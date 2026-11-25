@@ -33,19 +33,28 @@ class FfiFsrsEngine implements FsrsBatchEngine {
 
   FushiFsrsBindings get _b => library.bindings;
 
-  String? _fsrsRev;
+  ({String rev, Set<String> known})? _version;
 
-  @override
-  String get fsrsRev {
-    final String? cached = _fsrsRev;
+  /// 原生库的 `version`：当前 fsrs-rs 源码版本与本库认识的全部版本（当前版本 + 取代了的旧版本）。
+  ({String rev, Set<String> known}) get _fsrsVersion {
+    final ({String rev, Set<String> known})? cached = _version;
     if (cached != null) return cached;
     final Object? result = _call(<String, Object?>{'op': 'version'});
     final Object? rev = result is Map ? result['fsrsRev'] : null;
-    if (rev is! String) {
+    final Object? known = result is Map ? result['knownFsrsRevs'] : null;
+    if (rev is! String ||
+        known is! List ||
+        known.any((Object? r) => r is! String)) {
       throw SrsFsrsException('bad version response: $result');
     }
-    return _fsrsRev = rev;
+    return _version = (rev: rev, known: <String>{rev, ...known.cast<String>()});
   }
+
+  @override
+  String get fsrsRev => _fsrsVersion.rev;
+
+  @override
+  bool isKnownFsrsRev(String rev) => _fsrsVersion.known.contains(rev);
 
   @override
   List<double> defaultParams(SrsAlgorithm algorithm) {
@@ -69,72 +78,6 @@ class FfiFsrsEngine implements FsrsBatchEngine {
     } on SrsFsrsException catch (e) {
       return e.message;
     }
-  }
-
-  @override
-  SrsNextStates nextStates({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double desiredRetention,
-    required SrsMemory? memory,
-    required double elapsedDays,
-  }) {
-    final Object? result = _call(<String, Object?>{
-      'op': 'next_states',
-      'algorithm': algorithm.memoryAlgorithm.wire,
-      'params': params,
-      'desiredRetention': desiredRetention,
-      'elapsedDays': elapsedDays,
-      'memory': memory?.toJson(),
-    });
-    if (result is! Map) {
-      throw SrsFsrsException('bad next_states response: $result');
-    }
-    return SrsNextStates(
-      again: _itemState(result['again']),
-      hard: _itemState(result['hard']),
-      good: _itemState(result['good']),
-      easy: _itemState(result['easy']),
-    );
-  }
-
-  @override
-  SrsMemory? memoryState({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required List<SrsFsrsReview> reviews,
-    SrsMemory? starting,
-  }) {
-    final Object? result = _call(<String, Object?>{
-      'op': 'memory_state',
-      'algorithm': algorithm.memoryAlgorithm.wire,
-      'params': params,
-      'reviews': <Map<String, Object?>>[
-        for (final SrsFsrsReview r in reviews) r.toJson(),
-      ],
-      'starting': starting?.toJson(),
-    });
-    if (result == null) return null;
-    return _memory(result, 'memory_state');
-  }
-
-  @override
-  SrsMemory memoryStateFromSm2({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double easeFactor,
-    required double intervalDays,
-    required double sm2Retention,
-  }) {
-    final Object? result = _call(<String, Object?>{
-      'op': 'memory_state_from_sm2',
-      'algorithm': algorithm.memoryAlgorithm.wire,
-      'params': params,
-      'easeFactor': easeFactor,
-      'interval': intervalDays,
-      'sm2Retention': sm2Retention,
-    });
-    return _memory(result, 'memory_state_from_sm2');
   }
 
   @override
@@ -254,12 +197,101 @@ class FfiFsrsEngine implements FsrsBatchEngine {
     return _evaluation(result, 'evaluate');
   }
 
+  /// 时间序列切分的留出预测（复习统计页的校准图）：[items] 按复习时间排好序、带卡 ID；第 k 折只用之前的条目训练，
+  /// 预测这一段每条作答前的可提取度。返回与条目对齐的预测（第一段与数据不够训练的折为 NaN）。阻塞，放后台
+  /// isolate；[control] 的取消 / 进度与参数优化同一套。
+  Float32List predictTimeSeries({
+    required SrsAlgorithm algorithm,
+    required SrsFsrsTrainingSet items,
+    int folds = 5,
+    NativeSrsOptimizerControl? control,
+  }) {
+    final Pointer<Float> out = calloc<Float>(_slots(items.length));
+    try {
+      _fit(
+        <String, Object?>{
+          'algorithm': algorithm.memoryAlgorithm.wire,
+          'folds': folds,
+        },
+        items,
+        control,
+        out,
+      );
+      return Float32List.fromList(out.asTypedListOutOfLine(items.length));
+    } finally {
+      calloc.free(out);
+    }
+  }
+
+  /// 校准图与 UM+（lib.rs `ffsrs_calibration_report`）：样本六列等长（[actual] 1 = 记住，[fsrs] NaN = 没有预测），
+  /// RWKV 回放预测按日志数字 ID 配对，[scopeCards] 为空 = 全部卡。返回原生侧的结果 JSON。
+  Map<String, Object?> calibrationReport({
+    required Int64List cards,
+    required Int64List tags,
+    required Int64List ats,
+    required Int64List elapsed,
+    required Int64List actual,
+    required Float32List fsrs,
+    required Int64List rwkvTags,
+    required Float32List rwkvPreds,
+    required Int64List scopeCards,
+    int? fromMs,
+    int? toMs,
+  }) {
+    final int n = cards.length;
+    final Pointer<Char> req = _encode(<String, Object?>{
+      'from': ?fromMs,
+      'to': ?toMs,
+    }).toNativeUtf8().cast<Char>();
+    final List<Pointer<Int64>> ints = <Pointer<Int64>>[];
+    Pointer<Int64> i64(Int64List v) {
+      final Pointer<Int64> p = calloc<Int64>(_slots(v.length));
+      p.asTypedListOutOfLine(v.length).setAll(0, v);
+      ints.add(p);
+      return p;
+    }
+
+    final Pointer<Float> f = calloc<Float>(_slots(n));
+    final Pointer<Float> rp = calloc<Float>(_slots(rwkvPreds.length));
+    try {
+      f.asTypedListOutOfLine(n).setAll(0, fsrs);
+      rp.asTypedListOutOfLine(rwkvPreds.length).setAll(0, rwkvPreds);
+      final Object? result = _decodeResponse(
+        _b.ffsrs_calibration_report(
+          req,
+          n,
+          i64(cards),
+          i64(tags),
+          i64(ats),
+          i64(elapsed),
+          i64(actual),
+          f,
+          rwkvTags.length,
+          i64(rwkvTags),
+          rp,
+          scopeCards.length,
+          i64(scopeCards),
+        ),
+      );
+      if (result is! Map) {
+        throw SrsFsrsException('bad calibration response: $result');
+      }
+      return result.cast<String, Object?>();
+    } finally {
+      calloc.free(req);
+      calloc.free(f);
+      calloc.free(rp);
+      ints.forEach(calloc.free);
+    }
+  }
+
   /// 一次 `ffsrs_fit`：请求头走 JSON（几十字节），训练集的六段 TypedData 各拷一次进原生内存。
   /// 前缀在原生侧展开，这里只有 O(总评分数) 的数据。
   Object? _fit(
     Map<String, Object?> request,
     SrsFsrsTrainingSet set, [
     NativeSrsOptimizerControl? control,
+    Pointer<Float>? predictions,
   ]) {
     final Pointer<Char> req = _encode(request).toNativeUtf8().cast<Char>();
     final Int64List? ids = set.cardIds;
@@ -283,21 +315,38 @@ class FfiFsrsEngine implements FsrsBatchEngine {
       if (ids != null) cardIds.asTypedListOutOfLine(ids.length).setAll(0, ids);
       itemCards.asTypedListOutOfLine(set.length).setAll(0, set.itemCards);
       itemLengths.asTypedListOutOfLine(set.length).setAll(0, set.itemLengths);
+      // 留出预测（[predictTimeSeries]）与优化 / 评估同一份训练集打包，只是入口与输出缓冲区不同。
       return _decodeResponse(
-        _b.ffsrs_fit(
-          req,
-          ratings,
-          deltas,
-          set.ratings.length,
-          offsets,
-          cardIds,
-          set.cardCount,
-          itemCards,
-          itemLengths,
-          set.length,
-          control?.cancelPointer ?? nullptr,
-          control?.progressPointer ?? nullptr,
-        ),
+        predictions == null
+            ? _b.ffsrs_fit(
+                req,
+                ratings,
+                deltas,
+                set.ratings.length,
+                offsets,
+                cardIds,
+                set.cardCount,
+                itemCards,
+                itemLengths,
+                set.length,
+                control?.cancelPointer ?? nullptr,
+                control?.progressPointer ?? nullptr,
+              )
+            : _b.ffsrs_predict_tss(
+                req,
+                ratings,
+                deltas,
+                set.ratings.length,
+                offsets,
+                cardIds,
+                set.cardCount,
+                itemCards,
+                itemLengths,
+                set.length,
+                predictions,
+                control?.cancelPointer ?? nullptr,
+                control?.progressPointer ?? nullptr,
+              ),
       );
     } finally {
       calloc.free(req);
@@ -370,6 +419,35 @@ class FfiFsrsEngine implements FsrsBatchEngine {
     }
   }
 
+  /// 向内核要 ID（`ids`，native/fushi_fsrs/src/gen4_ids/derive.rs）：[items] 逐项对应结果。经 [SrsKernelIds] 调。
+  List<Object?> deriveIds(String? profile, List<List<Object?>> items) =>
+      _call(<String, Object?>{
+            'op': 'ids',
+            'profile': ?profile,
+            'items': items,
+          })!
+          as List<Object?>;
+
+  /// 复习卡文本导入（CSV / TSV / TXT）的解析（`text_import_parse`，native/fushi_fsrs/src/text_import.rs）：一次调用读完
+  /// 整个文件。[delimiter] / [html] 为 null 时按文件头或猜；[limit] 只回前几条（预览），`total` 仍是全部条数。阻塞到
+  /// 读完——在后台 isolate 里调。
+  Map<String, Object?> textImportParse(
+    String path, {
+    String? delimiter,
+    bool? html,
+    int? limit,
+  }) {
+    final Object? r = _call(<String, Object?>{
+      'op': 'text_import_parse',
+      'path': path,
+      'delimiter': ?delimiter,
+      'html': ?html,
+      'limit': ?limit,
+    });
+    if (r is! Map) throw SrsFsrsException('bad text_import_parse response: $r');
+    return r.cast<String, Object?>();
+  }
+
   // ---- JSON 往返 ----
 
   Object? _call(Map<String, Object?> request) {
@@ -424,22 +502,6 @@ class FfiFsrsEngine implements FsrsBatchEngine {
         else
           throw SrsFsrsException('bad $op response: $value'),
     ];
-  }
-
-  static SrsMemory _memory(Object? value, String op) {
-    final SrsMemory? memory = SrsMemory.fromJson(value);
-    if (memory == null) throw SrsFsrsException('bad $op response: $value');
-    return memory;
-  }
-
-  static SrsItemState _itemState(Object? value) {
-    if (value is! Map) throw SrsFsrsException('bad item state: $value');
-    final Object? interval = value['interval'];
-    if (interval is! num) throw SrsFsrsException('bad item state: $value');
-    return SrsItemState(
-      memory: _memory(value['memory'], 'next_states'),
-      interval: interval.toDouble(),
-    );
   }
 
   static SrsEvaluation _evaluation(Object? value, String op) {

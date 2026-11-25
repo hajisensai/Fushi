@@ -353,14 +353,15 @@ void main() {
           ShortcutAction.videoToggleMiniWindow,
           // 小窗 chrome 显隐：翻转型动作，按住连发 = 一片闪烁的按钮。
           ShortcutAction.videoToggleMiniChrome,
-          // 暂停句整句扫词：一按换一个词重查，按住连发 = 游标甩过整句。
-          ShortcutAction.videoLookupNextWord,
-          ShortcutAction.videoLookupPrevWord,
+          // 统计侧栏开关 / 学习计时停续：翻转型，按住连发 = 侧栏闪烁、计时来回翻。
+          ShortcutAction.videoOpenStatistics,
+          ShortcutAction.videoToggleStudyClock,
         },
         reason:
             '按一下翻一次的动作（模糊 / 遮蔽循环 / 隐藏 / 进选词光标 / 制卡 / F11 全屏 / '
-            '小窗 / 小窗控件 / 扫词上下词）——长按不该连发查词、更不该连发制卡、也不该来回翻全屏 / '
-            '来回进出小窗 / 让小窗控件闪烁',
+            '小窗 / 小窗控件 / 统计侧栏 / 学习计时停续）——长按不该连发查词、'
+            '更不该连发制卡、也不该来回翻全屏 / 来回进出小窗 / 让小窗控件闪烁 / 让侧栏开关闪烁 / '
+            '让计时来回翻',
       );
       // 连续型动作绝不能混进来：混进去 = 长按方向键不能连续快进 / 长按不能持续调音量。
       for (final ShortcutAction continuous in <ShortcutAction>[
@@ -375,56 +376,6 @@ void main() {
           kVideoPressEdgeOnlyActions.contains(continuous),
           isFalse,
           reason: '$continuous 是连续型动作，进了这个集合就是把长按连发删掉',
-        );
-      }
-    });
-  });
-
-  group('暂停句整句扫词（按下沿 + 绕开浮层守卫）', () {
-    // 扫词默认空绑定：绑到 F7（视频 scope 默认未占用）后走真实 resolver。
-    VideoKeyboardResolution resolveSweep(
-      KeyEvent event, {
-      required bool hasVisiblePopup,
-    }) {
-      final FushiShortcutRegistry registry = defaults()
-        ..updateBinding(
-          ShortcutAction.videoLookupNextWord,
-          const ShortcutBindingSet(
-            keyboardBindings: <InputBinding>[
-              InputBinding(key: LogicalKeyboardKey.f7),
-            ],
-          ),
-        );
-      return resolveVideoKeyboardShortcut(
-        registry,
-        event,
-        modifiers: const <ModifierKey>{},
-        hasEditableFocus: false,
-        hasVisiblePopup: hasVisiblePopup,
-        videoSurfaceHoldsFocus: true,
-        videoNavigablePanelOpen: false,
-      );
-    }
-
-    test('按下沿：浮层可见时仍执行扫词（不被「先关浮层」吃掉）', () {
-      final VideoKeyboardResolution r = resolveSweep(
-        down(LogicalKeyboardKey.f7, PhysicalKeyboardKey.f7),
-        hasVisiblePopup: true,
-      );
-      expect(r.dispatch, VideoKeyboardDispatch.run);
-      expect(r.action, ShortcutAction.videoLookupNextWord);
-    });
-
-    test('重复沿：不消费（长按不连发查词），浮层可见与否都一样', () {
-      for (final bool popup in <bool>[false, true]) {
-        final VideoKeyboardResolution r = resolveSweep(
-          repeat(LogicalKeyboardKey.f7, PhysicalKeyboardKey.f7),
-          hasVisiblePopup: popup,
-        );
-        expect(
-          r.dispatch,
-          VideoKeyboardDispatch.ignore,
-          reason: 'hasVisiblePopup=$popup：按住扫词键不能把游标甩过整句',
         );
       }
     });

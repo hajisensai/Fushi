@@ -35,6 +35,10 @@ abstract final class SrsImportIssueReason {
 
   /// 来源笔记引用了包里不存在的笔记类型。
   static const String missingNoteType = 'missingNoteType';
+
+  /// 同一个库里另一份 profile 已有同 guid 的笔记、属于另一个笔记类型：内核的实体归属闸不让本 profile 用这个 ID
+  /// 建结构不同的笔记（native/fushi_fsrs/src/store/gen4/cmd/writes_owner.rs，BUG-5005）。
+  static const String otherProfileNoteType = 'otherProfileNoteType';
 }
 
 /// 被截掉的步长（≥ 1 天的项）。
@@ -115,6 +119,10 @@ class SrsImportReport {
   /// 不含排程：来源里学过 / 暂停过、本次作为新卡导入的卡片数。
   int cardsResetToNew = 0;
 
+  /// 本机已有、来源里在另一个牌组的卡片数：重新导入不换已有卡的牌组（同 Anki），它们留在本机所在的
+  /// 牌组（BUG-5274）。恢复的笔记不算（它的卡回到来源牌组）。
+  int cardsKeptInDeck = 0;
+
   /// 不含排程：包里没导入的 revlog 条数。
   int reviewLogsSkipped = 0;
 
@@ -139,6 +147,13 @@ class SrsImportReport {
 
   /// 包里有 fushi-ext、却对不上任何 Fushi 日志的 revlog（Anki 端导出后又复习的），按普通 revlog 导入。
   int revlogsNotInExt = 0;
+
+  /// 本 profile 里已经有、只是落在这张卡的前身卡或旧卡上的 revlog（不再写一份；旧卡经 `historyFrom` 接进血统，BUG-4254）。
+  int revlogsAlreadyPresent = 0;
+
+  /// 来源包里卡已删除、revlog 还在的复习：写进 [reviewLogsImported] 的那部分里有多少条是这种（BUG-4657）。挂在
+  /// `SrsIds.deletedAnkiCard` 上，只进统计 / 日历，不参与任何卡的排期。
+  int deletedCardRevlogsImported = 0;
 
   int mediaStored = 0;
 
@@ -191,6 +206,7 @@ class SrsImportReport {
     'noteTypesDuplicated': noteTypesDuplicated,
     'noteTypesRestored': noteTypesRestored,
     'cardsResetToNew': cardsResetToNew,
+    'cardsKeptInDeck': cardsKeptInDeck,
     'reviewLogsSkipped': reviewLogsSkipped,
     'deckPresetsSkipped': deckPresetsSkipped,
     'cardsAdded': cardsAdded,
@@ -199,6 +215,8 @@ class SrsImportReport {
     'fushiLogsRestored': fushiLogsRestored,
     'revlogsVerifiedByExt': revlogsVerifiedByExt,
     'revlogsNotInExt': revlogsNotInExt,
+    'revlogsAlreadyPresent': revlogsAlreadyPresent,
+    'deletedCardRevlogsImported': deletedCardRevlogsImported,
     'mediaStored': mediaStored,
     'mediaMissing': mediaMissing.toList()..sort(),
     'latestFormat': latestFormat,

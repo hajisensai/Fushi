@@ -22,6 +22,9 @@ import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 
+/// 服务端本机 Anki 库定时同步（拉别的设备加的卡）的间隔。
+const Duration kServerAnkiPullInterval = Duration(minutes: 10);
+
 class ServerAnkiLanding {
   ServerAnkiLanding({
     required this.prefs,
@@ -33,8 +36,10 @@ class ServerAnkiLanding {
     AnkiSyncSession? session,
     bool resolveHelper = true,
     Duration interval = const Duration(seconds: 30),
+    Duration pullInterval = kServerAnkiPullInterval,
     int Function()? clock,
   }) : _interval = interval,
+       _pullInterval = pullInterval,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch),
        session = session ?? (resolveHelper ? _defaultSession(support) : null),
        store = PendingMineStore.inSupportDir(() => db, () async => support) {
@@ -68,11 +73,13 @@ class ServerAnkiLanding {
   final AnkiSyncSession? session;
   final PendingMineStore store;
   final Duration _interval;
+  final Duration _pullInterval;
   final int Function() _clock;
   late final AnkiSyncMiner? _miner;
   late final AnkiBoxLanding _landing;
 
   Timer? _timer;
+  Timer? _pullTimer;
   bool _stopped = false;
   AnkiBoxLandingReport? lastReport;
   int? lastRunAt;
@@ -117,6 +124,16 @@ class ServerAnkiLanding {
     // 上次退出前没同步完的卡还在会话日志里：开机补一次（没登录时在读账号那步就停）。
     session?.scheduleSync();
     _schedule(Duration.zero);
+    // 服务端没有「回到前台」：别的设备（桌面 Anki / AnkiDroid）加的卡只有同步拉下来，
+    // 互联查词的查重才看得见。定时排一次同步；没登录时会话在读账号那步就停、不拉起
+    // helper，限流冷却期内会话自己推迟到冷却结束。
+    _pullTimer?.cancel();
+    final AnkiSyncSession? s = session;
+    if (s != null) {
+      _pullTimer = Timer.periodic(_pullInterval, (_) {
+        if (!_stopped) s.scheduleSync();
+      });
+    }
   }
 
   /// 停机：停定时器，先关会话（立即结束 helper，在跑的同步随之失败、什么都不出日志；
@@ -126,6 +143,8 @@ class ServerAnkiLanding {
     _stopped = true;
     _timer?.cancel();
     _timer = null;
+    _pullTimer?.cancel();
+    _pullTimer = null;
     await session?.close();
     await _landing.idle;
   }

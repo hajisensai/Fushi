@@ -3,7 +3,6 @@
 import 'dart:io';
 import 'dart:typed_data';
 
-import 'package:archive/archive.dart';
 import 'package:fushi_rwkv/fushi_rwkv.dart';
 import 'package:test/test.dart';
 
@@ -27,17 +26,8 @@ File _modelFile(String name) {
   return file;
 }
 
-/// 小模型 int8 权重：从发布包里解出来落到临时文件（worker 按路径加载）。
-File _smallWeights() {
-  final Archive zip = ZipDecoder().decodeBytes(
-    _modelFile('sm56-package.zip').readAsBytesSync(),
-  );
-  final ArchiveFile entry = zip.findFile('sm56/weights.int8.bin')!;
-  final File out = File(
-    '${Directory.systemTemp.createTempSync('fushi_rwkv').path}/sm56.int8.bin',
-  )..writeAsBytesSync(entry.content as List<int>);
-  return out;
-}
+/// 小模型（Instant-Only sm98）int8 权重（worker 按路径加载）。
+File _smallWeights() => _modelFile('sm98_weights.int8.bin');
 
 /// 确定性小历史：40 张卡（两卡一笔记）、60 天；返回回放行与「今天」的作答行。
 (RwkvRows, RwkvRows) _history() {
@@ -113,9 +103,7 @@ void main() {
         final File weights = which == 'small'
             ? _smallWeights()
             : _modelFile('RWKV_trained_on_5000_10000.bin');
-        if (which == 'small') {
-          addTearDown(() => weights.parent.deleteSync(recursive: true));
-        }
+        // 两种权重都是 native/fushi_rwkv/model/ 下的真文件（只读），测试不清理它们。
         final RwkvNativeModel model = RwkvNativeModel.load(
           weights.readAsBytesSync(),
         );
@@ -256,19 +244,37 @@ void main() {
         expect(stats.cards, 40);
 
         final Uint8List snapshot = await worker.snapshot();
-        final RwkvIntervals intervals = await worker.nextIntervals(
-          answer,
-          targetRetention: 0.85,
-          maxIntervalDays: 365,
-        );
-        expect(intervals.days, hasLength(4));
-        for (int i = 1; i < 4; i++) {
-          expect(
-            intervals.days[i],
-            greaterThanOrEqualTo(intervals.days[i - 1]),
+        if (which == 'small') {
+          // Instant-Only 小模型的曲线头没训练过：RWKV-Curve 明确拒绝（-6），不给垃圾间隔。
+          await expectLater(
+            worker.nextIntervals(
+              answer,
+              targetRetention: 0.85,
+              maxIntervalDays: 365,
+            ),
+            throwsA(
+              isA<RwkvNativeException>().having(
+                (RwkvNativeException e) => e.isUnsupported,
+                'isUnsupported',
+                isTrue,
+              ),
+            ),
           );
+        } else {
+          final RwkvIntervals intervals = await worker.nextIntervals(
+            answer,
+            targetRetention: 0.85,
+            maxIntervalDays: 365,
+          );
+          expect(intervals.days, hasLength(4));
+          for (int i = 1; i < 4; i++) {
+            expect(
+              intervals.days[i],
+              greaterThanOrEqualTo(intervals.days[i - 1]),
+            );
+          }
+          expect(intervals.days.every((int d) => d >= 1 && d <= 365), isTrue);
         }
-        expect(intervals.days.every((int d) => d >= 1 && d <= 365), isTrue);
         // 排程不改状态。
         expect(await worker.snapshot(), snapshot);
 

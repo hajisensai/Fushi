@@ -7,6 +7,8 @@ import 'package:fushi/src/media/manga/library/manga_chapter_list.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:flutter/gestures.dart' show kSecondaryButton;
 
 /// 章节列表被**两个**界面共用（作品页正文 + 阅读器里的章节弹层）。两处对
 /// 「已读怎么显示、当前章怎么高亮、排序默认哪个方向」的答案必须一致，所以这些
@@ -310,6 +312,148 @@ void main() {
     );
   });
 
+  // 反馈 wCgL364tgM ②③：已读行整体降透明度、「已下载」改成中性描边图标，
+  // 行尾每枚状态图标都有 tooltip。
+  testWidgets('已读行降透明度；状态图标带 tooltip，已下载不再是主题色', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: MangaChapterList(
+              entry: entryWith(chapters),
+              states: <String, MangaChapterStateRow>{
+                '/c/3': _state(chapterKey: '/c/3', readAt: 1),
+              },
+              newestFirst: true,
+              unreadOnly: false,
+              downloadedChapterKeys: const <String>{'/c/2'},
+              ocrCompletedChapterKeys: const <String>{'/c/2'},
+              onChapterTap: (OnlineMangaChapter _) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    double contentOpacity(String title) => tester
+        .widget<AnimatedOpacity>(
+          find.descendant(
+            of: find.ancestor(
+              of: find.text(title),
+              matching: find.byType(MediaDetailItemRow),
+            ),
+            matching: find.byKey(
+              const ValueKey<String>('media-detail-item-content'),
+            ),
+          ),
+        )
+        .opacity;
+    expect(contentOpacity('Chapter 3'), kMediaDetailCompletedOpacity);
+    expect(contentOpacity('Chapter 2'), 1.0);
+
+    expect(_statusTooltip(t.manga_chapter_status_read), findsOneWidget);
+    expect(_statusTooltip(t.media_detail_status_downloaded), findsOneWidget);
+    expect(_statusTooltip(t.manga_chapter_status_ocr_done), findsOneWidget);
+    // 读屏名称：每枚状态图标都有显式语义标签（不只靠 tooltip）。可点的行会把子节点
+    // 语义并进行节点，所以按「行节点的标签里含这一句」找。
+    for (final String label in <String>[
+      t.manga_chapter_status_read,
+      t.media_detail_status_downloaded,
+      t.manga_chapter_status_ocr_done,
+    ]) {
+      expect(
+        find.bySemanticsLabel(RegExp(RegExp.escape(label))),
+        findsWidgets,
+        reason: label,
+      );
+    }
+
+    final BuildContext ctx = tester.element(find.byType(MangaChapterList));
+    final ColorScheme cs = Theme.of(ctx).colorScheme;
+    final FushiIcon downloaded = tester.widget<FushiIcon>(
+      find.byKey(const ValueKey<String>('media-detail-item-downloaded')),
+    );
+    expect(downloaded.color, cs.onSurfaceVariant, reason: '已下载是中性状态，不与已读对勾同色');
+    expect(downloaded.color, isNot(cs.primary));
+  });
+
+  testWidgets('正在识别的章不挂「已识别」标识', (WidgetTester tester) async {
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: MangaChapterList(
+              entry: entryWith(chapters),
+              states: const <String, MangaChapterStateRow>{},
+              newestFirst: true,
+              unreadOnly: false,
+              downloadedChapterKeys: const <String>{'/c/2'},
+              ocrCompletedChapterKeys: const <String>{'/c/2'},
+              ocrRunningChapterKey: '/c/2',
+              onChapterTap: (OnlineMangaChapter _) {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    expect(
+      find.byKey(const ValueKey<String>('manga_chapter_ocr_done')),
+      findsNothing,
+    );
+  });
+
+  testWidgets('多选态：行首勾选标记、收起行尾菜单；长按 / 右键回调选择手势', (WidgetTester tester) async {
+    final List<String> gestures = <String>[];
+    Future<void> pump({Set<String>? selected}) async {
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: SingleChildScrollView(
+              child: MangaChapterList(
+                entry: entryWith(chapters),
+                states: const <String, MangaChapterStateRow>{},
+                newestFirst: true,
+                unreadOnly: false,
+                selectedChapterKeys: selected,
+                onChapterSelectGesture: (OnlineMangaChapter c) =>
+                    gestures.add(c.key),
+                onToggleRead: (OnlineMangaChapter _) {},
+                onChapterTap: (OnlineMangaChapter _) {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+    }
+
+    await pump();
+    expect(find.byType(FushiOverflowMenu<String>), findsNWidgets(3));
+    await tester.longPress(find.text('Chapter 2'));
+    await tester.pumpAndSettle();
+    expect(gestures, <String>['/c/2']);
+    await tester.tap(find.text('Chapter 1'), buttons: kSecondaryButton);
+    await tester.pumpAndSettle();
+    expect(gestures, <String>['/c/2', '/c/1']);
+
+    await pump(selected: const <String>{'/c/2'});
+    expect(find.byType(FushiOverflowMenu<String>), findsNothing);
+    final Iterable<MediaDetailItemRow> rows = tester
+        .widgetList<MediaDetailItemRow>(find.byType(MediaDetailItemRow));
+    expect(
+      <String, bool?>{
+        for (final MediaDetailItemRow r in rows) r.title: r.selected,
+      },
+      <String, bool?>{
+        'Chapter 3': false,
+        'Chapter 2': true,
+        'Chapter 1': false,
+      },
+    );
+  });
+
   testWidgets('点某一行回调的是那一行对应的章', (WidgetTester tester) async {
     final List<String> tapped = <String>[];
     await pumpList(
@@ -338,3 +482,9 @@ MangaChapterStateRow _state({
   readAt: readAt,
   updatedAt: updatedAt,
 );
+
+/// 行尾状态图标的 tooltip 关了自身语义（读屏名由外层 Semantics 显式给），这时
+/// `find.byTooltip` 只认 package:flutter 的 Tooltip 类、认不出 material_ui 的
+/// Tooltip，所以按 material_ui Tooltip 的 message 直接找。
+Finder _statusTooltip(String message) =>
+    find.byWidgetPredicate((Widget w) => w is Tooltip && w.message == message);

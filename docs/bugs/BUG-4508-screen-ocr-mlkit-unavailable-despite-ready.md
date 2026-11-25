@@ -1,0 +1,7 @@
+## BUG-4508 · 悬浮球截屏 OCR 一直报「系统 OCR 模型未就绪」，配置弹窗却说已就绪
+- **报告**：2026-11-15（应用内反馈 4BBSaB12zj：TECNO KL4 Android 14，悬浮球截屏 OCR 确认录屏后提示模型未就绪并拉起配置弹窗，弹窗显示「模型已就绪，请重试」，重试仍失败；切换 Manga CTC / 设备 OCR / Google Lens 都一样）
+- **真实性**：⏳ 待真机。代码路径：`fushi/android/app/src/main/java/app/fushi/reader/ScreenOcrService.java:608` 截屏识别固定走 ML Kit（`SystemOcrChannel.recognizerFor`），失败码 UNAVAILABLE（`:634`）就提示并拉起配置；配置弹窗用 `fushi/android/app/src/main/java/app/fushi/reader/SystemOcrChannel.java:270` 的 `ModuleInstallClient.areModulesAvailable` 判成 ready。两者判据不同源：反编译 `play-services-mlkit-text-recognition-common` 19.1.0 的 `internal.zzd.zzb()`，UNAVAILABLE 来自每次 `process` 时 `DynamiteModule.load(PREFER_REMOTE, moduleId)` 抛 `LoadingException`（加载失败不缓存，识别器下次调用会重新加载），所以「静态缓存的识别器永久失效」的分诊假设不成立；真正原因是该机上 Play 服务报模块可用、但动态模块加载失败，失败原因只在 logcat（`DecoupledTextDelegate` / `DynamiteModule`）里，反馈日志没带。
+- **[ ] ① 未修复** — 需该机型 logcat 确认 LoadingException 原因后再按根因修。
+- **[ ] ② 未加自动化测试** —
+- **备注（2026-11-17，决定 4BBSaB12zj）**：Android 悬浮球截屏 OCR 改为跟随截屏识字引擎设置（默认跟随全局 OCR 引擎）：本机模型 / Google Lens 由 `ScreenOcrService.recognize` 把定格帧交给 Dart 识别；仍走 ML Kit 时报 UNAVAILABLE 先退到本机模型再试，本机模型也没就绪才弹配置。这位用户（本机模型已就绪）不再撞上这条路径；ML Kit 动态模块加载失败本身仍待 logcat，状态不变。
+- **备注（旧）**：Android 截屏 OCR 不跟随「OCR 引擎」设置（只用 ML Kit）是现有设计：截屏识字引擎设置项只在桌面显示（`fushi/lib/src/settings/settings_schema_floating_ball.dart` 的 `visible: isDesktopSystemBallPlatform`）。让 Android 截屏 OCR 也能用 Manga CTC / Lens 是功能取舍，留给所有者拍板。

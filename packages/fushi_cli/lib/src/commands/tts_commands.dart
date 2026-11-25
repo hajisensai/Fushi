@@ -1,0 +1,713 @@
+import 'package:args/args.dart';
+
+import '../ctl_commands.dart';
+
+/// `fushi_cli tts …`：漫画有声——演出稿、AI 看图标注、整卷生成、导入外部做好的成品（app 侧路由见
+/// `fushi/lib/src/ops/ctl_tts_routes.dart`）。条目键用 `book:<bookKey>`（见 library ls），
+/// 只认本地漫画卷。
+const List<CtlCommandGroup> ttsCommandGroups = <CtlCommandGroup>[
+  CtlCommandGroup(
+    name: 'tts',
+    summary:
+        '漫画有声：演出稿 / AI 标注 / 改句改角色 / 单句或按角色重生成 / 按句换本地音频 / 导出导入有声漫画包 / '
+        '整卷生成 / 导入成品',
+    commands: <CtlCommandSpec>[
+      CtlCommandSpec(
+        name: 'voices',
+        summary: '可选的声音（声音预设 + 声音包参考音频组）',
+        build: _buildVoices,
+        render: _renderVoices,
+      ),
+      CtlCommandSpec(
+        name: 'script',
+        summary: '演出稿摘要：角色表、行数、未定说话人、要不要重新标注',
+        usage: '<key>',
+        build: _buildScript,
+        render: _renderScript,
+      ),
+      CtlCommandSpec(
+        name: 'page',
+        summary: '某页的行（页码 1 起）',
+        usage: '<key> <页码>',
+        build: _buildPage,
+        render: _renderPage,
+      ),
+      CtlCommandSpec(
+        name: 'status',
+        summary: '标注任务与生成任务的状态',
+        usage: '<key>',
+        build: _buildStatus,
+        render: _renderStatus,
+      ),
+      CtlCommandSpec(
+        name: 'annotate',
+        summary: '后台发起 AI 看图标注（页图会发给指派的 AI 服务商）',
+        usage: '<key>',
+        configure: _configureAnnotate,
+        build: _buildAnnotate,
+        render: _renderStatusPart,
+      ),
+      CtlCommandSpec(
+        name: 'annotate-cancel',
+        summary: '取消正在跑的标注（已标的页保留）',
+        usage: '<key>',
+        build: _buildAnnotateCancel,
+      ),
+      CtlCommandSpec(
+        name: 'line',
+        summary: '改一句：说话人 / 类型 / 一拍 / 语气与强度 / 页内位置 / 手填文字 / 错字修正',
+        usage: '<key> <行 id>',
+        configure: _configureLine,
+        build: _buildLine,
+      ),
+      CtlCommandSpec(
+        name: 'character',
+        summary: '改某角色：改名 / 合并（只本卷）、声音指派（本卷或系列）',
+        usage: '<key> <角色名|narrator>',
+        configure: _configureCharacter,
+        build: _buildCharacter,
+      ),
+      CtlCommandSpec(
+        name: 'regenerate',
+        summary: '单句换种子重生成并保留（这句要已经生成过）',
+        usage: '<key> <行 id>',
+        configure: _configureRegenerate,
+        build: _buildRegenerate,
+      ),
+      CtlCommandSpec(
+        name: 'regenerate-character',
+        summary: '按角色批量重生成：这个角色已生成的合成句各换新种子，排进制作队列（--dry-run 只列句子）',
+        usage: '<key> <角色名|narrator|unknown>',
+        configure: _configureRegenerateCharacter,
+        build: _buildRegenerateCharacter,
+        render: _renderRegenerateCharacter,
+      ),
+      CtlCommandSpec(
+        name: 'replace',
+        summary: '按句换上本地音频（全有或全无；--dry-run 只预检）：<行 id>=<音频路径> 或 --map 映射 JSON',
+        usage: '<key> [<行 id>=<音频路径> ...]',
+        configure: _configureReplace,
+        build: _buildReplace,
+        render: _renderReplace,
+      ),
+      CtlCommandSpec(
+        name: 'render',
+        summary: '排整卷生成（进制作队列；生成完会替换这卷原有的音频）',
+        usage: '<key>',
+        configure: _configureRender,
+        build: _buildRender,
+        render: _renderStatusPart,
+      ),
+      CtlCommandSpec(
+        name: 'render-cancel',
+        summary: '取消这一卷在排队 / 在跑的生成任务',
+        usage: '<key>',
+        build: _buildRenderCancel,
+      ),
+      CtlCommandSpec(
+        name: 'import',
+        summary: '导入做好的成品清单 manifest.json（与漫画卡「导入漫画有声」同一套校验；已有成品要 --yes 才替换）',
+        usage: '<key> <manifest.json>',
+        configure: _configureImport,
+        build: _buildImport,
+        render: _renderImport,
+      ),
+      CtlCommandSpec(
+        name: 'export',
+        summary:
+            '导出有声漫画包（.fushi-manga-audio：页图 / OCR / 演出稿 / 成品 / 系列选角），'
+            '另一台导入就能直接播放；默认等写完',
+        usage: '<key>... --out <文件>  或  --series <系列> --out <文件>',
+        configure: _configureExport,
+        build: _buildExport,
+        render: _renderPackageTask,
+      ),
+      CtlCommandSpec(
+        name: 'import-package',
+        summary:
+            '导入有声漫画包：按页数 + OCR 认本机同一卷（没有就作为新卷导入），复制演出稿与'
+            '成品并登记、合并系列选角；--dry-run 只列计划；默认等导入完',
+        usage: '<文件.fushi-manga-audio>',
+        configure: _configureImportPackage,
+        build: _buildImportPackage,
+        render: _renderPackageTask,
+      ),
+      CtlCommandSpec(
+        name: 'package-task',
+        summary: '有声漫画包导出 / 导入任务的状态（--wait 等它结束）',
+        usage: '<任务 id>',
+        configure: _configurePackageTask,
+        build: _buildPackageTask,
+        render: _renderPackageTask,
+      ),
+      CtlCommandSpec(
+        name: 'package-cancel',
+        summary: '取消有声漫画包导出（删半成品）/ 还没开始落库的导入',
+        usage: '<任务 id>',
+        build: _buildPackageCancel,
+        render: _renderPackageTask,
+      ),
+    ],
+  ),
+];
+
+const String _packageRoot = '/api/admin/tts/manga-packages';
+
+const String _root = '/api/admin/tts/manga';
+
+String _item(CtlCommandContext c) =>
+    '$_root/${Uri.encodeComponent(c.positional(0, 'key').trim())}';
+
+CtlRequestSpec _buildVoices(CtlCommandContext c) =>
+    const CtlRequestSpec.get('/api/admin/tts/voices');
+
+CtlRequestSpec _buildScript(CtlCommandContext c) =>
+    CtlRequestSpec.get(_item(c));
+
+CtlRequestSpec _buildPage(CtlCommandContext c) {
+  final String page = c.positional(1, '页码').trim();
+  if (int.tryParse(page) == null) throw CtlUsageError('页码应为整数，收到「$page」');
+  return CtlRequestSpec.get('${_item(c)}/pages/${Uri.encodeComponent(page)}');
+}
+
+CtlRequestSpec _buildStatus(CtlCommandContext c) =>
+    CtlRequestSpec.get('${_item(c)}/status');
+
+void _configureAnnotate(ArgParser parser) => parser
+  ..addOption('pages', help: '只标这些页（1 起，逗号分隔）；不给 = 还没标过的页')
+  ..addFlag('roster', defaultsTo: null, help: '先跑 / 不跑角色表（不给 = 自动）')
+  ..addFlag(
+    'consent-upload',
+    negatable: false,
+    help: '同意把页图发给 AI 服务商（本机第一次标注时需要）',
+  );
+
+CtlRequestSpec _buildAnnotate(CtlCommandContext c) {
+  final String path = '${_item(c)}/annotate';
+  final String? raw = c.option('pages');
+  final List<int> pages = <int>[];
+  if (raw != null) {
+    for (final String part in raw.split(',')) {
+      final int? page = int.tryParse(part.trim());
+      if (page == null || page < 1) {
+        throw CtlUsageError('--pages 应为 1 起的页码，收到「$part」');
+      }
+      pages.add(page);
+    }
+  }
+  final bool? roster = c.explicitFlag('roster');
+  return CtlRequestSpec.post(
+    path,
+    body: <String, Object?>{
+      if (pages.isNotEmpty) 'pages': pages,
+      if (roster != null) 'roster': roster,
+      if (c.flag('consent-upload')) 'consentUpload': true,
+    },
+  );
+}
+
+CtlRequestSpec _buildAnnotateCancel(CtlCommandContext c) =>
+    CtlRequestSpec.post('${_item(c)}/annotate/cancel');
+
+const List<String> _kinds = <String>[
+  'narration',
+  'monologue',
+  'thought',
+  'spoken',
+  'shout',
+  'mutter',
+  'skip',
+];
+
+/// 语气词表（线上 wire 名，none = 不标）。CLI 不依赖 fushi_engine，所以这里手写；
+/// 与引擎 `CastEmotion` 的一致性由 app 侧测试
+/// `tts_manga_line_emotion_parity_test.dart` 钉住，操作目录描述也直接引用这份。
+const List<String> kTtsMangaLineEmotions = <String>[
+  'none',
+  'neutral',
+  'joy',
+  'sadness',
+  'anger',
+  'surprise',
+  'fear',
+  'disgust',
+  'embarrassment',
+  'tenderness',
+  'tension',
+];
+
+/// `--intensity`：整数，或 none（清掉强度，线上是 -1）。
+MapEntry<String, Object?>? _intensityOption(CtlCommandContext c) {
+  final String? raw = c.option('intensity');
+  if (raw == null) return null;
+  if (raw.trim() == 'none')
+    return const MapEntry<String, Object?>('intensity', -1);
+  return MapEntry<String, Object?>('intensity', _intOption(c, 'intensity'));
+}
+
+void _configureLine(ArgParser parser) => parser
+  ..addOption('speaker', help: '说话人：角色名 / narrator / unknown')
+  ..addFlag('new-character', negatable: false, help: '--speaker 是新角色，加进角色表')
+  ..addOption('kind', allowed: _kinds, help: '台词类型')
+  ..addOption('beat', help: '句后额外停顿（毫秒，0-10000）')
+  ..addOption(
+    'emotion',
+    allowed: kTtsMangaLineEmotions,
+    help: '语气（none = 不标，强度一并清掉）',
+  )
+  ..addOption('intensity', help: '语气强度 0-100（none = 不标强度）')
+  ..addOption('tone', help: '语气说明（自由文本演技指令，如「おずおずと」；空串 = 清掉）')
+  ..addOption('position', help: '移到本页第几句（1 起）')
+  ..addOption('say', help: '整句手填要念的文字（空串 = 清掉）')
+  ..addMultiOption('fix', help: 'OCR 错字修正：<块下标>=<文字>（文字为空 = 删掉这处修正）');
+
+int? _intOption(CtlCommandContext c, String name) {
+  final String? raw = c.option(name);
+  if (raw == null) return null;
+  final int? value = int.tryParse(raw);
+  if (value == null) throw CtlUsageError('--$name 应为整数，收到「$raw」');
+  return value;
+}
+
+CtlRequestSpec _buildLine(CtlCommandContext c) {
+  final String path =
+      '${_item(c)}/lines/${Uri.encodeComponent(c.positional(1, '行 id').trim())}';
+  final Map<String, String> fixes = <String, String>{};
+  for (final String raw in c.multiOption('fix')) {
+    final int eq = raw.indexOf('=');
+    if (eq <= 0 || int.tryParse(raw.substring(0, eq).trim()) == null) {
+      throw CtlUsageError('--fix 应为 <块下标>=<文字>，收到「$raw」');
+    }
+    fixes[raw.substring(0, eq).trim()] = raw.substring(eq + 1);
+  }
+  final Object? say = c.args.wasParsed('say') ? c.args['say'] : null;
+  final Map<String, Object?> body = <String, Object?>{
+    if (c.option('speaker') case final String speaker) 'speaker': speaker,
+    if (c.flag('new-character')) 'newCharacter': true,
+    if (c.option('kind') case final String kind) 'kind': kind,
+    if (_intOption(c, 'beat') case final int beat) 'beat': beat,
+    if (c.option('emotion') case final String emotion) 'emotion': emotion,
+    if (_intensityOption(c) case final MapEntry<String, Object?> e)
+      e.key: e.value,
+    if (c.args.wasParsed('tone')) 'tone': '${c.args['tone']}',
+    if (_intOption(c, 'position') case final int position) 'position': position,
+    if (say != null) 'say': '$say',
+    if (fixes.isNotEmpty) 'fixes': fixes,
+  };
+  if (body.isEmpty) {
+    throw const CtlUsageError(
+      '至少给一个要改的：--speaker / --kind / --beat / --emotion / --intensity / '
+      '--tone / --position / --say / --fix',
+    );
+  }
+  return CtlRequestSpec.put(path, body: body);
+}
+
+void _configureCharacter(ArgParser parser) => parser
+  ..addOption('rename', help: '新名字（填已有的名字 = 合并两人），只改本卷')
+  ..addOption('voice', help: '声音 id（见 tts voices）')
+  ..addFlag('clear-voice', negatable: false, help: '清掉这一级的声音指派')
+  ..addOption(
+    'kind',
+    allowed: _kinds.where((String k) => k != 'skip'),
+    help: '只给这一类台词指派声音',
+  )
+  ..addOption(
+    'scope',
+    allowed: <String>['volume', 'series'],
+    help: '声音指派写到哪：volume 只这一卷（默认）/ series 整个系列',
+  );
+
+CtlRequestSpec _buildCharacter(CtlCommandContext c) {
+  final String path =
+      '${_item(c)}/characters/${Uri.encodeComponent(c.positional(1, '角色名').trim())}';
+  final String? voice = c.option('voice');
+  final bool clear = c.flag('clear-voice');
+  if (voice != null && clear) {
+    throw const CtlUsageError('--voice 与 --clear-voice 只能给一个');
+  }
+  final Map<String, Object?> body = <String, Object?>{
+    if (c.option('rename') case final String rename) 'rename': rename,
+    if (voice != null) 'voice': voice,
+    if (clear) 'voice': '',
+    if (c.option('kind') case final String kind) 'kind': kind,
+    if (c.option('scope') case final String scope) 'scope': scope,
+  };
+  if (!body.containsKey('rename') && !body.containsKey('voice')) {
+    throw const CtlUsageError('至少给 --rename、--voice 或 --clear-voice');
+  }
+  return CtlRequestSpec.put(path, body: body);
+}
+
+void _configureRegenerate(ArgParser parser) =>
+    parser.addOption('seed', help: '种子（0-4294967295）；不给 = 随机');
+
+CtlRequestSpec _buildRegenerate(CtlCommandContext c) {
+  final String path =
+      '${_item(c)}/lines/${Uri.encodeComponent(c.positional(1, '行 id').trim())}/regenerate';
+  return CtlRequestSpec.post(
+    path,
+    body: <String, Object?>{
+      if (_intOption(c, 'seed') case final int seed) 'seed': seed,
+    },
+  );
+}
+
+void _configureRegenerateCharacter(ArgParser parser) => parser
+  ..addOption(
+    'kind',
+    allowed: _kinds.where((String k) => k != 'skip'),
+    help: '只重生成这一类台词',
+  )
+  ..addFlag('dry-run', negatable: false, help: '只列出会重生成 / 跳过的句子，不动任何东西');
+
+CtlRequestSpec _buildRegenerateCharacter(CtlCommandContext c) {
+  final String path =
+      '${_item(c)}/characters/${Uri.encodeComponent(c.positional(1, '角色名').trim())}/regenerate';
+  return CtlRequestSpec.post(
+    path,
+    body: <String, Object?>{
+      if (c.option('kind') case final String kind) 'kind': kind,
+      if (c.flag('dry-run')) 'dryRun': true,
+    },
+  );
+}
+
+void _configureReplace(ArgParser parser) => parser
+  ..addOption('map', help: '映射 JSON 文件：{"行 id": "音频路径"}（相对路径按该文件所在目录）')
+  ..addFlag('dry-run', negatable: false, help: '只逐句预检，不动任何东西');
+
+CtlRequestSpec _buildReplace(CtlCommandContext c) {
+  final String path = '${_item(c)}/lines/replace';
+  final Map<String, String> files = <String, String>{};
+  for (final String raw in c.rest.skip(1)) {
+    final int eq = raw.indexOf('=');
+    if (eq <= 0 || eq == raw.length - 1) {
+      throw CtlUsageError('应为 <行 id>=<音频路径>，收到「$raw」');
+    }
+    files[raw.substring(0, eq).trim()] = ctlAbsolutePath(
+      raw.substring(eq + 1).trim(),
+    );
+  }
+  final String? map = c.option('map');
+  if ((map == null) == files.isEmpty) {
+    throw const CtlUsageError('给 <行 id>=<音频路径>（可多个）或 --map <映射 JSON>，二选一');
+  }
+  c.positional(0, 'key');
+  return CtlRequestSpec.post(
+    path,
+    body: <String, Object?>{
+      if (files.isNotEmpty) 'files': files,
+      if (map != null) 'mapping': ctlAbsolutePath(map),
+      if (c.flag('dry-run')) 'dryRun': true,
+    },
+  );
+}
+
+void _configureRender(ArgParser parser) =>
+    parser.addOption('voice', help: '没有更细指派时用的声音 id（默认：上次生成的声音 / 当前朗读声音）');
+
+CtlRequestSpec _buildRender(CtlCommandContext c) => CtlRequestSpec.post(
+  '${_item(c)}/render',
+  body: <String, Object?>{
+    if (c.option('voice') case final String voice) 'voice': voice,
+  },
+);
+
+CtlRequestSpec _buildRenderCancel(CtlCommandContext c) =>
+    CtlRequestSpec.post('${_item(c)}/render/cancel');
+
+void _configureImport(ArgParser parser) =>
+    parser.addFlag('yes', negatable: false, help: '这一卷已有有声成品时确认替换');
+
+CtlRequestSpec _buildImport(CtlCommandContext c) => CtlRequestSpec.post(
+  '${_item(c)}/import',
+  body: <String, Object?>{
+    'manifest': ctlAbsolutePath(c.positional(1, 'manifest.json')),
+    if (c.flag('yes')) 'confirm': true,
+  },
+);
+
+void _configureExport(ArgParser parser) => parser
+  ..addOption('out', help: '写到这个文件（没带扩展名自动补 .fushi-manga-audio）')
+  ..addOption(
+    'series',
+    help: '导出整个系列：book:<系列里任一卷> / 系列身份（collection:<id>）/ 合集名',
+  )
+  ..addOption('volumes', help: '和 --series 一起用：只导这几卷（book:<key>，逗号分隔）')
+  ..addFlag('script-only', negatable: false, help: '只带演出稿（不带成品），给另一台接着生成')
+  ..addFlag(
+    'no-wait',
+    negatable: false,
+    help: '起了任务就返回（之后用 tts package-task 查）',
+  );
+
+CtlRequestSpec _buildExport(CtlCommandContext c) {
+  final String? out = c.option('out');
+  if (out == null) throw const CtlUsageError('缺少 --out <文件>');
+  final String? series = c.option('series');
+  final List<String> keys = <String>[
+    for (final String raw in c.rest)
+      if (raw.trim().isNotEmpty) raw.trim(),
+  ];
+  if ((series == null) == keys.isEmpty) {
+    throw const CtlUsageError('给要导出的卷 <key>...，或 --series <系列>，二选一');
+  }
+  final String? volumes = c.option('volumes');
+  if (volumes != null && series == null) {
+    throw const CtlUsageError('--volumes 只能和 --series 一起用');
+  }
+  return CtlRequestSpec.post(
+    '$_packageRoot/export',
+    body: <String, Object?>{
+      if (keys.isNotEmpty) 'keys': keys,
+      'series': ?series,
+      if (volumes != null)
+        'volumes': <String>[
+          for (final String v in volumes.split(','))
+            if (v.trim().isNotEmpty) v.trim(),
+        ],
+      'out': ctlAbsolutePath(out),
+      if (c.flag('script-only')) 'scriptOnly': true,
+      if (!c.flag('no-wait')) 'wait': true,
+    },
+  );
+}
+
+void _configureImportPackage(ArgParser parser) => parser
+  ..addFlag('dry-run', negatable: false, help: '只读包、列出每卷会怎么处理，不写任何东西')
+  ..addFlag('as-new', negatable: false, help: '与本机同名卷冲突（页数 / OCR 不一致）的卷作为新卷导入')
+  ..addFlag('yes', negatable: false, help: '本机已有演出稿 / 成品时确认替换')
+  ..addFlag(
+    'no-wait',
+    negatable: false,
+    help: '起了任务就返回（之后用 tts package-task 查）',
+  );
+
+CtlRequestSpec _buildImportPackage(CtlCommandContext c) => CtlRequestSpec.post(
+  '$_packageRoot/import',
+  body: <String, Object?>{
+    'file': ctlAbsolutePath(c.positional(0, '文件.fushi-manga-audio')),
+    if (c.flag('dry-run')) 'dryRun': true,
+    if (c.flag('as-new')) 'asNew': true,
+    if (c.flag('yes')) 'confirm': true,
+    if (!c.flag('no-wait') && !c.flag('dry-run')) 'wait': true,
+  },
+);
+
+void _configurePackageTask(ArgParser parser) =>
+    parser.addFlag('wait', negatable: false, help: '等任务结束再返回');
+
+String _packageTaskPath(CtlCommandContext c) =>
+    '$_packageRoot/tasks/${Uri.encodeComponent(c.positional(0, '任务 id').trim())}';
+
+CtlRequestSpec _buildPackageTask(CtlCommandContext c) => CtlRequestSpec.get(
+  _packageTaskPath(c),
+  query: <String, String>{if (c.flag('wait')) 'wait': 'true'},
+);
+
+CtlRequestSpec _buildPackageCancel(CtlCommandContext c) =>
+    CtlRequestSpec.post('${_packageTaskPath(c)}/cancel');
+
+// ── render ──────────────────────────────────────────────────────────────
+
+String _renderVoices(Object? data) => renderCtlTable(
+  data,
+  const <(String, String)>[('id', 'id'), ('名称', 'name'), ('引擎', 'provider')],
+  listKey: 'voices',
+  empty: '没有可用的声音（先在朗读设置里加一个声音）',
+);
+
+String _renderScript(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final StringBuffer out = StringBuffer(
+    '${data['title']}（${data['key']}）\n'
+    '页 ${data['pages']}，已标注 ${data['annotatedPages']}；'
+    '行 ${data['lines']}（发声 ${data['audibleLines']}），'
+    '说话人不明 ${data['unknownSpeakerLines']}，待复核 ${data['needsReviewLines']}',
+  );
+  if (data['needsReannotation'] == true) out.write('\nOCR 重跑过：需要重新标注');
+  out.write(data['rendered'] == true ? '\n已生成音频' : '\n还没生成音频');
+  out.write('\n');
+  out.write(
+    renderCtlTable(data['roster'], const <(String, String)>[
+      ('角色', 'name'),
+      ('行数', 'lines'),
+      ('声音', 'voice'),
+    ], empty: '角色表为空'),
+  );
+  return out.toString();
+}
+
+String _renderPage(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final String head =
+      '第 ${data['page']} 页'
+      '${data['annotated'] == true ? '' : '（未标注）'}';
+  return '$head\n${renderCtlTable(data['lines'], const <(String, String)>[('id', 'id'), ('说话人', 'speaker'), ('类型', 'kind'), ('文字', 'text')], empty: '这一页没有行')}';
+}
+
+String _task(Object? task) {
+  if (task is! Map) return '无';
+  final Object? error = task['error'];
+  return '${task['status']} ${task['done']}/${task['total']}'
+      '${error == null ? '' : '：$error'}';
+}
+
+String _renderStatus(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  return '标注：${_task(data['annotate'])}\n生成：${_task(data['render'])}';
+}
+
+String _renderStatusPart(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final Object? render = data['render'];
+  if (render is Map) {
+    return '${data['alreadyQueued'] == true ? '已在队列里' : '已排进队列'}：${_task(render)}';
+  }
+  return '已开始标注：${_task(data)}';
+}
+
+String _renderRegenerateCharacter(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final List<Object?> lines = data['lines'] is List
+      ? data['lines']! as List<Object?>
+      : const <Object?>[];
+  final List<Object?> skipped = data['skipped'] is List
+      ? data['skipped']! as List<Object?>
+      : const <Object?>[];
+  final StringBuffer out = StringBuffer(
+    data['dryRun'] == true
+        ? '${data['name']}：会重生成 ${lines.length} 句，跳过 ${skipped.length} 句\n'
+        : '${data['name']}：${lines.length} 句已排进队列（${_task(data['render'])}），'
+              '跳过 ${skipped.length} 句\n',
+  );
+  out.write(
+    renderCtlTable(lines, const <(String, String)>[
+      ('id', 'line'),
+      ('页', 'page'),
+      ('类型', 'kind'),
+      ('文字', 'text'),
+    ], empty: '没有要重生成的句子'),
+  );
+  if (skipped.isNotEmpty) {
+    out.write('\n跳过：\n');
+    out.write(
+      renderCtlTable(skipped, const <(String, String)>[
+        ('id', 'line'),
+        ('原因', 'reason'),
+      ]),
+    );
+  }
+  return out.toString();
+}
+
+String _renderReplace(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final String head = data['dryRun'] == true
+      ? (data['ok'] == true ? '预检通过，可以换' : '预检没通过（什么都没改）')
+      : '已换 ${data['replaced']} 句，原样 ${data['unchanged']} 句';
+  final List<(String, String)> columns = data['dryRun'] == true
+      ? const <(String, String)>[
+          ('id', 'line'),
+          ('结果', 'code'),
+          ('说明', 'message'),
+          ('文件', 'file'),
+        ]
+      : const <(String, String)>[
+          ('id', 'line'),
+          ('结果', 'status'),
+          ('时长', 'durationMs'),
+          ('原时长', 'previousDurationMs'),
+        ];
+  return '$head\n${renderCtlTable(data['lines'], columns, empty: '没有句子')}';
+}
+
+String _renderImport(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  return '${data['replaced'] == true ? '已替换' : '已导入'}：${data['key']}，'
+      '${data['pages']} 页 ${data['lines']} 句，'
+      '共 ${((data['durationMs'] as num? ?? 0) / 1000).toStringAsFixed(1)} 秒'
+      '${data['replaced'] == true ? '（原成品：${data['previous']}）' : ''}';
+}
+
+const Map<String, String> _packageActions = <String, String>{
+  'useExisting': '用本机已有的同一卷',
+  'create': '作为新卷导入',
+  'skip': '跳过（与本机同名卷冲突）',
+};
+
+const Map<String, String> _packageStatuses = <String, String>{
+  'running': '进行中',
+  'done': '完成',
+  'failed': '失败',
+  'cancelled': '已取消',
+  'imported': '已导入',
+  'skipped': '已跳过',
+};
+
+String _seconds(Object? ms) =>
+    '${((ms as num? ?? 0) / 1000).toStringAsFixed(1)} 秒';
+
+/// 导入计划（--dry-run）、导出 / 导入任务（含结束后的逐卷结果）的人类可读输出。
+String _renderPackageTask(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  if (data['dryRun'] == true) {
+    final StringBuffer out = StringBuffer('导入计划（${data['path']}，不写任何东西）：\n');
+    final Object? volumes = data['volumes'];
+    if (volumes is List) {
+      for (final Object? v in volumes) {
+        if (v is! Map) continue;
+        out.write(
+          '  ${v['id']} ${v['title']}（${v['pages']} 页）：'
+          '${_packageActions['${v['action']}'] ?? v['action']}'
+          '${v['key'] == null ? '' : ' ${v['key']}'}'
+          '${v['hasAudio'] == true ? '，${v['lines']} 句 ${_seconds(v['durationMs'])}' : '，仅演出稿'}'
+          '${v['replacesScript'] == true || v['replacesAudio'] == true ? '，会替换本机已有的演出稿 / 成品（要 --yes）' : ''}'
+          '${v['busy'] == null ? '' : '，${v['busy']}'}'
+          '${v['missingVoices'] is List ? '，本机缺声音：${(v['missingVoices'] as List).join('、')}' : ''}\n',
+        );
+      }
+    }
+    return out.toString().trimRight();
+  }
+  final String status =
+      _packageStatuses['${data['status']}'] ?? '${data['status']}';
+  final String kind = data['kind'] == 'export' ? '导出' : '导入';
+  final StringBuffer out = StringBuffer('$kind$status：${data['taskId']}');
+  if (data['status'] == 'running') {
+    out.write(
+      '（${data['phase'] ?? ''}'
+      '${data['progress'] == null ? '' : ' ${data['progress']}%'}）',
+    );
+  }
+  if (data['error'] != null) out.write('\n${data['error']}');
+  final Object? result = data['result'];
+  if (result is Map) {
+    if (data['kind'] == 'export') {
+      out.write(
+        '\n${result['path']}（${((result['bytes'] as num? ?? 0) / 1048576).toStringAsFixed(1)} MB）',
+      );
+    }
+    final Object? volumes = result['volumes'];
+    if (volumes is List) {
+      for (final Object? v in volumes) {
+        if (v is! Map) continue;
+        final String state = v['status'] == null
+            ? (v['scriptOnly'] == true
+                  ? '仅演出稿'
+                  : '${v['lines']} 句 ${_seconds(v['durationMs'])}')
+            : '${_packageStatuses['${v['status']}'] ?? v['status']}'
+                  '${v['created'] == true ? '（新卷）' : ''}'
+                  '${v['reason'] == null ? '' : '：${v['reason']}'}';
+        out.write(
+          '\n  ${v['id']} ${v['title']}'
+          '${v['key'] == null ? '' : ' ${v['key']}'}：$state'
+          '${v['missingVoices'] is List ? '；本机缺声音：${(v['missingVoices'] as List).join('、')}（继续重配前先装）' : ''}'
+          '${v['scriptStale'] == true ? '；演出稿要重新标注' : ''}',
+        );
+      }
+    }
+  }
+  return out.toString();
+}

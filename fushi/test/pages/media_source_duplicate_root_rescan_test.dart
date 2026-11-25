@@ -16,6 +16,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -47,8 +48,13 @@ void main() {
     WidgetTester tester, {
     required String mediaKind,
   }) async {
+    // 书籍来源重扫会问 folderImportTranscribePort（读偏好里的转录开关），生产里偏好
+    // 先于任何页面就绪，这里同样接上一份真偏好。
+    final PreferencesRepository prefs = PreferencesRepository(db);
+    await prefs.loadFromDb();
     final AppModel appModel = AppModel(testPlatformServices())
-      ..wireDatabaseForTesting(db);
+      ..wireDatabaseForTesting(db)
+      ..wirePreferencesForTesting(prefs);
     final GlobalKey<MediaSourcesViewState> viewKey =
         GlobalKey<MediaSourcesViewState>();
     await tester.pumpWidget(

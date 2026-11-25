@@ -8,6 +8,7 @@ import 'package:crypto/crypto.dart';
 import 'package:meta/meta.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/manga/mihon/manga_page_files.dart';
 import 'package:fushi/src/media/manga/mihon/manga_page_provider.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 
@@ -19,6 +20,10 @@ import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 const String kMangaStreamCacheDirName = 'manga_stream_cache';
 
 /// 同时在飞的取页请求上限（前台 + 预取共用）。
+///
+/// Android 运行时的取图线程池按「本值 + 下载页并发」开宽度
+/// （`MihonChannelHandler.kt` 的 `STREAM_PAGE_CONCURRENCY`），改这里要同步改那边，
+/// `mihon_image_pool_width_guard_test.dart` 钉着两边。
 const int kOnlineMangaPageConcurrency = 3;
 
 /// 每次取页时顺带往阅读方向（页号增大）预取几页。
@@ -29,9 +34,6 @@ const int kOnlineMangaPrefetchAhead = 4;
 
 /// 每次取页时顺带往回预取几页（回翻一页不白屏即可）。
 const int kOnlineMangaPrefetchBehind = 1;
-
-/// 单页字节上限，与旧在线会话 / 下载服务的 100 MiB 口径一致。
-const int kOnlineMangaMaximumPageBytes = 100 * 1024 * 1024;
 
 /// 取第 [index] 页（0-based）的原始字节。Mihon 必须经扩展自己的客户端，所以这里
 /// 只接一个闭包，由调用方绑到 `OnlineMangaRuntimeAdapter.fetchChapterPage`。
@@ -52,6 +54,9 @@ typedef OnlineMangaPageMeasured =
 /// - 预取：每次 [page] 顺带往前预取 [prefetchAhead] 页、往回 [prefetchBehind] 页，失败
 ///   静默（前台再取会重试）。读者跳走后，还在排队、落在新页预取窗口外的旧预取直接丢弃：很多源的扩展自带限流
 ///   拦截器，过期预取会占掉限流额度与取图通道，让真正要看的页排在它们后面。
+/// - 后台需求：「全部页面」缩略图经 [backgroundPage] 走同一条管线、同一份缓存与并发
+///   上限，排在阅读请求之后；按需求方（owner）收放（[retainBackgroundPages]），阅读翻页
+///   丢过期预取时不误伤它。
 /// - 取消：[close] 时把还在飞的请求经 [cancelPages] 交给运行时取消（Android 原生
 ///   取图线程有限，快速换章时旧章请求不该继续占着）。
 /// - 缓存：字节落到 [directory]（app 临时目录下的会话私有目录），[localFile] 因而能
@@ -226,6 +231,27 @@ class OnlineMangaReaderSession implements MangaReaderSession {
   /// 已经落盘的第 [index] 页（同步；没取过 / 越界 → null）。卡图路径这类同步读者用。
   String? cachedFilePath(int index) => _cached[index]?.path;
 
+  /// 后台需求方（「全部页面」缩略图）要第 [index] 页：与阅读同一条取页管线、同一份
+  /// 页缓存、同一个并发上限，只是排在前台请求与阅读预取之后，并且记在 [owner] 名下——
+  /// 阅读翻页丢过期预取时不动它，只由 [retainBackgroundPages] 按需求方的意愿收放。
+  /// 已缓存直接给文件；已在排队 / 在飞（不论谁发起的）就合并到那一次。
+  Future<File> backgroundPage(int index, {required Object owner}) {
+    _validateIndex(index);
+    return _ensureFile(index, priority: false, owner: owner);
+  }
+
+  /// [owner] 名下还在排队的后台请求只留 [order] 里的页，并按 [order] 的顺序重排到
+  /// 队尾（调用方把可见页排在前）；其余以 `PREFETCH_CANCELLED` 失败结束、不打源。
+  /// 已在飞的请求不动——取回的页照样进缓存，阅读时直接用。
+  void retainBackgroundPages(Object owner, List<int> order) {
+    if (_closed) return;
+    _permits.retainOwned(owner, order);
+  }
+
+  /// 撤掉 [owner] 名下所有还在排队的后台请求（缩略图面板关掉）。
+  void cancelBackgroundPages(Object owner) =>
+      retainBackgroundPages(owner, const <int>[]);
+
   @override
   String cacheIdentity(int index) {
     if (index < 0 || index >= _pageIdentities.length) {
@@ -254,7 +280,7 @@ class OnlineMangaReaderSession implements MangaReaderSession {
     await _deleteQuietly(directory);
   }
 
-  Future<File> _ensureFile(int index, {required bool priority}) {
+  Future<File> _ensureFile(int index, {required bool priority, Object? owner}) {
     _throwIfClosed();
     final File? cached = _cached[index];
     if (cached != null) return Future<File>.value(cached);
@@ -263,14 +289,22 @@ class OnlineMangaReaderSession implements MangaReaderSession {
       if (priority) _permits.promote(index);
       return pending;
     }
-    final Future<File> future = _download(index, priority: priority);
+    final Future<File> future = _download(
+      index,
+      priority: priority,
+      owner: owner,
+    );
     _pending[index] = future;
     return future;
   }
 
-  Future<File> _download(int index, {required bool priority}) async {
+  Future<File> _download(
+    int index, {
+    required bool priority,
+    Object? owner,
+  }) async {
     try {
-      await _permits.acquire(index, priority: priority);
+      await _permits.acquire(index, priority: priority, owner: owner);
       return await _fetchToDisk(index);
     } finally {
       // 成功失败都在 future 完成前摘掉：失败的页下一次请求会重新取。
@@ -284,28 +318,15 @@ class OnlineMangaReaderSession implements MangaReaderSession {
       _throwIfClosed();
       final Uint8List bytes = await _fetchPage(index);
       _throwIfClosed();
-      if (bytes.isEmpty) {
-        throw const MihonRuntimeException(
-          'PAGE_EMPTY',
-          'The online manga page is empty',
-        );
-      }
-      if (bytes.length > kOnlineMangaMaximumPageBytes) {
-        throw const MihonRuntimeException(
-          'PAGE_TOO_LARGE',
-          'The online manga page is too large',
-        );
-      }
-      final File target = File(
-        p.join(directory.path, onlineMangaStreamPageFileName(index, bytes)),
+      checkMangaPageBytes(bytes);
+      final File target = await writeMangaPageFile(
+        File(
+          p.join(directory.path, onlineMangaStreamPageFileName(index, bytes)),
+        ),
+        bytes,
+        // 写暂存期间会话关了：不落盘（目录马上被删）。
+        beforeCommit: _throwIfClosed,
       );
-      final File staged = File('${target.path}.part');
-      await staged.writeAsBytes(bytes, flush: true);
-      if (_closed) {
-        await _deleteQuietly(staged);
-        _throwIfClosed();
-      }
-      await staged.rename(target.path);
       _cached[index] = target;
       return target;
     } finally {
@@ -377,18 +398,8 @@ class OnlineMangaReaderSession implements MangaReaderSession {
 
 /// 直读缓存里第 [index] 页的文件名：与下载服务同一个 `page-NNNNNN` 词干，扩展名按
 /// 字节嗅探（嗅不出来用 `.img`，阅读器不靠扩展名判类型）。
-String onlineMangaStreamPageFileName(int index, Uint8List bytes) {
-  final String stem = 'page-${(index + 1).toString().padLeft(6, '0')}';
-  final String extension = switch (mangaImageContentType(bytes)) {
-    'image/png' => '.png',
-    'image/jpeg' => '.jpg',
-    'image/gif' => '.gif',
-    'image/webp' => '.webp',
-    'image/avif' => '.avif',
-    _ => '.img',
-  };
-  return '$stem$extension';
-}
+String onlineMangaStreamPageFileName(int index, Uint8List bytes) =>
+    mangaPageFileName(index, bytes, unknownExtension: '.img');
 
 /// 带插队的计数信号量：前台请求排在预取前面，已排队的预取被前台要到时可提升。
 class _PagePermitPool {
@@ -398,12 +409,16 @@ class _PagePermitPool {
   int _inUse = 0;
   final ListQueue<_PermitWaiter> _waiters = ListQueue<_PermitWaiter>();
 
-  Future<void> acquire(int index, {required bool priority}) {
+  Future<void> acquire(int index, {required bool priority, Object? owner}) {
     if (_inUse < _capacity && _waiters.isEmpty) {
       _inUse++;
       return Future<void>.value();
     }
-    final _PermitWaiter waiter = _PermitWaiter(index, priority: priority);
+    final _PermitWaiter waiter = _PermitWaiter(
+      index,
+      priority: priority,
+      owner: owner,
+    );
     if (priority) {
       _waiters.addFirst(waiter);
     } else {
@@ -424,14 +439,44 @@ class _PagePermitPool {
     if (found == null) return;
     _waiters.remove(found);
     found.priority = true;
+    // 被阅读要走了：不再归后台需求方管，面板收放不能再把它摘掉。
+    found.owner = null;
     _waiters.addFirst(found);
+  }
+
+  /// [owner] 名下的排队请求只留 [order] 里的，按 [order] 顺序重新排到队尾；其余以
+  /// `PREFETCH_CANCELLED` 失败结束。
+  void retainOwned(Object owner, List<int> order) {
+    final Map<int, _PermitWaiter> owned = <int, _PermitWaiter>{};
+    for (final _PermitWaiter waiter in _waiters) {
+      if (!waiter.priority && identical(waiter.owner, owner)) {
+        owned[waiter.index] = waiter;
+      }
+    }
+    if (owned.isEmpty) return;
+    _waiters.removeWhere(
+      (_PermitWaiter waiter) => identical(owned[waiter.index], waiter),
+    );
+    for (final int index in order) {
+      final _PermitWaiter? waiter = owned.remove(index);
+      if (waiter != null) _waiters.addLast(waiter);
+    }
+    for (final _PermitWaiter dropped in owned.values) {
+      dropped.completer.completeError(
+        const MihonRuntimeException(
+          'PREFETCH_CANCELLED',
+          'The background page request is no longer wanted',
+        ),
+      );
+    }
   }
 
   /// 摘掉 [isStale] 为真的排队预取，以 `PREFETCH_STALE` 失败结束它们。
   void dropQueuedPrefetches(bool Function(int index) isStale) {
     final List<_PermitWaiter> stale = <_PermitWaiter>[
       for (final _PermitWaiter waiter in _waiters)
-        if (!waiter.priority && isStale(waiter.index)) waiter,
+        if (!waiter.priority && waiter.owner == null && isStale(waiter.index))
+          waiter,
     ];
     for (final _PermitWaiter waiter in stale) {
       _waiters.remove(waiter);
@@ -465,9 +510,12 @@ class _PagePermitPool {
 }
 
 class _PermitWaiter {
-  _PermitWaiter(this.index, {required this.priority});
+  _PermitWaiter(this.index, {required this.priority, this.owner});
 
   final int index;
   bool priority;
+
+  /// 后台需求方（null = 阅读自己的预取 / 前台请求）。
+  Object? owner;
   final Completer<void> completer = Completer<void>();
 }

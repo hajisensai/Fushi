@@ -1,0 +1,123 @@
+{
+  "_doc": "冻结的真实旧版本发行包（SRS 换代协议 4 的 G7/G8/G11 合并条件，设计稿 §8、§9 第 1 项）。只认这里钉死的 sha256；下载与解包见 srs_old_binary.py fetch，说明见 docs/agent/srs-old-binary-harness.md。default=true 的是默认口径的版本集。debug-* 三个包原来在会过期的 actions artifact / 会轮换的 fushi-debug-rolling 上，已存档进不过期的 prerelease `srs-old-binaries-2026-11`（source.origin 记原来源）。",
+  "versions": [
+    {
+      "id": "v3.0.0",
+      "default": true,
+      "role": "最后一个协议 2 之前的正式版（不存在「只认协议 2」的正式版，见文档）",
+      "app_version": "3.0.0+1355",
+      "commit": "51fbb9b183829b4668fd5d69cd3a4d7349ab112b",
+      "srs_protocol": "pre-sync2",
+      "has_srs_db": false,
+      "has_folder_location": false,
+      "source": {
+        "kind": "release",
+        "tag": "v3.0.0",
+        "asset": "fushi-3.0.0-windows-setup.exe"
+      },
+      "installer_sha256": "71b59d654ba9637c62fe0499da6d411bf90d8e95c5933a163dfd1b56444ed1ed"
+    },
+    {
+      "id": "v3.0.1",
+      "default": false,
+      "role": "规划 D2 点名的协议 2 之前版本（prerelease，2026-10-21）；R0 用它验「不碰 v3 / v4、主库被拒」",
+      "app_version": "3.0.1+1356",
+      "commit": "185dcfdd940226631bbc42069088ae5ae24fdd12",
+      "srs_protocol": "pre-sync2",
+      "has_srs_db": false,
+      "has_folder_location": false,
+      "source": {
+        "kind": "release",
+        "tag": "v3.0.1",
+        "asset": "fushi-3.0.1-windows-setup.exe"
+      },
+      "installer_sha256": "bb565de7094966a6ab60c29367ec25275c3033f4df03e0259d83c6e533fbb495"
+    },
+    {
+      "id": "debug-23261-2eb0face",
+      "default": true,
+      "role": "最后一个只认协议 2 的已发布二进制（当时的 debug-rolling 包，develop 2eb0face）",
+      "app_version": "3.3.0-debug.23261",
+      "commit": "2eb0face28e0b7bd6e85d42849a7f4028794479e",
+      "srs_protocol": "2",
+      "has_srs_db": true,
+      "has_folder_location": true,
+      "source": {
+        "kind": "release",
+        "tag": "srs-old-binaries-2026-11",
+        "asset": "fushi-3.3.0-debug.23261-windows-setup.exe",
+        "origin": {
+          "kind": "actions-artifact",
+          "run_id": 41660639578,
+          "artifact": "desktop-artifacts-windows",
+          "artifact_id": 13250661025,
+          "artifact_zip_sha256": "4367ae2c0182e64fd1adb1f1d015b17066b45a270cefe8e64d55240749b35db3",
+          "expires_at": "2026-11-17T16:38:39Z"
+        }
+      },
+      "installer_sha256": "02f811a92567c1fdcef2bbb1d49f8275f79c910d322093c5e32bfd1a8d5d7a7c"
+    },
+    {
+      "id": "debug-23315-b263995",
+      "default": false,
+      "role": "最早带协议 3 的已发布二进制（当时的 debug-rolling 包，develop b263995）",
+      "app_version": "3.3.0-debug.23315",
+      "commit": "b263995df37ed4928960517623b88e08b41b66a4",
+      "srs_protocol": "3",
+      "has_srs_db": true,
+      "has_folder_location": true,
+      "source": {
+        "kind": "release",
+        "tag": "srs-old-binaries-2026-11",
+        "asset": "fushi-3.3.0-debug.23315-windows-setup.exe",
+        "origin": {
+          "kind": "actions-artifact",
+          "run_id": 41777877723,
+          "artifact": "desktop-artifacts-windows",
+          "artifact_id": 13299502388,
+          "artifact_zip_sha256": "361d01bfdc4bd15b26534409f66bf96cb8d52c2deae542d7814b59facfe0cb2c",
+          "expires_at": "2026-11-18T05:56:27Z"
+        }
+      },
+      "installer_sha256": "5d7c1d5188aa3020a2fdac6fadfaa42b54c69a2f94ac6b93a3318da92955b785"
+    },
+    {
+      "id": "v3.3.0",
+      "default": true,
+      "role": "最早带协议 3 的正式版 = 当前最新正式版（Latest）。2026-11-17 release 资产被 RWKV 热修重建包替换（a2638e03，相对 87f1c450 只改 RWKV 权重下载与 release.yml，SRS 代码不变）；原资产 sha256 734056b8… 已不可下载",
+      "app_version": "3.3.0+1368",
+      "commit": "a2638e03e1bf8a097f942c8cea440264ffe3589e",
+      "srs_protocol": "3",
+      "has_srs_db": true,
+      "has_folder_location": true,
+      "source": {
+        "kind": "release",
+        "tag": "v3.3.0",
+        "asset": "fushi-3.3.0-windows-setup.exe"
+      },
+      "installer_sha256": "7fcf9d90c5845038d26c99145fcab6f6d4e306829365ac8dedab225ad32188ee"
+    },
+    {
+      "id": "debug-26834-017cdcf",
+      "default": true,
+      "role": "当前最新 debug-rolling（develop 017cdcf，2026-11-14）",
+      "app_version": "3.3.0-debug.26834",
+      "commit": "017cdcf5de0",
+      "srs_protocol": "3",
+      "has_srs_db": true,
+      "has_folder_location": true,
+      "source": {
+        "kind": "release",
+        "tag": "srs-old-binaries-2026-11",
+        "asset": "fushi-3.3.0-debug.26834-windows-setup.exe",
+        "origin": {
+          "kind": "release",
+          "tag": "fushi-debug-rolling",
+          "note": "fushi-debug-rolling 的旧资产已被后续 debug 包轮换删掉（release-desktop run 43605197415 发布）",
+          "run_id": 43605197415
+        }
+      },
+      "installer_sha256": "d2866315eae9e58bc302e0cc2d17772412efe267f0d35ae0431f1414e3fb7b32"
+    }
+  ]
+}

@@ -7,9 +7,15 @@ library;
 
 import 'dart:io';
 
+import 'package:fushi_engine/sync/fushi_sync_server.dart' show FushiListenScope;
+import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart'
+    show FushiAddressRangeSet;
 import 'package:fushi_server/src/config/server_ai_config.dart';
+import 'package:fushi_server/src/config/server_srs_config.dart';
+import 'package:fushi_server/src/config/server_torrent_session_config.dart';
 import 'package:path/path.dart' as p;
 import 'package:yaml/yaml.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 /// 服务端扫描根支持的 kind：`fushi_server.yaml` 的 `libraries[].kind`、admin API 新增
 /// 库根与 WebUI 选择框共用这一份，与 `LibraryScanner.scanAll` 的分派一一对应。
@@ -27,6 +33,42 @@ String unsupportedLibraryKindMessage(String kind) => kind == 'music'
           'see docs/agent/server-parity-gaps.md); supported: ${kServerLibraryRootKinds.join(' / ')}'
     : 'unsupported kind "$kind"; supported: ${kServerLibraryRootKinds.join(' / ')}';
 
+/// `bind` 配置值 → 互联监听范围（互联 host 与 AnkiConnect 监听的「是否只听本机」判据
+/// 都从这里出，只此一份）：
+/// - 空、`0.0.0.0`、`::` 及通配地址的其他全零写法（`::0` 等）→ [FushiListenScope.lan]
+///   （与升级前逐字相同；`::` 不映射成双栈，免得明文部署在全局 IPv6 上暴露）；
+/// - `localhost`、`127.0.0.1` → [FushiListenScope.loopbackV4]（`localhost` 不交给系统
+///   解析——部分系统先解析成 `::1`，127.0.0.1 上的反代会断）；
+/// - 其他 IP 字面量（`::1`、`127.0.0.2`、具体网卡地址）→ [FushiListenScope.exact]；
+/// - 其余（主机名）→ [FushiListenScope.lan] 并带 [warning]，由调用方打日志。
+({FushiListenScope scope, String? warning}) parseBindSetting(String bind) {
+  final String value = bind.trim();
+  final String lower = value.toLowerCase();
+  if (value.isEmpty || value == '0.0.0.0' || value == '::') {
+    return (scope: const FushiListenScope.lan(), warning: null);
+  }
+  if (lower == 'localhost' || value == '127.0.0.1') {
+    return (scope: const FushiListenScope.loopbackV4(), warning: null);
+  }
+  final InternetAddress? address = InternetAddress.tryParse(value);
+  if (address != null) {
+    // 通配地址的其他写法（`::0`、`0:0:0:0:0:0:0:0`、`0000::`…）与 `0.0.0.0` / `::`
+    // 同义：按 lan() 处理。交给 exact() 会直接 bind 到 anyIPv6（v6Only=false 即双栈
+    // 全网卡），明文暴露在全局 IPv6 上，地址集也匹配不到任何网卡（评审 compat-2）。
+    if (address.rawAddress.every((int b) => b == 0)) {
+      return (scope: const FushiListenScope.lan(), warning: null);
+    }
+    return (scope: FushiListenScope.exact(address), warning: null);
+  }
+  return (
+    scope: const FushiListenScope.lan(),
+    warning: tr(
+      'bind 只接受 IP 字面量或 localhost，`$value` 按 0.0.0.0 处理',
+      'bind only accepts an IP literal or localhost; treating `$value` as 0.0.0.0',
+    ),
+  );
+}
+
 /// 一条扫描根：服务端库的来源目录。
 class LibraryRootConfig {
   const LibraryRootConfig({
@@ -38,11 +80,21 @@ class LibraryRootConfig {
 
   factory LibraryRootConfig.fromYaml(Object? raw, int index) {
     if (raw is! Map) {
-      throw FormatException('libraries[$index] 必须是映射（id/path/kind）');
+      throw FormatException(
+        tr(
+          'libraries[$index] 必须是映射（id/path/kind）',
+          'libraries[$index] must be a mapping (id/path/kind)',
+        ),
+      );
     }
     final String? path = raw['path']?.toString();
     if (path == null || path.trim().isEmpty) {
-      throw FormatException('libraries[$index].path 不能为空');
+      throw FormatException(
+        tr(
+          'libraries[$index].path 不能为空',
+          'libraries[$index].path must not be empty',
+        ),
+      );
     }
     final String kind = raw['kind']?.toString() ?? 'video';
     if (!kServerLibraryRootKinds.contains(kind)) {
@@ -89,6 +141,7 @@ class ServerConfig {
     required this.uploadQuotaBytes,
     required this.subtitleLanguage,
     required this.metadataLocale,
+    this.language = defaultLanguage,
     required this.qbittorrentUrl,
     required this.qbittorrentUsername,
     required this.qbittorrentPassword,
@@ -98,15 +151,22 @@ class ServerConfig {
     required this.torrentEngine,
     required this.torrentLibraryPath,
     required this.torrentListen,
+    this.torrentPeerRoots = const <String>[],
+    this.torrentSession = const ServerTorrentSessionConfig(),
     this.publicUrls = const <String>[],
+    this.trustedProxies = const <String>[],
     this.p2p = false,
     this.p2pRelays = const <String>[],
     this.scanPrune = true,
     this.scanScrape = true,
     this.profileTransfer = false,
+    this.remoteUpdate = false,
     this.leaderboardLink = true,
+    this.lookupChineseScriptVariants = false,
     this.tmdbApiKey,
     this.ai,
+    this.srs = const ServerSrsConfig(),
+    this.ankiConnect = const ServerAnkiConnectConfig(),
   });
 
   static const int defaultPort = 38765;
@@ -127,6 +187,29 @@ class ServerConfig {
   /// 实际行为（WebUI 本身只有中文），不是把中文当隐含常量——那种写死在引擎里、
   /// 用户无处可改的才是 BUG-2454 修掉的东西。
   static const String defaultMetadataLocale = 'zh-CN';
+
+  /// WebUI 资料语言下拉的常用项（BCP-47）；不在表里的照样可手填。
+  static const List<String> metadataLocaleSuggestions = <String>[
+    'zh-CN',
+    'zh-TW',
+    'zh-HK',
+    'ja',
+    'en',
+    'ko',
+  ];
+
+  /// `language`：WebUI（以及服务端面向人的输出）用的界面语言。
+  static const String languageEnglish = 'en';
+  static const String languageChinese = 'zh';
+  static const List<String> supportedLanguages = <String>[
+    languageEnglish,
+    languageChinese,
+  ];
+  static const String defaultLanguage = languageEnglish;
+
+  /// 已有配置文件里没写 `language` 时用的语言：这些是加这个键之前装的服务端，
+  /// 界面一直是中文，升级后保持中文；新装（`init` 写出的配置）才是 [defaultLanguage]。
+  static const String legacyLanguage = languageChinese;
 
   factory ServerConfig.defaults({required String dataDir}) => ServerConfig(
     dataDir: dataDir,
@@ -178,6 +261,9 @@ class ServerConfig {
   /// 刮削资料语言（BCP-47，如 `ja` / `zh-CN`）：TMDB 文字与海报语言、简介语言
   /// 感知都由它派生。偏好表里显式设过 `video_metadata_locale` 时以偏好为准。
   final String metadataLocale;
+
+  /// 界面语言：[supportedLanguages] 之一（`en` / `zh`），缺省 `en`。
+  final String language;
   final String? qbittorrentUrl;
   final String? qbittorrentUsername;
   final String? qbittorrentPassword;
@@ -195,9 +281,23 @@ class ServerConfig {
   final String? torrentLibraryPath;
   final String torrentListen;
 
+  /// `torrent.peer_roots`：已配对设备借本机引擎下载（`/api/torrent-engine`）时，
+  /// 除本机下载根外还允许落盘的目录（绝对路径；典型是挂载进来的对端媒体库共享）。
+  /// 空 = 远程任务只能落在本机下载根下。
+  final List<String> torrentPeerRoots;
+
+  /// `torrent:` 段里内置引擎的会话设置（上传开关 / 限速 / 活跃名额 / 做种上限，
+  /// BUG-5160）。保存即生效，不进重启集合。
+  final ServerTorrentSessionConfig torrentSession;
+
   /// 公网 / 反代 / DDNS 地址，经 `/api/host/addresses` 公布给已配对设备自动学习
   /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
   final List<String> publicUrls;
+
+  /// 可信反代地址（IP / CIDR，YAML `trusted_proxies`，缺省空）。TCP 对端命中时才读
+  /// 转发头里的真实来源，**只**用于配对限速键与展示 IP；不让任何请求变回局域网——
+  /// 带转发头的配对请求恒按公网要 PIN（BUG-4390）。
+  final List<String> trustedProxies;
 
   /// 扫描后是否对账回收「文件已消失」的视频条目（默认开）。
   ///
@@ -215,12 +315,25 @@ class ServerConfig {
   /// （BUG-988）。运行期现读，WebUI 改完即生效。
   final bool profileTransfer;
 
+  /// 允许已配对设备经互联 `/api/host/update` 让本机下载并安装新版服务端（与 app 的
+  /// 「允许已配对设备远程更新本机」同一条默认：关）。只在发布包里可用（见
+  /// `self_update/`）；装完进程以退出码 10（`kExitSelfUpdated`）退出，由 systemd / 服务管理器拉起新版。
+  /// 运行期现读，WebUI 改完即生效。
+  final bool remoteUpdate;
+
   /// 允许被标记为「我的设备」的已配对设备跟随本机（当前激活 Profile）的 Fushi 排行榜账户
   /// 自动登录（`/api/interconnect/leaderboard-link`，只在 TLS 下可达）。默认开：与 app 的
   /// 「允许已配对设备自动登录我的账户」同一默认（所有者 2026-10-16 拍板）——真正的门是逐台
   /// 的「我的设备」标记，无头配对从不自动授予，只能由管理员在 WebUI / `ctl pairing owner` 里手动标。
   /// 运行期现读，WebUI 改完即生效。
   final bool leaderboardLink;
+
+  /// 中文查词时简体 ↔ 繁體双向互查（yaml `lookup_chinese_script_variants`）。与 app 的
+  /// 「设置 › 查词 › 简繁互查」（偏好 `lookup_chinese_script_variants`）同一默认：关。
+  /// 只管**没声明开关的请求方**（浏览器扩展 / 旧客户端）；新版 app 每次查词自带请求方
+  /// 自己的开关（`zhScriptVariants`），以请求方为准，见 `serverLookupUsesChineseScriptVariants`。
+  /// 运行期现读，WebUI 改完即生效。
+  final bool lookupChineseScriptVariants;
 
   /// TMDB API key（刮削用）。服务端没有 app 的内置 key，不配就只有 AniDB / NFO
   /// 可用；偏好表里的 `video_scraper_tmdb_api_key` 是次级来源。改了重启生效。
@@ -236,6 +349,12 @@ class ServerConfig {
   /// 助手能力位报 `no_provider`、不发任何 AI 请求。保存即生效。
   final ServerAiConfig? ai;
 
+  /// 复习库（`srs:` 段，见 server_srs_config.dart）；默认 = 复习关。
+  final ServerSrsConfig srs;
+
+  /// AnkiConnect 兼容监听（`ankiconnect:` 段）；默认关。
+  final ServerAnkiConnectConfig ankiConnect;
+
   ServerConfig copyWith({
     String? dataDir,
     int? port,
@@ -250,6 +369,7 @@ class ServerConfig {
     int? uploadQuotaBytes,
     String? subtitleLanguage,
     String? metadataLocale,
+    String? language,
     String? qbittorrentUrl,
     String? qbittorrentUsername,
     String? qbittorrentPassword,
@@ -259,16 +379,23 @@ class ServerConfig {
     String? torrentEngine,
     String? torrentLibraryPath,
     String? torrentListen,
+    List<String>? torrentPeerRoots,
+    ServerTorrentSessionConfig? torrentSession,
     List<String>? publicUrls,
+    List<String>? trustedProxies,
     bool? p2p,
     List<String>? p2pRelays,
     bool? scanPrune,
     bool? scanScrape,
     bool? profileTransfer,
+    bool? remoteUpdate,
     bool? leaderboardLink,
+    bool? lookupChineseScriptVariants,
     String? tmdbApiKey,
     ServerAiConfig? ai,
     bool clearAi = false,
+    ServerSrsConfig? srs,
+    ServerAnkiConnectConfig? ankiConnect,
   }) => ServerConfig(
     dataDir: dataDir ?? this.dataDir,
     port: port ?? this.port,
@@ -283,6 +410,7 @@ class ServerConfig {
     uploadQuotaBytes: uploadQuotaBytes ?? this.uploadQuotaBytes,
     subtitleLanguage: subtitleLanguage ?? this.subtitleLanguage,
     metadataLocale: metadataLocale ?? this.metadataLocale,
+    language: language ?? this.language,
     qbittorrentUrl: qbittorrentUrl ?? this.qbittorrentUrl,
     qbittorrentUsername: qbittorrentUsername ?? this.qbittorrentUsername,
     qbittorrentPassword: qbittorrentPassword ?? this.qbittorrentPassword,
@@ -292,15 +420,23 @@ class ServerConfig {
     torrentEngine: torrentEngine ?? this.torrentEngine,
     torrentLibraryPath: torrentLibraryPath ?? this.torrentLibraryPath,
     torrentListen: torrentListen ?? this.torrentListen,
+    torrentPeerRoots: torrentPeerRoots ?? this.torrentPeerRoots,
+    torrentSession: torrentSession ?? this.torrentSession,
     publicUrls: publicUrls ?? this.publicUrls,
+    trustedProxies: trustedProxies ?? this.trustedProxies,
     p2p: p2p ?? this.p2p,
     p2pRelays: p2pRelays ?? this.p2pRelays,
     scanPrune: scanPrune ?? this.scanPrune,
     scanScrape: scanScrape ?? this.scanScrape,
     profileTransfer: profileTransfer ?? this.profileTransfer,
+    remoteUpdate: remoteUpdate ?? this.remoteUpdate,
     leaderboardLink: leaderboardLink ?? this.leaderboardLink,
+    lookupChineseScriptVariants:
+        lookupChineseScriptVariants ?? this.lookupChineseScriptVariants,
     tmdbApiKey: tmdbApiKey ?? this.tmdbApiKey,
     ai: clearAi ? null : ai ?? this.ai,
+    srs: srs ?? this.srs,
+    ankiConnect: ankiConnect ?? this.ankiConnect,
   );
 
   /// 从 YAML 文本解析；缺项取默认。[dataDir] 相对路径按配置文件所在目录解析。
@@ -334,7 +470,10 @@ class ServerConfig {
         engine != torrentEngineEmbedded &&
         engine != torrentEngineQbittorrent) {
       throw FormatException(
-        'torrent.engine 只能是 auto / embedded / qbittorrent，实际 "$engine"',
+        tr(
+          'torrent.engine 只能是 auto / embedded / qbittorrent，实际 "$engine"',
+          'torrent.engine must be auto / embedded / qbittorrent, got "$engine"',
+        ),
       );
     }
     return base.copyWith(
@@ -352,6 +491,7 @@ class ServerConfig {
       subtitleLanguage:
           map['subtitle_language']?.toString() ?? base.subtitleLanguage,
       metadataLocale: map['metadata_locale']?.toString() ?? base.metadataLocale,
+      language: parseLanguage(map['language']) ?? legacyLanguage,
       qbittorrentUrl: qbMap['url']?.toString(),
       qbittorrentUsername: qbMap['username']?.toString(),
       qbittorrentPassword: qbMap['password']?.toString(),
@@ -361,15 +501,27 @@ class ServerConfig {
       torrentEngine: engine,
       torrentLibraryPath: torrentMap['library']?.toString(),
       torrentListen: torrentMap['listen']?.toString() ?? base.torrentListen,
+      torrentPeerRoots: _absolutePaths(
+        _strings(torrentMap['peer_roots']),
+        'torrent.peer_roots',
+      ),
+      torrentSession: ServerTorrentSessionConfig.fromYaml(torrentMap),
       publicUrls: _strings(map['public_urls']),
+      trustedProxies: _trustedProxies(map['trusted_proxies']),
       p2p: _bool(map['p2p']) ?? base.p2p,
       p2pRelays: _strings(map['p2p_relays']),
       scanPrune: _bool(map['scan_prune']) ?? base.scanPrune,
       scanScrape: _bool(map['scan_scrape']) ?? base.scanScrape,
       profileTransfer: _bool(map['profile_transfer']) ?? base.profileTransfer,
+      remoteUpdate: _bool(map['remote_update']) ?? base.remoteUpdate,
       leaderboardLink: _bool(map['leaderboard_link']) ?? base.leaderboardLink,
+      lookupChineseScriptVariants:
+          _bool(map['lookup_chinese_script_variants']) ??
+          base.lookupChineseScriptVariants,
       tmdbApiKey: map['tmdb_api_key']?.toString(),
       ai: ServerAiConfig.fromYaml(map['ai']),
+      srs: ServerSrsConfig.fromYaml(map['srs']),
+      ankiConnect: ServerAnkiConnectConfig.fromYaml(map['ankiconnect']),
     );
   }
 
@@ -379,13 +531,53 @@ class ServerConfig {
   /// 宽松，不因手写的一条旧值拒绝启动。
   static String? remoteUrlProblem(String url) {
     final Uri? uri = Uri.tryParse(url);
-    if (uri == null) return '不是合法 URL';
+    if (uri == null) return tr('不是合法 URL', 'Not a valid URL');
     if (uri.scheme != 'http' && uri.scheme != 'https') {
-      return '只支持 http:// 或 https://';
+      return tr(
+        '只支持 http:// 或 https://',
+        'Only http:// or https:// is supported',
+      );
     }
-    if (uri.host.isEmpty) return '缺少主机名';
+    if (uri.host.isEmpty) return tr('缺少主机名', 'Missing host name');
     return null;
   }
+
+  /// `trusted_proxies`：每条必须是 IP 或 CIDR，非法条目拒绝启动并点名那一项——
+  /// 写错的可信代理会静默退回「按 TCP 对端」，用户很难察觉。
+  static List<String> _trustedProxies(Object? v) {
+    final List<String> entries = _strings(v);
+    try {
+      FushiAddressRangeSet.parse(entries);
+    } on FormatException catch (e) {
+      throw FormatException(
+        tr(
+          'trusted_proxies 条目不是合法的 IP / CIDR：${e.source}',
+          'trusted_proxies entry is not a valid IP / CIDR: ${e.source}',
+        ),
+      );
+    }
+    return entries;
+  }
+
+  /// `torrent.peer_roots` 这类目录清单：每条必须是绝对路径（相对路径在服务端没有
+  /// 确定含义，放行等于让远程任务落到工作目录下）。
+  static List<String> _absolutePaths(List<String> entries, String key) {
+    for (final String e in entries) {
+      if (!p.isAbsolute(e)) {
+        throw FormatException(
+          tr(
+            '$key 里只能写绝对路径，实际 "$e"',
+            '$key entries must be absolute paths, got "$e"',
+          ),
+        );
+      }
+    }
+    return entries;
+  }
+
+  /// 供 admin API 复用 [_absolutePaths] 的校验。
+  static List<String> parseTorrentPeerRoots(Object? raw) =>
+      _absolutePaths(_strings(raw), 'torrent.peerRoots');
 
   static List<String> _strings(Object? v) => <String>[
     if (v is List)
@@ -407,6 +599,7 @@ class ServerConfig {
     b.writeln('bind: ${_q(bind)}');
     b.writeln('tls: $tls');
     b.writeln('device_name: ${_q(deviceName)}');
+    b.writeln('language: ${_q(language)}');
     b.writeln('lan_requires_pin: $lanRequiresPin');
     b.writeln('admin_port: $adminPort');
     b.writeln('admin_bind: ${_q(adminBind)}');
@@ -415,7 +608,9 @@ class ServerConfig {
     b.writeln('scan_prune: $scanPrune');
     b.writeln('scan_scrape: $scanScrape');
     b.writeln('profile_transfer: $profileTransfer');
+    b.writeln('remote_update: $remoteUpdate');
     b.writeln('leaderboard_link: $leaderboardLink');
+    b.writeln('lookup_chinese_script_variants: $lookupChineseScriptVariants');
     if ((tmdbApiKey ?? '').isNotEmpty) {
       b.writeln('tmdb_api_key: ${_q(tmdbApiKey!)}');
     }
@@ -429,6 +624,10 @@ class ServerConfig {
     for (final String u in publicUrls) {
       b.writeln('  - ${_q(u)}');
     }
+    b.writeln('trusted_proxies:${trustedProxies.isEmpty ? ' []' : ''}');
+    for (final String u in trustedProxies) {
+      b.writeln('  - ${_q(u)}');
+    }
     b.writeln('p2p: $p2p');
     b.writeln('p2p_relays:${p2pRelays.isEmpty ? ' []' : ''}');
     for (final String u in p2pRelays) {
@@ -436,12 +635,21 @@ class ServerConfig {
     }
     if (adminToken != null) b.writeln('admin_token: ${_q(adminToken!)}');
     ai?.writeYaml(b, _q);
+    srs.writeYaml(b, _q);
+    ankiConnect.writeYaml(b, _q);
     b.writeln('torrent:');
     b.writeln('  engine: ${_q(torrentEngine)}');
     if (torrentLibraryPath != null) {
       b.writeln('  library: ${_q(torrentLibraryPath!)}');
     }
     b.writeln('  listen: ${_q(torrentListen)}');
+    torrentSession.writeYaml(b);
+    if (torrentPeerRoots.isNotEmpty) {
+      b.writeln('  peer_roots:');
+      for (final String r in torrentPeerRoots) {
+        b.writeln('    - ${_q(r)}');
+      }
+    }
     if (qbittorrentUrl != null) {
       b.writeln('qbittorrent:');
       b.writeln('  url: ${_q(qbittorrentUrl!)}');
@@ -469,6 +677,18 @@ class ServerConfig {
   }
 
   static int? _int(Object? v) => v is int ? v : int.tryParse('${v ?? ''}');
+
+  /// `language`：缺省 / 空 = null（取默认）；不认识的值报错，不悄悄回落。
+  static String? parseLanguage(Object? v) {
+    final String s = '${v ?? ''}'.trim().toLowerCase();
+    if (s.isEmpty) return null;
+    if (!supportedLanguages.contains(s)) {
+      throw FormatException(
+        'language must be ${supportedLanguages.join(' / ')}, got "$v"',
+      );
+    }
+    return s;
+  }
 
   static bool? _bool(Object? v) {
     if (v is bool) return v;

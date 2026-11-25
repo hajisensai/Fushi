@@ -9,6 +9,8 @@ import 'package:fushi/src/sync/interconnect_post_transport.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
+    show RemoteLookupDictionaryConfig;
 import 'package:fushi_engine/sync/game_stream/game_stream_library.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 import 'package:http/http.dart' as http;
@@ -407,7 +409,10 @@ class InterconnectGameStreamDictionaryLookup
     http.Client? httpClient,
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
     Duration timeout = const Duration(seconds: 3),
-  }) : _lookup = FushiRemoteLookupClient(
+    RemoteLookupDictionaryConfig? Function(FushiClientUrl candidate)?
+    dictionaryConfigFor,
+  }) : _dictionaryConfigFor = dictionaryConfigFor,
+       _lookup = FushiRemoteLookupClient(
          repo: repo,
          onlyCandidate: peer,
          httpClient: httpClient,
@@ -418,6 +423,12 @@ class InterconnectGameStreamDictionaryLookup
        );
 
   final FushiRemoteLookupClient _lookup;
+
+  /// 接收端生效配置对这台 host 的词典选择（`AppModel.remoteLookupDictionaryConfigFor`）。
+  /// 串流查词虽在 host 上执行，词典的隐藏与排序按接收端在词典管理里对这台 host 的设置
+  /// （拍板台 pr3602）；null = 不发 `dictionaries` 字段，host 用它自己的配置。
+  final RemoteLookupDictionaryConfig? Function(FushiClientUrl candidate)?
+  _dictionaryConfigFor;
 
   /// BUG-3425：查词与写卡都由 host 完成，但弹窗在本机渲染、Glossary 也在本机
   /// 导出——本机（iPad）往往一部词典都没有，`window.dictionaryStyles` 必须是
@@ -456,6 +467,9 @@ class InterconnectGameStreamDictionaryLookup
       maximumTerms: maximumTerms,
       // 不带 `language`：被查的台词来自 host 上运行的游戏，查词语言归 host（串流会话
       // 启动时按该游戏条目登记）。接收端本机的查词语言与这次查词无关。
+      // 词典选择则归接收端：用户在词典管理里对这台 host 关掉 / 排过的词典，串流时同样
+      // 生效（拍板台 pr3602）。老 host 忽略该字段。
+      dictionaryConfigFor: _dictionaryConfigFor,
     );
     final Map<String, String>? hostStyles = _lookup.hostDictionaryStyles;
     if (hostStyles != null) {

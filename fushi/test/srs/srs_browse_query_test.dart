@@ -197,6 +197,37 @@ void main() {
       );
     });
 
+    test('卡片类型：只列多模板笔记类型的模板名，选中拼成 card: 积木且能原样拆回', () {
+      final List<String> names = srsBrowseCardTypeNames(<List<String>>[
+        <String>['Card 1'],
+        <String>['Card 1', 'Card 2'],
+        <String>['card 2', 'Reverse_x'],
+      ]);
+      expect(names, <String>['Card 1', 'Card 2', 'Reverse_x']);
+      final List<SrsBrowseSuggestion> s = srsBrowseSuggestions(
+        'card:2',
+        decks: <String>['card 2 deck'],
+        tags: const <String>[],
+        noteTypes: const <String>[],
+        cardTypes: names,
+      );
+      expect(s.first.kind, SrsBrowseSuggestionKind.cardType);
+      expect(s.first.label, 'Card 2');
+      expect(s.first.chip.toQuery(), 'card:"Card 2"');
+      expect(srsParseBrowseChips(s.first.chip.toQuery()), <SrsBrowseChip>[
+        s.first.chip,
+      ]);
+      // 通配符转义成字面量。
+      final SrsBrowseSuggestion x = srsBrowseSuggestions(
+        'reverse',
+        decks: const <String>[],
+        tags: const <String>[],
+        noteTypes: const <String>[],
+        cardTypes: names,
+      ).first;
+      expect(x.chip.toQuery(), r'card:Reverse\_x');
+    });
+
     test('空草稿没有补全', () {
       expect(
         srsBrowseSuggestions(

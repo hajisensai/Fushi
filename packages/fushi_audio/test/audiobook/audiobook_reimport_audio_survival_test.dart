@@ -4,6 +4,7 @@ import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:fushi_audio/src/audiobook/audiobook_health.dart';
 import 'package:fushi_audio/src/audiobook/audiobook_model.dart';
+import 'package:fushi_audio/src/audiobook/audiobook_position_rebase.dart';
 import 'package:fushi_audio/src/audiobook/audiobook_repository.dart';
 import 'package:fushi_audio/src/audiobook/audiobook_storage.dart';
 import 'package:fushi_audio/src/audiobook/srt_book_model.dart';
@@ -333,4 +334,116 @@ void main() {
       expect(await prefs.readPositionMs('srtbook_1'), 0);
     },
   );
+
+  // ── 追加 / 删减分段：断点所在文件及其之前没变就保留进度 ─────────────────
+
+  group('audiobookPositionSurvivesAudioChange', () {
+    const List<String> ab = <String>['/a.mp3', '/b.mp3'];
+    test('no progress always survives', () {
+      expect(
+        audiobookPositionSurvivesAudioChange(
+          globalMs: 0,
+          durationsMs: const <int>[],
+          oldPaths: ab,
+          newPaths: const <String>['/x.mp3'],
+        ),
+        isTrue,
+      );
+    });
+    test('appending after the position keeps it', () {
+      expect(
+        audiobookPositionSurvivesAudioChange(
+          globalMs: 1500,
+          durationsMs: const <int>[1000, 1000],
+          oldPaths: ab,
+          newPaths: const <String>['/a.mp3', '/b.mp3', '/c.mp3'],
+        ),
+        isTrue,
+      );
+    });
+    test('removing a file after the position keeps it', () {
+      expect(
+        audiobookPositionSurvivesAudioChange(
+          globalMs: 500,
+          durationsMs: const <int>[1000, 1000],
+          oldPaths: ab,
+          newPaths: const <String>['/a.mp3'],
+        ),
+        isTrue,
+      );
+    });
+    test('inserting a file before the position resets it', () {
+      expect(
+        audiobookPositionSurvivesAudioChange(
+          globalMs: 1500,
+          durationsMs: const <int>[1000, 1000],
+          oldPaths: ab,
+          newPaths: const <String>['/a.mp3', '/a2.mp3', '/b.mp3'],
+        ),
+        isFalse,
+      );
+    });
+    test('removing the file under the position resets it', () {
+      expect(
+        audiobookPositionSurvivesAudioChange(
+          globalMs: 1500,
+          durationsMs: const <int>[1000, 1000],
+          oldPaths: ab,
+          newPaths: const <String>['/a.mp3'],
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  test('replaceAudio keeps the position when a part is appended', () async {
+    final AudiobookRepository repo = AudiobookRepository(db);
+    await repo.replaceAudio(
+      bookKey: 'Demo',
+      audioPaths: <String>['/persist/01.mp3'],
+    );
+    await repo.updatePositionMs(bookKey: 'Demo', positionMs: 3600000);
+
+    await repo.replaceAudio(
+      bookKey: 'Demo',
+      audioPaths: <String>['/persist/01.mp3', '/persist/02.mp3'],
+    );
+
+    expect(
+      await repo.readPositionMs('Demo'),
+      3600000,
+      reason: '追加章节后同一个毫秒数仍落在 01.mp3 的同一处',
+    );
+  });
+
+  test('SrtBookRepository.replaceAudio(copy: false) references the sources and '
+      'keeps the position on append', () async {
+    final SrtBookRepository repo = SrtBookRepository(db);
+    final AudiobookRepository prefs = AudiobookRepository(db);
+    await repo.save(
+      SrtBook()
+        ..uid = 'srtbook_ref'
+        ..title = 'Ref'
+        ..srtPath = '/src/ref.srt'
+        ..importedAt = 1,
+    );
+    final String a = writeSource('01.mp3', 'AAA').path;
+    final String b = writeSource('02.mp3', 'BBB').path;
+    await repo.replaceAudio(
+      uid: 'srtbook_ref',
+      pickedPaths: <String>[a],
+      copy: false,
+    );
+    await prefs.updatePositionMs(bookKey: 'srtbook_ref', positionMs: 1234);
+
+    final List<String> out = await repo.replaceAudio(
+      uid: 'srtbook_ref',
+      pickedPaths: <String>[a, b],
+      copy: false,
+    );
+
+    expect(out, <String>[a, b], reason: '引用导入：库里记原路径，不复制');
+    expect((await repo.findByUid('srtbook_ref'))!.audioPaths, <String>[a, b]);
+    expect(await prefs.readPositionMs('srtbook_ref'), 1234);
+  });
 }

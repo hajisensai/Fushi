@@ -226,6 +226,14 @@ SettingsDestination _subtitleDestination() => SettingsDestination(
           label: 'opt_subtitleReplaceNative',
           icon: FushiIcons.swap,
         ),
+        // YouTube 自动字幕按标点 / 停顿整合成整句（扩展 22e50989ec，反馈 97pds8EODm）；
+        // 页内脚本 content.js 读同一个 storage 键。
+        _switch(
+          'subtitleMergeAsrSentences',
+          fallback: false,
+          label: 'opt_subtitleMergeAsrSentences',
+          icon: FushiIcons.merge,
+        ),
         _switch(
           'playerControls',
           fallback: true,
@@ -305,6 +313,8 @@ const Map<String, Object> kWebBrowserSubtitleStyleDefaults = <String, Object>{
   'textAlign': 'center',
   'textColor': '',
   'shadow': 'soft',
+  'outlineWidth': 0,
+  'outlineColor': '',
   'backgroundColor': '',
   'backgroundOpacity': 72,
   'borderRadius': 8,
@@ -326,6 +336,7 @@ const Map<String, (int, int)> kWebBrowserSubtitleStyleLimits =
       'padding': (0, 300),
       'boxWidth': (0, 100),
       'boxHeight': (0, 60),
+      'outlineWidth': (0, 8),
     };
 
 /// 底板宽 / 高非 0 时的下限（`subtitle-style.js` BOX_FLOOR）；0 = 随内容。
@@ -350,6 +361,21 @@ const List<String> kWebBrowserSubtitleFontSuggestions = <String>[
 /// 主题缺省的字幕字色 / 底板色（`subtitle-style.js` DEFAULT_TEXT_COLOR / DEFAULT_BACKGROUND_COLOR）。
 const int kWebBrowserSubtitleDefaultTextColor = 0xFFF7F8F2;
 const int kWebBrowserSubtitleDefaultBackgroundColor = 0xFF0C0F0D;
+
+/// 描边默认色（`subtitle-style.js` DEFAULT_OUTLINE_COLOR，与 app 视频字幕
+/// `kDefaultSubtitleOutlineColor` 同值）：存 '' = 用它。
+const int kWebBrowserSubtitleDefaultOutlineColor = 0xFF000000;
+
+/// 描边粗细：夹进 [0, 8] 并取到 0.5px 步长（`subtitle-style.js` clampOutline）。
+double _clampOutline(Object? v) {
+  final (int lo, int hi) = kWebBrowserSubtitleStyleLimits['outlineWidth']!;
+  final num? n = v is num ? v : (v is String ? num.tryParse(v) : null);
+  if (n == null || !n.isFinite) {
+    return (kWebBrowserSubtitleStyleDefaults['outlineWidth']! as int)
+        .toDouble();
+  }
+  return ((n * 2).round() / 2).clamp(lo, hi).toDouble();
+}
 
 int _clampInt(Object? v, String field) {
   final (int lo, int hi) = kWebBrowserSubtitleStyleLimits[field]!;
@@ -407,6 +433,8 @@ Map<String, Object> normalizeWebBrowserSubtitleStyle(Object? raw) {
     'shadow': shadow == 'none' || shadow == 'soft' || shadow == 'strong'
         ? shadow! as String
         : 'soft',
+    'outlineWidth': _clampOutline(c['outlineWidth']),
+    'outlineColor': _normalizeHex(c['outlineColor']),
     'backgroundColor': _normalizeHex(c['backgroundColor']),
     'backgroundOpacity': _clampInt(c['backgroundOpacity'], 'backgroundOpacity'),
     'borderRadius': _clampInt(c['borderRadius'], 'borderRadius'),
@@ -579,7 +607,7 @@ SettingsDestination _subtitleStyleDestination() => SettingsDestination(
           id: 'web_browser.extension.subtitleStyle.shadow',
           title: _x('opt_subtitleStyleShadow_title'),
           subtitle: _d('opt_subtitleStyleShadow_desc'),
-          icon: FushiIcons.outline,
+          icon: FushiIcons.shadow,
           defaultValue: 'soft',
           options: <SettingsSegmentOption<String>>[
             for (final String v in <String>['none', 'soft', 'strong'])
@@ -591,6 +619,25 @@ SettingsDestination _subtitleStyleDestination() => SettingsDestination(
           selected: (SettingsContext c) => _style(c)['shadow']! as String,
           onChanged: (SettingsContext c, String v) =>
               _writeStyle(c, 'shadow', v),
+        ),
+        // 反馈 0wkJImhZUp：真描边粗细 + 颜色（与 app 视频字幕的描边自定义同义同刻度）。
+        SettingsSliderItem(
+          id: 'web_browser.extension.subtitleStyle.outlineWidth',
+          title: _x('opt_subtitleStyleOutlineWidth_title'),
+          subtitle: _d('opt_subtitleStyleOutlineWidth_desc'),
+          icon: FushiIcons.outline,
+          min: 0,
+          max: kWebBrowserSubtitleStyleLimits['outlineWidth']!.$2.toDouble(),
+          divisions: kWebBrowserSubtitleStyleLimits['outlineWidth']!.$2 * 2,
+          titleReadout: true,
+          commitOnRelease: true,
+          defaultValue: 0,
+          label: (double v) =>
+              v <= 0 ? _x('opt_shadow_none') : '${v.toStringAsFixed(1)} px',
+          value: (SettingsContext c) =>
+              (_style(c)['outlineWidth']! as num).toDouble(),
+          onChanged: (SettingsContext c, double v) =>
+              _writeStyle(c, 'outlineWidth', v),
         ),
       ],
     ),
@@ -659,6 +706,13 @@ SettingsDestination _subtitleStyleDestination() => SettingsDestination(
           selected: (SettingsContext c) => _style(c)['textAlign']! as String,
           onChanged: (SettingsContext c, String v) =>
               _writeStyle(c, 'textAlign', v),
+        ),
+        // 描边颜色与扩展设置页同位：常显区只放描边粗细，颜色进「更多选项」首项。
+        _styleColor(
+          'outlineColor',
+          label: 'opt_subtitleStyleOutlineColor',
+          icon: FushiIcons.outlineColor,
+          themed: kWebBrowserSubtitleDefaultOutlineColor,
         ),
         _styleColor(
           'textColor',
@@ -890,99 +944,101 @@ SettingsDestination _appearanceDestination() => SettingsDestination(
 const String kWebBrowserShortcutKeysSetting = 'videoShortcutKeys';
 
 /// 视频页快捷键：动作 → (开关键, 文案前缀, 默认组合)。`video-shortcuts.js` DEFAULT_COMBOS。
-const List<(String, String, String, String)> kWebBrowserVideoShortcuts =
-    <(String, String, String, String)>[
-      (
-        'prev-cue',
-        'videoShortcutPrevCue',
-        'opt_videoShortcutPrevCue',
-        'ArrowLeft',
-      ),
-      (
-        'next-cue',
-        'videoShortcutNextCue',
-        'opt_videoShortcutNextCue',
-        'ArrowRight',
-      ),
-      (
-        'replay-cue',
-        'videoShortcutReplayCue',
-        'opt_videoShortcutReplayCue',
-        'ArrowUp',
-      ),
-      (
-        'toggle-panel',
-        'videoShortcutTogglePanel',
-        'opt_videoShortcutTogglePanel',
-        'Shift+KeyS',
-      ),
-      (
-        'toggle-subtitle-hide',
-        'videoShortcutToggleSubtitleHide',
-        'opt_videoShortcutToggleSubtitleHide',
-        'Shift+KeyH',
-      ),
-      (
-        'copy-cue',
-        'videoShortcutCopyCue',
-        'opt_videoShortcutCopyCue',
-        'Ctrl+Shift+KeyZ',
-      ),
-      (
-        'favorite-cue',
-        'videoShortcutFavoriteCue',
-        'opt_videoShortcutFavoriteCue',
-        'Ctrl+Shift+KeyF',
-      ),
-      (
-        'offset-minus',
-        'videoShortcutOffsetMinus',
-        'opt_videoShortcutOffsetMinus',
-        'Ctrl+Shift+ArrowLeft',
-      ),
-      (
-        'offset-plus',
-        'videoShortcutOffsetPlus',
-        'opt_videoShortcutOffsetPlus',
-        'Ctrl+Shift+ArrowRight',
-      ),
-      (
-        'offset-reset',
-        'videoShortcutOffsetReset',
-        'opt_videoShortcutOffsetReset',
-        'Ctrl+Shift+ArrowDown',
-      ),
-      (
-        'rate-down',
-        'videoShortcutRateDown',
-        'opt_videoShortcutRateDown',
-        'Ctrl+Shift+BracketLeft',
-      ),
-      (
-        'rate-up',
-        'videoShortcutRateUp',
-        'opt_videoShortcutRateUp',
-        'Ctrl+Shift+BracketRight',
-      ),
-      (
-        'seek-back',
-        'videoShortcutSeekBack',
-        'opt_videoShortcutSeekBack',
-        'Shift+ArrowLeft',
-      ),
-      (
-        'seek-forward',
-        'videoShortcutSeekForward',
-        'opt_videoShortcutSeekForward',
-        'Shift+ArrowRight',
-      ),
-      (
-        'hold-speed',
-        'videoShortcutHoldSpeed',
-        'opt_videoShortcutHoldSpeed',
-        'KeyE',
-      ),
-    ];
+const List<(String, String, String, String)>
+kWebBrowserVideoShortcuts = <(String, String, String, String)>[
+  ('prev-cue', 'videoShortcutPrevCue', 'opt_videoShortcutPrevCue', 'ArrowLeft'),
+  (
+    'next-cue',
+    'videoShortcutNextCue',
+    'opt_videoShortcutNextCue',
+    'ArrowRight',
+  ),
+  (
+    'replay-cue',
+    'videoShortcutReplayCue',
+    'opt_videoShortcutReplayCue',
+    'ArrowUp',
+  ),
+  (
+    'toggle-panel',
+    'videoShortcutTogglePanel',
+    'opt_videoShortcutTogglePanel',
+    'Shift+KeyS',
+  ),
+  (
+    'toggle-subtitle-hide',
+    'videoShortcutToggleSubtitleHide',
+    'opt_videoShortcutToggleSubtitleHide',
+    'Shift+KeyH',
+  ),
+  // 字幕遮布开关（盖住烧进画面的硬字幕，扩展 subtitle-mask.js）。
+  (
+    'toggle-subtitle-mask',
+    'videoShortcutToggleSubtitleMask',
+    'opt_videoShortcutToggleSubtitleMask',
+    'Shift+KeyB',
+  ),
+  (
+    'copy-cue',
+    'videoShortcutCopyCue',
+    'opt_videoShortcutCopyCue',
+    'Ctrl+Shift+KeyZ',
+  ),
+  (
+    'favorite-cue',
+    'videoShortcutFavoriteCue',
+    'opt_videoShortcutFavoriteCue',
+    'Ctrl+Shift+KeyF',
+  ),
+  (
+    'offset-minus',
+    'videoShortcutOffsetMinus',
+    'opt_videoShortcutOffsetMinus',
+    'Ctrl+Shift+ArrowLeft',
+  ),
+  (
+    'offset-plus',
+    'videoShortcutOffsetPlus',
+    'opt_videoShortcutOffsetPlus',
+    'Ctrl+Shift+ArrowRight',
+  ),
+  (
+    'offset-reset',
+    'videoShortcutOffsetReset',
+    'opt_videoShortcutOffsetReset',
+    'Ctrl+Shift+ArrowDown',
+  ),
+  (
+    'rate-down',
+    'videoShortcutRateDown',
+    'opt_videoShortcutRateDown',
+    'Ctrl+Shift+BracketLeft',
+  ),
+  (
+    'rate-up',
+    'videoShortcutRateUp',
+    'opt_videoShortcutRateUp',
+    'Ctrl+Shift+BracketRight',
+  ),
+  (
+    'seek-back',
+    'videoShortcutSeekBack',
+    'opt_videoShortcutSeekBack',
+    'Shift+ArrowLeft',
+  ),
+  (
+    'seek-forward',
+    'videoShortcutSeekForward',
+    'opt_videoShortcutSeekForward',
+    'Shift+ArrowRight',
+  ),
+  (
+    'hold-speed',
+    'videoShortcutHoldSpeed',
+    'opt_videoShortcutHoldSpeed',
+    'KeyE',
+  ),
+];
 
 /// 无存量时默认**关**的快捷键动作（`video-shortcuts.js` DEFAULT_OFF / options.js
 /// settingDefaults 同一份）：裸字母键在任意网页都会和站点自己的快捷键撞，默认接管等于替所有

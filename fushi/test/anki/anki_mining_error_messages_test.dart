@@ -40,6 +40,26 @@ void main() {
       );
     });
 
+    test('BUG-4287：送达的卡带回的提示接在汇总后面', () {
+      final String msg = pendingFlushMessage(
+        const PendingFlushReport(delivered: 1, notice: 'Save to was reset.'),
+      );
+      expect(
+        msg,
+        '${t.anki_pending_mines_flush_result(delivered: 1, failed: 0, remaining: 0)}'
+        '\nSave to was reset.',
+      );
+      expect(
+        pendingFlushMessage(
+          const PendingFlushReport(
+            unreachable: true,
+            notice: 'Save to was reset.',
+          ),
+        ),
+        '${t.anki_pending_mines_unreachable}\nSave to was reset.',
+      );
+    });
+
     test('有卡被拒收：汇总后附第一张的原因', () {
       final String msg = pendingFlushMessage(
         PendingFlushReport(

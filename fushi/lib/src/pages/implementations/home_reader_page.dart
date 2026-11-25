@@ -10,11 +10,12 @@ import 'package:fushi/src/media/discovery/user_server_discovery_view.dart';
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
+import 'package:fushi/src/pages/implementations/discovery_manage_sources_action.dart';
 import 'package:fushi/src/pages/implementations/library_online_sources_view.dart';
 import 'package:fushi/src/pages/implementations/media_discovery_page.dart';
 import 'package:fushi/src/pages/implementations/media_server/user_media_servers_view.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
-import 'package:fushi/src/pages/implementations/media_sources_page.dart';
+import 'package:fushi/src/pages/implementations/book_import_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeInsetPadding;
 import 'package:fushi/i18n/strings.g.dart';
@@ -95,6 +96,10 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
                     domainLabel: t.books,
                     onlineDomain: OnlineSourcesDomain.novel,
                   ),
+                  onManageSources: discoveryManageSourcesAction(
+                    context: context,
+                    appModel: appModelNoUpdate,
+                  ),
                 ),
           ),
         // 用户自己的 Kavita / Audiobookshelf 服务器（同 Jellyfin / Plex）：配了可用的
@@ -141,7 +146,7 @@ class _HomeReaderPageState extends BaseTabPageState<HomeReaderPage> {
           handlesChromeInset: true,
           label: t.library_view_import,
           builder: (BuildContext context, Widget navigation) =>
-              MediaSourcesPage(mediaKind: 'book', navigation: navigation),
+              BookImportPage(navigation: navigation),
         ),
       ],
     );

@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:args/args.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -35,6 +36,7 @@ class _Recognizer implements VideoSubtitleRecognizer {
     required Directory workDir,
     required VideoSubtitleRecognizeProgress onProgress,
     required SubtitleCancelToken cancel,
+    int? audioStreamIndex,
   }) async {
     seen.add(p.basename(videoPath));
     onProgress(1, 'transcribing');
@@ -54,12 +56,17 @@ class _Recognizer implements VideoSubtitleRecognizer {
 class _Completer implements AiTextCompleter {
   final List<String> prefixes = <String>[];
 
+  /// 每次请求附了几张图。
+  final List<int> imageCounts = <int>[];
+
   @override
   Future<AiChatCompletion> complete(
     String prompt, {
     String stablePrefix = '',
+    List<AiChatImage> images = const <AiChatImage>[],
   }) async {
     prefixes.add(stablePrefix);
+    imageCounts.add(images.length);
     return AiChatCompletion(
       text: <String>[
         for (final RegExpMatch m in RegExp(
@@ -120,23 +127,79 @@ void main() {
       completerFactory: completer == null
           ? null
           : (AiProviderConfig _) => completer,
+      // 测试里不起真 ffmpeg：每个时刻回一张假图。
+      frameSource: (String videoPath, int atMs) async =>
+          Uint8List.fromList(<int>[1]),
     ),
   );
 
-  Future<void> configureAi() async {
+  Future<void> configureAi({bool images = false}) async {
     final ServerConfig config = await ServerConfig.load(h.configFile);
     await config
         .copyWith(
-          ai: const ServerAiConfig(
+          ai: ServerAiConfig(
             preset: kAiCustomPresetId,
             baseUrl: 'https://example.com/v1',
             model: 'm',
             apiKey: 'k',
             webKnowledge: false,
+            images: images,
           ),
         )
         .save(h.configFile);
   }
+
+  test('画面参考：配置写了 images: true 才带画面；--no-frames 关；没写时不带', () async {
+    final File glossary = File(p.join(h.tmp.path, 'g.json'))
+      ..writeAsStringSync(
+        jsonEncode(<Object?>[
+          <String, Object?>{'ja': '唯', 'reading': 'ゆい', 'kind': '人名'},
+        ]),
+      );
+    Future<_Completer> run(String out, List<String> extra) async {
+      final _Completer completer = _Completer();
+      expect(
+        await h.run(module(completer: completer), <String>[
+          'subgen',
+          p.join(season.path, 'Show - 01.mkv'),
+          '--title',
+          'けいおん!',
+          '--glossary',
+          glossary.path,
+          '--out-dir',
+          p.join(h.tmp.path, out),
+          ...extra,
+        ]),
+        0,
+        reason: '${h.err}',
+      );
+      return completer;
+    }
+
+    // 没写 images: true：模型当作收不了图，不带画面。
+    await configureAi();
+    final _Completer textOnly = await run('o1', const <String>[]);
+    expect(textOnly.imageCounts, everyElement(0));
+    expect(textOnly.prefixes.join('\n'), isNot(contains('補足規則(画面)')));
+
+    // 写了：缺省带画面（开关变了，校对从头重做）。
+    await configureAi(images: true);
+    final _Completer withFrames = await run('o2', const <String>[]);
+    expect(withFrames.imageCounts.any((int n) => n > 0), isTrue);
+    expect(withFrames.prefixes.join('\n'), contains('補足規則(画面)'));
+
+    final _Completer optedOut = await run('o3', const <String>['--no-frames']);
+    expect(optedOut.imageCounts, everyElement(0));
+    expect(optedOut.prefixes, isNotEmpty, reason: '关掉画面后校对重做，不沿用带画面的结果');
+
+    final ArgParser parser = ArgParser();
+    module().register(parser);
+    SubgenOptions parse(List<String> args) => parseSubgenOptions(
+      parser.parse(<String>['subgen', 'a.mkv', ...args]).command!,
+    );
+    expect(parse(const <String>[]).frames, isTrue);
+    expect(parse(const <String>['--no-frames']).frames, isFalse);
+  });
 
   test('参数解析：枚举、覆盖路径、out-dir；没有输入 / 后缀不合法是用法错误', () {
     final ArgParser parser = ArgParser();
@@ -227,9 +290,9 @@ void main() {
       reason: '${h.err}',
     );
     final String out = h.out.toString();
-    expect(out, contains('跳过  Show - 02.mkv'));
-    expect(out, contains('处理  Show - 01.mkv'));
-    expect(out, contains('处理  NCOP.mp4'));
+    expect(out, contains('skip  Show - 02.mkv'));
+    expect(out, contains('process  Show - 01.mkv'));
+    expect(out, contains('process  NCOP.mp4'));
     expect(recognizer.seen, isEmpty);
     expect(File(p.join(season.path, 'Show - 01.ja.srt')).existsSync(), isFalse);
   });
@@ -350,7 +413,7 @@ void main() {
       ]),
       kExitDataError,
     );
-    expect(h.err.toString(), contains('格式不对'));
+    expect(h.err.toString(), contains('invalid format'));
     expect(asked, isEmpty);
     expect(recognizer.seen, isEmpty);
 
@@ -366,7 +429,7 @@ void main() {
       ]),
       kExitDataError,
     );
-    expect(h.err.toString(), contains('第 1 条'));
+    expect(h.err.toString(), contains('entry 1'));
     expect(recognizer.seen, isEmpty);
   });
 
@@ -430,7 +493,7 @@ void main() {
       File(p.join(outDir, 'Show - 01.ja.srt')).readAsStringSync(),
       contains('唯ちゃん0'),
     );
-    expect(h.out.toString(), contains('AI 用量'));
+    expect(h.out.toString(), contains('AI usage'));
 
     final FushiDatabase db = h.openDb();
     addTearDown(db.close);
@@ -463,7 +526,7 @@ void main() {
     expect((group['usage']! as Map<Object?, Object?>)['input'], 21);
     expect(File('${group['glossaryCandidate']}').existsSync(), isTrue);
     expect((h.json()['usage']! as Map<Object?, Object?>)['calls'], 3);
-    expect(h.err.toString(), contains('失败前已调用 AI 3 次'));
+    expect(h.err.toString(), contains('AI called 3 times before the failure'));
   });
 }
 
@@ -473,6 +536,7 @@ class _WrongWork extends _Completer {
   Future<AiChatCompletion> complete(
     String prompt, {
     String stablePrefix = '',
+    List<AiChatImage> images = const <AiChatImage>[],
   }) async => const AiChatCompletion(
     // 专名表行协议：`ja<TAB>reading<TAB>kind<TAB>误识` 每行一条 + `END`。
     text:

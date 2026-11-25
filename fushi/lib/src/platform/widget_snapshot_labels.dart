@@ -6,7 +6,7 @@ import 'package:fushi/src/platform/widget_snapshot.dart';
 /// 小组件快照的全部文案，按 app 内语言（当前 slang locale）取。键集合与含义见
 /// [kWidgetLabelKeys]；这里是唯一把 i18n key 映射到快照 label 键的地方。
 ///
-/// 模板键（`updatedAgo` / `agoMinutes` / `agoHours` / `agoDays`）
+/// 模板键（`updatedAgo` / `agoMinutes` / `agoHours` / `agoDays` / `goalsMore`）
 /// 里的 `{n}` / `{age}` 原样保留给原生侧在显示时刻替换。
 WidgetSnapshotLabels buildWidgetLabels() {
   const String n = '{n}';
@@ -59,6 +59,9 @@ WidgetSnapshotLabels buildWidgetLabels() {
     'lookUp': t.widget_label_look_up,
     'noVocab': t.widget_label_no_vocab,
     'goalsTitle': t.widget_label_goals_title,
+    // 目标周期不全是每日时的标题（「每日目标」只在全是每日时用）。
+    'goalsTitleMixed': t.home_language_goals_mixed_title,
+    'goalsMore': t.widget_label_goals_more(n: n),
     'noGoals': t.widget_label_no_goals,
     'vocab': t.widget_label_vocabulary,
     'stats': t.widget_label_statistics,
@@ -116,14 +119,3 @@ Map<WidgetImmersionCategory, String> buildWidgetCategoryLabels() =>
       WidgetImmersionCategory.watching: t.widget_label_watching,
       WidgetImmersionCategory.games: t.widget_label_games,
     };
-
-/// `goals[].label`，键是目标 id（`total|reading|listening|watching|reviews|mined|chars`）。
-Map<String, String> buildWidgetGoalLabels() => <String, String>{
-  'total': t.widget_goal_total,
-  'reading': t.widget_label_reading,
-  'listening': t.widget_label_listening,
-  'watching': t.widget_label_watching,
-  'reviews': t.widget_goal_reviews,
-  'mined': t.widget_goal_mined,
-  'chars': t.widget_goal_chars,
-};

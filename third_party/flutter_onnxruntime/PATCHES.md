@@ -150,12 +150,12 @@ and macOS 13.4–14.0 for free, with no change to the ORT binary or the Dart API
     encoder GPU idle ~85% of the time for lack of queued work, which is what
     the Dart-side pipeline rewrite (`AsrBatchPipeline`) addresses.
 
-**The Dart API under `lib/` carries four deltas (#8, the
+**The Dart API under `lib/` carries five deltas (#8, the
 `freeDimensionOverrides` option, #10, `getDeviceMemoryInfo`, and #13,
-`probeCuda` / `registerCudaRuntime`, and #15, native provider-name
-normalisation); everything
+`probeCuda` / `registerCudaRuntime`, #15, native provider-name
+normalisation, and #16, the nullable `deviceId`); everything
 else there is byte-for-byte upstream.** The Apple, Android and Linux native
-trees are untouched; the Windows tree carries deltas 6–11 and 13 — provider
+trees are untouched; the Windows tree carries deltas 6–11, 13 and 16 — provider
 wiring, error-string encoding, free-dimension overrides, worker-thread
 dispatch, the DXGI budget query and per-session CPU workers. No ORT wrapper
 or inference logic changed anywhere.
@@ -187,7 +187,7 @@ path or drift the floors apart.
 
 ## Re-vendoring on upgrade
 
-Copy the new upstream version over this folder, then re-apply deltas #1–#15.
+Copy the new upstream version over this folder, then re-apply deltas #1–#18.
 Before bumping the `onnxruntime-objc` pin, check the new version's podspec
 platforms (`pod spec cat onnxruntime-objc --version=X.Y.Z`) — if the floor moved,
 the four project deployment targets and the guard test move with it.
@@ -324,8 +324,102 @@ the four project deployment targets and the guard test move with it.
     - Test: `fushi/test/onnx/onnxruntime_provider_names_test.dart` (through the
       real method channel).
 
+16. `windows/src/dxgi_memory.{h,cc}`, `windows/src/cuda_provider.{h,cc}`,
+    `windows/flutter_onnxruntime_plugin.cpp` + `lib/src/onnxruntime.dart` /
+    platform interface / method channel: `getDeviceMemoryInfo` without a
+    `deviceId` answers for **the adapter GPU sessions run on** instead of
+    always DXGI adapter 0 (issue #3380 follow-up).
+
+    - Delta #10 always read adapter 0. That is right for DirectML (device 0 is
+      adapter 0) and wrong for CUDA on a hybrid-graphics laptop, where adapter
+      0 is usually the integrated GPU and its local-segment budget is a slice
+      of system RAM. The app sizes CUDA batches and gates fp32 models on that
+      number, so the NVIDIA card overflowed while the budget looked ample.
+    - Once the CUDA plugin EP is registered (delta #13: a process runs CUDA on
+      the bundled core or DirectML on the downloaded one, never both) the
+      query matches CUDA device 0 to its DXGI adapter by LUID
+      (`cuDeviceGetLuid` from `nvcuda.dll` against
+      `DXGI_ADAPTER_DESC1::AdapterLuid`), falls back to the first hardware
+      adapter with PCI vendor 0x10DE, and only then to adapter 0. An explicit
+      `deviceId` still means that DXGI adapter.
+    - Dart: `deviceId` became nullable and the key is omitted when null; the
+      native side tells an absent key from an explicit 0. The reply gained
+      `adapterName` and `selection` (`explicit` / `cuda-luid` / `cuda-vendor` /
+      `default`) for logs and probes.
+    - `CudaPluginRegistry::IsRegistered` is lock-free (`std::atomic<bool>`):
+      it is now asked on the platform thread, and `Register` holds the
+      registry mutex for as long as the ~1 GB of provider DLLs take to load.
+    - The method still never binds ORT. Guard:
+      `fushi/test/onnx/onnxruntime_device_memory_guard_test.dart`.
+
+17. `android/build.gradle`: buildscript pins follow the app's Flutter 3.50 /
+    AGP 9 toolchain (AGP 9.3.1, Kotlin 2.4.20 since BUG-5148; the 3.50 Flutter Gradle plugin
+    requires Gradle >= 9.3.1, AGP >= 9.1.1, KGP >= 2.4.10). The module already
+    uses `kotlin { compilerOptions { } }`, so no DSL change was needed.
+
 Before bumping the bundled Windows core, bump the CUDA plugin EP to the release
 built against the same ORT revision (and its manifest in
 `gpu_runtime_pack.dart`), update the nupkg SHA-256, and keep both runtime DLLs
 in `flutter_onnxruntime_bundled_libraries`. `kOrtApiVersionUsed` must stay at
 or below the API version of the downloaded DirectML core.
+
+17. `linux/CMakeLists.txt`: ORT is fetched from the official NuGet package
+    `Microsoft.ML.OnnxRuntime` (`api.nuget.org/v3-flatcontainer/...nupkg`)
+    instead of the GitHub release tarball. `github.com/microsoft/onnxruntime`
+    -- the repository and every release asset -- has returned 404 since
+    2026-11-17 with no migration notice, which broke every Linux app build.
+    The nupkg is downloaded with `EXPECTED_HASH SHA256=` (pinned per version in
+    `ONNXRUNTIME_NUPKG_SHA256`; any other version must pass its own hash or
+    configure fails), then staged into the old tarball layout:
+    `build/native/include/*.h` -> `include/`,
+    `runtimes/<rid>/native/libonnxruntime.so` (rid `linux-x64` /
+    `linux-arm64`) -> `lib/`. The NuGet `.so` is a single real file with
+    SONAME `libonnxruntime.so.1` (no symlink chain), so the staging step
+    creates `lib/libonnxruntime.so.1 -> libonnxruntime.so` itself: the
+    runner's link step resolves the plugin's DT_NEEDED through the plugin's
+    build-tree RUNPATH (that lib dir), and without the SONAME file ld fails
+    with `libonnxruntime.so.1 ... not found`. Delta #12 then picks the SONAME
+    up from the same dir. Max GLIBC symbol version is 2.27.
+    The Windows build already used NuGet. On a version bump update the pinned
+    hash here and in `.github/scripts/fetch_onnxruntime_nuget.py`.
+
+18. `windows/src/cuda_provider.{h,cc}`, `windows/src/session_manager.{h,cc}`,
+    `windows/src/async_dispatch.{h,cc}`, `windows/flutter_onnxruntime_plugin.{h,cpp}`
+    + `lib/src/onnxruntime.dart` / platform interface / method channel:
+    **CUDA idle release** (BUG-5163).
+
+    - What stays behind after the last CUDA session closes is the CUDA primary
+      context: cudart retains it and never lets go for the life of the process.
+      Measured (RTX 4070 Ti, reazonspeech-k2-v2 fp16 on cu13-ep0.3.0, finished
+      and cancelled jobs alike): ~180 MiB of device memory and ~850 MiB of
+      private commit. Unregistering the plugin library alone gives back
+      nothing; `cuDevicePrimaryCtxReset_v2` afterwards returns device memory to
+      the pre-registration baseline.
+    - `CudaPluginRegistry` is now registered + loaded/unloaded: `Release()`
+      unregisters the library (keeping directory, EP names and
+      `IsRegistered()`), optionally resets the primary context of every
+      device; `AppendToSessionOptions()` reloads the library when needed. CUDA
+      stays in `getAvailableProviders` throughout, so the Dart side sees no
+      state change.
+    - The CUDA EP is appended in the GPU-queue task that builds the session
+      (it was appended on the platform thread): a release on the same queue
+      can no longer free the appended `OrtEpDevice` in between. A failed
+      append still answers `PROVIDER_ERROR`.
+    - Closing the last CUDA session arms a `DelayedTask`
+      (`FLUTTER_ONNXRUNTIME_CUDA_IDLE_MS`, default 60 s, 0 = never). When it
+      fires and no CUDA session was created since (`cudaGeneration()`
+      unchanged), the GPU queue unloads the library and resets the context.
+      Teardown (HBK-AUDIT-015) is explicit, not member-order based: a CUDA
+      close task still queued on the GPU queue arms the timer, and the timer
+      posts to the GPU queue, so no declaration order is safe. The Impl
+      destructor first `Shutdown()`s the `DelayedTask` (joins; later
+      `Schedule()` calls return false), then `Shutdown()`s every `WorkQueue`
+      (refuse new posts, drain queued tasks), all while every member is alive.
+      Native test: `windows/test/async_dispatch_teardown_test.cc` (build line in
+      its header; `/DFUSHI_TEARDOWN_LEGACY` reproduces the old order), run on
+      PRs by `.github/workflows/native-onnx-plugin-gate.yml` (which also
+      requires the legacy build to stay red).
+    - `releaseCudaRuntime({resetContext})` does the same on demand; refused
+      (`released: false`, `openCudaSessions > 0`) while a CUDA session is open.
+    - Guard: `fushi/test/onnx/cuda_idle_release_guard_test.dart`; device probe:
+      `fushi/integration_test/asr_cuda_vram_release_itest.dart`.

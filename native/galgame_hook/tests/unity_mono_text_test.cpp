@@ -176,7 +176,8 @@ FakeImage TextRenderingImage() {
 }
 
 // TMP：SetText(string,float) 排在 SetText(string,bool) 之前——只按参数个数找会挂错。
-FakeImage TmpImage(bool with_bool_overload) {
+// with_single：TMP 3.2+ 的独立 SetText(string)。
+FakeImage TmpImage(bool with_bool_overload, bool with_single = false) {
   FakeImage image{"Unity.TextMeshPro",
                   {{"TMPro",
                     "TMP_Text",
@@ -187,6 +188,10 @@ FakeImage TmpImage(bool with_bool_overload) {
     image.classes[0].methods.push_back(
         {"SetText", true, kMonoTypeVoid, {kMonoTypeString, kMonoTypeBoolean},
          0});
+  }
+  if (with_single) {
+    image.classes[0].methods.push_back(
+        {"SetText", true, kMonoTypeVoid, {kMonoTypeString}, 0});
   }
   return image;
 }
@@ -415,6 +420,38 @@ void TestTmpPairMustBeComplete() {
   assert(PlanUnityMonoTextHooks(r) == 0);
 }
 
+void TestTmpSingleSetTextRidesWithThePair() {
+  // TMP 3.2：SetText(string) 是自己的方法体，与 (string,bool) / (string,float)
+  // 按参数个数与类型区分；随完整的一对进计划。
+  std::vector<FakeImage> images = {ScriptImage(false, false), TmpImage(true, true)};
+  g_images = &images;
+  MonoTextResolution r = ResolveUnityMonoTextMethods(FakeApi());
+  const auto* single = static_cast<FakeMethod*>(
+      r.methods[static_cast<size_t>(MonoTextHookId::kTmpSetTextSingle)]);
+  assert(single != nullptr && single->name == std::string("SetText") &&
+         single->params.size() == 1 && single->params[0] == kMonoTypeString);
+  assert(PlanUnityMonoTextHooks(r) ==
+         (MonoTextHookBit(MonoTextHookId::kTmpSetText) |
+          MonoTextHookBit(MonoTextHookId::kTmpSetTextBool) |
+          MonoTextHookBit(MonoTextHookId::kTmpSetTextSingle)));
+  // 一对不完整（没有 (string,bool)）：三个 TMP 入口都不装。
+  images = {ScriptImage(false, false), TmpImage(false, true)};
+  g_images = &images;
+  r = ResolveUnityMonoTextMethods(FakeApi());
+  assert(r.methods[static_cast<size_t>(MonoTextHookId::kTmpSetTextSingle)] !=
+         nullptr);
+  assert(PlanUnityMonoTextHooks(r) == 0);
+  // TMP 1.x 没有独立入口（SetText(string) 只是转调）：计划里只有那一对。
+  images = {ScriptImage(false, false), TmpImage(true, false)};
+  g_images = &images;
+  r = ResolveUnityMonoTextMethods(FakeApi());
+  assert(r.methods[static_cast<size_t>(MonoTextHookId::kTmpSetTextSingle)] ==
+         nullptr);
+  assert(PlanUnityMonoTextHooks(r) ==
+         (MonoTextHookBit(MonoTextHookId::kTmpSetText) |
+          MonoTextHookBit(MonoTextHookId::kTmpSetTextBool)));
+}
+
 void TestMessageRendererReplacesGlyphTextMesh() {
   std::vector<FakeImage> images = {ScriptImage(true, true),
                                    TextRenderingImage()};
@@ -534,6 +571,7 @@ int main() {
   TestIncompleteApiResolvesNothing();
   TestGenericUnityComponentsAndExactTmpOverload();
   TestTmpPairMustBeComplete();
+  TestTmpSingleSetTextRidesWithThePair();
   TestMessageRendererReplacesGlyphTextMesh();
   TestMessageWithoutCompanionIsNotTrusted();
   TestFrameworkTypesOnlyFromScriptAssembly();

@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
 import 'package:crypto/crypto.dart';
@@ -94,6 +95,8 @@ class MihonManager extends ChangeNotifier {
   String? error;
   bool _disposed = false;
   Future<void>? _initialising;
+  Future<void>? _localReady;
+  bool _previousProcessResidueClaimed = false;
   Future<void>? _runtimeShutdown;
   ExitFlushCallback? _exitShutdown;
   final Set<String> _extensionActionPackages = <String>{};
@@ -122,29 +125,65 @@ class MihonManager extends ChangeNotifier {
       ? runtime.dispose()
       : Future<void>.value();
 
+  /// 完整初始化：本地就绪（[ensureLocalReady]）+ 刷新扩展仓库目录。完成后
+  /// [available] 才可用（BUG-1340：冷启动要把目录拉回来），扩展页、更新探针、
+  /// ctl 路由等这一段。只需要已装扩展 / 来源的调用方（在线阅读）等
+  /// [ensureLocalReady] 就够，不必陪着等仓库索引与下载量的网络请求。
+  ///
+  /// 失败不缓存：本地 IO / DB 出错后下一次调用重跑，而不是整个进程里永远拿到
+  /// 同一个失败的 Future。
   Future<void> initialise() {
     final Future<void>? current = _initialising;
     if (current != null) return current;
-    final Future<void> future = _initialise();
+    late final Future<void> future;
+    future = _initialise().onError<Object>((Object error, StackTrace stack) {
+      if (identical(_initialising, future)) _initialising = null;
+      Error.throwWithStackTrace(error, stack);
+    });
     _initialising = future;
     return future;
   }
 
+  /// 本地就绪段：建目录、读库（[stores] / [installed] / [sources]）；整个进程的
+  /// 第一次尝试还会回收上次进程没走完的预览与暂存 APK。不发任何网络请求。
+  /// 失败同样不缓存，但重跑只重做建目录 + 读库（见 [_prepareLocal]）。
+  Future<void> ensureLocalReady() {
+    final Future<void>? current = _localReady;
+    if (current != null) return current;
+    late final Future<void> future;
+    future = _prepareLocal().onError<Object>((Object error, StackTrace stack) {
+      if (identical(_localReady, future)) _localReady = null;
+      Error.throwWithStackTrace(error, stack);
+    });
+    _localReady = future;
+    return future;
+  }
+
+  Future<void> _prepareLocal() async {
+    // 「上次进程的残留」只在本进程第一次尝试时才认得出来：预览标记与
+    // `tmp/*.apk.part` 在运行期也会由在途的预览 / 安装写出，回收逻辑分不清两者。
+    // 所以名额在进门时就用掉——第一次尝试在读库之前就失败的话，残留留给下次
+    // 启动（与失败 Future 永久缓存时的行为一致），重跑绝不碰在途的预览 / 安装。
+    final bool firstAttempt = !_previousProcessResidueClaimed;
+    _previousProcessResidueClaimed = true;
+    await rootDirectory.create(recursive: true);
+    await Directory(
+      p.join(rootDirectory.path, 'extensions'),
+    ).create(recursive: true);
+    await Directory(p.join(rootDirectory.path, 'tmp')).create(recursive: true);
+    await reload();
+    if (!firstAttempt) return;
+    // 必须在 reload 之后：判断孤儿要拿 installed 跟标记里的包名比对。
+    await _recoverAbandonedPreview();
+    await _clearStagedApks();
+  }
+
   Future<void> _initialise() async {
     loading = true;
+    error = null;
     _notify();
     try {
-      await rootDirectory.create(recursive: true);
-      await Directory(
-        p.join(rootDirectory.path, 'extensions'),
-      ).create(recursive: true);
-      await Directory(
-        p.join(rootDirectory.path, 'tmp'),
-      ).create(recursive: true);
-      await reload();
-      // 必须在 reload 之后：判断孤儿要拿 installed 跟标记里的包名比对。
-      await _recoverAbandonedPreview();
-      await _clearStagedApks();
+      await ensureLocalReady();
       await _refreshStores();
     } catch (exception) {
       error = '$exception';
@@ -694,42 +733,47 @@ class MihonManager extends ChangeNotifier {
           'extensions',
           '$packageName.${desktop ? 'apk' : 'ext'}',
         );
-        await database.upsertMangaExtension(
-          MangaExtensionsCompanion.insert(
-            packageName: packageName,
-            storeUrl: Value(proposal.expected?.storeUrl),
-            name: proposal.inspection.name,
-            // 列名冻结，语义 = APK 尺度（见 [MihonExtensionInspection.apkVersionCode]）。
-            versionCode: proposal.inspection.apkVersionCode,
-            versionName: proposal.inspection.versionName,
-            libVersion: proposal.inspection.libVersion,
-            language:
-                proposal.expected?.language ??
-                loaded
-                    .map((MihonSource item) => item.language)
-                    .toSet()
-                    .join(','),
-            contentWarning: Value(proposal.expected?.contentWarning ?? 0),
-            apkPath: storedPath,
-            apkSha256: proposal.apkSha256,
-            signerSha256: signer,
-            installedAt: DateTime.now().millisecondsSinceEpoch,
-            mediaKind: Value(kind.dbValue),
-          ),
-        );
-        await database.replaceMangaOnlineSources(
-          packageName,
-          loaded.map(
-            (MihonSource source) => MangaOnlineSourcesCompanion.insert(
-              extensionPackage: packageName,
-              sourceId: source.id,
-              name: source.name,
-              language: source.language,
-              baseUrl: Value(source.baseUrl),
+        // 扩展行与它的源列表一起提交：中途失败（含换库 / 关库把后台自动更新打断，
+        // BUG-5449）整体回滚，不留「行已是新版、源列表还是旧版」的半截状态——下面的
+        // catch 会把桌面端 APK 回滚成旧版，库里也必须仍是旧版。
+        await database.transaction(() async {
+          await database.upsertMangaExtension(
+            MangaExtensionsCompanion.insert(
+              packageName: packageName,
+              storeUrl: Value(proposal.expected?.storeUrl),
+              name: proposal.inspection.name,
+              // 列名冻结，语义 = APK 尺度（见 [MihonExtensionInspection.apkVersionCode]）。
+              versionCode: proposal.inspection.apkVersionCode,
+              versionName: proposal.inspection.versionName,
+              libVersion: proposal.inspection.libVersion,
+              language:
+                  proposal.expected?.language ??
+                  loaded
+                      .map((MihonSource item) => item.language)
+                      .toSet()
+                      .join(','),
+              contentWarning: Value(proposal.expected?.contentWarning ?? 0),
+              apkPath: storedPath,
+              apkSha256: proposal.apkSha256,
+              signerSha256: signer,
+              installedAt: DateTime.now().millisecondsSinceEpoch,
               mediaKind: Value(kind.dbValue),
             ),
-          ),
-        );
+          );
+          await database.replaceMangaOnlineSources(
+            packageName,
+            loaded.map(
+              (MihonSource source) => MangaOnlineSourcesCompanion.insert(
+                extensionPackage: packageName,
+                sourceId: source.id,
+                name: source.name,
+                language: source.language,
+                baseUrl: Value(source.baseUrl),
+                mediaKind: Value(kind.dbValue),
+              ),
+            ),
+          );
+        });
         if (await backup.exists()) await backup.delete();
         if (await File(proposal.tempPath).exists()) {
           await File(proposal.tempPath).delete();
@@ -768,6 +812,11 @@ class MihonManager extends ChangeNotifier {
   ///
   /// 单条失败不中断整批：网络抖动、上游删了某个 release、签名换了——这些都只该
   /// 让那一条进 `failed`，而不是让已经排队的另外九十九条一起作废。
+  ///
+  /// **APK 有限并发下载**（[downloadConcurrency]，默认
+  /// [mihonBulkDownloadConcurrency]）：一键更新几十个扩展时，逐个下载让总耗时
+  /// 等于 N 次往返之和，老机器 + 慢网络上就是「卡在 1/52」。下载并发、安装串行，
+  /// 进度仍按请求顺序逐条报；取消后不再开新下载，也不再安装已下载的条目。
   Future<MihonBulkInstallReport> installMany(
     List<MihonAvailableExtension> targets, {
     required bool trustSigner,
@@ -775,7 +824,9 @@ class MihonManager extends ChangeNotifier {
     void Function(int done, int total, MihonAvailableExtension current)?
     onProgress,
     bool Function()? isCancelled,
+    int downloadConcurrency = mihonBulkDownloadConcurrency,
   }) async {
+    final int width = downloadConcurrency < 1 ? 1 : downloadConcurrency;
     final List<String> installedPackages = <String>[];
     final List<String> skippedPackages = <String>[];
     final Map<String, String> failedPackages = <String, String>{};
@@ -831,57 +882,108 @@ class MihonManager extends ChangeNotifier {
           }
           continue;
         }
-        for (final MihonAvailableExtension target in entry.value) {
-          if (cancelled()) break;
-          onProgress?.call(done, total, target);
-          done++;
-          if (shouldSkip(target)) {
-            skippedPackages.add(target.packageName);
-            continue;
-          }
-          if (!tryBeginExtensionAction(target.packageName)) {
-            // 用户正在单独装同一个，让那条流程去装。
-            skippedPackages.add(target.packageName);
-            continue;
-          }
-          MihonInstallProposal? proposal;
-          try {
-            final MihonAvailableExtension resolved = _requireListed(
-              catalogue,
-              target.packageName,
-            );
-            final Uint8List bytes = await _storeClient.downloadApk(
-              resolved.apkUrl,
-              allowInsecure: insecure,
-            );
-            proposal = await _prepareInstallBytes(
-              bytes,
-              expected: resolved,
-              expectedSigningKey: store.signingKey,
-            );
-            await commitInstall(
-              proposal,
-              trustSigner: trustSigner,
-              invalidateRuntime: false,
-            );
-            installedPackages.add(target.packageName);
-            alreadyInstalled.add(target.packageName);
-          } catch (exception) {
-            failedPackages[target.packageName] = '$exception';
-            if (exception is MihonRuntimeException) {
-              failureCodes[target.packageName] = exception.code;
+        // 下载与安装分两级流水线：最多 [downloadConcurrency] 条 APK 同时在下
+        // （窗口里的条目都已占住 [tryBeginExtensionAction] 的互斥），安装 / 注册
+        // 仍按请求顺序**逐条串行**——`_prepareInstallBytes` 要走 runtime 的
+        // inspect、`commitInstall` 要改库与扩展目录，这两步并发没有收益只有竞态。
+        // 窗口有界，所以已下载未安装的字节同时最多 [downloadConcurrency] + 1 份
+        // （窗口 + 正在安装的那一条），内存峰值与并发度成正比而不是与整批成正比。
+        final List<MihonAvailableExtension> queue = entry.value;
+        final ListQueue<_BulkSlot> window = ListQueue<_BulkSlot>();
+        int next = 0;
+        void fill() {
+          while (window.length < width && next < queue.length && !cancelled()) {
+            final MihonAvailableExtension target = queue[next++];
+            if (shouldSkip(target) ||
+                // 用户正在单独装同一个（或同一批里重复列了它），让那条流程去装。
+                !tryBeginExtensionAction(target.packageName)) {
+              window.add(_BulkSlot(target, null));
+              continue;
             }
-            // 失败的提案连着一份 tmp/*.apk.part，当场删掉而不是等下次启动兜底：
-            // 一百条里失败十条就是十份最大 100 MiB 的残骸。
-            if (proposal != null) {
-              try {
-                await discardProposal(proposal);
-              } catch (_) {
-                // 删不掉只是留个残骸，[_clearStagedApks] 下次启动会清。
+            window.add(
+              _BulkSlot(
+                target,
+                _downloadForBulk(catalogue, target, allowInsecure: insecure),
+              ),
+            );
+          }
+        }
+
+        try {
+          fill();
+          while (window.isNotEmpty) {
+            if (cancelled()) break;
+            final _BulkSlot slot = window.first;
+            final MihonAvailableExtension target = slot.target;
+            onProgress?.call(done, total, target);
+            done++;
+            final Future<_BulkDownload>? pending = slot.download;
+            if (pending == null) {
+              window.removeFirst();
+              fill();
+              skippedPackages.add(target.packageName);
+              continue;
+            }
+            // 这条落地之后才让出窗口里的位置（在途下载严格不超过上限），并
+            // 立刻补满：它安装期间，后面几条继续在下。下载 future 不抛，见
+            // [_downloadForBulk]；落地前出任何异常，这格仍在窗口里由下面的
+            // finally 放互斥。
+            final _BulkDownload download = await pending;
+            window.removeFirst();
+            MihonInstallProposal? proposal;
+            try {
+              // 补窗放在 try 里：这格已移出窗口，外层 finally 不再管它；fill 里
+              // 的回调（cancelled / shouldSkip）若同步抛错，也得由下面的 finally
+              // 放掉这条的互斥。
+              fill();
+              final MihonAvailableExtension? resolved = download.resolved;
+              final Uint8List? bytes = download.bytes;
+              if (resolved == null || bytes == null) {
+                Error.throwWithStackTrace(
+                  download.error!,
+                  download.stackTrace!,
+                );
               }
+              proposal = await _prepareInstallBytes(
+                bytes,
+                expected: resolved,
+                expectedSigningKey: store.signingKey,
+              );
+              await commitInstall(
+                proposal,
+                trustSigner: trustSigner,
+                invalidateRuntime: false,
+              );
+              installedPackages.add(target.packageName);
+              alreadyInstalled.add(target.packageName);
+            } catch (exception) {
+              failedPackages[target.packageName] = '$exception';
+              if (exception is MihonRuntimeException) {
+                failureCodes[target.packageName] = exception.code;
+              }
+              // 失败的提案连着一份 tmp/*.apk.part，当场删掉而不是等下次启动兜底：
+              // 一百条里失败十条就是十份最大 100 MiB 的残骸。
+              if (proposal != null) {
+                try {
+                  await discardProposal(proposal);
+                } catch (_) {
+                  // 删不掉只是留个残骸，[_clearStagedApks] 下次启动会清。
+                }
+              }
+            } finally {
+              endExtensionAction(target.packageName);
             }
-          } finally {
-            endExtensionAction(target.packageName);
+          }
+        } finally {
+          // 取消（或异常）时窗口里还有已经开下的条目：等它们落地再放互斥，
+          // 字节直接丢掉——取消的语义是「不再安装新的」，下了一半的不装。
+          // 这时还没写 tmp 文件（写盘在串行的 _prepareInstallBytes 里），无残骸。
+          while (window.isNotEmpty) {
+            final _BulkSlot slot = window.removeFirst();
+            final Future<_BulkDownload>? pending = slot.download;
+            if (pending == null) continue;
+            await pending;
+            endExtensionAction(slot.target.packageName);
           }
         }
       }
@@ -901,6 +1003,31 @@ class MihonManager extends ChangeNotifier {
       failed: Map<String, String>.unmodifiable(failedPackages),
       failureCodes: Map<String, String>.unmodifiable(failureCodes),
     );
+  }
+
+  /// [installMany] 下载级的一条：在当次索引里找到目标并把 APK 拉进内存。
+  ///
+  /// **不抛**：错误装进 [_BulkDownload] 由串行的安装级按请求顺序落进报告。
+  /// 并发窗口里的 future 可能要等前面几条装完才被 await，抛出去会先成为
+  /// 「未处理的异步错误」。
+  Future<_BulkDownload> _downloadForBulk(
+    List<MihonAvailableExtension> catalogue,
+    MihonAvailableExtension target, {
+    required bool allowInsecure,
+  }) async {
+    try {
+      final MihonAvailableExtension resolved = _requireListed(
+        catalogue,
+        target.packageName,
+      );
+      final Uint8List bytes = await _storeClient.downloadApk(
+        resolved.apkUrl,
+        allowInsecure: allowInsecure,
+      );
+      return _BulkDownload.done(resolved, bytes);
+    } catch (error, stackTrace) {
+      return _BulkDownload.failed(error, stackTrace);
+    }
   }
 
   /// 丢弃一个没有走到 [commitInstall] 的安装提案。
@@ -1558,6 +1685,39 @@ class MihonBulkInstallReport {
   final Map<String, String> failureCodes;
 
   int get attempted => installed.length + skipped.length + failed.length;
+}
+
+/// [MihonManager.installMany] 同时在下的 APK 条数上限。
+///
+/// 4：一键更新几十个扩展时总耗时约缩到串行的 1/4（瓶颈是逐条往返与慢链路，不是
+/// 带宽），同时已下载未安装的 APK 同时最多 5 份在内存里（单份上限 100 MiB，
+/// 实际扩展 APK 多在 1 MiB 以内）。再高对老机器的内存与 GitHub 镜像的并发限制
+/// 都不友好。
+const int mihonBulkDownloadConcurrency = 4;
+
+/// [MihonManager.installMany] 并发窗口里的一格：[download] 为 null 表示这条
+/// 在开下之前就判了跳过（不需要更新 / 已在别处装着），不占互斥。
+class _BulkSlot {
+  const _BulkSlot(this.target, this.download);
+
+  final MihonAvailableExtension target;
+  final Future<_BulkDownload>? download;
+}
+
+/// 下载级的结果：成功时 [resolved] 与 [bytes] 非空，失败时 [error] 非空。
+class _BulkDownload {
+  const _BulkDownload.done(MihonAvailableExtension this.resolved, this.bytes)
+    : error = null,
+      stackTrace = null;
+
+  const _BulkDownload.failed(Object this.error, StackTrace this.stackTrace)
+    : resolved = null,
+      bytes = null;
+
+  final MihonAvailableExtension? resolved;
+  final Uint8List? bytes;
+  final Object? error;
+  final StackTrace? stackTrace;
 }
 
 /// 目录快照里每个扩展包的公开下载次数（同一包在多个仓库都有时取最大）；没有

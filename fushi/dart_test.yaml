@@ -10,6 +10,8 @@ tags:
   ffmpeg:
     description: Tests that spawn a real ffmpeg from PATH or the bundled unified FFmpeg; self-skip when absent.
   chrome:
-    description: Tests that launch a real headless Chrome via node (tool/reader_pitch_headless/cdp_client.mjs); self-skip when node/Chrome is absent.
+    description: Tests that launch a real headless Chrome, directly (CHROME_EXECUTABLE / standard install paths) or via node (tool/reader_pitch_headless/cdp_client.mjs); self-skip when node/Chrome is absent. dist_test only sends them to workers that declare the chrome capability (test/tools/dist_chrome_tag_guard_test.dart).
   design-preview:
     description: Renders the UI redesign preview images; self-skips unless FUSHI_DESIGN_PREVIEW_OUT is set (tool/design_preview/render_previews.sh).
+  flutter-gpu:
+    description: Renders through package:flutter_gpu; needs `flutter test --enable-impeller --enable-flutter-gpu` and self-skips without it (FUSHI_REQUIRE_FLUTTER_GPU=1 turns the skip into a failure). CI runs them in the "Flutter GPU tests" step.

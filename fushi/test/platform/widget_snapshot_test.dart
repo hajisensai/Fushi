@@ -6,6 +6,11 @@ import 'package:fushi/src/platform/widget_links.dart';
 import 'package:fushi/src/platform/widget_progress.dart';
 import 'package:fushi/src/platform/widget_snapshot.dart';
 import 'package:fushi/src/platform/widget_snapshot_labels.dart';
+import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/stats/study_goals.dart' show studyGoalCompactText;
+import 'package:fushi_engine/stats/study_goal_language.dart'
+    show StudyGoalUnitChoice;
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 /// Android 桌面小组件快照：纯构建函数的 JSON 形状 / 夹取 / 模块门控 / 空态 / 目标 /
@@ -84,24 +89,49 @@ void main() {
       for (final WidgetImmersionCategory c in WidgetImmersionCategory.values)
         c: 'C:${c.wire}',
     },
-    goalLabels: <String, String>{
-      for (final String id in <String>[
-        'total',
-        'reading',
-        'listening',
-        'watching',
-        'reviews',
-        'mined',
-        'chars',
-      ])
-        id: 'G:$id',
-    },
     profileName: profileName,
     multiProfile: multiProfile,
     hideTitles: hideTitles,
     hideDefinitions: hideDefinitions,
     hideProfile: hideProfile,
     nextDayAt: nextDayAt,
+  );
+
+  /// 一条目标记录（测试用 id = metric wire，除非另给）。
+  StudyGoal sg(
+    StudyGoalId metric,
+    int target, {
+    StudyGoalPeriod period = StudyGoalPeriod.daily,
+    String? language,
+    Set<int> days = const <int>{},
+    String? id,
+  }) => StudyGoal(
+    id: id ?? metric.wire,
+    metric: metric,
+    period: period,
+    target: target,
+    language: language,
+    activeWeekdays: days,
+  );
+
+  /// 目标输入；标签 = `G:<metric>[_<period>][@<lang>][ (rest)]`，看得出调用方拿到的
+  /// 是哪条记录、是否休息日。
+  WidgetGoalsInput gi(
+    List<StudyGoal> goals, {
+    Map<String, WidgetImmersionInput> languageImmersion =
+        const <String, WidgetImmersionInput>{},
+    Map<String, int> minedByDay = const <String, int>{},
+    String Function(int words)? formatWords,
+  }) => WidgetGoalsInput(
+    goals: goals,
+    languageImmersion: languageImmersion,
+    minedByDay: minedByDay,
+    formatWords: formatWords,
+    labelOf: (StudyGoal g, {required bool restDay}) =>
+        'G:${g.metric.wire}'
+        '${g.period == StudyGoalPeriod.daily ? '' : '_${g.period.wire}'}'
+        '${g.language == null ? '' : '@${g.language}'}'
+        '${restDay ? ' (rest)' : ''}',
   );
 
   List<Map<String, Object?>> listOf(Object? v) =>
@@ -143,7 +173,7 @@ void main() {
           charsByDay: const <String, int>{today: 12400},
           activeDays: const <String>{today},
         ),
-        goals: const WidgetGoalsInput(chars: 24800),
+        goals: gi(<StudyGoal>[sg(StudyGoalId.chars, 24800)]),
         multiProfile: true,
       );
       // 能原样过 JSON（通道里发的就是 jsonEncode）。
@@ -222,6 +252,7 @@ void main() {
           'time',
           'activeDays',
           'firstWeekday',
+          'weekStart',
         ]),
       );
       expect(
@@ -456,6 +487,23 @@ void main() {
       expect(minutes[34 - 7], 60);
       expect(m['time'], '${11 + 60 + 7 + 4 + 5}m');
       expect(m['firstWeekday'], 6, reason: '2026-09-19 is a Saturday');
+      expect(m['weekStart'], DateTime.monday);
+    });
+
+    test('month / heatmap carry the week start setting for native grids', () {
+      StatWindow.weekStartDay = DateTime.sunday;
+      addTearDown(() => StatWindow.weekStartDay = DateTime.monday);
+      final Map<String, Object?> s = build(
+        immersion: WidgetImmersionInput(
+          msByDay: <String, Map<WidgetImmersionCategory, int>>{
+            '2026-10-23': day(5),
+          },
+        ),
+      );
+      expect(mapOf(s['month'])['weekStart'], DateTime.sunday);
+      expect(mapOf(s['heatmap'])['weekStart'], DateTime.sunday);
+      // firstWeekday 仍是第一格的 ISO 星期，不随周起始日变。
+      expect(mapOf(s['month'])['firstWeekday'], 6);
     });
 
     test('week-over-week: null without previous data, signed percent else', () {
@@ -585,55 +633,554 @@ void main() {
   });
 
   group('goals', () {
-    test('only configured goals appear, with frac / done / formatting', () {
+    test(
+      'one entry per record, in record order, with frac / done / format',
+      () {
+        final Map<String, Object?> s = build(
+          immersion: WidgetImmersionInput(
+            msByDay: <String, Map<WidgetImmersionCategory, int>>{
+              today: day(30, 5, 25),
+            },
+            charsByDay: const <String, int>{today: 2000},
+          ),
+          goals: gi(
+            <StudyGoal>[
+              sg(StudyGoalId.total, 120),
+              sg(StudyGoalId.reading, 30),
+              sg(StudyGoalId.watching, 50),
+              sg(StudyGoalId.mined, 4),
+              sg(StudyGoalId.chars, 1000),
+            ],
+            minedByDay: const <String, int>{today: 1},
+          ),
+        );
+        final List<Map<String, Object?>> goals = listOf(s['goals']);
+        expect(goals.map((Map<String, Object?> g) => g['id']), <String>[
+          'total',
+          'reading',
+          'watching',
+          'mined',
+          'chars',
+        ]);
+        final Map<String, Object?> total = goals[0];
+        expect(total['label'], 'G:total');
+        expect(total['value'], '60m');
+        expect(total['target'], '120m');
+        expect(total['frac'], 0.5);
+        expect(total['done'], false);
+        expect(goals[1]['done'], true, reason: '30 of 30 minutes');
+        expect(goals[1]['frac'], 1);
+        expect(goals[2]['frac'], 0.5);
+        expect(goals[3]['value'], '#1');
+        expect(goals[3]['target'], '#4');
+        expect(goals[3]['frac'], 0.25);
+        expect(goals[4]['frac'], 1, reason: 'clamped');
+        expect(goals[4]['value'], '2000 chars');
+      },
+    );
+
+    test('several records of the same metric each get their own entry', () {
       final Map<String, Object?> s = build(
-        immersion: WidgetImmersionInput(
-          msByDay: <String, Map<WidgetImmersionCategory, int>>{
-            today: day(30, 5, 25),
-          },
-          charsByDay: const <String, int>{today: 2000},
+        immersion: const WidgetImmersionInput(
+          charsByDay: <String, int>{today: 3000},
         ),
-        goals: const WidgetGoalsInput(
-          totalMinutes: 120,
-          readingMinutes: 30,
-          videoMinutes: 50,
-          chars: 1000,
-          minedCards: 4,
-          minedToday: 1,
+        goals: gi(
+          <StudyGoal>[
+            sg(StudyGoalId.chars, 6000, id: 'a'),
+            sg(StudyGoalId.chars, 1000, id: 'b', language: 'ja'),
+          ],
+          languageImmersion: const <String, WidgetImmersionInput>{
+            'ja': WidgetImmersionInput(charsByDay: <String, int>{today: 800}),
+          },
         ),
       );
       final List<Map<String, Object?>> goals = listOf(s['goals']);
-      expect(goals.map((Map<String, Object?> g) => g['id']), <String>[
-        'total',
-        'reading',
-        'watching',
-        'mined',
-        'chars',
+      expect(goals.map((Map<String, Object?> g) => g['label']), <String>[
+        'G:chars',
+        'G:chars@ja',
       ]);
-      final Map<String, Object?> total = goals[0];
-      expect(total['label'], 'G:total');
-      expect(total['value'], '60m');
-      expect(total['target'], '120m');
-      expect(total['frac'], 0.5);
-      expect(total['done'], false);
-      expect(goals[1]['done'], true, reason: '30 of 30 minutes');
-      expect(goals[1]['frac'], 1);
-      expect(goals[2]['frac'], 0.5);
-      expect(goals[3]['value'], '#1');
-      expect(goals[3]['target'], '#4');
-      expect(goals[3]['frac'], 0.25);
-      expect(goals[4]['frac'], 1, reason: 'clamped');
-      expect(goals[4]['value'], '2000 chars');
+      expect(goals[0]['value'], '3000 chars');
+      expect(goals[1]['value'], '800 chars');
+      expect(goals[1]['frac'], 0.8);
+    });
 
-      final Map<String, Object?> t = mapOf(s['today']);
-      expect(t['goalMs'], 120 * 60000);
-      expect(t['goalTime'], '120m');
-      expect(t['goalFrac'], 0.5);
-      expect(t['goal'], 1, reason: 'legacy char goal fraction, clamped');
+    test('v2 fields: period, state, floored pct; compact falls back to the '
+        'snapshot formatters without compactOf', () {
+      final Map<String, Object?> s = build(
+        immersion: const WidgetImmersionInput(
+          charsByDay: <String, int>{today: 998},
+        ),
+        goals: gi(
+          <StudyGoal>[
+            sg(StudyGoalId.chars, 1000),
+            sg(StudyGoalId.mined, 4, period: StudyGoalPeriod.weekly),
+            sg(StudyGoalId.reading, 30, days: <int>{DateTime.monday}),
+          ],
+          minedByDay: const <String, int>{today: 6},
+        ),
+      );
+      final List<Map<String, Object?>> goals = listOf(s['goals']);
+      expect(goals[0]['period'], 'daily');
+      expect(goals[0]['state'], 'inProgress');
+      expect(goals[0]['pct'], 99, reason: '99.8% must not read 100%');
+      expect(goals[0]['done'], false);
+      expect(goals[0]['compact'], '998 chars / 1000 chars');
+      expect(goals[0]['caption'], '');
+      expect(goals[1]['period'], 'weekly');
+      expect(goals[1]['state'], 'exceeded');
+      expect(goals[1]['pct'], 100);
+      expect(goals[1]['compact'], '#6 / #4');
+      // 2026-10-23 是周五，只在周一生效 → 休息日，没开始。
+      expect(goals[2]['state'], 'restDay');
+      expect(goals[2]['pct'], 0);
+    });
+
+    test('compactOf (study_goals.dart) fills the separate text fields', () {
+      LocaleSettings.setLocale(AppLocale.en);
+      final Map<String, Object?> s = build(
+        immersion: const WidgetImmersionInput(
+          charsByDay: <String, int>{today: 14800},
+        ),
+        goals: WidgetGoalsInput(
+          goals: <StudyGoal>[
+            sg(StudyGoalId.chars, 5000, language: 'ja'),
+            sg(StudyGoalId.chars, 4000, period: StudyGoalPeriod.monthly),
+          ],
+          languageImmersion: const <String, WidgetImmersionInput>{
+            'ja': WidgetImmersionInput(charsByDay: <String, int>{today: 14800}),
+          },
+          compactOf: (StudyGoalProgress g) => studyGoalCompactText(
+            g,
+            unitChoice: StudyGoalUnitChoice.auto,
+            languageTag: 'en',
+          ),
+        ),
+      );
+      final List<Map<String, Object?>> goals = listOf(s['goals']);
+      expect(goals[0]['language'], '日本語');
+      expect(goals[0]['metric'], 'Characters');
+      expect(goals[0]['caption'], 'Characters');
+      expect(goals[0]['compact'], '14.8K / 5K');
+      expect(goals[0]['valueShort'], '14.8K');
+      expect(goals[0]['targetShort'], '5K');
+      expect(goals[0]['status'], '+9.8K');
+      expect(goals[0]['state'], 'exceeded');
+      expect(goals[1]['language'], 'All languages');
+      expect(goals[1]['periodLabel'], 'Month');
+      expect(goals[1]['caption'], 'Characters · Month');
+      expect(goals[1]['compact'], '14.8K / 4K');
+    });
+
+    test('widget entries = computeStudyGoals (same numbers as home): mixed '
+        'periods, same metric twice, all-language aggregation', () {
+      final WidgetImmersionInput immersion = WidgetImmersionInput(
+        msByDay: <String, Map<WidgetImmersionCategory, int>>{
+          '2026-10-19': day(20),
+          today: day(10, 15),
+        },
+        charsByDay: const <String, int>{'2026-10-01': 700, today: 300},
+      );
+      final WidgetGoalsInput input = gi(
+        <StudyGoal>[
+          sg(StudyGoalId.total, 20, id: 'a'),
+          sg(StudyGoalId.total, 60, id: 'b', period: StudyGoalPeriod.weekly),
+          sg(StudyGoalId.chars, 900, id: 'c', period: StudyGoalPeriod.monthly),
+          sg(StudyGoalId.chars, 200, id: 'd', language: 'zh'),
+          sg(StudyGoalId.reading, 5, id: 'e', language: 'xx-unknown'),
+        ],
+        languageImmersion: const <String, WidgetImmersionInput>{
+          'zh': WidgetImmersionInput(charsByDay: <String, int>{today: 250}),
+        },
+      );
+      final List<Map<String, Object?>> goals = listOf(
+        build(immersion: immersion, goals: input)['goals'],
+      );
+      final List<StudyGoalProgress> app = computeStudyGoals(
+        goals: input,
+        immersion: immersion,
+        day: today,
+        reviewsByDay: null,
+      );
+      expect(goals.length, app.length);
+      for (int i = 0; i < app.length; i++) {
+        expect(goals[i]['frac'], app[i].fraction, reason: 'entry $i');
+        expect(goals[i]['state'], app[i].state.wire, reason: 'entry $i');
+        expect(goals[i]['pct'], app[i].percent, reason: 'entry $i');
+      }
+      // 全部语言：今日 25 分 ≥ 20；本周（周一起）45 分 < 60；本月字数 1000 ≥ 900。
+      expect(
+        <Object?>[for (final Map<String, Object?> g in goals) g['state']],
+        <String>[
+          'exceeded',
+          'inProgress',
+          'exceeded',
+          'exceeded',
+          'notStarted',
+        ],
+      );
+    });
+
+    test('DST transition and month boundary: windows are calendar keys', () {
+      // 2026-11-01（周日）美国夏令时结束；窗口只按统计日 key 算，与宿主时区无关。
+      StatWindow.weekStartDay = DateTime.sunday;
+      addTearDown(() => StatWindow.weekStartDay = DateTime.monday);
+      const String monday = '2026-11-02';
+      final Map<String, Object?> s = build(
+        day: monday,
+        immersion: const WidgetImmersionInput(
+          charsByDay: <String, int>{
+            '2026-10-31': 5000,
+            '2026-11-01': 100,
+            monday: 200,
+          },
+        ),
+        goals: gi(<StudyGoal>[
+          sg(StudyGoalId.chars, 1000, id: 'w', period: StudyGoalPeriod.weekly),
+          sg(StudyGoalId.chars, 1000, id: 'm', period: StudyGoalPeriod.monthly),
+        ]),
+      );
+      final List<Map<String, Object?>> goals = listOf(s['goals']);
+      expect(goals[0]['value'], '300 chars', reason: 'Sun 11-01 + Mon 11-02');
+      expect(goals[1]['value'], '300 chars', reason: 'October not counted');
+    });
+
+    group('studyGoalDailySeries / studyGoalDailyShare (home Today bars)', () {
+      // 2026-11-18（周三）起 3 天。
+      const List<String> keys = <String>[
+        '2026-11-16',
+        '2026-11-17',
+        '2026-11-18',
+      ];
+      final WidgetImmersionInput all = WidgetImmersionInput(
+        msByDay: <String, Map<WidgetImmersionCategory, int>>{
+          '2026-11-16': day(10, 0, 20),
+          '2026-11-18': day(5, 0, 40),
+        },
+        charsByDay: const <String, int>{'2026-11-16': 900, '2026-11-17': 300},
+      );
+
+      test('per-day amount of the goal metric, even for a weekly goal', () {
+        final StudyGoal watching = sg(
+          StudyGoalId.watching,
+          600,
+          period: StudyGoalPeriod.weekly,
+        );
+        expect(
+          studyGoalDailySeries(
+            goal: watching,
+            goals: gi(<StudyGoal>[watching]),
+            immersion: all,
+            dayKeys: keys,
+            reviewsByDay: null,
+          ),
+          <int>[20 * 60000, 0, 40 * 60000],
+        );
+      });
+
+      test(
+        'language goals use that language only; counts for mined / reviews',
+        () {
+          final StudyGoal zh = sg(StudyGoalId.chars, 4000, language: 'zh');
+          final StudyGoal mined = sg(StudyGoalId.mined, 5);
+          final StudyGoal reviews = sg(StudyGoalId.reviews, 100);
+          final WidgetGoalsInput input = gi(
+            <StudyGoal>[zh, mined, reviews],
+            languageImmersion: const <String, WidgetImmersionInput>{
+              'zh': WidgetImmersionInput(
+                charsByDay: <String, int>{'2026-11-17': 120},
+              ),
+            },
+            minedByDay: const <String, int>{'2026-11-18': 3},
+          );
+          List<int> series(StudyGoal g, [Map<String, int>? reviewsByDay]) =>
+              studyGoalDailySeries(
+                goal: g,
+                goals: input,
+                immersion: all,
+                dayKeys: keys,
+                reviewsByDay: reviewsByDay,
+              );
+          expect(series(zh), <int>[0, 120, 0]);
+          expect(series(mined), <int>[0, 0, 3]);
+          expect(series(reviews), <int>[0, 0, 0]);
+          expect(series(reviews, const <String, int>{'2026-11-16': 50}), <int>[
+            50,
+            0,
+            0,
+          ]);
+        },
+      );
+
+      test(
+        'daily share: daily = target, weekly / 7, monthly / days in month',
+        () {
+          expect(
+            studyGoalDailyShare(sg(StudyGoalId.chars, 7000), '2026-11-18'),
+            7000,
+          );
+          expect(
+            studyGoalDailyShare(
+              sg(StudyGoalId.total, 70, period: StudyGoalPeriod.weekly),
+              '2026-11-18',
+            ),
+            10 * 60000,
+          );
+          expect(
+            studyGoalDailyShare(
+              sg(StudyGoalId.chars, 3000, period: StudyGoalPeriod.monthly),
+              '2026-11-18',
+            ),
+            100,
+            reason: 'November has 30 days',
+          );
+        },
+      );
+    });
+
+    group('today rings (Android Today widget) come from the records', () {
+      test('time ring = daily all-languages total record', () {
+        final Map<String, Object?> s = build(
+          immersion: WidgetImmersionInput(
+            msByDay: <String, Map<WidgetImmersionCategory, int>>{
+              today: day(30, 0, 30),
+            },
+          ),
+          goals: gi(<StudyGoal>[
+            // 语言限定 / 非每日的时长目标都不驱动「今日」环。
+            sg(StudyGoalId.total, 10, id: 'ja', language: 'ja'),
+            sg(StudyGoalId.total, 600, id: 'w', period: StudyGoalPeriod.weekly),
+            sg(StudyGoalId.total, 120, id: 'day'),
+          ]),
+        );
+        final Map<String, Object?> t = mapOf(s['today']);
+        expect(t['goalMs'], 120 * 60000);
+        expect(t['goalTime'], '120m');
+        expect(t['goalFrac'], 0.5);
+        expect(mapOf(s['week'])['goalDays'], 0);
+      });
+
+      test('no daily all-languages total record: no time ring', () {
+        final Map<String, Object?> t = mapOf(
+          build(
+            immersion: WidgetImmersionInput(
+              msByDay: <String, Map<WidgetImmersionCategory, int>>{
+                today: day(30),
+              },
+            ),
+            goals: gi(<StudyGoal>[
+              sg(StudyGoalId.total, 30, language: 'ja'),
+              sg(StudyGoalId.reading, 30),
+            ]),
+          )['today'],
+        );
+        expect(t['goalMs'], 0);
+        expect(t['goalTime'], '');
+        expect(t['goalFrac'], 0);
+      });
+
+      test('chars ring prefers the daily all-languages chars record', () {
+        final Map<String, Object?> s = build(
+          immersion: const WidgetImmersionInput(
+            charsByDay: <String, int>{today: 2000},
+          ),
+          goals: gi(
+            <StudyGoal>[
+              sg(StudyGoalId.chars, 1000, id: 'ja', language: 'ja'),
+              sg(
+                StudyGoalId.chars,
+                2000,
+                id: 'w',
+                period: StudyGoalPeriod.weekly,
+              ),
+              sg(StudyGoalId.chars, 8000, id: 'all'),
+            ],
+            languageImmersion: const <String, WidgetImmersionInput>{
+              'ja': WidgetImmersionInput(
+                charsByDay: <String, int>{today: 1000},
+              ),
+            },
+          ),
+        );
+        expect(mapOf(s['today'])['goal'], 0.25);
+      });
+
+      test('falls back to the first daily chars record of any language', () {
+        final Map<String, Object?> s = build(
+          immersion: const WidgetImmersionInput(
+            charsByDay: <String, int>{today: 5000},
+          ),
+          goals: gi(
+            <StudyGoal>[
+              sg(
+                StudyGoalId.chars,
+                100,
+                id: 'm',
+                period: StudyGoalPeriod.monthly,
+              ),
+              sg(StudyGoalId.chars, 4000, id: 'ja', language: 'ja'),
+              sg(StudyGoalId.chars, 100, id: 'zh', language: 'zh'),
+            ],
+            languageImmersion: const <String, WidgetImmersionInput>{
+              'ja': WidgetImmersionInput(
+                charsByDay: <String, int>{today: 1000},
+              ),
+            },
+          ),
+        );
+        expect(mapOf(s['today'])['goal'], 0.25);
+      });
+
+      test('only weekly / monthly chars records: no chars ring', () {
+        final Map<String, Object?> s = build(
+          immersion: const WidgetImmersionInput(
+            charsByDay: <String, int>{today: 5000},
+          ),
+          goals: gi(<StudyGoal>[
+            sg(StudyGoalId.chars, 6000, period: StudyGoalPeriod.weekly),
+          ]),
+        );
+        expect(mapOf(s['today'])['goal'], 0);
+        // 「今日字数」本身不受目标影响。
+        expect(mapOf(s['today'])['chars'], '5000 chars');
+      });
+    });
+
+    test('word unit: words formatter and language-filtered numerator', () {
+      // 英语目标按词；分子取该语言过滤后的沉浸量，今日字数仍是全部。
+      final Map<String, Object?> s = build(
+        immersion: const WidgetImmersionInput(
+          charsByDay: <String, int>{today: 5000},
+        ),
+        goals: gi(
+          <StudyGoal>[sg(StudyGoalId.chars, 2000, language: 'en')],
+          languageImmersion: const <String, WidgetImmersionInput>{
+            'en': WidgetImmersionInput(charsByDay: <String, int>{today: 500}),
+          },
+          formatWords: (int n) => '$n words',
+        ),
+      );
+      final Map<String, Object?> g = listOf(s['goals']).single;
+      expect(g['label'], 'G:chars@en');
+      expect(g['value'], '500 words');
+      expect(g['target'], '2000 words');
+      expect(g['frac'], 0.25);
+      expect(mapOf(s['today'])['chars'], '5000 chars');
+    });
+
+    test('language with no counted content: numerator 0', () {
+      final Map<String, Object?> s = build(
+        immersion: WidgetImmersionInput(
+          msByDay: <String, Map<WidgetImmersionCategory, int>>{today: day(60)},
+          charsByDay: const <String, int>{today: 5000},
+        ),
+        goals: gi(<StudyGoal>[
+          sg(StudyGoalId.chars, 1000, language: 'ko'),
+          sg(StudyGoalId.reading, 30, language: 'ko'),
+        ]),
+      );
+      final List<Map<String, Object?>> goals = listOf(s['goals']);
+      expect(goals[0]['value'], '0 chars');
+      expect(goals[1]['value'], '0m');
+      expect(goals.every((Map<String, Object?> g) => g['frac'] == 0), isTrue);
+    });
+
+    test('weekly chars goal: numerator = natural week since Monday', () {
+      // today = 2026-10-23（周五）→ 本周一 = 2026-10-19。上周日 10-18 不计入。
+      final Map<String, Object?> s = build(
+        immersion: const WidgetImmersionInput(
+          charsByDay: <String, int>{
+            '2026-10-18': 9000,
+            '2026-10-19': 1000,
+            '2026-10-21': 2000,
+            today: 3000,
+          },
+        ),
+        goals: gi(<StudyGoal>[
+          sg(StudyGoalId.chars, 12000, period: StudyGoalPeriod.weekly),
+        ]),
+      );
+      final Map<String, Object?> g = listOf(s['goals']).single;
+      expect(g['id'], 'chars');
+      expect(g['label'], 'G:chars_weekly');
+      expect(g['value'], '6000 chars');
+      expect(g['target'], '12000 chars');
+      expect(g['frac'], 0.5);
+      expect(g['done'], false);
+    });
+
+    test('monthly time goal: numerator = calendar month since the 1st', () {
+      final Map<String, Object?> s = build(
+        immersion: WidgetImmersionInput(
+          msByDay: <String, Map<WidgetImmersionCategory, int>>{
+            '2026-09-30': day(600),
+            '2026-10-01': day(30),
+            '2026-10-15': day(20, 10),
+            today: day(0, 0, 60),
+          },
+        ),
+        goals: gi(<StudyGoal>[
+          sg(StudyGoalId.total, 240, period: StudyGoalPeriod.monthly),
+          sg(
+            StudyGoalId.watching,
+            120,
+            id: 'w',
+            period: StudyGoalPeriod.monthly,
+          ),
+        ]),
+      );
+      final List<Map<String, Object?>> goals = listOf(s['goals']);
+      expect(goals[0]['label'], 'G:total_monthly');
+      expect(goals[0]['value'], '120m');
+      expect(goals[0]['frac'], 0.5);
+      expect(goals[1]['value'], '60m');
+    });
+
+    test('weekly reviews / mined goals sum the week', () {
+      // 复习月表右对齐到今天：10-18(日)=1, 10-19=2, 10-20=3, 10-21=4, 10-22=5,
+      // 今天以 reviewedToday 为准 = 40 → 本周 2+3+4+5+40 = 54。
+      final Map<String, Object?> s = build(
+        goals: gi(
+          <StudyGoal>[
+            sg(StudyGoalId.reviews, 100, period: StudyGoalPeriod.weekly),
+            sg(StudyGoalId.mined, 20, period: StudyGoalPeriod.weekly),
+          ],
+          minedByDay: const <String, int>{
+            '2026-10-18': 50,
+            '2026-10-19': 3,
+            today: 2,
+          },
+        ),
+        srs: const WidgetSrsInput(
+          provider: WidgetSrsProvider.fushi,
+          reviewedToday: 40,
+          reviewsByDay: <int>[1, 2, 3, 4, 5, 6],
+        ),
+      );
+      final List<Map<String, Object?>> goals = listOf(s['goals']);
+      expect(goals[0]['value'], '#54');
+      expect(goals[1]['value'], '#5');
+      expect(goals[1]['frac'], 0.25);
+    });
+
+    test('rest day: label marks it, progress still shown', () {
+      // 2026-10-23 是周五（5）：只在周一到周四生效的目标今天是休息日。
+      final Map<String, Object?> s = build(
+        immersion: const WidgetImmersionInput(
+          charsByDay: <String, int>{today: 500},
+        ),
+        goals: gi(<StudyGoal>[
+          sg(StudyGoalId.chars, 1000, days: const <int>{1, 2, 3, 4}),
+          sg(StudyGoalId.mined, 5, id: 'm', days: const <int>{5}),
+        ]),
+      );
+      final List<Map<String, Object?>> goals = listOf(s['goals']);
+      expect(goals[0]['label'], 'G:chars (rest)');
+      expect(goals[0]['frac'], 0.5);
+      expect(goals[1]['label'], 'G:mined');
     });
 
     test('no goals set: empty list', () {
-      expect(build(goals: const WidgetGoalsInput())['goals'], isEmpty);
+      expect(build(goals: gi(const <StudyGoal>[]))['goals'], isEmpty);
     });
 
     test('week goalDays counts days meeting the time goal', () {
@@ -646,13 +1193,15 @@ void main() {
             '2026-10-20': day(0, 0, 45),
           },
         ),
-        goals: const WidgetGoalsInput(totalMinutes: 30),
+        goals: gi(<StudyGoal>[sg(StudyGoalId.total, 30)]),
       );
       expect(mapOf(s['week'])['goalDays'], 3);
     });
 
     test('reviews goal only exists for Fushi SRS', () {
-      const WidgetGoalsInput goals = WidgetGoalsInput(reviews: 100);
+      final WidgetGoalsInput goals = gi(<StudyGoal>[
+        sg(StudyGoalId.reviews, 100),
+      ]);
       final Map<String, Object?> fushi = build(
         goals: goals,
         srs: const WidgetSrsInput(
@@ -1062,20 +1611,11 @@ void main() {
       expect(v['agoDays'], contains('{n}'));
     });
 
-    test('category and goal labels cover every id', () {
+    test('category labels cover every id', () {
       expect(
         buildWidgetCategoryLabels().keys.toSet(),
         WidgetImmersionCategory.values.toSet(),
       );
-      expect(buildWidgetGoalLabels().keys.toSet(), <String>{
-        'total',
-        'reading',
-        'listening',
-        'watching',
-        'reviews',
-        'mined',
-        'chars',
-      });
     });
 
     test('label keys are unique', () {
@@ -1322,6 +1862,7 @@ void main() {
       expect(levels[levels.length - 4], 1);
       expect(levels.first, 3);
       expect(h['firstWeekday'], 6); // 2026-07-04 是周六
+      expect(h['weekStart'], DateTime.monday);
       expect(h['activeDays'], 5);
       expect(h['time'], '${70 + 20 + 5 + 40}m');
     });
@@ -1355,7 +1896,10 @@ void main() {
           charsByDay: const <String, int>{today: 500},
           activeDays: const <String>{today, '2026-10-22'},
         ),
-        goals: const WidgetGoalsInput(minedCards: 5, minedToday: 3),
+        goals: gi(
+          <StudyGoal>[sg(StudyGoalId.mined, 5)],
+          minedByDay: const <String, int>{today: 3},
+        ),
         srs: const WidgetSrsInput(
           provider: WidgetSrsProvider.fushi,
           reviewedToday: 4,

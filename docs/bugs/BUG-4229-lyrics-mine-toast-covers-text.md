@@ -1,0 +1,6 @@
+## BUG-4229 · 歌词模式（平板）制卡结果小卡压住正文
+- **报告**：2026-11-06（用户：应用内反馈 OOZ-lrCsU0，Android 平板歌词模式竖排小说；机器人代提）
+- **真实性**：✅ 真 bug——`FushiToast.anchorMineToCorner` 的定位规则是把制卡结果小卡贴在歌词矩形**内侧**的底部起始角（旧 `fushi/lib/src/utils/misc/fushi_toast.dart:542` `_cornerGeometry`：`bottom = overlay 高 - 区域下沿 + 12`、`left = 区域左沿 + 12`）。歌词矩形就是正文区域，新版宽屏几何（`lyrics_player_modern_shared.dart` `LyricsModernWideGeometry`）里它横向铺满，竖排正文的列一直排到矩形底部，小卡必然压住左下几列。不是角落选错，而是「贴在正文区域里」这条规则本身就会挡字。
+- **[x] ① 已修复** — 定位规则改成贴**正文区域的上角、行流收尾那一侧**（用户 2026-11-07 拍板：不要放到歌词下方盖住时间读数和进度条，放左上或右上）：新纯函数 `mineToastOffsetInRegion`（同文件）——横排 LTR 落右上，竖排右起左排 / 横排 RTL 落左上（竖排首列在右，左上是还没读到的一侧），纵向贴区域上沿内缩 12，横纵夹在屏幕内。登记方给的区域本身就是正文区域（已在顶栏 / 安全区之下、底部控件之上），所以不进顶栏、不压进度条。`FushiToast.anchorMineToCorner` 新增可选 `textFlow`（缺省跟 `Directionality`），歌词覆盖层按 `LyricsPlayerData.verticalText`（来自 `lyricsVerticalWriting`）传 rtl。所有登记方同一条规则，没有歌词模式特判。由 `CustomSingleChildLayout` 按卡片实测尺寸摆放，摆放层本身不命中。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/mine_toast_test.dart`（LTR 右上 / rtl 左上 / 夹回屏内的纯函数断言，widget 层右上与左上各一条）；`fushi/test/media/audiobook/lyrics_player_mine_corner_test.dart`（真 `ReaderLyricsPlayerOverlay`，手机 390×844 与平板 1280×800 × 横排 / 竖排，顶部 40 安全区：小卡贴歌词 WebView 上沿内 12、竖排贴左 / 横排贴右、不进安全区、不与任何 `FushiWavySeekBar` 相交）。
+- **备注**：toast 拿不到 WebView 里文字的实际排布，只按行流方向选「最可能空」的上角；若某一页上角恰好也有字（例如横排长行贴满整宽），仍会压到那一角——这是规则层面能做到的上限。未在平板真机复测。

@@ -18,6 +18,88 @@ final String _localRoot = Platform.isWindows
     : '/Media/Downloads';
 
 void main() {
+  group('非法字符替身：新任务全角，旧任务沿用 _（ZDYNkAP3Ln）', () {
+    VideoOrganizationPlan planFor({required bool legacy}) =>
+        const VideoDownloadOrganizer().plan(
+          VideoOrganizationRequest(
+            torrentId: 'hash',
+            title: 'Re:Zero? <Ex>',
+            year: 2016,
+            kind: VideoOrganizationKind.episodic,
+            sourceRoot: _localRoot,
+            pathMapping: VideoDownloadPathMapping(
+              remoteRoot: '/library',
+              localRoot: _localRoot,
+            ),
+            legacyUnderscoreNames: legacy,
+          ),
+          const <TorrentFileEntry>[
+            TorrentFileEntry(
+              name: '[G] Re Zero - 03 [1080p].mkv',
+              size: 9,
+              progress: 1,
+              index: 0,
+            ),
+          ],
+        );
+
+    test('默认全角替身；legacy 请求逐字节复现旧路径', () {
+      expect(
+        planFor(legacy: false).files.single.targetRelativePath,
+        'Re：Zero？ ＜Ex＞ (2016)/Season 01/Re：Zero？ ＜Ex＞ (2016) - S01E03.mkv',
+      );
+      expect(
+        planFor(legacy: true).files.single.targetRelativePath,
+        'Re_Zero_ _Ex_ (2016)/Season 01/Re_Zero_ _Ex_ (2016) - S01E03.mkv',
+      );
+      expect(videoOrganizationDisplayRoot('A: B', null), 'A： B');
+      expect(videoOrganizationDisplayRoot('A: B', 1, legacy: true), 'A_ B (1)');
+      expect(
+        () => videoOrganizationDisplayRoot('\u0001', null),
+        throwsFormatException,
+      );
+    });
+
+    test('沿用旧规则的判据：落过的意图优先，其次看哪种作品目录已存在', () {
+      bool keeps({
+        String title = 'Re:Zero',
+        Iterable<String?> persisted = const <String?>[],
+        bool legacyExists = false,
+        bool currentExists = false,
+      }) => videoOrganizationKeepsLegacyNames(
+        title: title,
+        year: 2016,
+        persistedTargets: persisted,
+        legacyRootExists: legacyExists,
+        currentRootExists: currentExists,
+      );
+
+      // 崩溃重放：意图是旧规则算的 → 旧规则；新规则算的 → 新规则，与磁盘无关。
+      expect(
+        keeps(
+          persisted: <String?>[
+            null,
+            'Re_Zero (2016)/Season 01/Re_Zero (2016) - S01E01.mkv',
+          ],
+        ),
+        isTrue,
+      );
+      expect(
+        keeps(
+          persisted: <String?>['Re：Zero (2016)/Season 01/x.mkv'],
+          legacyExists: true,
+        ),
+        isFalse,
+      );
+      // 没落过意图：旧作品目录在、新的不在 → 跟着已有的集走。
+      expect(keeps(legacyExists: true), isTrue);
+      expect(keeps(legacyExists: true, currentExists: true), isFalse);
+      expect(keeps(), isFalse);
+      // 标题里没有非法字符：两种规则同名，恒走新规则。
+      expect(keeps(title: 'Plain', legacyExists: true), isFalse);
+    });
+  });
+
   test('remote/local path mapping is bidirectional and prefix-safe', () {
     final VideoDownloadPathMapping mapping = VideoDownloadPathMapping(
       remoteRoot: '/srv/downloads/',
@@ -83,12 +165,14 @@ void main() {
           );
 
       expect(result.ok, isTrue, reason: result.error);
+      // 非法字符换全角替身（与视频库「整理文件名」同一套，ZDYNkAP3Ln），
+      // 不再是 `Show_ Name`。
       expect(
         result.files.single.targetRelativePath,
-        'Show_ Name (2024)/Season 02/Show_ Name (2024) - S02E03.mkv',
+        'Show： Name (2024)/Season 02/Show： Name (2024) - S02E03.mkv',
       );
       expect(backend.operations, <String>[
-        'rename:4:Show_ Name (2024)/Season 02/Show_ Name (2024) - S02E03.mkv',
+        'rename:4:Show： Name (2024)/Season 02/Show： Name (2024) - S02E03.mkv',
         'move:/library',
       ]);
       expect(committed, hasLength(1));
@@ -329,16 +413,16 @@ void main() {
 
     test('job Re:Re: renames the smaller Re：Re： file, mirrors Re：', () async {
       expect(await targetsFor('ぼっち・ざ・ろっく！ Re:Re:'), <String>[
-        'ぼっち・ざ・ろっく！ Re_Re_ (2024)/'
+        'ぼっち・ざ・ろっく！ Re：Re： (2024)/'
             '[Airota&VCB-Studio] BOCCHI THE ROCK! Re： [Ma10p_1080p][x265_flac].mkv',
-        'ぼっち・ざ・ろっく！ Re_Re_ (2024)/ぼっち・ざ・ろっく！ Re_Re_ (2024).mkv',
+        'ぼっち・ざ・ろっく！ Re：Re： (2024)/ぼっち・ざ・ろっく！ Re：Re： (2024).mkv',
       ]);
     });
 
     test('job Re: renames the Re： file, mirrors Re：Re：', () async {
       expect(await targetsFor('ぼっち・ざ・ろっく！ Re:'), <String>[
-        'ぼっち・ざ・ろっく！ Re_ (2024)/ぼっち・ざ・ろっく！ Re_ (2024).mkv',
-        'ぼっち・ざ・ろっく！ Re_ (2024)/'
+        'ぼっち・ざ・ろっく！ Re： (2024)/ぼっち・ざ・ろっく！ Re： (2024).mkv',
+        'ぼっち・ざ・ろっく！ Re： (2024)/'
             '[Airota&VCB-Studio] BOCCHI THE ROCK! Re：Re： [Ma10p_1080p][x265_flac].mkv',
       ]);
     });

@@ -14,6 +14,8 @@ import 'package:fushi/src/media/video/video_danmaku_model.dart';
 import 'package:fushi/src/media/video/video_immersive_mode.dart';
 import 'package:fushi/src/media/video/video_mpv_config.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
+import 'package:fushi/src/media/video/video_web_playback_mode_panel.dart'
+    show VideoWebPlaybackModeHost;
 import 'package:fushi/src/media/video/video_quick_settings_sheet.dart';
 import 'package:fushi/src/media/video/video_shader_tier.dart';
 import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
@@ -158,7 +160,10 @@ VideoQuickSettingsHost buildTestVideoHost({
     subtitlePositionListenable: subtitlePositionListenable,
     subtitleWaveformCues: subtitleWaveformCues,
     videoDurationMs: videoDurationMs,
-    loadSubtitleWaveform: loadSubtitleWaveform,
+    // 测试只关心「有 / 无波形、抽没抽」：每段都回同一条包络（host 侧按段请求）。
+    loadSubtitleWaveform: loadSubtitleWaveform == null
+        ? null
+        : (int start, int end) => loadSubtitleWaveform(),
     speed: () => s.speed,
     onPreviewSpeed: (double v) async {
       s.speed = v;
@@ -262,6 +267,7 @@ Widget buildVideoSheetUnderTest({
   required VideoQuickSettingsHost host,
   String? initialCategory,
   List<VideoGroup> groups = VideoGroup.values,
+  VideoWebPlaybackModeHost? webPlaybackMode,
 }) {
   return ProviderScope(
     child: Consumer(
@@ -272,6 +278,7 @@ Widget buildVideoSheetUnderTest({
           host: host,
           initialCategory: initialCategory,
           groups: groups,
+          webPlaybackMode: webPlaybackMode,
         );
       },
     ),

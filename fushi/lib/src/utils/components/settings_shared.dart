@@ -1,4 +1,8 @@
+import 'dart:math' as math;
+
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_backdrop_frost.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fading_edge_scrollview/fading_edge_scrollview.dart';
 import 'package:cupertino_ui/cupertino_ui.dart';
 import 'package:material_ui/material_ui.dart';
@@ -30,15 +34,15 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/components/fushi_focusable.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_option_selection_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_popup_button.dart'
+    show FushiApplePopUpButtonFace;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
-    show
-        FushiIconButtonControl,
-        FushiPlainButton,
-        fushiClearGlassBezel,
-        fushiClearGlassSettings;
+    show FushiIconButtonControl, FushiPlainButton, fushiClearGlassSettings;
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
@@ -47,7 +51,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
     show FushiAppleSwitch, FushiSegmentedButton;
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
-    show GlassStepper, GlassTextField;
+    show GlassStepper;
 
 class SettingsSectionHeader extends StatelessWidget {
   const SettingsSectionHeader(this.text, {super.key, this.padding});
@@ -70,10 +74,10 @@ class SettingsSectionHeader extends StatelessWidget {
         padding:
             padding ??
             EdgeInsets.fromLTRB(
-              apple.desktop ? 10 : 16,
+              apple.desktop ? 10 * apple.scale : 16,
               16,
               16,
-              apple.desktop ? 6 : 7,
+              apple.desktop ? 6 * apple.scale : 7,
             ),
         child: Text(text, style: settingsAppleSectionTitleStyle(context)),
       );
@@ -91,6 +95,20 @@ TextStyle settingsAppleSectionTitleStyle(BuildContext context) =>
     FushiAppleMetrics.of(
       context,
     ).footnoteStyle(context).copyWith(fontWeight: FontWeight.w600);
+
+/// 分组外标题行尾的文字动作（[AdaptiveSettingsSection.titleTrailing]）：与
+/// [settingsAppleSectionTitleStyle] 同字号同行高（标题行不因动作变高），常规字重、
+/// 强调色（不可用时 tertiaryLabel）。
+TextStyle settingsSectionTitleActionStyle(
+  BuildContext context, {
+  bool enabled = true,
+}) {
+  final FushiAppleColors colors = appleColorsOf(context);
+  return settingsAppleSectionTitleStyle(context).copyWith(
+    fontWeight: FontWeight.w400,
+    color: enabled ? colors.accent : colors.tertiaryLabel,
+  );
+}
 
 const kSettingsSegmentedStyle = ButtonStyle(
   visualDensity: VisualDensity.compact,
@@ -156,9 +174,15 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
     this.actions,
     this.padding,
     this.bottom,
+    this.subtitle,
   });
 
   final Widget title;
+
+  /// 页名下一行（可交互，如词典管理页的「配置 · 名字」按钮）。与 [title] 分开
+  /// 传：[title] 保持纯 [Text] 才走统一的页头大字；把副标题拼进标题组件会让整页
+  /// 退回旧胶囊顶栏（BUG-5410）。
+  final Widget? subtitle;
   final List<Widget> children;
   final List<Widget>? actions;
   final EdgeInsetsGeometry? padding;
@@ -193,6 +217,17 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
                   ? Row(mainAxisSize: MainAxisSize.min, children: actions!)
                   : null,
             ),
+            if (subtitle != null)
+              SliverPadding(
+                // 与下方列表同一水平内边距，副标题和第一组左缘对齐。
+                padding: const EdgeInsetsDirectional.symmetric(horizontal: 12),
+                sliver: SliverToBoxAdapter(
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: subtitle,
+                  ),
+                ),
+              ),
             SliverPadding(
               padding: listPadding,
               sliver: SliverList(delegate: SliverChildListDelegate(children)),
@@ -209,6 +244,7 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
     if (titleWidget is Text && titleWidget.data != null) {
       return SettingsKitScaffold(
         title: titleWidget.data!,
+        subtitle: subtitle,
         actions: actions ?? const <Widget>[],
         // 列表滚到叠放的页头底下：顶部内边距加上壳的页头让位。
         bodyConsumesTopPadding: true,
@@ -239,6 +275,7 @@ class AdaptiveSettingsScaffold extends StatelessWidget {
     final Widget list = ListView(padding: listPadding, children: children);
     return FushiToolScaffold.customTitle(
       title: title,
+      subtitle: subtitle,
       actions: actions ?? const <Widget>[],
       body: bottom == null
           ? list
@@ -326,9 +363,30 @@ class AdaptiveSettingsSurface extends StatelessWidget {
     if (isGlassDesign(context)) {
       // 「玻璃」设计系统：iOS 26 inset grouped 分组——实色
       // secondarySystemGroupedBackground、圆角 iOS 24 / 桌面 12，不是玻璃。
+      final FushiAppleMetrics apple = FushiAppleMetrics.of(context);
+      if (apple.form) {
+        // macOS 27 grouped form：分组框 #2A2A2A / 白底，0.5 px separator 描边、
+        // 圆角 10。描边画在前景层，不挤占内容。
+        return DecoratedBox(
+          position: DecorationPosition.foreground,
+          decoration: BoxDecoration(
+            borderRadius: apple.groupBorderRadius,
+            border: Border.all(
+              color: appleColorsOf(context).separator,
+              width: 0.5,
+            ),
+          ),
+          child: FushiCard(
+            padding: EdgeInsets.zero,
+            borderRadius: apple.groupBorderRadius,
+            color: color ?? apple.formGroupBackground(context),
+            child: content,
+          ),
+        );
+      }
       return FushiCard(
         padding: EdgeInsets.zero,
-        borderRadius: FushiAppleMetrics.of(context).groupBorderRadius,
+        borderRadius: apple.groupBorderRadius,
         color: color,
         child: content,
       );
@@ -480,10 +538,22 @@ class AdaptiveSettingsSection extends StatefulWidget {
     this.expanded,
     this.onExpansionChanged,
     this.summary,
+    this.footer,
+    this.titleTrailing,
   });
 
   final String? title;
   final List<Widget> children;
+
+  /// 分组外标题行尾的动作（如「编辑」/「完成」），与标题同一行、按基线对齐；
+  /// 只在标题画在组外（[SettingsSectionTitlePlacement.outside]）时出现。标题行高度
+  /// 仍由标题决定——调用方让动作文字与标题同一行高（见
+  /// [settingsSectionTitleActionStyle]），并排两栏的分组卡顶边才严格齐平。
+  final Widget? titleTrailing;
+
+  /// 贴在分组卡下方的说明（macOS 27 grouped form：卡下 6、再隔组间距到下一
+  /// 组）；null = 没有。
+  final Widget? footer;
   final SettingsSectionTitlePlacement titlePlacement;
   final Color? surfaceColor;
 
@@ -642,39 +712,73 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           if (!titleInside && widget.title != null && widget.title!.isNotEmpty)
-            apple != null
-                ? Padding(
-                    // 分组外标题：13 号 semibold secondaryLabel（macOS 系统设置
-                    // 的分组标题口径），与行文字起点对齐缩进。
-                    padding: EdgeInsets.fromLTRB(
-                      apple.desktop ? 10 : 16,
-                      0,
-                      16,
-                      apple.desktop ? 6 : 7,
-                    ),
-                    child: Text(
-                      widget.title!,
-                      style: settingsAppleSectionTitleStyle(context),
-                    ),
-                  )
-                : cupertino
-                ? Padding(
-                    padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
-                    child: Text(
-                      widget.title!.toUpperCase(),
-                      style: tokens.type.metadata.copyWith(
-                        color: CupertinoColors.secondaryLabel.resolveFrom(
-                          context,
-                        ),
-                        fontWeight: FontWeight.w600,
+            _withTitleTrailing(
+              apple != null
+                  ? Padding(
+                      // 分组外标题：13 号 semibold secondaryLabel（macOS 系统设置
+                      // 的分组标题口径），与卡片内行文字起点（行内边距）左对齐。
+                      padding: EdgeInsets.fromLTRB(
+                        apple.rowHorizontal,
+                        0,
+                        apple.rowHorizontal,
+                        apple.desktop ? 6 * apple.scale : 7,
                       ),
+                      child: Text(
+                        widget.title!,
+                        style: settingsAppleSectionTitleStyle(context),
+                      ),
+                    )
+                  : cupertino
+                  ? Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
+                      child: Text(
+                        widget.title!.toUpperCase(),
+                        style: tokens.type.metadata.copyWith(
+                          color: CupertinoColors.secondaryLabel.resolveFrom(
+                            context,
+                          ),
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
+                    )
+                  : SettingsSectionHeader(
+                      widget.title!,
+                      padding: const EdgeInsets.only(bottom: 6),
                     ),
-                  )
-                : SettingsSectionHeader(
-                    widget.title!,
-                    padding: const EdgeInsets.only(bottom: 6),
-                  ),
+            ),
           group,
+          if (widget.footer case final Widget footer) ...<Widget>[
+            const SizedBox(height: 6),
+            footer,
+          ],
+        ],
+      ),
+    );
+  }
+
+  /// 组外标题行挂 [AdaptiveSettingsSection.titleTrailing]：标题与动作按字母基线
+  /// 对齐，标题的内边距（行首对齐行文字、下距卡片）原样保留在外层。
+  Widget _withTitleTrailing(Widget header) {
+    final Widget? trailing = widget.titleTrailing;
+    if (trailing == null) return header;
+    final Widget? title = header is Padding ? header.child : null;
+    if (header is! Padding || title == null) {
+      // M3E 的 SettingsSectionHeader 自带内边距，整块与动作并排、竖直居中。
+      return Row(
+        children: <Widget>[
+          Expanded(child: header),
+          trailing,
+        ],
+      );
+    }
+    return Padding(
+      padding: header.padding,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.baseline,
+        textBaseline: TextBaseline.alphabetic,
+        children: <Widget>[
+          Expanded(child: title),
+          trailing,
         ],
       ),
     );
@@ -802,21 +906,7 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
           // 不可折叠分组的标题一律在组上方（内嵌位置在分段形态下没有「卡内
           // 顶部」可放）。
           if (hasTitle && !collapsible)
-            Padding(
-              padding: EdgeInsets.fromLTRB(
-                tokens.spacing.rowHorizontal,
-                0,
-                tokens.spacing.rowHorizontal,
-                tokens.spacing.gap,
-              ),
-              child: Text(
-                title,
-                style: theme.textTheme.titleSmall?.copyWith(
-                  color: theme.colorScheme.primary,
-                  fontWeight: FontWeight.w600,
-                ),
-              ),
-            ),
+            _Md3SegmentedTitle(title: title, tokens: tokens, theme: theme),
           group,
         ],
       ),
@@ -833,11 +923,13 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
     final bool glassDesign = isGlassDesign(context);
     for (int i = 0; i < rows.length; i++) {
       if (i > 0 && glassDesign && !cupertino) {
-        // 「玻璃」设计系统：iOS inset grouped 的行分隔——物理 1px separator，
-        // 从上一行的文字起点开始缩进（有行首图标时从图标后开始）、右端顶到
-        // 分组边缘；最后一行之后没有分隔线。
+        // 「玻璃」设计系统：iOS 27 inset grouped 的行分隔——物理 1px
+        // separator，从上一行的文字起点开始缩进（有行首图标时从图标后开始），
+        // 右端同样缩进行内边距（在 chevron 之前结束，左右对称）；最后一行之后
+        // 没有分隔线。
         final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
-        final double iconInset = _settingsRowHasIcon(rows[i - 1])
+        final double iconInset =
+            !metrics.form && _settingsRowHasIcon(rows[i - 1])
             ? metrics.iconTileSize + tokens.spacing.gap + 4
             : 0;
         result.add(
@@ -845,6 +937,7 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
             height: fushiHairline(context),
             margin: EdgeInsetsDirectional.only(
               start: metrics.rowHorizontal + iconInset,
+              end: metrics.rowHorizontal,
             ),
             color: appleColorsOf(context).separator,
           ),
@@ -860,12 +953,34 @@ class _AdaptiveSettingsSectionState extends State<AdaptiveSettingsSection> {
           ),
         );
       }
-      result.add(rows[i]);
+      // 「玻璃」：每行挂分组行作用域；直接是输入框的行另挂表单行作用域
+      // （iOS / macOS 表单行，见 [FushiAppleFormRowScope]）。
+      result.add(
+        glassDesign && !cupertino
+            ? FushiAppleFormRowScope.wrapRow(rows[i])
+            : rows[i],
+      );
     }
     return result;
   }
 
   static bool _settingsRowHasIcon(Widget row) => settingsRowHasLeadingIcon(row);
+}
+
+/// macOS 27 grouped form（[FushiAppleMetrics.form]）里设置行的水平内边距（10）；
+/// 不在 form 作用域 / 不是「玻璃」设计系统时 null（调用方用各自的默认）。
+double? settingsAppleFormRowInset(BuildContext context) {
+  if (!isGlassDesign(context) || isCupertinoPlatform(context)) return null;
+  final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+  return metrics.form ? metrics.rowHorizontal : null;
+}
+
+/// 设置行是否画行首图标：声明了 [showIcon] 且有 [icon]，且不在 macOS 27
+/// grouped form 里——系统设置的表单行不带行首图标，有的行带、有的行不带会让
+/// 文字起点参差（用户 2026-11-24 宽窗截图「界面语言」行）。
+bool settingsRowIconShown(BuildContext context, bool showIcon, IconData? icon) {
+  if (!showIcon || icon == null) return false;
+  return settingsAppleFormRowInset(context) == null;
 }
 
 /// 不改变行外观、只在设置行外面套一层的包装（schema 派发、搜索落点等）实现它，
@@ -971,7 +1086,34 @@ class AdaptiveSettingsRow extends StatelessWidget {
     this.titleMaxLines,
     this.subtitleMaxLines,
     this.horizontalPadding,
+    this.leading,
+    this.subtitleLeading,
+    this.animateSubtitle = false,
+    this.titleTrailing,
+    this.focusId,
   });
+
+  /// 可点行在焦点导航里的稳定 id（[FushiFocusTarget.id]）；null = 按行实例
+  /// 自动生成。调用方要按 id 定位 / 恢复焦点时传入（MD3 与 Apple 两套外观
+  /// 同一个焦点目标）。
+  final FushiFocusId? focusId;
+
+  /// 标题同一行最右侧的件（例如 Apple 滑块行的当前读数，iOS 27「标题 …… 读数」）。
+  /// 标题让出它的宽度后省略；null = 标题独占一行（原行为）。
+  final Widget? titleTrailing;
+
+  /// 说明文字随状态变化（例如分段行的说明跟着选中项换）时，旧说明淡出、新说明
+  /// 淡入，行高随之弹簧过渡（时长取 [FushiMotion.medium]，减弱动态效果 / 墨水屏
+  /// 下瞬间到位）。默认关：静态说明不需要多一层 AnimatedSwitcher。
+  final bool animateSubtitle;
+
+  /// 行首的自定义件（例如目标行的进度环）；非空时取代 [icon] 图标位，三套外观
+  /// （MD3 / Cupertino / 玻璃）同一位置。宽度由调用方的件决定，堆叠判据按图标位估。
+  final Widget? leading;
+
+  /// 说明文字前面的行内件（例如目标行的语言小胶囊）：与 [subtitle] 排成一行，
+  /// [subtitle] 为空时单独一行。
+  final Widget? subtitleLeading;
 
   /// 覆盖本行的水平内边距；null = 用标准 `tokens.spacing.rowHorizontal`（16）。
   ///
@@ -1048,6 +1190,33 @@ class AdaptiveSettingsRow extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final bool cupertino = isCupertinoPlatform(context);
+    // 「玻璃」：分组里一行「标题 + 输入框」的设置行就是 iOS / macOS 的表单行——
+    // 标题交给字段（iOS 写法① 当占位 / 写法② 左标题；macOS 左标题 + 右输入框），
+    // 说明排在行内下方，不再是「标题在上 + 下面一个填充框」的 M3E 表单写法。
+    final Widget? field = trailing;
+    if (field is FushiAppleFormRowField &&
+        onTap == null &&
+        !cupertino &&
+        isGlassDesign(context) &&
+        FushiAppleGroupedRowScope.of(context)) {
+      return FushiAppleFormRowScope(
+        label: title,
+        helper: subtitle,
+        leading: switch (leading ??
+            (settingsRowIconShown(context, showIcon, icon)
+                ? _SettingsIcon(icon: icon!)
+                : null)) {
+          final Widget lead => Padding(
+            padding: EdgeInsetsDirectional.only(
+              end: FushiDesignTokens.of(context).spacing.gap + 4,
+            ),
+            child: lead,
+          ),
+          null => null,
+        },
+        child: trailing!,
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     // Auto-stack a non-flex trailing under the label only when the row is
     // genuinely too narrow to host both side by side — NOT on every typical
@@ -1075,7 +1244,11 @@ class AdaptiveSettingsRow extends StatelessWidget {
     // 维持原经验值不动（它们的窄屏行为另有守卫钉着）。
     final double textScale = MediaQuery.textScalerOf(context).scale(1);
     final double horizontalInset =
-        horizontalPadding ?? (cupertino ? 16 : tokens.spacing.rowHorizontal);
+        horizontalPadding ??
+        (cupertino
+            ? 16
+            : settingsAppleFormRowInset(context) ??
+                  tokens.spacing.rowHorizontal);
     final double? declaredTrailingWidth = trailingWidth;
     final double stackThreshold = declaredTrailingWidth == null
         ? (220.0 * textScale).clamp(220.0, 420.0)
@@ -1089,7 +1262,10 @@ class AdaptiveSettingsRow extends StatelessWidget {
     // 左栏图标占固定宽（badge ~30 + 间距 gap+4 = 12）：堆叠判断必须把它计入
     // 需求，否则窄 pane（如视频快捷设置侧栏）里带图标的行仍按无图标阈值走
     // 行内布局，label+trailing 少了一个图标位而右溢出。
-    final double iconExtra = (showIcon && icon != null) ? 42.0 : 0.0;
+    final double iconExtra =
+        (leading != null || settingsRowIconShown(context, showIcon, icon))
+        ? 42.0
+        : 0.0;
     // BUG-3501：LayoutBuilder 不支持 intrinsic 测量（release 恒答 0、debug 抛错），
     // 而 Material AlertDialog 把正文包在 IntrinsicWidth 里——设置行直接当对话框正文
     // 时对话框被量成只有标题 / 按钮那么宽。这里替 LayoutBuilder 回答：宽度按「行内
@@ -1130,9 +1306,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
                 constraints.maxWidth < stackThreshold + iconExtra);
         return Padding(
           padding: EdgeInsets.symmetric(
-            horizontal:
-                horizontalPadding ??
-                (cupertino ? 16 : tokens.spacing.rowHorizontal),
+            horizontal: horizontalInset,
             // MD3 分段行（Android 16 设置）：行内布局也取 rowVertical（12），
             // 配合下面的最小高，单行行高 64、带说明的行更舒展。紧凑档
             // （[SettingsCompactRowsScope]）一律收到 gap。
@@ -1170,6 +1344,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
       }
       return _SettingsRowFocusTarget(
         onTap: onTap!,
+        focusId: focusId,
         child: ExcludeFocus(
           child: GestureDetector(
             behavior: HitTestBehavior.opaque,
@@ -1197,6 +1372,7 @@ class AdaptiveSettingsRow extends StatelessWidget {
         : InkWell(onTap: onTap, child: content);
     return _SettingsRowFocusTarget(
       onTap: onTap!,
+      focusId: focusId,
       focusEnabled: hasFocusRoot,
       child: ExcludeFocus(excluding: hasFocusRoot, child: tapSurface),
     );
@@ -1220,7 +1396,10 @@ class AdaptiveSettingsRow extends StatelessWidget {
       ),
       child: Row(
         children: [
-          if (showIcon && icon != null) ...[
+          if (leading case final Widget lead) ...[
+            lead,
+            SizedBox(width: tokens.spacing.gap + 4),
+          ] else if (settingsRowIconShown(context, showIcon, icon)) ...[
             _SettingsIcon(icon: icon!),
             SizedBox(width: tokens.spacing.gap + 4),
           ],
@@ -1228,8 +1407,11 @@ class AdaptiveSettingsRow extends StatelessWidget {
             child: _SettingsLabel(
               title: title,
               subtitle: subtitle,
+              subtitleLeading: subtitleLeading,
               titleMaxLines: titleMaxLines,
               subtitleMaxLines: subtitleMaxLines,
+              animateSubtitle: animateSubtitle,
+              titleTrailing: titleTrailing,
             ),
           ),
           if (trailing != null) ...[
@@ -1273,7 +1455,10 @@ class AdaptiveSettingsRow extends StatelessWidget {
         children: [
           Row(
             children: [
-              if (showIcon && icon != null) ...[
+              if (leading case final Widget lead) ...[
+                lead,
+                SizedBox(width: tokens.spacing.gap + 4),
+              ] else if (settingsRowIconShown(context, showIcon, icon)) ...[
                 _SettingsIcon(icon: icon!),
                 SizedBox(width: tokens.spacing.gap + 4),
               ],
@@ -1281,8 +1466,11 @@ class AdaptiveSettingsRow extends StatelessWidget {
                 child: _SettingsLabel(
                   title: title,
                   subtitle: subtitle,
+                  subtitleLeading: subtitleLeading,
                   titleMaxLines: titleMaxLines,
                   subtitleMaxLines: subtitleMaxLines,
+                  animateSubtitle: animateSubtitle,
+                  titleTrailing: titleTrailing,
                 ),
               ),
             ],
@@ -1582,10 +1770,14 @@ class _SettingsRowFocusTarget extends StatefulWidget {
     required this.child,
     this.autoHome = true,
     this.focusEnabled = true,
+    this.focusId,
   });
 
   final VoidCallback onTap;
   final Widget child;
+
+  /// 调用方指定的焦点 id；null = 按实例生成。
+  final FushiFocusId? focusId;
 
   /// False = 目标保持挂载但不参与遍历/注册（无焦点根时的恒定结构模式，
   /// 见调用处注释）。透传 [FushiFocusTarget.enabled]。
@@ -1602,7 +1794,7 @@ class _SettingsRowFocusTarget extends StatefulWidget {
 }
 
 class _SettingsRowFocusTargetState extends State<_SettingsRowFocusTarget> {
-  late final FushiFocusId _focusId = FushiFocusId(
+  late final FushiFocusId _fallbackId = FushiFocusId(
     'settings-row-${identityHashCode(this)}',
   );
 
@@ -1618,7 +1810,7 @@ class _SettingsRowFocusTargetState extends State<_SettingsRowFocusTarget> {
         ),
       },
       child: FushiFocusTarget(
-        id: _focusId,
+        id: widget.focusId ?? _fallbackId,
         autoHome: widget.autoHome,
         enabled: widget.focusEnabled,
         child: widget.child,
@@ -1690,28 +1882,18 @@ class AdaptiveSettingsSwitchRow extends StatelessWidget {
 }
 
 /// 「玻璃」设计系统设置行的开关：与 [FushiSwitch] 的 Apple 分支同一枚
-/// [FushiAppleSwitch]——经典 iOS / macOS 开关（触屏 51×31、桌面 38×22 全胶囊
-/// 轨 + 正圆钮带柔和投影，弹簧过渡）。开启色恒为强调色（用户 2026-10-04 拍板）；
-/// 开态圆钮取强调色上的前景色——默认单色主题深色下强调色是白，圆钮随之变黑，
-/// 不会白上白；关态 systemFill 灰轨 + 白钮。禁用态与 [adaptiveSwitch] 同语义
-/// （不可点、不可聚焦）。
-///
-/// 不再用库的 `GlassSwitch`（用户 2026-10-05 Windows 深色截图）：它的圆钮是
-/// 比例写死的横向长胶囊（1.6 倍轨高），开态轨道还带一圈强调色外发光，压在
-/// 深色分组卡上像白钮溢出 / 被裁；圆钮的玻璃透镜走 GlassEffect，在 Skia 上
-/// 没有回退。设置页里同一屏同时出现两种开关（行内 FushiSwitch 与设置行）也
-/// 不该长得不一样。
+/// [FushiAppleSwitch]（库 `GlassSwitch`，iOS 27 的 63×28 全胶囊轨 + 横向白色
+/// 胶囊圆钮，开 = systemGreen、关 = 灰轨，按下 / 拖动浮起玻璃透镜、画质跟随
+/// 玻璃档位）。设置页里行内 FushiSwitch 与设置行的开关是同一枚，长得一样。
+/// 禁用态与 [adaptiveSwitch] 同语义（不可点、不可聚焦、变淡）。
 Widget glassSettingsSwitch({
   required BuildContext context,
   required bool value,
   required ValueChanged<bool>? onChanged,
 }) {
-  final FushiAppleColors apple = appleColorsOf(context);
   final Widget glassSwitch = FushiAppleSwitch(
     value: value,
     onChanged: onChanged,
-    activeTrackColor: apple.accent,
-    inactiveTrackColor: apple.fill,
   );
   if (onChanged != null) return glassSwitch;
   return IgnorePointer(
@@ -2069,10 +2251,9 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isGlassDesign(context) && !isCupertinoPlatform(context)) {
-      return _buildGlass(context);
+    if (!isCupertinoPlatform(context)) {
+      return _buildDesignSystemRow(context, apple: isGlassDesign(context));
     }
-    if (!isCupertinoPlatform(context)) return _buildMd3(context);
     // A segmented row is a discrete-valued control: register it as a SINGLE
     // gamepad/keyboard focus stop (like the stepper/slider rows) so geometric
     // focus navigation can land on it, and D-pad Left/Right steps the segment
@@ -2116,6 +2297,7 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
       icon: icon,
       showIcon: showIcon,
       controlBelow: controlBelow,
+      animateSubtitle: true,
       // The segmented strip is intrinsically wide and wrapped in a horizontal
       // scroll view; host it as a flexible (bounded-width) trailing so it
       // shrink-and-scrolls on narrow panes instead of overflowing the row.
@@ -2134,66 +2316,21 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
     );
   }
 
-  /// 「玻璃」（Apple）设计系统：多选一按 [settingsChoiceUsesSegments] 二选一——
-  /// 选项少且短（设计系统、深色模式、玻璃材质、悬浮球自动恢复这类）是行右侧
-  /// 紧凑的 iOS 分段控件（选中段 = 强调色实底），否则是 macOS / iOS 的弹出菜单
-  /// 按钮（当前值 + `chevron.up.chevron.down` → 玻璃菜单，当前项打勾）。两种
-  /// 都是一个焦点停靠点：左右键逐项切换；弹出按钮另有 Enter / 手柄 A 打开菜单。
-  Widget _buildGlass(BuildContext context) {
-    final int currentIndex = segments.indexWhere(
-      (ButtonSegment<T> s) => s.value == selected,
-    );
-    final List<String> labels = <String>[
-      for (final ButtonSegment<T> s in segments) _segmentMenuLabel(s),
-    ];
-    final List<IconData?> icons = <IconData?>[
-      for (final ButtonSegment<T> s in segments) _segmentIcon(s),
-    ];
-    void pick(int index) {
-      final T value = segments[index].value;
-      if (value != selected) onChanged(value);
-    }
-
-    return LayoutBuilder(
-      builder: (BuildContext context, BoxConstraints constraints) {
-        final List<String> fitLabels = <String>[
-          for (final ButtonSegment<T> s in segments) _segmentFitLabel(s),
-        ];
-        final bool useSegments = settingsChoiceUsesSegments(
-          labels: fitLabels,
-          controlWidth: appleSegmentedControlWidth(fitLabels),
-          rowWidth: constraints.maxWidth,
-        );
-        return AdaptiveSettingsRow(
-          title: title,
-          subtitle: subtitle,
-          icon: icon,
-          showIcon: showIcon,
-          trailing: useSegments
-              ? AppleSettingsSegmentedControl(
-                  semanticLabel: title,
-                  labels: fitLabels,
-                  tooltips: labels,
-                  icons: icons,
-                  selectedIndex: currentIndex < 0 ? null : currentIndex,
-                  onChanged: pick,
-                )
-              : GlassSettingsPopUpButton(
-                  semanticLabel: title,
-                  labels: labels,
-                  icons: icons,
-                  selectedIndex: currentIndex < 0 ? null : currentIndex,
-                  onChanged: pick,
-                ),
-        );
-      },
-    );
-  }
-
-  /// MD3（Android 16 设置）：同一条 [settingsChoiceUsesSegments] 判据——少而短
-  /// 的选项是行右侧紧凑的 MD3 分段按钮（不再撑满整行）；否则当前值写进说明行，
-  /// 点整行弹出 MD3 菜单（当前项打勾）。
-  Widget _buildMd3(BuildContext context) {
+  /// MD3（Android 16 设置）与「玻璃」（Apple 系统设置）共用的分段行：标题 +
+  /// 说明恒在卡片内左侧，分段控件按 [settingsSegmentedPlacement] 三档摆放——
+  ///
+  /// - [SettingsSegmentedPlacement.inline]：行右侧的紧凑分段（macOS 系统设置的
+  ///   外观选择 / Android 16 的分段偏好）；
+  /// - [SettingsSegmentedPlacement.below]：标题、说明下方独占一整行、各段撑满
+  ///   行宽（iOS 设置里分段控件独占一格的形态）——窄屏、选项多或文字长时用，
+  ///   不再出现「分段只占左边一小块、右边空着」；
+  /// - [SettingsSegmentedPlacement.menu]：连整行都放不下每段文字时，MD3 退成
+  ///   点整行弹菜单的 ListPreference 行，Apple 退成行尾弹出按钮。
+  ///
+  /// 三档都是一个焦点停靠点：左右键 / 手柄十字键逐项切换；菜单形态另有
+  /// Enter / 手柄 A 打开菜单。说明随选中项变化时带切换动效
+  /// （[AdaptiveSettingsRow.animateSubtitle]）。
+  Widget _buildDesignSystemRow(BuildContext context, {required bool apple}) {
     final int currentIndex = segments.indexWhere(
       (ButtonSegment<T> s) => s.value == selected,
     );
@@ -2204,72 +2341,151 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
       if (value != selected) onChanged(value);
     }
 
-    final List<String?> stripLabels = segments
-        .map<String?>((ButtonSegment<T> s) {
-          final Widget? label = s.label;
-          return label is Text ? label.data : null;
-        })
-        .toList(growable: false);
+    final List<String> menuLabels = <String>[
+      for (final ButtonSegment<T> s in segments) _segmentMenuLabel(s),
+    ];
+    final List<String> fitLabels = <String>[
+      for (final ButtonSegment<T> s in segments) _segmentFitLabel(s),
+    ];
+    final List<IconData?> icons = <IconData?>[
+      for (final ButtonSegment<T> s in segments) _segmentIcon(s),
+    ];
+    final List<bool> hasIcon = segmentedStripIconFlags<T>(segments);
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    // MD3 下 adaptiveSegmentedButton 渲染的是胶囊分段（FushiPillSegmentedButton）：
-    // 估宽取它自己的几何常量（SegmentedStripMetrics.of），与绘制同源。早先这里
-    // 按「连接式按钮组」手补每段 +26 与段间缝，控件换成胶囊后成了另一套数字。
-    final double stripWidth = estimateSegmentedStripWidth(
-      segmentLabels: stripLabels,
-      segmentHasIcon: segmentedStripIconFlags<T>(segments),
-      fontSize: tokens.type.controlLabel.fontSize ?? 14.0,
-      textScaleFactor: MediaQuery.textScalerOf(context).scale(1),
-      metrics: SegmentedStripMetrics.of(context),
+    final double fontSize = tokens.type.controlLabel.fontSize ?? 14.0;
+    final double textScale = MediaQuery.textScalerOf(context).scale(1);
+    // 行内形态的估宽与绘制同源：Apple 行内是 [AppleSettingsSegmentedControl]
+    // （等宽段），MD3 行内是胶囊分段（SegmentedStripMetrics.of，等宽段）。
+    final double inlineWidth = apple
+        ? appleSegmentedControlWidth(fitLabels)
+        : estimateSegmentedStripWidth(
+            segmentLabels: <String?>[
+              for (final String l in fitLabels) l.isEmpty ? null : l,
+            ],
+            segmentHasIcon: hasIcon,
+            fontSize: fontSize,
+            textScaleFactor: textScale,
+            metrics: SegmentedStripMetrics.of(context),
+          );
+    // 独占一行时控件撑满、各段按内容分宽（[fushiSegmentWidths] 的退让），只要
+    // 每段文字在最小内边距下单行放得下就不需要菜单。
+    final double minContentWidth = segmentedStripMinContentWidth(
+      segmentLabels: fitLabels,
+      segmentHasIcon: hasIcon,
+      fontSize: fontSize,
+      textScaleFactor: textScale,
     );
+    final double rowInset = isCupertinoPlatform(context)
+        ? 16
+        : settingsAppleFormRowInset(context) ?? tokens.spacing.rowHorizontal;
+    final double iconExtra = settingsRowIconShown(context, showIcon, icon)
+        ? 42.0
+        : 0.0;
+    final bool enabled = segments.any((ButtonSegment<T> s) => s.enabled);
+
+    Widget gamepad(Widget child, String prefix) => _GamepadAdjustableValue(
+      focusIdPrefix: prefix,
+      onIncrement: () => selectAt(currentIndex + 1),
+      onDecrement: () => selectAt(currentIndex - 1),
+      child: child,
+    );
+
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        final bool useSegments = settingsChoiceUsesSegments(
-          labels: <String>[
-            for (final ButtonSegment<T> s in segments) _segmentFitLabel(s),
-          ],
-          controlWidth: stripWidth,
+        final SettingsSegmentedPlacement placement = settingsSegmentedPlacement(
+          labelCount: segments.length,
+          inlineWidth: inlineWidth,
+          minContentWidth: minContentWidth,
           rowWidth: constraints.maxWidth,
+          rowInset: rowInset,
+          leadingWidth: iconExtra,
         );
-        if (!useSegments) {
-          return SettingsChoiceMenuRow(
-            title: title,
-            subtitle: subtitle,
-            icon: icon,
-            showIcon: showIcon,
-            labels: <String>[
-              for (final ButtonSegment<T> s in segments) _segmentMenuLabel(s),
-            ],
-            selectedIndex: currentIndex < 0 ? null : currentIndex,
-            onChanged: selectAt,
-            // 分段条整条禁用（每段 enabled=false）时，换成菜单行也要同样置灰。
-            enabled: segments.any((ButtonSegment<T> s) => s.enabled),
-          );
+        switch (placement) {
+          case SettingsSegmentedPlacement.inline:
+            return AdaptiveSettingsRow(
+              title: title,
+              subtitle: subtitle,
+              icon: icon,
+              showIcon: showIcon,
+              animateSubtitle: true,
+              trailingWidth: inlineWidth,
+              trailing: apple
+                  ? AppleSettingsSegmentedControl(
+                      semanticLabel: title,
+                      labels: fitLabels,
+                      tooltips: menuLabels,
+                      icons: icons,
+                      selectedIndex: currentIndex < 0 ? null : currentIndex,
+                      onChanged: selectAt,
+                    )
+                  : gamepad(_segmentedButton(context), 'settings-segmented'),
+            );
+          case SettingsSegmentedPlacement.below:
+            return AdaptiveSettingsRow(
+              title: title,
+              subtitle: subtitle,
+              icon: icon,
+              showIcon: showIcon,
+              animateSubtitle: true,
+              controlBelow: true,
+              // 有界宽下两套分段都撑满（胶囊 / iOS 分段的 fill），各段等宽或按
+              // 内容分宽，永远铺满整行。
+              trailing: SizedBox(
+                key: const ValueKey<String>('settings-segmented-below'),
+                width: double.infinity,
+                child: Semantics(
+                  container: true,
+                  label: title,
+                  child: gamepad(
+                    _segmentedButton(context),
+                    apple ? 'settings-apple-segmented' : 'settings-segmented',
+                  ),
+                ),
+              ),
+            );
+          case SettingsSegmentedPlacement.menu:
+            if (apple) {
+              return AdaptiveSettingsRow(
+                title: title,
+                subtitle: subtitle,
+                icon: icon,
+                showIcon: showIcon,
+                animateSubtitle: true,
+                trailing: GlassSettingsPopUpButton(
+                  semanticLabel: title,
+                  labels: menuLabels,
+                  icons: icons,
+                  selectedIndex: currentIndex < 0 ? null : currentIndex,
+                  onChanged: selectAt,
+                ),
+              );
+            }
+            return SettingsChoiceMenuRow(
+              title: title,
+              subtitle: subtitle,
+              icon: icon,
+              showIcon: showIcon,
+              labels: menuLabels,
+              selectedIndex: currentIndex < 0 ? null : currentIndex,
+              onChanged: selectAt,
+              // 分段条整条禁用（每段 enabled=false）时，换成菜单行也要同样置灰。
+              enabled: enabled,
+            );
         }
-        return AdaptiveSettingsRow(
-          title: title,
-          subtitle: subtitle,
-          icon: icon,
-          showIcon: showIcon,
-          trailingWidth: stripWidth,
-          trailing: _GamepadAdjustableValue(
-            focusIdPrefix: 'settings-segmented',
-            onIncrement: () => selectAt(currentIndex + 1),
-            onDecrement: () => selectAt(currentIndex - 1),
-            child: adaptiveSegmentedButton<T>(
-              context: context,
-              segments: segments,
-              selected: <T>{selected},
-              onSelectionChanged: (Set<T> values) {
-                if (values.isEmpty) return;
-                onChanged(values.first);
-              },
-              style: kSettingsSegmentedStyle,
-            ),
-          ),
-        );
       },
     );
   }
+
+  Widget _segmentedButton(BuildContext context) => adaptiveSegmentedButton<T>(
+    context: context,
+    segments: segments,
+    selected: <T>{selected},
+    onSelectionChanged: (Set<T> values) {
+      if (values.isEmpty) return;
+      onChanged(values.first);
+    },
+    style: kSettingsSegmentedStyle,
+  );
 
   /// 菜单 / 弹出按钮里显示的文字：文字段取文字，纯图标段取 tooltip。
   static String _segmentMenuLabel(ButtonSegment<Object> segment) {
@@ -2292,6 +2508,106 @@ class AdaptiveSettingsSegmentedRow<T extends Object> extends StatelessWidget {
     if (icon is Icon) return icon.icon;
     return null;
   }
+}
+
+/// [AdaptiveSettingsSegmentedRow] 的分段控件摆放（MD3 与 Apple 共用一条判据）。
+enum SettingsSegmentedPlacement {
+  /// 行右侧的紧凑分段，标题 + 说明在左。
+  inline,
+
+  /// 标题 + 说明下方独占一整行，分段撑满行宽。
+  below,
+
+  /// 连整行都放不下每段文字：MD3 菜单行 / Apple 弹出按钮。
+  menu,
+}
+
+/// 分段行摆放的**唯一判据**（纯函数，布局前可算）：
+///
+/// - 2–4 个选项、行内估宽 [inlineWidth] 不超过行宽 [rowWidth] 的 55%（给标题与
+///   说明至少留 45%）→ [SettingsSegmentedPlacement.inline]；
+/// - 否则只要每段文字在最小内边距下单行排得下整行内容宽
+///   （[minContentWidth] ≤ 行宽 − 两侧 [rowInset]）→
+///   [SettingsSegmentedPlacement.below]：控件独占一行并撑满，杜绝「分段只占
+///   左边一小块、右边空着」；
+/// - 再放不下 → [SettingsSegmentedPlacement.menu]。
+///
+/// [leadingWidth] 是行首图标占的宽（无图标为 0），只扣在行内形态上：下方形态
+/// 的控件从行的左内边距起排，不缩进到图标后。
+SettingsSegmentedPlacement settingsSegmentedPlacement({
+  required int labelCount,
+  required double inlineWidth,
+  required double minContentWidth,
+  required double rowWidth,
+  required double rowInset,
+  double leadingWidth = 0,
+}) {
+  if (labelCount < 2) return SettingsSegmentedPlacement.menu;
+  if (!rowWidth.isFinite) {
+    return labelCount <= 4
+        ? SettingsSegmentedPlacement.inline
+        : SettingsSegmentedPlacement.below;
+  }
+  if (labelCount <= 4 && inlineWidth <= (rowWidth - leadingWidth) * 0.55) {
+    return SettingsSegmentedPlacement.inline;
+  }
+  if (minContentWidth <= rowWidth - 2 * rowInset) {
+    return SettingsSegmentedPlacement.below;
+  }
+  return SettingsSegmentedPlacement.menu;
+}
+
+/// 分段控件撑满一行时、每段文字都还读得全所需的最小总宽。分段的退让顺序是
+/// 「等宽 → 按内容分宽 → 收内边距 → 折成两行」（[fushiSegmentWidths]、
+/// [FushiPillSegmentedButton] 的 `maxLines: 2`），所以每段只需要：
+/// 文字折两行后的宽度（整段宽的一半），且不小于其中最长的不可断片段（拉丁词按
+/// 整词计，CJK 每个字都可断），再加最小内边距
+/// [FushiPillSegmentedButton.minSegmentPadding]、图标、段间缝与轨道内边距。MD3
+/// 胶囊分段与 Apple 分段的横排都走 [FushiSegmentRow]，几何同一量级，共用本估算。
+///
+/// [segmentLabels] 每段一项：空串 = 纯图标段。[segmentHasIcon] 与之同序。
+double segmentedStripMinContentWidth({
+  required List<String> segmentLabels,
+  required List<bool> segmentHasIcon,
+  required double fontSize,
+  required double textScaleFactor,
+}) {
+  if (segmentLabels.isEmpty) return 0;
+  const double minPad = FushiPillSegmentedButton.minSegmentPadding;
+  double width(String text) => estimateLabelAdvanceWidth(
+    label: text,
+    fontSize: fontSize,
+    textScaleFactor: textScaleFactor,
+  );
+  double total = 0;
+  for (int i = 0; i < segmentLabels.length; i++) {
+    final String label = segmentLabels[i];
+    final bool hasIcon = i < segmentHasIcon.length && segmentHasIcon[i];
+    if (label.isEmpty) {
+      total += FushiPillSegmentedButton.iconSize + 2 * minPad;
+      continue;
+    }
+    double longestUnbreakable = 0;
+    for (final String word in label.split(RegExp(r'\s+'))) {
+      // 含 CJK 的片段在字间可断：最长不可断片段按单字计。
+      final bool breakable = word.runes.any((int r) => r >= 0x1100);
+      final double w = breakable
+          ? width(String.fromCharCode(word.runes.first))
+          : width(word);
+      if (w > longestUnbreakable) longestUnbreakable = w;
+    }
+    final double text = math.max(width(label) / 2, longestUnbreakable);
+    total +=
+        text +
+        2 * minPad +
+        (hasIcon
+            ? FushiPillSegmentedButton.iconSize +
+                  FushiPillSegmentedButton.iconLabelGap
+            : 0);
+  }
+  return total +
+      2.0 * (segmentLabels.length - 1) +
+      2 * FushiPillSegmentedButton.trackPadding;
 }
 
 /// 单选项文字的「视觉宽度」权重：CJK 等全角字记 2、其余记 1（≈ 4 个汉字 =
@@ -2329,7 +2645,7 @@ bool settingsChoiceUsesSegments({
 
 /// [AppleSettingsSegmentedControl] 的估宽（纯函数，供判据在布局前用）。与
 /// [FushiSegmentedButton] 的 Apple 分支同一口径：等宽段，每段 = 最宽文字 + 28，
-/// 两侧轨道内边距共 6；纯图标段按 20 宽计。
+/// 两侧轨道内边距共 4；纯图标段按 20 宽计。
 double appleSegmentedControlWidth(List<String> labels) {
   double widest = 0;
   for (final String label in labels) {
@@ -2338,12 +2654,12 @@ double appleSegmentedControlWidth(List<String> labels) {
         : settingsChoiceLabelWeight(label) * 7.0;
     if (w > widest) widest = w;
   }
-  return labels.length * (widest + 28) + 6;
+  return labels.length * (widest + 28) + 4;
 }
 
-/// 「Apple」设计系统设置行的分段控件：直接用全应用统一的液态玻璃分段控件
-/// （[FushiSegmentedButton] 的 Apple 分支 = liquid_glass_widgets 的
-/// `GlassSegmentedControl`，玻璃透镜滑块、选中态跟随强调色），这里只负责
+/// 「Apple」设计系统设置行的分段控件：直接用全应用统一的 iOS 27 分段控件
+/// （[FushiSegmentedButton] 的 Apple 分支 = [FushiAppleSegmentedControl]，
+/// tertiarySystemFill 灰胶囊轨 + 更亮的灰 / 白色滑块，选中字不着强调色），这里只负责
 /// 「行右侧、随内容收宽」的摆放与焦点：整枚控件是一个停靠点
 /// （[_GamepadAdjustableValue]），左右键 / 手柄十字键逐段切换。
 class AppleSettingsSegmentedControl extends StatelessWidget {
@@ -2555,10 +2871,12 @@ class GlassSettingsPopUpButton extends StatefulWidget {
 
   /// 按钮面的水平几何（桌面 / 触屏）：前后内边距、值与箭头的间距、箭头尺寸。
   /// [build] 与 [maxFaceWidth] 共用这一份，宽度判据不另抄一遍数字。
-  static double _leadingPadding(bool desktop) => desktop ? 12 : 8;
-  static double _trailingPadding(bool desktop) => desktop ? 10 : 4;
-  static double _chevronGap(bool desktop) => desktop ? 6 : 5;
-  static double _chevronSize(bool desktop) => desktop ? 10 : 13;
+  /// [k] 是 macOS 档放大系数（[fushiAppleMacScale]），iOS 档为 1。
+  static double _leadingPadding(bool desktop, double k) => desktop ? 12 * k : 8;
+  static double _trailingPadding(bool desktop, double k) =>
+      desktop ? 10 * k : 4;
+  static double _chevronGap(bool desktop, double k) => desktop ? 6 * k : 5;
+  static double _chevronSize(bool desktop, double k) => desktop ? 10 * k : 13;
   static double _labelMaxWidth(bool desktop, double maxLabelWidth) =>
       desktop || maxLabelWidth < _touchLabelMaxWidth
       ? maxLabelWidth
@@ -2571,12 +2889,14 @@ class GlassSettingsPopUpButton extends StatefulWidget {
     BuildContext context, {
     double maxLabelWidth = 240,
   }) {
-    final bool desktop = FushiAppleMetrics.of(context).desktop;
-    return _leadingPadding(desktop) +
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    final bool desktop = metrics.desktop;
+    final double k = metrics.scale;
+    return _leadingPadding(desktop, k) +
         _labelMaxWidth(desktop, maxLabelWidth) +
-        _chevronGap(desktop) +
-        _chevronSize(desktop) +
-        _trailingPadding(desktop);
+        _chevronGap(desktop, k) +
+        _chevronSize(desktop, k) +
+        _trailingPadding(desktop, k);
   }
 
   @override
@@ -2625,11 +2945,14 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
         for (int i = 0; i < widget.labels.length; i++)
           PopupMenuItem<int>(
             value: i,
-            height: metrics.desktop ? 32 : 44,
+            height: metrics.desktop ? 32 * metrics.scale : 44,
             child: Row(
               children: <Widget>[
                 if (icons != null && i < icons.length && icons[i] != null) ...[
-                  FushiIcon(icons[i], size: metrics.desktop ? 15 : 18),
+                  FushiIcon(
+                    icons[i],
+                    size: metrics.desktop ? 15 * metrics.scale : 18,
+                  ),
                   const SizedBox(width: 10),
                 ],
                 Flexible(
@@ -2654,6 +2977,7 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
     final FushiAppleColors apple = appleColorsOf(context);
     final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
     final bool desktop = metrics.desktop;
+    final double k = metrics.scale;
     final int? selected = widget.selectedIndex;
     final String value =
         selected != null && selected >= 0 && selected < widget.labels.length
@@ -2669,57 +2993,68 @@ class _GlassSettingsPopUpButtonState extends State<GlassSettingsPopUpButton> {
     final Color fg = desktop ? apple.label : apple.secondaryLabel;
     final TextStyle style = metrics
         .subtitleStyle(context)
-        .copyWith(fontSize: desktop ? 13 : 17, color: fg);
-    final Widget face = Container(
-      key: _anchorKey,
-      constraints: BoxConstraints(minHeight: desktop ? 28 : 34),
-      padding: EdgeInsets.only(
-        left: GlassSettingsPopUpButton._leadingPadding(desktop),
-        right: GlassSettingsPopUpButton._trailingPadding(desktop),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          if (valueIcon != null && value.isEmpty)
-            FushiIcon(valueIcon, size: desktop ? 14 : 17, color: fg)
-          else
-            ConstrainedBox(
-              // 触屏行窄（≈ 360），当前值再收一截，给行标题留出位置。
-              constraints: BoxConstraints(
-                maxWidth: GlassSettingsPopUpButton._labelMaxWidth(
-                  desktop,
-                  widget.maxLabelWidth,
-                ),
-              ),
-              child: Text(
-                value,
-                style: style,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
+        .copyWith(fontSize: desktop ? 13 * k : 17, color: fg);
+    // macOS 27 pop-up button：共享外观 [FushiApplePopUpButtonFace]（灰填充、
+    // 高 22、右侧上下双箭头）；iOS 行尾仍是无 bezel 的「值 ⌃⌄」纯文字。
+    // 只有图标、没有文字的值（icons 给了而 label 为空）仍走下面的自绘外观。
+    final Widget face = desktop && !(valueIcon != null && value.isEmpty)
+        ? KeyedSubtree(
+            key: _anchorKey,
+            child: FushiApplePopUpButtonFace(
+              label: value,
+              height: 22 * k,
+              maxLabelWidth: GlassSettingsPopUpButton._labelMaxWidth(
+                desktop,
+                widget.maxLabelWidth,
               ),
             ),
-          SizedBox(width: GlassSettingsPopUpButton._chevronGap(desktop)),
-          FushiIcon(
-            CupertinoIcons.chevron_up_chevron_down,
-            size: GlassSettingsPopUpButton._chevronSize(desktop),
-            color: desktop ? apple.secondaryLabel : apple.tertiaryLabel,
-          ),
-        ],
-      ),
-    );
+          )
+        : Container(
+            key: _anchorKey,
+            constraints: BoxConstraints(minHeight: desktop ? 22 * k : 34),
+            padding: EdgeInsets.only(
+              left: GlassSettingsPopUpButton._leadingPadding(desktop, k),
+              right: GlassSettingsPopUpButton._trailingPadding(desktop, k),
+            ),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                if (valueIcon != null && value.isEmpty)
+                  FushiIcon(valueIcon, size: desktop ? 14 * k : 17, color: fg)
+                else
+                  ConstrainedBox(
+                    // 触屏行窄（≈ 360），当前值再收一截，给行标题留出位置。
+                    constraints: BoxConstraints(
+                      maxWidth: GlassSettingsPopUpButton._labelMaxWidth(
+                        desktop,
+                        widget.maxLabelWidth,
+                      ),
+                    ),
+                    child: Text(
+                      value,
+                      style: style,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                SizedBox(
+                  width: GlassSettingsPopUpButton._chevronGap(desktop, k),
+                ),
+                FushiIcon(
+                  CupertinoIcons.chevron_up_chevron_down,
+                  size: GlassSettingsPopUpButton._chevronSize(desktop, k),
+                  color: desktop ? apple.secondaryLabel : apple.tertiaryLabel,
+                ),
+              ],
+            ),
+          );
     final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
     Widget button = FushiPlainButton(
       onPressed: _openMenu,
-      borderRadius: BorderRadius.circular(desktop ? 13 : 17),
+      borderRadius: BorderRadius.circular(desktop ? 11 * k : 17),
       semanticLabel: widget.semanticLabel,
       child: face,
     );
-    // macOS 26 弹出按钮（Niratan「Klee ⌃⌄」）是无色透明玻璃胶囊，不是
-    // systemFill 灰块；iOS 行尾仍是无 bezel 的「值 ⌃⌄」纯文字。desktop 按
-    // 平台恒定，不会在运行中增删这层。
-    if (desktop) {
-      button = fushiClearGlassBezel(context, radius: 13, child: button);
-    }
     if (!hasFocusRoot) return button;
     return Actions(
       actions: <Type, Action<Intent>>{
@@ -3094,12 +3429,18 @@ class FushiAdjustableSegmented<T extends Object> extends StatelessWidget {
     super.key,
     this.focusIdPrefix = 'segmented',
     this.focusId,
+    this.selectedIsCurrent = true,
   });
 
   /// The segment values in display order; [selected] must be one of them.
   final List<T> values;
   final T selected;
   final ValueChanged<T> onChanged;
+
+  /// false = [selected] 只是视觉锚点（宿主停在不属于任何一段的视图上，如库页的
+  /// 导入页高亮「我的」组）：方向键落到它本身也要回调 [onChanged]，否则从首段
+  /// 往回按会被夹在原地、回不去（BUG-4706）。默认 true：落到当前段不回调。
+  final bool selectedIsCurrent;
   final Widget child;
   final String focusIdPrefix;
   final FushiFocusId? focusId;
@@ -3111,7 +3452,7 @@ class FushiAdjustableSegmented<T extends Object> extends StatelessWidget {
       if (values.isEmpty) return;
       final int clamped = index.clamp(0, values.length - 1);
       final T value = values[clamped];
-      if (value != selected) onChanged(value);
+      if (!selectedIsCurrent || value != selected) onChanged(value);
     }
 
     return _GamepadAdjustableValue(
@@ -3456,7 +3797,8 @@ class AdaptiveSettingsPickerRow<T> extends StatelessWidget {
   }
 }
 
-class AdaptiveSettingsTextField extends StatefulWidget {
+class AdaptiveSettingsTextField extends StatefulWidget
+    implements FushiAppleFormRowField {
   const AdaptiveSettingsTextField({
     super.key,
     this.controller,
@@ -3592,7 +3934,8 @@ class _AdaptiveSettingsTextFieldState extends State<AdaptiveSettingsTextField> {
 /// 正文又收进 560、其余分类的设置行（[AdaptiveSettingsTextField]）撑满 pane。
 /// 用户 2026-08-25 实报「这里和别的输入框宽度不一样」并拍板统一成撑满，两层限宽
 /// 随之删除。要再引入宽度上限，只能加在这里（全 app 一处），不能各段自设。
-class SettingsFormField extends StatelessWidget {
+class SettingsFormField extends StatelessWidget
+    implements FushiAppleFormRowField {
   const SettingsFormField({
     required this.label,
     required this.onChanged,
@@ -3647,9 +3990,14 @@ class SettingsFormField extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isGlassDesign(context)) return _buildGlass(context);
+    // 两套设计系统同一条路：[FushiTextFormFieldControl] 自己分派——M3E 是填充式
+    // 字段（浮动标签）；Apple 是实色输入框（标签在框上方），在 inset grouped
+    // 分组里是一整行表单行（[FushiAppleFormRowScope]，不再留字段间距）。此前
+    // Apple 分支是液态玻璃 GlassTextField + 自画标签，与其它 Apple 输入框两样。
     return Padding(
-      padding: EdgeInsets.only(bottom: bottomSpacing),
+      padding: EdgeInsets.only(
+        bottom: FushiAppleFormRowScope.of(context) ? 0 : bottomSpacing,
+      ),
       child: SizedBox(
         width: double.infinity,
         // 共享 M3E 输入框（FushiTextFormFieldControl → fushiMd3FieldDecoration）：
@@ -3676,120 +4024,6 @@ class SettingsFormField extends StatelessWidget {
           onChanged: onChanged,
         ),
       ),
-    );
-  }
-
-  /// 「玻璃」设计系统：[GlassTextField]（玻璃输入框）。它没有浮动标签 /
-  /// helper / error，标签放在框上方、说明与错误放在框下方（iOS 表单写法），
-  /// 宽度契约（恒撑满）与间距不变。只给初值时交给有状态的宿主持有控制器。
-  Widget _buildGlass(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ColorScheme colors = Theme.of(context).colorScheme;
-    final String? error = errorText;
-    final String? helper = helperText;
-    return Padding(
-      padding: EdgeInsets.only(bottom: bottomSpacing),
-      child: SizedBox(
-        width: double.infinity,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            Padding(
-              padding: const EdgeInsets.only(left: 4, bottom: 4),
-              child: Text(
-                label,
-                style: tokens.type.metadata.copyWith(
-                  color: error != null ? colors.error : null,
-                ),
-              ),
-            ),
-            _GlassFormInput(
-              initialValue: initialValue,
-              controller: controller,
-              focusNode: focusNode,
-              hintText: hintText,
-              obscureText: obscureText,
-              keyboardType: keyboardType,
-              suffixIcon: suffixIcon,
-              onChanged: onChanged,
-            ),
-            if (error != null || helper != null)
-              Padding(
-                padding: const EdgeInsets.only(left: 4, top: 4),
-                child: Text(
-                  error ?? helper!,
-                  maxLines: 3,
-                  overflow: TextOverflow.ellipsis,
-                  style: tokens.type.metadata.copyWith(
-                    color: error != null
-                        ? colors.error
-                        : colors.onSurfaceVariant,
-                  ),
-                ),
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-/// [SettingsFormField] 玻璃分支的输入框宿主：[GlassTextField] 没有
-/// `initialValue`，只给初值时由这里持有控制器。
-class _GlassFormInput extends StatefulWidget {
-  const _GlassFormInput({
-    required this.onChanged,
-    this.initialValue,
-    this.controller,
-    this.focusNode,
-    this.hintText,
-    this.obscureText = false,
-    this.keyboardType,
-    this.suffixIcon,
-  });
-
-  final String? initialValue;
-  final TextEditingController? controller;
-  final FocusNode? focusNode;
-  final String? hintText;
-  final bool obscureText;
-  final TextInputType? keyboardType;
-  final Widget? suffixIcon;
-  final ValueChanged<String> onChanged;
-
-  @override
-  State<_GlassFormInput> createState() => _GlassFormInputState();
-}
-
-class _GlassFormInputState extends State<_GlassFormInput> {
-  TextEditingController? _owned;
-
-  @override
-  void dispose() {
-    _owned?.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final TextEditingController controller =
-        widget.controller ??
-        (_owned ??= TextEditingController(text: widget.initialValue ?? ''));
-    return GlassTextField(
-      controller: controller,
-      focusNode: widget.focusNode,
-      placeholder: widget.hintText,
-      obscureText: widget.obscureText,
-      keyboardType: widget.keyboardType,
-      suffixIcon: widget.suffixIcon,
-      textStyle: tokens.type.listTitle,
-      placeholderStyle: tokens.type.listSubtitle,
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
-      shape: fushiGlassShapeOf(tokens.radii.controlRadius),
-      quality: fushiGlassQuality(context),
-      onChanged: widget.onChanged,
     );
   }
 }
@@ -4021,20 +4255,29 @@ class _KeyboardStepper extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 4),
-              GlassStepper(
-                value: value,
-                min: min,
-                max: max,
-                step: step,
-                width:
-                    kSettingsStepperTrailingWidth -
-                    kSettingsStepperValueWidth -
-                    4,
-                quality: fushiGlassQuality(context),
-                // 库默认 settings 带一层白色填充；步进器是控件层，取无色透明玻璃。
-                settings: fushiClearGlassSettings(context),
-                onChanged: (double next) => onChanged(next.clamp(min, max)),
-              ),
+              if (FushiAppleMetrics.of(context).desktop)
+                // macOS 27 宽窗：紧凑的 −|＋ 灰填充分段小钮（高 22）。
+                _AppleCompactStepper(
+                  canDecrement: value > min,
+                  canIncrement: value < max,
+                  onDecrement: _decrement,
+                  onIncrement: _increment,
+                )
+              else
+                GlassStepper(
+                  value: value,
+                  min: min,
+                  max: max,
+                  step: step,
+                  width:
+                      kSettingsStepperTrailingWidth -
+                      kSettingsStepperValueWidth -
+                      4,
+                  quality: fushiGlassQuality(context),
+                  // 库默认 settings 带一层白色填充；步进器是控件层，取无色透明玻璃。
+                  settings: fushiClearGlassSettings(context),
+                  onChanged: (double next) => onChanged(next.clamp(min, max)),
+                ),
             ],
           ),
         ),
@@ -4095,6 +4338,93 @@ class _KeyboardStepper extends StatelessWidget {
   }
 }
 
+/// macOS 27 系统设置宽窗的紧凑步进器：secondaryFill 灰填充、圆角 6、高 22 的
+/// 「− | ＋」两段小钮（各 26 宽，中间一条 separator 发丝线），到端点的一段
+/// 变 tertiaryLabel 并不响应。焦点 / 方向键 / 读屏由外层 [_KeyboardStepper] 的
+/// 单停靠点承担，这里只是指针命中面。
+class _AppleCompactStepper extends StatelessWidget {
+  const _AppleCompactStepper({
+    required this.canDecrement,
+    required this.canIncrement,
+    required this.onDecrement,
+    required this.onIncrement,
+  });
+
+  final bool canDecrement;
+  final bool canIncrement;
+  final VoidCallback onDecrement;
+  final VoidCallback onIncrement;
+
+  Widget _half(
+    FushiAppleColors apple, {
+    required double k,
+    required IconData icon,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return MouseRegion(
+      cursor: enabled ? SystemMouseCursors.click : MouseCursor.defer,
+      child: GestureDetector(
+        behavior: HitTestBehavior.opaque,
+        excludeFromSemantics: true,
+        onTap: enabled ? onTap : null,
+        child: FushiPressScale(
+          enabled: enabled,
+          child: SizedBox(
+            width: 30 * k,
+            height: 22 * k,
+            child: Center(
+              child: FushiIcon(
+                icon,
+                size: 12 * k,
+                color: enabled ? apple.label : apple.tertiaryLabel,
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    // macOS 档放大系数（Windows / Linux 放大，Mac 1.0）。
+    final double k = fushiAppleMacScale(context);
+    return DecoratedBox(
+      decoration: BoxDecoration(
+        color: apple.secondaryFill,
+        // macOS 27 stepper：全胶囊（与 pop-up / 分段同形），半径 = 高 / 2。
+        borderRadius: BorderRadius.circular(22 * k / 2),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          _half(
+            apple,
+            k: k,
+            icon: FushiIcons.remove,
+            enabled: canDecrement,
+            onTap: onDecrement,
+          ),
+          Container(
+            width: fushiHairline(context),
+            height: 12 * k,
+            color: apple.separator,
+          ),
+          _half(
+            apple,
+            k: k,
+            icon: FushiIcons.add,
+            enabled: canIncrement,
+            onTap: onIncrement,
+          ),
+        ],
+      ),
+    );
+  }
+}
+
 /// The slider equivalent of [_KeyboardStepper]: a single keyboard/gamepad focus
 /// stop whose Left/Right (D-pad or arrow keys) nudge the slider by one step,
 /// while the slider stays draggable by mouse/touch. Up/Down are left free for
@@ -4119,6 +4449,7 @@ class _KeyboardSlider extends StatefulWidget {
     this.onChangeEnd,
     this.step,
     this.autofocus = false,
+    this.stepButtonsTitle,
   });
 
   final double value;
@@ -4130,6 +4461,11 @@ class _KeyboardSlider extends StatefulWidget {
   final ValueChanged<double>? onChangeEnd;
   final double? step;
   final bool autofocus;
+
+  /// 非 null 时滑块两端加「−」「＋」步进钮（iOS 27 设置的滑块行），读屏标签是
+  /// 「减小 / 增大 <本值>」。点按与方向键同一步长、同一提交节奏（onChanged +
+  /// onChangeEnd 各一次）。
+  final String? stepButtonsTitle;
 
   @override
   State<_KeyboardSlider> createState() => _KeyboardSliderState();
@@ -4184,8 +4520,55 @@ class _KeyboardSliderState extends State<_KeyboardSlider> {
     widget.onChangeEnd?.call(next);
   }
 
+  /// iOS 27 滑块行两端的步进钮：secondaryLabel 色图标、44×44 命中区、自带焦点
+  /// （Enter / 手柄 A 触发），到端点时禁用。
+  Widget _stepButton(
+    BuildContext context, {
+    required IconData icon,
+    required String semanticLabel,
+    required bool enabled,
+    required VoidCallback onTap,
+  }) {
+    return FushiIconButton(
+      icon: icon,
+      tooltip: semanticLabel,
+      enabled: enabled,
+      onTap: onTap,
+      size: 18,
+      enabledColor: appleColorsOf(context).secondaryLabel,
+      // 18 图标 + 四周 13 = 44×44 命中区（Apple 路径的点按面就是这块）。
+      padding: const EdgeInsets.all(13),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final Widget slider = _buildSlider(context);
+    final String? title = widget.stepButtonsTitle;
+    if (title == null) return slider;
+    final double value = _shown;
+    return Row(
+      children: <Widget>[
+        _stepButton(
+          context,
+          icon: FushiIcons.remove,
+          semanticLabel: t.settings_slider_decrease(title: title),
+          enabled: value > widget.min,
+          onTap: () => _adjust(-_step),
+        ),
+        Expanded(child: slider),
+        _stepButton(
+          context,
+          icon: FushiIcons.add,
+          semanticLabel: t.settings_slider_increase(title: title),
+          enabled: value < widget.max,
+          onTap: () => _adjust(_step),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildSlider(BuildContext context) {
     final double value = _shown;
     return _GamepadAdjustableValue(
       focusIdPrefix: 'settings-slider',
@@ -4287,10 +4670,12 @@ class AdaptiveSettingsSliderRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (isGlassDesign(context) &&
-        !isCupertinoPlatform(context) &&
-        FushiAppleMetrics.of(context).desktop) {
-      return _buildGlassDesktop(context);
+    if (isGlassDesign(context) && !isCupertinoPlatform(context)) {
+      // 判据与 [FushiAppleMetrics] 的 iOS / 桌面分档同一个：桌面宽窗是 macOS
+      // 系统设置形态，触屏与桌面窄窗（< 600）是 iOS 27 设置形态。
+      return FushiAppleMetrics.of(context).desktop
+          ? _buildGlassDesktop(context)
+          : _buildGlassStacked(context);
     }
     if (!isCupertinoPlatform(context) && !isGlassDesign(context)) {
       return _buildMd3(context);
@@ -4363,6 +4748,44 @@ class AdaptiveSettingsSliderRow extends StatelessWidget {
               ),
             ),
         ],
+      ),
+    );
+  }
+
+  /// 「玻璃」触屏 / 桌面窄窗（iOS 27 设置）：第一行「标题 …… 读数」（读数靠右、
+  /// label 色、与标题同字号），说明在其下；第二行「− 滑块 ＋」，两端
+  /// secondaryLabel 色步进钮按一个 step 增减。
+  Widget _buildGlassStacked(BuildContext context) {
+    final String? valueText = readout ?? label;
+    return AdaptiveSettingsRow(
+      title: title,
+      subtitle: subtitle,
+      icon: icon,
+      showIcon: showIcon,
+      controlBelow: true,
+      titleTrailing: valueText == null || valueText.isEmpty
+          ? null
+          : Text(
+              valueText,
+              textAlign: TextAlign.end,
+              maxLines: 1,
+              style: const TextStyle(
+                fontFeatures: <FontFeature>[FontFeature.tabularFigures()],
+              ),
+            ),
+      trailing: SizedBox(
+        width: double.infinity,
+        child: _KeyboardSlider(
+          value: value,
+          min: min,
+          max: max,
+          divisions: divisions,
+          label: label,
+          onChanged: onChanged,
+          onChangeEnd: onChangeEnd,
+          step: step,
+          stepButtonsTitle: title,
+        ),
       ),
     );
   }
@@ -4481,14 +4904,26 @@ class _SettingsLabel extends StatelessWidget {
   const _SettingsLabel({
     required this.title,
     this.subtitle,
+    this.subtitleLeading,
     this.titleMaxLines,
     this.subtitleMaxLines,
+    this.animateSubtitle = false,
+    this.titleTrailing,
   });
 
   final String title;
   final String? subtitle;
+
+  /// 见 [AdaptiveSettingsRow.titleTrailing]。
+  final Widget? titleTrailing;
+
+  /// 说明前的行内件（[AdaptiveSettingsRow.subtitleLeading]）。
+  final Widget? subtitleLeading;
   final int? titleMaxLines;
   final int? subtitleMaxLines;
+
+  /// 见 [AdaptiveSettingsRow.animateSubtitle]。
+  final bool animateSubtitle;
 
   @override
   Widget build(BuildContext context) {
@@ -4517,7 +4952,8 @@ class _SettingsLabel extends StatelessWidget {
         ? theme.textTheme.bodySmall?.copyWith(color: subtitleColor)
         : theme.textTheme.bodyMedium?.copyWith(color: subtitleColor);
     final String? description = subtitle;
-    if (SettingsCompactRowsScope.of(context) &&
+    if (subtitleLeading == null &&
+        SettingsCompactRowsScope.of(context) &&
         description != null &&
         description.isNotEmpty) {
       return _CompactSettingsLabel(
@@ -4527,25 +4963,12 @@ class _SettingsLabel extends StatelessWidget {
         subtitleStyle: subtitleStyle,
       );
     }
-    return Column(
-      // BUG-3501：必须收高。mainAxisSize 缺省 max，在有界高度（对话框正文的
-      // Flexible）里标题列撑满、整行被撑高；设置页行高无界看不出来。竖直居中由
-      // 外层 Row 的 crossAxisAlignment.center 负责。
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.start,
-      mainAxisAlignment: MainAxisAlignment.center,
-      children: [
-        Text(
-          title,
-          style: titleStyle,
-          overflow: TextOverflow.ellipsis,
-          maxLines: titleMaxLines ?? kSettingsRowTitleMaxLines,
-        ),
-        if (subtitle != null && subtitle!.isNotEmpty)
-          Padding(
+    final Widget? subtitleText = description == null || description.isEmpty
+        ? null
+        : Padding(
             padding: const EdgeInsets.only(top: 2),
             child: Text(
-              subtitle!,
+              description,
               style: subtitleStyle,
               // BUG-1184：null = 不钳行数，说明文字整段显示（见
               // [AdaptiveSettingsRow.subtitleMaxLines]）。
@@ -4559,8 +4982,111 @@ class _SettingsLabel extends StatelessWidget {
               overflow: subtitleMaxLines == null ? null : TextOverflow.ellipsis,
               maxLines: subtitleMaxLines,
             ),
+          );
+    return Column(
+      // BUG-3501：必须收高。mainAxisSize 缺省 max，在有界高度（对话框正文的
+      // Flexible）里标题列撑满、整行被撑高；设置页行高无界看不出来。竖直居中由
+      // 外层 Row 的 crossAxisAlignment.center 负责。
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        if (titleTrailing case final Widget end)
+          Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  title,
+                  style: titleStyle,
+                  overflow: TextOverflow.ellipsis,
+                  maxLines: titleMaxLines ?? kSettingsRowTitleMaxLines,
+                ),
+              ),
+              const SizedBox(width: 8),
+              DefaultTextStyle.merge(style: titleStyle, child: end),
+            ],
+          )
+        else
+          Text(
+            title,
+            style: titleStyle,
+            overflow: TextOverflow.ellipsis,
+            maxLines: titleMaxLines ?? kSettingsRowTitleMaxLines,
           ),
+        if (subtitleLeading case final Widget lead)
+          Padding(
+            padding: const EdgeInsets.only(top: 2),
+            child: Row(
+              children: <Widget>[
+                Flexible(flex: 0, child: lead),
+                if (subtitle != null && subtitle!.isNotEmpty) ...<Widget>[
+                  const SizedBox(width: 6),
+                  // 与下面的纯说明同一套行数 / 溢出规则（BUG-1184）。
+                  Flexible(
+                    child: Text(
+                      subtitle!,
+                      style: subtitleStyle,
+                      overflow: subtitleMaxLines == null
+                          ? null
+                          : TextOverflow.ellipsis,
+                      maxLines: subtitleMaxLines,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          )
+        else if (animateSubtitle)
+          _AnimatedSettingsSubtitle(
+            text: description ?? '',
+            child: subtitleText ?? const SizedBox(width: double.infinity),
+          )
+        else if (subtitleText != null)
+          subtitleText,
       ],
+    );
+  }
+}
+
+/// 说明文字切换动效（[AdaptiveSettingsRow.animateSubtitle]）：按文字内容换 key，
+/// 旧说明淡出、新说明淡入并从上方轻移入位，外层 [FushiAnimatedSize] 让行高
+/// 跟着过渡。时长取 [FushiMotion.medium]，经 [fushiMotionDuration] 在减弱
+/// 动态效果 / 墨水屏下归零。
+class _AnimatedSettingsSubtitle extends StatelessWidget {
+  const _AnimatedSettingsSubtitle({required this.text, required this.child});
+
+  final String text;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
+    return FushiAnimatedSize(
+      duration: duration,
+      curve: FushiMotion.standard,
+      alignment: AlignmentDirectional.topStart,
+      child: AnimatedSwitcher(
+        duration: duration,
+        switchInCurve: FushiMotion.enter,
+        switchOutCurve: FushiMotion.exit,
+        // 左上对齐叠放：长短不一的两段说明交叉淡化时都贴着标题左缘，不居中漂移。
+        layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+          alignment: AlignmentDirectional.topStart,
+          children: <Widget>[...previous, ?current],
+        ),
+        transitionBuilder: (Widget child, Animation<double> animation) =>
+            FadeTransition(
+              opacity: animation,
+              child: SlideTransition(
+                position: Tween<Offset>(
+                  begin: const Offset(0, -0.15),
+                  end: Offset.zero,
+                ).animate(animation),
+                child: child,
+              ),
+            ),
+        child: KeyedSubtree(key: ValueKey<String>(text), child: child),
+      ),
     );
   }
 }
@@ -4758,6 +5284,44 @@ class _SettingsStepButton extends StatelessWidget {
         tooltip: tooltip,
         visualDensity: VisualDensity.compact,
         onPressed: onPressed,
+      ),
+    );
+  }
+}
+
+/// MD3 分段分组上方的分组标题（titleSmall、primary、w600）。
+///
+/// 页底是用户的自定义图片时，标题直接压在图上、对比度随图片明暗忽高忽低
+/// （2026-11-20 用户截图：樱花壁纸上的橙色小标题发糊），这时给它垫一枚毛玻璃
+/// 胶囊（[FushiBackdropFrost]，全应用统一的那一层，只画不占位，文字左缘不变）。
+class _Md3SegmentedTitle extends StatelessWidget {
+  const _Md3SegmentedTitle({
+    required this.title,
+    required this.tokens,
+    required this.theme,
+  });
+
+  final String title;
+  final FushiDesignTokens tokens;
+  final ThemeData theme;
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget text = Text(
+      title,
+      style: theme.textTheme.titleSmall?.copyWith(
+        color: theme.colorScheme.primary,
+        fontWeight: FontWeight.w600,
+      ),
+    );
+    final double inset = tokens.spacing.rowHorizontal;
+    return Padding(
+      padding: EdgeInsets.fromLTRB(inset, 0, inset, tokens.spacing.gap),
+      child: Align(
+        alignment: AlignmentDirectional.centerStart,
+        widthFactor: 1,
+        heightFactor: 1,
+        child: FushiBackdropFrost(child: text),
       ),
     );
   }

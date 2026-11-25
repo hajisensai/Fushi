@@ -8,6 +8,9 @@ import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/browse_moved_notice.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
+import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_appearance.dart';
+import 'package:fushi/src/settings/settings_schema_navigation.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 /// 「下载」改名「浏览」的一次性搬迁提示（所有者 2026-09-28 拍板「保持关闭 +
@@ -108,11 +111,18 @@ void main() {
       find.byKey(const ValueKey<String>('browse_moved_notice')),
       findsOneWidget,
     );
+    // 路径取设置页真实的分类标题与分区标题：「功能模块」分区挂在「导航与首页」
+    // 分类下，任何一方改名，提示框的路径都必须跟着变。
+    final SettingsDestination navigation = buildNavigationDestination();
+    expect(
+      navigation.sections.map((SettingsSection s) => s.id),
+      contains(buildModulesSection().id),
+    );
     final String body = t.browse_moved_notice_body(
       browse: t.nav_browse,
       settings: t.settings,
-      appearance: t.settings_destination_appearance_interaction,
-      modules: t.settings_section_modules,
+      appearance: navigation.title,
+      modules: buildModulesSection().title!,
     );
     expect(find.text(body), findsOneWidget);
     expect(body, contains(t.nav_browse));

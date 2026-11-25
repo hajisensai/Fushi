@@ -67,6 +67,14 @@ abstract class PlatformVideoController {
   }) async =>
       false;
 
+  /// FUSHI FORK (BUG-5200): cumulative presentation counters of the native
+  /// video output — frames rendered (`published`), frames Flutter's raster
+  /// thread picked up (`shown`), frames overwritten before any pickup
+  /// (`lost`), and the publish → pickup delay (`latencySumUs` over `shown`
+  /// frames, `latencyMaxUs`). Null where the platform has no such counters
+  /// (everything but the Windows output) or the output is busy / gone.
+  Future<Map<String, int>?> frameStats() async => null;
+
   /// A [Future] that completes when the first video frame has been rendered.
   Future<void> get waitUntilFirstFrameRendered =>
       waitUntilFirstFrameRenderedCompleter.future;

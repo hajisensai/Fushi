@@ -5,6 +5,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart';
 import 'package:path/path.dart' as path;
 
+import 'package:fushi_engine/models/local_audio_content_id.dart';
 import 'package:fushi_engine/models/local_audio_source_pref.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/utils/misc/local_audio_db.dart';
@@ -178,7 +179,21 @@ class LocalAudioManager {
       e.copyWith(path: resolveInternalPath(e.path, _databaseDirectory.path)),
   ];
 
-  Future<void> setEntries(List<LocalAudioDbEntry> dbs) async {
+  Future<void> setEntries(List<LocalAudioDbEntry> input) async {
+    // 唯一的登记写入口顺手补内容身份（拍板 pr3481）：调用方从音频源配置重建
+    // 条目时手里没有身份（AudioSourceConfig 不带它），这里从进程内缓存取——
+    // [importFile] 刚算过、或启动回填算过的库都在缓存里。只查缓存不扫库，
+    // 缓存没有的留给 [backfillContentIds]。
+    final List<LocalAudioDbEntry> dbs = <LocalAudioDbEntry>[
+      for (final LocalAudioDbEntry e in input)
+        isLocalAudioContentId(e.contentId)
+            ? e
+            : e.copyWith(
+                contentId: cachedLocalAudioContentId(
+                  resolveInternalPath(e.path, _databaseDirectory.path),
+                ),
+              ),
+    ];
     await _prefsRepo.setPref(
       'local_audio_dbs',
       jsonEncode(dbs.map((e) => e.toJson()).toList()),
@@ -362,6 +377,7 @@ class LocalAudioManager {
         path: sourcePath,
         displayName: displayName,
         enabled: true,
+        contentId: await computeLocalAudioContentIdInBackground(sourcePath),
       );
     }
     int stamp = DateTime.now().millisecondsSinceEpoch;
@@ -390,7 +406,48 @@ class LocalAudioManager {
       path: internalPath,
       displayName: displayName,
       enabled: true,
+      // 内容身份在导入时就算好（后台 isolate），跨设备同步与导入去重认它。
+      contentId: await computeLocalAudioContentIdInBackground(internalPath),
     );
+  }
+
+  /// 给没存内容身份的登记条目补写身份（拍板 pr3481；旧版本导入的库都没有）。
+  /// 逐库在后台 isolate 扫元数据表，扫完再读一次最新登记、只给仍缺身份且路径
+  /// 未变的条目补上，不覆盖期间用户的其它改动；不重推 native（路径没变）。
+  /// 返回补写的条数。文件不在本机的条目算不出，跳过。
+  Future<int> backfillContentIds() async {
+    final Map<String, String> computed = <String, String>{};
+    for (final LocalAudioDbEntry e in entries) {
+      if (isLocalAudioContentId(e.contentId) || e.path.isEmpty) continue;
+      final String resolved = resolveInternalPath(
+        e.path,
+        _databaseDirectory.path,
+      );
+      // 启动绑定会在库上后台补索引（持写锁）：等它结束再扫，不和它抢锁。
+      await LocalAudioDb.waitForPendingIndexing(resolved);
+      final String? id = await computeLocalAudioContentIdInBackground(resolved);
+      if (id != null) computed[e.path] = id;
+    }
+    if (computed.isEmpty) return 0;
+    int filled = 0;
+    await _withMigrationLock(() async {
+      final List<LocalAudioDbEntry> latest = <LocalAudioDbEntry>[
+        for (final LocalAudioDbEntry e in entries)
+          if (!isLocalAudioContentId(e.contentId) &&
+              computed.containsKey(e.path))
+            e.copyWith(contentId: computed[e.path])
+          else
+            e,
+      ];
+      filled = latest
+          .where((LocalAudioDbEntry e) => computed.containsKey(e.path))
+          .length;
+      await _prefsRepo.setPref(
+        'local_audio_dbs',
+        jsonEncode(latest.map((LocalAudioDbEntry e) => e.toJson()).toList()),
+      );
+    });
+    return filled;
   }
 
   /// 删除库目录里所有不被 [keepPaths] 引用的本地音频副本文件
@@ -464,6 +521,23 @@ class LocalAudioManager {
       await deleteFiles(entry.path);
     }
     await setEntries(dbs);
+  }
+
+  /// 移除存储 path 在 [paths] 里的所有条目（内部副本连文件一起删，引用模式的用户
+  /// 原文件不动，同 [remove]）。按 path 而不是下标认：调用方算身份期间登记表可能
+  /// 已经变了，下标会错位。返回移除的条数。
+  Future<int> removeByStoredPaths(Set<String> paths) async {
+    final List<LocalAudioDbEntry> kept = <LocalAudioDbEntry>[];
+    final List<LocalAudioDbEntry> removed = <LocalAudioDbEntry>[];
+    for (final LocalAudioDbEntry e in entries) {
+      (paths.contains(e.path) ? removed : kept).add(e);
+    }
+    if (removed.isEmpty) return 0;
+    for (final LocalAudioDbEntry e in removed) {
+      if (_isInternalCopy(e.path)) await deleteFiles(e.path);
+    }
+    await setEntries(kept);
+    return removed.length;
   }
 
   Future<void> reorder(int oldIndex, int newIndex) async {

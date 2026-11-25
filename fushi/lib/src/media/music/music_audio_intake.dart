@@ -10,8 +10,9 @@
 ///   `auto_owner_source_id`）：视频来源扫描完整成功后按正面证据撤掉不再成立的自动来源
 ///   （[ownedMusicRootsToRetire]），删视频来源时连带移除（`removeSourceLibrary`），用户
 ///   单独删掉的不再登记回来（`music_auto_source_dismissals`）。
-/// - 指名的几个文件（[importAudioFiles]）：已被音乐来源覆盖的，重扫那个来源；其余逐个
-///   「仅此一次」导入（Rust 扫描器接受单文件根，只收这一个文件），不登记常驻来源。
+/// - 指名的几个文件（[importAudioFiles] 只收纯音频，给视频侧入口；[importMusicFiles]
+///   另收 MV 视频容器，给音乐页自己的拖放 / 选文件与视频库「加入收听」）：已被音乐来源覆盖的，重扫那个来源；
+///   其余逐个「仅此一次」导入（Rust 扫描器接受单文件根，只收这一个文件），不登记常驻来源。
 ///
 /// - 网络视频来源（SFTP / WebDAV / AList）里的纯音频（[adoptRemoteVideoSourceAudio]）：同一套
 ///   规划规则（`p.url` 路径语义，条目与视频行同一命名空间），登记**同一台服务器上的**
@@ -24,7 +25,7 @@ import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/media_extensions.dart'
-    show isAudioOnlyMediaPath;
+    show isAudioOnlyMediaPath, isMusicLibraryMediaPath;
 import 'package:fushi_engine/media/music/music_audio_roots.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:path/path.dart' as p;
@@ -180,6 +181,8 @@ class MusicAudioIntake implements MusicAudioIntakePort {
     }
     final AddLocalFolderResult r = await addLocalFolderAsSource(
       db: _db,
+      // 音乐来源不扫书，没有有声书要转录。
+      transcribeAudiobook: null,
       mediaKind: SourceLibraryKind.music.dbValue,
       path: rootPath,
       recursive: recursive,
@@ -196,6 +199,7 @@ class MusicAudioIntake implements MusicAudioIntakePort {
     if (injected != null) return injected(path, recursive: recursive);
     final SourceScanSummary? summary = await importLocalFolderOnceAt(
       db: _db,
+      transcribeAudiobook: null,
       mediaKind: SourceLibraryKind.music.dbValue,
       path: path,
       recursive: recursive,
@@ -206,7 +210,10 @@ class MusicAudioIntake implements MusicAudioIntakePort {
   Future<String?> _rescan(SourceLibraryRow source) async {
     final MusicSourceRescanner? injected = _rescanSource;
     if (injected != null) return injected(source);
-    return (await SourceLibraryScanner(_db).scan(source)).error;
+    return (await SourceLibraryScanner(
+      _db,
+      transcribeAudiobook: null,
+    ).scan(source)).error;
   }
 
   Future<void> _retire(Set<int> ids) async {
@@ -475,17 +482,30 @@ class MusicAudioIntake implements MusicAudioIntakePort {
   /// 导入。不是本地纯音频 / 文件不存在的，原样放进 [MusicAudioIntakeResult.skippedPaths]。
   @override
   Future<MusicAudioIntakeResult> importAudioFiles(Iterable<String> paths) =>
-      _serial(() => _importFiles(paths.toList()));
+      _serial(
+        () => _importFiles(paths.toList(), accepts: isAudioOnlyMediaPath),
+      );
 
-  Future<MusicAudioIntakeResult> _importFiles(List<String> paths) async {
+  /// 音乐页自己的入口（拖进音乐页、「添加音频文件」）收的曲目文件：纯音频 + MV 视频
+  /// 容器（[isMusicLibraryMediaPath]，与音乐来源扫描同口径，拍板台 left3568）。其余规则
+  /// 与 [importAudioFiles] 相同。视频库「加入收听」（拍板台 oo_8_5z6Aw）也走这里：用户明确
+  /// 要把视频当 MV 收进曲库，与音乐页入口同口径。
+  @override
+  Future<MusicAudioIntakeResult> importMusicFiles(Iterable<String> paths) =>
+      _serial(
+        () => _importFiles(paths.toList(), accepts: isMusicLibraryMediaPath),
+      );
+
+  Future<MusicAudioIntakeResult> _importFiles(
+    List<String> paths, {
+    required bool Function(String path) accepts,
+  }) async {
     final List<SourceLibraryRow> sources = await _localMusicSources();
     final Map<int, SourceLibraryRow> toRescan = <int, SourceLibraryRow>{};
     final List<String> toImport = <String>[];
     final List<String> skipped = <String>[];
     for (final String path in paths) {
-      if (!isAudioOnlyMediaPath(path) ||
-          !p.isAbsolute(path) ||
-          !_fileExists(path)) {
+      if (!accepts(path) || !p.isAbsolute(path) || !_fileExists(path)) {
         skipped.add(path);
         continue;
       }

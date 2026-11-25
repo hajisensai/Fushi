@@ -11,6 +11,7 @@ use rusqlite::Connection;
 use serde_json::Value;
 
 use crate::registers::{card_lineage_flags, deck_view_of, register_value};
+use crate::store::study::{NewMix, ReviewOrder};
 use crate::sync2::id::Id;
 use crate::sync2::sched::{Config, MemAlg};
 
@@ -72,7 +73,7 @@ pub fn edits_of(
     Ok(out)
 }
 
-fn stored(v: &[(String, Option<i64>)]) -> Vec<crate::registers::StoredEdit<'_>> {
+pub(crate) fn stored(v: &[(String, Option<i64>)]) -> Vec<crate::registers::StoredEdit<'_>> {
     v.iter().map(|(j, s)| (j.as_str(), *s, None)).collect()
 }
 
@@ -93,22 +94,35 @@ impl DeckTree {
         let ids: Vec<String> = payloads.keys().cloned().collect();
         let edits = edits_of(conn, "deck", &ids)?;
         let empty = Vec::new();
-        let mut decks = HashMap::new();
+        let mut views = Vec::with_capacity(payloads.len());
         for (id, payload) in &payloads {
-            let view = deck_view_of(payload, &stored(edits.get(id).unwrap_or(&empty)))?;
+            views.push((
+                id.clone(),
+                deck_view_of(payload, &stored(edits.get(id).unwrap_or(&empty)))?,
+            ));
+        }
+        Ok(DeckTree::of_views(views, default_deck_id(profile)))
+    }
+
+    /// 由每个牌组的视图（`registers::deck_view_of` 的结果）拼树：已删除的（`da` 不为 null）不进树，父子关系按
+    /// [DeckTree::resolve_parents] 收拾。协议 3（[DeckTree::load]）与新代写命令（`store/gen4/cmd/writes.rs`）共用这
+    /// 一处，两边的树规则只有一份。
+    pub(crate) fn of_views(views: Vec<(String, Value)>, default_deck: String) -> DeckTree {
+        let mut decks = HashMap::new();
+        for (id, view) in views {
             if !view["da"].is_null() {
                 continue;
             }
             let parent = view["pa"].as_str().map(str::to_owned);
             let own = view["own"] == Value::Bool(true);
-            decks.insert(id.clone(), DeckNode { parent, own, view });
+            decks.insert(id, DeckNode { parent, own, view });
         }
         let mut tree = DeckTree {
             decks,
-            default_deck: default_deck_id(profile),
+            default_deck,
         };
         tree.resolve_parents();
-        Ok(tree)
+        tree
     }
 
     /// Dart `_resolveParents`：父不在树里 = 顶层；成环时环上最小 ID 视为顶层。
@@ -202,11 +216,35 @@ impl DeckTree {
     /// 只有明确写了 `ignoreLimit: true` 才算开；没有这个键的牌组与新建牌组都按每日复习上限截断）。
     pub fn ignores_review_limit(&self, deck: &str) -> bool {
         let id = self.effective(deck);
-        let Some(owner) = self.params_owner(&id) else {
-            return false;
-        };
-        Self::owner_uses_rwkv(owner)
-            && owner.view["rw"].get("ignoreLimit") == Some(&Value::Bool(true))
+        self.uses_rwkv(&id)
+            && self.params_owner(&id).is_some_and(|owner| {
+                owner.view["rw"].get("ignoreLimit") == Some(&Value::Bool(true))
+            })
+    }
+
+    /// 牌组按 RWKV 排程（参数归属的 own 祖先 `alg` 缺省 / 为 `"rwkv"`）。不能拿 [Self::config] 的 `alg` 判：
+    /// `MemAlg::of_wire` 把 `"rwkv"` 当 FSRS-7。
+    pub fn uses_rwkv(&self, deck: &str) -> bool {
+        let id = self.effective(deck);
+        self.params_owner(&id).is_some_and(Self::owner_uses_rwkv)
+    }
+
+    /// 从 [root] 出卡时的复习顺序（牌组寄存器 `reviewOrder`，视图键 `ro`）：随参数继承取 own 祖先的值；own 祖先
+    /// 按 RWKV 排程时整棵子树固定按可提取度（RWKV 一路的分数只有 R，别的键没有意义），寄存器里存的值照存不改。
+    pub(crate) fn review_order(&self, root: &str) -> ReviewOrder {
+        match self.params_owner(root) {
+            Some(owner) if Self::owner_uses_rwkv(owner) => ReviewOrder::Retrievability,
+            Some(owner) => ReviewOrder::from_wire(owner.view["ro"].as_str()),
+            None => ReviewOrder::default(),
+        }
+    }
+
+    /// 从 [root] 出卡时新卡与复习怎么排（牌组寄存器 `newMix`，视图键 `mx`），随参数继承取 own 祖先的值。
+    pub(crate) fn new_mix(&self, root: &str) -> NewMix {
+        NewMix::from_wire(
+            self.params_owner(root)
+                .and_then(|owner| owner.view["mx"].as_str()),
+        )
     }
 
     /// 某牌组复习时实际用的排程配置（`SrsDeckTree.schedulingConfig`）。
@@ -281,15 +319,36 @@ pub fn card_deck(
     card: &str,
     note: Option<&str>,
 ) -> Result<String, String> {
+    let note_edits = match note {
+        Some(n) => Some(
+            edits_of(conn, "note", &[n.to_owned()])?
+                .remove(n)
+                .unwrap_or_default(),
+        ),
+        None => None,
+    };
+    card_deck_with(tree, card, note_edits, &mut |c| {
+        Ok(edits_of(conn, "card", &[c.to_owned()])?
+            .remove(c)
+            .unwrap_or_default())
+    })
+}
+
+/// [card_deck] 的规则本体：[note_edits] 是卡所属笔记的修改记录（没有笔记 = None），[card_edits] 给一张卡的修改记录。
+/// 协议 3（读投影表）与新代写命令（`store/gen4/cmd/writes.rs`，按别名类读索引）共用。
+pub(crate) fn card_deck_with(
+    tree: &DeckTree,
+    card: &str,
+    note_edits: Option<Vec<(String, Option<i64>)>>,
+    card_edits: &mut dyn FnMut(&str) -> Result<Vec<(String, Option<i64>)>, String>,
+) -> Result<String, String> {
     // 血统：沿 historyFrom 前身（广度优先，最多 256 张）。先一次取全血统的记录。
     let mut lineage = vec![card.to_owned()];
     let mut i = 0;
     let mut by_card: HashMap<String, Vec<(String, Option<i64>)>> = HashMap::new();
     while i < lineage.len() && lineage.len() < 256 {
         let c = lineage[i].clone();
-        let es = edits_of(conn, "card", std::slice::from_ref(&c))?
-            .remove(&c)
-            .unwrap_or_default();
+        let es = card_edits(&c)?;
         for p in predecessors(&es) {
             if !lineage.contains(&p) {
                 lineage.push(p);
@@ -298,15 +357,10 @@ pub fn card_deck(
         by_card.insert(c, es);
         i += 1;
     }
-    let note_deck = match note {
-        Some(n) => {
-            let es = edits_of(conn, "note", &[n.to_owned()])?
-                .remove(n)
-                .unwrap_or_default();
-            register_value(&stored(&es), "deck")?
-                .as_str()
-                .map(str::to_owned)
-        }
+    let note_deck = match note_edits {
+        Some(es) => register_value(&stored(&es), "deck")?
+            .as_str()
+            .map(str::to_owned),
         None => None,
     };
     let cards: Vec<(String, Vec<crate::registers::StoredEdit<'_>>)> = lineage

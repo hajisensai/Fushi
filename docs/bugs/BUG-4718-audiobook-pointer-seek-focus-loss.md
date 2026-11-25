@@ -1,0 +1,6 @@
+## BUG-4718 · audiobook-pointer-seek-focus-loss
+- **报告**：2026-11-16（用户：应用内反馈 mNogI-kBAh）有声书把「跳转到点击句」绑到鼠标右键，右键跳句后 P 等快捷键全部失效，点一下空白 / 查一次词 / 按一下空格才恢复。
+- **真实性**：✅ 真 bug。正文 JS 的非左键 `mousedown`（`fushi/lib/src/pages/implementations/reader_fushi/webview.part.dart:1667-1674`）经 `onPointerSeek` 回 Dart；这次按下已把 OS 键盘焦点交给原生 WebView（BUG-136 同族），而 `onPointerSeek` handler（`webview.part.dart:2996` 起）的「seek 到点击句」分支跑完 `_seekToClickedSentence` 就 `return`，Windows 上 `hostOwnsWebViewPointerInput` 早退分支、通用动作分支也都不收回焦点，全程没有 `_focusOwnership.reclaim`。此后按键只到 DOM，`_handleKeyEvent` 收不到；左键点击 / 查词 / Space 键桥这些路径都会 reclaim，正好对上「点空白 / 按空格能恢复」。歌词文档的同名桥 `onLyricsPointerSeek` 早已 reclaim（NmpRV-amTY），正文这条漏了。
+- **[x] ① 已修复** — `onPointerSeek` 在参数校验之后、任何按动作分流的早退之前统一 `_focusOwnership.reclaim(FocusReclaimCause.gesture)`：焦点回收属于「这次指针按下进了 WebView」本身，与按下绑定的是哪个动作无关，不在各分支末尾逐个补。
+- **[x] ② 已加自动化测试** — `fushi/test/reader/reader_pointer_seek_focus_reclaim_test.dart`：静态守卫断言 `onPointerSeek` 注册体（去注释）里 reclaim 恰出现一次，且位于 `isSeekToClickedSentenceButton` / `_seekToClickedSentence` / `hostOwnsWebViewPointerInput` / `resolveMouseBindingActionForButton` / `_executeShortcutAction` 之前；修复前红。
+- **备注**：反馈里另一条「空格不管绑什么都是播放/暂停」是 `fushi/lib/src/shortcuts/reader_space_override.dart` 的有意硬覆写（有声书激活时裸 Space 映射 audiobookPlayPause），属行为取舍，不在本修复范围，待拍板。真机（Windows WebView2）右键复测未做。

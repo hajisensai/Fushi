@@ -119,9 +119,25 @@ class FushiDesktopTitleBar extends StatefulWidget {
         ? _contentFullscreenOwners.add(owner)
         : _contentFullscreenOwners.remove(owner);
     if (!changed) return;
-    _contentFullscreen.value = _contentFullscreenOwners.isNotEmpty;
-    reassertMacTrafficLights();
+    // 声明式入口（[FushiTitleBarContentFullscreenScope]）在 build 里上报，而
+    // 顶栏是页面的祖先：构建期改 notifier 会在构建中标脏祖先，推到帧尾（与
+    // [setCaptionPassthrough] / [setCaptionRevealed] 同一做法）。命令式调用方
+    // （视频全屏回调、小窗）不在构建期，照旧同步生效。
+    void publish() {
+      _contentFullscreen.value = _contentFullscreenOwners.isNotEmpty;
+      reassertMacTrafficLights();
+    }
+
+    if (SchedulerBinding.instance.schedulerPhase ==
+        SchedulerPhase.persistentCallbacks) {
+      SchedulerBinding.instance.addPostFrameCallback((_) => publish());
+    } else {
+      publish();
+    }
   }
+
+  /// 内容全屏此刻是否收起了自绘顶栏（测试读）。
+  static ValueListenable<bool> get contentFullscreen => _contentFullscreen;
 
   /// 沉浸页的标题行此刻是否隐去（悬停才浮出，见 [_ImmersiveCaptionReveal]）。
   /// macOS 的系统红绿灯不在 Flutter 树里、跟不上标题行的淡出，按它同步显隐。
@@ -289,6 +305,30 @@ class FushiDesktopTitleBar extends StatefulWidget {
   /// 顶栏且不在内容全屏（全屏下窗口不能拖）。
   static bool get windowDragAvailable =>
       _isEnabled && !_contentFullscreen.value;
+
+  /// 标题行拖动区上的**单击**（没拖、也不是双击）的订阅者，参数是全局坐标。
+  ///
+  /// 标题行叠在整个 Navigator 之上：页面里的全屏层（查词弹窗的 dismiss
+  /// barrier）在这一条里命中不到——拖动区先吃掉了指针。沉浸页的隐形拖动条
+  /// （[setCaptionDragBand]）更是常驻可命中，点窗口最顶部关不掉查词弹窗
+  /// （BUG-4475）。单击转发给订阅者，由页面按「点在弹窗外」处理；拖动 / 双击
+  /// 最大化照旧归窗口。
+  static final Set<ValueChanged<Offset>> _captionTapListeners =
+      <ValueChanged<Offset>>{};
+
+  static void addCaptionTapListener(ValueChanged<Offset> listener) =>
+      _captionTapListeners.add(listener);
+
+  static void removeCaptionTapListener(ValueChanged<Offset> listener) =>
+      _captionTapListeners.remove(listener);
+
+  static void _notifyCaptionTap(Offset globalPosition) {
+    for (final ValueChanged<Offset> listener in List<ValueChanged<Offset>>.of(
+      _captionTapListeners,
+    )) {
+      listener(globalPosition);
+    }
+  }
 
   /// 接管标题行的页面必须让开的左右宽度：macOS 左侧系统红绿灯留位；
   /// Windows / Linux 右侧 MD3 窗口按钮组 + 组右侧页边。未装自绘顶栏时为零。
@@ -732,26 +772,28 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
           const Expanded(child: SizedBox.shrink())
         else
           Expanded(
-            child: DragToMoveArea(
-              // 拖动区必须撑满整条标题栏高度：去掉标题文字后 Row 里只剩无高度的
-              // 占位（SizedBox 宽 / Spacer），Row 会塌成 0 高，命中测试永远落不进
-              // DragToMoveArea，顶栏就拖不动了（2026-10-04 用户报）。
-              child: SizedBox.expand(
-                child: Row(
-                  children: <Widget>[
-                    SizedBox(
-                      width: trafficLights
-                          ? math.max(
-                              0,
-                              widget.leadingInset - _kTrafficLightsReserve,
-                            )
-                          : widget.leadingInset,
-                    ),
-                    // 顶部控制条只做拖动区 + 窗口按钮，不显示页面标题（用户
-                    // 2026-10-04）；页面自己的大标题 / 顶栏负责标题。[title] 仍
-                    // 保留在参数里，供无障碍窗口名等后续用途。
-                    const Spacer(),
-                  ],
+            child: _CaptionTapForwarder(
+              child: DragToMoveArea(
+                // 拖动区必须撑满整条标题栏高度：去掉标题文字后 Row 里只剩无高度的
+                // 占位（SizedBox 宽 / Spacer），Row 会塌成 0 高，命中测试永远落不进
+                // DragToMoveArea，顶栏就拖不动了（2026-10-04 用户报）。
+                child: SizedBox.expand(
+                  child: Row(
+                    children: <Widget>[
+                      SizedBox(
+                        width: trafficLights
+                            ? math.max(
+                                0,
+                                widget.leadingInset - _kTrafficLightsReserve,
+                              )
+                            : widget.leadingInset,
+                      ),
+                      // 顶部控制条只做拖动区 + 窗口按钮，不显示页面标题（用户
+                      // 2026-10-04）；页面自己的大标题 / 顶栏负责标题。[title] 仍
+                      // 保留在参数里，供无障碍窗口名等后续用途。
+                      const Spacer(),
+                    ],
+                  ),
                 ),
               ),
             ),
@@ -794,10 +836,12 @@ class _FushiDesktopTitleBarState extends State<FushiDesktopTitleBar>
             ),
           ),
           // 组右侧的页边留白仍是拖动区（右上角另有顶边 resize 把手）。
-          DragToMoveArea(
-            child: SizedBox(
-              width: FushiDesignTokens.of(context).spacing.page,
-              height: FushiDesktopTitleBar.height,
+          _CaptionTapForwarder(
+            child: DragToMoveArea(
+              child: SizedBox(
+                width: FushiDesignTokens.of(context).spacing.page,
+                height: FushiDesktopTitleBar.height,
+              ),
             ),
           ),
         ],
@@ -1907,6 +1951,41 @@ class _FushiTitleBarDragBandScopeState
   Widget get child => widget.child;
 }
 
+/// 页内全屏声明「此刻整窗归内容，收起自绘顶栏」：[enabled] 为真且本页没被别的
+/// 整页盖住时登记 [FushiDesktopTitleBar.setContentFullscreen]，被盖住 / dispose
+/// 时撤回（同 [FushiTitleBarRevealScope] 的撤回语义）。
+///
+/// 给不经窗口全屏、只在页面里铺满的全屏用（内置浏览器的网页全屏：站点全屏键被
+/// 截成页内伪全屏）。不登记的话页面收起了自己的 chrome，窗口按钮组却还常驻在
+/// 画面右上角（反馈 WtYMwfPjpe）。未挂自绘顶栏（移动端、Linux）时无人消费。
+class FushiTitleBarContentFullscreenScope extends StatefulWidget {
+  const FushiTitleBarContentFullscreenScope({
+    required this.enabled,
+    required this.child,
+    super.key,
+  });
+
+  final bool enabled;
+  final Widget child;
+
+  @override
+  State<FushiTitleBarContentFullscreenScope> createState() =>
+      _FushiTitleBarContentFullscreenScopeState();
+}
+
+class _FushiTitleBarContentFullscreenScopeState
+    extends _CoverAwareTitleBarScopeState<FushiTitleBarContentFullscreenScope> {
+  @override
+  void publish({required bool covered}) =>
+      FushiDesktopTitleBar.setContentFullscreen(
+        owner: this,
+        enabled: widget.enabled && !covered,
+      );
+
+  @override
+  Widget get child => widget.child;
+}
+
 /// 浮出 / 拖动条两个 scope 共用的「被别的整页盖住就撤回」骨架：盯本页路由的
 /// `secondaryAnimation`（PopupRoute 不推动它，弹窗不撤回），build 里上报，
 /// dispose 撤回（[publish] 传 `covered: true`）。
@@ -1973,6 +2052,24 @@ class FushiWindowDragArea extends StatelessWidget {
           : null,
       child: child,
     ),
+    child: child,
+  );
+}
+
+/// 包在标题行拖动区（`DragToMoveArea`）外面，把**单击**转发给
+/// [FushiDesktopTitleBar.addCaptionTapListener] 的订阅者（BUG-4475）。拖动 /
+/// 双击最大化仍由里面的 `DragToMoveArea` 赢下手势竞技场；单击要等双击判定
+/// 超时（[kDoubleTapTimeout]）才落到这里，与系统标题栏同一手感。
+class _CaptionTapForwarder extends StatelessWidget {
+  const _CaptionTapForwarder({required this.child});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => GestureDetector(
+    behavior: HitTestBehavior.translucent,
+    onTapUp: (TapUpDetails details) =>
+        FushiDesktopTitleBar._notifyCaptionTap(details.globalPosition),
     child: child,
   );
 }

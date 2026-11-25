@@ -137,7 +137,7 @@ void main() {
         client: JimakuClient(apiKey: 'k', client: fake.client),
       );
 
-  test('整季包出现在搜索结果里（带集号查时服务端会滤掉，再列全表补回）', () async {
+  test('整季包出现在搜索结果里（带集号查时只列一次全表，本地筛集号、保留压缩包）', () async {
     final _FakeJimaku fake = _FakeJimaku(zipBytes: pack);
     final ProviderBatchResult<VideoSubtitleCandidate> result =
         await providerFor(fake).search(_request(episode: 2));
@@ -157,8 +157,10 @@ void main() {
     for (final VideoSubtitleCandidate c in result.items) {
       expect(c.episode, isNull, reason: '`(01-03)` 不是第 1 集');
     }
-    expect(fake.fileListings.first.queryParameters['episode'], '2');
-    expect(fake.fileListings.last.queryParameters, isEmpty);
+    // 服务端 `?episode=` 会把 `(01-03)` 整季包滤掉；全表里本来就有单集文件，
+    // 所以每个条目只列一次全表、不再带集号多打一次。
+    expect(fake.fileListings, hasLength(1));
+    expect(fake.fileListings.single.queryParameters, isEmpty);
   });
 
   test('列表标注：zip 是「整季包」，RAR 直说暂不支持解包', () async {

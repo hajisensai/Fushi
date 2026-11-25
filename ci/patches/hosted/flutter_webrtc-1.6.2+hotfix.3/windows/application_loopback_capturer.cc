@@ -11,6 +11,12 @@
 #include <mmdeviceapi.h>
 #include <roapi.h>
 
+#ifdef FUSHI_GAME_STREAM_WGC
+// Fushi host mute (game_stream_host_mute.cpp ducks the game's sessions; this
+// capturer undoes the duck). Sources come from fushi/windows/runner.
+#include "audio_session_ducker.h"
+#endif
+
 // ---------------------------------------------------------------------------
 // ApplicationLoopbackAudio API types
 // These structs were introduced in Windows SDK 10.0.20348.0.  We define them
@@ -47,6 +53,30 @@ typedef struct AUDIOCLIENT_ACTIVATION_PARAMS {
 #endif  // AUDIOCLIENT_ACTIVATION_TYPE_PROCESS_LOOPBACK
 
 namespace flutter_webrtc_plugin {
+
+#ifdef FUSHI_GAME_STREAM_WGC
+namespace {
+
+// KSDATAFORMAT_SUBTYPE_IEEE_FLOAT without pulling in ksmedia.h.
+const GUID kSubtypeIeeeFloat = {
+    0x00000003, 0x0000, 0x0010,
+    {0x80, 0x00, 0x00, 0xaa, 0x00, 0x38, 0x9b, 0x71}};
+
+bool IsFloat32(const WAVEFORMATEX* fmt) {
+  if (fmt->wBitsPerSample != 32) return false;
+  if (fmt->wFormatTag == WAVE_FORMAT_IEEE_FLOAT) return true;
+  return fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE &&
+         reinterpret_cast<const WAVEFORMATEXTENSIBLE*>(fmt)->SubFormat ==
+             kSubtypeIeeeFloat;
+}
+
+// How often the capture thread re-reads the game's session volume, and how
+// often it re-lists the game's sessions / process tree.
+constexpr ULONGLONG kDuckPollMs = 20;
+constexpr ULONGLONG kDuckRefreshMs = 1000;
+
+}  // namespace
+#endif
 
 // ---------------------------------------------------------------------------
 // COM completion handler for ActivateAudioInterfaceAsync
@@ -384,9 +414,47 @@ IAudioClient* ApplicationLoopbackCapturer::TryInitApplicationLoopback() {
       }
     }
 
+    DWORD stream_flags =
+        AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK;
+#ifdef FUSHI_GAME_STREAM_WGC
+    // Fushi host mute: undoing a session duck needs float samples (16-bit
+    // would quantise the -100 dB signal to zero). The shared-mode mix format
+    // is float32 on every current Windows; otherwise ask the engine to convert
+    // to float32 at the same rate / channel layout.
+    if (target_pid_ != 0 && !IsFloat32(fmt)) {
+      auto* f = static_cast<WAVEFORMATEXTENSIBLE*>(
+          CoTaskMemAlloc(sizeof(WAVEFORMATEXTENSIBLE)));
+      if (f != nullptr) {
+        DWORD mask = fmt->nChannels == 1   ? SPEAKER_FRONT_CENTER
+                     : fmt->nChannels == 2 ? (SPEAKER_FRONT_LEFT |
+                                              SPEAKER_FRONT_RIGHT)
+                                           : 0;
+        if (fmt->wFormatTag == WAVE_FORMAT_EXTENSIBLE) {
+          mask = reinterpret_cast<WAVEFORMATEXTENSIBLE*>(fmt)->dwChannelMask;
+        }
+        *f = WAVEFORMATEXTENSIBLE{};
+        f->Format.wFormatTag = WAVE_FORMAT_EXTENSIBLE;
+        f->Format.nChannels = fmt->nChannels;
+        f->Format.nSamplesPerSec = fmt->nSamplesPerSec;
+        f->Format.wBitsPerSample = 32;
+        f->Format.nBlockAlign =
+            static_cast<WORD>(f->Format.nChannels * sizeof(float));
+        f->Format.nAvgBytesPerSec =
+            f->Format.nSamplesPerSec * f->Format.nBlockAlign;
+        f->Format.cbSize =
+            sizeof(WAVEFORMATEXTENSIBLE) - sizeof(WAVEFORMATEX);
+        f->Samples.wValidBitsPerSample = 32;
+        f->dwChannelMask = mask;
+        f->SubFormat = kSubtypeIeeeFloat;
+        CoTaskMemFree(fmt);
+        fmt = &f->Format;
+        stream_flags |= AUDCLNT_STREAMFLAGS_AUTOCONVERTPCM |
+                        AUDCLNT_STREAMFLAGS_SRC_DEFAULT_QUALITY;
+      }
+    }
+#endif
     hr = client->Initialize(
-        AUDCLNT_SHAREMODE_SHARED,
-        AUDCLNT_STREAMFLAGS_LOOPBACK | AUDCLNT_STREAMFLAGS_EVENTCALLBACK,
+        AUDCLNT_SHAREMODE_SHARED, stream_flags,
         buffer_duration, 0, fmt, nullptr);
     if (FAILED(hr)) {
       std::cerr << "[LoopbackCapturer] IAudioClient::Initialize failed: 0x"
@@ -461,10 +529,38 @@ void ApplicationLoopbackCapturer::CaptureThread() {
   // Temporary conversion buffer (reused across packets).
   std::vector<int16_t> conv;
 
+#ifdef FUSHI_GAME_STREAM_WGC
+  // Fushi host mute: while the game's sessions sit at the duck level the
+  // host speakers are silent and this capture gets the game mix scaled by
+  // that level; scale it back so the stream keeps full volume. Only the
+  // marker volume counts (audio_duck_gain.h), so a user's own mixer setting
+  // still applies to the stream as before.
+  const bool follow_duck = target_pid_ != 0 && is_float && bits == 32;
+  fushi::DuckedTreeProbe duck_probe;
+  if (follow_duck) duck_probe.Open(target_pid_);
+  bool ducked = follow_duck && duck_probe.Ducked();
+  ULONGLONG last_duck_poll = GetTickCount64();
+  ULONGLONG last_duck_refresh = last_duck_poll;
+  std::vector<float> undone;
+#endif
+
   while (running_) {
     DWORD wait_result =
         WaitForSingleObject(buffer_ready_event_, /*dwMilliseconds=*/200);
     if (!running_) break;
+#ifdef FUSHI_GAME_STREAM_WGC
+    if (follow_duck) {
+      const ULONGLONG now = GetTickCount64();
+      if (now - last_duck_refresh >= kDuckRefreshMs) {
+        duck_probe.Refresh();
+        last_duck_refresh = now;
+      }
+      if (now - last_duck_poll >= kDuckPollMs) {
+        ducked = duck_probe.Ducked();
+        last_duck_poll = now;
+      }
+    }
+#endif
     if (wait_result == WAIT_TIMEOUT) continue;
     if (wait_result != WAIT_OBJECT_0) break;
 
@@ -486,10 +582,20 @@ void ApplicationLoopbackCapturer::CaptureThread() {
         const bool silent = (flags & AUDCLNT_BUFFERFLAGS_SILENT) != 0;
         if (!silent) {
           conv.resize(num_frames * out_channels);
+          const BYTE* samples = data;
+#ifdef FUSHI_GAME_STREAM_WGC
+          if (ducked) {
+            const size_t count = static_cast<size_t>(num_frames) * in_channels;
+            const float* raw = reinterpret_cast<const float*>(data);
+            undone.assign(raw, raw + count);
+            fushi::RestoreDuckedGain(undone.data(), count);
+            samples = reinterpret_cast<const BYTE*>(undone.data());
+          }
+#endif
           
           for (size_t f = 0; f < num_frames; ++f) {
             // Find the start of this frame in the raw WASAPI buffer
-            const BYTE* frame_ptr = data + (f * in_channels * bytes_per_sample);
+            const BYTE* frame_ptr = samples + (f * in_channels * bytes_per_sample);
             
             // Extract the Left channel
             int16_t left = extractor(frame_ptr);
@@ -528,6 +634,10 @@ void ApplicationLoopbackCapturer::CaptureThread() {
     }
   }
 
+#ifdef FUSHI_GAME_STREAM_WGC
+  // Release the session COM objects inside this thread's apartment.
+  duck_probe.Close();
+#endif
   if (task) AvRevertMmThreadCharacteristics(task);
   CoUninitialize();
 }

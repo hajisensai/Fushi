@@ -6,6 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
+import 'package:fushi/src/utils/misc/app_icon_preferences.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_color_utilities/material_color_utilities.dart';
 import 'package:material_ui/material_ui.dart';
@@ -67,6 +68,8 @@ void main() {
     pageBackdropSettings.value = const PageBackdropSettings();
     pageBackdropModuleOverrides.value =
         const <HomeTab, PageBackdropModuleOverride>{};
+    pageBackdropPageOverrides.value =
+        const <PageBackdropPage, PageBackdropModuleOverride>{};
     await database.close();
     if (scratch.existsSync()) scratch.deleteSync(recursive: true);
   });
@@ -117,6 +120,118 @@ void main() {
     expect(primary(), baseline);
   });
 
+  // ── 主题选择与取色覆盖：点色卡要真的换主题 ──────────────────────────────
+
+  test('取色生效时报告覆盖来源；在主题选择里点色卡：关掉取色、显示所选主题、背景图保留', () async {
+    notifier = build();
+    final Color blue = ThemeNotifier.buildPresetColorScheme(
+      ThemeNotifier.themePresets['m3-blue']!,
+      Brightness.light,
+    ).primary;
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    expect(
+      notifier.activeAccentOverrideSource,
+      ThemeAccentOverrideSource.pageBackdrop,
+    );
+
+    await notifier.pickAppThemeKey('m3-blue');
+
+    expect(notifier.appThemeKey, 'm3-blue');
+    expect(notifier.followPageBackdropAccent, isFalse);
+    expect(notifier.pageBackdropAccentSeed, isNull);
+    expect(notifier.activeAccentOverrideSource, isNull);
+    expect(primary(), blue);
+    expect(
+      pageBackdropSettings.value.hasCustomImage,
+      isTrue,
+      reason: '只关取色，不动背景图',
+    );
+  });
+
+  test('没有取色覆盖时点色卡：不碰「从图片取色」开关', () async {
+    notifier = build();
+    await notifier.pickAppThemeKey('m3-blue');
+    expect(notifier.appThemeKey, 'm3-blue');
+    expect(notifier.activeAccentOverrideSource, isNull);
+    expect(notifier.followPageBackdropAccent, isTrue);
+  });
+
+  test('setAppThemeKey 只换键（删除自定义主题后的回落等非用户选择）：不关取色', () async {
+    notifier = build();
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    await notifier.setAppThemeKey('m3-blue');
+    expect(notifier.followPageBackdropAccent, isTrue);
+    expect(notifier.pageBackdropAccentSeed, const Color(green));
+  });
+
+  test('点色卡：关取色与换主题同一次通知、监听者从不看到「取色已关、主题未换」的中间态', () async {
+    notifier = build();
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    final Color blue = ThemeNotifier.buildPresetColorScheme(
+      ThemeNotifier.themePresets['m3-blue']!,
+      Brightness.light,
+    ).primary;
+    final List<Color> seen = <Color>[];
+    void listener() => seen.add(primary());
+    notifier.addListener(listener);
+
+    await notifier.pickAppThemeKey('m3-blue');
+    notifier.removeListener(listener);
+
+    expect(seen, <Color>[blue]);
+  });
+
+  test('背景图取色与图标取色同时生效：点色卡两个都关，不会落到图标取色上', () async {
+    final Future<int?> Function(String) originalIconExtractor =
+        ThemeNotifier.appIconSeedExtractor;
+    addTearDown(() {
+      ThemeNotifier.appIconSeedExtractor = originalIconExtractor;
+      currentAppIconSelection.value = const AppIconSelection(
+        presetKey: 'default',
+      );
+    });
+    final File icon = source('icon.png');
+    ThemeNotifier.appIconSeedExtractor = (String _) async => red;
+    currentAppIconSelection.value = AppIconSelection(
+      presetKey: customIconKey,
+      customPath: icon.path,
+    );
+    notifier = build();
+    await notifier.setFollowAppIconAccent(true);
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    expect(notifier.appIconAccentSeed, const Color(red));
+    expect(
+      notifier.activeAccentOverrideSource,
+      ThemeAccentOverrideSource.pageBackdrop,
+    );
+
+    await notifier.pickAppThemeKey('m3-blue');
+
+    expect(notifier.followPageBackdropAccent, isFalse);
+    expect(notifier.followAppIconAccent, isFalse);
+    expect(notifier.activeAccentOverrideSource, isNull);
+    expect(
+      primary(),
+      ThemeNotifier.buildPresetColorScheme(
+        ThemeNotifier.themePresets['m3-blue']!,
+        Brightness.light,
+      ).primary,
+    );
+  });
+
+  test('点色卡落库：开关与主题键同一批写进偏好库，重载后仍是所选主题', () async {
+    notifier = build();
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    await notifier.pickAppThemeKey('m3-blue');
+
+    final Map<String, String> stored = await database.getAllPrefs();
+    expect(stored['app_theme_key'], PrefCodec.encode('m3-blue'));
+    expect(
+      stored[kPageBackdropFollowImageAccentPrefKey],
+      PrefCodec.encode(false),
+    );
+  });
+
   test('切回形状预设：取色不再生效，换回自定义又恢复', () async {
     notifier = build();
     final Color baseline = primary();
@@ -153,6 +268,83 @@ void main() {
     expect(pageBackdropSettings.value.imagePathFor(portrait: true), second);
   });
 
+  test('背景图按配置记：旧图还被别的配置用着就不删，没人用了才删', () async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    Future<int> profile(String name) => database.insertProfile(
+      ProfilesCompanion.insert(name: name, createdAt: now, updatedAt: now),
+    );
+    final int a = await profile('A');
+    final int b = await profile('B');
+    final String uidA = await database.profileUidOf(a);
+    final String uidB = await database.profileUidOf(b);
+    const String parkedPrefix = 'page_backdrop_image_landscape::';
+
+    /// 与 ProfileRepository 切配置时同一结果：live 值停放到 [fromUid] 名下，[restore] 换回 live。
+    Future<void> switchProfile(String fromUid, int to, String? restore) async {
+      final String? live = await database.getPref(
+        kPageBackdropLandscapeImagePrefKey,
+      );
+      await database.setPref('$parkedPrefix$fromUid', live ?? '');
+      await database.setPref(kActiveProfileIdPrefKey, '$to');
+      if (restore != null) {
+        await database.setPref(kPageBackdropLandscapeImagePrefKey, restore);
+      }
+      await notifier.refreshFromDb();
+    }
+
+    await database.setPref(kActiveProfileIdPrefKey, '$a');
+    notifier = build();
+    await notifier.importPageBackdropImage(source('x.png'), portrait: false);
+    final String x = pageBackdropSettings.value.landscapeImagePath!;
+
+    // 切到 B（没停放过，沿用 x），B 换成 y：x 还是 A 的图，不能删。
+    await switchProfile(uidA, b, null);
+    expect(pageBackdropSettings.value.landscapeImagePath, x);
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+    await notifier.importPageBackdropImage(source('y.png'), portrait: false);
+    final String y = pageBackdropSettings.value.landscapeImagePath!;
+    expect(File(x).existsSync(), isTrue, reason: 'A 还停放着 x');
+
+    // 切回 A：拿回 x。A 换成 z：x 只剩 A 自己的旧停放值指着，删；y 是 B 的，留。
+    await switchProfile(uidB, a, PrefCodec.encode(x));
+    expect(pageBackdropSettings.value.landscapeImagePath, x);
+    await Future<void>.delayed(const Duration(milliseconds: 2));
+    await notifier.importPageBackdropImage(source('z.png'), portrait: false);
+    final String z = pageBackdropSettings.value.landscapeImagePath!;
+    expect(File(x).existsSync(), isFalse);
+    expect(File(y).existsSync(), isTrue, reason: 'B 还停放着 y');
+    expect(File(z).existsSync(), isTrue);
+
+    // B 被删掉（停放键随之清掉）：y 成了孤儿，下一次换图时收掉。
+    await database.deletePref('$parkedPrefix$uidB');
+    await notifier.importPageBackdropImage(source('p.png'), portrait: true);
+    expect(File(y).existsSync(), isFalse);
+    expect(File(z).existsSync(), isTrue);
+  });
+
+  test('并发换图排队执行：后一次刚复制的文件不会被前一次的清扫删掉', () async {
+    notifier = build();
+    await Future.wait(<Future<void>>[
+      notifier.importPageBackdropImage(source('l.png'), portrait: false),
+      notifier.importPageBackdropImage(source('p.png'), portrait: true),
+      notifier.importPageBackdropModuleImage(
+        HomeTab.video,
+        source('v.png'),
+        portrait: false,
+      ),
+    ]);
+    final PageBackdropSettings settings = pageBackdropSettings.value;
+    expect(File(settings.landscapeImagePath!).existsSync(), isTrue);
+    expect(File(settings.portraitImagePath!).existsSync(), isTrue);
+    expect(
+      File(
+        pageBackdropModuleOverrides.value[HomeTab.video]!.landscapeImagePath!,
+      ).existsSync(),
+      isTrue,
+    );
+    expect(store.listSync().whereType<File>(), hasLength(3));
+  });
+
   test('冷启动先用取色缓存，文件没变不重取', () async {
     final File image = File('${scratch.path}/kept.png')
       ..writeAsBytesSync(<int>[9, 9, 9]);
@@ -177,7 +369,48 @@ void main() {
     expect(notifier.pageBackdropAccentSeed, const Color(red));
   });
 
-  test('偏好里的图在这台设备上不存在：回落角落形状、不取色', () async {
+  test('非激活配置的只读视图按它自己停放的图与取色缓存取色，不借激活配置那张图', () async {
+    notifier = build();
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    expect(notifier.pageBackdropAccentSeed, const Color(green));
+
+    // 另一份配置停放的是自己的图与取色缓存（loadSettingsView 把停放值换进视图偏好）。
+    final String other = '${scratch.path}/other-profile.png';
+    final ThemeNotifier view =
+        ThemeNotifier.profileView(notifier, <String, String>{
+          'design_system': PrefCodec.encode('material'),
+          'app_theme_key': PrefCodec.encode('m3-baseline'),
+          kPageBackdropPresetPrefKey: PrefCodec.encode('custom'),
+          kPageBackdropLandscapeImagePrefKey: PrefCodec.encode(other),
+          kPageBackdropSeedCachePrefKey: PrefCodec.encode('$other|1:1|$red'),
+        });
+    expect(view.pageBackdropAccentSeed, const Color(red));
+    view.dispose();
+
+    // 那份配置没选自定义图片：激活配置的图再怎么取色，视图也不被覆盖。
+    final ThemeNotifier plain =
+        ThemeNotifier.profileView(notifier, <String, String>{
+          'design_system': PrefCodec.encode('material'),
+          'app_theme_key': PrefCodec.encode('m3-baseline'),
+        });
+    expect(plain.pageBackdropAccentSeed, isNull);
+    plain.dispose();
+
+    // 与激活配置同一张图：沿用 live 已取到的颜色。
+    final ThemeNotifier same =
+        ThemeNotifier.profileView(notifier, <String, String>{
+          'design_system': PrefCodec.encode('material'),
+          'app_theme_key': PrefCodec.encode('m3-baseline'),
+          kPageBackdropPresetPrefKey: PrefCodec.encode('custom'),
+          kPageBackdropLandscapeImagePrefKey: PrefCodec.encode(
+            pageBackdropSettings.value.landscapeImagePath!,
+          ),
+        });
+    expect(same.pageBackdropAccentSeed, const Color(green));
+    same.dispose();
+  });
+
+  test('偏好里的图在这台设备上不存在：回落默认样式、不取色', () async {
     notifier = build(<String, String>{
       kPageBackdropPresetPrefKey: PrefCodec.encode('custom'),
       kPageBackdropLandscapeImagePrefKey: PrefCodec.encode(
@@ -189,11 +422,166 @@ void main() {
     // ……异步核对出不存在后重发布。
     await notifier.refreshPageBackdropSeeds();
     expect(pageBackdropSettings.value.hasCustomImage, isFalse);
-    expect(
-      pageBackdropSettings.value.effectivePreset,
-      PageBackdropPreset.corner,
-    );
+    expect(pageBackdropSettings.value.effectivePreset, PageBackdropPreset.mesh);
     expect(notifier.pageBackdropAccentSeed, isNull);
+  });
+
+  // ── BUG-5370：iOS 更新换容器 UUID / 换数据根后背景图不能丢 ─────────────
+
+  test('导入只存文件名：背景图目录整体换了根，重启后图照样解析到新位置', () async {
+    notifier = build();
+    await notifier.importPageBackdropImage(source('a.png'), portrait: false);
+    await notifier.importPageBackdropImage(source('b.png'), portrait: true);
+    await notifier.importPageBackdropModuleImage(
+      HomeTab.books,
+      source('c.png'),
+      portrait: false,
+    );
+    final String landscapeName = pageBackdropImageFileName(
+      pageBackdropSettings.value.landscapeImagePath!,
+    );
+    final Map<String, String> stored = await database.getAllPrefs();
+    expect(
+      PrefCodec.decodeUntyped(stored[kPageBackdropLandscapeImagePrefKey]!),
+      landscapeName,
+      reason: '偏好只存文件名，不烧进容器根',
+    );
+    expect(
+      PrefCodec.decodeUntyped(stored[kPageBackdropPortraitImagePrefKey]!),
+      isNot(contains(store.path)),
+    );
+    expect(
+      PrefCodec.decodeUntyped(stored[kPageBackdropModuleImagesPrefKey]!),
+      isNot(contains(store.path)),
+    );
+    await notifier.pageBackdropImagesSettled;
+    notifier.dispose();
+
+    // iOS 装新构建：容器 UUID 变了，support 根连同 page_backdrop 目录一起到了新位置。
+    final Directory moved = Directory('${scratch.path}/new-container/store');
+    moved.parent.createSync(recursive: true);
+    store.renameSync(moved.path);
+    ThemeNotifier.pageBackdropImageDirectory = () async => moved;
+    pageBackdropSettings.value = const PageBackdropSettings();
+    notifier = build(await database.getAllPrefs());
+    await notifier.pageBackdropImagesSettled;
+
+    final PageBackdropSettings after = pageBackdropSettings.value;
+    expect(after.hasCustomImage, isTrue);
+    expect(after.landscapeImagePath, startsWith(moved.path));
+    expect(File(after.landscapeImagePath!).existsSync(), isTrue);
+    expect(File(after.portraitImagePath!).existsSync(), isTrue);
+    final String books =
+        pageBackdropModuleOverrides.value[HomeTab.books]!.landscapeImagePath!;
+    expect(books, startsWith(moved.path));
+    expect(File(books).existsSync(), isTrue);
+    expect(notifier.pageBackdropAccentSeed, const Color(green));
+  });
+
+  test('存量绝对路径（旧容器根）：载入时按文件名改写 live、模块与各配置停放的值', () async {
+    store.createSync(recursive: true);
+    for (final String name in <String>[
+      'landscape-1.jpg',
+      'portrait-2.jpg',
+      'module-books-landscape-3.jpg',
+      'landscape-4.jpg',
+      'module-video-landscape-5.jpg',
+    ]) {
+      File('${store.path}/$name').writeAsBytesSync(<int>[1, 2, 3]);
+    }
+    // 旧容器里的路径：文件已随目录搬到 [store]，这些绝对路径本身全悬空。
+    String old(String name) =>
+        '${scratch.path}/OLD-CONTAINER-UUID/Library/page_backdrop/$name';
+    final String gone = old('landscape-0-not-here.jpg');
+    final Map<String, String> prefs = <String, String>{
+      kPageBackdropPresetPrefKey: PrefCodec.encode('custom'),
+      kPageBackdropLandscapeImagePrefKey: PrefCodec.encode(
+        old('landscape-1.jpg'),
+      ),
+      kPageBackdropPortraitImagePrefKey: PrefCodec.encode(
+        old('portrait-2.jpg'),
+      ),
+      kPageBackdropModulePresetsPrefKey: PrefCodec.encode(
+        jsonEncode(<String, String>{'books': 'custom'}),
+      ),
+      kPageBackdropModuleImagesPrefKey: PrefCodec.encode(
+        jsonEncode(<String, Object>{
+          'books': <String, String>{
+            'landscape': old('module-books-landscape-3.jpg'),
+          },
+        }),
+      ),
+      'page_backdrop_image_landscape::uid-other': PrefCodec.encode(
+        old('landscape-4.jpg'),
+      ),
+      'page_backdrop_image_portrait::uid-other': PrefCodec.encode(gone),
+      'page_backdrop_module_images::uid-other': PrefCodec.encode(
+        jsonEncode(<String, Object>{
+          'video': <String, String>{
+            'landscape': old('module-video-landscape-5.jpg'),
+          },
+        }),
+      ),
+    };
+    for (final MapEntry<String, String> e in prefs.entries) {
+      await database.setPref(e.key, e.value);
+    }
+
+    notifier = build(prefs);
+    await notifier.pageBackdropImagesSettled;
+
+    final PageBackdropSettings settings = pageBackdropSettings.value;
+    expect(settings.hasCustomImage, isTrue);
+    expect(
+      settings.landscapeImagePath,
+      resolvePageBackdropImagePath('landscape-1.jpg', directory: store.path),
+    );
+    expect(File(settings.portraitImagePath!).existsSync(), isTrue);
+    expect(
+      File(
+        pageBackdropModuleOverrides.value[HomeTab.books]!.landscapeImagePath!,
+      ).existsSync(),
+      isTrue,
+    );
+
+    Object? read(Map<String, String> all, String key) =>
+        PrefCodec.decodeUntyped(all[key]!);
+    final Map<String, String> all = await database.getAllPrefs();
+    expect(read(all, kPageBackdropLandscapeImagePrefKey), 'landscape-1.jpg');
+    expect(read(all, kPageBackdropPortraitImagePrefKey), 'portrait-2.jpg');
+    expect(
+      decodePageBackdropModuleImages(
+        read(all, kPageBackdropModuleImagesPrefKey),
+      )[HomeTab.books]!.landscape,
+      'module-books-landscape-3.jpg',
+    );
+    expect(
+      read(all, 'page_backdrop_image_landscape::uid-other'),
+      'landscape-4.jpg',
+    );
+    expect(
+      decodePageBackdropModuleImages(
+        read(all, 'page_backdrop_module_images::uid-other'),
+      )[HomeTab.video]!.landscape,
+      'module-video-landscape-5.jpg',
+    );
+    expect(
+      read(all, 'page_backdrop_image_portrait::uid-other'),
+      gone,
+      reason: '目录里没有的文件不改写，照旧按不存在处理',
+    );
+
+    // 换一张图触发清扫：停放配置引用的文件（按文件名比）一个都不能被当孤儿删。
+    await notifier.importPageBackdropImage(source('new.png'), portrait: false);
+    expect(File('${store.path}/landscape-1.jpg').existsSync(), isFalse);
+    for (final String kept in <String>[
+      'portrait-2.jpg',
+      'module-books-landscape-3.jpg',
+      'landscape-4.jpg',
+      'module-video-landscape-5.jpg',
+    ]) {
+      expect(File('${store.path}/$kept').existsSync(), isTrue, reason: kept);
+    }
   });
 
   // ── 按模块单独设置（反馈 DYI1IOZxSM）────────────────────────────────
@@ -242,6 +630,70 @@ void main() {
     expect(primary(), accent);
   });
 
+  test('复习答题页单独设图：与模块层同存一对键互不丢，恢复继承才删图（拍板台 xxbbL0j15l）', () async {
+    notifier = build();
+    await notifier.setPageBackdropModulePreset(
+      HomeTab.srs,
+      PageBackdropPreset.wave,
+    );
+    await notifier.importPageBackdropPageImage(
+      PageBackdropPage.srsReview,
+      source('review.png'),
+      portrait: false,
+    );
+    final PageBackdropModuleOverride review =
+        pageBackdropPageOverrides.value[PageBackdropPage.srsReview]!;
+    expect(review.preset, PageBackdropPreset.custom);
+    expect(review.landscapeImagePath, startsWith(store.path));
+    expect(File(review.landscapeImagePath!).existsSync(), isTrue);
+    expect(
+      pageBackdropSettingsFor(HomeTab.srs).preset,
+      PageBackdropPreset.wave,
+      reason: '总览页（复习模块）不受答题页影响',
+    );
+    expect(
+      pageBackdropSettingsFor(
+        null,
+        page: PageBackdropPage.srsReview,
+      ).landscapeImagePath,
+      review.landscapeImagePath,
+    );
+
+    // 改模块层（换图会触发清扫、恢复跟随会整体改写两个键）不能丢掉页面层。
+    await notifier.importPageBackdropModuleImage(
+      HomeTab.srs,
+      source('srs.png'),
+      portrait: false,
+    );
+    await notifier.setPageBackdropModulePreset(HomeTab.srs, null);
+    expect(pageBackdropModuleOverrides.value, isEmpty);
+    expect(pageBackdropPageOverrides.value[PageBackdropPage.srsReview], review);
+    expect(File(review.landscapeImagePath!).existsSync(), isTrue);
+
+    // 关掉：纯色，图先留着（切回自定义还能用）。
+    await notifier.setPageBackdropPagePreset(
+      PageBackdropPage.srsReview,
+      PageBackdropPreset.plain,
+    );
+    expect(
+      pageBackdropSettingsFor(
+        null,
+        page: PageBackdropPage.srsReview,
+      ).effectivePreset,
+      PageBackdropPreset.plain,
+    );
+    expect(File(review.landscapeImagePath!).existsSync(), isTrue);
+
+    // 恢复继承：连同本页的图一起删，回到模块（此时即全局）。
+    await notifier.setPageBackdropPagePreset(PageBackdropPage.srsReview, null);
+    expect(pageBackdropPageOverrides.value, isEmpty);
+    expect(File(review.landscapeImagePath!).existsSync(), isFalse);
+    expect(
+      pageBackdropSettingsFor(null, page: PageBackdropPage.srsReview),
+      pageBackdropSettings.value,
+    );
+  });
+
   test('模块单独设形状预设；恢复跟随全局连同模块图片一起删', () async {
     notifier = build();
     await notifier.setPageBackdropModulePreset(
@@ -254,7 +706,7 @@ void main() {
     );
     expect(
       pageBackdropSettingsFor(HomeTab.books).preset,
-      PageBackdropPreset.corner,
+      PageBackdropPreset.mesh,
     );
 
     await notifier.importPageBackdropModuleImage(
@@ -311,6 +763,25 @@ void main() {
     expect(
       pageBackdropSettingsFor(HomeTab.books).preset,
       PageBackdropPreset.wave,
+    );
+  });
+
+  test('没存过背景样式（新装 / 恢复默认删键）默认柔光晕染', () {
+    notifier = build();
+    expect(notifier.pageBackdropPreset, PageBackdropPreset.mesh);
+    expect(pageBackdropSettings.value.preset, PageBackdropPreset.mesh);
+  });
+
+  test('存量「角落形状」偏好（全局与按模块）读成柔光晕染，不改写持久化值', () {
+    notifier = build(<String, String>{
+      kPageBackdropPresetPrefKey: PrefCodec.encode('corner'),
+      kPageBackdropModulePresetsPrefKey: PrefCodec.encode('{"video":"corner"}'),
+    });
+    expect(notifier.pageBackdropPreset, PageBackdropPreset.mesh);
+    expect(pageBackdropSettings.value.preset, PageBackdropPreset.mesh);
+    expect(
+      pageBackdropModuleOverrides.value[HomeTab.video]?.preset,
+      PageBackdropPreset.mesh,
     );
   });
 }

@@ -34,6 +34,7 @@ import 'package:fushi_engine/ai/web_search.dart';
 import 'package:fushi_engine/sync/assistant/agent_assistant_host.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
+import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 
 class _Settings implements AiSettingsSource {
@@ -84,6 +85,82 @@ class _StubLlm implements AgentLlm {
     return _turns.isEmpty
         ? const AiChatTurn(text: 'done', toolCalls: <AiChatToolCall>[])
         : _turns.removeFirst();
+  }
+}
+
+/// 记下手机发出的每个动作；[lastAct] 等最后一个动作的往返结束，让测试按序投递。
+class _RecordingAssistantClient extends InterconnectAssistantClient {
+  _RecordingAssistantClient(SyncRepository repo) : super(repo: repo);
+
+  final List<Map<String, Object?>> actions = <Map<String, Object?>>[];
+  Future<void> lastAct = Future<void>.value();
+
+  @override
+  Future<HostAssistantEnvelope> act(
+    HostAssistantTarget target,
+    String id,
+    Map<String, Object?> action,
+  ) {
+    actions.add(Map<String, Object?>.of(action));
+    final Future<HostAssistantEnvelope> result = super.act(target, id, action);
+    lastAct = result.then((_) {}, onError: (Object _) {});
+    return result;
+  }
+}
+
+/// 统计发往会话路由的长轮询 GET（及其中的 401）与关会话 DELETE。借给
+/// [InterconnectAssistantClient] 用（借用的 client 它不关），由测试自己关 [inner]。
+class _CountingHttpClient extends http.BaseClient {
+  final http.Client inner = http.Client();
+  int sessionReads = 0;
+  int sessionReads401 = 0;
+  int sessionCloses = 0;
+
+  /// 关会话 DELETE 关的会话 id（按发出顺序）。
+  final List<String> closedIds = <String>[];
+
+  /// 非 null 时，开会话 POST 送达 host 之后把应答扣到它完成为止（host 已建好
+  /// 会话、应答还在路上）；[openHeld] 在应答被扣下时完成。
+  Completer<void>? holdOpen;
+  final Completer<void> openHeld = Completer<void>();
+
+  static final RegExp _session = RegExp(r'^/api/assistant/sessions/[^/]+$');
+
+  @override
+  Future<http.StreamedResponse> send(http.BaseRequest request) async {
+    final bool onSession = _session.hasMatch(request.url.path);
+    final bool isRead = onSession && request.method == 'GET';
+    if (isRead) sessionReads++;
+    if (onSession && request.method == 'DELETE') {
+      sessionCloses++;
+      closedIds.add(request.url.pathSegments.last);
+    }
+    final bool isOpen =
+        request.method == 'POST' &&
+        request.url.path == '/api/assistant/sessions';
+    final http.StreamedResponse response = await inner.send(request);
+    if (isRead && response.statusCode == 401) sessionReads401++;
+    final Completer<void>? hold = holdOpen;
+    if (isOpen && hold != null) {
+      if (!openHeld.isCompleted) openHeld.complete();
+      await hold.future;
+    }
+    return response;
+  }
+}
+
+/// 记下会话何时释放 client，以及释放那一刻已经发出的关会话请求数。
+class _DisposeRecordingClient extends InterconnectAssistantClient {
+  _DisposeRecordingClient(SyncRepository repo, this.counting)
+    : super(repo: repo, httpClient: counting);
+
+  final _CountingHttpClient counting;
+  final Completer<int> disposed = Completer<int>();
+
+  @override
+  void dispose() {
+    if (!disposed.isCompleted) disposed.complete(counting.sessionCloses);
+    super.dispose();
   }
 }
 
@@ -409,6 +486,69 @@ void main() {
     expect(deleted, <String>['a.mkv']);
   });
 
+  test('BUG-4458：确认作答带卡片 id，晚到的旧卡作答不落到下一张卡上', () async {
+    final (_, String url) = await startHost(
+      agentHost(
+        turns: <AiChatTurn>[
+          _call('files.delete', <String, Object?>{'name': 'a.mkv'}),
+          _call('files.delete', <String, Object?>{'name': 'b.mkv'}),
+        ],
+      ),
+    );
+    final _RecordingAssistantClient c = _RecordingAssistantClient(repo);
+    final RemoteAiAgentSession session = await RemoteAiAgentSession.open(
+      client: c,
+      target: (await c.probeUrl(url))!,
+      locale: 'zh-CN',
+      longPollWait: const Duration(seconds: 2),
+    );
+    addTearDown(session.dispose);
+    // 页面只经接口拿控制器。
+    final AiAgentConversationController controller = session;
+    await session.send('删掉 a.mkv 和 b.mkv');
+    await until(session, () => session.awaitingConfirm);
+    final AgentEntry cardA = session.entries.lastWhere(
+      (AgentEntry e) => e.kind == AgentEntryKind.confirm,
+    );
+
+    // 不给卡片 id 时取发送那一刻快照里的待答卡片。
+    controller.answerConfirm(true);
+    await c.lastAct;
+    expect(c.actions.last, <String, Object?>{
+      'type': 'answerConfirm',
+      'approve': true,
+      'entryId': cardA.id,
+    });
+    await until(
+      session,
+      () =>
+          session.awaitingConfirm &&
+          session.entries
+                  .lastWhere((AgentEntry e) => e.kind == AgentEntryKind.confirm)
+                  .id !=
+              cardA.id,
+    );
+    final AgentEntry cardB = session.entries.lastWhere(
+      (AgentEntry e) => e.kind == AgentEntryKind.confirm,
+    );
+    expect(deleted, <String>['a.mkv']);
+
+    // 卡片 A 的重复点击晚到：host 按卡片 id 忽略，不把卡片 B 同意掉。
+    controller.answerConfirm(true, entryId: cardA.id);
+    await c.lastAct;
+    expect(c.actions.last['entryId'], cardA.id);
+    expect(session.awaitingConfirm, isTrue);
+
+    controller.answerConfirm(false, entryId: cardB.id);
+    await c.lastAct;
+    await until(session, () => !session.running && !session.awaitingConfirm);
+    expect(deleted, <String>['a.mkv']);
+    expect(
+      session.entries.firstWhere((AgentEntry e) => e.id == cardB.id).status,
+      AgentEntryStatus.declined,
+    );
+  });
+
   test('电脑停机：断线提示只插一次、放开输入与待答卡片', () async {
     final (FushiSyncServer server, String url) = await startHost(agentHost());
     final InterconnectAssistantClient c = client();
@@ -436,6 +576,136 @@ void main() {
     );
     expect(session.running, isFalse);
     expect(session.awaitingConfirm, isFalse);
+  });
+
+  test('BUG-4406：会话中途凭据被吊销 → 401 后停止轮询、不再可用；dispose 不发关会话、'
+      '释放 client', () async {
+    // 与 `FushiServerController.revokePeer` 同一路径：删掉 per-peer 口令 + 清缓存。
+    final Set<String> peerTokens = <String>{'peer-tok'};
+    final FushiSyncServer server = FushiSyncServer(
+      syncDataDir: p.join(tmp.path, 'sync-revoke'),
+      port: 0,
+      token: 'tok',
+      assistant: agentHost(),
+    )..pairedPeerTokensProvider = () async => Set<String>.of(peerTokens);
+    await server.start();
+    addTearDown(server.stop);
+    final String url = 'http://127.0.0.1:${server.port}';
+    await repo.setFushiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: url, deviceName: 'PC', token: 'peer-tok'),
+    ]);
+    final _CountingHttpClient counting = _CountingHttpClient();
+    addTearDown(counting.inner.close);
+    final _DisposeRecordingClient c = _DisposeRecordingClient(repo, counting);
+    const Duration retryDelay = Duration(milliseconds: 20);
+    final RemoteAiAgentSession session = await RemoteAiAgentSession.open(
+      client: c,
+      target: (await c.probeUrl(url))!,
+      locale: 'zh-CN',
+      retryDelay: retryDelay,
+      longPollWait: const Duration(seconds: 1),
+    );
+    addTearDown(session.dispose);
+    expect(session.isUsable, isTrue);
+
+    peerTokens.remove('peer-tok');
+    server.invalidatePeerTokenCache();
+    await until(session, () => session.isLost);
+
+    expect(session.isUsable, isFalse);
+    expect(counting.sessionReads401, greaterThanOrEqualTo(1));
+    final int reads = counting.sessionReads;
+    await Future<void>.delayed(retryDelay * 5);
+    expect(counting.sessionReads, reads, reason: '凭据被拒再试也不会好，不得每隔几秒重试');
+    expect(
+      session.entries
+          .where((AgentEntry e) => e.errorCode == kAiAgentRemoteUnavailableCode)
+          .length,
+      1,
+    );
+
+    session.dispose();
+    expect(
+      await c.disposed.future.timeout(const Duration(seconds: 10)),
+      0,
+      reason: '永久失败后关会话也不会成功，不发',
+    );
+    expect(counting.sessionCloses, 0);
+  });
+
+  test('BUG-4406：dispose 先关 host 上的会话、再释放会话接管的 client', () async {
+    final (_, String url) = await startHost(agentHost());
+    final _CountingHttpClient counting = _CountingHttpClient();
+    addTearDown(counting.inner.close);
+    final _DisposeRecordingClient c = _DisposeRecordingClient(repo, counting);
+    final HostAssistantTarget target = (await c.probeUrl(url))!;
+    final RemoteAiAgentSession session = await RemoteAiAgentSession.open(
+      client: c,
+      target: target,
+      locale: 'zh-CN',
+      longPollWait: const Duration(seconds: 1),
+    );
+    addTearDown(session.dispose);
+
+    session.dispose();
+    expect(
+      await c.disposed.future.timeout(const Duration(seconds: 10)),
+      1,
+      reason: '关会话的请求发完才释放 client',
+    );
+    // 释放后 client 不再可用：再发请求按本机已关闭收尾。
+    await expectLater(
+      c.read(target, session.currentSessionId ?? 'gone'),
+      throwsA(
+        isA<HostAssistantException>().having(
+          (HostAssistantException e) => e.cancelled,
+          'cancelled',
+          isTrue,
+        ),
+      ),
+    );
+  });
+
+  test('BUG-4406：开会话在途（host 已建好、应答未回）时 dispose：等它落地补关，'
+      '再释放 client', () async {
+    final (_, String url) = await startHost(agentHost());
+    final _CountingHttpClient counting = _CountingHttpClient();
+    addTearDown(counting.inner.close);
+    final _DisposeRecordingClient c = _DisposeRecordingClient(repo, counting);
+    final RemoteAiAgentSession session = await RemoteAiAgentSession.open(
+      client: c,
+      target: (await c.probeUrl(url))!,
+      locale: 'zh-CN',
+      longPollWait: const Duration(seconds: 1),
+    );
+    addTearDown(session.dispose);
+
+    final Completer<void> release = Completer<void>();
+    addTearDown(() {
+      if (!release.isCompleted) release.complete();
+    });
+    counting.holdOpen = release;
+    // 新对话：关掉旧的一场，再开一场——开会话的应答被扣在路上。
+    unawaited(session.newSession());
+    await counting.openHeld.future.timeout(const Duration(seconds: 10));
+    // 此刻只有旧的一场被关（新的一场应答还扣着）。记它在 host 上的会话句柄——
+    // `currentSessionId` 是快照里的对话 id，不是 URL 里的句柄。
+    final String first = counting.closedIds.single;
+
+    session.dispose();
+    // 应答还没回：client 不得先释放（释放会把这次开会话掐成 cancelled）。
+    await Future<void>.delayed(const Duration(milliseconds: 100));
+    expect(c.disposed.isCompleted, isFalse);
+    release.complete();
+
+    expect(
+      await c.disposed.future.timeout(const Duration(seconds: 10)),
+      2,
+      reason: '旧的一场与在途开出的那场都关完才释放 client',
+    );
+    expect(counting.closedIds, hasLength(2));
+    expect(counting.closedIds.first, first);
+    expect(counting.closedIds.last, isNot(first));
   });
 
   group('BUG-4067：远端会话历史（按发起设备）', () {

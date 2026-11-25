@@ -5,6 +5,7 @@ import 'package:fushi/src/media/downloads/download_source_method.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi/src/media/discovery/discovery_labels.dart';
+import 'package:fushi/src/media/discovery/download_gateway_challenge_page.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
@@ -21,6 +22,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/engine_listenable.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 「下载」页任务 tab 的发现页直链下载区：渲染 [DiscoveryDownloadQueue] 的任务
 /// 列表（游戏 / 小说 / 有声书等 HTTP 直链，与 torrent 任务、漫画目录队列并列，
@@ -40,6 +42,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
     this.tasksBuilder,
     this.pathRevealer,
     this.revealHostProbe,
+    this.challengeOpener,
   });
 
   /// Parent owns unified filtering, sorting and grouping, including empty queues.
@@ -55,11 +58,15 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
   /// 「打开文件位置」入口隐藏，不画点了没反应的按钮。
   final RevealHost? Function()? revealHostProbe;
 
+  /// 测试注入「在浏览器中打开」（null = [openDownloadGatewayChallengeInBrowser]）。
+  final Future<bool> Function(Uri url)? challengeOpener;
+
   @override
   Widget build(BuildContext context, WidgetRef ref) {
-    final DiscoveryDownloadQueue? queue = queueOverride ?? _appQueue(ref);
+    final DiscoveryDownloadQueue? queue =
+        queueOverride ?? appQueue(ref.read(appProvider));
     final bool Function(String sourceId) external = queueOverride == null
-        ? _externalSourceResolver(ref)
+        ? externalSourceResolver(ref.read(appProvider))
         : (String _) => true;
     if (queue == null) {
       return tasksBuilder?.call(context, const <DownloadTaskEntry>[]) ??
@@ -70,10 +77,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
       builder: (BuildContext context, Widget? _) {
         final List<DiscoveryDownloadTask> tasks = queue.tasks;
         if (tasksBuilder != null) {
-          return tasksBuilder!(context, <DownloadTaskEntry>[
-            for (final DiscoveryDownloadTask task in tasks)
-              _buildEntry(queue, task, external: external(task.item.sourceId)),
-          ]);
+          return tasksBuilder!(context, entriesOf(queue, external: external));
         }
         if (tasks.isEmpty) return const SizedBox.shrink();
         final ThemeData theme = Theme.of(context);
@@ -142,6 +146,16 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
     );
   }
 
+  /// 队列此刻的任务 → 统一任务列表条目。下载页与侧栏下载速览共用这一份映射
+  /// （见 `download_task_sources.dart`）。
+  List<DownloadTaskEntry> entriesOf(
+    DiscoveryDownloadQueue queue, {
+    required bool Function(String sourceId) external,
+  }) => <DownloadTaskEntry>[
+    for (final DiscoveryDownloadTask task in queue.tasks)
+      _buildEntry(queue, task, external: external(task.item.sourceId)),
+  ];
+
   DownloadTaskEntry _buildEntry(
     DiscoveryDownloadQueue queue,
     DiscoveryDownloadTask task, {
@@ -178,6 +192,7 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
         DiscoveryDownloadStatus.cancelled => DownloadTaskStatus.cancelled,
       },
       progress: progress,
+      subtitle: discoveryMediaKindLabel(task.item.kind),
       // No collection identity in direct resources: never infer it from titles.
       searchTerms: <String>[task.item.sourceId],
       builder: (BuildContext context) => DownloadTaskCard(
@@ -293,6 +308,15 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
+          if (task.challengeUrl case final Uri challengeUrl
+              when task.status == DiscoveryDownloadStatus.failed)
+            FushiIconButton(
+              key: ValueKey<String>('$rowKey-challenge-browser'),
+              tooltip: t.discovery_download_challenge_open_browser,
+              icon: FushiIcons.openInNew,
+              size: 20,
+              onTap: () => _openChallenge(context, challengeUrl),
+            ),
           if (revealTarget != null)
             FushiIconButton(
               key: ValueKey<String>('$rowKey-location'),
@@ -327,6 +351,16 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
     );
   }
 
+  /// 下载网关要求人机验证（BUG-4354）：交给系统浏览器解题并下载。打不开要出声。
+  Future<void> _openChallenge(BuildContext context, Uri url) async {
+    final bool opened =
+        await (challengeOpener ?? openDownloadGatewayChallengeInBrowser)(url);
+    if (opened || !context.mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      FushiSnackBar(content: Text(t.collection_web_page_open_failed)),
+    );
+  }
+
   /// 行内「删除任务」：确认后把这行从队列摘掉（文件不动）。
   ///
   /// 复用下载中心的删除确认框以保持两处口径一致，但 `offerDeleteFiles: false`
@@ -349,14 +383,15 @@ class DiscoveryDownloadTasksSection extends ConsumerWidget {
 
   /// 生产队列。与漫画目录区同一道门：BrowsePage 会在数据库打开前被轻量
   /// widget 测试 / AppModel 桩渲染，空的可选任务区不该在这个窗口里去拉组装点。
-  static DiscoveryDownloadQueue? _appQueue(WidgetRef ref) {
-    final AppModel appModel = ref.read(appProvider);
+  /// app 持有的直链队列；库没就绪时为 null。
+  static DiscoveryDownloadQueue? appQueue(AppModel appModel) {
     return appModel.isDatabaseReady ? appModel.discoveryDownloadQueue : null;
   }
 
   /// 外部来源判据与发现页结果行同一个（[isExternalDiscoverySource]）。
-  static bool Function(String sourceId) _externalSourceResolver(WidgetRef ref) {
-    final AppModel appModel = ref.read(appProvider);
+  static bool Function(String sourceId) externalSourceResolver(
+    AppModel appModel,
+  ) {
     return (String sourceId) =>
         isExternalDiscoverySource(appModel.mediaDiscoveryService, sourceId);
   }
@@ -420,6 +455,11 @@ String discoveryDownloadStatusLabel(
     case DiscoveryDownloadStatus.cancelled:
       return t.download_status_cancelled;
     case DiscoveryDownloadStatus.failed:
+      // 网关人机验证没过（BUG-4354）：说人话，不甩一串异常文本。
+      if (task.challengeUrl != null) {
+        return '${t.manga_online_failed}: '
+            '${t.discovery_download_challenge_required}';
+      }
       return '${t.manga_online_failed}: ${task.error ?? ''}';
     case DiscoveryDownloadStatus.waitingRetry:
       return '${t.manga_online_retry_waiting(attempt: task.autoRetries, total: maxAutoRetries)}: ${task.error ?? ''}';

@@ -44,10 +44,10 @@
   var RETIRED_KEYS = ['extensionMaterial', 'appGlassMirror'];
   var STYLE_ID = 'fushi-theme-palette';
   // 与 scripts/generate-content-css.mjs 的 IN_PAGE_THEME_HOSTS 同一份清单。
-  var IN_PAGE_HOSTS = ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls, #fushi-ctx-modal-host)';
+  var IN_PAGE_HOSTS = ':where(#fushi-drawer, #fushi-subtitle-overlay, #fushi-subtitle-mask, #fushi-subtitle-drop-hint, #fushi-queue-chip, #fushi-toast, #fushi-player-btn, #fushi-player-controls, #fushi-ctx-modal-host)';
   var VALID = { auto: true, light: true, dark: true };
   // 页内宿主 id（与 IN_PAGE_HOSTS 同一份清单）：设置变化时按 id 重盖 data-style。
-  var IN_PAGE_HOST_IDS = ['fushi-drawer', 'fushi-subtitle-overlay', 'fushi-subtitle-drop-hint', 'fushi-queue-chip',
+  var IN_PAGE_HOST_IDS = ['fushi-drawer', 'fushi-subtitle-overlay', 'fushi-subtitle-mask', 'fushi-subtitle-drop-hint', 'fushi-queue-chip',
     'fushi-toast', 'fushi-player-btn', 'fushi-player-controls', 'fushi-ctx-modal-host'];
   var VALID_STYLE = { glass: true, m3e: true };
   var DEFAULT_STYLE = 'm3e';
@@ -240,9 +240,70 @@
     } catch (_) { return false; }
   }
 
+  // 独立网页（fushi_server 的 WebUI 等，经 sync-mirrors.mjs 生成的 web_kit.g.dart 内嵌本文件）：
+  // 页面在加载本脚本前给 <html> 写 data-fushi-theme-host="page"。这类页面同扩展页面一样把主题
+  // 写到自己的根上，偏好存 localStorage（同步读，首帧前就套上，无闪烁）而不是 chrome.storage。
+  // 这个 DOM 属性任何网页都写得出来，而 content script 与宿主页共享 DOM / localStorage：
+  // 扩展上下文（有 chrome.runtime.id）里一律不认，否则宿主页能让 content script 改读页面可控的
+  // localStorage、把主题写到宿主页根上（装了扩展再开 fushi_server WebUI 时还会两份各套一遍）。
+  function inExtensionContext() {
+    try {
+      return typeof chrome !== 'undefined' && !!chrome && !!chrome.runtime && !!chrome.runtime.id;
+    } catch (_) { return false; }
+  }
+
+  function isStandalonePage() {
+    if (inExtensionContext()) return false;
+    try {
+      var root = document && document.documentElement;
+      return !!root && root.getAttribute('data-fushi-theme-host') === 'page';
+    } catch (_) { return false; }
+  }
+
+  // 主题写在自己根上的页面：扩展页面 + 独立网页。其余（content script 所在的宿主网页）只碰浮层宿主。
+  function ownsDocument() {
+    return isExtensionPage() || isStandalonePage();
+  }
+
+  var LOCAL_PREFIX = 'fushi-theme:';
+
+  function localRead(keys) {
+    var out = {};
+    for (var i = 0; i < keys.length; i++) {
+      try {
+        var raw = window.localStorage.getItem(LOCAL_PREFIX + keys[i]);
+        if (raw != null) out[keys[i]] = JSON.parse(raw);
+      } catch (_) {}
+    }
+    return out;
+  }
+
+  // 写偏好：扩展里写 chrome.storage.local（onChanged 回来再生效，与设置页原路径一致）；
+  // 独立网页写 localStorage 并当场生效。changes 的键是 KEY / STYLE_KEY / PALETTE_KEY 等。
+  function save(changes) {
+    if (!changes || typeof changes !== 'object') return;
+    if (isStandalonePage()) {
+      for (var k in changes) {
+        try { window.localStorage.setItem(LOCAL_PREFIX + k, JSON.stringify(changes[k])); } catch (_) {}
+      }
+      applyChanges(changes);
+      return;
+    }
+    try { chrome.storage.local.set(changes); } catch (_) {}
+  }
+
+  function applyChanges(changes) {
+    if (KEY in changes) setPreference(changes[KEY]);
+    if (STYLE_KEY in changes) setStyle(changes[STYLE_KEY]);
+    if (PALETTE_KEY in changes) setPalette(changes[PALETTE_KEY]);
+    if (CUSTOM_KEY in changes) setCustomThemes(changes[CUSTOM_KEY]);
+    if (APP_MIRROR_KEY in changes) setAppMirror(changes[APP_MIRROR_KEY]);
+    if (PURE_BLACK_KEY in changes) setPureBlack(changes[PURE_BLACK_KEY] === true);
+  }
+
   function applyPaletteStyle(doc) {
     doc = doc || document;
-    var css = paletteCss(!isExtensionPage());
+    var css = paletteCss(!ownsDocument());
     try {
       var el = doc.getElementById ? doc.getElementById(STYLE_ID) : null;
       if (!css) {
@@ -359,11 +420,25 @@
     notify();
   }
 
-  try {
-    var keys = [KEY, PALETTE_KEY, CUSTOM_KEY, APP_MIRROR_KEY, STYLE_KEY, PURE_BLACK_KEY];
-    var p = chrome.storage.local.get(keys, readAll);
-    if (p && typeof p.then === 'function') p.then(readAll, function () {});
-  } catch (_) {}
+  var STORED_KEYS = [KEY, PALETTE_KEY, CUSTOM_KEY, APP_MIRROR_KEY, STYLE_KEY, PURE_BLACK_KEY];
+  if (isStandalonePage()) {
+    readAll(localRead(STORED_KEYS));
+    // 同一来源的其他标签页改了外观：跟着变。
+    try {
+      window.addEventListener('storage', function (e) {
+        if (!e || typeof e.key !== 'string' || e.key.indexOf(LOCAL_PREFIX) !== 0) return;
+        var k = e.key.slice(LOCAL_PREFIX.length);
+        var changes = {};
+        try { changes[k] = e.newValue == null ? undefined : JSON.parse(e.newValue); } catch (_) { return; }
+        applyChanges(changes);
+      });
+    } catch (_) {}
+  } else {
+    try {
+      var p = chrome.storage.local.get(STORED_KEYS, readAll);
+      if (p && typeof p.then === 'function') p.then(readAll, function () {});
+    } catch (_) {}
+  }
   // 旧版「材质」设置留下的键：只有扩展自己的页面清（content script 每个网页都跑，不必重复写）。
   try {
     if (isExtensionPage() && chrome.storage.local.remove) {
@@ -389,10 +464,10 @@
     }
   } catch (_) {}
 
-  // 扩展自己的页面（options / 侧边栏 / 工具栏菜单 / 嵌套查词壳）直接把主题写到根上；
+  // 扩展自己的页面（options / 侧边栏 / 工具栏菜单 / 嵌套查词壳）与独立网页直接把主题写到根上；
   // 宿主网页里（content script）只维护浮层宿主的调色板 style。
   try {
-    if (isExtensionPage()) applyToDocument(document);
+    if (ownsDocument()) applyToDocument(document);
     else if (typeof document !== 'undefined' && document && document.createElement) applyToHostPage(document);
   } catch (_) {}
 
@@ -424,6 +499,8 @@
     onChange: onChange,
     applyToDocument: applyToDocument,
     applyToHostPage: applyToHostPage,
+    isStandalonePage: isStandalonePage,
+    save: save,
     setPreference: setPreference,
     setStyle: setStyle,
     setPalette: setPalette,

@@ -25,6 +25,8 @@ import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart'
     show SyncAssetChannelScope, SyncChannel;
 import 'package:fushi/src/sync/sync_backend.dart' show SyncBackend;
+import 'package:fushi/src/sync/sync_module_gate.dart'
+    show resetSyncModuleGateForTest, syncModuleGate;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show
@@ -209,6 +211,26 @@ void main() {
       await expect400('/api/admin/sync/run', <String, Object?>{
         'conflicts': 'local',
       });
+    });
+
+    test('sync run 在「同步与备份」模块关着时 422，不开跑（与 UI 入口同一道门）', () async {
+      syncModuleGate.setOpen(false);
+      addTearDown(resetSyncModuleGateForTest);
+      const String pattern = '/api/admin/sync/run';
+      await expectLater(
+        routes
+            .firstWhere(
+              (CtlRoute r) => r.pattern == pattern && r.method == 'POST',
+            )
+            .handler(
+              CtlCall(method: 'POST', path: pattern, body: <String, Object?>{}),
+            ),
+        throwsA(
+          isA<CtlFailure>()
+              .having((CtlFailure f) => f.status, 'status', 422)
+              .having((CtlFailure f) => f.message, 'message', contains('模块')),
+        ),
+      );
     });
 
     test('storage migrate：相对路径 / 缺 confirm 都 400（dryRun 不要 confirm）', () async {

@@ -439,6 +439,7 @@ void main() {
         await db.addMusicAutoSourceDismissal(video, norm(at('Anime/Other')));
         final AddLocalFolderResult r = await addLocalFolderAsSource(
           db: db,
+          transcribeAudiobook: null,
           mediaKind: 'music',
           path: at('Anime/Drama'),
         );
@@ -448,6 +449,7 @@ void main() {
 
         await addLocalFolderAsSource(
           db: db,
+          transcribeAudiobook: null,
           mediaKind: 'music',
           path: at('Anime/Other'),
         ).catchError(

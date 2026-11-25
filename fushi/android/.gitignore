@@ -1,8 +1,5 @@
-gradle-wrapper.jar
 /.gradle
 /captures/
-/gradlew
-/gradlew.bat
 /local.properties
 GeneratedPluginRegistrant.java
 /fastlane/report.xml
@@ -15,3 +12,6 @@ key.properties
 
 # CMake/ndk-build 中间产物（externalNativeBuild），构建残留，不入库。
 .cxx/
+
+# KGP 2.x 的项目级会话缓存（AGP 9 / KGP 2.4 构建生成），不入库。
+.kotlin/

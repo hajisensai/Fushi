@@ -17,9 +17,11 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart' show sha1;
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart'
+    show TableUpdate, TableUpdateQuery, UpdateKind, Value;
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/tracking/remote_anime_link.dart';
 import 'package:fushi_engine/media/video/media_server_video_path.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
@@ -34,7 +36,11 @@ import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi/src/utils/misc/dashboard_server_continue.dart'
+    show mediaServerItemKey;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+
+export 'package:fushi/src/media/video/media_server/media_server_item_launch.dart';
 
 /// 媒体服务器入库条目的重开规格（落 `VideoBooks.streamSpecJson`）。
 @immutable
@@ -102,6 +108,29 @@ class MediaServerBookSpec {
   }
 }
 
+/// 一部入库的媒体服务器作品：服务器 + 作品 id（剧 id / 电影自身 id）。
+typedef MediaServerLibraryWork = ({String serverId, String workId});
+
+/// [row] 若是媒体服务器入库行，返回它所属的作品；否则 null。纯函数，不读库。
+MediaServerLibraryWork? mediaServerWorkOfRow(VideoBookRow row) {
+  if (!isMediaServerVideoPath(row.videoPath)) return null;
+  final MediaServerBookSpec? spec = MediaServerBookSpec.tryParse(
+    row.streamSpecJson,
+  );
+  if (spec == null) return null;
+  return (serverId: spec.serverId, workId: spec.workId ?? spec.itemId);
+}
+
+/// [row] 若是媒体服务器入库行，返回它那一集的条目键（[mediaServerItemKey]）；否则
+/// null。首页「继续」区与侧栏首页速览据此让已入库的服务器条目让位给本地卡。
+String? localMediaServerItemKeyOfVideo(VideoBookRow row) {
+  if (!isMediaServerVideoPath(row.videoPath)) return null;
+  final MediaServerBookSpec? spec = MediaServerBookSpec.tryParse(
+    row.streamSpecJson,
+  );
+  return spec == null ? null : mediaServerItemKey(spec.serverId, spec.itemId);
+}
+
 /// 一部作品在媒体库里的状态：已入库的叶子 id（有 `media-server://` 行的）。
 @immutable
 class MediaServerWorkLibraryStatus {
@@ -127,27 +156,63 @@ class MediaServerVideoLibrary {
     MediaServerBrowser browser,
     MediaServerItem work,
   ) async {
+    final MediaServerLibraryWork target = (
+      serverId: browser.serverId,
+      workId: work.id,
+    );
     final Set<String> online = <String>{
-      for (final ({VideoBookRow row, MediaServerBookSpec spec}) entry
-          in await _rowsOfWork(browser.serverId, work.id))
-        entry.row.bookUid,
+      for (final VideoBookRow row in await database.allVideoBooks())
+        if (mediaServerWorkOfRow(row) == target) row.bookUid,
     };
     return MediaServerWorkLibraryStatus(online);
   }
 
+  /// 入库行增删的信号（任何入口：服务器详情页、库页菜单、后台新集探针）。只听
+  /// insert / delete——在库与否只随行的增删变，播放进度等 update 不触发。
+  Stream<void> get membershipChanges => database
+      .tableUpdates(
+        TableUpdateQuery.allOf(<TableUpdateQuery>[
+          TableUpdateQuery.onTable(
+            database.videoBooks,
+            limitUpdateKind: UpdateKind.insert,
+          ),
+          TableUpdateQuery.onTable(
+            database.videoBooks,
+            limitUpdateKind: UpdateKind.delete,
+          ),
+        ]),
+      )
+      .map((Set<TableUpdate> _) {});
+
   /// 加入媒体库：电影一行；剧把**全部季**的集逐页取回各落一行，归进剧名合集。
   /// 已在库的集跳过（再点一次只补新集，不动已看 / 已下载的行）。返回新加的条数。
   /// 之后服务器上新出的集由后台库更新探针补（`video_library_update_probe.dart`）。
+  /// 用户亲手点的：用户删过的剧名合集就此重建（BUG-5014）。
   Future<int> addToLibrary(
     MediaServerBrowser browser,
     MediaServerItem work,
-  ) async => (await addMissing(browser, work)).length;
+  ) async => (await addMissing(browser, work, userIntent: true)).length;
 
-  /// [addToLibrary] 的本体：返回这次新加的条目（探针据此投递新集提醒）。
+  /// [addToLibrary] 的本体：返回这次新加的条目（探针据此投递新集提醒）。探针是
+  /// 被动刷新，[userIntent] 保持 false——用户删掉的合集不被它复活。
+  ///
+  /// 登记成库的后台工作（BUG-5387 审查遗留）：入库要逐页联网取集、逐集写行、下海报，
+  /// 后台新集探针也走这里——换库时关库等它停稳，它的 SQL 与服务器请求随关库中断。
   Future<List<RemoteVideoInfo>> addMissing(
     MediaServerBrowser browser,
-    MediaServerItem work,
-  ) async {
+    MediaServerItem work, {
+    bool userIntent = false,
+  }) => database.runBackgroundWork<List<RemoteVideoInfo>>(
+    'mediaServer.addToLibrary',
+    (DatabaseWorkToken _) =>
+        _addMissingInWork(browser, work, userIntent: userIntent),
+  );
+
+  Future<List<RemoteVideoInfo>> _addMissingInWork(
+    MediaServerBrowser browser,
+    MediaServerItem work, {
+    required bool userIntent,
+  }) async {
     final List<MediaServerItem> leaves = await _playableLeavesOf(browser, work);
     final RemoteCollectionAdoptionService adoption =
         RemoteCollectionAdoptionService(database);
@@ -177,7 +242,7 @@ class MediaServerVideoLibrary {
         addedInfos.add(info);
       }
       // 已在库的集也重新收养一次：合集被用户删掉后重新加入能回到合集里。
-      await adoption.adoptVideo(info);
+      await adoption.adoptVideo(info, userIntent: userIntent);
     }
     if (added.isNotEmpty) {
       await repository.recordVideoImportActivity(
@@ -219,29 +284,33 @@ class MediaServerVideoLibrary {
   Future<int> removeFromLibrary(
     MediaServerBrowser browser,
     MediaServerItem work,
-  ) async {
+  ) => removeWorks(<MediaServerLibraryWork>{
+    (serverId: browser.serverId, workId: work.id),
+  });
+
+  /// 按作品身份移出（库页菜单用：不联网、不需要服务器在线）。一次删掉这些作品的
+  /// 全部 `media-server://` 行；被删空的剧名合集随之删除（见
+  /// `FushiDatabase.deleteVideoBooks`）。返回删掉的行数。
+  ///
+  /// [afterDeleteBeforeReclaim] 透传给
+  /// [VideoBookRepository.deleteVideoBooksAndReclaimAssets]：库页在这里让卡片先
+  /// 卸载，再回收封面等 app 资产（与库页单删 / 批删同一顺序）。
+  Future<int> removeWorks(
+    Set<MediaServerLibraryWork> works, {
+    Future<void> Function()? afterDeleteBeforeReclaim,
+  }) async {
+    if (works.isEmpty) return 0;
     final List<String> uids = <String>[
-      for (final ({VideoBookRow row, MediaServerBookSpec spec}) entry
-          in await _rowsOfWork(browser.serverId, work.id))
-        entry.row.bookUid,
+      for (final VideoBookRow row in await database.allVideoBooks())
+        if (mediaServerWorkOfRow(row) case final MediaServerLibraryWork work
+            when works.contains(work))
+          row.bookUid,
     ];
     if (uids.isEmpty) return 0;
-    return repository.deleteVideoBooksAndReclaimAssets(uids);
-  }
-
-  Future<List<({VideoBookRow row, MediaServerBookSpec spec})>> _rowsOfWork(
-    String serverId,
-    String workId,
-  ) async {
-    return <({VideoBookRow row, MediaServerBookSpec spec})>[
-      for (final VideoBookRow row in await database.allVideoBooks())
-        if (isMediaServerVideoPath(row.videoPath))
-          if (MediaServerBookSpec.tryParse(row.streamSpecJson)
-              case final MediaServerBookSpec spec
-              when spec.serverId == serverId &&
-                  (spec.workId ?? spec.itemId) == workId)
-            (row: row, spec: spec),
-    ];
+    return repository.deleteVideoBooksAndReclaimAssets(
+      uids,
+      afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
+    );
   }
 
   /// 电影 = 自身；剧 = 整部剧的集（不带 SeasonId，按季集号升序，逐页取完）。
@@ -308,7 +377,7 @@ class MediaServerVideoLibrary {
   }) async {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) throw VideoScrapeMaintenanceActiveError();
     try {
       return await VideoCoverMutationGate.runExclusive(() async {
         if (bytes != null) {
@@ -367,7 +436,14 @@ class MediaServerLaunchUnavailable implements Exception {
 /// 同一台服务器的配置现建客户端，合集里同一部剧的其它入库行作为连播成员。
 ///
 /// 起播那一条先向服务器取一次详情（服务器端断点 / 带令牌的封面），失败就用规格里
-/// 的快照照常起播。[playlistCollectionId] 为空时只有这一条。
+/// 的快照照常起播。这一次的结果由客户端留给随后的取流 / 取字幕
+/// （`LaunchItemDetailMemo`）：成功则同一份详情不再重取，失败则取流立刻抛同一个
+/// 错——这里不判失败，也就不用分辨「连不上」和「条目不可播」。
+///
+/// 换线路（gap-remote-7）不在这里做：客户端的请求漏斗在传输失败时经
+/// `MediaServerRouteFailover` 换到另一条可达线路、把这次详情请求重试一遍，客户端
+/// 自己改走新线路（之后取的流地址带新 host），起播用的就是它。
+/// [playlistCollectionId] 为空时只有这一条。
 Future<
   ({
     RemoteVideoClient client,
@@ -405,7 +481,12 @@ buildMediaServerLaunch({
         .getCollectionItems(playlistCollectionId);
     items.sort(
       (MediaCollectionItemRow a, MediaCollectionItemRow b) =>
-          a.sortIndex.compareTo(b.sortIndex),
+          a.sortIndex != b.sortIndex
+          ? a.sortIndex.compareTo(b.sortIndex)
+          // 缺集号的几集同槽（[mediaServerEpisodeSortIndex]）：按条目身份平局，
+          // 与 getCollectionItems / 库页 / 继续观看同口径。List.sort 不稳定，
+          // 没有这一段时同槽的集超过 32 条就会被打乱。
+          : a.entryKey.compareTo(b.entryKey),
     );
     for (final MediaCollectionItemRow item in items) {
       if (item.mediaType != MediaKind.video.dbValue) continue;
@@ -436,11 +517,18 @@ buildMediaServerLaunch({
     (RemoteVideoInfo m) => m.id == spec.itemId,
   );
   if (startIndex < 0) startIndex = 0;
-  try {
-    final MediaServerItem detail = await browser.itemDetail(spec.itemId);
+  Future<void> fetchLaunchDetail(MediaServerBrowser from) async {
+    final MediaServerItem detail = await from.itemDetail(
+      spec.itemId,
+      forLaunch: true,
+    );
     if (detail.isPlayable) {
-      members[startIndex] = browser.toRemoteVideoInfo(detail);
+      members[startIndex] = from.toRemoteVideoInfo(detail);
     }
+  }
+
+  try {
+    await fetchLaunchDetail(browser);
   } on Object catch (error) {
     debugPrint('[media-server-library] detail ${spec.itemId} failed: $error');
   }
@@ -450,4 +538,29 @@ buildMediaServerLaunch({
     members: List<RemoteVideoInfo>.unmodifiable(members),
     startIndex: startIndex,
   );
+}
+
+/// The media tracking identity of library row [row] added from a media
+/// server, asked from that server (the row itself keeps no ids): what a hand
+/// "watched" mark reports, like playing it to the end does. Null when [row]
+/// is not such a row, its server is not signed in on this device, or the
+/// server has no tracking identity for it (not an episode or a movie, or a
+/// server type without one).
+Future<RemoteAnimeEpisode?> mediaServerTrackingEpisodeOf({
+  required VideoBookRow row,
+  required Future<List<MediaServerConfig>> Function() loadConfigs,
+}) async {
+  if (!isMediaServerVideoPath(row.videoPath)) return null;
+  final MediaServerBookSpec? spec = MediaServerBookSpec.tryParse(
+    row.streamSpecJson,
+  );
+  if (spec == null) return null;
+  for (final MediaServerConfig config in await loadConfigs()) {
+    if (config.sourceId != spec.serverId) continue;
+    final RemoteVideoClient client = config.buildBrowser().playbackClient;
+    if (client is! RemoteVideoTrackingEpisodeFetch) return null;
+    return (client as RemoteVideoTrackingEpisodeFetch)
+        .remoteVideoTrackingEpisode(spec.itemId);
+  }
+  return null;
 }

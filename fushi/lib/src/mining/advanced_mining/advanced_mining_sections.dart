@@ -1,8 +1,9 @@
 import 'dart:async';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'dart:ui' show FontFeature, PathMetric;
 
+import 'package:flutter/gestures.dart' show DragStartBehavior;
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_audio_source.dart';
@@ -15,6 +16,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
@@ -79,11 +81,13 @@ String videoImageModeLabel(VideoMiningImageMode mode) {
   }
 }
 
-/// 漫画取景方式的显示名。
-String mangaCropChoiceLabel(MangaCropChoice choice) {
+/// 漫画取景方式的显示名。[screenshot] = 框的是截屏识字的截图（「整页」叫「整张截图」）。
+String mangaCropChoiceLabel(MangaCropChoice choice, {bool screenshot = false}) {
   switch (choice) {
     case MangaCropChoice.wholePage:
-      return t.popup_advanced_mining_crop_whole_page;
+      return screenshot
+          ? t.popup_advanced_mining_crop_whole_screenshot
+          : t.popup_advanced_mining_crop_whole_page;
     case MangaCropChoice.panel:
       return t.popup_advanced_mining_crop_panel;
     case MangaCropChoice.textArea:
@@ -345,10 +349,25 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
       context,
       FushiCardTone.primary,
     )?.onContainer;
+    // 前文 / 后文清空了文字（只去字幕、保留这句音频）：显示占位说明，否则卡片正文
+    // 是空的，用户看不出这句还占着音频。与「移除」正交：清空后又被移除的句子同样
+    // 显示占位，再叠删除线——点「恢复」回到的正是这张占位卡。
+    final bool textCleared = !current && text.trim().isEmpty;
     final Widget body = editingThis
         ? _SentenceEditor(controller: c)
         : current
         ? _highlightedCurrent(context)
+        : textCleared
+        ? Text(
+            t.popup_ctx_sentence_text_cleared,
+            style: context.fushiType.bodyMedium.copyWith(
+              fontStyle: FontStyle.italic,
+              decoration: removed ? TextDecoration.lineThrough : null,
+              color: removed
+                  ? scheme.onSurfaceVariant.withValues(alpha: 0.6)
+                  : scheme.onSurfaceVariant,
+            ),
+          )
         : Text(
             text,
             style: removed
@@ -364,12 +383,14 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
       // 已移除的句子不给编辑——先恢复再改，免得改了一句看不见效果的文本。
       if (c.sentenceSection?.editSentence != null && !removed && !editingThis)
         _iconAction(
+          context,
           tooltip: t.popup_ctx_edit_start,
           icon: FushiIcons.edit,
           onPressed: c.locked ? null : () => c.startEdit(slot, index, text),
         ),
       if (!current && !editingThis && removed)
         _iconAction(
+          context,
           tooltip: t.popup_ctx_sentence_restore,
           icon: FushiIcons.undo,
           onPressed: c.locked
@@ -378,6 +399,7 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
         )
       else if (!current && !editingThis && c.canDismiss(slot, index))
         _iconAction(
+          context,
           tooltip: t.popup_ctx_sentence_remove,
           icon: FushiIcons.close,
           onPressed: c.locked
@@ -426,18 +448,33 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
     );
   }
 
-  /// 句子卡右侧的小图标按钮。取 M3E 图标按钮 XS 档（32）：默认 48 的命中框会把
-  /// 每张卡都顶高一截，矮窗里几张卡就把句子挤出屏。
-  Widget _iconAction({
+  /// 句子卡右侧的小图标按钮：视觉取 M3E 图标按钮 XS 档（32），命中区补足到 48
+  /// （命中区 ≥48dp 硬规则；× 是删整句的唯一入口，点不中就只能去清空文字）。
+  ///
+  /// 两套设计的命中区参数不同，分开传：
+  /// * MD3：`tapTargetSize: padded` 只扩命中区、不改视觉；不能传 `constraints`——
+  ///   那会让尺寸档退回主题 density、并被折成 minimumSize 把视觉也撑到 48。
+  /// * Apple 玻璃：只读 `constraints.minWidth` 定按钮边长，不认 `tapTargetSize`。
+  Widget _iconAction(
+    BuildContext context, {
     required String tooltip,
     required IconData icon,
     required VoidCallback? onPressed,
-  }) => FushiIconButtonControl(
-    tooltip: tooltip,
-    size: ButtonSizeVariant.xSmall,
-    onPressed: onPressed,
-    icon: FushiIcon(icon, size: 18),
-  );
+  }) {
+    final bool glass = isGlassDesign(context);
+    return FushiIconButtonControl(
+      tooltip: tooltip,
+      size: ButtonSizeVariant.xSmall,
+      style: glass
+          ? null
+          : const ButtonStyle(tapTargetSize: MaterialTapTargetSize.padded),
+      constraints: glass
+          ? const BoxConstraints.tightFor(width: 48, height: 48)
+          : null,
+      onPressed: onPressed,
+      icon: FushiIcon(icon, size: 18),
+    );
+  }
 
   /// 当前句里把查到的词高亮：offset 命中优先（offset 处正好是 matched），失配回退
   /// indexOf，再失配整句无高亮——与旧 popup.js `buildHighlightedCurrentText` 同容错。
@@ -486,52 +523,91 @@ class AdvancedMiningSentencePanel extends StatelessWidget {
   }
 }
 
-/// 编辑态的卡内容：多行输入框 + 「放弃修改 / 确认修改」。确认按钮独立于底部主按钮：
-/// 用户要的是「先确认这一句改完了」，改完还能继续加减句子、再改别的句子。
+/// 编辑态的卡内容：多行输入框 + 「（恢复原文）/ 放弃修改 / 确认修改」。确认按钮独立
+/// 于底部主按钮：用户要的是「先确认这一句改完了」，改完还能继续加减句子、再改别的句子。
+///
+/// 控制器只在状态变化时 notify，打字不会触发重建；清空提示与「恢复原文」都取决于
+/// 输入框当前内容，故用 [ValueListenableBuilder] 直接监听输入框。
 class _SentenceEditor extends StatelessWidget {
   const _SentenceEditor({required this.controller});
 
   final AdvancedMiningController controller;
 
   @override
-  Widget build(BuildContext context) => Column(
-    crossAxisAlignment: CrossAxisAlignment.stretch,
-    mainAxisSize: MainAxisSize.min,
-    children: <Widget>[
-      FushiTextFieldControl(
-        controller: controller.editController,
-        autofocus: true,
-        minLines: 2,
-        maxLines: null,
-        keyboardType: TextInputType.multiline,
-        textInputAction: TextInputAction.newline,
-        style: context.fushiType.bodyMedium,
-        decoration: const InputDecoration(
-          border: FushiOutlinedFieldBorder(),
-          isDense: true,
-          contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 8),
-        ),
-      ),
-      const SizedBox(height: 8),
-      Wrap(
-        alignment: WrapAlignment.end,
-        spacing: 8,
-        runSpacing: 8,
-        children: <Widget>[
-          FushiTextButton(
-            onPressed: controller.busy ? null : controller.cancelEdit,
-            child: Text(t.popup_ctx_edit_cancel),
-          ),
-          FushiFilledButton(
-            onPressed: controller.busy
-                ? null
-                : () => unawaited(controller.commitEdit()),
-            child: Text(t.popup_ctx_edit_confirm),
-          ),
-        ],
-      ),
-    ],
-  );
+  Widget build(BuildContext context) {
+    final TextEditingController edit = controller.editController!;
+    final SentenceContextSlot? slot = controller.editSlot;
+    // 清空提示与「恢复原文」同一口径：只有宿主支持「清空保留音频」语义才提示；旧宿主
+    // 清空 = 还原原句，提示「音频仍会保留」会与实际结果不符。
+    final bool clearKeepsAudioSlot =
+        controller.clearKeepsAudio &&
+        slot != null &&
+        slot != SentenceContextSlot.current;
+    final String? original = slot == null
+        ? null
+        : controller.originalOf(slot, controller.editIndex);
+    return ValueListenableBuilder<TextEditingValue>(
+      valueListenable: edit,
+      builder: (BuildContext context, TextEditingValue value, Widget? _) {
+        final bool empty = value.text.trim().isEmpty;
+        final bool showRestore =
+            original != null && original.trim() != value.text.trim();
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            FushiTextFieldControl(
+              controller: edit,
+              autofocus: true,
+              minLines: 2,
+              maxLines: null,
+              keyboardType: TextInputType.multiline,
+              textInputAction: TextInputAction.newline,
+              style: context.fushiType.bodyMedium,
+              decoration: InputDecoration(
+                border: const FushiOutlinedFieldBorder(),
+                isDense: true,
+                contentPadding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 8,
+                ),
+                // 正要清空前文 / 后文时提示：清空只去文字、音频保留，删整句走 ×。
+                helperText: clearKeepsAudioSlot && empty
+                    ? t.popup_ctx_edit_clear_keeps_audio_hint
+                    : null,
+                helperMaxLines: 3,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Wrap(
+              alignment: WrapAlignment.end,
+              spacing: 8,
+              runSpacing: 8,
+              children: <Widget>[
+                if (showRestore)
+                  FushiTextButton(
+                    onPressed: controller.busy
+                        ? null
+                        : controller.restoreEditToOriginal,
+                    child: Text(t.popup_ctx_edit_restore_original),
+                  ),
+                FushiTextButton(
+                  onPressed: controller.busy ? null : controller.cancelEdit,
+                  child: Text(t.popup_ctx_edit_cancel),
+                ),
+                FushiFilledButton(
+                  onPressed: controller.busy
+                      ? null
+                      : () => unawaited(controller.commitEdit()),
+                  child: Text(t.popup_ctx_edit_confirm),
+                ),
+              ],
+            ),
+          ],
+        );
+      },
+    );
+  }
 }
 
 /// 列表两端的「加前一句 / 加后一句」：虚线描边胶囊（交互稿 ①），表达「这里还能再接
@@ -1033,9 +1109,17 @@ class _AudioDetails extends StatelessWidget {
     final AdvancedMiningController c = controller;
     final AdvancedMiningAudioWindow w = c.audioWindow!;
     final int step = c.audioNudgeStepMs;
+    // 修饰键在按下那一刻读：Shift ×10、Ctrl / ⌘ 细调（反馈 66LR2RsYcl）。
     VoidCallback? nudge(bool start, bool forward) => c.locked
         ? null
-        : () => c.nudgeAudioEdge(start: start, deltaMs: forward ? step : -step);
+        : () {
+            final int s = scaleAdvancedMiningStepMs(
+              step,
+              currentAdvancedMiningStepScale(),
+              minMs: kAdvancedMiningAudioDragSnapMs,
+            );
+            c.nudgeAudioEdge(start: start, deltaMs: forward ? s : -s);
+          };
     Widget edge(String label, {required bool start}) => Row(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -1045,7 +1129,8 @@ class _AudioDetails extends StatelessWidget {
           child: Text(formatAdvancedMiningStep(step, forward: false)),
           tooltip:
               '$label · ${t.popup_advanced_mining_audio_earlier} '
-              '${formatAdvancedMiningStep(step, forward: false)}',
+              '${formatAdvancedMiningStep(step, forward: false)}\n'
+              '${t.popup_advanced_mining_step_modifier_hint}',
           onPressed: nudge(start, false),
         ),
         const SizedBox(width: 4),
@@ -1053,7 +1138,8 @@ class _AudioDetails extends StatelessWidget {
           child: Text(formatAdvancedMiningStep(step, forward: true)),
           tooltip:
               '$label · ${t.popup_advanced_mining_audio_later} '
-              '${formatAdvancedMiningStep(step, forward: true)}',
+              '${formatAdvancedMiningStep(step, forward: true)}\n'
+              '${t.popup_advanced_mining_step_modifier_hint}',
           onPressed: nudge(start, true),
         ),
       ],
@@ -1074,6 +1160,19 @@ class _AudioDetails extends StatelessWidget {
                 window: w,
                 startDeltaMs: c.audioStartDeltaMs,
                 endDeltaMs: c.audioEndDeltaMs,
+                stepMs: step,
+                onEdgeChanged: c.locked
+                    ? null
+                    : ({
+                        required bool start,
+                        required int deltaMs,
+                        required bool live,
+                      }) => c.setAudioEdgeDelta(
+                        start: start,
+                        deltaMs: deltaMs,
+                        describe: !live,
+                      ),
+                onEdgeDragEnd: () => unawaited(c.refreshAudioWindow()),
               ),
             ),
           ],
@@ -1170,53 +1269,372 @@ class AdvancedMiningPreviewButton extends StatelessWidget {
   );
 }
 
+/// 端点改动回调：[deltaMs] 是该端点的**新偏移**（绝对值，不是增量）；[live] = true
+/// 是拖动途中的一帧（宿主只做乐观更新），false 是一次完整的改动（方向键 / 读屏）。
+typedef AdvancedMiningRangeEdgeChanged =
+    void Function({
+      required bool start,
+      required int deltaMs,
+      required bool live,
+    });
+
+/// 当前按住的修饰键对应的步长档位（Shift 粗调、Ctrl / ⌘ 细调）。按钮、区间条方向键
+/// 与拖动都在动作发生那一刻读这一处，不各读各的（反馈 66LR2RsYcl）。
+AdvancedMiningStepScale currentAdvancedMiningStepScale() {
+  final HardwareKeyboard kb = HardwareKeyboard.instance;
+  return advancedMiningStepScaleFor(
+    shift: kb.isShiftPressed,
+    control: kb.isControlPressed || kb.isMetaPressed,
+  );
+}
+
 /// 区间条：没有波形数据，画一条「原区间 ± 余量」的轨道，高亮写进卡片的那一段，起止
 /// 各一根标记。标记位置随偏移补间（M3E spatial），用户按 ±0.25s 时能看见它挪了多少。
-class AdvancedMiningRangeBar extends StatelessWidget {
+///
+/// 给了 [onEdgeChanged] 时起止标记可直接拖动（反馈 66LR2RsYcl）：
+/// - 按下点离某个标记 ≤ 24dp（命中区 48dp）才开始拖，挪的是离按下点最近的那一个；
+/// - 拖动途中轨道域冻结在按下那一刻，像素 ↔ 毫秒换算不随区间变化而漂；
+/// - 默认吸附 [kAdvancedMiningAudioDragSnapMs]；按住 Shift 吸附到当前步长的整数倍，
+///   按住 Ctrl / ⌘ 位移减速到 1/[kAdvancedMiningFineStepDivisor]（精调）；
+/// - 两个标记各是一个焦点站点：←/→ 按当前步长微调（Shift / Ctrl 同上换档），读屏
+///   按 slider 增减。最短区间 / 不倒挂由控制器统一夹取。
+class AdvancedMiningRangeBar extends StatefulWidget {
   const AdvancedMiningRangeBar({
     super.key,
     required this.window,
     required this.startDeltaMs,
     required this.endDeltaMs,
+    this.stepMs = kAdvancedMiningAudioNudgeStepDefaultMs,
+    this.onEdgeChanged,
+    this.onEdgeDragEnd,
   });
 
   final AdvancedMiningAudioWindow window;
   final int startDeltaMs;
   final int endDeltaMs;
 
+  /// 当前微调步长（方向键一步、Shift 拖动的吸附格）。
+  final int stepMs;
+
+  /// null = 只画不交互（锁定 / 只读）。
+  final AdvancedMiningRangeEdgeChanged? onEdgeChanged;
+
+  /// 一次拖动结束（松手 / 取消）：宿主据此以真实区间为准重算一次。
+  final VoidCallback? onEdgeDragEnd;
+
+  /// 标记命中区半宽（总宽 48dp，满足最小触控目标）。
+  static const double hitSlop = 24;
+
+  /// 区间条高度（≥ 48dp：标记命中区是整条高）。
+  static const double height = 48;
+
   @override
-  Widget build(BuildContext context) {
-    // 轨道域取「未偏移的原区间」外扩：域跟着原区间走、不跟着当前区间走，起止标记
-    // 才会在用户微调时真的移动（域若跟当前区间，标记永远停在同一位置）。
-    final int baseStart = window.startMs - startDeltaMs;
-    final int baseEnd = window.endMs - endDeltaMs;
+  State<AdvancedMiningRangeBar> createState() => _AdvancedMiningRangeBarState();
+}
+
+class _AdvancedMiningRangeBarState extends State<AdvancedMiningRangeBar> {
+  final FocusNode _startFocus = FocusNode(debugLabel: 'miningRangeStart');
+  final FocusNode _endFocus = FocusNode(debugLabel: 'miningRangeEnd');
+
+  /// 正在拖的端点（true = 起点）；null = 没在拖。
+  bool? _dragging;
+
+  /// 拖动期间冻结的轨道域（毫秒）。
+  ({double start, double end})? _dragDomain;
+  double _dragMsPerPx = 0;
+  int _dragOriginDeltaMs = 0;
+  double _dragAccumMs = 0;
+
+  /// 鼠标悬停的端点。
+  bool? _hovered;
+  bool _startFocused = false;
+  bool _endFocused = false;
+
+  bool get _interactive => widget.onEdgeChanged != null;
+
+  /// 焦点环只在键盘（traditional）高亮模式下画：触摸拖完把手也会拿到焦点（好让外接
+  /// 键盘接着用方向键），但不能因此一直挂着放大 + 焦点环。
+  bool _keyboardHighlight =
+      FocusManager.instance.highlightMode == FocusHighlightMode.traditional;
+
+  void _onHighlightModeChanged(FocusHighlightMode mode) {
+    final bool next = mode == FocusHighlightMode.traditional;
+    if (next == _keyboardHighlight || !mounted) return;
+    setState(() => _keyboardHighlight = next);
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    FocusManager.instance.addHighlightModeListener(_onHighlightModeChanged);
+  }
+
+  @override
+  void didUpdateWidget(AdvancedMiningRangeBar oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 拖到一半被锁（确认制卡 / 编辑句子）：放掉这次拖动，不留冻结的域。
+    if (!_interactive && _dragging != null) {
+      _dragging = null;
+      _dragDomain = null;
+    }
+  }
+
+  @override
+  void dispose() {
+    FocusManager.instance.removeHighlightModeListener(_onHighlightModeChanged);
+    _startFocus.dispose();
+    _endFocus.dispose();
+    super.dispose();
+  }
+
+  /// 轨道域取「未偏移的原区间」外扩：域跟着原区间走、不跟着当前区间走，起止标记
+  /// 才会在用户微调时真的移动（域若跟当前区间，标记永远停在同一位置）。
+  ({double start, double end}) _domain() {
+    final AdvancedMiningAudioWindow window = widget.window;
+    final int baseStart = window.startMs - widget.startDeltaMs;
+    final int baseEnd = window.endMs - widget.endDeltaMs;
     final int margin = math.max(
       1000,
-      math.max(startDeltaMs.abs(), endDeltaMs.abs()) + 500,
+      math.max(widget.startDeltaMs.abs(), widget.endDeltaMs.abs()) + 500,
     );
-    final double domainStart = (math.min(baseStart, window.startMs) - margin)
-        .toDouble();
-    final double domainEnd = (math.max(baseEnd, window.endMs) + margin)
-        .toDouble();
-    final double span = math.max(1, domainEnd - domainStart);
-    final double a = ((window.startMs - domainStart) / span).clamp(0.0, 1.0);
-    final double b = ((window.endMs - domainStart) / span).clamp(0.0, 1.0);
+    return (
+      start: (math.min(baseStart, window.startMs) - margin).toDouble(),
+      end: (math.max(baseEnd, window.endMs) + margin).toDouble(),
+    );
+  }
+
+  int _deltaOf(bool start) => start ? widget.startDeltaMs : widget.endDeltaMs;
+
+  void _onDragStart(DragStartDetails d, double x0, double x1, double width) {
+    if (!_interactive || width <= 0) return;
+    final double px = d.localPosition.dx;
+    final double d0 = (px - x0).abs();
+    final double d1 = (px - x1).abs();
+    if (math.min(d0, d1) > AdvancedMiningRangeBar.hitSlop) return;
+    // 两个标记叠在一起时按按下点在哪一侧分：左侧是起点、右侧是终点。
+    final bool start = d0 == d1 ? px <= x0 : d0 < d1;
+    final ({double start, double end}) domain = _domain();
+    setState(() {
+      _dragging = start;
+      _dragDomain = domain;
+      _dragMsPerPx = math.max(1, domain.end - domain.start) / width;
+      _dragOriginDeltaMs = _deltaOf(start);
+      _dragAccumMs = 0;
+    });
+    (start ? _startFocus : _endFocus).requestFocus();
+  }
+
+  void _onDragUpdate(DragUpdateDetails d) {
+    final bool? start = _dragging;
+    final AdvancedMiningRangeEdgeChanged? onChanged = widget.onEdgeChanged;
+    if (start == null || onChanged == null) return;
+    final AdvancedMiningStepScale scale = currentAdvancedMiningStepScale();
+    final double factor = scale == AdvancedMiningStepScale.fine
+        ? 1 / kAdvancedMiningFineStepDivisor
+        : 1;
+    // 逐帧累加（而不是拿总位移一次乘）：拖到一半按下 / 松开 Ctrl 不会让端点跳。
+    _dragAccumMs += d.delta.dx * _dragMsPerPx * factor;
+    final double raw = _dragOriginDeltaMs + _dragAccumMs;
+    final int grid = scale == AdvancedMiningStepScale.coarse
+        ? widget.stepMs
+        : kAdvancedMiningAudioDragSnapMs;
+    final int next = (raw / grid).round() * grid;
+    if (next == _deltaOf(start)) return;
+    onChanged(start: start, deltaMs: next, live: true);
+  }
+
+  void _onDragEnd() {
+    if (_dragging == null) return;
+    setState(() {
+      _dragging = null;
+      _dragDomain = null;
+    });
+    widget.onEdgeDragEnd?.call();
+  }
+
+  void _step(bool start, bool forward, AdvancedMiningStepScale scale) {
+    final AdvancedMiningRangeEdgeChanged? onChanged = widget.onEdgeChanged;
+    if (onChanged == null) return;
+    final int step = scaleAdvancedMiningStepMs(
+      widget.stepMs,
+      scale,
+      minMs: kAdvancedMiningAudioDragSnapMs,
+    );
+    onChanged(
+      start: start,
+      deltaMs: _deltaOf(start) + (forward ? step : -step),
+      live: false,
+    );
+  }
+
+  KeyEventResult _onKey(bool start, KeyEvent event) {
+    if (!_interactive) return KeyEventResult.ignored;
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    final bool? forward = switch (event.logicalKey) {
+      LogicalKeyboardKey.arrowLeft => false,
+      LogicalKeyboardKey.arrowRight => true,
+      _ => null,
+    };
+    // ↑/↓ 不拦：留给方向焦点遍历，键盘用户才离得开区间条。
+    if (forward == null) return KeyEventResult.ignored;
+    _step(start, forward, currentAdvancedMiningStepScale());
+    return KeyEventResult.handled;
+  }
+
+  Widget _handle(
+    BuildContext context, {
+    required bool start,
+    required double x,
+  }) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    return SizedBox(
-      height: 44,
-      child: TweenAnimationBuilder<Offset>(
-        tween: Tween<Offset>(end: Offset(a, b)),
-        duration: context.fushiMotion.spatialFast.duration,
-        curve: context.fushiMotion.spatialFast.curve,
-        builder: (BuildContext context, Offset range, Widget? _) => CustomPaint(
-          painter: _RangeBarPainter(
-            start: range.dx,
-            end: range.dy,
-            track: scheme.outlineVariant,
-            fill: scheme.primary.withValues(alpha: 0.45),
-            marker: scheme.primary,
+    final bool focused =
+        _keyboardHighlight && (start ? _startFocused : _endFocused);
+    final bool active = _dragging == start || _hovered == start || focused;
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    final int atMs = start ? widget.window.startMs : widget.window.endMs;
+    final ({int increased, int decreased}) stepped =
+        advancedMiningSteppedEdgeMs(
+          window: widget.window,
+          start: start,
+          stepMs: widget.stepMs,
+        );
+    final String label = start
+        ? t.popup_advanced_mining_audio_start
+        : t.popup_advanced_mining_audio_end;
+    return Positioned(
+      left: x - AdvancedMiningRangeBar.hitSlop,
+      top: 0,
+      width: AdvancedMiningRangeBar.hitSlop * 2,
+      height: AdvancedMiningRangeBar.height,
+      child: Focus(
+        focusNode: start ? _startFocus : _endFocus,
+        onKeyEvent: (FocusNode _, KeyEvent e) => _onKey(start, e),
+        onFocusChange: (bool v) => setState(() {
+          if (start) {
+            _startFocused = v;
+          } else {
+            _endFocused = v;
+          }
+        }),
+        child: MouseRegion(
+          cursor: SystemMouseCursors.resizeLeftRight,
+          onEnter: (_) => setState(() => _hovered = start),
+          onExit: (_) => setState(() {
+            if (_hovered == start) _hovered = null;
+          }),
+          child: Semantics(
+            key: ValueKey<String>(
+              start ? 'advancedMiningRangeStart' : 'advancedMiningRangeEnd',
+            ),
+            slider: true,
+            label: label,
+            value: formatAdvancedMiningTime(atMs),
+            // 带 increase / decrease 动作的节点必须同时给增减后的读数；按控制器同一套
+            // 约束夹过，边界处不念一个到不了的时刻。
+            increasedValue: formatAdvancedMiningTime(stepped.increased),
+            decreasedValue: formatAdvancedMiningTime(stepped.decreased),
+            hint:
+                '${t.popup_advanced_mining_audio_drag_hint} · '
+                '${t.popup_advanced_mining_step_modifier_hint}',
+            onIncrease: () =>
+                _step(start, true, AdvancedMiningStepScale.normal),
+            onDecrease: () =>
+                _step(start, false, AdvancedMiningStepScale.normal),
+            child: Stack(
+              alignment: Alignment.center,
+              children: <Widget>[
+                AnimatedContainer(
+                  duration: duration,
+                  curve: FushiMotion.standard,
+                  width: active ? 5 : 3,
+                  height: AdvancedMiningRangeBar.height,
+                  decoration: BoxDecoration(
+                    color: scheme.primary,
+                    borderRadius: const BorderRadius.all(Radius.circular(3)),
+                  ),
+                ),
+                // 把手圆点：一眼看得出「能拖」；悬停 / 拖动 / 聚焦时放大，聚焦再加
+                // 一圈焦点环（键盘用户知道方向键会挪哪一个）。
+                AnimatedContainer(
+                  duration: duration,
+                  curve: FushiMotion.standard,
+                  width: active ? 20 : 14,
+                  height: active ? 20 : 14,
+                  decoration: BoxDecoration(
+                    color: scheme.primary,
+                    shape: BoxShape.circle,
+                    border: Border.all(
+                      color: focused ? scheme.onSurface : scheme.surface,
+                      width: focused ? 3 : 2,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ({double start, double end}) domain = _dragDomain ?? _domain();
+    final double span = math.max(1, domain.end - domain.start);
+    final AdvancedMiningAudioWindow window = widget.window;
+    final double a = ((window.startMs - domain.start) / span).clamp(0.0, 1.0);
+    final double b = ((window.endMs - domain.start) / span).clamp(0.0, 1.0);
+    final ColorScheme scheme = Theme.of(context).colorScheme;
+    final bool interactive = _interactive;
+    return SizedBox(
+      height: AdvancedMiningRangeBar.height,
+      child: LayoutBuilder(
+        builder: (BuildContext context, BoxConstraints constraints) {
+          final double width = constraints.maxWidth;
+          return TweenAnimationBuilder<Offset>(
+            tween: Tween<Offset>(end: Offset(a, b)),
+            // 拖动时标记要贴着手指走，不补间；松手后域重算，标记按 spatial 补间就位。
+            duration: _dragging != null
+                ? Duration.zero
+                : context.fushiMotion.spatialFast.duration,
+            curve: context.fushiMotion.spatialFast.curve,
+            builder: (BuildContext context, Offset range, Widget? _) {
+              final double x0 = range.dx * width;
+              final double x1 = math.max(x0, range.dy * width);
+              final Widget paint = CustomPaint(
+                size: Size(width, AdvancedMiningRangeBar.height),
+                painter: _RangeBarPainter(
+                  start: range.dx,
+                  end: range.dy,
+                  track: scheme.outlineVariant,
+                  fill: scheme.primary.withValues(alpha: 0.45),
+                  marker: scheme.primary,
+                  drawMarkers: !interactive,
+                ),
+              );
+              if (!interactive) return paint;
+              return GestureDetector(
+                behavior: HitTestBehavior.translucent,
+                dragStartBehavior: DragStartBehavior.down,
+                onHorizontalDragStart: (DragStartDetails d) =>
+                    _onDragStart(d, x0, x1, width),
+                onHorizontalDragUpdate: _onDragUpdate,
+                onHorizontalDragEnd: (_) => _onDragEnd(),
+                onHorizontalDragCancel: _onDragEnd,
+                child: Stack(
+                  clipBehavior: Clip.none,
+                  children: <Widget>[
+                    Positioned.fill(child: paint),
+                    _handle(context, start: true, x: x0),
+                    _handle(context, start: false, x: x1),
+                  ],
+                ),
+              );
+            },
+          );
+        },
       ),
     );
   }
@@ -1229,6 +1647,7 @@ class _RangeBarPainter extends CustomPainter {
     required this.track,
     required this.fill,
     required this.marker,
+    this.drawMarkers = true,
   });
 
   final double start;
@@ -1236,6 +1655,9 @@ class _RangeBarPainter extends CustomPainter {
   final Color track;
   final Color fill;
   final Color marker;
+
+  /// 可交互时起止标记由把手 widget 画（带悬停 / 聚焦动效），这里只画轨道与高亮段。
+  final bool drawMarkers;
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -1254,6 +1676,7 @@ class _RangeBarPainter extends CustomPainter {
       RRect.fromLTRBR(x0, cy - 10, x1, cy + 10, const Radius.circular(4)),
       Paint()..color = fill,
     );
+    if (!drawMarkers) return;
     final Paint m = Paint()..color = marker;
     for (final double x in <double>[x0, x1]) {
       canvas.drawRRect(
@@ -1275,7 +1698,8 @@ class _RangeBarPainter extends CustomPainter {
       old.end != end ||
       old.track != track ||
       old.fill != fill ||
-      old.marker != marker;
+      old.marker != marker ||
+      old.drawMarkers != drawMarkers;
 }
 
 // ───────────────────────────── 视频图片 ─────────────────────────────
@@ -1391,10 +1815,16 @@ class AdvancedMiningVideoImagePanel extends StatelessWidget {
                     mosaic: c.mosaicRegions,
                     onBack: c.locked
                         ? null
-                        : () => c.nudgeStillFrame(forward: false),
+                        : () => c.nudgeStillFrame(
+                            forward: false,
+                            scale: currentAdvancedMiningStepScale(),
+                          ),
                     onForward: c.locked
                         ? null
-                        : () => c.nudgeStillFrame(forward: true),
+                        : () => c.nudgeStillFrame(
+                            forward: true,
+                            scale: currentAdvancedMiningStepScale(),
+                          ),
                   ),
                 ),
                 const Spacer(),
@@ -1420,10 +1850,18 @@ class AdvancedMiningVideoImagePanel extends StatelessWidget {
               frameAt: section.frameAt,
               onBack: c.locked
                   ? null
-                  : () => c.nudgeVideoEdge(first: true, forward: false),
+                  : () => c.nudgeVideoEdge(
+                      first: true,
+                      forward: false,
+                      scale: currentAdvancedMiningStepScale(),
+                    ),
               onForward: c.locked
                   ? null
-                  : () => c.nudgeVideoEdge(first: true, forward: true),
+                  : () => c.nudgeVideoEdge(
+                      first: true,
+                      forward: true,
+                      scale: currentAdvancedMiningStepScale(),
+                    ),
             ),
           ),
           const SizedBox(width: 10),
@@ -1436,10 +1874,18 @@ class AdvancedMiningVideoImagePanel extends StatelessWidget {
               frameAt: section.frameAt,
               onBack: c.locked
                   ? null
-                  : () => c.nudgeVideoEdge(first: false, forward: false),
+                  : () => c.nudgeVideoEdge(
+                      first: false,
+                      forward: false,
+                      scale: currentAdvancedMiningStepScale(),
+                    ),
               onForward: c.locked
                   ? null
-                  : () => c.nudgeVideoEdge(first: false, forward: true),
+                  : () => c.nudgeVideoEdge(
+                      first: false,
+                      forward: true,
+                      scale: currentAdvancedMiningStepScale(),
+                    ),
             ),
           ),
         ],
@@ -1529,7 +1975,9 @@ class AdvancedMiningFrameTile extends StatelessWidget {
           children: <Widget>[
             Expanded(
               child: _nudgeButton(
-                tooltip: t.popup_advanced_mining_image_frame_back,
+                tooltip:
+                    '${t.popup_advanced_mining_image_frame_back}\n'
+                    '${t.popup_advanced_mining_frame_modifier_hint}',
                 child: const FushiIcon(FushiIcons.stepBackward, size: 16),
                 onPressed: onBack,
               ),
@@ -1537,7 +1985,9 @@ class AdvancedMiningFrameTile extends StatelessWidget {
             const SizedBox(width: 4),
             Expanded(
               child: _nudgeButton(
-                tooltip: t.popup_advanced_mining_image_frame_forward,
+                tooltip:
+                    '${t.popup_advanced_mining_image_frame_forward}\n'
+                    '${t.popup_advanced_mining_frame_modifier_hint}',
                 child: const FushiIcon(FushiIcons.stepForward, size: 16),
                 onPressed: onForward,
               ),

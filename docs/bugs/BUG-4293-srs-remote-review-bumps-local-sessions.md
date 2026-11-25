@@ -1,0 +1,15 @@
+## BUG-4293 · 远程复习推动本机 runtime 的活跃复习会话计数
+- **报告**：2026-11-10（用户：内部审查）
+- **真实性**：✅ 真 bug，已用 widget 测试复现。
+  - 远程复习页就是本机的 `SrsReviewPage` 跑在 `SrsRemoteCollectionScope` 里。它在 `initState` 照样执行全局的 `srsActiveReviewSessions.value++`（旧 `fushi/lib/src/pages/implementations/srs/srs_review_page.dart:415`）。
+  - 这个计数驱动的是**本机** runtime（`fushi/lib/src/srs/srs_app_runtime.dart:250` 的批量推送开关、`:519` 的自动优化空闲判据、`:498` 进入复习时取消优化）。
+  - 结果：在主机的库上复习时，本机库的互联推送被改成批量，本机的参数优化也被取消、让路。
+  - 远程作用域（`srs_remote_review_page.dart` 的 `SrsRemoteCollectionScope`）已经按「派生 provider 一律在作用域里覆盖」的办法隔离了修订号和 runtime，唯独漏了这个全局计数。
+- **[x] ① 已修复**
+  - 新增 `srsActiveReviewSessionsProvider`（`fushi/lib/src/srs/srs_providers.dart:415`）。在根容器里它就是 runtime 监听的那个全局计数。
+  - 复习页改为从这个 provider 取计数（`srs_review_page.dart:440`），不再直接改全局变量。
+  - 远程作用域把它覆盖成作用域自己的计数（`srs_remote_review_page.dart:202`）。
+- **[x] ② 已加自动化测试**
+  - `fushi/test/srs/srs_remote_review_test.dart`「本机的复习页跑在主机的库上」：断言远程复习期间 `srsActiveReviewSessions.value == 0`。
+  - `fushi/test/srs/srs_review_external_changes_test.dart`「本机复习页登记活跃会话计数，离开时撤销」：对照用例。
+- **备注**：只做了 widget 测试，没在真机远程复习时观察推送 / 优化行为。

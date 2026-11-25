@@ -9,12 +9,15 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/feedback/feedback_entry_gate.dart';
+import 'package:fushi/src/feedback/feedback_files.dart';
 import 'package:fushi/src/feedback/feedback_fix_progress.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_store.dart';
 import 'package:fushi/src/feedback/feedback_video.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_center_page.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_compose_page.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_compose_prefill.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_detail_page.dart';
 import 'package:fushi/src/utils/misc/clipboard_image.dart';
 import 'package:fushi/src/utils/misc/platform_updater.dart';
@@ -38,6 +41,8 @@ import 'package:fushi_engine/feedback/feedback_models.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:image/image.dart' as img;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiVerticalDivider;
 import 'package:path/path.dart' as p;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -60,6 +65,35 @@ Future<void> openFeedbackCenter(
     builder: (_) => FeedbackCenterPage(initialScreenshot: shot),
   ),
 );
+
+/// 提交成功后的一句提示（附件全传上 / 部分没传上 / 撞了当日配额）。反馈中心与 [openFeedbackComposeWith] 共用。
+String feedbackSubmittedMessage(FeedbackSubmitResult result) =>
+    result.quotaResetAt != null
+    ? t.feedback_submitted_quota(
+        n: result.failedAttachments,
+        time: feedbackQuotaResetTime(result.quotaResetAt!),
+      )
+    : result.failedAttachments > 0
+    ? t.feedback_submitted_partial(n: result.failedAttachments)
+    : t.feedback_submitted;
+
+/// 带着现场直接打开提交页（[prefill]：分类、标题、正文与自动附上的样本文件），不经反馈中心、不截图——现场已经在
+/// 预填与附件里。提交成功后给出与反馈中心同样的提示。
+Future<void> openFeedbackComposeWith(
+  BuildContext context,
+  FeedbackComposePrefill prefill,
+) async {
+  final FeedbackSubmitResult? result = await Navigator.of(context).push(
+    adaptivePageRoute<FeedbackSubmitResult>(
+      context: context,
+      builder: (_) => FeedbackComposePage(prefill: prefill),
+    ),
+  );
+  if (result == null || !context.mounted) return;
+  ScaffoldMessenger.of(context).showSnackBar(
+    FushiSnackBar(content: Text(feedbackSubmittedMessage(result))),
+  );
+}
 
 /// 点了「开发者回复了你的反馈」的系统通知：直达那条反馈的详情。本机清单里已经没有
 /// 这条（用户删了）就退到反馈中心。清单可能还没加载（被通知冷启动），先等它。
@@ -131,6 +165,18 @@ String? feedbackVideoErrorText(Object error) => switch (error) {
   _ => null,
 };
 
+/// 样本文件传不上去的原因（[feedbackFileProblem]）给用户看的完整一句。
+String feedbackFileProblemText(String name, FeedbackFileProblem problem) =>
+    switch (problem) {
+      FeedbackFileProblem.unsupportedType =>
+        t.feedback_compose_file_unsupported(name: name),
+      FeedbackFileProblem.empty => t.feedback_compose_file_empty(name: name),
+      FeedbackFileProblem.tooLarge => t.feedback_compose_file_too_large(
+        name: name,
+        max: FushiByteFormat.bytes(FeedbackLimits.fileMaxBytes),
+      ),
+    };
+
 /// 显示用户文字前剥掉伪装字符（双向控制符 / 零宽字符，emoji 的 ZWJ 保留）。服务端
 /// 提交时已剥过，这里是纵深防御：旧数据或绕过服务端的内容也不会在处理台里「看到的和
 /// 实际的不一样」。
@@ -192,6 +238,11 @@ class FeedbackFlagChips extends StatelessWidget {
 
 String feedbackTime(int ms) =>
     FushiTimeFormat.dateHourMinute(DateTime.fromMillisecondsSinceEpoch(ms));
+
+/// 上传额度重置时刻（[FeedbackService.uploadQuotaResetAt]，UTC 零点）按本机时区显示：带日期，
+/// 东八区看到的是「次日 08:00」这类，不会和今天的同一钟点混淆。
+String feedbackQuotaResetTime(DateTime at) =>
+    FushiTimeFormat.dateHourMinute(at.toLocal());
 
 /// 状态徽标：未结案用强调色，已解决用成功色，其余中性。
 class FeedbackStatusBadge extends StatelessWidget {
@@ -609,7 +660,7 @@ class FeedbackSplitLayout extends StatelessWidget {
               width: kFeedbackSplitListWidth,
               child: listBuilder(context, true, base),
             ),
-            const VerticalDivider(width: 1),
+            const FushiVerticalDivider(width: 1),
             Expanded(
               child: id == null
                   ? FushiPlaceholderMessage(
@@ -884,6 +935,21 @@ const Set<String> kFeedbackClipboardImageExtensions = <String>{
 
 /// 被复制的单个图片文件读取上限：再大就不是截图了，也不该整个读进内存。
 const int kFeedbackClipboardFileMaxBytes = 64 * 1024 * 1024;
+
+/// 桌面粘贴快捷键（macOS Cmd+V，其余 Ctrl+V；不带 Alt / Shift）的按下事件。
+///
+/// 提交页与详情页的「追加截图」共用：两处都在 [HardwareKeyboard] 上挂处理器，不论
+/// 焦点在不在输入框都看一眼剪贴板，有图就收；处理器不吃掉按键，输入框照常粘贴文字。
+bool isFeedbackPasteShortcut(KeyEvent event) {
+  if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.keyV) {
+    return false;
+  }
+  final HardwareKeyboard keyboard = HardwareKeyboard.instance;
+  final bool primary = Platform.isMacOS
+      ? keyboard.isMetaPressed
+      : keyboard.isControlPressed;
+  return primary && !keyboard.isAltPressed && !keyboard.isShiftPressed;
+}
 
 /// 从系统剪贴板取出可加入反馈的图片，最多 [limit] 张，每张已按反馈上限处理过
 /// （[prepareFeedbackImage]：超限转 JPEG 缩小）。

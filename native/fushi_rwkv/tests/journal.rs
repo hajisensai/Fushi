@@ -14,20 +14,11 @@
 
 mod common;
 
-use std::io::Read;
-
-use common::{model, small_package};
+use common::{model, small_weights};
 use fushi_rwkv::*;
 
 fn small_model() -> Model {
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(small_package())).unwrap();
-    let mut bytes = Vec::new();
-    archive
-        .by_name("sm56/weights.int8.bin")
-        .unwrap()
-        .read_to_end(&mut bytes)
-        .unwrap();
-    Model::from_bytes(&bytes).unwrap()
+    Model::from_bytes(small_weights()).unwrap()
 }
 
 /// 90 天、60 张卡（两卡一笔记、三个牌组）的确定性历史 + 第 90 天要追加的几条作答（其中一条是
@@ -462,13 +453,7 @@ fn scores_single_and_batch_are_bit_identical_and_patching_is_scoped() {
 
 #[test]
 fn c_abi_round_trip() {
-    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(small_package())).unwrap();
-    let mut bytes = Vec::new();
-    archive
-        .by_name("sm56/weights.int8.bin")
-        .unwrap()
-        .read_to_end(&mut bytes)
-        .unwrap();
+    let bytes = small_weights().to_vec();
     let (reviews, appended) = history();
     let rows = |inputs: &[ReviewInput]| -> Vec<FrwkvReview> {
         inputs.iter().map(FrwkvReview::from_input).collect()

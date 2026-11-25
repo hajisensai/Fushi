@@ -12,6 +12,8 @@ import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/games_library_page.dart';
+import 'package:fushi/src/pages/implementations/games/galgame_item_menu.dart'
+    show GalgameItemAction;
 import 'package:fushi/src/pages/implementations/media_item_dialog_page.dart'
     show MediaItemDialogFrame;
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
@@ -26,7 +28,7 @@ import '../helpers/test_platform_services.dart';
 ///
 /// 本测试钉住两条：
 /// 1. 卡片溢出菜单与长按/右键菜单**都**含「设置封面」「自动获取封面」（两处菜单
-///    共用同一份 `_menuItems`，任一处漏项都会红）；
+///    共用同一份 `galgameItemMenuItems`，任一处漏项都会红）；
 /// 2. 有 coverPath 且文件真实存在时，卡片渲染的是 [Image]（封面），而不是占位图标。
 void main() {
   setUp(() {
@@ -77,7 +79,7 @@ void main() {
 
   /// 卡片菜单应含的全部项，**按三库页统一次序**（重命名 → 封面类 → 刮削 →
   /// 加入合集 → 标签 → 删除；游戏特有的详情/状态保持最前）。与
-  /// `_GameCard._menuItems` 单一真相源对账：漏项或乱序本表即断言失败。
+  /// `galgameItemMenuItems` 单一真相源对账：漏项或乱序本表即断言失败。
   /// 'remove' 在长按对话框落危险区，但文案仍必须在场。
   ///
   /// 「窗口超分 · <当前档>」是 Windows-only（galgame hook 与 Magpie 都只做 Windows），
@@ -86,9 +88,13 @@ void main() {
   List<String> menuLabels() => <String>[
     t.game_view_detail,
     t.game_play_status,
+    // #4b 主操作行的「通关」一键开关（游玩状态「玩过」）。
+    t.item_menu_game_cleared,
     t.media_stats_action,
     t.game_rename,
     t.game_set_cover,
+    // 68214d0220（拍板 left3612）：「在线搜索封面」紧跟「设置封面」。
+    t.game_cover_online_search,
     t.game_auto_cover,
     t.game_scrape,
     t.add_to_collection,
@@ -100,6 +106,8 @@ void main() {
     // 链。hook 文本没有任何语言声明可读，用户指定是它唯一的真值来源，所以与
     // 标签同属「每游戏配置」，紧随其后。
     t.book_language_action,
+    // #4b 工作台入口「文本 Hook 与制卡」：galgame Hook 只做 Windows。
+    if (Platform.isWindows) t.item_menu_game_workbench,
     if (Platform.isWindows) '${t.game_upscaling} · ${t.game_upscaling_off}',
     // BUG-1477：每游戏「日语区域（转区）」档，与超分同为「启动期配置」，
     // 故紧邻它排在删除之前。未设过的游戏显示默认档——BUG-2253 起默认档是
@@ -126,14 +134,16 @@ void main() {
       ),
     ]);
     // 2026-10-25 卡盒定版：网格卡封面上不再放 ⋯ 按钮（菜单走长按 / 右键，见下一
-    // 条）；鼠标点按的溢出菜单留在列表布局的行尾，菜单项同一份 _menuItems。
+    // 条）；鼠标点按的溢出菜单留在列表布局的行尾，菜单项同一份 galgameItemMenuItems。
     await appModel.prefsRepo.setGamesLibraryListLayout(true);
     await pumpPage(tester, appModel);
 
     // 设计系统包装 FushiPopupMenuButton 是 PopupMenuButton 的子类，byType 按
     // 精确运行时类型匹配会漏掉它。
     await tester.tap(
-      find.byWidgetPredicate((Widget w) => w is PopupMenuButton<String>),
+      find.byWidgetPredicate(
+        (Widget w) => w is PopupMenuButton<GalgameItemAction>,
+      ),
     );
     await tester.pumpAndSettle();
 
@@ -142,7 +152,7 @@ void main() {
     for (final String label in menuLabels()) {
       expect(
         find.descendant(
-          of: find.byType(PopupMenuItem<String>),
+          of: find.byType(PopupMenuItem<GalgameItemAction>),
           matching: find.text(label),
         ),
         findsOneWidget,
@@ -152,8 +162,13 @@ void main() {
 
     // 次序也要钉住（统一约定：重命名 → 封面类 → 刮削 → 加入合集 → 标签 → 删除）。
     final List<String> shown = tester
-        .widgetList<PopupMenuItem<String>>(find.byType(PopupMenuItem<String>))
-        .map((PopupMenuItem<String> item) => (item.child! as Text).data!)
+        .widgetList<PopupMenuItem<GalgameItemAction>>(
+          find.byType(PopupMenuItem<GalgameItemAction>),
+        )
+        .map(
+          (PopupMenuItem<GalgameItemAction> item) =>
+              (item.child! as Text).data!,
+        )
         .toList();
     expect(shown, menuLabels(), reason: '溢出菜单次序偏离三库页统一约定');
   });
@@ -226,6 +241,9 @@ void main() {
       findsOneWidget,
       reason: 'coverPath 指向的文件存在时必须经降采样封面加载器渲染封面图',
     );
+    // 默认拼贴布局的封面色块按封面取色（[CoverColorSchemeCache] 带 10 s 超时
+    // 计时器）：推过超时再收尾，免得计时器挂到 widget 树卸载之后。
+    await tester.pump(const Duration(seconds: 11));
   });
 }
 

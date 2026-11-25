@@ -30,6 +30,36 @@ class _FakeRemote implements MusicRemoteMediaResolver {
 }
 
 void main() {
+  test('YouTube 内置音源曲目：起播时按 videoId 取 audio-only 流，带回放头与过期时刻；'
+      '算作「起播要联网取流」', () async {
+    const MusicPlayItem item = MusicPlayItem(
+      trackUid: 'srvyt',
+      path: 'fushi-music-youtube://video/dQw4w9WgXcQ',
+      title: 'Song',
+    );
+    expect(musicItemResolvesStream(item), isTrue);
+    final List<String> asked = <String>[];
+    final MusicResolvedMedia r = await resolveMusicMedia(
+      item,
+      youtubeResolver: (String id) async {
+        asked.add(id);
+        return (
+          url: 'https://rr1.googlevideo.com/videoplayback?expire=1700000000',
+          headers: <String, String>{'User-Agent': 'UA'},
+          expiresAt: 1700000000000,
+        );
+      },
+      remoteResolver: _FakeRemote(),
+    );
+    expect(asked, <String>['dQw4w9WgXcQ']);
+    expect(
+      r.media.uri,
+      'https://rr1.googlevideo.com/videoplayback?expire=1700000000',
+    );
+    expect(r.media.httpHeaders, <String, String>{'User-Agent': 'UA'});
+    expect(r.expiresAt, 1700000000000);
+  });
+
   test('a network-source track plays the resolved URL with its headers; a '
       'CUE track points its EDL segment at the resolved URL', () async {
     final _FakeRemote remote = _FakeRemote();

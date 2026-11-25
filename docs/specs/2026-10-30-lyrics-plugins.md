@@ -4,7 +4,8 @@
 不改其「仓库不内置任何平台协议实现」「iOS 不提供」两条边界。
 
 所有者已拍板：
-- LRCLIB 是**内置默认来源**，永远排第一、不可移除；
+- LRCLIB 是**内置默认来源**，不可移除；~~永远排第一~~（2026-11-16 维护者改判，反馈 h7d6Pa_g-7：LRCLIB 与歌词插件
+  同在一份有序来源列表里，可排序、可启停；旧偏好里没有 LRCLIB 项时读取补在最前，存量行为不变）；
 - 其余来源**全部是插件**，用户手动安装：不内置任何插件、首次启动不弹引导；
 - 插件由用户（自己）用 Ed25519 签名，放在独立仓库，本仓不收；
 - 旧的单开关「非官方在线歌词」（`music_lyrics_unofficial_online`）由**来源列表**取代（启停 + 排序）。
@@ -46,6 +47,7 @@ LyricText { format: 'lrc'|'yrc'|'qrc'|'krc'|'ttml'|'txt', text, language? }   //
 - `query` 由宿主生成（§4），`title` / `artist` / `album` / `durationMs` 是原始曲目信息，插件愿意可自己拼。
   宿主会对同一首歌依次用多个 `query` 调 `lyricsSearch`（见 §4），所以插件**不要**自己做多轮回退。
 - `format` 直接当 Rust 解析器 hint（`FushiLyricsAsync.parse(bytes, hint: format)`）；`yrc` 逐字、`lrc` 逐行。
+  `qrc` 的 `text` 可以是明文 QRC，也可以是 QQ 音乐接口的加密形态原样交上来：十六进制密文串、旧接口 XML（`<content><![CDATA[hex]]></content>`，只取 `<content>`，翻译请另放 `translation`），宿主统一解密（`native/fushi_music/src/lyrics/qrc.rs` 的 `sniff_encrypted`），插件不用自己剥壳。
   与所有者口述的 `{raw, format, translation?}` 的差别只是字段名：复用 `LyricText` 才能原样走
   `MusicPluginLyrics.fromJson` + `buildMusicPluginLyrics`（译文合并、TTML 落库）零新增解析代码（待确认，见 §9）。
 - 不可信输入处理（只影响显示，不让整次失败）：候选缺 `title` / `ref` 丢弃；`title` / `artist` 去空白并截断 200；
@@ -77,8 +79,9 @@ LyricText { format: 'lrc'|'yrc'|'qrc'|'krc'|'ttml'|'txt', text, language? }   //
 解析链改为（`music_lyrics_service.dart`）：user → sidecar → 内嵌 → **来源列表依次问**：
 
 1. 插件曲目的「自带歌词」（现有 ③'，`lyrics` 能力，键 `provider:plugin:<id>`）仍排最前——它按平台曲目 id 取，最准；
-2. **LRCLIB**（固定第一，`provider:lrclib`，精确匹配 + 现有逻辑，不变）；
-3. 用户启用的歌词插件，按用户排序，逐个：缓存命中（含负缓存）→ 否则 `lyricsSearch` → 评分挑 → `lyricsFetch` →
+2. **LRCLIB**（`provider:lrclib`，精确匹配 + 现有逻辑）与用户启用的歌词插件同在一份有序列表里，按用户排序逐个问
+   （2026-11-16 起 LRCLIB 不再固定第一）；
+3. 歌词插件逐个：缓存命中（含负缓存）→ 否则 `lyricsSearch` → 评分挑 → `lyricsFetch` →
    落库 `provider:lyrics:<id>`；第一个拿到歌词的胜出，其余不问。
 
 缓存键**不与**自带歌词共用：同一个插件可以同时声明 `lyrics` 与 `lyricsSearch` / `lyricsFetch`，它自己的平台曲目
@@ -113,7 +116,8 @@ TTML：合并规则随 `FushiLyrics.parserVersion` 变，缓存版本对不上�
 ## 5. 来源列表偏好与迁移
 
 - 键 `music_lyrics_providers`，值 JSON 字符串：`[{"id":"moe.example.lyrics","enabled":true}, …]`，**只存插件**，
-  数组顺序即优先级；LRCLIB 不在其中，读取时宿主固定在最前（所以「不可移除 / 不可重排」由结构保证，无从误写）。
+  数组顺序即优先级。2026-11-16 起 LRCLIB 以 id `provider:lrclib` 作为普通一项进入同一数组（插件 id 不含冒号，
+  不会撞），可重排、可停用；旧数组里没有它时读取补在最前（`mergeLyricsSourceList`）。
 - 存储：Drift `preferences` 表（`preferences_repository.dart` 新增 `musicLyricsProviders` getter/setter +
   `preference_keys.dart` 登记，使其进 `profile_settings` 每 Profile 快照；守卫 `preference_keys_guard_test`）。
 - 读取时与「已装且 `usable` 且声明了 `lyricsSearch`」的插件求并：列表里有但插件已卸载 / 缺能力的项丢弃（不写回，
@@ -132,7 +136,7 @@ TTML：合并规则随 `FushiLyrics.parserVersion` 变，缓存版本对不上�
 （新文件 `pages/implementations/music/music_lyrics_providers.dart`，套现有 `SettingsSubPage` 写法，参照
 `MusicPluginSettingsBody`）：
 
-- 第一行固定 LRCLIB：图标 + 名称 + 「内置，始终第一」副标，无开关、无拖拽柄；
+- ~~第一行固定 LRCLIB~~（2026-11-16 改）：LRCLIB 与插件同一列表，图标 + 名称 + 「内置」副标，带开关与拖拽 / 上移下移；
 - 其后 `ReorderableListView`：每行 = 拖拽柄 + 插件名 / 版本 + `Switch`；列表错峰进场用
   `FushiEntranceScope` + `fushiStaggeredItemBuilder`，行按压用 `FushiPressScale`，时长取 `fushiMotionDuration`
   （守卫 `fushi_entrance_wiring_guard_test`）；拖拽排序同时给「上移 / 下移」菜单项（焦点 / 手柄可用）；

@@ -190,21 +190,54 @@ class SrsReviewGestureMap {
   /// 当前格式版本。
   static const int version = 1;
 
-  /// 默认映射 = 加手势系统之前的行为：两面单击空白（任一分区）都切换悬浮顶栏，其余什么都
-  /// 不绑——没配置过的人行为一点不变。
-  static SrsReviewGestureAction defaultActionFor(SrsReviewGesture g) => g.isTap
-      ? SrsReviewGestureAction.toggleToolbar
-      : SrsReviewGestureAction.none;
+  /// 默认映射（2026-11-20 起默认开启手势，对齐 AnkiDroid 的常见手感）：
+  /// - 两面三区单击（点左 / 中 / 右）都切换悬浮顶栏（唤出顶栏的触屏入口不能丢；
+  ///   2026-11-22 起问题面点左 / 右也不再显示答案，点空白不翻面）；
+  /// - 两面向下滑 = 撤销（撤回上一张的评分），向上滑不绑；
+  /// - 问题面：向左 / 右滑 = 显示答案；
+  /// - 答案面：向左滑 = 良好、向右滑 = 重来；答案面的单击不评分（点空白误触评分代价
+  ///   太大）；困难 / 简单不绑手势，走评分按钮 / 快捷键；
+  /// - 双击 / 长按不绑：不为等第二击推迟单击，不和长按选词抢。
+  ///
+  /// 已经改过映射的人不受影响：[encode] 两面都写全部已知手势，存下来的值显式落盘。
+  static SrsReviewGestureAction defaultActionFor(
+    SrsReviewSide side,
+    SrsReviewGesture g,
+  ) => switch (side) {
+    SrsReviewSide.front => switch (g) {
+      SrsReviewGesture.tapLeft ||
+      SrsReviewGesture.tapCenter ||
+      SrsReviewGesture.tapRight => SrsReviewGestureAction.toggleToolbar,
+      SrsReviewGesture.swipeLeft ||
+      SrsReviewGesture.swipeRight => SrsReviewGestureAction.showAnswer,
+      SrsReviewGesture.swipeDown => SrsReviewGestureAction.undo,
+      SrsReviewGesture.doubleTap ||
+      SrsReviewGesture.longPress ||
+      SrsReviewGesture.swipeUp => SrsReviewGestureAction.none,
+    },
+    SrsReviewSide.back => switch (g) {
+      SrsReviewGesture.tapLeft ||
+      SrsReviewGesture.tapCenter ||
+      SrsReviewGesture.tapRight => SrsReviewGestureAction.toggleToolbar,
+      SrsReviewGesture.swipeLeft => SrsReviewGestureAction.rateGood,
+      SrsReviewGesture.swipeRight => SrsReviewGestureAction.rateAgain,
+      SrsReviewGesture.swipeDown => SrsReviewGestureAction.undo,
+      SrsReviewGesture.doubleTap ||
+      SrsReviewGesture.longPress ||
+      SrsReviewGesture.swipeUp => SrsReviewGestureAction.none,
+    },
+  };
+
+  static Map<SrsReviewGesture, SrsReviewGestureAction> _defaultsOf(
+    SrsReviewSide side,
+  ) => <SrsReviewGesture, SrsReviewGestureAction>{
+    for (final SrsReviewGesture g in SrsReviewGesture.values)
+      g: defaultActionFor(side, g),
+  };
 
   static final SrsReviewGestureMap defaults = SrsReviewGestureMap._(
-    <SrsReviewGesture, SrsReviewGestureAction>{
-      for (final SrsReviewGesture g in SrsReviewGesture.values)
-        g: defaultActionFor(g),
-    },
-    <SrsReviewGesture, SrsReviewGestureAction>{
-      for (final SrsReviewGesture g in SrsReviewGesture.values)
-        g: defaultActionFor(g),
-    },
+    _defaultsOf(SrsReviewSide.front),
+    _defaultsOf(SrsReviewSide.back),
   );
 
   final Map<SrsReviewGesture, SrsReviewGestureAction> _front;
@@ -217,7 +250,7 @@ class SrsReviewGestureMap {
 
   /// 存下来的绑定（不看「只留重来 / 良好」）。
   SrsReviewGestureAction actionFor(SrsReviewSide side, SrsReviewGesture g) =>
-      _of(side)[g] ?? defaultActionFor(g);
+      _of(side)[g] ?? defaultActionFor(side, g);
 
   /// 这一下实际要执行的动作：「只留重来 / 良好」开着时，绑在困难 / 简单上的手势什么都不做
   /// （与评分栏一致：那两颗按钮不在，手势也不偷偷评它们）。
@@ -282,7 +315,7 @@ class SrsReviewGestureMap {
   bool get isDefault {
     for (final SrsReviewSide side in SrsReviewSide.values) {
       for (final SrsReviewGesture g in SrsReviewGesture.values) {
-        if (actionFor(side, g) != defaultActionFor(g)) return false;
+        if (actionFor(side, g) != defaultActionFor(side, g)) return false;
       }
     }
     return true;
@@ -290,17 +323,18 @@ class SrsReviewGestureMap {
 
   String encode() {
     Map<String, String> side(
+      SrsReviewSide s,
       Map<SrsReviewGesture, SrsReviewGestureAction> known,
       Map<String, String> unknown,
     ) => <String, String>{
       ...unknown,
       for (final SrsReviewGesture g in SrsReviewGesture.values)
-        g.wire: (known[g] ?? defaultActionFor(g)).wire,
+        g.wire: (known[g] ?? defaultActionFor(s, g)).wire,
     };
     return jsonEncode(<String, Object>{
       'v': version,
-      'front': side(_front, _unknownFront),
-      'back': side(_back, _unknownBack),
+      'front': side(SrsReviewSide.front, _front, _unknownFront),
+      'back': side(SrsReviewSide.back, _back, _unknownBack),
     });
   }
 
@@ -318,11 +352,9 @@ class SrsReviewGestureMap {
       Map<String, String> unknown,
     })
     side(Object? value, SrsReviewSide s) {
-      final Map<SrsReviewGesture, SrsReviewGestureAction> known =
-          <SrsReviewGesture, SrsReviewGestureAction>{
-            for (final SrsReviewGesture g in SrsReviewGesture.values)
-              g: defaultActionFor(g),
-          };
+      final Map<SrsReviewGesture, SrsReviewGestureAction> known = _defaultsOf(
+        s,
+      );
       final Map<String, String> unknown = <String, String>{};
       if (value is Map) {
         value.forEach((Object? k, Object? v) {

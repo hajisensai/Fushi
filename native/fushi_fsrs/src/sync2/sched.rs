@@ -1,7 +1,7 @@
-//! 上层排程策略（Dart `scheduler.dart` / `card_ops.dart` 的 Rust 移植）：学习 / 重学步长、毕业、确定性
-//! fuzz、最大间隔、手动改期 / 重置 / 移交 / 立即重排。记忆状态与间隔由确定性 FSRS（fsrs_det.rs）算。
+//! 上层排程策略（原 Dart `scheduler.dart` / `card_ops.dart` 的 Rust 移植；Dart 版已删，这里是唯一一份）：学习 / 重学
+//! 步长、毕业、确定性 fuzz、最大间隔、手动改期 / 重置 / 移交 / 立即重排。记忆状态与间隔由确定性 FSRS（fsrs_det.rs）算。
 //!
-//! 重放（replay.rs）与评分预览都只走这一份，所以「按钮上显示的间隔」与「合并后重放出来的到期日」
+//! 重放（replay.rs）、评分预览与本机手动排程命令（store/sync2/sched_local.rs）都只走这一份，所以「按钮上显示的间隔」与「合并后重放出来的到期日」
 //! 出自同一段代码、同一套浮点运算。
 
 use serde_json::{Map, Value, json};
@@ -359,7 +359,7 @@ fn hard_delay(steps: &[f64], step: i64) -> f64 {
     if plus < cap { plus } else { cap }
 }
 
-/// 四个评分各自的「这次操作后」结果（Dart `srsPlanAnswer`）。[next] 是 again..easy。
+/// 四个评分各自的「这次操作后」结果（原 Dart `srsPlanAnswer`）。[next] 是 again..easy。
 pub fn plan_answer(
     card_id: &str,
     cur: &Sched,
@@ -508,7 +508,7 @@ pub fn plan_answer(
     }
 }
 
-/// 「manual 改到期」（Dart `srsManualSetDue`）。
+/// 「manual 改到期」（原 Dart `srsManualSetDue`）。
 pub fn manual_set_due(cur: &Sched, due_day: i64, today: i64) -> Sched {
     Sched {
         queue: Queue::Review,
@@ -520,7 +520,7 @@ pub fn manual_set_due(cur: &Sched, due_day: i64, today: i64) -> Sched {
     }
 }
 
-/// 「设为新卡」（Dart `srsManualReset`）：只保留排程归属。
+/// 「设为新卡」（原 Dart `srsManualReset`）：只保留排程归属。
 pub fn manual_reset(cur: &Sched) -> Sched {
     Sched {
         scheduler: cur.scheduler.clone(),
@@ -536,7 +536,7 @@ pub fn hand_off(cur: &Sched, to_anki: bool) -> Sched {
     }
 }
 
-/// 「立即重排」（Dart `SrsCardOps.reschedule`）：复习卡按当前参数重算到期；条件不满足 = 不变。
+/// 「立即重排」（原 Dart `SrsCardOps.reschedule`）：复习卡按当前参数重算到期；条件不满足 = 不变。
 pub fn reschedule(
     card_id: &str,
     cur: &Sched,

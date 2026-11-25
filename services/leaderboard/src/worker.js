@@ -34,11 +34,14 @@
 //   GET    /img/<key>                                    R2 出图
 //   /v1/feedback/**、/v1/dev/feedback/**                反馈与开发者处理（feedback.js 文件头）
 //   /v1/ci/feedback/**                    [Bearer FEEDBACK_CI_TOKEN]  CI 回填修复 commit / 发布版本（同上）
+//   /v1/decisions/**                      [Bearer 开发者个人密钥 fdk_…] 拍板台 JSON API（decisions_api.js 文件头）
 //   POST /v1/ci/usage                     [Bearer USAGE_UPLOAD_TOKEN] 上传 AI 额度消耗日汇总（ai_usage.js；没配 token 则 404）
+//   POST /v1/notices                       {v, p, c, l, id, h, k} 按构建信息取服务端下发的公告（notices.js）
 //   GET  /v1/musickit/token                                Apple Music API developer token（musickit.js；没配 MUSICKIT_* 则 503）
 //   GET  /musickit/  /musickit/bridge.js                   MusicKit JS 托管页 + 桥接脚本（musickit_page.js；Windows/Android 网页桥）
 //
 // 开发者网页处理台（HTML，会话 Cookie；devconsole.js）：/dev/**
+// 拍板台附件公开分享（无需登录，只读；decisions.js sharedFileResponse）：GET /share/f/<token>，撤销后 404
 //
 // 只读网页（HTML，匿名 + 边缘缓存；pages.js）：GET /u/:id、/w/:id、/rank?metric&window、/usage
 //
@@ -71,9 +74,12 @@ import { issueMusicKitToken } from './musickit.js';
 import { isMusicKitPagePath, renderMusicKitPage } from './musickit_page.js';
 import { isFeedbackPath, purgeFeedbackAttachments, purgeFeedbackVideos, routeFeedback } from './feedback.js';
 import { isDevConsolePath, purgeDevSessions, routeDevConsole } from './devconsole.js';
-import { purgeInstallStats, recordPing } from './installs.js';
+import { isDecisionsApiPath, routeDecisionsApi } from './decisions_api.js';
+import { DECISION_SHARE_PATH, sharedFileResponse } from './decisions.js';
+import { purgeInstallStats, recordPing, refreshInstallStatsSnapshot } from './installs.js';
 import { refreshProjectStats } from './project_stats.js';
 import { USAGE_LIMITS, recordAiUsage } from './ai_usage.js';
+import { NOTICE_LIMITS, handleNotices, purgeNoticeSeen } from './notices.js';
 
 const HOUR = 3600 * 1000;
 const JSON_BODY_MAX = 16 * 1024;
@@ -196,6 +202,13 @@ async function route(request, env, now, ctx) {
     return new Response(null, { status: 204, headers: { 'Cache-Control': 'no-store' } });
   }
 
+  // ---- 服务端公告（notices.js）：无账户；与心跳一样按 IP 过 AUTH_LIMITER，计数写入另有 'notices' 日预算 ----
+  if (method === 'POST' && path === '/v1/notices') {
+    await bindingLimit(env.AUTH_LIMITER, request);
+    const bytes = await readBodyBytes(request, NOTICE_LIMITS.maxBodyBytes);
+    return handleNotices(env, request, parseJsonBytes(bytes), now);
+  }
+
   // ---- AI 额度消耗上传（ai_usage.js）：Bearer USAGE_UPLOAD_TOKEN；没配 token 时 404 ----
   if (method === 'POST' && path === '/v1/ci/usage') {
     await bindingLimit(env.AUTH_LIMITER, request);
@@ -213,6 +226,18 @@ async function route(request, env, now, ctx) {
   if (method === 'GET' && isMusicKitPagePath(path)) {
     await bindingLimit(env.READ_LIMITER, request);
     return renderMusicKitPage(path);
+  }
+
+  // ---- 拍板台附件公开分享（decisions.js）：无账户，凭链接里的 token 只读一个附件；按 IP 过 READ_LIMITER，不缓存 ----
+  if (method === 'GET' && path.startsWith(DECISION_SHARE_PATH)) {
+    await bindingLimit(env.READ_LIMITER, request);
+    return sharedFileResponse(env, path.slice(DECISION_SHARE_PATH.length));
+  }
+
+  // ---- 拍板台 JSON API（decisions_api.js）：Bearer 开发者个人密钥；按 IP 过 READ_LIMITER，不进边缘缓存 ----
+  if (isDecisionsApiPath(path)) {
+    await bindingLimit(env.READ_LIMITER, request);
+    return routeDecisionsApi(request, env, url, now);
   }
 
   // ---- 反馈、开发者处理与 CI 回填：凭据各不相同（ticket / 签名 / Bearer），一律不进边缘缓存 ----
@@ -372,6 +397,9 @@ export default {
     await purgeFeedbackAttachments(env, now);
     await purgeFeedbackVideos(env, now);
     await purgeInstallStats(env, now);
+    await purgeNoticeSeen(env, now);
+    // 安装统计快照：按 INSTALL_LIMITS.snapshotEveryMs 节流，不到期只读一行就返回（迁移 0021）。
+    await refreshInstallStatsSnapshot(env, now);
     // 冷却期到期、没有新票的封面挑战者（cover_votes.js 文件头「替换门槛」）。
     await deleteMedia(env, (await settlePendingCovers(env.DB, now)).released);
     // 放最后：要等外部 API（GitHub / Cloudflare），按自己的间隔节流，失败只记状态不抛。

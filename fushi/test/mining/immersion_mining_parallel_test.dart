@@ -80,6 +80,7 @@ void main() {
       String audioBitrate = '64k',
       String? tlsPinSha256,
       Map<String, String> httpHeaders = const {},
+      double? gainDb,
     }) async {
       if (!audioStarted.isCompleted) audioStarted.complete();
       await audioRelease.future;
@@ -185,6 +186,7 @@ void main() {
       String audioBitrate = '64k',
       String? tlsPinSha256,
       Map<String, String> httpHeaders = const {},
+      double? gainDb,
     }) async {
       (onFailure as void Function(String)?)?.call('audio boom');
       return null;

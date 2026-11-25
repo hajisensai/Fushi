@@ -1,4 +1,5 @@
 import 'dart:math' as math;
+import 'dart:ui' show Size;
 
 import 'package:flutter/foundation.dart'
     show TargetPlatform, defaultTargetPlatform;
@@ -6,6 +7,7 @@ import 'package:fushi/src/models/cjk_font_families.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/reader_book_font_aliases.dart';
+import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_vertical_punctuation_font.dart';
 
@@ -121,117 +123,24 @@ class ReaderContentStyles {
     return 'max(1px, calc(($baseContentBoxCss - ${totalGapPx}px) / $pageColumns))';
   }
 
-  /// 折叠屏书本姿态下的每页列数覆盖：返回 null = 不覆盖（用用户设置）。
+  /// 窗口有竖向折痕（折叠屏书本姿态 / 完全展开的内屏）时两页之间的间隙（px）：
+  /// null = 不覆盖（常量 22px）。横排双页是 `column-gap`，竖排对开是两个 multicol 行
+  /// 之间的 `row-gap`。
   ///
-  /// 只在「翻页 + 横排 + 每页列数 = 自动(0)」时把一屏排成 2 栏，让竖向折痕正好落在
-  /// 两栏之间（content-box 居中、两栏对称，栏间隙中线 = 窗口中线；页边距左右不等时
-  /// 中线偏移半个差值）。用户显式选了列数就尊重用户；滚动 / VN 不经多列。
-  ///
-  /// 竖排不在这里处理：竖排的 multicol 列沿 inline 轴（竖直）堆叠，「2 栏」是上下两条，
-  /// 挡不住竖向折痕。竖排的一屏两页走另一种几何——[foldVerticalSpreadFor]（竖排对开）。
-  static int? foldPageColumnsOverride({
-    required bool bookPosture,
-    required ReaderSettings settings,
-  }) {
-    return foldPageColumnsOverrideFor(
-      bookPosture: bookPosture,
-      viewMode: settings.viewMode,
-      writingMode: settings.writingMode,
-      pageColumns: settings.pageColumns,
-    );
-  }
-
-  /// [foldPageColumnsOverride] 的原始值版本：设置页拿不到 [ReaderSettings]（全局设置
-  /// 不在阅读器里）时直接喂偏好值，判据只此一份。
-  static int? foldPageColumnsOverrideFor({
-    required bool bookPosture,
-    required String viewMode,
-    required String writingMode,
-    required int pageColumns,
-  }) {
-    if (!bookPosture) return null;
-    if (viewMode == 'vn' || viewMode == 'continuous') return null;
-    if (writingMode.startsWith('vertical')) return null;
-    if (pageColumns != 0) return null;
-    return 2;
-  }
-
-  /// 折叠屏书本姿态下竖排是否排成「对开」（一屏右页 + 左页，折痕落在两页之间）。
-  ///
-  /// 条件与横排两栏对称：书本姿态 + 翻页 + 竖排 + 每页列数 = 自动(0)。用户显式选了列数
-  /// 就尊重用户（竖排「2 栏」= 上下两条，那是用户自己的选择）；滚动 / VN 不经多列。
-  ///
-  /// 几何：CSS Multicol Level 2 的 `column-height` + `column-wrap: wrap`（Chromium 145+）。
-  /// 每个 multicol 行只有一列（列高 = 原竖排列高），行的块向尺寸 = 半个 content-box 宽，
-  /// 行沿块轴（vertical-rl 下从右往左）换行——右页、左页、下一对开……翻页轴随之变成从右往左
-  /// 的 x 轴（JS getScrollContext 按计算样式 `columnWrap == 'wrap'` 识别，见
-  /// reader_pagination_scripts.dart 的 xr 轴）。不支持 `column-wrap` 的 WebView 整条忽略
-  /// 这组声明（`@supports` 包裹），退回原竖排单条几何，JS 同样按计算样式退回 y 轴。
-  static bool foldVerticalSpread({
-    required bool bookPosture,
-    required ReaderSettings settings,
-  }) {
-    return foldVerticalSpreadFor(
-      bookPosture: bookPosture,
-      viewMode: settings.viewMode,
-      writingMode: settings.writingMode,
-      pageColumns: settings.pageColumns,
-    );
-  }
-
-  /// [foldVerticalSpread] 的原始值版本（设置页直接喂偏好值，判据只此一份）。
-  static bool foldVerticalSpreadFor({
-    required bool bookPosture,
-    required String viewMode,
-    required String writingMode,
-    required int pageColumns,
-  }) {
-    if (!bookPosture) return false;
-    if (viewMode == 'vn' || viewMode == 'continuous') return false;
-    if (!writingMode.startsWith('vertical')) return false;
-    return pageColumns == 0;
-  }
-
-  /// 「中缝折痕」此刻能不能画出来：只有翻页模式且本次排版实际是一屏两页才有「两页之间」。
-  /// 一屏两页 = 横排恰好两栏（[effectivePageColumns] = 折叠覆盖 ?? 用户设置的每页列数），
-  /// 或竖排对开（[verticalSpread]，见 [foldVerticalSpreadFor]）。
-  ///
-  /// CSS 生成与设置页的显隐共用这一个判据——设置页据此只在开关真能生效时露出该项，
-  /// 否则用户打开了也看不到效果。
-  static bool pageCreaseApplies({
-    required String viewMode,
-    required int effectivePageColumns,
-    bool verticalSpread = false,
-  }) {
-    return viewMode != 'vn' &&
-        viewMode != 'continuous' &&
-        (effectivePageColumns == 2 || verticalSpread);
-  }
-
-  /// 折叠屏书本姿态下两页之间的间隙（px）：null = 不覆盖（常量 22px）。横排两栏是
-  /// `column-gap`，竖排对开（[verticalSpread]）是两个 multicol 行之间的 `row-gap`。
-  ///
-  /// 对齐指南「内容放在铰链两侧、不放在铰链下」：只在翻页、一屏两页时生效，
-  /// 间隙 = 常量 22px + [hingeGutterPx]（铰链宽 + 2×铰链与正文中线的偏差，见
-  /// `fushiHingeGutterPx`），两侧各留 11px 余量。[hingeGutterPx] 为 0（柔性折痕且
-  /// 已居中）时不覆盖，与原几何逐字节相同。
+  /// 对齐指南「内容放在铰链两侧、不放在铰链下」：只在一屏两页（[layout] 由
+  /// [resolveReaderSpreadLayout] 给出，已排除滚动 / VN）时生效，间隙 = 常量 22px +
+  /// [hingeGutterPx]（铰链宽 + 2×铰链与正文中线的偏差，见 `fushiHingeGutterPx`），
+  /// 两侧各留 11px 余量。[hingeGutterPx] 为 0（柔性折痕且已居中）时不覆盖，与原几何
+  /// 逐字节相同。
   static int? foldColumnGapPx({
     required double hingeGutterPx,
-    required int effectivePageColumns,
-    required ReaderSettings settings,
-    bool verticalSpread = false,
+    required ReaderSpreadLayout layout,
   }) {
-    if (hingeGutterPx <= 0) return null;
-    if (settings.isVnMode || settings.isContinuousMode) return null;
-    if (settings.writingMode.startsWith('vertical')) {
-      if (!verticalSpread) return null;
-    } else if (effectivePageColumns != 2) {
-      return null;
-    }
+    if (hingeGutterPx <= 0 || !layout.isDouble) return null;
     return ReaderLayoutDefaults.columnGapPx + hingeGutterPx.ceil();
   }
 
-  /// 竖排对开（[foldVerticalSpreadFor]）的 multicol 行几何，整段包在
+  /// 竖排对开（[ReaderSpreadLayout.verticalDouble]）的 multicol 行几何，整段包在
   /// `@supports (column-wrap: wrap)` 里：不支持的 WebView 原样保留竖排单条。
   ///
   /// - `column-count: 1`：每个 multicol 行只有一列，列高仍是原竖排的 `column-width`
@@ -252,7 +161,7 @@ class ReaderContentStyles {
     required int gapPx,
   }) {
     return '''
-/* 竖排对开（折叠屏书本姿态）：一屏右页 + 左页，翻页轴 = 从右往左的 x 轴。 */
+/* 竖排对开（竖排双页）：一屏右页 + 左页，翻页轴 = 从右往左的 x 轴。 */
 @supports (column-wrap: wrap) {
   body {
     column-count: 1 !important;
@@ -353,6 +262,7 @@ html::after {
     String? customBg,
     String? customFg,
     String? selectionColor,
+    String? selectionTextColor,
     String? sentenceAudioHighlightColor,
     String? sentenceAudioTextColor,
     String? linkColor,
@@ -363,11 +273,10 @@ html::after {
     bool einkDark = false,
     String? contentLanguage,
     bool motionEnabled = true,
-    int? pageColumnsOverride,
+    ReaderSpreadLayout? spreadLayout,
     int? columnGapOverridePx,
-    bool verticalSpread = false,
   }) {
-    return '<style>\n${css(settings: settings, contentLanguage: contentLanguage, fontFaces: fontFaces, fontFamily: fontFamily, customBg: customBg, customFg: customFg, selectionColor: selectionColor, sentenceAudioHighlightColor: sentenceAudioHighlightColor, sentenceAudioTextColor: sentenceAudioTextColor, linkColor: linkColor, rubyColor: rubyColor, nativeSelectionColor: nativeSelectionColor, themeOverride: themeOverride, einkMode: einkMode, einkDark: einkDark, motionEnabled: motionEnabled, pageColumnsOverride: pageColumnsOverride, columnGapOverridePx: columnGapOverridePx, verticalSpread: verticalSpread)}\n</style>';
+    return '<style>\n${css(settings: settings, contentLanguage: contentLanguage, fontFaces: fontFaces, fontFamily: fontFamily, customBg: customBg, customFg: customFg, selectionColor: selectionColor, selectionTextColor: selectionTextColor, sentenceAudioHighlightColor: sentenceAudioHighlightColor, sentenceAudioTextColor: sentenceAudioTextColor, linkColor: linkColor, rubyColor: rubyColor, nativeSelectionColor: nativeSelectionColor, themeOverride: themeOverride, einkMode: einkMode, einkDark: einkDark, motionEnabled: motionEnabled, spreadLayout: spreadLayout, columnGapOverridePx: columnGapOverridePx)}\n</style>';
   }
 
   /// 正文 `font-family` 的值：用户字体 -> 内容语言的明朝体/宋体链 -> `serif`。
@@ -424,7 +333,9 @@ html::after {
   /// 所以由 `reader_ruby_metrics_script.dart` 在页面里量真实 ruby，把两截空白折成注音
   /// 字号的倍数写进 `--fushi-ruby-pull`，这里再多压 0.1em（注音 em 盒压进基字 em 盒
   /// 0.1em——假名墨迹不满 em 盒，视觉上正好紧贴；Hiragino 下与旧 `-0.2em` 相差 < 0.1px）。
-  /// 变量缺省 0.1 即旧值，脚本没跑到之前行为不变。`--fushi-ruby-snap` 是给脚本的开关，
+  /// 变量缺省 0.1 即旧值，脚本没跑到之前行为不变。BUG-4936：WebKit 18（iOS 18）把上面的
+  /// 负 `margin-block-start` 也算进注音位置（整挪 2em、压进基字），度量脚本量注音实际
+  /// 位置把这截扣回去，那里写出的拉力可以是负的。`--fushi-ruby-snap` 是给脚本的开关，
   /// 只在这里（Apple 端）打出。
   static String _webKitRubyAnnotationCss() => switch (defaultTargetPlatform) {
     TargetPlatform.iOS || TargetPlatform.macOS || TargetPlatform.linux =>
@@ -601,6 +512,8 @@ body::after {
     String? customBg,
     String? customFg,
     String? selectionColor,
+    // 查词高亮里被选中文字的字色（自定义主题「查词高亮文字」）。null = 跟随正文。
+    String? selectionTextColor,
     String? sentenceAudioHighlightColor,
     // 有声书当前句字色（resolveAudioHighlightStyle 的 text）。null = 沿用正文色。
     String? sentenceAudioTextColor,
@@ -625,21 +538,26 @@ body::after {
     /// 高亮笔触不放落笔动画（见 [highlightStrokeCssVariables]）。
     bool motionEnabled = true,
 
-    /// 本次排版实际生效的每页列数；null = 用户设置 [ReaderSettings.pageColumns]。
-    /// 折叠屏书本姿态下阅读器把「自动」解析成 2 栏（见 [foldPageColumnsOverride]），
-    /// 不写回用户偏好——展平后自动回到原值。
-    int? pageColumnsOverride,
+    /// 本次排版实际生效的单双页（阅读器按偏好 + 窗口 + 折叠状态用
+    /// [resolveReaderSpreadLayout] 解析，不写回偏好）。null = 只按偏好解析、不看窗口
+    /// （「自动」= 单页、「双页」= 双页）。
+    ReaderSpreadLayout? spreadLayout,
 
-    /// 本次排版的栏间隙（px）；null = 常量 [ReaderLayoutDefaults.columnGapPx]。折叠屏
-    /// 书本姿态下加宽到盖住铰链（见 [foldColumnGapPx]）。列宽推算与 `column-gap` 同用
+    /// 本次排版的栏间隙（px）；null = 常量 [ReaderLayoutDefaults.columnGapPx]。窗口有
+    /// 竖向折痕时加宽到盖住铰链（见 [foldColumnGapPx]）。列宽推算与 `column-gap` 同用
     /// 这一个值，JS 的页步又从计算样式回读 column-gap，三者同源、翻页网格不失配。
     int? columnGapOverridePx,
-
-    /// 折叠屏书本姿态下竖排排成对开（[foldVerticalSpread]）：一屏右页 + 左页，两页之间
-    /// 的 `row-gap` 取 [columnGapOverridePx]（缺省常量 22px）。只在翻页 + 竖排时生效。
-    bool verticalSpread = false,
   }) {
-    final int pageColumns = pageColumnsOverride ?? settings.pageColumns;
+    final ReaderSpreadLayout layout =
+        spreadLayout ??
+        resolveReaderSpreadLayout(
+          preference: settings.pageSpread,
+          viewMode: settings.viewMode,
+          writingMode: settings.writingMode,
+          hasFoldSpine: false,
+          window: Size.zero,
+        );
+    final int pageColumns = layout.columns;
     final int columnGapPx =
         columnGapOverridePx ?? ReaderLayoutDefaults.columnGapPx;
     final _ThemeColors themedColors = _themeColors(
@@ -672,7 +590,30 @@ body::after {
     final String themedRubyCss = !einkMode && rubyColor != null
         ? 'ruby > rt, ruby > rtc { color: $rubyColor; }\n'
         : '';
-    final String nativeSelectionCss = !einkMode && nativeSelectionColor != null
+    // 查词高亮文字色（拍板台 -8azTfJh_v）：设了就让查词选区的各条绘制路径
+    // （::highlight、ruby 分流 class、旧 WebView 包裹 span、与当前句重叠的 ruby）都换成
+    // 这个字色，配合底色做出反色高亮；没设时一律 inherit（跟随正文，与历史输出逐字
+    // 相同）。墨水屏的查词是线式下划线、不画底色，换字色只会与纸色撞色，所以忽略。
+    final String? selectionText = einkMode ? null : selectionTextColor;
+    final String selectionTextValue = selectionText ?? 'inherit';
+    final String selectionTextImportant = selectionText == null
+        ? 'inherit'
+        : '$selectionText !important';
+    // 振假名不在窄条底色上（窄条只按基字画，BUG-110）：换了字色的查词 ruby 里 rt 留在
+    // 注音 / 正文原色，否则反色时白字落在白纸上。
+    final String selectionRubyTextCss = selectionText == null
+        ? ''
+        : 'ruby.fushi-selection-ruby-active > rt, '
+              'ruby.fushi-selection-ruby-active > rtc '
+              '{ color: ${rubyColor ?? colors.textColor} !important; }\n';
+    // 桌面鼠标拖出的原生选区：设了查词高亮文字色时与查词高亮同一观感（同底色 + 同
+    // 字色），否则保持旧行为（只有跟随主题配色才写底色）。
+    final String nativeSelectionCss = einkMode
+        ? ''
+        : selectionText != null
+        ? '::selection { background-color: $selectionOpaque; '
+              'color: $selectionText; }\n'
+        : nativeSelectionColor != null
         ? '::selection { background-color: $nativeSelectionColor; }\n'
         : '';
 
@@ -887,7 +828,8 @@ svg.block-img.blurred {
         ? 'text-orientation: ${settings.verticalTextOrientation};'
         : '';
 
-    final String columnsCss = pageColumns > 0
+    // 单页不发 column-count（列数由 column-width == content-box 定为 1），双页发 2。
+    final String columnsCss = pageColumns >= 2
         ? 'column-count: $pageColumns !important;'
         : '';
 
@@ -948,7 +890,7 @@ svg.block-img.blurred {
         : _webKitPaginatedScrollEndCss();
     // 竖排对开：只在翻页 + 竖排下发（滚动 / VN 不经 multicol）。
     final bool spread =
-        verticalSpread &&
+        layout.verticalSpread &&
         isVertical &&
         !settings.isVnMode &&
         !settings.isContinuousMode;
@@ -965,11 +907,9 @@ svg.block-img.blurred {
     // 退回单条竖排时不会在正文中间画出一道阴影。
     final String pageCreaseCss;
     if (settings.pageCrease &&
-        ReaderContentStyles.pageCreaseApplies(
-          viewMode: settings.viewMode,
-          effectivePageColumns: pageColumns,
-          verticalSpread: spread,
-        )) {
+        !settings.isVnMode &&
+        !settings.isContinuousMode &&
+        (pageColumns == 2 || spread)) {
       final String crease = ReaderContentStyles.pageCreaseCss(
         isVertical: isVertical && !spread,
         shadeColor: colors.textColor,
@@ -1224,15 +1164,15 @@ $themedRubyCss$nativeSelectionCss/* 高亮条一律一个字高（用户 2026-10
    BUG-125：查词高亮用不透明色（见 selectionOpaque 注释）。 */
 ::highlight(fushi-selection) {
   background-color: transparent;
-  color: inherit;
+  color: $selectionTextValue;
 }
 /* BUG-110：<ruby> 内的字不走 ::highlight（竖排下会双绘成深色带），改给 ruby 元素
    加 class，由窄条层按基字画一遍。移植自 Hoshi-Reader-Android。 */
 ruby.fushi-selection-ruby-active {
   background-color: transparent !important;
-  color: inherit;
+  color: $selectionTextImportant;
 }
-/* 收藏句高亮同时服务 CSS Highlight、旧 WebView span fallback、以及 ruby 分流 class；
+$selectionRubyTextCss/* 收藏句高亮同时服务 CSS Highlight、旧 WebView span fallback、以及 ruby 分流 class；
    三条路径共用 underline，和 sentenceAudioHighlight/current sentence 重叠时仍保留收藏语义。 */
 ${_favoriteHighlightCss('yellow', 'rgb(184, 132, 0)')}
 ${_favoriteHighlightCss('green', 'rgb(0, 126, 54)')}
@@ -1241,7 +1181,7 @@ ${_favoriteHighlightCss('pink', 'rgb(196, 38, 92)')}
 ${_favoriteHighlightCss('purple', 'rgb(126, 0, 190)')}
 ${favoriteHighlightUnderlineOverrideCss(settings.highlightStrokeConfig(HighlightKind.favorite), einkMode: einkMode)}.fushi-dict-highlight {
   background-color: transparent !important;
-  color: inherit;
+  color: $selectionTextImportant;
 }
 ::highlight(fushi-sentence-audio) {
   color: var(--fushi-sentence-audio-text-color);
@@ -1254,7 +1194,7 @@ ruby.fushi-sentence-audio-ruby-active {
 }
 /* BUG-125：同一 <ruby> 同时带查词+音频两个 class 时，振假名字也只显示查词层（查词优先）。 */
 ruby.fushi-selection-ruby-active.fushi-sentence-audio-ruby-active {
-  color: inherit !important;
+  color: $selectionTextValue !important;
 }
 ::highlight(fushi-search) {
   background-color: transparent;
@@ -1748,21 +1688,27 @@ body {
     // 了「滚动条」，锁不住 iOS 的手指：WKWebView 的 UIScrollView 内容尺寸取文档的可滚
     // 动溢出，只要正文里有东西沿交叉轴越出视口（有声书句高亮窄条、注音、书自带的块
     // 等，body 的后代），WebKit 就照样让手指把整页沿交叉轴拖开几像素（关了回弹也只是
-    // 不弹回、停在被拖到的位置），程序化的 scrollBy / scrollIntoView 也能把它推开。两
-    // 层都要：
+    // 不弹回、停在被拖到的位置），程序化的 scrollBy / scrollIntoView 也能把它推开。
     //  ① body 沿交叉轴 `clip`：后代的越界部分不再计入文档的可滚动溢出，交叉轴可滚
     //     范围归零（程序化滚动也无处可去）。用 clip 不用 hidden——hidden 会让 body 另一
     //     轴变 auto、body 自己成滚动容器，正是上面 TODO-718 要避开的；clip 不建滚动容器，
     //     主轴照旧由 html 滚。body 交叉轴尺寸就是视口（竖排 height = 可视高、横排
     //     width = 100vw），被裁掉的只有本来就在视口外的部分。
-    //  ② `touch-action` 只放行主轴平移：交叉轴的手势在浏览器层就不翻译成滚动，不依赖
-    //     「文档恰好没有溢出」。只影响原生平移 / 缩放，长按、点击、JS 触摸事件不变。
+    //  ② `touch-action: pan-x pan-y`：两轴平移都放行，只关掉缩放手势。**不能**只放主轴
+    //     （反馈 R7k887yaJI）：Chromium `TouchActionFilter::ShouldSuppressScrolling` 在
+    //     GestureScrollBegin 的起手位移偏交叉轴（|交叉| > |主轴|）且 touch-action 不含该轴
+    //     时，把**整段手势**的滚动全部丢弃——拇指弧线斜着滑超过 45° 正文一动不动（真
+    //     Chromium 探针 tool/reader_pitch_headless/continuous_diagonal_pan_probe.mjs：
+    //     `pan-y` 下 50° 斜滑 scrollTop 0、`pan-x pan-y` 下 215）。交叉轴照样顶得住：BUG-3482
+    //     真 WebKit 实测「只加 body clip」手指就拖不动交叉轴，Chromium 本来就尊重根元素的
+    //     hidden。起手偏交叉轴超过 ~52° 时 Chromium 仍按交叉轴锁存不滚，那一段由连续 shell
+    //     的触摸控制器按主轴分量补位（ReaderPaginationScripts.continuousPanAssistShouldEngage）。
     // 分页 / VN 是 html、body 两轴都 hidden（body 自己就裁掉后代越界，分页另有
     // `touch-action: none`），不经这里。
     final String crossAxisLockRule =
         '''
 html, body {
-  touch-action: ${isVertical ? 'pan-x' : 'pan-y'} !important;
+  touch-action: pan-x pan-y !important;
 }
 body {
   $hiddenOverflowAxis: clip !important;

@@ -1,17 +1,21 @@
 // 反馈 8TaOy2i-lL 现象 3：删 Profile 只删 profiles 行，srs.db 里该 uid 的笔记 / 卡 / 复习记录与 srs_media/<uid>
 // 目录全部留成无主副本。这里经真实的 ProfileViewModel → SrsProfileCleanup → Rust `profile_purge` 走一遍：
 // 确认框规模、删前备份（且能导回）、备份失败中止、删当前 Profile、一次性存量扫描。
+//
+// 新代（协议 4，G9-5）：一个 profile 的数据 = 它绑定的那一个集合（内核 `collections` 一行 + 各表按 `col` 的行）与本机
+// 状态行 `srs_meta.local_state/<uid>`；规模与「一行不剩」都按内核 `profile_footprint` 数（没有集合 = 全 0），不再按
+// 协议 3 的 `srs_*` / `sync2_*` 表逐表数。
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive.dart';
-import 'package:drift/drift.dart' show QueryRow, Variable;
+import 'package:drift/drift.dart' show Variable;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_profile_cleanup.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -19,10 +23,12 @@ import 'package:fushi_engine/srs/srs_builtin.dart' show srsLapisFieldId;
 import 'package:fushi_engine/srs/srs_profile_data.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsGenState, SrsStoreNotMigrated;
 import 'package:path/path.dart' as p;
 
 import '../helpers/fake_anki_repository.dart';
 import 'srs_test_support.dart';
+import '../../../packages/fushi_engine/test/srs/support/srs_raw_sql.dart';
 
 void main() {
   late FushiDatabase db;
@@ -31,6 +37,7 @@ void main() {
   late Directory support;
   late Directory backups;
   late Map<String, SrsDbStore> stores;
+  late Map<String, List<String>> seededNotes;
   late Future<Directory> Function() backupRoot;
 
   Future<String> uidOf(int id) => db.profileUidOf(id);
@@ -39,7 +46,6 @@ void main() {
   Future<SrsDbStore> activeStore() async {
     final String uid = await uidOf(await repo.getActiveProfileId());
     return stores[uid] ??= await SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: uid,
       deviceId: 'dev',
@@ -47,20 +53,22 @@ void main() {
     );
   }
 
+  SrsProfileCleanup newCleanup() => SrsProfileCleanup(
+    SrsProfileCleanupDeps(
+      storage: () async => storage,
+      activeStore: activeStore,
+      deviceId: () async => 'dev',
+      supportRoot: () async => support,
+      backupRoot: () => backupRoot(),
+      clock: () => DateTime(2026, 10, 27, 9, 30, 5),
+    ),
+  );
+
   ProfileViewModel newVm() => ProfileViewModel(
     repo,
     () async {},
     ProfileDraftCoordinator(),
-    deletionCascade: SrsProfileCleanup(
-      SrsProfileCleanupDeps(
-        storage: () async => storage,
-        activeStore: activeStore,
-        deviceId: () async => 'dev',
-        supportRoot: () async => support,
-        backupRoot: () => backupRoot(),
-        clock: () => DateTime(2026, 10, 27, 9, 30, 5),
-      ),
-    ),
+    deletionCascade: newCleanup(),
   );
 
   Future<ProfileViewModel> loadedVm() async {
@@ -79,7 +87,6 @@ void main() {
     required int reviews,
   }) async {
     final SrsDbStore s = stores[uid] ??= await SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: uid,
       deviceId: 'dev',
@@ -98,6 +105,7 @@ void main() {
         ),
       );
     }
+    (seededNotes[uid] ??= <String>[]).addAll(ids);
     final String card = (await s.cardsOfNote(ids.first)).first.id;
     for (int i = 0; i < reviews; i++) {
       await s.answer(card, 3);
@@ -111,15 +119,30 @@ void main() {
     return s;
   }
 
-  Future<int> sqlCount(String sql, String uid) async {
-    final QueryRow r = await storage.db
-        .customSelect(
-          sql,
-          variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
-        )
-        .getSingle();
-    return r.read<int>('c');
+  /// [uid] 经 [seed] 写下的笔记一共有几张卡（按 store 现读）。
+  Future<int> cardsOf(String uid) async {
+    int n = 0;
+    for (final String id in seededNotes[uid] ?? const <String>[]) {
+      n += (await stores[uid]!.cardsOfNote(id)).length;
+    }
+    return n;
   }
+
+  /// [uid] 在本机新代库里的规模（内核 `profile_footprint`；没有集合 = 全 0）。
+  Future<SrsProfileFootprint> footprintOf(String uid) =>
+      srsProfileFootprint(storage.core, uid);
+
+  /// [uid] 名下按 profile 记的 `srs_meta` 键数（`…/<uid>` 或 `…/<uid>/…`；新代里就是本机状态行
+  /// `local_state/<uid>`）。
+  Future<int> metaOf(String uid) async =>
+      (await storage.core
+              .customSelect(
+                "SELECT COUNT(*) AS c FROM srs_meta WHERE key LIKE '%/' || ?1 "
+                "OR key LIKE '%/' || ?1 || '/%'",
+                variables: <Variable<Object>>[Variable<String>(uid)],
+              )
+              .getSingle())
+          .read<int>('c');
 
   setUp(() async {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -129,6 +152,7 @@ void main() {
     backups = Directory(p.join(support.path, 'backups'));
     backupRoot = () async => backups;
     stores = <String, SrsDbStore>{};
+    seededNotes = <String, List<String>>{};
     addTearDown(() async {
       await db.close();
       try {
@@ -160,21 +184,8 @@ void main() {
       final ProfileDeletionImpact impact = await vm.deletionImpact(goneId);
       expect(impact.hasSrsData, isTrue);
       expect(impact.srsNotes, 3);
-      expect(
-        impact.srsCards,
-        await sqlCount(
-          'SELECT COUNT(*) AS c FROM srs_cards_cache WHERE profile_uid = ?',
-          goneUid,
-        ),
-      );
+      expect(impact.srsCards, await cardsOf(goneUid));
       expect(impact.srsCards, greaterThan(0));
-      expect(
-        impact.srsReviews,
-        await sqlCount(
-          'SELECT COUNT(*) AS c FROM srs_review_logs WHERE profile_uid = ?',
-          goneUid,
-        ),
-      );
       expect(impact.srsReviews, 2);
 
       final ProfileDeletionOutcome? outcome = await vm.deleteProfile(goneId);
@@ -182,8 +193,8 @@ void main() {
       expect((await repo.getAllProfiles()).map((ProfileRow r) => r.id), <int>[
         keepId,
       ]);
-      // srs.db：这个 uid 在每张按 profile 分的表里一行不剩（rows 是内核按表清单现数的总行数）。
-      expect((await srsProfileFootprint(storage.core, goneUid)).rows, 0);
+      // 新代库：这个 uid 的集合一行不剩（rows 是内核按表清单现数的总行数；集合删掉之后数出来是全 0）。
+      expect((await footprintOf(goneUid)).rows, 0);
       expect((await srsStoredProfiles(storage.core)).uids, <String>[keepUid]);
       expect(
         SrsMediaStore.directoryFor(support, goneUid).existsSync(),
@@ -226,7 +237,6 @@ void main() {
       // 撤销途径：同 uid 的 profile 导回这份备份，笔记与复习记录都回来。
       final SrsStorage fresh = await openSrsTestStorage();
       final SrsDbStore restored = await SrsDbStore.open(
-        db: fresh.db,
         core: fresh.core,
         profileUid: goneUid,
         deviceId: 'dev2',
@@ -235,7 +245,20 @@ void main() {
       final Directory restoredMedia = Directory(
         p.join(support.path, 'restored_media'),
       );
-      await srsImportFushiSrs(restored, backup, mediaRoot: restoredMedia);
+      // 新代 `.fushisrs` 第 2 版：来自另一个复习库的文件要用户确认才并入（G11-3）；导入页会问，这里答是。
+      final List<SrsFushiSrsForeign> asked = <SrsFushiSrsForeign>[];
+      final SrsFushiSrsImport imported = await srsImportFushiSrs(
+        restored,
+        backup,
+        mediaRoot: restoredMedia,
+        confirmForeign: (SrsFushiSrsForeign f) async {
+          asked.add(f);
+          return true;
+        },
+      );
+      expect(asked, hasLength(1));
+      expect(imported.declined, isFalse);
+      expect(imported.applied, greaterThan(0));
       final SrsProfileFootprint back = await srsProfileFootprint(
         fresh.core,
         goneUid,
@@ -353,4 +376,348 @@ void main() {
       expect(await vm.sweepOrphanProfileData(), 0);
     },
   );
+
+  // 新代：协议 3 的完成标记（`profile_orphan_sweep_v1` / `…_v3`）不算数——迁移把协议 3 库里的无主 uid 各迁成一个集合，
+  // 新代库要按自己的标记（`profile_orphan_sweep_g4`）再扫一次，经同一个 `profile_purge` 清干净。
+  test(
+    'a protocol-3 sweep marker does not count in generation 4: the sweep runs '
+    'once more and clears orphan collections; the live profile keeps every row',
+    () async {
+      final ProfileViewModel vm = await loadedVm();
+      final String liveUid = await uidOf(await repo.getActiveProfileId());
+      await activeStore();
+      await seed(liveUid, notes: 1, reviews: 1);
+      // 协议 3 时代留下的无主 uid（迁移后成了一个集合）。
+      const String residue = '0193a1b2-0000-7000-8000-00000000ad09';
+      await seed(residue, notes: 2, reviews: 1);
+      expect((await footprintOf(residue)).rows, greaterThan(0));
+      // 协议 3 已经扫过的标记（随 srs_meta 留在库里）。
+      for (final String old in <String>[
+        'profile_orphan_sweep_v1',
+        'profile_orphan_sweep_v3',
+      ]) {
+        storage.core.debugExecRaw(
+          'INSERT INTO srs_meta (key, value) VALUES (?, ?)',
+          <Object>[old, '1'],
+        );
+      }
+      expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNull);
+      final SrsProfileFootprint liveBefore = await footprintOf(liveUid);
+      final int liveMeta = await metaOf(liveUid);
+
+      expect(await vm.sweepOrphanProfileData(), 1);
+
+      expect((await srsStoredProfiles(storage.core)).uids, <String>[liveUid]);
+      expect((await footprintOf(residue)).rows, 0);
+      expect(await metaOf(residue), 0);
+      expect(await footprintOf(liveUid), liveBefore);
+      expect(await metaOf(liveUid), liveMeta);
+      expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNotNull);
+
+      // 再扫一次：什么都不变。
+      expect(await vm.sweepOrphanProfileData(), 0);
+      expect(await footprintOf(liveUid), liveBefore);
+      expect(await metaOf(liveUid), liveMeta);
+    },
+  );
+
+  test(
+    'uids of an unfinished merge are not orphans, and the sweep is not marked '
+    'done until the merge finishes',
+    () async {
+      final ProfileViewModel vm = await loadedVm();
+      final String liveUid = await uidOf(await repo.getActiveProfileId());
+      await activeStore();
+      await seed(liveUid, notes: 1, reviews: 0);
+      // 并入做到一半：旧 uid 的数据还要等第二遍并入，目标 uid 在改主库 uid 之前也不在主库里。
+      const String oldUid = '0193a1b2-0000-7000-8000-0000000001d0';
+      const String newUid = '0193a1b2-0000-7000-8000-0000000002d0';
+      const String orphan = '0193a1b2-0000-7000-8000-0000000003d0';
+      await seed(oldUid, notes: 2, reviews: 1);
+      await seed(newUid, notes: 1, reviews: 1);
+      await seed(orphan, notes: 1, reviews: 0);
+      storage.core.debugExecRaw(
+        'INSERT INTO srs_meta (key, value) VALUES (?, ?)',
+        <Object>['profile_merge/$oldUid', '{"profileId":1,"newUid":"$newUid"}'],
+      );
+      final SrsProfileFootprint oldBefore = await footprintOf(oldUid);
+      final SrsProfileFootprint newBefore = await footprintOf(newUid);
+
+      expect(await vm.sweepOrphanProfileData(), 1);
+
+      expect(await footprintOf(oldUid), oldBefore);
+      expect(await footprintOf(newUid), newBefore);
+      expect((await footprintOf(orphan)).rows, 0);
+      expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNull);
+    },
+  );
+
+  /// 只剩本机状态行（`local_state/<uid>`）、没有集合的 uid：新代里「表里一行不剩、只剩 meta 键」的样子。不为它开
+  /// 副本——开了就有集合了。
+  Future<void> leaveStateOnly(String uid) async {
+    storage.core.debugExecRaw(
+      "INSERT INTO srs_meta (key, value) VALUES (?, '{}')",
+      <Object>['local_state/$uid'],
+    );
+    expect((await footprintOf(uid)).rows, 0);
+    expect(await metaOf(uid), 1);
+  }
+
+  /// `srs_meta` 里 [key] 这一行在不在。
+  Future<bool> hasMeta(String key) async =>
+      (await storage.core
+              .customSelect(
+                'SELECT COUNT(*) AS c FROM srs_meta WHERE key = ?',
+                variables: <Variable<Object>>[Variable<String>(key)],
+              )
+              .getSingle())
+          .read<int>('c') ==
+      1;
+
+  // 新代的收尾（内核 `orphan_sweep_done`）：没有集合、只剩本机状态行的无主 uid 也清掉（没有行可备份）；别的
+  // `srs_meta` 键（设备提示等不按 profile 分的）不动；新代没有 `sync2_deps`，回收数恒为 0。
+  test(
+    'the sweep clears state-only orphan uids without a backup; other meta keys '
+    'and the live profile stay; re-running finds nothing',
+    () async {
+      final ProfileViewModel vm = await loadedVm();
+      final String liveUid = await uidOf(await repo.getActiveProfileId());
+      await activeStore();
+      await seed(liveUid, notes: 1, reviews: 1);
+      const String device = '0193a1b2-0000-7000-8000-0000000d0001';
+      const String gone = '0193a1b2-0000-7000-8000-00000000a0e1';
+      const String hint = 'sync2_device_hint/$device';
+      storage.core.debugExecRaw(
+        "INSERT INTO srs_meta (key, value) VALUES (?, '{}')",
+        <Object>[hint],
+      );
+      await leaveStateOnly(gone);
+      expect((await srsStoredProfiles(storage.core)).uids, <String>[liveUid]);
+      final SrsProfileFootprint liveBefore = await footprintOf(liveUid);
+      final int liveMeta = await metaOf(liveUid);
+
+      expect(await vm.sweepOrphanProfileData(), 1);
+
+      expect(await metaOf(gone), 0);
+      expect(await metaOf(liveUid), liveMeta);
+      expect(await hasMeta(hint), isTrue);
+      expect(await footprintOf(liveUid), liveBefore);
+      expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNotNull);
+      expect(
+        backups.existsSync(),
+        isFalse,
+        reason: 'a uid with no rows has nothing to back up',
+      );
+      // 活 profile 照常能写。
+      final SrsDbStore live = await activeStore();
+      await live.createNote(
+        noteTypeId: live.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(liveUid, 'Expression'): '後',
+        },
+      );
+      final SrsProfileFootprint liveAfter = await footprintOf(liveUid);
+      expect(liveAfter.notes, liveBefore.notes + 1);
+
+      // 已扫过：不再跑。
+      expect(await vm.sweepOrphanProfileData(), 0);
+      // 幂等：去掉完成标记硬再扫一遍，也没有可清的、什么都不变。
+      storage.core.debugExecRaw(
+        "DELETE FROM srs_meta WHERE key = 'profile_orphan_sweep_g4'",
+      );
+      expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNull);
+      expect(await vm.sweepOrphanProfileData(), 0);
+      expect(await footprintOf(liveUid), liveAfter);
+      expect(await metaOf(liveUid), liveMeta);
+      expect(await hasMeta(hint), isTrue);
+      expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNotNull);
+    },
+  );
+
+  test(
+    'the state row of an unfinished merge target stays until the merge '
+    'finishes; an unrelated state-only orphan is cleared meanwhile',
+    () async {
+      final ProfileViewModel vm = await loadedVm();
+      final String liveUid = await uidOf(await repo.getActiveProfileId());
+      await activeStore();
+      await seed(liveUid, notes: 1, reviews: 0);
+      // 迁移带过来的半截并入：标记在，目标 uid 在本机还没有集合，只剩它的本机状态行。
+      const String target = '0193a1b2-0000-7000-8000-0000000002e0';
+      const String gone = '0193a1b2-0000-7000-8000-0000000003e0';
+      await leaveStateOnly(target);
+      await leaveStateOnly(gone);
+      storage.core.debugExecRaw(
+        'INSERT INTO srs_meta (key, value) VALUES (?, ?)',
+        <Object>[
+          'profile_merge/$liveUid',
+          '{"profileId":1,"newUid":"$target"}',
+        ],
+      );
+      final SrsProfileFootprint liveBefore = await footprintOf(liveUid);
+      final int liveMeta = await metaOf(liveUid);
+
+      expect(await vm.sweepOrphanProfileData(), 1);
+
+      expect(await metaOf(target), 1, reason: 'merge target is not an orphan');
+      expect(await metaOf(gone), 0);
+      expect(await footprintOf(liveUid), liveBefore);
+      expect(await metaOf(liveUid), liveMeta, reason: 'merge marker kept');
+      expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNull);
+
+      // 并入不做了（标记撤掉）、目标 uid 也没成为本机 profile：下一次扫描才把它当无主清掉，并记完成。
+      storage.core.debugExecRaw('DELETE FROM srs_meta WHERE key = ?', <Object>[
+        'profile_merge/$liveUid',
+      ]);
+      expect(await vm.sweepOrphanProfileData(), 1);
+      expect(await metaOf(target), 0);
+      expect(await footprintOf(liveUid), liveBefore);
+      expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNotNull);
+    },
+  );
+
+  test(
+    'with no live profile uid to compare against the sweep deletes nothing',
+    () async {
+      await loadedVm();
+      final String liveUid = await uidOf(await repo.getActiveProfileId());
+      await activeStore();
+      await seed(liveUid, notes: 1, reviews: 1);
+      const String other = '0193a1b2-0000-7000-8000-0000000004d0';
+      await seed(other, notes: 1, reviews: 0);
+      final SrsProfileFootprint liveBefore = await footprintOf(liveUid);
+      final SrsProfileFootprint otherBefore = await footprintOf(other);
+
+      // 主库一行 profile 都没读出来：判定不了谁活着。
+      expect(await newCleanup().sweepOrphans(const <ProfileRow>[]), 0);
+
+      expect(await footprintOf(liveUid), liveBefore);
+      expect(await footprintOf(other), otherBefore);
+      expect((await srsStoredProfiles(storage.core)).orphanSweptAt, isNull);
+      expect(backups.existsSync(), isFalse);
+    },
+  );
+
+  // G9-5 复核：删 profile 时内核核对「用户确认的就是这个集合」（`profile_purge` 的 `collection`）。准备（给用户看规模、
+  // 导出备份）之后、真正删除之前 profile 改绑到了别的集合（这里：本机目录名比对方大，按 D27 并入对方并改绑）——
+  // 删除报错，库里这个 profile 的数据一条不少。
+  test('G9-5: the purge checks the collection the user confirmed; a rebind in '
+      'between makes it fail and deletes nothing', () async {
+    await loadedVm();
+    final int goneId = await repo.createProfile('B');
+    final String goneUid = await uidOf(goneId);
+    await activeStore();
+    await seed(goneUid, notes: 2, reviews: 1);
+    final ProfileRow row = (await repo.getAllProfiles()).firstWhere(
+      (ProfileRow r) => r.id == goneId,
+    );
+    final ProfileDeletionCleanup cleanup = await newCleanup().prepare(row);
+    final Map<String, Object?> adopted = storage.core.sync2(<String, Object?>{
+      'op': 'collection_adopt',
+      'profile': goneUid,
+      'collection': '0193a1b2-0000-7000-8000-00000000f00d',
+      'dir': '00000000-0000-7000-8000-000000000000',
+      'confirmed': true,
+      'now': DateTime(2026, 10, 27, 9, 31).millisecondsSinceEpoch,
+    }).map;
+    expect(adopted['outcome'], 'joined', reason: '$adopted');
+    final SrsProfileFootprint before = await srsProfileFootprint(
+      storage.core,
+      goneUid,
+    );
+    expect(before.notes, 2);
+
+    await expectLater(cleanup.run(), throwsA(anything));
+    expect(await srsProfileFootprint(storage.core, goneUid), before);
+  });
+
+  // BUG-5275（反馈 s9Gq2L_ao9）：复习库打不开（上次升级没完成）时，统计 / 备份经 `storage()` 抛的原始
+  // SrsStoreNotMigrated 逃出删除按钮回调，确认框不弹、Profile 永远删不掉也没有任何提示。现在统一报成
+  // ProfileDeletionSrsUnavailableException（页面据此写明原因），删除中止、Profile 原样保留；存量扫描在换代状态下
+  // 不扫、不报错（升级完下次再扫），库真坏了照常抛。
+  group('review library cannot be opened', () {
+    SrsProfileCleanup cleanupWith(Future<SrsStorage?> Function() open) =>
+        SrsProfileCleanup(
+          SrsProfileCleanupDeps(
+            storage: open,
+            activeStore: () async => null,
+            deviceId: () async => 'dev',
+            supportRoot: () async => support,
+            backupRoot: () => backupRoot(),
+          ),
+        );
+
+    Future<SrsStorage?> migrationFailed() async =>
+        throw const SrsStoreNotMigrated(
+          'store not migrated {"state":"migrationFailed"}',
+          SrsGenState.migrationFailed,
+        );
+
+    Future<ProfileViewModel> vmWith(SrsProfileCleanup cleanup) async {
+      final ProfileViewModel vm = ProfileViewModel(
+        repo,
+        () async {},
+        ProfileDraftCoordinator(),
+        deletionCascade: cleanup,
+      );
+      addTearDown(vm.dispose);
+      await vm.stream.firstWhere(
+        (ProfileUiState s) => !s.isLoading && s.profiles.isNotEmpty,
+      );
+      return vm;
+    }
+
+    test('impact and delete report it; the profile is kept', () async {
+      final ProfileViewModel vm = await vmWith(cleanupWith(migrationFailed));
+      final int goneId = await repo.createProfile('blocked');
+      await uidOf(goneId);
+
+      await expectLater(
+        vm.deletionImpact(goneId),
+        throwsA(
+          isA<ProfileDeletionSrsUnavailableException>().having(
+            (ProfileDeletionSrsUnavailableException e) => e.cause,
+            'cause',
+            isA<SrsStoreNotMigrated>(),
+          ),
+        ),
+      );
+      await expectLater(
+        vm.deleteProfile(goneId),
+        throwsA(isA<ProfileDeletionSrsUnavailableException>()),
+      );
+
+      expect(
+        (await repo.getAllProfiles()).map((ProfileRow r) => r.id),
+        contains(goneId),
+      );
+      expect(backups.existsSync(), isFalse);
+    });
+
+    test('the orphan sweep waits for the upgrade instead of failing', () async {
+      final ProfileViewModel vm = await vmWith(cleanupWith(migrationFailed));
+      await uidOf(await repo.getActiveProfileId());
+
+      expect(await vm.sweepOrphanProfileData(), 0);
+    });
+
+    test('a store that is broken (not a generation state) still fails the '
+        'sweep', () async {
+      final ProfileViewModel vm = await vmWith(
+        cleanupWith(() async => throw StateError('srs storage is closed')),
+      );
+      await uidOf(await repo.getActiveProfileId());
+
+      await expectLater(
+        vm.sweepOrphanProfileData(),
+        throwsA(
+          isA<ProfileDeletionSrsUnavailableException>().having(
+            (ProfileDeletionSrsUnavailableException e) => e.cause,
+            'cause',
+            isA<StateError>(),
+          ),
+        ),
+      );
+    });
+  });
 }

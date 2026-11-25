@@ -63,7 +63,7 @@ String _lyricsHtml({required bool vertical, bool sweep = true}) =>
     );
 
 /// 生成 CSS 里所有「扫过进行中」才生效的当前行规则（选择器 → 声明块）：底层
-/// `.tx` 的未读色、注音色、上层 `.ly-sw` 的显示。
+/// `.tx` 的未读色、上层 `.ly-sw` 的显示。
 Map<String, String> _sweepActiveRules(String html) {
   final Map<String, String> rules = <String, String>{};
   final RegExp rule = RegExp(r'([^{}]+)\{([^{}]*)\}');
@@ -247,7 +247,12 @@ void main() {
         final Map<String, String> rules = _sweepActiveRules(
           _lyricsHtml(vertical: vertical),
         );
-        expect(rules, hasLength(3), reason: '上层显示 + 底层未读色 + 注音色');
+        expect(rules, hasLength(2), reason: '上层显示 + 底层未读色');
+        // BUG-4504：注音（rt）不再在底层单独钉成当前色，随基字一起被上层窗口扫亮。
+        expect(
+          rules.keys.where((String k) => RegExp(r'rt').hasMatch(k)),
+          isEmpty,
+        );
         for (final String selector in rules.keys) {
           expect(selector, startsWith('body.ly-sweep:not(.ly-paused)'));
           expect(

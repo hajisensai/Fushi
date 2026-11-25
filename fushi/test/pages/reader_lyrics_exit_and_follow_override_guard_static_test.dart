@@ -1,6 +1,8 @@
 import 'dart:io';
 
-import 'package:test/test.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import '../helpers/source_guard.dart';
 
 /// 歌词覆盖层的两条生命周期不变式（源码守卫；阅读器整页依赖 WebView / DB，
 /// pumpWidget 过重，沿用本目录 `reader_lyrics_*_static_test` 的源码切片范式）。
@@ -12,9 +14,10 @@ import 'package:test/test.dart';
 ///    `_exitReaderBook()`，在 maybePop 在途期间挂 `_exitBookRequested`，PopScope
 ///    把它作为 `explicitExit` 传给阶梯、整条跳过。
 ///
-/// ② 强制跟随随歌词层一起撤：进歌词层时给（会话级、可能比页面活得久的）有声书
-///    控制器挂 `setReaderFollowOverride(true)`。关歌词层撤了，但页面 dispose 没撤；
-///    开后台播放时再开书，用户的「跟随音频=关」会被残留覆盖成强制跟随。
+/// ② 正文面脱开随歌词模式一起撤：进歌词时给（会话级、可能比页面活得久的）有声书
+///    控制器挂 `setReaderDetached(true)`（2026-11-10 起歌词模式是独立模式，正文
+///    停着不跟随）。退出歌词撤、页面 dispose 也必须撤；否则开后台播放时再开书，
+///    正文不跟随音频、也不跨章。
 void main() {
   const String pagePath =
       'lib/src/pages/implementations/reader_fushi_page.dart';
@@ -101,12 +104,15 @@ void main() {
     });
 
     test('面板「退出」走 _exitReaderBook', () {
-      final String exit = slice(
+      // 按结构取 `onExitReader:` 实参的值（与相邻参数的名字 / 顺序无关）。
+      final List<String> exits = namedArgumentValues(
         read(chromePath),
-        'onExitReader:',
-        'webViewController:',
+        'onExitReader',
       );
-      expect(exit.contains('_exitReaderBook('), isTrue);
+      expect(exits, isNotEmpty, reason: '锚不到 `onExitReader:` 实参');
+      for (final String exit in exits) {
+        expect(exit.contains('_exitReaderBook('), isTrue);
+      }
     });
 
     test('重导入正文作废分支走 _exitReaderBook', () {
@@ -124,40 +130,40 @@ void main() {
     });
   });
 
-  group('② 强制跟随随歌词层与页面一起撤', () {
-    test('关歌词层撤 override', () {
+  group('② 正文面脱开随歌词模式与页面一起撤', () {
+    test('退出歌词撤脱开', () {
       final String exitLyrics = slice(
         read(lyricsPath),
         'Future<void> _exitLyricsMode() async {',
         '\n  }\n',
       );
-      expect(exitLyrics.contains('setReaderFollowOverride(false)'), isTrue);
+      expect(exitLyrics.contains('setReaderDetached(false)'), isTrue);
     });
 
-    test('dispose 在解绑控制器之前撤 override', () {
+    test('dispose 在解绑控制器之前撤脱开', () {
       final String dispose = slice(
         read(pagePath),
         'void dispose() {',
         '_syncChromePlaybackListener();',
       );
-      final int revert = dispose.indexOf('setReaderFollowOverride(false)');
+      final int revert = dispose.indexOf('setReaderDetached(false)');
       final int unbind = dispose.indexOf('_audiobookController = null;');
-      expect(revert, greaterThanOrEqualTo(0), reason: 'dispose 必须撤 override');
+      expect(revert, greaterThanOrEqualTo(0), reason: 'dispose 必须撤脱开');
       expect(
         unbind,
         greaterThan(revert),
-        reason: '撤 override 必须发生在 `_audiobookController = null` 之前',
+        reason: '撤脱开必须发生在 `_audiobookController = null` 之前',
       );
     });
 
     test('换接控制器时旧控制器撤、新控制器补挂', () {
       final String source = read(audiobookPath);
       expect(
-        source.contains('if (_lyricsMode) old.setReaderFollowOverride(false);'),
+        source.contains('if (_lyricsMode) old.setReaderDetached(false);'),
         isTrue,
       );
       expect(
-        '_reapplyLyricsFollowOverride();'.allMatches(source).length,
+        '_reapplyLyricsReaderDetached();'.allMatches(source).length,
         greaterThanOrEqualTo(2),
         reason: '复用会话与起新会话两条 attach 路径都要补挂',
       );

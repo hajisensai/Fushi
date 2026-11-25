@@ -238,8 +238,11 @@ foreach ($relativePath in $magpieBundleWorkflows.Keys) {
   Require-Text $relativePath $content 'Magpie-hibiki-slim-x64.zip.sha256' 'the bundled Magpie archive must ship with its sha256 sidecar; the installer refuses an unverified package (BUG-1292)'
 }
 
-# release-server.yml (headless server) is a separate product line: no push/debug
-# channel, no update manifest, no rolling tag. It shares the release sequence
+# release-server.yml (headless server) is a separate product line: no update
+# manifest; since 2026-11-24 it has the app's three channels (formal / beta / a
+# rolling `debug-rolling` debug release) and the app's version number, chosen by
+# tool/server_release_plan.py on a schedule (channel: auto), and pushes the Docker
+# image after the release. It shares the release sequence
 # source, and since 2026-09-14 it is a workflow_call reusable workflow that ONLY the
 # standalone release repo hajisensai/fushi-server invokes; releases land there.
 # The app stable-channel updater resolves THIS repo's releases/latest, so a server
@@ -268,11 +271,17 @@ Forbid-Pattern $serverWorkflow $serverContent 'RELEASE_SEQUENCE=\$\(git rev-list
 Forbid-Pattern $serverWorkflow $serverContent 'GITHUB_RUN_NUMBER' 'workflow-local run_number is not a release sequence'
 Forbid-Pattern $serverWorkflow $serverContent 'github\.run_number' 'workflow-local run_number is not a release sequence'
 Forbid-Pattern $serverWorkflow $serverContent 'make_latest:\s*true' 'make_latest must be the channel output, never a literal'
-Forbid-Pattern $serverWorkflow $serverContent '(?m)^\s+push:' 'server releases are manual only; no push trigger'
+Forbid-Pattern $serverWorkflow $serverContent '(?m)^\s+push:' 'server releases come from hajisensai/fushi-server (schedule / dispatch there); no push trigger here'
+Require-Text $serverWorkflow $serverContent 'run: python3 tool/server_release_plan.py' 'automatic server releases are planned by tool/server_release_plan.py (single source of the polling rules)'
+Require-Text $serverWorkflow $serverContent 'VERSION=$(grep ''^version:'' fushi/pubspec.yaml' 'server releases carry the app version (fushi/pubspec.yaml)'
+# The image is pushed only after its GitHub Release exists, so every GHCR tag maps to a release.
+if ($serverContent -notmatch '(?ms)^  docker:\s*\n.*?needs:\s*\n\s+- channel\s*\n\s+- publish\s*\n') {
+  $failures.Add("${serverWorkflow}: the docker job must need [channel, publish] (push the image only after the release is published)")
+}
 Forbid-Pattern $serverWorkflow $serverContent '(?m)^\s+workflow_dispatch:' 'no dispatch entry in the app repo: a server release here would become the app updater''s releases/latest; dispatch from hajisensai/fushi-server'
 # Every checkout must pin the source repo; a bare `actions/checkout` in a reusable
 # workflow checks out the CALLER (fushi-server), which has no source at all.
-$serverCheckouts = [regex]::Matches($serverContent, '(?m)^\s+- uses: actions/checkout@v\d+\s*\n(?:\s+with:\s*\n(?:\s+[a-z_-]+:.*\n)*)?')
+$serverCheckouts = [regex]::Matches($serverContent, '(?m)^\s+- uses: actions/checkout@[0-9a-f]{40}[^\n]*\n(?:\s+with:\s*\n(?:\s+[a-z_-]+:.*\n)*)?')
 if ($serverCheckouts.Count -eq 0) {
   $failures.Add("${serverWorkflow}: no actions/checkout step found")
 }

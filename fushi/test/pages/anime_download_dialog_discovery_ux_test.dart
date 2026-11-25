@@ -2,6 +2,7 @@ import 'dart:convert';
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/services.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -1016,6 +1017,101 @@ void main() {
         );
       }
     }
+  });
+
+  // 拍板台 cxBASRELn9：种子结果行 / 确认页都能「复制下载链接」，交给外部离线下载。
+  group('复制下载链接', () {
+    test('torrentCopyableLink：合法 infoHash 给磁力；缺 hash 退回 .torrent；都没有不给', () {
+      expect(torrentCopyableLink(_kTorrent), _kTorrent.magnet);
+      expect(
+        torrentCopyableLink(_kTorrent),
+        startsWith('magnet:?xt=urn:btih:${'a' * 40}&dn='),
+      );
+      expect(torrentCopyableLink(_torrentWith(seeders: 1)), isNull);
+      const NyaaTorrent urlOnly = NyaaTorrent(
+        title: 'x',
+        torrentUrl: 'https://nyaa.si/download/9.torrent',
+        pageUrl: '',
+        infoHash: 'not-a-hash',
+        seeders: 0,
+        leechers: 0,
+        downloads: 0,
+        sizeText: '',
+        sizeBytes: null,
+        categoryId: '1_0',
+        trusted: false,
+        remake: false,
+        pubDate: null,
+      );
+      expect(
+        torrentCopyableLink(urlOnly),
+        'https://nyaa.si/download/9.torrent',
+      );
+    });
+
+    List<String> captureClipboard(WidgetTester tester) {
+      final List<String> clips = <String>[];
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        SystemChannels.platform,
+        (MethodCall call) async {
+          if (call.method == 'Clipboard.setData') {
+            final Map<Object?, Object?> args =
+                call.arguments as Map<Object?, Object?>;
+            clips.add(args['text']! as String);
+          }
+          return null;
+        },
+      );
+      addTearDown(
+        () => tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+          SystemChannels.platform,
+          null,
+        ),
+      );
+      return clips;
+    }
+
+    testWidgets('结果行：复制该行磁力，且不进入确认推送阶段、不推送', (WidgetTester tester) async {
+      final List<String> clips = captureClipboard(tester);
+      final _FakeAppModel appModel = _FakeAppModel((http.Request req) async {
+        return http.Response.bytes(_kSortHtml.codeUnits, 200);
+      });
+      await pumpDialog(tester, appModel);
+      await tester.tap(find.byTooltip(t.anime_download_search).first);
+      await tester.pumpAndSettle();
+
+      final Finder copyButtons = find.byTooltip(t.anime_download_copy_link);
+      expect(copyButtons, findsNWidgets(3), reason: '每个结果行一个复制入口');
+
+      // 默认做种数降序：第二行是 middle（hash c…）。
+      await tester.tap(copyButtons.at(1));
+      await tester.pumpAndSettle();
+
+      expect(clips, hasLength(1));
+      expect(
+        clips.single,
+        startsWith('magnet:?xt=urn:btih:${'c' * 40}&dn=middle'),
+      );
+      expect(find.text(t.anime_download_push), findsNothing, reason: '复制不是选种');
+      expect(appModel.store.saved, isEmpty, reason: '复制不落计划、不推后端');
+    });
+
+    testWidgets('确认阶段：标题行的复制按钮给选中种子的磁力', (WidgetTester tester) async {
+      final List<String> clips = captureClipboard(tester);
+      final _FakeAppModel appModel = _FakeAppModel(
+        (http.Request req) async => http.Response('[]', 200),
+      );
+      await pumpDialog(tester, appModel, torrent: _kTorrent);
+      expect(find.text(t.anime_download_push), findsOneWidget);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('anime-download-confirm-copy-link')),
+      );
+      await tester.pumpAndSettle();
+
+      expect(clips, <String>[_kTorrent.magnet]);
+      expect(appModel.store.saved, isEmpty);
+    });
   });
 }
 

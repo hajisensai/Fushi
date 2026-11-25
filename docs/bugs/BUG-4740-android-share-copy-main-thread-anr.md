@@ -1,0 +1,6 @@
+## BUG-4740 · Android 分享在主线程同步拷贝整份文件导致 ANR
+- **报告**：2026-11-16（用户：应用内反馈 P1pyoS0dQb，3.3.0 Android ANR，主线程栈停在 MethodChannel 回调里的 kotlin `File.copyTo` → `FileOutputStream.write`）
+- **真实性**：✅ 真 bug。`fushi/lib/src/utils/misc/fushi_share.dart:205`（修复前）`FushiShare.shareFiles` 在 Android 上把文件交给 share_plus 7.2.2 的 `Share.shareFiles`；share_plus 的 Android 端 `MethodCallHandler.onMethodCall`（主线程）→ `Share.getUrisForPaths` → `Share.kt:247 copyToShareCacheFolder` 对每个文件无条件 `file.copyTo(cache/share_plus/…, true)` 整份同步拷贝。分享片段视频 / m4b / 备份 zip 等几百 MB 产物时主线程被阻塞到系统判 ANR。
+- **[x] ① 已修复** — Android 的文件分享不再经 share_plus：`FushiShare.stageFilesForShare` 用异步文件 I/O（Dart IO 线程）把文件落成快照（`getTemporaryDirectory()/fushi_share/<本次>/<序号>/<原名>`，每次分享先清上一次的快照），再经自有通道 `app.fushi.reader/share`（`FushiShareChannel.kt`）把快照路径交给原生；原生侧只用 `FushiFileProvider` 换 `content://` URI、拼 `ACTION_SEND(_MULTIPLE)` + chooser，不碰文件内容。快照（而非直接分享源文件）是必须的：调用方分享后会删临时产物。快照耗时不计入 30 s 呈现上限。其余平台仍走 share_plus。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/fushi_share_android_staging_test.dart`：Android 宿主下 share_plus 通道收不到任何调用；交给原生的路径在快照根里、内容一致、删源后仍可读、同名不覆盖；快照只保留本次；源文件在快照根里时拒绝；防重入；MIME 归并。修复前（把 Android 分支短路回 share_plus）9 条执行、多条红。
+- **备注**：未做真机复测（大文件分享不再 ANR、各分享目标能读到 `content://` URI），属待补。

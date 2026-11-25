@@ -1109,7 +1109,13 @@ Widget? _md3ControlButton(
       final ValueChanged<LyricsMenuAnchor>? onTypography =
           callbacks.onTypography;
       if (onTypography == null) return null;
-      return _TypographyButton(onTypography: onTypography, tonal: tonal);
+      return _AnchoredIconButton(
+        buttonKey: const ValueKey<String>('lyrics_typography_button'),
+        icon: FushiIcons.textFields,
+        tooltip: t.lyrics_typography_title,
+        onPressed: onTypography,
+        tonal: tonal,
+      );
     case LyricsControlItem.statistics:
       return iconButton(
         key: const ValueKey<String>('lyrics_statistics_button'),
@@ -1118,8 +1124,9 @@ Widget? _md3ControlButton(
         icon: FushiIcons.statistics,
       );
     case LyricsControlItem.bookMode:
-      // 没有退书回调时 × 本身就是「回正文」，再摆一颗同义键只是重复。
-      if (callbacks.onExitBook == null) return null;
+      // 没有退书回调时 × 本身就是「回正文」，再摆一颗同义键只是重复；窄屏顶栏
+      // × 前固定摆着它，布局里再放一颗也是重复。
+      if (callbacks.onExitBook == null || !wide) return null;
       return iconButton(
         key: const ValueKey<String>('lyrics_return_to_book_button'),
         tooltip: t.book_mode,
@@ -1152,6 +1159,25 @@ Widget? _md3ControlButton(
         onPressed: callbacks.onOpenJumpHistory,
         icon: FushiIcons.history,
       );
+    case LyricsControlItem.avSync:
+      final ValueChanged<LyricsMenuAnchor>? onAvSync = callbacks.onAvSyncPanel;
+      if (onAvSync == null) return null;
+      return _AnchoredIconButton(
+        buttonKey: const ValueKey<String>('lyrics_av_sync_button'),
+        icon: FushiIcons.sync,
+        tooltip: t.av_sync,
+        onPressed: onAvSync,
+        tonal: tonal,
+      );
+    case LyricsControlItem.exportSubtitle:
+      final VoidCallback? onExport = callbacks.onExportSubtitle;
+      if (onExport == null) return null;
+      return iconButton(
+        key: const ValueKey<String>('lyrics_export_subtitle_button'),
+        tooltip: t.lyrics_control_item_export_subtitle,
+        onPressed: onExport,
+        icon: FushiIcons.subtitles,
+      );
   }
 }
 
@@ -1174,11 +1200,21 @@ class _MaskButton extends StatelessWidget {
   }
 }
 
-/// Aa：歌词文字快捷面板（字号 / 竖排 / 更多歌词设置）。
-class _TypographyButton extends StatelessWidget {
-  const _TypographyButton({required this.onTypography, this.tonal = false});
+/// 弹锚定面板的图标键（Aa 文字面板 / 音画同步面板）：把按钮的全局矩形与 context
+/// 交给页面，面板从它取歌词模式主题。
+class _AnchoredIconButton extends StatelessWidget {
+  const _AnchoredIconButton({
+    required this.buttonKey,
+    required this.icon,
+    required this.tooltip,
+    required this.onPressed,
+    this.tonal = false,
+  });
 
-  final ValueChanged<LyricsMenuAnchor> onTypography;
+  final Key buttonKey;
+  final IconData icon;
+  final String tooltip;
+  final ValueChanged<LyricsMenuAnchor> onPressed;
   final bool tonal;
 
   @override
@@ -1187,23 +1223,22 @@ class _TypographyButton extends StatelessWidget {
       builder: (BuildContext anchor) {
         void open() {
           final LyricsMenuAnchor? at = _anchorOf(anchor);
-          if (at != null) onTypography(at);
+          if (at != null) onPressed(at);
         }
 
-        const Key key = ValueKey<String>('lyrics_typography_button');
-        const Widget icon = FushiIcon(FushiIcons.textFields);
+        final Widget glyph = FushiIcon(icon);
         return tonal
             ? FushiIconButtonControl.filledTonal(
-                key: key,
-                tooltip: t.lyrics_typography_title,
+                key: buttonKey,
+                tooltip: tooltip,
                 onPressed: open,
-                icon: icon,
+                icon: glyph,
               )
             : FushiIconButtonControl(
-                key: key,
-                tooltip: t.lyrics_typography_title,
+                key: buttonKey,
+                tooltip: tooltip,
                 onPressed: open,
-                icon: icon,
+                icon: glyph,
               );
       },
     );
@@ -1254,7 +1289,7 @@ class _MoreButton extends StatelessWidget {
 // 窄屏
 // ---------------------------------------------------------------------------
 
-/// 窄屏顶栏：书名 + 一行读数小字；右侧遮罩 / Aa / 统计 / 关闭（悬浮胶囊）。
+/// 窄屏顶栏：书名 + 一行读数小字；右侧遮罩 / Aa / 统计 / 书籍模式 / 关闭（悬浮胶囊）。
 class _NarrowTopBar extends StatelessWidget {
   const _NarrowTopBar({required this.data, required this.callbacks});
 
@@ -1267,17 +1302,6 @@ class _NarrowTopBar extends StatelessWidget {
     final FushiTypography type = context.fushiType;
     return Row(
       children: <Widget>[
-        // 窄屏（手机）左上角的返回键：退出歌词模式回到书页。此前唯一的出口是
-        // 右侧动作胶囊最末一枚 ×，与遮罩 / 排版 / 统计挤在一起，用户找不到
-        // 「返回」（2026-10-09 反馈：有声阅读界面没有返回键）；iOS 又没有系统
-        // 返回键兜底。
-        FushiIconButtonControl(
-          key: const ValueKey<String>('lyrics_player_back'),
-          tooltip: t.back,
-          onPressed: callbacks.onClose,
-          icon: const FushiIcon(FushiIcons.back),
-        ),
-        const SizedBox(width: 4),
         Expanded(
           child: Column(
             mainAxisSize: MainAxisSize.min,
@@ -1327,14 +1351,24 @@ class _NarrowTopBar extends StatelessWidget {
                 wide: false,
                 tonal: false,
               ),
-              // 左上角返回键回正文；× 直接退书回书架（反馈 QvYpZODImz）。
+              // 出口与宽屏同形（2026-11-10 用户：左上角返回改成横屏同款键、
+              // 都放右上角）：「书籍模式」回正文 + × 退书回书架；没有退书回调
+              // 时 × 本身就是回正文。
               if (callbacks.onExitBook != null)
                 FushiIconButtonControl(
-                  key: const ValueKey<String>('lyrics_close_button'),
-                  tooltip: t.lyrics_exit_to_library,
-                  onPressed: callbacks.onExitBook!,
-                  icon: const FushiIcon(FushiIcons.close),
+                  key: const ValueKey<String>('lyrics_return_to_book_button'),
+                  tooltip: t.book_mode,
+                  onPressed: callbacks.onClose,
+                  icon: const FushiIcon(FushiIcons.readingMode),
                 ),
+              FushiIconButtonControl(
+                key: const ValueKey<String>('lyrics_close_button'),
+                tooltip: callbacks.onExitBook != null
+                    ? t.lyrics_exit_to_library
+                    : MaterialLocalizations.of(context).closeButtonTooltip,
+                onPressed: callbacks.onExitBook ?? callbacks.onClose,
+                icon: const FushiIcon(FushiIcons.close),
+              ),
             ],
           ),
         ),

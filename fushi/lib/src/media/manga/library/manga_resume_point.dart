@@ -41,6 +41,52 @@ int mangaInitialChapterIndex(OnlineMangaLibraryEntry entry) {
   return entry.chapters.isEmpty ? -1 : entry.chapters.length - 1;
 }
 
+/// 书架进度里每一章占多少单位：章内进度（翻到第几页）按它细分，否则「读了
+/// 当前章一半」只能取整成 0 或 1 章。
+const int kMangaShelfUnitsPerChapter = 100;
+
+/// 在线漫画在书架上的进度（`MediaItem.position / duration`）。
+///
+/// 口径 = 已读章数（`manga_chapter_states.readAt` 非空，作品页「标记此章及更早
+/// 为已读」与阅读器读到章末写的是同一个列）+ 当前章（[entry.currentChapter]）
+/// 的章内进度，除以总章数。每章 [kMangaShelfUnitsPerChapter] 个单位。
+///
+/// - 当前章已读：已计入已读章数，不再加章内进度；
+/// - 当前章未读：按 `lastPage+1 / pageCount` 折算，夹在 [1, 单位-1]——打开过就
+///   算「在读」（position>0 进「继续阅读」），没读完就绝不凑成一整章；页数未知
+///   （还没落过章状态）按 1 个单位记「已打开」。
+///
+/// BUG-4356：此前只看 `currentChapterIndex`，按「从最旧数到当前章」算位置——
+/// 标记章节已读完全不影响书架，而打开过最新一话（下标 0）就直接是 total/total
+/// 「读完」。
+({int position, int duration}) onlineMangaShelfProgress(
+  OnlineMangaLibraryEntry entry,
+  Map<String, MangaChapterStateRow> states,
+) {
+  final int total = entry.chapters.length;
+  if (total == 0) return (position: 0, duration: 1);
+  int readChapters = 0;
+  for (final OnlineMangaChapter chapter in entry.chapters) {
+    if (states[chapter.key]?.readAt != null) readChapters++;
+  }
+  int partial = 0;
+  final OnlineMangaChapter? current = entry.currentChapter;
+  if (current != null) {
+    final MangaChapterStateRow? state = states[current.key];
+    if (state?.readAt == null) {
+      final int? pageCount = state?.pageCount;
+      partial = pageCount != null && pageCount > 0
+          ? ((state!.lastPage + 1) * kMangaShelfUnitsPerChapter ~/ pageCount)
+                .clamp(1, kMangaShelfUnitsPerChapter - 1)
+          : 1;
+    }
+  }
+  return (
+    position: readChapters * kMangaShelfUnitsPerChapter + partial,
+    duration: total * kMangaShelfUnitsPerChapter,
+  );
+}
+
 /// [state] 这一章是否「停在了末尾」：读完过，且最后停下的页就是最后一页（页数
 /// 未知时——「标记已读」批量写的行没有页信息——按读完算）。
 bool mangaChapterStoppedAtEnd(MangaChapterStateRow state) {

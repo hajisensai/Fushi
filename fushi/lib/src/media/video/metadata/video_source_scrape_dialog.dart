@@ -9,11 +9,14 @@ import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dar
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_issue_text.dart';
+import 'package:fushi/src/media/identity/pending_identity_widgets.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_tile.dart';
 import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_error_text.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
@@ -62,6 +65,12 @@ typedef VideoPendingWorkIgnoreSetter =
       VideoPendingScrapeWork entry, {
       required bool ignored,
     });
+
+/// 刮削范围在界面上的名字：无来源本机视频没有来源行，显示固定文案。
+String videoScrapeScopeLabel(SourceLibraryRow source) =>
+    isSourcelessVideoScrapeScope(source)
+    ? t.video_scrape_scope_sourceless
+    : source.label;
 
 class _VideoSourceScrapeTaskPanel extends StatefulWidget {
   const _VideoSourceScrapeTaskPanel({
@@ -485,7 +494,12 @@ class _VideoSourceScrapeTaskPanelState
           : null,
       details: <Widget>[
         if (progress.sourceLabel case final String label)
-          Text(label, style: detailStyle),
+          Text(
+            progress.sourceId == kSourcelessLocalVideoScrapeScopeId
+                ? t.video_scrape_scope_sourceless
+                : label,
+            style: detailStyle,
+          ),
         if (progress.currentWorkTitle case final String title)
           Text(
             t.scrape_all_item(title: title),
@@ -502,201 +516,76 @@ class _VideoSourceScrapeTaskPanelState
     );
   }
 
-  /// AI 识别结论卡（tertiary 色块 + AI 图标 + 可选中文案）。
-  Widget _buildPendingNoticeCard(String notice) {
-    return FushiCard(
-      tone: FushiCardTone.tertiary,
-      padding: const EdgeInsets.all(12),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          const FushiIcon(FushiIcons.ai, size: 20),
-          const SizedBox(width: 10),
-          Expanded(child: SelectableText(notice)),
-        ],
-      ),
-    );
-  }
-
   /// 待确认队列来自当前计划，手动指定按 stableKey 对应真实作品。
-  /// AI 结论与所有状态共用一个滚动正文：最后一项识别后清空、重新加载或
-  /// 加载失败时也不能把多行结论重新钉到列表外，否则矮窗口仍会溢出。
-  Widget _buildPendingWorks() {
-    Widget? status;
-    if (_loadingPending) {
-      status = const FushiLoadingView();
-    } else if (_pendingError case final Object error) {
-      status = _buildLoadErrorMessage(error, _reloadPendingWorks);
-    } else if (_pendingWorks.isEmpty) {
-      status = FushiPlaceholderMessage(
-        icon: FushiIcons.success,
-        message: t.video_source_scrape_pending_empty,
-      );
-    }
-    final int count = status == null ? _pendingWorks.length : 1;
-    final String? notice = _pendingNotice;
-    final int lead = notice == null ? 0 : 1;
-    // 已忽略的作品接在待确认清单后面：一个分组头 + 每部一行（可撤销）。加载中 /
-    // 出错时不画，免得和状态占位互相打架。
-    final List<VideoPendingScrapeWork> ignored =
-        _loadingPending || _pendingError != null
-        ? const <VideoPendingScrapeWork>[]
-        : _ignoredWorks;
-    final int tail = ignored.isEmpty ? 0 : 1 + ignored.length;
-    return FushiEntranceScope(
-      child: ListView.builder(
-        key: const PageStorageKey<String>('video-source-pending-list'),
-        itemCount: lead + count + tail,
-        itemBuilder: fushiStaggeredItemBuilder((
-          BuildContext context,
-          int position,
-        ) {
-          if (notice != null && position == 0) {
-            return Padding(
-              padding: const EdgeInsets.only(bottom: 12),
-              child: _buildPendingNoticeCard(notice),
-            );
-          }
-          if (position >= lead + count) {
-            final int ignoredIndex = position - lead - count - 1;
-            return ignoredIndex < 0
-                ? _buildIgnoredHeader(ignored.length)
-                : _buildIgnoredWork(ignored, ignoredIndex);
-          }
-          if (status != null) return status;
-          final int index = position - lead;
-          final VideoPendingScrapeWork entry = _pendingWorks[index];
-          final bool pending = widget.controller.isManualRequestPending(
-            sourceId: entry.source.id,
-            workTitle: entry.work.title,
-            workStableKey: entry.work.stableKey,
-          );
-          // 为什么还没认出来：最近一次刮削留下的原因 + AI 结果；没刮过就如实说。
-          final VideoScrapePendingNote? note = entry.pendingNote;
-          final String reason = note == null
-              ? t.video_scrape_pending_record_missing
-              : describeVideoScrapePendingNote(note);
-          return FushiGroupedListItem(
-            index: index,
-            count: count,
-            child: FushiListItem(
-              key: ValueKey<String>(
-                'video-source-pending-work-${entry.work.stableKey}',
-              ),
-              density: FushiListDensity.compact,
-              leading: const FushiListLeadingIcon(
-                FushiIcons.folder,
-                size: 36,
-                iconSize: 20,
-              ),
-              title: Text(entry.work.title),
-              subtitle: Text(
-                '${entry.source.label}\n$reason',
-                key: ValueKey<String>(
-                  'video-source-pending-reason-${entry.work.stableKey}',
-                ),
-              ),
-              trailing:
-                  pending || _bindingStableKeys.contains(entry.work.stableKey)
-                  ? FushiTag(
-                      dense: true,
-                      tone: FushiTagTone.accent,
-                      icon: FushiIcons.pending,
-                      text: t.video_source_scrape_queue_submitted,
-                    )
-                  : Row(
-                      mainAxisSize: MainAxisSize.min,
-                      children: <Widget>[
-                        if (widget.showAiIdentify &&
-                            widget.controller.supportsAiIdentify)
-                          FushiIconButtonControl(
-                            key: ValueKey<String>(
-                              'video-source-pending-ai-${entry.work.stableKey}',
-                            ),
-                            tooltip: t.video_source_scrape_ai_identify,
-                            onPressed: () =>
-                                unawaited(_identifyPendingWork(entry)),
-                            icon: const FushiIcon(FushiIcons.ai),
-                          ),
-                        FushiIconButtonControl(
-                          tooltip: t.video_source_scrape_manual_search_title,
-                          onPressed: () => unawaited(_bindPendingWork(entry)),
-                          icon: const FushiIcon(FushiIcons.search),
-                        ),
-                        if (widget.onSetWorkIgnored != null)
-                          FushiIconButtonControl(
-                            key: ValueKey<String>(
-                              'video-source-pending-ignore-${entry.work.stableKey}',
-                            ),
-                            tooltip: t.video_source_scrape_pending_ignore,
-                            onPressed:
-                                _togglingIgnoreKeys.contains(
-                                  entry.work.stableKey,
-                                )
-                                ? null
-                                : () => unawaited(
-                                    _setWorkIgnored(entry, ignored: true),
-                                  ),
-                            icon: const FushiIcon(FushiIcons.visibilityOff),
-                          ),
-                      ],
-                    ),
-            ),
-          );
-        }),
-      ),
-    );
-  }
+  ///
+  /// 清单本体是与书 / 游戏共用的 [PendingIdentityListView]（BUG-5283）：AI 结论与
+  /// 所有状态共用一个滚动正文，最后一项识别后清空、重新加载或加载失败时也不会把
+  /// 多行结论钉到列表外（矮窗口溢出）。这里只供视频自己的行内容与动作。
+  Widget _buildPendingWorks() => PendingIdentityListView(
+    keyPrefix: 'video-source',
+    pending: <PendingIdentityRow>[
+      for (final VideoPendingScrapeWork entry in _pendingWorks)
+        _pendingWorkRow(entry),
+    ],
+    ignored: <PendingIdentityRow>[
+      for (final VideoPendingScrapeWork entry in _ignoredWorks)
+        _ignoredWorkRow(entry),
+    ],
+    loading: _loadingPending,
+    error: _pendingError,
+    onReload: _reloadPendingWorks,
+    notice: _pendingNotice,
+    emptyMessage: t.video_source_scrape_pending_empty,
+    ignoredHint: t.video_source_scrape_pending_ignored_hint,
+  );
 
-  /// 「已忽略（n）」分组头 + 一行说明：忽略意味着什么、适合什么。
-  Widget _buildIgnoredHeader(int n) {
-    final ColorScheme cs = Theme.of(context).colorScheme;
-    final FushiTypography type = context.fushiType;
-    return Padding(
-      key: const ValueKey<String>('video-source-ignored-header'),
-      padding: const EdgeInsets.fromLTRB(4, 20, 4, 8),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
-          Text(
-            t.video_source_scrape_pending_ignored_header(count: n),
-            style: type.titleSmall,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            t.video_source_scrape_pending_ignored_hint,
-            style: type.bodySmall.copyWith(color: cs.onSurfaceVariant),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildIgnoredWork(List<VideoPendingScrapeWork> ignored, int index) {
-    final VideoPendingScrapeWork entry = ignored[index];
+  PendingIdentityRow _pendingWorkRow(VideoPendingScrapeWork entry) {
     final String key = entry.work.stableKey;
-    return FushiGroupedListItem(
-      index: index,
-      count: ignored.length,
-      child: FushiListItem(
-        key: ValueKey<String>('video-source-ignored-work-$key'),
-        density: FushiListDensity.compact,
-        leading: const FushiListLeadingIcon(
-          FushiIcons.visibilityOff,
-          size: 36,
-          iconSize: 20,
+    final bool queued = widget.controller.isManualRequestPending(
+      sourceId: entry.source.id,
+      workTitle: entry.work.title,
+      workStableKey: key,
+    );
+    // 为什么还没认出来：最近一次刮削留下的原因 + AI 结果；没刮过就如实说。
+    final VideoScrapePendingNote? note = entry.pendingNote;
+    final String reason = note == null
+        ? t.video_scrape_pending_record_missing
+        : describeVideoScrapePendingNote(note);
+    return PendingIdentityRow(
+      key: key,
+      title: entry.work.title,
+      subtitle: '${videoScrapeScopeLabel(entry.source)}\n$reason',
+      busy: queued || _bindingStableKeys.contains(key),
+      actions: <PendingIdentityRowAction>[
+        if (widget.showAiIdentify && widget.controller.supportsAiIdentify)
+          PendingIdentityRowAction(
+            key: ValueKey<String>('video-source-pending-ai-$key'),
+            icon: FushiIcons.ai,
+            tooltip: t.video_source_scrape_ai_identify,
+            onPressed: () => unawaited(_identifyPendingWork(entry)),
+          ),
+        PendingIdentityRowAction(
+          icon: FushiIcons.search,
+          tooltip: t.video_source_scrape_manual_search_title,
+          onPressed: () => unawaited(_bindPendingWork(entry)),
         ),
-        title: Text(entry.work.title),
-        subtitle: Text(entry.source.label),
-        trailing: FushiIconButtonControl(
-          key: ValueKey<String>('video-source-ignored-restore-$key'),
-          tooltip: t.video_source_scrape_pending_ignored_restore,
-          onPressed: _togglingIgnoreKeys.contains(key)
-              ? null
-              : () => unawaited(_setWorkIgnored(entry, ignored: false)),
-          icon: const FushiIcon(FushiIcons.undo),
-        ),
-      ),
+      ],
+      showIgnore: widget.onSetWorkIgnored != null,
+      onSetIgnored: _togglingIgnoreKeys.contains(key)
+          ? null
+          : () => unawaited(_setWorkIgnored(entry, ignored: true)),
+    );
+  }
+
+  PendingIdentityRow _ignoredWorkRow(VideoPendingScrapeWork entry) {
+    final String key = entry.work.stableKey;
+    return PendingIdentityRow(
+      key: key,
+      title: entry.work.title,
+      subtitle: videoScrapeScopeLabel(entry.source),
+      onSetIgnored: _togglingIgnoreKeys.contains(key)
+          ? null
+          : () => unawaited(_setWorkIgnored(entry, ignored: false)),
     );
   }
 
@@ -726,8 +615,9 @@ class _VideoSourceScrapeTaskPanelState
     VideoSourceScrapeManualRequest request,
   ) => switch (request.lookup) {
     final VideoMetadataLookup lookup =>
-      '${request.source.label} · ${lookup.provider.name.toUpperCase()} ${lookup.externalId}',
-    null => '${request.source.label} · ${t.video_source_scrape_ai_identify}',
+      '${videoScrapeScopeLabel(request.source)} · ${lookup.provider.name.toUpperCase()} ${lookup.externalId}',
+    null =>
+      '${videoScrapeScopeLabel(request.source)} · ${t.video_source_scrape_ai_identify}',
   };
 
   /// 「AI 识别」：对这一部重跑识别并强制重问 AI（歧义时在候选里挑、查无时
@@ -807,7 +697,8 @@ class _VideoSourceScrapeTaskPanelState
       unawaited(_reloadPendingWorks());
     } on Object catch (error) {
       if (!mounted) return;
-      setState(() => _pendingNotice = error.toString());
+      // 清理期间被刮削门挡回的是类型化错误，出本地化文案而不是 `Bad state: …`。
+      setState(() => _pendingNotice = videoScrapeErrorText(error));
     } finally {
       if (mounted) {
         setState(() => _bindingStableKeys.remove(entry.work.stableKey));
@@ -1042,7 +933,9 @@ class _VideoSourceScrapeTaskPanelState
                   ),
                   const SizedBox(height: 4),
                   Text(
-                    t.video_source_scrape_confirmation_hint,
+                    confirmation.strictMatches
+                        ? t.video_source_scrape_confirmation_hint
+                        : t.video_source_scrape_confirmation_review_hint,
                     style: type.bodySmall.copyWith(color: onCard),
                   ),
                 ],
@@ -1155,7 +1048,7 @@ class _VideoSourceScrapeTaskPanelState
               size: 32,
               iconSize: 18,
             ),
-            title: Text(issues[index].$1.workTitle),
+            title: Text(videoScrapeIssueTitle(issues[index].$1)),
             subtitle: SelectableText(
               issues[index].$1.path == null
                   ? describeVideoScrapeIssueMessage(issues[index].$1.message)

@@ -622,7 +622,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     return rows.length;
   }
 
-  /// 文件选择器与桌面拖放共用的导入扩展名（字体 + 压缩包）。
+  /// 文件选择器与桌面拖放共用的导入扩展名（字体 + 导入链路解包点认得的压缩包；
+  /// 加密包弹口令框，rar 要 7-Zip，没有时导入报失败）。tar / gz 解包点不认，不列。
   static const List<String> _importExtensions = <String>[
     'ttf',
     'otf',
@@ -632,8 +633,6 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     'zip',
     '7z',
     'rar',
-    'tar',
-    'gz',
   ];
 
   Future<void> _importFontFile() async {
@@ -1156,6 +1155,7 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
           FontTargetPreview(
             target: _previewTarget,
             families: families,
+            script: _script,
             subtitleStyle: VideoSubtitleStyle.decode(
               appModel.videoSubtitleStyle,
             ),
@@ -1239,6 +1239,9 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
   FontLibraryFilter _filter = FontLibraryFilter.all;
   FontSampleScript _script = FontSampleScript.japanese;
 
+  /// 中文档上次选的简 / 繁（默认简体）。
+  FontSampleScript _chineseVariant = FontSampleScript.simplifiedChinese;
+
   /// 用户手动选的布局；null = 跟随宽度（宽屏网格、窄屏列表）。
   FontLibraryLayout? _layoutOverride;
 
@@ -1320,6 +1323,13 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
     FontLibraryFilter.sansSerif => t.font_library_filter_sans,
     FontLibraryFilter.monospace => t.font_library_filter_mono,
   };
+
+  /// 样张文种（工具栏三档 + 简繁开关共用）。选中文时记下简 / 繁，切走再切回来
+  /// 恢复它。setState 同时刷新窄屏详情 sheet（见 [setState] 覆写）。
+  void _setScript(FontSampleScript script) => setState(() {
+    _script = script;
+    if (script.isChinese) _chineseVariant = script;
+  });
 
   String get _sampleText =>
       fontLibrarySampleText(_script, _sampleController.text);
@@ -1778,8 +1788,8 @@ class _CustomFontsPageState extends BasePageState<CustomFontsPage> {
             SizedBox(height: tokens.spacing.gap),
             FontSampleToolbar(
               script: _script,
-              onScriptChanged: (FontSampleScript script) =>
-                  setState(() => _script = script),
+              onScriptChanged: _setScript,
+              chineseVariant: _chineseVariant,
               controller: _sampleController,
               onCustomChanged: () => setState(() {}),
             ),

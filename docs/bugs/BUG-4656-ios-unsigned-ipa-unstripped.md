@@ -1,0 +1,10 @@
+## BUG-4656 · 未签名 IPA 的 Mach-O 没 strip 本地符号
+- **报告**：2026-11-15（iOS 包体积调研）
+- **真实性**：✅ 真问题。① 未签名 IPA：`.github/workflows/release-desktop.yml`「Build iOS release app (no codesign)」走 `flutter build ios`，即 Xcode 的 build 动作，`DEPLOYMENT_POSTPROCESSING=NO`，`fushi/ios/Runner.xcodeproj/project.pbxproj:796` 的 `STRIP_STYLE = "non-global"` 不执行；CocoaPods 嵌入的预编译 framework 也不 strip。CI 11-14 的 IPA 里 Runner 带 24 万本地符号（60.1 MB）。② TestFlight：Mac 上 `flutter build ipa --release --no-codesign` 实测，archive 动作下 Runner 已 strip（43.39 MB，再 `strip -x` 字节不变），但 Harfbuzz（5.24 MB，1.57 万本地符号）、PDFium、flutter_inappwebview_ios、DKImagePickerController 等嵌入 framework 原样进包。
+- **[x] ① 已修复** — 新增 `tool/ios_strip_local_symbols.sh`：对 .app 里每个 Mach-O（跳过 flutter_assets）`xcrun strip -x`，strip 前后 `nm -gUj` 导出集合必须完全相同、Runner 的 FFI 前缀（fp2p_/ffsrs_/ffc_/fcp_/fwc_/frwkv_/ffm_/fcorp_）计数不变且 > 0，否则非零退出让出包失败。未签名包在「Prepare unsigned iOS IPA release asset」的 ditto 之后、zip 之前调用，之后在发出去的 Runner 上再跑 7 个 `verify_abi.sh`（含 LINKEDIT 对齐检查）；TestFlight 在 `flutter build ipa` 与归档 Runner 核对之后新增一步：对归档 .app strip、再核 ABI、`xcodebuild -exportArchive` 用同一份 ExportOptions 重签导出覆盖 `build/ios/ipa`。
+- **[x] ② 已加自动化测试** — `fushi/test/build/ios_release_size_guard_test.dart`「BUG-4656」组：未签名步骤 strip 在 ditto 与 zip 之间、strip 后对 Release 核对步骤里的每个 crate 复跑 verify_abi；TestFlight 步骤 strip → verify → 删旧 ipa → exportArchive（同一份 ExportOptions）、位于签名构建与 IPA 上传之间；脚本只用 `strip -x`、比对导出集合、FFI 前缀覆盖 `native/*/verify_abi.sh` 校验的全部前缀。
+- **备注**：
+  - Mac 实测（CI 11-14 develop 未签名 IPA）：77 个 Mach-O 249,869,160 → 222,513,752 B（−27.4 MB），Runner 60.1 → 43.5 MB，Harfbuzz 5.24 → 2.42 MB；Runner FFI 导出 286 → 286；7 个 verify_abi 在 strip 后的 Runner 上全过；重新 zip 的 IPA 101,990,673 → 97,843,069 B（−4.1 MB）。反向验证：把脚本改成全量 `strip`，脚本以 `strip changed exported symbols` 退出 1。
+  - Mac 实测（本分支 `flutter build ipa --release --no-codesign` 的归档）：对归档 .app 再 strip −9.79 MB（Runner 不变，framework 部分）。
+  - **未验**：TestFlight 那一步的 `xcodebuild -exportArchive` 重签只能在带发行证书的 CI 上跑，本机 / Mac 没有 Apple 账号；按 Xcode 导出流程它会对每个嵌套 bundle 重新 codesign。合入后看 develop push 的 `ios` job 与 `testflight` job。
+  - 侧载工具（AltStore / Sideloadly）会重签，strip 让未签名包里原有签名失效无影响。

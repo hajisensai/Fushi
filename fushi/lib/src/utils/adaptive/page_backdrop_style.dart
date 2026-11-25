@@ -1,6 +1,8 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_core/fushi_core.dart' show PrefCodec;
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/models/home_tab.dart';
 
@@ -11,17 +13,18 @@ import 'package:fushi/src/models/home_tab.dart';
 /// `fushi/build/library_material_design/backdrop_presets.html`（本地，不入库）。
 ///
 /// 持久化值（[wire]）冻结，改名等于数据迁移。
+///
+/// 2026-11-15 所有者拍板：删掉「角落形状」（旧 wire `corner`），默认改为
+/// [mesh]（柔光晕染）。存量偏好 / Profile / 同步 / 备份里的 `corner` 不改写，
+/// 读取侧经 [fromWire] / [decodePageBackdropModulePresets] 解析为 [mesh]。
 enum PageBackdropPreset {
-  /// 角落三块形状（10-25 定版，默认）。
-  corner('corner'),
-
   /// 纯色：只有页面底色，不画装饰。
   plain('plain'),
 
   /// 十几块小号 M3E 形状散在整页。
   confetti('confetti'),
 
-  /// 三团柔和的径向渐变色斑。
+  /// 三团柔和的径向渐变色斑（柔光晕染，默认）。
   mesh('mesh'),
 
   /// 右上巨大圆弧 + 同心细环 + 左下 sunny 形状。
@@ -40,13 +43,15 @@ enum PageBackdropPreset {
 
   final String wire;
 
-  static PageBackdropPreset fromWire(Object? raw) {
-    for (final PageBackdropPreset preset in values) {
-      if (preset.wire == raw) return preset;
-    }
-    return PageBackdropPreset.corner;
-  }
+  /// 新装 / 恢复默认 / 认不出的旧值都落到这里。
+  static const PageBackdropPreset defaultPreset = PageBackdropPreset.mesh;
+
+  static PageBackdropPreset fromWire(Object? raw) =>
+      _presetFromWireOrNull(raw) ?? defaultPreset;
 }
+
+/// 已删除的「角落形状」预设的旧 wire：存量数据里仍可能出现，读取时解析为默认。
+const String kPageBackdropLegacyCornerWire = 'corner';
 
 /// 形状类预设的浓淡（乘在各形状的不透明度上）。
 enum PageBackdropStrength {
@@ -117,7 +122,15 @@ const String kPageBackdropModulePresetsPrefKey = 'page_backdrop_module_presets';
 /// `{模块 wire: {"landscape": 路径, "portrait": 路径}}`。文件只在这台设备上，设备本地。
 const String kPageBackdropModuleImagesPrefKey = 'page_backdrop_module_images';
 
-/// 设备本地的那几个键（图片文件路径 + 取色缓存）。
+/// 设备本地的那几个键（图片文件 + 取色缓存）。
+///
+/// BUG-5370：图片键（含模块 JSON 与各配置的停放值）存的是背景图目录
+/// （`<support>/page_backdrop`）里的**文件名**，读时按当前目录拼成绝对路径
+/// （[resolvePageBackdropImagePath]）。以前存绝对路径，iOS 每次安装 / 更新都换容器
+/// UUID、桌面换数据根也换 support 根，旧路径悬空，背景图静默回落默认样式。存量绝对
+/// 路径由 `ThemeNotifier` 载入时按文件名改写一次（[healPageBackdropImageRef]）。取色
+/// 缓存里的路径同样只按文件名比对。这几个键在 `kPathRebasePrefs` 里登记为非路径，守卫
+/// `path_rebase_coverage_guard_test.dart` 盯着这份清单。
 const List<String> kPageBackdropDeviceLocalPrefKeys = <String>[
   kPageBackdropLandscapeImagePrefKey,
   kPageBackdropPortraitImagePrefKey,
@@ -125,11 +138,71 @@ const List<String> kPageBackdropDeviceLocalPrefKeys = <String>[
   kPageBackdropModuleImagesPrefKey,
 ];
 
+/// 背景图片按配置记、只留在本机：live 键 → 停放键前缀（后缀 = profile uid）。
+///
+/// 样式（预设 / 强度 / 模糊…）随 Profile 快照走，图片路径却是设备本地的——两者拆开后切配置
+/// 只换样式不换图。这里把图片键接进 `ProfileRepository.perProfileDeviceLocalPrefs`：切走时
+/// live 值停放到这份配置名下，切入时换回；没停放过的配置沿用切换前的图（现有全局图就是每份
+/// 配置的初始值，不需要迁移）。停放键与 live 键同样设备本地
+/// （`PrefRedactionPolicy.deviceLocalKeyPrefixes`）：不进 Profile 快照 / 分享 / 备份 / 设置同步。
+/// 取色缓存跟着图走，一并停放，切回来不用重取。
+const Map<String, String> kPageBackdropProfileParkedPrefKeyPrefixes =
+    <String, String>{
+      kPageBackdropLandscapeImagePrefKey: 'page_backdrop_image_landscape::',
+      kPageBackdropPortraitImagePrefKey: 'page_backdrop_image_portrait::',
+      kPageBackdropModuleImagesPrefKey: 'page_backdrop_module_images::',
+      kPageBackdropSeedCachePrefKey: 'page_backdrop_seed_cache::',
+    };
+
+/// [prefs]（偏好表原始编码值）里仍在引用的全部背景图（存的原值：文件名或存量绝对
+/// 路径，调用方按 [pageBackdropImageFileName] 比对）：live 键与各配置停放的值，
+/// 全局两张 + 各模块 / 页面的。[skipParkedUid] 的停放值不算——激活配置的停放值是它上次
+/// 切走时的旧值，live 键才是它现在的图（下次切走会被覆盖），算进去只会让换掉的旧图多留一阵。
+Set<String> pageBackdropReferencedImagePaths(
+  Map<String, String> prefs, {
+  String? skipParkedUid,
+}) {
+  final Set<String> out = <String>{};
+  void addPath(Object? value) {
+    if (value is String && value.isNotEmpty) out.add(value);
+  }
+
+  void addModuleImages(Object? value) {
+    for (final PageBackdropModuleImages images
+        in decodePageBackdropScopedImages(value).values) {
+      addPath(images.landscape);
+      addPath(images.portrait);
+    }
+  }
+
+  prefs.forEach((String key, String raw) {
+    for (final MapEntry<String, String> e
+        in kPageBackdropProfileParkedPrefKeyPrefixes.entries) {
+      if (e.key == kPageBackdropSeedCachePrefKey) continue;
+      final bool live = key == e.key;
+      final bool parked =
+          key.startsWith(e.value) &&
+          (skipParkedUid == null || key != '${e.value}$skipParkedUid');
+      if (!live && !parked) continue;
+      // 停放值是 live 原始编码值的原样拷贝；空串 = 那份配置没设图。
+      if (raw.isEmpty) return;
+      final Object? value = PrefCodec.decodeUntyped(raw);
+      if (e.key == kPageBackdropModuleImagesPrefKey) {
+        addModuleImages(value);
+      } else {
+        addPath(value);
+      }
+      return;
+    }
+  });
+  return out;
+}
+
 /// 当前生效的页面背景设置（不可变快照）。
 @immutable
 class PageBackdropSettings {
   const PageBackdropSettings({
-    this.preset = PageBackdropPreset.corner,
+    this.preset = PageBackdropPreset.defaultPreset,
     this.strength = PageBackdropStrength.standard,
     this.motion = false,
     this.landscapeImagePath,
@@ -164,10 +237,10 @@ class PageBackdropSettings {
     return landscapeImagePath;
   }
 
-  /// 实际要画的样式：选了自定义但图片不在（换了设备、文件被删）时回落到默认形状。
+  /// 实际要画的样式：选了自定义但图片不在（换了设备、文件被删）时回落到默认样式。
   PageBackdropPreset get effectivePreset =>
       preset == PageBackdropPreset.custom && !hasCustomImage
-      ? PageBackdropPreset.corner
+      ? PageBackdropPreset.defaultPreset
       : preset;
 
   PageBackdropSettings copyWith({
@@ -224,6 +297,70 @@ double clampPageBackdropScrim(Object? raw) {
       .toDouble();
 }
 
+/// [path]（文件名或存量绝对路径，`/` 与 `\` 两种分隔符都认）的文件名部分。
+String pageBackdropImageFileName(String path) {
+  final int cut = path.lastIndexOf(RegExp(r'[\\/]'));
+  return cut < 0 ? path : path.substring(cut + 1);
+}
+
+/// 偏好里的图片值（文件名，或 BUG-5370 之前写下的绝对路径）→ 本机绝对路径。
+///
+/// 文件名按 [directory]（当前背景图目录）拼；[directory] 还没解析出来时返回 null
+/// （当作暂时没有图，目录解析后会重发布）。存量绝对路径原样返回（载入时能按文件名
+/// 找回的已被 [healPageBackdropImageRef] 改写成文件名，剩下的是真不在本机的）。
+String? resolvePageBackdropImagePath(
+  Object? raw, {
+  required String? directory,
+}) {
+  if (raw is! String || raw.isEmpty) return null;
+  if (pageBackdropImageFileName(raw) != raw) return raw;
+  if (directory == null) return null;
+  return p.join(directory, raw);
+}
+
+/// 存量绝对路径值的迁移：文件名在当前背景图目录里（[inDirectory] 判）就返回该文件名，
+/// 否则（已是文件名 / 空值 / 文件不在目录里）返回 null = 不改写。
+String? healPageBackdropImageRef(
+  Object? raw, {
+  required bool Function(String name) inDirectory,
+}) {
+  if (raw is! String || raw.isEmpty) return null;
+  final String name = pageBackdropImageFileName(raw);
+  if (name == raw || name.isEmpty) return null;
+  return inDirectory(name) ? name : null;
+}
+
+/// [kPageBackdropModuleImagesPrefKey] 值（解码后的 JSON 串）里的存量绝对路径按
+/// [healPageBackdropImageRef] 改写（模块与页面层级的图都改）；没有要改的返回 null。
+String? healPageBackdropModuleImagesValue(
+  Object? raw, {
+  required bool Function(String name) inDirectory,
+}) {
+  final Map<String, PageBackdropModuleImages> images =
+      decodePageBackdropScopedImages(raw);
+  bool changed = false;
+  String? heal(String? path) {
+    final String? healed = healPageBackdropImageRef(
+      path,
+      inDirectory: inDirectory,
+    );
+    if (healed == null) return path;
+    changed = true;
+    return healed;
+  }
+
+  final Map<String, PageBackdropModuleImages> out =
+      <String, PageBackdropModuleImages>{
+        for (final MapEntry<String, PageBackdropModuleImages> e
+            in images.entries)
+          e.key: (
+            landscape: heal(e.value.landscape),
+            portrait: heal(e.value.portrait),
+          ),
+      };
+  return changed ? encodePageBackdropScopedImages(out) : null;
+}
+
 /// 偏好里存的图片路径：空串 / 非字符串 / [exists] 判为不存在的一律视为没有。
 ///
 /// [exists] 由调用方给（`ThemeNotifier` 传异步核对过的结果）：快照在 UI isolate
@@ -274,7 +411,42 @@ HomeTab? pageBackdropModuleFromWire(Object? raw) {
   return null;
 }
 
-/// 某个模块单独设的背景（不可变）。
+// ── 按页面单独设置（拍板台 xxbbL0j15l，2026-11-24）────────────────────────────
+//
+// 层级：全局 → 模块（[HomeTab]）→ 模块里单独可设的页面（[PageBackdropPage]）。页面
+// 没单独设就继承所属模块解析出的背景（模块也没设就是全局）；选「纯色」等于在这一页
+// 关掉背景装饰。与模块层一样只覆盖「画什么」（预设 + 图片），也不参与取色。
+//
+// 页面层的设置与模块层存在同两个偏好键里（[kPageBackdropModulePresetsPrefKey] /
+// [kPageBackdropModuleImagesPrefKey]），键名是 [PageBackdropPage.wire]：设备本地登记、
+// 配置停放、存量路径改写、引用扫描都沿用模块那一套，不另立键。读取侧（模块 / 页面
+// 各自的 decode）认不出的 wire 跳过（等于跟随上一层）；整键读改写（Scoped 编解码）
+// 原样保留认不出的 wire 及其图片——别的版本 / 设备写下的层级不会因为本机改了另一层
+// 被抹掉，它的图也照样算被引用、不被清扫误删。
+
+/// 模块里能单独设背景的页面。[wire] 冻结（改了等于数据迁移），且不得与
+/// [pageBackdropModuleWire] 的任何值重名（两层共用一个 JSON 对象）。
+enum PageBackdropPage {
+  /// 复习答题页（`SrsReviewPage`）：默认继承复习模块（牌组总览）的背景。
+  srsReview('srs_review', HomeTab.srs);
+
+  const PageBackdropPage(this.wire, this.module);
+
+  final String wire;
+
+  /// 所属模块：本页没单独设时继承它的背景，从哪个 tab 的入口打开都一样。
+  final HomeTab module;
+
+  /// [wire] 的反向；认不出的返回 null。
+  static PageBackdropPage? fromWire(Object? raw) {
+    for (final PageBackdropPage page in values) {
+      if (page.wire == raw) return page;
+    }
+    return null;
+  }
+}
+
+/// 某个模块（或页面）单独设的背景（不可变）。
 @immutable
 class PageBackdropModuleOverride {
   const PageBackdropModuleOverride({
@@ -320,60 +492,111 @@ PageBackdropSettings resolvePageBackdropSettings(
   );
 }
 
-/// 解析 [kPageBackdropModulePresetsPrefKey] 的值：坏 JSON / 认不出的模块或预设
-/// 一律跳过（等于那个模块跟随全局）。
-Map<HomeTab, PageBackdropPreset> decodePageBackdropModulePresets(Object? raw) {
+/// 解析 [kPageBackdropModulePresetsPrefKey] 的值，键是层级 wire（模块 / 页面，也包括本版本
+/// 认不出的 wire——原样保留，见上方分层说明）：坏 JSON / 空键 / 认不出的预设跳过；已删除的
+/// 「角落形状」旧值解析为默认预设。写入侧按这份整体改写，各层的设置互不丢。
+Map<String, PageBackdropPreset> decodePageBackdropScopedPresets(Object? raw) {
   final Map<String, Object?> json = _decodeJsonObject(raw);
-  final Map<HomeTab, PageBackdropPreset> out = <HomeTab, PageBackdropPreset>{};
+  final Map<String, PageBackdropPreset> out = <String, PageBackdropPreset>{};
   json.forEach((String key, Object? value) {
-    final HomeTab? tab = pageBackdropModuleFromWire(key);
-    if (tab == null || value is! String) return;
+    if (key.isEmpty || value is! String) return;
     final PageBackdropPreset? preset = _presetFromWireOrNull(value);
-    if (preset != null) out[tab] = preset;
+    if (preset != null) out[key] = preset;
   });
   return out;
 }
 
-String encodePageBackdropModulePresets(Map<HomeTab, PageBackdropPreset> map) =>
+String encodePageBackdropScopedPresets(Map<String, PageBackdropPreset> map) =>
     jsonEncode(<String, String>{
-      for (final MapEntry<HomeTab, PageBackdropPreset> e in map.entries)
-        pageBackdropModuleWire(e.key): e.value.wire,
+      for (final MapEntry<String, PageBackdropPreset> e in map.entries)
+        e.key: e.value.wire,
     });
 
-/// 某个模块的两张图片路径（未核对存在与否）。
+/// [decodePageBackdropScopedPresets] 里模块那一层。
+Map<HomeTab, PageBackdropPreset> decodePageBackdropModulePresets(
+  Object? raw,
+) => <HomeTab, PageBackdropPreset>{
+  for (final MapEntry<String, PageBackdropPreset> e
+      in decodePageBackdropScopedPresets(raw).entries)
+    if (pageBackdropModuleFromWire(e.key) case final HomeTab tab) tab: e.value,
+};
+
+/// [decodePageBackdropScopedPresets] 里页面那一层。
+Map<PageBackdropPage, PageBackdropPreset> decodePageBackdropPagePresets(
+  Object? raw,
+) => <PageBackdropPage, PageBackdropPreset>{
+  for (final MapEntry<String, PageBackdropPreset> e
+      in decodePageBackdropScopedPresets(raw).entries)
+    if (PageBackdropPage.fromWire(e.key) case final PageBackdropPage page)
+      page: e.value,
+};
+
+String encodePageBackdropModulePresets(Map<HomeTab, PageBackdropPreset> map) =>
+    encodePageBackdropScopedPresets(<String, PageBackdropPreset>{
+      for (final MapEntry<HomeTab, PageBackdropPreset> e in map.entries)
+        pageBackdropModuleWire(e.key): e.value,
+    });
+
+/// 某个模块（或页面）的两张图片路径（未核对存在与否）。
 typedef PageBackdropModuleImages = ({String? landscape, String? portrait});
 
-/// 解析 [kPageBackdropModuleImagesPrefKey] 的值；空串路径视为没有。
-Map<HomeTab, PageBackdropModuleImages> decodePageBackdropModuleImages(
+/// 解析 [kPageBackdropModuleImagesPrefKey] 的值，键是层级 wire（同
+/// [decodePageBackdropScopedPresets]，认不出的 wire 原样保留）；空串路径视为没有。
+Map<String, PageBackdropModuleImages> decodePageBackdropScopedImages(
   Object? raw,
 ) {
   final Map<String, Object?> json = _decodeJsonObject(raw);
-  final Map<HomeTab, PageBackdropModuleImages> out =
-      <HomeTab, PageBackdropModuleImages>{};
+  final Map<String, PageBackdropModuleImages> out =
+      <String, PageBackdropModuleImages>{};
   json.forEach((String key, Object? value) {
-    final HomeTab? tab = pageBackdropModuleFromWire(key);
-    if (tab == null || value is! Map) return;
+    if (key.isEmpty || value is! Map) return;
     String? path(Object? v) => v is String && v.isNotEmpty ? v : null;
     final PageBackdropModuleImages images = (
       landscape: path(value['landscape']),
       portrait: path(value['portrait']),
     );
     if (images.landscape != null || images.portrait != null) {
-      out[tab] = images;
+      out[key] = images;
     }
   });
   return out;
 }
 
-String encodePageBackdropModuleImages(
-  Map<HomeTab, PageBackdropModuleImages> map,
+String encodePageBackdropScopedImages(
+  Map<String, PageBackdropModuleImages> map,
 ) => jsonEncode(<String, Object>{
-  for (final MapEntry<HomeTab, PageBackdropModuleImages> e in map.entries)
+  for (final MapEntry<String, PageBackdropModuleImages> e in map.entries)
     if (e.value.landscape != null || e.value.portrait != null)
-      pageBackdropModuleWire(e.key): <String, String>{
+      e.key: <String, String>{
         if (e.value.landscape case final String l) 'landscape': l,
         if (e.value.portrait case final String p) 'portrait': p,
       },
+});
+
+/// [decodePageBackdropScopedImages] 里模块那一层。
+Map<HomeTab, PageBackdropModuleImages> decodePageBackdropModuleImages(
+  Object? raw,
+) => <HomeTab, PageBackdropModuleImages>{
+  for (final MapEntry<String, PageBackdropModuleImages> e
+      in decodePageBackdropScopedImages(raw).entries)
+    if (pageBackdropModuleFromWire(e.key) case final HomeTab tab) tab: e.value,
+};
+
+/// [decodePageBackdropScopedImages] 里页面那一层。
+Map<PageBackdropPage, PageBackdropModuleImages> decodePageBackdropPageImages(
+  Object? raw,
+) => <PageBackdropPage, PageBackdropModuleImages>{
+  for (final MapEntry<String, PageBackdropModuleImages> e
+      in decodePageBackdropScopedImages(raw).entries)
+    if (PageBackdropPage.fromWire(e.key) case final PageBackdropPage page)
+      page: e.value,
+};
+
+String encodePageBackdropModuleImages(
+  Map<HomeTab, PageBackdropModuleImages> map,
+) => encodePageBackdropScopedImages(<String, PageBackdropModuleImages>{
+  for (final MapEntry<HomeTab, PageBackdropModuleImages> e in map.entries)
+    pageBackdropModuleWire(e.key): e.value,
 });
 
 /// 偏好值不是 JSON 对象（缺键、空串、坏数据）时按「没有任何模块单独设置」处理。
@@ -388,7 +611,10 @@ Map<String, Object?> _decodeJsonObject(Object? raw) {
   return decoded is Map<String, Object?> ? decoded : const <String, Object?>{};
 }
 
-PageBackdropPreset? _presetFromWireOrNull(String raw) {
+PageBackdropPreset? _presetFromWireOrNull(Object? raw) {
+  if (raw == kPageBackdropLegacyCornerWire) {
+    return PageBackdropPreset.defaultPreset;
+  }
   for (final PageBackdropPreset preset in PageBackdropPreset.values) {
     if (preset.wire == raw) return preset;
   }
@@ -403,9 +629,30 @@ pageBackdropModuleOverrides =
       const <HomeTab, PageBackdropModuleOverride>{},
     );
 
-/// [module] 实际生效的背景设置（null = 不属于任何模块，用全局）。
-PageBackdropSettings pageBackdropSettingsFor(HomeTab? module) =>
-    resolvePageBackdropSettings(
-      pageBackdropSettings.value,
-      module == null ? null : pageBackdropModuleOverrides.value[module],
+/// 全局发布点：各页面单独设的背景（只含有设置的页面），与
+/// [pageBackdropModuleOverrides] 同一处写入。
+final ValueNotifier<Map<PageBackdropPage, PageBackdropModuleOverride>>
+pageBackdropPageOverrides =
+    ValueNotifier<Map<PageBackdropPage, PageBackdropModuleOverride>>(
+      const <PageBackdropPage, PageBackdropModuleOverride>{},
     );
+
+/// [module] 实际生效的背景设置（null = 不属于任何模块，用全局）。
+///
+/// [page] 非空时再叠一层页面单独的设置；页面没设（或设了图片却不可用）就是
+/// [page] 所属模块解析出的设置——此时忽略 [module]，页面总按自己的模块继承。
+PageBackdropSettings pageBackdropSettingsFor(
+  HomeTab? module, {
+  PageBackdropPage? page,
+}) {
+  final HomeTab? owner = page?.module ?? module;
+  final PageBackdropSettings inherited = resolvePageBackdropSettings(
+    pageBackdropSettings.value,
+    owner == null ? null : pageBackdropModuleOverrides.value[owner],
+  );
+  if (page == null) return inherited;
+  return resolvePageBackdropSettings(
+    inherited,
+    pageBackdropPageOverrides.value[page],
+  );
+}

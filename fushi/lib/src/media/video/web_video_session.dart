@@ -1,11 +1,18 @@
 // 网页站点视频的宿主会话（Windows WebView2）：两个宿主页共用的那一层。
 //
-// · 原生播放器页（VideoFushiPage 的网页档）：底层合成下的窗口宿主档——WebView2 子窗口垫在
-//   Flutter 下面，硬件 PlayReady（Netflix 4K），播放控件 / 字幕 / 查词全是原生页自己的；
-//   本会话只负责环境、注入脚本、登录 cookie、JS 消息分派、页面命令与输入归属。
-// · 内置网页播放器（WebVideoFushiPage）：可捕获的 1080p 内置档，制卡队列重放的宿主；它仍持有
-//   自己的 InAppWebView（DOM 字幕层 / 超分 / 截图都挂在那棵树上），只复用这里的环境、脚本
-//   与 cookie 函数。
+// · 原生播放器页（VideoFushiPage 的网页档，用户看到的唯一网页视频播放器）：两档同一套播放器
+//   外观与控件——「画质优先」是底层合成下的窗口宿主档（WebView2 子窗口垫在 Flutter 下面，硬件
+//   PlayReady，Netflix 4K）；「制卡优先」是可捕获档（离屏纹理画在 Flutter 树里，软件 DRM ≤1080p，
+//   帧可截）。本会话只负责环境、注入脚本、登录 cookie、JS 消息分派、页面命令与输入归属。
+// · 内置网页播放器（WebVideoFushiPage）：只当制卡队列重放的后台宿主（可捕获档），不再给用户
+//   当播放器打开；Flutter 叠层画在 WebView 上面，WebView 照常收输入。
+//
+// 两个宿主页用同一个 [WebVideoSession] + [WebVideoSurface]（gap-webvideo-11）：环境与登录
+// cookie、注入脚本、WebView 设置（播放器必需项 + 浏览器广告拦截 / 网站设置权限 / 页内样式）、
+// JS 调用包装（在途调用随表面死亡统一作废）、JS 消息分派、进程死亡后的重建都只在这里写一次，
+// 宿主页之间的差别只是构造参数（[WebVideoSession.new]）和几个页面钩子
+// （[WebVideoSession.onSurfaceCreated] / [WebVideoSession.onDocumentReady] /
+// [WebVideoSession.onProcessGone]）。
 //
 // 本文件不碰播放状态：播放态由页面 glue 上报（[WebVideoSession.onState]），交给
 // [WebVideoPlatformPlayer] 变成 media_kit 的 player.state。
@@ -28,6 +35,12 @@ import 'package:fushi/src/media/video/web_video_login_migration.dart';
 import 'package:fushi/src/media/video/underlay_composition.dart'
     show UnderlayInputExclusion, underlayInputExclusions;
 import 'package:fushi/src/media/video/web_video_shaders.dart';
+import 'package:fushi/src/media/video/web_video_subtitle_media.dart'
+    show webVideoCookieHeader;
+import 'package:fushi_engine/media/video/youtube_source_resolver.dart'
+    show youtubeVideoIdOrNull;
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
+    show RemoteMineResult;
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -82,6 +95,66 @@ Future<WebViewEnvironment> webVideoCapturableEnvironment() {
   );
 }
 
+/// 可捕获档的环境重建入口：内置网页播放器页的 WebView 进程死了（WebView2 ProcessFailed，fork
+/// 转成 onRenderProcessGone；Dart 侧分不出死的是渲染进程还是整个浏览器进程）就丢掉缓存的单例，
+/// 下次 [webVideoCapturableEnvironment] 在同一目录 / 同一参数上重建。浏览器进程没了旧环境就是
+/// 废的，新 WebView 建在它上面只会再死一次；只是渲染进程没了时，同目录同参数的新环境会直接
+/// 接回还活着的浏览器进程（WebView2 的环境共享规则），照样可用。
+///
+/// 旧环境**不释放**：它是进程级单例，登录回抄（[syncWebVideoLoginToBrowser]）或另一页可能还
+/// 拿着同一个引用；浏览器进程还活着时释放会把别人用着的环境拆掉。独立 cookie 罐在磁盘上，
+/// 浏览器进程重启不丢登录态，重建后不用再抄。
+void discardWebVideoCapturableEnvironment() {
+  _capturableEnv = null;
+}
+
+/// 网页视频一句制卡走哪条路（唯一判据，gap-webvideo-4）：YouTube 能按视频 id + 字幕时间窗从真实
+/// 视频流直接裁音频与画面（与浏览器扩展、手机遥控同一条 `FushiRemoteMiningService.mineImmersion`
+/// 的 YouTube 分支），返回视频 id；其它站点返回 null，只能进制卡队列等可捕获档逐句重放。
+String? webVideoDirectMineVideoId(String href) => youtubeVideoIdOrNull(href);
+
+/// 直裁一句，裁不出来就退回制卡队列。内置网页播放器页（本页制卡 / 顶层查词窗口制卡 / 手机遥控
+/// 制卡）与原生播放器页网页档的制卡共用，分流规则只在这里写一次。
+///
+/// 只有「这条路拿不到媒体」才退回队列：结局标了 [RemoteMineResult.mediaUnavailable]（流解析
+/// 失败、裁剪缺音频中止）或 [mineDirect] 抛出——重放录的是播放出来的画面与声音，不依赖流解析。
+/// 原因交给 [onFallback]，调 [enqueue] 入队后返回 null。[enqueue] 抛出照常向外抛（入队也失败
+/// 了，调用方要报错）。
+///
+/// 其余结局原样返回，由调用方当场报：`success` / `duplicate`（重复卡不入队：重放出来还是同一张
+/// 重复卡），以及与取媒体无关的失败——`notConfigured`、落卡阶段的 Anki 错误、无效时间窗。这些
+/// 排进队列重放也会在同一处再失败，还要先白跑一整趟重放，用户当下却只看到「已加入制卡队列」。
+Future<RemoteMineResult?> mineWebVideoCueDirectOrQueue({
+  required Future<RemoteMineResult> Function() mineDirect,
+  required Future<void> Function() enqueue,
+  void Function(String reason)? onFallback,
+}) async {
+  String reason;
+  try {
+    final RemoteMineResult res = await mineDirect();
+    if (!res.mediaUnavailable) return res;
+    reason = res.message ?? res.detail ?? res.result;
+  } catch (e) {
+    reason = '$e';
+  }
+  onFallback?.call(reason);
+  await enqueue();
+  return null;
+}
+
+/// 站点投来一条轨（[updatedKey]）之后，要不要把当前轨整份重灌进字幕 controller（内置网页播放器
+/// 页与原生播放器页的网页档共用这条判据）。
+///
+/// live 轨边看边长，每采到一句 bridge 就把整条轨同 key 重投一次；当前显示的若是另一条整轨
+/// （整轨优先于 live 轨），那些重投只该进轨集，不该把当前那条几百上千句的整轨重灌一遍（每次
+/// `setCues` 都重建索引并通知字幕列表等监听者）。只有两种情况要灌：选轨结果变了，或更新的
+/// 正是当前轨。
+bool webVideoTrackUpdateNeedsReload({
+  required String updatedKey,
+  required String? previousActiveKey,
+  required String? nextActiveKey,
+}) => nextActiveKey != previousActiveKey || updatedKey == nextActiveKey;
+
 /// 窗口宿主档（4K）环境：**不带** `--disable-direct-composition`（硬件 PlayReady 的受保护输出
 /// 要走 DComp overlay），带 fork 的窗口宿主哨兵。与 app 内浏览器**同一 user data folder、同一
 /// 套 Chromium 参数**（fork 把哨兵剥掉再交给 WebView2），所以是同一个 cookie 罐：浏览器里登录
@@ -107,9 +180,25 @@ Future<WebViewEnvironment> webVideoWindowedEnvironment() async {
 /// 窗口宿主档环境的浏览器进程没了（WebView2 ProcessFailed，fork 转成 onRenderProcessGone）：
 /// 丢掉缓存，下次 [webVideoWindowedEnvironment] 在同一目录 / 同一参数上重建。同目录同参数的新
 /// 环境在旧浏览器进程还活着时会直接接到它上面（WebView2 的环境共享规则），所以只是渲染进程死了
-/// 也照样可用。返回被换下的旧环境（调用方负责释放）。
+/// 也照样可用。返回被换下的旧环境：播放器页**不**释放它（进程级缓存，别的页面可能还拿着同一个
+/// 对象，见 [WebVideoSession.recoverFromProcessGone]）。
 Future<WebViewEnvironment>? discardWebVideoWindowedEnvironment() =>
     MangaWebViewEnvironment.discardWindowedHosting();
+
+// ── 浏览器广告拦截 ─────────────────────────────────────────────────────────
+
+/// 建网页播放器 WebView 前把浏览器的广告拦截引擎暖进内存（两个宿主页同一段）：与浏览器标签页
+/// 同法，先等缓存引擎进内存（本地反序列化，不等网络），否则首页子资源请求与 documentStart 取的
+/// cosmetic 都落在空引擎上；联网刷新过期列表留在后台。失败只记日志（最坏是本页不拦广告）。
+Future<void> warmWebVideoAdblock(
+  WebAdblockWarmup adblock, {
+  required String logTag,
+}) async {
+  void logError(Object e, StackTrace s) =>
+      ErrorLogService.instance.log(logTag, e, s);
+  unawaited(adblock.ensureLoaded().catchError(logError));
+  await adblock.ensureEngineWarm().catchError(logError);
+}
 
 // ── 注入脚本 / cookie ───────────────────────────────────────────────────────
 
@@ -137,11 +226,10 @@ String webVideoKeyBridgeScript(FushiShortcutRegistry registry) {
 
 /// document-start 注入脚本：垫片（可选）→ 全部站点 bridge（各自按当前文档 host 自判，见
 /// [webVideoHostGuardedBridgeSource]：document-start 脚本建 WebView 时就定死，按起始页选 bridge
-/// 的话换站后就没有 bridge）→ adapters → providers →（可选）原生字幕开关 → glue →（可选）DOM
-/// 字幕层 → 键盘桥。资产读取失败直接抛（调用方落失败态）。
+/// 的话换站后就没有 bridge）→ adapters → providers →（可选）原生字幕开关 → glue →（可选）悬停
+/// 查词 → 键盘桥。资产读取失败直接抛（调用方落失败态）。
 Future<UnmodifiableListView<UserScript>> loadWebVideoUserScripts({
   required bool softwareDrm,
-  required bool domOverlay,
   required String keyBridgeScript,
   bool pageLookup = false,
   bool hideNativeSubtitles = false,
@@ -159,7 +247,6 @@ Future<UnmodifiableListView<UserScript>> loadWebVideoUserScripts({
     // 站点字幕在页面第一帧之前就藏（glue 装载即读这个开关），不等 onLoadStop。
     if (hideNativeSubtitles) kWebVideoHideNativeSubtitlesPrelude,
     await rootBundle.loadString(kWebVideoGlueAsset),
-    if (domOverlay) await rootBundle.loadString(kWebVideoDomSubtitlesAsset),
     if (pageLookup) await rootBundle.loadString(kWebVideoPageLookupAsset),
     keyBridgeScript,
   ];
@@ -181,10 +268,10 @@ const List<Future<WebViewEnvironment?> Function()> kWebVideoLoginCookieSources =
 /// 可捕获档是独立 cookie 罐（`--disable-direct-composition` 与共享罐参数不同 → 独立 user data
 /// folder）：把 [sources]（默认 [kWebVideoLoginCookieSources]）里已登录的站点 cookie 复制到
 /// [to]，用户不用登录两次。目标是共享罐（浏览器 / 窗口宿主档）时不要调——同一个罐。
-/// 尽力而为：单个来源失败只记日志、不挡其它来源（最坏是站点要求登录）。返回 [to] 里原本
-/// 没有、这次新加上的 cookie 名数（> 0 通常意味着目标从未登录变成已登录，调用方据此决定
-/// 要不要刷新已打开的页面）。
-Future<int> copyWebVideoLoginCookies({
+/// 尽力而为：单个来源失败只记日志、不挡其它来源（最坏是站点要求登录）。不回报「新加了几条」：
+/// 没有调用方用得上（浏览器侧自己比 cookie 名集合，见 [webBrowserSiteCookieNames]），为它预读
+/// 一遍目标罐只是白走一次平台通道。
+Future<void> copyWebVideoLoginCookies({
   required Uri uri,
   required WebViewEnvironment to,
   List<Future<WebViewEnvironment?> Function()> sources =
@@ -192,15 +279,6 @@ Future<int> copyWebVideoLoginCookies({
 }) async {
   final WebUri url = WebUri('${uri.scheme}://${uri.host}/');
   final CookieManager dst = CookieManager.instance(webViewEnvironment: to);
-  final Set<String> existing = <String>{};
-  try {
-    for (final Cookie c in await dst.getCookies(url: url)) {
-      existing.add(c.name);
-    }
-  } catch (e) {
-    ErrorLogService.instance.log('web_video', 'cookie read: $e');
-  }
-  final Set<String> added = <String>{};
   for (final Future<WebViewEnvironment?> Function() source in sources) {
     try {
       final WebViewEnvironment? from = await source();
@@ -210,7 +288,7 @@ Future<int> copyWebVideoLoginCookies({
         webViewEnvironment: from,
       ).getCookies(url: url);
       for (final Cookie c in cookies) {
-        final bool ok = await dst.setCookie(
+        await dst.setCookie(
           url: url,
           name: c.name,
           value: c.value.toString(),
@@ -221,24 +299,22 @@ Future<int> copyWebVideoLoginCookies({
           isSecure: c.isSecure,
           isHttpOnly: c.isHttpOnly,
         );
-        if (ok && !existing.contains(c.name)) added.add(c.name);
       }
     } catch (e) {
       ErrorLogService.instance.log('web_video', 'cookie copy: $e');
     }
   }
-  return added.length;
 }
 
 /// 反方向：可捕获档（内置档）页里的站点登录态抄回共享 cookie 罐（[MangaWebViewEnvironment]）。
 /// 用户也会在内置档页里登录；不抄回去的话浏览器与原生播放器页看同一个站点还是未登录
 /// （BUG-3801）。**只在内置档页关掉时调**：窗口宿主档就住在共享罐里，没东西可抄，抄可捕获档
-/// 反而会拿它开页时的旧值盖掉共享罐里的新值。返回共享罐新加的 cookie 名数（见
-/// [copyWebVideoLoginCookies]）。非 Windows / 共享环境建不出来时返回 0。
-Future<int> syncWebVideoLoginToBrowser(Uri uri) {
+/// 反而会拿它开页时的旧值盖掉共享罐里的新值（BUG-4818：[WebVideoSession.dispose] 曾经也调）。
+/// 非 Windows / 共享环境建不出来时什么都不做。
+Future<void> syncWebVideoLoginToBrowser(Uri uri) {
   final String host = uri.host.toLowerCase();
-  if (host.isEmpty) return Future<int>.value(0);
-  final Future<int> started = _syncWebVideoLoginToBrowser(uri);
+  if (host.isEmpty) return Future<void>.value();
+  final Future<void> started = _syncWebVideoLoginToBrowser(uri);
   final Future<void> settled = started.then<void>((_) {}, onError: (_) {});
   _browserLoginSyncs[host] = settled;
   unawaited(
@@ -251,7 +327,7 @@ Future<int> syncWebVideoLoginToBrowser(Uri uri) {
   return started;
 }
 
-/// 每个 host 正在进行的 [syncWebVideoLoginToBrowser]（播放页 dispose 发起的那次）。
+/// 每个 host 正在进行的 [syncWebVideoLoginToBrowser]（内置档页 dispose 发起的那次）。
 final Map<String, Future<void>> _browserLoginSyncs = <String, Future<void>>{};
 
 /// 等 [uri] 这个站点正在进行的回抄完成（没有就立刻完成）：浏览器标签页回到前台时先等它，
@@ -275,16 +351,16 @@ Future<Set<String>> webBrowserSiteCookieNames(Uri uri) async {
   }
 }
 
-Future<int> _syncWebVideoLoginToBrowser(Uri uri) async {
+Future<void> _syncWebVideoLoginToBrowser(Uri uri) async {
   final WebViewEnvironment? browser;
   try {
     browser = await MangaWebViewEnvironment.obtain();
   } catch (e) {
     ErrorLogService.instance.log('web_video', 'browser env: $e');
-    return 0;
+    return;
   }
-  if (browser == null) return 0;
-  return copyWebVideoLoginCookies(
+  if (browser == null) return;
+  await copyWebVideoLoginCookies(
     uri: uri,
     to: browser,
     sources: const <Future<WebViewEnvironment?> Function()>[
@@ -335,9 +411,10 @@ bool webVideoIsWatchPage(String href) {
   return true;
 }
 
-// ── 会话（原生播放器页的网页档）──────────────────────────────────────────────
+// ── 会话 ───────────────────────────────────────────────────────────────────
 
-/// 一本网页站流媒体书在原生播放器页里的宿主会话：窗口宿主档 + 底层合成。
+/// 一本网页站流媒体书的宿主会话：原生播放器页的「画质优先」（窗口宿主档 + 底层合成）/
+/// 「制卡优先」（可捕获档离屏纹理），以及制卡重放宿主（内置网页播放器页，可捕获档）。
 ///
 /// 生命周期：页面 [prepare] 成功后把 [WebVideoSurface] 挂进视频区最底层（同一棵子树、
 /// 稳定 key，加载 / 就绪切换不重建），页面 dispose 时 [dispose]。WebView 自身随 widget 销毁。
@@ -345,6 +422,11 @@ class WebVideoSession {
   WebVideoSession({
     required this.bookUid,
     required this.pageUrl,
+    this.hosting = WebVideoHosting.windowed,
+    this.softwareDrm = false,
+    this.underlay = true,
+    this.pageLookup = true,
+    this.hideNativeSubtitles = true,
     this.onTrack,
     this.onState,
     this.onKeyToken,
@@ -356,7 +438,43 @@ class WebVideoSession {
     this.onNetflixMetadata,
     this.adblock,
     this.browserPrefs,
+    this.onSurfaceCreated,
+    this.onDocumentReady,
+    this.onProcessGone,
   });
+
+  /// 宿主档：[WebVideoHosting.windowed] = 窗口宿主档环境（与 app 内浏览器同一个 cookie 罐，
+  /// 硬件 DRM）；[WebVideoHosting.builtin] = 可捕获档环境（独立罐，开页时从共享罐抄登录态）。
+  final WebVideoHosting hosting;
+
+  /// 软件 DRM 垫片 + 去掉 Edg/ 的 UA（只在可捕获的内置档有意义，见 [kWebVideoChromeUserAgent]）。
+  final bool softwareDrm;
+
+  /// 底层合成宿主（原生播放器页的「画质优先」档）：WebView2 子窗口垫在 Flutter 下面，输入归属 /
+  /// 挖洞 / 被盖住时停收输入都由本会话下发（[syncInput] / [setCovered] /
+  /// [setInputExclusions]），网页深色只在网页档生效。离屏纹理宿主（原生播放器页的「制卡优先」档、
+  /// 内置网页播放器）为 false：WebView 是 Flutter 树里的纹理，输入由宿主页的命中测试管，不套
+  /// 网页深色。
+  final bool underlay;
+
+  /// 网页档里按住修饰键悬停查站点任意文字（[kWebVideoPageLookupAsset]）。
+  final bool pageLookup;
+
+  /// 站点自己的字幕从第一帧起就藏（字幕归 Fushi 叠层）；运行中改用 [setNativeSubtitlesHidden]。
+  final bool hideNativeSubtitles;
+
+  /// 新建（含进程死亡后重建）的 WebView 控制器就绪、本会话的接线做完之后（宿主页挂超分、
+  /// 静音预起之类绑在这个 WebView 上的东西）。
+  void Function(InAppWebViewController controller)? onSurfaceCreated;
+
+  /// 每个文档加载完、本会话自己的重挂（悬停查词键、整轨重投、页面模式）做完之后：宿主页把属于
+  /// 当前文档、整页导航会丢的页面状态（DOM 字幕层样式、chrome 隐藏……）重挂一遍。
+  void Function()? onDocumentReady;
+
+  /// 进程死亡、本会话已作废死表面（在途 JS 调用以 null 结束、控制器置空、[surfaceGeneration]
+  /// 前进）之后、换环境之前：宿主页作废自己绑在死表面上的状态。抛出由 death guard 记录，
+  /// 重建照样进行。
+  Future<void> Function()? onProcessGone;
 
   /// 浏览器的广告拦截服务（与 app 内浏览器标签页同一个，[webVideoSurfaceWiring]）；null = 不接
   /// （测试宿主）。
@@ -412,6 +530,24 @@ class WebVideoSession {
   Object? _viewId;
   bool _disposed = false;
 
+  /// 在途的 [evaluate] 调用，每次调用一个、结束即移出。死进程上的 `evaluateJavascript` 可能永不
+  /// 返回：表面死亡时 [recoverFromProcessGone] 把还在飞的全部以 null 结束，在途调用随表面一起
+  /// 作废，不把等它的人（制卡重放循环、遥控命令）挂死。不在一个长寿 future 上为每次调用挂监听
+  /// ——表面不死时那些监听连同调用结果会一直被引用，长时间看片只增不减。
+  final Set<Completer<Object?>> _inflight = <Completer<Object?>>{};
+
+  /// 表面的「代」：每次进程死亡 +1（[recoverFromProcessGone]）。等页面的人（制卡重放循环）开跑
+  /// 时记下，之后据此判断录到的东西是不是同一个表面上的。
+  int get surfaceGeneration => _surfaceGeneration;
+  int _surfaceGeneration = 0;
+
+  /// 当前 WebView 控制器；还没建 / 进程死后到重建前为 null。截图、超分这类直接作用在 WebView
+  /// 上的操作用它；页面命令一律走 [evaluate]。
+  InAppWebViewController? get controller => _web;
+
+  /// 当前 WebView 的平台视图 id（fork 的平台通道 / 超分按它寻址）；没有表面时为 null。
+  Object? get platformViewId => _viewId;
+
   /// 最近一次上报的播放态（制卡入队要 href / videoKey）。
   WebVideoPlaybackState? get lastState => _lastState;
   WebVideoPlaybackState? _lastState;
@@ -421,7 +557,7 @@ class WebVideoSession {
   bool _playerMode = false;
 
   /// 主框架当前地址（空 = 还没导航）。播放器层只当播放器：唯一的消费者是「离开观看页就回
-  /// 浏览器」（`web_source.part.dart` `_onWebNav`），以及进程重建 / 抄登录要回到的地址。
+  /// 浏览器」（`web_source.part.dart` `_onWebNav`），以及进程重建要回到的地址。
   final ValueNotifier<String> mainFrameUrl = ValueNotifier<String>('');
 
   /// WebView2 子窗口当前是否收输入；null = 新建的 WebView 还没同步过。
@@ -448,44 +584,72 @@ class WebVideoSession {
   /// 窗口宿主档环境（浏览器进程没了旧环境就是废的；只是渲染进程没了新环境会接回同一个浏览器
   /// 进程），并记下重建后要回到的地址。登录态在共享罐里，不用抄。失败抛出由 death guard 记录——重建
   /// 照样进行，最坏是新 WebView 在旧环境里建不出来，与修复前一样停在死页面。
+  ///
+  /// 旧环境**不释放**：窗口宿主档环境是进程级缓存（[MangaWebViewEnvironment.obtainWindowedHosting]），
+  /// 别的原生播放器页、窗口档的网页播放器页（`WebVideoFushiPage._recoverFromProcessGone` 同一
+  /// 判断）拿的是同一个对象；只是渲染进程死了时浏览器进程还活着，这边释放会把别人正用着的环境
+  /// 拆掉。代理变更重建共享环境时由 `MangaWebViewEnvironment._create` 统一释放。
   Future<void> recoverFromProcessGone() async {
     if (_disposed) return;
+    _surfaceGeneration += 1;
+    _abandonInflight();
     final String current = mainFrameUrl.value;
-    if (current.isNotEmpty) _surfaceUrl = current;
+    final String lastHref = _lastState?.href ?? '';
+    if (current.isNotEmpty) {
+      _surfaceUrl = current;
+    } else if (lastHref.isNotEmpty) {
+      _surfaceUrl = lastHref;
+    }
     _web = null;
     _viewId = null;
-    final Future<WebViewEnvironment>? old =
-        discardWebVideoWindowedEnvironment();
-    final WebViewEnvironment env = await webVideoWindowedEnvironment();
+    _lastState = null;
+    await onProcessGone?.call();
+    if (_disposed) return;
+    final WebViewEnvironment env;
+    if (hosting == WebVideoHosting.windowed) {
+      discardWebVideoWindowedEnvironment()?.ignore();
+      env = await webVideoWindowedEnvironment();
+    } else {
+      // 可捕获档单例绑在死前的浏览器进程上：丢掉重建（同目录，cookie 罐不变，不用再抄）。
+      discardWebVideoCapturableEnvironment();
+      env = await webVideoCapturableEnvironment();
+    }
     if (_disposed) return;
     _environment = env;
-    if (old != null) {
-      try {
-        final WebViewEnvironment stale = await old;
-        if (!identical(stale, env)) await stale.dispose();
-      } catch (e) {
-        ErrorLogService.instance.log('web_video', 'stale env dispose: $e');
-      }
+  }
+
+  /// 在途的 [evaluate] 全部以 null 结束（表面死亡 / 会话释放）。
+  void _abandonInflight() {
+    final List<Completer<Object?>> inflight = _inflight.toList();
+    _inflight.clear();
+    for (final Completer<Object?> call in inflight) {
+      if (!call.isCompleted) call.complete(null);
     }
   }
 
-  /// 建 WebView 之前的异步准备：注入脚本、窗口宿主档环境（与 app 内浏览器共享 cookie 罐，
-  /// 登录态天然一致）。
+  /// 建 WebView 之前的异步准备：注入脚本、宿主档环境。窗口宿主档与 app 内浏览器共享 cookie
+  /// 罐，登录态天然一致；可捕获档是独立罐，从共享罐抄一份站点登录态（否则制卡队列重放落到
+  /// 站点登录页，BUG-3801），尽力而为、失败只记日志。
   /// 资产缺失 / WebView2 Runtime 缺失会抛（调用方落失败态，不吞）。
   Future<void> prepare({required FushiShortcutRegistry shortcuts}) async {
     final UnmodifiableListView<UserScript> scripts =
         await loadWebVideoUserScripts(
-          // 窗口宿主档就是为硬件 DRM 开的，不装软件 DRM 垫片。
-          softwareDrm: false,
-          // 字幕归 Flutter 叠层（底层合成下 Flutter 画在 WebView 上面）。
-          domOverlay: false,
+          // 软件 DRM 垫片只在可捕获档有意义；窗口宿主档就是为硬件 DRM 开的。
+          softwareDrm: softwareDrm && hosting == WebVideoHosting.builtin,
           keyBridgeScript: webVideoKeyBridgeScript(shortcuts),
-          // 网页档（站点页面可点）里按住 Shift 悬停查任意文字。
-          pageLookup: true,
-          // 字幕归 Fushi 叠层：站点自己的字幕从第一帧起就藏（visibility，DOM 采样 live 轨照读）。
-          hideNativeSubtitles: true,
+          pageLookup: pageLookup,
+          // 站点自己的字幕从第一帧起就藏（visibility，DOM 采样 live 轨照读）。
+          hideNativeSubtitles: hideNativeSubtitles,
         );
-    final WebViewEnvironment env = await webVideoWindowedEnvironment();
+    final WebViewEnvironment env = hosting == WebVideoHosting.windowed
+        ? await webVideoWindowedEnvironment()
+        : await webVideoCapturableEnvironment();
+    if (hosting == WebVideoHosting.builtin) {
+      final Uri? site = Uri.tryParse(pageUrl);
+      if (site != null && site.host.isNotEmpty) {
+        await copyWebVideoLoginCookies(uri: site, to: env);
+      }
+    }
     final WebAdblockPolicy? policy = adblock;
     _adblock = policy == null ? null : webVideoSurfaceWiring(policy: policy);
     _userScripts = scripts;
@@ -493,12 +657,16 @@ class WebVideoSession {
     browserPrefs?.addListener(_onBrowserPrefsChanged);
   }
 
-  /// 建 WebView 用的设置：播放器必需项 + 浏览器广告拦截（[webVideoSurfaceWiring]）。
+  /// 建 WebView 用的设置：播放器必需项 + 浏览器广告拦截（[webVideoSurfaceWiring]）；软件 DRM
+  /// 档再去掉 Edg/ 标记（Windows 生效，fork put_UserAgent），否则 Netflix 只试 PlayReady、
+  /// 被垫片拒后不回落 Widevine。
   InAppWebViewSettings _surfaceSettings() {
-    final InAppWebViewSettings? shared = _adblock?.settings;
-    if (shared != null) return shared;
-    final InAppWebViewSettings settings = InAppWebViewSettings();
+    final InAppWebViewSettings settings =
+        _adblock?.settings ?? InAppWebViewSettings();
     enforceWebVideoRequiredSettings(settings);
+    if (softwareDrm && hosting == WebVideoHosting.builtin) {
+      settings.userAgent = kWebVideoChromeUserAgent;
+    }
     return settings;
   }
 
@@ -520,8 +688,10 @@ class WebVideoSession {
 
   TargetPlatform get _platform => defaultTargetPlatform;
 
-  /// 当前该不该给页面套网页深色（浏览器偏好 × 网页档，[webVideoPageForceDark]）。
+  /// 当前该不该给页面套网页深色（浏览器偏好 × 网页档，[webVideoPageForceDark]）。内置网页播放器
+  /// 整页始终是播放页（受保护视频套滤镜可能变黑），一律不套。
   bool get _pageDark {
+    if (!underlay) return false;
     final PreferencesRepository? prefs = browserPrefs;
     return webVideoPageForceDark(
       browserForceDark: prefs != null && webVideoBrowserForceDark(prefs),
@@ -581,19 +751,71 @@ class WebVideoSession {
   /// 在站点页面里执行一条 `window.__fushiWebVideo.*` 表达式（[WebVideoPlatformPlayer.evaluate]
   /// 的实现），返回表达式的值（命令的结果码）。glue 没装上 / WebView 还没建时返回 null；失败记
   /// 日志并返回 null——调用方把 null 当「命令没发出去」。
+  ///
+  /// 进程死亡时在途的调用以 null 结束（[recoverFromProcessGone]），不会永久挂住。
   Future<Object?> evaluate(String expression) async {
     final InAppWebViewController? web = _web;
     if (web == null || _disposed) return null;
+    final Completer<Object?> call = Completer<Object?>();
+    _inflight.add(call);
+    web
+        .evaluateJavascript(
+          source:
+              '(function(){try{return window.__fushiWebVideo&&'
+              '($expression);}catch(e){return String(e);}})()',
+        )
+        .then(
+          (Object? value) {
+            if (!call.isCompleted) call.complete(value);
+          },
+          onError: (Object e, StackTrace st) {
+            if (!call.isCompleted) call.completeError(e, st);
+          },
+        );
     try {
-      return await web.evaluateJavascript(
-        source:
-            '(function(){try{return window.__fushiWebVideo&&'
-            '($expression);}catch(e){return String(e);}})()',
-      );
+      return await call.future;
     } catch (e) {
       ErrorLogService.instance.log(
         'web_video',
         'evaluateJavascript failed: $e',
+      );
+      return null;
+    } finally {
+      _inflight.remove(call);
+    }
+  }
+
+  /// 页面里这个 WebView 读 [url] 时会带的 Cookie（本会话的 WebView 环境就是站点登录态所在的
+  /// cookie 罐），拼成 `Cookie` 请求头的值；没有 cookie 为空串。字幕生成在 app 外（ffmpeg）
+  /// 拉站点媒体时带上它，与页面自己的请求同一身份。读不出来时抛错（由调用方报给用户）。
+  Future<String> cookieHeaderFor(String url) async {
+    final List<Cookie> cookies = await CookieManager.instance(
+      webViewEnvironment: _environment,
+    ).getCookies(url: WebUri(url));
+    return webVideoCookieHeader(<(String, String)>[
+      for (final Cookie c in cookies) (c.name, '${c.value ?? ''}'),
+    ]);
+  }
+
+  /// 截整个 WebView 表面（CDP 截图）。只对可捕获档（[WebVideoHosting.builtin]）有意义：窗口宿主档
+  /// 的硬件 DRM 画面截出来是黑的。播放器档的页面只留铺满的 `<video>`，截表面就是截画面。没有
+  /// 表面 / 超时 / 失败返回 null（失败记诊断日志）。
+  Future<Uint8List?> captureSurface({required bool png}) async {
+    final InAppWebViewController? web = _web;
+    if (web == null || _disposed) return null;
+    try {
+      return await web
+          .takeScreenshot(
+            screenshotConfiguration: ScreenshotConfiguration(
+              compressFormat: png ? CompressFormat.PNG : CompressFormat.JPEG,
+              quality: 90,
+            ),
+          )
+          .timeout(const Duration(seconds: 4));
+    } catch (e) {
+      ErrorLogService.instance.logDiagnostic(
+        'web_video',
+        'surface capture: $e',
       );
       return null;
     }
@@ -660,7 +882,7 @@ class WebVideoSession {
 
   /// 本页路由是不是被别的路由盖住了（[_covered]）。
   void setCovered(bool covered) {
-    if (covered == _covered) return;
+    if (!underlay || covered == _covered) return;
     _covered = covered;
     _applyInputEnabled();
   }
@@ -668,14 +890,14 @@ class WebVideoSession {
   /// 画在网页上面、要自己接鼠标的 Flutter 区域（悬浮球等，相对 WebView 左上角的逻辑 px）：
   /// 从 WebView2 子窗口上挖掉，点击落到上面的 Flutter 控件。
   void setInputExclusions(List<UnderlayInputExclusion> exclusions) {
-    if (listEquals(exclusions, _exclusions)) return;
+    if (!underlay || listEquals(exclusions, _exclusions)) return;
     _exclusions = List<UnderlayInputExclusion>.unmodifiable(exclusions);
     _applyInputExclusions();
   }
 
   void _applyInputExclusions() {
     final Object? viewId = _viewId;
-    if (viewId == null || _disposed) return;
+    if (!underlay || viewId == null || _disposed) return;
     if (_sentExclusions != null && listEquals(_sentExclusions, _exclusions)) {
       return;
     }
@@ -704,7 +926,7 @@ class WebVideoSession {
 
   void _applyInputEnabled() {
     final Object? viewId = _viewId;
-    if (viewId == null || _disposed) return;
+    if (!underlay || viewId == null || _disposed) return;
     final bool enabled = !_playerMode && !_covered;
     if (_inputEnabled == enabled) return;
     _inputEnabled = enabled;
@@ -755,6 +977,7 @@ class WebVideoSession {
         },
       ),
     );
+    onSurfaceCreated?.call(controller);
   }
 
   void _onLoadStop() {
@@ -767,6 +990,7 @@ class WebVideoSession {
     );
     unawaited(evaluate('window.__fushiWebVideo.replayCues()'));
     if (_playerMode) _applyPageMode();
+    onDocumentReady?.call();
   }
 
   Future<Object?> _onJsMessage(List<dynamic> args) async {
@@ -828,20 +1052,18 @@ class WebVideoSession {
   }
 
   void dispose() {
-    // 播放页里登录的站点会话抄回 app 内浏览器（登录入口主要在浏览器，BUG-3801）。
-    if (!_disposed && isReady) {
-      final String current = mainFrameUrl.value;
-      unawaited(
-        syncWebVideoLoginToBrowser(
-          Uri.parse(current.isNotEmpty ? current : pageUrl),
-        ),
-      );
-    }
+    // 不抄登录态：本会话的窗口宿主档就住在共享 cookie 罐里（与 app 内浏览器同一个罐），在这里
+    // 登录 / 退出登录浏览器当场可见。BUG-4818：从前这里把可捕获档罐（内置档）的 cookie 抄进
+    // 共享罐，那是上一次开内置档页时的旧值，会盖掉共享罐里更新的会话。
     _disposed = true;
+    _abandonInflight();
     browserPrefs?.removeListener(_onBrowserPrefsChanged);
     mainFrameUrl.dispose();
     _web = null;
     _viewId = null;
+    onSurfaceCreated = null;
+    onDocumentReady = null;
+    onProcessGone = null;
     onTrack = null;
     onState = null;
     onKeyToken = null;
@@ -905,7 +1127,7 @@ class _WebVideoSurfaceState extends State<WebVideoSurface> {
   }
 
   late final WebViewDeathGuard _deathGuard = WebViewDeathGuard(
-    surface: 'web_video_underlay',
+    surface: widget.session.underlay ? 'web_video_underlay' : 'web_video',
     flushBeforeRebuild: widget.session.recoverFromProcessGone,
     afterRebuild: () {
       if (mounted) setState(() {});

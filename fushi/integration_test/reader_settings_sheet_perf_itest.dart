@@ -83,8 +83,8 @@ void main() {
         );
         final List<({String name, String design, FushiGlassMaterial tier})>
         configs = <({String name, String design, FushiGlassMaterial tier})>[
-          (name: 'liquid', design: 'glass', tier: FushiGlassMaterial.liquid),
-          (name: 'md3', design: 'material', tier: FushiGlassMaterial.liquid),
+          (name: 'premium', design: 'glass', tier: FushiGlassMaterial.premium),
+          (name: 'md3', design: 'material', tier: FushiGlassMaterial.premium),
         ];
 
         for (int round = 0; round < 1; round++) {
@@ -243,7 +243,7 @@ void main() {
 
         await appModel.themeNotifier.setDesignSystem('glass');
         await appModel.themeNotifier.setGlassMaterial(
-          FushiGlassMaterial.liquid,
+          FushiGlassMaterial.premium,
         );
         await _settle(tester, 1000);
         debugPrint('[sheet-perf] done');

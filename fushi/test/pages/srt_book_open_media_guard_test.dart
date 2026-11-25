@@ -18,8 +18,21 @@ void main() {
 
     expect(openSrtBook, contains('await appModel.openMedia('));
     expect(openSrtBook, contains('ref: ref'));
-    expect(openSrtBook, contains('mediaSource: ReaderFushiSource.instance'));
-    expect(openSrtBook, contains('item: _srtBookMediaItem(book)'));
+    // BUG-4345：源按卡上由配对书 format 派生的 mediaSourceIdentifier 取（PDF 配对
+    // 行走 PDF 阅读器），不再写死 ReaderFushiSource。
+    expect(
+      openSrtBook,
+      contains('final MediaItem item = _srtBookMediaItem(book);'),
+    );
+    expect(
+      openSrtBook,
+      contains('mediaSource: item.getMediaSource(appModel: appModel)'),
+    );
+    expect(openSrtBook, contains('item: item'));
+    expect(
+      openSrtBook,
+      isNot(contains('mediaSource: ReaderFushiSource.instance')),
+    );
 
     expect(
       openSrtBook,
@@ -41,7 +54,15 @@ void main() {
       '  Widget _buildSrtCover(',
     );
 
-    expect(srtCard, contains('onTap: () => _openSrtBook(book)'));
+    // #3515 起点卡先经 _activateSrtCard：刮削过的进元数据详情页，没刮削的仍
+    // 直接落到 _openSrtBook（走 AppModel.openMedia）。
+    expect(srtCard, contains('onTap: () => _activateSrtCard(book)'));
+    final String activate = _sectionSource(
+      source,
+      'Future<void> _activateSrtCard(SrtBook book) async {',
+      'Future<void> _openSrtBook(SrtBook book) async {',
+    );
+    expect(activate, contains('await _openSrtBook(book);'));
   });
 }
 

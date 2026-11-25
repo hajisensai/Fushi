@@ -4,6 +4,7 @@ import 'dart:io';
 import 'package:fushi_audio/fushi_audio.dart' show SrtBookRepository;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+import 'package:flutter/foundation.dart' show Listenable;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
@@ -13,6 +14,8 @@ import 'package:fushi_engine/media/video/video_book_repository.dart'
     show VideoBookRepository;
 import 'package:fushi_engine/sync/deletion_propagation.dart'
     show DeleteDecision, DeleteScope;
+import 'package:fushi_engine/sync/interconnect_file_box_prune.dart'
+    show pruneDeadInterconnectFileBox;
 import 'package:fushi/src/media/video/video_shader_downloader.dart'
     show anime4kInstalledBytes, deleteAnime4kShaderFiles;
 import 'package:fushi/src/pages/implementations/tag_filter_sheet.dart'
@@ -41,10 +44,17 @@ class StorageUsageActions {
     this.deleteVideo,
     this.anime4kBytesProvider = anime4kInstalledBytes,
     this.anime4kDelete = deleteAnime4kShaderFiles,
+    this.pruneInterconnectFileBox = pruneDeadInterconnectFileBox,
+    this.interconnectHostStatus,
+    this.isInterconnectHostRunning,
   });
 
   /// 真实接线（原 `settings_schema_storage.dart` 里的闭包）。
   factory StorageUsageActions.of(SettingsContext c) => StorageUsageActions(
+    // 「旧版残留」清理只在互联 host 停着时可用：状态直接读 host 控制器（它就是
+    // ChangeNotifier，起停都 notify），不另存一份。
+    interconnectHostStatus: c.appModel.syncServerController,
+    isInterconnectHostRunning: () => c.appModel.syncServerController.isRunning,
     booksProvider: () => loadStorageBookRefs(c.appModel.database),
     dictionaryNamesProvider: () async => <String>[
       for (final Dictionary d in c.appModel.dictionaries) d.name,
@@ -146,6 +156,21 @@ class StorageUsageActions {
 
   final Future<int> Function() anime4kBytesProvider;
   final Future<List<String>> Function() anime4kDelete;
+
+  /// 清掉互联 host 同步数据里的「旧版残留」书文件夹（BUG-4991；参数是
+  /// `<sync-data>` 目录，即 [StorageEntryKind.interconnectLegacyFileBox] 明细的
+  /// `paths.single`）。真实现 fushi_engine `pruneDeadInterconnectFileBox`：识别口径
+  /// 与扫描侧同源，单个目录删不掉只记日志、不抛，返回删掉的目录名。
+  final Future<List<String>> Function(String syncDataDir)
+  pruneInterconnectFileBox;
+
+  /// 互联 host 起停时通知（真实现就是 `FushiSyncServerController`）。null = 不监听。
+  final Listenable? interconnectHostStatus;
+
+  /// 互联 host 此刻是否在运行（真实现读 `FushiSyncServerController.isRunning`）。
+  /// 运行中不清理「旧版残留」：在跑的旧版本客户端可能正往这些书文件夹里写（用户
+  /// 2026-11-21 拍板）。null = 视为没在运行。
+  final bool Function()? isInterconnectHostRunning;
 }
 
 /// 派生 / 缓存类明细（封面缩略图、浏览器数据、OCR 模型、着色器、临时文件、
@@ -253,6 +278,26 @@ Future<StorageEntryDeleteOutcome> deleteStorageEntry(
         failure: failure,
         changed: failure == null,
       );
+    case StorageEntryKind.interconnectLegacyFileBox:
+      // 存储页按钮在 host 运行时已禁用；控制通道 `rm` 也走这里，同一道闸。
+      if (actions.isInterconnectHostRunning?.call() ?? false) {
+        return StorageEntryDeleteOutcome(
+          failure: t.storage_entry_interconnect_legacy_host_running,
+          changed: false,
+        );
+      }
+      final List<String> removed = await actions.pruneInterconnectFileBox(
+        entry.paths.single,
+      );
+      // 原语自身吞错（被占用的目录只记日志）：删掉的少于扫描时数到的 = 部分失败，
+      // 如实告诉用户；host 下次启动还会再收一遍。
+      final int left = entry.itemCount - removed.length;
+      return StorageEntryDeleteOutcome(
+        failure: left > 0
+            ? t.storage_entry_interconnect_legacy_partial(n: left)
+            : null,
+        changed: removed.isNotEmpty,
+      );
     case StorageEntryKind.readOnly:
       throw StateError('read-only entry');
   }
@@ -304,8 +349,13 @@ Future<List<StorageCategoryUsage>> scanAllStorageCategories(
 /// bookKey，字幕书音频用关联 SrtBooks.uid。音频的真相源是 DB 里记的路径
 /// （BUG-1893，`audioRoot` / `audioPathsJson`）。standalone 字幕书（bookKey 恒空）
 /// 没有 EpubBooks 行，单独成条（[StorageEntryKind.srtBook]）。
+///
+/// `epub_books` 只读瘦投影（[FushiDatabase.getEpubBookMetas]）：整行里每本几十 KB
+/// 的 `chaptersJson` / `tocJson` 这里用不上，几百本书整行读就是几十 MB 字符串经
+/// drift 后台 isolate 拷回 UI isolate 解码——开存储页卡顿的根因
+/// （settings-storage-page-open-jank）。
 Future<List<StorageBookRef>> loadStorageBookRefs(FushiDatabase db) async {
-  final List<EpubBookRow> rows = await db.getAllEpubBooks();
+  final List<EpubBookMeta> rows = await db.getEpubBookMetas();
   final List<SrtBookRow> srtRows = await db.getAllSrtBooks();
   final List<AudiobookRow> audiobookRows = await db.getAllAudiobooks();
   final Map<String, List<String>> audioPathsByBookKey =
@@ -329,7 +379,7 @@ Future<List<StorageBookRef>> loadStorageBookRefs(FushiDatabase db) async {
     );
   }
   return <StorageBookRef>[
-    for (final EpubBookRow row in rows)
+    for (final EpubBookMeta row in rows)
       StorageBookRef(
         id: row.bookKey,
         title: row.title,
@@ -358,7 +408,9 @@ Future<List<StorageBookRef>> loadStorageBookRefs(FushiDatabase db) async {
 /// 一条视频可属于多个合集：取 id 最小的那个（最早建立的，一般就是下载 / 导入时
 /// 自动建的作品合集），保证每条视频只出现在一个组里。
 Future<List<StorageVideoRef>> loadStorageVideoRefs(FushiDatabase db) async {
-  final List<VideoBookRow> rows = await db.allVideoBooks();
+  // 瘦投影（同 [loadStorageBookRefs]）：只取 uid / 标题 / 路径三列。
+  final List<({String bookUid, String title, String videoPath})> rows = await db
+      .allVideoBookPaths();
   final Map<int, String> collectionNames = <int, String>{
     for (final MediaCollectionRow c in await db.getAllMediaCollections())
       c.id: c.name,
@@ -373,12 +425,12 @@ Future<List<StorageVideoRef>> loadStorageVideoRefs(FushiDatabase db) async {
     }
   }
   return <StorageVideoRef>[
-    for (final VideoBookRow row in rows)
+    for (final (:String bookUid, :String title, :String videoPath) in rows)
       StorageVideoRef(
-        id: row.bookUid,
-        title: row.title,
-        videoPath: row.videoPath,
-        group: switch (collectionOf[row.bookUid]) {
+        id: bookUid,
+        title: title,
+        videoPath: videoPath,
+        group: switch (collectionOf[bookUid]) {
           final int id => collectionNames[id],
           null => null,
         },
@@ -417,6 +469,7 @@ String storageCategoryTitle(StorageCategoryId id) => switch (id) {
   StorageCategoryId.videoDownloads => t.storage_category_video_downloads,
   StorageCategoryId.covers => t.storage_category_covers,
   StorageCategoryId.subtitles => t.storage_category_subtitles,
+  StorageCategoryId.subtitleJobs => t.storage_category_subtitle_jobs,
   StorageCategoryId.shaders => t.storage_category_shaders,
   StorageCategoryId.customFonts => t.storage_category_custom_fonts,
   StorageCategoryId.web => t.storage_category_web,
@@ -428,12 +481,147 @@ String storageCategoryTitle(StorageCategoryId id) => switch (id) {
   StorageCategoryId.other => t.storage_category_other,
 };
 
-/// 条目显示名：快照 / 备份聚合条目按文件数翻译，其余用服务层给的 label。
+/// 条目显示名：快照 / 备份聚合条目按文件数翻译，互联同步数据拆出的各条按
+/// 用途翻译（BUG-4991），其余用服务层给的 label。
 String storageEntryTitle(StorageEntryUsage entry) => switch (entry.kind) {
   StorageEntryKind.databaseSnapshots =>
     t.storage_entry_database_snapshots_label(n: entry.paths.length),
   StorageEntryKind.backupArchives => t.storage_entry_backups_label(
     n: entry.paths.length,
   ),
-  _ => entry.label,
+  StorageEntryKind.interconnectLegacyFileBox =>
+    t.storage_entry_interconnect_legacy_label(n: entry.itemCount),
+  _ => switch (entry.id) {
+    StorageUsageService.kInterconnectSharedEntryId =>
+      t.storage_entry_interconnect_shared_label,
+    StorageUsageService.kInterconnectSrsEntryId =>
+      t.storage_entry_interconnect_srs_label,
+    StorageUsageService.kInterconnectOtherEntryId =>
+      t.storage_entry_interconnect_other_label,
+    _ => entry.label,
+  },
 };
+
+/// 「一键清除全部缓存」覆盖的类目（反馈 jg3XoDVISk）。
+///
+/// 判据比 [kDeletableEntryCategories]（「删了不留悬空引用」）更严：**只收纯缓存**
+/// ——根下的东西没有任何 DB 行 / 配置 / 用户产物指着，删掉后各自的生产方会按需
+/// 重新生成或重新拉取，系统本身也随时可能清掉它（iOS `Library/Caches`、沙盒 `tmp`）。
+///
+/// 刻意**不含**（它们可删，但删的是用户数据或用户要付出代价才能找回的东西，
+/// 只走存储页逐条删除、各自确认）：
+/// - covers：`video_covers` / `game_covers` 里有用户手动设置的封面（`CoverOrigin.manual`），
+///   `game_covers` 还进备份包——是用户数据，不是缓存；
+/// - web：`browser` 是浏览器登录态 / Cookie，`webArchive` 是用户存档；
+/// - exports：用户导出的文件与待回写 Anki 的卡片草稿；
+/// - backups：本地备份归档，内容就是用户数据的副本；
+/// - ocrModels / shaders：要重新下载几百 MB，`mpv_shaders` 里还混着用户自导入的着色器。
+const Set<StorageCategoryId> kClearAllCacheCategories = <StorageCategoryId>{
+  StorageCategoryId.cache,
+};
+
+/// 一键清缓存的计划：按类目分组的待删明细（确认框据此逐类列出名称与大小）。
+class StorageCacheClearPlan {
+  const StorageCacheClearPlan({required this.categories});
+
+  /// 只含 [kClearAllCacheCategories] 里、且有可删明细的类目，按体积降序。
+  final List<StorageCategoryUsage> categories;
+
+  int get bytes => categories.fold<int>(
+    0,
+    (int sum, StorageCategoryUsage u) =>
+        sum +
+        u.entries.fold<int>(0, (int s, StorageEntryUsage e) => s + e.bytes),
+  );
+
+  List<StorageEntryUsage> get entries => <StorageEntryUsage>[
+    for (final StorageCategoryUsage u in categories) ...u.entries,
+  ];
+
+  bool get isEmpty => entries.isEmpty;
+}
+
+/// 从扫描结果里挑出一键清缓存要删的明细。只取
+/// [kDirectlyDeletableEntryKinds] 的明细——即便以后有人往
+/// [kClearAllCacheCategories] 里加了带只读 / 带删除链明细的类目，这里也只会裸删
+/// 「无引用的派生文件」，不会绕过书 / 词典 / 视频各自的删除原语。
+StorageCacheClearPlan buildStorageCacheClearPlan(
+  Iterable<StorageCategoryUsage> usage,
+) {
+  final List<StorageCategoryUsage> categories = <StorageCategoryUsage>[
+    for (final StorageCategoryUsage u in usage)
+      if (kClearAllCacheCategories.contains(u.id))
+        StorageCategoryUsage(
+          id: u.id,
+          bytes: u.bytes,
+          entries: <StorageEntryUsage>[
+            for (final StorageEntryUsage e in u.entries)
+              if (kDirectlyDeletableEntryKinds.contains(e.kind)) e,
+          ],
+        ),
+  ]..removeWhere((StorageCategoryUsage u) => u.entries.isEmpty);
+  categories.sort((StorageCategoryUsage a, StorageCategoryUsage b) {
+    final int byBytes = b.bytes.compareTo(a.bytes);
+    return byBytes != 0 ? byBytes : a.id.index.compareTo(b.id.index);
+  });
+  return StorageCacheClearPlan(categories: categories);
+}
+
+/// 一键清缓存的结果。[failures] 为空 = 全部清掉；[freedBytes] 只算成功删掉的明细。
+class StorageCacheClearOutcome {
+  const StorageCacheClearOutcome({
+    required this.freedBytes,
+    required this.failures,
+    required this.changed,
+  });
+
+  final int freedBytes;
+
+  /// 删不掉的明细（显示名 → 原因）。被占用的临时文件（例如正在进行的导入）
+  /// 删不掉是正常的，逐条报出，不中断其余明细的清理。
+  final Map<String, String> failures;
+
+  /// 磁盘确实变了（至少删掉了一条）→ 调用方需要重扫。
+  final bool changed;
+}
+
+/// 按 [plan] 逐条删除（确认由调用方负责）。每条明细独立：一条删不掉不影响其余，
+/// 失败原因逐条汇总进 [StorageCacheClearOutcome.failures]，本函数自身不抛。
+Future<StorageCacheClearOutcome> clearStorageCache(
+  StorageUsageActions actions,
+  StorageCacheClearPlan plan,
+) async {
+  int freed = 0;
+  bool changed = false;
+  final Map<String, String> failures = <String, String>{};
+  for (final StorageEntryUsage entry in plan.entries) {
+    String? failure;
+    try {
+      failure = await actions.deleteFiles(entry.paths);
+    } catch (e) {
+      // 不吞：记成这一条的失败原因逐条报给用户；不中断其余明细（与页面单删
+      // `_deleteEntry` 同口径，任何异常都转成失败原因）。
+      failure = '$e';
+    }
+    if (failure == null) {
+      freed += entry.bytes;
+      changed = true;
+    } else {
+      failures[storageEntryTitle(entry)] = failure;
+    }
+  }
+  return StorageCacheClearOutcome(
+    freedBytes: freed,
+    failures: failures,
+    changed: changed,
+  );
+}
+
+/// 一键清缓存的失败摘要：全成功 → null；否则「第一条: 原因 (+还有几条)」。
+String? storageCacheClearFailureReason(StorageCacheClearOutcome outcome) {
+  if (outcome.failures.isEmpty) return null;
+  final MapEntry<String, String> first = outcome.failures.entries.first;
+  final int rest = outcome.failures.length - 1;
+  final String head = '${first.key}: ${first.value}';
+  return rest > 0 ? '$head (+$rest)' : head;
+}

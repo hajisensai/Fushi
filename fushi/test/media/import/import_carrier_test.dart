@@ -79,8 +79,23 @@ void main() {
       );
     });
 
-    test('isManga 覆盖且仅覆盖四种漫画载体', () {
+    test('.fushi-manga-audio → mangaAudioPackage（是 zip 也不读包、不当页图压缩包）', () {
+      expect(
+        classify(
+          '/m/vol1.fushi-manga-audio',
+          imageArchives: <String>{'/m/vol1.fushi-manga-audio'},
+        ),
+        ImportCarrier.mangaAudioPackage,
+      );
+      expect(
+        classify('/m/VOL1.FUSHI-MANGA-AUDIO'),
+        ImportCarrier.mangaAudioPackage,
+      );
+    });
+
+    test('isManga 覆盖且仅覆盖五种漫画载体', () {
       expect(ImportCarrier.mangaFolder.isManga, isTrue);
+      expect(ImportCarrier.mangaAudioPackage.isManga, isTrue);
       expect(ImportCarrier.mangaBatchFolder.isManga, isTrue);
       expect(ImportCarrier.mangaMokuro.isManga, isTrue);
       expect(ImportCarrier.mangaArchive.isManga, isTrue);
@@ -116,7 +131,9 @@ void main() {
       );
     });
 
-    test('页图与整卷文件同时在场 → mangaFolder（页图这条解释优先）', () {
+    // 「散图只是整卷文件的封面」由 directoryHasPageImages 自己判（iycDWb7ys6，真文件系统
+    // 判据见 manga_folder_batch_test）；这里只钉：它说有成卷页图，就是页图目录。
+    test('成卷页图与整卷文件同时在场 → mangaFolder', () {
       expect(
         classify(
           '/m/mixed',

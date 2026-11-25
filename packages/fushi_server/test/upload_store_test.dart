@@ -188,4 +188,16 @@ void main() {
     expect(parseContentRange('items 0-1/2'), isNull);
     expect(parseContentRange(null), isNull);
   });
+
+  test('子目录建议：库根下两层内的目录，跳过隐藏目录与文件，/ 分隔、排序', () async {
+    for (final String d in <String>['B', 'A/Season1/deep', '.cache/x']) {
+      await Directory(p.join(lib.path, d)).create(recursive: true);
+    }
+    await File(p.join(lib.path, 'A', 'ep01.mkv')).writeAsString('x');
+    expect(await UploadStore.subfolders(lib), <String>['A', 'A/Season1', 'B']);
+  });
+
+  test('子目录建议：库根不存在 → 空表，不抛', () async {
+    expect(await UploadStore.subfolders(lib), isEmpty);
+  });
 }

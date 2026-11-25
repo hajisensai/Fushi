@@ -101,6 +101,7 @@ struct ArtemisLookupRuntime {
   // ── game-thread-owned ──
   artemis_lookup::GlyphCodeTable<> codes;
   artemis_lookup::CreationLog creations;  // under codes_lock
+  artemis_lookup::FactoryTextDecoder decoder;  // under codes_lock
   uint64_t glyph_seq = 0u;
   // Frames published so far; the factory stamps each creation with it.
   std::atomic<uint64_t> frame_clock{0u};
@@ -202,12 +203,20 @@ void InvalidateArtemisModel() {
 
 // ── game-thread detours ─────────────────────────────────────────────────────
 
-uint32_t ReadArtemisFactoryCode(const char* text) {
+// Copies the factory string (at most kMaxFactoryTextBytes + 1 bytes, never
+// past its NUL) into `out`; false when the memory faults.
+bool ReadArtemisFactoryBytes(
+    const char* text,
+    std::array<uint8_t, artemis_lookup::kMaxFactoryTextBytes + 2u>* out) {
   __try {
-    return artemis_lookup::FactoryCreationCode(
-        reinterpret_cast<const uint8_t*>(text));
+    for (size_t index = 0u; index <= artemis_lookup::kMaxFactoryTextBytes;
+         ++index) {
+      (*out)[index] = static_cast<uint8_t>(text[index]);
+      if ((*out)[index] == 0u) break;
+    }
+    return true;
   } __except (EXCEPTION_EXECUTE_HANDLER) {
-    return 0u;
+    return false;
   }
 }
 
@@ -218,11 +227,14 @@ void* __fastcall ArtemisGlyphFactoryDetour(void* layer, const char* text,
   auto& rt = g_artemis_lookup;
   if (glyph != nullptr && text != nullptr &&
       rt.live.load(std::memory_order_acquire)) {
-    const uint32_t code = ReadArtemisFactoryCode(text);
-    const uint32_t codepoint =
-        code == artemis_lookup::kCreatedControl ? 0u : code;
+    std::array<uint8_t, artemis_lookup::kMaxFactoryTextBytes + 2u> bytes{};
+    const bool readable = ReadArtemisFactoryBytes(text, &bytes);
+    artemis_lookup::GlyphText glyph_text;
     AcquireSRWLockExclusive(&rt.codes_lock);
-    rt.codes.Remember(reinterpret_cast<uintptr_t>(glyph), codepoint,
+    // The decoder learns the script encoding; it is only touched here.
+    const uint32_t code =
+        readable ? rt.decoder.Decode(bytes.data(), &glyph_text) : 0u;
+    rt.codes.Remember(reinterpret_cast<uintptr_t>(glyph), glyph_text,
                       ++rt.glyph_seq);
     rt.creations.Record(rt.glyph_seq, code, reinterpret_cast<uintptr_t>(layer),
                         rt.frame_clock.load(std::memory_order_relaxed));
@@ -267,7 +279,7 @@ void RecordArtemisDrawnGlyph(const uint8_t* glyph) {
   }
   std::memcpy(out.matrix, matrix, sizeof(matrix));
   out.seq = code.seq;
-  out.codepoint = code.codepoint;
+  out.text = code.text;
   ++rt.building.count;
 }
 
@@ -685,6 +697,7 @@ bool InstallArtemisLookup() {
   }
   rt.codes.Clear();
   rt.creations = artemis_lookup::CreationLog();
+  rt.decoder = artemis_lookup::FactoryTextDecoder();
   rt.glyph_seq = 0u;
   rt.frame_clock.store(0u, std::memory_order_relaxed);
   rt.published_line_seq = 0u;
@@ -980,11 +993,20 @@ void PublishArtemisRevealedLine(ArtemisFrame& frame) {
   g_header->luna_active = 1;
   if (rt.logged_lines < kArtemisModelLogBudget) {
     ++rt.logged_lines;
-    ArtemisLookupLog(L"artemis-text: event=%llu seq=%llu..%llu units=%u",
-                     static_cast<unsigned long long>(event),
-                     static_cast<unsigned long long>(first_seq),
-                     static_cast<unsigned long long>(frame.created),
-                     static_cast<unsigned>(text.size()));
+    // multi: glyphs of the line carrying several characters (ruby bases).
+    uint32_t multi = 0u;
+    for (size_t index = 0u; index < count; ++index) {
+      if (frame.glyphs[index].seq >= first_seq &&
+          artemis_lookup::GlyphTextCharacters(frame.glyphs[index].text) > 1u) {
+        ++multi;
+      }
+    }
+    ArtemisLookupLog(
+        L"artemis-text: event=%llu seq=%llu..%llu units=%u multi=%u",
+        static_cast<unsigned long long>(event),
+        static_cast<unsigned long long>(first_seq),
+        static_cast<unsigned long long>(frame.created),
+        static_cast<unsigned>(text.size()), multi);
   }
   rt.published_line_seq = first_seq;
   rt.published_last_seq = last_seq;

@@ -68,6 +68,16 @@ class ProfileSettingEntry {
 /// 同值，那边引用本常量）。
 const String kProfileSettingCategoryPref = 'pref';
 
+/// profile_settings 里「服务器托管词典的配置列」这一类的 category 值（v149，app
+/// `ProfileKeys.categoryRemoteDictionaryMeta` 引用本常量）。
+///
+/// 每行 key = `<hostId>/<词典真名>`（真名是目录名，不含 `/`；hostId 可能是带 `/` 的
+/// 地址 origin，所以按**最后一个** `/` 切），value = `{"order": int, "hidden": bool}`。
+/// 分享 JSON 原样携带、导入原样落库：hostId 只在出这份配置的设备的配对里有意义，
+/// 带到别的设备上对不上任何目录行，应用时自然跳过（应用只改已有目录行，从不插行）。
+const String kProfileSettingCategoryRemoteDictionaryMeta =
+    'remote_dictionary_meta';
+
 /// v63 已从 live preferences 与 Profile 副本中删除的旧全局超分键。
 ///
 /// 每游戏真值是 `galgames.upscaling_mode`；此键只保留为输入拒绝标识，防止

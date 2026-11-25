@@ -26,6 +26,7 @@ import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/sync_backend_type.dart';
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/downloads/download_execution_target.dart';
 import 'package:fushi/src/media/discovery/direct_link_download.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
@@ -59,7 +60,8 @@ import 'package:fushi/src/sync/sync_auto_trigger.dart'
         enabledSyncChannelBackends,
         lastFullSweepOutcome,
         syncAssetChannelScopeOf,
-        syncInProgress;
+        syncInProgress,
+        syncModuleGate;
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show
@@ -149,6 +151,40 @@ BackupService _backupServiceFor(AppModel appModel) => BackupService(
   gameCoversRootDirectory: p.join(appModel.appDirectory.path, 'game_covers'),
   srsStorage: appModel.srsStorageForBackup,
 );
+
+/// ctl 备份导出的类别里去掉「要先升级才能导出」的（[BackupContentSummary.needsUpgrade]，目前只有复习：本机只有协议 3
+/// 的复习库、还没迁移成新代时打不开，整份导出会失败）。
+///
+/// - [categories] 为 null（`all`）或 [named] 为 false（缺省类别）：从要导出的类别里拿掉它们，记进 `skipped`，其余照常；
+/// - [named]（调用方显式点名了类别）且点名了要先升级的类别：抛 [CtlFailure.rejected]，不出半份包、也不悄悄少一类。
+///
+/// 只在要导出的类别里有复习时才调 [summarize]（`needsUpgrade` 只会是复习，别的类别不必为它整机数一遍）。
+@visibleForTesting
+Future<({Set<BackupCategory>? categories, Set<BackupCategory> skipped})>
+dropBackupCategoriesNeedingUpgrade({
+  required Set<BackupCategory>? categories,
+  required bool named,
+  required Future<BackupContentSummary> Function() summarize,
+}) async {
+  final Set<BackupCategory> requested =
+      categories ?? BackupCategory.values.toSet();
+  if (!requested.contains(BackupCategory.srs)) {
+    return (categories: categories, skipped: const <BackupCategory>{});
+  }
+  final Set<BackupCategory> blocked = (await summarize()).needsUpgrade
+      .intersection(requested);
+  if (blocked.isEmpty) {
+    return (categories: categories, skipped: const <BackupCategory>{});
+  }
+  if (named) {
+    throw CtlFailure.rejected(
+      '这些类别要先在 app 里升级才能备份：'
+      '${blocked.map((BackupCategory c) => c.name).join(', ')}'
+      '（本机复习库还是旧格式）；不点名它们可以照常备份其余类别',
+    );
+  }
+  return (categories: requested.difference(blocked), skipped: blocked);
+}
 
 Future<Map<String, Object?>> _backupFileToWire(File file) async {
   final BackupMeta? meta = await BackupRestoreService.validateBackup(file.path);
@@ -256,7 +292,15 @@ List<CtlRoute> _backupRoutes(
       final VideoBookRow? row = await videos.getByBookUid(key);
       if (row == null) throw CtlFailure.notFound('没有这个视频：$key');
     }
-    final Set<BackupCategory>? finalCategories = categories;
+    // 本机复习库还没升级成新代时（打不开、数不了），缺省 / all 的导出跳过复习、其余照常，与设置页导出框一致；
+    // 显式点名 srs 才明确报错（G7-5b 复核）。
+    final ({Set<BackupCategory>? categories, Set<BackupCategory> skipped})
+    resolved = await dropBackupCategoriesNeedingUpgrade(
+      categories: categories,
+      named: explicit != null,
+      summarize: service.summarizeLiveContent,
+    );
+    final Set<BackupCategory>? finalCategories = resolved.categories;
     final bool wait = call.optBool('wait') ?? true;
     appModel.beginBackupExport();
     Future<Map<String, Object?>> export() async {
@@ -291,6 +335,11 @@ List<CtlRoute> _backupRoutes(
             : <String>[for (final BackupCategory c in finalCategories) c.name],
         if (bookKeys.isNotEmpty) 'books': bookKeys.toList(),
         if (videoKeys.isNotEmpty) 'videos': videoKeys.toList(),
+        if (resolved.skipped.isNotEmpty)
+          'skippedCategories': <Map<String, Object?>>[
+            for (final BackupCategory c in resolved.skipped)
+              <String, Object?>{'category': c.name, 'reason': 'needsUpgrade'},
+          ],
         'skippedDictionaries': skippedDictionaries,
         ...backupMetaToWire(meta),
       };
@@ -450,6 +499,11 @@ List<CtlRoute> _syncRoutes(OpContext context) => <CtlRoute>[
             policy,
             tempDir: context.appModel.temporaryDirectory,
           );
+    // 模块门（同步层唯一真值 [syncModuleGate]）：模块关着不开跑，说清楚原因，而不是
+    // 让 detached 模式回一句 started 再静默以 moduleDisabled 收场。
+    if (!syncModuleGate.isOpen) {
+      throw const CtlFailure.rejected('「同步与备份」模块已关闭，先在设置 → 功能模块里打开');
+    }
     if (syncInProgress.value) {
       throw const CtlFailure.conflict('已有同步在进行中');
     }
@@ -564,19 +618,23 @@ List<CtlRoute> _downloadRoutes(OpContext context) => <CtlRoute>[
       call.optString('device'),
     );
     if (remote != null) {
-      final List<HostDownloadJob> jobs = await mapCtlHostErrors(
-        remote.target,
-        () => remote.client.listJobs(remote.target),
-      );
-      return <String, Object?>{
-        'device': remote.target.label,
-        'remote': true,
-        'backend': remote.target.backend,
-        'jobs': <Map<String, Object?>>[
-          for (final HostDownloadJob job in jobs)
-            hostDownloadJobToWire(job, device: remote.target.label),
-        ],
-      };
+      try {
+        final List<HostDownloadJob> jobs = await mapCtlHostErrors(
+          remote.target,
+          () => remote.client.listJobs(remote.target),
+        );
+        return <String, Object?>{
+          'device': remote.target.label,
+          'remote': true,
+          'backend': remote.target.backend,
+          'jobs': <Map<String, Object?>>[
+            for (final HostDownloadJob job in jobs)
+              hostDownloadJobToWire(job, device: remote.target.label),
+          ],
+        };
+      } finally {
+        remote.release();
+      }
     }
     return <String, Object?>{
       ...await appModel.appDownloadHost.capability(),
@@ -598,10 +656,14 @@ List<CtlRoute> _downloadRoutes(OpContext context) => <CtlRoute>[
       call.optString('device'),
     );
     if (remote != null) {
-      return hostDownloadJobToWire(
-        await requireCtlHostJob(remote, id),
-        device: remote.target.label,
-      );
+      try {
+        return hostDownloadJobToWire(
+          await requireCtlHostJob(remote, id),
+          device: remote.target.label,
+        );
+      } finally {
+        remote.release();
+      }
     }
     final int? directId = parseDirectDownloadTaskId(id);
     if (directId != null) {
@@ -702,16 +764,20 @@ List<CtlRoute> _downloadRoutes(OpContext context) => <CtlRoute>[
       call.optString('device'),
     );
     if (remote != null) {
-      // 远端任务卡同一判据：只有未结束的任务有「取消」。
-      final HostDownloadJob job = await requireCtlHostJob(remote, id);
-      if (hostDownloadJobFinished(job)) {
-        throw CtlFailure.conflict('任务已结束，不能取消（当前：${job.lifecycle}）');
+      try {
+        // 远端任务卡同一判据：只有未结束的任务有「取消」。
+        final HostDownloadJob job = await requireCtlHostJob(remote, id);
+        if (hostDownloadJobFinished(job)) {
+          throw CtlFailure.conflict('任务已结束，不能取消（当前：${job.lifecycle}）');
+        }
+        await mapCtlHostErrors(
+          remote.target,
+          () => remote.client.cancel(remote.target, id),
+        );
+        return null;
+      } finally {
+        remote.release();
       }
-      await mapCtlHostErrors(
-        remote.target,
-        () => remote.client.cancel(remote.target, id),
-      );
-      return null;
     }
     final int? directId = parseDirectDownloadTaskId(id);
     if (directId != null) {
@@ -732,15 +798,19 @@ List<CtlRoute> _downloadRoutes(OpContext context) => <CtlRoute>[
       call.optString('device'),
     );
     if (remote != null) {
-      final HostDownloadJob job = await requireCtlHostJob(remote, id);
-      if (!hostDownloadJobRetryable(job)) {
-        throw CtlFailure.conflict('只有失败 / 需要处理的任务能重试（当前：${job.lifecycle}）');
+      try {
+        final HostDownloadJob job = await requireCtlHostJob(remote, id);
+        if (!hostDownloadJobRetryable(job)) {
+          throw CtlFailure.conflict('只有失败 / 需要处理的任务能重试（当前：${job.lifecycle}）');
+        }
+        await mapCtlHostErrors(
+          remote.target,
+          () => remote.client.retry(remote.target, id),
+        );
+        return null;
+      } finally {
+        remote.release();
       }
-      await mapCtlHostErrors(
-        remote.target,
-        () => remote.client.retry(remote.target, id),
-      );
-      return null;
     }
     final int? directId = parseDirectDownloadTaskId(id);
     if (directId != null) {
@@ -840,42 +910,46 @@ List<CtlRoute> _downloadRoutes(OpContext context) => <CtlRoute>[
       call.optString('device'),
     );
     if (remote != null) {
-      // 远端任务卡同一判据：只有已结束的任务有「删除」。host 宣告 deleteFilesParam
-      // 时 --delete-files 按字面生效（不给 = 保留文件，与下载页勾选框同义，
-      // BUG-3437）；老 host 不认这个参数，给了就明确拒绝，不给则按它的历史缺省。
-      final bool supported = remote.target.deleteFilesParam;
-      if (deleteFiles && !supported) {
-        throw CtlFailure.rejected(
-          'host「${remote.target.label}」版本较旧，不支持选择是否删除文件（--delete-files）；'
-          '不加这个参数时按它的缺省处理：Fushi app 当 host 保留文件、无头 fushi_server 连数据一起删',
-        );
-      }
-      final String id = call.params['id']!;
-      final HostDownloadJob job = await requireCtlHostJob(remote, id);
-      if (!hostDownloadJobFinished(job)) {
-        throw CtlFailure.conflict('任务还没结束，先 dl cancel（当前：${job.lifecycle}）');
-      }
-      await mapCtlHostErrors(
-        remote.target,
-        () => remote.client.delete(
+      try {
+        // 远端任务卡同一判据：只有已结束的任务有「删除」。host 宣告 deleteFilesParam
+        // 时 --delete-files 按字面生效（不给 = 保留文件，与下载页勾选框同义，
+        // BUG-3437）；老 host 不认这个参数，给了就明确拒绝，不给则按它的历史缺省。
+        final bool supported = remote.target.deleteFilesParam;
+        if (deleteFiles && !supported) {
+          throw CtlFailure.rejected(
+            'host「${remote.target.label}」版本较旧，不支持选择是否删除文件（--delete-files）；'
+            '不加这个参数时按它的缺省处理：Fushi app 当 host 保留文件、无头 fushi_server 连数据一起删',
+          );
+        }
+        final String id = call.params['id']!;
+        final HostDownloadJob job = await requireCtlHostJob(remote, id);
+        if (!hostDownloadJobFinished(job)) {
+          throw CtlFailure.conflict('任务还没结束，先 dl cancel（当前：${job.lifecycle}）');
+        }
+        await mapCtlHostErrors(
           remote.target,
-          id,
-          deleteFiles: supported ? deleteFiles : null,
-        ),
-      );
-      return <String, Object?>{
-        'ok': true,
-        'jobId': id,
-        'device': remote.target.label,
-        'remote': true,
-        // 老 host：删不删由它决定、这里分不出是哪种 → null，如实说明。
-        'deletedFiles': supported ? deleteFiles : null,
-        'message': supported
-            ? '已删除 host「${remote.target.label}」上的任务'
-                  '${deleteFiles ? '，并删除了已下载文件' : '，已下载文件保留'}'
-            : '已删除 host「${remote.target.label}」上的任务。这台 host 版本较旧，'
-                  '文件去留由它决定：Fushi app 当 host 保留文件，无头 fushi_server 连下载数据一起删除',
-      };
+          () => remote.client.delete(
+            remote.target,
+            id,
+            deleteFiles: supported ? deleteFiles : null,
+          ),
+        );
+        return <String, Object?>{
+          'ok': true,
+          'jobId': id,
+          'device': remote.target.label,
+          'remote': true,
+          // 老 host：删不删由它决定、这里分不出是哪种 → null，如实说明。
+          'deletedFiles': supported ? deleteFiles : null,
+          'message': supported
+              ? '已删除 host「${remote.target.label}」上的任务'
+                    '${deleteFiles ? '，并删除了已下载文件' : '，已下载文件保留'}'
+              : '已删除 host「${remote.target.label}」上的任务。这台 host 版本较旧，'
+                    '文件去留由它决定：Fushi app 当 host 保留文件，无头 fushi_server 连下载数据一起删除',
+        };
+      } finally {
+        remote.release();
+      }
     }
     final int? directId = parseDirectDownloadTaskId(call.params['id']!);
     if (directId != null) {
@@ -1098,7 +1172,18 @@ List<CtlRoute> _peerRoutes(OpContext context) => <CtlRoute>[
         case InterconnectLinkPaired(
           :final String baseUrl,
           :final String? deviceName,
+          :final String? reassignedFromHostId,
         ):
+          // 终端不给确认回调：归属冲突时拿到 address_owner_conflict，走不到这里；
+          // 保留对称的收尾，免得以后接了确认后漏改偏好。
+          if (reassignedFromHostId != null) {
+            await reconcileDownloadExecutionHostAfterReassign(
+              appModel.prefsRepo,
+              await repo.getFushiClientUrls(),
+              url: baseUrl,
+              previousHostId: reassignedFromHostId,
+            );
+          }
           return <String, Object?>{
             'ok': true,
             'paired': true,

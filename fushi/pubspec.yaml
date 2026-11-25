@@ -2,10 +2,10 @@ name: fushi
 resolution: workspace
 description: A focused Japanese EPUB reader with popup dictionary and Anki integration.
 publish_to: 'none'
-version: 3.3.0+1368
+version: 3.4.0+1369
 environment:
   sdk: ">=3.8.0 <4.0.0"
-  flutter: "^3.47.0"
+  flutter: "^3.50.0"
 
 dependencies:
   # 语音识别生成字幕：算法层已抽成独立仓库（hajisensai/fushi-subtitles，GPL-3.0），本仓只留
@@ -18,7 +18,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_core
-      ref: 1fce08d74d543f6640bc1c06a223d5f808521b2e
+      ref: 5284dbf0f607a0b4a7b8f4f7733072795d2233fb
   # 字幕重定时（拿 ASR 转录当参照修好已有字幕的时间轴）。与 fushi_asr_core 同仓同 sha。
   #
   # 只依赖 fushi_asr_core，**不含** ONNX 后端：算法那半边住在 fushi_asr 包里的话会
@@ -28,7 +28,7 @@ dependencies:
     git:
       url: https://github.com/hajisensai/fushi-subtitles.git
       path: packages/asr_subtitles
-      ref: 1fce08d74d543f6640bc1c06a223d5f808521b2e
+      ref: 5284dbf0f607a0b4a7b8f4f7733072795d2233fb
   archive: ^3.6.1
   async_zip: ^0.1.0
   audio_service: ^0.18.9
@@ -45,10 +45,14 @@ dependencies:
   # package:flutter/material.dart / cupertino.dart（守卫
   # test/build/design_widgets_import_guard_test.dart）。
   cupertino_ui: ^1.1.6
-  material_ui: ^1.10.0
-  liquid_glass_widgets: ^1.8.1
+  material_ui: ^1.11.0
+  liquid_glass_widgets: ^1.20.0
   crop_image: ^1.0.4
   desktop_drop: ^0.5.0
+  # XDG desktop portals over the session bus: Linux Flatpak self-update
+  # (org.freedesktop.portal.Flatpak, flatpak_updater.dart) and Linux Wayland
+  # global shortcuts (lib/src/shortcuts/global_shortcuts_portal.dart).
+  dbus: ^0.7.12
   device_info_plus: ^9.0.0
   dio: ^5.1.1
   # 2.x 起依赖 material_ui：其 ColorScheme 与本仓迁移后的 ColorScheme 同一类型。
@@ -72,6 +76,15 @@ dependencies:
     sdk: flutter
   flutter_localizations:
     sdk: flutter
+  # 真 3D 渲染（全屏歌词「镜台」）：Impeller 之上的 Flutter GPU。五端的启用开关见
+  # windows/runner/main.cpp、linux/runner、AndroidManifest、Info.plist。
+  # 着色器包由 hook/build.dart 经 flutter_gpu_shaders 调引擎自带 impellerc 编出
+  # （与引擎版本绑定，不入库），产物 build/shaderbundles/*.shaderbundle 登记在下方 assets。
+  flutter_gpu:
+    sdk: flutter
+  flutter_gpu_shaders: ^0.5.2
+  hooks: ^2.0.0
+  vector_math: ^2.1.4
   fushi_core:
     path: ../packages/fushi_core
   fushi_dictionary:
@@ -125,7 +138,11 @@ dependencies:
   # Linux，必须由 app 直接依赖实现包才会注册；vendored 原因见该包 pubspec 顶部。
   flutter_inappwebview_linux:
     path: ../packages/flutter_inappwebview_linux
-  flutter_logs: ^2.1.11
+  # BUG（后台拉起白屏）：≥2.2.7。2.1.x 的 Android 插件把 MethodChannel 存在
+  # companion object（进程级静态）里，同进程第二个引擎（WorkManager 后台引擎）销毁时
+  # 会把主引擎的 flutter_logs handler 清掉，main() 的 initLogs 抛 MissingPlugin、
+  # 初始化永不开始。守卫：test/platform/flutter_logs_engine_scoped_channel_test.dart。
+  flutter_logs: ^2.2.8
   # v101 统一更新提醒的系统通知后端。选 20.x 而不是 22.x：22 起要求
   # `sdk: ^3.10.0`，会把本包的 SDK 下界从 3.8 顶上去；20.1.0 的
   # environment 与本仓一致，且 android/ios/macos/linux/windows 五端都有实现
@@ -178,10 +195,9 @@ dependencies:
   pdfrx: 2.4.5
   progress_indicators: ^1.0.0
   recase: ^4.1.0
-  receive_intent:
-    git:
-      url: https://github.com/arianneorpilla/receive_intent
-      ref: 3854d07f8f4e9d5a78589639b18b5d454ddf54a0
+  # Vendored fork (arianneorpilla 3854d07) via the workspace dependency_overrides:
+  # third_party/receive_intent/PATCHES.md.
+  receive_intent: ^0.2.3
   remove_emoji: ^0.0.7
   restart_app: ^1.1.2
   share_plus: ^7.2.2
@@ -240,6 +256,9 @@ dev_dependencies:
   # flutter_charset_detector; declared here only for the test import.
   flutter_charset_detector_platform_interface: ^1.1.0
   plugin_platform_interface: ^2.1.0
+  # 反馈 P2jQzOBBag：manga_webview_gesture_policy_test 直接测 iOS 实现包打过
+  # 覆盖补丁的手势阻塞策略映射（ci/patches/hosted/flutter_inappwebview_ios-1.1.2/）。
+  flutter_inappwebview_ios: ^1.1.2
   # BUG-1213: android_permission_service_test 用它替换
   # PermissionHandlerPlatform.instance，在 flutter test 里复刻
   # permission_handler_android 的 SDK 分级语义（原生通道不可用）。
@@ -296,6 +315,12 @@ flutter:
     - assets/popup/
     - assets/transforms/
     - assets/transforms/i18n/
+    # 内置追踪插件（Bangumi）打好的包；源码在仓库根 plugins/tracking/bangumi/，
+    # 与包不一致时 test/build/bundled_tracking_plugin_asset_guard_test.dart 判红。
+    - assets/tracking_plugins/
+    # Flutter GPU 着色器包（全屏歌词「镜台」的真 3D 渲染）：hook/build.dart 每次构建用引擎自带
+    # impellerc 从 shaders/diorama.shaderbundle.json 编出，不入库（与引擎版本绑定）。
+    - build/shaderbundles/diorama.shaderbundle
 
   # 片段着色器（Impeller 编译期转 SPIR-V / MSL / GLSL）。
   # panorama_backdrop：首页「媒体库全景」的星空 + 中心光晕（lib/src/media/panorama/）。
@@ -304,6 +329,8 @@ flutter:
     - shaders/panorama_backdrop.frag
     - shaders/music_backdrop_pixi.frag
     - shaders/page_curl.frag
+    - shaders/visualizer_sonnet_post.frag
+    - shaders/visualizer_bg_latent.frag
 
   # M3E 语义图标（lib/src/utils/fushi_icons.dart）：Material Symbols Rounded 可变字体
   # 的子集，由 tool/icons/gen_fushi_symbols.py 生成。线框 / 实心各一个字族——选中态在

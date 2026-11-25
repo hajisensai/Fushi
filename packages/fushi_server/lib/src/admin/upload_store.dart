@@ -4,6 +4,7 @@
 /// `Content-Range: bytes <start>-<end>/<total>`（不带就当整文件一次传）。服务端把
 /// 分段追加到 `<file>.part`，收齐 `total` 字节后原子 rename 成目标文件。
 /// `GET /api/admin/upload?library=<id>&path=<相对路径>` 返回 `{received}` 供断点续传。
+/// `GET /api/admin/upload/folders?library=<id>` 返回库根下已有的子目录（WebUI 子目录框的建议）。
 ///
 /// 配额：`<support>/upload_ledger.json` 记累计上传字节；超过 `upload_quota_bytes`
 /// 拒收 413。不是磁盘配额（那由 OS 管），只是防 WebUI 被当网盘用。
@@ -13,6 +14,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:path/path.dart' as p;
 
 class UploadRejected implements Exception {
@@ -51,6 +53,47 @@ class UploadStore {
     );
   }
 
+  /// 把一次性上传（不分块、不续传）的 [body] 落到 [target]（暂存文件，调用方负责
+  /// 清理），按配额剩余量边收边判：[declaredLength] 只用于尽早拒绝，真正的判据是
+  /// 实际写入的字节数（与 [putChunk] 同口径）。超额抛 413，已写的半截文件删掉。
+  ///
+  /// **不记账**：收下的字节最终落不落地由调用方决定（例如词典导入成功才落进资源
+  /// 目录），落地了再 [recordUsage]。返回写入的字节数。
+  Future<int> receiveToFile({
+    required File target,
+    required Stream<List<int>> body,
+    required int declaredLength,
+  }) async {
+    final int baseline = await used();
+    if (declaredLength > 0 && baseline + declaredLength > quotaBytes) {
+      throw UploadRejected(413, tr('上传配额已用完', 'upload quota exceeded'));
+    }
+    await target.parent.create(recursive: true);
+    final IOSink sink = target.openWrite();
+    int written = 0;
+    bool overQuota = false;
+    try {
+      await for (final List<int> chunk in body) {
+        if (baseline + written + chunk.length > quotaBytes) {
+          overQuota = true;
+          break;
+        }
+        sink.add(chunk);
+        written += chunk.length;
+      }
+    } finally {
+      await sink.close();
+    }
+    if (overQuota) {
+      if (await target.exists()) await target.delete();
+      throw UploadRejected(413, tr('上传配额已用完', 'upload quota exceeded'));
+    }
+    return written;
+  }
+
+  /// 把 [bytes] 计入配额账本（[receiveToFile] 收下、且调用方确认落地之后）。
+  Future<void> recordUsage(int bytes) => _record(bytes);
+
   /// 目标文件的绝对路径；[relative] 不得逃出库根。
   static String resolveTarget(LibraryRootConfig library, String relative) {
     final String root = p.normalize(p.absolute(library.path));
@@ -68,6 +111,39 @@ class UploadStore {
       throw const UploadRejected(400, 'path escapes library root');
     }
     return target;
+  }
+
+  /// [library] 根下已有的子目录（相对路径、`/` 分隔、排序），最多 [maxDepth] 层、[limit] 条。
+  ///
+  /// 只给 WebUI 子目录框做建议：不跟符号链接（免得列到库外），跳过 `.` 开头的隐藏目录；
+  /// 库根不存在 / 读不了的目录静默略过（建议缺几条不影响上传本身）。
+  static Future<List<String>> subfolders(
+    LibraryRootConfig library, {
+    int maxDepth = 2,
+    int limit = 500,
+  }) async {
+    final String root = p.normalize(p.absolute(library.path));
+    final List<String> out = <String>[];
+    List<Directory> level = <Directory>[Directory(root)];
+    for (int depth = 0; depth < maxDepth && level.isNotEmpty; depth++) {
+      final List<Directory> next = <Directory>[];
+      for (final Directory dir in level) {
+        List<FileSystemEntity> children;
+        try {
+          children = await dir.list(followLinks: false).toList();
+        } on FileSystemException {
+          continue;
+        }
+        for (final FileSystemEntity e in children) {
+          if (e is! Directory || p.basename(e.path).startsWith('.')) continue;
+          out.add(p.relative(e.path, from: root).replaceAll(r'\', '/'));
+          if (out.length >= limit) return out..sort();
+          next.add(e);
+        }
+      }
+      level = next;
+    }
+    return out..sort();
   }
 
   Future<int> received(String target) async {
@@ -91,7 +167,7 @@ class UploadStore {
     // 所以下面在写入循环里按真实字节数再判一次。
     final int baseline = await used();
     if (declaredLength > 0 && baseline + declaredLength > quotaBytes) {
-      throw const UploadRejected(413, 'upload quota exceeded');
+      throw UploadRejected(413, tr('上传配额已用完', 'upload quota exceeded'));
     }
     final File part = File('$target.part');
     await part.parent.create(recursive: true);
@@ -125,7 +201,7 @@ class UploadStore {
           await raf.close();
         }
       }
-      throw const UploadRejected(413, 'upload quota exceeded');
+      throw UploadRejected(413, tr('上传配额已用完', 'upload quota exceeded'));
     }
     await _record(written);
     final int now = have + written;

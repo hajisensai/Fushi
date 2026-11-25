@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:test/test.dart';
@@ -23,6 +24,10 @@ class _FakeRecognizer implements VideoSubtitleRecognizer {
   final Map<String, List<SubtitleDraftCue>> drafts;
   final List<String> calls = <String>[];
 
+  /// 每次识别收到的音轨（全局流序号；null = 按语言挑）与工作目录。
+  final List<int?> streams = <int?>[];
+  final List<String> workDirs = <String>[];
+
   @override
   String get id => 'fake';
 
@@ -32,8 +37,11 @@ class _FakeRecognizer implements VideoSubtitleRecognizer {
     required Directory workDir,
     required VideoSubtitleRecognizeProgress onProgress,
     required SubtitleCancelToken cancel,
+    int? audioStreamIndex,
   }) async {
     calls.add(p.basename(videoPath));
+    streams.add(audioStreamIndex);
+    workDirs.add(workDir.path);
     onProgress(0.5, 'half');
     return drafts[p.basename(videoPath)]!;
   }
@@ -66,6 +74,28 @@ class _FakeEvidence implements SubtitleEvidenceSource {
   ) async {
     loads++;
     return tracks;
+  }
+}
+
+/// 收集不完整的证据来源（某个来源读失败）：给出部分轨，但要求不缓存。
+class _IncompleteEvidence implements SubtitleEvidenceSource {
+  _IncompleteEvidence(this.tracks);
+
+  final List<SubtitleEvidenceTrack> tracks;
+  int loads = 0;
+
+  @override
+  Future<String> sourceKey(
+    String videoPath, {
+    required bool Function(String path) isOwnOutput,
+  }) async => 'v1';
+
+  @override
+  Future<List<SubtitleEvidenceTrack>> load(
+    SubtitleEvidenceLoadRequest request,
+  ) async {
+    loads++;
+    throw SubtitleEvidenceIncomplete(tracks, 'burned-in OCR failed');
   }
 }
 
@@ -438,6 +468,86 @@ void main() {
     );
   });
 
+  test('原盘成员：默认落点在任务根的 disc_out 下，按成员分目录，不写进盘里', () async {
+    // 蓝光的「媒体旁」是 BDMV/PLAYLIST：挂载的 ISO / 光驱写不进，写得进也是污染盘结构。
+    final Directory disc = Directory(p.join(tmp.path, 'DiscA'));
+    final Directory playlist = Directory(p.join(disc.path, 'BDMV', 'PLAYLIST'))
+      ..createSync(recursive: true);
+    Directory(p.join(disc.path, 'BDMV', 'STREAM')).createSync();
+    final String mpls = p.join(playlist.path, '00001.mpls');
+    File(mpls).writeAsBytesSync(List<int>.filled(8, 1));
+    List<String> discFiles() => <String>[
+      for (final FileSystemEntity e in disc.listSync(recursive: true)) e.path,
+    ]..sort();
+    final List<String> before = discFiles();
+
+    final VideoSubtitlePipeline pl = VideoSubtitlePipeline(
+      recognizer: _FakeRecognizer(<String, List<SubtitleDraftCue>>{
+        '00001.mpls': _lines(<String>['結衣が来た', 'こんにちは', 'ありがとう', 'またね']),
+      }),
+      jobsRoot: jobs,
+      styleReference: null,
+      evidence: null,
+      probeDurationMs: duration,
+    );
+    final VideoSubtitlePipelineResult r = await pl.run(
+      videoPaths: <String>[mpls],
+      work: work,
+    );
+    final String expected = p.join(
+      jobs.path,
+      'disc_out',
+      videoSubtitleJobId(mpls),
+      '00001.ja.srt',
+    );
+    expect(r.episodes.single.status, VideoSubtitleEpisodeStatus.exported);
+    expect(r.episodes.single.outputPath, expected);
+    expect(File(expected).existsSync(), isTrue);
+    expect(pl.subtitlePathFor(mpls), expected);
+    expect(discFiles(), before, reason: '盘目录里不能多出任何文件');
+
+    // 别的盘上同名 title、蓝光虚拟分集、DVD title 各进各的目录；普通文件仍在媒体旁。
+    final String otherDisc = p.join(
+      tmp.path,
+      'DiscB',
+      'BDMV',
+      'PLAYLIST',
+      '00001.mpls',
+    );
+    final String episode = p.join(playlist.path, '00001.p02.mpls');
+    final String dvd = p.join(
+      tmp.path,
+      'DiscC',
+      'VIDEO_TS',
+      'TITLE_01.dvdtitle',
+    );
+    final Set<String> dirs = <String>{
+      p.dirname(expected),
+      for (final String member in <String>[otherDisc, episode, dvd])
+        videoSubtitleDiscExportDir(jobs, member)!.path,
+    };
+    expect(dirs, hasLength(4));
+    for (final String dir in dirs) {
+      expect(p.isWithin(p.join(jobs.path, 'disc_out'), dir), isTrue);
+    }
+    expect(videoSubtitleDiscExportDir(jobs, video('ep01.mkv')), isNull);
+    expect(videoSubtitleDefaultExportDir(jobs, video('ep01.mkv')), videos.path);
+
+    // 显式给了导出目录（CLI --out-dir / host 上传任务）照旧写那里。
+    final Directory out = Directory(p.join(tmp.path, 'out'));
+    expect(
+      VideoSubtitlePipeline(
+        recognizer: _FakeRecognizer(drafts),
+        jobsRoot: jobs,
+        styleReference: null,
+        evidence: null,
+        exportDir: out,
+        probeDurationMs: duration,
+      ).subtitlePathFor(mpls),
+      p.join(out.path, '00001.ja.srt'),
+    );
+  });
+
   test('已取消：抛 SubtitlePipelineCancelled，不识别', () async {
     final SubtitleCancelSource cancel = SubtitleCancelSource()..cancel();
     final _FakeRecognizer rec = _FakeRecognizer(drafts);
@@ -595,5 +705,179 @@ void main() {
     await runOnce();
     expect(ev.ownChecks.last(asr), isTrue);
     expect(ev.ownChecks.last(ja), isFalse);
+  });
+
+  test('不开 AI：画面硬字幕（OCR 证据）与识别行只差几个字时换成画面写法（d-fO4eGxKx）', () async {
+    final _FakeEvidence ev = _FakeEvidence(const <SubtitleEvidenceTrack>[
+      SubtitleEvidenceTrack(
+        label: 'burned-in subtitles OCR',
+        kind: SubtitleEvidenceKind.ocr,
+        language: 'ja',
+        cues: <SubtitleEvidenceCue>[
+          // 识别「結衣が来た」，画面写的是「唯が来た」：同一句，换。
+          SubtitleEvidenceCue(startMs: 1000, endMs: 3000, text: '唯が来た'),
+          // 同时段画面是另一句：不换。
+          SubtitleEvidenceCue(startMs: 7000, endMs: 9000, text: 'さようなら'),
+        ],
+      ),
+    ]);
+    final VideoSubtitlePipelineResult r = await pipeline(
+      _FakeRecognizer(drafts),
+      evidence: ev,
+    ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
+    expect(r.episodes.single.status, VideoSubtitleEpisodeStatus.exported);
+    final String srt = File(
+      p.join(videos.path, 'ep01.ja.srt'),
+    ).readAsStringSync();
+    expect(srt, contains('唯が来た'));
+    expect(srt, isNot(contains('結衣が来た')));
+    expect(srt, contains('ありがとう'));
+    expect(srt, isNot(contains('さようなら')));
+  });
+
+  SubtitleEvidenceTrack burnedIn(List<SubtitleEvidenceCue> cues) =>
+      SubtitleEvidenceTrack(
+        label: 'burned-in subtitles OCR',
+        kind: SubtitleEvidenceKind.ocr,
+        language: 'ja',
+        cues: cues,
+      );
+
+  test('开着 AI：不做确定性替换，画面硬字幕原样当证据交给 S3（d-fO4eGxKx）', () async {
+    final FakeAiCompleter ai = FakeAiCompleter(_answer);
+    await pipeline(
+      _FakeRecognizer(drafts),
+      ai: ai,
+      evidence: _FakeEvidence(<SubtitleEvidenceTrack>[
+        burnedIn(const <SubtitleEvidenceCue>[
+          SubtitleEvidenceCue(startMs: 1000, endMs: 3000, text: '唯が来た'),
+        ]),
+      ]),
+    ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
+    final String s3 = ai.prompts.firstWhere(
+      (String s) => s.startsWith('あなたは日本語アニメ字幕の校正者'),
+    );
+    expect(s3, contains('主: 結衣が来た'));
+    expect(s3, contains(']: 唯が来た'));
+  });
+
+  test('不开 AI：画面硬字幕只差标点时不换，识别稿的标点留着（d-fO4eGxKx）', () async {
+    await pipeline(
+      _FakeRecognizer(drafts),
+      evidence: _FakeEvidence(<SubtitleEvidenceTrack>[
+        burnedIn(const <SubtitleEvidenceCue>[
+          SubtitleEvidenceCue(startMs: 4000, endMs: 6000, text: 'こんにちは'),
+        ]),
+      ]),
+    ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
+    final String srt = File(
+      p.join(videos.path, 'ep01.ja.srt'),
+    ).readAsStringSync();
+    expect(srt, matches(RegExp('こんにちは[?？]')));
+  });
+
+  test('证据收集不完整（硬字幕 OCR 读失败）：这次照用，但不落 evidence.json，下次重收', () async {
+    final _IncompleteEvidence ev = _IncompleteEvidence(<SubtitleEvidenceTrack>[
+      burnedIn(const <SubtitleEvidenceCue>[
+        SubtitleEvidenceCue(startMs: 1000, endMs: 3000, text: '唯が来た'),
+      ]),
+    ]);
+    await pipeline(
+      _FakeRecognizer(drafts),
+      evidence: ev,
+    ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
+    expect(
+      File(p.join(videos.path, 'ep01.ja.srt')).readAsStringSync(),
+      contains('唯が来た'),
+    );
+    final List<File> caches = jobs
+        .listSync(recursive: true)
+        .whereType<File>()
+        .where((File f) => p.basename(f.path) == VideoSubtitleJobFiles.evidence)
+        .toList();
+    expect(caches, isEmpty);
+    await pipeline(
+      _FakeRecognizer(drafts),
+      evidence: ev,
+    ).run(videoPaths: <String>[video('ep01.mkv')], work: work);
+    expect(ev.loads, 2);
+  });
+
+  test('播放器当前音轨：识别那条轨、按轨分识别目录；换轨作废下游，换回来续用', () async {
+    final _FakeRecognizer rec = _FakeRecognizer(drafts);
+    final List<(String, int)> asked = <(String, int)>[];
+    // 播放器第 N 条音轨 → 流 N + 10；第 0 条与按语言挑的同一条（null）。
+    VideoSubtitlePipeline withTracks() => VideoSubtitlePipeline(
+      recognizer: rec,
+      jobsRoot: jobs,
+      styleReference: null,
+      evidence: null,
+      probeDurationMs: duration,
+      resolveAudioStream: (String path, int track) async {
+        asked.add((p.basename(path), track));
+        return track == 0 ? null : track + 10;
+      },
+    );
+    final String ep = video('ep01.mkv');
+    final Directory job = withTracks().jobDirFor(ep);
+
+    // 批量 / 没有播放上下文：按语言挑，不换算，识别目录就是任务目录。
+    await withTracks().run(videoPaths: <String>[ep], work: work);
+    expect(asked, isEmpty);
+    expect(rec.streams, <int?>[null]);
+    expect(rec.workDirs.single, job.path);
+    final File finalCues = File(
+      p.join(job.path, VideoSubtitleJobFiles.finalCues),
+    );
+    expect(finalCues.existsSync(), isTrue);
+
+    // 从播放页发起、当前是第 2 条音轨：识别流 12，放进按轨的子目录。
+    await withTracks().run(
+      videoPaths: <String>[ep],
+      work: work,
+      audioTracks: <String, int>{ep: 2},
+    );
+    expect(asked, <(String, int)>[('ep01.mkv', 2)]);
+    expect(rec.streams, <int?>[null, 12]);
+    expect(rec.workDirs.last, videoSubtitleRecognizeDir(job, 12).path);
+    expect(
+      File(
+        p.join(
+          videoSubtitleRecognizeDir(job, 12).path,
+          VideoSubtitleJobFiles.drafts('fake'),
+        ),
+      ).existsSync(),
+      isTrue,
+    );
+    final Map<String, Object?> state =
+        jsonDecode(
+              File(
+                p.join(job.path, VideoSubtitleJobFiles.state),
+              ).readAsStringSync(),
+            )
+            as Map<String, Object?>;
+    expect(state['audioStream'], 12);
+
+    // 只重跑写法统一：沿用上次的轨，不换算、不重识别。
+    await withTracks().run(
+      videoPaths: <String>[ep],
+      work: work,
+      keepRecordedAudio: true,
+    );
+    expect(asked, hasLength(1));
+    expect(rec.calls, hasLength(2));
+
+    // 当前音轨就是按语言挑的那条：回到任务目录里的那份稿，不重识别。
+    await withTracks().run(
+      videoPaths: <String>[ep],
+      work: work,
+      audioTracks: <String, int>{ep: 0},
+    );
+    expect(rec.calls, hasLength(2), reason: '按语言挑的稿还在，换回来续用');
+    expect(finalCues.existsSync(), isTrue);
+    final String srt = File(
+      p.join(videos.path, 'ep01.ja.srt'),
+    ).readAsStringSync();
+    expect(srt, contains('結衣が来た'));
   });
 }

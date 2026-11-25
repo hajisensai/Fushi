@@ -350,6 +350,144 @@ void main() {
       },
     );
   });
+
+  // BUG-4259（反馈 G5xYgLcp4p）：音画同步偏移 delayMs 定义 cue 在音频里真实出现于
+  // `startMs + delayMs`（tick 侧 `effectiveMs = pos - delayMs` 的逆变换）。点句跳转、
+  // 单句试听的起止点、按位置查上/下一句都必须在同一时基里换算，否则设了偏移后
+  // 高亮对得上、点句却落在偏移前的位置。
+  group('cue navigation honours the A/V sync offset (BUG-4259)', () {
+    test('cue -> audio position mapping adds the offset and clamps at 0', () {
+      expect(
+        AudiobookPlayerController.positionMsForCueForTesting(
+          audioFileIndex: 0,
+          startMs: 1250,
+          audioFileCount: 1,
+          delayMs: 800,
+        ),
+        2050,
+      );
+      expect(
+        AudiobookPlayerController.positionMsForCueForTesting(
+          audioFileIndex: 0,
+          startMs: 1250,
+          audioFileCount: 1,
+          delayMs: -2000,
+        ),
+        0,
+      );
+    });
+
+    test('skipToCue seeks to startMs + positive delay', () async {
+      final _HangingJustAudioPlatform platform = _installHangingAudioPlatform(
+        ready: true,
+      );
+      final AudiobookPlayerController controller = await _loadWithDelay(800);
+      final AudioCue cue = _cue(500);
+      controller.setChapterCues(<AudioCue>[cue]);
+
+      await controller.skipToCue(cue);
+
+      expect(
+        platform.player!.seeks.last.position,
+        const Duration(milliseconds: 1300),
+      );
+      expect(controller.currentCue, same(cue));
+    });
+
+    test('skipToCue seeks to startMs + negative delay', () async {
+      final _HangingJustAudioPlatform platform = _installHangingAudioPlatform(
+        ready: true,
+      );
+      final AudiobookPlayerController controller = await _loadWithDelay(-400);
+      final AudioCue cue = _cue(1000);
+      controller.setChapterCues(<AudioCue>[cue]);
+
+      await controller.skipToCue(cue);
+
+      expect(
+        platform.player!.seeks.last.position,
+        const Duration(milliseconds: 600),
+      );
+    });
+
+    test('playCueOnce starts and stops in the shifted audio window', () async {
+      final _HangingJustAudioPlatform platform = _installHangingAudioPlatform(
+        ready: true,
+      );
+      final AudiobookPlayerController controller = await _loadWithDelay(800);
+      final AudioCue cue = _cue(500); // cue time [500, 1000]
+      controller.setChapterCues(<AudioCue>[cue]);
+
+      await controller.playCueOnce(cue);
+
+      expect(
+        platform.player!.seeks.last.position,
+        const Duration(milliseconds: 1300),
+      );
+      expect(controller.stopAtPositionMsForTesting, 1800);
+    });
+
+    test('skipToPrevCue in a gap resolves the position in cue time', () async {
+      final _HangingJustAudioPlatform platform = _installHangingAudioPlatform(
+        ready: true,
+      );
+      final AudiobookPlayerController controller = await _loadWithDelay(800);
+      // cue time: [0,500] gap [1000,1500]. Audio 1500 - delay 800 = cue time 700,
+      // i.e. the gap after cue 0 — "previous" is cue 0 (audio 800), not cue 1.
+      final List<AudioCue> cues = <AudioCue>[_cue(0), _cue(1000)];
+      controller.setChapterCues(cues);
+      await controller.restoreToFileOffset(fileIndex: 0, positionMs: 1500);
+      expect(controller.currentCue, isNull);
+
+      await controller.skipToPrevCue();
+
+      expect(
+        platform.player!.seeks.last.position,
+        const Duration(milliseconds: 800),
+      );
+      expect(controller.currentCue, same(cues[0]));
+    });
+
+    test(
+      'skipToNextCue with no current cue resolves the position in cue time',
+      () async {
+        final _HangingJustAudioPlatform platform = _installHangingAudioPlatform(
+          ready: true,
+        );
+        final AudiobookPlayerController controller = await _loadWithDelay(800);
+        // cue time: [0,500] [1000,1500]. Audio 1100 - delay 800 = cue time 300,
+        // inside cue 0 — "next" is cue 1 (audio 1800). Raw 1100 would sit inside
+        // cue 1 and jump past it to the chapter boundary.
+        final List<AudioCue> cues = <AudioCue>[_cue(0), _cue(1000)];
+        controller.setChapterCues(cues);
+        await controller.restoreToFileOffset(fileIndex: 0, positionMs: 1100);
+        expect(controller.currentCue, isNull);
+
+        await controller.skipToNextCue();
+
+        expect(
+          platform.player!.seeks.last.position,
+          const Duration(milliseconds: 1800),
+        );
+        expect(controller.currentCue, same(cues[1]));
+      },
+    );
+  });
+}
+
+Future<AudiobookPlayerController> _loadWithDelay(int delayMs) async {
+  final AudiobookPlayerController controller = AudiobookPlayerController();
+  addTearDown(controller.dispose);
+  await controller.load(
+    audiobook: _audiobook(),
+    audioFiles: <File>[
+      File('${Directory.systemTemp.path}/fushi-delay-seek-test.mp3'),
+    ],
+    initialDelayMs: delayMs,
+  );
+  await controller.play();
+  await controller.pause();
+  return controller;
 }
 
 AudioCue _cue(int startMs, {int? id, String? fragmentId}) {

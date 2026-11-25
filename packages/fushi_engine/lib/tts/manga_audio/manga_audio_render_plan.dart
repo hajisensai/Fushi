@@ -1,0 +1,418 @@
+/// 漫画有声成品的生成计划（纯函数）：演出稿 + OCR → 逐句「念什么、用哪个声音 / 哪段
+/// 有声书、种子多少、文件叫什么」。生成端（`manga_audio_renderer.dart`）按它跑，测试
+/// 直接对它断言。
+///
+/// 规则来源：设计 §5 / §6 / §9 与 handoff「已经踩过的坑」：
+/// - 文件名按行身份 [MangaScriptLine.lineId]（页 + 块下标），不用行序号；
+/// - 模型单条上限 30 秒：长台词按句末切成 ≤ [kMangaSegmentMaxChars] 字的片段，各片段
+///   分别合成后拼回同一句的一个文件（片段序号进缓存键，不单独成文件）；
+/// - 不挂 LoRA 的声音在 20 字以内的短句上会念两遍：生成端按
+///   `irodori_voice_pack.dart` 的 `irodoriManualSeconds` 直接给定时长（唯一实现），只在
+///   引擎声明支持给定时长时生效（`tts_direction.dart`）；
+/// - 音源策略：有声书优先（命中的句子剪有声书）/ 只用有声书（没命中的不读）/ 只合成。
+///   「不读」不是未配音：不进成品、不进未配音账本、没有自动重试。
+/// - 克隆旁白（`manga_audio_narrator.dart`）：本卷有会剪的有声书片段、后端又能克隆
+///   时，没单句指定声音的合成句改用旁白音色（[mangaSynthVoiceFor]）。
+library;
+
+import 'dart:convert';
+
+import 'package:path/path.dart' as p;
+
+import 'package:fushi_engine/media/manga/manga_ruby.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_narrator.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_render.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_script.dart';
+import 'package:fushi_engine/tts/manga_audio/manga_audio_validate.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
+import 'package:fushi_engine/tts/tts_text_split.dart';
+
+/// 一个合成片段的字数上限（30 秒模型上限对应的保守字数，handoff `split_long`）。
+const int kMangaSegmentMaxChars = 70;
+
+/// 把一句切成合成片段（按句末标点，单句仍超长再硬切）。
+List<String> splitMangaLineSegments(String text) =>
+    splitTtsTextForInputLimit(text, maxLength: kMangaSegmentMaxChars);
+
+/// 一句成品音频的文件名（相对清单目录）。
+String mangaLineFileName(String lineId) => '$lineId.m4a';
+
+/// 一句占位静音的文件名。
+String mangaPlaceholderFileName(String lineId) => '$lineId.ph.wav';
+
+/// 单句换种子重生成的候选文件名（保留后就是这句的文件，撤回则删掉）。
+String mangaCandidateFileName(String lineId, int seed) => '$lineId.s$seed.m4a';
+
+/// 一句成品音频 [file] 提交前的暂存文件名（`p0b1.m4a` → `p0b1.stage.m4a`，扩展名不变，
+/// ffmpeg 照旧按它选封装）。清单从不引用暂存文件：生成 / 补回 / 换本地音频 / 单句候选
+/// 都先写到这里，提交时才改名成 [file]，没提交就删掉，旧清单引用的音频不会被半路改写
+/// 或误删（HBK-AUDIT-201 / 207）。残留的暂存文件由 `sweepUnreferenced` 清掉。
+String mangaStagedFileName(String file) =>
+    '${p.withoutExtension(file)}.stage${p.extension(file)}';
+
+/// 剪有声书的句子在清单 `voice` 字段里的标记（区分「合成」与「有声书片段」，也让片段
+/// 区间变了能被识别出来重剪）。
+const String kMangaClipVoicePrefix = 'audiobook:';
+
+String mangaClipVoiceTag(MangaAudiobookClip clip) =>
+    '$kMangaClipVoicePrefix${clip.bookKey ?? ''}#${clip.fileIndex}:'
+    '${clip.startMs}-${clip.endMs}';
+
+/// 换上本地音频的句子在清单 `voice` 字段里的标记（带内容指纹：换了另一段音频就能被
+/// 识别出来重新整形）。
+const String kMangaLocalVoicePrefix = 'file:';
+
+String mangaLocalVoiceTag(MangaLocalAudio audio) =>
+    '$kMangaLocalVoicePrefix${audio.sig}';
+
+/// 换上本地音频后这句的成品文件名（带内容指纹：与原文件不同名，原文件留到清单不再
+/// 引用时才清，撤销据此认出「还是这次换上的音频」）。
+String mangaLocalLineFileName(String lineId, MangaLocalAudio audio) =>
+    '$lineId.f${audio.sig}.m4a';
+
+/// 本地音频保留副本的绝对路径（成品目录 [directory] 下的 [kMangaLocalAudioDirName]）。
+String mangaLocalAudioSourcePath(String directory, MangaLocalAudio audio) =>
+    p.join(directory, kMangaLocalAudioDirName, '${audio.sig}${audio.ext}');
+
+/// 一句实际生效的演出（情绪 / 强度 / 语气说明 / 语速音高音量偏移）的可比较指纹，写进
+/// 清单行（[MangaRenderedLine.direction]），重跑时与旧行比对，变了就重出这句。
+///
+/// [effective] 是引擎**实际会用**的演出（`effectiveTtsDirection` 去掉不支持的字段、把情绪
+/// 折成韵律之后），所以只改了引擎表达不了的字段（例如给只收种子的声音包改语气说明）时
+/// 指纹不变、旧音频照用。种子与给定时长不算在内：种子单独比对（[MangaRenderedLine.seed]），
+/// 时长由念的文字推出。没有任何生效字段返回 null（与没有这个字段的旧清单行一致）。
+String? mangaDirectionKey(TtsDirection effective) {
+  final Map<String, Object?> identity = TtsDirection(
+    emotion: effective.emotion,
+    intensity: effective.intensity,
+    rateOffset: effective.rateOffset,
+    pitchOffset: effective.pitchOffset,
+    volumeOffset: effective.volumeOffset,
+    tone: effective.tone,
+  ).cacheIdentity;
+  return identity.isEmpty ? null : jsonEncode(identity);
+}
+
+/// 一句的音源（计划层）。
+sealed class MangaRenderSource {
+  const MangaRenderSource();
+}
+
+/// 合成：[voice] 是解析后的声音预设 id（已把「当前朗读声音」落成具体 id）。
+final class MangaRenderSynth extends MangaRenderSource {
+  const MangaRenderSynth({
+    required this.voice,
+    required this.seed,
+    required this.segments,
+    this.direction = const CastLineDirection(),
+  });
+
+  final String voice;
+  final int seed;
+
+  /// 这句标注的演出（情绪 / 强度 / 语气说明 / 偏移）；后端按引擎能力取其中能表达的
+  /// 部分（`effectiveTtsDirection`），不能表达情绪的引擎折成语速 / 音高 / 音量。
+  final CastLineDirection direction;
+
+  /// 合成片段（空 = 没有可念的文字）。
+  final List<String> segments;
+}
+
+/// 剪关联有声书的一段。
+final class MangaRenderClip extends MangaRenderSource {
+  const MangaRenderClip(this.clip);
+
+  final MangaAudiobookClip clip;
+}
+
+/// 整形用户换上的本地音频（[MangaLocalAudio]）。
+final class MangaRenderLocal extends MangaRenderSource {
+  const MangaRenderLocal(this.audio);
+
+  final MangaLocalAudio audio;
+}
+
+/// 计划里的一句。
+class MangaRenderItem {
+  const MangaRenderItem({
+    required this.line,
+    required this.text,
+    required this.source,
+    String? spoken,
+  }) : spoken = spoken ?? text;
+
+  final MangaScriptLine line;
+
+  /// 这句的显示文字（cue / 制卡；手填 `say` 优先，否则 OCR 拼出来的过普通替换）。
+  final String text;
+
+  /// 实际送去合成的文字（[text] 再过人名读法；手填 `say` 不过表）。
+  final String spoken;
+  final MangaRenderSource source;
+
+  String get lineId => line.lineId;
+
+  /// 写进清单 `voice` 的值（合成 = 声音 id；有声书 = [mangaClipVoiceTag]）。
+  String get voiceTag => switch (source) {
+    MangaRenderSynth(:final String voice) => voice,
+    MangaRenderClip(:final MangaAudiobookClip clip) => mangaClipVoiceTag(clip),
+    MangaRenderLocal(:final MangaLocalAudio audio) => mangaLocalVoiceTag(audio),
+  };
+
+  /// 写进清单 `seed` 的值（有声书片段没有种子）。
+  int? get seed => switch (source) {
+    MangaRenderSynth(:final int seed) => seed,
+    MangaRenderClip() || MangaRenderLocal() => null,
+  };
+
+  /// 账本里记的「指派的声音」（有声书片段记 null）。
+  String? get assignedVoice => switch (source) {
+    MangaRenderSynth(:final String voice) => voice,
+    MangaRenderClip() || MangaRenderLocal() => null,
+  };
+
+  /// 由这句生成清单行（文件 / 时长 / 是否占位 / 整形版本由生成端给；占位静音不整形，
+  /// [shape] 传 null）。
+  MangaRenderedLine rendered({
+    required String file,
+    required int durationMs,
+    required String? shape,
+    String? direction,
+    bool placeholder = false,
+  }) => MangaRenderedLine(
+    lineId: lineId,
+    page: line.page,
+    blocks: line.blocks,
+    speaker: line.speaker,
+    kind: line.kind,
+    beatMs: line.beatMs,
+    file: file,
+    durationMs: durationMs,
+    text: text,
+    spoken: spoken,
+    placeholder: placeholder,
+    voice: voiceTag,
+    seed: seed,
+    shape: shape,
+    direction: direction,
+  );
+
+  /// [old] 的音频能不能原样沿用：不是占位、念的文字（[spoken]，人名读法改了也算变）/
+  /// 声音 / 种子都没变，且出音频时的
+  /// 整形版本就是这次的 [shape]（`MangaRenderBackend.shapeVersion`）。整形参数（裁静音 /
+  /// 淡变 / 响度）变了，旧音频与新出的句子混排会忽大忽小，必须重出；没记整形版本的历史
+  /// 清单行（null）一律算版本不符。生效的演出指纹（[direction]，见 [mangaDirectionKey]；
+  /// 由后端按引擎能力算，`MangaRenderBackend.directionKey`）也要一致：情绪 / 语气 / 偏移
+  /// 改了就重出。说话人、类型、一拍这类不影响音频的字段变了照样沿用（清单行按新值重建）。
+  bool canReuse(
+    MangaRenderedLine old, {
+    required String shape,
+    String? direction,
+  }) =>
+      !old.placeholder &&
+      old.lineId == lineId &&
+      old.spokenText == spoken &&
+      old.voice == voiceTag &&
+      old.seed == seed &&
+      old.shape == shape &&
+      old.direction == direction;
+}
+
+/// 一卷的生成计划。
+class MangaRenderPlan {
+  const MangaRenderPlan({
+    required this.items,
+    required this.notRead,
+    this.outOfRange = const <String>[],
+  });
+
+  /// 要进成品的句子，按阅读顺序。
+  final List<MangaRenderItem> items;
+
+  /// 按音源策略不读的句子（只用有声书、而这句没命中）。
+  final List<String> notRead;
+
+  /// 页码超出 OCR 页数的句子（演出稿与 OCR 对不上；正常情况下签名判定会先拦住）。
+  /// 不进成品——清单要求行页码在页数之内。
+  final List<String> outOfRange;
+
+  Set<String> get lineIds => <String>{
+    for (final MangaRenderItem i in items) i.lineId,
+  };
+}
+
+/// 一句该用的声音 id：单句指定 → 本卷叠系列的指派表 → [defaultVoice]（当前朗读声音）。
+String mangaResolvedVoice(
+  MangaAudioScript script,
+  MangaScriptLine line,
+  String defaultVoice,
+) => script.voiceFor(line) ?? defaultVoice;
+
+/// 一句合成时实际用的声音：本卷在克隆旁白（[narrator] 非空）且这句没单句指定声音 →
+/// 旁白；否则同 [mangaResolvedVoice]。整卷生成、补回、换种子重生成都只认这一个函数。
+String mangaSynthVoiceFor(
+  MangaAudioScript script,
+  MangaScriptLine line,
+  String defaultVoice,
+  MangaNarratorVoice? narrator,
+) => narrator != null && line.voice == null
+    ? narrator.id
+    : mangaResolvedVoice(script, line, defaultVoice);
+
+/// 这句怎么出声；null = 不读。出声方式只认 [MangaAudioScript.audioPlanFor]（用户亲手
+/// 定的音源 → 作品音源策略）；有声书片段在这里落成具体的书（旧行没有 `k` 时取第一本
+/// 关联书，见 [MangaAudioScript.clipBookKey]），生成端按 `bookKey` + `fileIndex` 取
+/// 那本书 `audioFilesInCueOrder` 里的文件。
+MangaRenderSource? mangaRenderSourceFor({
+  required MangaAudioScript script,
+  required MangaScriptLine line,
+  required String spoken,
+  required String defaultVoice,
+  MangaNarratorVoice? narrator,
+}) {
+  switch (script.audioPlanFor(line)) {
+    case MangaLineAudioPlan.silent:
+      return null;
+    case MangaLineAudioPlan.audiobookClip:
+      final MangaAudiobookClip clip = line.audio as MangaAudiobookClip;
+      return MangaRenderClip(
+        MangaAudiobookClip(
+          bookKey: script.clipBookKey(clip),
+          fileIndex: clip.fileIndex,
+          startMs: clip.startMs,
+          endMs: clip.endMs,
+          byUser: clip.byUser,
+        ),
+      );
+    case MangaLineAudioPlan.localAudio:
+      return MangaRenderLocal(line.audio as MangaLocalAudio);
+    case MangaLineAudioPlan.synthesize:
+      return MangaRenderSynth(
+        voice: mangaSynthVoiceFor(script, line, defaultVoice, narrator),
+        seed: line.effectiveSeed(script.defaultSeed),
+        segments: splitMangaLineSegments(spoken),
+        direction: line.direction,
+      );
+  }
+}
+
+/// 整卷计划：「不读」类型的行不进计划；其余按音源策略分成合成 / 有声书片段 / 不读。
+/// [pageBlocks] 是 OCR 的逐页块（`MokuroPayload.images[i].blocks`），其长度就是页数。
+/// 没有可念文字的行照样进计划（生成端记成未配音，可以手动填写补回）。[narrator] 是
+/// 后端已准备好的旁白声音（null = 不克隆）。
+MangaRenderPlan planMangaRender({
+  required MangaAudioScript script,
+  required List<List<MokuroBlock>> pageBlocks,
+  required String defaultVoice,
+  MangaNarratorVoice? narrator,
+}) {
+  final List<MangaRenderItem> items = <MangaRenderItem>[];
+  final List<String> notRead = <String>[];
+  final List<String> outOfRange = <String>[];
+  for (final MangaScriptLine line in script.lines) {
+    if (!line.kind.isAudible) continue;
+    if (line.page >= pageBlocks.length) {
+      outOfRange.add(line.lineId);
+      continue;
+    }
+    final ({String text, String spoken}) texts = mangaLineTexts(
+      line,
+      pageBlocks,
+      substitutions: script.substitutions,
+    );
+    final MangaRenderSource? source = mangaRenderSourceFor(
+      script: script,
+      line: line,
+      spoken: texts.spoken,
+      defaultVoice: defaultVoice,
+      narrator: narrator,
+    );
+    if (source == null) {
+      notRead.add(line.lineId);
+      continue;
+    }
+    items.add(
+      MangaRenderItem(
+        line: line,
+        text: texts.text,
+        spoken: texts.spoken,
+        source: source,
+      ),
+    );
+  }
+  return MangaRenderPlan(
+    items: items,
+    notRead: notRead,
+    outOfRange: outOfRange,
+  );
+}
+
+/// 一句的显示文字（cue / 制卡用；页码越界时只认手填）。
+String mangaLineText(
+  MangaScriptLine line,
+  List<List<MokuroBlock>> pageBlocks, {
+  List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[],
+}) => mangaLineTexts(line, pageBlocks, substitutions: substitutions).text;
+
+/// 一句的显示文字与实际念的文字。手动填写的念法（`say`）是用户写好的最终文字，两者
+/// 都是它、不过替换表；否则 OCR 拼出的原文：显示过普通替换，念的先把底本换成页面
+/// 印着的注音读音（[resolveMangaLineTexts]），同卷别处注过音、这里没注的词也按那个
+/// 读音（[MangaRubyReadings]，替换表里写了的词以替换表为准），再过替换表加人名读法。
+({String text, String spoken}) mangaLineTexts(
+  MangaScriptLine line,
+  List<List<MokuroBlock>> pageBlocks, {
+  List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[],
+}) {
+  final String? say = line.say;
+  if (say != null) return (text: say.trim(), spoken: say.trim());
+  final ({String text, String spoken}) raw = resolveMangaLineTexts(
+    line,
+    line.page < pageBlocks.length
+        ? pageBlocks[line.page]
+        : const <MokuroBlock>[],
+  );
+  final String spoken = MangaRubyReadings.ofVolume(pageBlocks).apply(
+    raw.spoken.trim(),
+    skip: <String>{
+      for (final CastTextSubstitution s in substitutions)
+        if (s.enabled) s.source,
+    },
+  );
+  return (
+    text: applyCastSubstitutions(raw.text.trim(), substitutions),
+    spoken: applyCastSpokenSubstitutions(spoken, substitutions),
+  );
+}
+
+/// 读法改了的一句：清单里已出的音频按 [MangaRenderedLine.spokenText] 念的，按当前
+/// 替换表（含人名读法）该念 [spoken]。
+typedef MangaSpokenTextChange = ({MangaRenderedLine rendered, String spoken});
+
+/// 清单里已合成出真音频、但按当前替换表该念的文字已经变了的句子（系列人名读法 /
+/// 用词替换改过之后，从制作台定位并重生成）。占位静音（走未配音补回）、剪有声书的
+/// 片段、手填念法的句子、按当前音源策略不再合成的句子都不算。按清单顺序返回。
+List<MangaSpokenTextChange> mangaSpokenTextChanges({
+  required MangaAudioScript script,
+  required List<List<MokuroBlock>> pageBlocks,
+  required MangaRenderManifest manifest,
+}) {
+  final List<MangaSpokenTextChange> out = <MangaSpokenTextChange>[];
+  for (final MangaRenderedLine rendered in manifest.lines) {
+    if (rendered.placeholder) continue;
+    if (rendered.voice?.startsWith(kMangaClipVoicePrefix) ?? false) continue;
+    final MangaScriptLine? line = script.lineById(rendered.lineId);
+    if (line == null || line.say != null || !line.kind.isAudible) continue;
+    if (line.page >= pageBlocks.length) continue;
+    if (script.audioPlanFor(line) != MangaLineAudioPlan.synthesize) continue;
+    final String spoken = mangaLineTexts(
+      line,
+      pageBlocks,
+      substitutions: script.substitutions,
+    ).spoken;
+    if (spoken.isEmpty || spoken == rendered.spokenText) continue;
+    out.add((rendered: rendered, spoken: spoken));
+  }
+  return out;
+}

@@ -2,7 +2,7 @@
 ///
 /// - **Jellyfin 家族**：凭据就是视频的媒体服务器配置（`SyncRepository.getMediaServers` 里的
 ///   `JellyfinServerConfig`），登录 / 登出 / 换线路都在原来的设置页，这里不另存一份；
-/// - **OpenSubsonic**：用户在 设置 › 音乐 › 服务器曲库 里自配（`music_subsonic_servers`，
+/// - **OpenSubsonic**：用户在 设置 › 在线服务 › 媒体服务器 › 服务器曲库 里自配（`music_subsonic_servers`，
 ///   凭据键、设备本地）；
 /// - 混排进本地曲库是每台服务器的显式 opt-in（`music_server_library_mix`），混进去的是专辑卡，
 ///   点开仍走服务器专辑页（按需取曲目）。
@@ -12,6 +12,7 @@
 ///   资料库按方案 §4 v1 不混）。
 library;
 
+import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi_engine/media/music/apple_music/apple_music_catalog_client.dart';
 import 'package:fushi_engine/media/music/apple_music/apple_music_library_client.dart';
 import 'package:fushi_engine/media/music/apple_music/apple_music_personal_client.dart';
@@ -19,13 +20,19 @@ import 'package:fushi_engine/media/music/apple_music/apple_music_token_source.da
 import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi_engine/media/music/server/subsonic_music_client.dart';
 import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
+import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart';
-import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_remote_tracks.dart'
+    show MusicServerBinding;
+import 'package:fushi/src/media/music/server/interconnect_music_client.dart';
 import 'package:fushi/src/media/music/server/jellyfin_music_client.dart';
+import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/store_compliance.dart'
+    show interconnectMusicLibraryAvailable;
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig;
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -72,6 +79,48 @@ Future<List<MusicServerBrowser>> loadMusicServerBrowsers(AppModel app) async {
           ),
         );
       }
+    }
+    if (isYoutubeMusicSourceAvailable && app.prefsRepo.musicYoutubeEnabled) {
+      out.add(YoutubeMusicClient(displayName: 'YouTube'));
+    }
+  }
+  // 已配对、提供音乐库的互联 host（design-imusic-q2：与视频库 / 书库同级，跟着互联总开关走）。
+  final InterconnectMusicHosts? hosts = InterconnectMusicHosts.instance;
+  if (interconnectMusicLibraryAvailable && hosts != null) {
+    try {
+      out.addAll(await hosts.browsers());
+    } on Object catch (e) {
+      // 配对表读不出来（库还没好）时只是不列互联 host，不拖垮其他服务器。
+      debugPrint('[music-interconnect] list hosts failed: $e');
+    }
+  }
+  return out;
+}
+
+/// 曲库 / 本地歌单里的服务器曲目（v149，反馈 se3Fw8HmOX）起播 / 取封面用的服务器：只有
+/// Jellyfin（媒体服务器配置）与启用着的 Subsonic（自配服务器），按当前配置新建客户端、带上
+/// 设置里的码率上限。只拼地址、不发请求；不碰 Apple Music / YouTube（前者读状态要起网页桥）。
+/// `music_remote_tracks.dart` 的 [MusicServerBinding] 经 `AppModel` 装到
+/// `musicServerBindingLoader`。
+Future<Map<String, MusicServerBinding>> loadMusicServerBindings(
+  AppModel app,
+) async {
+  final int? limit = musicServerBitrateLimit(
+    app.isPreferencesReady ? app.prefsRepo.musicServerMaxBitrate : 0,
+  );
+  final Map<String, MusicServerBinding> out = <String, MusicServerBinding>{};
+  void add(MusicServerBrowser b) =>
+      out[b.serverId] = MusicServerBinding(b, maxBitrateKbps: limit);
+  if (app.isDatabaseReady) {
+    for (final MediaServerConfig c in await SyncRepository(
+      app.database,
+    ).getMediaServers()) {
+      if (c is JellyfinServerConfig) add(JellyfinMusicClient(c));
+    }
+  }
+  if (app.isPreferencesReady) {
+    for (final SubsonicServerConfig c in app.prefsRepo.musicSubsonicServers) {
+      if (c.enabled) add(SubsonicMusicClient(c));
     }
   }
   return out;
@@ -158,8 +207,20 @@ AppleMusicLinkedSources? appleMusicLinkedSourcesFor(
 
 /// 这类来源能不能混排进本地曲库（Apple Music 只有热门榜、没有「整库」，不混）。
 bool musicServerSupportsLibraryMix(MusicServerKind kind) => switch (kind) {
-  MusicServerKind.jellyfin || MusicServerKind.subsonic => true,
-  MusicServerKind.appleMusic => false,
+  MusicServerKind.jellyfin ||
+  MusicServerKind.subsonic ||
+  MusicServerKind.fushiHost => true,
+  MusicServerKind.appleMusic || MusicServerKind.youtube => false,
+};
+
+/// 这类来源有没有可浏览的树（专辑 / 艺人 / 歌单 / 榜单）：「推荐」页与推荐首页的服务器货架只列
+/// 有的。YouTube 内置音源只有搜索。
+bool musicServerHasBrowse(MusicServerKind kind) => switch (kind) {
+  MusicServerKind.jellyfin ||
+  MusicServerKind.subsonic ||
+  MusicServerKind.appleMusic ||
+  MusicServerKind.fushiHost => true,
+  MusicServerKind.youtube => false,
 };
 
 /// 来源列表 / 设置里的副标题（Apple Music 分试听与整曲）。
@@ -171,6 +232,8 @@ String musicServerSubtitle(MusicServerBrowser server) => switch (server) {
     MusicServerKind.jellyfin => t.music_server_jellyfin_subtitle,
     MusicServerKind.subsonic => t.music_server_subsonic_subtitle,
     MusicServerKind.appleMusic => t.music_server_apple_music_subtitle,
+    MusicServerKind.youtube => t.music_server_youtube_subtitle,
+    MusicServerKind.fushiHost => t.music_server_fushi_host_subtitle,
   },
 };
 
@@ -180,39 +243,6 @@ const List<int> kMusicServerBitrateChoices = <int>[320, 192, 128];
 /// 服务器码率上限（设置）→ [MusicServerBrowser.streamFor] 的参数：0 = 原样直出。
 int? musicServerBitrateLimit(int settingKbps) =>
     settingKbps <= 0 ? null : settingKbps;
-
-/// 一首服务器曲目 → 播放项。路径是 HTTP 流地址；源属性取服务器报的（转码时取转码后的：
-/// 信号路径面板据此不把转码流判 bit-perfect）。
-MusicPlayItem musicServerPlayItem(
-  MusicServerBrowser browser,
-  MusicServerTrack track, {
-  int? maxBitrateKbps,
-  String? albumTitle,
-  String? coverPath,
-}) {
-  final MusicServerStream stream = browser.streamFor(
-    track,
-    maxBitrateKbps: maxBitrateKbps,
-  );
-  return MusicPlayItem(
-    trackUid: musicServerTrackUid(browser.serverId, track.id),
-    path: stream.uri.toString(),
-    title: track.title,
-    artist: track.artist,
-    album: albumTitle ?? track.album,
-    albumUid: track.albumId == null
-        ? null
-        : musicServerAlbumUid(browser.serverId, track.albumId!),
-    discNo: track.discNo,
-    trackNo: track.trackNo,
-    durationMs: track.durationMs,
-    coverPath: coverPath ?? browser.coverUri(track.coverRef)?.toString(),
-    codec: stream.transcoded ? stream.codec : (track.codec ?? track.container),
-    sampleRate: stream.transcoded ? null : track.sampleRate,
-    bitDepth: stream.transcoded ? null : track.bitDepth,
-    channels: track.channels,
-  );
-}
 
 /// 混排进曲库的一张服务器专辑（专辑网格里与本地专辑并列）。
 class MusicServerAlbumRef {

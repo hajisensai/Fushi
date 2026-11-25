@@ -20,10 +20,15 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/epub/epub_storage.dart' show EpubStorage;
 import 'package:fushi/src/models/local_audio_manager.dart'
     show LocalAudioDbEntry;
+import 'package:fushi_engine/models/local_audio_content_id.dart';
 import 'package:fushi_engine/models/local_audio_source_pref.dart'
     show LocalAudioSourcePref;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/remote_audiobook_revision.dart';
+import 'package:fushi/src/sync/remote_audiobook_revision_store.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteAudiobookInfo;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
@@ -34,6 +39,7 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 import 'fake_asset_store.dart';
 
@@ -182,6 +188,15 @@ class _FakeSyncBackend implements SyncBackend {
     File destination, {
     void Function(double progress)? onProgress,
   }) => _store.getAsset(assetId, destination, onProgress: onProgress);
+  @override
+  Future<Uint8List?> getBytesAsset(String assetId) =>
+      _store.getBytesAsset(assetId);
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => _store.putBytesAsset(namespaceId, name, bytes);
   @override
   Future<Object?> getJsonAsset(String assetId) => _store.getJsonAsset(assetId);
   @override
@@ -736,6 +751,18 @@ void main() {
         isTrue,
         reason: '拉回来的必须是一本能播的书，不是一本只有字幕的壳',
       );
+      // sweep 自动补拉与书架手动下载经同一个记录入口：记下这份包是 host 哪一版，
+      // 之后 host 换了音频 / 字幕，书架才会提示「对端有更新」。
+      final String? hostRevision = (await backend.listRemoteAudiobooks())
+          .singleWhere((RemoteAudiobookInfo a) => a.bookKey == 'HostAudioBook')
+          .contentRevision;
+      expect(hostRevision, isNotNull);
+      final RemoteAudiobookRevisionRecord? record =
+          (await RemoteAudiobookRevisionStore(
+            localDb,
+          ).load())[remoteAudiobookRevisionKeyForBook('HostAudioBook')];
+      expect(record?.revision, hostRevision);
+      expect(record?.sourceId, startsWith('interconnect|'));
     });
 
     test('push：本地有 LocalAudioBook 有声书，host 无 → 推送到 host', () async {
@@ -786,6 +813,17 @@ void main() {
         ),
       );
 
+      // 这台设备以前从 host 下载过这本（记过 host 当时的内容版本），之后 host 那份
+      // 没了、本机把自己的推回去：推完 host 的版本就是本机这份，旧记录必须作废，
+      // 否则书架会把本机自己的推送报成「对端有更新」。
+      await RemoteAudiobookRevisionStore(localDb).put(
+        remoteAudiobookRevisionKeyForBook('LocalAudioBook'),
+        const RemoteAudiobookRevisionRecord(
+          sourceId: 'interconnect|stale-host',
+          revision: 'r1-stale',
+        ),
+      );
+
       final Directory tmp = Directory(p.join(work.path, 'tmp_ab_push'))
         ..createSync();
       final InterconnectSyncBackend backend = await _buildClientBackend(
@@ -811,6 +849,13 @@ void main() {
         report.audiobooksExported,
         1,
         reason: 'LocalAudioBook 有声书应被推送到 host',
+      );
+      expect(
+        (await RemoteAudiobookRevisionStore(
+          localDb,
+        ).load())[remoteAudiobookRevisionKeyForBook('LocalAudioBook')],
+        isNull,
+        reason: '推送后 host 就是本机这份，下载时记的旧内容版本必须作废',
       );
     });
 
@@ -1523,4 +1568,307 @@ void main() {
       },
     );
   });
+
+  // ── 用例 F：拍板 pr3481 本地音频按内容身份 union ──────────────────────────
+  //
+  // 同步原本按 displayName union：同一份库在两端名字不同（android.db / 推荐包的
+  // Japanese audio）会两边各拉一份；名字相同内容不同的另一份库则永远传不过去。
+
+  group('用例F: 本地音频按内容身份 union（拍板 pr3481）', () {
+    late FushiSyncServer server;
+    late FushiDatabase hostDb;
+    late String serverBase;
+    late String hostLibPath;
+    final List<LocalAudioPackageContents> hostImported =
+        <LocalAudioPackageContents>[];
+    const String token = 'orch-live-audio-identity-token';
+
+    setUp(() async {
+      hostImported.clear();
+      hostDb = _memDb();
+      hostLibPath = p.join(work.path, 'host_lib', 'local_audio_1.db');
+      _writeAudioDb(hostLibPath, <String>['猫', '犬']);
+      final LocalLibraryHostService libSvc = LocalLibraryHostService(
+        db: hostDb,
+        dictionaryResourceRoot: Directory(work.path),
+        packages: SyncAssetPackageService(db: hostDb),
+        refreshDictionaryCache: () async {},
+        runExclusive: (Future<void> Function() body) => body(),
+        localAudioEntries: <LocalAudioDbEntry>[
+          LocalAudioDbEntry(
+            path: hostLibPath,
+            displayName: 'Japanese audio',
+            enabled: true,
+          ),
+        ],
+        localAudioStagingDir: Directory(work.path),
+        onLocalAudioImported: (LocalAudioPackageContents c) async =>
+            hostImported.add(c),
+      );
+      server = FushiSyncServer(
+        syncDataDir: p.join(work.path, 'server_data_identity'),
+        port: 0,
+        token: token,
+        allowLan: false,
+        libraryService: libSvc,
+      );
+      await server.start();
+      serverBase = 'http://127.0.0.1:${server.port}';
+    });
+
+    tearDown(() async {
+      await server.stop();
+      await hostDb.close();
+    });
+
+    Future<SyncRunReport> runLive(
+      List<LocalAudioDbEntry> local,
+      List<LocalAudioPackageContents> imported, {
+      InterconnectSyncBackend? backend,
+    }) async {
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      final Directory tmp = Directory(
+        p.join(work.path, 'tmp_identity_${imported.hashCode}'),
+      )..createSync(recursive: true);
+      final InterconnectSyncBackend b =
+          backend ?? await _buildClientBackend(base: serverBase, token: token);
+      final SyncOrchestrator orch = _audioOrchestrator(
+        db: localDb,
+        backend: b,
+        tmp: tmp,
+        localAudioEntries: local,
+        onLocalAudioImported: (LocalAudioPackageContents c) async =>
+            imported.add(c),
+      );
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncLocalAudioLiveForTest(report, b);
+      return report;
+    }
+
+    test('同一份库两端名字不同（android.db vs Japanese audio）→ 不互拉', () async {
+      final String localPath = p.join(work.path, 'client', 'android.db');
+      _writeAudioDb(localPath, <String>['犬', '猫']);
+      final List<LocalAudioPackageContents> imported =
+          <LocalAudioPackageContents>[];
+      final SyncRunReport report = await runLive(<LocalAudioDbEntry>[
+        LocalAudioDbEntry(path: localPath, displayName: 'android.db'),
+      ], imported);
+
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+      expect(report.localAudioImported, 0, reason: '同一份库不该再拉一份');
+      expect(report.localAudioExported, 0, reason: '同一份库不该再推一份');
+      expect(imported, isEmpty);
+      expect(hostImported, isEmpty);
+    });
+
+    test('名字相同、内容不同 → 两份库都传（拉按 contentId 取 host 那份）', () async {
+      final String localPath = p.join(work.path, 'client', 'local_audio_9.db');
+      _writeAudioDb(localPath, <String>['鳥']);
+      final List<LocalAudioPackageContents> imported =
+          <LocalAudioPackageContents>[];
+      final SyncRunReport report = await runLive(<LocalAudioDbEntry>[
+        LocalAudioDbEntry(path: localPath, displayName: 'Japanese audio'),
+      ], imported);
+
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+      expect(report.localAudioImported, 1);
+      expect(report.localAudioExported, 1);
+      expect(
+        imported.single.contentId,
+        computeLocalAudioContentId(hostLibPath),
+        reason: '拉到的是 host 那份库',
+      );
+      expect(
+        hostImported.single.contentId,
+        computeLocalAudioContentId(localPath),
+        reason: '推上去的是本端这份，manifest 带着身份',
+      );
+    });
+
+    test('对端不声明内容身份能力（旧版本）→ 报告里记一条提示升级', () async {
+      final String localPath = p.join(work.path, 'client', 'android.db');
+      _writeAudioDb(localPath, <String>['犬', '猫']);
+      final _OldPeerBackend old = _OldPeerBackend();
+      final SyncRepository repo = SyncRepository(_memDb());
+      await repo.setFushiClientUrls(<FushiClientUrl>[
+        FushiClientUrl(url: serverBase, enabled: true),
+      ]);
+      await repo.setFushiClientToken(token);
+      await old.restoreAuth(repo);
+      await old.authenticate(repo: repo);
+
+      final SyncRunReport report = await runLive(
+        <LocalAudioDbEntry>[
+          LocalAudioDbEntry(path: localPath, displayName: 'android.db'),
+        ],
+        <LocalAudioPackageContents>[],
+        backend: old,
+      );
+      expect(
+        report.errors.where((String e) => e.contains('older Fushi')),
+        hasLength(1),
+        reason: '${report.errors}',
+      );
+    });
+  });
+
+  group('用例G: 云 __local_audio__ 按身份旁注 union（拍板 pr3481）', () {
+    Future<SyncRunReport> runCloud(
+      FakeAssetStore store,
+      List<LocalAudioDbEntry> local,
+      List<LocalAudioPackageContents> imported,
+    ) async {
+      final _FakeSyncBackend backend = _FakeSyncBackend(store);
+      final Directory tmp = Directory(
+        p.join(work.path, 'tmp_cloud_${imported.hashCode}'),
+      )..createSync(recursive: true);
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final SyncOrchestrator orch = _audioOrchestrator(
+        db: db,
+        backend: backend,
+        tmp: tmp,
+        localAudioEntries: local,
+        onLocalAudioImported: (LocalAudioPackageContents c) async =>
+            imported.add(c),
+      );
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncLocalAudioSources(
+        report,
+        direction: SyncAssetDirection.both,
+      );
+      return report;
+    }
+
+    Future<List<String>> names(FakeAssetStore store) async {
+      final String ns = await store.ensureNamespace(kSyncLocalAudioNamespace);
+      return <String>[
+        for (final AssetEntry e in await store.listChildren(ns)) e.name,
+      ]..sort();
+    }
+
+    test('推送时写身份旁注；另一台同内容不同名的设备不再拉 / 推', () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final String a = p.join(work.path, 'dev_a', 'local_audio_1.db');
+      _writeAudioDb(a, <String>['猫', '犬']);
+      final SyncRunReport pushed = await runCloud(store, <LocalAudioDbEntry>[
+        LocalAudioDbEntry(path: a, displayName: 'Japanese audio'),
+      ], <LocalAudioPackageContents>[]);
+      expect(pushed.errors, isEmpty, reason: '${pushed.errors}');
+      expect(pushed.localAudioExported, 1);
+      final String id = computeLocalAudioContentId(a)!;
+      expect(await names(store), <String>[
+        'Japanese audio.fushiaudiolib',
+        localAudioIdentityMarkerName('Japanese audio', id),
+      ]);
+
+      final String b = p.join(work.path, 'dev_b', 'android.db');
+      _writeAudioDb(b, <String>['犬', '猫']);
+      final List<LocalAudioPackageContents> imported =
+          <LocalAudioPackageContents>[];
+      final SyncRunReport second = await runCloud(store, <LocalAudioDbEntry>[
+        LocalAudioDbEntry(path: b, displayName: 'android.db'),
+      ], imported);
+      expect(second.errors, isEmpty, reason: '${second.errors}');
+      expect(second.localAudioExported, 0);
+      expect(second.localAudioImported, 0);
+      expect(imported, isEmpty);
+    });
+
+    test('旧版本传的库包（无旁注）拉下来后补旁注；撞名的不同库另起资产名', () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final String legacy = p.join(work.path, 'legacy', 'nhk.db');
+      _writeAudioDb(legacy, <String>['猫']);
+      // 旧版本只传库包、不写旁注。
+      final FushiDatabase pkgDb = _memDb();
+      addTearDown(pkgDb.close);
+      final File pkg = File(p.join(work.path, 'legacy.fushiaudiolib'));
+      await SyncAssetPackageService(db: pkgDb).exportLocalAudioPackage(
+        displayName: 'NHK',
+        enabled: true,
+        sources: const <LocalAudioSourcePref>[],
+        dbFile: File(legacy),
+        outputFile: pkg,
+      );
+      final String ns = await store.ensureNamespace(kSyncLocalAudioNamespace);
+      await store.putAsset(ns, 'NHK.fushiaudiolib', pkg);
+
+      // 本端有一份同名但内容不同的「NHK」：按名会被当成同一份（旧行为），这里
+      // 旁注还没有，退回按名认 → 两边都不动。
+      final String mine = p.join(work.path, 'mine', 'local_audio_2.db');
+      _writeAudioDb(mine, <String>['犬']);
+      final SyncRunReport byName = await runCloud(store, <LocalAudioDbEntry>[
+        LocalAudioDbEntry(path: mine, displayName: 'NHK'),
+      ], <LocalAudioPackageContents>[]);
+      expect(byName.errors, isEmpty, reason: '${byName.errors}');
+      expect(byName.localAudioExported + byName.localAudioImported, 0);
+
+      // 一台没有任何库的设备拉下旧库包，顺手替它补上旁注。
+      final List<LocalAudioPackageContents> imported =
+          <LocalAudioPackageContents>[];
+      final SyncRunReport pulled = await runCloud(
+        store,
+        const <LocalAudioDbEntry>[],
+        imported,
+      );
+      expect(pulled.errors, isEmpty, reason: '${pulled.errors}');
+      expect(pulled.localAudioImported, 1);
+      final String legacyId = computeLocalAudioContentId(legacy)!;
+      expect(
+        await names(store),
+        contains(localAudioIdentityMarkerName('NHK', legacyId)),
+      );
+
+      // 有了旁注，同名不同内容的「NHK」就是另一份库：推到另起的资产名，并拉回云上那份。
+      final List<LocalAudioPackageContents> got = <LocalAudioPackageContents>[];
+      final SyncRunReport both = await runCloud(store, <LocalAudioDbEntry>[
+        LocalAudioDbEntry(path: mine, displayName: 'NHK'),
+      ], got);
+      expect(both.errors, isEmpty, reason: '${both.errors}');
+      expect(both.localAudioExported, 1);
+      expect(both.localAudioImported, 1);
+      expect(await names(store), contains('NHK (2).fushiaudiolib'));
+      expect(got.single.contentId, legacyId);
+    });
+  });
+}
+
+/// 旧版本 host：capabilities 不声明本地音频内容身份。
+class _OldPeerBackend extends InterconnectSyncBackend {
+  _OldPeerBackend() : super.withProbe((String u, String t) async => true);
+
+  /// 老 host 没有 `/api/capabilities`（404 → null）。
+  @override
+  Future<Object?> readHostCapabilities() async => null;
+}
+
+/// 写一个 Yomitan 本地音频库（entries + android），每个 [words] 一行。
+void _writeAudioDb(String path, List<String> words) {
+  final File f = File(path);
+  if (f.existsSync()) f.deleteSync();
+  f.parent.createSync(recursive: true);
+  final sqlite.Database db = sqlite.sqlite3.open(path);
+  try {
+    db.execute(
+      'CREATE TABLE entries (expression TEXT, reading TEXT, file TEXT, '
+      'source TEXT)',
+    );
+    db.execute('CREATE TABLE android (file TEXT, source TEXT, data BLOB)');
+    for (final String w in words) {
+      db.execute('INSERT INTO entries VALUES (?, ?, ?, ?)', <Object?>[
+        w,
+        w,
+        '$w.mp3',
+        'nhk16',
+      ]);
+      db.execute('INSERT INTO android VALUES (?, ?, ?)', <Object?>[
+        '$w.mp3',
+        'nhk16',
+        Uint8List.fromList(<int>[1, 2, 3]),
+      ]);
+    }
+  } finally {
+    db.dispose();
+  }
 }

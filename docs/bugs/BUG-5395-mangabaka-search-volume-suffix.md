@@ -1,0 +1,33 @@
+## BUG-5395 · mangabaka-search-volume-suffix
+- **报告**：2026-11-23（用户：漫画「Horimiya ホリミヤ 第01巻」开「在线匹配封面」切到 MangaBaka，结果区空白；追问「其他源也这样吗」，要求顾及中文漫画 / 漫画书名）
+- **真实性**：✅ 真 bug。弹窗与控制通道 `book.scrape.search` 都把书架上的单卷书名（`displayTitleForBook`）原样发给在线源。2026-11-23 实测：
+  - MangaBaka：`Horimiya ホリミヤ 第01巻` 0 条，`ホリミヤ` / `Horimiya` 命中；中文名（`堀与宫村`、`进击的巨人`）、韩文名能直接命中，带卷号就 0 条。
+  - Bangumi：中日混写名 0 条，单写中文名能映射到日文条目，带卷号也能搜。
+  - 书架分卷判据 `parseBookSeriesKey` 不认港台「第N集」与韩文「N권」，这类卷整个书名被当成系列名。
+  - 卷封面网格只取日文版卷封面，中文版漫画也贴日文封面。
+  - 根因：`fushi/lib/src/media/metadata/book_metadata_scrape_facade.dart` `searchDetailed` 只用原词搜一次；`packages/fushi_engine/lib/media/collections/book_series_key.dart` `_volumeSuffix` 卷号单位缺 集 / 권；`fushi/lib/src/media/metadata/book_metadata_scraper.dart` `fetchMangaBakaVolumeCovers` 写死 `language: 'ja'`。
+- **[x] ① 已修复**
+  - 新增纯函数 `packages/fushi_engine/lib/media/metadata/books/book_search_query.dart` `bookSearchQueries`，按源的粒度 `BookScrapeSource.searchGranularity` 生成候选词：
+    - 系列级（MangaBaka / AniList）：系列名 → 中日韩部分 → 拉丁部分；
+    - 单卷级（Bangumi / NDL / 楽天）：原词 → 「名 卷号」→ 名 → 拉丁部分；
+    - 先去掉打头标签 `[作者]` / `【漫画】`，整个书名都在括号里时取含中日韩字的那组；
+    - `Re:ゼロ…`、`SPY×FAMILY` 这类一个词里两种文字的书名不切开；
+    - 至多 4 个。
+  - `searchDetailed` 依次试，第一个有结果的为准，请求出错照常抛出。返回值带实际用的词：弹窗搜索框保留用户的词，结果上方提示「显示的是“X”的结果」；控制通道多回 `matchedQuery`。ISBN / URL / 纯数字 / DLsite / openBD / iTunes 不改写。
+  - `_volumeSuffix` 认 卷 / 巻 / 冊 / 册 / 集 / 권。
+  - 卷封面按书的版本语言挑（`fetchMangaBakaVolumeCoverSet`，`zh-tw` / `zh-hk` 归到 `zh`），没有该语言版本时回落日文版。弹窗提示「没有中文版卷封面，显示的是日文版」；控制通道 `volumes` 收 `language`，回实际用的语言；`apply` 按书的语言挑。
+  - 卷封面网格预选卷号在调用方没给时从预填书名解析。
+- **[x] ② 已加自动化测试**
+  - `packages/fushi_engine/test/media/metadata/books/book_search_query_test.dart`：日 / 简 / 繁 / 港台 / 韩卷号，混写名，打头标签，整名在括号里，不切开的书名。
+  - `fushi/test/media/metadata/book_metadata_scrape_facade_test.dart`「searchDetailed 改写重搜」：重试顺序、命中即停、全零、出错不续打、不改写的输入。
+  - `fushi/test/media/metadata/book_cover_scrape_dialog_test.dart`：
+    - 「BUG-5395 分卷混写书名切到 MangaBaka…」：发出的 `q` 序列、搜索框不变、预选顺序；
+    - 「BUG-5395 改写词命中时显示…」；
+    - 「中文书：只有日文版卷封面时回落并提示；有中文版时不提示」。
+  - `fushi/test/media/collections/book_series_grouper_test.dart`「中文 / 韩文卷号单位」。
+- **备注（已知未覆盖）**
+  - `86―エイティシックス― 3` 这类破折号副标题会被当成「86」系列（`parseBookSeriesKey` 现有行为）。
+  - 上 / 中 / 下 分册不认作卷号。
+  - AniList 源只搜小说（`format: NOVEL`），漫画搜不到。
+  - NDL 只收日本出版物，中文版漫画查不到。
+  - 以上不在本修复范围。

@@ -225,16 +225,19 @@ extension _ReaderWebView on _ReaderFushiPageState {
     if (!p.isWithin(p.canonicalize(_extractDir!), p.canonicalize(joinedPath))) {
       return _forbidden('path traversal blocked: $epubPath');
     }
-    final OnlineNovelChapterLoader? onlineChapters = _onlineChapterLoader;
-    if (onlineChapters != null) {
-      await _ensureOnlineChapter(onlineChapters, filePath);
-    }
+    // 没有取章加载器的网文书（LNReader 下载成的 EPUB）：正文本来就在盘上，
+    // 直接交给缺图接线（见 [prepareReaderChapterFile]）。
+    await prepareReaderChapterFile(
+      filePath: filePath,
+      chapterLoader: _onlineChapterLoader,
+      missingImages: _onlineMissingImages,
+      ensureOnlineChapter: (OnlineNovelChapterLoader loader) =>
+          _ensureOnlineChapter(loader, filePath),
+    );
     final File file = File(filePath);
     if (!file.existsSync()) {
       return _notFound('resource not found: $epubPath (resolved: $filePath)');
     }
-
-    Uint8List data = await file.readAsBytes();
 
     // BUG-1203：「这是不是一个该走 HTML 处理链的内容文档」以 **EPUB 自己声明的
     // media-type** 为准，扩展名表只在声明缺失/畸形时兜底。EPUB 不规定内容文档的
@@ -266,6 +269,31 @@ extension _ReaderWebView on _ReaderFushiPageState {
     // `sanitizeXhtml` 是为 HTML5 解析语义写的补偿，切走后不再防护那两类故障。
     String mime = isHtmlDocument ? 'text/html' : extMime;
 
+    // novel-17d：缓存命中不读盘。分类只看路径与 manifest，不需要字节，所以先查
+    // 两份按路径键控的缓存（章节 HTML LRU、样式表净化缓存），命中直接下发；原先先
+    // `readAsBytes` 再查缓存，翻回已读章 / 预取命中时整章字节白读一遍。缓存检查放在
+    // [_ensureOnlineChapter] 与 404 判定之后：在线书取回正文时那一章的条目已被丢弃，
+    // 不会把占位页的缓存当正文发出去。字体分支没有缓存，照常读字节。
+    final bool servesStyledHtml = isHtmlDocument && _settings != null;
+    final Uint8List? cachedBytes = servesStyledHtml
+        ? _cachedChapterHtml(filePath)
+        : (mime == 'text/css' ? _sanitizedCssCache[filePath] : null);
+    if (cachedBytes != null) {
+      return _ReaderResourceResponse(
+        contentType: mime,
+        contentEncoding: _contentEncodingForMime(mime),
+        statusCode: 200,
+        reasonPhrase: 'OK',
+        headers: const <String, String>{
+          'Access-Control-Allow-Origin': '*',
+          'Cache-Control': 'no-cache',
+        },
+        data: cachedBytes,
+      );
+    }
+
+    Uint8List data = await file.readAsBytes();
+
     // 书自带的字体同样可能错设「x = 0 是竖排基线」（见 clearVerticalBaselineFlag）。
     if (_isFontMime(mime) || _isFontMime(declaredMime)) {
       final VerticalBaselineFontResult fixed =
@@ -284,20 +312,19 @@ extension _ReaderWebView on _ReaderFushiPageState {
           !_sanitizedCssCache.containsKey(filePath)) {
         _sanitizedCssCache.remove(_sanitizedCssCache.keys.first);
       }
-      data = _sanitizedCssCache.putIfAbsent(filePath, () {
-        // HBK-AUDIT-118: tolerate non-UTF-8 CSS bytes instead of throwing
-        // (decode + rewrite + encode run natively in one FFI call).
-        return ReaderResourceSanitizer.sanitizeCssBytes(data);
-      });
+      // HBK-AUDIT-118: tolerate non-UTF-8 CSS bytes instead of throwing
+      // (decode + rewrite + encode run natively in one FFI call).
+      data = ReaderResourceSanitizer.sanitizeCssBytes(data);
+      _sanitizedCssCache[filePath] = data;
     }
 
-    if (isHtmlDocument && _settings != null) {
+    if (servesStyledHtml) {
       // BUG-270 (TODO-296 B): repeat chapter visits (forward/back paging,
-      // prefetched chapters) reuse the sanitized + style-injected bytes from
-      // the LRU cache instead of re-reading/decoding/sanitizing/injecting. The
+      // prefetched chapters) are served from the LRU cache above, before the
+      // disk read. Here is the cold miss: sanitize + inject once and cache. The
       // cache is dropped on every style change (_invalidateStyleCache), so a
       // cached entry always carries the current styleTag.
-      data = _chapterHtmlBytes(filePath, data);
+      data = _buildAndCacheChapterHtml(filePath, data);
     }
 
     // TODO-1074 (root cause B): images are immutable on disk and carry no live
@@ -323,28 +350,102 @@ extension _ReaderWebView on _ReaderFushiPageState {
 
   /// 在线小说书 / 网页小说书：WebView 要的章节还是占位页就先取正文写回解压树
   /// （按需取章，见 [OnlineNovelChapterLoader]）。换成正文后丢掉这一章的 sanitize
-  /// 缓存与 [EpubChapter] 的正文缓存，否则会继续下发 / 计数占位页。取不到（断网
+  /// 缓存与 [EpubChapter] 的正文缓存，否则会继续下发 / 计数占位页；并把这一章
+  /// 的字数换成正文的（[_adoptOnlineChapterCharCount]，BUG-4809）。取不到（断网
   /// / 站点挂了 / 插件被删）时照常下发占位页，并提示原因——重进这一章会再取。
+  ///
+  /// 走到这里的不都是导航：连续模式章节无缝衔接在阅读中途用 `fetch` 挂前后邻章，
+  /// 请求同样经拦截层。那种取回的字数先记着，等当前单元结算后才换——无缝换章
+  /// 在 [_onSeamlessChapterActivated]，整章导航就在这里：导航在飞且账本当前单元
+  /// 已空（[_beginNavigation] 结算过了）。
   Future<void> _ensureOnlineChapter(
     OnlineNovelChapterLoader loader,
     String filePath,
   ) async {
+    if (_restoreInFlight && _readLedger.current == null) {
+      _applyDeferredOnlineChapterCharCounts();
+    }
+    final int? chapterIndex = loader.chapterIndexForFile(filePath);
     try {
-      if (!await loader.ensureLoaded(filePath)) return;
+      final OnlineNovelChapterLoaded? loaded = await loader.ensureLoaded(
+        filePath,
+      );
+      _onlineMissingImages?.chapterServed(chapterIndex);
+      if (loaded == null) return;
       _sanitizedHtmlCache.remove(filePath);
-      final int? index = loader.chapterIndexForFile(filePath);
       final EpubBook? book = _book;
-      if (book != null && index != null && index < book.chapters.length) {
-        book.chapters[index].discardCachedHtml();
+      if (book == null || loaded.index >= book.chapters.length) return;
+      book.chapters[loaded.index].discardCachedHtml();
+      if (!mounted) return;
+      _adoptOnlineChapterCharCount(book, loaded);
+      final List<int>? grown = loaded.grownSpineCharacters;
+      // novel-d6：取回的是网页小说书末尾那一章、解压树的 spine 末尾又续挂了新
+      // 占位。在这次请求放行之前并进已打开的书：随后为这一章装页时下发的无缝
+      // 阅读序、「有没有下一章」的判断就已包含新章。
+      if (grown != null && grown.length > book.chapters.length) {
+        await _adoptGrownOnlineSpine(book, grown);
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('ReaderFushi.onlineChapter', e, stack);
       if (!mounted) return;
       FushiToast.show(
-        msg: t.novel_online_chapter_failed(error: '$e'),
+        // 归一成用户看得懂的一句（断网 / 超时 / HTTP 状态），不甩异常原文；
+        // 原文已在上面写进错误日志。
+        msg: t.novel_online_chapter_failed(error: describeOnlineSourceError(e)),
         severity: ToastSeverity.error,
       );
     }
+  }
+
+  /// 缺图接线（[ReaderMissingImagesWiring]）：章节下发与补到图后的重载都在那里，
+  /// 页面只提供状态读取与缓存 / 重载动作。
+  ReaderMissingImagesWiring _createOnlineMissingImages(
+    OnlineNovelMissingImagesRetrier retrier,
+  ) => ReaderMissingImagesWiring(
+    retrier: retrier,
+    isActive: () => mounted,
+    currentChapter: () => _currentChapter,
+    restoreInFlight: () => _restoreInFlight,
+    discardChapterCaches: _discardOnlineChapterCaches,
+    reloadCurrentChapter: _reloadWithCurrentSettings,
+    onManualRetryFinished: (OnlineNovelMissingImagesRetry result) {
+      if (!mounted) return;
+      if (result.remaining == 0) {
+        FushiToast.show(
+          msg: t.novel_online_images_recovered,
+          severity: ToastSeverity.success,
+        );
+      } else {
+        FushiToast.show(
+          msg: t.novel_online_images_still_missing(n: result.remaining),
+          severity: ToastSeverity.warning,
+        );
+      }
+    },
+    onError: (Object error) {
+      if (!mounted) return;
+      FushiToast.show(
+        msg: t.novel_online_images_retry_failed(
+          error: describeOnlineSourceError(error),
+        ),
+        severity: ToastSeverity.error,
+      );
+    },
+  );
+
+  /// 补取到了第 [index] 章的插图（文件已写回）：丢掉这一章的下发缓存与正文缓存。
+  /// 书没就绪 / 章号越界返回 false（不重载）。
+  bool _discardOnlineChapterCaches(
+    int index,
+    bool Function(String filePath) inChapter,
+  ) {
+    final EpubBook? book = _book;
+    if (book == null || index >= book.chapters.length) return false;
+    _sanitizedHtmlCache.removeWhere(
+      (String path, Uint8List _) => inChapter(path),
+    );
+    book.chapters[index].discardCachedHtml();
+    return true;
   }
 
   Future<WebResourceResponse?> _interceptRequest(WebUri url) async {
@@ -389,17 +490,21 @@ extension _ReaderWebView on _ReaderFushiPageState {
     );
   }
 
-  // BUG-270 (TODO-296 B): return the sanitized + style-injected chapter bytes
-  // for [filePath], serving from the LRU cache on a hit and building+caching on
-  // a miss. [rawData] is the already-read on-disk bytes from _interceptRequest
-  // (avoids a second disk read on the cold path). On an LRU hit the entry is
-  // moved to most-recently-used.
-  Uint8List _chapterHtmlBytes(String filePath, Uint8List rawData) {
+  // BUG-270 (TODO-296 B): the LRU hit path for the sanitized + style-injected
+  // chapter bytes of [filePath]. Looked up *before* any disk read (novel-17d);
+  // a hit is moved to most-recently-used.
+  Uint8List? _cachedChapterHtml(String filePath) {
     final Uint8List? cached = _sanitizedHtmlCache.remove(filePath);
     if (cached != null) {
       _sanitizedHtmlCache[filePath] = cached; // bump to MRU
-      return cached;
     }
+    return cached;
+  }
+
+  // BUG-270: the cold-miss path — [rawData] is the on-disk bytes the resource
+  // branch read after [_cachedChapterHtml] missed; sanitize + inject once and
+  // cache the result.
+  Uint8List _buildAndCacheChapterHtml(String filePath, Uint8List rawData) {
     final Uint8List built = _buildSanitizedChapterHtmlBytes(
       rawData,
       chapterIndex: _chapterIndexForFilePath(filePath),
@@ -409,16 +514,28 @@ extension _ReaderWebView on _ReaderFushiPageState {
   }
 
   // TODO-1128: reverse the served on-disk XHTML path back to its spine index so
-  // the injection pipeline can look up absorbed single-image chapters. Linear
-  // scan over chapters (tens–hundreds), only on the cold cache-miss/prefetch
-  // path — never per frame. Returns -1 when the path is not a chapter document.
+  // the injection pipeline can look up absorbed single-image chapters. Returns
+  // -1 when the path is not a chapter document.
+  //
+  // 路线图 m1 / novel-17e：查表而不是逐章重算路径（每章两次 canonicalize）。表按书建一次，
+  // 章节列表换了（网文追加章节）或解包目录变了才重建，见 [ReaderChapterPathIndex]。
   int _chapterIndexForFilePath(String filePath) {
     final EpubBook? book = _book;
-    if (book == null) return -1;
-    for (int i = 0; i < book.chapters.length; i++) {
-      if (_chapterFilePath(i) == filePath) return i;
+    final String? dir = _extractDir;
+    if (book == null || dir == null) return -1;
+    final List<EpubChapter> chapters = book.chapters;
+    ReaderChapterPathIndex? index = _chapterPathIndex;
+    if (index == null ||
+        !index.describes(source: chapters, count: chapters.length, dir: dir)) {
+      index = ReaderChapterPathIndex.build(
+        source: chapters,
+        count: chapters.length,
+        dir: dir,
+        pathOf: _chapterFilePath,
+      );
+      _chapterPathIndex = index;
     }
-    return -1;
+    return index.indexOf(filePath);
   }
 
   // BUG-270: insert into the LRU, evicting the least-recently-used entry when
@@ -552,6 +669,23 @@ extension _ReaderWebView on _ReaderFushiPageState {
   // 异步 IO：当前帧先收尾，IO 让出主 isolate，净化（单章 ms 级 sync CPU）保留；
   // 真异步后按 _styleEpoch 丢弃跨样式失效的过期结果（styleTag 烤进缓存条目），
   // 在飞守卫此时才真正有防重入意义。
+  /// novel-17f：从 [fromChapter] 沿阅读方向（[_chapterAdvanceDirection]，导航 /
+  /// 无缝换章时采样）翻过章界后真正会加载的章。原先固定取 `+1`：倒着读时预取的是刚
+  /// 离开的下一章，翻上一章照样冷读盘；「插图并入正文」时 `+1` 可能是被吸收的单图章
+  /// ——它从不单独加载（导航经 [_resolveNavChapter] 重定向到宿主），预取白做。这里与
+  /// 翻页走同一张虚拟页表（[EpubSpreadMap.pageTurnTargetChapter]）；表未就绪时退回
+  /// 裸章号 ± 1（与翻页兜底分支一致）。
+  int? _htmlPrefetchTarget(int fromChapter) {
+    final EpubBook? book = _book;
+    if (book == null) return null;
+    final int direction = _chapterAdvanceDirection;
+    final EpubSpreadMap? map = _spreadMap;
+    if (map != null) return map.pageTurnTargetChapter(fromChapter, direction);
+    final int target = fromChapter + direction;
+    if (target < 0 || target >= book.chapters.length) return null;
+    return target;
+  }
+
   void _prefetchAdjacentChapter(int index) {
     if (_settings == null) return;
     final String? filePath = _chapterFilePath(index);
@@ -723,6 +857,9 @@ extension _ReaderWebView on _ReaderFushiPageState {
     // content-ready 后的「已分页基线」，供 _syncPageSize 与 settle 后的真实视口比对。
     _paginatedWidth = screenSize.width;
     _paginatedHeight = screenSize.height;
+    // 反馈 R7k887yaJI ③：章节无缝衔接只在连续模式 + 开关开 + 非双页文档时下发。
+    final ({bool active, int index, List<ReaderSeamlessChapterEntry> order})
+    seamless = _seamlessEngineConfig(continuousMode: continuousMode);
     return ReaderEngineConfig(
       navigationGeneration: navigationGeneration,
       continuousMode: continuousMode,
@@ -744,6 +881,9 @@ extension _ReaderWebView on _ReaderFushiPageState {
       swipeFastVelocity: swipeThresholds.fastVelocity,
       wheelGestureQuietMs: ReaderFushiSource.instance.wheelPageTurnInterval
           .clamp(150, 800),
+      continuousTurnPullPx: s.continuousChapterTurnResistance.pullPx,
+      continuousTurnPinMidGesture:
+          s.continuousChapterTurnResistance.pinMidGesture,
       pageTurnAnimation: _effectivePageTurnAnimation.key,
       pageTurnDurationMs: s.pageTurnAnimationSpeed.durationMs,
       pageTurnFollowDrag: s.pageTurnFollowDrag,
@@ -781,6 +921,10 @@ extension _ReaderWebView on _ReaderFushiPageState {
       vnMergeCrossScreenSentenceAudioCues:
           s.visualNovelMergeCrossScreenSentenceAudioCues,
       sentenceAudioCuesJson: sentenceAudioCuesJson,
+      audiobookLineAlignFollow: _audiobookLineAlignFollow,
+      seamlessChapters: seamless.active,
+      seamlessChapterIndex: seamless.index,
+      seamlessChapterOrder: seamless.order,
     );
   }
 
@@ -807,8 +951,17 @@ extension _ReaderWebView on _ReaderFushiPageState {
       pageTurnDurationMs: s.pageTurnAnimationSpeed.durationMs,
       pageTurnFollowDrag: s.pageTurnFollowDrag,
       swipeLeftIsForward: _readerSwipeLeftIsForward,
+      continuousTurnPullPx: s.continuousChapterTurnResistance.pullPx,
+      continuousTurnPinMidGesture:
+          s.continuousChapterTurnResistance.pinMidGesture,
+      audiobookLineAlignFollow: _audiobookLineAlignFollow,
     );
   }
+
+  /// 连续模式有声书跟读是否整行对齐（偏好 `audiobook_scroll_follow`，反馈 tUJsiLpL9d）。
+  bool get _audiobookLineAlignFollow =>
+      ReaderFushiSource.instance.audiobookScrollFollow ==
+      kAudiobookScrollFollowLineAlign;
 
   /// 实际播放的翻页效果：用户所选按墨水屏 / 系统「减弱动态效果」降级（规则唯一出处
   /// [effectivePageTurnAnimation]）。JS 侧只认这个结果，不再自己判减弱动态效果。
@@ -1394,10 +1547,15 @@ install: function(C) {
         return;
       }
       var imgUrl = _fushiBlockImageUrl(tapEl);
+      var shiftTap = !!(e && e.shiftKey);
+      var tapGate = window.__fushiTapGate;
+      // GitHub #3088：「单击查词」关闭（镜像 lookup === false）且不是 Shift 点击时，
+      // 单击正文与点空白同一语义——VN「点击前进」不再只认字面外的点。
+      var tapLookupOff = !shiftTap && !!tapGate && tapGate.lookup === false;
       if (imgUrl) {
         window.flutter_inappwebview.callHandler('onImageTap', imgUrl);
       } else if (fushiVnMode && fushiVnClickAdvance &&
-          _fushiVnTapIsBlank(x, y) &&
+          (tapLookupOff || _fushiVnTapIsBlank(x, y)) &&
           window.fushiReader && window.fushiReader.paginate) {
         // TODO-909: VN blank-tap. Only when the tap is NOT over matchable
         // text (so word lookup still wins on text).
@@ -1424,8 +1582,6 @@ install: function(C) {
               + ' scrollX=' + window.scrollX + ' scrollY=' + window.scrollY);
           } catch (err) {}
         }
-        var shiftTap = !!(e && e.shiftKey);
-        var tapGate = window.__fushiTapGate;
         if (tapGate && window.fushiSelection &&
             (shiftTap || (tapGate.chrome && tapGate.lookup))) {
           // BUG-712 ①（查词时延）：门控通过时 JS 直接选词——与旧链 Dart onTap→
@@ -1769,6 +1925,9 @@ $kContinuousWheelScrollJs
       // 必须松手、静默后再滑一次才跨章。离散滚轮/数位板旋钮：一格通常只有一个
       // WheelEvent，不能再要求 arm-then-fire 的第二拍，否则设备会表现为完全无响应。
       if (pointerKind === 'trackpad' && !startsNewWheelGesture) return;
+      // 反馈 R7k887yaJI 重开：文档内换章的所有者（章节无缝衔接）认领了这一侧就由它换章，
+      // 不再让 Dart 从（可能已在文档内换过的）章号再跨一章。
+      if (r && typeof r.claimBoundaryTurn === 'function' && r.claimBoundaryTurn(wheelDir)) return;
       window.flutter_inappwebview.callHandler(
         'onBoundarySwipe', wheelDir, pointerKind);
       return;
@@ -2297,6 +2456,8 @@ updateLive: function(patch) {
                     parameters: params,
                   );
           ReaderFushiPage.debugCaretSurface = () => _caretSurface.name;
+          ReaderFushiPage.debugChapterCharCounts = () =>
+              List<int>.unmodifiable(_chapterCharCounts);
           ReaderFushiPage.debugEvaluateTopPopup = (String source) async =>
               _webviewTopPopupState?.debugEval(source);
           ReaderFushiPage.debugInjectAudiobookBridge = () =>
@@ -2347,7 +2508,10 @@ updateLive: function(patch) {
               hoverSettle = ReaderSelectionScripts.hoverLookupSettledInvocation(
                 payload,
               );
-              await _handleTextSelected(ReaderSelectionData.fromJson(payload));
+              await _handleTextSelected(
+                ReaderSelectionData.fromJson(payload),
+                controllerLookup: payload['controllerLookup'],
+              );
             } catch (e, stack) {
               ErrorLogService.instance.log(
                 'ReaderFushi.onTextSelected',
@@ -2425,12 +2589,39 @@ updateLive: function(patch) {
           },
         );
 
+        // gap-readerjs1-2：引擎初始化 / 初次恢复链抛异常时的失败回执。
+        // args[0] = 错误描述；args[1] = 文档的 navigationGeneration（同上，缺失/失配丢弃）。
+        controller.addJavaScriptHandler(
+          handlerName: 'onRestoreFailed',
+          callback: (List<dynamic> args) {
+            final int? generation = readerReportedNavigationGeneration(args, 1);
+            if (generation == null) {
+              debugPrint(
+                '[ReaderFushi] onRestoreFailed missing/invalid generation',
+              );
+              return;
+            }
+            _acceptRestoreFailed(
+              reportedGeneration: generation,
+              reason: args.isEmpty ? '' : '${args.first}',
+            );
+          },
+        );
+
         // BUG-493 根因修复：JS 侧 `_reanchorPending` 清旗已单点化（_sharedJs 的
         // `_setReanchorPending`），true→false（重锚 settle）那一刻回调此处。settle 即补
         // 刷一次进度，事件驱动替代旧的 Dart 侧 120ms×8 轮询重试——commit 成功 / gate 不
         // 放行 / begin 采不到锚 / 已有别处重锚在飞等**所有**清旗路径都会通知，进度不再
         // 依赖轮询猜测清旗时机。图片/封面章的 null 稳态仍由 _refreshProgress 内的
         // _applyImagePageProgressFallback 兜底，不受影响。
+        // 反馈 R7k887yaJI ③：连续模式章节无缝衔接——JS 已把邻章晋升为活动章（DOM 与
+        // 引擎索引都已换好），这里把阅读器状态换到新章并 ack。args = [to, from, seq]。
+        controller.addJavaScriptHandler(
+          handlerName: 'onSeamlessChapterActivated',
+          callback: (List<dynamic> args) =>
+              _handleSeamlessChapterActivated(args),
+        );
+
         controller.addJavaScriptHandler(
           handlerName: 'onReanchorSettled',
           callback: (_) {
@@ -2446,6 +2637,17 @@ updateLive: function(patch) {
         controller.addJavaScriptHandler(
           handlerName: 'onReaderScroll',
           callback: (_) => _handleReaderScroll(),
+        );
+
+        // 墨水屏「每 N 页全刷」：连续模式每滚过一屏回传一次（JS `_noteEinkScroll`）。
+        // 恢复 / 换章在飞时的程序化滚动不是用户翻页，丢弃——翻页跨章由
+        // _onRestoreComplete 自己计。
+        controller.addJavaScriptHandler(
+          handlerName: 'onEinkScrollPage',
+          callback: (_) {
+            if (!_readerContentReady || _restoreInFlight || _lyricsMode) return;
+            _noteEinkPageTurn();
+          },
         );
 
         // BUG-117: primary internal-link path. The JS click interceptor (in the
@@ -2468,15 +2670,10 @@ updateLive: function(patch) {
             // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
             if (_closeSideSheetForWebViewPointer()) return;
             final bool shiftKey = args.length >= 3 && args[2] == true;
-            // indZkg2A0I：下面两条分支都**不查词**（挤压态栏收起 / 点按查词关闭），
-            // 点击翻页区域模板在这里先认领两侧，中间照旧。
-            if (!shiftKey &&
-                (!_tapGateChrome ||
-                    !ReaderFushiSource.instance.highlightOnTap) &&
-                _turnPageByTapZone(args, 0)) {
-              return;
-            }
-            if (!_tapGateChrome && !shiftKey) {
+            // 挤压态栏收起：这一击只管唤栏（不查词）。点击翻页区域模板（indZkg2A0I）
+            // 先认领两侧，中间照旧唤栏。
+            if (!shiftKey && !_tapGateChrome) {
+              if (_turnPageByTapZone(args, 0)) return;
               _toggleChrome();
               // Tap handed OS focus to the WebView; reclaim it so ESC still
               // exits after a tap-to-toggle-chrome (BUG-136). _toggleChrome()
@@ -2484,9 +2681,12 @@ updateLive: function(patch) {
               _focusOwnership.reclaim(FocusReclaimCause.gesture);
               return;
             }
+            // GitHub #3088（反馈 6UvuZxRQkW）：「单击查词」关闭时，单击正文与点空白
+            // **同一语义**（关弹窗 / 清拖选 / 翻页区域模板 / 悬浮栏唤出收起），查词只剩
+            // 长按选词与 Shift。旧实现在这里只 reclaim 焦点就吞掉了这一击——悬浮底栏
+            // 下点正文既不唤栏也不翻页，用户只能去找空白处点。
             if (!shiftKey && !ReaderFushiSource.instance.highlightOnTap) {
-              // Tap consumed without a selection/popup — reclaim reader focus.
-              _focusOwnership.reclaim(FocusReclaimCause.gesture);
+              _handleReaderBlankTap(args, sizeIndex: 3);
               return;
             }
             final double x = _ReaderFushiPageState._toDouble(args[0]) ?? 0;
@@ -2519,37 +2719,7 @@ updateLive: function(patch) {
           callback: (List<dynamic> args) {
             // BUG-2276：抽屉压着正文时，这次点击是「点遮罩关抽屉」，不是正文点击。
             if (_closeSideSheetForWebViewPointer()) return;
-            // TODO-1027：有可见查词弹窗时，本 onTapEmpty 是 dismiss barrier 转发的
-            // 真点击命中空白（onDismissBarrierTap → _selectTextAt 命中真空白才 fire）。
-            // 此时按 barrier 旧语义清整栈（clearDictionaryResult → onAllPopupsDismissed
-            // 续播 BUG-072 / 保留热槽 BUG-092），不走下面的隐藏控制栏分支。命中词的
-            // 情形不会到这里（走 onTextSelected）。无弹窗时（正常正文点空白）维持旧行为。
-            if (isDictionaryShown) {
-              clearDictionaryResult();
-              return;
-            }
-            // TODO-1366：点空白取消残留的拖选（app 自绘选区 + 起止手柄）。拖选松手弹的
-            // 菜单被 dismiss 后不再清选区（留着让用户拖手柄改选），于是「点空白 = 取消选择」
-            // 成为自然清除路径；无选区时 clearSelection 是空操作，零副作用。
-            _clearReaderAppSelection();
-            // indZkg2A0I：点击翻页区域模板认领两侧（或上下）三分之一；中间三分之一与
-            // 关闭模板时落到下面原来的工具栏分支。查词弹窗在场时上面已经 return，
-            // 所以「点空白关弹窗」永远先于翻页。
-            if (args.length >= 4 && _turnPageByTapZone(args, 0, sizeIndex: 2)) {
-              return;
-            }
-            // TODO-975 决策#3：开启「点空白处隐藏控制栏」即底栏悬浮模式。此时点空白
-            // 走悬浮唤出/收起状态机（_handleFloatingChromeReveal，不改预留高、不重锚），
-            // 而非旧的挤压 _toggleChrome。未开启（挤压）时维持旧行为（不响应空白点）。
-            // 顶栏和底栏被关掉时两条分支都被闸门拦下（栏不出来，出口在悬浮球上）。
-            if (_anyChromeFloating) {
-              _handleFloatingChromeReveal();
-            } else if (ReaderFushiSource.instance.tapEmptyToHideChrome) {
-              _toggleChrome();
-            }
-            // Tap on empty space handed OS focus to the WebView; reclaim it so
-            // ESC still exits the book afterward (BUG-136).
-            _focusOwnership.reclaim(FocusReclaimCause.gesture);
+            _handleReaderBlankTap(args, sizeIndex: 2);
           },
         );
 
@@ -2613,12 +2783,22 @@ updateLive: function(patch) {
               args[0] as String,
             );
             if (binding == null) return;
-            final ShortcutAction? action = resolveSpreadKeyBridgeAction(
+            final ShortcutAction? bound = resolveSpreadKeyBridgeAction(
               appModel.shortcutRegistry,
               binding,
             );
+            // 裸 ← / → 与键盘焦点路径同一套语义：跟随阅读方向 / 反转开关、有声在场
+            // 改作切句（反馈 uz_2m0E_Eu）。此前这里直接执行注册表绑定，竖排书的双页
+            // 插图页上 WebView 持焦时左右键方向是反的。
+            final ShortcutAction? action =
+                _resolveReaderArrowKey(
+                  binding.key,
+                  modifiers: binding.modifiers,
+                  boundAction: bound,
+                ) ??
+                bound;
             if (action == null) return;
-            _executeShortcutAction(action);
+            _executeShortcutAction(action, keyboardTriggerKey: binding.key);
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
           },
         );
@@ -2817,9 +2997,15 @@ updateLive: function(patch) {
                 )) {
               return;
             }
+            // 反馈 R7k887yaJI 重开：边界换章的意图相对发出它那一刻的章号。截图要 await，
+            // 其间文档内换章（无缝晋升 → _onSeamlessChapterActivated 同步换掉
+            // _currentChapter）一旦落地，这次意图描述的边界已经不存在，再从新章号跨一章
+            // 就是跳两章。
+            final int fromChapter = _currentChapter;
             if (!await _prepareContinuousChapterTransition()) return;
             if (!mounted ||
                 _paginationInFlight ||
+                _currentChapter != fromChapter ||
                 !_hasChapterTurnTarget(dir)) {
               _discardIdleChapterTransitionSnapshot();
               return;
@@ -2850,6 +3036,12 @@ updateLive: function(patch) {
             if (_lyricsMode) return;
             _audiobookController?.triggerImagePause();
           },
+        );
+
+        // 文字领读：VN 引擎每次换屏回传当前屏的有声书句子首尾。
+        controller.addJavaScriptHandler(
+          handlerName: 'onTextLeadsScreenCues',
+          callback: _onTextLeadsScreenCues,
         );
 
         // TODO-1289 / BUG-898：JS 揭开防剧透图后回传稳定 key（extractDir 相对归一路径）。
@@ -2893,10 +3085,10 @@ updateLive: function(patch) {
             // 同时成立，两条退出通道一起死——所以本轮先修这一条。
             //
             // 口径更正：onImageTap **不是**「全阅读器唯一没 reclaim 的手势入口」。
-            // 同族至今仍有 7 处 JS 桥零 reclaim：onSelectionMenu、onImageRevealed、
-            // onImageContextMenu、onImageLongPress、onCueTap、onPointerSeek、
-            // onLyricsPointerSeek。其中 onImageRevealed / onImageContextMenu /
-            // onImageLongPress / onCueTap 连兄弟桥兜底都没有。本轮只修 spread 退出
+            // 同族至今仍有 4 处 JS 桥零 reclaim：onSelectionMenu、onImageRevealed、
+            // onImageContextMenu、onImageLongPress（onPointerSeek 已由 BUG-4718、
+            // onLyricsPointerSeek 已由 NmpRV-amTY 补上）。其中 onImageRevealed / onImageContextMenu /
+            // onImageLongPress 连兄弟桥兜底都没有。本轮只修 spread 退出
             // 路径必经的这一条，其余未覆盖——别把这里当作「此族已清干净」的证据。
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
             _openImageViewer(args[0] as String);
@@ -2983,30 +3175,20 @@ updateLive: function(patch) {
           },
         );
 
-        controller.addJavaScriptHandler(
-          handlerName: 'onCueTap',
-          callback: (List<dynamic> args) {
-            if (args.isEmpty || _audiobookController == null) return;
-            // BUG-2276：抽屉压着正文时，点句子是「点遮罩关抽屉」，不是跳播。
-            if (_closeSideSheetForWebViewPointer()) return;
-            final int sentenceIndex = (args[0] as num).toInt();
-            final List<AudioCue>? allCues = _cachedAllCues;
-            if (allCues == null) return;
-            final int idx = allCues.indexWhere(
-              (AudioCue c) => c.sentenceIndex == sentenceIndex,
-            );
-            if (idx >= 0) {
-              _audiobookController!.playCueAndContinue(allCues[idx]);
-            }
-          },
-        );
-
+        // 反馈 C9wcnKaPq_：合成书左键点句跳播的 `onCueTap` 桥已删（左键只查词，与
+        // EPUB 书一致）；跳到点击句只走下面的位置型 `onPointerSeek`（中键）与触屏
+        // 长按选区操作条「从此句播放」（chrome.part.dart `_playFromSelectionSentence`）。
         controller.addJavaScriptHandler(
           handlerName: 'onPointerSeek',
           callback: (List<dynamic> args) async {
             if (args.length < 3) return;
             final int button = (args[0] as num?)?.toInt() ?? -1;
             if (button < 0) return;
+            // BUG-4718（反馈 mNogI-kBAh）：这次非左键按下已把 OS 键盘焦点交给原生
+            // WebView（BUG-136 同族），与它绑的是哪个动作无关——下面 ①②③ 各自早退，
+            // 原先全程不收回，右键「跳转到点击句」后快捷键只到 DOM、全部失效。故在任何
+            // 按动作分流之前收回一次（歌词文档的 onLyricsPointerSeek 同款）。
+            _focusOwnership.reclaim(FocusReclaimCause.gesture);
             final registry = appModel.shortcutRegistry;
             // ① **位置型动作**先行：「seek 到点击句」需要知道点在哪一句上，只有页内
             // JS 拿得到坐标，故它恒由本条路承担（Flutter 侧那个入口会跳过它，判据
@@ -3334,10 +3516,13 @@ updateLive: function(patch) {
       // MediaQuery——这样后续 resize 才与真正生效的版面宽度比对。
       _lastSyncedWidth = _paginatedWidth;
       _lastSyncedHeight = _paginatedHeight;
-      // BUG-270 (TODO-296 B): warm the next chapter so a forward boundary
-      // page-turn hits the LRU cache instead of disk read + decode + sanitize +
-      // inject. Background, single chapter, dropped if disposed/style-changed.
-      _prefetchAdjacentChapter(chapterSnapshot + 1);
+      // BUG-270 (TODO-296 B): warm the chapter the next boundary page-turn in
+      // the reading direction lands on, so it hits the LRU cache instead of disk
+      // read + decode + sanitize + inject. Background, single chapter, dropped
+      // if disposed/style-changed. novel-17f: direction + absorbed-image
+      // redirect come from [_htmlPrefetchTarget], not a fixed `+1`.
+      final int? prefetchTarget = _htmlPrefetchTarget(chapterSnapshot);
+      if (prefetchTarget != null) _prefetchAdjacentChapter(prefetchTarget);
       // BUG-785: EPUB 正文首次就绪 + 有声书已挂载 → 恢复「上次退出时在歌词模式」。
       // 此刻正文已加载，切歌词等价用户手动切（已知安全），规避 fresh open 直接整页
       // 加载歌词 HTML 跳过 EPUB 的 iOS 白屏。一次性（下面立即清零）防每章重触发；

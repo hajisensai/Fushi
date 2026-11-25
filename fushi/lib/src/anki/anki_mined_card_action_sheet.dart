@@ -2,6 +2,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 
+import 'package:fushi/src/anki/anki_overwrite_fields_selector.dart';
 import 'package:fushi/src/anki/mined_card_tap_policy.dart';
 import 'package:fushi/src/anki/mined_card_undo.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
@@ -116,6 +117,9 @@ class _MinedCardActionDialog extends StatefulWidget {
 
 class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
   bool _busy = false;
+
+  /// 拍板 lt2wobUYfE：「覆写哪些字段」一个都没勾时覆写按钮禁用。
+  bool _nothingSelected = false;
   int? _viewingNoteId;
 
   /// 还在的命中卡：删掉一张就从这里摘掉，删光了关对话框。
@@ -314,6 +318,17 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
               style: theme.textTheme.bodySmall,
             ),
             const SizedBox(height: 12),
+            // 反馈 nWWjBp3Clo：覆写只改勾选的字段（按笔记类型记住），预制卡组里的其余
+            // 字段保留。字段清单取第一张命中卡（命中卡同为当前笔记类型）。
+            if (matches.isNotEmpty)
+              AnkiOverwriteFieldsSelector(
+                key: ValueKey<int>(matches.first.noteId),
+                repo: widget.repo,
+                noteId: matches.first.noteId,
+                enabled: !_busy,
+                onNothingSelectedChanged: (bool nothing) =>
+                    setState(() => _nothingSelected = nothing),
+              ),
             // AlertDialog 的 content 拿到的是**有界**高度（Dialog 已按屏幕减 inset 收口），
             // 故此处 Flexible + shrinkWrap 列表安全：命中少时按内容高，多时自身滚动。
             Flexible(
@@ -347,7 +362,7 @@ class _MinedCardActionDialogState extends State<_MinedCardActionDialog> {
                           FushiIconButtonControl.filledTonal(
                             tooltip: t.anki_mined_action_overwrite,
                             icon: const FushiIcon(FushiIcons.edit),
-                            onPressed: _busy
+                            onPressed: _busy || _nothingSelected
                                 ? null
                                 : () => _runOverwrite(note.noteId),
                           ),
@@ -448,6 +463,9 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
   bool _loading = true;
   bool _busy = false;
 
+  /// 拍板 lt2wobUYfE：「覆写哪些字段」一个都没勾时覆写按钮禁用。
+  bool _nothingSelected = false;
+
   @override
   void initState() {
     super.initState();
@@ -516,6 +534,28 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
     );
   }
 
+  Widget _buildFields(List<MapEntry<String, String>> nonEmpty) {
+    if (_loading) {
+      return SizedBox(
+        height: 80,
+        child: Center(child: FushiLoadingView(compact: true)),
+      );
+    }
+    if (nonEmpty.isEmpty) return Text(t.anki_note_viewer_empty);
+    // 字段逐段铺成分段卡片：字段名 primary 小标题 + 可选中正文。
+    return SingleChildScrollView(
+      child: FushiGroupedList(
+        children: [
+          for (final e in nonEmpty)
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              child: _AnkiNoteField(label: e.key, value: e.value),
+            ),
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final fields = _fields;
@@ -537,28 +577,21 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
       ),
       content: SizedBox(
         width: 420,
-        child: _loading
-            ? SizedBox(
-                height: 80,
-                child: Center(child: FushiLoadingView(compact: true)),
-              )
-            : nonEmpty.isEmpty
-            ? Text(t.anki_note_viewer_empty)
-            // 字段逐段铺成分段卡片：字段名 primary 小标题 + 可选中正文。
-            : SingleChildScrollView(
-                child: FushiGroupedList(
-                  children: [
-                    for (final e in nonEmpty)
-                      Padding(
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 14,
-                          vertical: 12,
-                        ),
-                        child: _AnkiNoteField(label: e.key, value: e.value),
-                      ),
-                  ],
-                ),
-              ),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            // 反馈 nWWjBp3Clo：从这里覆写同样只改勾选的字段。
+            AnkiOverwriteFieldsSelector(
+              repo: widget.repo,
+              noteId: widget.noteId,
+              enabled: !_busy,
+              onNothingSelectedChanged: (bool nothing) =>
+                  setState(() => _nothingSelected = nothing),
+            ),
+            Flexible(child: _buildFields(nonEmpty)),
+          ],
+        ),
       ),
       actions: [
         // 本框先前只有「在 Anki 中打开」「覆写」两颗按钮，没有任何关闭入口，全靠
@@ -579,7 +612,7 @@ class _AnkiNoteViewerDialogState extends State<_AnkiNoteViewerDialog> {
             }),
           ),
         FushiFilledButton(
-          onPressed: _busy ? null : _overwrite,
+          onPressed: _busy || _nothingSelected ? null : _overwrite,
           child: Text(t.anki_mined_action_overwrite),
         ),
       ],

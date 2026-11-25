@@ -1,8 +1,20 @@
 // 反馈回复的**后台**检查（Android WorkManager 周期任务 / iOS BGTaskScheduler app refresh）。
 //
-// 不需要任何第三方推送账号：系统隔一段时间把 app 的一个无界面 isolate 拉起来，跑
-// [runFeedbackReplyBackgroundTask]，有新回复就发本地通知。
+// 不需要任何第三方推送账号：系统隔一段时间跑一次检查，有新回复就发本地通知。两端宿主不同：
+// - Android：纯原生的 `FeedbackReplyWorker.kt`（`android/app/src/main/kotlin/app/fushi/reader/
+//   feedback/`），**不起任何 Flutter 引擎**，由 [AndroidFeedbackReplyScheduler] 经主引擎上的
+//   `FeedbackReplyWorkChannel.kt` 排 / 撤。判据与文件格式和本文件 + feedback_reply_state.dart
+//   逐条一致（`FeedbackReplyCheck.kt`），改一边要同步另一边。
+//   不能再经 workmanager 插件（反馈 yjn-3h8B-7，BUG-4271 记下的遗留结构问题）：它的
+//   BackgroundWorker 用 `FlutterEngine(applicationContext)` 建后台引擎并自动注册全部插件，
+//   audio_service 一附着就 `connect()`，`AudioService.onCreate` 另起一个跑 `main()` 的主引擎停在
+//   无界面 gate 常驻，进程级静态 `audioHandlerInterface` 也被绑到后台引擎、随它销毁。
+// - iOS：workmanager 插件（[WorkmanagerFeedbackReplyScheduler]），系统拉起一个无界面 isolate 跑
+//   [feedbackReplyBackgroundDispatcher] → [runFeedbackReplyBackgroundTask]。
+//   [feedbackReplyBackgroundDispatcher] 在 Android 上也要保留：升级前排下的 workmanager 旧任务
+//   在用户首次打开新版本、[AndroidFeedbackReplyScheduler] 把它换成原生 Worker 之前还会跑一次。
 //
+// 以下说的是 iOS 的后台 isolate。
 // 后台 isolate 的边界（与 `asr_host.dart` 的 `AsrIsolateBackend` 同一个教训）：主 isolate
 // 的全局装配点**一个都带不过来**——没有 AppModel、没有打开的 Drift、`primeAppProxy` 没跑过、
 // slang 没设语言、排行榜账户没加载。所以这里只用：
@@ -21,12 +33,14 @@ import 'dart:io';
 import 'dart:ui' show DartPluginRegistrant;
 
 import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/services.dart' show MethodChannel;
 import 'package:fushi/src/feedback/feedback_reply_state.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart'
     show kLeaderboardDefaultBaseUrl;
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/updates/local_update_notifier.dart';
 import 'package:fushi/src/updates/update_notifier.dart';
+import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:workmanager/workmanager.dart';
@@ -106,7 +120,8 @@ Future<bool> runFeedbackReplyBackgroundTask({
   }
 }
 
-/// WorkManager / BGTaskScheduler 拉起后台 isolate 时的入口。必须是顶层函数并保留
+/// workmanager 插件拉起后台 isolate 时的入口（iOS BGTaskScheduler；以及 Android 上升级前排下、
+/// 尚未被 [AndroidFeedbackReplyScheduler] 换掉的旧任务）。必须是顶层函数并保留
 /// `vm:entry-point`，否则 release 构建的 tree shaking 会把它裁掉。
 @pragma('vm:entry-point')
 void feedbackReplyBackgroundDispatcher() {
@@ -143,7 +158,43 @@ class NoopFeedbackReplyScheduler implements FeedbackReplyBackgroundScheduler {
   Future<void> cancel() async {}
 }
 
-/// Android / iOS：workmanager 插件。
+/// Android：纯原生的 `FeedbackReplyWorker`（不起 Flutter 引擎），经主引擎上的
+/// `app.fushi.reader/feedback_reply_work` 排程。唯一任务名、周期、数据根与默认服务器都由这边
+/// 传过去，原生侧不另存一份；遇到旧版 workmanager 插件排下的同名任务，原生侧把它换成原生
+/// Worker（`FeedbackReplyWorkPolicy`）。
+class AndroidFeedbackReplyScheduler
+    implements FeedbackReplyBackgroundScheduler {
+  AndroidFeedbackReplyScheduler({
+    MethodChannel? channel,
+    Future<Directory> Function()? supportRoot,
+  }) : _channel = channel ?? FushiChannels.feedbackReplyWork,
+       _supportRoot = supportRoot ?? AppPaths.supportRootDirectory;
+
+  final MethodChannel _channel;
+  final Future<Directory> Function() _supportRoot;
+
+  @override
+  bool get supported => true;
+
+  @override
+  Future<void> schedule() async {
+    final Directory root = await _supportRoot();
+    await _channel.invokeMethod<void>('schedule', <String, Object>{
+      'uniqueName': kFeedbackReplyTaskName,
+      'intervalMinutes': kFeedbackReplyPollInterval.inMinutes,
+      'supportRoot': root.path,
+      'defaultServer': kLeaderboardDefaultBaseUrl,
+    });
+  }
+
+  @override
+  Future<void> cancel() => _channel.invokeMethod<void>(
+    'cancel',
+    <String, Object>{'uniqueName': kFeedbackReplyTaskName},
+  );
+}
+
+/// iOS：workmanager 插件（BGTaskScheduler）。
 class WorkmanagerFeedbackReplyScheduler
     implements FeedbackReplyBackgroundScheduler {
   WorkmanagerFeedbackReplyScheduler({Workmanager? workmanager})
@@ -178,8 +229,9 @@ class WorkmanagerFeedbackReplyScheduler
   }
 }
 
-/// 生产装配：Android / iOS 用 workmanager，其余平台没有系统后台检查。
-FeedbackReplyBackgroundScheduler createFeedbackReplyBackgroundScheduler() =>
-    Platform.isAndroid || Platform.isIOS
-    ? WorkmanagerFeedbackReplyScheduler()
-    : const NoopFeedbackReplyScheduler();
+/// 生产装配：Android 用纯原生 Worker，iOS 用 workmanager，其余平台没有系统后台检查。
+FeedbackReplyBackgroundScheduler createFeedbackReplyBackgroundScheduler() {
+  if (Platform.isAndroid) return AndroidFeedbackReplyScheduler();
+  if (Platform.isIOS) return WorkmanagerFeedbackReplyScheduler();
+  return const NoopFeedbackReplyScheduler();
+}

@@ -6,16 +6,22 @@ import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
 void main() {
   group('resolveMangaArrowPageTurn', () {
+    // 默认传该键的出厂绑定（左 = 后退、其余 = 前进），与 shortcut_defaults 一致。
     ShortcutAction? call(
       LogicalKeyboardKey key, {
       required bool rtl,
-      ShortcutAction? bound = ShortcutAction.mangaPageForward,
+      ShortcutAction? bound,
+      bool factoryBound = true,
       Set<ModifierKey> modifiers = const <ModifierKey>{},
     }) => resolveMangaArrowPageTurn(
       key: key,
       modifiers: modifiers,
       rtl: rtl,
-      boundAction: bound,
+      boundAction: factoryBound
+          ? (key == LogicalKeyboardKey.arrowLeft
+                ? ShortcutAction.mangaPageBackward
+                : ShortcutAction.mangaPageForward)
+          : bound,
     );
 
     test('rtl（日漫默认）：下一页在左 → 左键前进、右键后退', () {
@@ -40,24 +46,25 @@ void main() {
       );
     });
 
-    test('校正与「原本绑的是前进还是后退」无关，只看物理方向 + 排版方向', () {
-      // 左右键互为镜像：无论注册表把某一侧绑成 forward 还是 backward，校正后的
-      // 结果只由 rtl 决定。否则用户把左右键对调绑定后会出现「两个键都翻同一向」。
+    test('改绑成相反的翻页方向 → 不覆写，尊重用户（与小说 BUG-3805 同判据，反馈 uz_2m0E_Eu）', () {
+      // ltr 书里把右键改绑成「上一页」：此前漫画按跨页方向把它改回「下一页」。
+      expect(
+        call(
+          LogicalKeyboardKey.arrowRight,
+          rtl: false,
+          factoryBound: false,
+          bound: ShortcutAction.mangaPageBackward,
+        ),
+        isNull,
+      );
       expect(
         call(
           LogicalKeyboardKey.arrowLeft,
           rtl: true,
-          bound: ShortcutAction.mangaPageBackward,
-        ),
-        ShortcutAction.mangaPageForward,
-      );
-      expect(
-        call(
-          LogicalKeyboardKey.arrowRight,
-          rtl: true,
+          factoryBound: false,
           bound: ShortcutAction.mangaPageForward,
         ),
-        ShortcutAction.mangaPageBackward,
+        isNull,
       );
     });
 
@@ -66,13 +73,19 @@ void main() {
         call(
           LogicalKeyboardKey.arrowLeft,
           rtl: true,
+          factoryBound: false,
           bound: ShortcutAction.mangaDismissDict,
         ),
         isNull,
-        reason: '尊重改键：只有仍绑定到翻页时方向校正才适用',
+        reason: '尊重改键：只有仍是出厂翻页绑定时方向校正才适用',
       );
       expect(
-        call(LogicalKeyboardKey.arrowLeft, rtl: true, bound: null),
+        call(
+          LogicalKeyboardKey.arrowLeft,
+          rtl: true,
+          factoryBound: false,
+          bound: null,
+        ),
         isNull,
       );
     });
@@ -105,9 +118,17 @@ void main() {
     ShortcutAction? call(
       GamepadButton button, {
       required bool rtl,
-      ShortcutAction? bound = ShortcutAction.mangaPageForward,
-    }) =>
-        resolveMangaDpadPageTurn(button: button, rtl: rtl, boundAction: bound);
+      ShortcutAction? bound,
+      bool factoryBound = true,
+    }) => resolveMangaDpadPageTurn(
+      button: button,
+      rtl: rtl,
+      boundAction: factoryBound
+          ? (button == GamepadButton.dpadLeft
+                ? ShortcutAction.mangaPageBackward
+                : ShortcutAction.mangaPageForward)
+          : bound,
+    );
 
     test('rtl（日漫默认）：dpad左前进、dpad右后退；ltr 相反', () {
       expect(
@@ -128,14 +149,15 @@ void main() {
       );
     });
 
-    test('校正只看物理方向 + 排版方向，与原绑定的前进/后退无关（键盘同款不变式）', () {
+    test('改绑成相反的翻页方向 → 不覆写（键盘同款判据）', () {
       expect(
         call(
           GamepadButton.dpadLeft,
           rtl: true,
-          bound: ShortcutAction.mangaPageBackward,
+          factoryBound: false,
+          bound: ShortcutAction.mangaPageForward,
         ),
-        ShortcutAction.mangaPageForward,
+        isNull,
       );
     });
 
@@ -144,11 +166,15 @@ void main() {
         call(
           GamepadButton.dpadLeft,
           rtl: true,
+          factoryBound: false,
           bound: ShortcutAction.mangaDismissDict,
         ),
         isNull,
       );
-      expect(call(GamepadButton.dpadLeft, rtl: true, bound: null), isNull);
+      expect(
+        call(GamepadButton.dpadLeft, rtl: true, factoryBound: false),
+        isNull,
+      );
     });
 
     test('非 D-pad 左右按钮不参与校正（RB/LB 是页序语义，任何排版下一致）', () {
@@ -166,6 +192,84 @@ void main() {
           reason: '${button.label} 不该被方向校正',
         );
       }
+    });
+  });
+
+  // 反馈 WrLFAXNkSw：有声在场时裸空格 / 左右键默认由有声接管（与有声书同一惯例）。
+  group('resolveMangaAudioKeyTakeover', () {
+    ShortcutAction? call(
+      LogicalKeyboardKey key, {
+      ShortcutAction? page = ShortcutAction.mangaPageForward,
+      bool audio = true,
+      bool dict = false,
+      Set<ModifierKey> modifiers = const <ModifierKey>{},
+    }) => resolveMangaAudioKeyTakeover(
+      key: key,
+      modifiers: modifiers,
+      pageAction: page,
+      audioActive: audio,
+      dictionaryShown: dict,
+    );
+
+    test('有声在场：空格 = 播放暂停，左右键按校正后的页序 = 下一句 / 上一句', () {
+      expect(
+        call(LogicalKeyboardKey.space),
+        ShortcutAction.mangaAudioPlayPause,
+      );
+      // rtl 下左键已被校正成前进 → 下一句；右键后退 → 上一句。
+      expect(
+        call(
+          LogicalKeyboardKey.arrowLeft,
+          page: resolveMangaArrowPageTurn(
+            key: LogicalKeyboardKey.arrowLeft,
+            modifiers: const <ModifierKey>{},
+            rtl: true,
+            boundAction: ShortcutAction.mangaPageBackward,
+          ),
+        ),
+        ShortcutAction.mangaAudioNextLine,
+      );
+      expect(
+        call(
+          LogicalKeyboardKey.arrowRight,
+          page: ShortcutAction.mangaPageBackward,
+        ),
+        ShortcutAction.mangaAudioPreviousLine,
+      );
+    });
+
+    test('没有有声 / 弹窗可见 / 带修饰键：不接管', () {
+      expect(call(LogicalKeyboardKey.space, audio: false), isNull);
+      expect(call(LogicalKeyboardKey.arrowLeft, audio: false), isNull);
+      expect(call(LogicalKeyboardKey.space, dict: true), isNull);
+      expect(call(LogicalKeyboardKey.arrowRight, dict: true), isNull);
+      expect(
+        call(
+          LogicalKeyboardKey.arrowLeft,
+          modifiers: const <ModifierKey>{ModifierKey.ctrl},
+        ),
+        isNull,
+      );
+      expect(
+        call(
+          LogicalKeyboardKey.space,
+          modifiers: const <ModifierKey>{ModifierKey.shift},
+        ),
+        isNull,
+      );
+    });
+
+    test('左右键改绑成别的动作时让路；PageDown 等其它翻页键不接管', () {
+      expect(
+        call(
+          LogicalKeyboardKey.arrowLeft,
+          page: ShortcutAction.mangaToggleBookmark,
+        ),
+        isNull,
+      );
+      expect(call(LogicalKeyboardKey.arrowLeft, page: null), isNull);
+      expect(call(LogicalKeyboardKey.pageDown), isNull);
+      expect(call(LogicalKeyboardKey.arrowDown), isNull);
     });
   });
 }

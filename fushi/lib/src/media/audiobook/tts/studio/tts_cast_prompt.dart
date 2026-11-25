@@ -7,12 +7,20 @@
 /// 2. **逐句归属**：每块句子从 1 编号，给出角色表（规范名 + 别名）与上一块已归属
 ///    的最近几句台词（滚动上下文，保持对话轮次连贯）；模型只能从角色表里选人或回
 ///    `unknown`。回了别名映射到规范名，角色表外的名字一律 [kTtsUnknown]——第二遍
-///    不许造名字。没回的行是旁白；但台词行（引号开头或引号未闭合的续行）没回记
-///    [kTtsUnknown] + 零把握，留给人复核，而不是悄悄算成旁白。
+///    不许造名字。台词行（引号开头或引号未闭合的续行）在提示词里带 `*` 标记，模型
+///    必须逐条回：说话人、`unknown`，或括弧里不是人说出口的话（书名、标牌、引用的
+///    词）显式回 `narrator`——这一判断只交给模型，本地不猜。没回的普通行是旁白；
+///    没回的 `*` 行记 [kTtsUnknown] + 零把握，留给人复核，而不是悄悄算成旁白。
+///    同一遍顺带给台词标演出字段（类型 / 一拍 / 情绪 + 强度，与漫画演出稿同一词表与
+///    取值范围，见 `cast_line_direction.dart`），本地按词表校验、数值夹到范围。
 library;
 
 import 'dart:convert';
 
+import 'package:fushi_engine/tts/cast/cast_line_direction.dart';
+import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
+import 'package:fushi_engine/tts/cast/cast_prompt_roster.dart';
+import 'package:fushi_engine/tts/cast/cast_text_substitution.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
@@ -34,9 +42,6 @@ const int kTtsCastRecentDialogue = 6;
 
 /// 角色表最多带多少人进提示词（调用方按台词数降序排好）。
 const int kTtsCastMaxRosterInPrompt = 150;
-
-/// 情绪提示的长度上限；超长的多半是模型把整句解释塞进来了，丢弃。
-const int _kMaxEmotionLength = 24;
 
 /// 人设描述的长度上限。
 const int _kMaxDescriptionLength = 120;
@@ -267,20 +272,27 @@ String _rosterLine(TtsCastCharacter c, {required bool withDescription}) {
 String buildTtsRosterUserPrompt(
   TtsCastChunk chunk, {
   required List<TtsCastCharacter> roster,
+  List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[],
+  CastPromptRoster? promptRoster,
 }) {
+  final CastPromptRoster view =
+      promptRoster ??
+      CastPromptRoster(roster: roster, substitutions: substitutions);
   final StringBuffer b = StringBuffer();
   b.writeln('[current cast list]');
   if (roster.isEmpty) {
     b.writeln('(empty)');
   } else {
-    for (final TtsCastCharacter c in roster.take(kTtsCastMaxRosterInPrompt)) {
+    for (final TtsCastCharacter c in view.characters.take(
+      kTtsCastMaxRosterInPrompt,
+    )) {
       b.writeln(_rosterLine(c, withDescription: true));
     }
   }
   b.writeln();
   b.writeln('[passage]');
   for (final TtsPlanSentence s in chunk.sentences) {
-    b.writeln(_oneLine(s.text));
+    b.writeln(_oneLine(applyCastSubstitutions(s.text, substitutions)));
   }
   b.writeln();
   b.write('Return the JSON array of operations.');
@@ -322,13 +334,21 @@ const Set<String> _kGenders = <String>{'female', 'male'};
 const Set<String> _kAges = <String>{'child', 'teen', 'adult', 'elderly'};
 
 /// 解析第一遍回复。找不到可解析的 JSON 数组返回 null。
-TtsRosterParseResult? parseTtsRosterReply(String reply) {
+TtsRosterParseResult? parseTtsRosterReply(
+  String reply, {
+  CastPromptRoster? promptRoster,
+}) {
   final List<Object?>? array = _firstJsonArray(_stripFences(reply));
   if (array == null) return null;
   final List<TtsRosterOp> ops = <TtsRosterOp>[];
   for (final Object? entry in array) {
     if (entry is! Map) continue;
-    final String? name = _cleanName(entry['name']);
+    final String? rawName = _cleanName(entry['name']);
+    final String? name = rawName == null
+        ? null
+        : promptRoster == null
+        ? rawName
+        : promptRoster.restoreName(rawName);
     if (name == null) continue;
     final TtsRosterOpKind? kind = switch (entry['op']) {
       'add' => TtsRosterOpKind.add,
@@ -338,22 +358,32 @@ TtsRosterParseResult? parseTtsRosterReply(String reply) {
     };
     if (kind == null) continue;
     if (kind == TtsRosterOpKind.merge) {
-      final String? into = _cleanName(entry['into']);
+      final String? rawInto = _cleanName(entry['into']);
+      final String? into = rawInto == null
+          ? null
+          : promptRoster == null
+          ? rawInto
+          : promptRoster.restoreName(rawInto);
       if (into == null || _normName(into) == _normName(name)) continue;
       ops.add(TtsRosterOp(kind: kind, name: name, into: into));
       continue;
     }
     final Object? rawAliases = entry['aliases'];
+    final List<String> aliases = <String>[
+      if (rawAliases is List)
+        for (final Object? a in rawAliases)
+          if (_cleanName(a) case final String alias) alias,
+    ];
+    final List<String> restoredAliases =
+        promptRoster?.restoreAliases(aliases, owner: name) ?? aliases;
     final Set<String> seen = <String>{_normName(name)};
     ops.add(
       TtsRosterOp(
         kind: kind,
         name: name,
         aliases: <String>[
-          if (rawAliases is List)
-            for (final Object? a in rawAliases)
-              if (_cleanName(a) case final String alias)
-                if (seen.add(_normName(alias))) alias,
+          for (final String alias in restoredAliases)
+            if (seen.add(_normName(alias))) alias,
         ],
         gender: _pick(entry['gender'], _kGenders),
         age: _pick(entry['age'], _kAges),
@@ -366,6 +396,17 @@ TtsRosterParseResult? parseTtsRosterReply(String reply) {
     rawCount: array.length,
     looping: _looksLooping(array, _kMaxRosterOpsPerChunk),
   );
+}
+
+/// 第一遍回复的失败原因；null 表示可用。
+///
+/// 空数组 `[]`（`rawCount == 0`）表示本块没有可登记的新角色 / 别名，是合法回复；
+/// 非空数组但一条都没解析出来（`rawCount > 0 && ops.isEmpty`）才是坏输出。
+String? ttsRosterReplyFailureReason(TtsRosterParseResult? parsed) {
+  if (parsed == null) return 'no JSON array';
+  if (parsed.looping) return 'looping output';
+  if (parsed.ops.isEmpty && parsed.rawCount > 0) return 'no usable entries';
+  return null;
 }
 
 /// 把第一遍的操作依次并进 [cast]：
@@ -417,22 +458,37 @@ void applyTtsRosterOps(TtsCast cast, List<TtsRosterOp> ops) {
 // 第二遍：逐句归属
 // ---------------------------------------------------------------------------
 
-const String kTtsCastLinesSystemPrompt = '''
-You attribute dialogue in a novel to speakers so an audiobook can give each character a different voice.
+/// 第二遍台词可用的类型（叙述是旁白专用；小说没有「不读」）。
+const List<CastLineKind> kTtsCastDialogueKinds = <CastLineKind>[
+  CastLineKind.spoken,
+  CastLineKind.shout,
+  CastLineKind.mutter,
+  CastLineKind.thought,
+  CastLineKind.monologue,
+];
+
+String get kTtsCastLinesSystemPrompt =>
+    '''
+You attribute dialogue in a novel to speakers so an audiobook can give each character a different voice, and give each line a little direction.
 
 You get the cast list, the last few lines already attributed (for turn-taking), and numbered lines from one chapter (lines marked "context" only help you infer speakers; never label them). Return ONLY a JSON array, no prose, no code fence:
-[{"i":3,"s":"エミリア","e":"怒り","c":0.95,"ev":"explicit"},{"i":5,"s":"スバル","c":0.6,"ev":"implicit"},{"i":8,"s":"unknown","c":0.2,"ev":"implicit"}]
+[{"i":3,"s":"エミリア","k":"shout","e":"anger","ei":70,"tone":"必死に食い下がる","c":0.95,"ev":"explicit"},{"i":5,"s":"スバル","k":"thought","beat":400,"c":0.6,"ev":"implicit"},{"i":8,"s":"unknown","c":0.2,"ev":"implicit"},{"i":11,"s":"narrator"}]
 - "i": the line number.
-- "s": who speaks the line: EXACTLY one canonical name from the cast list, or "unknown" when it is dialogue but you cannot tell who says it. Never use a name that is not in the cast list; never use an alias.
-- "e": optional short emotion / tone hint in the book's language (e.g. 怒り, 囁き, 笑い); omit when neutral.
+- "s": who speaks the line: EXACTLY one canonical name from the cast list; "unknown" when it is dialogue but you cannot tell who says it; or "narrator" for a starred line that nobody says aloud (see Rules). Never use a name that is not in the cast list; never use an alias.
+- "k": optional, one of ${kTtsCastDialogueKinds.map((CastLineKind k) => '"${k.wire}"').join(' | ')}. "spoken" = normal speech (the default); "shout"; "mutter" = quiet talking to oneself; "thought" = inner voice written as a quoted thought, e.g. （…）; "monologue" = a longer first-person inner passage set off like dialogue.
+- "beat": optional extra pause after the line in milliseconds (0..${CastLineLimits.maxBeatMs}), only for dramatic timing.
+- "e": optional emotion, one of ${CastEmotion.values.map((CastEmotion e) => '"${e.wire}"').join(' | ')}; "ei": its intensity 0..100. Omit both when neutral.
+- "tone": optional short Japanese acting note (at most 20 characters, e.g. "おずおずと", "必死に食い下がる", "声を落として") saying HOW the line is delivered — the nuance the emotion word cannot carry.
 - "c": your confidence from 0 to 1.
 - "ev": "explicit" (an attribution like 「…」とスバルは言った names the speaker), "anaphoric" (a pronoun, title or description refers to them, e.g. と彼女は言った, 少女が呟いた), or "implicit" (no tag; inferred from turn-taking, address terms, speech style).
 
 Rules:
-- Include ONLY lines that are spoken (or clearly voiced aloud) by a character: dialogue, usually inside 「」 or 『』 (or “” / "" in Western text). Narration, descriptions, inner monologue written as narration and titles are the narrator: do NOT include them.
+- Include the lines that are spoken (or clearly voiced aloud) by a character: dialogue, usually inside 「」 or 『』 (or “” / "" in Western text). Unstarred narration, descriptions, inner monologue written as narration and titles are the narrator: do NOT include them.
+- Lines numbered with a "*" (e.g. "7*: 『…』") open or continue a quotation. Give EVERY starred line an entry: its speaker, "unknown", or {"i":N,"s":"narrator"} when the quoted text is not said by anyone — a book, song or work title (『書名』), a sign or notice (「立ち入り禁止」), a quoted word or phrase, a written message read silently. A starred line you leave out goes to a human for review, so decide it yourself; when it could be either, prefer "unknown" over "narrator".
 - A long utterance may be split across several consecutive lines; label every line of it with the same speaker.
 - Use the attribution tags, turn-taking (in a two-person exchange speakers usually alternate), how characters address each other, their speech style and gender, and the surrounding narration (including context lines and the already-attributed lines).
 - Prefer "unknown" with a low "c" over guessing.
+- Direct each line's delivery on its own. When the same speaker says several lines in a row, do NOT copy one direction across all of them: read each line's sentence-final particles and what the line does (apology, excuse, empathy, promise, plea, emotional appeal, …) and give each line its own "e" / "ei" / "tone", so the delivery changes from line to line the way a real actor's would.
 ''';
 
 /// 滚动上下文里的一句已归属台词。
@@ -443,14 +499,23 @@ typedef TtsCastRecentLine = ({String speaker, String text});
 String buildTtsCastLinesUserPrompt(
   TtsCastChunk chunk, {
   required List<TtsCastCharacter> roster,
+  List<CastTextSubstitution> substitutions = const <CastTextSubstitution>[],
+  CastPromptRoster? promptRoster,
   required List<TtsCastRecentLine> recent,
 }) {
+  final CastPromptRoster view =
+      promptRoster ??
+      CastPromptRoster(roster: roster, substitutions: substitutions);
   final StringBuffer b = StringBuffer();
   b.writeln('[cast list]');
   if (roster.isEmpty) {
-    b.writeln('(empty: use "unknown" for every dialogue line)');
+    b.writeln(
+      '(empty: use "unknown" for every spoken line, "narrator" for starred lines nobody says aloud)',
+    );
   } else {
-    for (final TtsCastCharacter c in roster.take(kTtsCastMaxRosterInPrompt)) {
+    for (final TtsCastCharacter c in view.characters.take(
+      kTtsCastMaxRosterInPrompt,
+    )) {
       b.writeln(_rosterLine(c, withDescription: false));
     }
   }
@@ -458,27 +523,36 @@ String buildTtsCastLinesUserPrompt(
   if (recent.isNotEmpty) {
     b.writeln('[already attributed, just before]');
     for (final TtsCastRecentLine r in recent) {
-      final String who = r.speaker == kTtsUnknown ? 'unknown' : r.speaker;
-      b.writeln('$who: ${_oneLine(r.text)}');
+      final String speaker = view.speakerFor(r.speaker);
+      final String who = speaker == kTtsUnknown ? 'unknown' : speaker;
+      b.writeln(
+        '$who: ${_oneLine(applyCastSubstitutions(r.text, substitutions))}',
+      );
     }
     b.writeln();
   }
   if (chunk.before.isNotEmpty) {
     b.writeln('[context before]');
     for (final TtsPlanSentence s in chunk.before) {
-      b.writeln('context: ${_oneLine(s.text)}');
+      b.writeln(
+        'context: ${_oneLine(applyCastSubstitutions(s.text, substitutions))}',
+      );
     }
     b.writeln();
   }
   b.writeln('[lines to label]');
   for (int i = 0; i < chunk.sentences.length; i++) {
-    b.writeln('${i + 1}: ${_oneLine(chunk.sentences[i].text)}');
+    b.writeln(
+      '${i + 1}${chunk.dialogue[i] ? '*' : ''}: ${_oneLine(applyCastSubstitutions(chunk.sentences[i].text, substitutions))}',
+    );
   }
   if (chunk.after.isNotEmpty) {
     b.writeln();
     b.writeln('[context after]');
     for (final TtsPlanSentence s in chunk.after) {
-      b.writeln('context: ${_oneLine(s.text)}');
+      b.writeln(
+        'context: ${_oneLine(applyCastSubstitutions(s.text, substitutions))}',
+      );
     }
   }
   b.writeln();
@@ -492,14 +566,20 @@ class TtsCastLabel {
   const TtsCastLabel({
     required this.index,
     required this.speaker,
-    this.emotion,
+    this.kind,
+    this.direction = const CastLineDirection(),
     this.confidence,
     this.evidence,
   });
 
   final int index;
   final String speaker;
-  final String? emotion;
+
+  /// 台词类型（只收 [kTtsCastDialogueKinds]）；null = 没标（按说话人推断）。
+  final CastLineKind? kind;
+
+  /// 一拍 / 情绪 + 强度（已夹到范围；种子与语速等不收 AI 的）。
+  final CastLineDirection direction;
   final double? confidence;
   final TtsCastEvidence? evidence;
 }
@@ -518,6 +598,7 @@ TtsCastParseResult? parseTtsCastReply(
   String reply,
   int lineCount, {
   required TtsCastSpeakerIndex speakers,
+  CastPromptRoster? promptRoster,
 }) {
   final List<Object?>? array = _firstJsonArray(_stripFences(reply));
   if (array == null) return null;
@@ -529,12 +610,17 @@ TtsCastParseResult? parseTtsCastReply(
     if (byIndex.containsKey(index)) continue;
     final String? raw = _cleanName(entry['s'], allowReserved: true);
     if (raw == null) continue;
-    final String speaker = speakers.resolve(raw);
+    final String speaker =
+        promptRoster?.canonicalName(raw) ??
+        speakers.resolve(promptRoster?.restoreSpeaker(raw) ?? raw);
     final bool narrator = speaker == kTtsNarrator;
     byIndex[index] = TtsCastLabel(
       index: index,
       speaker: speaker,
-      emotion: narrator ? null : _cleanText(entry['e'], _kMaxEmotionLength),
+      kind: narrator ? null : ttsCastDialogueKind(entry['k']),
+      direction: narrator
+          ? const CastLineDirection()
+          : ttsCastAiDirection(entry),
       confidence: narrator ? null : _asConfidence(entry['c']),
       evidence: narrator
           ? null
@@ -555,8 +641,40 @@ TtsCastParseResult? parseTtsCastReply(
   );
 }
 
-/// 一块的整套行标注：模型回了的行按回复；没回的台词行记 [kTtsUnknown] + 零把握
-/// （进复核），其余没回的行记旁白。全部是 llm 来源，重新标注时口径一致。
+/// 第二遍回复的失败原因；null 表示可用。
+///
+/// 空数组 `[]`（`rawCount == 0`）表示模型按提示词判断本块没有角色说出口的台词
+/// （如著者简介、后记、既刊案内、引言或纯旁白里的书名 / 标牌），属于合法回复；
+/// 只有缺少 JSON 数组、复读或非空数组全不合格（`rawCount > 0 && labels.isEmpty`）
+/// 才判为坏输出。
+String? ttsCastReplyFailureReason(TtsCastParseResult? parsed) {
+  if (parsed == null) return 'no JSON array';
+  if (parsed.looping) return 'looping output';
+  if (parsed.labels.isEmpty && parsed.rawCount > 0) return 'no usable entries';
+  return null;
+}
+
+/// 本地校验 AI 给的台词类型：不在词表、或是旁白专用的「叙述」/ 小说没有的「不读」，
+/// 一律当作没标。
+CastLineKind? ttsCastDialogueKind(Object? raw) {
+  final CastLineKind? kind = CastLineKind.parse(raw);
+  return kTtsCastDialogueKinds.contains(kind) ? kind : null;
+}
+
+/// AI 给的演出字段：只收一拍、情绪 + 强度与语气说明（夹取规则与漫画共用
+/// [CastLineDirection.fromJson]）；种子 / 语速 / 音高 / 音量不归 AI 定。
+CastLineDirection ttsCastAiDirection(Map<Object?, Object?> entry) {
+  return CastLineDirection.fromJson(<Object?, Object?>{
+    'beat': entry['beat'],
+    'e': entry['e'],
+    'ei': entry['ei'],
+    'tone': entry['tone'],
+  });
+}
+
+/// 一块的整套行标注：模型回了的行按回复（含模型对 `*` 行显式回的旁白，不进复核）；
+/// 没回的台词行记 [kTtsUnknown] + 零把握（进复核），其余没回的行记旁白。全部是
+/// llm 来源，重新标注时口径一致。
 Map<String, TtsCastLine> ttsCastLinesForChunk(
   TtsCastChunk chunk,
   List<TtsCastLabel> labels,
@@ -573,7 +691,11 @@ Map<String, TtsCastLine> ttsCastLinesForChunk(
         final TtsCastLabel l => TtsCastLine(
           speaker: l.speaker,
           source: TtsCastSource.llm,
-          emotion: l.emotion,
+          kind: l.kind,
+          beatMs: l.direction.beatMs,
+          emotion: l.direction.emotion,
+          intensity: l.direction.intensity,
+          tone: l.direction.tone,
           confidence: l.confidence,
           evidence: l.evidence,
         ),

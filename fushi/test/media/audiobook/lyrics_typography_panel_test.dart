@@ -83,7 +83,7 @@ void main() {
 
   test('覆盖层两套设计都挂了 Aa 入口，页面接到热更通道', () {
     // 85857ec154 起歌词次要按钮布局化（[LyricsControlLayout]）：宽 / 窄控件条不再各写
-    // 一份 `_TypographyButton(...)`，而是按布局区遍历同一个按钮工厂。不变量因此分三层钉：
+    // 一份 Aa 键，而是按布局区遍历同一个按钮工厂。不变量因此分三层钉：
     // ① 出厂宽 / 窄布局都把 Aa 摆在页上可见区（顶部或工具条，不收进 ⋯、不移出）；
     // ② 两套设计的按钮工厂里 Aa 分支确实画出接 onTypography 的入口；
     // ③ 两套设计的宽 / 窄控件条都经同一工厂渲染布局区（宽 = wideControls，窄 =
@@ -117,9 +117,15 @@ void main() {
         nextLabels: const <String>['case LyricsControlItem.'],
       ),
     );
+    // 2026-11 起 Aa 与音画同步共用锚定图标键 `_AnchoredIconButton`（反馈
+    // G5xYgLcp4p），Aa 分支仍须画出该键并把点按交给 onTypography。
     expect(
       md3Factory,
-      contains('return_TypographyButton(onTypography:onTypography'),
+      allOf(
+        contains('return_AnchoredIconButton('),
+        contains("buttonKey:constValueKey<String>('lyrics_typography_button')"),
+        contains('onPressed:onTypography'),
+      ),
       reason: 'MD3 按钮工厂的 Aa 分支必须画出接 onTypography 的 Aa 键',
     );
     final String appleFactory = compactCode(

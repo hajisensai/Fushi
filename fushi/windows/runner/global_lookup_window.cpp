@@ -1415,7 +1415,8 @@ void GlobalLookupWindow::PrewarmWebView(int width, int height, HWND owner) {
 
 void GlobalLookupWindow::Reveal(int width, int height,
                                 bool clamp_to_work_area,
-                                HWND consume_outside_owner) {
+                                HWND consume_outside_owner,
+                                RevealLayerOrigin layer_origin) {
   if (hwnd_ == nullptr || capture_suppressed_) {
     return;
   }
@@ -1511,7 +1512,15 @@ void GlobalLookupWindow::Reveal(int width, int height,
   // 这里是唯一合适的复位点——Dart 侧那两个调用点（450ms READY-SAFETY 兜底 /
   // reveal(scalar)）都不知道自己最终会走哪条 C++ 路径，而本函数正是「窗口按光标 +
   // 单卡尺寸摆好了」这个事实的发生地。RevealStack 走 commitLayerShift，不经过这里。
-  if (webview_ != nullptr) {
+  //
+  // BUG-4355 — 直连游戏内卡（RevealOverProcessClient）也借这个函数上屏，但它把窗口放在
+  // **已提交几何的 union bbox 原点 + union 尺寸**，图层平移由同一几何的
+  // commitLayerShift(bbox) 写好。嵌套 resize 后 Dart 每次都会重投 present，这里若照样
+  // 复位，子卡向上 / 向左翻出（bbox 原点为负）时整叠卡被画回 window-local 原点：子卡
+  // 顶部越出窗口被裁、根卡上移盖到子卡底下，而 HRGN / 投影仍按 shellRects 留在原位
+  // ——两张卡下方各露出一截透明区（反馈 SDbJAx1Db6）。所以只有 legacy 单卡语义才复位。
+  if (webview_ != nullptr &&
+      layer_origin == RevealLayerOrigin::kCursorSingleCard) {
     webview_->ExecuteScript(
         L"(function(){var h=window.__globalLookupHost;"
         L"if(h&&typeof h.resetLayerOffsetForLegacyReveal==='function'){"
@@ -2745,7 +2754,12 @@ bool GlobalLookupWindow::RevealOverProcessClient(
   // consumed. Pass the bound game HWND into the same reveal transaction that
   // makes the popup visible, so there is no first-frame window where the hook
   // is armed with desktop click-through semantics.
-  Reveal(screen_width, screen_height, false, game);
+  // BUG-4355 — the HWND lands on the committed union bbox origin (not the legacy
+  // cursor + single-card spot), so the host layer must keep the
+  // commitLayerShift(bbox) translation that ResizeStackForGal / the off-screen
+  // RevealStack already applied for this exact geometry.
+  Reveal(screen_width, screen_height, false, game,
+         RevealLayerOrigin::kCommittedBBox);
   const bool shown = revealed_ && visible_ && IsWindowVisible(hwnd_);
   if (shown) {
     direct_process_client_active_ = true;
@@ -3467,20 +3481,34 @@ void GlobalLookupWindow::ConfigureWebView() {
                   body.find("\"duplicateCheck\"") != std::string::npos ||
                   body.find("\"overwriteTargetNoteId\"") != std::string::npos ||
                   body.find("\"updateEntry\"") != std::string::npos ||
+                  // review-gal-overlay-mine-fail: popup.js asks queueOverwrite
+                  // when the user clicks a "queued" (written-in-background) ✓
+                  // again. An immediate null here read as "host refused, still
+                  // writing" forever -- even after that background write had
+                  // already FAILED, so the same card kept saying "still
+                  // writing". Dart answers from the background-mine ledger
+                  // (pending / landed / failed + reason).
+                  body.find("\"queueOverwrite\"") != std::string::npos ||
+                  // ...and once that background write has FAILED with the frame
+                  // and sentence audio still in hand, the card's + becomes
+                  // "retry": Dart answers {accepted} from the same one-shot
+                  // retry slot the main-window toast's "retry" uses.
+                  body.find("\"retryQueuedMine\"") != std::string::npos ||
                   body.find("\"findMinedMatches\"") != std::string::npos ||
                   body.find("\"openMinedNote\"") != std::string::npos ||
                   body.find("\"openInAnki\"") != std::string::npos ||
+                  // Cross-app audio cache: the "adjust sentence audio" panel is
+                  // drawn by popup.js inside THIS card (no foreground steal from
+                  // the game); the main Dart engine answers whether this lookup
+                  // captured any audio and ships the waveform + preview WAV.
+                  body.find("\"crossAppAudioAvailable\"") != std::string::npos ||
+                  body.find("\"crossAppAudioPreview\"") != std::string::npos ||
                   // Fushi review (SRS) word status + open-card badge: the main
                   // Dart engine answers from the SRS store (or null / false
                   // while the review module is off).
                   body.find("\"srsTermStatus\"") != std::string::npos ||
                   body.find("\"srsOpenCard\"") != std::string::npos ||
-                  body.find("\"srsTermStatusBatch\"") != std::string::npos ||
-                  // "Sentences from your library" (cross-media links L4): the
-                  // main Dart engine queries the local corpus (null while the
-                  // feature is off) and opens the origin in the main window.
-                  body.find("\"librarySentences\"") != std::string::npos ||
-                  body.find("\"librarySentenceOpen\"") != std::string::npos;
+                  body.find("\"srsTermStatusBatch\"") != std::string::npos;
               const std::string key = "\"__bridgeId\":";
               size_t pos = body.find(key);
               if (!deferred && pos != std::string::npos) {
@@ -3586,6 +3614,26 @@ void GlobalLookupWindow::DispatchGamepadAction(const std::string& action,
       L"window.__globalLookupHost && "
       L"window.__globalLookupHost.gamepadAction('" + action_w + L"', " +
       std::to_wstring(dy) + L");";
+  webview_->ExecuteScript(script.c_str(), nullptr);
+}
+
+void GlobalLookupWindow::SettleQueuedMine(const std::string& json_literal) {
+  if (recovering_ || !webview_ready_ || !webview_) {
+    // The card page (and every "queued" mark it held) is gone or not built
+    // yet: nothing to settle. Dart already toasted the outcome in the main
+    // window, so dropping this is lossless.
+    return;
+  }
+  // |json_literal| is a JS string literal (Dart double-encodes the settlement,
+  // same as ResolveBridge); the host JSON.parses it. Never splice raw objects.
+  if (json_literal.empty() || json_literal.front() != '"' ||
+      json_literal.back() != '"') {
+    return;
+  }
+  const std::wstring script =
+      L"window.__globalLookupHost && "
+      L"window.__globalLookupHost.settleQueuedMine(" +
+      Utf8ToWide(json_literal) + L");";
   webview_->ExecuteScript(script.c_str(), nullptr);
 }
 
@@ -4088,6 +4136,38 @@ void GlobalLookupWindow::UpdateCopyHotkey() {
     // 右键菜单的复制仍然可用。
     ReportOverlayError("RegisterHotKey(Ctrl+C) for overlay selection failed",
                        HRESULT_FROM_WIN32(GetLastError()));
+  }
+}
+
+// BUG-5310 — 卡片里的选区 + 查词热键 = 在卡片里嵌套查词。判据与 Ctrl+C 接管同源
+// （selection_present_ && IsShowing()），所以「卡片已收起 / 没选区」时一律回 false，
+// Dart 照旧抓前台程序的选区。接没接手以 host `lookupSelection()` 的返回值为准：
+// 上报与现场不一致（选区已清 / 只选中空白或注音 / realm 没有桥）时 host 回 false，
+// 这次按键退回前台抓取，而不是被吞掉。
+void GlobalLookupWindow::LookupOverlaySelection(
+    std::function<void(bool)> done) {
+  if (!selection_present_ || !IsShowing() || webview_ == nullptr ||
+      !webview_ready_) {
+    done(false);
+    return;
+  }
+  auto shared_done = std::make_shared<std::function<void(bool)>>(
+      std::move(done));
+  const HRESULT hr = webview_->ExecuteScript(
+      L"(function(){var h=window.__globalLookupHost;"
+      L"return !!(h&&typeof h.lookupSelection==='function'&&"
+      L"h.lookupSelection());})()",
+      Callback<ICoreWebView2ExecuteScriptCompletedHandler>(
+          [shared_done](HRESULT error_code, LPCWSTR result_json) -> HRESULT {
+            const bool taken = SUCCEEDED(error_code) && result_json != nullptr &&
+                               wcscmp(result_json, L"true") == 0;
+            (*shared_done)(taken);
+            return S_OK;
+          })
+          .Get());
+  if (FAILED(hr)) {
+    ReportOverlayError("ExecuteScript(lookupSelection) failed", hr);
+    (*shared_done)(false);
   }
 }
 

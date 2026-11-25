@@ -94,8 +94,8 @@ void main() {
     expect(result.items.map((VideoSubtitleCandidate c) => c.fileName), <String>[
       '[Group] Mirai Nikki - 07.ja.srt',
     ]);
-    // 条目搜索 + 带集号的文件列表 + 不带集号的全表（只为补回整季压缩包）。
-    expect(requests, hasLength(3));
+    // 条目搜索 + 一次全表（集号在本地按文件名筛，见 JimakuVideoSubtitleProvider）。
+    expect(requests, hasLength(2));
     for (final http.Request req in requests) {
       expect(
         req.headers['Authorization'],
@@ -106,8 +106,7 @@ void main() {
     final Uri search = requests.first.url;
     expect(search.queryParameters['anilist_id'], '$miraiNikkiAnilistId');
     expect(search.queryParameters['anime'], 'true');
-    expect(requests[1].url.queryParameters['episode'], '7');
-    expect(requests[2].url.queryParameters, isEmpty);
+    expect(requests[1].url.queryParameters, isEmpty);
   });
 
   test('401（key 无效）是带状态码的 unauthorized 失败，不是空结果', () async {

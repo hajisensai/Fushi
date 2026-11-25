@@ -1,8 +1,8 @@
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter/widgets.dart';
 
-import 'package:fushi/src/media/video/audio_energy_probe.dart'
-    show kSubtitleAutoAlignProbeLimitMs;
+import 'package:fushi/src/media/video/subtitle_waveform_segments.dart'
+    show SubtitleWaveformSegmentLoader, SubtitleWaveformSegments;
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_custom_action_bindings.dart';
@@ -42,7 +42,6 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     this.subtitleWaveformCues = const <AudioCue>[],
     this.videoDurationMs = 0,
     this.loadSubtitleWaveform,
-    this.subtitleProbeLimitMs = kSubtitleAutoAlignProbeLimitMs,
     this.onPlaySubtitleCue,
     this.subtitleIsPlaying,
     this.onToggleSubtitlePlayPause,
@@ -59,6 +58,7 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
     required this.onSubtitleStylePreview,
     required this.onSubtitleStyleCommit,
     this.onEnterSubtitleDragAdjust,
+    this.onEnterSubtitleMaskEdit,
     this.onEnterSubtitleDelayBar,
     this.onSubtitleObscureRevealChanged,
     this.onSecondarySubtitleObscureRevealChanged,
@@ -136,10 +136,11 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
 
   final List<AudioCue> subtitleWaveformCues;
   final int videoDurationMs;
-  final Future<List<double>> Function()? loadSubtitleWaveform;
 
-  /// 波形 / 自动对轴探测上界（毫秒），流音源比整集音源短，见 [subtitleAlignProbeLimitMs]。
-  final int subtitleProbeLimitMs;
+  /// 字幕对轴波形视图按段抽包络（`[startMs, endMs)`，见 [SubtitleWaveformSegments]）。
+  /// null = 无字幕 cue 或无对轴音源，不挂波形入口。视图时间窗是片长全程
+  /// （[videoDurationMs]），不受自动对轴探测上界限制。
+  final SubtitleWaveformSegmentLoader? loadSubtitleWaveform;
   final Future<void> Function(int startMs)? onPlaySubtitleCue;
   final bool Function()? subtitleIsPlaying;
   final Future<void> Function()? onToggleSubtitlePlayPause;
@@ -173,6 +174,10 @@ class VideoQuickSettingsHost extends VideoSettingsHost {
   /// 实时效果）：页面关掉设置面板，在画面顶部挂一条只含调轴控件的紧凑浮条，字幕
   /// 区域整片让出来。null = 面板不显示该入口（全局设置页 / 无播放器场景）。
   final VoidCallback? onEnterSubtitleDelayBar;
+
+  /// 进入「调整字幕遮布」模式：页面关设置侧栏，在画面上挂可拖动 / 缩放的遮布框。
+  /// null = 面板不显示该入口（全局设置页 / 无播放器场景）。
+  final VoidCallback? onEnterSubtitleMaskEdit;
 
   /// 遮蔽态「悬停 / 点击临时显形」总闸的页面通道：写偏好 + 立刻重建 overlay。null =
   /// 无播放器场景（全局设置页），由 schema 直接写 [AppModel]。

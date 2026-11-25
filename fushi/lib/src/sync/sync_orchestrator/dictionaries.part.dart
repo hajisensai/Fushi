@@ -13,6 +13,18 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
         .getAllDictionaryMetadata();
     final List<RemoteDictionaryInfo> remoteDicts = await backend
         .listRemoteDictionaries();
+    // 服务器托管词典目录（v153）：连接中这台 host 的清单已经拿在手上，顺手对账进
+    // `remote_dictionary_metadata`，不另发请求。对账失败只记进报告，不影响词典同步。
+    try {
+      await RemoteDictionaryCatalogService.reconcileHost(
+        _db,
+        hostId: await backend.connectedHostIdentity(),
+        infos: remoteDicts,
+        now: DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (e) {
+      report.noteError('refresh server dictionary catalog', e);
+    }
 
     final SyncKeyDiff diff = computeKeyUnionDiff(
       localKeys: <String>{for (final DictionaryMetaRow d in localDicts) d.name},
@@ -29,74 +41,127 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
     int index = 0;
 
     for (final String name in pulls) {
-      _emit(
-        SyncPhase.dictionaries,
-        itemIndex: index,
-        itemTotal: total,
-        title: name,
-      );
-      File? tmp;
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       try {
-        tmp = resumableTmpFile('dictionary', name, _dictionaryAssetSuffix);
-        await backend.getRemoteDictionary(
+        await _pullLiveDictionary(
+          backend,
           name,
-          tmp,
-          onProgress: (double f, [int? b]) => _emit(
-            SyncPhase.dictionaries,
-            itemIndex: index,
-            itemTotal: total,
-            title: name,
-            fileFraction: f,
-            fileBytes: b,
-          ),
-        );
-        await _packages.importDictionaryPackage(
-          packageFile: tmp,
-          dictionaryResourceRoot: _dictionaryResourceRoot,
+          itemIndex: index,
+          itemTotal: total,
         );
         report.dictionariesImported++;
       } catch (e) {
         report.noteError('pull dictionary "$name"', e);
-      } finally {
-        _safeDelete(tmp);
       }
       index++;
     }
 
     for (final String name in pushes) {
-      _emit(
-        SyncPhase.dictionaries,
-        itemIndex: index,
-        itemTotal: total,
-        title: name,
-      );
-      File? tmp;
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       try {
-        tmp = _tmpFile(_dictionaryAssetSuffix);
-        await _packages.exportDictionaryPackage(
-          dictionaryName: name,
-          dictionaryResourceRoot: _dictionaryResourceRoot,
-          outputFile: tmp,
-        );
-        await backend.putRemoteDictionary(
+        await _pushLiveDictionary(
+          backend,
           name,
-          tmp,
-          onProgress: (double f, [int? b]) => _emit(
-            SyncPhase.dictionaries,
-            itemIndex: index,
-            itemTotal: total,
-            title: name,
-            fileFraction: f,
-            fileBytes: b,
-          ),
+          itemIndex: index,
+          itemTotal: total,
         );
         report.dictionariesExported++;
       } catch (e) {
         report.noteError('push dictionary "$name"', e);
-      } finally {
-        _safeDelete(tmp);
       }
       index++;
+    }
+  }
+
+  /// 从互联对端拉一本词典包并导入本机（同步阶段与按 host 的单本下载共用这一份）。
+  /// 失败原样抛出，由调用方决定记账还是上屏。
+  ///
+  /// 导入后本机这份接替管理页上那条服务器目录行的位置与开关
+  /// （[DictionaryRepository.adoptCatalogPlacement]）：包里带的是 host 自己词典表的
+  /// `order` / 开关（另一条数轴、另一个配置）。放在这里而不是各调用方，整轮同步的
+  /// 拉取与单本「下载到本机」就不会一条接替、一条照搬。在后置钩子重载词典之前写，
+  /// 重载读到的就是最终值。
+  Future<void> _pullLiveDictionary(
+    InterconnectSyncBackend backend,
+    String name, {
+    required int itemIndex,
+    required int itemTotal,
+    void Function()? onImporting,
+  }) async {
+    _emit(
+      SyncPhase.dictionaries,
+      itemIndex: itemIndex,
+      itemTotal: itemTotal,
+      title: name,
+    );
+    File? tmp;
+    try {
+      tmp = resumableTmpFile('dictionary', name, _dictionaryAssetSuffix);
+      await backend.getRemoteDictionary(
+        name,
+        tmp,
+        onProgress: (double f, [int? b]) => _emit(
+          SyncPhase.dictionaries,
+          itemIndex: itemIndex,
+          itemTotal: itemTotal,
+          title: name,
+          fileFraction: f,
+          fileBytes: b,
+        ),
+      );
+      onImporting?.call();
+      await _packages.importDictionaryPackage(
+        packageFile: tmp,
+        dictionaryResourceRoot: _dictionaryResourceRoot,
+      );
+      await DictionaryRepository.adoptCatalogPlacement(
+        _db,
+        hostId: await backend.connectedHostIdentity(),
+        name: name,
+      );
+    } finally {
+      _safeDelete(tmp);
+    }
+  }
+
+  /// 把本机一本词典打包推到互联对端（同步阶段与按 host 的单本推送共用这一份）。
+  /// 失败原样抛出。
+  Future<void> _pushLiveDictionary(
+    InterconnectSyncBackend backend,
+    String name, {
+    required int itemIndex,
+    required int itemTotal,
+  }) async {
+    _emit(
+      SyncPhase.dictionaries,
+      itemIndex: itemIndex,
+      itemTotal: itemTotal,
+      title: name,
+    );
+    File? tmp;
+    try {
+      tmp = _tmpFile(_dictionaryAssetSuffix);
+      await _packages.exportDictionaryPackage(
+        dictionaryName: name,
+        dictionaryResourceRoot: _dictionaryResourceRoot,
+        outputFile: tmp,
+      );
+      await backend.putRemoteDictionary(
+        name,
+        tmp,
+        onProgress: (double f, [int? b]) => _emit(
+          SyncPhase.dictionaries,
+          itemIndex: itemIndex,
+          itemTotal: itemTotal,
+          title: name,
+          fileFraction: f,
+          fileBytes: b,
+        ),
+      );
+    } finally {
+      _safeDelete(tmp);
     }
   }
 
@@ -138,6 +203,8 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
 
     // Push local-only dictionaries.
     for (final DictionaryMetaRow d in toPush) {
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.dictionaries,
         itemIndex: index,
@@ -181,6 +248,8 @@ extension _SyncOrchestratorDictionaries on SyncOrchestrator {
       // `.fushidict`）suffix, which otherwise surfaces as a "weird" entry in
       // the progress list.
       final String displayName = _stripDictionaryAssetSuffix(e.name);
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.dictionaries,
         itemIndex: index,

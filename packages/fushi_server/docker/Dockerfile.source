@@ -1,0 +1,73 @@
+# syntax=docker/dockerfile:1
+# fushi_server image built from this checkout (multi-stage). Slow the first time:
+# the static libtorrent bridge alone is ~40 min cold. BuildKit cache mounts keep
+# cargo / vcpkg / pub / native build trees between builds, so later builds only
+# redo what changed.
+#
+# Build context: the repo root (Dockerfile.source.dockerignore, next to this
+# file, keeps build output and caches out). The build stage starts from the
+# `toolchain` named context, the image tool/linux/Dockerfile builds:
+#   - docker-compose.yml provides it from its `toolchain` service, so
+#     `docker compose up -d --build` does everything;
+#   - build_source_image.sh passes --build-context toolchain=docker-image://... .
+# Published images are not built from here: release-server.yml packages the
+# release bundle with Dockerfile.
+#
+# The runtime stage (from `FROM debian:trixie-slim AS runtime` on) must stay
+# identical in both Dockerfiles apart from the COPY source paths;
+# server-docker.yml diffs them. The bundle stage is named `bundle` in both.
+
+FROM toolchain AS bundle
+# Same build commands and bundle layout as the release (release-server.yml):
+# both run packages/fushi_server/tool/build_linux_bundle.sh.
+# The context has no .git: fushi-anki-sync records this commit in its AGPL
+# SOURCE.txt. Published images pass the exact commit; local builds may leave it.
+ARG FUSHI_SOURCE_COMMIT=unknown
+ENV FUSHI_SOURCE_COMMIT=${FUSHI_SOURCE_COMMIT}
+WORKDIR /src
+COPY . /src
+RUN --mount=type=cache,id=fushi-server-pub,target=/root/.pub-cache \
+    --mount=type=cache,id=fushi-server-cache,target=/root/.cache \
+    --mount=type=cache,id=fushi-server-cargo-registry,target=/opt/cargo/registry \
+    --mount=type=cache,id=fushi-server-cargo-git,target=/opt/cargo/git \
+    --mount=type=cache,id=fushi-server-t-torrent,target=/src/native/fushi_torrent/build-linux-x64 \
+    --mount=type=cache,id=fushi-server-t-dicts,target=/src/native/fushidicts/build-linux-x64 \
+    --mount=type=cache,id=fushi-server-t-p2p,target=/src/native/fushi_p2p/target \
+    --mount=type=cache,id=fushi-server-t-fsrs,target=/src/native/fushi_fsrs/target \
+    --mount=type=cache,id=fushi-server-t-compute,target=/src/native/fushi_compute/target \
+    --mount=type=cache,id=fushi-server-t-rwkv,target=/src/native/fushi_rwkv/target \
+    --mount=type=cache,id=fushi-server-t-anki,target=/src/native/fushi_anki_sync/target \
+    --mount=type=cache,id=fushi-server-anki-src,target=/src/native/fushi_anki_sync/.anki-src \
+    bash packages/fushi_server/tool/build_linux_bundle.sh all "$VCPKG_ROOT" \
+    && cp -a build/fushi_server_linux/bundle /opt/fushi_server \
+    && cp packages/fushi_server/README.md /opt/fushi_server/README.md
+
+FROM debian:trixie-slim AS runtime
+# ffmpeg/ffprobe: video, audiobook cue split, subtitles. 7zip: archive import.
+# curl: health check.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends 7zip ca-certificates curl ffmpeg tzdata \
+    && rm -rf /var/lib/apt/lists/*
+COPY --from=bundle /opt/fushi_server /opt/fushi_server
+# Fail the build, not the first start, if the bundle needs a newer glibc.
+COPY --chmod=755 packages/fushi_server/docker/check_bundle_libs.sh /usr/local/bin/fushi-check-bundle-libs
+RUN fushi-check-bundle-libs /opt/fushi_server
+COPY --chmod=755 packages/fushi_server/docker/entrypoint.sh /usr/local/bin/fushi-entrypoint
+COPY --chmod=755 packages/fushi_server/docker/fushi_server.sh /usr/local/bin/fushi_server
+COPY --chmod=755 packages/fushi_server/docker/healthcheck.sh /usr/local/bin/fushi-healthcheck
+# FUSHI_CONTAINER=1: the in-app self-update refuses (pull a new image instead).
+ENV FUSHI_CONTAINER=1 \
+    HOME=/config \
+    LANG=C.UTF-8
+# Runs as a non-root user. 1000:1000 owns the empty /config (a named volume
+# inherits that); compose runs it as PUID:PGID from .env instead, and a bind
+# mount must already be writable by that user (the entrypoint says so if not).
+RUN install -d -o 1000 -g 1000 /config
+USER 1000:1000
+WORKDIR /config
+VOLUME ["/config"]
+# 38765 interconnect (pairing / sync, TLS), 38780 WebUI + admin API, 6881 torrent.
+EXPOSE 38765/tcp 38780/tcp 6881/tcp 6881/udp
+HEALTHCHECK --interval=30s --timeout=10s --start-period=60s --retries=3 CMD ["fushi-healthcheck"]
+ENTRYPOINT ["fushi-entrypoint"]
+CMD ["serve"]

@@ -14,7 +14,12 @@ import 'package:path/path.dart' as p;
 import '../helpers/source_guard.dart';
 
 /// 允许同步 `SrsCore.open(` 的 lib 文件（相对仓库根，`/` 分隔）→ 理由。
-const Map<String, String> _kAllowed = <String, String>{};
+const Map<String, String> _kAllowed = <String, String>{
+  // 离线整机备份（serve 没开复习库时）：`_snapshotSrsOffline` 整段在 `Isolate.run` 里打开 srs.db、出快照、关掉，
+  // 不在调用方 isolate；而且这是无头服务端，没有 UI 主线程。
+  'packages/fushi_server/lib/src/backup/server_backup.dart':
+      'Isolate.run 里打开（离线备份快照），无头服务端无 UI isolate',
+};
 
 /// 仓库根（测试在 fushi/ 下跑）。
 final Directory _repo = Directory.current.parent;

@@ -48,13 +48,22 @@ void main() {
     '  // 运行中换翻页动画设置',
   );
   final String pan = section('  function _clampPan(){', '  // 方向键平移');
+  // 按显示尺寸取图（BUG-4658）：落位 / 画布刷新会调 `_scheduleRefit`，一并抽真实实现
+  // （默认 FIT_IMAGES = false，与生产默认一致，直接返回）。
+  final String fit = section(
+    '  var FIT_IMAGES = ',
+    '  function _layoutSource(page){',
+  );
   final String start = section(
     '  var sx = 0, sy = 0, st = 0, spx = 0, has = false;',
     '  // ── 触屏双指捏合缩放 ──',
   );
+  // 抽到手势监听器注册块为止（`_end` 之后第一条 document 级监听器，不限事件
+  // 类型）：中间是本节共用的阈值 / 长按 / 落点 helper；监听器本身不抽，node
+  // 桩没有 DOM 事件。
   final String end = section(
     '  function _end(x, y){',
-    "  document.addEventListener('pointerdown', function(e){",
+    '\n  document.addEventListener(',
   );
 
   /// 视口 412×860、RTL、5 个跨页：RTL 倒序排布，跨页 i 的 offsetLeft =
@@ -65,7 +74,8 @@ const assert=require('node:assert/strict');
 let ZOOM=1, PAN_X=0, PAN_Y=0, PAN_WIDE=true, IS_WEBTOON=false, IS_RTL=true;
 let SPLIT_ACTIVE=false, CURRENT=2, PAGE_HALF=0;
 let PAGE_ANIM='slide', PAGE_ANIM_MS=220, FOLLOW_DRAG=true;
-const MAX_ANIM_DIST=1, FOLLOW_COMMIT=0.25, FOLLOW_FLING=0.6;
+// FOLLOW_COMMIT / FOLLOW_FLING 等提交阈值随抽出的 `_end` 段一起注入（灵敏度 1.0）。
+const MAX_ANIM_DIST=1;
 const FOLLOW_EDGE_DAMPING=0.3, PAGE_EASE='ease';
 const window={innerWidth:412,innerHeight:860};
 function mkEl(props){
@@ -108,6 +118,7 @@ function _bridge(){ return {callHandler:(n,d)=>{
 function _onTap(){ taps++; }
 let now=1000;
 Date.now=()=>now;
+$fit
 $translate
 $pan
 $start

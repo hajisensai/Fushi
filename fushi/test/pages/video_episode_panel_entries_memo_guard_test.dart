@@ -58,8 +58,17 @@ void main() {
       '_episodePanelEntriesEpisodes = _episodes;',
       '_episodePanelEntriesFetcher = fetcher;',
       '_episodePanelEntriesImages = _playlistCollectionImages;',
+      // 选集面板剧照与封面来源（拍板 design-player-episode-rail-stills）。
+      '_episodePanelEntriesStills = _playlistFileEpisodes;',
+      '_episodePanelEntriesCoverMeta = _playlistCoverMeta;',
     ]) {
       expect(body.contains(snapshot), isTrue, reason: '应记录快照：$snapshot');
+    }
+    for (final String check in <String>[
+      'identical(_episodePanelEntriesStills, _playlistFileEpisodes)',
+      'identical(_episodePanelEntriesCoverMeta, _playlistCoverMeta)',
+    ]) {
+      expect(body.contains(check), isTrue, reason: '应按身份比较：$check');
     }
   });
 

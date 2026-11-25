@@ -63,6 +63,15 @@ void main() {
         ),
         <String>['music', 'music::Song'],
       );
+      expect(
+        repo.tags(
+          '',
+          source: AnkiMiningSource.manga,
+          nest: true,
+          titleTag: 'Yotsuba',
+        ),
+        <String>['manga', 'manga::Yotsuba'],
+      );
     });
 
     test('开启但关掉单独的分类标签：只剩层级标签', () {

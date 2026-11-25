@@ -8,6 +8,7 @@ library;
 import 'dart:async';
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsTermQuery;
@@ -15,7 +16,6 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_browse_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
-import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_term_status_bridge.dart';
 import 'package:fushi/src/sync/fushi_api_server.dart' show SrsExtensionApi;
@@ -30,6 +30,7 @@ class SrsAppHost implements SrsExtensionApi {
     required this.openNote,
     required this.openBrowse,
     this.remoteStore,
+    this.notifyLocalWrite,
   });
 
   /// 当前（复习模块开着时装上的）宿主入口；null = 模块关着。
@@ -47,6 +48,11 @@ class SrsAppHost implements SrsExtensionApi {
   /// 互联主机的远程复习库（`/api/srs/remote/*`，docs/specs/2026-11-01-srs-remote-review-design.md）。
   /// 只有 [current] 那份带它；按配置给浏览器扩展建的实例不带（null）。
   final SrsRemoteStoreService? remoteStore;
+
+  /// Riverpod 图外的后台任务直接改了 [readStore] 那份库之后调用：与复习页内的写入一样，
+  /// 界面重读、经互联 / 云盘推给别的设备（`SrsAppRuntime` 的修订号 +1）。只有 [current]
+  /// 那份带它；null = 这个宿主没有运行时可通知。
+  final void Function()? notifyLocalWrite;
 
   /// 弹窗 / 扩展的词状态回包（见 srs_term_status_bridge.dart）。
   @override

@@ -74,6 +74,76 @@ bool heavyCommandNeedsI18n(
   return false;
 }
 
+/// Whether [command], about to run here from [cwd], is a `flutter analyze` /
+/// `dart analyze` inside `<checkout>/fushi`. Such a run needs the untracked
+/// Flutter GPU shader bundles under `fushi/build/shaderbundles/` that
+/// pubspec.yaml lists as assets (else asset_does_not_exist): the build hook
+/// makes them for `flutter run|build|test`, but analyze runs no hooks, so
+/// heavy.dart runs fushi/tool/gen_shader_bundles.dart first (an offloaded
+/// run's worker does in worker_analyze.sh).
+bool heavyCommandAnalyzesApp(
+  List<String> command, {
+  required String cwd,
+  required String checkout,
+  required bool isWindows,
+}) {
+  if (command.isEmpty) return false;
+  final String app = _norm('$checkout/fushi', isWindows);
+  final String here = _norm(cwd, isWindows);
+  if (here != app && !here.startsWith('$app/')) return false;
+  final String name = _launcherName(command.first);
+  if (name != 'flutter' && name != 'dart') return false;
+  final String? sub = command
+      .skip(1)
+      .cast<String?>()
+      .firstWhere((String? a) => !a!.startsWith('-'), orElse: () => null);
+  return sub == 'analyze';
+}
+
+/// Whether [command], about to run here from [cwd], is a gradle build of the
+/// app (`gradlew` inside `<checkout>/fushi/android`). Gradle reads
+/// `local.properties` (flutter.sdk) and the plugin registration
+/// (`GeneratedPluginRegistrant.java`, the plugin settings) from what the
+/// Flutter tool last wrote; `flutter pub get` / `flutter test` write them for
+/// the debug variant with the dev_dependencies (integration_test,
+/// flutter_native_splash) registered, which a release compile then cannot
+/// find. So before such a run heavy.dart has the Flutter tool write them
+/// afresh with `flutter build apk --config-only`, as an offloaded run's
+/// worker does (fushi/tool/dist_test/worker_build.sh).
+bool heavyCommandIsAppGradle(
+  List<String> command, {
+  required String cwd,
+  required String checkout,
+  required bool isWindows,
+}) {
+  if (command.isEmpty || _launcherName(command.first) != 'gradlew') {
+    return false;
+  }
+  final String android = _norm('$checkout/fushi/android', isWindows);
+  final String here = _norm(cwd, isWindows);
+  return here == android || here.startsWith('$android/');
+}
+
+/// The `flutter` launcher that runs `flutter build apk --config-only` before
+/// an app gradle build: that of the SDK pub get used (gradle is then built
+/// against the same SDK the packages were resolved with), else the one on
+/// PATH.
+String heavyGradleConfigFlutter({
+  required String checkout,
+  required bool isWindows,
+  bool Function(String path)? fileExists,
+  String? Function(String path)? read,
+}) {
+  final bool Function(String) exists =
+      fileExists ?? (String p) => File(p).existsSync();
+  final String launcher = isWindows ? 'flutter.bat' : 'flutter';
+  final String? root = pubGetFlutterRoot(checkout, read: read);
+  if (root != null && exists('$root/bin/$launcher')) {
+    return '$root/bin/$launcher';
+  }
+  return launcher;
+}
+
 /// The Flutter SDK root `flutter pub get` recorded for this checkout
 /// (`flutterRoot` in `<checkout>/.dart_tool/package_config.json`), or null.
 String? pubGetFlutterRoot(String checkout, {String? Function(String)? read}) {

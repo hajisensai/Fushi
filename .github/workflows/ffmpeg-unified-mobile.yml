@@ -39,9 +39,9 @@ jobs:
       # FFmpegKitNext's android-r27d profile.
       NDK_VERSION: 27.3.13750724
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
-      - uses: actions/setup-java@v5
+      - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
         with:
           distribution: temurin
           java-version: "17"
@@ -87,7 +87,7 @@ jobs:
         run: tail -n 400 "$RUNNER_TEMP/work/ffmpeg-kit-next/build.log" || true
 
       - name: Upload Android artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ffmpeg-unified-android
           path: ${{ runner.temp }}/out/*
@@ -95,7 +95,7 @@ jobs:
 
       - name: Upload build.log
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ffmpeg-unified-android-build-log
           path: ${{ runner.temp }}/work/ffmpeg-kit-next/build.log
@@ -111,7 +111,7 @@ jobs:
     env:
       HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Select Xcode 26
         run: |
@@ -138,7 +138,7 @@ jobs:
         run: tail -n 400 "$RUNNER_TEMP/work/ffmpeg-kit-next/build.log" || true
 
       - name: Upload macOS artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ffmpeg-unified-macos
           path: ${{ runner.temp }}/out/*
@@ -146,7 +146,7 @@ jobs:
 
       - name: Upload build.log
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ffmpeg-unified-macos-build-log
           path: ${{ runner.temp }}/work/ffmpeg-kit-next/build.log
@@ -159,7 +159,7 @@ jobs:
     env:
       HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: "1"
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
 
       - name: Select Xcode 26
         # FFmpegKitNext's xcode26 profile requires Xcode 26 or newer.
@@ -192,7 +192,7 @@ jobs:
         run: tail -n 400 "$RUNNER_TEMP/work/ffmpeg-kit-next/build.log" || true
 
       - name: Upload iOS artifacts
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ffmpeg-unified-ios
           path: ${{ runner.temp }}/out/*
@@ -200,7 +200,7 @@ jobs:
 
       - name: Upload build.log
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ffmpeg-unified-ios-build-log
           path: ${{ runner.temp }}/work/ffmpeg-kit-next/build.log

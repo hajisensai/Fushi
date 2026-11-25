@@ -8,6 +8,9 @@ import 'package:fushi_engine/media/video/external_video.dart'
 import 'package:fushi_engine/media/video/strm_file.dart'
     show isNetworkStreamUrl, isSourceLibrarySftpVideoPath;
 
+// master 的联网探测（IO）单独成文件，从这里转出口：播放页只 import 本库。
+export 'package:fushi_engine/media/video/hls_master_probe.dart';
+
 /// **纯函数**：从 `VideoBooks.playlistJson` 解析出集数；空 / 非播放列表 / 解析失败
 /// 返回 0。供视频库卡片角标与「单视频 vs 播放列表」区分用——返回 ≥2 即播放列表。
 int playlistEpisodeCount(String? playlistJson) {
@@ -605,46 +608,95 @@ List<HlsVariant> parseM3u8Master({
   required String content,
   required String baseUrl,
 }) {
-  final List<HlsVariant> variants = <HlsVariant>[];
   final Uri? base = Uri.tryParse(baseUrl);
-  Map<String, String>? pendingAttrs;
+  return <HlsVariant>[
+    for (final HlsMasterVariantEntry entry in scanHlsMaster(content).variants)
+      HlsVariant(
+        url: _resolveHlsUri(base, baseUrl, entry.uri),
+        bandwidth: int.tryParse(
+          entry.attributes['BANDWIDTH'] ??
+              entry.attributes['AVERAGE-BANDWIDTH'] ??
+              '',
+        ),
+        resolution: entry.attributes['RESOLUTION'],
+        codecs: entry.attributes['CODECS'],
+        frameRate: double.tryParse(entry.attributes['FRAME-RATE'] ?? ''),
+      ),
+  ];
+}
 
+/// master playlist 里的一档变体：`#EXT-X-STREAM-INF` 的属性表 + 紧随其后的 URI 行原文
+/// （可能是相对地址，调用方按自己的基址解析）。
+typedef HlsMasterVariantEntry = ({Map<String, String> attributes, String uri});
+
+/// HLS master playlist 的**唯一一份逐行扫描**（纯函数，无 IO）：画质菜单
+/// （[parseM3u8Master]）与中继 / 下载器的选档（[selectHlsMasterVariant]）都从这里取，
+/// 两边对「哪一行算变体」「属性怎么切」不再可能各说各话。
+///
+/// - `variants`：每条 `#EXT-X-STREAM-INF:` 与其后第一条非空、非 `#` 行配成一档，按出现
+///   顺序。`#EXT-X-I-FRAME-STREAM-INF`（只有关键帧的 trick-play 档，URI 在属性里）不算。
+/// - `media`：每条 `#EXT-X-MEDIA:` 的属性表（独立音轨 / 画面 / 字幕 rendition）。
+/// - 其余标签忽略；前面没有 STREAM-INF 的裸行（media playlist 的分段）忽略。
+({List<HlsMasterVariantEntry> variants, List<Map<String, String>> media})
+scanHlsMaster(String content) {
+  final List<HlsMasterVariantEntry> variants = <HlsMasterVariantEntry>[];
+  final List<Map<String, String>> media = <Map<String, String>>[];
+  Map<String, String>? pendingAttrs;
   for (final String rawLine in content.split('\n')) {
     final String line = rawLine.trim();
     if (line.isEmpty) continue;
-
     if (line.startsWith('#')) {
       if (line.startsWith('#EXT-X-STREAM-INF:')) {
-        pendingAttrs = _parseHlsAttributes(
+        pendingAttrs = parseHlsAttributeList(
           line.substring('#EXT-X-STREAM-INF:'.length),
         );
+      } else if (line.startsWith('#EXT-X-MEDIA:')) {
+        media.add(
+          parseHlsAttributeList(line.substring('#EXT-X-MEDIA:'.length)),
+        );
       }
-      // 其它标签（#EXTM3U / #EXT-X-MEDIA / #EXT-X-VERSION 等）忽略。
       continue;
     }
-
-    // 非注释非空行：仅当前面有 STREAM-INF 时才是 variant URI；否则（无 pendingAttrs）
-    // 是 media playlist 的分段或裸行，跳过（master 解析只关心 variant）。
     if (pendingAttrs == null) continue;
-
-    final Map<String, String> attrs = pendingAttrs;
+    variants.add((attributes: pendingAttrs, uri: line));
     pendingAttrs = null;
-
-    final String resolvedUrl = _resolveHlsUri(base, baseUrl, line);
-    final String? bw = attrs['BANDWIDTH'];
-    final String? avgBw = attrs['AVERAGE-BANDWIDTH'];
-    variants.add(
-      HlsVariant(
-        url: resolvedUrl,
-        bandwidth: int.tryParse(bw ?? avgBw ?? ''),
-        resolution: attrs['RESOLUTION'],
-        codecs: attrs['CODECS'],
-        frameRate: double.tryParse(attrs['FRAME-RATE'] ?? ''),
-      ),
-    );
   }
+  return (variants: variants, media: media);
+}
 
-  return variants;
+/// [playlist] 是 master 播放列表时，返回播放器默认会选的那一档变体地址（原文，可能是
+/// 相对地址）；不是 master、或不能安全地只读一档时返回 null。
+///
+/// 「默认会选的那一档」= `BANDWIDTH` 最高者（并列取先出现的，缺 `BANDWIDTH` 按 0）：
+/// mpv 的 `hls-bitrate` 默认 `max`，ffmpeg 的默认视频流选最高分辨率，两者在正常 master
+/// 上是同一档。
+///
+/// 有 `TYPE=AUDIO` / `TYPE=VIDEO` 且带 `URI` 的 `#EXT-X-MEDIA` 时返回 null：那种 master
+/// 的音轨（或画面）是独立的 rendition 播放列表，单读一档变体会丢掉它们，句子音频直接
+/// 抽不出来。字幕 / 隐藏字幕 rendition 不影响制卡。
+String? selectHlsMasterVariant(String playlist) {
+  final ({
+    List<HlsMasterVariantEntry> variants,
+    List<Map<String, String>> media,
+  })
+  master = scanHlsMaster(playlist);
+  for (final Map<String, String> rendition in master.media) {
+    final String? type = rendition['TYPE'];
+    if ((type == 'AUDIO' || type == 'VIDEO') && rendition.containsKey('URI')) {
+      return null;
+    }
+  }
+  String? best;
+  int bestBandwidth = -1;
+  for (final HlsMasterVariantEntry entry in master.variants) {
+    final int bandwidth =
+        int.tryParse(entry.attributes['BANDWIDTH'] ?? '') ?? 0;
+    if (bandwidth > bestBandwidth) {
+      best = entry.uri;
+      bestBandwidth = bandwidth;
+    }
+  }
+  return best;
 }
 
 /// 按画质从高到低排序 variant（高度优先、码率其次）；缺分辨率的排后。返回新列表，
@@ -662,9 +714,12 @@ List<HlsVariant> sortedHlsVariantsByQualityDesc(List<HlsVariant> variants) {
   return sorted;
 }
 
-/// 解析 `#EXT-X-STREAM-INF:` 后的属性串为 `键→值` map（引号感知：`CODECS="a,b"` 的
-/// 内部逗号不切分，值两端引号剥掉）。纯函数。
-Map<String, String> _parseHlsAttributes(String attrs) {
+/// 解析 HLS 标签冒号后的属性串（RFC 8216 §4.2 attribute-list）为 `键→值` map。纯函数。
+///
+/// 引号感知：`CODECS="a,b"` 的内部逗号不切分，值两端引号剥掉；键统一大写。全仓只有这
+/// 一份——master 的 `#EXT-X-STREAM-INF` / `#EXT-X-MEDIA` 与媒体播放列表的
+/// `#EXT-X-KEY` / `#EXT-X-MAP` 都走它（此前三处各有一份，对引号内逗号的处理不一致）。
+Map<String, String> parseHlsAttributeList(String attrs) {
   final Map<String, String> out = <String, String>{};
   final List<String> fields = <String>[];
   final StringBuffer buf = StringBuffer();

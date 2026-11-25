@@ -1,11 +1,11 @@
 /// `fushi_server tracking sync|status`：Bangumi 追番同步（引擎 `MediaTrackingService`）。
 ///
-/// **当前恒不可用**：所有者 2026-08-19 把 Bangumi 同步整体下线（引擎总开关
-/// `kMediaTrackingEnabled = false`，「匹配 / 同步效果太差，先撤下」），app 的四个生产
-/// 触发点都不进服务。CLI 是又一个生产触发点，同样尊重这道闸：闸关时在发任何请求
-/// 之前判 69 并说明原因。装配本身是完整的（`MediaTrackingRepository(db)` +
-/// 服务端偏好 + 引擎缺省 `BangumiApiClient` 经 `createAppHttpIoClient()` 出站），闸一
-/// 打开即可用，不用再改这里。
+/// The build flag `kMediaTrackingEnabled` that kept this command offline is
+/// gone (2026-11-10): in the app media tracking is now a user option (the
+/// Media tracking module). The server has no modules; running this command is
+/// the operator's explicit request, so it always runs. Assembly:
+/// `MediaTrackingRepository(db)` + server preferences + the engine's default
+/// `BangumiApiClient` going out through `createAppHttpIoClient()`.
 ///
 /// 令牌：读偏好 `media_tracking_bangumi_access_token`（与 app 同键）；环境变量
 /// `FUSHI_BANGUMI_TOKEN` 给了且与已存的不同时先 `connect`（校验后落盘、换号清水位）。
@@ -21,6 +21,7 @@ import 'package:fushi_engine/media/tracking/bangumi_api_client.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 
 const int _exitOk = 0;
@@ -42,20 +43,13 @@ int trackingSyncExitCode(MediaTrackingSyncResult r) {
 }
 
 class TrackingModule extends CliModule {
-  const TrackingModule({
-    this.out,
-    this.err,
-    this.env,
-    this.enabled = kMediaTrackingEnabled,
-    this.apiFactory,
-  });
+  const TrackingModule({this.out, this.err, this.env, this.apiFactory});
 
   final StringSink? out;
   final StringSink? err;
 
-  /// 测试注入点：环境变量 / 下线闸 / Bangumi 客户端。
+  /// 测试注入点：环境变量 / Bangumi 客户端。
   final Map<String, String>? env;
-  final bool enabled;
   final BangumiApiFactory? apiFactory;
 
   @override
@@ -65,19 +59,29 @@ class TrackingModule extends CliModule {
   void register(ArgParser parser) {
     final ArgParser tracking = parser.addCommand('tracking');
     tracking.addCommand('sync')
-      ..addFlag('force', negatable: false, help: '忽略退避窗口，所有待发条目立刻重试')
-      ..addFlag('json', negatable: false, help: '输出 JSON');
+      ..addFlag(
+        'force',
+        negatable: false,
+        help: tr(
+          '忽略退避窗口，所有待发条目立刻重试',
+          'Ignore the back-off window and retry all pending entries immediately',
+        ),
+      )
+      ..addFlag('json', negatable: false, help: tr('输出 JSON', 'Output JSON'));
     tracking
         .addCommand('status')
-        .addFlag('json', negatable: false, help: '输出 JSON');
+        .addFlag('json', negatable: false, help: tr('输出 JSON', 'Output JSON'));
   }
 
   @override
-  String get usage =>
-      '''
+  String get usage => tr(
+    '''
 tracking sync [--force] [--json] | tracking status [--json]
-    Bangumi 追番同步（令牌取偏好或环境变量 $kBangumiTokenEnv）。目前该功能被所有者
-    整体下线（kMediaTrackingEnabled = false），命令恒返回 69。''';
+    Bangumi 追番同步（令牌取偏好或环境变量 $kBangumiTokenEnv）。''',
+    '''
+tracking sync [--force] [--json] | tracking status [--json]
+    Bangumi tracking sync (the token comes from the preference or the environment variable $kBangumiTokenEnv).''',
+  );
 
   @override
   Future<int> run(String name, ArgResults command, CliContext ctx) async {
@@ -85,15 +89,13 @@ tracking sync [--force] [--json] | tracking status [--json]
     final StringSink e = err ?? stderr;
     final ArgResults? sub = command.command;
     if (sub == null || (sub.name != 'sync' && sub.name != 'status')) {
-      e.writeln('用法: tracking sync [--force] | tracking status');
-      return _exitUsage;
-    }
-    if (!enabled) {
       e.writeln(
-        'Bangumi 追番同步已被下线（kMediaTrackingEnabled = false，2026-08-19 所有者决定：'
-        '匹配 / 同步效果太差，改好后再开放）',
+        tr(
+          '用法: tracking sync [--force] | tracking status',
+          'Usage: tracking sync [--force] | tracking status',
+        ),
       );
-      return _exitUnavailable;
+      return _exitUsage;
     }
     return ctx.withRuntime((ServerRuntime rt) async {
       final MediaTrackingService service = MediaTrackingService(
@@ -109,13 +111,22 @@ tracking sync [--force] [--json] | tracking status [--json]
           try {
             final BangumiUser user = await service.connect(envToken);
             e.writeln(
-              '已连接 Bangumi 账号 ${user.nickname.isEmpty ? user.username : user.nickname}',
+              tr(
+                '已连接 Bangumi 账号 ${user.nickname.isEmpty ? user.username : user.nickname}',
+                'Connected Bangumi account ${user.nickname.isEmpty ? user.username : user.nickname}',
+              ),
             );
           } on BangumiApiException catch (x) {
             e.writeln(
               x.isUnauthorized
-                  ? '$kBangumiTokenEnv 被 Bangumi 拒绝（令牌无效或过期）'
-                  : 'Bangumi 校验令牌失败: $x',
+                  ? tr(
+                      '$kBangumiTokenEnv 被 Bangumi 拒绝（令牌无效或过期）',
+                      '$kBangumiTokenEnv was rejected by Bangumi (invalid or expired token)',
+                    )
+                  : tr(
+                      'Bangumi 校验令牌失败: $x',
+                      'Bangumi token validation failed: $x',
+                    ),
             );
             return _exitUnavailable;
           }
@@ -146,22 +157,31 @@ tracking sync [--force] [--json] | tracking status [--json]
           } else {
             o.writeln(
               s.configured
-                  ? '账号: ${s.accountName.isEmpty ? '（已配置）' : s.accountName}'
-                  : '未配置 Bangumi 令牌',
+                  ? tr(
+                      '账号: ${s.accountName.isEmpty ? '（已配置）' : s.accountName}',
+                      'Account: ${s.accountName.isEmpty ? '(configured)' : s.accountName}',
+                    )
+                  : tr('未配置 Bangumi 令牌', 'No Bangumi token configured'),
             );
             o.writeln(
-              '待发送: ${s.pending}  已关联: ${s.mappings.length}  未关联: ${s.unlinked.length}',
+              tr(
+                '待发送: ${s.pending}  已关联: ${s.mappings.length}  未关联: ${s.unlinked.length}',
+                'Pending: ${s.pending}  linked: ${s.mappings.length}  unlinked: ${s.unlinked.length}',
+              ),
             );
           }
           return _exitOk;
         }
         if (!service.isConfigured) {
           e.writeln(
-            '没有 Bangumi 令牌：设置环境变量 $kBangumiTokenEnv（在 ${BangumiApiClient.accessTokenUrl} 生成）',
+            tr(
+              '没有 Bangumi 令牌：设置环境变量 $kBangumiTokenEnv（在 ${BangumiApiClient.accessTokenUrl} 生成）',
+              'No Bangumi token: set the environment variable $kBangumiTokenEnv (generate one at ${BangumiApiClient.accessTokenUrl})',
+            ),
           );
           return _exitUnavailable;
         }
-        e.writeln('同步 Bangumi …');
+        e.writeln(tr('同步 Bangumi …', 'Syncing Bangumi …'));
         final MediaTrackingSyncResult r = await service.syncNow(
           force: sub['force'] as bool,
         );
@@ -175,7 +195,10 @@ tracking sync [--force] [--json] | tracking status [--json]
           o.writeln(jsonEncode(report));
         } else {
           o.writeln(
-            '成功 ${r.succeeded}  失败 ${r.failed}  仍待发 ${r.pending}${r.unauthorized ? '  （令牌被拒）' : ''}',
+            tr(
+              '成功 ${r.succeeded}  失败 ${r.failed}  仍待发 ${r.pending}${r.unauthorized ? '  （令牌被拒）' : ''}',
+              'Succeeded ${r.succeeded}  failed ${r.failed}  still pending ${r.pending}${r.unauthorized ? '  (token rejected)' : ''}',
+            ),
           );
         }
         return trackingSyncExitCode(r);

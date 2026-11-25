@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/gal_ocr_line_source.dart';
 import 'package:fushi/src/mining/galgame_audio_encode.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -115,7 +116,10 @@ class _TestAppModel extends AppModel {
   }
 
   @override
-  Future<void> updateDictionaryOrder(List<Dictionary> newDictionaries) async {
+  Future<void> updateDictionaryOrder(
+    List<Dictionary> newDictionaries, {
+    String? moved,
+  }) async {
     for (final Dictionary d in newDictionaries) {
       _stored(d.name).order = d.order;
     }
@@ -318,6 +322,34 @@ class _GameHost implements GameCtlHost {
       state = state.copyWith(audioFallbackPolicy: policy);
 
   @override
+  ({GalOcrRegion region, bool binarize}) ocrDefaultsFor(
+    ExternalWindowInfo window,
+  ) => (region: GalOcrRegion.defaultDialogue, binarize: false);
+
+  @override
+  Future<String?> startOcr(
+    ExternalWindowInfo window, {
+    required GalOcrRegion region,
+    required bool binarize,
+  }) async {
+    state = state.copyWith(
+      boundWindow: window,
+      externalWindowMode: true,
+      ocrRegion: region,
+      ocrBinarize: binarize,
+    );
+    return null;
+  }
+
+  @override
+  void setOcrRegion(GalOcrRegion region) =>
+      state = state.copyWith(ocrRegion: region);
+
+  @override
+  void setOcrBinarize(bool binarize) =>
+      state = state.copyWith(ocrBinarize: binarize);
+
+  @override
   Future<List<GalAudioTrack>> tracksForLine(String lineId) async =>
       const <GalAudioTrack>[_trackA, _trackB];
 
@@ -433,10 +465,16 @@ void main() {
     ]);
     host = _GameHost(app.repo);
     final OpContext context = OpContext(ref: _Ref(app));
+    // 只把 buildGameCtlRoutes 那一组换成绑假宿主的版本；同在 /api/admin/game/ 下、
+    // 但由别的构造器提供的路由（如 Hook Code 配置）照常保留，否则它们的操作描述挂不上。
+    final List<CtlRoute> gameRoutes = buildGameCtlRoutesWith(host);
+    final Set<String> replaced = <String>{
+      for (final CtlRoute r in gameRoutes) '${r.method} ${r.pattern}',
+    };
     final List<CtlRoute> routes = <CtlRoute>[
       for (final CtlRoute r in buildDomainOpRoutes(context))
-        if (!r.pattern.startsWith('/api/admin/game/')) r,
-      ...buildGameCtlRoutesWith(host),
+        if (!replaced.contains('${r.method} ${r.pattern}')) r,
+      ...gameRoutes,
     ];
     catalog = buildAppOpCatalog(context, routes);
     invoker = OpInvoker(catalog);
@@ -584,6 +622,31 @@ void main() {
       expect(host.state.excludedAudioSourcePtrs, isEmpty);
     });
 
+    test('game.ocr.region.set：撤销写回原框与开关', () async {
+      const GalOcrRegion original = GalOcrRegion(
+        left: 0.05,
+        top: 0.7,
+        width: 0.9,
+        height: 0.25,
+      );
+      host.state = host.state.copyWith(
+        externalWindowMode: true,
+        ocrRegion: original,
+      );
+      final OpUndoRecord r = await run('game.ocr.region.set', <String, Object?>{
+        'left': 0.1,
+        'top': 0.5,
+        'width': 0.8,
+        'height': 0.4,
+        'binarize': true,
+      });
+      expect(host.state.ocrRegion?.top, 0.5);
+      expect(host.state.ocrBinarize, isTrue);
+      expect(await undo('game.ocr.region.set', r), OpUndoStatus.done);
+      expect(host.state.ocrRegion, original);
+      expect(host.state.ocrBinarize, isFalse);
+    });
+
     test('game.audio-policy.set', () async {
       final GalAudioFallbackPolicy before = host.state.audioFallbackPolicy;
       final GalAudioFallbackPolicy target = GalAudioFallbackPolicy.values
@@ -681,7 +744,7 @@ void main() {
       expect(termOrder(), <String>['JMdict', 'Meikyo', 'Daijirin']);
     });
 
-    test('dict.set：position 按语言组算，撤销回组内原位 (D_Nz5R4vSH)', () async {
+    test('dict.set：position 按整个分区算，语言不分组（zBzX4B7037）', () async {
       app.stored.add(
         Dictionary(
           name: 'OALD',
@@ -698,14 +761,11 @@ void main() {
         'name': 'Meikyo',
         'position': 1,
       });
-      // 未标注语言组（JMdict / Daijirin / Meikyo）内第 1 位。分区写回规范顺序
-      // （`concatenateLanguageGroups`：已标注组在前、未标注组在后，首尾相接），
-      // 旧数据里 OALD 夹在未标注组中间的跨组交错一并消掉（管理页显示顺序 == 查词顺序）。
-      expect(termOrder(), <String>['OALD', 'Meikyo', 'JMdict', 'Daijirin']);
+      // 整个分区第 1 位：标了 en 的 OALD 与未标注的词典照常互相排先后。
+      expect(termOrder(), <String>['Meikyo', 'JMdict', 'OALD', 'Daijirin']);
       expect(await undo('dict.set', r), OpUndoStatus.done);
-      // 撤销回**组内**原位（未标注组第 3 位）；撤销同样走 PUT，写回的仍是规范顺序，
-      // 不会再造出跨组交错。
-      expect(termOrder(), <String>['OALD', 'JMdict', 'Daijirin', 'Meikyo']);
+      // 撤销回分区里的原位（第 4 位），其余词典的相对顺序不变。
+      expect(termOrder(), <String>['JMdict', 'OALD', 'Daijirin', 'Meikyo']);
     });
 
     test('dict.import：撤销删掉刚导入的那本', () async {

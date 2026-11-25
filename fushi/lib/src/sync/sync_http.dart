@@ -1,8 +1,12 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
 import 'package:http/io_client.dart';
+import 'package:meta/meta.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_engine/utils/net/app_proxy.dart';
 
 /// Connection-establishment timeout for cloud sync HTTP requests.
@@ -62,6 +66,43 @@ Future<http.Client> obtainSyncHttpClient() {
 }
 
 Future<http.Client>? _sharedClient;
+
+/// 测试注入：让 [obtainSyncHttpClient] 返回 [client]（传 null 恢复惰性构造）。
+@visibleForTesting
+void debugSetSyncHttpClient(http.Client? client) {
+  _sharedClient = client == null ? null : Future<http.Client>.value(client);
+}
+
+/// 把**下载到的文件内容**按 UTF-8 解成 JSON。
+///
+/// 不能用 `jsonDecode(resp.body)`：OneDrive 的 downloadUrl、Dropbox 的
+/// `/files/download` 回的是 `Content-Type: application/octet-stream` 且不带 charset，
+/// `package:http` 此时把 `Response.body` 按 **latin1** 解码。上传端是
+/// `utf8.encode(jsonEncode(...))`，于是每一轮「下载 → 合并 → 上传」都把所有非 ASCII
+/// 字符再多编一层，标题键越滚越长、聚合快照与本地库膨胀（反馈 hbIHtWi2Q7）。
+/// 同步 JSON 一律是本端用 UTF-8 写的，这里按 UTF-8 严格解码（坏字节直接报错，不静默替换）。
+Object? decodeSyncJsonFileBody(http.Response resp) =>
+    jsonDecode(utf8.decode(resp.bodyBytes));
+
+/// 发 [request]，按 [SyncAssetStore.getBytesAsset] 的上限契约把响应体收进内存：
+/// `Content-Length` 已超 [kSyncBytesAssetMaxBytes] 就不收，边收边计数，超了抛
+/// [SyncAssetTooLarge]（HBK-AUDIT-223）。状态 >= 400 时把错误响应交给 [onError]
+/// 抛出（它决定报什么错）。
+Future<Uint8List> downloadSyncAssetBytesCapped(
+  http.BaseRequest request, {
+  required String assetId,
+  required Never Function(http.Response errorResponse) onError,
+}) async {
+  final http.StreamedResponse resp = await (await obtainSyncHttpClient()).send(
+    request,
+  );
+  if (resp.statusCode >= 400) onError(await http.Response.fromStream(resp));
+  return readSyncAssetBytesCapped(
+    resp.stream,
+    assetId: assetId,
+    declaredLength: resp.contentLength,
+  );
+}
 
 /// 丢弃共享 client，让下次调用按**当前**代理设置重建。
 ///

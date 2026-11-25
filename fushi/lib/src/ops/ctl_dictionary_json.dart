@@ -78,13 +78,13 @@ Dictionary resolveCtlDictionary(List<Dictionary> dictionaries, String query) {
   throw CtlFailure.notFound('没有名为「$q」的词典（fushi_cli dict ls 查看）');
 }
 
-/// 把 [target] 移到它**所在语言组**里的 [position]（1 起算，越界钳到组的两端），
-/// 返回重排后的整个分区（`order` 已按新下标改写）。与词典管理页
-/// `_reorderDictionaries` 同一语义（反馈 D_Nz5R4vSH）：分区按「有效语言」分组
-/// （[groupDictionariesByLanguage]），排序只在组内进行（[moveDictionaryWithinLanguageGroup]）；
-/// 返回的分区是规范顺序——各语言组按显示顺序首尾相接，其它组的组内顺序不变，
-/// 旧数据里的跨组交错一并消掉（管理页显示顺序 == 查词顺序）。
-/// 分区里只有一个语言组时就是整个分区内排序。
+/// 把 [target] 移到分区里的 [position]（1 起算，越界钳到两端），返回重排后的整个
+/// 分区（`order` 已按新下标改写）。与词典管理页 `_reorderRows` 同一语义：内容语言
+/// 只是标签，不参与排序，任何两本词典都能互相排先后（拍板台 zBzX4B7037）。
+///
+/// 只排本机词典：返回的 `order` 是本机分区内的下标，调用方交给
+/// `AppModel.updateDictionaryOrder`（仓库按名字与先后连同同分区的服务器词典一起
+/// 重编号，见 `DictionaryRepository.reorderDictionarySection`），不直接当序号落库。
 ///
 /// [sameType] 是一个分区（已按分区顺序排好）；[section] 是分区名（报错用），
 /// 缺省按 [target] 自身类型。混合词典在「汉字」分区排序时传 `kanji`。
@@ -103,12 +103,13 @@ List<Dictionary> ctlReorderDictionaries(
     );
   }
   final List<Dictionary> merged =
-      moveDictionaryWithinLanguageGroup(
+      moveDictionarySectionRow<Dictionary>(
         sameType,
+        (Dictionary d) => d.name,
         sameType[sectionIndex].name,
         position - 1,
       ) ??
-      concatenateLanguageGroups(sameType);
+      List<Dictionary>.of(sameType);
   for (int i = 0; i < merged.length; i++) {
     merged[i].order = i;
   }
@@ -217,7 +218,8 @@ Map<String, String> buildCtlMineFields({
   // 词头级的振假名 / 频率 / 音调：同一个词头的各词典条目共享这份数据（引擎把它写进
   // 每条的 extra），取第一条即可。值由创作器字段的同名生成函数算出，与弹窗制卡
   // 填进同名字段（furiganaPlain / freqHarmonicRank / frequenciesHtml /
-  // pitchPositions / pitchCategories）的语义一致。
+  // singleFrequencyNumbers / singleFrequenciesHtml / pitchPositions /
+  // pitchCategories）的语义一致。
   final DictionaryEntry? headword = glossEntries.isNotEmpty
       ? glossEntries.first
       : (sameWord.isEmpty ? null : sameWord.first);
@@ -416,6 +418,8 @@ Map<String, Object?> ctlFlushReportJson(PendingFlushReport report) =>
       'stopError': report.stopOutcome?.errorDetail,
       'failureErrorCode': report.failureOutcome?.errorCode,
       'failureError': report.failureOutcome?.errorDetail,
+      // 送达的卡带回的提示（如「保存到」被主机退回默认，BUG-4287）。
+      'notice': ?report.notice,
     };
 
 /// 词典内容语言覆盖的取值：`auto`（或 `-`）= 恢复自动（null），其余当 BCP-47 码原样用。

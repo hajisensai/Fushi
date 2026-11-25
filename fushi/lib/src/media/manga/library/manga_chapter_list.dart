@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/rendering.dart' show RenderSliverMultiBoxAdaptor;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
@@ -18,12 +19,14 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
+import 'package:fushi/src/utils/components/fushi_scrollbar.dart';
 
 /// 一章在「先下载再读」语义下的状态（设计稿 2026-09-12 §5）。
 enum _ChapterDownloadState {
   notDownloaded,
   queued,
   downloading,
+  paused,
   downloaded,
   failed,
 }
@@ -74,13 +77,34 @@ class MangaChapterList extends StatelessWidget {
     this.onDeleteDownload,
     this.onRevealDownload,
     this.onRetryDownload,
+    this.onPauseDownload,
+    this.onResumeDownload,
+    this.onCancelDownload,
     this.onOcr,
     this.ocrRunningChapterKey,
     this.ocrProgress,
     this.ocrQueuedChapterKeys = const <String>{},
+    this.ocrCompletedChapterKeys = const <String>{},
+    this.selectedChapterKeys,
+    this.onChapterSelectGesture,
     this.languageScope,
     this.onSiblingSourceTap,
+    this.sliver = false,
+    this.rowsKey,
   });
+
+  /// `true` = 以 sliver 形态输出（标题 / 空态各一块 [SliverToBoxAdapter]，章节行是
+  /// **懒建**的 [SliverList]），宿主直接放进 `CustomScrollView` 的 slivers。
+  ///
+  /// 作品页必须用它（BUG：#x2m35Gfrjh ANR）：Box 形态是一个 [Column] 把每一话都建出来，
+  /// 上千话的在线源每次重建 / 重排都要把上千行的文字全部排版、全部重绘，低端机主线程
+  /// 被吃满（崩前 15 s 窗口主线程 13 s CPU、只 3 次 build），ANR 现场主线程停在
+  /// Skia `ParagraphImpl::layout`。懒列表只建视口附近的几十行。
+  final bool sliver;
+
+  /// [sliver] 形态下挂在章节行 [SliverList] 上的 key：[scrollToMangaChapter] 拿它读
+  /// 列表在滚动视图里的起点与已建行的行高，把还没建出来的当前章估到视口里。
+  final GlobalKey? rowsKey;
 
   final OnlineMangaLibraryEntry? entry;
   final Map<String, MangaChapterStateRow> states;
@@ -121,6 +145,15 @@ class MangaChapterList extends StatelessWidget {
   final void Function(OnlineMangaChapter chapter)? onRevealDownload;
   final void Function(OnlineMangaChapter chapter)? onRetryDownload;
 
+  /// 排队 / 下载中的章「暂停下载」（半成品留着续跑）；null = 不出现。
+  final void Function(OnlineMangaChapter chapter)? onPauseDownload;
+
+  /// 已暂停的章「继续下载」；null = 不出现。
+  final void Function(OnlineMangaChapter chapter)? onResumeDownload;
+
+  /// 排队 / 下载中 / 已暂停的章「取消下载」（删半成品）；null = 不出现。
+  final void Function(OnlineMangaChapter chapter)? onCancelDownload;
+
   /// 「识别本章」（只对已下载的章出现）；null = 不出现。
   final void Function(OnlineMangaChapter chapter)? onOcr;
 
@@ -130,6 +163,16 @@ class MangaChapterList extends StatelessWidget {
   /// [uploading] = 远程引擎还在上传页图（计数是已上传页数，BUG-3605）。
   final ({int done, int total, bool uploading})? ocrProgress;
   final Set<String> ocrQueuedChapterKeys;
+
+  /// 已有识别结果的章（反馈 wCgL364tgM：逐章显示是否已 OCR）。宿主从磁盘上章
+  /// `manga.json` 的真实内容推导（`ocrCompletedChapterKeys`），不另存状态。
+  final Set<String> ocrCompletedChapterKeys;
+
+  /// 非 null = 多选态：行首换成勾选标记，行尾菜单收起，点行由宿主切换选择。
+  final Set<String>? selectedChapterKeys;
+
+  /// 长按 / 右键一行（进入多选或在多选态里切换该章）；null = 不支持多选。
+  final void Function(OnlineMangaChapter chapter)? onChapterSelectGesture;
 
   /// 空章节列表的解释（BUG-2510）：该源只取哪种语言的章 + 同扩展其它语言的源。
   /// null = 不知道 / 不适用，空态沿用「还没有章节」。作品页只在「刷新已结束、
@@ -148,6 +191,8 @@ class MangaChapterList extends StatelessWidget {
         return _ChapterDownloadState.queued;
       case MangaDownloadJobStatus.running:
         return _ChapterDownloadState.downloading;
+      case MangaDownloadJobStatus.paused:
+        return _ChapterDownloadState.paused;
       case MangaDownloadJobStatus.failed:
         return _ChapterDownloadState.failed;
       default:
@@ -161,6 +206,7 @@ class MangaChapterList extends StatelessWidget {
     final List<OnlineMangaChapter> chapters =
         entry?.chapters ?? const <OnlineMangaChapter>[];
     final List<OnlineMangaChapter> visible = _visibleChapters(chapters);
+    if (sliver) return _buildSliver(context, chapters, visible);
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -180,7 +226,61 @@ class MangaChapterList extends StatelessWidget {
     );
   }
 
-  List<OnlineMangaChapter> _visibleChapters(List<OnlineMangaChapter> chapters) {
+  Widget _buildSliver(
+    BuildContext context,
+    List<OnlineMangaChapter> chapters,
+    List<OnlineMangaChapter> visible,
+  ) {
+    // 行 key（`manga_chapter_<key>`）→ 下标：换序 / 筛选后已建的行按 key 找回自己的
+    // element（进场状态、菜单状态不丢），与 Box 形态里 Column 的 keyed diff 等价。
+    final Map<String, int> indexByRowKey = <String, int>{
+      for (int i = 0; i < visible.length; i++)
+        'manga_chapter_${visible[i].key}': i,
+    };
+    return SliverMainAxisGroup(
+      slivers: <Widget>[
+        if (showHeader)
+          SliverToBoxAdapter(child: _buildHeader(context, chapters.length)),
+        if (chapters.isEmpty)
+          SliverToBoxAdapter(child: _buildEmptyChapters(context))
+        else if (visible.isEmpty)
+          SliverToBoxAdapter(
+            child: _buildEmpty(
+              context,
+              t.manga_series_all_read,
+              icon: FushiIcons.success,
+            ),
+          )
+        else
+          SliverList.builder(
+            key: rowsKey,
+            itemCount: visible.length,
+            itemBuilder: (BuildContext context, int i) =>
+                _buildRow(context, visible[i], i, visible.length),
+            findChildIndexCallback: (Key key) =>
+                key is ValueKey<String> ? indexByRowKey[key.value] : null,
+          ),
+      ],
+    );
+  }
+
+  List<OnlineMangaChapter> _visibleChapters(
+    List<OnlineMangaChapter> chapters,
+  ) => visibleChapters(
+    chapters: chapters,
+    states: states,
+    newestFirst: newestFirst,
+    unreadOnly: unreadOnly,
+  );
+
+  /// 列表实际显示的章节与顺序（「只看未读」筛选 + 排序方向）。宿主要按下标定位某一话
+  /// （[scrollToMangaChapter]）时用同一份口径算下标。
+  static List<OnlineMangaChapter> visibleChapters({
+    required List<OnlineMangaChapter> chapters,
+    required Map<String, MangaChapterStateRow> states,
+    required bool newestFirst,
+    required bool unreadOnly,
+  }) {
     final Iterable<OnlineMangaChapter> filtered = unreadOnly
         ? chapters.where(
             (OnlineMangaChapter chapter) => states[chapter.key]?.readAt == null,
@@ -312,6 +412,12 @@ class MangaChapterList extends StatelessWidget {
     // 相邻章节常有相同下载状态，列表身份必须取章节 key；状态探针放在每章内部，
     // 避免重复 sibling key，且排序 / 下载状态变化时保留该章的进场状态。
     final GlobalKey? anchor = current ? currentChapterAnchorKey : null;
+    final Set<String>? selection = selectedChapterKeys;
+    final bool ocrBusy =
+        chapter.key == ocrRunningChapterKey ||
+        ocrQueuedChapterKeys.contains(chapter.key);
+    final void Function(OnlineMangaChapter chapter)? selectGesture =
+        onChapterSelectGesture;
     return FushiStaggeredEntrance(
       key: ValueKey<String>('manga_chapter_${chapter.key}'),
       index: index,
@@ -337,6 +443,7 @@ class MangaChapterList extends StatelessWidget {
               _ChapterDownloadState.queued => MediaDetailDownloadState.queued,
               _ChapterDownloadState.downloading =>
                 MediaDetailDownloadState.downloading,
+              _ChapterDownloadState.paused => MediaDetailDownloadState.paused,
               _ChapterDownloadState.downloaded =>
                 MediaDetailDownloadState.downloaded,
               _ChapterDownloadState.failed => MediaDetailDownloadState.failed,
@@ -345,8 +452,25 @@ class MangaChapterList extends StatelessWidget {
                 download == _ChapterDownloadState.downloading && pagesTotal > 0
                 ? ((job?.pagesDone ?? 0) / pagesTotal).clamp(0.0, 1.0)
                 : null,
-            trailing: _buildMenu(chapter, download),
+            completedLabel: t.manga_chapter_status_read,
+            statusIcons: <MediaDetailStatusIcon>[
+              // 正在识别 / 排队的章由副标题报进度，不同时挂「已识别」。
+              if (!ocrBusy && ocrCompletedChapterKeys.contains(chapter.key))
+                MediaDetailStatusIcon(
+                  key: const ValueKey<String>('manga_chapter_ocr_done'),
+                  icon: FushiIcons.ocr,
+                  label: t.manga_chapter_status_ocr_done,
+                ),
+            ],
+            selected: selection?.contains(chapter.key),
+            trailing: selection == null ? _buildMenu(chapter, download) : null,
             onTap: () => onChapterTap(chapter),
+            onLongPress: selectGesture == null
+                ? null
+                : () => selectGesture(chapter),
+            onSecondaryTap: selectGesture == null
+                ? null
+                : () => selectGesture(chapter),
           ),
         ),
       ),
@@ -381,6 +505,10 @@ class MangaChapterList extends StatelessWidget {
             done: '${job?.pagesDone ?? 0}',
             total: '${job?.pagesTotal ?? 0}',
           ),
+        _ChapterDownloadState.paused => t.manga_chapter_download_status_paused(
+          done: '${job?.pagesDone ?? 0}',
+          total: '${job?.pagesTotal ?? 0}',
+        ),
         _ChapterDownloadState.downloaded =>
           t.manga_chapter_download_status_downloaded,
         // 失败原因原样露出来：扩展抛的 `Log in via WebView ...` 之类正是用户要
@@ -429,6 +557,9 @@ class MangaChapterList extends StatelessWidget {
         onDeleteDownload != null ||
         onRevealDownload != null ||
         onRetryDownload != null ||
+        onPauseDownload != null ||
+        onResumeDownload != null ||
+        onCancelDownload != null ||
         onOcr != null;
     if (!hasMenu) return null;
     return FushiOverflowMenu<String>(
@@ -455,6 +586,30 @@ class MangaChapterList extends StatelessWidget {
           FushiPopupMenuItem<String>(
             value: 'retry-download',
             label: t.manga_chapter_download_retry_action,
+          ),
+        if (onPauseDownload != null &&
+            (download == _ChapterDownloadState.queued ||
+                download == _ChapterDownloadState.downloading))
+          FushiPopupMenuItem<String>(
+            key: const ValueKey<String>('manga_chapter_download_pause'),
+            value: 'pause-download',
+            label: t.manga_chapter_download_pause_action,
+          ),
+        if (onResumeDownload != null &&
+            download == _ChapterDownloadState.paused)
+          FushiPopupMenuItem<String>(
+            key: const ValueKey<String>('manga_chapter_download_resume'),
+            value: 'resume-download',
+            label: t.manga_chapter_download_resume_action,
+          ),
+        if (onCancelDownload != null &&
+            (download == _ChapterDownloadState.queued ||
+                download == _ChapterDownloadState.downloading ||
+                download == _ChapterDownloadState.paused))
+          FushiPopupMenuItem<String>(
+            key: const ValueKey<String>('manga_chapter_download_cancel'),
+            value: 'cancel-download',
+            label: t.manga_chapter_download_cancel_action,
           ),
         if (onOcr != null &&
             download == _ChapterDownloadState.downloaded &&
@@ -489,6 +644,12 @@ class MangaChapterList extends StatelessWidget {
             onDownload?.call(chapter);
           case 'retry-download':
             onRetryDownload?.call(chapter);
+          case 'pause-download':
+            onPauseDownload?.call(chapter);
+          case 'resume-download':
+            onResumeDownload?.call(chapter);
+          case 'cancel-download':
+            onCancelDownload?.call(chapter);
           case 'reveal-download':
             onRevealDownload?.call(chapter);
           case 'delete-download':
@@ -530,6 +691,83 @@ bool scrollToMangaChapterAnchor(
   return true;
 }
 
+/// [MangaChapterList.sliver] 形态下「跳到当前章节」：当前章行（挂 [anchor]）已经建出来
+/// 就直接 [scrollToMangaChapterAnchor]；还没建（懒列表只建视口附近）就按 [rowsKey]
+/// 那个 [SliverList] 已建行的平均行高估出第 [index] 行的位置跳过去，等这一帧把那一带
+/// 的行建出来后再对锚点精确定位。行高不一（有无副标题）时一次估不准，就以新建出来
+/// 的那一带为样本再估，最多 [maxPasses] 轮——每轮样本都更靠近目标，收敛是确定的。
+///
+/// 返回是否发起了滚动（列表还没布局 / [index] 越界时为 false）。
+bool scrollToMangaChapter({
+  required GlobalKey anchor,
+  required GlobalKey rowsKey,
+  required int index,
+  Duration duration = Duration.zero,
+  int maxPasses = 4,
+}) {
+  if (scrollToMangaChapterAnchor(anchor, duration: duration)) return true;
+  final BuildContext? listContext = rowsKey.currentContext;
+  final RenderObject? render = listContext?.findRenderObject();
+  if (listContext == null || render is! RenderSliverMultiBoxAdaptor) {
+    return false;
+  }
+  final double? target = estimateMangaChapterRowOffset(render, index);
+  if (target == null) return false;
+  final ScrollPosition position = Scrollable.of(listContext).position;
+  position.jumpTo(
+    (target - position.viewportDimension * 0.3).clamp(
+      position.minScrollExtent,
+      position.maxScrollExtent,
+    ),
+  );
+  if (maxPasses > 1) {
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      scrollToMangaChapter(
+        anchor: anchor,
+        rowsKey: rowsKey,
+        index: index,
+        duration: duration,
+        maxPasses: maxPasses - 1,
+      );
+    });
+  }
+  return true;
+}
+
+/// 估第 [index] 行在滚动视图里的起点（滚动偏移）：列表起点 +
+/// 已建行里离它最近一端的实际偏移 + 差几行 × 已建行平均行高。没有已建行返回 null。
+@visibleForTesting
+double? estimateMangaChapterRowOffset(
+  RenderSliverMultiBoxAdaptor list,
+  int index,
+) {
+  final RenderBox? first = list.firstChild;
+  final RenderBox? last = list.lastChild;
+  if (first == null || last == null) return null;
+  final int firstIndex = list.indexOf(first);
+  final int lastIndex = list.indexOf(last);
+  final double firstOffset = list.childScrollOffset(first) ?? 0;
+  final double lastEnd =
+      (list.childScrollOffset(last) ?? 0) +
+      (list.constraints.axis == Axis.vertical
+          ? last.size.height
+          : last.size.width);
+  final double average = (lastEnd - firstOffset) / (lastIndex - firstIndex + 1);
+  final double local = index < firstIndex
+      ? firstOffset - (firstIndex - index) * average
+      : index > lastIndex
+      ? lastEnd + (index - lastIndex - 1) * average
+      : list.childScrollOffset(_childAt(list, index)!) ?? firstOffset;
+  return list.constraints.precedingScrollExtent + local;
+}
+
+RenderBox? _childAt(RenderSliverMultiBoxAdaptor list, int index) {
+  for (RenderBox? c = list.firstChild; c != null; c = list.childAfter(c)) {
+    if (list.indexOf(c) == index) return c;
+  }
+  return null;
+}
+
 /// 长章节表的快速滚动条：一条可拖动的滚动条，几百话直接拖到想去的位置。
 ///
 /// 只在移动端加：桌面端 [ScrollBehavior] 已经给竖向滚动视图套了可拖动的滚动条，
@@ -562,13 +800,11 @@ class MangaChapterFastScrollbar extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     if (!neededOn(Theme.of(context).platform)) return child;
-    return Scrollbar(
+    return FushiScrollbar(
       key: const ValueKey<String>('manga_chapter_fast_scrollbar'),
       controller: controller,
       thumbVisibility: thumbVisibility,
-      interactive: true,
-      notificationPredicate:
-          notificationPredicate ?? defaultScrollNotificationPredicate,
+      notificationPredicate: notificationPredicate,
       child: child,
     );
   }

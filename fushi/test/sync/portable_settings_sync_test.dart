@@ -92,7 +92,7 @@ void main() {
         'selected_custom_theme_id',
         'custom_themes',
         'hover_lookup_modifier',
-        'lookup_library_sentences',
+        'lookup_page_auto_show_keyboard',
         'theme_tint_app_logo',
         'reader_settings_panel_side',
         'invert_swipe_direction',
@@ -312,11 +312,14 @@ void main() {
       await orch(dbA, 'devA').syncPortableSettingsForTest(ra);
       expect(ra.errors, isEmpty);
       expect(ra.settingsImported, 0);
+      // BUG-4501：本机改过的可移植项随快照发出，计入摘要的「↑N 项设置」。
+      expect(ra.settingsExported, 2);
 
       final SyncRunReport rb = SyncRunReport();
       await orch(dbB, 'devB').syncPortableSettingsForTest(rb);
       expect(rb.errors, isEmpty);
       expect(rb.settingsImported, 2);
+      expect(rb.settingsExported, 0, reason: '刚采纳的值回写进本机快照不算本机发出的变更');
       expect(await dbB.getPref('custom_themes'), 's:A-themes');
       expect(await dbB.getPref('hover_lookup_modifier'), 's:alt');
       expect(
@@ -328,10 +331,13 @@ void main() {
 
       // 对齐之后：B 改一项（更新的时刻）→ A 下一轮采纳；A 上更旧的值不回盖。
       await _setPrefAt(dbB, 'hover_lookup_modifier', 's:ctrl', 9000);
-      await orch(dbB, 'devB').syncPortableSettingsForTest(SyncRunReport());
+      final SyncRunReport rb2 = SyncRunReport();
+      await orch(dbB, 'devB').syncPortableSettingsForTest(rb2);
+      expect(rb2.settingsExported, 1);
       final SyncRunReport ra2 = SyncRunReport();
       await orch(dbA, 'devA').syncPortableSettingsForTest(ra2);
       expect(ra2.settingsImported, 1);
+      expect(ra2.settingsExported, 0);
       expect(await dbA.getPref('hover_lookup_modifier'), 's:ctrl');
       expect(await dbA.getPref('download_save_root'), 's:/a/downloads');
 
@@ -339,6 +345,7 @@ void main() {
       final SyncRunReport ra3 = SyncRunReport();
       await orch(dbA, 'devA').syncPortableSettingsForTest(ra3);
       expect(ra3.settingsImported, 0);
+      expect(ra3.settingsExported, 0);
     });
 
     test('快照文件里不含任何不可移植项（凭据 / 路径不出境）', () async {

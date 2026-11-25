@@ -20,13 +20,17 @@ Fushi 的 Rust 计算内核：CPU 密集操作（哈希 / 图像 / 文本匹配 
 
 | 符号 | 作用 |
 |---|---|
-| `ffc_abi_version() -> i32` | ABI 版本（当前 1）；Dart 侧不一致即抛加载异常 |
+| `ffc_abi_version() -> i32` | ABI 版本（当前 4）；Dart 侧不一致即抛加载异常 |
 | `ffc_free_bytes(u8*, usize)` | 释放本库分配并交给调用方的缓冲区 |
 | `ffc_hash_ed2k_new() -> ctx*` | 新建 AniDB ED2K 上下文（panic 时 NULL） |
 | `ffc_hash_ed2k_update(ctx*, const u8*, usize) -> i32` | 追加字节 |
 | `ffc_hash_ed2k_finish(ctx*, u8 out[32], i32* has_alt) -> i32` | `out[0..16]` 红变体；`*has_alt=1` 时 `out[16..32]` 为蓝变体（长度恰为 9728000 的非零整数倍） |
 | `ffc_hash_ed2k_free(ctx*)` | 释放（NULL 无操作） |
 | `ffc_hash_sha256_new / _update / _finish(ctx*, u8 out[32]) / _free` | SHA-256，同上形态 |
+| `ffc_hash_sha256_file(const u8* path, usize, u8 out[32], u64* out_len) -> i32` | 整文件 SHA-256，读盘也在 Rust（路径 UTF-8）；打不开 / 读失败回 `-5`（IO_ERROR）。Dart 以非叶调用，不挡 GC 安全点（BUG-5088） |
+| `ffc_hash_sha256_file_cancellable(const u8* path, usize, const u32* cancel, u8 out[32], u64* out_len) -> i32` | 可取消的整文件 SHA-256：`cancel` 是调用方分配的 4 字节对齐 `u32`（初值 0，NULL = 不可取消），每读 1 MiB 之前原子读一次，置位后关文件回 `-6`（CANCELLED）、不写输出。互联 host 停机打断视频指纹预热（拍板台 host-stop-fingerprint-cancel） |
+| `ffc_hash_cancel(u32* cancel)` | 置位取消标志（原子 Release 存储，幂等，NULL 无操作；任意线程 / isolate 可调） |
+| `ffc_hash_crc32_file(const u8* path, usize, u32* out, u64* out_len) -> i32` | 整文件 CRC-32，同上 |
 | `ffc_hash_crc32(u32 crc, const u8*, usize) -> u32` | CRC-32（zip / IEEE），在上一段结果上续算，首段传 0 |
 | `ffc_hash_uuid_v5_batch(const u8* ns[16n], const u8* names, const u64* offsets[n+1], usize n, u8* out[16n]) -> i32` | 批量 RFC 9562 UUIDv5（SHA-1）；名字是打包的 UTF-8（第 i 个 = `names[offsets[i]..offsets[i+1]]`） |
 | `ffc_hash_hash53_batch(const u8* data, const u64* offsets[n+1], usize n, u64* out[n]) -> i32` | 批量 53 位确定性正整数（SHA-256 前 7 字节大端取低 53 位，0 记作 1） |
@@ -145,6 +149,31 @@ galgame helper / hook 相关（Windows 专属规则域，另开任务）。
 | 内存 SHA-256 | 64 MiB | 1,173 ms | 43 ms | 27× |
 | 整文件 SHA-256（异步读，UI isolate 可用） | 256 MiB | 4,829 ms | 408 ms | 11.8× |
 
+## 图像域：漫画上传副本的文字覆盖
+
+`src/image/composite.rs` 的 `ffc_image_composite_rgba_jpeg` 接收编码原图与整页 straight RGBA
+覆盖层，解码并转正 EXIF、将透明源合白底、按面积平均缩小，再一次合成并编码 4:4:4 JPEG。
+输出宽高各为 1..1280，不能放大源图；输入只读，Rust 返回缓冲按通用 `ffc_free_bytes` 释放。
+
+Dart 入口为 `FushiComputeImage.compositeRgbaJpeg`，符号首次调用时绑定；缺符号仍是硬依赖错误。
+应用层 `manga_audio_substitution_image.dart` 用系统字体为命中替换表的 OCR 块排字，生成整页透明覆盖层；
+传 `ImageByteFormat.rawStraightRgba`，不能用预乘 alpha 的 `rawRgba`。解码、缩放、合成、编码放后台
+isolate，整页一次跨 FFI。处理失败返回 null，不可回退上传原图；本地页图与 OCR 文件不改写。
+
+回归覆盖原生像素合成、EXIF、透明度与参数校验，Dart FFI 生命周期，以及 Flutter 横竖排、缩放坐标、
+倾斜块范围与最终上传 JPEG 的实际像素。
+
+## 图像域：视频截帧 BGRA → RGBA 裁块（HBK-AUDIT-008）
+
+`ffc_image_bgra_to_rgba8_inplace(buf, len, stride, w, h)` 就地把带行跨度的 BGRA 行（mpv
+`screenshot-raw` 的 `bgr0`，第四字节未定义；每行从第 0 字节起取 `w` 像素）换成从 `buf[0]` 起行紧排的不透明 RGBA8888。智能遮布
+每次抽样的裁块与暂停 OCR 的整帧都走它：Dart 入口 `FushiComputeImage.bgraToRgba8` 在 media_kit
+补丁的截帧 isolate 上把矩形覆盖的那段行一次拷进暂存区、就地调用、按需前置字节头拷回 Dart 堆
+（只用一块暂存区：截帧 isolate 每次新建，多一块缓冲就多一轮缺页）；
+`fushi/lib/src/media/video/raw_video_frame.dart` 只算裁剪矩形与头。原先的 Dart 逐像素循环已删。
+逐字节对照（多种 stride / 矩形，含原生缓冲视图）见 `packages/fushi_compute/test/image_bgra_to_rgba_test.dart`，
+耗时对比用 `packages/fushi_compute/benchmark/bgra_to_rgba_bench.dart`。
+
 ## 字体域
 
 `ffc_font_woff2_to_sfnt(const u8*, usize, u8** out, usize* out_len) -> i32`：WOFF2 → 裸 sfnt
@@ -253,6 +282,40 @@ flutter_tester 有 94 个差 1 ULP，旧实现自己在两个宿主上也不一�
 本机同时有多个会话在跑重活，绝对值有 ±30% 噪声（同一份旧实现两次运行 2645 / 3415 ms），倍数更可信。
 互相关的累加次序要与旧实现一致，不能向量化重排，只跳过 `audio[i] ≤ 0` 的项（本来就不加）；
 降采样一次性调用基本持平（主要成本是 6 万次 `pow`，两边调的都是 CRT），收益在面板改宽度时不再重算。
+
+## 音乐分析域（`ffc_mana_*`，`src/music_analysis.rs` + `src/music_analysis/`）
+
+全屏歌词动画的音频信号（folia `src/services/analysis/` 的对应物）：整首离线分析出 ≈86 Hz 包络（响度 /
+低中高频段 / 起音 / 人声，按 folia 播放器 `AnalyserNode` 的同一套公式）、拍点 / 强拍 / BPM、每拍重音
+（folia `beatAccents`：impact、低中高占比、有无节奏、听感拍、整曲动感系数，`accents.rs`）、鼓点、人声起音，
+结果写成 `.fma` 文件（布局见 `format.rs` 头注，Dart 读取方 `fushi/lib/src/media/music/analysis/`）。
+进程级单例引擎（一个工作线程 + FIFO 队列），事件经 Dart 原生端口发回，每条 `[kind, token, value]`（见下「原生线程回 Dart」）。
+
+| 符号 | 作用 |
+|---|---|
+| `ffc_mana_start(post, port)` | 启动工作线程（幂等）；`post` = `NativeApi.postCObject`、`port` = `SendPort.nativePort`。换端口 = 旧 isolate 没了：它排队的任务丢掉、在跑的取消，事件只发提交者的端口 |
+| `ffc_mana_configure(ort, beat_this, htdemucs, threads, backend)` | 配置可选模型；有模型时经 `upscale::runtime` 接上本进程那份 ORT；`backend` 与超分同码（0 CPU / 1 DirectML / 2 CoreML / 3 XNNPACK），失败退 CPU 并发一次 `EVENT_BACKEND_FALLBACK` |
+| `ffc_mana_submit(token, pcm, out, flags)` / `ffc_mana_cancel(token)` | 排队一首（44.1 kHz 立体声 s16le raw）/ 取消 |
+| `ffc_mana_analyze_file(pcm, out, flags)` | 同步分析（无头 / 测试） |
+| `ffc_mana_format_version()` / `ffc_mana_pipeline_version()` / `ffc_mana_last_error` | 版本与错误 |
+
+三步：DSP（总跑：包络、Ellis 动态规划跟拍、HPSS 鼓点）→ Beat This!（模型在时换拍点）→ htdemucs（模型在时
+换鼓点 / 人声，分离途中每秒左右写一次部分结果，`FLAG_STEMS_PARTIAL` + `stems_until_ms`），每步写一次完整结果。
+`.fma` 现为 v2（加重音段），读侧兼容 v1（重音按中性值）；旧管线版本的结果照样读、再补算。
+模型（MIT）按需下载、不随包。真文件手动验证：
+`FUSHI_MANA_PCM=<s16le> [FUSHI_MANA_ORT=… FUSHI_MANA_BEAT_THIS=… FUSHI_MANA_HTDEMUCS=…] cargo test --profile quick --lib real_file_sanity -- --nocapture`。
+
+## 原生线程回 Dart（`src/dart_port.rs`，BUG-5413）
+
+进程级引擎（音乐分析、超分）的工作线程与 libmpv 的核心线程都活得比 isolate 久（Android 上 audio_service 在
+Activity 走后销毁 FlutterEngine、进程留在后台）。`NativeCallable.listener` 随 isolate 删掉、之后再调 VM 会
+abort 整个进程，所以本库一律往 Dart `ReceivePort` 的原生端口发消息（`Dart_PostCObject`，由 Dart 传入
+`NativeApi.postCObject`）：isolate 没了端口就关了，消息丢掉。事件按提交者的端口发，登记端口换了之后旧 isolate
+的任务不会把事件落到新 isolate 上（两边令牌都从头数）。
+
+| 符号 | 作用 |
+|---|---|
+| `ffc_port_wakeup(void* d)` | `void (*)(void*)` 形态的唤醒跳板，`d` 指向 `{ post, port: i64, value: i64 }`，每次被调把 `value` 发到 `port`。media_kit 补丁的 `useNativePortWakeup` 用它当 libmpv 的唤醒回调 |
 
 ## 解析域：EPUB 章节 DOM 派生量（BUG-3433）
 
@@ -457,6 +520,7 @@ Unicode 版本也比 Dart VM 的表新——Rust 1.96 下有 465 个码点 Dart 
 |---|---|---|
 | `ffc_crypto_aacs_open / _decrypt_units / _close` | AACS 1 内容解密：求单元密钥 + CBC + 0x47 校验 + 清 CPI + 多 key 轮换重试，一次处理一批 6144 字节单元；遇坏即停，失败码分三类：-20 标为未加密却不是合法 TS（全零单元落这里，数据坏）、-21 哪个 key 都解不开且还没解开过加密单元（key 不符或首单元坏，分不清）、-23 哪个 key 都解不开但此前已解开过加密单元 / 单元含整扇区全零（数据坏，不是 key） | `fushi_engine/.../aacs_content_decoder.dart`（relay 每 32 单元一次） |
 | `ffc_crypto_aes128_ecb_decrypt` | unit key 表解密 | 同上 `fromVolumeUniqueKey` |
+| `ffc_crypto_aes128_ecb_encrypt` | AES-128 ECB 加密（不填充） | AniDB UDP `ENCRYPT` 会话（`anidb_udp_file_client.dart` 的 `AnidbUdpCipher`） |
 | `ffc_crypto_aes_cbc_pkcs7_decrypt` | AES-128/192/256-CBC + PKCS7，原地 | HLS 分片（`anime_episode_downloader.dart`）、comico 根 URL |
 | `ffc_crypto_aes_cbc_encrypt` | AES-CBC 加密（不填充） | 只给测试造密文 |
 | `ffc_crypto_sync_obfuscate_file / _deobfuscate_file(src, src_len, dst, dst_len)` | 云同步「防扫盘」混淆：文件 → 文件整段在 Rust 里流式读（1 MiB 块）、XOR、写（目标创建或截断）；还原时无魔数则原样复制。keystream = SHA-256("hibiki")、魔数 `HBKOBF 01 00`，**永远不能改**，云端旧文件靠它解开；读写失败返回 -30 | `fushi/lib/src/sync/sync_obfuscator.dart` `obfuscateFile` / `deobfuscateFile`（`Isolate.run`）← `ObfuscatingSyncBackend` 上传 / 下载临时文件。内存里的字节（封面、Range 流播）留 Dart，见下 |
@@ -504,6 +568,17 @@ crate 的 AES 指令，跳过）。
 `deobfuscateBytes` / `deobfuscateBodyAt`），keystream 在那里另有一份 SHA-256("hibiki")；
 `sync_obfuscator_vectors_test.dart` 与 `crypto_vectors_v2_test.dart` 用删除前的冻结向量同时钉住 Dart 与 Rust 两侧。
 同一份脚本核对了签名与旧实现逐字节相同。
+
+## 学习统计派生域（`ffc_stats_*`，`src/stats.rs`，BUG-4960）
+
+| 符号 | 作用 |
+|---|---|
+| `ffc_stats_derive(const i64* ints, usize, const u32* ends, usize, const u16* text, usize, u8** out, usize* out_len) -> i32` | 统计事实面的整份派生：legacy 四表 / 游戏日时长 / legacy 游戏字数 / 段 / 复习格子 / 游玩会话骨架 → 日面、小时面、会话流、全域与阅读域按日合计；输入是整数流 + UTF-16 字符串流，输出 `[nInts][nEnds][nText]` 头 + 整数流 + 去重字符串表（格式见文件头）。坏输入 `-3` |
+
+唯一调用方是 `packages/fushi_engine/lib/stats/stat_facts.dart` 的 `loadStatFacts`（在一次性后台 isolate 里，
+经 `stat_derive.dart` 打包 / 解快照）。迁自 Dart：字符串比较按 UTF-16 码元（= `String.compareTo`），会话两处排序
+用 `dart::sort`（`List.sort` 逐步复刻，并列元素去向一致）。回归向量是迁移前 Dart 实现冻结的
+`packages/fushi_engine/test/stats/fixtures/stat_facts_parity.json`。
 
 ## 构建
 
@@ -560,7 +635,8 @@ Android ABI）。守卫 `fushi/test/build/fushi_compute_hard_dependency_guard_te
 ## 测试
 
 ```
-cargo test --release                    # 本目录，Rust 单元测试
+cargo test --profile quick --lib <过滤>  # 本目录，开发循环（不做 fat LTO、增量编译；docs/agent/build.md「Rust 本地开发循环」）
+cargo test --release                    # 本目录，Rust 单元测试全量（CI 跑的就是这条）
 dart test                               # packages/fushi_compute 下（真 FFI，库缺失即失败）
 ```
 
@@ -594,3 +670,19 @@ GPL-3.0 的 app 本体；发版前确认 app 开源许可页带上它们的声�
 
 每帧耗时（release，i5-12600KF）：合成大库 400 部作品 + 1.38 万词约 1.2 ms（`cargo test --release
 pano::tests::big_library -- --nocapture`）；本机真实库（132 部作品、展示 2,603 词、峰值 3.5 万顶点）约 0.26 ms。
+
+## OCR 台词流域（`ffc_ocrline_*`）
+
+游戏 OCR 模式（拍板台 `v5GSgDau9u` / BUG-5083）的判定核心（`src/ocrline.rs`，Dart 绑定
+`packages/fushi_compute/lib/src/ocr/fushi_compute_ocr_line.dart`，泵 `fushi/lib/src/mining/gal_ocr_line_source.dart`，
+spec `docs/specs/2026-11-22-game-ocr-line-stream-design.md`）。连续 OCR 的全部状态（上一帧签名、稳定计数、已送 OCR 的帧、
+空白态、上一句）都在 Rust，Dart 不存镜像。
+
+| 符号 | 说明 |
+|---|---|
+| `ffc_ocrline_new(void** out) -> i32` / `ffc_ocrline_free(void*)` | 建 / 释放 tracker（`free` 是 `void(void*)`，可挂 `NativeFinalizer`） |
+| `ffc_ocrline_reset(void*) -> i32` | 忘掉帧状态与上一句（换识别区域） |
+| `ffc_ocrline_forget_frame(void*) -> i32` | 上一次交出的 OCR 帧识别失败：只忘帧标记（同一画面会再交出），上一句保留 |
+| `ffc_ocrline_configure(void*, u32 flags) -> i32` | 送 OCR 前的预处理选项：bit0 = Otsu 二值化（白底黑字）；未知位 `-2`。选项变了同一画面会按新选项再交出（BUG-5141） |
+| `ffc_ocrline_feed_png(void*, const u8* png, usize, const f32 region[4], u8** out, usize* out_len, u32 meta[3]) -> i32` | 整窗 PNG + 客户区归一化框 → `meta = [action, w, h]`（0 idle / 1 settling / 2 ocr / 3 cleared）；ocr 时交出裁好并预处理过的 RGBA（`ffc_free_bytes`；字高 < 16 px 时整数倍放大到约 24 px、最长边不超 2600，`w` / `h` 是放大后的尺寸）。稳定判据排除循环小动画的易变格。坏 PNG `-3`，框在图外 `-2` |
+| `ffc_ocrline_feed_text(void*, const u8* utf8, usize, u8** out, usize* out_len, u32* kind) -> i32` | OCR 全文（行间 `\n`）→ kind（0 empty / 1 duplicate / 2 new / 3 extend）；new / extend 交出这一句的显示文本（CJK 间空白已去；extend 是「上一句 + 新尾巴」） |

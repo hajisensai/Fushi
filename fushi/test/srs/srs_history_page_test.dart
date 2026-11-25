@@ -6,6 +6,7 @@
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:flutter/foundation.dart' show ValueListenable, ValueNotifier;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -16,6 +17,7 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_history_page.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_retained_copy.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -122,6 +124,8 @@ Future<void> _pump(
   _Env env, {
   required bool apple,
   Size size = const Size(1100, 2400),
+  ValueListenable<Set<String>>? heritagePending,
+  List<Override> overrides = const <Override>[],
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -133,6 +137,9 @@ Future<void> _pump(
         srsStoreProvider.overrideWith((Ref ref) async => env.store),
         // 运行时（同步调度器 / AnkiConnect 端点）不在页面测试范围：保存文件夹位置后的那一轮同步跳过。
         srsAppRuntimeProvider.overrideWithValue(null),
+        if (heritagePending != null)
+          srsHeritagePendingProvider.overrideWithValue(heritagePending),
+        ...overrides,
       ],
       child: TranslationProvider(
         child: MaterialApp(
@@ -314,6 +321,73 @@ void main() {
         findsNothing,
       );
       expect(tester.takeException(), isNull);
+      await _close(tester, env);
+    });
+
+    testWidgets('[$ds] 有待确认的旧设备承袭日志：状态卡提示等确认，确认 / 拒绝后（集合变空）消失', (
+      WidgetTester tester,
+    ) async {
+      final ValueNotifier<Set<String>> pending = ValueNotifier<Set<String>>(
+        const <String>{},
+      );
+      addTearDown(pending.dispose);
+      final _Env env = await _open(tester);
+      await _pump(tester, env, apple: apple, heritagePending: pending);
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('srs_timeline_status_summary')),
+      );
+      final Finder row = find.byKey(
+        const ValueKey<String>('srs_timeline_status_heritage_unvouched'),
+      );
+      expect(row, findsNothing);
+
+      pending.value = const <String>{'dev-old', 'dev-older'};
+      await tester.pump();
+      expect(row, findsOneWidget);
+      expect(
+        find.descendant(
+          of: row,
+          matching: find.text(t.srs_sync_heritage_unvouched(n: 2)),
+        ),
+        findsOneWidget,
+      );
+
+      pending.value = const <String>{};
+      await tester.pump();
+      expect(row, findsNothing);
+      expect(tester.takeException(), isNull);
+      await _close(tester, env);
+    });
+
+    // 第五波复核遗留：彻底清除的字节层收尾出错（内核 `scrub_state`）时，同步与历史页给出提示；没出错时不显示。
+    testWidgets('[$ds] 清除收尾出错：页上提示原因；没出错时没有提示', (WidgetTester tester) async {
+      final _Env env = await _open(tester);
+      SrsScrubState scrub = (due: true, error: 'database or disk is full');
+      await _pump(
+        tester,
+        env,
+        apple: apple,
+        overrides: <Override>[
+          srsScrubStateProvider.overrideWith((Ref ref) async => scrub),
+        ],
+      );
+      final Finder notice = find.text(
+        t.srs_scrub_error_notice(reason: 'database or disk is full'),
+      );
+      await _pumpUntil(tester, notice);
+      expect(notice, findsOneWidget);
+      // 收尾做完（error 清掉），重读之后提示消失。
+      scrub = (due: false, error: null);
+      ProviderScope.containerOf(
+        tester.element(find.byType(SrsHistoryPage)),
+      ).invalidate(srsScrubStateProvider);
+      await _settle(tester);
+      expect(notice, findsNothing);
+      expect(
+        find.byKey(const ValueKey<String>('srs-scrub-error')),
+        findsNothing,
+      );
       await _close(tester, env);
     });
 
@@ -531,6 +605,14 @@ void main() {
         reason: 'usb removed',
       );
       expect(env.prefs.srsFolderLocations.single.path, nas);
+      // 运行时没起（这里覆盖成 null）：移除照样生效，内核要忘的位置记进待忘清单，等调度器起来再忘。
+      expect(env.prefs.srsPendingLocationForgets, <String>{
+        SrsFolderLocation(id: 'usb', path: usb).locationId,
+      });
+      expect(
+        find.byKey(const ValueKey<String>('srs_timeline_folder_usb')),
+        findsNothing,
+      );
       expect(Directory(usb).existsSync(), isTrue, reason: '移除不删文件');
       await _close(tester, env);
     });

@@ -54,6 +54,7 @@ const List<LyricsControlItem> kLyricsModernWidePriority = <LyricsControlItem>[
   LyricsControlItem.replayCue,
   LyricsControlItem.mask,
   LyricsControlItem.typography,
+  LyricsControlItem.avSync,
   LyricsControlItem.bookMode,
   LyricsControlItem.studyTimer,
   LyricsControlItem.statistics,

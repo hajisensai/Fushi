@@ -5,9 +5,9 @@
 //   - 全局日预算（budgets 表，UTC 日）：写入行数 / 媒体上传次数 / 注册数。超了返回 503，次日自动恢复。
 //   - R2 总存储配额（media_usage 单行）：超了拒收新图片（507），删除图片时归还。总配额分两池：
 //     反馈视频单独一池（media_usage.video_bytes，默认 1 GiB），其余（头像 / 封面 / 反馈截图与日志）
-//     用剩下的（media_usage.bytes）。视频单个 50 MB、能匿名上传，同一池的话几个 IP 就能把总配额
+//     用剩下的（media_usage.bytes）。视频单个 100 MB、能匿名上传，同一池的话几个 IP 就能把总配额
 //     打满、让全站头像封面一起 507 上一个月；分池后视频满了只拒视频。
-// 预算用 env 覆盖：BUDGET_WRITE_ROWS / BUDGET_MEDIA / BUDGET_REGISTER / BUDGET_EMAIL / BUDGET_FEEDBACK / BUDGET_PING /
+// 预算用 env 覆盖：BUDGET_WRITE_ROWS / BUDGET_MEDIA / BUDGET_REGISTER / BUDGET_EMAIL / BUDGET_FEEDBACK / BUDGET_PING / BUDGET_NOTICES /
 // MEDIA_QUOTA_BYTES / VIDEO_QUOTA_BYTES。
 
 import { HttpError, utcDateKey } from './util.js';
@@ -21,7 +21,13 @@ import { HttpError, utcDateKey } from './util.js';
  * write_rows 已占 8 万，D1 免费额度 10 万行/天，所以默认值压在剩余两成以内；日活逼近上限时
  * 先升级 Workers 付费计划再用 BUDGET_PING 调高。
  */
-export const DEFAULT_BUDGETS = { write_rows: 80000, media: 3000, register: 2000, email: 90, feedback: 300, ping: 4000 };
+/**
+ * notices 默认 2000：每天记入公告计数（notices.js notice_seen）的请求数上限，每次约写 2 行（计数 + 预算行）。
+ * 用完当天只停计数、公告照常下发，且超额后这条路径不再写库（条件 upsert）。
+ */
+export const DEFAULT_BUDGETS = {
+  write_rows: 80000, media: 3000, register: 2000, email: 90, feedback: 300, ping: 4000, notices: 2000,
+};
 /** R2 免费额度 10 GB；默认只用 8 GB。 */
 export const DEFAULT_MEDIA_QUOTA_BYTES = 8 * 1024 * 1024 * 1024;
 /** 反馈视频池默认 1 GiB（从总配额里切出来，不另加）。 */

@@ -1,6 +1,9 @@
 import 'dart:convert';
 
-/// 歌词来源列表中的一个插件项。LRCLIB 不在其中（结构上固定最前）。
+import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
+
+/// 有序列表里的一项（id + 是否启用）。歌词来源列表（[mergeLyricsSourceList]）里是
+/// LRCLIB（[MusicLyricsSource.lrclib]）或一个歌词插件 id；「来源」页的在线音源顺序也复用它。
 class LyricsProviderEntry {
   const LyricsProviderEntry({required this.id, required this.enabled});
 
@@ -94,7 +97,32 @@ List<LyricsProviderEntry> toggleLyricsProvider(
     e.id == id ? e.copyWith(enabled: enabled) : e,
 ];
 
-/// 查询顺序：已启用的插件 id（LRCLIB 由调用方固定放最前）。
+/// 歌词来源列表（`music_lyrics_providers` 偏好）：LRCLIB 与已装歌词插件同在一份有序列表里，
+/// 数组顺序即查询顺序，LRCLIB 用 [MusicLyricsSource.lrclib] 作 id（插件 id 不含冒号，不会撞）。
+///
+/// 旧偏好只存插件、LRCLIB 由宿主固定在最前：读到没有 LRCLIB 项的数组时把它补在最前并启用，
+/// 存量用户的查询顺序不变；之后用户怎么排、停不停用都照存。插件部分同 [mergeLyricsProviders]
+/// （丢弃未装、新装追加末尾默认启用）。
+List<LyricsProviderEntry> mergeLyricsSourceList(
+  List<LyricsProviderEntry> stored,
+  Iterable<String> installedPluginIds,
+) {
+  const String lrclib = MusicLyricsSource.lrclib;
+  final bool hasLrclib = stored.any((LyricsProviderEntry e) => e.id == lrclib);
+  return mergeLyricsProviders(
+    <LyricsProviderEntry>[
+      if (!hasLrclib) const LyricsProviderEntry(id: lrclib, enabled: true),
+      ...stored,
+    ],
+    <String>[
+      lrclib,
+      for (final String id in installedPluginIds)
+        if (id != lrclib) id,
+    ],
+  );
+}
+
+/// 查询顺序：已启用项的 id，按列表顺序。
 List<String> enabledLyricsProviderIds(List<LyricsProviderEntry> entries) =>
     <String>[
       for (final LyricsProviderEntry e in entries)

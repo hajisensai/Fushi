@@ -12,6 +12,8 @@ library;
 
 import 'package:fushi_core/fushi_core.dart' show mimeTypeForFilePath;
 
+import 'package:fushi/src/srs/srs_sound_tag.dart';
+
 /// 卡面媒体的虚拟域。必须与阅读器 `fushi.local`、漫画 `manga.local` 互异。
 const String kSrsMediaHost = 'srs.local';
 
@@ -32,9 +34,10 @@ String srsMediaUrlPrefix({required bool customScheme}) => customScheme
     ? '$kSrsMediaScheme://$kSrsMediaHost$kSrsMediaPath'
     : 'https://$kSrsMediaHost$kSrsMediaPath';
 
-final RegExp _soundTag = RegExp(r'\[sound:([^\]]+)\]');
+/// `src` / `poster` 属性：带引号（组 2 引号、组 3 值）或不带引号（组 4，`<img src=x.jpg>`，
+/// 浏览器同样认；不改写的话 WebView 卡面会按相对地址去请求、图片不显示）。
 final RegExp _srcAttr = RegExp(
-  r'''(\s(?:src|poster)\s*=\s*)(["'])([^"']*)\2''',
+  r'''(\s(?:src|poster)\s*=\s*)(?:(["'])([^"']*)\2|([^\s"'=<>`]+))''',
   caseSensitive: false,
 );
 final RegExp _cssUrl = RegExp(
@@ -42,20 +45,6 @@ final RegExp _cssUrl = RegExp(
   caseSensitive: false,
 );
 final RegExp _schemePrefix = RegExp(r'^[A-Za-z][A-Za-z0-9+.\-]*:');
-
-/// 把 HTML 属性 / 文本里常见的实体还原（Anki 字段把文件名里的 `&` 存成 `&amp;`）。
-String _htmlUnescape(String s) => s
-    .replaceAll('&quot;', '"')
-    .replaceAll('&#39;', "'")
-    .replaceAll('&lt;', '<')
-    .replaceAll('&gt;', '>')
-    .replaceAll('&amp;', '&');
-
-String _attrEscape(String s) => s
-    .replaceAll('&', '&amp;')
-    .replaceAll('"', '&quot;')
-    .replaceAll('<', '&lt;')
-    .replaceAll('>', '&gt;');
 
 /// 是不是「媒体库里的裸文件名」：不带 scheme、不以 `/` `#` 开头、不含路径分隔符。
 bool srsIsBareMediaName(String raw) {
@@ -68,7 +57,7 @@ bool srsIsBareMediaName(String raw) {
 }
 
 String _mediaUrl(String prefix, String rawName) =>
-    '$prefix${Uri.encodeComponent(_htmlUnescape(rawName.trim()))}';
+    '$prefix${Uri.encodeComponent(srsUnescapeMediaName(rawName.trim()))}';
 
 /// `[sound:x]` 渲染成的播放按钮（内联 SVG 三角，样式见 [kSrsCardMediaCss]）。
 ///
@@ -76,7 +65,7 @@ String _mediaUrl(String prefix, String rawName) =>
 /// （eggrolls 背面 `document.querySelector('.VocabAudio .replay-button').click()` 强制播单词音频，
 /// 模板 CSS 也按它画键；反馈 uCPhpeCM35）。点击仍由 [kSrsCardMediaScript] 按 `data-sound` 接管。
 String srsSoundButtonHtml(String name) {
-  final String n = _attrEscape(_htmlUnescape(name.trim()));
+  final String n = srsEscapeHtml(srsSoundTagName(name));
   return '<button type="button" class="$kSrsSoundButtonClasses" data-sound="$n" '
       'aria-label="$n">'
       '<svg viewBox="0 0 24 24" width="18" height="18" aria-hidden="true">'
@@ -86,14 +75,15 @@ String srsSoundButtonHtml(String name) {
 /// 卡面正文的媒体改写（见文件头）。
 String srsLocalizeCardHtml(String html, {required String urlPrefix}) {
   String out = html.replaceAllMapped(
-    _soundTag,
+    srsSoundTagPattern,
     (Match m) => srsSoundButtonHtml(m.group(1)!),
   );
   out = out.replaceAllMapped(_srcAttr, (Match m) {
-    final String value = m.group(3)!;
+    final String value = m.group(3) ?? m.group(4)!;
     if (!srsIsBareMediaName(value)) return m.group(0)!;
-    return '${m.group(1)}${m.group(2)}'
-        '${_attrEscape(_mediaUrl(urlPrefix, value))}${m.group(2)}';
+    final String quote = m.group(2) ?? '"';
+    return '${m.group(1)}$quote'
+        '${srsEscapeHtml(_mediaUrl(urlPrefix, value))}$quote';
   });
   return srsLocalizeCardCss(out, urlPrefix: urlPrefix);
 }
@@ -111,14 +101,14 @@ String srsLocalizeCardCss(String css, {required String urlPrefix}) =>
 Set<String> srsCardReferencedMedia(String text) {
   final Set<String> names = <String>{};
   void add(String raw) {
-    if (srsIsBareMediaName(raw)) names.add(_htmlUnescape(raw.trim()));
+    if (srsIsBareMediaName(raw)) names.add(srsUnescapeMediaName(raw.trim()));
   }
 
-  for (final Match m in _soundTag.allMatches(text)) {
+  for (final Match m in srsSoundTagPattern.allMatches(text)) {
     add(m.group(1)!);
   }
   for (final Match m in _srcAttr.allMatches(text)) {
-    add(m.group(3)!);
+    add(m.group(3) ?? m.group(4)!);
   }
   for (final Match m in _cssUrl.allMatches(text)) {
     add(m.group(2)!);

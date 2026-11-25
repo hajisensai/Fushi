@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/downloads/download_batch.dart';
 import 'package:fushi/src/media/downloads/download_task_browser.dart';
 import 'package:fushi/src/media/downloads/download_task_card.dart';
 import 'package:fushi/src/media/downloads/download_task_entry.dart';
@@ -211,8 +212,13 @@ void main() {
       );
       expect(details, findsNothing);
       expect(delete, findsNothing);
+      // 点行里的标题：行中心可能正落在标题旁可点的方式 / 来源标签上（标签
+      // 点按弹说明，不展开行）。
       await tester.tap(
-        find.byKey(const ValueKey<String>('download-task-toggle-done')),
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('download-task-toggle-done')),
+          matching: find.text('Finished game'),
+        ),
       );
       await tester.pumpAndSettle();
       await tester.ensureVisible(details);
@@ -284,7 +290,230 @@ void main() {
     );
     await tester.pumpWidget(const SizedBox.shrink());
   });
+
+  // BUG-5072：已完成但种子仍在后端的任务，批量与单条都能停 / 续做种，且走
+  // 做种回调而不是改持久生命周期的 cancel/resume；种子已不在后端的不提供。
+  testWidgets(
+    'completed jobs still in the backend can pause and resume seeding '
+    'from both the batch slot and the card',
+    (WidgetTester tester) async {
+      final _JobsStore store = _JobsStore();
+      addTearDown(store.close);
+      final List<String> pausedSeeding = <String>[];
+      final List<String> resumedSeeding = <String>[];
+      final List<String> lifecycleCalls = <String>[];
+      await _pump(
+        tester,
+        VideoDownloadJobsPanel(
+          store: store,
+          unified: true,
+          onCancel: (VideoDownloadJobRow job) async =>
+              lifecycleCalls.add('cancel:${job.jobId}'),
+          onResume: (List<VideoDownloadJobRow> jobs) async {
+            lifecycleCalls.addAll(<String>[
+              for (final VideoDownloadJobRow job in jobs) 'resume:${job.jobId}',
+            ]);
+            return const <String, Object>{};
+          },
+          onPauseSeeding: (List<VideoDownloadJobRow> jobs) async {
+            pausedSeeding.addAll(_ids(jobs));
+            return const <String, Object>{};
+          },
+          onResumeSeeding: (List<VideoDownloadJobRow> jobs) async {
+            resumedSeeding.addAll(_ids(jobs));
+            return const <String, Object>{};
+          },
+          metricsLoader: (Iterable<VideoDownloadJobRow> jobs) async =>
+              <String, TorrentSnapshot>{
+                for (final VideoDownloadJobRow job in jobs)
+                  if (job.jobId != 'gone')
+                    job.jobId: TorrentSnapshot(
+                      hash: job.jobId,
+                      name: job.title,
+                      progress: 1,
+                      state: job.jobId == 'stopped' ? 'pausedUP' : 'uploading',
+                      savePath: '',
+                      contentPath: '',
+                      amountLeft: 0,
+                    ),
+              },
+        ),
+      );
+      const String completed = VideoDownloadJobLifecycle.completed;
+      store.controller.add(<VideoDownloadJobRow>[
+        _job(id: 'seeding', title: 'Seeding show', lifecycle: completed),
+        _job(id: 'stopped', title: 'Stopped show', lifecycle: completed),
+        _job(id: 'gone', title: 'Removed show', lifecycle: completed),
+      ]);
+      await tester.pumpAndSettle();
+
+      final Map<String, DownloadTaskEntry> byId = <String, DownloadTaskEntry>{
+        for (final DownloadTaskEntry task in _entries(tester)) task.id: task,
+      };
+      expect(byId['seeding']!.actions.pause, isNotNull);
+      expect(byId['seeding']!.actions.resume, isNull);
+      expect(byId['stopped']!.actions.pause, isNull);
+      expect(byId['stopped']!.actions.resume, isNotNull);
+      expect(byId['gone']!.actions.pause, isNull);
+      expect(byId['gone']!.actions.resume, isNull);
+
+      // 用户的路径：全选后批量暂停 / 继续。
+      final DownloadBatchOutcome pauseOutcome = await runDownloadTaskBatch(
+        tasks: byId.values,
+        action: DownloadBatchAction.pause,
+      );
+      expect(pauseOutcome.done, 1);
+      expect(pauseOutcome.unsupported, 2);
+      expect(pausedSeeding, <String>['seeding']);
+      final DownloadBatchOutcome resumeOutcome = await runDownloadTaskBatch(
+        tasks: byId.values,
+        action: DownloadBatchAction.resume,
+      );
+      expect(resumeOutcome.done, 1);
+      expect(resumedSeeding, <String>['stopped']);
+
+      // 单条入口与批量同一判据：卡片行尾主操作。
+      expect(
+        find.byKey(
+          const ValueKey<String>('video-download-job-quick-pause-seeding'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('video-download-job-quick-resume-stopped'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('video-download-job-quick-pause-gone'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('video-download-job-quick-resume-gone'),
+        ),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(
+          const ValueKey<String>('video-download-job-quick-pause-seeding'),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(pausedSeeding, <String>['seeding', 'seeding']);
+      expect(lifecycleCalls, isEmpty);
+      await tester.pumpWidget(const SizedBox.shrink());
+    },
+  );
+
+  // HBK-AUDIT-025：批量暂停 / 继续整批交给来源一次（来源整批只枚举一次后端），
+  // 整批结束只重读一次快照。修复前逐条调做种回调、每条各刷新一次面板。
+  testWidgets('batch pause / resume hands each source one batch call and '
+      'refreshes snapshots once', (WidgetTester tester) async {
+    final _JobsStore store = _JobsStore();
+    addTearDown(store.close);
+    final List<List<String>> seedingPauseCalls = <List<String>>[];
+    final List<List<String>> seedingResumeCalls = <List<String>>[];
+    final List<List<String>> lifecycleResumeCalls = <List<String>>[];
+    final List<String> cancelled = <String>[];
+    final Set<String> pausedSeeds = <String>{};
+    int metricsLoads = 0;
+    await _pump(
+      tester,
+      VideoDownloadJobsPanel(
+        store: store,
+        unified: true,
+        onCancel: (VideoDownloadJobRow job) async => cancelled.add(job.jobId),
+        onResume: (List<VideoDownloadJobRow> jobs) async {
+          lifecycleResumeCalls.add(_ids(jobs));
+          return const <String, Object>{};
+        },
+        onPauseSeeding: (List<VideoDownloadJobRow> jobs) async {
+          seedingPauseCalls.add(_ids(jobs));
+          pausedSeeds.addAll(_ids(jobs));
+          // 第一条在来源侧失败：只它计入失败，其余照常。
+          return <String, Object>{jobs.first.jobId: StateError('boom')};
+        },
+        onResumeSeeding: (List<VideoDownloadJobRow> jobs) async {
+          seedingResumeCalls.add(_ids(jobs));
+          return const <String, Object>{};
+        },
+        metricsLoader: (Iterable<VideoDownloadJobRow> jobs) async {
+          metricsLoads++;
+          return <String, TorrentSnapshot>{
+            for (final VideoDownloadJobRow job in jobs)
+              if (job.lifecycle == VideoDownloadJobLifecycle.completed)
+                job.jobId: TorrentSnapshot(
+                  hash: job.jobId,
+                  name: job.title,
+                  progress: 1,
+                  state: job.jobId.startsWith('stopped')
+                      ? 'pausedUP'
+                      : 'uploading',
+                  savePath: '',
+                  contentPath: '',
+                  amountLeft: 0,
+                ),
+          };
+        },
+      ),
+    );
+    const String completed = VideoDownloadJobLifecycle.completed;
+    store.controller.add(<VideoDownloadJobRow>[
+      for (int i = 0; i < 4; i++)
+        _job(id: 'seed-$i', title: 'Seed $i', lifecycle: completed),
+      for (int i = 0; i < 3; i++)
+        _job(id: 'stopped-$i', title: 'Stopped $i', lifecycle: completed),
+      _job(id: 'running', title: 'Running'),
+      _job(
+        id: 'paused',
+        title: 'Paused',
+        lifecycle: VideoDownloadJobLifecycle.cancelled,
+      ),
+    ]);
+    await tester.pumpAndSettle();
+    final List<DownloadTaskEntry> tasks = _entries(tester);
+    expect(tasks, hasLength(9));
+
+    final int loadsBeforePause = metricsLoads;
+    final DownloadBatchOutcome pause = await runDownloadTaskBatch(
+      tasks: tasks,
+      action: DownloadBatchAction.pause,
+    );
+    await tester.pump();
+    expect(seedingPauseCalls, <List<String>>[
+      <String>['seed-0', 'seed-1', 'seed-2', 'seed-3'],
+    ]);
+    expect(cancelled, <String>['running']);
+    expect(pause.done, 4);
+    expect(pause.failed, 1);
+    expect(pause.unsupported, 4);
+    expect(metricsLoads - loadsBeforePause, 1);
+
+    final int loadsBeforeResume = metricsLoads;
+    final DownloadBatchOutcome resume = await runDownloadTaskBatch(
+      tasks: tasks,
+      action: DownloadBatchAction.resume,
+    );
+    await tester.pump();
+    expect(seedingResumeCalls, <List<String>>[
+      <String>['stopped-0', 'stopped-1', 'stopped-2'],
+    ]);
+    expect(lifecycleResumeCalls, <List<String>>[
+      <String>['paused'],
+    ]);
+    expect(resume.done, 4);
+    expect(metricsLoads - loadsBeforeResume, 1);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
 }
+
+List<String> _ids(List<VideoDownloadJobRow> jobs) => <String>[
+  for (final VideoDownloadJobRow job in jobs) job.jobId,
+];
 
 VideoDownloadJobRow _job({
   required String id,

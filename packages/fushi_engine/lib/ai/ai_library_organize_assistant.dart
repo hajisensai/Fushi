@@ -21,14 +21,16 @@ const int kAiOrganizeMaxCollectionsPerRequest = 150;
 /// 回复的输出上限：200 条目分成几十组，每组几十 token。
 const int kAiOrganizeMaxReplyTokens = 6000;
 
-/// 发给模型的一个条目（散条目，或某个整理器合集里的成员——[inCollection] 非空）。
+/// 发给模型的一个条目（散条目，或某些非目录合集里的成员——[inCollections] 非空）。
 class AiOrganizeItem {
   const AiOrganizeItem({
     required this.title,
     this.creator,
     this.year,
     this.folder,
-    this.inCollection,
+    this.inCollections = const <String>[],
+    this.pinnedIn = const <String>[],
+    this.evictedFrom = const <String>[],
     this.season,
     this.episode,
   });
@@ -42,8 +44,15 @@ class AiOrganizeItem {
   /// 视频所在文件夹的末级名（所有者 2026-10-20 同意发送）。
   final String? folder;
 
-  /// 已在哪个整理器合集里（`C<n>`）；null = 散条目。
-  final String? inCollection;
+  /// 已在哪些合集里（`C<n>`）；空 = 散条目。
+  final List<String> inCollections;
+
+  /// 其中哪些是用户亲手放进去的（成员行 `pinned_by_user`）：AI 不能把它移出这些合集。
+  final List<String> pinnedIn;
+
+  /// AI 已经把它移出过一次的合集（AI 库管家设计稿 §7「同一对只移出一次」）：
+  /// 不能再移出，也不该再提议放回。
+  final List<String> evictedFrom;
   final int? season;
   final int? episode;
 
@@ -55,7 +64,10 @@ class AiOrganizeItem {
     if (folder != null && folder!.isNotEmpty) 'folder': folder,
     if (season != null) 'season': season,
     if (episode != null) 'episode': episode,
-    if (inCollection != null) 'in': inCollection,
+    if (inCollections.length == 1) 'in': inCollections.single,
+    if (inCollections.length > 1) 'in': inCollections,
+    if (pinnedIn.isNotEmpty) 'pinned_in': pinnedIn,
+    if (evictedFrom.isNotEmpty) 'evicted_from': evictedFrom,
   };
 }
 
@@ -68,6 +80,7 @@ class AiOrganizeCollection {
     required this.sampleTitles,
     required this.userOwned,
     this.organizeKey,
+    this.folder = false,
   });
 
   /// `C<n>`。
@@ -76,9 +89,13 @@ class AiOrganizeCollection {
   final int memberCount;
   final List<String> sampleTitles;
 
-  /// 用户的合集：只能当 `into` 目标，不能被合并掉、不能被移出成员。
+  /// 用户的合集：可以接收条目，也可以带理由把放错的条目移出（成员 pinned 的除外）；
+  /// 与另一个用户合集合并、改名只产出待用户确认的建议。
   final bool userOwned;
   final String? organizeKey;
+
+  /// 目录合集（成员由磁盘目录决定）：只能当 `into` 目标，不移出、不合并、不改名。
+  final bool folder;
 
   Map<String, Object?> toPromptJson() => <String, Object?>{
     'id': id,
@@ -87,6 +104,7 @@ class AiOrganizeCollection {
     if (sampleTitles.isNotEmpty) 'sample': sampleTitles,
     if (organizeKey != null) 'key': organizeKey,
     if (userOwned) 'user_owned': true,
+    if (folder) 'folder': true,
   };
 }
 
@@ -168,17 +186,41 @@ class AiOrganizeMergeProposal {
   final AiOrganizeConfidence confidence;
 }
 
-/// 「这些条目不属于它现在所在的整理器合集」。
+/// 「这些条目不属于它现在所在的合集」：移出后单独放（[into] 为 null），或挪进
+/// [into] 那个合集（AI 库管家设计稿 §7）。
 class AiOrganizeEvictionProposal {
   const AiOrganizeEvictionProposal({
     required this.collection,
     required this.members,
     required this.confidence,
+    this.into,
+    this.reason,
   });
 
   final String collection;
   final List<int> members;
   final AiOrganizeConfidence confidence;
+
+  /// 挪到哪个合集（`C<n>`）；null = 移出后单独放。
+  final String? into;
+
+  /// 为什么放错了（移出用户合集时必填，存进整理记录）。
+  final String? reason;
+}
+
+/// 「这个合集名字不对」：只对用户合集产出待确认建议，不直接改。
+class AiOrganizeRenameProposal {
+  const AiOrganizeRenameProposal({
+    required this.collection,
+    required this.name,
+    required this.confidence,
+    this.reason,
+  });
+
+  final String collection;
+  final String name;
+  final AiOrganizeConfidence confidence;
+  final String? reason;
 }
 
 class AiOrganizeReply {
@@ -186,13 +228,16 @@ class AiOrganizeReply {
     this.groups = const <AiOrganizeGroupProposal>[],
     this.merges = const <AiOrganizeMergeProposal>[],
     this.evictions = const <AiOrganizeEvictionProposal>[],
+    this.renames = const <AiOrganizeRenameProposal>[],
   });
 
   final List<AiOrganizeGroupProposal> groups;
   final List<AiOrganizeMergeProposal> merges;
   final List<AiOrganizeEvictionProposal> evictions;
+  final List<AiOrganizeRenameProposal> renames;
 
-  bool get isEmpty => groups.isEmpty && merges.isEmpty && evictions.isEmpty;
+  bool get isEmpty =>
+      groups.isEmpty && merges.isEmpty && evictions.isEmpty && renames.isEmpty;
 }
 
 AiProviderConfig? resolveLibraryOrganizeAiProvider(AiSettingsSource settings) =>
@@ -211,22 +256,26 @@ String buildAiLibraryOrganizeSystemPrompt(String domain) {
   return '''
 You organize $what into collections: groups of items that belong together.
 
-You get loose items ("i" indexes) and the existing collections ("C" ids). Some
-items are already members of a machine-made collection ("in"). Propose only
-groupings you actually know to be right from your knowledge of these works:
+You get items ("i" indexes) and the existing collections ("C" ids). Some items
+are already members of collections ("in"). Propose only changes you actually
+know to be right from your knowledge of these works:
 - the same work written differently (original title, romanization,
   translation), volumes without volume numbers, side stories and sequels of the
   same series, scattered episodes, OVAs and specials of one show;
 - an item that belongs to an existing collection goes "into" that collection;
 - two existing collections that are the same series can be merged;
-- an item wrongly placed in a machine-made collection can be evicted.
+- an item wrongly placed in a collection can be taken out ("evictions"): moved
+  "into" the collection it belongs to, or with "into": null to stand alone.
 
 Answer with a single JSON object and nothing else:
 {"groups": [{"members": [i, ...], "into": "C3" or null, "name": "...",
              "originalTitle": "...", "key": "<known key>" or null,
              "level": "work" or "franchise", "confidence": "high"|"medium"|"low"}],
  "merges": [{"collections": ["C1", "C4"], "confidence": "..."}],
- "evictions": [{"collection": "C2", "members": [i, ...], "confidence": "..."}]}
+ "evictions": [{"collection": "C2", "members": [i, ...], "into": "C5" or null,
+                "reason": "...", "confidence": "..."}],
+ "renames": [{"collection": "C1", "name": "...", "reason": "...",
+              "confidence": "..."}]}
 
 Rules:
 - "level": "work" = the volumes / episodes of one single work (one season of a
@@ -239,13 +288,24 @@ Rules:
 - When the group is a series listed in "known_keys", put that key in "key"
   exactly as given. Never invent keys.
 - Never propose a group listed in "rejected".
-- A collection with "user_owned": true can only receive items ("into"); never
-  list it in "merges" or "evictions".
+- A collection with "folder": true mirrors a folder on disk: it can only
+  receive items ("into"); never list it in "merges", "evictions" or "renames".
+- A collection with "user_owned": true was made by the user. You may take an
+  item that clearly does not belong out of it ("evictions"), always with a
+  short "reason" naming what the item really is (e.g. "volume 3 of another
+  work X"). Merging two "user_owned" collections, and "renames" (only for
+  "user_owned" collections whose name is clearly wrong), are applied directly
+  (the user can undo them): propose them only with "high" confidence.
+- Never take an item out of a collection listed in its "pinned_in" (the user
+  put it there) or "evicted_from" (it was already taken out once), and never
+  put it back into an "evicted_from" collection.
+- An item that is in a "user_owned" collection changes collection only through
+  "evictions" with "into", never through "groups".
 - New groups need at least two items. "into" groups need at least one item.
 - Each item index at most once in the whole answer. Use only the indexes and
   ids you were given.
 - If you are not sure, leave it out. An empty answer is fine:
-  {"groups": [], "merges": [], "evictions": []}
+  {"groups": [], "merges": [], "evictions": [], "renames": []}
 ''';
 }
 
@@ -282,7 +342,11 @@ AiOrganizeReply? parseAiLibraryOrganizeReply(
   final Object? rawGroups = decoded['groups'];
   final Object? rawMerges = decoded['merges'];
   final Object? rawEvictions = decoded['evictions'];
-  if (rawGroups is! List && rawMerges is! List && rawEvictions is! List) {
+  final Object? rawRenames = decoded['renames'];
+  if (rawGroups is! List &&
+      rawMerges is! List &&
+      rawEvictions is! List &&
+      rawRenames is! List) {
     return null;
   }
   List<int> indexes(Object? raw) {
@@ -323,11 +387,24 @@ AiOrganizeReply? parseAiLibraryOrganizeReply(
         if (rawEvictions is List)
           for (final Object? e in rawEvictions)
             if (e is Map)
-              if (_eviction(e, indexes, collectionId)
+              if (_eviction(e, indexes, collectionId, text)
                   case final AiOrganizeEvictionProposal p)
                 p,
       ];
-  return AiOrganizeReply(groups: groups, merges: merges, evictions: evictions);
+  final List<AiOrganizeRenameProposal> renames = <AiOrganizeRenameProposal>[
+    if (rawRenames is List)
+      for (final Object? r in rawRenames)
+        if (r is Map)
+          if (_rename(r, collectionId, text)
+              case final AiOrganizeRenameProposal p)
+            p,
+  ];
+  return AiOrganizeReply(
+    groups: groups,
+    merges: merges,
+    evictions: evictions,
+    renames: renames,
+  );
 }
 
 AiOrganizeGroupProposal? _group(
@@ -380,6 +457,7 @@ AiOrganizeEvictionProposal? _eviction(
   Map<Object?, Object?> e,
   List<int> Function(Object?) indexes,
   String? Function(Object?) collectionId,
+  String? Function(Object?) text,
 ) {
   final AiOrganizeConfidence? confidence = AiOrganizeConfidence.parse(
     e['confidence'],
@@ -387,10 +465,34 @@ AiOrganizeEvictionProposal? _eviction(
   final String? collection = collectionId(e['collection']);
   final List<int> members = indexes(e['members']);
   if (confidence == null || collection == null || members.isEmpty) return null;
+  final String? into = collectionId(e['into']);
+  if (e['into'] != null && into == null) return null; // 引用了不存在的合集。
+  if (into == collection) return null;
   return AiOrganizeEvictionProposal(
     collection: collection,
     members: members,
     confidence: confidence,
+    into: into,
+    reason: text(e['reason']),
+  );
+}
+
+AiOrganizeRenameProposal? _rename(
+  Map<Object?, Object?> r,
+  String? Function(Object?) collectionId,
+  String? Function(Object?) text,
+) {
+  final AiOrganizeConfidence? confidence = AiOrganizeConfidence.parse(
+    r['confidence'],
+  );
+  final String? collection = collectionId(r['collection']);
+  final String? name = text(r['name']);
+  if (confidence == null || collection == null || name == null) return null;
+  return AiOrganizeRenameProposal(
+    collection: collection,
+    name: name,
+    confidence: confidence,
+    reason: text(r['reason']),
   );
 }
 

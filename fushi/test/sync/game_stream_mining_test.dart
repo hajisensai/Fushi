@@ -154,6 +154,54 @@ void main() {
     },
   );
 
+  // #4362 review leftover: an abort only means "capture failed" when capture
+  // actually failed. A write-stage engine abort is a host error, a stale line
+  // is line_expired.
+  for (final (GalHookMiningFailureStage stage, String detail)
+      in <(GalHookMiningFailureStage, String)>[
+        (GalHookMiningFailureStage.write, GameStreamMineDetail.hostError),
+        (GalHookMiningFailureStage.internal, GameStreamMineDetail.hostError),
+        (
+          GalHookMiningFailureStage.lineUnavailable,
+          GameStreamMineDetail.lineExpired,
+        ),
+        (GalHookMiningFailureStage.capture, GameStreamMineDetail.captureFailed),
+        (
+          GalHookMiningFailureStage.windowUnbound,
+          GameStreamMineDetail.captureFailed,
+        ),
+        (
+          GalHookMiningFailureStage.audioGate,
+          GameStreamMineDetail.audioFallbackDisabled,
+        ),
+      ]) {
+    test('an abort at ${stage.name} maps to $detail', () async {
+      adapter = FushiGameStreamMiningAdapter(
+        repository: () => throw StateError('unexpected repository'),
+        compression: () => MiningMediaCompression.compressed,
+        isWindows: () => true,
+        lineLookup: text.entryById,
+        currentLineId: () => text.lastEntry?.id,
+        lineValidator: (_) => true,
+        captureStill: (int hwnd) => capture(hwnd),
+        mineSnapshot: (_, _) async => GalHookMiningResult(
+          failureStage: stage,
+          failureReason: 'aborted at ${stage.name}',
+        ),
+      );
+      final GameStreamTextEvent line = event(text.appendLine('line')!);
+      expect(await adapter.captureLine(line, hwnd: 1), isTrue);
+
+      final GameStreamMineResult result = await adapter.mine(
+        request(line),
+        line,
+      );
+
+      expect(result.ok, isFalse);
+      expect(result.detail, detail);
+    });
+  }
+
   test('a backend rejection is logged on the host with its reason', () async {
     // The Anki / review backend reports failures in the outcome, not in
     // failureReason; they used to leave the host log empty.

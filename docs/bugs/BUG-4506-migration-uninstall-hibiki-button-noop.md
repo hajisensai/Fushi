@@ -1,0 +1,6 @@
+## BUG-4506 · 首页「卸载 Hibiki」按钮点了没反应，迁移完成提示关不掉
+- **报告**：2026-11-15（应用内反馈 bN4m7f394m：Android 16 三星机，迁移完成后首页一直挂着「卸载旧 Hibiki」提示，唯一的按钮点了没有任何反应；用户自己卸载 Hibiki 后提示仍在）
+- **真实性**：✅ 真 bug（按钮无反应部分）。按钮 → `fushi/lib/src/pages/implementations/home_dashboard_page.dart:4041` → `MigrationTargetChannel.requestUninstall` → `fushi/android/app/src/main/java/app/fushi/reader/MigrationChannelHandler.java:97` 发 `Intent.ACTION_DELETE`。Android 9（API 28）起 ACTION_DELETE 的调用方必须持有 `android.permission.REQUEST_DELETE_PACKAGES`，而 `fushi/android/app/src/main/AndroidManifest.xml` 从未声明——系统卸载器 `UninstallerActivity` 校验失败直接 finish，不弹确认框也不抛异常，按钮看起来什么都没做。提示本身按 `MigrationChannelHandler.java:65` 的 `getPackageInfo("app.hibiki.reader", 0)` 判定显示，设计上就是「旧包卸掉才消失」，没有单独的关闭入口。
+- **[x] ① 已修复** — manifest 声明 `REQUEST_DELETE_PACKAGES`（普通权限，安装即授予、不弹窗），按钮重新能拉起系统卸载确认框；从确认框回来时既有的 `didChangeAppLifecycleState(resumed)` 复查包是否还在。
+- **[x] ② 已加自动化测试** — `fushi/test/android/migration_uninstall_permission_guard_test.dart`（源码守卫：`MigrationChannelHandler` 用 ACTION_DELETE 时 manifest 必须声明该权限；系统 intent 解析在 flutter test / JVM 单测里都跑不到）。
+- **备注**：「用户手动卸载后提示仍在」未能定位：同一判据在包真被卸掉后返回 NameNotFound，提示应随回前台消失；三星安全文件夹 / 双开 / 其它用户空间里另装的 Hibiki、或卸的其实是另一个包名，都可能让 `app.hibiki.reader` 对本用户仍可见，需要真机 `adb shell pm list packages --user all | grep hibiki` 确认。是否给这条提示加「不再提示」关闭入口属于 UI 取舍，留给所有者拍板。未在真机复测。

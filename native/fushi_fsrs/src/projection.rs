@@ -1,6 +1,6 @@
 //! 卡片历史的投影（P6，docs/specs/2026-10-23-srs-rust-store.md §7）：记忆状态输入（铁律 A）、优化器训练集、
-//! RWKV 回放行。规则只在这里写一份；store/mod.rs 的直读命令在 srs.db 上取日志后调用它们，排程（Dart
-//! `SrsCardOps`）经列模式入口 [memory_input_columns] 调用同一份记忆状态规则。
+//! RWKV 回放行。规则只在这里写一份；store/mod.rs 的直读命令在 srs.db 上取日志后调用它们，排程预览 / 恢复计划（Dart
+//! 侧）经列模式入口 [memory_input_columns] 调用同一份记忆状态规则。
 //!
 //! 与删除前的 Dart 实现逐条对应（固定向量 packages/fushi_srs/test/memory/fixtures/ 与
 //! packages/fushi_engine/test/srs/fixtures/p6_vectors.json.gz 由删除前的 Dart 实现生成）：
@@ -333,6 +333,38 @@ pub fn optimizer_card(
         .map(|i| (ratings[i].at, i + 1))
         .collect();
     Ok(Some((input.reviews, items)))
+}
+
+/// 复习统计页校准图的条目：[optimizer_card] 的条目再带上目标评分在 [eff] 里的下标与它距上一次评分的天数
+/// （按复习日 [Day::index]，扩展「隔天复习才进校准」的口径）。顺序与 [optimizer_card] 的条目相同。
+pub type CalibrationItem = (i64, usize, usize, i64);
+
+pub fn calibration_card(
+    eff: &[EffLog],
+    alg: Alg,
+    day: &Day,
+) -> Result<Option<(Vec<(i64, f64)>, Vec<CalibrationItem>)>, String> {
+    let Some((reviews, items)) = optimizer_card(eff, alg, day)? else {
+        return Ok(None);
+    };
+    // 与 [optimizer_card] 同一组评分（它已核对过与记忆状态输入一一对应）。
+    let ratings: Vec<usize> = (0..eff.len())
+        .filter(|&i| eff[i].is_rating() && !eff[i].time_uncertain)
+        .collect();
+    let items = items
+        .into_iter()
+        .map(|(at, len)| {
+            let log = ratings[len - 1];
+            let prev = ratings[len - 2];
+            (
+                at,
+                len,
+                log,
+                day.index(eff[log].at) - day.index(eff[prev].at),
+            )
+        })
+        .collect();
+    Ok(Some((reviews, items)))
 }
 
 // ---------------------------------------------------------------- RWKV 回放行

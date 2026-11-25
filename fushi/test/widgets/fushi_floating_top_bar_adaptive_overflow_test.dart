@@ -3,7 +3,11 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_expressive_progress.dart'
+    show FushiExpressiveLoadingIndicator;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
+    show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 
 /// 顶部悬浮条按宽度自适应溢出（2026-10-06）：宽时全部平铺、不画「⋯」；骤缩到
@@ -142,6 +146,96 @@ void main() {
         hasActions: false,
       ),
       1,
+    );
+  });
+
+  test('BUG-4938: 前置圆钮测宽先扣标题保底宽，放不下从末尾收进 ⋯', () {
+    // 363dp 手机竖屏：五颗前置钮（返回 / 音乐 / 目录 / 图库 / 统计）+ 书名。
+    // 以前只给 ⋯ 留格、不扣标题，五颗里能平铺四颗，书名被压到约 30dp。
+    const double width = 363 - 16;
+    final int shown = fushiTopBarLeadingFitCount(
+      leadingCount: 5,
+      maxWidth: width,
+      hasActions: true,
+      hasTitle: true,
+    );
+    expect(shown, lessThan(5));
+    expect(shown, greaterThanOrEqualTo(1), reason: '返回恒在');
+    // 平铺的前置钮 + 标题保底 + ⋯ 那格（8 间距 + 8 内边距 + 一颗 52）放得下。
+    expect(
+      shown * 64 + kFushiFloatingTopBarTitleMinWidth + 8 + 8 + 52,
+      lessThanOrEqualTo(width),
+    );
+    // 没标题时不扣，能多平铺。
+    expect(
+      fushiTopBarLeadingFitCount(
+        leadingCount: 5,
+        maxWidth: width,
+        hasActions: true,
+      ),
+      greaterThan(shown),
+    );
+    // 短标题只预留自然宽，不按 160 多扣。
+    expect(
+      fushiTopBarLeadingFitCount(
+        leadingCount: 5,
+        maxWidth: width,
+        hasActions: true,
+        hasTitle: true,
+        titleWidth: 40,
+        subtitleWidth: 0,
+      ),
+      greaterThan(shown),
+    );
+  });
+
+  testWidgets('BUG-4938: 363dp 五颗前置钮 + 书名：标题胶囊不低于保底宽', (
+    WidgetTester tester,
+  ) async {
+    final List<FushiToolbarItem> leading = <FushiToolbarItem>[
+      for (final String label in <String>[
+        'Back',
+        'Music',
+        'Contents',
+        'Gallery',
+        'Stats',
+      ])
+        FushiToolbarItem(icon: Icons.circle, label: label, onPressed: () {}),
+    ];
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: Center(
+            child: SizedBox(
+              width: _outerWidth(363 - 16),
+              child: FushiFloatingTopBar(
+                leading: leading,
+                title: 'これはとても長い書名ですよね、本当に',
+                subtitle: 'Chapter 1',
+                overflow: <FushiToolbarItem>[
+                  FushiToolbarItem(
+                    icon: Icons.fullscreen,
+                    label: 'Fullscreen',
+                    onPressed: () {},
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull, reason: '不得溢出');
+    expect(find.byTooltip('Back'), findsOneWidget);
+    expect(find.byTooltip('Stats'), findsNothing, reason: '最后一颗先收');
+    final Rect title = tester.getRect(
+      find.byKey(const ValueKey<String>('fushi_floating_top_bar_title')),
+    );
+    expect(
+      title.width / kFushiFloatingCapsuleScale,
+      greaterThanOrEqualTo(kFushiFloatingTopBarTitleMinWidth - 0.5),
+      reason: '标题胶囊不被前置钮挤到保底宽以下',
     );
   });
 
@@ -369,13 +463,14 @@ void main() {
       String title = 'Fushi',
       bool apple = false,
     }) => MaterialApp(
+      // Apple 宽窗按 macOS 档测（iOS 档另有最多平铺 3 颗的上限，见末尾分组）。
       theme: apple
           ? buildFushiThemeData(
               scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
               textTheme: Typography.material2021().black,
               glass: FushiGlassMaterial.off,
               glassDesign: true,
-            )
+            ).copyWith(platform: TargetPlatform.macOS)
           : null,
       builder: apple
           ? (BuildContext context, Widget? child) =>
@@ -501,6 +596,295 @@ void main() {
       expect(tester.takeException(), isNull);
       expect(more, findsNothing);
       expect(subtitleTruncated(tester), isFalse);
+    });
+  });
+
+  group('阅读器顶栏统一（反馈 -JpWlEuH5N）', () {
+    Widget readerBar({
+      double width = 720,
+      bool apple = false,
+      bool titleBacking = true,
+      Widget? titleTrailing,
+      List<FushiToolbarItem> pinned = const <FushiToolbarItem>[],
+      List<FushiToolbarItem> menu = const <FushiToolbarItem>[],
+      List<FushiToolbarItem>? items,
+      Key overflowKey = kFushiToolbarOverflowKey,
+    }) => MaterialApp(
+      theme: apple
+          ? buildFushiThemeData(
+              scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+              textTheme: Typography.material2021().black,
+              glass: FushiGlassMaterial.off,
+              glassDesign: true,
+            )
+          : null,
+      builder: apple
+          ? (BuildContext context, Widget? child) =>
+                FushiGlassScope(child: child!)
+          : null,
+      home: Scaffold(
+        body: Center(
+          child: SizedBox(
+            width: _outerWidth(width),
+            child: FushiFloatingTopBar(
+              leading: <FushiToolbarItem>[
+                FushiToolbarItem(
+                  icon: Icons.arrow_back,
+                  label: 'Back',
+                  onPressed: () {},
+                ),
+              ],
+              title: 'Chapter 12',
+              subtitle: 'Series',
+              titleBacking: titleBacking,
+              titleTrailing: titleTrailing,
+              pinnedActions: pinned,
+              actions: <List<FushiToolbarItem>>[items ?? actions],
+              menu: menu,
+              overflowKey: overflowKey,
+            ),
+          ),
+        ),
+      ),
+    );
+
+    const ValueKey<String> titleKey = ValueKey<String>(
+      'fushi_floating_top_bar_title',
+    );
+
+    testWidgets('Apple：titleBacking 时标题装进实色悬浮胶囊；不开时仍是无底内联标题', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(readerBar(apple: true));
+      await tester.pumpAndSettle();
+      expect(
+        isGlassDesign(tester.element(find.byType(FushiFloatingTopBar))),
+        isTrue,
+      );
+      expect(tester.widget(find.byKey(titleKey)), isA<FushiFloatingPill>());
+      expect(tester.takeException(), isNull);
+
+      await tester.pumpWidget(readerBar(apple: true, titleBacking: false));
+      await tester.pumpAndSettle();
+      expect(
+        tester.widget(find.byKey(titleKey)),
+        isNot(isA<FushiFloatingPill>()),
+      );
+    });
+
+    testWidgets('Material：标题本来就是胶囊，titleBacking 不改形态', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(readerBar());
+      await tester.pumpAndSettle();
+      expect(tester.widget(find.byKey(titleKey)), isA<FushiFloatingPill>());
+      await tester.pumpWidget(readerBar(titleBacking: false));
+      await tester.pumpAndSettle();
+      expect(tester.widget(find.byKey(titleKey)), isA<FushiFloatingPill>());
+    });
+
+    for (final bool apple in <bool>[false, true]) {
+      testWidgets('titleTrailing 画在标题胶囊里（apple=$apple）', (
+        WidgetTester tester,
+      ) async {
+        await tester.pumpWidget(
+          readerBar(
+            apple: apple,
+            titleTrailing: const Text('Panel 3', key: ValueKey<String>('st')),
+          ),
+        );
+        await tester.pumpAndSettle();
+        expect(
+          find.descendant(
+            of: find.byKey(titleKey),
+            matching: find.byKey(const ValueKey<String>('st')),
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+      });
+    }
+
+    testWidgets('pinnedActions 恒平铺、排在最前；窄宽时普通动作收进 ⋯', (
+      WidgetTester tester,
+    ) async {
+      final List<FushiToolbarItem> pinned = <FushiToolbarItem>[
+        FushiToolbarItem(
+          key: const ValueKey<String>('p0'),
+          icon: Icons.undo,
+          label: 'Back jump',
+          onPressed: () {},
+        ),
+        FushiToolbarItem(
+          key: const ValueKey<String>('p1'),
+          icon: Icons.redo,
+          label: 'Forward jump',
+          onPressed: () {},
+        ),
+      ];
+      final List<FushiToolbarItem> keyed = <FushiToolbarItem>[
+        for (int i = 0; i < 6; i++)
+          FushiToolbarItem(
+            key: ValueKey<String>('a$i'),
+            icon: Icons.settings,
+            label: 'Action $i',
+            onPressed: () {},
+          ),
+      ];
+      // 300 宽：标题保底之后一颗按钮都放不下，恒平铺的两颗照样在。
+      await tester.pumpWidget(
+        readerBar(width: 300, pinned: pinned, items: keyed),
+      );
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      expect(find.byKey(const ValueKey<String>('p0')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('p1')), findsOneWidget);
+      expect(find.byKey(const ValueKey<String>('a5')), findsNothing);
+      expect(more, findsOneWidget);
+
+      await tester.pumpWidget(
+        readerBar(width: 1400, pinned: pinned, items: keyed),
+      );
+      await tester.pumpAndSettle();
+      final double p1 = tester
+          .getCenter(find.byKey(const ValueKey<String>('p1')))
+          .dx;
+      final double a0 = tester
+          .getCenter(find.byKey(const ValueKey<String>('a0')))
+          .dx;
+      expect(p1, lessThan(a0), reason: '恒平铺的那组排在普通动作之前');
+    });
+
+    testWidgets('overflowKey 换 ⋯ 的键；菜单项键 = <动作键>_menu_item', (
+      WidgetTester tester,
+    ) async {
+      int hits = 0;
+      await tester.pumpWidget(
+        readerBar(
+          overflowKey: const ValueKey<String>('host_overflow'),
+          menu: <FushiToolbarItem>[
+            FushiToolbarItem(
+              key: const ValueKey<String>('jump'),
+              icon: Icons.history,
+              label: 'Jump history',
+              onPressed: () => hits++,
+            ),
+          ],
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(more, findsNothing);
+      await tester.tap(find.byKey(const ValueKey<String>('host_overflow')));
+      await tester.pumpAndSettle();
+      await tester.tap(find.byKey(const ValueKey<String>('jump_menu_item')));
+      await tester.pumpAndSettle();
+      expect(hits, 1);
+    });
+
+    testWidgets('busy 动作的图标位换成 Expressive 加载指示，仍可点', (
+      WidgetTester tester,
+    ) async {
+      int hits = 0;
+      await tester.pumpWidget(
+        readerBar(
+          items: <FushiToolbarItem>[
+            FushiToolbarItem(
+              key: const ValueKey<String>('ocr'),
+              icon: Icons.document_scanner,
+              label: 'OCR',
+              busy: true,
+              onPressed: () => hits++,
+            ),
+          ],
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.descendant(
+          of: find.byKey(const ValueKey<String>('ocr')),
+          matching: find.byType(FushiExpressiveLoadingIndicator),
+        ),
+        findsOneWidget,
+      );
+      await tester.tap(find.byKey(const ValueKey<String>('ocr')));
+      expect(hits, 1);
+    });
+  });
+
+  group('Apple iOS 档顶栏最多平铺 3 颗（用户 2026-11-24）', () {
+    final List<FushiToolbarItem> five = actions.take(5).toList();
+
+    // Apple 档 FushiTooltip 的内层 Tooltip 只带玻璃气泡 WidgetSpan（message 为空），
+    // find.byTooltip 认不出，按 FushiTooltip.message 找。
+    Finder tip(String message) => find.byWidgetPredicate(
+      (Widget w) => w is FushiTooltip && w.message == message,
+    );
+
+    Widget bar({required bool apple, required TargetPlatform platform}) =>
+        MaterialApp(
+          theme: buildFushiThemeData(
+            scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+            textTheme: Typography.material2021().black,
+            designSystem: apple
+                ? FushiDesignSystem.cupertino
+                : FushiDesignSystem.material,
+            glass: FushiGlassMaterial.off,
+            glassDesign: apple,
+          ).copyWith(platform: platform),
+          builder: (BuildContext context, Widget? child) =>
+              FushiGlassScope(child: child!),
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: _outerWidth(1000),
+                child: FushiFloatingTopBar(
+                  title: 'Home',
+                  actions: <List<FushiToolbarItem>>[five],
+                ),
+              ),
+            ),
+          ),
+        );
+
+    void wide(WidgetTester tester) {
+      tester.view.physicalSize = const Size(1600, 600);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+    }
+
+    testWidgets('iOS 档：宽度够也只平铺前 3 颗，其余进 ⋯', (WidgetTester tester) async {
+      wide(tester);
+      await tester.pumpWidget(bar(apple: true, platform: TargetPlatform.iOS));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      for (int i = 0; i < 3; i++) {
+        expect(tip('Action $i'), findsOneWidget);
+      }
+      expect(tip('Action 3'), findsNothing);
+      expect(tip('Action 4'), findsNothing);
+      expect(more, findsOneWidget);
+    });
+
+    testWidgets('macOS 档：放得下就全平铺', (WidgetTester tester) async {
+      wide(tester);
+      await tester.pumpWidget(bar(apple: true, platform: TargetPlatform.macOS));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      for (int i = 0; i < 5; i++) {
+        expect(tip('Action $i'), findsOneWidget);
+      }
+      expect(more, findsNothing);
+    });
+
+    testWidgets('M3E（同为 iOS 平台）：不设上限，全平铺', (WidgetTester tester) async {
+      wide(tester);
+      await tester.pumpWidget(bar(apple: false, platform: TargetPlatform.iOS));
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+      for (int i = 0; i < 5; i++) {
+        expect(find.byTooltip('Action $i'), findsOneWidget);
+      }
+      expect(more, findsNothing);
     });
   });
 }

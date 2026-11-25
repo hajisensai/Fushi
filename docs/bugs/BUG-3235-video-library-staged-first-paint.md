@@ -16,5 +16,6 @@
   - **变更信号不作废在途轮次**：uid 集合变化（`_refreshAfterVideoUidsChanged` → `_refreshOnChangeSignal`）与合集表写入（`_onCollectionTablesChanged`）改走 `_loadLibraryMapsKeepingInFlight`，沿用当前代次；同代内按发起序号只进不退（`_libraryMapsRequestSequence` / `_libraryMapsAppliedSequence`），旧轮晚于新轮落地被丢弃。这类信号只说明「需要再读一轮更新的」，在途快照只是更旧、不是被清理作废，所以扫描期间首屏不再饿死，就位后映射也能在扫描中持续更新。
   - 另两条守卫：`load_paths_perf_guard_test.dart` 要求 `_loadLibraryMapsInner` 里出现 `_libraryMapsRequestGeneration`（代次检查回到 Inner 后满足）；`video_library_series_structure_guard_test.dart` 以 `_visibleVideos = ordered;` 为锚——改为骨架期 `ordered` 本身为空（`if (!firstPaintPending)` 包住筛选），可见集语义不变，守卫未改。
   - 测试：first_paint 的饿死用例改走真实 uid 流（每秒落库一条、每轮 2.5 s），新增「作废式刷新之后在途旧轮先完成也不落地（首屏期间同样）」。变异实测：uid / 合集表信号改回作废式 → 饿死用例红；Inner 判据改成「首屏期间放行旧代次」→ 不变式用例红。
-  - 残留：刮削批次期间的节流刷新仍是作废式（批次里可能有清理写入，刻意保守）；若首屏恰逢刮削批次、且一轮映射查询慢于 2 s 节流间隔，首屏会等到批次结束的补刷。
+  - 残留（2026-11-21 已消除）：刮削批次期间的节流刷新仍是作废式（批次里可能有清理写入，刻意保守）；若首屏恰逢刮削批次、且一轮映射查询慢于 2 s 节流间隔，首屏会等到批次结束的补刷。
+  - 2026-11-21（拍板 design-nmv-video16-scrape-refresh b）：刮削写入不再整表重读，改按刮削展示日志（TEMP 触发器记归属键，`database_video_scrape_journal.part.dart`）只重读变了的作品，不作废在途轮次；任何整表轮次落地前先按日志补齐（`_catchUpScrapeMaps`），「清理写入后旧轮不得落地」照旧成立。库页被盖住时不跟刷，露出来补一次。只有批次结束的兜底补刷仍是作废式整表轮次。
 - **备注**：真机未复测（本轮无真机验证）。

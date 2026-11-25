@@ -397,9 +397,13 @@ void main() {
       injectDeleteMembers: false,
       coverImage: MemoryImage(Uint8List.fromList(const <int>[0])),
     );
-    // 只有前景封面一张。
+    // 只有前景封面一张，不垫模糊背景。前景封面外有一层 NSFW 模糊（拍板台
+    // w04vrhUAaX，层恒在、只有 NSFW 合集才启用），这里合集没标，不得生效。
     expect(find.byType(Image), findsOneWidget);
-    expect(find.byType(ImageFiltered), findsNothing);
+    expect(
+      find.byWidgetPredicate((Widget w) => w is ImageFiltered && w.enabled),
+      findsNothing,
+    );
     expect(tester.takeException(), isNull);
   });
 

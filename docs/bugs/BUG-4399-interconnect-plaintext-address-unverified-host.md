@@ -1,0 +1,21 @@
+## BUG-4399 · 明文互联地址未核对 hostId 就带 token 发出（单地址组与竞速失败时）
+- **报告**：2026-11-10（用户：互联审查 V-B4）
+- **真实性**：✅ 真 bug。
+  - `fushi/lib/src/sync/interconnect_peer_addresses.dart:231`（基准 94317ab6295）`_rankGroup`：`if (group.length < 2 || hostId == null) return group;`——单地址组从不 ping 核对。一条明文 http 行标着 hostId A、带着 A 的 token，地址换网后背后是另一台 Fushi host 时，post transport 照样用 Basic 把 A 的 token 发过去。
+  - 同文件 `:252-255`：多地址组竞速没有胜者时原样返回整组，消费方逐个试候选，同样把 token 发给没核对过身份的明文地址。
+  - 新测试 `interconnect_plaintext_identity_test.dart` 在修复前红：真服务器收到 `Basic aGliaWtpOnNlY3JldA==`；查词 client 返回 null 而不是抛不可达。
+- **[x] ① 已修复** — `00e983ddfd8`：
+  - `interconnect_peer_addresses.dart` 新增 `_credentialSafe`（https 且钉了指纹，或持久地址是 `p2p://`，转发口按 `interconnectPersistedUrl` 换回判）。`_rankGroup` 改为返回 `(ranked, withheld)`：无 hostId 的老条目原样；全员自带密码学身份的单地址组原样；组里有明文成员（含单地址组）就竞速探测，只有当场 ping 回报 hostId 相符的明文地址留在结果里，其余扣下计入 `withheld`；没有胜者时只留带密码学身份的地址、删缓存。
+  - `raceInterconnectHostAddresses` 新增 `onResult`（含胜者决出后才回来的结果）；选路缓存项改为 `(url, at, verifiedPlain)`，30 秒内命中缓存时沿用本轮核对通过的明文地址集。
+  - 新增 `rankInterconnectCandidatesDetailed`，`rankInterconnectCandidates` 签名不变（取 `.ranked`），所有消费方（同步后端、post transport、下载 / 订阅 / job / manga_ocr、游戏串流选路）自动受益。
+  - 测试缝 `debugInterconnectAddressProbeOverride`（`defaultInterconnectAddressProbe` 先看它）。
+  - `InterconnectPostTransport` 构造新增 `probe`，改用详细版选路；`allUnreachable = !anyResponse && (attempted || withheld > 0)`，候选全被扣下时报不可达，查词失败冷却（BUG-575 / BUG-1302）照常生效。
+- **[x] ② 已加自动化测试** —
+  - `fushi/test/sync/interconnect_plaintext_identity_test.dart`（新建，真 `HttpServer` + 真 ping）：明文行背后换了 host → 服务器从未收到 Basic 头、`allUnreachable == true`；查词 client 抛 `RemoteLookupUnreachableError`。修复前 2 条都红（服务器收到 `Basic aGliaWtpOnNlY3JldA==`）。
+  - `fushi/test/sync/interconnect_peer_addresses_test.dart` 组「V-B4」6 条：单条明文组核对失败扣下、明文失败只留 https、单条明文核对通过保留、缓存窗口沿用 verifiedPlain、死 LAN + P2P 转发口竞速与缓存命中都保留、老条目不探测不扣。原「组内可达者排到组首」用例按新契约改为核对失败的明文 LAN 被扣下。
+  - 既有 MockClient 用例（明文行 + hostId）在 `setUp` 里设 `debugInterconnectAddressProbeOverride` 视为核对通过：`video_remote_phone_lifecycle_test`、`srs_remote_review_test`、`fushi_remote_lookup_client_dictionary_resources_test`、`remote_lookup_request_language_test`、`remote_lookup_request_ruby_test`、`game_stream_host_dictionary_styles_test`、`video_remote_client_test`、`fushi_remote_mining_client_target_test`；`interconnect_multi_address_identity_test` 的 onlyCandidate 用例经 transport 的 `probe` 参数注入。
+- **备注**：
+  - 第一轮选路时每个「含明文地址且带 hostId」的组多一次 `/api/ping`（2 秒超时，之后缓存 30 秒）。
+  - 中和 BUG-4398 存量误收编的明文手输行：它 ping 回报的 hostId 不等于组的 hostId，就拿不到凭据。
+  - 胜者决出时还没回结果的明文地址这一轮被扣下（不再作为后备候选）；晚到的成功结果写进缓存项，30 秒内的后续选路可用。
+- **提交信息里的旧号**：本条撞号改过两次（4278 → 4388 → 4399，改号提交 `3ab9e64b3cd`、`99ab766caca`），历史不重写，所以改号前写下的提交信息仍是当时的号：上面记的修复提交标题写的是 4278。按号查提交历史用 `git log --grep` 搜 `BUG-` 接 4278（第一次改号之后、第二次之前的提交接 4388）；这两个旧号现在或以后属于别的 bug，与本条无关。此处旧号不带前缀，免得 `bug.dart renumber` / `settle` 替别的 bug 改号时把这里一起改掉。

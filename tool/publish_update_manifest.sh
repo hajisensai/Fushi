@@ -59,6 +59,19 @@ DOWNLOAD_TAG="${DOWNLOAD_TAG:-$TAG}"
 # what the test asserts; the wait length is orthogonal to them.
 RETRY_BACKOFF_MS="${MANIFEST_RETRY_BACKOFF_MS:-3000}"
 
+# User-DB schema this build ships, stamped onto every asset as dbSchemaVersion.
+# The in-app updater refuses an asset whose schema is below the running app's:
+# installing it would leave the user DB newer than the code, and the app then
+# refuses to open it (FushiDatabaseDowngradeException). Read from the single
+# source of truth; failing to read it is a hard error -- a manifest without the
+# field silently drops that protection for this build.
+DB_SCHEMA_FILE="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/packages/fushi_core/lib/src/database/db_schema_version.dart"
+DB_SCHEMA_VERSION="$(sed -n 's/^const int kFushiDbSchemaVersion = \([0-9][0-9]*\);.*$/\1/p' "$DB_SCHEMA_FILE" 2>/dev/null | head -n 1)"
+if [ -z "$DB_SCHEMA_VERSION" ]; then
+  echo "::error title=No DB schema version::Could not read kFushiDbSchemaVersion from $DB_SCHEMA_FILE"
+  exit 1
+fi
+
 # Linear backoff: attempt * base. bash has no float math, so format the
 # millisecond total as `<s>.<mmm>` for sleep(1) (fractions are fine in the
 # coreutils / BSD sleep this script runs under).
@@ -126,11 +139,12 @@ fi
 # uploaded), not from the GitHub API: the website's chunked downloader verifies
 # the reassembled file against sha256, and the R2 mirror can cross-check it.
 PLATFORM_ASSETS_JSON="$(
-  REPO="$REPO" DOWNLOAD_TAG="$DOWNLOAD_TAG" ARTIFACTS_DIR="$ARTIFACTS_DIR" python3 - "${ASSET_FILES[@]}" <<'PY'
+  REPO="$REPO" DOWNLOAD_TAG="$DOWNLOAD_TAG" ARTIFACTS_DIR="$ARTIFACTS_DIR" DB_SCHEMA_VERSION="$DB_SCHEMA_VERSION" python3 - "${ASSET_FILES[@]}" <<'PY'
 import hashlib, json, os, sys
 repo = os.environ["REPO"]
 tag = os.environ["DOWNLOAD_TAG"]
 artifacts = os.environ["ARTIFACTS_DIR"]
+db_schema = int(os.environ["DB_SCHEMA_VERSION"])
 base = f"https://github.com/{repo}/releases/download/{tag}"
 
 
@@ -150,6 +164,7 @@ for name in sys.argv[1:]:
         "browser_download_url": f"{base}/{name}",
         "size": os.path.getsize(path),
         "sha256": digest(path),
+        "dbSchemaVersion": db_schema,
     })
 print(json.dumps(out))
 PY
@@ -338,8 +353,9 @@ while :; do
     # 会迅速吃光 R2 免费额度。assert_complete=true 让镜像侧走就位门 + 完整性断言。
     if [ "$CHANNEL" = "formal" ]; then
       # 用本次发布跑在哪个 ref 就 dispatch 哪个 ref：镜像 workflow 与它引用的 tool/ 脚本天然同版。
-      # 钉 default_branch 会在 main 落后时 422（main 上的 workflow 还没有 assert_complete 输入）。
-      MIRROR_REF="${GITHUB_REF_NAME:-$(GH_TOKEN="$GITHUB_TOKEN" gh api "repos/$REPO" -q .default_branch 2>/dev/null || echo main)}"
+      # 不钉 default_branch：从 main 发的正式版要用 main 上那份镜像 workflow（当初默认分支是
+      # 落后的 main 时，钉它会 422——main 上的 workflow 还没有 assert_complete 输入）。
+      MIRROR_REF="${GITHUB_REF_NAME:-$(GH_TOKEN="$GITHUB_TOKEN" gh api "repos/$REPO" -q .default_branch 2>/dev/null || echo develop)}"
       if ! GH_TOKEN="$GITHUB_TOKEN" gh workflow run mirror-releases.yml \
           --repo "$REPO" --ref "$MIRROR_REF" \
           -f tag="$DOWNLOAD_TAG" -f assert_complete=true; then

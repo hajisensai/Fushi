@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:path/path.dart' as p;
@@ -7,7 +9,9 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/strm_file.dart'
     show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/subtitle/plain_subtitle_overlap.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
+import 'package:fushi_engine/platform/media_disk_identity.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:meta/meta.dart';
@@ -209,6 +213,7 @@ SubtitleFormat? subtitleFormatForPath(String path) {
 bool isImportedExternalSubtitlePath(String persisted) {
   if (persisted.isEmpty) return false;
   if (persisted.startsWith(SubtitleSource.embeddedPrefix)) return false;
+  if (SubtitleSource.isHostSidecarPersisted(persisted)) return false;
   return subtitleFormatForPath(persisted) != null;
 }
 
@@ -305,6 +310,9 @@ String? subtitleExtensionForCodec(String codec) {
   return format == null ? null : subtitleExtensionForFormat(format);
 }
 
+///
+/// SRT / VTT 的部分重叠在这里收口（[clampPlainTextCueOverlaps]，拍板台 0jnNr_P5Rd：
+/// 重叠的纯文本句子在 overlay 槽位里上下交替跳）；ASS 原样保留。
 List<AudioCue> parseSubtitleContent(
   SubtitleFormat format, {
   required String content,
@@ -315,7 +323,9 @@ List<AudioCue> parseSubtitleContent(
   // for its cues is its own book_uid, so pass bookUid as the cue's bookKey.
   switch (format) {
     case SubtitleFormat.srt:
-      return SrtParser.parseString(content: content, bookKey: bookUid);
+      return clampPlainTextCueOverlaps(
+        SrtParser.parseString(content: content, bookKey: bookUid),
+      );
     case SubtitleFormat.ass:
       return AssParser.parseString(
         content: content,
@@ -323,7 +333,9 @@ List<AudioCue> parseSubtitleContent(
         includeDrawings: includeDrawings,
       );
     case SubtitleFormat.vtt:
-      return VttParser.parseString(content: content, bookKey: bookUid);
+      return clampPlainTextCueOverlaps(
+        VttParser.parseString(content: content, bookKey: bookUid),
+      );
   }
 }
 
@@ -357,27 +369,46 @@ Map<String, dynamic> buildParsedSubtitleResponse({
   };
 }
 
+/// 异步版 [parseSubtitleContent]，重叠收口语义相同。
+///
+/// 解析与解析后的整轨处理（SRT / VTT 的复制 + 排序 + 重叠收口，
+/// [clampPlainTextCueOverlaps]）是**同一个任务**：大内容（超过
+/// [SrtParser.shouldParseInIsolate] 的阈值）整个在后台 isolate 里做完才回来，调用方
+/// isolate（播放器页面 = UI isolate）只收结果。此前只把 parser 本体派到后台，回来后
+/// 在调用方 isolate 上复制整表、排序、再走一遍重叠收口——大字幕轨首帧 / 切轨时这段
+/// O(n log n) 的整轨处理又回到了 UI isolate（HBK-AUDIT-012）。
 Future<List<AudioCue>> parseSubtitleContentAsync(
   SubtitleFormat format, {
   required String content,
   required String bookUid,
   bool includeDrawings = false,
-}) {
-  // AudioCue is keyed by `bookKey` (name-PK rename); a video book's owner key
-  // for its cues is its own book_uid, so pass bookUid as the cue's bookKey.
-  switch (format) {
-    case SubtitleFormat.srt:
-      return SrtParser.parseStringAsync(content: content, bookKey: bookUid);
-    case SubtitleFormat.ass:
-      return AssParser.parseStringAsync(
-        content: content,
-        bookKey: bookUid,
-        includeDrawings: includeDrawings,
-      );
-    case SubtitleFormat.vtt:
-      return VttParser.parseStringAsync(content: content, bookKey: bookUid);
+}) async {
+  final List<AudioCue> Function() parse = _subtitleContentParseTask(
+    format,
+    content: content,
+    bookUid: bookUid,
+    includeDrawings: includeDrawings,
+  );
+  if (SrtParser.shouldParseInIsolate(content)) {
+    return Isolate.run(parse, debugName: 'parseSubtitleContent');
   }
+  return parse();
 }
+
+/// [parseSubtitleContentAsync] 的整轨任务：只捕获不可变入参（跨 isolate 发送），
+/// 放在非 async 函数里建闭包，免得把 async 帧的上下文一并带过去。
+List<AudioCue> Function() _subtitleContentParseTask(
+  SubtitleFormat format, {
+  required String content,
+  required String bookUid,
+  required bool includeDrawings,
+}) =>
+    () => parseSubtitleContent(
+      format,
+      content: content,
+      bookUid: bookUid,
+      includeDrawings: includeDrawings,
+    );
 
 /// 统一字幕源：内嵌轨或外挂文件二选一。
 ///
@@ -420,6 +451,15 @@ class SubtitleSource {
 
   /// 内嵌源约定前缀（持久化时拼 streamIndex）。
   static const String embeddedPrefix = 'embedded:';
+
+  /// 远端播放选中「互联 host 上某一条外挂字幕」的持久化编码前缀：
+  /// `hostsidecar:<host 上的文件名>`（反馈 -CaVsioFhG）。它不是本机文件路径——
+  /// 重进时按文件名向 host 重新下载（`GET .../subtitle?sidecar=`），不能当路径读。
+  static const String hostSidecarPrefix = 'hostsidecar:';
+
+  /// 持久化值 [persisted] 是否是 [hostSidecarPrefix] 编码。
+  static bool isHostSidecarPersisted(String? persisted) =>
+      persisted != null && persisted.startsWith(hostSidecarPrefix);
 
   /// 「用户显式关闭字幕」哨兵（持久化到 `VideoBooks.subtitleSource`）。
   ///
@@ -488,12 +528,17 @@ class DefaultEmbeddedSubtitleLoadResult {
     required this.cues,
     required this.embeddedProbe,
     this.source,
+    this.cueFailure,
   });
 
   final DefaultEmbeddedSubtitleLoadStatus status;
   final List<AudioCue> cues;
   final EmbeddedSubtitleTrackProbeResult embeddedProbe;
   final SubtitleSource? source;
+
+  /// [DefaultEmbeddedSubtitleLoadStatus.emptyCues] 时选中轨加载失败的真实原因
+  /// （抽取卡住 / 抽取失败 / 读不出 / 解析不出…），日志与提示按它分流（BUG-4838）。
+  final SubtitleCueLoadFailure? cueFailure;
 
   bool get shouldNotifyFailure {
     switch (status) {
@@ -521,14 +566,18 @@ class DefaultEmbeddedSubtitleLoadResult {
 /// contention has subsided / the cache is warm. Terminal statuses (no embedded
 /// track / no text track / missing file / already loaded) never benefit from a
 /// retry. Mirrors TODO-521's "re-read once the readiness signal arrives".
+///
+/// BUG-4838：`emptyCues`（枚举已成功、选中轨也已经过一次整轨抽取 / 解析）**不是**
+/// 瞬态：抽取按进度判活，慢盘上的抽取会一直跑到读完，失败只剩真失败（ffmpeg 卡住 /
+/// 坏轨 / 解析不出），再起一次只是把整个容器再读一遍、把一次失败放大成两次。
 bool isTransientDefaultEmbeddedSubtitleLoad(
   DefaultEmbeddedSubtitleLoadStatus status,
 ) {
   switch (status) {
     case DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout:
     case DefaultEmbeddedSubtitleLoadStatus.enumerationFailed:
-    case DefaultEmbeddedSubtitleLoadStatus.emptyCues:
       return true;
+    case DefaultEmbeddedSubtitleLoadStatus.emptyCues:
     case DefaultEmbeddedSubtitleLoadStatus.loaded:
     case DefaultEmbeddedSubtitleLoadStatus.noEmbeddedTracks:
     case DefaultEmbeddedSubtitleLoadStatus.noTextTrack:
@@ -549,6 +598,10 @@ bool isTransientDefaultEmbeddedSubtitleLoad(
 /// Non-transient (terminal/loaded) results are returned immediately without a
 /// retry. Returns the final [DefaultEmbeddedSubtitleLoadResult]; the caller
 /// decides whether to apply cues / notify, also gated on [isStillCurrent].
+///
+/// [cancel] 交给默认加载（[loadDefaultTextEmbeddedSubtitleCues]）的整轨抽取：播放器
+/// 换片 / 销毁时完成（注入 [loadOnce] 的测试不经过它）。[onExtractionStarted] 同样原样
+/// 交给默认加载。
 Future<DefaultEmbeddedSubtitleLoadResult>
 loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry({
   required String videoPath,
@@ -557,6 +610,8 @@ loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry({
   required bool Function() isStillCurrent,
   String langCode = 'ja',
   List<String> preferredLanguages = const <String>[],
+  Future<void>? cancel,
+  void Function(SubtitleSource chosen)? onExtractionStarted,
   Future<DefaultEmbeddedSubtitleLoadResult> Function({
     required String videoPath,
     required String bookUid,
@@ -571,7 +626,21 @@ loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry({
     String langCode,
     List<String> preferredLanguages,
   })
-  load = loadOnce ?? loadDefaultTextEmbeddedSubtitleCues;
+  load =
+      loadOnce ??
+      ({
+        required String videoPath,
+        required String bookUid,
+        String langCode = 'ja',
+        List<String> preferredLanguages = const <String>[],
+      }) => loadDefaultTextEmbeddedSubtitleCues(
+        videoPath: videoPath,
+        bookUid: bookUid,
+        langCode: langCode,
+        preferredLanguages: preferredLanguages,
+        cancel: cancel,
+        onExtractionStarted: onExtractionStarted,
+      );
 
   DefaultEmbeddedSubtitleLoadResult result = await load(
     videoPath: videoPath,
@@ -993,6 +1062,7 @@ bool sameSubtitleFilePath(String a, String b) =>
 bool isExternalSubtitleFilePathForMenu(String path) {
   if (path.trim().isEmpty) return false;
   if (path.startsWith(SubtitleSource.embeddedPrefix)) return false;
+  if (SubtitleSource.isHostSidecarPersisted(path)) return false;
   if (SubtitleSource.isOff(path)) return false;
   return true;
 }
@@ -1076,8 +1146,16 @@ enum SubtitleCueLoadFailure {
   /// 扩展名 / codec 不在受支持的文本字幕格式里（含图形轨如 PGS/VobSub）。
   unsupportedFormat,
 
-  /// 内嵌轨需要 ffmpeg demux，但没抽出文件（ffmpeg 缺失 / 超时 / 坏轨）。
+  /// 内嵌轨需要 ffmpeg demux，但没抽出文件（ffmpeg 缺失 / 坏轨 / 本机 ffmpeg 解不了）。
   extractionFailed,
+
+  /// 抽内嵌轨时读视频文件卡住：ffmpeg 的读取进度在卡死判据内没有推进（磁盘忙 /
+  /// 网络盘断开 / 设备休眠）。与 [extractionFailed] 分开：轨本身没问题，问题在读盘。
+  /// BUG-4838。
+  extractionStalled,
+
+  /// 抽取被调用方取消（离开播放页 / 换集）。结果本就作废，UI 侧按世代丢弃。
+  extractionCancelled,
 
   /// 文件读不出来（不存在 / 无权限 / IO 错误）。
   fileUnreadable,
@@ -1111,27 +1189,44 @@ class SubtitleCueLoadResult {
 /// 任一步失败（ffmpeg 缺失 / 文件读不出 / 格式不支持）返回空列表，不抛。
 /// **需要区分失败原因（例如给用户不同文案）时用 [loadSubtitleCueResult]**；
 /// 本函数只是它丢掉原因的薄封装，保留给不关心原因的调用方。
+///
+/// [cancel]：内嵌轨需要整轨抽取时，完成即退出等待；共享的抽取在所有可取消的等待方都
+/// 撤走、且没有不可取消的等待方时才被强杀（见 [_ensureAllEmbeddedSubtitlesExtracted]）。
 Future<List<AudioCue>> loadCuesForSource(
   SubtitleSource source,
   String videoPath,
-  String bookUid,
-) async {
+  String bookUid, {
+  Future<void>? cancel,
+}) async {
   final SubtitleCueLoadResult result = await loadSubtitleCueResult(
     source,
     videoPath,
     bookUid,
+    cancel: cancel,
   );
   return result.cues;
 }
 
 /// 同 [loadCuesForSource]，但**保留失败原因**（[SubtitleCueLoadFailure]）。不抛。
+///
+/// [onExtractionStarted]：内嵌轨缓存未命中、**真要去读整个容器**之前同步回调一次（缓存
+/// 命中 / 外挂源不回调）。播放页据此在抽取期间先让播放器解码这条轨即时出字（整轨抽取在
+/// 慢盘上要一分钟以上），抽完再换成完整 cue 列表。
 Future<SubtitleCueLoadResult> loadSubtitleCueResult(
   SubtitleSource source,
   String videoPath,
-  String bookUid,
-) async {
+  String bookUid, {
+  Future<void>? cancel,
+  void Function()? onExtractionStarted,
+}) async {
   if (source.isEmbedded) {
-    return _loadEmbeddedCues(source, videoPath, bookUid);
+    return _loadEmbeddedCues(
+      source,
+      videoPath,
+      bookUid,
+      cancel: cancel,
+      onExtractionStarted: onExtractionStarted,
+    );
   }
   return loadExternalSubtitleCueResult(source.externalPath!, bookUid);
 }
@@ -1139,11 +1234,35 @@ Future<SubtitleCueLoadResult> loadSubtitleCueResult(
 /// 自动挑一条能转文本的内封轨抽成 cue。[preferredLanguages]（用户的主字幕默认语言，
 /// 见 [parseSubtitleLanguagePreferences]）非空时按其顺序挑第一条命中的文本轨，都不命中
 /// 才回退「第一条文本轨」（反馈 Fz9HXThdSW）。
+///
+/// [onExtractionStarted]：挑中的轨缓存未命中、要整轨抽取时回调挑中的源（语义同
+/// [loadSubtitleCueResult]）。
 Future<DefaultEmbeddedSubtitleLoadResult> loadDefaultTextEmbeddedSubtitleCues({
   required String videoPath,
   required String bookUid,
   String langCode = 'ja',
   List<String> preferredLanguages = const <String>[],
+  Future<void>? cancel,
+  void Function(SubtitleSource chosen)? onExtractionStarted,
+}) => _asForegroundDiskRead(
+  videoPath,
+  () => _loadDefaultTextEmbeddedSubtitleCues(
+    videoPath: videoPath,
+    bookUid: bookUid,
+    langCode: langCode,
+    preferredLanguages: preferredLanguages,
+    cancel: cancel,
+    onExtractionStarted: onExtractionStarted,
+  ),
+);
+
+Future<DefaultEmbeddedSubtitleLoadResult> _loadDefaultTextEmbeddedSubtitleCues({
+  required String videoPath,
+  required String bookUid,
+  required String langCode,
+  required List<String> preferredLanguages,
+  required Future<void>? cancel,
+  required void Function(SubtitleSource chosen)? onExtractionStarted,
 }) async {
   final SubtitleSourceListing listing =
       await listAllSubtitleSourcesWithDiagnostics(
@@ -1202,32 +1321,75 @@ Future<DefaultEmbeddedSubtitleLoadResult> loadDefaultTextEmbeddedSubtitleCues({
     );
   }
 
-  final List<AudioCue> cues = await loadCuesForSource(
+  final SubtitleCueLoadResult loaded = await loadSubtitleCueResult(
     chosen,
     videoPath,
     bookUid,
+    cancel: cancel,
+    onExtractionStarted: onExtractionStarted == null
+        ? null
+        : () => onExtractionStarted(chosen),
   );
-  if (cues.isEmpty) {
+  if (loaded.isFailure) {
     return DefaultEmbeddedSubtitleLoadResult(
       status: DefaultEmbeddedSubtitleLoadStatus.emptyCues,
       source: chosen,
       cues: const <AudioCue>[],
       embeddedProbe: probe,
+      cueFailure: loaded.failure,
     );
   }
   return DefaultEmbeddedSubtitleLoadResult(
     status: DefaultEmbeddedSubtitleLoadStatus.loaded,
     source: chosen,
-    cues: cues,
+    cues: loaded.cues,
     embeddedProbe: probe,
   );
+}
+
+/// 把整轨抽取的失败原因翻成 cue 加载的失败原因（BUG-1490 按原因分流的延伸）。
+/// null（单趟成功却没有这条轨的文件：空轨 / 枚举没列出它）归 [SubtitleCueLoadFailure.extractionFailed]。
+@visibleForTesting
+SubtitleCueLoadFailure subtitleCueFailureForExtract(
+  EmbeddedSubtitleExtractFailure? failure,
+) {
+  switch (failure) {
+    case EmbeddedSubtitleExtractFailure.stalled:
+      return SubtitleCueLoadFailure.extractionStalled;
+    case EmbeddedSubtitleExtractFailure.cancelled:
+      return SubtitleCueLoadFailure.extractionCancelled;
+    case EmbeddedSubtitleExtractFailure.inputMissing:
+    case EmbeddedSubtitleExtractFailure.ffmpegUnavailable:
+    case EmbeddedSubtitleExtractFailure.failed:
+    case null:
+      return SubtitleCueLoadFailure.extractionFailed;
+  }
 }
 
 Future<SubtitleCueLoadResult> _loadEmbeddedCues(
   SubtitleSource source,
   String videoPath,
-  String bookUid,
-) async {
+  String bookUid, {
+  Future<void>? cancel,
+  void Function()? onExtractionStarted,
+}) => _asForegroundDiskRead(
+  videoPath,
+  () => _loadEmbeddedCuesNow(
+    source,
+    videoPath,
+    bookUid,
+    cancel: cancel,
+    onExtractionStarted: onExtractionStarted,
+  ),
+);
+
+Future<SubtitleCueLoadResult> _loadEmbeddedCuesNow(
+  SubtitleSource source,
+  String videoPath,
+  String bookUid, {
+  required Future<void>? cancel,
+  required void Function()? onExtractionStarted,
+}) async {
   final SubtitleFormat? format = subtitleFormatForCodec(source.codec ?? '');
   if (format == null) {
     return const SubtitleCueLoadResult.failed(
@@ -1244,12 +1406,18 @@ Future<SubtitleCueLoadResult> _loadEmbeddedCues(
   final Directory cacheDir = await embeddedSubtitleCacheDir(videoPath);
   final File cached = File(p.join(cacheDir.path, 'sub_$index${_ext(format)}'));
 
+  EmbeddedSubtitleExtractFailure? extractFailure;
   if (!await _isNonEmptyFile(cached)) {
-    await _ensureAllEmbeddedSubtitlesExtracted(videoPath, cacheDir);
+    onExtractionStarted?.call();
+    extractFailure = await _ensureAllEmbeddedSubtitlesExtracted(
+      videoPath,
+      cacheDir,
+      cancel: cancel,
+    );
   }
   if (!await _isNonEmptyFile(cached)) {
-    return const SubtitleCueLoadResult.failed(
-      SubtitleCueLoadFailure.extractionFailed,
+    return SubtitleCueLoadResult.failed(
+      subtitleCueFailureForExtract(extractFailure),
     );
   }
   return _readAndParse(cached, format, bookUid);
@@ -1313,11 +1481,48 @@ Future<SubtitleCueLoadResult> _readAndParse(
 /// while prewarm is still running waits for that task instead of launching a
 /// second full-container read. Failures are swallowed: manual switching keeps
 /// the existing fallback path and user-facing load failure message.
-Future<void> prewarmEmbeddedSubtitleCache(String videoPath) async {
+///
+/// [cancel]：播放页退出 / 换集时完成，撤掉本次预热对共享抽取的占用（见
+/// [_ensureAllEmbeddedSubtitlesExtracted]）；还在排队时完成 = 不再开始。
+///
+/// [background]：预热的不是正在看的这一集（下一集）。它只是为了换集时字幕瞬时出现，
+/// 不能和当前集的整片读盘抢同一块盘——两个顺序读同时压在一块机械盘 / 慢 USB 盘上，
+/// 磁头来回跳、两边都慢得多，当前集的字幕更晚出来、播放也跟着卡。所以后台预热先排队：
+/// 同一块盘（[mediaDiskIdentity]）上还有前台读盘（当前集的预热 / 自动加载 / 菜单切轨）
+/// 或别的已开始的后台预热时，等它们结束（或被取消）再开始。
+Future<void> prewarmEmbeddedSubtitleCache(
+  String videoPath, {
+  Future<void>? cancel,
+  bool background = false,
+}) async {
+  if (!background) {
+    return _asForegroundDiskRead(
+      videoPath,
+      () => _prewarmEmbeddedSubtitleCacheNow(videoPath, cancel: cancel),
+    );
+  }
+  final _EmbeddedDiskRead read = _EmbeddedDiskRead(
+    videoPath,
+    foreground: false,
+  );
+  _embeddedDiskReads.add(read);
+  try {
+    if (!await _awaitBackgroundDiskTurn(read, cancel)) return;
+    await _prewarmEmbeddedSubtitleCacheNow(videoPath, cancel: cancel);
+  } finally {
+    _releaseDiskRead(read);
+  }
+}
+
+Future<void> _prewarmEmbeddedSubtitleCacheNow(
+  String videoPath, {
+  required Future<void>? cancel,
+}) async {
   try {
     await _ensureAllEmbeddedSubtitlesExtracted(
       videoPath,
       await embeddedSubtitleCacheDir(videoPath),
+      cancel: cancel,
     );
   } catch (e, stack) {
     fushiDebugPrint(
@@ -1327,8 +1532,105 @@ Future<void> prewarmEmbeddedSubtitleCache(String videoPath) async {
   }
 }
 
-/// In-flight extract-all futures keyed by cache dir, so two near-simultaneous
-/// switches (or initial load + a quick switch) don't both re-demux the file.
+/// 一次可能读整个容器的内封字幕操作（排队判据用，见 [prewarmEmbeddedSubtitleCache]）。
+class _EmbeddedDiskRead {
+  _EmbeddedDiskRead(this.videoPath, {required this.foreground})
+    : running = foreground;
+
+  final String videoPath;
+
+  /// 前台 = 正在看的这一集（预热 / 自动加载 / 菜单切轨）：从不排队，登记即算在读。
+  final bool foreground;
+
+  /// 后台预热轮到了、已经开始读。
+  bool running;
+
+  final Completer<void> released = Completer<void>();
+
+  /// 只在有后台预热要比较时才去问系统（大多数登记的前台读盘根本用不到）。
+  late final Future<Set<String>?> disk = mediaDiskIdentity(videoPath).then((
+    Set<String>? value,
+  ) {
+    diskResolved = true;
+    diskValue = value;
+    return value;
+  });
+  bool diskResolved = false;
+  Set<String>? diskValue;
+}
+
+final List<_EmbeddedDiskRead> _embeddedDiskReads = <_EmbeddedDiskRead>[];
+
+/// **同步**登记一次前台读盘再跑 [body]：调用方在第一个 await 之前就占住盘，后台预热
+/// 不会因为「当前集还在算缓存目录」的那几毫秒抢先开始。
+Future<T> _asForegroundDiskRead<T>(
+  String videoPath,
+  Future<T> Function() body,
+) async {
+  final _EmbeddedDiskRead read = _EmbeddedDiskRead(videoPath, foreground: true);
+  _embeddedDiskReads.add(read);
+  try {
+    return await body();
+  } finally {
+    _releaseDiskRead(read);
+  }
+}
+
+void _releaseDiskRead(_EmbeddedDiskRead read) {
+  _embeddedDiskReads.remove(read);
+  if (!read.released.isCompleted) read.released.complete();
+}
+
+/// 后台预热 [read] 等到同一块盘上没有别的前台读盘 / 已开始的后台预热为止；轮到时置
+/// [_EmbeddedDiskRead.running] 并返回 true，[cancel] 先完成返回 false。
+///
+/// 盘标识判不出时按可能同盘处理（[mayShareDisk]）。判定与置 running 在同一段同步代码
+/// 里完成，两条后台预热不会同时判到「没人在读」。
+Future<bool> _awaitBackgroundDiskTurn(
+  _EmbeddedDiskRead read,
+  Future<void>? cancel,
+) async {
+  bool cancelled = false;
+  final Future<void> cancelSignal = cancel == null
+      ? Completer<void>().future
+      : cancel.then((_) => cancelled = true);
+  while (true) {
+    if (cancelled) return false;
+    final Set<String>? mine = await Future.any(<Future<Set<String>?>>[
+      read.disk,
+      cancelSignal.then((_) => null),
+    ]);
+    if (cancelled) return false;
+    final List<_EmbeddedDiskRead> blockers = <_EmbeddedDiskRead>[
+      for (final _EmbeddedDiskRead other in _embeddedDiskReads)
+        if (!identical(other, read) &&
+            (other.foreground || other.running) &&
+            (!other.diskResolved || mayShareDisk(mine, other.diskValue)))
+          other,
+    ];
+    if (blockers.isEmpty) {
+      read.running = true;
+      return true;
+    }
+    // 盘标识还没解析出来的：等它解析完再判；同盘的：等它结束。
+    await Future.any(<Future<void>>[
+      for (final _EmbeddedDiskRead b in blockers)
+        b.diskResolved ? b.released.future : b.disk.then((_) {}),
+      cancelSignal,
+    ]);
+  }
+}
+
+/// 测试用：当前登记着的内封字幕读盘（前台 / 后台）里，后台预热已开始的视频路径。
+@visibleForTesting
+List<String> debugRunningBackgroundSubtitlePrewarms() => <String>[
+  for (final _EmbeddedDiskRead r in _embeddedDiskReads)
+    if (!r.foreground && r.running) r.videoPath,
+];
+
+/// [videoPath] 第 [streamIndex] 条内嵌文本轨的缓存文件；缓存没有就先整轨抽取一次。
+/// 抽不出 / 不是文本轨返回 null。要拿**多条**轨时用 [extractEmbeddedSubtitleTrackFiles]：
+/// 逐条调本函数在抽取失败时会每条轨各触发一次整个容器的读取。
 Future<File?> extractEmbeddedSubtitleTrackFile({
   required String videoPath,
   required int streamIndex,
@@ -1344,78 +1646,214 @@ Future<File?> extractEmbeddedSubtitleTrackFile({
     ),
   );
   if (!await _isNonEmptyFile(cached)) {
-    await _ensureAllEmbeddedSubtitlesExtracted(videoPath, cacheDir);
+    await _asForegroundDiskRead(
+      videoPath,
+      () => _ensureAllEmbeddedSubtitlesExtracted(videoPath, cacheDir),
+    );
   }
   return await _isNonEmptyFile(cached) ? cached : null;
 }
 
-final Map<String, Future<void>> _embeddedExtractInFlight =
-    <String, Future<void>>{};
+/// [tracks] 里每条内嵌文本轨的缓存文件（相对序号 → 文件；抽不出 / 非文本轨不在结果里）。
+///
+/// 任一条缺缓存时**整体只抽一次**（单趟读完整个容器、写出全部文本轨），然后只读缓存：
+/// 不像逐条 [extractEmbeddedSubtitleTrackFile] 那样在抽取失败时对每条轨各读一遍整个
+/// 容器（30 条轨 = 30 次全量读盘，BUG-4838）。
+Future<Map<int, File>> extractEmbeddedSubtitleTrackFiles({
+  required String videoPath,
+  required List<EmbeddedSubtitleTrack> tracks,
+  Future<void>? cancel,
+}) async {
+  final Directory cacheDir = await embeddedSubtitleCacheDir(videoPath);
+  final Map<int, File> wanted = <int, File>{};
+  for (final EmbeddedSubtitleTrack track in tracks) {
+    final SubtitleFormat? format = subtitleFormatForCodec(track.codec);
+    if (format == null) continue;
+    wanted[track.streamIndex] = File(
+      p.join(
+        cacheDir.path,
+        'sub_${track.streamIndex}${subtitleExtensionForFormat(format)}',
+      ),
+    );
+  }
+  bool anyMissing = false;
+  for (final File f in wanted.values) {
+    if (!await _isNonEmptyFile(f)) {
+      anyMissing = true;
+      break;
+    }
+  }
+  if (anyMissing) {
+    await _asForegroundDiskRead(
+      videoPath,
+      () => _ensureAllEmbeddedSubtitlesExtracted(
+        videoPath,
+        cacheDir,
+        cancel: cancel,
+      ),
+    );
+  }
+  final Map<int, File> out = <int, File>{};
+  for (final MapEntry<int, File> e in wanted.entries) {
+    if (await _isNonEmptyFile(e.value)) out[e.key] = e.value;
+  }
+  return out;
+}
+
+/// 一次在途的整轨抽取，以及等它的调用方（BUG-4838）。
+///
+/// 抽取是按视频共享的（同一缓存目录只跑一个 ffmpeg），等待方各有各的生命周期：播放页
+/// 预热、自动加载、菜单切换带取消信号；互联 host 端点、ASR 取证等不带。只有当可取消的
+/// 等待方全部撤走、且从没有不可取消的等待方加入过时，才强杀进程——否则一个页面退出
+/// 会把别人正在等的抽取一起杀掉。
+class _EmbeddedExtractJob {
+  _EmbeddedExtractJob();
+
+  /// 完成即强杀 ffmpeg（交给 [extractEmbeddedSubtitlesViaFfmpeg] 的 `cancel`）。
+  final Completer<void> kill = Completer<void>();
+
+  /// 还在等、可取消的等待方个数。
+  int cancellableWaiters = 0;
+
+  /// 有不可取消的等待方加入过：此后永不强杀。
+  bool pinned = false;
+
+  late final Future<EmbeddedSubtitleExtractFailure?> done;
+
+  void releaseCancellableWaiter() {
+    cancellableWaiters--;
+    if (cancellableWaiters <= 0 && !pinned && !kill.isCompleted) {
+      kill.complete();
+    }
+  }
+}
+
+final Map<String, _EmbeddedExtractJob> _embeddedExtractInFlight =
+    <String, _EmbeddedExtractJob>{};
 
 /// Ensures every text embedded subtitle track of [videoPath] is demuxed into
 /// [cacheDir] (single ffmpeg pass). Idempotent and de-duplicated across
-/// concurrent callers. Returns when extraction finished (or immediately if a
-/// peer call is already doing it).
-Future<void> _ensureAllEmbeddedSubtitlesExtracted(
+/// concurrent callers. Returns the extraction failure reason (null = the pass
+/// succeeded or there was nothing to extract).
+///
+/// [cancel] 完成时本调用立即以 [EmbeddedSubtitleExtractFailure.cancelled] 返回，并撤掉
+/// 自己对共享抽取的占用（规则见 [_EmbeddedExtractJob]）。上一次抽取正在被强杀时，
+/// 先等它的进程真正退出再起新的（两个 ffmpeg 不能同时写同一批缓存文件）。
+Future<EmbeddedSubtitleExtractFailure?> _ensureAllEmbeddedSubtitlesExtracted(
   String videoPath,
-  Directory cacheDir,
-) {
+  Directory cacheDir, {
+  Future<void>? cancel,
+}) async {
+  bool cancelled = false;
+  unawaited(cancel?.then((_) => cancelled = true));
   final String key = cacheDir.path;
-  final Future<void>? existing = _embeddedExtractInFlight[key];
-  if (existing != null) return existing;
-  final Future<void> fut = _extractAllEmbeddedSubtitles(videoPath, cacheDir)
-      .whenComplete(() {
-        _embeddedExtractInFlight.remove(key);
-      });
-  _embeddedExtractInFlight[key] = fut;
-  return fut;
+  _EmbeddedExtractJob? job = _embeddedExtractInFlight[key];
+  while (job != null && job.kill.isCompleted) {
+    await job.done;
+    if (cancelled) return EmbeddedSubtitleExtractFailure.cancelled;
+    job = _embeddedExtractInFlight[key];
+  }
+  if (job == null) {
+    final _EmbeddedExtractJob created = _EmbeddedExtractJob();
+    created.done =
+        _extractAllEmbeddedSubtitles(
+          videoPath,
+          cacheDir,
+          cancel: created.kill.future,
+        ).whenComplete(() {
+          if (identical(_embeddedExtractInFlight[key], created)) {
+            _embeddedExtractInFlight.remove(key);
+          }
+        });
+    _embeddedExtractInFlight[key] = created;
+    job = created;
+  }
+  final _EmbeddedExtractJob joined = job;
+  if (cancel == null) {
+    joined.pinned = true;
+    return joined.done;
+  }
+  joined.cancellableWaiters++;
+  final Completer<EmbeddedSubtitleExtractFailure?> mine =
+      Completer<EmbeddedSubtitleExtractFailure?>();
+  unawaited(
+    joined.done.then((EmbeddedSubtitleExtractFailure? failure) {
+      if (!mine.isCompleted) mine.complete(failure);
+    }),
+  );
+  unawaited(
+    cancel.then((_) {
+      if (mine.isCompleted) return;
+      mine.complete(EmbeddedSubtitleExtractFailure.cancelled);
+      joined.releaseCancellableWaiter();
+    }),
+  );
+  return mine.future;
 }
 
-Future<void> _extractAllEmbeddedSubtitles(
-  String videoPath,
-  Directory cacheDir,
-) async {
-  final List<EmbeddedSubtitleTrack> tracks = await listEmbeddedSubtitleTracks(
-    videoPath,
-  );
-  // Only text tracks (graphic pgs/dvd → null format) get extracted; cache file
-  // name carries the parser-deciding extension.
-  final Map<int, String> outputs = <int, String>{};
-  for (final EmbeddedSubtitleTrack track in tracks) {
-    final SubtitleFormat? fmt = subtitleFormatForCodec(track.codec);
-    if (fmt == null) continue;
-    final String outputPath = p.join(
-      cacheDir.path,
-      'sub_${track.streamIndex}${_ext(fmt)}',
+/// 测试用：当前有没有在途的整轨抽取（[videoPath] 的缓存目录为键）。
+@visibleForTesting
+Future<bool> debugEmbeddedSubtitleExtractInFlight(String videoPath) async =>
+    _embeddedExtractInFlight.containsKey(
+      (await embeddedSubtitleCacheDir(videoPath)).path,
     );
-    final File cached = File(outputPath);
-    if (await _isNonEmptyFile(cached)) continue;
-    // BUG-863 negative cache: a track already rejected as undecodable by the
-    // bundled ffmpeg leaves an `.unsupported` sentinel (written by the extractor
-    // only on a definitive, non-timeout failure). Skip it so we don't re-read
-    // the whole (possibly multi-GB) container and re-log the same failure on
-    // every prewarm. The sentinel lives in the cache dir, keyed by video
-    // size+mtime, so replacing the file in place still re-attempts extraction.
-    if (await File(
-      '$outputPath$kUnsupportedEmbeddedSubtitleSentinelSuffix',
-    ).exists()) {
-      continue;
-    }
-    outputs[track.streamIndex] = outputPath;
-  }
-  if (outputs.isEmpty) return;
+
+Future<EmbeddedSubtitleExtractFailure?> _extractAllEmbeddedSubtitles(
+  String videoPath,
+  Directory cacheDir, {
+  required Future<void> cancel,
+}) async {
   try {
-    await cacheDir.create(recursive: true);
-  } catch (_) {
-    return;
+    final List<EmbeddedSubtitleTrack> tracks = await listEmbeddedSubtitleTracks(
+      videoPath,
+    );
+    // Only text tracks (graphic pgs/dvd → null format) get extracted; cache file
+    // name carries the parser-deciding extension.
+    final Map<int, String> outputs = <int, String>{};
+    for (final EmbeddedSubtitleTrack track in tracks) {
+      final SubtitleFormat? fmt = subtitleFormatForCodec(track.codec);
+      if (fmt == null) continue;
+      final String outputPath = p.join(
+        cacheDir.path,
+        'sub_${track.streamIndex}${_ext(fmt)}',
+      );
+      final File cached = File(outputPath);
+      if (await _isNonEmptyFile(cached)) continue;
+      // BUG-863 negative cache: a track already rejected as undecodable by the
+      // bundled ffmpeg leaves an `.unsupported` sentinel (written by the
+      // extractor only on a definitive failure, never on stall / cancel). Skip it
+      // so we don't re-read the whole (possibly multi-GB) container and re-log
+      // the same failure on every prewarm. The sentinel lives in the cache dir,
+      // keyed by video size+mtime, so replacing the file in place still
+      // re-attempts extraction.
+      if (await File(
+        '$outputPath$kUnsupportedEmbeddedSubtitleSentinelSuffix',
+      ).exists()) {
+        continue;
+      }
+      outputs[track.streamIndex] = outputPath;
+    }
+    if (outputs.isEmpty) return null;
+    try {
+      await cacheDir.create(recursive: true);
+    } on FileSystemException {
+      return EmbeddedSubtitleExtractFailure.failed;
+    }
+    // 按进度判活、可取消（BUG-4838）：不再给「60 s + 8 s/GB」的总预算——那个预算隐含
+    // ≥125 MB/s 的读盘吞吐，慢盘上会把一直在推进的抽取杀掉。
+    final EmbeddedSubtitleExtractResult result =
+        await extractEmbeddedSubtitlesViaFfmpeg(
+          inputPath: videoPath,
+          outputs: outputs,
+          cancel: cancel,
+        );
+    return result.failure;
+  } catch (e, stack) {
+    fushiDebugPrint(
+      '[VideoSubtitleSource] embedded subtitle extraction failed: $e\n$stack',
+    );
+    return EmbeddedSubtitleExtractFailure.failed;
   }
-  await extractEmbeddedSubtitlesViaFfmpeg(
-    inputPath: videoPath,
-    outputs: outputs,
-    timeout: subtitleExtractTimeoutForBytes(
-      (await _regularFileStat(videoPath))?.size ?? 0,
-    ),
-  );
 }
 
 /// [path] 是普通文件（跟随链接）则返回其 [FileStat]，否则 / stat 失败返回 null。
@@ -1481,11 +1919,13 @@ Directory embeddedSubtitleCacheDirForStat(String videoPath, FileStat? stat) {
   return Directory(p.join(Directory.systemTemp.path, 'fushi_vsub_cache', key));
 }
 
-/// **Pure**: how long to allow a single extract-all pass given the container's
-/// byte size. The read time of an interleaved container grows with its size, so
-/// a fixed 30s timeout silently fails on big REMUX files (and worse under
-/// playback I/O contention). Base 60s + 8s/GB, clamped to [60s, 1200s]: a 27GB
-/// REMUX gets ~276s of headroom instead of timing out at 30s (BUG-104).
+/// **Pure**: a size-scaled total budget for one ffmpeg pass over the container.
+/// Base 60s + 8s/GB, clamped to [60s, 1200s] (BUG-104).
+///
+/// 现在只给**枚举**（`ffmpeg -i` 读流头，[probeEmbeddedSubtitleTracks]）与音频能量
+/// 探测用。整轨抽取已不吃它（BUG-4838）：抽取要把整个容器读完，耗时 = 体积 ÷ 读盘
+/// 吞吐，这条预算隐含 ≥125 MB/s，慢盘上会杀掉一直在推进的抽取；抽取改为按进度判活
+/// （[kEmbeddedSubtitleExtractStallTimeout]）。
 @visibleForTesting
 Duration subtitleExtractTimeoutForBytes(int sizeBytes) {
   final double gb = sizeBytes / (1024 * 1024 * 1024);
@@ -1499,7 +1939,9 @@ Duration subtitleExtractTimeoutForBytes(int sizeBytes) {
 /// 与主页把字幕拖到视频卡（`attachSubtitleToVideoBook`）共用同一份失败分类，
 /// 不各自 `readAsString` + 解析（那样失败原因会退化成空列表或未捕获异常，BUG-1504）。
 ///
-/// [contentReader] 仅供测试注入（默认 [readTextWithEncoding]）。
+/// [contentReader] 默认 [readTextWithEncoding]；播放页载入链注入自己的读法，同一份
+/// 字节顺手判对齐产物（只读一次盘）。须与 [readTextWithEncoding] 同样任何字节都能解出
+/// 字符串。
 Future<SubtitleCueLoadResult> loadExternalSubtitleCueResult(
   String path,
   String bookUid, {

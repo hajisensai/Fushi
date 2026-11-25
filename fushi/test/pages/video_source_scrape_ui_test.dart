@@ -14,7 +14,11 @@ import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dar
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart'
+    show sourcelessLocalVideoScrapeScope;
 import 'package:fushi/src/media/video/metadata/video_source_scrape_dialog.dart';
+import 'package:fushi/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart'
+    show showVideoSourceScrapeRunDetailDialog;
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
     show VideoSourceScrapeWork;
@@ -135,6 +139,24 @@ class _ReportRunner implements VideoSourceScrapeRunner {
       ],
     );
   }
+}
+
+/// 刮削直接返回给定报告、同时支持手动指定（让 run 详情显示「手动指定」按钮）。
+class _ScopeIssueRunner extends _ManualBindingRunner {
+  _ScopeIssueRunner(this.report);
+
+  final SourceScrapeReport report;
+
+  @override
+  Future<SourceScrapeReport> scrapeSource(
+    SourceLibraryRow source, {
+    required VideoSourceScrapeCancellationToken cancellationToken,
+    required VideoSourceScrapeProgressCallback onProgress,
+    VideoSourceScrapeConfirmationCallback? onConfirmation,
+    VideoSourceScrapeBatchContext? batchContext,
+    List<VideoSourceScrapeWork>? plannedWorks,
+    String runScope = 'source',
+  }) async => report;
 }
 
 class _ManualBindingRunner
@@ -308,9 +330,13 @@ class _AiIdentifyRunner
 
 /// 交互式批次里把一个带 AI 建议的确认请求交给面板，等用户选。
 class _AiSuggestionConfirmationRunner implements VideoSourceScrapeRunner {
-  _AiSuggestionConfirmationRunner(this.candidates);
+  _AiSuggestionConfirmationRunner(
+    this.candidates, {
+    this.strictMatches = false,
+  });
 
   final List<VideoSourceScrapeConfirmationCandidate> candidates;
+  final bool strictMatches;
   VideoSourceScrapeConfirmationCandidate? chosen;
 
   @override
@@ -334,6 +360,7 @@ class _AiSuggestionConfirmationRunner implements VideoSourceScrapeRunner {
           confidencePercent: 72,
           reason: 'theatrical release matches the folder',
         ),
+        strictMatches: strictMatches,
       ),
     );
     return SourceScrapeReport(
@@ -530,7 +557,7 @@ void main() {
       findsOneWidget,
     );
 
-    await tester.tap(find.widgetWithText(TextButton, 'CLOSE'));
+    await tester.tap(find.widgetWithText(TextButton, 'Close'));
     await tester.pumpAndSettle();
     expect(find.text('Background tasks'), findsNothing);
     expect(controller.isRunning, isTrue);
@@ -749,7 +776,7 @@ void main() {
       await tester.tap(find.text('Scrape after scanning'));
       await tester.ensureVisible(find.text('Write image files'));
       await tester.tap(find.text('Write image files'));
-      await tester.tap(find.text('SAVE'));
+      await tester.tap(find.text('Save'));
       await tester.pumpAndSettle();
 
       final VideoSourceScrapeSettingRow settings = (await db
@@ -790,7 +817,7 @@ void main() {
     await tester.pumpAndSettle();
     await tester.ensureVisible(localeField());
     await tester.enterText(localeField(), '  ja  ');
-    await tester.tap(find.text('SAVE'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
     expect(
@@ -810,7 +837,7 @@ void main() {
       'ja',
     );
     await tester.enterText(localeField(), '   ');
-    await tester.tap(find.text('SAVE'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
     expect(
       (await db.getVideoSourceScrapeSettings(sourceId))!.metadataLocale,
@@ -940,6 +967,124 @@ void main() {
     expect(find.text('Unknown Show'), findsOneWidget);
     expect(
       find.widgetWithText(TextButton, 'Rescrape this source'),
+      findsOneWidget,
+    );
+  });
+
+  // 无来源范围的整批级问题（engine 没有 i18n，来源 label 是空串）按结构化范围 id
+  // 映射成本地化名字，不显示空标题；范围级问题不对应作品，不给「手动指定」。
+  testWidgets('scope-level issues show the localized scope name in run detail '
+      'and the task panel', (WidgetTester tester) async {
+    // 任务面板的问题列表是懒列表：屏幕放大到让四条问题都在可视区内。
+    tester.view.physicalSize = const Size(1400, 1000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = _memDb();
+    addTearDown(db.close);
+    final int sourceId = await _seedSource(db, mediaKind: 'video');
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final SourceScrapeReport report = SourceScrapeReport(
+      sourceIds: <int>[sourceId],
+      totalWorks: 2,
+      failedWorks: 2,
+      warnings: <SourceScrapeIssue>[
+        SourceScrapeIssue.scope(source, message: 'registered scope warning'),
+      ],
+      errors: <SourceScrapeIssue>[
+        SourceScrapeIssue.scope(
+          sourcelessLocalVideoScrapeScope,
+          message: 'providers down',
+        ),
+        SourceScrapeIssue.scope(
+          sourcelessLocalVideoScrapeScope,
+          message: 'batch crashed',
+        ),
+        const SourceScrapeIssue(workTitle: 'Unknown Show', message: 'nope'),
+      ],
+    );
+    final int runId = await db.insertVideoSourceScrapeRun(
+      VideoSourceScrapeRunsCompanion.insert(
+        sourceId: Value<int?>(sourceId),
+        scope: 'source',
+        status: 'failed',
+        failedWorks: const Value<int>(2),
+        summaryJson: Value<String?>(encodeSourceScrapeReport(report)),
+        startedAt: 1,
+        updatedAt: 2,
+        finishedAt: const Value<int?>(2),
+      ),
+    );
+    final VideoSourceScrapeRunRow run = (await db.getVideoSourceScrapeRuns(
+      limit: 20,
+    )).singleWhere((VideoSourceScrapeRunRow r) => r.id == runId);
+    final _ScopeIssueRunner runner = _ScopeIssueRunner(report);
+    final VideoSourceScrapeTaskController controller =
+        VideoSourceScrapeTaskController(runner);
+    addTearDown(controller.dispose);
+
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Builder(
+          builder: (BuildContext context) => Scaffold(
+            body: Column(
+              children: <Widget>[
+                TextButton(
+                  onPressed: () => unawaited(
+                    showVideoSourceScrapeRunDetailDialog(
+                      context: context,
+                      run: run,
+                      source: source,
+                      controller: controller,
+                    ),
+                  ),
+                  child: const Text('Open run'),
+                ),
+                TextButton(
+                  onPressed: () => unawaited(
+                    showVideoSourceScrapeTaskPanel(
+                      context: context,
+                      controller: controller,
+                      loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
+                    ),
+                  ),
+                  child: const Text('Open tasks'),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+
+    await tester.tap(find.text('Open run'));
+    await tester.pumpAndSettle();
+    expect(tester.takeException(), isNull);
+    expect(find.text(t.video_scrape_scope_sourceless), findsNWidgets(2));
+    expect(find.text('Anime'), findsOneWidget);
+    expect(find.text('Unknown Show'), findsOneWidget);
+    // 只有作品级问题给「手动指定」。
+    expect(
+      find.byTooltip(t.video_source_scrape_manual_search_title),
+      findsOneWidget,
+    );
+    Navigator.of(tester.element(find.text('Unknown Show'))).pop();
+    await tester.pumpAndSettle();
+
+    await controller.scrapeSource(source);
+    await tester.tap(find.text('Open tasks'));
+    await tester.pumpAndSettle();
+    final Finder list = find.byKey(
+      const PageStorageKey<String>('video-source-activity-list'),
+    );
+    expect(
+      find.descendant(
+        of: list,
+        matching: find.text(t.video_scrape_scope_sourceless),
+      ),
+      findsNWidgets(2),
+    );
+    expect(
+      find.descendant(of: list, matching: find.text('Unknown Show')),
       findsOneWidget,
     );
   });
@@ -1255,6 +1400,66 @@ void main() {
       );
     });
   });
+
+  // BUG-4894：只有候选都过了严格匹配门才能说「多个严格匹配」；标题对不上 /
+  // 只有目录摘要的「可能」候选要说「无法确认」，不能冒充严格匹配。
+  for (final bool strict in <bool>[true, false]) {
+    testWidgets('confirmation hint reflects strictMatches=$strict', (
+      WidgetTester tester,
+    ) async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final int sourceId = await _seedSource(db, mediaKind: 'video');
+      final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+      final _AiSuggestionConfirmationRunner runner =
+          _AiSuggestionConfirmationRunner(
+            <VideoSourceScrapeConfirmationCandidate>[
+              _candidate(id: '1001', title: 'Doraemon (TV)', year: 2005),
+              _candidate(id: '1002', title: 'Doraemon Movie', year: 2006),
+            ],
+            strictMatches: strict,
+          );
+      final VideoSourceScrapeTaskController controller =
+          VideoSourceScrapeTaskController(runner);
+      addTearDown(controller.dispose);
+
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Builder(
+            builder: (BuildContext context) => Scaffold(
+              body: TextButton(
+                onPressed: () {
+                  unawaited(controller.scrapeSource(source, interactive: true));
+                  unawaited(
+                    showVideoSourceScrapeTaskPanel(
+                      context: context,
+                      controller: controller,
+                      loadRuns: () => db.getVideoSourceScrapeRuns(limit: 20),
+                    ),
+                  );
+                },
+                child: const Text('Start'),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.tap(find.text('Start'));
+      await tester.pumpAndSettle();
+      expect(controller.pendingConfirmation, isNotNull);
+
+      expect(
+        find.text(t.video_source_scrape_confirmation_hint),
+        strict ? findsOneWidget : findsNothing,
+      );
+      expect(
+        find.text(t.video_source_scrape_confirmation_review_hint),
+        strict ? findsNothing : findsOneWidget,
+      );
+      controller.skipPendingConfirmation();
+      await tester.pumpAndSettle();
+    });
+  }
 
   testWidgets('confirmation marks only the AI-suggested candidate', (
     WidgetTester tester,

@@ -1,5 +1,6 @@
 // 复习（SRS）域写操作的撤销往返（spec §5.2 / §5.3）：经 [OpInvoker] 以模型身份执行 →
-// `undo.revert` → 状态回到执行前；执行后被手动改过的，撤销报 superseded 且不覆盖。
+// `undo.revert` → 状态回到执行前；执行后被手动改过的字段保留现值、不覆盖：一处都没撤成报 superseded，
+// 撤回了一部分报 partial（srs_edit_undo.dart）。
 // 撤销载荷先过一遍 JSON 往返（与持久化进 ai_agent_actions 同口径）。
 import 'dart:convert';
 
@@ -76,10 +77,13 @@ class _Ops {
     return (done.result, done.undo!);
   }
 
-  Future<OpUndoStatus> undo(String id, OpUndoRecord record) async {
+  Future<OpUndoStatus> undo(String id, OpUndoRecord record) async =>
+      (await undoOutcome(id, record)).status;
+
+  Future<OpUndoOutcome> undoOutcome(String id, OpUndoRecord record) {
     final Map<String, Object?> payload =
         jsonDecode(jsonEncode(record.payload)) as Map<String, Object?>;
-    return (await catalog[id]!.undo!.revert(payload)).status;
+    return catalog[id]!.undo!.revert(payload);
   }
 }
 
@@ -343,7 +347,7 @@ void main() {
       expect(await store.duplicateNoteGroups(), hasLength(1), reason: '建议回来了');
     });
 
-    test('合并后保留的笔记又被改过 → superseded，不拆', () async {
+    test('合并后保留的笔记标签又被改过 → 仍拆开，别人加的标签留着（标签按差量撤）', () async {
       final String keep = await _addNote(store, '星', 'ほし');
       final String other = await _addNote(store, '星', 'ほし');
       final _Ops ops = _Ops(store);
@@ -355,11 +359,41 @@ void main() {
         },
       );
       await store.updateNote(keep, tags: <String>['edited']);
-      expect(
-        await ops.undo('srs.duplicates.merge', record),
-        OpUndoStatus.superseded,
+      expect(await ops.undo('srs.duplicates.merge', record), OpUndoStatus.done);
+      expect((await store.note(other))!.deletedAt, isNull);
+      expect((await store.note(keep))!.tags, <String>['edited']);
+    });
+
+    test('合并后被吸收的笔记又被别处恢复过 → partial：那一处保留现值，其余照拆', () async {
+      final String keep = await _addNote(store, '月', 'つき');
+      final String other = await _addNote(store, '月', 'つき');
+      final _Ops ops = _Ops(store);
+      final (Object? _, OpUndoRecord record) = await ops.run(
+        'srs.duplicates.merge',
+        <String, Object?>{
+          'keep': keep,
+          'absorb': <String>[other],
+        },
       );
+      final String keepCard = (await store.cardsOfNote(keep)).first.id;
+      final String otherCard = (await store.cardsOfNote(other)).first.id;
+      await store.restoreNote(other);
+      await store.deleteNote(other);
+      final OpUndoOutcome outcome = await ops.undoOutcome(
+        'srs.duplicates.merge',
+        record,
+      );
+      expect(outcome.status, OpUndoStatus.partial);
+      expect(outcome.message, contains(other));
+      // 被别处再删的那一下没被覆盖；前身链接照样拆了。
       expect((await store.note(other))!.deletedAt, isNotNull);
+      expect(
+        (await store.entityEdits(
+          SrsEntityKind.card,
+          keepCard,
+        )).value(SrsFieldKeys.cardHistoryFrom(otherCard)),
+        isNot(true),
+      );
     });
   });
 
@@ -397,9 +431,24 @@ void main() {
           false,
         ),
       ]);
+      // a→b 被别处改过：保留现值；b→a 没被动过：撤回。
       expect(
         await ops.undo('srs.duplicates.dismiss', again),
-        OpUndoStatus.superseded,
+        OpUndoStatus.partial,
+      );
+      expect(
+        (await store.entityEdits(
+          SrsEntityKind.note,
+          a,
+        )).value(SrsDuplicateNotes.notDuplicateKey(b)),
+        isFalse,
+      );
+      expect(
+        (await store.entityEdits(
+          SrsEntityKind.note,
+          b,
+        )).value(SrsDuplicateNotes.notDuplicateKey(a)),
+        isNot(true),
       );
     });
   });

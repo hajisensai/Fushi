@@ -1,0 +1,8 @@
+## BUG-4719 · 浏览器扩展：ASS 字幕两句时间重叠时覆盖层只显示一句
+- **报告**：2026-11-16（用户：应用内反馈 -Rbr-U5FNr，浏览器扩展给网页视频挂外挂 ASS，两位说话人台词同时开始）
+- **真实性**：✅ 真 bug。根因：覆盖层是单 cue 模型——`tools/browser-extension/subtitle-panel.js` 的 tick（develop 上 :347-348）用 `cueIndexAt`（:202-210）只取「startMs <= t 的最后一条」并只把这一条交给 `updateSubtitleOverlay` / `renderOverlayCue`。字幕轨只按 startMs 排序、允许时间重叠：同起点的两句只画后一句；起点更早的长句在后一句结束后，`cueIndexAt` 返回 -1，整块字幕消失。
+- **[x] ① 已修复** — 覆盖层改成「此刻全部有效 cue」的集合模型：新增 `activeCueIndicesAt`（二分到最后一条已开始的 cue，再向前扫出所有 `t < endMs` 的），`st.overlayCue` → `st.overlayCues`、`overlayRenderedCue` → `overlayRenderedCues`；多条时每条一个 `.fushi-subtitle-overlay-line` 块级行（轨内顺序），点击 / 悬浮查词按指针所在行取对应 cue 的时间窗（`overlayCueForNode`）。镜像 `fushi/assets/browser_extension/subtitle-panel.js` 同步。
+- **[x] ② 已加自动化测试** — `tools/browser-extension/external-subtitle.test.js`「⑤b 时间重叠的 cue 同时叠字」：同起点两句都画、点第二行查词带第二行的 cue、短句结束后长句仍在、交错重叠两句同屏。修复前红（actual 只有 `ニア！言い方！`）。
+- **[x] ① 同根因的其余调用点** — 「单句」判据（`subtitle-panel.js cueIndexAt`：快捷键跳句 / 重播 / 复制 / 收藏 / 学习统计；`subtitle-adapters.js findCueIndexAt`：制卡默认取句、整轨认轨；`side-panel.js cueIndexAt`）同样只看起点最晚那条、长句后半段返回 -1：改成「有效 cue 里起点最晚的那条」，向前扫到更早开始仍未结束的长句。侧栏字幕列表高亮改成高亮全部有效行（`activeCueIndices`）。覆盖层 Shift 悬停（`content.js` → `fushiCaptionLineCueWindowAt` 对自绘覆盖层不带窗）新增 `window.fushiSubtitleOverlayCueWindowAt`，按指针所在行带 cue 窗，避免悬停上一行配上下一行例句。
+- **[x] ② 测试补充** — `external-subtitle.test.js`「⑤c」（学习统计 / 当前句在长句后半段回落长句、覆盖层按行取窗）、`subtitle-adapters.test.js` 重叠轨 `findCueIndexAt`、`side-panel-position.test.js` 重叠轨多行高亮、`native-caption-line-cue.test.js` Shift 悬停覆盖层行带窗；修复前 4 条全红。
+- **备注**：未在真实浏览器里肉眼复测（vm 壳内覆盖层 DOM 断言）；多行覆盖层的排版、`fitTextInto` 自适应缩放（量文字层整体 scrollHeight，多行会整体缩小）、模糊效果和跨行取词未实测。

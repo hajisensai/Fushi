@@ -19,6 +19,7 @@
 | `packages/fushi_cli/` | Dart | 桌面客户端命令行 `fushi_cli`：经本机控制通道（127.0.0.1 + token，发现文件 `endpoint.json`）驱动正在运行的 app，app 没开时自动拉起；app 侧接线 `fushi/lib/src/platform/desktop/desktop_ctl_host.dart`；Windows 发布随包放 `fushi.exe` 同级 | [README.md](../../packages/fushi_cli/README.md) |
 | `packages/fushi_server/` | Dart | 无头服务端 CLI + WebUI（Linux/Windows/macOS）；`dart build cli` 出 bundle，CI `build-multiplatform.yml` 的 `linux-server` job 随包 torrent bridge `.so` + onnxruntime（Linux app 已不在 CI 构建） | [README.md](../../packages/fushi_server/README.md) |
 | `packages/gamepads_windows/` | Dart+C++ | gamepads Windows vendored fork（BUG-116 崩溃修复，path override） | — |
+| `packages/gamepads_ios/` | Swift | gamepads iOS vendored fork（无 extendedGamepad 的手柄如单只 Joy-Con 退到 physicalInputProfile；扳机按数字键上报；workspace 成员） | — |
 | `packages/gamepads_android_stub/` | Dart | `gamepads_android` no-op stub（防启动 ClassCastException，path override） | — |
 | `native/fushidicts/` | C++ | 词典查询/导入引擎（上游深度 fork；`fushidicts_external/` 为 vendored 第三方）；FFI/JNI 编入 app | [UPSTREAM.md](../../native/fushidicts/UPSTREAM.md) |
 | `native/fushi_torrent/` | C++ | libtorrent 2.x C ABI bridge；FFI，Windows 预编译 DLL / macOS arm64 dylib / Android arm64 `.so` 随包 | [README.md](../../native/fushi_torrent/README.md) |

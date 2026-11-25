@@ -265,6 +265,8 @@ class _Rig {
       alignSubtitleToPrev: _noop,
       alignSubtitleToNext: _noop,
       enterCaret: () => bump(ShortcutAction.videoEnterCaret),
+      openStudyStatistics: () => bump(ShortcutAction.videoOpenStatistics),
+      toggleStudyClock: () => bump(ShortcutAction.videoToggleStudyClock),
       escape: () {
         bump(ShortcutAction.globalBack);
         if (state.fullscreenActive) {

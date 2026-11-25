@@ -10,6 +10,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_bridge_runtime.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
+import 'package:fushi/src/media/video/online/anime_source_book_spec.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
 import 'package:fushi/src/media/video/online/anime_episode_downloader.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
@@ -90,6 +91,28 @@ void main() {
       'anime-source:eu.kanade.tachiyomi.animeextension.all.fixture:42',
     );
   });
+
+  test(
+    'reopen spec of an episode names its work and episode (v180 favorite)',
+    () {
+      final AnimeSourceVideoClient c = client();
+      final String id = c.remoteVideos.last.id;
+      final AnimeSourceBookSpec? spec = AnimeSourceBookSpec.tryParse(
+        c.reopenSpecFor(id),
+      );
+      expect(c, isA<RemoteVideoReopenSpec>());
+      expect(spec, isNotNull);
+      expect(
+        spec!.extensionPackage,
+        'eu.kanade.tachiyomi.animeextension.all.fixture',
+      );
+      expect(spec.sourceId, '42');
+      expect(spec.anime.url, anime.url);
+      expect(spec.anime.title, anime.title);
+      expect(spec.episode.url, '/ep/2');
+      expect(c.reopenSpecFor('anime-source:other:1:/ep/9'), isNull);
+    },
+  );
 
   test(
     'stream resolution picks the preferred candidate and exposes its headers',
@@ -441,6 +464,41 @@ void main() {
       expect(fetched.single.toString(), 'https://cdn.example/ja.ass');
     });
 
+    test('扩展把字幕落在本机（file:// 链接）→ 直接拷文件，不走 HTTP（#o3voUUPYKz）', () async {
+      final File local = File('${root.path}/cache/subs751647215311001519.srt');
+      await local.parent.create(recursive: true);
+      await local.writeAsString('1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n');
+      final List<Uri> fetched = <Uri>[];
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': 'https://cdn.example/ep.m3u8',
+          'quality': '1080p',
+          'subtitleTracks': <Object?>[
+            <Object?, Object?>{'url': local.uri.toString(), 'lang': 'Japanese'},
+          ],
+        },
+      ];
+      final AnimeSourceVideoClient c = client(
+        httpClient: MockClient((http.Request request) async {
+          fetched.add(request.url);
+          return http.Response('', 404);
+        }),
+      );
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+      final File dest = File('${root.path}/out/episode_1.Japanese.srt');
+      double? progress;
+      await c.getRemoteVideoSubtitle(
+        id,
+        dest,
+        embeddedStreamIndex: 0,
+        onProgress: (double p) => progress = p,
+      );
+      expect(fetched, isEmpty);
+      expect(await dest.readAsString(), await local.readAsString());
+      expect(progress, 1.0);
+    });
+
     test('菜单选中某条轨 → 按下标下载那一条；下标失效如实报错', () async {
       final List<Uri> fetched = <Uri>[];
       runtime.videos = multiTrackVideos();
@@ -565,6 +623,95 @@ void main() {
       expect(await c.defaultSubtitleFileName(c.remoteVideos[1].id), isNull);
     });
 
+    test('两集交错下载：先下完的那集收尾仍拿得到自己的默认字幕（不被后开跑的那集覆盖）', () async {
+      Object? episodeVideos(String n) => <Object?>[
+        <Object?, Object?>{
+          'url': 'https://cdn.example/ep$n.mp4',
+          'quality': '1080p',
+          'subtitleTracks': <Object?>[
+            <Object?, Object?>{
+              'url': 'https://cdn.example/ep$n.ja.vtt',
+              'lang': '日本語',
+            },
+          ],
+        },
+      ];
+      runtime.videosByEpisode['/ep/1'] = episodeVideos('1');
+      runtime.videosByEpisode['/ep/2'] = episodeVideos('2');
+      final List<Uri> fetched = <Uri>[];
+      final AnimeSourceVideoClient c = AnimeSourceVideoClient(
+        manager: manager,
+        context: _context,
+        anime: anime,
+        episodes: sortEpisodesForPlayback(episodes),
+        httpClient: MockClient((http.Request request) async {
+          fetched.add(request.url);
+          return http.Response('WEBVTT', 200);
+        }),
+        subtitleLanguageResolver: () => null,
+        downloader: _RecordingDownloader(),
+      );
+      final String first = c.remoteVideos[0].id;
+      final String second = c.remoteVideos[1].id;
+      // 下载中心：第一集在跑时用户「继续」了第二集——第二集取流晚于第一集，第一集
+      // 先下完、才轮到它的收尾（下默认字幕）。
+      await c.downloadRemoteVideo(first, File('${root.path}/ep1.mp4'));
+      await c.downloadRemoteVideo(second, File('${root.path}/ep2.mp4'));
+
+      expect(await c.defaultSubtitleFileName(first), 'episode_1.日本語.vtt');
+      await c.getRemoteVideoSubtitle(first, File('${root.path}/ep1.vtt'));
+      expect(fetched.single, Uri.parse('https://cdn.example/ep1.ja.vtt'));
+      expect(File('${root.path}/ep1.vtt').readAsStringSync(), 'WEBVTT');
+      // 不带 id 的入口（播放用的请求头）仍跟「最近一次」那条。
+      expect(c.streamVariants.single.label, '1080p');
+      expect(await c.defaultSubtitleFileName(second), 'episode_2.日本語.vtt');
+    });
+
+    test('字幕站接了连接却不回数据：默认字幕下载到点抛 TimeoutException（BUG-5037）', () async {
+      final HttpServer server = await HttpServer.bind(
+        InternetAddress.loopbackIPv4,
+        0,
+      );
+      final List<HttpRequest> held = <HttpRequest>[];
+      server.listen(held.add);
+      addTearDown(() => server.close(force: true));
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': 'https://cdn.example/ep1.mp4',
+          'quality': '1080p',
+          'subtitleTracks': <Object?>[
+            <Object?, Object?>{
+              'url': 'http://127.0.0.1:${server.port}/ja.vtt',
+              'lang': '日本語',
+            },
+          ],
+        },
+      ];
+      final AnimeSourceVideoClient c = AnimeSourceVideoClient(
+        manager: manager,
+        context: _context,
+        anime: anime,
+        episodes: sortEpisodesForPlayback(episodes),
+        subtitleLanguageResolver: () => null,
+        subtitleFetchTimeout: const Duration(milliseconds: 300),
+      );
+      addTearDown(c.dispose);
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+      final File dest = File('${root.path}/stall.vtt');
+      await expectLater(
+        c.getRemoteVideoSubtitle(id, dest).timeout(const Duration(seconds: 10)),
+        throwsA(
+          isA<TimeoutException>().having(
+            (TimeoutException e) => e.duration,
+            'duration',
+            const Duration(milliseconds: 300),
+          ),
+        ),
+      );
+      expect(dest.existsSync(), isFalse);
+    });
+
     test('a pinned line is downloaded instead of the default', () async {
       runtime.videos = <Object?>[
         <Object?, Object?>{
@@ -595,6 +742,149 @@ void main() {
       );
       expect(runtime.videoListCalls, 0);
       expect(d.calls, isEmpty);
+    });
+  });
+
+  /// 反馈 xAeextyOV1：Torrentio 一类扩展给的候选是 `magnet:` 链接。此前它被原样当
+  /// `streamUrl` 交给播放页，`mediaUriForVideoPath` 把非 http(s) 当本地路径包成
+  /// file URI（`Temp\magnet:?xt=…`），libmpv 报 Invalid argument、45 秒后判超时。
+  group('种子（磁链）候选走下载管线，不当 URL 用（BUG-4386）', () {
+    const String magnet =
+        'magnet:?xt=urn:btih:72723c6e45267b82cdd8241825425c4f7310cf32'
+        '&dn=72723c6e45267b82cdd8241825425c4f7310cf32'
+        '&tr=udp://tracker.opentrackr.org:1337/announce&index=0';
+
+    test('only magnet candidates → typed torrent exception with magnet + '
+        'work/episode title', () async {
+      runtime.videos = <Object?>[
+        <Object?, Object?>{'url': magnet, 'quality': 'Torrentio 1080p'},
+      ];
+      final AnimeSourceVideoClient c = client();
+      final String id = c.remoteVideos.first.id;
+      await expectLater(
+        () => c.remoteVideoStreamUrls(id),
+        throwsA(
+          isA<AnimeSourceTorrentVideoException>()
+              .having(
+                (AnimeSourceTorrentVideoException e) => e.magnetUri,
+                'magnetUri',
+                magnet,
+              )
+              .having(
+                (AnimeSourceTorrentVideoException e) => e.title,
+                'title',
+                'Fixture Show - Episode 1',
+              ),
+        ),
+      );
+    });
+
+    test('mixed candidates: default picks the streamable one even when the '
+        'magnet comes first or is preferred', () async {
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': magnet,
+          'quality': 'Torrentio 1080p',
+          'preferred': true,
+        },
+        <Object?, Object?>{
+          'url': 'https://cdn.example/720.mp4',
+          'quality': '720p',
+        },
+      ];
+      final AnimeSourceVideoClient c = client();
+      final RemoteVideoStreamUrls urls = await c.remoteVideoStreamUrls(
+        c.remoteVideos.first.id,
+      );
+      expect(urls.streamUrl, 'https://cdn.example/720.mp4');
+      expect(c.streamVariantIndex, 1);
+    });
+
+    test('a pinned magnet line is honoured as a torrent, not played', () async {
+      runtime.videos = <Object?>[
+        <Object?, Object?>{
+          'url': 'https://cdn.example/720.mp4',
+          'quality': '720p',
+        },
+        <Object?, Object?>{'url': magnet, 'quality': 'Torrentio 1080p'},
+      ];
+      final AnimeSourceVideoClient c = client();
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+      c.streamVariantIndex = 1;
+      await expectLater(
+        () => c.remoteVideoStreamUrls(id),
+        throwsA(isA<AnimeSourceTorrentVideoException>()),
+      );
+    });
+
+    test('whole-episode download never hands a magnet to the HTTP '
+        'downloader', () async {
+      runtime.videos = <Object?>[
+        <Object?, Object?>{'url': magnet, 'quality': 'Torrentio'},
+      ];
+      final _RecordingDownloader d = _RecordingDownloader();
+      final AnimeSourceVideoClient c = AnimeSourceVideoClient(
+        manager: manager,
+        context: _context,
+        anime: anime,
+        episodes: sortEpisodesForPlayback(episodes),
+        httpClient: MockClient((_) async => http.Response('', 404)),
+        subtitleLanguageResolver: () => null,
+        downloader: d,
+      );
+      await expectLater(
+        () => c.downloadRemoteVideo(
+          c.remoteVideos.first.id,
+          File('${root.path}/ep1.mp4'),
+        ),
+        throwsA(isA<AnimeSourceTorrentVideoException>()),
+      );
+      expect(d.calls, isEmpty);
+    });
+
+    test('torrent task title: work + episode, without duplicates', () {
+      const MihonEpisode ep = MihonEpisode(
+        url: '/e',
+        name: 'Episode 3',
+        uploadedAt: 0,
+        number: 3,
+      );
+      expect(
+        AnimeSourceVideoClient.torrentTaskTitle(anime, ep),
+        'Fixture Show - Episode 3',
+      );
+      expect(
+        AnimeSourceVideoClient.torrentTaskTitle(
+          anime,
+          const MihonEpisode(url: '/e', name: '', uploadedAt: 0, number: 1),
+        ),
+        'Fixture Show',
+      );
+      expect(
+        AnimeSourceVideoClient.torrentTaskTitle(
+          const MihonAnime(url: '/a', title: '', coverUrl: ''),
+          ep,
+        ),
+        'Episode 3',
+      );
+    });
+
+    test('isTorrentAnimeVideo looks at the playable url', () {
+      expect(
+        isTorrentAnimeVideo(const MihonVideo(url: magnet, quality: 'x')),
+        isTrue,
+      );
+      expect(
+        isTorrentAnimeVideo(
+          const MihonVideo(
+            url: 'https://site.example/embed',
+            quality: 'x',
+            videoUrl: 'https://cdn.example/a.mp4',
+          ),
+        ),
+        isFalse,
+      );
     });
   });
 
@@ -681,6 +971,74 @@ void main() {
         'https://cdn.example/dub.m4a',
       ]);
       expect(d.muxCalls.single.headers['User-Agent'], 'FixtureUA/1');
+    });
+  });
+
+  group('字幕生成拉整集音频前现取地址（RemoteVideoSubtitleAudioRefresh）', () {
+    List<Object?> round(int sig) => <Object?>[
+      <Object?, Object?>{
+        'url': 'https://cdn.example/video-only.m4s?sig=$sig',
+        'quality': '1080p',
+        'headers': <Object?, Object?>{'Referer': 'https://site.example/$sig'},
+        'audioTracks': <Object?>[
+          <Object?, Object?>{
+            'url': 'https://cdn.example/ja.m4a?sig=$sig',
+            'lang': '日本語',
+          },
+          <Object?, Object?>{
+            'url': 'https://cdn.example/dub.m4a?sig=$sig',
+            'lang': 'English',
+          },
+        ],
+      },
+    ];
+
+    test('重新向扩展取流，挑同一位置的外挂音轨；不改播放用的当前流与请求头', () async {
+      runtime.videos = round(1);
+      final AnimeSourceVideoClient c = client();
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+      final int callsAfterPlay = runtime.videoListCalls;
+      expect(c, isA<RemoteVideoSubtitleAudioRefresh>());
+
+      runtime.videos = round(2);
+      final RemoteVideoSubtitleAudio dub = await c.freshSubtitleAudio(
+        id,
+        currentAudioUrl: 'https://cdn.example/dub.m4a?sig=1',
+      );
+      expect(runtime.videoListCalls, callsAfterPlay + 1, reason: '签名链接短 TTL');
+      expect(dub.url, 'https://cdn.example/dub.m4a?sig=2');
+      expect(dub.audioOnly, isTrue);
+      expect(dub.headers['Referer'], 'https://site.example/2');
+      // 播放会话不动：播放页下发给 libmpv 的头仍是起播那一轮的。
+      expect(c.httpHeaderFields['Referer'], 'https://site.example/1');
+      expect(c.streamVariantIndex, 0);
+    });
+
+    test('播放器放的是流自带音轨：读视频流本身（新地址）', () async {
+      runtime.videos = round(1);
+      final AnimeSourceVideoClient c = client();
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+      runtime.videos = round(3);
+      final RemoteVideoSubtitleAudio own = await c.freshSubtitleAudio(id);
+      expect(own.url, 'https://cdn.example/video-only.m4s?sig=3');
+      expect(own.audioOnly, isFalse);
+      expect(own.headers['Referer'], 'https://site.example/3');
+    });
+
+    test('认不出上一轮那条外挂音轨：取第一条外挂音轨（声音本来就从外挂音轨出）', () async {
+      runtime.videos = round(1);
+      final AnimeSourceVideoClient c = client();
+      final String id = c.remoteVideos.first.id;
+      await c.remoteVideoStreamUrls(id);
+      runtime.videos = round(4);
+      final RemoteVideoSubtitleAudio audio = await c.freshSubtitleAudio(
+        id,
+        currentAudioUrl: 'https://elsewhere.example/a.m4a',
+      );
+      expect(audio.url, 'https://cdn.example/ja.m4a?sig=4');
+      expect(audio.audioOnly, isTrue);
     });
   });
 
@@ -812,6 +1170,9 @@ const MihonSourceContext _context = MihonSourceContext(
 
 class _VideoRuntime extends MihonBridgeRuntime {
   Object? videos = <Object?>[];
+
+  /// 按集 url 给不同的候选（没登记的集回落 [videos]）。
+  final Map<String, Object?> videosByEpisode = <String, Object?>{};
   String? lastEpisodeUrl;
   int videoListCalls = 0;
   final List<String> fetchedImageUrls = <String>[];
@@ -828,7 +1189,9 @@ class _VideoRuntime extends MihonBridgeRuntime {
       lastEpisodeUrl =
           (arguments['episodeData']! as Map<String, Object?>)['url']
               ?.toString();
-      return videos;
+      return videosByEpisode.containsKey(lastEpisodeUrl)
+          ? videosByEpisode[lastEpisodeUrl]
+          : videos;
     }
     throw UnimplementedError(method);
   }

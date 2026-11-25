@@ -1,8 +1,11 @@
 import 'dart:async' show unawaited;
 import 'dart:math' as math;
 
+import 'package:flutter/services.dart' show Clipboard, ClipboardData;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/downloads/download_source_method.dart';
+import 'package:fushi/src/media/downloads/download_execution_target.dart'
+    show DownloadExecutionUnreachable;
 import 'package:fushi/src/pages/implementations/download_notice.dart';
 import 'package:fushi/src/pages/implementations/bt_site_settings_route.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
@@ -141,6 +144,19 @@ int compareNyaaTorrents(TorrentSortKey key, NyaaTorrent a, NyaaTorrent b) {
   }
 }
 
+/// 「复制下载链接」给出的链接（拍板台 cxBASRELn9：交给外部离线下载 / 其他客户端）。
+///
+/// 有合法 infoHash 时给磁力链接（[NyaaTorrent.magnet]，与推送路径交给后端的是
+/// 同一串），离线下载服务普遍只认磁力；RSS 缺 / 坏 infoHash 时 magnet 会是
+/// `btih:` 空值的废串，此时退回站点的 `.torrent` 地址；两者都没有返回 null
+/// （不出复制入口）。纯函数，便于单测。
+String? torrentCopyableLink(NyaaTorrent torrent) {
+  final String hash = torrent.infoHash.trim();
+  if (RegExp(r'^[0-9a-fA-F]{40}$').hasMatch(hash)) return torrent.magnet;
+  final String url = torrent.torrentUrl.trim();
+  return url.isEmpty ? null : url;
+}
+
 /// 手动字幕搜索框的标题候选（罗马字优先 → 日文原名 → 英文；去空、去重，保序）。
 /// 首项是默认预填（与 Nyaa 查询词同口径），其余供输入框下拉切换。纯函数。
 List<String> animeTitleOptions(AniListMedia media) {
@@ -211,7 +227,14 @@ DownloadTaskEntry animeDownloadTaskEntry({
     progress: plan.status == AnimeDownloadPlan.statusImported ? 1 : progress,
     collectionKey: collectionKey,
     collectionTitle: collectionKey == null ? null : plan.seriesTitle,
+    subtitle: animeDownloadPlanSubtitle(plan),
     searchTerms: <String>[plan.torrentTitle, plan.qbCategory],
+    // 观测值与视频任务同口径投影进 Entry：做种位喂「做种」筛选，速率喂下载中心
+    // 顶部合计速度——此前只拿 stats 算状态，合计里 legacy 行恒按 0 计（反馈
+    // D8YKoitTvM）。
+    seeding: observed == TorrentDisplayStatus.seeding,
+    downRateBps: stats?.downRateBps,
+    upRateBps: stats?.upRateBps,
     // 旧番剧计划唯一记着的作品身份是 AniList id：有它就能被「定位到这部番」精确
     // 命中，不必退回标题兜底。
     workIdentity: DownloadTaskWorkIdentity.maybe(
@@ -222,6 +245,37 @@ DownloadTaskEntry animeDownloadTaskEntry({
     builder: builder,
   );
 }
+
+/// 旧番剧计划卡片的副行：种子标题与作品名不同时才列（任务卡与侧栏速览同一句）。
+String? animeDownloadPlanSubtitle(AnimeDownloadPlan plan) =>
+    plan.torrentTitle == plan.seriesTitle ? null : plan.torrentTitle;
+
+/// 页外（侧栏下载速览）用的旧番剧计划快照：与下载页同一份计划表（新的在上）与
+/// 同一份映射 [animeDownloadTaskEntry]，进度 / 观测值取服务此刻的值。速览只读
+/// 条目的展示字段：不挂动作，卡片 builder 也不会被调用。
+Future<List<DownloadTaskEntry>> animeDownloadTaskSnapshot(
+  AppModel appModel,
+) async {
+  final AnimeDownloadPlanStore? store = appModel.animeDownloadPlanStore;
+  if (store == null) return const <DownloadTaskEntry>[];
+  final List<AnimeDownloadPlan> plans = await store.loadAll();
+  final AnimeDownloadService? service = appModel.animeDownloadService;
+  final Map<String, double> progress =
+      service?.downloadProgress.value ?? const <String, double>{};
+  final Map<String, DownloadTaskStats> stats =
+      service?.downloadStats.value ?? const <String, DownloadTaskStats>{};
+  return <DownloadTaskEntry>[
+    for (final AnimeDownloadPlan plan in plans.reversed)
+      animeDownloadTaskEntry(
+        plan: plan,
+        progress: progress[plan.id],
+        stats: stats[plan.id],
+        builder: _summaryOnlyTaskCard,
+      ),
+  ];
+}
+
+Widget _summaryOnlyTaskCard(BuildContext _) => const SizedBox.shrink();
 
 /// 合集名 / 关系边标题常带刮削附加的年份后缀（`FX戦士くるみちゃん (2026)`），
 /// AniList 搜索对整串字面匹配，带了后缀就 0 条（反馈 4Np5-EyJgE）。预填搜番词
@@ -521,6 +575,31 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(FushiSnackBar(content: Text(message)));
+  }
+
+  /// 把种子的下载链接（见 [torrentCopyableLink]）放进剪贴板。
+  ///
+  /// 不过 P2P 首用说明（[confirmP2pDownloadNotice]）：那份说明讲的是「本 app
+  /// 加入 swarm 收发数据会暴露 IP / 上传」，复制只是把一串文本交给用户，app
+  /// 自己不连任何 peer；用户拿去哪个客户端用，由那个客户端负责提示。
+  Future<void> _copyTorrentLink(String link) async {
+    await Clipboard.setData(ClipboardData(text: link));
+    FushiToast.show(
+      msg: t.copied_to_clipboard,
+      severity: ToastSeverity.success,
+    );
+  }
+
+  /// 复制下载链接按钮；拿不到链接时返回 null（不画禁用钮占位）。
+  Widget? _copyTorrentLinkButton(NyaaTorrent torrent, {Key? key}) {
+    final String? link = torrentCopyableLink(torrent);
+    if (link == null) return null;
+    return FushiIconButtonControl(
+      key: key,
+      tooltip: t.anime_download_copy_link,
+      icon: const FushiIcon(FushiIcons.copy, size: 20),
+      onPressed: () => unawaited(_copyTorrentLink(link)),
+    );
   }
 
   // ---------------------------------------------------------------- 阶段 1
@@ -1337,9 +1416,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
             appModel.database,
           );
           bool any = false;
+          // 整表只读一次建查表，不逐个文件 findByVideoPath（每次都整表读 + 逐行
+          // 归一）。同一行只删一次：不同写法的路径可能归一到同一行。
+          final VideoPathIndex index = await repo.videoPathIndex();
+          final Set<String> deleted = <String>{};
           for (final String path in videoAbsolutePaths) {
-            final VideoBookRow? row = await repo.findByVideoPath(path);
-            if (row == null) continue;
+            final VideoBookRow? row = index.find(path);
+            if (row == null || !deleted.add(row.bookUid)) continue;
             await repo.deleteVideoBookAndReclaimAssets(
               row.bookUid,
               compactDatabase: false,
@@ -1721,6 +1804,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
     final AppModel appModel = ref.read(appProvider);
     if (!await confirmP2pDownloadNotice(context) || !mounted) return;
     setState(() => _pushingGeneric = true);
+    DownloadExecutionUnreachable? unreachable;
     final GenericPushOutcome outcome = await pushGenericMagnet(
       context: context,
       appModel: appModel,
@@ -1730,10 +1814,11 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
       discoveryKind: _genericKind == AnimeDownloadPlan.kindBook
           ? DiscoveryMediaKind.novel
           : null,
+      onRemoteUnreachable: (DownloadExecutionUnreachable u) => unreachable = u,
     );
     if (!mounted) return;
     setState(() => _pushingGeneric = false);
-    _snack(genericPushMessage(outcome));
+    _snack(genericPushMessage(outcome, unreachable: unreachable));
     if (outcome.isSuccess) {
       _magnetCtrl.clear();
       await _reloadPlans();
@@ -2187,6 +2272,13 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                 titleMaxLines: 2,
                 subtitleMaxLines: 4,
                 title: Text(torrent.title),
+                // 复制下载链接：不必先点进确认页，直接交给外部离线下载。
+                trailing: _copyTorrentLinkButton(
+                  torrent,
+                  key: ValueKey<String>(
+                    'anime-download-copy-link-${torrent.infoHash}-$i',
+                  ),
+                ),
                 subtitle: Padding(
                   padding: const EdgeInsets.only(top: 4),
                   child: Wrap(
@@ -2297,6 +2389,10 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                 overflow: TextOverflow.ellipsis,
                 style: context.fushiType.titleMediumEmphasized,
               ),
+            ),
+            ?_copyTorrentLinkButton(
+              torrent,
+              key: const ValueKey<String>('anime-download-confirm-copy-link'),
             ),
           ],
         ),
@@ -3228,9 +3324,7 @@ class _AnimeDownloadDialogState extends ConsumerState<AnimeDownloadDialog>
                 title: plan.seriesTitle.isEmpty
                     ? plan.torrentTitle
                     : plan.seriesTitle,
-                subtitle: plan.torrentTitle == plan.seriesTitle
-                    ? null
-                    : plan.torrentTitle,
+                subtitle: animeDownloadPlanSubtitle(plan),
                 status: plan.status == AnimeDownloadPlan.statusImported
                     ? t.download_task_status_completed
                     : plan.status == AnimeDownloadPlan.statusFailed

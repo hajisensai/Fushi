@@ -4,7 +4,9 @@ import 'dart:io';
 
 import 'package:fushi_engine/srs/srs_profile_link.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart' show kSrs4Root;
 import 'package:fushi_engine/sync/local_directory_asset_store.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:test/test.dart';
 
 const String kMine = '01928c3e-0000-7000-8000-00000000000b';
@@ -196,6 +198,81 @@ void main() {
       );
     });
 
+    // BUG-4296：对方已经选定把它的 profile 并入别处、只是并入暂缓着（还按旧 uid 同步），说明文件里写着 `mergingInto`。
+    // 本机不能再被问要不要并进那个旧 profile——选了就会把本机并进对方正在离开的 profile，两边从此分叉。
+    test('对方的写入者已选定并入别处（mergingInto，并入暂缓中）：它的旧 profile 不再是候选', () {
+      for (final String into in <String>[
+        kMine,
+        '01928c3e-0000-7000-8000-0000000000ff',
+      ]) {
+        final SrsProfileLinkDecision d = decide(
+          localHasNotes: true,
+          v2Device: 'phone-v2',
+          remote: <SrsRemoteProfile>[
+            const SrsRemoteProfile(
+              uid: kMine,
+              writers: <String>['v2:phone-v2'],
+            ),
+            SrsRemoteProfile(
+              uid: kOther,
+              writers: const <String>['v2:host'],
+              names: const <String>{'Default'},
+              hasNotes: true,
+              mergingInto: <String, String>{'v2:host': into},
+            ),
+          ],
+        );
+        expect(d, isA<SrsProfileLinkKeep>(), reason: 'merging into $into');
+        expect((d as SrsProfileLinkKeep).linked, isFalse);
+      }
+      // 本机没有笔记时也不自动采用它。
+      expect(
+        decide(
+          remote: const <SrsRemoteProfile>[
+            SrsRemoteProfile(
+              uid: kOther,
+              writers: <String>['v2:host'],
+              names: <String>{'Default'},
+              hasNotes: true,
+              mergingInto: <String, String>{'v2:host': kMine},
+            ),
+          ],
+        ),
+        isA<SrsProfileLinkKeep>(),
+      );
+    });
+
+    test('mergingInto 只让那一个写入者不算数：旧 profile 里还有留下的设备，照样是候选', () {
+      final SrsProfileLinkDecision d = decide(
+        localHasNotes: true,
+        remote: const <SrsRemoteProfile>[
+          SrsRemoteProfile(
+            uid: kOther,
+            writers: <String>['v2:host', 'v2:tablet'],
+            names: <String>{'Default'},
+            hasNotes: true,
+            mergingInto: <String, String>{'v2:host': kMine},
+          ),
+        ],
+      );
+      expect(d, isA<SrsProfileLinkChoose>());
+      expect((d as SrsProfileLinkChoose).candidates.single.uid, kOther);
+    });
+
+    test('本机 uid 目录里别的设备正在并入别处：不算已关联', () {
+      final SrsProfileLinkDecision d = decide(
+        remote: const <SrsRemoteProfile>[
+          SrsRemoteProfile(
+            uid: kMine,
+            writers: <String>['phone#1', 'v2:tablet'],
+            mergingInto: <String, String>{'v2:tablet': kOther},
+          ),
+        ],
+      );
+      expect(d, isA<SrsProfileLinkKeep>());
+      expect((d as SrsProfileLinkKeep).linked, isFalse);
+    });
+
     // 实测布局（三台设备各自随机生成 uid、都叫 Default）：电脑 PC（有笔记）、iPhone（有笔记）、平板（空）、一个旧版本留下
     // 的无说明文件目录。以前平板按名字匹配到两个就静默保持，永远按自己的空 profile 同步、拉不到任何数据。
     const String kPc = '01a13df1-0000-7000-8000-000000000001';
@@ -353,7 +430,7 @@ void main() {
     });
     tearDown(() => root.deleteSync(recursive: true));
 
-    test('发布后列得出名字与有无笔记；说明文件落在同步 v2 的设备目录里', () async {
+    test('发布后列得出名字与有无笔记；说明文件落在新代根 v4/ 的设备目录里（旧根不碰）', () async {
       await srsPublishProfileInfo(
         store,
         profileUid: kOther,
@@ -376,11 +453,153 @@ void main() {
       expect(list.single.hasNotes, isTrue);
       expect(
         File(
-          '${root.path}/$kSrsSync2Namespace/$kOther/$kSrsSync2Folder/devices/'
+          '${root.path}/$kSrsSync2Namespace/$kOther/$kSrs4Root/devices/'
           'host#1/$kSrsProfileInfoName',
         ).existsSync(),
         isTrue,
       );
+      expect(
+        Directory(
+          '${root.path}/$kSrsSync2Namespace/$kOther/$kSrsSync2Folder',
+        ).existsSync(),
+        isFalse,
+      );
+    });
+
+    // 第五波 G9 身份收尾（交接 §34「没做」）：新代全新集合只有 `v4/` 根，说明文件在 `v4/devices/<设备>/`（规划 G-6）。
+    // 列表（WebUI 勾选列表、关联候选）读得出名字、设备名与笔记数；旧根 `v3/devices/` 里协议 3 设备的说明文件照样读，
+    // 同一台设备两边都有只算一个写入者；只有 head 的新代设备目录不算写入者。
+    test('新代全新集合：v4/devices 里的说明文件列得出名字与笔记数，与旧根同名设备只算一次', () async {
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'd4',
+        name: 'Main',
+        hasNotes: true,
+        device: 'Pixel 9',
+        noteCount: 12,
+      );
+      final String ns = await store.ensureNamespace(kSrsSync2Namespace);
+      final String profile = await store.ensureFolder(ns, kOther);
+      final String v4 = await store.ensureFolder(profile, kSrs4Root);
+      await store.ensureFolder(await store.ensureFolder(v4, 'devices'), 'bare');
+      SrsRemoteProfile p = (await srsListRemoteProfiles(store)).single;
+      expect(p.names, <String>{'Main'});
+      expect(p.displayName, 'Main');
+      expect(p.noteCount, 12);
+      expect(p.devices, <String>['Pixel 9']);
+      expect(p.writers, <String>[srsV2WriterName('d4')]);
+      // 协议 3 的设备（旧根）与同一台设备的旧说明文件：都读，写入者不重复。
+      final String v3 = await store.ensureFolder(profile, kSrsSync2Folder);
+      final String v3devices = await store.ensureFolder(v3, 'devices');
+      for (final (String dev, String json) in <(String, String)>[
+        ('d4', '{"v":1,"name":"Main","hasNotes":true,"notes":3}'),
+        ('p3', '{"v":1,"name":"Old","hasNotes":true,"notes":20}'),
+      ]) {
+        final String w = await store.ensureFolder(v3devices, dev);
+        final File f = File('${root.path}/info.json')..writeAsStringSync(json);
+        await store.putAsset(w, kSrsProfileInfoName, f);
+        f.deleteSync();
+      }
+      p = (await srsListRemoteProfiles(store)).single;
+      expect(p.names, <String>{'Main', 'Old'});
+      expect(p.noteCount, 20);
+      expect(p.writers.toSet(), <String>{
+        srsV2WriterName('d4'),
+        srsV2WriterName('p3'),
+      });
+      expect(p.writers.length, 2);
+    });
+
+    // 复核 major：同一台设备升级前把说明文件写在旧根 `v3/devices/`，升级后写 `v4/devices/`，旧那份没人删。两份都用同一个
+    // 写入者名，以前后读的覆盖先读的，采信哪份跟着目录列举顺序走（Linux ext4 上是哈希序）。现在当前发布位置 `v4/` 优先，
+    // 与两份的修改时刻谁新无关；名字集合（displayName 取第一个）也按时刻 + 写入者名排。两种列举顺序各跑一遍。
+    test('同一设备 v3 旧说明文件 + v4 新说明文件：两种列举顺序都只采信 v4 那份', () async {
+      final String ns = await store.ensureNamespace(kSrsSync2Namespace);
+      final String profile = await store.ensureFolder(ns, kOther);
+      final String v3devices = await store.ensureFolder(
+        await store.ensureFolder(profile, kSrsSync2Folder),
+        'devices',
+      );
+      final String oldDir = await store.ensureFolder(v3devices, 'devA');
+      final File f = File('${root.path}/info.json')
+        ..writeAsStringSync(
+          '{"v":1,"name":"OldName","hasNotes":true,"mergingInto":"$kMine"}',
+        );
+      await store.putAsset(oldDir, kSrsProfileInfoName, f);
+      f.deleteSync();
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'devA',
+        name: 'NewName',
+        hasNotes: true,
+      );
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'devB',
+        name: 'B',
+        hasNotes: true,
+      );
+      final File oldInfo = File('$oldDir/$kSrsProfileInfoName');
+      final File newInfo = File(
+        '${root.path}/$kSrsSync2Namespace/$kOther/$kSrs4Root/devices/devA/'
+        '$kSrsProfileInfoName',
+      );
+      final File bInfo = File(
+        '${root.path}/$kSrsSync2Namespace/$kOther/$kSrs4Root/devices/devB/'
+        '$kSrsProfileInfoName',
+      );
+      final DateTime t = DateTime(2026, 11, 1);
+      newInfo.setLastModifiedSync(t);
+      bInfo.setLastModifiedSync(t.subtract(const Duration(hours: 1)));
+      // 旧文件比新文件旧（真实场景）与比新文件新（钉住「位置优先于时刻」）各一遍。
+      for (final Duration oldShift in <Duration>[
+        const Duration(days: -1),
+        const Duration(days: 1),
+      ]) {
+        oldInfo.setLastModifiedSync(t.add(oldShift));
+        for (final bool reversed in <bool>[false, true]) {
+          final SrsRemoteProfile r = (await srsListRemoteProfiles(
+            _OrderedDirectoryStore(root, reversed: reversed),
+          )).single;
+          final String why = 'reversed=$reversed oldShift=$oldShift';
+          expect(r.nameOf, <String, String>{
+            srsV2WriterName('devA'): 'NewName',
+            srsV2WriterName('devB'): 'B',
+          }, reason: why);
+          expect(
+            r.nameAtOf[srsV2WriterName('devA')],
+            newInfo.statSync().modified.millisecondsSinceEpoch,
+            reason: why,
+          );
+          expect(r.names.toList(), <String>['NewName', 'B'], reason: why);
+          expect(r.displayName, 'NewName', reason: why);
+          // 旧那份的并入标记同样不采信（v4 那份没有并入标记）。
+          expect(r.mergingInto, isEmpty, reason: why);
+          expect(r.writers.toSet(), <String>{
+            srsV2WriterName('devA'),
+            srsV2WriterName('devB'),
+          }, reason: why);
+        }
+      }
+    });
+
+    test('新代集合根 v4/ 不是写入者目录（G8-7 起云端会有 fushi-srs/<dir>/v4/）', () async {
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'host#1',
+        name: 'Main',
+        hasNotes: true,
+      );
+      final String ns = await store.ensureNamespace(kSrsSync2Namespace);
+      final String profile = await store.ensureFolder(ns, kOther);
+      final String v4 = await store.ensureFolder(profile, kSrs4Root);
+      await store.ensureFolder(await store.ensureFolder(v4, 'devices'), 'd1');
+      final List<SrsRemoteProfile> list = await srsListRemoteProfiles(store);
+      expect(list.single.writers, <String>[srsV2WriterName('host#1')]);
     });
 
     test('旧格式写入者目录的说明文件照样列得出（升级前写的）', () async {
@@ -398,6 +617,47 @@ void main() {
       // 旧版本不报设备名与笔记数：未知，不瞎猜。
       expect(list.single.devices, isEmpty);
       expect(list.single.noteCount, isNull);
+    });
+
+    test('mergingInto 发布后按写入者列得出；指向自己 uid 的无效值与旧格式说明文件都当作没有', () async {
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'host',
+        name: 'Default',
+        hasNotes: true,
+        mergingInto: kMine,
+      );
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'tablet',
+        name: 'Default',
+        hasNotes: true,
+        mergingInto: kOther,
+      );
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'pc',
+        name: 'Default',
+        hasNotes: true,
+      );
+      final SrsRemoteProfile p = (await srsListRemoteProfiles(store)).single;
+      expect(p.mergingInto, <String, String>{srsV2WriterName('host'): kMine});
+      expect(p.stayingWriters.toSet(), <String>{
+        srsV2WriterName('tablet'),
+        srsV2WriterName('pc'),
+      });
+      // 写回不带 mergingInto（并入做完 / 不再暂缓）：再列就没有了。
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kOther,
+        writerId: 'host',
+        name: 'Default',
+        hasNotes: true,
+      );
+      expect((await srsListRemoteProfiles(store)).single.mergingInto, isEmpty);
     });
 
     test('多台设备的设备名按出现顺序去重，笔记数取最大的一份', () async {
@@ -451,5 +711,118 @@ void main() {
       final List<SrsRemoteProfile> left = await srsListRemoteProfiles(store);
       expect(left.single.writers, <String>['tab#1']);
     });
+
+    // G9-5：新代集合根 `v4/` 不是写入者目录（名字碰巧像本设备的写入者也不算）；只删本机新代身份的设备目录，
+    // 根与 profile 目录永远留着；不给本机新代身份时 `v4/` 一个字节不碰。
+    test('清理认识新代根 v4/：只删本机新代设备目录', () async {
+      final String ns = await store.ensureNamespace(kSrsSync2Namespace);
+      final String profile = await store.ensureFolder(ns, kMine);
+      final String v4 = await store.ensureFolder(profile, kSrs4Root);
+      final String devices = await store.ensureFolder(v4, 'devices');
+      await store.ensureFolder(devices, 'me4');
+      await store.ensureFolder(devices, 'other4');
+      await store.ensureFolder(profile, 'phone#1');
+      final Directory root4 = Directory(
+        '${root.path}/$kSrsSync2Namespace/$kMine/$kSrs4Root',
+      );
+
+      // 没有本机新代身份：v4 整个算别人的。设备 ID 故意取成 `v4` 的样子，也不许当写入者目录删。
+      await srsRemoveOwnProfileFolder(
+        store,
+        profileUid: kMine,
+        deviceId: kSrs4Root,
+      );
+      expect(Directory('${root4.path}/devices/me4').existsSync(), isTrue);
+      expect(Directory('${root4.path}/devices/other4').existsSync(), isTrue);
+
+      // 本机新代身份 me4：只删它；other4 还在，根与 profile 目录都留着。
+      await srsRemoveOwnProfileFolder(
+        store,
+        profileUid: kMine,
+        deviceId: kDevice,
+        v4Device: 'me4',
+      );
+      expect(Directory('${root4.path}/devices/me4').existsSync(), isFalse);
+      expect(Directory('${root4.path}/devices/other4').existsSync(), isTrue);
+      expect(
+        Directory(
+          '${root.path}/$kSrsSync2Namespace/$kMine/phone#1',
+        ).existsSync(),
+        isFalse,
+      );
+
+      // 只剩本机自己的新代设备目录：也只删它，根（含 meta.json）与 profile 目录留着——别的设备可能已按 meta.json
+      // 换绑到这个集合、只是还没发布自己的设备目录（复核 nit）。
+      await store.deleteAsset(
+        (await store.listChildren(devices)).single.id,
+        isFolder: true,
+      );
+      await store.ensureFolder(devices, 'me4');
+      File('${root4.path}/meta.json').writeAsStringSync('{}');
+      await srsRemoveOwnProfileFolder(
+        store,
+        profileUid: kMine,
+        deviceId: kDevice,
+        v4Device: 'me4',
+      );
+      expect(Directory('${root4.path}/devices/me4').existsSync(), isFalse);
+      expect(File('${root4.path}/meta.json').existsSync(), isTrue);
+      expect(
+        Directory('${root.path}/$kSrsSync2Namespace/$kMine').existsSync(),
+        isTrue,
+      );
+    });
+
+    // 改绑而旧集合里还有别的设备（`joined` + `rebound`，v4Device 不给）：本机新代设备目录留着（别的设备还要从那里收
+    // 本机之前的段），但本机的说明文件要删——它在 `v4/devices/<本机>/` 里，留着别的设备就一直把旧目录当候选。
+    test('清理不删新代设备目录时也删掉本机的说明文件', () async {
+      await srsPublishProfileInfo(
+        store,
+        profileUid: kMine,
+        writerId: 'me4',
+        name: 'Main',
+        hasNotes: true,
+      );
+      final String ns = await store.ensureNamespace(kSrsSync2Namespace);
+      final String profile = await store.ensureFolder(ns, kMine);
+      final String v4 = await store.ensureFolder(profile, kSrs4Root);
+      final String devices = await store.ensureFolder(v4, 'devices');
+      final String me = await store.ensureFolder(devices, 'me4');
+      final File seg = File('${root.path}/seg.bin')..writeAsStringSync('x');
+      await store.putAsset(me, 'head-000000000001-00000000.json', seg);
+      seg.deleteSync();
+      expect((await srsListRemoteProfiles(store)).single.writers, <String>[
+        srsV2WriterName('me4'),
+      ]);
+      await srsRemoveOwnProfileFolder(
+        store,
+        profileUid: kMine,
+        deviceId: kDevice,
+        v2Device: 'me4',
+      );
+      final String meDir =
+          '${root.path}/$kSrsSync2Namespace/$kMine/$kSrs4Root/devices/me4';
+      expect(Directory(meDir).existsSync(), isTrue);
+      expect(
+        File('$meDir/head-000000000001-00000000.json').existsSync(),
+        isTrue,
+      );
+      expect(File('$meDir/$kSrsProfileInfoName').existsSync(), isFalse);
+      expect((await srsListRemoteProfiles(store)).single.writers, isEmpty);
+    });
   });
+}
+
+/// 把 [listChildren] 按名字正序或逆序返回的本地目录后端：模拟不同机器上的目录列举顺序（`listSync` 不排序）。
+class _OrderedDirectoryStore extends LocalDirectoryAssetStore {
+  _OrderedDirectoryStore(super.root, {required this.reversed});
+
+  final bool reversed;
+
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) async {
+    final List<AssetEntry> out = await super.listChildren(namespaceId)
+      ..sort((AssetEntry a, AssetEntry b) => a.name.compareTo(b.name));
+    return reversed ? out.reversed.toList() : out;
+  }
 }

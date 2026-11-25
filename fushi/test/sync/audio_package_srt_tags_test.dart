@@ -124,4 +124,79 @@ void main() {
     expect(mapped, hasLength(1));
     expect(mapped.single.id, existingId);
   });
+
+  test('导入有声书包时配对 SRT 继承原书合集归属并尊重移出墓碑', () async {
+    final Directory temp = await Directory.systemTemp.createTemp(
+      'fushi-audio-col-',
+    );
+    addTearDown(() => temp.delete(recursive: true));
+    final FushiDatabase sourceDb = testDb();
+    final FushiDatabase targetDb = testDb();
+    final FushiDatabase tombDb = testDb();
+    addTearDown(sourceDb.close);
+    addTearDown(targetDb.close);
+    addTearDown(tombDb.close);
+
+    final File package = await seedAndExport(
+      sourceDb: sourceDb,
+      temp: temp,
+      tagNames: const <String>[],
+    );
+
+    Future<int> seedTargetBook(FushiDatabase db) async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'ttu-tag',
+          title: 'Tagged',
+          epubPath: '/t.epub',
+          extractDir: '/t',
+          chapterCount: 1,
+          chaptersJson: '[]',
+          importedAt: 100,
+          format: const Value<String>('epub'),
+        ),
+      );
+      final String epubUid = (await db.resolveEpubBookUid('ttu-tag'))!;
+      final int cid = await db.createMediaCollection('有声合集');
+      await db.addToCollection(cid, MediaKind.epub, epubUid);
+      return cid;
+    }
+
+    final int targetCid = await seedTargetBook(targetDb);
+    await SyncAssetPackageService(db: targetDb).importAudioDatabasePackage(
+      packageFile: package,
+      audioDatabaseRoot: Directory(p.join(temp.path, 'target-audio-col')),
+    );
+    final List<MediaCollectionItemRow> items = await targetDb
+        .getCollectionItems(targetCid);
+    expect(
+      items.any(
+        (MediaCollectionItemRow r) =>
+            r.mediaType == MediaKind.srt.dbValue && r.entryKey == 'srt-tag',
+      ),
+      isTrue,
+    );
+
+    final int tombCid = await seedTargetBook(tombDb);
+    await tombDb.upsertCollectionMemberTombstone(
+      collectionName: '有声合集',
+      collectionType: 'collection',
+      mediaType: MediaKind.srt.dbValue,
+      entryKey: 'srt-tag',
+      deletedAt: 5000,
+    );
+    await SyncAssetPackageService(db: tombDb).importAudioDatabasePackage(
+      packageFile: package,
+      audioDatabaseRoot: Directory(p.join(temp.path, 'tomb-audio-col')),
+    );
+    final List<MediaCollectionItemRow> tombItems = await tombDb
+        .getCollectionItems(tombCid);
+    expect(
+      tombItems.any(
+        (MediaCollectionItemRow r) =>
+            r.mediaType == MediaKind.srt.dbValue && r.entryKey == 'srt-tag',
+      ),
+      isFalse,
+    );
+  });
 }

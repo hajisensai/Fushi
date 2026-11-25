@@ -21,6 +21,8 @@ import 'package:fushi_anki/fushi_anki_core.dart'
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/srs/srs_field_catalog.dart';
+import 'package:fushi/src/srs/srs_native_template.dart'
+    show srsStripTemplateNative, srsTemplateIsNative, srsWithTemplateNative;
 
 /// 块的种类。
 enum SrsVisualBlockKind {
@@ -574,10 +576,13 @@ SrsVisualSideState srsReadVisualSide(
   }
   final List<SrsVisualBlock> blocks = _resolveFieldIds(parsed, ctx);
   // 只比正文：注释里的字段 id / 名字是元数据，克隆或导入后它们与正文不同步不算手改。
+  // 模板级原生渲染标记（srs_native_template.dart）同样是元数据，不算手改。
   final String expected = srsCompileVisualBody(blocks, ctx);
   return SrsVisualSideState(
     blocks: blocks,
-    edited: _normalize(expected) != _normalize(_bodyOf(template)),
+    edited:
+        _normalize(expected) !=
+        _normalize(_bodyOf(srsStripTemplateNative(template))),
   );
 }
 
@@ -599,10 +604,14 @@ String? srsVisualDropField(
       !blocks.any((SrsVisualBlock b) => b.fieldId == fieldId)) {
     return null;
   }
-  return srsCompileVisualSide(<SrsVisualBlock>[
-    for (final SrsVisualBlock b in blocks)
-      if (b.fieldId != fieldId) b,
-  ], ctx);
+  // 重编保住模板级原生渲染标记（只在正面才有）。
+  return srsWithTemplateNative(
+    srsCompileVisualSide(<SrsVisualBlock>[
+      for (final SrsVisualBlock b in blocks)
+        if (b.fieldId != fieldId) b,
+    ], ctx),
+    srsTemplateIsNative(template),
+  );
 }
 
 String _normalize(String s) => s.replaceAll('\r\n', '\n').trim();

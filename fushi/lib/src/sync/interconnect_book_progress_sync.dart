@@ -1,5 +1,11 @@
+import 'dart:async';
+
 import 'package:drift/drift.dart' show Value;
+import 'package:flutter/foundation.dart' show visibleForTesting;
+import 'package:fushi/src/media/manga/interconnect/interconnect_manga_source.dart';
+import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/sync_baseline_scope.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -14,6 +20,28 @@ const String kInterconnectBookProgressDimension = 'progress_live';
 /// 编码）；推送成功并记下基线后删除。见 [InterconnectBookProgressSync.decide]。
 const String kInterconnectBookProgressPendingDimension =
     'progress_live_pending';
+
+/// 一本书一次 live 同步的结果（[InterconnectBookProgressSync.syncOne]）。
+///
+/// [action] 为 null = 两端已收敛、本轮什么都没做（sweep 快照判定跳过）。
+/// [localChanged] = 本端 `reader_positions` 被改写（调用方据此刷新书架）。
+/// [pushed] = 本端进度推给了 host 且 host 确认采纳（BUG-4431；只计确认的推送）。
+/// 冲突时 [localUpdatedAtMs] / [remoteUpdatedAtMs] 是判定所依据的两端时间戳。
+typedef BookProgressSyncStep = ({
+  BookProgressSyncAction? action,
+  bool localChanged,
+  bool pushed,
+  int localUpdatedAtMs,
+  int remoteUpdatedAtMs,
+});
+
+/// host 端某本书进度的一次读取结果：成功给 [progress]，失败给 [error]（逐本错误
+/// 交给轮到这本书时的调用方处理，不在预取里吞掉）。
+typedef RemoteBookProgressRead = ({
+  RemoteBookProgress? progress,
+  Object? error,
+  StackTrace? stackTrace,
+});
 
 /// 一轮书籍进度 sweep 开头一次读齐的本端状态（见
 /// [InterconnectBookProgressSync.loadSweepSnapshot]）：`reader_positions` 按书 uid，
@@ -32,8 +60,12 @@ typedef BookProgressSweepSnapshot = ({
 /// 进度时若 host 的时间戳更新（host 只是重开过书），照原样 PUT 会被 host 静默丢弃，
 /// 于是每一轮都推、每一轮都被丢。所以 [pushLocal] 把时间戳抬到 `max(本端, host+1)`
 /// 并同步写回本端行，让两端在这一刻真正对齐；抬的是「决定时刻」，位置一字不改。
+///
+/// 基线按 host 分槽（BUG-4434）：一个实例一生只绑一台 host（[bind]），基线读写都落
+/// 那台 host 的存储维度，host 读写都钉住它；会话中途换了 host 时 live 读写抛
+/// [InterconnectHostChangedException]。sweep 每轮、弹窗每次加载各建新实例。
 class InterconnectBookProgressSync {
-  const InterconnectBookProgressSync({
+  InterconnectBookProgressSync({
     required FushiDatabase db,
     required InterconnectSyncBackend backend,
   }) : _db = db,
@@ -41,6 +73,109 @@ class InterconnectBookProgressSync {
 
   final FushiDatabase _db;
   final InterconnectSyncBackend _backend;
+
+  Future<void>? _binding;
+  InterconnectHostPin? _pin;
+  String? _storageDimension;
+  String? _storagePendingDimension;
+
+  /// 绑定的 host（[bind] 之前为 null）。
+  InterconnectHostPin? get pin => _pin;
+
+  /// 绑到会话此刻所连的 host（BUG-4434）：取作用域、领养升级前的无后缀旧行、记下
+  /// 存储维度。同一实例只绑一次（并发调用 await 同一个）；失败下次重试。不发请求。
+  Future<void> bind() => _binding ??= _bind().then(
+    (_) {},
+    onError: (Object e, StackTrace st) {
+      _binding = null;
+      Error.throwWithStackTrace(e, st);
+    },
+  );
+
+  Future<void> _bind() async {
+    final InterconnectHostScope scope = await _backend.liveHostScope();
+    final String? tag = scope.pin.tag;
+    await ensureBaselinesAdopted(
+      _db,
+      logicalDimensions: const <String>[
+        kInterconnectBookProgressDimension,
+        kInterconnectBookProgressPendingDimension,
+      ],
+      tag: tag,
+      adoption: scope.adoption,
+      predecessorTags: scope.predecessorTags,
+    );
+    _storageDimension = baselineStorageDimension(
+      kInterconnectBookProgressDimension,
+      tag,
+    );
+    _storagePendingDimension = baselineStorageDimension(
+      kInterconnectBookProgressPendingDimension,
+      tag,
+    );
+    _pin = scope.pin;
+  }
+
+  /// 测试入口：绑定后的基线存储维度。
+  @visibleForTesting
+  Future<String> storageDimensionForTest() async {
+    await bind();
+    return _storageDimension!;
+  }
+
+  /// 这本书在 host 上的 wire 键；null = 这本书没有可与 host 对齐的书级进度，
+  /// sweep / 退出书同步 / 对比弹窗一律跳过（BUG-5352）。
+  ///
+  /// 经互联收进本机的漫画行（runtime=interconnect 的在线描述符），本机 bookKey 是
+  /// [InterconnectMangaCatalog.localBookKeyFor] 推出的单向哈希（`interconnect-…`），
+  /// host 只认描述符里的对端键。此前进度读写直接用本机键，host 永远回空、推上去也
+  /// 判 missing：在 host 读到第 44 页，本机接过来仍从第 1 页开始。
+  ///
+  /// - 单卷条目：唯一一章就是整卷，本机 `reader_positions` 的页码与 host 那一行同一
+  ///   口径 → 用对端键同步。
+  /// - 章节式条目（`chaptered`）：`reader_positions` 只装「当前章读到第几页」，不带
+  ///   是哪一章；两端各自的当前章互不相干，拿它对齐会把 A 章的页码落到 B 章 → 不走
+  ///   书级进度（章级进度在 `manga_chapter_states`，见 BUG-5352「未尽事项」）。
+  /// - 其余书：本机键就是 wire 键。
+  static String? hostBookKeyOf(EpubBookRow book) {
+    final OnlineMangaLibraryEntry? entry = interconnectMangaEntryOf(book);
+    if (entry == null) return book.bookKey;
+    if (entry.series.raw['chaptered'] == true) return null;
+    final String peerKey = entry.series.key;
+    return peerKey.isEmpty ? null : peerKey;
+  }
+
+  /// 这本书是否参与互联书级进度同步（[hostBookKeyOf] 非 null）。
+  static bool syncsBookProgress(EpubBookRow book) =>
+      hostBookKeyOf(book) != null;
+
+  /// 经互联收下的漫画行的描述符；其它书 null（非漫画不解析 JSON）。
+  static OnlineMangaLibraryEntry? interconnectMangaEntryOf(EpubBookRow book) {
+    if (BookFormat.parseOrEpub(book.format) != BookFormat.manga) return null;
+    final OnlineMangaLibraryEntry? entry = OnlineMangaLibraryEntry.tryParse(
+      book.sourceMetadata,
+    );
+    if (entry == null || entry.runtime != OnlineMangaRuntimeKind.interconnect) {
+      return null;
+    }
+    return entry;
+  }
+
+  /// [hostBookKeyOf]；不参与同步的书走到 host 读写是调用方漏了过滤。
+  static String _hostKey(EpubBookRow book) {
+    final String? key = hostBookKeyOf(book);
+    if (key == null) {
+      throw ArgumentError.value(
+        book.bookKey,
+        'book',
+        'has no book-level progress to sync with the interconnect host',
+      );
+    }
+    return key;
+  }
+
+  String get _baseDim => _storageDimension!;
+  String get _pendingDim => _storagePendingDimension!;
 
   /// 本端 `reader_positions` 行 → 与 host 同形的进度（无行 = [RemoteBookProgress.empty]）。
   Future<RemoteBookProgress> localProgress(EpubBookRow book) async {
@@ -57,18 +192,17 @@ class InterconnectBookProgressSync {
 
   /// 一次读齐 sweep 判定要用的本端状态：全部 `reader_positions`（按书 uid）、
   /// 全部位置基线与「待确认」基线（按 bookKey），共三条查询，免逐本 N+1。
-  Future<BookProgressSweepSnapshot> loadSweepSnapshot() async => (
-    positions: <String, ReaderPositionRow>{
-      for (final ReaderPositionRow row in await _db.getAllReaderPositions())
-        row.bookUid: row,
-    },
-    baselines: await _db.getSyncBaselinesForDimension(
-      kInterconnectBookProgressDimension,
-    ),
-    pending: await _db.getSyncBaselinesForDimension(
-      kInterconnectBookProgressPendingDimension,
-    ),
-  );
+  Future<BookProgressSweepSnapshot> loadSweepSnapshot() async {
+    await bind();
+    return (
+      positions: <String, ReaderPositionRow>{
+        for (final ReaderPositionRow row in await _db.getAllReaderPositions())
+          row.bookUid: row,
+      },
+      baselines: await _db.getSyncBaselinesForDimension(_baseDim),
+      pending: await _db.getSyncBaselinesForDimension(_pendingDim),
+    );
+  }
 
   /// 从快照取本端进度（与 [localProgress] 同口径，零查询）。
   static RemoteBookProgress localProgressFromSnapshot(
@@ -109,18 +243,152 @@ class InterconnectBookProgressSync {
         BookProgressBaseline.of(local).encode();
   }
 
-  /// host 端该书进度（host 无记录 → empty）。
-  Future<RemoteBookProgress> remoteProgress(EpubBookRow book) =>
-      _backend.remoteBookProgress(book.bookKey);
+  /// 绑定的 host 端该书进度（host 无记录 → empty）；会话已换 host 时抛
+  /// [InterconnectHostChangedException]。
+  Future<RemoteBookProgress> remoteProgress(EpubBookRow book) async {
+    await bind();
+    return _backend.getLiveBookProgress(_hostKey(book), pin: _pin);
+  }
 
-  /// 上次两端达成一致的位置基线（没有 → null）。
-  Future<BookProgressBaseline?> baseline(EpubBookRow book) async =>
-      BookProgressBaseline.decode(
-        await _db.getSyncBaseline(
-          book.bookKey,
-          kInterconnectBookProgressDimension,
-        ),
+  /// 老 host（无 [kBookProgressBatchPath]）逐本预取的并发上限。只是把同样多的
+  /// GET 叠起来发，请求数不变；与云通道逐本列举预取（`SyncManager`）取同一个值。
+  static const int remoteReadConcurrency = 4;
+
+  /// 一轮 sweep 要用的 host 端进度，按 [books] 顺序给出每本的读取结果。
+  ///
+  /// - 新 host：一次 `GET` [kBookProgressBatchPath] 拿全库（反馈 kM-Gb_Xnu-，此前
+  ///   每本书一次往返）；不在表里的书 = host 无记录 = empty，与逐本端点同口径。
+  /// - 老 host（端点 404）：逐本 GET，但以 [remoteReadConcurrency] 路并发预取，
+  ///   不再一本等一本。
+  ///
+  /// 整批读取失败（网络 / 鉴权 / 5xx）照常抛给调用方，不降级成「全都没进度」。
+  /// 返回的每个 future 都不会以错误完成（错误装进 [RemoteBookProgressRead.error]），
+  /// 调用方可以按顺序逐个 await，不会有未处理的异步错误。
+  Future<List<Future<RemoteBookProgressRead>>> readRemoteForSweep(
+    List<EpubBookRow> books,
+  ) async {
+    await bind();
+    final Map<String, RemoteBookProgress>? all = await _backend
+        .getLiveBookProgressSnapshot(pin: _pin);
+    if (all != null) {
+      return <Future<RemoteBookProgressRead>>[
+        for (final EpubBookRow book in books)
+          Future<RemoteBookProgressRead>.value((
+            progress: all[_hostKey(book)] ?? RemoteBookProgress.empty,
+            error: null,
+            stackTrace: null,
+          )),
+      ];
+    }
+    final List<Completer<RemoteBookProgressRead>> slots =
+        <Completer<RemoteBookProgressRead>>[
+          for (int i = 0; i < books.length; i++)
+            Completer<RemoteBookProgressRead>(),
+        ];
+    int next = 0;
+    Future<void> worker() async {
+      while (next < books.length) {
+        final int i = next++;
+        try {
+          slots[i].complete((
+            progress: await remoteProgress(books[i]),
+            error: null,
+            stackTrace: null,
+          ));
+        } catch (e, stack) {
+          slots[i].complete((progress: null, error: e, stackTrace: stack));
+        }
+      }
+    }
+
+    for (int k = 0; k < remoteReadConcurrency; k++) {
+      unawaited(worker());
+    }
+    return <Future<RemoteBookProgressRead>>[
+      for (final Completer<RemoteBookProgressRead> c in slots) c.future,
+    ];
+  }
+
+  /// 对一本书跑一次完整的 live 三方同步：判定 → 推送 / 落地 / 对齐 / 报冲突。
+  ///
+  /// sweep（[snapshot] 非 null，两端已收敛的书在内存判定后跳过）与退出书的单本
+  /// 同步（[snapshot] 为 null，直接判定）共用这一份，两条路径的判定与落地口径不会
+  /// 漂移。冲突不落任何一端，由调用方按返回的时间戳上报。
+  Future<BookProgressSyncStep> syncOne(
+    EpubBookRow book, {
+    required RemoteBookProgress remote,
+    BookProgressSweepSnapshot? snapshot,
+  }) async {
+    if (snapshot != null &&
+        isSettled(
+          book: book,
+          local: localProgressFromSnapshot(book, snapshot),
+          remote: remote,
+          snapshot: snapshot,
+        )) {
+      return (
+        action: null,
+        localChanged: false,
+        pushed: false,
+        localUpdatedAtMs: remote.updatedAtMs,
+        remoteUpdatedAtMs: remote.updatedAtMs,
       );
+    }
+    final RemoteBookProgress local = await localProgress(book);
+    final BookProgressSyncAction action = await decide(
+      book,
+      local: local,
+      remote: remote,
+    );
+    bool localChanged = false;
+    bool pushed = false;
+    // 前置条件 = 本次判定读到的 host 进度（BUG-4432）。
+    final List<BookProgressBaseline> expected = <BookProgressBaseline>[
+      BookProgressBaseline.of(remote),
+    ];
+    switch (action) {
+      case BookProgressSyncAction.synced:
+        // BUG-686: a host-newer progress pull lands in reader_positions but
+        // writes no book content, so it must still flag the shelf for a
+        // refresh — the cached fushiBooksProvider otherwise keeps showing
+        // the pre-sync progress bar and the sync looks like it did nothing.
+        localChanged = await alignSynced(
+          book,
+          local: local,
+          remote: remote,
+          expected: expected,
+        );
+      case BookProgressSyncAction.pushLocal:
+        pushed =
+            (await pushLocal(
+              book,
+              local: local,
+              remote: remote,
+              expected: expected,
+            )).status ==
+            LivePushStatus.confirmed;
+      case BookProgressSyncAction.applyRemote:
+        // BUG-3537：判定后本地被改写则不落地（比较后写入），不计「已拉取」。
+        localChanged = await applyRemote(book, remote, local: local);
+      case BookProgressSyncAction.conflict:
+        break;
+    }
+    return (
+      action: action,
+      localChanged: localChanged,
+      pushed: pushed,
+      localUpdatedAtMs: local.updatedAtMs,
+      remoteUpdatedAtMs: remote.updatedAtMs,
+    );
+  }
+
+  /// 与绑定的 host 上次达成一致的位置基线（没有 → null）。
+  Future<BookProgressBaseline?> baseline(EpubBookRow book) async {
+    await bind();
+    return BookProgressBaseline.decode(
+      await _db.getSyncBaseline(book.bookKey, _baseDim),
+    );
+  }
 
   /// 三方判定的唯一入口：sweep 与冲突弹窗都走这里，不各自读基线。
   ///
@@ -136,10 +404,7 @@ class InterconnectBookProgressSync {
   }) async {
     BookProgressBaseline? base = await baseline(book);
     final BookProgressBaseline? pending = BookProgressBaseline.decode(
-      await _db.getSyncBaseline(
-        book.bookKey,
-        kInterconnectBookProgressPendingDimension,
-      ),
+      await _db.getSyncBaseline(book.bookKey, _pendingDim),
     );
     if (pending != null &&
         remote.updatedAtMs > 0 &&
@@ -161,31 +426,43 @@ class InterconnectBookProgressSync {
     EpubBookRow book,
     RemoteBookProgress agreed,
   ) async {
+    await bind();
     await _db.setSyncBaseline(
       book.bookKey,
-      kInterconnectBookProgressDimension,
+      _baseDim,
       BookProgressBaseline.of(agreed).encode(),
     );
-    await _db.deleteSyncBaseline(
-      book.bookKey,
-      kInterconnectBookProgressPendingDimension,
-    );
+    await _db.deleteSyncBaseline(book.bookKey, _pendingDim);
   }
 
-  /// 本端胜出：推给 host（时间戳抬到严格新于 host，见类头），本端行同步对齐，
-  /// 记基线。返回两端对齐后的进度。
-  Future<RemoteBookProgress> pushLocal(
+  /// 本端胜出：推给 host（时间戳抬到严格新于 host，见类头），**host 确认**后本端行
+  /// 同步对齐、记基线（BUG-4431）。返回推送结局与推送的进度。
+  ///
+  /// 推送带前置条件「host 仍停在判定时读到的 [remote] 位置」：确认 → 对齐 + 记基线；
+  /// rejected / superseded（host 没采纳 / 判定后被第三台设备改写）→ 删「待确认」行，
+  /// 不动本端、不记基线；抛异常 → 「待确认」行保留（BUG-3528）。
+  ///
+  /// [expected] 是前置条件：写者「判定时看到的 host 进度」。省略 = `[remote]`；对比
+  /// 弹窗传加载时展示给用户的 host 进度（BUG-4432）。调用方须持有这本书的书锁。
+  Future<({LivePushStatus status, RemoteBookProgress agreed})> pushLocal(
     EpubBookRow book, {
     required RemoteBookProgress local,
     required RemoteBookProgress remote,
+    List<BookProgressBaseline>? expected,
     int? nowMs,
   }) async {
+    await bind();
     final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
+    // 未来时间戳防护（与播放位置版同纪律）：host 已存的超限毒戳按 0 比较，抬出来
+    // 的戳至少是 [now]，最后截到 [capFutureSyncStamp]——否则 `毒戳 + 1` 会被推给
+    // host、写进本端 `reader_positions.updatedAt`，扩散到各端。
+    final int remoteTs = trustedStoredSyncStamp(remote.updatedAtMs, nowMs: now);
     int ts = local.updatedAtMs;
-    if (ts <= remote.updatedAtMs) {
-      ts = remote.updatedAtMs + 1;
+    if (ts <= remoteTs) {
+      ts = remoteTs + 1;
       if (now > ts) ts = now;
     }
+    ts = capFutureSyncStamp(ts, nowMs: now);
     final RemoteBookProgress agreed = RemoteBookProgress(
       sectionIndex: local.sectionIndex,
       normCharOffset: local.normCharOffset,
@@ -193,22 +470,50 @@ class InterconnectBookProgressSync {
       updatedAtMs: ts,
     );
     // 先记「待确认」再发：PUT 超时而 host 已提交时，下一轮 [decide] 靠它认出
-    // host 上那份是本机自己的写入（BUG-3528）。
+    // host 上那份是本机自己的写入（BUG-3528）。先核对会话仍连着绑定的 host：换了
+    // host 就不在这台 host 的作用域里留一条注定不会发出的「待确认」行（BUG-4434）。
+    _backend.checkHostPin(_pin!);
     await _db.setSyncBaseline(
       book.bookKey,
-      kInterconnectBookProgressPendingDimension,
+      _pendingDim,
       BookProgressBaseline.of(agreed).encode(),
     );
-    await _backend.putRemoteBookProgress(book.bookKey, agreed);
-    if (ts != local.updatedAtMs) {
+    final LiveBookProgressPush pushed = await _backend.putLiveBookProgress(
+      _hostKey(book),
+      agreed,
+      expected:
+          expected ?? <BookProgressBaseline>[BookProgressBaseline.of(remote)],
+      pin: _pin,
+    );
+    if (pushed.status != LivePushStatus.confirmed) {
+      await _dropPending(book);
+      return (status: pushed.status, agreed: agreed);
+    }
+    // host 可能把戳再抬过（前置条件命中时取 max(上报戳, 已存戳 + 1)），本端对齐到
+    // host 写后的戳，下一轮两端戳相同、不再重复对齐。
+    final int hostTs = capFutureSyncStamp(
+      pushed.hostNow?.updatedAtMs ?? ts,
+      nowMs: now,
+    );
+    final RemoteBookProgress landed = RemoteBookProgress(
+      sectionIndex: agreed.sectionIndex,
+      normCharOffset: agreed.normCharOffset,
+      charOffset: agreed.charOffset,
+      updatedAtMs: hostTs,
+    );
+    if (hostTs != local.updatedAtMs) {
       // 比较后写入（BUG-3537）：PUT 期间本地若已被改写（本机阅读器 / 本机作为
       // host 收到的对端 PUT），抬戳对齐作废——本地留着更新的那份，下一轮它偏离
-      // 基线、照常再推。host 此刻确实停在 [agreed]，基线照记。
-      await _upsertLocalIfUnchanged(book, agreed, expected: local);
+      // 基线、照常再推。host 已确认停在 [agreed]，基线照记。
+      await _upsertLocalIfUnchanged(book, landed, expected: local);
     }
     await recordBaseline(book, agreed);
-    return agreed;
+    return (status: LivePushStatus.confirmed, agreed: landed);
   }
+
+  /// 删「待确认」行：这次推送 host 明确没采纳（BUG-4431），它不再携带信息。
+  Future<void> _dropPending(EpubBookRow book) =>
+      _db.deleteSyncBaseline(book.bookKey, _pendingDim);
 
   /// host 胜出：落回本端 `reader_positions`，记基线。返回是否真的落地。
   ///
@@ -217,14 +522,20 @@ class InterconnectBookProgressSync {
   /// 阅读器或本机作为互联 host 收到的对端 PUT 写进更新的进度；时间戳一变，这次
   /// 判定作废——不落地、不记基线，交给下一轮按新的本地事实重新判定（届时两端都
   /// 偏离基线就是真分叉，走冲突弹窗），绝不用 host 的旧值盖掉它。
+  ///
+  /// 落到本端的时间戳截到 [capFutureSyncStamp]：host 上的超限毒戳不进本端
+  /// `reader_positions.updatedAt`；之后两端戳不同，下一轮 [alignSynced] 把本端
+  /// 可信戳推回 host，毒戳就此自愈。
   Future<bool> applyRemote(
     EpubBookRow book,
     RemoteBookProgress remote, {
     required RemoteBookProgress local,
   }) async {
+    await bind();
+    final int now = DateTime.now().millisecondsSinceEpoch;
     final bool landed = await _upsertLocalIfUnchanged(
       book,
-      remote,
+      withCappedStamp(remote, nowMs: now),
       expected: local,
     );
     if (landed) await recordBaseline(book, remote);
@@ -234,20 +545,43 @@ class InterconnectBookProgressSync {
   /// 两端位置一致、只是时间戳不同：把较新的时间戳对齐到另一端（沿用此前 LWW
   /// 路径的对齐写法），记基线。位置相同时「较新」只决定 charOffset 精确锚与时刻。
   /// 返回本端行是否被改写（调用方据此计入「已拉取」让书架刷新）。
+  ///
+  /// 比较用 host 的可信戳视图（[withTrustedStoredStamp]）：host 上的超限毒戳按 0，
+  /// 本端胜出、把本端戳推给 host，本端不会被对齐成毒戳。
+  ///
+  /// [expected] 同 [pushLocal]（省略 = `[remote]`）。
   Future<bool> alignSynced(
     EpubBookRow book, {
     required RemoteBookProgress local,
     required RemoteBookProgress remote,
+    List<BookProgressBaseline>? expected,
   }) async {
     if (local.updatedAtMs <= 0 && remote.updatedAtMs <= 0) return false;
+    await bind();
+    final RemoteBookProgress trustedRemote = withTrustedStoredStamp(
+      remote,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+    );
     final RemoteBookProgress winner = resolveBookProgressSync(
       local: local,
-      remote: remote,
+      remote: trustedRemote,
     );
-    if (winner.updatedAtMs > remote.updatedAtMs ||
-        (winner.updatedAtMs == remote.updatedAtMs &&
-            winner.charOffset != remote.charOffset)) {
-      await _backend.putRemoteBookProgress(book.bookKey, winner);
+    if (winner.updatedAtMs > trustedRemote.updatedAtMs ||
+        (winner.updatedAtMs == trustedRemote.updatedAtMs &&
+            winner.charOffset != trustedRemote.charOffset)) {
+      // 位置相同、只推本端较新的戳 / 精确锚；host 判定后被改写（superseded）则
+      // 这次判定作废，不对齐、不记基线。
+      final LiveBookProgressPush pushed = await _backend.putLiveBookProgress(
+        _hostKey(book),
+        winner,
+        expected:
+            expected ?? <BookProgressBaseline>[BookProgressBaseline.of(remote)],
+        pin: _pin,
+      );
+      if (pushed.status == LivePushStatus.superseded) {
+        await _dropPending(book);
+        return false;
+      }
     }
     bool localChanged =
         winner.updatedAtMs != local.updatedAtMs ||
@@ -267,18 +601,65 @@ class InterconnectBookProgressSync {
 
   /// 本端落地的唯一写口：仅当本地时间戳仍是判定时读到的 [expected] 才写
   /// （[FushiDatabase.upsertReaderPositionIfUnchanged]，BUG-3537）。
+  ///
+  /// 单卷互联漫画行还要把位置落进那唯一一章的 `manga_chapter_states`（BUG-5352）：
+  /// 书架在线条目开章时起始页只认章级进度，不读书级那行 `reader_positions`
+  /// （`MangaFushiPage` 的书架开章路径），只落书级那行，阅读器照样从第 1 页开始。
+  ///
+  /// 书级比较后写入与章级落地在**同一个事务**里（BUG-5358）：drift 把事务外的语句
+  /// 排到事务之后，阅读器存进度（同样一个事务写两张表，先书级后章级）只会整体落在
+  /// 这次落地之前（书级戳已变 → 前置条件不成立，两张表都不动）或之后（整体盖掉），
+  /// 不会夹在两次写之间让章级退回 host 旧页；章级写失败时书级一并回滚，不留半截。
   Future<bool> _upsertLocalIfUnchanged(
     EpubBookRow book,
     RemoteBookProgress p, {
     required RemoteBookProgress expected,
-  }) => _db.upsertReaderPositionIfUnchanged(
-    ReaderPositionsCompanion(
-      bookUid: Value(book.uid),
-      sectionIndex: Value(p.sectionIndex),
-      normCharOffset: Value(p.normCharOffset),
-      charOffset: Value(p.charOffset),
-      updatedAt: Value(p.updatedAtMs),
-    ),
-    expectedUpdatedAt: expected.updatedAtMs,
-  );
+  }) => _db.transaction<bool>(() async {
+    final bool written = await _db.upsertReaderPositionIfUnchanged(
+      ReaderPositionsCompanion(
+        bookUid: Value(book.uid),
+        sectionIndex: Value(p.sectionIndex),
+        normCharOffset: Value(p.normCharOffset),
+        charOffset: Value(p.charOffset),
+        updatedAt: Value(p.updatedAtMs),
+      ),
+      expectedUpdatedAt: expected.updatedAtMs,
+    );
+    if (written) await _landInterconnectVolumeChapter(book, p);
+    return written;
+  });
+
+  /// 把落到本端的书级位置同步进单卷互联漫画那唯一一章的章级进度；其它书不动。
+  ///
+  /// 漫画的书级位置：`sectionIndex` = 0-based 页码，`charOffset` = webtoon 页内千分比
+  /// （spread 恒 0）；章级进度同编码，只是「无精确偏移」记 -1（与阅读器写法一致）。
+  /// 页码与偏移都没变（只对齐了时间戳）就不写，不平白刷新章的 `updatedAt`。
+  Future<void> _landInterconnectVolumeChapter(
+    EpubBookRow book,
+    RemoteBookProgress p,
+  ) async {
+    if (book.uid.isEmpty) return;
+    final OnlineMangaLibraryEntry? entry = interconnectMangaEntryOf(book);
+    if (entry == null || entry.series.raw['chaptered'] == true) return;
+    if (entry.series.key.isEmpty) return;
+    final String chapterKey = InterconnectMangaCatalog.chapterFor(
+      entry.series.key,
+    ).key;
+    final int fraction = p.charOffset > 0 ? p.charOffset : -1;
+    final MangaChapterStateRow? existing = await _db.getMangaChapterState(
+      bookUid: book.uid,
+      chapterKey: chapterKey,
+    );
+    if (existing != null &&
+        existing.lastPage == p.sectionIndex &&
+        (existing.lastFraction > 0 ? existing.lastFraction : -1) == fraction) {
+      return;
+    }
+    await _db.saveMangaChapterState(
+      bookUid: book.uid,
+      chapterKey: chapterKey,
+      lastPage: p.sectionIndex,
+      lastFraction: fraction,
+    );
+  }
 }

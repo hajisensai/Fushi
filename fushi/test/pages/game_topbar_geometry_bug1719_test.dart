@@ -6,6 +6,7 @@ import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart'
     show gameSectionGroupOf;
 import 'package:fushi/src/pages/implementations/home_game_page.dart';
+import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart'
     show LibrarySectionGroup;
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -13,6 +14,8 @@ import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
+    show FushiMastheadSegmentedTabs, FushiMastheadSwitch;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -39,6 +42,10 @@ import '../helpers/test_platform_services.dart';
 ///    把段挤到折行）。
 Widget _stubDashboard(BuildContext _, VoidCallback __) => const SizedBox();
 
+/// 「导入」子区常驻来源列表的桩：绕开真 [MediaSourcesView] 对 appProvider 的依赖。
+Widget _stubSources(BuildContext _, GlobalKey<MediaSourcesViewState> __) =>
+    const Text('game-sources');
+
 Widget _stubLibrary(
   BuildContext _,
   GalHookSessionController __,
@@ -63,11 +70,13 @@ void main() {
     LocaleSettings.setLocaleRaw('en');
   });
 
-  /// 一级（「游戏库 / 发现」两组）或二级（组内子区胶囊）分区导航。
+  /// 一级（「游戏库 / 发现」两组，页头大字切换）或二级（组内子区连体按钮组）
+  /// 分区导航（PR #3397 页头大字顶栏）。
   Finder strip({required bool secondary, bool skipOffstage = true}) =>
-      find.byWidgetPredicate(
-        (Widget w) =>
-            w is FushiSectionTabBar<GameSection> && w.secondary == secondary,
+      find.byType(
+        secondary
+            ? FushiMastheadSegmentedTabs<GameSection>
+            : FushiMastheadSwitch<GameSection>,
         skipOffstage: skipOffstage,
       );
 
@@ -80,6 +89,9 @@ void main() {
     gameSectionNotifier.value = section;
     await tester.pump();
     await tester.pump();
+    // 二级页签换组时新挂一份、有小幅位移淡入的入场动效：等它落定再量，量的
+    // 是静止版面（几何是否跨子区一致），不是动画中途。
+    await tester.pump(const Duration(seconds: 1));
     // 2026-10-06 起分区页签由外壳浮动工具栏统一画（ad8496b2b86，
     // [GameSectionTabsHostScope]）：子区页头里那一份在外壳下留空。2026-10-30
     // 起一级只放两组、组内子区在顶栏下方的二级胶囊里——全树（含 offstage 子区）
@@ -92,8 +104,11 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(sectionKey, skipOffstage: false),
-        matching: find.byType(
-          FushiSectionTabBar<GameSection>,
+        matching: find.byWidgetPredicate(
+          (Widget w) =>
+              w is FushiMastheadSwitch<GameSection> ||
+              w is FushiMastheadSegmentedTabs<GameSection> ||
+              w is FushiSectionTabBar<GameSection>,
           skipOffstage: false,
         ),
       ),
@@ -110,8 +125,8 @@ void main() {
     );
     final Rect top = tester.getRect(strip(secondary: false));
     if (!inLibraryGroup) return (top, null);
-    // 「工作台」在二级胶囊里必须单行（高度 = 一行行高）。折行是 BUG-1719 的
-    // 直接症状：段被钳到比最长标签窄。
+    // 「工作台」在二级页签里必须单行（高度 = 同一段文字单行排版的高度）。折行
+    // 是 BUG-1719 的直接症状：段被钳到比最长标签窄。
     final Finder label = find.descendant(
       of: strip(secondary: true),
       matching: find.text('工作台'),
@@ -120,8 +135,14 @@ void main() {
     final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
       label,
     );
-    final double lineHeight =
-        (paragraph.text.style!.height ?? 1.0) * paragraph.text.style!.fontSize!;
+    final TextPainter oneLine = TextPainter(
+      text: paragraph.text,
+      textDirection: paragraph.textDirection,
+      textScaler: paragraph.textScaler,
+      maxLines: 1,
+    )..layout();
+    final double lineHeight = oneLine.height;
+    oneLine.dispose();
     expect(
       paragraph.size.height,
       moreOrLessEquals(lineHeight, epsilon: 1.0),
@@ -145,6 +166,7 @@ void main() {
             home: HomeGamePage(
               dashboardBuilder: _stubDashboard,
               libraryBuilder: _stubLibrary,
+              sourcesBuilder: _stubSources,
               discoverBuilder: _stubDiscover,
             ),
           ),

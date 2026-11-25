@@ -5,6 +5,7 @@ public final class ChannelNames {
 
     public static final String PREFIX = "app.fushi.reader";
     public static final String SPLASH = PREFIX + "/splash";
+    public static final String STARTUP_TRACE = PREFIX + "/startup_trace";
     public static final String ANKI = PREFIX + "/anki";
     public static final String POPUP = PREFIX + "/popup";
     public static final String TTS = PREFIX + "/tts";
@@ -33,6 +34,9 @@ public final class ChannelNames {
     // 系统画中画（PiP）：视频页把 Activity 缩成系统小窗。只有 Android 有原生侧，
     // 其余平台上 Dart 门面恒答「不支持」。实现见 PictureInPictureChannelHandler。
     public static final String PICTURE_IN_PICTURE = PREFIX + "/picture_in_picture";
+    // 墨水屏全刷：反射探测厂商 EPD 控制器（Onyx / 瑞芯微 / NTX）请求一次全刷。
+    // 实现见 EinkRefreshChannel，Dart 门面 android_eink_refresh.dart。
+    public static final String EINK_REFRESH = PREFIX + "/eink_refresh";
     // 互联下载保活：下载进行期间挂 dataSync 前台服务 + 进度通知，防止切走后进程被杀。
     // 实现见 DownloadKeepAliveService，Dart 门面 android_download_keep_alive.dart。
     public static final String DOWNLOAD_KEEP_ALIVE = PREFIX + "/download_keep_alive";
@@ -50,8 +54,23 @@ public final class ChannelNames {
     // 上次进程退出原因 + onTrimMemory 记录：实现见 ProcessExitChannel，Dart 门面
     // previous_exit_log.dart。
     public static final String PROCESS_EXIT = PREFIX + "/process_exit";
-    // 串流第二块屏上的查词面板：主进程 GameStreamCompanionDisplay 与面板进程
-    // GameStreamCompanionActivity 各自在自己的引擎上注册同名通道，中间由
-    // GameStreamCompanionRelayService 转发。
-    public static final String GAME_STREAM_COMPANION = PREFIX + "/game_stream_companion";
+    // 系统默认网络变了（EventChannel）：互联 P2P 隧道据此通知 iroh 重新探测路径。
+    // 实现见 NetworkChangeChannel，Dart 侧 interconnect_p2p_app.dart。
+    public static final String NETWORK_CHANGE = PREFIX + "/network_change";
+    // 第二块屏宿主（副屏伴侣 / 串流查词面板）：主进程 SecondScreenDisplay 与面板进程
+    // SecondScreenActivity 各自在自己的引擎上注册同名通道，中间由
+    // SecondScreenRelayService 转发。
+    public static final String SECOND_SCREEN = PREFIX + "/second_screen";
+    // 反馈回复后台检查（反馈 yjn-3h8B-7）：主引擎上排 / 撤纯原生的 FeedbackReplyWorker
+    // （feedback/FeedbackReplyWorkChannel.kt），Dart 门面 feedback_reply_background.dart。
+    public static final String FEEDBACK_REPLY_WORK = PREFIX + "/feedback_reply_work";
+    // 「用其他应用打开」/ 分享进来的书 / 漫画文件（拍板台 oeJzVRQ9p1）：原生把 content://
+    // 复制进缓存，Dart 取走后入库。实现见 OpenWithChannel，Dart 门面 android_open_with.dart。
+    public static final String OPEN_WITH = PREFIX + "/open_with";
+    // Android 文件分享（BUG-4740）：share_plus 在主线程整份拷贝文件会 ANR，Android 的
+    // 文件分享改走这条。实现见 FushiShareChannel.kt，Dart 门面 fushi_share.dart。
+    public static final String SHARE = PREFIX + "/share";
+    // 通知渠道显示名跟界面语言（拍板台 left3621）：Dart 启动时把「渠道 id → 名字」整表推过来。
+    // 实现见 NotificationChannelNames，Dart 门面 android_notification_channels.dart。
+    public static final String NOTIFICATION_CHANNELS = PREFIX + "/notification_channels";
 }

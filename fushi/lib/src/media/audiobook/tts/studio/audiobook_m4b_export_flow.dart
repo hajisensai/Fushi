@@ -60,11 +60,9 @@ Future<void> runAudiobookM4bExport({
     if (desktop) {
       FushiToast.show(msg: t.audiobook_studio_export_done(path: written));
     } else {
-      final String srt = p.setExtension(written, '.srt');
+      // 字幕与封面都封在 M4B 里（反馈 iUtGmIlZiD），只分享这一个文件。
       await FushiShare.shareFiles(<XFile>[
         XFile(written, mimeType: 'audio/mp4', name: p.basename(written)),
-        if (File(srt).existsSync())
-          XFile(srt, mimeType: 'application/x-subrip', name: p.basename(srt)),
       ], subject: p.basename(written));
     }
   } on AudiobookExportFailure catch (failure) {

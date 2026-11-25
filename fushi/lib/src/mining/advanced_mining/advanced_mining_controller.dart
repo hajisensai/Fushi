@@ -1,8 +1,10 @@
 import 'dart:async';
+import 'dart:math' as math;
 import 'dart:ui' show Rect;
 
 import 'package:flutter/foundation.dart';
-import 'package:flutter/widgets.dart' show TextEditingController, TextSelection;
+import 'package:flutter/widgets.dart'
+    show TextEditingController, TextEditingValue, TextSelection;
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
@@ -18,6 +20,54 @@ enum MangaCropChoice { wholePage, panel, textArea, custom, none }
 
 /// 整页（不裁）的归一化矩形。
 const Rect kMangaWholePageRect = Rect.fromLTRB(0, 0, 1, 1);
+
+/// 起点 / 终点按当前已知区间 [window] 可去的绝对时刻范围（毫秒）：起点不早于 0、
+/// 区间不短于 [kAdvancedMiningAudioMinDurationMs]（起点永远不越过终点）；终点往后
+/// 不设上限（媒体时长只有宿主知道，交给它夹）。
+///
+/// 区间本来就比最短时长还短（宿主夹到媒体两端）时只许往外放、不许再往里收：范围
+/// 总是包含当前时刻，不会反把端点往回拽。
+({int lo, int hi}) advancedMiningEdgeBoundsMs({
+  required AdvancedMiningAudioWindow window,
+  required bool start,
+}) {
+  if (start) {
+    return (
+      lo: math.min(0, window.startMs),
+      hi: math.max(
+        window.endMs - kAdvancedMiningAudioMinDurationMs,
+        window.startMs,
+      ),
+    );
+  }
+  return (
+    lo: math.min(
+      window.startMs + kAdvancedMiningAudioMinDurationMs,
+      window.endMs,
+    ),
+    // 只是「不设上限」：取一个远超任何媒体时长、又不会在加减里溢出的值。
+    hi: math.max(window.endMs, 1 << 52),
+  );
+}
+
+/// 端点往后 / 往前挪一步 [stepMs] 后**实际**会落到的绝对时刻（按
+/// [advancedMiningEdgeBoundsMs] 夹过）：读屏的增减读数用它，边界处不念一个到不了的
+/// 时刻。
+({int increased, int decreased}) advancedMiningSteppedEdgeMs({
+  required AdvancedMiningAudioWindow window,
+  required bool start,
+  required int stepMs,
+}) {
+  final int at = start ? window.startMs : window.endMs;
+  final ({int lo, int hi}) bounds = advancedMiningEdgeBoundsMs(
+    window: window,
+    start: start,
+  );
+  return (
+    increased: (at + stepMs).clamp(bounds.lo, bounds.hi),
+    decreased: (at - stepMs).clamp(bounds.lo, bounds.hi),
+  );
+}
 
 /// 「高级制卡」对话框的全部可变状态与宿主往返。
 ///
@@ -42,6 +92,10 @@ class AdvancedMiningController extends ChangeNotifier {
   AdvancedMiningVideoImageSection? get videoSection => sections.videoImage;
   AdvancedMiningMangaImageSection? get mangaSection => sections.mangaImage;
   AdvancedMiningStillImageSection? get stillSection => sections.stillImage;
+
+  /// 裁切分区框的是截屏识字的截图（没有分镜），见 [AdvancedMiningCropSource]。
+  bool get cropsScreenshot =>
+      mangaSection?.source == AdvancedMiningCropSource.screenshot;
 
   /// 卡片字段分区；没配字段映射（字段为空）时当作没有这项能力。
   AdvancedMiningFieldsSection? get fieldsSection {
@@ -109,6 +163,17 @@ class AdvancedMiningController extends ChangeNotifier {
   /// 与 [prev] / [next] 逐位对应：该句是否已被移除（宿主未给该字段时全 false）。
   List<bool> prevRemoved = const <bool>[];
   List<bool> nextRemoved = const <bool>[];
+
+  /// 与 [prev] / [next] 逐位对应：宿主给的原句（未手改前的文本）。旧宿主不给该字段
+  /// 时为空列表，[originalOf] 返回 null，「恢复原文」入口随之不显示。
+  List<String> prevOriginal = const <String>[];
+  List<String> nextOriginal = const <String>[];
+
+  /// 宿主是否支持「清空前文 / 后文只去文字、音频保留」语义。判据是预览里是否带
+  /// `prevOriginal` / `nextOriginal` 字段：这两个字段与该语义同一版宿主引入；旧宿主
+  /// （如手机远程连的旧版桌面）不给，其 `editSentence` 仍把空白当「还原原句」，此时
+  /// 既不能提示「清空保留音频」，也没有「恢复原文」入口（[originalOf] 返回 null）。
+  bool clearKeepsAudio = false;
   String current = '';
   int? currentOffset;
 
@@ -158,6 +223,10 @@ class AdvancedMiningController extends ChangeNotifier {
     next = _stringList(p['next']);
     prevRemoved = _boolList(p['prevRemoved'], prev.length);
     nextRemoved = _boolList(p['nextRemoved'], next.length);
+    clearKeepsAudio =
+        p.containsKey('prevOriginal') && p.containsKey('nextOriginal');
+    prevOriginal = _stringList(p['prevOriginal']);
+    nextOriginal = _stringList(p['nextOriginal']);
     current = p['current'] as String? ?? '';
     currentOffset = (p['currentOffset'] as num?)?.toInt();
     contextTotal = (p['total'] as num?)?.toInt() ?? (prev.length + next.length);
@@ -266,6 +335,33 @@ class AdvancedMiningController extends ChangeNotifier {
     _notify();
   }
 
+  /// 某一句前文 / 后文的宿主原句；当前句、越界或宿主不支持（[clearKeepsAudio] 为
+  /// false）时返回 null。
+  String? originalOf(SentenceContextSlot slot, int index) {
+    if (!clearKeepsAudio) return null;
+    final List<String> list = switch (slot) {
+      SentenceContextSlot.prev => prevOriginal,
+      SentenceContextSlot.next => nextOriginal,
+      SentenceContextSlot.current => const <String>[],
+    };
+    if (index < 0 || index >= list.length) return null;
+    return list[index];
+  }
+
+  /// 把正在编辑那句的输入框改回宿主原句（光标放末尾）。不自动提交——用户仍要点
+  /// 确认。清空不再等于还原（清空 = 只去文字、保留音频），这是回到原句的入口。
+  void restoreEditToOriginal() {
+    final SentenceContextSlot? slot = _editSlot;
+    final TextEditingController? controller = _editController;
+    if (slot == null || controller == null) return;
+    final String? original = originalOf(slot, _editIndex);
+    if (original == null) return;
+    controller.value = TextEditingValue(
+      text: original,
+      selection: TextSelection.collapsed(offset: original.length),
+    );
+  }
+
   /// 退出编辑态（不落地）。
   void cancelEdit() {
     if (!editing) return;
@@ -276,11 +372,11 @@ class AdvancedMiningController extends ChangeNotifier {
     _notify();
   }
 
-  /// 确认修改：写回宿主草稿，再重新拉一次预览（宿主是唯一真值——它可能把空白句还原
-  /// 成原句，UI 不把输入框里的文本直接当成结果显示）。
+  /// 确认修改：写回宿主草稿，再重新拉一次预览（宿主是唯一真值——它可能把与原句相同
+  /// 的文本还原，UI 不把输入框里的文本直接当成结果显示）。
   ///
-  /// 前文 / 后文清空后确认 = 移除这一句（用户的直觉操作：把那句删光再确认）。当前句
-  /// 清空仍是还原——当前句不可移除。
+  /// 前文 / 后文清空后确认 = **只去掉这句的文字，音频保留**（草稿 `editSentence`
+  /// 写入空串）；要连音频一起拿掉走「×」（[dismissSentence]）。当前句清空仍是还原。
   Future<void> commitEdit() async {
     final SentenceContextSlot? slot = _editSlot;
     final AdvancedMiningSentenceSection? section = sentenceSection;
@@ -289,20 +385,10 @@ class AdvancedMiningController extends ChangeNotifier {
     if (slot == null || edit == null) return;
     final String text = _editController?.text ?? '';
     final int index = _editIndex;
-    final Future<void> Function(SentenceContextSlot, int, bool)? remove =
-        section?.removeSentence;
-    final bool removeInstead =
-        text.trim().isEmpty &&
-        slot != SentenceContextSlot.current &&
-        remove != null;
     cancelEdit();
     busy = true;
     try {
-      if (removeInstead) {
-        await remove(slot, index, true);
-      } else {
-        await edit(slot, index, text);
-      }
+      await edit(slot, index, text);
       await refreshSentences();
     } finally {
       busy = false;
@@ -559,23 +645,59 @@ class AdvancedMiningController extends ChangeNotifier {
   /// 起点 / 终点各挪 [deltaMs]（负 = 提前）。画面窗口（动图 / 片段首尾帧）与音频共用
   /// 这一对偏移，所以视频的逐帧挪动也走这里。
   void nudgeAudioEdge({required bool start, required int deltaMs}) {
+    setAudioEdgeDelta(
+      start: start,
+      deltaMs: (start ? audioStartDeltaMs : audioEndDeltaMs) + deltaMs,
+    );
+  }
+
+  /// 把起点 / 终点的偏移**直接设成** [deltaMs]（拖动区间条端点走这里；按钮微调经
+  /// [nudgeAudioEdge] 也落到这里，两条路径同一套约束）。
+  ///
+  /// 约束按当前已知区间换算：起点不早于 0、区间不短于
+  /// [kAdvancedMiningAudioMinDurationMs]（起点永远不越过终点）。区间还没回来时
+  /// 不夹，交给宿主 describe。
+  ///
+  /// [describe] = false 只做乐观更新、不问宿主：拖动途中每一帧都问一次没有意义，
+  /// 松手后调 [refreshAudioWindow] 以宿主为准。
+  void setAudioEdgeDelta({
+    required bool start,
+    required int deltaMs,
+    bool describe = true,
+  }) {
     if (locked) return;
+    final int current = start ? audioStartDeltaMs : audioEndDeltaMs;
+    int next = deltaMs;
+    final AdvancedMiningAudioWindow? w = audioWindow;
+    if (w != null) {
+      // 绝对时刻的可去范围换算回偏移：偏移与绝对时刻只差一个常数。
+      final int at = start ? w.startMs : w.endMs;
+      final ({int lo, int hi}) bounds = advancedMiningEdgeBoundsMs(
+        window: w,
+        start: start,
+      );
+      next = (at + (next - current)).clamp(bounds.lo, bounds.hi) - at + current;
+    }
+    final int moved = next - current;
+    if (moved == 0) return;
+    // 偏移一变，所有在途的 describe 都是按旧偏移算的：一律作废，不能等它回来把
+    // 乐观区间换回旧窗口（拖动途中按旧窗口算约束会让起点越过终点）。
+    _describeGen++;
     if (start) {
-      audioStartDeltaMs += deltaMs;
+      audioStartDeltaMs = next;
     } else {
-      audioEndDeltaMs += deltaMs;
+      audioEndDeltaMs = next;
     }
     // 先按偏移量乐观地平移已知区间，让时间标签 / 区间条 / 首尾帧即时跟手；宿主的
     // describe 回来后再以它为准（它可能夹到 0 或媒体时长）。
-    final AdvancedMiningAudioWindow? w = audioWindow;
     if (w != null) {
       audioWindow = AdvancedMiningAudioWindow(
-        startMs: start ? w.startMs + deltaMs : w.startMs,
-        endMs: start ? w.endMs : w.endMs + deltaMs,
+        startMs: start ? w.startMs + moved : w.startMs,
+        endMs: start ? w.endMs : w.endMs + moved,
       );
     }
     _notify();
-    unawaited(refreshAudioWindow());
+    if (describe) unawaited(refreshAudioWindow());
   }
 
   /// 试听 / 停止。返回 false = 宿主说这段没有可试听的音频（调用方如实提示）。
@@ -865,11 +987,18 @@ class AdvancedMiningController extends ChangeNotifier {
   }
 
   /// 静态帧逐帧挪动。
-  void nudgeStillFrame({required bool forward}) {
+  ///
+  /// [scale] 是按住的修饰键档位（Shift 一次挪 [kAdvancedMiningCoarseStepFactor]
+  /// 帧；细调低不过一帧，与普通相同）。
+  void nudgeStillFrame({
+    required bool forward,
+    AdvancedMiningStepScale scale = AdvancedMiningStepScale.normal,
+  }) {
     final VideoMiningImageMode? mode = videoImageMode;
     final AdvancedMiningVideoImageSection? section = videoSection;
     if (locked || mode == null || !mode.isStill || section == null) return;
-    final int step = forward ? section.frameStepMs : -section.frameStepMs;
+    final int frameMs = _frameStepMs(section, scale);
+    final int step = forward ? frameMs : -frameMs;
     final int base = stillBaseMs(mode) ?? 0;
     final int next = (_stillDeltaMs[mode] ?? 0) + step;
     // 不挪到播放器轴 0 之前：那一帧不存在。
@@ -878,14 +1007,26 @@ class AdvancedMiningController extends ChangeNotifier {
   }
 
   /// 动图 / 片段的首帧 / 尾帧逐帧挪动：挪的就是音频起止偏移（画面窗口与音频共用）。
-  void nudgeVideoEdge({required bool first, required bool forward}) {
+  void nudgeVideoEdge({
+    required bool first,
+    required bool forward,
+    AdvancedMiningStepScale scale = AdvancedMiningStepScale.normal,
+  }) {
     final AdvancedMiningVideoImageSection? section = videoSection;
     if (section == null) return;
-    nudgeAudioEdge(
-      start: first,
-      deltaMs: forward ? section.frameStepMs : -section.frameStepMs,
-    );
+    final int frameMs = _frameStepMs(section, scale);
+    nudgeAudioEdge(start: first, deltaMs: forward ? frameMs : -frameMs);
   }
+
+  /// 逐帧挪动按档位换算的一步：最小单位是一帧。
+  static int _frameStepMs(
+    AdvancedMiningVideoImageSection section,
+    AdvancedMiningStepScale scale,
+  ) => scaleAdvancedMiningStepMs(
+    section.frameStepMs,
+    scale,
+    minMs: section.frameStepMs,
+  );
 
   // ───────────────────────────── 漫画裁切 ─────────────────────────────
 

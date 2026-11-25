@@ -16,9 +16,9 @@ import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart';
 import 'package:fushi/src/pages/implementations/video_library_shell.dart';
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/pages/shared/library_section_tabs.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import '../../helpers/masthead_tabs.dart';
 import '../../helpers/source_guard.dart';
 
 bool _gameSectionsHaveDropGates(String source) {
@@ -226,11 +226,10 @@ void main() {
       expect(dropped, <String>['library']);
 
       dropped.clear();
-      tester
-          .widget<FushiSectionTabBar<MediaLibraryViewKind>>(
-            find.byType(FushiSectionTabBar<MediaLibraryViewKind>),
-          )
-          .onChanged!(MediaLibraryViewKind.discover);
+      readMastheadTabs<MediaLibraryViewKind>(
+        tester,
+        mastheadPrimaryTabs<MediaLibraryViewKind>(),
+      ).onChanged(MediaLibraryViewKind.discover);
       await tester.pumpAndSettle();
 
       await _performOsDrop(tester);
@@ -298,11 +297,10 @@ void main() {
       expect(dropped, <String>['local'], reason: '停在本地库时本地库当然要接');
 
       dropped.clear();
-      tester
-          .widget<FushiSectionTabBar<VideoLibrarySection>>(
-            find.byType(FushiSectionTabBar<VideoLibrarySection>).first,
-          )
-          .onChanged!(VideoLibrarySection.mediaServers);
+      readMastheadTabs<VideoLibrarySection>(
+        tester,
+        mastheadPrimaryTabs<VideoLibrarySection>(),
+      ).onChanged(VideoLibrarySection.mediaServers);
       await tester.pumpAndSettle();
 
       await _performOsDrop(tester);

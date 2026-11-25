@@ -13,13 +13,22 @@
       "os": "macos",
       "seedRepo": "dev/hibiki",
       "slots": 1,
-      "path": ["$HOME/flutter_3.47.6/bin", "/opt/homebrew/bin", "$HOME/.cargo/bin"],
+      "path": ["$HOME/flutter_3.50.0/bin", "/opt/homebrew/bin", "$HOME/.cargo/bin"],
       "prepareEnv": {
         "LANG": "en_US.UTF-8",
         "HTTPS_PROXY": "http://127.0.0.1:7897",
         "HTTP_PROXY": "http://127.0.0.1:7897"
       },
       "capabilities": ["itest"]
+    },
+    {
+      "name": "self-linux",
+      "kind": "ssh-trusted",
+      "host": "fushi@192.168.1.42",
+      "os": "linux",
+      "slots": 1,
+      "path": ["$HOME/flutter/bin", "$HOME/.cargo/bin"],
+      "capabilities": ["ffmpeg"]
     },
     {
       "name": "friend-win",

@@ -24,6 +24,14 @@ const flutter::EncodableValue* FindArg(const flutter::EncodableMap* args,
   return it == args->end() ? nullptr : &it->second;
 }
 
+int64_t IntArg(const flutter::EncodableMap* args, const char* key) {
+  const flutter::EncodableValue* value = FindArg(args, key);
+  if (value == nullptr) return 0;
+  if (const auto* v = std::get_if<int32_t>(value)) return *v;
+  if (const auto* v = std::get_if<int64_t>(value)) return *v;
+  return 0;
+}
+
 std::string StringArg(const flutter::EncodableMap* args, const char* key,
                       const std::string& fallback) {
   const flutter::EncodableValue* value = FindArg(args, key);
@@ -35,6 +43,22 @@ flutter::EncodableValue SystemOcrReplyMap(const SystemOcrResult& ocr) {
   flutter::EncodableList lines;
   lines.reserve(ocr.lines.size());
   for (const SystemOcrLine& line : ocr.lines) {
+    flutter::EncodableList words;
+    words.reserve(line.words.size());
+    for (const SystemOcrWord& word : line.words) {
+      words.push_back(flutter::EncodableValue(flutter::EncodableMap{
+          {flutter::EncodableValue("start"),
+           flutter::EncodableValue(static_cast<int32_t>(word.start))},
+          {flutter::EncodableValue("length"),
+           flutter::EncodableValue(static_cast<int32_t>(word.length))},
+          {flutter::EncodableValue("left"), flutter::EncodableValue(word.left)},
+          {flutter::EncodableValue("top"), flutter::EncodableValue(word.top)},
+          {flutter::EncodableValue("right"),
+           flutter::EncodableValue(word.right)},
+          {flutter::EncodableValue("bottom"),
+           flutter::EncodableValue(word.bottom)},
+      }));
+    }
     // 不带 `vertical`：由 Dart 的 inferSystemOcrVertical 按包围盒推断。
     lines.push_back(flutter::EncodableValue(flutter::EncodableMap{
         {flutter::EncodableValue("text"), flutter::EncodableValue(line.text)},
@@ -43,6 +67,8 @@ flutter::EncodableValue SystemOcrReplyMap(const SystemOcrResult& ocr) {
         {flutter::EncodableValue("right"), flutter::EncodableValue(line.right)},
         {flutter::EncodableValue("bottom"),
          flutter::EncodableValue(line.bottom)},
+        {flutter::EncodableValue("words"),
+         flutter::EncodableValue(std::move(words))},
     }));
   }
   return flutter::EncodableValue(flutter::EncodableMap{
@@ -50,6 +76,12 @@ flutter::EncodableValue SystemOcrReplyMap(const SystemOcrResult& ocr) {
        flutter::EncodableValue(static_cast<int32_t>(ocr.width))},
       {flutter::EncodableValue("height"),
        flutter::EncodableValue(static_cast<int32_t>(ocr.height))},
+      {flutter::EncodableValue("recognizedWidth"),
+       flutter::EncodableValue(static_cast<int32_t>(ocr.recognized_width))},
+      {flutter::EncodableValue("recognizedHeight"),
+       flutter::EncodableValue(static_cast<int32_t>(ocr.recognized_height))},
+      {flutter::EncodableValue("maxImageDimension"),
+       flutter::EncodableValue(static_cast<int32_t>(ocr.max_image_dimension))},
       {flutter::EncodableValue("lines"),
        flutter::EncodableValue(std::move(lines))},
   });
@@ -120,13 +152,35 @@ void SystemOcrChannelHost::HandleMethodCall(
     return;
   }
   const auto* args = std::get_if<flutter::EncodableMap>(call.arguments());
-  const auto* bytes_value = FindArg(args, "bytes");
-  const auto* bytes = bytes_value == nullptr
-                          ? nullptr
-                          : std::get_if<std::vector<uint8_t>>(bytes_value);
-  if (bytes == nullptr || bytes->empty()) {
-    result->Error("INVALID_IMAGE", "missing image bytes");
-    return;
+  // `pixels` + `width` / `height`：不透明 RGBA（Dart recognizePixels），不经解码；
+  // 否则 `bytes`：编码图。
+  SystemOcrImage image;
+  const auto* pixels_value = FindArg(args, "pixels");
+  const auto* pixels = pixels_value == nullptr
+                           ? nullptr
+                           : std::get_if<std::vector<uint8_t>>(pixels_value);
+  if (pixels != nullptr) {
+    const int64_t width = IntArg(args, "width");
+    const int64_t height = IntArg(args, "height");
+    if (width <= 0 || height <= 0 || width > 0xFFFF || height > 0xFFFF ||
+        static_cast<uint64_t>(width) * static_cast<uint64_t>(height) * 4 !=
+            pixels->size()) {
+      result->Error("INVALID_IMAGE", "pixels do not match width * height * 4");
+      return;
+    }
+    image.rgba = *pixels;
+    image.width = static_cast<uint32_t>(width);
+    image.height = static_cast<uint32_t>(height);
+  } else {
+    const auto* bytes_value = FindArg(args, "bytes");
+    const auto* bytes = bytes_value == nullptr
+                            ? nullptr
+                            : std::get_if<std::vector<uint8_t>>(bytes_value);
+    if (bytes == nullptr || bytes->empty()) {
+      result->Error("INVALID_IMAGE", "missing image bytes");
+      return;
+    }
+    image.bytes = *bytes;
   }
   const std::string language = StringArg(args, "language", "ja");
   if (replies_->empty() &&
@@ -145,7 +199,7 @@ void SystemOcrChannelHost::HandleMethodCall(
     reply->Success(SystemOcrReplyMap(ocr));
   });
   if (completion) {
-    std::thread([image = *bytes, language, completion]() {
+    std::thread([image = std::move(image), language, completion]() {
       completion->Publish(RecognizeImageText(image, language));
     }).detach();
   }

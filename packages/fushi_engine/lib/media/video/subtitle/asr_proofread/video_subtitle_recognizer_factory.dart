@@ -61,6 +61,8 @@ class VideoSubtitleRecognizerChoice {
 ///   null = 引擎的 [engineAsrProcessStarter]（同一个 `HelperProcessRegistry`）。
 /// - [probes]：环境探测（测试注入）；null = 真实探测。
 /// - [language]：识别语言（两种识别器都按它选上游模型包）。
+/// - [audioProfile]：转录素材，两种识别器都按它建转录服务：视频是 `mixedAudio`，
+///   音乐库歌词是 `song`（识别前做人声分离）。不收 `cleanSpeech`。
 /// - [mossCliPath] / [mossModelPath]：跳过下载目录、直接用本机已有的 audio.cpp CLI
 ///   与 GGUF（CLI 排障 / 已手动部署时）；给了就只检查文件存在。
 Future<VideoSubtitleRecognizerChoice> resolveVideoSubtitleRecognizer({
@@ -74,7 +76,9 @@ Future<VideoSubtitleRecognizerChoice> resolveVideoSubtitleRecognizer({
   String? mossCliPath,
   String? mossModelPath,
   VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  asr.AsrAudioProfile audioProfile = asr.AsrAudioProfile.mixedAudio,
 }) async {
+  checkVideoSubtitleRecognizerProfile(audioProfile);
   VideoSubtitleRecognizerChoice sliding({
     MossUnavailableCode? code,
     String? reason,
@@ -83,6 +87,7 @@ Future<VideoSubtitleRecognizerChoice> resolveVideoSubtitleRecognizer({
       serviceFactory: serviceFactory,
       preference: preference,
       language: language,
+      audioProfile: audioProfile,
     ),
     mossUnavailableReason: reason,
     mossUnavailableCode: code,
@@ -157,6 +162,7 @@ Future<VideoSubtitleRecognizerChoice> resolveVideoSubtitleRecognizer({
       serviceFactory: serviceFactory,
       preference: preference,
       language: language,
+      audioProfile: audioProfile,
       moss: asr.MossRunner(
         cliPath: cli,
         modelPath: model,

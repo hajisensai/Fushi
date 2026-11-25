@@ -1,8 +1,10 @@
 import 'package:drift/native.dart';
+import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/collections/collection_grouping.dart';
 import 'package:fushi/src/pages/implementations/collection_management_page.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -28,7 +30,16 @@ void main() {
     FushiDatabase db, {
     List<String>? opened,
     List<Offset?>? menuAnchors,
+    ValueListenable<Map<int, int>>? counts,
   }) async {
+    final ValueListenable<Map<int, int>> displayCounts =
+        counts ??
+        ValueNotifier<Map<int, int>>(<int, int>{
+          for (final MediaCollectionRow c
+              in await tester.runAsync(() => db.getAllMediaCollections()) ??
+                  const <MediaCollectionRow>[])
+            c.id: 2,
+        });
     tester.view.physicalSize = const Size(1200, 1000);
     tester.view.devicePixelRatio = 1.0;
     addTearDown(tester.view.resetPhysicalSize);
@@ -42,6 +53,7 @@ void main() {
             onOpenCollection: (MediaCollectionRow c) => opened?.add(c.name),
             onShowCollectionMenu: (MediaCollectionRow c) async =>
                 menuAnchors?.add(activeContextMenuAnchor),
+            displayCounts: displayCounts,
           ),
         ),
       ),
@@ -101,5 +113,79 @@ void main() {
 
     expect(find.text('改名后'), findsOneWidget);
     expect(find.text('书合集'), findsNothing);
+  });
+
+  // BUG：书架合集卡「5 卷」，管理页却是「共 10 项」——管理页数的是
+  // media_collection_items 原始行（有声书 SRT 与配对 EPUB 各一行、已删条目的悬空
+  // 行、折叠归属被别的合集抢走的成员都算），库页只数折进卡里的显示单元。
+  testWidgets('成员数取库页折叠结果，不数原始成员行', (WidgetTester tester) async {
+    final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
+    addTearDown(db.close);
+    late int series;
+    await tester.runAsync(() async {
+      series = await db.createMediaCollection('七つの魔剣が支配する');
+      for (int i = 1; i <= 5; i++) {
+        await db.addToCollection(series, MediaKind.srt, 'srt$i');
+        await db.addToCollection(series, MediaKind.epub, 'epub$i');
+      }
+    });
+    final ValueNotifier<Map<int, int>> counts = ValueNotifier<Map<int, int>>(
+      <int, int>{series: 5},
+    );
+    addTearDown(counts.dispose);
+    await pumpPage(tester, db, counts: counts);
+
+    expect(find.text(t.collection_detail_member_count(n: 5)), findsOneWidget);
+    expect(find.text(t.collection_detail_member_count(n: 10)), findsNothing);
+
+    // 库页没有它的卡（成员全删 / 全折进别的合集）→ 0，而不是原始行数。
+    counts.value = const <int, int>{};
+    await tester.pump();
+    expect(find.text(t.collection_detail_member_count(n: 0)), findsOneWidget);
+  });
+
+  test('collectionDisplayCountsOf 只数合集组的成员、散卡不计', () {
+    final MediaCollectionRow c = MediaCollectionRow(
+      id: 7,
+      name: 'c',
+      collectionType: 'collection',
+      sortOrder: 0,
+      createdAt: 0,
+      orderUpdatedAt: 0,
+      origin: 'user',
+      organizeAliases: '',
+    );
+    CollectionOrderingItem<int> item(String k) => CollectionOrderingItem<int>(
+      mediaType: MediaKind.srt,
+      entryKey: k,
+      importedAt: 0,
+      payload: 0,
+    );
+    final List<CollectionGroup<int>> groups = groupByCollections<int>(
+      items: <CollectionOrderingItem<int>>[item('a'), item('b'), item('c')],
+      primaryCollectionIdByEntry: <String, int>{
+        MediaKind.srt.compositeKey('a'): 7,
+        MediaKind.srt.compositeKey('b'): 7,
+      },
+      collectionsById: <int, MediaCollectionRow>{7: c},
+      memberSortIndex: const <String, int>{},
+    );
+    expect(collectionDisplayCountsOf<int>(groups), <int, int>{7: 2});
+  });
+
+  testWidgets('CollectionDisplayCounts 帧末才写入，同帧多次只落最后一次', (
+    WidgetTester tester,
+  ) async {
+    final CollectionDisplayCounts counts = CollectionDisplayCounts();
+    addTearDown(counts.dispose);
+    int notified = 0;
+    counts.addListener(() => notified++);
+    counts.publishCounts(<int, int>{1: 3});
+    counts.publishCounts(<int, int>{1: 4});
+    expect(counts.value, isEmpty);
+    tester.binding.scheduleFrame();
+    await tester.pump();
+    expect(counts.value, <int, int>{1: 4});
+    expect(notified, 1);
   });
 }

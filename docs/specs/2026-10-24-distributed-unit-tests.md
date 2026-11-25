@@ -60,7 +60,9 @@
 
 用户：「我电脑上好卡，但是其他电脑上很闲」。`tool/heavy.dart` 在排本机租约前，把能外包的重活自动交给本工具：
 
-- `flutter test`（test/ 下）→ `dist_test.dart --offload`：worker 只用非 `local` 的机器；它们都没接（不可达 / 忙 / 暂停 / 平台不符）时退出码 75（`kDistOffloadDeclined`），heavy.dart 改在本机照原样跑；跑了一部分后剩下的（平台钉死、机器掉线）由 `local` worker 在租约下补跑。忙的机器只再问 `--busy-retries=2` 次。
+- `flutter test`（test/ 下）→ `dist_test.dart --offload`：别的机器都没接（不可达 / 忙 / 暂停 / 平台不符）时退出码 75（`kDistOffloadDeclined`），heavy.dart 改在本机照原样跑。忙的机器只再问 `--busy-retries=2` 次。
+  - **本机是同级 worker，不是收尾兜底（2026-11-20）**：起因是一个只能在 Windows 跑的 suite 只能等 wight-win，而 wight-win 的 `git push` 经中转卡了 984 秒（见下一条），本机 Windows 全程闲着，整次运行 18 分 45 秒里本机只干了最后 1 分 48 秒。以前 `local` worker 要等所有远端 `drive()` 结束才开始补跑。现在 heavy.dart 的**第一次**外包里，本机 worker 和远端一起起跑：`prepare` 照常排本机 heavy 租约（和任何 heavy 运行同一个队列，不多占槽），拿到槽就按速度和别的机器分同一个队列。没拿到槽时只在还有别的机器在准备 / 干活时才继续排；别的机器全都忙 / 掉线 / 跑完了，它就撤出队列（`HeavyLeaseRival`，`LocalDistWorker.abandon`；纯函数 `distWantedWhilePreparing`），交回 heavy.dart 照旧「本机排队 + 每分钟再问别的机器」。还剩下的 suite（平台钉死、机器掉线）仍由本机在租约下补跑。heavy 排队期间的重问（`heavyOffloadQueuedArgs`）带 `--no-local`：那时 heavy 自己的排队就是本机的名额，dist_test 再起本机 worker 就排了两次。
+  - **push 卡死检测（2026-11-20）**：snapshot 的 `git push` 改成 `--progress`，连续 `kDistPushStall`（120 秒）没有任何输出就杀掉并剔除这台 worker（`DistWorkerStalled`，算这台的失败，不是「暂时忙」）。依据：本机全部 prepare 日志里约 420 次成功 push 最长 198 秒（wight-mac），wight-win p99 88 秒，git 传对象时每秒至少刷一次进度；失败的几次都经中转 `domain.ztmy.asia`，一声不响挂到对端断开（312～984 秒）。ssh 的 ServerAlive 探测抓不到：中转一直在回应。日志里的进度行按 `\r` 折叠成最终状态。前提是 push 里没有会静默的远端步骤：receive-pack 的 auto gc 跑在回报 ref 之后、push 返回之前（实测 `To <remote>` 要等它结束才打印），所以每个 worker checkout 都关掉 `receive.autogc`（ssh-trusted 的 init、`worker_shim.sh` 的 lock 与 `receive-pack`，以及随快照下发的 `worker_prepare.sh`，旧 shim 也能拿到），改由 `worker_prepare.sh` 自己跑 `git gc --auto`。卡死会被 breaker 记成 `push stalled`。进程退出后管道最多再等 `kDistPipeDrain`（10 秒），防止残留子进程握着管道又挂住。coverage 运行本机不在第一轮当同级 worker（coverage 批次一次领走整份，本机一秒拿到槽就会吞掉整个队列），只补剩余。
 - `flutter analyze` → `dist_test.dart --analyze`：按 config 顺序，先问 `jobBlocker()`（shim 机器发 `hello`，看 `analyze=yes` / `paused`，不满足就不 lock / push / prepare），第一台 prepare 成功且接活的机器跑 `worker_analyze.sh`，输出与退出码原样带回；都不接 → 75。
 - shim 新动词 `analyze <slot> [--[no-]fatal-infos|warnings]`：选项白名单，路径走 stdin 由 `worker_analyze.sh` 校验（只许 `lib/ test/ tool/ integration_test/ test_driver/ bin/` 下已存在的路径，拒 `..`），与 `run` 同一套暂停 / 空闲内存门槛。信任面不变：同样是跑请求方仓库里的代码（analyzer），不回传任何文件。
 - **其它 package 的测试**（第二轮）：`packages/<name>/` 下的 `flutter test` / `dart test` → `--offload --package=packages/<name>`。协调者按包目录发现 suite（路径仍是包内的 `test/...`），包没有耗时表与人工钉表，按文件大小估重；包名经 flutter 参数 `--fushi-package=<name>` 带给 `worker_run.sh`，它先剥掉这个参数再 `cd ../packages/<name>`，按 pubspec 有没有 `sdk: flutter` 选 `flutter test --no-pub` 或 `dart test`（与 CI 一致）。旧 shim 的 `check_flutter_arg` 本来就放行 `--name=朴素值`，跑的又是快照里新的 `worker_run.sh`，所以朋友不用重装 shim 就能接包测试。
@@ -85,13 +87,14 @@
   | 动词 | 作用 |
   |---|---|
   | `hello` | 平台、Flutter 版本、核数、空闲内存 / 磁盘、槽位上限、是否暂停（`--status` 用它） |
-  | `lock <slot> <runId>` | 抢该槽位 checkout 的整轮锁（同第一期的 `mkdir` 锁 + 心跳 + 15 分钟接管），借种子仓 / 首槽位的对象库 |
+  | `lock <slot> <runId> [wait]` | 拿该槽位 checkout 的锁（同第一期的 `mkdir` 锁 + 心跳 + 15 分钟接管），借种子仓 / 首槽位的对象库。2026-11-15 起装了 `slot.sh`（`worker_slot.sh`）的机器按入队先后给锁，可在 worker 上等 `[wait]` 秒；没装的照旧先到先得、整轮占用 |
+  | `yield <slot> <runId>` | （2026-11-15）一个批次跑完后问：有别的运行在等就交出锁（回 `yielded`，本轮 ref 保留，之后再 `lock` 排队），否则 `kept` |
   | `git-receive-pack '<work\|work-N>'` | 收快照推送；只认这两种名字，映射到 shim 自己的目录，且必须先 `lock` |
   | `prepare <slot> <sha>` | checkout + clean + `worker_prepare.sh`（只带主人的 `prepare.env`） |
   | `run <slot> <concurrency> [flutter 参数]` | 跑一批，测试文件从 stdin 读（`worker_run.sh` 逐行校验） |
   | `analyze <slot> [--[no-]fatal-*]` | `flutter analyze`，路径从 stdin 读（`worker_analyze.sh` 校验） |
   | `build <slot> flutter\|gradle ...` | 编译检查（`worker_build.sh`），只回日志与退出码 |
-  | `kill <slot>` / `finish <slot> <runId>` | 停批次 / 删本轮 ref 并释放自己的锁 |
+  | `kill <slot>` / `finish <slot> <runId>` | 停批次 / 删本轮 ref、排队票并释放自己的锁 |
 
   请求先过字符集 `[A-Za-z0-9_ ,.:=+-]`（不认引号 / `$` / `;` / 反引号 / 斜杠），再逐参数按模式校验；flutter 参数只认 `--name`、`--name=朴素值` 或紧随其后的朴素值（不能以 `-` 开头），协调者在本机先用同一套规则拒绝（`shimRequest`），不把会被拒的请求发出去。
 - 主人侧设置全在 `~/.fushi-worker/`，请求方一个都改不了：`limits`（`MAX_SLOTS` 默认 1、`MAX_CONCURRENCY` 默认核数/2、`MIN_FREE_MEM_MB` 默认 4096、`MIN_FREE_DISK_GB` 默认 20；只按 `KEY=数字` 解析、不执行）、`path`（Flutter / cargo 的 bin，sshd 的非交互 shell 不读 profile）、`prepare.env`（只给准备步骤，如代理）、`seed`（公开仓的裸 clone）、`pause`。因此 `ssh-shim` 配置里出现 `workdir` / `seedRepo` / `path` / `prepareEnv` 直接报配置错误。
@@ -99,6 +102,7 @@
 - **资源上限**：`run` 前看空闲内存，低于 `MIN_FREE_MEM_MB` 回 `busy: low memory`，协调者把批次退回队列、30 秒后再问，连续 20 次仍忙才剔除；`lock` 前看磁盘。`--concurrency` 被钳到 `MAX_CONCURRENCY`，槽位超出 `MAX_SLOTS` 直接拒绝。
 - **种子仓**：仓库全历史约 6 GB，首推全量对朋友上行不现实。`worker_setup` 默认 `git clone --bare` 公开仓到 `~/.fushi-worker/seed`，首槽位 checkout 借它的对象库，推送只带种子之后的新提交；次槽位借首槽位。
 - **Windows worker**：Windows 的 sshd 默认给 cmd，给不了 POSIX shell，所以 Windows worker 只能是 `ssh-shim`（`ssh-trusted` + `windows` 报配置错误）。`worker_setup.ps1` 写一个 `shim.cmd` 用 Git Bash 起 shim，强制命令指向它（账户 profile 路径不能带空格）。worker 端三个脚本在 Git Bash 下的差异：原生库走 `tool/native_libs.ps1`（自带戳记）；杀进程树按 `/proc/<pid>/winpid` 用 `taskkill /T`；Windows 命令行上限 32767，一批按 24000 字符拆成连续几个 `flutter test` 进程（协调者按 `start` 事件拆段合并，与本机 worker 一致）。`worker_kill.sh` 先停 `worker_run.sh` 本身（`runner.pid`，它的 trap 带走测试树），拆段时不会再起下一段。
+- **Linux worker**（2026-11-20）：`"os": "linux"`，用 `ssh-trusted`（自己的机器）或 `ssh-shim`。worker 端脚本本来就认 Linux（原生库走各 crate 的 `build_linux_so.sh`）。静态扫描仍只把 suite 钉到 Windows / macOS（Linux 门控的 suite 不钉，CI 本身在 Linux 上覆盖），所以 Linux worker 接的是**未钉选**的 suite、analyze 和 Android 编译检查；`itest` 能力在 Linux worker 上报配置错误（集成测试只有 Windows / macOS 两条路）。实例：PVE 上的 VM103 `Linux-Fushi-Dist`（Ubuntu 26.04，192.168.1.42，用户 `fushi`）。
 - **Windows worker 的退出码会被压成 1**（2026-10-30 实测：同一个未知动词，Mac shim 回 2、Windows shim 回 1；sshd 经账户的 shell 和 `shim.cmd` 起 shim，失败一律成 1）。所以 shim 与 worker 脚本拒活时在 stderr 末行带固定前缀——`busy: `（75）、`error: `（2）、`toolchain: `（78）——stdout 为空的失败由协调者按前缀还原退出码（`distRemoteExitCode`），旧 shim 不重装也成立。此前 wight-win 内存不足回的 busy 被当成三个红批次。
 - **超时 / 取消一定杀干净**：`worker_kill.sh` 在发任何信号之前先把 `runner.pid` 与 `run.pid` 两棵进程树整个收集下来（`worker_run.sh` 的 trap 一退出就删 `run.pid`），先 TERM，10 秒后还活着的一律 KILL。flutter tool 在 Dart 里处理 TERM，而 coverage 合并是几分钟的同步循环，TERM 要等它跑完才轮得到（实测超时被杀的批次在 Mac 上又占满一核跑了 30 分钟）。各脚本的心跳用 `touch -c`：锁目录被释放后，残留的心跳也不会把它重建成普通文件、挡住下一轮的 `mkdir`。
 - macOS 自带 bash 3.2：worker 端脚本只用 3.2 能跑的语法（无 `mapfile`）。
@@ -262,6 +266,8 @@ worker 必须跑**和本机完全一致**的代码，包括没提交的改动。
 |---|---|---|
 | `flutter pub get --enforce-lockfile` + `ci/apply-patches.sh` | 全部 `pubspec.lock` + `ci/patches/` 哈希 | 1–2 分钟 |
 | 原生测试库 | 各 `native/fushi_*/` 源码树哈希（同 `tool/native_libs.ps1` 的判据） | 首次 5–10 分钟，之后增量 |
+
+2026-11-16 起 checkout 按批次在运行之间换手（`worker_slot.sh` 的 `yield`），两个快照不同的运行会在同一 checkout 上来回切。为此原生库与 hook 预热不再是「当前一份」的单值戳记，而由 `fushi/tool/dist_test/worker_cache.sh` 按内容键存多份：`.git/fushi-dist/native/<crate>/<key>/` 存每个键编出的整套 `prebuilt/<平台>`，切回见过的键只拷回来；`pub-warm/<key>` 记哪些依赖键预热过（hook 输出本身在 `.dart_tool/hooks_runner` 按输入哈希分目录，本就多版本共存）。各缓存只留最近用过的 3 个键。`pub get` 仍在依赖键变了时照跑（共享 pub cache 下只需数秒），以它为准写解析结果。
 
 准备失败的 worker 本轮直接退出队列，批次由其它机器接走；报告里写明哪台、为什么。
 

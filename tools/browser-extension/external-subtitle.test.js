@@ -258,6 +258,95 @@ test('⑤ 外挂字幕按视频矩形叠到画面上，站点轨不重复叠字'
   assert.strictEqual(overlay.style.left, '500px');
 });
 
+// 反馈 -Rbr-U5FNr：ASS 常让两位说话人的台词时间重叠（同起点、或交错）。覆盖层旧模型只认
+// 「startMs <= t 的最后一条」：同起点只画后一句；前一句结束得更晚时，后一句一结束整块字幕就消失。
+// 覆盖层必须画出此刻**所有**有效的 cue（每条一行，按轨内顺序），且点哪一行就带哪一行的 cue 去查词。
+function overlayLines(overlay) {
+  const text = overlay.children.find((c) => c.className === 'fushi-subtitle-overlay-text');
+  const lines = text.children.filter((c) => c.className === 'fushi-subtitle-overlay-line');
+  return lines.length ? lines.map((l) => l.textContent) : [text.textContent];
+}
+
+test('⑤b 时间重叠的 cue 同时叠字：同起点两句都画，先开始的长句不被短句的结束带走', () => {
+  const h = loadPanel({
+    hostname: 'example.com', pathname: '/video/1',
+    stored: { netflixSubtitlePanel: true, subtitleOverlayEnabled: true },
+    response: OK([
+      { text: 'さすがヒルデ。策士ね。', startMs: 1000, endMs: 5000 },
+      { text: 'ニア！言い方！', startMs: 1000, endMs: 3000 },
+      { text: '交错的第三句', startMs: 4000, endMs: 6000 },
+    ], 'ass'),
+  });
+  h.loadFile('overlap.ass', 'dummy');
+  h.video.currentTime = 2;
+  h.tick();
+  let overlay = findByIdDeep(h.html, 'fushi-subtitle-overlay');
+  assert.ok(overlay, '有效 cue 应创建视频叠字');
+  assert.deepStrictEqual(overlayLines(overlay), ['さすがヒルデ。策士ね。', 'ニア！言い方！']);
+
+  // 点第二行：查词带的是第二行自己的 cue 窗，而不是别的行。
+  const looked = [];
+  h.windowObj.fushiLookupAtPoint = (x, y, cue) => looked.push(cue);
+  const textLayer = overlay.children.find((c) => c.className === 'fushi-subtitle-overlay-text');
+  const line2 = textLayer.children[1];
+  for (const fn of overlay.handlers.click || []) {
+    fn({ target: line2, clientX: 10, clientY: 10, stopPropagation() {}, preventDefault() {} });
+  }
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(looked)), [{ startMs: 1000, endMs: 3000, text: 'ニア！言い方！' }]);
+
+  h.video.currentTime = 3.5; // 短句已结束，长句还在
+  h.tick();
+  overlay = findByIdDeep(h.html, 'fushi-subtitle-overlay');
+  assert.ok(overlay && overlay.parentNode, '长句仍在有效期内，覆盖层不能消失');
+  assert.deepStrictEqual(overlayLines(overlay), ['さすがヒルデ。策士ね。']);
+
+  h.video.currentTime = 4.5; // 交错：长句尚未结束，第三句已开始
+  h.tick();
+  assert.deepStrictEqual(overlayLines(findByIdDeep(h.html, 'fushi-subtitle-overlay')), ['さすがヒルデ。策士ね。', '交错的第三句']);
+
+  h.video.currentTime = 5.5;
+  h.tick();
+  assert.deepStrictEqual(overlayLines(findByIdDeep(h.html, 'fushi-subtitle-overlay')), ['交错的第三句']);
+});
+
+test('⑤c 时间重叠的 cue：单句口径（快捷键 / 学习统计 / 制卡取句）在长句后半段回落到长句，Shift 悬停按行取窗', () => {
+  const h = loadPanel({
+    hostname: 'example.com', pathname: '/video/1',
+    stored: { netflixSubtitlePanel: true, subtitleOverlayEnabled: true },
+    response: OK([
+      { text: 'さすがヒルデ。策士ね。', startMs: 1000, endMs: 5000 },
+      { text: 'ニア！言い方！', startMs: 1000, endMs: 3000 },
+    ], 'ass'),
+  });
+  h.loadFile('overlap.ass', 'dummy');
+  h.video.currentTime = 2;
+  h.tick();
+  // 两句都在：单句口径取起点最晚（同起点取轨内靠后）的那条。
+  assert.strictEqual(h.windowObj.fushiSubtitleStudyCue(2000).text, 'ニア！言い方！');
+  // Shift 悬停：按指针所在行给 cue 窗；不在覆盖层里的节点 → null。
+  const overlay = findByIdDeep(h.html, 'fushi-subtitle-overlay');
+  const textLayer = overlay.children.find((c) => c.className === 'fushi-subtitle-overlay-text');
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(h.windowObj.fushiSubtitleOverlayCueWindowAt(textLayer.children[0]))),
+    { text: 'さすがヒルデ。策士ね。', startMs: 1000, endMs: 5000 });
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(h.windowObj.fushiSubtitleOverlayCueWindowAt(textLayer.children[1]))),
+    { text: 'ニア！言い方！', startMs: 1000, endMs: 3000 });
+  assert.strictEqual(h.windowObj.fushiSubtitleOverlayCueWindowAt(h.body), null);
+
+  // 短句已结束、长句还在：旧判据只看起点最晚那条 → -1 / null。
+  h.video.currentTime = 3.5;
+  h.tick();
+  const study = h.windowObj.fushiSubtitleStudyCue(3500);
+  assert.ok(study, '长句仍在有效期内，学习统计不能当成句间空隙');
+  assert.strictEqual(study.text, 'さすがヒルデ。策士ね。');
+  assert.strictEqual(study.index, 0);
+  const cur = h.windowObj.fushiSubtitleCurrentCue();
+  assert.ok(cur, '复制 / 收藏的当前句不能为空');
+  assert.strictEqual(cur.text, 'さすがヒルデ。策士ね。');
+  assert.strictEqual(h.windowObj.fushiSubtitleStudyCue(5500), null, '全部结束后才是空隙');
+});
+
 // BUG-3145：Chrome 自己的侧边栏入口 / 「查字幕」装轨不经拖放，字幕能力总门（netflixSubtitlePanel，
 // 缺省关）没人去开——tick() 直接返回，覆盖层一个字都不画；用户要把「Fushi 字幕」拨关再拨开
 // （那一下顺带写开总门）字幕才「导进去」。装外挂轨本身就是开门的用户意图。

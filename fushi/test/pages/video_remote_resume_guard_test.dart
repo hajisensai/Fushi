@@ -128,22 +128,72 @@ void main() {
       () {
         final String initRemote = region(
           'Future<void> _initRemote() async {',
-          '/// per-book 播放倍速偏好 key',
+          // 终点钉代码（倍速写入 key getter）而不是它上面的注释：BUG-5030 把注释改成
+          // 「写入 key」后，钉注释的锚点就失配了。
+          'String get _speedPrefKey',
         );
-        // TODO-653/885：恢复改走 _resolveRemoteInitialPositionMs(info, index)——它在 host
-        // 真相（info.positionMs，随清单带回）与本地按集 prefs 之间取较新者（跨设备同步），
+        // TODO-653/885：恢复由 _loadRemoteEpisode 定（互联走三方判定 BUG-4436，其余
+        // 走 _resolveRemoteInitialPositionMs 的 LWW，见下一条守卫）；首开只带卡片回看的
+        // 显式起点，不预先算一份——预先算会在三方判定之外多读一次 host（评审 perf-1）。
         // 仍绝不硬编码 0（TODO-559 回归守卫保留）。
+        final String initRemoteBody = region(
+          'Future<void> _initRemote() async {',
+          'Future<void> _loadRemoteEpisode(',
+        );
         expect(
-          initRemote.contains('initialPositionMsOverride:') &&
-              initRemote.contains('_resolveRemoteInitialPositionMs('),
-          isTrue,
+          _flat(initRemoteBody)
+              .split(
+                _flat(
+                  'initialPositionMsOverride: widget.sourceReview?.startMs, )',
+                ),
+              )
+              .length,
+          3,
           reason:
-              'remote restore must resolve persisted vs host-synced position',
+              'initial open must leave resume resolution to _loadRemoteEpisode '
+              '(collection + single/playlist call sites)',
+        );
+        expect(
+          initRemoteBody.contains('_resolveRemoteInitialPositionMs('),
+          isFalse,
+          reason: 'precomputing the LWW resume reads the host a second time',
         );
         expect(
           initRemote.contains('initialPositionMs: 0'),
           isFalse,
           reason: 'remote restore must NOT hardcode 0 (the regression)',
+        );
+      },
+    );
+
+    test(
+      'BUG-4304: episode switch / auto-advance resolves against the live host',
+      () {
+        // 换集 / 连播走 _loadRemoteEpisode 不带 override：必须与首开同一条判定
+        // （本机库断点 vs 清单 vs 互联 host 此刻断点），不能只读本机断点——否则合集
+        // 下一成员 / 播放列表下一集从本机旧断点起播，实时上报再把旧位置写回 host。
+        final String loadEpisode = region(
+          'Future<void> _loadRemoteEpisode(',
+          'final RemoteVideoStreamUrls urls =',
+        );
+        expect(
+          _flat(loadEpisode),
+          contains(
+            _flat(
+              ': initialPositionMsOverride ?? await _resolveRemoteInitialPositionMs(info, index);',
+            ),
+          ),
+          reason: 'episode switch must resolve via the shared resume helper',
+        );
+        // 互联三方判定的回退值惰性求值且不再问 host（评审 perf-1）。
+        expect(
+          _flat(loadEpisode),
+          contains(
+            _flat(
+              'fallback: () async => initialPositionMsOverride ?? await _resolveRemoteInitialPositionMs( info, index, askHost: false, ), )',
+            ),
+          ),
+          reason: 'three-way start must not read the host again for fallback',
         );
       },
     );
@@ -155,7 +205,12 @@ void main() {
       );
       expect(
         _flat(region2).contains(
-          _flat('_isRemote ? _persistRemotePosition : _persistPosition'),
+          // BUG-5012：远端写入经 _remoteTeardown 登记（客户端等它用完再关）。
+          _flat(
+            '_isRemote ? (String uid, int posMs) => '
+            '_remoteTeardown.track(() => _persistRemotePosition(uid, posMs)) '
+            ': _persistPosition',
+          ),
         ),
         isTrue,
         reason: 'remote save must go through _persistRemotePosition',
@@ -193,10 +248,16 @@ void main() {
         ),
         reason: '非原盘会话必须仍回落 widget.bookUid，不能改变远端断点身份',
       );
-      // 读侧用 helper 结果元组构造按集 key。
+      // 读侧用 helper 结果元组读按集断点（BUG-4304：经 resolveRemoteVideoResumeMs →
+      // readLocalRemoteVideoPosition 直接读库，键由它按 videoRemotePositionEpisodePrefKey
+      // 构造）。
       expect(
-        src.contains('videoRemotePositionEpisodePrefKey(uid, ep)'),
-        isTrue,
+        _flat(src),
+        contains(
+          _flat(
+            'final (String uid, int ep) = _remotePositionKeyForIndex(episodeIndex); return resolveRemoteVideoResumeMs( db: appModel.database, client: _effectiveRemoteClient!, uid: uid, episodeIndex: ep,',
+          ),
+        ),
         reason: 'read-side key must derive from the helper tuple',
       );
       // 写侧（_persistRemotePosition）用 helper 结果构造同一按集 key。

@@ -14,6 +14,7 @@ import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 
 import 'fake_asset_store.dart';
 import 'sync_orchestrator_test.dart' show FakeSyncBackend;
+import '../helpers/interconnect_legacy_host_scope.dart';
 
 /// BUG-3657：书系列合集的卷序在同步里收敛。
 ///
@@ -132,7 +133,8 @@ List<String> _orderIn(CollectionManifest manifest) {
 Future<void> _tick() => Future<void>.delayed(const Duration(milliseconds: 3));
 
 /// 互联 live 通道的假 host：GET 返回共享清单，POST 整份替换并计数。
-class _FakeLiveHost extends InterconnectSyncBackend {
+class _FakeLiveHost extends InterconnectSyncBackend
+    with LegacyInterconnectHostScope {
   _FakeLiveHost(this.manifest)
     : super.withProbe((String url, String token) async => true);
 

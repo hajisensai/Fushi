@@ -58,6 +58,7 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("audiobook", "headphones", "headphones_outlined", "headphones", "有声书 / 听力"),
     ("dictionary", "dictionary", "library_books_outlined", "library_books", "词典"),
     ("subtitles", "subtitles", "subtitles_outlined", "subtitles", "字幕"),
+    ("transcribe", "transcribe", "transcribe_outlined", "transcribe", "生成字幕 / 字幕工作台（语音转文字）"),
     ("collection", "collections_bookmark", "collections_bookmark_outlined", "collections_bookmark", "合集"),
     ("tag", "sell", "sell_outlined", "sell", "标签"),
     ("statistics", "insights", "insights_outlined", "insights", "统计"),
@@ -151,6 +152,8 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("brokenImage", "broken_image", "broken_image_outlined", "broken_image", "图片损坏"),
     ("flag", "flag", "flag_outlined", "flag", "标记"),
     ("verified", "verified", "verified_outlined", "verified", "已验证"),
+    ("verifiedUser", "verified_user", "verified_user_outlined", "verified_user", "人机验证 / 安全校验（如 Cloudflare 验证）"),
+    ("upgrade", "upgrade", "upgrade_outlined", "upgrade", "升级（数据格式 / 版本）"),
     ("notifications", "notifications", "notifications_outlined", "notifications", "通知"),
     # ── 设置分组 ─────────────────────────────────────────────────────
     ("appearance", "palette", "palette_outlined", "palette", "外观 / 配色"),
@@ -186,6 +189,7 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("darkMode", "dark_mode", "dark_mode_outlined", "dark_mode", "深色"),
     ("lightMode", "light_mode", "light_mode_outlined", "light_mode", "浅色"),
     ("brightnessAuto", "brightness_6", "brightness_6_outlined", "brightness_6", "跟随系统明暗"),
+    ("flash", "flash_on", "flash_on_outlined", "flash_on", "闪电 / 闪刷（墨水屏全刷方式）"),
     ("ai", "auto_awesome", "auto_awesome_outlined", "auto_awesome", "AI / 智能"),
     ("barChart", "bar_chart", "bar_chart", "bar_chart", "柱状图"),
     ("widgets", "widgets", "widgets_outlined", "widgets", "组件 / 模块"),
@@ -239,6 +243,8 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("blur", "blur_on", "blur_on", "blur_on", "模糊遮蔽"),
     ("blurLinear", "blur_linear", "blur_linear", "blur_linear", "线性模糊（副字幕遮蔽）"),
     ("subtitlesOff", "subtitles_off", "subtitles_off_outlined", "subtitles_off", "隐藏字幕"),
+    ("subtitleMask", "texture", "texture_outlined", "texture", "字幕遮布（盖住烧进画面的硬字幕）"),
+    ("move", "open_with", "open_with_outlined", "open_with", "移动 / 调整位置（四向箭头）"),
     ("captionsOff", "closed_caption_disabled", "closed_caption_disabled_outlined", "closed_caption_disabled", "隐藏副字幕"),
     ("outline", "border_style", "border_style_outlined", "border_style", "描边 / 描边粗细（字幕）"),
     ("outlineColor", "border_color", "border_color_outlined", "border_color", "描边颜色（字幕）"),
@@ -302,6 +308,7 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("doubleChevronRight", "keyboard_double_arrow_right", "keyboard_double_arrow_right_outlined", "keyboard_double_arrow_right", "到最后"),
     ("laptop", "laptop", "laptop_outlined", "laptop", "电脑"),
     ("lightbulb", "lightbulb", "lightbulb_outlined", "lightbulb", "提示"),
+    ("celebration", "celebration", "celebration_outlined", "celebration", "本版新内容"),
     ("merge", "merge_type", "merge_type_outlined", "merge_type", "合并"),
     ("notificationsActive", "notifications_active", "notifications_active_outlined", "notifications_active", "通知开启"),
     ("notificationsOff", "notifications_off", "notifications_off_outlined", "notifications_off", "通知关闭"),
@@ -325,6 +332,8 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
     ("alignCenterVertical", "vertical_align_center", "vertical_align_center_outlined", "vertical_align_center", "居中对齐 / 跟随当前"),
     ("alignTop", "vertical_align_top", "vertical_align_top_outlined", "vertical_align_top", "顶部对齐"),
     ("viewAgenda", "view_agenda", "view_agenda_outlined", "view_agenda", "卡片列表视图"),
+    ("splitscreen", "splitscreen", "splitscreen_outlined", "splitscreen", "上下分屏（竖屏视频 + 字幕列表）"),
+    ("screenRotation", "screen_rotation", "screen_rotation_outlined", "screen_rotation", "屏幕方向 / 转屏"),
     ("viewColumn", "view_column", "view_column_outlined", "view_column", "分栏视图"),
     ("webAsset", "web_asset", "web_asset_outlined", "web_asset", "窗口 / 页面元素"),
     ("webAssetOff", "web_asset_off", "web_asset_off_outlined", "web_asset_off", "隐藏页面元素"),
@@ -348,8 +357,18 @@ SYMBOLS: list[tuple[str, str, str | None, str | None, str]] = [
 # 旧 Material 图标在 Apple 映射表里没有、或映射不合适时，直接指定 CupertinoIcons 名
 # （线框, 实心）。
 APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
+    # Apple 设计系统的「更多」一律横向 ⋯（iOS / macOS 惯例），竖向工具栏里也是横的
+    # （用户 2026-11-24 拍板）。与 moreHoriz 同字形，码位不同不冲突。
+    "more": ("ellipsis", "ellipsis"),
     "pageBackdrop": ("rectangle_stack", "rectangle_stack_fill"),
+    # 旧映射表里没有 flash_on（只有 bolt 系列），SF 风格对应字形就是 bolt。
+    "flash": ("bolt", "bolt_fill"),
+    # 本版新内容：SF 风格没有彩带，取「闪光」。
+    "celebration": ("sparkles", "sparkles"),
+    # 旧映射表里没有 transcribe；SF 风格取「字幕气泡」。
+    "transcribe": ("captions_bubble", "captions_bubble_fill"),
     "opacity": ("drop", "drop_fill"),
+    "subtitleMask": ("rectangle", "rectangle_fill"),
     "scrim": ("circle_lefthalf_fill", "circle_lefthalf_fill"),
     "portraitImage": ("device_phone_portrait", "device_phone_portrait"),
     "addImage": ("plus_rectangle_on_rectangle", "plus_rectangle_fill_on_rectangle_fill"),
@@ -361,7 +380,7 @@ APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
     "manga": ("photo_on_rectangle", "photo_fill_on_rectangle_fill"),
     "menu": ("line_horizontal_3", "line_horizontal_3"),
     "redo": ("arrow_uturn_right", "arrow_uturn_right"),
-    "linkOff": ("link", "link"),
+    "linkOff": ("slash_circle", "slash_circle_fill"),
     "selectAll": ("checkmark_square", "checkmark_square_fill"),
     "searchOff": ("search", "search"),
     "brokenImage": ("photo", "photo_fill"),
@@ -427,6 +446,10 @@ APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
     "sidebar": ("sidebar_left", "sidebar_left"),
     "tab": ("square_on_square", "square_fill_on_square_fill"),
     "findInPage": ("doc_text_search", "doc_text_search"),
+    # 旧映射表里没有 upgrade / splitscreen / screen_rotation，取 SF 风格对应字形。
+    "upgrade": ("arrow_up_circle", "arrow_up_circle_fill"),
+    "splitscreen": ("rectangle_grid_1x2", "rectangle_grid_1x2_fill"),
+    "screenRotation": ("rotate_right", "rotate_right_fill"),
 }
 
 

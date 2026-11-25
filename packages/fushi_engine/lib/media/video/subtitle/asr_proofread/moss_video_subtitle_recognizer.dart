@@ -4,7 +4,7 @@
 /// ```
 /// 视频 ─extractVideoSubtitleAudio─▶ 16 kHz 日语音轨 wav
 ///   ─MossRunner（audio.cpp CLI）─▶ 带说话人的句级时间轴 + MOSS 正文  → segments.moss.json
-///   ─AsrTranscriptionService(mixedAudio).start(segments:)─▶ Parakeet 每段一条 cue
+///   ─AsrTranscriptionService(mixedAudio | song).start(segments:)─▶ Parakeet 每段一条 cue
 ///   ─按时间对回─▶ SubtitleDraftCue{主稿 = Parakeet，候选 = [MOSS]，说话人 = MOSS}
 /// ```
 ///
@@ -37,6 +37,9 @@ import 'package:path/path.dart' as p;
 /// 识别器 id（进 `drafts.<id>.json`）。与 audio.cpp 后端无关：同一块音频 CUDA 与
 /// Vulkan 的转写实测只差几个字，换后端不该让已完成的稿作废。
 const String kMossVideoSubtitleRecognizerId = 'moss_pk';
+
+/// 歌曲素材（Parakeet 识别前先做人声分离）的识别器 id：稿与混音不同，不混用。
+const String kMossSongVideoSubtitleRecognizerId = 'moss_pk_song';
 
 /// 整段 MOSS 时间轴在任务目录里的文件名（spec 第 3 节「产物与加载」）。
 const String kMossSegmentsFileName = 'segments.moss.json';
@@ -216,10 +219,13 @@ class MossVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
     required this.moss,
     this.preference = asr.AsrAccelerationPreference.auto,
     this.language = VideoSubtitleLanguage.japanese,
-  });
+    this.audioProfile = asr.AsrAudioProfile.mixedAudio,
+  }) {
+    checkVideoSubtitleRecognizerProfile(audioProfile);
+  }
 
-  /// 与 `AsrHostJobRunner.serviceFactory` 同形；本识别器只用
-  /// [asr.AsrAudioProfile.mixedAudio]（日语 = Parakeet，普通话 = X-ASR zipformer）。
+  /// 与 `AsrHostJobRunner.serviceFactory` 同形；本识别器只用 [audioProfile]
+  /// （按混音选包：日语 = Parakeet，普通话 = X-ASR zipformer）。
   final asr.AsrTranscriptionService Function(asr.AsrAudioProfile profile)
   serviceFactory;
 
@@ -231,8 +237,14 @@ class MossVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
   /// 服务用哪个模型包。不进 [id]：各语言的任务目录本来就分开。
   final VideoSubtitleLanguage language;
 
+  /// 按分段识别的素材：`mixedAudio`（视频）或 `song`（音乐库歌词，识别前先做人声
+  /// 分离；MOSS 分段仍跑在原始音轨上）。进 [id]。
+  final asr.AsrAudioProfile audioProfile;
+
   @override
-  String get id => kMossVideoSubtitleRecognizerId;
+  String get id => audioProfile.separatesVocals
+      ? kMossSongVideoSubtitleRecognizerId
+      : kMossVideoSubtitleRecognizerId;
 
   @override
   Future<List<SubtitleDraftCue>> recognize({
@@ -240,6 +252,7 @@ class MossVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
     required Directory workDir,
     required VideoSubtitleRecognizeProgress onProgress,
     required SubtitleCancelToken cancel,
+    int? audioStreamIndex,
   }) async {
     onProgress(0, 'extracting audio');
     final File audio = await extractVideoSubtitleAudio(
@@ -247,13 +260,12 @@ class MossVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
       workDir: workDir,
       cancel: cancel,
       language: language,
+      streamIndex: audioStreamIndex,
     );
     throwIfSubtitleCancelled(cancel);
 
     // Parakeet 先确认模型在：MOSS 一集要跑好几分钟，跑完才发现缺模型白等。
-    final asr.AsrTranscriptionService service = serviceFactory(
-      asr.AsrAudioProfile.mixedAudio,
-    );
+    final asr.AsrTranscriptionService service = serviceFactory(audioProfile);
     final asr.AsrLanguage asrLanguage = language.asrLanguage;
     final asr.AsrTranscribePlan plan = await service.plan(
       language: asrLanguage,
@@ -261,7 +273,8 @@ class MossVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
     );
     if (!plan.modelReady) {
       throw VideoSubtitleRecognizeFailure(
-        'asr models for ${language.tag} (mixedAudio) are not downloaded',
+        'asr models for ${language.tag} (${audioProfile.name}) are not '
+        'downloaded',
       );
     }
 

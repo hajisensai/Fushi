@@ -1,3 +1,5 @@
+import 'package:fushi/src/reader/reader_caret_scripts.dart';
+
 /// JavaScript "line caret" for the audiobook **lyrics mode** (`LyricsModeHtml`).
 ///
 /// Lyrics mode is a separate, continuously-scrolled document whose lines are the
@@ -45,8 +47,12 @@ class ReaderLyricsCaretScripts {
   static String refreshInvocation() =>
       'JSON.stringify(window.fushiLyricsCaret.refresh())';
 
-  /// Look up the word at the caret (reuses the tap dictionary pipeline).
-  static String lookupInvocation() => 'window.fushiLyricsCaret.lookup()';
+  /// Look up the word at the caret (reuses the tap dictionary pipeline). A
+  /// controller lookup passes its [token] (> 0), stamped on the payload as
+  /// `controllerLookup` ([ReaderCaretScripts.lookupInvocation]).
+  static String lookupInvocation({int token = 0}) => token > 0
+      ? 'window.fushiLyricsCaret.lookup($token)'
+      : 'window.fushiLyricsCaret.lookup()';
 
   /// A/Enter at the caret — lyrics rows are plain text, so this looks up the word.
   static String activateInvocation() => 'window.fushiLyricsCaret.activate()';
@@ -71,7 +77,8 @@ class ReaderLyricsCaretScripts {
   // / _prevIndex / _hideRing。故意分叉（各自特化，勿强行同步）：_isStop（本文件仅剥空白，无弹窗
   // 标点/scope 门控）、_ensureRing（ring id fushi-lyrics-caret-ring vs fushi-caret-ring）、
   // _drawRing（本文件不做视口 clamp）、_walker（本文件按 cue 子树取 root 参数）。
-  static String source() => r"""
+  static String source() =>
+      r"""
 window.fushiLyricsCaret = {
   active: false,
   cueIndex: -1,
@@ -334,13 +341,15 @@ window.fushiLyricsCaret = {
       window.__lyricsCueContext = null;
     }
   },
-  lookup: function() {
+  lookup: function(token) {
     if (!this.active || !this.node) return false;
     var s = window.fushiSelection;
     if (!s || typeof s.selectFromPosition !== 'function') return false;
     this._setCueContext();
     if (typeof s.clearSelection === 'function') s.clearSelection();
-    var text = s.selectFromPosition(this.node, this.offset, 400);
+    var text = (""" +
+      ReaderCaretScripts.controllerLookupSelectJs +
+      r""")(s, this.node, this.offset, token || 0);
     return !!text;
   },
   activate: function() { return this.lookup() ? 'lookup' : 'none'; },

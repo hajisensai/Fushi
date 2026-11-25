@@ -1,6 +1,9 @@
 import 'dart:async';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/media/manga/manga_page_identity.dart';
+import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
+    show MangaOcrPageFile;
 import 'package:fushi_engine/ocr/ocr_inference.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
 
@@ -37,6 +40,13 @@ abstract class MangaOcrService {
   /// 的实现（远端 / 外部 CLI）可以忽略它；按序处理的实现必须在逐页事件里如实
   /// 给出 [MangaOcrVolumeEvent.pageIndex]——完成计数不再等于页号 + 1。
   /// 产物 manga.json 的内容与页序与起点无关。
+  ///
+  /// 取消订阅的 Future（`StreamSubscription.cancel()` 的返回值）**在执行体真正
+  /// 停下之后才完成**：本地实现是整卷 isolate 已关掉推理会话并退出。取消请求
+  /// 本身在页边界生效，当前页还要跑完，所以这个 Future 可能晚几秒；它是「这份
+  /// 模型内存已经放掉、可以再起一个任务」的唯一信号（BUG-4800）。不想被它拖住
+  /// 的调用方（界面上的取消按钮）不要 await，只在决定何时再起任务的地方等。
+  /// 没有可等的执行体的实现（在途的一次 HTTP / 平台调用）立即完成。
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
@@ -50,34 +60,49 @@ abstract class MangaOcrService {
 /// 翻到的页永远还没轮到，体感就是「要等整卷识别完」。阅读器每翻一页 [request]
 /// 一次，执行器每处理一页前 [take] 一次，把处理游标挪到读者当前页
 /// （[MangaOcrPageScheduler.focus]）。
+///
+/// 请求带的是**页身份**（`mangaPageId`，相对图片目录的页图路径），不是页号：执行器
+/// 的页表按 `enumerateMangaPages` 枚举目录，阅读器的页表是书的 `manga.json`，目录里
+/// 多一张不在页表里的图两边页号就错开，按阅读器页号改道会让任务去识别邻页（反馈
+/// -5BJ11GqOk）。执行器在自己的页表里按身份找下标（[mangaOcrFocusIndex]）。
 class MangaOcrPageFocus {
-  int? _pending;
-  final List<void Function(int pageIndex)> _listeners =
-      <void Function(int pageIndex)>[];
+  String? _pending;
+  final List<void Function(String pageId)> _listeners =
+      <void Function(String pageId)>[];
 
-  /// 读者翻到了 [pageIndex]（按 `enumerateMangaPages` 自然序的页号）。
-  void request(int pageIndex) {
-    if (pageIndex < 0) return;
-    _pending = pageIndex;
-    for (final void Function(int pageIndex) listener
-        in List<void Function(int pageIndex)>.of(_listeners)) {
-      listener(pageIndex);
+  /// 读者翻到了身份为 [pageId] 的页（`mangaPageId`）。
+  void request(String pageId) {
+    if (pageId.isEmpty) return;
+    _pending = pageId;
+    for (final void Function(String pageId) listener
+        in List<void Function(String pageId)>.of(_listeners)) {
+      listener(pageId);
     }
   }
 
   /// 取走最近一次还没被消费的请求；没有新请求时为 null。
-  int? take() {
-    final int? pending = _pending;
+  String? take() {
+    final String? pending = _pending;
     _pending = null;
     return pending;
   }
 
   /// 执行器不在本 isolate 时（本地 ONNX 的整卷 isolate）用监听把请求转发过去。
-  void addListener(void Function(int pageIndex) listener) =>
+  void addListener(void Function(String pageId) listener) =>
       _listeners.add(listener);
 
-  void removeListener(void Function(int pageIndex) listener) =>
+  void removeListener(void Function(String pageId) listener) =>
       _listeners.remove(listener);
+}
+
+/// 改道请求 [pageId] 在执行器页表 [pages] 里的下标；没有请求或不在表里为 null
+/// （不在表里 = 读者那页不在这次任务的目录里，不改道）。
+int? mangaOcrFocusIndex(List<MangaOcrPageFile> pages, String? pageId) {
+  if (pageId == null) return null;
+  return mangaPageIndexOf(
+    pages.map((MangaOcrPageFile page) => page.relativeUrl),
+    pageId,
+  );
 }
 
 /// 运行中能跟随 [MangaOcrPageFocus] 改道的整卷服务（本地 ONNX）。
@@ -91,6 +116,18 @@ abstract interface class MangaOcrFocusableService {
     int startPage = 0,
     MangaOcrPageFocus? focus,
   });
+}
+
+/// 能报出「整卷任务此刻会用的引擎签名」的服务（本地 ONNX）。
+///
+/// 签名是逐页缓存子目录名、也写进产物 manga.json 的 `ocr.engine_signature`，按已
+/// 安装模型与识别选项解析（BUG-1173）。互联 host 用它给按页图内容键控的结果缓存
+/// 分区（`MangaOcrContentCache`）：签名不同的结果绝不互相顶替。报不出签名的服务
+/// （远端 / 外部 CLI / 测试替身）不实现本接口，host 对它们不做内容去重。
+abstract interface class MangaOcrEngineSignatureSource {
+  /// 与 [MangaOcrService.ocrFolder] 此刻起跑时用的签名同源；模型没装齐时也照常
+  /// 返回（按当前清单算），能不能跑由 `modelStatus` 判。
+  Future<String> resolveEngineSignature();
 }
 
 /// 可选的页级能力（阅读器「边看边 OCR」）：只填逐页原子缓存，绝不把半卷结果
@@ -138,6 +175,15 @@ abstract interface class MangaOcrPageSession {
   Future<void> close();
 }
 
+/// 页会话的可选能力：识别一整页已在内存里的像素（视频暂停 OCR 的播放器截帧），与
+/// [MangaOcrPageSession.ocrPage] 同一条漫画整页管线（检测器 → 阅读顺序 → 识别 → 补检），
+/// 但不读页图文件、不解码、不落逐页缓存：结果直接交回。
+abstract interface class MangaOcrPagePixelsSession {
+  /// 识别 [image]，返回整页结果（坐标是 [image] 的像素坐标）。会话关闭 / 建会话失败
+  /// 时抛错（与 ocrPage 同语义）；以 `textImagesOnly` 打开的会话上以 [StateError] 失败。
+  Future<OcrPageResult> ocrPagePixels(OcrRgbaImage image);
+}
+
 /// 页会话的可选能力：直接识别一张已裁好的文字图（字幕位图），跳过漫画检测器、补检、
 /// PNG 落盘与逐页缓存。整图当一个块交 RoutingOcrRecognizer（宽≥高 → PP 行检测 + 逐行识别；
 /// 竖排占多数 → 块识别器）。
@@ -163,10 +209,16 @@ class MangaOcrModelStatus {
     required this.diskBytes,
     required this.totalBytes,
     this.obtainedBytes = 0,
+    this.supersededReady = false,
   });
 
+  /// 当前一代模型的检测 / 识别文件是否齐全（决定设置页还要不要下载）。
   final bool detectorReady;
   final bool recognizerReady;
+
+  /// 当前一代没下齐，但磁盘上有齐全的上一代模型：识别照常能跑（见 [canRun]），
+  /// 设置页仍按「未下齐」给出下载入口。
+  final bool supersededReady;
 
   /// 模型目录的**真实递归占用**字节数。
   ///
@@ -190,7 +242,11 @@ class MangaOcrModelStatus {
   /// Range 续传，再点就是接着下。能力早就在，缺的只是把它说出来。
   final int obtainedBytes;
 
+  /// 当前一代是否下齐。「还要不要下载」看它；「能不能识别」看 [canRun]。
   bool get allReady => detectorReady && recognizerReady;
+
+  /// 本地 OCR 现在能不能跑：当前一代齐全，或上一代齐全（替它读）。
+  bool get canRun => allReady || supersededReady;
 
   /// 是否存在可续传的半成品（决定按钮显示「下载」还是「继续下载」）。
   bool get hasResumableDownload => !allReady && obtainedBytes > 0;

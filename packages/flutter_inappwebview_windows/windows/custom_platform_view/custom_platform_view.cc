@@ -540,10 +540,12 @@ namespace flutter_inappwebview_plugin
       auto position = GetPointAndScaleFactorFromArgs(method_call.arguments());
       if (position && view) {
         const auto [x, y, scale_factor] = position.value();
+        if (!std::isfinite(x) || !std::isfinite(y) ||
+          !std::isfinite(scale_factor) || scale_factor <= 0.0) {
+          return result->Error(kErrorInvalidArgs);
+        }
 
-        view->setPosition(static_cast<size_t>(x),
-          static_cast<size_t>(y),
-          static_cast<float>(scale_factor));
+        view->setPosition(x, y, static_cast<float>(scale_factor));
 
         return result->Success();
       }

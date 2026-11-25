@@ -2430,6 +2430,15 @@ html[data-theme="dark"] {
     margin: 4px 0 6px;
 }
 
+/* 拍板台 6uasoIUvSR：汉字区块是一张 <details class="kanji-card-section glossary-group">，
+   默认折叠成一行（卡片皮肤 / 箭头 / 标题行沿用词典卡 .glossary-group / .dict-label）。
+   标题行 = 「汉字 · 粉」+ 区块里的汉字词典名。 */
+.kanji-card-summary-dicts {
+    margin-left: 6px;
+    font-weight: normal;
+    overflow-wrap: anywhere;
+}
+
 .kanji-card {
     margin-top: 4px;
     padding: 8px 10px;
@@ -2592,7 +2601,7 @@ html.global-lookup[data-theme="dark"] body {
    M3E 形状变形：静息整圆，按下收成 10px 圆角方块并缩到 0.92，松手带轻过冲弹回。
    时长对齐 Flutter 共享动效 token（FushiMotion.micro 90ms 按下 / short 180ms 松手 +
    release 软过冲）；减弱动态效果由 JS 挂 .no-motion 归零，墨水屏走 html.eink 通配压平。
-   Apple 设计系统（html.fushi-glass-host.fushi-apple）在后面换成 Apple 胶囊口径。 */
+   Apple 设计系统（html.fushi-glass-host.fushi-apple）在后面换成裸字形按钮。 */
 .ctx-adjust-button {
     box-sizing: border-box;
     width: 32px;
@@ -2644,36 +2653,12 @@ html.global-lookup[data-theme="dark"] body {
     transform: none;
 }
 
-/* Apple 设计系统：系统灰填充胶囊 + 强调色图标；按下是 Apple 的「变暗高亮」而不是
-   形状变形（整圆保持），焦点环用强调色半透明粗环（macOS 键盘焦点环口径）。
-   html.fushi-glass-host 开头，生成器整条丢弃（扩展没有 Apple 设计系统）。 */
-html.fushi-glass-host.fushi-apple .ctx-adjust-button {
-    background-color: color-mix(in srgb, var(--text-color) 9%, transparent);
-    color: var(--md-primary, var(--primary-color));
-}
-
-html.fushi-glass-host.fushi-apple .ctx-adjust-button:hover {
-    background-color: color-mix(in srgb, var(--text-color) 14%, transparent);
-}
-
-html.fushi-glass-host.fushi-apple .ctx-adjust-button:focus-visible {
-    background-color: color-mix(in srgb, var(--text-color) 14%, transparent);
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-primary, var(--primary-color)) 55%, transparent);
-}
-
-html.fushi-glass-host.fushi-apple .ctx-adjust-button:active {
-    border-radius: 16px;
-    transform: none;
-    opacity: 0.55;
-    background-color: color-mix(in srgb, var(--text-color) 14%, transparent);
-}
-
 /* Fushi 复习（SRS）词状态标记（popup.js createSrsStatusBadge）：与「在 Anki 中打开」同一颗
    ↗ 图标按钮（用户 10-28：不要「新卡」文字），尺寸 / 形状跟其它词条头图标按钮走；状态文案
    （「复习中 · 3天后」/「新卡」/「已暂停」）只进提示与无障碍标签。复习模块关着时 popup.js
    根本不渲染它。按队列分色——到期复习用主色、学习中用三级色、新卡用次级色、暂停
    用中性灰；颜色全部走注入的色角色变量（亮 / 暗 / 自定义主题自动跟随），淡染半透明，
-   自定义卡面底色下同样成立。Apple 设计系统在下面换成系统灰底 + 强调色图标。
+   自定义卡面底色下同样成立。Apple 设计系统在下面换成裸字形按钮（保留队列强调色）。
    墨水屏由 html.eink 通配压平圆角 / 动效。 */
 .srs-status-badge {
     border: none;
@@ -2717,131 +2702,113 @@ html.fushi-glass-host.fushi-apple .ctx-adjust-button:active {
     opacity: 0.7;
 }
 
-html.fushi-glass-host.fushi-apple .srs-status-badge {
-    color: var(--md-primary, var(--primary-color));
-    background-color: color-mix(in srgb, var(--text-color) 9%, transparent);
+/* Apple 设计系统（iOS 27 / macOS 27 工具栏口径）：词条头的动作按钮（♪ / ☆ / + / ✓ /
+   ↗ / 复习徽标 / 清空草稿 / 调整上下文）一律是**裸字形按钮**——无底色、不染容器，静息
+   secondaryLabel（正文色 62%），悬停变 label 色并在字形下浮出一枚半透明圆，按下圆加深；
+   不做形状变形、不缩放。命中区统一 44×44（iOS HIG 最小触控区，macOS 档同样够大），用
+   上下 -6px 外边距把行高仍收在 32，不把词头行撑高；圆只画在 6px 内边距内的 32px 内容盒
+   （background-clip: content-box，内圆角随 border-radius 50% 自动成正圆）。
+   状态色：已收藏 = 系统黄实心星（与系统 App 的收藏同色）；已制卡 ✓ = label 色；最新可改
+   ✓↩ = 系统绿；复习徽标保留按队列的强调色（状态含义不能丢）；禁用 / 暂无发音照旧淡显。
+   焦点环 = 强调色半透明 3px 环（macOS 键盘焦点环），落在圆外缘。
+   html.fushi-glass-host 开头，生成器整条丢弃（扩展没有 Apple 设计系统）。 */
+html.fushi-glass-host.fushi-apple .header-buttons {
+    gap: 0;
 }
 
-html.fushi-glass-host.fushi-apple .srs-status-badge:hover {
-    background-color: color-mix(in srgb, var(--text-color) 14%, transparent);
-}
-
-html.fushi-glass-host.fushi-apple .srs-status-badge.srs-status-suspended {
-    color: var(--text-color);
-}
-
-/* 「我库里的例句」（popup.js createLibrarySentencesSection）：词条末尾的一块，按模块分组。
-   M3E：标题用 label 级小字 + 次要色，每条例句是整行可点的低调 tonal 行（hover / focus 状态层
-   + 按下轻缩），命中词用主色淡染高亮。进场：淡入 + 上移 6px（短时长，对齐 FushiMotion.short），
-   减弱动态效果时 JS 不挂 entering；墨水屏由 html.eink 通配压平。Apple 设计系统在下面换成
-   系统灰填充。颜色全部走注入的色角色变量。 */
-.library-sentences {
-    margin-top: 8px;
-    padding-top: 6px;
-    border-top: 1px solid color-mix(in srgb, var(--text-color) 10%, transparent);
-    opacity: 1;
-    transform: none;
-    transition: opacity 0.18s cubic-bezier(0.2, 0, 0, 1), transform 0.18s cubic-bezier(0.2, 0, 0, 1);
-}
-
-.library-sentences.library-sentences-hidden {
-    display: none;
-}
-
-.library-sentences.library-sentences-entering {
-    opacity: 0;
-    transform: translateY(6px);
-}
-
-.library-sentences-title {
-    font-size: 12px;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    color: var(--md-sys-color-secondary, var(--text-color));
-    opacity: 0.85;
-    margin-bottom: 4px;
-}
-
-.library-sentences-group {
-    display: flex;
-    flex-direction: column;
-    gap: 2px;
-    margin-bottom: 4px;
-}
-
-.library-sentences-group-label {
-    font-size: 11px;
-    color: var(--text-color);
-    opacity: 0.6;
-    margin: 2px 0 0 2px;
-}
-
-.library-sentence {
-    display: flex;
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 1px;
+html.fushi-glass-host.fushi-apple .ctx-adjust-button,
+html.fushi-glass-host.fushi-apple .header-buttons > .inline-action-button {
     box-sizing: border-box;
-    width: 100%;
-    min-height: 32px;
-    padding: 5px 8px;
+    width: 44px;
+    height: 44px;
+    margin-block: -6px;
+    padding: 6px;
     border: none;
-    border-radius: 10px;
-    text-align: start;
-    font: inherit;
-    font-size: 0.92em;
-    line-height: 1.45;
-    color: var(--text-color);
+    border-radius: 50%;
+    font-size: 20px;
+    color: color-mix(in srgb, var(--text-color) 62%, transparent);
     background-color: transparent;
-    cursor: pointer;
+    background-image: none;
+    background-clip: content-box;
+    box-shadow: none;
+    opacity: 1;
     outline: none;
+    transform: none;
     -webkit-tap-highlight-color: transparent;
-    transition: background-color 0.15s ease, transform 0.18s cubic-bezier(0.34, 1.3, 0.64, 1);
+    transition: background-color 0.15s ease, color 0.15s ease;
 }
 
-.library-sentence:hover,
-.library-sentence:focus-visible {
-    background-color: color-mix(in srgb, var(--md-primary, var(--primary-color)) 10%, transparent);
-}
-
-.library-sentence:focus-visible {
-    box-shadow: 0 0 0 2px var(--md-primary, var(--primary-color));
-}
-
-.library-sentence:active {
-    transform: scale(0.985);
-    background-color: color-mix(in srgb, var(--md-primary, var(--primary-color)) 16%, transparent);
-    transition-duration: 0.09s;
-}
-
-.library-sentence-text {
-    overflow-wrap: anywhere;
-}
-
-.library-sentence-hl {
-    color: inherit;
-    background-color: color-mix(in srgb, var(--md-primary, var(--primary-color)) 22%, transparent);
-    border-radius: 3px;
-    padding: 0 1px;
-}
-
-.library-sentence-source {
-    font-size: 11px;
-    opacity: 0.6;
-}
-
-html.fushi-glass-host.fushi-apple .library-sentence:hover,
-html.fushi-glass-host.fushi-apple .library-sentence:focus-visible {
+html.fushi-glass-host.fushi-apple .ctx-adjust-button:where(:not(:disabled)):hover,
+html.fushi-glass-host.fushi-apple .header-buttons > .inline-action-button:where(:not(:disabled)):hover {
+    color: var(--text-color);
     background-color: color-mix(in srgb, var(--text-color) 8%, transparent);
 }
 
-html.fushi-glass-host.fushi-apple .library-sentence:active {
-    transform: none;
-    opacity: 0.55;
+html.fushi-glass-host.fushi-apple .ctx-adjust-button:focus-visible,
+html.fushi-glass-host.fushi-apple .header-buttons > .inline-action-button:focus-visible {
+    color: var(--text-color);
+    background-color: color-mix(in srgb, var(--text-color) 8%, transparent);
+    outline: 3px solid color-mix(in srgb, var(--md-primary, var(--primary-color)) 55%, transparent);
+    outline-offset: -6px;
 }
 
-html.fushi-glass-host.fushi-apple .library-sentence:focus-visible {
-    box-shadow: 0 0 0 3px color-mix(in srgb, var(--md-primary, var(--primary-color)) 55%, transparent);
+html.fushi-glass-host.fushi-apple .ctx-adjust-button:where(:not(:disabled)):active,
+html.fushi-glass-host.fushi-apple .header-buttons > .inline-action-button:where(:not(:disabled)):active {
+    border-radius: 50%;
+    transform: none;
+    opacity: 1;
+    background-color: color-mix(in srgb, var(--text-color) 15%, transparent);
+    transition-duration: 0s;
+}
+
+html.fushi-glass-host.fushi-apple .ctx-adjust-button:disabled,
+html.fushi-glass-host.fushi-apple .header-buttons > .inline-action-button:disabled {
+    opacity: 0.3;
+    cursor: default;
+}
+
+html.fushi-glass-host.fushi-apple .header-buttons > .audio-button.audio-unavailable {
+    opacity: 0.4;
+}
+
+html.fushi-glass-host.fushi-apple .header-buttons > .favorite-button.favorited {
+    color: #ffcc00;
+}
+
+html.fushi-glass-host.fushi-apple[data-theme="dark"] .header-buttons > .favorite-button.favorited {
+    color: #ffd60a;
+}
+
+/* 静息「+」由 ::before/::after 以 em 画十字（见 .mine-button:not(.duplicate)）：字号只决定
+   十字大小，33px → 臂长 15.4px，与同排 20px SVG 字形的可见轮廓等高。 */
+html.fushi-glass-host.fushi-apple .header-buttons > .mine-button:not(.duplicate) {
+    font-size: 33px;
+}
+
+html.fushi-glass-host.fushi-apple .header-buttons > .mine-button.duplicate {
+    color: var(--text-color);
+}
+
+html.fushi-glass-host.fushi-apple .header-buttons > .mine-button.latest {
+    font-size: 17px;
+    color: #34c759;
+}
+
+html.fushi-glass-host.fushi-apple[data-theme="dark"] .header-buttons > .mine-button.latest {
+    color: #30d158;
+}
+
+html.fushi-glass-host.fushi-apple .header-buttons > .srs-status-badge {
+    color: var(--md-primary, var(--primary-color));
+}
+
+html.fushi-glass-host.fushi-apple .header-buttons > .srs-status-badge.srs-status-suspended {
+    color: color-mix(in srgb, var(--text-color) 62%, transparent);
+}
+
+html.fushi-glass-host.fushi-apple.fushi-reduced-motion .header-buttons > .inline-action-button,
+html.fushi-glass-host.fushi-apple .ctx-adjust-button.no-motion {
+    transition: none;
 }
 
 /* =====================================================================
@@ -2969,6 +2936,140 @@ html.fushi-glass-host.fushi-apple .library-sentence:focus-visible {
 html.mined-action-open,
 html.mined-action-open body {
     min-height: 320px;
+}
+
+/* =====================================================================
+ * 跨应用语音缓存「调整句子音频」面板（拍板 design-cross-app-audio-trim-ui，popup.js
+ * openCrossAppAudioPanel）。外框复用 .mined-action-backdrop / -panel / -btn（默认、M3E
+ * 两套主题都已写好），这里只加波形区、端点手柄、播放头与进出场动效。波形柱的颜色是
+ * canvas 的 CSS color（JS 读 getComputedStyle），不在 JS 里写死。
+ * ===================================================================== */
+.crossapp-audio-panel {
+    width: min(480px, 100%);
+    animation: fushi-crossapp-panel-in 0.22s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.crossapp-audio-wave {
+    position: relative;
+    height: 96px;
+    margin: 4px 0;
+    border-radius: 8px;
+    background: var(--md-surface-container, color-mix(in srgb, var(--text-color) 8%, transparent));
+    color: var(--md-primary, var(--primary-color));
+    cursor: pointer;
+    touch-action: none;
+}
+
+.crossapp-audio-wave.dragging {
+    cursor: ew-resize;
+}
+
+.crossapp-audio-canvas {
+    position: absolute;
+    inset: 0;
+    display: block;
+    width: 100%;
+    height: 100%;
+    color: inherit;
+}
+
+.crossapp-audio-selection {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: color-mix(in srgb, currentColor 16%, transparent);
+    pointer-events: none;
+}
+
+.crossapp-audio-playhead {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    background: var(--md-tertiary, var(--text-color));
+    pointer-events: none;
+}
+
+/* 端点手柄：命中区 24px 宽（拖动由波形区统一判），视觉是一条 2px 竖线 + 中部握把。 */
+.crossapp-audio-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 24px;
+    margin-left: -12px;
+    cursor: ew-resize;
+    outline: none;
+}
+
+.crossapp-audio-handle::before {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    left: 11px;
+    width: 2px;
+    background: currentColor;
+}
+
+.crossapp-audio-handle::after {
+    content: '';
+    position: absolute;
+    top: calc(50% - 12px);
+    left: 9px;
+    width: 6px;
+    height: 24px;
+    border-radius: 3px;
+    background: currentColor;
+}
+
+.crossapp-audio-handle:focus-visible::after {
+    box-shadow: 0 0 0 3px color-mix(in srgb, currentColor 40%, transparent);
+}
+
+.crossapp-audio-range {
+    font-size: 0.85em;
+    text-align: center;
+    font-variant-numeric: tabular-nums;
+    opacity: 0.8;
+}
+
+/* 入口在探测到这次查词录到了声音后才露出：缩放淡入，不是突兀地跳出来。 */
+.crossapp-audio-button.crossapp-audio-revealed {
+    animation: fushi-crossapp-reveal 0.2s cubic-bezier(0.2, 0, 0, 1);
+}
+
+.crossapp-audio-panel.no-motion,
+.crossapp-audio-button.no-motion {
+    animation: none;
+}
+
+@keyframes fushi-crossapp-panel-in {
+    from {
+        opacity: 0;
+        transform: translateY(8px) scale(0.97);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+@keyframes fushi-crossapp-reveal {
+    from {
+        opacity: 0;
+        transform: scale(0.8);
+    }
+    to {
+        opacity: 1;
+        transform: none;
+    }
+}
+
+/* 面板比「卡片已在 Anki 中」高（多一块波形）：撑出的最小高度也更高。 */
+html.crossapp-audio-open,
+html.crossapp-audio-open body {
+    min-height: 380px;
 }
 
 /* =====================================================================
@@ -3603,6 +3704,30 @@ html.fushi-m3e .kanji-card {
     background: var(--md-sys-color-surface-container-high);
 }
 
+/* 汉字区块单独成卡（不在词典分段列表里）：四角都是分段列表首尾的 24 圆角，标题行的
+   按压层跟着卡片圆角走（同 .glossary-group:first-child / :last-child 的标题行规则）。 */
+html.fushi-m3e .kanji-card-section.glossary-group {
+    border-radius: 24px;
+}
+
+html.fushi-m3e .kanji-card-section.glossary-group > .dict-label {
+    border-top-left-radius: 24px;
+    border-top-right-radius: 24px;
+}
+
+html.fushi-m3e .kanji-card-section.glossary-group:not([open]) > .dict-label {
+    border-bottom-left-radius: 24px;
+    border-bottom-right-radius: 24px;
+}
+
+html.fushi-m3e .kanji-card-summary-dicts {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-left: 0;
+    font-size: var(--md-sys-typescale-body-small-size);
+    line-height: var(--md-sys-typescale-body-small-line-height);
+}
+
 html.fushi-m3e .kanji-card-char {
     display: inline-flex;
     align-items: center;
@@ -3736,6 +3861,29 @@ html.fushi-m3e .mined-action-error {
 
 /* 「新增为重复卡」旁的次要动作：M3 outlined button（outline-variant 描边 + on-surface 字，同 app
    outlinedButtonTheme），不再用主色字。 */
+/* 「调整句子音频」面板的波形区：M3E 中圆角 + surfaceContainer 底，柱与端点用 primary，
+   播放头 tertiary，区间读数 onSurfaceVariant。 */
+html.fushi-m3e .crossapp-audio-wave {
+    border-radius: var(--md-sys-shape-corner-medium);
+    background: var(--md-sys-color-surface-container);
+    color: var(--md-sys-color-primary);
+}
+
+html.fushi-m3e .crossapp-audio-playhead {
+    background: var(--md-sys-color-tertiary);
+}
+
+html.fushi-m3e .crossapp-audio-range {
+    color: var(--md-sys-color-on-surface-variant);
+    opacity: 1;
+    font-size: var(--md-sys-typescale-body-medium-size);
+}
+
+html.fushi-m3e.fushi-reduced-motion .crossapp-audio-panel,
+html.fushi-m3e.fushi-reduced-motion .crossapp-audio-button {
+    animation: none;
+}
+
 html.fushi-m3e .mined-action-btn.ghost {
     color: var(--md-sys-color-on-surface);
     border-color: var(--md-sys-color-outline-variant);
@@ -3950,4 +4098,15 @@ html.eink ::selection {
 html.eink.global-lookup body {
     border: 1px solid var(--text-color);
     background: var(--background-color);
+}
+
+/* 服务器来源小图标（popup.js __fushiRemoteDictGlyph）：只在释义带 `remote: true`
+   时出现，跟随 .dict-label 字色、略淡，不改变标签行高。 */
+.dict-label > .dict-remote-glyph {
+    display: inline-flex;
+    align-items: center;
+    margin-inline-start: 0.35em;
+    vertical-align: middle;
+    opacity: 0.7;
+    line-height: 0;
 }

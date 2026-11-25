@@ -26,16 +26,23 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:collection/collection.dart' show mergeSort;
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:http/http.dart' as http;
 
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
+import 'package:fushi/src/media/video/media_server/media_server_route_failover.dart';
 import 'package:fushi/src/media/video/media_server/media_server_search_match.dart';
+import 'package:fushi/src/sync/launch_item_detail_memo.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi_engine/media/tracking/remote_anime_link.dart'
+    show RemoteAnimeEpisode;
 import 'package:fushi_engine/media/video/media_server/plex/plex_api.dart';
+import 'package:fushi_engine/media/video/media_server/plex/plex_tv_auth.dart'
+    show PlexConnection, firstReachablePlexConnection;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show
         RemoteVideoEmbeddedSubtitleTrack,
@@ -170,12 +177,47 @@ class PlexServerConfig implements MediaServerConfig {
     );
   }
 
+  /// 当前连接请求失败（[error]）之后，在已存的全部连接里重新挑线路
+  /// （gap-remote-7）：连接地址只在登录时探测过一次，换了网络（出门 / 回家 /
+  /// 局域网地址变了）之后，存下的那条一直不通，直到用户手动切换。
+  ///
+  /// 只有 [isPlexTransportFailure]（请求没到达服务器）才探测——服务器答了话
+  /// （非 2xx、条目不存在）说明这条连接是通的，换线路无济于事。各条连接按登录时
+  /// 排好的优先级（局域网 → 公网 → relay）同时探测，取排名最靠前的可达那条
+  /// （[firstReachablePlexConnection]）。[probe] 必须**不带凭据**核对 `/identity`
+  /// 的 machineIdentifier 是 [machineIdentifier]（`probePlexConnection` →
+  /// `verifyPlexServerIdentity`，签名里就没有 token）：探测本身不向任何候选地址
+  /// 发 token；别的服务器占了旧局域网地址时核对不通过、不会被选成当前线路，之后
+  /// 带 token 的请求也就不会发过去。
+  ///
+  /// 返回切到新线路后的配置（只改 [activeServerUrl]，不存任何新凭据）；不是传输
+  /// 失败、全部不通、或最靠前的可达线路就是当前这条时返回 null（调用方原样
+  /// 照旧报错）。写回与清单缓存失效由调用方做（`rerouteMediaServerAfterFailure`，
+  /// 请求漏斗里经 `MediaServerRouteFailover` 单飞调到）。
+  Future<PlexServerConfig?> rerouteAfterFailure(
+    Object error, {
+    required Future<bool> Function(String uri) probe,
+  }) async {
+    if (!isPlexTransportFailure(error)) return null;
+    final String? reachable = await firstReachablePlexConnection(
+      <PlexConnection>[
+        for (final String url in connections) PlexConnection(uri: url),
+      ],
+      probe,
+    );
+    if (reachable == null || reachable == effectiveServerUrl) return null;
+    return withActiveRoute(reachable);
+  }
+
+  /// 按当前线路建客户端；传输失败时经这台服务器共享的 [MediaServerRouteFailover]
+  /// 换线路并重试（[MediaServerRouteFailover.hookFor]）。
   PlexVideoClient buildClient({http.Client? httpClient}) => PlexVideoClient(
     api: PlexApi(
       serverUrl: effectiveServerUrl,
       token: token,
       clientInfo: PlexClientInfo(clientIdentifier: clientIdentifier),
       client: httpClient,
+      onRouteFailure: MediaServerRouteFailover.hookFor(sourceId),
     ),
     machineIdentifier: machineIdentifier,
     accountId: accountId,
@@ -195,6 +237,9 @@ class PlexVideoClient
         RemoteVideoDetailFetch,
         RemoteVideoPlaybackSession,
         RemoteVideoCollectionIsWork,
+        RemoteVideoTrackingEpisodeFetch,
+        RemoteVideoClientConnections,
+        RemoteVideoRouteFailover,
         MediaServerBrowser {
   PlexVideoClient({
     required this.api,
@@ -256,7 +301,20 @@ class PlexVideoClient
   String get serverUrl => api.serverUrl;
 
   @override
+  Future<bool> failoverRemoteVideoRoute(Object error) =>
+      api.failoverRoute(error);
+
+  @override
   RemoteVideoClient get playbackClient => this;
+
+  /// 一次起播内的条目详情短复用（[LaunchItemDetailMemo]）：重开入口的
+  /// [itemDetail]、取流、下默认字幕要的是同一份 `/library/metadata/{id}`。
+  /// [remoteVideoPosition] 要服务器最新断点，不走这里。
+  final LaunchItemDetailMemo<PlexMetadata> _launchDetail =
+      LaunchItemDetailMemo<PlexMetadata>();
+
+  Future<PlexMetadata> _launchMetadata(String id) =>
+      _launchDetail.reuseOrFetch(id, () => api.metadata(id));
 
   // ── PlexMetadata → MediaServerItem 纯函数投影 ─────────────────────────
 
@@ -270,6 +328,81 @@ class PlexVideoClient
         'collection' || 'playlist' => MediaServerItemType.folder,
         _ => null,
       };
+
+  /// Tracking identity: the episode's numbering, the season's and the show's
+  /// external ids (`includeGuids`), and the season's episode count.
+  @override
+  Future<RemoteAnimeEpisode?> remoteVideoTrackingEpisode(String id) async {
+    final PlexMetadata item = await api.metadata(id, includeGuids: true);
+    PlexMetadata? season;
+    PlexMetadata? show;
+    if (item.type == 'episode') {
+      final String? seasonKey = item.parentRatingKey;
+      final String? showKey = item.grandparentRatingKey;
+      if (seasonKey != null && seasonKey.isNotEmpty) {
+        season = await api.metadata(seasonKey, includeGuids: true);
+      }
+      if (showKey != null && showKey.isNotEmpty) {
+        show = await api.metadata(showKey, includeGuids: true);
+      }
+    }
+    return trackingEpisodeOf(
+      item,
+      season: season,
+      show: show,
+      mediaKey: trackingKeyFor(id),
+      // The server's own name only, never the host ([displayName] falls
+      // back to it): tracking shows no addresses.
+      serverName: serverName?.trim() ?? '',
+    );
+  }
+
+  /// Tracking key for item [id]: this server + account + the item.
+  String trackingKeyFor(String id) => 'plex|$machineIdentifier|$accountId|$id';
+
+  /// Pure part of [remoteVideoTrackingEpisode] (tests).
+  static RemoteAnimeEpisode? trackingEpisodeOf(
+    PlexMetadata item, {
+    PlexMetadata? season,
+    PlexMetadata? show,
+    required String mediaKey,
+    String serverName = '',
+  }) {
+    if (item.type == 'movie') {
+      return RemoteAnimeEpisode(
+        mediaKey: mediaKey,
+        title: item.title,
+        episodeNumber: 1,
+        isMovie: true,
+        seriesIds: item.providerIds,
+        seriesTitle: item.title,
+        serverName: serverName,
+      );
+    }
+    if (item.type != 'episode') return null;
+    final int? number = item.index;
+    if (number == null || number <= 0) return null;
+    final int? seasonNumber = item.parentIndex;
+    final String name = (item.grandparentTitle ?? show?.title ?? '').trim();
+    final String where = seasonNumber == null
+        ? 'E$number'
+        : 'S${seasonNumber}E$number';
+    final int? seasonCount = season?.leafCount;
+    return RemoteAnimeEpisode(
+      mediaKey: mediaKey,
+      title: name.isEmpty ? where : '$name $where',
+      episodeNumber: number,
+      seasonNumber: seasonNumber,
+      seasonIds: season?.providerIds ?? const <String, String>{},
+      seriesIds: show?.providerIds ?? const <String, String>{},
+      seasonEpisodeCount: seasonCount != null && seasonCount > 0
+          ? seasonCount
+          : null,
+      seriesId: item.grandparentRatingKey ?? show?.ratingKey,
+      seriesTitle: name,
+      serverName: serverName,
+    );
+  }
 
   static MediaServerItem mediaServerItemFrom(
     PlexMetadata m,
@@ -362,6 +495,8 @@ class PlexVideoClient
     MediaServerSort.communityRating => 'rating:desc',
   };
 
+  /// 季集号升序、缺号排最后；同号 / 都缺号返回 0，调用方必须用稳定排序
+  /// （[mergeSort]）保住服务器原序——[List.sort] 超过 32 个元素不稳定（BUG-4257）。
   static int _bySeasonThenEpisode(MediaServerItem a, MediaServerItem b) {
     final int sa = a.seasonNumber ?? 1 << 30;
     final int sb = b.seasonNumber ?? 1 << 30;
@@ -425,10 +560,12 @@ class PlexVideoClient
   @override
   Future<List<MediaServerItem>> listSeasons(String seriesId) async {
     final PlexMetadataPage page = await api.children(seriesId);
-    return <MediaServerItem>[
+    final List<MediaServerItem> seasons = <MediaServerItem>[
       for (final MediaServerItem s in mediaServerItemsFrom(page.items))
         if (s.type == MediaServerItemType.season) s,
-    ]..sort(_bySeasonThenEpisode);
+    ];
+    mergeSort<MediaServerItem>(seasons, compare: _bySeasonThenEpisode);
+    return seasons;
   }
 
   @override
@@ -442,11 +579,13 @@ class PlexVideoClient
         ? await api.children(seasonId, start: startIndex, size: limit)
         : await api.allLeaves(seriesId, start: startIndex, size: limit);
     final MediaServerPage out = _pageFrom(page, startIndex);
+    final List<MediaServerItem> episodes = <MediaServerItem>[
+      for (final MediaServerItem e in out.items)
+        if (e.type == MediaServerItemType.episode) e,
+    ];
+    mergeSort<MediaServerItem>(episodes, compare: _bySeasonThenEpisode);
     return MediaServerPage(
-      items: <MediaServerItem>[
-        for (final MediaServerItem e in out.items)
-          if (e.type == MediaServerItemType.episode) e,
-      ]..sort(_bySeasonThenEpisode),
+      items: episodes,
       totalCount: out.totalCount,
       startIndex: out.startIndex,
       nextStartIndex: out.nextStartIndex,
@@ -554,8 +693,17 @@ class PlexVideoClient
   }
 
   @override
-  Future<MediaServerItem> itemDetail(String itemId) async {
-    final PlexMetadata m = await api.metadata(itemId);
+  Future<MediaServerItem> itemDetail(
+    String itemId, {
+    bool forLaunch = false,
+  }) async {
+    // 结果留给紧随其后的取流 / 取字幕复用，见 [_launchDetail]。失败只有重开入口
+    // 那一次（[forLaunch]）才留：详情页取详情失败后点播放，照常重新请求。
+    final PlexMetadata m = await _launchDetail.fetchAndRemember(
+      itemId,
+      () => api.metadata(itemId),
+      keepFailure: forLaunch,
+    );
     final MediaServerItemType? type = mediaServerTypeOf(m);
     if (type == null) {
       throw ArgumentError.value(
@@ -733,13 +881,16 @@ class PlexVideoClient
     Future<void>? cancelSignal,
   }) async {
     final PlexPart part = _requirePart(await api.metadata(id), id);
-    await api.downloadToFile(
+    // 原文件（download=1），可续传：断点键是条目 id，暂停 / 断网后从 `.part`
+    // 接着拉，不再删掉半截从 0 重下（BUG-4912）。
+    await api.downloadResumable(
       api.partUrl(part.key, download: true),
       dest,
+      resumeKey: 'plex:$id',
+      cancelledError: () => const RemoteDownloadCancelled(),
       onProgress: onProgress,
       onBytes: onBytes,
       cancelSignal: cancelSignal,
-      cancelledError: () => const RemoteDownloadCancelled(),
     );
   }
 
@@ -760,7 +911,7 @@ class PlexVideoClient
     int episodeIndex = 0,
   }) async {
     // 每一集都是独立条目，episodeIndex 恒 0。
-    final PlexMetadata m = await api.metadata(id);
+    final PlexMetadata m = await _launchMetadata(id);
     final PlexPart part = _requirePart(m, id);
     final int? duration = m.durationMs ?? m.media.firstOrNull?.durationMs;
     if (duration != null && duration > 0) _durations[id] = duration;
@@ -808,7 +959,7 @@ class PlexVideoClient
     int episodeIndex = 0,
     void Function(double progress)? onProgress,
   }) async {
-    final PlexMetadata m = await api.metadata(id);
+    final PlexMetadata m = await _launchMetadata(id);
     PlexStream? pick;
     if (embeddedStreamIndex == null) {
       pick = _defaultExternalSubtitle(m);
@@ -918,5 +1069,6 @@ class PlexVideoClient
     }
   }
 
+  @override
   void close() => api.close();
 }

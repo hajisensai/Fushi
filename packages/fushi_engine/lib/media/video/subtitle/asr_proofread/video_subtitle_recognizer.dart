@@ -19,6 +19,26 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_pipelin
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:path/path.dart' as p;
 
+/// 滑窗识别器在混音素材上的 id（存量任务目录里的 `drafts.sliding_mixed.json` 与
+/// `state.json` 的 `recognizer` 都是它，冻结不改）。
+const String kSlidingVideoSubtitleRecognizerId = 'sliding_mixed';
+
+/// 滑窗识别器在歌曲素材上的 id：识别的是人声分离后的音频，稿与混音不同，按识别器
+/// 分的 `drafts.<id>.json` 不能和 [kSlidingVideoSubtitleRecognizerId] 混用。
+const String kSlidingSongVideoSubtitleRecognizerId = 'sliding_song';
+
+/// 识别器转录用的素材档位只收混音与歌曲：`cleanSpeech` 的能量门限在带伴奏 / BGM
+/// 的音轨上前提不成立。
+void checkVideoSubtitleRecognizerProfile(asr.AsrAudioProfile profile) {
+  if (profile == asr.AsrAudioProfile.cleanSpeech) {
+    throw ArgumentError.value(
+      profile,
+      'audioProfile',
+      'video subtitle recognizers take mixedAudio or song',
+    );
+  }
+}
+
 /// 识别器进度：0~1 + 文本。
 typedef VideoSubtitleRecognizeProgress =
     void Function(double fraction, String message);
@@ -30,11 +50,16 @@ abstract interface class VideoSubtitleRecognizer {
 
   /// 识别 [videoPath]。[workDir] 是这一集的任务目录，实现可在里面放中间产物
   /// （抽出的音轨等）以便续跑。取消时抛 [SubtitlePipelineCancelled]。
+  ///
+  /// [audioStreamIndex]：要识别的音轨（全局流序号，`-map 0:<index>`），由
+  /// [resolveVideoSubtitleAudioStream] 从播放器当前音轨换算；null = 按识别语言挑
+  /// （[pickVideoSubtitleAudioStream]）。两种音轨的中间产物由管线放进不同的 [workDir]。
   Future<List<SubtitleDraftCue>> recognize({
     required String videoPath,
     required Directory workDir,
     required VideoSubtitleRecognizeProgress onProgress,
     required SubtitleCancelToken cancel,
+    int? audioStreamIndex,
   });
 }
 
@@ -92,8 +117,39 @@ List<String> videoSubtitleAudioExtractArgs({
   outputPath,
 ];
 
-/// 抽 [videoPath] 里 [language] 的音轨（[pickVideoSubtitleAudioStream]）到
-/// `<workDir>/`[videoSubtitleAudioFileName]；已有就直接用。
+/// 播放器的「第 [audioTrack] 条音轨」（0 起的音轨序号，即 ffmpeg `0:a:N`，与
+/// `VideoPlayerController.currentAudioStreamIndex` 同口径）→ 字幕管线要抽的全局流序号。
+///
+/// 只在它与按 [language] 挑的那条（[pickVideoSubtitleAudioStream]）不同时返回序号；
+/// 相同、[audioTrack] 为 null、越界或探测不到音轨时返回 null（= 按语言挑）。这样「从
+/// 播放页按当前音轨跑」与「批量按语言挑」落到同一条轨时共用同一份识别缓存。
+Future<int?> resolveVideoSubtitleAudioStream({
+  required String videoPath,
+  required int? audioTrack,
+  required VideoSubtitleLanguage language,
+  Future<VideoProbeFacts> Function(String videoPath) probe = probeVideoFacts,
+}) async {
+  if (audioTrack == null || audioTrack < 0) return null;
+  final List<AudioTrackFacts> tracks = (await probe(videoPath)).audioTracks;
+  return videoSubtitleAudioStreamForTrack(tracks, audioTrack, language);
+}
+
+/// [resolveVideoSubtitleAudioStream] 的纯函数部分（探测结果已在手）。
+int? videoSubtitleAudioStreamForTrack(
+  List<AudioTrackFacts> tracks,
+  int audioTrack,
+  VideoSubtitleLanguage language,
+) {
+  if (audioTrack < 0 || audioTrack >= tracks.length) return null;
+  final int stream = tracks[audioTrack].index;
+  return stream == pickVideoSubtitleAudioStream(tracks, language)
+      ? null
+      : stream;
+}
+
+/// 抽 [videoPath] 的音轨到 `<workDir>/`[videoSubtitleAudioFileName]；已有就直接用。
+/// [streamIndex] 给了就抽那条（全局流序号），否则按 [language] 挑
+/// （[pickVideoSubtitleAudioStream]）。
 ///
 /// ffmpeg 走引擎的后端装配点（[resolveFfmpegBackend]：子进程登记表、`FUSHI_FFMPEG`
 /// 覆盖、移动端 ffmpeg-kit），不裸起进程；测试用 `setFfmpegBackendForTesting` 换后端。
@@ -102,6 +158,7 @@ Future<File> extractVideoSubtitleAudio({
   required Directory workDir,
   required SubtitleCancelToken cancel,
   VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  int? streamIndex,
   void Function(Duration processed)? onProcessed,
 }) async {
   final File out = File(
@@ -112,11 +169,14 @@ Future<File> extractVideoSubtitleAudio({
   );
   if (out.existsSync() && out.lengthSync() > 44) return out;
   final FfmpegBackend backend = resolveFfmpegBackend();
-  final VideoProbeFacts facts = await probeVideoFacts(videoPath);
-  final int? stream = pickVideoSubtitleAudioStream(facts.audioTracks, language);
+  final VideoProbeFacts? facts = streamIndex == null
+      ? await probeVideoFacts(videoPath)
+      : null;
+  final int? stream =
+      streamIndex ?? pickVideoSubtitleAudioStream(facts!.audioTracks, language);
   if (stream == null) {
     throw VideoSubtitleRecognizeFailure(
-      facts.isUnavailable
+      facts!.isUnavailable
           ? 'ffprobe unavailable for $videoPath'
           : 'no audio track in $videoPath',
     );
@@ -156,26 +216,30 @@ Future<File> extractVideoSubtitleAudio({
   return out;
 }
 
-/// 现有滑窗识别：抽目标语言的音轨 → 上游 `AsrTranscriptionService`（`mixedAudio`）跑
-/// plan → start → run →
+/// 现有滑窗识别：抽目标语言的音轨 → 上游 `AsrTranscriptionService`（[audioProfile]：
+/// 视频是 `mixedAudio`，音乐库歌词是 `song`）跑 plan → start → run →
 /// 读回 `transcript.srt` 与 `transcript.tokens.jsonl`。
 ///
 /// 切段由上游按模型架构决定（`buildAsrSegmenter`）：日语 Parakeet（NeMo CTC）是
 /// 15 s/3 s 滑窗；普通话 X-ASR zipformer 不是 NeMo CTC，上游在 `mixedAudio` 下给它的是
 /// Silero VAD 切段，不是滑窗（BGM 下 VAD 漏对白的已知短板在上游，要改去
-/// `hajisensai/fushi-subtitles`）。
+/// `hajisensai/fushi-subtitles`）。`song` 选包、切段都按混音，识别前先做人声分离
+/// （上游 `asr_vocal_separation.dart`）。
 ///
-/// 转录任务目录由上游服务管（按音频文件名 + 字节数 + 模型包派生），中途暂停 /
+/// 转录任务目录由上游服务管（按音频文件名 + 字节数 + 模型包 + 素材派生），中途暂停 /
 /// 进程重启后再调同一音频即从断点续。
 class SlidingWindowVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
   SlidingWindowVideoSubtitleRecognizer({
     required this.serviceFactory,
     this.preference = asr.AsrAccelerationPreference.auto,
     this.language = VideoSubtitleLanguage.japanese,
-  });
+    this.audioProfile = asr.AsrAudioProfile.mixedAudio,
+  }) {
+    checkVideoSubtitleRecognizerProfile(audioProfile);
+  }
 
   /// 与 `AsrHostJobRunner.serviceFactory` 同形：按素材建服务。本识别器只用
-  /// [asr.AsrAudioProfile.mixedAudio]。
+  /// [audioProfile]。
   final asr.AsrTranscriptionService Function(asr.AsrAudioProfile profile)
   serviceFactory;
   final asr.AsrAccelerationPreference preference;
@@ -183,8 +247,13 @@ class SlidingWindowVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
   /// 识别语言。不进 [id]：各语言的任务目录本来就分开（[VideoSubtitleLanguage.jobId]）。
   final VideoSubtitleLanguage language;
 
+  /// 转录素材：`mixedAudio`（视频）或 `song`（音乐库歌词，先做人声分离）。进 [id]。
+  final asr.AsrAudioProfile audioProfile;
+
   @override
-  String get id => 'sliding_mixed';
+  String get id => audioProfile.separatesVocals
+      ? kSlidingSongVideoSubtitleRecognizerId
+      : kSlidingVideoSubtitleRecognizerId;
 
   @override
   Future<List<SubtitleDraftCue>> recognize({
@@ -192,6 +261,7 @@ class SlidingWindowVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
     required Directory workDir,
     required VideoSubtitleRecognizeProgress onProgress,
     required SubtitleCancelToken cancel,
+    int? audioStreamIndex,
   }) async {
     onProgress(0, 'extracting audio');
     final File audio = await extractVideoSubtitleAudio(
@@ -199,11 +269,10 @@ class SlidingWindowVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
       workDir: workDir,
       cancel: cancel,
       language: language,
+      streamIndex: audioStreamIndex,
     );
     throwIfSubtitleCancelled(cancel);
-    final asr.AsrTranscriptionService service = serviceFactory(
-      asr.AsrAudioProfile.mixedAudio,
-    );
+    final asr.AsrTranscriptionService service = serviceFactory(audioProfile);
     final asr.AsrLanguage asrLanguage = language.asrLanguage;
     final asr.AsrTranscribePlan plan = await service.plan(
       language: asrLanguage,
@@ -211,7 +280,8 @@ class SlidingWindowVideoSubtitleRecognizer implements VideoSubtitleRecognizer {
     );
     if (!plan.modelReady) {
       throw VideoSubtitleRecognizeFailure(
-        'asr models for ${language.tag} (mixedAudio) are not downloaded',
+        'asr models for ${language.tag} (${audioProfile.name}) are not '
+        'downloaded',
       );
     }
     onProgress(0, 'loading model');

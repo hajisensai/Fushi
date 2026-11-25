@@ -1,8 +1,10 @@
 // 提交反馈：分类 / 标题 / 描述 / 联系方式 + 截图（默认带上打开反馈前的画面；可从
 // 相册选、也可直接粘贴剪贴板里的截图——桌面 Ctrl/Cmd+V、描述框长按菜单「粘贴图片」、
 // 显式「粘贴图片」按钮、Android 输入法插入的图片）+
-// 附带日志与设备信息开关 + 已登录排行榜账户时「以 xx 身份提交」+ 可选 1 个视频（上传前
-// 本机转码成 720p（默认）/ 1080p，≤ 50 MB，见 feedback_video.dart；显示压缩 / 上传进度）。
+// 附带日志与设备信息开关 + 已登录排行榜账户时「以 xx 身份提交」+ 可选 1 个视频（≤ 100 MB；
+// 默认原件上传，超限 / 格式不收时自动压缩并告知；也可选 1080p / 720p 档在本机转码，见
+// feedback_video.dart；显示压缩 / 上传进度）+ 最多 3 个样本文件（字幕 / 书 / 音视频原件 / 词典 /
+// md，原样上传，只有开发者能下载，见 feedback_files.dart；拍板台 PLFh2VXDcN）。
 // 成功后 `pop(FeedbackSubmitResult)`，失败就地显示原因（不靠 toast，用户要一直看得到）。
 //
 // 视频选完就在后台压缩（用户边写边压），换档位即取消在途压缩按新档位重压；表单在压缩期间
@@ -17,10 +19,12 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/feedback/feedback_draft_store.dart';
+import 'package:fushi/src/feedback/feedback_files.dart';
 import 'package:fushi/src/feedback/feedback_service.dart';
 import 'package:fushi/src/feedback/feedback_video.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
+import 'package:fushi/src/pages/implementations/feedback/feedback_compose_prefill.dart';
 import 'package:fushi/src/utils/misc/clipboard_image.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_color_roles.dart';
@@ -90,12 +94,23 @@ bool feedbackDefaultAttachAutoShot(FeedbackCategory category) =>
     category == FeedbackCategory.bug;
 
 class FeedbackComposePage extends ConsumerStatefulWidget {
-  const FeedbackComposePage({this.initialScreenshot, this.reopenOf, super.key});
+  const FeedbackComposePage({
+    this.initialScreenshot,
+    this.reopenOf,
+    this.prefill,
+    super.key,
+  }) : assert(reopenOf == null || prefill == null);
 
   final Uint8List? initialScreenshot;
 
   /// 非空 = 基于这条已结案的反馈重新提交（不读写草稿：草稿属于普通的新反馈）。
   final FeedbackReopenSeed? reopenOf;
+
+  /// 非空 = 带着现场预填（[FeedbackComposePrefill]，不读写草稿）。
+  final FeedbackComposePrefill? prefill;
+
+  /// 这一页读写草稿：只有普通的新反馈（不是重新提交、也不是预填）。
+  bool get usesDraft => reopenOf == null && prefill == null;
 
   @override
   ConsumerState<FeedbackComposePage> createState() =>
@@ -126,8 +141,12 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
   double? _videoFraction;
   bool _pickingVideo = false;
 
-  /// 压缩档位（默认 720p，只在本页有效，不进草稿）。
-  FeedbackVideoQuality _videoQuality = FeedbackVideoQuality.p720;
+  /// 选的样本文件（原件路径与大小，最多 [FeedbackLimits.files] 个）。同视频，不进草稿。
+  final List<({File file, int bytes})> _files = <({File file, int bytes})>[];
+  bool _pickingFiles = false;
+
+  /// 视频档位（默认原件，只在本页有效，不进草稿）。
+  FeedbackVideoMode _videoMode = FeedbackVideoMode.original;
 
   /// 进行中的压缩的取消开关（× / 换档 / 离开页面时完成它）；没在压缩时为 null。
   Completer<void>? _videoCancel;
@@ -223,15 +242,53 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       },
     );
     final FeedbackReopenSeed? seed = widget.reopenOf;
-    if (seed == null) {
-      unawaited(_loadDraft());
-    } else {
+    final FeedbackComposePrefill? prefill = widget.prefill;
+    if (seed != null) {
       _category = seed.category;
       _includeLogs = feedbackDefaultIncludeLogs(seed.category);
       _title.text = seed.title;
       _body.text = seed.body;
       unawaited(_prefillContact());
+    } else if (prefill != null) {
+      _category = prefill.category;
+      _includeLogs = feedbackDefaultIncludeLogs(prefill.category);
+      _title.text = prefill.title;
+      _body.text = prefill.body;
+      unawaited(_prefillContact());
+      unawaited(_attachPrefillFiles(prefill.files));
+    } else {
+      unawaited(_loadDraft());
     }
+  }
+
+  /// 预填的样本文件：与手选的走同一道本机检查（[feedbackFileProblem]），传不上去的原因显示在表单错误行。
+  Future<void> _attachPrefillFiles(List<File> files) async {
+    final List<({File file, int bytes})> ok = <({File file, int bytes})>[];
+    String? problem;
+    for (final File f in files) {
+      final int bytes;
+      try {
+        bytes = await f.length();
+      } on FileSystemException catch (e, st) {
+        ErrorLogService.instance.log('feedback.prefill_file', e, st);
+        problem ??= e.message;
+        continue;
+      }
+      final FeedbackFileProblem? why = feedbackFileProblem(f.path, bytes);
+      if (why != null) {
+        problem ??= feedbackFileProblemText(p.basename(f.path), why);
+        continue;
+      }
+      ok.add((file: f, bytes: bytes));
+    }
+    if (!mounted) return;
+    setState(() {
+      for (final ({File file, int bytes}) f in ok) {
+        if (_files.length >= FeedbackLimits.files) break;
+        _files.add(f);
+      }
+      _error ??= problem;
+    });
   }
 
   /// 联系方式默认带上次提交用的那个。必须在草稿读完之后做：草稿里的联系方式（哪怕
@@ -584,19 +641,49 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     }
   }
 
+  /// 选样本文件：本机先拦住服务端必然拒收的（类型 / 空文件 / 超限），第一个原因显示在表单
+  /// 错误行；能收的按剩余名额加进来（同一路径不重复加）。
+  Future<void> _pickFiles() async {
+    if (_pickingFiles) return;
+    _pickingFiles = true;
+    try {
+      final List<File> picked = await pickFeedbackFiles(context);
+      if (picked.isEmpty || !mounted) return;
+      final List<({File file, int bytes})> ok = <({File file, int bytes})>[];
+      String? problem;
+      for (final File f in picked) {
+        final int bytes = await f.length();
+        final FeedbackFileProblem? why = feedbackFileProblem(f.path, bytes);
+        if (why != null) {
+          problem ??= feedbackFileProblemText(p.basename(f.path), why);
+          continue;
+        }
+        ok.add((file: f, bytes: bytes));
+      }
+      if (!mounted) return;
+      setState(() {
+        for (final ({File file, int bytes}) f in ok) {
+          if (_files.length >= FeedbackLimits.files) break;
+          if (_files.any(
+            (({File file, int bytes}) x) => x.file.path == f.file.path,
+          )) {
+            continue;
+          }
+          _files.add(f);
+        }
+        _error = problem;
+      });
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('feedback.pick_files', e, st);
+    } finally {
+      _pickingFiles = false;
+    }
+  }
+
   /// 桌面 Ctrl+V（macOS Cmd+V）：不论焦点在不在输入框都看一眼剪贴板，有图就收。
   /// 不吃掉按键——输入框里照常粘贴文字（剪贴板里只有图时那一步什么也不贴）。
   bool _onKey(KeyEvent event) {
-    if (event is! KeyDownEvent || event.logicalKey != LogicalKeyboardKey.keyV) {
-      return false;
-    }
-    final HardwareKeyboard keyboard = HardwareKeyboard.instance;
-    final bool primary = Platform.isMacOS
-        ? keyboard.isMetaPressed
-        : keyboard.isControlPressed;
-    if (!primary || keyboard.isAltPressed || keyboard.isShiftPressed) {
-      return false;
-    }
+    if (!isFeedbackPasteShortcut(event)) return false;
     // 只认最上层：提交页上面又压了别的页面 / 弹窗时不抢。
     if (!mounted || !(ModalRoute.of(context)?.isCurrent ?? false)) return false;
     unawaited(_pasteFromClipboard(explicit: false));
@@ -743,6 +830,9 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
           linkAccount: _linkAccount,
           screenshots: List<Uint8List>.of(_shots),
           video: video,
+          files: <File>[
+            for (final ({File file, int bytes}) f in _files) f.file,
+          ],
           reopenOf: widget.reopenOf?.id,
           submissionKey: submissionKey,
         ),
@@ -757,8 +847,8 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       // 视频已挪进待传区（或已传完）：压缩产物的工作目录可以删了。
       if (identical(_staged, staged)) _staged = null;
       unawaited(staged?.discard());
-      // 重新提交不读写草稿：磁盘上的草稿属于另一条还没写完的新反馈，不能被这次提交顺手删掉。
-      if (widget.reopenOf == null) {
+      // 重新提交 / 预填不读写草稿：磁盘上的草稿属于另一条还没写完的新反馈，不能被这次提交顺手删掉。
+      if (widget.usesDraft) {
         try {
           await (await _service.draftStore()).clear();
         } on Object catch (e, st) {
@@ -813,7 +903,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
       final FeedbackStagedVideo staged = await _service.stageVideo(
         video,
         options: FeedbackVideoPrepareOptions(
-          quality: _videoQuality,
+          mode: _videoMode,
           cancel: cancel.future,
           onDowngraded: () {
             if (current()) setState(() => _videoDowngraded = true);
@@ -903,6 +993,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
     FeedbackSubmitStage.sending => t.feedback_stage_sending,
     FeedbackSubmitStage.screenshots => t.feedback_stage_screenshots,
     FeedbackSubmitStage.logs => t.feedback_stage_logs,
+    FeedbackSubmitStage.files => t.feedback_stage_files,
     FeedbackSubmitStage.video => t.feedback_stage_video(percent: _percentText),
   };
 
@@ -944,18 +1035,21 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
           )
         : staged != null
         ? Text(
-            t.feedback_compose_video_compressed(
-              size: FushiByteFormat.bytes(staged.video.bytes),
-            ),
+            staged.video.transcoded
+                ? t.feedback_compose_video_compressed(
+                    size: FushiByteFormat.bytes(staged.video.bytes),
+                  )
+                : t.feedback_compose_video_ready_original(
+                    size: FushiByteFormat.bytes(staged.video.bytes),
+                  ),
             key: const ValueKey<String>('feedback-video-ready'),
           )
         : Text(FushiByteFormat.bytes(_videoBytes));
     return <Widget>[
       SizedBox(height: tokens.spacing.card),
       Text(
-        t.feedback_compose_video_hint(
+        t.feedback_compose_video_limit_hint(
           max: FushiByteFormat.bytes(FeedbackLimits.videoMaxBytes),
-          resolution: _videoQuality.label,
         ),
         key: const ValueKey<String>('feedback-video-hint'),
         style: tokens.type.metadata,
@@ -1009,28 +1103,45 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
         SizedBox(height: tokens.spacing.gap),
         Align(
           alignment: Alignment.centerLeft,
-          child: adaptiveSegmentedButton<FeedbackVideoQuality>(
+          child: adaptiveSegmentedButton<FeedbackVideoMode>(
             context: context,
-            segments: <ButtonSegment<FeedbackVideoQuality>>[
-              for (final FeedbackVideoQuality q in FeedbackVideoQuality.values)
-                ButtonSegment<FeedbackVideoQuality>(
-                  value: q,
+            segments: <ButtonSegment<FeedbackVideoMode>>[
+              for (final FeedbackVideoMode m in FeedbackVideoMode.values)
+                ButtonSegment<FeedbackVideoMode>(
+                  value: m,
                   label: Text(
-                    q.label,
-                    key: ValueKey<String>('feedback-video-quality-${q.label}'),
+                    _videoModeLabel(m),
+                    key: ValueKey<String>('feedback-video-quality-${m.name}'),
                   ),
                 ),
             ],
-            selected: <FeedbackVideoQuality>{_videoQuality},
-            onSelectionChanged: (Set<FeedbackVideoQuality> v) {
-              if (v.first == _videoQuality) return;
-              setState(() => _videoQuality = v.first);
+            selected: <FeedbackVideoMode>{_videoMode},
+            onSelectionChanged: (Set<FeedbackVideoMode> v) {
+              if (v.first == _videoMode) return;
+              setState(() => _videoMode = v.first);
               // 换档：取消在途压缩、丢掉旧档位的产物，按新档位重压。
               _startVideoCompression();
             },
           ),
         ),
-        if (_videoQuality == FeedbackVideoQuality.p1080) ...<Widget>[
+        const SizedBox(height: 2),
+        Text(
+          switch (_videoMode) {
+            FeedbackVideoMode.original =>
+              t.feedback_compose_video_original_hint(
+                max: FushiByteFormat.bytes(FeedbackLimits.videoMaxBytes),
+              ),
+            FeedbackVideoMode.p1080 => t.feedback_compose_video_compress_hint(
+              resolution: FeedbackVideoQuality.p1080.label,
+            ),
+            FeedbackVideoMode.p720 => t.feedback_compose_video_compress_hint(
+              resolution: FeedbackVideoQuality.p720.label,
+            ),
+          },
+          key: ValueKey<String>('feedback-video-${_videoMode.name}-hint'),
+          style: tokens.type.metadata,
+        ),
+        if (_videoMode == FeedbackVideoMode.p1080) ...<Widget>[
           const SizedBox(height: 2),
           Text(
             t.feedback_compose_video_1080_hint(
@@ -1051,8 +1162,102 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
           style: tokens.type.metadata,
         ),
       ],
+      // 原件档自动压缩了：告诉用户为什么（原件超限 / 格式不收）和压成了什么。
+      if (video != null &&
+          staged != null &&
+          _videoMode.keepsOriginal &&
+          staged.video.transcoded) ...<Widget>[
+        SizedBox(height: tokens.spacing.gap),
+        Text(
+          _videoBytes > FeedbackLimits.videoMaxBytes
+              ? t.feedback_compose_video_auto_compressed(
+                  max: FushiByteFormat.bytes(FeedbackLimits.videoMaxBytes),
+                  resolution: staged.video.quality?.label ?? '',
+                )
+              : t.feedback_compose_video_auto_converted(
+                  resolution: staged.video.quality?.label ?? '',
+                ),
+          key: const ValueKey<String>('feedback-video-auto-compressed'),
+          style: tokens.type.metadata,
+        ),
+      ],
     ];
   }
+
+  /// 已选样本文件合计超过每天的样本文件上传额度（[FeedbackLimits.fileBytesPerDay]）。
+  bool get _filesOverDailyQuota =>
+      _files.fold<int>(
+        0,
+        (int sum, ({File file, int bytes}) f) => sum + f.bytes,
+      ) >
+      FeedbackLimits.fileBytesPerDay;
+
+  /// 样本文件区：说明 + 已选文件（文件名 · 大小 · ×）+ 「添加文件」（名额满了不显示）。
+  /// 正文发出之后（上传附件时）锁住。
+  List<Widget> _filesSection(FushiDesignTokens tokens) => <Widget>[
+    SizedBox(height: tokens.spacing.card),
+    Text(
+      t.feedback_compose_files_hint(
+        n: FeedbackLimits.files,
+        max: FushiByteFormat.bytes(FeedbackLimits.fileMaxBytes),
+      ),
+      key: const ValueKey<String>('feedback-files-hint'),
+      style: tokens.type.metadata,
+    ),
+    // 合计超过每 IP 每天的样本文件额度（服务端 fileBytesPerIpDay）：提交前就提醒，传不下的会
+    // 留在本机待重试，不是提交后才发现「附件没传上去」。
+    if (_filesOverDailyQuota) ...<Widget>[
+      SizedBox(height: tokens.spacing.gap),
+      FushiInlineNotice(
+        key: const ValueKey<String>('feedback-files-over-quota'),
+        severity: FushiNoticeSeverity.warning,
+        message: t.feedback_compose_files_over_quota(
+          max: FushiByteFormat.bytes(FeedbackLimits.fileBytesPerDay),
+        ),
+      ),
+    ],
+    SizedBox(height: tokens.spacing.gap),
+    for (final ({File file, int bytes}) f in _files) ...<Widget>[
+      FushiCard(
+        key: ValueKey<String>('feedback-file-${f.file.path}'),
+        margin: EdgeInsets.zero,
+        child: FushiListItem(
+          leading: const FushiIcon(FushiIcons.file),
+          title: Text(
+            p.basename(f.file.path),
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(FushiByteFormat.bytes(f.bytes)),
+          trailing: FushiIconButton(
+            key: ValueKey<String>('feedback-remove-file-${f.file.path}'),
+            icon: FushiIcons.close,
+            tooltip: t.feedback_compose_remove_file,
+            enabled: !_locked,
+            onTap: () => setState(() => _files.remove(f)),
+          ),
+        ),
+      ),
+      SizedBox(height: tokens.spacing.gap),
+    ],
+    if (_files.length < FeedbackLimits.files)
+      Align(
+        alignment: Alignment.centerLeft,
+        child: _AddTile(
+          key: const ValueKey<String>('feedback-add-files'),
+          icon: FushiIcons.file,
+          label: t.feedback_compose_add_files,
+          onTap: _locked ? null : () => unawaited(_pickFiles()),
+        ),
+      ),
+  ];
+
+  /// 档位按钮的名字：原件翻译，720p / 1080p 不翻译。
+  static String _videoModeLabel(FeedbackVideoMode mode) => switch (mode) {
+    FeedbackVideoMode.original => t.feedback_compose_video_quality_original,
+    FeedbackVideoMode.p1080 => FeedbackVideoQuality.p1080.label,
+    FeedbackVideoMode.p720 => FeedbackVideoQuality.p720.label,
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -1204,6 +1409,7 @@ class _FeedbackComposePageState extends ConsumerState<FeedbackComposePage> {
               ],
             ),
             ..._videoSection(tokens),
+            ..._filesSection(tokens),
             SizedBox(height: tokens.spacing.card),
             FushiSwitchListTile(
               key: const ValueKey<String>('feedback-include-logs'),

@@ -48,8 +48,20 @@ class VideoOutputManager {
                     double target_peak_nits,
                     std::function<void(bool)> on_done);
 
-  // Destroys the |VideoOutput| with given handle.
-  void Dispose(int64_t handle);
+  // Destroys the |VideoOutput| with given handle. FUSHI FORK (BUG-4339):
+  // |on_done| runs (on a background thread) only after the |VideoOutput| is
+  // fully gone, i.e. after |mpv_render_context_free| returned. The Dart side
+  // awaits the method-channel reply sent from it before |Player.dispose| goes
+  // on to |mpv_terminate_destroy|, which libmpv aborts on while a render
+  // context is still alive ("Broken API use: mpv_render_context_free() not
+  // called").
+  void Dispose(int64_t handle, std::function<void()> on_done);
+
+  // FUSHI FORK (BUG-5200): presentation counters of the |VideoOutput| for
+  // |handle|. Called on the platform thread, so it never waits: empty while
+  // another manager call (Create / Dispose can take long) holds the lock, or
+  // when there is no such output.
+  std::optional<VideoOutputFrameStats> FrameStats(int64_t handle);
 
   ~VideoOutputManager();
 

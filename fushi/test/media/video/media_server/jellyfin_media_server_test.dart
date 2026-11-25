@@ -585,6 +585,62 @@ void main() {
         expect(r.seen.last.url.queryParameters['ParentId'], 'series-1');
       },
     );
+
+    // BUG-4257（VF5D4O_Tyx）：整季都没有 IndexNumber 时比较器全返回 0，
+    // List.sort 超过 32 个元素走不稳定快排，把 E13 排到第一。必须保住服务器原序。
+    test('超过 32 集都缺 IndexNumber → 保持服务器原序（稳定排序）', () async {
+      final List<String> ids = <String>[
+        for (int i = 1; i <= 37; i++) 'e${i.toString().padLeft(2, '0')}',
+      ];
+      final _Router r = _Router(
+        (_) => _page(<Map<String, Object?>>[
+          for (final String id in ids)
+            _item(
+              id,
+              'Episode',
+              extra: <String, Object?>{
+                'SeriesId': 'series-1',
+                'SeasonId': 'season-1',
+                'ParentIndexNumber': 1,
+              },
+            ),
+        ]),
+      );
+      final MediaServerPage page = await _client(
+        r.client,
+      ).listEpisodes(seriesId: 'series-1', seasonId: 'season-1');
+      expect(
+        page.items.every((MediaServerItem e) => e.episodeNumber == null),
+        isTrue,
+      );
+      expect(page.items.map((MediaServerItem e) => e.id).toList(), ids);
+    });
+
+    test('有号的按集号排，缺号的同号组排最后且保持原序', () async {
+      final List<String> extras = <String>[
+        for (int i = 1; i <= 34; i++) 'sp${i.toString().padLeft(2, '0')}',
+      ];
+      final _Router r = _Router(
+        (_) => _page(<Map<String, Object?>>[
+          _episode('ep2', episode: 2),
+          for (final String id in extras)
+            _item(
+              id,
+              'Episode',
+              extra: <String, Object?>{'ParentIndexNumber': 1},
+            ),
+          _episode('ep1', episode: 1),
+        ]),
+      );
+      final MediaServerPage page = await _client(
+        r.client,
+      ).listEpisodes(seriesId: 'series-1');
+      expect(page.items.map((MediaServerItem e) => e.id).toList(), <String>[
+        'ep1',
+        'ep2',
+        ...extras,
+      ]);
+    });
   });
 
   group('listResume', () {

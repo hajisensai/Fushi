@@ -1,4 +1,5 @@
 import 'anki_models.dart';
+import 'fushi_card_fields.dart';
 
 /// Senren（https://brenoaqua.github.io/Senren/）笔记类型预设。
 ///
@@ -17,7 +18,8 @@ abstract final class SenrenPreset {
     'word': '{expression}',
     'reading': '{reading}',
     'sentence': '{sentence}',
-    'selectionText': '{popup-selection-text}',
+    // 保留样式的选中内容（拍板 RdmYdegMPJ 选 a），与 Lapis / Fushi 卡片一致。
+    'selectionText': '{popup-selection-html}',
     'definition': '{glossary-first}',
     'wordAudio': '{audio}',
     'sentenceAudio': '{sentence-audio}',
@@ -27,7 +29,7 @@ abstract final class SenrenPreset {
     'pitchCategories': '{pitch-accent-categories}',
     'frequencies': '{frequencies}',
     'freqSort': '{frequency-harmonic-rank}',
-    'miscInfo': '{source-link} {clip-timestamp}',
+    'miscInfo': FushiCardFields.sourceDefaultMapping,
   };
 
   /// 改过名的 Senren 副本靠这组字段认：camelCase 的 `selectionText` / `freqSort` /

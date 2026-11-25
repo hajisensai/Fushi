@@ -13,22 +13,28 @@ import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 /// - 按住 500ms 不动 → 上报被按住那页的 `data-page`，松手不再当单击 / swipe；
 /// - 移动超过阈值、第二指落下（捏合）、提前松手、系统夺走指针 → 不触发；
 /// - 鼠标右键仍走 `onMangaContextMenu`，鼠标左键按住不触发长按；
-/// - 翻页动画克隆层（无 data-page）与加载失败页不触发。
+/// - 翻页动画克隆层（无 data-page）与加载失败页不触发；
+/// - 长按 / 右键落在 OCR 文本块上时带上该块的句子分组号 `group`（Dart 据此
+///   给出「复制文字」，反馈 hjUlprxxKI），别页的块不算；
+/// - 中键 / 侧键按下带同一份落点回传 `onMangaPointerSeek`（Dart 按绑定判「跳到
+///   点击句」，反馈 RCsvzByem-），左键 / 右键不走这条路。
 void main() {
-  String buildDocument() => mangaWindowDocument(
-    const <MokuroImage>[
-      MokuroImage(
-        url: 'page.png',
-        size: MokuroSize(1000, 1414),
-        blocks: <MokuroBlock>[],
-      ),
-    ],
-    const <String>['page.png'],
-    mode: MangaReadingMode.spread,
-    spreadDirection: 'rtl',
-    inlineSelectionJs: '',
-    zoomPercent: 100,
-  );
+  String buildDocument({bool enableMouseTextSelection = false}) =>
+      mangaWindowDocument(
+        const <MokuroImage>[
+          MokuroImage(
+            url: 'page.png',
+            size: MokuroSize(1000, 1414),
+            blocks: <MokuroBlock>[],
+          ),
+        ],
+        const <String>['page.png'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: '',
+        zoomPercent: 100,
+        enableMouseTextSelection: enableMouseTextSelection,
+      );
 
   String section(String document, String start, String end) {
     final int from = document.indexOf(start);
@@ -38,9 +44,9 @@ void main() {
     return document.substring(from, to);
   }
 
-  String harness(String body) {
+  String harness(String body, {bool enableMouseTextSelection = false}) {
     final String gestures = section(
-      buildDocument(),
+      buildDocument(enableMouseTextSelection: enableMouseTextSelection),
       '  var LONG_PRESS_MS',
       "  document.addEventListener('contextmenu'",
     );
@@ -49,6 +55,10 @@ const assert=require('node:assert/strict');
 var ZOOM=1, ZOOM_SENS=1, has=false, panDrag=null, touchPts={}, pinch=null;
 var pinchGuard=false, rightDrag=null, dblArmed=false;
 const listeners={};
+// 桌面精确指针（鼠标）在场：开了 enableMouseTextSelection 时字格可原生拖选。
+const window={matchMedia:(q)=>({matches:q==='(any-pointer:fine)'})};
+// 鼠标落点压在 OCR 字格（.ocr-char）上时用作 e.target。
+const ocrCharTarget={closest:(sel)=>sel==='.ocr-char'?{}:null};
 // 页面：x < 206 是 data-page=3（双页左），否则 data-page=2；
 // y > 800 落在一个摘掉 data-page 的克隆层上；failedAt 让命中页标成加载失败。
 let failed=false;
@@ -56,11 +66,23 @@ function pageEl(index){ return {
   hasAttribute:(k)=>k==='data-page'&&index!==null,
   getAttribute:(k)=>k==='data-page'?String(index):(k==='data-load-failed'&&failed?'1':null),
 }; }
+// ocrBox 非 null 时落点压在一个 OCR 文本块的字格上：{page, group}。
+let ocrBox=null;
+function boxEl(spec){ return {
+  getAttribute:(k)=>k==='data-manga-sentence-group'?String(spec.group):null,
+  closest:(sel)=>sel==='.manga-page'?pageEl(spec.page):null,
+}; }
 const document={
   addEventListener(type,fn){ listeners[type]=fn; },
   elementsFromPoint(x,y){
     const page=y>800?pageEl(null):pageEl(x<206?3:2);
-    return [{closest:(sel)=>sel==='.manga-page'?page:null}];
+    const box=ocrBox?boxEl(ocrBox):null;
+    const stack=[];
+    // 字格层只回答 .ocr-box；页号由下面的页元素给出，块的归属页单独由 box 给，
+    // 好构造「块属于别页」（双页接缝处 4px 余量命中邻页字格）的情形。
+    if(box) stack.push({closest:(sel)=>sel==='.ocr-box'?box:null});
+    stack.push({closest:(sel)=>sel==='.manga-page'?page:null});
+    return stack;
   },
 };
 let timers=[];
@@ -68,7 +90,7 @@ function setTimeout(f){ timers.push(f); return timers.length; }
 function clearTimeout(id){ if(id>0) timers[id-1]=null; }
 function elapse(){ const t=timers; timers=[]; t.forEach(f=>f&&f()); }
 let calls=[], ends=[], released=[];
-function _bridge(){ return {callHandler:(n,d)=>{ calls.push(n+':'+d); }}; }
+function _bridge(){ return {callHandler:(n,...a)=>{ calls.push([n].concat(a).join(':')); }}; }
 function _pinchGeom(){
   const ids=Object.keys(touchPts); if(ids.length<2) return null;
   const a=touchPts[ids[0]], b=touchPts[ids[1]];
@@ -196,7 +218,40 @@ assert.deepEqual(longPresses(),[]);
 ev('pointerup',{pointerType:'mouse'});
 ev('pointerdown',{pointerType:'mouse',button:2,clientX:50,clientY:60});
 ev('pointerup',{pointerType:'mouse',button:2,clientX:50,clientY:60});
-assert.deepEqual(calls,['onMangaContextMenu:{"x":50,"y":60}']);
+assert.deepEqual(calls,['onMangaContextMenu:{"page":3,"x":50,"y":60}']);
+'''),
+    );
+  });
+
+  test('长按落在 OCR 文本块上：带上该块的句子分组号', () async {
+    await runJs(
+      harness('''
+ocrBox={page:3,group:5};
+ev('pointerdown',{clientX:100});
+elapse();
+assert.deepEqual(longPresses(),['onMangaPageLongPress:{"page":3,"group":5}']);
+'''),
+    );
+  });
+
+  test('右键落在 OCR 文本块上：右键菜单 payload 带页号与分组号', () async {
+    await runJs(
+      harness('''
+ocrBox={page:3,group:0};
+ev('pointerdown',{pointerType:'mouse',button:2,clientX:50,clientY:60});
+ev('pointerup',{pointerType:'mouse',button:2,clientX:50,clientY:60});
+assert.deepEqual(calls,['onMangaContextMenu:{"page":3,"group":0,"x":50,"y":60}']);
+'''),
+    );
+  });
+
+  test('文本块属于别的页（双页另一侧）：不带分组号', () async {
+    await runJs(
+      harness('''
+ocrBox={page:2,group:1};
+ev('pointerdown',{clientX:100});
+elapse();
+assert.deepEqual(longPresses(),['onMangaPageLongPress:{"page":3}']);
 '''),
     );
   });
@@ -211,6 +266,86 @@ failed=true;
 ev('pointerdown');
 elapse();
 assert.deepEqual(longPresses(),[]);
+'''),
+    );
+  });
+
+  test('字格文字选区开启：鼠标左键点字格没拖动，照常走单击（查词）路径', () async {
+    await runJs(
+      harness('''
+ev('pointerdown',{pointerType:'mouse',target:ocrCharTarget});
+assert.equal(mouseOcrSelection.dragging,false);
+ev('pointerup',{pointerType:'mouse',target:ocrCharTarget});
+elapse();
+assert.equal(mouseOcrSelection,null);
+assert.deepEqual(longPresses(),[]);
+assert.equal(ends.length,1);
+''', enableMouseTextSelection: true),
+    );
+  });
+
+  test('字格文字选区开启：鼠标拖选松手不当单击 / 翻页，跟手回弹不翻页', () async {
+    await runJs(
+      harness('''
+ev('pointerdown',{pointerType:'mouse',target:ocrCharTarget});
+// pointermove 越过阈值时把这次按压判成拖选（pointermove 不在本节截取范围内）。
+mouseOcrSelection.dragging=true;
+ev('pointerup',{pointerType:'mouse',target:ocrCharTarget,clientX:160});
+elapse();
+assert.equal(mouseOcrSelection,null);
+assert.equal(ends.length,0);
+assert.deepEqual(released,[false]);
+assert.equal(has,false);
+''', enableMouseTextSelection: true),
+    );
+  });
+
+  test('字格文字选区开启：触屏长按字格仍上报长按，右键仍弹右键菜单', () async {
+    await runJs(
+      harness('''
+ocrBox={page:3,group:0};
+ev('pointerdown',{clientX:100,target:ocrCharTarget});
+assert.equal(mouseOcrSelection,null);
+elapse();
+assert.deepEqual(longPresses(),['onMangaPageLongPress:{"page":3,"group":0}']);
+ev('pointerup',{clientX:100,target:ocrCharTarget});
+assert.equal(ends.length,0);
+ev('pointerdown',{pointerType:'mouse',button:2,clientX:50,clientY:60,target:ocrCharTarget});
+ev('pointerup',{pointerType:'mouse',button:2,clientX:50,clientY:60,target:ocrCharTarget});
+assert.equal(mouseOcrSelection,null);
+assert.ok(calls.includes('onMangaContextMenu:{"page":3,"group":0,"x":50,"y":60}'));
+''', enableMouseTextSelection: true),
+    );
+  });
+
+  test('字格文字选区关闭（移动端）：鼠标落在字格上不进入拖选状态', () async {
+    await runJs(
+      harness('''
+ev('pointerdown',{pointerType:'mouse',target:ocrCharTarget});
+assert.equal(mouseOcrSelectionEnabled,false);
+assert.equal(mouseOcrSelection,null);
+ev('pointerup',{pointerType:'mouse',target:ocrCharTarget});
+assert.equal(ends.length,1);
+'''),
+    );
+  });
+
+  test('中键 / 侧键：带落点回传 onMangaPointerSeek，左键 / 右键不走', () async {
+    await runJs(
+      harness('''
+ocrBox={page:3,group:1};
+let prevented=0;
+ev('mousedown',{pointerType:'mouse',button:1,clientX:100,clientY:400,
+  preventDefault(){ prevented++; }});
+assert.deepEqual(calls,['onMangaPointerSeek:1:{"page":3,"group":1}']);
+assert.equal(prevented,1,'压掉中键自动滚动');
+calls=[];
+ev('mousedown',{pointerType:'mouse',button:0});
+ev('mousedown',{pointerType:'mouse',button:2});
+assert.deepEqual(calls,[],'左键查词 / 右键菜单各有自己的路');
+ocrBox=null;
+ev('mousedown',{pointerType:'mouse',button:3,clientX:300,clientY:400});
+assert.deepEqual(calls,['onMangaPointerSeek:3:{"page":2}'],'没点中气泡也回传，由 Dart 判');
 '''),
     );
   });

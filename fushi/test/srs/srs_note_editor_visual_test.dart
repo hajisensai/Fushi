@@ -18,7 +18,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_rich_text_controller.dart';
 import 'package:fushi/src/srs/srs_field_markup.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart' show srsSoundNames;
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -31,6 +31,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
+import 'support/srs_write_settle.dart';
 
 /// Yomitan 结构化释义（class / style / data-dictionary 都要原样留下）。
 const String _kGlossary =
@@ -54,12 +55,7 @@ Future<T> _db<T>(WidgetTester tester, Future<T> Function() body) async =>
     (await tester.runAsync(body)) as T;
 
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 Finder _key(String k) => find.byKey(ValueKey<String>(k));
@@ -190,10 +186,9 @@ Future<void> _pumpEditor(
   await _settle(tester);
 }
 
-Future<void> _save(WidgetTester tester) async {
-  await tester.tap(_key('srs_note_save').first);
-  await _settle(tester);
-}
+/// 点保存并等写入落库（之后从库里读断言）。
+Future<void> _save(WidgetTester tester) =>
+    srsUntilWritten(tester, () => tester.tap(_key('srs_note_save').first));
 
 Future<String> _field(
   WidgetTester tester,
@@ -569,6 +564,80 @@ void main() {
       await _field(tester, env.store, note, 'TermAudio'),
       '[sound:b.mp3][sound:$voiceName]',
     );
+    await _unmount(tester);
+  });
+
+  testWidgets('音频：「用 TTS 生成」念对应文字字段（去标签 / 解实体），音频存进媒体库追加到字段', (
+    WidgetTester tester,
+  ) async {
+    final _Env env = await _open(tester);
+    final String note = await _fushiNote(tester, env.store, <String, String>{
+      'Term': '通う',
+      'Sentence': _kSentence,
+    });
+    final Uint8List speech = Uint8List.fromList(<int>[7, 7, 7]);
+    final List<String> spoken = <String>[];
+    await _pumpEditor(
+      tester,
+      env,
+      note,
+      source: SrsFieldMediaSource(
+        pickImage: (_) async => null,
+        pickAudio: (_) async => null,
+        pasteImage: () async => null,
+        synthesizeSpeech: (String text) async {
+          spoken.add(text);
+          return (name: 'tts_term_audio.wav', bytes: speech);
+        },
+      ),
+    );
+    // 句子音频念句子；单词音频没有读音时念词头。
+    expect(_key('srs-sound-tts-SentenceAudio'), findsOneWidget);
+    expect(_key('srs-sound-tts-TermAudio'), findsOneWidget);
+
+    await tester.tap(_key('srs-sound-tts-SentenceAudio'));
+    await _settleMediaAdd(tester, 'srs-sound-tts-SentenceAudio');
+    await _save(tester);
+    expect(spoken, <String>['毎日図書館に通っています&。']);
+    final String name = SrsMediaStore.contentName('tts_term_audio.wav', speech);
+    expect(
+      await _field(tester, env.store, note, 'SentenceAudio'),
+      '[sound:$name]',
+    );
+    await _unmount(tester);
+  });
+
+  testWidgets('音频：没有可念的文字 / 不提供合成时不出「用 TTS 生成」', (WidgetTester tester) async {
+    final _Env env = await _open(tester);
+    final String note = await _fushiNote(tester, env.store, <String, String>{
+      'Term': '通う',
+    });
+    await _pumpEditor(
+      tester,
+      env,
+      note,
+      source: SrsFieldMediaSource(
+        pickImage: (_) async => null,
+        pickAudio: (_) async => null,
+        pasteImage: () async => null,
+        synthesizeSpeech: (String text) async => null,
+      ),
+    );
+    expect(_key('srs-sound-tts-SentenceAudio'), findsNothing);
+    expect(_key('srs-sound-tts-TermAudio'), findsOneWidget);
+    await _unmount(tester);
+
+    await _pumpEditor(
+      tester,
+      env,
+      note,
+      source: SrsFieldMediaSource(
+        pickImage: (_) async => null,
+        pickAudio: (_) async => null,
+        pasteImage: () async => null,
+      ),
+    );
+    expect(_key('srs-sound-tts-TermAudio'), findsNothing);
     await _unmount(tester);
   });
 

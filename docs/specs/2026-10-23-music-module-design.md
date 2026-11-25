@@ -334,7 +334,27 @@ TTML**。手动指定的来源存成 `user` 行（`isUserEdited`），原文为 
 
 - ReplayGain 2.0：读标签（`REPLAYGAIN_*`、R128_*、iTunNORM 换算）；缺标签的曲目
   后台用统一 FFmpeg `ebur128` 扫描并写入 DB（**不改用户文件**，写回是显式操作）。
-- 预放大 + 防削波（`replaygain-clip=no` + 峰值保护）。
+- 预放大 + 防削波（`replaygain-clip=no` + 峰值保护）。增益经 mpv `volume-gain` 施加，`volume-gain-max`
+  放到 150 dB（mpv 默认 +12 dB，超了整个被拒、按 0 dB 播；轻录音按 -18 LUFS 常要 +12 dB 以上），
+  封顶只靠峰值保护。
+- 服务器曲目（Jellyfin / Subsonic，2026-11-22）：**服务器给的响度优先**——Jellyfin 10.9+
+  条目的 `NormalizationGain`（服务器 EBU R128 测，目标 -18 LUFS，曲目 / 专辑条目各一份，媒体库开了
+  「LUFS 扫描」才有）、OpenSubsonic 曲目的 `replayGain`。列表接口带回来的直接进播放项 `rg_*`；
+  从音乐库 / 本地歌单还原的服务器曲目（v149 行不存响度）与缺专辑增益的，由 mpv 后端取流时经可选
+  能力 `MusicServerLoudnessLookup` 向那台服务器补查一次（进程内按曲目缓存、失败不缓存，不阻塞起播，
+  回来时若正在出声立即重下 `volume-gain`）。代码：引擎 `server/music_server_loudness.dart`、app
+  `server/music_server_loudness_resolver.dart`。
+- 服务器没给曲目增益时（Jellyfin 没开 LUFS 扫描、纯 Subsonic）**客户端测**，与本地曲库同一条
+  `ebur128` 路径换算成 ReplayGain 2.0（-18 LUFS），经同一个补查施加（mpv `volume-gain`，信号路径
+  面板 `rg_*`）；服务器之后有了值仍以服务器为准，测量值不进播放项的 `rg_*`、不写回服务器：
+  - 离线副本：下完时服务器没给曲目增益就测本机文件（不看「自动测量」开关，文件就在手边），存进音频
+    旁 `.loudness.json` 的 `measured`（与服务器值分开存）；存量副本第一次播过后补测。
+  - 串流曲目：只测**播过的**（听够 30 s / 一半 / 播完），先确认服务器答复了且没有曲目增益，再在
+    后台串行从服务器流测一次（每首至多 5 分钟，受「自动测量」开关管），存进 schema v176
+    `music_server_track_states`（设备本地：可重测的缓存，服务器身份只在本机有意义，不进备份 / 同步）。
+    流地址带凭据，只交给 FFmpeg，日志 / 错误文本只记 FFmpeg 返回码。
+  - 代码：app `server/music_server_loudness_measurer.dart`；真服务器回归
+    `integration_test/music_server_offline_itest.dart`。
 
 ### 7.4 输出与 bit-perfect
 
@@ -577,8 +597,33 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
   设备本地）。只读浏览（专辑分页 / 艺人 / 搜索 / 专辑曲目）+ 播放：缺省原样直出，设了码率上限才请
   服务器转码（信号路径按转码后的属性）。每台服务器「显示在曲库里」是显式 opt-in
   （`music_server_library_mix`），混排进来的是专辑卡（每台至多 500 张，带云朵，点开走服务器专辑页）。
-  mpv 的打开失败文本带流地址，后端在报错前统一脱敏（含 Subsonic 的 `t` / `s`）。**没有真服务器验证**
-  （本机没有 Jellyfin 音乐库 / Navidrome），只有离线 fixture 与假客户端。
+  mpv 的打开失败文本带流地址，后端在报错前统一脱敏（含 Subsonic 的 `t` / `s`）。Jellyfin 有真服务器
+  集成测试（`integration_test/music_server_*_itest.dart`，对一台本地 Jellyfin 跑：入库 / 下载 / 同步
+  / 本地功能 / 离线补发 / ASR）；Subsonic 只有离线 fixture 与假客户端。
+  - **专辑 / 艺人整体入库**（2026-11-22）：服务器专辑页与艺人页头部有入库状态按钮（都不在 /
+    「已在音乐库：n / m 首」/ 已在音乐库），整张（整位艺人的全部专辑）在一个事务里逐曲落
+    `music_remote_tracks`（与单曲「加入音乐库」同一条路径）；专辑卡 / 行右键同样有这组动作。
+  - **离线下载**（2026-11-22，schema v175 `music_server_downloads`，设备本地；v176 补
+    `server_kind`）：浏览器实现可选能力
+    `MusicServerDownloading`（Jellyfin `/Items/{id}/Download`、Subsonic `download`）才出现「下载」。
+    下的是服务器存的原文件（不转码、不受串流码率上限影响），走下载中心同一个下载器与任务管理器
+    （`.part` + Range 续传、可暂停 / 取消 / 重试；按钮上也能看进度、取消，iOS 没有下载中心也停得
+    下来），落 `<下载根>/music/media-servers/<服务器>/<专辑>/`，同目录 `cover.<ext>`。下完同事务入
+    音乐库并记副本行；播放时进程内索引把同一个 uid 换成本地文件（服务器离线 / 配置删了照样放，
+    歌词缓存 / 断点 / 统计不换 uid）。「下载 ⊂ 音乐库」：移出曲库过了撤销窗口连副本删，启动时清
+    掉不在库的副本。失败文本按这次请求的 query 整段脱敏。副本行记服务器种类（v176 `server_kind`，
+    存量按服务器身份前缀回填），所以服务器配置删了时本地副本的播放项照样带服务器身份。
+  - **离线 / 服务器删了时的播放与收藏**（2026-11-22，schema v176 `music_server_pending_actions`，
+    设备本地、不存任何凭据）：听够门槛却没送达的播放（连不上，或这台设备上已没配那台服务器）记一条
+    （服务器种类 / 身份 / 条目 id / 开播时刻），按「服务器 + 条目 + 开播时刻」去重；收藏切换同一首只
+    留最后一次。补发时机：app 启动、打开那台服务器的页面、那台服务器任何一次请求成功之后。Jellyfin
+    用 `POST /Users/{userId}/PlayedItems/{itemId}?datePlayed=<开播时刻>`（播放次数 + 1、最后播放时间
+    按原时刻），Subsonic 用 `scrobble time=<毫秒> submission=true`；只对种类一致的服务器补发，从旧到
+    新逐条发，还连不上就这轮停下、条目全留，被服务器拒绝的记尝试次数、第 5 次丢。上限 2000 条（超了
+    丢最旧的播放，收藏不丢）；没配回来的服务器的条目过了 180 天才丢。心形显示最后已知状态（服务器
+    报的 / 确认过的 / 本机最后一次切换，存 v176 `music_server_track_states`），连不上时切换不回滚、
+    直接入队。代码：app `server/music_server_offline_queue.dart`、`music_server_playback_reporter.dart`、
+    `music_server_favorites.dart`。
 - **均衡器（可选）**：10 段倍频程峰值滤波（`equalizer`，`precision=f64`）+ 自动余量，作为带标签的
   lavfi 链挂在 `af` 上；关 / 平直时不挂滤镜。交叉淡入的逐文件 `af` 会整体替换全局 `af`，所以装淡入
   淡出时把均衡器拼进同一条链。信号路径面板单列「均衡器」，判非 bit-perfect。真 libmpv：关时逐样本
@@ -600,6 +645,7 @@ iOS：在线 MV（YouTube 解析）**不归入** `StoreRestrictedCapability`（D
 | `music_videos` | `track_uid`、`kind`（local / youtube / disc-chapter / anime-episode）、`ref`、`offset_ms`（MV 相对音频）、`confidence`、`is_user_bound` |
 | `music_disc_sources` | `disc_uid`、`path`、`kind`（dvd / bluray / cdda / cdg）、`volume_id`、`has_menu`、`title_map`（json） |
 | `music_playlists` / `music_playlist_entries` | 常规；智能歌单规则存 json |
+| `music_remote_tracks`（v148） | `track_uid`（= 播放引擎里的 uid：YouTube `musicServerTrackUid('youtube', videoId)` / 插件 `musicPluginTrackUid`）、`kind`（youtube / plugin）、`source_key`、`item_id`、`title`、`artist`、`album`、`duration_ms`、`cover_url`、`library_added_at`（NULL = 只被歌单引用）、`created_at`、`updated_at`。只能串流的远程曲目加入音乐库 / 本地歌单；播放路径不落库（按身份现推占位）；随「音乐」备份类别按 `updated_at` LWW；iOS 按 `onlineMusicSource` 判据不显示 |
 | `music_play_events` | `track_uid`、`started_at`、`listened_ms`、`completed`（history 唯一含义：最近播放流） |
 | `music_scrape_meta` / `music_metadata_raw_snapshots` / `music_locked_fields` | 与视频刮削同构 |
 

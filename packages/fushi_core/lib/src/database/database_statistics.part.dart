@@ -144,8 +144,17 @@ mixin _FushiDbStatistics
         ),
       );
 
-  Future<List<ReadingStatisticRow>> getAllReadingStatistics() =>
-      select(readingStatistics).get();
+  /// 全部逐日阅读统计行；[fromDateKey] 非 null 时只取统计日 ≥ 它的行。
+  Future<List<ReadingStatisticRow>> getAllReadingStatistics({
+    String? fromDateKey,
+  }) {
+    final SimpleSelectStatement<$ReadingStatisticsTable, ReadingStatisticRow>
+    q = select(readingStatistics);
+    if (fromDateKey != null) {
+      q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
+    }
+    return q.get();
+  }
 
   /// 一本书（按统计行的 `title`）的全部逐日统计行。走 (title, dateKey) 唯一键的
   /// 前缀，不扫整表——同步每导入 / 导出一本书都要读它一次（jHQpTfjrNB）。
@@ -209,9 +218,18 @@ mixin _FushiDbStatistics
         readingHourlyLogs,
       )..where((t) => t.dateKey.equals(dateKey))).get();
 
-  /// 逐行读取全部阅读小时日志，供云聚合同步 materialize 快照（TODO-1056 phase B）。
-  Future<List<ReadingHourlyLogRow>> getAllReadingHourlyLogs() =>
-      select(readingHourlyLogs).get();
+  /// 逐行读取全部阅读小时日志，供云聚合同步 materialize 快照（TODO-1056 phase B）
+  /// 与统计事实面；[fromDateKey] 非 null 时只取统计日 ≥ 它的行。
+  Future<List<ReadingHourlyLogRow>> getAllReadingHourlyLogs({
+    String? fromDateKey,
+  }) {
+    final SimpleSelectStatement<$ReadingHourlyLogsTable, ReadingHourlyLogRow>
+    q = select(readingHourlyLogs);
+    if (fromDateKey != null) {
+      q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
+    }
+    return q.get();
+  }
 
   /// OVERWRITE 语义：把 (dateKey, hour, format) 桶设为绝对值 [readingTimeMs]。
   /// 云聚合合并已在 Dart 侧算好 MAX，这里直接落绝对值（对照
@@ -240,8 +258,36 @@ mixin _FushiDbStatistics
   );
 
   // ── video watch statistics ──────────────────────────────────────
-  Future<List<VideoWatchStatisticRow>> getAllVideoWatchStatistics() =>
-      select(videoWatchStatistics).get();
+  /// 全部逐日观看统计行；[fromDateKey] 非 null 时只取统计日 ≥ 它的行。
+  Future<List<VideoWatchStatisticRow>> getAllVideoWatchStatistics({
+    String? fromDateKey,
+  }) {
+    final SimpleSelectStatement<
+      $VideoWatchStatisticsTable,
+      VideoWatchStatisticRow
+    >
+    q = select(videoWatchStatistics);
+    if (fromDateKey != null) {
+      q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
+    }
+    return q.get();
+  }
+
+  /// 一个视频的 legacy 逐日观看行：`book_uid` 命中，无身份行（NULL / ''）按
+  /// [orTitle] 回退——与 `statFactBelongsToBook` 同一口径（[orTitle] 为 null / 空 =
+  /// 不回退）。统计侧栏按视频读，不再把全表拉回来再丢掉。
+  Future<List<VideoWatchStatisticRow>> getVideoWatchStatisticsForMedia({
+    required String bookUid,
+    String? orTitle,
+  }) =>
+      (select(videoWatchStatistics)..where(
+            (t) => orTitle == null || orTitle.isEmpty
+                ? t.bookUid.equals(bookUid)
+                : t.bookUid.equals(bookUid) |
+                      ((t.bookUid.isNull() | t.bookUid.equals('')) &
+                          t.title.equals(orTitle)),
+          ))
+          .get();
 
   // ── activity events (v49) ───────────────────────────────────────
   /// 追加一条活动事件（每次阅读/观看 session 结束或导入完成时写一行）。纯追加，
@@ -334,9 +380,11 @@ mixin _FushiDbStatistics
 
   /// 取最近 [limit] 条活动事件，按精确时刻倒序（首页 Activity 面板消费）。
   /// [eventTypes] 非空时只取这些类别（如只看 'read'），null = 全部类别。
+  /// [fromDateKey] 非 null 时只取统计日 ≥ 它的行。
   Future<List<ActivityEventRow>> getRecentActivityEvents({
     int limit = 200,
     List<String>? eventTypes,
+    String? fromDateKey,
   }) {
     final SimpleSelectStatement<$ActivityEventsTable, ActivityEventRow> query =
         select(activityEvents)
@@ -349,6 +397,9 @@ mixin _FushiDbStatistics
           ..limit(limit);
     if (eventTypes != null && eventTypes.isNotEmpty) {
       query.where((t) => t.eventType.isIn(eventTypes));
+    }
+    if (fromDateKey != null) {
+      query.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
     }
     return query.get();
   }
@@ -565,25 +616,58 @@ mixin _FushiDbStatistics
   ///
   /// v105：默认只取 [profileId]（null = 当前激活 Profile）的段；只有同步 / 备份
   /// 导出这种要搬**整库**的调用方传 `allProfiles: true`。
+  ///
+  /// [mediaKind] 只取一个域；再给 [mediaKey] 就只取一个媒体：身份行按
+  /// `media_key` 命中，无身份行（`media_key = ''`）按 [orTitle] 回退——与
+  /// `statFactBelongsToBook` 同一口径（[orTitle] 为 null / 空 = 不回退）。
   Future<List<StudySegmentRow>> getStudySegments({
     String? fromDateKey,
     String? toDateKey,
     int? profileId,
     bool allProfiles = false,
+    String? mediaKind,
+    String? mediaKey,
+    String? orTitle,
   }) async {
-    final SimpleSelectStatement<$StudySegmentsTable, StudySegmentRow> q =
-        select(studySegments);
-    if (!allProfiles) {
-      final int scope = profileId ?? await resolveActiveProfileId();
-      q.where((t) => t.profileId.equals(scope));
+    final int? scope = allProfiles
+        ? null
+        : profileId ?? await resolveActiveProfileId();
+    SimpleSelectStatement<$StudySegmentsTable, StudySegmentRow> base() {
+      final SimpleSelectStatement<$StudySegmentsTable, StudySegmentRow> q =
+          select(studySegments);
+      if (scope != null) {
+        q.where((t) => t.profileId.equals(scope));
+      }
+      if (mediaKind != null) {
+        q.where((t) => t.mediaKind.equals(mediaKind));
+      }
+      if (fromDateKey != null) {
+        q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
+      }
+      if (toDateKey != null) {
+        q.where((t) => t.dateKey.isSmallerOrEqualValue(toDateKey));
+      }
+      return q;
     }
-    if (fromDateKey != null) {
-      q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
-    }
-    if (toDateKey != null) {
-      q.where((t) => t.dateKey.isSmallerOrEqualValue(toDateKey));
-    }
-    return q.get();
+
+    if (mediaKey == null) return base().get();
+    // 单媒体（HBK-AUDIT-042）：「身份行 OR 无身份同名行」拆成两支各自全等值的
+    // 查询，每支都整段命中 idx_study_segments_profile_media 的
+    // (profile_id, media_kind, media_key[, title]) 前缀。合成一个 OR 时 SQLite
+    // 会把两支共有的 profile_id / media_kind 提到外面、OR 本身用不上索引，只能
+    // 扫本 Profile 的全部段。两支按 media_key 互斥（mediaKey 非空时），拼起来
+    // 不重不漏；mediaKey 为空时第二支是第一支的子集，不发。
+    final Future<List<StudySegmentRow>> byKey =
+        (base()..where((t) => t.mediaKey.equals(mediaKey))).get();
+    if (orTitle == null || orTitle.isEmpty || mediaKey.isEmpty) return byKey;
+    final Future<List<StudySegmentRow>> byTitle =
+        (base()..where((t) => t.mediaKey.equals('') & t.title.equals(orTitle)))
+            .get();
+    final List<List<StudySegmentRow>> parts =
+        await Future.wait<List<StudySegmentRow>>(
+          <Future<List<StudySegmentRow>>>[byKey, byTitle],
+        );
+    return <StudySegmentRow>[...parts[0], ...parts[1]];
   }
 
   /// 按 uid 取段（会话流编辑「这一次会话」时要读回每段的**现有**字数与起止时刻，
@@ -726,6 +810,51 @@ mixin _FushiDbStatistics
     };
   }
 
+  /// v178：段内查词（`study_segments.lookups`）按（媒体种类, 媒体, 统计日）聚合成与
+  /// `lookup_mining_counters` **同形**的行（拍板台 4KOWK3c2mn）。
+  ///
+  /// 查词有两处互斥的写入：媒体时钟在跑时记进当前段（随会话编辑平移、随段写零、
+  /// 走段的 uid LWW 同步），其余仍记按天计数表。统计读取面把这里的行与计数表的行
+  /// **相加**即得全部查词，消费方（按日分桶、按书 tile、来源切片）不必知道两处来源。
+  ///
+  /// 行形：`id` = 0（合成行，没有库内 id）、`bookKey` = `media_key`、`title` =
+  /// 该组任一段的标题快照、`sourceType` = `media_kind`（两个值域逐字节同值：
+  /// book / video / game / music）、`mineCount` = 0（制卡不进段，仍只在计数表）。
+  ///
+  /// 只看 [profileId] 的段（null = 当前激活 Profile，与段的其余读取面同一分区）。
+  /// [mediaKey] 非空时只取这个媒体（单媒体统计侧栏）。
+  Future<List<LookupMiningCounterRow>> getStudySegmentLookupCounters({
+    int? profileId,
+    String? mediaKey,
+  }) async {
+    final int profile = profileId ?? await resolveActiveProfileId();
+    final bool oneMedia = mediaKey != null && mediaKey.isNotEmpty;
+    final List<QueryRow> rows = await customSelect(
+      'SELECT media_kind, media_key, MAX(title) AS title, date_key, '
+      'SUM(lookups) AS lookups FROM study_segments '
+      'WHERE profile_id = ? AND lookups > 0'
+      '${oneMedia ? ' AND media_key = ?' : ''} '
+      'GROUP BY media_kind, media_key, date_key',
+      variables: <Variable<Object>>[
+        Variable<int>(profile),
+        if (oneMedia) Variable<String>(mediaKey),
+      ],
+      readsFrom: {studySegments},
+    ).get();
+    return <LookupMiningCounterRow>[
+      for (final QueryRow row in rows)
+        LookupMiningCounterRow(
+          id: 0,
+          bookKey: row.read<String>('media_key'),
+          title: row.read<String>('title'),
+          sourceType: row.read<String>('media_kind'),
+          dateKey: row.read<String>('date_key'),
+          lookupCount: row.read<int>('lookups'),
+          mineCount: 0,
+        ),
+    ];
+  }
+
   /// galgame_sessions 按 (game_id, date_key) 的时长合计（秒）：喂统一事实面
   /// （日明细按游戏分节、热力图游戏时长）。
   /// v105：只取 [profileId]（null = 当前激活 Profile）的会话。
@@ -733,12 +862,17 @@ mixin _FushiDbStatistics
   /// v113：游戏已从库移除的孤儿会话照样计入；[getGalgameSessionTitles] 给它们的
   /// 显示名快照。
   Future<List<(String gameId, String dateKey, int totalSeconds)>>
-  getGalgameDailySecondsByGame({int? profileId}) async {
+  getGalgameDailySecondsByGame({int? profileId, String? fromDateKey}) async {
     final int scope = profileId ?? await resolveActiveProfileId();
     final List<QueryRow> rows = await customSelect(
       'SELECT game_id, date_key, COALESCE(SUM(duration_seconds), 0) AS s '
-      'FROM galgame_sessions WHERE profile_id = ? GROUP BY game_id, date_key',
-      variables: [Variable.withInt(scope)],
+      'FROM galgame_sessions WHERE profile_id = ?'
+      '${fromDateKey == null ? '' : ' AND date_key >= ?'} '
+      'GROUP BY game_id, date_key',
+      variables: <Variable<Object>>[
+        Variable.withInt(scope),
+        if (fromDateKey != null) Variable.withString(fromDateKey),
+      ],
       readsFrom: {galgameSessions},
     ).get();
     return <(String, String, int)>[
@@ -819,24 +953,22 @@ mixin _FushiDbStatistics
   /// 该游戏全部 Profile 的会话行（`game_title`），游戏行没了统计页仍有名字可显示。
   /// [sessionTitle] 是调用方握着的当前显示名（含用户改名 / 刮削名覆盖层）；为空
   /// 时回落 `galgames.name`（exe 推导的本地默认名）。
-  Future<int> deleteGalgame(String id, {String? sessionTitle}) => transaction(
-    () async {
-      final String? fallback = (sessionTitle == null || sessionTitle.isEmpty)
-          ? (await getGalgame(id))?.name
-          : sessionTitle;
-      if (fallback != null && fallback.isNotEmpty) {
-        await (update(galgameSessions)..where((t) => t.gameId.equals(id)))
-            .write(GalgameSessionsCompanion(gameTitle: Value(fallback)));
-      }
-      await deleteTagAssignmentsForHost(TagHostKind.game, id);
-      // v135 配音表缓存（设备本地、无外键）同事务清掉。
-      await (delete(gameVoiceCasts)..where((t) => t.gameId.equals(id))).go();
-      // v134 游戏台词跟游戏走：外键 cascade 之外显式删一遍（连接没开 foreign_keys 的
-      // 场合——测试替身 / 临时连接——也不留悬空台词）。
-      await (delete(galgameTextLines)..where((t) => t.gameId.equals(id))).go();
-      return (delete(galgames)..where((t) => t.id.equals(id))).go();
-    },
-  );
+  Future<int> deleteGalgame(String id, {String? sessionTitle}) =>
+      transaction(() async {
+        final String? fallback = (sessionTitle == null || sessionTitle.isEmpty)
+            ? (await getGalgame(id))?.name
+            : sessionTitle;
+        if (fallback != null && fallback.isNotEmpty) {
+          await (update(galgameSessions)..where((t) => t.gameId.equals(id)))
+              .write(GalgameSessionsCompanion(gameTitle: Value(fallback)));
+        }
+        await deleteTagAssignmentsForHost(TagHostKind.game, id);
+        // v135 配音表缓存（设备本地、无外键）同事务清掉。
+        await (delete(gameVoiceCasts)..where((t) => t.gameId.equals(id))).go();
+        // v155：单个游戏的刮削资料 / 横版背景图（逻辑外键）同事务清。
+        await _purgeItemScrapeRows(this, MediaKind.game, <String>[id]);
+        return (delete(galgames)..where((t) => t.id.equals(id))).go();
+      });
 
   /// 只改游玩状态（0=未设置 / 1=想玩 / 2=玩过 / 3=在玩 / 4=搁置 / 5=弃坑）。
   ///
@@ -1191,9 +1323,16 @@ mixin _FushiDbStatistics
   Future<List<VideoHourlyLogRow>> getVideoHourlyLogsForDate(String dateKey) =>
       (select(videoHourlyLogs)..where((t) => t.dateKey.equals(dateKey))).get();
 
-  /// 逐行读取全部视频小时日志，供云聚合同步 materialize 快照（TODO-1056 phase B）。
-  Future<List<VideoHourlyLogRow>> getAllVideoHourlyLogs() =>
-      select(videoHourlyLogs).get();
+  /// 逐行读取全部视频小时日志，供云聚合同步 materialize 快照（TODO-1056 phase B）
+  /// 与统计事实面；[fromDateKey] 非 null 时只取统计日 ≥ 它的行。
+  Future<List<VideoHourlyLogRow>> getAllVideoHourlyLogs({String? fromDateKey}) {
+    final SimpleSelectStatement<$VideoHourlyLogsTable, VideoHourlyLogRow> q =
+        select(videoHourlyLogs);
+    if (fromDateKey != null) {
+      q.where((t) => t.dateKey.isBiggerOrEqualValue(fromDateKey));
+    }
+    return q.get();
+  }
 
   /// OVERWRITE 语义：把 (dateKey, hour) 桶设为绝对值 [watchTimeMs]（对照
   /// [addVideoHourlyWatchTime] 的累加）。云聚合合并已在 Dart 侧算好 MAX。
@@ -1346,32 +1485,37 @@ mixin _FushiDbStatistics
 
   // ── mining statistics ───────────────────────────────────────────
   /// 制卡成功计数 +[delta]：累加到 (sourceType, dateKey) 现有计数。
+  ///
+  /// 写在前（BUG-4283 跨进程查词计数丢失同一病）：事务第一条语句就是写，见
+  /// [_addLookupMiningCounter] 的说明。
   Future<void> addMiningCount({
     required String sourceType,
     required String dateKey,
     int delta = 1,
   }) => transaction(() async {
-    final existing =
-        await (select(miningStatistics)..where(
-              (t) =>
-                  t.sourceType.equals(sourceType) & t.dateKey.equals(dateKey),
-            ))
-            .getSingleOrNull();
-    if (existing != null) {
-      await (update(
-        miningStatistics,
-      )..where((t) => t.id.equals(existing.id))).write(
-        MiningStatisticsCompanion(count: Value(existing.count + delta)),
-      );
-    } else {
-      await into(miningStatistics).insert(
-        MiningStatisticsCompanion.insert(
-          sourceType: sourceType,
-          dateKey: dateKey,
-          count: Value(delta),
-        ),
-      );
-    }
+    final int inserted = await customUpdate(
+      'INSERT OR IGNORE INTO mining_statistics (source_type, date_key, count) '
+      'VALUES (?, ?, ?)',
+      variables: <Variable<Object>>[
+        Variable<String>(sourceType),
+        Variable<String>(dateKey),
+        Variable<int>(delta),
+      ],
+      updates: <TableInfo<Table, Object?>>{miningStatistics},
+      updateKind: UpdateKind.insert,
+    );
+    if (inserted == 1) return;
+    await customUpdate(
+      'UPDATE mining_statistics SET count = count + ? '
+      'WHERE source_type = ? AND date_key = ?',
+      variables: <Variable<Object>>[
+        Variable<int>(delta),
+        Variable<String>(sourceType),
+        Variable<String>(dateKey),
+      ],
+      updates: <TableInfo<Table, Object?>>{miningStatistics},
+      updateKind: UpdateKind.update,
+    );
   });
 
   /// MAX-union semantics: sets the (sourceType, dateKey) bucket to
@@ -1429,45 +1573,14 @@ mixin _FushiDbStatistics
     required String sourceType,
     required String dateKey,
     int delta = 1,
-  }) => transaction(() async {
-    // v76：匹配键含身份（null 归一 ''）——同名不同视频各记各行，不再互串。
-    // 遗留 '' 行与新带身份行并存时各自独立累加，读取端按身份分组归并
-    // （v39 的 NULL 遗留行共存语义，见 stat_shared）。
-    final String identity = bookKey ?? '';
-    final existing =
-        await (select(lookupMiningCounters)..where(
-              (t) =>
-                  t.bookKey.equals(identity) &
-                  t.title.equals(title) &
-                  t.sourceType.equals(sourceType) &
-                  t.dateKey.equals(dateKey),
-            ))
-            .getSingleOrNull();
-    if (existing != null) {
-      await (update(
-        lookupMiningCounters,
-      )..where((t) => t.id.equals(existing.id))).write(
-        LookupMiningCountersCompanion(
-          lookupCount: Value(existing.lookupCount + delta),
-        ),
-      );
-    } else {
-      await into(lookupMiningCounters).insert(
-        LookupMiningCountersCompanion.insert(
-          bookKey: Value(identity),
-          title: Value(title),
-          sourceType: sourceType,
-          dateKey: dateKey,
-          lookupCount: Value(delta),
-        ),
-      );
-      // 重新查该书/视频的词 = 新活动：清其统计删除墓碑（无书查词 title='' 不立碑
-      // 也无碑可清，跳过；TODO-1204 后续）。
-      if (title.isNotEmpty) {
-        await clearStatisticsTombstone(title, sourceType);
-      }
-    }
-  });
+  }) => _addLookupMiningCounter(
+    column: 'lookup_count',
+    bookKey: bookKey,
+    title: title,
+    sourceType: sourceType,
+    dateKey: dateKey,
+    delta: delta,
+  );
 
   /// 制卡计数 +[delta]（per-book）：累加到 (title, sourceType, dateKey) 现有行的
   /// [mineCount]。与全局 [addMiningCount] **并行**写（后者不动），只算成功制卡。
@@ -1477,42 +1590,79 @@ mixin _FushiDbStatistics
     required String sourceType,
     required String dateKey,
     int delta = 1,
-  }) => transaction(() async {
-    // v76：匹配键含身份（同 [addLookupCount]）。
+  }) => _addLookupMiningCounter(
+    column: 'mine_count',
+    bookKey: bookKey,
+    title: title,
+    sourceType: sourceType,
+    dateKey: dateKey,
+    delta: delta,
+  );
+
+  /// [addLookupCount] / [addMineCountPerBook] 的共同实现：给 [column]
+  /// （`lookup_count` / `mine_count`）+[delta]。
+  ///
+  /// BUG-4283（跨进程查词计数丢失）：同一个库还有别的进程在写（`:popup` 浮窗、
+  /// `:second_screen` 副屏面板写查词历史），旧实现是 deferred 事务里先 SELECT
+  /// 再 UPDATE / INSERT——SELECT 拿到的 WAL 快照一旦被别的进程的提交作废，升级
+  /// 写锁就立刻 `SqliteException(5) database is locked`，busy_timeout 不生效
+  /// （SQLite 对已持读事务的连接不调 busy handler，见
+  /// [insertPrefIfAbsent] 的同款说明）。所以事务的**第一条语句就是写**：
+  /// `INSERT OR IGNORE` 先拿写锁（受 busy_timeout 保护），存在性判断交给唯一键
+  /// {title, sourceType, dateKey, bookKey} 的冲突本身；没插进去才在已持写锁的
+  /// 事务里原地 `col = col + ?`。
+  ///
+  /// v76：匹配键含身份（null 归一 ''）——同名不同视频各记各行，不再互串。
+  /// 遗留 '' 行与新带身份行并存时各自独立累加，读取端按身份分组归并
+  /// （v39 的 NULL 遗留行共存语义，见 stat_shared）。
+  Future<void> _addLookupMiningCounter({
+    required String column,
+    required String? bookKey,
+    required String title,
+    required String sourceType,
+    required String dateKey,
+    required int delta,
+  }) {
+    assert(column == 'lookup_count' || column == 'mine_count');
     final String identity = bookKey ?? '';
-    final existing =
-        await (select(lookupMiningCounters)..where(
-              (t) =>
-                  t.bookKey.equals(identity) &
-                  t.title.equals(title) &
-                  t.sourceType.equals(sourceType) &
-                  t.dateKey.equals(dateKey),
-            ))
-            .getSingleOrNull();
-    if (existing != null) {
-      await (update(
-        lookupMiningCounters,
-      )..where((t) => t.id.equals(existing.id))).write(
-        LookupMiningCountersCompanion(
-          mineCount: Value(existing.mineCount + delta),
-        ),
+    return transaction(() async {
+      final int inserted = await customUpdate(
+        'INSERT OR IGNORE INTO lookup_mining_counters '
+        '(book_key, title, source_type, date_key, $column) '
+        'VALUES (?, ?, ?, ?, ?)',
+        variables: <Variable<Object>>[
+          Variable<String>(identity),
+          Variable<String>(title),
+          Variable<String>(sourceType),
+          Variable<String>(dateKey),
+          Variable<int>(delta),
+        ],
+        updates: <TableInfo<Table, Object?>>{lookupMiningCounters},
+        updateKind: UpdateKind.insert,
       );
-    } else {
-      await into(lookupMiningCounters).insert(
-        LookupMiningCountersCompanion.insert(
-          bookKey: Value(identity),
-          title: Value(title),
-          sourceType: sourceType,
-          dateKey: dateKey,
-          mineCount: Value(delta),
-        ),
-      );
-      // 重新在该书/视频制卡 = 新活动：清其统计删除墓碑（TODO-1204 后续）。
-      if (title.isNotEmpty) {
-        await clearStatisticsTombstone(title, sourceType);
+      if (inserted == 1) {
+        // 重新查词 / 制卡该书或视频 = 新活动：清其统计删除墓碑（无书 title=''
+        // 不立碑也无碑可清，跳过；TODO-1204 后续）。
+        if (title.isNotEmpty) {
+          await clearStatisticsTombstone(title, sourceType);
+        }
+        return;
       }
-    }
-  });
+      await customUpdate(
+        'UPDATE lookup_mining_counters SET $column = $column + ? '
+        'WHERE title = ? AND source_type = ? AND date_key = ? AND book_key = ?',
+        variables: <Variable<Object>>[
+          Variable<int>(delta),
+          Variable<String>(title),
+          Variable<String>(sourceType),
+          Variable<String>(dateKey),
+          Variable<String>(identity),
+        ],
+        updates: <TableInfo<Table, Object?>>{lookupMiningCounters},
+        updateKind: UpdateKind.update,
+      );
+    });
+  }
 
   /// P4 写侧收敛（2026-08 数据层重构）：一次成功制卡的**唯一记账入口**。
   ///
@@ -1696,6 +1846,21 @@ mixin _FushiDbStatistics
   Future<List<LookupMiningCounterRow>> getAllLookupMiningCounters() =>
       select(lookupMiningCounters).get();
 
+  /// 一本书 / 一个视频的查词 / 制卡计数行（不分来源）：`book_key` 命中，`book_key`
+  /// 为空的旧行按 [orTitle] 回退（[orTitle] 为 null / 空 = 不回退）——与
+  /// `summarizeReaderBookStats` 切本书计数同一口径。
+  Future<List<LookupMiningCounterRow>> getLookupMiningCountersForBook({
+    required String bookKey,
+    String? orTitle,
+  }) =>
+      (select(lookupMiningCounters)..where(
+            (t) => orTitle == null || orTitle.isEmpty
+                ? t.bookKey.equals(bookKey)
+                : t.bookKey.equals(bookKey) |
+                      (t.bookKey.equals('') & t.title.equals(orTitle)),
+          ))
+          .get();
+
   // ── mined sentences ──────────────────────────────────────────────
 
   /// 记录一次成功制卡：插入一条历史，并在事务内 trim 掉超额的最旧行。
@@ -1764,6 +1929,30 @@ mixin _FushiDbStatistics
     minedSentences,
   )..orderBy([(t) => OrderingTerm.desc(t.createdAt)])).get();
 
+  /// 原句（去首尾空白）落在 [sentences] 里的制卡历史的「原句 + 出处」（原句已去首尾
+  /// 空白）。首页「收藏句子」小组件判几句收藏有没有制过卡用：只查这几句，不读整张
+  /// 制卡历史。[sentences] 为空直接返回空。
+  Future<List<({String sentence, String? bookKey})>> getMinedSentenceOrigins(
+    Iterable<String> sentences,
+  ) async {
+    final List<String> wanted = <String>{
+      for (final String s in sentences)
+        if (s.trim().isNotEmpty) s.trim(),
+    }.toList();
+    if (wanted.isEmpty) return const <({String sentence, String? bookKey})>[];
+    final $MinedSentencesTable t = minedSentences;
+    final Expression<String> trimmed = t.sentence.trim();
+    final List<TypedResult> rows =
+        await (selectOnly(t)
+              ..addColumns(<Expression<Object>>[trimmed, t.bookKey])
+              ..where(trimmed.isIn(wanted)))
+            .get();
+    return <({String sentence, String? bookKey})>[
+      for (final TypedResult r in rows)
+        (sentence: r.read(trimmed)!, bookKey: r.read(t.bookKey)),
+    ];
+  }
+
   /// 最近 [limit] 条制卡历史（createdAt 倒序）。桌面小组件用，见 [getRecentFavoriteWords]。
   Future<List<MinedSentenceRow>> getRecentMinedSentences(int limit) =>
       (select(minedSentences)
@@ -1773,6 +1962,29 @@ mixin _FushiDbStatistics
             ])
             ..limit(limit))
           .get();
+
+  /// 改写一条制卡历史的章内锚点（拍板 hSZjfrcejt：存量小说出处坐标迁移）。只在锚点仍是
+  /// [expectedOffset] / [expectedLength] 时改——读到之后被别的写入动过就不覆盖。返回改到的
+  /// 行数（0 = 行没了或已被改过）。
+  Future<int> updateMinedSentenceCharAnchor(
+    int id, {
+    required int? expectedOffset,
+    required int? expectedLength,
+    required int normCharOffset,
+    required int normCharLength,
+  }) =>
+      (update(minedSentences)..where(
+            (t) =>
+                t.id.equals(id) &
+                t.normCharOffset.equalsNullable(expectedOffset) &
+                t.normCharLength.equalsNullable(expectedLength),
+          ))
+          .write(
+            MinedSentencesCompanion(
+              normCharOffset: Value(normCharOffset),
+              normCharLength: Value(normCharLength),
+            ),
+          );
 
   /// 删除一条制卡历史（按 id）。返回删除的行数。
   Future<int> removeMinedSentence(int id) =>

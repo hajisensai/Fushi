@@ -26,6 +26,11 @@ const String kWebBrowserForceDarkPref = 'web_browser_force_dark';
 const String kWebBrowserDesktopModeDefaultPref =
     'web_browser_desktop_mode_default';
 const String kWebBrowserRestoreTabsPref = 'web_browser_restore_tabs';
+const String kWebBrowserPullToRefreshPref = 'web_browser_pull_to_refresh';
+const String kWebBrowserFullscreenTakeoverPref =
+    'web_browser_fullscreen_takeover';
+const String kWebBrowserFullscreenAutoRotatePref =
+    'web_browser_fullscreen_auto_rotate';
 
 /// 默认值（设置页 `defaultValue` 与读取端共用）。
 const WebBrowserTabStyle kWebBrowserTabStyleDefault =
@@ -35,6 +40,18 @@ const bool kWebBrowserCollapseOnScrollDefault = true;
 const bool kWebBrowserForceDarkDefault = false;
 const bool kWebBrowserDesktopModeDefaultDefault = false;
 const bool kWebBrowserRestoreTabsDefault = true;
+
+/// 默认开：与此前行为一致（手机上一直能下拉刷新），关掉是用户嫌误触时的选择
+/// （反馈 wegu0vewts）。
+const bool kWebBrowserPullToRefreshDefault = true;
+
+/// 默认开（2026-11-20 用户拍板）：网站的全屏请求改由 Fushi 接管（页内伪全屏），
+/// iPhone 不再掉进系统播放器丢掉 Fushi 字幕 / 查词。关掉 = 交还原生全屏（要系统
+/// 画中画 / AirPlay 的人用）。
+const bool kWebBrowserFullscreenTakeoverDefault = true;
+
+/// 默认开：全屏横视频时自动转横屏；关掉后竖着拿手机就是「上视频、下字幕列表」分屏。
+const bool kWebBrowserFullscreenAutoRotateDefault = true;
 
 bool _readBool(PrefStore prefs, String key, bool fallback) {
   final Object? raw = prefs.getPref(key, defaultValue: fallback);
@@ -88,6 +105,38 @@ bool webBrowserRestoreTabs(PrefStore prefs) =>
 Future<void> setWebBrowserRestoreTabs(PrefStore prefs, bool value) =>
     prefs.setPref(kWebBrowserRestoreTabsPref, value);
 
+/// 手机（Android / iOS）上在网页顶部下拉刷新。标签页 WebView 监听偏好变化，开关
+/// 即时生效，不用重开标签页。
+bool webBrowserPullToRefresh(PrefStore prefs) => _readBool(
+  prefs,
+  kWebBrowserPullToRefreshPref,
+  kWebBrowserPullToRefreshDefault,
+);
+
+Future<void> setWebBrowserPullToRefresh(PrefStore prefs, bool value) =>
+    prefs.setPref(kWebBrowserPullToRefreshPref, value);
+
+/// 网页全屏由 Fushi 接管（见 [kWebBrowserFullscreenTakeoverDefault]）。标签页
+/// WebView 监听偏好变化换掉全屏脚本，刷新网页后生效。
+bool webBrowserFullscreenTakeover(PrefStore prefs) => _readBool(
+  prefs,
+  kWebBrowserFullscreenTakeoverPref,
+  kWebBrowserFullscreenTakeoverDefault,
+);
+
+Future<void> setWebBrowserFullscreenTakeover(PrefStore prefs, bool value) =>
+    prefs.setPref(kWebBrowserFullscreenTakeoverPref, value);
+
+/// 全屏横视频时自动转横屏（见 [kWebBrowserFullscreenAutoRotateDefault]）。
+bool webBrowserFullscreenAutoRotate(PrefStore prefs) => _readBool(
+  prefs,
+  kWebBrowserFullscreenAutoRotatePref,
+  kWebBrowserFullscreenAutoRotateDefault,
+);
+
+Future<void> setWebBrowserFullscreenAutoRotate(PrefStore prefs, bool value) =>
+    prefs.setPref(kWebBrowserFullscreenAutoRotatePref, value);
+
 /// 浏览器的设备本地偏好键：不进备份 / 同步 / Profile 快照
 /// （`SyncRepository._deviceLocalFixedKeys` 展开它）。功能插件的键用字面量登记，
 /// 免得本文件反向依赖各功能目录。
@@ -98,6 +147,9 @@ const List<String> kWebBrowserDeviceLocalPrefKeys = <String>[
   kWebBrowserForceDarkPref,
   kWebBrowserDesktopModeDefaultPref,
   kWebBrowserRestoreTabsPref,
+  kWebBrowserPullToRefreshPref,
+  kWebBrowserFullscreenTakeoverPref,
+  kWebBrowserFullscreenAutoRotatePref,
   // 已删除的「整页注音」「生词高亮」开关：不再读写，存量值仍不进备份 / 同步。
   'web_browser_furigana',
   'web_browser_known_words',

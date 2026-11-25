@@ -5,6 +5,8 @@ import 'dart:io';
 import 'package:dartssh2/dartssh2.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sftp_range_read.dart';
+import 'package:fushi/src/sync/sync_asset_range_reader.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_backend_file_trio_mixin.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -21,9 +23,17 @@ int? sftpMtimeToMs(int? mtimeSeconds) =>
     mtimeSeconds == null ? null : mtimeSeconds * 1000;
 
 class SftpSyncBackend extends SyncBackend
-    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults {
-  SftpSyncBackend._();
+    with SyncFolderCache, SyncBackendFileTrioMixin, SyncAssetStoreDefaults
+    implements SyncAssetRangeReader {
+  SftpSyncBackend._() : _connectOverride = null;
   static final SftpSyncBackend instance = SftpSyncBackend._();
+
+  /// 测试用：连接一律取自 [connect]，不碰真 SSH。
+  @visibleForTesting
+  SftpSyncBackend.withConnection(Future<SftpClient> Function() connect)
+    : _connectOverride = connect;
+
+  final Future<SftpClient> Function()? _connectOverride;
 
   /// Sync root folder, RELATIVE to the SFTP login directory (the user's home),
   /// never the server filesystem root. An absolute '/fushi-data' fails on
@@ -384,6 +394,25 @@ class SftpSyncBackend extends SyncBackend
             .toList();
       });
 
+  // ── SyncAssetRangeReader ─────────────────────────────────────────
+
+  /// 按偏移读资产区间（云端旧名漫画包判型、云盘视频流播），与来源库 SFTP 流播同一份
+  /// 实现（[openSftpFileRange]）。
+  ///
+  /// 只有 `stat`（拿总长、校验区间）在 op 锁里：字节流按需开句柄、可能持续整场播放，
+  /// 若持锁就会把同步的其它操作堵到播放结束。SFTP 在同一条通道上多路复用请求，
+  /// 句柄读与其它操作并发是协议本身支持的。读到一半连接断了，流以原始错误结束；
+  /// 下一次 [_guarded] 操作发现连接已关会重连。
+  @override
+  Future<SyncAssetRange> openAssetRange(
+    String assetId, {
+    required int start,
+    int? end,
+  }) => _guarded(() async {
+    final SftpClient sftp = await _ensureConnected();
+    return openSftpFileRange(sftp, assetId, start: start, end: end);
+  });
+
   @override
   Future<Object?> getJsonAsset(String assetId) async {
     // Delegates to the already-`_guarded` _downloadJson (no re-wrap). A missing
@@ -404,6 +433,26 @@ class SftpSyncBackend extends SyncBackend
         final sftp = await _ensureConnected();
         await _uploadJson(sftp, namespaceId, name, json);
       });
+
+  @override
+  Future<Uint8List?> getBytesAsset(String assetId) async {
+    // 与 getJsonAsset 同律：缺失的文件经 `_guarded` 变成 SyncBackendError，映射成 null。
+    try {
+      return await _downloadBytes(assetId);
+    } on SyncBackendError {
+      return null;
+    }
+  }
+
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => _guarded(() async {
+    final SftpClient sftp = await _ensureConnected();
+    await _writeBytes(sftp, '$namespaceId/$name', bytes);
+  });
 
   @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) =>
@@ -493,6 +542,8 @@ class SftpSyncBackend extends SyncBackend
   // ── Private: connection management ────────────────────────────────
 
   Future<SftpClient> _ensureConnected() async {
+    final Future<SftpClient> Function()? connectOverride = _connectOverride;
+    if (connectOverride != null) return connectOverride();
     if (_sftpClient != null && _sshClient != null && !_sshClient!.isClosed) {
       return _sftpClient!;
     }
@@ -565,6 +616,13 @@ class SftpSyncBackend extends SyncBackend
         rethrow;
       } on SyncBackendError {
         rethrow;
+      } on SyncAssetRangeNotSatisfiable {
+        // 区间读的契约结论（起点越过文件尾），不是传输故障：连接照用、原样交出。
+        rethrow;
+      } on SyncAssetTooLarge {
+        // 读取上限的契约结论（远端文件过大），同上：不是传输故障，也不能被
+        // [getBytesAsset] 当成「不存在」吞成 null。
+        rethrow;
       } on SftpStatusError catch (e) {
         // Per-file failure; the connection is still usable, so keep it.
         throw SyncBackendError('SFTP error: $e', isRetryable: true);
@@ -633,13 +691,22 @@ class SftpSyncBackend extends SyncBackend
     }
   }
 
-  Future<dynamic> _downloadJson(String fileId) => _guarded(() async {
+  Future<dynamic> _downloadJson(String fileId) async =>
+      jsonDecode(utf8.decode(await _downloadBytes(fileId)));
+
+  /// 整份读 [fileId]，受 [kSyncBytesAssetMaxBytes] 上限约束（HBK-AUDIT-223）：
+  /// `handle.readBytes()` 会按 stat 的大小整份收进内存，这里先看大小、超了就
+  /// 一个字节都不读。
+  Future<Uint8List> _downloadBytes(String fileId) => _guarded(() async {
     final sftp = await _ensureConnected();
     final handle = await sftp.open(fileId, mode: SftpFileOpenMode.read);
     try {
-      final bytes = await handle.readBytes();
-      final text = utf8.decode(bytes);
-      return jsonDecode(text);
+      final int? size = (await handle.stat()).size;
+      return await readSyncAssetBytesCapped(
+        handle.read(length: size),
+        assetId: fileId,
+        declaredLength: size,
+      );
     } finally {
       await handle.close();
     }

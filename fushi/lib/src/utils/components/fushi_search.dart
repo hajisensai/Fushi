@@ -399,9 +399,10 @@ class _FushiSearchSpringCurve extends Curve {
 }
 
 /// 搜索视图容器变换的弹簧：M3E「default spatial」刚度、阻尼比 0.8（展开时一点
-/// 弹性，对应 contained search view 的 bouncy 动效）。
-final SpringDescription fushiSearchViewSpring =
-    SpringDescription.withDampingRatio(mass: 1, stiffness: 380, ratio: 0.8);
+/// 弹性，对应 contained search view 的 bouncy 动效）。取官方 token
+/// [Springs.expressiveDefaultSpatial]。
+const SpringDescription fushiSearchViewSpring =
+    Springs.expressiveDefaultSpatial;
 
 /// 搜索视图形态。
 enum FushiSearchViewMode {

@@ -1,0 +1,9 @@
+## BUG-4225 · 书架下载云盘漫画卡 100% 打不开（对比页正常）
+- **报告**：2026-11-07（用户：应用内反馈 ecNgkRQcTk 的追加说明，macOS 3.3.0-debug.24478，OneDrive 云同步）
+- **真实性**：❌ 沿真实代码路径未复现。两条下载路径的内容处理逐字同源：书架 `_runRemoteBookDownload`（`fushi/lib/src/pages/implementations/reader_history/remote.part.dart:966-990`）= `CloudRemoteBookClient.getRemoteBook`（`pickRemoteBookContentEntry` → `backend.getAsset`）→ `_importRemoteBookFile`（`isMangaPackage` 嗅探 → `importMangaPackageFile`，:2132-2160）；对比页 `importRemoteBookFolder`（`fushi/lib/src/sync/sync_orchestrator.dart:2495-2540`）= 同一 `pickRemoteBookContentEntry` → 同一 `backend.getAsset` → 同一嗅探与 `importMangaPackageFile`。不存在「下载完没走导入 / 按书籍导入漫画」的分叉——占位卡被误归书籍书架（BUG-4223）不影响导入，导入按内容嗅探落成漫画。实测：在修复 BUG-4223 之前的代码上，用真实 `CloudRemoteBookClient` + 真实书架页 + 真实导入器从**书籍书架**下载 `.manga.zip`，任务 `completed`、落成 `format=manga` 行、远端清单重载后占位卡让位（探针输出 `status=completed rows=[Takagi 05/manga]`，重载后卡数 0）。
+- **[ ] ① 未修复** — 未定位到可证实的根因，不改代码。
+- **[ ] ② 未加自动化测试** — 正常路径已由 `fushi/test/pages/reader_remote_cloud_manga_test.dart`（BUG-4223）覆盖。
+- **备注**（两条路径真实存在、但未证实与症状因果相关的差异，留给后续有日志时判断）：
+  1. 并发契约：对比页的下载在 `runExclusiveWithSync` 里跑（`fushi/lib/src/sync/sync_compare_dialog.dart:1343`），书架下载不拿这把锁（`remote.part.dart:817-858` 直接交给 `InterconnectDownloadManager`）。`fushi/lib/src/sync/sync_auto_trigger.dart:175-198`（HBK-AUDIT-049 / BUG-083）写明云盘后端是进程级单例（`resolveSyncBackend` 返回 `OneDriveSyncBackend.instance` 等，`fushi/lib/src/sync/sync_backend.dart:345-367`），token / 文件夹缓存无逐操作锁，同步管线外的操作必须进这把锁。该用户日志里一轮云同步 153 s（aggregate 141 s、478 MB 聚合 JSON、连接被重置），书架下载与之并发的概率很高。但卡点在进度 100% 之后，而 100% 之后的步骤（解混淆、嗅探、导入、落库）不碰后端共享状态，因果未证实。是否把书架云盘下载也纳入这把锁（代价：同步进行中点下载要排队几分钟）属生命周期取舍，需要拍板。
+  2. 进度语义：书架任务进度只覆盖下载字节，下载完即显示「100%」，之后的解混淆 + 解包 + 两遍式导入（大卷漫画包可能要较长时间）期间仍是 running、卡片点击被 `manager.isRunning` 忽略（`remote.part.dart:838`）；对比页这段显示的是不定进度。大包时用户看到的就是「卡在 100%、点不开」。未用真实体量验证耗时。
+  3. 缺的信息：下载后是否最终入库（漫画书架有没有这几卷）、点下载时是否正在同步、漫画包体量、点下载之后时段的日志（反馈日志截至 17:32，没有 `ReaderFushiHistoryPage.downloadRemoteBook` 错误记录，说明任务未落 failed）。

@@ -9,27 +9,34 @@ import 'package:fushi_core/fushi_core.dart'
     show kStatSourceBook, kStatSourceMusic, kStatSourceVideo;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/mining/after_mining_popup_action.dart';
 import 'package:fushi/src/media/types/dictionary_media_type.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/anki_mined_card_action_sheet.dart';
 import 'package:fushi/src/diagnostics/lookup_perf_trace.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_frame.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/stats/study_lookup_recorder.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
-import 'package:fushi/src/pages/base_source_page.dart'
+import 'package:fushi/src/lookup/lookup_match_measure.dart'
     show lookupHighlightCharCount;
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
     show
         MinePopupResult,
+        DictionaryPopupRealmKeyWebView,
         DictionaryPopupWebViewState,
         OpenAdvancedMiningCallback,
         QueuedOverwriteReply,
@@ -109,15 +116,30 @@ mixin DictionaryPageMixin {
   /// 细分（首页词典 tab、悬浮歌词）可覆写；纯标签，不参与任何判决。
   String get lookupDiagHost => dictionarySourceType;
 
-  /// 本页所属的媒体模块，决定「底部停靠」按模块细分开关听哪一个
-  /// （[AppModel.popupBottomDockedFor]）。默认 `null` = 只听总开关（查词页 /
-  /// 外部弹窗 / 悬浮歌词）；视频页、texthooker 覆写。与 `BaseSourcePageState`
-  /// 的同名钩子对称。
-  ModuleId? get popupDockModule => null;
+  /// 本页所属的功能模块：「底部停靠」按模块细分开关听哪一个
+  /// （[AppModel.popupBottomDockedFor]）、「制卡后行为」听哪一行
+  /// （[afterMiningPopupAction]）。默认 `null` = 停靠听非模块宿主的开关、制卡后行为
+  /// 归查词那行（查词页 / 外部弹窗）；视频页、texthooker、悬浮歌词宿主（按请求来源）
+  /// 覆写。与 `BaseSourcePageState` 的同名钩子对称。
+  ModuleId? get lookupHostModule => null;
 
-  /// 本页查词弹窗实际是否底部停靠（总开关 ∧ [popupDockModule] 的细分开关）。
+  /// 宿主此刻要求查词弹窗强制底部停靠（不看「底部停靠」开关）。视频页竖屏时覆写为
+  /// true：屏幕只有手机宽，跟随选区的小窗会挡住当前那句字幕，改成从底部升起的半屏卡
+  /// （拍板台 P9AS-fvjJh 设计图 C）。
+  bool get lookupHostForcesBottomDock => false;
+
+  /// 强制停靠时卡片的高度（逻辑像素，已含界面缩放）；只在 [lookupHostForcesBottomDock]
+  /// 为 true 时读。
+  double lookupHostDockedHeight(Size screen) => screen.height / 2;
+
+  /// 强制停靠时卡片顶部最多能升到哪（距屏顶的预留）；视频页竖屏传视频条下沿，卡片
+  /// 拉满也不盖住画面。
+  double lookupHostDockTopReserve(Size screen) => 0;
+
+  /// 本页查词弹窗实际是否底部停靠（[lookupHostModule] 自己的开关，或宿主强制）。
   bool get _popupBottomDocked =>
-      mixinAppModel.popupBottomDockedFor(popupDockModule);
+      lookupHostForcesBottomDock ||
+      mixinAppModel.popupBottomDockedFor(lookupHostModule);
 
   /// BUG-1269：本页的快捷键作用域。非空即启用「弹窗内输入交回宿主」的桥。
   ///
@@ -128,6 +150,10 @@ mixin DictionaryPageMixin {
   /// 与 `BaseSourcePage` 的同名钩子是同一套契约（两个宿主各建一次
   /// [DictionaryPopupLayer]，此处保持对称）。
   ShortcutScope? get dictionaryPopupInputScope => null;
+
+  /// 本页面在弹窗可见时真正派发「点＋制卡」的键盘动作，只用于给「＋」写快捷键提示。
+  /// null = 本页没有键盘制卡派发 → 不提示。与 `BaseSourcePage` 的同名钩子对称。
+  ShortcutAction? get dictionaryPopupMineShortcutAction => null;
 
   /// 弹窗可见时仍要生效的动作。token 表由注册表**当前**绑定实时导出，改键立即跟随。
   Set<ShortcutAction> get dictionaryPopupForwardedActions =>
@@ -217,18 +243,49 @@ mixin DictionaryPageMixin {
   get onSentenceContextPreviewToDraft => null;
 
   /// 「高级制卡」对话框里本页面提供的句子 / 音频 / 图片分区（契约见
-  /// [AdvancedMiningCapabilities]）。默认什么都不提供——对话框只有卡组分区。
-  /// 视频页覆写。[matched] 是查到的词在句中的表现形。
+  /// [AdvancedMiningCapabilities]）。默认只在有截屏识字卡图来源（[miningCardImage]，
+  /// 且偏好「截屏识字制卡带截图」开着）时给一个截图裁切分区（反馈 mOe5HjBtuG：像漫画
+  /// 那样调卡图），其余什么都不提供——对话框只有卡组分区。视频 / 漫画等页面覆写。
+  /// [matched] 是查到的词在句中的表现形。
   @protected
   Future<AdvancedMiningSections> buildAdvancedMiningSections({
     required String matched,
-  }) async => AdvancedMiningSections.none;
+  }) async {
+    final ScreenOcrCardImage? source = miningCardImage;
+    if (source == null || !mixinAppModel.prefsRepo.screenOcrCardImage) {
+      return AdvancedMiningSections.none;
+    }
+    return AdvancedMiningSections(
+      mangaImage: screenOcrAdvancedMiningImageSection(source),
+    );
+  }
+
+  /// A popup search for [query] found entries ([result]); called once per
+  /// search with a result, nested layers included. Default: nothing. The
+  /// second-screen companion's embedded page reports the matched headword so
+  /// its history shows the word, not the scanned text.
+  @protected
+  void onPopupSearchResult(String query, DictionarySearchResult result) {}
 
   /// 「高级制卡」对话框里能不能为这张卡选卡组。默认 true（卡组取本机 Anki 设置）；
   /// 卡组由别的设备决定的表面覆写成 false（手机遥控页：遥控制卡落在电脑端、用电脑的
   /// Anki 配置），对话框就不渲染卡组分区。
   @protected
   bool get advancedMiningDeckChoiceAvailable => true;
+
+  /// 制卡被收下（成功 / 进后台 / 进待发队列）后查词弹窗怎么处理（拍板台
+  /// 8ldy3d8XFA）：按 [lookupHostModule] 那一行取用户的「制卡后行为」，不属于任何
+  /// 一行的归查词那行。视频模块默认「关闭并续播」，但和别的模块一样听用户的。
+  @protected
+  AfterMiningPopupAction get afterMiningPopupAction => ReaderFushiSource
+      .instance
+      .afterMiningPopupAction(afterMiningPopupModuleFor(lookupHostModule));
+
+  /// 制卡后按「关闭弹窗、不续播」关栈之前调用：撤掉「因查词暂停」的标记、保持暂停，
+  /// 随后的关栈汇聚点（`onPop(0)`）就不会续播。默认无事可做；会因查词暂停播放的
+  /// 宿主（视频页 / 网页视频页 / 悬浮歌词查词宿主）覆写。
+  @protected
+  void dropLookupPauseMark() {}
 
   /// 「制卡前调整·选择句子上下文」里**手改某一句文本**（视频/首页查词车道）：把 [slot]
   /// （上文/当前/下文）第 index 句的文本改成给定文本，写回本表面会话级制卡草稿。
@@ -325,10 +382,15 @@ mixin DictionaryPageMixin {
   /// [lookupContext] 是这个表面自己的查词语境（字段预填里 Sentence 的兜底句）；不给时用
   /// 宿主级的 [favoriteLookupContext]。查词页结果区的语境是源文本条那一句，只属于
   /// 结果区、不属于浮层（BUG-3216 / BUG-4209），所以按表面传，不覆写宿主级 getter。
+  ///
+  /// [sentenceSection] 同理是这个表面自己的句子分区（拍板台 rf--UcsGta：查词页结果区
+  /// 来自应用外「抓取上下文」时的前后句），页面级 [buildAdvancedMiningSections] 没给
+  /// 句子分区时补上；返回 null = 这次没有。浮层各层不传。
   @protected
   OpenAdvancedMiningCallback? advancedMiningOpenerFor(
-    GlobalKey<DictionaryPopupWebViewState> webViewKey, {
+    GlobalKey<DictionaryPopupRealmState> webViewKey, {
     FavoriteLookupContext? Function()? lookupContext,
+    AdvancedMiningSentenceSection? Function()? sentenceSection,
   }) => mixinAppModel.moduleVisibility.isEnabled(ModuleId.cardCreation)
       ? (int entryIndex, String matched, String expression, String reading) =>
             _openAdvancedMiningDialog(
@@ -338,6 +400,7 @@ mixin DictionaryPageMixin {
               expression: expression,
               reading: reading,
               lookupContext: lookupContext ?? () => favoriteLookupContext,
+              sentenceSection: sentenceSection,
             )
       : null;
 
@@ -352,12 +415,13 @@ mixin DictionaryPageMixin {
   /// （[advancedMiningDeckChoiceAvailable] 为 false）时卡片落在那台设备、用它的 Anki
   /// 配置，本机的卡组列表对它没有意义——不给卡组分区。
   Future<void> _openAdvancedMiningDialog({
-    required GlobalKey<DictionaryPopupWebViewState> webViewKey,
+    required GlobalKey<DictionaryPopupRealmState> webViewKey,
     required int entryIndex,
     required String matched,
     required String expression,
     required String reading,
     required FavoriteLookupContext? Function() lookupContext,
+    AdvancedMiningSentenceSection? Function()? sentenceSection,
   }) async {
     if (!mounted) return;
     // 本 mixin 没有 State 的 mounted 语义可借（mounted 是抽象成员），按 lint 的要求
@@ -376,12 +440,13 @@ mixin DictionaryPageMixin {
           ? await loadAdvancedMiningFieldsSection(
               ref,
               fetchPayload: () async =>
-                  webViewKey.currentState?.buildMinePayloadByIndex(entryIndex),
+                  webViewKey.webViewState?.buildMinePayloadByIndex(entryIndex),
               fallbackSentence: () => lookupContext()?.sentence ?? '',
             )
           : null;
-      final AdvancedMiningSections sections = await buildAdvancedMiningSections(
-        matched: matched,
+      final AdvancedMiningSections sections = withSurfaceSentenceSection(
+        await buildAdvancedMiningSections(matched: matched),
+        sentenceSection?.call(),
       );
       if (!dialogContext.mounted) {
         await sections.onClosed?.call();
@@ -394,18 +459,21 @@ mixin DictionaryPageMixin {
           expression: expression.isEmpty ? null : expression,
           deck: deck,
           fields: fields,
+          layout: ref.read(appProvider).advancedMiningLayout,
+          setLayout: ref.read(appProvider).setAdvancedMiningLayout,
           // 单词音频：与弹窗 ♪「选择音频源」同一份候选（读音空时与 ♪ 一样退回原形）。
           wordAudio: expression.isEmpty
               ? null
               : buildAdvancedMiningWordAudioSection(
                   listChoices: () async =>
-                      await webViewKey.currentState?.listWordAudioChoices(
+                      await webViewKey.webViewState?.listWordAudioChoices(
                         expression,
                         reading.isEmpty ? expression : reading,
+                        matched: matched,
                       ) ??
                       const <Map<String, String>>[],
                   refreshSource: (int sourceIndex) async =>
-                      await webViewKey.currentState
+                      await webViewKey.webViewState
                           ?.listWordAudioChoicesForSource(
                             expression,
                             reading.isEmpty ? expression : reading,
@@ -421,7 +489,7 @@ mixin DictionaryPageMixin {
                 MiningRequestOverrides overrides, {
                 String? wordAudioUrl,
               }) async =>
-                  await webViewKey.currentState?.mineEntryByIndex(
+                  await webViewKey.webViewState?.mineEntryByIndex(
                     entryIndex,
                     // BUG-2634 第二轮：_onMineEntryImpl 在 await _mineVideoCard
                     // 之前就把草稿 / cue / 历史快照读完，连当前帧截图的 Future 都
@@ -481,6 +549,9 @@ mixin DictionaryPageMixin {
     final Rect layerSelection = selectionRect.shift(
       -rootOverlayScreenOrigin(context),
     );
+    // 宿主强制停靠（视频页竖屏）：高度与顶部预留都由宿主定，不吃偏好尺寸与内容自适应
+    // ——卡片收起是半屏、拉满是到视频下沿，用户拖的是宿主那份状态。
+    final bool forcedDock = lookupHostForcesBottomDock;
     final Rect anchored = resolvePopupRect(
       selectionRect: layerSelection,
       screen: screen,
@@ -488,7 +559,10 @@ mixin DictionaryPageMixin {
       maxWidth:
           (_popupResizePreview?.width ?? mixinAppModel.popupMaxWidth) *
           mixinAppModel.appUiScale,
-      maxHeight: effectiveMaxHeight,
+      maxHeight: forcedDock
+          ? lookupHostDockedHeight(screen)
+          : effectiveMaxHeight,
+      topReserve: forcedDock ? lookupHostDockTopReserve(screen) : 0.0,
     );
     // Phase B 拖拽尺寸（2026-07-15）：被拖的那张卡（选区匹配）冻结左上角，从右下生长，
     // 消除「词靠右缘时贴词定位把左缘左移」的 bug（同 base_source_page）。dock 模式不冻结。
@@ -617,15 +691,22 @@ mixin DictionaryPageMixin {
   /// [autoReadWordUnified]；查词结果来自别的设备时覆写成问那台设备要发音。返回是否
   /// 真的开始播放（去重窗口靠它，BUG-1127）。
   @protected
+  ///
+  /// [matched] 是查词命中原文：词头带替换写法时本机 TTS 兜底念它（反馈 WJFhjUGaTn，
+  /// 见 `wordAudioTtsText`）。
   Future<bool> playPopupWordAudio(
     String expression,
     String reading,
-    DictionaryPopupWebViewState? popupState,
-  ) => autoReadWordUnified(
+    DictionaryPopupWebViewState? Function()? popupState, {
+    String matched = '',
+  }) => autoReadWordUnified(
     mixinAppModel,
     expression,
     reading,
-    playInWebView: popupState?.playWordAudioUrl,
+    playInWebView: popupState == null
+        ? null
+        : DictionaryPopupWebViewState.lazyWordAudioPlayer(popupState),
+    matched: matched,
   );
 
   /// 弹窗词典侧资源（样式 / 媒体 / ♪）的来源，透传给每一层 [DictionaryPopupLayer]。
@@ -639,22 +720,89 @@ mixin DictionaryPageMixin {
   @protected
   ScreenOcrCardImage? get miningCardImage => null;
 
-  /// 按 [miningCardImage] 裁出本次制卡的卡图；没有来源 / 偏好关着 / 裁不出返回 null。
-  Future<({String path, Directory dir})?> _prepareMiningCover() async {
+  /// 按 [miningCardImage] 裁出本次制卡的卡图；没有来源 / 偏好关着 / 裁不出 / 高级
+  /// 制卡选了「不要」返回 null。[overrides] 是「高级制卡」对话框的覆盖项（框选 / 打码
+  /// / 不要图，见 [resolveScreenOcrCardImagePlan]），一键「+」为 null。
+  Future<({String path, Directory dir})?> _prepareMiningCover(
+    MiningRequestOverrides? overrides,
+  ) async {
     final ScreenOcrCardImage? source = miningCardImage;
     if (source == null) return null;
     final AppModel model = mixinAppModel;
     if (!model.prefsRepo.screenOcrCardImage) return null;
-    return writeScreenOcrCardImage(source, imageTier: model.miningImageQuality);
+    final ScreenOcrCardImagePlan plan = resolveScreenOcrCardImagePlan(
+      overrides,
+    );
+    switch (plan.kind) {
+      case ScreenOcrCardImageKind.omit:
+        return null;
+      case ScreenOcrCardImageKind.auto:
+        return writeScreenOcrCardImage(
+          source,
+          imageTier: model.miningImageQuality,
+        );
+      case ScreenOcrCardImageKind.crop:
+        return writeScreenOcrCardImage(
+          source,
+          imageTier: model.miningImageQuality,
+          crop: plan.crop,
+          mosaic: plan.mosaic,
+        );
+    }
+  }
+
+  /// 跨应用语音挖掘（拍板 oqk37s3QFL）：应用外查词宿主覆写成「这次查词那一刻落下的
+  /// 最近一段其他 app 声音」（没开缓存 / 不是应用外查词为 null）。制卡时从中截出查词前
+  /// 最后一句语音走 [AnkiMiningContext.sentenceAudioPath]。
+  @protected
+  Future<CrossAppAudioSnapshot?>? get miningAudioSnapshot => null;
+
+  /// 按 [miningAudioSnapshot] 截出本次制卡的句子音频；没有快照 / 截不出返回 null。
+  /// [overrides] 带着查词卡「调整句子音频」面板拖出的起止偏移（拍板
+  /// design-cross-app-audio-trim-ui），或高级制卡的「不要句子音频」。
+  Future<({String path, Directory dir})?> _prepareMiningSentenceAudio(
+    MiningRequestOverrides? overrides,
+  ) async {
+    final Future<CrossAppAudioSnapshot?>? pending = miningAudioSnapshot;
+    if (pending == null) return null;
+    final CrossAppAudioSnapshot? snapshot = await pending;
+    if (snapshot == null) return null;
+    return CrossAppAudioCapture.instance.prepareSentenceAudio(
+      snapshot,
+      overrides: overrides,
+    );
   }
 
   Future<MinePopupResult> onMineEntry(Map<String, String> fields) async {
     final repo = ref.read(ankiRepositoryProvider);
-    final ({String path, Directory dir})? cover = await _prepareMiningCover();
+    MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(fields);
+    // 拍板 EuOLprw_dV（选 b）：开了「制卡时框选截图」就先推出框选页，用户框好再制；
+    // 点「×」就不制这张卡（弹窗把按钮放回「+」）。高级制卡里已经选过卡图的不再弹。
+    final ScreenOcrCardImage? frameSource = miningCardImage;
+    if (frameSource != null &&
+        screenOcrCardFrameNeeded(
+          cardImageEnabled: mixinAppModel.prefsRepo.screenOcrCardImage,
+          frameOnMine: mixinAppModel.prefsRepo.screenOcrCardFrameOnMine,
+          overrides: overrides,
+        )) {
+      if (!mounted) return const MinePopupResult.cancelled();
+      // 弹窗 WebView 会盖在 Flutter 路由上（与「高级制卡」对话框同理），框选期间停靠屏外。
+      final MiningRequestOverrides? frame = await runWithLookupPopupHidden(
+        () => pickScreenOcrCardFrame(context, frameSource),
+      );
+      if (frame == null) return const MinePopupResult.cancelled();
+      overrides = mergeScreenOcrCardFrame(overrides, frame);
+    }
+    final ({String path, Directory dir})? cover = await _prepareMiningCover(
+      overrides,
+    );
+    final ({String path, Directory dir})? audio =
+        await _prepareMiningSentenceAudio(overrides);
     try {
-      return await _mineEntryWithCover(repo, fields, cover?.path);
+      return await _mineEntryWithCover(repo, fields, cover?.path, audio?.path);
     } finally {
       if (cover != null) unawaited(deleteScreenOcrCardDir(cover.dir));
+      if (audio != null) unawaited(deleteCrossAppAudioDir(audio.dir));
     }
   }
 
@@ -662,11 +810,13 @@ mixin DictionaryPageMixin {
     BaseAnkiRepository repo,
     Map<String, String> fields,
     String? coverPath,
+    String? sentenceAudioPath,
   ) async {
     final CardSourceLink? sourceLink = miningCardSourceLink;
     final miningContext = AnkiMiningContext(
       sentence: fields['sentence'] ?? '',
       coverPath: coverPath,
+      sentenceAudioPath: sentenceAudioPath,
       source: miningSource,
       // 有库内定位（回到出处）时标题取出处的标题；否则取宿主给的来源标题（app 内浏览器
       // = 当前网页标题，其余默认 null）。
@@ -681,6 +831,8 @@ mixin DictionaryPageMixin {
     FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
+      term: fields['expression'],
+      reading: fields['reading'],
     );
     final outcome = await repo.mineEntry(
       rawPayloadJson: jsonEncode(fields),
@@ -702,8 +854,11 @@ mixin DictionaryPageMixin {
       FushiToast.showMine(
         msg: described.message,
         status: described.status,
-        // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-        action: minedCardUndoToastAction(
+        detail: described.detail,
+        term: fields['expression'],
+        reading: fields['reading'],
+        // 反馈 JNyykxvuY9：成功带「撤销」；进待发队列带「查看队列」；复习库要升级带「打开复习」。
+        action: mineResultToastAction(
           repo,
           outcome,
           expression: fields['expression'],
@@ -728,11 +883,25 @@ mixin DictionaryPageMixin {
     Map<String, String> fields,
   ) async {
     final repo = ref.read(ankiRepositoryProvider);
-    final ({String path, Directory dir})? cover = await _prepareMiningCover();
+    final MiningRequestOverrides? overrides = MiningRequestOverrides.readFrom(
+      fields,
+    );
+    final ({String path, Directory dir})? cover = await _prepareMiningCover(
+      overrides,
+    );
+    final ({String path, Directory dir})? audio =
+        await _prepareMiningSentenceAudio(overrides);
     try {
-      return await _updateEntryWithCover(repo, noteId, fields, cover?.path);
+      return await _updateEntryWithCover(
+        repo,
+        noteId,
+        fields,
+        cover?.path,
+        audio?.path,
+      );
     } finally {
       if (cover != null) unawaited(deleteScreenOcrCardDir(cover.dir));
+      if (audio != null) unawaited(deleteCrossAppAudioDir(audio.dir));
     }
   }
 
@@ -741,10 +910,12 @@ mixin DictionaryPageMixin {
     int noteId,
     Map<String, String> fields,
     String? coverPath,
+    String? sentenceAudioPath,
   ) async {
     final miningContext = AnkiMiningContext(
       sentence: fields['sentence'] ?? '',
       coverPath: coverPath,
+      sentenceAudioPath: sentenceAudioPath,
       source: miningSource,
       documentTitle: miningDocumentTitle,
       sourceUrl: miningSourceUrl,
@@ -753,6 +924,8 @@ mixin DictionaryPageMixin {
     FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
+      term: fields['expression'],
+      reading: fields['reading'],
     );
     final outcome = await repo.updateMinedNote(
       noteId: noteId,
@@ -763,34 +936,39 @@ mixin DictionaryPageMixin {
     final described = describeMineOutcome(outcome, overwrite: true);
     // TODO-1325 #6：覆写成功也是 added（绿），失败按状态着色。状态取自单一真相。
     if (described.success) {
-      FushiToast.showMine(msg: described.message, status: described.status);
+      FushiToast.showMine(
+        msg: described.message,
+        status: described.status,
+        detail: described.detail,
+        term: fields['expression'],
+        reading: fields['reading'],
+      );
       return MinePopupResult.mined(outcome);
     }
     return MinePopupResult.failed(outcome, message: described.message);
   }
 
-  /// Resolves and plays the audio for [expression] / [reading]. [popupState] is
-  /// the just-rendered popup WebView (when this surface renders results in a
-  /// popup): auto-read then plays through its own `<audio>` element — the unified
-  /// fast path shared with the manual ♪ button and every surface. Null (e.g. an
-  /// inline full-page view with no popup WebView) falls back to the Dart player.
+  /// Resolves and plays the audio for [expression] / [reading]. [popupState]
+  /// looks up the WebView of the popup layer this lookup rendered into (when
+  /// this surface renders results in a popup): auto-read then plays through its
+  /// own `<audio>` element — the unified fast path shared with the manual ♪
+  /// button and every surface. It is called only when the audio is resolved and
+  /// about to play, not when auto-read fires: a layer created in the same frame
+  /// may not have mounted its state yet (BUG-5278). Null (e.g. an inline
+  /// full-page view with no popup WebView) falls back to the Dart player.
   Future<void> autoReadWord(
     String expression,
     String reading, {
-    DictionaryPopupWebViewState? popupState,
+    DictionaryPopupWebViewState? Function()? popupState,
+    String matched = '',
   }) async {
     await LookupAutoReadCoordinator.instance.runAutomatic(
       expression: expression,
       reading: reading,
-      play: () => _playAutoReadWord(expression, reading, popupState),
+      play: () =>
+          playPopupWordAudio(expression, reading, popupState, matched: matched),
     );
   }
-
-  Future<bool> _playAutoReadWord(
-    String expression,
-    String reading,
-    DictionaryPopupWebViewState? popupState,
-  ) => playPopupWordAudio(expression, reading, popupState);
 
   /// Checks whether a card for [expression] / [reading] already exists in Anki.
   Future<bool> checkDuplicate(String expression, String reading) async {
@@ -934,16 +1112,15 @@ mixin DictionaryPageMixin {
     try {
       final ({String? bookKey, String? title})? identity = lookupBookIdentity;
       unawaited(
-        mixinAppModel.database
-            .addLookupCount(
-              bookKey: identity?.bookKey,
-              title: identity?.title ?? '',
-              sourceType: dictionarySourceType,
-              dateKey: _statTodayKey(),
-            )
-            .catchError((Object e, StackTrace st) {
-              debugPrint('[fushi-stats] addLookupCount failed: $e\n$st');
-            }),
+        recordStudyLookup(
+          mixinAppModel.database,
+          bookKey: identity?.bookKey,
+          title: identity?.title ?? '',
+          sourceType: dictionarySourceType,
+          at: DateTime.now(),
+        ).catchError((Object e, StackTrace st) {
+          debugPrint('[fushi-stats] addLookupCount failed: $e\n$st');
+        }),
       );
     } catch (e, st) {
       debugPrint('[fushi-stats] addLookupCount failed (sync): $e\n$st');
@@ -1212,6 +1389,7 @@ mixin DictionaryPageMixin {
         DictionaryPopupLayer(
           result: entry.result,
           restoreScrollTop: entry.restoreScrollTop,
+          lookupSession: entry.lookupSession,
           isSearching: entry.isSearching,
           keepWebViewWarm: entry.isWarmSlot,
           webViewKey: entry.webViewKey,
@@ -1233,6 +1411,7 @@ mixin DictionaryPageMixin {
           // 框里什么都看不见。与 barrier（[shouldShowLookupDismissBarrier]）和浮层
           // 可见性（[parkedPopupLayer] 的 `visible`）共用同一道门：对话框期间这条
           // 通道也不许落地。
+          mineShortcutAction: dictionaryPopupMineShortcutAction,
           onHostInputToken: dictionaryPopupInputScope == null
               ? null
               : (String token) {
@@ -1269,7 +1448,8 @@ mixin DictionaryPageMixin {
               : null,
           // Phase B：app 内弹窗右下角尺寸拖拽把手（video/首页/texthooker 共用此收口）。
           // 拖动 = 可视化改「最大宽高」偏好（与设置滑杆同一真值）；预览态在 mixin 级。
-          showResizeGrip: true,
+          // 宿主强制停靠时尺寸归宿主（视频页竖屏查词卡有自己的拖动条），不出这个把手。
+          showResizeGrip: !lookupHostForcesBottomDock,
           onResizeStart: _onMixinPopupResizeStart,
           onResizeUpdate: _onMixinPopupResizeUpdate,
           onResizeEnd: _onMixinPopupResizeEnd,
@@ -1349,7 +1529,7 @@ mixin DictionaryPageMixin {
               contextSentence,
             );
             if (count > 0) {
-              final Rect? wordRect = await entry.webViewKey.currentState
+              final Rect? wordRect = await entry.webViewKey.webViewState
                   ?.highlightSelection(count);
               // BUG-2054：同一次高亮顺带取回整词 bbox，把刚打开的子层从「点击的首
               // 字符」重锚到整词矩形——跨行选区时首字符矩形只覆盖第一行，子弹窗会
@@ -1380,12 +1560,25 @@ mixin DictionaryPageMixin {
             query: query,
             autoRead: autoReadOnNavigate,
           ),
+          // 拍板台 Um72dWD9Cz：「查不到」时点词块 / 改查询词，同一层原地换词。
+          onRefineQuery: (String query, String source) => navigatePopupInPlace(
+            controller: controller,
+            index: index,
+            entry: entry,
+            query: query,
+            autoRead: autoReadOnNavigate,
+            refineSource: source,
+          ),
+          refineSource: entry.refineSource,
           // 制卡四个出口都先过 [miningFieldsForLayer]：宿主按层补上它知道的上下文
           // （主窗查词宿主补出自那一行原文的例句，反馈 1Mwaro8UTC）。
           onMineEntry: closePopupAfterAcceptedMine(
             (Map<String, String> fields) =>
                 onMineEntry(miningFieldsForLayer(index, controller, fields)),
-            enabled: () => ReaderFushiSource.instance.closePopupAfterMining,
+            action: () => afterMiningPopupAction,
+            dropPauseMark: () {
+              if (mounted) dropLookupPauseMark();
+            },
             closeAll: () {
               if (mounted) onPop(0);
             },
@@ -1425,6 +1618,9 @@ mixin DictionaryPageMixin {
           // 不画在弹窗 WebView 内）；确认制卡回该层 WebView 精确点中该词条的「+」并带上
           // 覆盖项。只跟制卡模块走——纯查词页也有（对话框只有卡组分区）。
           onOpenAdvancedMining: advancedMiningOpenerFor(entry.webViewKey),
+          // 跨应用语音缓存：应用外查词窗（Android `:popup`）在「+」旁给「调整句子音频」
+          // 面板（拍板 design-cross-app-audio-trim-ui）；app 内表面为 null。
+          crossAppAudio: miningAudioSnapshot,
           headerWidget: buildPopupHeaderFor(index),
           topBarScale: dictionaryPopupTopBarScale(
             appUiScale: mixinAppModel.popupUiScale,
@@ -1618,7 +1814,7 @@ mixin DictionaryPageMixin {
             // onRendered 相同的翻可见路径，不空等 failsafe。state 为 null 时
             // 维持等待，交给 failsafe。
             final bool renderPending =
-                entry.webViewKey.currentState?.refreshCurrentResult() ?? true;
+                entry.webViewKey.webViewState?.refreshCurrentResult() ?? true;
             if (!renderPending && controller.revealRendered(entry)) {
               controller.endSearchUi();
               setState(() {});
@@ -1654,13 +1850,15 @@ mixin DictionaryPageMixin {
         searchTerm: trimmed,
       );
       mixinAppModel.addToDictionaryHistory(result: result);
+      onPopupSearchResult(trimmed, result);
       if (autoRead && ReaderFushiSource.instance.autoReadOnLookup) {
         final first = result.entries.first;
         if (first.word.isNotEmpty) {
           autoReadWord(
             first.word,
             first.reading,
-            popupState: entry.webViewKey.currentState,
+            popupState: () => entry.webViewKey.webViewState,
+            matched: lookupEntryMatchedText(first),
           );
         }
       }
@@ -1734,12 +1932,17 @@ mixin DictionaryPageMixin {
   /// 身份门：查询往返期间本层可能被关掉（`entries.contains`）或已被另一次跳转 /
   /// 顶层换词换掉内容（`searchTerm` 变了）——迟到的结果一律丢弃。查询期间置
   /// [DictionaryPopupEntry.isSearching] 挡住同层 load-more 并发写入。
+  ///
+  /// [refineSource] 非 null = 从「查不到」的词块 / 修改框换词（拍板台 Um72dWD9Cz）：
+  /// 空结果**也**换，新页记下词块来源、沿用原页那一句。与
+  /// [BaseSourcePageState.navigatePopupInPlace] 同语义。
   Future<void> navigatePopupInPlace({
     required DictionaryPopupController controller,
     required int index,
     required DictionaryPopupEntry entry,
     required String query,
     bool autoRead = false,
+    String? refineSource,
   }) async {
     final String trimmed = query.trim();
     if (trimmed.isEmpty || entry.isSearching) return;
@@ -1748,7 +1951,7 @@ mixin DictionaryPageMixin {
     }
     // 离开当前页前记下它的滚动位（回来时恢复）；查询开始后再读会读到新内容。
     final double scrollTop =
-        await entry.webViewKey.currentState?.currentScrollTop() ?? 0;
+        await entry.webViewKey.webViewState?.currentScrollTop() ?? 0;
     if (!mounted || !controller.entries.contains(entry)) return;
     final String termAtStart = entry.searchTerm;
     entry.isSearching = true;
@@ -1762,12 +1965,15 @@ mixin DictionaryPageMixin {
           entry.searchTerm != termAtStart) {
         return;
       }
-      if (result.entries.isEmpty && result.kanjiResults.isEmpty) return;
-      mixinAppModel.addToSearchHistory(
-        historyKey: DictionaryMediaType.instance.uniqueKey,
-        searchTerm: trimmed,
-      );
-      mixinAppModel.addToDictionaryHistory(result: result);
+      final bool empty = result.entries.isEmpty && result.kanjiResults.isEmpty;
+      if (empty && refineSource == null) return;
+      if (!empty) {
+        mixinAppModel.addToSearchHistory(
+          historyKey: DictionaryMediaType.instance.uniqueKey,
+          searchTerm: trimmed,
+        );
+        mixinAppModel.addToDictionaryHistory(result: result);
+      }
       // navigateInPlace 自己 notify，本层经 [DictionaryPopupEntryBinding] 重建。
       controller.navigateInPlace(
         entry,
@@ -1775,6 +1981,8 @@ mixin DictionaryPageMixin {
         result: result,
         allLoaded: !result.truncated,
         scrollTop: scrollTop,
+        refineSource: refineSource ?? '',
+        contextSentence: refineSource == null ? '' : entry.contextSentence,
       );
       if (autoRead &&
           ReaderFushiSource.instance.autoReadOnLookup &&
@@ -1784,7 +1992,8 @@ mixin DictionaryPageMixin {
           autoReadWord(
             first.word,
             first.reading,
-            popupState: entry.webViewKey.currentState,
+            popupState: () => entry.webViewKey.webViewState,
+            matched: lookupEntryMatchedText(first),
           );
         }
       }
@@ -1806,7 +2015,7 @@ mixin DictionaryPageMixin {
   }) async {
     if (entry.isSearching) return;
     final double scrollTop =
-        await entry.webViewKey.currentState?.currentScrollTop() ?? 0;
+        await entry.webViewKey.webViewState?.currentScrollTop() ?? 0;
     if (!mounted || !controller.entries.contains(entry)) return;
     // goForward / goBack 自己 notify，本层经 [DictionaryPopupEntryBinding] 重建。
     if (forward) {

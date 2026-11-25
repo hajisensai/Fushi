@@ -8,6 +8,10 @@ import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
+/// 「添加游戏」与拖放认的游戏可执行文件扩展名（不带点）：文件选择器的过滤与导入面
+/// 「支持 n 种格式」气泡（`importFormatLabels`）同源，不各写一份。
+const Set<String> kGameExecutableExtensions = <String>{'exe'};
+
 /// 「添加游戏」共用动作：文件选择器选一个 `.exe` → 查重 → 落库 → 后台补封面。
 ///
 /// 两个消费方：游戏库页（独立使用时的 FAB / 空态兜底）与游戏「导入」视图的快速
@@ -28,7 +32,7 @@ Future<void> addGameViaFilePicker(
   await repo.load();
   final FilePickerResult? picked = await FilePicker.platform.pickFiles(
     type: FileType.custom,
-    allowedExtensions: <String>['exe'],
+    allowedExtensions: kGameExecutableExtensions.toList(),
   );
   final String? exe = (picked != null && picked.files.isNotEmpty)
       ? picked.files.first.path
@@ -79,6 +83,22 @@ Future<void> addGamesFromPaths(
   );
   unawaited(_autoCoverAllSilently(repo, added));
   onImported?.call();
+}
+
+/// 游戏来源扫描（`game_source_scanner.dart`）落库之后的收尾：重载游戏库缓存，
+/// 再给本轮新建的 [createdIds] 后台补封面（与拖放添加同一条有界并行路径）。
+///
+/// 扫描器只拿得到数据库，直接写 `galgames` 表；仓储缓存不重载的话游戏库页看不到新
+/// 游戏。由 AppModel 接到 `onGameSourceScanned` 上。
+Future<void> adoptSourceScannedGames(
+  GalgameRepository repo,
+  List<String> createdIds,
+) async {
+  await repo.load();
+  final List<GalgameEntry> added = <GalgameEntry>[
+    for (final String id in createdIds) ?repo.byId(id),
+  ];
+  await _autoCoverAllSilently(repo, added);
 }
 
 /// 批量补封面的并行度。每个 exe 图标抽取都是一个后台 isolate 把整个 exe 读进

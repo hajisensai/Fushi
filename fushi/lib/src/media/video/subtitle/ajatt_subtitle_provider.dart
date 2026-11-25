@@ -15,6 +15,7 @@ import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi/src/media/video/subtitle/ajatt_catalog.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_source_season.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 
 /// provider id（registry 分派 / 候选 `providerId`）。
@@ -68,6 +69,14 @@ class AjattVideoSubtitleProvider implements VideoSubtitleProvider {
           <VideoSubtitleCandidate>[];
       final int? episode = request.effectiveEpisode;
       for (final (:AjattCatalogEntry entry, :int? anilistId) in matches) {
+        // 季号是来源事实而非请求意图（HBK-AUDIT-049）：只有 `.kitsuinfo.json` 的
+        // AniList id 与请求作品对上（[_confirmByAnilistId] 才会带回 id）时采信请求
+        // 季号，否则只认条目名的季度记号，再由各文件名覆盖。
+        final int? entrySeason = subtitleSourceEntrySeason(
+          identityConfirmed: anilistId != null,
+          requestedSeason: request.effectiveSeason,
+          entryNames: <String?>[entry.name],
+        );
         final List<AjattSubtitleFile> files = await _client.listEntryFiles(
           entry,
         );
@@ -91,7 +100,10 @@ class AjattVideoSubtitleProvider implements VideoSubtitleProvider {
               entry: entry,
               file: file,
               language: language,
-              season: request.effectiveSeason,
+              season: subtitleSourceFileSeason(
+                fileName: file.name,
+                entrySeason: entrySeason,
+              ),
               providerPriority: priority,
               anilistId: anilistId,
             ),

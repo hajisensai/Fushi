@@ -234,22 +234,26 @@ bool isHollowMediaHeaderBytes(List<int> head) {
 /// null——一条日志都没有，用户主动触发的导入/换封面也查不出「为什么没有封面」。返回
 /// false 是把这类输入交回给下游 ffmpeg，让它按原本那条**可诊断**路径失败
 /// （严重性由各调用方的 `diagnosticOnly` 决定）。
-bool hasHollowMediaHeader(String path) {
+///
+/// 全程 async（`open` / `length` / `read`）：书架封面回填在 UI isolate 上逐行调
+/// [extractVideoCover]，同步读盘会在 NAS 休眠 / 网络盘慢时每条待回填的行卡一次
+/// 界面（与 BUG-3756 清掉的那批同步 IO 同类）。
+Future<bool> hasHollowMediaHeader(String path) async {
   RandomAccessFile? handle;
   try {
-    handle = File(path).openSync();
-    final int length = handle.lengthSync();
+    handle = await File(path).open();
+    final int length = await handle.length();
     if (length <= 0) return true;
     final int wanted = length < kHollowMediaHeaderProbeBytes
         ? length
         : kHollowMediaHeaderProbeBytes;
-    return isHollowMediaHeaderBytes(handle.readSync(wanted));
+    return isHollowMediaHeaderBytes(await handle.read(wanted));
   } catch (e) {
     engineLog.logDiagnostic('hasHollowMediaHeader', '$path: $e');
     return false;
   } finally {
     try {
-      handle?.closeSync();
+      await handle?.close();
     } catch (_) {}
   }
 }
@@ -362,18 +366,12 @@ Future<String?> _extractVideoCoverUnlocked({
   required String? tlsPinSha256,
   required bool diagnosticOnly,
 }) async {
-  // 蓝光标题的 `videoPath` 是 `BDMV/PLAYLIST/*.mpls`——同样是「描述怎么播」的文件而
-  // 不是码流，ffmpeg 对它必然 `Invalid data found`。与下面 m3u8 在同一层收口，区别
-  // 是这里有真码流可用：换成它引用的第一段 `STREAM/*.m2ts` 再走原路。盘读不出来才
-  // 放弃（和清单拒收一样，返回 null 让书架显示占位）。
+  // 蓝光标题（`BDMV/PLAYLIST/*.mpls`）不是码流，另走 [_extractBlurayTitleCover]。
   if (isBlurayPlaylistPath(videoPath)) {
-    final BluraySource? bluray = await resolveBluraySource(videoPath);
-    if (bluray == null) return null;
-    return _extractVideoCoverUnlocked(
-      videoPath: bluray.primaryStreamPath,
+    return _extractBlurayTitleCover(
+      videoPath: videoPath,
       bookUid: bookUid,
       atSeconds: atSeconds,
-      tlsPinSha256: tlsPinSha256,
       diagnosticOnly: diagnosticOnly,
     );
   }
@@ -392,7 +390,7 @@ Future<String?> _extractVideoCoverUnlocked({
   //
   // 这里是这条判据的**唯一**一道门：调用方（含书架回填）不再各自预判一次，否则同一
   // 事实两处真相源，且两处会各读一次 64KB。
-  if (!isRemoteInput && hasHollowMediaHeader(videoPath)) return null;
+  if (!isRemoteInput && await hasHollowMediaHeader(videoPath)) return null;
   // TODO-1236：经 AppPaths 解析封面目录（跟随桌面自定义数据根 →
   // `<dataRoot>/documents/video_covers`；默认根仍是平台 Documents），与 TODO-1226
   // 迁移白名单 `video_covers` 一致，避免自定义数据根下新封面落回平台 Documents。
@@ -430,6 +428,43 @@ Future<String?> _extractVideoCoverUnlocked({
           outputPath: outputPath,
           atSeconds: atSeconds,
           tlsPinSha256: tlsPinSha256,
+          diagnosticOnly: diagnosticOnly,
+        ),
+  );
+}
+
+/// 蓝光标题的 `videoPath` 是 `BDMV/PLAYLIST/*.mpls`（或分集的虚拟路径
+/// `00001.p03.mpls`）——「描述怎么播」的文件，不是码流。它不带内嵌封面、也没有
+/// 「头部全零」可判，直接按这条标题自己的时间轴抽帧：ffmpeg 后端
+/// （`BlurayFfmpegBackend`）把它改写成只含这条标题各段的 concat 清单，加密段经
+/// AACS 会话解密，与制卡抽取同一条输入链。
+///
+/// BUG-5312：原来换成第一段 `STREAM/*.m2ts` 直接交给 ffmpeg——加密盘的 m2ts 是密文
+/// （`could not find sync byte`），各集一律没有封面；第一集的第一段还是几秒的厂标，
+/// 10 秒处根本没有画面。
+///
+/// 空洞拒收（[hasHollowMediaHeader]）不适用：路径指向的是清单而不是码流。
+Future<String?> _extractBlurayTitleCover({
+  required String videoPath,
+  required String bookUid,
+  required double atSeconds,
+  required bool diagnosticOnly,
+}) async {
+  if (await readBlurayMemberPlaylist(videoPath) == null) return null;
+  final Directory coverDir = await enginePaths.videoCoversDirectory();
+  return grabFirstNonBlackCoverFrame(
+    outputPath: p.join(coverDir.path, videoCoverFileName(bookUid)),
+    candidateSeconds: coverFrameCandidateSeconds(atSeconds),
+    diagnosticOnly: diagnosticOnly,
+    grab:
+        ({
+          required String outputPath,
+          required double atSeconds,
+          required bool diagnosticOnly,
+        }) => extractVideoFrameViaFfmpeg(
+          inputPath: videoPath,
+          outputPath: outputPath,
+          atSeconds: atSeconds,
           diagnosticOnly: diagnosticOnly,
         ),
   );

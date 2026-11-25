@@ -1,5 +1,84 @@
 # Fushi 快捷键清单（TODO-048a 统计）
 
+> **2026-11-24 增补（音乐推荐页刷新）：** home scope 新增 `musicRecommendRefresh`（`music_recommend_refresh`），
+> 默认 Ctrl + R（macOS ⌘R），移动端无键盘绑定。执行体是音乐「推荐」（在线）Apple 布局的键事件节点
+> （`music/apple/apple_music_recommend_layout.part.dart`，只在 Apple 外壳生效；焦点在推荐页内时命中即重载全部来源，
+> 与下拉刷新 / macOS 工具栏刷新键同一件事）。M3E 推荐页不接（刷新在各来源段头）。
+
+> **2026-11-24 增补（库页网格缩放）：** home scope 新增 `libraryGridZoomIn` / `libraryGridZoomOut`
+> （`library_grid_zoom_in` / `_out`），默认 Ctrl + = / 小键盘 +、Ctrl + − / 小键盘 −（macOS ⌘），移动端无键盘绑定。
+> 执行体是库页网格外的 `LibraryGridZoom`（`library_layout/library_grid_zoom.dart`，只在 Apple 外壳生效，与双指 /
+> 触控板捏合、macOS 工具栏滑杆同一件事：写回 `library_grid_columns`）；挂在首页键事件节点之下、先于 home 页派发。
+
+> **2026-11-08 增补（Linux Wayland 全局热键）：**
+>
+> - `globalExternal` 三个动作的 OS 注册收口到 `GlobalHotKeyBackend`（`lib/src/shortcuts/global_hotkey_backend.dart`）：
+>   Windows / macOS / Linux X11 走 `NativeGlobalHotKeyBackend`（hotkey_manager，X11 即 keybinder，行为不变）；
+>   Linux **Wayland 桌面**（按 `XDG_SESSION_TYPE` / `WAYLAND_DISPLAY` 判，不看 GTK 后端——Flatpak 钉了
+>   `GDK_BACKEND=x11` 但桌面仍是 Wayland）走 XDG GlobalShortcuts portal（`portal_global_hotkey_backend.dart` +
+>   `global_shortcuts_portal.dart`）。
+> - portal 下按键归桌面：注册表里的键盘绑定只作 `preferred_trigger` 提示，桌面可能弹窗让用户确认 / 改键，之后改键在
+>   系统设置里。设置页 `globalExternal` 的「键盘」视图在 Wayland 上换成 `GlobalHotKeyPortalPanel`：显示桌面回报的
+>   实际触发键、portal 缺失 / 对话框被取消 / 会话被关等原因，以及「在系统设置中修改」（portal v2 `ConfigureShortcuts`）
+>   或文字指引；手柄 / 鼠标视图不变。
+> - 热键不再依附查词卡覆盖窗：Wayland 会话没有覆盖窗时照样注册；选中文本查词改落到主窗查词页
+>   （`queueExternalLookup`），没取到选区就打开查词页；截屏识字需要覆盖窗，没有时不向 portal 声明。
+>   Flatpak（XWayland 下 GTK 走 X11）有覆盖窗，所以三个动作都向 portal 声明、查词仍出卡片。
+> - portal 会话生命周期：客户端按 `NameOwnerChanged` 跟踪 `org.freedesktop.portal.Desktop` 的属主——portal 进程
+>   崩溃 / 重启时，未应答的 Request 以 `PortalFailure.aborted` 结束、该进程的会话按「已关闭」上报（旧进程不会发
+>   `Closed`），之后只认新属主的信号；退出时 `dispose` 先 `abortPendingRequests()` 结束挂着的绑定对话框请求，再关会话
+>   与连接，不让退出步骤卡到超时。
+> - portal 缺 GlobalShortcuts（GNOME < 48、wlroots、Gamescope）而 GTK 跑在 XWayland 上（Flatpak、Steam 游戏模式启动脚本
+>   都钉 `GDK_BACKEND=x11`）时，`FallbackGlobalHotKeyBackend` 把热键交回 X11 keybinder（`portalShouldFallBackToX11Grab`）：
+>   X11 客户端（XWayland / Gamescope 下的游戏）有焦点时照样能触发，这是 portal 后端出现前这些会话本来就有的能力，不报
+>   「不支持」。设置页跟随实际后端：回落后键盘视图回到应用内录键。原生 Wayland GTK 上 X11 抓键看不到任何按键，不回落。
+> - 守卫 / 测试：`test/shortcuts/portal_global_hotkey_backend_test.dart`、`fallback_global_hotkey_backend_test.dart`、`global_shortcuts_portal_dbus_test.dart`（仅 Linux）、
+>   `test/lookup/global_hotkey_backend_wiring_test.dart`、`test/pages/global_hotkey_portal_panel_test.dart`。
+
+> **2026-11-08 增补（手柄查词模式 / 副屏面板驱动，副屏 S6；键位以 2026-11-22 统一为准）：**
+>
+> - `ControllerLookupMode`（`lib/src/second_screen/input/`）排在**一切页面分派之前**：桌面在
+>   `GamepadService._dispatchButton`，Android 在 `FocusManager` 早期按键处理器
+>   （`interceptNativeControllerLookupKey`）。进入方式是设备本地偏好 `controller_lookup_style`
+>   （设置「通用 › 键盘与手柄」：按住 L1 / Select 切换 / 关）。**未设时一律按住 L1**（单屏也是，
+>   原来单屏默认关）。
+> - 查词模式内的键位是 `controllerLookup` scope 的注册表动作，**全部可在快捷键设置里改键**（进入模式的键
+>   不进注册表）。默认：十字键 ←/→ 按词 / 字、↑/↓ 换行；L3 切换按词 / 按字；右摇杆 ←/→ 选区右端 −1/+1 字；
+>   X 制卡；Y 发音；RT / LT 下 / 上一词条；A 进入结果；B 先关结果、再退出模式。**停下即查**（光标停到新位置
+>   自动查词，不再先按 A）。结果去副屏「查词」页，副屏不在时走页内弹窗。
+> - 右摇杆左 / 右是新的可绑定虚拟键 `RS←` / `RS→`（`gameButton15` / `gameButton16`），桌面由轮询器横轴
+>   边沿检测，Android 由 `GamepadTriggerKeySynthesizer` 合成；只有查词模式消费。
+> - 副屏伴侣在用时**按住 R1** = 十字键 / 左摇杆 / A / B 驱动副屏面板的焦点（其它键吞掉），松开回到上屏。
+> - 行为变化：L1（有查词目标时）与 R1 的**轻点**改在**松开**时按原绑定补发（按住期间没有别的输入才算轻点）。
+>   阅读器 RB/LB 翻页等因此在松开时触发。
+
+> **2026-11-22 增补（手柄查词统一）：** 设计见 `docs/specs/2026-11-22-gamepad-lookup-unification-design.md`。
+>
+> - 删掉视频整句扫词动作 `videoLookupNextWord` / `videoLookupPrevWord`（旧持久化 key
+>   `video_lookup_next_word` / `video_lookup_prev_word` 加载时忽略）。
+> - `videoEnterCaret` / `readerEnterCaret` / `readerLookupAtCursor` 去掉手柄通道，只剩键盘（已存的自定义手柄
+>   绑定失效且不再显示）。手柄查词只有查词模式这一条路。
+> - 单屏默认按住 L1 带来的行为变化见上条：L1 轻点改在松开时补发。不想要的用户改成「Select 切换」或「关」。
+>
+> **2026-11-23 增补（拍板台 pr4141a）：** 阅读器整句扫词 `readerLookupNextWord` / `readerLookupPrevWord`（拍板台
+> 5H922XeDHM，PR #4130）同样删除，键盘 / 手柄 / 鼠标 / 弹窗回传 / 歌词键桥通道一并去掉；旧持久化 key
+> `reader_lookup_next_word` / `reader_lookup_prev_word` 加载时忽略（`kRetiredShortcutActionKeys`）。
+
+> **2026-11-08 增补（视频页逐句学习工具，副屏 S6）：**
+>
+> - 新增三个 video scope 动作：`videoReplayCueThenPause`（重播当前句并在句尾暂停，默认
+>   Ctrl+Shift+R）、`videoToggleAutoPauseAtCueEnd`（开关「每句播完自动暂停」，默认 Ctrl+Shift+P）、
+>   `videoToggleAbLoop`（A-B 循环三态：标 A → 标 B 开始循环 → 清除，默认 Ctrl+Shift+B）。macOS 表
+>   自动换成 ⌘⇧R / P / B；**手柄留空**（video scope 手柄键位已占满，手柄用户走副屏视频面板的
+>   「逐句学习」区或自配）。持久化 key 依次为 `video_replay_cue_then_pause` /
+>   `video_toggle_auto_pause_at_cue_end` / `video_toggle_ab_loop`。全新动作不在老快照里，直接取默认，
+>   不需要 schema 迁移。
+> - 状态归 `VideoPlayerController`：自动暂停与「重播本句」走同一套句尾暂停判定；循环当前句开着时
+>   自动暂停让位；A-B 只在自然播放越过 B 时回到 A，显式 seek / 拖进度条撤武装，换片作废。开关类
+>   动作在画面左上 OSD 报新状态。网页视频页不接线（默认 no-op）。
+> - 副屏视频面板「逐句学习」区另有「循环当前句 ×1 / ×2 / ×3 / ×5 / 无限」（`startCueLoop(times:)`，
+>   与 `videoToggleLoopCurrentSubtitle` 同一个循环模式），没有对应快捷键。
+
 > **2026-11-01 增补（焦点导航进快捷键体系，反馈 bjPjRHsaUy）：**
 >
 > - 设置页新分组「焦点导航」= 原 `gamepad` scope（枚举名与动作名 `dpadUp/Down/Left/Right`、
@@ -14,6 +93,8 @@
 >   页面没占用的备选键。
 > - 设置页「焦点导航」分组顶部有两个**默认关闭**的一键预设开关：WASD、Shift+方向键（追加为
 >   备选键，不替换方向键）。W/A/S/D 在视频页仍是 seek / 截图，Shift+←/→ 在音乐页仍是 ±5 秒。
+>   音乐全屏播放页 / 歌词页另有 `musicPlayer` scope（拍板台 vo1KPp0_Rh）：裸 ←/→ 默认 ±5 秒，
+>   页面键先于焦点导航解析；曲库页只解析 `music`，裸方向键仍是网格移焦。
 > - 文本框持焦时，用户另加的移焦 / 确认键一律放行（WASD 照常打字、Shift+方向键照常扩选）；
 >   裸方向键仍是既有契约（实验焦点导航关 → 框架 `DirectionalFocusIntent`；开 → 受管控件门 +
 >   单行框逃逸）。裸 Enter / 手柄 A 的确认仍由框架完成（wrapper 不重复激活）。
@@ -117,7 +198,7 @@
 | audiobookPlayPause | Ctrl+Space | L3（手柄） | 播放/暂停 |
 | audiobookNextSentence | Ctrl+→ | —（RB/LB 已被 reader 翻页占用会被遮蔽） | 下一句 |
 | audiobookPrevSentence | Ctrl+← | — | 上一句 |
-| audiobookSeekToClickedSentence | — | 鼠标中键（位置型，走 onPointerSeek） | 点句跳转并播放 |
+| audiobookSeekToClickedSentence | — | 鼠标中键（位置型，走 onPointerSeek） | 点句跳转并播放（EPUB 书与纯转录合成书一致；左键 / 单击只查词。触屏无中键：长按句子 → 选区操作条「从此句播放」） |
 
 > scope 解析顺序的关键约束（`shortcut_action.dart` coactiveScopes）：reader 页按
 > `[reader, audiobook]` 顺序解析，home 页按 `[home, global]`。同一物理键在共活 scope
@@ -179,6 +260,26 @@
 | 竖排 RTL（日文默认）+ 无修饰 ← | readerPageForward（下一页在左） |
 | 竖排 RTL + 无修饰 → | readerPageBackward |
 | 横排 LTR + 无修饰 ←/→ | 后退 / 前进（默认方向） |
+| 有声书激活 + 弹窗不可见 + 无修饰 ←/→ | 上述页序再改作上一句 / 下一句（见 2d+） |
+
+### 2d+. 小说 / 漫画左右键统一（反馈 uz_2m0E_Eu，2026-11 拍板「做」）
+
+两个阅读器的裸 ← → 走同一套原语（`shortcuts/directional_page_turn.dart`）：
+`resolveDirectionalPageTurn`（只接管出厂翻页绑定，`leftIsForward = rtl ^ reverse`）→
+`resolveAudioArrowTakeover`（有声在场切句）。
+
+| 条件 | 小说（reader） | 漫画（manga） |
+|---|---|---|
+| 裸 ← →，无有声 | 按阅读方向翻页 | 按跨页方向翻页 |
+| 裸 ← →，有声在场、弹窗不可见 | 上一句 / 下一句（audiobookPrev/NextSentence） | 上一句 / 下一句（mangaAudioPrevious/NextLine） |
+| PageUp / PageDown / ↑ / ↓，有声在场 | 照旧翻页 | 照旧翻页 |
+| 裸空格，有声在场 | 播放 / 暂停 | 播放 / 暂停 |
+| 长按 ← →（翻页） | 连发（BUG-687 / TODO-1370） | 连发，但等上一页翻页动画落定才翻下一页（`MangaHeldTurnGate`） |
+| 查词弹窗开着时 ← → | 关弹窗并翻页（正文持焦 / 弹窗持焦两条路都接） | 关弹窗并翻页 |
+| 「反转方向键翻页」开关 | 阅读控制 · `reverse_arrow_page_turn`（冻结键名） | 漫画 · 翻页 · `manga_reverse_arrow_page_turn`（两边分开） |
+
+用户改绑 / 解绑过左右键时上表全部让路，交回注册表的真实绑定。手柄 D-pad 跟随阅读方向，
+但不受「反转方向键翻页」与有声切句影响。
 
 ### 2e. 查词弹窗
 

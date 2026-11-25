@@ -9,6 +9,7 @@ import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_utils.dart' show kSyncRootFolderName;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/srs/sync2/srs_host_directory.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_link.dart';
@@ -33,8 +34,9 @@ const String kToken = 'srs-two-way-token';
 /// 两边各建的笔记都要到对面。
 ///
 /// 第二个用例是用户报的真实失败路径：两台设备各自装好、各自打开过复习模块，profileUid 是各自
-/// 本机随机生成的（`FushiDatabase.profileUidOf`），同步目录按 uid 分区——以前两边各写各的
-/// `fushi-srs/<uid>/`，「同步成功」但谁也看不到谁的卡。
+/// 本机随机生成的（`FushiDatabase.profileUidOf`），同步目录按集合分区——以前两边各写各的
+/// `fushi-srs/<目录>/`，「同步成功」但谁也看不到谁的卡。新代（协议 4，G9-5）里关联是认领对方的集合
+/// （`collection_adopt`）：profile uid 不变，两边绑到同一个集合、同一个位置目录。
 void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   late FushiSyncServer server;
@@ -70,12 +72,7 @@ void main() {
 
   Future<SrsDbStore> device(String id) async {
     final SrsStorage srs = await openSrsTestStorage();
-    return SrsDbStore.open(
-      db: srs.db,
-      core: srs.core,
-      profileUid: kProfile,
-      deviceId: id,
-    );
+    return SrsDbStore.open(core: srs.core, profileUid: kProfile, deviceId: id);
   }
 
   Future<String> addNote(SrsDbStore s, String expression) => s.createNote(
@@ -178,7 +175,7 @@ void main() {
     expect(expressionOf(await host.note(later)), '霧');
   });
 
-  test('各自生成 profileUid 的两台设备：没有笔记的一边（已同步发布过）采用对方 uid 后互通', () async {
+  test('各自生成 profileUid 的两台设备：没有笔记的一边（已同步发布过）认领对方集合后互通', () async {
     final SyncRepository repo = SyncRepository(clientAppDb);
     await repo.setFushiClientUrls(<FushiClientUrl>[
       FushiClientUrl(url: base, enabled: true),
@@ -198,6 +195,8 @@ void main() {
     final _LinkedDevice host = await _LinkedDevice.open('host');
     final _LinkedDevice phone = await _LinkedDevice.open('phone');
     final String phoneOldUid = phone.store.profileUid;
+    final String phoneOldDir = phone.store.sync2Dir!;
+    final String hostDirName = host.store.sync2Dir!;
     expect(host.store.profileUid, isNot(phoneOldUid));
 
     // 手机先单独同步过（内置行批次已发布在它自己的 uid 下）。
@@ -237,16 +236,12 @@ void main() {
         reason: 'phone round $round',
       );
     }
-    expect(phone.store.profileUid, host.store.profileUid);
-    expect(await phone.db.profileUidOf(phone.profileId), host.store.profileUid);
+    _sameCollection(phone.store, host.store);
+    expect(phone.store.profileUid, phoneOldUid, reason: '新代认领不改 profile uid');
+    expect(await phone.db.profileUidOf(phone.profileId), phoneOldUid);
     expect(_expressionOf(phone.store, await phone.store.note(fromHost)), '雪');
-    // 本设备在旧 uid 下的孤儿目录已清掉。
-    expect(
-      Directory(
-        p.join(hostDir.root.path, kSrsSync2Namespace, phoneOldUid),
-      ).existsSync(),
-      isFalse,
-    );
+    // 本设备在旧目录里的说明文件已清掉（`v4/` 根按 §21 留着）：别的设备不再把它当候选。
+    expect(await _writersIn(hostDir, phoneOldDir), isEmpty);
 
     final String fromPhone = await _addNote(phone.store, '雨');
     for (int round = 0; round < 3; round++) {
@@ -266,8 +261,10 @@ void main() {
       );
     }
     expect(_expressionOf(host.store, await host.store.note(fromPhone)), '雨');
-    // host 有用户笔记、目录里已有别的设备：不会被反过来改 uid。
-    expect(await host.db.profileUidOf(host.profileId), host.store.profileUid);
+    // host 有用户笔记、目录里已有别的设备：不会被反过来换集合。
+    expect(host.store.sync2Dir, hostDirName);
+    expect(phone.scheduler.profileConflict, isNull);
+    expect(host.scheduler.profileConflict, isNull);
   });
 
   test('两边都有用户笔记：不自动关联，提示一次', () async {
@@ -294,6 +291,183 @@ void main() {
     expect(b.store.profileUid, bUid);
     expect(b.notices, <SrsSyncNotice>[SrsSyncNotice.profileNotLinked]);
   });
+
+  // 用户报的真实路径：两台设备各有自己的 profile 与笔记 → 两边都检出冲突；host 在弹窗里选了客户端的 profile。
+  // host 的目录名大（客户端先装）：按 D27 host 改绑进客户端的集合（经 host 本机目录认领，复核：本机目录上认领曾因
+  // 不传 `within` 必然失败）。之后客户端不该再被问起 host 离开的旧集合，弹窗里的笔记数也不能是检出那一刻的旧数。
+  test('两边都有笔记、host（本机目录）认领客户端的集合之后：客户端不再有冲突，拿旧冲突认领被拒、两边不分叉', () async {
+    final SyncRepository repo = SyncRepository(clientAppDb);
+    await repo.setFushiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: base, enabled: true),
+    ]);
+    await repo.setFushiClientToken(kToken);
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+      (String url, String tok) async => true,
+    );
+    expect(await backend.restoreAuth(repo), isTrue);
+    await backend.authenticate(repo: repo);
+    final String clientKey = (await srsDirectoryKeyOf(backend, repo))!;
+    final LocalDirectoryAssetStore hostDir = LocalDirectoryAssetStore(
+      Directory(p.join(server.syncDataDir, kSyncRootFolderName)),
+    );
+    final String hostKey = srsInterconnectDirectoryKey(kHostId);
+
+    final _LinkedDevice phone = await _LinkedDevice.open(
+      'phone',
+      channel: backend,
+      channelKey: clientKey,
+    );
+    final _LinkedDevice host = await _LinkedDevice.open(
+      'host',
+      localDirectory: hostDir,
+      localKey: hostKey,
+    );
+    final String hostUid = host.store.profileUid;
+    final String hostOldDir = host.store.sync2Dir!;
+    final String phoneDirName = phone.store.sync2Dir!;
+    final String? phoneCollection = phone.store.sync2Collection;
+    expect(phoneDirName.compareTo(hostOldDir), lessThan(0));
+    await _addNote(host.store, '雪');
+    final String fromPhone = await _addNote(phone.store, '雨');
+
+    Future<void> rounds(int n) async {
+      for (int round = 0; round < n; round++) {
+        final SrsSyncNowResult h = await host.scheduler.syncLocalDirectories();
+        expect(h.errors, isEmpty, reason: 'host round $round');
+        expect(
+          (await phone.scheduler.syncWithBackend(
+            backend,
+            directoryKey: clientKey,
+          )).error,
+          isNull,
+          reason: 'phone round $round',
+        );
+      }
+    }
+
+    await rounds(2);
+    final SrsProfileConflict hostConflict = host.scheduler.profileConflict!;
+    final SrsProfileConflict stale = phone.scheduler.profileConflict!;
+    expect(hostConflict.candidates.map((SrsRemoteProfile c) => c.uid), <String>[
+      phoneDirName,
+    ]);
+    expect(stale.candidates.map((SrsRemoteProfile c) => c.uid), <String>[
+      hostOldDir,
+    ]);
+    expect(stale.localNoteCount, 1);
+    // 检出之后客户端又建了一条：弹窗前重判报的是现在的数，不是检出那一刻的。
+    await _addNote(phone.store, '霞');
+    final SrsProfileConflict? fresh = await phone.scheduler
+        .recheckProfileConflict(stale);
+    expect(fresh?.localNoteCount, 2);
+    expect(fresh?.candidates.map((SrsRemoteProfile c) => c.uid), <String>[
+      hostOldDir,
+    ]);
+
+    // host 在弹窗里选了客户端的 profile：经 host 本机目录认领它的集合，之后那一轮立即同步。
+    await host.scheduler.adoptProfile(hostConflict, phoneDirName);
+    _sameCollection(host.store, phone.store);
+    expect(host.store.profileUid, hostUid, reason: '新代认领不改 profile uid');
+    expect(host.scheduler.profileConflict, isNull);
+    await rounds(2);
+    expect(await phone.store.userNoteCount(), 3);
+    expect(await host.store.userNoteCount(), 3);
+    expect(_expressionOf(host.store, await host.store.note(fromPhone)), '雨');
+    // host 离开的旧目录：说明文件清掉了，别的设备不再把它当候选。
+    expect(await _writersIn(hostDir, hostOldDir), isEmpty);
+
+    // 客户端：后台轮次已经看到 host 加入了自己的 profile，检出时缓存的冲突不能还挂着。
+    expect(phone.scheduler.profileConflict, isNull);
+    // 弹窗之前按当前同步位置重判：旧冲突已经不成立。
+    expect(await phone.scheduler.recheckProfileConflict(stale), isNull);
+    // 用户手里还开着旧弹窗、选了那个旧候选：按当前位置重判后拒绝，本机什么都不动（不会把自己并进已经没人用的旧
+    // profile、与 host 分叉）。
+    await expectLater(
+      phone.scheduler.adoptProfile(stale, hostOldDir),
+      throwsA(isA<SrsProfileConflictStale>()),
+    );
+    expect(phone.store.sync2Collection, phoneCollection);
+    expect(phone.store.sync2Dir, phoneDirName);
+    await rounds(1);
+    expect(phone.scheduler.profileConflict, isNull);
+    _sameCollection(host.store, phone.store);
+  });
+
+  // D27 吸收方向：host 的目录名小（host 先装），host 选了客户端的 profile → 客户端的集合并进 host（host 不改绑）。
+  // 那条 Join 在 host 集合的根里，客户端只读自己的根：靠 host 在客户端目录里放的并入提示，客户端被再问一次。
+  test('host（本机目录）吸收客户端的集合：客户端经并入提示再确认一次，确认后两边同一个集合', () async {
+    final SyncRepository repo = SyncRepository(clientAppDb);
+    await repo.setFushiClientUrls(<FushiClientUrl>[
+      FushiClientUrl(url: base, enabled: true),
+    ]);
+    await repo.setFushiClientToken(kToken);
+    final InterconnectSyncBackend backend = InterconnectSyncBackend.withProbe(
+      (String url, String tok) async => true,
+    );
+    expect(await backend.restoreAuth(repo), isTrue);
+    await backend.authenticate(repo: repo);
+    final String clientKey = (await srsDirectoryKeyOf(backend, repo))!;
+    final LocalDirectoryAssetStore hostDir = LocalDirectoryAssetStore(
+      Directory(p.join(server.syncDataDir, kSyncRootFolderName)),
+    );
+    final String hostKey = srsInterconnectDirectoryKey(kHostId);
+
+    final _LinkedDevice host = await _LinkedDevice.open(
+      'host',
+      localDirectory: hostDir,
+      localKey: hostKey,
+    );
+    final _LinkedDevice phone = await _LinkedDevice.open(
+      'phone',
+      channel: backend,
+      channelKey: clientKey,
+    );
+    final String hostDirName = host.store.sync2Dir!;
+    final String phoneDirName = phone.store.sync2Dir!;
+    expect(hostDirName.compareTo(phoneDirName), lessThan(0));
+    final String snow = await _addNote(host.store, '雪');
+    final String rain = await _addNote(phone.store, '雨');
+
+    Future<void> rounds(int n) async {
+      for (int round = 0; round < n; round++) {
+        final SrsSyncNowResult h = await host.scheduler.syncLocalDirectories();
+        expect(h.errors, isEmpty, reason: 'host round $round');
+        expect(
+          (await phone.scheduler.syncWithBackend(
+            backend,
+            directoryKey: clientKey,
+          )).error,
+          isNull,
+          reason: 'phone round $round',
+        );
+      }
+    }
+
+    await rounds(2);
+    final SrsProfileConflict hostConflict = host.scheduler.profileConflict!;
+    expect(hostConflict.candidates.map((SrsRemoteProfile c) => c.uid), <String>[
+      phoneDirName,
+    ]);
+    await host.scheduler.adoptProfile(hostConflict, phoneDirName);
+    expect(host.store.sync2Dir, hostDirName, reason: '吸收方向：host 不改绑');
+    expect(host.scheduler.profileConflict, isNull);
+    await rounds(1);
+    // 客户端经 WebDAV 读到自己目录里的提示：把 host 的集合交给用户再确认一次。
+    final SrsProfileConflict phoneConflict = phone.scheduler.profileConflict!;
+    expect(
+      phoneConflict.candidates.map((SrsRemoteProfile c) => c.uid),
+      <String>[hostDirName],
+    );
+    await phone.scheduler.adoptProfile(phoneConflict, hostDirName);
+    _sameCollection(phone.store, host.store);
+    await rounds(3);
+    expect(host.scheduler.profileConflict, isNull);
+    expect(phone.scheduler.profileConflict, isNull);
+    for (final SrsDbStore s in <SrsDbStore>[host.store, phone.store]) {
+      expect(_expressionOf(s, await s.note(snow)), '雪');
+      expect(_expressionOf(s, await s.note(rain)), '雨');
+    }
+  });
 }
 
 Future<String> _addNote(SrsDbStore s, String expression) => s.createNote(
@@ -305,6 +479,21 @@ Future<String> _addNote(SrsDbStore s, String expression) => s.createNote(
 
 String? _expressionOf(SrsDbStore s, SrsNoteView? n) =>
     n?.field(srsLapisFieldId(s.profileUid, 'Expression'));
+
+/// [a] 与 [b] 绑在同一个集合、同一个位置目录上（新代的「关联上了」：profile uid 各是各的）。
+void _sameCollection(SrsDbStore a, SrsDbStore b) {
+  expect(a.sync2Collection, b.sync2Collection);
+  expect(a.sync2Dir, b.sync2Dir);
+}
+
+/// 位置上目录 [dirName] 里还列着哪些写入者（说明文件所在的设备目录）；目录不在为空。
+Future<List<String>> _writersIn(
+  LocalDirectoryAssetStore dir,
+  String dirName,
+) async => <String>[
+  for (final SrsRemoteProfile r in await srsListRemoteProfiles(dir))
+    if (r.uid == dirName) ...r.writers,
+];
 
 /// 一台独立设备：自己的数据库、自己的 profile（名字相同、uid 各自随机生成）、真 [SrsDbProfileLinker]。
 class _LinkedDevice {
@@ -318,7 +507,15 @@ class _LinkedDevice {
   late final SrsSyncScheduler scheduler;
   final List<SrsSyncNotice> notices = <SrsSyncNotice>[];
 
-  static Future<_LinkedDevice> open(String deviceId) async {
+  /// [channel] / [channelKey]：这台设备的同步通道（互联客户端）；[localDirectory] / [localKey]：本机直接读写的
+  /// 目录（互联 host）。都不给时只能直接调 [SrsSyncScheduler.syncWithBackend]。
+  static Future<_LinkedDevice> open(
+    String deviceId, {
+    SyncAssetStore? channel,
+    String? channelKey,
+    SyncAssetStore? localDirectory,
+    String? localKey,
+  }) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final SrsStorage srs = await openSrsTestStorage();
@@ -330,9 +527,18 @@ class _LinkedDevice {
     d.store = await d._openStore();
     d.scheduler = SrsSyncScheduler(
       readStore: () async => d.store,
-      channels: (Future<void> Function(SyncAssetStore backend) body) async =>
-          (ran: 0, errors: <Object>[]),
-      directoryKeyOf: (SyncAssetStore backend) async => null,
+      channels: (Future<void> Function(SyncAssetStore backend) body) async {
+        if (channel == null) return (ran: 0, errors: <Object>[]);
+        await body(channel);
+        return (ran: 1, errors: <Object>[]);
+      },
+      directoryKeyOf: (SyncAssetStore backend) async =>
+          identical(backend, channel) ? channelKey : null,
+      localDirectories: localDirectory == null
+          ? null
+          : () async => <SrsLocalDirectory>[
+              SrsLocalDirectory(directoryKey: localKey!, store: localDirectory),
+            ],
       onDataChanged: () {},
       onNotice: d.notices.add,
       profileLinker: SrsDbProfileLinker(
@@ -345,7 +551,6 @@ class _LinkedDevice {
   }
 
   Future<SrsDbStore> _openStore() async => SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: await db.profileUidOf(profileId),
     deviceId: deviceId,

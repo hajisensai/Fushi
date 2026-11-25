@@ -295,32 +295,44 @@ void main() {
   });
 
   group('routeAutoImport', () {
-    test('单文件按扩展名', () {
+    test('单文件按扩展名', () async {
       File touch(String name) =>
           File(p.join(h.tmp.path, name))..writeAsStringSync('x');
-      expect(routeAutoImport(touch('a.txt').path).kind, AutoImportKind.novel);
       expect(
-        routeAutoImport(touch('a.cbz').path).kind,
+        (await routeAutoImport(touch('a.txt').path)).kind,
+        AutoImportKind.novel,
+      );
+      expect(
+        (await routeAutoImport(touch('a.cbz').path)).kind,
         AutoImportKind.mangaArchive,
       );
       expect(
-        routeAutoImport(touch('v.mokuro').path).kind,
+        (await routeAutoImport(touch('v.mokuro').path)).kind,
         AutoImportKind.mangaLocal,
       );
       expect(
-        routeAutoImport(touch('a.mp3').path).kind,
+        (await routeAutoImport(touch('a.mp3').path)).kind,
         AutoImportKind.audiobook,
       );
       expect(
-        routeAutoImport(touch('a.xyz').path).kind,
+        (await routeAutoImport(touch('a.xyz').path)).kind,
+        AutoImportKind.unsupported,
+      );
+      // 分卷包：第一卷当整个包交执行器解开，后续卷不单独导入。
+      expect(
+        (await routeAutoImport(touch('合集.7z.001').path)).kind,
+        AutoImportKind.novel,
+      );
+      expect(
+        (await routeAutoImport(touch('合集.7z.002').path)).kind,
         AutoImportKind.unsupported,
       );
       final String epub = p.join(h.tmp.path, 'b.epub');
       writeTestEpub(epub, 'B');
-      expect(routeAutoImport(epub).kind, AutoImportKind.novel);
+      expect((await routeAutoImport(epub)).kind, AutoImportKind.novel);
     });
 
-    test('目录按内容：音频 → 有声书；mokuro → 漫画；EPUB + 封面图 → 书；纯页图 → 漫画', () {
+    test('目录按内容：音频 → 有声书；mokuro → 漫画；EPUB + 封面图 → 书；纯页图 → 漫画', () async {
       Directory dir(String name, Map<String, List<int>> files) {
         final Directory d = Directory(p.join(h.tmp.path, name))
           ..createSync(recursive: true);
@@ -332,38 +344,38 @@ void main() {
         return d;
       }
 
-      final AutoImportRoute audio = routeAutoImport(
+      final AutoImportRoute audio = (await routeAutoImport(
         dir('ab', <String, List<int>>{
           'b.txt': <int>[1],
           'b.srt': <int>[1],
           '01.mp3': <int>[1],
         }).path,
-      );
+      ));
       expect(audio.kind, AutoImportKind.audiobook);
       expect(audio.files, hasLength(3));
       final String vol = p.join(h.tmp.path, 'mk');
       writeTestMokuro(vol, 'V');
-      expect(routeAutoImport(vol).kind, AutoImportKind.mangaLocal);
+      expect((await routeAutoImport(vol)).kind, AutoImportKind.mangaLocal);
       expect(
-        routeAutoImport(
+        (await routeAutoImport(
           dir('nv', <String, List<int>>{
             'a.txt': <int>[1],
             'cover.jpg': <int>[1],
           }).path,
-        ).kind,
+        )).kind,
         AutoImportKind.novel,
       );
       expect(
-        routeAutoImport(
+        (await routeAutoImport(
           dir('pg', <String, List<int>>{
             '001.jpg': <int>[1],
             '002.jpg': <int>[1],
           }).path,
-        ).kind,
+        )).kind,
         AutoImportKind.mangaLocal,
       );
       expect(
-        routeAutoImport(dir('empty', <String, List<int>>{}).path).kind,
+        (await routeAutoImport(dir('empty', <String, List<int>>{}).path)).kind,
         AutoImportKind.unsupported,
       );
     });

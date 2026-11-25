@@ -15,6 +15,7 @@ import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// 无头服务端托管本地音频库（BUG-2815）：以前 host 服务没接本地音频三件，
 /// 清单恒空、推送传完才抛 UnsupportedError。现在服务端做存储中转——
@@ -45,6 +46,7 @@ void main() {
     await prefs.warmUp();
     final ServerIdentity identity = await ServerIdentity.loadOrCreate(prefs);
     final HeadlessHost host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: ServerConfig.defaults(dataDir: paths.dataDir),
       paths: paths,
       db: db,
@@ -80,6 +82,41 @@ void main() {
       dbFile: dbFile,
       outputFile: File(p.join(dir.path, '$displayName.fushiaudiolib')),
     );
+  }
+
+  /// 一份真的本地音频库（entries + android，录音字节是 [audio]）的文件字节：只有
+  /// 读得出内容身份的库才能被删除（HBK-AUDIT-022：删除只认内容身份）。
+  Future<Uint8List> audioDbBytes(List<int> audio) async {
+    final File f = File(p.join(tmp.path, 'mk_${audio.join('_')}.db'));
+    final FushiDatabase mk = FushiDatabase.forTesting(
+      NativeDatabase(
+        f,
+        setup: (raw) {
+          raw.execute(
+            'CREATE TABLE IF NOT EXISTS entries (expression TEXT, '
+            'reading TEXT, file TEXT, source TEXT)',
+          );
+          raw.execute(
+            'CREATE TABLE IF NOT EXISTS android (file TEXT, source TEXT, '
+            'data BLOB)',
+          );
+          raw.execute('INSERT INTO entries VALUES (?, ?, ?, ?)', <Object?>[
+            '猫',
+            'ねこ',
+            'neko.mp3',
+            'nhk16',
+          ]);
+          raw.execute('INSERT INTO android VALUES (?, ?, ?)', <Object?>[
+            'neko.mp3',
+            'nhk16',
+            Uint8List.fromList(audio),
+          ]);
+        },
+      ),
+    );
+    await mk.customSelect('SELECT 1').get();
+    await mk.close();
+    return f.readAsBytesSync();
   }
 
   List<String> names(List<RemoteLocalAudioInfo> list) => <String>[
@@ -134,7 +171,7 @@ void main() {
     );
   });
 
-  test('重启后清单还在；delete 摘登记并删库副本；重复推送不重复登记', () async {
+  test('重启后清单还在；delete 只认内容身份、摘登记并删库副本；重复推送不重复登记', () async {
     final LocalLibraryHostService first = (await boot()).svc;
     await first.importLocalAudio(
       await clientPackage(displayName: 'A', bytes: sqliteBytes(1)),
@@ -159,12 +196,37 @@ void main() {
       reason: '重名推送按 displayName 跳过，不覆盖已有库',
     );
 
+    // HBK-AUDIT-022：显示名不是身份（同名的可能是另一份库），按名删不动任何库。
     await second.svc.deleteLocalAudio('A');
-    expect(names(await second.svc.listLocalAudio()), <String>['B']);
-    expect(File(aPath).existsSync(), isFalse);
+    expect(names(await second.svc.listLocalAudio()), <String>['A', 'B']);
+    expect(File(aPath).existsSync(), isTrue);
+
+    // 两份元数据相同、录音不同的真库：按内容身份只删目标那份。
+    await second.svc.importLocalAudio(
+      await clientPackage(
+        displayName: 'C',
+        bytes: await audioDbBytes(<int>[1, 2, 3]),
+      ),
+    );
+    await second.svc.importLocalAudio(
+      await clientPackage(
+        displayName: 'D',
+        bytes: await audioDbBytes(<int>[4, 5, 6]),
+      ),
+    );
+    final List<RemoteLocalAudioInfo> listed = await second.svc.listLocalAudio();
+    expect(names(listed), <String>['A', 'B', 'C', 'D']);
+    final RemoteLocalAudioInfo c = listed[2];
+    expect(c.contentId, isNotNull);
+    expect(c.contentId, isNot(listed[3].contentId), reason: '录音不同就是两份库');
+    final String cPath = second.host.localAudio.entries[2].path;
+
+    await second.svc.deleteLocalAudio(c.contentId!);
+    expect(names(await second.svc.listLocalAudio()), <String>['A', 'B', 'D']);
+    expect(File(cPath).existsSync(), isFalse);
 
     final LocalLibraryHostService third = (await boot()).svc;
-    expect(names(await third.listLocalAudio()), <String>['B']);
+    expect(names(await third.listLocalAudio()), <String>['A', 'B', 'D']);
   });
 
   test('登记格式与 app LocalAudioManager 同键同形', () async {

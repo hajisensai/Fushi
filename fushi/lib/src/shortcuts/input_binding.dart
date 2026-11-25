@@ -11,6 +11,8 @@ import 'package:flutter/gestures.dart'
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
+import 'package:fushi/src/shortcuts/key_event_device_type.dart';
+
 enum ModifierKey {
   ctrl,
   shift,
@@ -603,7 +605,14 @@ enum GamepadButton {
   thumbRight('R3'),
   start('Start'),
   select('Select'),
-  mode('Mode');
+  mode('Mode'),
+
+  /// 右摇杆横推的虚拟键（2026-11-22 手柄查词统一）：桌面轮询器对右摇杆横轴做
+  /// 带滞回的边沿检测出 press / release，Android 由 `GamepadTriggerKeySynthesizer`
+  /// 合成 `KEYCODE_BUTTON_15/16`。只有查词模式（controllerLookup scope）默认绑定
+  /// 它们（选区右端 −1 / +1 字）；右摇杆纵向仍是连续滚动，不是按键。
+  rightStickLeft('RS←'),
+  rightStickRight('RS→');
 
   const GamepadButton(this.label);
   final String label;
@@ -651,7 +660,7 @@ enum GamepadButton {
     final GamepadButton? button = fromLogicalKey(event.logicalKey);
     if (button == null) return null;
     if (!button.isDpad) return button;
-    return isGamepadLikeDevice(event.deviceType) ? button : null;
+    return isGamepadLikeDevice(keyEventDeviceType(event)) ? button : null;
   }
 
   static GamepadButton? fromLabel(String label) {
@@ -697,6 +706,12 @@ enum GamepadButton {
         return LogicalKeyboardKey.gameButtonSelect;
       case mode:
         return LogicalKeyboardKey.gameButtonMode;
+      // Android 把右摇杆横轴合成成 KEYCODE_BUTTON_15 / 16，Flutter 映射为
+      // gameButton15 / gameButton16；桌面轮询器不经逻辑键，直接出枚举值。
+      case rightStickLeft:
+        return LogicalKeyboardKey.gameButton15;
+      case rightStickRight:
+        return LogicalKeyboardKey.gameButton16;
     }
   }
 }

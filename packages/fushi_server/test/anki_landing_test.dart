@@ -25,6 +25,10 @@ class _FakeHelper implements FushiAnkiSyncClient {
   final List<List<String>> local = <List<String>>[];
   final List<List<String>> server = <List<String>>[];
 
+  /// 服务器上别的设备（桌面 Anki / AnkiDroid）加的卡：下次同步拉进本地库。
+  final List<List<String>> remoteAdds = <List<String>>[];
+  int syncs = 0;
+
   @override
   Future<String> login({
     String? endpoint,
@@ -72,6 +76,9 @@ class _FakeHelper implements FushiAnkiSyncClient {
 
   @override
   Future<AnkiSyncResult> sync({required String hkey, String? endpoint}) async {
+    syncs++;
+    local.addAll(remoteAdds);
+    remoteAdds.clear();
     server
       ..clear()
       ..addAll(local);
@@ -300,5 +307,79 @@ void main() {
     );
     expect(reloaded.settings.tags, 'mine server');
     expect(reloaded.available, isFalse);
+  });
+  group('定时拉取（服务端没有回到前台）', () {
+    late AnkiSyncSession pulling;
+    late ServerAnkiLanding pullingAnki;
+    int starts = 0;
+
+    setUp(() {
+      starts = 0;
+      pulling = AnkiSyncSession(
+        root: () async => Directory(p.join(tmp.path, 'pull', 'anki_sync')),
+        startClient: () async {
+          starts++;
+          return helper;
+        },
+        syncDelay: const Duration(milliseconds: 5),
+      );
+      pullingAnki = ServerAnkiLanding(
+        prefs: prefs,
+        db: db,
+        support: Directory(p.join(tmp.path, 'pull')),
+        syncData: Directory(p.join(tmp.path, 'interconnect')),
+        deviceId: 'srv',
+        deviceName: 'NAS',
+        session: pulling,
+        pullInterval: const Duration(milliseconds: 40),
+        clock: () => now,
+      );
+    });
+
+    tearDown(() => pullingAnki.stop());
+
+    test('已登录：别的设备加的卡不用等制卡 / 重启，定时同步拉下来，查重看得见', () async {
+      await pulling.signIn(
+        endpoint: 'http://nas/',
+        username: 'u',
+        password: 'p',
+      );
+      pullingAnki.start();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      final int afterStart = helper.syncs;
+
+      helper.remoteAdds.add(<String>['走る', 'run']);
+      expect(
+        await helper.isDuplicate(notetype: 'Vocab', firstField: '走る'),
+        isFalse,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(helper.syncs, greaterThan(afterStart));
+      expect(
+        await helper.isDuplicate(notetype: 'Vocab', firstField: '走る'),
+        isTrue,
+      );
+    });
+
+    test('没登录：定时到点也不拉起 helper', () async {
+      pullingAnki.start();
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(starts, 0);
+      expect(helper.syncs, 0);
+    });
+
+    test('停机后不再同步', () async {
+      await pulling.signIn(
+        endpoint: 'http://nas/',
+        username: 'u',
+        password: 'p',
+      );
+      pullingAnki.start();
+      await Future<void>.delayed(const Duration(milliseconds: 30));
+      await pullingAnki.stop();
+      final int atStop = helper.syncs;
+      await Future<void>.delayed(const Duration(milliseconds: 200));
+      expect(helper.syncs, atStop);
+    });
   });
 }

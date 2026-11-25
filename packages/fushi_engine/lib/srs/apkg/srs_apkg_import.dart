@@ -229,23 +229,37 @@ SrsZstdFileDecoder _fileViaBytes(SrsZstdDecoder zstd) =>
 /// 攒成草稿，不会让它过时（恢复路径例外，它立即落库后自己刷新 [cards]）。
 class _ExistingPrefetch {
   _ExistingPrefetch({
+    required this.noteIdOfGuid,
     required this.notes,
     required this.cards,
     required this.cardEdits,
     required this.histories,
+    required this.ankiLogsAt,
+    required this.oldCardHeirs,
   });
 
-  static final _ExistingPrefetch empty = _ExistingPrefetch(
-    notes: const <String, SrsNoteView?>{},
-    cards: const <String, SrsCardCacheRow>{},
-    cardEdits: const <String, SrsEntityEdits>{},
-    histories: const <String, SrsCardHistory>{},
-  );
+  /// 这一块里没有本机已有的笔记：只带笔记 ID，其余预读为空。
+  _ExistingPrefetch.onlyNoteIds(this.noteIdOfGuid)
+    : notes = const <String, SrsNoteView?>{},
+      cards = const <String, SrsCardCacheRow>{},
+      cardEdits = const <String, SrsEntityEdits>{},
+      histories = const <String, SrsCardHistory>{},
+      ankiLogsAt = const <int, List<SrsAnkiLogAt>>{},
+      oldCardHeirs = const <String, String>{};
+
+  /// 这一块全部来源笔记的本机笔记 ID，按 guid（整块一次向内核要；逐条处理直接取，不再逐条跨 FFI）。
+  final Map<String, String> noteIdOfGuid;
 
   final Map<String, SrsNoteView?> notes;
   final Map<String, SrsCardCacheRow> cards;
   final Map<String, SrsEntityEdits> cardEdits;
   final Map<String, SrsCardHistory> histories;
+
+  /// 本机已有的 Anki 导入日志，按 revlog id（这一块已有笔记的来源 revlog；见 [SrsDbStore.ankiImportedLogsAt]）。
+  final Map<int, List<SrsAnkiLogAt>> ankiLogsAt;
+
+  /// [ankiLogsAt] 里不可见的卡此刻继承它历史的可见卡（见 [SrsDbStore.visibleHeirsOf]）；没有可见后继的不在里面。
+  final Map<String, String> oldCardHeirs;
 }
 
 /// 一个来源笔记类型映射到本机的结果。
@@ -477,6 +491,7 @@ class _Importer {
     await _stopIfAsked();
     await _prefetchMedia();
     await _importNotes();
+    if (options.withScheduling) await _importDeletedCardRevlogs();
     if (!options.withScheduling) {
       report.reviewLogsSkipped =
           col.db.select('SELECT count(*) AS n FROM revlog').first['n'] as int;
@@ -829,16 +844,23 @@ class _Importer {
   /// 「不合并笔记类型」时另建的那一份的 ankiNum：由来源身份 + 字段 / 模板组成确定性派生，
   /// 两台设备导入同一个包得到同一个 ID（铁律 C）；同一种结构再导入回到同一份副本
   /// （对应 Anki 的 get_previously_duplicated_notetype）。
-  static int _duplicateAnkiNum(SrsAnkiNoteType src) => hash53(
-    'notetype-dup/${src.ankiNum}/${srsCanonicalJson(<String, Object?>{
-      'cloze': src.isCloze,
-      'fields': <Object?>[for (final SrsAnkiField f in src.fields) f.configId ?? 'name:${f.name}'],
-      'tmpls': <Object?>[for (final SrsAnkiTemplate t in src.templates) t.configId ?? 'name:${t.name}'],
-    })}',
-  );
+  /// 规则在内核（gen4_ids/rules.rs `duplicate_note_type_anki_num`）。
+  static int _duplicateAnkiNum(SrsAnkiNoteType src) =>
+      SrsKernelIds.duplicateNoteTypeAnkiNum(
+        sourceAnkiNum: src.ankiNum,
+        cloze: src.isCloze,
+        fields: <SrsDupPart>[
+          for (final SrsAnkiField f in src.fields)
+            (configId: f.configId, name: f.name),
+        ],
+        templates: <SrsDupPart>[
+          for (final SrsAnkiTemplate t in src.templates)
+            (configId: t.configId, name: t.name),
+        ],
+      );
 
   Future<_NtMap> _mapNoteType(SrsAnkiNoteType src) async {
-    final String baseId = SrsIds.noteType(profileUid, src.ankiNum);
+    final String baseId = store.kernelIds.noteType(src.ankiNum);
     final String kind = src.isCloze
         ? SrsNoteTypeKind.cloze
         : SrsNoteTypeKind.standard;
@@ -860,7 +882,7 @@ class _Importer {
         !_equalSchema(base, src)) {
       // 不合并：本机那一个不动，来源笔记类型另建一份。
       final int dupNum = _duplicateAnkiNum(src);
-      final String dupId = SrsIds.noteType(profileUid, dupNum);
+      final String dupId = store.kernelIds.noteType(dupNum);
       final SrsNoteTypeView? dup = await store.noteType(dupId);
       if (dup == null) report.noteTypesDuplicated.add(src.name);
       return _mapInto(src, dupId, dupNum, dup);
@@ -1001,6 +1023,14 @@ class _Importer {
       }
     }
 
+    // 排序字段（Anki `sortf`）：来源指定了第一个以外的字段、且本机从没设过（没有这个键的记录）时取来源的；本机设过
+    // （含清回第一个字段）一律保留。第三方牌组常把编号之类放在第一个字段、把单词设成排序字段，浏览页靠它显示对。
+    if (src.sortFieldOrd > 0 &&
+        src.sortFieldOrd < fieldIds.length &&
+        view.edits[SrsFieldKeys.sortField] == null) {
+      edits[SrsFieldKeys.sortField] = fieldIds[src.sortFieldOrd];
+    }
+
     if (update) {
       if (view.name != src.name) edits[SrsFieldKeys.name] = src.name;
       final String css = await _withMedia(src.css, includeStatic: true);
@@ -1091,6 +1121,20 @@ class _Importer {
         if (!renamedImport)
           ..._newDeckSettings(full, byName, created, reportedPresets),
       };
+      // 新建的牌组明写每日上限单位（fushi-ext 带了就用它的，否则缺省的作答次数，与 [SrsDbStore.createDeck]
+      // 同理）：没写过单位的只剩加这项设置之前的存量牌组，牌组页只提醒它们（[SrsDeckView.limitUnitSet]）。
+      // 同样只在这个 ID 从没写过单位时补：恢复被删的旧牌组保留它原来明写的单位（如按卡片数）。
+      if (!renamedImport &&
+          (await store.entityEdits(
+                SrsEntityKind.deck,
+                id,
+              ))[SrsFieldKeys.deckLimitUnit] ==
+              null) {
+        values.putIfAbsent(
+          SrsFieldKeys.deckLimitUnit,
+          () => SrsLimitUnit.reviews.wire,
+        );
+      }
       await store.writeEdits(
         <SrsEditSpec>[
           for (final MapEntry<String, Object?> v in values.entries)
@@ -1267,10 +1311,11 @@ class _Importer {
 
   /// 身份记录已存在、却不在牌组树里 = 先前导入过、后来被删。
   Future<bool> _deckDeleted(String id) async {
-    final SrsEntityRow? row = await (store.db.select(
-      store.db.srsEntities,
-    )..where(($SrsEntitiesTable t) => t.id.equals(id))).getSingleOrNull();
-    if (row == null) return false;
+    final SrsColumns row = await store.readTable('entities', <String, Object?>{
+      'ids': <String>[id],
+      'bare': true,
+    });
+    if (row.rows == 0) return false;
     return (await store.deckTree())[id] == null;
   }
 
@@ -1333,6 +1378,15 @@ class _Importer {
     // 音频两项随参数继承（只写在 own 牌组上）；与缺省值相同时不写，不产生多余记录。
     if (!p.autoplay) v[SrsFieldKeys.deckAutoplay] = false;
     if (!p.replayQuestion) v[SrsFieldKeys.deckReplayQuestion] = false;
+    // 出卡顺序（srs_apkg_common.dart 的映射）同样随参数继承；映射后与缺省相同、或 Fushi 没有的顺序都不写。
+    final SrsNewCardMix? mix = srsNewCardMixOfAnki(p.newMix);
+    if (mix != null && mix != SrsNewCardMix.afterReviews) {
+      v[SrsFieldKeys.deckNewMix] = mix.wire;
+    }
+    final SrsReviewCardOrder? order = srsReviewCardOrderOfAnki(p.reviewOrder);
+    if (order != null && order != SrsReviewCardOrder.retrievability) {
+      v[SrsFieldKeys.deckReviewOrder] = order.wire;
+    }
     if (p.desiredRetention > 0 && p.desiredRetention < 1) {
       v[SrsFieldKeys.deckRetention] = p.desiredRetention;
     }
@@ -1421,7 +1475,8 @@ class _Importer {
       'SELECT nid, id, did, odid, ord, mod, type, queue, due, odue, ivl, '
       'factor, reps, lapses, data FROM cards ORDER BY nid, ord, id',
     );
-    // 不导排程时用不到 revlog（[_importCardSchedule] 只在带排程时走）。
+    // 不导排程时用不到 revlog（[_importCardSchedule] 只在带排程时走）。JOIN cards 只收还有卡的 revlog；卡已删除的
+    // 由 [_importDeletedCardRevlogs] 另走（BUG-4657）。
     final PreparedStatement? revlogs = options.withScheduling
         ? col.db.prepare(
             'SELECT c.nid AS nid, c.ord AS ord, r.cid AS cid, r.id AS id, '
@@ -1467,7 +1522,8 @@ class _Importer {
         }
         if (logCur != null) {
           for (final _SrcCard c in of) {
-            // 同序归并：先跳过排在这张卡之前的（属于被跳过的孤儿卡），再收这张卡的。
+            // 同序归并：先跳过排在这张卡之前的（属于被跳过的孤儿卡；没有笔记的卡的 revlog 由
+            // [_importDeletedCardRevlogs] 另走），再收这张卡的。
             for (Row? r = logCur.row; r != null; r = logCur.row) {
               if (!_logBefore(r, nid, c.ord, c.id)) break;
               logCur.next();
@@ -1487,6 +1543,157 @@ class _Importer {
       notes.close();
       cards.close();
       revlogs?.close();
+    }
+  }
+
+  /// 来源包里卡已删除、revlog 还在的复习（BUG-4657）：cards 表里已没有这张卡（或卡所属的笔记已不在），上面的三路
+  /// 归并按卡收 revlog，这些行一条不收。所有者定案：保留，只进统计与日历的历史，不参与排期。
+  ///
+  /// 承载：日志挂在 [SrsIds.deletedAnkiCard] 派生的卡 ID 上。这个 ID 不由任何笔记 × 模板派生，永远没有卡片缓存行：
+  /// 缓存刷新只更新已有缓存行的卡（caches.rs `flush_cards`），复习队列 / 浏览 / 卡片历史都从卡片缓存出发，碰不到它；
+  /// 有效复习投影（`refresh_stats`）对没有缓存行的卡也照常投影（归属自己），统计页与日历读的就是这张投影表。所以
+  /// 不需要新表、新列或改内核。
+  ///
+  /// 同一来源卡的 revlog 按 id 升序走 [_revlogLog]（与活卡同一套 reps / lapses 推算，投影里的分类与成熟变化才对）；
+  /// 不写导入锚点（没有卡可锚）。本 profile 里已经有同一次复习的不写，两种来路：
+  /// - Anki 导入那份（之前导入时卡还在、或重复导入同一个包）：按 revlog id 查本机 Anki 日志，评分 / 复习类型 / 用时
+  ///   都相同即是——没有笔记可比，判据同 [_importCardSchedule] 里认不出笔记的旧卡；
+  /// - 原生那份（在 Fushi 复习 → 导出 apkg → Anki 删卡 → 不带 fushi-ext 导回来）：导出时 revlog id 取原生日志的发生
+  ///   时刻，与原生日志之间没有血统链接，投影去重也只认 Anki 导入日志。按卡片历史内核的等价判据
+  ///   （[srsImportEquivalentAny]：评分类、评分相同、时刻差 ≤ 1 秒）对本 profile 里时刻相近的原生日志判；没有卡可比，
+  ///   另加用时相同（导出写的是 `min(用时, 60000)`），不把别的卡同一秒同评分的复习误判成它。
+  /// fushi-ext 里记着的 revlog 本来就是 Fushi 导出的日志，同样不写。
+  Future<void> _importDeletedCardRevlogs() async {
+    final PreparedStatement q = col.db.prepare(
+      'SELECT r.cid AS cid, r.id AS id, r.ease AS ease, r.ivl AS ivl, '
+      'r.factor AS factor, r.time AS time, r.type AS type FROM revlog r '
+      'WHERE NOT EXISTS (SELECT 1 FROM cards c JOIN notes n ON n.id = c.nid '
+      'WHERE c.id = r.cid) ORDER BY r.cid, r.id',
+    );
+    final Set<int> extRevlogs = _extRevlogIds.values.toSet();
+    final List<(int, List<_SrcRevlog>)> chunk = <(int, List<_SrcRevlog>)>[];
+    int chunkLogs = 0;
+    Future<void> drain() async {
+      if (chunk.isEmpty) return;
+      await _importDeletedCardChunk(chunk, extRevlogs);
+      chunk.clear();
+      chunkLogs = 0;
+      await _flush();
+      await _stopIfAsked();
+    }
+
+    try {
+      final IteratingCursor cur = q.selectCursor();
+      while (cur.moveNext()) {
+        final Row r = cur.current;
+        final int cid = r['cid'] as int;
+        if (chunk.isEmpty || chunk.last.$1 != cid) {
+          if (chunkLogs >= _batchEvents) await drain();
+          chunk.add((cid, <_SrcRevlog>[]));
+        }
+        chunk.last.$2.add(_SrcRevlog(r));
+        chunkLogs++;
+      }
+      await drain();
+    } finally {
+      q.close();
+    }
+  }
+
+  /// [_importDeletedCardRevlogs] 的一块：每项 (来源卡 id, 它的 revlog 按 id 升序)。本机已有的同一次复习按块一次查。
+  Future<void> _importDeletedCardChunk(
+    List<(int, List<_SrcRevlog>)> chunk,
+    Set<int> extRevlogs,
+  ) async {
+    final Map<int, List<SrsAnkiLogAt>> present = <int, List<SrsAnkiLogAt>>{};
+    for (final SrsAnkiLogAt l in await store.ankiImportedLogsAt(<int>[
+      for (final (int _, List<_SrcRevlog> logs) in chunk)
+        for (final _SrcRevlog r in logs) r.id,
+    ])) {
+      (present[l.revlogId] ??= <SrsAnkiLogAt>[]).add(l);
+    }
+    final List<SrsReviewLog> natives = await store.nativeRatingLogsNear(<int>[
+      for (final (int _, List<_SrcRevlog> logs) in chunk)
+        for (final _SrcRevlog r in logs) r.id,
+    ]);
+    bool alreadyPresent(_SrcRevlog r) {
+      final int? rating = r.ease >= 1 && r.ease <= 4 ? r.ease : null;
+      final String rtype = SrsReviewType.fromAnki(r.type);
+      return (present[r.id] ?? const <SrsAnkiLogAt>[]).any(
+        (SrsAnkiLogAt h) =>
+            h.rating == rating &&
+            h.reviewType == rtype &&
+            h.durationMs == r.time,
+      );
+    }
+
+    final (int nowMs, _) = store.now();
+    // 过了 fushi-ext 与 Anki 那份判重的候选；与原生日志的等价整块一次 FFI 判。
+    final List<SrsReviewLog> candidates = <SrsReviewLog>[];
+    final List<List<SrsReviewLog>> nearby = <List<SrsReviewLog>>[];
+    for (final (int cid, List<_SrcRevlog> revlogs) in chunk) {
+      if (revlogs.last.id > nowMs + srsClockToleranceMs) {
+        report.futureCards.add(cid);
+        continue;
+      }
+      final String cardId = SrsIds.deletedAnkiCard(store.defaultDeckId, cid);
+      final List<String> ids = SrsIds.importedRevlogs(cardId, <int>[
+        for (final _SrcRevlog r in revlogs) r.id,
+      ]);
+      int reps = 0;
+      int lapses = 0;
+      int? lastRated;
+      for (int i = 0; i < revlogs.length; i++) {
+        final _SrcRevlog r = revlogs[i];
+        if (r.isRating) {
+          reps++;
+          if (r.type == 1 && r.ease == 1) lapses++;
+          lastRated = r.id;
+        } else if (!r.isFiltered && r.row.isReset) {
+          reps = 0;
+          lapses = 0;
+        }
+        if (extRevlogs.contains(r.id)) {
+          report.revlogsVerifiedByExt++;
+          continue;
+        }
+        if (alreadyPresent(r)) {
+          report.revlogsAlreadyPresent++;
+          continue;
+        }
+        candidates.add(
+          _revlogLog(
+            cardId,
+            r,
+            id: ids[i],
+            reps: reps,
+            lapses: lapses,
+            lastRated: lastRated,
+          ),
+        );
+        nearby.add(<SrsReviewLog>[
+          for (final SrsReviewLog n in natives)
+            if ((n.occurredAt - r.id).abs() <= srsImportEquivalenceWindowMs &&
+                min(n.durationMs, 60000) == r.time)
+              n,
+        ]);
+      }
+    }
+    final List<bool> equivalent =
+        srsImportEquivalentAny(<(SrsReviewLog, List<SrsReviewLog>)>[
+          for (int i = 0; i < candidates.length; i++)
+            if (nearby[i].isNotEmpty) (candidates[i], nearby[i]),
+        ]);
+    int k = 0;
+    for (int i = 0; i < candidates.length; i++) {
+      if (nearby[i].isNotEmpty && equivalent[k++]) {
+        report.revlogsAlreadyPresent++;
+        continue;
+      }
+      if (pkg.fushiExt != null) report.revlogsNotInExt++;
+      _pending.add(SrsReadyDraft(SrsLogEvent(candidates[i])));
+      report.reviewLogsImported++;
+      report.deletedCardRevlogsImported++;
     }
   }
 
@@ -1528,18 +1735,45 @@ class _Importer {
   ) async {
     final List<String> noteIds = <String>[];
     final List<String> cardIds = <String>[];
+    final List<int> revlogIds = <int>[];
+    // 整块的笔记 ID 一次向内核要。
+    final List<String> guids = <String>[
+      for (final (Row n, _) in chunk) n['guid'] as String,
+    ];
+    final List<String> chunkNoteIds = store.kernelIds.notes(guids);
+    final Map<String, String> noteIdOfGuid = <String, String>{
+      for (int i = 0; i < guids.length; i++) guids[i]: chunkNoteIds[i],
+    };
+    int at = -1;
     for (final (Row n, List<_SrcCard> cards) in chunk) {
+      at++;
       final _NtMap? nt = _nts[n['mid'] as int];
       if (nt == null || nt.conflict != null) continue;
-      final String noteId = SrsIds.note(profileUid, n['guid'] as String);
+      final String noteId = chunkNoteIds[at];
       if (!_existingNotes.contains(noteId)) continue;
       noteIds.add(noteId);
-      for (final (_SrcCard _, String cardId) in _cardIdsOf(nt, noteId, cards)) {
+      for (final (_SrcCard c, String cardId) in _cardIdsOf(nt, noteId, cards)) {
         cardIds.add(cardId);
+        for (final _SrcRevlog r in c.revlogs) {
+          revlogIds.add(r.id);
+        }
       }
     }
-    if (noteIds.isEmpty) return _ExistingPrefetch.empty;
+    if (noteIds.isEmpty) return _ExistingPrefetch.onlyNoteIds(noteIdOfGuid);
+    // 只有本机已有的笔记才可能已经有这条复习（新笔记的卡 ID 都是新的）：按 revlog id 一块一次查。
+    final Map<int, List<SrsAnkiLogAt>> ankiLogsAt = <int, List<SrsAnkiLogAt>>{};
+    if (options.withScheduling && revlogIds.isNotEmpty) {
+      for (final SrsAnkiLogAt l in await store.ankiImportedLogsAt(revlogIds)) {
+        (ankiLogsAt[l.revlogId] ??= <SrsAnkiLogAt>[]).add(l);
+      }
+    }
+    final Set<String> hiddenHits = <String>{
+      for (final List<SrsAnkiLogAt> ls in ankiLogsAt.values)
+        for (final SrsAnkiLogAt l in ls)
+          if (!l.visible) l.cardId,
+    };
     return _ExistingPrefetch(
+      noteIdOfGuid: noteIdOfGuid,
       notes: await store.notes(noteIds),
       cards: <String, SrsCardCacheRow>{
         for (final SrsCardCacheRow r in await store.cardRows(cardIds)) r.id: r,
@@ -1548,29 +1782,51 @@ class _Importer {
       histories: options.withScheduling
           ? await store.histories(cardIds)
           : const <String, SrsCardHistory>{},
+      ankiLogsAt: ankiLogsAt,
+      oldCardHeirs: await store.visibleHeirsOf(hiddenHits),
     );
   }
 
-  /// 本批里当作新笔记攒下的（noteId, 卡数）：落库后按实际是否新建计入报告（BUG-3553）。
-  final List<(String, int)> _pendingNewNotes = <(String, int)>[];
+  /// 本批里当作新笔记攒下的：落库后按实际是否新建计入报告（BUG-3553），被实体归属闸拒掉的记冲突（BUG-5005）。
+  final List<_PendingNewNote> _pendingNewNotes = <_PendingNewNote>[];
 
   Future<void> _flush({bool force = false}) async {
     if (_pending.isEmpty || (!force && _pending.length < _batchEvents)) return;
     final List<SrsEventDraft> batch = List<SrsEventDraft>.of(_pending);
-    final List<(String, int)> newNotes = List<(String, int)>.of(
+    final List<_PendingNewNote> newNotes = List<_PendingNewNote>.of(
       _pendingNewNotes,
     );
     _pending.clear();
     _pendingNewNotes.clear();
-    final Set<String> existed = await store.importDrafts(batch);
-    for (final (String noteId, int cards) in newNotes) {
-      if (existed.contains(noteId)) {
+    final SrsImportDraftsResult landed = await store.importDrafts(
+      batch,
+      cardNotes: <String, String>{
+        for (final _PendingNewNote p in newNotes)
+          for (final String card in p.cardIds) card: p.noteId,
+      },
+    );
+    for (final _PendingNewNote p in newNotes) {
+      if (landed.foreignNotes.contains(p.noteId)) {
+        // 同库另一份 profile 已有同 guid、另一个笔记类型的笔记（本包不合并笔记模板时落到了副本类型上）：内核的
+        // 实体归属闸没让这条笔记落，它的日志、卡片修改也没落。记冲突，不算新增（BUG-5005 复核：以前照记「已添加」），
+        // 它的卡片计数（[_CardTally]）整份不并进报告。
+        report.conflictNotes.add(
+          SrsImportNoteIssue(
+            guid: p.guid,
+            noteType: p.noteType,
+            reason: SrsImportIssueReason.otherProfileNoteType,
+          ),
+        );
+        continue;
+      }
+      p.tally.addTo(report);
+      if (landed.existed.contains(p.noteId)) {
         // 攒批期间同一条笔记已被同步 / 别处建好：初值里键已有记录的没落（见
         // SrsEditDraft.initial），不算新增。
         report.notesSkipped++;
       } else {
         report.notesAdded++;
-        report.cardsAdded += cards;
+        report.cardsAdded += p.cards;
       }
     }
   }
@@ -1618,7 +1874,7 @@ class _Importer {
               !_schedulingTags.contains(t.toLowerCase()),
         )
         .toList();
-    final String noteId = SrsIds.note(profileUid, guid);
+    final String noteId = pre.noteIdOfGuid[guid]!;
     final SrsNoteView? existing = !_existingNotes.contains(noteId)
         ? null
         : pre.notes.containsKey(noteId)
@@ -1646,6 +1902,7 @@ class _Importer {
     final bool retype = noteDeleted && existing.noteTypeId != nt.id;
     final List<(_SrcCard, String)> cardIds = _cardIdsOf(nt, noteId, cards);
     bool update = false;
+    _PendingNewNote? pendingNew;
     if (isNew) {
       // 新笔记的事件攒进本批，与它的卡片标志、日志同一个事务落库（以前每条笔记各自
       // 落两三次库、各刷新一遍缓存，见 BUG-3549）。
@@ -1657,10 +1914,18 @@ class _Importer {
           tags: tags,
           source: SrsSourceRef.fromJson(_extNotes[guid]),
           guid: guid,
+          noteId: noteId,
           createdAt: _extNoteCreatedAt[guid] ?? n['id'] as int,
         ),
       );
-      _pendingNewNotes.add((noteId, cards.length));
+      pendingNew = _PendingNewNote(
+        noteId,
+        guid,
+        nt.name,
+        cards.length,
+        <String>[for (final (_SrcCard _, String id) in cardIds) id],
+      );
+      _pendingNewNotes.add(pendingNew);
     } else if (existing.noteTypeId != nt.id && !retype) {
       report.conflictNotes.add(
         SrsImportNoteIssue(
@@ -1732,6 +1997,8 @@ class _Importer {
       report.notesSkipped++;
     }
 
+    // 这条笔记的卡片计数：已有笔记当场并进报告；新笔记随 [_PendingNewNote] 等落库回包，被实体归属闸拒掉的整份不计。
+    final _CardTally tally = pendingNew?.tally ?? _CardTally();
     for (final (_SrcCard c, String cardId) in cardIds) {
       await _importCardFlags(
         cardId,
@@ -1747,11 +2014,16 @@ class _Importer {
           cardId,
           c,
           isNew ? null : pre.histories[cardId] ?? await store.history(cardId),
+          noteId: noteId,
+          ankiLogsAt: pre.ankiLogsAt,
+          oldCardHeirs: pre.oldCardHeirs,
+          tally: tally,
         );
       } else if (isNew && (c.type != 0 || c.queue < 0)) {
-        report.cardsResetToNew++;
+        tally.cardsResetToNew++;
       }
     }
+    if (pendingNew == null) tally.addTo(report);
   }
 
   /// 来源卡在本机的卡 ID（模板按 ord 对应；填空题共用一个模板、按填空序号区分）。
@@ -1774,7 +2046,6 @@ class _Importer {
     required bool update,
     bool restored = false,
   }) async {
-    if (!isNew && !update) return;
     final String deck = _deckOf[c.homeDeck] ?? store.defaultDeckId;
     // 暂停属于排程（Anki 不含排程时整卡 schedule_as_new，暂停一并清掉）。
     final bool suspended = c.queue == -1;
@@ -1792,24 +2063,30 @@ class _Importer {
     // 缓存行与修改记录在块开头一次预读（[_prefetchExisting]）。
     final SrsCardCacheRow? row = pre.cards[cardId];
     if (row == null) return;
-    // 本机在来源卡片最后修改之后改过的（用户在 Fushi 里挪过牌组 / 暂停过）不覆盖：按这个键的
-    // 修改记录时刻与 Anki 卡片 mod 比，新的赢（同 Anki 导入对已有卡片的「较新时更新」）。
-    // 以前笔记内容一更新就无条件改回 Anki 的牌组 / 暂停状态（BUG-3554）。
+    // 本机已有的卡**不随重导换牌组**（同 Anki 导入：已存在的卡跳过，只更新笔记内容）。以前「较新时
+    // 更新」也把卡挪进来源牌组，判据只看这张卡自己的牌组修改记录：用户改的是牌组名 / 父牌组（卡没有
+    // 牌组记录）、或新版包换了牌组名时，来源牌组认不出、另建一个同源牌组，旧牌组里的同源卡被整批
+    // 挪过去；用户把这个「重复」牌组连卡删掉，旧牌组的卡和笔记跟着全没了（BUG-5274）。
+    // 唯一例外是恢复的笔记：本机那次挪动（删牌组「保留卡片」时移去默认牌组）正是要撤回的。
+    final bool moveDeck = restored && row.deckId != deck;
+    if (!restored && row.deckId != deck) report.cardsKeptInDeck++;
+    final bool syncSuspend =
+        update && withSuspend && row.suspended != suspended;
+    if (!moveDeck && !syncSuspend) return;
+    // 暂停：本机在来源卡片最后修改之后改过的（用户在 Fushi 里暂停 / 取消暂停过）不覆盖：按这个键的
+    // 修改记录时刻与 Anki 卡片 mod 比，新的赢。以前笔记内容一更新就无条件改回 Anki 的暂停状态（BUG-3554）。
     final SrsEntityEdits edits =
         pre.cardEdits[cardId] ??
         await store.entityEdits(SrsEntityKind.card, cardId);
     final int sourceMs = c.mod * 1000;
-    // 恢复的笔记不比：本机那次改动（删牌组「保留卡片」时移去默认牌组）正是要撤回的。
+    // 恢复的笔记不比（同上，回到来源状态）。
     bool localNewer(String key) =>
         !restored && _lastEditMs(edits, (String k) => k == key, 0) > sourceMs;
     // 同 moveCard / setSuspended，但攒进本批（以前每个键各开一个事务）。
     _pending.addAll(
       store.newEditDrafts(SrsEntityKind.card, cardId, <String, Object?>{
-        if (row.deckId != deck && !localNewer(SrsFieldKeys.cardDeck))
-          SrsFieldKeys.cardDeck: deck,
-        if (withSuspend &&
-            row.suspended != suspended &&
-            !localNewer(SrsFieldKeys.suspended))
+        if (moveDeck) SrsFieldKeys.cardDeck: deck,
+        if (syncSuspend && !localNewer(SrsFieldKeys.suspended))
           SrsFieldKeys.suspended: suspended,
       }, current: edits),
     );
@@ -1861,31 +2138,75 @@ class _Importer {
     String cardId,
     _SrcCard c,
     // 已有笔记的卡在本机的历史（块开头预读）；新笔记为 null（据此也判断笔记是否已存在）。
-    SrsCardHistory? existingHistory,
-  ) async {
+    SrsCardHistory? existingHistory, {
+    required String noteId,
+    required Map<int, List<SrsAnkiLogAt>> ankiLogsAt,
+    required Map<String, String> oldCardHeirs,
+    required _CardTally tally,
+  }) async {
     final List<_SrcRevlog> revlogs = c.revlogs;
+    // 这条 revlog 已经在本 profile 里、只是落在另一张卡上（BUG-4254）：日志 ID 由本机卡 ID 派生，来源笔记换过
+    // 模板 / 笔记类型（Lapis 迁到 Fushi 卡片、删光重导按来源类型恢复）后再导入，同一次复习会按新卡再写一份，
+    // 统计 ×2。在这张卡的血统里（前身卡上）的：不写。不在血统里、那张卡已不可见（旧卡）且没有可见后继的：给这张卡
+    // 接上 `historyFrom/<旧卡>`，历史随血统过来，不再写一份；那张卡仍可见、或旧卡的历史已由另一张可见卡继承
+    // （[oldCardHeirs]）的：这次复习已经记在一张活卡上，同样不写也不接链（不让两张活卡共享一份历史）。别的笔记的卡不算；认不出笔记的旧卡（缓存行已没有）按评分 / 复习类型 / 用时都
+    // 相同才认（不同集合恰好同一毫秒同评分同用时的复习不误认）。
+    final Set<String> lineage = <String>{
+      cardId,
+      for (final SrsReviewLog l
+          in existingHistory?.all ?? const <SrsReviewLog>[])
+        l.cardId,
+    };
+    final Set<String> linkedOld = <String>{};
+    bool presentElsewhere(_SrcRevlog r) {
+      final List<SrsAnkiLogAt>? hits = ankiLogsAt[r.id];
+      if (hits == null) return false;
+      final int? rating = r.ease >= 1 && r.ease <= 4 ? r.ease : null;
+      final String rtype = SrsReviewType.fromAnki(r.type);
+      bool found = false;
+      for (final SrsAnkiLogAt h in hits) {
+        if (h.cardId == cardId) continue;
+        if (h.rating != rating || h.reviewType != rtype) continue;
+        if (h.noteId == null ? h.durationMs != r.time : h.noteId != noteId) {
+          continue;
+        }
+        found = true;
+        if (!lineage.contains(h.cardId) &&
+            !h.visible &&
+            !oldCardHeirs.containsKey(h.cardId)) {
+          linkedOld.add(h.cardId);
+        }
+      }
+      return found;
+    }
+
     // 整张卡的 revlog id 一次批量派生（UUIDv5 在 native/fushi_compute 里算）。
     final List<String> revlogIds = SrsIds.importedRevlogs(cardId, <int>[
       for (final _SrcRevlog r in revlogs) r.id,
     ]);
     _importNewPosition(cardId, c, noteExisted: existingHistory != null);
     final (int nowMs, _) = store.now();
-    final int latest = revlogs.isEmpty ? 0 : revlogs.last.id;
+    // fushi-ext 的日志与 revlog 同口径判未来：它的发生时刻决定回导后的排序键（新代内核 `derived_log_hlc`），伪造的
+    // fushi-ext 不能靠只改 ext、不改 revlog 绕过这道守卫。
+    final List<SrsReviewLog> extLogs =
+        _extLogsByCard[c.id] ?? const <SrsReviewLog>[];
+    int latest = revlogs.isEmpty ? 0 : revlogs.last.id;
+    for (final SrsReviewLog l in extLogs) {
+      if (l.occurredAt > latest) latest = l.occurredAt;
+    }
     if (latest > nowMs + srsClockToleranceMs) {
-      report.futureCards.add(c.id);
+      tally.futureCards.add(c.id);
       return;
     }
 
     // fushi-ext：恢复 Fushi 日志；它导出的 revlog 只作校验。
-    final List<SrsReviewLog> extLogs =
-        _extLogsByCard[c.id] ?? const <SrsReviewLog>[];
     final Set<int> extRevlogs = <int>{};
     if (extLogs.isNotEmpty) {
       for (final SrsReviewLog l in extLogs) {
         final int? rid = _extRevlogIds[l.id];
         if (rid != null) extRevlogs.add(rid);
         _pending.add(SrsReadyDraft(SrsLogEvent(_remapExtLog(l, cardId))));
-        report.fushiLogsRestored++;
+        tally.fushiLogsRestored++;
       }
     }
 
@@ -1908,10 +2229,14 @@ class _Importer {
         lapses = 0;
       }
       if (extRevlogs.contains(r.id)) {
-        report.revlogsVerifiedByExt++;
+        tally.revlogsVerifiedByExt++;
         continue;
       }
-      if (pkg.fushiExt != null) report.revlogsNotInExt++;
+      if (presentElsewhere(r)) {
+        tally.revlogsAlreadyPresent++;
+        continue;
+      }
+      if (pkg.fushiExt != null) tally.revlogsNotInExt++;
       _pending.add(
         SrsReadyDraft(
           SrsLogEvent(
@@ -1926,7 +2251,18 @@ class _Importer {
           ),
         ),
       );
-      report.reviewLogsImported++;
+      tally.reviewLogsImported++;
+    }
+
+    for (final String old in linkedOld) {
+      _historyLinks.add(
+        SrsEditSpec(
+          SrsEntityKind.card,
+          cardId,
+          SrsFieldKeys.cardHistoryFrom(old),
+          true,
+        ),
+      );
     }
 
     final SrsAnchorDecision d = srsDecideAnchor(
@@ -1982,11 +2318,14 @@ class _Importer {
         ),
       ),
     );
-    report.anchorsWritten++;
+    tally.anchorsWritten++;
   }
 
+  /// fushi-ext 里的一条日志 → 落到本机卡 [cardId] 上的那条。一律带 [srsForeignLogKey]：它的排序键由发生时刻派生
+  /// （新代内核不收作者 HLC），与导入时刻、导入设备无关。
   SrsReviewLog _remapExtLog(SrsReviewLog l, String cardId) {
-    if (_extSameProfile && l.cardId == cardId) return l;
+    final Map<String, Object?> j = l.toJson()..[srsForeignLogKey] = true;
+    if (_extSameProfile && l.cardId == cardId) return SrsReviewLog.fromJson(j);
     if (_extSameProfile && _extLogCards.containsKey(l.id)) {
       // 同 profile：前身卡的身份在本 profile 下不变，日志原样落回前身卡，再补上前身链接。
       _historyLinks.add(
@@ -1997,9 +2336,8 @@ class _Importer {
           true,
         ),
       );
-      return l;
+      return SrsReviewLog.fromJson(j);
     }
-    final Map<String, Object?> j = l.toJson();
     j['id'] = SrsIds.remappedLog(cardId, l.id);
     if (l.revokesId != null) {
       j['revokes'] = SrsIds.remappedLog(cardId, l.revokesId!);
@@ -2128,5 +2466,56 @@ class _Importer {
     } on FormatException {
       return null;
     }
+  }
+}
+
+/// 本批里当作新笔记攒下的一条（[_Importer._flush] 落库后按回包计入报告）。[tally]：它的卡片计数，落了才并进报告——
+/// 被实体归属闸拒掉时整份不计（它的日志、卡片修改同样没落）。
+final class _PendingNewNote {
+  _PendingNewNote(
+    this.noteId,
+    this.guid,
+    this.noteType,
+    this.cards,
+    this.cardIds,
+  );
+
+  final String noteId;
+  final String guid;
+
+  /// 来源笔记类型名（冲突报告用）。
+  final String noteType;
+  final int cards;
+
+  /// 它的卡在本机的 ID：落库时日志与卡片修改按它带上笔记（[SrsDbStore.importDrafts] 的 `cardNotes`），笔记被拒时一并
+  /// 不落。
+  final List<String> cardIds;
+  final _CardTally tally = _CardTally();
+}
+
+/// 一条笔记的卡片对导入报告的计数（[_Importer._importNote] 的卡片循环、[_Importer._importCardSchedule] 记在这里，不直接
+/// 改报告）：已有笔记当场 [addTo] 报告；新笔记等落库回包，落了才并进，被实体归属闸拒掉的整份不计（BUG-5005 第二轮复核：
+/// 以前直接记进报告、被拒时只退回日志数与重置数，fushi-ext 恢复数 / 校验数、锚点、未来卡等仍按已导入计）。笔记的卡
+/// 计进报告的项都在这里，只此一处并进报告（来源包里卡已删除的 revlog 不属任何笔记，仍直接记报告）。
+final class _CardTally {
+  int reviewLogsImported = 0;
+  int cardsResetToNew = 0;
+  int fushiLogsRestored = 0;
+  int revlogsVerifiedByExt = 0;
+  int revlogsAlreadyPresent = 0;
+  int revlogsNotInExt = 0;
+  int anchorsWritten = 0;
+  final List<int> futureCards = <int>[];
+
+  void addTo(SrsImportReport r) {
+    r
+      ..reviewLogsImported += reviewLogsImported
+      ..cardsResetToNew += cardsResetToNew
+      ..fushiLogsRestored += fushiLogsRestored
+      ..revlogsVerifiedByExt += revlogsVerifiedByExt
+      ..revlogsAlreadyPresent += revlogsAlreadyPresent
+      ..revlogsNotInExt += revlogsNotInExt
+      ..anchorsWritten += anchorsWritten
+      ..futureCards.addAll(futureCards);
   }
 }

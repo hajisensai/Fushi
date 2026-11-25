@@ -9,19 +9,36 @@ import 'package:fushi_engine/profile/profile_document.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart'
     show dbSourcePrefKey, kReaderSourcePersistedKey;
 import 'package:fushi/src/models/preference_keys.dart'
-    show kProfileFallbackIdPrefKey;
+    show
+        kMiningTtsFallbackVoicePref,
+        kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
+        kProfileFallbackIdPrefKey;
 import 'package:fushi/src/models/dictionary_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/profile/combo/combo_repository.dart';
+import 'package:fushi/src/profile/combo/fushi_settings_tree.dart'
+    show FushiComboNode;
 import 'package:fushi/src/profile/language_binding.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/profile/profile_settings_view.dart';
+import 'package:fushi/src/profile/remote_dictionary_profile_meta.dart';
 import 'package:fushi/src/sync/backup_path_rebase.dart'
     show rebaseFontCatalogJson, rebaseFontListJson;
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
+import 'package:fushi/src/sync/sync_repository.dart'
+    show
+        SyncRepository,
+        isRemoteDictionaryPseudoHostId,
+        remoteDictionaryLookupHostIdsOf;
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
+    show kPageBackdropProfileParkedPrefKeyPrefixes;
 
 // 分享 JSON 的模型与异常已下沉引擎（服务端共用），这里转出，调用方 import 不变。
 export 'package:fushi_engine/profile/profile_document.dart'
     show ProfileExport, ProfileImportException, ProfileSettingEntry;
+// 服务器词典快照 key 的编解码搬到了独立文件（目录对账也要用，BUG-4693），这里转出。
+export 'package:fushi/src/profile/remote_dictionary_profile_meta.dart'
+    show remoteDictionaryProfileKey, remoteDictionaryHostIdOfProfileKey;
 
 /// 导入模式：新建一个 Profile（默认，重名加后缀），或覆盖一个已有 Profile。
 enum ProfileImportMode { createNew, overwrite }
@@ -34,6 +51,14 @@ class ProfileRepository {
   }) : _isDictionaryInstalled = isDictionaryInstalled;
   final FushiDatabase _db;
   final BaseAnkiRepository _ankiRepo;
+
+  /// 组合仓库（拍板台 design-combo-node-split 阶段 2）：默认组合 = 激活配置，live 值由
+  /// [currentSettings] 现读。
+  late final ComboRepository combos = ComboRepository(
+    _db,
+    liveSettings: currentSettings,
+    activeProfileId: getActiveProfileId,
+  );
 
   /// 「这本词典**真的装着**吗」的唯一真值源：磁盘上有没有
   /// `dictionaryResourceDirectory/<name>/`。元数据行的存在性**不是**这个判据——
@@ -92,7 +117,13 @@ class ProfileRepository {
     if (count <= 1) return;
 
     final activeId = await getActiveProfileId();
+    final String? deletedUid = await _profileUidOrNull(id);
     await _db.deleteProfile(id);
+    if (deletedUid != null) {
+      for (final String prefix in perProfileDeviceLocalPrefs.values) {
+        await _db.deletePref('$prefix$deletedUid');
+      }
+    }
 
     if (activeId == id) {
       final remaining = await _db.getAllProfiles();
@@ -110,34 +141,43 @@ class ProfileRepository {
     // Snapshotting it would write orphan profile_settings rows / trip the FK.
     if (profileId <= 0) return;
 
-    final entries = <ProfileSettingsCompanion>[];
+    await _parkPerProfileDeviceLocalPrefs(profileId);
 
-    // Anki settings (Drift `anki_settings` row via the repository store)
-    final ankiSettings = await _ankiRepo.loadSettings();
-    final ankiMap = ProfileKeys.ankiSettingsToMap(ankiSettings);
-    for (final entry in ankiMap.entries) {
-      entries.add(
+    final Map<SettingKey, String> current = await currentSettings();
+    await _db.replaceProfileSettings(profileId, <ProfileSettingsCompanion>[
+      for (final MapEntry<SettingKey, String> e in current.entries)
         ProfileSettingsCompanion.insert(
           profileId: profileId,
-          category: ProfileKeys.categoryAnki,
-          key: entry.key,
-          value: entry.value,
+          category: e.key.category,
+          key: e.key.key,
+          value: e.value,
         ),
-      );
+    ]);
+  }
+
+  /// 激活配置（默认组合）此刻的全量设置，即 [snapshotCurrentSettings] 写进快照的那一份；
+  /// [categories] 非 null 时只读这些 category（[ComboRepository.resolve] 只关心制卡字段时用）。
+  Future<Map<SettingKey, String>> currentSettings({
+    Set<String>? categories,
+  }) async {
+    bool wants(String category) =>
+        categories == null || categories.contains(category);
+    final Map<SettingKey, String> out = <SettingKey, String>{};
+
+    // Anki settings (Drift `anki_settings` row via the repository store)
+    if (wants(ProfileKeys.categoryAnki)) {
+      final ankiSettings = await _ankiRepo.loadSettings();
+      for (final entry in ProfileKeys.ankiSettingsToMap(ankiSettings).entries) {
+        out[SettingKey(ProfileKeys.categoryAnki, entry.key)] = entry.value;
+      }
     }
 
     // ALL Drift prefs (excluding app-state keys)
-    final allPrefs = await _db.getAllPrefs();
-    for (final entry in allPrefs.entries) {
-      if (ProfileKeys.isExcludedPref(entry.key)) continue;
-      entries.add(
-        ProfileSettingsCompanion.insert(
-          profileId: profileId,
-          category: ProfileKeys.categoryPref,
-          key: entry.key,
-          value: entry.value,
-        ),
-      );
+    if (wants(ProfileKeys.categoryPref)) {
+      for (final entry in (await _db.getAllPrefs()).entries) {
+        if (ProfileKeys.isExcludedPref(entry.key)) continue;
+        out[SettingKey(ProfileKeys.categoryPref, entry.key)] = entry.value;
+      }
     }
 
     // TODO-1077: dictionary enable-list / order / source / language visibility
@@ -145,20 +185,30 @@ class ProfileRepository {
     // were previously shared across all profiles. Snapshot one row per
     // dictionary (key = dictionary name) into the dedicated
     // [ProfileKeys.categoryDictionaryMeta] category so they follow the profile.
-    final List<DictionaryMetaRow> dictRows = await _db
-        .getAllDictionaryMetadata();
-    for (final DictionaryMetaRow row in dictRows) {
-      entries.add(
-        ProfileSettingsCompanion.insert(
-          profileId: profileId,
-          category: ProfileKeys.categoryDictionaryMeta,
-          key: row.name,
-          value: _encodeDictionaryMeta(row),
-        ),
-      );
+    if (wants(ProfileKeys.categoryDictionaryMeta)) {
+      for (final DictionaryMetaRow row
+          in await _db.getAllDictionaryMetadata()) {
+        out[SettingKey(ProfileKeys.categoryDictionaryMeta, row.name)] =
+            _encodeDictionaryMeta(row);
+      }
     }
 
-    await _db.replaceProfileSettings(profileId, entries);
+    // v153：服务器托管词典的顺序 / 开关同理属于配置。目录行本身（host 上有哪些）是
+    // 全局事实，只快照配置拥有的两列；暂时没参与查词的 host（关掉 / 未连上）的行也
+    // 快照，否则切回来时它们的设置就丢了。
+    if (wants(ProfileKeys.categoryRemoteDictionaryMeta)) {
+      for (final RemoteDictionaryMetaRow row
+          in await _db.getAllRemoteDictionaryMetadata()) {
+        out[SettingKey(
+          ProfileKeys.categoryRemoteDictionaryMeta,
+          remoteDictionaryProfileKey(row.hostId, row.name),
+        )] = jsonEncode(<String, Object>{
+          'order': row.order,
+          'hidden': row.hidden,
+        });
+      }
+    }
+    return out;
   }
 
   Future<void> applyProfile(int profileId) async {
@@ -175,6 +225,8 @@ class ProfileRepository {
     final Map<String, DictionaryMetadataCompanion> dictMetaMap =
         snapshot.dictMetaMap;
     final bool hasDictMeta = snapshot.hasDictMeta;
+    final Map<String, RemoteDictionaryProfileColumns> remoteDictMetaMap =
+        snapshot.remoteDictMetaMap;
 
     // Wrap DB writes in transaction for consistency
     await _db.transaction(() async {
@@ -237,6 +289,23 @@ class ProfileRepository {
           }
         }
       }
+      // v153：服务器托管词典只写回**已有**目录行的顺序 / 开关。命中 0 行 = 本机目录
+      // 里没有这本（host 换了 / 配置来自别的设备 / 目录还没拉过）：跳过，绝不插行——
+      // 目录只由刷新建立，快照不知道 host 上有什么。这本之后在刷新里第一次出现时，
+      // 对账插行会先读激活配置的这份快照（BUG-4693，见
+      // `RemoteDictionaryCatalogService.reconcileHost`），所以配置的选择不必等到下一次
+      // 切换才生效；之后再应用同一配置写的是同一对值，不会互相打架。快照里没有的
+      // 目录行保持 live 值（与本机词典同口径）。
+      for (final RemoteDictionaryProfileColumns columns
+          in remoteDictMetaMap.values) {
+        await _db.setRemoteDictionaryProfileColumns(
+          hostId: columns.hostId,
+          name: columns.name,
+          order: columns.order,
+          hidden: columns.hidden,
+        );
+      }
+      await _restorePerProfileDeviceLocalPrefs(profileId);
       for (final entry in prefMap.entries) {
         // [FushiDatabase.setPref] auto-bumps the persisted prefs-version
         // (TODO-855) for every non-version key written here, so the common
@@ -287,7 +356,72 @@ class ProfileRepository {
         )
         .toList();
     await _db.replaceProfileSettings(newId, copies);
+    // 设备本地的按配置键不在快照里，单独跟着复制：副本一开始与源配置用同一个声音。
+    final String? sourceUid = await _profileUidOrNull(sourceId);
+    if (sourceUid != null) {
+      final String newUid = await _db.profileUidOf(newId);
+      for (final String prefix in perProfileDeviceLocalPrefs.values) {
+        final String? parked = await _db.getPref('$prefix$sourceUid');
+        if (parked != null) await _db.setPref('$prefix$newUid', parked);
+      }
+    }
     return newId;
+  }
+
+  /// 按配置记、但只留在本机的偏好（拍板台 olNAZUnEy6，方案 A）：live 键 → 停放键前缀（后缀 = profile uid）。
+  ///
+  /// live 键本身是设备本地的（[ProfileKeys.isExcludedPref]），不进快照、切配置时也不被剪掉；全部读取方只读
+  /// live 键，代表**当前激活配置**的选择。各配置自己的值停放在「前缀 + uid」下：
+  /// * 切走（[snapshotCurrentSettings]）时把 live 值停放到这份配置名下（没写过 = 空串，「没选过」）；
+  /// * 切入（[applyProfile]）时把停放值换回 live 键；没停放过的配置（升级前建的 / 新建的）不动 live 值，
+  ///   即沿用切换前的选择——现有全局值就是每个配置的初始值，不需要一次性迁移；
+  /// * 非激活配置的只读视图（[loadSettingsView]：浏览器扩展 / 互联选了别的配置）取停放值。
+  ///
+  /// 页面背景图片同理（[kPageBackdropProfileParkedPrefKeyPrefixes]）：文件只在本机，换配置要换图。
+  ///
+  /// 兜底声音的值多半指向本机朗读声音预设（`tts_voice_presets` 设备本地），带到别的设备只会指向不存在的
+  /// 预设，所以不走快照 / 导出 / 同步，只在本机按配置记。
+  static const Map<String, String>
+  perProfileDeviceLocalPrefs = <String, String>{
+    kMiningTtsFallbackVoicePref: kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
+    // 页面背景图片（与取色缓存）：样式随快照走，图片文件只在本机，按配置停放。
+    ...kPageBackdropProfileParkedPrefKeyPrefixes,
+  };
+
+  /// 配置的 uid；配置行已不存在时 null。
+  Future<String?> _profileUidOrNull(int profileId) async {
+    if (profileId <= 0) return null;
+    if (await _db.getProfileById(profileId) == null) return null;
+    return _db.profileUidOf(profileId);
+  }
+
+  /// 把 [perProfileDeviceLocalPrefs] 的 live 值停放到 [profileId] 名下（live 没有 = 空串）。
+  Future<void> _parkPerProfileDeviceLocalPrefs(int profileId) async {
+    final String? uid = await _profileUidOrNull(profileId);
+    if (uid == null) return;
+    for (final MapEntry<String, String> e
+        in perProfileDeviceLocalPrefs.entries) {
+      final String live = await _db.getPref(e.key) ?? '';
+      final String parkedKey = '${e.value}$uid';
+      if (await _db.getPref(parkedKey) == live) continue;
+      await _db.setPref(parkedKey, live);
+    }
+  }
+
+  /// 把 [profileId] 名下停放的值换回 live 键：空串 = 那份配置没选过，删掉 live 键；没停放过 = 不动。
+  Future<void> _restorePerProfileDeviceLocalPrefs(int profileId) async {
+    final String? uid = await _profileUidOrNull(profileId);
+    if (uid == null) return;
+    for (final MapEntry<String, String> e
+        in perProfileDeviceLocalPrefs.entries) {
+      final String? parked = await _db.getPref('${e.value}$uid');
+      if (parked == null) continue;
+      if (parked.isEmpty) {
+        await _db.deletePref(e.key);
+      } else {
+        await _db.setPref(e.key, parked);
+      }
+    }
   }
 
   /// 全部媒体类型绑定的**裸串视图**（key = [ProfileMediaKind.dbValue]；DB 列
@@ -345,12 +479,13 @@ class ProfileRepository {
   Future<void> removeBookProfile(String bookUid) =>
       _db.deleteBookProfile(bookUid);
 
-  /// 反馈 kEFPY4cuKZ：作品级配置会话期间对作品级键（[key]，`preferences` 表键）的写入落到
-  /// [profileId] 自己的设置上（[raw] 为 null = 删除）。
+  /// 反馈 kEFPY4cuKZ：作品会话期间对作品级键（[key]，`preferences` 表键）的写入落到
+  /// [profileId] 这份组合上（[raw] 为 null = 在这一层设为「未设置」）。目标组合由会话按叶子
+  /// 来源选（[WorkProfileSession.targetProfileIdFor]）。
   ///
-  /// [profileId] 此刻就是激活配置（会话期间用户手动切到了它）时写 live 偏好——激活配置的
-  /// 真值在 live 表里，切走时才快照；写快照会在下次切走时被 live 值覆盖掉。否则写它的
-  /// `profile_settings` 快照，下次切到它 / 再打开这部作品时生效。全局偏好绝不碰。
+  /// [profileId] 此刻就是激活配置（默认组合，会话期间用户手动切到了它）时写 live 偏好——
+  /// 激活配置的真值在 live 表里，切走时才快照；写快照会在下次切走时被 live 值覆盖掉。否则经
+  /// [ComboRepository.writeSettings] 写进它自己的行，下次打开这类作品时生效。全局偏好绝不碰。
   Future<void> writeWorkScopedPref(
     int profileId,
     String key,
@@ -364,23 +499,14 @@ class ProfileRepository {
       }
       return;
     }
-    if (raw == null) {
-      await _db.deleteProfileSetting(profileId, ProfileKeys.categoryPref, key);
-    } else {
-      await _db.upsertProfileSetting(
-        ProfileSettingsCompanion.insert(
-          profileId: profileId,
-          category: ProfileKeys.categoryPref,
-          key: key,
-          value: raw,
-        ),
-      );
-    }
+    await combos.writeSettings(profileId, <SettingKey, String?>{
+      SettingKey(ProfileKeys.categoryPref, key): raw,
+    });
   }
 
-  /// 作品级配置会话期间对 Anki 制卡设置的写入：[ankiMap]（[ProfileKeys.ankiSettingsToMap] 形，
-  /// 配置拥有的那几个字段）落到 [profileId] 自己的设置上。与 [writeWorkScopedPref] 同一判据：
-  /// [profileId] 此刻就是激活配置时叠到 live Anki 设置上，否则整组替换它快照里的 Anki 行。
+  /// 作品会话期间对 Anki 制卡设置的写入：[ankiMap]（[ProfileKeys.ankiSettingsToMap] 形的一部分，
+  /// 配置拥有的字段）落到 [profileId] 这份组合上。与 [writeWorkScopedPref] 同一判据：
+  /// [profileId] 此刻就是激活配置时叠到 live Anki 设置上。
   Future<void> writeWorkScopedAnkiSettings(
     int profileId,
     Map<String, String> ankiMap,
@@ -392,45 +518,88 @@ class ProfileRepository {
       );
       return;
     }
-    for (final MapEntry<String, String> entry in ankiMap.entries) {
-      await _db.upsertProfileSetting(
-        ProfileSettingsCompanion.insert(
-          profileId: profileId,
-          category: ProfileKeys.categoryAnki,
-          key: entry.key,
-          value: entry.value,
-        ),
-      );
-    }
+    await combos.writeSettings(profileId, <SettingKey, String?>{
+      for (final MapEntry<String, String> e in ankiMap.entries)
+        SettingKey(ProfileKeys.categoryAnki, e.key): e.value,
+    });
   }
 
-  /// 作品级配置会话读 [profileId] 此刻拥有的 Anki 字段（[ProfileKeys.ankiSettingsToMap] 形）；
-  /// 空 = 它的快照里没有 Anki 字段。每次现读持久层：Android 弹窗进程与主进程各有一份会话，
-  /// 任一边写进绑定配置的改动另一边下次读就看得到，读改写不会拿旧内存值覆盖对方的改动。
-  /// 与 [writeWorkScopedAnkiSettings] 同一判据：[profileId] 此刻就是激活配置时读 live。
-  Future<Map<String, String>> readWorkScopedAnkiSettings(int profileId) async {
-    if (profileId == await getActiveProfileId()) {
-      return ProfileKeys.ankiSettingsToMap(await _ankiRepo.loadSettings());
+  /// 制卡叶子的 key 只落在这两个 category（`fushi_settings_tree.dart` 的登记），现读 Anki 字段
+  /// 时只解析它们，省掉词典元数据。
+  static const Set<String> _miningCategories = <String>{
+    ProfileKeys.categoryAnki,
+    ProfileKeys.categoryPref,
+  };
+
+  /// 作品会话现读绑定层 [layers] 解析出的 Anki 字段（[ProfileKeys.ankiSettingsToMap] 形）；null =
+  /// 制卡叶子全部继承默认组合，Anki 设置照旧读 live。每次现读持久层：Android 弹窗进程与主进程
+  /// 各有一份会话，任一边写进组合的改动另一边下次读就看得到，读改写不会拿旧内存值覆盖对方。
+  Future<Map<String, String>?> readWorkScopedAnki(
+    Map<ComboScope, int> layers,
+  ) async {
+    final ResolvedComboStack stack = await combos.resolve(
+      layers,
+      categories: _miningCategories,
+    );
+    return workAnkiOverridesOf(stack);
+  }
+
+  /// [stack] 里制卡链要接管的 Anki 字段：任一认领 Anki 字段的叶子（[_ankiLeafIds]）来自绑定层
+  /// 时，取全部解析出的 Anki 字段（继承默认的那几组就是 live 值）；全部继承默认时 null（读 live，
+  /// 与旧版「绑定配置快照里没有 Anki 字段」同一处理）。
+  static Map<String, String>? workAnkiOverridesOf(ResolvedComboStack stack) {
+    if (!_ankiLeafIds.any((String l) => stack.sourceProfileIdOf(l) != null)) {
+      return null;
     }
     return <String, String>{
-      for (final ProfileSettingRow row in await _db.getProfileSettings(
-        profileId,
-      ))
-        if (row.category == ProfileKeys.categoryAnki) row.key: row.value,
+      for (final MapEntry<SettingKey, String> e
+          in stack.settings.values.entries)
+        if (e.key.category == ProfileKeys.categoryAnki) e.key.key: e.value,
     };
   }
 
-  /// 解析该打开哪个 Profile：**book > language > mediaType > active**。
+  /// 认领 Anki 字段的叶子（`fushi_settings_tree_test.dart` 守卫保证 Anki 快照字段只落在制卡叶子）。
+  static const List<String> _ankiLeafIds = <String>[
+    FushiComboNode.miningDeck,
+    FushiComboNode.miningNoteType,
+    FushiComboNode.miningTagsDupes,
+    FushiComboNode.miningCardContent,
+  ];
+
+  /// 一部作品的绑定层：作品（`book_profiles`）/ 媒体类型（`media_type_profiles`）/ 内容语言
+  /// （`language_profiles`）各自命中的 Profile。不回落到激活配置（它是最底层的默认组合，
+  /// [ComboRepository.resolve] 自己会补）。
   ///
-  /// 语言排在 book 之下、mediaType 之上：book 级是用户对单个条目的明确指令，压过
-  /// 一切；而「用哪套词典 / 哪个 Anki 牌组」由内容语言决定的程度，远高于由「这是
-  /// EPUB 还是视频」决定的程度——300 本书不可能一本本绑 book 级，媒体类型又粗到
-  /// 把日文书和英文书归成同一个 `epub`。
+  /// [languageTag] 传原始内容语言串即可（内部归一）。**为空 / 不可识别时整层跳过**。调用方绝不
+  /// 应为了「填一个值」而把全局默认内容语言喂进来：那会让所有未标注条目一起路由到同一个
+  /// Profile，且用户改一次全局默认就整批跳档——那不是按语言绑定，是多了一个全局开关。
+  Future<Map<ComboScope, int>> resolveBindingLayers({
+    required String? bookUid,
+    String? languageTag,
+    required ProfileMediaKind? mediaType,
+  }) async {
+    final Map<ComboScope, int> layers = <ComboScope, int>{};
+    if (bookUid != null) {
+      final int? bookProfileId = await getBookProfileId(bookUid);
+      if (bookProfileId != null) layers[ComboScope.work] = bookProfileId;
+    }
+    if (mediaType != null) {
+      final mtRow = await _db.getMediaTypeProfile(mediaType.dbValue);
+      if (mtRow != null) layers[ComboScope.mediaType] = mtRow.profileId;
+    }
+    final String languageKey = normalizeLanguageBinding(languageTag);
+    if (languageKey.isNotEmpty) {
+      final langRow = await _db.getLanguageProfile(languageKey);
+      if (langRow != null) layers[ComboScope.language] = langRow.profileId;
+    }
+    return layers;
+  }
+
+  /// 绑定层里优先级最高的那份 Profile，没有绑定时回落激活配置：**作品 > 媒体类型 > 语言 >
+  /// 激活**（组合模型的生效顺序，拍板台 design-combo-node-split；旧版是语言高于媒体类型）。
   ///
-  /// [languageTag] 传原始内容语言串即可（内部归一）。**为空 / 不可识别时整级跳过**，
-  /// 落到 mediaType，行为与语言绑定引入前逐字节一致。调用方绝不应为了「填一个值」
-  /// 而把全局默认内容语言喂进来：那会让所有未标注条目一起路由到同一个 Profile，
-  /// 且用户改一次全局默认就整批跳档——那不是按语言绑定，是多了一个全局开关。
+  /// 只给「整份选一个配置」的调用方用（浏览器扩展按「浏览器」媒体类型绑定选配置）；作品会话
+  /// 逐叶子解析全部绑定层（[resolveBindingLayers] + [ComboRepository.resolve]），不挑一份。
   Future<int> resolveProfileId({
     required String? bookUid,
     String? languageTag,
@@ -443,30 +612,22 @@ class ProfileRepository {
       )) ??
       await getActiveProfileId();
 
-  /// [resolveProfileId] 的前三级：只返回**绑定命中**的 Profile，没命中返回 null
-  /// （不回落到激活配置）。调用方需要区分「绑定指定了它」与「没有绑定」——后者应当
-  /// 回到用户自己选的配置，而不是停在上一本书的绑定配置上。
+  /// [resolveProfileId] 的绑定部分：只返回**绑定命中**的最高层 Profile，没命中返回 null
+  /// （不回落到激活配置）。
   Future<int?> resolveBoundProfileId({
     required String? bookUid,
     String? languageTag,
     required ProfileMediaKind? mediaType,
   }) async {
-    if (bookUid != null) {
-      final bookProfileId = await getBookProfileId(bookUid);
-      if (bookProfileId != null) return bookProfileId;
+    final Map<ComboScope, int> layers = await resolveBindingLayers(
+      bookUid: bookUid,
+      languageTag: languageTag,
+      mediaType: mediaType,
+    );
+    for (final ComboScope scope in ComboScope.bindingLayers) {
+      final int? id = layers[scope];
+      if (id != null) return id;
     }
-
-    final String languageKey = normalizeLanguageBinding(languageTag);
-    if (languageKey.isNotEmpty) {
-      final langRow = await _db.getLanguageProfile(languageKey);
-      if (langRow != null) return langRow.profileId;
-    }
-
-    if (mediaType != null) {
-      final mtRow = await _db.getMediaTypeProfile(mediaType.dbValue);
-      if (mtRow != null) return mtRow.profileId;
-    }
-
     return null;
   }
 
@@ -522,6 +683,12 @@ class ProfileRepository {
       if (row.category == ProfileKeys.categoryPref &&
           _isCredentialOrDeviceLocalPref(row.key)) {
         continue;
+      }
+      // 服务器词典的配置行 key 是 `<hostId>/<真名>`；老配对没有 hostId 时 hostId 是
+      // 服务器地址（伪 id），导出会把地址带出本机——剔掉。真 hostId 不透明，照常导出。
+      if (row.category == ProfileKeys.categoryRemoteDictionaryMeta) {
+        final String? hostId = remoteDictionaryHostIdOfProfileKey(row.key);
+        if (hostId == null || isRemoteDictionaryPseudoHostId(hostId)) continue;
       }
       settings.add(
         ProfileSettingEntry(
@@ -617,6 +784,11 @@ class ProfileRepository {
             'overwrite target $targetProfileId not found',
           );
         }
+        // 覆盖激活配置后调用方会 [applyProfile]，它会把停放值换回 live 键；导入文件不带
+        // 设备本地键，所以先把激活配置当前的 live 选择停放下来，免得换回切走那一刻的旧值。
+        if (targetProfileId == await getActiveProfileId()) {
+          await _parkPerProfileDeviceLocalPrefs(targetProfileId);
+        }
         await _db.replaceProfileSettings(
           targetProfileId,
           profileSettingCompanions(export.settings, targetProfileId),
@@ -629,7 +801,14 @@ class ProfileRepository {
 
   /// [applyProfile] 与 [loadSettingsView] 共用的快照解码：按类别拆成 Anki / 偏好 /
   /// 词典元数据三份，旧类别（legacy dictionary / reader）并进偏好。
-  _DecodedProfileSnapshot _decodeSnapshot(List<ProfileSettingRow> rows) {
+  _DecodedProfileSnapshot _decodeSnapshot(List<ProfileSettingRow> rows) =>
+      _decodeSettings(<SettingKey, String>{
+        for (final ProfileSettingRow row in rows)
+          SettingKey(row.category, row.key): row.value,
+      });
+
+  /// [_decodeSnapshot] 的本体，输入是 (category, key) → value（组合解析结果同形）。
+  _DecodedProfileSnapshot _decodeSettings(Map<SettingKey, String> settings) {
     final ankiMap = <String, String>{};
     final prefMap = <String, String>{};
     // TODO-1077: snapshot rows for the dictionary_metadata table. `hasDictMeta`
@@ -640,7 +819,14 @@ class ProfileRepository {
     final Map<String, DictionaryMetadataCompanion> dictMetaMap =
         <String, DictionaryMetadataCompanion>{};
     bool hasDictMeta = false;
-    for (final row in rows) {
+    final Map<String, RemoteDictionaryProfileColumns> remoteDictMetaMap =
+        <String, RemoteDictionaryProfileColumns>{};
+    for (final MapEntry<SettingKey, String> entry in settings.entries) {
+      final ({String category, String key, String value}) row = (
+        category: entry.key.category,
+        key: entry.key.key,
+        value: entry.value,
+      );
       switch (row.category) {
         case ProfileKeys.categoryAnki:
           ankiMap[row.key] = row.value;
@@ -656,6 +842,11 @@ class ProfileRepository {
           // instead of aborting the whole profile-apply (mirrors the Anki
           // fieldMappings try/catch, HBK-AUDIT-043).
           if (companion != null) dictMetaMap[row.key] = companion;
+        case ProfileKeys.categoryRemoteDictionaryMeta:
+          // 坏行跳过（同上），不中断整次应用。
+          final RemoteDictionaryProfileColumns? columns =
+              decodeRemoteDictionaryProfileColumns(row.key, row.value);
+          if (columns != null) remoteDictMetaMap[row.key] = columns;
         // Legacy categories from old snapshots
         case ProfileKeys.categoryDictionary:
           prefMap[row.key] = row.value;
@@ -684,6 +875,7 @@ class ProfileRepository {
       prefMap: prefMap,
       dictMetaMap: dictMetaMap,
       hasDictMeta: hasDictMeta,
+      remoteDictMetaMap: remoteDictMetaMap,
     );
   }
 
@@ -711,16 +903,76 @@ class ProfileRepository {
     if (profileId <= 0) return null;
     final ProfileRow? profile = await _db.getProfileById(profileId);
     if (profile == null) return null;
+    // 组合格式（只存被拆叶子）的 Profile：视图 = 它在默认组合之上的生效值。存量整份快照照旧
+    // 直接用快照（与解析结果逐键一致，见 [ComboRepository] 的库文档）。
+    if (await combos.isComboFormat(profileId)) {
+      final ResolvedComboStack stack = await combos.resolve(<ComboScope, int>{
+        ComboScope.mediaType: profileId,
+      });
+      return _viewFromSettings(
+        profile: profile,
+        snapshot: _decodeSettings(stack.settings.values),
+        ankiSnapshot: workAnkiOverridesOf(stack) ?? const <String, String>{},
+      );
+    }
     final _DecodedProfileSnapshot snapshot = _decodeSnapshot(
       await _db.getProfileSettings(profileId),
     );
+    return _viewFromSettings(
+      profile: profile,
+      snapshot: snapshot,
+      ankiSnapshot: snapshot.ankiMap,
+    );
+  }
 
+  /// 作品会话的分层视图：按绑定层 [layers] 逐叶子解析（作品 → 媒体类型 → 语言 → 默认），
+  /// 用与 [loadSettingsView] 同一套合成规则做成只读视图。没有不同于默认组合（激活配置）的
+  /// 绑定层时返回 null——作品没有自己的设置，读写都直达全局。
+  ///
+  /// 视图的 `profileId` / 名字取优先级最高的那层（诊断与查词缓存命名空间用；缓存键还带词典
+  /// 过滤指纹，层组合不同、词典结果不同时不会撞）。按配置停放的设备本地键同样取那一层。
+  Future<WorkComboView?> loadWorkComboView(Map<ComboScope, int> layers) async {
+    final ResolvedComboStack stack = await combos.resolve(layers);
+    final int? topId = stack.topProfileId;
+    if (topId == null) return null;
+    final ProfileRow? top = await _db.getProfileById(topId);
+    if (top == null) return null;
+    final Map<String, String>? anki = workAnkiOverridesOf(stack);
+    final ProfileSettingsView view = await _viewFromSettings(
+      profile: top,
+      snapshot: _decodeSettings(stack.settings.values),
+      ankiSnapshot: anki ?? const <String, String>{},
+    );
+    return WorkComboView(stack: stack, view: view);
+  }
+
+  /// [profile] 的只读视图：设置值来自 [snapshot]（存量快照或组合解析结果），合成规则见
+  /// [loadSettingsView]。[ankiSnapshot] 是视图声明「自己拥有」的 Anki 字段（作品会话据此决定
+  /// 接不接管 Anki 设置）。
+  Future<ProfileSettingsView> _viewFromSettings({
+    required ProfileRow profile,
+    required _DecodedProfileSnapshot snapshot,
+    required Map<String, String> ankiSnapshot,
+  }) async {
     final Map<String, String> prefs = <String, String>{
       for (final MapEntry<String, String> e
           in (await _db.getAllPrefs()).entries)
         if (settingsViewReadsLivePref(e.key)) e.key: e.value,
       ...snapshot.prefMap,
     };
+    // 按配置记的设备本地键：视图要的是这份配置自己的值（停放值），不是激活配置的 live 值；
+    // 没停放过的配置切过去会沿用 live 值（[applyProfile]），视图同口径保留 live。
+    final String uid = await _db.profileUidOf(profile.id);
+    for (final MapEntry<String, String> e
+        in perProfileDeviceLocalPrefs.entries) {
+      final String? parked = prefs['${e.value}$uid'];
+      if (parked == null) continue;
+      if (parked.isEmpty) {
+        prefs.remove(e.key);
+      } else {
+        prefs[e.key] = parked;
+      }
+    }
 
     final List<DictionaryMetaRow> liveRows = await _db
         .getAllDictionaryMetadata();
@@ -733,6 +985,22 @@ class ProfileRepository {
                 snapshot.dictMetaMap[live.name],
               ),
           ];
+    // 服务器托管词典：live 目录行换上快照里的顺序 / 开关（与 [applyProfile] 同一组列），
+    // 只留此刻参与查词的 host（与 DictionaryRepository 同一判据）。
+    final List<RemoteDictionaryMetaRow> remoteRows = <RemoteDictionaryMetaRow>[
+      for (final RemoteDictionaryMetaRow live
+          in await _db.getAllRemoteDictionaryMetadata())
+        _withProfileRemoteDictionaryColumns(
+          live,
+          snapshot.remoteDictMetaMap[remoteDictionaryProfileKey(
+            live.hostId,
+            live.name,
+          )],
+        ),
+    ];
+    final Set<String> lookupHosts = remoteDictionaryLookupHostIdsOf(
+      await SyncRepository(_db).getFushiClientUrls(),
+    );
 
     final AnkiSettings liveAnki = await _ankiRepo.loadSettings();
     final AnkiSettings anki = snapshot.ankiMap.isEmpty
@@ -746,9 +1014,21 @@ class ProfileRepository {
       prefs: PreferencesRepository.readOnlySnapshot(_db, prefs),
       ankiSettings: anki,
       dictionaries: DictionaryRepository.dictionariesFromRows(rows),
-      ankiSnapshot: snapshot.ankiMap,
+      remoteDictionaries: DictionaryRepository.remoteDictionariesFromRows(
+        remoteRows,
+        lookupHosts,
+      ),
+      ankiSnapshot: ankiSnapshot,
     );
   }
+
+  /// [live] 目录行换上快照里配置拥有的顺序 / 开关；快照没有这一行时原样返回。
+  static RemoteDictionaryMetaRow _withProfileRemoteDictionaryColumns(
+    RemoteDictionaryMetaRow live,
+    RemoteDictionaryProfileColumns? columns,
+  ) => columns == null
+      ? live
+      : live.copyWith(order: columns.order, hidden: columns.hidden);
 
   /// [live] 行换上快照 [companion] 里配置拥有的列（与 [applyProfile] 的
   /// `applyDictionaryMetaProfileColumns` 同一组列）；没有快照行时原样返回。
@@ -915,4 +1195,16 @@ typedef _DecodedProfileSnapshot = ({
   Map<String, String> prefMap,
   Map<String, DictionaryMetadataCompanion> dictMetaMap,
   bool hasDictMeta,
+  Map<String, RemoteDictionaryProfileColumns> remoteDictMetaMap,
 });
+
+/// 作品会话的分层解析结果（[ProfileRepository.loadWorkComboView]）。
+class WorkComboView {
+  const WorkComboView({required this.stack, required this.view});
+
+  /// 逐叶子的生效值与来源（写入按叶子来源路由，见 `WorkProfileSession`）。
+  final ResolvedComboStack stack;
+
+  /// 解析结果做成的只读设置视图（查词过滤 / 作品级键 / Anki 字段取它）。
+  final ProfileSettingsView view;
+}

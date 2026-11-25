@@ -14,7 +14,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/profile/profile_keys.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/pref_redaction_policy.dart';
 import 'package:fushi/src/sync/sync_repository.dart';

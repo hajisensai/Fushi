@@ -12,7 +12,7 @@ part of '../video_fushi_page.dart';
 ///
 /// 探测（[_detectHlsVariantsForLoad]）在常规载入后异步 fetch master 内容判定；仅网络
 /// `.m3u8`/`.m3u` 直链才 fetch（避开 YouTube/googlevideo 单次 token URL），best-effort：
-/// 失败/超时/非 master 都静默降级为「无画质菜单」，绝不影响播放。
+/// 失败/超时/非 master 都降级为「无画质菜单」，绝不影响播放；失败只落 error_log，不提示。
 extension _VideoQuality on _VideoFushiPageState {
   /// 载入后探测当前流是否为 HLS master（多档画质），填充画质菜单状态。
   ///
@@ -31,27 +31,31 @@ extension _VideoQuality on _VideoFushiPageState {
     if (mediaUri == null || !_looksLikeM3u8Url(mediaUri)) return;
     final Uri? uri = Uri.tryParse(mediaUri);
     if (uri == null || !(uri.isScheme('http') || uri.isScheme('https'))) return;
+    final List<HlsVariant> variants;
     try {
-      final Map<String, String> headers = _streamHttpHeaderFields;
-      final http.Response resp = await http
-          .get(uri, headers: headers.isEmpty ? null : headers)
-          .timeout(const Duration(seconds: 8));
-      if (resp.statusCode != 200) return;
-      final String content = resp.body;
-      if (!isHlsMasterPlaylist(content)) return;
-      final List<HlsVariant> variants = sortedHlsVariantsByQualityDesc(
-        parseM3u8Master(content: content, baseUrl: mediaUri),
+      // 走应用代理出口（BUG-4805）：与播放内核同一条出站路径。
+      variants = await fetchHlsMasterVariants(
+        uri,
+        headers: _streamHttpHeaderFields,
       );
-      if (variants.isEmpty) return;
-      if (seq != _hlsDetectSeq || !mounted) return; // 探测期间换片：丢弃。
-      _rebuild(() {
-        _hlsMasterUri = mediaUri;
-        _hlsVariants = variants;
-        _selectedHlsVariantIndex = -1; // 默认自动（master ABR）。
-      });
-    } catch (_) {
-      // best-effort：网络失败 / 超时 / 解析异常 → 无画质菜单，不影响播放。
+    } on Object catch (error) {
+      // best-effort：网络失败 / 超时 / 非 200 → 无画质菜单，不影响播放、不提示用户；
+      // 但要留痕，否则「画质菜单没出来」无从排查。只记 host 与异常类型——URL 的
+      // query 里常带播放 token，异常正文（ClientException）会把整条 URL 带出来。
+      ErrorLogService.instance.log(
+        'VideoFushi.hlsQualityProbe',
+        'HLS quality probe failed for ${uri.host}: '
+            '${error is HlsMasterProbeStatusException ? error : error.runtimeType}',
+      );
+      return;
     }
+    if (variants.isEmpty) return;
+    if (seq != _hlsDetectSeq || !mounted) return; // 探测期间换片：丢弃。
+    _rebuild(() {
+      _hlsMasterUri = mediaUri;
+      _hlsVariants = variants;
+      _selectedHlsVariantIndex = -1; // 默认自动（master ABR）。
+    });
   }
 
   /// URI 路径是否以 `.m3u8` / `.m3u` 结尾（忽略 query）。只对这类直链探测 HLS，避开
@@ -152,8 +156,9 @@ extension _VideoQuality on _VideoFushiPageState {
     return _isYoutubeStream ? t.video_quality_auto : null;
   }
 
-  /// 打开画质侧栏（右键菜单 / 设置面板共用入口）。YouTube 流首次点开即**懒解析**各档
-  /// （一次 getManifest；侧栏解析中显 spinner），避免每次开视频都预解析多档拖慢起播。
+  /// 打开画质侧栏（右键菜单 / 设置面板共用入口）。YouTube 流的各档优先用起播时同一份
+  /// manifest 算好的（挂在客户端上）；没有才首次点开时**懒解析**（一次 getManifest；
+  /// 侧栏解析中显 spinner），不为画质菜单额外预解析拖慢起播。
   void _showQualityMenu({VideoControlSlot? sourceSlot}) {
     if (_isYoutubeStream &&
         !_youtubeVariantsResolved &&
@@ -171,14 +176,17 @@ extension _VideoQuality on _VideoFushiPageState {
   /// bump [_episodeLoadSeq]。故 await 后除 `mounted` 外**必须重校验 seq**——否则 A 集迟到
   /// 的解析结果会覆盖 B 集状态，B 的画质菜单显 A 的档、切档播 A 的流（换集状态泄漏）。
   Future<void> _ensureYoutubeVariantsLoaded() async {
-    final String? watch = _currentYoutubeWatchUrl;
-    if (watch == null) return;
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    if (client is! UrlStreamVideoClient || _currentYoutubeWatchUrl == null) {
+      return;
+    }
     if (_youtubeVariantsResolved || _youtubeVariantsLoading) return;
     final int seq = _episodeLoadSeq;
     _rebuild(() => _youtubeVariantsLoading = true);
     try {
-      final YoutubeVariantSet set = await resolveYoutubeVideoVariants(
-        watch,
+      // 起播那次 getManifest 已算好的各档挂在客户端上：直接用，不再重取 manifest
+      // （gap-remote-10）；没有（持久缓存命中起播的）才现取一次。
+      final YoutubeVariantSet set = await client.youtubeQualityVariants(
         playbackTargetHeight: appModel.youtubeQualityTargetHeightOrNull,
       );
       // 换集：丢弃迟到结果（新集已复位状态、bump seq），绝不覆盖新集画质态。
@@ -390,13 +398,23 @@ extension _VideoQuality on _VideoFushiPageState {
       _adaptiveSeenSeekGeneration = seekGeneration;
       _adaptiveQuality.noteSeek();
     }
-    // 暂停时不评估：暂停本来就不下载，缓冲深度与卡顿都不反映网况。
-    if (!controller.isPlaying) return;
+    // 暂停时不评估：暂停时缓冲深度与卡顿都不反映「播放时跟不跟得上」；跨暂停的
+    // 两拍不构成相邻读数（BUG-4459 T4 的深度走向判据）。
+    if (!controller.isPlaying) {
+      _adaptiveQuality.notePlaybackPaused();
+      return;
+    }
 
+    final double? cacheSeconds = controller.networkCacheSeconds.value;
     final AdaptiveQualityDecision? decision = _adaptiveQuality.tick(
       currentIndex: client.adaptiveQualityIndex ?? -1,
       buffering: controller.isBuffering,
-      cacheSeconds: controller.networkCacheSeconds.value,
+      cacheSeconds: cacheSeconds,
+      cacheReachesEnd: adaptiveCacheReachesEnd(
+        positionMs: controller.positionMs,
+        durationMs: controller.durationMs,
+        cacheSeconds: cacheSeconds,
+      ),
     );
     if (decision == null) return;
     unawaited(_applyAdaptiveQuality(client, decision));
@@ -413,22 +431,42 @@ extension _VideoQuality on _VideoFushiPageState {
     _adaptiveQualitySwitching = true;
     try {
       final int posMs = _controller?.resumePositionMs ?? 0;
-      client.adaptiveQualityIndex = decision.targetIndex;
-      await _reportRemotePlaybackStopped(
-        info: _effectiveRemoteInfo,
-        client: _effectiveRemoteClient,
-        positionMs: posMs,
-        generation: _remotePlaybackGeneration,
-      );
+      final int generation = _remotePlaybackGeneration;
+      // 写入 → 重载 → 失败回滚（BUG-4460）：取流 / 起播没立起来时，共享的
+      // `adaptiveQualityIndex` 回到原档，页面重试与下一次同 scope 起播不会沿用
+      // 一个没起来的档。只覆盖取流 / 起播阶段；起播之后播放器异步暴露的失败
+      // （转码分段出错）走页面既有的播放失败路径。
+      final AdaptiveQualitySwitchOutcome outcome =
+          await runAdaptiveQualitySwitch(
+            read: () => client.adaptiveQualityIndex,
+            write: (int? index) => client.adaptiveQualityIndex = index,
+            targetIndex: decision.targetIndex,
+            reload: () async {
+              // 重载 = 丢掉旧档的流（同步释放，BUG-4461）→ 停止上报 → 回到原位置
+              // 重新取流；整程绑定采样时的播放会话（HBK-AUDIT-005）。页面还在而
+              // 重载没收尾 = 被换集 / 重试接管：共享档归接管的那一程，不回滚。
+              final bool reloaded = await _reloadRemoteEpisodeInSession(
+                generation: generation,
+                positionMs: posMs,
+              );
+              if (!reloaded) {
+                return mounted
+                    ? AdaptiveQualitySwitchOutcome.superseded
+                    : AdaptiveQualitySwitchOutcome.failed;
+              }
+              // `_loadRemoteEpisode` 的失败只落在 `_failed`（自适应只在播放中采样，
+              // 进来时它是 false）。
+              return _failed
+                  ? AdaptiveQualitySwitchOutcome.failed
+                  : AdaptiveQualitySwitchOutcome.applied;
+            },
+          );
       if (!mounted) return;
-      await _loadRemoteEpisode(
-        _currentEpisode < 0 ? 0 : _currentEpisode,
-        // 与手动换档同理：必须是 explicitCue，否则 near-end 判据会把「快看完时换档」
-        // 直接归零回片头。
-        startIntent: EpisodeStartIntent.explicitCue,
-        initialPositionMsOverride: posMs,
-      );
-      if (!mounted) return;
+      if (outcome != AdaptiveQualitySwitchOutcome.applied) {
+        // 没换成：不报「已自动调整」，观察窗从头来，别拿失败前的拍再判一次。
+        _adaptiveQuality.reset();
+        return;
+      }
       // `qualityPresets` 在 host 不支持转码时是空表，而 `_hostTranscodeAvailable`
       // 正由上一行 `_loadRemoteEpisode` 内部的 /streamurl 响应重新赋值——换档期间
       // host 用户关掉「为对端转码视频」就足以让表变空。调用点是 unawaited，越界会
@@ -478,6 +516,7 @@ extension _VideoQuality on _VideoFushiPageState {
       return;
     }
     final int posMs = _controller?.resumePositionMs ?? 0;
+    final int generation = _remotePlaybackGeneration;
     _hideVideoSidePanel();
     await _writeQualityPresetIndex(server, target);
     if (!mounted) return;
@@ -491,19 +530,13 @@ extension _VideoQuality on _VideoFushiPageState {
         server.adaptiveQualityIndex = null;
       }
     }
-    await _reportRemotePlaybackStopped(
-      info: _effectiveRemoteInfo,
-      client: _effectiveRemoteClient,
+    // 写偏好期间换了集：偏好已落，新集起播自己读它；不再拿本集位置重载（HBK-AUDIT-005）。
+    if (!await _reloadRemoteEpisodeInSession(
+      generation: generation,
       positionMs: posMs,
-      generation: _remotePlaybackGeneration,
-    );
-    if (!mounted) return;
-    await _loadRemoteEpisode(
-      _currentEpisode < 0 ? 0 : _currentEpisode,
-      startIntent: EpisodeStartIntent.explicitCue,
-      initialPositionMsOverride: posMs,
-    );
-    if (!mounted) return;
+    )) {
+      return;
+    }
     _showOsd(
       t.video_quality_switched(label: _mediaServerQualityLabel(server, target)),
       icon: Icons.high_quality,
@@ -541,24 +574,18 @@ extension _VideoQuality on _VideoFushiPageState {
       return;
     }
     final int posMs = _controller?.resumePositionMs ?? 0;
+    final int generation = _remotePlaybackGeneration;
     final String label = variants[index].label;
     _hideVideoSidePanel();
     client.streamVariantIndex = index;
     // 媒体服务器换版本 = 换一个文件：先报停旧会话（与换档同口径，服务器据此结束
     // 旧版本的转码）；扩展线路没有会话能力，这一步是空操作。
-    await _reportRemotePlaybackStopped(
-      info: _effectiveRemoteInfo,
-      client: _effectiveRemoteClient,
+    if (!await _reloadRemoteEpisodeInSession(
+      generation: generation,
       positionMs: posMs,
-      generation: _remotePlaybackGeneration,
-    );
-    if (!mounted) return;
-    await _loadRemoteEpisode(
-      _currentEpisode < 0 ? 0 : _currentEpisode,
-      startIntent: EpisodeStartIntent.explicitCue,
-      initialPositionMsOverride: posMs,
-    );
-    if (!mounted) return;
+    )) {
+      return;
+    }
     _showOsd(t.video_quality_switched(label: label), icon: Icons.high_quality);
   }
 

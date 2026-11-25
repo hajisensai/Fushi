@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 
 /// 收藏句子 / 制卡句（`mined_sentences.source`）的来源标识。与制卡/收藏单词统计的
@@ -84,11 +85,25 @@ class FavoriteSentence {
         normCharOffset: json['normCharOffset'] as int?,
         normCharLength: json['normCharLength'] as int?,
         color: json['color'] as String?,
+        // wire 上是带 `Z` 的 UTC 时刻（见 [toJson]），读进来统一转本地，与 [fromRow]
+        // 读库得到的时刻同一口径（DateTime 的 == 连 isUtc 一起比）。
+        colorUpdatedAt: switch (json['colorUpdatedAt']) {
+          final String raw => DateTime.tryParse(raw)?.toLocal(),
+          _ => null,
+        },
         // 向后兼容：旧条目无 source → 默认书籍；无 dateKey → 留空（不计入按日统计）。
         source: (json['source'] as String?) ?? kFavoriteSentenceSourceBook,
         dateKey: json['dateKey'] as String?,
         expression: json['expression'] as String?,
         reading: json['reading'] as String?,
+        originSourceId: switch (json['originSourceId']) {
+          final String raw when raw.isNotEmpty => raw,
+          _ => null,
+        },
+        originLocator: switch (json['originLocator']) {
+          final String raw when raw.isNotEmpty => raw,
+          _ => null,
+        },
       );
   FavoriteSentence({
     required this.text,
@@ -100,11 +115,14 @@ class FavoriteSentence {
     this.normCharOffset,
     this.normCharLength,
     this.color,
+    this.colorUpdatedAt,
     String? id,
     String? source,
     this.dateKey,
     this.expression,
     this.reading,
+    this.originSourceId,
+    this.originLocator,
   }) : id = id ?? _generateFavoriteId(),
        source = source ?? kFavoriteSentenceSourceBook;
 
@@ -119,6 +137,15 @@ class FavoriteSentence {
   final int? normCharLength;
   final String? color;
 
+  /// [color] 最后一次被用户改的时刻（BUG-5081）。null = 收藏后没改过色，颜色时钟按
+  /// [createdAt] 算（见 [colorClock]）。同步 / 备份合并按内容键去重时，颜色取这个时钟
+  /// 较新的一侧；wire 上是可选字段 `colorUpdatedAt`，旧版本读到会忽略。
+  final DateTime? colorUpdatedAt;
+
+  /// 颜色的 LWW 时钟：改过色取 [colorUpdatedAt]，没改过取 [createdAt]（收藏时选的颜色
+  /// 就是那一刻写下的）。
+  DateTime get colorClock => colorUpdatedAt ?? createdAt;
+
   /// 收藏来源（[kFavoriteSentenceSourceBook]/`Video`/`Audiobook`/`Lyrics`）。旧条目
   /// 反序列化时默认 [kFavoriteSentenceSourceBook]，保证既有书内收藏行为不变。
   final String source;
@@ -132,6 +159,20 @@ class FavoriteSentence {
   /// 查词对象，为 null；旧条目无此字段同为 null。
   final String? expression;
   final String? reading;
+
+  /// 收藏时所在条目的远端来源身份（`RemoteLibrarySource.remoteLibrarySourceId`，
+  /// v179，BUG-5402）：只有从没入库的远端条目（媒体服务器直接串流、互联对端）收藏
+  /// 时才有，此时 [bookKey] 是该来源内的条目 id，跳回原处按它找回那一台服务器。
+  /// null = 本机库条目，或 v179 之前的旧收藏。wire 上是可选字段 `originSourceId`，
+  /// 旧版本读到会忽略。
+  final String? originSourceId;
+
+  /// 回到收藏时那个远端条目的重开规格（v180）：只有按 [originSourceId] + [bookKey]
+  /// 找不回条目的来源才有——在线视频源的一集记作品与集的 JSON（与入库在线行
+  /// `streamSpecJson` 同形），收藏夹 / 遥控据此重建播放客户端。与 [originSourceId]
+  /// 成对：合并时随来源身份一起取记着的一侧。wire 可选字段 `originLocator`，旧版本
+  /// 读到会忽略。
+  final String? originLocator;
 
   // BUG-494 (TODO-1053 Bug C)：id 生成必须无碰撞。旧 'hl_<microsecondsSinceEpoch>' 在同一
   // 微秒内连续 new 两条（快速连续收藏 / 测试）会撞出相同 id → id 身份键坍缩（add 按 id 去重
@@ -151,11 +192,65 @@ class FavoriteSentence {
     if (normCharOffset != null) 'normCharOffset': normCharOffset,
     if (normCharLength != null) 'normCharLength': normCharLength,
     if (color != null) 'color': color,
+    // 颜色时钟是跨设备 LWW 比较的依据，必须是绝对时刻：一律写 UTC（带 `Z`）。
+    // 本地时间的 ISO 串不带时区，不同时区的设备（含跑在 UTC 容器里的 fushi_server）
+    // 会把同一个串读成相差几小时的时刻，改色的先后就判反了。
+    if (colorUpdatedAt != null)
+      'colorUpdatedAt': colorUpdatedAt!.toUtc().toIso8601String(),
     'source': source,
     if (dateKey != null) 'dateKey': dateKey,
     if (expression != null) 'expression': expression,
     if (reading != null) 'reading': reading,
+    if (originSourceId != null) 'originSourceId': originSourceId,
+    if (originLocator != null) 'originLocator': originLocator,
   };
+
+  /// 只换来源身份与重开规格的副本（合并时另一侧记着来源、本侧没有：同一条收藏在
+  /// 旧版本设备上同步过来时不带它们）。两者成对换，不拼两侧。
+  FavoriteSentence withOrigin({
+    required String? originSourceId,
+    required String? originLocator,
+  }) => FavoriteSentence(
+    id: id,
+    text: text,
+    bookTitle: bookTitle,
+    chapterLabel: chapterLabel,
+    createdAt: createdAt,
+    bookKey: bookKey,
+    sectionIndex: sectionIndex,
+    normCharOffset: normCharOffset,
+    normCharLength: normCharLength,
+    color: color,
+    colorUpdatedAt: colorUpdatedAt,
+    source: source,
+    dateKey: dateKey,
+    expression: expression,
+    reading: reading,
+    originSourceId: originSourceId,
+    originLocator: originLocator,
+  );
+
+  /// 只换颜色与颜色时钟的副本（合并取较新颜色、收藏夹改色后更新本地镜像用）。
+  FavoriteSentence withColor(String? color, DateTime? colorUpdatedAt) =>
+      FavoriteSentence(
+        id: id,
+        text: text,
+        bookTitle: bookTitle,
+        chapterLabel: chapterLabel,
+        createdAt: createdAt,
+        bookKey: bookKey,
+        sectionIndex: sectionIndex,
+        normCharOffset: normCharOffset,
+        normCharLength: normCharLength,
+        color: color,
+        colorUpdatedAt: colorUpdatedAt,
+        source: source,
+        dateKey: dateKey,
+        expression: expression,
+        reading: reading,
+        originSourceId: originSourceId,
+        originLocator: originLocator,
+      );
 }
 
 class FavoriteSentenceRepository {
@@ -163,7 +258,51 @@ class FavoriteSentenceRepository {
 
   final FushiDatabase _db;
 
-  static const String _key = 'favorite_sentences';
+  /// 表行 → 模型（v166 起收藏句存 `favorite_sentences` 表）。
+  static FavoriteSentence fromRow(FavoriteSentenceRow r) => FavoriteSentence(
+    id: r.id,
+    text: r.sentence,
+    bookTitle: r.bookTitle,
+    chapterLabel: r.chapterLabel,
+    createdAt: DateTime.fromMicrosecondsSinceEpoch(r.createdAtUs),
+    bookKey: r.bookKey,
+    sectionIndex: r.sectionIndex,
+    normCharOffset: r.normCharOffset,
+    normCharLength: r.normCharLength,
+    color: r.color,
+    source: r.source,
+    dateKey: r.dateKey,
+    expression: r.expression,
+    reading: r.reading,
+    colorUpdatedAt: switch (r.colorUpdatedAtUs) {
+      final int us => DateTime.fromMicrosecondsSinceEpoch(us),
+      null => null,
+    },
+    originSourceId: r.originSourceId,
+    originLocator: r.originLocator,
+  );
+
+  /// 模型 → 表行。
+  static FavoriteSentencesCompanion toCompanion(FavoriteSentence s) =>
+      FavoriteSentencesCompanion.insert(
+        id: s.id,
+        sentence: s.text,
+        bookTitle: Value<String>(s.bookTitle),
+        chapterLabel: Value<String?>(s.chapterLabel),
+        createdAtUs: s.createdAt.microsecondsSinceEpoch,
+        bookKey: Value<String?>(s.bookKey),
+        sectionIndex: Value<int?>(s.sectionIndex),
+        normCharOffset: Value<int?>(s.normCharOffset),
+        normCharLength: Value<int?>(s.normCharLength),
+        color: Value<String?>(s.color),
+        colorUpdatedAtUs: Value<int?>(s.colorUpdatedAt?.microsecondsSinceEpoch),
+        source: Value<String>(s.source),
+        dateKey: Value<String?>(s.dateKey),
+        expression: Value<String?>(s.expression),
+        reading: Value<String?>(s.reading),
+        originSourceId: Value<String?>(s.originSourceId),
+        originLocator: Value<String?>(s.originLocator),
+      );
 
   /// 跨设备稳定的内容身份键（**唯一真源**：aggregate 去重、删除墓碑 itemKey、接收端删除
   /// 三处共用同一函数，杜绝键分叉）。`收藏句无稳定 id`（本机随机），只能靠内容四元组。
@@ -200,30 +339,23 @@ class FavoriteSentenceRepository {
         DateTime.now().millisecondsSinceEpoch,
       );
 
-  Future<List<FavoriteSentence>> getAll() async {
-    final raw = await _db.getPref(_key);
-    if (raw == null || raw.isEmpty) return [];
-    final List<dynamic> list = jsonDecode(raw) as List<dynamic>;
-    return list
-        .map((e) => FavoriteSentence.fromJson(e as Map<String, dynamic>))
-        .toList()
-      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
-  }
+  /// 收藏句表有写入就发一次（任何来源：本仓库的增删、收藏夹页、同步合并、备份合并、
+  /// 音乐别名改写——它们都写同一张表）。持有页内镜像的页面（视频播放页的收藏星标、
+  /// 手机遥控）据此重读，不必等下次打开面板。
+  Stream<void> watchChanges() => _db.watchFavoriteSentencesChanged();
+
+  /// 全部收藏句，新收藏在前。
+  Future<List<FavoriteSentence>> getAll() async => <FavoriteSentence>[
+    for (final FavoriteSentenceRow r in await _db.getAllFavoriteSentenceRows())
+      fromRow(r),
+  ];
 
   Future<void> add(FavoriteSentence sentence) async {
-    final sentences = await getAll();
     // BUG-494 (TODO-1053 Bug C)：去重**只按 id**（每条 add 的 FavoriteSentence 自带唯一 id）。
-    // 不再按内容键（text+bookKey+section+normCharOffset）去重——那会在 normCharOffset 均 null
+    // 不按内容键（text+bookKey+section+normCharOffset）去重——那会在 normCharOffset 均 null
     // 时把同章重复短句 collapse 成一条（身份键坍缩，Bug C 的幻影收藏根因）。重复收藏同一句
     // 由调用方（reader 的 _currentSentenceIsFavorited 门控）拦在 add 之前，不靠这里内容去重。
-    if (sentences.any((s) => s.id == sentence.id)) {
-      return;
-    }
-    sentences.insert(0, sentence);
-    await _db.setPref(
-      _key,
-      jsonEncode(sentences.map((s) => s.toJson()).toList()),
-    );
+    if (!await _db.insertFavoriteSentenceRow(toCompanion(sentence))) return;
     // 重新收藏 → 清除该内容键的删除墓碑；否则墓碑会在 aggregate 并集里把这条刚收藏的句
     // 再次抑制掉（与收藏词 addFavoriteWord 清墓碑同律）。
     await _db.clearSyncDeletionTombstone(
@@ -232,27 +364,32 @@ class FavoriteSentenceRepository {
     );
   }
 
-  /// 查已收藏项：返回**匹配到的条目 id**（未收藏 → null）。id-first——先按内容键（含
-  /// normCharOffset）精确匹配，命中即返回该条 id 供 [removeById] 精确删除，杜绝 Bug C
-  /// 的身份键坍缩误删/误点亮（同章重复短句 offset 均 null 时，内容键相同也只会命中「某一
-  /// 条」，但因 removeById 按返回 id 删，不会连坐删掉另一条同内容记录）。
+  /// 给已收藏的句子改色（BUG-5081）：写新颜色并把颜色时钟记成 [at]（默认现在），
+  /// 同步 / 备份合并据此让这次改色压过别的设备上的旧颜色。返回是否改到了（id 不存在
+  /// = false）。颜色名的合法性由调用方保证（收藏五色之一）。
+  Future<bool> setColor(String id, String color, {DateTime? at}) async =>
+      await _db.updateFavoriteSentenceColor(
+        id,
+        color: color,
+        colorUpdatedAtUs: (at ?? DateTime.now()).microsecondsSinceEpoch,
+      ) >
+      0;
+
+  /// 查已收藏项：返回**匹配到的条目 id**（未收藏 → null）。按内容键（含 normCharOffset）
+  /// 精确匹配，命中即返回该条 id 供 [removeById] 精确删除，杜绝 Bug C 的身份键坍缩误删 /
+  /// 误点亮（同章重复短句 offset 均 null 时内容键相同，也只命中最新的那一条，removeById
+  /// 按返回 id 删，不会连坐删掉另一条同内容记录）。
   Future<String?> matchedFavoriteId({
     required String text,
     required String? bookKey,
     required int? sectionIndex,
     required int? normCharOffset,
-  }) async {
-    final sentences = await getAll();
-    for (final FavoriteSentence s in sentences) {
-      if (s.text == text &&
-          s.bookKey == bookKey &&
-          s.sectionIndex == sectionIndex &&
-          s.normCharOffset == normCharOffset) {
-        return s.id;
-      }
-    }
-    return null;
-  }
+  }) async => (await _db.findFavoriteSentenceByContent(
+    text: text,
+    bookKey: bookKey,
+    sectionIndex: sectionIndex,
+    normCharOffset: normCharOffset,
+  ))?.id;
 
   Future<bool> isFavorited({
     required String text,
@@ -276,56 +413,30 @@ class FavoriteSentenceRepository {
     required int? normCharOffset,
     bool propagateDeletion = true,
   }) async {
-    final sentences = await getAll();
-    // BUG-494：只删**第一条**匹配内容键的记录（非 removeWhere 全删），避免同章重复短句
-    // （offset 均 null → 内容键相同）取消收藏时把另一条同内容记录连坐删掉。
-    final int idx = sentences.indexWhere(
-      (s) =>
-          s.text == text &&
-          s.bookKey == bookKey &&
-          s.sectionIndex == sectionIndex &&
-          s.normCharOffset == normCharOffset,
+    // BUG-494：只删**一条**匹配内容键的记录（最新的那条），避免同章重复短句（offset 均
+    // null → 内容键相同）取消收藏时把另一条同内容记录连坐删掉。
+    final FavoriteSentenceRow? row = await _db.findFavoriteSentenceByContent(
+      text: text,
+      bookKey: bookKey,
+      sectionIndex: sectionIndex,
+      normCharOffset: normCharOffset,
     );
-    if (idx < 0) return;
-    final FavoriteSentence removed = sentences[idx];
-    sentences.removeAt(idx);
-    await _db.setPref(
-      _key,
-      jsonEncode(sentences.map((s) => s.toJson()).toList()),
-    );
-    if (propagateDeletion) await _writeTombstone(removed);
+    if (row == null) return;
+    await _removeRow(row, propagateDeletion: propagateDeletion);
   }
 
+  /// 删 [getAll] 列表里第 [index] 条（越界不动）。
   Future<void> removeAt(int index, {bool propagateDeletion = true}) async {
-    final sentences = await getAll();
-    if (index < 0 || index >= sentences.length) return;
-    final FavoriteSentence removed = sentences[index];
-    sentences.removeAt(index);
-    await _db.setPref(
-      _key,
-      jsonEncode(sentences.map((s) => s.toJson()).toList()),
-    );
-    if (propagateDeletion) await _writeTombstone(removed);
+    final List<FavoriteSentenceRow> rows = await _db
+        .getAllFavoriteSentenceRows();
+    if (index < 0 || index >= rows.length) return;
+    await _removeRow(rows[index], propagateDeletion: propagateDeletion);
   }
 
   Future<void> removeById(String id, {bool propagateDeletion = true}) async {
-    final sentences = await getAll();
-    // id 理论唯一，但 BUG-494 前的旧数据可能撞 id；捕获全部被删条目各写一次墓碑（同内容
-    // 键幂等）。
-    final List<FavoriteSentence> removed = sentences
-        .where((s) => s.id == id)
-        .toList();
-    if (removed.isEmpty) return;
-    sentences.removeWhere((s) => s.id == id);
-    await _db.setPref(
-      _key,
-      jsonEncode(sentences.map((s) => s.toJson()).toList()),
-    );
-    if (propagateDeletion) {
-      for (final FavoriteSentence s in removed) {
-        await _writeTombstone(s);
-      }
-    }
+    final FavoriteSentenceRow? row = await _db.getFavoriteSentenceRowById(id);
+    if (row == null) return;
+    await _removeRow(row, propagateDeletion: propagateDeletion);
   }
 
   /// 按内容键取消收藏（删除传播**接收端**确认后调用）。默认写墓碑：本设备也需墓碑抑制
@@ -335,35 +446,59 @@ class FavoriteSentenceRepository {
     String key, {
     bool propagateDeletion = true,
   }) async {
-    final sentences = await getAll();
-    final int idx = sentences.indexWhere((s) => itemKeyOf(s) == key);
-    if (idx < 0) {
-      if (propagateDeletion) {
-        await _db.writeSyncDeletionTombstone(
-          kFavoriteSentenceTombstoneType,
-          key,
-          DateTime.now().millisecondsSinceEpoch,
-        );
+    for (final FavoriteSentenceRow row
+        in await _db.getAllFavoriteSentenceRows()) {
+      if (itemKeyOf(fromRow(row)) == key) {
+        await _removeRow(row, propagateDeletion: propagateDeletion);
+        return;
       }
-      return;
     }
-    final FavoriteSentence removed = sentences[idx];
-    sentences.removeAt(idx);
-    await _db.setPref(
-      _key,
-      jsonEncode(sentences.map((s) => s.toJson()).toList()),
-    );
-    if (propagateDeletion) await _writeTombstone(removed);
+    if (propagateDeletion) {
+      await _db.writeSyncDeletionTombstone(
+        kFavoriteSentenceTombstoneType,
+        key,
+        DateTime.now().millisecondsSinceEpoch,
+      );
+    }
   }
 
-  /// 清空全部收藏句。收藏夹「清空」面板的收藏句范围走这里，直接删掉承载偏好键。
-  /// [propagateDeletion] 时为清空前的每条各写一个删除墓碑（传播到其它设备）。
+  /// 清空全部收藏句（收藏夹「清空」面板的收藏句范围走这里）。[propagateDeletion] 时为
+  /// 清空前的每条各写一个删除墓碑（传播到其它设备）。
   Future<void> clear({bool propagateDeletion = true}) async {
     if (propagateDeletion) {
       for (final FavoriteSentence s in await getAll()) {
         await _writeTombstone(s);
       }
     }
-    await _db.deletePref(_key);
+    await _db.deleteAllFavoriteSentences();
+  }
+
+  /// 整表换成 [sentences]（同步合并 / 备份合并的结果）。与现有内容逐字段相同时不写，
+  /// 免得一次空合并唤醒 [watchChanges] 的全部订阅方。
+  Future<void> replaceAll(List<FavoriteSentence> sentences) async {
+    final List<FavoriteSentence> current = await getAll();
+    if (_sameContent(current, sentences)) return;
+    await _db.replaceAllFavoriteSentenceRows(<FavoriteSentencesCompanion>[
+      for (final FavoriteSentence s in sentences) toCompanion(s),
+    ]);
+  }
+
+  Future<void> _removeRow(
+    FavoriteSentenceRow row, {
+    required bool propagateDeletion,
+  }) async {
+    await _db.deleteFavoriteSentenceById(row.id);
+    if (propagateDeletion) await _writeTombstone(fromRow(row));
+  }
+
+  static bool _sameContent(List<FavoriteSentence> a, List<FavoriteSentence> b) {
+    if (a.length != b.length) return false;
+    String sig(FavoriteSentence s) => jsonEncode(s.toJson());
+    final List<String> sa = a.map(sig).toList()..sort();
+    final List<String> sb = b.map(sig).toList()..sort();
+    for (int i = 0; i < sa.length; i++) {
+      if (sa[i] != sb[i]) return false;
+    }
+    return true;
   }
 }

@@ -1,9 +1,11 @@
 /// 曲库页一次读出的快照 + 行 → 播放项的换算（纯 Dart，可单测）。
 library;
 
+import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_remote_tracks.dart';
 
 /// 曲库快照。
 class MusicLibrarySnapshot {
@@ -13,6 +15,9 @@ class MusicLibrarySnapshot {
     required this.artists,
     required this.playlists,
     List<MusicDiscSourceRow> discs = const <MusicDiscSourceRow>[],
+    this.playlistTrackCounts = const <String, int>{},
+    this.playlistEntryTrackUids = const <String, List<String>>{},
+    this.remoteTracks = const <MusicRemoteEntry>[],
   }) : albumByUid = <String, MusicAlbumRow>{
          for (final MusicAlbumRow a in albums) a.albumUid: a,
        },
@@ -34,7 +39,24 @@ class MusicLibrarySnapshot {
   final List<MusicTrackRow> tracks;
   final List<MusicArtistRow> artists;
   final List<MusicPlaylistRow> playlists;
+
+  /// 各本地歌单的条目数（歌单 uid → 条数；没有条目的歌单不在里面）。
+  final Map<String, int> playlistTrackCounts;
+
+  /// 各本地歌单条目的曲目 uid（歌单 uid → 按位置排的 trackUid）。藏专辑时据此重算
+  /// [playlistTrackCounts]（上锁专辑的曲目不计数）；空 = 没读（测试快照）。
+  final Map<String, List<String>> playlistEntryTrackUids;
   final Map<String, MusicAlbumRow> albumByUid;
+
+  /// 加入了音乐库的远程曲目（YouTube / 在线插件 / 服务器曲目，最近加入的在前；v148 / v149）。
+  /// 合规门没过的平台上只剩服务器曲目（[musicRemoteKindAvailable]）。
+  final List<MusicRemoteEntry> remoteTracks;
+
+  /// 「歌曲」分区的条目：本地曲目在前，远程曲目随后（同一条队列）。快照不可变，算一次。
+  late final List<MusicLibraryEntry> songEntries = <MusicLibraryEntry>[
+    for (final MusicTrackRow t in tracks) MusicLocalEntry(t),
+    ...remoteTracks,
+  ];
 
   /// 光盘来源（`music_disc_sources`）：盘是一张带 `DVD` / `BD` 角标的专辑（§9.2）。
   final Map<String, MusicDiscSourceRow> discByUid;
@@ -47,8 +69,13 @@ class MusicLibrarySnapshot {
 
   final Map<String, MusicTrackRow> _trackByUid;
 
-  /// 曲库里什么都没有：没有曲目，也没有（还没导入章节的）光盘专辑。
-  bool get isEmpty => tracks.isEmpty && albums.isEmpty;
+  /// 曲库里什么都没有：没有曲目，也没有（还没导入章节的）光盘专辑、加入的远程曲目与本地
+  /// 歌单（歌单可以只装远程曲目，此时曲库没有一首本地曲目也不是空的）。
+  bool get isEmpty =>
+      tracks.isEmpty &&
+      albums.isEmpty &&
+      remoteTracks.isEmpty &&
+      playlists.isEmpty;
 
   /// 专辑内嵌封面所在的音频文件（[MusicAlbumRow.coverTrackUid] → 路径）。
   String? embeddedCoverPathOf(MusicAlbumRow album) {
@@ -63,14 +90,246 @@ class MusicLibrarySnapshot {
           if (t.albumUid == albumUid) t,
       ]);
 
-  static Future<MusicLibrarySnapshot> load(FushiDatabase db) async =>
-      MusicLibrarySnapshot(
-        albums: await db.listMusicAlbums(),
-        tracks: await db.listMusicTracks(),
-        artists: await db.listMusicArtists(),
-        playlists: await db.listMusicPlaylists(),
-        discs: await db.listMusicDiscSources(),
-      );
+  /// 去掉 [hiddenAlbum] 判为藏起来的专辑与它们的曲目（上锁且未解锁的专辑，
+  /// 拍板台 qiqSbvdxrk；判据由调用方经 `MediaVisibility.hidesMusicAlbum` 给）。没有
+  /// 要藏的就原样返回。
+  MusicLibrarySnapshot withoutAlbums(
+    bool Function(String albumUid) hiddenAlbum,
+  ) {
+    if (!albums.any((MusicAlbumRow a) => hiddenAlbum(a.albumUid))) return this;
+    bool hiddenTrack(String trackUid) {
+      final String? album = _trackByUid[trackUid]?.albumUid;
+      return album != null && hiddenAlbum(album);
+    }
+
+    return MusicLibrarySnapshot(
+      albums: <MusicAlbumRow>[
+        for (final MusicAlbumRow a in albums)
+          if (!hiddenAlbum(a.albumUid)) a,
+      ],
+      tracks: <MusicTrackRow>[
+        for (final MusicTrackRow t in tracks)
+          if (t.albumUid == null || !hiddenAlbum(t.albumUid!)) t,
+      ],
+      artists: artists,
+      playlists: playlists,
+      discs: discByUid.values.toList(),
+      // 歌单卡上的「N 首」也不数上锁专辑的曲目（歌单页本身同样不列它们）。
+      playlistTrackCounts: playlistEntryTrackUids.isEmpty
+          ? playlistTrackCounts
+          : <String, int>{
+              for (final MapEntry<String, List<String>> e
+                  in playlistEntryTrackUids.entries)
+                if (e.value.where((String uid) => !hiddenTrack(uid)).length
+                    case final int n when n > 0)
+                  e.key: n,
+            },
+      playlistEntryTrackUids: <String, List<String>>{
+        for (final MapEntry<String, List<String>> e
+            in playlistEntryTrackUids.entries)
+          e.key: <String>[
+            for (final String uid in e.value)
+              if (!hiddenTrack(uid)) uid,
+          ],
+      },
+      remoteTracks: remoteTracks,
+    );
+  }
+
+  /// [remoteAvailable] 缺省按真实平台的合规门（[musicRemoteTracksAvailable]）；[servers] 缺省
+  /// 走进程级装配点 [musicServerBindingLoader]（只在有服务器曲目时才读）。
+  static Future<MusicLibrarySnapshot> load(
+    FushiDatabase db, {
+    bool? remoteAvailable,
+    MusicServerBindingLoader? servers,
+  }) async => MusicLibrarySnapshot(
+    albums: await db.listMusicAlbums(),
+    tracks: await db.listMusicTracks(),
+    artists: await db.listMusicArtists(),
+    playlists: await db.listMusicPlaylists(),
+    discs: await db.listMusicDiscSources(),
+    playlistTrackCounts: await db.countMusicPlaylistEntries(),
+    playlistEntryTrackUids: await _playlistEntryTrackUids(db),
+    remoteTracks: await musicRemoteEntriesOf(
+      await db.listMusicRemoteLibraryTracks(),
+      online: remoteAvailable ?? musicRemoteTracksAvailable,
+      servers: servers,
+    ),
+  );
+}
+
+Future<Map<String, List<String>>> _playlistEntryTrackUids(
+  FushiDatabase db,
+) async {
+  final Map<String, List<String>> out = <String, List<String>>{};
+  for (final MusicPlaylistEntryRow r
+      in await (db.select(db.musicPlaylistEntries)
+            ..orderBy(<OrderClauseGenerator<$MusicPlaylistEntriesTable>>[
+              (t) => OrderingTerm(expression: t.position),
+            ]))
+          .get()) {
+    (out[r.playlistUid] ??= <String>[]).add(r.trackUid);
+  }
+  return out;
+}
+
+/// 曲库 / 歌单里的一首：本地曲库曲目，或只能串流的远程曲目（v148）。两者 uid 命名空间不同，
+/// 播放项的 uid 就是这里的 [trackUid]。
+sealed class MusicLibraryEntry {
+  const MusicLibraryEntry();
+
+  String get trackUid;
+  String get title;
+  String? get artist;
+  int? get durationMs;
+
+  /// 换成播放项；远程曲目的种类不认识（将来版本写的）或服务器曲目在这台设备上不可用时
+  /// 回 null。
+  MusicPlayItem? playItem(Map<String, MusicAlbumRow> albums);
+}
+
+/// 本地曲库曲目。
+final class MusicLocalEntry extends MusicLibraryEntry {
+  const MusicLocalEntry(this.track);
+
+  final MusicTrackRow track;
+
+  @override
+  String get trackUid => track.trackUid;
+  @override
+  String get title => track.title;
+  @override
+  String? get artist => track.artistCredit;
+  @override
+  int? get durationMs => track.durationMs;
+
+  @override
+  MusicPlayItem playItem(Map<String, MusicAlbumRow> albums) => musicPlayItemOf(
+    track,
+    album: track.albumUid == null ? null : albums[track.albumUid!],
+  );
+}
+
+/// 远程曲目（YouTube / 在线插件 / 服务器曲目）。
+final class MusicRemoteEntry extends MusicLibraryEntry {
+  const MusicRemoteEntry(this.track, {this.server});
+
+  final MusicRemoteTrackRow track;
+
+  /// 服务器曲目所在的服务器（当前配置）；这台设备没配它时为 null。其它种类恒为 null。
+  final MusicServerBinding? server;
+
+  MusicRemoteTrackKind? get kind => MusicRemoteTrackKind.fromWire(track.kind);
+
+  /// 现在能不能播：种类认识，且服务器曲目的服务器在这台设备上配着，或有离线副本（v175）。
+  bool get available => switch (kind) {
+    null => false,
+    MusicRemoteTrackKind.server =>
+      server != null || musicRemoteLocalCopyOf(track) != null,
+    // 互联 host 曲目：起播时才找 host，离线时按单曲播放失败（同插件曲目）；下了离线副本的放本机文件。
+    MusicRemoteTrackKind.youtube ||
+    MusicRemoteTrackKind.plugin ||
+    MusicRemoteTrackKind.fushiHost => true,
+  };
+
+  /// 封面地址（服务器曲目按当前配置现算）。
+  String? get coverUrl => musicRemoteCoverUrlOf(track, server: server);
+
+  @override
+  String get trackUid => track.trackUid;
+  @override
+  String get title => track.title;
+  @override
+  String? get artist => track.artist;
+  @override
+  int? get durationMs => track.durationMs;
+
+  @override
+  MusicPlayItem? playItem(Map<String, MusicAlbumRow> albums) =>
+      musicPlayItemOfRemote(track, server: server);
+}
+
+/// 远程曲目行 → 条目：滤掉种类不认识的（将来版本写的）与本平台不显示的（[online] 为合规门，
+/// 见 [musicRemoteKindAvailable]）；有服务器曲目时读一次当前的服务器配置（[servers] 缺省
+/// [musicServerBindingLoader]，未装配 = 服务器曲目全部不可用），把服务器绑到条目上。
+/// 配置没了的服务器曲目照样列出（显示为不可用），不删行。
+Future<List<MusicRemoteEntry>> musicRemoteEntriesOf(
+  Iterable<MusicRemoteTrackRow> rows, {
+  required bool online,
+  MusicServerBindingLoader? servers,
+}) async {
+  final List<MusicRemoteTrackRow> shown = <MusicRemoteTrackRow>[
+    for (final MusicRemoteTrackRow r in rows)
+      if (MusicRemoteTrackKind.fromWire(r.kind)
+          case final MusicRemoteTrackKind k
+          when musicRemoteKindAvailable(k, online: online))
+        r,
+  ];
+  final bool anyServer = shown.any(
+    (MusicRemoteTrackRow r) => r.kind == MusicRemoteTrackKind.server.wire,
+  );
+  final MusicServerBindingLoader? loader = anyServer
+      ? servers ?? musicServerBindingLoader
+      : null;
+  final Map<String, MusicServerBinding> bound = loader == null
+      ? const <String, MusicServerBinding>{}
+      : await loader();
+  return <MusicRemoteEntry>[
+    for (final MusicRemoteTrackRow r in shown)
+      MusicRemoteEntry(
+        r,
+        server: r.kind == MusicRemoteTrackKind.server.wire
+            ? bound[r.sourceKey]
+            : null,
+      ),
+  ];
+}
+
+/// 歌单里的一条：条目 id（删这一条用；同一首可以出现两次）+ 解析出的曲目。
+class MusicPlaylistItem {
+  const MusicPlaylistItem({required this.entryId, required this.entry});
+
+  final int entryId;
+  final MusicLibraryEntry entry;
+}
+
+/// 读一个本地歌单的条目并解析成曲目（按位置排）。解析不到的条目跳过、不删行：本地曲目
+/// 在这台设备的曲库里没有（歌单来自别的设备的备份），或 YouTube / 插件曲目在这个平台上不可用
+/// （[remoteAvailable] 为 false，缺省按真实平台的合规门）。服务器曲目的服务器在这台设备上
+/// 没配时条目仍列出、显示为不可用（[MusicRemoteEntry.available]）。
+///
+/// [hiddenTrack] 判为藏起来的本地曲目（上锁且未解锁的专辑里的，由调用方经
+/// `MediaVisibility.hidesMusicTrack` 给）不列、不进播放队列。
+Future<List<MusicPlaylistItem>> loadMusicPlaylistItems(
+  FushiDatabase db,
+  String playlistUid, {
+  bool? remoteAvailable,
+  MusicServerBindingLoader? servers,
+  bool Function(String trackUid)? hiddenTrack,
+}) async {
+  final List<MusicPlaylistEntryRow> rows = await db.listMusicPlaylistEntries(
+    playlistUid,
+  );
+  final Iterable<String> uids = rows.map(
+    (MusicPlaylistEntryRow r) => r.trackUid,
+  );
+  final Map<String, MusicTrackRow> local = await db.listMusicTracksByUid(uids);
+  final Map<String, MusicRemoteEntry> remote = <String, MusicRemoteEntry>{
+    for (final MusicRemoteEntry e in await musicRemoteEntriesOf(
+      (await db.listMusicRemoteTracks(uids)).values,
+      online: remoteAvailable ?? musicRemoteTracksAvailable,
+      servers: servers,
+    ))
+      e.trackUid: e,
+  };
+  return <MusicPlaylistItem>[
+    for (final MusicPlaylistEntryRow r in rows)
+      if (local[r.trackUid] case final MusicTrackRow t
+          when hiddenTrack == null || !hiddenTrack(t.trackUid))
+        MusicPlaylistItem(entryId: r.id, entry: MusicLocalEntry(t))
+      else if (remote[r.trackUid] case final MusicRemoteEntry e)
+        MusicPlaylistItem(entryId: r.id, entry: e),
+  ];
 }
 
 /// 专辑曲目排序：碟号 → 轨号 → CUE 起点 → 标题（缺号排后）。

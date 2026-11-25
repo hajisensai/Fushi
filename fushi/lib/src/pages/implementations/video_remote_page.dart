@@ -13,6 +13,7 @@ import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart'
     show SentenceContextSlot;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/favorites/favorite_lookup_context.dart';
+import 'package:fushi/src/media/favorites/favorite_video_origin_failure.dart';
 import 'package:fushi/src/media/video/video_remote_control_layout.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show PreferencesRepository;
@@ -430,9 +431,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     setState(() {
       _state = value;
       if (value['error'] != null) {
-        _error = videoRemoteErrorText(
-          VideoRemoteError(value['error'].toString()),
-        );
+        _error = videoRemoteErrorText(_snapshotError(value));
       }
       _anchor = DateTime.now();
       _revision = (value['revision'] as num?)?.toInt() ?? _revision;
@@ -1283,6 +1282,9 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
         rubySpans: rubySpans,
         // 不带 `language`：被查的字幕在电脑上播放，查词语言归电脑（电脑视频页按字幕
         // 语言登记查词来源语言）。遥控端本机的查词语言与这次查词无关。
+        // 词典选择则归遥控端：用户在词典管理里对这台电脑关掉 / 排过的词典照样生效
+        // （拍板台 pr3602）。老 host 忽略该字段。
+        dictionaryConfigFor: _appModel.remoteLookupDictionaryConfigFor,
       );
     } catch (e) {
       // 电脑不可达 / 配对被拒：横幅报原因，弹框按「没查到」收尾（不留半截搜索态）。
@@ -1304,8 +1306,10 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
   Future<bool> playPopupWordAudio(
     String expression,
     String reading,
-    DictionaryPopupWebViewState? popupState,
-  ) async {
+    DictionaryPopupWebViewState? Function()? popupState, {
+    // 发音问那台设备要：远端解析 / TTS 兜底由它按自己的口径做，命中原文不上送。
+    String matched = '',
+  }) async {
     final String? ref;
     try {
       ref = await _resources.wordAudioRef(expression, reading);
@@ -1316,7 +1320,9 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     return playResolvedLookupAudio(
       ref,
       label: expression,
-      playInWebView: popupState?.playWordAudioUrl,
+      playInWebView: popupState == null
+          ? null
+          : DictionaryPopupWebViewState.lazyWordAudioPlayer(popupState),
     );
   }
 
@@ -1473,6 +1479,8 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
+      term: fields['expression'],
+      reading: fields['reading'],
     );
     try {
       final Map<String, dynamic> task = await _runRemoteMine(
@@ -1755,7 +1763,7 @@ class VideoRemotePageState extends ConsumerState<VideoRemotePage>
     if (waiter == null || waiter.isCompleted || favorite == null) return;
     try {
       if (_state['error'] != null) {
-        throw VideoRemoteError(_state['error'].toString());
+        throw _snapshotError(_state);
       }
       final Map<String, dynamic>? cue = _favoriteCue(favorite);
       if (cue != null) waiter.complete(cue);
@@ -2354,6 +2362,10 @@ String videoRemoteErrorText(Object error) {
     case 'favorite_subtitle_ambiguous':
       return t.video_remote_error_favorite_ambiguous;
     case 'favorite_source_unavailable':
+      // 新版电脑随码附上细分原因（来源没登录 / 对端离线 / 扩展没装……）；旧版电脑
+      // 不带、或带了本机还不认识的原因，退回笼统文案。
+      return FavoriteVideoOriginFailure.fromWireReason(error.reason)?.message ??
+          t.video_remote_error_favorite_source_unavailable;
     case 'favorite_subtitle_unavailable':
       return t.video_remote_error_favorite_source_unavailable;
     case 'favorite_subtitle_missing':
@@ -2423,3 +2435,14 @@ String videoRemoteErrorText(Object error) {
   }
   return t.video_remote_error_unknown(code: code);
 }
+
+/// 快照上的异步失败（`error` + 可选的细分原因 `errorReason`，见
+/// `VideoRemoteHost.reportError`）。
+VideoRemoteError _snapshotError(Map<String, dynamic> snapshot) =>
+    VideoRemoteError(
+      snapshot['error'].toString(),
+      reason: switch (snapshot['errorReason']) {
+        final String reason when reason.isNotEmpty => reason,
+        _ => null,
+      },
+    );

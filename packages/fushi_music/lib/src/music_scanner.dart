@@ -27,6 +27,8 @@ typedef _NextDart =
     int Function(Pointer<Void>, int, Pointer<Pointer<Uint8>>, Pointer<Size>);
 typedef _CloseC = Void Function(Pointer<Void>);
 typedef _CloseDart = void Function(Pointer<Void>);
+typedef _ParserRevisionC = Int32 Function();
+typedef _ParserRevisionDart = int Function();
 typedef _CoverC =
     Int32 Function(
       Pointer<Uint8>,
@@ -62,6 +64,10 @@ class _ScanBindings {
       cover = lib.library.lookupFunction<_CoverC, _CoverDart>(
         'ffm_tags_embedded_cover',
       );
+      parserRevision = lib.library
+          .lookupFunction<_ParserRevisionC, _ParserRevisionDart>(
+            'ffm_scan_parser_revision',
+          );
     } on ArgumentError catch (e) {
       throw lib.missingSymbols('scan', e);
     }
@@ -73,6 +79,7 @@ class _ScanBindings {
   late final _NextDart next;
   late final _CloseDart close;
   late final _CoverDart cover;
+  late final _ParserRevisionDart parserRevision;
 
   static _ScanBindings? _instance;
   static _ScanBindings get instance =>
@@ -157,6 +164,11 @@ final class MusicScanSession {
     _handle = nullptr;
   }
 }
+
+/// Rust 扫描的解析修订号（`scan::PARSER_REVISION`）：同一个没改过的文件重新解析会入库
+/// 不同结果的改动都会升它。调用方按来源记下上次全量解析时的值，不一致就别传 `known`，
+/// 整源重新解析，否则增量扫描只认 mtime / size，解析改动永远落不到存量曲目上。
+int musicScanParserRevision() => _ScanBindings.instance.parserRevision();
 
 /// 读一个音频文件的内嵌封面字节（阻塞；放后台 isolate 调）。没有封面返回 null。
 Uint8List? readMusicEmbeddedCover(String path) {

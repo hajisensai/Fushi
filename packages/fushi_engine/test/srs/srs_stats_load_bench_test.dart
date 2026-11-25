@@ -1,7 +1,7 @@
-// 大库基准：统计页装载（`loadSrsStats`）与一次 AnkiConnect findNotes / notesInfo 的耗时与内存增量。
+// 大库基准：统计页装载（`loadSrsStats` + 一次 `report`，聚合在内核）与一次 AnkiConnect findNotes / notesInfo 的耗时与内存增量。
 //
 // 手动跑（库只读复制一份再开）：
-//   FUSHI_SRS_L3_BENCH_DB=<srs.db 路径> FUSHI_SRS_L3_BENCH_PROFILE=<profile uid> \
+//   FUSHI_SRS_L3_BENCH_DB=<新代库目录或协议 3 的 srs.db> FUSHI_SRS_L3_BENCH_PROFILE=<profile uid> \
 //     dart tool/heavy.dart -- flutter test test/srs/srs_stats_load_bench_test.dart
 // 不设环境变量时跳过。
 import 'dart:async';
@@ -11,6 +11,7 @@ import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/ankiconnect/srs_ankiconnect_handler.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:test/test.dart';
 
@@ -43,22 +44,10 @@ void main() {
   test(
     '基准：统计页装载 + AnkiConnect',
     () async {
-      final Directory tmp = Directory.systemTemp.createTempSync('srs_l3_');
-      addTearDown(() {
-        try {
-          tmp.deleteSync(recursive: true);
-        } on FileSystemException {
-          // 句柄晚释放。
-        }
-      });
-      File(src!).copySync('${tmp.path}/srs.db');
-      final TestSrs srs = await openTestSrsAt(
-        '${tmp.path}/srs.db',
-        inline: false,
-      );
+      // 副本上跑：新代库目录拷一份，协议 3 的 srs.db 经换代迁移。
+      final TestSrs srs = await openRealDataTestSrs(src!);
       final Stopwatch open = Stopwatch()..start();
       final SrsDbStore store = await SrsDbStore.open(
-        db: srs.db,
         core: srs.core,
         profileUid: uid,
         deviceId: 'dev',
@@ -67,13 +56,14 @@ void main() {
       );
       stdout.writeln('BENCH open ${open.elapsedMilliseconds}ms');
       for (int i = 0; i < 3; i++) {
-        final (int ms, int mb, SrsStatsBundle b) = await _measure(
-          () => loadSrsStats(store),
+        final (int ms, int mb, SrsStatsReport b) = await _measure(
+          () async =>
+              (await loadSrsStats(store)).report(range: SrsStatsRange.all),
         );
         stdout.writeln(
           'BENCH loadSrsStats#$i ${ms}ms +${mb}MB '
-          'cards=${b.data.cards.length} reviews=${b.data.reviews.length} '
-          'sources=${b.data.sourceShares().length}',
+          'cards=${b.cardCounts.total} reviews=${b.rangeTotals.count} '
+          'sources=${b.sources.length}',
         );
       }
       final SrsAnkiConnectHandler h = SrsAnkiConnectHandler(
@@ -114,8 +104,8 @@ void main() {
         () => ok('findNotes', <String, Object?>{'query': 'deck:*'}),
       );
       stdout.writeln('BENCH findNotes(after answer) ${ms3}ms +${mb3}MB');
-      final (int ms4, int mb4, SrsStatsBundle _) = await _measure(
-        () => loadSrsStats(store),
+      final (int ms4, int mb4, SrsStatsReport _) = await _measure(
+        () async => (await loadSrsStats(store)).report(),
       );
       stdout.writeln('BENCH loadSrsStats(after answer) ${ms4}ms +${mb4}MB');
     },

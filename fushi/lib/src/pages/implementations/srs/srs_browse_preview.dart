@@ -22,10 +22,9 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
     show SrsFushiCardView;
 import 'package:fushi/src/pages/implementations/srs/srs_html_card_view.dart'
-    show SrsHtmlCardView, srsNativeHtmlCardFor;
-import 'package:fushi/src/srs/srs_fushi_card_items.dart'
-    show srsFushiCardRenderedNative;
-import 'package:fushi/src/srs/srs_html_card.dart' show SrsHtmlCard;
+    show SrsHtmlCardView;
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
+import 'package:fushi/src/srs/srs_card_face_route.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -136,6 +135,11 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
     }
   }
 
+  void _retryLoad() {
+    setState(() => _error = null);
+    unawaited(_load());
+  }
+
   /// 载入一张卡。换卡期间旧卡面留在原位（上面压一条进度条），不把卡面换成加载视图：卡面是平台视图，
   /// 从树上摘下再挂回去就是销毁重建 WebView（首帧前整块空白）。出错显示错误态，不永远转圈。
   Future<void> _load() async {
@@ -187,54 +191,40 @@ class _SrsBrowsePreviewState extends ConsumerState<SrsBrowsePreview> {
         },
         onSourceLink: _openSource,
       );
-      // 与复习页同一判据（[SrsRenderedCard.fushiCardDefinitions]）：内置 Fushi 卡片（只调了区块布局、
-      // 媒体原生画得全）走原生 + 释义 WebView 的混合卡面，其余整面 WebView。以前预览一律整面
-      // WebView，Fushi 卡片在浏览预览里与复习时长得不一样（satv-DI70B）。
-      // 非 Fushi 卡片两面都在原生认得的子集里时同复习页走原生 HTML 卡面（[srsNativeHtmlCardFor]）。
-      // 自定义区块（字段 / HTML 区块）原生画不了时同样整面 WebView（[srsFushiCardRenderedNative]）。
-      final String? definitions =
-          srsFushiCardRenderedNative(
-            rendered,
-            languageCode: cardFace.languageCode,
-          )
-          ? rendered.fushiCardDefinitions
-          : null;
-      final SrsHtmlCard? html = definitions != null
-          ? null
-          : srsNativeHtmlCardFor(
-              fushiCard: cardFace.fushiCard,
-              question: rendered.question,
-              answer: rendered.answer,
-              css: rendered.css,
-              languageCode: cardFace.languageCode,
-            );
-      face = definitions != null
+      // 与复习页同一判据（[srsCardFaceRoute]）：内置 Fushi 卡片认得出区块布局、媒体与自定义区块
+      // 原生画得全时走原生 + 释义 WebView 的混合卡面；非 Fushi 卡片两面都在原生认得的子集里时
+      // 走原生 HTML 卡面；其余整面 WebView。以前预览一律整面 WebView，Fushi 卡片在浏览预览里
+      // 与复习时长得不一样（satv-DI70B）。
+      final SrsCardFaceRoute route = srsCardFaceRoute(
+        rendered,
+        fushiCard: cardFace.fushiCard,
+        languageCode: cardFace.languageCode,
+      );
+      face = route is SrsCardFaceFushiNative
           ? SrsFushiCardView(
               key: const ValueKey<String>('srs-browse-preview-native'),
               face: cardFace,
               fields: rendered.fields,
-              definitionsHtml: definitions,
+              definitionsHtml: rendered.fushiCardDefinitions!,
               front: rendered.fushiCardFront,
               back: rendered.fushiCardBack,
             )
-          : html != null
+          : route is SrsCardFaceHtmlNative
           ? SrsHtmlCardView(
               key: const ValueKey<String>('srs-browse-preview-html'),
               face: cardFace,
-              source: html.face(answerSide: widget.showAnswer),
+              source: route.card.face(answerSide: widget.showAnswer),
             )
           : ref.watch(srsCardFaceBuilderProvider)(context, cardFace);
     }
     // 压在卡面上的一层：首次载入转圈 / 出错 / 没有这张卡。卡面始终是 Stack 第 0 格（结构恒定）。
     final Widget? overlay;
     if (_error != null) {
-      overlay = Center(
-        child: FushiPlaceholderMessage(
-          key: const ValueKey<String>('srs-browse-preview-error'),
-          icon: FushiIcons.error,
-          tone: FushiPlaceholderTone.error,
-          message: t.error_load_failed,
-        ),
+      overlay = SrsLoadErrorView(
+        key: const ValueKey<String>('srs-browse-preview-error'),
+        error: _error,
+        retryKey: const ValueKey<String>('srs-browse-preview-retry'),
+        onRetry: _retryLoad,
       );
     } else if (!hasFace) {
       overlay = _loading

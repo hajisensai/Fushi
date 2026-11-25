@@ -317,6 +317,22 @@ void main() {
         isTrue,
         reason: 'RenderBox-unavailable fallback still closes (no crash)',
       );
+      // GitHub #3088: with "Look up words on tap" off, a tap outside the popup
+      // only closes it -- it must not reach _selectTextAt (which would look up
+      // the word under the finger). Lyrics overlay taps keep their own meaning.
+      final int toggleGuard = body.indexOf(
+        'if (!_lyricsMode && !ReaderFushiSource.instance.highlightOnTap) {',
+      );
+      expect(toggleGuard, greaterThan(0));
+      expect(
+        toggleGuard,
+        lessThan(body.indexOf('_selectTextAt(local.dx, local.dy)')),
+        reason: 'tap-lookup-off guard must run before the lookup forward',
+      );
+      expect(
+        body.substring(toggleGuard, body.indexOf('return;', toggleGuard)),
+        contains('clearDictionaryResult();'),
+      );
     });
 
     test('reader onTapEmpty clears the stack when a popup is visible', () {
@@ -350,6 +366,25 @@ void main() {
           continue;
         }
         sawBodyHandler = true;
+        // 正文 onTapEmpty 委托给 _handleReaderBlankTap（GitHub #3088），弹窗关栈
+        // 语义在 helper 体内。
+        if (body.contains('_handleReaderBlankTap(')) {
+          final int helper = corpus.indexOf('void _handleReaderBlankTap(');
+          expect(helper, greaterThan(0));
+          final String helperBody = corpus.substring(
+            helper,
+            corpus.indexOf('\n  }\n', helper),
+          );
+          expect(
+            helperBody.contains('if (isDictionaryShown) {'),
+            isTrue,
+            reason:
+                'barrier-forwarded blank tap (popup visible) must close the '
+                'stack, not toggle chrome (TODO-1027)',
+          );
+          expect(helperBody.contains('clearDictionaryResult();'), isTrue);
+          continue;
+        }
         expect(
           body.contains('if (isDictionaryShown) {'),
           isTrue,

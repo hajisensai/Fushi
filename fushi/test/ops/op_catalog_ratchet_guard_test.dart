@@ -209,6 +209,10 @@ void main() {
             f.path.endsWith('.dart') &&
             f.uri.pathSegments.last.startsWith('ctl_'))
           f.readAsStringSync(),
+      // 复习的路由本体在 engine（app 的 ctl_srs_routes.dart 只是装配），表态参数的读取点在那里。
+      File(
+        '../packages/fushi_engine/lib/srs/srs_ctl_routes.dart',
+      ).readAsStringSync(),
     ].join('\n');
     for (final FushiOp op in catalog.ops) {
       final Set<String> segments = <String>{

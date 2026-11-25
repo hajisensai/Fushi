@@ -49,13 +49,14 @@ class CloudRemoteVideoClient implements RemoteVideoSource {
   String get remoteLibrarySourceId =>
       cloudRemoteLibrarySourceId(backendType.name);
 
-  /// [backend] 的明文区间读视图；null = 该云盘只能整文件下载（WebDAV / FTP / SFTP）。
+  /// [backend] 的明文区间读视图；null = 该云盘只能整文件下载（FTP）。
   final SyncAssetRangeReader? _rangeReader;
   final Future<CloudVideoStreamRelay> Function() _relay;
   CloudStreamVideoClient? _streaming;
 
-  /// 流播视图：该云盘能按 `Range` 读（OneDrive / Dropbox / Google Drive）时给出，
-  /// 否则 null（WebDAV / FTP / SFTP，调用方只提供「下载」）。同一 client 复用同一
+  /// 流播视图：该云盘能按 `Range` 读（OneDrive / Dropbox / Google Drive / WebDAV /
+  /// SFTP）时给出，否则 null（FTP，调用方只提供「下载」）。WebDAV 服务器不支持
+  /// `Range` 时区间读抛 [SyncAssetRangeUnsupported]，流播起播即失败、不退化成整包下载。同一 client 复用同一
   /// 实例，让「资产是否混淆」的探测结果在多次播放间共享。
   CloudStreamVideoClient? streamingClient() {
     final SyncAssetRangeReader? reader = _rangeReader;

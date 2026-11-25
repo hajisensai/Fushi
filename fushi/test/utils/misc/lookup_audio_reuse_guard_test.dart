@@ -38,16 +38,17 @@ void main() {
       // reuses the same cached client, so the count is 3, not 2. Bumping this
       // keeps the invariant exact (one shared client, everyone reuses it): the
       // mining client threads _remoteLookupClient in exactly like the dictionary
-      // and audio lookups, never new-ing up its own.
+      // and audio lookups, never new-ing up its own. PR#3147 added a fourth: the
+      // server-dictionary catalog's InterconnectPostTransport reuses it too.
       final int passes = RegExp(
         r'httpClient:\s*_remoteLookupClient',
       ).allMatches(src).length;
       expect(
         passes,
-        3,
+        4,
         reason:
-            'dictionary + audio lookups + server-mining forwarder all '
-            'reuse the one cached client',
+            'dictionary + audio lookups + server-mining forwarder + '
+            'server-dictionary catalog transport all reuse the one cached client',
       );
     });
 

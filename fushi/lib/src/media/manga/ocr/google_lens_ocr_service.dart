@@ -16,6 +16,8 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_text_join.dart';
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart';
 import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
+import 'package:fushi_engine/utils/misc/atomic_text_file.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
 final Uri kGoogleLensEndpoint = Uri.parse(
@@ -113,6 +115,10 @@ class HttpGoogleLensTransport implements GoogleLensTransport {
 
 abstract interface class GoogleLensMangaOcrRunner {
   /// [focus]：运行中跟着读者当前页改道（[MangaOcrPageScheduler]）。
+  ///
+  /// [onlyMissing]：生产实现里已识别的页恒由 Lens 自己的逐页缓存决定（「重新
+  /// 识别」由调用方先清掉缓存目录），这个参数不改变执行器行为；保留是为了与
+  /// 系统 OCR runner 的接口对齐。
   Stream<MangaOcrVolumeEvent> ocrFolder({
     required String imageDirPath,
     String? volumeTitle,
@@ -129,14 +135,33 @@ abstract interface class GoogleLensMangaOcrRunner {
     required String language,
   });
 
+  /// 识别一整页内存像素（视频暂停 OCR 的播放器截帧）：不解码，直接缩放编 JPEG 上传。
+  Future<MokuroImage> recognizePagePixels(
+    OcrRgbaImage image, {
+    required String relativeUrl,
+    required String language,
+  });
+
   Future<void> clearCache(String imageDirPath);
 }
 
 class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
   GoogleLensMangaOcrService({GoogleLensTransport? transport})
-    : _transport = transport ?? HttpGoogleLensTransport();
+    : this._(transport, transport == null ? HttpGoogleLensTransport() : null);
+
+  GoogleLensMangaOcrService._(
+    GoogleLensTransport? injected,
+    HttpGoogleLensTransport? owned,
+  ) : _transport = injected ?? owned!,
+      _ownedTransport = owned;
 
   final GoogleLensTransport _transport;
+
+  /// 本服务自建的 HTTP 传输；注入的 transport 生命周期归调用方，不在这里关。
+  final HttpGoogleLensTransport? _ownedTransport;
+
+  /// 关闭自建的 HTTP 连接池（宿主 dispose 时调用）。
+  void close() => _ownedTransport?.close();
 
   @override
   Stream<MangaOcrVolumeEvent> ocrFolder({
@@ -156,7 +181,6 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
             final String output = await _runFolder(
               imageDirPath: imageDirPath,
               startPage: startPage,
-              onlyMissing: onlyMissing,
               language: language,
               cancelToken: cancelToken,
               focus: focus,
@@ -202,7 +226,6 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
   Future<String> _runFolder({
     required String imageDirPath,
     required int startPage,
-    required bool onlyMissing,
     required String language,
     required OcrCancelToken cancelToken,
     required MangaOcrPageFocus? focus,
@@ -228,9 +251,6 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
     final File output = File(
       p.join(outputDirectory.path, kMangaOcrOutputFileName),
     );
-    final Map<String, MokuroImage> existing = onlyMissing
-        ? await _readExistingPages(output)
-        : <String, MokuroImage>{};
     final List<MokuroImage?> results = List<MokuroImage?>.filled(
       pages.length,
       null,
@@ -241,23 +261,24 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
     );
     int done = 0;
     while (true) {
-      final int? focused = focus?.take();
+      // 改道请求带的是页身份，在本任务的页表里找下标（阅读器页号不是本任务页号）。
+      final int? focused = mangaOcrFocusIndex(pages, focus?.take());
       if (focused != null) scheduler.focus(focused);
       final int? pageIndex = scheduler.next();
       if (pageIndex == null) break;
       cancelToken.throwIfCancelled();
       final MangaOcrPageFile page = pages[pageIndex];
-      final MokuroImage? existingPage = existing[page.relativeUrl];
-      if (existingPage != null && existingPage.blocks.isNotEmpty) {
-        results[pageIndex] = existingPage;
-      } else {
-        final MokuroImage? cached = await cache.read(pageIndex, page);
-        results[pageIndex] =
-            cached ?? await _recognizePage(page, language: language);
-        if (cached == null) {
-          await cache.write(pageIndex, page, results[pageIndex]!);
-        }
+      // 已识别的页只认 Lens **自己**的逐页缓存（目录名即引擎签名，带语言）；
+      // 「重新识别」由调用方先清掉这个目录（`mangaOcrLensEvents`）。共用的
+      // `manga_ocr_out/manga.json` 可能是别的引擎写的：从那里收页会把别家的
+      // 结果标成 `google_lens`（BUG-4815）。
+      final MokuroImage? cached = await cache.read(pageIndex, page);
+      final MokuroImage image =
+          cached ?? await _recognizePage(page, language: language);
+      if (cached == null) {
+        await cache.write(pageIndex, page, image);
       }
+      results[pageIndex] = image;
       done += 1;
       onProgress(done, pages.length, pageIndex);
     }
@@ -268,6 +289,7 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
         engine: 'google_lens',
         engineSignature: googleLensEngineSignature(language),
         schemaVersion: 1,
+        completedAt: DateTime.now().toUtc(),
       ),
     );
     await outputDirectory.create(recursive: true);
@@ -303,6 +325,35 @@ class GoogleLensMangaOcrService implements GoogleLensMangaOcrRunner {
         await Isolate.run<GoogleLensPreparedImage>(
           () => GoogleLensProtocol.prepareImage(source),
         );
+    return _recognizePrepared(
+      prepared,
+      relativeUrl: relativeUrl,
+      language: language,
+    );
+  }
+
+  @override
+  Future<MokuroImage> recognizePagePixels(
+    OcrRgbaImage image, {
+    required String relativeUrl,
+    required String language,
+  }) async {
+    final GoogleLensPreparedImage prepared =
+        await Isolate.run<GoogleLensPreparedImage>(
+          () => GoogleLensProtocol.prepareRgba(image),
+        );
+    return _recognizePrepared(
+      prepared,
+      relativeUrl: relativeUrl,
+      language: language,
+    );
+  }
+
+  Future<MokuroImage> _recognizePrepared(
+    GoogleLensPreparedImage prepared, {
+    required String relativeUrl,
+    required String language,
+  }) async {
     final Uint8List request = GoogleLensProtocol.makeRequest(
       imageData: prepared.data,
       width: prepared.width,
@@ -422,7 +473,9 @@ class GoogleLensPageCache {
       if (await file.length() > kGoogleLensMaximumCachedPageBytes) {
         return null;
       }
-      final Object? decoded = jsonDecode(await file.readAsString());
+      final Object? decoded = jsonDecode(
+        await readAtomicallyWrittenTextFile(file),
+      );
       if (decoded is! Map) {
         return null;
       }
@@ -478,7 +531,7 @@ class GoogleLensPageCache {
     if (utf8.encode(json).length > kGoogleLensMaximumCachedPageBytes) {
       throw const GoogleLensOcrException('invalid_response', 'cache too large');
     }
-    await _writeTextAtomically(_pageFile(pageIndex), json);
+    await writeTextFileAtomically(_pageFile(pageIndex), json);
   }
 
   File _pageFile(int pageIndex) => File(
@@ -702,29 +755,5 @@ class _CachedLensPiece {
   final bool spaceBefore;
 }
 
-Future<Map<String, MokuroImage>> _readExistingPages(File output) async {
-  if (!output.existsSync()) {
-    return <String, MokuroImage>{};
-  }
-  try {
-    final MokuroPayload payload = parseMangaJson(await output.readAsString());
-    return <String, MokuroImage>{
-      for (final MokuroImage image in payload.images) image.url: image,
-    };
-  } catch (_) {
-    return <String, MokuroImage>{};
-  }
-}
-
 Future<void> _writeJsonAtomically(File target, Map<String, Object?> value) =>
-    _writeTextAtomically(target, jsonEncode(value));
-
-Future<void> _writeTextAtomically(File target, String value) async {
-  await target.parent.create(recursive: true);
-  final File temporary = File('${target.path}.tmp');
-  await temporary.writeAsString(value, flush: true);
-  if (target.existsSync()) {
-    await target.delete();
-  }
-  await temporary.rename(target.path);
-}
+    writeTextFileAtomically(target, jsonEncode(value));

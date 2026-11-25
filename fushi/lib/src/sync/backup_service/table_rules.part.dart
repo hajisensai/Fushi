@@ -136,6 +136,10 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'video_episode_binding_overrides': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.videos,
   }),
+  // v167：用户 / AI 钉死的合集分栏（拍板台 iR6ccUys9H），同手动季集指定。
+  'video_collection_section_overrides': BackupTableRule.follows(
+    <BackupCategory>{BackupCategory.videos},
+  ),
   'video_scrape_meta': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.videos,
   }),
@@ -192,14 +196,17 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // ── 游戏 ──
   'galgame_sources': BackupTableRule.rowLevel('_retainGames（FK cascade）'),
   'galgames': BackupTableRule.rowLevel('_retainGames'),
-  // v134：文本钩子台词——唯一的持久副本（「我库里的例句」的游戏来源由它派生），随游戏
-  // 一起出境；按游戏选择裁剪时经外键 cascade 跟着宿主走。合并导入见
-  // BackupMergeEngine._mergeGalgameTextLines（按游戏身份重映射 + (游戏, 台词) 去重）。
-  'galgame_text_lines': BackupTableRule.rowLevel('_retainGames（FK cascade）'),
+  // v134 的游戏台词表 galgame_text_lines 已在 v147 删除（「我库里的例句」下架后无读写者）。
+  // 旧备份里带它也不用登记：恢复 / 合并导入先把备份库迁到当前版本，表在那一步就删掉了。
 
   // ── 书 / 视频共享 ──
   'media_tracking_outbox': BackupTableRule.follows(_bookOrVideo),
   'media_tracking_mappings': BackupTableRule.follows(_bookOrVideo),
+  'media_tracking_suggestions': BackupTableRule.follows(_bookOrVideo),
+  // v151: the do-not-track list and the remembered media server episodes go
+  // with the links they belong to.
+  'media_tracking_ignored': BackupTableRule.follows(_bookOrVideo),
+  'media_tracking_remote_episodes': BackupTableRule.follows(_bookOrVideo),
   'series': BackupTableRule.follows(_bookOrVideo),
   'collection_member_tombstones': BackupTableRule.follows(_bookOrVideo),
   // v129 作品图谱：连接跨书 / 视频 / 游戏三类内容，任一勾选就随包（端点本机不在
@@ -226,12 +233,18 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'collection_scrape_meta': BackupTableRule.rowLevel(
     '随 media_collections FK cascade',
   ),
+  // v162：起点也可以是单视频（散装电影），随 video_books 一起裁剪。
   'collection_relations': BackupTableRule.rowLevel(
-    '随 media_collections FK cascade',
+    '随 media_collections / video_books FK cascade',
   ),
   'media_images': BackupTableRule.rowLevel(
     '随 media_collections / video_books FK cascade',
   ),
+  // v155：单本书 / 字幕书 / 游戏的刮削资料与附加图——与 collection_scrape_meta /
+  // media_images 同族的可重建缓存，宿主是逻辑外键（同 media_privacy_flags），
+  // 被裁剪内容的行按宿主收敛。
+  'item_scrape_meta': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
+  'item_images': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'media_collection_items': BackupTableRule.rowLevel(
     '_stripOrphanUserDataTables',
   ),
@@ -241,6 +254,14 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // v122 作品级私密标记：与 tag_assignments 同一套宿主逻辑外键，被裁剪内容的标记
   // 一并收敛掉。
   'media_privacy_flags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
+  // v156 作品级 NSFW 标记：同上。
+  'media_nsfw_flags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
+  // v171 上锁标记：同 media_privacy_flags / media_nsfw_flags（宿主逻辑外键）。
+  'media_locked_flags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
+  // v171 解锁口令摘要：跟着上锁标记走——导出副本里一条上锁记录都不剩就不带它。
+  'media_lock_credentials': BackupTableRule.rowLevel(
+    '_stripOrphanUserDataTables',
+  ),
   'book_tags': BackupTableRule.rowLevel('_stripOrphanUserDataTables'),
   'book_tag_membership_tombstones': BackupTableRule.rowLevel(
     '_stripOrphanUserDataTables',
@@ -300,6 +321,10 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'favorite_words': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.statistics,
   }),
+  // v166：收藏句（原偏好 `favorite_sentences`，BUG-816 起归「书籍」类别）。
+  'favorite_sentences': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.books,
+  }),
   'activity_events': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.statistics,
   }),
@@ -326,6 +351,11 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'music_playlists': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.music,
   }),
+  // 远程曲目（v148）：歌单条目可能引用它，与歌单同进同出；身份与设备无关（来源 + 条目 id
+  // 派生），不含本机路径。
+  'music_remote_tracks': BackupTableRule.follows(<BackupCategory>{
+    BackupCategory.music,
+  }),
   'music_lyrics': BackupTableRule.follows(<BackupCategory>{
     BackupCategory.music,
   }),
@@ -343,6 +373,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // ── 私人使用痕迹 ──
   'search_history_items': BackupTableRule.alwaysStripped(),
   'dictionary_history': BackupTableRule.alwaysStripped(),
+  // v151: this device's log of sends to tracking sites (capped, 500 rows).
+  'media_tracking_activity': BackupTableRule.alwaysStripped(),
 
   // ── 设备本地（= _deviceLocalTables）──
   'clipboard_history': BackupTableRule.deviceLocal(),
@@ -371,6 +403,11 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'ai_agent_actions': BackupTableRule.deviceLocal(),
   // v128：内置浏览器标签页会话 / 最近关闭 / 下载记录，设备本地。
   'web_browser_session_tabs': BackupTableRule.deviceLocal(),
+  // v175：服务器曲目的离线副本（本机文件路径）。
+  'music_server_downloads': BackupTableRule.deviceLocal(),
+  // v176：服务器曲目的离线补发队列与客户端状态（设备本地）。
+  'music_server_pending_actions': BackupTableRule.deviceLocal(),
+  'music_server_track_states': BackupTableRule.deviceLocal(),
   'web_browser_closed_tabs': BackupTableRule.deviceLocal(),
   'web_browser_downloads': BackupTableRule.deviceLocal(),
   // v130 音乐曲库目录：设备本地（本机重扫产物 + 绝对路径，见 _deviceLocalTables）。
@@ -381,6 +418,13 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   'music_disc_sources': BackupTableRule.deviceLocal(),
   // v131：OP / ED 声纹比对的按集缓存，设备本地（见 _deviceLocalTables）。
   'video_theme_song_spans': BackupTableRule.deviceLocal(),
+  // v163：作品图谱 AI 裁决缓存，设备本地（见 _deviceLocalTables）。
+  'media_link_ai_verdicts': BackupTableRule.deviceLocal(),
+  // v165：视频内容指纹缓存，设备本地（见 _deviceLocalTables）。
+  'video_content_fingerprints': BackupTableRule.deviceLocal(),
+  // v172：本地 MV 自动匹配缓存，设备本地（见 _deviceLocalTables）。
+  'music_video_prints': BackupTableRule.deviceLocal(),
+  'music_video_match_checks': BackupTableRule.deviceLocal(),
   // v135：游戏 VNDB 配音表缓存，设备本地（见 _deviceLocalTables）。
   'game_voice_casts': BackupTableRule.deviceLocal(),
   // v133：音乐刮削三表（识别结论 / 原始快照 / 字段锁），键含本机路径派生的 track_uid、
@@ -391,6 +435,8 @@ const Map<String, BackupTableRule> backupTableRules = <String, BackupTableRule>{
   // v145：曲目 uid 别名，设备本地（见 _deviceLocalTables）。
   'music_track_uid_aliases': BackupTableRule.deviceLocal(),
   'remote_audio_bindings': BackupTableRule.deviceLocal(),
+  // v153：服务器托管词典的本机目录行，键是本机配对的 hostId（见 _deviceLocalTables）。
+  'remote_dictionary_metadata': BackupTableRule.deviceLocal(),
 };
 
 /// 守卫测试用：各段专门剥离逻辑点名的表清单，用来核对与 [backupTableRules]

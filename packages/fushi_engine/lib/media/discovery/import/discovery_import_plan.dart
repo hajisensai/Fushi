@@ -12,6 +12,7 @@ import 'package:fushi_engine/media/audiobook/audiobook_subtitle_formats.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_subtitle_pick.dart';
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/utils/archive/archive_volumes.dart';
 
 /// 字幕扩展名（带点，`p.extension` 的形状）：有声书字幕唯一真相源
 /// [kAudiobookSubtitleExtensions] 的派生，不另写一份。
@@ -19,7 +20,8 @@ final Set<String> kDiscoverySubtitleExtensions = <String>{
   for (final String ext in kAudiobookSubtitleExtensions) '.$ext',
 };
 
-/// 需要先解压的压缩包扩展名。zip 走内置解码，7z/rar 依赖 7-Zip 命令行。
+/// 需要先解压的压缩包扩展名。zip / 7z 由原生库解，rar 依赖 7-Zip 命令行。分卷包的
+/// 第一卷（`book.7z.001`）另由 [isDiscoveryArchivePath] 认，后续卷不算（随第一卷解开）。
 const Set<String> kDiscoveryArchiveExtensions = <String>{'.zip', '.7z', '.rar'};
 
 /// 漫画**图包**载体：整包交给 `MangaArchiveImporter`，不走通用解压器。
@@ -85,15 +87,22 @@ enum DiscoveryImportBlocker {
   /// 游戏包里找不到可执行文件。
   gameNoExecutable,
 
-  /// 7z/rar 需要 7-Zip 命令行而本机没有。
+  /// RAR 需要 7-Zip 命令行而本机没有（zip / 7z 由原生库解，五端都有）。
   archiveToolMissing,
 
-  /// 解压失败（损坏/带密码等）。
+  /// 解压失败（损坏 / 不安全的条目路径 / 超限等）。
   archiveExtractionFailed,
 
   /// 分类出来了，但执行这一步的宿主没有对应的导入器（如无头服务端没有 PDF
   /// 栅格化、没有游戏库）。换到 app 当 host 或本机下载即可。
   unsupportedOnThisHost,
+
+  /// 加密包没拿到口令（用户取消口令对话框，或宿主不能交互，如无头服务端）。
+  /// 追加在末尾：原因码按名字落库 / 上报，不改既有值的位置。
+  archivePasswordRequired,
+
+  /// 分卷包拼不全（缺卷，或拿到的不是第一卷 `.001`）。追加在末尾，理由同上。
+  archiveVolumesMissing,
 }
 
 /// 自动导入被挡下（分类不出/解压工具缺失/解压失败）。队列把它落成任务
@@ -223,7 +232,8 @@ bool _isSubtitle(String path) =>
 
 /// 是否需要先解压。
 bool isDiscoveryArchivePath(String path) =>
-    kDiscoveryArchiveExtensions.contains(_ext(path));
+    kDiscoveryArchiveExtensions.contains(_ext(path)) ||
+    isFirstSplitArchiveVolume(path);
 
 /// 是否是漫画图包载体。
 bool isDiscoveryMangaArchivePath(String path) =>

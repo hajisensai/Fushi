@@ -12,6 +12,11 @@
 //! 本 crate 不加任何自己的符号；ABI 以各子 crate 的 lib.rs 为准，核对用各自的
 //! verify_abi.sh（期望集取自 Dart 绑定的 lookup 名）。
 
+// 让 cargo 的新鲜度指纹带上「这是哪个 worktree」：多个 worktree 共用一个 CARGO_TARGET_DIR 时，没有它会把别的
+// worktree 编出的产物当成本 worktree 的直接用（假绿 / 假红）。值来自仓库根 .cargo/config.toml 的 [env]，不进产物。
+// 每个 native crate 的入口文件都要有这一行（守卫 fushi/test/build/native_crate_worktree_fingerprint_guard_test.dart）。
+const _: Option<&str> = option_env!("FUSHI_WORKTREE_ROOT");
+
 // fushi_compute 以 crate 名整体重新导出、不 glob：它与 fushi_fsrs 都有 `ABI_VERSION` /
 // `status`，两个 glob 并列会触发 ambiguous_glob_reexports。C 级导出不受影响（链进来即导出）。
 // fushi_rwkv 同理（它也有 `ABI_VERSION`）。

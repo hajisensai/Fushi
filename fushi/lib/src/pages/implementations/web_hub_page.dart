@@ -1,9 +1,11 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/browser_extension_page.dart';
 import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart';
-import 'package:fushi/src/sync/desktop_lookup_service.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
         FushiFloatingChromeBar,
@@ -13,7 +15,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
         FushiFloatingChromeScope,
         FushiShellInlineTitle;
 import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
-    show fushiNotificationFromVisibleSubtree;
+    show fushiNotificationDrivesPageChrome;
 import 'package:fushi/src/utils/components/section_visibility.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
@@ -36,15 +38,15 @@ enum WebHubSection {
   /// 由浏览页自己按在线漫画源合规门控。
   browse,
 
-  /// 浏览器扩展安装与连接状态（[BrowserExtensionPage]），仅桌面。
+  /// 浏览器扩展安装与连接状态（[BrowserExtensionPage]），桌面与安卓有、iOS 没有。
   browserExtension,
 }
 
-/// 本平台上 [section] 是否存在。浏览器扩展问 [browserExtensionSupportedOn]。
+/// 本平台上 [section] 是否存在。浏览器扩展问 [browserExtensionInstallAvailableOn]。
 bool webHubSectionAvailable(WebHubSection section) => switch (section) {
   WebHubSection.browse => true,
-  WebHubSection.browserExtension => browserExtensionSupportedOn(
-    isDesktop: DesktopLookupService.isDesktop,
+  WebHubSection.browserExtension => browserExtensionInstallAvailableOn(
+    defaultTargetPlatform,
   ),
 };
 
@@ -92,7 +94,7 @@ class _WebHubPageState extends State<WebHubPage> {
 
   bool _onScroll(ScrollNotification notification) {
     // 保活的离屏子页（TickerMode 关着）发来的通知不算。
-    if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+    if (!fushiNotificationDrivesPageChrome(notification)) return false;
     return _chrome.handleScrollNotification(notification);
   }
 
@@ -136,7 +138,10 @@ class _WebHubPageState extends State<WebHubPage> {
   /// 工具栏行：既没有页签、外壳也不把标题交给本行时（窄窗 M3E / Apple 的单子页）
   /// 整行为空，不占高度。
   Widget _chromeBar(BuildContext context) {
-    final String? shellTitle = FushiShellInlineTitle.of(context)
+    // 重设计外壳下这一行是页头大字（[FushiFloatingChromeOverlay.masthead]）：
+    // 外壳给了页名就画（窄窗 / Apple 同样画大字页名，与库页一致）。
+    final String? shellTitle =
+        shellRedesignActive(context) || FushiShellInlineTitle.of(context)
         ? FushiShellTitleScope.maybeTitleOf(context)
         : null;
     final bool hasTitle = shellTitle != null && shellTitle.isNotEmpty;
@@ -165,6 +170,8 @@ class _WebHubPageState extends State<WebHubPage> {
         controller: _chrome,
         // 工具栏叠在子页上，收起只滑出画面、不改子页视口高度。
         child: FushiFloatingChromeOverlay(
+          // 重设计外壳下画成页头大字（`fushi_page_masthead.dart`），与库页同一套。
+          masthead: true,
           chrome: _chromeBar(context),
           child: NotificationListener<ScrollNotification>(
             onNotification: _onScroll,

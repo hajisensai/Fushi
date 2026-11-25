@@ -15,10 +15,75 @@ part of '../video_fushi_page.dart';
 /// domain) keeps calling the extracted `_episodeOverlayPanel` through shared private
 /// scope.
 extension _VideoEpisode on _VideoFushiPageState {
-  void _handlePlaybackCompleted() {
+  void _handlePlaybackCompleted() => _handlePlaybackEnded(
+    positionMs: _controller?.positionMs,
+    durationMs: _controller?.durationMs,
+  );
+
+  /// 播放器报 EOF（[_handlePlaybackCompleted]）：[positionMs] / [durationMs] 是 EOF
+  /// 那一刻的位置与时长。
+  void _handlePlaybackEnded({
+    required int? positionMs,
+    required int? durationMs,
+  }) {
     if (_controller?.isBlurayNavigationSession == true) return;
     if (_sourceReviewActive) return;
-    final int? positionMs = _controller?.positionMs;
+    // 媒体服务器的流在播放途中断了（EOF 远在片尾之前）：先问一次线路故障转移器，
+    // 换到另一条可达线路就按当前位置重新取流接着播；换不了才按「播完」处理
+    // （拍板台 design-media-server-failover-transport）。
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    if (client is RemoteVideoRouteFailover &&
+        !_streamRouteFailoverInFlight &&
+        isInterruptedStreamEnd(
+          positionMs: positionMs,
+          durationMs: durationMs,
+        )) {
+      unawaited(
+        _recoverInterruptedStream(
+          client as RemoteVideoRouteFailover,
+          positionMs!,
+        ),
+      );
+      return;
+    }
+    _finishPlaybackCompleted(positionMs);
+  }
+
+  /// 流断了之后换线路重载（[_handlePlaybackCompleted]）：[client] 改走新线路成功时
+  /// 与换档同一条路收尾旧会话、按 [positionMs] 重新取流（取流地址带新 host），弹
+  /// OSD；没有别的可达线路 / 当前线路其实还通时按「播完」处理。整程绑定发起时的
+  /// 播放会话（[_reloadRemoteEpisodeInSession]）：问线路、停止上报、重新取流任一
+  /// 等待期间用户换了集（播放代际变了）或退出页面，就什么都不做（HBK-AUDIT-005）。
+  Future<void> _recoverInterruptedStream(
+    RemoteVideoRouteFailover client,
+    int positionMs,
+  ) async {
+    final int generation = _remotePlaybackGeneration;
+    _streamRouteFailoverInFlight = true;
+    bool switched = false;
+    try {
+      switched = await client.failoverRemoteVideoRoute(
+        const MediaServerStreamInterrupted(),
+      );
+    } finally {
+      _streamRouteFailoverInFlight = false;
+    }
+    if (!mounted || generation != _remotePlaybackGeneration) return;
+    if (!switched) {
+      _finishPlaybackCompleted(positionMs);
+      return;
+    }
+    if (!await _reloadRemoteEpisodeInSession(
+      generation: generation,
+      positionMs: positionMs,
+    )) {
+      return;
+    }
+    _showOsd(t.video_media_server_route_switched, icon: FushiIcons.swap);
+  }
+
+  /// 「播完」的收尾：上报停止，满足条件时进自动连播倒计时。
+  void _finishPlaybackCompleted(int? positionMs) {
     if (positionMs != null) {
       unawaited(
         _reportRemotePlaybackStopped(
@@ -30,12 +95,9 @@ extension _VideoEpisode on _VideoFushiPageState {
       );
     }
     if (!mounted) return;
-    // 有下一集才连播（单集 / 末集 / 越界不推进，停在本集结束）。
-    final int cur = _currentEpisode;
-    final int? nextEpisode =
-        (_episodes.length > 1 && cur >= 0 && cur < _episodes.length - 1)
-        ? cur + 1
-        : null;
+    // 有目标集才连播：顺序模式单集 / 末集 / 越界不推进，停在本集结束；随机模式
+    // 只要合集多于一集就挑一集（拍板台 QHbRRctQdW）。
+    final int? nextEpisode = _autoAdvanceTargetEpisode();
     // TODO-639　三门控(自动连播开关/有下一集/未在换集)任一不满足都停在本集结束。
     if (!shouldAutoPlayNextOnCompletion(
       autoPlayNextEnabled: appModel.videoAutoPlayNext,
@@ -47,6 +109,38 @@ extension _VideoEpisode on _VideoFushiPageState {
     // 不直接进下一集，先弹一个可取消的倒计时 OSD(「N 秒后播放下一集 · 取消」)。
     // 倒计时归零→进下一集；用户点取消→停在本集([_cancelAutoAdvanceCountdown])。
     _startAutoAdvanceCountdown(nextEpisode!);
+  }
+
+  /// 自动连播的目标集（拍板台 QHbRRctQdW）。顺序模式 = 下一集（单集 / 末集 / 越界
+  /// 为 null）；随机模式 = 本轮还没播过的随机一集（[VideoShuffleRounds] 记轮次，
+  /// 本地每集一个页面实例也能跨换集接上）。随机结果按（集清单, 当前集）记忆，
+  /// 预热与 EOF 拿到同一集。
+  int? _autoAdvanceTargetEpisode() {
+    final List<_PlaylistEpisodeRef> episodes = _episodes;
+    final int cur = _currentEpisode;
+    if (appModel.videoPlaylistOrder == VideoPlaylistOrder.sequential) {
+      return sequentialNextEpisode(count: episodes.length, current: cur);
+    }
+    final ({List<_PlaylistEpisodeRef> episodes, int current, int? target})?
+    memo = _shuffleTargetMemo;
+    if (memo != null &&
+        identical(memo.episodes, episodes) &&
+        memo.current == cur) {
+      return memo.target;
+    }
+    final int? target = VideoShuffleRounds.instance.next(
+      playlistKey: VideoShuffleRounds.playlistKey(<String>[
+        for (int i = 0; i < episodes.length; i++)
+          episodes[i].bookUid ??
+              (episodes[i].path.isNotEmpty
+                  ? episodes[i].path
+                  : '#$i:${episodes[i].title}'),
+      ]),
+      count: episodes.length,
+      current: cur,
+    );
+    _shuffleTargetMemo = (episodes: episodes, current: cur, target: target);
+    return target;
   }
 
   /// 启动自动连播倒计时(TODO-639)。每秒 -1，归零调 [_runAutoAdvance] 进下一集。
@@ -114,9 +208,14 @@ extension _VideoEpisode on _VideoFushiPageState {
     // 倒计时 overlay，避免它停在旧目标上。
     _cancelAutoAdvanceCountdown();
 
-    // 网页档（站点视频）：剧集来自站点（Netflix metadata），换集 = 同一个 WebView 导航到那一集
-    // 的播放页；落书 / 进度 / 字幕身份由 [_onWebState] 按新地址接上。
-    if (_webMode) {
+    // 网页档（站点视频）：剧集来自站点（Netflix metadata）或每集一本书的列表（YouTube 播放
+    // 列表 / 合集），换集 = 同一个 WebView 导航到那一集的播放页；落书 / 进度 / 字幕身份由
+    // [_onWebState] 按新地址接上。列表里那一集不是网页站地址（合集里混着直链 / 本地文件）
+    // 就照本地换集换页，新页按它自己的地址分流。
+    if (_webMode &&
+        (!_streamBookEpisodes ||
+            (index < _webEpisodeUrls.length &&
+                shouldOpenInWebVideoPlayer(_webEpisodeUrls[index])))) {
       _switchWebEpisode(index);
       return;
     }
@@ -124,7 +223,15 @@ extension _VideoEpisode on _VideoFushiPageState {
     // TODO-885: 远端播放列表换集——本端无 VideoBooks 行，先把当前集精确位置落按集
     // prefs（_persistRemotePosition 用 _currentEpisode），再按 episodeIndex 向 host
     // 重新建流（_loadRemoteEpisode 内 ++_episodeLoadSeq 取代慢路径旧集）。
-    if (_isRemote) {
+    // 每集一本流媒体书的列表（[_streamBookEpisodes]）不在这里：它和本地合集一样换页
+    // （远端键见 [_remotePositionKeyForIndex]）。
+    if (_isRemote && !_streamBookEpisodes) {
+      // 换集 = 丢掉本集的流：在新集取流之前同步释放（BUG-4461）。
+      _releaseRemotePlayback(
+        info: _effectiveRemoteInfo,
+        client: _effectiveRemoteClient,
+        generation: _remotePlaybackGeneration,
+      );
       final int? curPos = _controller?.positionMs;
       if (curPos != null) {
         final RemoteVideoInfo? currentInfo = _effectiveRemoteInfo;
@@ -136,12 +243,14 @@ extension _VideoEpisode on _VideoFushiPageState {
         // 执行、`_currentEpisode` 不推进，互联 / Jellyfin / 流媒体书的换集按钮、剧集
         // 列表、连播全部失灵，与本地分支此前那条同形。
         persistInBackground(
-          persist: () => _persistRemotePositionAndReportPlaybackStopped(
-            uid: _activeBookUid,
-            positionMs: curPos,
-            info: currentInfo,
-            client: currentClient,
-            generation: currentGeneration,
+          persist: () => _remoteTeardown.track(
+            () => _persistRemotePositionAndReportPlaybackStopped(
+              uid: _activeBookUid,
+              positionMs: curPos,
+              info: currentInfo,
+              client: currentClient,
+              generation: currentGeneration,
+            ),
           ),
           onPersistError: (Object error, StackTrace stack) => ErrorLogService
               .instance
@@ -172,8 +281,8 @@ extension _VideoEpisode on _VideoFushiPageState {
       // （tick 只整秒写，补这一下避免丢尾部几百 ms）；新页 _init 从该集行 lastPositionMs 续播。
       final String? targetUid = openBlurayMenu
           ? _activeBookUid
-          : _episodes[index].bookUid;
-      if (targetUid == null) return;
+          : await _episodeTargetBookUid(index);
+      if (targetUid == null || !context.mounted) return;
       // BUG-839：全屏播放时 app 全屏路由压在剧集页之上（fullscreen.part.dart 推到 root
       // navigator）。裸 pushReplacement 会替换掉栈顶的**全屏路由**、把本集页漏在栈里 →
       // 每连播一集残留一层、ESC 需逐层退。
@@ -208,8 +317,14 @@ extension _VideoEpisode on _VideoFushiPageState {
         // BUG-2119：换集不等落库（同退出汇聚点 [_handleBackOrExit]）。此前 `await`
         // 在这里——连接被毒化时 `setPref` 事务 COMMIT 抛错 / 挂死，换集按钮、剧集列表、
         // 连播全部卡死。drift 请求已同步排进队列，新页读该集行排在它之后。
+        // 每集一本流媒体书的列表从内核 / 网页档换页：本集按它自己那条路落断点。
+        final String uid = _activeBookUid;
         persistInBackground(
-          persist: () => _persistPosition(_activeBookUid, curPos),
+          persist: () => _webMode
+              ? _persistWebPosition(uid, curPos)
+              : _isRemote
+              ? _persistRemotePosition(uid, curPos)
+              : _persistPosition(uid, curPos),
           onPersistError: (Object error, StackTrace stack) => ErrorLogService
               .instance
               .log('VideoFushiPage.switchEpisodePersist', error, stack),
@@ -229,6 +344,9 @@ extension _VideoEpisode on _VideoFushiPageState {
           openBlurayMenu: openBlurayMenu,
           repo: widget.repo,
           playlistCollectionId: widget.playlistCollectionId,
+          // 列表上下文随集走（网页档里站内点进的播放列表也算，见 [_adoptWebHrefPlaylist]）。
+          youtubePlaylistId: _streamBookYoutubePlaylistId,
+          webBackToBrowser: widget.webBackToBrowser,
           // BUG-2043：字幕列表随集常驻——换集前开着就带到新页，不再随旧页一起丢。
           initialSubtitleListVisible: _subtitleListVisible.value,
           initialFullscreen: plan.handOverNativeFullscreen,
@@ -244,7 +362,7 @@ extension _VideoEpisode on _VideoFushiPageState {
       // 原生全屏所有权随 initialFullscreen 交给新页：本页不再在 dispose 里释放它，
       // 挂着的一次性重进全屏回调也不得再压路由（本页马上被摘）。
       _ownsHandedOverNativeFullscreen = false;
-      _didInitialFullscreen = true;
+      _initialFullscreen.settle();
       unawaited(navigator.push<void>(nextRoute));
       if (oldFullscreenRoute != null && oldFullscreenRoute.isActive) {
         rootNavigator.removeRoute<void>(oldFullscreenRoute);
@@ -256,6 +374,195 @@ extension _VideoEpisode on _VideoFushiPageState {
     } finally {
       _localEpisodeSwitchInFlight = false;
     }
+  }
+
+  /// 第 [index] 集的书身份：本地合集成员已有；每集一本流媒体书的列表在真的换到那一集时
+  /// 才落书（[ensureStreamBookEpisode]，已有就原样用）。落不了返回 null（不换）。
+  Future<String?> _episodeTargetBookUid(int index) async {
+    final _PlaylistEpisodeRef ref = _episodes[index];
+    final String? uid = ref.bookUid;
+    if (!_streamBookEpisodes || uid == null) return uid;
+    try {
+      return await ensureStreamBookEpisode(
+        widget.repo,
+        StreamBookEpisode(
+          bookUid: uid,
+          url: ref.path,
+          title: ref.title,
+          coverUrl: ref.coverUrl,
+        ),
+      );
+    } on Object catch (e, st) {
+      ErrorLogService.instance.log('VideoFushiPage.streamBookEpisode', e, st);
+      return null;
+    }
+  }
+
+  /// 合集快照 → 选集（本地合集与流媒体书合集同一份映射）。
+  ///
+  /// v68 Jellyfin 对齐：剧集面板要 ①集级刮削集名 ②合集横图回退链 ③看完/在看角标。
+  /// 作品名作集名判据（集名缺失时集级刮削会把作品名回填进 title，那不是集名——与合集
+  /// 详情页 `_scrapedEpisodeTitle` 同判据）。
+  List<_PlaylistEpisodeRef> _collectionEpisodeRefs(
+    CollectionPlaybackSnapshot snapshot,
+  ) {
+    final String? workTitle = snapshot.collectionMeta?.title.trim();
+    final List<_PlaylistEpisodeRef> refs = <_PlaylistEpisodeRef>[];
+    // 季分栏与合集详情页同一个入口（手动分栏 / 手动季集指定优先，拍板台
+    // iR6ccUys9H）：一次批量查齐。
+    final Map<String, String> sectionKeys = snapshot.sectionKeys;
+    // 非视频成员与孤儿成员（集行已删）已在快照里按读取期过滤掉。
+    for (final VideoBookRow er in snapshot.episodes) {
+      String? scrapedName;
+      final VideoScrapeMetaRow? em = snapshot.episodeMeta[er.bookUid];
+      if (em != null && em.episodeNumber != null) {
+        final String t = em.title.trim();
+        if (t.isNotEmpty && t != workTitle) scrapedName = t;
+      }
+      refs.add(
+        _PlaylistEpisodeRef(
+          bookUid: er.bookUid,
+          title: er.title,
+          displayTitle: scrapedName,
+          path: er.videoPath,
+          coverPath: er.coverPath,
+          completed: er.completedAt != null,
+          started: er.lastPositionMs > 0,
+          sectionKey: sectionKeys[er.bookUid],
+          positionMs: er.lastPositionMs,
+        ),
+      );
+    }
+    return refs;
+  }
+
+  /// 流媒体书的列表上下文（[_initVideo] 流媒体分支在分流前调）：从 YouTube 播放列表打开
+  /// 的跟那份列表；合集里打开的读合集快照。当前集不在列表里 / 列表不足两集时不建。
+  Future<void> _loadStreamBookEpisodes() async {
+    final String? playlistId = widget.youtubePlaylistId;
+    if (playlistId != null) {
+      _attachYoutubePlaylist(playlistId);
+      return;
+    }
+    final int? collectionId = widget.playlistCollectionId;
+    if (collectionId == null) return;
+    final CollectionPlaybackSnapshot snapshot = await widget.repo
+        .collectionPlaybackSnapshot(collectionId);
+    if (!mounted) return;
+    final List<_PlaylistEpisodeRef> refs = _collectionEpisodeRefs(snapshot);
+    final int idx = refs.indexWhere(
+      (_PlaylistEpisodeRef e) => e.bookUid == _activeBookUid,
+    );
+    if (refs.length < 2 || idx < 0) return;
+    _playlistCollectionImages = snapshot.images;
+    _streamBookSeriesTitle = snapshot.collection?.name;
+    _applyStreamBookEpisodes(refs, idx);
+    // 剧照与封面来源后台读，不挡首帧（与本地合集同一条）。
+    unawaited(_loadPlaylistEpisodeThumbSources(refs));
+  }
+
+  /// 跟上 [playlistId] 这份 YouTube 播放列表（已在跟就不动）。条目在进程内共享，换页后的
+  /// 新页拿到的是已拉好的那份。
+  void _attachYoutubePlaylist(String playlistId) {
+    if (_youtubePlaylist?.playlistId == playlistId) return;
+    _youtubePlaylist?.removeListener(_onYoutubePlaylistChanged);
+    final YoutubePlaylistEpisodes list = YoutubePlaylistEpisodes.forPlaylist(
+      playlistId,
+    );
+    _youtubePlaylist = list;
+    list.addListener(_onYoutubePlaylistChanged);
+    _onYoutubePlaylistChanged();
+  }
+
+  /// 网页档里站内点进了播放列表里的视频（地址带 `list`）：跟上那份列表。没带 `list` 的地址
+  /// 不摘已有列表——列表里换集导航到的就是不带 `list` 的规范观看页。
+  void _adoptWebHrefPlaylist(String href) {
+    final String? playlistId = youtubeWatchPlaylistIdOf(Uri.tryParse(href));
+    if (playlistId != null) _attachYoutubePlaylist(playlistId);
+  }
+
+  /// 播放列表条目到了一批：带上已落书各集的进度 / 本机封面（一次批量查库）后换上。
+  void _onYoutubePlaylistChanged() {
+    final YoutubePlaylistEpisodes? list = _youtubePlaylist;
+    if (!mounted || list == null) return;
+    unawaited(_applyYoutubePlaylist(list, list.entries));
+  }
+
+  Future<void> _applyYoutubePlaylist(
+    YoutubePlaylistEpisodes list,
+    List<YoutubePlaylistEntry> entries,
+  ) async {
+    if (entries.length < 2) return;
+    final List<StreamBookEpisode> episodes =
+        await loadYoutubePlaylistBookEpisodes(widget.repo, entries);
+    // 期间换了列表 / 列表又到了新一批：以最新那次为准。
+    if (!mounted ||
+        !identical(_youtubePlaylist, list) ||
+        !identical(list.entries, entries)) {
+      return;
+    }
+    final List<_PlaylistEpisodeRef> refs = <_PlaylistEpisodeRef>[
+      for (final StreamBookEpisode e in episodes)
+        _PlaylistEpisodeRef(
+          bookUid: e.bookUid,
+          title: e.title,
+          path: e.url,
+          coverPath: e.coverPath,
+          coverUrl: e.coverUrl,
+          coverCacheKey: e.coverCacheKey,
+          episodeNumber: e.episodeNumber,
+          sectionKey: e.sectionKey,
+          completed: e.completed,
+          started: e.started,
+          progress: e.progress,
+          positionMs: e.positionMs,
+        ),
+    ];
+    final int idx = refs.indexWhere(
+      (_PlaylistEpisodeRef e) => e.bookUid == _activeBookUid,
+    );
+    // 当前这条还没拉到（长列表从后面点开）：等后面的批次。
+    if (idx < 0) return;
+    _applyStreamBookEpisodes(refs, idx);
+  }
+
+  /// 换上一份每集一本书的列表（[refs] 里第 [current] 集是本页这本书）。
+  void _applyStreamBookEpisodes(List<_PlaylistEpisodeRef> refs, int current) {
+    _rebuild(() {
+      _streamBookEpisodes = true;
+      _episodes = refs;
+      _currentEpisode = current;
+      // 网页档原地换集导航到的地址（[_switchWebEpisode]）。
+      _webEpisodeUrls = <String>[
+        for (final _PlaylistEpisodeRef e in refs) e.path,
+      ];
+    });
+  }
+
+  /// 网页档原地换了集（[_bindWebEpisode] 绑上了新一集的书）：当前集跟到它在列表里的位置；
+  /// 站内点到了列表外的视频，列表上下文就没了，面板收掉。
+  void _syncStreamBookCurrentEpisode() {
+    if (!_streamBookEpisodes) {
+      // 跟着的播放列表早已拉完、当时这一集还没绑上书（当前集对不上）：绑上后再对一次。
+      if (_youtubePlaylist != null) _onYoutubePlaylistChanged();
+      return;
+    }
+    final int idx = _episodes.indexWhere(
+      (_PlaylistEpisodeRef e) => e.bookUid == _activeBookUid,
+    );
+    if (idx == _currentEpisode) return;
+    if (idx >= 0) {
+      _rebuild(() => _currentEpisode = idx);
+      return;
+    }
+    _youtubePlaylist?.removeListener(_onYoutubePlaylistChanged);
+    _youtubePlaylist = null;
+    _rebuild(() {
+      _streamBookEpisodes = false;
+      _episodes = const <_PlaylistEpisodeRef>[];
+      _webEpisodeUrls = const <String>[];
+      _currentEpisode = 0;
+    });
   }
 
   /// 剧集列表入口（控制条剧集按钮）。保留 `_showEpisodeList` 作为控制条入口，
@@ -270,6 +577,8 @@ extension _VideoEpisode on _VideoFushiPageState {
   /// （[_subtitleListVisible]）与任何打开的浮层（[_videoSidePanel]），避免多个
   /// 浏览/设置表面同时争抢视频空间。打开时唤醒控制条让用户看到入口。
   void _toggleEpisodeList() {
+    // 竖屏学习版式：选集是下半屏的一个页签，不在画面上开横轨（拍板台 P9AS-fvjJh）。
+    if (_routeToPortraitPane(VideoPortraitTab.episodes)) return;
     final bool next = !_episodeListVisible.value;
     if (next) {
       _clearRailHover();
@@ -279,6 +588,7 @@ extension _VideoEpisode on _VideoFushiPageState {
       if (_subtitleListVisible.value) {
         _closeSubtitleJumpList();
       }
+      if (_liveChatVisible.value) _liveChatVisible.value = false;
       _episodeListVisible.value = true;
       if (_videoSidePanel.value != null) {
         _hideVideoSidePanel();
@@ -309,10 +619,21 @@ extension _VideoEpisode on _VideoFushiPageState {
     _switchEpisode(index, intent: EpisodeStartIntent.listSelect);
   }
 
+  /// 选集面板（横屏轨道与竖屏「选集」页签同一个 [VideoEpisodePanel]）的字号：
+  /// 面板默认字号乘视频页自管的界面缩放（media_kit 控制层不吃全局「界面大小」，
+  /// 见 [_videoUiScale]）。两种版式共用这一处，不各写一份数字。
+  double get _episodePanelFontSize => 14 * _videoUiScale;
+
   /// 把内部集表示 [_PlaylistEpisodeRef] 解析成面板要的 [VideoEpisodeEntry]。
   ///
   /// 封面来源判断**不在这里手写分支**——统一走 [resolveMediaCoverImage]：本地集给
   /// `coverPath`、互联远端集给 `coverUrl` + 稳定缓存键，解析器按固定优先级出图。
+  ///
+  /// 取图顺序与合集选集页同一套（拍板 design-player-episode-rail-stills，复用
+  /// [videoPanelEpisodeThumbCandidates] → `videoEpisodeThumbCandidates`）：用户手动
+  /// 设置的封面 > 这一集的刮削剧照（[videoFileEpisodeStillImage]，本地文件优先、
+  /// 其次远程 URL）> 自动截图 > 合集段回落；首选图加载失败依次回落
+  /// （[VideoEpisodeEntry.coverFallbacks]）。远端集没有剧照，只有 host 封面。
   ///
   /// v68 Jellyfin 对齐三件套：
   /// * 集名：集级刮削集名优先（[_PlaylistEpisodeRef.displayTitle]），回落文件名；
@@ -331,7 +652,9 @@ extension _VideoEpisode on _VideoFushiPageState {
     if (memo != null &&
         identical(_episodePanelEntriesEpisodes, _episodes) &&
         identical(_episodePanelEntriesFetcher, fetcher) &&
-        identical(_episodePanelEntriesImages, _playlistCollectionImages)) {
+        identical(_episodePanelEntriesImages, _playlistCollectionImages) &&
+        identical(_episodePanelEntriesStills, _playlistFileEpisodes) &&
+        identical(_episodePanelEntriesCoverMeta, _playlistCoverMeta)) {
       return memo;
     }
     final ImageProvider? seriesFallback = _playlistSeriesFallbackCover();
@@ -343,45 +666,121 @@ extension _VideoEpisode on _VideoFushiPageState {
         e.path.isNotEmpty ? e.path : e.title,
     ];
     final List<int?> numbers = parsedEpisodeNumbersOf(numberKeys);
+    // 切了集的原盘分集按顺序跨盘编号，特典不编号（与合集详情页同口径，BUG-5391）。
+    final List<int?> discOrdinals = discEpisodeOrdinalsOf(numberKeys);
     final Map<String, int?> numberByKey = <String, int?>{
-      for (int i = 0; i < numberKeys.length; i++) numberKeys[i]: numbers[i],
+      for (int i = 0; i < numberKeys.length; i++)
+        numberKeys[i]: discOrdinals[i] ?? numbers[i],
     };
-    final List<VideoEpisodeEntry> entries = <VideoEpisodeEntry>[
-      for (final _PlaylistEpisodeRef e in _episodes)
-        VideoEpisodeEntry(
-          title: e.displayTitle ?? e.title,
-          // 角标集号取**文件名解析值**而非列表下标（BUG-1544）：缺集时下标必然
-          // 说谎。远端集无路径 → 退回按标题解析；再解不出由卡片回落顺位号。
-          episodeNumber: numberByKey[e.path.isNotEmpty ? e.path : e.title],
-          // 季分组与合集详情页季 tab 同源（文件名纯函数，BUG-2520）：多季合集
-          // 在播放器内也能切季，而不是一条混着 S01/S02/PV 的长轨道。
-          groupKey: collectionGroupKeyForFilename(
-            e.path.isNotEmpty ? e.path : e.title,
-          ),
-          cover:
-              resolveMediaCoverImage(
-                kind: MediaKind.video,
-                localPath: e.coverPath,
-                remoteUrl: e.coverUrl,
-                remoteFetcher: fetcher,
-                remoteCacheKey: e.coverCacheKey,
-              ) ??
-              seriesFallback,
-          completed: e.completed,
-          started: e.started,
-          progress: e.progress,
+    final Map<String, CoverMeta>? coverMeta = _playlistCoverMeta;
+    List<ImageProvider> thumbs(_PlaylistEpisodeRef e) {
+      final String? uid = e.bookUid;
+      return videoPanelEpisodeThumbCandidates(
+        cover: resolveMediaCoverImage(
+          kind: MediaKind.video,
+          localPath: e.coverPath,
+          remoteUrl: e.coverUrl,
+          remoteFetcher: fetcher,
+          remoteCacheKey: e.coverCacheKey,
         ),
+        // 远端集（无 bookUid）没有封面来源表，host 封面就是唯一一张。
+        coverIsUserChosen: uid == null
+            ? false
+            : switch (coverMeta) {
+                null => null,
+                final Map<String, CoverMeta> meta =>
+                  meta[uid]?.origin.isUserChosen ?? false,
+              },
+        still: uid == null
+            ? null
+            : videoFileEpisodeStillImage(
+                _playlistFileEpisodes[uid],
+                positionMs: e.positionMs,
+                localExists: _playlistStillExists.lookupOptional,
+              ),
+        seriesFallback: seriesFallback,
+      );
+    }
+
+    VideoEpisodeEntry entryOf(_PlaylistEpisodeRef e) {
+      final List<ImageProvider> images = thumbs(e);
+      return VideoEpisodeEntry(
+        title: e.displayTitle ?? e.title,
+        // 角标集号取**文件名解析值**而非列表下标（BUG-1544）：缺集时下标必然
+        // 说谎。远端集无路径 → 退回按标题解析；再解不出由卡片回落顺位号。
+        // 播放列表的集号是列表顺位（[_PlaylistEpisodeRef.episodeNumber]），标题里的数字不是。
+        episodeNumber:
+            e.episodeNumber ??
+            numberByKey[e.path.isNotEmpty ? e.path : e.title],
+        // 季分组与合集详情页季 tab 同源（文件名纯函数，BUG-2520）：多季合集
+        // 在播放器内也能切季，而不是一条混着 S01/S02/PV 的长轨道。
+        // 本地集带着预先解析好的生效分栏（手动分栏 / 季集指定优先）。
+        groupKey:
+            e.sectionKey ??
+            collectionGroupKeyForFilename(e.path.isNotEmpty ? e.path : e.title),
+        cover: images.firstOrNull,
+        coverFallbacks: images.skip(1).toList(growable: false),
+        completed: e.completed,
+        started: e.started,
+        progress: e.progress,
+      );
+    }
+
+    final List<VideoEpisodeEntry> entries = <VideoEpisodeEntry>[
+      for (final _PlaylistEpisodeRef e in _episodes) entryOf(e),
     ];
     _episodePanelEntriesEpisodes = _episodes;
     _episodePanelEntriesFetcher = fetcher;
     _episodePanelEntriesImages = _playlistCollectionImages;
+    _episodePanelEntriesStills = _playlistFileEpisodes;
+    _episodePanelEntriesCoverMeta = _playlistCoverMeta;
     return _episodePanelEntriesMemo = entries;
+  }
+
+  /// 后台读选集面板取图链要的两份数据（拍板 design-player-episode-rail-stills）：
+  /// 各本地集的分集剧照（一次批量查库，[FushiDatabase.getVideoFileEpisodeRows]，
+  /// 与合集选集页同一份聚合 [videoFileEpisodeStillsByBook]）与封面来源表
+  /// （[loadVideoCoverMetaByUid]）。两者并行读，落定后整体替换并重建；期间成员
+  /// 列表已被换掉（[refs] 不再是 [_episodes]）则丢弃结果。
+  Future<void> _loadPlaylistEpisodeThumbSources(
+    List<_PlaylistEpisodeRef> refs,
+  ) async {
+    final List<String> uids = <String>[
+      for (final _PlaylistEpisodeRef e in refs) ?e.bookUid,
+    ];
+    if (uids.isEmpty) return;
+    final Future<Map<String, CoverMeta>> coverMeta = loadVideoCoverMetaByUid(
+      'VideoFushiPage._loadPlaylistEpisodeThumbSources',
+    );
+    // 本方法以 unawaited 起跑：查库失败只让剧照一环缺席（面板照旧按截图 / 合集段
+    // 取图），记诊断后继续，不让它变成未处理的异步异常。
+    Map<String, List<VideoFileEpisodeStills>> stills =
+        const <String, List<VideoFileEpisodeStills>>{};
+    try {
+      stills = videoFileEpisodeStillsByBook(
+        await appModel.database.getVideoFileEpisodeRows(uids),
+      );
+    } on Object catch (error) {
+      ErrorLogService.instance.logDiagnostic(
+        'VideoFushiPage._loadPlaylistEpisodeThumbSources',
+        error,
+      );
+    }
+    final Map<String, CoverMeta> meta = await coverMeta;
+    if (!mounted || !identical(_episodes, refs)) return;
+    _rebuild(() {
+      _playlistFileEpisodes = stills;
+      _playlistCoverMeta = meta;
+    });
   }
 
   /// 远端集封面（[_PlaylistEpisodeRef.coverUrl]）的取图器：网页档的剧集剧照来自
   /// 站点公开 CDN（Netflix metadata），用站点取图器；其余按来源客户端。剧集面板与
   /// 手机遥控选集（`_remoteEpisodeCover`）共用。
   RemoteCoverFetcher? get _episodeCoverFetcher => _webMode
+      ? const WebVideoCoverFetcher()
+      // 每集一本书的列表：远端封面是站点公开 CDN 上的缩略图（YouTube），与网页档同一个取图器。
+      : _streamBookEpisodes
       ? const WebVideoCoverFetcher()
       : remoteCoverFetcherFor(widget.remoteClient ?? _resolvedStreamClient);
 
@@ -469,7 +868,7 @@ extension _VideoEpisode on _VideoFushiPageState {
                       title: t.video_episode_list,
                       emptyHint: t.video_episode_list_empty,
                       seasonLabelOf: _episodeSeasonLabel,
-                      fontSize: 14 * _videoUiScale,
+                      fontSize: _episodePanelFontSize,
                       visible: visible,
                     ),
                   ),

@@ -19,15 +19,25 @@ checking parity. Hooks the server leaves null today:
 
 | Hook | Effect on the server | Status |
 |---|---|---|
-| `srsRemoteStoreProvider`, `onClientWrite`, `onClientUpload` | No remote review (`/api/srs/remote/*` 404), no host-side SRS sync | Gap. Needs an SRS store on the server first (see "SRS on the server"). Size L, needs a spec. |
-| `hostSelfUpdater` | `/api/host/update` 404, `hostUpdate=false` | Gap. Implement `HostSelfUpdater` (`fushi_engine/lib/sync/host_update/host_update_protocol.dart`) by fetching the `hajisensai/fushi-server` release asset for the running OS, unpacking it next to `bin/`, and exiting for the service manager to restart. The app version is `fushi/lib/src/updates/host_self_update_service.dart`. Size M. |
-| `leaderboardLinkHost` | Paired devices can't sign in to the Fushi account through the server | Gap. The server already stores per-profile accounts in the app's file format (`leaderboard_store.dart`); this needs an `InterconnectLeaderboardLinkHost` adapter on top. Size S/M. |
+| `srsRemoteStoreProvider`, `onClientWrite`, `onClientUpload` | Remote review, host-side SRS sync, AnkiConnect and mining into review | Wired (`server_srs.dart`, spec `docs/specs/2026-11-05-server-srs-design.md`). Off until the admin picks which synced profiles to serve. See "SRS follow-ups" below. |
 | `videoRemoteService`, `gameStreamService` | Remote playback and game streaming are off | Not applicable: both need a display or a running game. |
 | `LocalLibraryHostService.onlineMangaReader` | Online-manga chapters that weren't downloaded aren't served | Not applicable: the server has no online-source runtime. |
+| `sourceShareHost` | `/api/interconnect/source-share*` answers 404: paired devices don't receive the server's user-configured servers or plugins | Not wired: the server has no OPDS / AList / Kavita / Subsonic / media-server lists or plugin hosts to share (spec `docs/specs/2026-11-16-interconnect-source-share.md`). |
+| `pluginRelayHost` | `/api/interconnect/plugin-relay*` answers 404 and `pluginRelay` is not declared: devices without a plugin runtime (iOS) can't use plugins through the server | Not wired: the server has no music plugin manager (spec `docs/specs/2026-11-16-interconnect-source-share.md` §5). |
 
 The other hooks are wired on both sides: pairing, peer tokens, `hostId`, public URLs, P2P,
-graphic-subtitle export, `videoSubtitleBackfill`, OCR, jobs, downloads, subscriptions,
+graphic-subtitle export, `videoSubtitleBackfill`, `leaderboardLinkHost` (owner devices
+marked by an admin), `hostSelfUpdater` (`ServerSelfUpdater`:
+release bundles with `release.json` on Linux / Windows x64; dev builds answer `platform_unsupported`), OCR, jobs, downloads, subscriptions,
 assistant, lookup, history, mining, dictionary media/styles and prefs.
+
+Host-side settings that the app keeps in `preferences` live in `fushi_server.yaml` on the
+server when nothing on the server can write that preference. Example: the Chinese
+Simplified/Traditional lookup toggle. The app reads the `lookup_chinese_script_variants`
+preference; the server reads `lookup_chinese_script_variants` in the yaml
+(`ServerConfig.lookupChineseScriptVariants`, off by default, editable in the WebUI). It only
+applies to requests that don't send `zhScriptVariants` themselves (the browser extension and
+older apps).
 
 ## Music libraries: deliberately deferred
 
@@ -38,7 +48,7 @@ here, and `_purgeRoot` in `packages/fushi_server/lib/src/admin/admin_api.dart` t
 `SourceLibraryKind.music`. Do not "quick fix" this by letting music roots through. Without
 the host routes below, a client cannot see a scanned music library at all.
 
-The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
+Design (pending decisions): `docs/specs/2026-11-23-interconnect-music-library-design.md`. Size: L/XL.
 
 1. Move the scanner stack from `fushi/lib/src/media/music/` into `packages/fushi_engine`:
    `music_library_scanner.dart`, `disc/music_disc_import.dart` and
@@ -59,16 +69,118 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
    lyrics), `Remote*` DTOs, a capability bit, wiring in `LocalLibraryHostService`, an
    app-side remote client and UI, and op-catalog descriptions for any new ctl routes.
 
+## Interconnect audiobook updates
+
+- The audiobook list carries an optional `contentRevision` (`audiobookContentState` in
+  `packages/fushi_engine/lib/sync/audiobook_content_revision.dart`): a hash of the audio
+  list, the alignment / subtitle paths and those files' size + mtime. It changes on any
+  audio or subtitle change (rescan, app re-import, peer push) and not on a no-op rescan.
+  No DB column; old clients ignore it, old hosts don't send it.
+- The package endpoint's export cache is keyed on the same revision
+  (`ExportPackageCache.obtain(version:)`): a normal download after a change gets the new
+  package, without `?fresh=1` and without waiting for the 15-minute TTL. A download that
+  is streaming the old package finishes it; its resume (old ETag) gets a clean `200` of
+  the new package.
+- The package manifest carries the same `contentRevision` (computed just before packing).
+  After a full package download the app records that value, read from the package rather
+  than from the cached list, in the device-local pref `interconnect_audiobook_revisions`.
+  One shared entry point, `recordRemoteAudiobookPackageDownload` in
+  `fushi/lib/src/sync/remote_audiobook_revision_store.dart`, is used by shelf downloads,
+  the sync sweep's automatic audio pull and the sync compare page. When the list's value
+  differs, the shelf card shows "Update on peer" and the dialog offers "Download update
+  from peer". A subtitles-only refetch does not touch the record, so the flag stays until
+  the user downloads the full package.
+
 ## Other known gaps
 
-- **SRS on the server**: there is no SRS store or profile wiring yet, so there is no
-  AnkiConnect layer on the server (`TODO(srs-ankiconnect)` at the top of
-  `packages/fushi_server/lib/src/host_bindings.dart`). The same missing store keeps
-  `srsRemoteStoreProvider` / `onClientWrite` / `onClientUpload` null (table above). With
-  a store, both would reuse the engine pieces the app uses: `SrsRemoteStoreService`
-  (`fushi_engine/lib/srs/srs_remote_store.dart`) and `SrsAnkiConnectHandler`.
-- **Backup**: there is no `backup` CLI command or admin endpoint. App backups
-  (`createBackup` / `restoreBackup`) live in `fushi/lib/src/sync/backup_*`.
+- **SRS follow-ups**:
+  - Review content (decks, note search, one note, stats, the Conflict Center, duplicate
+    merge, batch note edits) is reachable on the server through the same engine routes the
+    app's `fushi_cli srs …` uses (`packages/fushi_engine/lib/srs/srs_ctl_routes.dart` /
+    `srs_ctl_ops.dart`): admin endpoints under `/api/admin/srs/…` (`admin_srs_ctl.dart`),
+    `fushi_server ctl srs decks|notes|note|stats|conflicts|…` (`ctl_srs_commands.dart`) and
+    the op catalog as `server.srs.decks.list` etc. (app id with a `server.` prefix, undo
+    included; the held-deletion "keep" is irreversible and needs the user's confirmation).
+    Every one takes `profile` (uid of a served profile); it may be left out only while exactly
+    one profile is ready, otherwise 409 `profile_required`. A note id that belongs to another
+    profile is refused as 404 (the store's by-id access is not profile scoped, BUG-4480; the
+    app's single-library host does not have this check yet). Known limits: route error messages
+    are the app's Chinese ones in both server languages; writes made through `ctl` are not
+    recorded for undo (admin only, use `--dry-run` first).
+  - Profiles whose sync location is end-to-end encrypted are not served in v1. Serving them
+    would need the passphrase on the server.
+  - Profile info file (`profile.json`): after each successful round the server publishes its own
+    file under `v4/devices/<its gen4 device>/` (`ServerSrsProfile._publishInfo`, same writer as the
+    app's `SrsProfileLinker.publish`), and hands its device name (`device_name` in the yaml) to the
+    kernel as the model through `publishDeviceInfo`. The note count comes from the kernel
+    (`userNoteCount`). The name is, in order: the admin's name for that profile (yaml
+    `srs.profile_names`, `PUT /api/admin/srs {profileNames}`, WebUI Review page, `ctl srs config`),
+    else a name another device reports in that directory (if several devices report different
+    names: the one whose info file is newest, ties broken by the smallest writer id —
+    `serverSrsPickReportedName`; never the directory listing order, which is hash order on
+    Linux / macOS), else the name the server itself
+    published last (so the name survives after the naming device leaves). Names reported by other
+    devices come from the sync location (untrusted) and go through the same check as admin names
+    (`serverSrsProfileNameOk`: at most 100 characters, no control characters); a name that fails it
+    is skipped. Each round reads only the directory the profile is bound to
+    (`srsListRemoteProfiles(onlyDirs:)`), not the whole sync root. The server does not
+    publish `mergingInto` (it never merges profiles) and does not write join hints. It also never
+    rebinds a profile at run time (it issues no `collection_adopt` / `collection_join` /
+    `collection_salts_add` and has no `.fushisrs` / SRS backup import), so it has no old directory
+    whose `profile.json` would need removing the way the app's `srsRemoveOwnProfileFolder` does; if a
+    rebinding path is ever added to the server, that cleanup has to come with it.
+  - AnkiConnect `getProfiles` reports one profile per key.
+  - Device trust (srs.db v29, BUG-4306, `native/fushi_fsrs/src/store/sync2/trust.rs`) is
+    confirmed on the server itself: a device that first syncs after the server's copy of a
+    profile already has data stays "pending" there, its deletions and permanent removals held
+    until the admin trusts it. Entries: `GET /api/admin/srs/devices`,
+    `POST /api/admin/srs/devices/trust`, the WebUI Review page ("Devices waiting for
+    confirmation"), `fushi_server ctl srs devices|trust|reject`. The logic is the engine's
+    `srs_devices.dart` (`srsUntrustedDevices` / `srsSetDeviceTrust`), shared with the app's
+    Conflict Center. Trusting a device in the app still does not reach the server's srs.db
+    (trust is local per replica, by design).
+  - RWKV scheduling runs on the server since 2026-11-11 (spec addendum), through the same
+    `srsAttachRwkv` as the app. The model size (Small sm98 / Tiny sm101) is chosen in the WebUI
+    ("RWKV model"), `PUT /api/admin/srs {rwkvModel}` or the undoable `server.srs.rwkv-model.set`
+    op; it writes the device file `<support>/srs_rwkv/model_size` and swaps the open profiles'
+    RWKV services on the spot (every config reconcile re-reads the file, so hand edits apply
+    too). The WebUI profile table shows each profile's `rwkv` / `rwkvError`. Still open: no
+    setting for the native thread count (it uses all cores, like the app).
+  - The FSRS optimizer is not run on the server yet (spec §4.6). `SrsOptimizationScheduler`
+    already lives in the engine; the server's collections pick up parameters optimized on
+    other devices through the normal sync.
+  - Old-version retained copy (D32): the WebUI Review page shows it while the sealed copy is there
+    (size, due date or "kept until deleted", the auto-delete error) with a "Delete retained copy"
+    button behind a danger confirmation; `fushi_server ctl srs retained [status]` /
+    `ctl srs retained delete --yes`. Both use the engine routes `GET /api/admin/srs/retained` and
+    `POST …/retained/delete {confirm: true}` (`server.srs.retained.*` in the op catalog). There is no
+    op for naming a profile (`profileNames` is admin config only).
+  - Mixed versions (plan §6.3): server upgraded first, client upgraded first and server never
+    upgraded are covered end to end with the real kernel (`server_srs_generation_e2e_test.dart`,
+    `fushi/test/srs/srs_generation_old_server_e2e_test.dart`): the location fence stops the old
+    side (and is written back when an old server removes it), remote review is refused with an
+    explicit "upgrade" error in both directions, cards made on an old paired client still land in
+    the server's new library, and no local card is lost. Mining from a new client to an old server
+    is covered for the server without an Anki helper (its only landing, the review profile, is in
+    "needs upgrade", so the old server answers `/api/mine/forward` with 404 `Mining off`): the client
+    reports "reachable but did not accept the card (it answered 404 / 405)" and says it cannot tell
+    why — the client only sees the status, which a host with no writable landing and a host without
+    the endpoint both return (`AnkiErrorCode.pairedDeviceMiningUnavailable`) and, with "queue undelivered cards" on, the card
+    goes to the pending queue. An old server that has the Anki helper still lands such cards in its
+    own Anki (its target resolver falls back from review to Anki); that path does not depend on the
+    library generation and is not tested here. "Old server" means the protocol-3 baseline (develop
+    `6dd38cb92d`); v3.3.0's server had no review library at all. A whole-server backup (`server_backup`) is refused while a
+    generation migration runs (`admin_backups_srs_migration_test.dart`). "One profile of several
+    fails its comparison → nothing is committed" is the kernel's (`migrate_tests.rs`,
+    `one_failing_profile_of_two_keeps_the_whole_file_uncommitted`); the server runs the same
+    migration command.
+  - The server op catalog (`admin_ops.dart`) describes `server.srs.status`, `.profiles`,
+    `.devices` (read only), `.sync` (irreversible, user confirms), `.mining-target.set`, `.mining-deck.set`,
+    `.rollover-hour.set` and `.rwkv-model.set` (undoable). Left out on purpose: the AnkiConnect settings (keys are
+    credentials, bind / port are listen settings; the status the AI sees is cut down to
+    enabled / listening / last error), and choosing which profiles are served or the default
+    one (spec §9: an owner decision, not something a paired device's AI session changes), and
+    trusting / rejecting a sync device (a security boundary, like pairing).
 - **Jellyfin / Emby / Plex as library sources**: the `MediaServerBrowser` implementations
   live in `fushi/lib/src/sync/`, not in the engine. The server only has read-only Plex
   browsing (`media-server plex`). It cannot register a media server as a library source.
@@ -76,6 +188,12 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   (`video_scrape_host.dart`).
 - **Manga PDF**: not imported. Rasterizing needs the app's pdfium/pdfrx. Downloads with a
   PDF are blocked with `unsupportedOnThisHost`, and manga roots skip `.pdf`.
+- **PDF books over interconnect (receiving)**: the server does not wire
+  `importPdfBookFromFile` (PDF import needs pdfrx for the page count and cover), so it
+  advertises `liveLibrary.pdfBooks=false` and clients keep their PDF books local instead of
+  pushing them; the client's sync report says so once per round ("the peer does not
+  support this", not "update"). The server still lists and serves any PDF already in its library
+  (`hasPdfContent`, BUG-4381).
 - **Subtitles (what is still app-only)**: downloads source subtitles and
   `POST /api/library/videos/<id>/subtitle/backfill` works on the server (one provider
   assembly in `packages/fushi_server/lib/src/server_subtitle_providers.dart`; the backfill
@@ -86,11 +204,11 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
   downloads that finished without a subtitle (`download_subtitle_retry.dart`, now in the
   engine), AI reordering of candidates (the `ai:` provider is also assigned to
   `AiFeature.videoSearch`), and the app's Jimaku provider (search by AniList / TMDB id,
-  now `packages/fushi_engine/lib/media/video/jimaku_subtitle_provider.dart`). Still missing:
-  - AJATT (`fushi/lib/src/media/video/subtitle/ajatt_*`) is app-only;
-  - the download pipeline reads subtitle providers when the pipeline is (re)built (start,
-    or after resource indexers are saved). A key pushed later over interconnect needs one
-    of those, or a restart. Backfill reads them per request.
+  now `packages/fushi_engine/lib/media/video/jimaku_subtitle_provider.dart`). Provider keys
+  and switches are set in the WebUI / `PUT /api/admin/settings` (`subtitleProviders`) /
+  `ctl settings subtitle-key|subtitle-source`, and the download pipeline and backfill read
+  them (and the subtitle languages) on each use, so no restart is needed. Still missing:
+  - AJATT (`fushi/lib/src/media/video/subtitle/ajatt_*`) is app-only.
 - **Audiobooks with audio only (no subtitle)**: these are not imported, either from an
   `audiobook` library root (counted as `audiobooksNeedSubtitle` in the scan summary) or
   from a download (`buildServerDiscoveryImporters` in `discovery_import_host.dart` blocks
@@ -111,12 +229,30 @@ The full plan needs its own design spec under `docs/specs/`. Size: L/XL.
 
   Until that exists, run `fushi_server transcribe`, then either use
   `audiobook align --srt …` or drop the `.srt` next to the audio and rescan.
+- **Book roots don't pair audiobooks beyond same-name sidecars**: the app's shelf folder
+  import (feedback z398R0ndAw) pairs a book with audio in a same-name subfolder (disc
+  folders `CD1` / `Disc 2` merged in), by volume number, with the only book in a folder,
+  or by EPUB `dc:title` (`book_audiobook_pairing.dart` in the engine, R2–R5). The server's
+  `kind=book` roots don't call it yet. Only the disc-folder rule
+  (`isAudiobookDiscFolderName`) is shared, by the server's `planAudiobookFolders`. The
+  server also never queues transcription for a book whose audio has no subtitle (same
+  reason as the next item).
 - **Audiobook roots (limits of the first version)**: audio is imported by reference
   (`copyAudio: false`). It stays in the root and is never copied into the data dir. A book
-  is tracked by its folder (or by a loose audio file in the root). Files added to an
-  already-imported folder are not picked up again. Remove the book, or purge the root, to
-  re-import it. When a book title already exists in the library, the folder is skipped
-  and not adopted. Root folders are recorded in `media_sources` with
-  `mediaKind = 'audiobook'`. This value is server-only: it is not in the shared
-  `SourceLibraryKind` enum, because adding it would touch every exhaustive switch in the
-  app.
+  is tracked by its folder (or by a loose audio file in the root). When a book title
+  already exists in the library, the folder is skipped and not adopted. A rescan updates
+  an already-imported folder in place (parts added / removed, subtitle added / replaced)
+  but does not convert a book to another form: an EPUB added later to a subtitle-only
+  folder is ignored; re-import the book for that. Multi-file books with one
+  single-timeline subtitle get their cues split across the files by measured durations
+  (ffprobe on the server, BUG-4279); if ffprobe can't read a file the cues stay on file 0
+  and a diagnostic is logged. Root folders are
+  recorded in `media_sources` with `mediaKind = 'audiobook'`. This value is server-only:
+  it is not in the shared `SourceLibraryKind` enum, because adding it would touch every
+  exhaustive switch in the app.
+- **AI library curator** (`docs/specs/2026-11-18-ai-library-curator-design.md` §14.2): the server
+  has no `ai.library_curate`. The curator runs every write through the op catalog, and the
+  server catalog (`admin_ops.dart` / `ServerAgentToolbox`) only has `server.*` ops: none of
+  `library.organize.run`, the scrape claims or `links.infer`. Link inference also depends on the
+  app-only snapshot loader in `fushi/lib/src/media/links/media_link_inference_host.dart`. Needed
+  first: an undoable server `library.organize.run` and a host hook for link inference.

@@ -15,7 +15,8 @@
 //! - `ffm_plugin_vault(root, op)`：凭据保险库（[vault]），`op` 为
 //!   `{"op":"get"|"set"|"remove"|"clear","plugin":id,"key"?,"value"?,"dataKey"?}`，返回
 //!   `{"value"?}` / `{"error"}`。`dataKey`（base64 的 32 字节）是宿主从系统安全存储取出的数据密钥；
-//!   缺省时只有 Windows 可用（DPAPI 封装的密钥文件）。迁移用：`legacyKey` → `{"value": base64|null}`、
+//!   缺省时只有 Windows 可用（DPAPI 封装的密钥文件）。`domain`（缺省 / `"music"` / `"tracking"`，
+//!   其余报错）选凭据所属的插件体系（[vault::Domain]）：音乐体系与旧格式逐字节相同。迁移用：`legacyKey` → `{"value": base64|null}`、
 //!   `dropLegacyKey`（带 `dataKey`）、`resetAll`。
 //!
 //! 校验 / 加载失败不是 FFI 错误：返回 0，JSON 里带 `"error"`。负返回码只给空指针 / 非 UTF-8 /
@@ -319,15 +320,16 @@ pub unsafe extern "C" fn ffm_plugin_vault(
                 .map(Some)
                 .ok_or_else(|| "dataKey 不是 32 字节".to_string()),
         };
+        let domain = vault::Domain::from_wire(op.get("domain"));
         let r = provided.and_then(|k| {
             let src = k.map_or(vault::KeySource::Os, vault::KeySource::Provided);
+            // 体系不合法时任何操作都不执行（含 remove / clear），不把它当音乐体系兜底。
+            let domain = domain?;
             match s("op") {
-                "get" => {
-                    vault::get(root, src, s("plugin"), s("key")).map(|v| json!({ "value": v }))
-                }
-                "set" => {
-                    vault::set(root, src, s("plugin"), s("key"), s("value")).map(|_| json!({}))
-                }
+                "get" => vault::get_in(domain, root, src, s("plugin"), s("key"))
+                    .map(|v| json!({ "value": v })),
+                "set" => vault::set_in(domain, root, src, s("plugin"), s("key"), s("value"))
+                    .map(|_| json!({})),
                 "remove" => vault::remove(root, s("plugin"), s("key")).map(|_| json!({})),
                 "clear" => vault::clear(root, s("plugin")).map(|_| json!({})),
                 "legacyKey" => Ok(json!({

@@ -1,14 +1,20 @@
 /// 制作台的纯文案 / 判据（无状态，单测直接覆盖）。
 library;
 
+import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/render/tts_pause.dart';
 import 'package:fushi_engine/tts/render/tts_render_queue.dart';
+import 'package:fushi_engine/tts/tts_provider.dart' show kTtsMaxConcurrency;
 import 'package:fushi_engine/tts/tts_types.dart';
 
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_annotator.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
+import 'package:fushi/src/media/manga/audio/manga_audio_annotate_flow.dart'
+    show mangaLineKindLabel;
+import 'package:fushi/src/media/manga/audio/manga_audio_stores.dart'
+    show kMangaAudioDramaFailure;
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
@@ -32,6 +38,32 @@ String ttsRenderFailureText(String? code) {
       return t.audiobook_studio_failure_cache_busy;
     case 'verify_failed':
       return t.audiobook_studio_failure_verify_failed;
+    case 'rate_limited_paused':
+      return t.audiobook_studio_failure_rate_limited_paused;
+    // 漫画有声（任务级与一句级失败码，见 `manga_audio_render_service.dart` /
+    // `manga_audio_renderer.dart`）。
+    case 'manga_script_empty':
+      return t.manga_audio_failure_script_empty;
+    case 'manga_package_importing':
+      return t.manga_audio_package_error_importing;
+    case 'manga_script_stale':
+      return t.manga_audio_failure_script_stale;
+    case 'manga_no_pages':
+      return t.manga_audio_failure_no_pages;
+    case 'manga_not_rendered':
+      return t.manga_audio_failure_not_rendered;
+    case kMangaAudioDramaFailure:
+      return t.manga_audio_failure_drama_registered;
+    case 'ffmpeg_missing':
+      return t.manga_audio_failure_ffmpeg_missing;
+    case 'empty_text':
+      return t.manga_audio_failure_empty_text;
+    case 'silent_output':
+      return t.manga_audio_failure_silent_output;
+    case 'clip_source_missing':
+      return t.manga_audio_failure_clip_missing;
+    case 'line_not_read':
+      return t.manga_audio_failure_line_not_read;
   }
   if (code != null && code.startsWith('tts_')) {
     final String name = code.substring(4);
@@ -40,6 +72,35 @@ String ttsRenderFailureText(String? code) {
     }
   }
   return t.audiobook_studio_failure_internal;
+}
+
+/// 限流面板「每句间隔」滑块的步长（毫秒）。
+const int kTtsStudioGapStepMs = 100;
+
+/// 估算用的在线单句请求耗时（毫秒）：只用于面板上「约 N 分钟」的粗估，不参与调度。
+const int kTtsStudioAssumedRequestMs = 1500;
+
+/// 整本书在线合成的粗估分钟数：每路串行发 `ceil(句数 / 并发)` 个请求，每个请求
+/// 按 [kTtsStudioAssumedRequestMs] 加上每句间隔。至少 1 分钟（有句子时）。
+int ttsStudioEstimateMinutes({
+  required int sentences,
+  required int concurrency,
+  required int gapMs,
+}) {
+  if (sentences <= 0) return 0;
+  final int lanes = concurrency < 1 ? 1 : concurrency;
+  final int perLane = (sentences + lanes - 1) ~/ lanes;
+  final int ms = perLane * (kTtsStudioAssumedRequestMs + gapMs);
+  final int minutes = (ms + 59999) ~/ 60000;
+  return minutes < 1 ? 1 : minutes;
+}
+
+/// 「同时请求」分段的档位：固定档（[kTtsRenderOnlineConcurrencyChoices]）再加上当前
+/// 生效的并发。声音预设自定义了 3 / 8 这类不在固定档里的值时，它作为额外一档出现并被
+/// 选中，界面高亮的就是实际执行的并发，不会显示 2 却按 3 跑。
+List<int> ttsStudioConcurrencySegments(int concurrency) {
+  final int current = concurrency.clamp(1, kTtsMaxConcurrency);
+  return <int>{...kTtsRenderOnlineConcurrencyChoices, current}.toList()..sort();
 }
 
 /// 任务状态行文案（运行中按阶段带进度）。
@@ -190,7 +251,7 @@ String? ttsCastEvidenceText(TtsCastEvidence? evidence) => switch (evidence) {
   null => null,
 };
 
-/// 核对页一句的副标题：说话人，LLM 标的行再带把握 / 依据，有语气提示也带上。
+/// 核对页一句的副标题：说话人，LLM 标的行再带把握 / 依据，有演出字段 / 语气提示也带上。
 String ttsCastLineSubtitle(TtsCastLine? line) {
   if (line == null) return ttsCastSpeakerLabel(kTtsNarrator);
   final double? confidence = line.confidence;
@@ -199,8 +260,15 @@ String ttsCastLineSubtitle(TtsCastLine? line) {
     if (line.source == TtsCastSource.llm && confidence != null)
       t.audiobook_studio_cast_confidence(pct: (confidence * 100).round()),
     if (line.source == TtsCastSource.llm) ?ttsCastEvidenceText(line.evidence),
-    if (line.emotion case final String emotion when emotion.trim().isNotEmpty)
-      emotion.trim(),
+    // 演出字段：标了且不是默认「说出口」的类型、情绪（词表名 + 强度）、旧版语气提示。
+    if (line.kind case final CastLineKind kind when kind != CastLineKind.spoken)
+      mangaLineKindLabel(kind),
+    if (line.emotion case final CastEmotion emotion)
+      line.intensity == null
+          ? emotion.wire
+          : '${emotion.wire} ${line.intensity}',
+    if (line.tone case final String tone when tone.trim().isNotEmpty)
+      tone.trim(),
   ].join(' · ');
 }
 

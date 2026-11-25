@@ -1,6 +1,7 @@
 import 'package:test/test.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_read_along_voices.dart';
+import 'package:fushi_engine/tts/cast/cast_voice_assignment.dart';
 import 'package:fushi_engine/tts/render/tts_cast.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
@@ -67,8 +68,8 @@ void main() {
   );
 
   group('ttsVoiceSlotOf', () {
-    test('only speakers with an assigned voice get their own slot', () {
-      expect(ttsVoiceSlotOf(cast, _s(0, 0)), 'alice');
+    test('only sentences resolving to a voice get their own slot', () {
+      expect(ttsVoiceSlotOf(cast, _s(0, 0)), 'va');
       expect(ttsVoiceSlotOf(cast, _s(0, 10)), kTtsDefaultVoiceSlot);
       expect(ttsVoiceSlotOf(cast, _s(0, 20)), kTtsDefaultVoiceSlot);
       expect(ttsVoiceSlotOf(cast, _s(0, 30)), kTtsDefaultVoiceSlot);
@@ -81,7 +82,56 @@ void main() {
       final TtsCast withNarrator = TtsCast(
         voices: <String, String>{kTtsNarrator: 'vn'},
       );
-      expect(ttsVoiceSlotOf(withNarrator, _s(0, 99)), kTtsNarrator);
+      expect(ttsVoiceSlotOf(withNarrator, _s(0, 99)), 'vn');
+    });
+
+    test('series voices and per-line voices resolve their own slot', () {
+      final TtsCast withSeries =
+          TtsCast(
+              lines: <String, TtsCastLine>{
+                ttsLineKey(0, 0): _line('alice'),
+                ttsLineKey(0, 10): _line('dave'),
+                ttsLineKey(0, 20): const TtsCastLine(
+                  speaker: 'alice',
+                  source: TtsCastSource.user,
+                  voice: 'vx',
+                ),
+              },
+              voices: <String, String>{'alice': 'va'},
+            )
+            ..series = CastVoiceAssignment(
+              byCharacter: <String, String>{'dave': 'vd'},
+            );
+      expect(ttsVoiceSlotOf(withSeries, _s(0, 0)), 'va');
+      // 本书没给 dave 配声音：用系列里记住的。
+      expect(ttsVoiceSlotOf(withSeries, _s(0, 10)), 'vd');
+      // 单句指定的声音优先于角色。
+      expect(ttsVoiceSlotOf(withSeries, _s(0, 20)), 'vx');
+      expect(ttsCastAssignsVoices(withSeries), isTrue);
+    });
+
+    test('ttsCastAssignsVoices sees every layer', () {
+      expect(ttsCastAssignsVoices(TtsCast()), isFalse);
+      expect(
+        ttsCastAssignsVoices(
+          TtsCast()..series = CastVoiceAssignment(narrationVoice: 'vn'),
+        ),
+        isTrue,
+      );
+      expect(
+        ttsCastAssignsVoices(
+          TtsCast(
+            lines: <String, TtsCastLine>{
+              ttsLineKey(0, 0): const TtsCastLine(
+                speaker: kTtsNarrator,
+                source: TtsCastSource.llm,
+                voice: 'v1',
+              ),
+            },
+          ),
+        ),
+        isTrue,
+      );
     });
   });
 

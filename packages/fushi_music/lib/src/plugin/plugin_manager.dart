@@ -7,6 +7,8 @@ import 'plugin_ffi.dart';
 import 'plugin_instance.dart';
 import 'plugin_models.dart';
 import 'plugin_net_guard.dart';
+import 'plugin_runtime.dart';
+import 'plugin_package_pack.dart';
 import 'plugin_source.dart';
 
 /// 一个已安装插件：校验摘要 + 启用状态；[error] 非空表示已装文件校验失败（被改过 / 不完整）。
@@ -16,12 +18,19 @@ class InstalledMusicPlugin {
     required this.enabled,
     this.info,
     this.error,
+    this.relayedVia,
   });
 
   final String id;
   final bool enabled;
   final MusicPluginPackageInfo? info;
   final String? error;
+
+  /// 经互联中继用的插件（本机没装，由这台设备代跑）：值是那台设备的展示名。本机已装的为 null。
+  /// 中继插件不能在本机启停 / 卸载 / 打包，管理页只列本机已装的。
+  final String? relayedVia;
+
+  bool get isRelayed => relayedVia != null;
 
   bool get usable => enabled && info != null;
 
@@ -50,13 +59,21 @@ class MusicPluginManager {
     MusicPluginResolver? resolver,
     MusicPluginAddressBlocker? addressBlocker,
     MusicPluginMediaProbe? mediaProbe,
+    this.relay,
   }) : _vaultKey = vaultKey,
        _httpClientFactory = httpClientFactory,
        _httpPerformer = httpPerformer,
        _resolver = resolver,
        _addressBlocker = addressBlocker,
        _mediaProbe = mediaProbe,
-       _log = log;
+       _log = log {
+    _relayChanges = relay?.changes.listen((_) => _changes.add(null));
+  }
+
+  /// 本机没有插件运行时时，经互联用别的设备上的插件（拍板台 wOMR4_Er7s 方案 b）。null =
+  /// 只用本机装的。本机已装的同 id 插件优先于中继的。
+  final MusicPluginRelay? relay;
+  StreamSubscription<void>? _relayChanges;
 
   final Directory rootDir;
   final MusicPluginHttpClientFactory _httpClientFactory;
@@ -93,14 +110,24 @@ class MusicPluginManager {
 
   /// 启停状态的内存副本（首次读盘后常驻；[setEnabled] / [uninstall] 先改它再写盘，
   /// [instance] 据此同步判可用，不会在读盘的空档里放过刚停用的插件）。
-  Map<String, bool>? _enabledCache;
+  ///
+  /// 存的是「读盘的 Future」而不是读完的 Map：首读是单飞的，所有并发的首读调用方
+  /// 拿到同一个 Map 对象。以前是 `_cache ??= await _readEnabled()`，`??=` 在 await
+  /// 之前判空，并发首读各读一份、各拿自己的 Map，后完成的覆盖缓存，先完成那份上的
+  /// 停用就丢了（BUG-4240）。
+  Future<Map<String, bool>>? _enabledLoad;
 
   /// 正在卸载的插件：卸载期间（删目录前后）不再开实例。
   final Set<String> _uninstalling = <String>{};
   int _stateWrites = 0;
 
-  Future<Map<String, bool>> _enabledState() async =>
-      _enabledCache ??= await _readEnabled();
+  Future<Map<String, bool>> _enabledState() =>
+      _enabledLoad ??= _readEnabled().catchError((Object e, StackTrace st) {
+        // 读盘意外失败（IO / 格式错误已在 _readEnabled 里按空状态处理，这里只剩
+        // 结构不符之类）：不把失败缓存成永久状态，错误照常抛给调用方，下次重读。
+        _enabledLoad = null;
+        Error.throwWithStackTrace(e, st);
+      });
 
   Future<Map<String, bool>> _readEnabled() async {
     try {
@@ -127,10 +154,39 @@ class MusicPluginManager {
     await tmp.rename(_stateFile.path);
   }
 
-  /// 列出已安装插件（逐个重新哈希校验）。
+  /// 列出可用插件：本机已装的（逐个重新哈希校验），再加上经 [relay] 可用、本机没装的。
   Future<List<InstalledMusicPlugin>> list() async {
+    final List<InstalledMusicPlugin> local = await listInstalled();
+    final MusicPluginRelay? r = relay;
+    if (r == null) return local;
+    final Set<String> mine = <String>{
+      for (final InstalledMusicPlugin p in local) p.id,
+    };
+    final List<InstalledMusicPlugin> out = <InstalledMusicPlugin>[
+      ...local,
+      for (final MusicPluginRelayedPlugin p in await r.list())
+        if (_idPattern.hasMatch(p.id) &&
+            p.info.manifest.isMusic &&
+            mine.add(p.id))
+          InstalledMusicPlugin(
+            id: p.id,
+            enabled: true,
+            info: p.info,
+            relayedVia: p.via,
+          ),
+    ];
+    out.sort(_byName);
+    return out;
+  }
+
+  static int _byName(InstalledMusicPlugin a, InstalledMusicPlugin b) =>
+      (a.info?.manifest.name ?? a.id).compareTo(b.info?.manifest.name ?? b.id);
+
+  /// 只列本机已安装的插件（管理页、来源共享打包用；不含中继的）。
+  Future<List<InstalledMusicPlugin>> listInstalled() async {
     if (!rootDir.existsSync()) return const <InstalledMusicPlugin>[];
-    final Map<String, bool> enabled = await _readEnabled();
+    // 与 [instance] 同一份内存真相源：写盘进行中也不会读到旧状态。
+    final Map<String, bool> enabled = await _enabledState();
     final List<InstalledMusicPlugin> out = <InstalledMusicPlugin>[];
     for (final FileSystemEntity e in rootDir.listSync()) {
       if (e is! Directory) continue;
@@ -142,29 +198,39 @@ class MusicPluginManager {
         e.path,
       );
       final Object? error = r['error'];
+      final MusicPluginPackageInfo? info = error == null
+          ? MusicPluginPackageInfo.fromJson(r)
+          : null;
+      // 别的插件体系（追踪插件）的包不属于音乐宿主：不列出，也就不会被打开。
+      if (info != null && !info.manifest.isMusic) continue;
       out.add(
         InstalledMusicPlugin(
           id: id,
           enabled: enabled[id] ?? true,
-          info: error == null ? MusicPluginPackageInfo.fromJson(r) : null,
+          info: info,
           error: error is String ? error : null,
         ),
       );
     }
-    out.sort(
-      (InstalledMusicPlugin a, InstalledMusicPlugin b) =>
-          (a.info?.manifest.name ?? a.id).compareTo(
-            b.info?.manifest.name ?? b.id,
-          ),
-    );
+    out.sort(_byName);
     return out;
   }
 
-  /// 校验一个待安装包（不写盘），供确认弹窗展示。坏包抛 [MusicPluginException]。
+  /// 校验一个待安装包（不写盘），供确认弹窗展示。坏包、不是音乐插件的包抛
+  /// [MusicPluginException]。
   Future<MusicPluginPackageInfo> inspect(Uint8List zip) async {
     final Map<String, Object?> r = await MusicPluginNativeAsync.inspect(zip);
     if (r['error'] case final String e) throw MusicPluginException(e);
-    return MusicPluginPackageInfo.fromJson(r);
+    return _requireMusic(MusicPluginPackageInfo.fromJson(r));
+  }
+
+  /// 音乐宿主只装 / 开音乐插件：别的种类（追踪插件）在这里拒掉。
+  static MusicPluginPackageInfo _requireMusic(MusicPluginPackageInfo info) {
+    if (info.manifest.isMusic) return info;
+    throw MusicPluginException(
+      '这不是音乐插件（kind: ${info.manifest.kind}），不能装进音乐插件',
+      pluginId: info.manifest.id,
+    );
   }
 
   /// 待装包 [info] 与已装的同 id 插件是否换了签名者（含「有签名 ↔ 无签名」、已装包校验失败）。
@@ -231,6 +297,13 @@ class MusicPluginManager {
     _changes.add(null);
   }
 
+  /// 已装插件 [id] 打回安装包（互联「来源共享」用）。只含包目录：插件存储与加密凭据在
+  /// 包目录之外，不随包出去。没装返回 null。
+  Future<Uint8List?> exportPackage(String id) async {
+    if (!_idPattern.hasMatch(id)) return null;
+    return packInstalledPluginDirectory(Directory('${rootDir.path}/$id'));
+  }
+
   /// 卸载：删包、插件存储与加密凭据。
   Future<void> uninstall(String id) async {
     if (!_idPattern.hasMatch(id)) return;
@@ -279,8 +352,20 @@ class MusicPluginManager {
     }
     // 从这里到登记新实例之间没有 await：判定与登记对其它调用方是原子的。
     _requireUsable(id, enabled);
-    final Future<MusicPluginInstance> opening = MusicPluginInstance.open(
-      dir: '${rootDir.path}/$id',
+    final Future<MusicPluginInstance> opening = _openMusic(id);
+    _instances[id] = opening;
+    return opening;
+  }
+
+  /// 打开已装插件 [id]；目录里若是别的种类（追踪插件）的包，先校验出来、不建实例就拒。
+  Future<MusicPluginInstance> _openMusic(String id) async {
+    final String dir = '${rootDir.path}/$id';
+    final Map<String, Object?> v = await MusicPluginNativeAsync.verify(dir);
+    // 与 [MusicPluginInstance.open] 打开失败时同样的异常形态（校验失败的文案也相同）。
+    if (v['error'] case final String e) throw MusicPluginException(e);
+    _requireMusic(MusicPluginPackageInfo.fromJson(v));
+    final MusicPluginInstance inst = await MusicPluginInstance.open(
+      dir: dir,
       storageFile: storageFileFor(id),
       httpClientFactory: _httpClientFactory,
       log: _log,
@@ -292,8 +377,12 @@ class MusicPluginManager {
       addressBlocker: _addressBlocker,
       mediaProbe: _mediaProbe,
     );
-    _instances[id] = opening;
-    return opening;
+    // 校验与打开之间目录可能被整个换掉：以打开时的摘要为准再核一次。
+    if (!inst.info.manifest.isMusic) {
+      await inst.close();
+      _requireMusic(inst.info);
+    }
+    return inst;
   }
 
   void _requireUsable(String id, Map<String, bool> enabled) {
@@ -314,6 +403,18 @@ class MusicPluginManager {
     }
   }
 
+  /// 某插件此刻的可调用实例：本机装了就开本机的（[instance]），否则经 [relay]。
+  Future<MusicPluginRuntime> runtime(String id) async {
+    final MusicPluginRelay? r = relay;
+    if (r != null &&
+        _idPattern.hasMatch(id) &&
+        !_uninstalling.contains(id) &&
+        !Directory('${rootDir.path}/$id').existsSync()) {
+      return r.open(id);
+    }
+    return instance(id);
+  }
+
   /// 某插件的类型化能力入口。
   MusicPluginSource source(String id) => MusicPluginSource(this, id);
 
@@ -328,6 +429,7 @@ class MusicPluginManager {
   }
 
   Future<void> dispose() async {
+    await _relayChanges?.cancel();
     for (final String id in _instances.keys.toList()) {
       await _dropInstance(id);
     }

@@ -20,8 +20,15 @@ import 'package:fushi_engine/sync/forwarded_mine_materialize.dart';
 import 'package:fushi_engine/sync/forwarded_mine_payload.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
+import 'package:fushi_engine/sync/remote_mining_target.dart';
+import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
+import 'package:fushi_srs/fushi_srs.dart' show SrsDeckTree, SrsDeckView;
 import 'package:fushi_server/src/anki_landing.dart';
+import 'package:fushi_server/src/config/server_srs_config.dart';
 import 'package:fushi_server/src/dictionary_host.dart';
+import 'package:fushi_server/src/server_srs.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 /// 落一张卡：未渲染的载荷 JSON + 制卡上下文 → 结果。
 typedef ServerMineCard =
@@ -31,8 +38,10 @@ typedef ServerMineCard =
     );
 
 /// 沉浸制卡在服务端不可用时回给对端的原因。
-const String kServerImmersionMiningUnsupported =
-    '服务端不支持沉浸制卡（截图 / 动图 / 句子音频需在客户端裁好后用「制卡到服务端」转发）';
+String get kServerImmersionMiningUnsupported => tr(
+  '服务端不支持沉浸制卡（截图 / 动图 / 句子音频需在客户端裁好后用「制卡到服务端」转发）',
+  'The server does not support immersive mining (screenshots / animations / sentence audio must be trimmed on the client and forwarded with "mine to server")',
+);
 
 /// 把一次 [MineOutcome] 映射成 wire 结果，失败写进服务端日志（与 app 的
 /// `remoteMineResultFromOutcome` 同一语义：error 带原因、success 带部分成功的音频警告与
@@ -64,17 +73,57 @@ RemoteMineResult serverRemoteMineResult(
   }
 }
 
-class ServerRemoteMiningService implements FushiRemoteMiningService {
+/// 互联制卡在服务端的落点分派（docs/specs/2026-11-05-server-srs-design.md §4.8）：
+/// - Anki：[ServerAnkiLanding] 的同步客户端库（老行为）；
+/// - Fushi 复习：[ServerSrs] 里某份 profile 的复习库（[SrsMiner]）；
+/// - 手机可在请求里带 `target` 挑落点（[FushiRemoteMiningTargetService]），不带 = 服务端默认
+///   （`srs.mining_target`；`auto` = 选了复习库且 Anki 没配好时进复习，否则进 Anki）。复习默认落到手机自己那份
+///   profile（`target.profile`，新客户端会带），服务端没有那份就落默认 profile。
+class ServerRemoteMiningService
+    implements
+        FushiRemoteMiningService,
+        FushiRemoteMiningTargetService,
+        FushiRemoteMiningAvailability {
   ServerRemoteMiningService({
-    required ServerMineCard mineCard,
-    required Future<bool> Function(String expression) isDuplicateExpression,
+    ServerMineCard? mineCard,
+    Future<bool> Function(String expression)? isDuplicateExpression,
     Future<void> Function(String dictionaryMediaJson)? writeDictionaryMedia,
+    ServerSrs? srs,
+    ServerSrsConfig Function()? srsConfig,
+    AnkiSettings Function()? ankiSettings,
+    bool Function()? ankiReady,
   }) : _mineCard = mineCard,
        _isDuplicateExpression = isDuplicateExpression,
-       _writeDictionaryMedia = writeDictionaryMedia;
+       _writeDictionaryMedia = writeDictionaryMedia,
+       _srs = srs,
+       _srsConfig = srsConfig ?? (() => const ServerSrsConfig()),
+       _ankiSettings = ankiSettings ?? (() => const AnkiSettings()),
+       _ankiReady = ankiReady ?? (() => mineCard != null);
 
-  /// 生产装配：落卡走 [landing] 的同步客户端会话；词典外字从 [dictionaries]
-  /// （服务端装了词典引擎时）落进 Anki 媒体缓存。
+  /// 生产装配：Anki 走 [landing]（带了 `fushi-anki-sync` 才有），复习走 [srs]；词典外字从 [dictionaries]
+  /// （服务端装了词典引擎时）落进媒体缓存。
+  factory ServerRemoteMiningService.forHost({
+    required ServerAnkiLanding landing,
+    required ServerSrs srs,
+    required ServerSrsConfig Function() srsConfig,
+    ServerDictionaryHost? dictionaries,
+  }) => ServerRemoteMiningService(
+    mineCard: landing.available ? landing.mineCard : null,
+    isDuplicateExpression: landing.available
+        ? (String expression) => landingIsDuplicate(landing, expression)
+        : null,
+    writeDictionaryMedia: dictionaries != null && dictionaries.available
+        ? dictionaries.writeDictionaryMediaCache
+        : null,
+    srs: srs,
+    srsConfig: srsConfig,
+    ankiSettings: () => landing.settings,
+    // 登录过、拉到过牌组清单 = Anki 配好了（auto 据此判断）。
+    ankiReady: () =>
+        landing.available && landing.settings.availableDecks.isNotEmpty,
+  );
+
+  /// 只有 Anki 落地的装配（测试与没有复习库的场合）。
   factory ServerRemoteMiningService.forLanding(
     ServerAnkiLanding landing, {
     ServerDictionaryHost? dictionaries,
@@ -87,47 +136,201 @@ class ServerRemoteMiningService implements FushiRemoteMiningService {
         : null,
   );
 
-  final ServerMineCard _mineCard;
-  final Future<bool> Function(String expression) _isDuplicateExpression;
+  final ServerMineCard? _mineCard;
+  final Future<bool> Function(String expression)? _isDuplicateExpression;
   final Future<void> Function(String dictionaryMediaJson)?
   _writeDictionaryMedia;
+  final ServerSrs? _srs;
+  final ServerSrsConfig Function() _srsConfig;
+  final AnkiSettings Function() _ankiSettings;
+  final bool Function() _ankiReady;
+
+  bool get _reviewAvailable => _srs?.defaultProfile != null;
+
+  /// 没带 Anki helper、也没有可用的复习库：制卡路由当没接线（`capabilities.mining: false`）。复习库正在升级 / 升级受阻
+  /// 时照样算接着：请求回类型化的「升级中 / 升级受阻」（[_upgradeLanding]），不是「主机没开制卡」。
+  @override
+  bool get miningAvailable =>
+      _ankiAvailable || _reviewAvailable || _reviewUpgradeRefusal != null;
+  bool get _ankiAvailable => _mineCard != null;
+
+  /// 服务端默认落到哪一类。[reviewServed] = 复习库能用（升级中按「升级完就能用」算，见 [_upgradeRefusalFor]）。
+  String _defaultKind({bool? reviewServed}) {
+    switch (_srsConfig().miningTarget) {
+      case ServerMiningTarget.anki:
+        return kRemoteMiningKindAnki;
+      case ServerMiningTarget.review:
+        return kRemoteMiningKindReview;
+      case ServerMiningTarget.auto:
+        return (reviewServed ?? _reviewAvailable) && !_ankiReady()
+            ? kRemoteMiningKindReview
+            : kRemoteMiningKindAnki;
+    }
+  }
+
+  /// 复习库因换代不可用（[ServerSrs.upgradeRefusal]）且服务端选了 profile 时的回答；否则 null。
+  ServerSrsUpgradeRefusal? get _reviewUpgradeRefusal {
+    final ServerSrsUpgradeRefusal? refusal = _srs?.upgradeRefusal;
+    if (refusal == null || _srsConfig().profiles.isEmpty) return null;
+    return refusal;
+  }
+
+  /// 这次请求本该落进复习库、而复习库正在升级 / 升级受阻：回类型化的拒绝，不按「点名的给不了」退回 Anki（拍板
+  /// 2026-11-08 的退回只针对 profile / 牌组真的不在了；升级几分钟后同一份就回来，悄悄落进 Anki 是错的落点）。
+  /// 本该落复习 = 点名复习；或没点名类别、服务端默认（按复习库可用算）是复习；或 Anki 根本没接（只剩复习可落）。点名
+  /// Anki 且 Anki 可用的照常进 Anki。
+  ServerSrsUpgradeRefusal? _upgradeRefusalFor(RemoteMiningTarget? target) {
+    final ServerSrsUpgradeRefusal? refusal = _reviewUpgradeRefusal;
+    if (refusal == null) return null;
+    final String kind = target?.kind ?? _defaultKind(reviewServed: true);
+    return kind == kRemoteMiningKindReview || !_ankiAvailable ? refusal : null;
+  }
+
+  /// [refusal] 的制卡回包：`error` + 稳定分类码（[ServerSrsUpgradeRefusal.reason]：`srs_upgrading` /
+  /// `srs_upgrade_blocked`）+ 分型（升级中可自行恢复 = transient，升级受阻要管理员处理 = permanent）。
+  RemoteMineLanding _upgradeLanding(ServerSrsUpgradeRefusal refusal) {
+    final bool upgrading = refusal == ServerSrsUpgradeRefusal.upgrading;
+    final String message = upgrading
+        ? tr(
+            '服务端的复习库正在升级，升级完成后再制卡',
+            'The review library on the server is being upgraded; mine again once it finishes',
+          )
+        : tr(
+            '服务端的复习库升级没有完成，需要在服务端处理（ctl srs migration）',
+            'The review library on the server could not finish its upgrade; it needs attention on the server (ctl srs migration)',
+          );
+    engineLog.logDiagnostic('ServerMining', '${refusal.reason}: $message');
+    return RemoteMineLanding(
+      RemoteMineResult(
+        result: MineResult.error.name,
+        message: message,
+        detail: _srs?.generation.advice,
+        errorKind: upgrading
+            ? RemoteMineErrorKind.transient
+            : RemoteMineErrorKind.permanent,
+        errorCode: refusal.reason,
+      ),
+    );
+  }
+
+  /// [target] → 实际落点（与桌面 host 同一套语义：[resolveRemoteMiningTarget]）。手机没点名牌组时复习用配置给
+  /// 那份 profile 定的制卡牌组（全名；空 = 默认牌组）。点名的牌组没有了 → 整个退回服务端默认。
+  Future<RemoteMiningResolution?> _resolve(RemoteMiningTarget? target) {
+    final ServerSrs? srs = _srs;
+    return resolveRemoteMiningTarget(
+      target,
+      defaultKind: _defaultKind(),
+      ankiAvailable: _ankiAvailable,
+      defaultReviewProfile: _reviewAvailable ? srs!.defaultProfile!.uid : null,
+      servesReviewProfile: (String uid) => srs?.storeFor(uid) != null,
+      configuredReviewDeck: (String uid) => _srsConfig().miningDecks[uid],
+      ankiDeckExists: (String deck) async {
+        final List<AnkiDeck> decks = _ankiSettings().availableDecks;
+        // 没拉到过牌组清单：无从判断，交给 Anki 落卡时自己回落（回包仍按实际牌组报）。
+        return decks.isEmpty || decks.any((AnkiDeck d) => d.name == deck);
+      },
+      reviewDeckExists: (String uid, String deck) async {
+        final SrsDbStore? store = srs?.storeFor(uid);
+        if (store == null) return false;
+        final SrsDeckTree tree = await store.deckTree();
+        return tree.decks.any((SrsDeckView d) => tree.fullName(d.id) == deck);
+      },
+    );
+  }
+
+  Future<RemoteMineLanding> _mineTo(
+    RemoteMiningTarget? target,
+    String rawPayloadJson,
+    AnkiMiningContext context,
+    String source,
+  ) async {
+    final ServerSrsUpgradeRefusal? refusal = _upgradeRefusalFor(target);
+    if (refusal != null) return _upgradeLanding(refusal);
+    final RemoteMiningResolution? to = await _resolve(target);
+    if (to == null) {
+      return RemoteMineLanding(
+        RemoteMineResult(result: MineResult.notConfigured.name),
+      );
+    }
+    final ({String raw, bool own}) withDeck = withRemoteMiningDeck(
+      rawPayloadJson,
+      to.deck,
+    );
+    final String raw = withDeck.raw;
+    final MineOutcome outcome;
+    if (to.kind == kRemoteMiningKindAnki) {
+      outcome = await _mineCard!(raw, context);
+    } else {
+      final SrsMiner? miner = _srs!.minerFor(to.profile!);
+      outcome = miner == null
+          ? MineOutcome.failure('Fushi review is not available on the server')
+          : await miner.mine(
+              settings: _ankiSettings(),
+              rawPayloadJson: raw,
+              context: context,
+            );
+      if (outcome.result == MineResult.success) {
+        _srs.notifyWrite(to.profile!);
+      }
+    }
+    return remoteMineLandingFor(
+      serverRemoteMineResult(outcome, source: source),
+      outcome: outcome,
+      to: to,
+      target: target,
+      ownDeck: withDeck.own,
+    );
+  }
 
   @override
   Future<RemoteMineResult> mineEntry({
     required Map<String, String> fields,
     required String sentence,
+  }) async => (await mineEntryTo(fields: fields, sentence: sentence)).result;
+
+  @override
+  Future<RemoteMineLanding> mineEntryTo({
+    required Map<String, String> fields,
+    required String sentence,
+    RemoteMiningTarget? target,
   }) async {
     // 弹窗把外字登记进 fields.dictionaryMedia 并渲染成占位 <img>；先把字节落缓存，
     // 渲染时才替换得上（与 app 的 BUG-2190 同一步骤）。
     await _writeDictionaryMedia?.call(fields['dictionaryMedia'] ?? '');
-    return serverRemoteMineResult(
-      await _mineCard(
-        jsonEncode(fields),
-        AnkiMiningContext(sentence: sentence),
-      ),
-      source: 'ServerMining.mineEntry',
+    return _mineTo(
+      target,
+      jsonEncode(fields),
+      AnkiMiningContext(sentence: sentence),
+      'ServerMining.mineEntry',
     );
   }
 
   @override
-  Future<RemoteMineResult> mineForwarded(ForwardedMinePayload payload) async {
+  Future<RemoteMineResult> mineForwarded(ForwardedMinePayload payload) async =>
+      (await mineForwardedTo(payload)).result;
+
+  @override
+  Future<RemoteMineLanding> mineForwardedTo(
+    ForwardedMinePayload payload, {
+    RemoteMiningTarget? target,
+  }) async {
     try {
-      return await withMaterializedMiningContext<RemoteMineResult>(
+      return await withMaterializedMiningContext<RemoteMineLanding>(
         payload,
-        (String raw, AnkiMiningContext context) async => serverRemoteMineResult(
-          await _mineCard(raw, context),
-          source: 'ServerMining.mineForwarded',
-        ),
+        (String raw, AnkiMiningContext context) =>
+            _mineTo(target, raw, context, 'ServerMining.mineForwarded'),
         // 客户端经本服务端查词时词典只在这里：搬不来字节的插图由本机词典补齐，
         // 与 [mineEntry] 同一步骤（反馈 PDgaHL5qmj）。
         writeHostDictionaryMedia: _writeDictionaryMedia,
       );
     } catch (e, st) {
       engineLog.log('ServerMining.mineForwarded', e, st);
-      return RemoteMineResult(
-        result: MineResult.error.name,
-        message: '服务端制卡失败',
-        detail: '$e',
+      return RemoteMineLanding(
+        RemoteMineResult(
+          result: MineResult.error.name,
+          message: tr('服务端制卡失败', 'Server-side mining failed'),
+          detail: '$e',
+        ),
       );
     }
   }
@@ -149,16 +352,77 @@ class ServerRemoteMiningService implements FushiRemoteMiningService {
   Future<bool> isDuplicate({
     required String expression,
     required String reading,
+  }) => isDuplicateIn(expression: expression, reading: reading);
+
+  @override
+  Future<bool> isDuplicateIn({
+    required String expression,
+    required String reading,
+    RemoteMiningTarget? target,
   }) async {
     if (expression.isEmpty) return false;
+    // 本该查复习库、复习库在升级：查不了，回「不重复」（与后端不可用同口径），真制卡时回升级中。
+    if (_upgradeRefusalFor(target) != null) return false;
     try {
-      return await _isDuplicateExpression(expression);
+      final RemoteMiningResolution? to = await _resolve(target);
+      if (to == null) return false;
+      if (to.kind == kRemoteMiningKindReview) {
+        final SrsMiner? miner = _srs!.minerFor(to.profile!);
+        return miner != null && await miner.isDuplicate(expression, reading);
+      }
+      return await _isDuplicateExpression?.call(expression) ?? false;
     } catch (e, st) {
       // 查重是每次查词都跑的高频探测：后端没登录 / helper 起不来回「不重复」，真正制卡时
       // mineEntry 会把原因报给用户（与 app 的同步客户端后端同口径）。
       engineLog.log('ServerMining.isDuplicate', e, st);
       return false;
     }
+  }
+
+  @override
+  Future<Map<String, Object?>> miningTargets() async {
+    final ServerSrsUpgradeRefusal? refusal = _upgradeRefusalFor(null);
+    final RemoteMiningResolution? def = refusal != null
+        ? null
+        : await _resolve(null);
+    final List<Map<String, Object?>> review = <Map<String, Object?>>[];
+    for (final ServerSrsProfile prof
+        in _srs?.readyProfiles ?? const <ServerSrsProfile>[]) {
+      final SrsDbStore? store = prof.store;
+      if (store == null) continue;
+      final SrsDeckTree tree = await store.deckTree();
+      final List<String> decks = <String>[
+        for (final SrsDeckView d in tree.decks) tree.fullName(d.id),
+      ]..sort();
+      // 不点名牌组时卡实际落进的那个（配置给这份定的制卡牌组，不在了 / 没配 = 库的默认牌组，与
+      // resolveSrsMiningDestination 同口径）。手机据此不把它在「默认牌组」之外再列一遍（BUG-4288）。
+      final String? configured = _srsConfig().miningDecks[prof.uid];
+      final String? defaultDeck =
+          configured != null && decks.contains(configured)
+          ? configured
+          : tree[store.defaultDeckId] == null
+          ? null
+          : tree.fullName(store.defaultDeckId);
+      review.add(<String, Object?>{
+        'profile': prof.uid,
+        'name': prof.name,
+        'decks': decks,
+        'defaultDeck': ?defaultDeck,
+      });
+    }
+    return <String, Object?>{
+      'default': def?.landing.toJson(),
+      'review': review,
+      // 复习库在升级 / 升级受阻（[ServerSrsUpgradeRefusal.reason]）：此时 review 为空、默认落点不报，手机据此说明原因
+      // 而不是「主机没开复习」。老客户端忽略。
+      'reviewUnavailable': ?_reviewUpgradeRefusal?.reason,
+      if (_ankiAvailable)
+        'anki': <String, Object?>{
+          'decks': <String>[
+            for (final AnkiDeck d in _ankiSettings().availableDecks) d.name,
+          ],
+        },
+    };
   }
 
   @override

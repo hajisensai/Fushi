@@ -61,17 +61,6 @@ OpUndoScope opUndoScopeFromPayload(Map<String, Object?> payload) => (
   },
 );
 
-/// 把 [CtlFailure] 变成撤销结论（404 = 对象已不在 → superseded）。
-Future<OpUndoOutcome> opUndoGuard(Future<OpUndoOutcome> Function() body) async {
-  try {
-    return await body();
-  } on CtlFailure catch (failure) {
-    return failure.status == 404
-        ? OpUndoOutcome.superseded(failure.message)
-        : OpUndoOutcome.failed(failure.message ?? failure.code);
-  }
-}
-
 /// 给人看的「改前 / 改后」。
 String? opUndoDisplay(Object? value) {
   if (value == null || value == kOpUndoNoop) return null;
@@ -121,34 +110,6 @@ OpUndo opScopedSnapshotUndo({
     }),
   );
 }
-
-/// 自定义撤销：[capture]（可空）抓前态，[payloadOf] 用前态 + 结果拼载荷，
-/// [revert] 自己判 done / superseded / failed（[CtlFailure] 统一兜成结论）。
-OpUndo opCustomUndo({
-  Future<Map<String, Object?>> Function(CtlCall call)? capture,
-  required Map<String, Object?> Function(
-    CtlCall call,
-    Map<String, Object?> before,
-    Object? result,
-  )
-  payloadOf,
-  required Future<OpUndoOutcome> Function(Map<String, Object?> payload) revert,
-  String? Function(Map<String, Object?> payload)? describe,
-}) => OpUndo(
-  capture: capture,
-  record: (CtlCall call, Map<String, Object?> before, Object? result) {
-    final Map<String, Object?> payload = payloadOf(call, before, result);
-    return OpUndoRecord(payload: payload, after: describe?.call(payload));
-  },
-  revert: (Map<String, Object?> payload) => opUndoGuard(() => revert(payload)),
-);
-
-/// 字符串列表（JSON 往返后的 `List<dynamic>` 也认）。
-List<String> opUndoStrings(Object? raw) => <String>[
-  if (raw is List)
-    for (final Object? item in raw)
-      if (item != null) '$item',
-];
 
 Map<String, Object?> _map(Object? raw) => raw is Map
     ? <String, Object?>{
@@ -461,7 +422,10 @@ List<OpDescription> _describeItemOps(OpDescribeKit kit) => <OpDescription>[
     pattern: '$_root/scan',
     summary:
         'Rescan source libraries (folders) for new / changed media, like the '
-        'source page "Rescan" button. Does not auto-scrape videos.',
+        'source page "Rescan" button. Does not auto-scrape videos. Each result '
+        'has imported = items newly added by this scan; blocked = '
+        '"video_scrape_maintenance" means the scan did not start because video '
+        'scrape data is being cleaned up (retry later).',
     risk: OpRisk.irreversible,
     params: <OpParam>[
       OpParam.integer(
@@ -1308,8 +1272,9 @@ List<OpDescription> _describeSourceOps(OpDescribeKit kit) => <OpDescription>[
     method: 'GET',
     pattern: _sources,
     summary:
-        'List source libraries (scanned folders): id, label, kind, path, media '
-        'count, last scan.',
+        'List source libraries (scanned folders): id, label, kind, path, last '
+        'scan. totalCount = items the source owns now; mediaCount = items the '
+        'last scan newly imported (0 after a rescan that found nothing new).',
     params: <OpParam>[
       OpParam.string(
         'kind',
@@ -1549,8 +1514,9 @@ List<OpDescription> _describeAudiobookOps(OpDescribeKit kit) {
       method: 'POST',
       pattern: '$_item/audiobook',
       summary:
-          'Attach or replace audiobook audio and / or subtitle on an EPUB book or '
-          'subtitle book (replaces the stored audio / cues). Returns a task id.',
+          'Attach or replace audiobook audio and / or subtitle on an EPUB / PDF '
+          'book or subtitle book (replaces the stored audio / cues). Returns a '
+          'task id.',
       risk: OpRisk.irreversible,
       longRunning: true,
       taskIdOf: opTaskIdFromId,
@@ -1817,6 +1783,29 @@ List<OpDescription> _describeMangaOcrOps(OpDescribeKit kit) {
 // AI 整理库（已有撤销机制：直接挂到 organize-undo）
 // ─────────────────────────────────────────────────────────────────────────
 
+/// 同意 / 暂缓一条整理建议的撤销：调 `proposals/:id/undo`，建议回到等确认。
+OpUndo _proposalUndo(OpDescribeKit kit) => opCustomUndo(
+  payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) =>
+      <String, Object?>{'id': _map(result)['id']},
+  describe: (Map<String, Object?> p) => 'organize suggestion ${p['id']}',
+  revert: (Map<String, Object?> payload) async {
+    final Object? id = payload['id'];
+    if (id == null) return const OpUndoOutcome.done();
+    try {
+      await kit.callRoute(
+        'POST',
+        '$_organize/proposals/:id/undo',
+        params: <String, String>{'id': '$id'},
+      );
+    } on CtlFailure {
+      return const OpUndoOutcome.superseded(
+        'suggestion was already undone or the collection is gone',
+      );
+    }
+    return const OpUndoOutcome.done();
+  },
+);
+
 List<OpDescription> _describeOrganizeOps(OpDescribeKit kit) => <OpDescription>[
   OpDescription(
     id: 'library.organize.run',
@@ -1833,6 +1822,23 @@ List<OpDescription> _describeOrganizeOps(OpDescribeKit kit) => <OpDescription>[
         description: 'Library page to organize: books, manga, video or games.',
         required: true,
         enumValues: <String>['books', 'manga', 'video', 'games'],
+      ),
+      OpParam.string(
+        'trigger',
+        description:
+            'manual (default; medium-confidence moves apply) or auto (only '
+            'high-confidence changes, as the background library curator).',
+        enumValues: <String>['manual', 'auto'],
+      ),
+      OpParam.stringList(
+        'entryKeys',
+        description:
+            'Only organize these member entries (default: the whole page).',
+      ),
+      OpParam.boolean(
+        'rulesOnly',
+        description:
+            'Only the free rule-based grouping; sends nothing to the LLM.',
       ),
       OpParam.userGate(
         'yes',
@@ -1878,6 +1884,96 @@ List<OpDescription> _describeOrganizeOps(OpDescribeKit kit) => <OpDescription>[
       OpParam.string(
         'id',
         description: 'Run id from library.organize.history.',
+        required: true,
+        inPath: true,
+      ),
+    ],
+  ),
+  const OpDescription(
+    id: 'library.organize.proposals',
+    method: 'GET',
+    pattern: '$_organize/proposals',
+    summary:
+        'Suggestions waiting for the user: merging, renaming or removing '
+        "members from the user's own collections (never applied "
+        'automatically; kind merge / rename / removeMembers, removeMembers '
+        'carries members and a reasonCode such as disc_extra).',
+    params: <OpParam>[
+      OpParam.boolean(
+        'all',
+        description:
+            'Also list accepted / rejected / deferred / stale suggestions.',
+      ),
+    ],
+  ),
+  OpDescription(
+    id: 'library.organize.proposal.accept',
+    method: 'POST',
+    pattern: '$_organize/proposals/:id/accept',
+    summary:
+        'Apply one pending suggestion as the user (merge, rename, or remove '
+        "members from the user's collections). Undo puts it back and the "
+        'suggestion returns to pending.',
+    risk: OpRisk.write,
+    params: const <OpParam>[
+      OpParam.string(
+        'id',
+        description: 'Suggestion id from library.organize.proposals.',
+        required: true,
+        inPath: true,
+      ),
+    ],
+    undo: _proposalUndo(kit),
+  ),
+  OpDescription(
+    id: 'library.organize.proposal.defer',
+    method: 'POST',
+    pattern: '$_organize/proposals/:id/defer',
+    summary:
+        'Not this time: hide one pending suggestion on this device for 7 days; '
+        'it may be suggested again afterwards.',
+    risk: OpRisk.write,
+    undo: _proposalUndo(kit),
+    params: const <OpParam>[
+      OpParam.string(
+        'id',
+        description: 'Suggestion id from library.organize.proposals.',
+        required: true,
+        inPath: true,
+      ),
+    ],
+  ),
+  const OpDescription(
+    id: 'library.organize.proposal.reject',
+    method: 'POST',
+    pattern: '$_organize/proposals/:id/reject',
+    summary:
+        'Never: reject one pending suggestion. Members it would remove or merge '
+        'away are pinned to their collection (synced), so no device suggests '
+        'it again.',
+    risk: OpRisk.irreversible,
+    params: <OpParam>[
+      OpParam.string(
+        'id',
+        description: 'Suggestion id from library.organize.proposals.',
+        required: true,
+        inPath: true,
+      ),
+    ],
+  ),
+  const OpDescription(
+    id: 'library.organize.proposal.undo',
+    method: 'POST',
+    pattern: '$_organize/proposals/:id/undo',
+    summary:
+        'Undo an accepted suggestion (put removed members back in place, '
+        'split a merge, rename back) or a deferred one; the suggestion returns '
+        'to pending.',
+    risk: OpRisk.irreversible,
+    params: <OpParam>[
+      OpParam.string(
+        'id',
+        description: 'Accepted suggestion id from library.organize.proposals.',
         required: true,
         inPath: true,
       ),

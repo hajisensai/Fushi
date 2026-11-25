@@ -16,9 +16,12 @@ const double kScrapeCoverPreviewHeight = 112;
 
 /// 书籍、漫画、视频、游戏刮削候选共用的可辨识封面预览。
 class ScrapeCoverPreview extends StatelessWidget {
-  const ScrapeCoverPreview({super.key, required this.url});
+  const ScrapeCoverPreview({super.key, required this.url, this.headers});
 
   final String? url;
+
+  /// 源站要求的请求头（NDL 缩略图要 Referer），缩略图与大图预览都带上。
+  final Map<String, String>? headers;
 
   @override
   Widget build(BuildContext context) {
@@ -34,7 +37,7 @@ class ScrapeCoverPreview extends StatelessWidget {
         child: normalized == null
             ? _buildPlaceholder(tokens)
             : Image(
-                image: AppHttpImage(normalized),
+                image: AppHttpImage(normalized, headers: headers),
                 fit: BoxFit.cover,
                 errorBuilder: (_, __, ___) => _buildPlaceholder(tokens),
               ),
@@ -49,7 +52,7 @@ class ScrapeCoverPreview extends StatelessWidget {
         child: InkWell(
           mouseCursor: SystemMouseCursors.click,
           borderRadius: FushiBorderRadius.chip,
-          onTap: () => _showLargePreview(context, normalized),
+          onTap: () => _showLargePreview(context, normalized, headers),
           child: preview,
         ),
       ),
@@ -70,7 +73,11 @@ Widget _buildPlaceholder(FushiDesignTokens tokens, {double iconSize = 28}) {
   );
 }
 
-Future<void> _showLargePreview(BuildContext context, String url) async {
+Future<void> _showLargePreview(
+  BuildContext context,
+  String url,
+  Map<String, String>? headers,
+) async {
   final Size viewport = MediaQuery.sizeOf(context);
   final double width = math.max(0, math.min(viewport.width - 48, 720));
   final double height = math.max(0, math.min(viewport.height - 48, 760));
@@ -97,7 +104,7 @@ Future<void> _showLargePreview(BuildContext context, String url) async {
                   minScale: 1,
                   maxScale: 5,
                   child: Image(
-                    image: AppHttpImage(url),
+                    image: AppHttpImage(url, headers: headers),
                     fit: BoxFit.contain,
                     errorBuilder: (_, __, ___) =>
                         _buildPlaceholder(tokens, iconSize: 48),

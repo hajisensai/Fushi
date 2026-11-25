@@ -44,9 +44,11 @@ abstract class FlutterOnnxruntimePlatform extends PlatformInterface {
     throw UnimplementedError('getAvailableProviders() has not been implemented.');
   }
 
-  /// Fushi fork: DXGI video-memory budget of adapter [deviceId] (Windows only).
-  /// Returns null where the platform has no such query.
-  Future<Map<String, dynamic>?> getDeviceMemoryInfo({int deviceId = 0}) async => null;
+  /// Fushi fork: DXGI video-memory budget (Windows only). With [deviceId] it
+  /// answers for that DXGI adapter; without it, for the adapter GPU sessions run
+  /// on (the CUDA device's adapter once the CUDA plugin EP is registered, DXGI
+  /// adapter 0 otherwise). Returns null where the platform has no such query.
+  Future<Map<String, dynamic>?> getDeviceMemoryInfo({int? deviceId}) async => null;
 
   /// Fushi fork: ask the NVIDIA driver (nvcuda.dll) for its CUDA version and
   /// devices, without needing the CUDA runtime libraries (Windows only).
@@ -59,6 +61,13 @@ abstract class FlutterOnnxruntimePlatform extends PlatformInterface {
   /// process (Windows only). `{ok: bool, error: String?, deviceCount: int}`;
   /// null where the platform has no plugin-EP path.
   Future<Map<String, dynamic>?> registerCudaRuntime(String dir) async => null;
+
+  /// Fushi fork: unload the CUDA plugin library (and its cuBLAS / cuDNN DLLs)
+  /// once no CUDA session is open, keeping the registration: the next CUDA
+  /// session loads it again (Windows only). [resetContext] also resets the
+  /// CUDA primary context. `{released: bool, contextReset: bool,
+  /// openCudaSessions: int, error: String?}`; null where there is no plugin EP.
+  Future<Map<String, dynamic>?> releaseCudaRuntime({bool resetContext = false}) async => null;
 
   /// Fushi fork: map the onnxruntime.dll at [path] (the downloaded DirectML
   /// core) before ONNX Runtime is first used in this process (Windows only).

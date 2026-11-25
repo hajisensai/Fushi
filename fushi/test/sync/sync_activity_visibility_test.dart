@@ -215,7 +215,6 @@ void main() {
       syncProgress.value = null;
       syncActivity.value = null;
       srsSyncProgress.value = null;
-      srsMigrationProgress.value = null;
     });
 
     Future<void> pumpBanner(WidgetTester tester) => tester.pumpWidget(
@@ -252,6 +251,25 @@ void main() {
       );
     });
 
+    // BUG-5061：媒体积压上千个文件时以前只显示「同步卡片媒体」，看不出在不在动。
+    testWidgets('媒体阶段知道总数：文字带计数 + 确定进度', (WidgetTester tester) async {
+      const SrsSyncProgress p = SrsSyncProgress(
+        stage: SrsSyncStage.media,
+        done: 37,
+        total: 1200,
+      );
+      srsSyncProgress.value = p;
+      await pumpBanner(tester);
+      final String line = srsSyncProgressLine(p);
+      expect(find.text(line), findsOneWidget);
+      expect(line, contains('37'));
+      expect(line, contains('1200'));
+      expect(
+        barValue(tester, 'sync-progress-banner-srs'),
+        closeTo(37 / 1200, 1e-9),
+      );
+    });
+
     testWidgets('准备 / 上传 / 媒体各有文案，进度条不确定', (WidgetTester tester) async {
       for (final SrsSyncStage stage in <SrsSyncStage>[
         SrsSyncStage.preparing,
@@ -279,41 +297,6 @@ void main() {
         }.length,
         SrsSyncStage.values.length,
       );
-    });
-
-    testWidgets('旧版本同步文件在后台迁移：没有一轮在跑时这一行显示迁移进度（确定进度条），一轮开跑时让位', (
-      WidgetTester tester,
-    ) async {
-      const SrsSyncProgress migrating = SrsSyncProgress(
-        stage: SrsSyncStage.migrating,
-        done: 1200,
-        total: 40493,
-      );
-      srsMigrationProgress.value = migrating;
-      await pumpBanner(tester);
-      final String line = srsSyncProgressLine(migrating);
-      expect(line, contains('1200'));
-      expect(line, contains('40493'));
-      expect(find.text(line), findsOneWidget);
-      expect(
-        barValue(tester, 'sync-progress-banner-srs'),
-        closeTo(1200 / 40493, 1e-9),
-      );
-      const SrsSyncProgress round = SrsSyncProgress(
-        stage: SrsSyncStage.downloading,
-        done: 3,
-        total: 9,
-      );
-      srsSyncProgress.value = round;
-      // 文字切换走 AnimatedSwitcher 淡入淡出：等旧文字淡出完再断言。
-      await tester.pump();
-      await tester.pump(const Duration(seconds: 1));
-      expect(find.text(srsSyncProgressLine(round)), findsOneWidget);
-      expect(find.text(line), findsNothing);
-      srsSyncProgress.value = null;
-      srsMigrationProgress.value = null;
-      await tester.pump(const Duration(seconds: 1));
-      expect(find.byType(FushiLinearProgressIndicator), findsNothing);
     });
 
     testWidgets('与常规同步并存：两行都在，各配各的进度', (WidgetTester tester) async {
@@ -364,12 +347,12 @@ void main() {
 
     int occurrences(String needle) => needle.allMatches(src).length;
 
-    test('五条同步路径都经由 _beginSyncActivity 登记身份', () {
-      // 1 处定义 + 5 处调用（开机自动 sweep / 手动全量 / 合集轻量 / 单本 /
-      // 设置页显式资产上传下载）。
+    test('六条同步路径都经由 _beginSyncActivity 登记身份', () {
+      // 1 处定义 + 6 处调用（开机自动 sweep / 手动全量 / 合集轻量 / 单本 /
+      // 设置页显式资产上传下载 / 词典管理页按 host 推送下载单本词典）。
       expect(
         occurrences('_beginSyncActivity('),
-        6,
+        7,
         reason: '新增同步路径必须一并登记身份，否则进度条又会退回「只有线没有字」',
       );
     });
@@ -377,19 +360,34 @@ void main() {
     test('每条路径都在 finally 里经由 _endSyncActivity 公布结局', () {
       expect(
         occurrences('_endSyncActivity('),
-        6,
+        7,
         reason: '漏掉结局 = 那轮同步静默收尾，用户无从判断到底同没同步',
       );
     });
 
-    test('在飞标志与计数只在这一对 helper 里被写', () {
-      expect(
-        occurrences('syncInProgress.value = true'),
-        1,
-        reason: '各路径手写这行正是「合集/单本 finally 漏清 syncProgress」的来源',
-      );
-      expect(occurrences('_activeSyncs++'), 1);
-      expect(occurrences('_activeSyncs--'), 1);
+    // 反馈 kM-Gb_Xnu-：三个全局值改由任务表（sync_task_board.dart）从「在飞任务」
+    // 派生，同步路径只登记 / 结束任务，不再手写全局值，也就没有计数可漏减。
+    final String boardSrc = File(
+      'lib/src/sync/sync_task_board.dart',
+    ).readAsStringSync();
+
+    test('在飞标志与阶段只由任务表派生、只在一处写', () {
+      for (final String needle in <String>[
+        'syncInProgress.value =',
+        'syncProgress.value =',
+        'syncActivity.value =',
+      ]) {
+        expect(
+          occurrences(needle),
+          0,
+          reason: '各路径手写这行正是「合集/单本 finally 漏清 syncProgress」的来源',
+        );
+        expect(
+          needle.allMatches(boardSrc).length,
+          1,
+          reason: '$needle 只能在任务表的 _publish 里写',
+        );
+      }
     });
 
     test('设置页「立即同步」只拿全量同步的结局填副标题', () {
@@ -419,13 +417,14 @@ void main() {
     });
 
     test('最后一个在飞同步退出时同时清掉阶段与身份', () {
-      // 两者必须一起清：只清其一会把上一轮的残留文字带进下一轮开头。
-      expect(src, contains('syncProgress.value = null'));
-      expect(src, contains('syncActivity.value = null'));
+      // 两者必须一起清：只清其一会把上一轮的残留文字带进下一轮开头。阶段与身份都取自
+      // 同一个「主任务」，没有在飞任务时两者同时为 null。
+      expect(boardSrc, contains('syncProgress.value = primary?.progress'));
+      expect(boardSrc, contains('syncActivity.value = primary == null'));
       expect(
-        occurrences('if (_activeSyncs == 0)'),
+        occurrences('task.finish()'),
         1,
-        reason: '清理只能有一处（在 _endSyncActivity 内），不得散回各路径',
+        reason: '结束任务只能有一处（在 _endSyncActivity 内），不得散回各路径',
       );
     });
   });

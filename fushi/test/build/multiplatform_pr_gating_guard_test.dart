@@ -110,9 +110,8 @@ void main() {
     }
   });
 
-  test('push / workflow_dispatch 整轮全开；PR 按 merge commit 取改动；schedule 只派发', () {
+  test('push / workflow_dispatch / schedule 整轮全开；PR 按 merge commit 取改动', () {
     final String prArm = _caseArm(changesJob, 'pull_request');
-    final String scheduleArm = _caseArm(changesJob, 'schedule');
     final String defaultArm = _caseArm(changesJob, '*');
     expect(
       prArm,
@@ -120,11 +119,15 @@ void main() {
       reason: 'PR 的改动清单 = merge commit 对它的第一个父提交（与平台 job 构建同一提交）',
     );
     expect(prArm, isNot(contains('all=true')));
-    expect(scheduleArm, isNot(contains('all=true')));
+    expect(
+      changesJob,
+      isNot(contains('            schedule)')),
+      reason: '默认分支是 develop，夜间 schedule 就是 develop 上的整轮兜底，不能落进不构建的分支',
+    );
     expect(
       defaultArm,
       contains('all=true'),
-      reason: 'push（main）与手动 dispatch 必须整轮全开，行为与加路径门之前一致',
+      reason: 'push（main）、手动 dispatch 与夜间 schedule 必须整轮全开',
     );
     expect(changesJob, contains('fetch-depth: 2'));
     expect(
@@ -132,26 +135,19 @@ void main() {
       contains(r'''if [ "$all" = true ] || grep -Eq "$re" "$files"; then'''),
     );
 
-    final String nightly = jobs['nightly-develop'] ?? '';
-    expect(nightly, contains("if: github.event_name == 'schedule'"));
-    expect(nightly, contains('actions: write'));
     expect(
-      nightly,
-      contains('gh workflow run build-multiplatform.yml'),
-      reason: '定时 run 只能在 main 上跑，必须派发到 develop 而不是就地构建',
+      jobs.containsKey('nightly-develop'),
+      isFalse,
+      reason: '默认分支已是 develop，定时 run 就地整轮跑，不再需要派发器',
     );
-    expect(nightly, contains('--ref develop'));
     final String on = workflow.substring(0, workflow.indexOf('\njobs:'));
     expect(on, contains('  schedule:'));
-    expect(on, contains('      nightly:'));
 
     // Android appSmoke 仍只在人手动 dispatch 时跑，夜间整轮与 PR 都不带它。
     final List<String> androidHeader = _jobLevelLines(jobs['android'] ?? '');
     expect(
       androidHeader,
-      contains(
-        "    if: github.event_name == 'workflow_dispatch' && !inputs.nightly",
-      ),
+      contains("    if: github.event_name == 'workflow_dispatch'"),
     );
   });
 
@@ -264,6 +260,7 @@ void main() {
       '.github/actions/setup-fushi-compute/action.yml': apps,
       '.github/actions/setup-fushi-rwkv/action.yml': apps,
       '.github/scripts/verify_torrent_abi.sh': <String>{'macos', 'server'},
+      '.github/scripts/check_glibc_baseline.sh': <String>{'server'},
       // strings.g.dart 不入库：三个 app job 编译前跑 gen-i18n action → fushi/tool/gen_i18n.dart，
       // 改生成器 / action 要在三个平台上真跑一次（Windows runner 的 bash / dart 路径不同）。
       // linux-server 不编 app（fushi_server 闭包不依赖 package:fushi），不跑生成。
@@ -384,6 +381,7 @@ void main() {
         'pubspec.lock',
         '.github/actions/native-store-names/names.sh',
         '.github/scripts/verify_torrent_abi.sh',
+        '.github/scripts/check_glibc_baseline.sh',
         '.github/workflows/build-multiplatform.yml',
       ])
         if (routed(p).isNotEmpty && !_githubPathFilterMatches(filter, p)) p,
@@ -426,7 +424,7 @@ void main() {
       "grep -q 'native library not found'",
       'native/fushi_anki_sync/build.sh --debug --install-dir build/fushi_server_linux/bundle/bin',
       'dart build cli --target packages/fushi_server/bin/fushi_server.dart',
-      'libonnxruntime.so',
+      '.github/scripts/fetch_onnxruntime_nuget.py "\$ORT_VERSION" linux-x64',
       'bash native/fushidicts/build_linux_so.sh',
       'build/fushi_server_linux/bundle/lib/libfushidicts_ffi.so',
       'lib.fushidicts_create.restype',

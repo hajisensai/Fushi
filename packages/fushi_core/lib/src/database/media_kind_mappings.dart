@@ -65,6 +65,8 @@ String tagTombstoneDomainOf(TagHostKind kind) => switch (kind) {
   TagHostKind.video => MediaKind.video.dbValue,
   TagHostKind.game => MediaKind.game.dbValue,
   TagHostKind.collection => TagHostKind.collection.dbValue,
+  // 音乐专辑不是 [MediaKind]（不进合集 / 书架），墓碑域同合集直接取自己的落库值。
+  TagHostKind.musicAlbum => TagHostKind.musicAlbum.dbValue,
 };
 
 /// 合集/书架种类 → 标签宿主种类（四个值同串同义；宿主域多一个 `collection`）。

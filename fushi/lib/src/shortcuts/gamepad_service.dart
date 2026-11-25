@@ -12,10 +12,13 @@ import 'package:gamepads/gamepads.dart' as gp;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_scroll.dart';
 import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_badge.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
 import 'package:fushi/src/shortcuts/dictionary_popup_gamepad.dart';
 import 'package:fushi/src/shortcuts/focus_navigation_shortcuts.dart';
 import 'package:fushi/src/shortcuts/global_external_lookup_route.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/key_event_device_type.dart';
 import 'package:fushi/src/shortcuts/page_scroll_shortcuts.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -404,8 +407,20 @@ class GamepadService {
     }
   }
 
+  ControllerLookupBadgeHost? _lookupBadge;
+
   void start() {
     if (_inputRoutesInstalled) return; // already started (idempotent)
+    // Controller lookup mode (hold L1 / Select) and R1 panel drive of the
+    // second-screen companion sit in front of page dispatch; a tapped L1 / R1
+    // is replayed through the normal path on release.
+    ControllerLookupMode.instance
+      ..redispatch = _dispatchButtonCore
+      // The mode resolves its buttons against the controllerLookup scope of
+      // the same registry the pages use (remappable in shortcut settings).
+      ..shortcutRegistry = registry;
+    _lookupBadge = ControllerLookupBadgeHost(navigatorKey: navigatorKey)
+      ..install();
     // TODO-939: the input-device → highlight-strategy tracking runs on EVERY
     // platform (Android included). Only the gamepads POLLER is platform-gated.
     _installHighlightTracking();
@@ -434,6 +449,10 @@ class GamepadService {
     // hidden, hardware nav → shown). Installed on all platforms (TODO-939).
     GestureBinding.instance.pointerRouter.addGlobalRoute(_onPointerGlobal);
     HardwareKeyboard.instance.addHandler(_onKey);
+    FocusManager.instance.addEarlyKeyEventHandler(_onEarlyKey);
+    // Before the first key: [GamepadButton.fromKeyEvent] needs the Android
+    // source of each key to tell a controller D-pad from keyboard arrows.
+    AndroidKeyEventSource.install();
     _inputRoutesInstalled = true;
   }
 
@@ -448,17 +467,27 @@ class GamepadService {
         onButtonRelease: _dispatchButtonRelease,
         onLongPress: _dispatchLongPress,
         onStickMove: _dispatchStickMove,
+        onStickRelease: _dispatchStickRelease,
         onRightStickScroll: _dispatchRightStickScroll,
       ),
     )..start();
   }
 
   void dispose() {
+    _lookupBadge?.dispose();
+    _lookupBadge = null;
+    if (ControllerLookupMode.instance.redispatch == _dispatchButtonCore) {
+      ControllerLookupMode.instance.redispatch = null;
+    }
+    if (identical(ControllerLookupMode.instance.shortcutRegistry, registry)) {
+      ControllerLookupMode.instance.shortcutRegistry = null;
+    }
     _poller?.dispose();
     _poller = null;
     if (_inputRoutesInstalled) {
       GestureBinding.instance.pointerRouter.removeGlobalRoute(_onPointerGlobal);
       HardwareKeyboard.instance.removeHandler(_onKey);
+      FocusManager.instance.removeEarlyKeyEventHandler(_onEarlyKey);
       _inputRoutesInstalled = false;
     }
   }
@@ -481,6 +510,17 @@ class GamepadService {
       dispatchDictionaryPopupGamepadButton(galHooks, registry, button);
       return;
     }
+    // Controller lookup mode / companion panel drive come before any page
+    // binding (they hand a tapped L1 / R1 back through [_dispatchButtonCore]).
+    if (ControllerLookupMode.instance.onPress(button)) {
+      _onGamepadNav();
+      return;
+    }
+    _dispatchButtonCore(button);
+  }
+
+  /// The normal (non-lookup-mode) press path; also replays a tapped L1 / R1.
+  void _dispatchButtonCore(GamepadButton button) {
     // TODO-1066：app 外全局查词的手柄触发。
     //
     // 位置刻意在取 `_dispatchContext` **之前**，两个理由缺一不可：
@@ -574,6 +614,7 @@ class GamepadService {
   /// releases are swallowed like presses.
   void _dispatchButtonRelease(GamepadButton button) {
     if (GalIngameLookupGamepadRoute.current != null) return;
+    if (ControllerLookupMode.instance.onRelease(button)) return;
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
     Actions.maybeInvoke<GamepadButtonReleaseIntent>(
@@ -591,10 +632,21 @@ class GamepadService {
     // P5：游戏内卡片独占期间左摇杆也吞掉——后台 app 的焦点不能被游戏里的
     // 摇杆悄悄挪走。
     if (GalIngameLookupGamepadRoute.current != null) return;
+    if (ControllerLookupMode.instance.onStickMove(dir)) {
+      _onGamepadNav();
+      return;
+    }
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
     _onGamepadNav();
     gamepadMoveFocusInDirection(ctx, dir);
+  }
+
+  /// The left stick's held direction ended: controller lookup mode looks up
+  /// once after a held push. Focus navigation needs no release.
+  void _dispatchStickRelease() {
+    if (GalIngameLookupGamepadRoute.current != null) return;
+    ControllerLookupMode.instance.onStickRelease();
   }
 
   /// 每 tick 满偏时滚动的 CSS 像素（60ms 一 tick ≈ 满偏 400px/s，半偏减半）。
@@ -604,6 +656,11 @@ class GamepadService {
   /// 页面滚动已有 LB/RB 整页滚（globalScrollPage*）与左摇杆焦点滚动兜底，右摇杆
   /// 现阶段专职弹窗，避免同一根摇杆在不同页面语义漂移。
   void _dispatchRightStickScroll(double dyNorm) {
+    if (ControllerLookupMode.instance.onRightStick(
+      dyNorm * _kRightStickScrollPxPerTick,
+    )) {
+      return;
+    }
     // P5：游戏内卡片可见时右摇杆滚动卡片内容（独占路由优先）。
     final DictionaryPopupGamepadHooks? hooks =
         GalIngameLookupGamepadRoute.current ??
@@ -640,6 +697,9 @@ class GamepadService {
   void _dispatchLongPress(GamepadButton button) {
     // P5：游戏内卡片独占期间长按也吞掉（后台 app 的长按语义不该被游戏触发）。
     if (GalIngameLookupGamepadRoute.current != null) return;
+    // A held past the long-press threshold is still "A" for lookup mode /
+    // panel drive (the press edge already went there).
+    if (ControllerLookupMode.instance.swallowsRepeat(button)) return;
     final BuildContext? ctx = _dispatchContext;
     if (ctx == null) return;
     _onGamepadNav();
@@ -697,6 +757,19 @@ class GamepadService {
           FocusHighlightStrategy.alwaysTouch;
     }
   }
+
+  /// Runs before the focus tree. A `HardwareKeyboard` handler cannot stop the
+  /// focus tree (Flutter still dispatches the key to it), so controller lookup
+  /// mode / companion panel drive intercept Android's controller keys here,
+  /// exactly like the desktop poller path in [_dispatchButton].
+  KeyEventResult _onEarlyKey(KeyEvent event) =>
+      interceptNativeControllerLookupKey(
+        event,
+        ControllerLookupMode.instance,
+        onConsumed: _onGamepadNav,
+      )
+      ? KeyEventResult.handled
+      : KeyEventResult.ignored;
 
   bool _onKey(KeyEvent event) {
     // Only ACTUAL focus navigation (arrow keys / Tab) should light the ring.
@@ -1009,8 +1082,15 @@ class GamepadFrameProcessor {
     this.onButtonRelease,
     this.onLongPress,
     this.onStickMove,
+    this.onStickRelease,
     this.onRightStickScroll,
   });
+
+  /// The left stick's held direction ended (back to centre, or switched to
+  /// another direction — the new direction then arrives on [onStickMove]).
+  /// Controller lookup mode looks up once here after a held push ("look up
+  /// when the cursor stops"). Null = not reported.
+  final VoidCallback? onStickRelease;
 
   /// 手柄重设计 P2：右摇杆的**连续滚动**通道。每个采样 tick（60ms）在死区外都
   /// 发一次归一化纵向偏移（-1..1，**向下为正**——插件轴 +Y=上，滚动语义相反，
@@ -1090,6 +1170,9 @@ class GamepadFrameProcessor {
   // Hysteretic stick direction (null = stick centred).
   TraversalDirection? _stickDir;
 
+  // Right-stick horizontal virtual key currently held (null = none).
+  GamepadButton? _rightStickKey;
+
   // Repeating directional channel state — D-pad.
   TraversalDirection? _heldDir;
   int _heldSinceMs = 0;
@@ -1115,13 +1198,17 @@ class GamepadFrameProcessor {
       if (_prevRightTrigger) release(GamepadButton.rt);
       final TraversalDirection? held = _heldDir;
       if (held != null) release(dpadButtonFor(held));
+      final GamepadButton? rsKey = _rightStickKey;
+      if (rsKey != null) release(rsKey);
     }
+    if (_heldStickDir != null) onStickRelease?.call();
     _prevButtons = 0;
     _prevLeftTrigger = false;
     _prevRightTrigger = false;
     _aDownMs = 0;
     _aLongFired = false;
     _stickDir = null;
+    _rightStickKey = null;
     _heldDir = null;
     _heldStickDir = null;
   }
@@ -1204,18 +1291,63 @@ class GamepadFrameProcessor {
     }
 
     final TraversalDirection? stickDir = _readStickDirection(stickX, stickY);
+    final TraversalDirection? previousStickDir = _heldStickDir;
+    if (previousStickDir != null && previousStickDir != stickDir) {
+      // The held stick direction ended (centred, or switched): report it
+      // before the new direction's first step.
+      _heldStickDir = null;
+      onStickRelease?.call();
+    }
     if (stickDir != null) {
       _updateHeldStickDirection(stickDir, nowMs: nowMs);
     } else {
       _heldStickDir = null;
     }
 
+    // 右摇杆横轴 → 虚拟键 RS← / RS→（2026-11-22 手柄查词统一）：带滞回的边沿
+    // 检测，只出 press / release，不自动重复（按住的连发由消费方——查词模式——
+    // 自己跑）。纵轴照旧是下面的连续滚动。
+    _updateRightStickKey(rightStickX, rightStickY);
+
     // 右摇杆连续滚动（P2）：无边沿检测、无自动重复——它是速度量，每 tick 在死区
-    // 外都发（横轴暂不消费，只采纵轴）。
+    // 外都发（只采纵轴；横轴走上面的虚拟键）。
     final void Function(double dyNorm)? scrollEmit = onRightStickScroll;
     if (scrollEmit != null && rightStickY.abs() > rightStickDeadZone) {
       scrollEmit(-rightStickY / GamepadFrameBits.axisMax);
     }
+  }
+
+  /// Right-stick horizontal → [GamepadButton.rightStickLeft] /
+  /// [GamepadButton.rightStickRight] press / release edges, with the same
+  /// [stickEnter] / [stickExit] hysteresis as the left stick. Enters only when
+  /// the horizontal component dominates (a mostly-vertical push is the scroll
+  /// channel, not a key); once held, only dropping below [stickExit] or
+  /// flipping sides releases it.
+  void _updateRightStickKey(int rx, int ry) {
+    final GamepadButton? held = _rightStickKey;
+    GamepadButton? next = held;
+    if (held == null) {
+      if (rx.abs() >= stickEnter && rx.abs() > ry.abs()) {
+        next = rx > 0
+            ? GamepadButton.rightStickRight
+            : GamepadButton.rightStickLeft;
+      }
+    } else {
+      final bool heldRight = held == GamepadButton.rightStickRight;
+      final int along = heldRight ? rx : -rx;
+      if (along < stickExit) {
+        next = null;
+        if (rx.abs() >= stickEnter && rx.abs() > ry.abs()) {
+          next = rx > 0
+              ? GamepadButton.rightStickRight
+              : GamepadButton.rightStickLeft;
+        }
+      }
+    }
+    if (next == held) return;
+    if (held != null) onButtonRelease?.call(held);
+    _rightStickKey = next;
+    if (next != null) onButton(next);
   }
 
   TraversalDirection? _dpadDirection(int buttons) {
@@ -1430,4 +1562,30 @@ class _PluginGamepadPoller {
     final gp.GamepadAxis? axis = e.axis;
     if (axis != null) _state.applyAxis(axis, e.value);
   }
+}
+
+/// Android: controller buttons arrive as key events (also the ones the
+/// second-screen panel forwards to the main Activity). Feeds them to
+/// [mode] ([ControllerLookupMode.onPress] / [ControllerLookupMode.onRelease],
+/// OS key repeats swallowed while the mode owns the button). True = the
+/// focus tree must not see the event. Desktop has no controller key events
+/// (the poller dispatches), so this is a no-op there.
+@visibleForTesting
+bool interceptNativeControllerLookupKey(
+  KeyEvent event,
+  ControllerLookupMode mode, {
+  VoidCallback? onConsumed,
+  bool? isAndroid,
+}) {
+  if (!(isAndroid ?? Platform.isAndroid)) return false;
+  final GamepadButton? button = GamepadButton.fromKeyEvent(event);
+  if (button == null) return false;
+  if (event is KeyDownEvent) {
+    if (!mode.onPress(button)) return false;
+    onConsumed?.call();
+    return true;
+  }
+  if (event is KeyRepeatEvent) return mode.swallowsRepeat(button);
+  if (event is KeyUpEvent) return mode.onRelease(button);
+  return false;
 }

@@ -284,6 +284,15 @@ class _DriveLikeStore implements SyncAssetStore {
   }
 
   @override
+  Future<Uint8List?> getBytesAsset(String assetId) async =>
+      throw UnimplementedError();
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => throw UnimplementedError();
+  @override
   Future<Object?> getJsonAsset(String assetId) =>
       throw UnimplementedError('getJsonAsset');
 
@@ -327,6 +336,15 @@ class _Wrapper implements SyncAssetStore {
     File destination, {
     SyncTransferProgress? onProgress,
   }) => inner.getAsset(assetId, destination, onProgress: onProgress);
+  @override
+  Future<Uint8List?> getBytesAsset(String assetId) =>
+      inner.getBytesAsset(assetId);
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => inner.putBytesAsset(namespaceId, name, bytes);
   @override
   Future<Object?> getJsonAsset(String assetId) => inner.getJsonAsset(assetId);
   @override

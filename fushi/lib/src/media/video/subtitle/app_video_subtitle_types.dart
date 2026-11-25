@@ -8,6 +8,8 @@ library;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show immutable;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_frame_reference.dart'
+    show SubtitleFrameSource;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart'
     show SubtitleWorkContext;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
@@ -26,7 +28,13 @@ class AppVideoSubtitleEpisode {
     this.registersSubtitleSource = true,
     this.replacesSubtitleSelection = false,
     this.contentLanguage,
+    this.audioTrack,
   });
+
+  /// 从播放页发起时播放器当前的音轨（0 起的音轨序号，ffmpeg `0:a:N`，即
+  /// `VideoPlayerController.currentAudioStreamIndex`）：管线识别这条轨，与「仅本机转录」
+  /// 同口径。null = 没有播放上下文（批量 / CLI）或跟随默认，按识别语言挑。
+  final int? audioTrack;
 
   /// 视频库条目（`video_books.book_uid`）；音乐目标为 null（曲目归属由
   /// [AppSubtitleOutputSink] 按 [videoPath] 自己记）。
@@ -82,10 +90,13 @@ class AppVideoSubtitleTarget {
     this.bookUid,
     this.sink,
     this.trackCounts,
+    this.frameSource,
     bool? wholeSeason,
     String? key,
+    List<String>? settingScopes,
   }) : _wholeSeason = wholeSeason,
-       _key = key;
+       _key = key,
+       _settingScopes = settingScopes;
 
   /// 音乐目标按**曲目**计数（[episodes] 是去重后的文件，CUE 整轨一个文件多首）：要写
   /// 字幕的曲目数与已有生成字幕、跳过的曲目数。视频目标为 null（按集计）。
@@ -105,8 +116,13 @@ class AppVideoSubtitleTarget {
   /// 产物落点；null = 视频库（[VideoBookSubtitleSink]，登记 `video_books.subtitleSource`）。
   final AppSubtitleOutputSink? sink;
 
+  /// AI 校对「参考画面」的取帧；null = 服务的默认取帧（从 [episodes] 的本机媒体文件
+  /// 抽）。在线流的输入是拉到本机的纯音频副本，画面要从播放中的流里抽，由调用方给。
+  final SubtitleFrameSource? frameSource;
+
   final bool? _wholeSeason;
   final String? _key;
+  final List<String>? _settingScopes;
 
   /// 批量（整季 / 整张专辑 / 整个来源）：已有导出字幕（`<媒体名>.<语言>.srt`）的集由
   /// 管线直接跳过，并做跨集一致性。显式给了就用给的；视频默认按「是不是合集目标」。
@@ -118,6 +134,11 @@ class AppVideoSubtitleTarget {
       (collectionId != null
           ? 'collection:$collectionId'
           : 'book:$bookUid:${episodes.map((AppVideoSubtitleEpisode e) => e.videoPath).join('|')}');
+
+  /// 按条目记住的生成选项（音乐的「先分离人声」）从哪些身份上查，由近到远：第一个
+  /// 记过的说了算，改动只记在第一个（[key]）上。单曲是「曲目 → 专辑 → 来源」——在整张
+  /// 专辑 / 整个来源上关掉后，之后单开其中一首也沿用；缺省只有 [key] 自己。
+  List<String> get settingScopes => _settingScopes ?? <String>[key];
 
   /// 给 CLI / 结果 JSON 看的目标名。
   String get describe => collectionId != null

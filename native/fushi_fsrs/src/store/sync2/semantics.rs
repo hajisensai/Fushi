@@ -278,13 +278,20 @@ pub(crate) fn tags_writer(note: &str) -> String {
     format!("{}tags:{note}", crate::registers::SYNTHETIC_WRITER_PREFIX)
 }
 
-/// 把笔记的 OR-Set 值投影成唯一一行 `tags` 修改记录（替换掉这条笔记上其它的 `tags` 行）。
-pub(crate) fn refresh_tags_row(
-    conn: &Connection,
-    profile: &str,
-    note: &str,
-    t: &mut Touched,
-) -> Result<(), String> {
+/// 一条笔记的合成 `tags` 修改行此刻该是什么样、库里的是不是已经是这样（[refresh_tags_row] 只读的前半）。
+pub(crate) struct TagsRow {
+    pub id: String,
+    pub writer: String,
+    /// 该写的整行（规范 JSON）。
+    pub text: String,
+    /// 库里的那行已经是 [text]，且这条笔记没有别的 `tags` 行：不用刷新。
+    pub fresh: bool,
+    /// 这条笔记上别的 `tags` 修改行（刷新时删掉）。
+    pub others: Vec<String>,
+}
+
+/// 只读：算 [TagsRow]。换代前的预演（store/gen4/dryrun.rs）拿它在只读连接上找出还欠着刷新的笔记。
+pub(crate) fn tags_row(conn: &Connection, profile: &str, note: &str) -> Result<TagsRow, String> {
     let tags = current_tags(conn, profile, note)?;
     let writer = tags_writer(note);
     let id = crate::registers::edit_id(&writer, 1);
@@ -306,7 +313,31 @@ pub(crate) fn refresh_tags_row(
         .map_err(sql)?
         .collect::<Result<_, _>>()
         .map_err(sql)?;
-    if old.as_deref() == Some(text.as_str()) && others.is_empty() {
+    let fresh = old.as_deref() == Some(text.as_str()) && others.is_empty();
+    Ok(TagsRow {
+        id,
+        writer,
+        text,
+        fresh,
+        others,
+    })
+}
+
+/// 把笔记的 OR-Set 值投影成唯一一行 `tags` 修改记录（替换掉这条笔记上其它的 `tags` 行）。
+pub(crate) fn refresh_tags_row(
+    conn: &Connection,
+    profile: &str,
+    note: &str,
+    t: &mut Touched,
+) -> Result<(), String> {
+    let TagsRow {
+        id,
+        writer,
+        text,
+        fresh,
+        others,
+    } = tags_row(conn, profile, note)?;
+    if fresh {
         return Ok(());
     }
     for o in &others {
@@ -622,6 +653,13 @@ pub(crate) fn purge_op(
         return Ok(());
     }
     let skel = op.purge();
+    if own == Some(&id.device) {
+        super::min_reader::raise(
+            conn,
+            profile,
+            crate::sync2::min_reader::min_reader_of(&skel),
+        )?;
+    }
     conn.prepare_cached(
         "UPDATE sync2_ops SET payload = ?4, purged = 1, sc = NULL, sc_at = NULL, pz = 0 WHERE profile_uid = srs_id(?1) AND device = ?2 AND seq = ?3",
     )

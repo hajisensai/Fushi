@@ -164,10 +164,7 @@ Future<(String, double)> _manifest(
   Future<String> Function(String)? resolveStream,
 }) async {
   final String? root = blurayDiscRootForPlaylistPath(path);
-  final BlurayPlaylist? playlist = parseBlurayPlaylist(
-    await File(path).readAsBytes(),
-    id: p.basenameWithoutExtension(path),
-  );
+  final BlurayPlaylist? playlist = await readBlurayMemberPlaylist(path);
   if (root == null || playlist == null) {
     throw FormatException('Invalid Blu-ray playlist', path);
   }

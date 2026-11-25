@@ -131,14 +131,15 @@ void main() {
     expect(text, contains('好的，没装。'));
     final (String, String, Map<String, Object?>?) answer = _lastPost(app);
     expect(answer.$2, '/api/admin/ai/agent/sessions/ai1/answer');
-    expect(answer.$3, <String, Object?>{'approve': false});
+    // 作答带上看到的那张卡片的 id（BUG-4458）：卡片换了 app 回 409，不落到别的卡片上。
+    expect(answer.$3, <String, Object?>{'approve': false, 'entryId': 's-2'});
   });
 
   test('ask 跟进：候选按序号选；回车 = 都不是', () async {
     for (final (String input, Map<String, Object?> body)
         in <(String, Map<String, Object?>)>[
-          ('2', <String, Object?>{'choice': 'b'}),
-          ('', <String, Object?>{}),
+          ('2', <String, Object?>{'choice': 'b', 'entryId': 's-1'}),
+          ('', <String, Object?>{'entryId': 's-1'}),
         ]) {
       final _ScriptedApp app = _ScriptedApp(<Map<String, Object?>>[
         <String, Object?>{
@@ -212,7 +213,10 @@ void main() {
       const <String, Object?>{'sessionId': 'ai1'},
     );
     expect(out.toString(), contains('这一步无法撤销'));
-    expect(_lastPost(app).$3, <String, Object?>{'approve': true});
+    expect(_lastPost(app).$3, <String, Object?>{
+      'approve': true,
+      'entryId': 's-1',
+    });
   });
 
   test('undo / log 的请求形状', () {

@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
@@ -103,6 +104,7 @@ void main() {
             required String lineId,
             required String sentence,
             required String outputExtension,
+            required GalMiningAudioLimit limit,
           }) async {
             if (!audioStarted.isCompleted) audioStarted.complete();
             await audioRelease.future;

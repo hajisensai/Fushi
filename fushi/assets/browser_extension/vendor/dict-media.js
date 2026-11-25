@@ -375,6 +375,40 @@ function applyFushiPopupCss(data) {
     fushiApplyDictionaryFont(data);
 }
 
+// BUG-4935：查词弹窗的「显示偏好」。popup.js 读一批 window.* 开关（自动展开行数、折叠开关、
+// 逐本折叠 / 展开名单、词频聚合、音调去重、表达标签、紧凑释义）；app 内弹窗由
+// popup_settings_injection 直接注入，扩展只能从查词响应的 theme 通道拿（app 侧唯一编码点是
+// popup_theme_css.dart 的 buildPopupDisplayPrefsThemeVars）。此前扩展只接了音调去重一项，
+// 其余恒 undefined：collapseDictionaries 缺 → 所有词典全展开、autoExpandRows 形同虚设，
+// harmonicFrequency 缺 → 词频永远不聚合。页面弹窗 / 侧边栏 / 嵌套层三个渲染面都走这一个解码点。
+// 缺键（旧 app）一律按「关」/ 未设处理，与修复前扩展的实际行为一致，不改变旧 app 的表现。
+function fushiParsePopupNameList(raw) {
+    if (typeof raw !== 'string' || !raw) return [];
+    try {
+        const list = JSON.parse(raw);
+        return Array.isArray(list) ? list.filter((name) => typeof name === 'string') : [];
+    } catch (_) {
+        return [];
+    }
+}
+
+function applyFushiPopupDisplayPrefs(theme) {
+    if (!theme || typeof theme !== 'object') return;
+    window.deduplicatePitchAccents = theme['--fushi-dedup-pitch'] === '1';
+    window.harmonicFrequency = theme['--fushi-harmonic-frequency'] === '1';
+    window.showExpressionTags = theme['--fushi-expression-tags'] === '1';
+    window.collapseDictionaries = theme['--fushi-collapse-dicts'] === '1';
+    window.compactGlossaries = theme['--fushi-compact-glossaries'] === '1';
+    const rows = Number.parseInt(theme['--fushi-auto-expand-rows'], 10);
+    // 缺键 → undefined，popup.js autoExpandCount 走自己的默认（`?? 1`）。
+    window.autoExpandRows = Number.isFinite(rows) && rows >= 0 ? rows : undefined;
+    window.collapsedDictionaryNames = fushiParsePopupNameList(theme['--fushi-collapsed-dicts']);
+    window.expandedDictionaryNames = fushiParsePopupNameList(theme['--fushi-expanded-dicts']);
+    // 汉字卡（默认折叠成一行）的逐本三态，拍板台 6uasoIUvSR。
+    window.kanjiCollapsedDictionaryNames = fushiParsePopupNameList(theme['--fushi-kanji-collapsed-dicts']);
+    window.kanjiExpandedDictionaryNames = fushiParsePopupNameList(theme['--fushi-kanji-expanded-dicts']);
+}
+
 // 用户在 app 里设的「词典字体」（设置 · 字体 · 词典），与 app 内弹窗同一份设置：
 //   - dictionaryFontCss：按内容语言分流的字体链（用户字体接在每条链首），挂进弹窗根
 //     （shadow root / 嵌套层文档），根选择器是 #entries-container；

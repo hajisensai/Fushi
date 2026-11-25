@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoColors;
 import 'package:flutter/foundation.dart' show listEquals;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -10,8 +9,12 @@ import 'package:fushi/src/settings/settings_kit_core.dart';
 import 'package:fushi/src/settings/settings_schema_fields.dart';
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi/src/settings/settings_section_container.dart';
+import 'package:fushi/src/settings/settings_section_footer.dart';
+
+// 脚注件挪到了不碰 SettingsContext / AppModel 的叶子文件（守卫
+// `import_cycle_guard_test.dart`）；这里转出，原有 import 不用改。
+export 'package:fushi/src/settings/settings_section_footer.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
-import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
@@ -20,11 +23,6 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 /// 两个渲染器各自提供工厂，是它们之间唯一的导航差异。
 typedef SettingsRouteBuilder =
     Route<void> Function(BuildContext context, WidgetBuilder builder);
-
-/// section footer 文字样式解析器。两个渲染器对 footer 用不同的 TextStyle
-/// （Material：bodySmall + surfaces.onVariant；Cupertino：metadata + secondaryLabel），
-/// 是这套共享 schema widget 里唯一的平台差异，作参数注入。
-typedef SettingsFooterStyle = TextStyle? Function(BuildContext context);
 
 /// 渲染单个 schema [SettingsSection]：一组 [SettingsSchemaItem] + 可选 footer。
 ///
@@ -57,11 +55,11 @@ class SettingsSchemaSection extends StatelessWidget {
     // SettingsSection.liveListenable）。
     final Listenable? live = section.liveListenable?.call(settingsContext);
     final Widget body = live == null
-        ? _buildSection(section)
+        ? _buildSection(context, section)
         : ListenableBuilder(
             listenable: live,
             builder: (BuildContext context, Widget? _) =>
-                _buildSection(section.visibleCopy(settingsContext)),
+                _buildSection(context, section.visibleCopy(settingsContext)),
           );
     // 着色面板：本分组的行首图标同一色调，相邻分组按 id 错开。
     if (SettingsTonalIconsScope.maybeOf(context) == null) return body;
@@ -73,8 +71,17 @@ class SettingsSchemaSection extends StatelessWidget {
     );
   }
 
-  Widget _buildSection(SettingsSection section) {
+  Widget _buildSection(BuildContext context, SettingsSection section) {
     if (section.items.isEmpty) return const SizedBox.shrink();
+    final String? footerText = section.footer;
+    final bool hasFooter = footerText != null && footerText.isNotEmpty;
+    // macOS 27 grouped form：组尾说明贴在卡下 6、再隔组间距到下一组（由分组
+    // 排间距）；其余形态仍排在整个分组之后。
+    final bool attachFooter =
+        hasFooter &&
+        isGlassDesign(context) &&
+        !isCupertinoPlatform(context) &&
+        FushiAppleMetrics.of(context).form;
     final List<Widget> rows = <Widget>[
       for (final SettingsItem item in section.items)
         if (item case SettingsCustomItem(
@@ -115,10 +122,17 @@ class SettingsSchemaSection extends StatelessWidget {
           searchTargetIds: section.items
               .map((SettingsItem item) => item.id)
               .toList(),
+          footer: attachFooter
+              ? SettingsSectionFooter(
+                  footerText,
+                  style: footerStyle,
+                  attached: true,
+                )
+              : null,
           children: rows,
         ),
-        if (section.footer != null && section.footer!.isNotEmpty)
-          SettingsSectionFooter(section.footer!, style: footerStyle),
+        if (hasFooter && !attachFooter)
+          SettingsSectionFooter(footerText, style: footerStyle),
       ],
     );
   }
@@ -192,6 +206,7 @@ class SettingsSchemaItem extends StatefulWidget
       SettingsSliderItem slider => <Object?>[
         slider.value(ctx),
         slider.label?.call(slider.value(ctx)),
+        slider.resolveBounds(ctx),
       ],
       SettingsStepperItem stepper => <Object?>[stepper.value(ctx)],
       SettingsTextItem text => <Object?>[
@@ -639,8 +654,11 @@ class _CommitOnReleaseSliderState extends State<_CommitOnReleaseSlider> {
   @override
   Widget build(BuildContext context) {
     final SettingsSliderItem item = widget.item;
+    final SettingsSliderBounds bounds = item.resolveBounds(
+      widget.settingsContext,
+    );
     final double value = (_dragValue ?? item.value(widget.settingsContext))
-        .clamp(item.min, item.max)
+        .clamp(bounds.min, bounds.max)
         .toDouble();
     return AdaptiveSettingsSliderRow(
       title: item.title,
@@ -648,9 +666,9 @@ class _CommitOnReleaseSliderState extends State<_CommitOnReleaseSlider> {
       icon: item.icon,
       showIcon: widget.showIcons,
       value: value,
-      min: item.min,
-      max: item.max,
-      divisions: item.divisions,
+      min: bounds.min,
+      max: bounds.max,
+      divisions: bounds.divisions,
       label: item.label?.call(value),
       step: item.step,
       readout: item.titleReadout ? item.label?.call(value) : null,
@@ -674,46 +692,6 @@ class _CommitOnReleaseSliderState extends State<_CommitOnReleaseSlider> {
         }
         widget.settingsContext.refresh();
       },
-    );
-  }
-}
-
-/// 设置分组脚注的默认文字样式，按设计系统 / 平台分派：Apple = iOS footnote
-/// （13 号 secondaryLabel）；Cupertino = metadata + secondaryLabel；MD3 =
-/// bodySmall + surfaces.onVariant。分组内外的说明文字都走这一处。
-TextStyle? settingsFootnoteStyle(BuildContext context) {
-  if (isCupertinoPlatform(context)) {
-    return FushiDesignTokens.of(context).type.metadata.copyWith(
-      color: CupertinoColors.secondaryLabel.resolveFrom(context),
-    );
-  }
-  if (isGlassDesign(context)) {
-    return FushiAppleMetrics.of(context).footnoteStyle(context);
-  }
-  return Theme.of(context).textTheme.bodySmall?.copyWith(
-    color: FushiDesignTokens.of(context).surfaces.onVariant,
-  );
-}
-
-/// section 底部说明文字。padding 两渲染器一致；文字样式默认按设计系统取
-/// [settingsFootnoteStyle]，渲染器要别的口径时经 [style] 注入。
-class SettingsSectionFooter extends StatelessWidget {
-  const SettingsSectionFooter(this.text, {super.key, this.style});
-
-  final String text;
-  final SettingsFooterStyle? style;
-
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    return Padding(
-      padding: EdgeInsets.fromLTRB(
-        tokens.spacing.gap + tokens.spacing.gap / 2,
-        0,
-        tokens.spacing.gap + tokens.spacing.gap / 2,
-        tokens.spacing.gap + tokens.spacing.gap / 2,
-      ),
-      child: Text(text, style: (style ?? settingsFootnoteStyle)(context)),
     );
   }
 }

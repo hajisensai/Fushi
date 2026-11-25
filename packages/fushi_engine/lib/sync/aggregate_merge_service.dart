@@ -190,7 +190,13 @@ class AggregateMergeService {
   ///
   /// On a content collision the row with the EARLIER createdAt is retained
   /// (mirrors favorite-word "earlier createdAt kept"), making the result
-  /// independent of which side is passed as [local]. This primitive is a PURE
+  /// independent of which side is passed as [local]. Its COLOR, however, is a
+  /// separate last-writer-wins register (BUG-5081): the color (and its clock)
+  /// comes from whichever side has the newer [FavoriteSentence.colorClock]
+  /// (`colorUpdatedAt ?? createdAt`), so recoloring an existing favorite on one
+  /// device reaches the others — both devices hold the same createdAt for the
+  /// same favorite, so "earlier createdAt kept" alone kept each device's own
+  /// color forever. See [_mergeFavoriteSentencePair]. This primitive is a PURE
   /// union: a remote-only sentence IS added (including one this device just
   /// un-favorited). Deletion propagation is layered ABOVE this by the
   /// `favoritesentence` tombstone suppression in
@@ -208,12 +214,9 @@ class AggregateMergeService {
     void absorb(FavoriteSentence s) {
       final String key = _favoriteSentenceContentKey(s);
       final FavoriteSentence? existing = byContent[key];
-      if (existing == null) {
-        byContent[key] = s;
-        return;
-      }
-      // Keep the earlier createdAt on a content collision (order-independent).
-      if (s.createdAt.isBefore(existing.createdAt)) byContent[key] = s;
+      byContent[key] = existing == null
+          ? s
+          : _mergeFavoriteSentencePair(existing, s);
     }
 
     for (final FavoriteSentence s in local) {
@@ -228,6 +231,49 @@ class AggregateMergeService {
             b.createdAt.compareTo(a.createdAt),
       );
     return out;
+  }
+
+  /// One content collision: the row with the EARLIER createdAt keeps its
+  /// identity (id, createdAt, every other field — ties keep [existing]); the
+  /// color and its clock come from the side with the newer
+  /// [FavoriteSentence.colorClock]. Equal clocks with different colors (two
+  /// devices recolored within the same microsecond) break the tie on the color
+  /// name so the outcome does not depend on argument order. The winning clock
+  /// is written out explicitly so every device converges on the same JSON.
+  static FavoriteSentence _mergeFavoriteSentencePair(
+    FavoriteSentence existing,
+    FavoriteSentence incoming,
+  ) {
+    final FavoriteSentence identity =
+        incoming.createdAt.isBefore(existing.createdAt) ? incoming : existing;
+    final FavoriteSentence other = identical(identity, existing)
+        ? incoming
+        : existing;
+    final int clockOrder = other.colorClock.compareTo(identity.colorClock);
+    final bool otherColorWins =
+        clockOrder > 0 ||
+        (clockOrder == 0 &&
+            (other.color ?? '').compareTo(identity.color ?? '') > 0);
+    // The remote-source identity (v179, BUG-5402) and its reopen locator (v180)
+    // are write-once: whichever side recorded them (an older device syncs the
+    // same favorite without them) keeps them, so the "jump back" on every
+    // device finds the right source. They travel as a pair: the locator is
+    // only borrowed from a side that names the same source.
+    final bool borrowOrigin =
+        identity.originSourceId == null && other.originSourceId != null;
+    final bool borrowLocator =
+        !borrowOrigin &&
+        identity.originLocator == null &&
+        other.originLocator != null &&
+        identity.originSourceId == other.originSourceId;
+    final FavoriteSentence withOrigin = borrowOrigin || borrowLocator
+        ? identity.withOrigin(
+            originSourceId: other.originSourceId,
+            originLocator: other.originLocator,
+          )
+        : identity;
+    if (!otherColorWins) return withOrigin;
+    return withOrigin.withColor(other.color, other.colorClock);
   }
 
   /// Content identity of a favorite sentence — delegates to the single source of

@@ -26,7 +26,10 @@ String musicOnlineMvVideoTitle(String title, String? artist) {
 }
 
 class MusicOnlineMvVideoClient
-    implements RemoteVideoClient, RemoteVideoStreamHeaders {
+    implements
+        RemoteVideoClient,
+        RemoteVideoStreamHeaders,
+        RemoteVideoSubtitleAudioRefresh {
   MusicOnlineMvVideoClient({required this.resolve, this.describeError});
 
   /// 取流：播放地址与请求头（插件宿主已按网络授权核对过地址）。
@@ -63,6 +66,17 @@ class MusicOnlineMvVideoClient
     _headers = Map<String, String>.unmodifiable(s.headers);
     // MV 是单条 muxed 流：制卡音频直接从它抽。
     return RemoteVideoStreamUrls(streamUrl: s.url, miningVideoHasAudio: true);
+  }
+
+  /// 字幕生成拉整集音频前向插件现取一次流（地址有时效）；不改播放用的请求头。MV 是
+  /// 单条 muxed 流，音频就从它读。
+  @override
+  Future<RemoteVideoSubtitleAudio> freshSubtitleAudio(
+    String id, {
+    String? currentAudioUrl,
+  }) async {
+    final ({String url, Map<String, String> headers}) s = await resolve();
+    return RemoteVideoSubtitleAudio(url: s.url, headers: s.headers);
   }
 
   /// MV 没有外挂字幕。

@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <string>
 #include <thread>
+#include <vector>
 
 namespace {
 
@@ -128,6 +129,140 @@ void ProbeWindowThread() {
 
 }  // namespace
 
+namespace {
+
+// Same position-dependent sentinel the helper writes before PrintWindow.
+std::vector<uint8_t> SentinelBuffer(UINT width, UINT height) {
+  std::vector<uint8_t> bytes(static_cast<size_t>(width) * height * 4u);
+  for (size_t i = 0; i < bytes.size(); ++i) {
+    bytes[i] = static_cast<uint8_t>(0xA5u ^ (i & 0x3Fu));
+  }
+  return bytes;
+}
+
+void PaintBlock(std::vector<uint8_t>* bytes, UINT width, UINT left, UINT top,
+                UINT right, UINT bottom, uint8_t blue, uint8_t green,
+                uint8_t red) {
+  for (UINT y = top; y < bottom; ++y) {
+    for (UINT x = left; x < right; ++x) {
+      const size_t i = (static_cast<size_t>(y) * width + x) * 4u;
+      (*bytes)[i] = blue;
+      (*bytes)[i + 1] = green;
+      (*bytes)[i + 2] = red;
+      (*bytes)[i + 3] = 0;
+    }
+  }
+}
+
+fushi::PrintWindowWorkerStatus Classify(std::vector<uint8_t>* bytes,
+                                        UINT width, UINT height,
+                                        UINT native_width, UINT native_height,
+                                        fushi::PrintWindowPaintedRegion* region) {
+  return fushi::ValidatePrintWindowPixels(bytes->data(), bytes->size(), width,
+                                          height, native_width, native_height,
+                                          region);
+}
+
+// BUG: a DPI-unaware VCL form at 300% scaling. The capture process measures
+// the physical client (36x27 here), the window itself renders its logical
+// client (12x9), and PrintWindow paints only that top-left block. That frame
+// is complete in the window's own coordinate space, not "partial".
+void CheckDpiVirtualizedPixelLayouts() {
+  using fushi::PrintWindowPaintedRegion;
+  using fushi::PrintWindowWorkerStatus;
+  constexpr UINT kWidth = 36;
+  constexpr UINT kHeight = 27;
+  constexpr UINT kNativeWidth = 12;
+  constexpr UINT kNativeHeight = 9;
+
+  {
+    std::vector<uint8_t> bytes = SentinelBuffer(kWidth, kHeight);
+    PaintBlock(&bytes, kWidth, 0, 0, kWidth, kHeight, 10, 20, 30);
+    PrintWindowPaintedRegion region;
+    Check(Classify(&bytes, kWidth, kHeight, kNativeWidth, kNativeHeight,
+                   &region) == PrintWindowWorkerStatus::kComplete &&
+              region.width == kWidth && region.height == kHeight,
+          "a full physical paint must stay a complete physical frame");
+  }
+  {
+    std::vector<uint8_t> bytes = SentinelBuffer(kWidth, kHeight);
+    PaintBlock(&bytes, kWidth, 0, 0, kNativeWidth, kNativeHeight, 10, 20, 30);
+    PrintWindowPaintedRegion region;
+    Check(Classify(&bytes, kWidth, kHeight, kNativeWidth, kNativeHeight,
+                   &region) == PrintWindowWorkerStatus::kComplete,
+          "a full native-size paint of a DPI-virtualized window was rejected");
+    Check(region.width == kNativeWidth && region.height == kNativeHeight &&
+              region.painted_right == kNativeWidth &&
+              region.painted_bottom == kNativeHeight,
+          "native-size paint must report the native image region");
+    Check(bytes[3] == 0xFF, "accepted pixels must be normalized to opaque");
+  }
+  {
+    // Same top-left block, but the window's own client is the physical one:
+    // this is a genuinely partial paint and must stay rejected.
+    std::vector<uint8_t> bytes = SentinelBuffer(kWidth, kHeight);
+    PaintBlock(&bytes, kWidth, 0, 0, kNativeWidth, kNativeHeight, 10, 20, 30);
+    PrintWindowPaintedRegion region;
+    Check(Classify(&bytes, kWidth, kHeight, kWidth, kHeight, &region) ==
+                  PrintWindowWorkerStatus::kPartialPixels &&
+              region.width == 0 && region.painted_right == kNativeWidth,
+          "a top-left paint of a non-virtualized client must stay partial");
+  }
+  {
+    std::vector<uint8_t> bytes = SentinelBuffer(kWidth, kHeight);
+    PaintBlock(&bytes, kWidth, 0, 0, kNativeWidth, kNativeHeight, 10, 20, 30);
+    PaintBlock(&bytes, kWidth, kNativeWidth, 0, kNativeWidth + 1, 1, 10, 20,
+               30);
+    PrintWindowPaintedRegion region;
+    Check(Classify(&bytes, kWidth, kHeight, kNativeWidth, kNativeHeight,
+                   &region) == PrintWindowWorkerStatus::kPartialPixels,
+          "paint leaking outside the native client must stay partial");
+  }
+  {
+    std::vector<uint8_t> bytes = SentinelBuffer(kWidth, kHeight);
+    PaintBlock(&bytes, kWidth, 0, 1, kNativeWidth, kNativeHeight, 10, 20, 30);
+    PrintWindowPaintedRegion region;
+    Check(Classify(&bytes, kWidth, kHeight, kNativeWidth, kNativeHeight,
+                   &region) == PrintWindowWorkerStatus::kPartialPixels,
+          "a native client with unpainted rows must stay partial");
+  }
+  {
+    std::vector<uint8_t> bytes = SentinelBuffer(kWidth, kHeight);
+    PrintWindowPaintedRegion region;
+    Check(Classify(&bytes, kWidth, kHeight, kNativeWidth, kNativeHeight,
+                   &region) == PrintWindowWorkerStatus::kNoPixels,
+          "an untouched buffer must report no pixels");
+  }
+  {
+    std::vector<uint8_t> bytes = SentinelBuffer(kWidth, kHeight);
+    PaintBlock(&bytes, kWidth, 0, 0, kNativeWidth, kNativeHeight, 0, 0, 0);
+    PrintWindowPaintedRegion region;
+    Check(Classify(&bytes, kWidth, kHeight, kNativeWidth, kNativeHeight,
+                   &region) == PrintWindowWorkerStatus::kTransparentPixels,
+          "an all-black native paint must not be accepted as a frame");
+  }
+  {
+    std::vector<uint8_t> bytes = SentinelBuffer(kWidth, kHeight);
+    PaintBlock(&bytes, kWidth, 0, 0, kNativeWidth, kNativeHeight, 10, 20, 30);
+    PrintWindowPaintedRegion region;
+    Check(Classify(&bytes, kWidth, kHeight, kNativeWidth, kNativeHeight,
+                   &region) == PrintWindowWorkerStatus::kComplete,
+          "native paint fixture invalid");
+    const std::vector<uint8_t> scaled = fushi::ScaleBgraRegion(
+        bytes.data(), region.width, region.height, kWidth * 4u, kWidth,
+        kHeight);
+    Check(scaled.size() == static_cast<size_t>(kWidth) * kHeight * 4u,
+          "native paint was not scaled to the physical client");
+    for (size_t i = 0; i < scaled.size(); i += 4) {
+      Check(scaled[i] == 10 && scaled[i + 1] == 20 && scaled[i + 2] == 30 &&
+                scaled[i + 3] == 0xFF,
+            "scaled physical frame must contain only native client pixels");
+    }
+  }
+}
+
+}  // namespace
+
 int main() {
   const int helper_exit = fushi::RunPrintWindowCaptureHelperIfRequested();
   if (helper_exit >= 0) {
@@ -142,6 +277,7 @@ int main() {
         "probe lifecycle event creation failed");
   Check(SUCCEEDED(CoInitializeEx(nullptr, COINIT_MULTITHREADED)),
         "probe COM initialization failed");
+  CheckDpiVirtualizedPixelLayouts();
   std::thread window_thread(ProbeWindowThread);
   Check(WaitForSingleObject(g_ready, 2000) == WAIT_OBJECT_0 &&
             g_window != nullptr,

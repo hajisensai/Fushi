@@ -4,13 +4,12 @@
 //
 // 每条笔记两张卡、每卡 3 条导入 revlog + 1 条导入锚点：25000 条笔记 = 20 万条日志 / 15 万条复习。
 // phases 是旧装载路径（全量读日志 → jsonDecode）与按卡在 Rust 里算投影（`SrsCore.statProjection`）各段的
-// 耗时，作对照；loadSrsStats 是现在的路径（读有效复习投影 srs_stat_reviews，BUG-3772）。
+// 耗时，作对照；loadSrsStats + report 是现在的路径（内核读有效复习投影 srs_stat_reviews 并就地聚合，store/stats.rs）。
 // 库开在临时 srs.db 上、走后台 isolate（与 app 同一种连接）。
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart';
-import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
@@ -18,6 +17,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'support/srs_bulk_fixture.dart';
+import 'support/srs_raw_sql.dart';
 import 'support/srs_test_storage.dart';
 import 'apkg/apkg_test_support.dart' show FakeFsrsEngine;
 
@@ -37,13 +37,9 @@ void main() {
           // 句柄晚释放。
         }
       });
-      final TestSrs srs = await openTestSrsAt(
-        '${tmp.path}/srs.db',
-        inline: false,
-      );
-      final SrsDatabase db = srs.db;
+      final TestSrs srs = openTestSrsIn(tmp.path);
+      final SrsCore db = srs.core;
       final SrsDbStore store = await SrsDbStore.open(
-        db: db,
         core: srs.core,
         profileUid: kBulkUid,
         deviceId: 'bench',
@@ -52,24 +48,28 @@ void main() {
         fallbackRolloverHour: () => 4,
       );
       await importBench(store, notes);
-      final int logCount = await db
-          .customSelect('SELECT COUNT(*) AS c FROM srs_review_logs')
-          .map((QueryRow r) => r.read<int>('c'))
-          .getSingle();
-      final SrsDayContext day = await store.dayContext();
+      final int logCount =
+          (await db
+                  .customSelect('SELECT COUNT(*) AS c FROM srs_review_logs')
+                  .getSingle())
+              .read<int>('c');
 
       final Stopwatch sw = Stopwatch()..start();
-      final List<SrsReviewLogRow> rows = await (db.select(
-        db.srsReviewLogs,
-      )..where((t) => t.profileUid.equals(kBulkUid))).get();
+      final List<SrsRawRow> rows = await db
+          .customSelect(
+            'SELECT card_id, json FROM srs_review_logs '
+            'WHERE profile_uid = srs_id(?)',
+            variables: <Variable<Object>>[Variable<String>(kBulkUid)],
+          )
+          .get();
       final int rowsMs = sw.elapsedMilliseconds;
       sw.reset();
       final Map<String, List<SrsReviewLog>> byCard =
           <String, List<SrsReviewLog>>{};
-      for (final SrsReviewLogRow r in rows) {
-        (byCard[r.cardId] ??= <SrsReviewLog>[]).add(
+      for (final SrsRawRow r in rows) {
+        (byCard[r.read<String>('card_id')] ??= <SrsReviewLog>[]).add(
           SrsReviewLog.fromJson(
-            (jsonDecode(r.json) as Map).cast<String, Object?>(),
+            (jsonDecode(r.read<String>('json')) as Map).cast<String, Object?>(),
           ),
         );
       }
@@ -81,35 +81,18 @@ void main() {
           for (final String c in byCard.keys) <String>[c],
         ]),
       );
-      final int reviews = srsStatsFromProjection(<SrsStatProjection>[
-        for (final List<Object?> r in projected)
-          SrsStatProjection(
-            logId: r[1]! as String,
-            cardId: byCard.keys.elementAt(r[0]! as int),
-            occurredAt: r[2]! as int,
-            utcOffsetMin: r[3]! as int,
-            rating: r[4] as int?,
-            kind: SrsStatReviewKind.values[r[5]! as int],
-            durationMs: r[6]! as int,
-            prevDueDay: r[7] as int?,
-            maturityDelta: r[8]! as int,
-          ),
-      ], day).reviews.length;
+      final int reviews = projected
+          .where((List<Object?> r) => r[4] != null)
+          .length;
       final int historyMs = sw.elapsedMilliseconds;
       sw.reset();
-      final $SrsReviewLogsTable t = db.srsReviewLogs;
       final int narrow =
-          (await (db.selectOnly(t)
-                    ..addColumns(<Expression<Object>>[
-                      t.cardId,
-                      t.kind,
-                      t.rating,
-                      t.occurredAt,
-                      t.reviewType,
-                      t.origin,
-                      t.durationMs,
-                    ])
-                    ..where(t.profileUid.equals(kBulkUid)))
+          (await db
+                  .customSelect(
+                    'SELECT card_id, kind, rating, occurred_at, review_type, origin, '
+                    'duration_ms FROM srs_review_logs WHERE profile_uid = srs_id(?)',
+                    variables: <Variable<Object>>[Variable<String>(kBulkUid)],
+                  )
                   .get())
               .length;
       final int narrowMs = sw.elapsedMilliseconds;
@@ -123,25 +106,19 @@ void main() {
       final List<String> other = <String>[
         await timed('deckTree', store.deckTree),
         await timed('allCardRows', store.allCardRows),
-        await timed(
-          'notesCache',
-          () => (db.select(
-            db.srsNotesCache,
-          )..where((x) => x.profileUid.equals(kBulkUid))).get(),
-        ),
+        await timed('notesCache', () => store.noteRows()),
         await timed('noteTypes', store.noteTypes),
       ];
       // ignore: avoid_print
       print('BENCH other: ${other.join(' ')}');
 
       // 存量库升级（缓存修订号 1 → 当前）时一次性补算投影的耗时。
-      await db.customStatement('DELETE FROM srs_stat_reviews');
-      await db.customStatement(
+      srs.core.debugExecRaw('DELETE FROM srs_stat_reviews');
+      srs.core.debugExecRaw(
         "UPDATE srs_local_state SET json = json_set(json, '\$.cacheRev', 1)",
       );
       sw.reset();
       await SrsDbStore.open(
-        db: db,
         core: srs.core,
         profileUid: kBulkUid,
         deviceId: 'bench',
@@ -154,18 +131,22 @@ void main() {
 
       sw.reset();
       final int rss0 = ProcessInfo.currentRss;
-      final SrsStatsBundle b = await loadSrsStats(store);
+      final SrsStatsReport b = await (await loadSrsStats(
+        store,
+      )).report(range: SrsStatsRange.all);
       final int loadMs = sw.elapsedMilliseconds;
       final int rssDelta = ProcessInfo.currentRss - rss0;
       sw.reset();
-      final SrsStatsBundle b2 = await loadSrsStats(store);
+      final SrsStatsReport b2 = await (await loadSrsStats(
+        store,
+      )).report(range: SrsStatsRange.all);
       final int warmMs = sw.elapsedMilliseconds;
       // ignore: avoid_print
       print(
-        'BENCH notes=$notes logs=$logCount reviews=$reviews/${b.data.reviews.length} '
-        'cards=${b.data.cards.length} | phases: rows=${rowsMs}ms '
+        'BENCH notes=$notes logs=$logCount reviews=$reviews/${b.rangeTotals.count} '
+        'cards=${b.cardCounts.total} | phases: rows=${rowsMs}ms '
         'decode=${decodeMs}ms history=${historyMs}ms narrowCols($narrow)=${narrowMs}ms | '
-        'loadSrsStats cold=${loadMs}ms warm=${warmMs}ms(${b2.data.reviews.length}) '
+        'loadSrsStats cold=${loadMs}ms warm=${warmMs}ms(${b2.rangeTotals.count}) '
         'rssDelta=${rssDelta ~/ (1 << 20)}MB maxRss=${ProcessInfo.maxRss ~/ (1 << 20)}MB',
       );
     },

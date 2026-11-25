@@ -112,6 +112,10 @@ abstract final class GlobalLookupChannel {
   static Future<void> resolveBridge(int id, Object? value) =>
       _impl.resolveBridge(id, value);
 
+  /// 后台写卡结局推进当前路由的覆盖窗（见 [OverlayWindowChannel.settleQueuedMine]）。
+  static Future<void> settleQueuedMine(Map<String, Object?> settlement) =>
+      _impl.settleQueuedMine(settlement);
+
   static Future<void> reveal({required int width, required int height}) =>
       _impl.reveal(width: width, height: height);
 
@@ -147,6 +151,11 @@ abstract final class GlobalLookupChannel {
   static Future<void> hide({bool notify = true}) => _impl.hide(notify: notify);
 
   static Future<bool> isShowing() => _impl.isShowing();
+
+  /// BUG-5310 — 卡片里有选区时由卡片接手这次查词触发（见
+  /// [OverlayWindowChannel.lookupOverlaySelection]）。
+  static Future<bool> lookupOverlaySelection() =>
+      _impl.lookupOverlaySelection();
 
   static Future<bool> suspendForCapture(int captureGeneration) =>
       _impl.suspendForCapture(captureGeneration);

@@ -131,8 +131,9 @@ void main() {
       // 代码上算，否则裸 indexOf 会先命中说明注释、顺序断言退化成恒真
       // （见 docs/agent 的顺序守卫纪律）。
 
-      const String bridge =
-          'if (this.isIntraWordApostrophe(content, scanOffset)) {';
+      final String bridge = label == 'reader_selection_scripts.dart (source())'
+          ? 'if (this.isIntraWordApostropheAt(scanNode, scanOffset)) {'
+          : 'if (this.isIntraWordApostrophe(content, scanOffset)) {';
       const String stop = 'if (this.isScanStop(char)) break;';
 
       expect(code.contains(bridge), isTrue, reason: '[$label] 前向扫描必须带词内撇号桥接');

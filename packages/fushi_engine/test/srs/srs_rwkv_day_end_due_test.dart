@@ -9,6 +9,8 @@
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_rwkv_scheduling.dart';
+import 'package:fushi_engine/srs/srs_stats.dart';
+import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
@@ -65,13 +67,8 @@ void main() {
     final SrsDbStore s = await openTestStore(
       profileUid: _profile,
       deviceId: 'day-end',
+      localOffsetMin: () => 0,
       now: () => t,
-    );
-    await s.editField(
-      SrsEntityKind.profile,
-      _profile,
-      SrsFieldKeys.utcOffsetMin,
-      0,
     );
     await s.editField(
       SrsEntityKind.profile,
@@ -143,13 +140,8 @@ void main() {
     final SrsDbStore s = await openTestStore(
       profileUid: _profile,
       deviceId: 'day-end-answered',
+      localOffsetMin: () => 0,
       now: () => t,
-    );
-    await s.editField(
-      SrsEntityKind.profile,
-      _profile,
-      SrsFieldKeys.utcOffsetMin,
-      0,
     );
     await s.editField(
       SrsEntityKind.profile,
@@ -221,5 +213,72 @@ void main() {
       first,
       reason: '同日重出看此刻的 R',
     );
+  });
+
+  test('首页「停在这里的话」：按 1 小时 / 3 小时后、今天结束各打一次分，内核数此刻在线上、到那时掉到线下的张数', () async {
+    int t = DateTime.utc(2026, 10, 14, 12).millisecondsSinceEpoch;
+    final SrsDbStore s = await openTestStore(
+      profileUid: _profile,
+      deviceId: 'day-end-ahead',
+      localOffsetMin: () => 0,
+      now: () => t,
+    );
+    await s.editField(
+      SrsEntityKind.profile,
+      _profile,
+      SrsFieldKeys.dayRolloverHour,
+      4,
+    );
+    final String r = await s.ensureDeckPath('Root::R');
+    for (int i = 0; i < 3; i++) {
+      t += 1000;
+      final String note = await s.createNote(
+        noteTypeId: s.lapisNoteTypeId,
+        fieldsById: <String, String>{
+          srsLapisFieldId(_profile, 'Expression'): 'h$i',
+        },
+        deckId: r,
+      );
+      await s.answer(
+        (await s.cardsOfNote(note)).single.id,
+        4,
+        durationMs: 1000,
+      );
+    }
+    t += const Duration(days: 1).inMilliseconds;
+    final SrsDayContext day = await s.dayContext();
+    final int dayEnd = day.dayStartMs(day.dayIndexOf(t) + 1) - 1;
+    // 此刻 0.99；两小时后掉到 0.5：1 小时后还在线上，3 小时后与今天结束都在线下。
+    final _DecayingRwkv rwkv = _DecayingRwkv(
+      dayEnd,
+      dropAtMs: t + const Duration(hours: 2).inMilliseconds,
+    );
+    s.rwkv = rwkv;
+
+    final SrsRwkvNow plain = (await (await loadSrsStats(s)).report()).rwkvNow!;
+    expect(plain.ahead, isNull, reason: '不要将来时刻就不多打分');
+    expect((plain.total, plain.due, plain.near, plain.safe), (3, 0, 0, 3));
+    expect(plain.recallBins.length, 20);
+    expect(plain.recallBins[19], 3, reason: '此刻 0.99 落在最后一格');
+
+    rwkv.asked.clear();
+    rwkv.askedNow.clear();
+    final SrsRwkvNow now = (await (await loadSrsStats(
+      s,
+      rwkvAhead: true,
+    )).report()).rwkvNow!;
+    expect(now.ahead, <int>[0, 3, 3]);
+    expect(
+      rwkv.askedNow,
+      containsAll(<int>[
+        t,
+        t + const Duration(hours: 1).inMilliseconds,
+        t + const Duration(hours: 3).inMilliseconds,
+      ]),
+    );
+    expect(rwkv.asked.toSet(), <int>{
+      dayEnd,
+    }, reason: '今天结束那一刻走排队的常驻分数表（与复习页数今天到期同一时刻）');
+    expect(srsRwkvHorizonMs(SrsRwkvHorizon.dayEnd, nowMs: t, day: day), dayEnd);
   });
 }

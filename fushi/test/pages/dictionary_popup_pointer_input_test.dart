@@ -340,4 +340,118 @@ void main() {
       expect(result.tokens, isEmpty);
     });
   });
+
+  group('DictionaryPopupLayer 宿主键盘通道：顶栏按钮持焦时让路（反馈 uz_2m0E_Eu ③）', () {
+    /// 阅读器把裸 ← / → 追加进弹窗回传键表（关弹窗并翻页）后，键盘光标从弹窗正文
+    /// 顶端上移进顶栏（有声控制按钮）时，左右键必须仍是按钮间遍历，不能被截走。
+    Future<List<String>> pumpAndKey(
+      WidgetTester tester, {
+      required bool focusHeader,
+      required LogicalKeyboardKey key,
+    }) async {
+      final List<String> tokens = <String>[];
+      final FocusNode headerButton = FocusNode(debugLabel: 'headerButton');
+      final FocusNode body = FocusNode(debugLabel: 'webViewFocusNode');
+      addTearDown(headerButton.dispose);
+      addTearDown(body.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Center(
+            child: SizedBox(
+              width: 300,
+              height: 200,
+              child: DictionaryPopupLayer(
+                result: null,
+                webViewKey: GlobalKey(),
+                onDismiss: () {},
+                onTextSelected: (_, __, ___, ____) {},
+                onLinkClick: (_, __) {},
+                onMineEntry: (_) async => const MinePopupResult(),
+                onDuplicateCheck: (_, __) async => false,
+                inputSpec: const DictionaryPopupInputSpec(
+                  keyTokens: <String>['ArrowLeft', 'ArrowRight', 'Escape'],
+                ),
+                onHostInputToken: tokens.add,
+                headerWidget: Focus(
+                  focusNode: headerButton,
+                  child: const SizedBox(width: 24, height: 24),
+                ),
+                overlayWidget: Focus(
+                  focusNode: body,
+                  child: const SizedBox.shrink(),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      (focusHeader ? headerButton : body).requestFocus();
+      await tester.pump();
+      expect(
+        (focusHeader ? headerButton : body).hasPrimaryFocus,
+        isTrue,
+        reason: '前提：焦点必须真的落在要测的节点上',
+      );
+      await tester.sendKeyEvent(key);
+      await tester.pump();
+      return tokens;
+    }
+
+    testWidgets('顶栏按钮持焦按 ← / → → 不截走，留给按钮遍历', (WidgetTester tester) async {
+      expect(
+        await pumpAndKey(
+          tester,
+          focusHeader: true,
+          key: LogicalKeyboardKey.arrowLeft,
+        ),
+        isEmpty,
+      );
+      expect(
+        await pumpAndKey(
+          tester,
+          focusHeader: true,
+          key: LogicalKeyboardKey.arrowRight,
+        ),
+        isEmpty,
+      );
+    });
+
+    testWidgets('顶栏按钮持焦按 Esc → 仍交回宿主关弹窗', (WidgetTester tester) async {
+      expect(
+        await pumpAndKey(
+          tester,
+          focusHeader: true,
+          key: LogicalKeyboardKey.escape,
+        ),
+        <String>['Escape'],
+      );
+    });
+
+    testWidgets('弹窗正文持焦按 ← → 交回宿主（关弹窗并翻页）', (WidgetTester tester) async {
+      expect(
+        await pumpAndKey(
+          tester,
+          focusHeader: false,
+          key: LogicalKeyboardKey.arrowRight,
+        ),
+        <String>['ArrowRight'],
+      );
+    });
+  });
+
+  test('dictionaryPopupTopBarOwnsKey 只认遍历 / 激活键', () {
+    for (final LogicalKeyboardKey key in <LogicalKeyboardKey>[
+      LogicalKeyboardKey.arrowLeft,
+      LogicalKeyboardKey.arrowRight,
+      LogicalKeyboardKey.arrowUp,
+      LogicalKeyboardKey.arrowDown,
+      LogicalKeyboardKey.enter,
+      LogicalKeyboardKey.numpadEnter,
+      LogicalKeyboardKey.space,
+    ]) {
+      expect(dictionaryPopupTopBarOwnsKey(key), isTrue, reason: '$key');
+    }
+    expect(dictionaryPopupTopBarOwnsKey(LogicalKeyboardKey.escape), isFalse);
+    expect(dictionaryPopupTopBarOwnsKey(LogicalKeyboardKey.pageDown), isFalse);
+  });
 }

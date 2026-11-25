@@ -24,6 +24,15 @@ const String kLyricsModeBookPrefShortPrefix = 'lyrics_mode_book_';
 /// 按书的阅读状态，Profile 快照按此前缀排除。
 const String kLyricsModeBookPrefDbPrefix = 'src:reader_fushi:lyrics_mode_book_';
 
+/// 快捷键绑定整份 JSON（阅读器源命名空间下的短键）。**值冻结**。
+const String kShortcutBindingsPrefShortKey = 'shortcut_bindings_json';
+
+/// 快捷键设置页手柄按钮图的显示品牌（阅读器源命名空间下的短键）。**值冻结**。
+const String kGamepadGlyphBrandPrefShortKey = 'gamepad_glyph_brand';
+
+/// 歌词模式一次性提示「已显示过」标记（阅读器源命名空间下的短键）。**值冻结**。
+const String kLyricsModeHintShownPrefShortKey = 'lyrics_mode_hint_shown';
+
 /// 书籍媒体标识前缀（`fushi://book/<bookKey>`）。
 const String kReaderBookIdentifierPrefix = 'fushi://book/';
 

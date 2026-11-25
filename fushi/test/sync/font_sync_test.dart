@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:test/test.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
@@ -311,6 +312,22 @@ class _MemoryStore implements SyncAssetStore {
     Object? json,
   ) async {
     _files[namespaceId]![name] = utf8.encode(jsonEncode(json));
+  }
+
+  @override
+  Future<Uint8List?> getBytesAsset(String assetId) async {
+    final ({String ns, String name}) id = _split(assetId);
+    final List<int>? bytes = _files[id.ns]?[id.name];
+    return bytes == null ? null : Uint8List.fromList(bytes);
+  }
+
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) async {
+    _files[namespaceId]![name] = Uint8List.fromList(bytes);
   }
 
   @override

@@ -4,6 +4,7 @@
 #include <cmath>
 #include <utility>
 
+#include "gamescope_overlay.h"
 #include "screen_capture.h"
 
 namespace so = fushi::screen_ocr;
@@ -82,6 +83,14 @@ bool ScreenOcrOverlay::Show(GdkMonitor* monitor,
   SetBannerText(style_.recognizing);
   // Tapping the ball again closes this layer and captures at once.
   fushi::screen_capture::SkipCloseAnimation(window_);
+  // Steam Deck Game Mode: Gamescope draws no other app's windows over the
+  // game. As an external overlay the layer is drawn (and stays drawn under the
+  // lookup card); in Steam's overlay slot it gets the touches. The card ranks
+  // higher, so it takes the touches while it is open and hands them back when
+  // it closes. The window covers the whole output, as both slots require.
+  fushi::gamescope::SetRole(
+      window_, fushi::gamescope::kDraw | fushi::gamescope::kInput,
+      fushi::gamescope::kFreezeLayerRank);
   gtk_widget_show(window_);
   return true;
 }
@@ -107,6 +116,10 @@ void ScreenOcrOverlay::Close() noexcept {
   }
   screenshot_.reset();
   lines_.clear();
+}
+
+void ScreenOcrOverlay::DismissByUser() {
+  if (window_ != nullptr) Dismiss();
 }
 
 void ScreenOcrOverlay::Dismiss() {

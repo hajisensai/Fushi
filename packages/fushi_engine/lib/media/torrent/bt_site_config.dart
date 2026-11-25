@@ -12,6 +12,7 @@ import 'dart:convert';
 
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart';
 import 'package:fushi_engine/media/torrent/nyaa_client.dart'
     show NyaaCategoryOption;
 import 'package:fushi_engine/media/torrent/torznab_client.dart'
@@ -33,7 +34,11 @@ enum BtSiteFormat {
   apibay,
 
   /// `POST` JSON 查询回 `{hits: [...]}`。
-  knaben;
+  knaben,
+
+  /// 用户导入的解析规则（[BtSiteConfig.parser]，见 `bt_site_parser_rule.dart`）：
+  /// 自动探测认不出的站（论坛式私有站等）由规则描述搜索地址与结果行结构。
+  custom;
 
   static BtSiteFormat? fromWire(String? raw) {
     final String value = (raw ?? '').trim().toLowerCase();
@@ -51,6 +56,7 @@ enum BtSiteFormat {
       BtSiteDomain.movie,
       BtSiteDomain.tv,
     },
+    BtSiteFormat.custom => kBtSiteParserDomains,
   };
 }
 
@@ -107,6 +113,8 @@ class BtSiteConfig {
     Map<BtSiteDomain, String> nyaaCategories = const <BtSiteDomain, String>{},
     this.enabled = true,
     this.allowInsecureHttp = false,
+    this.parser,
+    this.cookie = '',
   }) : domains = Set<BtSiteDomain>.unmodifiable(domains),
        nyaaCategories = Map<BtSiteDomain, String>.unmodifiable(nyaaCategories) {
     if (!isValidBtSiteId(id)) {
@@ -134,6 +142,14 @@ class BtSiteConfig {
         'or the host is loopback',
       );
     }
+    if ((format == BtSiteFormat.custom) != (parser != null)) {
+      throw ArgumentError(
+        'A parser rule is required for, and only for, custom BT sites',
+      );
+    }
+    if (cookie.contains('\n') || cookie.contains('\r')) {
+      throw ArgumentError('BT site cookie must be a single line');
+    }
   }
 
   /// 稳定身份：provider id 由它派生（`<format>:<id>`），订阅与下载任务按它持久化。
@@ -160,6 +176,13 @@ class BtSiteConfig {
   /// 明文 HTTP 的显式放行（局域网自建站）。
   final bool allowInsecureHttp;
 
+  /// [BtSiteFormat.custom] 站点的解析规则；其它格式为 null。
+  final BtSiteParserRule? parser;
+
+  /// 需要登录的站点：用户贴的 Cookie 请求头值（只用于 [BtSiteFormat.custom]）。
+  /// 凭据：与地址里的 passkey 同等对待，界面 / 控制通道 / 服务端列表都不回显。
+  final String cookie;
+
   /// 界面显示名：用户起的名字，否则主机名（地址可能带 passkey，从不显示整串）。
   String get displayName => name.trim().isNotEmpty ? name.trim() : baseUrl.host;
 
@@ -173,7 +196,8 @@ class BtSiteConfig {
   Set<BtSiteDomain> get effectiveDomains => <BtSiteDomain>{
     for (final BtSiteDomain domain in domains)
       if (format.supportedDomains.contains(domain) &&
-          (format != BtSiteFormat.nyaa || nyaaCategories.containsKey(domain)))
+          (format != BtSiteFormat.nyaa || nyaaCategories.containsKey(domain)) &&
+          (format != BtSiteFormat.custom || parser!.coversDomain(domain)))
         domain,
   };
 
@@ -199,6 +223,8 @@ class BtSiteConfig {
     Map<BtSiteDomain, String>? nyaaCategories,
     bool? enabled,
     bool? allowInsecureHttp,
+    BtSiteParserRule? parser,
+    String? cookie,
   }) => BtSiteConfig(
     id: id,
     name: name ?? this.name,
@@ -208,7 +234,20 @@ class BtSiteConfig {
     nyaaCategories: nyaaCategories ?? this.nyaaCategories,
     enabled: enabled ?? this.enabled,
     allowInsecureHttp: allowInsecureHttp ?? this.allowInsecureHttp,
+    parser: _copiedParser(format ?? this.format, parser),
+    cookie: cookie ?? this.cookie,
   );
+
+  /// 解析规则跟格式绑定（只有 custom 有）：结果格式不是 custom 时不沿用旧规则
+  /// （否则 custom 站点改格式必撞构造器的规则校验）；显式传了规则则原样交给构造器
+  /// 校验。custom 站点不能没有规则，所以「清空规则」唯一合法的路径就是改格式。
+  BtSiteParserRule? _copiedParser(
+    BtSiteFormat resultFormat,
+    BtSiteParserRule? parser,
+  ) {
+    if (parser != null) return parser;
+    return resultFormat == BtSiteFormat.custom ? this.parser : null;
+  }
 
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
@@ -227,6 +266,8 @@ class BtSiteConfig {
             domain.name: value,
       },
     'allowInsecureHttp': allowInsecureHttp,
+    if (parser != null) 'parser': parser!.toJson(),
+    if (cookie.isNotEmpty) 'cookie': cookie,
   };
 
   /// 解析一条；畸形即抛（列表层逐条丢弃，见 [decodeBtSiteConfigs]）。
@@ -265,6 +306,10 @@ class BtSiteConfig {
       },
       enabled: json['enabled'] != false,
       allowInsecureHttp: json['allowInsecureHttp'] == true,
+      parser: json['parser'] == null
+          ? null
+          : BtSiteParserRule.fromJson(json['parser']),
+      cookie: json['cookie'] is String ? json['cookie'] as String : '',
     );
   }
 }

@@ -11,16 +11,27 @@
 //!   [status::PANIC]，不越过 FFI 边界。
 //! - **硬依赖、无 Dart 回退**：Dart 侧加载失败抛带原因的 `FushiMusicUnavailableError`。
 
+// 让 cargo 的新鲜度指纹带上「这是哪个 worktree」：多个 worktree 共用一个 CARGO_TARGET_DIR 时，没有它会把别的
+// worktree 编出的产物当成本 worktree 的直接用（假绿 / 假红）。值来自仓库根 .cargo/config.toml 的 [env]，不进产物。
+// 每个 native crate 的入口文件都要有这一行（守卫 fushi/test/build/native_crate_worktree_fingerprint_guard_test.dart）。
+const _: Option<&str> = option_env!("FUSHI_WORKTREE_ROOT");
+
 use std::panic::{AssertUnwindSafe, catch_unwind};
 
 pub mod ac3;
 pub mod cd;
+pub mod credit;
 pub mod cue;
 pub mod dsf;
 pub mod fingerprint;
+// 本地多字节编码探测（ID3 乱码修复）：与 fushi_compute 的 ZIP 条目名重解共用同一份源码，
+// 判据只在那一个文件里写（不链 fushi_compute 的 rlib：那会把它的全部 ffc_* 导出与图像 / AV1
+// 解码一起带进本库产物）。
+#[path = "../../fushi_compute/src/legacy_text.rs"]
 pub mod legacy_text;
 pub mod lyrics;
 pub mod mp4_chapters;
+pub mod playlist;
 #[cfg(feature = "plugin")]
 pub mod plugin;
 pub mod remote;
@@ -32,7 +43,7 @@ pub mod wire;
 
 /// C ABI 版本。Dart 侧加载时比对，不一致抛带原因的加载异常。
 /// 批次二进制格式（[wire::BATCH_FORMAT_VERSION]）变化也必须升这里。
-pub const ABI_VERSION: i32 = 2;
+pub const ABI_VERSION: i32 = 3;
 
 /// 各导出函数共用的返回码。
 pub mod status {
@@ -84,6 +95,13 @@ pub(crate) unsafe fn slice_arg<'a>(ptr: *const u8, len: usize) -> Option<&'a [u8
 #[no_mangle]
 pub extern "C" fn ffm_abi_version() -> i32 {
     ABI_VERSION
+}
+
+/// 扫描解析修订号（[scan::PARSER_REVISION]）。调用方按来源记下上次全量解析时的值，变了就
+/// 不传已知文件清单、整源重新解析，让解析改动落到已入库的曲目上。
+#[no_mangle]
+pub extern "C" fn ffm_scan_parser_revision() -> i32 {
+    scan::PARSER_REVISION
 }
 
 /// 释放本库分配并交给调用方的缓冲区（长度必须与交出时一致）。
@@ -303,6 +321,43 @@ pub unsafe extern "C" fn ffm_remote_scan_close(handle: *mut remote::RemoteScanne
     if !handle.is_null() {
         let _ = catch_unwind(AssertUnwindSafe(|| drop(Box::from_raw(handle))));
     }
+}
+
+/// 解析一份播放列表文件（`.m3u` / `.m3u8`）的原始字节（[playlist::parse]）。`base` 是列表
+/// 文件所在目录（UTF-8，相对条目按它拼）；空串 = 没有目录（远程来源 / 只看名字），相对
+/// 条目原样交回。输出：`opt_str name | u32 count | str entry*count`（[playlist::write_parsed]）。
+///
+/// # Safety
+/// `bytes_ptr` 指向 `bytes_len` 字节、`base_ptr` 指向 `base_len` 字节；`out_ptr` / `out_len` 可写。
+#[no_mangle]
+pub unsafe extern "C" fn ffm_playlist_parse(
+    bytes_ptr: *const u8,
+    bytes_len: usize,
+    base_ptr: *const u8,
+    base_len: usize,
+    out_ptr: *mut *mut u8,
+    out_len: *mut usize,
+) -> i32 {
+    guard(|| {
+        if out_ptr.is_null() || out_len.is_null() {
+            return status::NULL_ARGUMENT;
+        }
+        let (Some(bytes), Some(base)) = (
+            slice_arg(bytes_ptr, bytes_len),
+            slice_arg(base_ptr, base_len),
+        ) else {
+            return status::NULL_ARGUMENT;
+        };
+        let Ok(base) = std::str::from_utf8(base) else {
+            return status::INVALID_ARGUMENT;
+        };
+        let base_dir = (!base.is_empty()).then(|| std::path::Path::new(base));
+        let parsed = playlist::parse(bytes, base_dir);
+        let mut w = wire::Writer::new();
+        playlist::write_parsed(&mut w, &parsed);
+        hand_over_bytes(w.into_bytes(), out_ptr, out_len);
+        status::OK
+    })
 }
 
 /// 取一个音频文件的内嵌封面（第一张 front cover，没有则第一张图）。没有封面时

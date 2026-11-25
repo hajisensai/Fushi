@@ -37,9 +37,9 @@
   app 与 flutter test 的硬依赖；兄弟 worktree 有同源码产物时直接拷，否则需要 cargo 编）。跳过后
   flutter build / test 之前必须手动跑 tool/native_libs.ps1。
 
-.PARAMETER SkipCacheSeed
-  不从兄弟 worktree 复制 flutter test 的增量编译缓存(见下方「预热 flutter test
-  编译缓存」一节)。默认会在 bootstrap 之后做这一步。
+.PARAMETER SkipTestSeed
+  不准备 flutter test 的第三方库编译 seed(见下方「flutter test 第三方库编译 seed」一节)。
+  默认在 bootstrap 之后做：全机缓存里有就拷，没有就生成一次(要跑一次 flutter test)。
 
 .EXAMPLE
   # 在新建好的 worktree 目录里(cwd 在该 worktree 内)：
@@ -47,7 +47,7 @@
   pwsh -File tool/setup_worktree.ps1 -SkipBootstrap # 只搬密钥(秒级)
 #>
 [CmdletBinding()]
-param([switch]$SkipBootstrap, [switch]$SkipCacheSeed, [switch]$SkipNativeCompute)
+param([switch]$SkipBootstrap, [switch]$SkipNativeCompute, [switch]$SkipTestSeed)
 
 $ErrorActionPreference = "Stop"
 
@@ -178,134 +178,74 @@ if ($SkipBootstrap) {
 Write-Host "`n开始 bootstrap (pub get + 打补丁)..." -ForegroundColor Cyan
 $bootstrap = Join-Path $here 'tool/bootstrap.ps1'
 if (-not (Test-Path $bootstrap)) { throw "找不到 $bootstrap" }
-$bootstrapError = $null
 Push-Location $here
 try {
     & $bootstrap -SkipNativeCompute:$SkipNativeCompute
-}
-catch {
-    # 先记下，预热照做再抛：bootstrap 若死在 apply-patches，那时 pub get 已经成功，
-    # 预热不依赖补丁(补丁打在全机共享的 pub cache 上)。
-    $bootstrapError = $_
 }
 finally {
     Pop-Location
 }
 
-# --- 预热 flutter test 编译缓存 ------------------------------------------------
-# 新 worktree 第一次 flutter test 慢在 frontend_server 从零编译(2026-10-07 实测
-# 同一测试冷启动编译 4.7 分钟、预热后 3.2 分钟；重负载下冷编译曾到 20 分钟)，
-# 不在 native-asset hooks(0.5~1.5 分钟)或 unit_test_assets(约 20 秒)。
-# flutter test 用 fushi/build/test_cache/build/<md5>.cache.dill.track.dill 做
-# --initialize-from-dill；文件名只由 dart-define / 前端参数 / Flutter 版本决定，
-# 与 worktree 路径无关，所以从兄弟 worktree 拷过来能被直接命中。
-# 内容安全性：frontend_server 拿到 dill 后按 package_config 重新解析每个
-# package: 库的文件路径，路径与 dill 里记录的不同(本仓 fushi 与 packages/* 必然
-# 如此)就整库重编，只复用 Flutter SDK 与 pub cache 里路径不变的库；再逐个比对
-# 源码字节，变了的也重编。所以拷来的 dill 只影响速度、不影响正确性(实测预热
-# 后产出的 dill 里源 worktree 的 fushi/lib、packages 路径为 0 处)。收益因此只
-# 是 SDK 与 pub 依赖那部分的编译时间。
-# 只拷 dill：.dart_tool/hooks_runner 的 input.json / 依赖哈希文件里写死了源
-# worktree 的绝对路径，且 hook 依赖环境变量 PATH 的哈希(每个 shell 都不同)，
-# 拷过来要么失效要么指向别人的目录；unit_test_assets 只按 mtime 判新旧，
-# 拷来会用别的提交的资源冒充当前提交，二者都不拷。
-function Get-FlutterSdkKey([string]$root) {
-    $cfg = Join-Path $root '.dart_tool/package_config.json'
-    if (-not (Test-Path -LiteralPath $cfg)) { return $null }
-    $text = [IO.File]::ReadAllText($cfg)
-    $sdkRoot = [regex]::Match($text, '"flutterRoot"\s*:\s*"([^"]*)"')
-    $sdkVersion = [regex]::Match($text, '"flutterVersion"\s*:\s*"([^"]*)"')
-    if (-not $sdkRoot.Success -or -not $sdkVersion.Success) { return $null }
-    return ($sdkRoot.Groups[1].Value.ToLowerInvariant() + '|' + $sdkVersion.Groups[1].Value)
+# --- 复用 build hook 的下载产物 -------------------------------------------------
+# 新 worktree 第一次 flutter test 会让 pdfium_dart / sqlite3 的 build hook 各自从 GitHub
+# 重下一遍（2026-11-20 实测 pdfium 约 17 秒）。下载产物在
+# .dart_tool/hooks_runner/shared/<包>/build/ 下按内容寻址，与 worktree 路径无关，可以先拷进来；
+# input.json、hook.dill、依赖哈希等写死了源 worktree 绝对路径的东西不拷。pdfium 的 hook 只看
+# 文件在不在，所以工具只拷 sha256 与钉值相符的文件。细节见 fushi/tool/worktree_seed/hook_downloads.dart
+# 与 docs/agent/build.md「新 worktree 第一次 flutter test」。
+function Resolve-SetupDart {
+    [OutputType([string])]
+    param([string]$Root)
+    # 用 pub get 写进 package_config 的那份 SDK（即 bootstrap 选中的 3.50.0），不用 PATH 上的 dart。
+    $cfg = Join-Path $Root '.dart_tool/package_config.json'
+    if (-not (Test-Path -LiteralPath $cfg)) { throw "找不到 $cfg（bootstrap 的 pub get 没成功）。" }
+    $m = [regex]::Match([IO.File]::ReadAllText($cfg), '"flutterRoot"\s*:\s*"([^"]*)"')
+    if (-not $m.Success) { throw "$cfg 里没有 flutterRoot。" }
+    $sdk = ([Uri]$m.Groups[1].Value).LocalPath
+    $exe = if ([Environment]::OSVersion.Platform -eq [PlatformID]::Win32NT) { 'dart.bat' } else { 'dart' }
+    $dart = Join-Path $sdk "bin/$exe"
+    if (-not (Test-Path -LiteralPath $dart)) { throw "找不到 $dart。" }
+    return $dart
+}
+$setupDart = Resolve-SetupDart -Root $here
+
+Write-Host "`n复用 build hook 的下载产物..." -ForegroundColor Cyan
+Push-Location $here
+try {
+    & $setupDart fushi/tool/worktree_seed.dart hooks --repo $here
+    $hookSeedExit = $LASTEXITCODE
+}
+finally {
+    Pop-Location
+}
+if ($hookSeedExit -ne 0) {
+    # 只是少了加速：hook 会自己下载，worktree 照样可用；退出码原样报出来，不当成功。
+    Write-Host "build hook 下载产物复用失败(exit $hookSeedExit)，首次 flutter test 会自己下载。" -ForegroundColor Yellow
 }
 
-function Get-LockHash([string]$root) {
-    $lock = Join-Path $root 'pubspec.lock'
-    if (-not (Test-Path -LiteralPath $lock)) { return $null }
-    # Not Get-FileHash: when Windows PowerShell 5.1 is started from pwsh 7 or
-    # Git Bash it inherits pwsh 7 module paths in PSModulePath, autoloads the
-    # wrong Microsoft.PowerShell.Utility and Get-FileHash is "not recognized".
-    $sha = [Security.Cryptography.SHA256]::Create()
-    try {
-        return [BitConverter]::ToString($sha.ComputeHash([IO.File]::ReadAllBytes($lock)))
-    }
-    finally {
-        $sha.Dispose()
-    }
-}
-
-function Invoke-TestKernelCacheSeed([string]$targetRoot) {
-    $rel = 'fushi/build/test_cache/build'
-    $targetDir = Join-Path $targetRoot $rel
-
-    $targetSdk = Get-FlutterSdkKey $targetRoot
-    if (-not $targetSdk) {
-        Write-Host "跳过预热：本 worktree 没有 .dart_tool/package_config.json(pub get 没成功)。" -ForegroundColor Yellow
-        return
-    }
-    $targetLock = Get-LockHash $targetRoot
-    if (-not $targetLock) {
-        Write-Host "跳过预热：本 worktree 没有 pubspec.lock。" -ForegroundColor Yellow
-        return
-    }
-    if ((Test-Path -LiteralPath $targetDir) -and
-        @(Get-ChildItem -LiteralPath $targetDir -Filter '*.dill' -File).Count -gt 0) {
-        Write-Host "跳过预热：本 worktree 已有 flutter test 编译缓存。" -ForegroundColor DarkGray
-        return
-    }
-
-    # 两分钟内还在写的 dill 可能是别人 flutter test 写到一半的，不拿。
-    $cutoff = (Get-Date).AddMinutes(-2)
-    $targetN = ($targetRoot -replace '\\', '/').TrimEnd('/')
-    $noCache = 0; $lockDiffers = 0; $sdkDiffers = 0
-    $best = $null; $bestDills = $null; $bestTime = [datetime]::MinValue
-
-    $lines = & git -C $targetRoot worktree list --porcelain | Select-String '^worktree '
-    foreach ($line in $lines) {
-        $wt = ($line.Line -replace '^worktree ', '').Trim()
-        if ((($wt -replace '\\', '/').TrimEnd('/')) -ieq $targetN) { continue }
-        $srcDir = Join-Path $wt $rel
-        if (-not (Test-Path -LiteralPath $srcDir)) { $noCache++; continue }
-        $dills = @(Get-ChildItem -LiteralPath $srcDir -Filter '*.dill' -File -ErrorAction SilentlyContinue |
-            Where-Object { $_.Length -gt 0 -and $_.LastWriteTime -lt $cutoff })
-        if ($dills.Count -eq 0) { $noCache++; continue }
-        if ((Get-LockHash $wt) -ne $targetLock) { $lockDiffers++; continue }
-        if ((Get-FlutterSdkKey $wt) -ne $targetSdk) { $sdkDiffers++; continue }
-        $newest = ($dills | Sort-Object LastWriteTime -Descending | Select-Object -First 1).LastWriteTime
-        if ($newest -gt $bestTime) {
-            $best = $wt; $bestDills = $dills; $bestTime = $newest
-        }
-    }
-
-    if (-not $best) {
-        Write-Host ("跳过预热：没有可用的兄弟 worktree(无缓存 {0} 个，pubspec.lock 不同 {1} 个，Flutter SDK 不同 {2} 个)。" -f $noCache, $lockDiffers, $sdkDiffers) -ForegroundColor Yellow
-        return
-    }
-
-    New-Item -ItemType Directory -Force -Path $targetDir | Out-Null
-    $totalMb = 0
-    foreach ($d in $bestDills) {
-        # 先写临时名再改名：flutter test 不会读到拷了一半的 dill。
-        $tmp = Join-Path $targetDir ($d.Name + '.seeding')
-        Copy-Item -LiteralPath $d.FullName -Destination $tmp -Force
-        Move-Item -LiteralPath $tmp -Destination (Join-Path $targetDir $d.Name) -Force
-        $totalMb += [math]::Round($d.Length / 1MB)
-    }
-    Write-Host ("OK 已从 {0} 预热 flutter test 编译缓存：{1} 个 dill，约 {2} MB(最新写于 {3:yyyy-MM-dd HH:mm})。" -f $best, $bestDills.Count, $totalMb, $bestTime) -ForegroundColor Green
-}
-
-if ($SkipCacheSeed) {
-    Write-Host "`n已跳过 flutter test 编译缓存预热(-SkipCacheSeed)。" -ForegroundColor DarkGray
+# --- flutter test 第三方库编译 seed ---------------------------------------------
+# 不能拷兄弟 worktree 的 build/test_cache：fushi 测试的 dill 都带源 worktree 路径下的
+# fushi/lib，frontend_server 发现 package: 库路径对不上就整份丢弃(PackageChangedError)
+# 再冷编。这里用全机共用、只含 Flutter SDK 与 pub 库的 seed(按 SDK revision、pubspec.lock、
+# app 版本号分 key，存 %LOCALAPPDATA%/fushi-heavy/test-seed/)，拷贝(不硬链接，flutter test
+# 会原地写回)进 fushi/build/test_cache/build/。没有就在本 worktree 用真实 flutter test 编一个
+# 只 import 第三方库的入口生成(经 heavy 租约，约 20~50 秒，每个 key 全机一次)。
+if ($SkipTestSeed) {
+    Write-Host "`n已跳过 flutter test 编译 seed(-SkipTestSeed)。" -ForegroundColor DarkGray
 }
 else {
-    Write-Host "`n预热 flutter test 编译缓存..." -ForegroundColor Cyan
+    Write-Host "`n准备 flutter test 第三方库编译 seed..." -ForegroundColor Cyan
+    Push-Location $here
     try {
-        Invoke-TestKernelCacheSeed $here
+        & $setupDart fushi/tool/worktree_seed.dart kernel --repo $here
+        $kernelSeedExit = $LASTEXITCODE
     }
-    catch {
-        Write-Host "预热失败(不影响 worktree 可用，首次 flutter test 只是慢)：$_" -ForegroundColor Yellow
+    finally {
+        Pop-Location
+    }
+    if ($kernelSeedExit -ne 0) {
+        Write-Host "flutter test 编译 seed 没备好(exit $kernelSeedExit，原因见上)，首次 flutter test 冷编。" -ForegroundColor Yellow
     }
 }
 
-if ($bootstrapError) { throw $bootstrapError }
 Write-Host "`nworktree 就绪。" -ForegroundColor Green

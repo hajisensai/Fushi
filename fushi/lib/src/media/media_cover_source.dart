@@ -24,11 +24,10 @@
 /// 调用方不该再自己判断「这条是不是远端」。
 library;
 
-import 'dart:io';
-
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_core/fushi_core.dart' show MediaKind;
 
+import 'package:fushi/src/media/media_cover_standalone_source.dart';
 import 'package:fushi/src/media/media_item.dart' show MediaItem;
 import 'package:fushi/src/models/app_model.dart' show AppModel;
 import 'package:fushi/src/sync/remote_cover_image.dart';
@@ -64,34 +63,25 @@ ImageProvider? resolveMediaCoverImage({
   int decodeWidth = kLocalCoverDecodePixelWidth,
 }) {
   if (book != null && appModel != null) {
-    final ImageProvider<Object> provider = book
+    // 宽度交给书的缩略图链自己用：本地文件经 [resizedFileImage] 降采样并登记驱逐
+    // 宽度。不能在返回值外面再包 [ResizeImage]——内层本来就是 [ResizeImage]，嵌套
+    // 违反 Flutter 断言，且外层键不在 [evictLocalCoverCache] 的驱逐表里。
+    return book
         .getMediaSource(appModel: appModel)
         .getDisplayThumbnailFromMediaItem(
           appModel: appModel,
           item: book,
           fallbackUrl: fallbackUrl,
+          decodeWidth: decodeWidth,
         );
-    return decodeWidth == kLocalCoverDecodePixelWidth
-        ? provider
-        : ResizeImage(provider, width: decodeWidth, allowUpscaling: false);
   }
-  if (remoteUrl != null && remoteUrl.isNotEmpty && remoteFetcher != null) {
-    // 远端封面与本机文件**对称**套解码上限（BUG-959 的远端半边）：host 下发的
-    // 封面常是 Jellyfin / Emby 原图（1000×1500 起步），此前默认 [decodeWidth] 时
-    // 直接返回裸 [RemoteCoverImage]，整帧解进 ImageCache——远端库页 / 剧集面板
-    // 几十张封面就把 100MB 上限撑爆，滚动时反复淘汰重解码，iOS 上是低内存被杀
-    // 的主因之一。[ResizeImage] 把 targetWidth 经 decode 回调交给
-    // `RemoteCoverImage._loadAsync`，磁盘 / 网络字节不变、只降解码尺寸。
-    return ResizeImage(
-      RemoteCoverImage(remoteUrl, remoteFetcher, cacheKey: remoteCacheKey),
-      width: decodeWidth,
-      allowUpscaling: false,
-    );
-  }
-  if (localPath != null && localPath.isNotEmpty) {
-    return resizedFileImage(File(localPath), width: decodeWidth);
-  }
-  return null;
+  return resolveStandaloneCoverImage(
+    localPath: localPath,
+    remoteUrl: remoteUrl,
+    remoteFetcher: remoteFetcher,
+    remoteCacheKey: remoteCacheKey,
+    decodeWidth: decodeWidth,
+  );
 }
 
 /// 无封面时的占位图标——**按媒体种类**，不是所有东西都画一本书。

@@ -148,23 +148,16 @@ const Map<String, int> _legacy = <String, int>{
       2,
   'lib/src/media/detail/media_detail_kit.dart|motion.spatialDefault.duration':
       1,
-  'lib/src/media/downloads/download_task_card.dart|expandDuration': 1,
   'lib/src/media/favorites/favorite_batch_mining.dart|context.fushiMotion.spatialDefault.duration':
-      1,
-  'lib/src/media/import/quick_import_section.dart|motion.spatialDefault.duration':
       1,
   'lib/src/media/manga/manga_ocr_settings_section.dart|duration': 1,
   'lib/src/media/manga/mihon/mihon_extensions_page.dart|spring.duration': 1,
-  'lib/src/media/manga/mihon/mihon_extensions_page.dart|motion.spatialDefault.duration':
-      1,
   'lib/src/media/manga/reader/manga_reader_settings_sheet.dart|duration': 1,
   'lib/src/media/metadata/scrape_failure_view.dart|motion.spatialDefault.duration':
       1,
   'lib/src/media/novel/online/lnreader_extensions_section.dart|spring.duration':
       1,
   'lib/src/media/online/installed_online_source_row.dart|motion.spatialFast.duration':
-      1,
-  'lib/src/media/online/installed_online_source_row.dart|motion.spatialDefault.duration':
       1,
   'lib/src/media/tags/tag_picker_sheet.dart|fushiMotionDuration(context,FushiMotion.medium)':
       1,
@@ -174,9 +167,6 @@ const Map<String, int> _legacy = <String, int>{
       1,
   'lib/src/ocr/system_ocr_setup_dialog.dart|motion.spatialDefault.duration': 1,
   'lib/src/onboarding/recommended_pack_download_mini_bar.dart|spring.duration':
-      1,
-  'lib/src/pages/implementations/browser_extension_page.dart|d': 2,
-  'lib/src/pages/implementations/browser_extension_page.dart|fushiMotionDuration(context,FushiMotion.medium)':
       1,
   'lib/src/pages/implementations/custom_theme_page.dart|motion.spatialDefault.duration':
       5,
@@ -211,8 +201,6 @@ const Map<String, int> _legacy = <String, int>{
   'lib/src/pages/implementations/stat_shared.dart|fushiMotionDuration(context,FushiMotion.medium)':
       1,
   'lib/src/pages/implementations/updates_dashboard_banner.dart|einkSafeDuration(context,constDuration(milliseconds:220))':
-      1,
-  'lib/src/pages/implementations/video_download_subscriptions_panel.dart|motion.spatialDefault.duration':
       1,
   'lib/src/pages/implementations/video_fushi/subtitle.part.dart|einkSafeDuration(context,constDuration(milliseconds:200))':
       1,

@@ -9,6 +9,7 @@ import 'package:fushi/src/pages/implementations/games_library_page.dart';
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/galgame_poster_card.dart';
+import '../helpers/shell_layout.dart';
 
 /// 游戏进合集：通用合集网格详情页（[MediaCollectionGridDetailPage]）加载 'game'
 /// 成员的 widget 测试。
@@ -76,6 +77,7 @@ void main() {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
+          theme: gridShellTheme(),
           home: MediaCollectionGridDetailPage(
             database: db,
             collection: collection,

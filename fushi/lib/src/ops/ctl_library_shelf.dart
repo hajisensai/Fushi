@@ -13,7 +13,7 @@
 ///   [removeTagFromHost]；
 /// - 书签：[BookmarkRepository]（PDF 阅读器加书签同一张表、同一口径）；
 /// - 收藏句：[FavoriteSentenceRepository] + 收藏夹导出的 [buildSentenceExport]；
-/// - 读完：[FushiDatabase.setEpubBookCompleted] / [setVideosWatched]。
+/// - 读完：[setBooksFinished] / [setVideosWatched]（设上的标记经 [LibraryFinishTracking] 报给追番）。
 library;
 
 import 'dart:io';
@@ -31,6 +31,9 @@ import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
 import 'package:fushi/src/media/collections/collection_episode_slot.dart'
     show videoCollectionMemberVisibility;
 import 'package:fushi/src/media/display_title.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
+import 'package:fushi/src/media/library_finish_marks.dart';
+import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/video/video_watched_marks.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart'
@@ -60,11 +63,16 @@ class LibraryCtlShelf {
   LibraryCtlShelf({
     required FushiDatabase db,
     required GalgameRepository galgameRepo,
+    required LibraryFinishTracking finishTracking,
   }) : _db = db,
-       _games = galgameRepo;
+       _games = galgameRepo,
+       _finishTracking = finishTracking;
 
   final FushiDatabase _db;
   final GalgameRepository _games;
+
+  /// Finished / watched marks set here reach media tracking through this.
+  final LibraryFinishTracking _finishTracking;
 
   // ── 条目键 → 各域身份 ─────────────────────────────────────────────────
 
@@ -177,12 +185,18 @@ class LibraryCtlShelf {
     final Set<String> srtUids = <String>{
       for (final SrtBook book in srtBooks) book.uid,
     };
-    final Set<String> srtBookKeys = <String>{
-      for (final SrtBook book in srtBooks)
-        if (book.bookKey.isNotEmpty) book.bookKey,
+    final List<EpubBookRow> bookRows = await _db.getAllEpubBooks();
+    final Map<String, BookFormat> formatByBookKey = <String, BookFormat>{
+      for (final EpubBookRow row in bookRows)
+        row.bookKey: BookFormat.parseOrEpub(row.format),
     };
+    // 与书架同一隐藏规则：有声书配对行只顶替能挂有声书的书（反馈 Ndnxy3mNdG）。
+    final Set<String> srtBookKeys = ReaderFushiSource.audiobookShadowedBookKeys(
+      srtBooks,
+      formatOf: (String key) => formatByBookKey[key],
+    );
     final Set<String> epubEntryKeys = <String>{
-      for (final EpubBookRow row in await _db.getAllEpubBooks())
+      for (final EpubBookRow row in bookRows)
         if (!srtBookKeys.contains(row.bookKey)) ...<String>[
           row.uid,
           row.bookKey,
@@ -197,7 +211,10 @@ class LibraryCtlShelf {
     );
     if (!_games.isLoaded) await _games.load();
     final List<GalgameEntry> games = _games.games;
+    // 上锁（未解锁）的成员与库页一样不可见（[MediaVisibility] 唯一入口）。
+    final MediaVisibility lock = await MediaVisibility.load(_db);
     return (String mediaType, String entryKey) =>
+        !lock.hidesCollectionMember(mediaType, entryKey) &&
         switch (MediaKind.tryParse(mediaType)) {
           MediaKind.video => video(mediaType, entryKey),
           MediaKind.game => isGameCollectionMemberVisible(
@@ -215,7 +232,10 @@ class LibraryCtlShelf {
 
   Future<MediaCollectionRow> _requireCollection(int id) async {
     final MediaCollectionRow? row = await _db.getMediaCollectionById(id);
-    if (row == null) throw CtlFailure.notFound('没有 id=$id 的合集');
+    // 上锁（未解锁）的合集对控制通道 / AI 就像不存在：不列、不给详情、不让改。
+    if (row == null || (await MediaVisibility.load(_db)).hidesCollection(id)) {
+      throw CtlFailure.notFound('没有 id=$id 的合集');
+    }
     return row;
   }
 
@@ -251,7 +271,11 @@ class LibraryCtlShelf {
             item.collectionId,
       };
     }
-    final List<MediaCollectionRow> rows = await _db.getAllMediaCollections();
+    final MediaVisibility lock = await MediaVisibility.load(_db);
+    final List<MediaCollectionRow> rows = <MediaCollectionRow>[
+      for (final MediaCollectionRow row in await _db.getAllMediaCollections())
+        if (!lock.hidesCollection(row.id)) row,
+    ];
     rows.sort(
       (MediaCollectionRow a, MediaCollectionRow b) =>
           a.sortOrder.compareTo(b.sortOrder),
@@ -271,8 +295,11 @@ class LibraryCtlShelf {
     final List<MediaCollectionItemRow> items = await _db.getCollectionItems(id);
     final CollectionMemberVisibility isVisible =
         await collectionMemberVisibility();
+    final MediaVisibility lock = await MediaVisibility.load(_db);
     final List<Map<String, Object?>> members = <Map<String, Object?>>[];
     for (final MediaCollectionItemRow item in items) {
+      // 上锁成员连行都不列（标题 / 键都会泄露它的存在）。
+      if (lock.hidesCollectionMember(item.mediaType, item.entryKey)) continue;
       final LibraryCtlKey? key = await keyForCollectionMember(item);
       members.add(<String, Object?>{
         'key': key?.wire,
@@ -914,18 +941,22 @@ class LibraryCtlShelf {
     switch (key.store) {
       case LibraryCtlStore.book:
         await _requireBook(key);
-        await _db.setEpubBookCompleted(
-          key.id,
-          completed ? DateTime.now() : null,
+        await setBooksFinished(
+          db: _db,
+          tracking: _finishTracking,
+          bookKeys: <String>[key.id],
+          finished: completed,
         );
       case LibraryCtlStore.srt:
         final SrtBook srt = await _requireSrt(key);
         if (srt.bookKey.isEmpty) {
           throw const CtlFailure.rejected('纯字幕书没有读完标记（没有正文进度）');
         }
-        await _db.setEpubBookCompleted(
-          srt.bookKey,
-          completed ? DateTime.now() : null,
+        await setBooksFinished(
+          db: _db,
+          tracking: _finishTracking,
+          bookKeys: <String>[srt.bookKey],
+          finished: completed,
         );
       case LibraryCtlStore.video:
         await _requireVideo(key);
@@ -943,6 +974,9 @@ class LibraryCtlShelf {
             positionMs: restorePositionMs,
           );
           final VideoBookRow? row = await _db.getVideoBookByBookUid(key.id);
+          if (row != null && completed) {
+            await _finishTracking.onVideosWatched(<String>[key.id]);
+          }
           if (row != null) {
             await writeBackMediaServerPlayed(
               db: _db,
@@ -954,6 +988,7 @@ class LibraryCtlShelf {
           // 统计不动，完整重置仍走 library reset。
           await setVideosWatched(
             db: _db,
+            tracking: _finishTracking,
             watched: completed,
             localUids: <String>[key.id],
           );

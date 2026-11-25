@@ -1,12 +1,15 @@
-// 内置网页播放器的两种宿主档（用户可选）与「窗口宿主档」专用的 JS↔Dart 契约。纯数据 / 纯函数。
+// 网页视频的两种播放档位与「窗口宿主档」专用的 JS↔Dart 契约。纯数据 / 纯函数。
 //
-// · [WebVideoHosting.builtin]（默认）：fork 的 composition + WGC 纹理链路，软件 DRM 1080p，帧可捕获
-//   → Flutter 字幕叠层 / 弹窗查词 / 超分 / 自动制卡全部可用。
-// · [WebVideoHosting.windowed]：WebView2 挂成真 HWND 子窗口自己绘制（硬件 PlayReady，Netflix 到
-//   2160p），Flutter 画不到它上面 → 字幕层注入页面 DOM（`web_video_dom_subtitles.js`），点词经
-//   callHandler 回 Dart，查词卡走独立顶层窗口（GlobalLookupController），制卡只入队、之后切回
-//   内置档重放（P3）。
-import 'dart:ui' show Offset, Rect;
+// 两档都在原生播放器页里播、同一套播放器外观与控件（拍板 cbKi3PN0G7-r2），用户只选「画质上限 vs
+// 能否截图制卡」；默认用哪一档（按站点手动选择 / 实测 / DRM 预判）见 `web_video_hosting_default.dart`，
+// 显示名与顶栏档位标识见 `web_video_mode_chip.dart`。
+// · [WebVideoHosting.builtin]（界面名「制卡优先」）：fork 的 composition + WGC 离屏纹理链路，软件 DRM
+//   ≤1080p，帧可捕获 → 超分 / 截图 / 识别画面文字可用；制卡队列重放也只在这一档跑（内置网页播放器
+//   页当后台宿主）。
+// · [WebVideoHosting.windowed]（界面名「画质优先」）：WebView2 挂成真 HWND 子窗口、经底层合成垫在
+//   Flutter 下面自己绘制（硬件 PlayReady，Netflix 到 2160p），帧截不到 → 制卡只入队、之后换到可
+//   捕获档重放（P3）。
+import 'dart:ui' show Rect;
 
 enum WebVideoHosting { builtin, windowed }
 
@@ -69,11 +72,8 @@ String windowedHostingArguments(String browserArguments) =>
   return (arguments: out, found: found);
 }
 
-const String kWebVideoDomSubtitlesAsset =
-    'assets/web_video/web_video_dom_subtitles.js';
-
-/// DOM 字幕层点词载荷 `{type:'lookup', kind, sentence, index, cueStart, cueEnd, rect:{x,y,w,h},
-/// screenX, screenY, dpr}`：`rect` 是被点字形的视口矩形（CSS px），`screenX/Y` 是页面视口在屏幕上
+/// 悬停查词载荷（`web_video_page_lookup.js` 投来的 `type: 'pageLookup'`）`{kind, sentence, index,
+/// cueStart, cueEnd, rect:{x,y,w,h}, screenX, screenY, dpr}`：`rect` 是被点字形的视口矩形（CSS px），`screenX/Y` 是页面视口在屏幕上
 /// 的位置（Chromium 给的是 DIP，与 Windows 逻辑 px 同单位）。
 class WebVideoLookupRequest {
   const WebVideoLookupRequest({
@@ -123,11 +123,4 @@ WebVideoLookupRequest? parseWebVideoLookupPayload(Object? raw) {
     screenX: _asDouble(raw['screenX']) ?? 0,
     screenY: _asDouble(raw['screenY']) ?? 0,
   );
-}
-
-/// 被点字形的**屏幕逻辑 px** 矩形（GlobalLookupController.lookupText 的 anchorScreenRect 单位）：
-/// 视口矩形 + 视口在屏幕上的位置。零尺寸矩形回 null（让查词窗回落到光标定位）。
-Rect? webVideoLookupAnchorScreenRect(WebVideoLookupRequest r) {
-  if (r.clientRect.width <= 0 || r.clientRect.height <= 0) return null;
-  return r.clientRect.shift(Offset(r.screenX, r.screenY));
 }

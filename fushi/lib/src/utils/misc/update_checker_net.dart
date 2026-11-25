@@ -29,7 +29,10 @@ part of 'update_checker.dart';
 /// 名单本身已搬到 `src/utils/net/github_mirrors.dart` 的 [kGitHubMirrorPrefixes]
 /// 作全仓唯一真相源（BUG-1875：Mihon 扩展仓库拉取也要同一份镜像）；part 契约禁止
 /// part 内 import，所以由 barrel 引入、这里只保留别名与既有的测试可见名。
-const List<String> updateCheckProxyPrefixes = kGitHubMirrorPrefixes;
+///
+/// 读的是 [activeGitHubMirrorPrefixes]：用户在设置里关掉 GitHub 加速镜像时为空，检查 /
+/// 下载候选只剩直连与官网 Cloudflare，设置页的下载来源下拉也不再列镜像。
+List<String> get updateCheckProxyPrefixes => activeGitHubMirrorPrefixes;
 
 /// 官网 Cloudflare Worker 暴露的版本化 R2 下载入口。
 ///
@@ -556,6 +559,23 @@ Future<List<Map<String, dynamic>>> fetchAllGitHubReleases({
   } catch (e, stack) {
     ErrorLogService.instance.log('fetchAllGitHubReleases', e, stack);
     return const <Map<String, dynamic>>[];
+  } finally {
+    client.close();
+  }
+}
+
+/// 拉调试版流水线数据（[kDebugPulseUrl]）的原始响应体。复用检查更新的私有 HTTP
+/// 管线：直连 + 镜像并发竞速、系统 / 自定义代理、每候选超时。全失败返回 null（调用方
+/// 显示「拉取失败」），异常收敛为 null 并记日志。
+Future<String?> fetchDebugPulseBody({String customProxy = ''}) async {
+  final HttpClient client = HttpClient()
+    ..connectionTimeout = const Duration(seconds: 10);
+  try {
+    await applyAppProxy(client, userProxy: customProxy);
+    return await UpdateChecker._httpGetString(client, kDebugPulseUrl);
+  } catch (e, stack) {
+    ErrorLogService.instance.log('fetchDebugPulseBody', e, stack);
+    return null;
   } finally {
     client.close();
   }

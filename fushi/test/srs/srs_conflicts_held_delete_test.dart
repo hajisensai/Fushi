@@ -10,7 +10,9 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -56,6 +58,15 @@ Future<void> _pumpUntil(WidgetTester tester, Finder finder) => _pumpUntilTrue(
   () async => finder.evaluate().isNotEmpty,
   reason: '$finder',
 );
+
+/// 「保留」写失败的错误日志条数（`srsRunLogged('SrsConflicts.keep', ...)`）。
+int _keepErrors() => ErrorLogService.instance.entries
+    .where((ErrorLogEntry e) => e.source == 'SrsConflicts.keep')
+    .length;
+
+/// [keep] 那颗按钮是否可点（两套设计系统都是同一个 [FushiFilledButton]，禁用 = onPressed 为 null）。
+bool _keepButtonEnabled(WidgetTester tester, Finder keep) =>
+    tester.widget<FushiFilledButton>(keep).onPressed != null;
 
 /// 两台设备、一条被 A 删除且被 B 并发修改的笔记，B 这边已经收到冲突。
 class _Env {
@@ -227,11 +238,134 @@ void main() {
 
         // 结论是普通操作：同步到 A 后 A 的冲突也消失、状态一致。
         await _io(tester, env.syncAll);
+        if (delete) {
+          // B 第一次出现时 A 已有内容，B 在 A 上待确认（BUG-4276）：B 选「删除」的结论在 A 上扣到确认，
+          // A 的冲突还在；A 信任 B 之后才落地。「保留」是普通操作，不受影响。
+          expect(
+            (await _io(tester, env.a.sync2Conflicts)).single['kind'],
+            'delete_edit',
+          );
+          await _io(
+            tester,
+            () => env.a.sync2Trust(env.b.sync2Device!, trust: true),
+          );
+          await _io(tester, env.syncAll);
+        }
         expect(await _io(tester, env.a.sync2Conflicts), isEmpty);
         expect(
           (await _io(
             tester,
             () => env.a.cardsOfNote(env.noteId),
+          )).single.hidden,
+          delete,
+        );
+        await _close(tester, env);
+      });
+    }
+
+    testWidgets('[$ds] d6njR3G6zE 连点「保留」：处理中按钮禁用，只写一次、'
+        '不报 no such conflict', (WidgetTester tester) async {
+      final _Env env = await _open(tester);
+      await _pump(tester, env.b, apple: apple);
+      final Finder card = find.byKey(
+        ValueKey<String>('srs-held-${env.conflictId}'),
+      );
+      await _pumpUntil(tester, card);
+      final Finder keep = find.descendant(
+        of: card,
+        matching: find.byKey(const ValueKey<String>('srs-held-keep')),
+      );
+      final int errorsBefore = _keepErrors();
+      // 第二下落在第一下的写还没完成时（以前这时按钮仍可点，后排的写撞上已解决的冲突）。
+      await tester.tap(keep);
+      await tester.tap(keep, warnIfMissed: false);
+      await tester.pump();
+      if (keep.evaluate().isNotEmpty) {
+        expect(
+          _keepButtonEnabled(tester, keep),
+          isFalse,
+          reason: '处理中所有处理按钮禁用',
+        );
+      }
+      await _pumpUntil(tester, find.text(t.srs_conflicts_empty));
+      await _settle(tester, rounds: 6);
+      expect(_keepErrors(), errorsBefore, reason: '同一条冲突只写一次');
+      expect(await _io(tester, env.b.sync2Conflicts), isEmpty);
+      await _close(tester, env);
+    });
+
+    testWidgets('[$ds] d6njR3G6zE 列表里的冲突已在别处解决：点「保留」报错后整页重读，'
+        '那条从列表消失（不再每点一次报一次）', (WidgetTester tester) async {
+      final _Env env = await _open(tester);
+      await _pump(tester, env.b, apple: apple);
+      final Finder card = find.byKey(
+        ValueKey<String>('srs-held-${env.conflictId}'),
+      );
+      await _pumpUntil(tester, card);
+      // 页面之外解决掉（等同另一台设备处理后同步过来）：页面上这条已过时。
+      await _io(
+        tester,
+        () => env.b.sync2Resolve(env.conflictId, delete: false),
+      );
+      expect(card, findsOneWidget);
+      final int errorsBefore = _keepErrors();
+      await tester.tap(
+        find.descendant(
+          of: card,
+          matching: find.byKey(const ValueKey<String>('srs-held-keep')),
+        ),
+      );
+      await _pumpUntil(tester, find.text(t.srs_conflicts_empty));
+      expect(card, findsNothing);
+      expect(_keepErrors(), errorsBefore + 1, reason: '写失败照常记录（不吞），但列表随即以库为准');
+      await _close(tester, env);
+    });
+
+    for (final bool delete in <bool>[false, true]) {
+      testWidgets('[$ds] #IBjxAjty39 顶栏「批量处理」：扣住的删除'
+          '「全部${delete ? '删除' : '保留'}」按选择落地', (WidgetTester tester) async {
+        final _Env env = await _open(tester);
+        await _pump(tester, env.b, apple: apple);
+        final Finder card = find.byKey(
+          ValueKey<String>('srs-held-${env.conflictId}'),
+        );
+        await _pumpUntil(tester, card);
+        // 只有扣住的删除、没有字段冲突时，批量按钮也在（不是灰掉 / 被删掉）。
+        final Finder bulk = find.byKey(
+          const ValueKey<String>('srs_conflicts_bulk'),
+        );
+        expect(bulk, findsOneWidget);
+        await tester.tap(bulk);
+        await _settle(tester, rounds: 6);
+        expect(find.text(t.srs_conflicts_bulk_held_keep(n: 1)), findsOneWidget);
+        expect(
+          find.text(t.srs_conflicts_bulk_held_delete(n: 1)),
+          findsOneWidget,
+        );
+        await tester.tap(
+          find.text(
+            delete
+                ? t.srs_conflicts_bulk_held_delete(n: 1)
+                : t.srs_conflicts_bulk_held_keep(n: 1),
+          ),
+        );
+        await _settle(tester, rounds: 6);
+        if (delete) {
+          // 全部删除不好撤回：再确认一次。
+          expect(
+            find.text(t.srs_conflicts_bulk_confirm_title(n: 1)),
+            findsOneWidget,
+          );
+          await tester.tap(find.text(t.dialog_ok));
+        }
+        await _pumpUntil(tester, find.text(t.srs_conflicts_empty));
+        expect(card, findsNothing);
+        expect(bulk, findsNothing, reason: '没有可批量处理的条目就不画');
+        expect(await _io(tester, env.b.sync2Conflicts), isEmpty);
+        expect(
+          (await _io(
+            tester,
+            () => env.b.cardsOfNote(env.noteId),
           )).single.hidden,
           delete,
         );

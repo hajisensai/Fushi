@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_date_time_picker.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
@@ -102,7 +103,7 @@ class _StatSessionEditDialogState extends State<StatSessionEditDialog> {
 
   Future<void> _pickDate() async {
     final DateTime initial = _parsedDay ?? _originalDay;
-    final DateTime? picked = await showDatePicker(
+    final DateTime? picked = await showFushiDatePicker(
       context: context,
       initialDate: initial,
       // 统计事实的合理范围：往前十年够覆盖任何导入的历史，往后到今天为止

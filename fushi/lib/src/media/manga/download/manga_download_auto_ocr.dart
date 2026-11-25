@@ -19,9 +19,10 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-/// 事件流构造口（测试注入；生产是 [mangaOcrBackgroundEvents]）。
-typedef MangaOcrEventsBuilder =
-    Stream<MangaOcrBackgroundEvent> Function(MangaOcrJobSpec spec);
+// 事件流构造口已随唯一装配点 [mangaOcrBackgroundJob] 搬进 job_stream；这里转出
+// 保持既有 import 不变。
+export 'package:fushi/src/media/manga/manga_ocr_job_stream.dart'
+    show MangaOcrEventsBuilder;
 
 /// 为刚下载完的一章排一个整卷 OCR 任务。返回排上的任务；跳过返回 null。
 ///
@@ -38,8 +39,10 @@ Future<MangaOcrRunningJob?> runAutoMangaOcrForDownloadedChapter({
   required String lensLanguage,
   MangaOcrEventsBuilder buildEvents = mangaOcrBackgroundEvents,
 }) async {
+  // 显式偏好只探那一个引擎；auto 要完整能力表，全探。
   final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
     engines,
+    only: mangaOcrProbeTargetFor(preference),
   );
   final MangaOcrEngineId? engine = resolveBackgroundMangaOcrEngine(
     preference: preference,
@@ -68,13 +71,10 @@ Future<MangaOcrRunningJob?> runAutoMangaOcrForDownloadedChapter({
     remoteTarget: availability.remoteTarget,
     focus: focus,
   );
-  final MangaOcrBackgroundJob job = MangaOcrBackgroundJob(
+  final MangaOcrBackgroundJob job = mangaOcrBackgroundJob(
     bookKey: chapter.bookKey,
-    managedDirectory: chapter.chapterDirectory.path,
-    engine: engine,
-    events: buildEvents(spec),
-    focus: focus,
-    follower: mangaOcrJobFollower(spec),
+    spec: spec,
+    buildEvents: buildEvents,
   );
   return registry.enqueue(job: job, mangaJsonPath: chapter.mangaJsonPath);
 }

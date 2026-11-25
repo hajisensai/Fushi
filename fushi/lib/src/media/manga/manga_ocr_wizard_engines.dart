@@ -25,6 +25,8 @@ MangaOcrRemoteRunner createInterconnectMangaOcrRunner(
 ) => InterconnectMangaOcrClient(
   repo: SyncRepository(db),
   preferredModel: () => appModel.mangaOcrPairedHostModel,
+  // 上传前给页图算内容哈希发清单，host 已识别过的页不再上传。
+  hashCache: appModel.contentHashCache,
 );
 
 /// 漫画 OCR 大模型识别器的唯一装配点：档位关、没指派（也没默认）提供商、指派的

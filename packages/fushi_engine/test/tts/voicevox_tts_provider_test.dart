@@ -1,8 +1,11 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:fushi_engine/tts/providers/voicevox_tts_provider.dart';
+import 'package:fushi_engine/tts/cast/cast_line_kind.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -41,6 +44,8 @@ const List<Object?> _speakers = <Object?>[
       <String, Object?>{'name': 'あまあま', 'id': 0},
       <String, Object?>{'name': 'ハミング', 'id': 3001, 'type': 'humming'},
       <String, Object?>{'name': '歌', 'id': 3002, 'type': 'sing'},
+      <String, Object?>{'name': '教師', 'id': 3003, 'type': 'singing_teacher'},
+      <String, Object?>{'name': 'フレーム', 'id': 3004, 'type': 'frame_decode'},
     ],
   },
   <String, Object?>{
@@ -231,6 +236,24 @@ void main() {
     expect(parseVoicevoxSpeakers(<String, Object?>{}), isEmpty);
   });
 
+  test('parseVoicevoxSpeakers keeps streaming_talk styles (engine 0.26+)', () {
+    // BUG-4503：VOICEVOX 0.26 的 /speakers 把默认角色的风格全报成
+    // `streaming_talk`，只认 `talk` 时整张列表为空。
+    final List<TtsVoice> voices = parseVoicevoxSpeakers(<Object?>[
+      <String, Object?>{
+        'name': 'ずんだもん',
+        'speaker_uuid': '388f246b',
+        'styles': <Object?>[
+          <String, Object?>{'name': 'ノーマル', 'id': 3, 'type': 'streaming_talk'},
+          <String, Object?>{'name': 'あまあま', 'id': 1, 'type': 'talk'},
+          <String, Object?>{'name': '歌', 'id': 3003, 'type': 'sing'},
+        ],
+      },
+    ]);
+    expect(voices.map((TtsVoice v) => v.id), <String>['3', '1']);
+    expect(voices.first.displayName, 'ずんだもん / ノーマル');
+  });
+
   test('listVoices GETs /speakers (sub-path endpoint kept)', () async {
     final TtsProvider provider = const AivisSpeechTtsDescriptor().create(
       preset(endpoint: '${base()}/'),
@@ -332,5 +355,205 @@ void main() {
       failsWith(TtsFailureCode.network),
     );
     server = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
+  });
+
+  group('per-line direction', () {
+    const double ln2 = 0.6931471805599453;
+
+    // 两个有声 mora（ln F0 = 5.4 / 5.6，平均 5.5）+ 一个无声 mora（pitch 0，不计入）。
+    final Map<String, Object?> query = <String, Object?>{
+      ..._audioQuery,
+      'accent_phrases': <Object?>[
+        <String, Object?>{
+          'moras': <Object?>[
+            <String, Object?>{'text': 'ワ', 'pitch': 5.4},
+            <String, Object?>{'text': 'ガ', 'pitch': 5.6},
+            <String, Object?>{'text': 'ッ', 'pitch': 0.0},
+          ],
+          'pause_mora': null,
+        },
+      ],
+    };
+
+    double log2(double x) => math.log(x) / ln2;
+
+    test('support: VOICEVOX / SHAREVOX native emotion, AivisSpeech rate + '
+        'volume only', () {
+      for (final VoicevoxCompatibleTtsDescriptor d
+          in <VoicevoxCompatibleTtsDescriptor>[
+            const VoicevoxTtsDescriptor(),
+            const SharevoxTtsDescriptor(),
+          ]) {
+        final TtsDirectionSupport s = ttsDirectionSupportOf(
+          d.create(preset(providerId: d.id), host),
+        );
+        expect(
+          <bool>[s.emotion, s.rate, s.pitch, s.volume, s.tone, s.seed],
+          <bool>[true, true, true, true, false, false],
+          reason: d.id,
+        );
+      }
+      final TtsDirectionSupport aivis = ttsDirectionSupportOf(
+        const AivisSpeechTtsDescriptor().create(
+          preset(providerId: AivisSpeechTtsDescriptor.providerId),
+          host,
+        ),
+      );
+      expect(
+        <bool>[aivis.emotion, aivis.rate, aivis.pitch, aivis.volume],
+        <bool>[false, true, false, true],
+      );
+    });
+
+    test('empty direction leaves the query untouched', () {
+      expect(
+        identical(
+          VoicevoxCompatibleTtsProvider.applyDirection(
+            query,
+            TtsDirection.none,
+          ),
+          query,
+        ),
+        isTrue,
+      );
+    });
+
+    test('rate / volume multiply, pitch shifts mean ln(F0) by semitones', () {
+      final Map<String, Object?> out =
+          VoicevoxCompatibleTtsProvider.applyDirection(
+            query,
+            const TtsDirection(
+              rateOffset: 0.2,
+              pitchOffset: 2,
+              volumeOffset: 6,
+            ),
+          );
+      expect(out['speedScale'], 1.2);
+      expect(out['volumeScale'], closeTo(1.9953, 1e-4));
+      final double p = out['pitchScale']! as double;
+      expect(p, closeTo(log2(1 + 2 * ln2 / 12 / 5.5), 1e-4));
+      // 平均 ln(F0) 被抬高的量 = 2 个半音。
+      expect(5.5 * math.pow(2, p) - 5.5, closeTo(2 * ln2 / 12, 1e-3));
+      expect(out['intonationScale'], 1.0); // 没情绪不碰抑揚
+      expect(out['kana'], 'ワガハイワ');
+      expect(out['accent_phrases'], query['accent_phrases']);
+    });
+
+    test('stacks on the preset scales and clamps to the engine range', () {
+      final Map<String, Object?> overridden =
+          VoicevoxCompatibleTtsProvider.applyOverrides(query, <String, String>{
+            'speedScale': '1.25',
+            'pitchScale': '0.05',
+            'volumeScale': '1.5',
+          });
+      final Map<String, Object?> out =
+          VoicevoxCompatibleTtsProvider.applyDirection(
+            overridden,
+            const TtsDirection(
+              rateOffset: 1.0,
+              pitchOffset: -1,
+              volumeOffset: 6,
+            ),
+          );
+      expect(out['speedScale'], 2.0); // 1.25 × 2 = 2.5 → 夹到 2.0
+      expect(out['volumeScale'], 2.0); // 1.5 × 1.995 → 夹到 2.0
+      // 在预设的 0.05 上再降 1 个半音（不是替换成「-1 个半音」）。
+      final double p = out['pitchScale']! as double;
+      expect(p, closeTo(log2(math.pow(2, 0.05) - ln2 / 12 / 5.5), 1e-4));
+      expect(p, lessThan(0.05));
+      final Map<String, Object?> high =
+          VoicevoxCompatibleTtsProvider.applyDirection(
+            query,
+            const TtsDirection(pitchOffset: 12),
+          );
+      expect(high['pitchScale'], 0.15);
+    });
+
+    test('native emotion: intonation plus folded rate / pitch / volume', () {
+      final Map<String, Object?> sad =
+          VoicevoxCompatibleTtsProvider.applyDirection(
+            query,
+            const TtsDirection(emotion: CastEmotion.sadness, intensity: 100),
+          );
+      expect(sad['intonationScale'], 0.7);
+      expect(sad['speedScale'], 0.88);
+      expect(sad['volumeScale'], closeTo(0.7943, 1e-4));
+      expect(sad['pitchScale']! as double, lessThan(0));
+      final Map<String, Object?> joy =
+          VoicevoxCompatibleTtsProvider.applyDirection(
+            query,
+            const TtsDirection(
+              emotion: CastEmotion.joy,
+              intensity: 40,
+              rateOffset: 0.1,
+            ),
+          );
+      expect(joy['intonationScale'], 1.1); // 1 + 0.25 × 0.4
+      expect(joy['speedScale'], closeTo(1.132, 1e-9)); // 1 + 0.1 + 0.08 × 0.4
+      expect(joy['pitchScale']! as double, greaterThan(0));
+    });
+
+    Future<Map<String, Object?>> directed(
+      VoicevoxCompatibleTtsDescriptor d,
+      TtsDirection wanted,
+    ) async {
+      final TtsProvider provider = d.create(preset(providerId: d.id), host);
+      try {
+        await synthesizeWithDirection(
+          provider,
+          '吾輩は猫である',
+          outputPath: p.join(tmp.path, 'out.wav'),
+          cancel: TtsCancelToken(),
+          direction: effectiveTtsDirection(
+            ttsDirectionSupportOf(provider),
+            wanted,
+          ),
+        );
+      } finally {
+        await provider.dispose();
+      }
+      return jsonDecode(requests.last.body) as Map<String, Object?>;
+    }
+
+    test('VOICEVOX end to end: the synthesis body carries the tone', () async {
+      final Map<String, Object?> sent = await directed(
+        const VoicevoxTtsDescriptor(),
+        const TtsDirection(
+          emotion: CastEmotion.anger,
+          intensity: 100,
+          tone: 'きつく',
+          seed: 7,
+        ),
+      );
+      expect(requests.map((_Recorded r) => r.uri.path), <String>[
+        '/audio_query',
+        '/synthesis',
+      ]);
+      expect(sent['intonationScale'], 1.3);
+      expect(sent['speedScale'], 1.06);
+      expect(sent['volumeScale'], closeTo(1.4125, 1e-4));
+      // 测试的 audio_query 没有有声 mora：音高按缺省 ln(F0) 5.5 换算。
+      expect(sent['pitchScale'], closeTo(log2(1 + 0.5 * ln2 / 12 / 5.5), 1e-4));
+    });
+
+    test('AivisSpeech end to end: emotion folds into speed / volume, '
+        'pitch and intonation untouched', () async {
+      final Map<String, Object?> sent = await directed(
+        const AivisSpeechTtsDescriptor(),
+        const TtsDirection(emotion: CastEmotion.sadness, intensity: 50),
+      );
+      expect(sent['speedScale'], 0.94);
+      expect(sent['volumeScale'], closeTo(0.8913, 1e-4));
+      expect(sent['pitchScale'], 0.0);
+      expect(sent['intonationScale'], 1.0);
+    });
+
+    test('empty direction sends the same body as plain synthesize', () async {
+      final Map<String, Object?> sent = await directed(
+        const VoicevoxTtsDescriptor(),
+        TtsDirection.none,
+      );
+      expect(sent, _audioQuery);
+    });
   });
 }

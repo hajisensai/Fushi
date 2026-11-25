@@ -4,6 +4,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/mining/video_mine_queue.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_anki/fushi_anki.dart' show BaseAnkiRepository;
 import 'package:fushi/src/mining/web_mine_queue_store.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -43,8 +44,34 @@ Future<VideoMineCommitSummary?> showVideoMineQueueDialog({
   );
 }
 
+/// 一批写入结束后的汇总提示：张数，加上写入的卡带回的提示（如「保存到」被主机退回默认，
+/// BUG-4287）——批量写入没有逐张的结果提示，汇总这一条不带它，用户就永远不知道落点变了。
+/// 有没送到的（后端不可达，留作待办、下次自动再试）另起一行说清楚，不混进「失败」。
+String videoMineCommitMessage(VideoMineCommitSummary summary) => <String>[
+  t.video_mine_queue_committed(ok: summary.succeeded, failed: summary.failed),
+  if (summary.undelivered > 0)
+    t.video_mine_queue_committed_undelivered(count: summary.undelivered),
+  ?summary.notice,
+].join('\n');
+
+/// 失败行副标题里的原因：已知的固定标记（重复卡、视频到不了）换成本地化说明，其余原样
+/// （引擎 / Anki 带回的原因本身就是给人看的）。本地「待制卡」与网页视频「制卡队列」共用。
+String mineQueueFailureText(String? error) => switch (error) {
+  WebMineQueueStore.duplicateError => t.video_mine_queue_reason_duplicate,
+  'navigate_timeout' => t.web_video_mine_queue_reason_unreachable,
+  _ => error ?? '',
+};
+
+/// 汇总提示的级别：有失败、没送到或带回提示都是 warning（关掉「制卡成功提示」也照样
+/// 要让用户看到）。
+ToastSeverity videoMineCommitSeverity(VideoMineCommitSummary summary) =>
+    summary.failed == 0 && summary.undelivered == 0 && summary.notice == null
+    ? ToastSeverity.success
+    : ToastSeverity.warning;
+
 /// 离开播放页之后，在后台把 [bookUid] 的待制卡写进 Anki：先等 [inFlight]（还在准备
-/// 媒体的暂存任务）收尾，再 [VideoMineQueue.commitAll]。
+/// 媒体的暂存任务）收尾，再 [VideoMineQueue.commitAll]。只写待写入的行（含上次因后端
+/// 不可达没送到的），不重排之前写入失败的——那是待制卡列表里「全部写入」的事。
 ///
 /// 结果用全局 toast 报：此时播放页和它左上角的 OSD 都已不在。视频页自己「提示只走
 /// OSD、不用 toast」（BUG-931）约束的是页面在场的时候——toast 会被视频画面挡住；退出
@@ -57,24 +84,16 @@ void commitStagedVideoMinesAfterExit({
 }) {
   unawaited(() async {
     try {
-      await Future.wait(inFlight);
-      final VideoMineQueue resolved = await queue;
-      if ((await resolved.pending(bookUid)).isEmpty &&
-          (await resolved.failed(bookUid)).isEmpty) {
-        return;
-      }
-      final VideoMineCommitSummary summary = await resolved.commitAll(
+      final VideoMineCommitSummary? summary = await commitPendingVideoMines(
+        queue: queue,
         bookUid: bookUid,
         repo: repo,
+        inFlight: inFlight,
       );
+      if (summary == null) return;
       FushiToast.show(
-        msg: t.video_mine_queue_committed(
-          ok: summary.succeeded,
-          failed: summary.failed,
-        ),
-        severity: summary.failed == 0
-            ? ToastSeverity.success
-            : ToastSeverity.warning,
+        msg: videoMineCommitMessage(summary),
+        severity: videoMineCommitSeverity(summary),
       );
     } catch (error, stack) {
       try {
@@ -82,6 +101,31 @@ void commitStagedVideoMinesAfterExit({
       } catch (_) {}
     }
   }());
+}
+
+/// [commitStagedVideoMinesAfterExit] 的写入本体（不报 toast、不吞错，便于测试）：等
+/// [inFlight] 收尾后，把 [bookUid] **待写入**的暂存卡写进 Anki。这一趟一行都没写
+/// （没有待写入的行）返回 `null`——只剩写入失败的行时什么都不做，它们留在列表里等
+/// 用户手动重试（BUG-4813）。
+///
+/// 「有没有待写入的行」只在 [VideoMineQueue.commitAll] 的串行链里面判（看它实际处理
+/// 了几行），不在排队之前先查一遍：排队期间另一次写入（列表里的「全部写入」、
+/// `video mine-send`）可能正好把这些行写完，先查的那一眼就过期了，会报出一条
+/// 「成功 0、失败 0」。
+Future<VideoMineCommitSummary?> commitPendingVideoMines({
+  required Future<VideoMineQueue> queue,
+  required String bookUid,
+  required BaseAnkiRepository repo,
+  required List<Future<void>> inFlight,
+}) async {
+  await Future.wait(inFlight);
+  final VideoMineQueue resolved = await queue;
+  final VideoMineCommitSummary summary = await resolved.commitAll(
+    bookUid: bookUid,
+    repo: repo,
+    retryFailed: false,
+  );
+  return summary.attempted == 0 ? null : summary;
 }
 
 /// 导出 widget 便于测试直接构造。
@@ -111,6 +155,10 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
   bool _loading = true;
   ({int done, int total})? _progress;
 
+  /// 有失败、弹窗留着时，上一轮写入带回的提示（[VideoMineCommitSummary.notice]）显示在列表上方；
+  /// 全部成功时汇总交回调用方报，这里不留。
+  String? _notice;
+
   @override
   void initState() {
     super.initState();
@@ -138,6 +186,12 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
     await _reload();
   }
 
+  Future<void> _retry(WebMineQueueRow row) async {
+    await widget.queue.retry(row.id);
+    widget.onChanged?.call();
+    await _reload();
+  }
+
   Future<void> _commitAll() async {
     setState(() => _progress = (done: 0, total: _rows.length));
     final VideoMineCommitSummary summary = await widget.commit((
@@ -147,8 +201,11 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
       if (mounted) setState(() => _progress = (done: done, total: total));
     });
     if (!mounted) return;
-    setState(() => _progress = null);
-    if (summary.failed == 0) {
+    setState(() {
+      _progress = null;
+      _notice = summary.notice ?? _notice;
+    });
+    if (summary.failed == 0 && summary.undelivered == 0) {
       Navigator.of(context).pop(summary);
       return;
     }
@@ -185,6 +242,10 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
                     ),
                     const SizedBox(height: 8),
                   ],
+                  if (_notice case final String notice) ...<Widget>[
+                    Text(notice, style: TextStyle(color: cs.tertiary)),
+                    const SizedBox(height: 8),
+                  ],
                   if (_rows.isEmpty)
                     Text(t.video_mine_queue_empty)
                   else
@@ -199,6 +260,8 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
                           final String word = fields['expression'] ?? '';
                           final bool failed =
                               row.status == WebMineQueueStatus.failed;
+                          // 待办却带着原因 = 上次后端不可达没送到，下次自动再试。
+                          final String? undelivered = failed ? null : row.error;
                           return FushiListItem(
                             key: ValueKey<String>('video-mine-queue-${row.id}'),
                             density: FushiListDensity.compact,
@@ -210,17 +273,38 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
                             subtitle: Text(
                               failed
                                   ? t.video_mine_queue_failed(
-                                      reason: row.error ?? '',
+                                      reason: mineQueueFailureText(row.error),
+                                    )
+                                  : undelivered != null
+                                  ? t.video_mine_queue_undelivered(
+                                      reason: undelivered,
                                     )
                                   : row.sentence,
                               maxLines: 2,
                               overflow: TextOverflow.ellipsis,
-                              style: failed ? TextStyle(color: cs.error) : null,
+                              style: failed
+                                  ? TextStyle(color: cs.error)
+                                  : undelivered != null
+                                  ? TextStyle(color: cs.tertiary)
+                                  : null,
                             ),
-                            trailing: FushiIconButtonControl(
-                              tooltip: t.video_mine_queue_remove,
-                              icon: const FushiIcon(Icons.delete_outline),
-                              onPressed: busy ? null : () => _remove(row),
+                            trailing: Row(
+                              mainAxisSize: MainAxisSize.min,
+                              children: <Widget>[
+                                // 单行重试：重复卡也能点（用户多半已在 Anki 删了那张）；
+                                // 「全部写入」的批量重排会跳过重复卡。
+                                if (failed)
+                                  FushiIconButtonControl(
+                                    tooltip: t.video_mine_queue_retry,
+                                    icon: const FushiIcon(FushiIcons.refresh),
+                                    onPressed: busy ? null : () => _retry(row),
+                                  ),
+                                FushiIconButtonControl(
+                                  tooltip: t.video_mine_queue_remove,
+                                  icon: const FushiIcon(Icons.delete_outline),
+                                  onPressed: busy ? null : () => _remove(row),
+                                ),
+                              ],
                             ),
                           );
                         },
@@ -235,7 +319,15 @@ class _VideoMineQueueDialogState extends State<VideoMineQueueDialog> {
           child: Text(t.dialog_close),
         ),
         FushiFilledButton(
-          onPressed: busy || _rows.isEmpty ? null : _commitAll,
+          // 只剩重复卡时「全部写入」无事可做（批量重排跳过重复卡），按钮灰掉。
+          onPressed:
+              busy ||
+                  !_rows.any(
+                    (WebMineQueueRow r) =>
+                        r.error != WebMineQueueStore.duplicateError,
+                  )
+              ? null
+              : _commitAll,
           child: Text(t.video_mine_queue_commit_all),
         ),
       ],

@@ -1,6 +1,6 @@
 import 'dart:async';
 
-import 'package:fushi/src/media/privacy/media_privacy_dialog.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
 import 'package:fushi/src/media/tags/tag_picker_sheet.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
@@ -76,6 +76,9 @@ Future<void> showCollectionContextDialog({
   Listenable? coverRefresh,
   String? title,
   ShelfCoverMaterial? coverMaterial,
+  String? launchLabel,
+  VoidCallback? onLaunch,
+  String? progressLabel,
 }) async {
   assert(
     coverImage == null || resolveCoverImage == null,
@@ -101,6 +104,32 @@ Future<void> showCollectionContextDialog({
         action();
       }
 
+      // 调用方给的动作统一「先关菜单再执行」，同时保留菜单落点（[ItemMenuSlot]）、
+      // 副文字与工作台子项；开关行就地拨动、不关菜单，原样透传。
+      DialogListAction wrap(DialogListAction action) => switch (action) {
+        DialogToggleAction() => action,
+        DialogWorkbenchAction() => DialogWorkbenchAction(
+          label: action.label,
+          icon: action.icon,
+          subtitle: action.subtitle,
+          loadStatus: action.loadStatus,
+          emphasized: action.emphasized,
+          onPressed: () => closeThen(action.onPressed),
+          children: <DialogListAction>[
+            for (final DialogListAction child in action.children) wrap(child),
+          ],
+        ),
+        _ => DialogListAction(
+          label: action.label,
+          icon: action.icon,
+          group: action.group,
+          selected: action.selected,
+          slot: action.slot,
+          subtitle: action.subtitle,
+          onPressed: () => closeThen(action.onPressed),
+        ),
+      };
+
       Widget buildFrame() {
         final ImageProvider? coverSource = resolveCoverImage != null
             ? resolveCoverImage()
@@ -118,21 +147,32 @@ Future<void> showCollectionContextDialog({
           cover: effectiveCover,
           coverBackdrop: coverSource,
           coverMaterial: coverMaterial,
+          // 头部封面是合集自设封面或某个成员的封面：按合集判定 NSFW。
+          nsfw: MediaNsfwTarget.collection(collection.id),
           title: title ?? collection.name,
-          // 顶部主按钮 = 打开详情（与行头/卡片单击同路径，键盘/手柄用户可达）。
-          launchLabel: t.collection_view_all,
-          onLaunch: () => closeThen(onOpenDetail),
+          progressLabel: progressLabel,
+          // 顶部主按钮：调用方给了「继续」（视频合集续播下一集）就用它，「全部集」
+          // 降为主操作行的第一个常用操作；否则主按钮 = 打开详情（与行头/卡片单击
+          // 同路径，键盘/手柄用户可达）。
+          launchLabel: onLaunch == null ? t.collection_view_all : launchLabel,
+          onLaunch: onLaunch == null
+              ? () => closeThen(onOpenDetail)
+              : () => closeThen(onLaunch),
           listActions: <DialogListAction>[
-            // 媒体特有的首项（视频原盘合集：「进入原盘菜单」）。同样统一包 closeThen。
-            for (final DialogListAction action in leadingListActions)
+            if (onLaunch != null)
               DialogListAction(
-                label: action.label,
-                icon: action.icon,
-                onPressed: () => closeThen(action.onPressed),
+                label: t.item_menu_all_episodes,
+                icon: FushiIcons.toc,
+                slot: ItemMenuSlot.primary,
+                onPressed: () => closeThen(onOpenDetail),
               ),
+            // 媒体特有的首项（视频：「选择」、原盘合集「进入原盘菜单」）。
+            for (final DialogListAction action in leadingListActions)
+              wrap(action),
             DialogListAction(
               label: t.rename_collection,
               icon: Icons.drive_file_rename_outline,
+              slot: ItemMenuSlot.edit,
               onPressed: () => closeThen(
                 () => _renameCollection(
                   context: context,
@@ -153,21 +193,13 @@ Future<void> showCollectionContextDialog({
                 ),
               ),
             ),
-            // 私密：整个合集（全部成员，书或视频）不上传排行榜、不推 Bangumi。
-            DialogListAction(
-              label: t.media_privacy_action,
-              icon: FushiIcons.lock,
-              onPressed: () => closeThen(
-                () => unawaited(
-                  showMediaPrivacyDialog(
-                    context,
-                    db: db,
-                    kind: TagHostKind.collection,
-                    entryKey: collectionTagEntryKey(collection.id),
-                    title: collection.name,
-                  ),
-                ),
-              ),
+            // 隐私：分级（公开 / 私密 / 上锁）与 NSFW 都作用于整个合集（全部成员）。
+            mediaPrivacyAction(
+              context,
+              db: db,
+              kind: TagHostKind.collection,
+              entryKey: collectionTagEntryKey(collection.id),
+              title: collection.name,
             ),
             // 右键 / 长按反查整个合集（全部成员身份之并）的学习统计。
             DialogListAction(
@@ -185,15 +217,12 @@ Future<void> showCollectionContextDialog({
             // 媒体特有项（视频：在线匹配封面 / 为合集获取字幕）。统一包 closeThen，
             // 调用方回调无需自行 pop。
             for (final DialogListAction action in extraListActions)
-              DialogListAction(
-                label: action.label,
-                icon: action.icon,
-                onPressed: () => closeThen(action.onPressed),
-              ),
+              wrap(action),
             // 一键整理（与合集详情页 AppBar 排序菜单同一实现与落盘路径）。
             DialogListAction(
               label: t.collection_sort_by_title,
               icon: Icons.sort_by_alpha,
+              slot: ItemMenuSlot.sort,
               onPressed: () => closeThen(
                 () => _sortCollection(
                   db: db,
@@ -206,6 +235,7 @@ Future<void> showCollectionContextDialog({
             DialogListAction(
               label: t.collection_sort_by_imported,
               icon: Icons.history,
+              slot: ItemMenuSlot.sort,
               onPressed: () => closeThen(
                 () => _sortCollection(
                   db: db,

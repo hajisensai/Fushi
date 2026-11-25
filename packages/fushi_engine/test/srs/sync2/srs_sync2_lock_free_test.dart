@@ -20,7 +20,6 @@ void main() {
   Future<SrsDbStore> open() async {
     final SrsStorage st = await openTestSrsStorage();
     return SrsDbStore.open(
-      db: st.db,
       core: st.core,
       profileUid: kProfile,
       deviceId: 'dev',
@@ -70,10 +69,16 @@ void main() {
       'checkpoints',
       'history',
       'digest',
-      // 读连接列摘要桶（审查 S-7）；媒体文件到文件的流式封 / 解，不碰库（审查 S-9）。
-      'digest_buckets',
+      // 媒体文件到文件的流式封 / 解，不碰库（审查 S-9）。新代没有摘要桶（`digest_buckets` 已删）。
       'seal_file',
       'open_file',
+      // 同步一轮里只读快照的几步（G8-7b：旧根清单比对、承袭对账与打包、位置上还没收的媒体清单）。
+      'oldroot_scan',
+      'heritage_plan',
+      'heritage_outbox',
+      'media_manifests',
+      // 转发件按目标位置的钥匙重新封装（G8-7b，内核读快照）。
+      'relay_outbox',
     });
     for (final String op in <String>[
       'identity',
@@ -81,7 +86,19 @@ void main() {
       'outbox',
       'outbox_ack',
       'head',
+      // 位置上该删什么由内核定（新代 `cmd/sync.rs` `obsolete` 只读，但它的结论要和发件水位同一时刻）。
+      'obsolete',
+      'obsolete_former',
+      // 转发记账（`relay_out` 与可转发段的清理）：写命令。
+      'relay_ack',
+      // 收段（切片事务）：写命令。
+      'ingest',
       'ingest_begin',
+      'oldroot_ingest',
+      'heritage_ack',
+      'media_manifest_ingest',
+      'media_manifest_build',
+      'media_manifest_published',
       'media_record',
       'media_scan',
       'media_landed',

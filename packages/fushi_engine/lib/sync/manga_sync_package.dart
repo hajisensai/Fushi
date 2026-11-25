@@ -21,21 +21,27 @@ const String kMangaPackageMarker = 'manga.json';
 
 /// 清单和导出共用的内容判据：元数据占位不等于已下载的漫画。
 /// 复用导入器的页图规划校验，确保非空且每页都能随包导入。
-bool hasExportableMangaContent(String extractDir) {
-  if (extractDir.isEmpty) return false;
+bool hasExportableMangaContent(String extractDir) =>
+    readExportableMangaPayload(extractDir) != null;
+
+/// [hasExportableMangaContent] 的判据，过关时把解析好的根 [kMangaPackageMarker]
+/// 页表一并交回（不过关 null）。要判据又要页表的调用方（互联 host 的单卷 manifest /
+/// 逐页供图）用它，免得判完再把同一份 `manga.json` 整份读 + 解析一遍。
+MokuroPayload? readExportableMangaPayload(String extractDir) {
+  if (extractDir.isEmpty) return null;
   try {
     final Directory dir = Directory(extractDir);
     final File marker = File(p.join(extractDir, kMangaPackageMarker));
-    if (!marker.existsSync()) return false;
+    if (!marker.existsSync()) return null;
     final MokuroPayload payload = parseMangaJson(marker.readAsStringSync());
-    if (payload.images.isEmpty) return false;
+    if (payload.images.isEmpty) return null;
     MangaImporter.planMangaDestRels(srcDir: dir, payload: payload);
-    return true;
+    return payload;
   } on Exception {
-    return false;
+    return null;
   } on TypeError {
     // JSON 字段类型不符合漫画格式，同样不能宣称可导出。
-    return false;
+    return null;
   }
 }
 
@@ -57,6 +63,12 @@ Future<bool> repackageMangaBook(String extractDir, String outputPath) async {
   return true;
 }
 
+/// zip 条目路径 [entryName] 是不是漫画包的根级标记 [kMangaPackageMarker]（反斜杠
+/// 分隔的 Windows 打包工具产物同样认）。本地整包嗅探 [isMangaPackage] 与云端按区间
+/// 读中央目录的嗅探共用这一条判据。
+bool isMangaPackageMarkerEntry(String entryName) =>
+    entryName.replaceAll('\\', '/') == kMangaPackageMarker;
+
 /// 嗅探 [zipFile] 是否为漫画包（zip 根有 [kMangaPackageMarker] 条目）。
 ///
 /// 只经 [InputFileStream] 流式读中央目录，不解压任何条目数据（漫画包可达数百
@@ -67,10 +79,9 @@ Future<bool> isMangaPackage(File zipFile) async {
   try {
     input = InputFileStream(zipFile.path);
     final Archive archive = ZipDecoder().decodeBuffer(input);
-    for (final ArchiveFile f in archive.files) {
-      if (f.name.replaceAll('\\', '/') == kMangaPackageMarker) return true;
-    }
-    return false;
+    return archive.files.any(
+      (ArchiveFile f) => isMangaPackageMarkerEntry(f.name),
+    );
   } catch (_) {
     return false;
   } finally {

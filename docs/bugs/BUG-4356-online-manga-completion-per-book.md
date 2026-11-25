@@ -1,0 +1,12 @@
+## BUG-4356 · online-manga-completion-per-book
+- **报告**：2026-11-08（用户：应用内反馈 8VgLlmIezE，Windows）在线漫画详情里仍在读，书架却显示「读完」、出现「取消已读完」、不进继续阅读；「标记此章及更早为已读」后书架仍显示未读 / 没有百分比。
+- **真实性**：✅ 真 bug（沿 origin/develop 704f8c6bd9 代码路径验证）。
+  - ① `fushi/lib/src/media/manga/reader/manga_fushi_page.dart:5777-5785`：`_persistPosition` 用 `_payload.images.length`（**当前载荷**页数）判末页，再对整本 `markEpubBookCompletedIfUnset(widget.bookKey)`。本地卷一个载荷 = 整本，没问题；书架在线条目按章装载（`_shelfChapterKey`），读到**任一章**末页就写整本 completedAt。
+  - ② `fushi/lib/src/media/sources/reader_fushi_source.dart:652-663` `_onlineMangaProgress` 只按 `entry.currentChapterIndex` 算「从最旧数到当前章」，完全不看 `manga_chapter_states.readAt`；`packages/fushi_core/lib/src/database/database_content_misc.part.dart:1177-1200` `markMangaChaptersRead` 只写章 readAt。所以标章节已读不改书架进度；打开过最新一话（下标 0）就是 total/total「读完」（`card_widgets.part.dart:276-289`）。
+  - ③ 书架 `fushiBooksProvider` 只订阅书行 key 集合（BUG-793），章状态表的写入不会触发重算。
+- **[x] ① 已修复** —
+  - 整本读完判据收成 `mangaChapterCompletesSeries`（`manga_adjacent_chapter.dart`）：阅读顺序上没有下一话（与阅读器换章同一个 `resolveAdjacentMangaChapter`，skipDuplicate 口径）才算读完整部；阅读器写 completedAt 前必须过它，本地卷（无书架条目）不变。
+  - 书架进度改 `onlineMangaShelfProgress`（`manga_resume_point.dart`）：已读章数（readAt）+ 当前未读章的章内页进度（封顶不足一整章）÷ 总章数，每章 100 单位。
+  - 新增 `getAllMangaChapterStatesByBook()`（书架一次取完）与 `watchMangaChapterReadKeys()`（只投影已读行），`fushiBooksProvider` 订阅后任一标记已读 / 未读入口落库即重算。无 schema 变化。
+- **[x] ② 已加自动化测试** — `fushi/test/media/manga/online_manga_completion_bug4323_test.dart`（判据、进度随 mark/clear 变化、DB 分组与 watch 流、阅读器 / provider 接线源码守卫）。
+- **备注**：存量被误标 completedAt 的在线漫画**未做**自动修正：completedAt 不区分「手动标读完」与「阅读器自动写」，一次性清除会误清用户手动标记；用户可用书架已有的「取消已读完」恢复。书架卡片「>97% 视同读完」的启发式对章级进度（几十话只剩最后一话）仍会显示「读完」，属显示规则取舍，列待决策。

@@ -102,12 +102,15 @@ void main() {
         path,
         isMainProcess: false,
       );
-      expect(migrated.schemaVersion, 146);
+      expect(migrated.schemaVersion, kFushiDbSchemaVersion);
       await migrated.customSelect('SELECT 1').get();
       await migrated.close();
 
       final sqlite.Database probe = sqlite.sqlite3.open(path);
-      expect(probe.select('PRAGMA user_version').first.values.first, 146);
+      expect(
+        probe.select('PRAGMA user_version').first.values.first,
+        kFushiDbSchemaVersion,
+      );
       expect(columnsOf(probe, 'profiles'), contains('uid'));
       final Map<String, String> uidsByName = <String, String>{
         for (final sqlite.Row row in probe.select(
@@ -205,7 +208,10 @@ void main() {
 
       final sqlite.Database probe2 = sqlite.sqlite3.open(path);
       addTearDown(probe2.dispose);
-      expect(probe2.select('PRAGMA user_version').first.values.first, 146);
+      expect(
+        probe2.select('PRAGMA user_version').first.values.first,
+        kFushiDbSchemaVersion,
+      );
       final Map<String, String> uidsAfter = <String, String>{
         for (final sqlite.Row row in probe2.select(
           'SELECT name, uid FROM profiles',

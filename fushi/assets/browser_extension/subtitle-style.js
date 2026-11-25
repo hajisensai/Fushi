@@ -1,5 +1,5 @@
 // 视频上自绘字幕（#fushi-subtitle-overlay）的外观设置：字体、大小、字重、字间距、行高、对齐、
-// 文字颜色、描边，以及底板的颜色 / 不透明度 / 圆角 / 内边距 / 宽 / 高。
+// 文字颜色、阴影、描边（粗细 + 颜色），以及底板的颜色 / 不透明度 / 圆角 / 内边距 / 宽 / 高。
 //
 // 存储：chrome.storage.local.subtitleStyle = 一个对象（部分字段也可缺省），字段名对齐 app 侧
 // VideoSubtitleStyle（fontSize / fontWeight / textColor / shadow* / background*）。底板开关仍是
@@ -22,6 +22,8 @@
   var DEFAULT_FONT_FAMILY = '"Hiragino Sans", "Yu Gothic UI", sans-serif';
   var DEFAULT_TEXT_COLOR = '#f7f8f2';      // theme.css --fushi-on-scrim
   var DEFAULT_BACKGROUND_COLOR = '#0c0f0d'; // theme.css --fushi-scrim 的 rgb(12, 15, 13)
+  // 描边默认色：纯黑，与 app VideoSubtitleStyle 的 kDefaultSubtitleOutlineColor 同值（白字黑边是惯例）。
+  var DEFAULT_OUTLINE_COLOR = '#000000';
   var DEFAULTS = Object.freeze({
     fontFamily: '',        // '' = 默认字体栈
     fontScale: 100,        // 百分比；100 = clamp(18px, 2.2vw, 32px) 的响应式基准
@@ -30,14 +32,19 @@
     lineHeight: 145,       // 百分比；有振假名的句子取 max(200%, 本值)
     textAlign: 'center',
     textColor: '',         // '' = 跟随主题 --fushi-on-scrim
-    shadow: 'soft',        // none | soft | strong
+    shadow: 'soft',        // none | soft | strong（柔和投影；与下面的真描边是两层，同 app）
+    // 真描边（反馈 0wkJImhZUp：同步 app 的字幕描边自定义 #xif6-gtSz7）：沿字形轮廓的硬边，
+    // 粗细 = 向外可见的像素宽（app outlineThickness 同义，0..8、步长 0.5），0 = 不描边（默认，
+    // 老用户外观零变化）；颜色 '' = 默认纯黑（app outlineColor null 同义）。
+    outlineWidth: 0,
+    outlineColor: '',
     backgroundColor: '',   // '' = 跟随主题 --fushi-scrim 的颜色
     backgroundOpacity: 72, // 百分比
     borderRadius: 8,       // px
     padding: 100,          // 百分比（默认 6px 12px 7px）
     boxWidth: 0,           // 视频宽的百分比；0 = 随内容（文字撑开，最宽到 subtitle-panel 的视口夹取）
     boxHeight: 0,          // 视频高的百分比（下限，内容更高时自动加高）；0 = 随内容
-    boxAutoFit: true,      // 自适应缩放：底板定了高度时，字号随盒伸缩到整句刚好放下（见 nextFitScale）
+    boxAutoFit: true,      // 自适应缩放：底板定了高度时，放不下的长句缩小到刚好放下；只缩不放（见 nextFitScale）
   });
   var LIMITS = Object.freeze({
     fontScale: [50, 300],
@@ -49,13 +56,16 @@
     padding: [0, 300],
     boxWidth: [0, 100],
     boxHeight: [0, 60],
+    outlineWidth: [0, 8],  // 与 app kVideoSubtitleMaxOutline 同一上限
   });
   // 宽 / 高非 0 时的下限：再窄就一字一行、再矮就等于没设。0 单独表示「随内容」，不受下限约束。
   var BOX_FLOOR = Object.freeze({ boxWidth: 20, boxHeight: 5 });
   // 自适应缩放倍率（--fushi-sub-fit）的允许区间。下限 0.35 是「还读得清」的底：压到这里仍放不下
-  // 的超长句**不再继续压**，改让底板按 min-height 自己长高（字一个都不许裁掉）；上限 2.5 防止
-  // 用户把底板拉得极大时字大到糊满画面。
-  var FIT_RANGE = Object.freeze([0.35, 2.5]);
+  // 的超长句**不再继续压**，改让底板按 min-height 自己长高（字一个都不许裁掉）。
+  // 上限 1 = **只缩不放**（维护者 2026-11-23 拍板「默认和 mpv 一样」，反馈 UAiGljqcTw）：字号的
+  // 上限就是用户设的「大小」，放得下的句子一律保持设置字号，只有放不下的才缩小。旧上限 2.5 会让
+  // 短句放大到填满底板，于是一行的字比两行的大、句与句之间字号忽大忽小。
+  var FIT_RANGE = Object.freeze([0.35, 1]);
   // 收敛容差：实测高落在可用高的 [1-TOL, 1] 区间内就算「刚好放下」，不再迭代。
   var FIT_TOLERANCE = 0.04;
   var ALIGNS = { left: true, center: true, right: true };
@@ -84,6 +94,16 @@
     n = Math.round(n);
     if (n < range[0]) n = range[0];
     if (n > range[1]) n = range[1];
+    return n;
+  }
+
+  // 描边粗细：夹进 [0, 8] 并取到 0.5px 步长（app 设置滑杆 divisions = max×2 同一刻度）。
+  function clampOutline(v) {
+    var n = typeof v === 'string' ? parseFloat(v) : v;
+    if (typeof n !== 'number' || !isFinite(n)) return DEFAULTS.outlineWidth;
+    n = Math.round(n * 2) / 2;
+    if (n < LIMITS.outlineWidth[0]) n = LIMITS.outlineWidth[0];
+    if (n > LIMITS.outlineWidth[1]) n = LIMITS.outlineWidth[1];
     return n;
   }
 
@@ -125,6 +145,8 @@
       textAlign: ALIGNS[c.textAlign] ? c.textAlign : DEFAULTS.textAlign,
       textColor: normalizeHex(c.textColor),
       shadow: SHADOWS[c.shadow] !== undefined ? c.shadow : DEFAULTS.shadow,
+      outlineWidth: clampOutline(c.outlineWidth),
+      outlineColor: normalizeHex(c.outlineColor),
       backgroundColor: normalizeHex(c.backgroundColor),
       backgroundOpacity: clampInt(c.backgroundOpacity, LIMITS.backgroundOpacity, DEFAULTS.backgroundOpacity),
       borderRadius: clampInt(c.borderRadius, LIMITS.borderRadius, DEFAULTS.borderRadius),
@@ -165,6 +187,11 @@
       '--fushi-sub-align': s.textAlign === DEFAULTS.textAlign ? null : s.textAlign,
       '--fushi-sub-color': s.textColor ? s.textColor : null,
       '--fushi-sub-shadow': s.shadow === DEFAULTS.shadow ? null : SHADOWS[s.shadow],
+      // 真描边走 -webkit-text-stroke + paint-order: stroke fill（描边画在填充之下）：居中描边的
+      // 内半边被字身盖住，可见只剩一半，所以 ×2——与 app subtitleOutlineStrokeWidth 同一换算，
+      // 同一个「粗细」数值在 app 和网页上看起来一样粗。
+      '--fushi-sub-stroke': s.outlineWidth === 0 ? null
+        : (s.outlineWidth * 2) + 'px ' + (s.outlineColor || DEFAULT_OUTLINE_COLOR),
       '--fushi-sub-radius': s.borderRadius === DEFAULTS.borderRadius ? null : s.borderRadius + 'px',
       '--fushi-sub-padding': s.padding === DEFAULTS.padding ? null
         : (6 * s.padding / 100).toFixed(1) + 'px ' + (12 * s.padding / 100).toFixed(1) + 'px ' + (7 * s.padding / 100).toFixed(1) + 'px',
@@ -291,9 +318,9 @@
   // availH/W 是底板扣掉内边距后的可用尺寸（高来自设置里的底板高，不是实测高——底板写的是
   // min-height，内容一溢出盒子自己就长高了，拿实测高做分母永远判不出「放不下」）。
   //
-  // 返回 { fit, done }：fit 是下一轮该用的倍率，done=true 表示已经「刚好放下」可以收手。
+  // 返回 { fit, done }：fit 是下一轮该用的倍率，done=true 表示已经「放得下」可以收手。
   // 换行是非线性的（缩小字号可能少折一行，高度阶跃式下降），所以一次比例外推不保证到位，
-  // 由调用方迭代几轮；横向溢出（一个长到断不开的词）只许收、不许放。
+  // 由调用方迭代几轮。倍率被 FIT_RANGE 夹在 1 以下：有富余时最多回到设置字号，绝不为填满而放大。
   function nextFitScale(current, m, opts) {
     var fit = clampFit(current);
     var contentH = m && isFinite(m.contentH) ? m.contentH : 0;
@@ -309,7 +336,8 @@
     var next = clampFit(fit * ratio);
     // 收手条件：① 已经「放得下且基本填满」——ratio 是「可用 / 实测」，放得下是
     // ratio >= 1，填得满是 ratio <= 1 + 容差（写反边界就是「刚好溢出一点反而判收手」）；
-    // ② 倍率顶到区间边界后还想继续同方向走（再迭代也只会原地踏步）；③ 倍率变化小到看不出来。
+    // ② 倍率顶到区间边界后还想继续同方向走（再迭代也只会原地踏步）——设置字号下本来就放得下
+    // 的句子走的就是这条：fit = 1 = 上限，next 仍是 1，原地收手；③ 倍率变化小到看不出来。
     var done = (ratio >= 1 && ratio <= 1 + tol) ||
       (next === fit) ||
       (Math.abs(next - fit) / fit < 0.01);
@@ -341,7 +369,8 @@
     };
   }
 
-  // 自适应缩放的落地：把 textEl 里的整句缩放到「box 里刚好放下」，返回最终倍率。
+  // 自适应缩放的落地：设置字号下放不下的整句缩小到「box 里刚好放下」，返回最终倍率
+  // （放得下就是 1，即保持设置字号；只缩不放，见 FIT_RANGE）。
   // el = 底板（写 --fushi-sub-fit 的那个），textEl = 文字层（被测量的那个），frame = 视频盒 /
   // 预览舞台盒。网页覆盖层与 options 预览共用这一份，观感不可能对不上。
   //
@@ -432,6 +461,7 @@
     DEFAULT_FONT_FAMILY: DEFAULT_FONT_FAMILY,
     DEFAULT_TEXT_COLOR: DEFAULT_TEXT_COLOR,
     DEFAULT_BACKGROUND_COLOR: DEFAULT_BACKGROUND_COLOR,
+    DEFAULT_OUTLINE_COLOR: DEFAULT_OUTLINE_COLOR,
     normalize: normalize,
     isDefault: isDefault,
     toCssVars: toCssVars,

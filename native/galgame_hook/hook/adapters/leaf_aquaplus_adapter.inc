@@ -1,7 +1,9 @@
-// Exact WHITE ALBUM2 (Leaf/AQUAPLUS) adapter.  Engine-family names and *.pak
-// signatures never enable offsets: the one admitted x86 executable digest is
-// kept in leaf_aquaplus_profile.h.
+// WHITE ALBUM2 (Leaf/AQUAPLUS) adapter.  Engine-family names, *.pak files and
+// the executable digest never enable offsets: admission is the structural proof
+// in leaf_aquaplus_autoprofile.h (anchors -> return sites -> section roles),
+// run on the pristine on-disk image or, for packed builds, the runtime image.
 #include "leaf_aquaplus_profile.h"
+#include "leaf_aquaplus_autoprofile.h"
 
 // d3d9.h 由 dll_main.cpp 在系统头块里 include。本文件整体被 include 进
 // dll_main 的**匿名 namespace 内部**，在这里 include 系统头等于把整套 COM
@@ -31,8 +33,6 @@ constexpr DWORD kLeafIdentityRetryWindowMs = 15000;
 // 差值用无符号 32 位算，49.7 天回绕自动正确。
 volatile LONG g_leaf_identity_first_failure_tick = 0;
 volatile LONG g_leaf_identity_last_attempt_tick = 0;
-volatile LONG g_leaf_exact_binary_structure_state =
-    0; // 0 unknown, +1 hydrated structure match, -1 reject
 std::atomic<const fushi_voice_hook::LeafAquaplusProfile *>
     g_leaf_aquaplus_profile{nullptr};
 
@@ -614,7 +614,224 @@ bool IsLeafAquaplusIdentityUndecided() {
   return InterlockedCompareExchange(&g_leaf_aquaplus_profile_state, 0, 0) == 0;
 }
 
+// ── 身份：结构证明，不是 exe 摘要 ─────────────────────────────────────────
+//
+// 旧实现把准入钉在**单个** exe SHA-256 上：WHITE ALBUM2 换一个发行版 / 补丁版（实测：另一份
+// 2011 PC 版，五处锚点与全部 return site 只是整体位移、traversal 函数体内插了 0x13 字节）
+// 就一句都不认，四条能力全部掉线。判据改成引擎结构本身：leaf_autoprofile 的锚点推导 →
+// return site 解析（含帧形状，给两条栈偏移以结构依据）→ 节角色，三段全过才认领。
+// 证明不唯一 / 任何一段不成立 = 不认领、不装钩子。
+//
+// 读哪一份字节：
+//   1. 先读**磁盘原始映像**（LoadLeafPristineImage 的手工按节展开）。进程内存里 Luna 的
+//      HSX0:0 文本 hook 与我们自己的 detour 都会改写锚点字节（BUG-2052），原始映像不受影响，
+//      而且结论确定、只需算一次。
+//   2. 磁盘代码看起来带壳（可执行节无原始数据或高熵，见 LeafExecutableCodeLooksPacked）时，
+//      磁盘副本证明不了任何事，转去**运行时主模块**按生命周期重扫：每 500ms 一次、上限 120s。
+//      运行时映像上 hook 点允许已是注入模块的 detour（EmbedHookSiteIsIntact）。
+//      壳解完（运行时可执行节指纹与磁盘不同、且连续两拍不变）后再证明不了就是确定结论，
+//      立刻拒绝，不把 120s 的「未定」压在非 Leaf 的带壳游戏头上——未定期间通用护盾要为
+//      本 adapter 预留 GetAsyncKeyState（generic_input_shield.inc），拖满 120s 代价不小。
+//   3. 磁盘 exe 在重试窗口内始终读不到时，对运行时映像证明一次，结论即终局。
+//
+// exe 摘要仍然要算：交给共享槽（无人认领时的诊断）、置「已测量构建」诊断位，并对已测量
+// 构建做自检——摘要等于已测量构建、结构证明却推出不同锚点，说明推导本身错了，拒绝。
+constexpr DWORD kLeafRuntimeRescanIntervalMs = 500;
+constexpr DWORD kLeafRuntimeRescanWindowMs = 120000;
+
+// 0 未定；+1 磁盘证明成立；-1 磁盘未带壳且证明不成立（终局）；
+// -2 磁盘代码带壳（转运行时重扫）；-3 磁盘映像在重试窗口内始终读不到。
+volatile LONG g_leaf_pristine_verdict = 0;
+volatile LONG g_leaf_digest_published = 0;
+// 身份测量单入口：Poll 线程与模块加载分发可能同时问话，测量期间其余调用者按「未定」返回。
+volatile LONG g_leaf_identity_busy = 0;
+volatile LONG g_leaf_runtime_first_tick = 0;
+volatile LONG g_leaf_runtime_last_tick = 0;
+uint64_t g_leaf_pristine_code_fingerprint = 0u;
+uint64_t g_leaf_runtime_previous_fingerprint = 0u;
+fushi_voice_hook::LeafAquaplusProfile g_leaf_resolved_profile = {};
+
+#if defined(_M_IX86)
+// 各可执行节 [VirtualAddress, VirtualAddress+VirtualSize) 的 FNV-1a。只用于判断「壳解完了
+// 没有」：带壳磁盘副本 vs 运行时映像不同 = 运行期已改写代码。
+uint64_t LeafExecutableFingerprint(
+    const fushi_voice_hook::exact_lookup::LoadedPeImage &image) {
+  uint64_t hash = 1469598103934665603ull;
+  for (size_t index = 0; index < image.section_count; ++index) {
+    const auto &section = image.sections[index];
+    if ((section.characteristics & IMAGE_SCN_MEM_EXECUTE) == 0u)
+      continue;
+    if (section.rva >= image.size || section.size > image.size - section.rva)
+      continue;
+    const uint8_t *bytes = image.base + section.rva;
+    for (size_t offset = 0; offset < section.size; ++offset) {
+      hash ^= bytes[offset];
+      hash *= 1099511628211ull;
+    }
+  }
+  return hash;
+}
+
+// 运行时主模块上的证明 + 指纹。读的是本进程正在被壳改写的内存，任何一页都可能暂时不可读，
+// 所以整段放在 SEH 里；本函数只有 POD 局部，满足 __try 的限制。
+bool ProveLeafRuntimeImageUnsafe(
+    fushi_voice_hook::LeafAquaplusProfile *out, uint64_t *fingerprint,
+    fushi_voice_hook::leaf_autoprofile::LeafStructureProof *proof) {
+  fushi_voice_hook::exact_lookup::LoadedPeImage image;
+  if (!fushi_voice_hook::exact_lookup::OpenLoadedPeImage(
+          GetModuleHandleW(nullptr), &image)) {
+    return false;
+  }
+  image.absolute_base = reinterpret_cast<uintptr_t>(image.base);
+  if (fingerprint != nullptr)
+    *fingerprint = LeafExecutableFingerprint(image);
+  return fushi_voice_hook::leaf_autoprofile::ProveLeafStructure(
+      image, fushi_voice_hook::leaf_autoprofile::LeafImageSource::kRuntimeImage,
+      out, proof);
+}
+
+bool ProveLeafRuntimeImageGuarded(
+    fushi_voice_hook::LeafAquaplusProfile *out, uint64_t *fingerprint,
+    fushi_voice_hook::leaf_autoprofile::LeafStructureProof *proof) {
+  __try {
+    return ProveLeafRuntimeImageUnsafe(out, fingerprint, proof);
+  } __except (EXCEPTION_EXECUTE_HANDLER) {
+    return false;
+  }
+}
+
+// 证明失败时按段记事实（只记录，不参与判定）。锚点推导在第一处失败即返回，后面各处的
+// 命中计数停在 0，所以只给「走到了、且没过」的那几段置位。
+void RecordLeafStructureProofFailure(
+    const fushi_voice_hook::leaf_autoprofile::LeafStructureProof &proof) {
+  const auto &a = proof.anchors;
+  // 两处入口签名一个都没命中 = 根本不是这套引擎的代码：本函数对**每个** x86 游戏都会跑到，
+  // 不给无关游戏留 Leaf 的诊断位（旧摘要门下它们同样不留）。
+  if (!proof.anchors_ok && a.traversal_hits == 0u && a.raster_hits == 0u)
+    return;
+  SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2LeafStructureRejected);
+  if (!proof.anchors_ok) {
+    if (a.traversal_hits != 1u)
+      SetXAudioDiagnostic2(
+          fushi_voice_hook::kXAudioDiag2LeafTraversalAnchorMissed);
+    if (a.raster_hits != 1u)
+      SetXAudioDiagnostic2(
+          fushi_voice_hook::kXAudioDiag2LeafRasterAnchorMissed);
+    if (a.iat_found && a.poller_hits != 1u)
+      SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2LeafInputAnchorMissed);
+    if (a.poller_hits == 1u &&
+        (a.embed_hits != 1u || a.embed_site_detoured_rejected))
+      SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2LeafEmbedAnchorMissed);
+    if (a.embed_hits == 1u && !a.embed_site_detoured_rejected &&
+        a.device_hits != 1u)
+      SetXAudioDiagnostic2(
+          fushi_voice_hook::kXAudioDiag2LeafDeviceAnchorMissed);
+    return;
+  }
+  if (!proof.resolve_ok) {
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2LeafReturnSitesRejected);
+    return;
+  }
+  if (!proof.section_roles_ok)
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2LeafSectionRolesRejected);
+}
+
+// exe 摘要：只做诊断与已测量构建的自检，**不**决定认领。算出来一次就够。
+// 返回 true 表示摘要已知且等于已测量构建。
+bool MeasureLeafExecutableDigest(const wchar_t *executable, bool *is_measured) {
+  *is_measured = false;
+  static std::array<uint8_t, 32> digest = {};
+  static bool known = false;
+  if (!known) {
+    if (!Sha256FileForLeafAquaplus(executable, &digest)) {
+      SetXAudioDiagnostic2(
+          fushi_voice_hook::kXAudioDiag2LeafExecutableUnmeasurable);
+      return false;
+    }
+    known = true;
+    fushi_voice_hook::PublishHostExecutableSha256(digest.data(),
+                                                  digest.size());
+    InterlockedExchange(&g_leaf_digest_published, 1);
+  }
+  *is_measured = fushi_voice_hook::MatchesLeafAquaplusDigest(
+      fushi_voice_hook::kWhiteAlbum2LeafAquaplusProfile, digest.data(),
+      digest.size());
+  if (*is_measured)
+    SetXAudioDiagnostic2(
+        fushi_voice_hook::kXAudioDiag2LeafIdentityHashMatched);
+  return true;
+}
+
+// 认领 / 拒绝的唯一写入口。profile 在 release-store 之前已写完。
+bool CommitLeafAquaplusIdentity(
+    const fushi_voice_hook::LeafAquaplusProfile *resolved, bool digest_known,
+    bool digest_is_measured) {
+  const fushi_voice_hook::LeafAquaplusProfile *profile = nullptr;
+  if (resolved != nullptr) {
+    // 已测量构建的自检：同一份 exe，结构推导必须推出已测量的那套锚点。
+    const bool self_check_ok =
+        !digest_known || !digest_is_measured ||
+        (resolved->stack_cookie_rva ==
+             fushi_voice_hook::kWhiteAlbum2LeafAquaplusProfile
+                 .stack_cookie_rva &&
+         resolved->text_traversal_rva ==
+             fushi_voice_hook::kWhiteAlbum2LeafAquaplusProfile
+                 .text_traversal_rva &&
+         resolved->raster_draw_rva ==
+             fushi_voice_hook::kWhiteAlbum2LeafAquaplusProfile
+                 .raster_draw_rva &&
+         resolved->embed_leaf_hook_rva ==
+             fushi_voice_hook::kWhiteAlbum2LeafAquaplusProfile
+                 .embed_leaf_hook_rva &&
+         resolved->glyph_single_return_rva ==
+             fushi_voice_hook::kWhiteAlbum2LeafAquaplusProfile
+                 .glyph_single_return_rva &&
+         resolved->voice_archive_read_return_rva ==
+             fushi_voice_hook::kWhiteAlbum2LeafAquaplusProfile
+                 .voice_archive_read_return_rva);
+    if (self_check_ok) {
+      g_leaf_resolved_profile = *resolved;
+      profile = &g_leaf_resolved_profile;
+    } else {
+      SetXAudioDiagnostic2(
+          fushi_voice_hook::kXAudioDiag2LeafReturnSitesRejected);
+    }
+  }
+  g_leaf_aquaplus_profile.store(profile, std::memory_order_release);
+  if (profile != nullptr) {
+    InterlockedOr(
+        reinterpret_cast<volatile LONG *>(&FushiLeafD3DTraceV1.reserved), 0x01);
+  }
+  InterlockedExchange(&g_leaf_aquaplus_profile_state,
+                      profile != nullptr ? 1 : -1);
+  return profile != nullptr;
+}
+
+bool MeasureLeafAquaplusIdentityExclusive();
+#endif  // _M_IX86
+
 bool IsLeafAquaplusProfileMatched() {
+  const LONG cached =
+      InterlockedCompareExchange(&g_leaf_aquaplus_profile_state, 0, 0);
+  if (cached != 0)
+    return cached > 0;
+#if !defined(_M_IX86)
+  // 这套引擎只有 32 位构建；x64 hook 里结构证明的所有模式都无意义。
+  InterlockedExchange(&g_leaf_aquaplus_profile_state, -1);
+  return false;
+#else
+  if (InterlockedCompareExchange(&g_leaf_identity_busy, 1, 0) != 0)
+    return false;
+  const bool matched = MeasureLeafAquaplusIdentityExclusive();
+  InterlockedExchange(&g_leaf_identity_busy, 0);
+  return matched;
+#endif
+}
+
+#if defined(_M_IX86)
+bool MeasureLeafAquaplusIdentityExclusive() {
   const LONG cached =
       InterlockedCompareExchange(&g_leaf_aquaplus_profile_state, 0, 0);
   if (cached != 0)
@@ -626,293 +843,93 @@ bool IsLeafAquaplusProfileMatched() {
   const DWORD chars = GetModuleFileNameW(
       nullptr, executable,
       static_cast<DWORD>(sizeof(executable) / sizeof(executable[0])));
-  HMODULE module = GetModuleHandleW(nullptr);
-  uint16_t machine = 0;
-  if (module != nullptr) {
-    const auto *dos = reinterpret_cast<const IMAGE_DOS_HEADER *>(module);
-    if (dos->e_magic == IMAGE_DOS_SIGNATURE) {
-      const auto *nt = reinterpret_cast<const IMAGE_NT_HEADERS *>(
-          reinterpret_cast<const uint8_t *>(module) + dos->e_lfanew);
-      if (nt->Signature == IMAGE_NT_SIGNATURE)
-        machine = nt->FileHeader.Machine;
+  const bool path_ok =
+      chars != 0 && chars < sizeof(executable) / sizeof(executable[0]);
+  bool digest_is_measured = false;
+  const bool digest_known =
+      path_ok && MeasureLeafExecutableDigest(executable, &digest_is_measured);
+
+  LONG pristine =
+      InterlockedCompareExchange(&g_leaf_pristine_verdict, 0, 0);
+  if (pristine == 0) {
+    LeafPristineImage image_copy;
+    const bool pristine_ready =
+        path_ok && LoadLeafPristineImage(executable, &image_copy);
+    fushi_voice_hook::exact_lookup::LoadedPeImage image;
+    const bool opened =
+        pristine_ready && image_copy.preferred_base != 0u &&
+        fushi_voice_hook::exact_lookup::OpenLoadedPeImage(
+            reinterpret_cast<HMODULE>(image_copy.base), &image);
+    if (!opened) {
+      // 「这一拍没映上」不是「结构不符」：杀软扫描期占住文件、共享冲突、32 位地址空间
+      // 碎片都能让它临时失败（BUG-2051 同一类事实）。窗口内保持未定。
+      SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2LeafImageUnopened);
+      if (!LeafIdentityRetryWindowExhausted())
+        return false;
+      pristine = -3;
+    } else {
+      // 读字节用私有副本地址；解绝对操作数用首选基址（副本未施加重定位）。
+      image.absolute_base = image_copy.preferred_base;
+      fushi_voice_hook::LeafAquaplusProfile resolved;
+      fushi_voice_hook::leaf_autoprofile::LeafStructureProof proof;
+      if (fushi_voice_hook::leaf_autoprofile::ProveLeafStructure(
+              image,
+              fushi_voice_hook::leaf_autoprofile::LeafImageSource::
+                  kPristineFile,
+              &resolved, &proof)) {
+        InterlockedExchange(&g_leaf_pristine_verdict, 1);
+        return CommitLeafAquaplusIdentity(&resolved, digest_known,
+                                          digest_is_measured);
+      }
+      if (fushi_voice_hook::leaf_autoprofile::LeafExecutableCodeLooksPacked(
+              image)) {
+        g_leaf_pristine_code_fingerprint = LeafExecutableFingerprint(image);
+        pristine = -2;
+      } else {
+        RecordLeafStructureProofFailure(proof);
+        pristine = -1;
+      }
     }
+    InterlockedExchange(&g_leaf_pristine_verdict, pristine);
   }
-  std::array<uint8_t, 32> digest = {};
-  const bool executable_read =
-      chars != 0 && chars < sizeof(executable) / sizeof(executable[0]) &&
-      Sha256FileForLeafAquaplus(executable, &digest);
-  if (!executable_read) {
-    // 「量不到」不是「不匹配」。旧实现让这次失败沿用与"哈希不符"同一条 -1 路径写进
-    // g_leaf_aquaplus_profile_state，而那是**永久**缓存：probe() 此后直接返回 false，
-    // 本会话的 Leaf adapter 就此出局 —— 没有 adapter 认领 → 准入汇总收敛成
-    // EngineUnsupported、LAC 原声 hook 一次都不装，用户看到的是整场音频降级到系统
-    // Loopback。而首次 probe 可能落在注入窗口内：摘要要走 BCrypt + 文件映射，在
-    // loader lock 或 hook 安装中途失败是瞬时条件，下一拍 Poll 就能量到。同一台机器
-    // 同一个游戏，有的会话原声正常、有的整场降级，差别就在这一拍。
-    //
-    // 所以只有**测量成功**才允许写缓存。重试有界：窗口用尽后照旧钉死，那时"读不到"
-    // 才是个确定结论，而不是一次运气不好。
-    SetXAudioDiagnostic2(
-        fushi_voice_hook::kXAudioDiag2LeafExecutableUnmeasurable);
-    if (!LeafIdentityRetryWindowExhausted()) {
+
+  if (pristine == -1)
+    return CommitLeafAquaplusIdentity(nullptr, digest_known,
+                                      digest_is_measured);
+
+  // 运行时主模块。
+  const DWORD now = GetTickCount() | 1u;
+  if (pristine == -2) {
+    const DWORD last = static_cast<DWORD>(
+        InterlockedCompareExchange(&g_leaf_runtime_last_tick, 0, 0));
+    if (last != 0u && now - last < kLeafRuntimeRescanIntervalMs)
       return false;
-    }
-    g_leaf_aquaplus_profile.store(nullptr, std::memory_order_release);
-    InterlockedExchange(&g_leaf_aquaplus_profile_state, -1);
-    return false;
+    InterlockedExchange(&g_leaf_runtime_last_tick, static_cast<LONG>(now));
+    InterlockedCompareExchange(&g_leaf_runtime_first_tick,
+                               static_cast<LONG>(now), 0);
   }
-  const auto *profile =
-      executable_read && fushi_voice_hook::MatchesLeafAquaplusProfile(
-                             fushi_voice_hook::kWhiteAlbum2LeafAquaplusProfile,
-                             digest.data(), digest.size(), machine)
-          ? &fushi_voice_hook::kWhiteAlbum2LeafAquaplusProfile
-          : nullptr;
-  // 摘要已算出，交给共享槽。白2 的准入是**单个** exe hash，用户拿到不同发行版/补丁版
-  // 就必然落空，此时唯一能推进事情的信息就是他这份 hash 是多少——而那一刻本 adapter
-  // 的 probe() 也跟着落空、不再被问话，所以摘要不能留在自己家里（见 host_executable_digest.h）。
-  // 本函数对**任何** x86 游戏都会跑到这里，于是共享槽在"谁都没认领"的场合也是满的。
-  if (executable_read) {
-    fushi_voice_hook::PublishHostExecutableSha256(digest.data(), digest.size());
+  fushi_voice_hook::LeafAquaplusProfile resolved;
+  fushi_voice_hook::leaf_autoprofile::LeafStructureProof proof;
+  uint64_t fingerprint = 0u;
+  if (ProveLeafRuntimeImageGuarded(&resolved, &fingerprint, &proof))
+    return CommitLeafAquaplusIdentity(&resolved, digest_known,
+                                      digest_is_measured);
+  if (pristine == -2) {
+    // 壳解完且代码已稳定（与磁盘不同、连续两拍相同）：运行时证明是确定结论。
+    const bool unpacked_and_settled =
+        fingerprint != 0u && fingerprint != g_leaf_pristine_code_fingerprint &&
+        fingerprint == g_leaf_runtime_previous_fingerprint;
+    g_leaf_runtime_previous_fingerprint = fingerprint;
+    const DWORD first = static_cast<DWORD>(
+        InterlockedCompareExchange(&g_leaf_runtime_first_tick, 0, 0));
+    if (!unpacked_and_settled && now - first < kLeafRuntimeRescanWindowMs)
+      return false;
   }
-  if (profile != nullptr) {
-    // 哈希 + machine 已匹配。这一位必须在结构门**之前**置位：否则「exe 根本读不到 /
-    // 哈希不是这个发行版」和「哈希对但二进制结构校验没过」在诊断上同形，而它们的处置
-    // 完全不同（前者要用户报摘要，后者要重测锚点）。
-    SetXAudioDiagnostic2(
-        fushi_voice_hook::kXAudioDiag2LeafIdentityHashMatched);
-    const LONG structure_cached = InterlockedCompareExchange(
-        &g_leaf_exact_binary_structure_state, 0, 0);
-    bool structure_matched = structure_cached > 0;
-    if (structure_cached == 0) {
-#if defined(_M_IX86)
-      // 结构校验必须读**磁盘上的原始映像**，不能读进程内存。
-      //
-      // 这五处掩码模式扫的都是会被 hook 改写的地址，而其中 embed_leaf_hook_rva 正是
-      // profile 自己指定给 LunaHook 的 HSX0:0 文本 hook 点（VA 0x004512bf）。Luna 的
-      // detour 一落下，那段字节就不再匹配，唯一命中数变 0 → 结构门判否 → adapter 不
-      // 认领 → 几何 provider 不上线、输入护盾不装、LAC 原声 hook 不装，用户看到的就是
-      // 「点击穿透到下一句」+「语音整场降级 Loopback」。而 Luna 的 hook 何时装上取决于
-      // 它何时观测到第一句输出，于是同一个游戏有的会话正常、有的全废。
-      //
-      // text_traversal_rva / raster_draw_rva 同样是**我们自己**在 InstallLeafAquaplus-
-      // D3DTrace 里要 hook 的地址，今天只因结果被永久缓存才没暴露同一个问题。
-      //
-      // 身份是「这个 exe 是不是那份被测量过的构建」——那是文件的属性，不是当前进程内存
-      // 的属性。所以这里映射磁盘上的那一份来扫。取原始映像走 LoadLeafPristineImage 的
-      // 手工按节展开（平坦数据映射 + memcpy），**不是** LOAD_LIBRARY_AS_IMAGE_RESOURCE：
-      // 后者对本进程自己的主映像会别名回已加载的那一份，修了等于没修（见该函数注释）。
-      // 手工展开不经加载器、不执行代码、不施加重定位，因此绝对操作数仍编码首选基址，
-      // 要用 image.absolute_base 告诉解码器这一点。
-      fushi_voice_hook::exact_lookup::LoadedPeImage image;
-      LeafPristineImage pristine;
-      const bool pristine_ready =
-          LoadLeafPristineImage(executable, &pristine);
-      // 「原始映像这一拍没映上」不是「结构不符」，和上面「exe 摘要量不到」是同一
-      // 类事实。LoadLeafPristineImage 走 CreateFileW + CreateFileMappingW +
-      // VirtualAlloc：杀软扫描期占住文件、共享冲突、32 位地址空间碎片都能让它临时
-      // 失败。而往下走一路的结局是 opened=false → 三组全 false →
-      // g_leaf_exact_binary_structure_state 被 InterlockedExchange 成 -1 →
-      // profile 置空 → g_leaf_aquaplus_profile_state 永久 -1，症状与摘要量不到
-      // 那条一模一样：LAC 原声 hook 一次都不装、整场音频降级系统 Loopback，
-      // 外加输入护盾不装的点击穿透。
-      //
-      // 结构门在改成读磁盘原始映像之前只读进程内存、根本没有文件 IO，这条失败面是
-      // 本次修法自己引进来的，必须共用同一个有界重试窗口。窗口内直接返回，
-      // 不写 g_leaf_exact_binary_structure_state，也不写 g_leaf_aquaplus_profile_state。
-      //
-      // 只对 pristine_ready 设闸：OpenLoadedPeImage 之后的判定读的都是这份已在内存
-      // 里的私有副本，是确定性的，再重试多少次结论都一样。
-      if (!pristine_ready) {
-        SetXAudioDiagnostic2(fushi_voice_hook::kXAudioDiag2LeafImageUnopened);
-        if (!LeafIdentityRetryWindowExhausted()) {
-          return false;
-        }
-      }
-      const uintptr_t preferred_base = pristine.preferred_base;
-      const bool opened =
-          pristine_ready && preferred_base != 0u &&
-          fushi_voice_hook::exact_lookup::OpenLoadedPeImage(
-              reinterpret_cast<HMODULE>(pristine.base), &image) &&
-          image.machine == IMAGE_FILE_MACHINE_I386 &&
-          image.pointer_bits == 32u;
-      // 读字节用映射地址；解绝对操作数用首选基址。
-      image.absolute_base = preferred_base;
-      const uintptr_t base = reinterpret_cast<uintptr_t>(image.base);
-      const uintptr_t expected_cookie =
-          preferred_base + profile->stack_cookie_rva;
-      const uintptr_t expected_input_iat =
-          preferred_base + profile->get_async_key_state_iat_rva;
-      const uintptr_t expected_device =
-          preferred_base + profile->d3d9_device_pointer_rva;
-      const uintptr_t input_anchor_rva =
-          profile->input_poller_first_return_rva >= 10u
-              ? profile->input_poller_first_return_rva - 10u
-              : 0u;
-
-      fushi_voice_hook::exact_lookup::UniquePatternMatch traversal;
-      fushi_voice_hook::exact_lookup::UniquePatternMatch raster;
-      fushi_voice_hook::exact_lookup::UniquePatternMatch input;
-      fushi_voice_hook::exact_lookup::UniquePatternMatch embed;
-      fushi_voice_hook::exact_lookup::UniquePatternMatch device;
-      if (opened) {
-        traversal = fushi_voice_hook::exact_lookup::
-            FindUniqueAbsolute32PatternInExecutableSections(
-                image,
-                fushi_voice_hook::leaf_exact::kTextTraversalEntryPattern,
-                fushi_voice_hook::leaf_exact::
-                    kTextTraversalCookieOperandOffset,
-                expected_cookie);
-        raster = fushi_voice_hook::exact_lookup::
-            FindUniqueAbsolute32PatternInExecutableSections(
-                image, fushi_voice_hook::leaf_exact::kRasterDrawEntryPattern,
-                fushi_voice_hook::leaf_exact::kRasterDrawCookieOperandOffset,
-                expected_cookie);
-        input = fushi_voice_hook::exact_lookup::
-            FindUniqueAbsolute32PatternInExecutableSections(
-                image, fushi_voice_hook::leaf_exact::kInputPollerEntryPattern,
-                fushi_voice_hook::leaf_exact::kInputPollerIatOperandOffset,
-                expected_input_iat);
-        embed = fushi_voice_hook::exact_lookup::
-            FindUniquePatternInExecutableSections(
-                image, fushi_voice_hook::leaf_exact::kEmbedLoopAnchorPattern);
-        device = fushi_voice_hook::exact_lookup::
-            FindUniqueAbsolute32PatternInExecutableSections(
-                image, fushi_voice_hook::leaf_exact::kD3dDeviceAccessPattern,
-                fushi_voice_hook::leaf_exact::
-                    kD3dDevicePointerOperandOffset,
-                expected_device);
-      }
-
-      const auto executable_rva = [&image](uintptr_t rva, size_t bytes = 1u) {
-        return fushi_voice_hook::exact_lookup::SectionHasRole(
-            fushi_voice_hook::exact_lookup::FindSectionForRva(image, rva,
-                                                               bytes),
-            IMAGE_SCN_MEM_EXECUTE);
-      };
-      const auto data_rva = [&image](uintptr_t rva, size_t bytes,
-                                     uint32_t required) {
-        return fushi_voice_hook::exact_lookup::SectionHasRole(
-            fushi_voice_hook::exact_lookup::FindSectionForRva(image, rva,
-                                                               bytes),
-            required, IMAGE_SCN_MEM_EXECUTE);
-      };
-      const bool section_roles_ok =
-          opened && input_anchor_rva != 0u &&
-          executable_rva(profile->embed_leaf_hook_rva) &&
-          executable_rva(profile->text_traversal_rva,
-                         sizeof(fushi_voice_hook::leaf_exact::
-                                    kTextTraversalEntryBytes)) &&
-          executable_rva(profile->raster_draw_rva,
-                         sizeof(fushi_voice_hook::leaf_exact::
-                                    kRasterDrawEntryBytes)) &&
-          executable_rva(profile->glyph_dispatch_rva) &&
-          executable_rva(profile->input_poller_first_return_rva) &&
-          executable_rva(profile->input_poller_last_return_rva) &&
-          executable_rva(profile->raster_glyph_return_rva) &&
-          executable_rva(profile->glyph_single_return_rva) &&
-          executable_rva(profile->glyph_double_first_return_rva) &&
-          executable_rva(profile->glyph_double_second_return_rva) &&
-          executable_rva(profile->quad_draw_return_rva) &&
-          executable_rva(profile->alternate_quad_draw_return_rva) &&
-          executable_rva(profile->voice_archive_read_return_rva) &&
-          data_rva(profile->d3d9_device_pointer_rva, sizeof(uintptr_t),
-                   IMAGE_SCN_MEM_WRITE) &&
-          data_rva(profile->stack_cookie_rva, sizeof(uint32_t),
-                   IMAGE_SCN_MEM_WRITE) &&
-          data_rva(profile->get_async_key_state_iat_rva, sizeof(uint32_t),
-                   IMAGE_SCN_MEM_READ) &&
-          data_rva(profile->read_file_iat_rva, sizeof(uint32_t),
-                   IMAGE_SCN_MEM_READ);
-      const bool anchors_ok =
-          opened &&
-          traversal.count == 1u &&
-          reinterpret_cast<uintptr_t>(traversal.address) ==
-              base + profile->text_traversal_rva &&
-          raster.count == 1u &&
-          reinterpret_cast<uintptr_t>(raster.address) ==
-              base + profile->raster_draw_rva &&
-          input.count == 1u &&
-          reinterpret_cast<uintptr_t>(input.address) ==
-              base + input_anchor_rva &&
-          embed.count == 1u &&
-          reinterpret_cast<uintptr_t>(embed.address) +
-                  fushi_voice_hook::leaf_exact::kEmbedHookOffsetFromAnchor ==
-              base + profile->embed_leaf_hook_rva &&
-          device.count == 1u;
-      const bool return_sites_ok =
-          opened &&
-          fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
-              image, profile->raster_glyph_return_rva,
-              profile->raster_draw_rva) &&
-          fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
-              image, profile->glyph_single_return_rva,
-              profile->glyph_dispatch_rva) &&
-          fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
-              image, profile->glyph_double_first_return_rva,
-              profile->glyph_dispatch_rva) &&
-          fushi_voice_hook::exact_lookup::MatchesRel32CallEndingAt(
-              image, profile->glyph_double_second_return_rva,
-              profile->glyph_dispatch_rva) &&
-          fushi_voice_hook::exact_lookup::MatchesRegisterIndirectCallEndingAt(
-              image, profile->quad_draw_return_rva, 0xd0u) &&
-          fushi_voice_hook::exact_lookup::MatchesRegisterIndirectCallEndingAt(
-              image, profile->alternate_quad_draw_return_rva, 0xd0u) &&
-          fushi_voice_hook::exact_lookup::MatchesRegisterIndirectCallEndingAt(
-              image, profile->input_poller_first_return_rva, 0xd6u) &&
-          fushi_voice_hook::exact_lookup::MatchesRegisterIndirectCallEndingAt(
-              image, profile->input_poller_last_return_rva, 0xd6u) &&
-          fushi_voice_hook::exact_lookup::MatchesAbsoluteIndirectCallEndingAt(
-              image, profile->voice_archive_read_return_rva,
-              profile->read_file_iat_rva);
-      structure_matched = section_roles_ok && anchors_ok && return_sites_ok;
-      // 结构门失败时按组记录事实（只记录，不参与上面的判定）：exe 哈希逐字节匹配却仍
-      // 不被认领时，唯一能推进事情的信息就是这条 ~25 项 && 链断在哪一组。
-      if (!structure_matched) {
-        SetXAudioDiagnostic2(
-            fushi_voice_hook::kXAudioDiag2LeafStructureRejected);
-        if (!opened)
-          SetXAudioDiagnostic2(
-              fushi_voice_hook::kXAudioDiag2LeafImageUnopened);
-        if (!section_roles_ok)
-          SetXAudioDiagnostic2(
-              fushi_voice_hook::kXAudioDiag2LeafSectionRolesRejected);
-        if (traversal.count != 1u)
-          SetXAudioDiagnostic2(
-              fushi_voice_hook::kXAudioDiag2LeafTraversalAnchorMissed);
-        if (raster.count != 1u)
-          SetXAudioDiagnostic2(
-              fushi_voice_hook::kXAudioDiag2LeafRasterAnchorMissed);
-        if (input.count != 1u)
-          SetXAudioDiagnostic2(
-              fushi_voice_hook::kXAudioDiag2LeafInputAnchorMissed);
-        if (embed.count != 1u)
-          SetXAudioDiagnostic2(
-              fushi_voice_hook::kXAudioDiag2LeafEmbedAnchorMissed);
-        if (device.count != 1u)
-          SetXAudioDiagnostic2(
-              fushi_voice_hook::kXAudioDiag2LeafDeviceAnchorMissed);
-        if (section_roles_ok && anchors_ok && !return_sites_ok)
-          SetXAudioDiagnostic2(
-              fushi_voice_hook::kXAudioDiag2LeafReturnSitesRejected);
-      }
-#else
-      structure_matched = false;
-#endif
-      InterlockedExchange(&g_leaf_exact_binary_structure_state,
-                          structure_matched ? 1 : -1);
-    }
-    if (!structure_matched)
-      profile = nullptr;
-  }
-  g_leaf_aquaplus_profile.store(profile, std::memory_order_release);
-  if (profile != nullptr) {
-    InterlockedOr(
-        reinterpret_cast<volatile LONG *>(&FushiLeafD3DTraceV1.reserved), 0x01);
-  }
-  InterlockedExchange(&g_leaf_aquaplus_profile_state,
-                      profile != nullptr ? 1 : -1);
-  return profile != nullptr;
+  RecordLeafStructureProofFailure(proof);
+  return CommitLeafAquaplusIdentity(nullptr, digest_known,
+                                    digest_is_measured);
 }
+#endif
 
 // ── WHITE ALBUM2 LAC original-voice capture ────────────────────────────────
 // The shared KernelBase detour in siglus_adapter.inc only dispatches metadata.

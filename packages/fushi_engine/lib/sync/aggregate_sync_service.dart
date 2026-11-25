@@ -1,10 +1,14 @@
 import 'dart:convert';
+import 'dart:isolate';
+import 'dart:typed_data';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
 import 'package:fushi_engine/sync/aggregate_peer_snapshot_cache.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
+import 'package:fushi_engine/sync/aggregate_sync_owner.dart';
 import 'package:fushi_engine/sync/aggregate_web_browser.dart';
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_engine/sync/sync_channel_scope.dart';
 import 'package:fushi_audio/fushi_audio_core.dart'
@@ -36,6 +40,21 @@ bool _isAggregateAsset(String name) =>
     name.endsWith(_aggregateAssetSuffix) ||
     name.endsWith(_legacyAggregateAssetSuffix);
 
+/// 聚合快照资产名（新后缀或 Hibiki 时代旧后缀）→ 写它的设备 id；不是聚合快照
+/// （或设备 id 为空）返回 null。后缀口径只在本文件写一次，app 侧（书级变更闸门识别
+/// 旧版客户端）调它，不另抄一份后缀表。
+String? aggregateSnapshotDeviceOf(String name) {
+  for (final String suffix in const <String>[
+    _aggregateAssetSuffix,
+    _legacyAggregateAssetSuffix,
+  ]) {
+    if (name.endsWith(suffix) && name.length > suffix.length) {
+      return name.substring(0, name.length - suffix.length);
+    }
+  }
+  return null;
+}
+
 /// 设备级「同步浏览历史」开关的偏好键（云备份与互联两条通道共用，host 侧也认）。
 ///
 /// **缺行 = 关**：v128 起浏览历史进聚合快照，若跟「共享收藏」走，已开共享收藏的
@@ -48,10 +67,24 @@ const String kSyncWebHistoryPrefKey = 'sync_web_history_enabled';
 Future<bool> readWebHistorySyncEnabled(FushiDatabase db) =>
     db.getPrefTyped<bool>(kSyncWebHistoryPrefKey, false);
 
-/// Preference key holding the favorite-sentence JSON list. Mirrors
-/// `FavoriteSentenceRepository._key` and BackupMergeEngine's constant; kept in
-/// sync behaviourally by favorite_sentence_merge_import_test.dart.
-const String _favoriteSentencesPrefKey = 'favorite_sentences';
+/// 一轮聚合同步「折叠」步骤的纯计算结果（在后台所有者里算，只留在那边）。
+class AggregateFoldPlan {
+  const AggregateFoldPlan({
+    required this.merged,
+    required this.applyNeeded,
+    this.peerFingerprint,
+  });
+
+  /// 本地快照与全部对端快照折叠后的结果。
+  final AggregateSnapshot merged;
+
+  /// [merged] 相对本地快照是否有写回增量（[AggregateSyncService.localDelta] 非 null）。
+  final bool applyNeeded;
+
+  /// 互联通道：host 快照（按共享许可裁剪后）的 [AggregateSyncService.
+  /// unorderedSnapshotFingerprint]，供 PUT 跳过判据用；云通道为 null。
+  final String? peerFingerprint;
+}
 
 /// Drives the `aggregate` sync dimension over any cloud [SyncAssetStore]
 /// (Google Drive / OneDrive / Dropbox / WebDAV / FTP / SFTP), the TODO-1056
@@ -75,7 +108,7 @@ const String _favoriteSentencesPrefKey = 'favorite_sentences';
 /// resurrected from a peer snapshot); statistics only ever move up (per-bucket
 /// MAX, never SUM, so a re-sync never double-counts). No schema change: the
 /// snapshot is a transient JSON asset, the local state lives in the existing
-/// statistic tables + favorite_sentences pref.
+/// statistic tables + favorite_sentences table (v166; a pref JSON list before).
 class AggregateSyncService {
   AggregateSyncService(
     this._db, {
@@ -93,7 +126,7 @@ class AggregateSyncService {
   /// 包住「把合并结果写回本地 DB」这一步的窄互斥（BUG-2717）。
   ///
   /// 本机同时是互联 host 时，对端 PUT 来的快照经 host 的
-  /// `applyAggregateSnapshot` → [foldIntoLocal] 落进同一批统计 / 收藏表；两边
+  /// `applyAggregateBody` → [applyWireBody] → [foldIntoLocal] 落进同一批统计 / 收藏表；两边
   /// 都是「materialize → MAX 折叠 → 绝对值写回」，交错就会让后写者用陈旧的
   /// 较小值覆盖先写者（丢更新）。app 把 host 侧与这里接到同一把锁上。
   ///
@@ -129,15 +162,37 @@ class AggregateSyncService {
     bool shareWebHistory = false,
   }) async {
     if (!shareStats && !shareWebHistory) return false;
-    AggregateSnapshot scoped(AggregateSnapshot s) => s.select(
-      stats: shareStats,
-      favorites: shareStats,
-      webHistory: shareWebHistory,
-    );
 
-    // 1) Materialise local state.
-    final AggregateSnapshot localSnapshot = scoped(
-      await materializeLocalSnapshot(),
+    // HBK-AUDIT-028：DB 读取、快照组装、折叠、写回、墓碑裁剪、上行编码 / 哈希都在
+    // 同一个后台所有者里做，整份快照只活在那边；这里只发命令、收轻量结果。
+    final AggregateSyncOwner owner = await AggregateSyncOwner.spawn(_db);
+    try {
+      return await _syncWithOwner(
+        owner,
+        store: store,
+        deviceId: deviceId,
+        shareStats: shareStats,
+        shareWebHistory: shareWebHistory,
+      );
+    } finally {
+      await owner.close();
+    }
+  }
+
+  Future<bool> _syncWithOwner(
+    AggregateSyncOwner owner, {
+    required SyncAssetStore store,
+    required String deviceId,
+    required bool shareStats,
+    required bool shareWebHistory,
+  }) async {
+    // 1) Materialise local state（在所有者里，结果留在那边）。
+    await owner.run(
+      _materializeCommand(
+        stats: shareStats,
+        favorites: shareStats,
+        webHistory: shareWebHistory,
+      ),
     );
 
     // 2) Ensure the reserved namespace, list peer snapshots.
@@ -152,7 +207,6 @@ class AggregateSyncService {
     // 3) Fold every OTHER device's snapshot into the local one. Own asset is
     //    skipped (it is a stale echo of our own state; re-folding it is a no-op
     //    anyway, but skipping saves a download).
-    AggregateSnapshot merged = localSnapshot;
     final List<AssetEntry> peerEntries = <AssetEntry>[
       for (final AssetEntry entry in children)
         if (!entry.isFolder &&
@@ -161,29 +215,44 @@ class AggregateSyncService {
             entry.name != ownLegacyAssetName)
           entry,
     ];
+    // BUG-5159：传输层只搬**原样字节**（`getBytesAsset` / 字节级副本缓存），
+    // 报文体解码、按许可裁剪、折叠都在所有者里做——与互联通道同一套
+    // `aggregate_wire_codec.dart`，调用方（UI isolate）上没有整份快照的 JSON 工作。
+    // 折叠命令不等它做完就去下载下一份：所有者按到达顺序逐条执行，解码与下一份
+    // 的网络传输重叠；字节随 TransferableTypedData 移交。
+    final List<Future<void>> folds = <Future<void>>[];
     for (final AssetEntry entry in peerEntries) {
-      Object? peerJson;
+      final Uint8List? body;
       try {
-        peerJson = await _readPeerSnapshot(store, entry);
+        body = await _readPeerSnapshot(store, entry);
       } catch (_) {
         // A single unreadable peer snapshot must not abort the sweep; skip it.
         continue;
       }
-      final AggregateSnapshot peer = scoped(
-        AggregateSnapshot.fromJson(peerJson),
-      );
-      merged = mergeSnapshots(merged, peer);
+      if (body == null) continue;
+      // 先挂上处理器：下一份下载期间它若失败，不能算未处理的异步错误；错误仍在
+      // 下面的 Future.wait 里原样抛出。
+      final Future<void> fold = owner.run(
+        _foldPeerCommand(
+          _transferable(body),
+          stats: shareStats,
+          favorites: shareStats,
+          webHistory: shareWebHistory,
+        ),
+      )..ignore();
+      folds.add(fold);
     }
+    await Future.wait(folds);
     await peerSnapshotCache?.retainOnly(scope.id, <String>{
       for (final AssetEntry e in peerEntries) e.name,
     });
+    // 写回增量判定在所有者里做，合并结果留在那边，只回「要不要写回」。
+    final bool applyNeeded = await owner.run(_cloudApplyNeededCommand());
 
     // 4) Apply the merged result back locally (MAX / union writes; idempotent).
     //    合并结果与本地内容相等（[localDelta] 为 null）时整步跳过：mergeSnapshots
     //    每次都返回新对象，旧的 `identical` 判据恒真，稳态每轮都要整库重写。
-    if (localDelta(merged, localSnapshot) != null) {
-      await _applyMergedLocally(merged);
-    }
+    if (applyNeeded) await _applyMergedLocally(owner);
 
     // 5) Upload this device's now-merged snapshot so peers converge next sync.
     //    BUG-1572：上行前先过墓碑。merged 是 local ∪ peer，peer 那份仍带着本机**已
@@ -193,8 +262,9 @@ class AggregateSyncService {
     //    清掉后拉回来）= 数据复活。裁剪规则与 applySnapshotToLocal 同源（filterTombstoned）。
     //    Nothing to share on a device with an empty merged state and no peers:
     //    skip the write so a fresh device does not litter an empty asset.
-    final AggregateSnapshot outgoing = await filterTombstoned(merged);
-    if (outgoing.isEmpty) return false;
+    //    裁剪 + 编码 + 哈希在所有者里做；全空回 null。
+    final String? hash = await owner.run(_cloudOutgoingHashCommand());
+    if (hash == null) return false;
 
     // 内容与本端上次上传的完全一致时不再重传：远端那份就是这份，重写一遍除了让
     // 所有对端误以为「本端又改了远端」之外没有任何作用。
@@ -202,8 +272,6 @@ class AggregateSyncService {
     // 判据同时要求**远端确实还存在**本端那份资产（`children` 里已经列到了，免费）：
     // 只信本地记录的话，远端那份被删掉后本端会永远拒绝重传，peers 再也拿不到本端
     // 的数据。
-    final Map<String, dynamic> payload = outgoing.toJson();
-    final String hash = _stableHash(jsonEncode(payload));
     final bool ownAssetPresent = children.any(
       (AssetEntry e) => !e.isFolder && e.name == ownAssetName,
     );
@@ -212,22 +280,31 @@ class AggregateSyncService {
       return false;
     }
 
-    await store.putJsonAsset(ns, ownAssetName, payload);
+    // 真要上传时才把所有者编好的上行字节取回调用方，原样写上去（BUG-5159）。
+    final TransferableTypedData body = await owner.run(
+      _cloudOutgoingBodyCommand(),
+    );
+    await store.putBytesAsset(
+      ns,
+      ownAssetName,
+      body.materialize().asUint8List(),
+    );
     await _db.setPrefTyped<String>(_lastPushedHashKey, hash);
     return true;
   }
 
-  /// 一份对端快照的内容：版本标记没变就读本地副本，否则下载并更新副本。
-  Future<Object?> _readPeerSnapshot(
+  /// 一份对端快照的原样字节：版本标记没变就读本地副本，否则下载并更新副本。
+  /// 远端不存在返回 null。
+  Future<Uint8List?> _readPeerSnapshot(
     SyncAssetStore store,
     AssetEntry entry,
   ) async {
     final AggregatePeerSnapshotCache? cache = peerSnapshotCache;
-    final Object? cached = await cache?.read(scope.id, entry);
+    final Uint8List? cached = await cache?.read(scope.id, entry);
     if (cached != null) return cached;
-    final Object? json = await store.getJsonAsset(entry.id);
-    await cache?.write(scope.id, entry, json);
-    return json;
+    final Uint8List? body = await store.getBytesAsset(entry.id);
+    if (body != null) await cache?.write(scope.id, entry, body);
+    return body;
   }
 
   /// 本端上次成功上传的聚合快照内容哈希（设备本地，纯缓存：丢了最多多传一次）。
@@ -242,11 +319,15 @@ class AggregateSyncService {
   ///
   /// 不用 `Object.hashCode`：Dart 不保证它跨运行稳定，用它会让每轮都判成「变了」，
   /// 去重形同虚设；更糟的是它可能在部分平台上恰好稳定，于是问题只在部分用户身上出现。
-  static String _stableHash(String input) {
+  static String _stableHash(String input) => _fnv1a64(input.codeUnits);
+
+  /// [_stableHash] 的本体，按「码元」逐个折进去：字符串给 UTF-16 码元，报文体给
+  /// UTF-8 字节。纯 ASCII 内容两种口径算出同一个值。
+  static String _fnv1a64(List<int> units) {
     const int prime = 0x01000193;
     int hi = 0xcbf29ce4;
     int lo = 0x84222325;
-    for (final int unit in input.codeUnits) {
+    for (final int unit in units) {
       lo ^= unit;
       final int loProduct = lo * prime;
       final int hiProduct = hi * prime + (loProduct ~/ 0x100000000);
@@ -262,12 +343,19 @@ class AggregateSyncService {
   /// [sync], but the transport is a single host snapshot fetched over the LAN
   /// server instead of per-device snapshot files in a `__aggregate__` namespace.
   ///
-  /// [fetchRemote] GETs the host's aggregate snapshot JSON (the client backend
-  /// returns null when the host is old / lacks the endpoint — an old-server
-  /// degradation: the client then only PUSHES its own materialised snapshot so a
-  /// newer host would still receive it, and skips the local fold with no crash).
-  /// [pushMerged] PUTs the merged snapshot JSON back to the host, where the host
-  /// folds it into its own DB (MAX / union, idempotent).
+  /// [fetchRemote] GETs the host's aggregate snapshot as the **raw** UTF-8 JSON
+  /// response body (the client backend returns null when the host is old / lacks
+  /// the endpoint — an old-server degradation: the client then only PUSHES its
+  /// own materialised snapshot so a newer host would still receive it, and skips
+  /// the local fold with no crash).
+  /// [pushMerged] PUTs the merged snapshot as a ready-encoded UTF-8 JSON body
+  /// back to the host, where the host folds it into its own DB (MAX / union,
+  /// idempotent).
+  ///
+  /// HBK-AUDIT-028：传输层只搬字节；一轮里的 DB 读取、快照组装、报文体解码、折叠、
+  /// 锁内重读写回、墓碑裁剪、上行判定与编码全部在同一个后台所有者
+  /// （[AggregateSyncOwner]）里做，整份快照只活在那边。调用方只发命令、收轻量结果
+  /// （要不要写回、要推的报文体字节）。
   ///
   /// Flow: materialise local -> GET host snapshot -> fold via [mergeSnapshots]
   /// (single source of truth) -> apply locally (MAX / union writes only) -> PUT
@@ -276,7 +364,7 @@ class AggregateSyncService {
   /// A device with an empty merged state pushes nothing (nothing to share).
   ///
   /// No schema change; the snapshot is a transient JSON payload, local state
-  /// lives in the existing statistic tables + favorite_sentences pref.
+  /// lives in the existing statistic tables + favorite_sentences table.
   ///
   /// [shareStats] / [shareFavorites] 是用户在互联设置里的「共享统计 / 共享收藏夹」
   /// 许可（两者默认 true = 既有行为）。裁剪在**本方法内**做，而不是交给调用方：
@@ -288,68 +376,412 @@ class AggregateSyncService {
   /// [shareWebHistory] 是设备级「同步浏览历史」（默认关，见
   /// [kSyncWebHistoryPrefKey]），与上面两个许可同律上下行一起裁。
   Future<void> syncOverClient({
-    required Future<Object?> Function() fetchRemote,
-    required Future<void> Function(Object json) pushMerged,
+    required Future<Uint8List?> Function() fetchRemote,
+    required Future<void> Function(Uint8List body) pushMerged,
     bool shareStats = true,
     bool shareFavorites = true,
     bool shareWebHistory = false,
   }) async {
     if (!shareStats && !shareFavorites && !shareWebHistory) return;
 
-    // 1) Materialise local state.
-    final AggregateSnapshot localSnapshot = (await materializeLocalSnapshot())
-        .select(
+    final AggregateSyncOwner owner = await AggregateSyncOwner.spawn(_db);
+    try {
+      // 1) Materialise local state（在所有者里，结果留在那边）。
+      await owner.run(
+        _materializeCommand(
           stats: shareStats,
           favorites: shareFavorites,
           webHistory: shareWebHistory,
-        );
-
-    // 2) Fetch the host's snapshot. null => old host without the endpoint:
-    //    degrade to push-only (still share our state; skip the local fold).
-    final Object? remoteJson = await fetchRemote();
-    if (remoteJson == null) {
-      // BUG-1572：即便这条退化路径推的是纯本地快照，也走同一道裁剪——本地
-      // materialise 与墓碑之间没有强制不变量（例如收藏句 pref 与墓碑表分居两处），
-      // 让「推出去的东西必过墓碑」在**每条**上行路径上都成立，而不是靠推理。
-      final AggregateSnapshot localOutgoing = await filterTombstoned(
-        localSnapshot,
+        ),
       );
-      if (localOutgoing.isEmpty) return; // Nothing to share, nothing to fold.
-      await pushMerged(localOutgoing.toJson());
-      return;
-    }
 
-    // 3) Fold the host snapshot into the local one through the same pure merge
-    //    the cloud channel uses (single source of truth; commutative/idempotent).
-    final AggregateSnapshot remote = AggregateSnapshot.fromJson(remoteJson)
-        .select(
+      // 2) Fetch the host's snapshot. null => old host without the endpoint:
+      //    degrade to push-only (still share our state; skip the local fold).
+      final Uint8List? remoteBody = await fetchRemote();
+      if (remoteBody == null) {
+        // BUG-1572：即便这条退化路径推的是纯本地快照，也走同一道裁剪——本地
+        // materialise 与墓碑之间没有强制不变量（例如收藏句 pref 与墓碑表分居两处），
+        // 让「推出去的东西必过墓碑」在**每条**上行路径上都成立，而不是靠推理。
+        // 全空回 null：Nothing to share, nothing to fold.
+        final TransferableTypedData? localOutgoing = await owner.run(
+          _localOutgoingBodyCommand(),
+        );
+        if (localOutgoing == null) return;
+        await pushMerged(localOutgoing.materialize().asUint8List());
+        return;
+      }
+
+      // 3) Fold the host snapshot into the local one through the same pure merge
+      //    the cloud channel uses (single source of truth; commutative/idempotent).
+      //    报文体解码、折叠、写回增量判定、host 快照指纹都在所有者里做（c2voByEqPq：
+      //    这几步在慢设备上同步跑满 5 秒 = ANR），合并结果留在那边。
+      final bool applyNeeded = await owner.run(
+        _planLiveCommand(
+          remoteBody,
           stats: shareStats,
           favorites: shareFavorites,
           webHistory: shareWebHistory,
-        );
-    final AggregateSnapshot merged = mergeSnapshots(localSnapshot, remote);
+        ),
+      );
 
-    // 4) Apply the merged result back locally (MAX / union writes; idempotent).
-    //    与云通道同一判据：内容相等就不进锁、不重读本地、不写库。
-    if (localDelta(merged, localSnapshot) != null) {
-      await _applyMergedLocally(merged);
+      // 4) Apply the merged result back locally (MAX / union writes; idempotent).
+      //    与云通道同一判据：内容相等就不进锁、不重读本地、不写库。
+      if (applyNeeded) await _applyMergedLocally(owner);
+
+      // 5) Push the merged snapshot back so the host converges to the union.
+      //    BUG-1572：与云通道同律，上行前按本机墓碑裁剪，否则 host 会把本机已删的
+      //    统计/收藏落库并在下轮回灌本机（复活）。全空不推；host 刚给的就是这份内容
+      //    （不计列表顺序：两端行序天然不同，而折叠结果与顺序无关）也不推——PUT 只会让
+      //    host 把同一批数据再折一遍。两个判据都在所有者里算，回 null 即不推。
+      final TransferableTypedData? outgoing = await owner.run(
+        _liveOutgoingBodyCommand(),
+      );
+      if (outgoing == null) return;
+      await pushMerged(outgoing.materialize().asUint8List());
+    } finally {
+      await owner.close();
     }
+  }
 
-    // 5) Push the merged snapshot back so the host converges to the union.
-    //    BUG-1572：与云通道同律，上行前按本机墓碑裁剪，否则 host 会把本机已删的
-    //    统计/收藏落库并在下轮回灌本机（复活）。
-    //    Nothing to share on an all-empty merge: skip the write.
-    final AggregateSnapshot outgoing = await filterTombstoned(merged);
-    if (outgoing.isEmpty) return;
-    // host 刚给的就是这份内容时 PUT 只是让 host 把同一批数据再折一遍（并集 / MAX，
-    // 无变化）。比较不计列表顺序：两端数据库查出来的行序天然不同，而折叠结果与
-    // 顺序无关（收藏句合并后按时间重排，其余都是按键并集）。
-    final Map<String, Object?> outgoingJson = outgoing.toJson();
-    if (unorderedSnapshotFingerprint(outgoingJson) ==
-        unorderedSnapshotFingerprint(remote.toJson())) {
+  /// host 侧 GET `/api/library/aggregate` 的报文体：在后台所有者里 materialize 本机
+  /// 快照、按许可裁剪、编码成 UTF-8 JSON（HBK-AUDIT-028：app 里 host 与 UI 同一个
+  /// isolate，以前组装与拷贝都在这边）。
+  Future<Uint8List> encodeLocalWireBody({
+    required bool stats,
+    required bool favorites,
+    required bool webHistory,
+  }) async {
+    final AggregateSyncOwner owner = await AggregateSyncOwner.spawn(_db);
+    try {
+      await owner.run(
+        _materializeCommand(
+          stats: stats,
+          favorites: favorites,
+          webHistory: webHistory,
+        ),
+      );
+      final TransferableTypedData body = await owner.run(
+        _encodeLocalBodyCommand(),
+      );
+      return body.materialize().asUint8List();
+    } finally {
+      await owner.close();
+    }
+  }
+
+  /// host 侧 PUT `/api/library/aggregate`：把 client 上报的报文体折进本机 DB
+  /// （[foldIntoLocal] 语义：先重读本机再 MAX / 并集合并，只增不减、幂等）。
+  ///
+  /// 解码 + 按许可裁剪在锁外、所有者里做；重读 + 合并 + 差集 + 写回在
+  /// [localApplyLock] 持有期间、同一个所有者里做（锁照旧包住整个「重读 → 合并 →
+  /// 写回」）。返回 false = 报文体不是合法的 JSON object（非法 UTF-8 / JSON、顶层
+  /// 不是 object），什么都不写——host 据此回 400。
+  Future<bool> applyWireBody(
+    Uint8List body, {
+    required bool stats,
+    required bool favorites,
+    required bool webHistory,
+  }) async {
+    final AggregateSyncOwner owner = await AggregateSyncOwner.spawn(_db);
+    try {
+      final bool valid = await owner.run(
+        _decodeIncomingCommand(
+          body,
+          stats: stats,
+          favorites: favorites,
+          webHistory: webHistory,
+        ),
+      );
+      if (!valid) return false;
+      await _withLocalApplyLock(() => owner.run(_foldIncomingCommand()));
+      return true;
+    } finally {
+      await owner.close();
+    }
+  }
+
+  /// client 对比弹窗：host 报文体里每本书（按标题）的阅读统计条数。解码在后台
+  /// isolate，只回小表。顶层不是 object 当空快照；非法 JSON 抛 [FormatException]。
+  static Future<Map<String, int>> readingStatCountsByTitle(Uint8List body) =>
+      Isolate.run<Map<String, int>>(() {
+        final AggregateSnapshot? snapshot = decodeAggregateWireSnapshot(body);
+        final Map<String, int> counts = <String, int>{};
+        for (final ReadingStatRecord r
+            in snapshot?.readingStats ?? const <ReadingStatRecord>[]) {
+          counts[r.title] = (counts[r.title] ?? 0) + 1;
+        }
+        return counts;
+      }, debugName: 'aggregate-wire-counts');
+
+  // ── 后台所有者的命令（HBK-AUDIT-028）──────────────────────────────────────
+  // 刻意写成 static：返回的闭包只捕获参数里的纯数据。写在实例方法里的闭包与同一
+  // 作用域的其它闭包共用上下文，可能把持有数据库连接的 `this` / 传输层对象一起带进
+  // isolate 消息（发不过去，或白白深拷贝）。闭包在所有者 isolate 里执行，`service`
+  // 是那边用所有者自己的库连接构造的实例。
+
+  static _OwnerRound _round(AggregateOwnerContext context) =>
+      (context.session ??= _OwnerRound(context.db)) as _OwnerRound;
+
+  static TransferableTypedData _transferable(Uint8List bytes) =>
+      TransferableTypedData.fromList(<TypedData>[bytes]);
+
+  static AggregateOwnerCommand<void> _materializeCommand({
+    required bool stats,
+    required bool favorites,
+    required bool webHistory,
+  }) => (AggregateOwnerContext context) async {
+    final _OwnerRound round = _round(context);
+    round.local = (await round.service.materializeLocalSnapshot()).select(
+      stats: stats,
+      favorites: favorites,
+      webHistory: webHistory,
+    );
+  };
+
+  static AggregateOwnerCommand<TransferableTypedData>
+  _encodeLocalBodyCommand() =>
+      (AggregateOwnerContext context) => _transferable(
+        encodeAggregateWireJson(_round(context).local.toJson()),
+      );
+
+  static AggregateOwnerCommand<TransferableTypedData?>
+  _localOutgoingBodyCommand() => (AggregateOwnerContext context) async {
+    final _OwnerRound round = _round(context);
+    final AggregateSnapshot outgoing = await round.service.filterTombstoned(
+      round.local,
+    );
+    if (outgoing.isEmpty) return null;
+    return _transferable(encodeAggregateWireJson(outgoing.toJson()));
+  };
+
+  static AggregateOwnerCommand<bool> _planLiveCommand(
+    Uint8List remoteBody, {
+    required bool stats,
+    required bool favorites,
+    required bool webHistory,
+  }) => (AggregateOwnerContext context) {
+    final _OwnerRound round = _round(context);
+    final AggregateFoldPlan plan = planLiveFold(
+      local: round.local,
+      remoteBody: remoteBody,
+      stats: stats,
+      favorites: favorites,
+      webHistory: webHistory,
+    );
+    round.merged = plan.merged;
+    round.peerFingerprint = plan.peerFingerprint;
+    return plan.applyNeeded;
+  };
+
+  /// 云通道：解码一份对端报文体、按许可裁剪、折进本轮的合并结果。报文体不是合法
+  /// UTF-8 / JSON 时跳过这一份（与「单份对端读不出不中断整轮」同律）；顶层不是
+  /// object 时按 [AggregateSnapshot.fromJson] 的降级当空快照。
+  static AggregateOwnerCommand<void> _foldPeerCommand(
+    TransferableTypedData body, {
+    required bool stats,
+    required bool favorites,
+    required bool webHistory,
+  }) => (AggregateOwnerContext context) {
+    final _OwnerRound round = _round(context);
+    final Object? json;
+    try {
+      json = decodeAggregateWireJson(body.materialize().asUint8List());
+    } on FormatException {
       return;
     }
-    await pushMerged(outgoingJson);
+    noteAggregateSnapshotWork('fold');
+    round.merged = _foldPeer(
+      round.merged ?? round.local,
+      json,
+      stats: stats,
+      favorites: favorites,
+      webHistory: webHistory,
+    );
+  };
+
+  /// 云通道：所有对端都折完后，合并结果相对本地有没有写回增量。
+  static AggregateOwnerCommand<bool> _cloudApplyNeededCommand() =>
+      (AggregateOwnerContext context) {
+        final _OwnerRound round = _round(context);
+        final AggregateSnapshot merged = round.merged ??= round.local;
+        return localDelta(merged, round.local) != null;
+      };
+
+  static AggregateOwnerCommand<void> _applyMergedCommand() =>
+      (AggregateOwnerContext context) {
+        final _OwnerRound round = _round(context);
+        return round.service.foldIntoLocal(round.merged!);
+      };
+
+  static AggregateOwnerCommand<TransferableTypedData?>
+  _liveOutgoingBodyCommand() => (AggregateOwnerContext context) async {
+    final _OwnerRound round = _round(context);
+    final AggregateSnapshot outgoing = await round.service.filterTombstoned(
+      round.merged!,
+    );
+    if (outgoing.isEmpty) return null;
+    final Uint8List? body = liveOutgoingIfChanged(
+      outgoing,
+      round.peerFingerprint!,
+    );
+    return body == null ? null : _transferable(body);
+  };
+
+  static AggregateOwnerCommand<String?> _cloudOutgoingHashCommand() =>
+      (AggregateOwnerContext context) async {
+        final _OwnerRound round = _round(context);
+        final AggregateSnapshot outgoing = await round.service.filterTombstoned(
+          round.merged!,
+        );
+        if (outgoing.isEmpty) return null;
+        final ({Uint8List body, String hash}) encoded = encodeOutgoing(
+          outgoing,
+        );
+        round.outgoingBody = encoded.body;
+        return encoded.hash;
+      };
+
+  static AggregateOwnerCommand<TransferableTypedData>
+  _cloudOutgoingBodyCommand() =>
+      (AggregateOwnerContext context) =>
+          _transferable(_round(context).outgoingBody!);
+
+  static AggregateOwnerCommand<bool> _decodeIncomingCommand(
+    Uint8List body, {
+    required bool stats,
+    required bool favorites,
+    required bool webHistory,
+  }) => (AggregateOwnerContext context) {
+    final AggregateSnapshot? decoded;
+    try {
+      // fromJson 容错：未知高版本 / 缺字段 / 坏行降级为空或跳过，绝不抛；只有
+      // 非法 UTF-8 / JSON 抛 FormatException，顶层非 object 为 null。
+      decoded = decodeAggregateWireSnapshot(body);
+    } on FormatException {
+      return false;
+    }
+    if (decoded == null) return false;
+    _round(context).incoming = decoded.select(
+      stats: stats,
+      favorites: favorites,
+      webHistory: webHistory,
+    );
+    return true;
+  };
+
+  static AggregateOwnerCommand<void> _foldIncomingCommand() =>
+      (AggregateOwnerContext context) {
+        final _OwnerRound round = _round(context);
+        return round.service.foldIntoLocal(round.incoming!);
+      };
+
+  /// 折叠步骤的纯计算：把 [peerJsons] 逐份解码、按共享许可裁剪、依次折进 [local]，
+  /// 并判定合并结果相对 [local] 有没有写回增量。[fingerprintPeer] 为 true 时（互联
+  /// 通道，恰一份 host 快照）顺带算出 host 快照的 [unorderedSnapshotFingerprint]。
+  ///
+  /// 只读入参、不碰数据库，可以（也应当）在后台 isolate 里跑。
+  @visibleForTesting
+  static AggregateFoldPlan planFold({
+    required AggregateSnapshot local,
+    required List<Object?> peerJsons,
+    required bool stats,
+    required bool favorites,
+    required bool webHistory,
+    bool fingerprintPeer = false,
+  }) {
+    noteAggregateSnapshotWork('fold');
+    assert(!fingerprintPeer || peerJsons.length == 1);
+    AggregateSnapshot merged = local;
+    String? peerFingerprint;
+    for (final Object? json in peerJsons) {
+      merged = _foldPeer(
+        merged,
+        json,
+        stats: stats,
+        favorites: favorites,
+        webHistory: webHistory,
+        onPeer: fingerprintPeer
+            ? (AggregateSnapshot peer) =>
+                  peerFingerprint = unorderedSnapshotFingerprint(peer.toJson())
+            : null,
+      );
+    }
+    return AggregateFoldPlan(
+      merged: merged,
+      applyNeeded: localDelta(merged, local) != null,
+      peerFingerprint: peerFingerprint,
+    );
+  }
+
+  /// 一份对端 JSON 按共享许可裁剪后折进 [merged]（云通道逐份折、[planFold] 循环折
+  /// 的同一步）。[onPeer] 拿到裁剪后的对端快照（互联通道据此算 host 指纹）。
+  static AggregateSnapshot _foldPeer(
+    AggregateSnapshot merged,
+    Object? json, {
+    required bool stats,
+    required bool favorites,
+    required bool webHistory,
+    void Function(AggregateSnapshot peer)? onPeer,
+  }) {
+    final AggregateSnapshot peer = AggregateSnapshot.fromJson(
+      json,
+    ).select(stats: stats, favorites: favorites, webHistory: webHistory);
+    onPeer?.call(peer);
+    return mergeSnapshots(merged, peer);
+  }
+
+  /// 云通道上行的纯计算：快照一步编成 UTF-8 JSON 报文体（与互联通道同一
+  /// [encodeAggregateWireJson]），内容哈希（「没变就不重传」的判据）直接对这份
+  /// 字节算，不再另编一遍字符串。
+  @visibleForTesting
+  static ({Uint8List body, String hash}) encodeOutgoing(
+    AggregateSnapshot outgoing,
+  ) {
+    noteAggregateSnapshotWork('encodeOutgoing');
+    final Uint8List body = encodeAggregateWireJson(outgoing.toJson());
+    return (body: body, hash: _fnv1a64(body));
+  }
+
+  /// 互联通道上行的纯计算：[outgoing] 与 host 刚给的内容（指纹 [peerFingerprint]，
+  /// 不计列表顺序）相同就返回 null（不 PUT），否则返回编码好的 PUT 报文体。
+  @visibleForTesting
+  static Uint8List? liveOutgoingIfChanged(
+    AggregateSnapshot outgoing,
+    String peerFingerprint,
+  ) {
+    final Map<String, Object?> json = outgoing.toJson();
+    return unorderedSnapshotFingerprint(json) == peerFingerprint
+        ? null
+        : encodeAggregateWireJson(json);
+  }
+
+  /// 互联通道下行的纯计算：解码 host 报文体（[decodeAggregateWireJson]，非法 JSON
+  /// 抛 [FormatException]），再走与云通道同一个 [planFold]（带 host 指纹）。顶层
+  /// 非 object 的报文体按 [AggregateSnapshot.fromJson] 的降级当空快照折叠。
+  @visibleForTesting
+  static AggregateFoldPlan planLiveFold({
+    required AggregateSnapshot local,
+    required Uint8List remoteBody,
+    required bool stats,
+    required bool favorites,
+    required bool webHistory,
+  }) => planFold(
+    local: local,
+    peerJsons: <Object?>[decodeAggregateWireJson(remoteBody)],
+    stats: stats,
+    favorites: favorites,
+    webHistory: webHistory,
+    fingerprintPeer: true,
+  );
+
+  /// [foldIntoLocal] 的纯计算：[incoming] 折进 [local] 后相对 [local] 的写回增量
+  /// （无变化为 null）。
+  static AggregateSnapshot? foldDelta(
+    AggregateSnapshot local,
+    AggregateSnapshot incoming,
+  ) {
+    noteAggregateSnapshotWork('foldDelta');
+    return localDelta(mergeSnapshots(local, incoming), local);
   }
 
   /// 与列表顺序无关的快照内容指纹：顶层每个列表的元素各自编码后排序再拼接。
@@ -518,6 +950,7 @@ class AggregateSyncService {
   /// 无任何墓碑时返回入参本身（零拷贝，且 `identical` 仍成立）。
   @visibleForTesting
   Future<AggregateSnapshot> filterTombstoned(AggregateSnapshot snapshot) async {
+    noteAggregateSnapshotWork('filterTombstoned');
     final Set<(String, String)> statTombstoned = await _db
         .getStatisticsTombstoneKeys();
     final Map<String, int> favWordTombstoned = <String, int>{
@@ -1114,6 +1547,7 @@ class AggregateSyncService {
   /// lookup/mine per-book counters + favorite words + favorite-sentence pref
   /// blob) into a snapshot. Pure read, no mutation.
   Future<AggregateSnapshot> materializeLocalSnapshot() async {
+    noteAggregateSnapshotWork('materialize');
     final List<ReadingStatisticRow> reading = await _db
         .getAllReadingStatistics();
     final List<VideoWatchStatisticRow> video = await _db
@@ -1273,6 +1707,7 @@ class AggregateSyncService {
     pages: s.pages,
     updatedAt: s.updatedAt,
     profileName: profileNameById[s.profileId] ?? '',
+    lookups: s.lookups,
   );
 
   static StudyTombstoneRecord _tombstoneRecordOf(
@@ -1327,6 +1762,7 @@ class AggregateSyncService {
     durationMs: Value(r.durationMs),
     chars: Value(r.chars),
     pages: Value(r.pages),
+    lookups: Value(r.lookups),
     updatedAt: r.updatedAt,
     profileId: Value(profileId),
   );
@@ -1396,7 +1832,7 @@ class AggregateSyncService {
   /// 把快照里的收藏删除墓碑落进本地墓碑表（只写严格较新者，旧戳不降级），并删掉
   /// 被墓碑压制的本地收藏词行（merge 侧已仲裁：快照里仍在的墓碑必然压过全部已知
   /// 同键收藏；本地行仍按 createdAt 双保险判一次）。收藏句的移除走
-  /// [_writeFavoriteSentences] 的墓碑过滤（pref 整表重写天然是移除）。
+  /// [_writeFavoriteSentences] 的墓碑过滤（整表重写天然是移除）。
   Future<void> _applySnapshotTombstones(AggregateSnapshot snapshot) async {
     if (snapshot.favoriteWordTombstones.isEmpty &&
         snapshot.favoriteSentenceTombstones.isEmpty) {
@@ -1611,21 +2047,21 @@ class AggregateSyncService {
     await applyWebBrowserFamilies(_db, snapshot);
   }
 
-  /// 第 4 步落库（BUG-2717）：在 [localApplyLock] 内**重新** materialize 本地再折叠
-  /// [merged]，而不是直接写回 [merged]。
+  /// 第 4 步落库（BUG-2717）：在 [localApplyLock] 内让 [owner] **重新** materialize
+  /// 本地再折叠它手里的合并结果，而不是直接写回合并结果。
   ///
-  /// [merged] 基于第 1 步的本地快照，中间隔着一次网络往返；这段时间里互联对端可能
+  /// 合并结果基于第 1 步的本地快照，中间隔着一次网络往返；这段时间里互联对端可能
   /// 已经把更大的值折进了本地（host 的 [foldIntoLocal]）。直接写回会用陈旧值覆盖它。
   /// 锁内重读再 MAX 折叠（与 host 侧同一个 [foldIntoLocal]）让结果只增不减，且合并
-  /// 满足交换 / 幂等，本地没被改过时结果与直接写回 [merged] 逐字段相同。
-  Future<void> _applyMergedLocally(AggregateSnapshot merged) async {
+  /// 满足交换 / 幂等，本地没被改过时结果与直接写回合并结果逐字段相同。所有者在后台
+  /// 执行这一步期间调用方一直持锁（HBK-AUDIT-028：锁语义不随执行位置变）。
+  Future<void> _applyMergedLocally(AggregateSyncOwner owner) =>
+      _withLocalApplyLock(() => owner.run(_applyMergedCommand()));
+
+  Future<void> _withLocalApplyLock(Future<void> Function() body) {
     final Future<void> Function(Future<void> Function() body)? lock =
         localApplyLock;
-    if (lock == null) {
-      await foldIntoLocal(merged);
-      return;
-    }
-    await lock(() => foldIntoLocal(merged));
+    return lock == null ? body() : lock(body);
   }
 
   /// Folds an INCOMING peer snapshot into the local DB safely: materialises the
@@ -1642,36 +2078,27 @@ class AggregateSyncService {
   /// 只把 [localDelta]（合并结果相对本地真正变化的部分）交给
   /// [applySnapshotToLocal]：与整份写回效果相同（理由见 [localDelta]），但稳态
   /// 零写入、增量只写变化行。
+  ///
+  /// 在**当前 isolate** 上执行（重读 + 合并 + 差集 + 写回）。app 内的出站同步与 host
+  /// 的 PUT 都经后台所有者（[AggregateSyncOwner]）调用它，调用方的写锁
+  /// （[localApplyLock] / host 的 `_runSyncStateExclusive`）照旧包住整个「重读 →
+  /// 合并 → 写回」（HBK-AUDIT-028）。
   Future<void> foldIntoLocal(AggregateSnapshot incoming) async {
     if (incoming.isEmpty) return; // Nothing to fold: no-op (idempotent).
     final AggregateSnapshot local = await materializeLocalSnapshot();
-    final AggregateSnapshot merged = mergeSnapshots(local, incoming);
-    final AggregateSnapshot? delta = localDelta(merged, local);
+    final AggregateSnapshot? delta = foldDelta(local, incoming);
     if (delta == null) return;
     await applySnapshotToLocal(delta);
   }
 
-  /// Reads the favorite-sentence pref blob into models, tolerating a
-  /// null/empty/malformed value (empty list) so a corrupt pref never aborts.
-  Future<List<FavoriteSentence>> _readFavoriteSentences() async {
-    final String? raw = await _db.getPref(_favoriteSentencesPrefKey);
-    if (raw == null || raw.isEmpty) return const <FavoriteSentence>[];
-    try {
-      final dynamic decoded = jsonDecode(raw);
-      if (decoded is! List) return const <FavoriteSentence>[];
-      return decoded
-          .whereType<Map<String, dynamic>>()
-          .map(FavoriteSentence.fromJson)
-          .toList();
-    } catch (_) {
-      return const <FavoriteSentence>[];
-    }
-  }
+  /// Reads the favorite sentences (v166: the `favorite_sentences` table).
+  Future<List<FavoriteSentence>> _readFavoriteSentences() =>
+      FavoriteSentenceRepository(_db).getAll();
 
-  /// Merges [merged] favorite sentences with whatever the pref currently holds
+  /// Merges [merged] favorite sentences with whatever the table currently holds
   /// (a concurrent local add during the sync must not be lost) and writes the
   /// union back. The extra fold is idempotent, so writing an already-merged set
-  /// is a no-op.
+  /// is a no-op ([FavoriteSentenceRepository.replaceAll] skips identical sets).
   Future<void> _writeFavoriteSentences(List<FavoriteSentence> merged) async {
     final List<FavoriteSentence> current = await _readFavoriteSentences();
     // 互联完整支持批次：merged 为空也不能早退——对端的取消收藏（墓碑）要靠下面
@@ -1699,9 +2126,29 @@ class AggregateSyncService {
                     s.createdAt.millisecondsSinceEpoch,
               )
               .toList();
-    final String json = jsonEncode(
-      out.map((FavoriteSentence s) => s.toJson()).toList(),
-    );
-    await _db.setPref(_favoriteSentencesPrefKey, json);
+    await FavoriteSentenceRepository(_db).replaceAll(out);
   }
+}
+
+/// 一轮同步在后台所有者里跨命令暂存的整份数据（只活在所有者 isolate）。
+final class _OwnerRound {
+  _OwnerRound(FushiDatabase db) : service = AggregateSyncService(db);
+
+  /// 用所有者自己的库连接构造的服务实例（不带锁：锁由调用方在发命令前后持有）。
+  final AggregateSyncService service;
+
+  /// 按共享许可裁剪后的本地快照（[AggregateSyncService.materializeLocalSnapshot]）。
+  AggregateSnapshot local = const AggregateSnapshot();
+
+  /// 本地与对端折叠后的结果。
+  AggregateSnapshot? merged;
+
+  /// 互联通道：host 快照（裁剪后）的无序指纹，上行判据用。
+  String? peerFingerprint;
+
+  /// 云通道：待上传的快照报文体（哈希判定要上传时才取回调用方）。
+  Uint8List? outgoingBody;
+
+  /// host PUT：解码并裁剪好的对端快照。
+  AggregateSnapshot? incoming;
 }

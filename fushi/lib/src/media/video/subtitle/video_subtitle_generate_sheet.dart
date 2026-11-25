@@ -10,10 +10,15 @@ library;
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
-import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
+import 'package:fushi_asr_core/asr_core.dart'
+    show AsrAudioProfile, ModelDownloadEvent;
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart'
     show SubtitleAiUsageTally, kSubtitleAiReplyIncomplete;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart'
+    show SubtitleEvidenceTrack;
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_frame_reference.dart'
+    show kSubtitleReferenceFramesPerBatch;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart'
     show SubtitleGlossaryProblem;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart'
@@ -50,6 +55,9 @@ import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
+/// 识别模型判定 / 下载所属的那一套选择（见 `_planKey`）。
+typedef _AsrPlanKey = ({VideoSubtitleLanguage language, bool separateVocals});
+
 /// 面板读写的偏好（生产实现包 [PreferencesRepository]，测试注入 fake）。
 abstract interface class VideoSubtitleGeneratePrefs {
   bool get proofread;
@@ -59,8 +67,19 @@ abstract interface class VideoSubtitleGeneratePrefs {
   bool get consented;
   Future<void> setConsented(bool value);
 
+  /// 画面参考（AI 校对时附上视频画面）与它的「会发送什么」同意。
+  bool get frames;
+  Future<void> setFrames(bool value);
+  bool get framesConsented;
+  Future<void> setFramesConsented(bool value);
+
   VideoSubtitleSegmenterMode get segmenter;
   Future<void> setSegmenter(VideoSubtitleSegmenterMode value);
+
+  /// 「保存字幕文件」（写到视频旁边）上次的选择；只在面板带
+  /// [VideoSubtitleInAppTranscribe] 时出现与读写。
+  bool get saveBesideVideo;
+  Future<void> setSaveBesideVideo(bool value);
 
   MossBackendPreference get mossBackend;
 
@@ -90,11 +109,31 @@ class PrefsRepoVideoSubtitleGeneratePrefs
       prefs.setVideoSubtitleAiConsented(value);
 
   @override
+  bool get frames => prefs.videoSubtitleAiFrames;
+
+  @override
+  Future<void> setFrames(bool value) => prefs.setVideoSubtitleAiFrames(value);
+
+  @override
+  bool get framesConsented => prefs.videoSubtitleAiFramesConsented;
+
+  @override
+  Future<void> setFramesConsented(bool value) =>
+      prefs.setVideoSubtitleAiFramesConsented(value);
+
+  @override
   VideoSubtitleSegmenterMode get segmenter => prefs.videoSubtitleSegmenter;
 
   @override
   Future<void> setSegmenter(VideoSubtitleSegmenterMode value) =>
       prefs.setVideoSubtitleSegmenter(value);
+
+  @override
+  bool get saveBesideVideo => prefs.videoSubtitleSaveBesideVideo;
+
+  @override
+  Future<void> setSaveBesideVideo(bool value) =>
+      prefs.setVideoSubtitleSaveBesideVideo(value);
 
   @override
   MossBackendPreference get mossBackend => prefs.videoSubtitleMossBackend;
@@ -103,6 +142,15 @@ class PrefsRepoVideoSubtitleGeneratePrefs
   Future<void> ensureWebSearchPageFetchDecided(BuildContext context) =>
       ensureAiWebSearchPageFetchDecided(context, prefs);
 }
+
+/// 「生成字幕」面板里关掉「保存字幕文件」后点开始：面板先关，由视频页走「只在 Fushi
+/// 里转录」那条路（转录弹层，产物进 Fushi 字幕库并当场选中）。[proofread] = 面板里
+/// AI 校对开关的值，转录完就自动校对一次。
+///
+/// 视频页「语音识别生成字幕」与「生成日语字幕」两个入口合并成一个（反馈
+/// 6Tj3ECtB0Q）后，两条原流程都从这一个面板出发：开着保存 = 生成字幕管线，关着 =
+/// 原「语音识别生成字幕」。
+typedef VideoSubtitleInAppTranscribe = void Function({required bool proofread});
 
 /// AI 失败短码 → 文案（管线自己的 `reply_incomplete` 在通用映射里没有）。
 String videoSubtitleAiFailureText(String code) =>
@@ -201,7 +249,8 @@ String videoSubtitleTokenCount(int n) {
 }
 
 /// 打开面板。[onJobStarted]：任务一起就回调（视频页据此在任务结束时把字幕切过去，
-/// 面板关了也照样切）。
+/// 面板关了也照样切）。[pinnedEvidence]：视频页交过来的、播放器里正对照着的其它
+/// 语言字幕（视频路径 → 轨），随任务交给 AI 校对当参考。
 Future<void> showVideoSubtitleGenerateSheet({
   required BuildContext context,
   required AppVideoSubtitleService service,
@@ -209,6 +258,9 @@ Future<void> showVideoSubtitleGenerateSheet({
   required VideoSubtitleGeneratePrefs prefs,
   required Future<void> Function(BuildContext context) openAiSettings,
   void Function(AppVideoSubtitleJob job)? onJobStarted,
+  VideoSubtitleInAppTranscribe? onTranscribeInApp,
+  Map<String, List<SubtitleEvidenceTrack>> pinnedEvidence =
+      const <String, List<SubtitleEvidenceTrack>>{},
 }) {
   Widget build(BuildContext ctx) => VideoSubtitleGenerateSheet(
     service: service,
@@ -216,6 +268,8 @@ Future<void> showVideoSubtitleGenerateSheet({
     prefs: prefs,
     openAiSettings: openAiSettings,
     onJobStarted: onJobStarted,
+    onTranscribeInApp: onTranscribeInApp,
+    pinnedEvidence: pinnedEvidence,
   );
   if (isDesktopPlatform) {
     return showAppDialog<void>(
@@ -231,8 +285,48 @@ Future<void> showVideoSubtitleGenerateSheet({
   return adaptiveModalSheet<void>(
     context: context,
     showDragHandle: true,
+    // 与桌面分支（showAppDialog）一致开在 root navigator 上：字幕工作台是 root 上的
+    // 整页，面板从它下面的视频页起，不在 root 上会被整页挡住。
+    useRootNavigator: true,
     builder: build,
   );
+}
+
+/// 这次任务要不要带画面：[wanted]（AI 校对与「参考画面」都开着，且提供商能收图）并且
+/// 用户知情。画面参考默认开，首次开 AI 校对的说明里已写明会发画面；只有在旧版说明
+/// （写着「不发送画面」）下同意过的用户会在这里补看一次——点「不发画面」就把开关
+/// 关掉，任务照常按纯文字校对。
+Future<bool> resolveVideoSubtitleAiFrames(
+  BuildContext context,
+  VideoSubtitleGeneratePrefs prefs, {
+  required bool wanted,
+}) async {
+  if (!wanted) return false;
+  if (await confirmVideoSubtitleAiFrames(context, prefs)) return true;
+  await prefs.setFrames(false);
+  return false;
+}
+
+/// 发画面前的确认（生成面板、互联面板与字幕工作台共用）：没看过写明「会发画面」的
+/// 说明就先弹一次，同意了才返回 true 并记下；看过的直接 true。
+Future<bool> confirmVideoSubtitleAiFrames(
+  BuildContext context,
+  VideoSubtitleGeneratePrefs prefs,
+) async {
+  if (prefs.framesConsented) return true;
+  final bool ok = await showFushiConfirmDialog(
+    context: context,
+    title: t.video_subtitle_ai_frames_consent_title,
+    message: t.video_subtitle_ai_frames_consent_body(
+      count: kSubtitleReferenceFramesPerBatch,
+    ),
+    confirmLabel: t.video_subtitle_ai_consent_confirm,
+    cancelLabel: t.video_subtitle_ai_frames_consent_decline,
+    icon: FushiIcons.image,
+  );
+  if (!ok) return false;
+  await prefs.setFramesConsented(true);
+  return true;
 }
 
 class VideoSubtitleGenerateSheet extends StatefulWidget {
@@ -243,13 +337,27 @@ class VideoSubtitleGenerateSheet extends StatefulWidget {
     required this.prefs,
     required this.openAiSettings,
     this.onJobStarted,
+    this.onTranscribeInApp,
+    this.pinnedEvidence = const <String, List<SubtitleEvidenceTrack>>{},
+    this.embedded = false,
   });
+
+  /// 嵌在别的页面里（字幕工作台的工具栏）：不套弹层外框、没有标题和「关闭」按钮，
+  /// 滚动交给外层。选项、任务卡、开始 / 取消 / 继续与弹层形态完全相同。
+  final bool embedded;
 
   final AppVideoSubtitleService service;
   final AppVideoSubtitleTarget target;
   final VideoSubtitleGeneratePrefs prefs;
   final Future<void> Function(BuildContext context) openAiSettings;
   final void Function(AppVideoSubtitleJob job)? onJobStarted;
+
+  /// 非 null 时面板多一项「保存字幕文件」开关（视频页单集入口）；关掉后「开始」改走
+  /// 这条回调（见 [VideoSubtitleInAppTranscribe]）。整季 / 音乐入口不传。
+  final VideoSubtitleInAppTranscribe? onTranscribeInApp;
+
+  /// 用户指定的参考字幕（见 [showVideoSubtitleGenerateSheet]）。
+  final Map<String, List<SubtitleEvidenceTrack>> pinnedEvidence;
 
   @override
   State<VideoSubtitleGenerateSheet> createState() =>
@@ -262,7 +370,14 @@ class _VideoSubtitleGenerateSheetState
   AppVideoSubtitleTarget get _target => widget.target;
 
   late bool _proofread = widget.prefs.proofread;
+  late bool _frames = widget.prefs.frames;
   late VideoSubtitleSegmenterMode _segmenter = widget.prefs.segmenter;
+
+  /// 写到视频旁边（走管线）；false = 只在 Fushi 里转录。没有
+  /// [VideoSubtitleGenerateSheet.onTranscribeInApp] 时恒为 true。接回已有管线任务时
+  /// 在 [initState] 里强制为 true，免得任务卡被藏起来。
+  late bool _saveBeside =
+      widget.onTranscribeInApp == null || widget.prefs.saveBesideVideo;
 
   /// 字幕语言。初值：接回的任务用它自己的；否则先按日语，音轨探测出来后
   /// （[_guessLanguage]）若用户还没动过就换成猜到的。
@@ -271,6 +386,25 @@ class _VideoSubtitleGenerateSheetState
 
   /// 语言初值从哪一档来（提示「为什么选了它」）；用户自己选过 / 接回已有任务后为 null。
   VideoSubtitleLanguageSource? _languageSource;
+
+  /// 音乐：识别前先分离人声（拍板 W_wrz-ZPU8）。初值按条目记住的
+  /// （[AppVideoSubtitleService.separatesVocalsFor]，没记过默认开）；视频恒为 false。
+  late bool _separateVocals = _service.separatesVocalsFor(_target);
+
+  /// 这次转录用的素材（[AppVideoSubtitleService.asrAudioProfileFor]：视频混音；音乐
+  /// 开着分离 = 歌曲档，手机内存不够时退回混音；关着 = 混音）；null = 还在判定。模型
+  /// 就绪 / 下载都按它查，开跑也按它跑（[AppVideoSubtitleOptions.audioProfile]）。
+  AsrAudioProfile? _audioProfile;
+
+  /// 判定出来之前查下载进度用的猜测：音乐开着分离按歌曲（它的接回会兜到混音那条上）。
+  AsrAudioProfile get _profileGuess =>
+      _audioProfile ??
+      (_separateVocals ? AsrAudioProfile.song : AsrAudioProfile.mixedAudio);
+
+  /// 识别模型的判定 / 下载跟着哪一套选择走：换了语言或分离开关，旧选择那次判定与
+  /// 下载的回包都不能写进当前状态。
+  _AsrPlanKey get _planKey =>
+      (language: _language, separateVocals: _separateVocals);
 
   /// 识别模型是否已下载；null = 还在查。
   bool? _modelReady;
@@ -335,23 +469,47 @@ class _VideoSubtitleGenerateSheetState
   Future<void> _applyLanguage(VideoSubtitleLanguage language) async {
     setState(() {
       _language = language;
+      // 素材按语言判（各语言的包与内存估算不同），沿用上一门语言的判定会在新判定
+      // 回来前拿错的素材查 / 下模型。
+      _audioProfile = null;
       _modelReady = null;
       _planError = null;
       _asrDownloadError = null;
       _existing = const <String>{};
       _estimate = null;
     });
-    final Stream<ModelDownloadEvent>? asr = _service.asrModelPort
-        .resumeDownload(language: language);
-    if (asr != null) {
-      setState(() => _asrDownload = _starting);
-      unawaited(_followAsr(asr, language));
-    } else {
-      setState(() => _asrDownload = null);
-    }
+    _resumeAsrDownload();
     unawaited(_loadExisting());
     unawaited(_refreshPlan());
     if (_proofread) unawaited(_refreshEstimate());
+  }
+
+  /// 换了模型选择（语言 / 分离开关）后接回那一套模型包进行中的下载（下载归全应用
+  /// 登记表），没有就清掉上一套的进度。
+  void _resumeAsrDownload() {
+    final Stream<ModelDownloadEvent>? asr = _service.asrModelPort
+        .resumeDownload(language: _language, audioProfile: _profileGuess);
+    if (asr != null) {
+      setState(() => _asrDownload = _starting);
+      unawaited(_followAsr(asr, _planKey));
+    } else {
+      setState(() => _asrDownload = null);
+    }
+  }
+
+  /// 「先分离人声」开关：按条目记住；素材跟着变，模型就绪 / 下载重查一遍。
+  Future<void> _setSeparateVocals(bool on) async {
+    if (_running || on == _separateVocals) return;
+    setState(() {
+      _separateVocals = on;
+      _audioProfile = null;
+      _modelReady = null;
+      _planError = null;
+      _asrDownloadError = null;
+    });
+    _resumeAsrDownload();
+    unawaited(_refreshPlan());
+    await _service.setSeparatesVocals(_target, on);
   }
 
   @override
@@ -362,6 +520,7 @@ class _VideoSubtitleGenerateSheetState
       _attach(latest);
       _language = latest.options.language;
       _languageTouched = true;
+      _saveBeside = true;
     } else if (!_target.isMusic) {
       // 音乐只生成日语字幕（入口与批量标题都写明日语），不猜语言、不给语言选项。
       unawaited(_guessLanguage());
@@ -373,10 +532,10 @@ class _VideoSubtitleGenerateSheetState
     // 下载归全应用登记表、不归弹层（kZZmXQBv7E）：关掉再打开弹层时接回进行中的
     // 那条，进度照常显示、按钮不再亮——以前这里看不到它，再点一次就起第二条写者。
     final Stream<ModelDownloadEvent>? asr = _service.asrModelPort
-        .resumeDownload(language: _language);
+        .resumeDownload(language: _language, audioProfile: _profileGuess);
     if (asr != null) {
       _asrDownload = _starting;
-      unawaited(_followAsr(asr, _language));
+      unawaited(_followAsr(asr, _planKey));
     }
     final Stream<ModelDownloadEvent>? moss = _service.mossPort.resumeEnsure();
     if (moss != null) {
@@ -409,16 +568,24 @@ class _VideoSubtitleGenerateSheetState
   bool get _running => _job?.isRunning ?? false;
 
   Future<void> _refreshPlan() async {
-    final VideoSubtitleLanguage language = _language;
+    final _AsrPlanKey key = _planKey;
     try {
-      final bool ready = await _service.asrModelPort.isReady(
-        language: language,
+      final AsrAudioProfile profile = await _service.asrAudioProfileFor(
+        _target,
+        key.language,
+        separateVocals: key.separateVocals,
       );
-      if (mounted && language == _language) {
+      if (!mounted || key != _planKey) return;
+      setState(() => _audioProfile = profile);
+      final bool ready = await _service.asrModelPort.isReady(
+        language: key.language,
+        audioProfile: profile,
+      );
+      if (mounted && key == _planKey) {
         setState(() => _modelReady = ready);
       }
     } catch (error) {
-      if (mounted && language == _language) {
+      if (mounted && key == _planKey) {
         setState(() => _planError = '$error');
       }
     }
@@ -463,7 +630,11 @@ class _VideoSubtitleGenerateSheetState
     setState(() => _estimating = true);
     AppVideoSubtitleCostEstimate? estimate;
     try {
-      estimate = await _service.estimateCost(_target, language: language);
+      estimate = await _service.estimateCost(
+        _target,
+        language: language,
+        frames: _frames,
+      );
     } catch (error, stack) {
       // 预估只是参考：读不出时长 / 缓存坏了就不显示，不拦用户（但留日志可查）。
       ErrorLogService.instance.log('video.subtitleEstimate', error, stack);
@@ -490,32 +661,38 @@ class _VideoSubtitleGenerateSheetState
       _asrDownloadError = null;
       _asrDownload = _starting;
     });
-    final VideoSubtitleLanguage language = _language;
     unawaited(
-      _followAsr(_service.asrModelPort.download(language: language), language),
+      _followAsr(
+        _service.asrModelPort.download(
+          language: _language,
+          audioProfile: _profileGuess,
+        ),
+        _planKey,
+      ),
     );
   }
 
-  /// 跟一条 [language] 识别模型下载的进度。弹层关掉只摘掉这个监听，下载本身继续。
+  /// 跟一条识别模型下载（[key] 那一套语言 + 分离开关的模型包）的进度。弹层关掉只摘掉
+  /// 这个监听，下载本身继续。
   ///
-  /// 监听绑定发起时的语言：面板换了语言后这条下载属于别的模型包，它的进度 / 失败 /
-  /// 完成都不能写进当前语言的模型状态（换回来时 [_applyLanguage] 会重新接回）。
-  /// 退出 `await for` 只取消本监听，下载归 `sharedModelDownloads`，照常跑完。
+  /// 监听绑定发起时的选择：面板换了语言 / 分离开关后这条下载属于别的模型包，它的
+  /// 进度 / 失败 / 完成都不能写进当前的模型状态（换回来时 [_resumeAsrDownload] 会
+  /// 重新接回）。退出 `await for` 只取消本监听，下载归 `sharedModelDownloads`，照常跑完。
   Future<void> _followAsr(
     Stream<ModelDownloadEvent> download,
-    VideoSubtitleLanguage language,
+    _AsrPlanKey key,
   ) async {
     try {
       await for (final ModelDownloadEvent e in download) {
-        if (!mounted || language != _language) return;
+        if (!mounted || key != _planKey) return;
         setState(() => _asrDownload = e);
       }
     } catch (error) {
-      if (mounted && language == _language) {
+      if (mounted && key == _planKey) {
         setState(() => _asrDownloadError = '$error');
       }
     }
-    if (!mounted || language != _language) return;
+    if (!mounted || key != _planKey) return;
     setState(() => _asrDownload = null);
     await _refreshPlan();
   }
@@ -549,7 +726,8 @@ class _VideoSubtitleGenerateSheetState
     await _refreshMoss();
   }
 
-  /// 打开 AI 校对：首次先说明会发送什么，同意了才开。
+  /// 打开 AI 校对：首次先说明会发送什么（文本、已有字幕的台词、专名表，以及画面），
+  /// 同意了才开；说明里写明了画面，所以画面的知情也一并记下。
   Future<void> _setProofread(bool on) async {
     if (on && !widget.prefs.consented) {
       final bool ok = await showFushiConfirmDialog(
@@ -565,10 +743,45 @@ class _VideoSubtitleGenerateSheetState
       );
       if (!ok || !mounted) return;
       await widget.prefs.setConsented(true);
+      await widget.prefs.setFramesConsented(true);
     }
     setState(() => _proofread = on);
     await widget.prefs.setProofread(on);
     if (on) unawaited(_refreshEstimate());
+  }
+
+  /// 打开画面参考：没看过写明「会发画面」的说明就先看（[confirmVideoSubtitleAiFrames]）。
+  Future<void> _setFrames(bool on) async {
+    if (on && !await confirmVideoSubtitleAiFrames(context, widget.prefs)) {
+      return;
+    }
+    if (!mounted) return;
+    setState(() => _frames = on);
+    await widget.prefs.setFrames(on);
+    if (_proofread) unawaited(_refreshEstimate());
+  }
+
+  Future<void> _setSaveBeside(bool on) async {
+    setState(() {
+      _saveBeside = on;
+      _startError = null;
+    });
+    await widget.prefs.setSaveBesideVideo(on);
+    if (on && _proofread) unawaited(_refreshEstimate());
+  }
+
+  /// 不保存到视频旁：关面板，交给视频页走转录弹层（见 [VideoSubtitleInAppTranscribe]）。
+  /// 用 maybePop：面板总在自己的路由里，pop 掉的就是它本身。
+  Future<void> _transcribeInApp() async {
+    final VideoSubtitleInAppTranscribe? transcribe = widget.onTranscribeInApp;
+    if (transcribe == null) return;
+    final bool proofread = _proofread;
+    // 转录弹层的 AI 校对同样会带画面（`appAsrProofreadHost` 现读偏好）：先把知情补上。
+    await _resolveFrames();
+    if (!mounted) return;
+    // 嵌入形态没有自己的路由可关（pop 掉的会是整个工作台）：转录弹层直接盖在上面。
+    if (!widget.embedded) await Navigator.of(context).maybePop();
+    transcribe(proofread: proofread);
   }
 
   Future<void> _openAiSettings() async {
@@ -596,6 +809,20 @@ class _VideoSubtitleGenerateSheetState
     if (mounted && _proofread) unawaited(_refreshEstimate());
   }
 
+  /// 这次要不要带画面（[resolveVideoSubtitleAiFrames]）；用户点了「不发画面」时开关
+  /// 跟着关掉。
+  Future<bool> _resolveFrames() async {
+    final bool frames = await resolveVideoSubtitleAiFrames(
+      context,
+      widget.prefs,
+      wanted: _proofread && _frames && _service.proofreadAcceptsImages,
+    );
+    if (mounted && _frames && !widget.prefs.frames) {
+      setState(() => _frames = false);
+    }
+    return frames;
+  }
+
   Future<void> _start() async {
     setState(() => _startError = null);
     // 开 AI 才会跑歌词补齐（联网搜索抓页交给 AI）：配了后端还没答过就先问一次。
@@ -603,6 +830,8 @@ class _VideoSubtitleGenerateSheetState
       await widget.prefs.ensureWebSearchPageFetchDecided(context);
       if (!mounted) return;
     }
+    final bool frames = await _resolveFrames();
+    if (!mounted) return;
     try {
       final AppVideoSubtitleJob job = _service.start(
         _target,
@@ -611,6 +840,9 @@ class _VideoSubtitleGenerateSheetState
           segmenter: _segmenter,
           mossBackend: widget.prefs.mossBackend,
           language: _language,
+          frames: frames,
+          pinnedEvidence: widget.pinnedEvidence,
+          audioProfile: _audioProfile,
         ),
       );
       setState(() => _attach(job));
@@ -627,6 +859,8 @@ class _VideoSubtitleGenerateSheetState
             t.video_subtitle_ai_no_local_episodes,
           AppVideoSubtitleStartProblem.nothingToRerun =>
             t.video_subtitle_ai_nothing_to_rerun,
+          AppVideoSubtitleStartProblem.glossaryRegenerating =>
+            t.video_subtitle_ai_glossary_regenerating,
         };
       });
     }
@@ -637,12 +871,18 @@ class _VideoSubtitleGenerateSheetState
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 不保存到视频旁时语言 / 模型 / 分段都归转录弹层管（那边语言与引擎更多），
+    // 这里只留对象、保存开关与 AI 校对。
     final List<(String, Widget)> parts = <(String, Widget)>[
       (t.video_subtitle_ai_target_label, _targetSummary(context)),
-      if (!_target.isMusic)
-        (t.video_subtitle_ai_language_label, _languageControl()),
-      (t.video_subtitle_ai_model_label, _modelStatus(context)),
-      (t.video_subtitle_ai_segmenter_label, _segmenterControl()),
+      if (widget.onTranscribeInApp != null)
+        (t.video_subtitle_save_label, _saveControl()),
+      if (_saveBeside) ...<(String, Widget)>[
+        if (!_target.isMusic)
+          (t.video_subtitle_ai_language_label, _languageControl()),
+        (t.video_subtitle_ai_model_label, _modelSection(context)),
+        (t.video_subtitle_ai_segmenter_label, _segmenterControl()),
+      ],
       (t.video_subtitle_ai_proofread_label, _proofreadControl()),
     ];
     final List<Widget> sections = <Widget>[
@@ -650,6 +890,27 @@ class _VideoSubtitleGenerateSheetState
         _section(i, parts.length, parts[i].$1, parts[i].$2),
     ];
     final AppVideoSubtitleJob? job = _job;
+    final Widget body = _body(context, tokens, sections, job);
+    final Widget footer = Wrap(
+      alignment: WrapAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: tokens.spacing.gap,
+      runSpacing: tokens.spacing.gap,
+      children: _footerButtons(context),
+    );
+    if (widget.embedded) {
+      return Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          body,
+          Padding(
+            padding: EdgeInsets.only(top: tokens.spacing.rowVertical),
+            child: footer,
+          ),
+        ],
+      );
+    }
     return FushiModalSheetFrame(
       title: _target.wholeSeason
           ? (_target.isMusic
@@ -661,46 +922,49 @@ class _VideoSubtitleGenerateSheetState
       leadingIcon: FushiIcons.subtitles,
       scrollable: true,
       bodyPadding: EdgeInsets.symmetric(horizontal: tokens.spacing.card),
-      body: FushiEntranceScope(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            ...sections,
-            FushiAnimatedSize(
-              duration: context.fushiMotion.spatialDefault.duration,
-              curve: context.fushiMotion.spatialDefault.curve,
-              alignment: Alignment.topCenter,
-              child: job == null
-                  ? const SizedBox(width: double.infinity)
-                  : Padding(
-                      padding: EdgeInsets.only(top: tokens.spacing.rowVertical),
-                      child: FushiStaggeredEntrance(
-                        index: sections.length,
-                        child: _jobCard(context, job),
-                      ),
+      body: body,
+      footer: footer,
+    );
+  }
+
+  Widget _body(
+    BuildContext context,
+    FushiDesignTokens tokens,
+    List<Widget> sections,
+    AppVideoSubtitleJob? job,
+  ) {
+    return FushiEntranceScope(
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          ...sections,
+          FushiAnimatedSize(
+            duration: context.fushiMotion.spatialDefault.duration,
+            curve: context.fushiMotion.spatialDefault.curve,
+            alignment: Alignment.topCenter,
+            child: job == null || !_saveBeside
+                ? const SizedBox(width: double.infinity)
+                : Padding(
+                    padding: EdgeInsets.only(top: tokens.spacing.rowVertical),
+                    child: FushiStaggeredEntrance(
+                      index: sections.length,
+                      child: _jobCard(context, job),
                     ),
-            ),
-            if (_startError != null)
-              Padding(
-                padding: EdgeInsets.only(top: tokens.spacing.gap),
-                child: Text(
-                  _startError!,
-                  key: const ValueKey<String>('video-subtitle-ai-start-error'),
-                  style: tokens.type.metadata.copyWith(
-                    color: Theme.of(context).colorScheme.error,
                   ),
+          ),
+          if (_startError != null)
+            Padding(
+              padding: EdgeInsets.only(top: tokens.spacing.gap),
+              child: Text(
+                _startError!,
+                key: const ValueKey<String>('video-subtitle-ai-start-error'),
+                style: tokens.type.metadata.copyWith(
+                  color: Theme.of(context).colorScheme.error,
                 ),
               ),
-          ],
-        ),
-      ),
-      footer: Wrap(
-        alignment: WrapAlignment.end,
-        crossAxisAlignment: WrapCrossAlignment.center,
-        spacing: tokens.spacing.gap,
-        runSpacing: tokens.spacing.gap,
-        children: _footerButtons(context),
+            ),
+        ],
       ),
     );
   }
@@ -764,7 +1028,7 @@ class _VideoSubtitleGenerateSheetState
           AppVideoSubtitleUnavailableReason.missingFile =>
             t.video_subtitle_ai_unavailable_missing(title: u.title),
         }),
-      if (_proofread && _target.missingScrapedData)
+      if (_saveBeside && _proofread && _target.missingScrapedData)
         _hint(
           t.video_subtitle_ai_scrape_hint,
           key: const ValueKey<String>('video-subtitle-ai-scrape-hint'),
@@ -823,6 +1087,73 @@ class _VideoSubtitleGenerateSheetState
       ),
     ],
   );
+
+  /// 模型一节：音乐先给「先分离人声」开关，再是模型就绪 / 下载。
+  Widget _modelSection(BuildContext context) {
+    if (!_target.isMusic) return _modelStatus(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: 8,
+      children: <Widget>[_vocalSeparationControl(), _modelStatus(context)],
+    );
+  }
+
+  /// 音乐「先分离人声」开关（拍板 W_wrz-ZPU8）：开 = 伴奏重时更准、要多下分离模型、
+  /// 耗时数倍（手机内存不够时这次退回原音频）；关 = 直接识别原音频，广播 / 讲座快
+  /// 很多，伴奏重的歌会漏句。按条目记住。
+  Widget _vocalSeparationControl() {
+    final AsrAudioProfile? profile = _audioProfile;
+    final Widget hint = !_separateVocals
+        ? _hint(
+            t.music_subtitle_vocal_separation_off,
+            key: const ValueKey<String>('music-subtitle-vocal-separation-off'),
+          )
+        : profile != null && !profile.separatesVocals
+        ? _hint(
+            t.music_subtitle_vocal_separation_low_memory,
+            key: const ValueKey<String>(
+              'music-subtitle-vocal-separation-low-memory',
+            ),
+          )
+        : _hint(
+            t.music_subtitle_vocal_separation_on,
+            key: const ValueKey<String>('music-subtitle-vocal-separation-on'),
+          );
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: 2,
+            children: <Widget>[
+              Text(
+                t.music_subtitle_vocal_separation_label,
+                style: context.fushiType.bodyMedium,
+              ),
+              FushiAnimatedSize(
+                duration: context.fushiMotion.spatialDefault.duration,
+                curve: context.fushiMotion.spatialDefault.curve,
+                alignment: Alignment.topCenter,
+                child: hint,
+              ),
+              _hint(t.music_subtitle_vocal_separation_remembered),
+            ],
+          ),
+        ),
+        SizedBox(width: FushiDesignTokens.of(context).spacing.gap),
+        KeyedSubtree(
+          key: const ValueKey<String>('music-subtitle-vocal-separation'),
+          child: adaptiveSwitch(
+            context: context,
+            value: _separateVocals,
+            onChanged: _running
+                ? null
+                : (bool v) => unawaited(_setSeparateVocals(v)),
+          ),
+        ),
+      ],
+    );
+  }
 
   Widget _modelStatus(BuildContext context) {
     final bool? ready = _modelReady;
@@ -924,6 +1255,37 @@ class _VideoSubtitleGenerateSheetState
     );
   }
 
+  Widget _saveControl() {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return Row(
+      children: <Widget>[
+        Expanded(
+          child: _hint(
+            _saveBeside
+                ? t.video_subtitle_save_beside_hint
+                : t.video_subtitle_save_off_hint,
+            key: ValueKey<String>(
+              _saveBeside
+                  ? 'video-subtitle-save-beside-hint'
+                  : 'video-subtitle-save-off-hint',
+            ),
+          ),
+        ),
+        SizedBox(width: tokens.spacing.gap),
+        KeyedSubtree(
+          key: const ValueKey<String>('video-subtitle-save-beside'),
+          child: adaptiveSwitch(
+            context: context,
+            value: _saveBeside,
+            onChanged: _running
+                ? null
+                : (bool v) => unawaited(_setSaveBeside(v)),
+          ),
+        ),
+      ],
+    );
+  }
+
   Widget _proofreadControl() {
     final AiProviderConfig? provider = _service.proofreadProvider;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -932,7 +1294,13 @@ class _VideoSubtitleGenerateSheetState
       children: <Widget>[
         Row(
           children: <Widget>[
-            Expanded(child: _hint(t.video_subtitle_ai_proofread_hint)),
+            Expanded(
+              child: _hint(
+                _saveBeside
+                    ? t.video_subtitle_ai_proofread_hint
+                    : t.video_subtitle_transcribe_proofread_hint,
+              ),
+            ),
             SizedBox(width: tokens.spacing.gap),
             KeyedSubtree(
               key: const ValueKey<String>('video-subtitle-ai-proofread'),
@@ -984,17 +1352,22 @@ class _VideoSubtitleGenerateSheetState
                             'video-subtitle-ai-provider',
                           ),
                         ),
-                      _estimateLine(),
-                      FushiPressScale(
-                        child: FushiOutlinedButton.icon(
-                          key: const ValueKey<String>(
-                            'video-subtitle-ai-glossary',
+                      // 画面参考两条路都用（转录弹层的校对同样附画面）。
+                      if (provider != null) _framesControl(provider),
+                      // 费用预估与专名表只属于管线校对；转录弹层的校对不用专名表。
+                      if (_saveBeside) ...<Widget>[
+                        _estimateLine(),
+                        FushiPressScale(
+                          child: FushiOutlinedButton.icon(
+                            key: const ValueKey<String>(
+                              'video-subtitle-ai-glossary',
+                            ),
+                            icon: const FushiIcon(FushiIcons.edit, size: 18),
+                            label: Text(t.video_subtitle_glossary_open),
+                            onPressed: () => unawaited(_openGlossary()),
                           ),
-                          icon: const FushiIcon(FushiIcons.edit, size: 18),
-                          label: Text(t.video_subtitle_glossary_open),
-                          onPressed: () => unawaited(_openGlossary()),
                         ),
-                      ),
+                      ],
                     ],
                   ),
                 ),
@@ -1002,6 +1375,46 @@ class _VideoSubtitleGenerateSheetState
       ],
     );
   }
+
+  /// 「参考画面」：AI 校对时每批附上对应时刻的视频画面（默认开）。开着但提供商没开
+  /// 图片输入时直说画面不会发送（任务照常按纯文字校对）——只是说明，不标成错误：
+  /// 纯文字提供商是常态。
+  Widget _framesControl(AiProviderConfig provider) => Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    spacing: 4,
+    children: <Widget>[
+      Row(
+        children: <Widget>[
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: <Widget>[
+                Text(
+                  t.video_subtitle_ai_frames_label,
+                  style: context.fushiType.bodyMedium,
+                ),
+                _hint(t.video_subtitle_ai_frames_hint),
+              ],
+            ),
+          ),
+          SizedBox(width: FushiDesignTokens.of(context).spacing.gap),
+          KeyedSubtree(
+            key: const ValueKey<String>('video-subtitle-ai-frames'),
+            child: adaptiveSwitch(
+              context: context,
+              value: _frames,
+              onChanged: _running ? null : (bool v) => unawaited(_setFrames(v)),
+            ),
+          ),
+        ],
+      ),
+      if (_frames && !provider.acceptsImages)
+        _hint(
+          t.video_subtitle_ai_frames_unsupported,
+          key: const ValueKey<String>('video-subtitle-ai-frames-unsupported'),
+        ),
+    ],
+  );
 
   Widget _estimateLine() {
     final AppVideoSubtitleCostEstimate? estimate = _estimate;
@@ -1019,6 +1432,9 @@ class _VideoSubtitleGenerateSheetState
             input: videoSubtitleTokenCount(estimate.cost.inputTokens),
             output: videoSubtitleTokenCount(estimate.cost.outputTokens),
           ) +
+          (estimate.cost.frames > 0
+              ? t.video_subtitle_ai_estimate_frames(count: estimate.cost.frames)
+              : '') +
           (estimate.basis == AppVideoSubtitleEstimateBasis.duration
               ? t.video_subtitle_ai_estimate_by_duration
               : t.video_subtitle_ai_estimate_by_drafts),
@@ -1217,13 +1633,31 @@ class _VideoSubtitleGenerateSheetState
     final bool modelReady = _modelReady ?? false;
     final bool providerMissing =
         _proofread && _service.proofreadProvider == null;
-    final bool canStart = modelReady && !providerMissing && !_running;
     final List<Widget> buttons = <Widget>[
-      FushiTextButton(
-        onPressed: () => Navigator.pop(context),
-        child: Text(_running ? t.video_subtitle_ai_hide : t.dialog_close),
-      ),
+      // 嵌在工作台里时没有自己的路由可关：这里 pop 掉的会是整个工作台。
+      if (!widget.embedded)
+        FushiTextButton(
+          onPressed: () => Navigator.pop(context),
+          child: Text(_running ? t.video_subtitle_ai_hide : t.dialog_close),
+        ),
     ];
+    if (!_saveBeside) {
+      // 识别模型由转录弹层自己查 / 下，这里不看 modelReady。
+      buttons.add(
+        FushiPressScale(
+          child: FushiFilledButton.icon(
+            key: const ValueKey<String>('video-subtitle-transcribe-start'),
+            icon: const FushiIcon(FushiIcons.play, size: 18),
+            label: Text(t.video_subtitle_ai_start),
+            onPressed: providerMissing || _running
+                ? null
+                : () => unawaited(_transcribeInApp()),
+          ),
+        ),
+      );
+      return buttons;
+    }
+    final bool canStart = modelReady && !providerMissing && !_running;
     if (job != null && job.isRunning) {
       buttons.add(
         FushiFilledButton.icon(

@@ -243,8 +243,16 @@ void main() {
         r'${ReaderCaretScripts.instantScrollInvocation(popupInstantScroll)};',
       );
       final int renderTokenAt = source.indexOf('window.__fushiRenderToken =');
-      final int resetAt = source.indexOf(
-        'window.__fushiResetPopupScroll = function() {',
+      // 归零在 afterEntriesJs（beforeRenderJs）里，投递脚本里排在 render token 之后。
+      final int resetAt = source.indexOf(': afterEntriesJs}');
+      // 归零只有 popup.js 一份实现（与 app 外查词窗根 iframe 共用），Dart 不再另写。
+      expect(
+        source,
+        isNot(contains('window.__fushiResetPopupScroll = function')),
+      );
+      expect(
+        File('assets/popup/popup.js').readAsStringSync(),
+        contains('window.__fushiResetPopupScroll = function() {'),
       );
       expect(instantScrollAt, greaterThanOrEqualTo(0));
       expect(

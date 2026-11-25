@@ -27,6 +27,7 @@ class PendingFlushReport {
     this.awaitingConfirmation = false,
     this.stopOutcome,
     this.failureOutcome,
+    this.notice,
   });
 
   /// 送进 Anki（或 Anki 说已经有了）的张数。
@@ -54,12 +55,25 @@ class PendingFlushReport {
 
   /// 这一轮第一张被拒收（[failed]）的卡的结果，界面据此说明为什么失败。
   final MineOutcome? failureOutcome;
+
+  /// 这一轮送达的卡随结果带回的提示（[MineOutcome.notice]，如「保存到」被主机退回默认），
+  /// 取第一条。补发是批量 / 后台的，没有逐张的结果提示可以挂，调用方必须把它报出来，
+  /// 否则用户永远不知道落点变了（BUG-4287）。
+  final String? notice;
+}
+
+/// [outcome] 带回的非空提示；没有时 null。
+String? _noticeOf(MineOutcome? outcome) {
+  final String? notice = outcome?.notice;
+  return notice == null || notice.isEmpty ? null : notice;
 }
 
 /// 这次失败是不是「确定没送到」——只有这种才能放心入队、之后原样重发。
 ///
 /// * `connectionRefused`：建连就没成（Anki 没开 / 地址不通）。
 /// * `pairedDeviceUnreachable`：互联远端制卡时一个已配对设备都连不上。
+/// * `pairedDeviceMiningUnavailable`：连上了主机、但它的制卡端点回 404 / 405（此刻不收卡，例如复习库要升级），
+///   请求没被执行。
 ///
 /// 刻意**不**包括：`connectionTimeout`（连上了、请求可能已发出）、
 /// `connectionUnknown`（含 AnkiConnect「提交结果未知」与远端兜底异常）——卡可能
@@ -67,7 +81,8 @@ class PendingFlushReport {
 bool isUndeliveredMineFailure(MineOutcome outcome) =>
     outcome.result == MineResult.error &&
     (outcome.errorCode == AnkiErrorCode.connectionRefused ||
-        outcome.errorCode == AnkiErrorCode.pairedDeviceUnreachable);
+        outcome.errorCode == AnkiErrorCode.pairedDeviceUnreachable ||
+        outcome.errorCode == AnkiErrorCode.pairedDeviceMiningUnavailable);
 
 /// 待发制卡队列的仓库层接线：包在制卡链路最外层。
 ///
@@ -237,6 +252,7 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
           _SendResult.delivered => PendingFlushReport(
             delivered: 1,
             remaining: remaining,
+            notice: _noticeOf(outcome),
           ),
           _SendResult.failed => PendingFlushReport(
             failed: 1,
@@ -302,6 +318,7 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
     int delivered = 0;
     int failed = 0;
     MineOutcome? firstFailure;
+    String? notice;
     final List<PendingMineRow> batch = includeFailed
         ? await _store.sendableIncludingFailed()
         : await _store.sendable();
@@ -310,6 +327,7 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
       switch (result) {
         case _SendResult.delivered:
           delivered++;
+          notice ??= _noticeOf(outcome);
         case _SendResult.failed:
           failed++;
           firstFailure ??= outcome;
@@ -326,6 +344,7 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
             unreachable: true,
             stopOutcome: outcome,
             failureOutcome: firstFailure,
+            notice: notice,
           );
       }
     }
@@ -334,6 +353,7 @@ class PendingMiningAnkiRepository extends DelegatingAnkiRepository {
       failed: failed,
       remaining: (await _store.sendable()).length,
       failureOutcome: firstFailure,
+      notice: notice,
     );
   }
 

@@ -47,10 +47,11 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
     if (svc == null) return shelf.Response.notFound('Library service off');
 
     switch (method) {
+      // HBK-AUDIT-028：快照的组装、裁剪、折叠与 JSON 编 / 解码都在 host 服务的
+      // 后台所有者里做（app 里 host 与 UI 同一个 isolate），这里只搬字节。
       case 'GET':
-        final AggregateSnapshot snapshot = await svc.getAggregateSnapshot();
         return shelf.Response.ok(
-          jsonEncode(snapshot.toJson()),
+          await svc.getAggregateBody(),
           // charset=utf-8 必带：快照里的书名/标题/义项含 CJK，client 用
           // package:http `.body` 默认按 latin1 解码会乱码（同 _jsonResponse）。
           headers: <String, String>{
@@ -58,11 +59,15 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
           },
         );
       case 'PUT':
-        final Map<String, dynamic>? json = await readJsonObjectBody(request);
-        if (json == null) return shelf.Response(400, body: 'Invalid JSON');
-        // fromJson 容错：未知高版本 / 缺字段 / 坏行降级为空或跳过，绝不抛。
-        final AggregateSnapshot snapshot = AggregateSnapshot.fromJson(json);
-        await svc.applyAggregateSnapshot(snapshot);
+        final Uint8List body = await readBoundedRequestBody(
+          request.read(),
+          declaredLength: request.contentLength,
+          maxBytes: kInterconnectJsonBodyMaxBytes,
+        );
+        // 非法 UTF-8 / JSON、顶层不是 object（含空体）→ false，什么都没写。
+        if (!await svc.applyAggregateBody(body)) {
+          return shelf.Response(400, body: 'Invalid JSON');
+        }
         return shelf.Response(200);
       default:
         return shelf.Response(405);
@@ -207,6 +212,54 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
     }
   }
 
+  /// 在线源条目清单跨设备端点（`online_library_sync.dart`）。
+  ///
+  /// GET — `{"manifests": [...]}`：host 自己的清单（app 当 host）+ 信箱里各设备的；
+  /// PUT / POST — 一台设备的清单（`deviceId` 必填），host 存进信箱、app 当 host 时
+  /// 并进自己的库，回 204。host 不实现 [OnlineLibrarySyncHost] → 404。
+  Future<shelf.Response> _handleLibraryOnlineItems(
+    shelf.Request request,
+    String method,
+  ) async {
+    final Object? svc = _libraryService;
+    if (svc is! OnlineLibrarySyncHost) {
+      return shelf.Response.notFound('Online library sync off');
+    }
+    final OnlineLibrarySyncHost host = svc;
+    switch (method) {
+      case 'GET':
+        final List<OnlineLibraryManifest> manifests = await host
+            .getOnlineLibraryManifests();
+        return shelf.Response.ok(
+          jsonEncode(<String, Object?>{
+            'manifests': <Map<String, dynamic>>[
+              for (final OnlineLibraryManifest m in manifests) m.toJson(),
+            ],
+          }),
+          headers: const <String, String>{
+            'Content-Type': 'application/json; charset=utf-8',
+          },
+        );
+      case 'PUT':
+      case 'POST':
+        final Map<String, dynamic>? json = await readJsonObjectBody(request);
+        if (json == null) return shelf.Response(400, body: 'Invalid JSON');
+        final OnlineLibraryManifest incoming;
+        try {
+          incoming = OnlineLibraryManifest.fromJson(json);
+        } on FormatException catch (e) {
+          return shelf.Response(400, body: 'Invalid manifest: $e');
+        }
+        if (incoming.deviceId.isEmpty) {
+          return shelf.Response(400, body: 'Missing deviceId');
+        }
+        await host.putOnlineLibraryManifest(incoming);
+        return shelf.Response(204);
+      default:
+        return shelf.Response(405);
+    }
+  }
+
   /// Host → paired child service configuration.
   ///
   /// This endpoint carries API keys and connection credentials, so its security
@@ -262,10 +315,14 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
   ) async {
     if (method != 'GET' && method != 'PUT') return shelf.Response(405);
     if (_securityContext == null) {
-      return shelf.Response.forbidden('HTTPS required for profile transfer');
+      return _interconnectProfileDenied(
+        InterconnectProfileDenial.httpsRequired,
+      );
     }
     if (!await _validatePeerAuth(request.headers['authorization'])) {
-      return shelf.Response.forbidden('Paired-device token required');
+      return _interconnectProfileDenied(
+        InterconnectProfileDenial.peerTokenRequired,
+      );
     }
     final FushiLibraryHostService? library = _libraryService;
     if (library is! InterconnectProfileHost) {
@@ -273,15 +330,18 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
     }
     final InterconnectProfileHost host = library as InterconnectProfileHost;
     if (!await host.isInterconnectProfileTransferEnabled()) {
-      return shelf.Response.forbidden('Profile transfer disabled on host');
+      return _interconnectProfileDenied(InterconnectProfileDenial.disabled);
     }
     if (method == 'GET') {
       final String json;
       try {
         json = await host.exportInterconnectProfile();
       } on InterconnectProfileUnavailableException catch (e) {
-        // 懂端点、开关开着、只是眼下没东西可给：409 带原因，client 如实报给用户。
-        return shelf.Response(409, body: e.message);
+        // 懂端点、开关开着、只是眼下没东西可给：409 带结构化码，client 如实报给用户。
+        engineLog.logDiagnostic('InterconnectProfile', e.message);
+        return _interconnectProfileDenied(
+          InterconnectProfileDenial.unavailable,
+        );
       }
       return shelf.Response.ok(
         json,
@@ -291,7 +351,7 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
         },
       );
     }
-    final String body = await request.readAsString();
+    final String body = await readBoundedBodyString(request);
     if (body.trim().isEmpty) {
       return shelf.Response(400, body: 'Empty profile payload');
     }
@@ -304,6 +364,18 @@ extension _FushiSyncServerSyncState on FushiSyncServer {
       return shelf.Response(400, body: 'Invalid profile payload: ${e.message}');
     }
   }
+
+  /// 配置搬运的拒绝响应：`{"error": code}`（反馈 G-ebgSnoK8：不再回英文自由文本，
+  /// client 按码给本地化原因）。
+  shelf.Response _interconnectProfileDenied(InterconnectProfileDenial denial) =>
+      shelf.Response(
+        denial.httpStatus,
+        body: interconnectProfileDenialBody(denial),
+        headers: const <String, String>{
+          'Content-Type': 'application/json; charset=utf-8',
+          'Cache-Control': 'no-store',
+        },
+      );
 
   /// GET `/api/tombstones`：列 host 全部删除墓碑为 JSON 数组，供 client 拉取后与本地
   /// 在库键求交、弹逐条确认删本地（显式确认式删除传播，host→client 消费方向）。走已配对

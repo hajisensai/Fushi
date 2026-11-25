@@ -3,7 +3,7 @@
 // 1. 复习页不能永远停在「等 RWKV」：
 //    a. 竞态——「就绪」事件在 `_loadNext` 等排队结果时就来了（那时 `_finished` 还是 false，事件被丢掉），
 //       之后再也没有就绪事件。pending 落定时要当场看一次服务，已就绪就重排。
-//    b. 服务就绪但打分失败——服务转「出错」（`SrsRwkvService._scoringFailed`，engine 测试覆盖），复习页
+//    b. 服务就绪但打分失败——服务转「出错」（RWKV 排程内核，engine 的 srs_rwkv_service_test 覆盖），复习页
 //       给出错误与「重试」，重试就绪后自动出卡，而不是一页静默的空白。
 // 2. 牌组列表 / 首页：RWKV 牌组的到期数在等 RWKV 时显示「准备中」而不是 0；RWKV 就绪后列表自己重读。
 //
@@ -22,7 +22,7 @@ import 'package:fushi/src/pages/implementations/home_nav_peek.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -111,12 +111,7 @@ class _FakeRwkvService extends SrsRwkvService {
 }
 
 Future<void> _settle(WidgetTester tester, {int rounds = 16}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 /// 复习页的排队 / 读卡 / 渲染是真异步（原生库 + 内存库），完成要多少墙钟取决于机器负载：固定轮数的

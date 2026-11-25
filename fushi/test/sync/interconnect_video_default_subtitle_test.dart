@@ -26,6 +26,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/remote_disc_share.dart'
+    show RemoteDiscTitleAudioUnsupported;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
@@ -91,6 +93,28 @@ Future<File> _seedVideo(FushiDatabase db, Directory dir) async {
     ),
   );
   return vid;
+}
+
+/// host 播放列表（一行带 `playlistJson`）：第 0 集 = `ep1.mp4`，第 1 集 = `ep2.mp4`。
+Future<(File, File)> _seedPlaylist(FushiDatabase db, Directory dir) async {
+  final File ep1 = File(p.join(dir.path, 'ep1.mp4'))
+    ..writeAsBytesSync(<int>[1, 2, 3]);
+  final File ep2 = File(p.join(dir.path, 'ep2.mp4'))
+    ..writeAsBytesSync(<int>[4, 5, 6]);
+  await db.upsertVideoBook(
+    VideoBooksCompanion.insert(
+      bookUid: 'video/show',
+      title: 'Show',
+      videoPath: ep1.path,
+      playlistJson: Value<String?>(
+        jsonEncode(<Map<String, String>>[
+          <String, String>{'title': 'EP1', 'path': ep1.path},
+          <String, String>{'title': 'EP2', 'path': ep2.path},
+        ]),
+      ),
+    ),
+  );
+  return (ep1, ep2);
 }
 
 void main() {
@@ -184,6 +208,90 @@ void main() {
       final VideoBookRow row = (await db.getVideoBookByBookUid('video/movie'))!;
       expect(row.subtitleSource, landed.path);
       expect(row.subtitleFormat, 'ass');
+    });
+
+    test('同目录有 stem 更长的视频：不动人家的字幕，落成本视频认得的无标记名', () async {
+      // `movie.ja.srt` 归 `movie.ja.mkv`（最长主干认领）：给 `movie` 设默认字幕既不能
+      // 把它当「压过新字幕的旧档」备份掉，也不能把新字幕落成 `movie.ja.*`（那是
+      // `movie.ja.mkv` 的字幕，`movie` 播放时看不到）。
+      final Directory vidDir = Directory(p.join(work.path, 'vids'))
+        ..createSync(recursive: true);
+      await _seedVideo(db, vidDir);
+      File(p.join(vidDir.path, 'movie.ja.mkv')).writeAsBytesSync(<int>[9]);
+      final File neighbour = File(p.join(vidDir.path, 'movie.ja.srt'))
+        ..writeAsStringSync(_srtOriginal);
+      final File upload = File(p.join(work.path, 'upload.tmp'))
+        ..writeAsStringSync(_srtUploaded);
+
+      final LocalLibraryHostService svc = _hostService(db: db, work: work);
+      final String placed = await svc.importDefaultVideoSubtitle(
+        upload,
+        id: 'video/movie',
+        format: 'srt',
+      );
+
+      expect(placed, '.srt');
+      expect(neighbour.readAsStringSync(), _srtOriginal);
+      expect(
+        File('${neighbour.path}$kDisplacedSidecarBackupSuffix').existsSync(),
+        isFalse,
+      );
+      final File landed = File(p.join(vidDir.path, 'movie.srt'));
+      expect(landed.readAsStringSync(), _srtUploaded);
+      expect(
+        (await svc.resolveVideoSubtitle('video/movie'))?.path,
+        landed.path,
+      );
+    });
+
+    test('播放列表第 N 集：落到那一集文件旁、让位同集旧档，第 0 集的库行与字幕不动', () async {
+      final Directory vidDir = Directory(p.join(work.path, 'vids'))
+        ..createSync(recursive: true);
+      final (File ep1, File ep2) = await _seedPlaylist(db, vidDir);
+      final File ep1Ja = File(p.join(vidDir.path, 'ep1.ja.srt'))
+        ..writeAsStringSync(_srtOriginal);
+      final File ep2Ja = File(p.join(vidDir.path, 'ep2.ja.srt'))
+        ..writeAsStringSync(_srtOriginal);
+      final File upload = File(p.join(work.path, 'upload.tmp'))
+        ..writeAsStringSync(_srtUploaded);
+      final LocalLibraryHostService svc = _hostService(db: db, work: work);
+
+      final String placed = await svc.importDefaultVideoSubtitle(
+        upload,
+        id: 'video/show',
+        format: 'srt',
+        episodeIndex: 1,
+      );
+
+      expect(placed, '.ja.srt');
+      expect(ep2Ja.readAsStringSync(), _srtUploaded);
+      expect(
+        File('${ep2Ja.path}$kDisplacedSidecarBackupSuffix').readAsStringSync(),
+        _srtOriginal,
+      );
+      expect(ep1Ja.readAsStringSync(), _srtOriginal, reason: '第 0 集的字幕不能被压掉');
+      expect(
+        (await svc.resolveVideoSubtitle('video/show', episodeIndex: 1))?.path,
+        ep2Ja.path,
+      );
+      final VideoBookRow row = (await db.getVideoBookByBookUid('video/show'))!;
+      expect(row.videoPath, ep1.path);
+      expect(row.subtitleSource, isNull, reason: '行上的字幕源属于第 0 集');
+      expect(await db.getCuesForBook('video/show'), isEmpty);
+      expect(ep2.existsSync(), isTrue);
+
+      // 越界的集：StateError（端点 404），不退回第 0 集。
+      final File again = File(p.join(work.path, 'upload2.tmp'))
+        ..writeAsStringSync(_srtUploaded);
+      expect(
+        () => svc.importDefaultVideoSubtitle(
+          again,
+          id: 'video/show',
+          format: 'srt',
+          episodeIndex: 2,
+        ),
+        throwsStateError,
+      );
     });
 
     test('连续上传：原始文件只备份一次，之前的上传产物直接替换', () async {
@@ -293,6 +401,11 @@ void main() {
           (json['liveLibrary'] as Map<String, dynamic>)['videoSubtitleDefault'],
           isTrue,
         );
+        expect(
+          (json['liveLibrary']
+              as Map<String, dynamic>)['videoSubtitleDefaultEpisode'],
+          isTrue,
+        );
       } finally {
         http.close(force: true);
       }
@@ -333,6 +446,49 @@ void main() {
         'video/movie',
       ))!;
       expect(row.subtitleSource, oldJa.path);
+    });
+
+    test('client 没有学习语言标记（后缀只有 .srt）：host 照样认出格式并设为默认', () async {
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: token,
+      );
+      final File sub = File(p.join(work.path, 'picked.srt'))
+        ..writeAsStringSync(_srtUploaded);
+      expect(
+        await backend.putRemoteVideoSubtitleAsDefault(
+          'video/movie',
+          sub,
+          suffix: '.srt',
+        ),
+        RemoteSubtitleDefaultUpload.applied,
+      );
+      expect(
+        File(p.join(vidDir.path, 'movie.ja.srt')).readAsStringSync(),
+        _srtUploaded,
+      );
+    });
+
+    test('播放列表第 N 集：client 带集下标上传，host 落到那一集旁并成为它的首选字幕', () async {
+      final (File _, File ep2) = await _seedPlaylist(hostDb, vidDir);
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: token,
+      );
+      final File sub = File(p.join(work.path, 'picked.srt'))
+        ..writeAsStringSync(_srtUploaded);
+      expect(
+        await backend.putRemoteVideoSubtitleAsDefault(
+          'video/show',
+          sub,
+          suffix: '.ja.srt',
+          episodeIndex: 1,
+        ),
+        RemoteSubtitleDefaultUpload.applied,
+      );
+      final File landed = File(p.join(p.dirname(ep2.path), 'ep2.ja.srt'));
+      expect(landed.readAsStringSync(), _srtUploaded);
+      expect(File(p.join(vidDir.path, 'ep1.ja.srt')).existsSync(), isFalse);
     });
 
     // 改名前（Hibiki）的 client 只发 X-Hibiki-* 请求头、只读 x-hibiki-subtitle-suffix
@@ -425,6 +581,7 @@ void main() {
     late int capabilityProbes;
     late int subtitlePuts;
     final List<String> oldHostSuffixes = <String>[];
+    final List<Map<String, String>> clipQueries = <Map<String, String>>[];
     // null = /api/capabilities 整个端点 404（更老的 host）。
     Map<String, dynamic>? capabilities;
 
@@ -435,6 +592,7 @@ void main() {
       capabilityProbes = 0;
       subtitlePuts = 0;
       oldHostSuffixes.clear();
+      clipQueries.clear();
       fake = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
       fake.listen((HttpRequest req) async {
         final HttpResponse res = req.response;
@@ -458,6 +616,10 @@ void main() {
           final List<int> body = <int>[];
           await req.forEach(body.addAll);
           File(p.join(work.path, 'movie$suffix')).writeAsBytesSync(body);
+        } else if (req.method == 'GET' && req.uri.path.endsWith('/clipaudio')) {
+          // 老 host 的 clipaudio 不认 discTitle：照 <id> 那一行裁。
+          clipQueries.add(req.uri.queryParameters);
+          res.add(<int>[0xAA, 0xBB]);
         } else {
           res.statusCode = 404;
         }
@@ -516,6 +678,228 @@ void main() {
         expect(capabilityProbes, 1, reason: '同一 host 基址的能力位只探一次（缓存）');
       });
     }
+
+    test('认默认字幕但没声明 videoSubtitleDefaultEpisode：第 N 集不上传（会压掉第 0 集）', () async {
+      capabilities = <String, dynamic>{
+        'liveLibrary': <String, dynamic>{'videoSubtitleDefault': true},
+      };
+      final List<int> before = hostJa.readAsBytesSync();
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: 'old-host-token',
+      );
+      final File sub = File(p.join(work.path, 'picked.srt'))
+        ..writeAsStringSync(_srtUploaded);
+      expect(
+        await backend.putRemoteVideoSubtitleAsDefault(
+          'video/movie',
+          sub,
+          suffix: '.ja.srt',
+          episodeIndex: 1,
+        ),
+        RemoteSubtitleDefaultUpload.hostUnsupported,
+      );
+      expect(subtitlePuts, 0);
+      expect(hostJa.readAsBytesSync(), before);
+    });
+
+    test(
+      '远端原盘 title 取音频：没声明 videoClipAudioDiscTitle 时不发 clipaudio（老 host 会裁错 title）',
+      () async {
+        capabilities = <String, dynamic>{
+          'liveLibrary': <String, dynamic>{'videos': true},
+        };
+        final InterconnectSyncBackend backend = await _clientBackend(
+          base: base,
+          token: 'old-host-token',
+        );
+        final File dest = File(p.join(work.path, 'title.aac'));
+        await expectLater(
+          backend.getRemoteVideoAudioClip(
+            'disc/main',
+            dest,
+            startMs: 0,
+            endMs: 60000,
+            discTitle: 'BDMV/PLAYLIST/00005.mpls',
+          ),
+          throwsA(isA<RemoteDiscTitleAudioUnsupported>()),
+        );
+        expect(clipQueries, isEmpty);
+        expect(dest.existsSync(), isFalse);
+        // 库里有行的 title（不带 discTitle）照常走老端点。
+        await backend.getRemoteVideoAudioClip(
+          'disc/main',
+          dest,
+          startMs: 0,
+          endMs: 60000,
+        );
+        expect(clipQueries.single.containsKey('discTitle'), isFalse);
+      },
+    );
+
+    test('DVD title：没声明 videoClipAudioDiscTitleDvd 不发，声明了才带', () async {
+      capabilities = <String, dynamic>{
+        'liveLibrary': <String, dynamic>{
+          kVideoClipAudioDiscTitleCapability: true,
+          kVideoClipAudioDiscTitleAngleCapability: true,
+        },
+      };
+      final InterconnectSyncBackend old = await _clientBackend(
+        base: base,
+        token: 'old-dvd-host-token',
+      );
+      final File dest = File(p.join(work.path, 'dvd.aac'));
+      await expectLater(
+        old.getRemoteVideoAudioClip(
+          'dvd/main',
+          dest,
+          startMs: 0,
+          endMs: 60000,
+          discTitle: 'VIDEO_TS/TITLE_02.dvdtitle',
+        ),
+        throwsA(isA<RemoteDiscTitleAudioUnsupported>()),
+      );
+      expect(clipQueries, isEmpty);
+
+      capabilities = <String, dynamic>{
+        'liveLibrary': <String, dynamic>{
+          kVideoClipAudioDiscTitleCapability: true,
+          kVideoClipAudioDiscTitleDvdCapability: true,
+        },
+      };
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: 'dvd-host-token',
+      );
+      await backend.getRemoteVideoAudioClip(
+        'dvd/main',
+        dest,
+        startMs: 0,
+        endMs: 60000,
+        discTitle: 'VIDEO_TS/TITLE_02.dvdtitle',
+      );
+      expect(clipQueries.single['discTitle'], 'VIDEO_TS/TITLE_02.dvdtitle');
+      expect(dest.readAsBytesSync(), <int>[0xAA, 0xBB]);
+    });
+
+    test('DVD 角度成员路径：没声明 videoClipAudioDiscTitleDvdAngle 不发，声明了才带', () async {
+      capabilities = <String, dynamic>{
+        'liveLibrary': <String, dynamic>{
+          kVideoClipAudioDiscTitleCapability: true,
+          kVideoClipAudioDiscTitleAngleCapability: true,
+          kVideoClipAudioDiscTitleDvdCapability: true,
+        },
+      };
+      final InterconnectSyncBackend old = await _clientBackend(
+        base: base,
+        token: 'old-dvd-angle-host-token',
+      );
+      final File dest = File(p.join(work.path, 'dvd-angle.aac'));
+      await expectLater(
+        old.getRemoteVideoAudioClip(
+          'dvd/main',
+          dest,
+          startMs: 0,
+          endMs: 60000,
+          discTitle: 'VIDEO_TS/TITLE_02.a2.dvdtitle',
+        ),
+        throwsA(isA<RemoteDiscTitleAudioUnsupported>()),
+      );
+      expect(clipQueries, isEmpty);
+
+      capabilities = <String, dynamic>{
+        'liveLibrary': <String, dynamic>{
+          kVideoClipAudioDiscTitleCapability: true,
+          kVideoClipAudioDiscTitleDvdCapability: true,
+          kVideoClipAudioDiscTitleDvdAngleCapability: true,
+        },
+      };
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: 'dvd-angle-host-token',
+      );
+      await backend.getRemoteVideoAudioClip(
+        'dvd/main',
+        dest,
+        startMs: 0,
+        endMs: 60000,
+        discTitle: 'VIDEO_TS/TITLE_02.a2.dvdtitle',
+      );
+      expect(clipQueries.single['discTitle'], 'VIDEO_TS/TITLE_02.a2.dvdtitle');
+      expect(dest.readAsBytesSync(), <int>[0xAA, 0xBB]);
+    });
+
+    test(
+      '多角度 title 的角度成员路径：没声明 videoClipAudioDiscTitleAngle 不发，声明了才带',
+      () async {
+        capabilities = <String, dynamic>{
+          'liveLibrary': <String, dynamic>{
+            kVideoClipAudioDiscTitleCapability: true,
+          },
+        };
+        final InterconnectSyncBackend old = await _clientBackend(
+          base: base,
+          token: 'old-host-token',
+        );
+        final File dest = File(p.join(work.path, 'angle.aac'));
+        await expectLater(
+          old.getRemoteVideoAudioClip(
+            'disc/main',
+            dest,
+            startMs: 0,
+            endMs: 60000,
+            discTitle: 'BDMV/PLAYLIST/00001.a2.mpls',
+          ),
+          throwsA(isA<RemoteDiscTitleAudioUnsupported>()),
+        );
+        expect(clipQueries, isEmpty);
+
+        capabilities = <String, dynamic>{
+          'liveLibrary': <String, dynamic>{
+            kVideoClipAudioDiscTitleCapability: true,
+            kVideoClipAudioDiscTitleAngleCapability: true,
+          },
+        };
+        final InterconnectSyncBackend backend = await _clientBackend(
+          base: base,
+          token: 'angle-host-token',
+        );
+        await backend.getRemoteVideoAudioClip(
+          'disc/main',
+          dest,
+          startMs: 0,
+          endMs: 60000,
+          discTitle: 'BDMV/PLAYLIST/00001.a2.mpls',
+        );
+        expect(clipQueries.single['discTitle'], 'BDMV/PLAYLIST/00001.a2.mpls');
+        expect(dest.readAsBytesSync(), <int>[0xAA, 0xBB]);
+      },
+    );
+
+    test('声明了 videoClipAudioDiscTitle：clipaudio 带 discTitle', () async {
+      capabilities = <String, dynamic>{
+        'liveLibrary': <String, dynamic>{
+          kVideoClipAudioDiscTitleCapability: true,
+        },
+      };
+      final InterconnectSyncBackend backend = await _clientBackend(
+        base: base,
+        token: 'old-host-token',
+      );
+      final File dest = File(p.join(work.path, 'title.aac'));
+      await backend.getRemoteVideoAudioClip(
+        'disc/main',
+        dest,
+        startMs: 0,
+        endMs: 60000,
+        discTitle: 'BDMV/PLAYLIST/00005.mpls',
+        audioStreamIndex: 1,
+      );
+      expect(clipQueries.single['discTitle'], 'BDMV/PLAYLIST/00005.mpls');
+      expect(clipQueries.single['audioStreamIndex'], '1');
+      expect(clipQueries.single.containsKey('episode'), isFalse);
+      expect(dest.readAsBytesSync(), <int>[0xAA, 0xBB]);
+    });
 
     test('能力位为 true 时才上传（假 host 的覆盖语义证明门确实在 PUT 之前）', () async {
       capabilities = <String, dynamic>{
@@ -720,18 +1104,25 @@ void main() {
 
     test('对轴 / 重定时入口不再只认本地视频文件', () {
       expect(part, isNot(contains('!_isRemote && _currentVideoPath != null')));
-      // 波形与自动对轴只看前几分钟，走对轴音源：整集音源优先，媒体服务器流再退到
+      // 自动对轴只看前几分钟，走对轴音源：整集音源优先，媒体服务器流再退到
       // 只裁前 N 分钟（BUG-3290 批次）；ASR 转录要整集，仍只认整集音源。
-      for (final String fn in <String>[
-        'Future<int?> _autoAlignSubtitle(',
-        'Future<List<double>> _loadSubtitleWaveformEnvelope(',
-      ]) {
-        expect(
-          body(part, fn),
-          contains('_resolveSubtitleAlignAudio()'),
-          reason: '$fn 要经统一对轴音源解析，远端才拿得到 host 裁的音轨',
-        );
-      }
+      expect(
+        body(part, 'Future<int?> _autoAlignSubtitle('),
+        contains('_resolveSubtitleAlignAudio()'),
+        reason: '自动对轴要经统一对轴音源解析，远端才拿得到 host 裁的音轨',
+      );
+      // 波形视图是片长全程、按段抽（EUvw-RjUE4）：整集音源同样走整集音源解析（互联
+      // 远端拿 host 裁的整集音轨），流再退到只拉被请求的那一段。
+      final String waveform = body(
+        part,
+        'Future<List<double>> _loadSubtitleWaveformSegment(',
+      );
+      expect(
+        waveform,
+        contains('_resolveSubtitleTimingAudio()'),
+        reason: '波形分段要经整集音源解析，远端才拿得到 host 裁的音轨',
+      );
+      expect(waveform, contains('_streamAlignAudioSource'));
       expect(
         body(part, 'Future<_SubtitleTimingAudio?> _resolveSubtitleAlignAudio('),
         contains('return _resolveSubtitleTimingAudio();'),

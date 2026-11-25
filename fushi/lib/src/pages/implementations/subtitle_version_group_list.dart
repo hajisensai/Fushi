@@ -8,6 +8,7 @@ import 'package:fushi/src/media/video/subtitle/subtitle_archive_label.dart';
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
+import 'package:fushi/src/pages/implementations/subtitle_file_name_text.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show ActivityRelativeTime, ActivityRelativeUnit, activityRelativeTime;
 import 'package:fushi/i18n/strings.g.dart';
@@ -23,6 +24,9 @@ import 'package:fushi/src/utils/misc/fushi_byte_format.dart';
 /// 交互：点卡片 → 有明确目标集时直接下载该集文件（[requestedEpisode] +
 /// [pickGroupCandidateForEpisode]），解析不出唯一文件则展开卡片让用户手选；
 /// 右侧 chevron 恒可手动展开。每行/每卡的下载动作都回 [onPickCandidate]。
+///
+/// 多选态（已有勾选，见 [selectedIdentityKeys]）下不再有「点一下就下载」：点文件行
+/// 切换勾选，点卡片只展开 / 收起（BUG-4802）。
 class SubtitleVersionGroupList extends StatefulWidget {
   const SubtitleVersionGroupList({
     required this.groups,
@@ -66,12 +70,18 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
 
   bool get _busy => widget.busyIdentityKey != null;
 
+  /// 多选态：宿主支持多选且已经勾了至少一条。此时点行 / 点卡片都不得触发下载——
+  /// 宿主的下载回调会当场关页，手滑一下勾选就全丢了（BUG-4802）。
+  bool get _multiSelecting =>
+      widget.onToggleCandidate != null &&
+      widget.selectedIdentityKeys.isNotEmpty;
+
   void _onCardTap(SubtitleVersionGroup group) {
     if (_busy || widget.onPickCandidate == null) return;
-    final VideoSubtitleCandidate? picked = pickGroupCandidateForEpisode(
-      group,
-      widget.requestedEpisode,
-    );
+    // 多选态下卡片不替用户挑一集下载，只展开 / 收起。
+    final VideoSubtitleCandidate? picked = _multiSelecting
+        ? null
+        : pickGroupCandidateForEpisode(group, widget.requestedEpisode);
     if (picked != null) {
       widget.onPickCandidate!(picked);
       return;
@@ -281,14 +291,12 @@ class _SubtitleVersionGroupListState extends State<SubtitleVersionGroupList> {
       selected: highlight,
       onTap: _busy || widget.onPickCandidate == null
           ? null
-          : () => widget.onPickCandidate!(candidate),
-      title: Text(
-        candidate.fileName,
-        maxLines: 2,
-        softWrap: true,
-        overflow: TextOverflow.fade,
-      ),
-      titleMaxLines: 2,
+          : () => _multiSelecting
+                ? widget.onToggleCandidate!(candidate)
+                : widget.onPickCandidate!(candidate),
+      // 文件名完整换行（BUG-4348）：区分版本的段在末尾，与文件视图同一规则。
+      title: SubtitleFileNameText(candidate.fileName),
+      titleMaxLines: null,
       subtitle: meta.isEmpty ? null : Text(meta.join(' · ')),
       trailing: busyThis
           ? const SizedBox.square(

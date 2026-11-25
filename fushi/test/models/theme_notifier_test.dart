@@ -14,6 +14,8 @@ import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellLayoutInstallDefault;
 import 'package:fushi/src/utils/system_transparency.dart';
 
 FushiDatabase _testDb() {
@@ -547,8 +549,9 @@ void main() {
       test(
         'glass material is off unless the glass design system is chosen',
         () async {
-          await notifier.setGlassMaterial(FushiGlassMaterial.frosted);
+          await notifier.setGlassMaterial(FushiGlassMaterial.premium);
           await notifier.setDesignSystem('material');
+          expect(notifier.glassMaterialTier, FushiGlassMaterial.premium);
           expect(notifier.glassMaterial, FushiGlassMaterial.off);
           expect(
             notifier.theme.extension<FushiGlassTheme>()?.material,
@@ -556,39 +559,38 @@ void main() {
           );
 
           await notifier.setDesignSystem('glass');
-          expect(notifier.glassMaterial, FushiGlassMaterial.off);
+          expect(notifier.glassMaterial, FushiGlassMaterial.premium);
           expect(
             notifier.theme.extension<FushiGlassTheme>()?.material,
-            FushiGlassMaterial.off,
+            FushiGlassMaterial.premium,
           );
         },
       );
 
-      // 2026-10-12：Apple 设计系统去掉玻璃特效、直接原生 Cupertino 实色——
-      // 已存 frosted / liquid 的偏好读取时一律为 off，存储值不改写。
+      // 2026-11：玻璃画质四档（off / minimal / standard / premium）存在
+      // `glass_quality`，缺省精简；旧键 `glass_material`（frosted / liquid）冻结不读。
       test(
-        'glass tier is pinned to off, even with a stored liquid pref',
+        'glass tier defaults to minimal and ignores the frozen legacy key',
         () async {
+          await db.setPref('glass_material', PrefCodec.encode('liquid'));
+          await notifier.refreshFromDb();
           await notifier.setDesignSystem('glass');
-          expect(notifier.glassMaterialTier, FushiGlassMaterial.off);
-          expect(notifier.glassMaterial, FushiGlassMaterial.off);
+          expect(notifier.glassMaterialTier, FushiGlassMaterial.minimal);
+          expect(notifier.glassMaterial, FushiGlassMaterial.minimal);
 
-          await notifier.setGlassMaterial(FushiGlassMaterial.liquid);
-          expect(notifier.glassMaterialTier, FushiGlassMaterial.off);
-          expect(notifier.glassMaterial, FushiGlassMaterial.off);
-          expect(
-            notifier.theme.extension<FushiGlassTheme>()?.material,
-            FushiGlassMaterial.off,
-          );
-
-          await notifier.setGlassMaterial(FushiGlassMaterial.frosted);
-          expect(notifier.glassMaterialTier, FushiGlassMaterial.off);
+          for (final FushiGlassMaterial tier in FushiGlassMaterial.values) {
+            await notifier.setGlassMaterial(tier);
+            expect(notifier.glassMaterialTier, tier);
+            expect(notifier.glassMaterial, tier);
+            expect(notifier.theme.extension<FushiGlassTheme>()?.material, tier);
+          }
           expect(notifier.designSystem, 'glass');
         },
       );
 
       test('system reduce-transparency turns glass off and rebuilds', () async {
         await notifier.setDesignSystem('glass');
+        await notifier.setGlassMaterial(FushiGlassMaterial.standard);
         int notified = 0;
         notifier.addListener(() => notified++);
 
@@ -597,7 +599,8 @@ void main() {
         expect(notifier.glassMaterial, FushiGlassMaterial.off);
 
         SystemTransparency.reduceTransparency.value = false;
-        expect(notifier.glassMaterial, FushiGlassMaterial.off);
+        expect(notified, 2);
+        expect(notifier.glassMaterial, FushiGlassMaterial.standard);
       });
     });
   });
@@ -739,7 +742,9 @@ void main() {
       final String hiddenRaw = PrefCodec.encode('macos');
       final String materialRaw = PrefCodec.encode('material');
       await db.setPref('design_system', hiddenRaw);
-      final Map<String, String> staleSnapshot = await db.getAllPrefs();
+      final Map<String, String> staleSnapshot = _withSettledLayoutInstall(
+        await db.getAllPrefs(),
+      );
 
       // 模拟另一进程在本进程拿到旧 snapshot 后已选择 material。
       await db.setPref('design_system', materialRaw);
@@ -850,8 +855,9 @@ void main() {
           'design_system',
           PrefCodec.encode('cupertino'),
         );
-        final Map<String, String> staleSnapshot = await processADb
-            .getAllPrefs();
+        final Map<String, String> staleSnapshot = _withSettledLayoutInstall(
+          await processADb.getAllPrefs(),
+        );
         final Future<void> delayedMigration = () async {
           await releaseStaleSnapshot.future;
           processANotifier.loadFromPrefsSnapshot(staleSnapshot);
@@ -892,7 +898,9 @@ void main() {
       () async {
         final String hiddenRaw = PrefCodec.encode('cupertino');
         await db.setPref('design_system', hiddenRaw);
-        final Map<String, String> staleSnapshot = await db.getAllPrefs();
+        final Map<String, String> staleSnapshot = _withSettledLayoutInstall(
+          await db.getAllPrefs(),
+        );
 
         notifier.loadFromPrefsSnapshot(staleSnapshot);
         await pumpEventQueue(times: 10);
@@ -1360,3 +1368,13 @@ void main() {
     );
   });
 }
+
+/// 快照里带上已判定的库页布局出厂值（#3515）：否则载入时那次一次性判定落盘也会
+/// bump `prefs_version`，与本组要钉的 design_system CAS 计数混在一起。
+Map<String, String> _withSettledLayoutInstall(Map<String, String> prefs) =>
+    <String, String>{
+      ...prefs,
+      ShellLayoutInstallDefault.prefKey: PrefCodec.encode(
+        ShellLayoutInstallDefault.fresh.prefValue,
+      ),
+    };

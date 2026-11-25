@@ -5,11 +5,13 @@ import 'dart:ui' as ui;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_backdrop_frost.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/nsfw_cover_blur.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/cover_image.dart';
 import 'package:transparent_image/transparent_image.dart';
@@ -76,13 +78,18 @@ class ShelfCardFooter extends StatelessWidget {
           title: title,
           style: style,
           maxLines: 2,
-          child: Text(
-            title,
-            overflow: TextOverflow.ellipsis,
-            maxLines: 2,
-            textAlign: TextAlign.center,
-            softWrap: true,
-            style: style,
+          // 自定义背景图上书名垫毛玻璃底（只画不占位，footer 高度不变）。
+          child: FushiBackdropFrost(
+            outset: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+            borderRadius: const BorderRadius.all(Radius.circular(8)),
+            child: Text(
+              title,
+              overflow: TextOverflow.ellipsis,
+              maxLines: 2,
+              textAlign: TextAlign.center,
+              softWrap: true,
+              style: style,
+            ),
           ),
         ),
       ),
@@ -168,17 +175,19 @@ class ShelfSelectedOverlay extends StatelessWidget {
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context) && !eink;
     final BorderRadius radius = shelfCoverRadius(context);
-    final BoxDecoration decoration;
+    final Decoration decoration;
     if (eink) {
       decoration = BoxDecoration(
         border: Border.all(color: tokens.surfaces.outline, width: 2),
         borderRadius: radius,
       );
     } else if (apple) {
-      decoration = BoxDecoration(
-        color: Colors.black.withValues(alpha: 0.22),
-        borderRadius: radius,
-      );
+      final Color scrim = Colors.black.withValues(alpha: 0.22);
+      final ShelfCoverShape? shape = shelfCoverShapeOf(context);
+      // 连续曲率封面（Cupertino 专辑）：选中罩与封面同一个超椭圆。
+      decoration = shape != null && shape.continuous
+          ? ShapeDecoration(color: scrim, shape: shape.border())
+          : BoxDecoration(color: scrim, borderRadius: radius);
     } else {
       final Color primary = Theme.of(context).colorScheme.primary;
       decoration = BoxDecoration(
@@ -196,13 +205,23 @@ class ShelfSelectedOverlay extends StatelessWidget {
 ///
 /// 祖先有 [ShelfCoverRadiusScope] 时以它为准（游戏卡局部改成 20，书 / 视频库
 /// 共享的封面组件不受影响）。
+///
+/// 材质封面取 [ShelfCoverShape.nominalRadius]（满尺寸圆角）；连续曲率外形
+/// （Cupertino 专辑）真正画封面的各层要用 [shelfCoverShapeOf] 的形状。
 BorderRadius shelfCoverRadius(BuildContext context) {
-  final ShelfCoverMaterial? material = shelfCoverMaterialOf(context);
-  if (material != null) return shelfMaterialRadius(material);
+  final ShelfCoverShape? shape = shelfCoverShapeOf(context);
+  if (shape != null) return shape.nominalRadius;
   final BorderRadius? scoped = ShelfCoverRadiusScope.maybeOf(context);
   if (scoped != null) return scoped;
   final bool apple = isGlassDesign(context) && !isEinkTheme(context);
   return BorderRadius.all(Radius.circular(apple ? 10 : 12));
+}
+
+/// 当前材质封面的外形（[ShelfCoverShape.of]）；没有材质（墨水屏 / 无
+/// [ShelfCoverMaterialScope]）时为 null。
+ShelfCoverShape? shelfCoverShapeOf(BuildContext context) {
+  final ShelfCoverMaterial? material = shelfCoverMaterialOf(context);
+  return material == null ? null : ShelfCoverShape.of(context, material);
 }
 
 /// 局部覆盖 [shelfCoverRadius]：子树里的封面框 / 选中罩 / 无封面占位全部换成
@@ -260,6 +279,7 @@ FushiCard shelfCoverCard({
   VoidCallback? onSecondaryTap,
   EdgeInsetsGeometry padding = EdgeInsets.zero,
   BorderRadius borderRadius = const BorderRadius.all(Radius.circular(12)),
+  OutlinedBorder? shape,
 }) {
   return FushiCard(
     key: key,
@@ -268,6 +288,7 @@ FushiCard shelfCoverCard({
     color: Colors.transparent,
     borderColor: Colors.transparent,
     borderRadius: borderRadius,
+    shape: shape,
     clipBehavior: Clip.none,
     // 封面卡不画状态层：卡面透明，悬停 / 按下的灰底会在封面后面露出一块
     // 底板（2026-10-25 用户截图指出）；反馈由 FushiHoverLift 与材质扫光负责。
@@ -330,6 +351,9 @@ class ShelfCoverSelection extends InheritedWidget {
 /// 不画勾选圈（选中罩照常）。比例由调用方外层的盒子给（专辑
 /// [kShelfAlbumAspectRatio]、剧照 [kShelfLandscapeAspectRatio]），本组件按实际
 /// 尺寸铺满，不假定 2:3。
+///
+/// 卡壳挂了 [ShelfCoverNsfw]（`MediaNsfwCoverScope`）且判定要模糊时，封面图
+/// （[child] 与叠层的后几本）经 [NsfwCoverBlur] 打模糊；框、投影、勾选圈不受影响。
 class ShelfCoverFrame extends StatelessWidget {
   const ShelfCoverFrame({
     required this.child,
@@ -370,9 +394,23 @@ class ShelfCoverFrame extends StatelessWidget {
     final bool lifted = !eink && !compact && FushiHoverLift.liftedOf(context);
     final BorderRadius radius = shelfCoverRadius(context);
     final ShelfCoverSelection? selection = ShelfCoverSelection.maybeOf(context);
+    final bool nsfwBlur = ShelfCoverNsfw.blurOf(context);
+    final Widget content = NsfwCoverBlur(
+      blur: nsfwBlur,
+      showIcon: !compact,
+      child: child,
+    );
     final ShelfCoverMaterial? material = shelfCoverMaterialOf(context);
     if (material != null) {
-      return _buildMaterial(context, material, tokens, cs, selection);
+      return _buildMaterial(
+        context,
+        material,
+        tokens,
+        cs,
+        selection,
+        content,
+        nsfwBlur,
+      );
     }
 
     final List<BoxShadow> shadows;
@@ -424,7 +462,7 @@ class ShelfCoverFrame extends StatelessWidget {
         child: Stack(
           fit: StackFit.expand,
           children: <Widget>[
-            ColoredBox(color: fill, child: child),
+            ColoredBox(color: fill, child: content),
             IgnorePointer(
               child: DecoratedBox(
                 decoration: BoxDecoration(
@@ -475,7 +513,11 @@ class ShelfCoverFrame extends StatelessWidget {
             child: apple
                 ? ImageFiltered(
                     imageFilter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
-                    child: behind,
+                    child: NsfwCoverBlur(
+                      blur: nsfwBlur,
+                      showIcon: false,
+                      child: behind,
+                    ),
                   )
                 : ColoredBox(color: layerFill),
           ),
@@ -504,6 +546,8 @@ class ShelfCoverFrame extends StatelessWidget {
     FushiDesignTokens tokens,
     ColorScheme cs,
     ShelfCoverSelection? selection,
+    Widget content,
+    bool nsfwBlur,
   ) {
     final double checkInset = tokens.spacing.gap / 2;
     if (density == ShelfCoverDensity.compact) {
@@ -515,7 +559,7 @@ class ShelfCoverFrame extends StatelessWidget {
           if (selection != null && selection.selected)
             const Positioned.fill(child: ShelfSelectedOverlay()),
         ],
-        child: child,
+        child: content,
       );
     }
     final List<Widget> overlay = <Widget>[
@@ -528,14 +572,17 @@ class ShelfCoverFrame extends StatelessWidget {
           child: ShelfSelectionCheck(selected: selection.selected),
         ),
     ];
-    final List<Widget> behind =
-        stackedCovers ??
-        (stackedBehind == null
-            ? const <Widget>[]
-            : <Widget>[stackedBehind!, stackedBehind!]);
+    final List<Widget> behind = <Widget>[
+      for (final Widget cover
+          in stackedCovers ??
+              (stackedBehind == null
+                  ? const <Widget>[]
+                  : <Widget>[stackedBehind!, stackedBehind!]))
+        NsfwCoverBlur(blur: nsfwBlur, showIcon: false, child: cover),
+    ];
     return ShelfCoverPile(
       material: material,
-      front: child,
+      front: content,
       behind: behind,
       frontOverlay: overlay,
       backgroundColor: backgroundColor,
@@ -672,13 +719,17 @@ class ShelfCoverPlaceholder extends StatelessWidget {
         ? apple.tertiaryLabel
         : tokens.surfaces.onVariant;
     final String? label = title;
+    final ShelfCoverShape? shape = shelfCoverShapeOf(context);
     return DecoratedBox(
-      decoration: BoxDecoration(
-        color: fill,
-        border: eink ? Border.all(color: tokens.surfaces.outline) : null,
-        // 与封面框同形（MD3 12 / Apple 10），占位换成真封面时轮廓不跳。
-        borderRadius: shelfCoverRadius(context),
-      ),
+      // 与封面框同形（MD3 12 / Apple 10 / 材质外形，Cupertino 专辑是连续曲率），
+      // 占位换成真封面时轮廓不跳。
+      decoration: shape != null && shape.continuous
+          ? ShapeDecoration(color: fill, shape: shape.border())
+          : BoxDecoration(
+              color: fill,
+              border: eink ? Border.all(color: tokens.surfaces.outline) : null,
+              borderRadius: shelfCoverRadius(context),
+            ),
       child: Center(
         child: label == null || label.isEmpty
             ? FushiIcon(icon, size: iconSize, color: foreground)
@@ -800,4 +851,57 @@ class ShelfTitleOverflowTooltip extends StatelessWidget {
       },
     );
   }
+}
+
+/// 书架 / 漫画库网格格宽小于它时，格子内边距减半（每行数量 ≥ 3 的手机窄屏，
+/// 2026-11-07 用户选「紧凑间距」）：360dp 手机定 3 列时格宽约 115dp，标准 12dp
+/// 内边距会让封面只剩约 91dp、封面之间空隙比封面宽的四分之一还多。
+const double kShelfGridCompactCellWidth = 130;
+
+/// 书架网格格子的内边距：格宽 < [kShelfGridCompactCellWidth] 时取 [standard] 的
+/// 一半，否则就是 [standard]。
+double shelfGridCellInsetFor(double cardWidth, double standard) =>
+    cardWidth < kShelfGridCompactCellWidth ? standard / 2 : standard;
+
+/// 向下传书架网格格子的内边距（书卡 / 合集扇形卡读它，网格外的卡片读到
+/// fallback = 设计 token 的标准值）。
+class ShelfGridCellInset extends InheritedWidget {
+  const ShelfGridCellInset({
+    required this.inset,
+    required super.child,
+    super.key,
+  });
+
+  final double inset;
+
+  static double of(BuildContext context, double fallback) =>
+      context.dependOnInheritedWidgetOfExactType<ShelfGridCellInset>()?.inset ??
+      fallback;
+
+  @override
+  bool updateShouldNotify(ShelfGridCellInset oldWidget) =>
+      oldWidget.inset != inset;
+}
+
+/// 书封宽高比（约 1:1.42，常见文库本封面 450×640；与
+/// `kDiscoveryBookCoverAspectRatio` 同一口径）。
+const double kShelfBookCoverAspectRatio = 1 / 1.42;
+
+/// 书架 / 漫画库网格一格的宽高比：封面区恒为 [kShelfBookCoverAspectRatio]，
+/// 格高 = 两倍格子内边距 + 封面高 + 文字块高。
+///
+/// 此前格子用固定比例 `kShelfBookCardAspectRatio`（180/320）、封面区是「格高 −
+/// 文字块」剩下的 Expanded：文字块高度不随格宽变，格子一窄（3 / 4 列、窄窗）
+/// 封面区就比书封扁，封面按高度适配后两侧露出材质衬底；格子一宽又反过来裁掉
+/// 封面两侧（2026-11-07 用户截图「材质溢出」，两列也会）。视频库 / 游戏库早就
+/// 按「封面高 + 文字块」算行高，这里对齐。
+double shelfBookCellAspectRatio({
+  required double cellWidth,
+  required double inset,
+  required double footerHeight,
+}) {
+  final double coverWidth = math.max(1, cellWidth - inset * 2);
+  final double cellHeight =
+      coverWidth / kShelfBookCoverAspectRatio + footerHeight + inset * 2;
+  return cellWidth / cellHeight;
 }

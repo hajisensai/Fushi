@@ -20,9 +20,12 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary_core.dart';
 import 'package:fushi_engine/dictionary/dictionary_engine_hooks.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show RemoteDictionaryInfo;
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 import 'package:fushi_server/src/native_libs.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_server/src/server_language.dart';
 
 /// 词典引擎原生库路径的环境变量覆盖（与 `FUSHI_P2P_LIB` 同一约定）。
 const String kFushiDictsLibEnv = 'FUSHI_DICTS_LIB';
@@ -106,20 +109,122 @@ bool isSingleKanjiTerm(String text) {
 }
 
 /// 引擎装载用的词典视图（一次 DB 读的快照）。
+///
+/// 引擎装的是**全部**词典；这里的 [termOrder] + [hidden] 是服务端自己的词典开关与
+/// 顺序，只充当「请求没带词典选择」（浏览器扩展 / 旧客户端）时的默认选择，见
+/// [resolveServerDictionarySelection]。
 class _DictionarySnapshot {
-  const _DictionarySnapshot({required this.termOrder, required this.hidden});
+  const _DictionarySnapshot({
+    required this.termOrder,
+    required this.hidden,
+    required this.kanjiDictionaries,
+  });
 
-  /// term 词典按用户排序的名单（结果生成按它排）。
+  /// term 词典按服务端排序的名单（结果生成按它排）。
   final List<String> termOrder;
 
-  /// 在日语下被隐藏的词典名（结果生成时过滤）。
+  /// 服务端在日语下关掉的词典名（默认选择的排除名单）。
   final Set<String> hidden;
+
+  /// 纯汉字词典（type == kanji）的名字。汉字卡只对它们按名排除：混合词典
+  /// （term + hasKanji）的名字排除的是它的术语部分，汉字部分由自己的 kanjiHidden
+  /// 管（BUG-3573），不能被同名连带掉。
+  final Set<String> kanjiDictionaries;
+}
+
+/// 一次查词实际生效的词典选择（[resolveServerDictionarySelection] 的结果）。
+/// `order`：term 词典的结果排序（传给结果生成的 dictionaryOrder）；`excluded`：不参与
+/// 本次查词的词典名（引擎内截断前剔除 + 结果生成再滤一道）。
+typedef ServerDictionarySelection = ({
+  List<String> order,
+  Set<String> excluded,
+});
+
+/// 「这次查词按什么词典选择」的唯一判据（纯函数，便于单测）：
+///
+/// - [config] 为 null（请求没带 `dictionaries`）：用服务端自己的顺序 [serverTermOrder]
+///   与关掉的名单 [serverHidden]——与按 DB 开关装载引擎时的旧输出一致。
+/// - [config] 非 null：它是本次请求的唯一真相，不叠加服务端的隐藏。排序 =
+///   `config.order` 里服务端确有的 term 词典（按请求方顺序、去重）+ 服务端其余 term
+///   词典（按服务端顺序，即新词典默认启用、排在请求方已知的之后）；排除 =
+///   `config.excluded`（服务端没有的名字无害）。
+ServerDictionarySelection resolveServerDictionarySelection({
+  required List<String> serverTermOrder,
+  required Set<String> serverHidden,
+  RemoteLookupDictionaryConfig? config,
+}) {
+  if (config == null) {
+    return (order: serverTermOrder, excluded: serverHidden);
+  }
+  final Set<String> serverTerms = serverTermOrder.toSet();
+  final Set<String> seen = <String>{};
+  final List<String> order = <String>[
+    for (final String name in config.order)
+      if (serverTerms.contains(name) && seen.add(name)) name,
+    for (final String name in serverTermOrder)
+      if (seen.add(name)) name,
+  ];
+  return (order: order, excluded: config.excluded);
+}
+
+/// 把 [excluded] 词典的频率 / 音调条目从引擎结果里剔掉（释义由引擎与结果生成剔除）。
+/// 引擎装了全部词典，被排除的频率 / 音调词典不剔就会照样挂在词条上。
+/// [excluded] 为空或结果里没有它们时原样返回同一个列表。
+List<FushiLookupResult> withoutExcludedDictionaryMeta(
+  List<FushiLookupResult> results,
+  Set<String> excluded,
+) {
+  if (excluded.isEmpty) return results;
+  bool touched = false;
+  final List<FushiLookupResult> out = <FushiLookupResult>[];
+  for (final FushiLookupResult r in results) {
+    final FushiTermResult t = r.term;
+    final bool dropFreq = t.frequencies.any(
+      (FushiFrequencyEntry f) => excluded.contains(f.dictName),
+    );
+    final bool dropPitch = t.pitches.any(
+      (FushiPitchEntry e) => excluded.contains(e.dictName),
+    );
+    if (!dropFreq && !dropPitch) {
+      out.add(r);
+      continue;
+    }
+    touched = true;
+    out.add(
+      FushiLookupResult(
+        matched: r.matched,
+        deinflected: r.deinflected,
+        trace: r.trace,
+        preprocessorSteps: r.preprocessorSteps,
+        term: FushiTermResult(
+          expression: t.expression,
+          reading: t.reading,
+          rules: t.rules,
+          glossaries: t.glossaries,
+          frequencies: dropFreq
+              ? <FushiFrequencyEntry>[
+                  for (final FushiFrequencyEntry f in t.frequencies)
+                    if (!excluded.contains(f.dictName)) f,
+                ]
+              : t.frequencies,
+          pitches: dropPitch
+              ? <FushiPitchEntry>[
+                  for (final FushiPitchEntry e in t.pitches)
+                    if (!excluded.contains(e.dictName)) e,
+                ]
+              : t.pitches,
+        ),
+      ),
+    );
+  }
+  return touched ? out : results;
 }
 
 class ServerDictionaryHost {
   ServerDictionaryHost({
     required this.db,
     required this.dictionaryResourceRoot,
+    this.indexCacheDirectory,
     String? libraryPath,
     Directory? transformsDir,
   }) : _libraryPath = libraryPath ?? resolveFushiDictsLibraryPath(),
@@ -127,6 +232,9 @@ class ServerDictionaryHost {
 
   final FushiDatabase db;
   final Directory dictionaryResourceRoot;
+
+  /// 引擎派生索引（联合过滤器）的缓存目录；null = 不落盘、每次装载后在内存里现建。
+  final Directory? indexCacheDirectory;
   final String? _libraryPath;
   final Directory? _transformsDir;
 
@@ -135,8 +243,10 @@ class ServerDictionaryHost {
   _DictionarySnapshot _snapshot = const _DictionarySnapshot(
     termOrder: <String>[],
     hidden: <String>{},
+    kanjiDictionaries: <String>{},
   );
   int _loadedCount = 0;
+  bool _transformsLoaded = false;
 
   /// 引擎是否可用（原生库加载成功）。不可用时互联的查词 / 词典媒体路由不接线。
   bool get available => _available;
@@ -150,18 +260,28 @@ class ServerDictionaryHost {
   /// 实际使用的原生库路径（null = 按平台默认裸名加载）。
   String? get libraryPath => _libraryPath;
 
+  /// 去屈折变形表目录（null = 没找到，查词只匹配原形）。
+  String? get transformsPath => _transformsDir?.path;
+
+  /// 变形表是否已预载进引擎（给 WebUI 状态行：没装时「食べた」查不到「食べる」）。
+  bool get transformsLoaded => _transformsLoaded;
+
   /// 加载原生库、预载变形表、按 DB 装载词典。原生库加载不了返回 false 并记下原因，
   /// 服务端照常起（词典只是存储中转，查词不可用）。
   Future<bool> start() async {
     FushiDicts.nativeLibraryPath = _libraryPath;
+    FushiDicts.unionFilterCacheDirectory = indexCacheDirectory?.path;
     try {
       // 空引擎探一次原生库：dlopen / 符号缺失在这里暴露，而不是在第一次查词时。
       FushiDicts.initializeTyped();
     } catch (e, st) {
       _available = false;
-      _unavailableReason =
-          'fushidicts 原生库加载失败'
-          '（${_libraryPath ?? 'libfushidicts_ffi 裸名'}）：$e';
+      _unavailableReason = tr(
+        'fushidicts 原生库加载失败'
+            '（${_libraryPath ?? 'libfushidicts_ffi 裸名'}）：$e',
+        'Failed to load the fushidicts native library '
+            '(${_libraryPath ?? 'libfushidicts_ffi bare name'}): $e',
+      );
       engineLog.log('ServerDictionaryHost.start', e, st);
       return false;
     }
@@ -170,8 +290,62 @@ class ServerDictionaryHost {
     // 删 / 覆盖词典目录前释放映射（BUG-1756），与 app 的装配一致。
     withDictionaryMappingsReleased = FushiDicts.withMappingsReleased;
     await _preloadTransforms();
+    await upgradeDictionaryFormats();
     await refresh();
     return true;
+  }
+
+  /// 把 DB 里全部词典目录原地升级到当前磁盘格式（[FushiDicts.upgradeDictionaryFormats]），
+  /// 在 [start] 里首次 [refresh] 之前跑：此刻引擎是空的、没有映射，升级完旧文件当场
+  /// 就清得掉（Windows 上也是），首次装载直接用上新格式，不必像 app 那样重载 + 补跑。
+  ///
+  /// 服务端没有 UI：打开始 / 逐本「已升级」/ 汇总诊断日志。失败（-1）/ 不适用（2）
+  /// 的词典按旧格式照常可用，下次启动再试；任何异常（原生库缺导出等）只记日志，
+  /// 不阻止启动。与删 / 覆盖词典（管理接口经 [withDictionaryMappingsReleased]）的
+  /// 串行由 [FushiDicts.upgradeDictionaryFormats] 的借用账本保证。
+  Future<void> upgradeDictionaryFormats() async {
+    if (!_available) return;
+    try {
+      final List<DictionaryMetaRow> rows = await db.getAllDictionaryMetadata();
+      final List<String> dirs = <String>[
+        for (final DictionaryMetaRow r in rows)
+          p.join(dictionaryResourceRoot.path, r.name),
+      ];
+      if (dirs.isEmpty) return;
+      engineLog.logDiagnostic(
+        'ServerDictionaryHost',
+        'checking dictionary format of ${dirs.length} dictionaries',
+      );
+      final FushiDictUpgradeReport report =
+          await FushiDicts.upgradeDictionaryFormats(
+            dirs,
+            onProgress:
+                (
+                  int done,
+                  int total,
+                  String dir,
+                  FushiDictUpgradeOutcome outcome,
+                ) {
+                  if (outcome != FushiDictUpgradeOutcome.upgraded) return;
+                  engineLog.logDiagnostic(
+                    'ServerDictionaryHost',
+                    'upgraded dictionary format ($done/$total): '
+                        '${p.basename(dir)}',
+                  );
+                },
+          );
+      String names(List<String> list) => list.map(p.basename).join(', ');
+      engineLog.logDiagnostic(
+        'ServerDictionaryHost',
+        'dictionary format: ${report.upgraded.length} upgraded, '
+            '${report.upToDate.length} up to date, ${report.notApplicable.length} kept legacy'
+            '${report.notApplicable.isEmpty ? '' : ' (${names(report.notApplicable)})'}, '
+            '${report.failed.length} failed'
+            '${report.failed.isEmpty ? '' : ' (${names(report.failed)})'}',
+      );
+    } catch (e, st) {
+      engineLog.log('ServerDictionaryHost.upgradeDictionaryFormats', e, st);
+    }
   }
 
   Future<void> _preloadTransforms() async {
@@ -179,8 +353,12 @@ class ServerDictionaryHost {
     if (dir == null) {
       engineLog.logDiagnostic(
         'ServerDictionaryHost',
-        '没找到变形表目录（设 $kFushiTransformsDirEnv 或随包放 share/fushi/transforms），'
-            '查词不做去屈折',
+        tr(
+          '没找到变形表目录（设 $kFushiTransformsDirEnv 或随包放 share/fushi/transforms），'
+              '查词不做去屈折',
+          'Transforms directory not found (set $kFushiTransformsDirEnv or ship share/fushi/transforms); '
+              'lookups will not deinflect',
+        ),
       );
       return;
     }
@@ -188,9 +366,16 @@ class ServerDictionaryHost {
       // 资源键形如 `assets/transforms/<file>`，只取文件名，落到目录内。
       return File(p.join(dir.path, p.basename(assetKey))).readAsString();
     });
+    _transformsLoaded = true;
   }
 
   /// 按 DB 当前的词典元数据重载引擎（导入 / 删除词典后由库服务回调）。
+  ///
+  /// **全部**词典都装进引擎（`hidden: false`）：每个请求可以带自己的词典选择
+  /// （见 [resolveServerDictionarySelection]），服务端的开关只是没带选择时的默认，
+  /// 排除在引擎里截断前做（`excludedDictionaries`），不靠「不装载」。混合词典汉字
+  /// 部分的 kanjiHidden 仍按 metadata 在装载时生效（请求方的名单只按名字，表达不了
+  /// 「这本的汉字部分」）。
   Future<void> refresh() async {
     if (!_available) return;
     final List<DictionaryMetaRow> rows = await db.getAllDictionaryMetadata()
@@ -204,21 +389,22 @@ class ServerDictionaryHost {
     final List<DictPathEntry> entries = <DictPathEntry>[];
     final List<String> termOrder = <String>[];
     final Set<String> hidden = <String>{};
+    final Set<String> kanjiDictionaries = <String>{};
     for (final DictionaryMetaRow r in rows) {
       final String dir = p.join(dictionaryResourceRoot.path, r.name);
-      final bool isHidden = _decodeStringList(
-        r.hiddenLanguagesJson,
-      ).contains('ja');
-      if (isHidden) hidden.add(r.name);
-      if (r.type == 'term') termOrder.add(r.name);
+      if (isServerDictionaryHiddenByDefault(r)) hidden.add(r.name);
+      final DictionaryType type = dictionaryTypeFromName(r.type);
+      if (type == DictionaryType.term) termOrder.add(r.name);
+      if (type == DictionaryType.kanji) kanjiDictionaries.add(r.name);
       entries.add(
         dictPathEntryOf(
-          type: dictionaryTypeFromName(r.type),
+          type: type,
           path: dir,
           exists: Directory(dir).existsSync(),
-          hidden: isHidden,
+          hidden: false,
           metadata: _decodeStringMap(r.metadataJson),
           order: r.order,
+          languageOverride: r.languageOverride,
         ),
       );
     }
@@ -228,8 +414,13 @@ class ServerDictionaryHost {
       freqPaths: b.freq,
       pitchPaths: b.pitch,
       kanjiPaths: b.kanji,
+      termLanguages: termDictLanguagesOf(entries),
     );
-    _snapshot = _DictionarySnapshot(termOrder: termOrder, hidden: hidden);
+    _snapshot = _DictionarySnapshot(
+      termOrder: termOrder,
+      hidden: hidden,
+      kanjiDictionaries: kanjiDictionaries,
+    );
     _loadedCount =
         b.term.length + b.freq.length + b.pitch.length + b.kanji.length;
     engineLog.logDiagnostic(
@@ -239,15 +430,37 @@ class ServerDictionaryHost {
     );
   }
 
-  static List<String> _decodeStringList(String raw) {
-    try {
-      final Object? v = jsonDecode(raw);
-      return v is List
-          ? <String>[for (final Object? e in v) '$e']
-          : const <String>[];
-    } on FormatException {
-      return const <String>[];
-    }
+  /// 服务端自己的「默认关掉」判据：与清单下发的 `defaultEnabled` 同一份
+  /// （[RemoteDictionaryInfo.isDictionaryHiddenByDefault]）。
+  static bool isServerDictionaryHiddenByDefault(DictionaryMetaRow row) =>
+      RemoteDictionaryInfo.isDictionaryHiddenByDefault(row);
+
+  /// 服务端默认的 term 词典顺序（没带词典选择的请求按它排）。
+  List<String> get defaultTermOrder => _snapshot.termOrder;
+
+  /// 服务端默认关掉的词典名（没带词典选择的请求按它排除）。
+  Set<String> get defaultHiddenDictionaries => _snapshot.hidden;
+
+  ServerDictionarySelection _selectionFor(
+    RemoteLookupDictionaryConfig? config,
+  ) {
+    final _DictionarySnapshot snap = _snapshot;
+    return resolveServerDictionarySelection(
+      serverTermOrder: snap.termOrder,
+      serverHidden: snap.hidden,
+      config: config,
+    );
+  }
+
+  /// 单汉字查询的汉字卡：只按名排除纯汉字词典（见
+  /// [_DictionarySnapshot.kanjiDictionaries]）。
+  List<FushiKanjiResult> _kanjiFor(String term, Set<String> excluded) {
+    if (!isSingleKanjiTerm(term)) return const <FushiKanjiResult>[];
+    // 只按名剔除纯汉字型词典；混合词典的汉字部分按 kanjiHidden 在装载时生效。
+    return withoutExcludedKanjiDictionaries(
+      FushiDicts.instance.queryKanji(term),
+      excluded.intersection(_snapshot.kanjiDictionaries),
+    );
   }
 
   static Map<String, String> _decodeStringMap(String raw) {
@@ -269,87 +482,109 @@ class ServerDictionaryHost {
   /// [buildPopupJsonFromLookup]（隐藏词典在源头剔除）→ 单汉字附汉字词典结果。
   /// 无结果返回 null。
   ///
-  /// [chineseSimpToTrad]：请求方声明查词语言为中文时置 true（引擎额外试简体 → 繁體
-  /// 变体）。服务端没有「当前查词语言」，请求不带语言时为 false。
+  /// [chineseSimpToTrad]：这次要简繁互查时置 true（引擎额外试另一种字形），判据见
+  /// [serverLookupUsesChineseScriptVariants]。
   ///
   /// [rubySpans]：请求方原文自带的振假名（以 [rawTerm] 为坐标系），对齐后交给引擎按读音
   /// 排同长度候选。
+  ///
+  /// [config]：请求方配置的词典选择（null = 用服务端自己的开关与顺序），判据见
+  /// [resolveServerDictionarySelection]。排除名单进引擎（截断前剔除，被排除词典的长匹配
+  /// 不会挤掉可见词典），结果生成再按同一名单滤一道。
   DictionarySearchResult? search(
     String rawTerm, {
     required int maximumTerms,
     bool chineseSimpToTrad = false,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    RemoteLookupDictionaryConfig? config,
   }) {
     if (!_available) return null;
     final String term = normalizeServerSearchTerm(rawTerm);
     if (term.trim().isEmpty) return null;
-    final List<FushiKanjiResult> kanji = isSingleKanjiTerm(term)
-        ? FushiDicts.instance.queryKanji(term)
-        : const <FushiKanjiResult>[];
-    final List<FushiLookupResult> results = FushiDicts.instance.lookup(
-      term,
-      maxResults: maximumTerms,
-      chineseSimpToTrad: chineseSimpToTrad,
-      rubySpans: alignServerRubySpans(
-        raw: rawTerm,
-        normalized: term,
-        spans: rubySpans,
+    final ServerDictionarySelection selection = _selectionFor(config);
+    final List<FushiKanjiResult> kanji = _kanjiFor(term, selection.excluded);
+    final List<FushiLookupResult> results = withoutExcludedDictionaryMeta(
+      FushiDicts.instance.lookup(
+        term,
+        maxResults: maximumTerms,
+        chineseSimpToTrad: chineseSimpToTrad,
+        rubySpans: alignServerRubySpans(
+          raw: rawTerm,
+          normalized: term,
+          spans: rubySpans,
+        ),
+        excludedDictionaries: selection.excluded,
       ),
+      selection.excluded,
     );
     if (results.isEmpty) {
       if (kanji.isEmpty) return null;
       return DictionarySearchResult(searchTerm: term, kanjiResults: kanji);
     }
-    final _DictionarySnapshot snap = _snapshot;
     final DictionarySearchResult built = buildResultFromLookup(
       searchTerm: term,
       results: results,
       maximumTerms: maximumTerms,
-      dictionaryOrder: snap.termOrder,
+      dictionaryOrder: selection.order,
+      hiddenDictionaries: selection.excluded,
     );
     final DictionarySearchResult result = built.withKanjiResults(kanji);
     result.popupJson = buildPopupJsonFromLookup(
       results: results,
       maximumTerms: maximumTerms,
-      hiddenDictionaries: snap.hidden,
-      dictionaryOrder: snap.termOrder,
+      hiddenDictionaries: selection.excluded,
+      dictionaryOrder: selection.order,
     );
     if (result.entries.isEmpty && result.kanjiResults.isEmpty) return null;
     return result;
   }
 
   /// 只要弹窗 JSON 的快路径（浏览器扩展 `popupOnly`），不物化 DictionaryEntry。
+  /// [config] 同 [search]。
   RemoteDictionaryPopupLookup? searchPopup(
     String rawTerm, {
     required int maximumTerms,
     bool chineseSimpToTrad = false,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    RemoteLookupDictionaryConfig? config,
   }) {
     if (!_available) return null;
     final String term = normalizeServerSearchTerm(rawTerm);
     if (term.trim().isEmpty) return null;
-    final List<FushiLookupResult> results = FushiDicts.instance.lookup(
-      term,
-      maxResults: maximumTerms,
-      chineseSimpToTrad: chineseSimpToTrad,
-      rubySpans: alignServerRubySpans(
-        raw: rawTerm,
-        normalized: term,
-        spans: rubySpans,
+    final ServerDictionarySelection selection = _selectionFor(config);
+    final List<FushiLookupResult> results = withoutExcludedDictionaryMeta(
+      FushiDicts.instance.lookup(
+        term,
+        maxResults: maximumTerms,
+        chineseSimpToTrad: chineseSimpToTrad,
+        rubySpans: alignServerRubySpans(
+          raw: rawTerm,
+          normalized: term,
+          spans: rubySpans,
+        ),
+        excludedDictionaries: selection.excluded,
       ),
+      selection.excluded,
     );
     if (results.isEmpty) return null;
     int bestLength = 0;
     for (final FushiLookupResult r in results) {
+      // 与 buildResultFromLookup 同口径：只有被排除词典释义的行不贡献高亮长度
+      // （引擎已在截断前剔除，这里是第二道网）。
+      if (r.term.glossaries.every(
+        (FushiGlossaryEntry g) => selection.excluded.contains(g.dictName),
+      )) {
+        continue;
+      }
       if (r.matched.length > bestLength) bestLength = r.matched.length;
     }
-    final _DictionarySnapshot snap = _snapshot;
+    if (bestLength == 0) return null;
     return RemoteDictionaryPopupLookup(
       popupJson: buildPopupJsonFromLookup(
         results: results,
         maximumTerms: maximumTerms,
-        hiddenDictionaries: snap.hidden,
-        dictionaryOrder: snap.termOrder,
+        hiddenDictionaries: selection.excluded,
+        dictionaryOrder: selection.order,
       ),
       bestLength: bestLength,
     );
@@ -380,7 +615,7 @@ class ServerDictionaryHost {
     } on FormatException catch (e) {
       engineLog.logDiagnostic(
         'ServerDictionaryHost.media',
-        'payload JSON 解析失败: $e',
+        tr('payload JSON 解析失败: $e', 'Failed to parse payload JSON: $e'),
       );
       return;
     }
@@ -400,7 +635,10 @@ class ServerDictionaryHost {
       if (bytes == null || bytes.isEmpty) {
         engineLog.logDiagnostic(
           'ServerDictionaryHost.media',
-          '词典「$dict」取不到媒体字节: $path',
+          tr(
+            '词典「$dict」取不到媒体字节: $path',
+            'Cannot read media bytes from dictionary "$dict": $path',
+          ),
         );
         continue;
       }
@@ -409,20 +647,47 @@ class ServerDictionaryHost {
   }
 }
 
+/// 「这次服务端查词要不要简繁互查」的唯一判据（纯函数，便于单测）：开关取请求方发来的
+/// [requested]（没发 = 浏览器扩展 / 旧客户端，取服务端开关 [serverToggle]，默认关），
+/// 开着且请求方声明的 [language] 是中文才开。服务端没有「当前查词语言」，语言未知一律不开。
+bool serverLookupUsesChineseScriptVariants({
+  required bool? requested,
+  required String? language,
+  required bool serverToggle,
+}) =>
+    (requested ?? serverToggle) &&
+    language != null &&
+    isChineseLanguageTag(language);
+
 /// 互联查词 service：查词走 [ServerDictionaryHost]，单词音频服务端不提供
 /// （服务端不做查词发音，见 README；`/api/lookup/audio` 恒回「未命中」）。
 ///
-/// 请求带了请求方查词语言（[FushiRemoteLanguageLookupService]）时按它决定是否开简体 →
-/// 繁體回落；不带语言 = 旧行为（不回落）。
+/// 简繁互查按 [serverLookupUsesChineseScriptVariants] 判；[scriptVariantsEnabled] 读服务端
+/// 配置 `lookup_chinese_script_variants`（`ServerConfig.lookupChineseScriptVariants`，默认关，
+/// WebUI「设置」页可改），不给 = 恒关。
 class ServerRemoteLookupService
     implements
         FushiRemoteLookupService,
         FushiRemotePopupLookupService,
         FushiRemoteLanguageLookupService,
-        FushiRemoteRubyLookupService {
-  ServerRemoteLookupService(this.dictionaries);
+        FushiRemoteRubyLookupService,
+        FushiRemoteFilteredLookupService {
+  ServerRemoteLookupService(
+    this.dictionaries, {
+    bool Function()? scriptVariantsEnabled,
+  }) : _scriptVariantsEnabled = scriptVariantsEnabled ?? _alwaysOff;
+
+  static bool _alwaysOff() => false;
 
   final ServerDictionaryHost dictionaries;
+  final bool Function() _scriptVariantsEnabled;
+
+  bool _scriptVariants(String? language, bool? requested) =>
+      serverLookupUsesChineseScriptVariants(
+        requested: requested,
+        language: language,
+        serverToggle: _scriptVariantsEnabled(),
+      );
 
   @override
   Future<DictionarySearchResult?> searchDictionary({
@@ -443,11 +708,12 @@ class ServerRemoteLookupService
     required String term,
     required bool wildcards,
     required int maximumTerms,
-    required String language,
+    required String? language,
+    bool? chineseScriptVariants,
   }) async => dictionaries.search(
     term,
     maximumTerms: maximumTerms,
-    chineseSimpToTrad: isChineseLanguageTag(language),
+    chineseSimpToTrad: _scriptVariants(language, chineseScriptVariants),
   );
 
   @override
@@ -455,12 +721,13 @@ class ServerRemoteLookupService
     required String term,
     required bool wildcards,
     required int maximumTerms,
-    required String language,
+    required String? language,
+    bool? chineseScriptVariants,
     RemoteDictionaryPopupTiming? timing,
   }) async => dictionaries.searchPopup(
     term,
     maximumTerms: maximumTerms,
-    chineseSimpToTrad: isChineseLanguageTag(language),
+    chineseSimpToTrad: _scriptVariants(language, chineseScriptVariants),
   );
 
   @override
@@ -470,10 +737,11 @@ class ServerRemoteLookupService
     required int maximumTerms,
     required List<FushiRubySpan> rubySpans,
     String? language,
+    bool? chineseScriptVariants,
   }) async => dictionaries.search(
     term,
     maximumTerms: maximumTerms,
-    chineseSimpToTrad: language != null && isChineseLanguageTag(language),
+    chineseSimpToTrad: _scriptVariants(language, chineseScriptVariants),
     rubySpans: rubySpans,
   );
 
@@ -484,12 +752,48 @@ class ServerRemoteLookupService
     required int maximumTerms,
     required List<FushiRubySpan> rubySpans,
     String? language,
+    bool? chineseScriptVariants,
     RemoteDictionaryPopupTiming? timing,
   }) async => dictionaries.searchPopup(
     term,
     maximumTerms: maximumTerms,
-    chineseSimpToTrad: language != null && isChineseLanguageTag(language),
+    chineseSimpToTrad: _scriptVariants(language, chineseScriptVariants),
     rubySpans: rubySpans,
+  );
+
+  @override
+  Future<DictionarySearchResult?> searchDictionaryFiltered({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required RemoteLookupDictionaryConfig dictionaryConfig,
+    String? language,
+    bool? chineseScriptVariants,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+  }) async => dictionaries.search(
+    term,
+    maximumTerms: maximumTerms,
+    chineseSimpToTrad: _scriptVariants(language, chineseScriptVariants),
+    rubySpans: rubySpans,
+    config: dictionaryConfig,
+  );
+
+  @override
+  Future<RemoteDictionaryPopupLookup?> searchDictionaryPopupFiltered({
+    required String term,
+    required bool wildcards,
+    required int maximumTerms,
+    required RemoteLookupDictionaryConfig dictionaryConfig,
+    String? language,
+    bool? chineseScriptVariants,
+    List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    RemoteDictionaryPopupTiming? timing,
+  }) async => dictionaries.searchPopup(
+    term,
+    maximumTerms: maximumTerms,
+    chineseSimpToTrad: _scriptVariants(language, chineseScriptVariants),
+    rubySpans: rubySpans,
+    config: dictionaryConfig,
   );
 
   @override

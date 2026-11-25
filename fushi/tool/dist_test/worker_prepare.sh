@@ -27,6 +27,15 @@ heartbeat=$!
 echo "$$" > "$state/prepare.pid"
 trap 'kill "$heartbeat" 2>/dev/null; rm -f "$state/prepare.pid"' EXIT
 
+# Housekeeping of this checkout's objects here, not inside the next push:
+# receive-pack's auto gc runs after the ref report and before the push
+# returns, printing nothing, and the coordinator kills a push that is silent
+# for two minutes (dist_workers.dart kDistPushStall). This script comes with
+# the snapshot, so it also reaches workers whose shim predates that setting.
+git config receive.autogc false
+echo "==> git gc --auto"
+git gc --auto --quiet || echo "warning: git gc --auto failed (exit $?)" >&2
+
 # Dependencies: pub get + pub-cache patches + one tiny test run, which builds
 # the native-asset hooks (sqlite3, pdfium download) while prepareEnv (proxy)
 # is still set; the batches then run against the warm hook cache.
@@ -53,9 +62,15 @@ bash ci/apply-patches.sh
 # unchanged snapshot costs a hash, a changed one a fresh slang + format.
 echo "==> i18n (fushi/tool/gen_i18n.dart)"
 "$(dirname "$(command -v flutter)")/dart" fushi/tool/gen_i18n.dart
+# The hook outputs under .dart_tool/hooks_runner are kept per hook input, so
+# a checkout that goes back to dependencies it warmed before (two runs taking
+# turns batch by batch, worker_slot.sh) finds them there: worker_cache.sh
+# remembers which dependency keys were warmed and runs the test only for a
+# new one.
 if [ -n "$deps_changed" ]; then
-  echo "==> warm native-asset hooks"
-  (cd fushi && flutter test --no-pub test/tools/test_file_shards_test.dart > /dev/null)
+  bash fushi/tool/dist_test/worker_cache.sh warm "$state" "$pub_key" \
+    sh -c 'echo "==> warm native-asset hooks" &&
+      cd fushi && flutter test --no-pub test/tools/test_file_shards_test.dart > /dev/null'
   echo "$pub_key" > "$state/pub.key"
 fi
 
@@ -73,46 +88,62 @@ fi
 
 # Rust test hard dependencies (same crate list as tool/bootstrap.sh and
 # tool/native_libs.ps1), keyed by the crate's tree hash in this snapshot.
+#
+# Same crate set as tool/native_libs.ps1 / tool/bootstrap.sh: a crate missing here
+# leaves its dylib/so absent on mac/linux workers, and every test that loads it
+# goes red only there (fushi_music → op_undo_music_test, fushi_corpus →
+# library_corpus_service_test).
+native_crates="fushi_compute fushi_fsrs fushi_web_core fushi_rwkv fushi_music fushi_corpus"
+# fushi_fsrs is built with its test-only cargo feature `raw_sql` (the raw SQL
+# channel that fushi_engine / fushi tests use to poke the database; release
+# builds leave it out). The feature set is part of the key, so a library
+# built without it (an older worker state) is rebuilt.
+native_key() {
+  features=""
+  if [ "$1" = fushi_fsrs ]; then features=raw_sql; fi
+  # The crate's tree hash, folded with the sources it pulls in from outside
+  # native/<crate> (external_sources.txt): fushi_music compiles
+  # native/fushi_compute/src/legacy_text.rs in (BUG-4988).
+  key=$(bash tool/native_source_key.sh "$1")
+  if [ -n "$features" ]; then key="$key+$features"; fi
+}
+# Each library set is kept under its key (worker_cache.sh): two runs that
+# take turns on this checkout batch by batch (worker_slot.sh) with different
+# crate trees copy their set back instead of building it on every turn.
 case "$(uname -s)" in
   Darwin) plat=macos; script=build_macos_dylib.sh ;;
   Linux) plat=linux-x64; script=build_linux_so.sh ;;
   MINGW*|MSYS*)
     # A Windows worker runs this under Git Bash; tool/native_libs.ps1 keeps
     # its own per-crate stamps (and copies from a sibling checkout, e.g. the
-    # first slot, when the source tree matches).
+    # first slot, when the source tree matches). This checkout's per-key
+    # cache (worker_cache.sh) goes first: the library sets come back with
+    # their stamps, and native_libs.ps1 then finds them current.
+    plat=windows-x64
+    for crate in $native_crates; do
+      native_key "$crate"
+      bash fushi/tool/dist_test/worker_cache.sh native-restore "$state" "$crate" "$key" "$plat" || true
+    done
     echo "==> native libraries (tool/native_libs.ps1)"
     powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass \
       -File tool/native_libs.ps1
+    for crate in $native_crates; do
+      native_key "$crate"
+      bash fushi/tool/dist_test/worker_cache.sh native-store "$state" "$crate" "$key" "$plat"
+    done
     echo "==> ready (this script: ${SECONDS}s; the rest of the step is checkout and ssh)"
     exit 0 ;;
   *) echo "error: unsupported worker OS $(uname -s)" >&2; exit 3 ;;
 esac
-# Same crate set as tool/native_libs.ps1 / tool/bootstrap.sh: a crate missing here
-# leaves its dylib/so absent on mac/linux workers, and every test that loads it
-# goes red only there (fushi_music → op_undo_music_test, fushi_corpus →
-# backup_galgame_text_lines_test).
-for crate in fushi_compute fushi_fsrs fushi_web_core fushi_rwkv fushi_music fushi_corpus; do
-  key=$(git rev-parse "HEAD:native/$crate")
-  stamp="$state/native-$crate.key"
-  if [ "$(cat "$stamp" 2>/dev/null || true)" != "$key" ] ||
-     [ -z "$(ls "native/$crate/prebuilt/$plat" 2>/dev/null)" ]; then
-    # A secondary slot (DIST_NATIVE_PEER = the primary checkout, prepared
-    # first) copies a library built from the same source tree.
-    peer="${DIST_NATIVE_PEER:-}"
-    if [ -n "$peer" ] &&
-       [ "$(cat "$peer/.git/fushi-dist/native-$crate.key" 2>/dev/null || true)" = "$key" ] &&
-       [ -n "$(ls "$peer/native/$crate/prebuilt/$plat" 2>/dev/null)" ]; then
-      echo "==> copy native/$crate from $peer"
-      mkdir -p "native/$crate/prebuilt"
-      rm -rf "native/$crate/prebuilt/$plat"
-      cp -R "$peer/native/$crate/prebuilt/$plat" "native/$crate/prebuilt/$plat"
-    else
-      echo "==> build native/$crate"
-      bash "native/$crate/$script"
-    fi
-    echo "$key" > "$stamp"
-  else
-    echo "==> native/$crate unchanged"
-  fi
+# Missing from this checkout's cache: a secondary slot (DIST_NATIVE_PEER = the
+# primary checkout, prepared first) copies a set built from the same source
+# tree, else the crate is built here.
+for crate in $native_crates; do
+  native_key "$crate"
+  bash fushi/tool/dist_test/worker_cache.sh native "$state" "$crate" "$key" "$plat" \
+    "${DIST_NATIVE_PEER:-}" \
+    env FUSHI_FSRS_FEATURES="$features" bash -c \
+    'echo "==> build native/$1${FUSHI_FSRS_FEATURES:+ (features $FUSHI_FSRS_FEATURES)}" &&
+      bash "native/$1/$2"' build "$crate" "$script"
 done
 echo "==> ready (this script: ${SECONDS}s; the rest of the step is checkout and ssh)"

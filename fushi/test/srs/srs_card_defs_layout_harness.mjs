@@ -65,6 +65,14 @@ try {
         check(getComputedStyle(mainBtn).pointerEvents === 'auto', 'main toggle clickable');
         check(mainBtn.lang === 'zh-CN', 'main toggle lang');
         const mainGroups = Array.from(mainEl.querySelectorAll('.fc-dict'));
+        // 与「其他词典」行尾同一套纯箭头：不带底色，也不顶出词典卡的圆角（3bYq5GDy80）。
+        check(getComputedStyle(mainBtn).backgroundColor === 'rgba(0, 0, 0, 0)',
+          'main toggle no fill ' + getComputedStyle(mainBtn).backgroundColor);
+        const card = mainBtn.closest('.fc-dict').getBoundingClientRect();
+        const btnBox = mainBtn.getBoundingClientRect();
+        check(btnBox.top >= card.top - 0.5 && btnBox.right <= card.right + 0.5 &&
+          btnBox.bottom <= card.bottom + 0.5,
+          'main toggle inside card ' + JSON.stringify([btnBox.top, btnBox.right, card.top, card.right]));
         const state = (open) => mainBtn.getAttribute('aria-expanded') === String(open) &&
           mainBtn.getAttribute('aria-label') === (open ? 'Collapse main' : 'Expand main');
         check(mainGroups.length > 0 && mainGroups.every((g) => g.open), 'main open initially');

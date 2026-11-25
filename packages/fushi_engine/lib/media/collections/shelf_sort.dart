@@ -199,6 +199,36 @@ ShelfReadStatus classifyShelfReadStatus({
       : ShelfReadStatus.reading;
 }
 
+/// 超过这个比例的进度在卡面上视同读完（跳过后记 / 附录 / 版权页）。
+const double kShelfReadFinishedFraction = 0.97;
+
+/// 书 / 漫画卡面展示用的阅读比例（0–1），书架卡、库页「继续阅读」、导航速览、
+/// 首页「继续」卡共用这一个口径：
+/// * [completed]（手动标记或读到末尾自动写入的读完标记）→ 恒为 1，不看位置；
+/// * `duration<=0` 或比例非有限 → 0；
+/// * 超过 [kShelfReadFinishedFraction] → 1；其余按 `position/duration`。
+double shelfReadFraction({
+  required bool completed,
+  required int position,
+  required int duration,
+}) {
+  if (completed) return 1;
+  if (duration <= 0) return 0;
+  final double v = position / duration;
+  if (!v.isFinite) return 0;
+  return v > kShelfReadFinishedFraction ? 1 : v.clamp(0.0, 1.0);
+}
+
+/// [shelfReadFraction] 结果的百分比数字：读完（≥1）与未读（≤0）返回 null（卡面
+/// 写「已读完」/「未读」）；其余向下取整并夹在 1–99（不足 1% 记 1%，避免「0%」与
+/// 「未读」混淆，也不在还没读完时写出 100%）。各处一律向下取整，同一本书在不同
+/// 卡面上不会一处 3% 一处 4%。
+int? shelfReadPercent(double fraction) {
+  if (fraction >= 1 || fraction <= 0 || !fraction.isFinite) return null;
+  // 加一个远小于 1% 的余量：0.29 * 100 在浮点下是 28.999…，直接取整会少一格。
+  return (fraction * 100 + 1e-9).floor().clamp(1, 99);
+}
+
 /// 书架概览统计（在读数 / 读完数 / 在读候选列表）。
 ///
 /// BUG-804：输入必须是**全量 EPUB-backed 书**——含有声书（EPUB 正文 + SRT

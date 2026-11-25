@@ -61,6 +61,10 @@ extension _VideoSidePanel on _VideoFushiPageState {
     if (_episodeListVisible.value) {
       _episodeListVisible.value = false;
     }
+    // 聊天回放栏同处右栏：开浮层面板时一并收起（拍板台 zTedU_pOQF）。
+    if (_liveChatVisible.value) {
+      _liveChatVisible.value = false;
+    }
     // BUG-253：开面板时不再唤起背景控制条（旧 [_pokeControlsVisible]），而是立刻把
     // 已经在显示的 media_kit 控制条 / 右侧 rail 镜像收起，避免它们冒在面板后面。
     // 面板开着期间 [_markControlsVisible] / [_pokeControlsVisible] 都被门控成不可见。
@@ -92,6 +96,8 @@ extension _VideoSidePanel on _VideoFushiPageState {
         return t.video_quality;
       case _VideoSidePanelKind.danmakuMatch:
         return t.video_danmaku_manual_match_title;
+      case _VideoSidePanelKind.statistics:
+        return t.video_stats_title;
     }
   }
 
@@ -112,13 +118,16 @@ extension _VideoSidePanel on _VideoFushiPageState {
         return FushiIcons.highQuality;
       case _VideoSidePanelKind.danmakuMatch:
         return FushiIcons.forum;
+      case _VideoSidePanelKind.statistics:
+        return FushiIcons.statistics;
     }
   }
 
   double _videoSidePanelWidth(_VideoSidePanelKind kind) {
     switch (kind) {
-      // 切换条成员（字幕 / 音频 / 章节 / 画质 / 设置）同宽：原地互换时面板不跳宽。
+      // 切换条成员（字幕 / 音频 / 章节 / 画质 / 统计 / 设置）同宽：原地互换时面板不跳宽。
       case _VideoSidePanelKind.settings:
+      case _VideoSidePanelKind.statistics:
       case _VideoSidePanelKind.subtitle:
       case _VideoSidePanelKind.audio:
       case _VideoSidePanelKind.chapters:
@@ -166,6 +175,8 @@ extension _VideoSidePanel on _VideoFushiPageState {
         return _buildQualitySidePanel(controller);
       case _VideoSidePanelKind.danmakuMatch:
         return _buildDanmakuMatchSidePanel();
+      case _VideoSidePanelKind.statistics:
+        return _buildVideoStatisticsPanel();
     }
   }
 
@@ -204,7 +215,8 @@ extension _VideoSidePanel on _VideoFushiPageState {
     );
   }
 
-  /// 面板切换条成员：字幕 / 音频 / 章节（有章节时）/ 画质（有可选档时）/ 设置。
+  /// 面板切换条成员：字幕 / 音频 / 章节（有章节时）/ 画质（有可选档时）/ 统计（在计
+  /// 观看统计时）/ 设置。
   /// 倍速与弹幕手动匹配是一次性的小弹层，不进切换条。
   List<_VideoSidePanelKind> _videoPanelSwitcherKinds() {
     return <_VideoSidePanelKind>[
@@ -215,6 +227,8 @@ extension _VideoSidePanel on _VideoFushiPageState {
       if (_hasChapters) _VideoSidePanelKind.chapters,
       if (_qualityCurrentLabel != null || _isYoutubeStream)
         _VideoSidePanelKind.quality,
+      // 回看态 / 原盘菜单不建观看统计（[_ensureWatchTracker]），没有可看的数字。
+      if (_watchTracker != null) _VideoSidePanelKind.statistics,
       _VideoSidePanelKind.settings,
     ];
   }
@@ -271,9 +285,11 @@ extension _VideoSidePanel on _VideoFushiPageState {
     final ReaderPanelSwitcher? switcher = _videoPanelSwitcher(kind);
     final bool member = switcher != null;
     // 设置面板顶上就是分类页签，不画大标题页头（反馈 nGxUGtYot9）；字幕 / 音频
-    // 只有一个分组，同样不画——切换条本身已经标明当前面板。
+    // 只有一个分组、统计面板首卡就是本次会话秒表，同样不画——切换条本身已经标明
+    // 当前面板。
     final bool headerless =
         kind == _VideoSidePanelKind.settings ||
+        kind == _VideoSidePanelKind.statistics ||
         kind == _VideoSidePanelKind.subtitle ||
         kind == _VideoSidePanelKind.audio;
     final Widget child = _buildVideoSidePanelChild(kind, controller);

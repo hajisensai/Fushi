@@ -5,17 +5,21 @@
 ## 基本规则
 
 - 始终用中文回复。发现问题直接说，不为了顺滑把风险说轻。先读最近层级的 `AGENTS.md` / `CLAUDE.md`。
-- **改动必须在独立 Git worktree 里做**，新建后第一件事跑 `powershell -ExecutionPolicy Bypass -File tool/setup_worktree.ps1`（别手动 cp 密钥桩；只搬密钥加 `-SkipBootstrap`）。完成→验证→提交→push→开 PR 后就停，**不自己合并**，用户当轮明说「合并」才合；合并不得覆盖原工作区未提交改动。（[细则](docs/agent/rules-detail.md#worktree-初始化)）
-- 多 agent 并发：在 `.worktrees/coordination/claims/`（worktree 里用 `../coordination/claims/`）按 `_template.json` 登记 claim（任务、分支、base SHA、预计 / 高冲突文件），只编辑自己的 claim；普通 agent 不主动 rebase/merge `develop`，由 integration owner 统一合并与 broad verification。
-- 子代理：≥2 个可独立推进的子任务才并行派发，后台派、不空等、不重复派；几次工具调用能做完的不派（首轮固定开销约 8 万 token）。分工与伪红判别见 [fast-workflow.md](docs/agent/fast-workflow.md)。子代理类型定义在 `.claude/agents/`（只带实际用到的工具），模型由 `tool/claude_hooks/subagent_model_router.mjs` 按类型钉死：`scout` / `worker` → Sonnet，`reviewer` / `general` → Opus，`general-purpose` 与省略类型自动改派 `general`；workflow 的 `agent()` 由 `workflow_agent_type_default.mjs` 默认补 `agentType: 'general'`。
+- **改动必须在独立 Git worktree 里做**，新建后第一件事跑 `powershell -ExecutionPolicy Bypass -File tool/setup_worktree.ps1`（别手动 cp 密钥桩；只搬密钥加 `-SkipBootstrap`）。完成→验证→提交→push→开 PR 后就停，**不自己合并**，用户当轮明说「合并」才合；合并不得覆盖原工作区未提交改动。在 worktree 会话里另建给自己或子代理改的 worktree（合并 / 审查 PR 用），一律放仓库目录外（主 checkout 同级的 `../fushi-wt/<名>`）：主 checkout 下的 `.worktrees/` 会被隔离检查拒写。（[细则](docs/agent/rules-detail.md#worktree-初始化)）
+- 多 agent 并发：在 `.worktrees/coordination/claims/`（worktree 里用 `../coordination/claims/`）按 `_template.json` 登记 claim（任务、分支、base SHA、预计 / 高冲突文件），只编辑自己的 claim；普通 agent 不主动 rebase/merge `develop`，由 integration owner 统一合并与 broad verification。**长期集成分支也不追 `develop`**：只在对 `develop` 开整批 PR 前合一次（与最后一批合流并成一次验证），中途不合、不量、不汇报「落后多少提交」。（[细则](docs/agent/rules-detail.md#集成分支不追-develop)）
+- **跨目录找 Dart / Rust 符号的定义或引用，先用 `python tool/symindex/sym.py def|refs|find <名字>`**（语义索引，0.5 秒；改动文件自动退回实时 grep，标 `[live]`），没有结果或要搜非符号文本时再 `grep`。（[README](tool/symindex/README.md)）
+- 子代理：≥2 个可独立推进的子任务才并行派发，后台派、不空等、不重复派；几次工具调用能做完的不派（首轮固定开销约 8 万 token）。分工与伪红判别见 [fast-workflow.md](docs/agent/fast-workflow.md)。子代理类型定义在 `.claude/agents/`（只带实际用到的工具；正文内嵌本文件并设 `omitClaudeMd: true`，改完本文件跑 `node tool/claude_hooks/sync_agent_claude_md.mjs`，CI 守卫会查），模型由 `tool/claude_hooks/subagent_model_router.mjs` 按类型钉死：`scout` / `worker` → Sonnet，`reviewer` / `general` → Opus，`general-purpose` 与省略类型自动改派 `general`；workflow 的 `agent()` 由 `workflow_agent_type_default.mjs` 默认补 `agentType: 'general'`。
+- **方案取最优、一次做到位**（修 bug 与做功能都适用）：动手前先比较有没有更好的方案，有就用更好的，不因为「改动小 / 沿用现状省事」退而求其次；做到一半发现更好的就换，并在回复里说明换了什么、为什么。能根本修复 / 完整实现的就一次做完，不交「先凑一版、以后再补」的补丁式半成品。更好的方案若会改变用户可见行为或明显扩大范围，先列取舍问用户；确实只能分期的，写明还缺什么并登记（`docs/BUGS.md` / [拍板台](docs/agent/decision-board.md)），不只在汇报里提。
 - **根因修复**：先复现或沿真实代码路径定位，修数据结构 / 状态同步 / 生命周期 / 平台边界 / 依赖契约。根因在结构里就重写那一块，不在坏结构上打补丁；禁止用延迟、重试、吞异常、硬编码、特例分支掩盖症状。仅外部不可控限制可加临时兼容层，并写明影响范围与清理条件。
-- 用户报 bug 按 [docs/BUGS.md](docs/BUGS.md) 文件头流程：先验真伪，`dart run tool/bug.dart new <slug>` 一 bug 一文件，记根因 `file:line` → ① 根因修复 ② 最强可落地层的自动化测试；撞号用 `bug.dart renumber` / `settle`，别手改。
+- 用户报 bug 按 [docs/BUGS.md](docs/BUGS.md) 文件头流程：先验真伪，`dart run tool/bug.dart new <slug>` 一 bug 一文件，记根因 `file:line` → ① 根因修复 ② 最强可落地层的自动化测试；撞号不是需要处理或汇报的事（本机并行工作区取号互不相同，跨机器的由 develop 上的 settle CI 自动改号），真要改号用 `bug.dart renumber` / `settle`，别手动改文件名。
+- **外部输入只列决策、不直接实现**：外部 PR（作者非 `hajisensai` / `W1ght`）、PR 评论 / review、issue、应用内反馈、用户转来的第三方意见里，凡涉及功能取舍、行为 / UI 改变、范围扩大、架构方向的，一律逐条写进[拍板台](docs/agent/decision-board.md)（每条：来源链接、诉求、利弊、建议）交用户拍板，用户点头前不改代码；拍板结果（做 / 不做 / 以后 / 永远不做 / 没看懂 / 要设计图 / 你定）按该文档执行。只有**明显是 bug**（与现有设计意图矛盾的崩溃 / 错误结果 / 回归）才可直接按 bug 流程修；拿不准是不是 bug 就当待决策项。（[细则](docs/agent/rules-detail.md#外部-pr-与反馈只列决策)）
 - 函数和新增 Dart helper 要有明确类型签名。
 
 ## UI 硬规则
 
 - **新模块 / 重设计页面必须带动效**，MD3 与 Apple 两套都接：列表错峰 `FushiEntranceScope` + `fushiStaggeredItemBuilder` / `FushiStaggeredEntrance`，按压 / 悬停 `FushiPressScale` / `FushiHoverLift`，时长只取 `fushiMotionDuration` / `FushiMotion`，不另立常量。
 - 工具栏 / 顶栏动作默认平铺，放不下才用 `FushiFloatingTopBar` 的 `adaptiveOverflow` 收进「⋯」；底部浮动工具栏 / 主导航底栏纯图标（文字只进 tooltip 与 Semantics，命中区 ≥48dp）；主导航选中高亮用 `navShapeOf` 的 M3E 多边形，不画药丸。（[细则](docs/agent/rules-detail.md#工具栏默认展开)）
+- **公共组件必须分两套设计系统**（用户 2026-11-24）：`utils/components/**`、`utils/adaptive/**` 里会渲染系统控件外观的组件，M3E 分支与 Cupertino 分支都要有；Cupertino 以 `liquid_glass_widgets`（iOS 27 / macOS 27 风格）为准、其次 `cupertino_ui`，跟随「玻璃画质」档位（唯一判据 `glassMaterialOf`）。纯布局 / 动效 / 内容层可不分，但要在类注释里写明与设计系统无关。页面代码不直接用裸 Material 控件（`IconButton` / `AlertDialog` / `ListTile` / `PopupMenuButton` 等），走公共组件。
 - 分段选择禁止裸 `SegmentedButton`：单选 `adaptiveSegmentedButton(...)` / `AdaptiveSettingsSegmentedRow`，多选 / 竖排 / 允许空选 `FushiSegmentedButton`。（[细则](docs/agent/rules-detail.md#分段选择用设计系统组件)）
 - 一律 `import 'package:material_ui/material_ui.dart'` / `'package:cupertino_ui/cupertino_ui.dart'`，**禁止新写 `package:flutter/material.dart` / `cupertino.dart`**。升级这两个包前必读 [material-ui-upgrade.md](docs/agent/material-ui-upgrade.md)，M3E 规范特性一个不许丢。（[细则](docs/agent/rules-detail.md#material_ui-迁移)）
 - 渲染五端全线 Impeller，禁止新增关 Impeller 的开关 / manifest / plist 键 / 启动参数，渲染问题在 Impeller 上按根因修。（[细则](docs/agent/rules-detail.md#impeller)）
@@ -30,10 +34,9 @@
 - 存量持久化名（DB 列 / 偏好键 / 磁盘目录 / wire key，含 `reader_ttu`、`ttu_*`、`Aidoku` 冻结名）**冻结不追改**；新代码遵守 [命名术语表](docs/agent/naming.md)。
 - 旧注释里的 Isar / Hive / TTU 阅读器 / 旧 SRS 同步引擎都已不存在，先查代码再判断。子系统文件位置与现状见 [repo-map.md](docs/agent/repo-map.md)。
 
-## 功能黑名单（不提议、不实现、不写进 spec / brief / 推荐）
+## 功能黑名单
 
-- **自动注音（机器推断读音的振假名 / furigana）——全仓绝对不可**：不 100% 准确会误导学习者。来源自带的 ruby（EPUB `<ruby>`、歌词源文件注音）照常显示。
-- **音乐歌词编辑界面**（改字、编辑翻译 / 注音、单行偏移）。整首偏移、选来源 / 恢复自动来源、导出 TTML 保留。
+不提议、不实现、不写进 spec / brief / 推荐的功能全在 [feature-blacklist.md](docs/agent/feature-blacklist.md)；提议功能、写 spec / brief、往拍板台写事项、动注音 / 歌词相关代码前先读。
 
 ## 领域硬边界
 
@@ -51,8 +54,12 @@
 
 - 文档改动：`git diff --cached --check` 即可。
 - **本机重活一律走租约**：在 `fushi/` 下写成 `dart tool/heavy.dart -- <原命令>`（`flutter test` / `analyze` / `build` / `gradlew` / `run_windows_itest.ps1`）；test 与 analyze 自动外包给 dist 机器，只验能编过的构建加 `--check-only`。（[heavy-lease.md](docs/agent/heavy-lease.md)）
-- **推送前唯一本地门**：`fushi/` 下全量 `dart tool/heavy.dart -- flutter analyze --no-pub`，一个分支只在 push 前跑一次。analyze 过了 ≠ CI 绿，推完看 PR CI。（[细则](docs/agent/rules-detail.md#推送前只跑-analyze)）
+- **开 PR 不跑全量，合并时跑一次**（2026-11-24 用户拍板）：开发分支 push / 开 PR 前本机**不跑**全量 `flutter analyze`，`dart format` + 定向测试做完就推（要早看静态错用 `dart analyze <改动文件>`），PR 上的 analyze 由 CI 快门跑。全量 `dart tool/heavy.dart -- flutter analyze --no-pub` 只由**合并任务**在审查完、合并结果提交后、推 `develop` 前跑一次（批量合并只在集成结果上跑一次）；不经 PR 直推 `develop` 的改动推前同样跑这一次。开发会话不为 PR CI 留守（见下一条）。（[细则](docs/agent/rules-detail.md#全量-analyze-只在合并时跑)）
+- **等待不烧缓存**（2026-11-20，实测与依据见 [fast-workflow.md](docs/agent/fast-workflow.md#等待与缓存)）：① 开发会话 push + 开 PR 后就结束，不挂 `wait-ci` / `gh run watch` / `gh pr checks --watch`，不开 Auto-fix 与 PR 监视；PR CI 的红由**合并任务**在合并前读一次、按根因修。② 主会话里预计 <2 分钟且期间没别的事可推进的命令前台跑；要后台跑的几条合成一条命令、一个日志，只被唤醒一次。③ 子代理的缓存只保 5 分钟：前台 `timeout` 不超过 270000，等待切成不超过 4 分钟一片；子代理的 `heavy.dart` 自动带 `--wait-max-min=10`，排队预测等不完就立刻退出 75（`gives up now`），命令交回委托方汇总跑（写在 `.claude/agents/*.md`，`tool/claude_hooks/subagent_wait_slice.mjs` 兜底）。
+- **PR CI 默认只跑快门**（analyze + 守卫 + 直接受影响的测试），全量在合并后的 `develop` 上跑；改了原生 / Android / pubspec / `fushi/tool/` 等才在 PR 上自动跑全量。**不为全量空等**：快门绿就算 PR CI 过；要在分支上跑全量用 `gh workflow run main.yml --ref <分支>` 或 `full-ci` 标签。（[build.md](docs/agent/build.md#pr-主门分层快门每推必跑全量按需--合并后跑2026-11-18)）
 - Dart 改动：`dart format` 改动文件；测试只定向跑新增 / 改动的文件并合成一次 `flutter test a_test.dart b_test.dart --no-pub`，本地不跑全量（全量走 `dart tool/dist_test.dart --config=D:/fushi-dist/workers.local.json`）。**判绿只认退出码 + 实际执行数**，零执行的红不算红，也不许拿伪红跳过真红。（[细则](docs/agent/rules-detail.md#dartflutter-改动的测试纪律)）
+- **绿结果不重跑**（2026-11-22）：`heavy.dart` 把 test / analyze 的绿结果按「工作树内容 + 命令」记住，任何 worktree 同内容同命令再跑直接回 `CACHED PASS`、不排队，那就是绿，不加 `--no-cache`。审查代理不重跑实现方已贴出绿结果的测试；全量 / 成片目录不在子代理里等，交委托方汇总一次跑。（[heavy-lease.md](docs/agent/heavy-lease.md#绿结果缓存)）
+- Rust 改动（`native/fushi_*`）：「编译—测试」循环用 `cargo test --profile quick --lib <过滤>`（不做 fat LTO、增量编译，fushi_fsrs 改一行重编约 8 秒；`--release` 是 7～15 分钟），一大批测试用 `bash tool/rust_test.sh <crate> [过滤]`（分进程跑，全量快一倍多），**不拿 `cargo test --release` 当循环**，`id_audit` 与默认构建本地只跑一种。`--release` 只用于出产物（`build_*` / `tool/native_libs.ps1`）和量性能，全量 release 测试交给 PR CI 的 `native-*-gate`。一个 worktree 一个 target 目录，不另设共用的 `CARGO_TARGET_DIR`。（[build.md](docs/agent/build.md#rust-本地开发循环quick-profile)）
 - PR 合入 `develop` 后加跑目录枚举型守卫整批（清单在 [fast-workflow.md](docs/agent/fast-workflow.md)「合并后必跑」）。
 - Android 资源 / manifest / Gradle / 权限 / 前台服务 / 打包改动：加 `gradlew :app:assembleRelease`（`fushi/android/` 下 `dart ../tool/heavy.dart --check-only -- .\gradlew.bat :app:assembleRelease`）。
 - 阅读器 / 导入 / 播放 / 布局问题，声明修好前用真实设备或模拟器复测原始失败路径并留证据（[integration-testing.md](docs/agent/integration-testing.md)）；小说阅读器排版 / 注音 / 行高 / 高亮 / 恢复位置类修复必须在 `paginated`、`continuous`、`vn` 三种 view mode 各验一遍，验不了的写明原因。
@@ -62,8 +69,8 @@
 
 - **2026-11-01 仓库历史已用 filter-repo 重写**：旧 clone / 分支与新历史无共同祖先，报 `unrelated histories` 时禁止 `--allow-unrelated-histories`，用 `git rebase --onto origin/develop <旧分叉点> <分支>` 只搬自己的提交（或从新 `origin/develop` 重开 worktree）；带旧历史的 PR / push 会被 `.github/workflows/history-guard.yml` 判红。
 - 提交前 `git status --short`，**只 stage 本轮相关文件（禁止 `git add -A`）**，再 `git diff --cached --check`；提交信息简洁写真实改动；提交后回复里给出哈希和仍存在的无关未提交改动。
-- 过了推送门就直接 push + 开 PR，**不问**；只有方案取舍、范围扩大、风险判断才问。
-- 合并 PR 看作者：只有 `hajisensai` 与 `W1ght` 的 PR 可审查后直接合，其他人一律先问用户（许可形态是 `merge-approved` 标签）。批量合并不逐条等 PR CI，合完看 `develop` 尖端整体 CI，红了按根因修，不回滚、不跳过。（[细则](docs/agent/rules-detail.md#合并-pr-看作者)）
+- 改完（`dart format` + 定向测试）就直接 push + 开 PR，**不问**；只有方案取舍、范围扩大、风险判断才问。
+- 合并 PR 看作者：只有 `hajisensai` 与 `W1ght` 的 PR 可审查后直接合，其他人一律先问用户（许可形态是 `merge-approved` 标签）。合并任务合并前对每条 PR 读一次 CI 的现成结论（`gh pr checks <N>`，不 `--watch`）：红了就在合并任务里按根因修，还没跑完的不等；批量合并不逐条等 PR CI，合完看 `develop` 尖端整体 CI，红了按根因修，不回滚、不跳过。（[细则](docs/agent/rules-detail.md#合并-pr-看作者)）
 - 版本号、发布通道（push 只进 debug / prerelease，正式版只能手动触发）、跨 workflow release 序列：见 [build.md](docs/agent/build.md)。
 - **TestFlight 不用人管**：`develop` 每次 push 的 `release-desktop.yml` 都自动传 debug 包（用户 2026-11-02 拍板），合并后不查序列、不补发；`main` 的 push 不传。（[细则](docs/agent/rules-detail.md#testflight-每次-push-自动传)）
 
@@ -71,7 +78,7 @@
 
 | 要做的事 | 看这里 |
 |---|---|
-| 子系统文件位置、当前技术事实（Flutter 3.47.6、schema、五平台、依赖） | [repo-map.md](docs/agent/repo-map.md) |
+| 子系统文件位置、当前技术事实（Flutter 3.50.0、schema、五平台、依赖） | [repo-map.md](docs/agent/repo-map.md) |
 | 命名术语表 | [naming.md](docs/agent/naming.md) |
 | 难度分级、子代理分工、并行时间线、并发伪红判别、合并后必跑守卫 | [fast-workflow.md](docs/agent/fast-workflow.md) |
 | 构建 / Melos / bootstrap / 发布通道与版本号 / galgame helper 随包 | [build.md](docs/agent/build.md) |
@@ -83,9 +90,12 @@
 | Computer Use 巡检与真实像素证据 | [computer-use-testing.md](docs/agent/computer-use-testing.md) |
 | Windows app 外打开视频 | [external-video-open.md](docs/agent/external-video-open.md) |
 | 快捷键 / 手柄 / 鼠标绑定盘点 | [shortcuts-inventory.md](docs/agent/shortcuts-inventory.md) |
+| 第二块屏（双屏伴屏、游戏串流副屏、手柄查词模式） | [second-screen.md](docs/agent/second-screen.md) |
 | 学习统计域 | [statistics.md](docs/agent/statistics.md) |
 | Galgame Hook | [galgame-hooking.md](docs/agent/galgame-hooking.md) |
+| 远程操作社区志愿者电脑做 galgame 适配（一个会话控多台、MCP 网关、打包） | [remote-adapt.md](docs/agent/remote-adapt.md) |
 | 本机重活租约 | [heavy-lease.md](docs/agent/heavy-lease.md) |
+| 符号索引（按名字查定义 / 引用、定时刷新、改动文件降级） | [tool/symindex/README.md](tool/symindex/README.md) |
 | 在线源 / 浏览 / 应用内反馈 | [online-sources.md](docs/agent/online-sources.md) |
 | 动画刮削 | [anime-scraping.md](docs/agent/anime-scraping.md) |
 | 各模块语言与职责 | [module-index.md](docs/agent/module-index.md) |
@@ -94,4 +104,5 @@
 | `fushi_server` 相对 app 当 host 的能力缺口（未接的 host 钩子、音乐库刻意延后等） | [server-parity-gaps.md](docs/agent/server-parity-gaps.md) |
 | material_ui 升级 | [material-ui-upgrade.md](docs/agent/material-ui-upgrade.md) |
 | 拍板原文（起因、日期、例外、实测数据） | [rules-detail.md](docs/agent/rules-detail.md) |
+| 往拍板台写待决策项、按拍板结果执行 | [decision-board.md](docs/agent/decision-board.md) |
 | `fushi/` 主应用模块说明 | [fushi-app-module.md](docs/agent/fushi-app-module.md) |

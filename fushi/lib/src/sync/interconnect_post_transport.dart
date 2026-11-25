@@ -4,6 +4,8 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/sync/interconnect_host_channel.dart'
+    show InterconnectCandidateSelection, interconnectRankedCandidates;
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -43,20 +45,16 @@ Never _throwAssetUnreachable(Uri uri, Object error, StackTrace stack) {
   );
 }
 
-/// 互联客户端的 JSON POST 传输层：**唯一**一份「已启用候选按序 fallback +
-/// `Basic base64(hibiki:token)` 鉴权 + https 带指纹强制走钉扎 client + 每候选独立
-/// 回收」的实现。
+/// 互联客户端**跨 host** 的 JSON POST fallback：已启用候选（经共享的
+/// [interconnectRankedCandidates] 选路）逐台尝试 + `Basic base64(hibiki:token)`
+/// 鉴权 + https 带指纹强制走钉扎 client + 每候选独立回收。查词、制卡这类「哪台
+/// 已配对设备能答就用哪台」的请求走这里。
 ///
-/// **为什么抽出来**——这套逻辑此前被逐行复制过多份：
-/// `fushi_remote_lookup_client.dart` 的 `_postLookup`、
-/// `fushi_remote_mining_client.dart` 的 `_post`（它的类注释自己就写着「传输契约与
-/// [FushiRemoteLookupClient] 完全同构」），
-/// 另有 `interconnect_manga_ocr_client.dart` 的 GET 版 `probe` 和
-/// `InterconnectSyncBackend` 走 `WebDavOps` 的第四份。每加一个互联端点就再抄一遍，
-/// 而钉扎、401 语义、socket 回收这些安全相关的细节一旦有一份抄漏就是真事故
-/// （TODO-961 gap①：注入的 keep-alive client 不得旁路证书钉扎）。
-///
-/// 现在新增一个互联端点 = 调一次 [post]，不再复制传输代码。
+/// 「到**某一台** host」的请求（视频遥控、远程复习、代下载、订阅、AI 助手、任务、
+/// 漫画 OCR…）一律走 `InterconnectHostChannel`（`interconnect_host_channel.dart`），
+/// 不在这里加 `onlyCandidate` 的新用法，也不再复制传输代码：钉扎、401 语义、
+/// socket 回收这些安全相关的细节一旦有一份抄漏就是真事故（TODO-961 gap①：注入的
+/// keep-alive client 不得旁路证书钉扎）。
 ///
 /// 互联请求的**建连**超时。不设时，建连阶段也吃整次请求的超时（制卡 60 s）：对端
 /// 关机 / 走 Tailscale 或公网地址时 SYN 石沉大海，要等满整次超时，而且以
@@ -69,11 +67,16 @@ class InterconnectPostTransport {
     required SyncRepository repo,
     http.Client? httpClient,
     http.Client Function(String expectedFingerprint)? pinnedClientFactory,
+    InterconnectAddressProbe? probe,
   }) : _repo = repo,
        _httpClient = httpClient ?? http.Client(),
-       _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient;
+       _pinnedClientFactory = pinnedClientFactory ?? _defaultPinnedClient,
+       _probe = probe ?? defaultInterconnectAddressProbe;
 
   final SyncRepository _repo;
+
+  /// 选路时核对地址身份的探测（默认真 `/api/ping`）。
+  final InterconnectAddressProbe _probe;
 
   /// 明文 http 候选共用的 client（生产由 AppModel 注入 keep-alive client 复用连接，
   /// TODO-744）。**绝不**用于带指纹的 https 候选——那必须走钉扎 client
@@ -101,8 +104,9 @@ class InterconnectPostTransport {
   /// - 其它非 2xx、响应体不是 JSON 对象 → 换下一个候选。
   /// - 传输层失败（连接拒绝 / 超时 / DNS）→ 换下一个候选。
   ///
-  /// 返回的 `allUnreachable` 仅当「至少发起过一次请求，且所有候选都没拿到**任何**
-  /// HTTP 响应」时为 true——未配对 / 无 token / 候选 URL 全畸形都**不**算不可达。
+  /// 返回的 `allUnreachable` 仅当「至少发起过一次请求，或有候选因明文地址身份核对
+  /// 失败被扣下，且所有候选都没拿到**任何** HTTP 响应」时为 true——未配对 / 无
+  /// token / 候选 URL 全畸形都**不**算不可达。
   /// 这条区分是音频源失败冷却（BUG-575）的依据：设备可达但没这个词 ≠ 设备死了。
   /// [onlyCandidate] limits a source-edit continuation to the exact URL, pin and
   /// effective credential used for the original read. Revocation/re-pairing
@@ -110,36 +114,120 @@ class InterconnectPostTransport {
   /// [onRejectedResponse] observes reachable but unusable responses without
   /// changing fallback or 401 semantics. Callers may surface the last rejection
   /// if no later candidate succeeds. Response text is never passed through.
+  /// [bodyFor] 按候选改写请求体（制卡带每台主机各自的「保存到」，§4.8）；返回 null 用 [body]。
+  /// [candidateFilter] 在「已启用」之外再筛一道候选（远端词典查词只发给开着
+  /// [FushiClientUrl.lookupEnabled] 的 host）。null = 不筛，与升级前逐字一致。
+  /// 每个真正发出请求的候选的传输层结局一律经 [reportInterconnectCandidateReached] /
+  /// [reportInterconnectCandidateUnreachable] 上报——这是互联可达性的唯一上报点，
+  /// 词典服务器在线状态（BUG-4692）也只从那里听。
   Future<InterconnectPostOutcome> post({
     required String path,
     required Map<String, dynamic> body,
     required Duration timeout,
     required String authErrorMessage,
     FushiClientUrl? onlyCandidate,
+    Map<String, dynamic>? Function(FushiClientUrl candidate)? bodyFor,
+    bool Function(FushiClientUrl candidate)? candidateFilter,
     void Function(int statusCode, Map<String, dynamic>? json)?
     onRejectedResponse,
   }) async {
-    List<FushiClientUrl> candidates = (await _repo.getFushiClientUrls())
-        .where((FushiClientUrl u) => u.enabled)
-        .toList();
-    final String? fallbackToken = await _repo.getFushiClientToken();
-    if (onlyCandidate != null) {
-      final String? onlyHost = onlyCandidate.hostId;
-      candidates.removeWhere(
-        (FushiClientUrl candidate) =>
-            // 带 hostId 时「只发给这台」认的是 host（凭据仍须一致）：同一台 host
-            // 的任一地址都行，出门后不会因为当初那条 LAN 地址不通就失败。
-            (onlyHost != null
-                ? candidate.hostId != onlyHost
-                : (candidate.url != onlyCandidate.url ||
-                      candidate.fingerprintSha256 !=
-                          onlyCandidate.fingerprintSha256)) ||
-            interconnectTokenFor(candidate, fallbackToken) !=
-                onlyCandidate.token,
-      );
-    }
-    if (candidates.isEmpty) {
-      // 未配对/未启用：不是「设备不可达」，按「无结果」处理。
+    final _InterconnectExchange exchange = await _exchange(
+      path: path,
+      timeout: timeout,
+      authErrorMessage: authErrorMessage,
+      onlyCandidate: onlyCandidate,
+      candidateFilter: candidateFilter,
+      onRejectedResponse: onRejectedResponse,
+      acceptsJson: (Object? decoded) => decoded is Map<String, dynamic>,
+      send:
+          (
+            http.Client client,
+            Uri uri,
+            Map<String, String> headers,
+            FushiClientUrl candidate,
+          ) => client.post(
+            uri,
+            headers: <String, String>{
+              ...headers,
+              'Content-Type': 'application/json',
+            },
+            body: jsonEncode(bodyFor?.call(candidate) ?? body),
+          ),
+    );
+    return (
+      json: exchange.json as Map<String, dynamic>?,
+      allUnreachable: exchange.allUnreachable,
+      mayHaveDelivered: exchange.mayHaveDelivered,
+      candidate: exchange.candidate,
+    );
+  }
+
+  /// 只读 GET 版 [post]：同一套候选筛选 / 选路 / 鉴权 / 钉扎 / 401 / 不可达语义，
+  /// 响应体可以是任意 JSON 值（清单端点回数组）。服务器词典目录刷新
+  /// （`/api/library/dictionaries`，用 [candidateFilter] 限定到某一台 host）用它，
+  /// 不再为一个 GET 另抄一份传输层。
+  Future<InterconnectGetOutcome> getJson({
+    required String path,
+    required Duration timeout,
+    required String authErrorMessage,
+    bool Function(FushiClientUrl candidate)? candidateFilter,
+  }) async {
+    final _InterconnectExchange exchange = await _exchange(
+      path: path,
+      timeout: timeout,
+      authErrorMessage: authErrorMessage,
+      candidateFilter: candidateFilter,
+      acceptsJson: (Object? decoded) => decoded != null,
+      send:
+          (
+            http.Client client,
+            Uri uri,
+            Map<String, String> headers,
+            FushiClientUrl candidate,
+          ) => client.get(uri, headers: headers),
+    );
+    return (
+      json: exchange.json,
+      allUnreachable: exchange.allUnreachable,
+      candidate: exchange.candidate,
+    );
+  }
+
+  /// [post] / [getJson] 共用的候选循环（语义见 [post] 的文档）。[send] 只管发出这一次
+  /// 请求；[acceptsJson] 判解码后的响应体算不算可用结果（不可用 = 换下一个候选）。
+  Future<_InterconnectExchange> _exchange({
+    required String path,
+    required Duration timeout,
+    required String authErrorMessage,
+    required bool Function(Object? decoded) acceptsJson,
+    required Future<http.Response> Function(
+      http.Client client,
+      Uri uri,
+      Map<String, String> headers,
+      FushiClientUrl candidate,
+    )
+    send,
+    FushiClientUrl? onlyCandidate,
+    bool Function(FushiClientUrl candidate)? candidateFilter,
+    void Function(int statusCode, Map<String, dynamic>? json)?
+    onRejectedResponse,
+  }) async {
+    // 候选来源与 [InterconnectHostChannel] 共用：启用 → onlyCandidate 过滤 → 组内
+    // 并发选路，可达者排到组首（§2）；明文地址没当场核对过 hostId 的被扣下，
+    // 不拿凭据（V-B4）。
+    final InterconnectCandidateSelection ranked =
+        await interconnectRankedCandidates(
+          _repo,
+          onlyCandidate: onlyCandidate,
+          member: candidateFilter == null
+              ? null
+              : (FushiClientUrl row, String? _) => candidateFilter(row),
+          probe: _probe,
+        );
+    if (ranked.members.isEmpty) {
+      // 未配对/未启用：不是「设备不可达」，按「无结果」处理。有已配对地址、但选路
+      // 后一条可拨的都没剩（只剩 `p2p://` 而隧道层没装 / 起不来）不走这里：选路把
+      // 它计进 withheld，落到下面的不可达分支（BUG-4278 审查）。
       return (
         json: null,
         allUnreachable: false,
@@ -147,13 +235,15 @@ class InterconnectPostTransport {
         candidate: null,
       );
     }
-    // 同一台 host 的多条地址组内并发选路，可达者排到组首（§2）。
-    candidates = await rankInterconnectCandidates(candidates);
+    final String? fallbackToken = ranked.fallbackToken;
+    final List<FushiClientUrl> candidates = ranked.ranked;
 
     bool attempted = false;
     bool anyResponse = false;
     // 请求发出后等应答超时：对端可能已经处理了这次请求。
     bool anyTimedOut = false;
+    // 对端回了话、而且这句话不排除它执行过这次请求（404 / 405 = 没有这个端点 / 端点没接线，什么都没做，不算）。
+    bool anyMayHaveExecuted = false;
     // BUG-1550：某台对端拒了我的凭据不该株连其余对端；记下来，全部试完还没结果才抛。
     SyncAuthError? authError;
     for (final FushiClientUrl candidate in candidates) {
@@ -172,20 +262,14 @@ class InterconnectPostTransport {
           : _httpClient;
       attempted = true;
       try {
-        final http.Response response = await client
-            .post(
-              uri,
-              headers: <String, String>{
-                'Authorization':
-                    'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
-                'Content-Type': 'application/json',
-              },
-              body: jsonEncode(body),
-            )
-            .timeout(timeout);
+        final http.Response response = await send(client, uri, <String, String>{
+          'Authorization':
+              'Basic ${base64Encode(utf8.encode('hibiki:$token'))}',
+        }, candidate).timeout(timeout);
         // 拿到任何 HTTP 响应（含 401/404/405/非 2xx/坏 JSON 体）都算「可达」；
         // 传输层失败（连接拒绝/超时/DNS）根本走不到这一行，落在 catch 里。
         anyResponse = true;
+        reportInterconnectCandidateReached(candidate);
         if (response.statusCode == 401) {
           // BUG-2377：这条通道的凭据只可能是配对 token（地址行自带的 per-peer
           // token，或全局回落键）——本文件从头到尾只服务互联。语义写死成
@@ -198,14 +282,19 @@ class InterconnectPostTransport {
           continue;
         }
         if (response.statusCode < 200 || response.statusCode >= 300) {
+          // 404 / 405：旧版 host 没有这个端点，或这台主机此刻没接这条路由（例如服务端制卡没有任何可写的落点时
+          // `/api/mine/forward` 回 404 `Mining off`，读请求体之前就回了）——请求没被执行，不是「可能已送达」。
+          if (response.statusCode != 404 && response.statusCode != 405) {
+            anyMayHaveExecuted = true;
+          }
           onRejectedResponse?.call(
             response.statusCode,
             _responseObject(response),
           );
           continue;
         }
-        final Map<String, dynamic>? decoded = _responseObject(response);
-        if (decoded != null) {
+        final Object? decoded = _responseJson(response);
+        if (acceptsJson(decoded)) {
           return (
             json: decoded,
             allUnreachable: false,
@@ -213,11 +302,14 @@ class InterconnectPostTransport {
             candidate: candidate.copyWith(token: token),
           );
         }
+        anyMayHaveExecuted = true;
         onRejectedResponse?.call(response.statusCode, null);
       } on TimeoutException {
         anyTimedOut = true;
+        reportInterconnectCandidateUnreachable(candidate);
         continue;
       } catch (_) {
+        reportInterconnectCandidateUnreachable(candidate);
         continue;
       } finally {
         // 每候选独立 pinned client 用完即关，所有出口（return/continue/throw）统一
@@ -229,11 +321,13 @@ class InterconnectPostTransport {
     // 401 语义还给调用方——它们据此区分「没查成」与「查过了没有」（BUG-1185）。
     if (authError != null) throw authError;
     // 只有「试过且一个响应都没拿到」才算全部不可达（传输层失败），可达但无结果
-    // 仍是普通 null。
+    // 仍是普通 null。候选因身份核对失败被扣下、或 `p2p://` 换不出转发口（都计入
+    // withheld）也是「设备不可达」：查词失败冷却（BUG-575 / BUG-1302）与排行榜的
+    // unreachable 分支照常生效。
     return (
       json: null,
-      allUnreachable: attempted && !anyResponse,
-      mayHaveDelivered: anyResponse || anyTimedOut,
+      allUnreachable: !anyResponse && (attempted || ranked.withheld > 0),
+      mayHaveDelivered: anyMayHaveExecuted || anyTimedOut,
       candidate: null,
     );
   }
@@ -355,9 +449,14 @@ class InterconnectPostTransport {
 }
 
 Map<String, dynamic>? _responseObject(http.Response response) {
+  final Object? decoded = _responseJson(response);
+  return decoded is Map<String, dynamic> ? decoded : null;
+}
+
+/// 响应体按 JSON 解码；不是合法 JSON 返回 null。
+Object? _responseJson(http.Response response) {
   try {
-    final Object? decoded = jsonDecode(response.body);
-    return decoded is Map<String, dynamic> ? decoded : null;
+    return jsonDecode(response.body);
   } on FormatException {
     return null;
   }
@@ -365,10 +464,26 @@ Map<String, dynamic>? _responseObject(http.Response response) {
 
 /// [InterconnectPostTransport.post] 的结局：`json` 为拿到并解析成功的响应体；
 /// `allUnreachable` 的语义见 [InterconnectPostTransport.post] 的文档。
-/// [mayHaveDelivered]：至少一个候选拿到了响应，或请求发出后等应答超时——对端
-/// 可能已经执行了这次请求。只有它为 false 时，失败才是「确定没送到」，可以放心重发。
+/// [mayHaveDelivered]：至少一个候选回了不排除执行过的响应（2xx、或 404 / 405 以外的非 2xx），或请求发出后等应答
+/// 超时——对端可能已经执行了这次请求。只有它为 false 时，失败才是「确定没送到」，可以放心重发。401 之后会抛
+/// [SyncAuthError]，不经这个字段；404 / 405 是「没有这个端点 / 没接线」，对端什么都没做，不算。
 typedef InterconnectPostOutcome = ({
   Map<String, dynamic>? json,
+  bool allUnreachable,
+  bool mayHaveDelivered,
+  FushiClientUrl? candidate,
+});
+
+/// [InterconnectPostTransport.getJson] 的结局：`json` 为第一个可用响应体（任意 JSON
+/// 值），`allUnreachable` / `candidate` 同 [InterconnectPostOutcome]。
+typedef InterconnectGetOutcome = ({
+  Object? json,
+  bool allUnreachable,
+  FushiClientUrl? candidate,
+});
+
+typedef _InterconnectExchange = ({
+  Object? json,
   bool allUnreachable,
   bool mayHaveDelivered,
   FushiClientUrl? candidate,

@@ -8,6 +8,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <string>
 #include <vector>
 
 #include "artemis_lookup_core.h"
@@ -406,19 +407,20 @@ void TestGlyphCodeTable() {
   table.Clear();
   core::GlyphCode code;
   assert(!table.Find(0x1000u, &code));
-  table.Remember(0x1000u, 0x4ffau, 1u);
-  assert(table.Find(0x1000u, &code) && code.codepoint == 0x4ffau &&
-         code.seq == 1u);
+  table.Remember(0x1000u, core::GlyphTextOf(0x4ffau), 1u);
+  assert(table.Find(0x1000u, &code) && code.text.count == 1u &&
+         code.text.units[0] == 0x4ffau && code.seq == 1u);
   // A freed glyph's address reused by a later glyph takes the new identity.
-  table.Remember(0x1000u, 0x306fu, 9u);
-  assert(table.Find(0x1000u, &code) && code.codepoint == 0x306fu &&
+  table.Remember(0x1000u, core::GlyphTextOf(0x306fu), 9u);
+  assert(table.Find(0x1000u, &code) && code.text.units[0] == 0x306fu &&
          code.seq == 9u);
   // Unknown characters are remembered as unknown, never as a match.
-  table.Remember(0x2000u, 0u, 10u);
+  table.Remember(0x2000u, core::GlyphTextOf(0u), 10u);
   assert(!table.Find(0x2000u, &code));
   // Filling far past capacity keeps the newest entries findable.
   for (uintptr_t index = 0; index < 64u; ++index) {
-    table.Remember(0x10000u + index * 0x110u, 0x3042u, 100u + index);
+    table.Remember(0x10000u + index * 0x110u, core::GlyphTextOf(0x3042u),
+                   100u + index);
   }
   size_t newest_found = 0u;
   for (uintptr_t index = 60u; index < 64u; ++index) {
@@ -494,9 +496,21 @@ void TestProjection() {
 core::FrameGlyph Glyph(uint64_t seq, uint32_t codepoint, float x) {
   core::FrameGlyph glyph;
   glyph.seq = seq;
-  glyph.codepoint = codepoint;
+  glyph.text = core::GlyphTextOf(codepoint);
   glyph.bounds = {x, 552.0f, x + 27.0f, 593.0f};
   return glyph;
+}
+
+// The creation code the factory records for a drawn glyph's text.
+uint32_t CreationCodeOf(const core::FrameGlyph& glyph) {
+  const core::GlyphText& text = glyph.text;
+  if (text.count == 0u) return 0u;
+  if (core::GlyphTextCharacters(text) > 1u) return core::kCreatedText;
+  if (text.count == 2u) {
+    return 0x10000u + ((static_cast<uint32_t>(text.units[0]) - 0xd800u) << 10u) +
+           (static_cast<uint32_t>(text.units[1]) - 0xdc00u);
+  }
+  return text.units[0];
 }
 
 void TestOrderFrameGlyphs() {
@@ -586,7 +600,7 @@ std::vector<core::FrameGlyph> GlyphRun(uint64_t first_seq, const wchar_t* text) 
 // Records every glyph as created (drawn or not) in seq order.
 core::CreationLog LogOf(const std::vector<core::FrameGlyph>& glyphs) {
   core::CreationLog log;
-  for (const auto& glyph : glyphs) log.Record(glyph.seq, glyph.codepoint);
+  for (const auto& glyph : glyphs) log.Record(glyph.seq, CreationCodeOf(glyph));
   return log;
 }
 
@@ -858,7 +872,7 @@ void TestHitTest() {
 void RecordRun(core::CreationLog* log, const std::vector<core::FrameGlyph>& run,
                uintptr_t layer, uint64_t frame) {
   for (const auto& glyph : run) {
-    log->Record(glyph.seq, glyph.codepoint, layer, frame);
+    log->Record(glyph.seq, CreationCodeOf(glyph), layer, frame);
   }
 }
 
@@ -930,6 +944,194 @@ void TestTooltipIsNotPartOfTheLine() {
   assert(text == L"「それで……」" && first_seq == 300u);
 }
 
+// NUL-terminated bytes of `text` in `code_page` (CP_UTF8 or 932).
+std::vector<uint8_t> EncodedOf(const wchar_t* text, UINT code_page) {
+  std::vector<uint8_t> bytes(64u, 0u);
+  const int written = WideCharToMultiByte(
+      code_page, 0, text, static_cast<int>(wcslen(text)),
+      reinterpret_cast<char*>(bytes.data()), 63, nullptr, nullptr);
+  assert(written >= 0);
+  bytes.resize(static_cast<size_t>(written) + 1u);
+  return bytes;
+}
+
+void TestFactoryTextDecoder() {
+  core::GlyphText text;
+  // A ruby base is handed to the factory as one string, in either encoding.
+  for (const UINT code_page : {static_cast<UINT>(CP_UTF8), 932u}) {
+    core::FactoryTextDecoder decoder;
+    const auto base = EncodedOf(L"漢字", code_page);
+    assert(decoder.Decode(base.data(), &text) == core::kCreatedText);
+    assert(text.count == 2u && text.units[0] == L'漢' &&
+           text.units[1] == L'字');
+    assert(core::GlyphTextCharacters(text) == 2u);
+    // The longest base kept is kMaxGlyphUnits units; a longer one is unknown.
+    const auto eight = EncodedOf(L"あいうえおかきく", code_page);
+    assert(decoder.Decode(eight.data(), &text) == core::kCreatedText &&
+           text.count == core::kMaxGlyphUnits);
+    const auto nine = EncodedOf(L"あいうえおかきくけ", code_page);
+    assert(decoder.Decode(nine.data(), &text) == 0u && text.count == 0u);
+  }
+  {
+    core::FactoryTextDecoder decoder;
+    // Single characters keep their scalar, including a surrogate pair.
+    const uint8_t emoji[] = {0xf0, 0x9f, 0x98, 0x80, 0x00};
+    assert(decoder.Decode(emoji, &text) == 0x1f600u && text.count == 2u);
+    const uint8_t ascii[] = {'A', 'B', 0x00};
+    assert(decoder.Decode(ascii, &text) == core::kCreatedText &&
+           text.count == 2u);
+    // A control inside a string is never a drawn glyph.
+    const uint8_t inner_control[] = {'a', '\n', 'b', 0x00};
+    assert(decoder.Decode(inner_control, &text) == 0u);
+    const uint8_t newline[] = {'\n', 0x00};
+    assert(decoder.Decode(newline, &text) == core::kCreatedControl);
+    const uint8_t unterminated[32] = {'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a',
+                                      'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a',
+                                      'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a',
+                                      'a', 'a', 'a', 'a', 'a', 'a', 'a', 'a'};
+    assert(decoder.Decode(unterminated, &text) == 0u);
+  }
+
+  // Two Shift_JIS characters (E0A0, 8940) that also read as UTF-8 U+0809 '@'.
+  const uint8_t both[] = {0xe0, 0xa0, 0x89, 0x40, 0x00};
+  wchar_t as_cp932[4] = {};
+  assert(MultiByteToWideChar(932, MB_ERR_INVALID_CHARS,
+                             reinterpret_cast<const char*>(both), 4, as_cp932,
+                             4) == 2);
+  {
+    // Before the encoding is known the string is ambiguous: unknown.
+    core::FactoryTextDecoder decoder;
+    assert(decoder.Decode(both, &text) == 0u && text.count == 0u);
+    // A UTF-8 kanji ending in 0xa1..0xbf also reads as Shift_JIS kanji plus
+    // half-width kana: it decodes (UTF-8 first) but teaches nothing.
+    const auto kan = EncodedOf(L"漢", CP_UTF8);
+    assert(decoder.Decode(kan.data(), &text) == L'漢');
+    assert(decoder.encoding == core::FactoryEncoding::kUnknown);
+    // A Shift_JIS kanji is valid only as Shift_JIS: it teaches CP932.
+    const auto in = EncodedOf(L"院", 932u);
+    assert(decoder.Decode(in.data(), &text) == L'院');
+    assert(decoder.encoding == core::FactoryEncoding::kCp932);
+    assert(decoder.Decode(both, &text) == core::kCreatedText);
+    assert(text.count == 2u && text.units[0] == as_cp932[0] &&
+           text.units[1] == as_cp932[1]);
+  }
+  {
+    core::FactoryTextDecoder decoder;
+    const auto a = EncodedOf(L"あ", CP_UTF8);  // E3 81 82: not Shift_JIS
+    assert(decoder.Decode(a.data(), &text) == L'あ');
+    assert(decoder.encoding == core::FactoryEncoding::kUtf8);
+    assert(decoder.Decode(both, &text) == core::kCreatedText);
+    assert(text.count == 2u && text.units[0] == 0x0809u &&
+           text.units[1] == L'@');
+  }
+}
+
+// One factory call of the synthetic line below.
+struct FactoryCall {
+  const wchar_t* text;  // L"" = the line break of a wrapped line
+  uintptr_t layer;
+  bool drawn;
+};
+
+// Replays factory calls through the given decoding into a creation log and
+// the frame of drawn glyphs, the way the detours build them.  `fixed` false
+// reproduces the pre-fix decode: one character or nothing.
+void ReplayFactory(const FactoryCall* calls, size_t count, UINT code_page,
+                   bool fixed, uint64_t first_seq, uint64_t frame,
+                   core::CreationLog* log,
+                   std::vector<core::FrameGlyph>* drawn) {
+  core::FactoryTextDecoder decoder;
+  for (size_t index = 0u; index < count; ++index) {
+    const auto bytes = EncodedOf(calls[index].text, code_page);
+    std::vector<uint8_t> padded(bytes);
+    padded.resize(core::kMaxFactoryTextBytes + 2u, 0u);
+    core::GlyphText text;
+    uint32_t code = 0u;
+    if (fixed) {
+      code = decoder.Decode(padded.data(), &text);
+    } else {
+      code = padded[0] == 0u ? core::kCreatedControl
+                             : core::DecodeFactoryCharacter(padded.data());
+      if (code != core::kCreatedControl) text = core::GlyphTextOf(code);
+    }
+    const uint64_t seq = first_seq + index;
+    log->Record(seq, code, calls[index].layer, frame);
+    // The draw detour only records glyphs whose text is known.
+    if (calls[index].drawn && text.count != 0u) {
+      core::FrameGlyph glyph;
+      glyph.seq = seq;
+      glyph.text = text;
+      glyph.bounds = {27.0f * index, 552.0f, 27.0f * index + 27.0f, 593.0f};
+      drawn->push_back(glyph);
+    }
+  }
+}
+
+// Field report 2026-11-12 (x64 build, ADV window, wrapped line, ruby over a
+// two-kanji name): the text lane published only what follows the ruby base;
+// the log showed the line as seq 307..371 with the previous line ending at
+// 296, i.e. one creation (306) between the drawn glyph before the base and
+// the one after it.  The base is one factory string; the old one-character
+// decode left it unknown, so it was never in the frame and its creation was a
+// visible hole that cut the line.  Synthetic text, same structure.
+void TestRubyBaseIsPartOfTheLine() {
+  const uintptr_t kUi = 0x53393de0u, kName = 0x5e5e0e70u, kBody = 0x6eb5d400u;
+  const FactoryCall calls[] = {
+      {L"ア", kName, true}, {L"コ", kName, true},
+      {L"「", kBody, true}, {L"あ", kBody, true}, {L"い", kBody, true},
+      {L"、", kBody, true},
+      {L"漢字", kBody, true},  // ruby base; its reading is no creation
+      {L"さ", kBody, true}, {L"ん", kBody, true}, {L"は", kBody, true},
+      {L"、", kBody, true},
+      {L"", kBody, false},  // row break
+      {L"う", kBody, true}, {L"え", kBody, true}, {L"」", kBody, true},
+  };
+  constexpr size_t kCalls = sizeof(calls) / sizeof(calls[0]);
+  constexpr uint64_t kFirst = 297u;
+  constexpr uint64_t kNewest = kFirst + kCalls - 1u;
+  const wchar_t* const kFull = L"アコ「あい、漢字さんは、うえ」";
+
+  for (const UINT code_page : {static_cast<UINT>(CP_UTF8), 932u}) {
+    for (const bool fixed : {false, true}) {
+      core::CreationLog log;
+      const auto ui = GlyphRun(25u, L"　");
+      RecordRun(&log, ui, kUi, 5u);
+      std::vector<core::FrameGlyph> frame = ui;
+      ReplayFactory(calls, kCalls, code_page, fixed, kFirst, 900u, &log,
+                    &frame);
+      const size_t count = core::OrderFrameGlyphs(frame.data(), frame.size());
+      std::wstring text;
+      uint64_t first_seq = 0u;
+      assert(core::ComposeRevealedLine(frame.data(), count, kNewest, log,
+                                       &text, &first_seq));
+      if (!fixed) {
+        // The pre-fix decode: the line starts after the base.
+        assert(text == L"さんは、うえ」" && first_seq == kFirst + 7u);
+        continue;
+      }
+      assert(text == kFull && first_seq == kFirst);
+
+      // The lookup model maps the same text: every glyph from the name on,
+      // the base as one glyph that looks up from its first character.
+      core::TextMapping mapping;
+      assert(core::ResolveSelectedSuffix(frame.data(), count, text.data(),
+                                         text.size(), &mapping));
+      assert(mapping.first_glyph == 1u);  // the UI glyph stays unmapped
+      size_t mapped = 0u;
+      for (size_t index = 1u; index < count; ++index) {
+        assert(mapping.source_index[index] != core::kNoSource);
+        ++mapped;
+      }
+      assert(mapped == count - 1u && count == 1u + 14u);
+      const size_t base = 1u + 6u;  // UI, ア, コ, 「, あ, い, 、
+      assert(core::GlyphTextCharacters(frame[base].text) == 2u);
+      assert(mapping.source_index[base] == 6u &&
+             mapping.source_length[base] == 1u);
+      assert(mapping.source_index[base + 1u] == 8u);  // さ after the base
+    }
+  }
+}
+
 }  // namespace
 
 int main() {
@@ -943,6 +1145,8 @@ int main() {
   TestFactoryCreationCode();
   TestRevealedLine();
   TestTooltipIsNotPartOfTheLine();
+  TestFactoryTextDecoder();
+  TestRubyBaseIsPartOfTheLine();
   TestArchiveSetLeaf();
   TestRangeStartingAt();
   TestLeftButtonClaim();

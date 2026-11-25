@@ -50,6 +50,12 @@ class MusicLookupPause {
     _play().ignore();
   }
 
+  /// 制卡后「关闭弹窗、不续播」（拍板台 8ldy3d8XFA）：撤掉「因查词暂停」的标记、保持
+  /// 暂停，随后的 [lookupClosed] 就不续播。
+  void dropPauseMark() {
+    _pausedForLookup = false;
+  }
+
   void _onPlaybackChanged() {
     final bool playing = _isPlaying();
     // 停 → 播的跳变只可能来自外部（本类暂停后在 lookupClosed 里先清标志再 play）。

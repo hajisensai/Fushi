@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_cli/fushi_cli.dart';
+import 'package:fushi_engine/mining/metadata/galgame_scrape_snapshot.dart';
+import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
@@ -20,7 +22,8 @@ import 'package:fushi/src/ops/op_describe_kit.dart';
 ///   读旧值（路由没有单条读接口，`game ls` 也不带这些字段），撤销经同一组写路由写回；
 /// * 会话细项（线程 / 绑定窗口 / 选轨 / 排除轨 / 取音策略 / 逐句轨 / 收藏 /
 ///   文本处理 / 内嵌查词模式）= 快照：读路由取旧值、写路由写回；
-/// * 启动 / 附着 / 结束会话 / 制卡 / 删除类 / 刮削落库 / 校准 = 不可逆，见各条说明。
+/// * 刮削落库 = 快照（源行 + 两列 + 封面备份），见 [_scrapeApplyUndo]；
+/// * 启动 / 附着 / 结束会话 / 制卡 / 删除类 / 校准 = 不可逆，见各条说明。
 List<OpDescription> describeGameOps(OpDescribeKit kit) {
   final OpAvailability Function() available = kit.all(
     <OpAvailability Function()>[_windowsOnly, kit.whenModule(ModuleId.games)],
@@ -128,6 +131,72 @@ List<OpDescription> describeGameOps(OpDescribeKit kit) {
               'Process id from game.window.list (must own one window).',
         ),
       ],
+    ),
+    // 不可逆：替换当前捕获会话（丢掉进行中的 hook / 台词缓冲 / 计时），没有路由能接回原会话。
+    // 不注入游戏进程。
+    irreversible(
+      'game.ocr.start',
+      'POST',
+      '/api/admin/game/ocr/start',
+      'Start OCR capture on a running game window (no injection: periodically '
+          'captures the window and recognizes the dialogue box; for games '
+          'hooks cannot reach). Replaces the current session unless OCR is '
+          'already running on that window, in which case only the given '
+          'area / binarize are applied. Area and binarize default to what was '
+          'remembered for that game. Give exactly one of hwnd / pid.',
+      const <OpParam>[
+        OpParam.integer(
+          'hwnd',
+          description: 'Window handle from game.window.list.',
+        ),
+        OpParam.integer(
+          'pid',
+          description:
+              'Process id from game.window.list (must own one window).',
+        ),
+        ..._ocrRegionParams,
+        OpParam.boolean(
+          'binarize',
+          description:
+              'Binarize before OCR (helps low-contrast or outlined text).',
+        ),
+      ],
+    ),
+    write(
+      'game.ocr.region.set',
+      'PUT',
+      '/api/admin/game/ocr/region',
+      'Change the dialogue area and/or binarize option of the running OCR '
+          'capture session (remembered for that game). Give all four area '
+          'values, binarize, or both.',
+      const <OpParam>[
+        ..._ocrRegionParams,
+        OpParam.boolean(
+          'binarize',
+          description:
+              'Binarize before OCR (helps low-contrast or outlined text).',
+        ),
+      ],
+      kit.snapshotUndo(
+        read: (Map<String, String> params) async => _ocrSettings(
+          _field(await kit.callRoute('GET', '/api/admin/game/status'), <String>[
+            'session',
+            'ocr',
+          ]),
+        ),
+        write: (Map<String, String> params, Object? old) async {
+          if (old is! Map || old['region'] is! Map) return;
+          await kit.callRoute(
+            'PUT',
+            '/api/admin/game/ocr/region',
+            body: <String, Object?>{
+              ...(old['region'] as Map).cast<String, Object?>(),
+              'binarize': old['binarize'] == true,
+            },
+          );
+        },
+        newValue: (CtlCall call, Object? result) => _ocrSettings(result),
+      ),
     ),
     // 不可逆：结束会话会丢掉进行中的 hook、台词缓冲与计时，没有路由能接回同一会话。
     irreversible(
@@ -927,14 +996,15 @@ List<OpDescription> describeGameOps(OpDescribeKit kit) {
         ),
       ],
     ),
-    // 不可逆：覆盖该源的资料快照、主显示源与发行日（可能连带封面），没有路由能
-    // 退回旧快照。
-    irreversible(
+    // 可撤销：执行前快照该源的资料行、主显示源 / 发行日与封面文件（备份），撤销
+    // 精确写回（先前没有该源就删掉、封面拷回）；之后又被改过的报 superseded。
+    write(
       'game.scrape.apply',
       'POST',
       '/api/admin/game/games/:id/scrape',
       'Apply a metadata candidate to a game (overwrites that source\'s '
-          'snapshot, the primary source and the release date).',
+          'snapshot, the primary source, the release date and the cover). '
+          'Undo restores the previous snapshot and cover.',
       const <OpParam>[
         _gameIdParam,
         OpParam.string(
@@ -944,7 +1014,14 @@ List<OpDescription> describeGameOps(OpDescribeKit kit) {
               'game.scrape.search.',
           required: true,
         ),
+        OpParam.boolean(
+          'keepCover',
+          description:
+              'Keep the current cover when the game already has one (only '
+              'download the scraped cover when it has none).',
+        ),
       ],
+      _scrapeApplyUndo(kit),
     ),
     read(
       'game.source.list',
@@ -997,6 +1074,25 @@ OpAvailability _windowsOnly() => gameOpsPlatformSupported()
         'platform_unsupported',
         'Galgame Hook 只支持 Windows',
       );
+
+/// OCR 识别区域四个参数（客户区归一化 0～1）。
+const List<OpParam> _ocrRegionParams = <OpParam>[
+  OpParam.number(
+    'left',
+    description: 'Dialogue area left edge, 0-1 of the client area width.',
+  ),
+  OpParam.number(
+    'top',
+    description: 'Dialogue area top edge, 0-1 of the client area height.',
+  ),
+  OpParam.number('width', description: 'Dialogue area width, 0-1.'),
+  OpParam.number('height', description: 'Dialogue area height, 0-1.'),
+];
+
+/// `session.ocr` / `game ocr region` 应答里参与撤销比对的部分（region + binarize）。
+Object? _ocrSettings(Object? ocr) => ocr is Map
+    ? <String, Object?>{'region': ocr['region'], 'binarize': ocr['binarize']}
+    : null;
 
 /// 沿 [path] 取嵌套 Map 里的一个值；任一层不是 Map 时为 null。
 Object? _field(Object? value, List<String> path) {
@@ -1087,6 +1183,98 @@ Map<String, Object?> _resultFields(Object? result, List<String> keys) =>
           final Object? v => v,
         },
     };
+
+/// 刮削落库撤销备份目录（`<thumbnails>/undo_backups/game_scrape/`，与书封面 / 视频
+/// 认领撤销备份同一落点，30 天清理）。
+Directory _scrapeBackupDirectory(OpDescribeKit kit) => Directory(
+  p.join(
+    kit.context.appModel.thumbnailsDirectory.path,
+    'undo_backups',
+    'game_scrape',
+  ),
+);
+
+/// `game.scrape.apply` 的撤销：执行前抓快照（[captureGalgameScrapeSnapshot]），载荷
+/// 带执行后状态，撤销经 [revertGalgameScrape] 判 superseded 后整块恢复，再重载仓储。
+OpUndo _scrapeApplyUndo(OpDescribeKit kit) => opCustomUndo(
+  capture: (CtlCall call) async {
+    final String raw = call.optString('candidate') ?? '';
+    final int colon = raw.indexOf(':');
+    // 候选 id 格式不对：路由自己会回 400，这里不抓快照。
+    if (colon <= 0) return const <String, Object?>{};
+    final GalgameEntry entry = await _entryOf(kit, call.params['id']!);
+    final GalgameScrapeSnapshot snapshot;
+    try {
+      snapshot = await captureGalgameScrapeSnapshot(
+        kit.context.appModel.database,
+        gameId: entry.id,
+        source: raw.substring(0, colon).toLowerCase(),
+        backupDirectory: _scrapeBackupDirectory(kit),
+      );
+    } on StateError catch (e) {
+      throw CtlFailure.notFound(e.message);
+    }
+    return <String, Object?>{'snapshot': snapshot.toJson()};
+  },
+  payloadOf: (CtlCall call, Map<String, Object?> before, Object? result) {
+    if (before['snapshot'] == null) return <String, Object?>{'skip': true};
+    final Map<Object?, Object?> r = result is Map ? result : const {};
+    final String candidate = '${r['candidate'] ?? ''}';
+    final String? coverPath = r['coverPath'] as String?;
+    final GalgameScrapeAfter after = GalgameScrapeAfter(
+      primarySource: r['primarySource'] as String?,
+      releaseDate: r['releaseDate'] as String?,
+      coverPath: coverPath,
+      coverStamp: galgameCoverStamp(coverPath),
+      externalId: candidate.contains(':')
+          ? candidate.substring(candidate.indexOf(':') + 1)
+          : null,
+    );
+    final GalgameScrapeSnapshot snapshot = GalgameScrapeSnapshot.fromJson(
+      before['snapshot'],
+    );
+    Map<String, Object?> snap = snapshot.toJson();
+    // 封面没换：备份用不上，当场删掉。
+    if (snapshot.coverBackup != null &&
+        after.coverPath == snapshot.coverPath &&
+        after.coverStamp == snapshot.coverStamp) {
+      final File backup = File(snapshot.coverBackup!);
+      if (backup.existsSync()) backup.deleteSync();
+      snap = <String, Object?>{...snap, 'coverBackup': null};
+    }
+    return <String, Object?>{'snapshot': snap, 'after': after.toJson()};
+  },
+  describe: (Map<String, Object?> payload) => payload['skip'] == true
+      ? null
+      : _display(<String, Object?>{
+          'game': _field(payload['snapshot'], <String>['gameId']),
+          'source': _field(payload['snapshot'], <String>['source']),
+          'externalId': _field(payload['after'], <String>['externalId']),
+        }),
+  revert: (Map<String, Object?> payload) async {
+    if (payload['skip'] == true) return const OpUndoOutcome.done();
+    final GalgameScrapeSnapshot snapshot;
+    try {
+      snapshot = GalgameScrapeSnapshot.fromJson(payload['snapshot']);
+    } on FormatException catch (e) {
+      return OpUndoOutcome.failed('撤销载荷损坏：${e.message}');
+    }
+    final GalgameScrapeRevertResult result = await revertGalgameScrape(
+      kit.context.appModel.database,
+      snapshot,
+      after: GalgameScrapeAfter.fromJson(payload['after']),
+    );
+    switch (result.status) {
+      case GalgameScrapeRevertStatus.restored:
+        await kit.context.appModel.galgameRepo.load();
+        return const OpUndoOutcome.done();
+      case GalgameScrapeRevertStatus.superseded:
+        return OpUndoOutcome.superseded(result.message);
+      case GalgameScrapeRevertStatus.failed:
+        return OpUndoOutcome.failed(result.message ?? 'failed');
+    }
+  },
+);
 
 /// 游戏条目当前值：直接读游戏仓储（与路由宿主同一个 `AppModel.galgameRepo`）。
 Future<GalgameEntry> _entryOf(OpDescribeKit kit, String rawId) async {

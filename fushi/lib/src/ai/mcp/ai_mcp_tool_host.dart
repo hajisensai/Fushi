@@ -241,6 +241,12 @@ class AiMcpToolHost implements McpToolHost {
             result.message ??
             'Changed again afterwards; the later change was kept.',
       }),
+      AgentUndoStatus.partial => McpToolResult.ok(<String, Object?>{
+        'status': 'partial',
+        'message':
+            result.message ??
+            'Partly undone; parts changed again afterwards were kept.',
+      }),
       AgentUndoStatus.notUndoable => McpToolResult.error(
         'not_undoable',
         'This action cannot be undone.',

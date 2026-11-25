@@ -20,6 +20,9 @@ on:
     paths:
       - '.github/**'
       - 'tool/**'
+      - '.claude/agents/**'
+      # 代理定义内嵌根 CLAUDE.md（tool/claude_hooks/sync_agent_claude_md.mjs），改它要跑同步守卫。
+      - 'CLAUDE.md'
   # 本仓日常大量直推 develop（不走 PR），而发布 workflow 的 push 已不再因 workflow / tool
   # 改动触发——直推也要有门。
   push:
@@ -27,6 +30,9 @@ on:
     paths:
       - '.github/**'
       - 'tool/**'
+      - '.claude/agents/**'
+      # 代理定义内嵌根 CLAUDE.md（tool/claude_hooks/sync_agent_claude_md.mjs），改它要跑同步守卫。
+      - 'CLAUDE.md'
 
 permissions:
   contents: read
@@ -40,18 +46,38 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
+      # 必须紧跟 checkout（vendored_binaries_manifest_guard_test 钉住）。
       - name: Fetch vendored binaries
         uses: ./.github/actions/fetch-vendored-binaries
         with:
           groups: all
+      # Claude Code 子代理分流 hook（tool/claude_hooks）与 .claude/agents 定义的一致性：
+      # node:test、零依赖、秒级，放在其余守卫前面先红。这批测试以前只在作者本机手跑。
+      - name: Run Claude hook tests
+        shell: bash
+        run: node --test tool/claude_hooks/*.test.mjs
       - name: Validate unified release policy
         shell: pwsh
         run: ./tool/check_release_policy.ps1
-      - uses: subosito/flutter-action@v2
+      # 调试版流水线生成器（发布 run 里 continue-on-error 地调用，红了不会在那里暴露）。
+      - name: Debug pulse generator unit tests
+        run: python3 tool/gen_debug_pulse_test.py
+      # 服务端自动发布的轮询规划（release-server.yml 的 plan job；红了在 fushi-server 那边才暴露）。
+      - name: Server release plan unit tests
+        run: python3 tool/server_release_plan_test.py
+      # 符号索引（tool/symindex）：改动文件判定 / 自动降级 / Rust hover 解析。
+      - name: Symbol index unit tests
+        run: python3 tool/symindex/symdb_test.py
+      # 下面的磁盘枚举按「引用了 .github / tool 文件」整文件收测试，其中有十几个会 import
+      # package:fushi、pump 真页面（如 test/reader/continuous_*_test.dart 构建设置 schema）。
+      # app 代码对 fushi_web_core 是硬依赖（设置 schema 的「广告拦截」分区在顶层取
+      # AdblockCore.catalog()），与 main.yml unit-tests 一样先编好库、经 FUSHI_WEB_CORE_LIB 指过去。
+      - uses: ./.github/actions/fushi-web-core-linux
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: '3.47.6'
+          flutter-version: '3.50.0'
           cache: true
       # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
       # runner; restore it so a release-asset hiccup cannot fail the build.
@@ -72,6 +98,8 @@ jobs:
       - name: Run workflow / release-script guard tests
         working-directory: fushi
         shell: bash
+        env:
+          FUSHI_WEB_CORE_LIB: ${{ github.workspace }}/native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
         run: |
           set -euo pipefail
           mapfile -t files < <(grep -rlE '\.github/|\.\./tool/|\.\./\.\./tool/' test --include='*_test.dart' | sort)

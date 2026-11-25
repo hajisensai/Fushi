@@ -16,16 +16,24 @@ import 'package:fushi/src/lookup/effective_lookup_size.dart'
         kLookupPopupMinHeight,
         kLookupPopupMinWidth;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
+    show CrossAppAudioSnapshot;
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_input_bridge.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_mining_target.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
+import 'package:fushi/src/reader/popup_swipe_close_script.dart'
+    show PopupSelectionChangedNotification;
 import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
     show dispatchClaimedMouseAction;
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/lookup/lookup_refine.dart';
 import 'package:fushi/src/lookup/swipe_dismiss_wrapper.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_threshold.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -658,13 +666,18 @@ Widget parkedPopupLayer({
           visible: visible,
           startProgress: entranceStartProgress,
           onSettledChanged: onEntranceSettled,
-          child: visible && occluders.isNotEmpty
-              ? PopupOccluderClip(
-                  layerRect: pos,
-                  occluders: occluders,
-                  child: child,
-                )
-              : child,
+          // 恒包一层、只改参数（反馈 5hnsRtTrQj）：子层入场就位 / 关闭会让本层的
+          // [occluders] 在空与非空之间翻转。若按条件增删这一层，[child] 里的查词
+          // WebView（带 GlobalKey）会被搬家，Android 平台视图的 RenderBox 在 detach
+          // 里 `_gestureRecognizer.reset()` 直接丢掉正在转发的指针、不补 cancel——
+          // controller 的指针表里留下一根「幽灵手指」，此后每次触摸都被当成第二根
+          // 手指（捏合）：弹窗滑不动、点词不触发、选区菜单关不掉，热槽复用到
+          // 退出视频页为止。平台视图上方的祖先结构在层的生命周期内必须恒定。
+          child: PopupOccluderClip(
+            layerRect: pos,
+            occluders: visible ? occluders : const <Rect>[],
+            child: child,
+          ),
         ),
       ),
     ),
@@ -705,14 +718,19 @@ class PopupOccluderClip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    if (!fushiPopupBackdropSampleable(context)) return child;
     final List<Rect> local = <Rect>[
-      for (final Rect r in occluders)
-        if (r.overlaps(layerRect)) r.shift(-layerRect.topLeft),
+      if (fushiPopupBackdropSampleable(context))
+        for (final Rect r in occluders)
+          if (r.overlaps(layerRect)) r.shift(-layerRect.topLeft),
     ];
-    if (local.isEmpty) return child;
+    // 不论裁不裁都是同一个 [ClipPath]：增删这一层会把 [child] 里的平台视图搬家、
+    // 丢掉正在转发的指针（见 [parkedPopupLayer]）。不裁时 clipper 为 null（命中
+    // 不受限）+ [Clip.none]（不推裁剪层，iOS / macOS 原生材质不受影响）。
     return ClipPath(
-      clipper: _PopupOccluderClipper(local, occluderRadius),
+      clipper: local.isEmpty
+          ? null
+          : _PopupOccluderClipper(local, occluderRadius),
+      clipBehavior: local.isEmpty ? Clip.none : Clip.antiAlias,
       child: child,
     );
   }
@@ -777,7 +795,7 @@ const Size kParkedRealmSize = Size(360, 480);
 /// `keepWebViewWarm` 让 [DictionaryPopupLayer] 在无结果时也挂 WebView）；所有回调
 /// 都是 no-op——屏外隐藏层收不到任何用户输入。
 Widget parkedRealmPopupLayer({
-  required GlobalKey<DictionaryPopupWebViewState> webViewKey,
+  required GlobalKey<DictionaryPopupRealmState> webViewKey,
   required Size screen,
   required bool isDark,
   Color? overrideFillColor,
@@ -819,13 +837,13 @@ Widget parkedRealmPopupLayer({
 /// `_takeRealmKey()` 接管到的是一把已死的键。测试全绿、analyze 全绿，
 /// 只有用户觉得慢。登记面由 `parked_realm_host_registration_guard_test.dart` 守。
 List<Widget> parkedRealmPopupLayers({
-  required Iterable<GlobalKey<DictionaryPopupWebViewState>> parkedRealms,
+  required Iterable<GlobalKey<DictionaryPopupRealmState>> parkedRealms,
   required Size screen,
   required bool isDark,
   Color? overrideFillColor,
 }) {
   return <Widget>[
-    for (final GlobalKey<DictionaryPopupWebViewState> key in parkedRealms)
+    for (final GlobalKey<DictionaryPopupRealmState> key in parkedRealms)
       parkedRealmPopupLayer(
         webViewKey: key,
         screen: screen,
@@ -1175,6 +1193,25 @@ final Expando<ValueNotifier<bool>> _popupScrolledUnderOf =
 /// 顶栏的 M3 scrolled-under 底：正文滚离顶部时淡入 surfaceContainerHigh 底，回到顶部
 /// 淡回透明。玻璃设计系统与墨水屏不铺底（前者是材质、后者灰阶下色块读不出来），
 /// 无可渲染词条（搜索中 / 空态）时恒透明。
+/// 标出查词弹窗顶栏子树，供宿主键盘通道判「焦点是不是落在顶栏按钮上」
+/// （[DictionaryPopupLayer._maybeWrapHostKeyInput]）。只做标记，不改布局。
+class _PopupTopBarFocusRegion extends StatelessWidget {
+  const _PopupTopBarFocusRegion({required this.child});
+
+  final Widget child;
+
+  /// 当前主焦点是否落在某个弹窗顶栏子树内。
+  static bool containsPrimaryFocus() {
+    final BuildContext? focused = FocusManager.instance.primaryFocus?.context;
+    return focused != null &&
+        focused.findAncestorWidgetOfExactType<_PopupTopBarFocusRegion>() !=
+            null;
+  }
+
+  @override
+  Widget build(BuildContext context) => child;
+}
+
 class _PopupScrolledUnderBar extends StatelessWidget {
   const _PopupScrolledUnderBar({
     required this.scrolledUnder,
@@ -1339,6 +1376,7 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onSetSentenceContext,
     this.onClearSentenceDraft,
     this.onOpenAdvancedMining,
+    this.crossAppAudio,
     this.isSearching = false,
     this.keepWebViewWarm = false,
     this.showMiningTargetSwitch = false,
@@ -1367,18 +1405,37 @@ class DictionaryPopupLayer extends StatelessWidget {
     this.onBack,
     this.historyNav,
     this.restoreScrollTop,
+    this.lookupSession = 0,
     this.transparentDocumentBackground = false,
+    this.mineShortcutAction,
     this.showResizeGrip = false,
     this.onResizeStart,
     this.onResizeUpdate,
     this.onResizeEnd,
     this.onResizeCancel,
     this.resourceSource,
+    this.onRefineQuery,
+    this.refineSource = '',
+    this.refineTokenizer = defaultLookupRefineTokenizer,
     super.key,
   });
 
   final DictionarySearchResult? result;
   final bool isSearching;
+
+  /// 拍板台 Um72dWD9Cz（方案 B）：「查不到」时的词块 / 修改框换词入口
+  /// `(要查的词, 词块来源)`，宿主在**同一层**原地换词（空结果也换，好让用户看到
+  /// 「这个词也查不到」并接着点别的）。null = 本宿主不支持（空态只显示「未找到」，
+  /// 与旧行为一致）。
+  final void Function(String query, String refineSource)? onRefineQuery;
+
+  /// 本页的词块来源（[DictionaryPopupEntry.refineSource]）：非空时结果上方画一行
+  /// 词块，点进来的那个高亮，可接着换词；空态里也优先用它拆词块（不然点进一个同样
+  /// 查不到的词块后，词块就只剩它自己）。
+  final String refineSource;
+
+  /// 词块切分器；只有测试注入。
+  final LookupRefineTokenizer refineTokenizer;
 
   /// 透传给 [DictionaryPopupWebView.resourceSource]：结果来自别的设备时，词典样式 /
   /// 媒体 / 发音取自那台设备。null = 本机。
@@ -1402,7 +1459,7 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// `window.__hasChildPopup`，让 popup.js 点卡片本体留白时据此关后代层（有子层才发
   /// tapOutside，叶子层不发，保持 TODO-859）。宿主按 `index < entries.length - 1` 派生。
   final bool hasChildPopup;
-  final GlobalKey<DictionaryPopupWebViewState> webViewKey;
+  final GlobalKey<DictionaryPopupRealmState> webViewKey;
   final VoidCallback onDismiss;
   final DictionaryTextSelected onTextSelected;
   final void Function(String query, Rect localRect) onLinkClick;
@@ -1483,6 +1540,9 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 「高级制卡」：弹窗点某词条「高级制卡」→ 宿主弹 app 原生顶层对话框。透传给 webview；
   /// null 时弹窗不渲染该按钮（宿主只在制卡模块开着时接线）。
   final OpenAdvancedMiningCallback? onOpenAdvancedMining;
+
+  /// 跨应用语音缓存的查词快照，透传给 webview（见 [DictionaryPopupWebView.crossAppAudio]）。
+  final Future<CrossAppAudioSnapshot?>? crossAppAudio;
   final VoidCallback? onTapOutside;
   final VoidCallback? onScrolledToBottom;
   final VoidCallback? onRendered;
@@ -1550,10 +1610,18 @@ class DictionaryPopupLayer extends StatelessWidget {
   /// 时的滚动位（[DictionaryPopupEntry.restoreScrollTop]）；常态 null。
   final double? restoreScrollTop;
 
+  /// 透传 [DictionaryPopupWebView.lookupSession]（[DictionaryPopupEntry.lookupSession]）。
+  /// 不按 entry 驱动的宿主（串流页等）留默认 0。
+  final int lookupSession;
+
   /// TODO-1065：转发给 [DictionaryPopupWebView] —— 本层属「app 外 / 悬浮字幕」独立
   /// 查词窗（popup_main 宿主）时 true，令弹窗 `<html>` 透明消除整窗泛白（默认 false =
   /// in-app 行为，见 DictionaryPopupWebView.transparentDocumentBackground）。
   final bool transparentDocumentBackground;
+
+  /// 宿主页面上「点＋制卡」真正响应的键盘动作，只用于「＋」按钮的快捷键提示。
+  /// 见 [DictionaryPopupWebView.mineShortcutAction]。
+  final ShortcutAction? mineShortcutAction;
 
   /// 弹窗尺寸拖拽（2026-07-13 设计 Phase B）：为真时在弹窗右下角叠一个可拖拽把手，
   /// 拖动 = 可视化地改「最大宽/高」偏好（`popupMaxWidth/Height`，与设置页两滑杆同一
@@ -1660,7 +1728,9 @@ class DictionaryPopupLayer extends StatelessWidget {
       // [SwipeDismissWrapper] 的 Listener 子树内——正文里左键框选的指针位移序列
       // 不再冒泡进滑动判定，彻底消除"框选误触滑动关闭"。
       // BUG-2770：鼠标滑关关时仍按触摸开关挂 touchOnly 包装。
-      final Widget topRegion = _wrapSwipeDismiss(topBar);
+      final Widget topRegion = _wrapSwipeDismiss(
+        _PopupTopBarFocusRegion(child: topBar),
+      );
       // M3E（2026-10-06，用户：「这条线很丑」）：顶栏与正文之间不再画常驻硬分隔线
       // （旧 TODO-1187 的 0.5px Divider）。未滚动时两者只靠间距区分；正文一离开顶部，
       // 顶栏铺上一层 surfaceContainerHigh 底（M3 top app bar 的 scrolled-under），
@@ -1765,6 +1835,13 @@ class DictionaryPopupLayer extends StatelessWidget {
         // 只在按下沿触发：关词典是一次性动作，按住不该逐层关掉整条弹窗栈
         // （与 JS 桥的 `forwardRepeats: false` 同语义）。
         if (event is! KeyDownEvent) return KeyEventResult.ignored;
+        // 顶栏按钮（阅读器有声控制 / 视频收藏星标 …）持 Flutter 焦点时，方向键是
+        // 按钮间遍历、Enter / 空格是激活——属于控件自己，不截走交给宿主；与 JS 桥
+        // 放行输入框 / 键盘聚焦控件同一条原则。
+        if (dictionaryPopupTopBarOwnsKey(event.logicalKey) &&
+            _PopupTopBarFocusRegion.containsPrimaryFocus()) {
+          return KeyEventResult.ignored;
+        }
         final String? token = dictionaryPopupKeyToken(
           key: event.logicalKey,
           modifiers: activeModifierKeys(),
@@ -2069,9 +2146,9 @@ class DictionaryPopupLayer extends StatelessWidget {
       onSelected: (_PopupTopBarOverflowAction action) {
         switch (action) {
           case _PopupTopBarOverflowAction.zoomOut:
-            webViewKey.currentState?.zoomFontStep(zoomIn: false);
+            webViewKey.webViewState?.zoomFontStep(zoomIn: false);
           case _PopupTopBarOverflowAction.zoomIn:
-            webViewKey.currentState?.zoomFontStep(zoomIn: true);
+            webViewKey.webViewState?.zoomFontStep(zoomIn: true);
         }
       },
       itemBuilder: (BuildContext context) =>
@@ -2128,7 +2205,7 @@ class DictionaryPopupLayer extends StatelessWidget {
       tooltip: message,
       constraints: _topActionConstraints,
       padding: EdgeInsets.zero,
-      onTap: () => webViewKey.currentState?.zoomFontStep(zoomIn: zoomIn),
+      onTap: () => webViewKey.webViewState?.zoomFontStep(zoomIn: zoomIn),
     );
   }
 
@@ -2190,9 +2267,11 @@ class DictionaryPopupLayer extends StatelessWidget {
               resourceSource: resourceSource,
               visibleViewportHeight: visibleHeight,
               transparentDocumentBackground: transparentDocumentBackground,
+              mineShortcutAction: mineShortcutAction,
               result: result ?? kPopupSearchingPlaceholderResult,
               lookupPending: lookupPending,
               restoreScrollTop: restoreScrollTop,
+              lookupSession: lookupSession,
               hasChildPopup: hasChildPopup,
               onTapOutside: onTapOutside,
               onTextSelected: onTextSelected,
@@ -2210,6 +2289,7 @@ class DictionaryPopupLayer extends StatelessWidget {
               onAppendSentence: onAppendSentence,
               onSetSentenceContext: onSetSentenceContext,
               onOpenAdvancedMining: onOpenAdvancedMining,
+              crossAppAudio: crossAppAudio,
               onClearSentenceDraft: onClearSentenceDraft,
               onScrolledToBottom: onScrolledToBottom,
               onScrolledUnderChanged: (bool under) =>
@@ -2271,14 +2351,67 @@ class DictionaryPopupLayer extends StatelessWidget {
     // 是一整块最大高度的空面板。
     // 反馈 vXYKPudf7U：空态写明查的是哪个词——取词结果和读者以为点中的词对不上
     // （漫画 OCR 粘词、点到词中间）时，一眼能看出问题在取词而不在词典。
+    // 拍板台 Um72dWD9Cz：宿主支持换词时，空态里把查询词拆成可点的词块 + 「修改」，
+    // OCR 多框进的词 / 认错的字就地自救。
+    final void Function(String query, String refineSource)? refine =
+        onRefineQuery;
+    final String source = _refineSourceFor(result?.searchTerm);
+    final bool showRefine = refine != null && source.isNotEmpty;
     return Center(
       child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         child: FushiPlaceholderMessage(
           icon: FushiIcons.searchOff,
           message: dictionaryPopupNoResultsMessage(result?.searchTerm),
-          detail: t.settings_search_empty_hint,
+          detail: showRefine
+              ? t.dictionary_popup_refine_hint
+              : t.settings_search_empty_hint,
+          action: showRefine
+              ? LookupRefinePanel(
+                  key: const ValueKey<String>('lookup-refine-empty'),
+                  source: source,
+                  currentTerm: result?.searchTerm ?? '',
+                  onQuery: refine,
+                  tokenizer: refineTokenizer,
+                )
+              : null,
         ),
       ),
+    );
+  }
+
+  /// 词块来源：本页记着的来源优先（从词块点进来的页），否则就是本页查不到的词。
+  String _refineSourceFor(String? searchTerm) {
+    final String recorded = refineSource.trim();
+    if (recorded.isNotEmpty) return recorded;
+    return searchTerm?.trim() ?? '';
+  }
+
+  /// 结果页上方的一行词块（只在从词块 / 修改框点进来、且查到了的页上画）。
+  /// 结构恒定：不画时是零尺寸的 [SizedBox]，下面的 WebView 永远在同一个树深度，
+  /// 不会因为这一行的有无而被搬家重建（见 [popupWebViewOverflow] 同一条约束）。
+  Widget _buildRefineBar(BuildContext context) {
+    final void Function(String query, String refineSource)? refine =
+        onRefineQuery;
+    final bool show =
+        refine != null &&
+        refineSource.trim().isNotEmpty &&
+        _hasRenderableResults;
+    // 关动效时 duration 归零，SDK AnimatedSize 零时长会在布局中自我置脏，走 FushiAnimatedSize。
+    return FushiAnimatedSize(
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
+      alignment: Alignment.topCenter,
+      child: show
+          ? LookupRefinePanel(
+              key: const ValueKey<String>('lookup-refine-bar'),
+              source: refineSource.trim(),
+              currentTerm: result?.searchTerm ?? '',
+              onQuery: refine,
+              compact: true,
+              tokenizer: refineTokenizer,
+            )
+          : const SizedBox(width: double.infinity),
     );
   }
 
@@ -2294,7 +2427,14 @@ class DictionaryPopupLayer extends StatelessWidget {
     }
     // header 不再在此处包 Column——顶栏（header + X）由 [build] 经 [_buildTopBar]
     // 渲染并与 body 拆成上下两块，使 swipe 只裹顶栏、body 脱离滑动判定（TODO-406）。
-    return body;
+    // 词块行（拍板台 Um72dWD9Cz）排在 WebView **之前**绘制：macOS 上画在平台视图
+    // 之后的 Flutter 层会被并进命中忽略区（BUG-1692），这里不会。
+    return Column(
+      children: <Widget>[
+        _buildRefineBar(context),
+        Expanded(child: body),
+      ],
+    );
   }
 }
 
@@ -2313,6 +2453,11 @@ class DictionaryPopupLayer extends StatelessWidget {
 /// [swipeDismissThreshold]（灵敏度取 [dismissSwipeSensitivity]，与顶栏 wrapper / 716
 /// barrier 同源）判定：过了直接 [onDismiss]（关一层，与点 × 同一条路径），没过什么都不做。
 /// 双向水平（左右皆可）。鼠标拖选不参与本体滑关，避免正文框选触发关闭。
+///
+/// BUG-4925：这一划期间 WebView 选区变成了新的非空选区（长按选字后拖动、拖选区柄调整
+/// 范围）——收到子树冒泡的 [PopupSelectionChangedNotification]——本划作废、抬手不关。
+/// 与覆盖窗横滑脚本 `kPopupTouchSideSwipeReleaseJs` 同一条选区判据；划之前就留着的
+/// 旧选区不挡滑关。
 ///
 /// 用户 2026-11-06：拖动期间弹窗**一动不动**，不再跟手平移 / 淡出 / 补间滑出。Android
 /// 混合合成下那段跟手平移只挪了原生 WebView，Flutter 画的顶栏和卡框原地不动，看起来是
@@ -2346,6 +2491,9 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector> {
   /// null=尚未判轴，true=横拖关闭候选，false=纵向/斜向滚动（交还 WebView）。
   bool? _pointerIsHorizontal;
 
+  /// BUG-4925：本划进行中 WebView 选区变过（拖选区柄 / 长按选字），抬手不滑关。
+  bool _selectionChangedDuringGesture = false;
+
   double get _threshold =>
       swipeDismissThreshold(ReaderFushiSource.instance.dismissSwipeSensitivity);
 
@@ -2377,7 +2525,8 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector> {
   void _onPointerUp(PointerUpEvent event) {
     _activePointers.remove(event.pointer);
     if (event.pointer != _trackedPointer) return;
-    final bool horizontal = _pointerIsHorizontal == true;
+    final bool horizontal =
+        _pointerIsHorizontal == true && !_selectionChangedDuringGesture;
     final double accumulated = _pointerStart == null
         ? 0
         : event.position.dx - _pointerStart!.dx;
@@ -2395,6 +2544,12 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector> {
     _trackedPointer = null;
     _pointerStart = null;
     _pointerIsHorizontal = null;
+    _selectionChangedDuringGesture = false;
+  }
+
+  bool _onSelectionChanged(PopupSelectionChangedNotification notification) {
+    if (_trackedPointer != null) _selectionChangedDuringGesture = true;
+    return false;
   }
 
   @override
@@ -2405,7 +2560,10 @@ class _BodySwipeDismissDetectorState extends State<_BodySwipeDismissDetector> {
       onPointerMove: _onPointerMove,
       onPointerUp: _onPointerUp,
       onPointerCancel: _onPointerCancel,
-      child: widget.child,
+      child: NotificationListener<PopupSelectionChangedNotification>(
+        onNotification: _onSelectionChanged,
+        child: widget.child,
+      ),
     );
   }
 }

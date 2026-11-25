@@ -1,8 +1,8 @@
 // 真机集成测试：「粘贴 YouTube URL 导入 → 书架打开」完整路径（BUG-2507 取证用例）。
 //
 // 走真实导入对话框（`VideoImportDialog` 的流 URL 输入 + 提交）→ 落库（真标题 + 封面）
-// → `VideoFushiPage.neutralized` 打开 → Windows 分流到内置网页播放器 `WebVideoFushiPage`
-// 并在页面里出现视频标题。依赖真实网络（直连 YouTube），故**默认 skip**，仅在设
+// → `VideoFushiPage.neutralized` 打开 → 在原生播放器页的「制卡优先」档里播（网页视频两档都在
+// 原生播放器页，拍板 cbKi3PN0G7-r2；内置网页播放器页只当制卡重放宿主），页面上出现视频标题。依赖真实网络（直连 YouTube），故**默认 skip**，仅在设
 // FUSHI_YT_LIVE_ITEST=1 时跑：
 //   $env:FUSHI_YT_LIVE_ITEST=1; .\tool\run_windows_itest.ps1 `
 //     integration_test\youtube_import_open_itest.dart
@@ -57,8 +57,8 @@ void main() {
         await tester.pump(const Duration(seconds: 2));
         final AppModel appModel = await readyAppModel(tester);
         final VideoBookRepository repo = VideoBookRepository(appModel.database);
-        // 本测试验的是内置网页播放器页：显式钉内置档（没选过档时，打了底层合成补丁的
-        // 引擎会默认 4K 窗口档、在原生播放器页里播，那条路由 web_video_underlay_itest 验）。
+        // 本测试验「制卡优先」档（可捕获离屏纹理）：显式钉这一档（「画质优先」= 底层合成那条
+        // 路由由 web_video_underlay_itest 验）。
         await appModel.prefsRepo.setPref(
           kWebVideoHostingPrefKey,
           WebVideoHosting.builtin.name,
@@ -108,7 +108,7 @@ void main() {
           'cover=${row.coverPath}',
         );
 
-        // 打开：与书架点卡同一入口；Windows 上分流到网页播放器并显示视频标题。
+        // 打开：与书架点卡同一入口；就在这一页播，不再换成内置网页播放器页。
         unawaited(
           nav.push<void>(
             MaterialPageRoute<void>(
@@ -121,11 +121,12 @@ void main() {
         for (int i = 0; i < 20 && !titled; i++) {
           await tester.pump(const Duration(seconds: 1));
           titled =
-              find.byType(WebVideoFushiPage).evaluate().isNotEmpty &&
+              find.byType(VideoFushiPage).evaluate().isNotEmpty &&
+              find.byType(WebVideoFushiPage).evaluate().isEmpty &&
               find.textContaining(row.title).evaluate().isNotEmpty;
         }
         await captureFlutterFrame(tester, 'yt-import-open');
-        expect(titled, isTrue, reason: '20s 内应切到 WebVideoFushiPage 并显示视频标题');
+        expect(titled, isTrue, reason: '20s 内原生播放器页应显示视频标题（不换成重放宿主页）');
         expect(errors, isEmpty);
       } finally {
         FlutterError.onError = oldHandler;

@@ -1,5 +1,7 @@
 #include "card_overlay.h"
 
+#include "../runner/gamescope_overlay.h"
+
 #include <X11/Xatom.h>
 #include <X11/Xlib.h>
 #include <X11/extensions/XInput2.h>
@@ -61,7 +63,9 @@ const std::set<std::string>& DeferredHandlers() {
       "duplicateCheck",   "overwriteTargetNoteId", "updateEntry",
       "findMinedMatches", "openMinedNote",        "openInAnki",
       "srsTermStatus",    "srsTermStatusBatch",   "srsOpenCard",
-      "librarySentences", "librarySentenceOpen",
+      // review-gal-overlay-mine-fail: same list as the Windows router; Dart
+      // answers queueOverwrite from the background-mine ledger.
+      "queueOverwrite",   "retryQueuedMine",
   };
   return handlers;
 }
@@ -400,6 +404,13 @@ Reply CardOverlay::Handle(const std::string& method, JsonObject* args) {
   if (method == "isShowing") {
     return ValueReply(BoolNode(IsShowing()));
   }
+  if (method == "lookupOverlaySelection") {
+    // BUG-5310: only the Windows card reports its in-card selection
+    // (overlaySelection), so a lookup hotkey never hands off to this card; the
+    // explicit false tells Dart to dismiss it and capture the foreground
+    // selection as usual.
+    return ValueReply(BoolNode(false));
+  }
   if (method == "suspendForCapture") {
     return ValueReply(
         BoolNode(SuspendForCapture(Int64Arg(args, "captureGeneration", 0))));
@@ -465,7 +476,10 @@ bool CardOverlay::EnsureWindow(int width, int height) {
   gtk_widget_set_app_paintable(window_, TRUE);
   GdkScreen* screen = gtk_widget_get_screen(window_);
   GdkVisual* visual = gdk_screen_get_rgba_visual(screen);
-  if (visual != nullptr && gdk_screen_is_composited(screen)) {
+  const bool game_mode = fushi::gamescope::InGameMode();
+  // Game Mode: Gamescope composites the window's alpha; the screen OCR layer
+  // must show around the card.
+  if (visual != nullptr && (game_mode || gdk_screen_is_composited(screen))) {
     gtk_widget_set_visual(window_, visual);
   }
   gtk_widget_add_events(window_,
@@ -539,7 +553,19 @@ bool CardOverlay::EnsureWindow(int width, int height) {
   g_signal_connect(view, "load-failed", G_CALLBACK(OnLoadFailed), this);
   g_signal_connect(view, "web-process-terminated",
                    G_CALLBACK(OnWebProcessTerminated), this);
-  gtk_container_add(GTK_CONTAINER(window_), web_view_);
+  if (game_mode) {
+    stage_ = gtk_fixed_new();
+    gtk_container_add(GTK_CONTAINER(stage_), web_view_);
+    gtk_container_add(GTK_CONTAINER(window_), stage_);
+    gtk_widget_show(stage_);
+    // The window takes every touch while it holds Steam's overlay slot: a tap
+    // beside the card closes it (the desktop's click-outside).
+    gtk_widget_add_events(window_, GDK_BUTTON_PRESS_MASK);
+    g_signal_connect(window_, "button-press-event", G_CALLBACK(OnStagePress),
+                     this);
+  } else {
+    gtk_container_add(GTK_CONTAINER(window_), web_view_);
+  }
   gtk_widget_show(web_view_);
   gtk_widget_set_opacity(web_view_, 0);
 
@@ -624,8 +650,30 @@ void CardOverlay::MoveResize(const Frame& frame) {
   const int width = std::max(Round(frame.width), 1);
   const int height = std::max(Round(frame.height), 1);
   gtk_widget_set_size_request(web_view_, width, height);
+  if (stage_ != nullptr) {
+    // Game Mode: the window stays on the whole output; the card moves inside.
+    const GdkRectangle area = StageArea();
+    gtk_widget_set_size_request(window_, area.width, area.height);
+    gtk_window_resize(GTK_WINDOW(window_), area.width, area.height);
+    gtk_window_move(GTK_WINDOW(window_), area.x, area.y);
+    gtk_fixed_move(GTK_FIXED(stage_), web_view_, Round(frame.x) - area.x,
+                   Round(frame.y) - area.y);
+    return;
+  }
   gtk_window_resize(GTK_WINDOW(window_), width, height);
   gtk_window_move(GTK_WINDOW(window_), Round(frame.x), Round(frame.y));
+}
+
+GdkRectangle CardOverlay::StageArea() const {
+  GdkMonitor* monitor = anchor_monitor_;
+  if (monitor == nullptr) {
+    GdkDisplay* display = gdk_display_get_default();
+    monitor = gdk_display_get_primary_monitor(display);
+    if (monitor == nullptr) monitor = gdk_display_get_monitor(display, 0);
+  }
+  GdkRectangle area{0, 0, 1, 1};
+  if (monitor != nullptr) gdk_monitor_get_geometry(monitor, &area);
+  return area;
 }
 
 // On-screen, invisible, click-through measurement parking.
@@ -730,6 +778,10 @@ void CardOverlay::Present() {
   measuring_ = false;
   visible_ = true;
   revealed_ = true;
+  // Game Mode: drawn over the game and given the touches, above the screen OCR
+  // layer (kCardRank > kFreezeLayerRank) and below Steam's own overlay.
+  fushi::gamescope::SetRole(window_, fushi::gamescope::kInput,
+                            fushi::gamescope::kCardRank);
   ArmDismissMonitors();
 }
 
@@ -824,6 +876,8 @@ void CardOverlay::Hide(bool notify) {
   DisarmDismissMonitors();
   EndResizeTracking(false);
   if (window_ != nullptr) {
+    // Gamescope picks overlays without checking whether they are mapped.
+    fushi::gamescope::SetRole(window_, fushi::gamescope::kNone, 0);
     gtk_widget_hide(window_);
     gtk_widget_set_opacity(web_view_, 0);
   }
@@ -839,6 +893,7 @@ bool CardOverlay::SuspendForCapture(int64_t generation) {
   capture_suppressed_ = true;
   capture_generation_ = generation;
   if (window_ != nullptr) {
+    fushi::gamescope::SetRole(window_, fushi::gamescope::kNone, 0);
     gtk_widget_hide(window_);
   }
   return true;
@@ -852,6 +907,8 @@ bool CardOverlay::RestoreAfterCapture(int64_t generation) {
   capture_suppressed_ = false;
   capture_generation_ = 0;
   if (visible_ && window_ != nullptr) {
+    fushi::gamescope::SetRole(window_, fushi::gamescope::kInput,
+                              fushi::gamescope::kCardRank);
     gtk_widget_show(window_);
     gdk_window_raise(gtk_widget_get_window(window_));
   }
@@ -1023,6 +1080,12 @@ void CardOverlay::OnRawButtonPress(int x_button) {
 }
 
 void CardOverlay::OnActiveWindowChanged() {
+  // Game Mode: Gamescope rewrites _NET_ACTIVE_WINDOW whenever it moves input
+  // focus, including to this card when it takes Steam's overlay slot. Leaving
+  // the game goes through Steam's menu there, which takes the slot instead.
+  if (fushi::gamescope::InGameMode()) {
+    return;
+  }
   // The user switched to another window (the Windows EVENT_SYSTEM_FOREGROUND
   // hook). The card itself is never activated (override-redirect).
   if (ReadActiveWindow() != armed_active_window_) {
@@ -1096,6 +1159,22 @@ gboolean CardOverlay::OnWindowRelease(GtkWidget*, GdkEventButton*,
     return FALSE;
   }
   self->EndResizeTracking(true);
+  return TRUE;
+}
+
+gboolean CardOverlay::OnStagePress(GtkWidget*, const GdkEventButton* event,
+                                   gpointer data) {
+  auto* self = static_cast<CardOverlay*>(data);
+  if (!self->visible_ || self->resizing_) {
+    return FALSE;
+  }
+  const Frame& f = self->frame_;
+  // A press on the card itself belongs to the card.
+  if (event->x_root >= f.x && event->x_root < f.x + f.width &&
+      event->y_root >= f.y && event->y_root < f.y + f.height) {
+    return FALSE;
+  }
+  self->Hide(true);
   return TRUE;
 }
 

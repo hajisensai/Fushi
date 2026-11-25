@@ -1,6 +1,7 @@
 import 'package:fushi_cli/fushi_cli.dart';
 
 import 'package:fushi/src/ops/op_describe_kit.dart';
+import 'package:fushi/src/ops/settings_index.dart' show settingsIndexLinkedKeys;
 
 /// 设置域的操作描述（spec §4.3）：设置不逐项写操作，走 schema 的四个通用操作
 /// 加模块开关。值的读写都是 `ctl_settings_routes.dart` 里同一组闭包（与在设置页
@@ -74,11 +75,17 @@ List<OpDescription> describeSettingsOps(OpDescribeKit kit) => <OpDescription>[
         required: true,
       ),
     ],
+    // 写一项会联动改掉别的项时（选主题会关掉正在生效的取色开关），撤销把联动项
+    // 一并写回。
     undo: kit.readBackUndo(
       readMethod: 'GET',
       readPattern: '/api/admin/settings/:key',
       writeMethod: 'PUT',
       writePattern: '/api/admin/settings/:key',
+      linked: (Map<String, String> params) => <Map<String, String>>[
+        for (final String key in settingsIndexLinkedKeys(params['key']!))
+          <String, String>{'key': key},
+      ],
     ),
   ),
   OpDescription(
@@ -120,8 +127,8 @@ List<OpDescription> describeSettingsOps(OpDescribeKit kit) => <OpDescription>[
       OpParam.object(
         'args',
         description:
-            'Parameters the action row declares (see "params" in settings.get).',
-        spread: true,
+            'Parameters the action row declares (see "params" in settings.get). '
+            'Sent as body.args, the same shape the direct route reads.',
       ),
       OpParam.userGate(
         'confirm',

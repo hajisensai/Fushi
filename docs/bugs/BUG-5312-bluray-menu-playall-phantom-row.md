@@ -1,0 +1,17 @@
+## BUG-5312 · 原盘菜单「全部播放」凭空多出一集整卷行，加密剧集盘各集没有封面
+- **报告**：2026-11-23（应用内反馈 M7C0Ikvhv0，开发者本人；波奇 BD vol.1：第 1、2 集没缩略图，第 3 集缩略图是真人，菜单播放后合集里多出第 4 集「BOCCHI THE ROCK! 1 - 00001」，进度 24:13）
+- **真实性**：✅ 真 bug（①②沿真实代码路径确认，日志佐证②；③未能复现，见备注）
+  - ① 凭空多一集：菜单「ALL PLAY」播整条 `00001.mpls`，扫描时它已按 PlayItem 切成 `00001.p01` / `00001.p02`（`bluray_disc.dart` `selectBlurayTitles` 第 7 步），整条播放列表不在 `disc.titles` 里。`disc_menu.part.dart:451`（`_bindDiscPlaylist`）调 `ensureBlurayTitleInLibrary`，`bluray_library_title.dart:107-123` 在 `titleById` 里找不到 `00001` → 用 `blurayMenuTitleName` 起名「<盘名> - 00001」并新建一行（来源继承同盘），进度也记在这行上；下一轮扫描才由 `disc_library_import.dart` 的整卷折叠回收。
+  - ② 没封面：`video_cover_extractor.dart:373-381` 把 `.mpls` 换成 `resolveBluraySource(...).primaryStreamPath`（第一段 `STREAM/*.m2ts`）后直接交给 ffmpeg，绕过了 `BlurayFfmpegBackend` 的 concat + AACS 解密输入链：加密盘的 m2ts 是密文（日志 `mpegts … could not find sync byte`），第一集的第一段还是几秒的厂标。另外 `desktop_audio_clipper.dart:1431` `extractVideoFrameViaFfmpeg` 用 `File(inputPath).existsSync()` 判输入在不在，分集虚拟路径（`00001.p01.mpls`）不是磁盘文件，直接交 `.mpls` 也会被早退。
+- **[x] ① 已修复** —
+  - 新增 `ensureBlurayMenuTitleInLibrary`（`packages/fushi_engine/lib/media/video/bluray/bluray_library_title.dart`）：菜单进入的播放列表若被扫描切成了集，不建整卷行，按扫描规则确保各集在库，返回 `BlurayMenuTitleBinding`（各集行 + 在播放列表时间轴上的区间，`episodeAt` / `progressAt` 把播放列表位置映射到某一集自己的时间轴）；没切的播放列表照旧单条入库。
+  - 播放页 `_bindDiscPlaylist` 改用它，按播放头选出当前集绑定；`_persistPosition` 经 `_discMenuEpisodeProgress` 把整条播放列表上的位置记到播放头所在那一集（集内时间轴、集长写进已知片长），跨集时换页面身份（标题 / 集下标 / 观看统计）并 `VideoPlayerController.retargetDiscTitleBook` 换控制器的库身份；播放、抽取、章节仍在整条播放列表时间轴上，不作废轨道。
+  - 封面：蓝光标题直接以 `.mpls`（含分集虚拟路径）为输入走 `grabFirstNonBlackCoverFrame`，由 ffmpeg 后端改写成本标题的 concat + AACS 解密输入；`extractVideoFrameViaFfmpeg` 的存在性判据改成 `videoMemberExistsSync`（原盘成员按背后的真实文件判）。
+- **[x] ② 已加自动化测试** —
+  - `packages/fushi_engine/test/media/video/bluray/bluray_menu_title_binding_test.dart`：真 Drift 库 + 真临时盘，菜单进入切过集的 `00001` 不新增任何行、绑到两集且区间正确；位置映射（跨集、集内偏移、越过末集终点夹到集长）；没切的特典照旧单条。
+  - `packages/fushi_engine/test/media/video/bluray/bluray_cover_extract_test.dart`：录制式 ffmpeg 后端，分集 / 整条播放列表的封面抽帧输入是 `.mpls` 本身、不出现任何 `.m2ts`，虚拟分集路径也真的起 ffmpeg；播放列表不存在时不起 ffmpeg。
+- **备注**：
+  - ③「第 3 集是真人缩略图、标题却是『馳せサンズ』」疑为盘上的放送直前特番时长超过最短正片的一半，被 `bluray_disc_extras.dart` `classifyDiscExtras` 当成正片、刮削按序编成第 3 集。本机没有这张盘，无法只读跑 `readBlurayDisc` / `classifyBlurayDiscExtras` 拿到真实时长与结构，判据未改（凭猜测改「多长算特典」会误伤剧集盘的特别篇 / 总集篇）。需要真盘的 `BDMV/PLAYLIST` + `CLIPINF` 复现后再定。
+  - 已经建出来的整卷行由下一轮扫描的整卷折叠（`disc_library_import.dart` `_foldWholeTitleProgress`）把进度折到各集并回收，无需另做迁移。
+  - 同一反馈日志里原盘菜单会话缩略图预览的 `Error opening output files: Invalid argument` 是 `video_thumbnail_preview_controller.dart` 的预览抽帧，与书架封面不是同一条路径，本次未处理。
+- **合并审查**（2026-11-23）：分集绑定下除进度外的时间锚点（观看完成判定 / 覆盖并集、收藏句、制卡回跳）仍在整条播放列表时间轴上，登记为 BUG-5356，待拍板。

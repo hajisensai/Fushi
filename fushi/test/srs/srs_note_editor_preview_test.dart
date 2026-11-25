@@ -28,6 +28,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
+import 'support/srs_write_settle.dart';
 
 const String _kGlossary =
     '<div class="yomitan-glossary"><ol><li data-dictionary="大辞林">'
@@ -42,12 +43,7 @@ Future<T> _db<T>(WidgetTester tester, Future<T> Function() body) async =>
     (await tester.runAsync(body)) as T;
 
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 Future<SrsDbStore> _open(WidgetTester tester) async {
@@ -373,8 +369,10 @@ void main() {
       '(大辞林) かよう（通う）',
     );
     await tester.pump();
-    await tester.tap(_key('srs_note_save').first);
-    await _settle(tester);
+    await srsUntilWritten(
+      tester,
+      () => tester.tap(_key('srs_note_save').first),
+    );
     final String saved = (await _db(
       tester,
       () => store.note(note),

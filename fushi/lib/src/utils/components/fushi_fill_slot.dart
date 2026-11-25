@@ -50,8 +50,9 @@ class FushiFillSlot extends InheritedWidget {
           final ButtonStyle fill = fushiFillSlotButtonStyle(extent, shape);
           return IconButtonTheme(
             data: IconButtonThemeData(
-              // 沿用祖先的设计变体（官方 M3E）：只换尺寸与形状。
-              variant: inherited.variant,
+              // 不写 variant：官方按钮经 IconButtonTheme.variantOf 取最近的非空
+              // 变体（material_ui 1.11 起），祖先的 M3E 照样生效，这里只换尺寸
+              // 与形状。
               style: inherited.style == null
                   ? fill
                   : fill.merge(inherited.style),

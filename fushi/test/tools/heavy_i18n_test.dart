@@ -75,6 +75,52 @@ void main() {
     });
   });
 
+  group('heavyCommandAnalyzesApp', () {
+    bool analyzes(List<String> cmd, String cwd, {bool win = true}) =>
+        heavyCommandAnalyzesApp(
+          cmd,
+          cwd: cwd,
+          checkout: win ? r'D:\wt' : '/wt',
+          isWindows: win,
+        );
+
+    test('fushi/ 下的 flutter / dart analyze 要先编着色器包', () {
+      const String fl = r'D:\sdk\bin\flutter.bat';
+      const String dt = r'D:\sdk\bin\dart.bat';
+      expect(
+        analyzes(<String>[fl, 'analyze', '--no-pub'], r'D:\WT\Fushi'),
+        true,
+      );
+      expect(
+        analyzes(<String>[dt, 'analyze', 'lib'], r'D:\wt\fushi\lib'),
+        true,
+      );
+      expect(
+        analyzes(
+          <String>['/sdk/bin/flutter', 'analyze'],
+          '/wt/fushi',
+          win: false,
+        ),
+        true,
+      );
+    });
+
+    test('test / build / fushi/ 以外的 analyze 不编（构建钩子自己会编或不需要）', () {
+      const String fl = r'D:\sdk\bin\flutter.bat';
+      expect(analyzes(<String>[fl, 'test'], r'D:\wt\fushi'), false);
+      expect(analyzes(<String>[fl, 'build', 'windows'], r'D:\wt\fushi'), false);
+      expect(
+        analyzes(<String>[fl, 'analyze'], r'D:\wt\packages\fushi_srs'),
+        false,
+      );
+      expect(
+        analyzes(<String>[r'.\gradlew.bat', 'analyze'], r'D:\wt\fushi'),
+        false,
+      );
+      expect(analyzes(<String>[], r'D:\wt\fushi'), false);
+    });
+  });
+
   group('heavyI18nDart', () {
     test('取命令自己那份 SDK 的 dart（stamp 认 Dart 版本，format 决定字节）', () {
       expect(
@@ -134,12 +180,105 @@ void main() {
     });
   });
 
+  group('heavyCommandIsAppGradle', () {
+    bool gradle(List<String> cmd, String cwd, {bool win = true}) =>
+        heavyCommandIsAppGradle(
+          cmd,
+          cwd: cwd,
+          checkout: win ? r'D:\wt' : '/wt',
+          isWindows: win,
+        );
+
+    test('fushi/android 下的 gradlew 要先刷新插件注册（release 编不过 debug 那份）', () {
+      expect(
+        gradle(<String>[
+          r'.\gradlew.bat',
+          ':app:assembleRelease',
+        ], r'D:\WT\fushi\android'),
+        true,
+      );
+      expect(
+        gradle(
+          <String>['./gradlew', ':app:testDebugUnitTest'],
+          '/wt/fushi/android',
+          win: false,
+        ),
+        true,
+      );
+    });
+
+    test('flutter / dart 命令、fushi/android 以外的 gradlew 不刷新', () {
+      expect(
+        gradle(<String>[
+          r'D:\sdk\bin\flutter.bat',
+          'build',
+          'apk',
+        ], r'D:\wt\fushi'),
+        false,
+      );
+      expect(
+        gradle(<String>[r'.\gradlew.bat', 'build'], r'D:\other\android'),
+        false,
+      );
+      expect(
+        gradle(<String>[r'.\gradlew.bat', 'build'], r'D:\wt\fushi'),
+        false,
+      );
+      expect(gradle(const <String>[], r'D:\wt\fushi\android'), false);
+    });
+  });
+
+  group('heavyGradleConfigFlutter', () {
+    test('取 pub get 记下的 SDK 的 flutter，没有就退回 PATH 上的', () {
+      const String cfg =
+          '{"configVersion":2,"packages":[],'
+          '"flutterRoot":"file:///D:/flutter%20sdk/f","flutterVersion":"3.47.6"}';
+      expect(
+        heavyGradleConfigFlutter(
+          checkout: 'D:/wt',
+          isWindows: true,
+          fileExists: (String p) => p == 'D:/flutter sdk/f/bin/flutter.bat',
+          read: (String p) =>
+              p == 'D:/wt/.dart_tool/package_config.json' ? cfg : null,
+        ),
+        'D:/flutter sdk/f/bin/flutter.bat',
+      );
+      expect(
+        heavyGradleConfigFlutter(
+          checkout: '/wt',
+          isWindows: false,
+          fileExists: (_) => false,
+          read: (_) => null,
+        ),
+        'flutter',
+      );
+    });
+  });
+
+  test(
+    'heavy.dart 本机跑 gradlew 前先 flutter build apk --config-only，失败即失败（lease 之前）',
+    () {
+      final String heavy = File('tool/heavy.dart').readAsStringSync();
+      final int gen = heavy.indexOf('heavyCommandNeedsI18n(');
+      final int config = heavy.indexOf('heavyCommandIsAppGradle(');
+      final int lease = heavy.indexOf('admitted = await acquireHeavyLease(');
+      expect(config, allOf(greaterThan(gen), lessThan(lease)));
+      expect(heavy, contains("<String>['build', 'apk', '--config-only']"));
+      expect(heavy, contains('exit(config);'));
+    },
+  );
+
   test('heavy.dart 在本机运行前（offload 之后、lease 之前）接了生成，失败即失败', () {
     final String heavy = File('tool/heavy.dart').readAsStringSync();
-    final int offload = heavy.indexOf('if (remote != null) exit(remote);');
+    // 外包先问一次别的机器（它们接走就直接以其退出码结束）；没接走才在本机生成、再排本机的租约。
+    final int offload = heavy.indexOf('await _askElsewhere(');
     final int gen = heavy.indexOf('heavyCommandNeedsI18n(');
-    final int lease = heavy.indexOf('lease = await acquireHeavyLease(');
+    final int lease = heavy.indexOf('admitted = await acquireHeavyLease(');
     expect(offload, greaterThan(0));
+    expect(
+      heavy.indexOf('case HeavyOffloadNext.done:'),
+      allOf(greaterThan(offload), lessThan(gen)),
+    );
     expect(gen, greaterThan(offload));
     expect(lease, greaterThan(gen));
     expect(heavy, contains('exit(gen);'));

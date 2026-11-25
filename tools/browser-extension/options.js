@@ -38,6 +38,8 @@ const settingDefaults = Object.freeze({
   studyTrackVideo: true,
   // 用扩展预取的整集轨自绘整句字幕并藏掉站点原生字幕（默认关：改变站点观感的行为要用户点头）。
   subtitleReplaceNative: false,
+  // YouTube 自动字幕按标点 / 停顿合成整句（默认关：日语 ASR 常无标点，断句是启发式，用户点头再开）。
+  subtitleMergeAsrSentences: false,
   // 隐藏字幕是实际显示状态；Shift+H 是否接管由独立快捷键开关控制。
   subtitleHidden: false,
   // 触屏查词：点按默认开（手机端没有 Shift 悬停，点按是主入口），长按默认关
@@ -55,6 +57,7 @@ const settingDefaults = Object.freeze({
   videoShortcutReplayCue: true,
   videoShortcutTogglePanel: true,
   videoShortcutToggleSubtitleHide: true,
+  videoShortcutToggleSubtitleMask: true,
   videoShortcutOffsetMinus: true,
   videoShortcutOffsetPlus: true,
   videoShortcutOffsetReset: true,
@@ -83,6 +86,7 @@ const toggleIds = Object.freeze({
   subtitleOverlayBackground: 'subtitleOverlayBackground',
   studyTrackVideo: 'studyTrackVideo',
   subtitleReplaceNative: 'subtitleReplaceNative',
+  subtitleMergeAsrSentences: 'subtitleMergeAsrSentences',
   subtitleHidden: 'subtitleHidden',
   touchLookupTap: 'touchLookupTap',
   touchLookupHold: 'touchLookupHold',
@@ -94,6 +98,7 @@ const toggleIds = Object.freeze({
   videoShortcutReplayCue: 'videoShortcutReplayCue',
   videoShortcutTogglePanel: 'videoShortcutTogglePanel',
   videoShortcutToggleSubtitleHide: 'videoShortcutToggleSubtitleHide',
+  videoShortcutToggleSubtitleMask: 'videoShortcutToggleSubtitleMask',
   videoShortcutOffsetMinus: 'videoShortcutOffsetMinus',
   videoShortcutOffsetPlus: 'videoShortcutOffsetPlus',
   videoShortcutOffsetReset: 'videoShortcutOffsetReset',
@@ -264,6 +269,7 @@ async function loadSettings() {
   }
   await loadPopupSize(saved);
   await loadPopupFontSize();
+  await loadScanDelay();
   await loadShortcutKeys();
 }
 
@@ -454,6 +460,48 @@ async function loadPopupFontSize() {
   on('popupFontSize', 'change', submitPopupFontSize);
 }
 
+// ── 悬停扫描延迟（反馈 L4Vhk0hOjM，content.js / side-panel.js fushiNormalizeScanDelay 读）──
+// storage.scanDelay：毫秒整数 0–2000，缺省 0（立即查）。只在查词按键为 none 时生效，
+// 按键模式下输入框置灰（值保留，切回 none 即恢复）。
+const SCAN_DELAY_MAX_MS = 2000;
+function normalizeScanDelay(value) {
+  if (typeof value !== 'number' || !isFinite(value)) return 0;
+  const ms = Math.round(value);
+  return ms <= 0 ? 0 : Math.min(SCAN_DELAY_MAX_MS, ms);
+}
+
+function fillScanDelay(value) {
+  const input = $('scanDelay');
+  if (!input || document.activeElement === input) return;
+  input.value = String(normalizeScanDelay(value));
+}
+
+function syncScanDelayEnabled() {
+  const input = $('scanDelay');
+  const modifier = $('scanModifier');
+  if (!input) return;
+  input.disabled = !!modifier && modifier.value !== 'none';
+}
+
+async function submitScanDelay() {
+  const input = $('scanDelay');
+  if (!input) return;
+  const raw = String(input.value || '').trim();
+  const n = raw ? Number(raw) : 0;
+  const ms = normalizeScanDelay(isFinite(n) ? n : 0);
+  input.value = String(ms);
+  await chrome.storage.local.set({ scanDelay: ms });
+  toast(tr('opt_toast_scan_delay_saved', { ms }));
+}
+
+async function loadScanDelay() {
+  const store = await chrome.storage.local.get(['scanDelay']);
+  fillScanDelay(store.scanDelay);
+  syncScanDelayEnabled();
+  on('scanDelay', 'change', submitScanDelay);
+  on('scanModifier', 'change', syncScanDelayEnabled);
+}
+
 on('connectionForm', 'submit', async (event) => {
   event.preventDefault();
   await chrome.storage.local.set({
@@ -474,6 +522,91 @@ on('resetSubtitleOverlayPosition', 'click', async () => {
   await chrome.storage.local.remove('subtitleOverlayPosition');
   toast(tr('opt_toast_overlay_position_reset'));
 });
+
+// ── 字幕遮布（subtitle-mask.js）：一个对象 subtitleMask 存开关 / 外观 / 强度 / 位置，整份等于默认就删键。
+// 纯函数（normalize / writeOf / LIMITS）全部借 subtitle-mask.js，这里不重复任何默认值或上下限。
+// 位置只能在视频上调（播放器 Fushi 菜单「调整遮布」或快捷键），这里只给「重置位置」。
+const MASK = self.FUSHI_SUBTITLE_MASK || null;
+let subtitleMaskCurrent = MASK ? MASK.normalize(null) : null;
+let subtitleMaskWriteTimer = null;
+
+function fillSubtitleMaskInputs(raw) {
+  if (!MASK) return;
+  subtitleMaskCurrent = MASK.normalize(raw);
+  const s = subtitleMaskCurrent;
+  const enabled = $('subtitleMaskEnabled');
+  if (enabled) enabled.checked = s.enabled;
+  const appearance = $('subtitleMaskAppearance');
+  if (appearance && document.activeElement !== appearance) appearance.value = s.appearance;
+  const strength = $('subtitleMaskStrength');
+  if (strength) {
+    const field = s.appearance === 'solid' ? 'opacity' : 'blur';
+    const lim = MASK.LIMITS[field];
+    strength.min = String(lim[0]);
+    strength.max = String(lim[1]);
+    if (document.activeElement !== strength) strength.value = String(s[field]);
+    const out = document.querySelector('output[for="subtitleMaskStrength"]');
+    if (out) out.dataset.unit = field === 'opacity' ? '%' : 'px';
+    formatRangeOutput('subtitleMaskStrength', strength.value);
+  }
+  const strengthTitle = $('subtitleMaskStrengthTitle');
+  if (strengthTitle) {
+    strengthTitle.textContent = tr(s.appearance === 'solid' ? 'opt_subtitleMaskOpacity_title' : 'opt_subtitleMaskBlur_title');
+  }
+}
+
+function writeSubtitleMask(patch, immediate) {
+  if (!MASK) return;
+  subtitleMaskCurrent = MASK.normalize(Object.assign({}, subtitleMaskCurrent, patch));
+  if (subtitleMaskWriteTimer) clearTimeout(subtitleMaskWriteTimer);
+  const commit = () => {
+    subtitleMaskWriteTimer = null;
+    const w = MASK.writeOf(subtitleMaskCurrent);
+    if (w.remove) chrome.storage.local.remove(w.remove);
+    else chrome.storage.local.set({ [w.set]: w.value });
+  };
+  // 滑杆拖动期间去抖（与字幕外观同一条纪律），离散控件立即落盘。
+  if (immediate) commit();
+  else subtitleMaskWriteTimer = setTimeout(commit, 120);
+}
+
+async function loadSubtitleMask() {
+  if (!MASK) return;
+  let got = null;
+  try { got = await chrome.storage.local.get(MASK.KEY); } catch (_) { got = null; }
+  fillSubtitleMaskInputs(got ? got[MASK.KEY] : null);
+  on('subtitleMaskEnabled', 'change', (e) => {
+    writeSubtitleMask({ enabled: e.target.checked === true }, true);
+    toast(tr('opt_toast_updated', { name: tr('opt_subtitleMask_title') }));
+  });
+  on('subtitleMaskAppearance', 'change', (e) => {
+    writeSubtitleMask({ appearance: e.target.value }, true);
+    fillSubtitleMaskInputs(subtitleMaskCurrent);
+  });
+  const strength = $('subtitleMaskStrength');
+  if (strength) {
+    const field = () => (subtitleMaskCurrent && subtitleMaskCurrent.appearance === 'solid' ? 'opacity' : 'blur');
+    strength.addEventListener('input', () => {
+      formatRangeOutput('subtitleMaskStrength', strength.value);
+      writeSubtitleMask({ [field()]: Number(strength.value) }, false);
+    });
+    strength.addEventListener('change', () => {
+      writeSubtitleMask({ [field()]: Number(strength.value) }, true);
+      strength.value = String(subtitleMaskCurrent[field()]);
+    });
+  }
+  on('resetSubtitleMaskPosition', 'click', () => {
+    writeSubtitleMask(MASK.rectOf(MASK.resetRect(subtitleMaskCurrent)), true);
+    toast(tr('opt_toast_mask_position_reset'));
+  });
+}
+
+try {
+  chrome.storage.onChanged.addListener((changes, area) => {
+    if (area !== 'local' || !MASK || !changes || !changes[MASK.KEY]) return;
+    fillSubtitleMaskInputs(changes[MASK.KEY].newValue);
+  });
+} catch (_) { /* 测试壳没有 onChanged：只少热同步，其余绑定照常 */ }
 
 on('showToken', 'click', () => {
   const token = $('token');
@@ -591,6 +724,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
   }
   if (changes.popupSizeFromApp) fillPopupSizeInputs(changes.popupSizeFromApp.newValue);
   if (changes[POPUP_FONT_KEY]) fillPopupFontSize(changes[POPUP_FONT_KEY].newValue);
+  if (changes.scanDelay) fillScanDelay(changes.scanDelay.newValue);
+  if (changes.scanModifier) syncScanDelayEnabled();
   if (changes[SHORTCUT_KEYS_SETTING]) {
     const v = changes[SHORTCUT_KEYS_SETTING].newValue;
     shortcutCustom = v && typeof v === 'object' ? Object.assign({}, v) : {};
@@ -933,7 +1068,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
   if (dirty) renderPaletteGrid();
 });
 
-// ── 字幕外观（subtitle-style.js：字体 / 大小 / 字重 / 间距 / 行高 / 对齐 / 颜色 / 描边 / 底板）──
+// ── 字幕外观（subtitle-style.js：字体 / 大小 / 字重 / 间距 / 行高 / 对齐 / 颜色 / 阴影 / 描边 / 底板）──
 // 设置整体存 chrome.storage.local.subtitleStyle；控件 id → 字段名。预览与视频上的覆盖层走同一份
 // toCssVars（预览节点的默认值在 options.css 里与 content-css-overlay.css 同一组 --fushi-sub-*）。
 const SUB = self.fushiSubtitleStyle || null;
@@ -946,6 +1081,8 @@ const subtitleStyleFields = Object.freeze({
   subtitleStyleTextAlign: { field: 'textAlign', kind: 'select' },
   subtitleStyleTextColor: { field: 'textColor', kind: 'color' },
   subtitleStyleShadow: { field: 'shadow', kind: 'select' },
+  subtitleStyleOutlineWidth: { field: 'outlineWidth', kind: 'range' },
+  subtitleStyleOutlineColor: { field: 'outlineColor', kind: 'color' },
   subtitleStyleBackgroundColor: { field: 'backgroundColor', kind: 'color' },
   subtitleStyleBackgroundOpacity: { field: 'backgroundOpacity', kind: 'range' },
   subtitleStyleBorderRadius: { field: 'borderRadius', kind: 'range' },
@@ -958,6 +1095,8 @@ const subtitleStyleFields = Object.freeze({
 const subtitleColorDefaults = SUB ? {
   subtitleStyleTextColor: SUB.DEFAULT_TEXT_COLOR,
   subtitleStyleBackgroundColor: SUB.DEFAULT_BACKGROUND_COLOR,
+  // 描边色的「默认」不是主题色而是纯黑（app 同值），按钮文案因此是「默认」而非「跟随主题」。
+  subtitleStyleOutlineColor: SUB.DEFAULT_OUTLINE_COLOR,
 } : {};
 let subtitleStyleCurrent = SUB ? SUB.normalize(null) : null;
 
@@ -1228,6 +1367,7 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 loadPalette();
 loadSubtitleStyle();
+void loadSubtitleMask();
 
 // ── 节导航：左侧（窄屏为顶部横条）链接随滚动高亮当前节（aria-current="true"）。
 // 只是锚点 + 视觉提示，键盘 Tab 到链接回车即跳；没有 IntersectionObserver 的环境（vm 测试）跳过。

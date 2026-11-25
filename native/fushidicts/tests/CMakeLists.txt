@@ -138,6 +138,12 @@ add_fushi_test(ruby_reading_lookup_test ruby_reading_lookup_test.cpp
 add_fushi_test(chinese_simp_trad_lookup_test chinese_simp_trad_lookup_test.cpp
     "${FUSHI_SRC}/text_processor"
     "${FUSHI_ROOT}/fushidicts_external/utfcpp/source")
+# 按请求排除词典（LookupOptions::excluded_dictionaries）：被排除词典的释义 / 频率 /
+# 音调都不出现、不占 max_results 名额、不影响排序；空选项逐字不变。
+add_fushi_test(excluded_dictionaries_lookup_test excluded_dictionaries_lookup_test.cpp)
+# index.json 的 sourceLanguage / targetLanguage 写回导入输出目录（app / 服务端从输出目录读
+# 语言给词典管理按语言分组）；不带语言的源输出逐字节不变，非字符串 / 空串当缺席。
+add_fushi_test(index_language_roundtrip_test index_language_roundtrip_test.cpp)
 # BUG-1665: an MDX @@@LINK= redirect entry (definition bytes copied from its
 # lemma at import) must collapse into the lemma at lookup time, so the popup
 # header / mined Anki term is the dictionary form, not the inflected surface.
@@ -171,6 +177,22 @@ add_test(NAME en_inflection_lookup_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json"
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/en_irregular.json")
 
+# 反馈 WIZUEQx1fY：标了语言的词典只接受本语言变形表的还原链（Our 不再被阿尔巴尼亚语
+# -ur 还原成 O），排序里变形链长先于预处理步数（My 不再排出 M 在 my 前面）。真变形表。
+add_executable(dictionary_language_gate_lookup_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/dictionary_language_gate_lookup_test.cpp")
+target_link_libraries(dictionary_language_gate_lookup_test PRIVATE fushidicts)
+target_include_directories(dictionary_language_gate_lookup_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(dictionary_language_gate_lookup_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME dictionary_language_gate_lookup_test
+         COMMAND dictionary_language_gate_lookup_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/en_irregular.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/sq.json"
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/la.json")
+
 # BUG-3212：关西方言「うた → った」不得跨词吞掉「ため / たび」的「た」（真 ja.json）。
 add_executable(ja_kansai_ta_boundary_test
     "${CMAKE_CURRENT_SOURCE_DIR}/ja_kansai_ta_boundary_test.cpp")
@@ -181,6 +203,18 @@ if(MSVC)
 endif()
 add_test(NAME ja_kansai_ta_boundary_test
          COMMAND ja_kansai_ta_boundary_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+
+# 2026-11 上游功能同步：片假名中点 / 片假名词边界 / くって / 歴史的仮名遣い / -やしない（真 ja.json）。
+add_executable(ja_upstream_sync_lookup_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/ja_upstream_sync_lookup_test.cpp")
+target_link_libraries(ja_upstream_sync_lookup_test PRIVATE fushidicts)
+target_include_directories(ja_upstream_sync_lookup_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}")
+if(MSVC)
+  target_compile_options(ja_upstream_sync_lookup_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME ja_upstream_sync_lookup_test
+         COMMAND ja_upstream_sync_lookup_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
 
 # 批量分词：与旧 Dart 逐位置最长匹配循环（原样转写为参考实现）逐位一致（真 ja.json）。
@@ -255,6 +289,31 @@ endif()
 add_test(NAME ja_mixed_orthography_lookup_test
          COMMAND ja_mixed_orthography_lookup_test
                  "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+
+# 联合过滤器（hash/union_filter.hpp）：一条缓存行判「键可能在哪几本词典里」。纯加速
+# 结构，验的是不改结果：无假阴性、坏缓存文件被拒并重建、有 / 无过滤器时真词典上的
+# lookup / query 逐字段相同、add_dict 后作废、后台构建最终就绪。
+add_executable(union_filter_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/union_filter_test.cpp")
+target_link_libraries(union_filter_test PRIVATE fushidicts Threads::Threads)
+target_include_directories(union_filter_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${FUSHI_SRC}")
+if(MSVC)
+  target_compile_options(union_filter_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME union_filter_test
+         COMMAND union_filter_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")
+
+# 键索引（hash/key_index.hpp，key.index）：无假阴性、枚举完整、大小在预期内、
+# 装不进 / 坏文件被拒。
+add_executable(key_index_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/key_index_test.cpp")
+target_link_libraries(key_index_test PRIVATE fushidicts)
+target_include_directories(key_index_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${FUSHI_SRC}")
+if(MSVC)
+  target_compile_options(key_index_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME key_index_test COMMAND key_index_test)
 
 # BUG-2853：Yomitan 词典自带变形（`[formOf, [rule...]]` 重定向记录）在 lookup 里被跟随。
 add_executable(yomitan_redirect_lookup_test
@@ -364,3 +423,20 @@ add_test(NAME decompressor_null_guard_test
 # directories / pre-built zips on argv (no self-contained fixture), so they are
 # NOT auto-registered as no-arg ctest cases. dict_name_uaf_e2e_test below is the
 # self-contained, fixture-driven successor that covers the same BUG-052 path.
+
+# key.index / type 3 meta 记录 / 存量词典原地升级（hash/dict_index.hpp、json/meta_record.hpp、
+# fushidicts/upgrade.hpp）：旧式 / 旧式+升级 / 新式三种状态 lookup、query、query_kanji
+# 逐字段相同（有无联合过滤器、混装）；核对记录上的键（假候选、A 指向 B 的记录）；
+# 升级幂等、遗留临时文件 / 孤儿 blobs3.bin、key.index 损坏回退、引擎装着词典时升级。
+# C ABI 入口 fushidicts_upgrade_dictionary 经真实导出符号调，所以编进 fushidicts_ffi.cpp。
+add_executable(dict_upgrade_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/dict_upgrade_test.cpp"
+    "${FUSHI_ROOT}/fushidicts_ffi.cpp")
+target_link_libraries(dict_upgrade_test PRIVATE fushidicts libzstd_static Threads::Threads)
+target_include_directories(dict_upgrade_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}" "${FUSHI_SRC}")
+if(MSVC)
+  target_compile_options(dict_upgrade_test PRIVATE /utf-8 /Zc:__cplusplus /permissive-)
+endif()
+add_test(NAME dict_upgrade_test
+         COMMAND dict_upgrade_test
+                 "${FUSHI_ROOT}/../../fushi/assets/transforms/ja.json")

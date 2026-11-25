@@ -73,27 +73,35 @@ extension _VideoLookupMining on _VideoFushiPageState {
       return _miningDraft.length;
     }
     final List<AudioCue> cues = controller.cueStreamOwning(anchor);
-    final int idx = cues.indexOf(anchor);
+    // 反馈 rLCxUJ-2i4：「句」按同时显示的多行合一切（[groupSimultaneousCues]）——ASS 把
+    // 一句拆成几条起止相同的 Dialogue 时，「上 1 句」不能取到同一句的另一行。
+    final List<List<AudioCue>> sentences = groupSimultaneousCues(cues);
+    final int idx = sentences.indexWhere(
+      (List<AudioCue> group) => group.any((AudioCue c) => identical(c, anchor)),
+    );
     if (idx < 0) {
       _miningDraft.setContext();
       return _miningDraft.length;
     }
-    // 与有声书歌词模式同一个切法（cueContextNeighbors）：一条 cue 就是一句。
-    final ({List<AudioCue> prev, List<AudioCue> next}) around =
-        cueContextNeighbors(
-          cues: cues,
+    // 与有声书歌词模式同一个切法（cueContextNeighbors），只是元素是「一句」而非一条 cue。
+    final ({List<List<AudioCue>> prev, List<List<AudioCue>> next}) around =
+        cueContextNeighbors<List<AudioCue>>(
+          cues: sentences,
           anchorIndex: idx,
           prevCount: prevCount,
           nextCount: nextCount,
         );
-    MiningDraftSentence toEntry(AudioCue cue) =>
-        MiningDraftSentence(sentence: cue.text, audioRange: _cueRange(cue));
+    // 同组 cue 起止相同，取组首的时间窗即整句时间窗。
+    MiningDraftSentence toEntry(List<AudioCue> group) => MiningDraftSentence(
+      sentence: joinSimultaneousCueText(group),
+      audioRange: _cueRange(group.first),
+    );
     _miningDraft.setContext(
       prev: <MiningDraftSentence>[
-        for (final AudioCue cue in around.prev) toEntry(cue),
+        for (final List<AudioCue> group in around.prev) toEntry(group),
       ],
       next: <MiningDraftSentence>[
-        for (final AudioCue cue in around.next) toEntry(cue),
+        for (final List<AudioCue> group in around.next) toEntry(group),
       ],
     );
     return _miningDraft.length;
@@ -284,12 +292,24 @@ extension _VideoLookupMining on _VideoFushiPageState {
           ? (controller.positionMs ?? 0)
           : miningClipTimeMs(mergedRange.startMs, clipDelayMs),
       // 多句时 cueSentence 用合并文本与 sentence 一致；草稿空时退回单 cue 文本作 fallback。
-      cueSentence: _miningDraft.isEmpty ? cue?.text : mergedSentence,
+      // 反馈 rLCxUJ-2i4：单句时也取锚点 cue 所在整句（同时显示的多行合一）。
+      cueSentence: _miningDraft.isEmpty
+          ? (cue == null
+                ? null
+                : simultaneousCueText(controller.cueStreamOwning(cue), cue))
+          : mergedSentence,
       sentence: mergedSentence,
     );
   }
 
-  Future<MinePopupResult> _onMineEntryImpl(Map<String, String> fields) async {
+  /// [awaitLocalLanding]：本地视频要不要等卡落地再回结果。查词弹窗（默认 false）不等——
+  /// 反馈 OeS0m8tLHc，弹窗点「制卡」后立刻关、视频续播，卡在后台落地；手机遥控制卡传
+  /// true，要把真实结果报回手机。网络流照旧按「在线视频制卡」偏好（见
+  /// [resolveVideoMineDispatch]）。
+  Future<MinePopupResult> _onMineEntryImpl(
+    Map<String, String> fields, {
+    bool awaitLocalLanding = false,
+  }) async {
     // 网页档：画面归站点（硬件 DRM 截不到）、没有本地媒体源——只入队，由内置档重放落卡
     // （见 web_source.part.dart）。
     if (_webMode) return _onWebMineEntry(fields);
@@ -315,17 +335,24 @@ extension _VideoLookupMining on _VideoFushiPageState {
       _resolveVideoMiningRange(controller),
       overrides,
     );
-    final int queuedEpisode = _currentEpisode;
+    final String queuedEpisode = _playingEpisodeScope;
     final AudioCue? historyCue = _lastLookupCue;
+    // 制卡历史的回跳锚点按句子所属那一行的时间轴记（原盘「全部播放」= 那一集，
+    // BUG-5356），与收藏句同一口径。
+    final ({String bookUid, int ms})? historyAnchor = historyCue == null
+        ? null
+        : _libraryAnchorAt(historyCue.startMs);
     final VideoMiningHistorySnapshot historySnapshot =
         VideoMiningHistorySnapshot.capture(
           fields: fields,
           sentence: range.sentence,
           documentTitle: _title ?? _activeBookUid,
-          bookKey: _activeBookUid,
+          bookKey: historyAnchor?.bookUid ?? _activeBookUid,
           sectionIndex: _favoriteSectionIndex,
-          cueStartMs: historyCue?.startMs,
-          cueEndMs: historyCue?.endMs,
+          cueStartMs: historyAnchor?.ms,
+          cueEndMs: historyCue == null || historyAnchor == null
+              ? null
+              : historyAnchor.ms + (historyCue.endMs - historyCue.startMs),
           dateKey: statTodayKey(),
         );
 
@@ -341,6 +368,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       sentence: range.sentence,
       cueSentence: range.cueSentence,
       overrides: overrides,
+      awaitLocalLanding: awaitLocalLanding,
       historySnapshot: recordHistory ? historySnapshot : null,
       // 在线视频后台制卡：卡在弹窗返回之后才落地，历史行跟着落地时再写。
       onBackgroundLanded: (MinePopupResult landed) {
@@ -359,7 +387,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       // 后台 / 看完再制卡：请求已冻结了草稿里的句子，当场清空（popup.js 在同一次回包
       // 里把上下文角标归零），下一次查词从空草稿重新累积。与落卡路径同一道门：页面
       // 已销毁或已换集就不碰新页面 / 新集的草稿。
-      if (!mounted || _currentEpisode != queuedEpisode) return result;
+      if (!mounted || _playingEpisodeScope != queuedEpisode) return result;
       _miningDraft.clear();
       return result;
     }
@@ -372,7 +400,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       if (_sourceReviewSession == null) {
         unawaited(_recordMinedSentenceForVideo(historySnapshot, result.noteId));
       }
-      if (!mounted || _currentEpisode != queuedEpisode) return result;
+      if (!mounted || _playingEpisodeScope != queuedEpisode) return result;
       // TODO-270 E：合并卡已落地 → 清空多句草稿（popup.js 同事件把角标清零，两端在
       // 同一事件归零、不漂移）。下一次查词从空草稿重新累积。
       _miningDraft.clear();
@@ -406,7 +434,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       _resolveVideoMiningRange(controller),
       overrides,
     );
-    final int queuedEpisode = _currentEpisode;
+    final String queuedEpisode = _playingEpisodeScope;
 
     final MinePopupResult result = await _mineVideoCard(
       fields: fields,
@@ -419,7 +447,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       updateNoteId: noteId,
     );
     if (result.ankiConnect) {
-      if (!mounted || _currentEpisode != queuedEpisode) return result;
+      if (!mounted || _playingEpisodeScope != queuedEpisode) return result;
       _miningDraft.clear();
     }
     return result;
@@ -486,7 +514,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         range: range,
         overrides: overrides,
         controller: controller,
-        episode: _currentEpisode,
+        episodeScope: _playingEpisodeScope,
         frame: frame,
         repo: ref.read(ankiRepositoryProvider),
       ),
@@ -569,7 +597,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
     // 没有可抽取的播放器，同样作罢。
     if (!mounted ||
         !identical(_controller, request.controller) ||
-        _currentEpisode != request.episode) {
+        _playingEpisodeScope != request.episodeScope) {
       if (mounted) {
         _showOsd(
           t.video_mine_overwrite_cancelled_episode,
@@ -632,19 +660,22 @@ extension _VideoLookupMining on _VideoFushiPageState {
     Future<void> Function()? writeFieldsMedia,
     Future<Uint8List?>? frozenCurrentFrame,
     bool detachedFromDialog = false,
+    bool awaitLocalLanding = true,
   }) async {
     final VideoPlayerController? controller = _controller;
     if (controller == null || !_discExtractionAllowed(controller)) {
       onFailure?.call('video_extraction_unavailable');
       return const MinePopupResult();
     }
-    // 在线视频：弹窗等不等这张卡（见 [VideoOnlineMiningMode]）。覆盖已有卡片 / 回看会话
-    // 要拿到落卡结果才有意义，恒等待；本地文件本就秒出，恒等待（= 改动前行为）。
-    final VideoOnlineMiningMode onlineMode = resolveVideoOnlineMiningMode(
+    // 调用方等不等这张卡（见 [resolveVideoMineDispatch]）。覆盖已有卡片 / 回看会话要拿到
+    // 落卡结果才有意义，恒等待；查词弹窗的新制卡不等（反馈 OeS0m8tLHc：弹窗立刻关、
+    // 视频续播），本地视频也走后台；网络流再按「在线视频制卡」偏好分后台 / 看完再制。
+    final VideoMineDispatch dispatch = resolveVideoMineDispatch(
       preferred: appModel.videoOnlineMiningMode,
       mediaSource: controller.miningSource,
       overwrite: updateNoteId != null || forceForeground,
       sourceReview: _sourceReviewSession != null,
+      awaitLocalLanding: awaitLocalLanding,
     );
 
     // 入队前立即冻结所有播放器/页面输入。换集会复用或 dispose controller，后续任务绝不能
@@ -701,7 +732,16 @@ extension _VideoLookupMining on _VideoFushiPageState {
     );
     final int? audioStreamIndex = audioPlan.audioStreamIndex;
     final int audioStreamCount = controller.realAudioStreamCount;
-    final int episode = _currentEpisode;
+    // 句子音频跟随播放音量（d7mXlstcv9，与歌曲 / 有声书卡同一开关同一套换算）：点击当下
+    // 播放器的音量（静音按 0 算 → 不跟随，截一段无声的卡没有意义）；开关关 → null，
+    // 原始电平、ffmpeg 参数与现状逐字节相同。
+    final double? audioGainDb = videoMiningClipGainDb(
+      followPlayback: appModel.miningAudioFollowPlaybackVolume,
+      volume: controller.muted ? 0 : controller.requestedVolume,
+      webBackend: controller.isWebBackend,
+    );
+    final int episode = _playingEpisodeIndex;
+    final String episodeScope = _playingEpisodeScope;
     final SourceReviewSession? reviewSession = _sourceReviewSession;
     final (String sourceUid, int sourceEpisode) = _isRemote
         ? _remotePositionKeyForIndex(episode)
@@ -715,6 +755,16 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final bool contentAddressedStream =
         _resolvedStreamInfo != null &&
         CardSourceLink.isContentAddressedVideoUid(sourceUid);
+    // 拍板台 IFCPPprIpT：远程播放互联 host 的视频，字节在 host 上——由 host 对同一个
+    // 文件算指纹（与本地卡同口径），uid 是 host 的 bookUid。回跳时本机有同一份字节就
+    // 本地播，没有就经互联在线播（card_source_router）。Jellyfin / Emby / Plex 没有
+    // 原文件可算，仍不带链接。
+    final RemoteVideoFingerprintSource? hostFingerprints = switch (_isRemote
+        ? _effectiveRemoteClient
+        : null) {
+      final RemoteVideoFingerprintSource source => source,
+      _ => null,
+    };
     // A still-only card has no subtitle range, but its source is the frame
     // being viewed now; it must not accidentally link to the start of the film.
     final int sourceStartMs = clipEndMs > clipStartMs
@@ -729,6 +779,25 @@ extension _VideoLookupMining on _VideoFushiPageState {
         );
       } else if (contentAddressedStream) {
         fingerprint = null;
+      } else if (hostFingerprints != null) {
+        // 老 host（null）/ host 担保不了这份字节（RemoteVideoFingerprintUnavailable，
+        // BUG-4782）/ 这一刻连不上 host：没有可担保的字节身份，卡片
+        // 照常制、只是不带链接（远程卡以前一直如此）。与本地不同，这里不中止整张卡：
+        // 失败的是「来源链接」这一附属信息，不是卡片内容；原因进错误日志。
+        try {
+          fingerprint = await hostFingerprints.fetchRemoteVideoFingerprint(
+            sourceUid,
+            episodeIndex: sourceEpisode,
+          );
+        } on Object catch (error, stack) {
+          ErrorLogService.instance.log(
+            'video.remoteSourceFingerprint',
+            error,
+            stack,
+          );
+          return null;
+        }
+        if (fingerprint == null) return null;
       } else {
         return null;
       }
@@ -792,8 +861,46 @@ extension _VideoLookupMining on _VideoFushiPageState {
                 } catch (_) {}
                 return null;
               });
-    // 不 await：先把本任务按点击顺序送进共享队列，轮到它时再解析临时目录。否则两个
-    // 连续点击可能因 path_provider 返回先后不同而逆序入队。
+    // 反馈 OeS0m8tLHc：不陪等的制卡（后台 / 看完再制）失败时，弹窗早就关了、视频在播，
+    // 结果卡上的「重试」是唯一的重来入口。用这一次冻结的全部输入（字段 / 区间 / 覆盖项 /
+    // 点击当下那一帧）重跑；换集 / 换播放器后区间对不上现在的媒体，不重跑、说一声。
+    // 等待落地的调用方（覆盖 / 回看 / 遥控）自己拿得到失败结果，不挂重试。
+    final VoidCallback? retry =
+        dispatch == VideoMineDispatch.awaitLanding || silent
+        ? null
+        : () {
+            if (!mounted ||
+                !identical(_controller, controller) ||
+                _playingEpisodeScope != episodeScope) {
+              if (mounted) {
+                _showOsd(
+                  t.video_mine_retry_cancelled_episode,
+                  severity: ToastSeverity.warning,
+                );
+              }
+              return;
+            }
+            unawaited(
+              _mineVideoCard(
+                fields: fields,
+                clipStartMs: clipStartMs,
+                clipEndMs: clipEndMs,
+                stillFrameAtMs: stillFrameAtMs,
+                sentence: sentence,
+                cueSentence: cueSentence,
+                overrides: overrides,
+                historySnapshot: historySnapshot,
+                onBackgroundLanded: onBackgroundLanded,
+                onFailure: onFailure,
+                writeFieldsMedia: writeFieldsMedia,
+                frozenCurrentFrame: currentFrameSnapshot,
+                detachedFromDialog: true,
+                awaitLocalLanding: awaitLocalLanding,
+              ),
+            );
+          };
+    // 不 await：先把本任务按点击顺序送进共享落卡队列，临时目录由引擎的抽取段自己等。
+    // 否则两个连续点击可能因 path_provider 返回先后不同而逆序入队。
     final Future<String> tempDir = getTemporaryDirectory().then(
       (Directory value) => value.path,
     );
@@ -835,17 +942,14 @@ extension _VideoLookupMining on _VideoFushiPageState {
             : null);
     // 统计 / 历史归属在点击当下冻结：后台落卡时页面可能已经关了。
     final FushiDatabase mineDb = appModel.database;
-    final ({String bookKey, String title}) statIdentity = (
-      bookKey: _activeBookUid,
-      title: _title ?? '',
-    );
+    final ({String bookKey, String title}) statIdentity = _studyStatsIdentity;
     // 看完再制卡：媒体照常备好，但交给暂存队列而不是 Anki（见 [VideoMineQueue]）。
     Future<MineOutcome> Function({
       required String rawPayloadJson,
       required AnkiMiningContext context,
     })?
     stageNote;
-    if (onlineMode == VideoOnlineMiningMode.deferred) {
+    if (dispatch == VideoMineDispatch.deferred) {
       final Future<VideoMineQueue> queueFuture = _videoMineQueue();
       final String queueBookUid = _activeBookUid;
       final String videoKey = '$sourceUid#$sourceEpisode';
@@ -857,6 +961,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         collectionTag: appModel.autoAddBookNameToTags
             ? BaseAnkiRepository.sanitizeTitleTag(_playlistTitle)
             : null,
+        seriesTitle: _playlistTitle,
         statBookKey: statIdentity.bookKey,
         statTitle: statIdentity.title,
         recordHistory: historySnapshot != null,
@@ -981,6 +1086,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         audioStreamCount: audioStreamCount,
         audioFrontCenter: audioPlan.frontCenter,
         audioFrontCenterNeedsProbe: audioPlan.frontCenterNeedsProbe,
+        audioGainDb: audioGainDb,
         // TODO-115：视频来源 → 卡片追加 `video` 分类标签。
         source: AnkiMiningSource.video,
         sourceLinkResolver: resolveSourceLink,
@@ -999,6 +1105,9 @@ extension _VideoLookupMining on _VideoFushiPageState {
         // 合集/系列名标签（同上开关）：播放列表下用系列名 _playlistTitle（col.name，已在内存）
         // 作独立 tag，与剧集名并列；单视频/远端无系列名时为 null 不追加。
         collectionTag: collectionTag,
+        // 出处的上一级（反馈 MCJLSBR5Wg）：SRS 出处按「系列 → 集」两级分组。与 collectionTag 同一个来源
+        // （本地播放列表的合集名 / 远端作品名），但不看标签开关、不清洗。单视频为 null，出处只有集这一级。
+        seriesTitle: _playlistTitle,
         updateNoteId: updateNoteId,
         stillFallback: () => currentFrameSnapshot,
         // 高级制卡「不要音频 / 不要图片」（只对这一张卡）：引擎跳过对应抽取，两者都
@@ -1048,6 +1157,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
         onFailure: onFailure,
         undoRepo: repo,
         expression: fields['expression'],
+        retry: retry,
       );
       _reportSentenceAudioFallback(
         reason: audioSourceFallback,
@@ -1058,7 +1168,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
       return landed;
     }
 
-    if (onlineMode == VideoOnlineMiningMode.wait) return land(await job);
+    if (dispatch == VideoMineDispatch.awaitLanding) return land(await job);
     // BUG-3492：后台**写入 Anki** 的这张卡（不是暂存、不是回看改卡）在落地前可以被排队
     // 覆盖。登记在途，落地时（成功或失败）结算排队的覆盖请求。
     final String? overwriteKey =
@@ -1124,6 +1234,7 @@ extension _VideoLookupMining on _VideoFushiPageState {
             }
             onBackgroundLanded?.call(landed);
           }),
+      retry: retry,
     );
     return const MinePopupResult.queued();
   }
@@ -1146,21 +1257,30 @@ extension _VideoLookupMining on _VideoFushiPageState {
     void Function(String code)? onFailure,
     BaseAnkiRepository? undoRepo,
     String? expression,
+    VoidCallback? retry,
   }) {
     // BUG-296 / TODO-390：应带句子音频却抽取失败 → 显式 OSD + 中止，不建无音频卡。
     if (res.aborted) {
       onFailure?.call(res.abortReason ?? 'sentence_audio_export_failed');
       if (mounted && !silent) {
-        _showOsd(
-          t.card_export_failed_detail(
-            reason:
-                res.abortReason ??
-                (audioFailure == null
-                    ? 'sentence audio export failed'
-                    : 'sentence audio export failed: $audioFailure'),
-          ),
-          severity: ToastSeverity.error,
+        final String message = t.card_export_failed_detail(
+          reason:
+              res.abortReason ??
+              (audioFailure == null
+                  ? 'sentence audio export failed'
+                  : 'sentence audio export failed: $audioFailure'),
         );
+        // 不陪等的制卡（[retry] 非空）：弹窗早关了，结果卡带「重试」。
+        if (retry != null) {
+          _showMineOsd(
+            message,
+            MineToastStatus.failed,
+            retry: retry,
+            term: expression,
+          );
+        } else {
+          _showOsd(message, severity: ToastSeverity.error);
+        }
       }
       return const MinePopupResult();
     }
@@ -1215,56 +1335,56 @@ extension _VideoLookupMining on _VideoFushiPageState {
     final MinedCardUndo? undo = overwrite || undoRepo == null
         ? null
         : MinedCardUndo.of(undoRepo, outcome, expression: expression);
-    _showMineOsd(described.message, described.status, undo);
+    // 反馈 OeS0m8tLHc：只有真失败才挂「重试」（重复卡片重试也还是重复）。
+    _showMineOsd(
+      described.message,
+      described.status,
+      undo: undo,
+      retry: described.status == MineToastStatus.failed ? retry : null,
+      term: expression,
+      detail: described.detail,
+      fallbackAction:
+          mineFailureToastAction(outcome) ?? mineQueuedToastAction(outcome),
+    );
     return result;
   }
 
   /// 视频制卡的统计记账（= [DictionaryPageMixin.recordMined] 对视频来源的那一次写入），
-  /// 但不经 `ref`：后台落卡时页面可能已经销毁。best-effort，失败吞掉。
+  /// 但不经 `ref`：后台落卡时页面可能已经销毁。实际写入在 [recordVideoMineStat]——
+  /// 暂存队列写入 Anki 时记的是同一笔账，两边共用一份。
   Future<void> _recordVideoMineStat(
     FushiDatabase db,
     ({String bookKey, String title}) identity,
-  ) async {
-    try {
-      await db.recordMiningEvent(
-        bookKey: identity.bookKey,
-        title: identity.title,
-        sourceType: kStatSourceVideo,
-        at: DateTime.now(),
-      );
-    } catch (e, st) {
-      debugPrint('[fushi-stats] video recordMiningEvent failed: $e\n$st');
-    }
-  }
+  ) => recordVideoMineStat(
+    db,
+    bookKey: identity.bookKey,
+    title: identity.title,
+    at: DateTime.now(),
+  );
 
   /// TODO-633: land one mined-sentence history row for a video card. Locator
   /// anchors mirror _toggleFavoriteSentenceForVideo (bookUid + episode +
   /// cue.startMs/duration) so collections reuses _openVideoSentence to jump back.
-  /// Best-effort; failure is swallowed + logged (does not break mining).
+  /// Best-effort; the write (and its failure logging) lives in
+  /// [recordVideoMinedSentence], shared with the staged-queue commit.
   Future<void> _recordMinedSentenceForVideo(
     VideoMiningHistorySnapshot snapshot,
     int? noteId, {
     FushiDatabase? db,
-  }) async {
-    try {
-      await (db ?? appModel.database).addMinedSentence(
-        source: kStatSourceVideo,
-        dateKey: snapshot.dateKey,
-        expression: snapshot.expression,
-        reading: snapshot.reading,
-        glossary: snapshot.glossary,
-        sentence: snapshot.sentence,
-        documentTitle: snapshot.documentTitle,
-        bookKey: snapshot.bookKey,
-        sectionIndex: snapshot.sectionIndex,
-        positionMs: snapshot.positionMs,
-        durationMs: snapshot.durationMs,
-        noteId: noteId,
-      );
-    } catch (e, st) {
-      debugPrint('[fushi-stats] video addMinedSentence failed: $e\n$st');
-    }
-  }
+  }) => recordVideoMinedSentence(
+    db ?? appModel.database,
+    dateKey: snapshot.dateKey,
+    expression: snapshot.expression,
+    reading: snapshot.reading,
+    glossary: snapshot.glossary,
+    sentence: snapshot.sentence,
+    documentTitle: snapshot.documentTitle,
+    bookKey: snapshot.bookKey,
+    sectionIndex: snapshot.sectionIndex,
+    positionMs: snapshot.positionMs,
+    durationMs: snapshot.durationMs,
+    noteId: noteId,
+  );
 }
 
 /// 制卡 ffmpeg 的远端输入是否改走本机中继（与播放器同一条取流路径）。
@@ -1323,7 +1443,7 @@ class _QueuedVideoOverwrite {
     required this.range,
     required this.overrides,
     required this.controller,
-    required this.episode,
+    required this.episodeScope,
     required this.frame,
     required this.repo,
   });
@@ -1337,7 +1457,7 @@ class _QueuedVideoOverwrite {
 
   /// 排队时的播放器与集数：落地时变了就不覆盖。
   final VideoPlayerController controller;
-  final int episode;
+  final String episodeScope;
 
   /// 排队时的查词画面（高级制卡锁帧或当时截图）；不要图片时 null。
   final Future<Uint8List?>? frame;

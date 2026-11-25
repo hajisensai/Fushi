@@ -4,8 +4,11 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/dictionary_repository.dart'
+    show RemoteDictionary;
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/dictionary_dialog_page.dart';
+import 'package:fushi/src/pages/implementations/dictionary_import_surface.dart';
 import 'package:fushi/src/pages/implementations/dictionary_manager_panels.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -43,6 +46,10 @@ class _FakeAppModel extends AppModel {
   @override
   List<Dictionary> get pitchDictionaries => _ofType(DictionaryType.pitch);
 
+  // 没配服务器：服务器托管词典为空（真 AppModel 的 dictRepo 在这里没初始化）。
+  @override
+  List<RemoteDictionary> get remoteDictionaries => const <RemoteDictionary>[];
+
   @override
   Map<String, DictionaryFormat> get dictionaryFormats =>
       <String, DictionaryFormat>{'yomichan': YomichanFormat.instance};
@@ -72,6 +79,10 @@ class _FakeAppModel extends AppModel {
     ];
   }
 
+  // 没配服务器：没有同名目录行可镜像（真 AppModel 走 dictRepo，这里未初始化）。
+  @override
+  Future<void> setCatalogRowsHiddenNamed(String name, bool hidden) async {}
+
   @override
   Future<void> setDictionaryCollapseState(
     Dictionary dictionary,
@@ -83,6 +94,26 @@ class _FakeAppModel extends AppModel {
     dictionary.collapsedLanguages = state == DictionaryCollapseState.collapsed
         ? <String>['ja']
         : <String>[];
+  }
+
+  @override
+  Future<void> setDictionaryKanjiCardCollapseState(
+    Dictionary dictionary,
+    DictionaryCollapseState state,
+  ) async {
+    if (!dictionary.hasEmbeddedKanji) {
+      return setDictionaryCollapseState(dictionary, state);
+    }
+    final Map<String, String> metadata = Map<String, String>.of(
+      dictionary.metadata,
+    )..remove(kDictKanjiCollapseKey);
+    if (state != DictionaryCollapseState.inherit) {
+      metadata[kDictKanjiCollapseKey] = state.name;
+    }
+    final int index = store.indexWhere(
+      (Dictionary d) => d.name == dictionary.name,
+    );
+    store[index] = dictionary.copyWith(metadata: metadata);
   }
 
   @override
@@ -102,7 +133,10 @@ class _FakeAppModel extends AppModel {
   }
 
   @override
-  Future<void> updateDictionaryOrder(List<Dictionary> newDictionaries) async {
+  Future<void> updateDictionaryOrder(
+    List<Dictionary> newDictionaries, {
+    String? moved,
+  }) async {
     orderWrites++;
     for (final Dictionary updated in newDictionaries) {
       store.firstWhere((Dictionary d) => d.name == updated.name).order =
@@ -110,27 +144,17 @@ class _FakeAppModel extends AppModel {
     }
   }
 
-  /// 与 `DictionaryRepository.setDictionaryLanguageOverride` 同一语义：换组则
-  /// 排到新组最后，本分区按 [sectionAfterLanguageChange] 规范化重编号；同组不动。
+  /// 与 `DictionaryRepository.setDictionaryLanguageOverride` 同一语义：只改语言，
+  /// 不动任何序号（语言只是标签，拍板台 zBzX4B7037）。
   @override
   Future<void> setDictionaryLanguageOverride(
     Dictionary dictionary,
     String? language,
   ) async {
-    final Dictionary stored = store.firstWhere(
-      (Dictionary d) => d.name == dictionary.name,
-    );
-    final String? before = dictionaryLanguageGroupOf(stored);
-    stored.languageOverride = language;
-    if (dictionaryLanguageGroupOf(stored) != before) {
-      final List<Dictionary> section = sectionAfterLanguageChange(
-        _ofType(stored.type),
-        stored,
-      );
-      for (int i = 0; i < section.length; i++) {
-        section[i].order = i;
-      }
-    }
+    store
+            .firstWhere((Dictionary d) => d.name == dictionary.name)
+            .languageOverride =
+        language;
   }
 
   @override
@@ -260,10 +284,10 @@ void main() {
   });
 
   testWidgets(
-    'BUG-3573: kanji section rows of a mixed dictionary offer no collapse '
-    'control (it would edit the term part)',
+    'BUG-3573 + 6uasoIUvSR: the kanji section collapse control of a mixed '
+    'dictionary edits its kanji cards, never the term part',
     (WidgetTester tester) async {
-      await _pumpPage(
+      final _FakeAppModel model = await _pumpPage(
         tester,
         size: const Size(1280, 800),
         dictionaries: <Dictionary>[
@@ -287,27 +311,42 @@ void main() {
       const ValueKey<String> rowCollapseKey = ValueKey<String>(
         'dict-row-collapse-Mixed',
       );
+      Dictionary mixed() =>
+          model.store.firstWhere((Dictionary d) => d.name == 'Mixed');
 
       // 「术语」分区：混合词典的术语部分照常有折叠控件（行内钮 + 详情分段）。
       expect(find.byKey(rowCollapseKey), findsOneWidget);
       await tester.tap(find.text('Mixed'));
       await _settle(tester);
-      expect(
-        find.byKey(const ValueKey<String>('dict-detail-Mixed')),
-        findsOneWidget,
-      );
       expect(find.byKey(collapseKey), findsOneWidget);
 
-      // 「汉字」分区：同一本的汉字部分不给折叠控件（汉字卡不折叠）。切分区时详情
-      // 侧板仍停在这本（再点一下行会把详情收起），此时它按「汉字」分区的上下文渲染。
+      // 「汉字」分区：同一本的汉字部分也有折叠控件（汉字卡默认折叠成一行，逐本三态），
+      // 改的是汉字部分自己的状态。切分区时详情侧板仍停在这本。
       await tester.tap(find.textContaining(t.dictionary_section_kanji));
       await _settle(tester);
       expect(
         find.byKey(const ValueKey<String>('dict-detail-Mixed')),
         findsOneWidget,
       );
-      expect(find.byKey(collapseKey), findsNothing);
-      expect(find.byKey(rowCollapseKey), findsNothing, reason: '行内折叠钮与详情同一判据');
+      expect(find.byKey(collapseKey), findsOneWidget);
+      expect(find.byKey(rowCollapseKey), findsOneWidget);
+      expect(
+        find.byKey(const ValueKey<String>('dict-row-collapse-KANJIDIC')),
+        findsOneWidget,
+        reason: '纯 kanji 词典同样可设汉字卡的默认展示',
+      );
+
+      await tester.tap(find.byKey(rowCollapseKey));
+      await _settle(tester);
+      expect(
+        mixed().kanjiCardCollapseStateFor(JapaneseLanguage.instance),
+        DictionaryCollapseState.expanded,
+      );
+      expect(
+        mixed().collapseStateFor(JapaneseLanguage.instance),
+        DictionaryCollapseState.inherit,
+        reason: '汉字分区的控件不能改到术语部分',
+      );
       expect(tester.takeException(), isNull);
     },
   );
@@ -412,7 +451,7 @@ void main() {
     await tester.tap(find.byKey(const ValueKey<String>('dict-batch-delete')));
     await _settle(tester);
     expect(find.text('Delete 1 dictionaries?'), findsOneWidget);
-    await tester.tap(find.text('DELETE').last);
+    await tester.tap(find.text('Delete').last);
     await _settle(tester);
     await _settle(tester);
     expect(model.deleted, <String>['大辞林']);
@@ -464,15 +503,21 @@ void main() {
       dictionaries: <Dictionary>[],
       platform: TargetPlatform.android,
     );
-    expect(find.byType(DictionaryManagerEmptyState), findsOneWidget);
-    expect(
-      find.byKey(const ValueKey<String>('dict-empty-import')),
-      findsOneWidget,
-    );
-    expect(
-      find.byKey(const ValueKey<String>('dict-empty-download')),
-      findsOneWidget,
-    );
+    // IM23：与库页导入面同一套引导首块 + 方式块（导入词典 / 导入文件夹词典 /
+    // 下载推荐词典）。文件夹词典的门是 `!Platform.isIOS`（宿主测试机不是 iOS）。
+    expect(find.byType(DictionaryImportEmptySurface), findsOneWidget);
+    expect(find.text(t.dictionaries_menu_empty), findsOneWidget);
+    for (final String id in <String>[
+      'dict-import-files',
+      'dict-import-folder',
+      'dict-download',
+    ]) {
+      expect(
+        find.byKey(ValueKey<String>('import-method-$id')),
+        findsOneWidget,
+        reason: id,
+      );
+    }
     expect(tester.takeException(), isNull);
   });
   // ── 移到第几位 ─────────────────────────────────────────────────────────
@@ -603,7 +648,7 @@ void main() {
     );
     await openMoveTo(tester, 'Dict 1');
     await tester.enterText(positionField(), '4');
-    await tester.tap(find.text('CANCEL'));
+    await tester.tap(find.text('Cancel'));
     await _settle(tester);
     expect(find.byType(DictionaryPositionDialog), findsNothing);
     expect(model.orderWrites, 0);
@@ -627,6 +672,10 @@ void main() {
     );
     expect(moveButton().enabled, isFalse);
 
+    // PR #3515 后行高 / 页头变高，1280×800 下第六行落在左列视口之外（被批量栏
+    // 上沿裁掉，tap 命中不到）：先把它滚进视口再点。
+    await tester.ensureVisible(find.text('Dict 6'));
+    await _settle(tester);
     await tester.tap(find.text('Dict 6'));
     await _settle(tester);
     expect(moveButton().enabled, isTrue);
@@ -644,7 +693,7 @@ void main() {
     expect(_termOrder(model).first, 'Dict 6');
   });
 
-  group('language groups (D_Nz5R4vSH)', () {
+  group('language tags and filter (zBzX4B7037)', () {
     List<Dictionary> mixedLanguages() => <Dictionary>[
       Dictionary(
         name: 'JMdict',
@@ -667,40 +716,53 @@ void main() {
       Dictionary(name: 'local-pack', formatKey: 'yomichan', order: 3),
     ];
 
-    testWidgets('one header per language, unlabelled group last', (
-      WidgetTester tester,
-    ) async {
+    double rowTop(WidgetTester tester, String name) => tester
+        .getTopLeft(find.byKey(ValueKey<String>('dict-row-switch-$name')))
+        .dy;
+
+    Finder rowLanguageTag(String name, String label) => find.descendant(
+      of: find.byKey(ValueKey<String>('dict-row-language-$name')),
+      matching: find.text(label),
+    );
+
+    testWidgets('mixed languages: one list in lookup order, a language tag on '
+        'labelled rows and a language filter bar', (WidgetTester tester) async {
       await _pumpPage(
         tester,
         size: const Size(1280, 800),
         dictionaries: mixedLanguages(),
       );
       expect(tester.takeException(), isNull);
-      expect(find.text('日本語 (ja) · 2'), findsOneWidget);
-      expect(find.text('English (en) · 1'), findsOneWidget);
-      expect(find.text('Language not set · 1'), findsOneWidget);
-      final double ja = tester.getTopLeft(find.text('日本語 (ja) · 2')).dy;
-      final double en = tester.getTopLeft(find.text('English (en) · 1')).dy;
-      final double none = tester
-          .getTopLeft(find.text('Language not set · 1'))
-          .dy;
-      expect(ja < en && en < none, isTrue);
-      // 大辞林 紧跟 JMdict 在日语组里：组内序号 2，而不是全局第 3。
-      expect(tester.getTopLeft(find.text('大辞林')).dy, lessThan(en));
-    });
-
-    testWidgets('a single language group shows no group header', (
-      WidgetTester tester,
-    ) async {
-      // 全部未标注语言（一组）。
-      await _pumpPage(tester, size: const Size(1280, 800));
-      expect(tester.takeException(), isNull);
-      expect(find.textContaining('Language not set'), findsNothing);
+      // 不再按语言分组：从上到下就是全局查词顺序。
+      expect(rowTop(tester, 'JMdict'), lessThan(rowTop(tester, 'OALDPE')));
+      expect(rowTop(tester, 'OALDPE'), lessThan(rowTop(tester, '大辞林')));
+      expect(rowTop(tester, '大辞林'), lessThan(rowTop(tester, 'local-pack')));
+      expect(rowLanguageTag('JMdict', '日本語 (ja)'), findsOneWidget);
+      expect(rowLanguageTag('OALDPE', 'English (en)'), findsOneWidget);
       expect(
-        find.byKey(const ValueKey<String>('dict-language-group-')),
+        find.byKey(const ValueKey<String>('dict-row-language-local-pack')),
         findsNothing,
       );
-      // 全部日语（也是一组）。
+      for (final String id in <String>['all', 'ja', 'en', 'unset']) {
+        expect(
+          find.byKey(ValueKey<String>('dict-language-filter-$id')),
+          findsOneWidget,
+          reason: 'filter chip $id',
+        );
+      }
+    });
+
+    testWidgets('a single language shows no tags and no filter bar', (
+      WidgetTester tester,
+    ) async {
+      // 全部未标注语言。
+      await _pumpPage(tester, size: const Size(1280, 800));
+      expect(tester.takeException(), isNull);
+      expect(
+        find.byKey(const ValueKey<String>('dict-language-filter-bar')),
+        findsNothing,
+      );
+      // 全部日语。
       await _pumpPage(
         tester,
         size: const Size(1280, 800),
@@ -709,18 +771,20 @@ void main() {
             if (d.name != 'OALDPE' && d.name != 'local-pack') d,
         ],
       );
-      expect(find.textContaining('日本語 (ja)'), findsNothing);
       expect(
-        find.byKey(const ValueKey<String>('dict-language-group-ja')),
+        find.byKey(const ValueKey<String>('dict-language-filter-bar')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('dict-row-language-JMdict')),
         findsNothing,
       );
       expect(find.text('JMdict'), findsOneWidget);
       expect(find.text('大辞林'), findsOneWidget);
     });
 
-    testWidgets('Alt+Down only moves inside the language group', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('Alt+Down moves across languages: a labelled dictionary goes '
+        'below unlabelled ones (feedback)', (WidgetTester tester) async {
       final _FakeAppModel model = await _pumpPage(
         tester,
         size: const Size(1280, 800),
@@ -729,55 +793,81 @@ void main() {
       Focus.of(tester.element(find.text('JMdict'))).requestFocus();
       await tester.pump();
       await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-      await tester.pump();
-      // 已是日语组最后一本：再按不越过英语组，不写顺序。
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
-      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
-      await tester.pump();
-      expect(model.orderWrites, 1);
-      // 日语组内换位；写回的是规范顺序（各组首尾相接），英语 / 未标注组的组内
-      // 顺序不动——显示顺序 == 查词顺序。
-      expect(_termOrder(model), <String>[
-        '大辞林',
-        'JMdict',
-        'OALDPE',
-        'local-pack',
-      ]);
-    });
-
-    testWidgets('a stale group (membership changed elsewhere) still reorders '
-        'from the latest partition, no exception', (WidgetTester tester) async {
-      final _FakeAppModel model = await _pumpPage(
-        tester,
-        size: const Size(1280, 800),
-        dictionaries: mixedLanguages(),
-      );
-      // 列表按 [JMdict, 大辞林] 渲染了日语组；随后别处（ctl 路由 / 另一窗口）把
-      // OALDPE 改成日语，页面还没重建，手里仍是旧组。
-      model.store
-              .firstWhere((Dictionary d) => d.name == 'OALDPE')
-              .languageOverride =
-          'ja';
-      Focus.of(tester.element(find.text('JMdict'))).requestFocus();
-      await tester.pump();
-      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
-      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      for (int i = 0; i < 3; i++) {
+        await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+        await tester.pump();
+      }
       await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
       await tester.pump();
       expect(tester.takeException(), isNull);
-      expect(model.orderWrites, 1);
-      // 最新日语组是 [JMdict, OALDPE, 大辞林]：JMdict 下移一位。
+      expect(model.orderWrites, 3);
       expect(_termOrder(model), <String>[
         'OALDPE',
-        'JMdict',
         '大辞林',
         'local-pack',
+        'JMdict',
       ]);
     });
 
-    testWidgets('changing a dictionary language moves it to the end of the '
-        'new group', (WidgetTester tester) async {
+    testWidgets('the language filter narrows the list; moving inside it hops '
+        'over hidden rows in the full order', (WidgetTester tester) async {
+      final _FakeAppModel model = await _pumpPage(
+        tester,
+        size: const Size(1280, 800),
+        dictionaries: mixedLanguages(),
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('dict-language-filter-ja')),
+      );
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('dict-row-switch-JMdict')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('dict-row-switch-大辞林')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('dict-row-switch-OALDPE')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('dict-row-switch-local-pack')),
+        findsNothing,
+      );
+
+      Focus.of(tester.element(find.text('JMdict').first)).requestFocus();
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+      await tester.pump();
+      expect(model.orderWrites, 1);
+      // 筛选后挪一格 = 越过屏幕上相邻的 大辞林；被筛掉的 OALDPE 不受影响。
+      expect(_termOrder(model), <String>[
+        'OALDPE',
+        '大辞林',
+        'JMdict',
+        'local-pack',
+      ]);
+
+      await tester.tap(
+        find.byKey(const ValueKey<String>('dict-language-filter-unset')),
+      );
+      await _settle(tester);
+      expect(
+        find.byKey(const ValueKey<String>('dict-row-switch-local-pack')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('dict-row-switch-JMdict')),
+        findsNothing,
+      );
+    });
+
+    testWidgets('changing a dictionary language keeps its position and '
+        'updates its tag', (WidgetTester tester) async {
       final _FakeAppModel model = await _pumpPage(
         tester,
         size: const Size(1280, 800),
@@ -792,28 +882,14 @@ void main() {
       await tester.tap(find.text('English (en)').last);
       await _settle(tester);
 
-      expect(find.text('English (en) · 2'), findsOneWidget);
-      expect(find.text('日本語 (ja) · 1'), findsOneWidget);
-      final List<String> en = <String>[
-        for (final Dictionary d in model.termDictionaries)
-          if (dictionaryLanguageGroupOf(d) == 'en') d.name,
-      ];
-      expect(en, <String>['OALDPE', 'JMdict']);
-      // 按行尾开关定位列表行（右侧详情里也有一个 JMdict 标题）。
-      expect(
-        tester
-            .getTopLeft(
-              find.byKey(const ValueKey<String>('dict-row-switch-JMdict')),
-            )
-            .dy,
-        greaterThan(
-          tester
-              .getTopLeft(
-                find.byKey(const ValueKey<String>('dict-row-switch-OALDPE')),
-              )
-              .dy,
-        ),
-      );
+      expect(_termOrder(model), <String>[
+        'JMdict',
+        'OALDPE',
+        '大辞林',
+        'local-pack',
+      ]);
+      expect(rowLanguageTag('JMdict', 'English (en)'), findsOneWidget);
+      expect(rowTop(tester, 'JMdict'), lessThan(rowTop(tester, 'OALDPE')));
     });
   });
 }

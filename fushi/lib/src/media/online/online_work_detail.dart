@@ -19,6 +19,7 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/focus/fushi_focus_controller.dart' show FushiFocusId;
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/media/detail/media_poster_detail.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -72,7 +73,18 @@ class OnlineWorkHeader extends StatelessWidget {
     this.overline,
     this.extra,
     this.coverMaterial,
+    this.posterPanel = false,
+    this.coverImage,
   });
+
+  /// 重设计外壳的海报面板版式（[MediaPosterDetailHero]）：调用页把本头部排进
+  /// [MediaPosterDetailLayout] 时传 true；数据与按钮 key 同一份，只换视觉。
+  /// 墨水屏 / 旧版式保持 false（[MediaDetailHero]）。
+  final bool posterPanel;
+
+  /// [cover] 画的那张图的图片源（海报位按它定比例；没给按 2:3）。拿不到
+  /// ImageProvider 的取图组件（扩展源字节流）不传。
+  final ImageProvider? coverImage;
 
   /// 封面卡的条目材质（与该域库页一致：小说 / 漫画 = 光面书皮、视频 = 光面
   /// 海报），由各域作品页传；null = 不套材质。
@@ -119,6 +131,7 @@ class OnlineWorkHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (posterPanel) return _buildPosterHero();
     final String? summary = description?.trim();
     final List<MediaDetailChip> allChips = <MediaDetailChip>[
       for (final String? line in lines)
@@ -169,6 +182,51 @@ class OnlineWorkHeader extends StatelessWidget {
               extra: extra,
             )
           : null,
+    );
+  }
+}
+
+extension on OnlineWorkHeader {
+  /// 海报面板 hero（[posterPanel]）：overline → 小标签行，[lines] / [chips] /
+  /// 类型标签 → 信息胶囊，[description] → 简介，[extra] → 按钮下的附加内容；
+  /// 按钮组与简介沿用原 key（`online_work_actions` / `online_work_more` /
+  /// `online_work_description`）。没有横版背景图，背景带拿封面重模糊垫底。
+  Widget _buildPosterHero() {
+    final Widget? primary =
+        primaryAction ?? (actions.isEmpty ? null : actions.first);
+    final List<Widget> secondary = primaryAction != null
+        ? secondaryActions
+        : actions.isEmpty
+        ? const <Widget>[]
+        : actions.sublist(1);
+    final ImageProvider? image = coverImage ?? backdrop;
+    return MediaPosterDetailHero(
+      title: title,
+      kicker: overline,
+      poster: SizedBox.expand(child: cover),
+      posterImage: coverImage,
+      backdropFallback: image,
+      pills: <MediaDetailChip>[
+        for (final String? line in lines)
+          if (line != null && line.trim().isNotEmpty)
+            MediaDetailChip(line.trim()),
+        ...chips,
+        for (final String genre in genres.take(8)) MediaDetailChip(genre),
+      ],
+      summary: description,
+      summaryKey: const ValueKey<String>('online_work_description'),
+      selectableSummary: selectableDescription,
+      actionsKey: const ValueKey<String>('online_work_actions'),
+      primaryAction: primary,
+      secondaryActions: secondary,
+      more: primaryAction == null || moreItems.isEmpty
+          ? null
+          : MediaDetailMoreButton(
+              buttonKey: const ValueKey<String>('online_work_more'),
+              items: moreItems,
+              adaptiveOverflow: moreAdaptiveOverflow,
+            ),
+      footer: extra,
     );
   }
 }

@@ -6,7 +6,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
+import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
@@ -24,6 +24,9 @@ class _FakePlugins {
   /// pluginId -> 取词结果。
   final Map<String, MusicPluginLyrics?> lyrics = <String, MusicPluginLyrics?>{};
   final List<String> searched = <String>[];
+
+  /// 每次搜索收到的 `标题|艺人|时长`（手动搜索要按用户输入的关键词搜）。
+  final List<String> searchedKeywords = <String>[];
   final List<String> fetched = <String>[];
 
   Future<List<MusicPluginLyricsCandidate>> search(
@@ -35,6 +38,7 @@ class _FakePlugins {
     String? query,
   }) async {
     searched.add(id);
+    searchedKeywords.add('$title|$artist|$durationMs');
     final List<MusicPluginLyricsCandidate>? c = candidates[id];
     if (c == null) throw MusicPluginException('boom $id');
     return c;
@@ -95,7 +99,7 @@ void main() {
   setUp(() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     plugins = _FakePlugins();
-    enabled = <String>['a', 'b', 'c'];
+    enabled = <String>[MusicLyricsSource.lrclib, 'a', 'b', 'c'];
     lrclibCalls = <Uri>[];
     lrclibStatus = 404;
     lrclibBody = '';
@@ -133,6 +137,53 @@ void main() {
     expect(plugins.searched, isEmpty);
   });
 
+  test('用户把插件排到 LRCLIB 前：先问插件，命中就不再问 LRCLIB', () async {
+    // 反馈 h7d6Pa_g-7：LRCLIB 与插件同在一份有序来源列表里，不再固定第一。
+    enabled = <String>['a', MusicLyricsSource.lrclib];
+    lrclibStatus = 200;
+    lrclibBody = File(
+      'test/media/music/lyrics/fixtures/lrclib_get.json',
+    ).readAsStringSync();
+    plugins.candidates['a'] = <MusicPluginLyricsCandidate>[
+      MusicPluginLyricsCandidate(
+        title: '夜に駆ける',
+        artist: 'YOASOBI',
+        durationMs: 261000,
+        ref: const <String, Object?>{'id': 'a'},
+      ),
+    ];
+    plugins.lyrics['a'] = _lyr('[00:01.00]沈むように溶けてゆくように');
+    const MusicLyricsTrackRef t = MusicLyricsTrackRef(
+      trackUid: 'uid-1',
+      path: '/nonexistent/x.flac',
+      title: '夜に駆ける',
+      artist: 'YOASOBI',
+      album: 'THE BOOK',
+      durationMs: 261000,
+    );
+    final MusicLyricsResolution r = (await service().resolve(t))!;
+    expect(r.source, MusicLyricsSource.lyricsPlugin('a'));
+    expect(lrclibCalls, isEmpty);
+    expect(plugins.searched, <String>['a']);
+
+    // 插件没有时按顺序落到后面的 LRCLIB。
+    await db.delete(db.musicLyrics).go();
+    plugins.searched.clear();
+    plugins.candidates['a'] = <MusicPluginLyricsCandidate>[];
+    final MusicLyricsResolution fallback = (await service().resolve(t))!;
+    expect(fallback.source, MusicLyricsSource.lrclib);
+    expect(plugins.searched.toSet(), <String>{'a'});
+    expect(lrclibCalls, isNotEmpty);
+  });
+
+  test('来源列表里停用了 LRCLIB：不问 LRCLIB', () async {
+    enabled = <String>['a'];
+    plugins.candidates['a'] = <MusicPluginLyricsCandidate>[];
+    expect(await service().resolve(track), isNull);
+    expect(plugins.searched.toSet(), <String>{'a'});
+    expect(lrclibCalls, isEmpty);
+  });
+
   test('按列表顺序问，首个命中胜出，后面的不问', () async {
     plugins.candidates['a'] = <MusicPluginLyricsCandidate>[];
     plugins.candidates['b'] = <MusicPluginLyricsCandidate>[_cand('b')];
@@ -151,7 +202,7 @@ void main() {
   });
 
   test('未在启用列表里的插件不会被问', () async {
-    enabled = <String>['c'];
+    enabled = <String>[MusicLyricsSource.lrclib, 'c'];
     plugins.candidates['a'] = <MusicPluginLyricsCandidate>[_cand('a')];
     plugins.lyrics['a'] = _lyr('[00:01.00]a');
     plugins.candidates['c'] = <MusicPluginLyricsCandidate>[_cand('c')];
@@ -178,7 +229,7 @@ void main() {
 
   test('没有结果写 1 天负缓存，期内不再问，过期重问', () async {
     plugins.candidates['a'] = <MusicPluginLyricsCandidate>[];
-    enabled = <String>['a'];
+    enabled = <String>[MusicLyricsSource.lrclib, 'a'];
     expect(await service().resolve(track), isNull);
     final MusicLyricRow neg = (await db.select(db.musicLyrics).get())
         .firstWhere(
@@ -195,7 +246,7 @@ void main() {
   });
 
   test('命中后落库，再解析直接读缓存不再问插件', () async {
-    enabled = <String>['a'];
+    enabled = <String>[MusicLyricsSource.lrclib, 'a'];
     plugins.candidates['a'] = <MusicPluginLyricsCandidate>[_cand('a')];
     plugins.lyrics['a'] = _lyr('[00:01.00]cached');
     await service().resolve(track);
@@ -255,7 +306,7 @@ void main() {
     setUp(() {
       ownReply = null;
       ownFetches = 0;
-      enabled = <String>[pluginId];
+      enabled = <String>[MusicLyricsSource.lrclib, pluginId];
       plugins.candidates[pluginId] = <MusicPluginLyricsCandidate>[
         _cand(pluginId),
       ];
@@ -339,7 +390,7 @@ void main() {
     );
 
     test('有译文时落库原始各轨，不是合并后的派生 TTML', () async {
-      enabled = <String>['a'];
+      enabled = <String>[MusicLyricsSource.lrclib, 'a'];
       plugins.candidates['a'] = <MusicPluginLyricsCandidate>[_cand('a')];
       plugins.lyrics['a'] = withTranslation;
       final MusicLyricsResolution r = (await service().resolve(track))!;
@@ -359,7 +410,7 @@ void main() {
     });
 
     test('解析器版本变了：从原始各轨按当前解析器重新合并，不问插件、离线也行', () async {
-      enabled = <String>['a'];
+      enabled = <String>[MusicLyricsSource.lrclib, 'a'];
       online = false;
       // 旧解析器留下的缓存：时间轴是错的（模拟旧合并规则的产物），版本落后一版。
       final LyricTimeline staleMerge = FushiLyrics.parse(
@@ -407,7 +458,6 @@ void main() {
         parseStoredMusicLyrics(
           Uint8List.fromList(utf8.encode('{not json')),
           kMusicPluginLyricsTracksFormat,
-          isUserEdited: false,
           parse: _parse,
         ),
         throwsA(isA<LyricsParseException>()),
@@ -416,7 +466,6 @@ void main() {
         parseStoredMusicLyrics(
           Uint8List.fromList(utf8.encode('{}')),
           kMusicPluginLyricsTracksFormat,
-          isUserEdited: false,
           parse: _parse,
         ),
         throwsA(isA<LyricsParseException>()),
@@ -425,7 +474,7 @@ void main() {
   });
 
   test('候选与曲目对不上（标题相似度低）不取词也不采用', () async {
-    enabled = <String>['a'];
+    enabled = <String>[MusicLyricsSource.lrclib, 'a'];
     plugins.candidates['a'] = <MusicPluginLyricsCandidate>[
       const MusicPluginLyricsCandidate(
         title: 'Totally Different',
@@ -436,5 +485,124 @@ void main() {
     ];
     expect(await service().resolve(track), isNull);
     expect(plugins.fetched, isEmpty);
+  });
+
+  // 拍板台 D48CgzHUok：YouTube 来源（翻唱多）标题与歌名对不上，自动匹配找不到，用户要能
+  // 手动输入关键词搜歌词——LRCLIB 与歌词插件都按输入搜。
+  group('手动关键词搜索（searchOnline）', () {
+    const MusicLyricsTrackRef youtube = MusicLyricsTrackRef(
+      trackUid: 'uid-yt',
+      path: 'https://www.youtube.com/watch?v=abc',
+      title: '【歌ってみた】ぜんぜん違う動画タイトル',
+      artist: 'SomeChannel',
+      durationMs: 320000,
+    );
+
+    test('LRCLIB 与已启用的歌词插件都按输入的标题 / 艺人搜，插件结果并入候选，不落库', () async {
+      plugins.candidates['a'] = <MusicPluginLyricsCandidate>[
+        _cand('a'),
+        const MusicPluginLyricsCandidate(
+          title: 'Unrelated Track',
+          artist: 'Artist',
+          ref: <String, Object?>{'id': 'nope'},
+        ),
+      ];
+      plugins.lyrics['a'] = _lyr('[00:01.00]hi');
+      // 'b' 报错只跳过它；'c' 没结果。
+      plugins.candidates['c'] = <MusicPluginLyricsCandidate>[];
+      final List<MusicLyricsCandidate> found = await service().searchOnline(
+        youtube,
+        title: ' Song ',
+        artist: 'Artist',
+      );
+      final Uri lrclib = lrclibCalls.single;
+      expect(lrclib.path, '/api/search');
+      expect(lrclib.queryParameters['track_name'], 'Song');
+      expect(lrclib.queryParameters['artist_name'], 'Artist');
+      expect(plugins.searched.toSet(), <String>{'a', 'b', 'c'});
+      // 不带曲目时长：视频版 / 翻唱的时长与原曲不同，不该被时长剔除。
+      expect(plugins.searchedKeywords.toSet(), <String>{'Song|Artist|null'});
+      expect(found, hasLength(1));
+      expect(found.single.source, MusicLyricsSource.lyricsPlugin('a'));
+      expect(found.single.label, 'Song — Artist');
+      expect(found.single.timeline.lines.single.text, 'hi');
+      expect(await db.select(db.musicLyrics).get(), isEmpty);
+    });
+
+    test('插件候选时长与曲目差很多（视频版）仍列出', () async {
+      enabled = <String>['a'];
+      plugins.candidates['a'] = <MusicPluginLyricsCandidate>[_cand('a')];
+      plugins.lyrics['a'] = _lyr('[00:01.00]hi');
+      final List<MusicLyricsCandidate> found = await service().searchOnline(
+        youtube,
+        title: 'Song',
+        artist: 'Artist',
+      );
+      expect(found, hasLength(1));
+    });
+
+    test('来源与顺序照来源列表：插件排在 LRCLIB 前就先列，停用的 LRCLIB 不问', () async {
+      enabled = <String>['a', MusicLyricsSource.lrclib];
+      lrclibStatus = 200;
+      lrclibBody = jsonEncode(<Map<String, Object?>>[
+        <String, Object?>{
+          'id': 1,
+          'trackName': 'Song',
+          'artistName': 'Artist',
+          'duration': 320,
+          'syncedLyrics': '[00:02.00]from lrclib',
+        },
+      ]);
+      plugins.candidates['a'] = <MusicPluginLyricsCandidate>[_cand('a')];
+      plugins.lyrics['a'] = _lyr('[00:01.00]from plugin');
+      final List<MusicLyricsCandidate> found = await service().searchOnline(
+        youtube,
+        title: 'Song',
+        artist: 'Artist',
+      );
+      expect(found.map((MusicLyricsCandidate c) => c.source), <String>[
+        MusicLyricsSource.lyricsPlugin('a'),
+        MusicLyricsSource.lrclib,
+      ]);
+      // 来源列表里的 LRCLIB 项不是插件，不交给插件搜索。
+      expect(plugins.searched, <String>['a']);
+
+      enabled = <String>['a'];
+      lrclibCalls.clear();
+      final List<MusicLyricsCandidate> onlyPlugin = await service()
+          .searchOnline(youtube, title: 'Song', artist: 'Artist');
+      expect(lrclibCalls, isEmpty);
+      expect(onlyPlugin.single.source, MusicLyricsSource.lyricsPlugin('a'));
+    });
+
+    test('没装配来源列表（无插件宿主）时只搜 LRCLIB', () async {
+      lrclibStatus = 200;
+      lrclibBody = '[]';
+      await service(
+        withPlugins: false,
+      ).searchOnline(youtube, title: 'Song', artist: 'Artist');
+      expect(lrclibCalls, hasLength(1));
+      expect(plugins.searched, isEmpty);
+    });
+
+    test('艺人留空 = 不限艺人；不传关键词 = 用曲目元数据', () async {
+      enabled = <String>[MusicLyricsSource.lrclib];
+      lrclibStatus = 200;
+      lrclibBody = '[]';
+      await service().searchOnline(youtube, title: 'Song', artist: '  ');
+      expect(lrclibCalls.last.queryParameters['artist_name'], isNull);
+      await service().searchOnline(youtube);
+      expect(lrclibCalls.last.queryParameters['track_name'], youtube.title);
+      expect(lrclibCalls.last.queryParameters['artist_name'], youtube.artist);
+    });
+
+    test('所有来源都出错且没有结果时抛出（界面显示错误而不是「没有候选」）', () async {
+      enabled = <String>[MusicLyricsSource.lrclib, 'b'];
+      await expectLater(
+        service().searchOnline(youtube, title: 'Song', artist: 'Artist'),
+        throwsA(isA<HttpException>()),
+      );
+      expect(plugins.searched, <String>['b']);
+    });
   });
 }

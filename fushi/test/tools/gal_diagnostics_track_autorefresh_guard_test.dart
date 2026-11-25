@@ -70,19 +70,28 @@ void main() {
       'Future<void> _stopSourcesInternal()',
     );
     expect(stopAt, greaterThan(0));
-    final int cancelAt = controllerSrc.indexOf(
-      '_trackRefreshTimer?.cancel();',
-      stopAt,
-    );
+    // 判据按结构而不是按字符距离：清理段前面会随新的会话源（DOM 源、OCR 泵……）
+    // 一起变长，字符上限只会逼人把新源的收尾挪到定时器后面。真正要钉的是——
+    // 取消写在 _stopSourcesInternal 方法体的顶层（不包在 if / 回调里），且之前
+    // 没有顶层 return 能把它跳过：任何一次停源都必然回收音轨刷新定时器。
+    final String body = _methodBody(controllerSrc, stopAt);
+    const String cancel = '_trackRefreshTimer?.cancel();';
+    // 只认代码里的取消：注释掉的那行不算（HBK-AUDIT-233）。
+    final int cancelAt = _codeIndexOf(body, cancel);
     expect(
       cancelAt,
-      greaterThan(stopAt),
+      greaterThan(0),
       reason: 'stopCapture/close 必须经 _stopSources 取消音轨刷新定时器',
     );
     expect(
-      cancelAt - stopAt,
-      lessThan(600),
-      reason: '定时器取消必须在 _stopSources 开头的清理段内',
+      _braceDepthAt(body, cancelAt),
+      1,
+      reason: '音轨刷新定时器的取消必须是 _stopSourcesInternal 的顶层语句，不能有条件',
+    );
+    expect(
+      _topLevelReturnBefore(body, cancelAt),
+      isFalse,
+      reason: '_stopSourcesInternal 在取消音轨刷新定时器之前不得有顶层 return',
     );
   });
 
@@ -196,4 +205,91 @@ void main() {
       reason: '试听必须走既有 grabUtterance IPC 按轨抓取（sourcePtr 过滤）',
     );
   });
+}
+
+/// 从 [declAt]（方法声明起点）之后的第一个 `{` 起按括号配对截出方法体（含两端花括号）。
+/// 跳过 `//` 行注释与单 / 双引号字符串，免得注释或字符串里的花括号打乱配对。
+String _methodBody(String src, int declAt) {
+  final int open = src.indexOf('{', declAt);
+  expect(open, greaterThan(declAt), reason: '找不到方法体起点');
+  int depth = 0;
+  for (int i = open; i < src.length; i++) {
+    i = _skipNonCode(src, i);
+    if (i >= src.length) break;
+    final String c = src[i];
+    if (c == '{') depth++;
+    if (c == '}') {
+      depth--;
+      if (depth == 0) return src.substring(open, i + 1);
+    }
+  }
+  fail('方法体花括号不配对');
+}
+
+/// [body] 由 [_methodBody] 截出（首字符是方法体的 `{`）；返回 [at] 处的花括号深度，
+/// 方法体顶层为 1。
+int _braceDepthAt(String body, int at) {
+  int depth = 0;
+  for (int i = 0; i < at; i++) {
+    i = _skipNonCode(body, i);
+    if (i >= at) break;
+    if (body[i] == '{') depth++;
+    if (body[i] == '}') depth--;
+  }
+  return depth;
+}
+
+/// [at] 之前是否有方法体顶层（深度 1）的 `return` 语句。
+bool _topLevelReturnBefore(String body, int at) {
+  final RegExp returnStmt = RegExp(r'\breturn\b');
+  for (final RegExpMatch m in returnStmt.allMatches(body.substring(0, at))) {
+    if (_isInNonCode(body, m.start)) continue;
+    if (_braceDepthAt(body, m.start) == 1) return true;
+  }
+  return false;
+}
+
+/// [needle] 在 [src] 里第一次出现在代码（不在 `//` 注释或字符串字面量内）的位置，没有返回 -1。
+int _codeIndexOf(String src, String needle) {
+  for (
+    int at = src.indexOf(needle);
+    at >= 0;
+    at = src.indexOf(needle, at + 1)
+  ) {
+    if (!_isInNonCode(src, at)) return at;
+  }
+  return -1;
+}
+
+bool _isInNonCode(String src, int at) {
+  int i = 0;
+  while (i < at) {
+    final int next = _skipNonCode(src, i);
+    if (next > at) return true;
+    i = next == i ? i + 1 : next;
+  }
+  return false;
+}
+
+/// [i] 处若是 `//` 注释或字符串字面量开头，返回其后第一个代码字符的位置；否则原样返回。
+int _skipNonCode(String src, int i) {
+  while (i < src.length) {
+    if (src.startsWith('//', i)) {
+      final int eol = src.indexOf('\n', i);
+      i = eol < 0 ? src.length : eol + 1;
+      continue;
+    }
+    final String c = src[i];
+    if (c == "'" || c == '"') {
+      int j = i + 1;
+      while (j < src.length && src[j] != c && src[j] != '\n') {
+        if (src[j] == r'\') j++;
+        j++;
+      }
+      i = j + 1;
+      continue;
+    }
+    return i;
+  }
+  return i;
 }

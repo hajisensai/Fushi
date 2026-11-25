@@ -1,5 +1,6 @@
 import 'package:fushi_engine/media/music/server/music_server.dart';
-import 'package:fushi_music/fushi_music.dart' show MusicPluginManifest;
+import 'package:fushi_music/fushi_music.dart'
+    show MusicPluginManager, MusicPluginManifest;
 
 import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -44,12 +45,19 @@ final class MusicServerOnlineSource extends MusicOnlineSource {
 /// Apple Music 在排序偏好里的固定 id。
 const String kAppleMusicSourceKey = 'apple-music';
 
+/// YouTube 内置音源在排序偏好里的固定 id。
+const String kYoutubeMusicSourceKey = 'youtube';
+
 String musicPluginSourceKey(String pluginId) => 'plugin:$pluginId';
 
 String musicServerSourceKey(MusicServerBrowser browser) =>
-    browser.kind == MusicServerKind.appleMusic
-    ? kAppleMusicSourceKey
-    : 'server:${browser.serverId}';
+    switch (browser.kind) {
+      MusicServerKind.appleMusic => kAppleMusicSourceKey,
+      MusicServerKind.youtube => kYoutubeMusicSourceKey,
+      MusicServerKind.jellyfin ||
+      MusicServerKind.subsonic ||
+      MusicServerKind.fushiHost => 'server:${browser.serverId}',
+    };
 
 /// 一个来源连同它在「推荐 / 搜索」里是否显示。
 typedef MusicOrderedSource = ({MusicOnlineSource source, bool enabled});
@@ -128,4 +136,18 @@ Future<void> forgetMusicOnlineSource(
         if (e.id != key) e,
     ]),
   );
+}
+
+/// 卸载一个音乐插件（设置页「卸载」与控制通道 `music plugin-rm` 共用）：删包、插件存储与
+/// 加密凭据，再清它在「来源」页的顺序与开关（停用不清：重新启用后还在原位）。[prefs] 为
+/// null（偏好还没就绪）时只卸载。
+Future<void> uninstallMusicPlugin(
+  MusicPluginManager manager,
+  PreferencesRepository? prefs,
+  String id,
+) async {
+  await manager.uninstall(id);
+  if (prefs != null) {
+    await forgetMusicOnlineSource(prefs, musicPluginSourceKey(id));
+  }
 }

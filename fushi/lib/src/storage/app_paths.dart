@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart';
@@ -10,6 +11,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart'
     show activityNameFromBreadcrumbFileName;
 import 'package:fushi/src/startup/test_environment.dart';
+import 'package:fushi/src/storage/android_library_db_witness.dart';
+import 'package:fushi/src/storage/directory_move.dart'
+    show kDirectoryCopyPartSuffix, moveDirectoryMerging;
 import 'package:fushi/src/storage/macos_data_root_access.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
@@ -94,6 +98,12 @@ class AppPaths {
     // 解析：`testWidgets` 跑在 FakeAsync 上，真实文件 IO 的 future 在那里永不完成、
     // `.timeout()` 还会留下 pending timer，整批页面测试会挂死或报「Timer is still pending」。
     await _ensureDocumentsLayoutDecided();
+    // Android：书库根内部 / 外部的判定（新装外部、老安装内部），外部时解析外部目录。
+    await _ensureAndroidDocumentsLocationDecided();
+    // 拍板台 nLXhu0d7gV：iOS 的 Documents 改作「文件」App 可见的导入收件箱，书库搬出去。
+    // 必须在解析根之前跑完：搬完之后 [_resolveDocumentsRoot] 解析出的新根才有数据，
+    // 紧随其后的 `SandboxRelocation.reconcile` 按台账把库里的绝对路径重基过去。
+    await _ensureIosSharedDocumentsVacated();
     final Directory documents = await _resolveDocumentsRoot();
     final Directory support = await _resolveSupportRoot();
     final Directory temp = await _resolveTempRoot();
@@ -196,6 +206,12 @@ class AppPaths {
   /// （存量安装）或 `Fushi`（新装/已迁移）。
   static const String documentsContainerPrefKey = 'documents_container';
 
+  /// nested 容器名：新装 / 已迁移。
+  static const String documentsContainerFushi = 'Fushi';
+
+  /// nested 容器名：改名前的存量安装（目录冻结不改）。
+  static const String documentsContainerHibiki = 'Hibiki';
+
   /// 本进程已判定的容器名；[_ensureDocumentsLayoutDecided] 启动期写一次。
   static String? _documentsContainerName;
 
@@ -228,6 +244,617 @@ class AppPaths {
   /// 锁在门外——**绝不自动置真**（默认 false）。仅本次进程有效：下次启动重新探测配置根，
   /// 盘醒了即自动用回真实数据；用户的 `data_root` 配置与原盘数据一字节不动。
   static bool forceDefaultRootForSession = false;
+
+  // ---- Android：书库根放内部私有目录还是外部 app 专属目录 ----
+
+  /// Android 书库根（documents 根）位置锚点的**旧版** SharedPreferences 键。值
+  /// [androidDocumentsLocationInternal] / [androidDocumentsLocationExternal]。
+  ///
+  /// 现在锚点存在 support 根下的 [androidLibraryAnchorFileName]，这个键只在锚点文件
+  /// 还不存在时当种子读一次、不再写。原因（反馈 RCv76PPoiJ）：app 有 `:popup`、
+  /// `:second_screen` 等独立进程，每个进程各持一份 SharedPreferences 内存副本，任一
+  /// 进程写任何键都会把**整份**副本落盘——长驻的弹窗进程带着迁移前的旧值一写，就把
+  /// 主进程刚提交的「外部」锚点冲回去，下次冷启动书库根判回空的内部目录。
+  ///
+  /// - 外部 = `getExternalFilesDir(null)/data`（`Android/data/<包名>/files/data`）：
+  ///   USB / 电脑能直接拿到有声书、下载、字幕与转录结果；不需要任何存储权限，卸载时随
+  ///   app 一起删除。**全新安装默认外部**。
+  /// - 内部 = `app_flutter` 下的旧布局（flat 或 nested）。**升级上来的老安装锚定内部**、
+  ///   一个字节都不自动搬：内部到外部跨挂载点，只能逐文件复制，GB 级书库在启动期悄悄搬
+  ///   会卡死启动画面。老用户由首页一次性提示（或设置「数据存储位置」）走带进度的
+  ///   `DataRootMigrator` 迁移，迁完提交本锚点。
+  ///
+  /// 数据库（support 根）两种情况下都留在内部 `filesDir`，不随本锚点移动。
+  static const String androidDocumentsLocationPrefKey =
+      'android_documents_location';
+  static const String androidDocumentsLocationInternal = 'internal';
+  static const String androidDocumentsLocationExternal = 'external';
+
+  /// 老安装「把书库移到可访问文件夹」一次性提示已处理（弹过 / 已迁移）的标记。
+  static const String androidDocumentsMovePromptedPrefKey =
+      'android_documents_move_prompted';
+
+  /// 外部 app 专属目录下书库根的子目录名。不直接用 `files/` 本身：`files/logs`（诊断）、
+  /// `files/video_clips`（导出剪辑）、`files/Download`（浏览器下载兜底）与书库并列，
+  /// 迁移引擎整树搬书库根时不会把它们卷进去。
+  static const String androidExternalDocumentsChild = 'data';
+
+  /// 本进程已判定的 Android 书库位置；[_ensureAndroidDocumentsLocationDecided] 启动期写一次。
+  static String? _androidDocumentsLocation;
+
+  /// 启动期解析到的 `getExternalFilesDir(null)`（null：没解析过或外部存储未挂载）。
+  static Directory? _androidExternalFilesDir;
+
+  /// 仅供测试：注入 / 清掉进程内的 Android 书库位置判定与外部目录。
+  @visibleForTesting
+  static void debugSetAndroidDocumentsLocation(
+    String? location, {
+    Directory? externalFilesDir,
+  }) {
+    _androidDocumentsLocation = location;
+    _androidExternalFilesDir = externalFilesDir;
+  }
+
+  /// 纯判定（测试钉住）：已有合法锚点就沿用；否则按「本机是否已有跑过的安装」决定——
+  /// 老安装 = 内部（不自动搬），全新安装 = 外部。
+  static String decideAndroidDocumentsLocation({
+    required String? stored,
+    required bool existingInstall,
+  }) {
+    if (stored == androidDocumentsLocationInternal ||
+        stored == androidDocumentsLocationExternal) {
+      return stored!;
+    }
+    return existingInstall
+        ? androidDocumentsLocationInternal
+        : androidDocumentsLocationExternal;
+  }
+
+  /// 外部书库根的展示串（外部存储不可用、拿不到真实路径时给逃生屏用）。
+  static String get _androidExternalDocumentsLabel =>
+      p.join('Android', 'data', '…', 'files', androidExternalDocumentsChild);
+
+  /// 判定 + 固化 Android 书库位置，外部时顺带解析外部目录。只由 [resolve] 调用一次。
+  ///
+  /// 锚点读写走 support 根下的 [androidLibraryAnchorFileName]（见
+  /// [AndroidLibraryAnchor]），旧版写在 SharedPreferences 的值只在文件还不存在时
+  /// 当种子读一次。判定之后再让磁盘作证（[reconcileAndroidDocumentsLocation]）：锚定
+  /// 的根里一个书库文件都没有、另一个根里有，就说明锚点错了，以磁盘为准并改正锚点。
+  ///
+  /// 外部锚定但外部存储本次不可用（`getExternalFilesDir` 返回 null）时抛
+  /// [DataRootUnavailableException]——与桌面自定义根不可达同一铁律：绝不静默派生空的
+  /// 内部根，让用户看成「书库被清空」。
+  static Future<void> _ensureAndroidDocumentsLocationDecided() async {
+    if (!Platform.isAndroid) return;
+    if (fushiTestDirectory('app-documents') != null) return;
+    if (_androidDocumentsLocation == null) {
+      final Directory support = await _resolveSupportRoot();
+      final AndroidLibraryAnchor? anchor = await readAndroidLibraryAnchor(
+        support,
+      );
+      // 内部书库的布局（flat / nested）与容器名（Fushi / Hibiki）同样以锚点文件为准：
+      // 它们在 SharedPreferences 里的那份会被别的进程的旧副本整份冲掉（RCv76PPoiJ），
+      // 冲掉后布局判定会因为主库存在而回落成 flat，书库根就指到 `app_flutter` 本身。
+      final String? anchoredLayout = anchor?.layout;
+      if (anchoredLayout != null) {
+        _legacyFlatDocumentsRoot = anchoredLayout == documentsLayoutFlat;
+      }
+      final String? anchoredContainer = anchor?.container;
+      if (anchoredContainer != null) {
+        _documentsContainerName = anchoredContainer;
+      }
+      final String? stored =
+          anchor?.location ??
+          (await _prefsOrNull())?.getString(androidDocumentsLocationPrefKey);
+      final String decided = decideAndroidDocumentsLocation(
+        stored: stored,
+        existingInstall: stored != null || await existingInstallHasDatabase(),
+      );
+      _androidExternalFilesDir = await getExternalStorageDirectory();
+      final Directory? ext = _androidExternalFilesDir;
+      final List<AndroidInternalLibraryCandidate> candidates =
+          androidInternalLibraryCandidates(
+            platformDocuments: await getApplicationDocumentsDirectory(),
+            configuredLayout: await _useLegacyFlatDocumentsRoot()
+                ? documentsLayoutFlat
+                : documentsLayoutNested,
+            configuredContainer: defaultDocumentsChildSegments.first,
+          );
+      final AndroidLibraryReconciliation result =
+          await reconcileAndroidLibraryRoots(
+            anchored: decided,
+            external: ext == null
+                ? null
+                : Directory(p.join(ext.path, androidExternalDocumentsChild)),
+            internalCandidates: candidates,
+            supportRoot: support,
+          );
+      androidLocationCorrections.addAll(result.notes);
+      androidStrayLibraryRoot = result.strayRoot;
+      _androidDocumentsLocation = result.location;
+      final AndroidInternalLibraryCandidate chosen = result.internal;
+      _legacyFlatDocumentsRoot = chosen.layout == documentsLayoutFlat;
+      _documentsContainerName = chosen.container;
+      final AndroidLibraryAnchor settled = AndroidLibraryAnchor(
+        location: result.location,
+        layout: chosen.layout,
+        container: chosen.container,
+      );
+      if (anchor != settled) {
+        try {
+          await writeAndroidLibraryAnchor(support, settled);
+        } catch (e) {
+          // 写失败只意味着下次启动再判一次（判据与磁盘对账都是确定的）。
+          debugPrint('AppPaths: 固化 Android 书库位置失败（下次启动重新判定）: $e');
+        }
+      }
+      // prefs 里那份布局 / 容器跟上最终结论，免得不经锚点的读者（布局判定的兜底、桌面
+      // 共用的 helper）读到旧值。不只在对账改了布局时才同步：prefs 被冲掉后
+      // [_ensureDocumentsLayoutDecided] 已经先把重判出的（错的）flat 写了回去，锚点在内存
+      // 里纠正了它，prefs 却一直留着错值。尽力而为，真相源是锚点文件。
+      try {
+        final SharedPreferences? prefs = await _prefsOrNull();
+        if (prefs != null) {
+          if (prefs.getString(documentsLayoutPrefKey) != chosen.layout) {
+            await prefs.setString(documentsLayoutPrefKey, chosen.layout);
+          }
+          if (prefs.getString(documentsContainerPrefKey) != chosen.container) {
+            await prefs.setString(documentsContainerPrefKey, chosen.container);
+          }
+        }
+      } catch (e) {
+        debugPrint('AppPaths: 同步纠正后的布局 / 容器到 prefs 失败: $e');
+      }
+    }
+    if (_androidDocumentsLocation != androidDocumentsLocationExternal) return;
+    _androidExternalFilesDir ??= await getExternalStorageDirectory();
+    if (_androidExternalFilesDir == null) {
+      throw DataRootUnavailableException(
+        configuredPath: _androidExternalDocumentsLabel,
+      );
+    }
+  }
+
+  /// 内部书库根的所有候选，**第一个是当前配置**（布局锚点 + 容器锚点推出来的那个），
+  /// 其后是另外几种历史布局：flat（`app_flutter` 本身）、nested `Fushi/data`、nested
+  /// `Hibiki/data`，按根路径去重。
+  ///
+  /// 布局 / 容器锚点丢过的安装（多进程冲掉 prefs，见 [_ensureAndroidDocumentsLocationDecided]），
+  /// 「当前配置」指的是一个空目录，真书库在另一种布局下；对账只看当前配置就永远认定
+  /// 「内部没有书库」、不会自愈（#4366 指出，3.4.0-debug.32552 用户复现）。
+  static List<AndroidInternalLibraryCandidate>
+  androidInternalLibraryCandidates({
+    required Directory platformDocuments,
+    required String configuredLayout,
+    required String configuredContainer,
+  }) {
+    AndroidInternalLibraryCandidate candidate(
+      String layout,
+      String container,
+    ) => AndroidInternalLibraryCandidate(
+      layout: layout,
+      container: container,
+      root: layout == documentsLayoutFlat
+          ? platformDocuments
+          : Directory(p.join(platformDocuments.path, container, 'data')),
+    );
+    final List<AndroidInternalLibraryCandidate> all =
+        <AndroidInternalLibraryCandidate>[
+          candidate(configuredLayout, configuredContainer),
+          candidate(documentsLayoutFlat, configuredContainer),
+          candidate(documentsLayoutNested, documentsContainerFushi),
+          candidate(documentsLayoutNested, documentsContainerHibiki),
+        ];
+    final Set<String> seen = <String>{};
+    return <AndroidInternalLibraryCandidate>[
+      for (final AndroidInternalLibraryCandidate c in all)
+        if (seen.add(p.normalize(c.root.path))) c,
+    ];
+  }
+
+  /// Android 书库位置锚点与磁盘对账（启动期，[_ensureAndroidDocumentsLocationDecided]）。
+  ///
+  /// [internalCandidates] 第一个是当前配置的内部根（[androidInternalLibraryCandidates]）。
+  /// [external] 为 null（外部存储不可用）时外部不参与对账；锚点指外部时原样沿用（随后
+  /// [_ensureAndroidDocumentsLocationDecided] 抛 [DataRootUnavailableException]）。
+  ///
+  /// **所有候选根一起探**（外部 + 每种内部布局），不因锚定的根里有文件就停：错根运行
+  /// 期间 app 自己也会往里写证据文件（`srs_backups` 自动备份、`thumbnails` 等），只要
+  /// 锚定的根「有文件」就不看别处，真书库在另一种布局下时照样永不自愈。
+  ///
+  ///  - 只有一个根有书库文件：它胜出；
+  ///  - 多个根都有：让主库对这些根一起计票（[AndroidLibraryDbWitness.probeRoots]），
+  ///    「只在某个根存在」的书严格最多的根胜出；平局或没有证据时，锚定的根在其中就沿用，
+  ///    否则取探测顺序里的第一个。主库作过证时，票数次多的落选根交给散书合并；
+  ///  - 都没有：沿用锚点。
+  ///
+  /// 锚定的根探不清（[LibraryProbe.unknown]）按「有书」参与（保守：不因一次 IO 抖动离开
+  /// 它）。除了「锚定的根有书、别处都没有」这一常态，其余情形都把每个根的探测结论写进
+  /// [AndroidLibraryReconciliation.notes]，反馈日志里能看出书库到底在不在磁盘上。
+  static Future<AndroidLibraryReconciliation> reconcileAndroidLibraryRoots({
+    required String anchored,
+    required Directory? external,
+    required List<AndroidInternalLibraryCandidate> internalCandidates,
+    required Directory supportRoot,
+  }) async {
+    final AndroidInternalLibraryCandidate configured = internalCandidates.first;
+    final bool anchoredExternal = anchored == androidDocumentsLocationExternal;
+    if (anchoredExternal && external == null) {
+      return AndroidLibraryReconciliation(
+        location: anchored,
+        internal: configured,
+      );
+    }
+    // 探测顺序：锚定的根在最前，其后是对面与其余内部布局。
+    final List<_AndroidLibraryRootCandidate> roots =
+        <_AndroidLibraryRootCandidate>[
+          if (anchoredExternal)
+            _AndroidLibraryRootCandidate(
+              androidDocumentsLocationExternal,
+              configured,
+              external!,
+            ),
+          _AndroidLibraryRootCandidate(
+            androidDocumentsLocationInternal,
+            configured,
+            configured.root,
+          ),
+          if (!anchoredExternal && external != null)
+            _AndroidLibraryRootCandidate(
+              androidDocumentsLocationExternal,
+              configured,
+              external,
+            ),
+          for (final AndroidInternalLibraryCandidate c in internalCandidates)
+            if (!identical(c, configured))
+              _AndroidLibraryRootCandidate(
+                androidDocumentsLocationInternal,
+                c,
+                c.root,
+              ),
+        ];
+    final _AndroidLibraryRootCandidate anchoredRoot = roots.first;
+    final List<String> probes = <String>[];
+    final List<_AndroidLibraryRootCandidate> found =
+        <_AndroidLibraryRootCandidate>[];
+    for (final _AndroidLibraryRootCandidate r in roots) {
+      final LibraryProbe probe = await probeLibraryFiles(r.root);
+      probes.add('${r.root.path}=${probe.name}');
+      if (probe == LibraryProbe.found ||
+          (identical(r, anchoredRoot) && probe == LibraryProbe.unknown)) {
+        found.add(r);
+      }
+    }
+    String describe(_AndroidLibraryRootCandidate r) =>
+        r.location == androidDocumentsLocationInternal
+        ? '$androidDocumentsLocationInternal（布局 ${r.internal.layout}，'
+              '容器 ${r.internal.container}）'
+        : r.location;
+    final String probeSummary = '探测：${probes.join('，')}';
+
+    if (found.isEmpty) {
+      return AndroidLibraryReconciliation(
+        location: anchored,
+        internal: configured,
+        notes: <String>[
+          '锚点 $anchored 指向的书库根 ${anchoredRoot.root.path} 里没有书库文件，'
+              '其余候选也都没有 → 沿用；$probeSummary',
+        ],
+      );
+    }
+    if (found.length == 1) {
+      final _AndroidLibraryRootCandidate winner = found.single;
+      if (identical(winner, anchoredRoot)) {
+        return AndroidLibraryReconciliation(
+          location: anchored,
+          internal: configured,
+        );
+      }
+      return AndroidLibraryReconciliation(
+        location: winner.location,
+        internal: winner.internal,
+        notes: <String>[
+          '锚点 $anchored 指向的书库根 ${anchoredRoot.root.path} 里没有书库文件，'
+              '${winner.root.path} 里有 → 改为 ${describe(winner)}；$probeSummary',
+        ],
+      );
+    }
+
+    // 多个根都有书库文件：主库作证。
+    final List<int>? votes = await AndroidLibraryDbWitness.probeRoots(
+      supportRoot: supportRoot,
+      roots: <Directory>[
+        for (final _AndroidLibraryRootCandidate r in found) r.root,
+      ],
+    );
+    final bool anchoredFound = identical(found.first, anchoredRoot);
+    int winnerIndex = 0;
+    if (votes != null) {
+      final int best = votes.reduce((int a, int b) => a > b ? a : b);
+      final List<int> leaders = <int>[
+        for (int i = 0; i < votes.length; i++)
+          if (votes[i] == best) i,
+      ];
+      // 严格最多才改；平局（迁移中断，两边是同一批文件）沿用锚定的根。
+      if (leaders.length == 1) winnerIndex = leaders.single;
+    }
+    // 没有证据 / 平局：锚定的根在其中就是它（found.first），否则取探测顺序第一个。
+    final _AndroidLibraryRootCandidate winner = found[winnerIndex];
+    _AndroidLibraryRootCandidate? stray;
+    if (votes != null) {
+      int strayVotes = -1;
+      for (int i = 0; i < found.length; i++) {
+        if (i == winnerIndex) continue;
+        if (votes[i] > strayVotes) {
+          strayVotes = votes[i];
+          stray = found[i];
+        }
+      }
+    }
+    final bool switched = !identical(winner, anchoredRoot);
+    return AndroidLibraryReconciliation(
+      location: winner.location,
+      internal: switched ? winner.internal : configured,
+      notes: <String>[
+        '${found.length} 个书库根都有书库文件'
+            '（${anchoredFound ? '含' : '不含'}锚定的 $anchored：${anchoredRoot.root.path}），'
+            '主库作证 ${votes == null ? '无（主库读不到）' : <String>[for (int i = 0; i < found.length; i++) '${found[i].root.path}=${votes[i]}'].join('，')}'
+            ' → ${switched ? '改为' : '沿用'} ${describe(winner)}'
+            '${stray == null ? '' : '，落选根 ${stray.root.path} 交给散书合并'}'
+            '；$probeSummary',
+      ],
+      // 只有主库作过证才去合并：读不到主库时谁对谁错没有依据，宁可原样不动。
+      strayRoot: stray?.root,
+    );
+  }
+
+  /// 纯判定（测试钉住）：
+  ///  - 另一个根里没有书库文件 → 沿用锚点（常态，以及两边都空的全新安装）；
+  ///  - 锚定的根里没有、另一个根里有 → 书库实际在另一个根，锚点是错的（反馈
+  ///    RCv76PPoiJ：锚点被旧进程副本冲掉，判回空的内部根）；
+  ///  - 两边都有：让主库作证（[dbWitness]，拍板台 review-library-anchor-both-roots）。
+  ///    主库里的书「只在另一个根存在」的严格多于「只在锚定的根存在」的 → 改到另一个根；
+  ///    平局（迁移中断，两边是同一批文件）或没有证据 → 沿用锚点。
+  static String reconcileAndroidDocumentsLocation({
+    required String anchored,
+    required bool anchoredHasLibrary,
+    required bool otherHasLibrary,
+    AndroidLibraryDbWitness? dbWitness,
+  }) {
+    if (!otherHasLibrary) return anchored;
+    final String other = anchored == androidDocumentsLocationExternal
+        ? androidDocumentsLocationInternal
+        : androidDocumentsLocationExternal;
+    if (!anchoredHasLibrary) return other;
+    return (dbWitness?.favorsOther ?? false) ? other : anchored;
+  }
+
+  /// 本进程启动期判定时两个根都有书库文件、经主库作证后**落选**的那个根；开库后
+  /// `AndroidStrayLibraryMerge` 把散在那里的书并进书库根。null：只有一个根有书（常态）。
+  static Directory? androidStrayLibraryRoot;
+
+  /// 书库证据里不算数的顶层项：app 每次冷启动自己就会往里放东西（导出目录的
+  /// `.nomedia`）或只放过程性临时物，与「书库在不在这个根」无关。#4366 指出：已中招
+  /// 的安装（书库在内部、锚点指向外部）外部根里恰好只有冷启动建出的
+  /// `fushiExport/.nomedia`，把它当书库就会让对账认定「锚定的根有书」、永远不自愈。
+  static const Set<String> libraryEvidenceIgnoredEntries = <String>{
+    'fushiExport',
+    'hibikiExport',
+    'dictionaryImportWorkingDirectory',
+    'recommended_pack',
+    'onboarding_tutorial',
+  };
+
+  /// 不算书库证据的文件名：`.nomedia` 是排除媒体扫描的占位（0 字节），任何目录都可能被
+  /// 顺手放一个；`*.fushi-part` 是中断的跨盘复制留下的半截临时文件，不是书。
+  static bool isLibraryEvidenceFileName(String name) =>
+      name != '.nomedia' && !name.endsWith(kDirectoryCopyPartSuffix);
+
+  /// [root] 下 Fushi 自有顶层项（[fushiOwnedDocumentsEntries]，去掉
+  /// [libraryEvidenceIgnoredEntries]）里是否至少有一个书库**文件**。只认文件不认目录：
+  /// 启动期会顺手建出空的派生目录，那不是书库；`.nomedia` 占位也不算。
+  /// 遇到第一个文件就停；探不清（出错且没找到文件 / 超时）返回 [onTimeout]（调用方按
+  /// 保守方向给）。
+  static Future<bool> hasLibraryFiles(
+    Directory root, {
+    required bool onTimeout,
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    switch (await probeLibraryFiles(root, timeout: timeout)) {
+      case LibraryProbe.found:
+        return true;
+      case LibraryProbe.none:
+        return false;
+      case LibraryProbe.unknown:
+        return onTimeout;
+    }
+  }
+
+  /// [hasLibraryFiles] 的三态版本。逐个目录列举、各自容错：某个子目录列不出来（权限、
+  /// 遍历中被删、坏链接）只记一笔，不中断其余目录——旧实现一处出错就整体判「没有书库」，
+  /// 别的目录里明明有书也看不见。没找到文件但途中出过错 → [LibraryProbe.unknown]。
+  static Future<LibraryProbe> probeLibraryFiles(
+    Directory root, {
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    Future<LibraryProbe> probe() async {
+      bool errored = false;
+      for (final String name in fushiOwnedDocumentsEntries) {
+        if (libraryEvidenceIgnoredEntries.contains(name)) continue;
+        final List<Directory> pending = <Directory>[
+          Directory(p.join(root.path, name)),
+        ];
+        while (pending.isNotEmpty) {
+          final Directory dir = pending.removeLast();
+          try {
+            if (!await dir.exists()) continue;
+            await for (final FileSystemEntity e in dir.list(
+              followLinks: false,
+            )) {
+              if (e is Directory) {
+                pending.add(e);
+              } else if (e is File &&
+                  isLibraryEvidenceFileName(p.basename(e.path))) {
+                return LibraryProbe.found;
+              }
+            }
+          } catch (_) {
+            errored = true;
+          }
+        }
+      }
+      return errored ? LibraryProbe.unknown : LibraryProbe.none;
+    }
+
+    try {
+      return await probe().timeout(
+        timeout,
+        onTimeout: () => LibraryProbe.unknown,
+      );
+    } catch (_) {
+      return LibraryProbe.unknown;
+    }
+  }
+
+  /// Android 书库迁移前，固定目标 [target] 里第一个「[source] 里没有同名相对路径」的
+  /// 文件（相对 [target]）；没有返回 null。
+  ///
+  /// 目标是固定位置，上次中断的跨盘复制会留下半成品，必须先清掉引擎才肯搬。半成品一定
+  /// 是源的子集（复制阶段不删源）；目标里出现源里没有的文件，就说明它**不是**半成品
+  /// ——典型是锚点错指空根时，用户点「移回内部」，目标恰好就是真正的书库（#4366 指出）。
+  /// 这时绝不能整树删除。`.nomedia` 占位不计。
+  static Future<String?> firstAndroidMigrationTargetOnlyFile({
+    required Directory target,
+    required Directory source,
+  }) async {
+    if (!await target.exists()) return null;
+    await for (final FileSystemEntity e in target.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      if (e is! File) continue;
+      if (!isLibraryEvidenceFileName(p.basename(e.path))) continue;
+      final String rel = p.relative(e.path, from: target.path);
+      if (!await File(p.join(source.path, rel)).exists()) return rel;
+    }
+    return null;
+  }
+
+  /// 本进程启动期对 Android 书库位置做过的纠正（AppModel 写进诊断日志）。
+  static final List<String> androidLocationCorrections = <String>[];
+
+  // ---- Android 书库位置锚点文件 ----
+
+  /// support 根（Android `filesDir`）下的锚点文件名。
+  static const String androidLibraryAnchorFileName =
+      'android_library_location.json';
+
+  /// 读锚点文件；不存在 / 损坏返回 null（按旧版 prefs 种子与安装状态重判）。
+  static Future<AndroidLibraryAnchor?> readAndroidLibraryAnchor(
+    Directory support,
+  ) async {
+    try {
+      final File f = File(p.join(support.path, androidLibraryAnchorFileName));
+      if (!await f.exists()) return null;
+      return AndroidLibraryAnchor.tryParse(await f.readAsString());
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /// 原子写锚点文件：先写本进程独占的临时文件再 rename，别的进程要么读到旧值要么读到
+  /// 新值，读不到半截。
+  static Future<void> writeAndroidLibraryAnchor(
+    Directory support,
+    AndroidLibraryAnchor anchor,
+  ) async {
+    final File target = File(
+      p.join(support.path, androidLibraryAnchorFileName),
+    );
+    final File tmp = File('${target.path}.$pid.tmp');
+    await tmp.writeAsString(anchor.encode(), flush: true);
+    await tmp.rename(target.path);
+  }
+
+  /// 书库迁移提交时写锚点（Android 位置迁移的唯一提交点）。返回写之前的锚点，供提交
+  /// 失败时 [restoreAndroidLibraryAnchor] 原样写回。
+  static Future<AndroidLibraryAnchor?> commitAndroidLibraryAnchor(
+    AndroidLibraryAnchor anchor,
+  ) async {
+    final Directory support = await _resolveSupportRoot();
+    final AndroidLibraryAnchor? previous = await readAndroidLibraryAnchor(
+      support,
+    );
+    await writeAndroidLibraryAnchor(support, anchor);
+    return previous;
+  }
+
+  /// 把锚点文件恢复成 [previous]（null = 删掉，回到「按旧 prefs 种子判定」）。
+  static Future<void> restoreAndroidLibraryAnchor(
+    AndroidLibraryAnchor? previous,
+  ) async {
+    final Directory support = await _resolveSupportRoot();
+    if (previous != null) {
+      await writeAndroidLibraryAnchor(support, previous);
+      return;
+    }
+    final File f = File(p.join(support.path, androidLibraryAnchorFileName));
+    if (await f.exists()) await f.delete();
+  }
+
+  /// 本机 Android 书库是否在外部 app 专属目录。**纯读取、绝不探测文件系统**（理由同
+  /// [_useLegacyFlatDocumentsRoot]）：本进程已判定 → 用判定值；否则读锚点；没有锚点 →
+  /// 内部（保守：没跑过 [resolve] 的夹具不会被切到一个空的外部根）。
+  static Future<bool> androidDocumentsAreExternal() async {
+    if (!Platform.isAndroid) return false;
+    final String? decided = _androidDocumentsLocation;
+    if (decided != null) return decided == androidDocumentsLocationExternal;
+    final SharedPreferences? prefs = await _prefsOrNull();
+    return prefs?.getString(androidDocumentsLocationPrefKey) ==
+        androidDocumentsLocationExternal;
+  }
+
+  /// `getExternalFilesDir(null)`（`Android/data/<包名>/files`）；外部存储不可用时 null。
+  /// 启动期已解析过就复用，不再走平台通道。
+  static Future<Directory?> androidExternalFilesDirectory() async =>
+      _androidExternalFilesDir ??= await getExternalStorageDirectory();
+
+  /// Android 外部书库根 `Android/data/<包名>/files/data`（不创建）。外部存储不可用时抛
+  /// [DataRootUnavailableException]。
+  static Future<Directory> androidExternalDocumentsRoot() async {
+    final Directory? ext = await androidExternalFilesDirectory();
+    if (ext == null) {
+      throw DataRootUnavailableException(
+        configuredPath: _androidExternalDocumentsLabel,
+      );
+    }
+    return Directory(p.join(ext.path, androidExternalDocumentsChild));
+  }
+
+  /// Android 内部书库根（迁回内部时的目标）= `app_flutter/<容器>/data`（nested 布局）。
+  /// 迁回时一律落 nested，提交时把布局锚点一起锚成 nested：老 flat 安装迁出再迁回也不会
+  /// 摊回 `app_flutter` 根。
+  static Future<Directory> androidInternalDocumentsRoot() async {
+    final Directory platformDocuments =
+        await getApplicationDocumentsDirectory();
+    return Directory(
+      p.joinAll(<String>[
+        platformDocuments.path,
+        ...defaultDocumentsChildSegments,
+      ]),
+    );
+  }
+
+  /// 用户导出物（视频剪辑等）的基目录：Android 落外部 app 专属目录（USB / 电脑可见），
+  /// 外部存储不可用时退回 `app_flutter`；其它平台保持 `getApplicationDocumentsDirectory()`
+  /// （iOS 那就是「文件」App 可见的 Documents）。
+  static Future<Directory> userExportsBaseDirectory() async {
+    if (Platform.isAndroid) {
+      final Directory? ext = await androidExternalFilesDirectory();
+      if (ext != null) return ext;
+    }
+    return getApplicationDocumentsDirectory();
+  }
 
   /// 读取桌面自定义数据根**配置路径**（绝对路径，不做存在性探测）。无覆盖 / 非桌面 /
   /// 未设 / 空白 / prefs 通道不可用 → 返回 null（调用方退回默认根）。macOS 下顺带激活
@@ -319,10 +946,212 @@ class AppPaths {
   /// 老用户要收进子目录，走设置里的「数据存储位置」（[DataRootMigrator] 会连 DB 里的绝对
   /// 路径一起 rebase）；这里绝不自动迁移——启动期搬整个书库既慢又可能被文件锁半途打断。
   static Future<Directory> _resolveDefaultDocumentsRoot() async {
+    // iOS 不论 flat / nested：书库一律在 `<Library>/Fushi/data`，Documents 只当收件箱。
+    if (Platform.isIOS) return iosDocumentsRoot();
+    // Android 外部锚定：书库在 `Android/data/<包名>/files/data`，与 flat/nested 无关。
+    if (await androidDocumentsAreExternal()) {
+      return androidExternalDocumentsRoot();
+    }
     final Directory platformDocuments =
         await getApplicationDocumentsDirectory();
     if (await _useLegacyFlatDocumentsRoot()) return platformDocuments;
     return defaultLocationDocumentsRoot();
+  }
+
+  // ---- iOS：Documents = 导入收件箱，书库在 Library 下（拍板台 nLXhu0d7gV） ----
+
+  /// iOS 书库根 `<Library>/Fushi/data` 相对 `Library` 的路径段。
+  ///
+  /// 为什么不是 `Library/Application Support/...`：那是 support 根（数据库所在），两根
+  /// 嵌套会让存储统计把书库重复算一遍，也破坏「两根各有独立子树」的不变式。`Library`
+  /// 下的自建目录与 Application Support 同样随 iCloud / 电脑备份、不会被系统清理，
+  /// 而且「文件」App 看不到。
+  static const List<String> iosDocumentsRootSegments = <String>[
+    'Fushi',
+    'data',
+  ];
+
+  /// iOS 书库根（不创建；[resolve] 的 `_ensureResolvedRootsExist` 负责建）。
+  static Future<Directory> iosDocumentsRoot() async =>
+      iosDocumentsRootUnder(await getLibraryDirectory());
+
+  /// [iosDocumentsRoot] 的纯派生（测试注入 `Library` 目录）。
+  static Directory iosDocumentsRootUnder(Directory library) =>
+      Directory(p.joinAll(<String>[library.path, ...iosDocumentsRootSegments]));
+
+  /// iOS 书库搬出 Documents 的台账文件名，放在 `<Library>/Fushi/`（书库根的父目录，不在
+  /// documents 根里、也不在「文件」App 可见的 Documents 里）。
+  ///
+  /// 只按白名单全扫一次：台账一旦存在，Documents 就是用户的收件箱，用户在「文件」App 里
+  /// 新建一个叫 `videos` / `browser` 的文件夹是完全正常的事，绝不能再按白名单把它当书库
+  /// 收走。台账内容是上次**没搬动**的条目（相对 Documents 的路径，一行一个），之后的启动
+  /// 只重试这几项；空台账 = 搬完了。用文件而不是 SharedPreferences：偏好拿不到时锚点永远
+  /// 写不进去，每次启动都会重新全扫一遍白名单。
+  static const String iosDocumentsVacateLedgerName = 'documents_vacated.txt';
+
+  /// [iosDocumentsVacateLedgerName] 在 [library] 下的位置（纯派生，测试注入）。
+  static File iosDocumentsVacateLedgerUnder(Directory library) => File(
+    p.join(
+      library.path,
+      iosDocumentsRootSegments.first,
+      iosDocumentsVacateLedgerName,
+    ),
+  );
+
+  /// iOS 导入收件箱目录 = 平台 `Documents`（Info.plist 开了 `UIFileSharingEnabled` /
+  /// `LSSupportsOpeningDocumentsInPlace`，「文件」App 的「我的 iPhone › Fushi」就是它）。
+  ///
+  /// iOS 没有「只共享 Documents 的某个子目录」的办法，所以收件箱只能是整个 Documents——
+  /// 这正是书库必须先搬出 Documents（[iosDocumentsRoot]）的原因。
+  static Future<Directory> importInboxDirectory() async =>
+      fushiTestDirectory('import-inbox') ??
+      await getApplicationDocumentsDirectory();
+
+  /// 启动期把 iOS 存量书库搬出 Documents（只在 [resolve] 里调，见那里的顺序说明）。
+  ///
+  /// 测试分支（[fushiTestDirectory]）与非 iOS 直接跳过。没搬动的条目记进台账
+  /// （[vacateIosDocumentsWithLedger]），下次启动只重试它们——已搬的条目本次就从新根读，
+  /// 没搬动的留在原处，库里的路径由 `SandboxRelocation`
+  /// 统一重基到新根，重试搬完后两边自然对上（同一个白名单作用域）。失败条目记进
+  /// [iosDocumentsVacateFailures]，由错误日志服务就绪后写入，不吞。
+  static Future<void> _ensureIosSharedDocumentsVacated() async {
+    if (!Platform.isIOS) return;
+    if (fushiTestDirectory('app-documents') != null) return;
+    final Directory library = await getLibraryDirectory();
+    final List<String> failures = await vacateIosDocumentsWithLedger(
+      platformDocuments: await getApplicationDocumentsDirectory(),
+      target: iosDocumentsRootUnder(library),
+      ledger: iosDocumentsVacateLedgerUnder(library),
+      legacyFlat: () => _useLegacyFlatDocumentsRoot(),
+      containerName: defaultDocumentsChildSegments.first,
+    );
+    _iosDocumentsVacateFailures
+      ..clear()
+      ..addAll(failures);
+  }
+
+  /// 按台账 [ledger] 搬 iOS 存量书库（见 [iosDocumentsVacateLedgerName]）。返回失败条目。
+  ///
+  /// - 台账不存在：第一次，按 [vacateLegacyIosDocuments] 全量搬，把没搬动的条目写进台账；
+  /// - 台账存在且为空：早已搬完，什么都不碰（Documents 已经是用户的收件箱）；
+  /// - 台账存在且非空：只重试台账里那几项，再把仍失败的写回。
+  ///
+  /// 台账写不进去时记为失败（下次启动会重新全量搬一遍，这是唯一会退化成全扫的情况，
+  /// 并且会进错误日志）。
+  @visibleForTesting
+  static Future<List<String>> vacateIosDocumentsWithLedger({
+    required Directory platformDocuments,
+    required Directory target,
+    required File ledger,
+    required Future<bool> Function() legacyFlat,
+    required String containerName,
+  }) async {
+    Set<String>? only;
+    if (await ledger.exists()) {
+      only = <String>{
+        for (final String line in await ledger.readAsLines())
+          if (line.trim().isNotEmpty) line.trim(),
+      };
+      if (only.isEmpty) return const <String>[];
+    }
+    final List<String> failedEntries = <String>[];
+    final List<String> failures = await vacateLegacyIosDocuments(
+      platformDocuments: platformDocuments,
+      target: target,
+      legacyFlat: await legacyFlat(),
+      containerName: containerName,
+      onlyEntries: only,
+      failedEntries: failedEntries,
+    );
+    try {
+      await ledger.parent.create(recursive: true);
+      await ledger.writeAsString(
+        failedEntries.isEmpty ? '' : '${failedEntries.join('\n')}\n',
+        flush: true,
+      );
+    } on FileSystemException catch (e) {
+      return <String>[...failures, '${ledger.path}: $e'];
+    }
+    return failures;
+  }
+
+  /// 启动期 iOS 书库搬迁失败的条目（`路径: 原因`）。由 `ErrorLogService.init` 写进错误日志。
+  static List<String> get iosDocumentsVacateFailures =>
+      List<String>.unmodifiable(_iosDocumentsVacateFailures);
+  static final List<String> _iosDocumentsVacateFailures = <String>[];
+
+  /// 把旧版放在 iOS `Documents` 里的书库搬进 [target]。返回失败条目，全部成功为空。
+  ///
+  /// - nested 布局（[legacyFlat] = false）：整个 `<Documents>/<容器>/data` 搬成 [target]，
+  ///   容器伞变空后删掉（不空说明里面有别的东西，原样留着）；
+  /// - flat 布局：Documents 根下**只搬** [fushiOwnedDocumentsEntries] 白名单里的顶层项，
+  ///   其它东西（导出的剪辑、用户文件）一律不碰——与数据根迁移对共享根的纪律一致。
+  ///
+  /// 同一容器内是同卷 `rename`，GB 级书库也是 O(1)；目标里已有同名项（上次搬到一半）
+  /// 时走 [moveDirectoryMerging] 的合并语义。
+  ///
+  /// [onlyEntries] 非 null 时只处理其中的条目（相对 Documents 的路径：nested 为
+  /// `<容器>/data`，flat 为白名单顶层名），用于按台账重试；没搬动的条目名追加进
+  /// [failedEntries]。
+  @visibleForTesting
+  static Future<List<String>> vacateLegacyIosDocuments({
+    required Directory platformDocuments,
+    required Directory target,
+    required bool legacyFlat,
+    required String containerName,
+    Set<String>? onlyEntries,
+    List<String>? failedEntries,
+  }) async {
+    final List<String> failures = <String>[];
+    if (p.equals(platformDocuments.path, target.path) ||
+        p.isWithin(platformDocuments.path, target.path)) {
+      failures.add('${target.path}: target inside shared Documents');
+      return failures;
+    }
+    bool wanted(String entry) => onlyEntries?.contains(entry) ?? true;
+    if (!legacyFlat) {
+      final String entry = '$containerName/data';
+      if (!wanted(entry)) return failures;
+      final Directory container = Directory(
+        p.join(platformDocuments.path, containerName),
+      );
+      final Directory legacy = Directory(p.join(container.path, 'data'));
+      try {
+        if (await legacy.exists()) {
+          await moveDirectoryMerging(legacy, target);
+        }
+        if (await container.exists() && await container.list().isEmpty) {
+          await container.delete();
+        }
+      } on FileSystemException catch (e) {
+        failures.add('${legacy.path}: $e');
+        failedEntries?.add(entry);
+      }
+      return failures;
+    }
+    for (final String name in fushiOwnedDocumentsEntries) {
+      if (!wanted(name)) continue;
+      final String source = p.join(platformDocuments.path, name);
+      final String destination = p.join(target.path, name);
+      try {
+        switch (await FileSystemEntity.type(source, followLinks: false)) {
+          case FileSystemEntityType.directory:
+            await moveDirectoryMerging(
+              Directory(source),
+              Directory(destination),
+            );
+          case FileSystemEntityType.file:
+            await target.create(recursive: true);
+            await File(source).rename(destination);
+          default:
+            break;
+        }
+      } on FileSystemException catch (e) {
+        failures.add('$source: $e');
+        failedEntries?.add(name);
+      }
+    }
+    return failures;
   }
 
   /// BUG-1188：**「默认位置」这个概念本身**的 documents 根 = `<Documents>/<容器>/data`
@@ -337,6 +1166,7 @@ class AppPaths {
   static Future<Directory> defaultLocationDocumentsRoot() async {
     final Directory? test = fushiTestDirectory('app-documents');
     if (test != null) return test;
+    if (Platform.isIOS) return iosDocumentsRoot();
     final Directory platformDocuments =
         await getApplicationDocumentsDirectory();
     return Directory(
@@ -591,9 +1421,16 @@ class AppPaths {
     // 音频 CD 抓轨产物（BUG-3312，`<documents>/audio_cd/<卷标> (<光盘id>)/`）。导入后的
     // 视频条目 videoPath 指向这里，必须随数据根走。派生点：audio_cd_import.dart。
     'audio_cd',
+    // 在线音源插件曲目下载（`<documents>/music_downloads/<插件>/<专辑>/`）。导入后的曲目
+    // path 指向这里，必须随数据根走。派生点：music_plugin_download.dart。
+    'music_downloads',
     // 旧版复习自动备份（`<documents>/srs_backups/`）。同步 v2 已取消定时备份（时间线 + 归档 + 手动
     // 导出取代），旧文件升级后再留 30 天（srs_legacy_backup_cleanup.dart），这期间仍随数据根走。
     'srs_backups',
+    // iOS「文件」App 收件箱收进来的文件（拍板台 nLXhu0d7gV，`<documents>/inbox_imports/<域>/<批次>/`）。
+    // 视频 / 曲目条目原地引用这里，必须随数据根走、随容器漂移重基。派生点：
+    // AppPaths.inboxImportsDirectory（import_inbox.dart / media_sources_view.dart 使用）。
+    'inbox_imports',
   };
 
   /// BUG-1115：[newDataRoot] 落在**共享** documents 根（老安装的扁平布局 = 平台
@@ -641,8 +1478,13 @@ class AppPaths {
   /// 数据根可能不可达），但目录选错了：
   /// - 桌面：`<ApplicationSupport>/logs`（macOS `~/Library/Application Support/<bundle>/logs`），
   ///   app 私有、与数据根无关、启动最早期可用；
-  /// - Android / iOS：沿用 app 沙盒内的 documents 目录（用户看不到，iOS 原生 MetricKit
-  ///   落盘 `Documents/metrickit/` 与它同目录约定，见 `AppDelegate.swift`）。
+  /// - iOS：同桌面 `<ApplicationSupport>/logs`。iOS 的 Documents 已是「文件」App 可见的
+  ///   导入收件箱（拍板台 nLXhu0d7gV），未脱敏的错误日志不能摊在那里；原生 MetricKit
+  ///   落盘 `<ApplicationSupport>/logs/metrickit/` 与它同目录约定（`AppDelegate.swift`），
+  ///   旧版留在 `Documents/metrickit/` 的待摘要诊断随诊断文件一起搬过来；
+  /// - Android：外部 app 专属目录 `Android/data/<包名>/files/logs`（USB / 电脑可直接拿去
+  ///   反馈；其它 app 读不到，分区存储隔离）。旧版留在 `app_flutter` 的诊断文件首次解析时
+  ///   搬过来；外部存储本次不可用时退回 `app_flutter`。
   ///
   /// 测试分支与旧实现同一个键（`app-documents`），测试注入不变。首次解析时把旧位置
   /// （平台 Documents 根）残留的诊断文件搬过来（[migrateLegacyDiagnostics]），再交给
@@ -669,17 +1511,59 @@ class AppPaths {
   }
 
   static Future<Directory> _resolveDiagnosticsDirectory() async {
-    if (!isDesktopPlatform) return getApplicationDocumentsDirectory();
+    if (Platform.isAndroid) {
+      final Directory legacy = await getApplicationDocumentsDirectory();
+      final Directory? ext = await androidExternalFilesDirectory();
+      // 外部存储本次不可用：留在 app_flutter（下次可用时再搬）。
+      if (ext == null) return legacy;
+      final Directory dir = Directory(p.join(ext.path, 'logs'));
+      await dir.create(recursive: true);
+      _diagnosticsMigrationFailures.addAll(
+        await migrateLegacyDiagnostics(from: legacy, to: dir),
+      );
+      return dir;
+    }
+    if (!isDesktopPlatform && !Platform.isIOS) {
+      return getApplicationDocumentsDirectory();
+    }
     final Directory support = await getApplicationSupportDirectory();
     final Directory dir = Directory(p.join(support.path, 'logs'));
     await dir.create(recursive: true);
+    final Directory legacy = await getApplicationDocumentsDirectory();
+    if (Platform.isIOS) {
+      _diagnosticsMigrationFailures.addAll(
+        await migrateLegacyMetricKitDirectory(from: legacy, to: dir),
+      );
+    }
     _diagnosticsMigrationFailures.addAll(
-      await migrateLegacyDiagnostics(
-        from: await getApplicationDocumentsDirectory(),
-        to: dir,
-      ),
+      await migrateLegacyDiagnostics(from: legacy, to: dir),
     );
     return dir;
+  }
+
+  /// iOS 原生 MetricKit 落盘子目录名（`AppDelegate.swift` 与 `previous_exit_log.dart` 同名）。
+  static const String metricKitDirectoryName = 'metrickit';
+
+  /// 把旧版落在 [from]（iOS Documents）下的 `metrickit/` 合并进 [to] 下的同名目录。
+  /// 返回失败条目。旧目录不存在时什么都不做（每次启动只多一次 stat）。
+  @visibleForTesting
+  static Future<List<String>> migrateLegacyMetricKitDirectory({
+    required Directory from,
+    required Directory to,
+  }) async {
+    final Directory legacy = Directory(
+      p.join(from.path, metricKitDirectoryName),
+    );
+    try {
+      if (!await legacy.exists()) return const <String>[];
+      await moveDirectoryMerging(
+        legacy,
+        Directory(p.join(to.path, metricKitDirectoryName)),
+      );
+      return const <String>[];
+    } on FileSystemException catch (e) {
+      return <String>['$metricKitDirectoryName: $e'];
+    }
   }
 
   /// 旧位置（平台 Documents 根）上属于 Fushi 的诊断文件名。只认这些确切的名字 /
@@ -832,8 +1716,162 @@ class AppPaths {
   static Future<Directory> srsBackupsDirectory() =>
       documentsSubdirectory('srs_backups');
 
+  /// iOS 收件箱批次落点 `<documents>/inbox_imports`（见 `import_inbox.dart`）。
+  static Future<Directory> inboxImportsDirectory() =>
+      documentsSubdirectory('inbox_imports');
+
   /// 删 Profile 前自动做的复习数据备份 `<documents>/srs_profile_backups`（`.fushisrs`，撤销途径；
   /// 不进旧备份的 30 天清理，见 `srs_profile_cleanup.dart`）。
   static Future<Directory> srsProfileBackupsDirectory() =>
       documentsSubdirectory('srs_profile_backups');
+}
+
+/// Android 书库位置锚点（[AppPaths.androidLibraryAnchorFileName] 的内容）。
+///
+/// 放在 support 根下的独立小文件里、原子替换，而不是 SharedPreferences：后者在多进程
+/// 下会被别的进程的旧内存副本整份覆盖（反馈 RCv76PPoiJ）。内部书库的布局与容器名也
+/// 记在这里，理由相同：它们在 prefs 里那份被冲掉后，布局判定会回落成 flat，书库根指到
+/// `app_flutter` 本身，书库在 UI 上整体消失。
+@immutable
+class AndroidLibraryAnchor {
+  const AndroidLibraryAnchor({
+    required this.location,
+    this.layout,
+    this.container,
+  });
+
+  /// [AppPaths.androidDocumentsLocationInternal] / [AppPaths.androidDocumentsLocationExternal]。
+  final String location;
+
+  /// 内部书库的布局 [AppPaths.documentsLayoutFlat] / [AppPaths.documentsLayoutNested]；
+  /// null = 不由锚点决定（沿用布局锚点的判定）。
+  final String? layout;
+
+  /// 内部 nested 书库的容器名 [AppPaths.documentsContainerFushi] /
+  /// [AppPaths.documentsContainerHibiki]；null = 不由锚点决定（沿用容器锚点的判定）。
+  final String? container;
+
+  static const Set<String> _locations = <String>{
+    AppPaths.androidDocumentsLocationInternal,
+    AppPaths.androidDocumentsLocationExternal,
+  };
+  static const Set<String> _layouts = <String>{
+    AppPaths.documentsLayoutFlat,
+    AppPaths.documentsLayoutNested,
+  };
+  static const Set<String> _containers = <String>{
+    AppPaths.documentsContainerFushi,
+    AppPaths.documentsContainerHibiki,
+  };
+
+  /// 解析文件内容；不是合法锚点返回 null。
+  static AndroidLibraryAnchor? tryParse(String raw) {
+    try {
+      final Object? decoded = jsonDecode(raw);
+      if (decoded is! Map<String, Object?>) return null;
+      final Object? location = decoded['location'];
+      if (location is! String || !_locations.contains(location)) return null;
+      final Object? layout = decoded['layout'];
+      final Object? container = decoded['container'];
+      return AndroidLibraryAnchor(
+        location: location,
+        layout: layout is String && _layouts.contains(layout) ? layout : null,
+        container: container is String && _containers.contains(container)
+            ? container
+            : null,
+      );
+    } on FormatException {
+      return null;
+    }
+  }
+
+  String encode() => jsonEncode(<String, String>{
+    'location': location,
+    if (layout != null) 'layout': layout!,
+    if (container != null) 'container': container!,
+  });
+
+  @override
+  bool operator ==(Object other) =>
+      other is AndroidLibraryAnchor &&
+      other.location == location &&
+      other.layout == layout &&
+      other.container == container;
+
+  @override
+  int get hashCode => Object.hash(location, layout, container);
+
+  @override
+  String toString() => encode();
+}
+
+/// [AppPaths.reconcileAndroidLibraryRoots] 的一个候选根：位置、内部布局与目录。
+class _AndroidLibraryRootCandidate {
+  const _AndroidLibraryRootCandidate(this.location, this.internal, this.root);
+
+  /// [AppPaths.androidDocumentsLocationInternal] / [AppPaths.androidDocumentsLocationExternal]。
+  final String location;
+
+  /// 选中后的内部布局（位置是外部时 = 当前配置）。
+  final AndroidInternalLibraryCandidate internal;
+
+  final Directory root;
+}
+
+/// [AppPaths.probeLibraryFiles] 的结论。
+enum LibraryProbe {
+  /// 至少有一个书库文件。
+  found,
+
+  /// 全部探完，一个书库文件都没有。
+  none,
+
+  /// 没找到书库文件，但途中有目录列不出来或超时：结论不可靠。
+  unknown,
+}
+
+/// Android 内部书库根的一个候选：布局、容器名与它推出来的目录。
+@immutable
+class AndroidInternalLibraryCandidate {
+  const AndroidInternalLibraryCandidate({
+    required this.layout,
+    required this.container,
+    required this.root,
+  });
+
+  /// [AppPaths.documentsLayoutFlat] / [AppPaths.documentsLayoutNested]。
+  final String layout;
+
+  /// [AppPaths.documentsContainerFushi] / [AppPaths.documentsContainerHibiki]（flat 布局
+  /// 下不影响 [root]，只是沿用当前值，供日后迁回内部 nested 时用）。
+  final String container;
+
+  /// 这个候选的书库根。
+  final Directory root;
+
+  @override
+  String toString() => '$layout/$container ${root.path}';
+}
+
+/// [AppPaths.reconcileAndroidLibraryRoots] 的结论。
+@immutable
+class AndroidLibraryReconciliation {
+  const AndroidLibraryReconciliation({
+    required this.location,
+    required this.internal,
+    this.notes = const <String>[],
+    this.strayRoot,
+  });
+
+  /// 最终的书库位置（internal / external）。
+  final String location;
+
+  /// 最终的内部书库根候选（位置是外部时，它是迁回内部时用的布局与容器）。
+  final AndroidInternalLibraryCandidate internal;
+
+  /// 写进诊断日志的对账说明（纠正、两边都有、锚定根是空的时各根的探测结论）。
+  final List<String> notes;
+
+  /// 两个根都有书、主库作证后落选的根，交给散书合并；null = 不合并。
+  final Directory? strayRoot;
 }

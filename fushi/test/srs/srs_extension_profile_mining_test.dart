@@ -6,13 +6,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_profile_stores.dart';
 import 'package:fushi_anki/fushi_anki.dart';
-import 'package:fushi_core/fushi_core.dart' show srsIdType;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -72,7 +70,6 @@ void main() {
   Future<SrsDbStore> openActive(String uid) => stores.activate(
     uid,
     () => SrsDbStore.open(
-      db: storage.db,
       core: storage.core,
       profileUid: uid,
       deviceId: 'dev',
@@ -99,15 +96,19 @@ void main() {
     SrsTermQuery(expression, reading),
   ])).isNotEmpty;
 
-  Future<int> opsOf(String uid) async {
-    final QueryRow r = await storage.db
-        .customSelect(
-          'SELECT COUNT(*) AS c FROM sync2_ops WHERE profile_uid = ?',
-          variables: <Variable<Object>>[Variable<String>(uid, srsIdType)],
-        )
-        .getSingle();
-    return r.read<int>('c');
-  }
+  // 某个 profile 名下的操作（新代真相表 `ops`，主键 `k = 设备下标 << 40 | seq`，设备下标经 `devs.col` 归到
+  // profile 的集合，native/fushi_fsrs/src/store/gen4/schema.rs）：没有公开读命令按 profile 数原始操作，走测试专用的
+  // 原始通道。协议 3 查的是 `sync2_ops.profile_uid`。
+  const String opsOfProfile =
+      'FROM ops WHERE (k >> 40) IN (SELECT dev FROM devs WHERE col = '
+      '(SELECT col FROM collections WHERE profile_uid = ?))';
+
+  Future<int> opsOf(String uid) async =>
+      storage.core.debugSelectRaw(
+            'SELECT COUNT(*) AS c $opsOfProfile',
+            <Object?>[uid],
+          ).single['c']!
+          as int;
 
   Future<SrsDbStore> foreignStoreOf(String uid) async => (await stores.minerFor(
     profileUid: uid,
@@ -285,17 +286,13 @@ void main() {
     await expectLater(storeA.createDeck('过期'), throwsA(isA<StateError>()));
     await foreignA.createDeck('之后');
 
-    final List<int> seqs =
-        (await storage.db
-                .customSelect(
-                  'SELECT seq FROM sync2_ops WHERE profile_uid = ? ORDER BY seq',
-                  variables: <Variable<Object>>[
-                    Variable<String>(_uidA, srsIdType),
-                  ],
-                )
-                .get())
-            .map((QueryRow r) => r.read<int>('seq'))
-            .toList();
+    final List<int> seqs = <int>[
+      for (final Map<String, Object?> r in storage.core.debugSelectRaw(
+        'SELECT k & 1099511627775 AS seq $opsOfProfile ORDER BY k',
+        <Object?>[_uidA],
+      ))
+        r['seq']! as int,
+    ];
     expect(seqs, isNotEmpty);
     expect(seqs.toSet().length, seqs.length, reason: '同一写入者序号不重复');
     expect(

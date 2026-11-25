@@ -9,12 +9,17 @@
 /// 墨水屏的差异也在这里各自收口。
 library;
 
+import 'dart:async';
 import 'dart:math' as math;
+import 'dart:ui' show PointerDeviceKind;
 
 import 'package:flutter/rendering.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
 
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
+import 'package:fushi/src/utils/components/fushi_poster_block.dart'
+    show FushiBarReferenceLine;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
@@ -27,6 +32,8 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleMetrics;
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 
 /// 首载骨架块：中性底色圆角块（MD3 surfaceContainer 档 / Apple tertiaryFill /
@@ -237,14 +244,20 @@ class HomeGoalRing extends StatelessWidget {
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final double? target = fraction;
-    final Color accent = tokens.surfaces.primary;
+    // Apple：强调色环 + systemFill 底轨、环心 label（不取 M3E primary / 中性块色）。
+    final FushiAppleColors? apple =
+        isGlassDesign(context) && !isEinkTheme(context)
+        ? appleColorsOf(context)
+        : null;
+    final Color accent = apple?.accent ?? tokens.surfaces.primary;
+    final Color track = apple?.fill ?? fushiNeutralBlockColor(context);
     if (target == null) {
       return SizedBox.square(
         dimension: size,
         child: DecoratedBox(
           decoration: BoxDecoration(
             shape: BoxShape.circle,
-            color: fushiNeutralBlockColor(context),
+            color: track,
             border: isEinkTheme(context)
                 ? Border.all(color: tokens.surfaces.outline)
                 : null,
@@ -271,16 +284,28 @@ class HomeGoalRing extends StatelessWidget {
                     value: value,
                     strokeWidth: 5,
                     color: accent,
-                    backgroundColor: fushiNeutralBlockColor(context),
+                    // 墨水屏的中性块色是纯白：底轨看不见，环只剩半截弧。用浅灰
+                    // （前景 30%，与「语言目标」环同一个）。
+                    backgroundColor: isEinkTheme(context)
+                        ? tokens.surfaces.onSurface.withValues(alpha: 0.3)
+                        : track,
+                    // 铺满 [size]：不给外框时 M3E 指示器按默认 40 画在 52 的槽里，
+                    // 环心只剩 ~22 宽，「37%」压在弧上（2026-11-20 走查截图）。
+                    constraints: BoxConstraints.tight(Size.square(size)),
+                    padding: EdgeInsets.zero,
                   ),
                 ),
-                Text(
-                  '${(value * 100).round()}%',
-                  style: context.fushiType.labelSmall.copyWith(
-                    fontWeight: FontWeight.w600,
-                    color: tokens.surfaces.onSurface,
+                // 达成后环心是对勾（与目标环 [StudyGoalRing] 同一完成状态）。
+                if (target >= 1)
+                  FushiIcon(FushiIcons.check, size: size * 0.42, color: accent)
+                else
+                  Text(
+                    '${(value * 100).round()}%',
+                    style: context.fushiType.labelSmall.copyWith(
+                      fontWeight: FontWeight.w600,
+                      color: apple?.label ?? tokens.surfaces.onSurface,
+                    ),
                   ),
-                ),
               ],
             ),
           ),
@@ -328,6 +353,12 @@ class HomeStudyHeader extends StatelessWidget {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ThemeData theme = Theme.of(context);
     final bool hasGoal = setGoalLabel == null;
+    // Apple：文字 label / secondaryLabel，整行点按走系统高亮（不画墨水）。
+    final FushiAppleColors? apple =
+        isGlassDesign(context) && !isEinkTheme(context)
+        ? appleColorsOf(context)
+        : null;
+    final Color strong = apple?.label ?? tokens.surfaces.onSurface;
     final Duration swap = fushiMotionDuration(context, FushiMotion.short);
     final Widget valueText = AnimatedSwitcher(
       duration: swap,
@@ -339,13 +370,15 @@ class HomeStudyHeader extends StatelessWidget {
         maxLines: 1,
         softWrap: false,
         style: (theme.textTheme.titleLarge ?? tokens.type.listTitle).copyWith(
-          color: tokens.surfaces.onSurface,
+          color: strong,
           fontWeight: FontWeight.w700,
         ),
       ),
     );
     final Color timeColor =
-        tokens.type.metadata.color ?? tokens.surfaces.onSurface;
+        apple?.secondaryLabel ??
+        tokens.type.metadata.color ??
+        tokens.surfaces.onSurface;
     final Widget time = Semantics(
       key: const ValueKey<String>('home-today-time'),
       container: true,
@@ -366,10 +399,7 @@ class HomeStudyHeader extends StatelessWidget {
               maxLines: 1,
               softWrap: false,
               style: (theme.textTheme.titleMedium ?? tokens.type.listTitle)
-                  .copyWith(
-                    color: tokens.surfaces.onSurface,
-                    fontWeight: FontWeight.w600,
-                  ),
+                  .copyWith(color: strong, fontWeight: FontWeight.w600),
             ),
           ),
         ],
@@ -386,43 +416,54 @@ class HomeStudyHeader extends StatelessWidget {
               FushiTextButton(onPressed: onEditGoal, child: Text(setLabel)),
             ],
           );
+    final Widget row = Padding(
+      padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
+      child: Row(
+        children: <Widget>[
+          HomeGoalRing(fraction: fraction, size: 52),
+          SizedBox(width: tokens.spacing.card),
+          // 字数与时长恒在同一行（用户：「每日目标的同一行右侧加上今日时长」）：
+          // 放得下时两端对齐（时长贴右）；极窄屏（320）放不下时整行等比缩小，
+          // 两个数字一起缩，不折行、不省略号截断、也不会只把其中一个压成小字。
+          Expanded(
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints c) => FittedBox(
+                fit: BoxFit.scaleDown,
+                alignment: AlignmentDirectional.centerStart,
+                child: ConstrainedBox(
+                  constraints: BoxConstraints(minWidth: c.maxWidth),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: <Widget>[
+                      valueText,
+                      SizedBox(width: tokens.spacing.card),
+                      trailingRow,
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (apple != null) {
+      return FushiPlainButton(
+        key: const ValueKey<String>('home-goal-row'),
+        onPressed: hasGoal ? onEditGoal : null,
+        borderRadius: BorderRadius.circular(
+          FushiAppleMetrics.of(context).groupRadius / 2,
+        ),
+        child: row,
+      );
+    }
     return InkWell(
       key: const ValueKey<String>('home-goal-row'),
       onTap: hasGoal ? onEditGoal : null,
       canRequestFocus: hasGoal,
       borderRadius: FushiBorderRadius.card,
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-        child: Row(
-          children: <Widget>[
-            HomeGoalRing(fraction: fraction, size: 52),
-            SizedBox(width: tokens.spacing.card),
-            // 字数与时长恒在同一行（用户：「每日目标的同一行右侧加上今日时长」）：
-            // 放得下时两端对齐（时长贴右）；极窄屏（320）放不下时整行等比缩小，
-            // 两个数字一起缩，不折行、不省略号截断、也不会只把其中一个压成小字。
-            Expanded(
-              child: LayoutBuilder(
-                builder: (BuildContext context, BoxConstraints c) => FittedBox(
-                  fit: BoxFit.scaleDown,
-                  alignment: AlignmentDirectional.centerStart,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(minWidth: c.maxWidth),
-                    child: Row(
-                      mainAxisSize: MainAxisSize.min,
-                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                      children: <Widget>[
-                        valueText,
-                        SizedBox(width: tokens.spacing.card),
-                        trailingRow,
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-          ],
-        ),
-      ),
+      child: row,
     );
   }
 }
@@ -711,6 +752,322 @@ class _RenderPanelFlow extends RenderBox
       defaultHitTestChildren(result, position: position);
 }
 
+/// 重设计外壳下首页色块面板的排布（设计稿首页 `.stat` 一排 `s2` 色块）：按行排，
+/// 同一行的色块**等高**（按行里最高的那块拉齐），每行列数均分——
+///
+/// - 每行最多放得下几列 = 按 [minColumnWidth] 取整，且不超过 [maxColumns]；
+/// - 行数 = 面板数 ÷ 每行上限向上取整，再把面板尽量均分到各行（[rowSizes]：
+///   4 块排成 2 + 2 而不是 3 + 1，5 块排成 3 + 2），最后一行不会剩一块孤零零
+///   挂在左边、右边一大片空；
+/// - 窄屏（放不下两列）就是一列竖排。
+///
+/// 与 [HomePanelFlow]（按高度分列的瀑布流）不同：色块是一整块底色，列底参差
+/// 会露出锯齿状的空白，所以这里按行拉齐。行内顺序 = 子节点顺序，Tab 与方向键
+/// 走几何遍历。
+class HomePosterRows extends MultiChildRenderObjectWidget {
+  const HomePosterRows({
+    super.key,
+    required super.children,
+    required this.gap,
+    this.minColumnWidth = 300,
+    this.maxColumns = 3,
+  });
+
+  final double gap;
+  final double minColumnWidth;
+  final int maxColumns;
+
+  /// 宽 [width] 下 [count] 块面板逐行各放几块（纯函数，测试与版面共用）。
+  static List<int> rowSizes({
+    required double width,
+    required int count,
+    required double gap,
+    double minColumnWidth = 300,
+    int maxColumns = 3,
+  }) {
+    if (count <= 0) return const <int>[];
+    final int fit = ((width + gap) / (minColumnWidth + gap)).floor().clamp(
+      1,
+      math.max(1, maxColumns),
+    );
+    final int rows = (count + fit - 1) ~/ fit;
+    final int base = count ~/ rows;
+    final int extra = count % rows;
+    return <int>[for (int r = 0; r < rows; r++) base + (r < extra ? 1 : 0)];
+  }
+
+  @override
+  RenderObject createRenderObject(BuildContext context) => _RenderPosterRows(
+    gap: gap,
+    minColumnWidth: minColumnWidth,
+    maxColumns: maxColumns,
+    textDirection: Directionality.of(context),
+  );
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderPosterRows renderObject,
+  ) {
+    renderObject
+      ..gap = gap
+      ..minColumnWidth = minColumnWidth
+      ..maxColumns = maxColumns
+      ..textDirection = Directionality.of(context);
+  }
+}
+
+class _PosterRowsParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderPosterRows extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _PosterRowsParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _PosterRowsParentData> {
+  _RenderPosterRows({
+    required double gap,
+    required double minColumnWidth,
+    required int maxColumns,
+    required TextDirection textDirection,
+  }) : _gap = gap,
+       _minColumnWidth = minColumnWidth,
+       _maxColumns = maxColumns,
+       _textDirection = textDirection;
+
+  double _gap;
+  set gap(double v) {
+    if (v == _gap) return;
+    _gap = v;
+    markNeedsLayout();
+  }
+
+  double _minColumnWidth;
+  set minColumnWidth(double v) {
+    if (v == _minColumnWidth) return;
+    _minColumnWidth = v;
+    markNeedsLayout();
+  }
+
+  int _maxColumns;
+  set maxColumns(int v) {
+    if (v == _maxColumns) return;
+    _maxColumns = v;
+    markNeedsLayout();
+  }
+
+  TextDirection _textDirection;
+  set textDirection(TextDirection v) {
+    if (v == _textDirection) return;
+    _textDirection = v;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _PosterRowsParentData) {
+      child.parentData = _PosterRowsParentData();
+    }
+  }
+
+  @override
+  void performLayout() {
+    final List<RenderBox> kids = <RenderBox>[];
+    RenderBox? child = firstChild;
+    while (child != null) {
+      kids.add(child);
+      child = childAfter(child);
+    }
+    final double width = constraints.maxWidth;
+    final List<int> rows = HomePosterRows.rowSizes(
+      width: width,
+      count: kids.length,
+      gap: _gap,
+      minColumnWidth: _minColumnWidth,
+      maxColumns: _maxColumns,
+    );
+    final bool rtl = _textDirection == TextDirection.rtl;
+    double y = 0;
+    int next = 0;
+    for (final int n in rows) {
+      final double colWidth = (width - _gap * (n - 1)) / n;
+      // 先按列宽量自然高度（面板里有 LayoutBuilder，不支持 dry layout），再按
+      // 行里最高的那块统一定高重排一遍。
+      double rowHeight = 0;
+      for (int k = 0; k < n; k++) {
+        final RenderBox kid = kids[next + k]
+          ..layout(
+            BoxConstraints.tightFor(width: colWidth),
+            parentUsesSize: true,
+          );
+        rowHeight = math.max(rowHeight, kid.size.height);
+      }
+      for (int k = 0; k < n; k++) {
+        final RenderBox kid = kids[next + k]
+          ..layout(
+            // 只抬到行高、不封顶：两遍量高都在「高度不设上限」下进行，面板里按
+            // 约束分支的内容（LayoutBuilder、进场包装）两遍给出同一份版面。
+            // 曾用紧约束重排：第二遍的内容比第一遍量出的高，整块在里面溢出。
+            BoxConstraints(
+              minWidth: colWidth,
+              maxWidth: colWidth,
+              minHeight: rowHeight,
+            ),
+            parentUsesSize: true,
+          );
+        final double x = k * (colWidth + _gap);
+        (kid.parentData! as _PosterRowsParentData).offset = Offset(
+          rtl ? width - x - colWidth : x,
+          y,
+        );
+      }
+      y += rowHeight + _gap;
+      next += n;
+    }
+    size = constraints.constrain(
+      Size(width, rows.isEmpty ? 0 : math.max(0, y - _gap)),
+    );
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+}
+
+/// [HomePosterRows] 里色块内容的竖排：同一行被拉到行高时，多出来的高度插在第
+/// [split] 个子节点前面——前面的贴顶、从第 [split] 个起贴底，内容自然高度够了就是
+/// 普通的 `Column(spacing: gap)`。
+///
+/// [HomePosterRows] 两遍量高都不封顶（只抬 minHeight），`Column` 的 [Spacer] /
+/// [Expanded] 在不封顶的高度里用不了，所以单独写成按 minHeight 分配的竖排。
+class HomePosterSpread extends MultiChildRenderObjectWidget {
+  const HomePosterSpread({
+    super.key,
+    required super.children,
+    required this.split,
+    this.gap = 12,
+  });
+
+  /// 从这个下标起的子节点贴底；≥ 子节点数时全部贴顶（等同普通竖排）。
+  final int split;
+  final double gap;
+
+  @override
+  RenderObject createRenderObject(BuildContext context) =>
+      _RenderPosterSpread(split: split, gap: gap);
+
+  @override
+  void updateRenderObject(
+    BuildContext context,
+    _RenderPosterSpread renderObject,
+  ) {
+    renderObject
+      ..split = split
+      ..gap = gap;
+  }
+}
+
+class _PosterSpreadParentData extends ContainerBoxParentData<RenderBox> {}
+
+class _RenderPosterSpread extends RenderBox
+    with
+        ContainerRenderObjectMixin<RenderBox, _PosterSpreadParentData>,
+        RenderBoxContainerDefaultsMixin<RenderBox, _PosterSpreadParentData> {
+  _RenderPosterSpread({required int split, required double gap})
+    : _split = split,
+      _gap = gap;
+
+  int _split;
+  set split(int v) {
+    if (v == _split) return;
+    _split = v;
+    markNeedsLayout();
+  }
+
+  double _gap;
+  set gap(double v) {
+    if (v == _gap) return;
+    _gap = v;
+    markNeedsLayout();
+  }
+
+  @override
+  void setupParentData(RenderBox child) {
+    if (child.parentData is! _PosterSpreadParentData) {
+      child.parentData = _PosterSpreadParentData();
+    }
+  }
+
+  List<RenderBox> get _kids {
+    final List<RenderBox> kids = <RenderBox>[];
+    RenderBox? child = firstChild;
+    while (child != null) {
+      kids.add(child);
+      child = childAfter(child);
+    }
+    return kids;
+  }
+
+  @override
+  double computeMinIntrinsicHeight(double width) =>
+      _sumHeights((RenderBox k) => k.getMinIntrinsicHeight(width));
+
+  @override
+  double computeMaxIntrinsicHeight(double width) =>
+      _sumHeights((RenderBox k) => k.getMaxIntrinsicHeight(width));
+
+  double _sumHeights(double Function(RenderBox kid) of) {
+    final List<RenderBox> kids = _kids;
+    if (kids.isEmpty) return 0;
+    return kids.fold<double>(0, (double a, RenderBox k) => a + of(k)) +
+        _gap * (kids.length - 1);
+  }
+
+  @override
+  double computeMinIntrinsicWidth(double height) => _kids.fold<double>(
+    0,
+    (double a, RenderBox k) => math.max(a, k.getMinIntrinsicWidth(height)),
+  );
+
+  @override
+  double computeMaxIntrinsicWidth(double height) => _kids.fold<double>(
+    0,
+    (double a, RenderBox k) => math.max(a, k.getMaxIntrinsicWidth(height)),
+  );
+
+  @override
+  void performLayout() {
+    final List<RenderBox> kids = _kids;
+    final double width = constraints.maxWidth;
+    final BoxConstraints each = BoxConstraints.tightFor(width: width);
+    double natural = 0;
+    for (final RenderBox kid in kids) {
+      kid.layout(each, parentUsesSize: true);
+      natural += kid.size.height;
+    }
+    if (kids.isNotEmpty) natural += _gap * (kids.length - 1);
+    final Size own = constraints.constrain(Size(width, natural));
+    final double extra = math.max(0, own.height - natural);
+    double y = 0;
+    for (int i = 0; i < kids.length; i++) {
+      if (i == _split) y += extra;
+      (kids[i].parentData! as _PosterSpreadParentData).offset = Offset(0, y);
+      y += kids[i].size.height + _gap;
+    }
+    size = own;
+  }
+
+  @override
+  void paint(PaintingContext context, Offset offset) =>
+      defaultPaint(context, offset);
+
+  @override
+  bool hitTestChildren(BoxHitTestResult result, {required Offset position}) =>
+      defaultHitTestChildren(result, position: position);
+}
+
 /// 「今日」面板宽屏时的近 7 天柱条（2026-10-31 方案 A 补齐「今日」）：每天一根，
 /// 高度按 7 天里的最大值归一，今天用强调色、其余用浅一档；悬停提示是当天字数。
 /// 全为 0 时柱条贴底一线（不画空白）。
@@ -721,10 +1078,23 @@ class HomeWeekBars extends StatelessWidget {
     required this.labels,
     required this.semanticLabel,
     this.height = 44,
+    this.reference,
+    this.color,
+    this.axisLabels,
   });
+
+  /// 柱色（当前目标的语言色，与旁边的环同色）；null = 主题主色。墨水屏忽略。
+  final Color? color;
+
+  /// 与 [values] 对齐的横轴短标签（星期首字母）；只有 Apple（Swift Charts 口径）
+  /// 画，高度够时画在细基线下面。null = 不画。
+  final List<String>? axisLabels;
 
   /// 升序 7 天的数值（最后一个是今天）。
   final List<int> values;
+
+  /// 参考线（与 [values] 同单位，当前目标摊到一天的量）；null = 不画。
+  final double? reference;
 
   /// 与 [values] 对齐的悬停提示文案。
   final List<String> labels;
@@ -737,59 +1107,228 @@ class HomeWeekBars extends StatelessWidget {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final bool eink = isEinkTheme(context);
     final bool apple = isGlassDesign(context) && !eink;
+    if (apple) return _buildApple(context);
+    final Color? tint = eink ? null : color;
     final Color today = eink
         ? cs.onSurface
-        : (apple ? appleColorsOf(context).accent : cs.primary);
+        : (tint ?? (apple ? appleColorsOf(context).accent : cs.primary));
     final Color past = eink
         ? cs.outline
-        : (apple
-              ? appleColorsOf(context).accent.withValues(alpha: 0.4)
-              : cs.primaryContainer);
-    final int peak = values.fold<int>(0, math.max);
+        : (tint != null
+              ? tint.withValues(alpha: 0.3)
+              : (apple
+                    ? appleColorsOf(context).accent.withValues(alpha: 0.4)
+                    : cs.primaryContainer));
+    final double? line = reference != null && reference! > 0 ? reference : null;
+    final double peak = math.max(
+      values.fold<int>(0, math.max).toDouble(),
+      line ?? 0,
+    );
+    final Widget bars = SizedBox(
+      key: const ValueKey<String>('home-week-bars'),
+      height: height,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: <Widget>[
+          for (int i = 0; i < values.length; i++) ...<Widget>[
+            if (i > 0) SizedBox(width: tokens.spacing.gap / 2),
+            Expanded(
+              child: FushiTooltip(
+                message: labels[i],
+                excludeFromSemantics: true,
+                child: TweenAnimationBuilder<double>(
+                  // begin: 0：首次出现也从底长起（只给 end 时首帧直接画终值）。
+                  tween: Tween<double>(
+                    begin: 0,
+                    end: peak == 0 ? 0 : values[i] / peak,
+                  ),
+                  duration: fushiMotionDuration(context, FushiMotion.medium),
+                  curve: FushiMotion.standard,
+                  builder: (BuildContext _, double f, Widget? __) => Container(
+                    height: math.max(3, height * f),
+                    decoration: BoxDecoration(
+                      color: i == values.length - 1 ? today : past,
+                      borderRadius: const BorderRadius.all(Radius.circular(4)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
+    );
     return Semantics(
       container: true,
       label: semanticLabel,
       excludeSemantics: true,
-      child: SizedBox(
-        key: const ValueKey<String>('home-week-bars'),
-        height: height,
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.end,
-          children: <Widget>[
-            for (int i = 0; i < values.length; i++) ...<Widget>[
-              if (i > 0) SizedBox(width: tokens.spacing.gap / 2),
-              Expanded(
-                child: FushiTooltip(
-                  message: labels[i],
-                  excludeFromSemantics: true,
-                  child: TweenAnimationBuilder<double>(
-                    // begin: 0：首次出现也从底长起（只给 end 时首帧直接画终值）。
-                    tween: Tween<double>(
-                      begin: 0,
-                      end: peak == 0 ? 0 : values[i] / peak,
-                    ),
-                    duration: fushiMotionDuration(context, FushiMotion.medium),
-                    curve: FushiMotion.standard,
-                    builder: (BuildContext _, double f, Widget? __) =>
-                        Container(
-                          height: math.max(3, height * f),
-                          decoration: BoxDecoration(
-                            color: i == values.length - 1 ? today : past,
-                            borderRadius: const BorderRadius.all(
-                              Radius.circular(4),
-                            ),
-                          ),
-                        ),
+      child: line == null
+          ? bars
+          : FushiBarReferenceLine(
+              fraction: line / peak,
+              height: height,
+              color: tokens.surfaces.onVariant.withValues(alpha: 0.6),
+              child: bars,
+            ),
+    );
+  }
+
+  /// Apple（Swift Charts BarMark / Health 周图口径）：顶端圆角的柱、今天强调色
+  /// （或目标语言色）、其余 systemFill 灰；0 值不画柱，只留一条 hairline 基线；
+  /// 高度够时基线下是星期首字母（secondaryLabel）。柱从基线长起，时长取
+  /// [fushiMotionDuration]。
+  Widget _buildApple(BuildContext context) {
+    final FushiAppleColors a = appleColorsOf(context);
+    final FushiAppleMetrics m = FushiAppleMetrics.of(context);
+    final Color today = color ?? a.accent;
+    final Color past = color?.withValues(alpha: 0.35) ?? a.fill;
+    final double? line = reference != null && reference! > 0 ? reference : null;
+    // 纵轴顶留余量（Swift Charts 自动轴取整到「好看」的刻度，最高柱不顶满）。
+    final double peak =
+        math.max(values.fold<int>(0, math.max).toDouble(), line ?? 0) *
+        _kAppleWeekBarsHeadroom;
+    final double hairline = 1 / MediaQuery.devicePixelRatioOf(context);
+    final List<String>? axis = axisLabels;
+    final TextStyle axisStyle = appleTextStyle(
+      context,
+      size: (m.desktop ? 10 : 11) * m.scale,
+      weight: FontWeight.w500,
+      height: 1.2,
+      color: a.secondaryLabel,
+    );
+    final double axisHeight =
+        MediaQuery.textScalerOf(context).scale(axisStyle.fontSize ?? 11) * 1.2 +
+        2;
+    // 柱区至少留 24 高才挂星期行，矮格只画柱。
+    final bool showAxis =
+        axis != null &&
+        axis.length == values.length &&
+        height >= 24 + axisHeight;
+    final double barArea = showAxis ? height - axisHeight : height;
+    final double gap = 4 * m.scale;
+    final Widget bars = SizedBox(
+      key: const ValueKey<String>('home-week-bars'),
+      height: barArea,
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: <Widget>[
+          for (int i = 0; i < values.length; i++) ...<Widget>[
+            if (i > 0) SizedBox(width: gap),
+            Expanded(
+              child: FushiTooltip(
+                message: labels[i],
+                excludeFromSemantics: true,
+                child: TweenAnimationBuilder<double>(
+                  tween: Tween<double>(
+                    begin: 0,
+                    end: peak == 0 ? 0 : values[i] / peak,
                   ),
+                  duration: fushiMotionDuration(context, FushiMotion.medium),
+                  curve: FushiMotion.standard,
+                  builder: (BuildContext _, double f, Widget? __) =>
+                      LayoutBuilder(
+                        builder: (BuildContext _, BoxConstraints c) {
+                          final double h = values[i] == 0 ? 0 : barArea * f;
+                          // 柱宽按 Swift Charts 类目轴比例：约半格宽、封顶、居中，
+                          // 宽格里也不成大方块。
+                          final double w = math.min(
+                            c.maxWidth * _kAppleWeekBarBandShare,
+                            _kAppleWeekBarMaxWidth * m.scale,
+                          );
+                          final double r = math.min(w / 2, 4 * m.scale);
+                          return Align(
+                            alignment: Alignment.bottomCenter,
+                            child: SizedBox(
+                              width: w,
+                              height: math.max(0, h),
+                              child: DecoratedBox(
+                                decoration: BoxDecoration(
+                                  color: i == values.length - 1 ? today : past,
+                                  borderRadius: BorderRadius.vertical(
+                                    top: Radius.circular(math.min(r, h / 2)),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          );
+                        },
+                      ),
                 ),
               ),
-            ],
+            ),
           ],
-        ),
+        ],
       ),
+    );
+    final Widget plot = Stack(
+      children: <Widget>[
+        if (line == null)
+          bars
+        else
+          FushiBarReferenceLine(
+            fraction: line / peak,
+            height: barArea,
+            color: a.tertiaryLabel,
+            child: bars,
+          ),
+        // 细基线（Swift Charts 横轴线）。
+        PositionedDirectional(
+          start: 0,
+          end: 0,
+          bottom: 0,
+          child: SizedBox(
+            height: hairline,
+            child: ColoredBox(color: a.separator),
+          ),
+        ),
+      ],
+    );
+    return Semantics(
+      container: true,
+      label: semanticLabel,
+      excludeSemantics: true,
+      child: !showAxis
+          ? plot
+          : Column(
+              mainAxisSize: MainAxisSize.min,
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                plot,
+                SizedBox(
+                  height: axisHeight,
+                  child: Row(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: <Widget>[
+                      for (int i = 0; i < axis.length; i++) ...<Widget>[
+                        if (i > 0) SizedBox(width: gap),
+                        Expanded(
+                          child: Text(
+                            axis[i],
+                            maxLines: 1,
+                            softWrap: false,
+                            overflow: TextOverflow.clip,
+                            textAlign: TextAlign.center,
+                            style: axisStyle,
+                          ),
+                        ),
+                      ],
+                    ],
+                  ),
+                ),
+              ],
+            ),
     );
   }
 }
+
+/// Apple 周柱纵轴顶部余量：最高柱占柱区约 87%。
+const double _kAppleWeekBarsHeadroom = 1.15;
+
+/// Apple 周柱一根占它那一格宽的比例（Swift Charts 类目柱约半格）。
+const double _kAppleWeekBarBandShare = 0.5;
+
+/// Apple 周柱最宽多少（逻辑像素，macOS 档再乘 [FushiAppleMetrics.scale]）。
+const double _kAppleWeekBarMaxWidth = 16;
 
 /// 「最近添加」紧凑行（2026-10-10，横屏 / 宽屏侧栏）：小竖封面 + 标题 + 「类型 ·
 /// 相对时间」一行。侧栏宽度有限，列表比横滑封面行省地方，标题也能完整露出。
@@ -875,6 +1414,163 @@ class HomeRecentTile extends StatelessWidget {
           ),
         ),
       ),
+    );
+  }
+}
+
+/// 首页「今日」格的目标翻页：每个目标一页，左右滑（触屏 / 触控板 / 鼠标拖）或点
+/// 下方圆点切换；切到哪页由 [onPageChanged] 记下。
+///
+/// **受控组件**：显示哪一页由 [page] 决定（调用方传当前页目标在列表里的位置），页序
+/// 与页集合固定（不随滑动重排或增减，否则一滑就把页换了位置）。用户滑到第 i 页 →
+/// [onPageChanged] 写当前页（不改主目标）→ 调用方用新的 [page] 重建，与当前页相同、
+/// 不再跳；主目标在别处被改（设置里换主目标）或目标增删让当前页挪了位置 → [page] 与
+/// 当前页不同 → 跳过去。
+/// 页面身份因此始终是「哪条目标」，而不是一个只在首建时读一次的下标。
+/// 内容区矮于此时圆点竖排在结束侧（底下一行会把页面挤得只剩一条缝）。
+const double _kGoalPagerSideDotsBelow = 72;
+
+class HomeTodayGoalPager extends StatefulWidget {
+  const HomeTodayGoalPager({
+    super.key,
+    required this.count,
+    required this.page,
+    required this.pageBuilder,
+    required this.onPageChanged,
+    required this.dotLabel,
+    required this.dotColor,
+  });
+
+  final int count;
+
+  /// 该显示的页（夹进 0..count-1）。
+  final int page;
+  final IndexedWidgetBuilder pageBuilder;
+  final ValueChanged<int> onPageChanged;
+
+  /// 第 i 个圆点的读屏 / tooltip 文案（「显示 阅读时长」）。
+  final String Function(int index) dotLabel;
+  final Color dotColor;
+
+  @override
+  State<HomeTodayGoalPager> createState() => _HomeTodayGoalPagerState();
+}
+
+class _HomeTodayGoalPagerState extends State<HomeTodayGoalPager> {
+  late int _page = _wanted;
+  late final PageController _controller = PageController(initialPage: _page);
+
+  int get _wanted => widget.page.clamp(0, math.max(0, widget.count - 1));
+
+  @override
+  void didUpdateWidget(HomeTodayGoalPager old) {
+    super.didUpdateWidget(old);
+    final int wanted = _wanted;
+    if (wanted == _page) return;
+    _page = wanted;
+    // 构建期不能滚动（跳页会同步发滚动通知 → onPageChanged → 写偏好）：等这一帧
+    // 布局完再跳。期间又换了目标页就跳最新的那个。
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted || !_controller.hasClients || _page != wanted) return;
+      if (_controller.page?.round() != wanted) _controller.jumpToPage(wanted);
+    });
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  void _goTo(int index) {
+    unawaited(
+      _controller.animateToPage(
+        index,
+        duration: fushiMotionDuration(context, FushiMotion.medium),
+        curve: FushiMotion.enter,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget pages = ScrollConfiguration(
+      // 桌面上也能用鼠标拖着翻页（默认只认触屏 / 触控笔 / 触控板）。
+      behavior: ScrollConfiguration.of(
+        context,
+      ).copyWith(dragDevices: PointerDeviceKind.values.toSet()),
+      child: PageView.builder(
+        controller: _controller,
+        itemCount: widget.count,
+        onPageChanged: (int i) {
+          setState(() => _page = i);
+          widget.onPageChanged(i);
+        },
+        itemBuilder: widget.pageBuilder,
+      ),
+    );
+    if (widget.count <= 1) return pages;
+    final Duration swap = fushiMotionDuration(context, FushiMotion.short);
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        // 矮格（手机上的 1×1）放不下底下一行圆点：圆点竖排在结束侧，页面占满高度。
+        final bool side = box.maxHeight < _kGoalPagerSideDotsBelow;
+        final List<Widget> dots = <Widget>[
+          for (int i = 0; i < widget.count; i++)
+            FushiTooltip(
+              message: widget.dotLabel(i),
+              child: Semantics(
+                button: true,
+                selected: i == _page,
+                label: widget.dotLabel(i),
+                excludeSemantics: true,
+                child: InkResponse(
+                  key: ValueKey<String>('home-today-goal-dot-$i'),
+                  onTap: () => _goTo(i),
+                  radius: 12,
+                  child: SizedBox(
+                    width: side ? 14 : 20,
+                    height: side ? 12 : 16,
+                    child: Center(
+                      child: AnimatedContainer(
+                        duration: swap,
+                        curve: FushiMotion.enter,
+                        width: side ? 6 : (i == _page ? 14 : 6),
+                        height: side ? (i == _page ? 10 : 6) : 6,
+                        // 胶囊点：短边恒为 6，StadiumBorder 即半径 3 的圆端。
+                        decoration: ShapeDecoration(
+                          color: widget.dotColor.withValues(
+                            alpha: i == _page ? 1 : 0.35,
+                          ),
+                          shape: const StadiumBorder(),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+        ];
+        if (side) {
+          return Row(
+            children: <Widget>[
+              Expanded(child: pages),
+              // 页内容写满宽度时（一行高的「语言目标」格）别和圆点贴在一起。
+              const SizedBox(width: 6),
+              FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Column(mainAxisSize: MainAxisSize.min, children: dots),
+              ),
+            ],
+          );
+        }
+        return Column(
+          children: <Widget>[
+            Expanded(child: pages),
+            Row(mainAxisAlignment: MainAxisAlignment.center, children: dots),
+          ],
+        );
+      },
     );
   }
 }

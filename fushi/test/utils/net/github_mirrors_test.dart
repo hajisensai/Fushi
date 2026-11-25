@@ -7,6 +7,58 @@ import 'package:fushi/src/utils/net/github_mirrors.dart';
 import 'package:http/http.dart' as http;
 
 void main() {
+  group('用户关掉 GitHub 加速镜像（拍板台 0E-r9q489Y）', () {
+    tearDown(() => gitHubMirrorsEnabledReader = () => true);
+
+    test('未绑定读取器时默认开，可用前缀就是全量名单', () {
+      expect(activeGitHubMirrorPrefixes, kGitHubMirrorPrefixes);
+    });
+
+    test('关掉后可用前缀为空，GitHub 直链候选只剩直连', () {
+      gitHubMirrorsEnabledReader = () => false;
+      expect(activeGitHubMirrorPrefixes, isEmpty);
+      final Uri direct = Uri.parse(
+        'https://github.com/keiyoushi/extensions/raw/repo/index.pb',
+      );
+      expect(gitHubMirrorCandidates(direct), <Uri>[direct]);
+    });
+
+    test('关掉后仓库文件只走 jsDelivr 与 raw 直连，不出现任何镜像前缀', () {
+      gitHubMirrorsEnabledReader = () => false;
+      final List<String> urls = gitHubRepoFileUrls(
+        'glsl/a.glsl',
+        repo: 'bloc97/Anime4K',
+        ref: 'master',
+      );
+      expect(urls, hasLength(kJsDelivrHosts.length + 1));
+      expect(
+        urls.last,
+        'https://raw.githubusercontent.com/bloc97/Anime4K/master/glsl/a.glsl',
+      );
+      expect(urls.where(isGitHubMirrorUrl), isEmpty);
+    });
+
+    test('读取器请求时现读：重新打开立即恢复镜像候选', () {
+      bool enabled = false;
+      gitHubMirrorsEnabledReader = () => enabled;
+      final Uri direct = Uri.parse('https://raw.githubusercontent.com/o/r/m/f');
+      expect(gitHubMirrorCandidates(direct), hasLength(1));
+      enabled = true;
+      expect(
+        gitHubMirrorCandidates(direct),
+        hasLength(1 + kGitHubMirrorPrefixes.length),
+      );
+    });
+
+    test('isGitHubMirrorUrl 分档不受开关影响（仍认得出镜像 URL）', () {
+      gitHubMirrorsEnabledReader = () => false;
+      expect(
+        isGitHubMirrorUrl('${kGitHubMirrorPrefixes.first}https://github.com/x'),
+        isTrue,
+      );
+    });
+  });
+
   group('gitHubMirrorCandidates', () {
     const String direct =
         'https://github.com/keiyoushi/extensions/raw/repo/index.pb';

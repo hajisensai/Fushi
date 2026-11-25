@@ -149,11 +149,10 @@ void main() {
         );
         await _pumpUntil(tester, card);
         expect(find.text(t.srs_duplicates_title), findsOneWidget);
-        // #IBjxAjty39：只有重复笔记、没有字段冲突时不画「全部确认」（它只确认字段
-        // 冲突；此前是一颗灰掉、看着像点不动的按钮）。
+        // #IBjxAjty39：只有重复笔记、没有字段冲突时顶栏「批量处理」照样在、可点。
         expect(
-          find.byKey(const ValueKey<String>('srs_conflicts_confirm_all')),
-          findsNothing,
+          find.byKey(const ValueKey<String>('srs_conflicts_bulk')),
+          findsOneWidget,
         );
         for (final String id in <String>[keep, other]) {
           expect(
@@ -201,6 +200,88 @@ void main() {
             (await _io(tester, () => store.history(keepCard))).effective,
             hasLength(2),
           );
+        }
+
+        await tester.pumpWidget(const SizedBox.shrink());
+        await tester.pump(const Duration(seconds: 1));
+        await _io(tester, db.close);
+      });
+    }
+
+    for (final bool merge in <bool>[true, false]) {
+      testWidgets('[$ds] #IBjxAjty39 顶栏「批量处理」：两组重复笔记'
+          '「${merge ? '全部合并' : '都不是重复'}」一次处理完', (WidgetTester tester) async {
+        final (FushiDatabase db, SrsDbStore store) = await _io(
+          tester,
+          openSrsTestStore,
+        );
+        final (
+          String keepA,
+          String otherA,
+          String keepB,
+          String otherB,
+        ) = await _io(tester, () async {
+          final String keepA = await _addNote(store, '雪', 'ゆき');
+          final String otherA = await _addNote(store, '雪', 'ゆき');
+          final String keepB = await _addNote(store, '赤', 'あか');
+          final String otherB = await _addNote(store, '赤', 'あか');
+          // 复习多的那条排最前、批量合并时保留它。
+          for (final String n in <String>[keepA, keepB]) {
+            await store.answer((await store.cardsOfNote(n)).first.id, 3);
+          }
+          return (keepA, otherA, keepB, otherB);
+        });
+        final List<SrsDuplicateGroup> groups = await _io(
+          tester,
+          store.duplicateNoteGroups,
+        );
+        expect(groups, hasLength(2));
+
+        await _pump(tester, store, apple: apple);
+        await _pumpUntil(tester, find.text(t.srs_duplicates_title));
+        final Finder bulk = find.byKey(
+          const ValueKey<String>('srs_conflicts_bulk'),
+        );
+        expect(bulk, findsOneWidget);
+        await tester.tap(bulk);
+        await _settle(tester, rounds: 6);
+        final String mergeLabel = t.srs_conflicts_bulk_duplicates_merge(n: 2);
+        final String dismissLabel = t.srs_conflicts_bulk_duplicates_dismiss(
+          n: 2,
+        );
+        expect(find.text(mergeLabel), findsOneWidget);
+        expect(find.text(dismissLabel), findsOneWidget);
+        await tester.tap(find.text(merge ? mergeLabel : dismissLabel));
+        await _settle(tester, rounds: 6);
+        if (merge) {
+          // 合并不好撤回：再确认一次。
+          expect(
+            find.text(t.srs_conflicts_bulk_confirm_title(n: 2)),
+            findsOneWidget,
+          );
+          await tester.tap(find.text(t.dialog_ok));
+        }
+        await _pumpUntil(tester, find.text(t.srs_conflicts_empty));
+        expect(bulk, findsNothing);
+        expect(await _io(tester, store.duplicateNoteGroups), isEmpty);
+
+        final Map<String, SrsNoteView?> notes = await _io(
+          tester,
+          () => store.notes(<String>[keepA, otherA, keepB, otherB]),
+        );
+        for (final String keep in <String>[keepA, keepB]) {
+          expect(notes[keep]!.deletedAt, isNull, reason: '复习多的那条保留');
+        }
+        for (final String other in <String>[otherA, otherB]) {
+          if (merge) {
+            expect(
+              notes[other] == null || notes[other]!.deletedAt != null,
+              isTrue,
+              reason: '被吸收的那条删除',
+            );
+          } else {
+            expect(notes[other]!.deletedAt, isNull, reason: '不是重复：都保留');
+          }
         }
 
         await tester.pumpWidget(const SizedBox.shrink());

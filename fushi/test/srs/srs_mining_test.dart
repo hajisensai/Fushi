@@ -13,9 +13,14 @@ import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi/src/sync/fushi_remote_mining_client.dart';
+import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_engine/sync/remote_mining_target.dart';
+import 'package:drift/native.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -699,6 +704,75 @@ void main() {
       expect(inner.mined, 0);
     });
 
+    test('覆写只改勾选的字段（反馈 nWWjBp3Clo）：按这条笔记自己的笔记类型取选择，其余字段原样', () async {
+      final int handle = await mine('雪', 'ゆき');
+      final SrsNoteView before = await noteOf('雪', 'ゆき');
+      final String? typeName = await repo.overwriteNoteTypeName(handle);
+      expect(typeName, isNotNull);
+      inner.settings = inner.settings.withOverwriteFields(typeName!, <String>[
+        'Sentence',
+      ]);
+      final MineOutcome out = await repo.updateMinedNote(
+        noteId: handle,
+        rawPayloadJson: jsonEncode(<String, Object?>{
+          'expression': '雪',
+          'reading': 'ゆき',
+          'glossary': '<ol><li>snowfall</li></ol>',
+          'glossaryFirst': '<ol><li>snowfall</li></ol>',
+          'audio': '',
+        }),
+        context: const AnkiMiningContext(sentence: '雪が積もる。'),
+      );
+      expect(out.result, MineResult.success);
+      final SrsNoteView after = (await store.note(before.id))!;
+      expect(after.field(fid('Sentence')), contains('積もる'));
+      expect(
+        after.field(fid('Glossary')),
+        before.field(fid('Glossary')),
+        reason: '没勾的字段不点名，保留原值',
+      );
+      expect(after.tags, containsAll(before.tags));
+      expect(inner.ankiCalls, 0);
+    });
+
+    test('覆写只改勾选的字段：勾的字段这次全空 → 拒绝，笔记不动', () async {
+      final int handle = await mine('雪', 'ゆき');
+      final SrsNoteView before = await noteOf('雪', 'ゆき');
+      final String typeName = (await repo.overwriteNoteTypeName(handle))!;
+      inner.settings = inner.settings.withOverwriteFields(typeName, <String>[
+        'Sentence',
+      ]);
+      final MineOutcome out = await repo.updateMinedNote(
+        noteId: handle,
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: const AnkiMiningContext(sentence: ''),
+      );
+      expect(out.result, MineResult.error);
+      expect(out.errorCode, AnkiErrorCode.overwriteFieldsEmpty);
+      final SrsNoteView after = (await store.note(before.id))!;
+      expect(after.field(fid('Sentence')), before.field(fid('Sentence')));
+    });
+
+    test('覆写：「覆写哪些字段」一个都没勾（拍板 lt2wobUYfE）→ 拒绝，笔记不动', () async {
+      final int handle = await mine('雪', 'ゆき');
+      final SrsNoteView before = await noteOf('雪', 'ゆき');
+      final String typeName = (await repo.overwriteNoteTypeName(handle))!;
+      inner.settings = inner.settings.withOverwriteFields(
+        typeName,
+        const <String>[],
+      );
+      final MineOutcome out = await repo.updateMinedNote(
+        noteId: handle,
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: const AnkiMiningContext(sentence: '雪が積もる。'),
+      );
+      expect(out.result, MineResult.error);
+      expect(out.errorCode, AnkiErrorCode.overwriteNoFieldsSelected);
+      final SrsNoteView after = (await store.note(before.id))!;
+      expect(after.field(fid('Sentence')), before.field(fid('Sentence')));
+      expect(inner.ankiCalls, 0);
+    });
+
     test('覆写：原笔记已删 → 明确失败', () async {
       final int handle = await mine('雪', 'ゆき');
       await store.deleteNote((await noteOf('雪', 'ゆき')).id);
@@ -1154,11 +1228,14 @@ void main() {
     ProviderContainer container({
       required bool srsEnabled,
       required SrsMiningTarget target,
+      bool mineToServer = false,
     }) {
       final ProviderContainer c = ProviderContainer(
         overrides: <Override>[
           platformServicesProvider.overrideWithValue(testPlatformServices()),
-          appProvider.overrideWith((Ref ref) => _TargetAppModel(target)),
+          appProvider.overrideWith(
+            (Ref ref) => _TargetAppModel(target, mineToServer: mineToServer),
+          ),
           srsModuleEnabledProvider.overrideWithValue(srsEnabled),
         ],
       );
@@ -1174,6 +1251,36 @@ void main() {
         ).read(ankiRepositoryProvider);
         expect(repo, isNot(isA<SrsMiningAnkiRepository>()));
       }
+    });
+
+    test('复习库在换代途中（BUG-5085）：链上制卡回带分类码的失败，不吞成「复习不可用」', () async {
+      final ProviderContainer c = ProviderContainer(
+        overrides: <Override>[
+          platformServicesProvider.overrideWithValue(testPlatformServices()),
+          appProvider.overrideWith(
+            (Ref ref) => _TargetAppModel(SrsMiningTarget.srs),
+          ),
+          srsModuleEnabledProvider.overrideWithValue(true),
+          srsStoreProvider.overrideWith(
+            (Ref ref) async => throw const SrsStoreNotMigrated(
+              'not migrated',
+              SrsGenState.needsMigration,
+            ),
+          ),
+        ],
+      );
+      addTearDown(c.dispose);
+      final BaseAnkiRepository repo = c.read(ankiRepositoryProvider);
+      expect(repo, isA<SrsMiningAnkiRepository>());
+      final MineOutcome out = await repo.mineEntry(
+        rawPayloadJson: _payload('雪', 'ゆき'),
+        context: const AnkiMiningContext(sentence: ''),
+      );
+      expect(out.result, MineResult.error);
+      expect(out.errorCode, AnkiErrorCode.srsNeedsMigration);
+      expect(out.error, isA<SrsStoreNotMigrated>());
+      // 查词时的查重探测照旧回「不重复」。
+      expect(await repo.isDuplicate('雪', 'ゆき'), isFalse);
     });
 
     test('模块开着、目标仍是 Anki：也不包', () {
@@ -1196,6 +1303,21 @@ void main() {
         repositionSnapshotFolderFor(repo),
         AnkiDeckRepositionRunner.kSrsSnapshotFolder,
       );
+      // 重排弹窗据此显示「读取 Fushi 复习的卡片」，不写「从 Anki 读取」（BUG-4255）。
+      expect(repositionTargetsSrsFor(repo), isTrue);
+    });
+
+    test('制卡到已配对设备：不套本机复习层，查重与落卡都交给主机（§4.8）', () {
+      final BaseAnkiRepository repo = container(
+        srsEnabled: true,
+        target: SrsMiningTarget.srs,
+        mineToServer: true,
+      ).read(ankiRepositoryProvider);
+      expect(repo, isNot(isA<SrsMiningAnkiRepository>()));
+      expect(
+        ankiRepositoryChainLabel(repo),
+        contains('RemoteMiningAnkiRepository'),
+      );
     });
 
     test('目标是 Anki：重排快照仍落在 Anki 的目录', () {
@@ -1207,6 +1329,7 @@ void main() {
         repositionSnapshotFolderFor(repo),
         AnkiDeckRepositionRunner.kAnkiSnapshotFolder,
       );
+      expect(repositionTargetsSrsFor(repo), isFalse);
     });
   });
 
@@ -1228,12 +1351,25 @@ void main() {
 }
 
 class _TargetAppModel extends AppModel {
-  _TargetAppModel(this._target) : super(testPlatformServices());
+  _TargetAppModel(this._target, {bool mineToServer = false})
+    : _mineToServer = mineToServer,
+      super(testPlatformServices());
 
   final SrsMiningTarget _target;
+  final bool _mineToServer;
 
   @override
   SrsMiningTarget get srsMiningTarget => _target;
+
+  @override
+  bool get mineToServerEnabled => _mineToServer;
+
+  @override
+  FushiRemoteMiningClient createRemoteMiningClient({
+    void Function(RemoteMiningTarget? landed)? onTargetUnavailable,
+  }) => FushiRemoteMiningClient(
+    repo: SyncRepository(FushiDatabase.forTesting(NativeDatabase.memory())),
+  );
 }
 
 /// 后端类型支持重排、但连着的那一端缺原生接口（新版 AnkiConnect 无

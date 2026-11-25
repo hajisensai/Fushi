@@ -1,0 +1,8 @@
+## BUG-4732 · macOS Apple Music 重新授权后一直用作废的 Music-User-Token，资料库 403
+- **报告**：2026-11-16（用户：应用内反馈 caI0UrhA6-，macOS）
+- **真实性**：✅ 真 bug。截图里「For you」页的 Apple Music 资料库区块报 `AppleMusicApiException(http 403, /v1/me/library/albums)`，用户此前在 Apple 账号「Apps with Access」里撤销过 Fushi 再重新授权。根因是 token 生命周期没有失效路径：
+  - `fushi/apple/FushiAppleMusic.swift:83-89`：`userCredentials` 只看设备级的 `MusicAuthorization.currentStatus`（账号侧撤销 / 重新授权后仍是 `.authorized`），再以 `options: []` 调 `DefaultMusicTokenProvider.userToken`，永远拿缓存里那枚已作废的 Music-User-Token；
+  - `packages/fushi_engine/lib/media/music/apple_music/apple_music_user_api.dart:70-85`：`send` 收到 401 / 403 只抛异常，从不要求换 token，`AppleMusicUserCredentialsProvider` 契约里也没有「绕缓存重取」这一步。于是每次请求、每次点 Retry 都拿同一枚作废 token。
+- **[x] ① 已修复** — `AppleMusicUserCredentialsProvider` 加 `{bool refresh}`：`AppleMusicUserApi.send` 遇 401 / 403 用 `refresh: true` 重取一次，换到不同的 token 才重发一次，仍失败 / token 没变就抛原状态码；`AppleMusicAccount.userCredentials` / `AppleMusicBridge.userCredentials` 透传，原生桥经 channel 传 `refresh`，Swift 侧对 user token 用 `.ignoreCache`。网页桥（MusicKit JS 只有存储里那一枚）原样返回，不会无谓重发。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/media/music/apple_music/apple_music_library_client_test.dart`（group `stale Music-User-Token`：401/403 绕缓存重取并重发、重取后仍被拒抛原码、token 没变不重发、其它错误不重取）；`fushi/test/media/music/apple_music/apple_music_account_test.dart`（refresh 透传到桥）；`fushi/test/media/music/apple_music/apple_music_native_bridge_test.dart`（refresh 经 method channel 传给原生）。
+- **备注**：Swift 侧 `.ignoreCache` 与「账号侧撤销后缓存 token 回 403」未在 macOS 真机实测（本机 Windows）；原生改动只在 Dart 传来 `refresh` 时把 `options` 从 `[]` 换成 `.ignoreCache`。

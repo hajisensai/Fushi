@@ -14,6 +14,7 @@ import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// admin API 的「远程可达」三项（公网地址 / P2P 开关 / 自建中继）：
 /// 读写往返、非法 URL 400 且不落半截、写回 yaml、原生库不可用时的 409，
@@ -47,6 +48,7 @@ void main() {
     final ServerIdentity identity = await ServerIdentity.loadOrCreate(prefs);
     final ServerPaths paths = ServerPaths(config.dataDir);
     final HeadlessHost host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,

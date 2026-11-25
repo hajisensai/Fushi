@@ -59,6 +59,7 @@ class DataRootMigrationTarget {
     required this.documentsRoot,
     required this.supportRoot,
     required this.dataRootPrefValue,
+    this.androidDocumentsLocation,
   });
 
   /// 普通自定义数据根：两个根都落在 [dataRootPath] 下（TODO-935 的原语义）。
@@ -88,6 +89,21 @@ class DataRootMigrationTarget {
     dataRootPrefValue: null,
   );
 
+  /// Android：只搬书库根（内部 `app_flutter` ↔ 外部 `Android/data/<包名>/files/data`），
+  /// 数据库留在原地（[supportRoot] = 当前 support 根，引擎按 BUG-1188 的「support 不搬」
+  /// 处理）。[location] 是提交时要写进 [AppPaths.androidDocumentsLocationPrefKey] 的值。
+  factory DataRootMigrationTarget.androidDocuments({
+    required String documentsRoot,
+    required String supportRoot,
+    required String location,
+  }) => DataRootMigrationTarget._(
+    pickedPath: documentsRoot,
+    documentsRoot: Directory(documentsRoot),
+    supportRoot: Directory(supportRoot),
+    dataRootPrefValue: null,
+    androidDocumentsLocation: location,
+  );
+
   /// 用户在目录选择器里真正挑中的路径。校验（自我迁移 / 安装目录）按它判定，与用户看到的
   /// 那个目录一致。
   final String pickedPath;
@@ -102,14 +118,20 @@ class DataRootMigrationTarget {
   /// 提交时要写进 [AppPaths.dataRootPrefKey] 的值；null = 默认位置（清掉该 pref）。
   final String? dataRootPrefValue;
 
+  /// 非 null = Android 书库位置迁移（见 [DataRootMigrationTarget.androidDocuments]），
+  /// 提交时写 Android 位置锚点而不是 `data_root`。
+  final String? androidDocumentsLocation;
+
   /// 本次目标是否是「默认位置」（= 与全新安装同形）。
-  bool get isDefaultLocation => dataRootPrefValue == null;
+  bool get isDefaultLocation =>
+      dataRootPrefValue == null && androidDocumentsLocation == null;
 
   @override
   String toString() =>
       'DataRootMigrationTarget(picked: $pickedPath, '
       'documents: ${documentsRoot.path}, support: ${supportRoot.path}, '
-      'dataRootPref: $dataRootPrefValue)';
+      'dataRootPref: $dataRootPrefValue, '
+      'androidLocation: $androidDocumentsLocation)';
 }
 
 /// BUG-1188：把用户挑的目录 [pickedRoot] 解析成 [DataRootMigrationTarget]。
@@ -1046,10 +1068,16 @@ class DataRootMigrator {
   /// **两条路径必须共用这一份调用清单**——覆盖面的真相源是
   /// `path_rebase_coverage.dart`，各自抄一份表就等于给「新增路径列」留了两个
   /// 会漂开的登记处。
+  ///
+  /// [includePreferences]=false 只改写表、不碰 `preferences` / `profile_settings`：
+  /// 第三个调用者——改下载根时搬已下载内容（`download_root_migrator.dart`）——发生在
+  /// app 运行中，偏好仓库握着内存副本，直接改库会被下一次写偏好覆盖回去；那条路径
+  /// 搬的是下载域子目录，偏好里也没有指向它们的路径。
   static Future<void> rebaseOpenDatabasePaths({
     required FushiDatabase db,
     required DocumentsPathRebaser docs,
     required String newSupportRoot,
+    bool includePreferences = true,
   }) async {
     await db.transaction(() async {
       await _rebaseEpubBooks(db, docs);
@@ -1068,13 +1096,16 @@ class DataRootMigrator {
       await _rebaseCollectionScrapeMeta(db, docs);
       await _rebaseCollectionRelations(db, docs);
       await _rebaseMediaImages(db, docs);
+      await _rebaseItemImages(db, docs);
       await _rebaseVideoMetadataExtras(db, docs);
       await _rebaseVideoDownloadJobs(db, docs);
       await _rebaseVideoDownloadJobFiles(db, docs);
       await _rebaseVideoDownloadJobSubtitles(db, docs);
       await _rebaseMediaOpenHistory(db, docs);
-      await _rebasePreferences(db, docs, newSupportRoot);
-      await _rebaseProfileSettings(db, docs, newSupportRoot);
+      if (includePreferences) {
+        await _rebasePreferences(db, docs, newSupportRoot);
+        await _rebaseProfileSettings(db, docs, newSupportRoot);
+      }
     });
     // checkpoint 必须在事务**外**：SQLite 不允许在活动事务里 wal_checkpoint。
     await db.customStatement('PRAGMA wal_checkpoint(TRUNCATE)');
@@ -1348,6 +1379,25 @@ class DataRootMigrator {
     }
   }
 
+  /// item_images：path（v161 单本书 / 字幕书 / 游戏附加图：
+  /// `<documents>/video_covers/items/`，与 media_images 同目录族）。不改写 = 换
+  /// 数据根后书架 / 游戏库系列色块的横版背景全部变死链、静默退回书封摆法。
+  /// media_type / entry_key / kind / source_url 不是本机路径，绝不改写。
+  static Future<void> _rebaseItemImages(
+    FushiDatabase db,
+    DocumentsPathRebaser docs,
+  ) async {
+    for (final ItemImageRow row in await db.getAllItemImages()) {
+      final String? newPath = docs.rebaseNullable(row.path);
+      if (newPath == null || newPath == row.path) continue;
+      await db.customStatement(
+        'UPDATE item_images SET path = ? WHERE media_type = ? '
+        'AND entry_key = ? AND kind = ? AND position = ?',
+        <Object?>[newPath, row.mediaType, row.entryKey, row.kind, row.position],
+      );
+    }
+  }
+
   /// video_metadata_extras：本地 NCOP/NCED 等附加视频的 thumbnail_path
   /// 直接复用 VideoBook.coverPath，必须与 video_books.cover_path 同步重挂。
   /// 在线项只有 remote_url / thumbnail_url，不参与本机路径改写。
@@ -1462,22 +1512,20 @@ class DataRootMigrator {
   /// `<documents>/video_covers/` 目录族，与合集封面同型；schema v66 /
   /// TODO-2484）。当前尚无写入方（封面下载归 UI 接力线程），本改写是
   /// 前置兜底 —— 列一旦开始落值，不改写 = 换数据根后相关作品卡封面死链。
-  /// source / cover_url 不是本机路径，绝不改写。
+  /// source / cover_url 不是本机路径，绝不改写。整表读：v162 起起点也可以是单视频
+  /// （散装电影），按合集逐个取会漏掉这些行。
   static Future<void> _rebaseCollectionRelations(
     FushiDatabase db,
     DocumentsPathRebaser docs,
   ) async {
-    for (final MediaCollectionRow c in await db.getAllMediaCollections()) {
-      for (final CollectionRelationRow r in await db.getCollectionRelations(
-        c.id,
-      )) {
-        final String? newCover = docs.rebaseNullable(r.coverPath);
-        if (newCover == r.coverPath) continue;
-        await db.customStatement(
-          'UPDATE collection_relations SET cover_path = ? WHERE id = ?',
-          <Object?>[newCover, r.id],
-        );
-      }
+    for (final CollectionRelationRow r
+        in await db.getAllCollectionRelations()) {
+      final String? newCover = docs.rebaseNullable(r.coverPath);
+      if (newCover == r.coverPath) continue;
+      await db.customStatement(
+        'UPDATE collection_relations SET cover_path = ? WHERE id = ?',
+        <Object?>[newCover, r.id],
+      );
     }
   }
 

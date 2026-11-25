@@ -4,7 +4,6 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
-import 'package:fushi/src/pages/implementations/activity_feed.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_day_reset_hour_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_hourly_breakdown.dart';
@@ -12,6 +11,7 @@ import 'package:fushi/src/pages/implementations/stat_trends.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi_engine/stats/stat_derive.dart' show StatDayTotal;
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -19,22 +19,24 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
-import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
-import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
-import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi_engine/stats/study_goal_language.dart';
+
+// 时长 / 词数外显挪到统计层（统计层不 import 本 UI 文件），这里原样转出。
+export 'package:fushi/src/stats/stat_format.dart'
+    show formatStatHeatmapDay, formatStatTime, formatStatWords;
+export 'package:fushi/src/pages/implementations/activity_feed.dart'
+    show formatActivityRelativeTime;
 
 /// 三个域统计页「按媒体」列表共用的一行（用户 2026-09-08「统计全改成游戏那种」：
 /// 原游戏页 `_buildGameRow` 的形态提成共享件）：左域图标 · 标题（+ 合集标签）·
@@ -873,238 +875,22 @@ String formatStatSessionRange(int startMs, int endMs) {
       '${FushiTimeFormat.hourMinute(end)}';
 }
 
-/// 统计页时长外显：不足 1 小时套 i18n 分钟文案，否则套 i18n 时+分文案。
-String formatStatTime(int ms) {
-  final int totalMin = ms ~/ 60000;
-  if (totalMin < 60) return t.stat_format_minutes(n: totalMin);
-  final int h = totalMin ~/ 60;
-  final int m = totalMin % 60;
-  return t.stat_format_hours_minutes(h: h, m: m);
-}
+/// 目标单位的外显文案（输入框后缀 / 小组件单位）。
+String statGoalUnitLabel(StudyGoalUnit unit) => switch (unit) {
+  StudyGoalUnit.chars => t.stat_goal_unit_chars,
+  StudyGoalUnit.words => t.stat_goal_unit_words,
+};
 
-/// 每日 / 每周字数目标编辑对话框。写 0 = 清除（隐藏）该目标。返回 true 表示用户
-/// 点了保存并已写穿偏好，调用方据此重建。
-///
-/// 阅读统计 tab、统计中心总览 tab 与首页仪表盘编辑的是**同一个**持久化目标
-/// （`readingGoal*Chars`），所以只有一份表单；多处各写一份的话，单位、清零语义和
-/// 校验规则一改就只改到一处。
-///
-/// 2026-10 体验优化：首页原有一套只编每日目标的 `_DailyGoalDialog`（带预设 chip
-/// 与近 7 日参考），统计页这套只有两个裸输入框——两套对话框合并为本函数 +
-/// [StatGoalEditDialog]：每日目标 + 预设 + 近 7 日参考，多处入口共用（每周目标
-/// 2026-10-10 用户拍板删除：统计中心目标卡删掉后它只能设、不显示进度）。
-/// [recentDailyAverage] 为近 7 日日均字数（与目标同口径，见
-/// [statRecentDailyAverageChars]）；<=0 不显示参考行。
-Future<bool> showStatGoalEditDialog(
-  BuildContext context,
-  AppModel appModel, {
-  int recentDailyAverage = 0,
-}) async {
-  final StatGoalEditResult? result = await showAppDialog<StatGoalEditResult>(
-    context: context,
-    builder: (BuildContext _) => StatGoalEditDialog(
-      initialDailyChars: appModel.readingGoalDailyChars,
-      recentDailyAverage: recentDailyAverage,
-    ),
-  );
-  if (result == null) return false;
-  await appModel.setReadingGoalDailyChars(result.daily);
-  return true;
-}
-
-/// [dayKeys]（调用方从自己的统计窗口取，如 `w.lastDayKeys(7)`）的日均字数，
-/// **与目标同口径**（学习域 [studyGoalCharsForDay]）：给「我该填多少」一个
-/// 真实参考值（BUG-1075）。无数据日按 0 计入分母（真实反映日均，不是活跃日均）。
-int statRecentDailyAverageChars(
-  Iterable<StatFact> daily,
-  List<String> dayKeys,
-) {
-  if (dayKeys.isEmpty) return 0;
-  int total = 0;
-  for (final String key in dayKeys) {
-    total += studyGoalCharsForDay(daily, key);
-  }
-  return total ~/ dayKeys.length;
-}
-
-/// [StatGoalEditDialog] 保存时的结果（已规整为 >= 0；0 = 关闭该目标）。
-typedef StatGoalEditResult = ({int daily});
-
-/// 目标编辑表单。独立 StatefulWidget **自持** controller 生命周期：dispose 跟随
-/// 路由销毁（弹出动画结束后）。曾经「await showDialog 返回即 dispose」会在退场
-/// 动画帧触碰已销毁 controller——保存后宿主 setState 让仍在退场的 TextField
-/// 重建 addListener 直接断言崩（widget 测试实测复现）。
-///
-/// BUG-1075：输入框带单位后缀、近 7 日日均参考值、一排快捷预设 chip。保存 pop
-/// [StatGoalEditResult]，取消 pop null。
-class StatGoalEditDialog extends StatefulWidget {
-  const StatGoalEditDialog({
-    required this.initialDailyChars,
-    this.recentDailyAverage = 0,
-    super.key,
-  });
-
-  /// 当前每日目标（0 = 未设，输入框留空）。
-  final int initialDailyChars;
-
-  /// 近 7 日日均字数（全来源合计，与目标同口径）；<=0 不显示参考行。
-  final int recentDailyAverage;
-
-  /// 每日目标快捷预设（字/天）：点一下直接填进输入框，省得用户凭空想数字。
-  static const List<int> presets = <int>[3000, 5000, 10000, 20000];
-
-  @override
-  State<StatGoalEditDialog> createState() => _StatGoalEditDialogState();
-}
-
-class _StatGoalEditDialogState extends State<StatGoalEditDialog> {
-  late final TextEditingController _daily = TextEditingController(
-    text: _initialText(widget.initialDailyChars),
-  );
-
-  static String _initialText(int chars) => chars <= 0 ? '' : chars.toString();
-
-  static int _parse(TextEditingController c) {
-    final int value = int.tryParse(c.text.trim()) ?? 0;
-    return value < 0 ? 0 : value;
-  }
-
-  @override
-  void initState() {
-    super.initState();
-    // 预设按钮组的选中态跟随输入框（手输 5000 也点亮「5000」那一格）。
-    _daily.addListener(_onDailyChanged);
-  }
-
-  void _onDailyChanged() {
-    if (mounted) setState(() {});
-  }
-
-  @override
-  void dispose() {
-    _daily.removeListener(_onDailyChanged);
-    _daily.dispose();
-    super.dispose();
-  }
-
-  /// 预设 / 近 7 日日均 → 填入每日输入框（光标置尾，用户可继续改）。
-  void _applyPreset(int chars) {
-    final String text = chars.toString();
-    _daily.value = TextEditingValue(
-      text: text,
-      selection: TextSelection.collapsed(offset: text.length),
-    );
-  }
-
-  /// 2026-10 M3E 重做（用户反馈「这个设定目标的界面没有经历过 ai 的洗礼」）：
-  /// 旧版是两个裸下划线输入框 + 一排散落的纯文字预设，层级全靠缩进。现在：
-  /// - 顶部 M3E 饼干形 hero 图标（旗子）+ 标题；
-  /// - 每日目标是大号填充输入框（数字用 headline 字号，单位后缀），是这张卡的主角；
-  /// - 近 7 日日均变成一颗可点的建议 chip（点一下直接填进去），不再是一行灰字；
-  /// - 快捷预设是 M3E 连接按钮组（单选，选中态随输入框联动，弹簧切换）；
-  /// - 每周目标是次要的填充输入框；
-  /// - 动作区「取消」文字按钮 +「保存」实心主按钮。
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final ThemeData theme = Theme.of(context);
-    final int daily = _parse(_daily);
-    final int average = widget.recentDailyAverage;
-    // 填充色要和对话框底色拉开（主题默认填充色与 M3 对话框容器几乎同色）。
-    final Color fill = Color.alphaBlend(
-      theme.colorScheme.primary.withValues(alpha: 0.08),
-      theme.colorScheme.surface,
-    );
-    InputDecoration filled({required String label}) => InputDecoration(
-      labelText: label,
-      suffixText: t.stat_goal_unit_chars,
-      suffixStyle: theme.textTheme.titleMedium?.copyWith(
-        color: theme.colorScheme.onSurfaceVariant,
-      ),
-      filled: true,
-      fillColor: fill,
-      border: OutlineInputBorder(
-        borderRadius: tokens.radii.cardRadius,
-        borderSide: BorderSide.none,
-      ),
-    );
-    return FushiAlertDialog(
-      icon: const FushiDialogHeroIcon(
-        icon: FushiIcons.flag,
-        tone: FushiHeroTone.primary,
-      ),
-      title: Text(t.stat_goal_set),
-      // 内容可能变高：横屏/小窗下用滚动兜底，不再顶到溢出。
-      content: SizedBox(
-        width: 400,
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            FushiTextFieldControl(
-              key: const ValueKey<String>('stat-goal-daily-field'),
-              controller: _daily,
-              keyboardType: TextInputType.number,
-              style: (theme.textTheme.headlineSmall ?? tokens.type.listTitle)
-                  .copyWith(fontWeight: FontWeight.w700),
-              decoration: filled(label: t.stat_goal_daily),
-            ),
-            if (average > 0) ...<Widget>[
-              SizedBox(height: tokens.spacing.gap),
-              Align(
-                alignment: AlignmentDirectional.centerStart,
-                child: FushiActionChipControl(
-                  key: const ValueKey<String>('stat-goal-average-chip'),
-                  avatar: const FushiIcon(FushiIcons.trendingUp, size: 18),
-                  label: Text(t.stat_goal_recent_average(n: average)),
-                  onPressed: () => _applyPreset(average),
-                ),
-              ),
-            ],
-            SizedBox(height: tokens.spacing.card),
-            Text(
-              t.stat_goal_presets,
-              style: context.fushiType.titleSmallEmphasized,
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            FushiConnectedButtonGroup<int>(
-              key: const ValueKey<String>('stat-goal-presets'),
-              showSelectedIcon: false,
-              emptySelectionAllowed: true,
-              expandedInsets: EdgeInsets.zero,
-              segments: <ButtonSegment<int>>[
-                for (final int preset in StatGoalEditDialog.presets)
-                  ButtonSegment<int>(
-                    value: preset,
-                    label: Text(formatStatCharsAxis(preset)),
-                  ),
-              ],
-              selected: StatGoalEditDialog.presets.contains(daily)
-                  ? <int>{daily}
-                  : const <int>{},
-              onSelectionChanged: (Set<int> picked) {
-                if (picked.isNotEmpty) _applyPreset(picked.first);
-              },
-            ),
-          ],
-        ),
-      ),
-      actions: <Widget>[
-        FushiTextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(t.cancel),
-        ),
-        FushiFilledButton(
-          key: const ValueKey<String>('stat-goal-save'),
-          onPressed: () => Navigator.of(
-            context,
-          ).pop<StatGoalEditResult>((daily: _parse(_daily))),
-          child: Text(t.dialog_save),
-        ),
-      ],
-    );
-  }
-}
+/// 每日字数目标的进度文案「X / Y 字」/「X / Y 词」。首页经典「今日」外观（目标行与
+/// 「今日」格）共用。
+String statGoalProgressLabel({
+  required StudyGoalUnit unit,
+  required int read,
+  required int goal,
+}) => switch (unit) {
+  StudyGoalUnit.chars => t.stat_goal_progress(read: read, goal: goal),
+  StudyGoalUnit.words => t.stat_goal_progress_words(read: read, goal: goal),
+};
 
 /// 统计页字数外显：数字部分走当前语言的紧凑写法（[formatCompactCount]：CJK
 /// `6.8万`、其余语言 `68K`），再套上 i18n 的「N characters」文案。
@@ -1131,6 +917,9 @@ String? formatStatCphOf(int chars, int ms) {
 /// 一个时段（[contains] 选 dateKey）内**阅读域**的速度外显：只累加 `isBook` 的
 /// 日面行再经 [formatStatCphOf]。统计中心总览的时段卡是跨域总和（视频只计时不
 /// 计字、游戏 hook 只计字不计时），「字/时」只对阅读域有意义，所以单独切片算。
+///
+/// 统计中心总览不走它：总览拿的是加载时 Rust 一并算好的阅读域按日合计
+/// （[StatFacts.bookDayTotals]），用 [statBookCphOfTotals]，口径相同、不逐条遍历日面。
 String? statBookCphOf(
   List<StatFact> daily,
   bool Function(String dateKey) contains,
@@ -1145,35 +934,21 @@ String? statBookCphOf(
   return formatStatCphOf(chars, ms);
 }
 
-/// 相对时间外显：把 [activityRelativeTime] 的结构化结果套上 i18n 文案
-/// （刚刚 / N 分钟前 / N 小时前 / N 天前）。
-///
-/// [activityRelativeTime] 刻意留在纯数据层不碰 i18n，这里是它唯一的 widget 层
-/// 映射：首页活动时间轴与 Bangumi 同步卡的「上次同步」共用同一口径，不各写一份
-/// switch（否则单位阈值一改就只改到一处）。
-String formatActivityRelativeTime(int timestampMs, DateTime now) {
-  final ActivityRelativeTime rel = activityRelativeTime(timestampMs, now);
-  switch (rel.unit) {
-    case ActivityRelativeUnit.justNow:
-      return t.activity_just_now;
-    case ActivityRelativeUnit.minutesAgo:
-      return t.activity_minutes_ago(n: rel.value);
-    case ActivityRelativeUnit.hoursAgo:
-      return t.activity_hours_ago(n: rel.value);
-    case ActivityRelativeUnit.daysAgo:
-      return t.activity_days_ago(n: rel.value);
+/// [statBookCphOf] 的按日合计版本：[bookDays] 是阅读域日面的按日合计
+/// （[StatFacts.bookDayTotals]），只累加 [contains] 选中的统计日。统计中心总览用它，
+/// 改范围重建时只走天数级的循环。
+String? statBookCphOfTotals(
+  List<StatDayTotal> bookDays,
+  bool Function(String dateKey) contains,
+) {
+  int chars = 0;
+  int ms = 0;
+  for (final StatDayTotal d in bookDays) {
+    if (!contains(d.dateKey)) continue;
+    chars += d.chars;
+    ms += d.ms;
   }
-}
-
-/// 热力图气泡日期标签：`M-dd`；跨年补年份成 `Y-M-dd`。[dateKey] 形如 `2026-07-18`
-/// （[statDateKey] 格式）；无法解析时原样返回。
-String formatStatHeatmapDay(String dateKey) {
-  final DateTime? d = DateTime.tryParse(dateKey);
-  if (d == null) return dateKey;
-  final DateTime now = DateTime.now();
-  final String dd = d.day.toString().padLeft(2, '0');
-  if (d.year == now.year) return '${d.month}-$dd';
-  return '${d.year}-${d.month}-$dd';
+  return formatStatCphOf(chars, ms);
 }
 
 /// 「今日按小时」单色柱状图区块（视频统计用：观看时长没有阅读面之分，只有一带）。

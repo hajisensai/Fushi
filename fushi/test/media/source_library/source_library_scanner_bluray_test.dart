@@ -199,7 +199,10 @@ void main() {
     _writeDisc(disc1, <String>['00011', '00012', '00013']);
     _writeDisc(disc2, <String>['00021', '00022']);
 
-    final SourceLibraryScanner scanner = SourceLibraryScanner(db);
+    final SourceLibraryScanner scanner = SourceLibraryScanner(
+      db,
+      transcribeAudiobook: null,
+    );
     final SourceScanSummary first = await scanner.scan(
       await _videoSource(db, tmp.path),
     );
@@ -248,6 +251,7 @@ void main() {
       source = await _videoSource(db, tmp.path);
       final SourceScanSummary scan = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
       expect(scan.succeeded, isTrue, reason: scan.error ?? '');
     });
@@ -273,6 +277,7 @@ void main() {
       expect(again.bookUid, scanned.bookUid);
       final SourceScanSummary rescan = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
       expect(rescan.succeeded, isTrue, reason: rescan.error ?? '');
       final List<VideoBookRow> onBonus = <VideoBookRow>[
@@ -372,7 +377,10 @@ void main() {
       for (int i = 0; i < 7; i++) ('00013', 93),
     ]);
     final SourceLibraryRow source = await _videoSource(db, tmp.path);
-    final SourceScanSummary scan = await SourceLibraryScanner(db).scan(source);
+    final SourceScanSummary scan = await SourceLibraryScanner(
+      db,
+      transcribeAudiobook: null,
+    ).scan(source);
     expect(scan.succeeded, isTrue, reason: scan.error ?? '');
 
     String mpls(String id) => p.join(disc, 'BDMV', 'PLAYLIST', '$id.mpls');
@@ -418,6 +426,7 @@ void main() {
       source = await _videoSource(db, tmp.path);
       final SourceScanSummary scan = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
       expect(scan.succeeded, isTrue, reason: scan.error ?? '');
       final VideoBookRepository repo = VideoBookRepository(db);
@@ -439,6 +448,7 @@ void main() {
 
       final SourceScanSummary rescan = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
       expect(rescan.succeeded, isTrue, reason: rescan.error ?? '');
       expect(await repo.listAll(), isEmpty);
@@ -460,6 +470,7 @@ void main() {
 
       final SourceScanSummary rescan = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
       expect(rescan.succeeded, isTrue, reason: rescan.error ?? '');
       expect(await repo.findByVideoPath(mpls('00002')), isNull);
@@ -484,7 +495,10 @@ void main() {
       ('00006', 100),
     ]);
     final SourceLibraryRow source = await _videoSource(db, tmp.path);
-    final SourceScanSummary scan = await SourceLibraryScanner(db).scan(source);
+    final SourceScanSummary scan = await SourceLibraryScanner(
+      db,
+      transcribeAudiobook: null,
+    ).scan(source);
     expect(scan.succeeded, isTrue, reason: scan.error ?? '');
 
     final VideoBookRepository repo = VideoBookRepository(db);
@@ -544,6 +558,7 @@ void main() {
       source = await _videoSource(db, tmp.path);
       final SourceScanSummary scan = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
       expect(scan.succeeded, isTrue, reason: scan.error ?? '');
       await ensureBlurayTitleInLibrary(db, mpls(disc, '00003'));
@@ -647,6 +662,7 @@ void main() {
       );
       final SourceScanSummary scan = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
       expect(scan.succeeded, isTrue, reason: scan.error ?? '');
       final Set<String> planned = <String>{
@@ -672,6 +688,7 @@ void main() {
       _writeDisc(series, <String>['00021', '00022', '00023']);
       final SourceScanSummary scan = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
       expect(scan.succeeded, isTrue, reason: scan.error ?? '');
       final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
@@ -735,6 +752,7 @@ void main() {
       final SourceLibraryRow source = await _videoSource(db, tmp.path);
       final SourceScanSummary summary = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan(source);
       expect(summary.succeeded, isTrue, reason: summary.error ?? '');
       return source;
@@ -842,7 +860,10 @@ void main() {
       await (db.delete(
         db.mediaImages,
       )..where(($MediaImagesTable t) => t.collectionId.equals(id))).go();
-      final SourceLibraryScanner scanner = SourceLibraryScanner(db);
+      final SourceLibraryScanner scanner = SourceLibraryScanner(
+        db,
+        transcribeAudiobook: null,
+      );
       expect((await scanner.scan(source)).succeeded, isTrue);
       expect((await discCollection()).id, id, reason: '重扫对回同一合集');
       final String cover = (await discImage(id, MediaImageKind.discCover))!;
@@ -868,7 +889,10 @@ void main() {
       final String picked = p.join(tmp.path, 'picked.jpg');
       File(picked).writeAsBytesSync(jpeg(3, 5));
       await db.updateMediaCollectionCoverPath(id, picked);
-      final SourceLibraryScanner scanner = SourceLibraryScanner(db);
+      final SourceLibraryScanner scanner = SourceLibraryScanner(
+        db,
+        transcribeAudiobook: null,
+      );
       expect((await scanner.scan(source)).succeeded, isTrue);
       expect((await discCollection()).coverPath, picked);
       expect(await ownCandidates(), <String>[picked, tall]);

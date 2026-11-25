@@ -4,7 +4,12 @@ import 'dart:io';
 import 'package:test/test.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
+import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
+import 'package:fushi_engine/media/video/subtitle/plain_subtitle_overlap.dart'
+    show debugPlainTextOverlapClampRuns;
 import 'package:fushi_engine/media/video/video_subtitle_source.dart';
+import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
+    show EmbeddedSubtitleExtractFailure;
 import 'package:path/path.dart' as p;
 
 import '../../helpers/unified_ffmpeg.dart';
@@ -390,6 +395,128 @@ WEBVTT
     });
   });
 
+  // 拍板台 0jnNr_P5Rd：重叠的 srt 在 overlay 槽位里一句贴底一句在上、换句就跳。
+  // 纯文本字幕解析时把部分重叠收到下一句开始；ASS / 同起点 / 完整包住的不动。
+  group('纯文本字幕重叠收口（0jnNr_P5Rd）', () {
+    const String bookUid = 'video_book_x://book/overlap';
+    const String rollingSrt = '''
+1
+00:00:01,000 --> 00:00:04,500
+dal canto suo ha toccato con mano le
+
+2
+00:00:03,000 --> 00:00:06,500
+potenzialità di quella bevanda e gli
+
+3
+00:00:05,000 --> 00:00:08,000
+vende il sogno
+''';
+
+    List<(int, int)> spans(List<AudioCue> cues) => <(int, int)>[
+      for (final AudioCue c in cues) (c.startMs, c.endMs),
+    ];
+
+    test('srt 部分重叠：前一句收到下一句开始，最后一句不动', () {
+      final List<AudioCue> cues = parseSubtitleContent(
+        SubtitleFormat.srt,
+        content: rollingSrt,
+        bookUid: bookUid,
+      );
+      expect(spans(cues), <(int, int)>[
+        (1000, 3000),
+        (3000, 5000),
+        (5000, 8000),
+      ]);
+    });
+
+    test('async 路径同语义（播放器外挂 / 内封都走这里）', () async {
+      final List<AudioCue> cues = await parseSubtitleContentAsync(
+        SubtitleFormat.srt,
+        content: rollingSrt,
+        bookUid: bookUid,
+      );
+      expect(spans(cues), <(int, int)>[
+        (1000, 3000),
+        (3000, 5000),
+        (5000, 8000),
+      ]);
+    });
+
+    test('vtt 部分重叠同样收口', () async {
+      const String vtt = '''
+WEBVTT
+
+00:00:01.000 --> 00:00:04.000
+一句目
+
+00:00:02.000 --> 00:00:05.000
+二句目
+''';
+      for (final List<AudioCue> cues in <List<AudioCue>>[
+        parseSubtitleContent(
+          SubtitleFormat.vtt,
+          content: vtt,
+          bookUid: bookUid,
+        ),
+        await parseSubtitleContentAsync(
+          SubtitleFormat.vtt,
+          content: vtt,
+          bookUid: bookUid,
+        ),
+      ]) {
+        expect(spans(cues), <(int, int)>[(1000, 2000), (2000, 5000)]);
+      }
+    });
+
+    test('完整包住（长注释 + 中间对白）与同起点并列不收口', () {
+      const String srt = '''
+1
+00:00:00,000 --> 00:00:10,000
+【注】招牌
+
+2
+00:00:02,000 --> 00:00:04,000
+台词一
+
+3
+00:00:20,000 --> 00:00:23,000
+甲：同时开口
+
+4
+00:00:20,000 --> 00:00:22,000
+乙：同时开口
+''';
+      final List<AudioCue> cues = parseSubtitleContent(
+        SubtitleFormat.srt,
+        content: srt,
+        bookUid: bookUid,
+      );
+      expect(spans(cues), <(int, int)>[
+        (0, 10000),
+        (2000, 4000),
+        (20000, 23000),
+        (20000, 22000),
+      ]);
+    });
+
+    test('ASS 的重叠原样保留', () {
+      const String ass = '''
+[Script Info]
+[Events]
+Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
+Dialogue: 0,0:00:01.00,0:00:04.00,Default,,0,0,0,,一句目
+Dialogue: 0,0:00:02.00,0:00:05.00,Default,,0,0,0,,二句目
+''';
+      final List<AudioCue> cues = parseSubtitleContent(
+        SubtitleFormat.ass,
+        content: ass,
+        bookUid: bookUid,
+      );
+      expect(spans(cues), <(int, int)>[(1000, 4000), (2000, 5000)]);
+    });
+  });
+
   group('parseSubtitleContentAsync (TODO-475 async parser route)', () {
     const String bookUid = 'video_book_x://book/async';
 
@@ -490,6 +617,54 @@ hello async vtt
       expect(VttParser.shouldParseInIsolate(cjkSubtitle), isTrue);
     });
 
+    // HBK-AUDIT-012：大字幕轨的整轨后处理（复制 + 排序 + 重叠收口）必须和解析同在
+    // 后台任务里做完；调用方 isolate（播放器页面 = UI isolate）只收结果。收口计数是
+    // isolate 局部的静态量，落在调用方就会 +1。
+    for (final SubtitleFormat format in <SubtitleFormat>[
+      SubtitleFormat.srt,
+      SubtitleFormat.vtt,
+    ]) {
+      test(
+        'large ${format.name}: overlap clamp runs inside the background parse '
+        'task, not on the caller isolate',
+        () async {
+          final String content = _largeOverlappingPlainText(
+            format,
+            cueCount: 3000,
+          );
+          expect(SrtParser.shouldParseInIsolate(content), isTrue);
+          debugPlainTextOverlapClampRuns = 0;
+
+          final List<AudioCue> cues = await parseSubtitleContentAsync(
+            format,
+            content: content,
+            bookUid: bookUid,
+          );
+
+          expect(debugPlainTextOverlapClampRuns, 0);
+          expect(cues, hasLength(3000));
+          // 收口语义不变：每句（倒序写入，所以先按起点排）尾巴收到下一句开头，末句不动。
+          final List<AudioCue> byStart = List<AudioCue>.of(cues)
+            ..sort((AudioCue a, AudioCue b) => a.startMs.compareTo(b.startMs));
+          for (int i = 0; i < byStart.length - 1; i++) {
+            expect(byStart[i].endMs, byStart[i + 1].startMs);
+          }
+          expect(byStart.last.endMs, byStart.last.startMs + 1500);
+        },
+      );
+    }
+
+    test('small content still clamps synchronously on the caller', () async {
+      debugPlainTextOverlapClampRuns = 0;
+      final List<AudioCue> cues = await parseSubtitleContentAsync(
+        SubtitleFormat.srt,
+        content: _largeOverlappingPlainText(SubtitleFormat.srt, cueCount: 3),
+        bookUid: bookUid,
+      );
+      expect(debugPlainTextOverlapClampRuns, 1);
+      expect(cues.map((AudioCue c) => c.endMs), <int>[3500, 2000, 1000]);
+    });
+
     test('video subtitle load paths await the async parser entry point', () {
       // 实现已搬进引擎包（cwd 仍是 fushi/，所以要往上一级）。写死旧路径的后果
       // 是 PathNotFoundException——硬红，不会伪装成通过。
@@ -518,7 +693,7 @@ hello async vtt
       expect(
         _functionBody(
           source,
-          'Future<SubtitleCueLoadResult> _loadEmbeddedCues',
+          'Future<SubtitleCueLoadResult> _loadEmbeddedCuesNow',
         ),
         contains('_readAndParse('),
       );
@@ -1320,6 +1495,8 @@ At least one output file must be specified
       expect(result.status, DefaultEmbeddedSubtitleLoadStatus.emptyCues);
       expect(result.source?.streamIndex, 1);
       expect(result.cues, isEmpty);
+      // BUG-4838：失败原因随结果带出（ffmpeg 正常退出却没写出这条轨 = 抽取失败）。
+      expect(result.cueFailure, SubtitleCueLoadFailure.extractionFailed);
     });
 
     test('真实 ffmpeg 合成 mkv+SRT 与 mp4 mov_text 都能默认显示文本内封', () async {
@@ -1329,6 +1506,12 @@ At least one output file must be specified
         return;
       }
       setFfmpegBackendForTesting(null);
+      // 被测代码要用的正是上面验过能跑的那一份：它可能只是随包统一 FFmpeg（PATH 上
+      // 没有 ffmpeg 的 worker，如 wight-mac），而生产解析是「覆盖 > app 旁捆绑 > PATH」，
+      // 测试进程旁没有捆绑件——不装配覆盖，合成成功、枚举却去 PATH 找 ffmpeg 起不来。
+      final String? previousFfmpeg = ffmpegPathOverride;
+      ffmpegPathOverride = ffmpeg;
+      addTearDown(() => ffmpegPathOverride = previousFfmpeg);
       final File srt = File(p.join(tempDir.path, 'sample.srt'))
         ..writeAsStringSync('''
 1
@@ -1412,6 +1595,224 @@ synthetic subtitle
     }, timeout: const Timeout(Duration(seconds: 60)));
   });
 
+  group('文本内封抽取：卡死不重跑、可取消、原因传到结果（BUG-4838）', () {
+    late Directory tempDir;
+
+    setUp(() {
+      tempDir = Directory.systemTemp.createTempSync('fushi_vsub_4791_');
+    });
+
+    tearDown(() {
+      setFfmpegBackendForTesting(null);
+      if (tempDir.existsSync()) tempDir.deleteSync(recursive: true);
+    });
+
+    File videoNamed(String name) =>
+        File(p.join(tempDir.path, '$name.mkv'))
+          ..writeAsStringSync('fake bytes for $name');
+
+    const SubtitleSource jpn0 = SubtitleSource.embedded(
+      streamIndex: 0,
+      label: '内封 0: jpn / subrip',
+      language: 'jpn',
+      codec: 'subrip',
+    );
+
+    test('subtitleCueFailureForExtract：卡死 / 取消各自成类，其余归抽取失败', () {
+      expect(
+        subtitleCueFailureForExtract(EmbeddedSubtitleExtractFailure.stalled),
+        SubtitleCueLoadFailure.extractionStalled,
+      );
+      expect(
+        subtitleCueFailureForExtract(EmbeddedSubtitleExtractFailure.cancelled),
+        SubtitleCueLoadFailure.extractionCancelled,
+      );
+      for (final EmbeddedSubtitleExtractFailure? f
+          in <EmbeddedSubtitleExtractFailure?>[
+            EmbeddedSubtitleExtractFailure.failed,
+            EmbeddedSubtitleExtractFailure.ffmpegUnavailable,
+            EmbeddedSubtitleExtractFailure.inputMissing,
+            null,
+          ]) {
+        expect(
+          subtitleCueFailureForExtract(f),
+          SubtitleCueLoadFailure.extractionFailed,
+        );
+      }
+    });
+
+    test('抽取卡死 → 默认加载报 emptyCues + extractionStalled，整轨只读一次、'
+        '自动加载不再重跑', () async {
+      final File video = videoNamed('stall4791');
+      final _WatchedSubtitleBackend backend = _WatchedSubtitleBackend(
+        mode: _WatchedMode.stall,
+      );
+      setFfmpegBackendForTesting(backend);
+      int readyWaits = 0;
+
+      final DefaultEmbeddedSubtitleLoadResult result =
+          await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
+            videoPath: video.path,
+            bookUid: 'video/stall',
+            waitForReady: () async => readyWaits++,
+            isStillCurrent: () => true,
+          );
+
+      expect(result.status, DefaultEmbeddedSubtitleLoadStatus.emptyCues);
+      expect(result.cueFailure, SubtitleCueLoadFailure.extractionStalled);
+      expect(backend.extractCount, 1, reason: '卡死不是瞬态：不再等就绪后把整个容器再读一遍');
+      expect(readyWaits, 0);
+      expect(backend.plainExtractCount, 0, reason: '抽取一律走观察式运行');
+    });
+
+    test('emptyCues（抽取 / 解析失败）不触发就绪重试', () async {
+      int loadCalls = 0;
+      final DefaultEmbeddedSubtitleLoadResult result =
+          await loadDefaultTextEmbeddedSubtitleCuesWithReadinessRetry(
+            videoPath: '/tmp/x.mkv',
+            bookUid: 'video/x',
+            waitForReady: () async {},
+            isStillCurrent: () => true,
+            loadOnce:
+                ({
+                  required String videoPath,
+                  required String bookUid,
+                  String langCode = 'ja',
+                  List<String> preferredLanguages = const <String>[],
+                }) async {
+                  loadCalls++;
+                  return const DefaultEmbeddedSubtitleLoadResult(
+                    status: DefaultEmbeddedSubtitleLoadStatus.emptyCues,
+                    cues: <AudioCue>[],
+                    embeddedProbe: EmbeddedSubtitleTrackProbeResult(
+                      tracks: <EmbeddedSubtitleTrack>[],
+                      status: EmbeddedSubtitleTrackProbeStatus.success,
+                      timeout: Duration(seconds: 60),
+                      sizeBytes: 0,
+                    ),
+                    cueFailure: SubtitleCueLoadFailure.extractionStalled,
+                  );
+                },
+          );
+      expect(loadCalls, 1);
+      expect(result.cueFailure, SubtitleCueLoadFailure.extractionStalled);
+    });
+
+    test('共享抽取：一个等待方取消不杀进程，另一个照样拿到 cue', () async {
+      final File video = videoNamed('share4791');
+      final _WatchedSubtitleBackend backend = _WatchedSubtitleBackend(
+        mode: _WatchedMode.block,
+      );
+      setFfmpegBackendForTesting(backend);
+      final Completer<void> pageCancel = Completer<void>();
+      final Completer<void> playerCancel = Completer<void>();
+
+      final Future<void> prewarm = prewarmEmbeddedSubtitleCache(
+        video.path,
+        cancel: pageCancel.future,
+      );
+      await backend.started.future;
+      final Future<SubtitleCueLoadResult> manual = loadSubtitleCueResult(
+        jpn0,
+        video.path,
+        'video/share',
+        cancel: playerCancel.future,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      pageCancel.complete();
+      await prewarm;
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(backend.killed, isFalse, reason: '还有别的可取消等待方在等');
+
+      backend.release();
+      final SubtitleCueLoadResult r = await manual;
+      expect(r.isFailure, isFalse);
+      expect(backend.extractCount, 1);
+    });
+
+    test('共享抽取：所有可取消的等待方都撤走 → 强杀进程、结果为 extractionCancelled', () async {
+      final File video = videoNamed('cancel4791');
+      final _WatchedSubtitleBackend backend = _WatchedSubtitleBackend(
+        mode: _WatchedMode.block,
+      );
+      setFfmpegBackendForTesting(backend);
+      final Completer<void> cancel = Completer<void>();
+
+      final Future<SubtitleCueLoadResult> pending = loadSubtitleCueResult(
+        jpn0,
+        video.path,
+        'video/cancel',
+        cancel: cancel.future,
+      );
+      await backend.started.future;
+      cancel.complete();
+      final SubtitleCueLoadResult r = await pending;
+      expect(r.failure, SubtitleCueLoadFailure.extractionCancelled);
+      await backend.finished.future;
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(backend.killed, isTrue);
+      expect(await debugEmbeddedSubtitleExtractInFlight(video.path), isFalse);
+    });
+
+    test('共享抽取：有不可取消的等待方（互联 host / ASR 取证）时，页面取消不杀进程', () async {
+      final File video = videoNamed('pinned4791');
+      final _WatchedSubtitleBackend backend = _WatchedSubtitleBackend(
+        mode: _WatchedMode.block,
+      );
+      setFfmpegBackendForTesting(backend);
+      final Completer<void> cancel = Completer<void>();
+
+      final Future<File?> host = extractEmbeddedSubtitleTrackFile(
+        videoPath: video.path,
+        streamIndex: 0,
+        codec: 'subrip',
+      );
+      await backend.started.future;
+      final Future<void> prewarm = prewarmEmbeddedSubtitleCache(
+        video.path,
+        cancel: cancel.future,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      cancel.complete();
+      await prewarm;
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(backend.killed, isFalse);
+      backend.release();
+      expect(await host, isNotNull);
+    });
+
+    test('extractEmbeddedSubtitleTrackFiles：多条轨整体只抽一次；失败时也只读一遍容器', () async {
+      final File ok = videoNamed('multi_ok4791');
+      final _WatchedSubtitleBackend backend = _WatchedSubtitleBackend(
+        mode: _WatchedMode.succeed,
+      );
+      setFfmpegBackendForTesting(backend);
+      const List<EmbeddedSubtitleTrack> tracks = <EmbeddedSubtitleTrack>[
+        EmbeddedSubtitleTrack(streamIndex: 0, language: 'jpn', codec: 'subrip'),
+        EmbeddedSubtitleTrack(streamIndex: 1, language: 'eng', codec: 'subrip'),
+        EmbeddedSubtitleTrack(streamIndex: 2, language: 'chi', codec: 'subrip'),
+      ];
+      final Map<int, File> files = await extractEmbeddedSubtitleTrackFiles(
+        videoPath: ok.path,
+        tracks: tracks,
+      );
+      expect(files.keys.toSet(), <int>{0, 1, 2});
+      expect(backend.extractCount, 1);
+
+      final File bad = videoNamed('multi_bad4791');
+      final _WatchedSubtitleBackend stalled = _WatchedSubtitleBackend(
+        mode: _WatchedMode.stall,
+      );
+      setFfmpegBackendForTesting(stalled);
+      final Map<int, File> none = await extractEmbeddedSubtitleTrackFiles(
+        videoPath: bad.path,
+        tracks: tracks,
+      );
+      expect(none, isEmpty);
+      expect(stalled.extractCount, 1, reason: '逐轨触发会把一次卡死放大成 3 次全量读盘');
+    });
+  });
+
   group('首开瞬态争用重试（TODO-572）', () {
     DefaultEmbeddedSubtitleLoadResult resultFor(
       DefaultEmbeddedSubtitleLoadStatus status, {
@@ -1429,7 +1830,8 @@ synthetic subtitle
       );
     }
 
-    test('isTransientDefaultEmbeddedSubtitleLoad 只对枚举超时/失败/空cue为真', () {
+    test('isTransientDefaultEmbeddedSubtitleLoad 只对枚举超时/失败为真'
+        '（空 cue 自 BUG-4838 起不再算瞬态）', () {
       expect(
         isTransientDefaultEmbeddedSubtitleLoad(
           DefaultEmbeddedSubtitleLoadStatus.enumerationTimeout,
@@ -1446,7 +1848,7 @@ synthetic subtitle
         isTransientDefaultEmbeddedSubtitleLoad(
           DefaultEmbeddedSubtitleLoadStatus.emptyCues,
         ),
-        isTrue,
+        isFalse,
       );
       expect(
         isTransientDefaultEmbeddedSubtitleLoad(
@@ -1701,6 +2103,31 @@ String _largeSrt({required int cueCount}) {
         '${_srtTimestamp(startMs + 750)}',
       )
       ..writeln('<i>large async srt cue $i</i> $filler')
+      ..writeln();
+  }
+  return buffer.toString();
+}
+
+/// 部分重叠的纯文本字幕：第 i 句 [i*1000, i*1000+1500)，**倒序**写入（文件顺序与
+/// 时间顺序不一致，收口必须先排序）。
+String _largeOverlappingPlainText(
+  SubtitleFormat format, {
+  required int cueCount,
+}) {
+  final String filler = List<String>.filled(120, 'z').join();
+  final bool vtt = format == SubtitleFormat.vtt;
+  final StringBuffer buffer = StringBuffer(vtt ? 'WEBVTT\n\n' : '');
+  for (int i = cueCount - 1; i >= 0; i--) {
+    final int startMs = i * 1000;
+    String stamp(int ms) {
+      final String srt = _srtTimestamp(ms);
+      return vtt ? srt.replaceAll(',', '.') : srt;
+    }
+
+    if (!vtt) buffer.writeln(cueCount - i);
+    buffer
+      ..writeln('${stamp(startMs)} --> ${stamp(startMs + 1500)}')
+      ..writeln('overlap cue $i $filler')
       ..writeln();
   }
   return buffer.toString();
@@ -2015,4 +2442,101 @@ Future<String?> _runFfmpeg(String executable, List<String> args) async {
   } catch (e) {
     return e.toString();
   }
+}
+
+enum _WatchedMode { succeed, stall, block }
+
+/// 支持观察式运行的假后端（BUG-4838）：`ffmpeg -i` 枚举走 [run]，列出三条 subrip 轨；
+/// 整轨抽取走 [runWatched]：succeed 立即写出全部轨；stall 返回「卡死」（returnCode
+/// null + 卡死标记）；block 一直挂着，直到 [release]（写出、退出 0）或 watch.cancel
+/// （记 [killed]，返回取消标记）。
+class _WatchedSubtitleBackend implements FfmpegBackend, FfmpegWatchedRunner {
+  _WatchedSubtitleBackend({required this.mode});
+
+  final _WatchedMode mode;
+  int extractCount = 0;
+  int plainExtractCount = 0;
+  bool killed = false;
+  final Completer<void> started = Completer<void>();
+  final Completer<void> finished = Completer<void>();
+  final Completer<void> _release = Completer<void>();
+
+  void release() {
+    if (!_release.isCompleted) _release.complete();
+  }
+
+  @override
+  Future<FfmpegRunResult> run(List<String> args, Duration timeout) async {
+    if (args.contains('-hide_banner')) {
+      return const FfmpegRunResult(
+        returnCode: 1,
+        output: '''
+  Stream #0:0: Video: h264
+  Stream #0:1(jpn): Subtitle: subrip (srt) (default)
+  Stream #0:2(eng): Subtitle: subrip (srt)
+  Stream #0:3(chi): Subtitle: subrip (srt)
+''',
+      );
+    }
+    plainExtractCount++;
+    return const FfmpegRunResult(returnCode: 1, output: 'plain run');
+  }
+
+  void _writeOutputs(List<String> args) {
+    for (int i = 0; i + 2 < args.length; i++) {
+      if (args[i] != '-map' || !RegExp(r'^0:s:\d+$').hasMatch(args[i + 1])) {
+        continue;
+      }
+      if (args[i + 2].startsWith('-')) continue;
+      final File out = File(args[i + 2]);
+      out.parent.createSync(recursive: true);
+      out.writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\nこんにちは\n');
+    }
+  }
+
+  @override
+  Future<FfmpegRunResult> runWatched(
+    List<String> args,
+    FfmpegWatch watch,
+  ) async {
+    extractCount++;
+    if (!started.isCompleted) started.complete();
+    try {
+      switch (mode) {
+        case _WatchedMode.succeed:
+          _writeOutputs(args);
+          return const FfmpegRunResult(returnCode: 0, output: '');
+        case _WatchedMode.stall:
+          return FfmpegRunResult(
+            returnCode: null,
+            output: ffmpegStallMarker(watch.stallTimeout),
+          );
+        case _WatchedMode.block:
+          final Future<void>? cancel = watch.cancel;
+          final bool cancelled = await Future.any(<Future<bool>>[
+            _release.future.then((_) => false),
+            if (cancel != null) cancel.then((_) => true),
+          ]);
+          if (cancelled) {
+            killed = true;
+            return const FfmpegRunResult(
+              returnCode: null,
+              output: kFfmpegCancelledMarker,
+            );
+          }
+          _writeOutputs(args);
+          return const FfmpegRunResult(returnCode: 0, output: '');
+      }
+    } finally {
+      if (!finished.isCompleted) finished.complete();
+    }
+  }
+
+  @override
+  Future<FfmpegRunResult> runQuery(List<String> args, Duration timeout) =>
+      run(args, timeout);
+
+  @override
+  Future<FfmpegRunResult> runProbe(List<String> args, Duration timeout) async =>
+      const FfmpegRunResult(returnCode: 0, output: '{"format":{}}');
 }

@@ -34,6 +34,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 import '../sync/fake_asset_store.dart';
+import '../helpers/shell_layout.dart';
 
 /// 多端库联合视图 §2.2/§2.6：云后端「上传视频文件」推上去的 `__videos__` 资产，经
 /// [CloudRemoteVideoClient] 适配成主网格云视频占位卡（云角标 ☁）+ 点击下载整文件入库。
@@ -105,6 +106,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: HomeVideoPage(
             repo: repo,
@@ -353,11 +355,18 @@ void main() {
     };
     try {
       await tester.tap(find.text(t.remote_video_stream_play));
+      // 开播路径在 controller.load 前用异步 `dart:io` 解析着色器 / Lua 脚本目录
+      // （video-20 起不再同步 IO）。真实文件 IO 只在 runAsync 里推进，`await` 的续体
+      // 绑在 fake-async zone、只在 pump 时跑——两者交替把这段链排空到 load 打出日志
+      // （同 video_quick_settings_sheet_test 的 _settleShaderListLoad）。
       for (
         int i = 0;
-        i < 40 && !logs.any((String l) => l.contains('[video-load]'));
+        i < 100 && !logs.any((String l) => l.contains('[video-load]'));
         i++
       ) {
+        await tester.runAsync(
+          () => Future<void>.delayed(const Duration(milliseconds: 10)),
+        );
         await tester.pump(const Duration(milliseconds: 50));
       }
     } finally {

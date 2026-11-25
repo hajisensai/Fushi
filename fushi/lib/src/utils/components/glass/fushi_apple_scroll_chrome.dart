@@ -1,6 +1,7 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart'
     show SmoothWheelScrollScope;
@@ -74,8 +75,9 @@ class FushiAppleScrollEdge extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final Color base = (color ?? Theme.of(context).scaffoldBackgroundColor)
-        .withValues(alpha: 1);
+    final Color base = (color ?? fushiAppleScrollEdgeColor(context)).withValues(
+      alpha: 1,
+    );
     final bool top = side == FushiScrollEdgeSide.top;
     final bool solid = glassMaterialOf(context) == FushiGlassMaterial.off;
     Widget band = Stack(
@@ -147,6 +149,10 @@ class FushiAppleScrollChrome extends ChangeNotifier {
   bool _underBottom = false;
   Object? _scope;
 
+  /// 把底栏收起的那条 [ScrollUpdateNotification] 的 viewport 深度，供
+  /// [_expandIfStranded] 区分主滚动视图与内容里嵌套的子滚动视图。
+  int? _minimizedAtDepth;
+
   /// 内容的开头已滚到顶部导航层下面（extentBefore > 0）。
   bool get contentUnderTop => _underTop;
 
@@ -184,10 +190,15 @@ class FushiAppleScrollChrome extends ChangeNotifier {
     if (notification is ScrollNotification) {
       metrics = notification.metrics;
       if (metrics.axis != Axis.vertical) return false;
+      final bool wasMinimized = minimize.minimized;
       minimize.handleNotification(notification);
+      if (!wasMinimized && minimize.minimized) {
+        _minimizedAtDepth = notification.depth;
+      }
     } else if (notification is ScrollMetricsNotification) {
       metrics = notification.metrics;
       if (metrics.axis != Axis.vertical) return false;
+      _expandIfStranded(notification);
     } else {
       return false;
     }
@@ -203,6 +214,34 @@ class FushiAppleScrollChrome extends ChangeNotifier {
       _notifySafely();
     }
     return false;
+  }
+
+  /// 反馈 TyMqz158nj：收起状态必须跟着「还有没有能滚回去的内容」走。
+  ///
+  /// [GlassTabBarMinimizeController] 自己的两条展开规则（内容不可滚 / 停在
+  /// 起始边）只在 [ScrollUpdateNotification] 上判——可内容被**换掉或缩短**
+  /// （查词清空结果、换成历史页，列表变短）时 Flutter 只发
+  /// [ScrollMetricsNotification]，不发 update，状态机看不到，底栏就停在收起态，
+  /// 而新内容没东西可回滚。这里把同两条规则补到尺寸通知上：新内容滚不动
+  /// （可滚范围不足库的 [GlassTabBarMinimizeController.kMinScrollableExtent]）
+  /// 或停在起始边时展开。只会展开、不会收起，不改变「只有用户滚动才收起」。
+  ///
+  /// 只认「收起它的那条滚动视图」所在深度及更浅的尺寸通知：内容里嵌套的竖向
+  /// 子滚动视图（shrinkWrap 的嵌套列表、多行输入框内部的 Scrollable）在外层
+  /// 列表下滑把它们建出来时会发首次布局的尺寸通知，它们自己恒在顶部、滚不动，
+  /// 不按深度过滤的话用户一边下滑底栏一边被它们弹开。被换掉的主列表与原主
+  /// 列表同深度，照常展开。
+  void _expandIfStranded(ScrollMetricsNotification notification) {
+    if (!minimize.minimized) return;
+    final int? owner = _minimizedAtDepth;
+    if (owner != null && notification.depth > owner) return;
+    final ScrollMetrics metrics = notification.metrics;
+    if (!metrics.hasContentDimensions || !metrics.hasPixels) return;
+    final bool cannotScroll =
+        metrics.maxScrollExtent - metrics.minScrollExtent <
+        GlassTabBarMinimizeController.kMinScrollableExtent;
+    final bool atRestingEdge = metrics.pixels <= metrics.minScrollExtent;
+    if (cannotScroll || atRestingEdge) minimize.expand();
   }
 
   bool _notifyScheduled = false;
@@ -352,4 +391,47 @@ bool fushiNotificationFromVisibleSubtree(Notification notification) {
   };
   if (source == null || !source.mounted) return true;
   return TickerMode.getValuesNotifier(source).value.enabled;
+}
+
+/// 标出一块「侧窗格」：它里面的竖向滚动是导航（设置宽屏左栏的分类列表等），
+/// 不是页面正文，不驱动页面级导航层——顶部 scroll edge 带、外壳大标题收起、
+/// 底栏最小化都只跟正文走。
+///
+/// 起因（2026-11-21 用户截图）：玻璃设计 + 自定义壁纸下滚设置左栏，外壳把它
+/// 当成正文滚到了顶部下面，整宽亮出顶部边缘带（而左栏本身离顶还隔着卡片外边距，
+/// 内容根本没压到顶边下）。判据由 [fushiNotificationDrivesPageChrome] 读。
+class FushiSidePaneScrollScope extends InheritedWidget {
+  const FushiSidePaneScrollScope({required super.child, super.key});
+
+  /// [context] 是否在某个侧窗格里。只读不建依赖（通知回调里调用）。
+  static bool contains(BuildContext context) =>
+      context.getInheritedWidgetOfExactType<FushiSidePaneScrollScope>() != null;
+
+  @override
+  bool updateShouldNotify(FushiSidePaneScrollScope oldWidget) => false;
+}
+
+/// 这条通知该不该驱动页面级导航层（顶部边缘带 / 大标题收起 / 底栏最小化）：
+/// 来自可见子树（[fushiNotificationFromVisibleSubtree]），且不在侧窗格
+/// （[FushiSidePaneScrollScope]）里。页面级的滚动观察一律用它过滤。
+bool fushiNotificationDrivesPageChrome(Notification notification) {
+  if (!fushiNotificationFromVisibleSubtree(notification)) return false;
+  final BuildContext? source = switch (notification) {
+    ScrollNotification(:final BuildContext? context) => context,
+    ScrollMetricsNotification(:final BuildContext context) => context,
+    _ => null,
+  };
+  if (source == null || !source.mounted) return true;
+  return !FushiSidePaneScrollScope.contains(source);
+}
+
+/// [FushiAppleScrollEdge] 的缺省底色：页面底色，不透明化。脚手架底色完全透明
+/// 时（[FushiPageBackdrop] 在画用户的背景图片，把子树的 scaffoldBackgroundColor
+/// 换成 `Colors.transparent`）它的 RGB 是黑色，直接不透明化就是一条黑带
+/// （2026-11-21 用户截图），此时退回设计 token 的页面底色。半透明的玻璃底色
+/// 保留自己的 RGB、只抬不透明度（半透明的 Mica 底会让渐隐发灰）。
+Color fushiAppleScrollEdgeColor(BuildContext context) {
+  final Color scaffold = Theme.of(context).scaffoldBackgroundColor;
+  if (scaffold.a > 0) return scaffold.withValues(alpha: 1);
+  return FushiDesignTokens.of(context).surfaces.page.withValues(alpha: 1);
 }

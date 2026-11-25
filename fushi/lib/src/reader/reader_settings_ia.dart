@@ -129,6 +129,7 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
         title: () => t.reader_panel_section_common,
         itemIds: const <String>[
           'reading_display.view_mode',
+          'reading_display.follow_book_layout',
           'reading_display.writing_mode',
           'reading_display.line_height',
           'reading_display.page_columns',
@@ -188,6 +189,8 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'reading_controls.highlight_on_tap',
           'reading_controls.wheel_page_turn_interval',
           'reading_controls.swipe_page_turn_sensitivity',
+          'reading_controls.continuous_chapter_turn_resistance',
+          'reading_controls.continuous_seamless_chapters',
           'reading_controls.page_turn_animation',
           'reading_controls.page_turn_animation_speed',
           'reading_controls.page_turn_follow_drag',
@@ -237,6 +240,9 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'listening.volume_key_sentence_nav',
           'reading_controls.invert_audiobook_skip_direction',
           'reading_vn.merge_spoken_sentence',
+          'listening.page_end_audio',
+          'listening.page_split_follow',
+          'listening.scroll_follow',
         ],
       ),
       // ── 查词 ──
@@ -250,7 +256,6 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'lookup.popup_size_preview',
           'lookup.dictionary_font_size',
           'lookup.popup_ui_scale',
-          'lookup.popup_bottom_docked_books_only',
         ],
         itemIdPrefixes: const <String>['lookup.popup_bottom_docked.'],
       ),
@@ -271,6 +276,7 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'lookup.auto_read_on_lookup',
           'lookup.audio_volume',
           'lookup.pause_on_lookup',
+          'lookup.restart_sentence_after_lookup',
         ],
       ),
       ReaderSettingsSectionSpec(
@@ -281,7 +287,7 @@ final List<ReaderSettingsSectionSpec> kReaderSettingsSections =
           'reading_controls.enable_swipe_to_close',
           'reading_controls.dismiss_swipe_sensitivity',
           'reading_controls.dismiss_popup_on_scroll',
-          'reading_controls.close_popup_after_mining',
+          'lookup.after_mining_popup.books',
         ],
       ),
       ReaderSettingsSectionSpec(

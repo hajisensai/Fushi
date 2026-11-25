@@ -1,5 +1,6 @@
 import 'package:test/test.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
+import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
 
 void main() {
   const LyricsProviderEntry a = LyricsProviderEntry(id: 'a', enabled: true);
@@ -40,6 +41,47 @@ void main() {
       mergeLyricsProviders(const <LyricsProviderEntry>[], <String>['c']),
       <LyricsProviderEntry>[c],
     );
+  });
+
+  group('mergeLyricsSourceList（LRCLIB 与插件同一份有序列表）', () {
+    const LyricsProviderEntry lrclib = LyricsProviderEntry(
+      id: MusicLyricsSource.lrclib,
+      enabled: true,
+    );
+
+    test('旧偏好没有 LRCLIB：补在最前并启用，存量查询顺序不变', () {
+      expect(
+        mergeLyricsSourceList(<LyricsProviderEntry>[b, a], <String>['a', 'b']),
+        <LyricsProviderEntry>[lrclib, b, a],
+      );
+      expect(
+        mergeLyricsSourceList(const <LyricsProviderEntry>[], const <String>[]),
+        <LyricsProviderEntry>[lrclib],
+      );
+    });
+
+    test('用户排过的 LRCLIB 位置与停用照存，插件照常并集', () {
+      const LyricsProviderEntry off = LyricsProviderEntry(
+        id: MusicLyricsSource.lrclib,
+        enabled: false,
+      );
+      expect(
+        mergeLyricsSourceList(
+          <LyricsProviderEntry>[a, off, b],
+          <String>['a', 'c'],
+        ),
+        <LyricsProviderEntry>[a, off, c],
+      );
+      expect(
+        enabledLyricsProviderIds(
+          mergeLyricsSourceList(
+            <LyricsProviderEntry>[c, lrclib],
+            <String>['c'],
+          ),
+        ),
+        <String>['c', MusicLyricsSource.lrclib],
+      );
+    });
   });
 
   test('reorder and toggle', () {

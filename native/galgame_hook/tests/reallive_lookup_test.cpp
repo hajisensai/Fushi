@@ -68,6 +68,283 @@ void TestResolveSitesFailsClosed() {
          core::SiteResult::kResolved);
 }
 
+// ── import slots (synthetic x86 import directory) ───────────────────────────
+
+// Writes a PE32 header plus an import directory with one descriptor per dll
+// into a blank image, every symbol imported by name.  Returns the IAT slot
+// RVA of each symbol in `out_slots` (dll-major order).
+struct SyntheticDll {
+  const char* name;
+  const char* const* symbols;
+  size_t count;
+};
+
+void WriteImportTable(BlankImage* image, const SyntheticDll* dlls,
+                      size_t dll_count, uint32_t* out_slots) {
+  constexpr uint32_t kNtOffset = 0x80u;
+  constexpr uint32_t kDirectory = 0x1000u;
+  constexpr uint32_t kStrings = 0x2000u;
+  constexpr uint32_t kThunks = 0x3000u;
+  uint8_t* base = image->base;
+  std::memset(base, 0, 0x4000u);
+  auto* dos = reinterpret_cast<IMAGE_DOS_HEADER*>(base);
+  dos->e_magic = IMAGE_DOS_SIGNATURE;
+  dos->e_lfanew = static_cast<LONG>(kNtOffset);
+  auto* nt = reinterpret_cast<IMAGE_NT_HEADERS32*>(base + kNtOffset);
+  nt->Signature = IMAGE_NT_SIGNATURE;
+  nt->FileHeader.Machine = IMAGE_FILE_MACHINE_I386;
+  nt->OptionalHeader.Magic = IMAGE_NT_OPTIONAL_HDR32_MAGIC;
+  nt->OptionalHeader.NumberOfRvaAndSizes = IMAGE_NUMBEROF_DIRECTORY_ENTRIES;
+  nt->OptionalHeader.DataDirectory[IMAGE_DIRECTORY_ENTRY_IMPORT]
+      .VirtualAddress = kDirectory;
+  uint32_t strings = kStrings;
+  uint32_t thunks = kThunks;
+  size_t slot_index = 0u;
+  auto put_string = [&](const char* text, uint32_t prefix) {
+    const uint32_t at = strings;
+    std::memcpy(base + strings + prefix, text, std::strlen(text) + 1u);
+    strings += prefix + static_cast<uint32_t>(std::strlen(text)) + 2u;
+    return at;
+  };
+  for (size_t d = 0u; d < dll_count; ++d) {
+    auto* desc = reinterpret_cast<IMAGE_IMPORT_DESCRIPTOR*>(
+        base + kDirectory + d * sizeof(IMAGE_IMPORT_DESCRIPTOR));
+    desc->Name = put_string(dlls[d].name, 0u);
+    const uint32_t lookup = thunks;
+    const uint32_t iat = thunks + 0x100u;
+    thunks += 0x200u;
+    desc->OriginalFirstThunk = lookup;
+    desc->FirstThunk = iat;
+    for (size_t s = 0u; s < dlls[d].count; ++s) {
+      const uint32_t hint_name = put_string(dlls[d].symbols[s], 2u);
+      std::memcpy(base + lookup + s * 4u, &hint_name, 4u);
+      std::memcpy(base + iat + s * 4u, &hint_name, 4u);
+      out_slots[slot_index++] = iat + static_cast<uint32_t>(s) * 4u;
+    }
+  }
+}
+
+void TestGlyphOutlineImportAliases() {
+  const char* const kUser32[] = {"GetKeyboardState", "GetFocus"};
+  uint32_t slots[8] = {};
+  {
+    // The canonical ANSI name.
+    const char* const gdi32[] = {"SelectObject", "GetGlyphOutlineA"};
+    const SyntheticDll dlls[] = {{"GDI32.dll", gdi32, 2u},
+                                 {"USER32.dll", kUser32, 2u}};
+    BlankImage x86(IMAGE_FILE_MACHINE_I386, 32u);
+    WriteImportTable(&x86, dlls, 2u, slots);
+    const core::ImportSlots imports = core::FindLookupImportSlots(x86.image);
+    assert(imports.get_glyph_outline == slots[1]);
+    assert(imports.get_keyboard_state == slots[2]);
+    assert(imports.get_focus == slots[3]);
+  }
+  {
+    // A rebuilt import table binding the rasteriser by gdi32's unsuffixed
+    // ANSI export name is the same entry point.
+    const char* const gdi32[] = {"GetGlyphOutline", "TextOutA"};
+    const SyntheticDll dlls[] = {{"gdi32.dll", gdi32, 2u},
+                                 {"user32.dll", kUser32, 2u}};
+    BlankImage x86(IMAGE_FILE_MACHINE_I386, 32u);
+    WriteImportTable(&x86, dlls, 2u, slots);
+    const core::ImportSlots imports = core::FindLookupImportSlots(x86.image);
+    assert(imports.get_glyph_outline == slots[0]);
+    assert(imports.get_keyboard_state == slots[2]);
+    // Exact names only: no prefix match onto a longer or other-suffix name.
+    assert(core::FindImportSlotRva(x86.image, "gdi32.dll",
+                                   "GetGlyphOutlineA") == 0u);
+  }
+  {
+    // Both names present: the `A` slot is offered first.
+    const char* const gdi32[] = {"GetGlyphOutline", "GetGlyphOutlineA"};
+    const SyntheticDll dlls[] = {{"gdi32.dll", gdi32, 2u},
+                                 {"user32.dll", kUser32, 2u}};
+    BlankImage x86(IMAGE_FILE_MACHINE_I386, 32u);
+    WriteImportTable(&x86, dlls, 2u, slots);
+    assert(core::FindLookupImportSlots(x86.image).get_glyph_outline ==
+           slots[1]);
+  }
+  {
+    // The wide rasteriser takes a UTF-16 code, not the engine's Shift_JIS
+    // one: never accepted, so the resolver reports missing imports.
+    const char* const gdi32[] = {"GetGlyphOutlineW"};
+    const SyntheticDll dlls[] = {{"gdi32.dll", gdi32, 1u},
+                                 {"user32.dll", kUser32, 2u}};
+    BlankImage x86(IMAGE_FILE_MACHINE_I386, 32u);
+    WriteImportTable(&x86, dlls, 2u, slots);
+    const core::ImportSlots imports = core::FindLookupImportSlots(x86.image);
+    assert(imports.get_glyph_outline == 0u);
+    assert(imports.get_keyboard_state != 0u && imports.get_focus != 0u);
+    core::Sites sites;
+    assert(core::ResolveSites(x86.image, imports, &sites) ==
+           core::SiteResult::kImportsMissing);
+  }
+  {
+    // The alias name under another dll is not gdi32's rasteriser.
+    const char* const other[] = {"GetGlyphOutline"};
+    const SyntheticDll dlls[] = {{"gdi32full.dll", other, 1u},
+                                 {"user32.dll", kUser32, 2u}};
+    BlankImage x86(IMAGE_FILE_MACHINE_I386, 32u);
+    WriteImportTable(&x86, dlls, 2u, slots);
+    assert(core::FindLookupImportSlots(x86.image).get_glyph_outline == 0u);
+  }
+}
+
+// ── site resolution on a synthetic engine image ─────────────────────────────
+
+// Code in [0, 0x8000), data in [0x8000, 0x10000); absolute operands are
+// written against a fake preferred base so the image works in x64 too.
+constexpr uintptr_t kFakeBase = 0x400000u;
+constexpr uint32_t kGlyphPathRva = 0x1000u;
+constexpr uint32_t kEpilogueRva = 0x1100u;
+constexpr uint32_t kRasterRva = 0x1400u;
+constexpr uint32_t kKeyPathRva = 0x2000u;
+constexpr uint32_t kFocusRva = 0x2400u;
+constexpr uint32_t kCompositeRva = 0x3000u;
+constexpr uint32_t kBlitRva = 0x3400u;
+constexpr uint32_t kFontSizeRva = 0x9000u;
+constexpr uint32_t kWindowRva = 0x9010u;
+constexpr uint32_t kScreenHRva = 0x9020u;
+constexpr uint32_t kScreenWRva = 0x9024u;
+constexpr uint32_t kScreenBitsRva = 0x9028u;
+constexpr uint32_t kGlyphSlotRva = 0x9100u;
+constexpr uint32_t kKeyboardSlotRva = 0x9104u;
+constexpr uint32_t kFocusSlotRva = 0x9108u;
+
+void PutAbsolute(uint8_t* base, uint32_t at, uint32_t rva) {
+  const uint32_t absolute = static_cast<uint32_t>(kFakeBase) + rva;
+  std::memcpy(base + at, &absolute, 4u);
+}
+
+void PutRel32Call(uint8_t* base, uint32_t at, uint32_t target) {
+  base[at] = 0xe8u;
+  const int32_t rel = static_cast<int32_t>(target) -
+                      static_cast<int32_t>(at + 5u);
+  std::memcpy(base + at + 1u, &rel, 4u);
+}
+
+void WriteEngineSites(BlankImage* x86, const core::KeyPathShape& key) {
+  uint8_t* base = x86->base;
+  x86->image.absolute_base = kFakeBase;
+  x86->image.section_count = 2u;
+  x86->image.sections[0] = {base, 0x8000u, 0u,
+                            IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_EXECUTE};
+  x86->image.sections[1] = {base + 0x8000u, 0x8000u, 0x8000u,
+                            IMAGE_SCN_MEM_READ | IMAGE_SCN_MEM_WRITE};
+  // Text render path, its join (0x60 past the cache jump) and epilogue.
+  std::memcpy(base + kGlyphPathRva, core::kGlyphPathBytes,
+              sizeof(core::kGlyphPathBytes));
+  PutAbsolute(base, kGlyphPathRva + core::kGlyphPathSizeOperand,
+              kFontSizeRva);
+  PutRel32Call(base, kGlyphPathRva + core::kGlyphPathRasterCall, kRasterRva);
+  const uint32_t join = kGlyphPathRva + core::kGlyphPathCacheJump + 2u + 0x60u;
+  std::memcpy(base + join, core::kGlyphJoinBytes,
+              sizeof(core::kGlyphJoinBytes));
+  PutAbsolute(base, join + core::kGlyphJoinSizeOperand, kFontSizeRva);
+  std::memcpy(base + kEpilogueRva, core::kGlyphEpilogueBytes,
+              sizeof(core::kGlyphEpilogueBytes));
+  // Rasteriser: `call [glyph outline slot]`.
+  base[kRasterRva] = 0xffu;
+  base[kRasterRva + 1u] = 0x15u;
+  PutAbsolute(base, kRasterRva + 2u, kGlyphSlotRva);
+  // Key poll of the given shape and its Focused().
+  std::memcpy(base + kKeyPathRva, key.bytes, key.size);
+  PutRel32Call(base, kKeyPathRva + core::kKeyPathFocusCall, kFocusRva);
+  PutAbsolute(base, kKeyPathRva + static_cast<uint32_t>(key.keyboard_operand),
+              kKeyboardSlotRva);
+  std::memcpy(base + kFocusRva, core::kFocusBytes, sizeof(core::kFocusBytes));
+  PutAbsolute(base, kFocusRva + core::kFocusForegroundOperand, kFocusSlotRva);
+  PutAbsolute(base, kFocusRva + core::kFocusWindowOperand, kWindowRva);
+  // Compositor call into the blitter.
+  std::memcpy(base + kCompositeRva, core::kCompositeCallBytes,
+              sizeof(core::kCompositeCallBytes));
+  PutAbsolute(base, kCompositeRva + core::kCompositeHeightOperand,
+              kScreenHRva);
+  PutAbsolute(base, kCompositeRva + core::kCompositeWidthOperand, kScreenWRva);
+  PutAbsolute(base, kCompositeRva + core::kCompositeScreenOperand,
+              kScreenBitsRva);
+  PutRel32Call(base, kCompositeRva + core::kCompositeBlitCall, kBlitRva);
+  std::memcpy(base + kBlitRva, core::kBlitPrologueBytes,
+              sizeof(core::kBlitPrologueBytes));
+}
+
+core::ImportSlots SyntheticImports() {
+  core::ImportSlots imports;
+  imports.get_glyph_outline = kGlyphSlotRva;
+  imports.get_keyboard_state = kKeyboardSlotRva;
+  imports.get_focus = kFocusSlotRva;
+  return imports;
+}
+
+void TestResolveSitesBothKeyPollShapes() {
+  constexpr size_t kShapes =
+      sizeof(core::kKeyPathShapes) / sizeof(core::kKeyPathShapes[0]);
+  static_assert(kShapes == 2u, "plain and normalised key polls");
+  for (size_t index = 0u; index < kShapes; ++index) {
+    const core::KeyPathShape& shape = core::kKeyPathShapes[index];
+    BlankImage x86(IMAGE_FILE_MACHINE_I386, 32u);
+    WriteEngineSites(&x86, shape);
+    const uintptr_t base = reinterpret_cast<uintptr_t>(x86.base);
+    core::Sites sites;
+    assert(core::ResolveSites(x86.image, SyntheticImports(), &sites) ==
+           core::SiteResult::kResolved);
+    assert(sites.key_join == base + kKeyPathRva + shape.join);
+    assert(sites.raster == base + kRasterRva);
+    assert(sites.composite_blit == base + kBlitRva);
+    assert(sites.font_size_rva == kFontSizeRva &&
+           sites.window_rva == kWindowRva &&
+           sites.screen_bits_rva == kScreenBitsRva &&
+           sites.screen_width_rva == kScreenWRva &&
+           sites.screen_height_rva == kScreenHRva);
+    // The key table sits at esp+0x10 at the join in every shape: the bytes
+    // right after the join read VK_UP at [esp+0x36].
+    const uint8_t* after_join = x86.base + kKeyPathRva + shape.join;
+    assert(after_join[0] == 0x8au || after_join[0] == 0x38u);
+    assert(after_join[2] == 0x24u && after_join[3] == 0x36u);
+
+    // The rasteriser must load the slot the imports name.
+    core::ImportSlots wrong = SyntheticImports();
+    wrong.get_glyph_outline = kGlyphSlotRva + 0x40u;
+    assert(core::ResolveSites(x86.image, wrong, &sites) ==
+           core::SiteResult::kRasterInvalid);
+    // GetKeyboardState through another slot is not the key poll.
+    wrong = SyntheticImports();
+    wrong.get_keyboard_state = kKeyboardSlotRva + 0x40u;
+    assert(core::ResolveSites(x86.image, wrong, &sites) ==
+           core::SiteResult::kKeyPathMissing);
+    assert(sites.key_join == 0u && sites.glyph_join == 0u);
+  }
+  {
+    // A key poll of each shape in one image is ambiguous: nothing installs.
+    BlankImage x86(IMAGE_FILE_MACHINE_I386, 32u);
+    WriteEngineSites(&x86, core::kKeyPathShapes[0]);
+    const core::KeyPathShape& other = core::kKeyPathShapes[1];
+    std::memcpy(x86.base + 0x5000u, other.bytes, other.size);
+    PutRel32Call(x86.base, 0x5000u + core::kKeyPathFocusCall, kFocusRva);
+    PutAbsolute(x86.base, 0x5000u + static_cast<uint32_t>(other.keyboard_operand),
+                kKeyboardSlotRva);
+    core::Sites sites;
+    assert(core::ResolveSites(x86.image, SyntheticImports(), &sites) ==
+           core::SiteResult::kKeyPathMissing);
+  }
+  {
+    // The shape table's branch offsets agree with its bytes, and a
+    // normalised poll whose `je` skips anything but the normalisation loop
+    // (here: the plain shape's distance) is not the key poll.
+    BlankImage x86(IMAGE_FILE_MACHINE_I386, 32u);
+    WriteEngineSites(&x86, core::kKeyPathShapes[1]);
+    const core::KeyPathShape& shape = core::kKeyPathShapes[1];
+    assert(core::ShortJumpTarget(x86.base + kKeyPathRva, shape.zero_jump) ==
+           shape.zero_path);
+    assert(core::ShortJumpTarget(x86.base + kKeyPathRva, shape.join_jump) ==
+           shape.join);
+    x86.base[kKeyPathRva + shape.zero_jump + 1u] = 0x0du;
+    core::Sites sites;
+    assert(core::ResolveSites(x86.image, SyntheticImports(), &sites) ==
+           core::SiteResult::kKeyPathMissing);
+  }
+}
+
 // ── glyph codes ─────────────────────────────────────────────────────────────
 
 void TestGlyphCodes() {
@@ -328,6 +605,8 @@ void TestClaimReducer() {
 
 int main() {
   TestResolveSitesFailsClosed();
+  TestGlyphOutlineImportAliases();
+  TestResolveSitesBothKeyPollShapes();
   TestGlyphCodes();
   TestTrackerVisibility();
   TestCellTrimming();

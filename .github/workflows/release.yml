@@ -41,13 +41,19 @@ on:
       - 'tool/check_release_policy.ps1'
       - 'tool/release_sequence.sh'
       - 'tool/publish_update_manifest.sh'
+      - 'tool/publish_debug_pulse.sh'
       - 'tool/merge_update_manifest.py'
+      - 'tool/gen_debug_pulse.py'
       - 'tool/feedback_mark_released.sh'
+      - 'tool/bump_rolling_release_tag.sh'
+      - 'tool/publish_settings_catalog.sh'
       - '.github/workflows/release.yml'
       - '.github/workflows/release-desktop.yml'
       - '.github/actions/provide-baked-secrets/**'
       # strings.g.dart 不入库：编 app 前由它生成（生成器 fushi/tool/gen_i18n.dart 在 fushi/** 里）。
       - '.github/actions/gen-i18n/**'
+      # shaderbundle 不入库：flutter analyze 前由它编出（pubspec 资源，analyze 不跑构建钩子）。
+      - '.github/actions/gen-shader-bundles/**'
       - '.github/actions/native-artifact-store/**'
       - '.github/actions/native-store-names/**'
       - '.github/actions/pdfium-hook-cache/**'
@@ -134,6 +140,9 @@ jobs:
       # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
       # job 级 permissions 会把没列出的 scope 置 none，缺 actions: write 则 dispatch 403。
       actions: write
+      # debug pulse（tool/publish_debug_pulse.sh）用 GraphQL 读 PR 标题 / 作者 / 标签；没列出的
+      # scope 会被置 none，缺它 PR 元数据整批退回 #N 占位。
+      pull-requests: read
     # 发布步骤已搬到下面的 `publish-android` job（2026-10-17，正式版云端预构建 + 审批门）：
     # 这里只构建、签名、上传 run artifact，绝不对外发布任何东西。
     #
@@ -149,7 +158,7 @@ jobs:
       publish_manifest: ${{ steps.channel.outputs.publish_manifest }}
 
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
         fetch-depth: 0
     # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
@@ -157,19 +166,33 @@ jobs:
       uses: ./.github/actions/fetch-vendored-binaries
       with:
         groups: android
+    # 调试版流水线（debug pulse，docs/specs/2026-11-10-debug-pulse.md）：发布 run 一开始就刷新一次
+    # update-manifest 的 debug-pulse-fushi.json——此刻本 run 在构建中、被顶掉的旧 run 已 cancelled、
+    # develop 新合的 PR 显示为「还没进包」。只对 develop push（debug 通道）；不建 release / tag、不碰
+    # latest-*.json；continue-on-error + 3 分钟超时，失败绝不让发布变红。脚本见 tool/publish_debug_pulse.sh。
+    # 排在 vendored 二进制拉取之后：那一步必须紧跟 checkout（vendored_binaries_manifest_guard_test）。
+    - name: Debug pulse (run start)
+      if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+      continue-on-error: true
+      timeout-minutes: 3
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+      run: bash tool/publish_debug_pulse.sh
 
     - name: Validate unified release policy
       shell: pwsh
       run: ./tool/check_release_policy.ps1
 
-    - uses: actions/setup-java@v5
+    - uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961 # v5.7.0
       with:
         distribution: 'zulu'
-        java-version: '17'
+        java-version: '21'
 
-    - uses: subosito/flutter-action@v2
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
       with:
-        flutter-version: '3.47.6'
+        flutter-version: '3.50.0'
         cache: true
     # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
     # runner; restore it so a release-asset hiccup cannot fail the build.
@@ -476,7 +499,7 @@ jobs:
     # 两条各 2.7 GB 的缓存。理由见 docs/agent/build.md 的「CI 缓存配额」，守卫见
     # fushi/test/build/workflow_cache_quota_guard_test.dart。
     - name: Cache Gradle caches
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: |
           ~/.gradle/caches/modules-2
@@ -558,7 +581,7 @@ jobs:
         path: native/fushi_torrent/prebuilt/android
     - name: Cache vcpkg source distfiles (libtorrent android)
       if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.torrent_store.outputs.hit != 'true' }}
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: |
           ${{ runner.temp }}/vcpkg-downloads
@@ -568,7 +591,7 @@ jobs:
           ${{ runner.os }}-vcpkg-downloads-libtorrent-android-v1-
     - name: Cache vcpkg binary archives (libtorrent android)
       if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.torrent_store.outputs.hit != 'true' }}
-      uses: actions/cache@v4
+      uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: ~/.cache/vcpkg/archives
         # v1 -> v2：同 Windows，manifest 钉版换了 ABI hash（BUG-1772）。
@@ -649,19 +672,19 @@ jobs:
         path: native/fushi_p2p/prebuilt/android
     - name: Set up Rust (fushi_p2p, Android targets)
       if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.p2p_store.outputs.hit != 'true' }}
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
       with:
         toolchain: ${{ steps.native_store.outputs.p2p_rust }}
         targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
     - name: Cache Rust build (fushi_p2p)
       if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.p2p_store.outputs.hit != 'true' }}
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         workspaces: native/fushi_p2p -> target
         key: fushi-p2p-android
     - name: Install cargo-ndk
       if: ${{ (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') && steps.p2p_store.outputs.hit != 'true' }}
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
       with:
         tool: cargo-ndk@${{ steps.native_store.outputs.cargo_ndk }}
     - name: Build fushi_p2p Android .so (cargo-ndk)
@@ -702,19 +725,19 @@ jobs:
     # 无条件再装一次（同版本，幂等）。
     - name: Set up Rust (fushi_fsrs, Android targets)
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
       with:
         toolchain: ${{ steps.native_store.outputs.p2p_rust }}
         targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
     - name: Cache Rust build (fushi_fsrs)
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         workspaces: native/fushi_fsrs -> target
         key: fushi-fsrs-android
     - name: Install cargo-ndk (fushi_fsrs)
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
       with:
         tool: cargo-ndk@${{ steps.native_store.outputs.cargo_ndk }}
     - name: Build fushi_fsrs Android .so (cargo-ndk)
@@ -755,19 +778,19 @@ jobs:
     # 无条件再装一次（同版本，幂等）。
     - name: Set up Rust (fushi_web_core, Android targets)
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
-      uses: dtolnay/rust-toolchain@master
+      uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
       with:
         toolchain: ${{ steps.native_store.outputs.p2p_rust }}
         targets: aarch64-linux-android,armv7-linux-androideabi,x86_64-linux-android
     - name: Cache Rust build (fushi_web_core)
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         workspaces: native/fushi_web_core -> target
         key: fushi-web-core-android
     - name: Install cargo-ndk (fushi_web_core)
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
-      uses: taiki-e/install-action@v2
+      uses: taiki-e/install-action@75a7c0f87bd666af3cdb75c5b9e9d03ab6044e6f # v2.90.6
       with:
         tool: cargo-ndk@${{ steps.native_store.outputs.cargo_ndk }}
     - name: Build fushi_web_core Android .so (cargo-ndk)
@@ -805,7 +828,7 @@ jobs:
     # cargo-ndk 已由 fushi_fsrs 那组无条件装好，这里不再重复安装。
     - name: Cache Rust build (fushi_compute)
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         workspaces: native/fushi_compute -> target
         key: fushi-compute-android
@@ -842,7 +865,7 @@ jobs:
     # build.gradle 的 checkFushiRwkvNative 缺 ABI 即失败；出包后逐 ABI 核对 APK 里确有 libfushi_rwkv.so。
     - name: Cache Rust build (fushi_rwkv)
       if: ${{ steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
-      uses: Swatinem/rust-cache@v2
+      uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
       with:
         workspaces: native/fushi_rwkv -> target
         key: fushi-rwkv-android
@@ -1013,6 +1036,8 @@ jobs:
           --build-name "${{ steps.channel.outputs.build_version_name }}" \
           --build-number "${{ steps.channel.outputs.android_build_number }}" \
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+        # BUG-4955：AGP strip 前的 libapp.so（带 .symtab / DWARF）存下来，ANR 栈的裸 pc 才对得上源码。
+        bash tool/android_dart_symbols.sh stash android-arm64
 
     - name: Prepare release-signed debug-channel APK asset
       if: steps.channel.outputs.build_debug_channel_apk == 'true'
@@ -1084,6 +1109,8 @@ jobs:
             --build-name "${{ steps.channel.outputs.build_version_name }}" \
             --build-number "${{ steps.channel.outputs.android_build_number }}" \
             --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
+          # BUG-4955：换 target-platform 重编会清掉上一个 ABI 的 flutter 中间产物，逐次收。
+          bash tool/android_dart_symbols.sh stash "$platform"
           echo "::endgroup::"
         done
         missing=0
@@ -1094,6 +1121,29 @@ jobs:
           fi
         done
         exit "$missing"
+
+    # BUG-4955：Android 的 Dart 符号。ANR / tombstone 栈里 libapp.so 只有 `base.apk (offset …) (???)`
+    # 的裸 pc（反馈 ICF67eBY57），没有 AGP strip 前的那份 ELF 就还原不了。不用 --split-debug-info：
+    # 它连带 DWARF 栈，会让 app 内诊断的 Dart 栈与调用点归因退化。核对 build-id 与包里一致；
+    # 只是诊断件，不挡发版（continue-on-error），也不进 Release 资产。
+    - name: Verify Android Dart symbols match APKs
+      if: ${{ steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      continue-on-error: true
+      working-directory: fushi
+      shell: bash
+      run: bash tool/android_dart_symbols.sh verify
+
+    - name: Upload Android Dart symbols
+      if: ${{ steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true' }}
+      continue-on-error: true
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: android-dart-symbols-${{ steps.channel.outputs.release_sequence }}
+        path: fushi/build/android-dart-symbols/
+        if-no-files-found: warn
+        # debug 通道每次 push 都出一份（arm64 约 140 MB），留 14 天；其余（formal / beta，以及手动发
+        # GitHub Release 的 channel=github-release——正式版的一等路径）与 iOS dSYM 同为 90 天。
+        retention-days: ${{ steps.channel.outputs.channel == 'debug' && 14 || 90 }}
 
     - name: Collect Android post-build diagnostics
       if: ${{ always() && (steps.channel.outputs.build_debug_apk == 'true' || steps.channel.outputs.build_debug_channel_apk == 'true' || steps.channel.outputs.build_split_release_apk == 'true') }}
@@ -1123,7 +1173,7 @@ jobs:
         done
 
     # build.gradle 的 release signingConfig 显式开了 v1 + v2 + v3，并在 packageRelease 后用 apksigner
-    # 强制补 v1（minSdk 24 时 AGP 无视 enableV1Signing，只签 v2/v3）。HarmonyOS 4.x 安装器会因没有 JAR（v1）签名报「无证书」拒装（反馈 j3ChbSpKgJ）。
+    # 强制补 v1（minSdk ≥ 24 时 AGP 无视 enableV1Signing，只签 v2/v3）。HarmonyOS 4.x 安装器会因没有 JAR（v1）签名报「无证书」拒装（反馈 j3ChbSpKgJ）。
     # 这三个开关被删 / 被 AGP 升级改了默认都不会让构建失败，这里对每个 release 签名的 APK
     # （release-signed 调试通道包与 split release 包；Gradle 出的 `*-release.apk`，debug 签名
     # 的 `*-debug.apk` 不在其列）跑 apksigner，三种方案缺一个就挡在发布前。
@@ -1147,7 +1197,7 @@ jobs:
         fi
         failed=0
         for apk in "${apks[@]}"; do
-          # apksigner verify 按 APK 自己的 minSdk（24）判：那个口径下 v2 已足够，它**根本不看** v1，
+          # apksigner verify 按 APK 自己的 minSdk（26）判：那个口径下 v2 已足够，它**根本不看** v1，
           # 恒报 v1=false。v1 要按「API 23 及以下 / 只认 JAR 签名的安装器」口径单独验。
           out="$("$APKSIGNER" verify --verbose "$apk")"
           out_v1="$("$APKSIGNER" verify --verbose --min-sdk-version 23 "$apk")"
@@ -1446,7 +1496,7 @@ jobs:
 
     - name: Upload Android release channel to workflow run
       if: always() && steps.channel.outcome == 'success'
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: fushi-release-channel-${{ github.sha }}
         path: fushi/build/release-channel/
@@ -1455,7 +1505,7 @@ jobs:
 
     - name: Upload APK artifacts to workflow run
       if: always()
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: fushi-${{ steps.channel.outputs.channel }}-apk-${{ github.sha }}
         path: fushi/build/release-artifacts/*.apk
@@ -1464,6 +1514,18 @@ jobs:
         # 待审批 job 最长挂 30 天），publish job 从这份 artifact 取 APK：保留期必须
         # 盖住整个审批窗口，否则过了 14 天再批就发不出去。
         retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
+
+    # 构建本身失败时 publish-android 整个被跳过，收尾刷新到不了：在这里补一次，让 Android
+    # 显示「失败」。成功路径由 publish-android 里的收尾刷新负责，这里不重复。
+    - name: Debug pulse (build failed)
+      if: failure() && github.event_name == 'push' && github.ref == 'refs/heads/develop'
+      continue-on-error: true
+      timeout-minutes: 3
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+      run: bash tool/publish_debug_pulse.sh
 
   # 对外发布全部收在这个 job（2026-10-17 用户要求：正式版必须云端预构建好，说「发版」
   # 时秒发、不重新构建）。build job 只构建 + 签名 + 上传 run artifact；这里下载 artifact
@@ -1490,11 +1552,13 @@ jobs:
       # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
       # job 级 permissions 会把没列出的 scope 置 none，缺 actions: write 则 dispatch 403。
       actions: write
+      # debug pulse（tool/publish_debug_pulse.sh）用 GraphQL 读 PR 元数据，同上。
+      pull-requests: read
 
     steps:
     # 完整历史：反馈回填要 `git merge-base --is-ancestor`，main 同步拿工作区当
     # `--reference` 借对象，清单脚本在 tool/ 下。
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
       with:
         fetch-depth: 0
 
@@ -1502,7 +1566,7 @@ jobs:
     # 同一份结果只算一次，publish 与 build 不可能对版本串 / tag / 开关各执一词）。
     # 来源是 build job 上传的 artifact，不是 job outputs（会被 secret 过滤静默丢值）。
     - name: Download Android release channel from build job
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
       with:
         name: fushi-release-channel-${{ github.sha }}
         path: ${{ runner.temp }}/release-channel
@@ -1539,14 +1603,14 @@ jobs:
         echo "channel=$(cat "$CH_DIR/channel") tag=$(cat "$CH_DIR/tag") publish_tag=$(cat "$CH_DIR/publish_tag") managed=$(cat "$CH_DIR/publish_managed_release") manifest=$(cat "$CH_DIR/publish_manifest")/$(cat "$CH_DIR/manifest_channel")"
 
     - name: Download APK artifacts from build job
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
       with:
         name: fushi-${{ steps.channel.outputs.channel }}-apk-${{ github.sha }}
         path: fushi/build/release-artifacts
 
     - name: Upload APKs to GitHub Release event
       if: github.event_name == 'release'
-      uses: softprops/action-gh-release@v3
+      uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
       with:
         tag_name: ${{ steps.channel.outputs.tag }}
         files: |
@@ -1665,7 +1729,7 @@ jobs:
 
     - name: Publish Android channel release
       if: steps.channel.outputs.publish_managed_release == 'true'
-      uses: softprops/action-gh-release@v3
+      uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
       with:
         tag_name: ${{ steps.channel.outputs.publish_tag }}
         # Rolling debug: target the DEFAULT branch, not github.sha. GitHub rejects a
@@ -1682,6 +1746,21 @@ jobs:
         prerelease: ${{ steps.channel.outputs.prerelease }}
         make_latest: ${{ steps.channel.outputs.make_latest }}
         files: ${{ steps.channel.outputs.files }}
+
+    # 拍板台 RRYro9vSEU：同 release-desktop.yml 的同名步骤——发完把 rolling tag 挪到
+    # 「现在」的提交（tree = 默认分支），让调试版排在 Releases 顶部附近；只挪 tag，
+    # release id / 资产 / 下载链接不动。失败只 ::warning，下一次发布自愈。
+    - name: Bump rolling debug tag to keep it near the top of Releases
+      if: steps.channel.outputs.publish_managed_release == 'true' && steps.channel.outputs.rolling_debug == 'true'
+      continue-on-error: true
+      shell: bash
+      env:
+        GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+        PUBLISH_TAG: ${{ steps.channel.outputs.publish_tag }}
+        DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+        BUILD_SHA: ${{ github.sha }}
+      run: bash tool/bump_rolling_release_tag.sh
 
     # TODO-1049 (supersedes TODO-967): the debug channel now publishes to ONE
     # fixed rolling release (`debug-rolling`), so no new per-push
@@ -1768,6 +1847,18 @@ jobs:
         PLATFORM_LABEL: android
       run: bash tool/publish_update_manifest.sh
 
+    # 调试版流水线收尾刷新（出包结果）：紧跟清单发布，always()——前面任何一步失败也刷新，
+    # 让 debug 用户看到「失败」而不是一直「构建中」。同上只对 develop push、continue-on-error。
+    - name: Debug pulse (publish result)
+      if: always() && github.event_name == 'push' && github.ref == 'refs/heads/develop'
+      continue-on-error: true
+      timeout-minutes: 3
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        REPO: ${{ github.repository }}
+      run: bash tool/publish_debug_pulse.sh
+
     # 反馈发布回填：清单落地 = 这一版 Android 包已对用户可见，把「本构建包含其修复」的
     # 反馈记上 <channel>.android = 本版本（按 git 祖先关系判定，见脚本头注释）。
     # 绝不能让发布变红：步骤 continue-on-error，脚本内部失败也只打 ::warning。
@@ -1788,11 +1879,11 @@ jobs:
     # 正式版发布成功后自动把 main 同步成 develop（2026-09-08 用户要求）。
     #
     # main 只有两种来源的提交：从 develop 合过来的（历史上是人工 `Merge develop into main
-    # for X.Y.Z`），以及两条图表 workflow 的机器人提交（dev-activity.yml / star-history.yml
-    # 是 scheduled，只能跑在默认分支 main 上，SVG 因此只落在 main）。所以 main 永远不是
-    # develop 的祖先、纯快进永远失败，这里沿用人工时代的合并：`git merge --no-ff -X theirs`——
-    # 图表 SVG 两边都改过就取 develop 的（第二天定时任务会重新生成），除此之外 main 不该有
-    # develop 没有的东西。-X theirs 解不了的冲突（modify/delete）直接红，让人来看，绝不
+    # for X.Y.Z`），以及 2026-11-25 之前两条图表 workflow 的机器人提交（dev-activity.yml /
+    # star-history.yml 是 scheduled，当时默认分支是 main，SVG 落在 main；之后默认分支改成
+    # develop，SVG 改落 develop）。main 上的合并提交让它永远不是 develop 的祖先、纯快进永远
+    # 失败，这里沿用人工时代的合并：`git merge --no-ff -X theirs`——图表 SVG 两边都改过就取
+    # develop 的，除此之外 main 不该有 develop 没有的东西。-X theirs 解不了的冲突（modify/delete）直接红，让人来看，绝不
     # force-push。GITHUB_TOKEN 的 push 不级联触发 main 的 push 构建，也不会因此多发一版。
     #
     # 只在本 workflow 做（release-desktop.yml 不做）：两条正式版 workflow 现在并行，各推一次
@@ -1849,9 +1940,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
     - uses: ./.github/actions/fushi-web-core-linux
-    - uses: actions/upload-artifact@v7
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: fushi-web-core-linux-x64
         path: native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
@@ -1865,9 +1956,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
     - uses: ./.github/actions/test-native-linux
-    - uses: actions/upload-artifact@v7
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: fushi-test-native-linux-x64
         path: |
@@ -1887,9 +1978,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
     - uses: ./.github/actions/fushidicts-linux
-    - uses: actions/upload-artifact@v7
+    - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: fushidicts-linux-x64
         path: native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so
@@ -1937,21 +2028,23 @@ jobs:
     env:
       FUSHI_WEB_CORE_LIB: ${{ github.workspace }}/native/fushi_web_core/prebuilt/linux-x64/libfushi_web_core.so
       FUSHI_FSRS_LIB: ${{ github.workspace }}/native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so
+      # 上面这份库由 test-native-linux 带 `id_audit` 编：告诉金丝雀（fushi/test/srs/srs_id_audit_gate_test.dart）审计该开着。
+      FUSHI_FSRS_ID_AUDIT: '1'
       FUSHI_COMPUTE_LIB: ${{ github.workspace }}/native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so
       FUSHI_RWKV_LIB: ${{ github.workspace }}/native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so
       FUSHI_MUSIC_LIB: ${{ github.workspace }}/native/fushi_music/prebuilt/linux-x64/libfushi_music.so
       FUSHI_CORPUS_LIB: ${{ github.workspace }}/native/fushi_corpus/prebuilt/linux-x64/libfushi_corpus.so
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
     # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
     - name: Fetch vendored binaries
       uses: ./.github/actions/fetch-vendored-binaries
       with:
         groups: all
 
-    - uses: subosito/flutter-action@v2
+    - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
       with:
-        flutter-version: '3.47.6'
+        flutter-version: '3.50.0'
         cache: true
     # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
     # runner; restore it so a release-asset hiccup cannot fail the build.
@@ -1986,16 +2079,21 @@ jobs:
       uses: ./.github/actions/gen-i18n
 
     - name: Fetch fushi_web_core linux-x64 library (hard dependency of the unit tests)
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
       with:
         name: fushi-web-core-linux-x64
         path: native/fushi_web_core/prebuilt/linux-x64
     - name: Fetch fushidicts linux-x64 library (hard dependency of the package tests)
       if: matrix.part == 'checks'
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
       with:
         name: fushidicts-linux-x64
         path: native/fushidicts/prebuilt/linux-x64
+
+    # build/shaderbundles/*.shaderbundle is hook output listed in pubspec assets; analyze runs no hook.
+    - name: Generate Flutter GPU shader bundles
+      if: matrix.part == 'checks'
+      uses: ./.github/actions/gen-shader-bundles
 
     - name: Run dart analyze
       if: matrix.part == 'checks'
@@ -2008,10 +2106,34 @@ jobs:
     # 由 test-native-linux 编好，五份矩阵只下载（路径与 job 级 FUSHI_FSRS_LIB / FUSHI_COMPUTE_LIB /
     # FUSHI_RWKV_LIB 对应）。
     - name: Fetch fushi_fsrs + fushi_compute + fushi_rwkv linux-x64 libraries (hard dependencies of the tests)
-      uses: actions/download-artifact@v7
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
       with:
         name: fushi-test-native-linux-x64
         path: native
+
+    # 设置项目录（给官网 fushi.moe/settings.md 用，读者是 AI）：导出器就是一条普通单测，设了
+    # FUSHI_SETTINGS_CATALOG_DIR 才落盘。这里只生成并传 artifact；推到 update-manifest 分支由
+    # 本 workflow 的 publish-settings-catalog job 做（本 job 没有写权限）。
+    # continue-on-error：同一条测试在单测分片里照常当守卫跑，红在那里；这里失败只是这次不更新目录。
+    - name: Export settings catalog
+      id: settings_catalog
+      if: matrix.part == 'checks' && github.event_name == 'push'
+      continue-on-error: true
+      timeout-minutes: 10
+      working-directory: fushi
+      env:
+        FUSHI_SETTINGS_CATALOG_DIR: ${{ runner.temp }}/settings-catalog
+      # 经失败过滤包装器跑（零执行不算绿）；单独的输出目录，不与分片的事件日志混。
+      run: dart run tool/flutter_test_failures.dart --output-dir=../.codex-test/settings-catalog test/settings/settings_catalog_export_test.dart
+    - name: Upload settings catalog
+      if: matrix.part == 'checks' && github.event_name == 'push' && steps.settings_catalog.outcome == 'success'
+      continue-on-error: true
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: settings-catalog
+        path: ${{ runner.temp }}/settings-catalog/settings-catalog.*
+        if-no-files-found: error
+        retention-days: 7
 
     - name: Run unit tests (main app, file shard ${{ matrix.part }}/4)
       if: matrix.part != 'checks'
@@ -2022,7 +2144,7 @@ jobs:
     # 逐 suite 耗时（tool/update_suite_timings.dart 的输入），见 main.yml 同名步骤。
     - name: Upload test event log
       if: always() && matrix.part != 'checks'
-      uses: actions/upload-artifact@v7
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
       with:
         name: unit-test-events-${{ matrix.part }}
         path: .codex-test/flutter-test/flutter_test.jsonl
@@ -2030,14 +2152,14 @@ jobs:
         retention-days: 14
 
     # packages/fushi_rwkv 的端到端测试要真权重（缺了判红、不 skip），与 main.yml 同名两步一致：
-    # 只读 native-rwkv-gate 写的同一个缓存条目（key 是两个钉死的 SHA-256，与 fetch_model.sh
-    # 一致），未命中时 fetch_model.sh 按钉死 URL 下载并校验（~15 MB）。
+    # 只读 native-rwkv-gate 写的同一个缓存条目（key 是五个钉死的 SHA-256，与 fetch_model.sh
+    # 一致），未命中时 fetch_model.sh 按钉死 URL 下载并校验（~13 MB）。
     - name: Restore RWKV weights cache
       if: matrix.part == 'checks'
-      uses: actions/cache/restore@v4
+      uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
       with:
         path: native/fushi_rwkv/model
-        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-22a4df807806615c0d58e382127eeb8cf764ae3233ac577115f112130f268361
+        key: fushi-rwkv-model-749ad1ad18d5b6ef8c4185802fa0c1e4a14e67cd7874f3efeaae355fffb1b9ec-b2f335bd712b9d602150201de41ab5a0f0a4c291644705e2aa1ed2a1bf1592c3-c7d8df407966fccd8f98227241816e114ce9ed1dfea799587e481c1d5926a453-77703dd2f2a21a1bcadaedfed1cec93ee0fd6fd6d3c840be221e72b5e1c05066-18de8ae77a1a40986dc432531116dfb009beae2385001ef425389a3ad7919a9e
     - name: Fetch RWKV weights (pinned URL, SHA-256 checked)
       if: matrix.part == 'checks'
       run: bash native/fushi_rwkv/fetch_model.sh
@@ -2075,3 +2197,48 @@ jobs:
           echo "::error title=Package test enumeration collapsed::只跑了 $ran 个包的测试，实测应有 4 个。去修枚举逻辑，不要调低这个下界。"
           exit 1
         fi
+
+  # 设置项目录推到 update-manifest 分支（官网 fushi.moe/settings.md、/settings.json 按通道代理）。
+  # 不用独立的 workflow_run workflow：放在本 workflow 里，develop push 当轮就发，链路最短。
+  # （当初还因为 workflow_run 只认默认分支上的定义、而默认分支曾是落后一个发布周期的 main；
+  # 2026-11-25 起默认分支是 develop，这条理由已不成立，但同 run 发布仍更简单。）
+  # - 写权限只给这个 job（tests 仍只读）；artifact 取本 run 的，不需要跨 run 的 actions: read。
+  # - needs tests 但用 always()：tests 是矩阵，任一单测分片红都会让裸 needs 跳过本 job，而导出
+  #   那一步是 continue-on-error、与分片红不红无关。只有 run 被取消才不发；没有 artifact
+  #   （checks 分片没跑到导出 / 导出失败）记 notice 后正常结束。
+  # - 与 publish-android 并发推同一分支：tool/publish_settings_catalog.sh 被拒后重取远端 tip、
+  #   只在最新提交上重放两个目录文件。
+  # - 只取发布脚本（sparse），不执行 artifact 里的任何东西。
+  publish-settings-catalog:
+    needs: tests
+    if: ${{ always() && github.event_name == 'push' && (github.ref_name == 'develop' || github.ref_name == 'main') && needs.tests.result != 'cancelled' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+    - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      with:
+        sparse-checkout: tool/publish_settings_catalog.sh
+        sparse-checkout-cone-mode: false
+        persist-credentials: false
+    - name: Download settings catalog artifact
+      id: fetch
+      continue-on-error: true
+      uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+      with:
+        name: settings-catalog
+        path: ${{ runner.temp }}/settings-catalog
+    - name: No settings catalog in this run
+      if: steps.fetch.outcome != 'success'
+      run: |
+        echo "::notice title=Settings catalog::本 run 没有 settings-catalog artifact（tests (checks) 被跳过 / 没跑到导出，或导出失败），本次不更新。"
+    - name: Publish settings catalog to update-manifest
+      if: steps.fetch.outcome == 'success'
+      shell: bash
+      env:
+        GITHUB_TOKEN: ${{ github.token }}
+        REPO: ${{ github.repository }}
+        CATALOG_DIR: ${{ runner.temp }}/settings-catalog
+        CHANNEL: ${{ github.ref_name == 'main' && 'stable' || 'debug' }}
+      run: bash tool/publish_settings_catalog.sh

@@ -17,6 +17,19 @@ void main() {
   driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
 
   group('srsFushiCardMediaIsNative', () {
+    test('unquoted <img src=x.jpg> stays native (real decks)', () {
+      expect(
+        srsFushiCardMediaIsNative(<String, String>{
+          'Media': '<img src=b9fac8abc52ef5afc4c727d659e38f358ba86028.jpg>',
+        }),
+        isTrue,
+      );
+      expect(
+        srsFushiCardMediaIsNative(<String, String>{'Media': '<img src=a.svg>'}),
+        isFalse,
+      );
+    });
+
     test('plain still / animated raster <img> stays native', () async {
       for (final String name in <String>[
         'a.jpg',

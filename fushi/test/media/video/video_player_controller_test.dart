@@ -1179,6 +1179,182 @@ void main() {
     });
   });
 
+  // BUG-4332 / 反馈 rLCxUJ-2i4：ASS 把一句台词拆成两条起止相同、\pos 不同的
+  // Dialogue（解析后两条起点严格相等的 cue）。上/下一句必须把同起点组视为同一句，
+  // 一次就跳到相邻的另一组，不能先落到同组另一行（看着像回到本句开头）。
+  group('BUG-4332 同起点多条 cue 视为同一句（上/下一句不按两次）', () {
+    // 反馈原文：
+    //   Dialogue: 0,0:07:26.00,0:07:28.30,...{\pos(466,600)}＜俺は 浩一に
+    //   Dialogue: 0,0:07:26.00,0:07:28.30,...{\pos(520,680)}呼び出しをくらった＞
+    // 前后各补一句普通台词。
+    final List<AudioCue> cues = <AudioCue>[
+      _cue(0, 443000, 445500), // 07:23.00-07:25.50
+      _cue(1, 446000, 448300), // 07:26.00-07:28.30 ＜俺は 浩一に
+      _cue(2, 446000, 448300), // 07:26.00-07:28.30 呼び出しをくらった＞
+      _cue(3, 449000, 451000), // 07:29.00-07:31.00
+    ];
+
+    test('按位置：同组句中下一句跳到下一组，上一句跳到上一组', () {
+      expect(
+        VideoPlayerController.nextCueIndexFor(cues: cues, positionMs: 447000),
+        3,
+      );
+      expect(
+        VideoPlayerController.prevCueIndexFor(cues: cues, positionMs: 447000),
+        0,
+      );
+    });
+
+    test('按位置：恰在同组起点（句首）也一次跳走', () {
+      expect(
+        VideoPlayerController.nextCueIndexFor(cues: cues, positionMs: 446000),
+        3,
+      );
+      expect(
+        VideoPlayerController.prevCueIndexFor(cues: cues, positionMs: 446000),
+        0,
+      );
+    });
+
+    test('按位置：从前后句跳进同组，落点是组首', () {
+      expect(
+        VideoPlayerController.nextCueIndexFor(cues: cues, positionMs: 444000),
+        1,
+      );
+      expect(
+        VideoPlayerController.prevCueIndexFor(cues: cues, positionMs: 450000),
+        1,
+      );
+    });
+
+    test('gap 内上一句落到 gap 前那组的组首', () {
+      // 448300 < 448600 < 449000：同组之后、cue3 之前的 gap。
+      expect(
+        VideoPlayerController.prevCueIndexFor(cues: cues, positionMs: 448600),
+        1,
+      );
+      expect(
+        VideoPlayerController.nextCueIndexFor(cues: cues, positionMs: 448600),
+        3,
+      );
+    });
+
+    test('锚定：锚在组内任一行，下一句 / 上一句都跳出整组', () {
+      for (final int anchor in <int>[1, 2]) {
+        expect(
+          VideoPlayerController.nextCueIndexFor(
+            cues: cues,
+            positionMs: 445820, // preRoll 偏前落点
+            anchorIndex: anchor,
+          ),
+          3,
+          reason: 'anchor=$anchor',
+        );
+        expect(
+          VideoPlayerController.prevCueIndexFor(
+            cues: cues,
+            positionMs: 445820,
+            anchorIndex: anchor,
+          ),
+          0,
+          reason: 'anchor=$anchor',
+        );
+      }
+    });
+
+    test('锚定：从前后句跳进同组，落点是组首', () {
+      expect(
+        VideoPlayerController.nextCueIndexFor(
+          cues: cues,
+          positionMs: 442820,
+          anchorIndex: 0,
+        ),
+        1,
+      );
+      expect(
+        VideoPlayerController.prevCueIndexFor(
+          cues: cues,
+          positionMs: 448820,
+          anchorIndex: 3,
+        ),
+        1,
+      );
+    });
+
+    test('同组位于首 / 末：边界仍 no-op', () {
+      final List<AudioCue> edge = <AudioCue>[
+        _cue(0, 1000, 2000),
+        _cue(1, 1000, 2000),
+        _cue(2, 3000, 4000),
+        _cue(3, 3000, 4000),
+      ];
+      expect(
+        VideoPlayerController.prevCueIndexFor(cues: edge, positionMs: 1500),
+        isNull,
+      );
+      expect(
+        VideoPlayerController.prevCueIndexFor(
+          cues: edge,
+          positionMs: 820,
+          anchorIndex: 1,
+        ),
+        isNull,
+      );
+      expect(
+        VideoPlayerController.nextCueIndexFor(cues: edge, positionMs: 3500),
+        isNull,
+      );
+      expect(
+        VideoPlayerController.nextCueIndexFor(
+          cues: edge,
+          positionMs: 2820,
+          anchorIndex: 2,
+        ),
+        isNull,
+      );
+    });
+
+    test('起点仅差 1ms 不算同一句（严格相等分组，无容差）', () {
+      final List<AudioCue> near = <AudioCue>[
+        _cue(0, 1000, 2000),
+        _cue(1, 1001, 2000),
+        _cue(2, 3000, 4000),
+      ];
+      expect(
+        VideoPlayerController.nextCueIndexFor(
+          cues: near,
+          positionMs: 820,
+          anchorIndex: 0,
+        ),
+        1,
+      );
+      expect(
+        VideoPlayerController.prevCueIndexFor(
+          cues: near,
+          positionMs: 821,
+          anchorIndex: 1,
+        ),
+        0,
+      );
+      expect(
+        VideoPlayerController.prevCueIndexFor(cues: near, positionMs: 3500),
+        1,
+      );
+    });
+
+    test('snapSubtitleDelayMs 同样按组取相邻句', () {
+      expect(
+        VideoPlayerController.snapSubtitleDelayMs(
+          cues: cues,
+          positionMs: 447000,
+          currentDelayMs: 0,
+          next: true,
+        ),
+        447000 - 449000,
+      );
+    });
+  });
+
   // TODO-571 / BUG-329：视频「上一句/下一句」字幕跳转跳过头（上一句跳到 N-2）/ 原地
   // 不动（下一句卡在刚跳到的那句）。
   //

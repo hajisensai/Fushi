@@ -10,6 +10,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
@@ -76,6 +77,31 @@ class _DownloadBackendSetupDialogState
   bool _probing = false;
   bool _saving = false;
 
+  /// 运行库在、但下载服务还没备好内置引擎路径时，正在等服务起来。
+  bool _serviceStarting = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _startDownloadServiceIfNeeded();
+  }
+
+  /// 反馈 cliIUL82nf：运行库可用而服务没起（会话中途刚开「浏览」/ 启动还没跑完）
+  /// 不是「缺运行库」。这里走 AppModel 的唯一启动入口把服务补起来，落地后按真实
+  /// 就绪状态重画；起不来（模块关着 / 启动抛错）就如实说「下载服务没有运行」。
+  void _startDownloadServiceIfNeeded() {
+    final AppModel appModel = widget.appModel;
+    if (!_embeddedSupported ||
+        appModel.isEmbeddedTorrentReady ||
+        !appModel.isEmbeddedTorrentRuntimeAvailable) {
+      return;
+    }
+    _serviceStarting = true;
+    appModel.ensureAnimeDownloadServiceRunning().whenComplete(() {
+      if (mounted) setState(() => _serviceStarting = false);
+    });
+  }
+
   @override
   void dispose() {
     _urlCtrl.dispose();
@@ -102,8 +128,9 @@ class _DownloadBackendSetupDialogState
       ? null
       : t.download_backend_qb_url_invalid;
 
-  /// 当前选择是否已经可用：内置引擎要宿主真就绪（缺 DLL 的包配了也下不了），
-  /// 外接 qb 要有能解析出身份的地址。判据与 `torrentBackendReady` 同源。
+  /// 当前选择是否已经可用：内置引擎要宿主真就绪（缺 DLL 的包、或下载服务没起时
+  /// 配了也下不了），外接 qb 要有能解析出身份的地址。判据与 `torrentBackendReady`
+  /// 同源。
   bool get _canFinish {
     if (_saving) return false;
     if (_isEmbedded) return widget.appModel.isEmbeddedTorrentReady;
@@ -219,6 +246,39 @@ class _DownloadBackendSetupDialogState
     );
   }
 
+  /// 内置引擎的状态行：缺运行库 / 服务启动中 / 服务没运行 / 就绪（显示下载根）。
+  /// 「缺少运行库」只看 [AppModel.isEmbeddedTorrentRuntimeAvailable]，绝不拿
+  /// 服务就绪判据去推断 DLL 在不在。
+  Widget _embeddedStatus(ThemeData theme, String saveRoot) {
+    final AppModel appModel = widget.appModel;
+    if (!appModel.isEmbeddedTorrentRuntimeAvailable) {
+      return _note(
+        theme,
+        t.download_backend_embedded_unavailable,
+        warning: true,
+      );
+    }
+    if (!appModel.isEmbeddedTorrentReady) {
+      if (_serviceStarting) {
+        return _note(theme, t.download_backend_embedded_service_starting);
+      }
+      return _note(
+        theme,
+        t.download_backend_embedded_service_unavailable,
+        warning: true,
+      );
+    }
+    if (saveRoot.isEmpty) return const SizedBox.shrink();
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Text(t.download_save_root_title, style: theme.textTheme.labelMedium),
+        const SizedBox(height: 2),
+        _note(theme, saveRoot),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final ThemeData theme = Theme.of(context);
@@ -261,20 +321,19 @@ class _DownloadBackendSetupDialogState
             const SizedBox(height: 12),
             if (_isEmbedded) ...<Widget>[
               _note(theme, t.download_backend_embedded_hint),
-              if (!widget.appModel.isEmbeddedTorrentReady)
-                _note(
-                  theme,
-                  t.download_backend_embedded_unavailable,
-                  warning: true,
-                )
-              else if (saveRoot.isNotEmpty) ...<Widget>[
-                Text(
-                  t.download_save_root_title,
-                  style: theme.textTheme.labelMedium,
+              // 「启动中」→「就绪 / 没运行」是同一位置的状态切换：交叉淡入，
+              // 不让下载根一行凭空跳出来。
+              AnimatedSwitcher(
+                duration: fushiMotionDuration(context, FushiMotion.short),
+                child: KeyedSubtree(
+                  key: ValueKey<String>(
+                    '${widget.appModel.isEmbeddedTorrentRuntimeAvailable}/'
+                    '${widget.appModel.isEmbeddedTorrentReady}/'
+                    '$_serviceStarting',
+                  ),
+                  child: _embeddedStatus(theme, saveRoot),
                 ),
-                const SizedBox(height: 2),
-                _note(theme, saveRoot),
-              ],
+              ),
             ] else ...<Widget>[
               _note(theme, t.download_backend_qb_hint),
               _field(

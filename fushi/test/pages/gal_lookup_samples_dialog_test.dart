@@ -12,6 +12,12 @@ import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/gal_lookup_samples_dialog.dart';
 import 'package:fushi/src/pages/implementations/gal_lookup_calibration_canvas.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/utils/adaptive/fushi_apple_surface.dart';
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiVerticalDivider;
 import 'package:image/image.dart' as img;
 import '../helpers/glass_unwrap.dart';
 
@@ -1703,4 +1709,106 @@ void main() {
       },
     );
   }
+
+  // Apple（Cupertino）：样张校准在 macOS 档是窗口 sheet（底部「关闭」走同一条
+  // _finish 保存出口），iOS 档是整页（返回 = 关闭；窄面上下排）。
+  Future<_Result> openApple(
+    WidgetTester tester, {
+    required Size size,
+    required TargetPlatform platform,
+    required _MemoryStore store,
+  }) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = size;
+    addTearDown(tester.view.resetDevicePixelRatio);
+    addTearDown(tester.view.resetPhysicalSize);
+    final _Result result = _Result();
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildFushiThemeData(
+          scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+          textTheme: Typography.material2021().black,
+          glassDesign: true,
+        ).copyWith(platform: platform),
+        home: Builder(
+          builder: (BuildContext context) => Scaffold(
+            body: Center(
+              child: ElevatedButton(
+                onPressed: () async {
+                  result.applied =
+                      await showAdaptiveDialogSurface<
+                        GalLookupCalibrationDraft
+                      >(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (_) => GalLookupSamplesDialog(
+                          exeSha256: _sha,
+                          initialRect: _rect,
+                          initialLayout: _layout,
+                          capture: _captureAsync,
+                          store: store,
+                          previewBuilder: _preview,
+                        ),
+                      );
+                  result.closed = true;
+                },
+                child: const Text('Open synthetic sample notebook'),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.tap(find.byType(ElevatedButton));
+    await tester.pumpAndSettle();
+    return result;
+  }
+
+  testWidgets('Apple macOS 档：sheet，底部「关闭」经保存出口关掉', (WidgetTester tester) async {
+    final _MemoryStore store = _MemoryStore(draft: _draft());
+    final _Result result = await openApple(
+      tester,
+      size: const Size(1400, 1000),
+      platform: TargetPlatform.windows,
+      store: store,
+    );
+    final Finder dialog = find.byType(GalLookupSamplesDialog);
+    expect(
+      find.descendant(of: dialog, matching: find.byType(FushiModalSheetFrame)),
+      findsOneWidget,
+    );
+    expect(find.byType(CloseButton), findsNothing);
+    expect(find.byType(Image), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.tap(find.byKey(const ValueKey<String>('calibration-close')));
+    await tester.pumpAndSettle();
+    expect(result.closed, isTrue);
+    expect(result.applied, isNull);
+  });
+
+  testWidgets('Apple iOS 档：整页（上下排），返回 = 关闭', (WidgetTester tester) async {
+    final _MemoryStore store = _MemoryStore(draft: _draft());
+    final _Result result = await openApple(
+      tester,
+      size: const Size(430, 932),
+      platform: TargetPlatform.iOS,
+      store: store,
+    );
+    final Finder dialog = find.byType(GalLookupSamplesDialog);
+    expect(
+      find.descendant(of: dialog, matching: find.byType(FushiMastheadScaffold)),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('calibration-close')),
+      findsNothing,
+    );
+    expect(find.byType(FushiVerticalDivider), findsNothing);
+    expect(find.byType(Image), findsOneWidget);
+    expect(tester.takeException(), isNull);
+    await tester.state<NavigatorState>(find.byType(Navigator)).maybePop();
+    await tester.pumpAndSettle();
+    expect(result.closed, isTrue);
+    expect(result.applied, isNull);
+  });
 }

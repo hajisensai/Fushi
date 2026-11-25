@@ -40,11 +40,16 @@ on:
       - 'tool/check_release_policy.ps1'
       - 'tool/release_sequence.sh'
       - 'tool/publish_update_manifest.sh'
+      - 'tool/publish_debug_pulse.sh'
       - 'tool/merge_update_manifest.py'
+      - 'tool/gen_debug_pulse.py'
       - 'tool/feedback_mark_released.sh'
+      - 'tool/bump_rolling_release_tag.sh'
       - 'tool/notarize_submit.sh'
       - 'tool/mihon/**'
       - 'tool/ffmpeg-unified/**'
+      # Linux bundle + Flatpak (linux / flatpak-baseapp jobs).
+      - 'tool/linux/**'
       - 'tool/sign_windows_release.ps1'
       - 'tool/simplysign_connect.ps1'
       - 'tool/engine_overlay.ps1'
@@ -156,8 +161,11 @@ jobs:
       contents: write
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
       actions: read
+      # debug pulse（tool/publish_debug_pulse.sh）用 GraphQL 读 PR 标题 / 作者 / 标签；没列出的
+      # scope 会被置 none，缺它 PR 元数据整批退回 #N 占位。
+      pull-requests: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
       # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
@@ -165,13 +173,28 @@ jobs:
         uses: ./.github/actions/fetch-vendored-binaries
         with:
           groups: windows galgame mihon
+      # 调试版流水线（debug pulse，docs/specs/2026-11-10-debug-pulse.md）：发布 run 一开始就刷新一次
+      # update-manifest 的 debug-pulse-fushi.json——此刻本 run 在构建中、被顶掉的旧 run 已 cancelled、
+      # develop 新合的 PR 显示为「还没进包」。只对 develop push（debug 通道）；不建 release / tag、不碰
+      # latest-*.json；continue-on-error + 3 分钟超时，失败绝不让发布变红。脚本见 tool/publish_debug_pulse.sh。
+      # 桌面 run 只在 windows job 里刷新开头（三个平台 job 并行起跑，一次就够）。
+      # 排在 vendored 二进制拉取之后：那一步必须紧跟 checkout（vendored_binaries_manifest_guard_test）。
+      - name: Debug pulse (run start)
+        if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        continue-on-error: true
+        timeout-minutes: 3
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: bash tool/publish_debug_pulse.sh
       - name: Validate unified release policy
         shell: pwsh
         run: ./tool/check_release_policy.ps1
       # 只缓存 pub、不缓存 SDK：理由与实测见 build-multiplatform.yml windows job 同处注释。
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: '3.47.6'
+          flutter-version: '3.50.0'
           cache: false
           pub-cache: true
       # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
@@ -474,7 +497,7 @@ jobs:
       # 合适了就把 key 里的 -v1 递增一次。
       - name: Cache vcpkg source distfiles (libtorrent)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ${{ runner.temp }}\vcpkg-downloads
@@ -484,7 +507,7 @@ jobs:
             ${{ runner.os }}-vcpkg-downloads-libtorrent-v1-
       - name: Cache vcpkg binary archives (libtorrent)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~\AppData\Local\vcpkg\archives
           # v2 -> v3：manifest 钉版换掉了 libtorrent/boost/openssl 的 ABI hash，旧条目
@@ -530,13 +553,13 @@ jobs:
           path: native\fushi_p2p\prebuilt\windows-x64
       - name: Set up Rust (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: x86_64-pc-windows-msvc
       - name: Cache Rust build (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-windows-x64
@@ -560,12 +583,12 @@ jobs:
       # build-multiplatform.yml windows job 的 fushi_fsrs 同一口径），只靠 rust-cache；工具链
       # 版本与 fushi_p2p 同源。fushi_p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
       - name: Set up Rust (fushi_fsrs)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: x86_64-pc-windows-msvc
       - name: Cache Rust build (fushi_fsrs)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_fsrs -> target
           key: fushi-fsrs-windows-x64
@@ -580,12 +603,12 @@ jobs:
       # build-multiplatform.yml windows job 的 fushi_web_core 同一口径），只靠 rust-cache；工具链
       # 版本与 fushi_p2p 同源。fushi_p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
       - name: Set up Rust (fushi_web_core)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: x86_64-pc-windows-msvc
       - name: Cache Rust build (fushi_web_core)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_web_core -> target
           key: fushi-web-core-windows-x64
@@ -598,7 +621,7 @@ jobs:
       # 缺了 fushi/windows/CMakeLists.txt 在配置期就让构建失败；构建失败即 job 失败，出包后再核对。
       # 不进原生产物持久库，只靠 rust-cache；Rust 已由 fushi_fsrs 那组无条件装好。
       - name: Cache Rust build (fushi_compute)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_compute -> target
           key: fushi-compute-windows-x64
@@ -610,7 +633,7 @@ jobs:
       # RWKV-Instant 排程推理 DLL：**硬依赖**（AGPL-3.0-or-later），同 fushi_compute 口径——缺了
       # fushi/windows/CMakeLists.txt 配置期 FATAL_ERROR；出包后再核对。只靠 rust-cache。
       - name: Cache Rust build (fushi_rwkv)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_rwkv -> target
           key: fushi-rwkv-windows-x64
@@ -631,25 +654,11 @@ jobs:
         run: |
           powershell -ExecutionPolicy Bypass -File native/fushi_corpus/build_windows_dll.ps1
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_corpus) failed" }
-      # BUG-1589 根因（run 31700342531 的 -v 日志确证）：`aot_elf_release` 阶段
-      # gen_snapshot.exe 以 -1073741571 = 0xC00000FD（栈溢出）退出——本仓 AOT 规模
-      # 超出其默认栈保留。本机 SDK 早已用 `editbin /STACK:128M` 打过同款补丁
-      # （flutter upgrade 会冲掉需重打），CI 每次全新 SDK 自然没有，于是发布构建
-      # 固定红。gen_snapshot 不暴露栈大小参数，这是上游工具链限制，只能改二进制
-      # 头；上游抬默认栈或 AOT 深度下降后本步可移除。
-      - name: Raise gen_snapshot stack reserve (BUG-1589)
-        shell: pwsh
-        run: |
-          flutter precache --windows
-          $editbin = Get-ChildItem 'C:\Program Files\Microsoft Visual Studio\2022\*\VC\Tools\MSVC\*\bin\HostX64\x64\editbin.exe' -ErrorAction SilentlyContinue | Select-Object -First 1
-          if (-not $editbin) { throw 'editbin.exe not found in the VS 2022 toolchain' }
-          $snapshots = Get-ChildItem "$env:FLUTTER_ROOT\bin\cache\artifacts\engine" -Recurse -Filter gen_snapshot.exe
-          if (-not $snapshots) { throw 'gen_snapshot.exe not found under engine artifacts' }
-          foreach ($snap in $snapshots) {
-            & $editbin.FullName /STACK:134217728 $snap.FullName
-            if ($LASTEXITCODE -ne 0) { throw "editbin failed on $($snap.FullName)" }
-            Write-Host "Raised stack reserve to 128MB: $($snap.FullName)"
-          }
+      # BUG-1589：曾在这里改 gen_snapshot.exe 的 PE 头把栈保留抬到 128 MB，
+      # 绕开 slang flat map 巨型 string switch 在 Windows 1 MB 主线程栈上的 SSA
+      # 递归溢出（0xC00000FD）。PR #3428 关掉 flat map（slang.yaml `flat_map: false`）
+      # 后，stock gen_snapshot 已能编过，本步按 BUG-1589 写明的移除条件删除；
+      # 守卫 release_build_diagnosability_guard_test.dart 禁止再加回来。
       # BUG-1589：这一步在 develop 上固定红，而错误**看不见**——MSBuild 把自定义
       # 生成步骤的真实报错折叠成 `Target dart_build failed` + `MSB8066`，日志里
       # 只剩这两行。本机用 -v 跑同一条命令才拿到真正的 CMake/hook 报错。
@@ -669,7 +678,7 @@ jobs:
       # 报错只在这两个文件里。artifact 而不是 echo，避免再被日志截断吃掉。
       - name: Upload Windows build logs on failure
         if: failure()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-release-build-logs
           path: |
@@ -877,6 +886,25 @@ jobs:
           mode: save
           name: ${{ steps.native_store.outputs.anki_sync_release }}
           path: native\fushi_anki_sync\target\release\fushi-anki-sync.exe
+      # 资源管理器封面缩略图（native/fushi_shell_thumbs，拍板台 WoAtPpuvwm）：fushi_shell_thumbs.dll
+      # （COM 处理器，fushi.iss 按用户注册，跑在 explorer.exe 里只转交路径）+
+      # fushi_shell_thumbs_host.exe（每张缩略图一次性的宿主进程，用随包的 7za\7z.dll / pdfium.dll）。
+      # 它们不是 app 进程的依赖，不进 CMake bundle，只在这里放进 Release 目录：排在签名步骤之前，
+      # `{#SourceDir}\*` 整目录收进安装包。Rust 已由上面 fushi_web_core 那组装好（p2p_rust 钉的版本）。
+      # 构建失败即 job 失败；最后按处理器的查找方式（只看自己所在目录）核对四个文件都在。
+      - name: Build and bundle fushi_shell_thumbs
+        shell: pwsh
+        run: |
+          $targetDir = Join-Path $PWD 'fushi\build\windows\x64\runner\Release'
+          powershell -ExecutionPolicy Bypass -File native/fushi_shell_thumbs/build_windows_dll.ps1 -InstallDirectory $targetDir
+          if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_shell_thumbs) failed" }
+          # 7-Zip 由上面 bundle_7za.ps1 放在 7za\ 子目录，pdfium.dll 由 CMake 放在 exe 同级。
+          foreach ($name in 'fushi_shell_thumbs.dll', 'fushi_shell_thumbs_host.exe', '7za\7z.dll', 'pdfium.dll') {
+            $p = Join-Path $targetDir $name
+            if (-not (Test-Path -LiteralPath $p -PathType Leaf)) {
+              throw "$p missing - the Explorer cover thumbnail handler needs it in the same directory"
+            }
+          }
       # fushi_cli（packages/fushi_cli）：桌面客户端命令行。fushi.exe 是 GUI 子系统，拿不到
       # stdout、退出码也不可靠，所以 CLI 是单独的控制台 exe，经本机控制通道驱动 app。
       # 纯 Dart、无原生资产，dart compile exe 直出；放 fushi.exe 同级（CLI 按同级目录
@@ -1088,7 +1116,7 @@ jobs:
       - name: Cache SimplySign Desktop installer
         if: steps.signcheck.outputs.have == 'true'
         id: ssdcache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}\SimplySignDesktop.msi
           key: simplysign-desktop-9.4.4.92-64bit-en
@@ -1320,7 +1348,7 @@ jobs:
       # Release publishing, so Windows never waits on / is blocked by mac/iOS.
       - name: Upload Windows installer artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-artifacts-windows
           path: |
@@ -1345,7 +1373,7 @@ jobs:
       # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
       actions: read
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
       # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
@@ -1361,9 +1389,9 @@ jobs:
         uses: ./.github/actions/native-store-names
         with:
           platform: macos
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: '3.47.6'
+          flutter-version: '3.50.0'
           cache: true
       # pdfium_dart's build hook downloads PDFium from GitHub on every fresh
       # runner; restore it so a release-asset hiccup cannot fail the build.
@@ -1577,7 +1605,7 @@ jobs:
       # invalidates it; CocoaPods re-installs on a mismatch, and a miss just
       # re-downloads.
       - name: Cache CocoaPods
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/Library/Caches/CocoaPods
@@ -1613,13 +1641,13 @@ jobs:
           path: native/fushi_p2p/prebuilt/macos
       - name: Set up Rust (fushi_p2p, macOS targets)
         if: steps.p2p_store.outputs.hit != 'true'
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-darwin
       - name: Cache Rust build (fushi_p2p)
         if: steps.p2p_store.outputs.hit != 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-macos
@@ -1639,12 +1667,12 @@ jobs:
       # 出包后再核对。不进原生产物持久库（与 build-multiplatform.yml macos job 同一口径），
       # 工具链版本与 fushi_p2p 同源；p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
       - name: Set up Rust (fushi_fsrs, macOS targets)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-darwin
       - name: Cache Rust build (fushi_fsrs)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_fsrs -> target
           key: fushi-fsrs-macos
@@ -1660,12 +1688,12 @@ jobs:
       # 出包后再核对。不进原生产物持久库（与 build-multiplatform.yml macos job 同一口径），
       # 工具链版本与 fushi_p2p 同源；p2p 持久库命中时它的 Rust 安装被跳过，所以这里无条件装。
       - name: Set up Rust (fushi_web_core, macOS targets)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-darwin
       - name: Cache Rust build (fushi_web_core)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_web_core -> target
           key: fushi-web-core-macos
@@ -1680,7 +1708,7 @@ jobs:
       # 那个阶段直接让 xcodebuild 失败；之后由下面的 Developer ID 签名循环随其它 Mach-O 一起签。
       # Rust 已由 fushi_fsrs 那组无条件装好（同一工具链、同一 target）。
       - name: Cache Rust build (fushi_compute)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_compute -> target
           key: fushi-compute-macos
@@ -1694,7 +1722,7 @@ jobs:
       # （fushi/macos/bundle_fushi_rwkv.sh）拷进 Contents/Frameworks，缺库时 xcodebuild 失败；
       # 之后随其它 Mach-O 一起走 Developer ID 签名循环。
       - name: Cache Rust build (fushi_rwkv)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_rwkv -> target
           key: fushi-rwkv-macos
@@ -1743,7 +1771,7 @@ jobs:
           echo "image=$image" >> "$GITHUB_OUTPUT"
       - name: Cache vcpkg source distfiles (libtorrent macos)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ${{ runner.temp }}/vcpkg-downloads
@@ -1753,7 +1781,7 @@ jobs:
             ${{ runner.os }}-vcpkg-downloads-libtorrent-macos-v1-
       - name: Cache vcpkg binary archives (libtorrent macos)
         if: steps.torrent_store.outputs.hit != 'true'
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/vcpkg/archives
           key: ${{ runner.os }}-vcpkg-libtorrent-osx-fushi-v1-${{ steps.vcpkg_cache_id_macos.outputs.image }}-${{ hashFiles('native/fushi_torrent/vcpkg.json', 'native/fushi_torrent/vcpkg-ports/**', 'native/fushi_torrent/vcpkg-triplets/**') }}
@@ -1979,7 +2007,7 @@ jobs:
       # 缓存里是未签名原始输出；ad-hoc / Developer ID 签名都只作用于拷进 .app 的副本。
       - name: Restore pinned Mihon desktop runtimes
         id: mihon_runtime_cache
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ${{ runner.temp }}/mihon-runtime
           key: ${{ runner.os }}-${{ runner.arch }}-mihon-runtime-v1-${{ hashFiles('third_party/m_extension_server/**', 'third_party/jogamp/**', 'tool/mihon/**') }}
@@ -2489,13 +2517,417 @@ jobs:
       # never blocks (or is blocked by) the other platforms.
       - name: Upload macOS app artifact
         if: always()
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-artifacts-macos
           path: |
             fushi/build/release-artifacts/fushi-*-macos-arm64.zip
             fushi/build/release-artifacts/fushi-*-macos-arm64.dmg
           if-no-files-found: ignore
+          retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
+
+  # Linux Flatpak, layer 1: the BaseApp (WPE WebKit, mpv and the other libraries the
+  # GNOME runtime lacks; tool/linux/flatpak/baseapp/). WebKit takes hours, so it is a
+  # job of its own (own 6 h budget) and goes through the native artifact store: a hit
+  # is one download, only a change under baseapp/ or the Dockerfile (or the 30-day
+  # artifact expiry) rebuilds it. Built without debug info (-g0): with -g WebCore
+  # needs ~4 GB per compiler and a ~50 GB ccache, neither of which a runner has.
+  flatpak-baseapp:
+    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 350
+    permissions:
+      contents: read
+      # native-artifact-store 按名字查 / 下载本仓历史 run 的产物。
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - name: Resolve native artifact store names
+        id: native_store
+        uses: ./.github/actions/native-store-names
+        with:
+          platform: flatpak
+      - name: Restore Flatpak BaseApp from native artifact store
+        id: baseapp_restore
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.baseapp }}
+          path: build/flatpak-baseapp
+      - name: Free disk space for the WebKit build
+        if: steps.baseapp_restore.outputs.hit != 'true'
+        shell: bash
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL /usr/local/share/boost
+          df -h /
+      - name: Build Flatpak BaseApp
+        if: steps.baseapp_restore.outputs.hit != 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -t fushi-flatpak-build tool/linux/flatpak
+          # Privileged: flatpak-builder runs every module in bubblewrap.
+          docker run --rm --privileged -v "$PWD:/src" -w /src \
+            -e FLATPAK_BUILDER_JOBS="$(nproc)" -e FLATPAK_STATE_DIR=/src/build/flatpak-state \
+            fushi-flatpak-build bash tool/linux/flatpak/flatpak_build.sh baseapp /src/build/flatpak-baseapp
+          sudo chown -R "$(id -u):$(id -g)" build
+          rm -rf build/flatpak-state
+          ls -lh build/flatpak-baseapp
+      - name: Save Flatpak BaseApp to native artifact store
+        if: steps.baseapp_restore.outputs.hit != 'true'
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: save
+          name: ${{ steps.native_store.outputs.baseapp }}
+          path: build/flatpak-baseapp
+
+  # Linux Flatpak, layer 2: the Linux bundle (tool/linux/build_bundle.sh, the same
+  # Debian image as local builds) as app.fushi.reader on top of the BaseApp. The
+  # Flatpak branch follows the channel (debug / beta / stable): the in-app updater
+  # (fushi/lib/src/utils/misc/flatpak_updater.dart) updates within the installed
+  # branch through the Flatpak portal, pulling from the repo the publish job deploys
+  # to GitHub Pages. Commits and the bundle are signed with FLATPAK_GPG_PRIVATE_KEY;
+  # without it the bundle is built unsigned and publish ships neither repo nor asset.
+  linux:
+    needs: flatpak-baseapp
+    if: ${{ github.event.inputs.testflight_only != 'true' && (github.event_name != 'release' || startsWith(github.event.release.tag_name, 'v0') || startsWith(github.event.release.tag_name, 'v1') || startsWith(github.event.release.tag_name, 'v2') || startsWith(github.event.release.tag_name, 'v3') || startsWith(github.event.release.tag_name, 'v4') || startsWith(github.event.release.tag_name, 'v5') || startsWith(github.event.release.tag_name, 'v6') || startsWith(github.event.release.tag_name, 'v7') || startsWith(github.event.release.tag_name, 'v8') || startsWith(github.event.release.tag_name, 'v9')) }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          fetch-depth: 0
+      - name: Resolve desktop release channel
+        id: channel
+        shell: bash
+        env:
+          INPUT_CHANNEL: ${{ github.event.inputs.channel }}
+          INPUT_BUILD_ONLY: ${{ github.event.inputs.build_only }}
+          INPUT_TAG_NAME: ${{ github.event.inputs.tag_name }}
+          INPUT_RELEASE_NAME: ${{ github.event.inputs.release_name }}
+          RELEASE_TAG_NAME: ${{ github.event.release.tag_name }}
+          RELEASE_IS_PRERELEASE: ${{ github.event.release.prerelease }}
+          RELEASE_BODY: ${{ github.event.release.body }}
+        run: |
+          set -euo pipefail
+          VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//')
+          RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)
+          if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
+            echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
+            exit 1
+          fi
+          SHORT_SHA="${GITHUB_SHA::7}"
+          EVENT="${GITHUB_EVENT_NAME}"
+          CHANNEL="${INPUT_CHANNEL:-}"
+          TAG="${INPUT_TAG_NAME:-}"
+          NAME="${INPUT_RELEASE_NAME:-}"
+          # BUG-2088：正式版/测试版**真实更新公告**的来源。此前 BODY 只有一行模板，
+          # 而 NOTES 就是它——实测 v2.1.1 的 latest-stable.json 里 notes 是
+          # 「Manual formal release from bridge/auto-migrate-download @ 4d1c8f4.」，
+          # 而 GitHub 上那份正文有 3613 字：**应用内更新弹窗给用户看的一直是占位符**。
+          # 约定：公告写在 docs/release-notes/<语义版本>.md，正式/测试通道自动取用；
+          # 手动发 GitHub Release 时优先用 Release 正文（那才是当场写的那份）。
+          # debug 通道不取——滚动开发构建挂完整 changelog 会误导。
+          NOTES_FILE="docs/release-notes/${VERSION}.md"
+          BODY=""
+          PRERELEASE=true
+          MAKE_LATEST=false
+          PUBLISH_MANAGED_RELEASE=false
+          # BUG-869: manifest-only publish flag decoupled from
+          # PUBLISH_MANAGED_RELEASE (see release.yml) so the `release` event can
+          # emit latest-stable.json without re-touching the manual Release.
+          PUBLISH_MANIFEST=false
+          MANIFEST_CHANNEL=""
+
+          case "$EVENT" in
+            push)
+              CHANNEL=debug
+              TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
+              NAME="${NAME:-Fushi desktop debug ${VERSION} (${SHORT_SHA})}"
+              BODY="Automated desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Push releases are always prerelease and never Latest."
+              PUBLISH_MANAGED_RELEASE=true
+              ;;
+            workflow_dispatch)
+              case "$CHANNEL" in
+                debug)
+                  TAG="${TAG:-v${VERSION}-debug.${RELEASE_SEQUENCE}+${SHORT_SHA}}"
+                  NAME="${NAME:-Fushi desktop debug ${VERSION} (${SHORT_SHA})}"
+                  BODY="Manual desktop debug-channel build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Debug releases are prerelease and never Latest."
+                  ;;
+                beta)
+                  TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
+                  NAME="${NAME:-Fushi ${VERSION} beta ${RELEASE_SEQUENCE}}"
+                  BODY="Manual desktop beta/test build from ${GITHUB_REF_NAME} @ ${SHORT_SHA}. Beta/test releases are prerelease and never Latest."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
+                  ;;
+                formal)
+                  TAG="${TAG:-v${VERSION}}"
+                  NAME="${NAME:-Fushi ${VERSION}}"
+                  BODY="Manual desktop formal release from ${GITHUB_REF_NAME} @ ${SHORT_SHA}."
+                  if [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
+                  PRERELEASE=false
+                  MAKE_LATEST=true
+                  ;;
+                *)
+                  echo "::error title=Invalid release channel::Use debug, beta, or formal."
+                  exit 1
+                  ;;
+              esac
+              PUBLISH_MANAGED_RELEASE=true
+              ;;
+            release)
+              CHANNEL=github-release
+              # 手动发 GitHub Release：正文就是当场写的公告，优先用它；留空（先建空
+              # Release 再补正文）时回落到仓库里的公告文件。
+              BODY="${RELEASE_BODY:-}"
+              if [ -z "$BODY" ] && [ -f "$NOTES_FILE" ]; then BODY="$(cat "$NOTES_FILE")"; fi
+              TAG="${RELEASE_TAG_NAME:-${GITHUB_REF_NAME}}"
+              # BUG-869: a manually-published NON-prerelease Release IS the formal
+              # stable release → emit latest-stable.json (with releaseSequence) for
+              # in-China stable clients. Manifest-only; never touches the Release.
+              if [ "${RELEASE_IS_PRERELEASE}" = "false" ]; then
+                MANIFEST_CHANNEL=formal
+                PUBLISH_MANIFEST=true
+                PRERELEASE=false
+              fi
+              ;;
+            *)
+              echo "::error title=Unsupported event::$EVENT is not a desktop release event."
+              exit 1
+              ;;
+          esac
+
+          # BUG-869: push / workflow_dispatch unchanged — MANIFEST_CHANNEL follows
+          # CHANNEL and manifest publishes whenever the managed release does.
+          if [ -z "$MANIFEST_CHANNEL" ]; then MANIFEST_CHANNEL="$CHANNEL"; fi
+          if [ "$PUBLISH_MANAGED_RELEASE" = true ]; then PUBLISH_MANIFEST=true; fi
+
+          # build_only：出候选包给人测，但**什么都不发布**。与 release.yml 的同名
+          # 开关成对，语义必须一致——两条 workflow 同 tag 共用一个 concurrency 组、
+          # 产出的是同一个 release 的不同平台资产，一边发一边不发会造出「只有一半
+          # 平台的正式版」，比两边都不发更糟。
+          #
+          # 本文件有四份独立的 channel 解析（每个 job 一份），四份都要摁；漏一份就是
+          # 「那个平台照发」。守卫测试逐个 occurrence 校验，不是只看第一份。
+          if [ "$INPUT_BUILD_ONLY" = "true" ]; then
+            PUBLISH_MANAGED_RELEASE=false
+            PUBLISH_MANIFEST=false
+            echo "::notice title=Build-only run::Channel '$CHANNEL' artifacts will be built and uploaded to this workflow run, but no GitHub Release and no update manifest will be published."
+          fi
+
+          BUILD_VERSION_NAME="$VERSION"
+          case "$CHANNEL" in
+            debug)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-debug\.[0-9]+\+[0-9A-Fa-f]{7,40}$ ]]; then
+                echo "::error title=Invalid debug tag::Use v<version>-debug.<sequence>+<short-sha>, not debug-<sha>."
+                exit 1
+              fi
+              ;;
+            beta)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*-beta\.[0-9]+$ ]]; then
+                echo "::error title=Invalid beta tag::Use v<version>-beta.<sequence>."
+                exit 1
+              fi
+              ;;
+            formal)
+              if ! [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*$ ]]; then
+                echo "::error title=Invalid formal tag::Use v<version>."
+                exit 1
+              fi
+              ;;
+          esac
+          # BUG-1836：版本名对**所有版本 tag** 派生，不再只认 debug tag。
+          # 此前 beta 走的是 pubspec 的裸 `$VERSION`，于是 beta 包在任何来源里都
+          # 自称 `2.2.1`——「运行中代码版本」这条证据在 beta 上退化成常量，
+          # BUG-1786 的「判据恒为真」与 BUG-1836 的「手动救援判失败」在 beta 通道
+          # 全都还活着。这里与 release.yml（Android）对齐，那边一直是 tag 派生。
+          # 仍保留正则守门：`release` 事件的 tag 未经格式校验（可能是
+          # `debug-rolling` 这类），无条件 ${TAG#v} 会让 --build-name 拿到非版本串
+          # 直接构建失败。
+          if [[ "$TAG" =~ ^v[0-9]+(\.[0-9]+)*(-[0-9A-Za-z]+\.[0-9]+)?(\+[0-9A-Fa-f]{7,40})?$ ]]; then
+            BUILD_VERSION_NAME="${TAG#v}"
+            BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%+*}"
+          fi
+          # Apple 只接受「至多三段非负整数」的 CFBundleShortVersionString
+          # （`fushi/ios/Runner/Info.plist` = $(FLUTTER_BUILD_NAME)），
+          # `2.2.1-beta.30` 会在 altool --validate-app 阶段直接被拒。iOS 的
+          # --build-name 因此单独剥掉预发布段；FUSHI_BUILD_VERSION 不受影响，
+          # 仍注入完整版本名。
+          APPLE_BUILD_VERSION_NAME="${BUILD_VERSION_NAME%%-*}"
+
+          # BUG-1481: per product family; the bridge (`app.hibiki.reader`) keeps
+          # the historical `debug-rolling`. Must match release.yml.
+          ROLLING_DEBUG_TAG=fushi-debug-rolling
+          if [ "$CHANNEL" = debug ]; then
+            PUBLISH_TAG="$ROLLING_DEBUG_TAG"
+            ROLLING_DEBUG=true
+          else
+            PUBLISH_TAG="$TAG"
+            ROLLING_DEBUG=false
+          fi
+
+          {
+            echo "channel=$CHANNEL"
+            echo "tag=$TAG"
+            echo "publish_tag=$PUBLISH_TAG"
+            echo "rolling_debug=$ROLLING_DEBUG"
+            echo "name=$NAME"
+            echo "prerelease=$PRERELEASE"
+            echo "make_latest=$MAKE_LATEST"
+            echo "publish_managed_release=$PUBLISH_MANAGED_RELEASE"
+            echo "publish_manifest=$PUBLISH_MANIFEST"
+            echo "manifest_channel=$MANIFEST_CHANNEL"
+            echo "build_version_name=$BUILD_VERSION_NAME"
+            echo "apple_build_version_name=$APPLE_BUILD_VERSION_NAME"
+            echo "release_sequence=$RELEASE_SEQUENCE"
+            echo "body<<EOF"
+            echo "$BODY"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Provide baked-in secret stubs
+        uses: ./.github/actions/provide-baked-secrets
+        with:
+          google-oauth-client-secret: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+          log-upload-endpoint: ${{ secrets.LOG_UPLOAD_ENDPOINT }}
+          log-upload-token: ${{ secrets.LOG_UPLOAD_TOKEN }}
+          dandanplay-app-id: ${{ secrets.DANDANPLAY_APP_ID }}
+          dandanplay-app-secret: ${{ secrets.DANDANPLAY_APP_SECRET }}
+          tmdb-api-key: ${{ secrets.TMDB_API_KEY }}
+          opensubtitles-api-key: ${{ secrets.OPENSUBTITLES_API_KEY }}
+          acoustid-api-key: ${{ secrets.ACOUSTID_API_KEY }}
+      - name: Resolve native artifact store names
+        id: native_store
+        uses: ./.github/actions/native-store-names
+        with:
+          platform: flatpak
+      - name: Restore Flatpak BaseApp from native artifact store
+        id: baseapp_restore
+        uses: ./.github/actions/native-artifact-store
+        with:
+          mode: restore
+          name: ${{ steps.native_store.outputs.baseapp }}
+          path: build/flatpak-baseapp
+      - name: Require the Flatpak BaseApp
+        if: steps.baseapp_restore.outputs.hit != 'true'
+        shell: bash
+        env:
+          BASEAPP: ${{ steps.native_store.outputs.baseapp }}
+        run: |
+          echo "::error title=Flatpak BaseApp missing::the flatpak-baseapp job saved $BASEAPP but it cannot be restored here."
+          exit 1
+      - name: Free disk space for the Linux build
+        shell: bash
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+      - name: Build Linux bundle
+        shell: bash
+        env:
+          FUSHI_BUILD_NAME: ${{ steps.channel.outputs.build_version_name }}
+          FUSHI_BUILD_NUMBER: ${{ steps.channel.outputs.release_sequence }}
+        run: |
+          set -euo pipefail
+          docker build -t fushi-linux-build tool/linux
+          mkdir -p build/linux-dist
+          # The checkout is mounted as is (CI has no host-side .dart_tool to protect,
+          # unlike build_in_docker.sh), so the baked secret stubs above are included.
+          docker run --rm -v "$PWD:/src" -v "$PWD/build/linux-dist:/out" \
+            -e FUSHI_SOURCE_COMMIT="$GITHUB_SHA" -e FUSHI_BUILD_NAME -e FUSHI_BUILD_NUMBER \
+            -e GIT_CONFIG_COUNT=1 -e GIT_CONFIG_KEY_0=safe.directory -e GIT_CONFIG_VALUE_0='*' \
+            fushi-linux-build bash /src/tool/linux/build_bundle.sh
+          sudo chown -R "$(id -u):$(id -g)" .
+          ls -lh build/linux-dist
+      - name: Resolve Flatpak branch and signing
+        id: flatpak
+        shell: bash
+        env:
+          CHANNEL: ${{ steps.channel.outputs.channel }}
+          PRERELEASE: ${{ steps.channel.outputs.prerelease }}
+          FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+          REPO_URL_OVERRIDE: ${{ vars.FLATPAK_REPO_URL }}
+        run: |
+          set -euo pipefail
+          # One Flatpak branch per update channel; a manually published GitHub Release
+          # is stable unless it is a prerelease.
+          case "$CHANNEL" in
+            debug) BRANCH=debug ;;
+            beta) BRANCH=beta ;;
+            formal) BRANCH=stable ;;
+            github-release) if [ "$PRERELEASE" = true ]; then BRANCH=beta; else BRANCH=stable; fi ;;
+            *) echo "::error title=Unknown channel::$CHANNEL"; exit 1 ;;
+          esac
+          URL="${REPO_URL_OVERRIDE:-https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}}"
+          SIGNED=false
+          if [ -n "$FLATPAK_GPG_PRIVATE_KEY" ]; then
+            GNUPG="$RUNNER_TEMP/flatpak-gnupg"
+            mkdir -p -m 700 "$GNUPG"
+            printf '%s\n' "$FLATPAK_GPG_PRIVATE_KEY" | gpg --homedir "$GNUPG" --batch --import
+            KEY_ID="$(gpg --homedir "$GNUPG" --batch --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')"
+            echo "key_id=$KEY_ID" >> "$GITHUB_OUTPUT"
+            echo "gnupg=$GNUPG" >> "$GITHUB_OUTPUT"
+            SIGNED=true
+          else
+            echo "::warning title=Flatpak unsigned::FLATPAK_GPG_PRIVATE_KEY is not set: the bundle is built unsigned without a repo URL, and publish ships neither the Flatpak repo nor the asset."
+          fi
+          {
+            echo "branch=$BRANCH"
+            echo "repo_url=$URL"
+            echo "signed=$SIGNED"
+          } >> "$GITHUB_OUTPUT"
+      - name: Build Flatpak
+        shell: bash
+        env:
+          BRANCH: ${{ steps.flatpak.outputs.branch }}
+          VERSION: ${{ steps.channel.outputs.build_version_name }}
+          SIGNED: ${{ steps.flatpak.outputs.signed }}
+          KEY_ID: ${{ steps.flatpak.outputs.key_id }}
+          GNUPG: ${{ steps.flatpak.outputs.gnupg }}
+          REPO_URL: ${{ steps.flatpak.outputs.repo_url }}
+        run: |
+          set -euo pipefail
+          docker build -t fushi-flatpak-build tool/linux/flatpak
+          sign=()
+          if [ "$SIGNED" = true ]; then
+            sign=(-v "$GNUPG:/gnupg" -e FLATPAK_GPG_KEY_ID="$KEY_ID" -e FLATPAK_GPG_HOMEDIR=/gnupg
+                  -e FLATPAK_REPO_URL="$REPO_URL/repo/")
+          fi
+          tarball="$(ls build/linux-dist/fushi-*-linux-x64.tar.gz)"
+          docker run --rm --privileged -v "$PWD:/src" -w /src "${sign[@]}" \
+            -e FLATPAK_BUILDER_JOBS="$(nproc)" -e FLATPAK_STATE_DIR=/src/build/flatpak-state \
+            -e BRANCH -e VERSION -e TARBALL="/src/$tarball" \
+            fushi-flatpak-build bash -euo pipefail -c '
+              flatpak remote-add --user --if-not-exists flathub https://dl.flathub.org/repo/flathub.flatpakrepo
+              flatpak install --user -y --noninteractive build/flatpak-baseapp/*.flatpak
+              bash tool/linux/flatpak/flatpak_build.sh app "$TARBALL" "$BRANCH" "$VERSION" /src/build/flatpak-out'
+          sudo chown -R "$(id -u):$(id -g)" build
+          mkdir -p fushi/build/release-artifacts
+          cp build/flatpak-out/fushi-*-linux-x86_64.flatpak fushi/build/release-artifacts/
+          # The plain bundle tarball ships too: distros without Flatpak (or users who
+          # want a portable copy) run it directly; it has no in-app installer, so the
+          # updater only opens the release page for it (UnsupportedUpdater).
+          cp "$tarball" fushi/build/release-artifacts/
+          # One file instead of thousands of OSTree objects for the artifact upload.
+          tar -C build/flatpak-out -cf build/flatpak-repo.tar repo
+      - name: Upload Linux Flatpak artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: desktop-artifacts-linux
+          path: |
+            fushi/build/release-artifacts/fushi-*-linux-x86_64.flatpak
+            fushi/build/release-artifacts/fushi-*-linux-x64.tar.gz
+          if-no-files-found: ignore
+          retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
+      - name: Upload Flatpak repo commit artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: flatpak-repo-linux
+          path: build/flatpak-repo.tar
+          if-no-files-found: error
           retention-days: ${{ (github.event_name == 'workflow_dispatch' && (github.event.inputs.channel == 'formal' || github.event.inputs.channel == 'beta')) && 30 || 14 }}
 
   ios:
@@ -2514,7 +2946,7 @@ jobs:
     outputs:
       testflight: ${{ steps.signing.outputs.testflight }}
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
       # Prebuilt third-party binaries are not in git (tool/vendored_binaries.json).
@@ -2529,9 +2961,9 @@ jobs:
         uses: ./.github/actions/native-store-names
         with:
           platform: ios
-      - uses: subosito/flutter-action@v2
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: '3.47.6'
+          flutter-version: '3.50.0'
           cache: true
       - name: Resolve desktop release channel
         id: channel
@@ -2740,7 +3172,7 @@ jobs:
       # invalidates it; CocoaPods re-installs on a mismatch, and a miss just
       # re-downloads.
       - name: Cache CocoaPods
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ~/Library/Caches/CocoaPods
@@ -2790,13 +3222,13 @@ jobs:
           path: native/fushi_ios_umbrella/prebuilt/ios
       - name: Set up Rust (fushi_ios_umbrella, iOS device target)
         if: steps.ios_native_store.outputs.hit != 'true'
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: ${{ steps.native_store.outputs.p2p_rust }}
           targets: aarch64-apple-ios
       - name: Cache Rust build (fushi_ios_umbrella)
         if: steps.ios_native_store.outputs.hit != 'true'
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_ios_umbrella -> target
           key: fushi-ios-umbrella
@@ -2806,11 +3238,16 @@ jobs:
         run: |
           set -euo pipefail
           bash native/fushi_ios_umbrella/build_ios_staticlib.sh device
+      # BUG-4655：--split-debug-info 把 Dart AOT 的 CodeSourceMap 换成 DWARF 栈、调试信息拆到
+      # 单独目录（App.framework 约 -15 MB）。不加 --obfuscate：只多省 0.7 MB，而仓里有按
+      # runtimeType.toString() 判断的代码，混淆后会坏。Dart 栈还原用 `flutter symbolize`
+      # + 下面按序号上传的 symbols（docs/agent/build.md「iOS 包体积与崩溃符号」）。
       - name: Build iOS release app (no codesign)
         if: github.event.inputs.testflight_only != 'true'
         working-directory: fushi
         run: >-
           flutter build ios --release --no-codesign
+          --split-debug-info=build/ios/dart-symbols-unsigned
           --build-name "${{ steps.channel.outputs.apple_build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
           --dart-define="FUSHI_BUILD_VERSION=${{ steps.channel.outputs.build_version_name }}"
@@ -2834,10 +3271,21 @@ jobs:
       - name: Upload iOS release dSYMs (no codesign)
         if: github.event.inputs.testflight_only != 'true'
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-dsyms-unsigned-${{ steps.channel.outputs.release_sequence }}
           path: fushi/build/ios/Release-iphoneos/*.dSYM
+          if-no-files-found: warn
+          retention-days: 90
+      # BUG-4655：Dart 侧的 dSYM——--split-debug-info 拆出来的 app.ios-arm64.symbols。没有它，
+      # 诊断日志 / 反馈里的 Dart 栈只剩 `abs 0x… virt 0x…`，还原不了。与 dSYM 同保留期。
+      - name: Upload iOS release Dart symbols (no codesign)
+        if: github.event.inputs.testflight_only != 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-dart-symbols-unsigned-${{ steps.channel.outputs.release_sequence }}
+          path: fushi/build/ios/dart-symbols-unsigned
           if-no-files-found: warn
           retention-days: 90
       # 只在上面那道 Release Runner 符号核对真跑过之后才存（testflight_only 的 run 不走它）。
@@ -2867,6 +3315,23 @@ jobs:
           rm -rf "$payload_dir"
           mkdir -p "$payload_dir/Payload" "$out_dir"
           ditto "$app_dir" "$payload_dir/Payload/Runner.app"
+          # BUG-4656：`flutter build ios` 走的是 Xcode 的 build（不是 archive），
+          # DEPLOYMENT_POSTPROCESSING=NO，Runner 的 STRIP_STYLE=non-global 根本不执行；CocoaPods
+          # 嵌入的预编译 framework（Harfbuzz / PDFium / WebRTC …）两条路径都不 strip。这里对包里
+          # 每个 Mach-O 做 `strip -x`（只去本地符号，= STRIP_STYLE non-global；导出符号原样保留，
+          # DynamicLibrary.process().lookup 与 dlsym 要的都在），约 -27 MB。侧载工具会重签，
+          # strip 让未签名包里的签名失效无所谓。
+          bash "$GITHUB_WORKSPACE/tool/ios_strip_local_symbols.sh" "$payload_dir/Payload/Runner.app"
+          # strip 之后再核一遍真正发出去的 Runner：Dart 绑定 lookup 的每个 C 接口符号都还在、
+          # LINKEDIT 对齐仍合规。
+          runner="$payload_dir/Payload/Runner.app/Runner"
+          bash "$GITHUB_WORKSPACE/native/fushi_p2p/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_fsrs/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_compute/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_web_core/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_rwkv/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_music/verify_abi.sh" --no-plugin "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_corpus/verify_abi.sh" "$runner" nm
           rm -f "$out_dir"/fushi-*-ios.ipa
           (
             cd "$payload_dir"
@@ -2877,7 +3342,7 @@ jobs:
       # never blocks (or is blocked by) the other platforms.
       - name: Upload iOS IPA artifact
         if: always() && github.event.inputs.testflight_only != 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: desktop-artifacts-ios
           path: fushi/build/release-artifacts/fushi-*-ios.ipa
@@ -3108,6 +3573,16 @@ jobs:
             /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.kernel.extended-virtual-addressing' "$ENTITLEMENTS_FILE"
             echo "::warning title=Extended virtual addressing missing::The provisioning profile does not grant com.apple.developer.kernel.extended-virtual-addressing. Enable it on the App ID, regenerate the App Store profile and update IOS_PROVISIONING_PROFILE_BASE64 (BUG-4013)."
           fi
+          # BUG-4758：抬高 jetsam 内存额度。设备端 ASR 装载大模型时 footprint 冲到 ~2 GB，
+          # 默认额度下被 jetsam 杀；授予后 ASR 内存门槛按更高的额度放行原模型。
+          INCREASED_MEM="$(/usr/libexec/PlistBuddy -c 'Print :Entitlements:com.apple.developer.kernel.increased-memory-limit' "$PROFILE_PLIST" 2>/dev/null || true)"
+          if [ "$INCREASED_MEM" = "true" ]; then
+            WIRE_ENTITLEMENTS=1
+            echo "Increased memory limit entitlement enabled"
+          else
+            /usr/libexec/PlistBuddy -c 'Delete :com.apple.developer.kernel.increased-memory-limit' "$ENTITLEMENTS_FILE"
+            echo "::warning title=Increased memory limit missing::The provisioning profile does not grant com.apple.developer.kernel.increased-memory-limit. Enable Increased Memory Limit on the App ID, regenerate the App Store profile and update IOS_PROVISIONING_PROFILE_BASE64 (BUG-4758)."
+          fi
           # 主屏小组件 / Live Activity（FushiWidgets 扩展）的 App Group：主 app 描述文件带
           # group 才保留这项；扩展那份描述文件（app.fushi.reader.widgets）也逐项对照它的
           # entitlement（App Group 是扩展唯一的 entitlement，也是扩展能读快照的前提）。缺任何
@@ -3195,11 +3670,14 @@ jobs:
           plutil -lint "$RUNNER_TEMP/ExportOptions.plist"
           rm -f "$PROFILE_PATH" "$PROFILE_PLIST"
           echo "profile: $PROFILE_NAME ($PROFILE_UUID) bundle=$PROFILE_BUNDLE_ID expires=$PROFILE_EXPIRY"
+      # BUG-4655：同未签名构建，拆 Dart 调试信息、不混淆；符号目录与上面分开（两次构建的
+      # App.framework 不保证同一个 build id），按序号单独上传。
       - name: Build signed iOS App Store IPA
         if: steps.signing.outputs.signed == 'true'
         working-directory: fushi
         run: >-
           flutter build ipa --release
+          --split-debug-info=build/ios/dart-symbols-testflight
           --export-options-plist "$RUNNER_TEMP/ExportOptions.plist"
           --build-name "${{ steps.channel.outputs.apple_build_version_name }}"
           --build-number "${{ steps.channel.outputs.release_sequence }}"
@@ -3217,15 +3695,49 @@ jobs:
           bash native/fushi_rwkv/verify_abi.sh "$runner" nm
           bash native/fushi_music/verify_abi.sh --no-plugin "$runner" nm
           bash native/fushi_corpus/verify_abi.sh "$runner" nm
+      # BUG-4656：archive 动作下 Xcode 按 STRIP_STYLE=non-global 处理了 Runner（Mac 实测 strip -x
+      # 对它是空操作），但 CocoaPods 嵌入的预编译 framework（Harfbuzz / PDFium / inappwebview …）
+      # 原样进包，带着约 9.8 MB 本地符号表。对归档里的 .app 同样 strip -x，再从归档重新导出：
+      # exportArchive 按 ExportOptions 用发行证书重签每个嵌套 bundle，strip 让旧签名失效无妨。
+      # 脚本会核对每个二进制导出符号不变，之后再核一遍 Runner 的 C ABI。
+      - name: Strip local symbols from signed iOS archive and re-export IPA
+        if: steps.signing.outputs.signed == 'true'
+        working-directory: fushi
+        shell: bash
+        run: |
+          set -euo pipefail
+          archive=build/ios/archive/Runner.xcarchive
+          app="$archive/Products/Applications/Runner.app"
+          bash "$GITHUB_WORKSPACE/tool/ios_strip_local_symbols.sh" "$app"
+          runner="$app/Runner"
+          bash "$GITHUB_WORKSPACE/native/fushi_p2p/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_fsrs/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_compute/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_web_core/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_rwkv/verify_abi.sh" "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_music/verify_abi.sh" --no-plugin "$runner" nm
+          bash "$GITHUB_WORKSPACE/native/fushi_corpus/verify_abi.sh" "$runner" nm
+          rm -rf build/ios/ipa
+          xcodebuild -exportArchive -archivePath "$archive" -exportPath build/ios/ipa -exportOptionsPlist "$RUNNER_TEMP/ExportOptions.plist"
+          ls -l build/ios/ipa/*.ipa
       # TestFlight 用户跑的是这份归档里的 Runner（与上面未签名包不是同一个二进制、UUID 不同），
       # 它的 dSYM 单独存（BUG-4102 / BUG-4075）。
       - name: Upload signed iOS archive dSYMs
         if: steps.signing.outputs.testflight == 'true'
         continue-on-error: true
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-dsyms-testflight-${{ steps.channel.outputs.release_sequence }}
           path: fushi/build/ios/archive/Runner.xcarchive/dSYMs
+          if-no-files-found: warn
+          retention-days: 90
+      - name: Upload signed iOS archive Dart symbols
+        if: steps.signing.outputs.testflight == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ios-dart-symbols-testflight-${{ steps.channel.outputs.release_sequence }}
+          path: fushi/build/ios/dart-symbols-testflight
           if-no-files-found: warn
           retention-days: 90
       # TestFlight 上传是不可回收的外发，搬到下面的 `testflight` job：正式 / 测试版
@@ -3236,7 +3748,7 @@ jobs:
       # `testflight` job 只认 testflight 输出，不会把它传出去。
       - name: Upload signed TestFlight IPA artifact
         if: steps.signing.outputs.signed == 'true'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: ios-testflight-signed-ipa
           path: fushi/build/ios/ipa/*.ipa
@@ -3257,7 +3769,7 @@ jobs:
       contents: read
     steps:
       - name: Download signed TestFlight IPA
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           name: ios-testflight-signed-ipa
           path: fushi/build/ios/ipa
@@ -3300,7 +3812,7 @@ jobs:
           echo "已上传 TestFlight；App Store Connect 处理完成（通常 5-30 分钟）后才会出现在测试员列表里。"
 
   publish:
-    needs: [windows, macos, ios]
+    needs: [windows, macos, ios, linux]
     # testflight_only 下三个平台 job 要么 skipped 要么只传了 TestFlight，没有任何
     # Release 资产可发；整个 publish 跳过，rolling debug / 清单一根手指都不碰。
     # BUG-2817：always() 会无视上游 job 被跳过，这里必须自己再挡一次非应用 tag。
@@ -3317,8 +3829,13 @@ jobs:
       # publish_update_manifest.sh 推完正式版清单要 `gh workflow run` 唤醒 R2 镜像；
       # job 级 permissions 会把没列出的 scope 置 none，缺 actions: write 则 dispatch 403。
       actions: write
+      # debug pulse（tool/publish_debug_pulse.sh）用 GraphQL 读 PR 元数据，理由同 windows job。
+      pull-requests: read
+      # Linux Flatpak repo on GitHub Pages (actions/deploy-pages).
+      pages: write
+      id-token: write
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           fetch-depth: 0
       - name: Validate unified release policy
@@ -3519,14 +4036,14 @@ jobs:
       # platform simply contributes no file (uploads use if-no-files-found:
       # ignore), so a broken mac/iOS build never blocks the Windows publish.
       - name: Download platform release artifacts
-        uses: actions/download-artifact@v7
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: desktop-artifacts-*
           merge-multiple: true
           path: fushi/build/release-artifacts
       - name: Upload assets to GitHub Release event
         if: github.event_name == 'release'
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ steps.channel.outputs.tag }}
           files: |
@@ -3582,12 +4099,12 @@ jobs:
           # prune deletes it and the rolling release "loses" that device. Scope
           # the candidate set to THIS workflow's filename shapes (Windows:
           # *-windows-setup.exe / macOS: *-macos-arm64.zip + .dmg (+ legacy *-macos.zip) /
-          # iOS: *-ios.ipa) so it keeps
+          # iOS: *-ios.ipa / Linux: *-linux-x86_64.flatpak + *-linux-x64.tar.gz) so it keeps
           # its own top KEEP_SEQS and never touches Android's assets.
           PLATFORM_ASSETS=()
           for name in "${ASSET_NAMES[@]}"; do
             case "$name" in
-              *-windows-setup.exe|*-macos-arm64.zip|*-macos-arm64.dmg|*-macos.zip|*-ios.ipa) PLATFORM_ASSETS+=("$name") ;;
+              *-windows-setup.exe|*-macos-arm64.zip|*-macos-arm64.dmg|*-macos.zip|*-ios.ipa|*-linux-x86_64.flatpak|*-linux-x64.tar.gz) PLATFORM_ASSETS+=("$name") ;;
             esac
           done
           # Check length BEFORE re-expanding the (possibly empty) array: on macOS
@@ -3647,7 +4164,7 @@ jobs:
           done
       - name: Publish desktop channel release
         if: steps.channel.outputs.publish_managed_release == 'true'
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ steps.channel.outputs.publish_tag }}
           # Rolling debug: target the DEFAULT branch, not github.sha. GitHub rejects a
@@ -3668,6 +4185,21 @@ jobs:
             fushi/build/release-artifacts/fushi-*-macos-arm64.zip
             fushi/build/release-artifacts/fushi-*-macos-arm64.dmg
             fushi/build/release-artifacts/fushi-*-ios.ipa
+      # 拍板台 RRYro9vSEU：Releases 列表按 tag 所指提交的日期排，rolling tag 一直指着
+      # 2026-08-10 的提交，调试版沉在第 40 条左右。每次发完把 tag 挪到一个「现在」的
+      # 提交（tree = 默认分支）上，release id / 资产 / 下载链接都不动、没有窗口期。
+      # 失败只 ::warning（资产已发完，排序只是展示），下一次发布自愈。理由与实测见脚本头注释。
+      - name: Bump rolling debug tag to keep it near the top of Releases
+        if: steps.channel.outputs.publish_managed_release == 'true' && steps.channel.outputs.rolling_debug == 'true'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          PUBLISH_TAG: ${{ steps.channel.outputs.publish_tag }}
+          DEFAULT_BRANCH: ${{ github.event.repository.default_branch }}
+          BUILD_SHA: ${{ github.sha }}
+        run: bash tool/bump_rolling_release_tag.sh
       # TODO-705: publish a mirror update manifest so beta/debug in-China update
       # checks succeed (raw.githubusercontent.com is proxiable; api.github.com
       # /releases is mirror-403'd, BUG-292). This pushes a DATA FILE to the
@@ -3718,6 +4250,18 @@ jobs:
           ASSET_GLOB: fushi-*-macos-arm64.zip fushi-*-macos-arm64.dmg fushi-*-ios.ipa
           PLATFORM_LABEL: apple
         run: bash tool/publish_update_manifest.sh
+      # 调试版流水线收尾刷新（出包结果）：紧跟清单发布，always()——前面任何一步失败也刷新，
+      # 让 debug 用户看到「失败」而不是一直「构建中」。同上只对 develop push、continue-on-error。
+      # publish job 本身 always()：三个平台 job 失败时它照样跑到这里。
+      - name: Debug pulse (publish result)
+        if: always() && github.event_name == 'push' && github.ref == 'refs/heads/develop'
+        continue-on-error: true
+        timeout-minutes: 3
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+        run: bash tool/publish_debug_pulse.sh
       # 反馈发布回填：三个平台并行构建、失败的平台不出产物（上面 download-artifact 的
       # 注释），所以按产物是否真的在本次发布里逐平台回填，不能一刀切记三个平台。
       # 判据用 shell 的 compgen 而不是 hashFiles()：路径过滤守卫要求 hashFiles 模式
@@ -3775,3 +4319,82 @@ jobs:
           else
             echo "No iOS package in this publish; skipping feedback backfill."
           fi
+      # Linux Flatpak runs last in this job: its steps depend on the live Pages
+      # repo, a GPG mirror check and a Docker build, and a failure there must not
+      # skip the Windows / macOS / iOS feedback backfill above (steps without a
+      # status function only run while the job is still successful).
+      # Linux Flatpak: the repo first, then the asset. The asset is what tells the
+      # in-app updater that a release has a Linux build (FlatpakUpdater.selectAsset),
+      # so it only goes up once the repo the updater pulls from carries that build.
+      # The repo lives on GitHub Pages and is its own state: flatpak_build.sh publish
+      # mirrors what is live (the branches this run did not build), adds this run's
+      # commit, prunes and re-signs the summary. Known limit: two runs publishing at
+      # the same moment from different refs (a develop push and a formal dispatch on
+      # main) can each mirror the same live repo, and the later deploy drops the
+      # other's new commit. Nothing breaks: clients on that branch get "not in the
+      # Flatpak repository yet" until that branch's next build.
+      - name: Download Flatpak repo commit
+        if: needs.linux.result == 'success'
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: flatpak-repo-linux
+          path: build
+      - name: Assemble Flatpak repository
+        id: flatpak_repo
+        if: needs.linux.result == 'success'
+        shell: bash
+        env:
+          FLATPAK_GPG_PRIVATE_KEY: ${{ secrets.FLATPAK_GPG_PRIVATE_KEY }}
+          REPO_URL_OVERRIDE: ${{ vars.FLATPAK_REPO_URL }}
+        run: |
+          set -euo pipefail
+          if [ -z "$FLATPAK_GPG_PRIVATE_KEY" ]; then
+            echo "::warning title=Flatpak not published::FLATPAK_GPG_PRIVATE_KEY is not set, so the Linux Flatpak repo and asset are not published."
+            echo "publish=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          GNUPG="$RUNNER_TEMP/flatpak-gnupg"
+          mkdir -p -m 700 "$GNUPG"
+          printf '%s\n' "$FLATPAK_GPG_PRIVATE_KEY" | gpg --homedir "$GNUPG" --batch --import
+          KEY_ID="$(gpg --homedir "$GNUPG" --batch --list-secret-keys --with-colons | awk -F: '/^fpr/{print $10; exit}')"
+          URL="${REPO_URL_OVERRIDE:-https://${GITHUB_REPOSITORY_OWNER}.github.io/${GITHUB_REPOSITORY#*/}}"
+          tar -C build -xf build/flatpak-repo.tar
+          docker build -t fushi-flatpak-build tool/linux/flatpak
+          docker run --rm -v "$PWD:/src" -w /src -v "$GNUPG:/gnupg" \
+            -e FLATPAK_GPG_KEY_ID="$KEY_ID" -e FLATPAK_GPG_HOMEDIR=/gnupg -e URL="$URL" \
+            fushi-flatpak-build bash tool/linux/flatpak/flatpak_build.sh publish /src/build/repo /src/build/flatpak-site "$URL"
+          sudo chown -R "$(id -u):$(id -g)" build
+          echo "publish=true" >> "$GITHUB_OUTPUT"
+      - name: Upload Flatpak repository to Pages
+        if: steps.flatpak_repo.outputs.publish == 'true'
+        uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
+        with:
+          path: build/flatpak-site
+      - name: Deploy Flatpak repository
+        if: steps.flatpak_repo.outputs.publish == 'true'
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5
+      - name: Upload Linux Flatpak to the release
+        if: steps.flatpak_repo.outputs.publish == 'true'
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
+        with:
+          tag_name: ${{ github.event_name == 'release' && steps.channel.outputs.tag || steps.channel.outputs.publish_tag }}
+          files: |
+            fushi/build/release-artifacts/fushi-*-linux-x86_64.flatpak
+            fushi/build/release-artifacts/fushi-*-linux-x64.tar.gz
+      - name: Publish mirror update manifest (Linux assets)
+        if: steps.channel.outputs.publish_manifest == 'true' && steps.flatpak_repo.outputs.publish == 'true'
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REPO: ${{ github.repository }}
+          CHANNEL: ${{ steps.channel.outputs.manifest_channel }}
+          TAG: ${{ steps.channel.outputs.tag }}
+          DOWNLOAD_TAG: ${{ steps.channel.outputs.publish_tag }}
+          PRERELEASE: ${{ steps.channel.outputs.prerelease }}
+          NOTES: ${{ steps.channel.outputs.body }}
+          VERSION: ${{ steps.channel.outputs.build_version_name }}
+          RELEASE_SEQUENCE: ${{ steps.channel.outputs.release_sequence }}
+          ARTIFACTS_DIR: fushi/build/release-artifacts
+          ASSET_GLOB: fushi-*-linux-x86_64.flatpak
+          PLATFORM_LABEL: linux
+        run: bash tool/publish_update_manifest.sh

@@ -2,6 +2,8 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../helpers/source_guard.dart';
+
 /// 根因守卫（远端视频/书「每次进 tab 重新加载」）：
 ///
 /// 症状——切到书架 / 视频 tab 每次都重新联网拉远端列表 + 封面。真根因是顶层 tab 的
@@ -12,10 +14,10 @@ import 'package:test/test.dart';
 ///
 /// 修复——让**书架 + 视频 + 游戏**保活（State 常驻、用 `Offstage` 隐藏未选中者），
 /// 切回沿用已加载列表/封面/滚动位置；游戏保活则保证 Hook 会话不因切 tab 停止。
-/// 其余 tab（词典 / 设置）**故意不保活**、
-/// 按需重建，以保留其依赖 initState 挂载的语义——尤其 HomeDictionaryPage 靠切到查词
-/// tab 时 re-mount 消费桌面悬浮字幕 pending 查词（TODO-376，见
-/// desktop_lookup_to_dictionary_tab_test.dart）。
+/// 查词与复习后来也保活（BUG-4849：不保活时每次切入整页重挂，查词页还要
+/// 每次冷建一个查词 WebView）。它们原先靠「切入即重挂」做的事改成显式的「切入时
+/// 做」，由下面「保活的查词 / 复习页……」那条守卫钉住——尤其 HomeDictionaryPage
+/// 消费桌面悬浮字幕 pending 查词（TODO-376）。设置与网页仍按需重建。
 ///
 /// HomePage 的运行时表面在 headless widget 测试里无法稳定挂载（AppModel 未初始化、
 /// late dictRepo；同 desktop_lookup_to_dictionary_tab_test.dart 的说明），故这里用源码
@@ -69,13 +71,83 @@ void main() {
     );
     expect(
       literal.contains('HomeTab.dictionaries'),
-      isFalse,
-      reason: '查词 tab 不得保活：靠 re-mount 消费桌面悬浮字幕 pending（TODO-376）',
+      isTrue,
+      reason:
+          '查词 tab 必须保活（BUG-4849：不保活时每次切入整页重挂，并冷建 / '
+          '销毁一个预热用的查词 WebView）',
+    );
+    expect(
+      literal.contains('HomeTab.srs'),
+      isTrue,
+      reason: '复习 tab 必须保活（BUG-4849：不保活时每次切入整页重挂）',
     );
     expect(
       literal.contains('HomeTab.settings'),
       isFalse,
-      reason: '设置 tab 不得保活：保留其 initState 挂载语义（现状不变）',
+      reason: '设置 tab 不得保活：每次进入从根页开始，保留其 initState 挂载语义',
+    );
+  });
+
+  test('保活的查词 / 复习页把「切入即重挂」做的事改成显式的「切入时做」', () {
+    final String dictSrc = File(
+      'lib/src/pages/implementations/home_dictionary_page.dart',
+    ).readAsStringSync();
+    final String srsSrc = File(
+      'lib/src/pages/implementations/srs/srs_deck_list_page.dart',
+    ).readAsStringSync();
+
+    // 查词页：藏着时不消费待查词 / 聚焦请求（与「还没挂载」同义），由藏转显后再消费。
+    final int pending = dictSrc.indexOf('void _onDesktopLookupPending() {');
+    expect(pending, isNonNegative);
+    expect(
+      dictSrc
+          .substring(pending, dictSrc.indexOf('clearPending()', pending))
+          .contains('if (!_sectionVisible) return;'),
+      isTrue,
+      reason:
+          'TODO-376：藏着的保活查词页不得消费待查词——否则用户在别的 tab 上时词被'
+          '看不见的页面吞掉，切过来什么都没有',
+    );
+    final int focus = dictSrc.indexOf('void _consumeFocusRequest() {');
+    expect(focus, isNonNegative);
+    expect(
+      dictSrc
+          .substring(focus, dictSrc.indexOf('signal.value = null;', focus))
+          .contains('if (!_sectionVisible) return;'),
+      isTrue,
+      reason: '藏着时聚焦会被外层 ExcludeFocus 吞掉，请求必须留到变成可见之后',
+    );
+    final int deps = dictSrc.indexOf('void didChangeDependencies() {');
+    expect(deps, isNonNegative);
+    final String depsBody = dictSrc.substring(
+      deps,
+      dictSrc.indexOf('void deactivate()', deps),
+    );
+    expect(
+      depsBody.contains('SectionVisibility.of(context)') &&
+          depsBody.contains('_onDesktopLookupPending();') &&
+          depsBody.contains('_consumeFocusRequest();'),
+      isTrue,
+      reason: '由藏转显必须补消费待查词与聚焦请求（原先靠重新挂载在 initState 里做）',
+    );
+
+    // 复习页：切回时刷新已配对主机（原先靠每次挂载在 initState 里做）。
+    expect(
+      srsSrc.contains('homeShellTabNotifier.addListener(_onShellTabActivated)'),
+      isTrue,
+      reason: '复习页必须监听 tab 信号',
+    );
+    expect(
+      srsSrc.contains(
+        'homeShellTabNotifier.removeListener(_onShellTabActivated)',
+      ),
+      isTrue,
+      reason: '复习页 dispose 必须移除监听（防泄漏）',
+    );
+    expect(
+      srsSrc.contains('SectionPopScope('),
+      isTrue,
+      reason: '藏着的保活复习页不得拦系统返回',
     );
   });
 
@@ -103,7 +175,9 @@ void main() {
     // 2026-10 切 tab 卡顿：buildBody 每次 new 页面 widget，Offstage 里看不见的
     // 视频页 / 首页也跟着整页 build。隐藏 tab 必须走缓存，可见 tab 才重建。
     expect(
-      src.contains('_keepAliveTabContent(tab, visible: visible == tab)'),
+      RegExp(
+        r'_keepAliveTabContent\(\s*tab,\s*visible:\s*visible == tab,?\s*\)',
+      ).hasMatch(src),
       isTrue,
       reason: '保活 tab 内容必须经 _keepAliveTabContent 按可见性取缓存',
     );
@@ -196,13 +270,38 @@ void main() {
       isTrue,
       reason: 'BUG-995：概览门控必须并入远端条目（homeRemote）',
     );
+    // BUG-5197 起远端两份列表按输入记忆（[_remoteListsMemo]）：首页那份 `home`
+    // 在记忆体里取自未筛选的远端可见条目，homeRemote 就是它。BUG-5330 起这份判据
+    // 与侧栏视频速览共用 [visibleHomeRemoteVideos]（只过「显示远端条目」开关、
+    // 清单失败态、上锁、本机同集去重，不吃任何筛选）。
     expect(
       RegExp(
-        r'final List<RemoteVideoInfo> homeRemote = <RemoteVideoInfo>\[\s*'
-        r'for \(final RemoteVideoInfo v in _visibleRemoteVideos\(',
+        r'final List<RemoteVideoInfo> home = visibleHomeRemoteVideos\(\s*'
+        r'remote: remoteState == null \|\| remoteState\.failed',
       ).hasMatch(videoSrc),
       isTrue,
-      reason: 'BUG-995：homeRemote 必须取自远端可见条目（_visibleRemoteVideos）',
+      reason: 'BUG-995：homeRemote 必须取自远端可见条目（visibleHomeRemoteVideos，不筛）',
+    );
+    final String shared = File(
+      'lib/src/media/video/video_continue_watching.dart',
+    ).readAsStringSync();
+    final String sharedBody = shared.substring(
+      shared.indexOf('List<RemoteVideoInfo> visibleHomeRemoteVideos({'),
+      shared.indexOf('class VideoContinueLibrary'),
+    );
+    expect(
+      sharedBody.contains('!showRemoteEntries') &&
+          sharedBody.contains('visibility.hidesRemoteVideo(v)') &&
+          !sharedBody.contains('filter'),
+      isTrue,
+      reason: 'BUG-995：首页远端判据只过开关 / 上锁，不吃标签筛选',
+    );
+    expect(
+      videoSrc.contains(
+        'final List<RemoteVideoInfo> homeRemote = remoteLists.home;',
+      ),
+      isTrue,
+      reason: 'BUG-995：homeRemote 就是记忆体里的未筛选远端列表',
     );
     // _buildOverviewSection 必须接收 remoteVideos 并把它们并进概览 entries。
     expect(
@@ -225,6 +324,60 @@ void main() {
           .contains('_openRemote('),
       isTrue,
       reason: 'BUG-995：远端续播卡点按走 _openRemote（流播）',
+    );
+  });
+  test('书架与首页藏着时不重建（BUG-4848）：带 SectionDeferredBuild，State 不直接依赖可见性', () {
+    final String shelfSrc = File(
+      'lib/src/pages/implementations/reader_fushi_history_page.dart',
+    ).readAsStringSync();
+    final String dashSrc = File(
+      'lib/src/pages/implementations/home_dashboard_page.dart',
+    ).readAsStringSync();
+    final String shelfParts = Directory(
+      'lib/src/pages/implementations/reader_history',
+    ).listSync().whereType<File>().map((File f) => f.readAsStringSync()).join();
+
+    expect(
+      RegExp(
+        r'class ReaderFushiHistoryPage extends HistoryReaderPage\s+'
+        r'with SectionDeferredBuild \{',
+      ).hasMatch(shelfSrc),
+      isTrue,
+      reason:
+          '书架（书 / 漫画两个实例）藏着时不得跟着共享 provider 重建：首页切回时'
+          '失效书列表，两个藏着的书架各整页重建四次，回首页卡 100 ms',
+    );
+    expect(
+      dashSrc.contains(
+        'class HomeDashboardPage extends BaseModuleTabPage '
+        'with SectionDeferredBuild {',
+      ),
+      isTrue,
+      reason: '首页藏着时同理：书架切回时失效同一对 provider',
+    );
+    // SectionDeferredBuild 的前提：可见性翻转不触发这两页的 State 重建，它们的
+    // build 产物就不能直接读可见性（要读就放进子 widget）。
+    for (final MapEntry<String, String> src in <String, String>{
+      '书架': shelfSrc + shelfParts,
+      '首页': dashSrc,
+    }.entries) {
+      expect(
+        src.value.contains('SectionVisibility.of(context)'),
+        isFalse,
+        reason:
+            '${src.key}的 State 不得直接依赖 SectionVisibility：混了 '
+            'SectionDeferredBuild 之后可见性翻转不会让它重建，读到的是旧值',
+      );
+    }
+    // 只看代码行：注释里会提到被替掉的旧写法。
+    final String dashCode = maskComments(dashSrc);
+    expect(
+      dashCode.contains('TickerMode.valuesOf(context)') ||
+          dashCode.contains('TickerMode.of(context)'),
+      isFalse,
+      reason:
+          '首页用 TickerMode.getValuesNotifier 订阅开关：直接依赖 TickerMode 会让'
+          '它每次切走 / 切回都被记一笔构建欠账，切回那一帧白白整页重建',
     );
   });
 }

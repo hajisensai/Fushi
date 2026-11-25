@@ -16,8 +16,9 @@ name: Cleanup PR caches
 # pull_request, same-repo PRs only (2026-09-30). #1829 moved this to
 # pull_request_target so fork PRs (79%; their pull_request token is read-only) get
 # the base repo's token -- but pull_request_target takes the workflow definition
-# from the DEFAULT branch, main, which lags develop and is not synced by agents, and
-# main's copy only knew `pull_request`: from then on the job never ran for anyone.
+# from the DEFAULT branch -- main at the time (develop since 2026-11-25), which lagged
+# develop and was not synced by agents, and main's copy only knew `pull_request`:
+# from then on the job never ran for anyone.
 # Merged PRs of any origin are now cleaned on the develop push instead
 # (merged-pr-cleanup.yml; merging IS a push, which runs develop's own file with a
 # writable token). This workflow keeps same-repo PRs closed without merging.
@@ -42,7 +43,7 @@ jobs:
     steps:
       # The script from the base branch, not the closed PR's merge ref (which may
       # be gone once the PR is closed).
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           ref: ${{ github.event.pull_request.base.ref }}
           sparse-checkout: tool/cleanup_pr_ci.sh

@@ -16,8 +16,17 @@
 //    集合），被打断时知道卡在哪。
 // 3. 看门狗时长由各串行阶段的预算推出（[watchdogTimeoutFor]），不再拍一个比预算还短的数。
 // 4. 终止进程只经 [AppExitCoordinator.terminate]：先标 clean（带 terminatedBy），再
-//    `exit`。`lib/` 下其余地方禁止裸 `exit(`（守卫
-//    `test/build/process_exit_single_exit_guard_test.dart`）。
+//    结束进程（Windows 在落盘完成后走 `TerminateProcess` 跳过
+//    `DllMain(DLL_PROCESS_DETACH)` 死锁，其他平台走 `io.exit`）。`lib/` 下其余地方
+//    禁止裸 `exit(`（守卫 `test/build/process_exit_single_exit_guard_test.dart`）。
+// 5. [begin] 在写意图之前先同步摘掉 libmpv 指向 Dart 的唤醒回调（反馈 H6Vou-6uYX）。
+//    发布构建的 media_kit 给每个播放器注册一个 `NativeCallable.listener` 当 libmpv
+//    唤醒回调，只有逐个 `Player.dispose` 才解绑。退出链不 dispose 播放器，而进程
+//    可能不经链尾的 `exit` 就结束：macOS 上链跑到一半再来一次退出请求（Dock 退出、
+//    再按 ⌘Q、注销）会走 `NSApp terminate`，Flutter 引擎在 willTerminate 里先拆掉
+//    isolate、释放回调跳板，mpv 核心线程派发属性变更时就跳进已释放的地址。所以
+//    「开始退出」与「libmpv 不再回调 Dart」必须是同一个同步点，而不是退出链里
+//    某个可能来不及跑到的步骤。
 
 import 'dart:async';
 import 'dart:io' as io;
@@ -25,6 +34,8 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/diagnostics/previous_exit_log.dart';
+import 'package:fushi/src/platform/windows_process_exit.dart';
+import 'package:media_kit/native_exit.dart';
 
 /// 退出意图 / 阶段 / clean 的落点。生产实现写 [PreviousExitLog] 的会话标记。
 abstract interface class ExitMarkerSink {
@@ -48,20 +59,27 @@ class _PreviousExitLogSink implements ExitMarkerSink {
       PreviousExitLog.markCleanExit(terminatedBy: terminatedBy);
 }
 
-void _systemExit(int code) => io.exit(code);
+void _systemExit(int code) =>
+    exitProcessForPlatform(code, fallbackExit: io.exit);
 
 class AppExitCoordinator {
   AppExitCoordinator({
     ExitMarkerSink marker = const _PreviousExitLogSink(),
     void Function(int code) exitProcess = _systemExit,
+    void Function() quiesceNativeCallbacks =
+        quiesceNativeCallbacksForProcessExit,
   }) : _marker = marker,
-       _exitProcess = exitProcess;
+       _exitProcess = exitProcess,
+       _quiesceNativeCallbacks = quiesceNativeCallbacks;
 
   /// 进程级单例。测试可替换（注入假 marker / 假 exit）。
   static AppExitCoordinator instance = AppExitCoordinator();
 
   final ExitMarkerSink _marker;
   final void Function(int code) _exitProcess;
+
+  /// 摘掉原生库（libmpv）指向 Dart 的回调。见文件头第 5 条。
+  final void Function() _quiesceNativeCallbacks;
 
   String? _reason;
   final List<String> _inFlight = <String>[];
@@ -91,10 +109,17 @@ class AppExitCoordinator {
     Duration margin = watchdogMargin,
   }) => serialBudgets.fold<Duration>(margin, (Duration a, Duration b) => a + b);
 
-  /// 退出链的**第一步**：同步落盘退出意图（调用方在任何 await 之前调）。返回 true =
-  /// 这是本进程第一次发起退出；false = 已有退出在跑（意图保持第一次的原因）。
+  /// 退出链的**第一步**：先同步摘掉 libmpv 回调（文件头第 5 条），再同步落盘退出
+  /// 意图（调用方在任何 await 之前调）。返回 true = 这是本进程第一次发起退出；
+  /// false = 已有退出在跑（意图保持第一次的原因）。
   bool begin(String reason) {
     if (_reason != null) return false;
+    // 退出清理失败不能阻止退出（同 [runStep]）：摘回调抛了也要继续落盘意图。
+    try {
+      _quiesceNativeCallbacks();
+    } catch (e) {
+      debugPrint('[Fushi] exit quiesce native callbacks failed: $e');
+    }
     _reason = reason;
     _marker.exitRequested(reason);
     return true;
@@ -138,8 +163,13 @@ class AppExitCoordinator {
   }
 
   /// 结束进程的唯一出口：先补 [begin]（直接走到这里的路径也留下意图），再标 clean
-  /// （[terminatedBy] 记由谁结束），最后 `exit`。[exitWith] 只给已有测试缝的调用方
+  /// （[terminatedBy] 记由谁结束），最后结束进程。[exitWith] 只给已有测试缝的调用方
   /// （更新交接）透传假 exit。
+  ///
+  /// 契约：调到这里时所有要持久化的东西必须已经显式落盘 / 关好。Windows 上走
+  /// `TerminateProcess`（[exitProcessForPlatform]），不跑任何 DLL 的
+  /// `DllMain(DLL_PROCESS_DETACH)`、CRT atexit / 静态析构，也不 flush C `FILE*`
+  /// 缓冲；依赖这些退出期回调刷盘的原生代码会静默丢尾部数据（BUG-5185）。
   void terminate(
     String terminatedBy, {
     int code = 0,

@@ -34,6 +34,22 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_manga_pan_left;
       case ShortcutAction.mangaPanRight:
         return t.shortcut_action_manga_pan_right;
+      // 文案与小说同名动作完全相同（「打开阅读统计」/「暂停 / 继续阅读计时」），
+      // 复用同一条译文，不另立 key（设置页按 scope 分组，组名已标明「漫画」）。
+      case ShortcutAction.mangaOpenStatistics:
+        return t.shortcut_action_reader_open_statistics;
+      case ShortcutAction.mangaToggleStudyClock:
+        return t.shortcut_action_reader_toggle_study_clock;
+      case ShortcutAction.mangaToggleBookmark:
+        return t.shortcut_action_manga_toggle_bookmark;
+      case ShortcutAction.mangaToggleBubbleFocus:
+        return t.shortcut_action_manga_toggle_bubble_focus;
+      case ShortcutAction.mangaAudioPlayPause:
+        return t.shortcut_action_manga_audio_play_pause;
+      case ShortcutAction.mangaAudioPreviousLine:
+        return t.shortcut_action_manga_audio_previous_line;
+      case ShortcutAction.mangaAudioNextLine:
+        return t.shortcut_action_manga_audio_next_line;
       case ShortcutAction.readerPageForward:
         return t.shortcut_action_reader_page_forward;
       case ShortcutAction.readerPageBackward:
@@ -78,6 +94,12 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_home_focus_search;
       case ShortcutAction.librarySearch:
         return t.shortcut_action_library_search;
+      case ShortcutAction.libraryGridZoomIn:
+        return t.shortcut_action_library_grid_zoom_in;
+      case ShortcutAction.libraryGridZoomOut:
+        return t.shortcut_action_library_grid_zoom_out;
+      case ShortcutAction.musicRecommendRefresh:
+        return t.shortcut_action_music_recommend_refresh;
       case ShortcutAction.globalBack:
         return t.shortcut_action_global_back;
       case ShortcutAction.globalScrollPageDown:
@@ -186,12 +208,22 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_toggle_secondary_subtitle_hide;
       case ShortcutAction.videoToggleFavoriteSentence:
         return t.shortcut_action_video_toggle_favorite_sentence;
+      case ShortcutAction.videoOpenStatistics:
+        return t.shortcut_action_video_open_statistics;
+      case ShortcutAction.videoToggleStudyClock:
+        return t.shortcut_action_video_toggle_study_clock;
       case ShortcutAction.videoReplayCurrentSubtitle:
         return t.shortcut_action_video_replay_current_subtitle;
       case ShortcutAction.videoReplayPreviousSubtitle:
         return t.shortcut_action_video_replay_previous_subtitle;
       case ShortcutAction.videoToggleLoopCurrentSubtitle:
         return t.shortcut_action_video_toggle_loop_current_subtitle;
+      case ShortcutAction.videoReplayCueThenPause:
+        return t.shortcut_action_video_replay_cue_then_pause;
+      case ShortcutAction.videoToggleAutoPauseAtCueEnd:
+        return t.shortcut_action_video_toggle_auto_pause_at_cue_end;
+      case ShortcutAction.videoToggleAbLoop:
+        return t.shortcut_action_video_toggle_ab_loop;
       case ShortcutAction.videoCopyCurrentSubtitle:
         return t.shortcut_action_video_copy_current_subtitle;
       case ShortcutAction.videoCopyCurrentSecondarySubtitle:
@@ -212,10 +244,6 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_align_subtitle_to_next;
       case ShortcutAction.videoEnterCaret:
         return t.shortcut_action_video_enter_caret;
-      case ShortcutAction.videoLookupNextWord:
-        return t.shortcut_action_video_lookup_next_word;
-      case ShortcutAction.videoLookupPrevWord:
-        return t.shortcut_action_video_lookup_prev_word;
       case ShortcutAction.webBrowserNewTab:
         return t.shortcut_action_web_browser_new_tab;
       case ShortcutAction.webBrowserCloseTab:
@@ -284,6 +312,11 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_music_seek_forward;
       case ShortcutAction.musicSeekBackward:
         return t.shortcut_action_music_seek_backward;
+      // 与 music 那对同名：设置页按 scope 分卡片，卡片标题（「音乐播放页」）已说明范围。
+      case ShortcutAction.musicPlayerSeekForward:
+        return t.shortcut_action_music_seek_forward;
+      case ShortcutAction.musicPlayerSeekBackward:
+        return t.shortcut_action_music_seek_backward;
       case ShortcutAction.srsReviewPrimary:
         return t.shortcut_action_srs_review_primary;
       case ShortcutAction.srsReviewAgain:
@@ -321,6 +354,20 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_global_external_open_lookup_page;
       case ShortcutAction.globalExternalScreenOcr:
         return t.shortcut_action_global_external_screen_ocr;
+      case ShortcutAction.globalExternalFloatingLyricToggle:
+        return t.shortcut_action_global_external_floating_lyric_toggle;
+      case ShortcutAction.globalExternalAudiobookPlayPause:
+        return t.shortcut_action_global_external_audiobook_play_pause;
+      case ShortcutAction.globalExternalAudiobookPrevSentence:
+        return t.shortcut_action_global_external_audiobook_prev_sentence;
+      case ShortcutAction.globalExternalAudiobookNextSentence:
+        return t.shortcut_action_global_external_audiobook_next_sentence;
+      case ShortcutAction.globalExternalAudiobookReplaySentence:
+        return t.shortcut_action_global_external_audiobook_replay_sentence;
+      case ShortcutAction.globalExternalGalgameSpeakLine:
+        return t.shortcut_action_global_external_galgame_speak_line;
+      case ShortcutAction.globalExternalGalgameOverlayToggle:
+        return t.shortcut_action_global_external_galgame_overlay_toggle;
       case ShortcutAction.popupNextEntry:
         return t.shortcut_action_popup_next_entry;
       case ShortcutAction.popupPrevEntry:
@@ -329,6 +376,32 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_popup_mine_entry;
       case ShortcutAction.popupPlayAudio:
         return t.shortcut_action_popup_play_audio;
+      case ShortcutAction.controllerLookupCursorLeft:
+        return t.shortcut_action_controller_lookup_cursor_left;
+      case ShortcutAction.controllerLookupCursorRight:
+        return t.shortcut_action_controller_lookup_cursor_right;
+      case ShortcutAction.controllerLookupLineUp:
+        return t.shortcut_action_controller_lookup_line_up;
+      case ShortcutAction.controllerLookupLineDown:
+        return t.shortcut_action_controller_lookup_line_down;
+      case ShortcutAction.controllerLookupToggleGranularity:
+        return t.shortcut_action_controller_lookup_toggle_granularity;
+      case ShortcutAction.controllerLookupShrinkEnd:
+        return t.shortcut_action_controller_lookup_shrink_end;
+      case ShortcutAction.controllerLookupExtendEnd:
+        return t.shortcut_action_controller_lookup_extend_end;
+      case ShortcutAction.controllerLookupMine:
+        return t.shortcut_action_controller_lookup_mine;
+      case ShortcutAction.controllerLookupPlayAudio:
+        return t.shortcut_action_controller_lookup_play_audio;
+      case ShortcutAction.controllerLookupNextEntry:
+        return t.shortcut_action_controller_lookup_next_entry;
+      case ShortcutAction.controllerLookupPrevEntry:
+        return t.shortcut_action_controller_lookup_prev_entry;
+      case ShortcutAction.controllerLookupEnterResult:
+        return t.shortcut_action_controller_lookup_enter_result;
+      case ShortcutAction.controllerLookupCloseOrExit:
+        return t.shortcut_action_controller_lookup_close_or_exit;
     }
   }
 }
@@ -384,10 +457,14 @@ extension ShortcutScopeLabel on ShortcutScope {
         return t.shortcut_scope_focus_navigation;
       case ShortcutScope.globalExternal:
         return t.shortcut_scope_global_external;
+      case ShortcutScope.controllerLookup:
+        return t.shortcut_scope_controller_lookup;
       case ShortcutScope.dictionaryPopup:
         return t.shortcut_scope_dictionary_popup;
       case ShortcutScope.music:
         return t.shortcut_scope_music;
+      case ShortcutScope.musicPlayer:
+        return t.shortcut_scope_music_player;
       case ShortcutScope.srsReview:
         return t.shortcut_scope_srs_review;
     }
@@ -498,6 +575,12 @@ extension ShortcutActionIcon on ShortcutAction {
         return FushiIcons.replay5;
       case ShortcutAction.videoToggleLoopCurrentSubtitle:
         return FushiIcons.repeat;
+      case ShortcutAction.videoReplayCueThenPause:
+        return FushiIcons.replay;
+      case ShortcutAction.videoToggleAutoPauseAtCueEnd:
+        return FushiIcons.pauseCircle;
+      case ShortcutAction.videoToggleAbLoop:
+        return FushiIcons.repeatOne;
       case ShortcutAction.videoCopyCurrentSubtitle:
         return FushiIcons.copy;
       case ShortcutAction.videoCopyCurrentSecondarySubtitle:
@@ -566,13 +649,12 @@ extension ShortcutActionIcon on ShortcutAction {
       // 学习
       case ShortcutAction.videoToggleFavoriteSentence:
         return FushiIcons.star;
+      case ShortcutAction.videoOpenStatistics:
+        return FushiIcons.barChart;
+      case ShortcutAction.videoToggleStudyClock:
+        return FushiIcons.timer;
       case ShortcutAction.videoEnterCaret:
         return FushiIcons.textFields;
-      // 扫词：同一根「逐词移动」的语义，用前后向的小三角图标区分方向。
-      case ShortcutAction.videoLookupNextWord:
-        return FushiIcons.stepForward;
-      case ShortcutAction.videoLookupPrevWord:
-        return FushiIcons.stepBackward;
 
       // 全 app 共用「返回上一级」：视频页把它解释成逐级退出阶梯。
       case ShortcutAction.globalBack:

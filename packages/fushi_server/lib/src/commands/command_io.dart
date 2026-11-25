@@ -2,7 +2,9 @@
 ///
 /// - 退出码：0 成功、1 业务失败、64 用法错误、66 找不到输入 / 配置、69 依赖不可用
 ///   （缺原生库 / 模型 / 凭据）、75 冲突（数据目录被 serve 或另一条离线命令占着，
-///   与 `ctl` 的 409 → 75 同义）。
+///   与 `ctl` 的 409 → 75 同义）。远程更新装完 / 还原后要求重启用的是另一个专用码
+///   `kExitSelfUpdated`（10，server_self_updater.dart）：服务单元据此「75 不重启、
+///   10 重启」，冲突不会被服务管理器无限重启。
 /// - `--json` 的 stdout 隔离在 CLI 入口整体做（json_stdout_isolation.dart）：后台
 ///   isolate 的 `print`、原生库的 `printf` 一律改道 stderr，命令只管把结果写 stdout。
 /// - `--json`：机器可读结果整段打到 stdout；进度与诊断一律走 stderr，不混进 JSON。
@@ -14,6 +16,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:args/args.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 const int kExitOk = 0;
 const int kExitFailure = 1;
@@ -42,14 +45,18 @@ class CommandIo {
   /// 用法错误：消息 + 用法行打到 stderr，返回 64。
   int usage(String message, String usageLine) {
     err.writeln(message);
-    err.writeln('用法: $usageLine');
+    err.writeln(tr('用法: $usageLine', 'Usage: $usageLine'));
     return kExitUsage;
   }
 }
 
 /// 子命令（`import epub` 里的 `epub`）的叶子参数表上都挂同一个 `--json`。
-ArgParser addJsonFlag(ArgParser parser) =>
-    parser..addFlag('json', negatable: false, help: '输出机器可读 JSON（stdout）');
+ArgParser addJsonFlag(ArgParser parser) => parser
+  ..addFlag(
+    'json',
+    negatable: false,
+    help: tr('输出机器可读 JSON（stdout）', 'Output machine-readable JSON (stdout)'),
+  );
 
 /// 叶子命令有没有要 `--json`。
 bool wantsJson(ArgResults leaf) =>

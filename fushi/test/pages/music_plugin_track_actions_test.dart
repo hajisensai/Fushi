@@ -16,6 +16,9 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
+import 'package:fushi/src/media/music/music_library_data.dart';
+import 'package:fushi/src/media/music/plugin/music_plugins.dart'
+    show musicPluginTrackPath, musicPluginTrackUid;
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
@@ -335,10 +338,31 @@ void main() {
   Finder menuAction(String id) =>
       find.byKey(ValueKey<String>('music-menu-action-$id'));
 
+  /// 开曲目菜单：列表行点行尾「更多」；歌单详情默认的色块格（PR #3397 起歌单
+  /// 曲目默认排成色块，行尾没有「更多」）整块右键 = 同一份菜单。
   Future<void> openTrackMenu(WidgetTester tester, String id) async {
-    await tester.tap(
-      find.byKey(ValueKey<String>('music-plugin-track-menu-$id')),
+    final Finder button = find.byKey(
+      ValueKey<String>('music-plugin-track-menu-$id'),
     );
+    if (button.evaluate().isNotEmpty) {
+      await tester.tap(button);
+      await tester.pumpAndSettle();
+      return;
+    }
+    await rightClick(
+      tester,
+      find.byKey(ValueKey<String>('music-plugin-track-$id')),
+    );
+  }
+
+  /// 点菜单里的 [label] 一项。曲目菜单项多（「下一首播放」「加入播放队列」排在最上），
+  /// 800×600 测试面上锚点上下都放不下整份菜单时，菜单按 showFushiMenu 的定位规则限高、
+  /// 菜单内滚动；靠下的项要像用户一样先滚进可见区再点。
+  Future<void> tapMenuItem(WidgetTester tester, String label) async {
+    final Finder item = find.text(label);
+    await tester.ensureVisible(item);
+    await tester.pumpAndSettle();
+    await tester.tap(item);
     await tester.pumpAndSettle();
   }
 
@@ -357,8 +381,7 @@ void main() {
     ]) {
       expect(find.text(label), findsOneWidget, reason: label);
     }
-    await tester.tap(find.text(t.music_action_remove_from_playlist));
-    await tester.pumpAndSettle();
+    await tapMenuItem(tester, t.music_action_remove_from_playlist);
     expect(app.manager.log, <String>[
       'playlist:$_mine',
       'remove:$_mine:1',
@@ -385,8 +408,7 @@ void main() {
   testWidgets('以这首起电台：按种子取一批并开播、来源记成该电台', (WidgetTester tester) async {
     await pumpPlaylist(tester, _other);
     await openTrackMenu(tester, '1');
-    await tester.tap(find.text(t.music_action_start_station));
-    await tester.pumpAndSettle();
+    await tapMenuItem(tester, t.music_action_start_station);
     expect(app.manager.log, contains('radio:1'));
     final MusicPlayerEngine engine = app.musicSession.engine;
     expect(engine.current?.title, 'Track r1');
@@ -622,7 +644,7 @@ void main() {
     await tester.pumpWidget(const SizedBox.shrink());
   });
 
-  testWidgets('本地曲目列表整行右键：播放 / 曲目详情；不加行尾「⋯」', (WidgetTester tester) async {
+  testWidgets('本地曲目列表整行右键：播放 / 曲目详情；行尾有「⋯」（触屏入口）', (WidgetTester tester) async {
     const MusicTrackRow track = MusicTrackRow(
       trackUid: 'lt1',
       path: '/m/local.flac',
@@ -645,7 +667,7 @@ void main() {
     );
     expect(
       find.byKey(const ValueKey<String>('music-track-menu-lt1')),
-      findsNothing,
+      findsOneWidget,
     );
     await rightClick(
       tester,
@@ -653,9 +675,197 @@ void main() {
     );
     expect(menuAction('play'), findsOneWidget);
     expect(menuAction('detail'), findsOneWidget);
+    // 纯音频没有「在视频播放器中观看」。
+    expect(menuAction('watchVideo'), findsNothing);
     await tester.tap(menuAction('play'));
     await tester.pumpAndSettle();
     expect(app.musicSession.engine.current?.title, 'Local One');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('本地 MV（曲库里的 mkv）：行上标 MV，菜单给「在视频播放器中观看」', (
+    WidgetTester tester,
+  ) async {
+    // 拍板台 jeNKF9u0WJ：音乐来源里的视频容器进曲库，标 MV，看画面交给视频播放页。
+    const MusicTrackRow track = MusicTrackRow(
+      trackUid: 'mv1',
+      path: '/m/Song MV.mkv',
+      title: 'Song MV',
+      artistCredit: 'Artist',
+      codec: 'unknown',
+      isLossless: false,
+      fileMtimeAt: 1,
+      fileSize: 1,
+      hasEmbeddedCover: false,
+      addedAt: 1,
+    );
+    await pumpHome(
+      tester,
+      const Scaffold(
+        body: MusicTrackList(
+          tracks: <MusicTrackRow>[track],
+          albums: <String, MusicAlbumRow>{},
+          context: MusicQueueContext.mixed,
+        ),
+      ),
+    );
+    expect(find.textContaining('Artist · MV'), findsOneWidget);
+    await rightClick(
+      tester,
+      find.byKey(const ValueKey<String>('music-track-mv1')),
+    );
+    expect(menuAction('play'), findsOneWidget);
+    expect(menuAction('watchVideo'), findsOneWidget);
+    expect(find.text('Watch in video player'), findsOneWidget);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('网络来源的 MV（WebDAV 上的 mkv）：标 MV，但菜单不给「在视频播放器中观看」', (
+    WidgetTester tester,
+  ) async {
+    // 网络曲目的 path 是 URL，视频播放页没有本地文件可开：只放音轨，不给必然打不开的入口。
+    const MusicTrackRow track = MusicTrackRow(
+      trackUid: 'mvnet1',
+      path: 'https://dav.example/music/Song MV.mkv',
+      title: 'Net MV',
+      artistCredit: 'Artist',
+      codec: 'unknown',
+      isLossless: false,
+      fileMtimeAt: 1,
+      fileSize: 1,
+      hasEmbeddedCover: false,
+      addedAt: 1,
+    );
+    await pumpHome(
+      tester,
+      const Scaffold(
+        body: MusicTrackList(
+          tracks: <MusicTrackRow>[track],
+          albums: <String, MusicAlbumRow>{},
+          context: MusicQueueContext.mixed,
+        ),
+      ),
+    );
+    expect(find.textContaining('Artist · MV'), findsOneWidget);
+    await rightClick(
+      tester,
+      find.byKey(const ValueKey<String>('music-track-mvnet1')),
+    );
+    expect(menuAction('play'), findsOneWidget);
+    expect(menuAction('watchVideo'), findsNothing);
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  // ── 远程曲目加入音乐库 / 本地歌单（v148，反馈 0tRY-D2JgG）──
+
+  testWidgets('插件曲目菜单：加入音乐库 → 落远程曲目行；再开菜单变成「从音乐库移除」', (
+    WidgetTester tester,
+  ) async {
+    await pumpPlaylist(tester, _other);
+    await openTrackMenu(tester, '1');
+    expect(menuAction('addToLocalPlaylist'), findsOneWidget);
+    expect(find.text(t.music_action_add_to_local_playlist), findsOneWidget);
+    await tester.tap(menuAction('addToLibrary'));
+    await tester.pumpAndSettle();
+    final MusicRemoteTrackRow row = (await db.getMusicRemoteTrack(
+      musicPluginTrackUid(_pluginId, '1'),
+    ))!;
+    expect(row.kind, 'plugin');
+    expect(row.sourceKey, _pluginId);
+    expect(row.itemId, '1');
+    expect(row.title, 'Track 1');
+    expect(row.libraryAddedAt, isNotNull);
+
+    await openTrackMenu(tester, '1');
+    expect(menuAction('addToLibrary'), findsNothing);
+    await tester.tap(menuAction('removeFromLibrary'));
+    await tester.pumpAndSettle();
+    expect(
+      (await db.getMusicRemoteTrack(
+        musicPluginTrackUid(_pluginId, '1'),
+      ))?.libraryAddedAt,
+      isNull,
+    );
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('插件曲目菜单「加入本地歌单」→ 新建歌单：条目与远程曲目行同时落库', (WidgetTester tester) async {
+    await pumpPlaylist(tester, _other);
+    await openTrackMenu(tester, '2');
+    await tester.tap(menuAction('addToLocalPlaylist'));
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(t.music_action_new_playlist));
+    await tester.pumpAndSettle();
+    await tester.enterText(find.byType(TextField), 'Road');
+    await tester.testTextInput.receiveAction(TextInputAction.done);
+    await tester.pumpAndSettle();
+    final MusicPlaylistRow p = (await db.listMusicPlaylists()).single;
+    expect(p.name, 'Road');
+    final List<MusicPlaylistEntryRow> entries = await db
+        .listMusicPlaylistEntries(p.playlistUid);
+    expect(entries.single.trackUid, musicPluginTrackUid(_pluginId, '2'));
+    final MusicRemoteTrackRow row = (await db.getMusicRemoteTrack(
+      musicPluginTrackUid(_pluginId, '2'),
+    ))!;
+    expect(row.libraryAddedAt, isNull, reason: '加进歌单不等于加入音乐库');
+    await tester.pumpWidget(const SizedBox.shrink());
+  });
+
+  testWidgets('混排曲目列表：远程曲目行带「⋯」菜单，点行以整列为队列从这首起播', (WidgetTester tester) async {
+    const MusicTrackRow local = MusicTrackRow(
+      trackUid: 'lt1',
+      path: '/m/local.flac',
+      title: 'Local One',
+      isLossless: true,
+      fileMtimeAt: 1,
+      fileSize: 1,
+      hasEmbeddedCover: false,
+      addedAt: 1,
+    );
+    final String uid = musicPluginTrackUid(_pluginId, '9');
+    final MusicRemoteTrackRow remote = MusicRemoteTrackRow(
+      trackUid: uid,
+      kind: 'plugin',
+      sourceKey: _pluginId,
+      itemId: '9',
+      title: 'Remote Nine',
+      artist: 'Singer',
+      libraryAddedAt: 5,
+      createdAt: 5,
+      updatedAt: 5,
+    );
+    await pumpHome(
+      tester,
+      Scaffold(
+        body: MusicTrackList.entries(
+          entries: <MusicLibraryEntry>[
+            const MusicLocalEntry(local),
+            MusicRemoteEntry(remote),
+          ],
+          albums: const <String, MusicAlbumRow>{},
+          context: MusicQueueContext.mixed,
+        ),
+      ),
+    );
+    expect(find.text('Singer · $_pluginId'), findsOneWidget);
+    await tester.tap(find.byKey(ValueKey<String>('music-track-$uid')));
+    await tester.pumpAndSettle();
+    final MusicPlayerEngine engine = app.musicSession.engine;
+    expect(engine.current?.title, 'Remote Nine');
+    expect(engine.current?.trackUid, uid);
+    expect(engine.current?.path, musicPluginTrackPath(_pluginId, '9'));
+    expect(engine.queue.map((MusicPlayItem i) => i.trackUid), <String>[
+      'lt1',
+      uid,
+    ]);
+
+    await tester.tap(
+      find.byKey(ValueKey<String>('music-remote-track-menu-$uid')),
+    );
+    await tester.pumpAndSettle();
+    expect(menuAction('play'), findsOneWidget);
+    expect(menuAction('removeFromLibrary'), findsOneWidget);
+    expect(menuAction('addToLocalPlaylist'), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
   });
 }

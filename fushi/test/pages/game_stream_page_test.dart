@@ -5,6 +5,9 @@ import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_resource_source.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
+import 'package:fushi/src/second_screen/companion/companion_context.dart';
+import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
+import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
@@ -109,6 +112,44 @@ void main() {
     );
     expect(sent.last.x, sent.first.x);
     expect(sent.last.y, sent.first.y);
+  });
+
+  testWidgets('the stream owns the raw controller while it is on screen '
+      '(companion lookup mode / R1 panel drive stand down)', (
+    WidgetTester tester,
+  ) async {
+    final CompanionContextRegistry registry = CompanionContextRegistry()
+      ..bindControllerSink(_PanelSink())
+      ..setActive(true);
+    addTearDown(registry.dispose);
+    final ControllerLookupMode mode = ControllerLookupMode(registry: registry);
+    addTearDown(mode.dispose);
+    final GameStreamInputComposer composer = GameStreamInputComposer(
+      sessionId: 's1',
+      clientId: 'c1',
+      sender: (GameStreamInputEvent event) async =>
+          GameStreamInputAck(sequence: event.sequence, accepted: true),
+    );
+    expect(mode.onPress(GamepadButton.rb), isTrue);
+    expect(mode.onRelease(GamepadButton.rb), isTrue);
+    await tester.pumpWidget(
+      MaterialApp(
+        home: GameStreamPage(
+          sessionId: 's1',
+          clientId: 'c1',
+          inputComposer: composer,
+          videoPlaceholder: const Text('frame'),
+          controllerLookupMode: mode,
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(mode.rawInputClaimed, isTrue);
+    expect(mode.onPress(GamepadButton.rb), isFalse);
+    expect(mode.onRelease(GamepadButton.rb), isFalse);
+    await tester.pumpWidget(const MaterialApp(home: SizedBox()));
+    expect(mode.rawInputClaimed, isFalse);
+    expect(mode.onPress(GamepadButton.rb), isTrue);
   });
 
   testWidgets('focused gamepad holds input and releases on focus loss', (
@@ -481,4 +522,18 @@ class _Transport implements GameStreamTransport {
     required Map<String, dynamic> body,
     required Duration timeout,
   }) async => const GameStreamPostResult(json: null);
+}
+
+class _PanelSink implements CompanionControllerSink {
+  @override
+  bool get lookupOpen => false;
+
+  @override
+  bool sendLookupAction(
+    String action, [
+    Map<String, Object?> args = const <String, Object?>{},
+  ]) => true;
+
+  @override
+  bool sendPanelNav(String action) => true;
 }

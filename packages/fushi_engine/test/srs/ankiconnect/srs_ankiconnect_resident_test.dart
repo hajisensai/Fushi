@@ -136,16 +136,11 @@ void main() {
     final SrsStorage srs = await openTestSrsStorage();
     t = DateTime.utc(2026, 10, 14, 12).millisecondsSinceEpoch;
     store = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: kAcProfile,
       deviceId: 'dev',
       engine: const SrsFakeEngine(),
-      trustedClock: SrsTrustedClock(
-        wallClockMs: () => t,
-        bootClockMs: () => t,
-        bootId: 'boot',
-      ),
+      trustedClock: SrsTrustedClock(wallClockMs: () => t, bootClockMs: () => t),
       fallbackRolloverHour: () => 4,
     );
     resident = SrsAnkiConnectHandler(
@@ -371,7 +366,7 @@ void main() {
   });
 
   test('未知整数 id：不重建索引，直接回空', () async {
-    final CountingInterceptor counter = CountingInterceptor();
+    final SrsReadCounter counter = SrsReadCounter();
     final Directory dir = Directory.systemTemp.createTempSync('srs_ac_');
     addTearDown(() {
       try {
@@ -380,12 +375,8 @@ void main() {
         // 句柄晚释放。
       }
     });
-    final TestSrs srs = await openTestSrsAt(
-      '${dir.path}/srs.db',
-      interceptor: counter,
-    );
+    final TestSrs srs = openTestSrsIn(dir.path);
     final SrsDbStore s = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: kAcProfile,
       deviceId: 'dev',
@@ -452,7 +443,8 @@ void main() {
             }))!
             as List<Object?>;
     expect(added.whereType<int>(), hasLength(50));
-    expect(f.counter.transactions, 1, reason: f.counter.summary());
+    // 50 条一次落库：一条 `apply`，内核在它自己的 SAVEPOINT 里连同缓存与本机状态行一起提交，不开 Drift 事务。
+    expect(f.counter.transactions, 0, reason: f.counter.summary());
 
     // 写后的下一次请求只补读变了的 50 条（连同它们的卡），不整库重读。
     f.counter.reset();

@@ -21,7 +21,7 @@ import 'dart:ui' as ui;
 import 'package:flutter/foundation.dart'
     show ValueListenable, defaultTargetPlatform;
 import 'package:flutter/rendering.dart'
-    show RenderObjectVisitor, RenderOffstage, RenderProxyBox, SelectedContent;
+    show RenderObjectVisitor, RenderOffstage, RenderProxyBox;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_anki/fushi_anki.dart' show CardSourceLink;
@@ -44,10 +44,13 @@ import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/anki/card_source_origin.dart'
     show CardSourceLocatorText, cardSourceKindIcon;
-import 'package:fushi/src/anki/card_source_router.dart' show openCardSource;
+import 'package:fushi/src/anki/card_source_router.dart'
+    show cardSourceOpenerProvider, openCardSource;
 import 'package:fushi/src/models/app_model.dart' show appProvider;
 import 'package:fushi/src/models/content_font_chain.dart';
+import 'package:fushi/src/models/font_face_weight.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_source_jump.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_defs_scroll_window.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
@@ -62,7 +65,7 @@ import 'package:fushi/src/srs/srs_card_video_channel.dart';
 import 'package:fushi/src/srs/srs_card_defs_layout.dart';
 import 'package:fushi/src/srs/srs_card_tokens.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -78,8 +81,6 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
-import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 export 'package:fushi/src/srs/srs_fushi_card_plan.dart'
@@ -400,22 +401,13 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       host(names);
       return;
     }
-    if (names.isNotEmpty) await _play(names.first);
-  }
-
-  Future<void> _play(String name) async {
-    SrsMediaStore? store;
-    try {
-      store = await ref.read(srsMediaStoreProvider.future);
-    } catch (e, stack) {
-      ErrorLogService.instance.log('SrsFushiCardView.mediaStore', e, stack);
+    if (names.isNotEmpty) {
+      await srsPlayCardSoundFile(
+        ref,
+        names.first,
+        logTag: 'SrsFushiCardView.mediaStore',
+      );
     }
-    final File? file = store?.resolve(name);
-    if (file == null || !await file.exists()) {
-      FushiToast.show(msg: t.srs_media_missing(name: name));
-      return;
-    }
-    await ref.read(srsSoundPlayerProvider)(file.path);
   }
 
   void _onDefsHeight(double h) {
@@ -510,14 +502,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   /// 不在它的子树里；WebView 自己声明手势（[srsCardFaceGestureRecognizers]）。
   Widget _selectable(Widget child, {FocusNode? focusNode}) => SelectionArea(
     focusNode: focusNode ?? _selectionFocus,
-    // 复习时编辑：原生区选中的文字交给复习页（没有序号；整页清空选区不报）。
-    onSelectionChanged: widget.face.onEditSelection == null
-        ? null
-        : (SelectedContent? content) {
-            final String text = content?.plainText ?? '';
-            if (text.trim().isEmpty) return;
-            widget.face.onEditSelection!(SrsCardSelection(text));
-          },
+    // 复习时编辑：原生区选中的文字交给复习页。
+    onSelectionChanged: srsCardSelectionReporter(widget.face),
     child: child,
   );
 
@@ -813,11 +799,13 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   /// 也从同一个 x 起头。词条独占整行宽：手机上不再与右侧缩略图抢宽度（短词被折成两行）。
   ///
   /// 区块布局里词条与读音不相邻时各自成块（[term] / [reading] 只画其一）；发音键属读音区块。
+  /// [sourceJump]：「回到出处」入口落在这里（[_SrsSourceJumpSlot.header]），行尾画 ↩。
   Widget _header(
     _SrsCardStyle s,
     BoxConstraints c, {
     bool term = true,
     bool reading = true,
+    bool sourceJump = false,
   }) {
     final List<String> audio = reading ? _plan.media.word : const <String>[];
     final Widget main = Column(
@@ -856,6 +844,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
               Expanded(child: main),
             ],
           );
+    final CardSourceLink? jumpLink = sourceJump ? _source?.link : null;
     return Padding(
       key: ValueKey<String>(
         term && reading
@@ -865,7 +854,21 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
             : 'srs-fushi-header-reading',
       ),
       padding: EdgeInsets.symmetric(horizontal: s.pad),
-      child: body,
+      child: jumpLink == null
+          ? body
+          // 卡面既没有媒体胶囊也没有例句卡时，「回到出处」的 ↩ 落在词条行尾（unGQ8ykXGJ）。
+          : Row(
+              children: <Widget>[
+                Expanded(child: body),
+                Padding(
+                  padding: EdgeInsetsDirectional.only(start: s.gap / 2),
+                  child: SrsCardSourceJumpButton(
+                    color: s.scheme.primary,
+                    onPressed: () => _openSource(jumpLink),
+                  ),
+                ),
+              ],
+            ),
     );
   }
 
@@ -895,8 +898,9 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   /// 图片 / 视频片段：宽版式左栏与窄版式同一套规则——常见比例铺满栏宽（窄版式就是整屏
   /// 宽），怪比例限高完整显示。窄版式以前是标题右侧 126×118 的缩略图，手机上视频片段
   /// 小得看不清、播放 / 放大 / 重播三个角标挤在一起。
-  Widget? _picture(_SrsCardStyle s) {
-    if (!_plan.shows(FushiCardBlock.picture)) return null;
+  /// [pill]：「回到出处」入口落在媒体上（[_SrsSourceJumpSlot.mediaPill]），左下角压胶囊。
+  Widget? _picture(_SrsCardStyle s, {required bool pill}) {
+    if (!_drawsPicture) return null;
     final String picture = widget.fields['Media']!;
     final SrsPictureLimits limits = srsPictureLimits(
       ref.watch(srsReviewImageSizeProvider),
@@ -909,27 +913,127 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     final String? clip = _plan.media.clip;
     if (clip != null) {
       // 尺寸与图片同一套规则：常见比例铺满栏宽、超过高度上限等比缩小。
-      return SrsCardVideoClip(
+      return _withSourcePill(
+        pill: pill,
+        reserveEnd: true,
+        SrsCardVideoClip(
+          key: const ValueKey<String>('srs-fushi-picture'),
+          name: clip,
+          maxHeight: maxHeight,
+          fillWidth: limits.fillWidth,
+          maxFillHeight: limits.maxFillHeight,
+          radius: s.tokens.radiusSmall,
+        ),
+      );
+    }
+    final String name = srsImageSources(picture).first;
+    return _withSourcePill(
+      pill: pill,
+      reserveEnd: false,
+      _MediaImage(
         key: const ValueKey<String>('srs-fushi-picture'),
-        name: clip,
+        name: name,
+        // 常见比例（视频截图 16:9、4:3 等）铺满栏宽、与例句卡等宽；竖长 / 超宽的怪比例
+        // 限高完整显示。铺满的图有高度上限，再高就整张等比缩小（不裁切），不把例句挤出
+        // 首屏。各上限随「卡面图片大小」设置，见 [srsPictureLimits]。
         maxHeight: maxHeight,
         fillWidth: limits.fillWidth,
         maxFillHeight: limits.maxFillHeight,
         radius: s.tokens.radiusSmall,
-      );
+      ),
+    );
+  }
+
+  /// 背面画不画图片区：区块可见且字段里真有片段或图片（[_picture] 与 [_sourceJumpSlot]
+  /// 同一判据——胶囊画没画在这里定，例句卡 ↩ 据此让位）。
+  bool get _drawsPicture =>
+      _plan.shows(FushiCardBlock.picture) &&
+      (_plan.media.clip != null ||
+          srsImageSources(widget.fields['Media']!).isNotEmpty);
+
+  /// 背面卡面上的「回到出处」入口画在哪（unGQ8ykXGJ）：每面只画一个，与顶栏图标是同一个
+  /// 动作。有媒体素材就是媒体胶囊（写明跳到哪）；没有媒体就是例句卡右侧的 ↩（小说、网页的
+  /// 卡）；连例句卡也没有就落在词条行尾。没有出处、或这一面三处都不画时返回 null。
+  /// [order] 是背面区块布局（[_backBlocks] 按它画）。
+  _SrsSourceJumpSlot? _sourceJumpSlot(List<FushiCardItem> order) {
+    if (_source == null) return null;
+    bool laidOut(FushiCardBlock b) =>
+        order.any((FushiCardItem x) => x is FushiCardBlockItem && x.block == b);
+    if (laidOut(FushiCardBlock.picture) && _drawsPicture) {
+      return _SrsSourceJumpSlot.mediaPill;
     }
-    final String? name = srsImageSources(picture).firstOrNull;
-    if (name == null) return null;
-    return _MediaImage(
-      key: const ValueKey<String>('srs-fushi-picture'),
-      name: name,
-      // 常见比例（视频截图 16:9、4:3 等）铺满栏宽、与例句卡等宽；竖长 / 超宽的怪比例
-      // 限高完整显示。铺满的图有高度上限，再高就整张等比缩小（不裁切），不把例句挤出
-      // 首屏。各上限随「卡面图片大小」设置，见 [srsPictureLimits]。
-      maxHeight: maxHeight,
-      fillWidth: limits.fillWidth,
-      maxFillHeight: limits.maxFillHeight,
-      radius: s.tokens.radiusSmall,
+    if (laidOut(FushiCardBlock.sentence) &&
+        _plan.shows(FushiCardBlock.sentence)) {
+      return _SrsSourceJumpSlot.sentence;
+    }
+    if (laidOut(FushiCardBlock.term) || laidOut(FushiCardBlock.reading)) {
+      return _SrsSourceJumpSlot.header;
+    }
+    return null;
+  }
+
+  /// 这张卡的出处：按字段顺序第一个可解析的 `fushi://source` 链接（与复习页顶栏「回到出处」
+  /// 同一判据，[cardSourceLinkOfFields]）+ 它所在字段的纯文字（链接锚文本：书名 / 番名…）。
+  ({CardSourceLink link, String title})? get _source {
+    for (final String html in widget.fields.values) {
+      final CardSourceLink? link = CardSourceLink.fromHtml(html).firstOrNull;
+      if (link != null) return (link: link, title: srsPlainText(html));
+    }
+    return null;
+  }
+
+  /// 卡面上所有「回到出处」入口（媒体胶囊、例句卡 ↩、来源行）共用的跳转：交给宿主的
+  /// [SrsCardFace.onSourceLink]（复习页 = 顶栏「回到出处」按钮那一个动作）；宿主没接时
+  /// （外观预览等）直接 [openCardSource]。
+  void _openSource(CardSourceLink link) {
+    final void Function(CardSourceLink link)? host = widget.face.onSourceLink;
+    if (host != null) {
+      host(link);
+      return;
+    }
+    srsRunLogged(
+      'SrsFushiCardView.openSource',
+      () => ref.read(cardSourceOpenerProvider)(ref: ref, link: link),
+    );
+  }
+
+  /// 媒体素材左下角压一颗「回到出处」胶囊（设计稿 #15 方案 A）；[pill] 为假或没有出处时
+  /// 原样返回。[reserveEnd]：视频片段右下角有重播角标（48dp），胶囊不伸进去（画面太窄时不让）。
+  Widget _withSourcePill(
+    Widget media, {
+    required bool pill,
+    required bool reserveEnd,
+  }) {
+    final ({CardSourceLink link, String title})? source = pill ? _source : null;
+    if (source == null) return media;
+    return Stack(
+      children: <Widget>[
+        media,
+        PositionedDirectional(
+          start: 0,
+          end: 0,
+          bottom: 0,
+          child: LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints c) => Padding(
+              padding: EdgeInsetsDirectional.only(
+                end: reserveEnd && c.maxWidth > 2 * kMinInteractiveDimension
+                    ? kMinInteractiveDimension
+                    : 0,
+              ),
+              child: Align(
+                alignment: AlignmentDirectional.bottomStart,
+                heightFactor: 1,
+                child: SrsCardSourceJumpPill(
+                  link: source.link,
+                  title: source.title,
+                  database: () => ref.read(appProvider).database,
+                  onPressed: () => _openSource(source.link),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
     );
   }
 
@@ -950,7 +1054,8 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     );
   }
 
-  Widget? _sentence(_SrsCardStyle s) {
+  /// [sourceJump]：「回到出处」入口落在例句卡（[_SrsSourceJumpSlot.sentence]），右侧画 ↩。
+  Widget? _sentence(_SrsCardStyle s, {required bool sourceJump}) {
     final Map<String, String> f = widget.fields;
     if (!_plan.shows(FushiCardBlock.sentence)) return null;
     final bool showRuby = _sentenceRuby;
@@ -1047,6 +1152,16 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
               ],
             ),
           ),
+          // 例句卡右侧的小 ↩：只在卡面没有媒体胶囊时画（没有媒体素材的卡：小说、网页），
+          // 有胶囊时不再重复一个入口（unGQ8ykXGJ）。
+          if (sourceJump && _source != null)
+            Padding(
+              padding: EdgeInsetsDirectional.only(start: s.gap / 2),
+              child: SrsCardSourceJumpButton(
+                color: s.scheme.primary,
+                onPressed: () => _openSource(_source!.link),
+              ),
+            ),
         ],
       ),
     );
@@ -1160,6 +1275,12 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     required Widget Function(FushiCardItem item, Widget child, bool first) wrap,
   }) {
     final List<FushiCardItem> order = _plan.back;
+    final _SrsSourceJumpSlot? jump = _sourceJumpSlot(order);
+    final bool headerJump = jump == _SrsSourceJumpSlot.header;
+    final bool termLaidOut = order.any(
+      (FushiCardItem x) =>
+          x is FushiCardBlockItem && x.block == FushiCardBlock.term,
+    );
     bool isBlock(int i, FushiCardBlock b) =>
         i >= 0 &&
         i < order.length &&
@@ -1179,14 +1300,25 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       final Widget? w = switch (x) {
         FushiCardBlockItem(block: FushiCardBlock.term) =>
           isBlock(i + 1, FushiCardBlock.reading)
-              ? _header(s, c)
-              : _header(s, c, reading: false),
+              ? _header(s, c, sourceJump: headerJump)
+              : _header(s, c, reading: false, sourceJump: headerJump),
         FushiCardBlockItem(block: FushiCardBlock.reading) =>
           isBlock(i - 1, FushiCardBlock.term)
               ? null
-              : _header(s, c, term: false),
-        FushiCardBlockItem(block: FushiCardBlock.picture) => _picture(s),
-        FushiCardBlockItem(block: FushiCardBlock.sentence) => _sentence(s),
+              : _header(
+                  s,
+                  c,
+                  term: false,
+                  sourceJump: headerJump && !termLaidOut,
+                ),
+        FushiCardBlockItem(block: FushiCardBlock.picture) => _picture(
+          s,
+          pill: jump == _SrsSourceJumpSlot.mediaPill,
+        ),
+        FushiCardBlockItem(block: FushiCardBlock.sentence) => _sentence(
+          s,
+          sourceJump: jump == _SrsSourceJumpSlot.sentence,
+        ),
         FushiCardBlockItem(block: FushiCardBlock.frequency) => _metaRow(
           s,
           FushiCardBlock.frequency,
@@ -1205,7 +1337,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
   }
 
   /// 卡面上的一段 HTML（字段区块 / HTML 区块）：原生 HTML 渲染器画（能不能画由
-  /// [srsFushiCardItemsNative] 事先判过，画不了的卡整张走 WebView，不会到这里）。
+  /// [srsFushiCardItemsFallback] 事先判过，画不了的卡整张走 WebView，不会到这里）。
   Widget? _htmlFragment(String html, String key) {
     if (html.trim().isEmpty) return null;
     final SrsHtmlCardFace? face = srsHtmlFragmentProbe(
@@ -1250,6 +1382,24 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
                 : AlignmentDirectional.centerStart,
             child: _Chip(text: srsPlainText(value), style: s),
           ),
+          // 大号发音键（听力预设正面）：与听力卡题面那颗同一按钮，每段音频一颗。
+          FushiCardFieldStyle.audio => switch (srsAudioSources(value)) {
+            final List<String> names when names.isNotEmpty => Wrap(
+              alignment: front ? WrapAlignment.center : WrapAlignment.start,
+              spacing: s.pad,
+              runSpacing: s.pad,
+              children: <Widget>[
+                for (final String name in names)
+                  _AudioButton(
+                    name: name,
+                    large: true,
+                    style: s,
+                    onPlay: (String n) => _playNames(<String>[n]),
+                  ),
+              ],
+            ),
+            _ => null,
+          },
           _ => _htmlFragment(
             srsFushiItemHtml(item, widget.fields) ?? '',
             '$key-body',
@@ -1305,10 +1455,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
       child: InkWell(
         key: const ValueKey<String>('srs-fushi-source-link'),
         borderRadius: BorderRadius.all(Radius.circular(s.tokens.radiusInner)),
-        onTap: () => srsRunLogged(
-          'SrsFushiCardView.openSource',
-          () => openCardSource(ref: ref, link: link),
-        ),
+        onTap: () => _openSource(link),
         // 出处 = 种类图标 + 标题（链接锚文本：书名 / 番名 / 歌名 / 游戏名）+ 定位
         // （第几集 · 时间 / 第几页，[CardSourceLocatorText]）。
         child: Row(
@@ -1331,7 +1478,7 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
             const SizedBox(width: 6),
             Flexible(
               child: CardSourceLocatorText(
-                database: ref.read(appProvider).database,
+                database: () => ref.read(appProvider).database,
                 link: link,
                 style: s.text(s.tokens.caption, color: s.muted, ui: true),
               ),
@@ -1344,16 +1491,13 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
     );
   }
 
-  SrsCardFace _defsFace({required bool wide}) => SrsCardFace(
+  // 键盘桥、页面缩放 / Ctrl+滚轮缩放、来源链接、发音、卡面手势、点图放大由 [SrsCardFace.derived]
+  // 沿用整面卡的宿主回调（以前逐字段手抄漏了点图放大，BUG-4734）。
+  SrsCardFace _defsFace({required bool wide}) => widget.face.derived(
     cardId: '${widget.face.cardId}#defs',
     showingAnswer: true,
     bodyHtml: widget.definitionsHtml,
-    css: widget.face.css,
-    languageCode: widget.face.languageCode,
-    onBridgeKey: widget.face.onBridgeKey,
-    bridgeKeys: widget.face.bridgeKeys,
     layout: wide ? SrsCardLayout.wide : SrsCardLayout.narrow,
-    pageZoom: widget.face.pageZoom,
     fushiCard: true,
     onContentHeight: wide ? null : _onDefsHeight,
     pageWindow: wide ? null : _defsWindow,
@@ -1374,19 +1518,18 @@ class _SrsFushiCardViewState extends ConsumerState<SrsFushiCardView> {
         // 主词典通栏 + 其他词典分列，展开规则跟查词设置（srs_card_defs_layout.dart）。
         '${ref.watch(srsDefsLayoutCssProvider)}'
         // 卡面外观：释义显示前几本词典、释义对齐 / 首行缩进（只改显示，字段不动）。
-        '${srsDefsAppearanceCss(ref.watch(srsCardAppearanceProvider))}',
-    hostScript: kSrsDefsLayoutScript,
+        '${srsDefsAppearanceCss(ref.watch(srsCardAppearanceProvider))}'
+        // 词典插图：对齐查词弹窗的最小宽度，并随「卡面图片大小」放大（外字 / 小图标不动）。
+        '${srsDefsIllustrationCss(ref.watch(srsReviewImageSizeProvider), maxHeight: wide ? '${kSrsReviewLargeImageMaxVh}vh' : '${(_viewport * kSrsReviewLargeImageMaxVh / 100).round()}px')}',
+    hostScript: kSrsDefsIllustrationScript + kSrsDefsLayoutScript,
     onWheel: wide ? null : _onDefsWheel,
-    onSourceLink: widget.face.onSourceLink,
     // 释义区不在自动播放清单里（[SrsFushiCardPlan] 只收原生区画出来的媒体）：词典 HTML 里
     // 收起 / 隐藏的 `<audio autoplay>` 不许自己出声，自动播放只走宿主序列（HrB0STYm3E）。
     // 用户在释义里点按发音照常放行（闸门只拦手势外的播放）。
     autoplayMedia: false,
-    // 释义里的发音按钮同样交给复习页的序列（同一时刻只出一路声音）。
-    onPlayAudio: widget.face.onPlayAudio,
-    // 释义区的卡面手势由页内指针脚本回报（原生区那一层见 [SrsCardGestureRegion]）。
-    onCardGesture: widget.face.onCardGesture,
-    gestureArming: widget.face.gestureArming,
+    // 同理不上报可见发音键：自动播放 / 底栏重播 / R 重播的清单只认原生区（释义里的发音按钮照样
+    // 经沿用的 onPlayAudio 交给复习页的序列，同一时刻只出一路声音）。
+    onVisibleSounds: null,
     // 释义页整页就是释义字段：选区序号对得上字段里的序号，且只在释义字段里找。
     onEditSelection: widget.face.onEditSelection == null
         ? null
@@ -1676,11 +1819,12 @@ class _SrsCardStyle {
   double indentOf(TextStyle style, int chars) =>
       chars <= 0 ? 0 : chars * (style.fontSize ?? 16);
 
-  TextStyle term(TextStyle role, {double scale = 1}) => text(
-    role,
-    scale: scale,
-    height: 1.25,
-  ).copyWith(fontWeight: FontWeight.w600);
+  /// 词头：w600，但单字重的用户字体不请求（会被合成假粗体糊字，见
+  /// [withFaceSafeWeight]），保持其原字重、靠字号区分。
+  TextStyle term(TextStyle role, {double scale = 1}) => withFaceSafeWeight(
+    text(role, scale: scale, height: 1.25),
+    FontWeight.w600,
+  );
 }
 
 // ---------------------------------------------------------------- 组件
@@ -1715,7 +1859,10 @@ class SrsRubyText extends StatelessWidget {
   final Color? emphasis;
 
   TextStyle _styleOf(SrsInline s) => style.copyWith(
-    fontWeight: s.bold ? FontWeight.w700 : null,
+    // 单字重用户字体不请求 w700（会合成假粗体），只靠强调色区分。
+    fontWeight: s.bold
+        ? faceSafeFontWeight(style.fontFamily, FontWeight.w700)
+        : null,
     fontStyle: s.italic ? FontStyle.italic : null,
     decoration: s.underline ? TextDecoration.underline : null,
     color: s.bold && emphasis != null ? emphasis : null,
@@ -1787,49 +1934,13 @@ class SrsRubyText extends StatelessWidget {
       if (s.ruby == null) {
         spans.add(TextSpan(text: s.text, style: _styleOf(s)));
       } else {
-        Widget tag(Widget child, {required bool isRuby}) => lookup
-            ? MetaData(
-                metaData: SrsLookupRubySegment(
-                  fullStart: fullStart,
-                  isRuby: isRuby,
-                ),
-                child: child,
-              )
-            : child;
-        // 按基线对齐，基线取基字（不是上面的注音）：注音段与旁边的普通字落在
-        // 同一条基线上。WidgetSpan 的子组件已由 Text.rich 按 textScaler 整体缩放，
-        // 里面的 Text 不能再缩一次（否则带注音的字比旁边的大一圈）。
         spans.add(
-          WidgetSpan(
-            alignment: PlaceholderAlignment.baseline,
-            baseline: TextBaseline.alphabetic,
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                SrsNoBaseline(
-                  child: tag(
-                    Text(
-                      s.ruby!,
-                      style: rubyStyle.copyWith(height: 1.1),
-                      maxLines: 1,
-                      softWrap: false,
-                      textScaler: TextScaler.noScaling,
-                    ),
-                    isRuby: true,
-                  ),
-                ),
-                tag(
-                  Text(
-                    s.text,
-                    style: _styleOf(s),
-                    maxLines: 1,
-                    softWrap: false,
-                    textScaler: TextScaler.noScaling,
-                  ),
-                  isRuby: false,
-                ),
-              ],
-            ),
+          srsRubyWidgetSpan(
+            reading: s.ruby!,
+            base: s.text,
+            rubyStyle: rubyStyle,
+            baseStyle: _styleOf(s),
+            lookupFullStart: lookup ? fullStart : null,
           ),
         );
       }
@@ -1845,6 +1956,64 @@ class SrsRubyText extends StatelessWidget {
   }
 }
 
+/// 注音段的行内组件（注音在上、基字在下），两套原生卡面（Fushi 卡面的 [SrsRubyText]、
+/// 原生 HTML 卡面的行内排版）共用。读音只来自卡片内容自带的 ruby，这里不推断。
+///
+/// 按基线对齐，基线取基字（不是上面的注音，见 [SrsNoBaseline]）：注音段与旁边的普通字落在
+/// 同一条基线上。WidgetSpan 的子组件已由 Text.rich 按 textScaler 整体缩放，里面的 Text
+/// 不能再缩一次（否则带注音的字比旁边的大一圈）。
+///
+/// [lookupFullStart] 非空 = 标成可取词（[SrsLookupRubySegment]）：值是这段基字在整段纯文本
+/// 里的起点，点基字 / 注音都换算回它。
+WidgetSpan srsRubyWidgetSpan({
+  required String reading,
+  required String base,
+  required TextStyle rubyStyle,
+  required TextStyle baseStyle,
+  int? lookupFullStart,
+}) {
+  Widget tag(Widget child, {required bool isRuby}) => lookupFullStart == null
+      ? child
+      : MetaData(
+          metaData: SrsLookupRubySegment(
+            fullStart: lookupFullStart,
+            isRuby: isRuby,
+          ),
+          child: child,
+        );
+  return WidgetSpan(
+    alignment: PlaceholderAlignment.baseline,
+    baseline: TextBaseline.alphabetic,
+    child: Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        SrsNoBaseline(
+          child: tag(
+            Text(
+              reading,
+              style: rubyStyle.copyWith(height: 1.1),
+              maxLines: 1,
+              softWrap: false,
+              textScaler: TextScaler.noScaling,
+            ),
+            isRuby: true,
+          ),
+        ),
+        tag(
+          Text(
+            base,
+            style: baseStyle,
+            maxLines: 1,
+            softWrap: false,
+            textScaler: TextScaler.noScaling,
+          ),
+          isRuby: false,
+        ),
+      ],
+    ),
+  );
+}
+
 /// 不对外报告基线的包装：Column 取「第一个有基线的孩子」作自己的基线，注音行包上它
 /// 后，注音段的基线就是下面基字的基线。
 /// 不上屏的预热位（释义 WebView 正面预建 / 保活）：与 [Offstage] 一样不画、不接命中，
@@ -1853,7 +2022,7 @@ class SrsRubyText extends StatelessWidget {
 ///
 /// 为什么不用 [Offstage]：释义子树由 GlobalKey 从背面（语义可见）挪进来时（预览切回正面、
 /// 复习换下一张），[RenderOffstage] 不遍历子树语义，挪过来的语义节点仍指着背面那棵已卸下
-/// 的父节点；Flutter 3.47 的 flushSemantics 照这条过期父链算几何，触发
+/// 的父节点；Flutter 3.47 起（3.50.0 仍是）的 flushSemantics 照这条过期父链算几何，触发
 /// `computeChildGeometry` 的「父不是祖先」断言（无障碍开启时每次背面 → 正面都炸）。
 class SrsWarmOffstage extends SingleChildRenderObjectWidget {
   const SrsWarmOffstage({super.key, required super.child});
@@ -1988,11 +2157,13 @@ class SrsPitchGraph extends StatelessWidget {
       ),
       child: Text(
         '$p',
-        style: style.copyWith(
-          fontSize: math.max(9, base * 0.42),
-          height: 1,
-          color: color,
-          fontWeight: FontWeight.w600,
+        style: withFaceSafeWeight(
+          style.copyWith(
+            fontSize: math.max(9, base * 0.42),
+            height: 1,
+            color: color,
+          ),
+          FontWeight.w600,
         ),
       ),
     );
@@ -2127,9 +2298,10 @@ class _MetaRow extends StatelessWidget {
       children: <Widget>[
         Text(
           label,
-          style: style
-              .text(style.tokens.label, color: style.muted, ui: true)
-              .copyWith(fontWeight: FontWeight.w600),
+          style: withFaceSafeWeight(
+            style.text(style.tokens.label, color: style.muted, ui: true),
+            FontWeight.w600,
+          ),
         ),
         const SizedBox(height: 6),
         child,
@@ -2535,4 +2707,16 @@ ImageProvider<Object>? srsCardImageProvider(String src, SrsMediaStore? store) {
   // AVIF 统一走原生内核（同 resizedFileImage / BUG-3643）：不依赖各平台引擎 codec 是否带
   // AVIF；动图在这里只取首帧（全屏查看用），卡面上的动图播放见 FushiAnimatedAvifImage。
   return isAvifPath(file.path) ? AvifFileImage(file) : FileImage(file);
+}
+
+/// 背面卡面上「回到出处」入口的位置（每面只画一个，见 `_sourceJumpSlot`，unGQ8ykXGJ）。
+enum _SrsSourceJumpSlot {
+  /// 媒体素材左下角的胶囊（[SrsCardSourceJumpPill]）。
+  mediaPill,
+
+  /// 例句卡右侧的 ↩（[SrsCardSourceJumpButton]）。
+  sentence,
+
+  /// 词条行尾的 ↩（既没有媒体也没有例句卡的卡）。
+  header,
 }

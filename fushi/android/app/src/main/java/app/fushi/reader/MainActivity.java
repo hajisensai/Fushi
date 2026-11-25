@@ -4,6 +4,10 @@ package app.fushi.reader;
 
 import android.app.Activity;
 import android.content.Intent;
+import android.content.pm.PackageInfo;
+import android.content.pm.PackageManager;
+import android.content.pm.Signature;
+import android.content.pm.SigningInfo;
 import android.os.Build;
 import android.os.Bundle;
 import android.os.Environment;
@@ -18,6 +22,7 @@ import android.provider.OpenableColumns;
 import android.view.KeyEvent;
 import android.view.MotionEvent;
 import android.view.WindowManager;
+import android.window.SplashScreenView;
 import androidx.annotation.NonNull;
 import android.net.Uri;
 
@@ -36,6 +41,7 @@ import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStream;
+import java.security.MessageDigest;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -119,6 +125,7 @@ public class MainActivity extends AudioServiceActivity {
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
+        StartupTrace.mark("activity-enter");
         // Splash 缓存只设置窗口背景；保留系统 uiMode，让 Flutter 正确跟随系统明暗。
         SharedPreferences splashPrefs = getSharedPreferences(SPLASH_PREFS, MODE_PRIVATE);
         int bgColor = splashPrefs.getInt(PreferenceKeys.SPLASH_BG_COLOR, 0);
@@ -153,12 +160,32 @@ public class MainActivity extends AudioServiceActivity {
                 "Mihon runtime init failed; manga extensions disabled this session", e);
         }
 
+        StartupTrace.mark("activity-pre-super");
         super.onCreate(savedInstanceState);
 
         disableSystemFocusHighlight();
+
+        // Android 12+ 的系统启动画面默认在 app 首帧画出后再淡出约 200 ms，首页（连同
+        // 侧栏、背景）是从启动底色里慢慢透出来的。启动画面本来就是纯色、与首帧同底色
+        // （launch_background），淡出没有东西可过渡：首帧一到直接撤掉。
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            getSplashScreen().setOnExitAnimationListener(SplashScreenView::remove);
+        }
+        StartupTrace.mark("activity-super-create");
         // 阅读器主窗口请求系统最高刷新率（收敛到共享 HighRefreshRate，与查词弹窗
         // PopupDictFlutterActivity / 悬浮窗共用同一实现，见 HighRefreshRate.java）。
         HighRefreshRate.applyToActivity(this);
+        // 「用其他应用打开」/ 分享进来的书（OpenWithChannel）。重建（savedInstanceState
+        // 非空）时 getIntent() 还是当初那个已经收过的 intent，不再收第二次。
+        if (savedInstanceState == null) {
+            OpenWithChannel.offer(this, getIntent());
+        }
+    }
+
+    @Override
+    protected void onNewIntent(@NonNull Intent intent) {
+        super.onNewIntent(intent);
+        OpenWithChannel.offer(this, intent);
     }
 
     // BUG-195: On API 26+ every View defaults to defaultFocusHighlightEnabled=true,
@@ -259,6 +286,7 @@ public class MainActivity extends AudioServiceActivity {
 
     @Override
     protected void onDestroy() {
+        CrossAppAudioChannel.unregisterMain();
         if (ttsChannelHandler != null) {
             ttsChannelHandler.destroy();
         }
@@ -293,7 +321,8 @@ public class MainActivity extends AudioServiceActivity {
             floatingDictChannel = null;
         }
         FloatingBallChannel.detach(getFlutterEngine());
-        GameStreamCompanionDisplay.detach();
+        SecondScreenDisplay.detach();
+        OpenWithChannel.detach();
         ioExecutor.shutdownNow();
         super.onDestroy();
     }
@@ -430,6 +459,8 @@ public class MainActivity extends AudioServiceActivity {
     @Override
     protected void onActivityResult(int requestCode, int resultCode, Intent data) {
         super.onActivityResult(requestCode, resultCode, data);
+        // 上锁作品的系统验证（API 24–28 的确认锁屏页）。
+        if (DeviceOwnerAuthChannel.onActivityResult(requestCode, resultCode)) return;
         if (requestCode == SAF_PICK_DIR_REQUEST) {
             if (pendingSafResult == null) return;
             final MethodChannel.Result safResult = pendingSafResult;
@@ -613,22 +644,41 @@ public class MainActivity extends AudioServiceActivity {
 
     @Override
     public void configureFlutterEngine(@NonNull FlutterEngine flutterEngine) {
+        StartupTrace.mark("engine-ready");
         super.configureFlutterEngine(flutterEngine);
+        StartupTrace.mark("plugins-registered");
+        StartupTrace.registerWith(flutterEngine.getDartExecutor().getBinaryMessenger());
         FloatingDictService.initEngineGroup(getApplicationContext());
+        // 反馈回复后台检查的排程：纯原生 Worker，不起 Flutter 引擎（反馈 yjn-3h8B-7）。
+        app.fushi.reader.feedback.FeedbackReplyWorkChannel.registerWith(
+                flutterEngine, getApplicationContext());
         SelectionActionChannel.registerWith(flutterEngine, this);
+        // 文件分享：Dart 侧先异步落好快照，这里只拼 Intent，主线程不做文件 I/O（BUG-4740）。
+        FushiShareChannel.registerWith(flutterEngine, this);
         SystemOcrChannel.registerWith(flutterEngine, this);
+        // 上锁作品解锁的系统验证（生物识别 / 设备锁屏，拍板台 qiqSbvdxrk）。
+        DeviceOwnerAuthChannel.registerWith(flutterEngine, this);
         ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
+        // 墨水屏全刷的厂商 EPD 通道（反射探测，需要 Activity 的 decorView）。
+        EinkRefreshChannel.registerWith(flutterEngine, this);
         SystemProxyChannel.registerWith(flutterEngine, getApplicationContext());
+        NetworkChangeChannel.registerWith(flutterEngine, getApplicationContext());
         // 上次进程退出原因 + onTrimMemory 记录（Dart previous_exit_log.dart 启动时读一次）。
         ProcessExitChannel.registerWith(flutterEngine, getApplicationContext());
+        // 「用其他应用打开」/ 分享进来的书：content:// 复制进缓存后交 Dart 入库。
+        OpenWithChannel.registerWith(flutterEngine, getApplicationContext());
         MigrationChannelHandler.registerWith(flutterEngine, getApplicationContext());
         DownloadKeepAliveService.registerWith(flutterEngine, getApplicationContext());
+        // 通知渠道显示名跟界面语言（拍板台 left3621）。
+        NotificationChannelNames.registerWith(flutterEngine, getApplicationContext());
         // 全局悬浮球（系统常驻球 + 截屏 OCR）。传 Activity：申请悬浮窗权限 / 发起截屏确认
         // 都要从 Activity 起，不必再补 NEW_TASK。
         FloatingBallChannel.registerWith(flutterEngine, this);
+        // 跨应用语音缓存（拍板 oqk37s3QFL）：主引擎接管采集服务的状态回调。
+        CrossAppAudioChannel.registerWith(flutterEngine, this, true);
         app.fushi.reader.widgets.WidgetChannel.registerWith(flutterEngine, getApplicationContext());
-        // 串流第二块屏：列显示器、把查词面板拉到另一块屏上并转发消息与手柄键。
-        GameStreamCompanionDisplay.registerWith(flutterEngine, this);
+        // 第二块屏宿主（副屏伴侣 / 串流查词面板）：列显示器、把面板拉到另一块屏上并转发消息与手柄键。
+        SecondScreenDisplay.registerWith(flutterEngine, this);
 
         volumeKeyChannel = new MethodChannel(
                 flutterEngine.getDartExecutor().getBinaryMessenger(), VOLUME_KEY_CHANNEL);
@@ -796,6 +846,10 @@ public class MainActivity extends AudioServiceActivity {
                     } catch (Exception e) {
                         result.success(null);
                     }
+                } else if ("buildInfo".equals(call.method)) {
+                    // 构建信息（updates/build_info.dart）：包名、签名证书 SHA-256 与 base APK
+                    // 路径。服务端按构建信息下发通知时用；任何失败都回空列表，不抛。
+                    result.success(readBuildInfo(context));
                 } else {
                     result.notImplemented();
                 }
@@ -1136,6 +1190,8 @@ public class MainActivity extends AudioServiceActivity {
                 }
             });
 
+        // BUG-4326：旧版长按图标菜单同步会把自定义图标快捷方式误置灰，启动时把它恢复。
+        IconSwitchHelper.restoreCustomShortcut(this);
         new MethodChannel(flutterEngine.getDartExecutor().getBinaryMessenger(), ICON_CHANNEL)
             .setMethodCallHandler((call, result) -> {
                 switch (call.method) {
@@ -1242,6 +1298,7 @@ public class MainActivity extends AudioServiceActivity {
                         break;
                 }
             });
+        StartupTrace.mark("channels-installed");
     }
 
     private void persistFloatingLyricOptions(Object rawArgs) {
@@ -1297,6 +1354,61 @@ public class MainActivity extends AudioServiceActivity {
                 .edit()
                 .putBoolean(PreferenceKeys.LYRIC_PLAYING, playing)
                 .apply();
+    }
+
+    /** 包名 + 各签名证书 DER 的小写十六进制 SHA-256 + base APK 路径；失败的字段留空。 */
+    private static Map<String, Object> readBuildInfo(Context context) {
+        Map<String, Object> out = new HashMap<>();
+        List<String> digests = new ArrayList<>();
+        out.put("id", context.getPackageName());
+        out.put("h", digests);
+        out.put("apk", null);
+        try {
+            out.put("apk", context.getApplicationInfo().sourceDir);
+        } catch (Exception ignored) {
+            // 路径取不到时 Dart 侧只用通道给的证书摘要。
+        }
+        try {
+            PackageManager pm = context.getPackageManager();
+            Signature[] certs = null;
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+                PackageInfo info = pm.getPackageInfo(
+                    context.getPackageName(), PackageManager.GET_SIGNING_CERTIFICATES);
+                SigningInfo signing = info.signingInfo;
+                if (signing != null) {
+                    if (signing.hasMultipleSigners()) {
+                        certs = signing.getApkContentsSigners();
+                    } else {
+                        Signature[] history = signing.getSigningCertificateHistory();
+                        if (history != null && history.length > 0) {
+                            certs = new Signature[] {history[history.length - 1]};
+                        }
+                    }
+                }
+            } else {
+                @SuppressWarnings("deprecation")
+                PackageInfo info = pm.getPackageInfo(
+                    context.getPackageName(), PackageManager.GET_SIGNATURES);
+                @SuppressWarnings("deprecation")
+                Signature[] legacy = info.signatures;
+                certs = legacy;
+            }
+            if (certs != null) {
+                MessageDigest md = MessageDigest.getInstance("SHA-256");
+                for (Signature cert : certs) {
+                    if (cert == null) continue;
+                    byte[] hash = md.digest(cert.toByteArray());
+                    StringBuilder hex = new StringBuilder(hash.length * 2);
+                    for (byte b : hash) {
+                        hex.append(String.format("%02x", b & 0xff));
+                    }
+                    digests.add(hex.toString());
+                }
+            }
+        } catch (Exception e) {
+            digests.clear();
+        }
+        return out;
     }
 
     private static void putFloatIfNumber(

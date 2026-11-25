@@ -3,9 +3,65 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:liquid_glass_widgets/liquid_glass_widgets.dart';
+
+/// 一个批量动作的定义：底部批量操作栏（[batchActionButtons]）与多选态右键的
+/// 批量菜单（`showBatchItemActions`，#4b）共用这一份，不各写一套可用态判据。
+@immutable
+class BatchAction {
+  const BatchAction({
+    required this.key,
+    required this.label,
+    required this.icon,
+    required this.onPressed,
+    this.enabled = true,
+    this.destructive = false,
+  });
+
+  /// 操作栏按钮的 widget key（测试与焦点定位靠它）。
+  final String key;
+  final String label;
+  final IconData icon;
+  final VoidCallback onPressed;
+
+  /// 当前选中集能不能做这件事；批量菜单只列可用的项。
+  final bool enabled;
+
+  /// 删除类：操作栏按钮用错误色，批量菜单排进危险段。
+  final bool destructive;
+}
+
+/// [BatchActionBar.actions] 的标准按钮排（每个 [BatchAction] 一枚图标钮）。
+List<Widget> batchActionButtons(
+  BuildContext context,
+  List<BatchAction> actions,
+) => <Widget>[
+  for (final BatchAction action in actions)
+    FushiIconButton(
+      key: ValueKey<String>(action.key),
+      enabled: action.enabled,
+      onTap: action.onPressed,
+      icon: action.icon,
+      tooltip: action.label,
+      enabledColor: action.destructive
+          ? Theme.of(context).colorScheme.error
+          : null,
+      // Apple 选择模式底栏：纯图标 + tooltip，命中区 48（图标 20 + 四周 14）。
+      size: isGlassDesign(context) ? kBatchAppleIconSize : null,
+      padding: isGlassDesign(context)
+          ? const EdgeInsets.all(kBatchAppleIconPadding)
+          : null,
+    ),
+];
+
+/// Apple 选择模式底栏图标字号与四周留白：合起来是 48 的命中区（底部浮动工具栏
+/// 命中区 ≥48dp 的硬规则）。
+const double kBatchAppleIconSize = 20;
+const double kBatchAppleIconPadding = 14;
 
 /// 批量操作栏：多选态下钉在页面底部的那条「已选 N · 全选 · 反选 · 若干动作」。
 ///
@@ -109,7 +165,43 @@ class BatchActionBar extends StatelessWidget {
     const EdgeInsets outer = EdgeInsets.fromLTRB(12, 4, 12, 12);
     if (isGlassDesign(context)) {
       final bool compact = fushiAppleCompact(context);
-      final double minHeight = compact ? 44 : 52;
+      final double macScale = fushiAppleMacScale(context);
+      final double minHeight = compact ? 44 * macScale : 52;
+      // Apple（Photos / Files 选择模式底栏）：全选 / 反选也是纯图标钮（文字只进
+      // tooltip 与 Semantics），中间「已选 N」，右侧是各表面的动作图标。
+      final Widget appleContent = Row(
+        children: <Widget>[
+          FushiIconButton(
+            key: const ValueKey<String>('batch_select_all'),
+            icon: FushiIcons.selectAll,
+            tooltip: t.batch_select_all,
+            size: kBatchAppleIconSize,
+            padding: const EdgeInsets.all(kBatchAppleIconPadding),
+            onTap: onSelectAll,
+          ),
+          FushiIconButton(
+            key: const ValueKey<String>('batch_invert_selection'),
+            icon: FushiIcons.swapVert,
+            tooltip: t.batch_invert_selection,
+            size: kBatchAppleIconSize,
+            padding: const EdgeInsets.all(kBatchAppleIconPadding),
+            onTap: onInvertSelection,
+          ),
+          Expanded(
+            child: Text(
+              t.batch_selected_count(n: selectedCount),
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: theme.textTheme.bodyMedium?.copyWith(
+                fontWeight: FontWeight.w600,
+                color: appleColorsOf(context).label,
+              ),
+            ),
+          ),
+          ...actions,
+        ],
+      );
       return SafeArea(
         top: false,
         child: Padding(
@@ -122,15 +214,10 @@ class BatchActionBar extends StatelessWidget {
             child: ConstrainedBox(
               constraints: BoxConstraints(minHeight: minHeight),
               child: Padding(
-                padding: const EdgeInsetsDirectional.only(
-                  start: 18,
-                  end: 8,
-                  top: 4,
-                  bottom: 4,
-                ),
+                padding: const EdgeInsetsDirectional.symmetric(horizontal: 4),
                 child: DefaultTextStyle.merge(
                   style: TextStyle(color: appleColorsOf(context).label),
-                  child: content,
+                  child: appleContent,
                 ),
               ),
             ),

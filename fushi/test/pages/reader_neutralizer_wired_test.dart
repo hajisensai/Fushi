@@ -17,7 +17,7 @@ void main() {
     );
   });
 
-  test('history page opens books through ReaderFushiSource', () {
+  test('history page opens books through the derived reader source', () {
     final String src = readReaderHistorySource();
     expect(
       src.contains('appModel.openMedia('),
@@ -25,9 +25,11 @@ void main() {
       reason: '书架打开阅读器必须走 AppModel.openMedia 注册媒体源',
     );
     expect(
-      src.contains('mediaSource: ReaderFushiSource.instance'),
+      src.contains('mediaSource: item.getMediaSource(appModel: appModel)'),
       isTrue,
-      reason: '书架入口必须走 ReaderFushiSource，由 source 层包裹中和器',
+      reason:
+          '书架入口必须按卡上派生的阅读器源（ReaderFushiSource / PDF / 漫画）'
+          '经 openMedia 打开，由 source 层包裹中和器（BUG-4345）',
     );
     expect(
       src.contains('ReaderFushiPage('),

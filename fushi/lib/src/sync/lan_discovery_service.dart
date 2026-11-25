@@ -105,13 +105,23 @@ class LanDiscoveryService {
   /// that drop the TXT `id` attribute on resolve (then [deviceId] can't match).
   final Set<String> _localAddresses = <String>{};
 
+  /// Discovered peers keyed by endpoint (`host:port`, see [_endpointKey]).
+  ///
+  /// C10: this used to be keyed by the TXT `id`, which the peer reports about
+  /// itself unauthenticated — any LAN device advertising someone else's id
+  /// replaced that peer's entry (impersonation). Only one service can listen
+  /// on a `host:port`, so the endpoint is the one reliable identity at the
+  /// discovery stage; it also decides the settings row key (`webDavUrl`).
   final Map<String, FushiDevice> _discoveredDevices = <String, FushiDevice>{};
 
-  /// BUG-1693：serviceName → deviceId 辅助映射。[_discoveredDevices] 以 TXT `id`
-  /// 为键，而 lost 事件在多数平台**不带 TXT 属性**、只带 service name——旧实现
-  /// 回落 `service.name` 当键去 remove，与存储键对不上，离线对端永远留在列表里。
-  /// resolved 时登记、lost 时先查它，消除「lost 事件带不带 TXT」的平台特例。
-  final Map<String, String> _serviceNameToDeviceId = <String, String>{};
+  /// serviceName → endpoint key. Lost events usually carry no TXT attributes
+  /// or addresses, only the service name (BUG-1693), so the name registered on
+  /// resolve is the only way to find the entry again. A lost for a name with no
+  /// mapping removes nothing.
+  final Map<String, String> _serviceNameToEndpoint = <String, String>{};
+
+  static String _endpointKey(FushiDevice d) =>
+      '${d.host.toLowerCase()}:${d.port}';
   final StreamController<List<FushiDevice>> _deviceStream =
       StreamController<List<FushiDevice>>.broadcast();
   BonsoirDiscovery? _discovery;
@@ -291,34 +301,66 @@ class LanDiscoveryService {
       // A service finished resolving: map it and add it (unless it is us — by
       // advertised id, or by host address when the id attribute didn't survive).
       case BonsoirDiscoveryServiceResolvedEvent():
-        final FushiDevice? device = FushiDevice.fromResolvedService(
+        final FushiDevice? resolved = FushiDevice.fromResolvedService(
           event.service,
         );
-        if (device == null ||
-            device.deviceId == deviceId ||
-            _localAddresses.contains(device.host)) {
+        if (resolved == null ||
+            resolved.deviceId == deviceId ||
+            _localAddresses.contains(resolved.host)) {
           return;
         }
-        _discoveredDevices[device.deviceId] = device;
-        // BUG-1693：登记 name → deviceId，lost 事件（多不带 TXT）靠它找回存储键。
-        _serviceNameToDeviceId[event.service.name] = device.deviceId;
+        final String serviceName = event.service.name;
+        final FushiDevice device = _withKnownTxtFacts(resolved, event.service);
+        final String key = _endpointKey(device);
+        // The same service moved to another address / port: its old endpoint
+        // is no longer served by it.
+        final String? previous = _serviceNameToEndpoint[serviceName];
+        if (previous != null && previous != key) {
+          _discoveredDevices.remove(previous);
+        }
+        _discoveredDevices[key] = device;
+        _serviceNameToEndpoint[serviceName] = key;
+        // The endpoint changed instance name: a late lost for the old name
+        // must not remove the live entry.
+        _serviceNameToEndpoint.removeWhere(
+          (String name, String endpoint) =>
+              endpoint == key && name != serviceName,
+        );
         _deviceStream.add(currentDevices);
-      // A service went away: look up the storage key we registered on resolve
-      // (lost events usually carry no TXT attributes), falling back to the id
-      // attribute / service name for services we never resolved.
+      // A service went away: look up the endpoint registered for its name on
+      // resolve. A name we never resolved (or already superseded) maps to
+      // nothing, so it removes nothing — the TXT id is never trusted here.
       case BonsoirDiscoveryServiceLostEvent():
-        final BonsoirService service = event.service;
-        final String key =
-            _serviceNameToDeviceId.remove(service.name) ??
-            service.attributes[attributeId] ??
-            service.name;
-        if (_discoveredDevices.remove(key) != null) {
+        final String? key = _serviceNameToEndpoint.remove(event.service.name);
+        if (key != null && _discoveredDevices.remove(key) != null) {
           _deviceStream.add(currentDevices);
         }
       default:
         // Started / stopped / updated / resolve-failed / unknown: no-op.
         break;
     }
+  }
+
+  /// A resolve whose TXT record did not come through (no `id` attribute) only
+  /// lacks information: it must not erase the `id` / `tls` that the same
+  /// `host:port` already advertised. Otherwise the endpoint's single row would
+  /// fall back to the name key and an `http://` URL for a TLS host, which the
+  /// v1 pairing fallback stores as-is (BUG-1693). The newest name still wins.
+  ///
+  /// The entry for the endpoint carries TXT facts when its id is not the
+  /// service-name fallback of [FushiDevice.fromResolvedService]
+  /// (`deviceId != name`).
+  FushiDevice _withKnownTxtFacts(FushiDevice device, BonsoirService service) {
+    if (service.attributes.containsKey(attributeId)) return device;
+    final FushiDevice? known = _discoveredDevices[_endpointKey(device)];
+    if (known == null || known.deviceId == known.name) return device;
+    return FushiDevice(
+      name: device.name,
+      host: device.host,
+      port: device.port,
+      deviceId: known.deviceId,
+      tlsEnabled: known.tlsEnabled,
+    );
   }
 
   Future<void> _resolve(
@@ -349,7 +391,7 @@ class LanDiscoveryService {
     _discovery = null;
     await _stopMdnsFallback();
     _discoveredDevices.clear();
-    _serviceNameToDeviceId.clear();
+    _serviceNameToEndpoint.clear();
     // 已关闭的 controller 不能再 add（StateError）：dispose 走的正是这条路径。
     if (!_deviceStream.isClosed) _deviceStream.add(<FushiDevice>[]);
   }
@@ -374,7 +416,7 @@ class LanDiscoveryService {
     _discovery = null;
     unawaited(_stopMdnsFallback()); // pure Dart: timers + socket, no channel
     _discoveredDevices.clear();
-    _serviceNameToDeviceId.clear();
+    _serviceNameToEndpoint.clear();
     unawaited(_deviceStream.close());
   }
 }

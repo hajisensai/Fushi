@@ -1,16 +1,22 @@
 // Copyright: Fushi contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
-//! Fushi: runtime for the small RWKV model (331,511 parameters, d_model 64,
-//! JSchoreels/anki-rwkv release `small-model-sm56-2026-10-24`, package
-//! sm56). Not upstream code: written for Fushi from the INTEGRATION.md and
-//! NumPy reference of package sm40v2; sm56 retrains the same architecture
-//! (identical `architecture.json` and reference code, new weights).
+//! Fushi: runtime for the small RWKV models (d_model 64; the default weights
+//! are the Instant-Only `sm98`, 331,511 parameters, from JSchoreels/anki
+//! `qt/aqt/rwkv_inference/sm98/`). Not upstream code: written for Fushi from
+//! the INTEGRATION.md and NumPy reference of package sm40v2. The network is
+//! built from the weight file's tensor directory (layers per stream, which
+//! layers have a channel mixer, the layer-major `layer_steps`), so the
+//! same-architecture retrains (SM56, SM72, SM92, SM98) and the one-card-layer
+//! "w64-c1" (Tiny, sm101) load alike.
 //!
 //! It shares the input side with the big model unchanged (the 92 features of
-//! [FeatureState], ID codes and all; the model ignores feature 22) and keeps
+//! [FeatureState], ID codes and all; the model ignores feature 22 and, by the
+//! SM72 leak-free rule, the missing-id flags 13–15) and keeps
 //! the same contract: answered reviews are replayed in order, queries read
-//! the states without changing them.
+//! the states without changing them. A replayed review's prediction query uses
+//! the show-time interval (§6.10). Only the instant / rating head is used: the
+//! curve head of an Instant-Only model was never trained.
 
 mod model;
 mod weights;
@@ -142,63 +148,56 @@ impl SmallInference {
         self.precision
     }
 
-    /// Same contract as the big model's `warm_up_reviews`: rating-less rows
-    /// are skipped; with `record_predictions` every answered row also gets the
-    /// R a query just before it would have given (index into `reviews`).
-    /// Diagnostic replay (examples/curve_calibration.rs): like
-    /// [Self::warm_up_reviews] with predictions, but also returns each
-    /// answered row's own heads with the curve, i.e. the forgetting curve that
-    /// scheduling would read after that answer. `(index, p_imm before the
-    /// answer, heads of the answer row)`.
-    #[doc(hidden)]
-    pub fn replay_with_curves(
+    /// The model rows of one answered review, as replay feeds them: with
+    /// `record_predictions` first the query asked just before it (show-time
+    /// intervals, INTEGRATION.md §6.10, [super::show_time_query]), then the
+    /// update row (answer-to-answer interval), whose bookkeeping is committed.
+    /// Query features come first, as in the big model's replay, so first-seen
+    /// ID codes are drawn in the same order. The one place replay rows are
+    /// built ([Self::warm_up_reviews], [Self::replay_features]).
+    fn push_replay_rows(
         &mut self,
-        reviews: Vec<ReviewInput>,
-    ) -> io::Result<Vec<(usize, f32, SmallHeads)>> {
-        let answered: Vec<(usize, ReviewInput)> = reviews
-            .into_iter()
-            .enumerate()
-            .filter(|(_, input)| input.ease.is_some())
-            .collect();
-        let mut out = Vec::with_capacity(answered.len());
-        for chunk in answered.chunks(CHUNK_REVIEWS) {
-            let mut features = Vec::with_capacity(2 * chunk.len() * CARD_FEATURES);
-            let mut keys = Vec::with_capacity(2 * chunk.len());
-            let mut commit = Vec::with_capacity(2 * chunk.len());
-            for (_, input) in chunk {
-                let mut query = input.clone();
-                query.is_query = true;
-                query.ease = None;
-                query.duration_millis = None;
-                features.extend(self.features.features_for(&query));
-                keys.push(stream_keys(input));
-                commit.push(false);
-                features.extend(self.features.features_for(input));
-                self.features.store_review(input);
-                keys.push(stream_keys(input));
-                commit.push(true);
-            }
-            let heads = vec![true; commit.len()];
-            let rows = model::run(
-                &self.model.net,
-                &self.layouts,
-                &mut self.stores,
-                &Rows {
-                    features: &features,
-                    keys: &keys,
-                    commit: &commit,
-                    heads: &heads,
-                },
-                true,
-                true,
-            );
-            for ((index, _), pair) in chunk.iter().zip(rows.chunks_exact(2)) {
-                out.push((*index, pair[0].retrievability(), pair[1]));
-            }
+        input: &ReviewInput,
+        record_predictions: bool,
+        features: &mut Vec<f32>,
+        keys: &mut Vec<[i64; STREAMS]>,
+        commit: &mut Vec<bool>,
+    ) {
+        if record_predictions {
+            features.extend(self.features.features_for(&super::show_time_query(input)));
+            keys.push(stream_keys(input));
+            commit.push(false);
         }
-        Ok(out)
+        features.extend(self.features.features_for(input));
+        self.features.store_review(input);
+        keys.push(stream_keys(input));
+        commit.push(true);
     }
 
+    /// Test hook: the 92 inputs replay with predictions builds for each
+    /// answered review of `reviews`, `(index, query row, update row)`, through
+    /// the same builder as [Self::warm_up_reviews]. Advances only the feature
+    /// bookkeeping (not the network states): use a scratch runtime.
+    #[doc(hidden)]
+    pub fn replay_features(&mut self, reviews: &[ReviewInput]) -> Vec<(usize, Vec<f32>, Vec<f32>)> {
+        let mut out = Vec::new();
+        for (index, input) in reviews.iter().enumerate() {
+            if input.ease.is_none() {
+                continue;
+            }
+            let (mut features, mut keys, mut commit) = (Vec::new(), Vec::new(), Vec::new());
+            self.push_replay_rows(input, true, &mut features, &mut keys, &mut commit);
+            let update = features.split_off(CARD_FEATURES);
+            out.push((index, features, update));
+        }
+        out
+    }
+
+    /// Same contract as the big model's `warm_up_reviews`: rating-less rows
+    /// are skipped; with `record_predictions` every answered row also gets the
+    /// R a query just before it would have given (index into `reviews`); that
+    /// query uses the show-time interval the model was trained on
+    /// ([Self::push_replay_rows]).
     pub fn warm_up_reviews(
         &mut self,
         reviews: Vec<ReviewInput>,
@@ -216,26 +215,17 @@ impl SmallInference {
             let mut features = Vec::with_capacity(rows * CARD_FEATURES);
             let mut keys = Vec::with_capacity(rows);
             let mut commit = Vec::with_capacity(rows);
-            let mut heads = Vec::with_capacity(rows);
             for (_, input) in chunk {
-                // Query features before answer features, as the big model's
-                // replay does, so first-seen ID codes come in the same order.
-                if record_predictions {
-                    let mut query = input.clone();
-                    query.is_query = true;
-                    query.ease = None;
-                    query.duration_millis = None;
-                    features.extend(self.features.features_for(&query));
-                    keys.push(stream_keys(input));
-                    commit.push(false);
-                    heads.push(true);
-                }
-                features.extend(self.features.features_for(input));
-                self.features.store_review(input);
-                keys.push(stream_keys(input));
-                commit.push(true);
-                heads.push(false);
+                self.push_replay_rows(
+                    input,
+                    record_predictions,
+                    &mut features,
+                    &mut keys,
+                    &mut commit,
+                );
             }
+            // Heads only for the queries (an update row's own output is unused).
+            let heads: Vec<bool> = commit.iter().map(|&c| !c).collect();
             let out = model::run(
                 &self.model.net,
                 &self.layouts,
@@ -350,36 +340,9 @@ impl SmallInference {
         Ok(out)
     }
 
-    /// The heads (with the curve) of `answer` answered Again / Hard / Good /
-    /// Easy: four what-if update rows from the current states in one call,
-    /// none committed (a row's own output does not depend on whether it
-    /// commits), nothing kept. INTEGRATION.md §9.2 "intervals for each
-    /// possible answer".
-    pub fn answer_curves(&mut self, answer: &ReviewInput) -> io::Result<[SmallHeads; 4]> {
-        let mut features = Vec::with_capacity(4 * CARD_FEATURES);
-        let mut keys = Vec::with_capacity(4);
-        for rating in 1..=4u8 {
-            let mut answer = answer.clone();
-            answer.is_query = false;
-            answer.ease = Some(rating);
-            features.extend(self.features.features_for(&answer));
-            keys.push(stream_keys(&answer));
-        }
-        let heads = model::run(
-            &self.model.net,
-            &self.layouts,
-            &mut self.stores,
-            &Rows {
-                features: &features,
-                keys: &keys,
-                commit: &[false; 4],
-                heads: &[true; 4],
-            },
-            true,
-            false,
-        );
-        Ok([heads[0], heads[1], heads[2], heads[3]])
-    }
+    // No `answer_curves` (RWKV-Curve) here: the small models Fushi runs are
+    // Instant-Only (sm98 / sm101, trained with curve_loss_weight 0.0), whose
+    // curve head was never trained. `ModelKind::has_trained_curve_head`.
 
     fn query_heads(&mut self, inputs: &[ReviewInput], curve: bool) -> io::Result<Vec<SmallHeads>> {
         if inputs.iter().any(|input| !input.is_query) {

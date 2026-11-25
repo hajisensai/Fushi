@@ -25,8 +25,8 @@ import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 
-import 'package:fushi/src/srs/srs_media_store.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 export 'package:fushi_engine/srs/apkg/anki_collection_snapshot.dart';

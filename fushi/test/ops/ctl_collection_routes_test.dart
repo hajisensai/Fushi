@@ -11,6 +11,7 @@ import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/ai/web_search.dart';
 
+import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show collectionDetailSortPrefKey, kCollectionDetailManualSortValue;
 import 'package:fushi/src/mining/galgame_repository.dart';
@@ -47,6 +48,7 @@ MediaCollectionItemRow _row(String mediaType, String entryKey) =>
       mediaType: mediaType,
       entryKey: entryKey,
       sortIndex: 0,
+      pinnedByUser: false,
     );
 
 Matcher _status(int status) => throwsA(
@@ -71,7 +73,11 @@ void main() {
   setUp(() async {
     readonly = false;
     db = FushiDatabase.forTesting(NativeDatabase.memory());
-    shelf = LibraryCtlShelf(db: db, galgameRepo: GalgameRepository(db));
+    shelf = LibraryCtlShelf(
+      db: db,
+      galgameRepo: GalgameRepository(db),
+      finishTracking: LibraryFinishTracking.none,
+    );
     routes = buildCollectionCtlRoutesFor(
       database: () => db,
       shelf: () => shelf,

@@ -204,6 +204,31 @@ void main() {
     },
   );
 
+  test(
+    'reported error carries its reason on the snapshot, cleared with it',
+    () async {
+      host.reportError('favorite_source_unavailable', reason: 'peer_offline');
+      Map<String, Object?> state = await host.handle(
+        'snapshot',
+        <String, dynamic>{},
+        'phone',
+      );
+      expect(state['error'], 'favorite_source_unavailable');
+      expect(state['errorReason'], 'peer_offline');
+      await call('command', <String, dynamic>{'action': 'pause'});
+      state = await host.handle('snapshot', <String, dynamic>{}, 'phone');
+      expect(state.containsKey('error'), isFalse);
+      expect(state.containsKey('errorReason'), isFalse);
+
+      // A failure reported without a reason does not inherit an old one.
+      host.reportError('favorite_source_unavailable', reason: 'peer_offline');
+      host.reportError('favorite_subtitle_ambiguous');
+      state = await host.handle('snapshot', <String, dynamic>{}, 'phone');
+      expect(state['error'], 'favorite_subtitle_ambiguous');
+      expect(state.containsKey('errorReason'), isFalse);
+    },
+  );
+
   group('lookupContext (adjust sentence context)', () {
     // Four primary rows around one secondary row: the context must stay on
     // the anchor's own track, in time order.
@@ -325,6 +350,37 @@ void main() {
         preview = await context(id, 'preview');
         expect(preview['total'], 0);
         expect(preview['prev'], isEmpty);
+      },
+    );
+
+    // Feedback _RLnsVq_QZ: clearing a context row drops its text but keeps
+    // its audio; the original stays available for "restore original".
+    test(
+      'edit with empty text clears the row text but keeps its audio',
+      () async {
+        final String id = await begin('p1');
+        await context(id, 'set', <String, dynamic>{'prev': 1, 'next': 0});
+        final Map<String, Object?> preview = await context(
+          id,
+          'edit',
+          <String, dynamic>{'slot': 'prev', 'index': 0, 'text': ''},
+        );
+        expect(preview['prev'], <String>['']);
+        expect(preview['prevOriginal'], <String>['零']);
+        expect(preview['prevRemoved'], <bool>[false]);
+        expect(preview['total'], 1);
+
+        await call('mine', <String, dynamic>{
+          'contextId': id,
+          'fields': <String, dynamic>{
+            'rawFields': <String, dynamic>{'expression': '一'},
+          },
+        });
+        final VideoRemoteMineSelection selection = player.minedSelection!;
+        expect(selection.sentence, '一');
+        // The cleared row's audio still opens the clip.
+        expect(selection.startMs, 0);
+        expect(selection.endMs, 1900);
       },
     );
 
@@ -815,6 +871,59 @@ void main() {
     },
   );
 
+  test('媒体服务器直接串流：手机收藏记下播放器的来源身份（BUG-5402）', () async {
+    player.originSourceId = 'plex:m1|a1';
+    await call('favoriteSet', <String, dynamic>{
+      'cueId': 'primary',
+      'favorited': true,
+    });
+    final FavoriteSentence stored = (await FavoriteSentenceRepository(
+      db,
+    ).getAll()).single;
+    expect(stored.bookKey, 'book-one');
+    expect(stored.originSourceId, 'plex:m1|a1');
+    expect(stored.originLocator, isNull);
+  });
+
+  test('在线视频源：手机收藏同时记下那一集的重开规格（v180）', () async {
+    player.originSourceId = 'anime-source:ext:42';
+    player.originLocator = (String bookUid) => '{"kind":"spec-of-$bookUid"}';
+    await call('favoriteSet', <String, dynamic>{
+      'cueId': 'primary',
+      'favorited': true,
+    });
+    final FavoriteSentence stored = (await FavoriteSentenceRepository(
+      db,
+    ).getAll()).single;
+    expect(stored.originSourceId, 'anime-source:ext:42');
+    expect(stored.originLocator, '{"kind":"spec-of-book-one"}');
+  });
+
+  test('原盘「全部播放」：手机收藏按句子所在那一集的时间轴落库与匹配（BUG-5356）', () async {
+    // 句子在整条播放列表的 1000ms，属于从 600ms 起的那一集 → 记 (episode-two, 400)。
+    player.anchor = (int startMs) =>
+        (bookUid: 'episode-two', ms: startMs - 600);
+    await call('favoriteSet', <String, dynamic>{
+      'cueId': 'primary',
+      'favorited': true,
+    });
+    await call('favoriteSet', <String, dynamic>{
+      'cueId': 'primary',
+      'favorited': true,
+    });
+    final List<FavoriteSentence> stored = await FavoriteSentenceRepository(
+      db,
+    ).getAll();
+    expect(stored, hasLength(1), reason: '第二次按同一锚点匹配到已有收藏');
+    expect(stored.single.bookKey, 'episode-two');
+    expect(stored.single.normCharOffset, 400);
+    await call('favoriteSet', <String, dynamic>{
+      'cueId': 'primary',
+      'favorited': false,
+    });
+    expect(await FavoriteSentenceRepository(db).getAll(), isEmpty);
+  });
+
   test(
     'favorites persist in real DB, repeated set is idempotent and bulk remove deletes',
     () async {
@@ -941,6 +1050,15 @@ final class _BlockingFavorites extends FavoriteSentenceRepository {
 
 final class _Player {
   String identity = 'episode-one';
+
+  /// 播放器时间轴 → 库锚点（原盘「全部播放」，BUG-5356）；null = 同轴同行。
+  ({String bookUid, int ms}) Function(int startMs)? anchor;
+
+  /// 播放器的远端来源身份（媒体服务器直接串流，BUG-5402）；null = 本机库条目。
+  String? originSourceId;
+
+  /// 播放器给出的重开规格（在线视频源，v180）；null = 没有。
+  String? Function(String bookUid)? originLocator;
   int sectionIndex = 0;
   bool playing = true;
   int controlRevision = 0;
@@ -1017,6 +1135,10 @@ final class _Player {
       seekMs = favorite.normCharOffset;
       notify();
     },
+    libraryAnchor: (int startMs) =>
+        anchor?.call(startMs) ?? (bookUid: 'book-one', ms: startMs),
+    originSourceId: () => originSourceId,
+    originLocator: (String bookUid) => originLocator?.call(bookUid),
     addListener: listeners.add,
     removeListener: listeners.remove,
   );

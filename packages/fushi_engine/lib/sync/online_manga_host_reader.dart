@@ -19,19 +19,27 @@ abstract interface class OnlineMangaHostReader {
   /// `/api/library/books` 清单对每本漫画都会问一次，不得发网络请求。
   bool canServe(String sourceMetadata);
 
-  /// [chapter]（`EpubBooks.chaptersJson` 里的一项，原样）的页数。
-  Future<int> chapterPageCount({
+  /// [chapter]（`EpubBooks.chaptersJson` 里的一项，原样）的页表：长度即页数，
+  /// 第 i 项是第 i 页的源端稳定身份（运行时给不出就是 null），原样写进对端页表的
+  /// `RemoteMangaPageInfo.key`，对端下载续跑按它认页（audit-035）。
+  Future<List<String?>> chapterPageKeys({
     required String bookKey,
     required String sourceMetadata,
     required Map<String, Object?> chapter,
   });
 
   /// [chapter] 第 [index] 页（0 基）的图片字节。越界抛 [RangeError]。
+  ///
+  /// [expectedPageKey] 是调用方从 [chapterPageKeys] 拿到的第 [index] 页身份
+  /// （HBK-AUDIT-205）：实现必须在**取这页所用的同一份页表**上核对第 [index] 页的
+  /// 身份等于它，不等抛 `MangaPageChanged`。两次调用之间页表可能被淘汰、重解析成
+  /// 换了页的一份，只按页序取会把另一页当这一页端出去。null = 身份认不出，不核对。
   Future<Uint8List> chapterPage({
     required String bookKey,
     required String sourceMetadata,
     required Map<String, Object?> chapter,
     required int index,
+    required String? expectedPageKey,
   });
 }
 

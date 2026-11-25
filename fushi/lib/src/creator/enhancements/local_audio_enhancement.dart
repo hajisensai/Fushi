@@ -8,6 +8,7 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fushi/src/creator/audio_enhancement.dart';
 import 'package:fushi/src/creator/audio_export_field.dart';
 import 'package:fushi/src/creator/enhancement.dart';
+import 'package:fushi/src/creator/fields/cloze_inside_field.dart';
 import 'package:fushi/src/creator/fields/reading_field.dart';
 import 'package:fushi/src/creator/fields/term_field.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -134,13 +135,21 @@ class LocalAudioEnhancement extends AudioEnhancement {
 
     if (term.isEmpty) return;
 
+    // 句子里被选中的那段原文（反馈 WJFhjUGaTn）：词头带替换写法（`quite a/the
+    // something`）时 TTS 兜底念它而不是连斜杠一起念词头，见 [wordAudioTtsText]。
+    final String matched = creatorModel
+        .getFieldController(ClozeInsideField.instance)
+        .text
+        .trim();
+
     await audioField.setAudio(
       cause: cause,
       appModel: appModel,
       creatorModel: creatorModel,
       newAutoCannotOverride: true,
       searchTerm: term,
-      generateAudio: () => _generateAudio(appModel, term, reading),
+      generateAudio: () =>
+          _generateAudio(appModel, term, reading, matched: matched),
     );
   }
 
@@ -164,6 +173,7 @@ class LocalAudioEnhancement extends AudioEnhancement {
     String term,
     String reading, {
     String? dictionaryName,
+    String matched = '',
   }) async {
     // 1. Local audio database (Yomitan SQLite): query metadata, then extract
     //    the blob. Native handler on Android; pure-Dart sqlite3 on desktop —
@@ -231,7 +241,11 @@ class LocalAudioEnhancement extends AudioEnhancement {
       appModel.prefsRepo,
     );
     if (choice.kind == MiningTtsFallbackKind.none) return null;
-    final String word = reading.isNotEmpty ? reading : term;
+    final String word = wordAudioTtsText(
+      expression: term,
+      reading: reading,
+      matched: matched,
+    );
     return synthesizeMiningTtsFallback(
       text: word,
       choice: choice,
@@ -273,12 +287,14 @@ class LocalAudioEnhancement extends AudioEnhancement {
   }) => fetchEntryAudio(appModel: appModel, term: term, reading: reading);
 
   /// [fetchAudio] 的带词典版本：[dictionaryName] 是这条词条出自的词典，系统语音
-  /// 兜底按它声明的词头语言念（BUG-3669）。
+  /// 兜底按它声明的词头语言念（BUG-3669）；[matched] 是查词命中的原文，词头带替换
+  /// 写法时 TTS 兜底念它（[wordAudioTtsText]）。
   Future<File?> fetchEntryAudio({
     required AppModel appModel,
     required String term,
     required String reading,
     String? dictionaryName,
+    String matched = '',
   }) async {
     try {
       return await _generateAudio(
@@ -286,6 +302,7 @@ class LocalAudioEnhancement extends AudioEnhancement {
         term,
         reading,
         dictionaryName: dictionaryName,
+        matched: matched,
       );
     } on WordAudioUnavailable catch (e, stack) {
       // 播放预览是用户手动点的：带原因提示，而不是静默没声音。

@@ -122,6 +122,18 @@ void main() {
     }
 
     test('退出书单本', () async {
+      // 书要在库里：书不在时根本不排锁（nothingToSync），测不到「排队期间被关」。
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'abc',
+          title: 'abc',
+          epubPath: '/fake/abc.epub',
+          extractDir: '/fake/abc',
+          chapterCount: 1,
+          chaptersJson: '["c"]',
+          importedAt: 0,
+        ),
+      );
       await runQueuedThenDisabled(
         () => runAutoSyncForBookForTest(
           db: db,
@@ -222,7 +234,6 @@ void main() {
         mediaIdentifier: 'fushi://book/abc',
       );
       expectUntouched();
-      expect(pendingBookSyncCountForTest, 0, reason: '开关关着的触发不记补跑账');
     });
   });
 

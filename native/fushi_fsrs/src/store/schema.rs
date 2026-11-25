@@ -5,7 +5,10 @@
 //! [TABLES] 的列序逐行原样写入，所以列序也是契约的一部分。
 
 /// 本库自己的版本号（`srs_meta.schema`）。迁移阶梯见 [migrate]。
-pub const SCHEMA_VERSION: i64 = 26;
+pub const SCHEMA_VERSION: i64 = 29;
+
+// 封存与墓碑库（冻结侧，设计 §6.1 第 7 步）：实现在 `store/seal.rs`，从这里给出。
+pub use super::seal::{SEALED_SCHEMA, legacy_identity, seal_legacy, write_tombstone};
 
 /// 前身链接的部分索引条件；与 `kSrsHistoryFromCondition`（database_srs.part.dart）逐字一致，
 /// 查询里的 WHERE 必须写成同一个表达式才用得上这个索引。
@@ -492,6 +495,10 @@ pub fn check_upgrade_space(c: &rusqlite::Connection, free: Option<u64>) -> Resul
 
 /// 建表 / 升级到 [SCHEMA_VERSION]。在一个事务里做；版本只升不降（库比本程序新 = 打开失败，
 /// 免得旧版本写坏新版本的库）。
+///
+/// 不变量：从任何版本升级上来的库与全新库的表集合相同——阶梯里不许有「只在全新库上建」的表。gen4 换代的 prepare
+/// （`store/gen4/prepare.rs` `missing_tables`）拿全新库建出的表当基准，缺一张就判库坏、拒绝迁移。守卫：
+/// `tests_v15_upgrade.rs` 从最老的冻结夹具（v8）与 v15 升级后比对。
 pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
     // 升级步骤与触发器用的 SQL 函数：只建表的裸连接（测试）也要有。
     super::ids::register(conn).map_err(|e| e.to_string())?;
@@ -725,6 +732,30 @@ pub fn migrate(conn: &mut rusqlite::Connection) -> Result<(), String> {
         // 的库、与对端逐位相同（摘要前缀同时换成 `4:`，digest.rs `VV_PREFIX`）。只改投影行，操作日志不动；新建的库
         // 没有日志，不跑。可重放。
         super::sync2::replay_event_copies(&tx)?;
+    }
+    if (1..27).contains(&current) {
+        // V27（BUG-4218 后续）：整组已撤销、但还没被 undo 直接点名的事件副本各补一条确定性 undo（ID / HLC / 内容只由副本
+        // 决定，各设备独立升级写出同一条），让只按 ID 认撤销的旧版本客户端经同步也看到撤销生效
+        // （store/sync2/mod.rs [super::sync2::revoke_copies_of_revoked_events]）。在 v26 重放之后：读的是新规则的投影。
+        // 新建的库没有日志，不跑。可重放。
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_millis() as i64)
+            .unwrap_or(0);
+        super::sync2::revoke_copies_of_revoked_events(&tx, now)?;
+    }
+    if (1..28).contains(&current) {
+        // V28（BUG-4254）：同一条 Anki revlog 导入到血统里不同卡上的两份算同一事件（history.rs `EventKey` 对 Anki
+        // 来源不比卡）。按新规则重放带这种副本的卡、写回日志投影行的 `res`（store/sync2/mod.rs
+        // [super::sync2::replay_anki_copies]），与收段新建的库、与对端逐位相同（摘要前缀换成 `5:`）。只改投影行，
+        // 操作日志不动；新建的库没有日志，不跑。可重放。
+        super::sync2::replay_anki_copies(&tx)?;
+    }
+    if current < 29 {
+        // V29：设备信任（store/sync2/trust.rs）。只建两张表；没有行 = 可信，升级那一刻已经认识的设备全部可信，存量的删除
+        // 不追溯扣住。新建的库同样建表。可重放。
+        tx.execute_batch(super::sync2::schema::V29_TRUST)
+            .map_err(|e| e.to_string())?;
     }
     tx.execute(
         "INSERT INTO srs_meta (key, value) VALUES ('schema', ?1) \

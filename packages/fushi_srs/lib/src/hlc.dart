@@ -41,52 +41,18 @@ class Hlc {
 }
 
 /// 排序与 HLC 推进共用的容差：发布时服务器时间 S 之后最多 10 分钟。
+///
+/// 本机 HLC 时钟（发出事件时取 max(可信时间, 已见过的最大 HLC)、收到对端事件时先钳位再推进）在内核里，与它的状态
+/// 一起（native/fushi_fsrs/src/store/legacy_clock.rs）；Dart 没有时钟的副本。
 const int srsClockToleranceMs = 10 * 60 * 1000;
-
-/// 本机 HLC 状态。只在本机发出事件与收到对端事件时推进。
-class HlcClock {
-  HlcClock(this.writerId, {Hlc? last}) : _last = last ?? Hlc(0, 0, writerId);
-
-  final String writerId;
-  Hlc _last;
-
-  Hlc get last => _last;
-
-  /// 本机发出事件：取 max(可信时间, 已见过的最大 HLC)。
-  Hlc tick(int trustedNowMs) {
-    if (trustedNowMs > _last.physical) {
-      _last = Hlc(trustedNowMs, 0, writerId);
-    } else {
-      _last = Hlc(_last.physical, _last.counter + 1, writerId);
-    }
-    return _last;
-  }
-
-  /// 收到对端事件（第六轮审查第 3 条）：**先钳位再推进**。
-  ///
-  /// 用 `min(远端物理时间, S(e) + 10 分钟)` 推进；S 未知时只推进到 `本机可信时间 + 10 分钟`。
-  /// 不钳位的话，一台时钟快一年的设备会把所有收到它数据的设备的 HLC 推到一年后，
-  /// 之后所有人的事件都被钳到 S + 10 分钟，排序退化成「按批次 S」。
-  void receive(Hlc remote, {int? serverTimeMs, required int trustedNowMs}) {
-    final int bound = (serverTimeMs ?? trustedNowMs) + srsClockToleranceMs;
-    final int effective = remote.physical < bound ? remote.physical : bound;
-    if (effective > _last.physical) {
-      _last = Hlc(effective, 0, writerId);
-    } else if (effective == _last.physical && remote.physical == effective) {
-      final int c = remote.counter > _last.counter
-          ? remote.counter
-          : _last.counter;
-      _last = Hlc(effective, c, writerId);
-    }
-  }
-}
 
 /// 事件时间来源（铁律 F 第一层）。
 enum SrsTimeSource {
-  /// 本进程已与同步后端校时：校时那一刻的服务器时间 + 开机时钟（含睡眠）之后走过的量。
+  /// 本次开机里已与同步后端校时（本进程校的，或同一次开机里别的进程校过、落库后接上的）：校时那一刻的服务器时间
+  /// + 开机时钟（含睡眠）之后走过的量。
   anchored('anchored'),
 
-  /// 本进程还没校时：墙钟（有上一个进程留下的校时偏移时 = 墙钟 + 该偏移，仍算未校时）。
+  /// 本次开机还没校时（或校时之后改过系统时间、接不上）：墙钟，原样。
   wall('wall');
 
   const SrsTimeSource(this.wire);
@@ -99,47 +65,48 @@ enum SrsTimeSource {
 
 /// 持久化的校时状态（[SrsTrustedClock.anchorState]）。
 typedef SrsClockAnchorState = ({
-  /// 写下它的进程（[SrsTrustedClock] 的 `bootId`）。
-  String bootId,
-
-  /// 保存那一刻「可信时间 − 墙钟」：别的进程（重启 / 重新开机后）在下一次校时前按「墙钟 + 它」估算。
-  int offsetMs,
-
-  /// 校时那一刻的服务器时间；只有本进程校过时才有。
-  int? serverTimeMs,
+  /// 校时那一刻的服务器时间。
+  int serverTimeMs,
 
   /// 与 [serverTimeMs] 同一刻的开机时钟读数。
-  int? bootTimeMs,
+  int bootTimeMs,
+
+  /// 校时时按墙钟估的开机时刻（墙钟 − 开机时钟）：识别「还是不是同一次开机」（[SrsTrustedClock.restoreAnchor]）。
+  int bootEpochMs,
 });
+
+/// [SrsTrustedClock.restoreAnchor] 判「同一次开机」时，开机时刻（墙钟 − 开机时钟）允许的漂移：墙钟被 NTP 微调、
+/// 与开机时钟的频率差，长时间不关机也到不了这个量；超出就当换了一次开机或改过系统时间，不接校时。
+const int srsBootEpochToleranceMs = 10 * 60 * 1000;
 
 /// 可信时间：同步校时时记下「服务器时间 S、同一刻的开机时钟读数 B」，之后 = S + (开机时钟 − B)。
 ///
 /// 开机时钟（`ffsrs_boot_time_ms`，native/fushi_fsrs/src/boot_clock.rs）**睡眠也计时**、**不受改系统时间影响**：
 /// - 不能用 Dart Stopwatch：Android / Linux 上是 CLOCK_MONOTONIC，深睡不计，睡一觉可信时间落后睡掉的时长；
-/// - 不能用「墙钟 + 偏移」：校时之后在同一进程里改系统时间，可信时间跟着跳，「系统时间不准」也再查不出来。
+/// - 不能用「墙钟 + 偏移」：校时之后改系统时间，可信时间跟着跳，「系统时间不准」也再查不出来。
 ///
 /// [wallSkewMs] 每次现算（墙钟 − 可信时间），校时后改过系统时间也能报出来。
 ///
-/// 开机时钟重启后从 0 重新计：S/B 只在写下它的进程里有效（[restoreAnchor] 按 bootId 判）；别的进程只接上一份
-/// 「可信时间 − 墙钟」偏移，按墙钟 + 偏移估算到下一次校时，来源记为 [SrsTimeSource.wall]（未校时）。
+/// 跨进程：校时状态（S、B、开机时刻 E = 校时时的墙钟 − 开机时钟）落进本机状态行，新进程只在**同一次开机**里接上
+/// （[restoreAnchor]），照样按开机时钟精确推算、不经过墙钟。开机时钟重启后从 0 重新计，换了一次开机 S/B 就对不上，
+/// 校时作废、按墙钟走，直到下一次校时。**不**把「可信时间 − 墙钟」的偏移带到下一个进程：那份偏移在校时之后改过
+/// 系统时间时会把改动量固化下来（例如拨回 1 天 → 之后每个进程的「今天」都比系统日期多 1 天，关了同步就一直不再
+/// 校时，BUG-5264）。
 class SrsTrustedClock {
   SrsTrustedClock({
     required int Function() wallClockMs,
     required int Function() bootClockMs,
-    required String bootId,
   }) : _wall = wallClockMs,
-       _boot = bootClockMs,
-       _bootId = bootId;
+       _boot = bootClockMs;
 
   final int Function() _wall;
   final int Function() _boot;
-  final String _bootId;
 
   int? _anchorServerMs;
   int? _anchorBootMs;
 
-  /// 上一个进程留下的「可信时间 − 墙钟」（未校时的估算用）。
-  int? _carriedOffsetMs;
+  /// 校时时按墙钟估的开机时刻（墙钟 − 开机时钟），见 [SrsClockAnchorState.bootEpochMs]。
+  int? _anchorBootEpochMs;
 
   /// 当前墙钟（毫秒）。
   int wallNowMs() => _wall();
@@ -155,53 +122,39 @@ class SrsTrustedClock {
   void anchor({required int serverTimeMs, required int observedAtBootMs}) {
     _anchorServerMs = serverTimeMs;
     _anchorBootMs = observedAtBootMs;
-    _carriedOffsetMs = null;
+    _anchorBootEpochMs = _wall() - _boot();
   }
 
   /// 恢复持久化的校时状态。
   ///
-  /// 本进程写下的（[bootId] 相同、开机时钟没有倒退）：完整恢复 S/B，接着按开机时钟推算。别的进程写下的：开机
-  /// 时钟可能已经因重启归零、读数没法对上，只接 [offsetMs]，下一次校时前按墙钟 + 偏移估算、算未校时。
+  /// 只认同一次开机里写下的：开机时钟没有倒退（没归零），且此刻按墙钟估的开机时刻与 [bootEpochMs] 相差不超过
+  /// [srsBootEpochToleranceMs]。单看读数分不出重启：开机时钟归零后过一阵读数又会超过 [bootTimeMs]；开机时刻
+  /// 变了 = 重新开过机，或者校时之后改过系统时间。认下就完整接上 S/B，接着按开机时钟推算；不认就**不动**本进程
+  /// 已有的状态（没校过就仍按墙钟走），不带任何偏移。
   void restoreAnchor({
-    required int offsetMs,
-    required String bootId,
-    int? serverTimeMs,
-    int? bootTimeMs,
+    required int serverTimeMs,
+    required int bootTimeMs,
+    required int bootEpochMs,
   }) {
-    if (bootId == _bootId &&
-        serverTimeMs != null &&
-        bootTimeMs != null &&
-        _boot() >= bootTimeMs) {
-      _anchorServerMs = serverTimeMs;
-      _anchorBootMs = bootTimeMs;
-      _carriedOffsetMs = null;
+    final int boot = _boot();
+    if (boot < bootTimeMs) return;
+    if ((_wall() - boot - bootEpochMs).abs() > srsBootEpochToleranceMs) {
       return;
     }
-    _anchorServerMs = null;
-    _anchorBootMs = null;
-    _carriedOffsetMs = offsetMs;
+    _anchorServerMs = serverTimeMs;
+    _anchorBootMs = bootTimeMs;
+    _anchorBootEpochMs = bootEpochMs;
   }
 
   bool get isAnchored => _anchorServerMs != null && _anchorBootMs != null;
 
-  /// 持久化用；既没校时也没有接上的偏移时为 null。
+  /// 持久化用；没校过时为 null。
   SrsClockAnchorState? get anchorState {
-    if (isAnchored) {
-      return (
-        bootId: _bootId,
-        offsetMs: now().$1 - _wall(),
-        serverTimeMs: _anchorServerMs,
-        bootTimeMs: _anchorBootMs,
-      );
-    }
-    final int? carried = _carriedOffsetMs;
-    if (carried == null) return null;
-    return (
-      bootId: _bootId,
-      offsetMs: carried,
-      serverTimeMs: null,
-      bootTimeMs: null,
-    );
+    final int? server = _anchorServerMs;
+    final int? at = _anchorBootMs;
+    final int? epoch = _anchorBootEpochMs;
+    if (server == null || at == null || epoch == null) return null;
+    return (serverTimeMs: server, bootTimeMs: at, bootEpochMs: epoch);
   }
 
   /// 墙钟与可信时间的偏差（毫秒，正 = 墙钟超前），每次现算；未校时为 null。超过 10 分钟时同步状态里提示
@@ -215,6 +168,6 @@ class SrsTrustedClock {
     if (server != null && at != null) {
       return (server + (_boot() - at), SrsTimeSource.anchored);
     }
-    return (_wall() + (_carriedOffsetMs ?? 0), SrsTimeSource.wall);
+    return (_wall(), SrsTimeSource.wall);
   }
 }

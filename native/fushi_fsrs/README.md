@@ -31,7 +31,7 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 | `ffsrs_materialize(const u8* header, usize, const u8* text, usize, const u32* offs, const i64* servers, usize n_items, usize* out_len, char** err) -> u8*` | 字段寄存器内核（`src/registers.rs`）：组描述 JSON + 修改记录落库原文 / 服务器时刻 → 寄存器（支配、排序键、冲突候选、删除优先）与笔记 / 卡片标志（按前身血统继承）/ 笔记类型 / 牌组的物化视图，以及落库支配裁剪、no-op 的「值相同」；结果是 JSON，批量。排序键（`src/ordering.rs`）与释义样式去重规范形（`src/style_dedup.rs`）与卡片历史 / 查重共用一份 |
 | `ffsrs_memory_input(const i64* ints, usize n_logs, i32 alg, i32 utc_offset_min, i32 rollover_hour, usize* out_len, char** err) -> u8*` | 记忆状态输入（铁律 A，`src/projection.rs` `memory_input`，排程用）：一份历史的有效日志（列模式，每条 14 个 i64，已排序）→ 评审序列（rating, 小数 / 整数天）与起点（同算法记忆状态 / SM-2 换算）、是否完整；`alg` 0 fsrs6 / 1 fsrs7 / 2 rwkv。与优化器直读命令同一个函数 |
 | `ffsrs_rwkv_now_rows(const i64* ints, usize n_rows, i32 utc_offset_min, i32 rollover_hour, usize* out_len, char** err) -> u8*` | RWKV「此刻」行（ease 0，RWKV-Instant 排队 / 作答）：每行 9 个 i64（四个数字 id、最后保留评分、队列、此刻）→ 80 字节 `FrwkvReview`（packages/fushi_rwkv `RwkvRows` 布局；本库不链接 RWKV）|
-| `ffsrs_store_open(const u8* path, usize, SrsCore** out, char** err) -> i32` / `ffsrs_store_close(SrsCore*)` | 打开 / 关闭 Rust 独占的 `srs.db`（`src/store/`，rusqlite bundled；设计 `docs/specs/2026-10-23-srs-rust-store.md`）。一条写连接 + 一条读连接，WAL；只开 srs.db，绝不开主库 |
+| `ffsrs_store_open_mode(const u8* dir, usize, i32 mode, SrsCore** out, char** err) -> i32` / `ffsrs_store_close(SrsCore*)` | 打开 / 关闭 profile 目录里 Rust 独占的新代库 `srs4.db`（`src/store/gen4/`，rusqlite bundled；设计 `docs/specs/2026-11-15-srs-gen4-handoff.md`「S1 接线设计」）。`dir` 是 profile 目录；`mode` 0 = Primary（唯一的写者：一条写连接 + 读连接池，WAL），1 = Secondary（辅助进程，只读，写命令与 `wal_checkpoint` 报只读）。没迁移 / 只剩封存旧库 / 上次迁移失败回 `STORE_NOT_MIGRATED`（-4，错误文本后接 `{"state"}`），迁移进行中 `STORE_MIGRATING`（-5），旁边另有未迁移的协议 3 库 `STORE_LEGACY_UNMIGRATED`（-6）；绝不打开协议 3 的 `srs.db` 或主库。迁移走全局 JSON 命令 `gen4_migrate_status` / `_run` / `_cancel`。协议 3 的旧入口 `ffsrs_store_open` 已删（S1） |
 | `ffsrs_store_exec` / `ffsrs_store_exec_batch` / `ffsrs_store_in_transaction` | Drift 执行器后端：写连接上执行语句（行页编码见 `src/store/rows.rs`）|
 | `ffsrs_store_read_concurrency` | Drift 事务外查询的并发上限（只读连接池上限，按核数算，`src/store/read_pool.rs`）|
 | `ffsrs_store_history_states(SrsCore*, const u8* groups, usize, usize n_groups, u8** out, usize*, char**) -> i32` | 缓存刷新：Rust 在写连接上直读日志 + 服务器时刻并选取（含事务里未提交的行），输出布局同 `ffsrs_history_states` |
@@ -39,15 +39,14 @@ Fushi SRS（间隔重复）的排程内核：[fsrs-rs](https://github.com/open-s
 | `ffsrs_store_rwkv_rows` | RWKV 回放行（P6）：mode 0 逐卡（保留评分行、日志 ID、有效评分数、最后保留评分），mode 1 全量回放（本 profile 日志一条语句扫出，指纹与行同一快照，按评分时刻稳定排序，另报列卡之后才出现的「漏卡」）；签名同上，`args = [n, mode, utcOffsetMin, rolloverHour, since, 数字 id × 4n]` |
 | `ffsrs_store_rwkv_log_tail` | RWKV 对齐：本 profile 日志的 (行数, 最大 rowid, since 之后的行数)，可选连同这些新行（id / 卡 / kind（review / undo / 其它）/ 撤销目标 / 时刻）；签名同上，`args = [since, with_rows, incremental?]`，incremental 时只数 since 之后的行（O(新增)） |
 | `ffsrs_store_stat_projection` | 有效复习投影（`srs_stat_reviews` 的行）：写连接直读日志，一批归属组（归属卡 + 归它的前身卡）一次调用，按合并历史投影，回 9 列行页 |
-| `ffsrs_store_legacy_state` / `_legacy_begin` / `_legacy_page` / `_legacy_commit` / `_legacy_abort` / `_legacy_mark_none` | 主库旧 srs_* 表的一次性搬迁（Dart 读、Rust 写，一个事务）|
 | `ffsrs_store_snapshot(SrsCore*, const u8* path, usize, i32 strip_device_local, char**) -> i32` | 备份快照（`VACUUM INTO`，可清空设备本地表）|
 | `ffsrs_store_debug_query` | 只读调试查询（测试 / 诊断）|
-| `ffsrs_store_read_begin` / `_read_query` / `_read_end` | 只读会话：另开一条只读连接 + 一个读事务（开会话时快照即定），在里面跑只读查询（编码同 debug_query），结束回滚并关闭。备份读快照用（后台 isolate） |
 
 响应恒为 `{"ok": …}` 或 `{"error": "…"}`；panic 一律接住转成 error，不越过 FFI。每个 op 带
 `algorithm`（`"fsrs6"` 21 参 / `"fsrs7"` 34 参），`params` 空或缺省 = 该算法默认参数；elapsed
-一律**小数天**。`op`：`version` / `defaults` / `validate` / `next_states` / `memory_state` /
-`memory_state_from_sm2` / `retrievability` / `next_interval`。
+一律**小数天**。`op`：`version` / `defaults` / `validate` / `retrievability`。
+排程（四个评分的下一状态与间隔）、由历史重建记忆状态、SM-2 起点换算不在这里：由内核的确定性 FSRS
+（`src/sync2/fsrs_det.rs`）在作答 / 回放里算，与 fsrs-rs 的对拍也在那个文件的单元测试里。
 
 `ffsrs_fit` 的训练集（BUG-3745）：每张卡只传一份完整历史（`ratings` / `delta_days` 按 `card_offsets`
 切段，长 `n_cards + 1`），外加按评分时刻排好序的条目 `(item_cards[i], item_lengths[i])` = 卡
@@ -103,8 +102,28 @@ native lib 目录、macOS `Contents/Frameworks`、Linux `bundle/lib/`）；iOS �
 - **缺库 = 能力不可用，不是构建失败**：五端都是「prebuilt 有则随包」，没装 Rust 的机器照常出包。
 - 构建脚本只断言文件存在；`verify_abi.sh <二进制> [nm]` 按 Dart 绑定里 lookup 的 `ffsrs_*`
   名逐个核对导出表（ELF `.so` / Mach-O dylib 与可执行文件 / ar 静态库）。
-- `target/`、`prebuilt/` 不入库。访问 crates.io / GitHub（fsrs-rs 是钉 rev 的 git 依赖）不稳时设
+- `target/`、`prebuilt/` 不入库。访问 crates.io（fsrs-rs 是 `=7.0.0` 精确钉版本的 crates.io 依赖）不稳时设
   `CARGO_HTTP_PROXY`。
+- **带 ID 审计的本机库（只给调试构建与测试宿主）**：cargo feature `id_audit`（`src/store/ids.rs` `audit`）让 Dart
+  经桥执行的 SQL 里漏写 `srs_id(?)` 的那条语句直接报 `id audit: …`（普通构建里只是静默查不到行）。桌面三端的
+  构建脚本可以在普通库之外另编一份到 `prebuilt/<平台>/id_audit/<库名>`：`build_windows_dll.ps1 -IdAudit`、
+  `FUSHI_FSRS_ID_AUDIT_VARIANT=1 build_{macos_dylib,linux_so}.sh`；`tool/native_libs.ps1` / `tool/bootstrap.sh`
+  备库时就是这么调的。谁加载它：断言开着的进程——`flutter run` 的桌面 debug app（从可执行文件所在的
+  `fushi/build/…` 向上找到仓库）、`dart test` / `flutter test`（从当前目录向上找）——见
+  `FushiFsrs.libraryCandidates`；设 `FUSHI_FSRS_ID_AUDIT=0` 关掉，没有这份库就照旧用普通库。profile / release
+  构建不找它。**它不随包**：上表「怎么进包」那一列的文件只认 `prebuilt/<平台>/` 里的普通库，发布流水线不带
+  `-IdAudit` / 不设那个环境变量；发布产物过 `verify_abi.sh` 时由 `verify_id_audit.sh <二进制> absent` 核对
+  （Windows 在 `build_windows_dll.ps1` 里核对），守卫 `fushi/test/build/srs_id_audit_debug_only_guard_test.dart`。
+  不带开关重编普通库会删掉已有的 `id_audit/`（那份对应上一次的源码）。Android / iOS 没有这份库（调试包也是
+  普通库）；Mac / Linux 测试 worker 的 `worker_prepare.sh` 也不编它。代价（2026-11-11 实测）：Windows x64 DLL
+  9,550,336 B → 9,569,280 B（+18,944 B），多编这一份 +100 s～4 分 46 秒（后一个数是机器同时在跑别的重活时）；
+  macOS arm64 dylib 6,370,432 B → 6,386,944 B（+16,512 B），+80 s（都只重编 rusqlite 与本 crate，时间花在本
+  crate 的 fat LTO 上）。两份共用一个 `target/`、同名产物轮流覆盖，所以源码变了之后两份都要把本 crate 重编一遍
+  （Windows 上忙时实测普通库 9 分 50 秒 + 审计库 4 分 46 秒）。普通库不受影响：macOS 上编审计库前后 sha256
+  相同；Windows 上同一份源码两次构建的 DLL sha256 本来就不同（审计库也是），看的是大小相同、不含审计标记。运行时（Windows，开发库的拷贝：26 MB / 1501 张卡 / 25,504 条操作，经桥各 200 条写、2000 条读，机器
+  有别的负载，两轮）：**自动提交的写语句 0.13～0.26 ms → 26～66 ms / 条**——每条这样的写之后 `check_stored`
+  把 54 张表的 92 个 ID 列各扫一遍，随库的行数增长；点查、200 行分页、开库没有可辨的差别。开着事务时的写
+  不逐条扫，batch 收尾扫一次。调试时嫌慢就设 `FUSHI_FSRS_ID_AUDIT=0`。
 - 体积（release，`opt-level="z"` + fat LTO + strip，2026-10-14 本机实测）：Windows x64 DLL
   806,912 B；Android arm64-v8a 936,848 B（NEEDED 只有 libc / libm / libdl）。2026-10-18 加 Anki 搜索
   （`regex` crate 默认特性：Unicode 表 + 字面量 / DFA 加速）后 Windows x64 DLL 2,149,376 B；正则 / 子串查找 /
@@ -169,10 +188,10 @@ FUSHI_FSRS_LIB=<绝对路径>/fushi_fsrs.dll dart test test/ffi_fsrs_engine_test
 ```
 
 不设环境变量时测试按平台找本目录 `prebuilt/` 下的产物。覆盖：默认参数 21 / 34、参数校验
-（个数错、FSRS-6/7 参数互换、NaN）、next_states 按评分单调、FSRS-7 小数天敏感、由历史重建
-记忆状态、SM-2 换算、可提取度衰减、两种算法在合成数据上的参数优化、从另一个 isolate 在进度
+（个数错、FSRS-6/7 参数互换、NaN）、可提取度衰减、两种算法在合成数据上的参数优化、从另一个 isolate 在进度
 > 0 后取消、外样本 / 训练集内评估、zstd 解码（预生成帧）与坏帧返回 null。库缺失时整组 skip。
-Rust 侧单元测试：`cargo test --release`（本目录）。
+Rust 侧单元测试（本目录）：开发时 `cargo test --profile quick --lib <过滤>`（不做 fat LTO、增量编译，见
+[docs/agent/build.md](../../docs/agent/build.md)「Rust 本地开发循环」）；CI 跑的是 `cargo test --release --locked`。
 
 `packages/fushi_srs/test/search/`、`packages/fushi_engine/test/srs/`（浏览 / 统计 / AnkiConnect）与主应用
 `fushi/test/srs/srs_browse_page_test.dart` 的搜索测试同样要真实库，但**加载失败直接判红、不 skip**：搜索没有

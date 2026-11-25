@@ -1,5 +1,8 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/focus/fushi_focus_controller.dart';
+import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/name_input_dialog.dart';
 
 import '../widgets/widget_test_helpers.dart';
@@ -107,5 +110,56 @@ void main() {
   testWidgets('初始就为空时确认键一开始就是灰的', (WidgetTester tester) async {
     await _open(tester);
     expect(_okOnPressed(tester), isNull, reason: '「组合成合集」那条路径预填就是空串，进来时就该是灰的');
+  });
+
+  testWidgets('焦点导航开着、键盘 Enter 打开时焦点落在输入框，而不是框尾的屏幕键盘钮', (
+    WidgetTester tester,
+  ) async {
+    // 真机集成跑（隐藏 Windows runner、实验性焦点导航开、MD3）记到过：词典详情
+    // Rename 钮上按 Enter 打开本弹窗后，主焦点停在 `fushi-icon-button-…`——
+    // 桌面端输入框尾部「屏幕键盘」钮（对话框里唯一登记进焦点引擎的目标，被动
+    // 修复只会落到它）。挂上 FushiFocusRoot + Windows 平台的 widget 测试复现
+    // 不出来（焦点稳定在输入框），这条用例守住 widget 层的契约。
+    final FocusNode trigger = FocusNode(debugLabel: 'open-trigger');
+    addTearDown(trigger.dispose);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: buildFushiFallbackTheme(
+          Brightness.light,
+        ).copyWith(platform: TargetPlatform.windows),
+        builder: (BuildContext context, Widget? child) =>
+            FushiFocusRoot(child: child!),
+        home: Scaffold(
+          body: Builder(
+            builder: (BuildContext context) => TextButton(
+              focusNode: trigger,
+              onPressed: () => showNameInputDialog(
+                context: context,
+                title: '重命名',
+                labelText: '名称',
+                initialName: '旧名',
+              ),
+              child: const Text('open'),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    trigger.requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+
+    final EditableText field = tester.widget<EditableText>(
+      find.byType(EditableText),
+    );
+    expect(
+      field.focusNode.hasPrimaryFocus,
+      isTrue,
+      reason:
+          'autofocus 的输入框应持有主焦点；实际主焦点是 '
+          '${FocusManager.instance.primaryFocus}',
+    );
   });
 }

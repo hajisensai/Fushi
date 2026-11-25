@@ -18,7 +18,6 @@ void main() {
   test('冲突角标：修订信号递增但内容指纹没变 → 复用；内容变了 → 重算', () async {
     final SrsStorage srs = await openSrsTestStorage();
     final SrsDbStore store = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: _kProfile,
       deviceId: 'memo-test',
@@ -47,9 +46,10 @@ void main() {
     // 绕过事件直接在缓存里造一条「待裁决」：不推进内容指纹。信号递增后仍是上次的结果，
     // 说明这次没有重扫库。
     final String fp = store.contentFingerprint;
-    await srs.db.customStatement(
-      'UPDATE srs_notes_cache SET pending_decision = 1 WHERE id = srs_id(?)',
-      <Object>[note],
+    // 新代的笔记派生表是 `notes`（native/fushi_fsrs/src/store/gen4/cache.rs），ID 列存 16 字节键（UUID 的字节）。
+    srs.core.debugExecRaw(
+      'UPDATE notes SET pending_decision = 1 WHERE lower(hex(id)) = ?',
+      <Object>[note.replaceAll('-', '').toLowerCase()],
     );
     container.read(srsRevisionProvider.notifier).state++;
     expect(store.contentFingerprint, fp);

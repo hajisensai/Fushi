@@ -14,7 +14,9 @@ import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_service.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
+import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
+import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/pages/implementations/manga_fushi_page.dart';
@@ -22,6 +24,8 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
+import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
 
@@ -100,6 +104,11 @@ class _MangaTestAppModel extends AppModel {
   @override
   Directory get temporaryDirectory => _temp;
 
+  /// 朗读起播先解析这部漫画的作品身份（`resolveTtsMediaVoiceScope` → 系列选角档案
+  /// `<databaseDirectory>/tts_cast`），真实 AppModel 启动时一定设好这个目录。
+  @override
+  Directory get databaseDirectory => _temp;
+
   @override
   FushiDatabase get database => _db;
 
@@ -145,6 +154,10 @@ class _MangaTestAppModel extends AppModel {
 
   @override
   bool get mangaPageTurnFollowDrag => kMangaPageTurnFollowDragDefault;
+
+  @override
+  double get mangaSwipePageTurnSensitivity =>
+      kMangaSwipePageTurnSensitivityDefault;
   @override
   bool get mangaTapZonePaging => true;
 
@@ -173,7 +186,39 @@ class _MangaTestAppModel extends AppModel {
   String get mangaOcrLensLanguage => 'ja';
 }
 
-Widget _harness(AppModel appModel, String bookKey) => ProviderScope(
+/// 本平台没有内置 OCR：任何识别入口探测下来都是「没有可用引擎」。
+class _NoBuiltinOcrService implements MangaOcrService {
+  @override
+  bool get isSupportedPlatform => false;
+
+  @override
+  Future<MangaOcrModelStatus> modelStatus() async => const MangaOcrModelStatus(
+    detectorReady: false,
+    recognizerReady: false,
+    diskBytes: 0,
+    totalBytes: 1,
+  );
+
+  @override
+  Stream<MangaOcrDownloadEvent> downloadModels() =>
+      const Stream<MangaOcrDownloadEvent>.empty();
+
+  @override
+  Future<int> deleteModels() async => 0;
+
+  @override
+  Stream<MangaOcrVolumeEvent> ocrFolder({
+    required String imageDirPath,
+    String? volumeTitle,
+    int startPage = 0,
+  }) => const Stream<MangaOcrVolumeEvent>.empty();
+}
+
+Widget _harness(
+  AppModel appModel,
+  String bookKey, {
+  MangaOcrWizardEngines? ocrEngines,
+}) => ProviderScope(
   overrides: <Override>[
     platformServicesProvider.overrideWithValue(testPlatformServices()),
     appProvider.overrideWith((ref) => appModel),
@@ -182,7 +227,11 @@ Widget _harness(AppModel appModel, String bookKey) => ProviderScope(
     child: MaterialApp(
       builder: (BuildContext context, Widget? child) =>
           child ?? const SizedBox.shrink(),
-      home: MangaFushiPage(item: _item(bookKey), bookKey: bookKey),
+      home: MangaFushiPage(
+        item: _item(bookKey),
+        bookKey: bookKey,
+        ocrEnginesOverride: ocrEngines,
+      ),
     ),
   ),
 );
@@ -480,6 +529,75 @@ void main() {
       )!.currentChapter?.key,
       '/chapter/1',
     );
+  });
+
+  // 漫画朗读（Vfy9mU3-OV）：手动触发模式下的直读章，点「朗读」也要起页级识别。
+  // 修复前 `_maybeStartStreamingOcr` 的 manual 门把朗读挡在门外，识别器根本没起，
+  // 朗读只能以笼统的「本页文字未能识别」停下；修复后识别真的启动，探测到没有
+  // 引擎时给出「没有可用的 OCR 引擎」。
+  testWidgets('手动触发 + 直读章：点「朗读」起页级识别（无引擎时如实报无引擎）', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(1600, 1000);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.reset);
+    final EnginePaths previousPaths = enginePaths;
+    final Directory support = Directory(p.join(root.path, 'support'))
+      ..createSync(recursive: true);
+    enginePaths = FixedEnginePaths(
+      documents: support,
+      support: support,
+      temp: support,
+    );
+    addTearDown(() => enginePaths = previousPaths);
+    adapter.serve = true;
+    final _MangaTestAppModel appModel = _MangaTestAppModel(db, library, root);
+
+    late String bookKey;
+    await tester.runAsync(() async {
+      final EpubBookRow row = await library.add(_entry());
+      bookKey = row.bookKey;
+      await tester.pumpWidget(
+        _harness(
+          appModel,
+          bookKey,
+          ocrEngines: MangaOcrWizardEngines(
+            service: _NoBuiltinOcrService(),
+            initialEnginePreference: 'local_onnx',
+            initialLensLanguage: 'ja',
+            lensLanguageSetter: (_) async {},
+          ),
+        ),
+      );
+      await _pumpUntil(
+        tester,
+        find.byKey(const ValueKey<String>('manga_content_ready')),
+      );
+    });
+    await tester.pump();
+
+    final Finder button = find.byKey(
+      const ValueKey<String>('manga_reader_read_aloud_button'),
+    );
+    expect(button, findsOneWidget);
+    await tester.tap(button);
+    // 状态读数是播放条左侧的 `_BarLabel`（带 tooltip / 圆点），文字在它里面的 Text。
+    final Finder status = find.descendant(
+      of: find.byKey(const ValueKey<String>('manga_read_aloud_status')),
+      matching: find.byType(Text),
+    );
+    await tester.runAsync(() async {
+      for (int i = 0; i < 80; i++) {
+        await Future<void>.delayed(const Duration(milliseconds: 50));
+        await tester.pump();
+        final Iterable<Text> texts = tester.widgetList<Text>(status);
+        if (texts.isNotEmpty &&
+            texts.first.data != t.manga_read_aloud_waiting_ocr) {
+          break;
+        }
+      }
+    });
+    await tester.pump();
+    expect(status, findsOneWidget);
+    expect(tester.widget<Text>(status).data, t.manga_reader_ocr_unavailable);
   });
 
   // 直读章在阅读器内不触发、不接回任何**整卷** OCR（设计稿 2026-09-12 §1.3）；

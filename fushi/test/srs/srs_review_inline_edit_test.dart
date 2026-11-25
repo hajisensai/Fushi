@@ -24,6 +24,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
+import 'support/srs_write_settle.dart';
 
 String get _defField => srsLapisFieldId(kSrsTestProfile, 'MainDefinition');
 
@@ -40,12 +41,7 @@ class _SilentAudio implements SrsCardAudioOutput {
 }
 
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 Future<(SrsDbStore, String)> _seed(WidgetTester tester) async {
@@ -147,26 +143,50 @@ void main() {
 
     faces.last.onEditSelection!(const SrsCardSelection('formal'));
     await tester.pump();
-    await tester.tap(bold);
-    await _settle(tester, rounds: 20);
+    // 修订号到了不代表这次写入的流程走完：页面写库 → 发修订号 → 重读，整段置忙（编辑键与撤销都不可按）。不等它
+    // 回到可按就注入下一个选区、点「清除」，这一下点在忙态上被吞掉（新代重读多花几百毫秒时稳定复现）。
+    await srsUntilWritten(
+      tester,
+      () => tester.tap(bold),
+      until: () => srsToolbarItemEnabled(
+        tester,
+        const ValueKey<String>('srs_review_undo'),
+      ),
+    );
     expect(await _definition(tester, store, noteId), 'a <b>formal</b> match');
     // 原地刷新：仍在答案面。
     expect(faces.last.showingAnswer, isTrue);
 
     faces.last.onEditSelection!(const SrsCardSelection('formal match'));
     await tester.pump();
-    await tester.tap(
-      find.byKey(const ValueKey<String>('srs-review-edit-clear')),
+    await srsUntilWritten(
+      tester,
+      () => tester.tap(
+        find.byKey(const ValueKey<String>('srs-review-edit-clear')),
+      ),
+      until: () => srsToolbarItemEnabled(
+        tester,
+        const ValueKey<String>('srs_review_undo'),
+      ),
     );
-    await _settle(tester, rounds: 20);
     expect(await _definition(tester, store, noteId), 'a formal match');
 
     // 撤销两步：先回到加粗，再回到原值。
-    await tester.tap(find.byKey(const ValueKey<String>('srs_review_undo')));
-    await _settle(tester, rounds: 20);
+    await srsUntilStoreWritten(
+      tester,
+      store,
+      () => tester.tap(find.byKey(const ValueKey<String>('srs_review_undo'))),
+      until: () => srsToolbarItemEnabled(
+        tester,
+        const ValueKey<String>('srs_review_undo'),
+      ),
+    );
     expect(await _definition(tester, store, noteId), 'a <b>formal</b> match');
-    await tester.tap(find.byKey(const ValueKey<String>('srs_review_undo')));
-    await _settle(tester, rounds: 20);
+    await srsUntilStoreWritten(
+      tester,
+      store,
+      () => tester.tap(find.byKey(const ValueKey<String>('srs_review_undo'))),
+    );
     expect(await _definition(tester, store, noteId), 'a formal match');
 
     await tester.pumpWidget(const SizedBox.shrink());

@@ -1,12 +1,53 @@
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
-import 'support/fake_engine.dart';
-
 const String kP = 'profile-uid';
 const int kT0 = 1700000000000;
 const int kDayMs = 86400000;
 const SrsDayContext kDayCtx = SrsDayContext(utcOffsetMin: 0, rolloverHour: 4);
+
+/// 测试夹具：按旧协议写入者的规则造修改记录（按序分配 dot，因果上下文覆盖此前写过的全部）。本机的写入者与 HLC
+/// 时钟在内核里，生产代码没有 Dart 版。
+class _EditWriter {
+  _EditWriter(this.writerId);
+
+  final String writerId;
+  int _lastSeq = 0;
+  SrsCausalContext _applied = SrsCausalContext.empty();
+
+  SrsFieldEdit create({
+    required String profileUid,
+    required SrsEntityKind entityKind,
+    required String entityId,
+    required String fieldKey,
+    required Object? value,
+    required Hlc hlc,
+    required SrsTimeSource timeSource,
+  }) {
+    _lastSeq += 1;
+    final SrsFieldEdit edit = SrsFieldEdit(
+      profileUid: profileUid,
+      entityKind: entityKind,
+      entityId: entityId,
+      fieldKey: fieldKey,
+      dot: SrsDot(writerId, _lastSeq),
+      ctx: _applied,
+      value: value,
+      hlc: hlc,
+      timeSource: timeSource,
+    );
+    _applied = _applied.merge(edit.ctx).add(edit.dot);
+    return edit;
+  }
+}
+
+/// 测试夹具：写入者 [writerId] 的 HLC 来源（发出事件时取 max(可信时间, 已见过的最大 HLC)）。
+Hlc Function(int nowMs) _ticker(String writerId) {
+  Hlc cur = Hlc(0, 0, writerId);
+  return (int nowMs) => cur = nowMs > cur.physical
+      ? Hlc(nowMs, 0, writerId)
+      : Hlc(cur.physical, cur.counter + 1, writerId);
+}
 
 int _seq = 0;
 
@@ -60,10 +101,10 @@ void main() {
     });
 
     test('同一来源在两台设备上派生出同一 ID，与本机状态无关', () {
-      final String nt = SrsIds.noteType(kP, 12345);
-      expect(SrsIds.noteType(kP, 12345), nt);
+      final String nt = SrsKernelIds(kP).noteType(12345);
+      expect(SrsKernelIds(kP).noteType(12345), nt);
       expect(SrsIds.fieldByName(nt, 'Front'), SrsIds.fieldByName(nt, 'Front'));
-      final String note = SrsIds.note(kP, 'abc');
+      final String note = SrsKernelIds(kP).note('abc');
       final String tpl = SrsIds.template(nt, 7);
       expect(SrsIds.card(note, tpl, 0), SrsIds.card(note, tpl, 0));
       expect(SrsIds.card(note, tpl, 1), isNot(SrsIds.card(note, tpl, 2)));
@@ -72,15 +113,18 @@ void main() {
     test('内置笔记类型走通用规则：导出 → 导入回到同一 ID（第六轮审查第 8 条）', () {
       final int lapisNum = SrsIds.builtinNoteTypeAnkiNum('lapis');
       // 导出写进 .apkg 的笔记类型 id 就是 ankiNum；回导时按通用规则派生。
-      expect(SrsIds.noteType(kP, lapisNum), SrsIds.noteType(kP, lapisNum));
+      expect(
+        SrsKernelIds(kP).noteType(lapisNum),
+        SrsKernelIds(kP).noteType(lapisNum),
+      );
       expect(lapisNum, greaterThan(0));
       expect(lapisNum, lessThan(1 << 53));
     });
 
     test('fushi-ext 跨 profile 导入：日志与 revokesId 用同一函数重映射', () {
       expect(
-        SrsIds.remappedLog(SrsIds.note(kP, 'g'), 'orig-1'),
-        SrsIds.remappedLog(SrsIds.note(kP, 'g'), 'orig-1'),
+        SrsIds.remappedLog(SrsKernelIds(kP).note('g'), 'orig-1'),
+        SrsIds.remappedLog(SrsKernelIds(kP).note('g'), 'orig-1'),
       );
     });
 
@@ -382,149 +426,8 @@ void main() {
     });
   });
 
-  group('评分（PR1 策略）', () {
-    SrsLogContext ctx(int Function() now) => SrsLogContext(
-      profileUid: kP,
-      clock: HlcClock('dev#1'),
-      now: () => (now(), SrsTimeSource.anchored),
-      day: kDayCtx,
-    );
-    const SrsCardOps ops = SrsCardOps(engine: FakeFsrsEngine());
-
-    test('新卡按学习步走：Again→步 0，Good→步 1，再 Good 毕业', () {
-      int now = kT0;
-      final List<SrsReviewLog> logs = <SrsReviewLog>[];
-      SrsReviewLog rate(int r) {
-        final SrsReviewLog l = ops.answer(
-          cardId: 'card',
-          history: SrsCardHistory(logs),
-          rating: r,
-          config: const SrsSchedulingConfig(),
-          ctx: ctx(() => now),
-          rwkvQueued: false,
-        );
-        logs.add(l);
-        return l;
-      }
-
-      expect(rate(1).result!.queue, SrsQueue.learning);
-      expect(logs.last.reviewType, SrsReviewType.learn);
-      now += 60000;
-      final SrsReviewLog g = rate(3);
-      expect(g.result!.queue, SrsQueue.learning);
-      expect(g.result!.learningStep, 1);
-      now += 600000;
-      final SrsReviewLog grad = rate(3);
-      expect(grad.result!.queue, SrsQueue.review);
-      expect(grad.result!.reps, 3);
-      expect(grad.result!.dueDay, greaterThan(kDayCtx.dayIndexOf(now)));
-    });
-
-    test(
-      '日志 alg 记实际排程的算法：RWKV 牌组只有由 RWKV-Instant 排队时记 rwkv，没有 RWKV 运行时（无头宿主）记 FSRS-7',
-      () {
-        const SrsSchedulingConfig rwkvDeck = SrsSchedulingConfig(
-          algorithm: SrsAlgorithm.rwkv,
-        );
-        SrsReviewLog rate({required bool rwkvQueued}) => ops.answer(
-          cardId: 'card',
-          history: SrsCardHistory(const <SrsReviewLog>[]),
-          rating: 3,
-          config: rwkvDeck,
-          ctx: ctx(() => kT0),
-          rwkvQueued: rwkvQueued,
-        );
-        final SrsReviewLog headless = rate(rwkvQueued: false);
-        expect(headless.algorithm, SrsAlgorithm.fsrs7.wire);
-        expect(
-          headless.paramsHash,
-          srsParamsHash(SrsAlgorithm.fsrs7, rwkvDeck.params),
-        );
-        expect(rate(rwkvQueued: true).algorithm, SrsAlgorithm.rwkv.wire);
-        // FSRS 牌组与 rwkvQueued 无关。
-        expect(
-          ops
-              .answer(
-                cardId: 'card',
-                history: SrsCardHistory(const <SrsReviewLog>[]),
-                rating: 3,
-                config: const SrsSchedulingConfig(
-                  algorithm: SrsAlgorithm.fsrs6,
-                ),
-                ctx: ctx(() => kT0),
-                rwkvQueued: true,
-              )
-              .algorithm,
-          SrsAlgorithm.fsrs6.wire,
-        );
-      },
-    );
-
-    test('elapsed = 评分时刻 − lastReviewedAt：中间导入 / 改期不改变它（13 天的例子）', () {
-      const int oct1 = kT0;
-      const SrsScheduleResult reviewed = SrsScheduleResult(
-        queue: SrsQueue.review,
-        dueDay: 1,
-        scheduledDays: 5,
-        lastReviewedAt: oct1,
-        reps: 3,
-      );
-      final SrsScheduleResult moved = srsManualSetDue(
-        reviewed,
-        dueDay: 99,
-        today: 50,
-      );
-      expect(moved.lastReviewedAt, oct1);
-      final SrsAnswerContext a = SrsAnswerContext(
-        cardId: 'c',
-        current: moved,
-        nowMs: oct1 + 13 * kDayMs,
-        day: kDayCtx,
-        config: const SrsSchedulingConfig(),
-      );
-      expect(a.elapsedDaysFor(SrsAlgorithm.fsrs7), 13.0);
-      expect(a.elapsedDaysFor(SrsAlgorithm.fsrs6), 13.0);
-    });
-
-    test('复习卡：hard < good < easy，Again 记一次 lapse 并进重学', () {
-      final SrsAnswerContext a = SrsAnswerContext(
-        cardId: 'c',
-        current: const SrsScheduleResult(
-          queue: SrsQueue.review,
-          scheduledDays: 10,
-          lastReviewedAt: kT0,
-          reps: 5,
-          dueDay: 10,
-        ),
-        nowMs: kT0 + 10 * kDayMs,
-        day: kDayCtx,
-        config: const SrsSchedulingConfig(),
-      );
-      final SrsAnswerPlan plan = srsPlanAnswer(
-        a,
-        const FakeFsrsEngine().nextStates(
-          algorithm: SrsAlgorithm.fsrs7,
-          params: const <double>[],
-          desiredRetention: 0.9,
-          memory: const SrsMemory(stability: 10, difficulty: 5),
-          elapsedDays: 10,
-        ),
-      );
-      expect(plan[1].queue, SrsQueue.relearning);
-      expect(plan[1].lapses, 1);
-      expect(plan[2].scheduledDays, lessThan(plan[3].scheduledDays));
-      expect(plan[3].scheduledDays, lessThan(plan[4].scheduledDays));
-      expect(plan[3].scheduledDays, greaterThanOrEqualTo(10), reason: '#4431');
-    });
-
-    test('fuzz 确定性', () {
-      expect(srsFuzzFactor('card-x', 3), srsFuzzFactor('card-x', 3));
-      expect(srsFuzzFactor('card-x', 3), isNot(srsFuzzFactor('card-x', 4)));
-      final ({int min, int max}) r = srsFuzzRange(30, 1, 36500);
-      expect(r.min, lessThan(30));
-      expect(r.max, greaterThan(30));
-    });
-
+  // 评分 / 撤销 / 手动改期的排程只在 Rust 里（native/fushi_fsrs/src/sync2/sched.rs 与 store/sync2/sched_local.rs 的测试）。
+  group('步长', () {
     test('步长只允许当天以内', () {
       expect(srsValidateSteps(<double>[1, 10]), isTrue);
       expect(srsValidateSteps(<double>[1, 1440]), isFalse);
@@ -536,42 +439,6 @@ void main() {
       // 空 = 不用步长（Anki 预设留空、设置页留空），不回落默认。
       expect(srsSanitizeSteps(<double>[], <double>[1, 10]), isEmpty);
       expect(srsValidateSteps(<double>[]), isTrue);
-    });
-
-    test('撤销只允许最后一条有效日志', () {
-      final SrsReviewLog a = _log(
-        card: 'c',
-        kind: SrsLogKind.review,
-        at: kT0,
-        rating: 3,
-      );
-      final SrsReviewLog b = _log(
-        card: 'c',
-        kind: SrsLogKind.review,
-        at: kT0 + 10,
-        rating: 3,
-      );
-      final SrsCardHistory h = SrsCardHistory(<SrsReviewLog>[a, b]);
-      expect(
-        ops.undo(
-          cardId: 'c',
-          history: h,
-          targetLogId: a.id,
-          ctx: ctx(() => kT0 + 20),
-        ),
-        isNull,
-      );
-      expect(
-        ops
-            .undo(
-              cardId: 'c',
-              history: h,
-              targetLogId: b.id,
-              ctx: ctx(() => kT0 + 20),
-            )!
-            .revokesId,
-        b.id,
-      );
     });
   });
 
@@ -682,7 +549,7 @@ void main() {
         ],
         css: 'code css',
       );
-      final SrsEditWriter w = SrsEditWriter(writerId: 'w');
+      final _EditWriter w = _EditWriter('w');
       final SrsFieldEdit rename = w.create(
         profileUid: kP,
         entityKind: SrsEntityKind.noteType,
@@ -719,7 +586,7 @@ void main() {
 
     test('牌组树：成环确定性打破；参数继承', () {
       SrsDeckView deck(String id, String? parent, {bool own = false}) {
-        final SrsEditWriter w = SrsEditWriter(writerId: 'w$id');
+        final _EditWriter w = _EditWriter('w$id');
         final List<SrsFieldEdit> e = <SrsFieldEdit>[
           w.create(
             profileUid: kP,
@@ -802,7 +669,7 @@ void main() {
   group('恢复计划（重放副本优先，旧版本客户端不分歧）', () {
     SrsLogContext ctx() => SrsLogContext(
       profileUid: kP,
-      clock: HlcClock('dev#9'),
+      nextHlc: _ticker('dev#9'),
       now: () => (kT0 + 30 * kDayMs, SrsTimeSource.anchored),
       day: kDayCtx,
     );

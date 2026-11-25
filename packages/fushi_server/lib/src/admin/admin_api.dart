@@ -15,12 +15,17 @@ import 'package:fushi_engine/asr/asr_host_job_runner.dart'
     show parseAsrAudioProfile;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart';
 import 'package:fushi_engine/media/torrent/bt_site_probe.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart'
     show TorznabIndexerConfig;
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart'
     show readTorznabIndexerConfigs;
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
+import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart'
+    show kVideoAcquisitionSubtitleLanguageCodes;
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart'
+    show subtitleLanguageNativeName;
 import 'package:fushi_engine/utils/net/app_http.dart'
     show createAppHttpIoClient;
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
@@ -34,15 +39,22 @@ import 'package:fushi_engine/sync/downloads/host_download_host.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job.dart';
 import 'package:fushi_engine/sync/interconnect_owner_devices.dart';
+import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
     show HostSubscriptionRejected;
 import 'package:fushi_server/src/admin/admin_backups.dart';
+import 'package:fushi_server/src/admin/admin_srs.dart';
+import 'package:fushi_server/src/admin/admin_srs_ctl.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
+import 'package:fushi_server/src/admin/admin_dictionaries.dart';
 import 'package:fushi_server/src/admin/resource_indexer_settings.dart';
+import 'package:fushi_server/src/admin/subtitle_provider_settings.dart';
 import 'package:fushi_server/src/anki_landing.dart';
 import 'package:fushi_server/src/admin/upload_store.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
+import 'package:fushi_server/src/commands/dict_commands.dart'
+    show DictArchiveImporter;
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/download_host.dart';
 import 'package:fushi_server/src/headless_host.dart';
@@ -54,6 +66,7 @@ import 'package:fushi_server/src/video_scrape_host.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
+import 'package:fushi_server/src/server_language.dart';
 
 shelf.Response _json(Object body, {int status = 200}) => shelf.Response(
   status,
@@ -75,12 +88,16 @@ Future<Map<String, dynamic>> _body(shelf.Request request) async {
 }
 
 class AdminApi {
-  AdminApi(this.ctx, {http.Client Function()? btSiteProbeClient})
-    : uploads = UploadStore(
-        ledgerFile: File(p.join(ctx.paths.support.path, 'upload_ledger.json')),
-        quotaBytes: ctx.config.uploadQuotaBytes,
-      ),
-      _btSiteProbeClient = btSiteProbeClient ?? createAppHttpIoClient;
+  AdminApi(
+    this.ctx, {
+    http.Client Function()? btSiteProbeClient,
+    DictArchiveImporter? dictionaryImporter,
+  }) : uploads = UploadStore(
+         ledgerFile: File(p.join(ctx.paths.support.path, 'upload_ledger.json')),
+         quotaBytes: ctx.config.uploadQuotaBytes,
+       ),
+       _btSiteProbeClient = btSiteProbeClient ?? createAppHttpIoClient,
+       _dictionaryImporter = dictionaryImporter;
 
   final AdminContext ctx;
   final UploadStore uploads;
@@ -88,6 +105,9 @@ class AdminApi {
   /// 添加 / 重新检测 BT 站时探测用的 HTTP client 工厂（每次探测建一个、用完关）。
   /// 生产走全应用代理装配；测试注入假站点。
   final http.Client Function() _btSiteProbeClient;
+
+  /// 词典导入的原生导入器（null = 真原生库）；测试注入假的。
+  final DictArchiveImporter? _dictionaryImporter;
 
   Future<shelf.Response> handle(shelf.Request request) async {
     final String method = request.method.toUpperCase();
@@ -117,6 +137,20 @@ class AdminApi {
   /// 整机备份端点（`/api/admin/backups*`，见 admin_backups.dart）。
   late final AdminBackups backups = AdminBackups(ctx);
 
+  /// 复习（SRS）端点（`/api/admin/srs*`，见 admin_srs.dart）。
+  late final AdminSrs srs = AdminSrs(ctx);
+
+  /// 复习库内容端点（`/api/admin/srs/{decks,notes,stats,conflicts,duplicates}*`，见
+  /// admin_srs_ctl.dart）：与 app 同一份 engine 路由，按 `profile` 点名哪一份库。
+  late final AdminSrsCtl srsCtl = AdminSrsCtl(() => ctx.host.srs);
+
+  /// 词典端点（`/api/admin/dictionaries*`，见 admin_dictionaries.dart）。
+  late final AdminDictionaries dictionaries = AdminDictionaries(
+    ctx,
+    importer: _dictionaryImporter,
+    uploads: uploads,
+  );
+
   Future<shelf.Response> _route(
     String method,
     String path,
@@ -124,6 +158,19 @@ class AdminApi {
   ) async {
     if (path.startsWith(kAdminBackupsPath)) {
       final shelf.Response? r = await backups.route(method, path, request);
+      if (r != null) return r;
+    }
+    if (path == kAdminSrsPath || path.startsWith('$kAdminSrsPath/')) {
+      final shelf.Response? r = await srs.route(method, path, request);
+      if (r != null) return r;
+    }
+    if (path.startsWith('$kAdminSrsPath/')) {
+      final shelf.Response? r = await srsCtl.route(method, path, request);
+      if (r != null) return r;
+    }
+    if (path == kAdminDictionariesPath ||
+        path.startsWith('$kAdminDictionariesPath/')) {
+      final shelf.Response? r = await dictionaries.route(method, path, request);
       if (r != null) return r;
     }
     switch ((method, path)) {
@@ -139,6 +186,12 @@ class AdminApi {
         );
       case ('GET', '/api/admin/pairing'):
         return _pairing();
+      case ('POST', '/api/admin/pairing/unlock'):
+        // BUG-4391：解除因 PIN 失败过多的配对暂停（全部来源类别）。
+        ctx.host.resetPairingLockout();
+        return shelf.Response(204);
+      case ('POST', '/api/admin/pairing/link'):
+        return _createPairLink();
       case ('PUT', _)
           when path.startsWith('/api/admin/pairing/peers/') &&
               path.endsWith('/owner'):
@@ -313,6 +366,10 @@ class AdminApi {
         );
       case ('GET', '/api/admin/p2p'):
         return _json(ctx.host.p2pStatus());
+      case ('GET', '/api/admin/upload/folders'):
+        return _json(<String, Object?>{
+          'folders': await UploadStore.subfolders(_libraryFor(request)),
+        });
       case ('GET', '/api/admin/upload'):
         return _uploadStatus(request);
       case ('PUT', '/api/admin/upload'):
@@ -537,8 +594,32 @@ class AdminApi {
   InterconnectOwnerDeviceStore get _ownerDevices =>
       InterconnectOwnerDeviceStore(ctx.db);
 
+  /// BUG-4391：签发一次性配对链接（票据配对不走 PIN 预算）。签不出时 409 + reason。
+  Future<shelf.Response> _createPairLink() async {
+    final PairLinkOutcome outcome = await ctx.host.createPairLink();
+    return switch (outcome) {
+      PairLinkIssued(:final String uri, :final DateTime expiresAt) =>
+        _json(<String, Object?>{
+          'uri': uri,
+          'expiresInSeconds': expiresAt
+              .difference(DateTime.now())
+              .inSeconds
+              .clamp(0, 1 << 31),
+        }),
+      PairLinkUnavailable(:final String reason) => _json(<String, Object?>{
+        'reason': reason,
+      }, status: 409),
+    };
+  }
+
   Future<shelf.Response> _pairing() async {
-    final PendingPairing? pending = ctx.host.pendingPairing;
+    // 待输入 PIN 按会话各一条（并发配对互不覆盖）；`pending` 保留最新一条兼容旧前端。
+    final List<PendingPairing> pendingList = ctx.host.pendingPairings;
+    final PendingPairing? pending = pendingList.isEmpty
+        ? null
+        : pendingList.last;
+    final Map<FushiPairOriginClass, DateTime> lockouts =
+        ctx.host.pairingLockouts;
     final List<FushiPairedPeerRow> peers = await ctx.db.getPairedPeers();
     final Set<String> owners = await _ownerDevices.ownerDevicePeerIds();
     final Map<String, String> deviceKeys = await _ownerDevices
@@ -551,6 +632,11 @@ class AdminApi {
         'tls': ctx.config.tls,
         'reachable': ctx.config.leaderboardLink && ctx.config.tls,
       },
+      // BUG-4391：各来源类别因 PIN 失败过多暂停配对到何时；null = 没暂停。
+      'lockout': <String, Object?>{
+        for (final FushiPairOriginClass c in FushiPairOriginClass.values)
+          c.name: lockouts[c]?.toUtc().toIso8601String(),
+      },
       'pending': pending == null
           ? null
           : <String, Object?>{
@@ -559,6 +645,16 @@ class AdminApi {
               'remoteAddress': pending.remoteAddress,
               'createdAt': pending.createdAt.toIso8601String(),
             },
+      // 不下发 sessionId：WebUI 只需显示，会话 id 留在进程内。
+      'pendingList': <Object?>[
+        for (final PendingPairing p in pendingList)
+          <String, Object?>{
+            'pin': p.pin,
+            'deviceName': p.deviceName,
+            'remoteAddress': p.remoteAddress,
+            'createdAt': p.createdAt.toIso8601String(),
+          },
+      ],
       'peers': <Object?>[
         for (final FushiPairedPeerRow peer in peers)
           <String, Object?>{
@@ -591,7 +687,10 @@ class AdminApi {
     final bool result = await _ownerDevices.setOwnerDevicePeer(peerId, owner);
     if (owner && !result) {
       return _json(<String, Object?>{
-        'error': '该设备配对时没有证明设备钥匙（旧版客户端），不能标为「我的设备」；升级客户端后重新配对',
+        'error': tr(
+          '该设备配对时没有证明设备钥匙（旧版客户端），不能标为「我的设备」；升级客户端后重新配对',
+          'This device did not provide a device key when pairing (old client), so it cannot be marked as "my device". Upgrade the client and pair again',
+        ),
         'reason': 'device_key_unverified',
       }, status: 409);
     }
@@ -748,6 +847,7 @@ class AdminApi {
           force: true,
         );
       case SourceLibraryKind.music:
+      case SourceLibraryKind.game:
       case null:
         throw FormatException(
           'library "${library.id}": ${unsupportedLibraryKindMessage(library.kind)}',
@@ -978,8 +1078,14 @@ class AdminApi {
       BtSiteProbeError.invalidUrl => 'Invalid site address',
       BtSiteProbeError.insecureHttp =>
         'Plain HTTP is not allowed for this address; use HTTPS or allow plain HTTP',
-      BtSiteProbeError.unrecognized => 'Unable to recognize this site',
+      BtSiteProbeError.unrecognized =>
+        'Unable to recognize this site; add a parser rule for it',
       BtSiteProbeError.timedOut => 'The site did not respond in time',
+      BtSiteProbeError.ruleRequestFailed =>
+        "The parser rule could not load the site's search page "
+            '(check the address or the login cookie)',
+      BtSiteProbeError.ruleMatchedNothing =>
+        "The parser rule found no results on the site's search page",
     },
     'reason': error.name,
   }, status: 422);
@@ -987,6 +1093,8 @@ class AdminApi {
   Future<BtSiteProbeResult> _probe(
     String url, {
     required bool allowInsecureHttp,
+    BtSiteParserRule? parser,
+    String cookie = '',
   }) async {
     final http.Client client = _btSiteProbeClient();
     try {
@@ -994,6 +1102,8 @@ class AdminApi {
         url,
         client: client,
         allowInsecureHttp: allowInsecureHttp,
+        parser: parser,
+        cookie: cookie,
       );
     } finally {
       client.close();
@@ -1011,6 +1121,15 @@ class AdminApi {
     return v;
   }
 
+  /// `parser`：省略 = null（新增时自动识别）；对象或 JSON 文本 = 解析规则；畸形抛
+  /// [FormatException]（→ 400）。
+  static BtSiteParserRule? _optionalParser(Map<String, dynamic> body) {
+    final Object? raw = body['parser'];
+    if (raw == null) return null;
+    if (raw is String && raw.trim().isEmpty) return null;
+    return BtSiteParserRule.fromJson(raw);
+  }
+
   static bool? _optionalBool(Map<String, dynamic> body, String key) {
     final Object? v = body[key];
     if (v == null) return null;
@@ -1018,8 +1137,9 @@ class AdminApi {
     return v;
   }
 
-  /// `POST bt-sites {url, name?, domains?, enabled?, allowInsecureHttp?}`：先探测，认得出
-  /// 才保存；`domains` 省略 = 全部媒体域。
+  /// `POST bt-sites {url, name?, domains?, enabled?, allowInsecureHttp?, parser?, cookie?}`：
+  /// 先探测，认得出才保存；`domains` 省略 = 全部媒体域。带 `parser`（用户导入的
+  /// 解析规则）就不自动识别，按规则验证；`cookie` 只对带规则的站点生效。
   Future<shelf.Response> _addBtSite(Map<String, dynamic> body) async {
     final String url = (_optionalString(body, 'url') ?? '').trim();
     if (url.isEmpty) throw const FormatException('url is required');
@@ -1030,9 +1150,16 @@ class AdminApi {
     final bool enabled = _optionalBool(body, 'enabled') ?? true;
     final bool allowInsecureHttp =
         _optionalBool(body, 'allowInsecureHttp') ?? false;
+    final BtSiteParserRule? parser = _optionalParser(body);
+    final String cookie = (_optionalString(body, 'cookie') ?? '').trim();
     final BtSiteProbeResult probe;
     try {
-      probe = await _probe(url, allowInsecureHttp: allowInsecureHttp);
+      probe = await _probe(
+        url,
+        allowInsecureHttp: allowInsecureHttp,
+        parser: parser,
+        cookie: cookie,
+      );
     } on BtSiteProbeException catch (e) {
       return _probeFailed(e.error);
     }
@@ -1042,6 +1169,7 @@ class AdminApi {
       domains: domains,
       enabled: enabled,
       allowInsecureHttp: allowInsecureHttp,
+      cookie: cookie,
     );
     await _serialBtSites(() async {
       final List<BtSiteConfig> sites = readBtSiteConfigs(ctx.host.prefs);
@@ -1068,8 +1196,9 @@ class AdminApi {
     ]);
   });
 
-  /// `PUT bt-sites/<id> {name?, domains?, enabled?, allowInsecureHttp?, url?}`：只改带了的
-  /// 字段。带非空 `url`（用户换了地址）就重新探测，认得出才保存。
+  /// `PUT bt-sites/<id> {name?, domains?, enabled?, allowInsecureHttp?, url?, parser?, cookie?}`：
+  /// 只改带了的字段。带非空 `url`（用户换了地址）、`parser`（空串 = 去掉规则改回
+  /// 自动识别）或 `cookie` 就重新探测 / 验证，通过才保存。
   Future<shelf.Response> _updateBtSite(
     String id,
     Map<String, dynamic> body,
@@ -1084,11 +1213,22 @@ class AdminApi {
       final bool allowInsecureHttp =
           _optionalBool(body, 'allowInsecureHttp') ?? current.allowInsecureHttp;
       final String url = (_optionalString(body, 'url') ?? '').trim();
+      final bool parserChanged = body.containsKey('parser');
+      final BtSiteParserRule? parser = parserChanged
+          ? _optionalParser(body)
+          : current.parser;
+      final String cookie =
+          _optionalString(body, 'cookie')?.trim() ?? current.cookie;
       final BtSiteConfig next;
-      if (url.isNotEmpty) {
+      if (url.isNotEmpty || parserChanged || cookie != current.cookie) {
         final BtSiteProbeResult probe;
         try {
-          probe = await _probe(url, allowInsecureHttp: allowInsecureHttp);
+          probe = await _probe(
+            url.isNotEmpty ? url : current.baseUrl.toString(),
+            allowInsecureHttp: allowInsecureHttp,
+            parser: parser,
+            cookie: cookie,
+          );
         } on BtSiteProbeException catch (e) {
           return _probeFailed(e.error);
         }
@@ -1098,6 +1238,7 @@ class AdminApi {
           domains: domains ?? current.domains,
           enabled: enabled ?? current.enabled,
           allowInsecureHttp: allowInsecureHttp,
+          cookie: cookie,
         );
       } else {
         // 关掉明文放行而地址仍是明文 → 构造期 ArgumentError → 400，不落库。
@@ -1125,6 +1266,8 @@ class AdminApi {
         probe = await _probe(
           current.baseUrl.toString(),
           allowInsecureHttp: current.allowInsecureHttp,
+          parser: current.parser,
+          cookie: current.cookie,
         );
       } on BtSiteProbeException catch (e) {
         return _probeFailed(e.error);
@@ -1136,6 +1279,7 @@ class AdminApi {
           domains: current.domains,
           enabled: current.enabled,
           allowInsecureHttp: current.allowInsecureHttp,
+          cookie: current.cookie,
         ),
       );
       await _btSitesChanged();
@@ -1174,7 +1318,9 @@ class AdminApi {
       return _json(_modelsCache!);
     }
     final List<Object?> asrModels = <Object?>[];
-    for (final asr.AsrAudioProfile profile in asr.AsrAudioProfile.values) {
+    // 按模型包列：只有两种声学素材各自可能对应不同的包；`song` 用混音那个包（外加
+    // 一个人声分离模型），不单列一行。
+    for (final asr.AsrAudioProfile profile in asr.kAsrPackAudioProfiles) {
       final asr.AsrTranscriptionService service =
           createServerAsrTranscriptionService(audioProfile: profile);
       for (final asr.AsrLanguage language in asr.AsrLanguage.registered) {
@@ -1266,7 +1412,7 @@ class AdminApi {
   }
 
   static String _ocrModelName(String key) => switch (key) {
-    'manga_ctc' => '漫画 CTC（快速）',
+    'manga_ctc' => tr('漫画 CTC（快速）', 'Manga CTC (fast)'),
     _ => key,
   };
 
@@ -1361,12 +1507,22 @@ class AdminApi {
     'lanRequiresPin': ctx.config.lanRequiresPin,
     'subtitleLanguage': ctx.config.subtitleLanguage,
     'metadataLocale': ctx.config.metadataLocale,
+    'language': ctx.config.language,
     'scanPrune': ctx.config.scanPrune,
     'scanScrape': ctx.config.scanScrape,
     'profileTransfer': ctx.config.profileTransfer,
+    'remoteUpdate': ctx.config.remoteUpdate,
     'leaderboardLink': ctx.config.leaderboardLink,
+    // 简繁互查：只管没自带开关的请求方（浏览器扩展 / 旧客户端）；保存即生效。
+    'lookupChineseScriptVariants': ctx.config.lookupChineseScriptVariants,
     // 与 qBittorrent 密码同样只报「设过没有」，不回显明文。
     'tmdbApiKeySet': (ctx.config.tmdbApiKey ?? '').isNotEmpty,
+    // 在线字幕来源（偏好表，与 app 同键）：key / 密码只报「设过没有」；保存即生效
+    // （下载管线每轮字幕阶段、补字幕每次请求现读）。
+    kSubtitleProvidersSettingsKey: subtitleProviderSettingsToJson(
+      ctx.host.prefs,
+      ctx.environment,
+    ),
     'ffmpeg': ctx.config.ffmpegPath,
     'ffprobe': ctx.config.ffprobePath,
     'onnxruntimeLibrary': ctx.config.ortLibraryPath,
@@ -1381,7 +1537,12 @@ class AdminApi {
       'engine': ctx.config.torrentEngine,
       'library': ctx.config.torrentLibraryPath,
       'listen': ctx.config.torrentListen,
+      // 已配对设备借本机引擎下载时，除下载根外允许落盘的目录（保存即生效）。
+      'peerRoots': ctx.config.torrentPeerRoots,
       'embeddedLibraryFound': locateBundledLibrary(torrentLibraryName()),
+      // 内置引擎会话设置（上传开关 / 限速 / 活跃名额 / 做种上限，BUG-5160）：
+      // 保存即重新铺到常驻会话，不用重启。
+      ...ctx.config.torrentSession.toAdminJson(),
     },
     // 远程可达三项：保存即生效，不在 restartRequiredKeys 里。
     'publicUrls': ctx.config.publicUrls,
@@ -1395,6 +1556,31 @@ class AdminApi {
       for (final AiProviderPreset preset in kAiProviderPresets) preset.id,
       kAiCustomPresetId,
     ],
+    // WebUI 下拉用：预设显示名 + 起点模型（模型框的建议值）。
+    'aiPresetOptions': <Map<String, String>>[
+      for (final AiProviderPreset preset in kAiProviderPresets)
+        <String, String>{
+          'id': preset.id,
+          'name': preset.displayName,
+          'model': preset.suggestedModel,
+        },
+    ],
+    // 字幕语言下拉：与「AI 下视频」同一份可选码，显示名用母语写法。
+    'subtitleLanguageOptions': <Map<String, String>>[
+      for (final String code in kVideoAcquisitionSubtitleLanguageCodes)
+        <String, String>{
+          'code': code,
+          'name': subtitleLanguageNativeName(code),
+        },
+    ],
+    'metadataLocaleOptions': <Map<String, String>>[
+      // 地区由 code 本身体现（zh-CN / zh-TW），名字只取主语种，免得显示成「中文 (CN) (zh-CN)」。
+      for (final String code in ServerConfig.metadataLocaleSuggestions)
+        <String, String>{
+          'code': code,
+          'name': subtitleLanguageNativeName(code.split('-').first),
+        },
+    ],
     // 刮削协调器按启动时的配置快照构造（下载管线持有它），资料语言与 TMDB key 同重启生效。
     'restartRequiredKeys': const <String>[
       'port',
@@ -1402,7 +1588,10 @@ class AdminApi {
       'tls',
       'adminPort',
       'qbittorrent',
-      'torrent',
+      // torrent 段只有这三项要重启；peerRoots 与会话设置保存即生效。
+      'torrent.engine',
+      'torrent.library',
+      'torrent.listen',
       'onnxruntimeLibrary',
       'ffmpeg',
       'ffprobe',
@@ -1438,7 +1627,9 @@ class AdminApi {
       'scanPrune',
       'scanScrape',
       'profileTransfer',
+      'remoteUpdate',
       'leaderboardLink',
+      'lookupChineseScriptVariants',
     ]) {
       if (body[key] != null && body[key] is! bool) {
         throw FormatException('$key must be a boolean');
@@ -1447,7 +1638,10 @@ class AdminApi {
     // 只拦「从关到开」：原本就开着（手写 yaml）时照常能保存别的项、也能关掉。
     if (p2p == true && !ctx.config.p2p && !ctx.host.p2pAvailable) {
       return _json(<String, Object?>{
-        'error': 'P2P 隧道不可用：没找到 libfushi_p2p（放在 bin/../lib/ 或设 FUSHI_P2P_LIB）',
+        'error': tr(
+          'P2P 隧道不可用：没找到 libfushi_p2p（放在 bin/../lib/ 或设 FUSHI_P2P_LIB）',
+          'P2P tunnel unavailable: libfushi_p2p not found (put it in bin/../lib/ or set FUSHI_P2P_LIB)',
+        ),
         'reason': 'p2p_unavailable',
       }, status: 409);
     }
@@ -1455,6 +1649,14 @@ class AdminApi {
       body['ai'],
       ctx.config.ai,
     );
+    // 字幕来源先整体校验（非法 → 400，什么都不写），配置文件落盘之后再写偏好。
+    final SubtitleProviderSettingsUpdate? subtitleProviders =
+        body[kSubtitleProvidersSettingsKey] == null
+        ? null
+        : parseSubtitleProviderSettings(
+            body[kSubtitleProvidersSettingsKey],
+            ctx.host.prefs,
+          );
     final ServerConfig next = ctx.config.copyWith(
       deviceName: body['deviceName']?.toString(),
       port: body['port'] is num ? (body['port'] as num).toInt() : null,
@@ -1465,6 +1667,7 @@ class AdminApi {
           : null,
       subtitleLanguage: body['subtitleLanguage']?.toString(),
       metadataLocale: body['metadataLocale']?.toString(),
+      language: ServerConfig.parseLanguage(body['language']),
       ffmpegPath: body['ffmpeg']?.toString(),
       ffprobePath: body['ffprobe']?.toString(),
       ortLibraryPath: body['onnxruntimeLibrary']?.toString(),
@@ -1484,13 +1687,21 @@ class AdminApi {
       torrentListen: (torrent?['listen'] ?? '').toString().isEmpty
           ? null
           : torrent!['listen'].toString(),
+      torrentPeerRoots: torrent?['peerRoots'] == null
+          ? null
+          : ServerConfig.parseTorrentPeerRoots(torrent!['peerRoots']),
+      torrentSession: torrent == null
+          ? null
+          : ctx.config.torrentSession.mergeAdminJson(torrent),
       publicUrls: publicUrls,
       p2p: p2p,
       p2pRelays: p2pRelays,
       scanPrune: body['scanPrune'] as bool?,
       scanScrape: body['scanScrape'] as bool?,
       profileTransfer: body['profileTransfer'] as bool?,
+      remoteUpdate: body['remoteUpdate'] as bool?,
       leaderboardLink: body['leaderboardLink'] as bool?,
+      lookupChineseScriptVariants: body['lookupChineseScriptVariants'] as bool?,
       // 空串 = 不改（与 qBittorrent 密码同口径：表单不回显旧值）。
       tmdbApiKey: (body['tmdbApiKey'] ?? '').toString().trim().isEmpty
           ? null
@@ -1499,6 +1710,7 @@ class AdminApi {
       clearAi: ai?.clear ?? false,
     );
     await ctx.updateConfig(next);
+    await subtitleProviders?.apply(ctx.host.prefs);
     return _settings();
   }
 
@@ -1573,6 +1785,7 @@ class AdminApi {
           ? null
           : AiReasoningEffort.fromStorageKey(effort),
       allowInsecureHttp: flag('allowInsecureHttp'),
+      images: flag('images'),
       webKnowledge: flag('webKnowledge'),
       libraryOrganize: flag('libraryOrganize'),
       agentForPeers: flag('agentForPeers'),

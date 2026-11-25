@@ -43,6 +43,12 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:fushi_engine/media/music/disc/music_disc_media.dart';
+import 'package:fushi_engine/media/music/server/music_server_loudness.dart'
+    show MusicServerLoudness;
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerTrackRef, isFushiHostMusicPath;
+import 'package:fushi_engine/media/music/youtube/youtube_music_client.dart'
+    show youtubeMusicVideoIdFromPath;
 import 'package:fushi_music/fushi_music.dart' show MusicPluginStream;
 import 'package:fushi_engine/media/music/server/subsonic_music_client.dart'
     show redactSubsonicCredentials;
@@ -50,12 +56,16 @@ import 'package:media_kit/media_kit.dart';
 
 import 'package:fushi/src/media/music/disc/music_audio_cd.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
-import 'package:fushi/src/media/music/music_equalizer.dart';
+import 'package:fushi/src/media/music/music_audio_effects.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_platform_output.dart';
 import 'package:fushi/src/media/music/music_remote_media.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/plugin/music_plugins.dart';
+import 'package:fushi/src/media/music/server/music_server_loudness_resolver.dart';
+import 'package:fushi/src/media/music/server/youtube_music_gate.dart';
+import 'package:fushi/src/media/video/video_mpv_config.dart'
+    show setMpvPropertiesInOrder;
 
 /// 纯函数：整轨文件里的一段 → mpv EDL URI。路径按 UTF-8 字节数加 `%len%` 前缀，
 /// 路径里的逗号 / 等号不会被当成 EDL 分隔符。[endMs] 为 null = 播到文件尾。
@@ -145,12 +155,48 @@ bool musicCddaContinues(MusicPlayItem from, MusicPlayItem to) =>
 ///
 /// 在线音源插件曲目（`fushi-music-plugin://`）此时才向插件取流（[pluginResolver]，缺省
 /// [resolveMusicPluginStream]），取不到抛 [MusicPluginStreamUnavailable]。
+///
+/// YouTube 内置音源曲目（`fushi-music-youtube://`）同理此时才取 audio-only 直链
+/// （[youtubeResolver]，缺省 [resolveMusicYoutubeStream]），过期时刻取自直链的 `expire`。
 Future<MusicResolvedMedia> resolveMusicMedia(
   MusicPlayItem item, {
   MusicPlayItem? playThrough,
   MusicPluginStreamResolver? pluginResolver,
   MusicRemoteMediaResolver? remoteResolver,
+  MusicYoutubeStreamResolver? youtubeResolver,
+  MusicFushiHostTrackOpener? fushiHostOpener,
 }) async {
+  // 互联 host 曲目（design-imusic-q1）：此时才向 host 签统一流票；CUE 虚拟曲目取 host 曲目行
+  // 的起止（播放项自带的优先），EDL 段指向流地址。
+  if (isFushiHostMusicPath(item.path)) {
+    final MusicFushiHostTrackOpener? open =
+        fushiHostOpener ?? musicFushiHostTrackOpener;
+    if (open == null) {
+      throw StateError('interconnect music library is not installed');
+    }
+    final ({String url, int? startMs, int? endMs}) s = await open(item.path);
+    final int start = item.startMs ?? s.startMs ?? 0;
+    final int? end = (playThrough ?? item).endMs ?? s.endMs;
+    return (
+      media: Media(
+        start == 0 && end == null
+            ? s.url
+            : musicEdlUri(s.url, startMs: start, endMs: end),
+      ),
+      fileLocal: const <String, String>{},
+      expiresAt: null,
+    );
+  }
+  final String? youtubeId = youtubeMusicVideoIdFromPath(item.path);
+  if (youtubeId != null) {
+    final MusicYoutubeStream s =
+        await (youtubeResolver ?? resolveMusicYoutubeStream)(youtubeId);
+    return (
+      media: Media(s.url, httpHeaders: s.headers.isEmpty ? null : s.headers),
+      fileLocal: const <String, String>{},
+      expiresAt: s.expiresAt,
+    );
+  }
   if (isMusicPluginPath(item.path)) {
     final MusicPluginStream s =
         await (pluginResolver ?? resolveMusicPluginStream)(item.path);
@@ -235,6 +281,9 @@ MusicOutputPlatform musicOutputPlatformOfHost() {
   return MusicOutputPlatform.other;
 }
 
+/// mpv `volume-gain-max` 的取值（mpv 选项允许的上限 150 dB）。
+const String kMusicMpvVolumeGainMaxDb = '150';
+
 /// 纯函数：输出设置 → 要下发的 mpv 属性（设计 §7.4 的平台表）。
 ///
 /// * Windows `ao=wasapi`、macOS `ao=coreaudio`：独占时 `audio-exclusive=yes`
@@ -243,6 +292,9 @@ MusicOutputPlatform musicOutputPlatformOfHost() {
 /// * Linux：`ao` 不钉（PipeWire 优先，退 ALSA）；选 `alsa/hw:…` 设备即硬件直出。
 /// * Android / iOS：`ao` 用 media_kit 默认；bit-perfect / 采样率由平台通道处理。
 /// * ReplayGain 恒 `replaygain=no`：增益由后端按曲目用 `volume-gain` 施加（见文件头）。
+///   `volume-gain-max` 放到 mpv 允许的上限：mpv 默认只准 +12 dB，超过的 `volume-gain`
+///   整个被拒（停在上一个值 / 0 dB）。录得轻的曲目（-30 LUFS 量级的人声、老录音）按 -18 LUFS
+///   要 +12 dB 以上；防削波由 [musicReplayGainDb] 按峰值封顶，不靠 mpv 这道上限。
 Map<String, String> musicMpvProperties(
   MusicOutputSettings settings, {
   required MusicOutputPlatform platform,
@@ -254,6 +306,7 @@ Map<String, String> musicMpvProperties(
     'gapless-audio': settings.gapless ? 'weak' : 'no',
     'prefetch-playlist': settings.gapless ? 'yes' : 'no',
     'replaygain': 'no',
+    'volume-gain-max': kMusicMpvVolumeGainMaxDb,
     // 纯音频实例：没有画面，也不要封面当视频轨解码。
     'audio-display': 'no',
     if (platform == MusicOutputPlatform.windows) 'ao': 'wasapi',
@@ -288,6 +341,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     MusicPlatformOutput platformOutput = const MusicPlatformOutput(),
     MusicCdDiscIdReader? cdDiscIdReader,
     MusicPluginStreamResolver? pluginStreamResolver,
+    MusicServerLoudnessResolver? serverLoudnessResolver,
     int Function()? nowMs,
   }) : _player = Player(configuration: configuration),
        _initialProperties = initialProperties,
@@ -295,6 +349,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
        _platformOutput = platformOutput,
        _cdDiscIdReader = cdDiscIdReader,
        _pluginStreamResolver = pluginStreamResolver,
+       _serverLoudnessResolver = serverLoudnessResolver,
        _nowMs = nowMs ?? _wallClockMs {
     _subs.add(_player.stream.position.listen(_onPosition));
     _subs.add(_player.stream.playing.listen(_onPlaying));
@@ -309,6 +364,16 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
 
   /// 插件曲目取流（null = 全局装配点 [resolveMusicPluginStream]）。
   final MusicPluginStreamResolver? _pluginStreamResolver;
+
+  /// 服务器曲目起播期补查响度（null = 全局装配点 [musicServerLoudnessResolver]）。
+  final MusicServerLoudnessResolver? _serverLoudnessResolver;
+
+  /// 补查到的服务器响度（曲目 uid → 响度），[_applyGain] 与播放项自带的值合并。
+  final Map<String, MusicServerLoudness> _serverLoudness =
+      <String, MusicServerLoudness>{};
+
+  /// 正在补查的曲目（同一首并发只问一次）。
+  final Set<String> _serverLoudnessPending = <String>{};
 
   /// 墙钟（epoch 毫秒），判插件流地址是否过期。
   final int Function() _nowMs;
@@ -431,11 +496,20 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     _initialised = true;
     final NativePlayer? native = _native;
     if (native == null) return;
-    for (final MapEntry<String, String> e in _initialProperties.entries) {
-      await native.setProperty(e.key, e.value);
-    }
+    // 全仓 mpv 属性批量下发的唯一实现：逐条保序，被拒的单条留痕后跳过（BUG-4911）。
+    await setMpvPropertiesInOrder(_player, _initialProperties);
     native.onLoadHooks.add(_onLoadHook);
+    native.onUnloadHooks.add(_onUnloadHook);
     await native.observePropertyChanges('audio-pts', _onAudioPts);
+    // 暂停态下设备开起来 / 音轨选中（不起播的打开、暂停早于加载完成）：独占时交还。
+    await native.observePropertyChanges(
+      'current-ao',
+      (String _) => _syncPausedDevice(),
+    );
+    await native.observePropertyChanges(
+      'current-tracks/audio/id',
+      (String _) => _syncPausedDevice(),
+    );
   }
 
   Future<void> _setIfChanged(String key, String value) async {
@@ -463,11 +537,11 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       await _setIfChanged(e.key, e.value);
     }
     await _applyGain(_audible);
-    // 均衡器（P5）：没装交叉淡入滤镜时挂在全局 `af` 上（关 / 平直 = 空，bit-perfect 不动）；
+    // 音效（P5）：没装交叉淡入滤镜时挂在全局 `af` 上（关 / 全部中性 = 空，bit-perfect 不动）；
     // 装了交叉淡入时由 on_load 钩子与淡入淡出拼进同一条逐文件链（逐文件 `af` 整体替换全局
-    // 的，单挂全局会在淡入淡出的那几首上丢掉均衡）。
+    // 的，单挂全局会在淡入淡出的那几首上丢掉音效）。
     if (!_crossfadeFilters) {
-      await _setIfChanged('af', musicEqualizerAf(settings.equalizer) ?? '');
+      await _setIfChanged('af', musicAudioEffectsAf(settings.effects) ?? '');
     }
     if (_platform == MusicOutputPlatform.android) {
       if (exclusiveTurnedOff) {
@@ -482,18 +556,29 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
   }
 
   /// 按出声曲目下发 ReplayGain（`volume-gain`，dB）。
+  ///
+  /// 服务器曲目没随播放项带来的响度用补查结果补上（[_lookupServerLoudness]）。
   Future<void> _applyGain(MusicPlayItem? item) async {
-    final double db =
-        item == null || _settings.replayGain == MusicReplayGainMode.off
-        ? 0
-        : musicReplayGainDb(
-            albumMode: _settings.replayGain == MusicReplayGainMode.album,
-            trackGain: item.rgTrackGain,
-            trackPeak: item.rgTrackPeak,
-            albumGain: item.rgAlbumGain,
-            albumPeak: item.rgAlbumPeak,
-            preampDb: _settings.replayGainPreampDb,
-          );
+    final double db;
+    if (item == null || _settings.replayGain == MusicReplayGainMode.off) {
+      db = 0;
+    } else {
+      final ({
+        double? trackGain,
+        double? trackPeak,
+        double? albumGain,
+        double? albumPeak,
+      })
+      l = musicItemLoudnessWith(item, _serverLoudness[item.trackUid]);
+      db = musicReplayGainDb(
+        albumMode: _settings.replayGain == MusicReplayGainMode.album,
+        trackGain: l.trackGain,
+        trackPeak: l.trackPeak,
+        albumGain: l.albumGain,
+        albumPeak: l.albumPeak,
+        preampDb: _settings.replayGainPreampDb,
+      );
+    }
     await _setIfChanged('volume-gain', db.toStringAsFixed(2));
   }
 
@@ -513,7 +598,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       await native.setProperty(
         'file-local-options/af',
         musicComposeAf(<String?>[
-          musicEqualizerAf(_settings.equalizer),
+          musicAudioEffectsAf(_settings.effects),
           musicCrossfadeAf(
             fadeIn: fadeIn ?? Duration.zero,
             originSeconds: _originSeconds(item),
@@ -557,10 +642,36 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
   final Map<String, Map<String, String>> _fileLocalFor =
       <String, Map<String, String>>{};
 
+  /// 服务器曲目缺响度时向服务器补查（不阻塞起播：预排的下一首在出声前早就查完；当前这首
+  /// 查回来时若正在出声，立即按新值重下增益）。查不到 / 失败按 0 dB 播。
+  void _lookupServerLoudness(MusicPlayItem item) {
+    final MusicServerTrackRef? ref = item.serverTrack;
+    if (ref == null || !musicItemNeedsServerLoudness(item)) return;
+    final String uid = item.trackUid;
+    if (_serverLoudness.containsKey(uid) || !_serverLoudnessPending.add(uid)) {
+      return;
+    }
+    final MusicServerLoudnessResolver? resolver =
+        _serverLoudnessResolver ?? musicServerLoudnessResolver;
+    if (resolver == null) {
+      _serverLoudnessPending.remove(uid);
+      return;
+    }
+    unawaited(
+      resolver.resolve(ref).then((MusicServerLoudness? l) async {
+        _serverLoudnessPending.remove(uid);
+        if (l == null || _disposed) return;
+        _serverLoudness[uid] = l;
+        if (_audible?.trackUid == uid) await _applyGain(_audible);
+      }),
+    );
+  }
+
   Future<Media> _mediaFor(
     MusicPlayItem item, {
     MusicPlayItem? playThrough,
   }) async {
+    _lookupServerLoudness(item);
     final MusicResolvedMedia resolved = await resolveMusicMedia(
       item,
       playThrough: playThrough,
@@ -699,6 +810,10 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
         ? null
         : await _mediaFor(separate);
     if (gen != _openGen) return false;
+    // 不起播的打开（暂停态换曲 / 恢复会话）：加载完成后由 [_syncPausedDevice] 交还独占设备。
+    // 上一个文件暂停时取消选中的音轨是逐文件选项，随它卸载自动还原，这里不用管。
+    _pauseWanted = !play;
+    _releasedForPause = false;
     _rewiring = true;
     _entryProducedAudio = false;
     try {
@@ -913,9 +1028,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       _pending = _next;
       _next = null;
       _entryProducedAudio = false;
-      _pendingFromDuration = _audible?.durationMs == null
-          ? null
-          : Duration(milliseconds: _audible!.durationMs!);
+      _pendingFromDuration = _audible?.playbackDuration;
       _lastIndex = playlist.index;
       return;
     }
@@ -1326,11 +1439,11 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     final MusicPlayItem? item = _audible;
     // 取流期间没有出声曲目：mpv 卸掉旧曲时报的位置不上报。
     if (item == null) return;
-    final Duration? duration = item.durationMs == null
-        ? (_player.state.duration > Duration.zero
-              ? _player.state.duration
-              : null)
-        : Duration(milliseconds: item.durationMs!);
+    final Duration? duration =
+        item.playbackDuration ??
+        (_player.state.duration > Duration.zero
+            ? _player.state.duration
+            : null);
     final Duration relative = absolute - _originOf(item);
     final Duration clamped = relative < Duration.zero
         ? Duration.zero
@@ -1339,11 +1452,95 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     _emit(MusicBackendPosition(clamped, duration));
   }
 
-  @override
-  Future<void> play() => _player.play();
+  // ── 独占输出：暂停即交还设备（反馈 WY8uvL1Vfy）─────────────────────────────
+  //
+  // mpv 的暂停只让 AO 停止消耗缓冲，WASAPI 独占流 / macOS hog mode 一直占着设备，暂停期间
+  // 别的程序放不出声。交还方式是取消选中音轨：mpv `mp_switch_track_n` 在没有音轨时
+  // `uninit_audio_chain` + `uninit_audio_out`（`player/loadfile.c`），设备立刻关闭（已暂停时
+  // `uninit_audio_out` 不 drain）；文件不卸载、播放位置不动，也不会因此判成播完（两条链都
+  // 没有时 `handle_eof` 不结束文件，`player/playloop.c`）。恢复时 [play] 先把音轨选回来
+  // （mpv 按当前位置重建音频链，下一帧到达时重开设备；那时设备被别的程序独占着，就走
+  // [_recoverOutput] 照常退共享），再取消暂停。不用 `stop` + 重开：那要卸载文件，切换期 /
+  // 预排下一首 / CD 同文件续播的状态都得重建。
+  //
+  // 取消选中写的是 `file-local-options/aid`，不是全局 `aid`：全局选项会带进下一次 loadfile，
+  // 让下一个文件「没有可播的流」直接结束；逐文件选项在这个文件卸载时由 mpv 还原。
+  //
+  // 只能对**已经初始化好**的文件取消选中（初始化前写进去会作用到正在加载的文件上）。所以
+  // 「要不要交还」是一个状态（[_pauseWanted] 且独占），由 [_syncPausedDevice] 在每次暂停、
+  // 以及 `current-ao` / 当前音轨变化时（不起播的打开、暂停早于加载完成）对照 mpv 现状收敛，
+  // 而不是在暂停那一刻赌文件已经加载好。
+
+  /// 用户要的播放态是「暂停」（[pause] / 不起播的打开）。
+  bool _pauseWanted = false;
+
+  /// 当前文件的音轨是我们为暂停交还设备而取消选中的（恢复播放时要选回来）。
+  bool _releasedForPause = false;
+
+  /// mpv `on_unload` 钩子计数：[_syncPausedDevice] 读完 mpv 状态到下发之间文件换了就作废。
+  int _mpvUnloads = 0;
+
+  /// 播放 / 暂停的代次：每次 [play] / [pause] 加一。选回音轨途中用户又按了暂停，就不再
+  /// 按旧的那次 [play] 起播。
+  int _transportGen = 0;
+
+  /// 当前是不是以独占方式占着设备（Windows WASAPI 独占 / macOS hog mode；退回共享后不算）。
+  bool get _holdsExclusiveDevice => _applied['audio-exclusive'] == 'yes';
+
+  Future<void> _onUnloadHook() async {
+    _mpvUnloads++;
+    _releasedForPause = false;
+  }
 
   @override
-  Future<void> pause() => _player.pause();
+  Future<void> play() async {
+    final int gen = ++_transportGen;
+    _pauseWanted = false;
+    await _reacquireDevice();
+    // 选回音轨途中用户又暂停了：不再起播。
+    if (gen != _transportGen) return;
+    await _player.play();
+  }
+
+  @override
+  Future<void> pause() async {
+    ++_transportGen;
+    _pauseWanted = true;
+    await _player.pause();
+    await _syncPausedDevice();
+  }
+
+  /// 要暂停 + 独占 + 当前文件已初始化且设备开着 → 取消选中音轨交还设备。其余情况什么都
+  /// 不做（还没加载好的，等 `current-ao` / 当前音轨变化时再来）。幂等：已交还的读出来
+  /// `aid=no`，不再下发。
+  Future<void> _syncPausedDevice() async {
+    final NativePlayer? native = _native;
+    if (native == null || !_initialised || _disposed) return;
+    if (!_pauseWanted || !_holdsExclusiveDevice || _mpvItems.isEmpty) return;
+    final int unloads = _mpvUnloads;
+    // 播放初始化完成后 `aid` 读出的是选中音轨的编号；加载途中读出的是选项值（auto），
+    // 已取消选中读出 no。
+    if (int.tryParse(await native.getPropertyAsync('aid')) == null) return;
+    if ((await native.getPropertyAsync('current-ao')).isEmpty) return;
+    // 读属性期间状态变了：用户按了播放 / 已释放 / mpv 开始卸载这个文件（`on_unload` 钩子
+    // 在我们的回调跑完之前不放行，所以计数没变 = 下发时 mpv 还停在读到的那个文件上）。
+    if (_disposed || !_pauseWanted || unloads != _mpvUnloads) return;
+    _releasedForPause = true;
+    await native.setProperty('file-local-options/aid', 'no');
+  }
+
+  /// 暂停时交还过设备 → 把这个文件的音轨选回来。
+  Future<void> _reacquireDevice() async {
+    if (!_releasedForPause) return;
+    _releasedForPause = false;
+    final NativePlayer? native = _native;
+    if (native == null) return;
+    await native.setProperty('file-local-options/aid', 'auto');
+  }
+
+  /// 测试：当前文件的音轨是否为暂停交还设备而取消选中。
+  @visibleForTesting
+  bool get debugDeviceReleasedForPause => _releasedForPause;
 
   @override
   Future<void> seek(Duration position) async {
@@ -1449,10 +1646,10 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
       muted: await read('mute') == 'yes',
       speed: readDouble(await read('speed'), 1),
       pitchCorrection: await read('audio-pitch-correction') == 'yes',
-      userFilters: musicStripEqualizerFilters(
+      userFilters: musicStripAudioEffectsFilters(
         musicStripCrossfadeFilters(rawAf),
       ),
-      equalizer: musicAfHasEqualizer(rawAf),
+      effects: musicAfHasAudioEffects(rawAf),
       crossfade: item != null && _filteredUids.contains(item.trackUid),
       crossfadeAvailability: musicCrossfadeAvailability(
         _settings,
@@ -1527,7 +1724,7 @@ class MpvMusicOutputBackend implements MusicCrossfadeInstance {
     if (_isCd(_audible)) return ms == null ? null : Duration(milliseconds: ms);
     final Duration d = _player.state.duration;
     if (d > Duration.zero) return d;
-    return ms == null ? null : Duration(milliseconds: ms);
+    return _audible?.playbackDuration;
   }
 
   @override

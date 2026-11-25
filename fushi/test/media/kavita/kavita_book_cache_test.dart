@@ -6,7 +6,8 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart'
+    show ApplyInterceptor, QueryExecutor, QueryInterceptor, Value;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/kavita/kavita_book_binding.dart';
@@ -85,15 +86,34 @@ class _Server {
   );
 }
 
+/// 数 SELECT：全书架 Kavita 扫描（`LIKE` 标记）与总查询数（HBK-AUDIT-041）。
+class _SelectCounter extends QueryInterceptor {
+  int selects = 0;
+  int shelfScans = 0;
+
+  @override
+  Future<List<Map<String, Object?>>> runSelect(
+    QueryExecutor executor,
+    String statement,
+    List<Object?> args,
+  ) {
+    selects++;
+    if (statement.contains('LIKE')) shelfScans++;
+    return super.runSelect(executor, statement, args);
+  }
+}
+
 void main() {
   late FushiDatabase db;
   late Directory tmp;
   late List<String> deleted;
+  late int compactions;
 
   setUp(() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     tmp = Directory.systemTemp.createTempSync('kavita_book_cache_');
     deleted = <String>[];
+    compactions = 0;
   });
   tearDown(() async {
     await db.close();
@@ -114,6 +134,8 @@ void main() {
     db: db,
     tempRoot: tmp,
     deleteBook: deleteBook,
+    hasCustomization: (String _) => false,
+    compactDatabase: () async => compactions++,
     apiFor: server == null ? null : (String _) => server.api(),
     cacheLimit: cacheLimit,
     pushTimeout: pushTimeout,
@@ -308,6 +330,42 @@ void main() {
       server.gate!.complete();
       await trimming;
     });
+
+    // HBK-AUDIT-041 的候选快照：淘汰进行中别的书被固定，可清理集合少了一本，开头拍的
+    // 快照已过时；必须按最新状态重排，不能照旧快照多删一本。
+    test(
+      'pinning a kept copy mid-trim re-plans; no extra copy is evicted',
+      () async {
+        final _Server server = _Server()..gate = Completer<void>();
+        // 排位（新 → 旧）：Keep 600、Newer 500、Victim 10（阅读位置时间）、Mid 5。
+        await insertBook(
+          'Victim',
+          _binding(1, lastOpenedAt: 1, lastPushedPage: 2),
+          localSection: 7,
+        );
+        await insertBook('Newer', _binding(2, lastOpenedAt: 500));
+        await insertBook('Mid', _binding(3, lastOpenedAt: 5));
+        await insertBook('Keep', _binding(4, lastOpenedAt: 600));
+        final KavitaBookService svc = service(
+          server: server,
+          cacheLimit: 2,
+          pushTimeout: const Duration(seconds: 30),
+        );
+        final Future<KavitaCacheCleanup> trimming = svc.trimCache();
+        await server.pushStarted.future;
+        // 快照里该删 Victim 与 Mid；Victim 推进度时用户把 Newer 固定成下载。
+        expect(await svc.pin('Newer'), isTrue);
+        server.gate!.complete();
+        final KavitaCacheCleanup result = await trimming;
+        expect(deleted, <String>['Victim']);
+        expect(result.removed, 1);
+        expect(
+          await db.getEpubBook('Mid'),
+          isNotNull,
+          reason: '固定 Newer 后缓存副本只剩 Keep / Mid，不超限，Mid 不该再删',
+        );
+      },
+    );
   });
 
   group('trimCache', () {
@@ -323,6 +381,11 @@ void main() {
         ).trimCache();
         expect(result.removed, 3);
         expect(deleted.toSet(), <String>{'C1', 'C2', 'C3'});
+        expect(
+          compactions,
+          1,
+          reason: 'BUG-4996：淘汰 3 本只回收一次数据库空间（以前每本一次整库 VACUUM）',
+        );
         expect(
           await service().cachedBookKeys(),
           unorderedEquals(<String>['C4', 'C5']),
@@ -356,6 +419,7 @@ void main() {
       final KavitaCacheCleanup result = await service().trimCache();
       expect(result.removed, 0);
       expect(deleted, isEmpty);
+      expect(compactions, 0, reason: '没删书不回收');
     });
 
     test('opening an existing copy stamps lastOpenedAt', () async {
@@ -382,6 +446,57 @@ void main() {
     });
   });
 
+  // HBK-AUDIT-041：淘汰循环以前每删一本都在「选目标」与「锁内复核」各扫一次整个
+  // Kavita 书架，并逐本查阅读位置与 6 张用户数据表——清 M 本、N 本缓存时约 O(M·N)
+  // 次查询。现在只拍一次候选快照（批量查询，查询数与书数无关），逐本只复核目标自己。
+  group('HBK-AUDIT-041 eviction query cost', () {
+    Future<_SelectCounter> countingDb() async {
+      await db.close();
+      final _SelectCounter counter = _SelectCounter();
+      db = FushiDatabase.forTesting(
+        NativeDatabase.memory().interceptWith(counter),
+      );
+      return counter;
+    }
+
+    Future<({int selects, int shelfScans})> trimCost(int cached) async {
+      final _SelectCounter counter = await countingDb();
+      for (int i = 1; i <= cached; i++) {
+        await insertBook('C$i', _binding(i, lastOpenedAt: i));
+      }
+      counter
+        ..selects = 0
+        ..shelfScans = 0;
+      final KavitaCacheCleanup result = await service(
+        cacheLimit: 2,
+      ).trimCache();
+      final ({int selects, int shelfScans}) cost = (
+        selects: counter.selects,
+        shelfScans: counter.shelfScans,
+      );
+      expect(result.removed, cached - 2);
+      expect(
+        await service().cachedBookKeys(),
+        unorderedEquals(<String>['C${cached - 1}', 'C$cached']),
+      );
+      return cost;
+    }
+
+    test('one shelf snapshot per trim; per-victim work is constant', () async {
+      final ({int selects, int shelfScans}) small = await trimCost(10);
+      final ({int selects, int shelfScans}) large = await trimCost(40);
+      // ignore: avoid_print
+      print('HBK-AUDIT-041 trim cost: 10 books $small, 40 books $large');
+      expect(large.shelfScans, 1, reason: '整个淘汰只扫一次书架');
+      expect(small.shelfScans, 1);
+      // 多淘汰 30 本，查询增量必须与「多删的本数」线性相称（每本只复核自己：推进度
+      // 前读位置、锁内重读行与位置、6 张用户数据表、删书桩），而不是 O(M·N)——旧实现
+      // 每本要把整个书架连同每本的位置与 6 张表各查两遍。
+      final double perVictim = (large.selects - small.selects) / 30;
+      expect(perVictim, lessThanOrEqualTo(16), reason: '每多淘汰一本的查询数是常数');
+    });
+  });
+
   group('clearCache', () {
     test('removes every cached copy and leaves downloads alone', () async {
       await insertBook('C1', _binding(1));
@@ -390,6 +505,7 @@ void main() {
       final KavitaCacheCleanup result = await service().clearCache();
       expect(result.removed, 2);
       expect(deleted.toSet(), <String>{'C1', 'C2'});
+      expect(compactions, 1, reason: 'BUG-4996：一键清理整轮只回收一次');
       expect(await db.getEpubBook('D'), isNotNull);
     });
 
@@ -448,6 +564,7 @@ void main() {
       final KavitaLocalRemoval outcome = await service().removeDownload('D');
       expect(outcome, KavitaLocalRemoval.removed);
       expect(deleted, <String>['D']);
+      expect(compactions, 1);
       expect(await db.getEpubBook('D'), isNull);
     });
 

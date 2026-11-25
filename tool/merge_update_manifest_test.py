@@ -156,6 +156,23 @@ def test_macos_arm64_zip_supersedes_legacy_macos_zip():
     check(_names(m) == [arm64], "a stale legacy macOS zip cannot come back")
 
 
+def test_linux_flatpak_has_its_own_slot():
+    # The Linux Flatpak is its own platform: a newer one replaces the older one,
+    # and it neither replaces nor is replaced by the desktop / Apple assets.
+    def linux(seq):
+        tag = "v0.11.1-debug." + str(seq) + "+sha" + str(seq)
+        version = "0.11.1-debug." + str(seq)
+        name = "fushi-0.11.1-debug." + str(seq) + "-linux-x86_64.flatpak"
+        assets = [{"name": name, "browser_download_url": _url(tag, name)}]
+        return tag, version, assets, name
+
+    m, win = _publish({}, _desktop, 100)
+    m, old = _publish(m, linux, 100)
+    check(_names(m) == sorted([win, old]), "Flatpak joins next to the Windows installer")
+    m, new = _publish(m, linux, 101)
+    check(_names(m) == sorted([win, new]), "a newer Flatpak replaces the older one only")
+
+
 def test_macos_dmg_travels_with_its_zip():
     # The dmg (website first-install download) shares the "macos" slot with the
     # zip: same publish -> both kept; a newer publish replaces both, so a stale
@@ -422,9 +439,45 @@ def test_integrity_fields_malformed_dropped():
     check("size" not in a and "sha256" not in a, "malformed size/sha256 are dropped, not persisted")
 
 
+def test_db_schema_version_survives_and_garbage_dropped():
+    tag, version, assets, exe = _desktop(10400)
+    assets[0]["dbSchemaVersion"] = 154
+    m = merge_manifest(
+        {},
+        tag=tag,
+        channel="debug",
+        version=version,
+        prerelease=True,
+        notes="",
+        release_sequence=10400,
+        new_assets=assets,
+    )
+    m = json.loads(json.dumps(m))
+    check(_by_name(m, exe).get("dbSchemaVersion") == 154, "incoming dbSchemaVersion persisted")
+    # Retained across another platform's publish.
+    m2, apk = _publish(m, _android, 10410, live=None)
+    check(_by_name(m2, exe).get("dbSchemaVersion") == 154, "retained asset keeps dbSchemaVersion")
+    check("dbSchemaVersion" not in _by_name(m2, apk), "asset published without dbSchemaVersion carries none")
+    for bad in ("154", 0, -1, True):
+        tag, version, assets, name = _android(10500)
+        assets[0]["dbSchemaVersion"] = bad
+        out = merge_manifest(
+            {},
+            tag=tag,
+            channel="debug",
+            version=version,
+            prerelease=True,
+            notes="",
+            release_sequence=10500,
+            new_assets=assets,
+        )
+        check("dbSchemaVersion" not in _by_name(out, name), "malformed dbSchemaVersion %r dropped" % (bad,))
+
+
 def main():
     for fn in [
         test_first_publish,
+        test_db_schema_version_survives_and_garbage_dropped,
         test_integrity_fields_survive_incoming,
         test_integrity_fields_survive_retained_asset,
         test_integrity_fields_malformed_dropped,
@@ -434,6 +487,7 @@ def main():
         test_same_platform_upgrade_replaces,
         test_concurrent_same_tag_both_platforms,
         test_macos_arm64_zip_supersedes_legacy_macos_zip,
+        test_linux_flatpak_has_its_own_slot,
         test_macos_dmg_travels_with_its_zip,
         test_backward_compat_legacy_no_seq,
         test_backward_compat_no_seq_unparseable,

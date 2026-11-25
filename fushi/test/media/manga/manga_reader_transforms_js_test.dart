@@ -47,6 +47,13 @@ void main() {
     document.indexOf(end, document.indexOf(start)),
   );
 
+  /// `_layoutSource` 末尾调 `_refitPage`（按显示尺寸取图，BUG-4658）：抽生成文档里
+  /// 真实的取图段（`FIT_IMAGES` … `_scheduleRefit`）一起跑。
+  String fitSection(String doc) => doc.substring(
+    doc.indexOf('  var FIT_IMAGES = '),
+    doc.indexOf('  function _layoutSource(page){'),
+  );
+
   test('generated gesture script parses as executable JavaScript', () async {
     final String script = section('(function(){', '</script>');
     await runJs('new Function(${_jsString(script)});');
@@ -72,7 +79,8 @@ const page={dataset:{pw:'1000',ph:'600',spreadPages:'1'},style:{},
   getBoundingClientRect:()=>({left:20,top:30,width:500,height:800})};
 const window={innerWidth:1000,innerHeight:800};
 const document={querySelector:()=>page};
-const ROTATE_WIDE=true,IS_WEBTOON=false;
+const ROTATE_WIDE=true,IS_WEBTOON=false,RESERVE_R=0,RESERVE_B=0;
+${fitSection(document)}
 $layout
 $inverse
 _layoutSource(page);
@@ -112,8 +120,10 @@ const page={dataset:{pw:'1000',ph:'600',spreadPages:'1'},style:{},
 const window={innerWidth:1000,innerHeight:800};
 const document={body:{style:{}},documentElement:{style:{}},querySelector:()=>page,
   createElement:()=>({getContext:()=>({drawImage:()=>{},getImageData:()=>({data:pixels})})})};
-const ROTATE_WIDE=true,IS_WEBTOON=false,CURRENT=0;
+const ROTATE_WIDE=true,IS_WEBTOON=false,CURRENT=0,RESERVE_R=0,RESERVE_B=0;
+function _refitPage(){}
 function _bridge(){return null;}
+${fitSection(document)}
 $inspect
 _inspectSource(page);
 assert.deepEqual(page.__crop,{x:100,y:60,width:800,height:480});
@@ -158,7 +168,8 @@ function mk(prev, gap){
 }
 const window={innerWidth:393,innerHeight:852,devicePixelRatio:2.75};
 function getComputedStyle(el){return {marginBottom:el.__gap?'12px':'0px'};}
-const ROTATE_WIDE=false,IS_WEBTOON=true,IS_VERTICAL_PAGED=false;
+const ROTATE_WIDE=false,IS_WEBTOON=true,IS_VERTICAL_PAGED=false,RESERVE_R=0,RESERVE_B=0;
+${fitSection(webtoon)}
 $layout
 const first=mk(null,false), second=mk(first,false), afterGap=mk(mk(null,true),false);
 [first,second,afterGap].forEach(_layoutSource);
@@ -172,6 +183,104 @@ assert.equal(afterGap.style.marginTop,'');
 // 图像的纵向缩放必须跟着对齐后的页高走，否则图和页框之间又留一条缝。
 const sy=Number(first.source.style.transform.split(',')[3]);
 assert.ok(Math.abs(sy*3001-parseFloat(first.style.height))<1e-6);
+''');
+    },
+  );
+
+  test(
+    'two-page spread pages snap to device pixels and overlap one device pixel',
+    () async {
+      String layoutOf({required double gutter}) {
+        final String doc = mangaWindowDocument(
+          const <MokuroImage>[
+            MokuroImage(
+              url: 'a.png',
+              size: MokuroSize(1003, 1427),
+              blocks: <MokuroBlock>[],
+            ),
+            MokuroImage(
+              url: 'b.png',
+              size: MokuroSize(1003, 1427),
+              blocks: <MokuroBlock>[],
+            ),
+          ],
+          const <String>['a.png', 'b.png'],
+          mode: MangaReadingMode.spread,
+          spreadDirection: 'rtl',
+          pagesPerSpread: const <int>[2, 2],
+          inlineSelectionJs: '',
+          readerPreferences: const MangaReaderPreferences(),
+          spreadGutterPx: gutter,
+        );
+        final int start = doc.indexOf('  function _layoutSource(page){');
+        return doc.substring(
+          start,
+          doc.indexOf('  function _inspectSource(page){', start),
+        );
+      }
+
+      String gutterFlag(double gutter) {
+        final String doc = mangaWindowDocument(
+          const <MokuroImage>[
+            MokuroImage(
+              url: 'a.png',
+              size: MokuroSize(1003, 1427),
+              blocks: <MokuroBlock>[],
+            ),
+          ],
+          const <String>['a.png'],
+          mode: MangaReadingMode.spread,
+          spreadDirection: 'rtl',
+          inlineSelectionJs: '',
+          readerPreferences: const MangaReaderPreferences(),
+          spreadGutterPx: gutter,
+        );
+        final RegExpMatch? m = RegExp(
+          r'var SPREAD_GUTTER = (true|false);',
+        ).firstMatch(doc);
+        return m == null ? 'undefined' : m.group(1)!;
+      }
+
+      String scenario(String layout, String gutter) =>
+          '''
+(function(){
+const assert=require('node:assert/strict');
+function mk(prev, slots){
+  const source={style:{}};
+  return {dataset:{pw:'1003',ph:'1427',spreadPages:slots},style:{},
+    previousElementSibling:prev,querySelector:()=>source,source};
+}
+// 反馈截图的窗口：2221 CSS px 宽，125% 缩放。
+const window={innerWidth:2221,innerHeight:1157,devicePixelRatio:1.25};
+function _refitPage(){}
+const ROTATE_WIDE=false,IS_WEBTOON=false,IS_VERTICAL_PAGED=false,RESERVE_R=0,RESERVE_B=0;
+const SPREAD_GUTTER=$gutter;
+$layout
+const inner=mk(null,'2'), outer=mk(inner,'2'), single=mk(null,'1');
+[inner,outer,single].forEach(_layoutSource);
+return {inner,outer,single};
+})()''';
+
+      await runJs('''
+const assert=require('node:assert/strict');
+const r=${scenario(layoutOf(gutter: 0), gutterFlag(0))};
+for (const p of [r.inner,r.outer]) {
+  // 1157/1427*1003 = 813.2… CSS px → 1016.5 device px；必须落在整物理像素上。
+  const devicePx=parseFloat(p.style.width)*1.25;
+  assert.ok(Math.abs(devicePx-Math.round(devicePx))<1e-6, p.style.width);
+  // 图像的横向缩放跟着对齐后的页宽走，图和页框之间不能再留缝。
+  const sx=Number(p.source.style.transform.split('(')[1].split(',')[0]);
+  assert.ok(Math.abs(sx*1003-parseFloat(p.style.width))<1e-6, p.source.style.transform);
+}
+// 跨页里靠后的那页向对面页压一个物理像素；margin-inline-start 跟着跨页的
+// direction 走，RTL / LTR 都朝向对面页。
+assert.equal(r.inner.style.marginInlineStart,'');
+assert.equal(r.outer.style.marginInlineStart,(-1/1.25)+'px');
+// 单页跨页没有对面页。
+assert.ok(!r.single.style.marginInlineStart);
+// 折叠屏铰链缝是有意留的，不能被压掉。
+const g=${scenario(layoutOf(gutter: 24), gutterFlag(24))};
+assert.equal(g.outer.style.marginInlineStart,'');
 ''');
     },
   );

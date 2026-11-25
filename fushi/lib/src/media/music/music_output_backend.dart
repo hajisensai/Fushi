@@ -6,8 +6,10 @@ library;
 import 'dart:async';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerTrackRef;
 
-import 'package:fushi/src/media/music/music_equalizer.dart';
+import 'package:fushi/src/media/music/music_audio_effects.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
 
 /// 一首要播的曲目（CUE 虚拟曲目带起止）。
@@ -37,6 +39,8 @@ class MusicPlayItem {
     this.artistRefs = const <MusicPlayArtistRef>[],
     this.sourceAlbumId,
     this.sourceId,
+    this.serverTrack,
+    this.isPreview = false,
   });
 
   final String trackUid;
@@ -54,6 +58,13 @@ class MusicPlayItem {
   /// transport 取流（`music_remote_media.dart`）；服务器曲库 / 插件 / 单文件导入为 null。
   final int? sourceId;
 
+  /// 服务器曲库曲目（Jellyfin / Subsonic / Apple Music / YouTube 经 `musicServerPlayItem` 建的
+  /// 项，含离线副本）的服务器身份：[path] / [coverPath] 是带账号凭据的地址（或本机副本路径）、
+  /// [trackUid] 是哈希，都推不回是哪台服务器的哪一首。最近播放快照只落这份身份（BUG-5290），
+  /// 重播时由当前配置的服务器现算地址；播放上报、服务器歌词、起播期补查响度、生成字幕取流都按它
+  /// 找回当前配置的服务器。其余曲目为 null。
+  final MusicServerTrackRef? serverTrack;
+
   /// CUE 虚拟曲目在整轨文件里的起止（毫秒）；普通文件为 null。
   final int? startMs;
   final int? endMs;
@@ -64,8 +75,21 @@ class MusicPlayItem {
   /// 碟号 / 轨号（判「专辑连续曲目」用，见 `musicTransitionIsBoundary`）。
   final int? discNo;
   final int? trackNo;
+
+  /// 曲目本身的时长（元数据；歌词匹配 / 加入曲库 / 历史按它）。试听片段（[isPreview]）
+  /// 不是整首，播放进度用 [playbackDuration]。
   final int? durationMs;
   final String? coverPath;
+
+  /// 这一项只是曲目的试听片段（Apple Music 未登录 / 无订阅时约 30 秒的预览）：界面打
+  /// 「试听」标记，播放时长以媒体实际长度为准（反馈 okvRZINcQU）。
+  final bool isPreview;
+
+  /// 播放进度条该用的时长：普通曲目 = [durationMs]；试听片段 = null（等媒体报实际长度，
+  /// 不拿整首的时长去画一条约 30 秒就跳回开头的进度条）。
+  Duration? get playbackDuration => isPreview || durationMs == null
+      ? null
+      : Duration(milliseconds: durationMs!);
 
   /// 曲库扫描从文件头读到的源属性（`dsd` / `flac` …；位深 mpv 不报，信号路径用这里的）。
   final String? codec;
@@ -125,7 +149,7 @@ class MusicOutputSettings {
     this.dsdPcmRate = MusicDsdPcmRate.khz176,
     this.crossfade = Duration.zero,
     this.crossfadeContinuous = false,
-    this.equalizer = const MusicEqualizerSettings(),
+    this.effects = const MusicAudioEffects(),
   });
 
   /// mpv `gapless-audio=weak`（同格式真无缝，格式变化时重开设备）。
@@ -154,8 +178,9 @@ class MusicOutputSettings {
   /// 专辑连续曲目 / CUE 拆轨这类本来就该无缝的衔接也交叉淡入（默认否：真无缝优先）。
   final bool crossfadeContinuous;
 
-  /// 图示均衡器（P5，可选）：作用于信号时即非 bit-perfect；关 / 平直时不挂滤镜。
-  final MusicEqualizerSettings equalizer;
+  /// 音效（均衡 / 音色 / 声道 / 限幅，P5，可选）：作用于信号时即非 bit-perfect；关 / 全部
+  /// 中性时不挂滤镜。
+  final MusicAudioEffects effects;
 
   MusicOutputSettings copyWith({
     bool? gapless,
@@ -168,7 +193,7 @@ class MusicOutputSettings {
     MusicDsdPcmRate? dsdPcmRate,
     Duration? crossfade,
     bool? crossfadeContinuous,
-    MusicEqualizerSettings? equalizer,
+    MusicAudioEffects? effects,
   }) => MusicOutputSettings(
     gapless: gapless ?? this.gapless,
     replayGain: replayGain ?? this.replayGain,
@@ -180,7 +205,7 @@ class MusicOutputSettings {
     dsdPcmRate: dsdPcmRate ?? this.dsdPcmRate,
     crossfade: crossfade ?? this.crossfade,
     crossfadeContinuous: crossfadeContinuous ?? this.crossfadeContinuous,
-    equalizer: equalizer ?? this.equalizer,
+    effects: effects ?? this.effects,
   );
 
   @override
@@ -196,7 +221,7 @@ class MusicOutputSettings {
       other.dsdPcmRate == dsdPcmRate &&
       other.crossfade == crossfade &&
       other.crossfadeContinuous == crossfadeContinuous &&
-      other.equalizer == equalizer;
+      other.effects == effects;
 
   @override
   int get hashCode => Object.hash(
@@ -210,7 +235,7 @@ class MusicOutputSettings {
     dsdPcmRate,
     crossfade,
     crossfadeContinuous,
-    equalizer,
+    effects,
   );
 }
 

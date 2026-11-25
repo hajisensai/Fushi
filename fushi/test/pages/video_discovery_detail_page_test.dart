@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
+import 'package:fushi/src/media/detail/media_poster_detail.dart';
 import 'package:fushi/src/pages/implementations/video_discovery_detail_page.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import '../helpers/glass_unwrap.dart';
@@ -29,6 +30,29 @@ Widget _harness(VideoDiscoveryDetailPage page) {
   return TranslationProvider(
     child: MaterialApp(theme: ThemeData.dark(useMaterial3: true), home: page),
   );
+}
+
+/// hero 里的作品名。重设计外壳（PR #3397 海报面板版式）下页头大字标题
+/// （`fushi-masthead-title-*`）也画同一个名字，故把查找收窄到 hero 本体。
+Finder _heroTitle(String title) => find.descendant(
+  of: find.byType(MediaPosterDetailHero),
+  matching: find.text(title),
+);
+
+/// 次按钮的文案：紧凑 hero 下是图标钮（文案进 tooltip），海报面板 hero 宽度
+/// 够时是带字 tonal 按钮（文案是按钮上的 Text）。两种版式都只认一处。
+Finder _secondaryActionLabel(String label) => find.byWidgetPredicate(
+  (Widget w) =>
+      (w is Tooltip && w.message == label) || (w is Text && w.data == label),
+);
+
+/// 次按钮（[FushiIconButtonControl] 图标钮或 [FushiFilledButton] 带字钮）的
+/// 点按回调——null = 禁用。
+VoidCallback? _secondaryOnPressed(WidgetTester tester, Key key) {
+  final Widget w = tester.widget(find.byKey(key));
+  if (w is FushiIconButtonControl) return w.onPressed;
+  if (w is FushiFilledButton) return w.onPressed;
+  fail('未知的次按钮类型：${w.runtimeType}');
 }
 
 void main() {
@@ -82,7 +106,11 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('星环纪元'), findsOneWidget);
+    expect(_heroTitle('星环纪元'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('fushi-masthead-title-星环纪元')),
+      findsOneWidget,
+    );
     expect(find.text('这是一段在线作品简介。'), findsOneWidget);
     expect(find.text('演员甲'), findsOneWidget);
     expect(find.text('12'), findsOneWidget);
@@ -92,9 +120,10 @@ void main() {
     );
     expect(find.text('字幕处理中'), findsOneWidget);
     expect(statusWatches, 1);
-    // 紧凑 hero 下次按钮是图标钮，文案进 tooltip。
+    // 已订阅：订阅次按钮换成「管理订阅」（紧凑 hero 进 tooltip，海报面板 hero
+    // 是按钮文案）。
     expect(
-      find.byTooltip(t.video_discovery_subscription_manage),
+      _secondaryActionLabel(t.video_discovery_subscription_manage),
       findsOneWidget,
     );
     expect(
@@ -143,7 +172,7 @@ void main() {
     );
     await tester.pumpAndSettle();
 
-    expect(find.text('重试作品'), findsOneWidget);
+    expect(_heroTitle('重试作品'), findsOneWidget);
     expect(find.text(t.video_discovery_details_load_failed), findsOneWidget);
     await tester.tap(find.text(t.retry));
     await tester.pumpAndSettle();
@@ -183,28 +212,32 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 50));
 
-    // M3E 详情骨架：「找资源」是主按钮（filled）；紧凑 hero 下字幕 / 订阅是
-    // tonal 图标次按钮（FushiIconButtonControl，文案进 tooltip）。
+    // M3E 详情骨架：「找资源」是主按钮（filled）；字幕 / 订阅是 tonal 次按钮
+    // （紧凑 hero 为图标钮，海报面板 hero 为带字钮）。
     final FilledButton resource = tester.widget<FilledButton>(
       glassUnwrap<FilledButton>(
         find.byKey(const ValueKey<String>('video-discovery-search-resource')),
       ),
     );
-    final FushiIconButtonControl subtitle = tester
-        .widget<FushiIconButtonControl>(
-          find.byKey(const ValueKey<String>('video-discovery-search-subtitle')),
-        );
-    final FushiIconButtonControl subscribe = tester
-        .widget<FushiIconButtonControl>(
-          find.byKey(const ValueKey<String>('video-discovery-subscribe')),
-        );
     expect(
       resource.onPressed,
       isNotNull,
       reason: '下载进行中要能换源重下；per-series 并发限制在队列层根本不存在。',
     );
-    expect(subscribe.onPressed, isNull);
-    expect(subtitle.onPressed, isNotNull);
+    expect(
+      _secondaryOnPressed(
+        tester,
+        const ValueKey<String>('video-discovery-subscribe'),
+      ),
+      isNull,
+    );
+    expect(
+      _secondaryOnPressed(
+        tester,
+        const ValueKey<String>('video-discovery-search-subtitle'),
+      ),
+      isNotNull,
+    );
 
     await tester.tap(
       find.byKey(const ValueKey<String>('video-discovery-search-subtitle')),

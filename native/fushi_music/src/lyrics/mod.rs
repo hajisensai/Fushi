@@ -3,27 +3,26 @@
 //!
 //! | 类别 | 格式 | 模块 |
 //! |---|---|---|
-//! | 行级 | LRC、SRT、WebVTT、SAMI、纯文本 | [lrc]、[subtitle] |
+//! | 行级 | LRC、SRT、WebVTT、SAMI、纯文本（正文「漢字(かな)」→ ruby） | [lrc]、[subtitle]、[inline_ruby] |
 //! | 字级 | 增强 LRC（A2）、ESLyric 逐字 LRC、WebVTT cue 内时间戳 | [lrc]、[subtitle] |
 //! | 音节级 | TTML（AMLL / Apple 方言）、Lyricify Syllable | [ttml]、[syllabic] |
 //! | 卡拉 OK 字幕 | ASS / SSA `\k` `\K` `\kf` `\ko` `\kt`（只结构化） | [ass] |
-//! | 平台格式 | KRC（解密）、QRC 明文 / XML 包装、YRC | [syllabic] |
+//! | 平台格式 | KRC（解密）、QRC（明文 / XML 包装 / 加密，`[kana:]` 注音轨 → ruby）、YRC | [syllabic]、[qrc] |
 //! | 卡拉 OK 歌曲 | UltraStar `.txt`、MIDI / `.kar` | [ultrastar]、[midi] |
 //! | 内嵌 | ID3 USLT / SYLT、Vorbis LYRICS / UNSYNCEDLYRICS、MP4 ©lyr | [embedded] |
-//!
-//! 已知不支持：QQ 音乐加密 QRC（本地缓存的二进制 `.qrc`，需 QQ 定制 3DES，没有可验证的公开
-//! 向量）→ 明确报错而不是出乱码。
 
 pub mod ass;
 pub mod embedded;
 pub mod export;
 pub mod ffi;
+pub mod inline_ruby;
 pub mod json;
 pub mod lrc;
 pub mod markup;
 pub mod merge;
 pub mod midi;
 pub mod model;
+pub mod qrc;
 pub mod slice;
 pub mod subtitle;
 pub mod syllabic;
@@ -39,7 +38,13 @@ use model::*;
 /// 的缓存在读取时重建。
 /// 2：ASS 特效检测加了 `\org`、`\p1` 绘图与逐字定位（P3）。
 /// 3：翻译合并改为估计整体偏移 + 单调对齐，对不上的翻译挂靠原文行、不再成独立行。
-pub const PARSER_VERSION: u32 = 3;
+/// 4：加密 QRC（本地缓存 / 接口十六进制串）解密；QRC `[kana:]` 注音轨挂成音节 ruby。
+/// 5：QRC `[kana:]` 的汉字计数口径：补扩展 H / J（U+31350–3347F），`〇` `〆` 两种取舍都做完整对齐校验。
+/// 6：QRC `[kana:]` 注音轨对不上时标记 `ruby_dropped`（线格式 flags bit2），界面提示已隐藏。
+/// 7：接口十六进制密文认旧接口 XML 的 CDATA 包装（`<content><![CDATA[hex]]></content>`）。
+/// 8：TTML 读 `<div itunes:song-part>` 段落标注（线格式 flags bit3 + 尾部段落表）。
+/// 9：LRC / 纯文本正文里的「漢字(かな)」内联读音挂成音节 ruby（[inline_ruby]）。
+pub const PARSER_VERSION: u32 = 9;
 
 /// 按格式提示（扩展名或格式名，大小写不敏感，可空）+ 内容嗅探解析。`duration_ms` 是曲长
 /// （补最后一行终点），未知传 None。
@@ -57,12 +62,13 @@ pub fn parse(bytes: &[u8], hint: &str, duration_ms: Option<i64>) -> Result<Timel
         let text = text::normalize_newlines(&text::decode_text(&plain));
         return Ok(syllabic::parse(&text, syllabic::Flavor::Krc, duration_ms));
     }
-    let text = text::normalize_newlines(&text::decode_text(bytes));
-    if hint == "qrc" && !text.contains('[') && !text.contains("LyricContent") {
-        return Err(
-            "encrypted QRC is not supported (decrypt it with the QQ Music client first)".to_owned(),
-        );
+    if let Some(cipher) = qrc::sniff_encrypted(bytes, hint == "qrc") {
+        let plain = qrc::decrypt(bytes, cipher)
+            .ok_or_else(|| "encrypted QRC decryption failed".to_owned())?;
+        let text = text::normalize_newlines(&text::decode_text(&plain));
+        return Ok(parse_qrc(&text, duration_ms));
     }
+    let text = text::normalize_newlines(&text::decode_text(bytes));
     let by_hint = match hint.as_str() {
         "ttml" | "xml" if ttml::looks_like_ttml(&text) => Some(parse_ttml(&text, duration_ms)?),
         "ttml" => return Err("not a TTML document".to_owned()),
@@ -71,12 +77,7 @@ pub fn parse(bytes: &[u8], hint: &str, duration_ms: Option<i64>) -> Result<Timel
         "vtt" | "webvtt" => Some(subtitle::parse_vtt(&text, duration_ms)),
         "smi" | "sami" => Some(subtitle::parse_sami(&text, duration_ms)),
         "lys" => Some(syllabic::parse(&text, syllabic::Flavor::Lys, duration_ms)),
-        "qrc" => {
-            let body = syllabic::unwrap_qrc_xml(&text).unwrap_or_else(|| text.clone());
-            let body = text::normalize_newlines(&body);
-            let flavor = syllabic::sniff(&body).unwrap_or(syllabic::Flavor::Qrc);
-            Some(syllabic::parse(&body, flavor, duration_ms))
-        }
+        "qrc" => Some(parse_qrc(&text, duration_ms)),
         "yrc" => Some(syllabic::parse(&text, syllabic::Flavor::Yrc, duration_ms)),
         "krc" => Some(syllabic::parse(&text, syllabic::Flavor::Krc, duration_ms)),
         "lrc" => Some(lrc::parse(&text, duration_ms)),
@@ -87,6 +88,30 @@ pub fn parse(bytes: &[u8], hint: &str, duration_ms: Option<i64>) -> Result<Timel
         return Ok(t);
     }
     sniff_parse(&text, duration_ms)
+}
+
+/// `.qrc` 明文（可能是 XML 包装）。
+fn parse_qrc(text: &str, duration_ms: Option<i64>) -> Timeline {
+    let body = syllabic::unwrap_qrc_xml(text).unwrap_or_else(|| text.to_owned());
+    let body = text::normalize_newlines(&body);
+    let flavor = syllabic::sniff(&body).unwrap_or(syllabic::Flavor::Qrc);
+    syllabic::parse(&body, flavor, duration_ms)
+}
+
+/// 加密歌词（KRC / 加密 QRC）解出的明文上限。真实整首歌词（含 XML 包装、翻译、注音轨）
+/// 在几十到几百 KB；zlib 压缩比可到约 1000:1，不设上限时插件结果上限（8 MiB）级别的
+/// 输入就能解出 GB 级明文，OOM 是 abort、FFI 的 panic 守卫接不住。
+pub const MAX_INFLATED_BYTES: usize = 4 * 1024 * 1024;
+
+/// zlib 解压，输出超过 `limit` 字节或流损坏都返回 None（只读到 `limit + 1` 字节就停）。
+pub(crate) fn inflate_bounded(data: &[u8], limit: usize) -> Option<Vec<u8>> {
+    use std::io::Read;
+    let mut out = Vec::new();
+    flate2::read::ZlibDecoder::new(data)
+        .take(limit as u64 + 1)
+        .read_to_end(&mut out)
+        .ok()?;
+    (out.len() <= limit).then_some(out)
 }
 
 fn parse_ttml(text: &str, duration_ms: Option<i64>) -> Result<Timeline, String> {
@@ -136,7 +161,9 @@ pub fn plain(text: &str) -> Timeline {
     for l in text.lines() {
         let l = l.trim();
         if !l.is_empty() {
-            t.lines.push(Line::whole(l, 0, 0));
+            let mut line = Line::whole(l, 0, 0);
+            inline_ruby::apply(&mut line);
+            t.lines.push(line);
         }
     }
     t.finalize(None);

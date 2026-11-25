@@ -39,7 +39,7 @@
 `floating_ball.system_open_app`（bool，默认开），经 `startSystemBall.showOpenApp` 下发，
 三端原生按它增删（位置固定在「关闭」之下，不进 `actions`）。
 
-截屏识字两个选项（设置 → 悬浮球）：
+截屏识字三个选项（设置 → 悬浮球）：
 
 - 「截屏识字制卡带截图」`screen_ocr.card_image`（默认开，反馈 Gz7z6Y6Mbr）：四条识字
   链路（Android MediaProjection、iOS 截自己窗口、拍照、桌面冻结层）制卡时把所点文字所在
@@ -47,6 +47,21 @@
   成块）留白后按制卡图片质量档裁成卡图，走 `AnkiMiningContext.coverPath`（与漫画卡图同
   一通道，`lib/src/floating_ball/screen_ocr_card_image.dart`）。Android 查词窗在 `:popup`
   进程：原生把定格帧写进 app 缓存 `screen_ocr_card/`，Intent 只带路径 + 块框 / 行框。
+  「高级制卡」对话框里可以像漫画那样手动调卡图（反馈 mOe5HjBtuG）：`DictionaryPageMixin`
+  默认的 `buildAdvancedMiningSections` 把这张截图交给漫画同款裁切分区（截图模式
+  `AdvancedMiningCropSource.screenshot`：无分镜，「整页」叫「整张截图」），预选框就是上面
+  的自动裁切框；确认后的框选 / 打码 / 不要图经 `MiningRequestOverrides` 回到制卡路径，
+  由 `resolveScreenOcrCardImagePlan` 出图。四条链路都已在 Flutter 侧拿到图（Android 读
+  缓存文件），所以不需要新的跨进程传图。
+- 「制卡时框选截图」`screen_ocr.card_frame_on_mine`（默认关，拍板 EuOLprw_dV 选 b；只在
+  「制卡带截图」开着时显示）：每次「+」先推出同一个全屏框选页（`MangaCropFullscreenPage`，
+  主按钮叫「制卡」），预选还是自动裁切框，用户可改整张截图 / 自定义 / 不要、可打码，好让卡图
+  带上发帖人、时间等上下文；「×」= 不制这张卡（`MinePopupResult.cancelled`，popup.js 把按钮
+  放回「+」、不报失败）。入口在 `lib/src/floating_ball/screen_ocr_card_frame.dart`：
+  手机 / 拍照 / iOS 走 `DictionaryPageMixin.onMineEntry`（框选期间查词弹窗停靠屏外）；
+  桌面冻结层的查词卡是原生浮窗、没有「高级制卡」，由 `screenOcrOverlayMiningHandler` 的
+  `pickFrame` 收起冻结层与浮窗、把主窗拉到前台再推框选页，结果在主窗 toast。高级制卡里
+  已经选过卡图的、覆盖已制卡片的不再弹。
 - 「保持截屏会话」`screen_ocr.keep_capture_session`（Android，默认关）：经
   `setScreenOcrOptions` 下发原生 `ScreenOcrOptions`。同意一次后 MediaProjection 常驻，截完帧
   只摘 VirtualDisplay 的 surface；下一次截屏识字直接挂回 surface 取帧，不弹确认框、不起

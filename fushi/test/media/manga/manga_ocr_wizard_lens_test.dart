@@ -10,6 +10,7 @@ import 'package:fushi/src/media/manga/manga_ocr_wizard_dialog.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
 import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -43,6 +44,13 @@ class _UnavailableLocalService implements MangaOcrService {
 }
 
 class _FakeLensRunner implements GoogleLensMangaOcrRunner {
+  @override
+  Future<MokuroImage> recognizePagePixels(
+    OcrRgbaImage image, {
+    required String relativeUrl,
+    required String language,
+  }) => throw UnimplementedError();
+
   int requests = 0;
   String? lastLanguage;
 

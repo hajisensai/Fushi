@@ -198,13 +198,17 @@ void main() {
     // BUG-101: a single app-wide notifier carries progress for EVERY full sweep
     // (manual + app-open/background auto), so the settings "立即同步" row's bar
     // shows even for a sync the row didn't trigger (previously: bare toast).
+    // Feedback kM-Gb_Xnu-: the app-wide notifier is now derived from the sync
+    // task board (one task per concurrent sync), not written by each path.
+    final board = File('lib/src/sync/sync_task_board.dart').readAsStringSync();
     expect(
-      autoTrigger.contains('ValueNotifier<SyncProgress?>'),
+      board.contains('ValueNotifier<SyncProgress?>'),
       isTrue,
       reason: 'an app-wide syncProgress notifier must exist',
     );
     expect(
-      autoTrigger.contains('syncProgress.value = p'),
+      autoTrigger.contains('task.progress(p)') &&
+          autoTrigger.contains('onProgress: task.progress'),
       isTrue,
       reason: 'both the manual and auto sweep must publish progress globally',
     );
@@ -214,7 +218,7 @@ void main() {
       reason: 'manual sync must still forward to the caller callback',
     );
     expect(
-      autoTrigger.contains('syncProgress.value = null'),
+      board.contains('syncProgress.value = primary?.progress'),
       isTrue,
       reason: 'the global progress must reset when no sync is in flight',
     );

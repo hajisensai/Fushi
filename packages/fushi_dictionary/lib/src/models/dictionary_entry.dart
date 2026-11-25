@@ -1,8 +1,11 @@
 import 'dart:convert';
 
 class DictionaryEntry {
-  factory DictionaryEntry.fromJson(String json) {
-    final map = Map<String, dynamic>.from(jsonDecode(json));
+  factory DictionaryEntry.fromJson(String json) =>
+      DictionaryEntry.fromMap(Map<String, dynamic>.from(jsonDecode(json)));
+
+  /// [toJson] 那个 JSON 对象解码后的 Map（[fromJson] 的后半步）。
+  factory DictionaryEntry.fromMap(Map<String, dynamic> map) {
     return DictionaryEntry(
       dictionaryName: map['dictionaryName'] as String? ?? '',
       word: map['word'] as String? ?? '',

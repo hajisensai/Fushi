@@ -25,6 +25,7 @@ void main() {
   late List<String> seen;
   late int pinChecks;
   late bool lanReachable;
+  late String lanMachineId;
   late int pmsStatus;
 
   http.Response jsonResponse(Object body, [int status = 200]) => http.Response(
@@ -92,7 +93,9 @@ void main() {
     if (pmsStatus != 200) return http.Response('', pmsStatus);
     if (u.path == '/identity') {
       return jsonResponse(<String, Object?>{
-        'MediaContainer': <String, Object?>{'machineIdentifier': 'mid1'},
+        'MediaContainer': <String, Object?>{
+          'machineIdentifier': u.host == '10.0.0.9' ? lanMachineId : 'mid1',
+        },
       });
     }
     if (u.path == '/library/sections') {
@@ -148,6 +151,7 @@ void main() {
     seen = <String>[];
     pinChecks = 0;
     lanReachable = true;
+    lanMachineId = 'mid1';
     pmsStatus = 200;
   });
 
@@ -185,7 +189,7 @@ void main() {
     expect(await plex(<String>['plex', 'login']), 0, reason: err.toString());
     expect(out.toString(), contains('https://app.plex.tv/auth#?'));
     expect(out.toString(), contains('code=ABCD'));
-    expect(out.toString(), contains('已登录 Plex: neko'));
+    expect(out.toString(), contains('Signed in to Plex: neko'));
     expect(pinChecks, 2);
     final File f = PlexCredentialStore.under(paths.support).file;
     final Map<String, Object?> saved =
@@ -282,6 +286,30 @@ void main() {
     expect(
       (jsonDecode(out.toString()) as Map<String, Object?>)['server'],
       'https://relay.plex.direct:8443',
+    );
+  });
+
+  test('局域网地址被别的服务器占了：身份核对不带 token，不通过就不往那里发 token', () async {
+    await login();
+    lanMachineId = 'mid-neighbour';
+    seen.clear();
+    expect(
+      await plex(<String>['plex', 'ls', '--json']),
+      0,
+      reason: err.toString(),
+    );
+    expect(
+      (jsonDecode(out.toString()) as Map<String, Object?>)['server'],
+      'https://relay.plex.direct:8443',
+    );
+    expect(seen, contains('GET 10.0.0.9/identity token=-'));
+    expect(
+      seen.where((String s) => s.contains('/identity')),
+      everyElement(endsWith('token=-')),
+    );
+    expect(
+      seen.where((String s) => s.startsWith('GET 10.0.0.9')),
+      everyElement(endsWith('token=-')),
     );
   });
 

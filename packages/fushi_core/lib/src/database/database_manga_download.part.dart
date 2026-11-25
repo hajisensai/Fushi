@@ -42,6 +42,20 @@ mixin _FushiDbMangaDownload on _$FushiDatabase {
     return query.get();
   }
 
+  /// 一本书某一类的任务（走唯一索引 `(kind, book_key, chapter_key)` 的前缀，
+  /// 不扫全表），按创建时刻升序。
+  Future<List<MangaDownloadJobRow>> listMangaDownloadJobsForBook({
+    required String kind,
+    required String bookKey,
+  }) =>
+      (select(mangaDownloadJobs)
+            ..where((t) => t.kind.equals(kind) & t.bookKey.equals(bookKey))
+            ..orderBy(<OrderingTerm Function($MangaDownloadJobsTable)>[
+              (t) => OrderingTerm(expression: t.createdAt),
+              (t) => OrderingTerm(expression: t.jobId),
+            ]))
+          .get();
+
   /// 「任务表变了」的信号流（不带行）。长驻页面订阅必须用它而不是裸
   /// `select(...).watch()`：drift 的 QueryStream 取消时会排一个 `Timer.run`，
   /// widget 测试里页面 dispose 后它仍 pending（BUG-834）。
@@ -107,6 +121,36 @@ mixin _FushiDbMangaDownload on _$FushiDatabase {
           : Value<int>(attemptCount),
     ),
   );
+
+  /// 条件改状态：只改当前状态在 [from] 里的行（一条 UPDATE，判与写之间不会被
+  /// worker 领取插队）。[jobId] / [bookKey] 进一步限定范围，都不给 = 全表。
+  /// [resetAttempts] 为真时清 `last_error`、`attempt_count` 归零（恢复 = 重新排队）。
+  /// 返回受影响行数。
+  Future<int> transitionMangaDownloadJobs({
+    required Set<String> from,
+    required String to,
+    required int updatedAt,
+    String? jobId,
+    String? bookKey,
+    bool resetAttempts = false,
+  }) {
+    final UpdateStatement<$MangaDownloadJobsTable, MangaDownloadJobRow> query =
+        update(mangaDownloadJobs)..where((t) => t.status.isIn(from));
+    if (jobId != null) query.where((t) => t.jobId.equals(jobId));
+    if (bookKey != null) query.where((t) => t.bookKey.equals(bookKey));
+    return query.write(
+      MangaDownloadJobsCompanion(
+        status: Value<String>(to),
+        updatedAt: Value<int>(updatedAt),
+        lastError: resetAttempts
+            ? const Value<String?>(null)
+            : const Value<String?>.absent(),
+        attemptCount: resetAttempts
+            ? const Value<int>(0)
+            : const Value<int>.absent(),
+      ),
+    );
+  }
 
   Future<int> deleteMangaDownloadJob(String jobId) =>
       (delete(mangaDownloadJobs)..where((t) => t.jobId.equals(jobId))).go();

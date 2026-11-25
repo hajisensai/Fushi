@@ -16,6 +16,7 @@
 
 namespace ml = fushi_voice_hook::malie_lookup;
 namespace exact = fushi_voice_hook::exact_lookup;
+namespace mio = fushi_voice_hook::malie_io;
 
 namespace {
 
@@ -248,10 +249,20 @@ void TestSegmentFailsClosed() {
     assert(ml::ResolveSegment(other.image, sites, &segment) ==
            ml::SegmentResult::kRevealFieldMismatch);
   }
-  {  // parser with two callers
+  {  // a second parser call site that only measures (no reveal after it)
+     // is not the progress function: the revealing one still resolves
     SyntheticImage other;
     PutSegment(&other);
     other.Rel32(0x3000u, kParser);
+    assert(ml::ResolveSegment(other.image, sites, &segment) ==
+           ml::SegmentResult::kResolved);
+    assert(segment.parser == other.At(kParser));
+  }
+  {  // two parser call sites that both reveal: ambiguous
+    SyntheticImage other;
+    PutSegment(&other);
+    const size_t at = other.Rel32(0x3000u, kParser);
+    other.Rel32(at, kReveal);
     assert(ml::ResolveSegment(other.image, sites, &segment) ==
            ml::SegmentResult::kParserCallers);
   }
@@ -269,6 +280,56 @@ void TestSegmentFailsClosed() {
     assert(ml::ResolveSegment(other.image, sites, &segment) ==
            ml::SegmentResult::kNoParser);
   }
+}
+
+void TestIdentity() {
+  using mio::ProfileState;
+  using mio::SchemeResult;
+  using ml::DrawResult;
+  // Either full structure is a match on its own.
+  assert(ml::ClassifyIdentity(SchemeResult::kResolved,
+                              DrawResult::kNoClassName) ==
+         ProfileState::kMatched);
+  assert(ml::ClassifyIdentity(SchemeResult::kNoName, DrawResult::kResolved) ==
+         ProfileState::kMatched);
+  assert(ml::ClassifyIdentity(SchemeResult::kTellShape,
+                              DrawResult::kResolved) ==
+         ProfileState::kMatched);
+  // Not unpacked yet only when both name lookups miss.
+  assert(ml::ClassifyIdentity(SchemeResult::kNoName,
+                              DrawResult::kNoClassName) ==
+         ProfileState::kImageNotReady);
+  assert(ml::ClassifyIdentity(SchemeResult::kNoNameCopy,
+                              DrawResult::kNoClassTable) ==
+         ProfileState::kImageNotReady);
+  // Any structural refusal with no match is final.
+  assert(ml::ClassifyIdentity(SchemeResult::kNoName,
+                              DrawResult::kRevealShape) ==
+         ProfileState::kRejected);
+  assert(ml::ClassifyIdentity(SchemeResult::kTellShape,
+                              DrawResult::kNoClassName) ==
+         ProfileState::kRejected);
+  assert(ml::ClassifyIdentity(SchemeResult::kNotX86, DrawResult::kNotX86) ==
+         ProfileState::kRejected);
+  assert(ml::PackIdentityResult(SchemeResult::kNoName,
+                                DrawResult::kResolved) == 0x002u);
+  assert(ml::PackIdentityResult(SchemeResult::kTellShape,
+                                DrawResult::kRevealShape) == 0x609u);
+
+  // A synthetic image with RICHTEXT3D but no CFI scheme is Malie; the same
+  // image with the class renamed (another engine's text node) is not.
+  SyntheticImage img;
+  PutClass(&img);
+  PutDraw(&img);
+  ml::DrawSites sites;
+  assert(ml::ClassifyIdentity(
+             mio::ResolveScheme(img.image, mio::kArchiveSchemeName),
+             ml::ResolveDraw(img.image, &sites)) == ProfileState::kMatched);
+  img.Wide(kName, L"RICHTEXT2D");
+  assert(ml::ClassifyIdentity(
+             mio::ResolveScheme(img.image, mio::kArchiveSchemeName),
+             ml::ResolveDraw(img.image, &sites)) ==
+         ProfileState::kImageNotReady);
 }
 
 void TestCleanSegment() {
@@ -432,6 +493,7 @@ int main() {
   TestDrawResolves();
   TestDrawFailsClosed();
   TestSegmentFailsClosed();
+  TestIdentity();
   TestCleanSegment();
   TestMapLine();
   TestProjection();

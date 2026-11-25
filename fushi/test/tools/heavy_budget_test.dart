@@ -135,13 +135,19 @@ void main() {
         }
       }
       final HeavyNeed analyze = heavyNeedFor(HeavyKind.analyze);
-      expect(analyze.capMb, 8192);
-      expect(analyze.bookedMb, 4608);
-      // Still never three test runs at once on a 64 GB machine (2026-10-19);
-      // two tests and an analyze fit, as do a test and both light slots.
+      // 2026-11-10: the 8 GB ceiling killed one full analyze in five.
+      expect(analyze.capMb, 16384);
+      expect(analyze.bookedMb, 8192);
+      // On a 64 GB machine (40 GB since 2026-11-20, the owner's call): three
+      // test runs at their fixed booking fit, as the replay that set the
+      // budget assumed; a fourth never does, nor do three next to an
+      // analyze. Two tests and an analyze fit, as do a test and both light
+      // slots.
       final int test = heavyNeedFor(HeavyKind.test).bookedMb;
       final int budget = defaultHeavyBudgetMb(65156);
-      expect(3 * test, greaterThan(budget));
+      expect(3 * test, lessThanOrEqualTo(budget));
+      expect(4 * test, greaterThan(budget));
+      expect(3 * test + analyze.bookedMb, greaterThan(budget));
       expect(2 * test + analyze.bookedMb, lessThanOrEqualTo(budget));
       expect(
         test + kLightSlotCount * analyze.bookedMb,
@@ -157,10 +163,10 @@ void main() {
     expect(defaultHeavySlots(256 * 1024), 4);
   });
 
-  test('defaultHeavyBudgetMb: half the RAM in whole GB', () {
-    expect(defaultHeavyBudgetMb(65156), 32768);
-    expect(defaultHeavyBudgetMb(32 * 1024), 16384);
-    expect(defaultHeavyBudgetMb(8 * 1024), 4096);
+  test('defaultHeavyBudgetMb: 5/8 of the RAM in whole GB', () {
+    expect(defaultHeavyBudgetMb(65156), 40960);
+    expect(defaultHeavyBudgetMb(32 * 1024), 20480);
+    expect(defaultHeavyBudgetMb(8 * 1024), 5120);
   });
 
   // 2026-10-19 (owner's call): three 12-16 GB ceilings promised 48 GB on a
@@ -206,6 +212,139 @@ void main() {
         budgetMb: budget,
       ),
       isNotNull,
+    );
+  });
+
+  // 2026-11-11: a small run may go ahead of queued runs that do not fit the
+  // budget, but never into the room the head needs.
+  group('heavyMayGoAhead', () {
+    const int budget = 16384;
+    HeavyHolder holder(int bookedMb, int startedAtMs) => HeavyHolder(
+      slot: 0,
+      pid: 1,
+      startedAtMs: startedAtMs,
+      label: 'h',
+      cwd: '',
+      capMb: bookedMb,
+    );
+    // An older test (7680) and an analyze that started after the head queued.
+    final List<HeavyHolder> busy = <HeavyHolder>[
+      holder(7680, 1000),
+      holder(4608, 3000),
+    ];
+    const HeavyEarlier head = (bookedMb: 7680, enqueuedUs: 2000000);
+
+    test('past a head that does not fit, within what the head leaves', () {
+      expect(
+        heavyMayGoAhead(
+          needMb: 2048,
+          earlier: <HeavyEarlier>[head],
+          holders: busy,
+          budgetMb: budget,
+        ),
+        isTrue,
+      );
+      // 4608 + 2048 + 2048 already started since the head queued: 2048 more
+      // would leave the head less than its 7680 of the 16384.
+      expect(
+        heavyMayGoAhead(
+          needMb: 2048,
+          earlier: <HeavyEarlier>[head],
+          holders: <HeavyHolder>[
+            holder(4608, 3000),
+            holder(2048, 4000),
+            holder(2048, 5000),
+          ],
+          budgetMb: budget,
+        ),
+        isFalse,
+      );
+      // A head that books the whole budget needs every run gone.
+      expect(
+        heavyMayGoAhead(
+          needMb: 2048,
+          earlier: <HeavyEarlier>[(bookedMb: 16384, enqueuedUs: 2000000)],
+          holders: <HeavyHolder>[holder(7680, 1000)],
+          budgetMb: budget,
+        ),
+        isFalse,
+      );
+    });
+
+    test('never past a waiter that can start, or one of unknown size', () {
+      // The head fits next to the analyze alone.
+      expect(
+        heavyMayGoAhead(
+          needMb: 2048,
+          earlier: <HeavyEarlier>[head],
+          holders: <HeavyHolder>[holder(4608, 3000)],
+          budgetMb: budget,
+        ),
+        isFalse,
+      );
+      // The head does not fit, but the second waiter does: it goes next.
+      expect(
+        heavyMayGoAhead(
+          needMb: 2048,
+          earlier: <HeavyEarlier>[head, (bookedMb: 2048, enqueuedUs: 2500000)],
+          holders: busy,
+          budgetMb: budget,
+        ),
+        isFalse,
+      );
+      // Queued by an older checkout's tool: no booking recorded.
+      expect(
+        heavyMayGoAhead(
+          needMb: 2048,
+          earlier: <HeavyEarlier>[(bookedMb: null, enqueuedUs: 2000000)],
+          holders: busy,
+          budgetMb: budget,
+        ),
+        isFalse,
+      );
+      // No budget on this machine: slots alone pace the runs.
+      expect(
+        heavyMayGoAhead(
+          needMb: 2048,
+          earlier: <HeavyEarlier>[head],
+          holders: busy,
+          budgetMb: null,
+        ),
+        isFalse,
+      );
+    });
+  });
+
+  test('heavyRunKey: one run however the tool and directory are spelled', () {
+    final String key = heavyRunKey(
+      cwd: r'D:\repo\.worktrees\a\fushi',
+      argv: <String>['flutter', 'test', 'test/a_test.dart', '--no-pub'],
+    );
+    expect(
+      heavyRunKey(
+        cwd: 'd:/repo/.worktrees/a/fushi/',
+        argv: <String>[
+          'D:/sdk/bin/flutter.bat',
+          'test',
+          'test/a_test.dart',
+          '--no-pub',
+        ],
+      ),
+      key,
+    );
+    expect(
+      heavyRunKey(
+        cwd: r'D:\repo\.worktrees\b\fushi',
+        argv: <String>['flutter', 'test', 'test/a_test.dart', '--no-pub'],
+      ),
+      isNot(key),
+    );
+    expect(
+      heavyRunKey(
+        cwd: r'D:\repo\.worktrees\a\fushi',
+        argv: <String>['flutter', 'test', 'test/b_test.dart', '--no-pub'],
+      ),
+      isNot(key),
     );
   });
 

@@ -5,7 +5,7 @@
 ///   直接在排版里改字（标签骨架不动，见 srs_html_layout.dart）；也可改源码。原 HTML 不经序列化；
 /// - 振假名 `漢字[かな]`：上方注音显示，点词改读音；
 /// - 图片：缩略图 + 选择 / 替换 / 粘贴 / 删除，新图进 SRS 媒体库（不再塞 base64）；
-/// - 音频 `[sound:]`：播放 + 选择文件 / 录音 / 删除；
+/// - 音频 `[sound:]`：播放 + 选择文件 / 录音 / 用 TTS 生成 / 删除；
 /// - 卡型开关字段：开关。
 ///
 /// 每个字段都能切到 HTML 源码（按钮或 Ctrl+Shift+X，同 Anki）。类型判据见
@@ -15,12 +15,15 @@ library;
 import 'dart:async';
 import 'dart:io';
 
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 
+import 'package:fushi/src/creator/mining_tts_fallback.dart';
+import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart'
     show pickSystemFilePath;
 import 'package:fushi/src/models/app_model.dart';
@@ -30,9 +33,10 @@ import 'package:fushi/src/pages/implementations/srs/srs_field_label.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_html_layout_editor.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_rich_text_controller.dart';
 import 'package:fushi/src/srs/srs_field_markup.dart';
+import 'package:fushi/src/srs/srs_field_speech.dart' show srsSpeechText;
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
 import 'package:fushi/src/srs/srs_rich_format.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
@@ -52,6 +56,10 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/utils/misc/system_tts.dart'
+    show resolveSystemTtsLanguageTag;
+import 'package:fushi/src/utils/misc/tts_channel.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 一个字段的当前值。编辑器改值走 [edit]；页面整体换值（重读笔记、连续添加后清空、
 /// 冲突裁决）走 [reset]，编辑器据 [generation] 重建内部状态。
@@ -91,6 +99,7 @@ class SrsFieldMediaSource {
     required this.pickAudio,
     required this.pasteImage,
     this.recordAudio,
+    this.synthesizeSpeech,
   });
 
   final Future<SrsPickedMedia?> Function(BuildContext context) pickImage;
@@ -101,6 +110,9 @@ class SrsFieldMediaSource {
 
   /// 录一段音；null = 不提供录音。
   final Future<SrsPickedMedia?> Function(BuildContext context)? recordAudio;
+
+  /// 用 TTS 把 [text] 合成一段音频；null = 不提供。合成失败时自己提示原因并返回 null。
+  final Future<SrsPickedMedia?> Function(String text)? synthesizeSpeech;
 }
 
 /// 选一个文件当场读进内存（随即存进媒体库，原路径不长期引用）：走统一入口的
@@ -178,7 +190,53 @@ Future<SrsPickedMedia?> _recordAudio(BuildContext context) async {
   return (name: 'recording.m4a', bytes: await file.readAsBytes());
 }
 
-/// 生产实现：系统文件选择器 / app 剪贴板通道 / 现有录音对话框。
+/// 用户主动点「用 TTS 生成」：声音沿用「制卡发音兜底」的设置（系统语音 / 朗读声音预设）
+/// 与兜底倍速。那项设成「不使用」时按系统语音念——那个开关管的是**自动**兜底，这里是
+/// 用户明确要一段音频。制卡流程里句子音频仍不做 TTS 兜底（BUG-172）。
+Future<SrsPickedMedia?> _synthesizeSpeech(
+  AppModel appModel,
+  String text,
+) async {
+  final MiningTtsFallbackVoice configured = miningTtsFallbackVoiceOf(
+    appModel.prefsRepo,
+  );
+  final MiningTtsFallbackVoice choice =
+      configured.kind == MiningTtsFallbackKind.none
+      ? const MiningTtsFallbackVoice.system()
+      : configured;
+  try {
+    final File? file = await synthesizeMiningTtsFallback(
+      text: text,
+      choice: choice,
+      // 系统语音念哪种语言：编辑器不知道词条出自哪本词典，只看文字本身与已装词典
+      // 声明的词头语言（判据见 [resolveSystemTtsLanguageTag]）。
+      languageTag: resolveSystemTtsLanguageTag(
+        text: text,
+        installedDictionaryLanguages:
+            appModel.installedDictionarySourceLanguages,
+      ),
+      outputDir: Directory(
+        p.join((await getTemporaryDirectory()).path, 'fushi_srs_tts'),
+      ),
+      systemTts: (String text, String outputPath, String? languageTag) =>
+          TtsChannel.instance.ttsToFile(
+            text,
+            outputPath,
+            languageTag: languageTag,
+          ),
+      voices: () => miningTtsVoiceSourceOf(TtsServices.of(appModel.prefsRepo)),
+      tempo: ttsFallbackSpeedOf(appModel.prefsRepo),
+    );
+    if (file == null) return null;
+    // 媒体库按内容哈希命名，系统语音的固定输出文件名不会让两段音频互相覆盖。
+    return (name: p.basename(file.path), bytes: await file.readAsBytes());
+  } on WordAudioUnavailable catch (e, stack) {
+    reportWordAudioUnavailable(e, stack, manual: true);
+    return null;
+  }
+}
+
+/// 生产实现：系统文件选择器 / app 剪贴板通道 / 现有录音对话框 / TTS。
 final Provider<SrsFieldMediaSource> srsFieldMediaSourceProvider =
     Provider<SrsFieldMediaSource>(
       (Ref ref) => SrsFieldMediaSource(
@@ -188,6 +246,8 @@ final Provider<SrsFieldMediaSource> srsFieldMediaSourceProvider =
             _pickFile(context, _kAudioExtensions),
         pasteImage: _pasteClipboardImage,
         recordAudio: _recordAudio,
+        synthesizeSpeech: (String text) =>
+            _synthesizeSpeech(ref.read(appProvider), text),
       ),
     );
 
@@ -234,6 +294,7 @@ class SrsFieldEditor extends ConsumerStatefulWidget {
     this.footer,
     this.help,
     this.headerActions = const <Widget>[],
+    this.speechSources = const <SrsFieldModel>[],
   });
 
   /// 字段名（标题；也参与类型判据）。
@@ -257,6 +318,10 @@ class SrsFieldEditor extends ConsumerStatefulWidget {
 
   /// 字段下方的附加内容（同步冲突候选）。
   final Widget? footer;
+
+  /// 音频字段「用 TTS 生成」念的文字字段（按优先级取第一个有字的，见
+  /// [srsSpeechSourcesOf]）；空 = 不提供 TTS。
+  final List<SrsFieldModel> speechSources;
 
   @override
   ConsumerState<SrsFieldEditor> createState() => _SrsFieldEditorState();
@@ -289,6 +354,9 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
     _setup();
     _model.addListener(_onModel);
     _richFocus.addListener(_onFocus);
+    for (final SrsFieldModel m in widget.speechSources) {
+      m.addListener(_onSpeechSource);
+    }
   }
 
   @override
@@ -301,11 +369,22 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
       _source = false;
       _setup();
     }
+    if (!listEquals(old.speechSources, widget.speechSources)) {
+      for (final SrsFieldModel m in old.speechSources) {
+        m.removeListener(_onSpeechSource);
+      }
+      for (final SrsFieldModel m in widget.speechSources) {
+        m.addListener(_onSpeechSource);
+      }
+    }
   }
 
   @override
   void dispose() {
     _model.removeListener(_onModel);
+    for (final SrsFieldModel m in widget.speechSources) {
+      m.removeListener(_onSpeechSource);
+    }
     _rich?.dispose();
     _sourceCtl.dispose();
     _richFocus.dispose();
@@ -350,6 +429,20 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
     }
     // 富文本自己的输入已经在 TextField 里画出来了，不用整块重建。
     if (_kind != SrsFieldKind.rich || _source) setState(() {});
+  }
+
+  /// 朗读来源字段改了字：只有音频字段要据此显示 / 隐藏「用 TTS 生成」。
+  void _onSpeechSource() {
+    if (mounted && _kind == SrsFieldKind.audio) setState(() {});
+  }
+
+  /// 「用 TTS 生成」要念的字：第一个有字的朗读来源；null = 没有可念的。
+  String? _speechText() {
+    for (final SrsFieldModel m in widget.speechSources) {
+      final String text = srsSpeechText(m.value);
+      if (text.isNotEmpty) return text;
+    }
+    return null;
   }
 
   void _onFocus() {
@@ -413,7 +506,10 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
       _model.edit(apply(_model.value, name));
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsFieldEditor.$what', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -432,7 +528,10 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
       await ref.read(srsSoundPlayerProvider)(file.path);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsFieldEditor.play', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -1281,6 +1380,9 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
     final List<String> sounds = srsSoundNames(_model.value);
     final Future<SrsPickedMedia?> Function(BuildContext)? record =
         source.recordAudio;
+    final Future<SrsPickedMedia?> Function(String)? synthesize =
+        source.synthesizeSpeech;
+    final String? speechText = synthesize == null ? null : _speechText();
     return Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       spacing: tokens.spacing.gap / 2,
@@ -1351,6 +1453,21 @@ class _SrsFieldEditorState extends ConsumerState<SrsFieldEditor> {
                       ),
                 icon: const FushiIcon(FushiIcons.mic, size: 18),
                 label: Text(t.srs_note_audio_record),
+              ),
+            if (synthesize != null && speechText != null)
+              FushiOutlinedButton.icon(
+                key: ValueKey<String>('srs-sound-tts-${widget.name}'),
+                onPressed: _busy
+                    ? null
+                    : () => unawaited(
+                        _addMedia(
+                          'synthesizeSpeech',
+                          () => synthesize(speechText),
+                          srsAppendSound,
+                        ),
+                      ),
+                icon: const FushiIcon(FushiIcons.voice, size: 18),
+                label: Text(t.srs_note_audio_tts),
               ),
           ],
         ),

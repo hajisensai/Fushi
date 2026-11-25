@@ -9,7 +9,7 @@ SettingsDestination buildProfilesDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.profiles,
     title: t.settings_destination_profile_presets,
-    summary: t.profile_management,
+    summary: t.settings_profiles_summary,
     icon: FushiIcons.profiles,
     sections: <SettingsSection>[
       SettingsSection(

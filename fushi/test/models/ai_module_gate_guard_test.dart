@@ -40,6 +40,12 @@ final List<_EntrySite> _sites = <_EntrySite>[
     definitionFile: 'video_source_scrape_dialog.dart',
   ),
   _EntrySite(
+    '待确认身份弹窗的「让 AI 重试」（书 / 漫画、游戏）',
+    RegExp(r'retryWithAi:(?!\s*widget\.)'),
+    RegExp(r'retryWithAi:\s*isAiModuleEnabled\('),
+    definitionFile: 'pending_identity_widgets.dart',
+  ),
+  _EntrySite(
     '合集详情页排序菜单的「AI 排序」',
     // 透传（`widget.collectionAiSettings`）不是新入口，只认真正求值的接线点。
     RegExp(r'collectionAiSettings:(?!\s*widget\.)'),
@@ -53,7 +59,11 @@ final List<_EntrySite> _sites = <_EntrySite>[
   _EntrySite(
     '库页多选的「AI 整理所选」',
     RegExp(r't\.library_organize_selection_action'),
-    RegExp(r'if \(isAiModuleEnabled\([^\n]*\)\)\s*FushiIconButton\('),
+    // 多选动作栏从逐个 FushiIconButton 收成 BatchAction 列表（视频页）后两种写法都认；
+    // 门必须直接包住带这个 label 的那一项。
+    RegExp(
+      r'if \(isAiModuleEnabled\([^\n]*\)\)\s*(?:FushiIconButton|BatchAction)\(',
+    ),
   ),
   _EntrySite(
     '漫画 OCR 的 AI 档位面板',

@@ -15,6 +15,7 @@
 #include <render.h>
 #include <render_gl.h>
 
+#include <atomic>
 #include <future>
 #include <memory>
 
@@ -24,6 +25,22 @@
 
 #include "angle_surface_manager.h"
 #include "thread_pool.h"
+
+// FUSHI FORK (BUG-5200): cumulative presentation counters of one
+// |VideoOutput|, read by the video diagnostics sampler.
+struct VideoOutputFrameStats {
+  // Frames libmpv rendered into the shared texture and marked available.
+  uint64_t published = 0;
+  // Of those, frames Flutter's raster thread picked up (texture resolves that
+  // saw a newer frame than the previous resolve).
+  uint64_t shown = 0;
+  // Frames overwritten before any resolve saw them (published - shown, minus
+  // the frame still waiting for its resolve).
+  uint64_t lost = 0;
+  // Publish -> resolve delay of shown frames, in microseconds.
+  uint64_t latency_sum_us = 0;
+  uint64_t latency_max_us = 0;
+};
 
 typedef struct _VideoOutputConfiguration {
   std::optional<int64_t> width;
@@ -91,7 +108,15 @@ class VideoOutput {
                     double target_peak_nits,
                     std::function<void(bool)> on_done);
 
+  // FUSHI FORK (BUG-5200): see |VideoOutputFrameStats|. Any thread.
+  VideoOutputFrameStats FrameStats();
+
  private:
+  // FUSHI FORK (BUG-5200): called after a frame was marked available (render
+  // thread) / from Flutter's texture callback (raster thread).
+  void OnFramePublished();
+  void OnFrameResolved();
+
   void NotifyRender();
 
   void Render();
@@ -118,10 +143,22 @@ class VideoOutput {
   ThreadPool* thread_pool_ref_ = nullptr;
   // For preventing any asynchronous operations (primarily texture objects
   // deletion after unregister in |Resize|) access this object after
-  // destruction.
-  bool destroyed_ = false;
+  // destruction. FUSHI FORK (BUG-4339): written by the disposing thread and
+  // read by libmpv's update callback / the render thread, hence atomic.
+  std::atomic<bool> destroyed_{false};
 
   std::mutex textures_mutex_ = std::mutex();
+
+  // FUSHI FORK (BUG-5200): presentation counters. |published_frames_| and
+  // |last_publish_us_| are written on the render thread after each mark; the
+  // rest only on Flutter's raster thread (texture callback) and read anywhere.
+  std::atomic<uint64_t> published_frames_{0};
+  std::atomic<uint64_t> last_publish_us_{0};
+  uint64_t last_resolved_published_ = 0;
+  std::atomic<uint64_t> shown_frames_{0};
+  std::atomic<uint64_t> lost_frames_{0};
+  std::atomic<uint64_t> latency_sum_us_{0};
+  std::atomic<uint64_t> latency_max_us_{0};
 
   std::unordered_map<int64_t, std::unique_ptr<flutter::TextureVariant>>
       texture_variants_ = {};

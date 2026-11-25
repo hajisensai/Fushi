@@ -1,6 +1,8 @@
 import 'dart:io';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/media_extensions.dart';
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show isDiscMemberPath;
 import 'package:fushi_engine/media/video/external_video.dart'
     show decodedSourceBasename;
 import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
@@ -115,6 +117,31 @@ VideoNameInfo parseVideoPath(String path) {
     episode: info.episode,
     isMovieHint: info.isMovieHint,
   );
+}
+
+/// 视频文件所属**作品的根目录**（小写、`/` 分隔，作比较键用）：父目录；父目录是
+/// 纯季目录（`Season 01` / `S02` / `第2季` / `2nd Season`——规则引擎解出季号、
+/// 且剥完季号没有标题）时再上一层。与 [parseVideoPath] 的季目录回落同一套规则：
+/// `Show/Season 01/01.mkv` 与 `Show/Season 02/01.mkv` 同属 `…/show`。
+///
+/// 只剥纯季目录；`Hibike! Euphonium 2/` 这种带标题的续作目录本身就是一部作品的
+/// 根，不往上走（往上走会把同一父目录下的不同作品并成一个根）。没有目录段的裸
+/// 文件名返回空串。
+String videoWorkRootDirectory(String path) {
+  final List<String> segments = _pathSegments(path);
+  if (segments.length < 2) return '';
+  int end = segments.length - 1;
+  if (end >= 2) {
+    final ParsedMediaName dir = FilenameParser.parse(
+      _decodedSegment(path, segments[end - 1]),
+    );
+    if (dir.season != null && dir.title.trim().isEmpty) end -= 1;
+  }
+  return segments
+      .sublist(0, end)
+      .map((String s) => _decodedSegment(path, s))
+      .join('/')
+      .toLowerCase();
 }
 
 /// 剧集卡片的**显示集号**（BUG-1544）：从路径/文件名解析出的**真实**集号；
@@ -264,15 +291,22 @@ _SiblingResolution _resolveWithSiblings(List<String> paths) {
   return _SiblingResolution(episodes, series);
 }
 
-/// 某目录的兄弟差分结论，已过「值得用」的三道门：目录里至少 2 个文件、至少有
-/// 一个文件单看文件名解不出集号（全解得出的目录一个字节都不动），差分结果与每
-/// 个已解出的集号都对得上。
+/// 某目录的兄弟差分结论，已过「值得用」的四道门：目录里至少 2 个文件、不是原盘
+/// 成员、至少有一个文件单看文件名解不出集号（全解得出的目录一个字节都不动），
+/// 差分结果与每个已解出的集号都对得上。
+///
+/// 原盘成员（`BDMV/PLAYLIST/00001.p02.mpls`、`VIDEO_TS/TITLE_03.dvdtitle`）的文件名
+/// 是播放列表号 / PlayItem 序号 / title 号，不是集号：差分会把每卷盘的
+/// `00001.p01` / `00001.p02` 都定成第 1、2 集，六卷剧集盘的集卡读成 1 2 1 2 …。
+/// 盘作品的集号是成员在盘合集里的顺序（`discOrdinalEpisodeOverrides`），解析不出
+/// 交给调用方回落顺位号，与刮削同一口径。
 SiblingEpisodeNumbering? _acceptedSiblingNumbering(
   List<String> paths,
   List<int?> perFile,
   List<int> indices,
 ) {
   if (indices.length < 2) return null;
+  if (indices.any((int i) => isDiscMemberPath(paths[i]))) return null;
   if (indices.every((int i) => perFile[i] != null)) return null;
   final SiblingEpisodeNumbering? sib = resolveSiblingEpisodeNumbers(<String>[
     for (final int i in indices) paths[i],

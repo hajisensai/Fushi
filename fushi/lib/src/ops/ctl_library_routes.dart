@@ -9,6 +9,7 @@ import 'package:fushi_dictionary/fushi_dictionary.dart' show JapaneseLanguage;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/media_item.dart';
@@ -20,6 +21,8 @@ import 'package:fushi/src/media/video/video_library_delete.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/ops/ctl_library_agent_routes.dart';
+import 'package:fushi/src/ops/ctl_library_curate_routes.dart';
 import 'package:fushi/src/ops/ctl_library_organize_routes.dart';
 import 'package:fushi/src/pages/implementations/galgame_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
@@ -29,6 +32,7 @@ import 'package:fushi/src/ops/ctl_audiobook_routes.dart';
 import 'package:fushi/src/ops/ctl_library_entries.dart';
 import 'package:fushi/src/ops/ctl_library_import.dart';
 import 'package:fushi/src/ops/ctl_library_manage_routes.dart';
+import 'package:fushi/src/ops/ctl_library_scrape_routes.dart';
 import 'package:fushi/src/ops/ctl_manga_ocr_routes.dart';
 import 'package:fushi/src/ops/ctl_reader_routes.dart';
 import 'package:fushi/src/ops/op_context.dart';
@@ -42,7 +46,7 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 ///
 /// - 列书：[ReaderFushiSource.getBooksFromDb]（书架同源）+ [SrtBookRepository.listAll]
 ///   + [VideoBookRepository.listAll] + [GalgameRepository.games]；
-/// - 删除：[ReaderFushiSource.deleteBook] / [SrtBookRepository.delete]（书架单删）、
+/// - 删除：[ReaderFushiSource.deleteBook] / [ReaderFushiSource.deleteSrtShelfBook]（书架单删）、
 ///   [deleteVideoBooksWithDecision]（视频页单删）、[GalgameRepository.remove]（游戏库「移除」）；
 /// - 打开：[AppModel.openMedia]（书架点卡）、[MangaSeriesPage]（漫画先进作品页）、
 ///   [VideoFushiPage.neutralized]（视频页 / 外部打开同一出口）、[GalgameDetailPage]
@@ -63,11 +67,17 @@ List<CtlRoute> buildLibraryCtlRoutes(OpContext context) {
     // 书架管理（合集 / 标签 / 书签 / 收藏句 / 改名 / 封面 / 读完 / 重置 / 来源增删改）、
     // 阅读会话遥控、有声书、漫画 OCR：各自一个文件，路径同在 library 前缀下。
     ...buildLibraryManageCtlRoutes(context),
+    // v161 条目刮削资料 / 横版背景（CLI `library scrape-meta`）。
+    ...buildLibraryScrapeCtlRoutes(context),
     ...buildReaderCtlRoutes(context),
     ...buildAudiobookCtlRoutes(context),
     ...buildMangaOcrCtlRoutes(context),
     // AI 整理库（CLI `library organize` / `organize-history` / `organize-undo`）。
     ...buildLibraryOrganizeCtlRoutes(context),
+    // AI 库管家（CLI `library curate` / `curate-*`，spec 2026-11-18）。
+    ...buildLibraryCurateCtlRoutes(context),
+    // AI 管库 v3：整库地图与批量变更集（spec 2026-11-22）。
+    ...buildLibraryAgentCtlRoutes(context),
   ];
 }
 
@@ -192,7 +202,35 @@ class _LibraryCtlHandlers {
 
   /// 书架同源：`getBooksFromDb`（进度 / 封面 / 改名覆盖）+ 瘦投影 meta（format /
   /// 导入时刻 / 读完标记）+ 字幕书。与书架一致，被字幕书配对的 EPUB 只以有声书出现。
-  Future<List<LibraryCtlEntry>> _bookEntries() async {
+  Future<List<LibraryCtlEntry>> _bookEntries() async =>
+      _withoutLocked(await _allBookEntries());
+
+  Future<List<LibraryCtlEntry>> _videoEntries() async =>
+      _withoutLocked(await _allVideoEntries());
+
+  Future<List<LibraryCtlEntry>> _gameEntries() async =>
+      _withoutLocked(await _allGameEntries());
+
+  /// 上锁（未解锁）的作品不给控制通道 / AI 助手看（[MediaVisibility]，与库页同一个
+  /// 过滤入口）：AI 列库、搜库、最近打开都见不到它，也就不会在对话里报出标题。
+  Future<List<LibraryCtlEntry>> _withoutLocked(
+    List<LibraryCtlEntry> entries,
+  ) async {
+    final MediaVisibility visibility = await MediaVisibility.load(_db);
+    if (!visibility.hidesAnything) return entries;
+    return <LibraryCtlEntry>[
+      for (final LibraryCtlEntry e in entries)
+        if (!switch (e.key.store) {
+          LibraryCtlStore.book => visibility.hidesBook(e.key.id),
+          LibraryCtlStore.srt => visibility.hidesSrtBook(e.key.id),
+          LibraryCtlStore.video => visibility.hidesVideo(e.key.id),
+          LibraryCtlStore.game => visibility.hidesGame(e.key.id),
+        })
+          e,
+    ];
+  }
+
+  Future<List<LibraryCtlEntry>> _allBookEntries() async {
     final List<MediaItem> books = await ReaderFushiSource.instance
         .getBooksFromDb(appModel: _app);
     final Map<String, EpubBookMeta> metas = <String, EpubBookMeta>{
@@ -200,10 +238,12 @@ class _LibraryCtlHandlers {
         meta.bookKey: meta,
     };
     final List<SrtBook> srtBooks = await SrtBookRepository(_db).listAll();
-    final Set<String> pairedBookKeys = <String>{
-      for (final SrtBook srt in srtBooks)
-        if (srt.bookKey.isNotEmpty) srt.bookKey,
-    };
+    // 与书架同一隐藏规则：有声书配对行只顶替能挂有声书的书（反馈 Ndnxy3mNdG）。
+    final Set<String> pairedBookKeys =
+        ReaderFushiSource.audiobookShadowedBookKeys(
+          srtBooks,
+          formatOf: (String key) => BookFormat.tryParse(metas[key]?.format),
+        );
     final Map<String, int> percentByBookKey = <String, int>{};
     final List<LibraryCtlEntry> out = <LibraryCtlEntry>[];
     for (final MediaItem item in books) {
@@ -220,7 +260,7 @@ class _LibraryCtlHandlers {
       final LibraryCtlKind kind = LibraryCtlKind.forBookFormat(
         BookFormat.parseOrEpub(meta?.format),
       );
-      if (kind == LibraryCtlKind.book && pairedBookKeys.contains(bookKey)) {
+      if (pairedBookKeys.contains(bookKey)) {
         continue;
       }
       out.add(
@@ -264,7 +304,7 @@ class _LibraryCtlHandlers {
     return out;
   }
 
-  Future<List<LibraryCtlEntry>> _videoEntries() async {
+  Future<List<LibraryCtlEntry>> _allVideoEntries() async {
     final List<VideoBookRow> rows = await VideoBookRepository(_db).listAll();
     final List<LibraryCtlEntry> out = <LibraryCtlEntry>[
       for (final VideoBookRow row in rows) _videoEntry(row),
@@ -292,7 +332,7 @@ class _LibraryCtlHandlers {
     return repo.games;
   }
 
-  Future<List<LibraryCtlEntry>> _gameEntries() async => <LibraryCtlEntry>[
+  Future<List<LibraryCtlEntry>> _allGameEntries() async => <LibraryCtlEntry>[
     for (final GalgameEntry game in await _games()) _gameEntry(game),
   ];
 
@@ -453,6 +493,7 @@ class _LibraryCtlHandlers {
     final DeleteBookResult result = await ReaderFushiSource.instance.deleteBook(
       db: _db,
       bookKey: key.id,
+      appModel: _app,
       scope: decision.scope,
       deleteLocalFiles: decision.deleteLocalFiles,
       deleteStatistics: decision.deleteStatistics,
@@ -485,24 +526,23 @@ class _LibraryCtlHandlers {
         if (book.bookKey.isNotEmpty) book.bookKey,
       ]);
     }
-    LocalFileDeleteReport localFiles = const LocalFileDeleteReport();
-    if (book.bookKey.isNotEmpty) {
-      final DeleteBookResult result = await ReaderFushiSource.instance
-          .deleteBook(
-            db: _db,
-            bookKey: book.bookKey,
-            scope: decision.scope,
-            deleteLocalFiles: decision.deleteLocalFiles,
-            deleteStatistics: decision.deleteStatistics,
-          );
-      localFiles = localFiles.merge(result.localFiles);
+    // 与书架字幕书卡删除同一个原语，按身份只走一条删除路径（BUG-3101）：配对了 EPUB
+    // 的整本删（srt 行随 deleteEpubBook 级联删），纯字幕书删 srt 行。以前这里先
+    // deleteBook、再按 uid 删一次 srt 行（行早已不在），而且两边的失败都不看，删不掉
+    // 也回报成功（#3722 c37 遗留）；现在与 [_removeBook] 一样回 conflict。
+    final DeleteBookResult result = await ReaderFushiSource.instance
+        .deleteSrtShelfBook(
+          db: _db,
+          book: book,
+          appModel: _app,
+          scope: decision.scope,
+          deleteLocalFiles: decision.deleteLocalFiles,
+          deleteStatistics: decision.deleteStatistics,
+        );
+    if (!result.deleted) {
+      throw CtlFailure.conflict('删除失败：${result.failureReason ?? '原因未知'}');
     }
-    final SrtBookDeleteResult srtResult = await repo.delete(
-      book.uid,
-      propagateDeletion: decision.scope == DeleteScope.syncEverywhere,
-      deleteLocalFiles: decision.deleteLocalFiles,
-    );
-    localFiles = localFiles.merge(srtResult.localFiles);
+    final LocalFileDeleteReport localFiles = result.localFiles;
     _refreshShelf();
     return _deletedJson(key, book.title, decision, localFiles);
   }
@@ -843,6 +883,7 @@ class _LibraryCtlHandlers {
       isKindEnabled: _kindVisible,
       keepDuplicates: duplicate == 'suffix',
       ingestVideoFile: _context.ingestExternalVideo,
+      folderTranscribeAudiobook: _app.folderImportTranscribePort,
       // 只有音频的有声书：本机能转录就排进「转录后入库」队列（发现页同一个）。
       enqueueTranscription: isAsrSupported
           ? ({
@@ -931,8 +972,8 @@ class _LibraryCtlHandlers {
         SourceLibraryKind.book => _kindVisible(LibraryCtlKind.book),
         SourceLibraryKind.video => _kindVisible(LibraryCtlKind.video),
         SourceLibraryKind.manga => _kindVisible(LibraryCtlKind.manga),
-        // ctl 没有音乐库命令（见 ctl_library_manage_routes 的加来源分支），不列出。
-        SourceLibraryKind.music || null => false,
+        // ctl 没有音乐 / 游戏库命令（见 ctl_library_manage_routes 的加来源分支），不列出。
+        SourceLibraryKind.music || SourceLibraryKind.game || null => false,
       };
 
   Future<List<MediaSourceRow>> _sources(CtlCall call) async {
@@ -948,21 +989,27 @@ class _LibraryCtlHandlers {
         .toList(growable: false);
   }
 
-  Map<String, Object?> _sourceJson(MediaSourceRow row) => <String, Object?>{
-    'id': row.id,
-    'label': row.label,
-    'kind': row.mediaKind,
-    'transport': row.transport,
-    'path': row.rootPath,
-    'mediaCount': row.mediaCount,
-    if (row.lastScannedAt != null)
-      'lastScannedAt': row.lastScannedAt!.millisecondsSinceEpoch,
-    if (row.lastScanError != null) 'lastScanError': row.lastScanError,
-  };
+  /// `mediaCount` 是列的原值 = **上次扫描新增**的条目数（重扫一个早已全部入库的
+  /// 来源后是 0），不是这个来源有多少东西；后者是 `totalCount`（与来源页显示的
+  /// 累计数同一条查询）。
+  Future<Map<String, Object?>> _sourceJson(MediaSourceRow row) async =>
+      <String, Object?>{
+        'id': row.id,
+        'label': row.label,
+        'kind': row.mediaKind,
+        'transport': row.transport,
+        'path': row.rootPath,
+        'mediaCount': row.mediaCount,
+        'totalCount': await _db.countMediaBySourceId(row.id, row.mediaKind),
+        if (row.lastScannedAt != null)
+          'lastScannedAt': row.lastScannedAt!.millisecondsSinceEpoch,
+        if (row.lastScanError != null) 'lastScanError': row.lastScanError,
+      };
 
   Future<Object?> listSources(CtlCall call) async => <String, Object?>{
     'sources': <Object?>[
-      for (final MediaSourceRow row in await _sources(call)) _sourceJson(row),
+      for (final MediaSourceRow row in await _sources(call))
+        await _sourceJson(row),
     ],
   };
 
@@ -985,6 +1032,7 @@ class _LibraryCtlHandlers {
     for (final MediaSourceRow row in targets) {
       final SourceScanSummary summary = await SourceLibraryScanner(
         _db,
+        transcribeAudiobook: _app.folderImportTranscribePort,
       ).scan(row);
       results.add(<String, Object?>{
         'id': row.id,
@@ -997,6 +1045,8 @@ class _LibraryCtlHandlers {
         if (summary.createdVideoUids.isNotEmpty)
           'createdVideos': summary.createdVideoUids.length,
         if (summary.error != null) 'error': summary.error,
+        // 扫描没开始的类型化原因（`error` 是随界面语言变的文案，程序认这个）。
+        if (summary.blocked != null) 'blocked': summary.blocked!.wireValue,
       });
     }
     _refreshShelf();

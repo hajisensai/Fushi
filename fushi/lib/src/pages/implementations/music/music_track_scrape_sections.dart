@@ -11,9 +11,14 @@ library;
 import 'dart:async';
 import 'dart:convert';
 
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/metadata/music_tag_writeback.dart';
 import 'package:fushi/src/media/music/metadata/music_video_service.dart';
+import 'package:fushi/src/media/music/music_local_video.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/music/music_mv_page.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -159,7 +164,9 @@ class _MusicTrackIdentificationSectionState
       widget.database.getMusicScrapeMeta(widget.track.trackUid);
 
   void _reload() {
-    setState(() => _meta = _load());
+    setState(() {
+      _meta = _load();
+    });
     widget.onChanged?.call();
   }
 
@@ -653,6 +660,26 @@ class _MusicTrackVideosSectionState extends State<MusicTrackVideosSection> {
               spacing: tokens.spacing.gap,
               runSpacing: tokens.spacing.gap,
               children: <Widget>[
+                // 曲目本身就是 MV（曲库里的视频容器，拍板台 jeNKF9u0WJ；网络来源的串流看，
+                // left3568）：在视频播放页看。视频模块关掉时不给入口。
+                if (isMusicWatchableVideoTrack(widget.track) &&
+                    ProviderScope.containerOf(context, listen: false)
+                        .read(appProvider)
+                        .moduleVisibility
+                        .isEnabled(ModuleId.video))
+                  FushiPressScale(
+                    child: FushiFilledButton.icon(
+                      key: const ValueKey<String>('music_mv_watch_in_player'),
+                      onPressed: () => unawaited(
+                        openMusicTrackVideo(
+                          context: context,
+                          track: widget.track,
+                        ),
+                      ),
+                      icon: const FushiIcon(FushiIcons.video),
+                      label: Text(t.music_mv_watch_in_player),
+                    ),
+                  ),
                 FushiPressScale(
                   child: FushiOutlinedButton.icon(
                     key: const ValueKey<String>('music_mv_find_local'),

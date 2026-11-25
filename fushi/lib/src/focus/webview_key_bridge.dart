@@ -79,9 +79,13 @@ bool get hostOwnsWebViewHoverLookup => isMacOSPlatform;
 /// 且极难定位。裹进 IIFE 后每份桥各自闭包持有自己的键表，多份共存互不相干。
 /// 前导 `;` 是拼接安全惯例：本脚本被插进一大段 setup 脚本中间，前一条语句若少了
 /// 分号，裸 `(function…` 会被解析成对它的调用。
-/// [forwardRepeats] 为 false 时丢弃长按产生的 `KeyRepeatEvent`（`e.repeat`）。
-/// 漫画页要的是「按住方向键不堆翻页风暴」，阅读器则保留连发，故做成参数而不是
-/// 二选一写死。
+/// [forwardRepeats] 为 false 时丢弃长按产生的 `KeyRepeatEvent`（`e.repeat`）：一次性
+/// 动作（关词典、书签）按住不该反复触发。
+///
+/// [reportRepeats] 为 true 时（要求 [forwardRepeats] 也为 true）回传第二个参数
+/// `e.repeat`（布尔），让 Dart 侧把长按的自动重复与新的一次按下分开处理——漫画翻页
+/// 桥靠它对长按连发做「等上一页动画落定」节流，而新按下照常排队（反馈 uz_2m0E_Eu ②）。
+/// 默认 false：生成的 `callHandler` 只带 token，与既有宿主逐字一致。
 ///
 /// [stopPropagation] 为 true 时额外 `stopImmediatePropagation()`，用于宿主文档里
 /// 还有别的 keydown 监听、且这些键必须**独占**给 Dart 的场合。
@@ -99,6 +103,12 @@ bool get hostOwnsWebViewHoverLookup => isMacOSPlatform;
 /// `document`：页面里有不受宿主控制的脚本（复习卡面的模板脚本）也挂了 keydown 并
 /// stopPropagation 时，挂在 document 上的桥会被它截走。配合「桥在页面脚本之前注册」才
 /// 完整（复习卡面把桥写进外壳 `<head>`）。
+///
+/// [yieldActivationToKeyboardFocus] 为 true 时，Enter / 空格按在**键盘焦点**（`:focus-visible`）
+/// 所在的页内控件（`button` / `summary` / `a[href]` / `[role=button]`）上放行，由控件自己
+/// 激活：复习卡面里的「展开全文」、词典折叠头等用 Tab / 手柄移过去后要能按 Enter 触发，
+/// 不能被翻面 / 评分键截走。只认 `:focus-visible`——鼠标点过控件留下的焦点不算，点过
+/// 之后照样按空格 / Enter 翻面、评分。
 ///
 /// [installMouseListeners] 为 true 时额外装 `mousedown`/`auxclick`/`contextmenu`
 /// 监听。默认 false：只用键盘的宿主生成的脚本里完全不含鼠标块（零行为变化）。
@@ -118,8 +128,10 @@ String webViewKeyBridgeScript({
   bool installMouseListeners = false,
   bool deferToPopupModal = false,
   bool forwardRepeats = true,
+  bool reportRepeats = false,
   bool stopPropagation = false,
   bool listenOnWindow = false,
+  bool yieldActivationToKeyboardFocus = false,
 }) {
   // 空键表 + 不装鼠标监听**是合法的**：脚本每次注入都覆盖 window 上的 token 表，
   // 宿主靠「注入空 spec」来清掉热槽 WebView 上残留的旧表（弹窗跨查词长期存活）。
@@ -130,6 +142,10 @@ String webViewKeyBridgeScript({
     keys.isNotEmpty || installMouseListeners || mouseButtons.isEmpty,
     'a bridge with mouse tokens but no mouse listeners can never fire them',
   );
+  assert(
+    forwardRepeats || !reportRepeats,
+    'reportRepeats needs forwardRepeats: dropped repeats can never be reported',
+  );
   final String keyList = keys.map(_jsStringLiteral).join(', ');
   final String buttonList = mouseButtons.join(', ');
   final String installFlag = _jsStringLiteral(
@@ -139,6 +155,7 @@ String webViewKeyBridgeScript({
   final String buttonsVar = _jsStringLiteral(
     '__fushiKeyBridgeButtons_$handlerName',
   );
+  final String repeatArg = reportRepeats ? ', !!e.repeat' : '';
   final String repeatGuard = forwardRepeats
       ? ''
       : '\n    if (e.repeat) return;';
@@ -152,6 +169,20 @@ String webViewKeyBridgeScript({
   final String keyTarget = listenOnWindow ? 'window' : 'document';
   final String propagationGuard = stopPropagation
       ? '\n    e.stopImmediatePropagation();'
+      : '';
+  final String activationGuard = yieldActivationToKeyboardFocus
+      ? '''
+    if (t && (e.code === 'Enter' || e.code === 'NumpadEnter' || e.code === 'Space') &&
+        _fushiKeyboardFocusedControl(t)) return;'''
+      : '';
+  final String activationHelper = yieldActivationToKeyboardFocus
+      ? '''
+  function _fushiKeyboardFocusedControl(t) {
+    try {
+      return !!(t.matches && t.matches('button, summary, a[href], [role="button"]') &&
+        t.matches(':focus-visible'));
+    } catch (err) { return false; }
+  }'''
       : '';
   final String mouseListeners = installMouseListeners
       ? '''
@@ -191,7 +222,7 @@ String webViewKeyBridgeScript({
     if (e.key) out.push(mods + e.key);
     if (e.code && e.code !== e.key) out.push(mods + e.code);
     return out;
-  }
+  }$activationHelper
   $keyTarget.addEventListener('keydown', function(e) {
     if (!e) return;
     if (e.isComposing) return;$repeatGuard$popupModalGuard
@@ -199,7 +230,7 @@ String webViewKeyBridgeScript({
     if (t) {
       var tag = t.tagName ? t.tagName.toUpperCase() : '';
       if (tag === 'INPUT' || tag === 'TEXTAREA' || t.isContentEditable) return;
-    }
+    }$activationGuard
     var _keys = window[$keysVar] || [];
     var _cand = _fushiBridgeTokens(e);
     var _hit = null;
@@ -209,7 +240,7 @@ String webViewKeyBridgeScript({
     if (_hit === null) return;
     e.preventDefault();$propagationGuard
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-      window.flutter_inappwebview.callHandler('$handlerName', _hit);
+      window.flutter_inappwebview.callHandler('$handlerName', _hit$repeatArg);
     }
   }, {capture: true});
 $mouseListeners  })();''';

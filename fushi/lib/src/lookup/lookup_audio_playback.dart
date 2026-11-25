@@ -3,6 +3,8 @@ import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:flutter/foundation.dart' show visibleForTesting;
+
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/creator/mining_tts_fallback.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
@@ -20,7 +22,7 @@ import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi/src/utils/misc/word_audio_cache.dart';
 import 'package:fushi/src/utils/misc/word_audio_resolver.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart'
-    show Dictionary, FushiDicts;
+    show Dictionary, DictionaryEntry, FushiDicts;
 import 'package:fushi_engine/dictionary/dictionary_media_types.dart'
     show normalizeDictionaryMediaPath;
 import 'package:path_provider/path_provider.dart';
@@ -50,12 +52,14 @@ const Duration kLocalAudioQueryBudget = Duration(milliseconds: 500);
 Future<void> playLookupAudio(
   AppModel appModel,
   String expression,
-  String reading,
-) async {
+  String reading, {
+  String matched = '',
+}) async {
   final String? url = await resolveLookupAudioUrl(
     appModel,
     expression,
     reading,
+    matched: matched,
   );
   if (url == null || url.isEmpty) return;
 
@@ -81,12 +85,16 @@ Future<void> playLookupAudio(
 ///
 /// [profileView]（反馈 biLEesNqWb）：浏览器扩展所选的非激活配置——音频源配置、TTS 兜底
 /// 声音与系统语音的语言判据都取它；null = App 当前生效的设置。
+///
+/// [matched]（反馈 WJFhjUGaTn）：查词命中的原文。只影响 TTS 兜底念的字（词头带替换
+/// 写法时念原文，见 [wordAudioTtsText]）；音频源照旧按词头 / 读音查。
 Future<String?> resolveLookupAudioUrl(
   AppModel appModel,
   String expression,
   String reading, {
   bool ttsFallback = true,
   ProfileSettingsView? profileView,
+  String matched = '',
 }) async {
   final String? configured = await _buildLookupAudioResolver(appModel)
       .resolveConfigured(
@@ -101,6 +109,7 @@ Future<String?> resolveLookupAudioUrl(
     expression,
     reading,
     profileView: profileView,
+    matched: matched,
   );
 }
 
@@ -111,14 +120,16 @@ List<AudioSourceConfig> _lookupAudioSourceConfigs(
     ? appModel.audioSourceConfigs
     : appModel.audioSourceConfigsFrom(profileView.prefs.audioSourceConfigs);
 
-/// 查词 TTS 兜底：用户显式选过的兜底声音合成 [reading]（空则 [expression]，与制卡
-/// 兜底同一取词口径），返回本地文件路径。没选过 / 选了「不使用」返回 null；合成
+/// 查词 TTS 兜底：用户显式选过的兜底声音合成 [reading]（空则 [expression]；词头带
+/// 替换写法时念命中原文 [matched]——与制卡兜底同一取词口径 [wordAudioTtsText]），
+/// 返回本地文件路径。没选过 / 选了「不使用」返回 null；合成
 /// 失败（服务没起、凭据缺失……）记错误日志后返回 null，调用方照常显示「暂无发音」。
 Future<String?> _synthesizeLookupTtsFallback(
   AppModel appModel,
   String expression,
   String reading, {
   ProfileSettingsView? profileView,
+  String matched = '',
 }) async {
   // 兜底只认用户显式选过的声音，而那个选择存在偏好里：偏好还没装载（AppModel
   // 尚未 initialise，或只装了数据库的轻量进程）时不知道用户选了什么，按「没选」
@@ -127,7 +138,11 @@ Future<String?> _synthesizeLookupTtsFallback(
   final PreferencesRepository prefs = profileView?.prefs ?? appModel.prefsRepo;
   final MiningTtsFallbackVoice? choice = lookupTtsFallbackVoiceOf(prefs);
   if (choice == null) return null;
-  final String text = reading.isNotEmpty ? reading : expression;
+  final String text = wordAudioTtsText(
+    expression: expression,
+    reading: reading,
+    matched: matched,
+  );
   try {
     final File? file = await synthesizeMiningTtsFallback(
       text: text,
@@ -220,15 +235,21 @@ const String kWordAudioChoiceKindKey = 'kind';
 Future<List<Map<String, String>>> listWordAudioWebViewChoices(
   AppModel appModel,
   String expression,
-  String reading,
-) async {
+  String reading, {
+  String matched = '',
+}) async {
   final List<Map<String, String>> choices = await _webViewChoicesOf(
     await listLookupAudioCandidates(appModel, expression, reading),
   );
   if (choices.isNotEmpty) return choices;
   // 与单击 ♪ 同一兜底（[resolveLookupAudioUrl]）：菜单不能说「暂无发音」而单击却能播。
   final String? ttsUrl = await audioRefToWebViewUrl(
-    await _synthesizeLookupTtsFallback(appModel, expression, reading),
+    await _synthesizeLookupTtsFallback(
+      appModel,
+      expression,
+      reading,
+      matched: matched,
+    ),
   );
   return <Map<String, String>>[
     if (ttsUrl != null && ttsUrl.isNotEmpty)
@@ -346,11 +367,13 @@ Future<bool> autoReadWordUnified(
   String expression,
   String reading, {
   required Future<bool> Function(String url)? playInWebView,
+  String matched = '',
 }) async {
   final String? ref = await resolveLookupAudioUrl(
     appModel,
     expression,
     reading,
+    matched: matched,
   );
   return playResolvedLookupAudio(
     ref,
@@ -374,7 +397,10 @@ Future<bool> playResolvedLookupAudio(
   if (playInWebView != null && !lookupWordAudioPlaysNatively) {
     final String? url = await audioRefToWebViewUrl(ref);
     if (url != null && url.isNotEmpty) {
-      if (await playInWebView(url)) return true;
+      if (await playInWebView(url)) {
+        debugLookupAudioRouteObserver?.call(LookupAudioRoute.webView, label);
+        return true;
+      }
       // The WebView reported a real failure (autoplay blocked / JS error /
       // bridge timeout). Record it — this exact silence used to be invisible
       // (zero logs) and cost a mis-rooted fix in BUG-1015 — then fall back.
@@ -386,11 +412,27 @@ Future<bool> playResolvedLookupAudio(
     }
   }
 
+  debugLookupAudioRouteObserver?.call(LookupAudioRoute.hostPlayer, label);
   return await TtsChannel.instance.playAudioRef(
     ref,
     volume: ReaderFushiSource.instance.lookupAudioVolumeGain,
   );
 }
+
+/// [playResolvedLookupAudio] 这次把单词音频交给了谁。
+enum LookupAudioRoute {
+  /// 弹窗 WebView 自己的 `<audio>` 真的开播了（统一快路径）。
+  webView,
+
+  /// 宿主播放器（桌面 media_kit / Android 原生 MediaPlayer）。
+  hostPlayer,
+}
+
+/// 测试钩子：[playResolvedLookupAudio] 每次选定播放路径后回调（[label] = 词头）。
+/// BUG-5278 的集成测试靠它断言「阅读器自动发音走的是弹窗 `<audio>`」。生产不设。
+@visibleForTesting
+void Function(LookupAudioRoute route, String label)?
+debugLookupAudioRouteObserver;
 
 /// 单词音频是否改走宿主原生播放器而不是弹窗 WebView 的 `<audio>`（BUG-3311）。
 ///
@@ -517,10 +559,25 @@ String _audioExtensionForMime(String mime) {
 Future<String?> resolveWordAudioWebViewUrl(
   AppModel appModel,
   String expression,
-  String reading,
-) async => audioRefToWebViewUrl(
-  await resolveLookupAudioUrl(appModel, expression, reading),
+  String reading, {
+  String matched = '',
+}) async => audioRefToWebViewUrl(
+  await resolveLookupAudioUrl(appModel, expression, reading, matched: matched),
 );
+
+/// 词条的查词命中原文（引擎随结果放在 `extra` JSON 的 `matched`，即查询串里实际
+/// 匹配上的那段）；没有 / 解析不了时为空串。自动发音与预览发音把它交给
+/// [resolveLookupAudioUrl] 的 `matched`。
+String lookupEntryMatchedText(DictionaryEntry entry) {
+  if (entry.extra.isEmpty) return '';
+  try {
+    final Object? decoded = jsonDecode(entry.extra);
+    if (decoded is! Map) return '';
+    return decoded['matched']?.toString() ?? '';
+  } on FormatException {
+    return '';
+  }
+}
 
 /// Converts a resolved audio ref (from [resolveLookupAudioUrl] /
 /// [WordAudioResolver], i.e. a remote `http(s)://` URL **or** a local file path)

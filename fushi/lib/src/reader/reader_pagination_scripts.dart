@@ -3,9 +3,12 @@ import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show visibleForTesting;
 import 'package:flutter/services.dart';
+import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_page_turn_script.dart';
+import 'package:fushi/src/reader/reader_seamless_chapters_script.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_relocation_script.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ruby_gap_script.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
@@ -152,9 +155,10 @@ class ReaderPaginationScripts {
   static const int kSentenceAudioAdjacent = 2;
 
   /// 把 cue 的归一化偏移（提示）+ 原文，映射成在 [fullNorm]（实时 DOM 的
-  /// 归一化文本）里的解析起点。这是 JS `collectSasayakiCueRanges` 搜索逻辑的
+  /// 归一化文本）里的解析起点。这是 JS `fushiSentenceAudioRelocation.resolveSpans`
+  /// （`kSentenceAudioRelocationJs`，分页 / 连续 / VN 三种 view mode 共用）的
   /// 纯 Dart 影子，供单测验证「漂移自愈 / 不跳远处重复 / 未命中回落提示 / 尾巴
-  /// 回吃」不变量；JS 侧实现同一算法（见同文件脚本字符串 + 源码守卫测试）。
+  /// 回吃」不变量；两侧逐用例对拍见 `sentence_audio_relocation_behavior_test.dart`。
   ///
   /// 规则：游标 `cursor` 单调（BUG-2204 起允许回到前一条命中的尾巴 [kSentenceAudioTailOverlap]
   /// 字以内、不越过其起点）；每条 cue 先看紧接前一条命中处
@@ -194,6 +198,11 @@ class ReaderPaginationScripts {
             final int i = fullNorm.indexOf(needle, from);
             if (i < 0 || i > hi) {
               break;
+            }
+            // 整条落在前一条命中区间内的只是前句里的重复片段，不是下一句。
+            if (i < cursor && i + needle.length <= cursor) {
+              from = i + 1;
+              continue;
             }
             if (lastHit >= 0 &&
                 i >= cursor - kSentenceAudioTailOverlap &&
@@ -614,8 +623,9 @@ class ReaderPaginationScripts {
   // JS `foldCodePoint` 的 Dart 影子：与 `AudioTextNormalizer.appendNormalized`
   // 的值转换同口径。改用 fushi_core 共享码点原语（`jp_codepoint_fold.dart`）后
   // 与 AudioTextNormalizer 同源；在白名单域（`_jsIsMatchableCodePoint` 为 true
-  // 的码点）与 JS 分段平移逐码点等价。运行期 JS 副本（`hwKataToFw` 查表）由
-  // `fushi/test/utils/jp_codepoint_fold_test.dart` 的 parity 测试逐项锁定。
+  // 的码点）与 JS 分段平移逐码点等价。运行期 JS 副本（`kSentenceAudioRelocationJs` 的
+  // `HW_KATA_TO_FW` 查表）由 `fushi/test/utils/jp_codepoint_fold_test.dart` 的
+  // parity 测试逐项锁定。
   static int _jsFoldCodePoint(int cp) {
     int out = fullwidthAsciiToHalfwidth(cp);
     if (out >= 0x41 && out <= 0x5A) {
@@ -720,28 +730,118 @@ class ReaderPaginationScripts {
     return !isTrackpad || startsNewGesture;
   }
 
-  /// TODO-656 根治：触摸/指针边界手势跨章判据，替代 `_bEnd` 旧的瞬时 `scrollTop<=2`。
+  /// 反馈 R7k887yaJI ①：连续模式触摸手势「沿主轴」的最大偏离角（度）。拇指在手机上
+  /// 走的是弧线，斜着滑偏离书写轴三四十度很常见；旧判据 `|主轴| >= |交叉轴|` 等于 45°
+  /// 一刀切，偏一点就既不跨章也（因 Chromium 锁存交叉轴）不滚动。65° 以内都当主轴手势：
+  /// 连续模式里横向（交叉轴）滑动本来就不承担任何动作（见 [continuousSwipeShouldPaginate]），
+  /// 再往外才是「基本横着划」，不算阅读滚动。
+  static const double continuousGestureMaxOffAxisDegrees = 65;
+
+  /// [continuousGestureMaxOffAxisDegrees] 的正切：`|交叉轴| <= |主轴| * tan` 即在阈值内。
+  static final double continuousGestureMaxOffAxisTan = math.tan(
+    continuousGestureMaxOffAxisDegrees * math.pi / 180,
+  );
+
+  /// JS 侧逐字常量（四位小数足够：角度误差 < 0.01°）。
+  static String get _kContinuousOffAxisTanJs =>
+      continuousGestureMaxOffAxisTan.toStringAsFixed(4);
+
+  /// 斜滑补位接管前，手指至少要沿主轴走的距离（CSS px）。
+  static const int continuousPanAssistMinMainPx = 8;
+
+  /// 过了点击半径之后，至少再观察这么久（ms）原生滚动仍纹丝不动才接管：原生滚动的起步
+  /// 要一两帧才反映到主线程的 scrollTop，太早判会和原生滚动叠成双份。
+  static const int continuousPanAssistSettleMs = 48;
+
+  /// 补位惯性每毫秒的速度保留率（与 UIScrollView 默认 decelerationRate 0.998 同值）。
+  static const double continuousPanAssistFlingDecayPerMs = 0.998;
+
+  /// 补位惯性的最小起步 / 停止速度（px/ms）。
+  static const double continuousPanAssistFlingMinVelocity = 0.05;
+
+  /// 补位惯性的速度上限（px/ms），防一次采样抖动甩飞整章。
+  static const double continuousPanAssistFlingMaxVelocity = 8;
+
+  /// 反馈 R7k887yaJI ① 纯谓词：连续模式一次触摸手势的主轴方向（`'forward'` /
+  /// `'backward'`），不是主轴手势返回 null。JS 影子 = 连续 shell 触摸控制器 `_bEnd`。
   ///
-  /// 旧判据在 touchend 那一帧读 `scrollTop<=2`：用户从章中向上滚，momentum/回弹把
-  /// scrollPos 滑到边界的瞬态被误当「跨章意图」→ 没到章首就切上一章。新判据只看
-  /// **手势起点**（touchstart 时刻）是否已停在边界——从章中滚到边界的那一下起点不在
-  /// 边界，不跨章；只有「一开始就贴着章首/章末再发同向手势」才跨章（与移动端到边界
-  /// 再拉一下翻页的心智一致）。纯函数、无副作用，供单测。
-  ///
-  /// [gestureDir] 手势方向（`'forward'`/`'backward'`，由 swipe 位移符号定）；
-  /// [downScrollPos] touchstart 时沿内容轴的滚动量（横排 scrollTop、竖排 |scrollLeft|）；
-  /// [scrollMax] 该轴最大可滚量（横排 scrollHeight-innerHeight、竖排 scrollWidth-innerWidth）。
+  /// [dx]/[dy] 为手指净位移（CSS px）。主轴（书写轴）：横排为纵向，手指上推（dy<0）=
+  /// forward；竖排 vertical-rl 为横向，手指右移（dx>0）= forward。主轴位移不足
+  /// [minMainPx]，或偏离主轴超过 [continuousGestureMaxOffAxisDegrees]，返回 null。
   @visibleForTesting
-  static String? touchBoundaryCrossDir({
-    required String gestureDir,
-    required num downScrollPos,
-    required num scrollMax,
+  static String? continuousGestureDir({
+    required bool vertical,
+    required double dx,
+    required double dy,
+    required double minMainPx,
   }) {
-    final bool downAtStart = downScrollPos <= 2;
-    final bool downAtEnd = downScrollPos >= scrollMax - 2;
-    if (gestureDir == 'backward' && downAtStart) return 'backward';
-    if (gestureDir == 'forward' && downAtEnd) return 'forward';
+    final double main = vertical ? dx : -dy;
+    final double cross = vertical ? dy : dx;
+    if (main.abs() < minMainPx) return null;
+    if (cross.abs() > main.abs() * continuousGestureMaxOffAxisTan) return null;
+    return main > 0
+        ? ReaderNavigationDirection.forward.jsValue
+        : ReaderNavigationDirection.backward.jsValue;
+  }
+
+  /// 反馈 R7k887yaJI ③ / TODO-656 纯谓词：触摸边界拉动是否跨章（JS 影子 = `_bEnd`）。
+  ///
+  /// 坐标都是「手指沿前进方向的坐标」（横排 `-y`、竖排 `x`）。[pinnedForwardAt] /
+  /// [pinnedBackwardAt] = 正文贴到章末 / 章首那一刻的手指坐标（null = 本手势里没贴过；
+  /// 标准档只在 touchstart 记，低阻尼档 touchmove 中途贴上也记）。手指从贴边界处起再沿
+  /// [gestureDir] 拉 [pullPx] 以上才跨章。
+  @visibleForTesting
+  static String? continuousBoundaryCrossDir({
+    required String? gestureDir,
+    required double endFingerMain,
+    required double? pinnedForwardAt,
+    required double? pinnedBackwardAt,
+    required int pullPx,
+  }) {
+    if (gestureDir == ReaderNavigationDirection.forward.jsValue &&
+        pinnedForwardAt != null &&
+        endFingerMain - pinnedForwardAt >= pullPx) {
+      return gestureDir;
+    }
+    if (gestureDir == ReaderNavigationDirection.backward.jsValue &&
+        pinnedBackwardAt != null &&
+        pinnedBackwardAt - endFingerMain >= pullPx) {
+      return gestureDir;
+    }
     return null;
+  }
+
+  /// 反馈 R7k887yaJI ① 纯谓词：斜滑补位是否接管这次手势（JS 影子 = `_bMove`）。
+  ///
+  /// Chromium 对起手偏交叉轴（|交叉| > |主轴|）的触摸滚动按交叉轴锁存，而连续模式交叉轴
+  /// 无可滚范围，于是整段手势正文不动（真 Chromium 探针
+  /// `tool/reader_pitch_headless/continuous_diagonal_pan_probe.mjs`）。只有同时满足才接管：
+  /// 原生滚动自按下起没动过（[nativeMoved] 恒 false）、过点击半径后已观察
+  /// [continuousPanAssistSettleMs]、主轴走了 [continuousPanAssistMinMainPx]、起手偏交叉轴
+  /// （主轴占优的手势原生一定会滚，绝不碰）、且仍在 [continuousGestureMaxOffAxisDegrees] 内。
+  @visibleForTesting
+  static bool continuousPanAssistShouldEngage({
+    required double mainTravel,
+    required double crossTravel,
+    required bool nativeMoved,
+    required double sinceSlopMs,
+  }) {
+    if (nativeMoved) return false;
+    if (sinceSlopMs < continuousPanAssistSettleMs) return false;
+    final double main = mainTravel.abs();
+    final double cross = crossTravel.abs();
+    if (main < continuousPanAssistMinMainPx) return false;
+    if (cross <= main) return false;
+    return cross <= main * continuousGestureMaxOffAxisTan;
+  }
+
+  /// 斜滑补位惯性：[velocity]（px/ms）经过 [dtMs] 后的速度。指数衰减、单调趋零、不反向。
+  @visibleForTesting
+  static double continuousPanAssistFlingVelocity({
+    required double velocity,
+    required double dtMs,
+  }) {
+    return velocity * math.pow(continuousPanAssistFlingDecayPerMs, dtMs);
   }
 
   /// TODO-656 根治：滚轮跨章的「到边界」判据，替代 `atStart/atEnd` 瞬时几何。
@@ -986,6 +1086,7 @@ class ReaderPaginationScripts {
     return '''<script>
 $kStudyUnitJs
 $kSentenceAudioOwnershipJs
+$kSentenceAudioRelocationJs
 window.__fushiShells = {};
 ${_stripShellScriptTags(shell)}
 window.__fushiInstallShell = function(C) {
@@ -997,9 +1098,15 @@ window.__fushiInstallShell = function(C) {
   }
 
   /// 三个 shell 各自仍以 `<script>…</script>` 形式返回（它们的单测按这个形状钉着），
-  /// 拼进引擎时剥掉外层标签。
-  static String _stripShellScriptTags(String js) =>
-      js.replaceAll('<script>', '').replaceAll('</script>', '').trim();
+  /// 拼进引擎时**只**剥掉首尾那一对外层标签。shell 正文里出现的 `<script>` 字样
+  /// （注释、字符串字面量）必须原样保留：以前用 `replaceAll` 全局删，会把 BUG-5015
+  /// 注释里的「<script> / <style>」一并抠掉，要是哪天出现在字符串里就是静默改写了
+  /// 脚本语义（守卫 `reader_engine_static_source_guard_test.dart` 的「整段原样在场」）。
+  static String _stripShellScriptTags(String js) => js
+      .trim()
+      .replaceFirst(RegExp(r'^<script>'), '')
+      .replaceFirst(RegExp(r'</script>$'), '')
+      .trim();
 
   // ── Shared JS (properties + methods used by both modes) ────────────
 
@@ -1079,6 +1186,13 @@ window.__fushiInstallShell = function(C) {
     return axis === 'y'
       ? { start: rect.top, end: rect.bottom }
       : { start: rect.left, end: rect.right };
+  },
+  // turnSpan 的批量版：调用方在循环外读好 body 右缘（xr 轴才用得到）传进来，循环内逐矩形
+  // 换算不再各读一次 document.body.getBoundingClientRect()。前提是循环期间不滚动、不改
+  // 排版（buildPaginationMetrics 满足）。axis 须是已解析的轴；非 xr 轴与 turnSpan 完全相同。
+  turnSpanWithin: function(axis, rect, bodyRight) {
+    if (axis === 'xr') return { start: bodyRight - rect.right, end: bodyRight - rect.left };
+    return this.turnSpan(axis, rect);
   },
   // BUG-493 根因修复：_reanchorPending 的唯一写入口（清旗单点化，_sharedJs 两 shell 共用）。
   // true→false 转换 = 重锚 settle，那一刻（bridge 可用时）callHandler('onReanchorSettled')
@@ -1182,29 +1296,12 @@ window.__fushiInstallShell = function(C) {
   // → 回落 hint → 高亮看似「不显示/错位」。下面 foldCodePoint 与 AudioTextNormalizer
   // 的值转换严格同口径。所有折叠都是单 BMP 码元→单 BMP 码元（1:1 码元），因此
   // buildSasayakiNormIndex 的逐码元 map 粒度（代理对 push 两条）保持不变。
-  hwKataToFwBase: 0xFF66,
-  hwKataToFw: [0x30F2,0x30A1,0x30A3,0x30A5,0x30A7,0x30A9,0x30E3,0x30E5,0x30E7,0x30C3,0x30FC,0x30A2,0x30A4,0x30A6,0x30A8,0x30AA,0x30AB,0x30AD,0x30AF,0x30B1,0x30B3,0x30B5,0x30B7,0x30B9,0x30BB,0x30BD,0x30BF,0x30C1,0x30C4,0x30C6,0x30C8,0x30CA,0x30CB,0x30CC,0x30CD,0x30CE,0x30CF,0x30D2,0x30D5,0x30D8,0x30DB,0x30DE,0x30DF,0x30E0,0x30E1,0x30E2,0x30E4,0x30E6,0x30E8,0x30E9,0x30EA,0x30EB,0x30EC,0x30ED,0x30EF,0x30F3],
+  // 码点折叠表与实现只在 kSentenceAudioRelocationJs 写一次（VN 的 cue 重定位同用）。
   foldCodePoint: function(cp) {
-    var out = cp;
-    if (cp >= 0x41 && cp <= 0x5A) out = cp + 0x20;            // ASCII A-Z -> a-z
-    else if (cp >= 0xFF21 && cp <= 0xFF3A) out = cp - 0xFEC0; // fullwidth A-Z -> a-z
-    else if (cp >= 0xFF41 && cp <= 0xFF5A) out = cp - 0xFEE0; // fullwidth a-z -> a-z
-    else if (cp >= 0xFF10 && cp <= 0xFF19) out = cp - 0xFEE0; // fullwidth 0-9 -> 0-9
-    else if (cp >= 0xFF66 && cp <= 0xFF9D) out = this.hwKataToFw[cp - this.hwKataToFwBase]; // halfwidth kana -> fullwidth kana
-    if (out >= 0x30A1 && out <= 0x30F6) out -= 0x60;          // katakana -> hiragana
-    return out;
+    return window.fushiSentenceAudioRelocation.foldCodePoint(cp);
   },
   foldNormalize: function(text) {
-    var stripped = this.normalizeText(text);
-    var folded = '';
-    var i = 0;
-    while (i < stripped.length) {
-      var cp = stripped.codePointAt(i);
-      var ch = String.fromCodePoint(cp);
-      folded += String.fromCodePoint(this.foldCodePoint(cp));
-      i += ch.length;
-    }
-    return folded;
+    return window.fushiSentenceAudioRelocation.foldText(this.normalizeText(text));
   },
   scrollToProgressContinuous: function(progress) {
     var targetNode = this.findNodeAtProgress(progress);
@@ -1232,7 +1329,35 @@ window.__fushiInstallShell = function(C) {
       runningSum += this.countChars(node.textContent);
       if (runningSum > targetCharCount) { targetNode = node; break; }
     }
-    return targetNode;
+    if (!targetNode) return null;
+    // BUG-5015：落点只能取**画出来了**的文本。计数口径（与 calculateProgress / 度量的
+    // totalChars 同源）含没有排版盒的文本节点（正文里的 <script> / <style>、书自带
+    // display:none 的元素），目标字落在这种节点上时它没有任何矩形：分页 getRect 退回
+    // 全零的包围盒，锚 = 0 + 当前滚动量，落点变成「调用前停在哪页」的函数（竖排
+    // contentStart > gap 时每落一次还再退一页）；连续的 scrollIntoView 对它是空操作。
+    // 进度把这段字算在下一个画出来的节点之前（progressStops 只给有矩形的节点立桩），
+    // 所以往后取第一个画出来的节点；后面全都没画出来时取前面最近的一个。
+    node = targetNode;
+    do {
+      if (this.countChars(node.textContent) > 0 && this.renderedTextStartRect(node)) return node;
+    } while (node = walker.nextNode());
+    walker.currentNode = targetNode;
+    while (node = walker.previousNode()) {
+      if (this.countChars(node.textContent) > 0 && this.renderedTextStartRect(node)) return node;
+    }
+    return null;
+  },
+  // 文本节点第一个画出来的片段（宽高都 > 0）的 client rect；节点没有排版盒（祖先
+  // display:none、<script> / <style> 正文）或只剩塌缩空白时返回 null。与
+  // buildPaginationMetrics 给 progressStops 立桩的「节点首片段」同口径。
+  renderedTextStartRect: function(node) {
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var rects = range.getClientRects();
+    for (var i = 0; i < rects.length; i++) {
+      if (rects[i].width > 0 && rects[i].height > 0) return rects[i];
+    }
+    return null;
   },
   scrollToProgressPaged: function(context, progress) {
     if (context.pageSize <= 0 || progress <= 0) {
@@ -1244,11 +1369,10 @@ window.__fushiInstallShell = function(C) {
       return;
     }
     var targetNode = this.findNodeAtProgress(progress);
-    if (targetNode) {
-      var range = document.createRange();
-      range.setStart(targetNode, 0);
-      range.setEnd(targetNode, Math.min(1, targetNode.length));
-      var rect = this.getRect(range);
+    // BUG-5015：锚取节点第一个画出来的片段，不经 getRect 的包围盒兜底——那个兜底对
+    // 没有排版盒的文本给全零矩形，锚就退化成当前滚动量。
+    var rect = targetNode ? this.renderedTextStartRect(targetNode) : null;
+    if (rect) {
       var scroll = this.getPagePosition(context);
       var anchor = this.turnSpan(context.axis, rect).start + scroll;
       this.setPagePosition(context, this.alignToPage(context, anchor));
@@ -1296,6 +1420,9 @@ window.__fushiInstallShell = function(C) {
     if (typeof this._invalidateGeometryReanchor === 'function') {
       this._invalidateGeometryReanchor();
     }
+    // 锚代际：每次替换 / 清除都 +1。延后执行的回调（分页 _alignRangeToPage 的下一帧复核）
+    // 凭它判断「我落页时的那个目标还是不是当前目标」，不是就不再写位置（BUG-4808）。
+    this.__imgAnchorGen = (this.__imgAnchorGen || 0) + 1;
     this.__imgReanchorProgress = null;
     this.__imgReanchorCharOffset = null;
     this.__imgReanchorCharOffsetEnd = -1;
@@ -1383,7 +1510,11 @@ window.__fushiInstallShell = function(C) {
     this.scrollToProgressPaged(rctx, p);
     return true;
   },
+  // gap-readerjs1-2：本文档是否已经给 Dart 发过恢复回执（成功或失败）。初次恢复链
+  // 只该有一个结局；notifyRestoreFailed 据此不在成功回执之后再补一条失败回执。
+  _restoreReceiptSent: false,
   notifyRestoreComplete: function() {
+    this._restoreReceiptSent = true;
     this.perfMark('restoreDone');
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler(
@@ -1395,6 +1526,36 @@ window.__fushiInstallShell = function(C) {
     if (typeof this.warmPaginationMetrics === 'function') {
       this.warmPaginationMetrics();
     }
+  },
+  // gap-readerjs1-2：初始化 / 初次恢复链同步抛出时的失败出口。原先异常只让
+  // `Promise.all(imagePromises).then(...)` 变成无人处理的 rejected promise，
+  // onRestoreComplete 永远不来，Dart 只能干等 8 秒内容就绪兜底。现在发一条带代际的
+  // onRestoreFailed，Dart 立刻走与兜底同一条收尾（_failNavigation）。已发过回执的
+  // 文档不再补发：失败只代表「还没落地的那次初次恢复」。
+  notifyRestoreFailed: function(error) {
+    try { if (window.console && console.error) console.error('[FushiReader] initial restore failed', error); } catch (_ignored) {}
+    if (this._restoreReceiptSent === true) return;
+    this._restoreReceiptSent = true;
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      window.flutter_inappwebview.callHandler(
+        'onRestoreFailed',
+        String(error && error.message ? error.message : error),
+        C.navigationGeneration
+      );
+    }
+  },
+  // BUG-4975 续：恢复入口把「落定 + 回执」排进 setTimeout 的回调里，回调里抛的异常
+  // 既不在入口返回的 promise 里，也不在初次恢复链里，回执永远不来。凡是负责发回执的
+  // 延后回调都经它包一层：抛出即改发失败回执（已发过回执的文档只记 console.error）。
+  _restoreCallback: function(callback) {
+    var self = this;
+    return function() {
+      try {
+        callback();
+      } catch (callbackError) {
+        self.notifyRestoreFailed(callbackError);
+      }
+    };
   },
   createWalker: function(rootNode) {
     var root = rootNode || document.body;
@@ -1418,6 +1579,49 @@ window.__fushiInstallShell = function(C) {
     this.nodeStartOffsets = offsets;
     if (this.paginationMetrics !== undefined) this.paginationMetrics = null;
   },
+  // BUG-2903：章内文本索引——按文档序列出有可匹配字符的文本节点、各自的章内起始字数与
+  // 章总字数。滚动中的进度回报每帧都要「视口边之前有多少字」（onReaderScroll →
+  // fushiProgressDetails），旧实现每次对整章做三遍 walk（总字数 / calculateProgress /
+  // getLastVisibleCharOffset），后两遍还逐节点 getClientRects——6000 个文本节点的长章
+  // 桌面 Chrome 实测一次 150–200ms，滚轮 rAF 缓动（BUG-2830）在其间整段冻住，体感是
+  // 「往下滚会卡在某处停一会」。索引只依赖 DOM 文本结构，不依赖几何，建一次即可；
+  // 正文 DOM 变化（有声书 span 包裹兜底、注音切换等）由 MutationObserver 记账，取用时
+  // 同步 takeRecords 判脏，不吃异步回调的时序。
+  //
+  // 两个 shell 共用（_sharedJs）：分页的「字符偏移 → 文本节点」（textNodeAtCharOffset：
+  // 恢复落页 / 每次进度采样的页上校验 charOffsetOnCurrentPage）、越界判据与扫描兜底此前
+  // 也各自从章首逐节点 walk——10 万字单章桌面 Chrome 实测章末一次 fushiProgressDetails
+  // 19ms、插图页（caret 落图走扫描兜底）56ms（路线图 m1 / gap-readerjs1-3）。
+  _textIndexCache: null,
+  _textIndexObserver: null,
+  _textIndex: function() {
+    var obs = this._textIndexObserver;
+    if (obs && obs.takeRecords().length > 0) this._textIndexCache = null;
+    var cache = this._textIndexCache;
+    if (cache && cache.body === document.body) return cache;
+    if (!obs) {
+      var self = this;
+      obs = new MutationObserver(function() { self._textIndexCache = null; });
+      this._textIndexObserver = obs;
+    }
+    obs.disconnect();
+    obs.observe(document.body, {childList: true, characterData: true, subtree: true});
+    var nodes = [];
+    var starts = [];
+    var total = 0;
+    var walker = this.createWalker();
+    var node;
+    while (node = walker.nextNode()) {
+      var len = this.countChars(node.textContent);
+      if (len <= 0) continue;
+      nodes.push(node);
+      starts.push(total);
+      total += len;
+    }
+    cache = {body: document.body, nodes: nodes, starts: starts, total: total};
+    this._textIndexCache = cache;
+    return cache;
+  },
   // BUG-492 (TODO-1053 Bug A) 越界判据（分页/连续共用，_sharedJs）：charOffset 是否落在
   // 本章可匹配字符总数之内。恢复端用它护住旧脏收藏——写入端曾把某句错记成相邻章
   // sectionIndex，恢复加载错章后 charOffset 可能超本章字符总数 → 定位静默失败停错位。
@@ -1425,14 +1629,27 @@ window.__fushiInstallShell = function(C) {
   // （countChars / createWalker，furigana 已 REJECT）。>=0 且在范围内返 true。
   charOffsetInRange: function(charOffset) {
     if (typeof charOffset !== 'number' || charOffset < 0) return false;
-    var walker = this.createWalker();
-    var runningOffset = 0;
-    var node;
-    while (node = walker.nextNode()) {
-      runningOffset += this.countChars(node.textContent);
-      if (runningOffset > charOffset) return true;
+    return charOffset < this._textIndex().total;
+  },
+  // 章内第 charOffset 个学习单位落在哪个文本节点：返 {node, remaining}（remaining = 该节点内
+  // 目标单位之前的单位数），越界返 null。分页 scrollToCharOffset 与 charOffsetOnCurrentPage
+  // 共用这一份走查（countChars / createWalker 口径，furigana 已 REJECT）——两处各写一份时
+  // 只改一处就会让「落页」与「页上校验」对同一个偏移给出不同的字。
+  // 走章内文本索引二分：索引只收字数 > 0 的节点，与逐节点累加的「第一个 running + 字数 >
+  // charOffset 的节点」是同一个（零字节点永远不满足那个条件）。
+  textNodeAtCharOffset: function(charOffset) {
+    if (typeof charOffset !== 'number' || charOffset < 0) return null;
+    var index = this._textIndex();
+    if (charOffset >= index.total) return null;
+    var starts = index.starts;
+    var lo = 0;
+    var hi = starts.length - 1;
+    while (lo < hi) {
+      var mid = (lo + hi + 1) >> 1;
+      if (starts[mid] <= charOffset) lo = mid;
+      else hi = mid - 1;
     }
-    return false;
+    return { node: index.nodes[lo], remaining: charOffset - starts[lo] };
   },
   // WebKit vertical text can give a collapsed caret range an all-zero rect,
   // even for an off-screen character. Measure that character instead; treating
@@ -1584,18 +1801,56 @@ window.__fushiInstallShell = function(C) {
   // 恒为 0 → 兜底把任何页都报成章首 0。重锚路径被 scrollToCharOffset 的 `<=0 → 保当前页`
   // 掩住看不出来；统计接入后（fushiProgressDetails 第三/四段）页首角落在插图 / 空行时
   // 整段 [0, 页尾) 被当成本页可见区间，翻走一次就把几千字前文计成已读。仅分页 shell 调用。
+  //
+  // 走章内文本索引二分（与连续 shell 的 _charsBeforeEdge 同构，只换成翻页轴）：multicol 里
+  // 文本节点按文档序沿翻页轴单调排开，二分出第一个不整段在首边之前的节点，再从它起逐个
+  // 累加跨边节点的局部计数，遇到整段在首边之后即止。每次只量 O(log n) 个节点的几何。
   firstVisibleCharOffsetByScanPaged: function() {
     var axis = this.pagedAxis();
     var firstEdge = this.pagedFirstEdge(axis);
-    var walker = this.createWalker();
-    var explored = 0;
-    var node;
-    while (node = walker.nextNode()) {
-      if (this.countChars(node.textContent) > 0) {
-        explored += this.countCharsBeforeViewportPaged(node, axis, firstEdge);
-      }
+    var index = this._textIndex();
+    var nodes = index.nodes;
+    var n = nodes.length;
+    if (n === 0) return 0;
+    var lo = 0;
+    var hi = n;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      var j = mid;
+      var side = null;
+      while (j < hi && (side = this._textNodeTurnSide(nodes[j], axis, firstEdge)) === null) j++;
+      if (side === null || side >= 0) hi = mid;
+      else lo = j + 1;
+    }
+    if (lo >= n) return index.total;
+    var explored = index.starts[lo];
+    for (var k = lo; k < n; k++) {
+      var kSide = this._textNodeTurnSide(nodes[k], axis, firstEdge);
+      if (kSide === null) continue;
+      if (kSide > 0) break;
+      explored += this.countCharsBeforeViewportPaged(nodes[k], axis, firstEdge);
     }
     return explored;
+  },
+  // 文本节点沿翻页轴相对首边的位置：-1 整段在首边之前 / 0 跨边 / 1 整段在首边之后 /
+  // null 无几何。判据与 countCharsBeforeViewportPaged 的两个早返回逐条同口径。
+  _textNodeTurnSide: function(node, axis, firstEdge) {
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var rects = range.getClientRects();
+    var minStart = Infinity;
+    var maxEnd = -Infinity;
+    for (var i = 0; i < rects.length; i++) {
+      var rect = rects[i];
+      if (rect.width <= 0 || rect.height <= 0) continue;
+      var span = this.turnSpan(axis, rect);
+      if (span.start < minStart) minStart = span.start;
+      if (span.end > maxEnd) maxEnd = span.end;
+    }
+    if (minStart === Infinity) return null;
+    if (maxEnd <= firstEdge) return -1;
+    if (minStart >= firstEdge) return 1;
+    return 0;
   },
   // 分页翻页轴上「当前页 content-box 起点」（body-relative）：横排 = padding-left、竖排 =
   // padding-top、竖排对开（xr，到 body 右缘的距离）= padding-right。前页的末列在它之前
@@ -1698,21 +1953,10 @@ window.__fushiInstallShell = function(C) {
   // 其 rect 校验；定位不到 / 零尺寸都按「不在本页」返 false——统计宁可不计。
   charOffsetOnCurrentPage: function(charOffset) {
     if (typeof charOffset !== 'number' || charOffset < 0) return false;
-    var walker = this.createWalker();
-    var node;
-    var runningOffset = 0;
-    var targetNode = null;
-    var remaining = 0;
-    while (node = walker.nextNode()) {
-      var nodeChars = this.countChars(node.textContent);
-      if (runningOffset + nodeChars > charOffset) {
-        targetNode = node;
-        remaining = charOffset - runningOffset;
-        break;
-      }
-      runningOffset += nodeChars;
-    }
-    if (!targetNode) return false;
+    var located = this.textNodeAtCharOffset(charOffset);
+    if (!located) return false;
+    var targetNode = located.node;
+    var remaining = located.remaining;
     var text = targetNode.textContent;
     // 第 k 个单元结束后的下一个码元未必是第 k+1 个单元的首码元：句读 / 括号（「。」）、
     // 西文分词空格、`<p>\n本文` 的前导折叠空白都落在这里，且软换行处它们可能带着一个落在
@@ -1805,68 +2049,21 @@ window.__fushiInstallShell = function(C) {
     var idx = this.buildSentenceAudioNormIndex();
     var full = idx.full;
     var map = idx.map;
-    var WINDOW = 256;
-    var OVERLAP = 4;
-    var ADJACENT = 2;
-    var cursor = 0;
-    var lastHit = -1;
-    var lastHitStart = -1;
-    var spans = [];
+    // 搜索算法（就近 + 单调 + 有界窗口 + 延续优先 + 回落不推进游标）三种 view mode 共用
+    // window.fushiSentenceAudioRelocation.resolveSpans（kSentenceAudioRelocationJs）。
+    // TODO-630/BUG-366：needle 用 foldNormalize（剥+折叠），与 full(已折叠)、与 Dart
+    // matcher 的折叠坐标系对齐，折叠类书才能 indexOf 命中。
+    var hints = [];
     for (var ci = 0; ci < cues.length; ci++) {
       var cue = cues[ci];
-      // TODO-630/BUG-366：needle 用 foldNormalize（剥+折叠），与 full(已折叠)、
-      // 与 Dart matcher 的折叠坐标系对齐，折叠类书才能 indexOf 命中。
-      var needle = this.foldNormalize(cue.text || '');
-      var hint = (typeof cue.start === 'number') ? cue.start : cursor;
-      var len = (typeof cue.length === 'number') ? cue.length : 0;
-      var normLen = needle.length;
-      var resolved = -1;
-      if (normLen > 0) {
-        var floor = lastHit >= 0 ? Math.max(lastHitStart + 1, cursor - OVERLAP) : cursor;
-        var lo = floor > (hint - WINDOW) ? floor : (hint - WINDOW);
-        var startAt = lo < 0 ? 0 : lo;
-        var hi = Math.max(hint + WINDOW, cursor + ADJACENT);
-        var best = -1, bestDist = 1 << 30;
-        var adjacent = -1, adjacentDist = 1 << 30;
-        if (startAt <= full.length) {
-          var from = startAt;
-          while (true) {
-            var p = full.indexOf(needle, from);
-            if (p < 0 || p > hi) break;
-            if (lastHit >= 0 && p >= cursor - OVERLAP && p <= cursor + ADJACENT) {
-              var da = Math.abs(p - cursor);
-              if (da < adjacentDist) { adjacentDist = da; adjacent = p; }
-            }
-            if (p <= hint + WINDOW) {
-              var d = Math.abs(p - hint);
-              if (d < bestDist) { bestDist = d; best = p; }
-            }
-            from = p + 1;
-          }
-        }
-        if (adjacent >= 0) best = adjacent;
-        if (best >= 0) {
-          resolved = best;
-          // 回吃了前一条的尾巴：把它的 span 裁到本条起点，range 不重叠。
-          if (best < cursor && lastHit >= 0) spans[lastHit].len = best - spans[lastHit].start;
-          cursor = best + normLen;
-          lastHit = spans.length;
-          lastHitStart = best;
-        }
-      }
-      var spanStart, spanLen;
-      if (resolved >= 0) {
-        spanStart = resolved; spanLen = normLen;
-      } else {
-        // BUG-282：未命中只给这一条 cue 一个尽力而为的回落区间，**不推进单调
-        // 游标 cursor**。游标只在 DOM 真命中时前进；让回落按未核实的 hint 猜测
-        // 推进游标会越过后面真正能命中 cue 的真实位置，把其搜索窗口下界顶过去
-        // → 整本逐句累积漂移（与 Dart 影子 resolveCueNormSpansForTesting 同改）。
-        spanStart = hint < cursor ? cursor : (hint > map.length ? map.length : hint);
-        spanLen = len;
-      }
-      spans.push({ id: cue.id, start: spanStart, len: spanLen });
+      hints.push({
+        id: cue.id,
+        needle: this.foldNormalize(cue.text || ''),
+        hint: cue.start,
+        length: cue.length
+      });
     }
+    var spans = window.fushiSentenceAudioRelocation.resolveSpans(full, hints);
     // BUG-2907：句末「。」与句首「「」按 Hoshi 的标点归属并进当前句（只放宽首尾）。
     var isMatchable = this.isMatchableChar.bind(this);
     for (var si = 0; si < spans.length; si++) {
@@ -1992,9 +2189,16 @@ window.__fushiInstallShell = function(C) {
       this._audioRevealPageTurn = true;
       var revealed = false;
       try {
-        revealed = targetRange
-          ? !!(this.revealRange && this.revealRange(targetRange))
-          : !!(target && this.revealElement && this.revealElement(target));
+        // 反馈 tUJsiLpL9d：shell 有 revealAudioCue 时把整句区间一并交给它（分页量跨页句的
+        // 翻页时刻、连续做整行对齐）；没有就走原来的单段揭示。
+        if (this.revealAudioCue) {
+          revealed = !!this.revealAudioCue(cueId, target, targetRange,
+            this.audioCueSpan([].concat(wrappers, rubyElements, ranges)));
+        } else {
+          revealed = targetRange
+            ? !!(this.revealRange && this.revealRange(targetRange))
+            : !!(target && this.revealElement && this.revealElement(target));
+        }
       } finally {
         this._audioRevealPageTurn = false;
       }
@@ -2002,6 +2206,75 @@ window.__fushiInstallShell = function(C) {
         return this.calculateProgress(
           this.pendingPageTurnTarget ? this.pendingPageTurnTarget() : undefined);
       }
+    }
+    return null;
+  },
+  // 有声书当前句的整句区间（反馈 tUJsiLpL9d）：一组片段（包裹 span / ruby 元素 / live Range，
+  // 顺序不限）并成一个从最早起点到最晚终点的 Range。没有片段回 null。
+  audioCueSpan: function(segments) {
+    var span = null;
+    for (var i = 0; i < segments.length; i++) {
+      var seg = segments[i];
+      if (!seg) continue;
+      var r;
+      try {
+        if (seg.nodeType === 1) {
+          r = document.createRange();
+          r.selectNode(seg);
+        } else if (typeof seg.cloneRange === 'function') {
+          r = seg.cloneRange();
+        } else {
+          continue;
+        }
+      } catch (e) {
+        continue;
+      }
+      if (!span) {
+        span = r;
+        continue;
+      }
+      if (r.compareBoundaryPoints(Range.START_TO_START, span) < 0) {
+        span.setStart(r.startContainer, r.startOffset);
+      }
+      if (r.compareBoundaryPoints(Range.END_TO_END, span) > 0) {
+        span.setEnd(r.endContainer, r.endOffset);
+      }
+    }
+    return span;
+  },
+  // 整句区间里按文档序列出的可数字符 [文本节点, 偏移, 码元长度]：跳过注音（createWalker 已
+  // 排除 rt/rp）、空白与标点（isMatchableChar，与进度字数同口径）——只数念出声的字。
+  audioCueChars: function(span) {
+    var out = [];
+    if (!span) return out;
+    var root = span.commonAncestorContainer;
+    if (root && root.nodeType === 3) root = root.parentNode;
+    if (!root) return out;
+    if (root.nodeType === 3 || root.nodeType === 1) {
+      var walker = this.createWalker(root);
+      var node;
+      while ((node = walker.nextNode())) {
+        if (!span.intersectsNode(node)) continue;
+        var text = node.textContent || '';
+        var from = node === span.startContainer ? span.startOffset : 0;
+        var to = node === span.endContainer ? span.endOffset : text.length;
+        for (var i = from; i < to; ) {
+          var len = text.codePointAt(i) > 0xFFFF ? 2 : 1;
+          if (this.isMatchableChar(text.substr(i, len))) out.push([node, i, len]);
+          i += len;
+        }
+      }
+    }
+    return out;
+  },
+  // 单个可数字符的字形盒（零尺寸盒跳过），量不到回 null。
+  audioCueCharRect: function(entry) {
+    var r = document.createRange();
+    r.setStart(entry[0], entry[1]);
+    r.setEnd(entry[0], entry[1] + entry[2]);
+    var rects = r.getClientRects();
+    for (var i = 0; i < rects.length; i++) {
+      if (rects[i].width > 0 && rects[i].height > 0) return rects[i];
     }
     return null;
   },
@@ -2340,35 +2613,57 @@ window.__fushiInstallShell = function(C) {
   /// 优先级与旧的 Dart 三元式逐条相同：`initialFragment` 非空 → `jumpToFragment`；
   /// 否则 `initialCharOffset >= 0` → `restoreToCharOffset`；否则 `restoreProgress`。
   /// 分页 shell 只用单点句首锚（旧实现也只传一个参数）。
+  ///
+  /// BUG-4975 续：恢复入口都是 async 函数，第一个 `await` 之后抛的异常只会让它返回的
+  /// promise 变成 rejected。这里把那个 promise `return` 给外层
+  /// `Promise.all(imagePromises).then(...)`，异步失败才走得到链尾的失败回执
+  /// （[_sharedInitialRestoreCatchJs]）；不 return 时链早已 resolve，异常成了无人处理的
+  /// rejection，Dart 只能等 8 秒兜底。
   static const String _paginatedInitialRestoreJs = '''
     if (C.initialFragment !== null && C.initialFragment !== undefined) {
-      window.fushiReader.jumpToFragment(C.initialFragment);
+      return window.fushiReader.jumpToFragment(C.initialFragment);
     } else if (C.initialCharOffset >= 0) {
-      window.fushiReader.restoreToCharOffset(C.initialCharOffset);
+      return window.fushiReader.restoreToCharOffset(C.initialCharOffset);
     } else {
-      window.fushiReader.restoreProgress(C.initialProgress);
+      return window.fushiReader.restoreProgress(C.initialProgress);
     }''';
 
   /// 连续 shell 版：多一条 BUG-461 的句尾区间对齐分支（`initialCharOffsetEnd >
   /// initialCharOffset` 时透传句尾偏移），其余与 [_paginatedInitialRestoreJs] 相同。
   static const String _continuousInitialRestoreJs = '''
     if (C.initialFragment !== null && C.initialFragment !== undefined) {
-      window.fushiReader.jumpToFragment(C.initialFragment);
+      return window.fushiReader.jumpToFragment(C.initialFragment);
     } else if (C.initialCharOffset >= 0) {
       if (C.initialCharOffsetEnd > C.initialCharOffset) {
-        window.fushiReader.restoreToCharOffset(C.initialCharOffset, C.initialCharOffsetEnd);
+        return window.fushiReader.restoreToCharOffset(C.initialCharOffset, C.initialCharOffsetEnd);
       } else {
-        window.fushiReader.restoreToCharOffset(C.initialCharOffset);
+        return window.fushiReader.restoreToCharOffset(C.initialCharOffset);
       }
     } else {
-      window.fushiReader.restoreProgress(C.initialProgress);
+      return window.fushiReader.restoreProgress(C.initialProgress);
     }''';
 
   /// 有声书 cue 下发：旧实现「有 cue 才注入这一行」，现在「有 cue 才调用」。
+  ///
+  /// gap-readerjs1-2：cue 应用是恢复链上的附属步骤，它抛异常不该连带吞掉位置恢复
+  /// （原先一抛，后面的恢复与 onRestoreComplete 都不执行）。单独隔离、在控制台上报
+  /// 真实错误后照常往下恢复；cue 高亮缺失只影响跟读，正文与位置照常可用。
   static const String _sharedSentenceAudioInitJs = '''
     if (C.sentenceAudioCues !== null && C.sentenceAudioCues !== undefined) {
-      window.fushiReader.applySentenceAudioCues(C.sentenceAudioCues);
+      try {
+        window.fushiReader.applySentenceAudioCues(C.sentenceAudioCues);
+      } catch (cueError) {
+        try { if (window.console && console.error) console.error('[FushiReader] applySentenceAudioCues failed', cueError); } catch (_ignored) {}
+      }
     }''';
+
+  /// gap-readerjs1-2：初次恢复链（`Promise.all(imagePromises).then(...)`）的失败出口。
+  /// 链里任何一步同步抛出（建偏移表 / 恢复函数）都改发失败回执，不再留一条无人处理的
+  /// rejected promise 让 Dart 干等兜底。
+  static const String _sharedInitialRestoreCatchJs = '''
+  }).catch(function(restoreError) {
+    window.fushiReader.notifyRestoreFailed(restoreError);
+  });''';
 
   /// 三种 shell 共用的视口 meta 重写（BUG-1688 第二处：VN shell 原先没跑这段）。
   ///
@@ -2582,6 +2877,9 @@ function _fushiBootInitialize() {
     window.fushiReader.initialize();
   } catch (e) {
     try { if (window.console && console.error) console.error('[FushiReader] boot initialize failed', e); } catch (_ignored) {}
+    // gap-readerjs1-2：initialize 同步抛出时初次恢复链根本没挂上，onRestoreComplete
+    // 永远不来。发失败回执让 Dart 立刻收尾，而不是等 8 秒兜底。
+    try { window.fushiReader.notifyRestoreFailed(e); } catch (_ignored) {}
   }
 }
 window.addEventListener('load', function() {
@@ -2636,6 +2934,107 @@ $kReaderPageTurnJs
   // BUG-3518：WebKit 上有声书当前句是 Range（不包裹），跟读揭示直接按它定位。
   revealRange: function(range) {
     return this.scrollToRange(range.cloneRange());
+  },
+  // ── 有声书跨页句（反馈 tUJsiLpL9d 方案 A「读到页边就翻」）──────────────────
+  // 跟读揭示当前句都走 revealAudioCue（highlightSentenceAudioCue 与 bridge 的
+  // __fushiHighlight 两条路）。跨页分界在**翻页之前**量：翻页淡入在途时 getScrollContext
+  // 会同步落位、打断动画，所以落点页按 _alignRangeToPage 同一判据（起始边锚 +
+  // alignToPage）先算出来，再数整句里落在「落点页及之前」的字，结果存进 _audioCueSplit。
+  // Dart 揭示后取走（audioCuePageSplit），按字数比例换成音频时刻挂在播放 tick 上，声音
+  // 到达下一页第一个字时调 revealAudioCueTail 翻过去。页仍是整页，页码 / 恢复 / 动效不变。
+  _audioCueSplit: null,
+  // 已翻到后半截的那句（key + 翻页锚字的 Range）：同一句再次被揭示（暂停后续播等）时
+  // 停在后半截所在页，不翻回句首页。换句、或 Dart 判定音频已回到分界之前
+  // （dropAudioCueTail）时作废。
+  _audioTail: null,
+  revealAudioCue: function(key, target, targetRange, span) {
+    this._audioCueSplit = null;
+    var tail = this._audioTail && this._audioTail.key === key ? this._audioTail : null;
+    if (!tail) this._audioTail = null;
+    var startRange = null;
+    if (tail) {
+      startRange = tail.range.cloneRange();
+    } else if (targetRange) {
+      startRange = targetRange.cloneRange();
+    } else if (target) {
+      // selectNode 取元素自身盒（与 __fushiRevealTarget 同口径）：bridge 那条路的 cue
+      // 元素可能是空的 img，selectNodeContents 对它取不到 rect。
+      startRange = document.createRange();
+      startRange.selectNode(target);
+    }
+    if (!startRange) return false;
+    try {
+      this._audioCueSplit = this._measureAudioCueSplit(key, span, startRange);
+    } catch (e) {
+      this._audioCueSplit = null;
+    }
+    return this.scrollToRange(startRange);
+  },
+  // 以 anchorRange 的起始边所在页为落点页，量整句 span 在落点页之后的第一个字。
+  // 返回 {key, span, before, total, tail}：before = 落点页及之前的可数字数，tail = 下一页
+  // 第一个字的 Range；整句都在落点页内（或量不到）回 null。字的页号沿文档序单调，二分。
+  _measureAudioCueSplit: function(key, span, anchorRange) {
+    if (!span) return null;
+    var context = this.getScrollContext();
+    if (context.pageSize <= 0) return null;
+    var currentScroll = this.getPagePosition(context);
+    var anchorRect = this.getRect(anchorRange);
+    if (!anchorRect) return null;
+    var landing = this.alignToPage(context,
+      this.turnSpan(context.axis, anchorRect).start + currentScroll);
+    var chars = this.audioCueChars(span);
+    if (!chars.length) return null;
+    var self = this;
+    var pageOf = function(k) {
+      var rect = self.audioCueCharRect(chars[k]);
+      if (!rect) return null;
+      return self.alignToPage(context,
+        self.turnSpan(context.axis, rect).start + currentScroll);
+    };
+    var lo = 0;
+    var hi = chars.length;
+    while (lo < hi) {
+      var mid = (lo + hi) >> 1;
+      var page = pageOf(mid);
+      if (page === null || page <= landing) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo <= 0 || lo >= chars.length) return null;
+    var entry = chars[lo];
+    var tail = document.createRange();
+    tail.setStart(entry[0], entry[1]);
+    tail.setEnd(entry[0], entry[1] + entry[2]);
+    return { key: key, span: span, before: lo, total: chars.length, tail: tail };
+  },
+  // Dart 取本句的跨页分界：JSON {before, total}；不是这句 / 不跨页回 null。
+  audioCuePageSplit: function(key) {
+    var split = this._audioCueSplit;
+    if (!split || split.key !== key) return null;
+    return JSON.stringify({ before: split.before, total: split.total });
+  },
+  // 声音到达下一页第一个字：翻到那一页（跟读淡入），记下后半截，并按新落点页量下一个
+  // 分界（一句跨三页时接着挂观察）。返回新分界（同 audioCuePageSplit）或 null。
+  revealAudioCueTail: function(key) {
+    var split = this._audioCueSplit;
+    if (!split || split.key !== key || !split.tail) return null;
+    var tail = split.tail;
+    this._audioTail = { key: key, range: tail };
+    this._audioCueSplit = null;
+    try {
+      this._audioCueSplit = this._measureAudioCueSplit(key, split.span, tail);
+    } catch (e) {
+      this._audioCueSplit = null;
+    }
+    this._audioRevealPageTurn = true;
+    try {
+      this.scrollToRange(tail.cloneRange());
+    } finally {
+      this._audioRevealPageTurn = false;
+    }
+    return this.audioCuePageSplit(key);
+  },
+  dropAudioCueTail: function() {
+    this._audioTail = null;
   },
   getScrollContext: function() {
     // 翻页动画：update 回调还没落位（旧页快照未截）时有人读几何，先同步落位并跳过这次
@@ -2934,6 +3333,11 @@ $kReaderPageTurnJs
     if (context.pageSize <= 0) return false;
     var rect = this.getRect(range);
     var currentScroll = this.getPagePosition(context);
+    // BUG-4808：下面「落页后下一帧再落一次」的回调按**当时仍登记着的揭示目标**重算，不写
+    // 这里捕获的像素值。锚代际在回调前变了（用户翻页 / 新的恢复或揭示替换了目标）= 位置已
+    // 归别人所有，回调不动；没变则重量一次 range（迟到图片在这一帧里把目标顶到别的页时，
+    // 跟到目标的新页而不是把视口拽回旧页）。
+    var anchorGen = this.__imgAnchorGen;
     // TODO-881：落页锚取起始边（竖排 rect.top、横排 rect.left），与
     // restoreToCharOffset / jumpToFragment / scrollToCharOffset 统一。
     // 旧实现用首段 rect 的几何中点（top/bottom 或 left/right 取中），句首落列后
@@ -2963,18 +3367,39 @@ $kReaderPageTurnJs
       this.turnPageAnimated(context, targetScroll, targetScroll > currentScroll, 'fade');
       this.whenPageTurnApplied(function() {
         requestAnimationFrame(function() {
-          if (self.getPagePosition(context) !== targetScroll) {
-            self._setPagePositionNow(context, targetScroll);
-          }
+          self._realignRevealTarget(range, anchorGen, true);
         });
       });
       return true;
     }
     this.setPagePosition(context, targetScroll);
     requestAnimationFrame(function() {
-      self.setPagePosition(context, targetScroll);
+      self._realignRevealTarget(range, anchorGen, false);
     });
     return true;
+  },
+  // _alignRangeToPage 落页后下一帧的复核：揭示目标仍是当前语义锚（代际未变）才按它**现在**
+  // 的几何重新落页。keepPageTurn = 正在播跟读淡入，只在位置不符时瞬时改写、不打断动画
+  // （与旧实现同）；否则经 setPagePosition 无条件重设（防 reflow 把 scroll 归零）。
+  // 卷页预览中（curlPreview 不换锚代际，正文暂时落在相邻页）与 reapplyImageLateAnchor 同样
+  // 处理：不在预览页上写位置（否则正文被写回揭示页，而 _curl.base / target 仍指着预览），
+  // 记 pending，回卷后由 curlRevert 按仍登记着的揭示目标补做，提交翻页则作废。
+  _realignRevealTarget: function(range, anchorGen, keepPageTurn) {
+    if (this.__imgAnchorGen !== anchorGen) return;
+    if (this._curl) {
+      this._curlLateAnchorPending = true;
+      return;
+    }
+    var context = this.getScrollContext();
+    if (context.pageSize <= 0) return;
+    var anchor = this.turnSpan(context.axis, this.getRect(range)).start
+      + this.getPagePosition(context);
+    var targetScroll = this.alignToPage(context, anchor);
+    if (!keepPageTurn) {
+      this.setPagePosition(context, targetScroll);
+    } else if (this.getPagePosition(context) !== targetScroll) {
+      this._setPagePositionNow(context, targetScroll);
+    }
   },
   contentLastPageScroll: function(context) {
     var metrics = this.paginationMetrics || this.buildPaginationMetrics();
@@ -3018,6 +3443,9 @@ $kReaderPageTurnJs
     var progressStops = [];
     var exploredChars = 0;
     var totalChars = 0;
+    // 竖排对开（xr 轴）的坐标要减 body 右缘；整个度量循环不滚动、不改样式，右缘不变，
+    // 循环外读一次（turnSpan 每次调用都读一遍，全章逐矩形就是上万次重复读）。
+    var bodyRight = context.axis === 'xr' ? document.body.getBoundingClientRect().right : 0;
     var walker = this.createWalker();
     var node;
     while (node = walker.nextNode()) {
@@ -3026,15 +3454,17 @@ $kReaderPageTurnJs
       if (nodeLen <= 0) continue;
       var range = document.createRange();
       range.selectNodeContents(node);
+      // 每节点只量一次矩形：首矩形就是 getRect(range) 的结果（同一个 getClientRects()[0]，
+      // 没有矩形才退回包围盒），不再让 getRect 重量一遍。
       var rects = range.getClientRects();
-      var progressRect = this.getRect(range);
+      var progressRect = rects[0] || range.getBoundingClientRect();
       var nodeStartEdge = progressRect && progressRect.width > 0 && progressRect.height > 0
-        ? this.turnSpan(context.axis, progressRect).start + currentScroll
+        ? this.turnSpanWithin(context.axis, progressRect, bodyRight).start + currentScroll
         : null;
       for (var i = 0; i < rects.length; i++) {
         var rect = rects[i];
         if (rect.width <= 0 || rect.height <= 0) continue;
-        var span = this.turnSpan(context.axis, rect);
+        var span = this.turnSpanWithin(context.axis, rect, bodyRight);
         var startEdge = span.start + currentScroll;
         var endEdge = span.end + currentScroll;
         firstContentEdge = firstContentEdge === null ? startEdge : Math.min(firstContentEdge, startEdge);
@@ -3049,7 +3479,7 @@ $kReaderPageTurnJs
     for (var j = 0; j < media.length; j++) {
       var mediaRect = media[j].getBoundingClientRect();
       if (mediaRect.width <= 0 || mediaRect.height <= 0) continue;
-      var mediaSpan = this.turnSpan(context.axis, mediaRect);
+      var mediaSpan = this.turnSpanWithin(context.axis, mediaRect, bodyRight);
       var mediaStart = mediaSpan.start + currentScroll;
       var mediaEnd = mediaSpan.end + currentScroll;
       firstContentEdge = firstContentEdge === null ? mediaStart : Math.min(firstContentEdge, mediaStart);
@@ -3148,15 +3578,17 @@ $kReaderPageTurnJs
   // （offset = caret 位置之前的单位数，node/index = caret 落点，供调用方判该字是否在页内），
   // caret 失败 / 落点无文本节点 / 基址缺失返 null——调用方各自决定降级路径。
   //
-  // getFirstVisibleCharOffset 未改走本函数：它的函数体被 TODO-773 守卫
-  // （paged_first_visible_scan_fallback_guard_test）钉成「三个失败出口各自回退
-  // firstVisibleCharOffsetByScanPaged」+ BUG-2058 口径守卫（study_char_caliber_guard_test）
-  // 要求其函数体内直接出现 fushiStudyUnits；两条守卫都要求逐出口内联，抽公共函数即红。
-  _charOffsetAtPoint: function(x, y) {
+  // textOnly：探点落在**元素**上（插图 `<p><img>` / 空行 / 章容器 / body）也算失败。此时
+  // caret 的 startOffset 是子节点下标不是字符下标，取元素子树首个文本节点会在章容器上算出
+  // 章首附近的假偏移（BUG-2492）；页首探点（getFirstVisibleCharOffset）必须把它当失败去走
+  // 几何扫描。页尾探点（getLastVisibleCharOffset）不传：落在元素上时取子树首个文本节点，
+  // 算不准由 `end <= start` 的二分降级兜住。
+  _charOffsetAtPoint: function(x, y, textOnly) {
     var range = document.caretRangeFromPoint(x, y);
     if (!range || !range.startContainer) return null;
     var target = range.startContainer;
     if (target.nodeType !== Node.TEXT_NODE) {
+      if (textOnly) return null;
       var walker = this.createWalker(target);
       target = walker.nextNode();
       if (!target) return null;
@@ -3272,13 +3704,32 @@ $kReaderPageTurnJs
   // 落点在第一层回调里已被 setPagePosition 同步写死，Dart 收到通知后读到的就是这个
   // 位置；再空等一帧不改变任何落点，只是让「内容就绪」晚 16ms、遮罩多留一帧。故删掉
   // 第二层，保留第一层的「等一帧再重设」防 reflow 语义。
-  _settleAndNotify: function(context, pos) {
+  //
+  // BUG-4808：「重设」的是**语义锚**，不是 16ms 前读到的像素值。旧实现把入口捕获的
+  // (context, pos) 原样写回：这 16ms 内若有迟到的图 load（reapplyImageLateAnchor 已按语义锚
+  // 把视口挪到正确页）、或程序化揭示换了目标，回调就把旧像素位置盖回去，之后没有第二张图
+  // load 就再没人纠正，随后的进度回传还会把错位置落库。现在回调按已登记的锚重算一次
+  // （reapplyImageLateAnchor：字符 / progress / fragment / 揭示目标，与图片 load 同一条路，
+  // 对稳定排版幂等，等价于「重设落点」）；锚已被清（用户翻页 / 滚动意图）说明位置已归别人
+  // 所有，不再写位置。snap 基线一律取**此刻**的真实位置。
+  //
+  // 重算只在**位置被动过**时做：入口刚落定的位置（landed）只用来比较、绝不写回。位置原封
+  // 未动 = 这 16ms 里没有 reflow 把 scroll 归零、也没有别人改写，「重设落点」没有可做的事；
+  // 而重算并不便宜——字符锚要从章首走到锚字、progress 锚要两遍全章计数，都排在通知 Dart
+  // 之前（实测 11 万字 / 8400 个文本节点的章，桌面 Chromium 上章末字符锚 ~100 ms、progress
+  // 中段 ~60 ms，与入口落点本身同量级）。排版在窗口内变了而位置没变的情形各有自己的所有者：
+  // 图片 load 监听自己调 reapplyImageLateAnchor（load 事件还在队列里时也一样，轮到它就
+  // 重锚）；几何 / 样式变化走各自的重锚 token。
+  _settleAndNotify: function() {
     var self = this;
-    setTimeout(function() {
-      self.setPagePosition(context, pos);
-      self.registerSnapScroll(pos);
+    var landed = this.getPagePosition(this.getScrollContext());
+    setTimeout(this._restoreCallback(function() {
+      if (self.getPagePosition(self.getScrollContext()) !== landed) {
+        self.reapplyImageLateAnchor();
+      }
+      self.registerSnapScroll(self.getPagePosition(self.getScrollContext()));
       self.notifyRestoreComplete();
-    }, 16);
+    }), 16);
   },
   restoreProgress: async function(progress) {
     this._invalidateGeometryReanchor();
@@ -3289,8 +3740,7 @@ $kReaderPageTurnJs
     // progressStops 是字符域，按同一 progress 重算 = 落回同一批字符所在页，严格优于停在
     // 被图片顶走的 scroll 上。任一用户翻页(paginate)清资格。
     this.registerImageLateAnchor({progress: progress});
-    var pos = this.getPagePosition(context);
-    this._settleAndNotify(context, pos);
+    this._settleAndNotify();
   },
   // BUG-162: 退出再进的精确恢复——按 section 内绝对字符偏移落到该字符真实所在页
   // （成熟 scrollToCharOffset 路径，是「存→取」不动点），替代粗粒度
@@ -3319,8 +3769,7 @@ $kReaderPageTurnJs
       // 收藏跳转 / 有声书 seek 落中段）在图文混排章完全裸奔，位置漂了还会被落库。
       this.registerImageLateAnchor({charOffset: charOffset});
     }
-    var pos = this.getPagePosition(context);
-    this._settleAndNotify(context, pos);
+    this._settleAndNotify();
   },
   // fragment 落点的纯几何对齐（jumpToFragment 与迟到图片重锚共用同一份换算，避免
   // 重锚复制一份会漂开的算法）。命中返 true 并已 setPagePosition，未命中返 false。
@@ -3348,7 +3797,7 @@ $kReaderPageTurnJs
     // BUG-1140 第二轮：目录/内链跳转同样在图片 decode 之前落点，登记 fragment 锚让迟到
     // 图片 load 后按同一个目标元素重新对齐。
     this.registerImageLateAnchor({fragment: fragment});
-    this._settleAndNotify(context, this.getPagePosition(context));
+    this._settleAndNotify();
     return true;
   },
   paginate: function(direction) {
@@ -3463,34 +3912,15 @@ $kReaderPageTurnJs
     var pr = parseFloat(cs.paddingRight) || 0;
     var x = context.vertical ? (document.body.clientWidth - pr - 2) : (pl + 2);
     var y = pt + 2;
-    var range = document.caretRangeFromPoint(x, y);
-    // TODO-773 P0：竖排切字号/字体/主题后页顶落 ruby/图片/折叠盒 → caretRangeFromPoint 返
-    // null → 旧实现裸 return -1 → beginStyleReanchor 返 -1 → Dart 跳过 commit → CSS 已换但
-    // scrollTop 停残值不滚回 → 文字漂移。改走 firstVisibleCharOffsetByScanPaged 全文累加兜底
-    // （body-relative 首边，与分页 caret 探边同量纲；不裸抄连续版 window 量纲的
-    // firstVisibleCharOffsetByScan）。连续版三失败点早有同形兜底。
-    if (!range || !range.startContainer) return this.firstVisibleCharOffsetByScanPaged();
-    var target = range.startContainer;
-    // BUG-2492：探点落在元素上（插图 `<p><img>` / 空行 / 章容器 `<div>` / body）时，
-    // caret 的 startOffset 是子节点下标不是字符下标；旧写法取该元素**子树首个文本节点**
-    // 再拿子节点下标当字符数，落在章容器上会算出章首附近的假偏移。几何扫描兜底按翻页
-    // 轴数出前页字数，才是这一页真正的首字。
-    if (target.nodeType !== Node.TEXT_NODE) return this.firstVisibleCharOffsetByScanPaged();
-    var baseOffset = this.nodeStartOffsets.get(target);
-    if (baseOffset === undefined) {
-      this.buildNodeOffsets();
-      baseOffset = this.nodeStartOffsets.get(target);
-      if (baseOffset === undefined) return this.firstVisibleCharOffsetByScanPaged();
-    }
-    var localChars = 0;
-    var text = target.textContent;
-    var limit = Math.min(range.startOffset, text.length);
-    for (var i = 0; i < limit; i++) {
-      var cp = text.codePointAt(i);
-      if (window.fushiStudyUnits.isUnitEnd(text, i)) localChars++;
-      if (cp > 0xFFFF) i++;
-    }
-    return baseOffset + localChars;
+    // 三个失败出口——caret 返 null（TODO-773 P0：竖排切字号 / 字体 / 主题后页顶落 ruby /
+    // 图片 / 折叠盒；旧实现裸返负一 → beginStyleReanchor 也返负一 → Dart 跳过 commit → CSS
+    // 已换但 scrollTop 停残值不滚回 → 文字漂移）、探点落在元素上（BUG-2492，见
+    // _charOffsetAtPoint 的 textOnly）、节点基址缺失——都由 _charOffsetAtPoint 返 null 表达，
+    // 这里统一回退 firstVisibleCharOffsetByScanPaged 全文累加兜底（body-relative 首边、沿翻页
+    // 轴，与分页 caret 探边同量纲；不裸抄连续版 window 量纲的 firstVisibleCharOffsetByScan）。
+    // 三出口的行为由 paged_first_visible_scan_axis_behavior_test 用 Node 真跑钉住。
+    var caret = this._charOffsetAtPoint(x, y, true);
+    return caret ? caret.offset : this.firstVisibleCharOffsetByScanPaged();
   },
   scrollToCharOffset: function(charOffset, hintScroll) {
     // TODO-1229 (BUG-594 第 6 次复诉)：charOffset<=0 == 章首区（fvco 归 0：可能是「用户在前导
@@ -3513,21 +3943,10 @@ $kReaderPageTurnJs
       }
       return;
     }
-    var walker = this.createWalker();
-    var node;
-    var runningOffset = 0;
-    var targetNode = null;
-    var remaining = 0;
-    while (node = walker.nextNode()) {
-      var nodeChars = this.countChars(node.textContent);
-      if (runningOffset + nodeChars > charOffset) {
-        targetNode = node;
-        remaining = charOffset - runningOffset;
-        break;
-      }
-      runningOffset += nodeChars;
-    }
-    if (!targetNode) return;
+    var located = this.textNodeAtCharOffset(charOffset);
+    if (!located) return;
+    var targetNode = located.node;
+    var remaining = located.remaining;
     var text = targetNode.textContent;
     // BUG-3651：落到目标单元的首码点，不是「前一单元结束后的下一码元」——后者可能是句读 /
     // 空白分隔符；页首字紧跟在前一页末行的「。」之后时，量到的是那个「。」的字形，整页
@@ -3745,9 +4164,7 @@ $_sharedInitViewport
   document.documentElement.style.setProperty('--page-height', pageHeight + 'px');
   document.documentElement.style.setProperty('--reader-viewport-height', viewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', pageWidth + 'px');
-  var __imgBox = this._imageMaxBox();
-  document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');
-  document.documentElement.style.setProperty('--fushi-image-max-height', __imgBox.h + 'px');
+  this._resetImageMaxVars();
   window.fushiReader.pageHeight = pageHeight;
   window.fushiReader.viewportHeight = viewportHeight;
   window.fushiReader.pageWidth = pageWidth;
@@ -3774,7 +4191,7 @@ $initImages
     }
     $sentenceAudioInit
     $initialRestoreScript
-  });
+$_sharedInitialRestoreCatchJs
 };
 window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   // TODO-734：newViewportHeight = 纯 V（Math.round(cssHeight)），newHeight = V + O。
@@ -3789,9 +4206,7 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   document.documentElement.style.setProperty('--reader-viewport-height', newViewportHeight + 'px');
   document.documentElement.style.setProperty('--page-width', newWidth + 'px');
   window.__fushiApplyReaderMargins(newWidth, newViewportHeight);
-  var __imgBox = this._imageMaxBox();
-  document.documentElement.style.setProperty('--fushi-image-max-width', __imgBox.w + 'px');
-  document.documentElement.style.setProperty('--fushi-image-max-height', __imgBox.h + 'px');
+  this._resetImageMaxVars();
   this.pageHeight = newHeight;
   this.viewportHeight = newViewportHeight;
   this.pageWidth = newWidth;
@@ -3939,6 +4354,25 @@ $kSentenceAudioRubyGapJs
     this.__selectionViewportScroll = position;
     if (typeof previous === 'number' && position !== previous) {
       this._clearSelectionOnViewportChange();
+      this._noteEinkScroll(previous, position);
+    }
+  },
+  // 墨水屏「每 N 页全刷」：连续模式没有「翻页」这个动作，按内容轴累计滚过的距离，
+  // 每满一屏回传一次 onEinkScrollPage（Dart 计一页）。一次事件最多算一页：恢复 / 跳转
+  // 这类大跳只是一次换屏，不是翻了几十页。恢复在飞期间的回传由 Dart 侧丢弃。
+  _noteEinkScroll: function(previous, position) {
+    var extent = this.isVertical() ? window.innerWidth : window.innerHeight;
+    if (!(extent > 0)) return;
+    this.__einkScrollAccum =
+      (this.__einkScrollAccum || 0) + Math.abs(position - previous);
+    if (this.__einkScrollAccum < extent) return;
+    this._noteEinkPage();
+  },
+  // 回传一页（Dart `onEinkScrollPage` → 计数），并清零拖动累计。
+  _noteEinkPage: function() {
+    this.__einkScrollAccum = 0;
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      try { window.flutter_inappwebview.callHandler('onEinkScrollPage'); } catch (e) {}
     }
   },
   _writeContinuousScroll: function(pos) {
@@ -4002,43 +4436,85 @@ $kSentenceAudioRubyGapJs
   revealRange: function(range) {
     return this.scrollToTarget(range.cloneRange());
   },
-  // BUG-2903：章内文本索引——按文档序列出有可匹配字符的文本节点、各自的章内起始字数与
-  // 章总字数。滚动中的进度回报每帧都要「视口边之前有多少字」（onReaderScroll →
-  // fushiProgressDetails），旧实现每次对整章做三遍 walk（总字数 / calculateProgress /
-  // getLastVisibleCharOffset），后两遍还逐节点 getClientRects——6000 个文本节点的长章
-  // 桌面 Chrome 实测一次 150–200ms，滚轮 rAF 缓动（BUG-2830）在其间整段冻住，体感是
-  // 「往下滚会卡在某处停一会」。索引只依赖 DOM 文本结构，不依赖几何，建一次即可；
-  // 正文 DOM 变化（有声书 span 包裹兜底、注音切换等）由 MutationObserver 记账，取用时
-  // 同步 takeRecords 判脏，不吃异步回调的时序。
-  _textIndexCache: null,
-  _textIndexObserver: null,
-  _textIndex: function() {
-    var obs = this._textIndexObserver;
-    if (obs && obs.takeRecords().length > 0) this._textIndexCache = null;
-    var cache = this._textIndexCache;
-    if (cache && cache.body === document.body) return cache;
-    if (!obs) {
-      var self = this;
-      obs = new MutationObserver(function() { self._textIndexCache = null; });
-      this._textIndexObserver = obs;
+  // 有声书跟读揭示（反馈 tUJsiLpL9d 方案 B「整行对齐」，kadoki 的做法）：开关开着
+  // （C.audiobookLineAlignFollow，可热更新）时整句在正文带内就不动；否则把句首所在行
+  // （竖排 = 列）的行框起始边滚到正文起始边，起始侧不露半行。开关关 = 原来的 15% 边距跟随。
+  revealAudioCue: function(key, target, targetRange, span) {
+    if (C.audiobookLineAlignFollow === true && span) {
+      var aligned = this._lineAlignAudioCue(span, targetRange || target);
+      if (aligned !== null) return aligned;
     }
-    obs.disconnect();
-    obs.observe(document.body, {childList: true, characterData: true, subtree: true});
-    var nodes = [];
-    var starts = [];
-    var total = 0;
-    var walker = this.createWalker();
-    var node;
-    while (node = walker.nextNode()) {
-      var len = this.countChars(node.textContent);
-      if (len <= 0) continue;
-      nodes.push(node);
-      starts.push(total);
-      total += len;
+    return targetRange
+      ? this.revealRange(targetRange)
+      : !!(target && this.revealElement(target));
+  },
+  // 返回 true = 已滚、false = 整句已在带内不用滚、null = 量不到几何（调用方退回旧跟随）。
+  // 「阅读坐标」d 沿阅读方向递增：横排 d = y，竖排 vertical-rl d = −x，vertical-lr d = x。
+  _lineAlignAudioCue: function(span, startTarget) {
+    var wm = window.getComputedStyle(document.body).writingMode || '';
+    var vertical = wm.indexOf('vertical') === 0;
+    var rl = wm.indexOf('vertical-rl') === 0;
+    var toD = function(rect) {
+      if (!vertical) return { s: rect.top, e: rect.bottom };
+      return rl ? { s: -rect.right, e: -rect.left } : { s: rect.left, e: rect.right };
+    };
+    var rects = span.getClientRects();
+    var minS = Infinity;
+    var maxE = -Infinity;
+    for (var i = 0; i < rects.length; i++) {
+      if (!(rects[i].width > 0 && rects[i].height > 0)) continue;
+      var d = toD(rects[i]);
+      if (d.s < minS) minS = d.s;
+      if (d.e > maxE) maxE = d.e;
     }
-    cache = {body: document.body, nodes: nodes, starts: starts, total: total};
-    this._textIndexCache = cache;
-    return cache;
+    if (minS === Infinity) return null;
+    var cs = window.getComputedStyle(document.body);
+    var vw = window.innerWidth;
+    var vh = window.innerHeight;
+    var bandStart;
+    var bandEnd;
+    if (!vertical) {
+      bandStart = parseFloat(cs.paddingTop) || 0;
+      bandEnd = vh - (parseFloat(cs.paddingBottom) || 0);
+    } else if (rl) {
+      bandStart = -(vw - (parseFloat(cs.paddingRight) || 0));
+      bandEnd = -(parseFloat(cs.paddingLeft) || 0);
+    } else {
+      bandStart = parseFloat(cs.paddingLeft) || 0;
+      bandEnd = vw - (parseFloat(cs.paddingRight) || 0);
+    }
+    if (bandEnd <= bandStart) return null;
+    // BUG-2744：跟读目标替换恢复锚（与 scrollToTarget 同一不变量：不滚也登记，迟到的图
+    // load 后按当前句重对齐，而不是按上一次滚动时的旧句）。
+    if (startTarget) this.registerImageLateAnchor({target: startTarget});
+    if (minS >= bandStart && maxE <= bandEnd) return false;
+    // 句首所在行的行框起始边 = 首字字形盒起始边 − 半行距（行高 − 字形高）/2。注音落在
+    // 行距里，所以对齐行框起始边就把注音一并留在屏内。
+    var chars = this.audioCueChars(span);
+    var firstRect = chars.length ? this.audioCueCharRect(chars[0]) : null;
+    var lineStart = minS;
+    if (firstRect) {
+      var fd = toD(firstRect);
+      var glyph = fd.e - fd.s;
+      var host = chars[0][0].parentElement || document.body;
+      var lh = parseFloat(window.getComputedStyle(host).lineHeight);
+      var halfLeading = lh > glyph ? (lh - glyph) / 2 : 0;
+      lineStart = fd.s - halfLeading;
+    }
+    var delta = lineStart - bandStart;
+    if (Math.abs(delta) < 1) return false;
+    // 墨水屏瞬时跳；跨过一整屏以上是「跳」不是「跟」，也瞬时落地（BUG-2466 同口径），
+    // 其余平滑滚（TODO-825）。
+    var eink = window.getComputedStyle(document.documentElement)
+      .getPropertyValue('--fushi-reader-eink-mode').trim() === '1';
+    var viewport = vertical ? vw : vh;
+    var behavior = (eink || Math.abs(delta) > viewport) ? 'auto' : 'smooth';
+    if (!vertical) {
+      window.scrollBy({top: delta, behavior: behavior});
+    } else {
+      window.scrollBy({left: rl ? -delta : delta, behavior: behavior});
+    }
+    return true;
   },
   chapterCharTotal: function() {
     return this._textIndex().total;
@@ -4110,6 +4586,13 @@ $kSentenceAudioRubyGapJs
     if (total <= 0) return 0;
     return this._charsBeforeEdge(this.isVertical()) / total;
   },
+  // 文档内换章计数与边界换章的认领（反馈 R7k887yaJI 重开：慢拖跨一章落到下下章）。
+  // 连续 shell 自己从不在文档内换章，所以默认计数恒 0、从不认领——换章一律交 Dart 整章
+  // 重载。章节无缝衔接模块（reader_seamless_chapters_script.dart）装饰这两个方法，成为
+  // 文档内换章的唯一所有者。三条「滚到尽头就换章」的通道（触摸边界拉动、滚轮试滚、
+  // 按键 paginate 的 limit）发起换章前都先问 claimBoundaryTurn。
+  chapterTurnEpoch: function() { return 0; },
+  claimBoundaryTurn: function(direction) { return false; },
   // BUG-1241：连续模式同样以视口首字符算 progress，物理滚到底时分数仍可能小于 1。
   // 横排读 scrollTop；竖排 WebView 在 vertical-rl 下 scrollX 为负，因此用绝对位移
   // 与物理最大滚动量比较。
@@ -4140,7 +4623,7 @@ $kSentenceAudioRubyGapJs
   // shell 的章首/章末分支（`单层 16ms + 重发滚动后立即通知`）时序一致。
   _settleAndNotify: function() {
     var self = this;
-    setTimeout(function() { self.notifyRestoreComplete(); }, 16);
+    setTimeout(this._restoreCallback(function() { self.notifyRestoreComplete(); }), 16);
   },
   restoreProgress: async function(progress) {
     await document.fonts.ready;
@@ -4153,10 +4636,10 @@ $kSentenceAudioRubyGapJs
       // 后正文整体下移，不重锚就会停在图与正文之间的错位。
       this.registerImageLateAnchor({progress: 0});
       this.scrollToChapterStart();
-      setTimeout(function() {
+      setTimeout(this._restoreCallback(function() {
         self.scrollToChapterStart();
         self.notifyRestoreComplete();
-      }, 16);
+      }), 16);
       return;
     }
     // TODO-1349：progress>=0.99 = 章末（往前翻到上一章的落点），与分页版
@@ -4169,10 +4652,10 @@ $kSentenceAudioRubyGapJs
       // scrollToChapterEnd（连续分支）落到含尾图的真实章末。
       this.registerImageLateAnchor({progress: progress});
       this.scrollToChapterEnd();
-      setTimeout(function() {
+      setTimeout(this._restoreCallback(function() {
         self.scrollToChapterEnd();
         self.notifyRestoreComplete();
-      }, 16);
+      }), 16);
       return;
     }
     // BUG-1140 第二轮：中段 progress 同样登记（理由见分页版 restoreProgress 长注释）。
@@ -4223,7 +4706,14 @@ $kSentenceAudioRubyGapJs
     this.__selectionViewportScroll = after;
     var moved = Math.abs(after - before) > 1;
     if (moved) this._clearSelectionOnViewportChange(true);
-    return moved ? "scrolled" : "limit";
+    // 墨水屏「每 N 页全刷」：点击区 / 音量键 / 键盘 / 手柄 / 翻页按钮的一步翻页就是
+    // 一页。上面已把快照推进到 after，稍后到达的 scroll 事件不会再进 _noteEinkScroll，
+    // 所以这里直接计一页并清掉拖动累计（不与半屏拖动叠成两页）。
+    if (moved) this._noteEinkPage();
+    if (moved) return "scrolled";
+    // 滚到文档尽头：文档内换章的所有者（无缝衔接）认领了就由它换章，不再回 limit 让
+    // Dart 从（可能已经换过的）章号再跨一章。认领后视口已对齐到新章，按「滚动了」回报。
+    return this.claimBoundaryTurn(direction) ? "scrolled" : "limit";
   },
   getFirstVisibleCharOffset: function() {
     var vertical = this.isVertical();
@@ -4614,7 +5104,7 @@ $initImages
     }
     $sentenceAudioInit
     $initialRestoreScript
-  });
+$_sharedInitialRestoreCatchJs
 };
 window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
   var newHeight = Math.round(cssHeight);
@@ -4643,66 +5133,208 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
     }
   });
 };
+// 反馈 R7k887yaJI：连续模式触摸手势控制器（边界拉动跨章 + 斜滑补位）。一个文档只装一次
+// （同一文档可能先后装分页 / 连续 shell，重复注册会让补位滚动翻倍），事件时刻现读
+// window.__fushiReaderConfig（updateLive 热更新的同一个对象）与当前 shell。
+//  ① 判轴：手势沿主轴（书写轴）的偏离角不超过 MAX_OFF_AXIS_TAN 对应的角度即算主轴手势
+//     （纯函数影子 ReaderPaginationScripts.continuousGestureDir），不再是 45° 一刀切——
+//     拇指弧线斜着滑也能跨章。
+//  ② 斜滑补位：Chromium 对起手偏横向（|dx|>|dy|）的手势按交叉轴锁存，正文整段不滚（真
+//     Chromium 探针 tool/reader_pitch_headless/continuous_diagonal_pan_probe.mjs 实测：
+//     超过约 52° 一律不动）。原生滚动确实没动、手势又仍在角度阈值内时，由这里按主轴分量
+//     接管滚动，松手按速度做惯性（纯函数影子 continuousPanAssistShouldEngage /
+//     continuousPanAssistFlingVelocity）。原生已经在滚的手势一概不碰。
+//  ③ 跨章阻尼（设置 continuousChapterTurnResistance → C.continuousTurnPullPx /
+//     C.continuousTurnPinMidGesture）：正文贴在章首 / 章末之后，手指还要朝同一方向再拉
+//     continuousTurnPullPx 才跨章（纯函数影子 continuousBoundaryCrossDir）。标准档只认
+//     「手势起点就贴在边界」（TODO-656：从章中滚到边界的那一下不跨章）；低阻尼档允许
+//     同一手势里滚到边界后继续推，不必松手再滑一次。
 (function() {
+  if (window.__fushiContinuousTouchInstalled) return;
+  window.__fushiContinuousTouchInstalled = true;
   var TAP_SLOP = 12;
-  var SWIPE_THRESHOLD = 20;
+  var MAX_OFF_AXIS_TAN = $_kContinuousOffAxisTanJs;
+  var ASSIST_MIN_MAIN = $continuousPanAssistMinMainPx;
+  var ASSIST_SETTLE_MS = $continuousPanAssistSettleMs;
+  var FLING_DECAY_PER_MS = $continuousPanAssistFlingDecayPerMs;
+  var FLING_MIN_VELOCITY = $continuousPanAssistFlingMinVelocity;
+  var FLING_MAX_VELOCITY = $continuousPanAssistFlingMaxVelocity;
   var downX = 0, downY = 0, downSPos = 0, downSMax = 1, hasDown = false;
-  function _bStart(x, y) {
-    hasDown = true; downX = x; downY = y;
-    // TODO-656：记手势起点(touchstart)沿内容轴的滚动量 + 最大可滚量，跨章只看
-    // 起点是否已在边界（见 _bEnd / 纯函数 touchBoundaryCrossDir）。
+  var downEpoch = 0;
+  var pinFwdAt = null, pinBackAt = null;
+  var slopAt = 0, nativeMovedSinceDown = false;
+  var assist = false, assistDecided = false, assistLastPos = 0, assistLastMain = 0;
+  var samples = [];
+  var flingRaf = 0;
+  function _reader() {
+    var r = window.fushiReader;
+    return (r && r._isContinuousShell && r._isContinuousShell()) ? r : null;
+  }
+  function _cfg() { return window.__fushiReaderConfig || {}; }
+  function _vertical() { var r = window.fushiReader; return !!(r && r.isVertical()); }
+  // 手指沿「前进」方向的坐标：横排前进 = 手指上推（-y），竖排 vertical-rl 前进 = 手指右移（+x）。
+  function _fingerMain(x, y, vertical) { return vertical ? x : -y; }
+  // 正文沿前进方向的滚动量（横排 scrollTop、竖排 |scrollLeft|）与最大可滚量。
+  function _axis(vertical) {
     var root = document.scrollingElement || document.documentElement;
-    var vertical = window.fushiReader && window.fushiReader.isVertical();
     if (vertical) {
-      downSPos = Math.abs(root.scrollLeft);
-      downSMax = Math.max(1, root.scrollWidth - window.innerWidth);
-    } else {
-      downSPos = root.scrollTop;
-      downSMax = Math.max(1, root.scrollHeight - window.innerHeight);
+      return {pos: Math.abs(root.scrollLeft), max: Math.max(1, root.scrollWidth - window.innerWidth)};
     }
+    return {pos: root.scrollTop, max: Math.max(1, root.scrollHeight - window.innerHeight)};
+  }
+  function _scrollMain(delta, vertical) {
+    // 前进 = 横排 scrollTop 增大；竖排 vertical-rl scrollLeft 减小（与 paginate forwardSign=-1 同约定）。
+    if (vertical) window.scrollBy({left: -delta, top: 0, behavior: 'auto'});
+    else window.scrollBy({left: 0, top: delta, behavior: 'auto'});
+  }
+  function _stopFling() {
+    if (flingRaf) { cancelAnimationFrame(flingRaf); flingRaf = 0; }
+  }
+  function _notePin(fingerMain, ax) {
+    if (pinFwdAt === null && ax.pos >= ax.max - 2) pinFwdAt = fingerMain;
+    if (pinBackAt === null && ax.pos <= 2) pinBackAt = fingerMain;
+  }
+  function _bStart(x, y) {
+    _stopFling();
+    hasDown = true; downX = x; downY = y;
+    var vertical = _vertical();
+    // TODO-656：记手势起点(touchstart)沿内容轴的滚动量 + 最大可滚量；起点已贴边界时
+    // 拉动距离从起点算起（标准档只认这种）。
+    var ax = _axis(vertical);
+    downSPos = ax.pos;
+    downSMax = ax.max;
+    var r0 = _reader();
+    downEpoch = r0 ? r0.chapterTurnEpoch() : 0;
+    pinFwdAt = null; pinBackAt = null;
+    _notePin(_fingerMain(x, y, vertical), ax);
+    slopAt = 0; nativeMovedSinceDown = false;
+    assist = false; assistDecided = false;
+    samples = [];
+  }
+  function _bMove(x, y, t) {
+    if (!hasDown || window.__fushiTextSelectDragActive) return;
+    var vertical = _vertical();
+    var fm = _fingerMain(x, y, vertical);
+    var ax = _axis(vertical);
+    var dx = x - downX, dy = y - downY;
+    var main = vertical ? dx : -dy;
+    var cross = vertical ? dy : dx;
+    if (Math.abs(ax.pos - downSPos) > 1 && !assist) nativeMovedSinceDown = true;
+    if (!slopAt && (Math.abs(dx) >= TAP_SLOP || Math.abs(dy) >= TAP_SLOP)) slopAt = t;
+    if (assist) {
+      // 原生滚动也动起来了（引擎晚一步接管）→ 立刻让出，绝不双份滚动。
+      if (Math.abs(ax.pos - assistLastPos) > 2) {
+        assist = false;
+      } else {
+        _scrollMain(fm - assistLastMain, vertical);
+        assistLastMain = fm;
+        assistLastPos = _axis(vertical).pos;
+        samples.push({t: t, m: fm});
+        while (samples.length > 1 && t - samples[0].t > 100) samples.shift();
+      }
+    } else if (!assistDecided && slopAt) {
+      var since = t - slopAt;
+      if (nativeMovedSinceDown) {
+        assistDecided = true;
+      } else if (since >= ASSIST_SETTLE_MS) {
+        assistDecided = true;
+        var r = _reader();
+        if (r && Math.abs(main) >= ASSIST_MIN_MAIN && Math.abs(cross) > Math.abs(main)
+            && Math.abs(cross) <= Math.abs(main) * MAX_OFF_AXIS_TAN) {
+          assist = true;
+          // 接管时补上手指已走过的主轴位移，正文与手指对齐。
+          _scrollMain(main, vertical);
+          assistLastMain = fm;
+          assistLastPos = _axis(vertical).pos;
+          samples = [{t: t, m: fm}];
+        }
+      }
+    }
+    if (_cfg().continuousTurnPinMidGesture === true) _notePin(fm, _axis(vertical));
+  }
+  function _fling(v, vertical) {
+    var last = 0;
+    function step(ts) {
+      if (!last) { last = ts; flingRaf = requestAnimationFrame(step); return; }
+      var dt = Math.min(48, ts - last);
+      last = ts;
+      var before = _axis(vertical).pos;
+      _scrollMain(v * dt, vertical);
+      v = v * Math.pow(FLING_DECAY_PER_MS, dt);
+      if (Math.abs(_axis(vertical).pos - before) < 0.5 || Math.abs(v) < FLING_MIN_VELOCITY) {
+        flingRaf = 0;
+        return;
+      }
+      flingRaf = requestAnimationFrame(step);
+    }
+    flingRaf = requestAnimationFrame(step);
   }
   function _bEnd(x, y, src) {
     if (!hasDown) return;
     hasDown = false;
+    var vertical = _vertical();
+    var fm = _fingerMain(x, y, vertical);
+    if (assist) {
+      assist = false;
+      if (samples.length > 1) {
+        var a = samples[0], b = samples[samples.length - 1];
+        var v = b.t > a.t ? (b.m - a.m) / (b.t - a.t) : 0;
+        v = Math.max(-FLING_MAX_VELOCITY, Math.min(FLING_MAX_VELOCITY, v));
+        if (Math.abs(v) >= FLING_MIN_VELOCITY) _fling(v, vertical);
+      }
+    }
     // TODO-1317: a mobile long-press drag-select owns this touch; never cross
     // chapters from a selection gesture.
     if (window.__fushiTextSelectDragActive) return;
+    if (!_reader()) return;
     var dx = x - downX;
     var dy = y - downY;
     if (Math.abs(dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP) return;
-    var vertical = window.fushiReader && window.fushiReader.isVertical();
+    var C = _cfg();
+    var pullPx = Number(C.continuousTurnPullPx) > 0 ? Number(C.continuousTurnPullPx) : ${ContinuousChapterTurnResistance.standard.pullPx};
+    var main = vertical ? dx : -dy;
+    var cross = vertical ? dy : dx;
     var gestureDir = null;
-    if (vertical) {
-      if (Math.abs(dx) < SWIPE_THRESHOLD || Math.abs(dx) < Math.abs(dy)) return;
-      gestureDir = dx > 0 ? 'forward' : 'backward';
-    } else {
-      if (Math.abs(dy) < SWIPE_THRESHOLD || Math.abs(dy) < Math.abs(dx)) return;
-      gestureDir = dy < 0 ? 'forward' : 'backward';
+    if (Math.abs(main) >= pullPx && Math.abs(cross) <= Math.abs(main) * MAX_OFF_AXIS_TAN) {
+      gestureDir = main > 0 ? 'forward' : 'backward';
     }
-    // TODO-656 根治：跨章只看手势起点(touchstart 记的 downSPos)是否已停在边界，不再用
-    // touchend 瞬时 scrollTop<=2。从章中滚到边界的那一下起点不在边界 → 不跨章；到边界后
-    // 再发同向手势才跨（与纯函数 touchBoundaryCrossDir 同形）。消除「没到章首就跨章」。
+    if (C.continuousTurnPinMidGesture === true) _notePin(fm, _axis(vertical));
     var downAtStart = downSPos <= 2;
     var downAtEnd = downSPos >= downSMax - 2;
     var dir = null;
-    if (gestureDir === 'backward' && downAtStart) dir = 'backward';
-    else if (gestureDir === 'forward' && downAtEnd) dir = 'forward';
+    if (gestureDir === 'forward' && pinFwdAt !== null && fm - pinFwdAt >= pullPx) dir = 'forward';
+    else if (gestureDir === 'backward' && pinBackAt !== null && pinBackAt - fm >= pullPx) dir = 'backward';
     console.log('[xchapter] bEnd src=' + src + ' vertical=' + (vertical ? 1 : 0)
       + ' gestureDir=' + gestureDir + ' downSPos=' + Math.round(downSPos)
       + ' downSMax=' + Math.round(downSMax)
       + ' downAtStart=' + (downAtStart ? 1 : 0) + ' downAtEnd=' + (downAtEnd ? 1 : 0)
+      + ' pull=' + pullPx + ' mid=' + (C.continuousTurnPinMidGesture === true ? 1 : 0)
       + ' dir=' + dir);
-    if (dir && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+    if (!dir) return;
+    // 反馈 R7k887yaJI 重开：起点贴边的 pin 记在手势开始那一章的文档几何上。这次手势里
+    // 文档内已经换过章（无缝晋升），pin 与距离都不再描述「当前章的边界」，换章已经发生，
+    // 这次手势到此为止；否则松手再跨一章就落到下下章。
+    var r = _reader();
+    if (r.chapterTurnEpoch() !== downEpoch) return;
+    if (r.claimBoundaryTurn(dir)) return;
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler('onBoundarySwipe', dir);
     }
   }
   document.addEventListener('touchstart', function(e) {
-    if (!e.touches.length) return;
+    if (e.touches.length !== 1) { hasDown = false; assist = false; return; }
     _bStart(e.touches[0].clientX, e.touches[0].clientY);
+  }, {passive: true});
+  document.addEventListener('touchmove', function(e) {
+    if (e.touches.length !== 1) { hasDown = false; assist = false; return; }
+    _bMove(e.touches[0].clientX, e.touches[0].clientY, e.timeStamp);
   }, {passive: true});
   document.addEventListener('touchend', function(e) {
     if (!e.changedTouches.length) return;
     _bEnd(e.changedTouches[0].clientX, e.changedTouches[0].clientY, 'touch');
+  }, {passive: true});
+  document.addEventListener('touchcancel', function() {
+    hasDown = false; assist = false;
   }, {passive: true});
   // 砍掉 PC 鼠标/触控笔(pointer)的边界手势跨章：连续模式鼠标左键已回归原生选字/划词
   // （见 _fushiReaderMouseDragStartAllowed 连续模式返 false），PC 桌面跨章只走滚轮；
@@ -4750,6 +5382,10 @@ window.fushiReader.updatePageSize = function(cssWidth, cssHeight) {
     if (SCROLL_KEYS[e.key]) note();
   }, opts);
 })();
+// 反馈 R7k887yaJI ③：章节无缝衔接（只在 C.seamlessChapters === true 时安装，见
+// reader_seamless_chapters_script.dart）。必须在 boot 之前装：初次恢复可能同步完成，
+// 装饰过的 notifyRestoreComplete 要在那之前就位。
+$kSeamlessChaptersInstallJs
 $_sharedInitBoot
 };
 </script>''';

@@ -4,6 +4,7 @@ import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -40,21 +41,49 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/pages/base_page.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/app_model.dart' show AppModel;
+import 'package:flutter_riverpod/flutter_riverpod.dart' show WidgetRef;
 import 'package:fushi/src/utils/misc/collection_exporter.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/favorites/favorite_batch_mining.dart';
+import 'package:fushi/src/media/favorites/favorite_visibility.dart';
 import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
 import 'package:fushi/src/media/favorites/web_video_favorite.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/mining/mined_origin_navigation.dart';
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi/src/media/favorites/favorite_video_origin.dart';
+import 'package:fushi/src/media/video/remote_client_teardown.dart'
+    show closeOwnedRemoteVideoClient;
+import 'package:fushi/src/sync/remote_library_cache.dart'
+    show remoteLibraryCacheProvider;
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadLongPressActions;
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/utils/components/library_section_tab.dart';
 
 enum _CollectionType { sentence, mined, word }
+
+/// 类型筛选页签的取值：[LibrarySectionTabs] 要非空值，「全部」= 不按类型筛
+/// （[type] 为 null）。顺序即页签顺序。
+enum _CollectionTypeTab {
+  all(null),
+  word(_CollectionType.word),
+  sentence(_CollectionType.sentence),
+  mined(_CollectionType.mined);
+
+  const _CollectionTypeTab(this.type);
+
+  final _CollectionType? type;
+
+  static _CollectionTypeTab of(_CollectionType? type) =>
+      values.firstWhere((_CollectionTypeTab tab) => tab.type == type);
+}
 
 /// 分组视图的一行（阶段 3，统计中心大改造：收藏夹按「合集 → 媒体」两级分节）。
 enum CollectionGroupRowKind { collectionHeader, mediaHeader, item }
@@ -145,7 +174,7 @@ List<CollectionGroupRow<T>> groupCollectionItems<T>({
   return rows;
 }
 
-/// 收藏句 / 「我库里的例句」（`corpus_origin_navigation.dart`）共用的视频起点解析。
+/// 收藏句共用的视频起点解析。
 ({int? episodeIndex, int? startMs}) resolveVideoFavoriteOpenTarget({
   required VideoBookRow row,
   required int? favoriteSectionIndex,
@@ -265,7 +294,29 @@ class _CollectionItem {
     this.contextSentence,
     this.headword,
     this.headwordReading,
+    this.originSourceId,
+    this.originLocator,
   });
+
+  /// 收藏句表的一行（收藏夹列表与首页「收藏句子」小组件同一映射）。
+  factory _CollectionItem.fromFavoriteSentence(FavoriteSentence fav) =>
+      _CollectionItem(
+        type: _CollectionType.sentence,
+        createdAt: fav.createdAt,
+        bookTitle: fav.bookTitle,
+        bookKey: fav.bookKey,
+        text: fav.text,
+        chapterLabel: fav.chapterLabel,
+        sectionIndex: fav.sectionIndex,
+        normCharOffset: fav.normCharOffset,
+        normCharLength: fav.normCharLength,
+        favoriteId: fav.id,
+        source: fav.source,
+        headword: fav.expression,
+        headwordReading: fav.reading,
+        originSourceId: fav.originSourceId,
+        originLocator: fav.originLocator,
+      );
 
   final _CollectionType type;
   final DateTime createdAt;
@@ -307,6 +358,14 @@ class _CollectionItem {
   final String? headword;
   final String? headwordReading;
 
+  /// 收藏时所在远端条目的来源身份（[FavoriteSentence.originSourceId]，收藏句专用；
+  /// 制卡历史 / 收藏词没有）。视频跳回原处据此回到那一台媒体服务器（BUG-5402）。
+  final String? originSourceId;
+
+  /// 收藏时远端条目的重开规格（[FavoriteSentence.originLocator]，收藏句专用）：在线
+  /// 视频源的一集据此重建播放客户端。
+  final String? originLocator;
+
   bool get isWord => type == _CollectionType.word;
 
   /// 浏览器扩展收藏的「视频本身」（KGC1ifR1a3）：网页来源、没有句子文本。标题显示视频名，
@@ -341,20 +400,35 @@ class _CollectionItem {
   SentenceSourceKind get sourceKind => sentenceSourceKindOf(source);
 }
 
+/// 收藏夹打开时预选的类型页签（首页「收藏句子」小组件从标题进来时选「句子」）。
+enum CollectionsInitialFilter { all, word, sentence, mined }
+
 class CollectionsPage extends BasePage {
-  const CollectionsPage({super.key});
+  const CollectionsPage({
+    super.key,
+    this.initialFilter = CollectionsInitialFilter.all,
+  });
+
+  /// 打开时预选的类型页签；之后用户照常切换。
+  final CollectionsInitialFilter initialFilter;
 
   @override
   BasePageState<CollectionsPage> createState() => _CollectionsPageState();
 }
 
-class _CollectionsPageState extends BasePageState<CollectionsPage> {
+class _CollectionsPageState extends BasePageState<CollectionsPage>
+    with MediaVisibilityDependent<CollectionsPage> {
   bool _loading = true;
   List<_CollectionItem> _items = [];
 
   /// 分类筛选（null = 全部）。收藏夹同时装着收藏词 / 收藏句 / 制卡句三类、书 / 视频 /
   /// 有声书多来源，全部混排时找词很难——顶部筛选条按类型收窄。
-  _CollectionType? _typeFilter;
+  late _CollectionType? _typeFilter = switch (widget.initialFilter) {
+    CollectionsInitialFilter.all => null,
+    CollectionsInitialFilter.word => _CollectionType.word,
+    CollectionsInitialFilter.sentence => _CollectionType.sentence,
+    CollectionsInitialFilter.mined => _CollectionType.mined,
+  };
 
   List<_CollectionItem> get _visibleItems => _typeFilter == null
       ? _items
@@ -406,6 +480,24 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) => _load());
   }
 
+  /// 解锁 / 重新上锁 / 上锁标记变了：重读（上锁作品的收藏 / 制卡不列、不导出）。
+  @override
+  void onMediaVisibilityChanged() => unawaited(_load());
+
+  /// 来源作品上锁（本次会话未解锁）的行：列表、导出、批量制卡都不出现
+  /// （[MediaVisibility.hidesWork]，唯一的上锁过滤入口）。网页收藏的 bookKey 是
+  /// 网址，不是作品身份。
+  bool _hiddenByLock({
+    required String? bookKey,
+    required String? title,
+    required String source,
+  }) => favoriteHiddenByLock(
+    mediaVisibility,
+    bookKey: bookKey,
+    title: title,
+    source: source,
+  );
+
   Future<void> _load() async {
     setState(() => _loading = true);
 
@@ -456,23 +548,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     final items = <_CollectionItem>[];
 
     for (final fav in allFavorites) {
-      items.add(
-        _CollectionItem(
-          type: _CollectionType.sentence,
-          createdAt: fav.createdAt,
-          bookTitle: fav.bookTitle,
-          bookKey: fav.bookKey,
-          text: fav.text,
-          chapterLabel: fav.chapterLabel,
-          sectionIndex: fav.sectionIndex,
-          normCharOffset: fav.normCharOffset,
-          normCharLength: fav.normCharLength,
-          favoriteId: fav.id,
-          source: fav.source,
-          headword: fav.expression,
-          headwordReading: fav.reading,
-        ),
-      );
+      items.add(_CollectionItem.fromFavoriteSentence(fav));
     }
 
     // TODO-633 制卡历史：与收藏句同结构落 _CollectionItem，复用 _openBook /
@@ -527,7 +603,15 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       );
     }
 
-    items.sort((a, b) => b.createdAt.compareTo(a.createdAt));
+    items
+      ..removeWhere(
+        (_CollectionItem i) => _hiddenByLock(
+          bookKey: i.bookKey,
+          title: i.bookTitle,
+          source: i.source,
+        ),
+      )
+      ..sort((a, b) => b.createdAt.compareTo(a.createdAt));
 
     final allBookKeys = <String>{};
     for (final fav in allFavorites) {
@@ -724,139 +808,6 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     source: item.source,
     rawSnapshot: item.bookTitle,
   );
-
-  Future<void> _openBook(_CollectionItem item) async {
-    final String? bookKey = item.bookKey;
-    if (bookKey == null || bookKey.isEmpty) return;
-
-    // 阅读器路由的真相源是**当前** `EpubBooks.format`，这里只有 bookKey，必须现查。
-    // 书行查不到（书已删、收藏还在）时按 EPUB 回退，与路由层 parseOrEpub 的既有
-    // 回退一致——反正随后阅读器自己会报「书不存在」，不在这里造第二种失败形态。
-    final EpubBookRow? book = await appModel.database.getEpubBook(bookKey);
-    final BookFormat format = BookFormat.parseOrEpub(book?.format);
-
-    // 标题仅作展示（身份走 mediaIdentifier=bookKey），过门面显示改名后书名。
-    final String title =
-        _displayBookTitleFor(
-          bookKey: bookKey,
-          source: item.source,
-          rawSnapshot: item.bookTitle,
-        ) ??
-        '';
-
-    final MediaItem mediaItem = buildCollectionReaderMediaItem(
-      bookKey: bookKey,
-      title: title,
-      format: format,
-    );
-
-    // BUG-459: 三类行的 normCharOffset 计量不同——
-    //   bookmark：0-10000 章内进度分数（reader `_addBookmarkAtCurrentPosition` 写）。
-    //   sentence/mined：`getNormalizedOffset` 的章节内绝对可匹配字符索引（0..数千，
-    //                   收藏 `_toggleFavoriteSentence` / 制卡 `_recordMinedSentence` 写）。
-    // 旧代码把后者也塞进 Bookmark.normCharOffset，跳转端按分数 `/10000≈0` 还原 → 恒
-    // 跳章首。这里按行类型分流：句子/制卡走绝对字符锚（charAnchor）让阅读器精确恢复，
-    // 且标 preserveSavedPosition——临时浏览跳转不覆盖用户真实阅读进度。
-    // v114：带上下文锚点的收藏词与收藏句同口径（锚点就是收藏时那句）。
-    final bool isSentenceJump =
-        item.type == _CollectionType.sentence ||
-        item.type == _CollectionType.mined ||
-        item.hasWordAnchor;
-    final Bookmark? bookmark = item.sectionIndex != null
-        ? Bookmark(
-            sectionIndex: item.sectionIndex!,
-            normCharOffset: isSentenceJump ? 0 : (item.normCharOffset ?? 0),
-            charAnchor: isSentenceJump ? item.normCharOffset : null,
-            // BUG-461: 句子/制卡跳转把句长一并透传，连续模式横排据此整句对齐进可见区，
-            // 句尾不被阅读底栏切（句子行才有 normCharLength；制卡行/老收藏可能为 null）。
-            charAnchorLength: isSentenceJump ? item.normCharLength : null,
-            preserveSavedPosition: isSentenceJump,
-            label: '',
-            createdAt: item.createdAt,
-          )
-        : null;
-
-    if (!mounted) return;
-    await appModel.openMedia(
-      ref: ref,
-      // 由 item 自己的 mediaSourceIdentifier 反查源，不写死 EPUB 阅读器。
-      mediaSource: mediaItem.getMediaSource(appModel: appModel),
-      item: mediaItem,
-      initialBookmarkJump: bookmark,
-    );
-  }
-
-  Future<void> _openVideoSentence(_CollectionItem item) async {
-    final String? bookUid = item.bookKey;
-    if (bookUid == null || bookUid.isEmpty) return;
-
-    final VideoBookRepository repo = VideoBookRepository(appModel.database);
-    final VideoBookRow? row = await repo.getByBookUid(bookUid);
-    if (row == null) return;
-
-    final int? startMs = await _resolveVideoFavoriteStartMs(repo, row, item);
-    final target = resolveVideoFavoriteOpenTarget(
-      row: row,
-      favoriteSectionIndex: item.sectionIndex,
-      favoriteStartMs: startMs,
-    );
-    // BUG-1067：本集若属于某 playlist 合集，必须带上主合集 id 进播放器——否则
-    // 视频初始化时系列级音轨/字幕调轴记忆分支（video_fushi_page 1884-1894，
-    // schema v52）被整段跳过，退回读本集 per-book 默认值（音轨 null / 调轴 0），
-    // 表现为「从收藏跳转后音轨与调好的字幕轴又被重置」。解析口径与书架/首页
-    // dashboard 续播一致（getPrimaryCollectionIdByEntry，key='video|<bookUid>'）。
-    final int? playlistCollectionId = await _resolveVideoPlaylistCollectionId(
-      row.bookUid,
-    );
-    if (!mounted) return;
-    Navigator.push(
-      context,
-      adaptivePageRoute<void>(
-        context: context,
-        builder: (_) => VideoFushiPage.neutralized(
-          bookUid: row.bookUid,
-          repo: repo,
-          playlistCollectionId: playlistCollectionId,
-          initialCueStartMs: target.startMs,
-          initialEpisodeIndex: target.episodeIndex,
-          initialSubtitleListVisible: true,
-        ),
-      ),
-    );
-  }
-
-  /// 解析该视频条目所属的主 playlist 合集 id（无归属返回 null → 按散卡单视频打开）。
-  /// 与书架 [_open]（`collection.id`）、首页 dashboard 续播（`_primaryCollectionByEntry`）
-  /// 同口径，确保系列级音轨/字幕调轴记忆命中同一 collectionId（BUG-1067）。
-  Future<int?> _resolveVideoPlaylistCollectionId(String bookUid) async {
-    final Map<String, int> primaryByEntry = await appModel.database
-        .getPrimaryCollectionIdByEntry();
-    return primaryByEntry[MediaKind.video.compositeKey(bookUid)];
-  }
-
-  Future<int?> _resolveVideoFavoriteStartMs(
-    VideoBookRepository repo,
-    VideoBookRow row,
-    _CollectionItem item,
-  ) async {
-    if (_isPlaylistVideo(row) && item.sectionIndex == null) {
-      return null;
-    }
-    if (item.normCharOffset != null) return item.normCharOffset;
-    final String? text = item.anchorText?.trim();
-    final String? bookUid = item.bookKey;
-    if (text == null || text.isEmpty || bookUid == null || bookUid.isEmpty) {
-      return null;
-    }
-    final List<AudioCue> cues = await repo.loadCues(bookUid);
-    for (final AudioCue cue in cues) {
-      if (cue.text.trim() == text) return cue.startMs;
-    }
-    return null;
-  }
-
-  bool _isPlaylistVideo(VideoBookRow row) =>
-      playlistEpisodeCount(row.playlistJson) > 0;
 
   Future<List<File>> _resolveAudioFiles({
     required List<String>? audioPaths,
@@ -1246,8 +1197,16 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Future<List<ExportMinedSentence>> _loadMinedForExport({
     Set<String> bookKeys = const <String>{},
   }) async {
-    final List<MinedSentenceRow> rows = await appModel.database
-        .getAllMinedSentences();
+    final List<MinedSentenceRow> rows = <MinedSentenceRow>[
+      for (final MinedSentenceRow r
+          in await appModel.database.getAllMinedSentences())
+        if (!_hiddenByLock(
+          bookKey: r.bookKey,
+          title: r.documentTitle,
+          source: r.source,
+        ))
+          r,
+    ];
     final List<ExportMinedSentence> mapped = rows
         .map(
           (r) => ExportMinedSentence(
@@ -1285,9 +1244,17 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   Future<List<ExportSentence>> _loadFavoritesForExport({
     Set<String> bookKeys = const <String>{},
   }) async {
-    final List<FavoriteSentence> all = await FavoriteSentenceRepository(
-      appModel.database,
-    ).getAll();
+    final List<FavoriteSentence> all = <FavoriteSentence>[
+      for (final FavoriteSentence f in await FavoriteSentenceRepository(
+        appModel.database,
+      ).getAll())
+        if (!_hiddenByLock(
+          bookKey: f.bookKey,
+          title: f.bookTitle,
+          source: f.source,
+        ))
+          f,
+    ];
     final List<ExportSentence> mapped = all
         .map(
           (FavoriteSentence f) => ExportSentence(
@@ -1422,8 +1389,16 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
 
   /// 导出全部收藏词（按 sourceType 分组）。
   Future<void> _exportAllWords(ExportFormat format) async {
-    final List<FavoriteWordRow> rows = await appModel.database
-        .getAllFavoriteWords();
+    final List<FavoriteWordRow> rows = <FavoriteWordRow>[
+      for (final FavoriteWordRow w
+          in await appModel.database.getAllFavoriteWords())
+        if (!_hiddenByLock(
+          bookKey: w.bookKey,
+          title: w.title,
+          source: w.sourceType,
+        ))
+          w,
+    ];
     if (!mounted) return;
     if (rows.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -1469,104 +1444,14 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
     }
   }
 
-  /// 收藏句「跳回原文」的目的地所属功能模块。
-  ///
-  /// 视频句进视频播放页；书 / 有声书 / 歌词三种句共享 `hoshi://book/` 身份，落地
-  /// 都是阅读器（有声书与歌词模式是阅读器内的形态，不是独立页面），所以统一挂
-  /// [ModuleId.books]。
-  ///
-  /// ⚠️ 漫画收藏行也走 [ModuleId.books]：本行只有 bookKey，判不出
-  /// `EpubBooks.format=='manga'`（要现查库，[_openBook] 里才拿得到）。宁可在
-  /// 「books 关 + manga 开」时少跳一条漫画句，也不能在 books 关掉后还把 EPUB
-  /// 阅读器打开。
-  ModuleId _moduleOfSentenceSource(SentenceSourceKind kind) => switch (kind) {
-    SentenceSourceKind.video => ModuleId.video,
-    SentenceSourceKind.game => ModuleId.games,
-    SentenceSourceKind.manga => ModuleId.manga,
-    SentenceSourceKind.music => ModuleId.music,
-    // 网页视频收藏归视频模块（[_canNavigateTo] 对它另判：打开的是系统浏览器，不受模块开关限制）。
-    SentenceSourceKind.web => ModuleId.video,
-    SentenceSourceKind.book ||
-    SentenceSourceKind.audiobook ||
-    SentenceSourceKind.lyrics => ModuleId.books,
-  };
-
-  /// 「跳回原文」的唯一分派（条目菜单与列表行共用）：每种来源落到自己模块已有的
-  /// 出口（漫画 / 游戏 / 音乐经 `mined_origin_navigation.dart`，与复习卡片的来源
-  /// 链接同一组出口）。
-  void _openOrigin(_CollectionItem item, SentenceSourceKind kind) {
-    final String? key = item.bookKey;
-    switch (kind) {
-      case SentenceSourceKind.video:
-        unawaited(_openVideoSentence(item));
-      case SentenceSourceKind.game:
-        if (key == null || key.isEmpty) return;
-        unawaited(
-          openGameOrigin(
-            navigator: Navigator.of(context),
-            db: appModel.database,
-            gameId: key,
-          ),
-        );
-      case SentenceSourceKind.manga:
-        if (key == null || key.isEmpty) return;
-        unawaited(
-          openMangaOriginAtPage(
-            ref: ref,
-            bookKey: key,
-            pageIndex: item.pageIndex,
-          ),
-        );
-      case SentenceSourceKind.music:
-        if (key == null || key.isEmpty) return;
-        unawaited(
-          playMusicOriginClip(
-            app: appModel,
-            trackUid: key,
-            positionMs: item.normCharOffset ?? 0,
-          ),
-        );
-      case SentenceSourceKind.web:
-        unawaited(_openWebOrigin(item));
-      case SentenceSourceKind.book:
-      case SentenceSourceKind.audiobook:
-      case SentenceSourceKind.lyrics:
-        // audiobook/lyrics 的 bookKey 共享 hoshi://book/ 身份，reader 是正确目的地
-        // （内部处理有声书/歌词模式）。
-        unawaited(_openBook(item));
-    }
-  }
-
-  /// 网页视频收藏（KGC1ifR1a3）跳回原网页：支持时间参数的站点直接从收藏的时间点起播
-  /// （YouTube `t=` / niconico `from=` / bilibili `t=`），其余站点只打开原网页并告诉用户
-  /// 这句在第几分几秒。
-  Future<void> _openWebOrigin(_CollectionItem item) async {
-    final String? url = item.bookKey;
-    if (url == null) return;
-    final int? position = item.isWebVideoFavorite ? null : item.normCharOffset;
-    final WebVideoJumpTarget? target = webVideoJumpTarget(url, position);
-    bool opened = false;
-    if (target != null) {
-      try {
-        opened = await launchUrl(
-          target.uri,
-          mode: LaunchMode.externalApplication,
-        );
-      } on Object catch (error, stack) {
-        ErrorLogService.instance.log('Collections.openWebOrigin', error, stack);
-      }
-    }
-    if (!mounted) return;
-    final String? message = !opened
-        ? t.collection_web_page_open_failed
-        : (target != null && !target.timed && position != null)
-        ? t.collection_web_page_untimed(time: formatWebVideoPosition(position))
-        : null;
-    if (message == null) return;
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(FushiSnackBar(content: Text(message)));
-  }
+  /// 「跳回原文」：分派在 [FavoriteOriginNavigator]（与首页「收藏句子」小组件共用）。
+  void _openOrigin(_CollectionItem item, SentenceSourceKind kind) =>
+      FavoriteOriginNavigator._(
+        context: context,
+        ref: ref,
+        appModel: appModel,
+        displayTitleOf: _itemDisplayBookTitle,
+      )._openOrigin(item, kind);
 
   /// 收藏行能否「跳回原文」的**唯一**谓词：条目菜单（[_showItemDialog]）与列表行
   /// （[_buildItem]）共用，此前是两份逐字同构的表达式。
@@ -1579,19 +1464,8 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   /// 判 false 不会让行消失：行照常渲染（隐藏行会让用户以为收藏数据丢了），只是
   /// 不出 chevron / 不出「阅读·视频」按钮，点行改开条目菜单（播放/复制/删除仍在），
   /// 手柄也仍能停焦点。
-  bool _canNavigateTo(_CollectionItem item) {
-    // 收藏词只有带收藏上下文锚点（v114 起）才能跳回原文；存量词行没有定位。
-    if (item.isWord && !item.hasWordAnchor) return false;
-    final String? bookKey = item.bookKey;
-    if (bookKey == null || bookKey.isEmpty) return false;
-    // 网页视频（KGC1ifR1a3）回到系统浏览器里的原网页，与 App 内模块开关无关。
-    if (item.sourceKind == SentenceSourceKind.web) {
-      return webVideoJumpTarget(bookKey, null) != null;
-    }
-    return appModel.moduleVisibility.isEnabled(
-      _moduleOfSentenceSource(item.sourceKind),
-    );
-  }
+  bool _canNavigateTo(_CollectionItem item) =>
+      _canNavigateToOrigin(item, appModel.moduleVisibility);
 
   bool _hasAudio(_CollectionItem item) {
     // 无锚点的收藏词没有「原句」可播。
@@ -1778,6 +1652,7 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   @override
   Widget build(BuildContext context) {
     return FushiPageScaffold(
+      masthead: true,
       title: t.collections,
       actions: <Widget>[
         // TODO-829: 仅当存在收藏句条目时显示「导出/分享」。
@@ -2067,6 +1942,29 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
   }
 
   Widget _buildTypeFilterBar() {
+    // 重设计外壳（页头大字）：页名下一行与库页二级页签同一组件——
+    // [LibrarySectionTabs] 在页头下方一行（`FushiMastheadScope` secondary）里
+    // 画成连体按钮组，焦点 / 方向键切换 / Semantics 同库页。墨水屏照旧 chip 行。
+    if (shellRedesignActive(context)) {
+      return LibrarySectionTabs<_CollectionTypeTab>(
+        tabs: <LibrarySectionTab<_CollectionTypeTab>>[
+          for (final _CollectionTypeTab tab in _CollectionTypeTab.values)
+            LibrarySectionTab<_CollectionTypeTab>(
+              value: tab,
+              label: switch (tab) {
+                _CollectionTypeTab.all => t.collection_filter_all,
+                _CollectionTypeTab.word => t.collection_word,
+                _CollectionTypeTab.sentence => t.collection_sentence,
+                _CollectionTypeTab.mined => t.collection_mined,
+              },
+            ),
+        ],
+        selected: _CollectionTypeTab.of(_typeFilter),
+        onChanged: (_CollectionTypeTab tab) =>
+            setState(() => _typeFilter = tab.type),
+        focusIdPrefix: 'collections-type-tab',
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     Widget chip(_CollectionType? type, String label) => Padding(
       padding: EdgeInsets.only(right: tokens.spacing.gap / 2),
@@ -2338,6 +2236,375 @@ class _CollectionsPageState extends BasePageState<CollectionsPage> {
       ),
     );
   }
+}
+
+/// 收藏句「跳回原文」的目的地所属功能模块。
+///
+/// 视频句进视频播放页；书 / 有声书 / 歌词三种句共享 `hoshi://book/` 身份，落地
+/// 都是阅读器（有声书与歌词模式是阅读器内的形态，不是独立页面），所以统一挂
+/// [ModuleId.books]。
+///
+/// ⚠️ 漫画收藏行也走 [ModuleId.books]：本行只有 bookKey，判不出
+/// `EpubBooks.format=='manga'`（要现查库，[_openBook] 里才拿得到）。宁可在
+/// 「books 关 + manga 开」时少跳一条漫画句，也不能在 books 关掉后还把 EPUB
+/// 阅读器打开。
+ModuleId _moduleOfSentenceSource(SentenceSourceKind kind) => switch (kind) {
+  SentenceSourceKind.video => ModuleId.video,
+  SentenceSourceKind.game => ModuleId.games,
+  SentenceSourceKind.manga => ModuleId.manga,
+  SentenceSourceKind.music => ModuleId.music,
+  // 网页视频收藏归视频模块（[_canNavigateTo] 对它另判：打开的是系统浏览器，不受模块开关限制）。
+  SentenceSourceKind.web => ModuleId.video,
+  SentenceSourceKind.book ||
+  SentenceSourceKind.audiobook ||
+  SentenceSourceKind.lyrics => ModuleId.books,
+};
+
+/// [_CollectionsPageState._canNavigateTo] 的本体（收藏夹与首页小组件共用）。
+bool _canNavigateToOrigin(_CollectionItem item, ModuleVisibility visibility) {
+  // 收藏词只有带收藏上下文锚点（v114 起）才能跳回原文；存量词行没有定位。
+  if (item.isWord && !item.hasWordAnchor) return false;
+  final String? bookKey = item.bookKey;
+  if (bookKey == null || bookKey.isEmpty) return false;
+  // 网页视频（KGC1ifR1a3）回到系统浏览器里的原网页，与 App 内模块开关无关。
+  if (item.sourceKind == SentenceSourceKind.web) {
+    return webVideoJumpTarget(bookKey, null) != null;
+  }
+  return visibility.isEnabled(_moduleOfSentenceSource(item.sourceKind));
+}
+
+/// 收藏句能不能「跳回原文」（首页「收藏句子」小组件用；与收藏夹列表同一判据）。
+bool favoriteSentenceOriginReachable(
+  FavoriteSentence favorite,
+  ModuleVisibility visibility,
+) => _canNavigateToOrigin(
+  _CollectionItem.fromFavoriteSentence(favorite),
+  visibility,
+);
+
+/// 视频收藏跳不回去时弹出具体原因（收藏夹 / 首页「收藏句子」共用，文案见
+/// [FavoriteVideoOriginFailure.message]，与手机遥控同一份）。
+void showVideoFavoriteUnavailable(FavoriteVideoOriginFailure failure) {
+  FushiToast.show(msg: failure.message, severity: ToastSeverity.error);
+}
+
+/// 收藏句 / 制卡句 / 带锚点收藏词「跳回原文」的唯一实现：收藏夹（列表行与条目菜单）
+/// 与首页「收藏句子」小组件（[HomeWidgetKind.favorites]）共用同一份分派，不各写一套。
+///
+/// 只依赖 [context]（导航 / 提示）、[ref]（打开媒体）、[appModel]（数据库），不持有
+/// 收藏夹页的状态；书名展示由调用方经 [displayTitleOf] 解析（收藏夹走它的门面表，
+/// 首页传已解析好的显示名）。
+class FavoriteOriginNavigator {
+  FavoriteOriginNavigator._({
+    required this.context,
+    required this.ref,
+    required this.appModel,
+    required this.displayTitleOf,
+  });
+
+  final BuildContext context;
+  final WidgetRef ref;
+  final AppModel appModel;
+  final String? Function(_CollectionItem item) displayTitleOf;
+
+  /// 打开一条收藏句的来源（[displayTitle] 只用于阅读器标题展示，身份走 bookKey）。
+  static void openFavoriteSentence({
+    required BuildContext context,
+    required WidgetRef ref,
+    required AppModel appModel,
+    required FavoriteSentence favorite,
+    String? displayTitle,
+  }) {
+    final _CollectionItem item = _CollectionItem.fromFavoriteSentence(favorite);
+    FavoriteOriginNavigator._(
+      context: context,
+      ref: ref,
+      appModel: appModel,
+      displayTitleOf: (_CollectionItem i) => displayTitle ?? i.bookTitle,
+    )._openOrigin(item, item.sourceKind);
+  }
+
+  /// 「跳回原文」的唯一分派（收藏夹条目菜单 / 列表行与首页「收藏句子」小组件共用）：每种来源落到自己模块已有的
+  /// 出口（漫画 / 游戏 / 音乐经 `mined_origin_navigation.dart`，与复习卡片的来源
+  /// 链接同一组出口）。
+  void _openOrigin(_CollectionItem item, SentenceSourceKind kind) {
+    final String? key = item.bookKey;
+    switch (kind) {
+      case SentenceSourceKind.video:
+        unawaited(_openVideoSentence(item));
+      case SentenceSourceKind.game:
+        if (key == null || key.isEmpty) return;
+        unawaited(
+          openGameOrigin(
+            navigator: Navigator.of(context),
+            db: appModel.database,
+            gameId: key,
+          ),
+        );
+      case SentenceSourceKind.manga:
+        if (key == null || key.isEmpty) return;
+        unawaited(
+          openMangaOriginAtPage(
+            ref: ref,
+            bookKey: key,
+            pageIndex: item.pageIndex,
+          ),
+        );
+      case SentenceSourceKind.music:
+        if (key == null || key.isEmpty) return;
+        unawaited(
+          playMusicOriginClip(
+            app: appModel,
+            trackUid: key,
+            positionMs: item.normCharOffset ?? 0,
+          ),
+        );
+      case SentenceSourceKind.web:
+        unawaited(_openWebOrigin(item));
+      case SentenceSourceKind.book:
+      case SentenceSourceKind.audiobook:
+      case SentenceSourceKind.lyrics:
+        // audiobook/lyrics 的 bookKey 共享 hoshi://book/ 身份，reader 是正确目的地
+        // （内部处理有声书/歌词模式）。
+        unawaited(_openBook(item));
+    }
+  }
+
+  /// 网页视频收藏（KGC1ifR1a3）跳回原网页：支持时间参数的站点直接从收藏的时间点起播
+  /// （YouTube `t=` / niconico `from=` / bilibili `t=`），其余站点只打开原网页并告诉用户
+  /// 这句在第几分几秒。
+  Future<void> _openWebOrigin(_CollectionItem item) async {
+    final String? url = item.bookKey;
+    if (url == null) return;
+    final int? position = item.isWebVideoFavorite ? null : item.normCharOffset;
+    final WebVideoJumpTarget? target = webVideoJumpTarget(url, position);
+    bool opened = false;
+    if (target != null) {
+      try {
+        opened = await launchUrl(
+          target.uri,
+          mode: LaunchMode.externalApplication,
+        );
+      } on Object catch (error, stack) {
+        ErrorLogService.instance.log('Collections.openWebOrigin', error, stack);
+      }
+    }
+    if (!context.mounted) return;
+    final String? message = !opened
+        ? t.collection_web_page_open_failed
+        : (target != null && !target.timed && position != null)
+        ? t.collection_web_page_untimed(time: formatWebVideoPosition(position))
+        : null;
+    if (message == null) return;
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(FushiSnackBar(content: Text(message)));
+  }
+
+  Future<void> _openBook(_CollectionItem item) async {
+    final String? bookKey = item.bookKey;
+    if (bookKey == null || bookKey.isEmpty) return;
+
+    // 阅读器路由的真相源是**当前** `EpubBooks.format`，这里只有 bookKey，必须现查。
+    // 书行查不到（书已删、收藏还在）时按 EPUB 回退，与路由层 parseOrEpub 的既有
+    // 回退一致——反正随后阅读器自己会报「书不存在」，不在这里造第二种失败形态。
+    final EpubBookRow? book = await appModel.database.getEpubBook(bookKey);
+    final BookFormat format = BookFormat.parseOrEpub(book?.format);
+
+    // 标题仅作展示（身份走 mediaIdentifier=bookKey），过门面显示改名后书名。
+    final String title = displayTitleOf(item) ?? '';
+
+    final MediaItem mediaItem = buildCollectionReaderMediaItem(
+      bookKey: bookKey,
+      title: title,
+      format: format,
+    );
+
+    // BUG-459: 三类行的 normCharOffset 计量不同——
+    //   bookmark：0-10000 章内进度分数（reader `_addBookmarkAtCurrentPosition` 写）。
+    //   sentence/mined：`getNormalizedOffset` 的章节内绝对可匹配字符索引（0..数千，
+    //                   收藏 `_toggleFavoriteSentence` / 制卡 `_recordMinedSentence` 写）。
+    // 旧代码把后者也塞进 Bookmark.normCharOffset，跳转端按分数 `/10000≈0` 还原 → 恒
+    // 跳章首。这里按行类型分流：句子/制卡走绝对字符锚（charAnchor）让阅读器精确恢复，
+    // 且标 preserveSavedPosition——临时浏览跳转不覆盖用户真实阅读进度。
+    // v114：带上下文锚点的收藏词与收藏句同口径（锚点就是收藏时那句）。
+    final bool isSentenceJump =
+        item.type == _CollectionType.sentence ||
+        item.type == _CollectionType.mined ||
+        item.hasWordAnchor;
+    final Bookmark? bookmark = item.sectionIndex != null
+        ? Bookmark(
+            sectionIndex: item.sectionIndex!,
+            normCharOffset: isSentenceJump ? 0 : (item.normCharOffset ?? 0),
+            charAnchor: isSentenceJump ? item.normCharOffset : null,
+            // BUG-461: 句子/制卡跳转把句长一并透传，连续模式横排据此整句对齐进可见区，
+            // 句尾不被阅读底栏切（句子行才有 normCharLength；制卡行/老收藏可能为 null）。
+            charAnchorLength: isSentenceJump ? item.normCharLength : null,
+            preserveSavedPosition: isSentenceJump,
+            label: '',
+            createdAt: item.createdAt,
+          )
+        : null;
+
+    if (!context.mounted) return;
+    await appModel.openMedia(
+      ref: ref,
+      // 由 item 自己的 mediaSourceIdentifier 反查源，不写死 EPUB 阅读器。
+      mediaSource: mediaItem.getMediaSource(appModel: appModel),
+      item: mediaItem,
+      initialBookmarkJump: bookmark,
+    );
+  }
+
+  Future<void> _openVideoSentence(_CollectionItem item) async {
+    final String? bookUid = item.bookKey;
+    if (bookUid == null || bookUid.isEmpty) {
+      showVideoFavoriteUnavailable(FavoriteVideoOriginFailure.noLink);
+      return;
+    }
+
+    final VideoBookRepository repo = VideoBookRepository(appModel.database);
+    final VideoBookRow? row = await repo.getByBookUid(bookUid);
+    if (row == null) {
+      // 没有本机库行：在远端条目上收藏的句子（媒体服务器直接串流 / 互联对端 / 云盘 /
+      // 在线源），bookKey 是该来源内的条目 id，按收藏时记下的来源回去（BUG-5402）。
+      await _openRemoteOriginVideoSentence(repo, bookUid, item);
+      return;
+    }
+
+    final int? startMs = await _resolveVideoFavoriteStartMs(repo, row, item);
+    final target = resolveVideoFavoriteOpenTarget(
+      row: row,
+      favoriteSectionIndex: item.sectionIndex,
+      favoriteStartMs: startMs,
+    );
+    // BUG-1067：本集若属于某 playlist 合集，必须带上主合集 id 进播放器——否则
+    // 视频初始化时系列级音轨/字幕调轴记忆分支（video_fushi_page 1884-1894，
+    // schema v52）被整段跳过，退回读本集 per-book 默认值（音轨 null / 调轴 0），
+    // 表现为「从收藏跳转后音轨与调好的字幕轴又被重置」。解析口径与书架/首页
+    // dashboard 续播一致（getPrimaryCollectionIdByEntry，key='video|<bookUid>'）。
+    final int? playlistCollectionId = await _resolveVideoPlaylistCollectionId(
+      row.bookUid,
+    );
+    if (!context.mounted) return;
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => VideoFushiPage.neutralized(
+          bookUid: row.bookUid,
+          repo: repo,
+          playlistCollectionId: playlistCollectionId,
+          initialCueStartMs: target.startMs,
+          initialEpisodeIndex: target.episodeIndex,
+          initialSubtitleListVisible: true,
+        ),
+      ),
+    );
+  }
+
+  /// 远端条目（没入库）的收藏句：按收藏时记下的来源身份
+  /// （[_CollectionItem.originSourceId]）与重开规格（[_CollectionItem.originLocator]）
+  /// 回到那个来源（媒体服务器 / 互联对端 / 云盘 / 在线源，[resolveFavoriteVideoOrigin]）
+  /// 取回条目、以远端播放页打开，起播后按收藏的起点 + 原文对到那一句（与手机遥控跳
+  /// 收藏同一条 `initialRemoteFavorite` 路径）。找不回来一律按原因给提示，不静默。
+  Future<void> _openRemoteOriginVideoSentence(
+    VideoBookRepository repo,
+    String itemId,
+    _CollectionItem item,
+  ) async {
+    final FavoriteVideoOriginResult result;
+    try {
+      result = await resolveFavoriteVideoOrigin(
+        itemId: itemId,
+        originSourceId: item.originSourceId,
+        originLocator: item.originLocator,
+        expectedTitle: item.bookTitle ?? '',
+        sources: appModel.favoriteVideoOriginSources(
+          cache: ref.read(remoteLibraryCacheProvider),
+        ),
+      );
+    } on Object catch (error, stack) {
+      // 读来源配置本身失败（数据库出错）：不知道该去哪儿，按旧收藏的笼统提示。
+      ErrorLogService.instance.log(
+        'FavoriteOriginNavigator.openRemoteOriginVideo',
+        error,
+        stack,
+      );
+      showVideoFavoriteUnavailable(FavoriteVideoOriginFailure.originUnknown);
+      return;
+    }
+    final FavoriteVideoOriginLaunch? launch = result.launch;
+    if (launch == null) {
+      showVideoFavoriteUnavailable(result.failure!);
+      return;
+    }
+    if (!context.mounted) {
+      if (launch.ownsClient) closeOwnedRemoteVideoClient(launch.client);
+      return;
+    }
+    final FavoriteSentence favorite = FavoriteSentence(
+      text: item.anchorText ?? item.text ?? '',
+      bookTitle: item.bookTitle ?? itemId,
+      createdAt: item.createdAt,
+      bookKey: itemId,
+      sectionIndex: item.sectionIndex,
+      normCharOffset: item.normCharOffset,
+      normCharLength: item.normCharLength,
+      source: kFavoriteSentenceSourceVideo,
+      originSourceId: item.originSourceId,
+      originLocator: item.originLocator,
+    );
+    unawaited(
+      Navigator.push(
+        context,
+        adaptivePageRoute<void>(
+          context: context,
+          builder: (_) => VideoFushiPage.neutralizedRemote(
+            info: launch.info,
+            repo: repo,
+            client: launch.client,
+            ownsRemoteClient: launch.ownsClient,
+            initialRemoteFavorite: favorite,
+            initialSubtitleListVisible: true,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// 解析该视频条目所属的主 playlist 合集 id（无归属返回 null → 按散卡单视频打开）。
+  /// 与书架 [_open]（`collection.id`）、首页 dashboard 续播（`_primaryCollectionByEntry`）
+  /// 同口径，确保系列级音轨/字幕调轴记忆命中同一 collectionId（BUG-1067）。
+  Future<int?> _resolveVideoPlaylistCollectionId(String bookUid) async {
+    final Map<String, int> primaryByEntry = await appModel.database
+        .getPrimaryCollectionIdByEntry();
+    return primaryByEntry[MediaKind.video.compositeKey(bookUid)];
+  }
+
+  Future<int?> _resolveVideoFavoriteStartMs(
+    VideoBookRepository repo,
+    VideoBookRow row,
+    _CollectionItem item,
+  ) async {
+    if (_isPlaylistVideo(row) && item.sectionIndex == null) {
+      return null;
+    }
+    if (item.normCharOffset != null) return item.normCharOffset;
+    final String? text = item.anchorText?.trim();
+    final String? bookUid = item.bookKey;
+    if (text == null || text.isEmpty || bookUid == null || bookUid.isEmpty) {
+      return null;
+    }
+    final List<AudioCue> cues = await repo.loadCues(bookUid);
+    for (final AudioCue cue in cues) {
+      if (cue.text.trim() == text) return cue.startMs;
+    }
+    return null;
+  }
+
+  bool _isPlaylistVideo(VideoBookRow row) =>
+      playlistEpisodeCount(row.playlistJson) > 0;
 }
 
 @visibleForTesting

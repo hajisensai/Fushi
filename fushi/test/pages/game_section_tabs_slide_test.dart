@@ -3,11 +3,16 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/pages/implementations/home_game_page.dart';
+import 'package:fushi/src/pages/implementations/media_sources_view.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:flutter/rendering.dart' show RenderParagraph;
+import 'package:fushi/src/pages/implementations/game_shared.dart'
+    show gameSectionGroupOf;
+import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
+    show FushiMastheadSwitch;
 import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/test_platform_services.dart';
@@ -21,6 +26,10 @@ import '../helpers/test_platform_services.dart';
 /// `selected` 随子区变化，同一个 State 的指示器从来源子区滑到目标子区——本测试守
 /// 的「切子区时指示条在滑」这个用户可见结果不变。
 Widget _stubDashboard(BuildContext _, VoidCallback __) => const SizedBox();
+
+/// 「导入」子区常驻来源列表的桩：绕开真 [MediaSourcesView] 对 appProvider 的依赖。
+Widget _stubSources(BuildContext _, GlobalKey<MediaSourcesViewState> __) =>
+    const Text('game-sources');
 
 Widget _stubLibrary(
   BuildContext _,
@@ -45,24 +54,36 @@ void main() {
     LocaleSettings.setLocaleRaw('en');
   });
 
-  TabController shellController(WidgetTester tester) {
+  /// 外壳一级分区切换（PR #3397 页头大字顶栏：大字「游戏库 / 发现」）。
+  Finder shellSwitch() {
     // 2026-10-06 起分区页签由外壳浮动工具栏统一画一份（ad8496b2b86，
     // [GameSectionTabsHostScope]），子区页头里那份留空：全树（含 offstage 子区）
-    // 一级恰好一份。2026-10-30 起一级只放「游戏库 / 发现」两组，组内子区在下方
-    // 的二级胶囊（secondary）里。MD3 下 FushiTabBar 把原 TabBar 渲染在自己下面
-    // 一层。
-    final Finder bar = find.byWidgetPredicate(
-      (Widget w) => w is FushiSectionTabBar<GameSection> && !w.secondary,
+    // 一级恰好一份。2026-10-30 起一级只放「游戏库 / 发现」两组，组内子区在
+    // 二级页签里。
+    final Finder bar = find.byType(
+      FushiMastheadSwitch<GameSection>,
       skipOffstage: false,
     );
     expect(bar, findsOneWidget, reason: '游戏外壳应恰好一份一级分区页签');
-    final TabBar tabBar = tester.widget<TabBar>(
-      find.descendant(of: bar, matching: find.byType(TabBar)),
-    );
-    return tabBar.controller!;
+    return bar;
   }
 
-  testWidgets('库 → 发现：外壳页签从「库」滑到「发现」，而不是原地落位', (WidgetTester tester) async {
+  /// 一级切换里第 [index] 段文字此刻画出来的颜色。
+  Color labelColor(WidgetTester tester, int index) {
+    final FushiMastheadSwitch<GameSection> bar = tester.widget(shellSwitch());
+    final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+      find.descendant(
+        of: shellSwitch(),
+        matching: find.text(bar.tabs[index].label),
+      ),
+    );
+    return paragraph.text.style!.color!;
+  }
+
+  // 页头大字里选中态是字色（选中 strong、其余淡墨），没有滑动指示条；守的仍是
+  // 「切子区时页签有过渡、不是原地跳变」这个用户可见结果：目标段的字色从未选中
+  // 渐变到选中，旧段反向渐变。
+  testWidgets('库 → 发现：外壳页签从「库」过渡到「发现」，而不是原地落位', (WidgetTester tester) async {
     await tester.binding.setSurfaceSize(const Size(1440, 900));
     addTearDown(() => tester.binding.setSurfaceSize(null));
     await tester.pumpWidget(
@@ -74,6 +95,7 @@ void main() {
           home: HomeGamePage(
             dashboardBuilder: _stubDashboard,
             libraryBuilder: _stubLibrary,
+            sourcesBuilder: _stubSources,
             discoverBuilder: _stubDiscover,
           ),
         ),
@@ -82,22 +104,36 @@ void main() {
     await tester.pumpAndSettle();
 
     // 一级：「游戏库」组（库所在）是第 0 段，「发现」是第 1 段。
-    const double from = 0;
-    const double to = 1;
-    final TabController shellTabs = shellController(tester);
-    expect(shellTabs.animation!.value, from, reason: '外壳页签应停在用户真正所在的「游戏库」组');
+    final FushiMastheadSwitch<GameSection> before = tester.widget(
+      shellSwitch(),
+    );
+    expect(
+      gameSectionGroupOf(before.selected),
+      gameSectionGroupOf(GameSection.library),
+      reason: '外壳页签应停在用户真正所在的「游戏库」组',
+    );
+    final Element element = tester.element(shellSwitch());
+    final Color fromSelected = labelColor(tester, 0);
+    final Color fromIdle = labelColor(tester, 1);
+    expect(fromSelected, isNot(fromIdle));
 
     gameSectionNotifier.value = GameSection.discover;
     await tester.pump();
-    // 投影在帧末 animateTo；Ticker 第一帧只记起点，再推一帧才有中途值。
-    await tester.pump(const Duration(milliseconds: 60));
-    await tester.pump(const Duration(milliseconds: 60));
+    await tester.pump(const Duration(milliseconds: 40));
 
-    expect(shellTabs.index, to.toInt());
-    expect(shellTabs.animation!.value, greaterThan(from));
-    expect(shellTabs.animation!.value, lessThan(to), reason: '切出来的那一刻指示条应正在滑动');
+    final FushiMastheadSwitch<GameSection> after = tester.widget(shellSwitch());
+    expect(after.selected, GameSection.discover);
+    expect(
+      tester.element(shellSwitch()),
+      same(element),
+      reason: '外壳只画一份页签，切子区不重新挂一份',
+    );
+    final Color midTarget = labelColor(tester, 1);
+    expect(midTarget, isNot(fromIdle), reason: '「发现」应已开始变成选中色');
+    expect(midTarget, isNot(fromSelected), reason: '切出来的那一刻应正在过渡，不是直接落位');
 
     await tester.pumpAndSettle();
-    expect(shellTabs.animation!.value, to);
+    expect(labelColor(tester, 1), fromSelected);
+    expect(labelColor(tester, 0), fromIdle);
   });
 }

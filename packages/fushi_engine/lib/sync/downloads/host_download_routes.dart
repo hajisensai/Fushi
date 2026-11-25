@@ -20,6 +20,9 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart'
     show VideoDownloadPipelineActionRequired;
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
+import 'package:fushi_engine/sync/interconnect_module.dart';
+import 'package:fushi_engine/sync/remote_lookup_routes.dart'
+    show readBoundedBodyString;
 import 'package:shelf/shelf.dart' as shelf;
 
 shelf.Response _json(Object body, {int status = 200}) => shelf.Response(
@@ -49,7 +52,9 @@ Future<shelf.Response> handleHostDownloadRequest(
         });
       }
       if (method == 'POST') {
-        final Object? decoded = jsonDecode(await request.readAsString());
+        final Object? decoded = jsonDecode(
+          await readBoundedBodyString(request),
+        );
         if (decoded is! Map) {
           return shelf.Response(400, body: 'JSON object body required');
         }
@@ -104,5 +109,43 @@ Future<shelf.Response> handleHostDownloadRequest(
     return shelf.Response(400, body: '${e.message}');
   } on FormatException catch (e) {
     return shelf.Response(400, body: e.message);
+  }
+}
+
+/// 代下载（设计 §3.3）的互联模块（`/api/downloads*` + 能力位 `downloads`）。[host] 为 null = host
+/// 不提供：端点 404、能力位无 `downloads`。
+class HostDownloadsInterconnectModule extends InterconnectHostModule {
+  HostDownloadsInterconnectModule(this.host);
+
+  final HostDownloadHost? host;
+
+  @override
+  String get capabilityKey => 'downloads';
+
+  @override
+  Future<Object?> capability() async {
+    final Map<String, Object?>? downloads = await host?.capability();
+    if (downloads == null) return null;
+    // `deleteFilesParam`：本路由的 DELETE 认 `?deleteFiles=`（BUG-3437）；老 host 没有这个键，
+    // client 据此决定能不能让用户选「同时删除已下载文件」。
+    return <String, Object?>{
+      ...downloads,
+      kHostDownloadDeleteFilesParamCapability: true,
+    };
+  }
+
+  @override
+  List<String> get routePrefixes => const <String>['/api/downloads'];
+
+  @override
+  Future<shelf.Response> handle(InterconnectRequest request) async {
+    final HostDownloadHost? h = host;
+    if (h == null) return shelf.Response.notFound('Host downloads off');
+    return handleHostDownloadRequest(
+      h,
+      request.raw,
+      request.method.toUpperCase(),
+      request.path,
+    );
   }
 }

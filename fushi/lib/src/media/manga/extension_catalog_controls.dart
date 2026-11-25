@@ -1,6 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/media/manga/extension_management_tile.dart';
+import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_download_counts.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -11,6 +11,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
@@ -68,9 +69,12 @@ String extensionDownloadCountLabel(int? downloads) => downloads == null
         count: formatMihonDownloadCount(downloads),
       );
 
-/// 扩展目录「最低下载量」筛选：一排单选 chip（[ExtensionFilterChipRow]，与仓库 /
-/// 语言筛选同一形态）。键名 `<prefix>_min_downloads`（chip 行）/
-/// `<prefix>_min_downloads_<档位>`（chip）。
+/// 扩展目录「最低下载量」筛选：一枚下拉筛选胶囊（[LibraryFilterDropdown]，与
+/// 仓库 / 语言筛选同一形态，排在搜索框同一行）。不筛时胶囊显示维度名「最低下载
+/// 量」，菜单首项是「不限」；选了门槛后胶囊显示 `≥ 50` 并以选中色强调。
+///
+/// 键名 `<prefix>_min_downloads`（胶囊）/ `<prefix>_min_downloads_<档位>`（菜单项，
+/// 首项「不限」是 `_0`）。
 class ExtensionMinDownloadsFilter extends StatelessWidget {
   const ExtensionMinDownloadsFilter({
     required this.keyPrefix,
@@ -87,38 +91,59 @@ class ExtensionMinDownloadsFilter extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return ExtensionFilterChipRow<int>(
+    return LibraryFilterDropdown<int>(
       key: ValueKey<String>('${keyPrefix}_min_downloads'),
-      icon: FushiIcons.download,
-      label: t.mihon_extension_min_downloads,
-      chipKeyPrefix: '${keyPrefix}_min_downloads_',
-      selected: minDownloads,
-      options: <ExtensionFilterOption<int>>[
+      value: minDownloads == 0 ? null : minDownloads,
+      options: <int>[
         for (final int option in minDownloadOptions)
-          (
-            value: option,
-            label: option == 0
-                ? t.mihon_extension_min_downloads_any
-                : '≥ ${formatMihonDownloadCount(option)}',
-          ),
+          if (option != 0) option,
       ],
-      onSelected: onMinDownloadsChanged,
+      labelOf: (int option) => '≥ ${formatMihonDownloadCount(option)}',
+      title: t.mihon_extension_min_downloads,
+      allLabel: t.mihon_extension_min_downloads_any,
+      itemKeyOf: (int? option) =>
+          ValueKey<String>('${keyPrefix}_min_downloads_${option ?? 0}'),
+      onSelected: (int? option) => onMinDownloadsChanged(option ?? 0),
     );
   }
 }
 
-/// 扩展目录的动作排：批量安装 + 一键更新 + [trailing]（M3E，同一行、靠左）。
+/// 扩展目录动作排里的一个动作（图标 + 文字）。
+@immutable
+class ExtensionCatalogAction {
+  const ExtensionCatalogAction({
+    required this.icon,
+    required this.label,
+    required this.onPressed,
+    this.key,
+  });
+
+  /// 平铺按钮与收进「⋯」后的菜单项共用（两者不会同时存在）。
+  final Key? key;
+  final IconData icon;
+  final String label;
+
+  /// null = 置灰。
+  final VoidCallback? onPressed;
+}
+
+/// 扩展目录的动作排：批量安装 + 一键更新 + [extra]（同一行、靠左）。
 ///
 /// 排在目录最上面、搜索框之上（2026-10-25 用户拍板：四颗按钮同一行放左上角，
-/// 页头的仓库 / 刷新图标砍掉）。批量安装是 outlined（装进来的是会执行的代码，
-/// 不给主色），一键更新是 tonal 强调。键名 `<prefix>_bulk_install` /
-/// `<prefix>_update_all`，测试按它定位。
+/// 页头的仓库 / 刷新图标砍掉）。2026-11-16 拼贴改版：四颗按钮统一成同一种 tonal
+/// 带字按钮（不再描边 / 色调混搭）；**默认平铺，宽度放不下时从末尾起收进「⋯」**
+/// （与顶栏 `adaptiveOverflow` 同一条规矩：工具栏动作默认展开）。有可更新的扩展时
+/// 「一键更新」升成 filled 主色并挂数量角标——这是这一排里唯一需要被注意到的状态。
+///
+/// 键名 `<prefix>_bulk_install` / `<prefix>_update_all` / `<prefix>_more`，测试按它
+/// 定位；[extra] 的 key 由调用方给。
 class ExtensionCatalogActions extends StatelessWidget {
   const ExtensionCatalogActions({
     required this.keyPrefix,
     required this.onBulkInstall,
     required this.onUpdateAll,
-    this.trailing = const <Widget>[],
+    this.updateCount = 0,
+    this.extra = const <ExtensionCatalogAction>[],
     super.key,
   });
 
@@ -128,33 +153,156 @@ class ExtensionCatalogActions extends StatelessWidget {
   final VoidCallback? onBulkInstall;
   final VoidCallback? onUpdateAll;
 
-  /// 同一行末尾的其它目录动作（「扩展仓库」「导入本地 APK」；按钮尺寸用
-  /// [FushiButtonSize.s] 与前两颗对齐）。
-  final List<Widget> trailing;
+  /// 已装且仓库里有更新的扩展数；>0 时「一键更新」强调并挂角标。
+  final int updateCount;
+
+  /// 同一行末尾的其它目录动作（「扩展仓库」「导入本地 APK」）；优先级最低，
+  /// 放不下时最先收进「⋯」。
+  final List<ExtensionCatalogAction> extra;
+
+  static const double _spacing = 8;
+
+  /// 「⋯」按钮占的宽度（48 命中区）。
+  static const double _moreWidth = 48;
+
+  /// 一颗带字按钮的估宽：按钮几何 + 实测文字宽 + 角标余量。玻璃按钮的内边距
+  /// 略大，统一多留 8 的余量，宁可早一颗收起也不溢出。
+  static double _estimateWidth(
+    BuildContext context,
+    String label, {
+    required bool badge,
+  }) {
+    final FushiButtonMetrics metrics = FushiButtonMetrics.of(FushiButtonSize.s);
+    final TextPainter painter = TextPainter(
+      text: TextSpan(
+        text: label,
+        style: FushiButtonMetrics.labelStyleOf(
+          FushiButtonSize.s,
+          Theme.of(context).textTheme,
+        ),
+      ),
+      textDirection: Directionality.of(context),
+      textScaler: MediaQuery.textScalerOf(context),
+      maxLines: 1,
+    )..layout();
+    final double width =
+        metrics.horizontalPadding * 2 +
+        metrics.iconSize +
+        metrics.iconGap +
+        painter.width +
+        (badge ? 12 : 0) +
+        8;
+    painter.dispose();
+    return width;
+  }
+
+  Key get _updateKey => ValueKey<String>('${keyPrefix}_update_all');
+
+  List<ExtensionCatalogAction> _actions() => <ExtensionCatalogAction>[
+    ExtensionCatalogAction(
+      key: ValueKey<String>('${keyPrefix}_bulk_install'),
+      icon: FushiIcons.libraryAdd,
+      label: t.mihon_extension_bulk_install,
+      onPressed: onBulkInstall,
+    ),
+    ExtensionCatalogAction(
+      key: _updateKey,
+      icon: FushiIcons.sync,
+      label: t.mihon_extension_update_all,
+      onPressed: onUpdateAll,
+    ),
+    ...extra,
+  ];
+
+  bool _emphasized(ExtensionCatalogAction action) =>
+      updateCount > 0 && action.key == _updateKey;
+
+  Widget _button(ExtensionCatalogAction action) {
+    if (_emphasized(action)) {
+      // 数量角标挂在整颗按钮的右上角外侧（iOS 的按钮角标位置），不挂在图标上
+      // ——挂图标时红色角标会压住紧挨着的按钮文字。
+      return FushiBadgeControl.count(
+        key: ValueKey<String>('${keyPrefix}_update_count'),
+        count: updateCount,
+        child: FushiFilledButton.icon(
+          key: action.key,
+          size: FushiButtonSize.s,
+          onPressed: action.onPressed,
+          icon: FushiIcon(action.icon),
+          label: Text(action.label),
+        ),
+      );
+    }
+    return FushiFilledButton.tonalIcon(
+      key: action.key,
+      size: FushiButtonSize.s,
+      onPressed: action.onPressed,
+      icon: FushiIcon(action.icon),
+      label: Text(action.label),
+    );
+  }
 
   @override
   Widget build(BuildContext context) {
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      children: <Widget>[
-        FushiOutlinedButton.icon(
-          key: ValueKey<String>('${keyPrefix}_bulk_install'),
-          size: FushiButtonSize.s,
-          onPressed: onBulkInstall,
-          icon: const FushiIcon(FushiIcons.libraryAdd),
-          label: Text(t.mihon_extension_bulk_install),
-        ),
-        FushiFilledButton.tonalIcon(
-          key: ValueKey<String>('${keyPrefix}_update_all'),
-          size: FushiButtonSize.s,
-          onPressed: onUpdateAll,
-          icon: const FushiIcon(FushiIcons.sync),
-          label: Text(t.mihon_extension_update_all),
-        ),
-        ...trailing,
-      ],
+    final List<ExtensionCatalogAction> actions = _actions();
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) {
+        final List<double> widths = <double>[
+          for (final ExtensionCatalogAction action in actions)
+            _estimateWidth(context, action.label, badge: _emphasized(action)),
+        ];
+        // 从前往后尽量平铺；有任何一颗收起时还要给「⋯」留位。至少留一颗。
+        int shown = actions.length;
+        double total() {
+          double sum = 0;
+          for (int i = 0; i < shown; i++) {
+            sum += widths[i] + (i > 0 ? _spacing : 0);
+          }
+          if (shown < actions.length) sum += _spacing + _moreWidth;
+          return sum;
+        }
+
+        if (constraints.maxWidth.isFinite) {
+          while (shown > 1 && total() > constraints.maxWidth) {
+            shown--;
+          }
+        }
+        final List<ExtensionCatalogAction> folded = actions.sublist(shown);
+        return Row(
+          children: <Widget>[
+            for (int i = 0; i < shown; i++) ...<Widget>[
+              if (i > 0) const SizedBox(width: _spacing),
+              Flexible(child: _button(actions[i])),
+            ],
+            if (folded.isNotEmpty) ...<Widget>[
+              const SizedBox(width: _spacing),
+              FushiPopupMenuButton<VoidCallback>(
+                key: ValueKey<String>('${keyPrefix}_more'),
+                tooltip: t.common_more_actions,
+                icon: const FushiIcon(FushiIcons.more),
+                onSelected: (VoidCallback action) => action(),
+                itemBuilder: (BuildContext context) =>
+                    <PopupMenuEntry<VoidCallback>>[
+                      for (final ExtensionCatalogAction action in folded)
+                        PopupMenuItem<VoidCallback>(
+                          key: action.key,
+                          value: action.onPressed,
+                          enabled: action.onPressed != null,
+                          child: Row(
+                            mainAxisSize: MainAxisSize.min,
+                            children: <Widget>[
+                              FushiIcon(action.icon, size: 20),
+                              const SizedBox(width: 12),
+                              Flexible(child: Text(action.label)),
+                            ],
+                          ),
+                        ),
+                    ],
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }

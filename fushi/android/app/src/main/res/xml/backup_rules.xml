@@ -10,13 +10,22 @@
   音乐插件凭据保险库 <support>/music_plugins/.credentials/（各插件的 AES-GCM 密文；旧版还有明文
   数据密钥 key，首次启动迁进系统安全存储后删除）：凭据不随备份上云 / 迁到新设备，同样排除。
   见 native/fushi_music/src/plugin/vault.rs 与 AppModel 的 music_plugins 根目录。
+  追踪插件凭据保险库 <support>/tracking_plugins/.credentials/（同一引擎、tracking 域）同样排除，
+  见 AppModel 的 tracking_plugins 根目录。
   flutter_secure_storage 的两份 SharedPreferences（FlutterSecureStorage.xml 存密文、
   FlutterSecureKeyStorage.xml 存被 Keystore 包裹的密钥）：Keystore 密钥不随备份走，恢复到新设备
   只会得到解不开的密文（插件文档要求排除），而且里面就是上面保险库的数据密钥。
+  书库与媒体（Android/data/<包名>/files = domain="external"；老安装的 app_flutter =
+  domain="root" 下的 app_flutter/）不进云备份：Android 云备份每个 app 上限 25MB，超了整次放弃，
+  有声书 / 下载一进来连数据库都备份不上。云备份只留数据库与偏好；API ≤ 30 这份规则同时管设备迁移，
+  只能一起排除；书库换机靠 Fushi 自己的备份 / 同步。见 AppPaths.androidDocumentsLocationPrefKey。
 -->
 <full-backup-content>
     <exclude domain="file" path="leaderboard/" />
     <exclude domain="file" path="music_plugins/.credentials/" />
+    <exclude domain="file" path="tracking_plugins/.credentials/" />
     <exclude domain="sharedpref" path="FlutterSecureStorage.xml" />
     <exclude domain="sharedpref" path="FlutterSecureKeyStorage.xml" />
+    <exclude domain="external" path="." />
+    <exclude domain="root" path="app_flutter/" />
 </full-backup-content>

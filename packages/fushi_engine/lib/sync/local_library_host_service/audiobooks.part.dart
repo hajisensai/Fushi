@@ -18,19 +18,22 @@ mixin _LocalLibraryHostAudiobooks
     // 清单内联断点 + 调轴（互联完整支持批次）：与视频清单同范式，sweep/下载回填
     // 免逐本 GET（旧实现 N 本书 = N 次网络往返）。一趟 prefs 批读。
     final Map<String, String> allPrefs = await _db.getAllPrefs();
+    // 上锁的字幕书 / 有声书（按 uid 或配对正文书的 bookKey）标 locked。
+    final MediaLockSnapshot locks = await MediaLockSnapshot.load(_db);
     RemoteAudiobookInfo build(
       String bookKey,
       String uid,
       String? title, {
       required int importedAt,
-      required bool hasAudio,
+      required AudiobookContentState content,
     }) {
       final String identity = bookKey.isNotEmpty ? bookKey : uid;
       return RemoteAudiobookInfo(
         bookKey: bookKey,
         uid: uid,
         title: title,
-        hasAudio: hasAudio,
+        hasAudio: content.hasAudio,
+        contentRevision: content.revision,
         positionMs: PrefCodec.decode<int>(
           allPrefs[audiobookPositionPrefKey(identity)] ?? '',
           0,
@@ -50,12 +53,16 @@ mixin _LocalLibraryHostAudiobooks
         // `SrtBooks.importedAt`：client 书架的远端占位卡据此排进「导入时间」序
         // （与 [RemoteBookInfo.importedAt] 同范式）。
         importedAt: importedAt,
+        locked:
+            locks.isSrtBookLocked(uid) ||
+            (bookKey.isNotEmpty && locks.isBookLocked(bookKey)),
       );
     }
 
-    // `hasAudio` 是清单里**唯一**问磁盘的字段（BUG-2551）：其余全是 DB 行的投影，
-    // 而「有行」不等于「有音频」。判据与导出打包同源（[audiobookAudioIsIntact]），
-    // 否则 client 会收到「清单说有、包里是空」的自相矛盾清单。
+    // `hasAudio` 与 `contentRevision` 是清单里问磁盘的两个字段（BUG-2551）：其余全是
+    // DB 行的投影，而「有行」不等于「有音频」。hasAudio 判据与导出打包同源（音频解析
+    // 同一份），否则 client 会收到「清单说有、包里是空」的自相矛盾清单；内容版本与包
+    // 端点的导出缓存同源（[audiobookContentState]），一次遍历同时得出。
     for (final AudiobookRow r in rows) {
       final SrtBookRow? srt = await _db.getSrtBookByBookKey(r.bookKey);
       if (srt == null) continue;
@@ -65,10 +72,7 @@ mixin _LocalLibraryHostAudiobooks
           srt.uid,
           srt.title,
           importedAt: srt.importedAt,
-          hasAudio: await audiobookAudioIsIntact(
-            audioPathsJson: r.audioPathsJson,
-            audioRoot: r.audioRoot,
-          ),
+          content: await audiobookContentState(audiobook: r, srtBook: srt),
         ),
       );
       emittedUids.add(srt.uid);
@@ -96,14 +100,25 @@ mixin _LocalLibraryHostAudiobooks
           srt.uid,
           srt.title,
           importedAt: srt.importedAt,
-          hasAudio: await audiobookAudioIsIntact(
-            audioPathsJson: srt.audioPathsJson,
-            audioRoot: srt.audioRoot,
-          ),
+          content: await audiobookContentState(audiobook: null, srtBook: srt),
         ),
       );
     }
     return result;
+  }
+
+  /// 身份键为 [identity] 的有声书此刻的内容版本（[AudiobookContentRevisionHost]）：
+  /// 身份解析与 [exportAudiobook] 同一套（先 Audiobooks.bookKey，再 SrtBooks.uid），
+  /// 值与 [listAudiobooks] 的 `contentRevision` 同源。查无此书返回 null。
+  @override
+  Future<String?> audiobookContentRevision(String identity) async {
+    _assertSafeName(identity);
+    final AudiobookRow? ab = await _db.getAudiobookByBookKey(identity);
+    final SrtBookRow? srt = ab != null
+        ? await _db.getSrtBookByBookKey(identity)
+        : await _db.getSrtBookByUid(identity);
+    if (srt == null) return null;
+    return (await audiobookContentState(audiobook: ab, srtBook: srt)).revision;
   }
 
   /// 读 host 端有声书 [identity] 的调轴（[AudiobookDelayHost]）。值键是既有
@@ -359,61 +374,81 @@ mixin _LocalLibraryHostAudiobooks
     return (positionMs: pos, updatedAtMs: at);
   }
 
-  /// 把 client 上报的有声书 [bookKey] 断点写入 host（BUG-471）。
-  ///
-  /// 存在性闸门：host 无该 bookKey 的 Audiobooks 行 → no-op，不写孤儿
-  /// `audiobook_pos_` pref（与视频 [putVideoPosition]「视频不存在不写脏」、书
-  /// [putBookProgress]「书不存在不写孤儿行」同语义）。
-  ///
-  /// 冲突解决「取较新时间戳」（[resolvePositionLww]）：仅当 [updatedAtMs]
-  /// 严格新于 host 已存时间戳才覆盖。负位置 clamp 0。
+  /// 把 client 上报的有声书 [bookKey] 断点写入 host（BUG-471）。旧口径（无前置
+  /// 条件、丢弃回执），等价于 [putAudiobookPositionChecked]`(expectedPositionsMs: null)`。
   @override
   Future<void> putAudiobookPosition(
     String bookKey,
     int positionMs,
     int updatedAtMs,
   ) async {
-    // host 库不存在该有声书 → no-op（防任意 client 上报任意 key 写脏 prefs）。
+    await putAudiobookPositionChecked(bookKey, positionMs, updatedAtMs);
+  }
+
+  /// 带回执与可选前置条件的有声书断点写入（BUG-4431，[LivePositionWriteHost]）。
+  ///
+  /// 存在性闸门：host 无该 bookKey 的 Audiobooks 行 → [LiveWriteResult.missing]，
+  /// 不写孤儿 `audiobook_pos_` pref（与视频「视频不存在不写脏」、书「书不存在不写
+  /// 孤儿行」同语义）。判定口径只在 [resolveLivePositionWrite] 一处。
+  @override
+  Future<LivePositionWriteOutcome> putAudiobookPositionChecked(
+    String identity,
+    int positionMs,
+    int updatedAtMs, {
+    List<int>? expectedPositionsMs,
+  }) async {
+    final String bookKey = identity;
+    // host 库不存在该有声书 → missing（防任意 client 上报任意 key 写脏 prefs）。
     // srt-backed 按 bookKey 查 Audiobooks；纯 SRT standalone 按 uid 查 SrtBooks。
     // 进度 pref key = audiobook_pos_<identity>：standalone 的 identity=uid 恰为
     // SrtBook 进度键，故写穿即写到正确命名空间。
     if (await _db.getAudiobookByBookKey(bookKey) == null &&
         await _db.getSrtBookByUid(bookKey) == null) {
-      return;
+      return const LivePositionWriteOutcome(
+        result: LiveWriteResult.missing,
+        positionMs: 0,
+        updatedAtMs: 0,
+      );
     }
     // 读-比较-写在同步状态窄锁内（与 [putBookProgress] 同纪律）：两个对端并发上报
     // 不会互相用旧值盖掉对方；不用 _runExclusive，免得排在本机整轮同步后面超时。
     // 同时放进一个 DB 事务（BUG-3537）：本机出站同步落地在事务里比较后写入，这里
     // 的读-比较-写也须原子，否则出站落地插在「读 current」与「写 winner」之间会被
-    // 按旧 current 算出的 winner 盖掉。
+    // 按旧 current 算出的 winner 盖掉。前置条件也在同一事务里比较。
+    late LivePositionWriteOutcome outcome;
     await _runSyncStateExclusive(
       () => _db.transaction(() async {
         final ({int positionMs, int updatedAtMs}) current =
             await getAudiobookPosition(bookKey);
         // BUG-3367：上报戳截到 host 当前时刻 + 余量；已存的超限毒戳按 0 比较以便自愈。
-        final int nowMs = DateTime.now().millisecondsSinceEpoch;
-        final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
-          localPositionMs: current.positionMs,
-          localUpdatedAtMs: trustedStoredSyncStamp(
-            current.updatedAtMs,
-            nowMs: nowMs,
-          ),
-          remotePositionMs: positionMs < 0 ? 0 : positionMs,
-          remoteUpdatedAtMs: capFutureSyncStamp(updatedAtMs, nowMs: nowMs),
+        final ({
+          LiveWriteResult result,
+          ({int positionMs, int updatedAtMs}) next,
+        })
+        decision = resolveLivePositionWrite(
+          current: current,
+          positionMs: positionMs,
+          updatedAtMs: updatedAtMs,
+          expectedPositionsMs: expectedPositionsMs,
+          nowMs: DateTime.now().millisecondsSinceEpoch,
         );
-        if (winner.updatedAtMs == current.updatedAtMs &&
-            winner.positionMs == current.positionMs) {
-          return; // host 已存更新或相等，no-op。
+        if (decision.result == LiveWriteResult.applied) {
+          await _db.setPrefTyped<int>(
+            audiobookPositionPrefKey(bookKey),
+            decision.next.positionMs,
+          );
+          await _db.setPrefTyped<int>(
+            audiobookPositionAtPrefKey(bookKey),
+            decision.next.updatedAtMs,
+          );
         }
-        await _db.setPrefTyped<int>(
-          audiobookPositionPrefKey(bookKey),
-          winner.positionMs,
-        );
-        await _db.setPrefTyped<int>(
-          audiobookPositionAtPrefKey(bookKey),
-          winner.updatedAtMs,
+        outcome = LivePositionWriteOutcome(
+          result: decision.result,
+          positionMs: decision.next.positionMs,
+          updatedAtMs: decision.next.updatedAtMs,
         );
       }),
     );
+    return outcome;
   }
 }

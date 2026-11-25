@@ -12,6 +12,7 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 class _Repo implements BaseAnkiRepository {
   AnkiMiningContext? context;
   bool mediaExistedDuringImport = false;
+  List<String> subdirectoriesDuringImport = const <String>[];
   int? updatedId;
 
   @override
@@ -21,6 +22,16 @@ class _Repo implements BaseAnkiRepository {
   }) async {
     this.context = context;
     mediaExistedDuringImport = File(context.coverPath!).existsSync();
+    // 落卡这一刻封面所在目录（本任务私有目录）里还剩哪些子目录：导出失败留下的半截
+    // 片段目录必须在落卡前就清掉。整个私有目录在落卡后才删，事后看 temp 根看不出来。
+    final Directory coverDir = File(context.coverPath!).parent;
+    subdirectoriesDuringImport = coverDir.existsSync()
+        ? coverDir
+              .listSync()
+              .whereType<Directory>()
+              .map((Directory d) => d.path)
+              .toList()
+        : const <String>[];
     return const MineOutcome.success(noteId: 1);
   }
 
@@ -173,8 +184,12 @@ void main() {
                     '${decoded.stderr}',
                     matches(RegExp(r'Duration: 00:00:03\.5[01]')),
                   );
+                  // 抽取写在本任务的私有目录里（片段目录的上一级），不是 temp 根。
+                  final String jobDir = File(
+                    context.coverPath!,
+                  ).parent.parent.path;
                   expect(
-                    File('${temp.path}/immersion_audio.aac').existsSync(),
+                    File('$jobDir/immersion_audio.aac').existsSync(),
                     false,
                   );
                   return const MineOutcome.success(noteId: 1);
@@ -312,11 +327,12 @@ void main() {
       expect(repo.context!.sentenceAudioPath, isNotNull);
       // 导出临时目录已清理，不留半截片段。
       expect(
-        temp.listSync().whereType<Directory>().where(
-          (Directory d) => d.path.contains('synced_video_'),
+        repo.subdirectoriesDuringImport.where(
+          (String d) => d.contains('synced_video_'),
         ),
         isEmpty,
       );
+      expect(temp.listSync(), isEmpty, reason: '落卡后本任务私有目录整个收掉');
     },
   );
 
@@ -476,6 +492,7 @@ void main() {
                   String audioBitrate = '64k',
                   String? tlsPinSha256,
                   Map<String, String> httpHeaders = const <String, String>{},
+                  double? gainDb,
                 }) async {
                   audioCalls.add(outputPath);
                   return null;
@@ -552,6 +569,7 @@ void main() {
                   String audioBitrate = '64k',
                   String? tlsPinSha256,
                   Map<String, String> httpHeaders = const <String, String>{},
+                  double? gainDb,
                 }) async {
                   await File(outputPath).writeAsBytes(<int>[1, 2, 3]);
                   return outputPath;
@@ -674,6 +692,7 @@ void main() {
                     String audioBitrate = '64k',
                     String? tlsPinSha256,
                     Map<String, String> httpHeaders = const {},
+                    double? gainDb,
                   }) async {
                     audioCalls++;
                     expect(audioStreamIndex, tracks.index);
@@ -785,6 +804,7 @@ void main() {
                   String audioBitrate = '64k',
                   String? tlsPinSha256,
                   Map<String, String> httpHeaders = const {},
+                  double? gainDb,
                 }) async {
                   calls.add('audio');
                   await File(outputPath).writeAsBytes([1]);

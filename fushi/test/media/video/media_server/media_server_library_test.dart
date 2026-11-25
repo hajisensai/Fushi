@@ -1,8 +1,10 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
@@ -86,7 +88,48 @@ MediaServerItem _episode(String id, int season, int number) => MediaServerItem(
   episodeNumber: number,
 );
 
+/// 服务器没给集号（Jellyfin `IndexNumber` / Plex `index` 为空）的集。
+MediaServerItem _unnumbered(String id, int? season) => MediaServerItem(
+  id: id,
+  name: 'Special $id',
+  type: MediaServerItemType.episode,
+  seriesId: 'show',
+  seriesName: 'The Show',
+  seasonNumber: season,
+);
+
 void main() {
+  group('VF5D4O_Tyx：缺号的集不占 0 号槽', () {
+    test('缺集号排在本季有号的集之后、下一季之前；缺季号排在所有季之后', () {
+      int slot(MediaServerItem item) =>
+          mediaServerCollectionOf(item)!.sortIndex;
+      final int s1e1 = slot(_episode('a', 1, 1));
+      final int s1e24 = slot(_episode('b', 1, 24));
+      final int s1none = slot(_unnumbered('c', 1));
+      final int s2e1 = slot(_episode('d', 2, 1));
+      final int s2none = slot(_unnumbered('e', 2));
+      final int noSeasonE1 = slot(
+        const MediaServerItem(
+          id: 'f',
+          name: 'f',
+          type: MediaServerItemType.episode,
+          seriesName: 'The Show',
+          episodeNumber: 1,
+        ),
+      );
+      final int nothing = slot(_unnumbered('g', null));
+      expect(s1e1, 1 * 10000 + 1, reason: '有号的槽位口径不变（已入库行不漂移）');
+      expect(s1e1 < s1e24 && s1e24 < s1none && s1none < s2e1, isTrue);
+      expect(s2e1 < s2none && s2none < noSeasonE1, isTrue);
+      expect(noSeasonE1 < nothing, isTrue);
+      expect(
+        mediaServerEpisodeSortIndex(seasonNumber: 0, episodeNumber: 3),
+        3,
+        reason: '特别篇（第 0 季）仍在最前',
+      );
+    });
+  });
+
   const MediaServerItem series = MediaServerItem(
     id: 'show',
     name: 'The Show',
@@ -215,6 +258,7 @@ void main() {
     final List<String> resolved = <String>[];
     final WatchedMarkResult result = await setVideosWatched(
       db: database,
+      tracking: LibraryFinishTracking.none,
       watched: true,
       localUids: <String>['e1', 'e2'],
       mediaServerMarker: (String serverId) async {
@@ -238,6 +282,106 @@ void main() {
           e.path,
     ];
     expect(hits, isEmpty);
+  });
+
+  test('library home remove: rows map back to their work and removeWorks '
+      'deletes only that work (no server needed), dropping the emptied series '
+      'collection', () async {
+    const MediaServerItem movie = MediaServerItem(
+      id: 'm1',
+      name: 'A Movie',
+      type: MediaServerItemType.movie,
+    );
+    expect(await library.addToLibrary(browser, series), 3);
+    expect(await library.addToLibrary(browser, movie), 1);
+
+    final MediaServerLibraryWork episodeWork = mediaServerWorkOfRow(
+      (await repository.getByBookUid('e3'))!,
+    )!;
+    expect(episodeWork, (serverId: browser.serverId, workId: 'show'));
+    expect(mediaServerWorkOfRow((await repository.getByBookUid('m1'))!), (
+      serverId: browser.serverId,
+      workId: 'm1',
+    ));
+
+    expect(await library.removeWorks(<MediaServerLibraryWork>{episodeWork}), 3);
+    for (final String uid in <String>['e1', 'e2', 'e3']) {
+      expect(await repository.getByBookUid(uid), isNull);
+    }
+    expect(
+      await database.getMediaCollectionByNaturalKey('The Show', 'playlist'),
+      isNull,
+      reason: '剧名合集被删空后随之删除，库页不留空卡',
+    );
+    expect(await repository.getByBookUid('m1'), isNotNull);
+    expect(await library.removeWorks(<MediaServerLibraryWork>{episodeWork}), 0);
+  });
+
+  test('removeWorks runs afterDeleteBeforeReclaim after the rows are gone '
+      '(library home unmounts cards before covers are reclaimed)', () async {
+    expect(await library.addToLibrary(browser, series), 3);
+    final MediaServerLibraryWork work = (
+      serverId: browser.serverId,
+      workId: 'show',
+    );
+    final List<String?> seenDuringHook = <String?>[];
+    int calls = 0;
+    expect(
+      await library.removeWorks(
+        <MediaServerLibraryWork>{work},
+        afterDeleteBeforeReclaim: () async {
+          calls++;
+          for (final String uid in <String>['e1', 'e2', 'e3']) {
+            seenDuringHook.add((await repository.getByBookUid(uid))?.bookUid);
+          }
+        },
+      ),
+      3,
+    );
+    expect(calls, 1);
+    expect(seenDuringHook, <String?>[null, null, null], reason: '钩子在删行之后跑');
+  });
+
+  test(
+    'membershipChanges fires on add and remove, not on progress writes',
+    () async {
+      int signals = 0;
+      final StreamSubscription<void> sub = library.membershipChanges.listen(
+        (_) => signals++,
+      );
+      addTearDown(sub.cancel);
+      Future<void> flush() => Future<void>.delayed(Duration.zero);
+
+      expect(await library.addToLibrary(browser, series), 3);
+      await flush();
+      expect(signals, greaterThan(0), reason: '加入要通知压在栈里的详情页');
+
+      signals = 0;
+      await repository.updatePosition('e1', 42000);
+      await flush();
+      expect(signals, 0, reason: '播放进度写入不改变在库与否，不该触发全表重读');
+
+      expect(await library.removeFromLibrary(browser, series), 3);
+      await flush();
+      expect(signals, greaterThan(0), reason: '移出要通知压在栈里的详情页');
+    },
+  );
+
+  test('mediaServerWorkOfRow ignores rows that are not media-server rows', () {
+    final VideoBookRow local = VideoBookRow(
+      bookUid: 'local',
+      title: 'Local',
+      videoPath: 'C:/videos/a.mkv',
+      currentEpisode: 0,
+      lastPositionMs: 0,
+      delayMs: 0,
+      importedAt: 0,
+      streamSpecJson: MediaServerBookSpec(
+        serverId: 'srv',
+        info: browser.toRemoteVideoInfo(_episode('e1', 1, 1)),
+      ).encode(),
+    );
+    expect(mediaServerWorkOfRow(local), isNull);
   });
 
   test('movie is one row keyed by itself and is not a series work', () async {
@@ -265,6 +409,10 @@ void main() {
       playlistCollectionId: collection.id,
     );
     expect(identical(launch.client, browser.playbackClient), isTrue);
+    // 重开入口那一次取详情要标明是起播（失败留给取流直接抛，见
+    // LaunchItemDetailMemo）；别处取详情不带这个标记。
+    expect(browser.itemDetailCalls, 1);
+    expect(browser.launchItemDetailCalls, 1);
     expect(launch.members.map((RemoteVideoInfo i) => i.id), <String>[
       'e1',
       'e2',
@@ -282,6 +430,40 @@ void main() {
       ),
       throwsA(isA<MediaServerLaunchUnavailable>()),
     );
+  });
+
+  test('VF5D4O_Tyx：入库后从库里起播，缺集号的集排在本季有号的集之后，同槽按条目 '
+      'id 稳定（超过 32 条也不乱）', () async {
+    // 服务器给的缺号集故意乱序：同槽平局只认条目身份，与 getCollectionItems /
+    // 库页 / 继续观看同口径。
+    final List<String> unnumberedIds = <String>[
+      for (int i = 0; i < 40; i++) 'u${i.toString().padLeft(2, '0')}',
+    ];
+    browser.episodes['show|'] = <MediaServerItem>[
+      _unnumbered('zz-no-season', null),
+      for (final String id in unnumberedIds.reversed) _unnumbered(id, 1),
+      _episode('e3', 2, 1),
+      _episode('e2', 1, 2),
+      _episode('e1', 1, 1),
+    ];
+    expect(await library.addToLibrary(browser, series), 44);
+    final MediaCollectionRow collection = (await database
+        .getMediaCollectionByNaturalKey('The Show', 'playlist'))!;
+    final launch = await buildMediaServerLaunch(
+      row: (await repository.getByBookUid('e2'))!,
+      database: database,
+      repository: repository,
+      loadConfigs: () async => <MediaServerConfig>[_FakeConfig(browser)],
+      playlistCollectionId: collection.id,
+    );
+    expect(launch.members.map((RemoteVideoInfo i) => i.id), <String>[
+      'e1',
+      'e2',
+      ...unnumberedIds,
+      'e3',
+      'zz-no-season',
+    ]);
+    expect(launch.startIndex, 1);
   });
 
   test('background probe fills new episodes of in-library series and '

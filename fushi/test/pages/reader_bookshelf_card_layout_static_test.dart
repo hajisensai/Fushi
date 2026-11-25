@@ -8,7 +8,7 @@ void main() {
   // 类型 / 对齐状态 / 远端 / 下载 / 标签 / 进度全部进封面下的 ShelfCardMeta。
   test('bookshelf cards put title + subtitle + progress below the cover', () {
     final String source = readReaderHistorySource();
-    final String layout = _functionSource(source, 'Widget _bookCardLayout({');
+    final String layout = _bookCardLayoutSource(source);
 
     expect(
       source,
@@ -45,7 +45,7 @@ void main() {
 
   test('no badge slots remain on the shelf cover', () {
     final String source = readReaderHistorySource();
-    final String layout = _functionSource(source, 'Widget _bookCardLayout({');
+    final String layout = _bookCardLayoutSource(source);
 
     for (final String banned in <String>[
       'Widget? coverBadge',
@@ -156,7 +156,7 @@ void main() {
   test('visual card frame wraps only the cover, while interactions wrap all', () {
     final String source = readReaderHistorySource();
     final String shell = _functionSource(source, 'Widget _bookCardShell({');
-    final String layout = _functionSource(source, 'Widget _bookCardLayout({');
+    final String layout = _bookCardLayoutSource(source);
 
     expect(
       shell,
@@ -169,10 +169,15 @@ void main() {
       contains('InkWell('),
       reason: 'tap/long-press/right-click must still cover the whole card',
     );
+    // 非多选态右键 = 长按同一份上下文菜单；多选态下参与勾选的卡右键弹批量菜单，
+    // 不参与勾选的卡（slot == null）右键让位（#3803）。
     expect(
       shell,
-      contains(
-        'onInvoke: contextMenuInvoker(_selectionMode ? null : onLongPress)',
+      matches(
+        RegExp(
+          r'onInvoke: contextMenuInvoker\(\s*_selectionMode\s*\?\s*'
+          r'\(slot == null \? null : _showBatchMenu\)\s*:\s*onLongPress,?\s*\)',
+        ),
       ),
     );
     expect(
@@ -280,3 +285,10 @@ String _functionSource(String source, String startToken) {
       : start + startToken.length + next.start + 1;
   return source.substring(start, end);
 }
+
+/// 书架卡版式：[_bookCardLayout] 按格子是否包了色块 scope 分派——色块走
+/// `_shelfCoverBlock`，封面网格走 `_bookCardGridLayout`（PR #3397 拆出）。本文件
+/// 守的「封面下文字块 / 封面上只有加载遮罩」是封面网格版式，两段拼起来读。
+String _bookCardLayoutSource(String source) =>
+    _functionSource(source, 'Widget _bookCardLayout({') +
+    _functionSource(source, 'Widget _bookCardGridLayout({');

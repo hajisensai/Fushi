@@ -120,6 +120,10 @@ void main() {
       // 路径（正斜杠、相对本测试的扫描根）→ 允许出现的**次数**。数量也钉住：同一文件
       // 里多冒出一处同样要表态，这正是「漏改一个」的形状。
       const Map<String, int> allowed = <String, int>{
+        // 截屏识字诊断日志：每个识别框的字素数（`…/12c`），是排障摘要不是学习计数。
+        'lib/src/floating_ball/app_floating_ball_host.dart': 1,
+        // 发现页搜索相关度：查询词按码点数加权算命中覆盖率，是排序判据不是学习计数。
+        'lib/src/media/discovery/discovery_search_relevance.dart': 1,
         // BUG-2767 切片 OCR 合并：重叠区重复行去重时按文本码点长度排序（长行先
         // 占位、短行若被包含就丢），比较器两侧各一处，是排序键不是学习计数。
         'packages/fushi_engine/lib/ocr/ocr_page_tiling.dart': 2,
@@ -129,9 +133,38 @@ void main() {
         // PDF 文字层：一页文字层字素数是否达到「整页正文就是文字层」门槛
         // （kPdfTextLayerCompletePageMinChars），是覆盖判据不是学习计数。
         'packages/fushi_engine/lib/media/manga/manga_pdf_text_layer.dart': 1,
+        // 全屏歌词动画（PR #4211，照 folia-major 移植）：按歌词行的码点 / 字素数排版
+        // （逐字格宽、气泡与图形尺寸、单字判定、按字数分配时长），是排版几何与动画
+        // 计时，不是学习计数。cappella_scene 那处是逐字排布计划的条目数。
+        'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_messages.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_scene.dart':
+            1,
+        // hanabi_collage_plan：拼贴字块宽度按码点数估算、片头标题按码点数定字号（排版几何）。
+        'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_collage_plan.dart':
+            2,
+        'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text_layout.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_figures.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/mindscape/mindscape_layout.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/mindscape/mindscape_scene.dart':
+            1,
+        'lib/src/media/music/lyrics/visualizer/modes/partita/partita_layout.dart':
+            2,
+        // 漫画页面注音（BUG-5216）：无逐行框时按最长行码点数均分行框（两处，是
+        // 排版几何），学已注音词时单字底本不学（一处，是匹配判据），都不是学习计数。
+        'packages/fushi_engine/lib/media/manga/manga_ruby.dart': 3,
         // 作品图谱 L5 人物同名建议：归一化后的名字短于 2 个码点不出建议键（单字名
         // 撞名太多），是匹配判据不是学习计数。
         'packages/fushi_engine/lib/media/people/person_identity.dart': 1,
+        // TTS 角色读音替换：「单字人名简称只在称呼后缀前命中」的判断（源串恰好一个
+        // 码点），是匹配判据不是学习计数。
+        'packages/fushi_engine/lib/tts/cast/cast_text_substitution.dart': 1,
+        // 媒体追踪书目关联：书名方括号里的人名长度上限（≤24 码点才当作者名），
+        // 与繁简折叠时「折叠结果恰好是单个码点」的判断，是匹配判据不是学习计数。
+        'packages/fushi_engine/lib/media/tracking/book_tracking_link.dart': 2,
         // 视频字幕 AI 校对（spec 2026-10-19）：S4 片假名名字编辑距离 1 的长度比较
         // （与基准 consistency.py 的 len() 同口径），是匹配判据不是学习计数。
         'packages/fushi_engine/lib/media/video/subtitle/asr_proofread/subtitle_consistency_pass.dart':
@@ -143,6 +176,10 @@ void main() {
         // 校对费用预估：按提示词 / 回复字符数估 token，是费用估算不是学习计数。
         'packages/fushi_engine/lib/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart':
             2,
+        // ASS 歌词行逐字 \kf：每个码点一段唱时，唱时表长度须等于文本码点数才输出卡拉 OK，
+        // 是对齐校验不是学习计数。
+        'packages/fushi_engine/lib/media/video/subtitle/asr_proofread/subtitle_ass_style_transfer.dart':
+            1,
         // 排行榜昵称长度校验（与服务端「1–24 个码点」同口径），是表单校验不是记账。
         'lib/src/pages/implementations/leaderboard/leaderboard_account_page.dart':
             1,
@@ -170,6 +207,22 @@ void main() {
         // 游戏串流手柄查词模式：当前行与命中词的字素数是查词光标的移动边界、跳过
         // 命中词的步长与命中高亮范围（_moveLookupCaret / lookupHighlight），是导航不是记账。
         'lib/src/pages/implementations/game_stream_page.dart': 2,
+        // 手柄查词模式（书 / 漫画 / 视频三处 ControllerLookupTarget）：查词命中长度
+        // 由 UTF-16 码元折成字素、光标到句尾的字素数、扫描出的查询串字素数，都是查词
+        // 选区右端的上界与步长，是导航不是记账。
+        'lib/src/lookup/lookup_match_measure.dart': 1,
+        'lib/src/media/manga/reader/manga_fushi/controller_lookup.part.dart': 1,
+        'lib/src/pages/implementations/reader_fushi/controller_lookup.part.dart':
+            1,
+        'lib/src/pages/implementations/video_fushi/controller_lookup.part.dart':
+            1,
+        // 无封面时按标题生成的封面：首字母的字素数决定排版字号（一字 / 两字），
+        // 是排版不是记账。
+        'lib/src/utils/components/fushi_generated_cover.dart': 1,
+        // 书店系列注记（`<系列名> (文库名)`）判据：尖括号内少于 2 个码点不当系列名，
+        // 是解析校验不是记账。
+        'packages/fushi_engine/lib/media/collections/store_series_annotation.dart':
+            1,
         // 玻璃输入框的字数计数器（maxLength 显示），是表单 UI 不是记账。
         'lib/src/utils/components/glass/fushi_glass_inputs.dart': 1,
         // 源文本条是否被查词高亮完整覆盖：字素坐标范围比较，不写学习统计。
@@ -284,9 +337,13 @@ void main() {
     '$paginationPath|countCharsBeforeViewportPaged: function(': <String>[
       'fushiStudyUnits',
     ],
-    // 分页 shell（2512）与连续 shell（3080）各一份，两份都自己数。
+    // 分页 shell 转发给 _charOffsetAtPoint（下一条已钉；页首 / 页尾两个 caret 探点共用
+    // 同一份「节点基址 + 节点内学习单位累加」）；连续 shell 自己数。
     '$paginationPath|getFirstVisibleCharOffset: function() {': <String>[
+      '_charOffsetAtPoint',
       'fushiStudyUnits',
+    ],
+    '$paginationPath|_charOffsetAtPoint: function(': <String>[
       'fushiStudyUnits',
     ],
     // 分页版自己数；连续版转发给 collapsedRangeAtCharOffset（下一条已钉）。

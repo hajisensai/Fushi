@@ -194,7 +194,7 @@ void main() {
 
     test('fullscreen helper uses the controls-subtree context', () {
       expect(
-        page.contains('_videoControlsContext = controlsContext'),
+        page.contains('_captureVideoControlsContext(controlsContext)'),
         isTrue,
         reason:
             'isFullscreen/toggle/exitFullscreen need a controls-subtree '
@@ -703,7 +703,7 @@ void main() {
       // cue，作制卡锚点）。本守卫要锁的是**方法体内的顺序**（沉浸门控先于 _lookupAt），
       // 不是签名长什么样，故按 `(...)` 整体匹配。
       final RegExpMatch? body = RegExp(
-        r'void _handleSubtitleLookupTap\([^)]*\) \{(.*?)\n  \}',
+        r'Future<int> _handleSubtitleLookupTap\([^)]*\) \{(.*?)\n  \}',
         dotAll: true,
       ).firstMatch(page);
       expect(

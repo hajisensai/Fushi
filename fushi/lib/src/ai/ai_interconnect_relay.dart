@@ -105,8 +105,15 @@ Future<List<InterconnectHostTarget>> probeAiRelayHostTargets(
   SyncRepository repository,
 ) => probeInterconnectHostTargets(
   repository: repository,
-  probe: (SyncRepository repo, FushiClientUrl peer) => InterconnectHostClient(
-    repository: repo,
-    peer: peer,
-  ).declaresCapability(kAiRelayCapability),
+  probe: (SyncRepository repo, FushiClientUrl peer) async {
+    final InterconnectHostClient client = InterconnectHostClient(
+      repository: repo,
+      peer: peer,
+    );
+    try {
+      return await client.declaresCapability(kAiRelayCapability);
+    } finally {
+      client.cancelPending();
+    }
+  },
 );

@@ -15,7 +15,8 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       );
 
   /// host 当前书库清单（从 EpubBooks 表读）。
-  /// [RemoteBookInfo.hasContent] 为 true 当且仅当该书存在可导出的 EPUB 根目录。
+  /// [RemoteBookInfo.hasContent] 为 true 当且仅当该书存在可导出的 EPUB 根目录；
+  /// PDF 书的原件在盘上时标 [RemoteBookInfo.hasPdfContent]（反馈 Jq1_ujHa4t）。
   @override
   Future<List<RemoteBookInfo>> listBooks() async {
     // BUG-3441：分卷按系列归组以前只在书架页打开时跑——host 没开过书架（或是无头
@@ -74,6 +75,8 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       for (final SrtBookRow s in await _db.getAllSrtBooks())
         if (s.bookKey.isNotEmpty) s.bookKey: s.uid,
     };
+    // 上锁的书（含在上锁合集里的）标 locked：对端未解锁时不出占位卡 / 「继续」。
+    final MediaLockSnapshot locks = await MediaLockSnapshot.load(_db);
     return rows.map((EpubBookRow r) {
       // EPUB 行的 coverPath 是 EPUB 内部相对 href，必须拼 extractDir 才是磁盘真
       // 路径；直接 _existingFilePath(相对href) 恒 false → 远端书卡没封面（#4）。
@@ -104,6 +107,10 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
         hasMangaContent:
             format == BookFormat.manga &&
             hasExportableMangaContent(r.extractDir),
+        // 反馈 Jq1_ujHa4t：PDF 此前在这里没有任何内容位（hasContent 是 EPUB 判据、
+        // 恒 false），对端书架按内容位过滤 → host 上的 PDF 在对端整本隐形，同步还报
+        // 「无新增」。PDF 原件在盘上即可下载（包 = 原件，见 pdf_sync_package.dart）。
+        hasPdfContent: hasExportablePdfContent(r),
         // BUG-2474：在线书架条目（Mihon / Aidoku）根目录只有占位 manga.json，
         // hasMangaContent 恒 false，但它按章下载的页图就在 <extractDir>/chapters/
         // 下——标 hasMangaChapters，对端以多章在线作品收下、逐章从这里拉。清单级
@@ -153,6 +160,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
         // hoshi://srtbook/<uid>，无 EpubBooks 行）今天不在本清单，进清单是独立
         // follow-up。
         kind: MediaKind.epub,
+        locked: locks.isBookLocked(r.bookKey),
       );
     }).toList();
   }
@@ -252,10 +260,25 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       }
       return out;
     }
+    // PDF（反馈 Jq1_ujHa4t）：包 = PDF 原件本身（导入时已原样拷进书目录，没有解压
+    // 树、无需重打包）。拷一份到临时目录交给端点——导出缓存会持有并在 TTL 后删除
+    // 返回的文件，不能把书目录里的原件直接交出去。扩展名用 `.pdf`，端点按扩展名给
+    // Content-Type；接收方按内容嗅探分流，不看扩展名。
+    if (format == BookFormat.pdf) {
+      if (!hasExportablePdfContent(row)) {
+        throw StateError('pdf book has no file on disk: $title');
+      }
+      final Directory tmpDir = await Directory.systemTemp.createTemp(
+        'fushi_book_export',
+      );
+      final File out = File(p.join(tmpDir.path, '${row.bookKey}.pdf'));
+      await File(pdfBookFilePath(row)).copy(out.path);
+      return out;
+    }
     if (format != BookFormat.epub ||
         isLnReaderOnlineBookMetadata(row.sourceMetadata) ||
         resolveExtractedEpubRoot(row.extractDir) == null) {
-      // PDF（无互联内容通道）/ EPUB 树缺失：与旧行为一致抛 StateError → 404。
+      // EPUB 树缺失：与旧行为一致抛 StateError → 404。
       throw StateError('book has no exportable EPUB root: $title');
     }
 
@@ -287,6 +310,31 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     String? displayTitle,
     int displayTitleAt = 0,
   }) async {
+    // 反馈 Jq1_ujHa4t：PDF 原件与 EPUB / 漫画包同端点推来，按内容嗅探分流（tmp 文件
+    // 名恒 `<URL 书名>.epub`，扩展名不可信）。标题 = URL 书名（去扩展名），host 端
+    // bookKey 由它派生，与 EPUB / 漫画包同口径。
+    if (await isPdfFile(epubFile)) {
+      final Future<String?> Function(File, String)? pdfImporter =
+          _importPdfBookFromFile;
+      if (pdfImporter == null) {
+        // 本 host 没有 PDF 引擎（无头服务端），能力位也没宣称——新 client 不会推；
+        // 旧 client 不推 PDF。走到这里只能是协议外的调用，如实拒绝。
+        throw UnsupportedError('this host cannot import PDF books');
+      }
+      String? pdfBookKey;
+      await _runExclusive(() async {
+        pdfBookKey = await pdfImporter(
+          epubFile,
+          p.basenameWithoutExtension(epubFile.path),
+        );
+      });
+      await _adoptPushedDisplayTitle(
+        bookKey: pdfBookKey,
+        displayTitle: displayTitle,
+        displayTitleAt: displayTitleAt,
+      );
+      return;
+    }
     final Future<String?> Function(File)? importer = _importBookFromFile;
     if (importer == null) {
       throw UnsupportedError(
@@ -370,9 +418,12 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
       final EpubBookRow? row = _findBookByTitleOrKey(rows, title);
       if (row == null) return; // 幂等：不存在则静默跳过
 
-      // 先让注入的磁盘清理回调运行（AudiobookStorage / SrtBook 等 DB 行外资源），
-      // 在 DB deleteEpubBook 事务之前拿到 row 数据（事务后 row 即消失）。
-      await _cleanupBookOnDisk?.call(row);
+      // 配对字幕书的 uid 住在即将被级联删掉的 srt_books 行上：删行前先取，DB 行外
+      // 的清理（[_cleanupBookOnDisk]）放到删行**成功之后**——先删有声书持久目录 /
+      // override 封面、再删行失败，书留着而它的有声书副本已经没了。
+      final String? pairedSrtUid = (await _db.getSrtBookByBookKey(
+        row.bookKey,
+      ))?.uid;
 
       // DB 事务：删除 EpubBooks 行及其所有关联行（readerPositions / bookmarks /
       // srtBooks / audioCues / audiobooks）。见 HBK-AUDIT-041。
@@ -381,6 +432,7 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
         row.bookKey,
         tombstone: true,
       );
+      if (deleted > 0) await _cleanupBookOnDisk?.call(row, pairedSrtUid);
       // BUG-2945：再记同步删除墓碑。上面的 tombstone 只防旧备份复活，其它设备
       // 拉 /api/tombstones 读的是 sync_deletion_tombstones——host 不写，「从所有
       // 设备删除」就只删掉了发起端与 host 两份。
@@ -418,31 +470,60 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     );
   }
 
-  /// 把 client 上报的书 [bookKey] 进度写入 host 自己的 `reader_positions`
-  /// （TODO-767）。
+  /// 全库书籍进度一次读齐（[BookProgressBatchHost]，反馈 kM-Gb_Xnu-）。
   ///
-  /// 冲突解决「取较新时间戳」（[resolveBookProgressSync]）：仅当 [progress] 严格
-  /// 新于 host 已存时间戳才覆盖，避免旧设备滞后上报回退新进度。胜出方等于 host 已存
-  /// 进度时 no-op（不写库）。负 normCharOffset clamp 0。
+  /// 与 [getBookProgress] 同口径：wire 键 bookKey 经 epub_books 换算成本地 uid，
+  /// 书不在库 / uid 为空 / 无 `reader_positions` 行的书不进结果。两趟全表读，无逐书查询。
+  @override
+  Future<Map<String, RemoteBookProgress>> getAllBookProgress() async {
+    final Map<String, String> bookKeyByUid = <String, String>{
+      for (final EpubBookRow b in await _db.getAllEpubBooks())
+        if (b.uid.isNotEmpty) b.uid: b.bookKey,
+    };
+    return <String, RemoteBookProgress>{
+      for (final ReaderPositionRow r in await _db.getAllReaderPositions())
+        if (bookKeyByUid[r.bookUid] case final String key)
+          key: RemoteBookProgress(
+            sectionIndex: r.sectionIndex,
+            normCharOffset: r.normCharOffset,
+            charOffset: r.charOffset,
+            updatedAtMs: r.updatedAt,
+          ),
+    };
+  }
+
+  /// 把 client 上报的书 [bookKey] 进度写入 host 自己的 `reader_positions`
+  /// （TODO-767）。旧口径（无前置条件、丢弃回执），等价于
+  /// [putBookProgressChecked]`(expected: null)`。
   @override
   Future<void> putBookProgress(
     String bookKey,
     RemoteBookProgress progress,
   ) async {
-    // host 书库不存在该 bookKey → no-op，不写孤儿 `reader_positions` 行。
+    await putBookProgressChecked(bookKey, progress);
+  }
+
+  /// 带回执与可选前置条件的书进度写入（BUG-4431，[LivePositionWriteHost]）。判定口径
+  /// 只在 [resolveLiveBookProgressWrite] 一处。
+  @override
+  Future<LiveBookProgressWriteOutcome> putBookProgressChecked(
+    String bookKey,
+    RemoteBookProgress progress, {
+    List<BookProgressBaseline>? expected,
+  }) async {
+    // host 书库不存在该 bookKey → missing，不写孤儿 `reader_positions` 行。
     // （reader_positions 无外键也无 GC，任意 client 上报任意 bookKey 都会落库；
     // 之后 host 若导入同名 sanitize bookKey 的书，恢复时会取到来自别处设备、host
     // 从没读过的陈旧位置 = 进度污染。与视频 `updateVideoBookPosition`「UPDATE
     // 不存在即 no-op」语义对齐。syncContent 开时 client 独有书已先经
     // `_syncBooksContentLive` importBook 推成 host 书，故正常同步不被此闸门误挡。）
     final EpubBookRow? hostBook = await _db.getEpubBook(bookKey);
-    if (hostBook == null || hostBook.uid.isEmpty) return;
-    final RemoteBookProgress incoming = RemoteBookProgress(
-      sectionIndex: progress.sectionIndex < 0 ? 0 : progress.sectionIndex,
-      normCharOffset: progress.normCharOffset < 0 ? 0 : progress.normCharOffset,
-      charOffset: progress.charOffset,
-      updatedAtMs: progress.updatedAtMs,
-    );
+    if (hostBook == null || hostBook.uid.isEmpty) {
+      return const LiveBookProgressWriteOutcome(
+        result: LiveWriteResult.missing,
+        current: RemoteBookProgress.empty,
+      );
+    }
     // 窄锁而非 _runExclusive：后者在 app 里罩着整个自动同步轮（含云备份，动辄
     // 几分钟），对端这条单行 PUT 排在后面拿不到响应头，15s 判超时——而 host 等锁
     // 放开后照样落库，对端便漏记「已对齐」，下一轮误报进度冲突。读-比较-写整段在
@@ -452,31 +533,39 @@ mixin _LocalLibraryHostBooks on _LocalLibraryHostBase, _LocalLibraryHostShared {
     // 这把锁，前者改用 `upsertReaderPositionIfUnchanged` 在事务里比较后写入
     // （BUG-3537）。这里的读-比较-写也放进同一个 DB 事务，两边才互不插队：否则
     // 出站落地正好写在本端「读 current」与「写 winner」之间时，会被这里按旧的
-    // current 算出的 winner 盖掉。
+    // current 算出的 winner 盖掉。前置条件也在同一事务里比较，才是原子的。
+    late LiveBookProgressWriteOutcome outcome;
     await _runSyncStateExclusive(
       () => _db.transaction(() async {
         final RemoteBookProgress current = await getBookProgress(bookKey);
-        final RemoteBookProgress winner = resolveBookProgressSync(
-          local: current,
-          remote: incoming,
-        );
-        if (winner.sectionIndex == current.sectionIndex &&
-            winner.normCharOffset == current.normCharOffset &&
-            winner.charOffset == current.charOffset &&
-            winner.updatedAtMs == current.updatedAtMs) {
-          return; // host 已存更新或相等，no-op。
+        // 未来时间戳防护在判定函数里：上报戳截到 host 当前时刻 + 余量，已存的
+        // 超限毒戳按 0 比较。
+        final ({LiveWriteResult result, RemoteBookProgress next}) decision =
+            resolveLiveBookProgressWrite(
+              current: current,
+              incoming: progress,
+              expected: expected,
+              nowMs: DateTime.now().millisecondsSinceEpoch,
+            );
+        if (decision.result == LiveWriteResult.applied) {
+          final RemoteBookProgress next = decision.next;
+          await _db.upsertReaderPosition(
+            ReaderPositionsCompanion(
+              bookUid: Value(hostBook.uid),
+              sectionIndex: Value(next.sectionIndex),
+              normCharOffset: Value(next.normCharOffset),
+              charOffset: Value(next.charOffset),
+              updatedAt: Value(next.updatedAtMs),
+            ),
+          );
         }
-        await _db.upsertReaderPosition(
-          ReaderPositionsCompanion(
-            bookUid: Value(hostBook.uid),
-            sectionIndex: Value(winner.sectionIndex),
-            normCharOffset: Value(winner.normCharOffset),
-            charOffset: Value(winner.charOffset),
-            updatedAt: Value(winner.updatedAtMs),
-          ),
+        outcome = LiveBookProgressWriteOutcome(
+          result: decision.result,
+          current: decision.next,
         );
       }),
     );
+    return outcome;
   }
 
   /// 按 [id]（downloadId：bookKey 或 title）单查书封面磁盘路径（对称

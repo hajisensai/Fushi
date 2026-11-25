@@ -8,7 +8,7 @@
 /// ```
 /// fushi_server ctl status
 /// fushi_server ctl logs
-/// fushi_server ctl pairing [ls] | pairing revoke <peerId> | pairing owner <peerId> on|off
+/// fushi_server ctl pairing [ls] | pairing link | pairing revoke <peerId> | pairing owner <peerId> on|off
 /// fushi_server ctl libraries [ls] | libraries add <path> [--kind video|book|manga|audiobook] [--id x]
 ///                                 | libraries rm <id> [--purge]
 /// fushi_server ctl scan [--prune | --no-prune]
@@ -46,65 +46,155 @@ import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/ctl/admin_client.dart';
 import 'package:fushi_server/src/ctl/ctl_download_commands.dart';
 import 'package:fushi_server/src/ctl/ctl_host_commands.dart';
+import 'package:fushi_server/src/ctl/ctl_srs_commands.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 /// `ctl` 子命令的参数表；所有动作的选项平铺在这一层（动词在 rest 里）。
 ArgParser buildCtlParser() {
   final ArgParser parser = _buildBaseCtlParser();
   addCtlHostOptions(parser);
   addCtlDownloadOptions(parser);
+  addCtlSrsOptions(parser);
   return parser;
 }
 
 ArgParser _buildBaseCtlParser() => ArgParser()
-  ..addOption('url', help: 'admin API 地址（缺省按配置推本机地址）')
-  ..addOption('token', help: 'admin_token（缺省读配置）')
+  ..addOption(
+    'url',
+    help: tr(
+      'admin API 地址（缺省按配置推本机地址）',
+      'Admin API address (defaults to the local address inferred from the config)',
+    ),
+  )
+  ..addOption(
+    'token',
+    help: tr(
+      'admin_token（缺省读配置）',
+      'admin_token (defaults to the config value)',
+    ),
+  )
   ..addOption(
     'fingerprint',
-    help: 'TLS 证书 SHA-256 指纹（缺省读本机服务端证书；互联模式下用它钉扎 host 证书）',
+    help: tr(
+      'TLS 证书 SHA-256 指纹（缺省读本机服务端证书；互联模式下用它钉扎 host 证书）',
+      'TLS certificate SHA-256 fingerprint (defaults to the local server certificate; in interconnect mode used to pin the host certificate)',
+    ),
   )
   ..addOption(
     'interconnect',
-    help:
-        '直连互联 host（运行中的 Fushi app）地址，如 https://127.0.0.1:38765（或 FUSHI_HOST_URL）',
+    help: tr(
+      '直连互联 host（运行中的 Fushi app）地址，如 https://127.0.0.1:38765（或 FUSHI_HOST_URL）',
+      'Address of the interconnect host (a running Fushi app) to connect to directly, e.g. https://127.0.0.1:38765 (or FUSHI_HOST_URL)',
+    ),
   )
-  ..addOption('password', help: '互联 host 的密码 / token（或 FUSHI_HOST_PASSWORD）')
-  ..addOption('grep', help: 'videos / books ls：只列标题 / id / 文件名包含该串的条目（不区分大小写）')
-  ..addFlag('json', negatable: false, help: '原样输出服务端 JSON')
+  ..addOption(
+    'password',
+    help: tr(
+      '互联 host 的密码 / token（或 FUSHI_HOST_PASSWORD）',
+      'Password / token of the interconnect host (or FUSHI_HOST_PASSWORD)',
+    ),
+  )
+  ..addOption(
+    'grep',
+    help: tr(
+      'videos / books ls：只列标题 / id / 文件名包含该串的条目（不区分大小写）',
+      'videos / books ls: only list entries whose title / id / file name contains this string (case-insensitive)',
+    ),
+  )
+  ..addFlag(
+    'json',
+    negatable: false,
+    help: tr('原样输出服务端 JSON', 'Print the server JSON as is'),
+  )
   ..addOption(
     'kind',
-    help: 'libraries add：库类型 video | book | manga | audiobook',
+    help: tr(
+      'libraries add：库类型 video | book | manga | audiobook',
+      'libraries add: library kind video | book | manga | audiobook',
+    ),
     defaultsTo: 'video',
   )
-  ..addOption('id', help: 'libraries add：库 id（缺省自动生成）')
-  ..addFlag('purge', negatable: false, help: 'libraries rm：移除前回收文件已消失的条目')
-  ..addFlag('prune', negatable: true, help: 'scan：回收文件已消失的条目（缺省读配置）')
-  ..addOption('title', help: 'downloads add：任务标题')
+  ..addOption(
+    'id',
+    help: tr(
+      'libraries add：库 id（缺省自动生成）',
+      'libraries add: library id (generated automatically by default)',
+    ),
+  )
+  ..addFlag(
+    'purge',
+    negatable: false,
+    help: tr(
+      'libraries rm：移除前回收文件已消失的条目',
+      'libraries rm: reclaim entries whose files are gone before removing',
+    ),
+  )
+  ..addFlag(
+    'prune',
+    negatable: true,
+    help: tr(
+      'scan：回收文件已消失的条目（缺省读配置）',
+      'scan: reclaim entries whose files are gone (defaults to the config value)',
+    ),
+  )
+  ..addOption(
+    'title',
+    help: tr('downloads add：任务标题', 'downloads add: task title'),
+  )
   ..addOption(
     'media-kind',
-    help: 'downloads add：movie | tv',
+    help: tr('downloads add：movie | tv', 'downloads add: movie | tv'),
     allowed: <String>['movie', 'tv'],
     defaultsTo: 'movie',
   )
-  ..addOption('user', help: 'anki login：用户名')
-  ..addOption('endpoint', help: 'anki login：自建同步服务器地址（缺省 AnkiWeb）')
+  ..addOption('user', help: tr('anki login：用户名', 'anki login: user name'))
+  ..addOption(
+    'endpoint',
+    help: tr(
+      'anki login：自建同步服务器地址（缺省 AnkiWeb）',
+      'anki login: self-hosted sync server address (defaults to AnkiWeb)',
+    ),
+  )
   ..addFlag(
     'accept-ankiweb',
     negatable: false,
-    help: 'anki login：确认使用 AnkiWeb 的条款风险',
+    help: tr(
+      'anki login：确认使用 AnkiWeb 的条款风险',
+      'anki login: acknowledge the AnkiWeb terms risk',
+    ),
   )
-  ..addFlag('discard-unsynced', negatable: false, help: 'anki logout：丢弃未同步的卡片')
+  ..addFlag(
+    'discard-unsynced',
+    negatable: false,
+    help: tr('anki logout：丢弃未同步的卡片', 'anki logout: discard unsynced cards'),
+  )
   ..addFlag(
     'documents',
     defaultsTo: true,
-    help: 'backup create：带上 documents/（--no-documents 只备份设置与状态）',
+    help: tr(
+      'backup create：带上 documents/（--no-documents 只备份设置与状态）',
+      'backup create: include documents/ (--no-documents backs up only settings and state)',
+    ),
   )
-  ..addOption('lib', help: 'upload：目标库根 id')
-  ..addOption('path', help: 'upload：库根下的相对目录（缺省放库根）')
+  ..addOption(
+    'lib',
+    help: tr('upload：目标库根 id', 'upload: target library root id'),
+  )
+  ..addOption(
+    'path',
+    help: tr(
+      'upload：库根下的相对目录（缺省放库根）',
+      'upload: relative directory under the library root (defaults to the library root)',
+    ),
+  )
   ..addFlag(
     'follow',
     abbr: 'f',
     negatable: false,
-    help: 'logs：持续输出新日志（Ctrl-C 退出）',
+    help: tr(
+      'logs：持续输出新日志（Ctrl-C 退出）',
+      'logs: keep printing new logs (Ctrl-C to exit)',
+    ),
   );
 
 /// 短别名 → 规范动作名。
@@ -120,8 +210,8 @@ const Map<String, String> _aliases = <String, String>{
 };
 
 /// `ctl` 的用法说明。
-const String kCtlUsage =
-    '''
+String get kCtlUsage => tr(
+  '''
 fushi_server ctl <action> [args] [--url u] [--token t] [--fingerprint fp] [--json]
 fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --password <host token>
     （直连运行中的 Fushi app 的互联 host；也可用 FUSHI_HOST_URL / FUSHI_HOST_PASSWORD。
@@ -130,6 +220,7 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   status                                   运行状态
   logs [-f|--follow]                       最近日志（-f 持续跟随）
   pairing [ls] | revoke <peerId>           已配对设备 / 待确认 PIN
+  pairing link                             出一次性配对链接（对端 `fushi_cli peer pair <链接> --yes`）
   pairing owner <peerId> on|off            标记 / 取消「我的设备」（可跟随本机排行榜账户自动登录）
   libraries [ls] | add <path> [--kind video|book|manga|audiobook] [--id x] | rm <id> [--purge]
   scan [--prune|--no-prune]                触发一次库扫描（后台进行）
@@ -142,10 +233,24 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   subscriptions [ls] | add '<json>' | check [id] | enable|disable|rm <id>
   models [ls] | pull <语言 tag|ocr|ocr:key>
   settings [get] | set '<json>'
+  settings subtitle-key opensubtitles|subdl|jimaku [clear]
+                                           存 / 清在线字幕来源的 key（key 从 stdin 或
+                                           FUSHI_<来源>_API_KEY 读，不进 argv；不回显）
+  settings subtitle-source opensubtitles|subdl|jimaku on|off
   resource-indexers [get] | set '<json>'
   anki [status] | sync | refresh | run | retry | landing on|off | config '<json>'
        login --user u [--endpoint e] [--accept-ankiweb]   密码从 stdin 或 FUSHI_ANKI_PASSWORD 读
        logout [--discard-unsynced]
+  srs [status] | profiles                  复习库：状态 / 同步目录里能选的 profile
+  srs decks | notes [搜索] | note <id> | stats | conflicts [--srs-profile <uid>]
+                                           复习库内容；冲突处理 / 重复合并 / 批量改笔记见 `srs help`
+  srs add|remove|default <uid> | off       提供哪几份 profile（off = 全部不提供）
+  srs sync [<uid>] | ankiconnect on|off    立即同步 / AnkiConnect 监听（默认关）
+  srs config '<json>'                      其余配置（rolloverHour、miningTarget、miningDecks、profileNames、rwkvModel、ankiConnect…）
+  srs devices [<uid>]                      还没信任的复习同步设备（扣着的删除 / 彻底清除）
+  srs trust|reject <设备 ID> [<uid>]       信任（扣着的立即生效）/ 拒绝（继续扣着）一台设备
+  srs migration [status] | start | cancel  复习库换代（协议 3 → 新代）：状态与处置说明 / 开始或重跑 / 叫停
+  srs retained [status] | delete --yes     旧版本保留副本：状态 / 立即删除（不可撤销）
   profiles [ls] | share|rm <id>
   backup [ls] | create [--no-documents] | rm <name>
                                            整机备份（落 <data>/backups/；下载走
@@ -156,7 +261,59 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
 $kCtlHostUsage
 
   别名：pair=pairing lib=libraries dl=downloads sub=subscriptions
-        indexers=resource-indexers profile=profiles config=settings''';
+        indexers=resource-indexers profile=profiles config=settings''',
+  '''
+fushi_server ctl <action> [args] [--url u] [--token t] [--fingerprint fp] [--json]
+fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --password <host token>
+    (connect directly to the interconnect host of a running Fushi app; FUSHI_HOST_URL / FUSHI_HOST_PASSWORD also work.
+     A self-signed https certificate is trusted only for this one explicit address; with --fingerprint it is pinned by fingerprint)
+
+  status                                   Run status
+  logs [-f|--follow]                       Recent logs (-f keeps following)
+  pairing [ls] | revoke <peerId>           Paired devices / pending PINs
+  pairing link                             Issue a one-time pairing link (peer: `fushi_cli peer pair <link> --yes`)
+  pairing owner <peerId> on|off            Mark / unmark "my device" (may follow the local leaderboard account for auto sign-in)
+  libraries [ls] | add <path> [--kind video|book|manga|audiobook] [--id x] | rm <id> [--purge]
+  scan [--prune|--no-prune]                Trigger a library scan (runs in the background)
+  jobs [ls] | rm <id>                      Generic jobs (ASR etc.)
+  downloads [ls] | cancel|retry|rm <id> | subtitles <id>
+  downloads add --title t (<magnet> | --magnet m | --torrent <path|URL>) [--select <regex>]... [--index n]...
+                [--year y] [--provider anidb|mal|tmdb --external-id id] [--media-kind movie|tv]
+                [--subtitle-policy none|bestEffort|required]
+  downloads add --torrent <path|URL> --list-files     List .torrent files (index / size / path)
+  subscriptions [ls] | add '<json>' | check [id] | enable|disable|rm <id>
+  models [ls] | pull <language tag|ocr|ocr:key>
+  settings [get] | set '<json>'
+  settings subtitle-key opensubtitles|subdl|jimaku [clear]
+                                           Store / clear an online subtitle source key (read from
+                                           stdin or FUSHI_<SOURCE>_API_KEY, never argv; not echoed)
+  settings subtitle-source opensubtitles|subdl|jimaku on|off
+  resource-indexers [get] | set '<json>'
+  anki [status] | sync | refresh | run | retry | landing on|off | config '<json>'
+       login --user u [--endpoint e] [--accept-ankiweb]   Password is read from stdin or FUSHI_ANKI_PASSWORD
+       logout [--discard-unsynced]
+  srs [status] | profiles                  Review library: status / profiles selectable in the sync directory
+  srs decks | notes [search] | note <id> | stats | conflicts [--srs-profile <uid>]
+                                           Review library contents; see `srs help` for conflicts / duplicate merge / batch edits
+  srs add|remove|default <uid> | off       Which profiles to provide (off = provide none)
+  srs sync [<uid>] | ankiconnect on|off    Sync now / AnkiConnect listener (off by default)
+  srs config '<json>'                      Other settings (rolloverHour, miningTarget, miningDecks, profileNames, rwkvModel, ankiConnect...)
+  srs devices [<uid>]                      Review sync devices not trusted yet (their held deletes / purges)
+  srs trust|reject <device id> [<uid>]     Trust (held changes apply now) / reject (keep holding) a device
+  srs migration [status] | start | cancel  Review library upgrade (protocol 3 -> current): state and advice / start or rerun / stop
+  srs retained [status] | delete --yes     Old-version retained copy: state / delete now (cannot be undone)
+  profiles [ls] | share|rm <id>
+  backup [ls] | create [--no-documents] | rm <name>
+                                           Whole-machine backup (stored in <data>/backups/; download via
+                                           GET /api/admin/backups/<name>)
+  p2p                                      P2P tunnel status
+  upload <files...> --lib <id> [--path <dir>] Chunked resumable upload to a library root (remember to scan afterwards)
+  raw <METHOD> </api/admin/...> ['<json>'] Call any admin endpoint directly
+$kCtlHostUsage
+
+  Aliases: pair=pairing lib=libraries dl=downloads sub=subscriptions
+           indexers=resource-indexers profile=profiles config=settings''',
+);
 
 /// 读配置、建客户端、执行一条 `ctl` 动作。退出码见 [runCtlAction]。
 Future<int> runCtl(
@@ -192,7 +349,12 @@ Future<int> runCtl(
       e.writeln(ex.message);
       return 64;
     } on FormatException catch (ex) {
-      e.writeln('无效的 --interconnect: ${ex.message}');
+      e.writeln(
+        tr(
+          '无效的 --interconnect: ${ex.message}',
+          'Invalid --interconnect: ${ex.message}',
+        ),
+      );
       return 64;
     }
     try {
@@ -206,14 +368,24 @@ Future<int> runCtl(
     try {
       config = await ServerConfig.load(configFile);
     } on FormatException catch (ex) {
-      e.writeln('配置文件解析失败: ${ex.message}');
+      e.writeln(
+        tr(
+          '配置文件解析失败: ${ex.message}',
+          'Failed to parse the config file: ${ex.message}',
+        ),
+      );
       return 65;
     }
   } else if (url != null && command['token'] != null) {
     // 远程用法：地址与凭据都显式给了，不需要本机配置。
     config = ServerConfig.defaults(dataDir: configFile.parent.path);
   } else {
-    e.writeln('找不到配置文件 ${configFile.path}；用 --config 指定，或同时给 --url 与 --token');
+    e.writeln(
+      tr(
+        '找不到配置文件 ${configFile.path}；用 --config 指定，或同时给 --url 与 --token',
+        'Config file not found: ${configFile.path}; specify it with --config, or give both --url and --token',
+      ),
+    );
     return 66;
   }
   final AdminClient client;
@@ -228,7 +400,7 @@ Future<int> runCtl(
     e.writeln(ex.message);
     return 69;
   } on FormatException catch (ex) {
-    e.writeln('无效的 --url: ${ex.message}');
+    e.writeln(tr('无效的 --url: ${ex.message}', 'Invalid --url: ${ex.message}'));
     return 64;
   }
   try {
@@ -322,7 +494,12 @@ Future<int> runCtlAction(
       query: request.query,
     );
   } on AdminApiException catch (ex) {
-    err.writeln('${request.method} ${request.path} 失败: $ex');
+    err.writeln(
+      tr(
+        '${request.method} ${request.path} 失败: $ex',
+        '${request.method} ${request.path} failed: $ex',
+      ),
+    );
     if (command['json'] as bool && ex.body != null) {
       out.writeln(_pretty(ex.body));
     }
@@ -384,6 +561,16 @@ _CtlRequest? _fromHost(CtlHostRequest? r) {
   );
 }
 
+_CtlRequest? _fromSrs(CtlSrsRequest? r) => r == null
+    ? null
+    : _CtlRequest(
+        r.method,
+        r.path,
+        body: r.body,
+        query: r.query == null || r.query!.isEmpty ? null : r.query,
+        render: r.render,
+      );
+
 int _exitCodeFor(AdminApiException ex) => switch (ex.status) {
   kCtlUsageErrorStatus => 64,
   0 => 69,
@@ -407,7 +594,10 @@ Future<int> _upload(
   final String? library = command['lib'] as String?;
   if (files.isEmpty || library == null || library.trim().isEmpty) {
     err.writeln(
-      '用法: fushi_server ctl upload <文件…> --lib <库根 id> [--path <目录>]',
+      tr(
+        '用法: fushi_server ctl upload <文件…> --lib <库根 id> [--path <目录>]',
+        'Usage: fushi_server ctl upload <files…> --lib <library root id> [--path <directory>]',
+      ),
     );
     return 64;
   }
@@ -417,7 +607,7 @@ Future<int> _upload(
   );
   for (final String local in files) {
     if (!File(local).existsSync()) {
-      err.writeln('找不到文件: $local');
+      err.writeln(tr('找不到文件: $local', 'File not found: $local'));
       return 66;
     }
   }
@@ -445,7 +635,12 @@ Future<int> _upload(
           headers: const <String, String>{'Content-Range': 'bytes 0-0/0'},
         );
       } else if (offset >= size) {
-        err.writeln('$rel: 服务端已有完整文件，跳过');
+        err.writeln(
+          tr(
+            '$rel: 服务端已有完整文件，跳过',
+            '$rel: the server already has the complete file, skipping',
+          ),
+        );
       } else {
         final RandomAccessFile raf = await file.open();
         try {
@@ -466,7 +661,13 @@ Future<int> _upload(
             );
             final Object? received = r is Map ? r['received'] : null;
             if (received is! int || received <= offset) {
-              throw AdminApiException(1, '服务端没有推进已收字节数（$received），停止以免死循环');
+              throw AdminApiException(
+                1,
+                tr(
+                  '服务端没有推进已收字节数（$received），停止以免死循环',
+                  'The server did not advance the received byte count ($received); stopping to avoid an endless loop',
+                ),
+              );
             }
             offset = received;
             err.write(
@@ -480,9 +681,13 @@ Future<int> _upload(
         }
       }
       results.add(<String, Object?>{'file': local, 'path': rel, 'bytes': size});
-      if (!(command['json'] as bool)) out.writeln('已上传 $local → $library:$rel');
+      if (!(command['json'] as bool)) {
+        out.writeln(
+          tr('已上传 $local → $library:$rel', 'Uploaded $local -> $library:$rel'),
+        );
+      }
     } on AdminApiException catch (ex) {
-      err.writeln('\n$rel 上传失败: $ex');
+      err.writeln(tr('\n$rel 上传失败: $ex', '\n$rel upload failed: $ex'));
       return _exitCodeFor(ex);
     }
   }
@@ -506,7 +711,7 @@ Future<int> _followLogs(
     try {
       response = await client.get('$_api/logs');
     } on AdminApiException catch (ex) {
-      err.writeln('GET $_api/logs 失败: $ex');
+      err.writeln(tr('GET $_api/logs 失败: $ex', 'GET $_api/logs failed: $ex'));
       return _exitCodeFor(ex);
     }
     final Object? raw = response is Map ? response['lines'] : null;
@@ -561,6 +766,13 @@ class _CtlRequest {
 
 const String _api = '/api/admin';
 
+/// `ctl settings subtitle-key <来源>` 读 key 的环境变量（与服务端同名）。
+const Map<String, String> _kCtlSubtitleKeyEnv = <String, String>{
+  'opensubtitles': 'FUSHI_OPENSUBTITLES_API_KEY',
+  'subdl': 'FUSHI_SUBDL_API_KEY',
+  'jimaku': 'FUSHI_JIMAKU_API_KEY',
+};
+
 /// 把动词 + 参数翻成一个请求；用法不对时写 [err] 并返回 null。
 _CtlRequest? _parseAction(
   List<String> rest,
@@ -575,7 +787,9 @@ _CtlRequest? _parseAction(
       : const <String>[];
 
   _CtlRequest? usage(String text) {
-    err.writeln('用法: fushi_server ctl $text');
+    err.writeln(
+      tr('用法: fushi_server ctl $text', 'Usage: fushi_server ctl $text'),
+    );
     return null;
   }
 
@@ -597,6 +811,12 @@ _CtlRequest? _parseAction(
             '$_api/pairing',
             render: _renderPairing,
           );
+        case 'link':
+          return const _CtlRequest(
+            'POST',
+            '$_api/pairing/link',
+            render: _renderPairLink,
+          );
         case 'revoke' when arg(0) != null:
           return _CtlRequest(
             'DELETE',
@@ -610,7 +830,8 @@ _CtlRequest? _parseAction(
           );
       }
       return usage(
-        'pairing [ls] | pairing revoke <peerId> | pairing owner <peerId> on|off',
+        'pairing [ls] | pairing link | pairing revoke <peerId> | '
+        'pairing owner <peerId> on|off',
       );
 
     case 'libraries':
@@ -736,7 +957,12 @@ _CtlRequest? _parseAction(
             body: <String, Object?>{'model': arg(0)},
           );
       }
-      return usage('models [ls] | models pull <语言 tag|ocr|ocr:key>');
+      return usage(
+        tr(
+          'models [ls] | models pull <语言 tag|ocr|ocr:key>',
+          'models [ls] | models pull <language tag|ocr|ocr:key>',
+        ),
+      );
 
     case 'settings' || 'resource-indexers':
       switch (sub) {
@@ -747,8 +973,59 @@ _CtlRequest? _parseAction(
           return body == null
               ? null
               : _CtlRequest('PUT', '$_api/$action', body: body);
+        // 字幕来源的 key 不走 argv（会进 shell 历史 / 进程列表）：从 stdin 或同名环境变量读。
+        case 'subtitle-key'
+            when action == 'settings' &&
+                _kCtlSubtitleKeyEnv.containsKey(arg(0)) &&
+                (arg(1) == null || arg(1) == 'clear'):
+          final String id = arg(0)!;
+          final Map<String, Object?> change;
+          if (arg(1) == 'clear') {
+            change = <String, Object?>{'clearApiKey': true};
+          } else {
+            final String key = (readSecret(_kCtlSubtitleKeyEnv[id]!) ?? '')
+                .trim();
+            if (key.isEmpty) {
+              err.writeln(
+                tr(
+                  '没有读到 key：经 stdin 传入，或设置 ${_kCtlSubtitleKeyEnv[id]}',
+                  'No key read: pipe it through stdin, or set ${_kCtlSubtitleKeyEnv[id]}',
+                ),
+              );
+              return null;
+            }
+            change = <String, Object?>{'apiKey': key};
+          }
+          return _CtlRequest(
+            'PUT',
+            '$_api/settings',
+            body: <String, Object?>{
+              'subtitleProviders': <String, Object?>{id: change},
+            },
+            render: _renderSubtitleProviders,
+          );
+        case 'subtitle-source'
+            when action == 'settings' &&
+                _kCtlSubtitleKeyEnv.containsKey(arg(0)) &&
+                (arg(1) == 'on' || arg(1) == 'off'):
+          return _CtlRequest(
+            'PUT',
+            '$_api/settings',
+            body: <String, Object?>{
+              'subtitleProviders': <String, Object?>{
+                arg(0)!: <String, Object?>{'enabled': arg(1) == 'on'},
+              },
+            },
+            render: _renderSubtitleProviders,
+          );
       }
-      return usage("$action [get] | $action set '<json>'");
+      return usage(
+        action == 'settings'
+            ? "settings [get] | settings set '<json>' | "
+                  'settings subtitle-key opensubtitles|subdl|jimaku [clear] | '
+                  'settings subtitle-source opensubtitles|subdl|jimaku on|off'
+            : "$action [get] | $action set '<json>'",
+      );
 
     case 'anki':
       switch (sub) {
@@ -779,12 +1056,20 @@ _CtlRequest? _parseAction(
           final String? user = command['user'] as String?;
           if (user == null || user.trim().isEmpty) {
             return usage(
-              'anki login --user <用户名> [--endpoint <url>] [--accept-ankiweb]',
+              tr(
+                'anki login --user <用户名> [--endpoint <url>] [--accept-ankiweb]',
+                'anki login --user <user name> [--endpoint <url>] [--accept-ankiweb]',
+              ),
             );
           }
           final String? password = readSecret('FUSHI_ANKI_PASSWORD');
           if (password == null || password.isEmpty) {
-            err.writeln('没有读到密码：经 stdin 传入，或设置 FUSHI_ANKI_PASSWORD');
+            err.writeln(
+              tr(
+                '没有读到密码：经 stdin 传入，或设置 FUSHI_ANKI_PASSWORD',
+                'Could not read the password: pass it via stdin, or set FUSHI_ANKI_PASSWORD',
+              ),
+            );
             return null;
           }
           return _CtlRequest(
@@ -802,6 +1087,97 @@ _CtlRequest? _parseAction(
       return usage(
         'anki [status] | anki sync|refresh|run|retry | anki landing on|off | '
         "anki config '<json>' | anki login --user u | anki logout [--discard-unsynced]",
+      );
+
+    case 'srs':
+      // 复习库内容（牌组 / 笔记 / 统计 / 冲突 / 批量改笔记）：见 ctl_srs_commands.dart。
+      if (kCtlSrsDataActions.contains(sub)) {
+        return _fromSrs(parseCtlSrsDataAction(sub, args, command, err));
+      }
+      Map<String, Object?>? uidBody(String key) {
+        final String? uid = arg(0);
+        return uid == null
+            ? null
+            : <String, Object?>{
+                key: key == 'defaultProfile' ? uid : <String>[uid],
+              };
+      }
+      switch (sub) {
+        case '' || 'status':
+          return const _CtlRequest('GET', '$_api/srs');
+        case 'profiles':
+          return _list('GET', '$_api/srs/profiles', 'profiles');
+        case 'add' || 'remove' || 'default' when arg(0) != null:
+          return _CtlRequest(
+            'PUT',
+            '$_api/srs',
+            body: uidBody(switch (sub) {
+              'add' => 'addProfiles',
+              'remove' => 'removeProfiles',
+              _ => 'defaultProfile',
+            }),
+          );
+        case 'off':
+          return const _CtlRequest(
+            'PUT',
+            '$_api/srs',
+            body: <String, Object?>{'profiles': <String>[]},
+          );
+        case 'sync':
+          return _CtlRequest(
+            'POST',
+            '$_api/srs/sync',
+            body: <String, Object?>{'profile': ?arg(0)},
+          );
+        case 'ankiconnect' when arg(0) == 'on' || arg(0) == 'off':
+          return _CtlRequest(
+            'PUT',
+            '$_api/srs',
+            body: <String, Object?>{
+              'ankiConnect': <String, Object?>{'enabled': arg(0) == 'on'},
+            },
+          );
+        case 'config' when arg(0) != null:
+          final Object? body = _jsonArg(arg(0)!, err);
+          return body == null
+              ? null
+              : _CtlRequest('PUT', '$_api/srs', body: body);
+        case 'devices':
+          return _CtlRequest(
+            'GET',
+            '$_api/srs/devices',
+            query: arg(0) == null ? null : <String, String>{'profile': arg(0)!},
+            render: _renderSrsDevices,
+          );
+        case 'migration' when arg(0) == null || arg(0) == 'status':
+          return const _CtlRequest(
+            'GET',
+            '$_api/srs/migration',
+            render: _renderSrsMigration,
+          );
+        case 'migration' when arg(0) == 'start' || arg(0) == 'cancel':
+          return _CtlRequest(
+            'POST',
+            '$_api/srs/migration/${arg(0)}',
+            render: _renderSrsMigration,
+          );
+        case 'trust' || 'reject' when arg(0) != null:
+          return _CtlRequest(
+            'POST',
+            '$_api/srs/devices/trust',
+            body: <String, Object?>{
+              'device': arg(0),
+              'trust': sub == 'trust',
+              'profile': ?arg(1),
+            },
+            render: _renderSrsDevices,
+          );
+      }
+      return usage(
+        'srs [status] | srs profiles | srs add|remove|default <uid> | srs off | '
+        "srs sync [<uid>] | srs ankiconnect on|off | srs config '<json>' | "
+        'srs devices [<uid>] | srs trust|reject <device> [<uid>] | '
+        'srs migration [status|start|cancel]',
       );
 
     case 'profiles':
@@ -868,7 +1244,7 @@ _CtlRequest? _parseAction(
         query: parsed.queryParameters.isEmpty ? null : parsed.queryParameters,
       );
   }
-  err.writeln('未知动作 "$action"\n');
+  err.writeln(tr('未知动作 "$action"\n', 'Unknown action "$action"\n'));
   err.writeln(kCtlUsage);
   return null;
 }
@@ -877,7 +1253,7 @@ String? _readSecretDefault(String envName) {
   final String? env = Platform.environment[envName];
   if (env != null && env.isNotEmpty) return env;
   if (stdin.hasTerminal) {
-    stderr.write('密码: ');
+    stderr.write(tr('密码: ', 'Password: '));
     stdin.echoMode = false;
     try {
       return stdin.readLineSync();
@@ -896,9 +1272,11 @@ Object? _jsonArg(String text, StringSink err) {
   try {
     final Object? decoded = jsonDecode(text);
     if (decoded is Map) return decoded;
-    err.writeln('要求 JSON 对象: $text');
+    err.writeln(tr('要求 JSON 对象: $text', 'Expected a JSON object: $text'));
   } on FormatException catch (e) {
-    err.writeln('JSON 解析失败: ${e.message}');
+    err.writeln(
+      tr('JSON 解析失败: ${e.message}', 'Failed to parse JSON: ${e.message}'),
+    );
   }
   return null;
 }
@@ -939,6 +1317,22 @@ void _renderStatus(Object? response, StringSink out) {
   _renderKeyValues(response, out);
 }
 
+/// 只打印字幕来源那一块（开关 / 设过没有 / 是否生效；凭据本来就不在响应里）。
+void _renderSubtitleProviders(Object? response, StringSink out) {
+  final Object? providers = response is Map
+      ? response['subtitleProviders']
+      : null;
+  if (providers is! Map) return _renderGeneric(response, out);
+  providers.forEach((Object? id, Object? state) {
+    if (state is! Map) return;
+    out.writeln(
+      '${'$id'.padRight(14)}enabled=${state['enabled']} '
+      'apiKeySet=${state['apiKeySet']} active=${state['active']}'
+      '${state['apiKeyFromEnv'] == true ? ' (env key wins)' : ''}',
+    );
+  });
+}
+
 void _renderLogs(Object? response, StringSink out) {
   final Object? lines = response is Map ? response['lines'] : null;
   if (lines is! List) return _renderGeneric(response, out);
@@ -947,16 +1341,121 @@ void _renderLogs(Object? response, StringSink out) {
   }
 }
 
+/// `pairing link`：一行链接 + 有效期，链接单独成行方便复制 / 管道。
+void _renderPairLink(Object? response, StringSink out) {
+  if (response is! Map || response['uri'] == null) {
+    return _renderGeneric(response, out);
+  }
+  out.writeln(response['uri']);
+  final Object? ttl = response['expiresInSeconds'];
+  if (ttl is num) {
+    out.writeln(
+      tr(
+        '（${ttl.toInt()} 秒内有效，只能用一次）',
+        '(valid for ${ttl.toInt()} s, single use)',
+      ),
+    );
+  }
+}
+
 void _renderPairing(Object? response, StringSink out) {
   if (response is! Map) return _renderGeneric(response, out);
   final Object? pending = response['pending'];
   if (pending is Map) {
     out.writeln(
-      '待确认: PIN ${pending['pin']}  ${_scalar(pending['deviceName'])}  '
-      '${_scalar(pending['remoteAddress'])}',
+      tr(
+        '待确认: PIN ${pending['pin']}  ${_scalar(pending['deviceName'])}  '
+            '${_scalar(pending['remoteAddress'])}',
+        'Pending: PIN ${pending['pin']}  ${_scalar(pending['deviceName'])}  '
+            '${_scalar(pending['remoteAddress'])}',
+      ),
     );
   }
   _listRenderer('peers')(response, out);
+}
+
+/// `srs migration [status|start|cancel]`：代际状态、步骤进度、上次结论与处置说明，再列各份 profile 的状态。
+void _renderSrsMigration(Object? response, StringSink out) {
+  final Object? g = response is Map ? response['generation'] : null;
+  if (g is! Map) return _renderGeneric(response, out);
+  out.writeln(
+    '${tr('状态', 'State')}: ${g['state']}'
+    '${g['code'] == null ? '' : ' (${g['code']})'}',
+  );
+  if (g['step'] != null) {
+    out.writeln(
+      '${tr('步骤', 'Step')}: ${g['step']} ${g['done']}/${g['total']}'
+      '${g['cancelRequested'] == true ? tr('（已请求叫停）', ' (cancel requested)') : ''}',
+    );
+  }
+  if (g['verdict'] != null) {
+    out.writeln(
+      '${tr('上次结论', 'Last verdict')}: ${g['verdict']}'
+      '${g['finishedAt'] == null ? '' : '  ${g['finishedAt']}'}',
+    );
+  }
+  if (g['reason'] != null) out.writeln('${tr('原因', 'Reason')}: ${g['reason']}');
+  if (g['reportPath'] != null) {
+    out.writeln('${tr('报告', 'Report')}: ${g['reportPath']}');
+  }
+  if (g['advice'] != null) out.writeln('${tr('处置', 'Advice')}: ${g['advice']}');
+  final Object? profiles = response is Map ? response['profiles'] : null;
+  if (profiles is List) {
+    for (final Object? p in profiles) {
+      if (p is Map) out.writeln('  ${p['uid']}  [${p['state']}]');
+    }
+  }
+}
+
+/// `srs devices` / `srs trust|reject`：每份 profile 一段，还没信任的设备一行一台。
+void _renderSrsDevices(Object? response, StringSink out) {
+  if (response is! Map) return _renderGeneric(response, out);
+  void line(Object? d) {
+    if (d is! Map) return;
+    final String trust = switch (d['trust']) {
+      'pending' => tr('待确认', 'pending'),
+      'rejected' => tr('已拒绝', 'rejected'),
+      _ => tr('已信任', 'trusted'),
+    };
+    final String name = '${d['name'] ?? ''}'.isEmpty
+        ? tr('未命名设备', 'Unnamed device')
+        : '${d['name']}${'${d['app'] ?? ''}'.isEmpty ? '' : ' (Fushi ${d['app']})'}';
+    final Object? since = d['trustSince'];
+    out.writeln(
+      '  ${d['device']}  [$trust]  $name  '
+      '${tr('扣着 ${d['heldDeletes']} 条删除、${d['heldPurges']} 条彻底清除', 'holding ${d['heldDeletes']} deletes, ${d['heldPurges']} purges')}'
+      '${since is num ? tr('  首次出现 ${DateTime.fromMillisecondsSinceEpoch(since.toInt()).toIso8601String()}', '  first seen ${DateTime.fromMillisecondsSinceEpoch(since.toInt()).toIso8601String()}') : ''}',
+    );
+  }
+
+  void profile(Object? p) {
+    if (p is! Map) return;
+    final String name = '${p['name'] ?? ''}';
+    out.writeln(name.isEmpty ? '${p['uid']}' : '$name (${p['uid']})');
+    final Object? untrusted = p['untrusted'];
+    if (untrusted is! List || untrusted.isEmpty) {
+      out.writeln(tr('  （没有待确认的设备）', '  (no devices waiting)'));
+      return;
+    }
+    untrusted.forEach(line);
+  }
+
+  final Object? device = response['device'];
+  if (device is Map) {
+    out.writeln(
+      device['trust'] == 'trusted'
+          ? tr('已信任 ${device['device']}', 'Trusted ${device['device']}')
+          : tr('已拒绝 ${device['device']}', 'Rejected ${device['device']}'),
+    );
+    profile(response['profile']);
+    return;
+  }
+  final Object? profiles = response['profiles'];
+  if (profiles is! List) return _renderGeneric(response, out);
+  if (profiles.isEmpty) {
+    out.writeln(tr('  （没有可用的复习配置文件）', '  (no review profile available)'));
+  }
+  profiles.forEach(profile);
 }
 
 /// `downloads subtitles <id>`：一行一条字幕行。
@@ -964,7 +1463,7 @@ void _renderJobSubtitles(Object? response, StringSink out) {
   final Object? rows = response is Map ? response['subtitles'] : null;
   if (rows is! List) return _renderGeneric(response, out);
   if (rows.isEmpty) {
-    out.writeln('  （空）');
+    out.writeln(tr('  （空）', '  (empty)'));
     return;
   }
   for (final Object? row in rows) {
@@ -993,17 +1492,33 @@ void _renderModels(Object? response, StringSink out) {
 /// 渲染 `{<key>: [...]}` 形状的列表响应；其余字段（capability 之类）不展开，`--json` 可看全量。
 void _renderBackups(Object? response, StringSink out) {
   if (response is! Map) return _renderGeneric(response, out);
-  if (response['running'] != null) out.writeln('进行中: ${response['running']}');
+  if (response['running'] != null) {
+    out.writeln(
+      tr('进行中: ${response['running']}', 'In progress: ${response['running']}'),
+    );
+  }
   if (response['lastError'] != null) {
-    out.writeln('上次失败: ${response['lastError']}');
+    out.writeln(
+      tr(
+        '上次失败: ${response['lastError']}',
+        'Last failure: ${response['lastError']}',
+      ),
+    );
   }
   final Object? items = response['items'];
   if (items is! List || items.isEmpty) {
-    out.writeln('（没有备份）');
+    out.writeln(tr('（没有备份）', '(no backups)'));
     return;
   }
   for (final Object? item in items) {
-    if (item is Map) out.writeln('${item['name']}  ${item['bytes']} 字节');
+    if (item is Map) {
+      out.writeln(
+        tr(
+          '${item['name']}  ${item['bytes']} 字节',
+          '${item['name']}  ${item['bytes']} bytes',
+        ),
+      );
+    }
   }
 }
 
@@ -1050,7 +1565,7 @@ void _renderRows(
   List<String> idKeys = _idKeys,
 }) {
   if (rows is! List || rows.isEmpty) {
-    out.writeln('  （空）');
+    out.writeln(tr('  （空）', '  (empty)'));
     return;
   }
   for (final Object? row in rows) {

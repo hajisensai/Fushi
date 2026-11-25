@@ -47,13 +47,17 @@ function makeEl(tag) {
     getAttribute(name) { return Object.prototype.hasOwnProperty.call(this.attrs, name) ? this.attrs[name] : null; },
     removeAttribute(name) { delete this.attrs[name]; },
     addEventListener(type, fn) { (this.handlers[type] = this.handlers[type] || []).push(fn); },
-    appendChild(child) { child.parentNode = this; this.children.push(child); return child; },
+    appendChild(child) {
+      if (child.parentNode) child.parentNode.removeChild(child);
+      child.parentNode = this;
+      this.children.push(child);
+      return child;
+    },
     insertBefore(child, before) {
       // 真 DOM 的语义是「移动」：已在树上的同一节点先被摘下来再插回去。壳里必须
       // 照做，否则「每秒重插同一个节点」这类 bug 在测试里只会表现成节点变多，
       // 或者干脆看不出来。
-      const had = this.children.indexOf(child);
-      if (had >= 0) this.children.splice(had, 1);
+      if (child.parentNode) child.parentNode.removeChild(child);
       child.parentNode = this;
       const at = before ? this.children.indexOf(before) : -1;
       if (at < 0) this.children.push(child); else this.children.splice(at, 0, child);
@@ -88,6 +92,7 @@ function makeEl(tag) {
       });
     },
     querySelector(sel) { return queryIn(this, sel); },
+    querySelectorAll(sel) { return findAll(this, (el) => el !== this && el.matches && el.matches(sel)); },
     getBoundingClientRect() {
       return this.rect || { left: 0, right: 0, top: 0, bottom: 0, width: 0, height: 0 };
     },
@@ -147,7 +152,7 @@ function findAll(root, pred, out = []) {
 
 const STYLE_STUB = {
   KEY: 'subtitleStyle',
-  DEFAULTS: { fontScale: 100, lineHeight: 145, textAlign: 'center', shadow: 'soft', textColor: '', backgroundColor: '', backgroundOpacity: 72 },
+  DEFAULTS: { fontScale: 100, lineHeight: 145, textAlign: 'center', shadow: 'soft', textColor: '', backgroundColor: '', backgroundOpacity: 72, boxAutoFit: true },
   LIMITS: { fontScale: [50, 300], lineHeight: [100, 250], backgroundOpacity: [0, 100] },
   DEFAULT_TEXT_COLOR: '#f7f8f2',
   DEFAULT_BACKGROUND_COLOR: '#0c0f0d',
@@ -168,7 +173,7 @@ const STYLE_STUB = {
 function load(options = {}) {
   const body = makeEl('body');
   const video = makeEl('video');
-  video.rect = { left: 0, right: 1280, top: 0, bottom: 720, width: 1280, height: 720 };
+  video.rect = options.videoRect || { left: 0, right: 1280, top: 0, bottom: 720, width: 1280, height: 720 };
   video.clientWidth = 1280;
   video.clientHeight = 720;
   video.duration = 600;
@@ -180,8 +185,17 @@ function load(options = {}) {
   rightControls.className = 'ytp-right-controls';
   const siteButton = makeEl('button');
   siteButton.className = 'ytp-settings-button';
+  if (options.netflixFullscreenControl) siteButton.setAttribute('data-uia', options.netflixFullscreenControl);
   rightControls.appendChild(siteButton);
-  player.appendChild(video);
+  if (options.netflixCanvasRect) {
+    const canvas = makeEl('div');
+    canvas.setAttribute('data-uia', 'video-canvas');
+    canvas.rect = options.netflixCanvasRect;
+    canvas.appendChild(video);
+    player.appendChild(canvas);
+  } else {
+    player.appendChild(video);
+  }
   player.appendChild(rightControls);
   if (options.site !== 'none') body.appendChild(player);
 
@@ -227,7 +241,9 @@ function load(options = {}) {
       if (sel === 'video') return options.noVideo ? null : video;
       return queryIn(body, sel);
     },
+    querySelectorAll(sel) { return body.querySelectorAll(sel); },
   };
+  if (options.configurePlayer) options.configurePlayer({ player, rightControls, siteButton, documentObject });
   const sandbox = {
     window: windowObject,
     document: documentObject,
@@ -267,7 +283,7 @@ function load(options = {}) {
     for (const fn of storageListeners) fn(changes, 'local');
   }
   return {
-    api, body, video, rightControls, sets, removes, sent, shortcuts, menu, button, rowFor, changed,
+    api, body, video, rightControls, siteButton, sets, removes, sent, shortcuts, menu, button, rowFor, changed,
     doc: documentObject,
     hideToggles: () => hideToggles,
     picks, offsets, toasts, trackState,
@@ -309,10 +325,14 @@ test('menuModel：总开关关掉时从属项置灰，隐藏字幕不受影响',
   const on = PC.menuModel({ overlayOn: true });
   assert.deepStrictEqual(
     on.map((i) => i.id),
-    ['overlay', 'replaceNative', 'allTracks', 'background', 'hidden', 'study', 'favLine', 'favVideo', 'track', 'list', 'offset', 'style', 'settings'],
+    ['overlay', 'replaceNative', 'allTracks', 'background', 'hidden', 'mask', 'maskEdit', 'study', 'favLine', 'favVideo', 'track', 'list', 'offset', 'autoAlign', 'style', 'settings'],
   );
-  // 「收藏当前句」只在有当前句时可点（KGC1ifR1a3），其余项开总开关时全可用。
-  assert.ok(on.every((i) => i.id === 'favLine' || !i.disabled));
+  // 「收藏当前句」只在有当前句时可点（KGC1ifR1a3）、「自动对轴」只在有 Fushi 字幕轨时可点
+  // （0wkJImhZUp：没轨就没东西可对），其余项开总开关时全可用。
+  assert.ok(on.every((i) => i.id === 'favLine' || i.id === 'autoAlign' || !i.disabled));
+  const withTrack = Object.fromEntries(PC.menuModel({ overlayOn: true, hasTrack: true }).map((i) => [i.id, i]));
+  assert.ok(!withTrack.autoAlign.disabled);
+  assert.strictEqual(withTrack.autoAlign.icon, 'auto_awesome');
 
   const off = PC.menuModel({ overlayOn: false });
   const byId = Object.fromEntries(off.map((i) => [i.id, i]));
@@ -396,6 +416,8 @@ test('styleControls：上下限全部取自 fushiSubtitleStyle，本模块不另
   assert.deepStrictEqual([byId.lineHeight.min, byId.lineHeight.max], STYLE_STUB.LIMITS.lineHeight);
   assert.deepStrictEqual([byId.backgroundOpacity.min, byId.backgroundOpacity.max], STYLE_STUB.LIMITS.backgroundOpacity);
   // 变异实测：把 LIMITS 改窄，控件必须跟着变窄（否则说明值是硬编码的）。
+  // 自适应缩放开关在快捷面板里（反馈 UAiGljqcTw），字段与设置页同一个 boxAutoFit。
+  assert.strictEqual(byId.boxAutoFit.kind, 'switch');
   const narrowed = PC.styleControls(Object.assign({}, STYLE_STUB, { LIMITS: { fontScale: [80, 120] } }));
   assert.deepStrictEqual([narrowed[0].min, narrowed[0].max], [80, 120]);
   assert.deepStrictEqual(PC.styleControls(null), []);
@@ -518,6 +540,25 @@ test('字幕样式子页：改字号写 subtitleStyle；恢复默认删键', () 
   const reset = walk(menu, (el) => el.textContent === FUSHI_T('pc_style_reset'));
   reset.click();
   assert.strictEqual(t.removes.pop(), 'subtitleStyle');
+});
+
+test('字幕样式子页：自适应缩放开关（反馈 UAiGljqcTw）回显默认开、翻关写 boxAutoFit:false、翻回删键', () => {
+  const t = load();
+  t.button().click();
+  t.rowFor('style').click();
+  const find = () => walk(t.menu(), (el) => el.dataset && el.dataset.field === 'boxAutoFit');
+  const row = find();
+  assert.ok(row, '快捷面板里应该有自适应缩放开关');
+  assert.strictEqual(row.getAttribute('role'), 'switch');
+  assert.strictEqual(row.getAttribute('aria-checked'), 'true', '默认开（与 fushiSubtitleStyle.DEFAULTS 一致）');
+  row.click();
+  assert.strictEqual(t.sets.pop().subtitleStyle.boxAutoFit, false);
+  const again = find();
+  assert.strictEqual(again.getAttribute('aria-checked'), 'false', '立即重绘，回显关');
+  // 键盘：Enter 翻回默认 → 等于默认就删键。
+  for (const fn of again.handlers.keydown || []) fn({ key: 'Enter', preventDefault() {}, stopPropagation() {} });
+  assert.strictEqual(t.removes.pop(), 'subtitleStyle');
+  assert.strictEqual(find().getAttribute('aria-checked'), 'true');
 });
 
 test('BUG-3145：总门没开时「Fushi 字幕」显示关，翻开时连总门一起写', () => {
@@ -775,6 +816,93 @@ test('悬浮按钮：指针落在画面上就出现——盖在 <video> 上的�
   assert.strictEqual(btn.dataset.visible, '1');
 });
 
+test('Netflix：进入或退出全屏的原生控件不被插入 Fushi 按钮，字幕菜单仍可打开', () => {
+  for (const control of ['control-fullscreen-enter', 'control-fullscreen-exit']) {
+    const t = load({ hostname: 'www.netflix.com', netflixFullscreenControl: control });
+    assert.strictEqual(t.rightControls.children.length, 1, `${control} 保持原生按钮数量`);
+    assert.strictEqual(t.rightControls.firstChild, t.siteButton);
+
+    const btn = t.button();
+    assert.ok(btn && btn.classList.contains('is-floating'));
+    t.fire('pointerover', { target: t.video, clientX: 640, clientY: 360 });
+    assert.strictEqual(btn.dataset.visible, '1');
+    btn.click();
+    assert.ok(t.menu());
+  }
+});
+
+test('Netflix：全屏旁有位时同排，缩窄后退到进度条上方，拉宽再回位', () => {
+  let width = 1000;
+  const title = makeEl('span');
+  title.setAttribute('data-uia', 'video-title');
+  const t = load({
+    hostname: 'www.netflix.com',
+    netflixFullscreenControl: 'control-fullscreen-enter',
+    configurePlayer({ player, rightControls, siteButton, documentObject }) {
+      const bar = makeEl('div');
+      bar.setAttribute('data-uia', 'controls-standard');
+      bar.getBoundingClientRect = () => ({ left: 0, top: 610, right: width, bottom: 700 });
+      const hiddenFullscreen = makeEl('button');
+      hiddenFullscreen.setAttribute('data-uia', 'control-fullscreen-enter');
+      bar.appendChild(hiddenFullscreen);
+      bar.appendChild(title);
+      bar.appendChild(rightControls);
+      player.appendChild(bar);
+      rightControls.getBoundingClientRect = () => ({ left: width - 144, top: 652, right: width, bottom: 700 });
+      siteButton.getBoundingClientRect = () => ({ left: width - 48, top: 652, right: width, bottom: 700 });
+      documentObject.createElement = (tag) => {
+        const el = makeEl(tag);
+        if (tag === 'button') {
+          el.getBoundingClientRect = () => width >= 400
+            ? { left: width - 96, top: 652, right: width - 48, bottom: 700 }
+            : { left: width - 30, top: 652, right: width + 18, bottom: 700 };
+        }
+        return el;
+      };
+    },
+  });
+  const btn = t.button();
+  assert.strictEqual(btn.nextSibling, t.siteButton);
+  assert.ok(!btn.classList.contains('is-floating'));
+
+  width = 350;
+  t.tick();
+  assert.deepStrictEqual(t.rightControls.children, [t.siteButton]);
+  assert.ok(btn.classList.contains('is-floating'));
+  assert.strictEqual(btn.style.top, '554px');
+
+  width = 1000;
+  t.tick();
+  assert.strictEqual(t.button(), btn);
+  assert.strictEqual(btn.nextSibling, t.siteButton);
+
+  t.siteButton.setAttribute('data-uia', 'control-fullscreen-exit');
+  t.fire('fullscreenchange');
+  assert.strictEqual(btn.nextSibling, t.siteButton);
+
+  t.changed({ playerControls: false });
+  assert.ok(!t.button());
+  assert.deepStrictEqual(t.rightControls.children, [t.siteButton]);
+  assert.strictEqual(title.className, '');
+});
+
+test('Netflix：视频超出播放区域时，按钮仍留在可见画面内并避开上下两行原生控件', () => {
+  const t = load({
+    hostname: 'www.netflix.com',
+    netflixFullscreenControl: 'control-fullscreen-enter',
+    videoRect: { left: 0, right: 1400, top: -72, bottom: 792, width: 1400, height: 864 },
+    netflixCanvasRect: { left: 0, right: 1150, top: 0, bottom: 720, width: 1150, height: 720 },
+  });
+  const btn = t.button();
+  t.fire('pointerover', { target: t.video, clientX: 650, clientY: 360 });
+  assert.strictEqual(btn.dataset.visible, '1');
+  assert.strictEqual(btn.style.left, '1094px');
+  assert.strictEqual(btn.style.top, '336px');
+
+  t.fire('pointermove', { target: t.body, clientX: 1220, clientY: 360 });
+  assert.strictEqual(btn.dataset.visible, '', '被播放器裁掉的区域不能触发浮动按钮');
+});
+
 test('pointInVideo：只认画面矩形内的有限坐标', () => {
   const v = { getBoundingClientRect: () => ({ left: 10, right: 110, top: 20, bottom: 80 }) };
   assert.ok(PC.pointInVideo(v, 10, 20));
@@ -785,4 +913,35 @@ test('pointInVideo：只认画面矩形内的有限坐标', () => {
   assert.ok(!PC.pointInVideo(v, undefined, 50));
   assert.ok(!PC.pointInVideo({ getBoundingClientRect: () => ({ left: 0, right: 0, top: 0, bottom: 0 }) }, 0, 0));
   assert.ok(!PC.pointInVideo(null, 1, 1));
+});
+
+test('menuModel：全屏项只在页面脚本可用时出现，且紧跟隐藏字幕之后', () => {
+  for (const state of [{}, { fullscreenAvailable: false }, { fullscreenAvailable: undefined, fullscreenActive: true }]) {
+    assert.ok(!PC.menuModel(state).some((i) => i.id === 'fullscreen'), '不可用时不出现');
+  }
+  const items = PC.menuModel({ fullscreenAvailable: true });
+  const ids = items.map((i) => i.id);
+  assert.strictEqual(ids.indexOf('fullscreen'), ids.indexOf('hidden') + 1);
+  const fs = items[ids.indexOf('fullscreen')];
+  assert.strictEqual(fs.kind, 'action');
+  assert.strictEqual(fs.label, FUSHI_T('pc_fullscreen_enter'));
+  assert.strictEqual(fs.icon, 'fullscreen');
+});
+
+test('menuModel：全屏项随 fullscreenActive 切换文案与图标', () => {
+  const on = PC.menuModel({ fullscreenAvailable: true, fullscreenActive: true }).find((i) => i.id === 'fullscreen');
+  assert.strictEqual(on.label, FUSHI_T('pc_fullscreen_exit'));
+  assert.strictEqual(on.icon, 'fullscreen_exit');
+  assert.notStrictEqual(on.label, FUSHI_T('pc_fullscreen_enter'));
+});
+
+test('menuModel：「自动字幕分句整合」只在 YouTube 出现，不随覆盖层置灰（97pds8EODm）', () => {
+  const ids = (s) => PC.menuModel(s).map((i) => i.id);
+  assert.ok(!ids({ overlayOn: true }).includes('mergeAsr'), '非 YouTube 没有 ASR 滚动行，不出现');
+  const yt = PC.menuModel({ overlayOn: false, asrMergeAvailable: true, mergeAsr: true });
+  const byId = Object.fromEntries(yt.map((i) => [i.id, i]));
+  assert.strictEqual(byId.mergeAsr.kind, 'switch');
+  assert.strictEqual(byId.mergeAsr.on, true);
+  assert.ok(!byId.mergeAsr.disabled, '改的是轨本身（侧边栏 / 查词 / 制卡也用），覆盖层关了照样有意义');
+  assert.strictEqual(yt.map((i) => i.id).indexOf('mergeAsr'), yt.map((i) => i.id).indexOf('replaceNative') + 1);
 });

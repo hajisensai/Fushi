@@ -1,9 +1,6 @@
 /// 服务端对引擎装配点的一次性接线（与 app 的 `installEngineHostBindings()` 对偶）。
 ///
-/// TODO(srs-ankiconnect): 服务端还没有 SRS 装配（没有「当前 profile」的 SrsDbStore），所以
-/// AnkiConnect v6 兼容层（`fushi_engine/srs/ankiconnect/`）目前只在 app 的 Fushi API 上挂。
-/// 服务端接 SRS 后，用配置里指定的 SRS profile 构造 `SrsAnkiConnectHandler`，经
-/// `SrsAnkiConnectEndpoint.handle` 挂到 Fushi API 根路径（鉴权由端点自己做，不经中间件）。
+/// 复习库与 AnkiConnect 不在这里：见 `server_srs.dart` / `server_ankiconnect.dart`（服务端自己的监听，默认关）。
 library;
 
 import 'dart:io';
@@ -18,6 +15,8 @@ import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/media/audio/flac_encoder.dart';
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
+import 'package:fushi_engine/media/video/video_duration_probe.dart'
+    show probeVideoDurationMs;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:fushi_engine/ocr/ocr_host_bindings.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
@@ -27,6 +26,7 @@ import 'package:fushi_server/src/ocr_session_factory.dart';
 import 'package:fushi_server/src/server_gpu_budget.dart';
 import 'package:fushi_server/src/server_log.dart';
 import 'package:fushi_server/src/server_paths.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 void installServerHostBindings({
   required ServerConfig config,
@@ -44,6 +44,11 @@ void installServerHostBindings({
   // resolveFfmpegBackend() 之前装——后端选择是进程级单例。
   ffmpegPathOverride = config.ffmpegPath;
   ffprobePathOverride = config.ffprobePath;
+  // 有声书音频时长探测（app 装的是 just_audio）：多个音频文件 + 一份单时间轴字幕时，
+  // 导入 / 重扫靠它把 cue 分到各文件（BUG-4279）。走同一个 ffprobe；探不出返回 0，
+  // 引擎据此不切、cue 留在第 0 个文件并记诊断。
+  AudiobookStorage.audioDurationProbeMs = (String path) async =>
+      await probeVideoDurationMs(path) ?? 0;
   // AIFF 有声书落盘转 FLAC（Android 播放器不认 AIFF）。
   installAudiobookFlacTranscoder();
   // 漫画 OCR 整卷任务的后台 isolate：FFI ONNX Runtime 工厂 + ORT 库路径引导。
@@ -82,7 +87,10 @@ Future<String?> validateFfmpeg(ServerConfig config) async {
   ]) {
     if (configured == null || configured.trim().isEmpty) continue;
     if (!await File(configured.trim()).exists()) {
-      return '$label 路径不存在: $configured';
+      return tr(
+        '$label 路径不存在: $configured',
+        '$label path does not exist: $configured',
+      );
     }
   }
   return null;

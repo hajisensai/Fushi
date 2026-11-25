@@ -2,7 +2,6 @@
 library;
 
 import 'dart:convert';
-import 'dart:io';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -12,6 +11,8 @@ import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import '../helpers/node_runtime.dart';
+
 /// BUG-3776：Blink 上任何生效的 CSS Custom Highlight 都会裁掉它覆盖的着重号（傍点）。VN 的有声书
 /// 当前句自 BUG-3741 起在 Blink 上也走 Range + CSS.highlights，播到带傍点的句子时傍点只剩一角。
 /// 同一机制还把墨迹伸出文字片段盒的字形切平（圆体 / Meiryo 的 ruby 基字）。真 Chrome 跑生产 CSS +
@@ -19,7 +20,8 @@ import 'package:fushi_core/fushi_core.dart';
 /// 墨迹不能变少；当前句窄条仍盖住带傍点的字；交给引擎绘制的高亮不覆盖带傍点的文字，也不覆盖
 /// 高亮对它是空操作的文字（默认字色时整句都不交）；自定义字色时不走 CSS Highlight，VN 在换屏时
 /// （显示之前）把句子包裹好、字色走 wrapper，播放时屏上 DOM 只切 class（BUG-3741 不平移），
-/// 带傍点的字也换成自定义色。
+/// 带傍点的字也换成自定义色。查词高亮设了文字色（反色高亮）时，带傍点的字照样交给引擎换色（能读优先），
+/// 没设时查词高亮对整段是空操作、一个字都不交。
 void main() {
   const String paragraph =
       '彼は<span class="em">教科書通り</span>の<ruby>技術<rt>ぎじゅつ</rt></ruby>で戦った。';
@@ -33,6 +35,7 @@ void main() {
     required String writingMode,
     required String viewMode,
     String? textColor,
+    String? selectionTextColor,
   }) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
@@ -43,6 +46,8 @@ void main() {
     final String css = ReaderContentStyles.css(
       settings: settings,
       sentenceAudioTextColor: textColor,
+      selectionColor: selectionTextColor == null ? null : 'rgb(20, 20, 20)',
+      selectionTextColor: selectionTextColor,
     );
     final bool vn = viewMode == 'vn';
     final String engine = ReaderPaginationScripts.engineShell(
@@ -82,8 +87,13 @@ void main() {
         '<style id="fushi-reader-style">$css</style>'
         // 段落离开页顶 / 页右：连续模式页顶有渐隐，着重号取样带不能落在里面。
         '<style>.em { text-emphasis: sesame; } p { margin-block-start: 4em; }</style>'
-        '<script>window.flutter_inappwebview = { callHandler: function() '
-        '{ return Promise.resolve(null); } };'
+        // The bridge stub records onRestoreComplete -- the engine's content-ready signal that
+        // lifts the app's loading mask -- so the harness waits on it, not on a fixed sleep.
+        '<script>window.__fushiRestored = new Promise(function(r) '
+        '{ window.__fushiMarkRestored = r; });'
+        'window.flutter_inappwebview = { callHandler: function(name) '
+        '{ if (name === "onRestoreComplete") window.__fushiMarkRestored(); '
+        'return Promise.resolve(null); } };'
         'window.__fushiApplyReaderMargins = function() {};</script>'
         '</head><body><p>$paragraph</p>'
         '<script>${ReaderSelectionScripts.source()}</script>$engine'
@@ -94,7 +104,7 @@ void main() {
   test(
     'a current-sentence highlight keeps the emphasis marks it covers',
     () async {
-      final String? nodeExe = _resolveNode();
+      final String? nodeExe = resolveNodeExecutable();
       if (nodeExe == null) {
         markTestSkipped('node not found on PATH; skipping JS execution');
         return;
@@ -113,6 +123,17 @@ void main() {
             'name': '$writingMode/$viewMode',
             'html': await page(writingMode: writingMode, viewMode: viewMode),
           });
+          // 查词高亮文字色（拍板台 -8azTfJh_v）做的反色高亮：深色查词条上带傍点的字也必须换成
+          // 浅色交给引擎绘制，否则深字落在深条上看不见。
+          pages.add(<String, String>{
+            'name': '$writingMode/$viewMode/selection-text',
+            'selectionText': 'true',
+            'html': await page(
+              writingMode: writingMode,
+              viewMode: viewMode,
+              selectionTextColor: 'rgb(255, 255, 255)',
+            ),
+          });
           // 自定义当前句字色：Blink 上不走 CSS Highlight，VN 换屏时先包裹、播放只切 class。
           pages.add(<String, String>{
             'name': '$writingMode/$viewMode/custom-color',
@@ -125,55 +146,22 @@ void main() {
           });
         }
       }
-      final Directory temp = Directory.systemTemp.createTempSync(
-        'emphasis-highlight-',
+      final Map<String, Object> payload = <String, Object>{'pages': pages};
+      final NodeHarnessResult run = await runNodeHarness(
+        nodeExe,
+        'test/reader/reader_emphasis_highlight_bug3770_harness.mjs',
+        payload,
+        timeout: const Duration(seconds: 100),
       );
-      try {
-        final File payload = File('${temp.path}/pages.json')
-          ..writeAsStringSync(jsonEncode(<String, Object>{'pages': pages}));
-        final Process process = await Process.start(nodeExe, <String>[
-          'test/reader/reader_emphasis_highlight_bug3770_harness.mjs',
-          payload.path,
-        ]);
-        final Future<String> stdout = process.stdout
-            .transform(utf8.decoder)
-            .join();
-        final Future<String> stderr = process.stderr
-            .transform(utf8.decoder)
-            .join();
-        final int exitCode = await process.exitCode.timeout(
-          const Duration(seconds: 100),
-          onTimeout: () {
-            process.kill(ProcessSignal.sigkill);
-            return -1;
-          },
-        );
-        final String out = await stdout;
-        if (exitCode == 77) {
-          markTestSkipped('Chrome unavailable: $out');
-          return;
-        }
-        expect(exitCode, 0, reason: '$out\n${await stderr}');
-        expect(out, contains('PASS 12 emphasis pages'));
-      } finally {
-        temp.deleteSync(recursive: true);
+      final int exitCode = run.exitCode;
+      final String out = run.stdout;
+      if (exitCode == 77) {
+        markTestSkipped('Chrome unavailable: $out');
+        return;
       }
+      expect(exitCode, 0, reason: '$out\n${run.stderr}');
+      expect(out, contains('PASS 18 emphasis pages'));
     },
     timeout: const Timeout(Duration(seconds: 150)),
   );
-}
-
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) return name;
-    } on ProcessException {
-      // Try the next executable name.
-    }
-  }
-  return null;
 }

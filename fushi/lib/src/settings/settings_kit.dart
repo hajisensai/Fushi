@@ -27,13 +27,17 @@ import 'package:fushi/src/settings/settings_kit_core.dart';
 /// 到 error 容器，error 角色是固定的红、**不随主题种子色变化**——分类图标用它，
 /// 换主题时就只有那一枚还是红的（2026-10-09 用户截图「视频图标不变色」）。
 SettingsIconTone settingsIconToneFor(SettingsDestinationId id) => switch (id) {
+  SettingsDestinationId.general => SettingsIconTone.blue,
   SettingsDestinationId.appearance => SettingsIconTone.purple,
+  SettingsDestinationId.navigation => SettingsIconTone.teal,
   SettingsDestinationId.floatingBall => SettingsIconTone.pink,
   SettingsDestinationId.reading => SettingsIconTone.blue,
+  SettingsDestinationId.listening => SettingsIconTone.orange,
   SettingsDestinationId.manga => SettingsIconTone.teal,
   SettingsDestinationId.video => SettingsIconTone.pink,
   SettingsDestinationId.music => SettingsIconTone.purple,
   SettingsDestinationId.game => SettingsIconTone.green,
+  SettingsDestinationId.webBrowser => SettingsIconTone.orange,
   SettingsDestinationId.mediaTracking => SettingsIconTone.orange,
   SettingsDestinationId.lookup => SettingsIconTone.orange,
   SettingsDestinationId.cardCreation => SettingsIconTone.green,
@@ -41,7 +45,7 @@ SettingsIconTone settingsIconToneFor(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.services => SettingsIconTone.blue,
   SettingsDestinationId.localServices => SettingsIconTone.teal,
   SettingsDestinationId.ai => SettingsIconTone.purple,
-  SettingsDestinationId.models => SettingsIconTone.purple,
+  SettingsDestinationId.models => SettingsIconTone.pink,
   SettingsDestinationId.profiles => SettingsIconTone.pink,
   SettingsDestinationId.syncBackup => SettingsIconTone.blue,
   SettingsDestinationId.interconnect => SettingsIconTone.teal,
@@ -57,12 +61,13 @@ SettingsIconTone settingsIconToneFor(SettingsDestinationId id) => switch (id) {
 /// 导航分组的色调（分组标题的小色点、搜索结果分组头用）。
 SettingsIconTone settingsIconToneForGroup(SettingsNavigationGroupId id) =>
     switch (id) {
-      SettingsNavigationGroupId.interface => SettingsIconTone.purple,
+      SettingsNavigationGroupId.general => SettingsIconTone.purple,
       SettingsNavigationGroupId.content => SettingsIconTone.blue,
       SettingsNavigationGroupId.learning => SettingsIconTone.orange,
+      SettingsNavigationGroupId.aiModels => SettingsIconTone.pink,
       SettingsNavigationGroupId.connections => SettingsIconTone.teal,
       SettingsNavigationGroupId.data => SettingsIconTone.green,
-      SettingsNavigationGroupId.app => SettingsIconTone.gray,
+      SettingsNavigationGroupId.system => SettingsIconTone.gray,
     };
 
 // -----------------------------------------------------------------------------
@@ -361,9 +366,20 @@ class SettingsResetSpec {
     required this.reset,
     required this.currentLabel,
     required this.defaultLabel,
-  });
+    this.pinnedAtDefault = false,
+  }) : assert(!(modified && pinnedAtDefault));
 
+  /// 生效值偏离了出厂默认（用户看得见的「改过」；分组头「N 项已修改」只数它）。
   final bool modified;
+
+  /// 生效值等于出厂默认，但偏好里显式存着它（[SettingsStoredChoice] 行先改走、
+  /// 再手动选回默认值）：现在看不出差别，以后出厂默认一改它就钉在旧值上。页级
+  /// 「恢复本页默认」把它列成「当前值 → 跟随默认」并删值（HBK-AUDIT-235）。
+  final bool pinnedAtDefault;
+
+  /// 恢复默认会改变偏好：[modified] 或 [pinnedAtDefault]。
+  bool get resettable => modified || pinnedAtDefault;
+
   final Future<void> Function() reset;
   final String currentLabel;
   final String defaultLabel;
@@ -422,7 +438,7 @@ SettingsResetSpec? settingsResetSpecFor(
   }
   if (item is SettingsSegmentedItem) {
     final SettingsSegmentedItem<Object> segmented = item;
-    final Object? defaultValue = segmented.defaultValue;
+    final Object? defaultValue = segmented.defaultValueFor(context);
     if (defaultValue == null) return null;
     final Object current = segmented.selected(context);
     String format(Object value) {
@@ -432,12 +448,19 @@ SettingsResetSpec? settingsResetSpecFor(
       return value.toString();
     }
 
+    final SettingsStoredChoice? storedChoice = segmented.storedChoice;
+    final bool modified = current != defaultValue;
     return SettingsResetSpec(
-      modified: current != defaultValue,
+      modified: modified,
+      pinnedAtDefault: !modified && (storedChoice?.isStored(context) ?? false),
       currentLabel: format(current),
       defaultLabel: format(defaultValue),
       reset: () async {
-        await segmented.dispatchChange(context, defaultValue);
+        if (storedChoice != null) {
+          await storedChoice.clear(context);
+        } else {
+          await segmented.dispatchChange(context, defaultValue);
+        }
         context.refresh();
       },
     );

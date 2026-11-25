@@ -3,6 +3,7 @@ import 'dart:io';
 
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
@@ -101,6 +102,7 @@ void main() {
     required String lineId,
     required String sentence,
     required String outputExtension,
+    required GalMiningAudioLimit limit,
   }) async => Uint8List.fromList(<int>[7, 8, 9]);
 
   test('上一张卡还在写库时，下一张卡的画面立刻采样；写卡仍按采样顺序串行', () async {

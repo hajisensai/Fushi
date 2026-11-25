@@ -224,6 +224,39 @@ void main() {
       );
     });
 
+    test('专辑 DLsite 资料：认得出编号回资料；认不出 400、不存在 404、请求失败 409、只读 422', () async {
+      final Map<String, Object?> hit = asMap(
+        await call(
+          'POST',
+          '$kMusicCtlRoot/albums/:uid/dlsite',
+          params: <String, String>{'uid': 'al-1'},
+        ),
+      );
+      expect(hit['uid'], 'al-1');
+      expect(hit['workId'], 'RJ01109339');
+      expect(hit['status'], 'matched');
+      expect(hit['circle'], 'チームランドセル');
+      expect(hit['voiceActors'], <String>['耳恋なか']);
+      expect(hit['tags'], <String>['癒し']);
+      expect(hit['ratingCount'], 12);
+      expect(hit['ageCategory'], 'general');
+      expect(
+        hit['pageUrl'],
+        'https://www.dlsite.com/maniax/work/=/product_id/RJ01109339.html',
+      );
+      Future<Object?> post(String uid) => call(
+        'POST',
+        '$kMusicCtlRoot/albums/:uid/dlsite',
+        params: <String, String>{'uid': uid},
+      );
+      await expectLater(() => post('al-2'), _status(400));
+      await expectLater(() => post('nope'), _status(404));
+      scraper.dlsiteFails = true;
+      await expectLater(() => post('al-1'), _status(409));
+      readonly = true;
+      await expectLater(() => post('al-1'), _status(422));
+    });
+
     test('整库识别后台跑：重复启动 409、进度可查、取消后停在 cancelled', () async {
       final Object? started = await call('POST', '$kMusicCtlRoot/scrape');
       final String taskId = asMap(started)['taskId']! as String;

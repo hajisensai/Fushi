@@ -21,7 +21,7 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -232,6 +232,33 @@ void main() {
     expect(rest, isNot(contains(t.onboarding_step_pack_title)));
     expect(rest, isNot(contains(t.onboarding_review_method_title)));
     expect(rest, isNot(contains(t.onboarding_srs_title)));
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pump(const Duration(milliseconds: 10));
+  });
+
+  // 反馈 Soq3tInVt1：音乐模块（2026-10 新增）在功能步有自己的方格，取消勾选后
+  // 走完向导，`module_music_enabled` 落为关；其余库页不受牵连。
+  testWidgets('功能步取消音乐：音乐模块关，其余库页保持开', (WidgetTester tester) async {
+    final _HostAppModel app = await _pumpWizard(tester);
+    expect(app.moduleEnabled(ModuleId.music), isTrue);
+    await _nextUntil(tester, t.onboarding_features_title);
+    OnboardingFeatureTile musicTile() => tester
+        .widgetList<OnboardingFeatureTile>(find.byType(OnboardingFeatureTile))
+        .firstWhere((OnboardingFeatureTile tile) => tile.title == t.nav_music);
+    // 新装默认开，方格初值随偏好真值勾上。
+    expect(musicTile().selected, isTrue);
+    musicTile().onToggle();
+    await _settle(tester);
+    expect(musicTile().selected, isFalse);
+
+    await _nextUntil(tester, t.onboarding_finish_title);
+    await tester.runAsync(
+      () => Future<void>.delayed(const Duration(milliseconds: 50)),
+    );
+    expect(app.moduleEnabled(ModuleId.music), isFalse);
+    expect(app.moduleEnabled(ModuleId.books), isTrue);
+    expect(app.moduleEnabled(ModuleId.video), isTrue);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pump(const Duration(milliseconds: 10));

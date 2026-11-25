@@ -21,7 +21,7 @@ import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_fushi_card_media.dart';
 import 'package:fushi/src/srs/srs_fushi_card_plan.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_edit.dart' show SrsCardSelection;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';

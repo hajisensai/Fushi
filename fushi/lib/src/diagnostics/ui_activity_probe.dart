@@ -27,12 +27,19 @@
 //   `fvis` = 其余要帧（render object 弄脏、重建、平台消息），按间隔节流抓栈取调用点。
 // - `layers=[PictureLayer×40 …]`：此刻合成树里各类 layer 的数量（每帧都要把整棵树重新光栅化，
 //   逐帧涨原生内存时看是哪类 layer：BackdropFilter / ShaderMask / Texture / PlatformView …）。
+// - `lhot=[6602 Viewport<…: ClipPath<FushiGroupedListItem<…×1098]`：#E5IZOyVcbm 停在浏览页空闲时
+//   合成树有 PictureLayer×6593 / OpacityLayer×4395 / ClipPathLayer×1098，`layers=` 只按类型计数，
+//   说不出是哪棵子树。这里找「扇出点」——子树 ≥ [kUiActivityMinHotspotLayers] 个 layer、且没有哪个
+//   子 layer 独占一半的容器 layer（一长串同构子树就挂在它下面），按大小取前
+//   [kUiActivityMaxLayerHotspots] 个：先写子树 layer 数和它的归属，冒号后是它的直接子 layer 按归属
+//   聚合的前两名。归属 = 持有该 layer 的 render object 所在元素的 widget 名 + 往上几层组件 widget 名
+//   （release 下没有 debugCreator，只能走元素树反查；layer 不归任何 render object 持有时沿父 layer 上找）。
 
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart'
-    show ContainerLayer, Layer, RenderView, RendererBinding;
+    show ContainerLayer, Layer, PictureLayer, RenderView, RendererBinding;
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -98,21 +105,42 @@ abstract final class UiActivityProbe {
   /// 归给这个调用点。
   static String? _registeringSite;
 
+  /// 已知 `~`/`?` 调用点的回调重抓栈的节流（见 [beginFrameCallbackRegistration]）。
+  static final Stopwatch _sinceCallbackStack = Stopwatch();
+
   /// 帧回调注册开始（[SchedulerBinding.scheduleFrameCallback] 入口）。首次注册（`rescheduling`
   /// 为 false：Ticker.start / 解除静音、动图下一帧……）抓栈记下调用点；逐帧续排直接按回调身份查。
   /// [stack] 只给测试用，生产传 null 取当前栈。
+  ///
+  /// 已记过调用点的回调再以 `rescheduling: false` 注册时（BUG-5444）：具体调用点直接沿用；
+  /// 只有 `~`/`?` 的才重抓，且与其它重抓共用 [kUiActivityStackSampleInterval] 节流。
+  /// 起因：`OverlayPortal.overlayChildLayoutBuilder` 的 render object 每次布局都以
+  /// `rescheduling: false` 重新注册同一个 `_frameCallback`（整栈只有框架 → `~`），而它在
+  /// 任何一帧都会重新布局；liquid_glass 的 `GlassPinnedBarChrome` 每个顶栏挂一个，保活的
+  /// 各 tab 合计十几个，旧逻辑因此每帧抓十几次整栈再跑正则，debug 下吃掉主线程约四分之一。
   static void beginFrameCallbackRegistration(
     Function callback, {
     required bool rescheduling,
     StackTrace? stack,
   }) {
     String? site = _callbackSites[callback];
-    if (rescheduling && site != null) {
+    final bool recapture =
+        site == null ||
+        (!rescheduling &&
+            _isVague(site) &&
+            !(_sinceCallbackStack.isRunning &&
+                _sinceCallbackStack.elapsed < kUiActivityStackSampleInterval));
+    if (!recapture) {
       // 还活着的回调挪到队尾，不被后来大量短命 ticker 挤出去（常驻的孤儿 ticker 正是要找的那个）。
       _callbackSites
         ..remove(callback)
         ..[callback] = site;
     } else {
+      if (site != null) {
+        _sinceCallbackStack
+          ..reset()
+          ..start();
+      }
       final String fresh = frameRequestSiteOf(
         (stack ?? StackTrace.current).toString(),
       );
@@ -168,6 +196,9 @@ abstract final class UiActivityProbe {
     _sinceStack
       ..stop()
       ..reset();
+    _sinceCallbackStack
+      ..stop()
+      ..reset();
     _requests = 0;
     _callbackRequestSites.clear();
     _otherRequestSites.clear();
@@ -203,6 +234,10 @@ abstract final class UiActivityProbe {
     final Map<String, int> layers = countLayers(
       RendererBinding.instance.renderViews,
     );
+    final List<String> hotspots = describeLayerHotspots(
+      RendererBinding.instance.renderViews,
+      WidgetsBinding.instance.rootElement,
+    );
     final List<String> parts = <String>[
       if (_installed) 'frames=$frames',
       if (snap.pages.isNotEmpty) 'page=[${snap.pages.join('>')}]',
@@ -218,6 +253,7 @@ abstract final class UiActivityProbe {
         'fvis=[${describeTickerOwners(otherRequests, max: kUiActivityMaxBuildSites, separator: '; ')}]',
       if (layers.isNotEmpty)
         'layers=[${describeTickerOwners(layers, max: kUiActivityMaxLayerTypes)}]',
+      if (hotspots.isNotEmpty) 'lhot=[${hotspots.join(' | ')}]',
     ];
     return parts.isEmpty ? null : parts.join(' ');
   }
@@ -339,6 +375,152 @@ Map<String, int> countLayers(
   return counts;
 }
 
+/// `lhot=[…]` 最多列几处扇出点。
+const int kUiActivityMaxLayerHotspots = 3;
+
+/// 子树至少有这么多 layer 才算扇出点（正常页面整棵合成树只有几十个 layer）。
+const int kUiActivityMinHotspotLayers = 500;
+
+/// 归属描述最多取几个 widget 名（持有者自己 + 往上的组件 widget）。
+const int kUiActivityOwnerChainDepth = 5;
+
+/// 合成树的扇出点及其归属（格式见文件头 `lhot=`），按子树大小降序，最多 [maxHotspots] 个。
+///
+/// 扇出点 = 子树 ≥ [minLayers] 个 layer、至少两个子 layer、且每个子 layer 的子树都不到它的一半的
+/// 容器 layer。根 layer 这类「一个子 layer 独占全部」的单链节点不算——要点名的是那串同构子树的
+/// 共同父亲，以及那串子树本身是谁。[root] 为空时归属记 `?`。
+@visibleForTesting
+List<String> describeLayerHotspots(
+  Iterable<RenderView> views,
+  Element? root, {
+  int maxHotspots = kUiActivityMaxLayerHotspots,
+  int minLayers = kUiActivityMinHotspotLayers,
+  int maxLayers = kUiActivityMaxLayers,
+  int maxElements = kUiActivityMaxElements,
+}) {
+  final Map<Layer, int> sizes = Map<Layer, int>.identity();
+  int visitedLayers = 0;
+  int measure(Layer layer) {
+    if (visitedLayers >= maxLayers) return 0;
+    visitedLayers++;
+    int total = 1;
+    if (layer is ContainerLayer) {
+      for (Layer? c = layer.firstChild; c != null; c = c.nextSibling) {
+        total += measure(c);
+      }
+    }
+    sizes[layer] = total;
+    return total;
+  }
+
+  for (final RenderView view in views) {
+    // ignore: invalid_use_of_protected_member
+    final Layer? layer = view.layer;
+    if (layer != null) measure(layer);
+  }
+
+  final List<ContainerLayer> hotspots = <ContainerLayer>[];
+  sizes.forEach((Layer layer, int size) {
+    if (layer is! ContainerLayer || size < minLayers) return;
+    int children = 0;
+    for (Layer? c = layer.firstChild; c != null; c = c.nextSibling) {
+      children++;
+      if ((sizes[c] ?? 0) * 2 >= size) return;
+    }
+    if (children >= 2) hotspots.add(layer);
+  });
+  if (hotspots.isEmpty) return const <String>[];
+  hotspots.sort(
+    (ContainerLayer a, ContainerLayer b) => sizes[b]!.compareTo(sizes[a]!),
+  );
+  final List<ContainerLayer> top = hotspots.take(maxHotspots).toList();
+
+  // 只为扇出点、它们的直接子 layer 与祖先 layer 反查持有者，其余 layer 不进表。
+  final Set<Layer> wanted = Set<Layer>.identity();
+  for (final ContainerLayer hotspot in top) {
+    for (Layer? l = hotspot; l != null; l = l.parent) {
+      wanted.add(l);
+    }
+    for (Layer? c = hotspot.firstChild; c != null; c = c.nextSibling) {
+      wanted.add(c);
+    }
+  }
+  final Map<Layer, Element> owners = Map<Layer, Element>.identity();
+  if (root != null) {
+    int visitedElements = 0;
+    void visit(Element element) {
+      if (visitedElements >= maxElements) return;
+      visitedElements++;
+      if (element is RenderObjectElement) {
+        // ignore: invalid_use_of_protected_member
+        final Layer? layer = element.renderObject.layer;
+        if (layer != null && wanted.contains(layer)) owners[layer] = element;
+      }
+      element.visitChildElements(visit);
+    }
+
+    visit(root);
+  }
+
+  String ownerOf(Layer layer) {
+    for (Layer? l = layer; l != null; l = l.parent) {
+      final Element? owner = owners[l];
+      if (owner != null) return describeElementChain(owner);
+    }
+    return '?';
+  }
+
+  return <String>[
+    for (final ContainerLayer hotspot in top)
+      '${sizes[hotspot]} ${ownerOf(hotspot)}: ${_describeChildOwners(hotspot, owners)}',
+  ];
+}
+
+/// 扇出点的直接子 layer 按归属聚合（前两名）。没人持有的子 layer 记类型名，图层（PictureLayer，
+/// 从来不归 render object 持有）不计。
+String _describeChildOwners(
+  ContainerLayer hotspot,
+  Map<Layer, Element> owners,
+) {
+  final Map<String, int> tally = <String, int>{};
+  for (Layer? c = hotspot.firstChild; c != null; c = c.nextSibling) {
+    if (c is PictureLayer) continue;
+    final Element? owner = owners[c];
+    final String key = owner != null
+        ? describeElementChain(owner)
+        : _layerTypeName(c);
+    tally.update(key, (int n) => n + 1, ifAbsent: () => 1);
+  }
+  if (tally.isEmpty) return 'PictureLayer';
+  return describeTickerOwners(tally, max: 2, separator: ', ');
+}
+
+/// `ClipPath<FushiGroupedListItem<InstalledOnlineSourceRow`：[element] 的 widget 名，接着往上最多
+/// [depth] − 1 个组件 widget（Stateless / Stateful）名，相邻重复只记一次。不用 `@` 连接（日志脱敏
+/// 会把 `x@y` 当邮箱抹掉）。
+@visibleForTesting
+String describeElementChain(
+  Element element, {
+  int depth = kUiActivityOwnerChainDepth,
+}) {
+  final List<String> names = <String>[_typeName(element.widget)];
+  element.visitAncestorElements((Element ancestor) {
+    if (names.length >= depth) return false;
+    if (ancestor is ComponentElement) {
+      final String name = _typeName(ancestor.widget);
+      if (name != names.last) names.add(name);
+    }
+    return names.length < depth;
+  });
+  return names.join('<');
+}
+
+String _layerTypeName(Layer layer) {
+  final String full = layer.runtimeType.toString();
+  final int generic = full.indexOf('<');
+  return generic < 0 ? full : full.substring(0, generic);
+}
+
 /// 从 [root] 先序走元素树，跳过 `TickerMode(enabled: false)` 的子树（里面的 ticker 被静音、不驱动出帧）：
 ///
 /// - 收集类型名以 `Page` 结尾的 widget（相邻重复只记一次），只留最后 [maxPages] 个；
@@ -347,7 +529,6 @@ Map<String, int> countLayers(
 ///   ticker 是 mixin 私有字段，只能经它们的 `debugFillProperties`（release 也在）取到对象本身。
 ///
 /// [root] 为空返回空结果。
-@visibleForTesting
 UiActivitySnapshot scanUiActivity(
   Element? root, {
   int maxPages = kUiActivityMaxPages,
@@ -390,7 +571,6 @@ UiActivitySnapshot scanUiActivity(
 }
 
 /// `A×3 B +2`：按活跃 ticker 数降序取前 [max] 个持有者，数量为 1 不写倍数。
-@visibleForTesting
 String describeTickerOwners(
   Map<String, int> tickers, {
   int max = kUiActivityMaxTickerOwners,

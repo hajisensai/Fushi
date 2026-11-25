@@ -22,11 +22,15 @@ import 'package:fushi_core/fushi_core.dart'
     show LocalFileDeleteReport, VideoBookRow, deleteLocalFiles, platformPathKey;
 import 'package:path/path.dart' as p;
 
-import 'package:fushi_engine/media/media_extensions.dart' show kVideoExtensions;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
-    show isBlurayPlaylistPath;
+    show blurayDiscRootForPlaylistPath, isBlurayPlaylistPath;
+import 'package:fushi_engine/media/video/dvd/dvd_angle.dart'
+    show dvdTitleAnglePath, parseDvdTitleAnglePath;
 import 'package:fushi_engine/media/video/dvd/dvd_disc.dart' show isDvdTitlePath;
+import 'package:fushi_engine/media/video/dvd/dvd_title_path.dart'
+    show dvdDiscRootForTitlePath, dvdTitleNumberForPath, dvdTitlePath;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart' show PlaylistEntry;
+import 'package:fushi_engine/sync/ttu_filename.dart' show sanitizeTtuFilename;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
 
@@ -74,6 +78,88 @@ List<String> playlistEntryPaths(String? playlistJson) {
   } catch (_) {
     return const <String>[];
   }
+}
+
+/// 纯函数：视频行第 [episodeIndex] 集的文件路径（host 按集反查文件的唯一判据：播放
+/// 端点、按集字幕、字幕任务共用）。下标从 0 起，与 `?episode=` 同口径：
+/// - 负数 → null；
+/// - 第 0 集，或这一行没有播放列表 → [videoPath]（空串 → null）；
+/// - 其余取 [playlistEntryPaths] 的第 [episodeIndex] 项，越界 / 空路径 → null。
+///
+/// 路径只来自这一行自己的库数据，不接受外部传入的路径。
+String? videoBookEpisodePath({
+  required String videoPath,
+  String? playlistJson,
+  required int episodeIndex,
+}) {
+  if (episodeIndex < 0) return null;
+  if (episodeIndex == 0) return videoPath.isEmpty ? null : videoPath;
+  final List<String> entries = playlistEntryPaths(playlistJson);
+  if (episodeIndex >= entries.length) return null;
+  final String path = entries[episodeIndex];
+  return path.isEmpty ? null : path;
+}
+
+/// 纯函数：与视频行成员路径 [videoPath] 同一张原盘上的另一条 title（[discTitle]，
+/// 相对盘根、`/` 分隔）的成员路径。host 按（盘, title）定位远端原盘会话里的 title
+/// （菜单里的特典等库里没有行的、多角度 title 的某个角度、DVD title）的唯一判据：远端
+/// 原盘会话的字幕任务 `discTitle` 与 `clipaudio?discTitle=` 共用。
+///
+/// - 蓝光行：恰好三段 `BDMV/PLAYLIST/<名>.mpls`（大小写不敏感），名字里不许有路径
+///   分隔符、`..`；
+/// - DVD 行（[videoPath] 是 `VIDEO_TS/TITLE_nn.dvdtitle`）：恰好两段
+///   `VIDEO_TS/TITLE_nn.dvdtitle`（或角度成员路径 `VIDEO_TS/TITLE_nn.aK.dvdtitle`），
+///   title 号 1～99，按 [dvdTitlePath] 在这一行的盘根上重拼、保留角度（规整写法，读媒体
+///   经 `DvdFfmpegBackend` 按 title / 角度读）；
+/// - [videoPath] 不是原盘成员（没有盘根）、两边格式不同 → null。
+///
+/// 路径只由这一行自己的盘根拼出，[discTitle] 走不出这张盘。
+String? videoBookDiscTitlePath({
+  required String videoPath,
+  required String discTitle,
+}) {
+  if (isDvdTitlePath(videoPath)) {
+    return _dvdDiscTitlePath(videoPath: videoPath, discTitle: discTitle);
+  }
+  if (!isBlurayPlaylistPath(videoPath)) return null;
+  final String? root = blurayDiscRootForPlaylistPath(videoPath);
+  if (root == null) return null;
+  final List<String> parts = discTitle.split('/');
+  if (parts.length != 3 ||
+      parts[0].toUpperCase() != 'BDMV' ||
+      parts[1].toUpperCase() != 'PLAYLIST') {
+    return null;
+  }
+  final String name = parts[2];
+  if (name.isEmpty ||
+      name.contains(r'\') ||
+      name.contains(':') ||
+      name.startsWith('.') ||
+      p.extension(name).toLowerCase() != '.mpls') {
+    return null;
+  }
+  final String path = p.join(root, parts[0], parts[1], name);
+  final String? back = blurayDiscRootForPlaylistPath(path);
+  return back != null && p.equals(back, root) ? path : null;
+}
+
+/// [videoBookDiscTitlePath] 的 DVD 分支。
+String? _dvdDiscTitlePath({
+  required String videoPath,
+  required String discTitle,
+}) {
+  final String? root = dvdDiscRootForTitlePath(videoPath);
+  if (root == null) return null;
+  final List<String> parts = discTitle.split('/');
+  if (parts.length != 2 || parts[0].toUpperCase() != 'VIDEO_TS') return null;
+  final String name = parts[1];
+  if (name.contains(r'\') || name.contains(':')) return null;
+  final int? number = dvdTitleNumberForPath(name);
+  if (number == null) return null;
+  // 多角度 title 的角度成员路径（`TITLE_03.a2.dvdtitle`，`dvd_angle.dart`）保留角度：
+  // host 按会话里正在播的角度读。
+  final int angle = parseDvdTitleAnglePath(name)?.angleIndex ?? 0;
+  return dvdTitleAnglePath(dvdTitlePath(root, number), angle);
 }
 
 /// 纯函数：这一行视频在本机拥有的原始文件候选（`videoPath` + 播放列表各集），只
@@ -142,22 +228,37 @@ bool isPickerImportCopyPath(String path, Iterable<String> copyDirs) {
 ///
 /// 只删 `File`（含符号链接），目录一律跳过——`videoPath` 不该是目录，真遇到也绝不
 /// 递归删。单个失败（Windows 句柄占用等）不翻转其它文件的结果。
+///
+/// [onCandidateDone] 每处理完一个候选回调一次（入参是已处理的候选数，含被护栏挡下
+/// 的），给删除进度用。
 Future<LocalFileDeleteReport> deleteLocalVideoFiles({
   required Iterable<String> candidates,
   required Set<String> stillReferenced,
-}) => deleteLocalFiles(<String>[
-  for (final String path in candidates)
-    if (!stillReferenced.contains(platformPathKey(path))) path,
-]);
+  void Function(int done)? onCandidateDone,
+}) async {
+  final List<String> all = candidates.toList(growable: false);
+  final List<String> deletable = <String>[
+    for (final String path in all)
+      if (!stillReferenced.contains(platformPathKey(path))) path,
+  ];
+  final int skipped = all.length - deletable.length;
+  if (skipped > 0) onCandidateDone?.call(skipped);
+  return deleteLocalFiles(
+    deletable,
+    onPathDone: onCandidateDone == null
+        ? null
+        : (int done) => onCandidateDone(skipped + done),
+  );
+}
 
 /// 纯函数：从同目录文件名清单 [dirFileNames] 里挑出**跟着 [videoFileName] 一起走**
 /// 的 sidecar 外挂字幕文件名（原样返回，便于调用方拼回目录）。
 ///
-/// 归属判据复用 [listSidecarSubtitles]（`<stem>[.lang].srt|ass|ssa|vtt`，大小写
-/// 不敏感），再减去「同目录另一个 stem 更长的**视频文件**也认领的那些」：
-/// `ep01.mkv` 与 `ep01.5.mkv` 并存时，`ep01.5.srt` 按前缀匹配会同时命中两边
-/// （对 `ep01` 而言后缀 `.5.srt` 里的 `5` 正好长得像语言标记），而它显然属于
-/// `ep01.5.mkv`。删 `ep01.mkv` 绝不能顺手带走还在用的那一集的字幕。
+/// 归属判据就是播放器列字幕的那一条 [listSidecarSubtitles]（`<stem>[.lang].srt|ass|
+/// ssa|vtt`，大小写不敏感，「最长主干认领」）：`ep01.mkv` 与 `ep01.5.mkv` 并存时，
+/// `ep01.5.srt` 按前缀匹配会同时命中两边（对 `ep01` 而言后缀 `.5.srt` 里的 `5` 正好
+/// 长得像语言标记），它归 stem 更长的 `ep01.5.mkv`——播放 `ep01.mkv` 不会选它，删
+/// `ep01.mkv` 也绝不顺手带走还在用的那一集的字幕。
 ///
 /// 反过来，`ep01.5.mkv` 若也在同一批删除里，它自己的候选照样包含 `ep01.5.srt`，
 /// 两者并集仍然完整——护栏只挡「实体还在的邻居」，不挡「一起赴死的同伴」。
@@ -167,28 +268,7 @@ List<String> sidecarSubtitlesForDeletedVideo({
 }) {
   final String stem = p.basenameWithoutExtension(videoFileName);
   if (stem.isEmpty) return const <String>[];
-  final List<String> mine = listSidecarSubtitles(stem, dirFileNames);
-  if (mine.isEmpty) return const <String>[];
-  final String stemLower = stem.toLowerCase();
-  final Set<String> claimedByNeighbours = <String>{};
-  for (final String name in dirFileNames) {
-    if (!kVideoExtensions.contains(p.extension(name).toLowerCase())) continue;
-    final String otherStem = p.basenameWithoutExtension(name);
-    // 只有「更长且以本 stem 开头」的邻居才可能抢走本 stem 的候选；其余视频的
-    // sidecar 本就匹配不到这里来。
-    if (otherStem.length <= stem.length) continue;
-    if (!otherStem.toLowerCase().startsWith(stemLower)) continue;
-    for (final String claimed in listSidecarSubtitles(
-      otherStem,
-      dirFileNames,
-    )) {
-      claimedByNeighbours.add(claimed.toLowerCase());
-    }
-  }
-  return <String>[
-    for (final String name in mine)
-      if (!claimedByNeighbours.contains(name.toLowerCase())) name,
-  ];
+  return listSidecarSubtitles(stem, dirFileNames);
 }
 
 /// [videoPaths]（**已过护栏、确定要删**的本机视频文件）各自同目录的 sidecar 外挂
@@ -201,24 +281,30 @@ List<String> sidecarSubtitlesForDeletedVideo({
 ///
 /// app 自有目录里的字幕副本不归这里管：它们在删行后由
 /// `VideoStorage.deleteBookAssets` 无条件回收，与本勾选框无关。
+///
+/// [onVideoDone] 每看完一个视频回调一次（入参是已看完的视频数），给删除进度用。
 Future<List<String>> localVideoSidecarSubtitleCandidates(
-  Iterable<String> videoPaths,
-) async {
+  Iterable<String> videoPaths, {
+  void Function(int done)? onVideoDone,
+}) async {
   final Map<String, List<String>> dirFilesByKey = <String, List<String>>{};
   final Set<String> seen = <String>{};
   final List<String> out = <String>[];
+  int done = 0;
   for (final String videoPath in videoPaths) {
     final String dir = p.dirname(videoPath);
     final List<String> dirFileNames = dirFilesByKey[platformPathKey(dir)] ??=
         await _listFileNames(dir);
-    if (dirFileNames.isEmpty) continue;
-    for (final String name in sidecarSubtitlesForDeletedVideo(
-      videoFileName: p.basename(videoPath),
-      dirFileNames: dirFileNames,
-    )) {
-      final String full = p.normalize(p.join(dir, name));
-      if (seen.add(platformPathKey(full))) out.add(full);
+    if (dirFileNames.isNotEmpty) {
+      for (final String name in sidecarSubtitlesForDeletedVideo(
+        videoFileName: p.basename(videoPath),
+        dirFileNames: dirFileNames,
+      )) {
+        final String full = p.normalize(p.join(dir, name));
+        if (seen.add(platformPathKey(full))) out.add(full);
+      }
     }
+    onVideoDone?.call(++done);
   }
   return out;
 }
@@ -256,3 +342,60 @@ Set<String> referencedLocalSubtitlePaths(Iterable<VideoBookRow> rows) =>
           if (source != null && isLocalVideoFilePath(source))
             platformPathKey(source.trim()),
     };
+
+/// 把选择器交回的视频路径变成**可长期落库**的路径（反馈 HfXM-ECaE8）。
+///
+/// [isRealPath] = true（桌面 / 安卓 SAF 解析到原始位置 / 拖入）原样返回，不复制。
+/// false = 平台临时副本（iOS import 模式的 `NSTemporaryDirectory()`、安卓 app
+/// cache）：系统清 tmp、词典 / 外部阅读器导入调 `FilePicker.clearTemporaryFiles()`
+/// 都会把它删掉。这里把它**挪**进
+/// `<copiesRoot>/<sanitize(bookUid)>/<原文件名>` 再返回新路径：先 rename（同卷零
+/// 额外空间），跨卷失败才退回 copy + 删源。保留原文件名，标题 / sidecar 派生不变。
+///
+/// 目标目录按 bookUid 归属 app 自有；同名旧文件（重新选择文件、或同 uid 删后重导
+/// 的残留）先删再落。复制成功但删源失败时撤掉新副本再抛，不留两份。
+Future<String> adoptPickedVideoCopy({
+  required String pickedPath,
+  required bool isRealPath,
+  required String bookUid,
+  required Directory copiesRoot,
+}) async {
+  if (isRealPath) return pickedPath;
+  final Directory dir = Directory(
+    p.join(copiesRoot.path, sanitizeTtuFilename(bookUid)),
+  );
+  await dir.create(recursive: true);
+  final String target = p.join(dir.path, p.basename(pickedPath));
+  if (platformPathKey(target) == platformPathKey(pickedPath)) return target;
+  final File existing = File(target);
+  if (await existing.exists()) await existing.delete();
+  final File source = File(pickedPath);
+  try {
+    await source.rename(target);
+    return target;
+  } on FileSystemException {
+    // rename 跨文件系统 / 跨卷会失败（EXDEV）：走 copy + 删源。源文件本身不在
+    // 时 copy 照样抛，真实失败不会被这里吞掉。
+  }
+  final File copied = await source.copy(target);
+  try {
+    await source.delete();
+  } on FileSystemException {
+    await copied.delete();
+    rethrow;
+  }
+  return target;
+}
+
+/// 一行视频展开成集（主题曲比对与 `anime_episode` 类 MV 解析共用）：有播放列表按列表各项，否则就是 `videoPath` 一个文件。只留本机
+/// 绝对路径（远端流 / 网页源没有可解码的本地音轨）。
+List<({int index, String path})> themeSongFilesOf(VideoBookRow row) {
+  final List<String> playlist = playlistEntryPaths(row.playlistJson);
+  final List<String> paths = playlist.isEmpty
+      ? <String>[row.videoPath]
+      : playlist;
+  return <({int index, String path})>[
+    for (int i = 0; i < paths.length; i++)
+      if (isLocalVideoFilePath(paths[i])) (index: i, path: paths[i]),
+  ];
+}

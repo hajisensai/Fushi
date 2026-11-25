@@ -9,6 +9,11 @@
 ///   语言一个声音），单次约 200 字，返回 MP3。
 ///
 /// 两者都可能随服务端改版失效或被限流，设置页标注「非官方」。
+///
+/// 逐句语气：微软翻译走的就是 Azure 语音的 `cognitiveservices/v1`，SSML `<prosody>`
+/// 的语速 / 音高 / 音量照收（换算与 Edge 共用 [microsoftProsodyOf]），情绪由
+/// [effectiveTtsDirection] 折成这三项（`mstts:express-as` 的风格按声音而异，合成时
+/// 不知道这个声音有哪些风格，不发）。谷歌翻译的接口只有文本与语言，不声明任何项。
 library;
 
 import 'dart:async';
@@ -19,8 +24,9 @@ import 'dart:math';
 import 'package:crypto/crypto.dart';
 
 import 'package:fushi_engine/tts/providers/edge_tts_provider.dart'
-    show parseMicrosoftVoiceList;
+    show MicrosoftProsody, microsoftProsodyOf, parseMicrosoftVoiceList;
 import 'package:fushi_engine/tts/providers/tts_http.dart';
+import 'package:fushi_engine/tts/tts_direction.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
@@ -320,7 +326,12 @@ String microsoftVoiceLocale(String voice) {
   return parts.length >= 3 ? '${parts[0]}-${parts[1]}' : 'ja-JP';
 }
 
-class MicrosoftTranslatorTtsProvider extends TtsProvider {
+/// 微软翻译能逐句表达的演出字段：SSML `<prosody>` 的三项。
+const TtsDirectionSupport kMicrosoftTranslatorDirectionSupport =
+    TtsDirectionSupport(rate: true, pitch: true, volume: true);
+
+class MicrosoftTranslatorTtsProvider extends TtsProvider
+    implements TtsDirectedSynthesis {
   MicrosoftTranslatorTtsProvider({
     required this.voice,
     required TtsHost host,
@@ -339,11 +350,26 @@ class MicrosoftTranslatorTtsProvider extends TtsProvider {
   TtsCapabilities get capabilities =>
       const MicrosoftTranslatorTtsDescriptor().capabilities;
 
-  static String ssml(String voice, String text) {
+  @override
+  TtsDirectionSupport get directionSupport =>
+      kMicrosoftTranslatorDirectionSupport;
+
+  /// 一句的 SSML。[direction] 有语速 / 音高 / 音量偏移时正文包一层 `<prosody>`；
+  /// 没有时与以前逐字节相同。
+  static String ssml(
+    String voice,
+    String text, {
+    TtsDirection direction = TtsDirection.none,
+  }) {
     final String lang = ttsEscapeXml(microsoftVoiceLocale(voice));
+    final MicrosoftProsody? p = microsoftProsodyOf(direction);
+    final String body = p == null
+        ? ttsEscapeXml(text)
+        : "<prosody rate='${p.rate}' pitch='${p.pitch}' volume='${p.volume}'>"
+              '${ttsEscapeXml(text)}</prosody>';
     return "<speak version='1.0' xml:lang='$lang'>"
         "<voice xml:lang='$lang' name='${ttsEscapeXml(voice)}'>"
-        '${ttsEscapeXml(text)}</voice></speak>';
+        '$body</voice></speak>';
   }
 
   /// 用令牌发一次请求；令牌被拒（401/403）时换一枚新令牌再发一次——JWT 只有约
@@ -369,9 +395,22 @@ class MicrosoftTranslatorTtsProvider extends TtsProvider {
     String text, {
     required String outputPath,
     required TtsCancelToken cancel,
+  }) => synthesizeDirected(
+    text,
+    outputPath: outputPath,
+    cancel: cancel,
+    direction: TtsDirection.none,
+  );
+
+  @override
+  Future<TtsResult> synthesizeDirected(
+    String text, {
+    required String outputPath,
+    required TtsCancelToken cancel,
+    required TtsDirection direction,
   }) async {
     cancel.throwIfCancelled();
-    final List<int> body = utf8.encode(ssml(voice, text));
+    final List<int> body = utf8.encode(ssml(voice, text, direction: direction));
     await _authorized<void>((MicrosoftTranslatorToken token) async {
       final HttpClient client = _host.httpClientFactory();
       try {

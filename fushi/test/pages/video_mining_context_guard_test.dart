@@ -37,13 +37,14 @@ void main() {
       reason: 'Video mining needs the subtitle cue from the original lookup.',
     );
 
-    // TODO-590 batch13: `_lookupAt` 与 `_refreshVideoSentenceFavorite` 同搬进
-    // lookup_favorite.part.dart 且相邻；end marker 由留主壳的 `_onDismissBarrierTap`
-    // 改成 part 里紧跟 `_lookupAt` 的 `_refreshVideoSentenceFavorite`，精确夹住
-    // `_lookupAt` 体（合并语料把 part 拼末尾，旧 marker 在 start 前会切片失败）。
+    // TODO-590 batch13: `_lookupAt` 搬进 lookup_favorite.part.dart；end marker
+    // 钉 part 里紧跟 `_lookupAt` 的下一个方法 `_pauseForLookup`，精确夹住
+    // `_lookupAt` 体（合并语料把 part 拼末尾，留主壳的 marker 在 start 前会切片失败）。
+    // c51：`_refreshVideoSentenceFavorite` 改成同步读收藏镜像后签名变了，
+    // 不再拿它当 end marker。
     final String lookup = region(
-      'Future<void> _lookupAt(',
-      'Future<void> _refreshVideoSentenceFavorite(',
+      'Future<int> _lookupAt(',
+      'void _pauseForLookup(',
     );
     // BUG-966: 查词那一刻快照锚定 cue，解析收口到顶层纯函数 resolveVideoLookupAnchorCue
     // （overrideCue > currentCue > 按位置解析），不再在 _lookupAt 体里内联三元。
@@ -130,7 +131,7 @@ void main() {
     // 改用 part 内紧随其后的 `_onUpdateEntryImpl` 签名（旧 `TODO-270 D：覆盖` 文案
     // 跟着 onUpdateEntry 瘦转发器留在主壳，位于 start 之前会切片失败）。
     final String mine = region(
-      'Future<MinePopupResult> _onMineEntryImpl(Map<String, String> fields) async {',
+      'Future<MinePopupResult> _onMineEntryImpl(',
       'Future<MinePopupResult> _onUpdateEntryImpl(',
     );
     expect(mine, contains('_resolveVideoMiningRange(controller)'));
@@ -158,7 +159,7 @@ void main() {
       reason: '成功历史落库必须只消费点击时快照。',
     );
     final int mountedIndex = mine.indexOf(
-      'if (!mounted || _currentEpisode != queuedEpisode) return result;',
+      'if (!mounted || _playingEpisodeScope != queuedEpisode) return result;',
       awaitIndex,
     );
     final int clearIndex = mine.indexOf('_miningDraft.clear()', awaitIndex);
@@ -189,7 +190,7 @@ void main() {
     );
     final int updateAwait = update.indexOf('await _mineVideoCard(');
     final int updateGuard = update.indexOf(
-      'if (!mounted || _currentEpisode != queuedEpisode) return result;',
+      'if (!mounted || _playingEpisodeScope != queuedEpisode) return result;',
       updateAwait,
     );
     final int updateClear = update.indexOf('_miningDraft.clear()', updateAwait);
@@ -368,11 +369,22 @@ void main() {
       // 中止顺序：引擎在构造 AnkiMiningContext 之前就 return aborted（不建缺音频 context）；
       // shell 在读取 res.outcome!（落卡产物）之前据 res.aborted 中止。
       // BUG-1664：锚点随构造改为 `_withRootCause('required audio missing', …)`。
-      final int engineAbortIdx = engineCompact.indexOf(
+      // video-30：落卡拆到 `_commit`（文件里排在 `_mineNow` 前面，也有一句
+      // `AnkiMiningContext context = card.context!`），全文件 indexOf 会命中它而误红；
+      // 锚到抽取段 `_mineNow` 的方法体，比的才是「中止」与「构造 context」的先后。
+      final String mineNowCompact = compactCode(
+        methodBody(engine, 'Future<_PreparedCard> _mineNow('),
+      );
+      expect(
+        mineNowCompact,
+        isNotEmpty,
+        reason: '引擎必须有 _mineNow 方法；守卫锚点失效请同步更新本测试。',
+      );
+      final int engineAbortIdx = mineNowCompact.indexOf(
         compactCode("abortReason: _withRootCause('required audio missing'"),
       );
-      final int engineCtxIdx = engineCompact.indexOf(
-        compactCode('AnkiMiningContext context ='),
+      final int engineCtxIdx = mineNowCompact.indexOf(
+        compactCode('AnkiMiningContext context = AnkiMiningContext('),
       );
       expect(engineAbortIdx, greaterThanOrEqualTo(0));
       expect(

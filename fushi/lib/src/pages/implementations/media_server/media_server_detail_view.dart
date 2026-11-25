@@ -4,17 +4,28 @@ import 'package:flutter_riverpod/flutter_riverpod.dart'
     show ProviderContainer, ProviderScope;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
-import 'package:flutter/rendering.dart' show SliverConstraints;
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
 import 'package:fushi/src/media/collections/collection_detail_layout.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/media/detail/media_poster_detail.dart'
+    show
+        MediaPosterDetailChrome,
+        MediaPosterDetailLayout,
+        MediaPosterDetailTheme,
+        MediaPosterEpisodeTile,
+        kMediaPosterEpisodeGridMinWidth,
+        kMediaPosterEpisodeRowHeight,
+        mediaPosterEpisodeColumns,
+        mediaPosterEpisodeTileHeight;
+import 'package:fushi/src/media/video/cover_ui/video_poster_detail_hero.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart';
+import 'package:fushi/src/pages/implementations/media_server/media_server_user_data_refresh.dart';
 import 'package:fushi/src/media/video/video_watched_marks.dart';
-import 'package:fushi/src/models/app_model.dart' show appProvider;
-import 'package:fushi/src/sync/remote_library_cache.dart'
-    show remoteLibraryCacheProvider;
+import 'package:fushi/src/models/app_model.dart' show AppModel, appProvider;
 import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteVideoPlayedMark;
 import 'package:fushi/src/pages/implementations/media_server/media_server_session.dart';
@@ -46,6 +57,7 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
+import 'package:fushi/src/utils/components/fushi_sliver_width_builder.dart';
 
 /// 剧 / 电影详情（2026-10 M3E 重做）：hero 与本地「系列」详情同一套
 /// （`collection_detail_layout.dart`：fanart / 封面模糊 + 色晕 scrim 大背景、2:3
@@ -85,7 +97,7 @@ class MediaServerDetailView extends StatefulWidget {
 }
 
 class _MediaServerDetailViewState extends State<MediaServerDetailView>
-    with TickerProviderStateMixin {
+    with TickerProviderStateMixin, MediaServerUserDataRefresh {
   final ScrollController _scrollController = ScrollController();
 
   /// 季分段控制器：只在 ≥2 季时存在（季清单回来后建一次）。
@@ -125,6 +137,13 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
   MediaServerWorkLibraryStatus? _libraryStatus;
   bool _libraryBusy = false;
 
+  /// 入库行增删就重读入库状态：库页菜单 / 合集详情页移出、后台探针补新集后，
+  /// 压在栈里的本页回来时按钮与「已在库」chip 不是旧的。
+  StreamSubscription<void>? _libraryChanges;
+
+  /// 每次读入库状态 +1：并发的两次读，旧的那次晚回来时丢掉。
+  int _libraryGeneration = 0;
+
   /// 换季 +1；旧季的响应回来时丢掉。
   int _generation = 0;
 
@@ -150,6 +169,9 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     unawaited(_loadDetail());
     if (_isSeries) unawaited(_loadSeasons());
     unawaited(_reloadLibraryState());
+    _libraryChanges = widget.session.library?.membershipChanges.listen(
+      (_) => unawaited(_reloadLibraryState()),
+    );
     // 从滚到半截的网格点进来：库页浮动工具区回到展开态（新页面从顶部开始），
     // 与 [MediaServerPageFrame] 每层路由成为栈顶时同一口径。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -160,6 +182,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
 
   @override
   void dispose() {
+    unawaited(_libraryChanges?.cancel());
     _scrollController
       ..removeListener(_onScroll)
       ..dispose();
@@ -320,6 +343,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
   Future<void> _reloadLibraryState() async {
     final MediaServerVideoLibrary? library = widget.session.library;
     if (library == null) return;
+    final int generation = ++_libraryGeneration;
     final MediaServerWorkLibraryStatus status;
     try {
       status = await library.statusOf(_browser, widget.item);
@@ -331,7 +355,8 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
       );
       return;
     }
-    if (mounted) setState(() => _libraryStatus = status);
+    if (!mounted || generation != _libraryGeneration) return;
+    setState(() => _libraryStatus = status);
   }
 
   bool get _inLibrary => _libraryStatus?.inLibrary ?? false;
@@ -533,8 +558,10 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
       context,
       listen: false,
     );
+    final AppModel app = container.read(appProvider);
     final WatchedMarkResult result = await setVideosWatched(
-      db: container.read(appProvider).database,
+      db: app.database,
+      tracking: app.libraryFinishTracking,
       watched: watched,
       localUids: <String>[
         for (final MediaServerItem e in targets)
@@ -546,10 +573,6 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
       ],
       remoteMarker: marker,
     );
-    // 库页 / 首页读的是同一台服务器的清单缓存：作废它，下次读到新的「已播放」。
-    container
-        .read(remoteLibraryCacheProvider)
-        .invalidateSource(_browser.serverId);
     if (!mounted) return;
     FushiToast.show(
       msg: watchedMarkFeedback(result, watched: watched),
@@ -557,13 +580,26 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
           ? ToastSeverity.error
           : ToastSeverity.success,
     );
-    await _refreshEpisodesInPlace();
+    // 集卡跟上服务器：标记成功经 [MediaServerUserDataChanges] 触发
+    // [refreshUserDataInPlace]，不在这里另拉一次。
   }
 
-  Future<void> _playEpisode(MediaServerItem episode) async {
-    await widget.session.playItem(context, episode, siblings: _episodes);
-    // 播放页退回来：服务器上的断点 / 已看标记变了，原地重拉（BUG-3491）。
-    if (mounted) await _refreshEpisodesInPlace();
+  // 播放页退回来时 [MediaServerSession.playItem] 发 [MediaServerUserDataChanges]，
+  // 集清单 / 电影详情经 [refreshUserDataInPlace] 原地跟上（BUG-3491）。
+  Future<void> _playEpisode(MediaServerItem episode) =>
+      widget.session.playItem(context, episode, siblings: _episodes);
+
+  @override
+  String get userDataServerId => widget.session.serverId;
+
+  /// 服务器上的已播放 / 断点变了：重取详情（电影的断点 / 已看、剧的「N 集未看」），
+  /// 剧再原地重拉已加载的集。
+  @override
+  Future<void> refreshUserDataInPlace() async {
+    await Future.wait(<Future<void>>[
+      _loadDetail(),
+      if (_isSeries) _refreshEpisodesInPlace(),
+    ]);
   }
 
   /// 原地重拉当前季**已加载的那些集**（不清空、不出加载态、不动滚动位置）：
@@ -606,12 +642,8 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
   /// 「播放」：电影直接播；剧播续播那集（都看完就第一集）。
   void _playPrimary() {
     if (!_isSeries) {
-      unawaited(
-        widget.session.playItem(context, _detail).then((_) {
-          // 电影：退回来重取详情，断点 / 已看跟上服务器（BUG-3491）。
-          if (mounted) unawaited(_loadDetail());
-        }),
-      );
+      // 电影：退回来经 [refreshUserDataInPlace] 重取详情（BUG-3491）。
+      unawaited(widget.session.playItem(context, _detail));
       return;
     }
     if (_episodes.isEmpty) return;
@@ -681,7 +713,12 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     final int index = _continueIndex;
     if (index < 0) return null;
     final MediaServerItem episode = _episodes[index];
-    return '${t.collection_continue_progress(n: index + 1)}  ·  ${episode.name}';
+    // BUG-4921：集号只认服务器给的 IndexNumber（与集卡同口径，VF5D4O_Tyx），
+    // 不拿列表下标冒充——季里缺前几集时下标 +1 与真实集号对不上。缺号就不写集号。
+    final int? number = episode.episodeNumber;
+    return number == null
+        ? '${t.video_continue_watching}  ·  ${episode.name}'
+        : '${t.collection_continue_progress(n: number)}  ·  ${episode.name}';
   }
 
   @override
@@ -701,6 +738,60 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     // 这里为 0，不改任何东西。
     final double chromeInset = FushiFloatingChromeInset.of(context);
     final MediaQueryData media = MediaQuery.of(context);
+    final ImageProvider? logo = mediaServerHeroImage(
+      _browser,
+      _detail,
+      kind: MediaServerImageKind.logo,
+    );
+    final Widget? fab = canPlay
+        ? MediaDetailResumeFab(
+            buttonKey: const ValueKey<String>('media-server-detail-resume-fab'),
+            watching: true,
+            started: _resumesMidway,
+            itemLabel: _resumeEpisodeName(),
+            onPressed: _playPrimary,
+          )
+        : null;
+    if (shellRedesignActive(context)) {
+      // 重设计外壳：海报面板版式（与本地系列详情 `media_collection_detail_page`
+      // 同一套）——整页按封面取色（[MediaPosterDetailTheme]，外壳侧栏 / 顶栏不
+      // 跟着变），背景图铺顶、竖版海报整张显示不裁（横图不进海报位，见
+      // [VideoPosterDetailHero]），返回键是不带胶囊底色的裸图标、桌面画进窗口
+      // 标题行（[MediaPosterDetailChrome]）。下面接同一套版本 / 选集 / 资料区块。
+      return MediaQuery(
+        data: media.copyWith(
+          padding: media.padding.copyWith(top: media.padding.top + chromeInset),
+          viewPadding: media.viewPadding.copyWith(
+            top: media.viewPadding.top + chromeInset,
+          ),
+        ),
+        child: FushiFloatingChromeInset(
+          top: 0,
+          child: Scaffold(
+            extendBodyBehindAppBar: true,
+            body: MediaPosterDetailTheme(
+              image: cover,
+              fallbackKey: _detail.name,
+              child: MediaPosterDetailChrome(
+                title: _detail.name,
+                child: MediaPosterDetailLayout(
+                  controller: _scrollController,
+                  bottomPadding: tokens.spacing.page,
+                  fab: fab,
+                  header: _buildPosterHero(
+                    cover: cover,
+                    backdrop: backdrop,
+                    logo: logo,
+                    canPlay: canPlay,
+                  ),
+                  slivers: _detailSlivers(tokens, genres),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     // 本视图是嵌套 Navigator 里的一条路由：没有 Scaffold 就没有 Material 祖先。
     return MediaQuery(
       data: media.copyWith(
@@ -739,26 +830,12 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
             backdropBlur: collectionHeroBackdropBlur(backdrop: backdrop),
             bottomPadding: tokens.spacing.section,
             // 「继续 / 开始观看」悬浮按钮：与 hero 主按钮同一动作（剧 = 续播那一集）。
-            fab: canPlay
-                ? MediaDetailResumeFab(
-                    buttonKey: const ValueKey<String>(
-                      'media-server-detail-resume-fab',
-                    ),
-                    watching: true,
-                    started: _resumesMidway,
-                    itemLabel: _resumeEpisodeName(),
-                    onPressed: _playPrimary,
-                  )
-                : null,
+            fab: fab,
             header: CollectionDetailHero(
               backdrop: backdrop,
               cover: cover,
               coverMaterial: ShelfCoverMaterial.glossyPoster,
-              logo: mediaServerHeroImage(
-                _browser,
-                _detail,
-                kind: MediaServerImageKind.logo,
-              ),
+              logo: logo,
               title: _detail.name,
               chips: _heroChips(),
               tagNames: genres.take(6).toList(),
@@ -775,38 +852,82 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
                 ..._buildLibraryActions(),
               ],
             ),
-            slivers: <Widget>[
-              // 版本在选集之上：剧的集清单可能很长（分页触底追加），放在后面就沉底看不见。
-              if (_versionItem case final MediaServerItem versionItem
-                  when _versionIndex >= 0)
-                SliverToBoxAdapter(
-                  child: MediaServerVersionSection(
-                    versions: versionItem.versions,
-                    selectedIndex: _versionIndex,
-                    focusPrefix:
-                        '${widget.session.serverId}-version-${versionItem.id}',
-                    onSelected: _selectVersion,
-                  ),
-                ),
-              if (_isSeries) ...<Widget>[
-                SliverToBoxAdapter(child: _buildEpisodeSectionHeader(tokens)),
-                ..._buildEpisodeSlivers(tokens),
-              ],
-              // 简介已在 hero 里（可展开）；这里只留事实行。
-              SliverToBoxAdapter(
-                child: CollectionWorkDetailsSection(
-                  overview: _detail.overview,
-                  showOverview: false,
-                  facts: <(String, String)>[
-                    if (genres.isNotEmpty)
-                      (t.video_work_genres, genres.join(' · ')),
-                  ],
-                ),
-              ),
-            ],
+            slivers: _detailSlivers(tokens, genres),
           ),
         ),
       ),
+    );
+  }
+
+  /// hero 以下的区块（两套版式共用）：版本 → 选集（剧）→ 作品资料。
+  List<Widget> _detailSlivers(FushiDesignTokens tokens, List<String> genres) {
+    return <Widget>[
+      // 版本在选集之上：剧的集清单可能很长（分页触底追加），放在后面就沉底看不见。
+      if (_versionItem case final MediaServerItem versionItem
+          when _versionIndex >= 0)
+        SliverToBoxAdapter(
+          child: MediaServerVersionSection(
+            versions: versionItem.versions,
+            selectedIndex: _versionIndex,
+            focusPrefix: '${widget.session.serverId}-version-${versionItem.id}',
+            onSelected: _selectVersion,
+          ),
+        ),
+      if (_isSeries) ...<Widget>[
+        SliverToBoxAdapter(child: _buildEpisodeSectionHeader(tokens)),
+        ..._buildEpisodeSlivers(tokens),
+      ],
+      // 简介已在 hero 里（可展开）；这里只留事实行。
+      SliverToBoxAdapter(
+        child: CollectionWorkDetailsSection(
+          overview: _detail.overview,
+          showOverview: false,
+          facts: <(String, String)>[
+            if (genres.isNotEmpty) (t.video_work_genres, genres.join(' · ')),
+          ],
+        ),
+      ),
+    ];
+  }
+
+  /// 海报面板 hero（重设计外壳）：数据与原 [CollectionDetailHero] 同源（背景图 /
+  /// 封面 / logo / 信息胶囊 / 续播行 / 主次按钮与 key），只换视觉。
+  Widget _buildPosterHero({
+    required ImageProvider? cover,
+    required ImageProvider? backdrop,
+    required ImageProvider? logo,
+    required bool canPlay,
+  }) {
+    final String? originalTitle = _detail.originalTitle?.trim();
+    return VideoPosterDetailHero(
+      title: _detail.name,
+      mediaType: _isSeries ? 'tv' : 'movie',
+      originalTitle:
+          originalTitle == null ||
+              originalTitle.isEmpty ||
+              originalTitle == _detail.name
+          ? null
+          : originalTitle,
+      cover: cover,
+      backdrop: backdrop,
+      logo: logo,
+      logoSemanticsName: _detail.name,
+      pills: _heroChips(),
+      continueLabel: _continueLabel(),
+      summary: _detail.overview,
+      primaryAction: MediaDetailPrimaryButton(
+        icon: FushiIcons.play,
+        label: MediaDetailResumeFab.labelFor(
+          watching: true,
+          started: _resumesMidway,
+        ),
+        buttonKey: const ValueKey<String>('media-server-detail-play'),
+        onPressed: canPlay ? _playPrimary : null,
+      ),
+      secondaryActions: <Widget>[
+        ?_buildDownloadAction(),
+        ..._buildLibraryActions(),
+      ],
     );
   }
 
@@ -878,8 +999,10 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
           buttonKey: const ValueKey<String>(
             'media-server-detail-library-remove',
           ),
-          icon: FushiIcons.libraryAdd,
+          // 「−」：与「加入」的「+」成对，一眼看出这部已在库里、点了是移出。
+          icon: FushiIcons.remove,
           label: t.video_online_library_remove,
+          selected: true,
           busy: _libraryBusy,
           onPressed: () => unawaited(_removeFromLibrary()),
         ),
@@ -975,24 +1098,40 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
     final int continueIndex = _continueIndex;
     final int count = _episodes.length;
     const double spacing = 12;
+    // 重设计外壳：分集走剧照格（够宽时网格、窄屏一集一行，见
+    // [MediaPosterEpisodeTile]），与本地系列详情同一套；墨水屏照旧 hayase 宽卡。
+    final bool posterTiles = shellRedesignActive(context);
     return <Widget>[
       // 与本地系列详情同一套网格几何（[collectionEpisodeColumns] /
       // [kCollectionEpisodeCardHeight]）：宽屏两列、否则一列，卡高固定。
       SliverPadding(
         padding: EdgeInsets.symmetric(horizontal: tokens.spacing.page),
-        sliver: SliverLayoutBuilder(
-          builder: (BuildContext context, SliverConstraints constraints) {
-            final double width = constraints.crossAxisExtent;
-            final int columns = collectionEpisodeColumns(width);
+        sliver: FushiSliverWidthBuilder(
+          builder: (BuildContext context, double crossAxisExtent) {
+            final double width = crossAxisExtent;
+            final bool stills =
+                posterTiles && width >= kMediaPosterEpisodeGridMinWidth;
+            final int columns = !posterTiles
+                ? collectionEpisodeColumns(width)
+                : (stills ? mediaPosterEpisodeColumns(width, spacing) : 1);
             final double columnWidth =
                 (width - spacing * (columns - 1)) / columns;
+            final double cellHeight = !posterTiles
+                ? kCollectionEpisodeCardHeight
+                : (stills
+                      ? mediaPosterEpisodeTileHeight(
+                          columnWidth,
+                          textScaler: MediaQuery.textScalerOf(context),
+                        )
+                      : kMediaPosterEpisodeRowHeight);
+            final bool? posterHorizontal = posterTiles ? !stills : null;
             return FushiEntranceScope(
               replayKey: _episodeEpoch,
               child: SliverGrid.builder(
                 itemCount: count,
                 gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
                   crossAxisCount: columns,
-                  childAspectRatio: columnWidth / kCollectionEpisodeCardHeight,
+                  childAspectRatio: columnWidth / cellHeight,
                   crossAxisSpacing: spacing,
                   mainAxisSpacing: spacing,
                 ),
@@ -1000,8 +1139,8 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
                   (BuildContext context, int index) => _buildEpisodeCard(
                     context,
                     _episodes[index],
-                    index,
                     isContinue: index == continueIndex,
+                    posterHorizontal: posterHorizontal,
                   ),
                 ),
               ),
@@ -1023,15 +1162,54 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
   /// 手柄 A 播放。卡本身是纯视觉（IgnorePointer），点击由外层墨水接、焦点由
   /// [FushiFocusTarget] 接。测试与 itest 按 `media-server-episode-<id>` 定位，key
   /// 放在最外层。
+  ///
+  /// [posterHorizontal] 非 null = 重设计外壳的剧照格（[MediaPosterEpisodeTile]，
+  /// true 时一集一行）；null = 原 hayase 宽卡。数据求值两者同一份。
   Widget _buildEpisodeCard(
     BuildContext context,
-    MediaServerItem episode,
-    int index, {
+    MediaServerItem episode, {
     required bool isContinue,
+    bool? posterHorizontal,
   }) {
     final String duration = formatMediaServerDuration(episode.durationMs);
     final int versionCount =
         _episodeVersions[episode.id]?.length ?? episode.knownVersionCount ?? 0;
+    final ImageProvider? thumb = mediaServerCoverImage(
+      _browser,
+      episode,
+      kind: episode.hasThumb
+          ? MediaServerImageKind.thumb
+          : MediaServerImageKind.primary,
+    );
+    final List<String> meta = <String>[
+      if (duration.isNotEmpty) duration,
+      if (versionCount > 1) t.media_server_version_count(n: versionCount),
+    ];
+    final Widget visual = posterHorizontal != null
+        ? MediaPosterEpisodeTile(
+            image: thumb,
+            horizontal: posterHorizontal,
+            // 缺集号就不画集号：列表位置不是集号（VF5D4O_Tyx）。
+            number: episode.episodeNumber?.toString(),
+            title: episode.name,
+            meta: meta,
+            completed: episode.played,
+            positionMs: episode.positionMs,
+            progress: mediaServerProgress(episode),
+            isContinue: isContinue,
+          )
+        : CollectionEpisodeCard(
+            thumb: collectionEpisodeThumb(context, thumb),
+            // 缺集号就不画集号：列表位置不是集号（VF5D4O_Tyx）。
+            number: episode.episodeNumber?.toString(),
+            title: episode.name,
+            summary: episode.overview,
+            meta: meta,
+            completed: episode.played,
+            positionMs: episode.positionMs,
+            progress: mediaServerProgress(episode),
+            isContinue: isContinue,
+          );
     final Widget card = FushiPressScale(
       // 长按 / 右键：重新选版本再播（记住过也问）。不支持多版本的服务器与点按同义。
       // 右键走绑定表（ContextMenuTrigger），右键被别的动作占用时自动让位。
@@ -1046,30 +1224,7 @@ class _MediaServerDetailViewState extends State<MediaServerDetailView>
             canRequestFocus: false,
             onTap: () => unawaited(_openEpisode(episode)),
             onLongPress: () => unawaited(_showEpisodeMenu(episode)),
-            child: CollectionEpisodeCard(
-              thumb: collectionEpisodeThumb(
-                context,
-                mediaServerCoverImage(
-                  _browser,
-                  episode,
-                  kind: episode.hasThumb
-                      ? MediaServerImageKind.thumb
-                      : MediaServerImageKind.primary,
-                ),
-              ),
-              number: '${episode.episodeNumber ?? index + 1}',
-              title: episode.name,
-              summary: episode.overview,
-              meta: <String>[
-                if (duration.isNotEmpty) duration,
-                if (versionCount > 1)
-                  t.media_server_version_count(n: versionCount),
-              ],
-              completed: episode.played,
-              positionMs: episode.positionMs,
-              progress: mediaServerProgress(episode),
-              isContinue: isContinue,
-            ),
+            child: visual,
           ),
         ),
       ),

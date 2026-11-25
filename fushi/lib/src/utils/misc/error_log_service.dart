@@ -1,3 +1,4 @@
+import 'dart:async' show unawaited;
 import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/foundation.dart';
@@ -6,6 +7,7 @@ import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/frame_safe_notifier.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_core/fushi_core.dart' show DatabaseWorkCancelledException;
 import 'package:fushi_engine/foundation/engine_log.dart';
 
 class ErrorLogEntry {
@@ -209,7 +211,8 @@ class ErrorLogService extends ChangeNotifier
     if (file.lengthSync() <= _maxFileBytes) return;
     final List<int> bytes = file.readAsBytesSync();
     if (bytes.length <= _maxFileBytes) return;
-    file.writeAsStringSync(_trimLogBytes(bytes), flush: true);
+    // 不 fsync（BUG-4943）：logFatal 在主线程调，进程死不丢页缓存。
+    file.writeAsStringSync(_trimLogBytes(bytes));
   }
 
   /// [directoryOverride] 仅供测试注入临时目录（端到端验面包屑恢复，不碰
@@ -307,7 +310,7 @@ class ErrorLogService extends ChangeNotifier
   }
 
   /// 在调用 native 词典导入 FFI 之前**同步**落盘一条面包屑。[detail] 应能唯一
-  /// 标识本次导入（如词典文件名）。必须同步，否则进程在异步 flush 前就已崩溃。
+  /// 标识本次导入（如词典文件名）。必须同步写（写进页缓存即可，不 fsync），否则进程在异步写排上队前就已崩溃。
   ///
   /// 写入内容带时间戳：用户「正常强杀」恰好命中某本 FFI 执行中时，下次启动会
   /// 把残留误报为崩溃（与真硬崩在文件层不可区分）；带上时间戳让人工读日志时
@@ -321,10 +324,8 @@ class ErrorLogService extends ChangeNotifier
 
   void markImportStart(String detail) {
     try {
-      _breadcrumbFile?.writeAsStringSync(
-        '[${DateTime.now()}] $detail',
-        flush: true,
-      );
+      // 不 fsync（BUG-4943）：进程死不丢页缓存，见 SessionMarker 文档。
+      _breadcrumbFile?.writeAsStringSync('[${DateTime.now()}] $detail');
     } catch (e) {
       debugPrint('[ErrorLogService] markImportStart failed: $e');
     }
@@ -346,8 +347,8 @@ class ErrorLogService extends ChangeNotifier
 
   /// TODO-607 P0-2：查词弹窗栈层进出时**同步**写一条查词面包屑（[_lookupBreadcrumbFile]）。
   /// [depth] 是当前**可见**查词栈深度（0=已无可见弹窗，1=顶层查词，>=2=嵌套查词第
-  /// `depth` 层）；[topTerm] 是栈顶在查的词（可空）。必须同步落盘，否则进程在异步
-  /// flush 前就已 native 崩溃。[depth]<=0 时改为清掉面包屑（栈已空，无活跃查词，
+  /// `depth` 层）；[topTerm] 是栈顶在查的词（可空）。必须同步写（不 fsync），否则进程在异步
+  /// 写排上队前就已 native 崩溃。[depth]<=0 时改为清掉面包屑（栈已空，无活跃查词，
   /// 此后再崩与查词无关——避免把「正常关弹窗后很久的崩溃」误报成查词崩）。
   ///
   /// 由 [DictionaryPopupController] 的栈进出方法经注入回调驱动（三查词表面共用一份
@@ -360,9 +361,9 @@ class ErrorLogService extends ChangeNotifier
     }
     try {
       final String term = (topTerm == null || topTerm.isEmpty) ? '?' : topTerm;
+      // 不 fsync（BUG-4943）：查词弹窗每次进出都在主线程写，fsync 会卡出 ANR。
       _lookupBreadcrumbFile?.writeAsStringSync(
         '[${DateTime.now()}] 查词栈深度=$depth（>=2 为嵌套查词），栈顶词=「$term」',
-        flush: true,
       );
     } catch (e) {
       debugPrint('[ErrorLogService] markLookupStackDepth failed: $e');
@@ -401,13 +402,11 @@ class ErrorLogService extends ChangeNotifier
   /// TODO-1260：在 `AppModel.initialise()` 每个高风险 IO 步骤**前**同步写一条启动步进
   /// 面包屑（带时间戳）。若这一步的 IO 永不返回（掉线数据根盘），进程被强杀后下次启动
   /// 会从 [_initStepFile] 残留读到 `[时间] $step`，折成 `AppInit.hangRecovered`。必须
-  /// 同步落盘（`flush: true`），否则 hang→强杀期间异步缓冲来不及写盘。
+  /// 同步写（进页缓存即可，不 fsync：BUG-4943），否则 hang→强杀期间异步写来不及排上。
   void markInitStep(String step) {
     try {
-      _initStepFile?.writeAsStringSync(
-        '[${DateTime.now()}] $step',
-        flush: true,
-      );
+      // 不 fsync（BUG-4943）：进程死不丢页缓存，见 SessionMarker 文档。
+      _initStepFile?.writeAsStringSync('[${DateTime.now()}] $step');
     } catch (e) {
       debugPrint('[ErrorLogService] markInitStep failed: $e');
     }
@@ -426,6 +425,12 @@ class ErrorLogService extends ChangeNotifier
 
   @override
   void log(String source, Object error, [StackTrace? stack]) {
+    // BUG-5387：换库 / 关库时被取消的后台写库工作是预期内的停机，不是应用错误——
+    // 进诊断段留证据，不进用户可见错误计数。
+    if (error is DatabaseWorkCancelledException) {
+      logDiagnostic(source, error);
+      return;
+    }
     final entry = ErrorLogEntry(
       timestamp: DateTime.now(),
       source: source,
@@ -470,11 +475,15 @@ class ErrorLogService extends ChangeNotifier
   /// 致命错误后进程可能立刻被带崩（尤其 `PlatformDispatcher.onError` 接住的、
   /// 来自 platform/原生回调的异常），常规 [log] 的异步 `_appendToFile` 来不及把
   /// 缓冲 flush 到磁盘——错误日志页就空了。这里在内存登记之外，额外用
-  /// `writeAsStringSync(flush:true)` **同步**把这条 entry 追加进日志文件（复用
+  /// `writeAsStringSync`（不 fsync，BUG-4943）**同步**把这条 entry 追加进日志文件（复用
   /// 导入/查词面包屑同一「同步落盘存活崩溃」范式），保证即便下一刻崩溃，这条致命
   /// 错误也已在磁盘上，下次启动能读到。同步 IO 仅在罕见的致命路径触发，不影响热路径。
   @override
   void logFatal(String source, Object error, [StackTrace? stack]) {
+    if (error is DatabaseWorkCancelledException) {
+      logDiagnostic(source, error);
+      return;
+    }
     final entry = ErrorLogEntry(
       timestamp: DateTime.now(),
       source: source,
@@ -490,7 +499,7 @@ class ErrorLogService extends ChangeNotifier
       _logFile?.writeAsStringSync(
         _formatEntryForFile(entry),
         mode: FileMode.append,
-        flush: true,
+        // 不 fsync（BUG-4943）：进程死不丢页缓存，见 SessionMarker 文档。
       );
       _trimLogFileToMaxBytesSync();
     } catch (e) {
@@ -591,11 +600,65 @@ String mineFailureMessage(MineOutcome outcome) {
   if (outcome.errorCode == AnkiErrorCode.pairedDeviceMineFailed) {
     return t.anki_error_paired_device_mine_failed(reason: detail ?? '');
   }
+  // BUG-5085：同上，卡要去的是那台设备上的 Fushi 复习、它的复习库在换代途中。
+  if (outcome.errorCode == AnkiErrorCode.pairedDeviceReviewBlocked) {
+    return t.anki_error_paired_device_review_blocked(reason: detail ?? '');
+  }
   final String? localized = localizeAnkiMineError(outcome.errorCode);
   if (localized != null) return localized;
   return detail != null && detail.isNotEmpty
       ? t.card_export_failed_detail(reason: detail)
       : t.card_export_failed;
+}
+
+/// 复习库在换代途中而制卡失败时，提示上「打开复习」按钮做的事（切到复习页，那里就是升级 / 说明页）。主窗口
+/// 进程由 main.dart 装上；弹窗 / 查词窗进程不装（那里没有复习页可去，文案本身指向主窗口）。
+VoidCallback? mineFailureOpenReview;
+
+/// BUG-5085：制卡失败提示上的动作。复习库要升级 / 上次没升级完 / 要人处理时给「打开复习」（[mineFailureOpenReview]
+/// 装上时）；正在升级（等它完成就行）与其它失败不给。
+MineNoticeAction? mineFailureToastAction(MineOutcome outcome) {
+  final VoidCallback? open = mineFailureOpenReview;
+  if (open == null || outcome.result != MineResult.error) return null;
+  return switch (outcome.errorCode) {
+    AnkiErrorCode.srsNeedsMigration ||
+    AnkiErrorCode.srsMigrationFailed ||
+    AnkiErrorCode.srsNeedsAttention => MineNoticeAction(
+      label: t.srs_mining_open_review,
+      onPressed: open,
+    ),
+    _ => null,
+  };
+}
+
+/// 制卡进了**待发卡片**队列（Anki 连不上，卡冻结待补发）时，提示上「查看队列」做的事：打开
+/// 待发卡片列表。主窗口进程由 main.dart 装上；没装（弹窗 / 查词窗进程、测试）就不出按钮。
+VoidCallback? mineQueuedOpenPending;
+
+/// 「已加入待发队列」提示上的「查看队列」（用户 2026-11-22 重设计）。只给待发卡片队列
+/// （[MineOutcome.deckName] 为 null）；Fushi 复习的后台写入马上就落库，没有可看的队列。
+MineNoticeAction? mineQueuedToastAction(MineOutcome outcome) {
+  final VoidCallback? open = mineQueuedOpenPending;
+  if (open == null ||
+      outcome.result != MineResult.queued ||
+      outcome.deckName != null) {
+    return null;
+  }
+  return MineNoticeAction(label: t.card_notice_view_queue, onPressed: open);
+}
+
+/// 「已存在」提示上的「仍要添加」：[remine] 是调用方用同一份字段、拍上
+/// `AnkiMiningPayload.withAllowDuplicate` 再制一次（BUG-2605 同一约定）。只有结果是
+/// 重复、且调用方手里有字段可重发时才给。
+MineNoticeAction? mineAddAnywayToastAction(
+  MineOutcome outcome,
+  Future<void> Function()? remine,
+) {
+  if (remine == null || outcome.result != MineResult.duplicate) return null;
+  return MineNoticeAction(
+    label: t.card_notice_add_anyway,
+    onPressed: () => unawaited(remine()),
+  );
 }
 
 /// BUG-089 / BUG-4003：把一次没制成的 [MineOutcome] 的**完整诊断**写进
@@ -647,6 +710,8 @@ String? localizeAnkiMineError(String? code) {
       return t.anki_error_connection_unknown;
     case AnkiErrorCode.pairedDeviceUnreachable:
       return t.anki_error_paired_device_unreachable;
+    case AnkiErrorCode.pairedDeviceMiningUnavailable:
+      return t.anki_error_paired_device_mining_unavailable;
     // BUG-1900：此前这两种情形都由 AnkiConnect 透传同一句
     // `cannot create note because it is empty`——用户既看不出是自己选错了笔记类型 /
     // 没配好字段映射，也不知道该去哪儿改。现在由本地预检分类后给可操作的文案。
@@ -656,10 +721,25 @@ String? localizeAnkiMineError(String? code) {
       return t.anki_error_first_field_empty;
     case AnkiErrorCode.allFieldsEmpty:
       return t.anki_error_all_fields_empty;
+    case AnkiErrorCode.overwriteFieldsEmpty:
+      return t.anki_error_overwrite_fields_empty;
+    // 拍板 lt2wobUYfE：查词弹窗直接点 ✓ 覆写时，「覆写哪些字段」一个都没勾。
+    case AnkiErrorCode.overwriteNoFieldsSelected:
+      return t.anki_error_overwrite_no_fields_selected;
     case AnkiErrorCode.syncClientSignedOut:
       return t.anki_error_sync_signed_out;
     case AnkiErrorCode.syncClientUnavailable:
       return t.anki_error_sync_unavailable;
+    // BUG-5085：挖词目标是 Fushi 复习、复习库在换代途中（分类见 srs_generation_kind.dart）。此前一律是
+    // 「Fushi review is not available.」，用户不知道该去复习页完成升级。
+    case AnkiErrorCode.srsNeedsMigration:
+      return t.srs_mining_error_needs_migration;
+    case AnkiErrorCode.srsMigrationFailed:
+      return t.srs_mining_error_migration_failed;
+    case AnkiErrorCode.srsMigrating:
+      return t.srs_mining_error_migrating;
+    case AnkiErrorCode.srsNeedsAttention:
+      return t.srs_mining_error_needs_attention;
     default:
       return null;
   }
@@ -681,7 +761,17 @@ String? localizeAnkiMineError(String? code) {
 ///   `card_overwritten`、且 `record=false`（覆盖不计入制卡统计）。此前 reader/video/
 ///   mixin 的 update 方法各自复制一份与 mine 几乎相同的 switch（只差 card_overwritten
 ///   + 不记账），一并收口于此。
-({String message, bool success, bool record, MineToastStatus status})
+///
+/// [detail]：制卡结果卡第二行、状态标题后面的**短说明**（用户 2026-11-22 重设计：卡片
+/// 第一行是词、第二行「已制卡 · 日语::挖矿」）——成功给牌组名，有缺失给缺的原因，
+/// 重复给「本次未导出」，待写入复习给牌组名；null = 没有更短的说法，卡片用 [message]。
+({
+  String message,
+  String? detail,
+  bool success,
+  bool record,
+  MineToastStatus status,
+})
 describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
   switch (outcome.result) {
     case MineResult.success:
@@ -695,17 +785,29 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
           : t.card_exported(deck: deckName);
       final bool hasAudioWarning =
           audioWarning != null && audioWarning.isNotEmpty;
-      final String message = hasAudioWarning
-          ? '$baseMessage ${t.card_exported_audio_failed(reason: audioWarning)}'
-          : baseMessage;
+      // BUG-4287：结果附带的另一件事（如「保存到」被退回主机默认）接在同一条提示后面——单独弹会被
+      // 这条结果提示顶掉。
+      final String? notice = outcome.notice;
+      final bool hasNotice = notice != null && notice.isNotEmpty;
+      final String message = <String>[
+        baseMessage,
+        if (hasAudioWarning) t.card_exported_audio_failed(reason: audioWarning),
+        if (hasNotice) notice,
+      ].join(' ');
+      final String detail = <String>[
+        if (!hasAudioWarning && !hasNotice && deckName.isNotEmpty) deckName,
+        if (hasAudioWarning) t.card_exported_audio_failed(reason: audioWarning),
+        if (hasNotice) notice,
+      ].join(' ');
       return (
         message: message,
+        detail: detail.isEmpty ? null : detail,
         success: true,
         // 覆盖已有卡片不是新制一张，不计入制卡统计（与新制路径区分）。
         record: !overwrite,
         // 新制是绿色 added，覆盖已有卡是紫色 overwritten（此前两者同绿，用户分不出）。
-        // 带音频缺失提示的成功是 addedWithWarning：关掉「制卡成功提示」也照样弹。
-        status: hasAudioWarning
+        // 带音频缺失提示 / 附带提醒的成功是 addedWithWarning：关掉「制卡成功提示」也照样弹。
+        status: hasAudioWarning || hasNotice
             ? MineToastStatus.addedWithWarning
             : overwrite
             ? MineToastStatus.overwritten
@@ -714,6 +816,7 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
     case MineResult.duplicate:
       return (
         message: t.card_duplicate,
+        detail: t.card_notice_detail_not_exported,
         success: false,
         record: false,
         status: MineToastStatus.duplicate,
@@ -721,6 +824,7 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
     case MineResult.notConfigured:
       return (
         message: t.card_export_not_configured,
+        detail: null,
         success: false,
         record: false,
         status: MineToastStatus.failed,
@@ -738,6 +842,7 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
             : t.srs_mining_background_queued(
                 deck: queuedDeck.isEmpty ? t.srs_mining_target_srs : queuedDeck,
               ),
+        detail: queuedDeck == null || queuedDeck.isEmpty ? null : queuedDeck,
         success: true,
         record: !overwrite,
         status: MineToastStatus.queued,
@@ -745,6 +850,7 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
     case MineResult.error:
       return (
         message: logMineFailure(outcome),
+        detail: null,
         success: false,
         record: false,
         status: MineToastStatus.failed,

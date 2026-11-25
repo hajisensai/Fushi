@@ -35,6 +35,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 打开「迁移旧 Lapis 到新模板」页；页面关掉后返回。需要 [context] 在 [ProviderScope] 之下。
 ///
@@ -98,7 +99,7 @@ class _SrsLegacyLapisMigrationPageState
           <SrsLegacyLapisMigrationPreview>[
             for (final SrsLegacyLapisSource s
                 in await store.legacyLapisSources())
-              await store.previewLegacyLapisMigration(s.type.id),
+              await store.previewLegacyLapisSource(s),
           ];
       final SrsLapisBackfillPreview backfill = await store
           .previewLapisBackfill();
@@ -148,7 +149,10 @@ class _SrsLegacyLapisMigrationPageState
       FushiToast.show(msg: done, severity: ToastSeverity.success);
     } catch (e, stack) {
       ErrorLogService.instance.log(where, e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -195,7 +199,7 @@ class _SrsLegacyLapisMigrationPageState
 
   Future<void> _migrate(SrsLegacyLapisMigrationPreview p) async {
     final int n = p.source.noteIds.length;
-    final int dropped = p.change.droppedCards;
+    final int dropped = p.droppedCards;
     final String? targetDeckId = _targetDeckId;
     final String? deckName = _targetDeckName;
     final bool ok = await showFushiConfirmDialog(
@@ -203,7 +207,7 @@ class _SrsLegacyLapisMigrationPageState
       title: t.srs_lapis_migration_title,
       message:
           '${t.srs_lapis_migration_confirm(n: n, name: p.source.type.name)}\n'
-          '${t.srs_lapis_migration_cards(linked: p.change.linkedCards, dropped: dropped)}'
+          '${t.srs_lapis_migration_cards(linked: p.linkedCards, dropped: dropped)}'
           '${deckName == null ? '' : '\n${t.srs_lapis_migration_confirm_deck(deck: deckName)}'}',
       confirmLabel: t.srs_lapis_migration_migrate,
       cancelLabel: t.cancel,
@@ -255,6 +259,7 @@ class _SrsLegacyLapisMigrationPageState
     final bool apple = isGlassDesign(context);
     return FushiPageScaffold(
       title: t.srs_lapis_migration_title,
+      masthead: true,
       header: apple ? null : _buildTopBar(context),
       body: Builder(builder: _buildBody),
     );
@@ -464,10 +469,10 @@ class _SrsLegacyLapisMigrationPageState
           _note(
             context,
             t.srs_lapis_migration_cards(
-              linked: p.change.linkedCards,
-              dropped: p.change.droppedCards,
+              linked: p.linkedCards,
+              dropped: p.droppedCards,
             ),
-            error: p.change.droppedCards > 0,
+            error: p.droppedCards > 0,
           ),
           if (p.fallbackFills > 0)
             _note(context, t.srs_lapis_migration_fallback(n: p.fallbackFills)),

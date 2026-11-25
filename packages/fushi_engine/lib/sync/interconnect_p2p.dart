@@ -4,9 +4,10 @@ import 'dart:io' show InternetAddress, InternetAddressType;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart';
 import 'package:fushi_p2p/fushi_p2p.dart';
+import 'package:meta/meta.dart';
 
 export 'package:fushi_p2p/fushi_p2p.dart'
-    show FushiP2pConnStatus, FushiP2pPathKind;
+    show FushiP2pConnStatus, FushiP2pException, FushiP2pInfo, FushiP2pPathKind;
 
 /// 互联 P2P 隧道（iroh，dumbpipe 形态）的进程级运行时
 /// （docs/specs/2026-09-28-interconnect-remote-reach.md §5 / §6）。
@@ -45,11 +46,23 @@ String interconnectP2pUrl(
   return 'p2p://$nodeId${q.isEmpty ? '' : '?${q.join('&')}'}';
 }
 
-/// 解析 [interconnectP2pUrl]；不是 P2P 地址 → null。
+/// NodeId 的合法形态，与原生 `EndpointId::from_str`（iroh-base 1.2
+/// `decode_base32_hex`）同口径：64 位十六进制，或 52 位 RFC4648 base32（无填充、
+/// 不区分大小写）。[Uri.host] 已转成小写，原生 hex 分支也只认小写。
+///
+/// 这是必要条件：形态合法但不在曲线上的公钥仍会在原生侧被拒，调用方照旧要接住
+/// [FushiP2pException]。
+final RegExp _nodeIdPattern = RegExp(r'^(?:[0-9a-f]{64}|[a-z2-7]{52})$');
+
+/// 解析 [interconnectP2pUrl]；不是 P2P 地址、或 NodeId 形态不合法 → null。
+///
+/// NodeId 在解析阶段就校验：畸形链接里的 `p2p://xyz` 不会被当成 P2P 地址一路
+/// 传到原生 `conn_status` / `client_forward` 才抛。
 ({String nodeId, bool tls, String? relayUrl, List<String> directAddrs})?
 parseInterconnectP2pUrl(String url) {
   final Uri? uri = Uri.tryParse(url);
-  if (uri == null || uri.scheme != 'p2p' || uri.host.isEmpty) return null;
+  if (uri == null || uri.scheme != 'p2p') return null;
+  if (!_nodeIdPattern.hasMatch(uri.host)) return null;
   final Map<String, List<String>> q = uri.queryParametersAll;
   final String? relay = q['relay']?.first;
   return (
@@ -85,17 +98,95 @@ class InterconnectP2pPathTracker {
 /// 当前进程开着的本地转发口（`127.0.0.1:<port>`）。这些口在字面上是回环地址，
 /// 但背后是跨公网的隧道——按「局域网」给原画直传会把中继带宽打爆。画质判断等
 /// 「是不是局域网」的判据必须先问这里。
-final Set<int> _tunnelPorts = <int>{};
+///
+/// 值是该口代表的持久 `p2p://` 地址（列表里存的那一行）。映射与转发口同生命
+/// 周期：换提示撤口、关端点时随口一起回收，旧口不会再被当成隧道。
+final Map<int, String> _tunnelPorts = <int, String>{};
+
+bool _isLoopbackHost(String host) => host == '127.0.0.1' || host == 'localhost';
 
 /// [host]:[port] 是否是本进程的 P2P 本地转发口。
 bool isInterconnectTunnelOrigin(String host, int port) =>
-    (host == '127.0.0.1' || host == 'localhost') && _tunnelPorts.contains(port);
+    _isLoopbackHost(host) && _tunnelPorts.containsKey(port);
+
+/// [host]:[port] 是本进程**仍存活**的转发口时，返回它代表的持久 `p2p://`
+/// 地址；否则 null。
+String? interconnectTunnelOriginUrl(String host, int port) =>
+    _isLoopbackHost(host) ? _tunnelPorts[port] : null;
+
+/// [InterconnectP2pNode] 用到的端点能力（窄接口：真实实现包 [FushiP2pEndpoint]，
+/// 测试注入假端点）。
+abstract interface class InterconnectP2pEndpointPort {
+  int clientForward(
+    String nodeId, {
+    List<String> directAddrs,
+    String? relayUrl,
+  });
+  bool stopForward(int port);
+  FushiP2pConnStatus status(String nodeId);
+  FushiP2pInfo info();
+  void hostListen(int port);
+  void hostStop();
+  String? hostPeer(int port);
+
+  /// 系统默认网络变了，让 iroh 重新探测路径。原生库没有这项能力 → false。
+  bool networkChange();
+  Future<void> closeAsync();
+}
+
+final class _FfiEndpointPort implements InterconnectP2pEndpointPort {
+  _FfiEndpointPort(this._endpoint);
+
+  final FushiP2pEndpoint _endpoint;
+
+  @override
+  int clientForward(
+    String nodeId, {
+    List<String> directAddrs = const <String>[],
+    String? relayUrl,
+  }) => _endpoint.clientForward(
+    nodeId,
+    directAddrs: directAddrs,
+    relayUrl: relayUrl,
+  );
+
+  @override
+  bool stopForward(int port) => _endpoint.stopForward(port);
+
+  @override
+  FushiP2pConnStatus status(String nodeId) => _endpoint.status(nodeId);
+
+  @override
+  FushiP2pInfo info() => _endpoint.info();
+
+  @override
+  void hostListen(int port) => _endpoint.hostListen(port);
+
+  @override
+  void hostStop() => _endpoint.hostStop();
+
+  @override
+  String? hostPeer(int port) => _endpoint.hostPeer(port);
+
+  @override
+  bool networkChange() => _endpoint.networkChange();
+
+  @override
+  Future<void> closeAsync() => _endpoint.closeAsync();
+}
 
 /// 本进程的 iroh 端点。
 class InterconnectP2pNode {
   InterconnectP2pNode._(this._endpoint, this.nodeId);
 
-  final FushiP2pEndpoint _endpoint;
+  /// 测试装置：用假端点建节点。
+  @visibleForTesting
+  InterconnectP2pNode.forTesting(
+    InterconnectP2pEndpointPort port,
+    String nodeId,
+  ) : this._(port, nodeId);
+
+  final InterconnectP2pEndpointPort _endpoint;
 
   /// 本机 NodeId（公钥）。
   final String nodeId;
@@ -125,16 +216,22 @@ class InterconnectP2pNode {
   FushiP2pInfo info() => _endpoint.info();
 
   /// 作为 client：确保到 [remoteNodeId] 的本地转发口并返回端口。[relayUrl] /
-  /// [directAddrs] 是拨号提示（见 [interconnectP2pUrl]）。
+  /// [directAddrs] 是拨号提示（见 [interconnectP2pUrl]）。[originUrl] 是这个口
+  /// 代表的持久 `p2p://` 地址，供 [interconnectTunnelOriginUrl] 反查；映射随口
+  /// 撤销 / 端点关闭一起回收。
   int forwardTo(
     String remoteNodeId, {
     String? relayUrl,
     List<String> directAddrs = const <String>[],
+    required String originUrl,
   }) {
     final String hints = '${relayUrl ?? ''}|${directAddrs.join(',')}';
     final int? existing = _forwards[remoteNodeId];
     if (existing != null) {
-      if (_forwardHints[remoteNodeId] == hints) return existing;
+      if (_forwardHints[remoteNodeId] == hints) {
+        _tunnelPorts[existing] = originUrl;
+        return existing;
+      }
       _endpoint.stopForward(existing);
       _tunnelPorts.remove(existing);
       _forwards.remove(remoteNodeId);
@@ -146,19 +243,26 @@ class InterconnectP2pNode {
     );
     _forwards[remoteNodeId] = port;
     _forwardHints[remoteNodeId] = hints;
-    _tunnelPorts.add(port);
+    _tunnelPorts[port] = originUrl;
     return port;
   }
 
-  /// 到 [remoteNodeId] 的路径状态（direct / relay / mixed / none）。
-  FushiP2pConnStatus status(String remoteNodeId) =>
-      _endpoint.status(remoteNodeId);
+  /// 到 [remoteNodeId] 的路径状态（direct / relay / mixed / none）。节点已关闭
+  /// → null（与 [hostPeer] 同口径）；原生调用失败照旧抛 [FushiP2pException]。
+  FushiP2pConnStatus? status(String remoteNodeId) =>
+      _closed ? null : _endpoint.status(remoteNodeId);
+
+  /// 系统默认网络变了：通知 iroh 重新探测本机地址与到各对端的路径（连接没断、
+  /// 路径已失效时只有它能让隧道换路）。已关闭 → 不调原生，返回 false；原生库
+  /// 没有这项能力也是 false。原生调用失败照旧抛 [FushiP2pException]。
+  bool networkChange() => _closed ? false : _endpoint.networkChange();
 
   Future<void> close() async {
     if (_closed) return;
     _closed = true;
     _forwards.values.forEach(_tunnelPorts.remove);
     _forwards.clear();
+    _forwardHints.clear();
     await _endpoint.closeAsync();
   }
 }
@@ -184,6 +288,10 @@ class InterconnectP2pRuntime {
   /// 已启动的端点（未启动 → null，不触发启动）。
   InterconnectP2pNode? get current => _node;
 
+  /// 测试装置：直接装入节点（[ensure] 随后原样返回它）。
+  @visibleForTesting
+  void debugInstall(InterconnectP2pNode? node) => _node = node;
+
   /// 确保端点已启动；原生库不可用或启动失败 → null（已留痕）。
   Future<InterconnectP2pNode?> ensure() {
     final InterconnectP2pNode? node = _node;
@@ -204,7 +312,7 @@ class InterconnectP2pRuntime {
         await saveSecret(info.secretKeyHex);
       }
       final InterconnectP2pNode node = InterconnectP2pNode._(
-        endpoint,
+        _FfiEndpointPort(endpoint),
         info.nodeId,
       );
       _node = node;
@@ -228,6 +336,19 @@ class InterconnectP2pRuntime {
 
   Future<void> dispose() => restart();
 
+  /// 系统默认网络变了（平台信号 / 回到前台）。端点没启动就什么都不做——不为此
+  /// 建端点，之后建的端点本来就从当前网络起步。原生失败只留痕：这是尽力而为的
+  /// 提示，iroh 自己的周期探测仍在。
+  void notifyNetworkChange() {
+    final InterconnectP2pNode? node = _node;
+    if (node == null) return;
+    try {
+      node.networkChange();
+    } on Object catch (e, st) {
+      engineLog.log('InterconnectP2p.networkChange', e, st);
+    }
+  }
+
   /// host 地址集里本机的 P2P 地址（端点未启动 / 还没有任何可用拨号提示 → 空）。
   List<InterconnectHostAddress> hostAddresses({required bool tls}) {
     final InterconnectP2pNode? node = _node;
@@ -250,6 +371,18 @@ class InterconnectP2pRuntime {
     ];
   }
 }
+
+/// 把平台的「默认网络变了」信号流接到 [runtime]：每个事件转成一次
+/// [InterconnectP2pRuntime.notifyNetworkChange]。取消返回的订阅即解绑。
+/// 信号流报错（例如平台侧没注册这条通道）只留痕、订阅不断，之后的信号照常转。
+StreamSubscription<void> bindInterconnectP2pNetworkSignals(
+  InterconnectP2pRuntime runtime,
+  Stream<void> signals,
+) => signals.listen(
+  (void _) => runtime.notifyNetworkChange(),
+  onError: (Object e, StackTrace st) =>
+      engineLog.log('InterconnectP2p.networkSignals', e, st),
+);
 
 /// host 该不该公布、公布成什么样的 `p2p://` 地址（纯函数，便于单测）。
 ///

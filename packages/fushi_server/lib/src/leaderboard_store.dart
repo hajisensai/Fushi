@@ -15,6 +15,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/leaderboard/leaderboard_sync.dart';
 import 'package:path/path.dart' as p;
+import 'package:fushi_server/src/server_language.dart';
 
 /// 本机排行榜账户（字段语义见 app 侧同名类）。
 class ServerLeaderboardAccount {
@@ -187,7 +188,10 @@ class ServerLeaderboardStore {
     } on Object catch (e) {
       // 只报类型：jsonDecode 的 FormatException 会带上源文本（= 私钥）。
       throw ServerLeaderboardStoreException(
-        '排行榜账户文件损坏（${e.runtimeType}）: ${f.path}',
+        tr(
+          '排行榜账户文件损坏（${e.runtimeType}）: ${f.path}',
+          'Leaderboard account file is corrupted (${e.runtimeType}): ${f.path}',
+        ),
       );
     }
   }
@@ -206,7 +210,10 @@ class ServerLeaderboardStore {
       ]);
       if (r.exitCode != 0) {
         await tmp.delete();
-        throw FileSystemException('chmod 600 失败: ${r.stderr}', tmp.path);
+        throw FileSystemException(
+          tr('chmod 600 失败: ${r.stderr}', 'chmod 600 failed: ${r.stderr}'),
+          tmp.path,
+        );
       }
     }
     await tmp.rename(target.path);

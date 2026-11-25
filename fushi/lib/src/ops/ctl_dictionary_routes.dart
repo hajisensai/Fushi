@@ -107,8 +107,8 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
       }
       if (position != null) {
         if (position < 1) throw const CtlFailure.badRequest('position 从 1 起算');
-        // 与词典管理页 `_reorderDictionaries` 同语义：position 是在本分区**语言组**
-        // 里的位置（D_Nz5R4vSH），组内移动后整个分区按新顺序改 order。
+        // 与词典管理页 `_reorderRows` 同语义：position 是在整个分区里的位置（内容
+        // 语言只是标签、不参与排序，拍板台 zBzX4B7037），移动后按新顺序改 order。
         // 「汉字」分区还含混合词典的汉字部分（BUG-3573），位置要按该分区数、写入
         // 走分区专用的 updateKanjiSectionOrder，否则纯 kanji 词典的 order 与混合
         // 词典的 kanjiOrder 各排各的。
@@ -120,7 +120,9 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
         if (target.type == DictionaryType.kanji) {
           await model.updateKanjiSectionOrder(reordered);
         } else {
-          await model.updateDictionaryOrder(reordered);
+          // position 只数本机词典（`fushi_cli dict ls` 列的就是它们）；同分区的服务器
+          // 词典由仓库一起重编号，守在没挪动的本机词典旁边（moved = 这一本）。
+          await model.updateDictionaryOrder(reordered, moved: target.name);
         }
       }
       if (kanjiEnabled != null) {
@@ -132,7 +134,7 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
       }
       if (kanjiPosition != null) {
         // 「汉字」分区重排同一入口：混合词典只写 kanjiOrder，纯 kanji 词典写 order。
-        // 位置同样按「汉字」分区里的语言组算。
+        // 位置按整个「汉字」分区算。
         final Dictionary current = resolveCtlDictionary(
           model.dictionaries,
           target.name,
@@ -253,18 +255,16 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
       final String term = call.requireString('term');
       final int limit = call.optInt('limit') ?? 10;
       if (limit < 1) throw const CtlFailure.badRequest('limit 必须 ≥ 1');
-      // 与浏览器扩展 `/api/lookup/dictionary`（buildRemoteDictionaryLookupResponse）
-      // 同一个查词服务：同一套清洗 / 缓存 / 隐藏词典过滤，只是不要 popupJson。
-      // `language`（可选）：调用方的查词语言，与扩展 / 对端同一分派点；缺省按本机
-      // 当前查词语言。
-      final DictionarySearchResult? result =
-          await searchRemoteDictionaryForRequest(
-            app().createRemoteLookupService(),
-            term: term,
-            wildcards: call.optBool('wildcards') ?? false,
-            maximumTerms: limit,
-            language: _ctlLookupLanguage(call),
-          );
+      // 与查词页同一条查词链（AppModel.searchDictionaryForUser：同一套清洗 / 缓存 /
+      // 隐藏词典过滤，开着「远端查词」时远端优先），只是不要 popupJson。不走替对端
+      // 查词的 createRemoteLookupService：它只查本机词典，瘦客户端上永远是空的
+      // （BUG-4321）。`language`（可选）：调用方的查词语言；缺省按本机当前查词语言。
+      final DictionarySearchResult result = await app().searchDictionaryForUser(
+        searchTerm: term,
+        searchWithWildcards: call.optBool('wildcards') ?? false,
+        maximumTerms: limit,
+        lookupLanguage: _ctlLookupLanguage(call),
+      );
       return ctlSearchResultJson(
         term,
         result,
@@ -379,12 +379,11 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
       final bool lookup = call.optBool('lookup') ?? true;
       DictionarySearchResult? found;
       if (lookup && (reading == null || glossary == null)) {
-        found = await searchRemoteDictionaryForRequest(
-          app().createRemoteLookupService(),
-          term: word,
-          wildcards: false,
+        // 与查词页同一条查词链（远端优先，BUG-4321）：瘦客户端靠电脑的词典补释义。
+        found = await app().searchDictionaryForUser(
+          searchTerm: word,
           maximumTerms: 10,
-          language: _ctlLookupLanguage(call),
+          lookupLanguage: _ctlLookupLanguage(call),
         );
       }
       final Map<String, String> fields = buildCtlMineFields(
@@ -417,6 +416,8 @@ List<CtlRoute> buildDictionaryCtlRoutes(OpContext context) {
         if (outcome.deckName != null) 'deckName': outcome.deckName,
         if (view.message != null) 'message': view.message,
         if (view.detail != null) 'detail': view.detail,
+        // 随结果带回的提示（如「保存到」被主机退回默认，BUG-4287）。
+        'notice': ?outcome.notice,
         'expression': fields['expression'],
         'reading': fields['reading'],
         'glossaryFilled': (fields['glossary'] ?? '').isNotEmpty,

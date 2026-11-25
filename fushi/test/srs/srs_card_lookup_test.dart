@@ -1,6 +1,7 @@
 // 复习卡面查词：原生区按字取词 → 查词弹窗（与阅读器同一套弹窗引擎）；弹窗里继续嵌套查；
 // 卡面原有点击（点例句显示注音）不被取词吃掉，取词 / 显示注音用掉的点按也不报卡面手势；卡面链接只放行 Fushi 来源跳转。
 // 复习页整页（按键不评分、Esc 关弹窗回焦点）见 srs_pages_test.dart 的「卡面查词」组。
+import 'dart:async';
 import 'dart:ui' show BoxHeightStyle;
 
 import 'package:flutter/rendering.dart' show RenderParagraph, TextBox;
@@ -20,7 +21,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_card_sample.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -94,6 +95,7 @@ void main() {
     bool apple = false,
     SrsCardLookupCardSource? Function()? cardSource,
     void Function(SrsCardGestureEvent)? onCardGesture,
+    VoidCallback? onClosed,
   }) async {
     tester.view.physicalSize = const Size(390, 844);
     tester.view.devicePixelRatio = 1;
@@ -136,6 +138,7 @@ void main() {
                 child: SrsCardLookupHost(
                   controller: lookup,
                   cardSource: cardSource,
+                  onClosed: onClosed,
                   child: SrsFushiCardView(
                     face: SrsCardFace(
                       cardId: 'c1',
@@ -579,6 +582,100 @@ void main() {
       expect(kSrsCardLinkScript, contains("closest('a[href]')"));
       expect(kSrsCardLinkScript, contains('e.preventDefault()'));
       expect(kSrsCardLinkScript, contains(kSrsSourceLinkHandler));
+    });
+  });
+
+  // BUG-4942（反馈 4YiquMnaSc）：app 内浏览器把扩展的查词交给本宿主，点「高级制卡」弹的
+  // 对话框是压在浏览器页之上的路由；宿主曾把「本页不在栈顶」一律当成「被别的页面盖住」
+  // 关掉整栈 → onClosed → 扩展续播视频，对话框确认时要回点的那层弹窗也没了。
+  group('查词会话自己的对话框（BUG-4942）', () {
+    Future<void> openLookup(
+      WidgetTester tester,
+      SrsCardLookupController lookup,
+    ) async {
+      lookup.lookup(
+        const SrsCardLookupRequest(
+          term: '通う',
+          anchor: Rect.fromLTWH(40, 200, 20, 20),
+          sentence: '図書館に通っている。',
+        ),
+      );
+      await settlePopup(tester);
+      expect(lookup.isOpen, isTrue);
+    }
+
+    testWidgets('经 runWithLookupPopupHidden 弹的对话框：不关栈、不回调 onClosed，关窗后弹窗还在', (
+      WidgetTester tester,
+    ) async {
+      int closed = 0;
+      final SrsCardLookupController lookup = await pumpCard(
+        tester,
+        answer: true,
+        onClosed: () => closed++,
+      );
+      await openLookup(tester, lookup);
+      final Finder host = find.byType(SrsCardLookupHost);
+      final DictionaryPageMixin page =
+          tester.state(host) as DictionaryPageMixin;
+      final BuildContext context = tester.element(host);
+      final Future<void> dialog = page.runWithLookupPopupHidden<void>(
+        () => showDialog<void>(
+          context: context,
+          builder: (BuildContext _) =>
+              const Dialog(child: SizedBox(key: ValueKey<String>('dlg'))),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(find.byKey(const ValueKey<String>('dlg')), findsOneWidget);
+      expect(lookup.isOpen, isTrue);
+      expect(closed, 0);
+
+      Navigator.of(
+        tester.element(find.byKey(const ValueKey<String>('dlg'))),
+      ).pop();
+      await dialog;
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(lookup.isOpen, isTrue);
+      expect(lookup.debugVisibleDepth, 1);
+      expect(closed, 0);
+
+      lookup.closeAll();
+      await tester.pump();
+      expect(closed, 1);
+      await tester.pump(const Duration(seconds: 2));
+    });
+
+    testWidgets('别的路由盖住本页（不是查词会话的对话框）：照旧关栈并回调 onClosed', (
+      WidgetTester tester,
+    ) async {
+      int closed = 0;
+      final SrsCardLookupController lookup = await pumpCard(
+        tester,
+        answer: true,
+        onClosed: () => closed++,
+      );
+      await openLookup(tester, lookup);
+      final BuildContext context = tester.element(
+        find.byType(SrsCardLookupHost),
+      );
+      unawaited(
+        showDialog<void>(
+          context: context,
+          builder: (BuildContext _) =>
+              const Dialog(child: SizedBox(key: ValueKey<String>('other'))),
+        ),
+      );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      expect(lookup.isOpen, isFalse);
+      expect(closed, 1);
+      await tester.pump(const Duration(seconds: 2));
+    });
+
+    test('高级制卡语境 = 查词所在那句；没有句子时为 null', () {
+      expect(srsLookupMiningContext('図書館に通っている。')?.sentence, '図書館に通っている。');
+      expect(srsLookupMiningContext(''), isNull);
     });
   });
 

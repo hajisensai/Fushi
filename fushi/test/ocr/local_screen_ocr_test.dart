@@ -69,6 +69,75 @@ void main() {
       expect(page.lines.single.rect, const Rect.fromLTWH(0, 0, 640, 360));
     });
 
+    // 反馈 Eemf0HOZhj（BUG-4069）：本机模型的逐字命中格切到各行、换成行内区间作
+    // 词框，点字按字格定位（与 Windows OCR 词框同一路径），不再整行等分。
+    test('glyph boxes become per-line segments in line-local offsets', () {
+      OcrGlyphBox glyph(int start, double left, double top) => OcrGlyphBox(
+        start: start,
+        end: start + 1,
+        rect: OcrRect(left: left, top: top, right: left + 20, bottom: top + 24),
+      );
+      final SystemOcrPageResult page = systemOcrPageFromRecognition(
+        OcrRecognition(
+          text: 'あい うえ',
+          vertical: false,
+          // 第二行带一个行首空格：trim 后字格区间要跟着左移。
+          lines: const <String>['あい', ' うえ'],
+          lineBoxes: const <OcrRect>[
+            OcrRect(left: 10, top: 20, right: 50, bottom: 44),
+            OcrRect(left: 10, top: 60, right: 60, bottom: 84),
+          ],
+          glyphBoxes: <OcrGlyphBox>[
+            glyph(0, 10, 20),
+            glyph(1, 30, 20),
+            glyph(3, 20, 60),
+            glyph(4, 40, 60),
+          ],
+        ),
+        width: 100,
+        height: 100,
+      );
+      final SystemOcrTextLine second = page.lines[1];
+      expect(second.text, 'うえ');
+      expect(second.segments.map((SystemOcrTextSegment s) => s.start), <int>[
+        0,
+        1,
+      ]);
+      expect(second.segments[1].rect, const Rect.fromLTRB(40, 60, 60, 84));
+      expect(
+        page.lines.first.segments.map((SystemOcrTextSegment s) => s.start),
+        <int>[0, 1],
+      );
+    });
+
+    test('out-of-order glyph boxes leave the line without segments', () {
+      final SystemOcrPageResult page = systemOcrPageFromRecognition(
+        const OcrRecognition(
+          text: 'あい',
+          vertical: false,
+          lines: <String>['あい'],
+          lineBoxes: <OcrRect>[
+            OcrRect(left: 10, top: 20, right: 50, bottom: 44),
+          ],
+          glyphBoxes: <OcrGlyphBox>[
+            OcrGlyphBox(
+              start: 1,
+              end: 2,
+              rect: OcrRect(left: 30, top: 20, right: 50, bottom: 44),
+            ),
+            OcrGlyphBox(
+              start: 0,
+              end: 1,
+              rect: OcrRect(left: 10, top: 20, right: 30, bottom: 44),
+            ),
+          ],
+        ),
+        width: 100,
+        height: 100,
+      );
+      expect(page.lines.single.segments, isEmpty);
+    });
+
     test('nothing read -> empty page', () {
       expect(
         systemOcrPageFromRecognition(
@@ -153,6 +222,35 @@ void main() {
         expect(service.session.closed, isTrue);
       },
     );
+
+    // 智能遮布关掉 / 离开播放页时识别可能正在 native 侧跑：dispose 必须等它跑完再
+    // 关会话，之后的识别直接拒绝。
+    test('dispose waits for running recognitions before closing', () async {
+      final _FakeService service = _FakeService(ready: true);
+      final LocalScreenOcr ocr = LocalScreenOcr(service, workDir: work);
+      final Completer<void> gate = Completer<void>();
+      service.session.gate = gate;
+      final Future<SystemOcrPageResult> running = ocr.recognizeRgba(
+        Uint8List(4 * 2 * 4),
+        width: 4,
+        height: 2,
+      );
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(service.session.sizes, hasLength(1));
+      bool disposed = false;
+      final Future<void> disposing = ocr.dispose().then((_) => disposed = true);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(disposed, isFalse);
+      expect(service.session.closed, isFalse);
+      gate.complete();
+      expect((await running).lines.single.text, '日本語');
+      await disposing;
+      expect(service.session.closed, isTrue);
+      await expectLater(
+        ocr.recognizeRgba(Uint8List(4), width: 1, height: 1),
+        throwsStateError,
+      );
+    });
 
     test('an image that does not decode is a format error', () async {
       final LocalScreenOcr ocr = LocalScreenOcr(

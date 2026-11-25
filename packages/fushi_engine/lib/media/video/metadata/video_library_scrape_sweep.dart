@@ -25,13 +25,18 @@
 library;
 
 import 'dart:async';
+import 'dart:convert';
 
+import 'package:drift/drift.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_video_metadata_provider.dart'
+    show AniDbVideoMetadataProvider;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_ignored_works.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_sweep_ledger.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
@@ -55,10 +60,14 @@ class VideoPendingScrapeWork {
     required this.source,
     required this.work,
     this.pendingNote,
+    this.pendingNoteAt,
   });
 
   final SourceLibraryRow source;
   final VideoSourceScrapeWork work;
+
+  /// [pendingNote] 所在那次运行的开始时刻（待确认清单显示「上次尝试」）。
+  final DateTime? pendingNoteAt;
 
   /// 最近一次刮削留下的「为什么没认出来」；近期运行记录里没有它的标记时为 null。
   /// 只有 [VideoLibraryScrapeSweep.pendingWorksWithReasons] 填它（待确认清单要
@@ -98,10 +107,7 @@ Future<List<VideoPendingScrapeWork>> planScrapeWorksForCollection(
     ))
       if (item.mediaType == MediaKind.video.dbValue) item.entryKey,
   };
-  final List<SourceLibraryRow> sources =
-      (await database.getMediaSourcesByKind('video'))
-          .where((SourceLibraryRow source) => source.transport == 'local')
-          .toList(growable: false);
+  final List<SourceLibraryRow> sources = await localVideoScrapeScopes(database);
   final List<VideoPendingScrapeWork> memberWorks = <VideoPendingScrapeWork>[];
   for (final SourceLibraryRow source in sources) {
     final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
@@ -138,9 +144,11 @@ Future<VideoPendingScrapeWork?> planScrapeWorkForVideoBook(
   String bookUid,
 ) async {
   final VideoBookRow? book = await database.getVideoBookByBookUid(bookUid);
-  final int? sourceId = book?.sourceId;
-  if (book == null || sourceId == null) return null;
-  final SourceLibraryRow? source = await database.getMediaSourceById(sourceId);
+  if (book == null) return null;
+  final int? sourceId = book.sourceId;
+  final SourceLibraryRow? source = sourceId == null
+      ? sourcelessLocalVideoScrapeScope
+      : await database.getMediaSourceById(sourceId);
   if (source == null || !videoBookHasScrapePlan(book, source)) return null;
   for (final VideoSourceScrapeWork work in await VideoSourceWorkPlanner(
     database,
@@ -152,21 +160,28 @@ Future<VideoPendingScrapeWork?> planScrapeWorkForVideoBook(
   return null;
 }
 
-/// [book] 在它所属来源 [source] 的刮削计划里有没有作品单元、且能被协调器真的刮
-/// （BUG-2737）：来源是本机扫描根（远端流 / 互联来源没有本机计划，协调器也只刮
-/// `transport == 'local'`），且计划器会为这个来源、这个视频出单元（非目录分组
-/// 模式、非特典）。
+/// [book] 在它所属范围的刮削计划里有没有作品单元、且能被协调器真的刮
+/// （BUG-2737）：范围是本机视频来源（远端流 / 互联来源没有本机计划，协调器也只刮
+/// `transport == 'local'`；「仅此一次」导入的临时行不立项），或 `sourceId` 为 NULL
+/// 的本机视频所在的无来源范围（拍板台 gtpgyff3l7-oneshot-scrape 方案 b）；且计划器
+/// 会为这个范围、这个视频出单元（非目录分组模式、非特典）。
+///
+/// [source] 是 [book] 所属来源的行；`book.sourceId` 为 NULL 时不看它（调用方可传
+/// null），按无来源范围判。
 ///
 /// 纯函数、不跑计划器：库页「重新刮削」入口用它决定画不画，
 /// [planScrapeWorkForVideoBook] 用它提前返回——两处同口径，入口不会画出点了
-/// 必然扑空的按钮（手动导入的视频没有 `sourceId`、互联远端下载落在应用目录里，
-/// 都在这里被挡掉）。
-bool videoBookHasScrapePlan(VideoBookRow book, SourceLibraryRow? source) =>
-    source != null &&
-    book.sourceId == source.id &&
-    source.transport == 'local' &&
-    videoSourcePlansScrapeWorks(source) &&
-    videoBookJoinsScrapePlan(book);
+/// 必然扑空的按钮（远端流 / 媒体服务器视频没有本机文件，在这里被挡掉）。
+bool videoBookHasScrapePlan(VideoBookRow book, SourceLibraryRow? source) {
+  final SourceLibraryRow? scope = book.sourceId == null
+      ? sourcelessLocalVideoScrapeScope
+      : source;
+  return scope != null &&
+      isVideoScrapeScope(scope) &&
+      videoBookInScrapeScope(book, scope) &&
+      videoSourcePlansScrapeWorks(scope) &&
+      videoBookJoinsScrapePlan(book);
+}
 
 /// 自动补刮调度器。生命周期跟随 HomePage 的刮削 controller。
 class VideoLibraryScrapeSweep {
@@ -175,6 +190,7 @@ class VideoLibraryScrapeSweep {
     required VideoSourceScrapeTaskController controller,
     bool Function()? isEnabled,
     bool Function()? isHashReady,
+    bool Function()? isAniDbDetailReady,
     TmdbChangedTvIdsProbe? tmdbChangedTvIds,
     DateTime Function()? now,
     VideoScrapeSweepLedger? ledger,
@@ -188,6 +204,7 @@ class VideoLibraryScrapeSweep {
        _controller = controller,
        _isEnabled = isEnabled,
        _isHashReady = isHashReady,
+       _isAniDbDetailReady = isAniDbDetailReady,
        _tmdbChangedTvIds = tmdbChangedTvIds,
        _ledger = ledger ?? VideoScrapeSweepLedger(),
        _configFingerprint = configFingerprint,
@@ -247,6 +264,16 @@ class VideoLibraryScrapeSweep {
 
   /// AniDB 哈希识别开关已开且账号 / 客户端配齐（`config.anidbHashReady`）。
   final bool Function()? _isHashReady;
+
+  /// AniDB HTTP anime XML 此刻拿得到（已登记的 HTTP 客户端身份、未被拒、未封禁；
+  /// 生产装配 `AniDbVideoMetadataProvider.isHttpApiAvailable`）。null = 不设闸
+  /// （测试）。
+  ///
+  /// 只管「标题目录摘要」存量作品的补全（[_refreshBacklog]）：AniDB HTTP 客户端
+  /// 登记之前（#3563）刮成 catalogOnly 的作品只有标题、没类型 / 年份 / 集数，XML
+  /// 拿得到时它们优先进刷新、不等 [staleAfter]；拿不到时补刮只会再得一份摘要，
+  /// 不白跑。
+  final bool Function()? _isAniDbDetailReady;
   final VideoSourceScrapeTaskController _controller;
 
   /// 自动补刮总闸（`AppModel.videoLibraryAutoBackfillScrape`，默认开，设置页
@@ -364,39 +391,57 @@ class VideoLibraryScrapeSweep {
   Future<List<VideoPendingScrapeWork>> _withPendingNotes(
     List<VideoPendingScrapeWork> pending,
   ) async {
-    final Map<int, Map<String, VideoScrapePendingNote>> bySource =
-        <int, Map<String, VideoScrapePendingNote>>{};
+    final Map<int, Map<String, (VideoScrapePendingNote, DateTime)>> bySource =
+        <int, Map<String, (VideoScrapePendingNote, DateTime)>>{};
     for (final VideoPendingScrapeWork entry in pending) {
-      bySource[entry.source.id] ??= await _pendingNotesOf(entry.source.id);
+      bySource[entry.source.id] ??= await _pendingNotesOf(entry.source);
     }
     return <VideoPendingScrapeWork>[
       for (final VideoPendingScrapeWork entry in pending)
-        VideoPendingScrapeWork(
-          source: entry.source,
-          work: entry.work,
-          pendingNote: bySource[entry.source.id]![entry.work.stableKey],
-        ),
+        if (bySource[entry.source.id]![entry.work.stableKey]
+            case final (VideoScrapePendingNote, DateTime) found)
+          VideoPendingScrapeWork(
+            source: entry.source,
+            work: entry.work,
+            pendingNote: found.$1,
+            pendingNoteAt: found.$2,
+          )
+        else
+          VideoPendingScrapeWork(source: entry.source, work: entry.work),
     ];
   }
 
-  Future<Map<String, VideoScrapePendingNote>> _pendingNotesOf(
-    int sourceId,
+  /// 每个作品键最近一次的挂起原因 + 那次运行的开始时刻。逐次运行（新 → 旧）
+  /// 解析、先到先得，与 [latestVideoScrapePendingNotes] 一次喂全部运行的结果
+  /// 逐条相同，只是多带出运行时刻。
+  Future<Map<String, (VideoScrapePendingNote, DateTime)>> _pendingNotesOf(
+    SourceLibraryRow scope,
   ) async {
     final List<VideoSourceScrapeRunRow> runs = await _database
         .getUnresolvedVideoSourceScrapeRuns(
-          sourceId: sourceId,
+          sourceId: persistedScrapeSourceId(scope),
           limit: _pendingNoteRunLookback,
         );
-    return latestVideoScrapePendingNotes(<Iterable<String>>[
-      for (final VideoSourceScrapeRunRow run in runs)
-        if (decodeSourceScrapeReport(run.summaryJson)
-            case final SourceScrapeReport report)
-          <String>[
-            for (final SourceScrapeIssue issue in report.warnings)
-              issue.message,
-            for (final SourceScrapeIssue issue in report.errors) issue.message,
-          ],
-    ]);
+    final Map<String, (VideoScrapePendingNote, DateTime)> notes =
+        <String, (VideoScrapePendingNote, DateTime)>{};
+    for (final VideoSourceScrapeRunRow run in runs) {
+      final SourceScrapeReport? report = decodeSourceScrapeReport(
+        run.summaryJson,
+      );
+      if (report == null) continue;
+      final DateTime at = DateTime.fromMillisecondsSinceEpoch(run.startedAt);
+      final Map<String, VideoScrapePendingNote>
+      inRun = latestVideoScrapePendingNotes(<Iterable<String>>[
+        <String>[
+          for (final SourceScrapeIssue issue in report.warnings) issue.message,
+          for (final SourceScrapeIssue issue in report.errors) issue.message,
+        ],
+      ]);
+      for (final MapEntry<String, VideoScrapePendingNote> e in inRun.entries) {
+        notes.putIfAbsent(e.key, () => (e.value, at));
+      }
+    }
+    return notes;
   }
 
   /// 一次计划两用：待确认清单 + 哈希待补文件所在的已识别作品。
@@ -407,13 +452,19 @@ class VideoLibraryScrapeSweep {
     final Set<String> ignoredKeys = await loadIgnoredVideoScrapeWorks(
       _database,
     );
+    // 三张整表与规范身份索引都与来源无关：一轮计划各读一次，所有来源、所有
+    // 作品共用（原先每个来源三次整表读、每部作品 2～2N 次查询）。
+    VideoLibraryPlanSnapshot? snapshot;
+    VideoCanonicalIdentityIndex? identities;
     for (final SourceLibraryRow source in await _localVideoSources()) {
       final VideoSourceScrapeSettingRow? settings = await _database
           .getVideoSourceScrapeSettings(source.id);
       if (settings?.enabled == false) continue;
+      final VideoLibraryPlanSnapshot tables = snapshot ??=
+          await VideoLibraryPlanSnapshot.load(_database);
       final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
         _database,
-      ).plan(source);
+      ).plan(source, snapshot: tables);
       for (final VideoSourceScrapeWork work in works) {
         // 成员文件全都不在磁盘上的作品不进任何一份清单（BUG-4055）。行与进度
         // 原样保留；文件回来（重新插盘 / 网络盘上线）下一次计划就自然回到队列。
@@ -422,7 +473,9 @@ class VideoLibraryScrapeSweep {
           source: source,
           work: work,
         );
-        if (await _hasCanonicalIdentity(work)) {
+        final VideoCanonicalIdentityIndex index = identities ??=
+            await VideoCanonicalIdentityIndex.load(_database);
+        if (index.hasIdentity(work)) {
           identified.add(entry);
         } else if (ignoredKeys.contains(work.stableKey)) {
           // 已识别的作品照常进 identified（资料刷新 / 哈希补齐不受忽略影响）；
@@ -455,6 +508,13 @@ class VideoLibraryScrapeSweep {
   ) async {
     if (identified.isEmpty) return const <VideoPendingScrapeWork>[];
     final DateTime now = _now();
+    // 主身份是 AniDB、details 快照还是标题目录摘要的作品：XML 拿得到就优先补全。
+    // 走同一份刷新记账，补完快照换成完整 XML 后自然退出；XML 仍没取到（临时
+    // 失败）的在 [refreshProbeInterval] 之后再试，不每轮重刮。
+    final Set<int> catalogOnlyIds = (_isAniDbDetailReady?.call() ?? true)
+        ? await anidbCatalogOnlyVideoWorkIds(_database)
+        : const <int>{};
+    final List<VideoPendingScrapeWork> catalogOnly = <VideoPendingScrapeWork>[];
     final List<VideoPendingScrapeWork> stale = <VideoPendingScrapeWork>[];
     final List<(VideoPendingScrapeWork, int, DateTime)> fresh =
         <(VideoPendingScrapeWork, int, DateTime)>[];
@@ -466,6 +526,10 @@ class VideoLibraryScrapeSweep {
       }
       final VideoMetadataWorkRow? row = await _canonicalWork(entry.work);
       if (row == null) continue;
+      if (catalogOnlyIds.contains(row.id)) {
+        catalogOnly.add(entry);
+        continue;
+      }
       final DateTime scrapedAt = DateTime.fromMillisecondsSinceEpoch(
         row.updatedAt,
       );
@@ -479,9 +543,12 @@ class VideoLibraryScrapeSweep {
       );
       if (tmdbId != null) fresh.add((entry, tmdbId, scrapedAt));
     }
+    // 上限 [maxRefreshPerSweep] 三类合算（保护 AniDB / TMDB 配额，下轮接着刷），
+    // 摘要补全排最前。
     final List<VideoPendingScrapeWork> result = <VideoPendingScrapeWork>[
+      ...catalogOnly,
       ...stale,
-    ];
+    ].take(maxRefreshPerSweep).toList();
     final TmdbChangedTvIdsProbe? probe = _tmdbChangedTvIds;
     final DateTime? lastProbe = _ledger.lastRefreshProbeAt;
     if (probe != null &&
@@ -551,12 +618,35 @@ class VideoLibraryScrapeSweep {
   /// 一次查库两用：清单喂视频页的待确认提醒条，其中没自动试过的作品同时进补刮
   /// 批次。总闸关、controller 忙、作品已试过都只是不发起批次，**清单照常返回**
   /// ——「不自动刮」不等于「不告诉用户有东西待确认」。
+  ///
+  /// BUG-5387：整轮登记成本库的后台工作。关库 / 换库（备份恢复等）时被取消，取消后的
+  /// SQL 发不出去，关库等它退出才真关；被取消的这轮沿用上一份清单。
   Future<List<VideoPendingScrapeWork>> sweepAndListPending() async {
+    try {
+      return await _database.runBackgroundWork<List<VideoPendingScrapeWork>>(
+        'video.scrapeSweep',
+        (DatabaseWorkToken _) => _sweepAndListPendingInWork(),
+      );
+    } on DatabaseWorkCancelledException {
+      return _lastPending;
+    }
+  }
+
+  Future<List<VideoPendingScrapeWork>> _sweepAndListPendingInWork() async {
     if (_sweeping || _controller.isBusy) return _deferUntilIdle(_lastPending);
     _sweeping = true;
     _sweepDeferred = false;
     try {
-      final _PlannedWorks planned = await _plannedWorksOrEmpty();
+      final _PlannedWorks planned;
+      try {
+        planned = await _plannedWorks();
+      } catch (error, stack) {
+        if (error is DatabaseWorkCancelledException) rethrow;
+        // 计划失败 ≠ 「没有待确认作品」：留痕，沿用上一份清单（不拿空清单盖掉
+        // 提醒条），本轮不发批次。
+        engineLog.log('VideoLibraryScrapeSweep.plan', error, stack);
+        return _lastPending;
+      }
       final List<VideoPendingScrapeWork> pending = _lastPending =
           planned.pending;
       if (_isEnabled != null && !_isEnabled()) return pending;
@@ -646,8 +736,10 @@ class VideoLibraryScrapeSweep {
           _ledger.markTransientFailure(transient, _now());
           await _saveLedger();
         }
-      } catch (_) {
-        // 后台静默批次：单轮失败不打扰页面。失败的作品已记账，不反复重试。
+      } catch (error, stack) {
+        // 后台静默批次：单轮失败不打扰页面（不抛、不提示），但原因必须留痕。
+        // 失败的作品已记账，不反复重试。
+        engineLog.log('VideoLibraryScrapeSweep.batch', error, stack);
       }
       return pending;
     } finally {
@@ -675,18 +767,10 @@ class VideoLibraryScrapeSweep {
     await sweepAndListPending();
   }
 
-  Future<_PlannedWorks> _plannedWorksOrEmpty() async {
-    try {
-      return await _plannedWorks();
-    } catch (_) {
-      return const _PlannedWorks();
-    }
-  }
-
-  Future<List<SourceLibraryRow>> _localVideoSources() async =>
-      (await _database.getMediaSourcesByKind('video'))
-          .where((SourceLibraryRow source) => source.transport == 'local')
-          .toList(growable: false);
+  /// 本机全部可刮削范围（来源 + 无来源本机视频；「仅此一次」导入的临时行不在内，
+  /// 见 [localVideoScrapeScopes]）。
+  Future<List<SourceLibraryRow>> _localVideoSources() =>
+      localVideoScrapeScopes(_database);
 
   Future<Set<String>> _downloadConfirmedKeys(
     List<VideoPendingScrapeWork> pending,
@@ -708,9 +792,6 @@ class VideoLibraryScrapeSweep {
 
   Future<VideoMetadataWorkRow?> _canonicalWork(VideoSourceScrapeWork work) =>
       canonicalVideoMetadataWork(_database, work);
-
-  Future<bool> _hasCanonicalIdentity(VideoSourceScrapeWork work) =>
-      hasCanonicalVideoMetadataIdentity(_database, work);
 }
 
 /// 计划器作品对应的规范作品行（按合集 id / bookUid 锚定）。
@@ -720,6 +801,38 @@ Future<VideoMetadataWorkRow?> canonicalVideoMetadataWork(
 ) => work.collection == null
     ? database.getVideoMetadataWorkByBook(work.members.single.bookUid)
     : database.getVideoMetadataWorkByCollection(work.collection!.id);
+
+/// 主身份是 AniDB、且 details 快照仍是标题目录摘要
+/// （[AniDbVideoMetadataProvider.catalogOnlyPayloadKey]）的规范作品 id。
+///
+/// AniDB HTTP anime XML 不可用时 provider 退回离线标题目录：作品只有标题，没有
+/// 类型 / 年份 / 集数。完整 XML 刮完后快照整份替换（不再带这个键），所以这份
+/// 集合就是「还缺 AniDB 详情」的作品。一条查询读完，不逐作品查库。
+Future<Set<int>> anidbCatalogOnlyVideoWorkIds(FushiDatabase database) async {
+  const String key = AniDbVideoMetadataProvider.catalogOnlyPayloadKey;
+  final List<QueryRow> rows = await database
+      .customSelect(
+        'SELECT i.work_id AS wid, s.raw_json AS raw '
+        'FROM video_metadata_provider_identities i '
+        'JOIN video_metadata_raw_snapshots s '
+        "ON s.identity_key = i.identity_key AND s.snapshot_kind = 'details' "
+        "WHERE i.provider = 'anidb' AND i.is_primary = 1 "
+        'AND i.work_id IS NOT NULL AND s.raw_json LIKE ?',
+        variables: <Variable<Object>>[Variable<String>('%$key%')],
+      )
+      .get();
+  final Set<int> ids = <int>{};
+  for (final QueryRow row in rows) {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(row.read<String>('raw'));
+    } on FormatException {
+      continue;
+    }
+    if (decoded is Map && decoded[key] == true) ids.add(row.read<int>('wid'));
+  }
+  return ids;
+}
 
 /// 规范身份存在判据：works 行存在且至少有一条作品级 provider 身份。合集单元
 /// 没有合集级作品行时，成员**各自**拥有带身份的作品行也算（按 AniDB 作品拆成
@@ -747,6 +860,68 @@ Future<bool> hasCanonicalVideoMetadataIdentity(
     if (owned == null || !await hasIdentity(owned)) return false;
   }
   return work.members.isNotEmpty;
+}
+
+/// [hasCanonicalVideoMetadataIdentity] 的整库批量版：作品行与「带作品级
+/// provider 身份的作品 id」各读一次，之后逐作品判定不再查库。判据与单作品版
+/// 逐条相同（合集行优先；合集没有作品行时要求每个成员各自有带身份的作品行）。
+///
+/// 只在一轮计划内使用，不跨轮缓存——刮削写身份后下一轮重新读。
+class VideoCanonicalIdentityIndex {
+  VideoCanonicalIdentityIndex._({
+    required Map<int, int> workIdByCollection,
+    required Map<String, int> workIdByBook,
+    required Set<int> identifiedWorkIds,
+  }) : _workIdByCollection = workIdByCollection,
+       _workIdByBook = workIdByBook,
+       _identifiedWorkIds = identifiedWorkIds;
+
+  final Map<int, int> _workIdByCollection;
+  final Map<String, int> _workIdByBook;
+  final Set<int> _identifiedWorkIds;
+
+  static Future<VideoCanonicalIdentityIndex> load(
+    FushiDatabase database,
+  ) async {
+    final Map<int, int> byCollection = <int, int>{};
+    final Map<String, int> byBook = <String, int>{};
+    for (final VideoMetadataWorkRow row
+        in await database.getAllVideoMetadataWorks()) {
+      final int? collectionId = row.collectionId;
+      if (collectionId != null) byCollection[collectionId] = row.id;
+      final String? bookUid = row.bookUid;
+      if (bookUid != null) byBook[bookUid] = row.id;
+    }
+    final $VideoMetadataProviderIdentitiesTable table =
+        database.videoMetadataProviderIdentities;
+    final List<TypedResult> rows =
+        await (database.selectOnly(table, distinct: true)
+              ..addColumns(<Expression<Object>>[table.workId])
+              ..where(table.workId.isNotNull()))
+            .get();
+    return VideoCanonicalIdentityIndex._(
+      workIdByCollection: byCollection,
+      workIdByBook: byBook,
+      identifiedWorkIds: <int>{
+        for (final TypedResult row in rows)
+          if (row.read(table.workId) case final int workId) workId,
+      },
+    );
+  }
+
+  bool hasIdentity(VideoSourceScrapeWork work) {
+    final MediaCollectionRow? collection = work.collection;
+    final int? workId = collection == null
+        ? _workIdByBook[work.members.single.bookUid]
+        : _workIdByCollection[collection.id];
+    if (workId != null) return _identifiedWorkIds.contains(workId);
+    if (collection == null) return false;
+    for (final VideoBookRow member in work.members) {
+      final int? owned = _workIdByBook[member.bookUid];
+      if (owned == null || !_identifiedWorkIds.contains(owned)) return false;
+    }
+    return work.members.isNotEmpty;
+  }
 }
 
 class _PlannedWorks {

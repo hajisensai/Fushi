@@ -9,10 +9,9 @@ import 'package:test/test.dart';
 
 /// 有意保留内层滚动的调用点：路径 → 允许的处数与原因。
 const Map<String, (int, String)> _allowed = <String, (int, String)>{
-  // 本地 TTS 引擎日志：定高 360 的日志窗、reverse 贴底滚，不是「装不下兜底」。
-  'lib/src/media/audiobook/tts/gpt_sovits_local_page.dart': (1, '定高日志窗'),
-  'lib/src/media/audiobook/tts/irodori_local_page.dart': (1, '定高日志窗'),
-  'lib/src/media/audiobook/tts/voicevox_local_page.dart': (1, '定高日志窗'),
+  // 本地 TTS 引擎日志（四个本地引擎页共用一份）：定高 360 的日志窗、reverse
+  // 贴底滚，不是「装不下兜底」。
+  'lib/src/media/audiobook/tts/tts_local_log_dialog.dart': (1, '定高日志窗'),
   // 长度无上限的内容（全量字段值 / 错误日志）：可能高过外壳判型用的放大上限
   // （整窗 4 倍），超过后外壳会把它当吃满型给视口高度，所以由内层滚动视口自己滚。
   // 内层 SCSV 在外壳里不会形成两级滚动：装得进上限时外层滚、内层全展开；装不进
@@ -22,6 +21,11 @@ const Map<String, (int, String)> _allowed = <String, (int, String)>{
   'lib/src/pages/implementations/video_download_jobs_panel.dart': (
     1,
     '下载错误原文，长度无上限',
+  ),
+  // 批量下载失败清单（BUG-5212）：条数随批量大小、每条带后端错误原文，同上。
+  'lib/src/media/downloads/download_batch_failures_dialog.dart': (
+    1,
+    '批量失败清单 + 错误原文，长度无上限',
   ),
   // 刮削运行详情：ConstrainedBox(maxHeight) 显式限高的滚动区。
   'lib/src/media/video/metadata/video_source_scrape_run_detail_dialog.dart': (

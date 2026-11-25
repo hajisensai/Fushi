@@ -1,8 +1,8 @@
 import 'dart:async';
 import 'dart:io';
 
-import 'package:drift/drift.dart' show QueryRow, Variable, driftRuntimeOptions;
-import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow, srsIdType;
+import 'package:drift/drift.dart' show driftRuntimeOptions;
+import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_media_sync.dart' show kSrsMediaRetention;
@@ -43,16 +43,11 @@ void main() {
   });
 
   Future<SrsDbStore> open(SrsStorage srs, String id) => SrsDbStore.open(
-    db: srs.db,
     core: srs.core,
     profileUid: kProfile,
     deviceId: id,
     engine: const SrsFakeEngine(),
-    trustedClock: SrsTrustedClock(
-      wallClockMs: () => t,
-      bootClockMs: () => t,
-      bootId: 'boot-$id',
-    ),
+    trustedClock: SrsTrustedClock(wallClockMs: () => t, bootClockMs: () => t),
   );
 
   Future<SrsDbStore> device(String id) async =>
@@ -87,38 +82,39 @@ void main() {
       (await s.cardsOfNote(noteId)).single.id;
 
   Future<int> logCount(SrsDbStore s, String cardId) async =>
-      (await (s.db.select(
-        s.db.srsReviewLogs,
-      )..where((r) => r.cardId.equals(cardId))).get()).length;
+      (await s.readTable('logs', <String, Object?>{
+        'cards': <String>[cardId],
+      })).rows;
 
+  /// [noteId] 在投影里剩下的修改记录的字段键（导出 `read events` 的修改记录，按键排）。
   Future<List<String>> noteEditKeys(SrsDbStore s, String noteId) async =>
       <String>[
-        for (final QueryRow r
-            in await s.db
-                .customSelect(
-                  'SELECT field_key FROM srs_field_edits WHERE entity_id = ? '
-                  'ORDER BY field_key',
-                  variables: <Variable<Object>>[
-                    Variable<String>(noteId, srsIdType),
-                  ],
-                )
-                .get())
-          r.read<String>('field_key'),
-      ];
+        for (final SrsEvent e in await s.exportAll())
+          if (e case SrsEditEvent(
+            :final SrsFieldEdit edit,
+          ) when edit.entityId == noteId)
+            edit.fieldKey,
+      ]..sort();
 
-  /// 本机操作日志里还带着 [text] 的操作条数（载荷原字节里按字节子串找；载荷开头是二进制头、含 NUL，不能 CAST 成 TEXT 再 LIKE）。
+  /// 本机操作日志里还带着 [text] 的操作条数。没有公开读命令给出操作体原字节，这里走测试专用的原始通道查新代真相表
+  /// `ops.body`（native/fushi_fsrs/src/store/gen4/schema.rs；按字节子串找：操作体开头是二进制头、含 NUL，不能
+  /// CAST 成 TEXT 再 LIKE）。每个测试一个库、一个 profile，不按集合筛。
   Future<int> opsCarrying(SrsDbStore s, String text) async =>
-      (await s.db
-              .customSelect(
-                'SELECT COUNT(*) AS c FROM sync2_ops WHERE profile_uid = ? '
-                'AND instr(payload, CAST(? AS BLOB)) > 0',
-                variables: <Variable<Object>>[
-                  Variable<String>(kProfile, srsIdType),
-                  Variable<String>(text),
-                ],
+      s.core.debugSelectRaw(
+            'SELECT COUNT(*) AS c FROM ops WHERE instr(body, CAST(? AS BLOB)) > 0',
+            <Object?>[text],
+          ).single['c']!
+          as int;
+
+  /// 本机日志里空洞的条数（新代真相表 `op_voids`，每行是一段连续空洞、`n` 条）。
+  Future<int> opsVoided(SrsDbStore s) async =>
+      s.core
+              .debugSelectRaw(
+                'SELECT COALESCE(SUM(n), 0) AS c FROM op_voids',
+                <Object?>[],
               )
-              .getSingle())
-          .read<int>('c');
+              .single['c']!
+          as int;
 
   /// 被彻底清除的笔记：不可见、内容（字段 / 标签的修改记录与日志载荷）没了，只剩删除寄存器；复习日志保留。
   Future<void> expectPurged(
@@ -218,10 +214,14 @@ void main() {
     );
     expect(r.notes, 1);
     expect(r.mediaFiles, 1);
+    // 新代 `status` 的 `ops` 不算空洞（native/fushi_fsrs/src/store/gen4/cmd/writes_local.rs `status`）：清除在同一个
+    // 事务里把带内容的操作落成空洞，条数要扣掉它们。
+    final int voided = await opsVoided(a);
+    expect(voided, greaterThan(0), reason: '带内容的操作落成了空洞');
     expect(
       (await a.sync2Status())['ops'],
-      opsBefore + 2,
-      reason: '一条删除 + 一条 Purge（未删的笔记先删除再清除）',
+      opsBefore + 2 - voided,
+      reason: '一条删除 + 一条 Purge（未删的笔记先删除再清除），被清的落成空洞',
     );
     await expectPurged(a, gone, goneCard, 'secret-snow');
     expect(await logCount(a, goneCard), 1, reason: '统计里过去的复习不能因为清除而消失');
@@ -309,18 +309,18 @@ void main() {
       expect(r.mediaFiles, 1);
       expect(stale.existsSync(), isFalse, reason: '过了宽限期且无引用');
       expect(reused.existsSync(), isTrue, reason: '刚复用、引用可能还没提交');
-      expect(a.pendingMediaGc, <String>{'reused.png'});
+      expect(await a.pendingMediaGc(), <String>{'reused.png'});
 
       // 引用一直没提交（制卡被取消）：重开 store 后候选还在，过了宽限期照常回收。
       final SrsDbStore again = await open(srs, 'a');
-      expect(again.pendingMediaGc, <String>{'reused.png'});
+      expect(await again.pendingMediaGc(), <String>{'reused.png'});
       reused.setLastModifiedSync(old);
       expect(
         (await srsPurgeExpiredTombstones(again, mediaRoot: media)).mediaFiles,
         1,
       );
       expect(reused.existsSync(), isFalse);
-      expect(again.pendingMediaGc, isEmpty);
+      expect(await again.pendingMediaGc(), isEmpty);
     });
 
     test('候选在宽限期内被新笔记引用：不删，并移出待回收集合', () async {
@@ -333,7 +333,7 @@ void main() {
       await a.deleteNote(gone);
       f.setLastModifiedSync(DateTime.now());
       await srsPurgeNotesNow(a, <String>[gone], mediaRoot: media);
-      expect(a.pendingMediaGc, <String>{'cat.png'});
+      expect(await a.pendingMediaGc(), <String>{'cat.png'});
 
       await addNote(a, '虎', extra: '<img src="CAT.png">');
       f.setLastModifiedSync(old);
@@ -342,10 +342,10 @@ void main() {
         0,
       );
       expect(f.existsSync(), isTrue);
-      expect(a.pendingMediaGc, isEmpty);
+      expect(await a.pendingMediaGc(), isEmpty);
     });
 
-    test('扫描与删除在独占区里：排在前面的写入重新引用了候选，文件保留', () async {
+    test('核对与删除对写入原子：排在前面的写入重新引用了候选，文件保留', () async {
       final SrsDbStore a = await device('a');
       final Directory media = mediaDir();
       final File f = File(p.join(media.path, 'dog.png'))

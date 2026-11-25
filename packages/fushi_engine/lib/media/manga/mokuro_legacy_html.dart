@@ -96,35 +96,40 @@ List<String> legacyMokuroHtmlPathsIn(
 }) {
   final p.Context ctx = context ?? p.context;
   // 判据在规范化路径上算，交回的是调用方给的**原样**路径（远端 href 不能被改写）。
-  final List<String> originals = filePaths.toList();
-  final List<String> normalized = <String>[
-    for (final String path in originals) ctx.normalize(path),
-  ];
-  final Set<String> mokuroStems = <String>{
-    for (final String path in normalized)
-      if (ctx.extension(path).toLowerCase() == '.mokuro')
-        ctx.withoutExtension(path).toLowerCase(),
-  };
-  // `_ocr/<卷名>` 目录集合：取每个文件路径里 `_ocr` 段与其后一段。
+  // 只规范化 / 切分用得上的路径：`.mokuro`、`.html` 与含 `_ocr` 段的文件。漫画库里
+  // 绝大多数是页图，逐个 `normalize` + `split` 一遍 3 万张页图要上百毫秒（#3722 m2）。
+  // 规范化只删 `.` / `..` / 重复分隔符、不改段名，所以规范化后有 `_ocr` 段的路径，
+  // 原样路径里必然含这个子串，按子串预筛不漏。
+  final Set<String> mokuroStems = <String>{};
   final Set<String> ocrVolumeDirs = <String>{};
-  for (final String path in normalized) {
-    final List<String> segments = ctx.split(path);
+  final List<(String original, String normalized)> htmlCandidates =
+      <(String, String)>[];
+  for (final String original in filePaths) {
+    final String ext = ctx.extension(original).toLowerCase();
+    if (ext == '.mokuro') {
+      mokuroStems.add(
+        ctx.withoutExtension(ctx.normalize(original)).toLowerCase(),
+      );
+    } else if (ext == kMokuroLegacyHtmlExtension) {
+      htmlCandidates.add((original, ctx.normalize(original)));
+    }
+    // `_ocr/<卷名>` 目录集合：取每个文件路径里 `_ocr` 段与其后一段。
+    if (!original.contains(kMokuroLegacyOcrDirName)) continue;
+    final List<String> segments = ctx.split(ctx.normalize(original));
     for (int i = 0; i + 2 < segments.length; i++) {
       if (segments[i] != kMokuroLegacyOcrDirName) continue;
       ocrVolumeDirs.add(ctx.joinAll(segments.sublist(0, i + 2)));
     }
   }
   final List<String> result = <String>[];
-  for (int i = 0; i < normalized.length; i++) {
-    final String path = normalized[i];
-    if (!isMokuroLegacyHtmlPath(path, context: ctx)) continue;
+  for (final (String original, String path) in htmlCandidates) {
     if (!ocrVolumeDirs.contains(legacyMokuroOcrDir(path, context: ctx))) {
       continue;
     }
     if (mokuroStems.contains(ctx.withoutExtension(path).toLowerCase())) {
       continue;
     }
-    result.add(originals[i]);
+    result.add(original);
   }
   return result;
 }

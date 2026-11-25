@@ -112,6 +112,9 @@ typedef _ToRgbaC =
     );
 typedef _ToRgbaDart =
     int Function(Pointer<Uint8>, int, int, int, int, Pointer<Uint8>, int);
+typedef _BgraToRgbaC =
+    Int32 Function(Pointer<Uint8>, Size, Size, Uint32, Uint32);
+typedef _BgraToRgbaDart = int Function(Pointer<Uint8>, int, int, int, int);
 typedef _MosaicC =
     Int32 Function(
       Pointer<Uint8>,
@@ -155,6 +158,15 @@ typedef _DecodeDart =
       Pointer<Size>,
       Pointer<Uint32>,
     );
+typedef _ToPngC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _ToPngDart =
+    int Function(Pointer<Uint8>, int, Pointer<Pointer<Uint8>>, Pointer<Size>);
 typedef _ProbeC = Int32 Function(Pointer<Uint8>, Size, Int32, Pointer<Uint32>);
 typedef _ProbeDart = int Function(Pointer<Uint8>, int, int, Pointer<Uint32>);
 typedef _ToJpegC =
@@ -168,6 +180,79 @@ typedef _ToJpegC =
 typedef _ToJpegDart =
     int Function(
       Pointer<Uint8>,
+      int,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _FitJpegC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Uint32,
+      Uint32,
+      Uint32,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _FitJpegHqC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Uint32,
+      Uint32,
+      Uint32,
+      Uint32,
+      Uint32,
+      Pointer<Float>,
+      Size,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _FitJpegHqDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      int,
+      int,
+      int,
+      int,
+      int,
+      Pointer<Float>,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _FitJpegDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      int,
+      int,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+
+typedef _CompositeRgbaJpegC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Pointer<Uint8>,
+      Size,
+      Uint32,
+      Uint32,
+      Uint32,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _CompositeRgbaJpegDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      Pointer<Uint8>,
+      int,
+      int,
       int,
       int,
       Pointer<Pointer<Uint8>>,
@@ -267,6 +352,67 @@ typedef _AiCropsDart =
       Pointer<Size>,
     );
 
+typedef _AiCropsRgbaC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Uint32,
+      Uint32,
+      Size,
+      Double,
+      Double,
+      Pointer<Double>,
+      Size,
+      Int32,
+      Int32,
+      Int32,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _AiCropsRgbaDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      int,
+      int,
+      int,
+      double,
+      double,
+      Pointer<Double>,
+      int,
+      int,
+      int,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _RgbaFitJpegC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Uint32,
+      Uint32,
+      Size,
+      Uint32,
+      Uint32,
+      Uint32,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+typedef _RgbaFitJpegDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      int,
+      int,
+      int,
+      int,
+      int,
+      int,
+      Pointer<Pointer<Uint8>>,
+      Pointer<Size>,
+    );
+
 /// 解码出的图像格式（与 image.rs 的 `FORMAT_*` 一致）。
 enum FfcImageFormat { jpeg, png, gif, webp, bmp, tiff, tga, ico, pnm, avif }
 
@@ -333,6 +479,12 @@ class FushiComputeImage {
       _toJpeg = lib.library.lookupFunction<_ToJpegC, _ToJpegDart>(
         'ffc_image_to_jpeg',
       ),
+      _fitJpeg = lib.library.lookupFunction<_FitJpegC, _FitJpegDart>(
+        'ffc_image_fit_jpeg',
+      ),
+      _fitJpegHq = lib.library.lookupFunction<_FitJpegHqC, _FitJpegHqDart>(
+        'ffc_image_fit_jpeg_hq',
+      ),
       _edge = lib.library.lookupFunction<_EdgeC, _EdgeDart>(
         'ffc_image_edge_similarity',
       ),
@@ -361,6 +513,8 @@ class FushiComputeImage {
   final _DecodeDart _decode;
   final _ProbeDart _probe;
   final _ToJpegDart _toJpeg;
+  final _FitJpegDart _fitJpeg;
+  final _FitJpegHqDart _fitJpegHq;
   final _EdgeDart _edge;
   final _DbDart _db;
   final _DecodePngDart _decodePng;
@@ -368,6 +522,45 @@ class FushiComputeImage {
   final _CoverCmpDart _coverCmp;
   final _AiCropsDart _aiCrops;
   final FushiCompute _lib;
+
+  // 独立延迟绑定：旧库仍可用既有图像操作；真正调用新功能时缺符号照硬依赖报错。
+  _CompositeRgbaJpegDart? _compositeRgbaJpeg;
+
+  _CompositeRgbaJpegDart get _compositeRgbaJpegFunction {
+    try {
+      return _compositeRgbaJpeg ??= _lib.library
+          .lookupFunction<_CompositeRgbaJpegC, _CompositeRgbaJpegDart>(
+            'ffc_image_composite_rgba_jpeg',
+          );
+    } on ArgumentError catch (e) {
+      throw _lib.missingSymbols('image composite', e.message ?? e);
+    }
+  }
+
+  _BgraToRgbaDart? _bgraToRgba;
+
+  _BgraToRgbaDart get _bgraToRgbaFunction {
+    try {
+      return _bgraToRgba ??= _lib.library
+          .lookupFunction<_BgraToRgbaC, _BgraToRgbaDart>(
+            'ffc_image_bgra_to_rgba8_inplace',
+          );
+    } on ArgumentError catch (e) {
+      throw _lib.missingSymbols('image bgra to rgba', e.message ?? e);
+    }
+  }
+
+  _ToPngDart? _toPng;
+
+  _ToPngDart get _toPngFunction {
+    try {
+      return _toPng ??= _lib.library.lookupFunction<_ToPngC, _ToPngDart>(
+        'ffc_image_to_png',
+      );
+    } on ArgumentError catch (e) {
+      throw _lib.missingSymbols('image to png', e.message ?? e);
+    }
+  }
 
   static FushiComputeImage? _instance;
 
@@ -614,6 +807,49 @@ class FushiComputeImage {
     );
   }
 
+  /// 带行跨度 [stride] 的 BGRA 帧（每像素 4 字节，第四字节不用，如 mpv `screenshot-raw`）
+  /// 里取 `[x, x + width) × [y, y + height)`，转成行紧排的不透明 RGBA8888（alpha 恒 255）。
+  ///
+  /// 结果前面留 [headerBytes] 字节（置 0，由调用方填自己的头），像素从该偏移起，省掉调用方
+  /// 再拼一次。[bgra] 可以是原生缓冲的视图（只在调用期间读）：只把矩形覆盖的那段行一次性
+  /// 拷进暂存区，不拷整帧。
+  Uint8List bgraToRgba8(
+    Uint8List bgra, {
+    required int stride,
+    required int x,
+    required int y,
+    required int width,
+    required int height,
+    int headerBytes = 0,
+  }) {
+    if (x < 0 || y < 0 || width <= 0 || height <= 0 || headerBytes < 0) {
+      throw ArgumentError('bad rect ($x, $y, $width, $height) / header');
+    }
+    if ((x + width) * 4 > stride) {
+      throw ArgumentError.value(stride, 'stride', 'row exceeds stride');
+    }
+    // 矩形覆盖的字节段：首行左缘到末行右缘（中间行带上 stride 余下的部分），一次 memmove
+    // 拷进暂存区；Rust 在同一块上就地去掉行尾并换通道，只用一块暂存区（截帧 isolate 每次
+    // 都是新的，多一块就多一轮缺页）。
+    final int start = y * stride + x * 4;
+    final int span = (height - 1) * stride + width * 4;
+    if (start + span > bgra.length) {
+      throw ArgumentError.value(bgra.length, 'bgra', 'shorter than the rect');
+    }
+    final _BgraToRgbaDart call = _bgraToRgbaFunction;
+    final Pointer<Uint8> buf = NativeScratch.input.reserve(span);
+    buf
+        .asTypedListOutOfLine(span)
+        .setRange(0, span, Uint8List.sublistView(bgra, start, start + span));
+    _check(
+      'ffc_image_bgra_to_rgba8_inplace',
+      call(buf, span, stride, width, height),
+    );
+    final int n = width * height * 4;
+    return Uint8List(headerBytes + n)
+      ..setRange(headerBytes, headerBytes + n, buf.asTypedListOutOfLine(n));
+  }
+
   /// 就地给 RGBA8888 缓冲 [rgba] 打码。[rects] 每项是已夹进图像的像素范围
   /// `[x0, x1) × [y0, y1)`，[blockSize] 为块边长。
   void mosaicRgba8(
@@ -778,6 +1014,255 @@ class FushiComputeImage {
       _check('ffc_image_to_jpeg', status);
       return _takeBytes(outPtr, outLen);
     } finally {
+      malloc.free(outPtr);
+      malloc.free(outLen);
+    }
+  }
+
+  /// 解码（转正 EXIF / TIFF 方向）后无损编码成 PNG（灰度源出 8 位灰度 PNG，16 位截成
+  /// 8 位，多页 TIFF 只取首页）；认不出 / 解不开返回 null。漫画导入把 TIFF 页图落盘成 PNG 用。
+  Uint8List? toPng(Uint8List bytes) {
+    final _ToPngDart toPng = _toPngFunction;
+    final Pointer<Uint8> src = _copyIn(bytes);
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    try {
+      final int status = toPng(src, bytes.length, outPtr, outLen);
+      if (status == FfcStatus.badInput) return null;
+      _check('ffc_image_to_png', status);
+      return _takeBytes(outPtr, outLen);
+    } finally {
+      malloc.free(outPtr);
+      malloc.free(outLen);
+    }
+  }
+
+  /// 按显示尺寸降采样成 JPEG：解码（转正）→ 面积平均缩到 [width] × [height] → JPEG
+  /// （[quality] 1..100，4:4:4；灰度源编单通道）。只缩不放。解不开、带 alpha、或目标
+  /// 尺寸大于源图时返回 null——调用方原样交出源字节。
+  Uint8List? fitJpeg(
+    Uint8List bytes, {
+    required int width,
+    required int height,
+    required int quality,
+  }) {
+    if (quality < 1 || quality > 100) {
+      throw ArgumentError.value(quality, 'quality', 'must be 1..100');
+    }
+    if (width <= 0 || height <= 0) return null;
+    final Pointer<Uint8> src = _copyIn(bytes);
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    try {
+      final int status = _fitJpeg(
+        src,
+        bytes.length,
+        width,
+        height,
+        quality,
+        outPtr,
+        outLen,
+      );
+      if (status == FfcStatus.badInput || status == FfcStatus.invalidArgument) {
+        return null;
+      }
+      _check('ffc_image_fit_jpeg', status);
+      return _takeBytes(outPtr, outLen);
+    } finally {
+      malloc.free(outPtr);
+      malloc.free(outLen);
+    }
+  }
+
+  /// 画质缩放成 JPEG：解码（转正）→ [filter] 可分离重采样（核按缩放比放宽，网点不出摩尔纹）→
+  /// JPEG（[quality] 1..100，4:4:4；灰度源编单通道）。**可以放大**（每边至多 4 倍、输出至多
+  /// 4800 万像素）。解不开、带 alpha、或尺寸越界返回 null——调用方原样交出源字节。
+  ///
+  /// [textAwareGammaBoxes] 非 null 时做文字感知的 Gamma 校正：每 4 个数是一个归一化文字框
+  /// `[x0, y0, x1, y1]`（0..1，相对整页），框内在 sRGB 编码值上重采样（细笔画不变淡），框外在线性光
+  /// 里（网点明度准），羽化混合；空列表等同 sRGB（没有文字框就不做线性光）。长度须是 4 的倍数，
+  /// 至多 [kFitHqMaxTextBoxes] 个框。
+  Uint8List? fitJpegHq(
+    Uint8List bytes, {
+    required int width,
+    required int height,
+    required int quality,
+    FfcResampleFilter filter = FfcResampleFilter.lanczos3,
+    Float32List? textAwareGammaBoxes,
+  }) {
+    if (quality < 1 || quality > 100) {
+      throw ArgumentError.value(quality, 'quality', 'must be 1..100');
+    }
+    final Float32List? boxes = textAwareGammaBoxes;
+    if (boxes != null &&
+        (boxes.length % 4 != 0 || boxes.length ~/ 4 > kFitHqMaxTextBoxes)) {
+      throw ArgumentError.value(
+        boxes.length,
+        'textAwareGammaBoxes',
+        'must hold 4 floats per box, at most $kFitHqMaxTextBoxes boxes',
+      );
+    }
+    if (width <= 0 || height <= 0) return null;
+    final Pointer<Uint8> src = _copyIn(bytes);
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    final int boxFloats = boxes?.length ?? 0;
+    final Pointer<Float> boxPtr = boxFloats == 0
+        ? nullptr
+        : malloc<Float>(boxFloats);
+    if (boxFloats > 0) boxPtr.asTypedListOutOfLine(boxFloats).setAll(0, boxes!);
+    try {
+      final int status = _fitJpegHq(
+        src,
+        bytes.length,
+        width,
+        height,
+        quality,
+        filter.code,
+        boxes == null ? 0 : _kFitHqTextAwareGamma,
+        boxPtr,
+        boxFloats ~/ 4,
+        outPtr,
+        outLen,
+      );
+      if (status == FfcStatus.badInput || status == FfcStatus.invalidArgument) {
+        return null;
+      }
+      _check('ffc_image_fit_jpeg_hq', status);
+      return _takeBytes(outPtr, outLen);
+    } finally {
+      if (boxPtr != nullptr) malloc.free(boxPtr);
+      malloc.free(outPtr);
+      malloc.free(outLen);
+    }
+  }
+
+  /// 解码、转正 [bytes]，合白底并缩到 [width] × [height]，一次合成整页 straight RGBA
+  /// [overlay] 后编码成 JPEG（4:4:4）。不放大源图，宽高各限 1..1280，质量限 1..100。
+  /// 坏图或非法尺寸 / 覆盖层长度返回 null；缺库 / 缺符号抛硬依赖异常。失败不可改发原图。
+  /// 此操作须由调用方放后台 isolate，覆盖层长度恰为 `width * height * 4`。
+  _AiCropsRgbaDart? _aiCropsRgba;
+
+  _AiCropsRgbaDart get _aiCropsRgbaFunction {
+    try {
+      return _aiCropsRgba ??= _lib.library
+          .lookupFunction<_AiCropsRgbaC, _AiCropsRgbaDart>(
+            'ffc_image_ai_crops_rgba',
+          );
+    } on ArgumentError catch (e) {
+      throw _lib.missingSymbols('image ai crops rgba', e.message ?? e);
+    }
+  }
+
+  _RgbaFitJpegDart? _rgbaFitJpeg;
+
+  _RgbaFitJpegDart get _rgbaFitJpegFunction {
+    try {
+      return _rgbaFitJpeg ??= _lib.library
+          .lookupFunction<_RgbaFitJpegC, _RgbaFitJpegDart>(
+            'ffc_image_rgba_fit_jpeg',
+          );
+    } on ArgumentError catch (e) {
+      throw _lib.missingSymbols('image rgba fit jpeg', e.message ?? e);
+    }
+  }
+
+  /// 不透明 RGBA（[width]×[height]，行跨度 [stride]，缺省紧排 `width * 4`）→ 面积平均缩到
+  /// [dstWidth]×[dstHeight]（与源同尺寸则不缩）→ RGB JPEG（[quality] 1..100，4:4:4，alpha
+  /// 丢弃）。不经整帧编码 / 解码；只缩不放，参数不合法抛 [ArgumentError]。
+  Uint8List rgbaFitJpeg(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+    int? stride,
+    required int dstWidth,
+    required int dstHeight,
+    required int quality,
+  }) {
+    final int rowBytes = stride ?? width * 4;
+    if (width <= 0 ||
+        height <= 0 ||
+        rowBytes < width * 4 ||
+        rgba.length < (height - 1) * rowBytes + width * 4 ||
+        dstWidth <= 0 ||
+        dstHeight <= 0 ||
+        dstWidth > width ||
+        dstHeight > height ||
+        quality < 1 ||
+        quality > 100) {
+      throw ArgumentError(
+        'invalid RGBA fit: ${width}x$height stride $rowBytes '
+        '(${rgba.length} B) -> ${dstWidth}x$dstHeight q$quality',
+      );
+    }
+    final _RgbaFitJpegDart fit = _rgbaFitJpegFunction;
+    final Pointer<Uint8> src = _copyIn(rgba);
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    try {
+      final int status = fit(
+        src,
+        rgba.length,
+        width,
+        height,
+        rowBytes,
+        dstWidth,
+        dstHeight,
+        quality,
+        outPtr,
+        outLen,
+      );
+      _check('ffc_image_rgba_fit_jpeg', status);
+      return _takeBytes(outPtr, outLen);
+    } finally {
+      malloc.free(outPtr);
+      malloc.free(outLen);
+    }
+  }
+
+  Uint8List? compositeRgbaJpeg(
+    Uint8List bytes,
+    Uint8List overlay, {
+    required int width,
+    required int height,
+    required int quality,
+  }) {
+    if (width <= 0 ||
+        height <= 0 ||
+        width > 1280 ||
+        height > 1280 ||
+        quality < 1 ||
+        quality > 100 ||
+        bytes.isEmpty ||
+        overlay.length != width * height * 4) {
+      return null;
+    }
+    final _CompositeRgbaJpegDart composite = _compositeRgbaJpegFunction;
+    final Pointer<Uint8> src = _copyIn(bytes);
+    // 两份输入不能共用 NativeScratch.input；覆盖层单独分配、调用结束立即释放。
+    final Pointer<Uint8> layer = malloc<Uint8>(overlay.length);
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    try {
+      layer.asTypedListOutOfLine(overlay.length).setAll(0, overlay);
+      final int status = composite(
+        src,
+        bytes.length,
+        layer,
+        overlay.length,
+        width,
+        height,
+        quality,
+        outPtr,
+        outLen,
+      );
+      if (status == FfcStatus.badInput || status == FfcStatus.invalidArgument) {
+        return null;
+      }
+      _check('ffc_image_composite_rgba_jpeg', status);
+      return _takeBytes(outPtr, outLen);
+    } finally {
+      malloc.free(layer);
       malloc.free(outPtr);
       malloc.free(outLen);
     }
@@ -1010,4 +1495,107 @@ class FushiComputeImage {
       malloc.free(outLen);
     }
   }
+
+  /// [aiCrops] 的原始像素版：输入是**不透明** RGBA（[width]×[height]，行跨度 [stride]，缺省
+  /// 紧排），不经解码；裁出的块编成 RGB PNG。尺寸 / 跨度 / 长度不合法抛 [ArgumentError]，
+  /// 坐标换算后非有限抛 [UnsupportedError]（同 [aiCrops]）。
+  List<Uint8List?> aiCropsRgba(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+    int? stride,
+    required double pageWidth,
+    required double pageHeight,
+    required List<({double left, double top, double right, double bottom})>
+    boxes,
+    required int padding,
+    required int maxSide,
+    required int minSide,
+  }) {
+    final int rowBytes = stride ?? width * 4;
+    if (width <= 0 ||
+        height <= 0 ||
+        rowBytes < width * 4 ||
+        rgba.length < (height - 1) * rowBytes + width * 4) {
+      throw ArgumentError(
+        'invalid RGBA page: ${width}x$height stride $rowBytes '
+        '(${rgba.length} B)',
+      );
+    }
+    final _AiCropsRgbaDart crop = _aiCropsRgbaFunction;
+    final Pointer<Uint8> src = _copyIn(rgba);
+    final Pointer<Double> rects = malloc<Double>(math.max(1, boxes.length * 4));
+    final Pointer<Pointer<Uint8>> outPtr = malloc<Pointer<Uint8>>();
+    final Pointer<Size> outLen = malloc<Size>();
+    try {
+      for (int i = 0; i < boxes.length; i++) {
+        rects[i * 4] = boxes[i].left;
+        rects[i * 4 + 1] = boxes[i].top;
+        rects[i * 4 + 2] = boxes[i].right;
+        rects[i * 4 + 3] = boxes[i].bottom;
+      }
+      final int status = crop(
+        src,
+        rgba.length,
+        width,
+        height,
+        rowBytes,
+        pageWidth,
+        pageHeight,
+        rects,
+        boxes.length,
+        padding,
+        maxSide,
+        minSide,
+        outPtr,
+        outLen,
+      );
+      if (status == FfcStatus.invalidArgument) {
+        throw UnsupportedError('Infinity or NaN toInt');
+      }
+      _check('ffc_image_ai_crops_rgba', status);
+      final Uint8List blob = _takeBytes(outPtr, outLen);
+      final ByteData view = ByteData.sublistView(blob);
+      final List<Uint8List?> crops = <Uint8List?>[];
+      int o = 0;
+      for (int i = 0; i < boxes.length; i++) {
+        final int n = view.getUint32(o, Endian.host);
+        o += 4;
+        if (n == 0xFFFFFFFF) {
+          crops.add(null);
+          continue;
+        }
+        crops.add(Uint8List.sublistView(blob, o, o + n));
+        o += n;
+      }
+      return crops;
+    } finally {
+      malloc.free(rects);
+      malloc.free(outPtr);
+      malloc.free(outLen);
+    }
+  }
+}
+
+/// [FushiComputeImage.fitJpegHq] 一次最多接受的文字框数（原生 `FIT_HQ_MAX_TEXT_BOXES`）。
+const int kFitHqMaxTextBoxes = 4096;
+
+/// 原生 `FIT_HQ_TEXT_AWARE_GAMMA` 标志位。
+const int _kFitHqTextAwareGamma = 1;
+
+/// [FushiComputeImage.fitJpegHq] 的重采样核（与原生 `ffc_image_fit_jpeg_hq` 的 `filter` 码一一对应）。
+enum FfcResampleFilter {
+  /// 面积平均（盒式核，按缩放比放宽）。
+  box(0),
+
+  /// Lanczos 窗口 sinc（a = 3）。
+  lanczos3(1),
+
+  /// Catmull-Rom 三次。
+  catmullRom(2);
+
+  const FfcResampleFilter(this.code);
+
+  /// 原生侧的核编码。
+  final int code;
 }

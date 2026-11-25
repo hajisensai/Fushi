@@ -1,5 +1,6 @@
 import 'package:flutter/foundation.dart' show debugPrint;
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_library.dart'
     show MediaServerBookSpec, MediaServerLaunchUnavailable;
@@ -80,8 +81,12 @@ const int kWatchedMarkServerConcurrency = 4;
 ///
 /// 服务器侧单条失败不挡其余，计入 [WatchedMarkResult.remoteFailed]；回写有界并发
 /// （[kWatchedMarkServerConcurrency]）。
+///
+/// Local rows that became watched are reported to [tracking] (media tracking
+/// sends them to the linked sites); un-marking reports nothing.
 Future<WatchedMarkResult> setVideosWatched({
   required FushiDatabase db,
+  required LibraryFinishTracking tracking,
   required bool watched,
   List<String> localUids = const <String>[],
   List<String> remoteIds = const <String>[],
@@ -93,6 +98,11 @@ Future<WatchedMarkResult> setVideosWatched({
       await VideoBookRepository(
         db,
       ).setWatched(localUids, watched: watched, now: now);
+  if (watched && local.rows.isNotEmpty) {
+    await tracking.onVideosWatched(<String>[
+      for (final VideoBookRow row in local.rows) row.bookUid,
+    ]);
+  }
 
   final List<_ServerMark> marks = <_ServerMark>[
     for (final VideoBookRow row in local.rows)

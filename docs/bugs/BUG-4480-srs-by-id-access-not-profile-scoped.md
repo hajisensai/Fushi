@@ -1,0 +1,21 @@
+## BUG-4480 · 复习库按 id 的读写不按 profile 过滤：点名的 profile 与 id 不属于同一份时写错库
+- **报告**：2026-11-11（用户：内部审查，把复习的控制通道路由下沉到 engine、接上无头服务端时发现）
+- **真实性**：✅ 真 bug，engine 测试已复现（一份 srs.db 上开两份 profile 的 `SrsDbStore`，拿 A 的 store 操作 B 的笔记 id）。
+  - 根因在 `packages/fushi_engine/lib/srs/srs_db_store.dart`：按 id 的入口不看实体属于哪份 profile。`note(id)`（`:2389`）→ `_materializeNotes` → `_entityRow`（`:2586-2592`，`WHERE id = ?`，没有 `profile_uid`）；`cardsOfNote`（`:5052`）同样只按 `note_id`。写入口（`mergeNotes`、`dismissDuplicates`、`editFieldsBatch`）沿用这些读，也不核对归属。
+  - 实测（两份 profile 都用内置 Lapis 类型，id 给的是另一份的笔记）：
+    - 读一条笔记：返回那条笔记，但字段全空（按本 profile 的字段 id 去取别人的字段）；
+    - 给字段设值：报「改了 1 条」，实际往别人的笔记上写了一条本 profile 字段 id 的修改记录，那份自己看不到变化；
+    - 合并重复：把别人那份里被吸收的笔记删掉（墓碑）；
+    - 标记不是重复：照样写进去。
+  - 能走到的入口：
+    - app 的控制通道 / AI 助手（`srs.note.get`、`srs.duplicates.merge`、`srs.duplicates.dismiss`、`srs.notes.*` 的 `notes` 参数；路由本体在 `packages/fushi_engine/lib/srs/srs_ctl_routes.dart`）：app 一次只开当前 profile 的 store，搜索给出的 id 都是当前 profile 的，所以要拿到别的 profile 的 id 才会触发——切换 profile 之前搜到的 id 留在 AI 会话里、或命令行手敲，是能想到的两条路。
+    - 远程复习的主机侧（`packages/fushi_engine/lib/srs/srs_remote_store.dart:1084` 只核对请求的 profile 与 store 是同一份，不核对请求里的 id）：同一组 store 方法，推断有同样的缺口，**没有实测**。
+- **[x] ① 已修复**（根上收口在 BUG-4626 `srs-by-id-cross-profile`，PR #3381）
+  - 最初只在无头服务端的入口挡了一道（`srs_ctl_routes.dart` 的 `_requireInTarget`：多 profile 宿主下别的 profile 的 id 回 404），app 与远程复习的入口没收口。
+  - #3381 在根上修：内核的本机写命令在追加操作前核对实体归属（`native/fushi_fsrs/src/store/sync2/ownership.rs`），`SrsDbStore` 按 id 的读都带 profile 条件，别的 profile 的 id 与不存在的 id 同一个回答。
+  - 随之删掉 `_requireInTarget`（#3381 合入 develop 时）：它是同一判据在路由层的第二份，且要绕过「读只限本 profile」去查整库。行为差别只在批量改笔记——别的 profile 的 id 由「整批 404」变成与不存在的 id 一样记进 `missing`、不写；读一条笔记 / 合并 / 标记不是重复仍是 404。
+- **[x] ② 已加自动化测试**
+  - `packages/fushi_engine/test/srs/srs_ctl_routes_test.dart`：多 profile 宿主下拿另一份 profile 的笔记 id 读 / 合并 / 标记不是重复 → 404，批量改 → `missing`、不写；自己的混着别人的只改自己的。
+  - `packages/fushi_server/test/admin_srs_ctl_test.dart`：经真 HTTP 的同一件事。
+  - app 入口与内核写命令：BUG-4626 的 `fushi/test/ops/ctl_srs_profile_ownership_test.dart`、`packages/fushi_engine/test/srs/srs_profile_ownership_test.dart`、内核 `tests_ownership.rs`。
+- **备注**：`conflicts/held/*` 与 `conflicts/fields/resolve` 不受影响——前者只认内核按 profile 列出的冲突项，后者的查询带 `profile_uid`。

@@ -29,6 +29,7 @@
 		335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */ = {isa = PBXBuildFile; fileRef = 335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */; };
 		33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC10F02044A3C60003C045 /* AppDelegate.swift */; };
 		33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F22044A3C60003C045 /* Assets.xcassets */; };
+		FA1C0A0E2F00000100A1C001 /* AppIcon.icon in Resources */ = {isa = PBXBuildFile; fileRef = FA1C0A0E2F00000100A1C002 /* AppIcon.icon */; };
 		33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */ = {isa = PBXBuildFile; fileRef = 33CC10F42044A3C60003C045 /* MainMenu.xib */; };
 		33CC11132044BFA00003C045 /* MainFlutterWindow.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11122044BFA00003C045 /* MainFlutterWindow.swift */; };
 		33CC11212044BFA00003C045 /* LookupImeLanguage.swift in Sources */ = {isa = PBXBuildFile; fileRef = 33CC11202044BFA00003C045 /* LookupImeLanguage.swift */; };
@@ -60,6 +61,7 @@
 		FA171A002B000004001C0F01 /* FushiClipboardImage.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000004001C0F02 /* FushiClipboardImage.swift */; };
 		FA171A002B000006001C0F01 /* FushiNativeMaterialView.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000006001C0F02 /* FushiNativeMaterialView.swift */; };
 		FA171A002B000007001C0F01 /* FushiAppleMusic.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B000007001C0F02 /* FushiAppleMusic.swift */; };
+		FA171A002B00000F001C0F01 /* FushiDeviceOwnerAuth.swift in Sources */ = {isa = PBXBuildFile; fileRef = FA171A002B00000F001C0F02 /* FushiDeviceOwnerAuth.swift */; };
 		FC0061617F3BFF30BBB3B436 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = 6BCC25C3243B10BA9C40F182 /* Localizable.xcstrings */; };
 /* End PBXBuildFile section */
 
@@ -124,6 +126,7 @@
 		335BBD1A22A9A15E00E9071D /* GeneratedPluginRegistrant.swift */ = {isa = PBXFileReference; fileEncoding = 4; lastKnownFileType = sourcecode.swift; path = GeneratedPluginRegistrant.swift; sourceTree = "<group>"; };
 		33CC10ED2044A3C60003C045 /* fushi.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = fushi.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		33CC10F02044A3C60003C045 /* AppDelegate.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppDelegate.swift; sourceTree = "<group>"; };
+		FA1C0A0E2F00000100A1C002 /* AppIcon.icon */ = {isa = PBXFileReference; lastKnownFileType = folder.iconcomposer.icon; name = AppIcon.icon; path = Runner/AppIcon.icon; sourceTree = "<group>"; };
 		33CC10F22044A3C60003C045 /* Assets.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Assets.xcassets; path = Runner/Assets.xcassets; sourceTree = "<group>"; };
 		33CC10F52044A3C60003C045 /* Base */ = {isa = PBXFileReference; lastKnownFileType = file.xib; name = Base; path = Base.lproj/MainMenu.xib; sourceTree = "<group>"; };
 		33CC10F72044A3C60003C045 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; name = Info.plist; path = Runner/Info.plist; sourceTree = "<group>"; };
@@ -169,6 +172,7 @@
 		FA171A002B000004001C0F02 /* FushiClipboardImage.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiClipboardImage.swift; path = ../../apple/FushiClipboardImage.swift; sourceTree = "<group>"; };
 		FA171A002B000006001C0F02 /* FushiNativeMaterialView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiNativeMaterialView.swift; path = ../../apple/FushiNativeMaterialView.swift; sourceTree = "<group>"; };
 		FA171A002B000007001C0F02 /* FushiAppleMusic.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiAppleMusic.swift; path = ../../apple/FushiAppleMusic.swift; sourceTree = "<group>"; };
+		FA171A002B00000F001C0F02 /* FushiDeviceOwnerAuth.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; name = FushiDeviceOwnerAuth.swift; path = ../../apple/FushiDeviceOwnerAuth.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -262,6 +266,7 @@
 		33CC11242044D66E0003C045 /* Resources */ = {
 			isa = PBXGroup;
 			children = (
+				FA1C0A0E2F00000100A1C002 /* AppIcon.icon */,
 				33CC10F22044A3C60003C045 /* Assets.xcassets */,
 				33CC10F42044A3C60003C045 /* MainMenu.xib */,
 				33CC10F72044A3C60003C045 /* Info.plist */,
@@ -290,6 +295,7 @@
 				FA171A002B000003001C0F02 /* FushiSpeechTranscriber.swift */,
 				FA171A002B000004001C0F02 /* FushiClipboardImage.swift */,
 				FA171A002B000007001C0F02 /* FushiAppleMusic.swift */,
+				FA171A002B00000F001C0F02 /* FushiDeviceOwnerAuth.swift */,
 				FA171A002B000006001C0F02 /* FushiNativeMaterialView.swift */,
 				33CC10F02044A3C60003C045 /* AppDelegate.swift */,
 				FA171A002B000001001C0F12 /* GlobalLookupOverlay.swift */,
@@ -517,6 +523,7 @@
 			isa = PBXResourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				FA1C0A0E2F00000100A1C001 /* AppIcon.icon in Resources */,
 				33CC10F32044A3C60003C045 /* Assets.xcassets in Resources */,
 				33CC10F62044A3C60003C045 /* MainMenu.xib in Resources */,
 			);
@@ -868,6 +875,7 @@
 				FA171A002B000001001C0F21 /* SelectionCaptureMac.swift in Sources */,
 				FA171A002B000004001C0F01 /* FushiClipboardImage.swift in Sources */,
 				FA171A002B000007001C0F01 /* FushiAppleMusic.swift in Sources */,
+				FA171A002B00000F001C0F01 /* FushiDeviceOwnerAuth.swift in Sources */,
 				FA171A002B000006001C0F01 /* FushiNativeMaterialView.swift in Sources */,
 				33CC10F12044A3C60003C045 /* AppDelegate.swift in Sources */,
 				335BBD1B22A9A15E00E9071D /* GeneratedPluginRegistrant.swift in Sources */,

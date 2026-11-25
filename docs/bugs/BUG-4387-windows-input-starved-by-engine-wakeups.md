@@ -1,0 +1,9 @@
+## BUG-4387 · 启动时 WebView 预热的 idle 任务被常驻背景动画永久挡住，调度器空转饿死 Windows 输入
+- **报告**：2026-11-11（所有者本机，安装版 3.3.0-debug.26407 / 26444，Windows 11 Insider build 29704，4K 144 Hz）
+- **真实性**：✅ 真 bug。现象：窗口正常、界面持续出帧（主页时间文案在走），但鼠标点击、键盘全部无反应，「发现新版本」弹窗的「跳过」也点不动；同机另一个 Flutter 程序点击正常。是否中招取决于启动时序。
+  - 根因：`fushi/lib/main.dart:864` 的 WebView 预热用 `SchedulerBinding.scheduleTask(() {}, Priority.idle)` 等「空闲」。Flutter 默认调度策略 `defaultSchedulingStrategy` 只要 `transientCallbackCount > 0` 就不执行 idle 任务，`_runTasks` 用 `Timer.run` 零延迟把自己重新排上。主页背景动效（`fushi/lib/src/utils/components/page_backdrop_layer.dart` 的 `controller.repeat()`）常驻循环、永远挂着帧回调，于是这个 idle 任务永远执行不了，调度器无限空转。每圈一条 Dart 自发消息，Windows 嵌入层 `TaskRunnerWindow::WakeUp` 都 `PostMessage(WM_NULL)`；`GetMessage` 先取 posted 消息，鼠标键盘输入永远排不上。预热排进 idle 时背景动画已在跑 → 永久卡死；那一刻没动画 → 任务当场执行、没事。
+  - 证据：对卡死实例（PID 4696）只读栈采样、同提交 debug 符号解析，热点 `SchedulerBinding._runTasks → new Timer → SendPort.send → 引擎 PostTask / TaskRunnerWindow::ProcessTasks`，主线程 4 s 忙 3.97 s。对照：只跑动画 4 s 忙 1.0 s；动画 + 一个 idle 任务忙 3.25 s，且 idle 任务一直等到动画结束才执行；空转期间注入的点击 Dart 一直没收到、结束后也不补发。
+  - 排查中作废的结论：曾以为是 runner 裸 `GetMessage` 对引擎唤醒无防护（加过「输入优先消息泵」，未证明有效，已撤）；「新起的实例也点不动」是测试坐标点到已选中的「首页」，加上新实例与卡死实例共用查词覆盖窗 WebView2 浏览器进程（`%LOCALAPPDATA%\Fushi\GlobalLookupWebView2`）导致输入队列合并的误判。
+- **[x] ① 已修复** — 新增 `fushi/lib/src/utils/scheduling/ambient_ticker.dart`：`AmbientTickerProviderStateMixin` 建的 ticker 视为常驻装饰动画登记在 `AmbientTickers`；`ambientAwareSchedulingStrategy` 计「忙」时扣掉它们挂着的帧回调，其余与默认策略一致。`FushiWidgetsFlutterBinding.ensureInitialized` 装上该策略，`PageBackdropLayer` 改用该 mixin。「空闲」恢复原意（没有真实动画在跑），全 app 任何 idle 任务都不再被常驻装饰动画卡死。
+- **[x] ② 已加自动化测试** — `fushi/test/utils/scheduling/ambient_ticker_test.dart`：默认策略下复现 idle 永不执行；ambient 策略下只有装饰动画时 idle 照常执行、有真实动画时仍等待、TickerMode 静音不多扣、页面背景层真走 ambient ticker、主入口装上策略。
+- **备注**：主页常驻背景动效最小化时也不停、用户数据下每帧 UI 成本约 17 ms，是另一个性能问题，本条不处理。

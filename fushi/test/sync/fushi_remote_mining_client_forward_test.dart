@@ -58,6 +58,20 @@ void main() {
     );
   });
 
+  test('主机连上了但制卡端点回 404 / 405（不收卡）→ RemoteMineRefused（确定没送到，不是结果未知）', () async {
+    for (final int status in <int>[404, 405]) {
+      final FushiRemoteMiningClient client = await _client(
+        db,
+        (_) async => http.Response('Mining off', status),
+      );
+      await expectLater(
+        client.mineForward(_payload),
+        throwsA(isA<RemoteMineRefused>()),
+        reason: '$status',
+      );
+    }
+  });
+
   test('主机给出结果 → 原样返回', () async {
     final FushiRemoteMiningClient client = await _client(
       db,

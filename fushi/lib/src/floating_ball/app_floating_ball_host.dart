@@ -19,6 +19,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show compute;
+import 'package:fushi_anki/fushi_anki_core.dart' show MiningRequestOverrides;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -31,11 +32,17 @@ import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
 import 'package:fushi/src/floating_ball/floating_ball_scene.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_card_frame.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_card_image.dart';
 import 'package:fushi/src/floating_ball/screen_ocr_picker.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_recognition_cancellation.dart';
+import 'package:fushi/src/floating_ball/screen_ocr_text_block.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart'
     show OverlayMiningHandler, screenOcrOverlayMiningHandler;
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
+    show CrossAppAudioSnapshot;
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/audiobook/floating_lyric_lookup_host.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -43,7 +50,12 @@ import 'package:fushi/src/ai/agent/ai_agent_ui_context.dart';
 import 'package:fushi/src/pages/implementations/ai_agent_page.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_disclosure.dart';
+import 'package:fushi/src/media/manga/ocr/google_lens_ocr_service.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/ocr/google_lens_screen_ocr.dart';
 import 'package:fushi/src/ocr/local_screen_ocr.dart';
+import 'package:fushi/src/ocr/screen_ocr_engine.dart';
 import 'package:fushi/src/ocr/screen_ocr_language.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
 import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart';
@@ -153,6 +165,8 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   'notification': t.floating_ball_notification,
   'ocr_notification': t.floating_ball_ocr_notification,
   'ocr_hint': t.floating_ball_ocr_pick_hint,
+  // 选取层顶部提示条尾的 ✕ 关闭（反馈 Z0JMfFZXQ9，原生 ScreenOcrService.LABEL_CLOSE）。
+  'ocr_close': t.floating_ball_ocr_close,
   'ocr_no_text': t.floating_ball_ocr_empty,
   'ocr_model_unavailable': t.floating_ball_ocr_model_unavailable,
   'ocr_failed': t.floating_ball_ocr_failed,
@@ -163,6 +177,8 @@ Map<String, String> floatingBallNativeLabels() => <String, String>{
   'ocr_session_notification': t.screen_ocr_session_notification,
   'ocr_session_hint': t.screen_ocr_session_hint,
   'ocr_session_stop': t.screen_ocr_session_stop,
+  // 识别中通知上的「取消」（BUG-4790，原生 ScreenOcrService.LABEL_CANCEL）。
+  'ocr_cancel': t.cancel,
 };
 
 /// 全局按钮的图标：应用内球与原生系统球共用这一张表（FushiIcons 语义图标；
@@ -249,8 +265,8 @@ bool get floatingBallSystemBallSupported =>
       isDesktop: isDesktopSystemBallPlatform,
     );
 
-/// 应用外球上有没有这颗全局按钮（桌面另有一套、并受查词模块开关约束，见
-/// [FloatingBallGlobalAction.availableIn]）。
+/// 应用外球上有没有这颗全局按钮（桌面另有一套，「打开查词页」受查词模块开关
+/// 约束，见 [FloatingBallGlobalAction.availableIn]）。
 bool floatingBallSystemActionAvailable(
   FloatingBallGlobalAction action, {
   required bool lookupModuleEnabled,
@@ -268,7 +284,7 @@ bool floatingBallSystemActionAvailable(
 class DesktopSystemBallActionTarget {
   const DesktopSystemBallActionTarget();
 
-  /// 全局查词覆盖窗此刻能不能接查词（查词模块开着且启动过）。
+  /// 全局查词覆盖窗此刻能不能接查词（平台支持且启动过）。
   bool get overlayLookupAvailable =>
       GlobalLookupController.instance.isAvailable;
 
@@ -283,29 +299,50 @@ class DesktopSystemBallActionTarget {
     Rect? anchorScreenRect,
     GlobalLookupPhysicalPlacement? physicalPlacement,
     OverlayMiningHandler? miningHandler,
+    Future<CrossAppAudioSnapshot?>? sentenceAudio,
   }) => GlobalLookupController.instance.lookupText(
     text,
     sentence: sentence,
     anchorScreenRect: anchorScreenRect,
     physicalPlacement: physicalPlacement,
     miningHandler: miningHandler,
+    sentenceAudio: sentenceAudio,
   );
 
   /// 收起覆盖窗里开着的查词卡（截屏前收起，免得它被截进图里；退出冻结层时收起）。
   Future<void> dismissLookup() => GlobalLookupChannel.hide();
 
-  /// 识别一张截图：[engine] 为 null 时走系统 OCR（macOS Vision /
-  /// Windows.Media.Ocr）；Linux 没有系统 OCR，宿主传本机 OCR 模型
-  /// （[LocalScreenOcr]）。[language] 见
-  /// [PreferencesRepository.screenOcrLanguage]。
+  /// 识别一张截图：[engine] 是宿主按截屏识字引擎设置解析出的识别器（本机模型
+  /// [LocalScreenOcr] / 设备自带 / [GoogleLensScreenOcr]，见 [resolveScreenOcrEngine]）；
+  /// null 时走设备自带（macOS Vision / Windows.Media.Ocr，按屏幕截图识别）。
+  /// [language] 见 [PreferencesRepository.screenOcrLanguage]。
   Future<SystemOcrPageResult> recognize(
     Uint8List png, {
     required String language,
     SystemOcrPlatform? engine,
-  }) => (engine ?? const MethodChannelSystemOcr()).recognize(
+  }) => (engine ?? const MethodChannelSystemOcr(screenText: true)).recognize(
     png,
     language: language,
   );
+
+  /// 本机 OCR 模型此刻能不能识别：截屏识字引擎「跟随全局」时据此在本机模型与设备
+  /// 自带之间选（[resolveScreenOcrEngine]）。
+  /// [localModel] 只在要问时才建（建它要读 OCR 服务 provider）。
+  Future<bool> localModelReady(SystemOcrPlatform Function() localModel) =>
+      localModel().isAvailable();
+
+  /// 本设备是否已同意把截屏发给 Google Lens。[scene] 是桌面冻结层
+  /// （[GoogleLensDisclosureScene.desktopScreens]）或 Android 悬浮球
+  /// （[GoogleLensDisclosureScene.mobileScreens]），两者共用一份同意记录。
+  Future<bool> hasLensConsent({required GoogleLensDisclosureScene scene}) =>
+      hasGoogleLensDisclosure(scene: scene);
+
+  /// 弹截屏上传 Google Lens 的同意框（在主窗里）；[scene] 决定文案（桌面说显示器、
+  /// 手机说屏幕）。
+  Future<bool> askLensConsent(
+    BuildContext context, {
+    required GoogleLensDisclosureScene scene,
+  }) => ensureGoogleLensDisclosure(context, scene: scene);
 
   Future<void> bringMainWindowToFront() =>
       DesktopLookupService.instance.bringMainWindowToFront();
@@ -496,8 +533,24 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           onProfileMenu: () async => _current?._systemBallProfileMenu(),
           onSwitchProfileTo: (int id) async =>
               await _current?._systemBallSwitchProfileTo(id) ??
-              t.floating_ball_profile_switch_failed,
+              t.profile_switch_failed,
           onOpenSystemOcrSetup: () => pendingSystemOcrSetup.value = true,
+          // 没有宿主时回 null：原生退回设备自带（ML Kit）。
+          onScreenOcrEngine: () async => _current?._androidScreenOcrEngine(),
+          onRecognizeScreenOcrFrame:
+              (
+                Uint8List png,
+                String engine, {
+                required bool fallback,
+                required int flow,
+              }) async => _current?._androidRecognizeScreenOcrFrame(
+                png,
+                engine,
+                fallback: fallback,
+                flow: flow,
+              ),
+          onCancelScreenOcrRecognition: (int flow) =>
+              _current?._cancelAndroidScreenOcrRecognition(flow),
           onSystemBallClosedByUser: () => _current?._onSystemBallClosedByUser(),
           onSystemBallAction: (String id, Rect? anchor) =>
               _current?._onDesktopSystemBallAction(id, anchor),
@@ -526,7 +579,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
   @override
   void dispose() {
     if (identical(_current, this)) _current = null;
-    unawaited(_linuxScreenOcr?.dispose());
+    unawaited(_screenOcrLocal?.dispose());
+    _screenOcrLens?.close();
     WidgetsBinding.instance.removeObserver(this);
     unawaited(_pictureInPictureSub?.cancel());
     _registry.removeListener(_onChanged);
@@ -924,9 +978,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
         ref.read(appProvider).requestHomeDictionaryTab(focusSearch: true);
       case 'popup_lookup':
         // 查前台程序当前选中的文字：点球不激活 Fushi，前台还是那个程序。按钮只在
-        // 查词模块开着时下发，而模块一开覆盖窗就起（含会话中途打开，见
-        // [GlobalLookupController.followLookupModule]）；走到 else 是真异常，
-        // 记一笔而不是静默。
+        // 平台支持覆盖窗时下发，而覆盖窗在启动链里按平台能力无条件起（见
+        // `startDesktopLookupSurfaces`）；走到 else 是真异常，记一笔而不是静默。
         if (target.overlayLookupAvailable) {
           await target.lookupSelection();
         } else {
@@ -950,6 +1003,8 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
             physicalPlacement: anchor == null
                 ? null
                 : GlobalLookupPhysicalPlacement(anchorScreenRect: anchor),
+            // 应用外的剪贴板文字：制卡带上查词前其他应用播的最后一句语音。
+            sentenceAudio: CrossAppAudioCapture.instance.snapshot(),
           );
         } else {
           // 全局查词没开：退回主窗里的查词弹窗。
@@ -1003,6 +1058,17 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
             eink: isEinkTheme(context),
           )
         : _systemBallColors;
+    // 反馈 Eemf0HOZhj：截屏识字有自己的引擎设置（默认跟随全局 OCR 引擎），截图前就
+    // 定下来——Lens 要先问上传同意，同意框在主窗里，不能等冻结层盖上屏幕再问。
+    final ScreenOcrEngine engineKind = await _resolveScreenOcrEngine(target);
+    if (!mounted) return;
+    if (engineKind == ScreenOcrEngine.googleLens &&
+        !await target.hasLensConsent(
+          scene: GoogleLensDisclosureScene.desktopScreens,
+        )) {
+      await _askScreenOcrLensConsent(target);
+      return;
+    }
     // 开着的查词卡会被截进图里，而且它挡着的字点不到。
     await target.dismissLookup();
     // 反馈 Eemf0HOZhj（macOS 4K 屏截屏识字要一分钟以上才出行框）：分段计时记进
@@ -1053,14 +1119,22 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
       final SystemOcrPageResult result = await target.recognize(
         png,
         language: language,
-        engine: Platform.isLinux ? _localScreenOcr() : null,
+        engine: _screenOcrRecognizer(engineKind),
       );
       lines = result.lines;
       ErrorLogService.instance.logDiagnostic(
         'floating_ball.screen_ocr_timing',
-        'capture=${captureMs}ms recognize=${recognizeClock.elapsedMilliseconds}ms '
+        'engine=${engineKind.name} '
+            'capture=${captureMs}ms recognize=${recognizeClock.elapsedMilliseconds}ms '
             'image=${result.imageWidth}x${result.imageHeight} '
             'png=${png.length}B lines=${result.lines.length}',
+      );
+      // 反馈 Z9fC87pZrY（Windows 150% 缩放下「识别不出或错位」，BUG-4367）：一次截屏
+      // 记一行几何取证——显示器矩形与截图尺寸对不对得上、DPI / HDR / 取帧路径、
+      // 送进识别器的实际尺寸、前几行的框。
+      ErrorLogService.instance.logDiagnostic(
+        'floating_ball.screen_ocr_geometry',
+        screenOcrGeometrySummary(capture: capture, result: result),
       );
       if (result.isEmpty) message = t.floating_ball_ocr_empty;
     } on SystemOcrUnavailableException catch (error) {
@@ -1069,7 +1143,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
           t.floating_ball_ocr_language_pack_missing(
             language: contentLanguageLabelOf(language),
           ),
-        // Linux：本机 OCR 模型还没下载（设置里下载）。
+        // 本机 OCR 模型还没下载（设置里下载）。
         kSystemOcrModelUnavailableReason => t.floating_ball_ocr_model_missing,
         _ => t.floating_ball_ocr_failed,
       };
@@ -1086,20 +1160,204 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     );
   }
 
-  /// Linux 截屏识字的本机 OCR（[LocalScreenOcr]）。用户换了本机模型时服务实例跟着
-  /// 换（[mangaOcrServiceProvider] 按模型键重建），识别器随之重建。
-  LocalScreenOcr? _linuxScreenOcr;
-  MangaOcrService? _linuxScreenOcrService;
+  /// 按截屏识字引擎设置（[PreferencesRepository.screenOcrEngine]，默认跟随全局 OCR
+  /// 引擎偏好）解析这次用哪个引擎。只有「跟随全局」落到本机模型类、且平台有设备
+  /// 自带可选时才去问本机模型是否就绪。
+  Future<ScreenOcrEngine> _resolveScreenOcrEngine(
+    DesktopSystemBallActionTarget target,
+  ) async {
+    final PreferencesRepository? prefs = _prefs;
+    final ScreenOcrEngineSetting setting =
+        prefs?.screenOcrEngine ?? ScreenOcrEngineSetting.followGlobal;
+    final MangaOcrEnginePreference global = MangaOcrEnginePreferenceKey.fromKey(
+      prefs?.mangaOcrEnginePreference ?? kDefaultMangaOcrEnginePreference.key,
+    );
+    final bool systemOcrSupported = screenOcrHasSystemEngine;
+    final ScreenOcrEngine? fromGlobal = screenOcrEngineOfGlobal(
+      global,
+      systemOcrSupported: systemOcrSupported,
+    );
+    final bool needsReadiness =
+        setting == ScreenOcrEngineSetting.followGlobal &&
+        systemOcrSupported &&
+        (fromGlobal == null || fromGlobal == ScreenOcrEngine.localModel);
+    final bool localModelReady =
+        needsReadiness && await target.localModelReady(_localScreenOcr);
+    return resolveScreenOcrEngine(
+      setting: setting,
+      global: global,
+      systemOcrSupported: systemOcrSupported,
+      localModelReady: localModelReady,
+    );
+  }
+
+  /// Android 截屏 OCR 截到帧后来问这次用哪个引擎（决定 4BBSaB12zj：Android 截屏识字
+  /// 也跟随截屏识字引擎设置，默认跟随全局 OCR 引擎）。设备自带（ML Kit）回
+  /// `{engine: 'systemOcr'}`，由原生自己识别；本机模型 / Lens 回对应名字，原生再把
+  /// 定格帧交回来（[_androidRecognizeScreenOcrFrame]）。Lens 还没同意上传时这次不截：
+  /// 回提示文案、让原生把 Fushi 拉到前台，同意框在那里等着，同意后再点一次。
+  Future<Map<String, Object?>> _androidScreenOcrEngine() async {
+    final DesktopSystemBallActionTarget target = desktopSystemBallActionTarget;
+    final ScreenOcrEngine engine = await _resolveScreenOcrEngine(target);
+    if (engine == ScreenOcrEngine.googleLens &&
+        !await target.hasLensConsent(
+          scene: GoogleLensDisclosureScene.mobileScreens,
+        )) {
+      // 手机上没有「显示器」：同意框用手机文案，同意记录与桌面共用。
+      // 宿主挂在 MaterialApp.builder 里、与 Navigator 平级，自己的 context 之上
+      // 没有 Navigator，同意框必须用导航器的 context 弹（反馈 zkQylCmcKq）。
+      final BuildContext? navigatorContext = _navigatorContext;
+      if (navigatorContext != null && navigatorContext.mounted) {
+        unawaited(
+          target.askLensConsent(
+            navigatorContext,
+            scene: GoogleLensDisclosureScene.mobileScreens,
+          ),
+        );
+      }
+      return <String, Object?>{
+        'message': t.floating_ball_ocr_lens_consent_needed,
+        'openApp': true,
+      };
+    }
+    return <String, Object?>{'engine': engine.name};
+  }
+
+  /// Android 截屏 OCR 的定格帧交给 Dart 侧识别器（本机模型 / Lens）。
+  ///
+  /// [fallback]：设备自带 OCR（ML Kit）报模型不可用时原生退到本机模型再试一次
+  /// （BUG-4508：有的机型 Play 服务报模块就绪、动态模块却加载失败）；本机模型也没
+  /// 就绪时回 `{unavailable: true}`，原生照旧弹系统 OCR 模型配置。
+  ///
+  /// [flow]：原生流程编号。识别期间用户在通知上取消（BUG-4790）时原生按它点名
+  /// （[_cancelAndroidScreenOcrRecognition]），这里立刻回 `{cancelled: true}`。
+  Future<Map<String, Object?>> _androidRecognizeScreenOcrFrame(
+    Uint8List png,
+    String engineName, {
+    required bool fallback,
+    int flow = 0,
+  }) async {
+    final DesktopSystemBallActionTarget target = desktopSystemBallActionTarget;
+    final ScreenOcrEngine? engine = ScreenOcrEngine.values
+        .asNameMap()[engineName];
+    if (engine == null) {
+      return <String, Object?>{'message': t.floating_ball_ocr_failed};
+    }
+    final ScreenOcrRecognitionCancellation cancellation =
+        ScreenOcrRecognitionCancellation(flow);
+    _androidScreenOcrCancellation?.cancel();
+    _androidScreenOcrCancellation = cancellation;
+    final Stopwatch clock = Stopwatch()..start();
+    try {
+      if (fallback &&
+          !await cancellation.guard(target.localModelReady(_localScreenOcr))) {
+        return const <String, Object?>{'unavailable': true};
+      }
+      final SystemOcrPlatform recognizer = _screenOcrRecognizer(engine);
+      final GoogleLensMangaOcrService? lens =
+          engine == ScreenOcrEngine.googleLens ? _screenOcrLens : null;
+      if (lens != null) {
+        // 取消就断开这次的 Lens 连接（请求停在半路，不再等 60 秒超时）；下次用
+        // Lens 时重新建客户端。
+        cancellation.onCancel(() {
+          if (identical(_screenOcrLens, lens)) _screenOcrLens = null;
+          lens.close();
+        });
+      }
+      final SystemOcrPageResult result = await cancellation.guard(
+        target.recognize(png, language: _ocrLanguage, engine: recognizer),
+      );
+      ErrorLogService.instance.logDiagnostic(
+        'floating_ball.screen_ocr_timing',
+        'engine=${engine.name} fallback=$fallback '
+            'recognize=${clock.elapsedMilliseconds}ms '
+            'image=${result.imageWidth}x${result.imageHeight} '
+            'png=${png.length}B lines=${result.lines.length}',
+      );
+      return <String, Object?>{'lines': screenOcrLinesToNative(result.lines)};
+    } on ScreenOcrRecognitionCancelledException {
+      ErrorLogService.instance.logDiagnostic(
+        'floating_ball.screen_ocr_cancelled',
+        'engine=${engine.name} fallback=$fallback '
+            'after=${clock.elapsedMilliseconds}ms',
+      );
+      return const <String, Object?>{'cancelled': true};
+    } on SystemOcrUnavailableException catch (error) {
+      if (fallback) return const <String, Object?>{'unavailable': true};
+      return <String, Object?>{
+        'message': error.reason == kSystemOcrModelUnavailableReason
+            ? t.floating_ball_ocr_model_missing
+            : t.floating_ball_ocr_failed,
+      };
+    } catch (error, stack) {
+      ErrorLogService.instance.log('floating_ball.screen_ocr', error, stack);
+      return <String, Object?>{'message': t.floating_ball_ocr_failed};
+    } finally {
+      if (identical(_androidScreenOcrCancellation, cancellation)) {
+        _androidScreenOcrCancellation = null;
+      }
+    }
+  }
+
+  /// 正在识别的那次 Android 截屏识字（[_androidRecognizeScreenOcrFrame]）的取消令牌。
+  ScreenOcrRecognitionCancellation? _androidScreenOcrCancellation;
+
+  /// 用户在识别中的通知上取消了原生流程 [flow]（BUG-4790）：只取消点名的那一次，
+  /// 编号对不上（那次已经回话、或已换成下一次）就不动。
+  void _cancelAndroidScreenOcrRecognition(int flow) {
+    final ScreenOcrRecognitionCancellation? current =
+        _androidScreenOcrCancellation;
+    if (current == null || current.flow != flow) return;
+    current.cancel();
+  }
+
+  /// 解析出的引擎 → 识别器。
+  SystemOcrPlatform _screenOcrRecognizer(ScreenOcrEngine engine) =>
+      switch (engine) {
+        ScreenOcrEngine.localModel => _localScreenOcr(),
+        ScreenOcrEngine.systemOcr => const MethodChannelSystemOcr(
+          screenText: true,
+        ),
+        ScreenOcrEngine.googleLens => GoogleLensScreenOcr(
+          runner: _screenOcrLens ??= GoogleLensMangaOcrService(),
+          lensLanguage: _prefs?.mangaOcrLensLanguage ?? _ocrLanguage,
+        ),
+      };
+
+  /// 截屏识字的 Lens 客户端：第一次用 Lens 时才建，之后常驻复用 HTTP 连接，宿主
+  /// 销毁时关掉（[dispose]）。
+  GoogleLensMangaOcrService? _screenOcrLens;
+
+  /// 截屏识字要用 Lens 但本设备还没同意上传：在主窗里问。不管同意与否这次都不截——
+  /// 同意框在主窗里、主窗此刻在最前，接着截会把主窗截进去；同意后用户回到要识别的
+  /// 画面再点一次。
+  Future<void> _askScreenOcrLensConsent(
+    DesktopSystemBallActionTarget target,
+  ) async {
+    await target.bringMainWindowToFront();
+    // 宿主与 Navigator 平级（MaterialApp.builder 的 Stack），用导航器的 context 弹。
+    final BuildContext? navigatorContext = _navigatorContext;
+    if (navigatorContext == null || !navigatorContext.mounted) return;
+    await target.askLensConsent(
+      navigatorContext,
+      scene: GoogleLensDisclosureScene.desktopScreens,
+    );
+  }
+
+  /// 截屏识字的本机 OCR（[LocalScreenOcr]）。用户换了本机模型时服务实例跟着换
+  /// （[mangaOcrServiceProvider] 按模型键重建），识别器随之重建。
+  LocalScreenOcr? _screenOcrLocal;
+  MangaOcrService? _screenOcrLocalService;
 
   LocalScreenOcr _localScreenOcr() {
     final MangaOcrService service = ref.read(mangaOcrServiceProvider);
-    final LocalScreenOcr? current = _linuxScreenOcr;
-    if (current != null && identical(service, _linuxScreenOcrService)) {
+    final LocalScreenOcr? current = _screenOcrLocal;
+    if (current != null && identical(service, _screenOcrLocalService)) {
       return current;
     }
     if (current != null) unawaited(current.dispose());
-    _linuxScreenOcrService = service;
-    return _linuxScreenOcr = LocalScreenOcr(service);
+    _screenOcrLocalService = service;
+    return _screenOcrLocal = LocalScreenOcr(service);
   }
 
   /// 冻结层上点了一下（截图像素）：点在字上 → 查从这个字起的后缀，卡锚在这个字
@@ -1126,20 +1384,38 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     // 落点，下一份反馈能分清是识别文本错了还是命中 / 查词错了。只记这一行的前
     // 32 个字。
     final String linePreview = text.characters.take(32).toString();
+    // 坐标映射前后值（BUG-4367）：截图像素里的字框 → 屏幕物理像素的查词卡锚点。
+    final Rect anchorScreenRect = hit.charRect.shift(session.screen.topLeft);
     ErrorLogService.instance.logDiagnostic(
       'floating_ball.screen_ocr_tap',
       'point=(${point.dx.round()},${point.dy.round()}) '
           'line=${_rectSummary(hit.line.rect)} '
           'vertical=${hit.line.isVertical} charIndex=${hit.charIndex} '
+          'segments=${hit.line.segments.length} '
+          'char=${_rectSummary(hit.charRect)} '
+          'anchor=${_rectSummary(anchorScreenRect)} '
           'text="$linePreview"',
     );
+    // BUG-4707：查词串从被点字起、跨过 OCR 折行接上同一文本块的后续行（词被折到
+    // 下一行时不再在行尾截断）；制卡句子取块里含被点字的整句。
+    final ScreenOcrBlockLookup lookup = screenOcrBlockLookupForHit(
+      lines: lines,
+      hit: hit.line,
+      charIndex: hit.charIndex,
+    );
+    // 拍板 design-cross-app-audio-desktop：点字这一刻钉住游戏刚播的声音。制卡委托与
+    // 查词卡的「调整句子音频」面板读同一份（面板拖出的起止才落在委托截的那段上）。
+    final Future<CrossAppAudioSnapshot?> sentenceAudio = CrossAppAudioCapture
+        .instance
+        .snapshot();
     unawaited(
       target.lookupText(
-        text.substring(hit.charIndex),
-        sentence: text,
+        lookup.text.substring(hit.charIndex),
+        sentence: lookup.sentence,
         physicalPlacement: GlobalLookupPhysicalPlacement(
-          anchorScreenRect: hit.charRect.shift(session.screen.topLeft),
+          anchorScreenRect: anchorScreenRect,
         ),
+        sentenceAudio: sentenceAudio,
         // 反馈 Gz7z6Y6Mbr：制卡带上截图里所点文字所在的文本块。
         miningHandler: screenOcrOverlayMiningHandler(
           model: ref.read(appProvider),
@@ -1148,10 +1424,29 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
             lines: lines,
             hit: hit.line,
           ),
-          sentenceContext: text,
+          sentenceContext: lookup.sentence,
+          sentenceAudio: sentenceAudio,
+          pickFrame: _pickDesktopScreenOcrCardFrame,
         ),
       ),
     );
+  }
+
+  /// 拍板 EuOLprw_dV（选 b）：桌面截屏识字「制卡时框选截图」。冻结层与查词卡都是盖在
+  /// 最上层的原生窗口，框选页在主窗里：先收起两者、把主窗拉到前台，再用导航器的
+  /// context 推框选页（宿主与 Navigator 平级）。截图字节已在 [source] 里，收起冻结层
+  /// 不丢图。返回 null = 用户放弃 / 主窗不可用，这张卡不制。
+  Future<MiningRequestOverrides?> _pickDesktopScreenOcrCardFrame(
+    ScreenOcrCardImage source,
+  ) async {
+    final DesktopSystemBallActionTarget target = desktopSystemBallActionTarget;
+    _desktopOcr = null;
+    await FloatingBallChannel.stopScreenOcr();
+    await target.dismissLookup();
+    await target.bringMainWindowToFront();
+    final BuildContext? navigatorContext = _navigatorContext;
+    if (navigatorContext == null || !navigatorContext.mounted) return null;
+    return pickScreenOcrCardFrame(navigatorContext, source);
   }
 
   /// 冻结层被 Esc / 右键 / 关闭钮关掉（原生已关层、已恢复球）。
@@ -1386,7 +1681,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     );
     if (picked == null || picked == activeId) return;
     if (!await _applyProfileSwitch(picked)) {
-      _toast(t.floating_ball_profile_switch_failed);
+      _toast(t.profile_switch_failed);
     }
   }
 
@@ -1411,9 +1706,9 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     for (final ProfileRow profile in profiles) {
       if (profile.id == profileId) target = profile;
     }
-    if (target == null) return t.floating_ball_profile_switch_failed;
+    if (target == null) return t.profile_switch_failed;
     if (profileId != activeId && !await _applyProfileSwitch(profileId)) {
-      return t.floating_ball_profile_switch_failed;
+      return t.profile_switch_failed;
     }
     return t.floating_ball_profile_switched(name: target.name);
   }
@@ -1436,7 +1731,7 @@ class _AppFloatingBallHostState extends ConsumerState<AppFloatingBallHost>
     if (!await _applyProfileSwitch(picked)) {
       // 切失败要让人知道：把主窗叫出来给提示（成功时不打扰）。
       await desktopSystemBallActionTarget.bringMainWindowToFront();
-      _toast(t.floating_ball_profile_switch_failed);
+      _toast(t.profile_switch_failed);
     }
   }
 
@@ -1824,6 +2119,52 @@ class _ManualLookupDialogState extends State<_ManualLookupDialog> {
       ],
     );
   }
+}
+
+/// 截屏识字一次识别的几何取证（BUG-4367，一次截屏一行）：显示器矩形（物理像素）、
+/// 截图尺寸、两者是否一致（不一致 = 截图与屏幕坐标系对不上）、DPI、HDR 与取帧路径、
+/// 送进识别器的实际尺寸与上限、行数、前 [maxBoxes] 行的框与词框数。
+@visibleForTesting
+String screenOcrGeometrySummary({
+  required DesktopScreenOcrCapture capture,
+  required SystemOcrPageResult result,
+  int maxBoxes = 8,
+}) {
+  final Rect? screen = capture.screen;
+  final bool matches =
+      screen != null &&
+      screen.width.round() == result.imageWidth &&
+      screen.height.round() == result.imageHeight;
+  final int? dpi = capture.dpi;
+  final int? recognizedWidth = result.recognizedWidth;
+  final int? recognizedHeight = result.recognizedHeight;
+  final StringBuffer out = StringBuffer()
+    ..write('screen=${screen == null ? '-' : _rectSummary(screen)} ')
+    ..write('image=${result.imageWidth}x${result.imageHeight} ')
+    ..write('screenMatchesImage=$matches ')
+    ..write('dpi=${dpi == null ? '-' : '$dpi(${(dpi * 100 / 96).round()}%)'} ')
+    ..write('hdr=${capture.hdrMonitor ?? '-'} ')
+    ..write('path=${capture.capturePath ?? '-'} ')
+    ..write(
+      'recognized=${recognizedWidth == null || recognizedHeight == null ? '-' : '${recognizedWidth}x$recognizedHeight'} ',
+    )
+    ..write('max=${result.maxImageDimension ?? '-'} ')
+    ..write('lines=${result.lines.length}');
+  final Iterable<SystemOcrTextLine> head = result.lines.take(maxBoxes);
+  if (head.isNotEmpty) {
+    out
+      ..write(' boxes=')
+      ..write(
+        head
+            .map(
+              (SystemOcrTextLine line) =>
+                  '${_rectSummary(line.rect)}/${line.text.characters.length}c'
+                  '/${line.segments.length}w',
+            )
+            .join(' '),
+      );
+  }
+  return out.toString();
 }
 
 /// 桌面截屏识字的一次冻结层：截的是哪块显示器、识别出了哪些行（null = 还在识别）。

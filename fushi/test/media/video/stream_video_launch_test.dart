@@ -170,6 +170,107 @@ void main() {
       },
     );
 
+    test('画质档随缓存落盘：换进程（新缓存实例）命中时画质菜单不再现取', () async {
+      final YoutubeVariantSet set = YoutubeVariantSet(
+        variants: <YoutubeVideoVariant>[
+          YoutubeVideoVariant(
+            height: 1080,
+            label: '1080p',
+            videoUrl: 'https://g/v?itag=137&expire=$futureExpire',
+            codec: 'avc1',
+          ),
+          YoutubeVideoVariant(
+            height: 720,
+            label: '720p',
+            videoUrl: 'https://g/v?itag=136&expire=$futureExpire',
+            codec: 'avc1',
+          ),
+        ],
+        audioStreamUrl: 'https://g/a?itag=251&expire=$futureExpire',
+        defaultIndex: 0,
+      );
+      final File file = File('${tmp.path}/variants.json');
+      final launch1 = await buildStreamVideoLaunch(
+        ytRow(),
+        streamCache: YoutubeStreamCache(file: file, now: () => now),
+        youtubeResolver: (String url) async => YoutubeResolvedSource(
+          streamUrl: 'https://g/v?itag=137&expire=$futureExpire',
+          audioStreamUrl: 'https://g/a?itag=251&expire=$futureExpire',
+          miningVideoUrl: 'https://g/m?itag=18&expire=$futureExpire',
+          miningVideoHasAudio: true,
+          title: '',
+          httpHeaders: const <String, String>{},
+          cues: const <AudioCue>[],
+          variants: set,
+        ),
+        livenessCheck: (String u, Map<String, String> h) async => true,
+        now: () => now,
+      );
+      launch1.client.close();
+
+      final launch2 = await buildStreamVideoLaunch(
+        ytRow(),
+        streamCache: YoutubeStreamCache(file: file, now: () => now),
+        youtubeResolver: (String url) async =>
+            fail('cache hit must not resolve'),
+        livenessCheck: (String u, Map<String, String> h) async => true,
+        now: () => now,
+      );
+      final YoutubeVariantSet reused = await launch2.client
+          .youtubeQualityVariants();
+      expect(
+        reused.variants.map((YoutubeVideoVariant v) => v.label).toList(),
+        <String>['1080p', '720p'],
+      );
+      expect(reused.variants.last.videoUrl, contains('itag=136'));
+      expect(reused.audioStreamUrl, set.audioStreamUrl);
+      expect(reused.defaultIndex, 0);
+      launch2.client.close();
+    });
+
+    test('档位直链比播放流先过期：缓存过期时间取档位里最早的 expire', () async {
+      final int soonExpire = now.millisecondsSinceEpoch ~/ 1000 + 3600;
+      final File file = File('${tmp.path}/early.json');
+      final YoutubeStreamCache cache = YoutubeStreamCache(
+        file: file,
+        now: () => now,
+      );
+      final launch = await buildStreamVideoLaunch(
+        ytRow(),
+        streamCache: cache,
+        youtubeResolver: (String url) async => YoutubeResolvedSource(
+          streamUrl: 'https://g/v?itag=137&expire=$futureExpire',
+          audioStreamUrl: 'https://g/a?itag=251&expire=$futureExpire',
+          miningVideoUrl: null,
+          miningVideoHasAudio: false,
+          title: '',
+          httpHeaders: const <String, String>{},
+          cues: const <AudioCue>[],
+          variants: YoutubeVariantSet(
+            variants: <YoutubeVideoVariant>[
+              YoutubeVideoVariant(
+                height: 480,
+                label: '480p',
+                videoUrl: 'https://g/v?itag=135&expire=$soonExpire',
+                codec: 'avc1',
+              ),
+            ],
+            audioStreamUrl: null,
+            defaultIndex: 0,
+          ),
+        ),
+        livenessCheck: (String u, Map<String, String> h) async => true,
+        now: () => now,
+      );
+      launch.client.close();
+      final YoutubeStreamCacheEntry? entry = await cache.get('dQw4w9WgXcQ');
+      expect(entry, isNotNull);
+      expect(
+        entry!.expiresAtMs,
+        soonExpire * 1000 - const Duration(minutes: 30).inMilliseconds,
+      );
+    });
+
     test(
       'cache hit but liveness dead -> invalidate + re-resolve fresh',
       () async {
@@ -287,6 +388,54 @@ void main() {
       }
       // 无 expire 不缓存 → 两次都重解析。
       expect(resolveCalls, 2);
+    });
+
+    test('起播解析出的画质档挂在客户端上，点开画质菜单直接用（gap-remote-10）', () async {
+      const YoutubeVariantSet variants = YoutubeVariantSet(
+        variants: <YoutubeVideoVariant>[
+          YoutubeVideoVariant(
+            height: 1080,
+            label: '1080p',
+            videoUrl: 'https://g/v1080',
+            codec: 'avc1',
+          ),
+          YoutubeVideoVariant(
+            height: 720,
+            label: '720p',
+            videoUrl: 'https://g/v720',
+            codec: 'avc1',
+          ),
+        ],
+        audioStreamUrl: 'https://g/a',
+        defaultIndex: 0,
+      );
+      final YoutubeResolvedSource base = fakeResolved('v');
+      final launch = await buildStreamVideoLaunch(
+        ytRow(),
+        streamCache: YoutubeStreamCache(
+          file: File('${tmp.path}/c.json'),
+          now: () => now,
+        ),
+        youtubeTargetHeight: 1080,
+        youtubeResolver: (String url) async => YoutubeResolvedSource(
+          streamUrl: base.streamUrl,
+          audioStreamUrl: base.audioStreamUrl,
+          miningVideoUrl: base.miningVideoUrl,
+          miningVideoHasAudio: base.miningVideoHasAudio,
+          title: base.title,
+          httpHeaders: base.httpHeaders,
+          cues: base.cues,
+          variants: variants,
+        ),
+        livenessCheck: (String u, Map<String, String> h) async => true,
+        now: () => now,
+      );
+      addTearDown(launch.client.close);
+      // 同一个画质目标：拿到的就是起播那份（没有再走联网的 getManifest）。
+      expect(
+        await launch.client.youtubeQualityVariants(playbackTargetHeight: 1080),
+        same(variants),
+      );
     });
   });
 }

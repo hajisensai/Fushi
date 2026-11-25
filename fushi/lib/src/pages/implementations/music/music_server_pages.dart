@@ -7,6 +7,7 @@ import 'dart:async';
 import 'dart:math' as math;
 
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi_core/fushi_core.dart' show FushiDatabase;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/media/music/apple_music/apple_music_token_source.dart'
     show AppleMusicUnavailableException;
@@ -19,15 +20,44 @@ import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_account.dart'
     show AppleMusicNotSignedInException;
 import 'package:fushi/src/media/music/music_output_backend.dart';
+import 'package:fushi/src/media/music/music_remote_tracks.dart'
+    show musicServerKindStorable;
 import 'package:fushi/src/media/music/music_player_engine.dart';
 import 'package:fushi/src/media/music/server/music_servers.dart';
+import 'package:fushi/src/media/music/server/music_server_play_item.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_browse_widgets.dart';
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_recommend_widgets.dart';
 import 'package:fushi/src/pages/implementations/music/music_apple_music_pages.dart';
+import 'package:fushi/src/media/music/server/music_server_downloads.dart'
+    show MusicServerDownloadService;
+import 'package:fushi/src/media/music/server/music_server_favorites.dart';
+import 'package:fushi/src/media/music/server/music_server_offline_queue.dart'
+    show MusicServerOfflineQueue;
+import 'package:fushi/src/pages/implementations/music/music_local_playlist_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_collection_actions.dart';
+import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dart'
+    show
+        musicServerSubtitleMenuActions,
+        musicSubtitleGenerationSupported,
+        openMusicServerSubtitleGenerateSheet;
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart'
     show MusicFloatingBarHost;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
+import 'package:fushi/src/pages/implementations/music/music_detail_chrome.dart';
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
+    show FushiMastheadScaffold;
+import 'package:fushi/src/pages/implementations/music/music_preview_badge.dart';
+import 'package:fushi/src/pages/implementations/music/music_playlist_track_column.dart'
+    show MusicPlaylistTrackColumn, MusicPlaylistTrackRowData;
+import 'package:fushi/src/pages/implementations/music/music_playlist_actions.dart';
+import 'package:fushi/src/media/music/music_local_playlists.dart'
+    show MusicPlaylistExportItem;
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_row_surface.dart';
+import 'package:fushi/src/pages/implementations/music/music_collection_view.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -48,9 +78,32 @@ import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
+    show FushiMastheadRole, FushiMastheadScope;
+import 'package:fushi/src/utils/components/library_section_tab.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockSize;
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
+    show SliverFushiCoverBlocks;
+
+// 详情页头部色块 / 页头大字外壳与 [musicBrowseScaffold] 同属「音乐二级页外壳」：
+// 一并导出，插件详情页（`music_plugin_pages.dart` 的 part）经本文件拿到。
+export 'package:fushi/src/pages/implementations/music/music_detail_chrome.dart'
+    show
+        MusicCoverPalette,
+        MusicDetailHero,
+        MusicDetailHeroLineBuilder,
+        musicDetailHeroGap;
+
+part 'music_server_discovery_pages.dart';
+part 'music_server_item_actions.dart';
 
 /// 专辑网格的列宽上限（本地曲库与服务器曲库同一套几何）。
 const double kMusicAlbumGridMaxExtent = 200;
@@ -62,10 +115,8 @@ const double kMusicAlbumGridMaxExtent = 200;
 SliverGridDelegate musicAlbumGridDelegate(BuildContext context, double width) {
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final double spacing = tokens.spacing.gap * 1.5;
+  final int columns = musicAlbumGridColumns(context, width);
   final double available = math.max(1, width - tokens.spacing.page * 2);
-  final int columns = (available / (kMusicAlbumGridMaxExtent + spacing))
-      .ceil()
-      .clamp(1, 1 << 10);
   final double cardWidth = (available - (columns - 1) * spacing) / columns;
   return SliverGridDelegateWithMaxCrossAxisExtent(
     maxCrossAxisExtent: kMusicAlbumGridMaxExtent,
@@ -76,6 +127,38 @@ SliverGridDelegate musicAlbumGridDelegate(BuildContext context, double width) {
   );
 }
 
+/// 专辑网格在 [width] 下按 `MaxCrossAxisExtent` 公式算出的自动列数。
+int musicAlbumGridColumns(BuildContext context, double width) {
+  final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+  final double spacing = tokens.spacing.gap * 1.5;
+  final double available = math.max(1, width - tokens.spacing.page * 2);
+  return (available / (kMusicAlbumGridMaxExtent + spacing)).ceil().clamp(
+    1,
+    1 << 10,
+  );
+}
+
+/// 曲库专辑网格的几何：[fixedColumns] 为 null 时就是 [musicAlbumGridDelegate]
+/// （自动列数，像素不变）；用户定了「每行数量」（Apple 外壳的捏合 / ⌘± / 滑杆，
+/// 写回 `library_grid_columns` 的 music 格）时按固定列数排、行高同一公式。
+MusicGridDelegateBuilder musicAlbumGridDelegateFor({int? fixedColumns}) {
+  if (fixedColumns == null || fixedColumns <= 0) return musicAlbumGridDelegate;
+  return (BuildContext context, double width) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final double spacing = tokens.spacing.gap * 1.5;
+    final double available = math.max(1, width - tokens.spacing.page * 2);
+    final double cardWidth =
+        (available - (fixedColumns - 1) * spacing) / fixedColumns;
+    return SliverGridDelegateWithFixedCrossAxisCount(
+      crossAxisCount: fixedColumns,
+      mainAxisSpacing: spacing,
+      crossAxisSpacing: spacing,
+      mainAxisExtent:
+          cardWidth / kShelfAlbumAspectRatio + ShelfCardMeta.heightFor(context),
+    );
+  };
+}
+
 /// 专辑详情页大封面的边长。
 const double kMusicAlbumDetailCoverSize = 200;
 
@@ -83,6 +166,15 @@ const double kMusicAlbumDetailCoverSize = 200;
 /// 光泽），墨水屏退回描边封面框。本地专辑页与服务器专辑页共用。
 Widget musicAlbumDetailCover(Widget cover) =>
     musicMaterialCover(cover, size: kMusicAlbumDetailCoverSize, tilt: true);
+
+/// 当前用户库（还没打开时为 null）：服务器页上的入库 / 下载动作用。
+FushiDatabase? musicServerDatabaseOf(BuildContext context) {
+  final AppModel app = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appProvider);
+  return app.isDatabaseReady ? app.database : null;
+}
 
 /// 服务器曲目 → 播放项（按设置的码率上限）。
 List<MusicPlayItem> musicServerPlayItems(
@@ -110,14 +202,51 @@ List<MusicPlayItem> musicServerPlayItems(
   ];
 }
 
-/// 统一的页面外壳：MD3 用悬浮顶栏（动作默认平铺、放不下才收），Apple 用系统页头。
-/// 服务器曲库与插件音源（`music_plugin_pages.dart`）共用。
+/// 统一的页面外壳：重设计外壳（[shellRedesignActive]，两套设计系统同一形态）下是
+/// 页头大字（[FushiMastheadScaffold]：返回键 + 大标题 + 悬浮动作组，滚动后高斯模糊
+/// 底板）；墨水屏照旧——MD3 用悬浮顶栏（动作默认平铺、放不下才收），Apple 用系统
+/// 页头。服务器曲库、插件音源（`music_plugin_pages.dart`）与本地专辑 / 歌单 / 艺人 /
+/// 曲目详情共用。
+///
+/// [titleInBody]：正文顶部已有同名大标题（[MusicDetailHero]），页头大字不再重复，
+/// 滚过色块后才以收缩字号淡入。墨水屏形态不受影响。
+///
+/// [body] 是构建器：它拿到的 `context` 在页头脚手架之下，页头经 `MediaQuery`
+/// 注入的顶部让位只在那里读得到。正文留白一律用这个 `context` 量
+/// （[musicBrowsePagePadding]）；拿脚手架之上的 context 量会少掉页头高度，
+/// 正文顶端被页头盖住（BUG-4919）。
+///
+/// [mastheadBottom]：页头大字形态下页名下一行（[FushiMastheadScaffold.bottom]，
+/// 页签放这里即画成库页二级页签同款连体按钮组）；墨水屏形态不画，调用方自己
+/// 在正文里摆原来的控件。
 Widget musicBrowseScaffold(
   BuildContext context, {
   required String title,
-  required Widget body,
+  required WidgetBuilder body,
   List<FushiToolbarItem> actions = const <FushiToolbarItem>[],
+  bool titleInBody = false,
+  Widget? mastheadBottom,
 }) {
+  if (shellRedesignActive(context)) {
+    return MusicFloatingBarHost(
+      child: FushiMastheadScaffold(
+        title: title,
+        titleInBody: titleInBody,
+        bottom: mastheadBottom,
+        actions: <Widget>[
+          for (final FushiToolbarItem item in actions)
+            FushiIconButtonControl(
+              key: item.key,
+              icon: FushiIcon(item.icon),
+              tooltip: item.tooltip ?? item.label,
+              onPressed: item.onPressed,
+              onLongPress: item.onLongPress,
+            ),
+        ],
+        body: Builder(builder: body),
+      ),
+    );
+  }
   final FushiDesignTokens tokens = FushiDesignTokens.of(context);
   final NavigatorState? navigator = Navigator.maybeOf(context);
   return MusicFloatingBarHost(
@@ -149,7 +278,7 @@ Widget musicBrowseScaffold(
                 ],
               ),
             ),
-      body: body,
+      body: Builder(builder: body),
     ),
   );
 }
@@ -188,10 +317,43 @@ EdgeInsets musicBrowsePagePadding(BuildContext context) {
   );
 }
 
-enum _BrowseSection { home, albums, artists, playlists, songs }
+enum _BrowseSection {
+  home,
+  albums,
+  artists,
+  playlists,
+  songs,
+  genres,
+  favorites,
+}
+
+/// 各分区记样式的视图种类与原有画法（[MusicViewStyleStore]）；主页没有。
+(MusicViewKind, MusicViewStyle)? _sectionViewKind(_BrowseSection s) =>
+    switch (s) {
+      _BrowseSection.albums => (MusicViewKind.albums, MusicViewStyle.blocks),
+      _BrowseSection.artists => (MusicViewKind.artists, MusicViewStyle.list),
+      _BrowseSection.playlists => (
+        MusicViewKind.playlists,
+        MusicViewStyle.blocks,
+      ),
+      _BrowseSection.songs => (MusicViewKind.tracks, MusicViewStyle.list),
+      _BrowseSection.home ||
+      _BrowseSection.genres ||
+      _BrowseSection.favorites => null,
+    };
+
+/// [s] 分区在本页生效的样式（主页恒为色块，不用）。
+MusicViewStyle _sectionStyle(BuildContext context, _BrowseSection s) {
+  final (MusicViewKind, MusicViewStyle)? view = _sectionViewKind(s);
+  return view == null
+      ? MusicViewStyle.blocks
+      : musicViewStyleOf(context, view.$1, view.$2);
+}
 
 /// 一个来源有哪些分区（第一个是缺省）：Apple Music catalog 多一个「主页」（推荐 / 榜单 /
-/// 电台 / 流派），Apple Music 资料库多一个「歌曲」（资料库全部歌曲）。
+/// 电台 / 流派），Apple Music 资料库多一个「歌曲」（资料库全部歌曲）。能按统计浏览的服务器
+/// （[MusicServerDiscovery]：Jellyfin / OpenSubsonic）多「主页」（最近添加 / 最常 / 最近
+/// 播放）与「流派」，能收藏的（[MusicServerFavoriteEditing]）多「收藏」。
 List<_BrowseSection> _sectionsOf(MusicServerBrowser b) => switch (b) {
   AppleMusicCatalogClient() => const <_BrowseSection>[
     _BrowseSection.home,
@@ -205,10 +367,13 @@ List<_BrowseSection> _sectionsOf(MusicServerBrowser b) => switch (b) {
     _BrowseSection.songs,
     _BrowseSection.artists,
   ],
-  _ => const <_BrowseSection>[
+  _ => <_BrowseSection>[
+    if (b is MusicServerDiscovery) _BrowseSection.home,
     _BrowseSection.albums,
     _BrowseSection.artists,
     _BrowseSection.playlists,
+    if (b is MusicServerDiscovery) _BrowseSection.genres,
+    if (b is MusicServerFavoriteEditing) _BrowseSection.favorites,
   ],
 };
 
@@ -218,6 +383,8 @@ String _sectionLabel(_BrowseSection s) => switch (s) {
   _BrowseSection.artists => t.music_section_artists,
   _BrowseSection.playlists => t.music_section_playlists,
   _BrowseSection.songs => t.music_section_songs,
+  _BrowseSection.genres => t.music_server_section_genres,
+  _BrowseSection.favorites => t.music_server_section_favorites,
 };
 
 /// 一台服务器：专辑 / 艺人两个分区 + 搜索。
@@ -253,6 +420,8 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
   void initState() {
     super.initState();
     if (_section == _BrowseSection.albums) unawaited(_loadMore());
+    // 打开服务器页：把这台服务器上次离线时没送达的播放 / 收藏补发出去（连不上就留着）。
+    unawaited(MusicServerOfflineQueue.instance.flushServer(widget.browser));
   }
 
   Future<void> _loadMore() async {
@@ -277,9 +446,27 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
     }
   }
 
+  void _selectSection(_BrowseSection section) => setState(() {
+    _section = section;
+    if (_section == _BrowseSection.artists) {
+      _artists ??= widget.browser.listArtists();
+    }
+    if (_section == _BrowseSection.albums && _albums.isEmpty) {
+      unawaited(_loadMore());
+    }
+  });
+
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => ListenableBuilder(
+    listenable: MusicViewStyleStore.instance,
+    builder: (BuildContext context, Widget? _) => _buildPage(context),
+  );
+
+  Widget _buildPage(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // 当前分区的样式切换键（色块 / 列表）；主页与墨水屏不给。
+    final (MusicViewKind, MusicViewStyle)? view =
+        musicViewStyleSwitchable(context) ? _sectionViewKind(_section) : null;
     final Widget segmented = adaptiveSegmentedButton<_BrowseSection>(
       context: context,
       segments: <ButtonSegment<_BrowseSection>>[
@@ -290,23 +477,21 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
           ),
       ],
       selected: <_BrowseSection>{_section},
-      onSelectionChanged: (Set<_BrowseSection> v) => setState(() {
-        _section = v.first;
-        if (_section == _BrowseSection.artists) {
-          _artists ??= widget.browser.listArtists();
-        }
-        if (_section == _BrowseSection.albums && _albums.isEmpty) {
-          unawaited(_loadMore());
-        }
-      }),
+      onSelectionChanged: (Set<_BrowseSection> v) => _selectSection(v.first),
     );
     final Widget content = switch (_section) {
       _BrowseSection.home => switch (widget.browser) {
         final AppleMusicCatalogClient c => AppleMusicHomeView(catalog: c),
+        MusicServerDiscovery() => MusicServerHomeView(browser: widget.browser),
         _ => const SizedBox.shrink(),
       },
+      _BrowseSection.genres => MusicServerGenresView(browser: widget.browser),
+      _BrowseSection.favorites => MusicServerFavoritesView(
+        browser: widget.browser,
+      ),
       _BrowseSection.playlists => MusicServerPlaylistsView(
         browser: widget.browser,
+        style: _sectionStyle(context, _BrowseSection.playlists),
       ),
       _BrowseSection.songs => switch (widget.browser) {
         final AppleMusicLibraryClient l => AppleMusicLibrarySongsView(
@@ -326,6 +511,7 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
                   browser: widget.browser,
                   albums: _albums,
                   loading: _loading,
+                  style: _sectionStyle(context, _BrowseSection.albums),
                 ),
               ),
       _BrowseSection.artists => FutureBuilder<List<MusicServerArtist>>(
@@ -346,7 +532,11 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
               }
               final List<MusicServerArtist>? artists = snap.data;
               if (artists == null) return const FushiLoadingView();
-              return _ArtistList(browser: widget.browser, artists: artists);
+              return _ArtistList(
+                browser: widget.browser,
+                artists: artists,
+                style: _sectionStyle(context, _BrowseSection.artists),
+              );
             },
       ),
     };
@@ -365,6 +555,27 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
         child: content,
       ),
     );
+    if (isGlassDesign(context)) {
+      return _buildApple(context, animated, openSearch);
+    }
+    final bool masthead = shellRedesignActive(context);
+    final List<_BrowseSection> sections = _sectionsOf(widget.browser);
+    // 重设计外壳：分区页签与库页二级页签同一组件（[LibrarySectionTabs] 在
+    // secondary 页头作用域里画成连体按钮组）；墨水屏照旧分段条。
+    final Widget? sectionTabs = masthead && sections.length > 1
+        ? LibrarySectionTabs<_BrowseSection>(
+            tabs: <LibrarySectionTab<_BrowseSection>>[
+              for (final _BrowseSection s in sections)
+                LibrarySectionTab<_BrowseSection>(
+                  value: s,
+                  label: _sectionLabel(s),
+                ),
+            ],
+            selected: _section,
+            onChanged: _selectSection,
+            focusIdPrefix: 'music-server-section',
+          )
+        : null;
     if (widget.embedded) {
       return Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -378,17 +589,33 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
               spacing: tokens.spacing.gap,
               children: <Widget>[
                 Expanded(
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: HorizontalDragScrollable(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: segmented,
-                      ),
-                    ),
-                  ),
+                  // 嵌在音乐库内容区、没有自己的页头：就地挂 secondary 页头
+                  // 作用域画成同款连体按钮组（按钮组自带横滑）。
+                  child: masthead
+                      ? FushiMastheadScope(
+                          role: FushiMastheadRole.secondary,
+                          child: Align(
+                            alignment: AlignmentDirectional.centerStart,
+                            child: sectionTabs ?? const SizedBox.shrink(),
+                          ),
+                        )
+                      : Align(
+                          alignment: Alignment.centerLeft,
+                          child: HorizontalDragScrollable(
+                            child: SingleChildScrollView(
+                              scrollDirection: Axis.horizontal,
+                              child: segmented,
+                            ),
+                          ),
+                        ),
                 ),
                 ?widget.trailing,
+                if (view != null)
+                  musicViewStyleToggleButton(
+                    view.$1,
+                    _sectionStyle(context, _section),
+                    padTouchTarget: true,
+                  ),
                 FushiIconButton(
                   key: const ValueKey<String>('music_server_search'),
                   icon: FushiIcons.search,
@@ -403,6 +630,135 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
         ],
       );
     }
+    final List<FushiToolbarItem> actions = <FushiToolbarItem>[
+      FushiToolbarItem(
+        key: const ValueKey<String>('music_server_search'),
+        icon: FushiIcons.search,
+        label: t.music_server_search,
+        onPressed: openSearch,
+      ),
+      if (view != null)
+        musicViewStyleToggle(view.$1, _sectionStyle(context, _section)),
+    ];
+    // 重设计外壳（页头大字）：分区页签进页名下一行，与库页二级页签同一组件
+    // （[LibrarySectionTabs] 在页头下方一行里画成连体按钮组）；正文只剩内容。
+    if (masthead) {
+      return musicBrowseScaffold(
+        context,
+        title: widget.browser.displayName,
+        actions: actions,
+        mastheadBottom: sectionTabs,
+        body: (BuildContext context) => Padding(
+          padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+          child: MediaQuery.removePadding(
+            context: context,
+            removeTop: true,
+            child: animated,
+          ),
+        ),
+      );
+    }
+    return musicBrowseScaffold(
+      context,
+      title: widget.browser.displayName,
+      actions: actions,
+      body: (BuildContext context) => Padding(
+        padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+        child: MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              Padding(
+                padding: EdgeInsets.symmetric(
+                  horizontal: tokens.spacing.page,
+                  vertical: tokens.spacing.gap,
+                ),
+                child: Align(
+                  alignment: Alignment.centerLeft,
+                  child: HorizontalDragScrollable(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: segmented,
+                    ),
+                  ),
+                ),
+              ),
+              Expanded(child: animated),
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Cupertino 版（设计稿方案 A ③）：分区是 Apple 胶囊行（与推荐页来源胶囊同一
+  /// 组件，选中反白、整排一个焦点停靠点），尾部跟 [MusicServerBrowsePage.trailing]
+  /// （Apple Music 地区 pull-down）与搜索；各分区内容自己按 `isGlassDesign` 画 Apple
+  /// 版（艺人圆形头像、平封面网格、Apple 曲目行、彩色流派块）。Apple 版只有平封面
+  /// 网格一种排法，不出「色块 / 列表」样式切换。
+  Widget _buildApple(
+    BuildContext context,
+    Widget animated,
+    VoidCallback openSearch,
+  ) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<_BrowseSection> sections = _sectionsOf(widget.browser);
+    final double pad = appleMusicPagePadding(context);
+    final Widget? pills = sections.length > 1
+        ? AppleMusicSourcePills(
+            pills: <AppleMusicSourcePill>[
+              for (final _BrowseSection s in sections)
+                (
+                  value: s.name,
+                  label: _sectionLabel(s),
+                  labelKey: ValueKey<String>('music-server-section-${s.name}'),
+                  relayed: false,
+                ),
+            ],
+            selected: _section.name,
+            onSelect: (String v) =>
+                _selectSection(_BrowseSection.values.byName(v)),
+            focusIdPrefix: 'music-server-section',
+          )
+        : null;
+    if (widget.embedded) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          Padding(
+            padding: EdgeInsets.fromLTRB(pad, tokens.spacing.gap / 2, pad, 0),
+            child: Row(
+              spacing: tokens.spacing.gap,
+              children: <Widget>[
+                Expanded(
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: pills ?? const SizedBox.shrink(),
+                  ),
+                ),
+                ?widget.trailing,
+                FushiIconButton(
+                  key: const ValueKey<String>('music_server_search'),
+                  icon: FushiIcons.search,
+                  tooltip: t.music_server_search,
+                  padTouchTarget: true,
+                  onTap: openSearch,
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: MediaQuery.removePadding(
+              context: context,
+              removeTop: true,
+              child: animated,
+            ),
+          ),
+        ],
+      );
+    }
     return musicBrowseScaffold(
       context,
       title: widget.browser.displayName,
@@ -414,33 +770,32 @@ class _MusicServerBrowsePageState extends ConsumerState<MusicServerBrowsePage> {
           onPressed: openSearch,
         ),
       ],
-      body: Builder(
-        builder: (BuildContext context) => Padding(
-          padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
-          child: MediaQuery.removePadding(
-            context: context,
-            removeTop: true,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
+      body: (BuildContext context) => Padding(
+        padding: EdgeInsets.only(top: MediaQuery.paddingOf(context).top),
+        child: MediaQuery.removePadding(
+          context: context,
+          removeTop: true,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: <Widget>[
+              if (pills != null)
                 Padding(
-                  padding: EdgeInsets.symmetric(
-                    horizontal: tokens.spacing.page,
-                    vertical: tokens.spacing.gap,
-                  ),
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: HorizontalDragScrollable(
-                      child: SingleChildScrollView(
-                        scrollDirection: Axis.horizontal,
-                        child: segmented,
+                  padding: EdgeInsets.fromLTRB(pad, tokens.spacing.gap, pad, 0),
+                  child: Row(
+                    spacing: tokens.spacing.gap,
+                    children: <Widget>[
+                      Expanded(
+                        child: Align(
+                          alignment: AlignmentDirectional.centerStart,
+                          child: pills,
+                        ),
                       ),
-                    ),
+                      ?widget.trailing,
+                    ],
                   ),
                 ),
-                Expanded(child: animated),
-              ],
-            ),
+              Expanded(child: animated),
+            ],
           ),
         ),
       ),
@@ -458,11 +813,19 @@ class _AlbumGrid extends StatelessWidget {
   const _AlbumGrid({
     required this.browser,
     required this.albums,
+    required this.style,
     this.loading = false,
+    this.header,
   });
 
   final MusicServerBrowser browser;
   final List<MusicServerAlbum> albums;
+
+  /// 网格上方的一行（艺人页的入库 / 下载按钮）。
+  final Widget? header;
+
+  /// 色块（封面网格布局下是原有的唱片网格卡）/ 单列行。
+  final MusicViewStyle style;
   final bool loading;
 
   @override
@@ -477,44 +840,76 @@ class _AlbumGrid extends StatelessWidget {
         ),
       );
     }
-    // 专辑一律是方形「唱片」材质（用户 2026-10-26 拍板）。
-    return ShelfCoverMaterialScope(
-      material: ShelfCoverMaterial.glossyAlbum,
-      child: FushiEntranceScope(
-        child: LayoutBuilder(
-          builder: (BuildContext context, BoxConstraints constraints) =>
-              GridView.builder(
-                padding: withBottomSafeInset(
-                  context,
-                  EdgeInsets.fromLTRB(
-                    tokens.spacing.page,
-                    MediaQuery.paddingOf(context).top + tokens.spacing.gap,
-                    tokens.spacing.page,
-                    tokens.spacing.section,
-                  ),
-                ),
-                gridDelegate: musicAlbumGridDelegate(
-                  context,
-                  constraints.maxWidth,
-                ),
-                itemCount: albums.length,
-                itemBuilder: fushiStaggeredItemBuilder((
-                  BuildContext context,
-                  int i,
-                ) {
-                  final MusicServerAlbum a = albums[i];
-                  return MusicServerAlbumCard(
-                    key: ValueKey<String>('music-server-album-${a.id}'),
-                    browser: browser,
-                    album: a,
-                  );
-                }),
-              ),
+    ValueKey<String> keyOf(int i) =>
+        ValueKey<String>('music-server-album-${albums[i].id}');
+    if (isGlassDesign(context)) {
+      // Cupertino：平封面网格（卡片自己画 Apple 版，见 [MusicServerAlbumCard]）。
+      return AppleMusicCollectionView(
+        itemCount: albums.length,
+        header: header,
+        tileBuilder: (BuildContext context, int i) => MusicServerAlbumCard(
+          key: keyOf(i),
+          browser: browser,
+          album: albums[i],
         ),
+        rowBuilder: (BuildContext context, int i) => MusicServerAlbumListRow(
+          key: keyOf(i),
+          browser: browser,
+          album: albums[i],
+        ),
+      );
+    }
+    // 专辑一律是方形「唱片」材质（用户 2026-10-26 拍板）。
+    return MusicStyledCollection(
+      style: style,
+      itemCount: albums.length,
+      padding: withBottomSafeInset(
+        context,
+        EdgeInsets.fromLTRB(
+          tokens.spacing.page,
+          MediaQuery.paddingOf(context).top + tokens.spacing.gap,
+          tokens.spacing.page,
+          tokens.spacing.section,
+        ),
+      ),
+      header: header,
+      headerGap: header == null ? 0 : tokens.spacing.gap,
+      gridMaterial: ShelfCoverMaterial.glossyAlbum,
+      gridDelegate: musicAlbumGridDelegate,
+      gridCardBuilder: (BuildContext context, int i) => MusicServerAlbumCard(
+        key: keyOf(i),
+        browser: browser,
+        album: albums[i],
+      ),
+      blockBuilder: (BuildContext context, int i, FushiCoverBlockSize size) =>
+          MusicServerAlbumBlockCard(
+            key: keyOf(i),
+            browser: browser,
+            album: albums[i],
+            size: size,
+          ),
+      rowBuilder: (BuildContext context, int i) => MusicServerAlbumListRow(
+        key: keyOf(i),
+        browser: browser,
+        album: albums[i],
       ),
     );
   }
 }
+
+/// 打开一张服务器专辑。
+void _openServerAlbum(
+  BuildContext context,
+  MusicServerBrowser browser,
+  MusicServerAlbum album,
+) => unawaited(
+  Navigator.of(context).push<void>(
+    adaptivePageRoute<void>(
+      context: context,
+      builder: (_) => MusicServerAlbumPage(browser: browser, album: album),
+    ),
+  ),
+);
 
 /// 服务器专辑卡（服务器页的网格与混排进曲库的专辑都用它）：方形「唱片」材质
 /// （[ShelfCoverMaterial.glossyAlbum]，由网格外的 [ShelfCoverMaterialScope] 给；
@@ -533,6 +928,35 @@ class MusicServerAlbumCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return musicWithContextMenu(
+      musicServerAlbumMenu(
+        context,
+        musicServerDatabaseOf(context),
+        browser,
+        album,
+      ),
+      isGlassDesign(context) ? _buildApple(context) : _buildCard(context),
+    );
+  }
+
+  /// Cupertino：平封面卡（宽度跟格子 / 货架走），副行尾一枚云朵（在服务器上）与
+  /// 试听角标；服务器名照旧经语义标签读出。
+  Widget _buildApple(BuildContext context) => Semantics(
+    label: browser.displayName,
+    child: AppleMusicAutoCoverTile(
+      key: ValueKey<String>('music-server-album-meta-${album.id}'),
+      title: album.title,
+      subtitle: <String>[
+        album.artist ?? t.music_artist_unknown,
+        if (album.year != null) '${album.year}',
+      ].join(' · '),
+      cover: browser.coverUri(album.coverRef)?.toString(),
+      subtitleTrailing: _appleServerBadges(context, browser),
+      onTap: () => _openServerAlbum(context, browser, album),
+    ),
+  );
+
+  Widget _buildCard(BuildContext context) {
     return FushiHoverLift(
       scale: kMusicHoverLiftScale,
       builder: (BuildContext context, bool _) => shelfCoverCard(
@@ -568,6 +992,10 @@ class MusicServerAlbumCard extends StatelessWidget {
                   album.artist ?? t.music_artist_unknown,
                   if (album.year != null) '${album.year}',
                 ].join(' · '),
+                // 试听来源的专辑：与原盘规格角标同位（副行尾部），封面上不压角标。
+                trailing: musicServerPreviewOnly(browser)
+                    ? const MusicPreviewBadge()
+                    : null,
               ),
             ),
           ],
@@ -577,40 +1005,192 @@ class MusicServerAlbumCard extends StatelessWidget {
   }
 }
 
+/// 服务器专辑的封面色块卡（色块样式下代替 [MusicServerAlbumCard]；混排进曲库的
+/// 专辑、推荐页「全部」里各服务器来源那一排也用它）：同一个点开去处、同一份副行
+/// （☁ + 歌手 · 年份）、试听来源角标、服务器名语义标签。
+class MusicServerAlbumBlockCard extends StatelessWidget {
+  const MusicServerAlbumBlockCard({
+    required this.browser,
+    required this.album,
+    required this.size,
+    super.key,
+  });
+
+  final MusicServerBrowser browser;
+  final MusicServerAlbum album;
+  final FushiCoverBlockSize size;
+
+  @override
+  Widget build(BuildContext context) => musicWithContextMenu(
+    musicServerAlbumMenu(
+      context,
+      musicServerDatabaseOf(context),
+      browser,
+      album,
+    ),
+    _buildBlock(context),
+  );
+
+  Widget _buildBlock(BuildContext context) => Semantics(
+    label: browser.displayName,
+    child: MusicCollectionBlock(
+      size: size,
+      metaKey: ValueKey<String>('music-server-album-meta-${album.id}'),
+      title: album.title,
+      coverPath: browser.coverUri(album.coverRef)?.toString(),
+      leadingIcon: FushiIcons.cloud,
+      subtitle: <String>[
+        album.artist ?? t.music_artist_unknown,
+        if (album.year != null) '${album.year}',
+      ].join(' · '),
+      trailing: musicServerPreviewOnly(browser)
+          ? const MusicPreviewBadge()
+          : null,
+      // 服务器（含 Apple Music）专辑只有封面图、没有盘面图来源：不画唱片。
+      onTap: () => _openServerAlbum(context, browser, album),
+    ),
+  );
+}
+
+/// 服务器专辑的单列行（列表样式）：封面、专辑名、艺人 · 年份 · 曲目数；云朵与试听
+/// 角标跟在标题后，服务器名经语义标签读出。
+class MusicServerAlbumListRow extends StatelessWidget {
+  const MusicServerAlbumListRow({
+    required this.browser,
+    required this.album,
+    super.key,
+  });
+
+  final MusicServerBrowser browser;
+  final MusicServerAlbum album;
+
+  @override
+  Widget build(BuildContext context) => musicWithContextMenu(
+    musicServerAlbumMenu(
+      context,
+      musicServerDatabaseOf(context),
+      browser,
+      album,
+    ),
+    _buildRow(context),
+  );
+
+  Widget _buildRow(BuildContext context) => Semantics(
+    label: browser.displayName,
+    child: MusicCollectionRow(
+      title: album.title,
+      coverPath: browser.coverUri(album.coverRef)?.toString(),
+      subtitle: <String>[
+        album.artist ?? t.music_artist_unknown,
+        if (album.year != null) '${album.year}',
+        if (album.trackCount != null)
+          t.music_tracks_count(count: album.trackCount!),
+      ].join(' · '),
+      badges: <Widget>[
+        const FushiIcon(FushiIcons.cloud, size: 16),
+        if (musicServerPreviewOnly(browser)) const MusicPreviewBadge(),
+      ],
+      onTap: () => _openServerAlbum(context, browser, album),
+    ),
+  );
+}
+
 class _ArtistList extends StatelessWidget {
-  const _ArtistList({required this.browser, required this.artists});
+  const _ArtistList({
+    required this.browser,
+    required this.artists,
+    required this.style,
+  });
 
   final MusicServerBrowser browser;
   final List<MusicServerArtist> artists;
 
+  /// 色块 / 单列行（墨水屏恒为原有的分组列表）。
+  final MusicViewStyle style;
+
+  void _open(BuildContext context, MusicServerArtist a) => unawaited(
+    Navigator.of(context).push<void>(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => MusicServerArtistPage(browser: browser, artist: a),
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
+    ValueKey<String> keyOf(MusicServerArtist a) =>
+        ValueKey<String>('music-server-artist-${a.id}');
+    String? countOf(MusicServerArtist a) => a.albumCount == null
+        ? null
+        : t.music_server_album_count(count: a.albumCount!);
+    String? coverOf(MusicServerArtist a) =>
+        browser.coverUri(a.coverRef)?.toString();
+    if (isGlassDesign(context)) {
+      // Cupertino：圆形头像网格（Apple Music「艺人」）。
+      return AppleMusicCollectionView(
+        itemCount: artists.length,
+        tileBuilder: (BuildContext context, int i) => AppleMusicAutoCoverTile(
+          key: keyOf(artists[i]),
+          title: artists[i].name,
+          subtitle: countOf(artists[i]),
+          cover: coverOf(artists[i]),
+          circular: true,
+          onTap: () => _open(context, artists[i]),
+        ),
+        rowBuilder: (BuildContext context, int i) => AppleMusicEntityRow(
+          key: keyOf(artists[i]),
+          title: artists[i].name,
+          subtitle: countOf(artists[i]) ?? '',
+          cover: coverOf(artists[i]),
+          circular: true,
+          onTap: () => _open(context, artists[i]),
+        ),
+      );
+    }
+    if (musicTrackRowSurfaceActive(context)) {
+      return MusicStyledCollection(
+        style: style,
+        itemCount: artists.length,
+        padding: musicBrowsePagePadding(context),
+        blockBuilder: (BuildContext context, int i, FushiCoverBlockSize size) =>
+            MusicCollectionBlock(
+              key: keyOf(artists[i]),
+              size: size,
+              title: artists[i].name,
+              subtitle: countOf(artists[i]),
+              coverPath: coverOf(artists[i]),
+              circular: true,
+              onTap: () => _open(context, artists[i]),
+            ),
+        rowBuilder: (BuildContext context, int i) => MusicCollectionRow(
+          key: keyOf(artists[i]),
+          title: artists[i].name,
+          subtitle: countOf(artists[i]),
+          coverPath: coverOf(artists[i]),
+          circular: true,
+          onTap: () => _open(context, artists[i]),
+        ),
+      );
+    }
+    // 墨水屏：原有的分组列表。
     return FushiEntranceScope(
       child: ListView.builder(
         padding: musicBrowsePagePadding(context),
         itemCount: artists.length,
         itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
           final MusicServerArtist a = artists[i];
+          final String? count = countOf(a);
           return FushiPressScale(
             child: FushiGroupedListItem(
-              key: ValueKey<String>('music-server-artist-${a.id}'),
+              key: keyOf(a),
               index: i,
               count: artists.length,
-              onTap: () => unawaited(
-                Navigator.of(context).push<void>(
-                  adaptivePageRoute<void>(
-                    context: context,
-                    builder: (_) =>
-                        MusicServerArtistPage(browser: browser, artist: a),
-                  ),
-                ),
-              ),
+              onTap: () => _open(context, a),
               child: FushiListItem(
                 leading: const FushiListLeadingIcon(FushiIcons.person),
                 title: Text(a.name),
-                subtitle: a.albumCount == null
-                    ? null
-                    : Text(t.music_server_album_count(count: a.albumCount!)),
+                subtitle: count == null ? null : Text(count),
                 trailing: const FushiIcon(FushiIcons.chevronRight),
               ),
             ),
@@ -641,6 +1221,53 @@ class _MusicServerArtistPageState extends State<MusicServerArtistPage> {
     widget.artist.id,
   );
 
+  /// 艺人全部专辑的曲目（入库 / 下载按钮用；专辑列表到了才取，各专辑串行）。
+  Future<_ArtistTracks>? _tracks;
+  List<MusicServerAlbum>? _tracksFor;
+
+  Future<_ArtistTracks> _loadTracks(List<MusicServerAlbum> albums) async {
+    final List<MusicServerTrack> tracks = <MusicServerTrack>[];
+    final Map<String, MusicServerAlbum> albumOf = <String, MusicServerAlbum>{};
+    for (final MusicServerAlbum a in albums) {
+      for (final MusicServerTrack t in await widget.browser.albumTracks(a.id)) {
+        if (albumOf.containsKey(t.id)) continue;
+        albumOf[t.id] = a;
+        tracks.add(t);
+      }
+    }
+    return (tracks: tracks, albumOf: albumOf);
+  }
+
+  Widget? _collectionHeader(List<MusicServerAlbum> albums) {
+    if (!musicServerKindStorable(widget.browser.kind) || albums.isEmpty) {
+      return null;
+    }
+    if (!identical(_tracksFor, albums)) {
+      _tracksFor = albums;
+      _tracks = _loadTracks(albums);
+    }
+    return FutureBuilder<_ArtistTracks>(
+      future: _tracks,
+      builder: (BuildContext context, AsyncSnapshot<_ArtistTracks> snap) {
+        final _ArtistTracks? data = snap.data;
+        if (data == null) return const SizedBox.shrink();
+        return Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: MusicServerCollectionButtons(
+            key: const ValueKey<String>('music-server-artist-collection'),
+            db: musicServerDatabaseOf(context),
+            browser: widget.browser,
+            tracks: data.tracks,
+            title: widget.artist.name,
+            scope: 'artist',
+            scopeId: widget.artist.id,
+            albumTitleOf: (MusicServerTrack t) => data.albumOf[t.id]?.title,
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) => switch (widget.browser) {
     final AppleMusicCatalogClient c => AppleMusicArtistPage(
@@ -650,29 +1277,100 @@ class _MusicServerArtistPageState extends State<MusicServerArtistPage> {
     _ => _buildGeneric(context),
   };
 
-  Widget _buildGeneric(BuildContext context) => musicBrowseScaffold(
-    context,
-    title: widget.artist.name,
-    body: FutureBuilder<List<MusicServerAlbum>>(
-      future: _albums,
-      builder:
-          (BuildContext context, AsyncSnapshot<List<MusicServerAlbum>> snap) {
-            if (snap.hasError) {
-              return musicBrowseErrorView(
-                context,
-                snap.error!,
-                () => setState(
-                  () => _albums = widget.browser.artistAlbums(widget.artist.id),
-                ),
-              );
-            }
-            final List<MusicServerAlbum>? albums = snap.data;
-            if (albums == null) return const FushiLoadingView();
-            return _AlbumGrid(browser: widget.browser, albums: albums);
-          },
+  Widget _buildGeneric(BuildContext context) => MusicViewStyleBuilder(
+    kind: MusicViewKind.albums,
+    fallback: MusicViewStyle.blocks,
+    builder: (BuildContext context, MusicViewStyle style) => ListenableBuilder(
+      // 收藏钮的心形随收藏状态刷新。
+      listenable: MusicServerFavoriteStore.instance,
+      builder: (BuildContext context, Widget? _) => musicBrowseScaffold(
+        context,
+        title: widget.artist.name,
+        actions: <FushiToolbarItem>[
+          ..._artistActions(context),
+          if (musicViewStyleSwitchable(context))
+            musicViewStyleToggle(MusicViewKind.albums, style),
+        ],
+        body: (BuildContext context) => FutureBuilder<List<MusicServerAlbum>>(
+          future: _albums,
+          builder:
+              (
+                BuildContext context,
+                AsyncSnapshot<List<MusicServerAlbum>> snap,
+              ) {
+                if (snap.hasError) {
+                  return musicBrowseErrorView(
+                    context,
+                    snap.error!,
+                    () => setState(
+                      () => _albums = widget.browser.artistAlbums(
+                        widget.artist.id,
+                      ),
+                    ),
+                  );
+                }
+                final List<MusicServerAlbum>? albums = snap.data;
+                if (albums == null) return const FushiLoadingView();
+                return _AlbumGrid(
+                  browser: widget.browser,
+                  albums: albums,
+                  style: style,
+                  header: _collectionHeader(albums),
+                );
+              },
+        ),
+      ),
     ),
   );
+
+  /// 收藏这位艺人、以他为种子的即时混音（服务器支持时）。
+  List<FushiToolbarItem> _artistActions(BuildContext context) {
+    final MusicServerBrowser b = widget.browser;
+    final MusicServerArtist a = widget.artist;
+    final bool fav = MusicServerFavoriteStore.instance.isFavorite(
+      b,
+      MusicServerItemKind.artist,
+      a.id,
+      reported: a.favorite,
+    );
+    return <FushiToolbarItem>[
+      if (musicServerCanInstantMix(b))
+        FushiToolbarItem(
+          key: const ValueKey<String>('music_server_artist_instant_mix'),
+          icon: FushiIcons.cast,
+          label: t.music_server_instant_mix,
+          onPressed: () => unawaited(
+            playMusicServerInstantMix(
+              context,
+              b,
+              MusicServerItemKind.artist,
+              a.id,
+            ),
+          ),
+        ),
+      if (musicServerCanFavorite(b))
+        FushiToolbarItem(
+          key: const ValueKey<String>('music_server_artist_favorite'),
+          icon: musicServerFavoriteIcon(fav),
+          label: fav ? t.music_favorite_remove : t.music_favorite_add,
+          onPressed: () => unawaited(
+            toggleMusicServerFavorite(
+              b,
+              MusicServerItemKind.artist,
+              a.id,
+              reported: a.favorite,
+            ),
+          ),
+        ),
+    ];
+  }
 }
+
+/// 艺人页按专辑串起来的全部曲目与每首所在的专辑。
+typedef _ArtistTracks = ({
+  List<MusicServerTrack> tracks,
+  Map<String, MusicServerAlbum> albumOf,
+});
 
 /// 一张服务器专辑：封面、整碟播放 / 随机、曲目表。
 class MusicServerAlbumPage extends ConsumerStatefulWidget {
@@ -718,13 +1416,25 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
   }
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context) => MusicViewStyleBuilder(
+    kind: MusicViewKind.tracks,
+    fallback: MusicViewStyle.list,
+    builder: _buildPage,
+  );
+
+  /// [style]：曲目区排成单列曲目行（原有）或多列封面色块。
+  Widget _buildPage(BuildContext context, MusicViewStyle style) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final MusicServerAlbum album = widget.album;
     return musicBrowseScaffold(
       context,
       title: album.title,
-      body: FutureBuilder<List<MusicServerTrack>>(
+      titleInBody: true,
+      actions: <FushiToolbarItem>[
+        if (musicTrackRowSurfaceActive(context))
+          musicViewStyleToggle(MusicViewKind.tracks, style),
+      ],
+      body: (BuildContext context) => FutureBuilder<List<MusicServerTrack>>(
         future: _tracks,
         builder:
             (BuildContext context, AsyncSnapshot<List<MusicServerTrack>> snap) {
@@ -739,81 +1449,113 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
               }
               final List<MusicServerTrack>? tracks = snap.data;
               if (tracks == null) return const FushiLoadingView();
-              final List<Widget> children = <Widget>[
-                Wrap(
-                  spacing: tokens.spacing.section,
-                  runSpacing: tokens.spacing.gap,
-                  crossAxisAlignment: WrapCrossAlignment.end,
-                  children: <Widget>[
-                    musicAlbumDetailCover(
-                      MusicCover(
-                        coverPath: widget.browser
-                            .coverUri(album.coverRef)
-                            ?.toString(),
-                        size: kMusicAlbumDetailCoverSize,
-                      ),
-                    ),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 420),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        spacing: tokens.spacing.gap * 0.5,
-                        children: <Widget>[
-                          Text(
-                            album.title,
-                            style: context.fushiType.headlineSmall,
-                          ),
-                          Text(
-                            <String>[
-                              album.artist ?? t.music_artist_unknown,
-                              if (album.year != null) '${album.year}',
-                              t.music_tracks_count(count: tracks.length),
-                              widget.browser.displayName,
-                            ].join(' · '),
-                            style: context.fushiType.bodyMedium,
-                          ),
-                          Wrap(
-                            spacing: tokens.spacing.gap,
-                            runSpacing: tokens.spacing.gap,
-                            children: <Widget>[
-                              FushiPressScale(
-                                child: FushiFilledButton.icon(
-                                  size: FushiButtonSize.m,
-                                  key: const ValueKey<String>(
-                                    'music_server_album_play',
-                                  ),
-                                  onPressed: tracks.isEmpty
-                                      ? null
-                                      : () => _play(tracks),
-                                  icon: const FushiIcon(FushiIcons.play),
-                                  label: Text(t.music_play_all),
-                                ),
-                              ),
-                              FushiPressScale(
-                                child: FushiFilledButton.tonalIcon(
-                                  size: FushiButtonSize.m,
-                                  onPressed: tracks.isEmpty
-                                      ? null
-                                      : () => _play(tracks, shuffle: true),
-                                  icon: const FushiIcon(FushiIcons.shuffle),
-                                  label: Text(t.music_shuffle_play),
-                                ),
-                              ),
-                              ...appleMusicCollectionActions(
-                                context,
-                                ref,
-                                widget.browser,
-                                album: album,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
+              final String? cover = widget.browser
+                  .coverUri(album.coverRef)
+                  ?.toString();
+              final String meta = <String>[
+                album.artist ?? t.music_artist_unknown,
+                if (album.year != null) '${album.year}',
+                t.music_tracks_count(count: tracks.length),
+                widget.browser.displayName,
+              ].join(' · ');
+              final List<Widget> actions = <Widget>[
+                FushiPressScale(
+                  child: FushiFilledButton.icon(
+                    size: FushiButtonSize.m,
+                    key: const ValueKey<String>('music_server_album_play'),
+                    onPressed: tracks.isEmpty ? null : () => _play(tracks),
+                    icon: const FushiIcon(FushiIcons.play),
+                    label: Text(t.music_play_all),
+                  ),
                 ),
-                for (int i = 0; i < tracks.length; i++)
+                FushiPressScale(
+                  child: FushiFilledButton.tonalIcon(
+                    size: FushiButtonSize.m,
+                    onPressed: tracks.isEmpty
+                        ? null
+                        : () => _play(tracks, shuffle: true),
+                    icon: const FushiIcon(FushiIcons.shuffle),
+                    label: Text(t.music_shuffle_play),
+                  ),
+                ),
+                ...appleMusicCollectionActions(
+                  context,
+                  ref,
+                  widget.browser,
+                  album: album,
+                ),
+                // Jellyfin / Subsonic：整张专辑加入 / 移出音乐库、离线下载（状态按钮）。
+                if (musicServerKindStorable(widget.browser.kind))
+                  MusicServerCollectionButtons(
+                    key: const ValueKey<String>(
+                      'music-server-album-collection',
+                    ),
+                    db: musicServerDatabaseOf(context),
+                    browser: widget.browser,
+                    tracks: tracks,
+                    title: album.title,
+                    scope: 'album',
+                    scopeId: album.id,
+                    album: album,
+                    albumTitleOf: (_) => album.title,
+                  ),
+                if (musicServerCanInstantMix(widget.browser))
+                  FushiPressScale(
+                    child: FushiFilledButton.tonalIcon(
+                      key: const ValueKey<String>(
+                        'music_server_album_instant_mix',
+                      ),
+                      size: FushiButtonSize.m,
+                      onPressed: () => unawaited(
+                        playMusicServerInstantMix(
+                          context,
+                          widget.browser,
+                          MusicServerItemKind.album,
+                          album.id,
+                        ),
+                      ),
+                      icon: const FushiIcon(FushiIcons.cast),
+                      label: Text(t.music_server_instant_mix),
+                    ),
+                  ),
+                MusicServerFavoriteButton(
+                  browser: widget.browser,
+                  kind: MusicServerItemKind.album,
+                  id: album.id,
+                  reported: album.favorite,
+                ),
+                // 整张专辑生成日语字幕（Jellyfin / Subsonic）：逐首从服务器取音频再开面板。
+                if (musicSubtitleGenerationSupported() &&
+                    musicServerKindStorable(widget.browser.kind))
+                  FushiPressScale(
+                    child: FushiFilledButton.tonalIcon(
+                      size: FushiButtonSize.m,
+                      key: const ValueKey<String>(
+                        'music_server_album_generate_subtitles',
+                      ),
+                      onPressed: tracks.isEmpty
+                          ? null
+                          : () => unawaited(
+                              openMusicServerSubtitleGenerateSheet(
+                                context: context,
+                                appModel: ref.read(appProvider),
+                                items: musicServerPlayItems(
+                                  ref,
+                                  widget.browser,
+                                  tracks,
+                                  album: album,
+                                ),
+                                title: album.title,
+                                key:
+                                    'music:server-album:${widget.browser.serverId}:${album.id}',
+                              ),
+                            ),
+                      icon: const FushiIcon(FushiIcons.subtitles),
+                      label: Text(t.music_subtitle_generate_album),
+                    ),
+                  ),
+              ];
+              Widget tile(int i, {FushiCoverBlockSize? block}) =>
                   MusicServerTrackTile(
                     key: ValueKey<String>('music-server-track-${tracks[i].id}'),
                     browser: widget.browser,
@@ -822,14 +1564,74 @@ class _MusicServerAlbumPageState extends ConsumerState<MusicServerAlbumPage> {
                     onPlay: (int i) => _play(tracks, start: i),
                     leading: MusicServerTrackLeading.trackNo,
                     hideArtist: album.artist,
+                    block: block,
+                  );
+              final List<Widget> children = <Widget>[
+                MusicDetailHero(
+                  title: album.title,
+                  coverPath: cover,
+                  eyebrow: t.music_section_albums,
+                  meta: meta,
+                  actions: actions,
+                  legacy: Wrap(
+                    spacing: tokens.spacing.section,
+                    runSpacing: tokens.spacing.gap,
+                    crossAxisAlignment: WrapCrossAlignment.end,
+                    children: <Widget>[
+                      musicAlbumDetailCover(
+                        MusicCover(
+                          coverPath: cover,
+                          size: kMusicAlbumDetailCoverSize,
+                        ),
+                      ),
+                      ConstrainedBox(
+                        constraints: const BoxConstraints(maxWidth: 420),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          mainAxisSize: MainAxisSize.min,
+                          spacing: tokens.spacing.gap * 0.5,
+                          children: <Widget>[
+                            Text(
+                              album.title,
+                              style: context.fushiType.headlineSmall,
+                            ),
+                            Text(meta, style: context.fushiType.bodyMedium),
+                            Wrap(
+                              spacing: tokens.spacing.gap,
+                              runSpacing: tokens.spacing.gap,
+                              children: actions,
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
                   ),
+                ),
+                for (int i = 0; i < tracks.length; i++) tile(i),
               ];
+              final double heroGap = musicDetailHeroGap(
+                context,
+                tokens.spacing.gap,
+              );
+              if (musicCoverBlocksActive(context, style)) {
+                return MusicStyledCollection(
+                  style: style,
+                  itemCount: tracks.length,
+                  padding: musicBrowsePagePadding(context),
+                  header: children.first,
+                  headerGap: heroGap,
+                  rowBuilder: (BuildContext context, int i) => tile(i),
+                  blockBuilder:
+                      (BuildContext context, int i, FushiCoverBlockSize size) =>
+                          tile(i, block: size),
+                );
+              }
               return FushiEntranceScope(
                 child: ListView.separated(
                   padding: musicBrowsePagePadding(context),
                   itemCount: children.length,
                   separatorBuilder: (_, int i) =>
-                      SizedBox(height: i == 0 ? tokens.spacing.gap : 0),
+                      SizedBox(height: i == 0 ? heroGap : 0),
                   itemBuilder: fushiStaggeredItemBuilder(
                     (BuildContext context, int i) => children[i],
                   ),
@@ -888,140 +1690,138 @@ class _MusicServerSearchPageState extends ConsumerState<MusicServerSearchPage> {
     return musicBrowseScaffold(
       context,
       title: t.music_server_search,
-      body: Builder(
-        builder: (BuildContext context) => ListView(
-          padding: musicBrowsePagePadding(context),
-          children: <Widget>[
-            FushiSearchField(
-              controller: _controller,
-              focusNode: _focus,
-              autofocus: true,
-              hintText: t.music_server_search_hint,
-              onChanged: (_) {},
-              onSubmitted: _submit,
-            ),
-            SizedBox(height: tokens.spacing.gap),
-            if (_result != null)
-              FutureBuilder<MusicServerSearchResult>(
-                future: _result,
-                builder:
-                    (
-                      BuildContext context,
-                      AsyncSnapshot<MusicServerSearchResult> snap,
-                    ) {
-                      if (snap.hasError) {
-                        return musicBrowseErrorView(
-                          context,
-                          snap.error!,
-                          () => _submit(_controller.text),
-                        );
-                      }
-                      final MusicServerSearchResult? r = snap.data;
-                      if (r == null) return const FushiLoadingView();
-                      if (r.isEmpty) {
-                        return FushiPlaceholderMessage(
-                          icon: FushiIcons.searchOff,
-                          message: t.music_server_search_empty,
-                        );
-                      }
-                      return FushiEntranceScope(
-                        child: Column(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          spacing: tokens.spacing.gap,
-                          children: <Widget>[
-                            if (r.albums.isNotEmpty) ...<Widget>[
-                              FushiSectionTitle(t.music_section_albums),
-                              SizedBox(
-                                height: 220,
-                                // 桌面端默认 dragDevices 不含鼠标：专辑横排要鼠标也拖得动。
-                                child: HorizontalDragScrollable(
-                                  child: ListView.separated(
-                                    scrollDirection: Axis.horizontal,
-                                    itemCount: r.albums.length,
-                                    separatorBuilder: (_, _) =>
-                                        SizedBox(width: tokens.spacing.gap),
-                                    itemBuilder: fushiStaggeredItemBuilder(
-                                      (BuildContext context, int i) => SizedBox(
-                                        width: 160,
-                                        child: MusicServerAlbumCard(
-                                          browser: widget.browser,
-                                          album: r.albums[i],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                            if (r.playlists.isNotEmpty) ...<Widget>[
-                              FushiSectionTitle(t.music_section_playlists),
-                              SizedBox(
-                                height: 220,
-                                child: HorizontalDragScrollable(
-                                  child: ListView.separated(
-                                    scrollDirection: Axis.horizontal,
-                                    itemCount: r.playlists.length,
-                                    separatorBuilder: (_, _) =>
-                                        SizedBox(width: tokens.spacing.gap),
-                                    itemBuilder: fushiStaggeredItemBuilder(
-                                      (BuildContext context, int i) => SizedBox(
-                                        width: 160,
-                                        child: MusicServerPlaylistCard(
-                                          browser: widget.browser,
-                                          playlist: r.playlists[i],
-                                        ),
-                                      ),
-                                    ),
-                                  ),
-                                ),
-                              ),
-                            ],
-                            if (_stations
-                                case final Future<List<AppleMusicStation>>
-                                    stations)
-                              AppleMusicStationsFutureRow(
-                                catalog:
-                                    widget.browser as AppleMusicCatalogClient,
-                                stations: stations,
-                              ),
-                            if (r.tracks.isNotEmpty) ...<Widget>[
-                              FushiSectionTitle(t.music_section_songs),
-                              for (int i = 0; i < r.tracks.length; i++)
-                                MusicServerTrackTile(
-                                  browser: widget.browser,
-                                  tracks: r.tracks,
-                                  index: i,
-                                  showAlbum: true,
-                                  onPlay: (int i) => unawaited(
-                                    ref
-                                        .read(appProvider)
-                                        .musicSession
-                                        .engine
-                                        .playQueue(
-                                          musicServerPlayItems(
-                                            ref,
-                                            widget.browser,
-                                            r.tracks,
-                                          ),
-                                          startIndex: i,
-                                        ),
-                                  ),
-                                ),
-                            ],
-                            if (r.artists.isNotEmpty) ...<Widget>[
-                              FushiSectionTitle(t.music_section_artists),
-                              _ArtistColumn(
-                                browser: widget.browser,
-                                artists: r.artists,
-                              ),
-                            ],
-                          ],
-                        ),
+      body: (BuildContext context) => ListView(
+        padding: musicBrowsePagePadding(context),
+        children: <Widget>[
+          FushiSearchField(
+            controller: _controller,
+            focusNode: _focus,
+            autofocus: true,
+            hintText: t.music_server_search_hint,
+            onChanged: (_) {},
+            onSubmitted: _submit,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          if (_result != null)
+            FutureBuilder<MusicServerSearchResult>(
+              future: _result,
+              builder:
+                  (
+                    BuildContext context,
+                    AsyncSnapshot<MusicServerSearchResult> snap,
+                  ) {
+                    if (snap.hasError) {
+                      return musicBrowseErrorView(
+                        context,
+                        snap.error!,
+                        () => _submit(_controller.text),
                       );
-                    },
-              ),
-          ],
-        ),
+                    }
+                    final MusicServerSearchResult? r = snap.data;
+                    if (r == null) return const FushiLoadingView();
+                    if (r.isEmpty) {
+                      return FushiPlaceholderMessage(
+                        icon: FushiIcons.searchOff,
+                        message: t.music_server_search_empty,
+                      );
+                    }
+                    return FushiEntranceScope(
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.stretch,
+                        spacing: tokens.spacing.gap,
+                        children: <Widget>[
+                          if (r.albums.isNotEmpty) ...<Widget>[
+                            FushiSectionTitle(t.music_section_albums),
+                            SizedBox(
+                              height: musicShelfRowHeight(context),
+                              // 桌面端默认 dragDevices 不含鼠标：专辑横排要鼠标也拖得动。
+                              child: HorizontalDragScrollable(
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: r.albums.length,
+                                  separatorBuilder: (_, _) =>
+                                      SizedBox(width: tokens.spacing.gap),
+                                  itemBuilder: fushiStaggeredItemBuilder(
+                                    (BuildContext context, int i) => SizedBox(
+                                      width: kMusicShelfCardWidth,
+                                      child: MusicServerAlbumCard(
+                                        browser: widget.browser,
+                                        album: r.albums[i],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (r.playlists.isNotEmpty) ...<Widget>[
+                            FushiSectionTitle(t.music_section_playlists),
+                            SizedBox(
+                              height: musicShelfRowHeight(context),
+                              child: HorizontalDragScrollable(
+                                child: ListView.separated(
+                                  scrollDirection: Axis.horizontal,
+                                  itemCount: r.playlists.length,
+                                  separatorBuilder: (_, _) =>
+                                      SizedBox(width: tokens.spacing.gap),
+                                  itemBuilder: fushiStaggeredItemBuilder(
+                                    (BuildContext context, int i) => SizedBox(
+                                      width: kMusicShelfCardWidth,
+                                      child: MusicServerPlaylistCard(
+                                        browser: widget.browser,
+                                        playlist: r.playlists[i],
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ),
+                          ],
+                          if (_stations
+                              case final Future<List<AppleMusicStation>>
+                                  stations)
+                            AppleMusicStationsFutureRow(
+                              catalog:
+                                  widget.browser as AppleMusicCatalogClient,
+                              stations: stations,
+                            ),
+                          if (r.tracks.isNotEmpty) ...<Widget>[
+                            FushiSectionTitle(t.music_section_songs),
+                            for (int i = 0; i < r.tracks.length; i++)
+                              MusicServerTrackTile(
+                                browser: widget.browser,
+                                tracks: r.tracks,
+                                index: i,
+                                showAlbum: true,
+                                onPlay: (int i) => unawaited(
+                                  ref
+                                      .read(appProvider)
+                                      .musicSession
+                                      .engine
+                                      .playQueue(
+                                        musicServerPlayItems(
+                                          ref,
+                                          widget.browser,
+                                          r.tracks,
+                                        ),
+                                        startIndex: i,
+                                      ),
+                                ),
+                              ),
+                          ],
+                          if (r.artists.isNotEmpty) ...<Widget>[
+                            FushiSectionTitle(t.music_section_artists),
+                            _ArtistColumn(
+                              browser: widget.browser,
+                              artists: r.artists,
+                            ),
+                          ],
+                        ],
+                      ),
+                    );
+                  },
+            ),
+        ],
       ),
     );
   }
@@ -1037,10 +1837,10 @@ class _ArtistColumn extends StatelessWidget {
   Widget build(BuildContext context) => Column(
     children: <Widget>[
       for (int i = 0; i < artists.length; i++)
-        FushiPressScale(
-          child: FushiGroupedListItem(
-            index: i,
-            count: artists.length,
+        if (musicTrackRowSurfaceActive(context))
+          MusicTrackRowSurface(
+            title: artists[i].name,
+            leading: const FushiListLeadingIcon(FushiIcons.person),
             onTap: () => unawaited(
               Navigator.of(context).push<void>(
                 adaptivePageRoute<void>(
@@ -1052,13 +1852,31 @@ class _ArtistColumn extends StatelessWidget {
                 ),
               ),
             ),
-            child: FushiListItem(
-              leading: const FushiListLeadingIcon(FushiIcons.person),
-              title: Text(artists[i].name),
-              trailing: const FushiIcon(FushiIcons.chevronRight),
+            trailing: const <Widget>[FushiIcon(FushiIcons.chevronRight)],
+          )
+        else
+          FushiPressScale(
+            child: FushiGroupedListItem(
+              index: i,
+              count: artists.length,
+              onTap: () => unawaited(
+                Navigator.of(context).push<void>(
+                  adaptivePageRoute<void>(
+                    context: context,
+                    builder: (_) => MusicServerArtistPage(
+                      browser: browser,
+                      artist: artists[i],
+                    ),
+                  ),
+                ),
+              ),
+              child: FushiListItem(
+                leading: const FushiListLeadingIcon(FushiIcons.person),
+                title: Text(artists[i].name),
+                trailing: const FushiIcon(FushiIcons.chevronRight),
+              ),
             ),
           ),
-        ),
     ],
   );
 }
@@ -1079,15 +1897,24 @@ class MusicServerTrackTile extends StatelessWidget {
     this.leading = MusicServerTrackLeading.icon,
     this.hideArtist,
     this.showAlbum = false,
+    this.block,
+    this.separator,
   });
 
   final MusicServerBrowser browser;
   final List<MusicServerTrack> tracks;
   final int index;
+
+  /// Cupertino 行底细线；null = 不是 [tracks] 最后一首就画（分页列按列传）。
+  final bool? separator;
   final void Function(int index) onPlay;
   final MusicServerTrackLeading leading;
   final String? hideArtist;
   final bool showAlbum;
+
+  /// 非 null（且重设计外壳生效）时这首画成歌单详情网格里的一格封面色块
+  /// （[MusicTrackBlock]），值是这一格的尺寸档；null = 曲目行。
+  final FushiCoverBlockSize? block;
 
   @override
   Widget build(BuildContext context) {
@@ -1096,7 +1923,90 @@ class MusicServerTrackTile extends StatelessWidget {
       if (track.artist != null && track.artist != hideArtist) track.artist!,
       if (showAlbum && track.album != null) track.album!,
     ].join(' · ');
-    final MusicItemMenu? menu = appleMusicTrackMenu(context, browser, track);
+    final MusicItemMenu? menu =
+        appleMusicTrackMenu(context, browser, track) ??
+        musicServerTrackMenu(context, browser, track) ??
+        musicServerTrackLibraryMenu(context, browser, track);
+    final FushiCoverBlockSize? blockSize = block;
+    if (blockSize == null && isGlassDesign(context)) {
+      return musicWithContextMenu(
+        menu,
+        MusicNowPlayingTrack(
+          trackUid: musicServerTrackUid(browser.serverId, track.id),
+          builder: (BuildContext context, bool playing) => AppleMusicSongRow(
+            key: ValueKey<String>('music-server-track-${track.id}'),
+            title: track.title,
+            subtitle: subtitle,
+            cover: browser.coverUri(track.coverRef)?.toString(),
+            playing: playing,
+            separator: separator ?? index < tracks.length - 1,
+            ordinal: switch (leading) {
+              MusicServerTrackLeading.icon => null,
+              MusicServerTrackLeading.position => '${index + 1}',
+              MusicServerTrackLeading.trackNo =>
+                track.trackNo?.toString() ?? '',
+            },
+            badges: <Widget>[
+              if (musicServerPreviewOnly(browser)) const MusicPreviewBadge(),
+              MusicServerTrackDownloadBadge(browser: browser, track: track),
+              MusicServerFavoriteBadge(browser: browser, track: track),
+            ],
+            durationText: formatMusicDuration(track.durationMs),
+            onTap: () => onPlay(index),
+            trailing: <Widget>[?menu?.button()],
+          ),
+        ),
+      );
+    }
+    if (blockSize != null && musicTrackRowSurfaceActive(context)) {
+      return musicWithContextMenu(
+        menu,
+        MusicNowPlayingTrack(
+          trackUid: musicServerTrackUid(browser.serverId, track.id),
+          builder: (BuildContext context, bool playing) => MusicTrackBlock(
+            size: blockSize,
+            title: track.title,
+            subtitle: subtitle,
+            coverPath: browser.coverUri(track.coverRef)?.toString(),
+            durationText: formatMusicDuration(track.durationMs),
+            playing: playing,
+            onTap: () => onPlay(index),
+            menu: menu,
+          ),
+        ),
+      );
+    }
+    if (musicTrackRowSurfaceActive(context)) {
+      return musicWithContextMenu(
+        menu,
+        MusicNowPlayingTrack(
+          trackUid: musicServerTrackUid(browser.serverId, track.id),
+          builder: (BuildContext context, bool playing) => MusicTrackRowSurface(
+            title: track.title,
+            subtitle: subtitle,
+            ordinal: switch (leading) {
+              MusicServerTrackLeading.icon => null,
+              MusicServerTrackLeading.position => '${index + 1}',
+              MusicServerTrackLeading.trackNo =>
+                track.trackNo?.toString() ?? '',
+            },
+            leading: leading == MusicServerTrackLeading.icon
+                ? const FushiListLeadingIcon(FushiIcons.music)
+                : null,
+            coverPath: browser.coverUri(track.coverRef)?.toString(),
+            badges: <Widget>[
+              if (musicServerPreviewOnly(browser)) const MusicPreviewBadge(),
+              MusicServerTrackDownloadBadge(browser: browser, track: track),
+              MusicServerFavoriteBadge(browser: browser, track: track),
+            ],
+            durationText: formatMusicDuration(track.durationMs),
+            playing: playing,
+            onTap: () => onPlay(index),
+            trailing: <Widget>[?menu?.button()],
+          ),
+        ),
+      );
+    }
     return musicWithContextMenu(
       menu,
       FushiPressScale(
@@ -1132,6 +2042,25 @@ class MusicServerTrackTile extends StatelessWidget {
             trailing: Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[
+                if (musicServerPreviewOnly(browser))
+                  const Padding(
+                    padding: EdgeInsetsDirectional.only(end: 8),
+                    child: MusicPreviewBadge(),
+                  ),
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 8),
+                  child: MusicServerTrackDownloadBadge(
+                    browser: browser,
+                    track: track,
+                  ),
+                ),
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(end: 8),
+                  child: MusicServerFavoriteBadge(
+                    browser: browser,
+                    track: track,
+                  ),
+                ),
                 Text(
                   formatMusicDuration(track.durationMs),
                   style: context.fushiType.bodySmall,
@@ -1146,42 +2075,164 @@ class MusicServerTrackTile extends StatelessWidget {
   }
 }
 
+/// 服务器上收藏了的曲目行尾的小心形（随 [MusicServerFavoriteStore] 刷新；没收藏 / 服务器
+/// 不能收藏时不占位）。
+class MusicServerFavoriteBadge extends StatelessWidget {
+  const MusicServerFavoriteBadge({
+    super.key,
+    required this.browser,
+    required this.track,
+  });
+
+  final MusicServerBrowser browser;
+  final MusicServerTrack track;
+
+  @override
+  Widget build(BuildContext context) {
+    if (!musicServerCanFavorite(browser)) return const SizedBox.shrink();
+    final MusicServerFavoriteStore store = MusicServerFavoriteStore.instance;
+    return ListenableBuilder(
+      listenable: store,
+      builder: (BuildContext context, Widget? _) =>
+          store.isFavorite(
+            browser,
+            MusicServerItemKind.track,
+            track.id,
+            reported: track.favorite,
+          )
+          ? Semantics(
+              label: t.music_server_section_favorites,
+              child: FushiIcon(
+                musicServerFavoriteIcon(true),
+                key: ValueKey<String>('music-server-track-fav-${track.id}'),
+                size: 16,
+              ),
+            )
+          : const SizedBox.shrink(),
+    );
+  }
+}
+
 /// 服务器歌单卡（与专辑卡同一套「唱片」几何，副行是作者 / 曲目数）。
+///
+/// 歌单的「色块 / 列表」样式：[block] 非 null 画成封面色块，[row] 画成单列行
+/// （封面、歌单名、作者 · 曲目数）；都没给是原有的唱片网格卡。
 class MusicServerPlaylistCard extends StatelessWidget {
   const MusicServerPlaylistCard({
     super.key,
     required this.browser,
     required this.playlist,
+    this.onChanged,
+    this.block,
+    this.row = false,
   });
 
   final MusicServerBrowser browser;
   final MusicServerPlaylist playlist;
 
+  /// 打开的歌单页里改了歌单（改名 / 删除 / 曲目）时调用。
+  final VoidCallback? onChanged;
+
+  /// 非 null = 封面色块（色块样式，色块布局下）。
+  final FushiCoverBlockSize? block;
+
+  /// 单列行（列表样式）。
+  final bool row;
+
+  void _open(BuildContext context) => unawaited(
+    Navigator.of(context).push<void>(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => MusicServerPlaylistPage(
+          browser: browser,
+          playlist: playlist,
+          onChanged: onChanged,
+        ),
+      ),
+    ),
+  );
+
   @override
   Widget build(BuildContext context) {
+    final String subtitle = <String>[
+      ?playlist.curator,
+      if (playlist.trackCount != null)
+        t.music_tracks_count(count: playlist.trackCount!),
+    ].join(' · ');
+    final String? cover = browser.coverUri(playlist.coverRef)?.toString();
+    final FushiCoverBlockSize? blockSize = block;
+    if (blockSize == null && isGlassDesign(context)) {
+      return Semantics(
+        label: browser.displayName,
+        child: row
+            ? AppleMusicEntityRow(
+                title: playlist.title,
+                subtitle: subtitle,
+                cover: cover,
+                badges: <Widget>[
+                  if (musicServerPreviewOnly(browser))
+                    const MusicPreviewBadge(),
+                ],
+                onTap: () => _open(context),
+              )
+            : AppleMusicAutoCoverTile(
+                key: ValueKey<String>(
+                  'music-server-playlist-meta-${playlist.id}',
+                ),
+                title: playlist.title,
+                subtitle: subtitle,
+                cover: cover,
+                subtitleTrailing: musicServerPreviewOnly(browser)
+                    ? const MusicPreviewBadge()
+                    : null,
+                onTap: () => _open(context),
+              ),
+      );
+    }
+    if (row) {
+      return Semantics(
+        label: browser.displayName,
+        child: MusicCollectionRow(
+          title: playlist.title,
+          subtitle: subtitle,
+          coverPath: cover,
+          badges: <Widget>[
+            if (musicServerPreviewOnly(browser)) const MusicPreviewBadge(),
+          ],
+          onTap: () => _open(context),
+        ),
+      );
+    }
+    if (blockSize != null) {
+      return Semantics(
+        label: browser.displayName,
+        child: MusicCollectionBlock(
+          size: blockSize,
+          metaKey: ValueKey<String>(
+            'music-server-playlist-meta-${playlist.id}',
+          ),
+          title: playlist.title,
+          subtitle: subtitle,
+          coverPath: cover,
+          leadingIcon: FushiIcons.playlist,
+          trailing: musicServerPreviewOnly(browser)
+              ? const MusicPreviewBadge()
+              : null,
+          onTap: () => _open(context),
+        ),
+      );
+    }
     return FushiHoverLift(
       scale: kMusicHoverLiftScale,
       builder: (BuildContext context, bool _) => shelfCoverCard(
-        onTap: () => unawaited(
-          Navigator.of(context).push<void>(
-            adaptivePageRoute<void>(
-              context: context,
-              builder: (_) =>
-                  MusicServerPlaylistPage(browser: browser, playlist: playlist),
-            ),
-          ),
-        ),
+        onTap: () => _open(context),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
             AspectRatio(
               aspectRatio: kShelfAlbumAspectRatio,
-              child: ShelfCoverFrame(
-                child: MusicCover(
-                  coverPath: browser.coverUri(playlist.coverRef)?.toString(),
-                ),
-              ),
+              child: ShelfCoverFrame(child: MusicCover(coverPath: cover)),
             ),
             Semantics(
               label: browser.displayName,
@@ -1191,11 +2242,10 @@ class MusicServerPlaylistCard extends StatelessWidget {
                 ),
                 title: playlist.title,
                 leadingIcon: FushiIcons.playlist,
-                subtitle: <String>[
-                  ?playlist.curator,
-                  if (playlist.trackCount != null)
-                    t.music_tracks_count(count: playlist.trackCount!),
-                ].join(' · '),
+                subtitle: subtitle,
+                trailing: musicServerPreviewOnly(browser)
+                    ? const MusicPreviewBadge()
+                    : null,
               ),
             ),
           ],
@@ -1208,9 +2258,16 @@ class MusicServerPlaylistCard extends StatelessWidget {
 /// 「歌单」分区：一台服务器的歌单网格（按服务器分页往下翻）。Apple Music 资料库在顶部多一个
 /// 「新建歌单」。
 class MusicServerPlaylistsView extends StatefulWidget {
-  const MusicServerPlaylistsView({super.key, required this.browser});
+  const MusicServerPlaylistsView({
+    super.key,
+    required this.browser,
+    this.style = MusicViewStyle.blocks,
+  });
 
   final MusicServerBrowser browser;
+
+  /// 色块（封面网格布局下是原有的唱片网格卡）/ 单列行。
+  final MusicViewStyle style;
 
   @override
   State<MusicServerPlaylistsView> createState() =>
@@ -1275,11 +2332,17 @@ class _MusicServerPlaylistsViewState extends State<MusicServerPlaylistsView> {
     if (_items.isEmpty && (_loading || _next != null)) {
       return const FushiLoadingView();
     }
-    final Widget? create = appleMusicCreatePlaylistButton(
-      context,
-      widget.browser,
-      onCreated: _reload,
-    );
+    final Widget? create =
+        appleMusicCreatePlaylistButton(
+          context,
+          widget.browser,
+          onCreated: _reload,
+        ) ??
+        _serverCreatePlaylistButton(
+          context,
+          widget.browser,
+          onCreated: _reload,
+        );
     if (_items.isEmpty) {
       return Center(
         child: FushiPlaceholderMessage(
@@ -1289,78 +2352,156 @@ class _MusicServerPlaylistsViewState extends State<MusicServerPlaylistsView> {
         ),
       );
     }
-    final EdgeInsets padding = musicBrowsePagePadding(context);
+    MusicServerPlaylistCard card(
+      int i, {
+      FushiCoverBlockSize? block,
+      bool row = false,
+    }) => MusicServerPlaylistCard(
+      key: ValueKey<String>('music-server-playlist-${_items[i].id}'),
+      browser: widget.browser,
+      playlist: _items[i],
+      onChanged: _reload,
+      block: block,
+      row: row,
+    );
+    final Widget? header = create == null
+        ? null
+        : Align(alignment: AlignmentDirectional.centerStart, child: create);
     return NotificationListener<ScrollNotification>(
       onNotification: (ScrollNotification n) {
         if (n.metrics.extentAfter < 600) unawaited(_loadMore());
         return false;
       },
-      child: ShelfCoverMaterialScope(
-        material: ShelfCoverMaterial.glossyAlbum,
-        child: FushiEntranceScope(
-          child: LayoutBuilder(
-            builder: (BuildContext context, BoxConstraints constraints) =>
-                CustomScrollView(
-                  slivers: <Widget>[
-                    if (create != null)
-                      SliverPadding(
-                        padding: EdgeInsets.fromLTRB(
-                          padding.left,
-                          padding.top,
-                          padding.right,
-                          tokens.spacing.gap,
-                        ),
-                        sliver: SliverToBoxAdapter(
-                          child: Align(
-                            alignment: Alignment.centerLeft,
-                            child: create,
-                          ),
-                        ),
-                      ),
-                    SliverPadding(
-                      padding: create == null
-                          ? padding
-                          : padding.copyWith(top: 0),
-                      sliver: SliverGrid.builder(
-                        gridDelegate: musicAlbumGridDelegate(
-                          context,
-                          constraints.maxWidth,
-                        ),
-                        itemCount: _items.length,
-                        itemBuilder: fushiStaggeredItemBuilder((
-                          BuildContext context,
-                          int i,
-                        ) {
-                          final MusicServerPlaylist p = _items[i];
-                          return MusicServerPlaylistCard(
-                            key: ValueKey<String>(
-                              'music-server-playlist-${p.id}',
-                            ),
-                            browser: widget.browser,
-                            playlist: p,
-                          );
-                        }),
-                      ),
-                    ),
-                  ],
-                ),
-          ),
-        ),
-      ),
+      child: isGlassDesign(context)
+          // Cupertino：平封面网格（卡片自己画 Apple 版）。
+          ? AppleMusicCollectionView(
+              itemCount: _items.length,
+              header: header,
+              tileBuilder: (BuildContext context, int i) => card(i),
+              rowBuilder: (BuildContext context, int i) => card(i, row: true),
+            )
+          : MusicStyledCollection(
+              style: widget.style,
+              itemCount: _items.length,
+              padding: musicBrowsePagePadding(context),
+              header: header,
+              headerGap: tokens.spacing.gap,
+              gridMaterial: ShelfCoverMaterial.glossyAlbum,
+              gridDelegate: musicAlbumGridDelegate,
+              gridCardBuilder: (BuildContext context, int i) => card(i),
+              blockBuilder:
+                  (BuildContext context, int i, FushiCoverBlockSize size) =>
+                      card(i, block: size),
+              rowBuilder: (BuildContext context, int i) => card(i, row: true),
+            ),
     );
   }
 }
 
-/// 一个服务器歌单：封面、简介、整单播放 / 随机、曲目表（歌单顺序）。
+/// 能改歌单的服务器（Jellyfin / Emby）曲目的菜单：加入服务器歌单（含新建），以及加入 /
+/// 移出本机音乐库、加入本地歌单（v149，[musicServerTrackLibraryActions]）。Apple Music 走
+/// 自己的菜单（[appleMusicTrackMenu]），不能改歌单的来源回 null（由
+/// [musicServerTrackLibraryMenu] 出入库菜单）。
+MusicItemMenu? musicServerTrackMenu(
+  BuildContext context,
+  MusicServerBrowser browser,
+  MusicServerTrack track, {
+  String? albumTitle,
+}) {
+  final MusicServerPlaylistEditor? editor = MusicServerPlaylistEditor.of(
+    browser,
+  );
+  if (editor == null) return null;
+  final AppModel app = ProviderScope.containerOf(
+    context,
+    listen: false,
+  ).read(appProvider);
+  return MusicItemMenu(
+    buttonKey: ValueKey<String>('music-server-track-menu-${track.id}'),
+    open: (MusicMenuAnchor? anchor) => unawaited(() async {
+      // 右键坐标只在同步派发期间可读：第一个 await 之前取好。
+      final MusicMenuAnchor? at = anchor ?? musicContextMenuAnchor();
+      final List<MusicMenuAction> library = app.isDatabaseReady
+          ? await musicServerTrackLibraryActions(
+              app.database,
+              browser,
+              track,
+              albumTitle: albumTitle,
+              playlistLabel: t.music_action_add_to_local_playlist,
+              downloads: musicServerDownloadServiceOf(
+                context,
+                app.database,
+                browser,
+              ),
+            )
+          : const <MusicMenuAction>[];
+      if (!context.mounted) return;
+      await showMusicActionMenu(
+        context,
+        anchor: at,
+        errorText: musicPlaylistErrorText,
+        actions: <MusicMenuAction>[
+          MusicMenuAction(
+            id: 'addToPlaylist',
+            label: t.music_action_add_to_playlist,
+            icon: FushiIcons.playlist,
+            run: (BuildContext c) =>
+                musicAddToPlaylist(c, editor, <String>[track.id]),
+          ),
+          ...musicServerItemActions(
+            browser,
+            MusicServerItemKind.track,
+            track.id,
+            reportedFavorite: track.favorite,
+          ),
+          ...library,
+          ...musicServerSubtitleMenuActions(
+            app,
+            browser,
+            track,
+            albumTitle: albumTitle,
+          ),
+        ],
+      );
+    }()),
+  );
+}
+
+/// 「歌单」分区顶部的「新建歌单」（能改歌单的服务器）；其它来源回 null。
+Widget? _serverCreatePlaylistButton(
+  BuildContext context,
+  MusicServerBrowser browser, {
+  required VoidCallback onCreated,
+}) {
+  final MusicServerPlaylistEditor? editor = MusicServerPlaylistEditor.of(
+    browser,
+  );
+  if (editor == null) return null;
+  return musicCreatePlaylistButton(
+    context,
+    editor,
+    key: const ValueKey<String>('music-server-new-playlist'),
+    onCreated: onCreated,
+    errorText: musicPlaylistErrorText,
+  );
+}
+
+/// 一个服务器歌单：封面、简介、整单播放 / 随机、曲目表（歌单顺序）。能改歌单的服务器
+/// （Jellyfin / Emby）且歌单可改时，曲目可拖拽重排、可从歌单移除，并能改名 / 删除；
+/// 这类服务器都能导出 `.m3u8`（只收服务器报了文件路径的曲目）。
 class MusicServerPlaylistPage extends ConsumerStatefulWidget {
   const MusicServerPlaylistPage({
     super.key,
     required this.browser,
     required this.playlist,
+    this.onChanged,
   });
 
   final MusicServerBrowser browser;
   final MusicServerPlaylist playlist;
+
+  /// 改名 / 删除 / 改了曲目之后调用（歌单网格据此重读）。
+  final VoidCallback? onChanged;
 
   @override
   ConsumerState<MusicServerPlaylistPage> createState() =>
@@ -1369,13 +2510,39 @@ class MusicServerPlaylistPage extends ConsumerStatefulWidget {
 
 class _MusicServerPlaylistPageState
     extends ConsumerState<MusicServerPlaylistPage> {
-  late Future<List<MusicServerTrack>> _tracks = widget.browser.playlistTracks(
-    widget.playlist.id,
-  );
+  List<MusicServerTrack>? _tracks;
+  Object? _error;
+  late String _title = widget.playlist.title;
 
-  void _reload() => setState(() {
-    _tracks = widget.browser.playlistTracks(widget.playlist.id);
-  });
+  /// 重读代次：晚回来的旧请求丢掉。
+  int _gen = 0;
+
+  MusicServerPlaylistEditing? get _editing =>
+      widget.browser is MusicServerPlaylistEditing
+      ? widget.browser as MusicServerPlaylistEditing
+      : null;
+
+  /// 本页能不能改这个歌单。
+  bool get _editable => _editing != null && widget.playlist.editable;
+
+  @override
+  void initState() {
+    super.initState();
+    unawaited(_reload());
+  }
+
+  Future<void> _reload() async {
+    final int gen = ++_gen;
+    setState(() => _error = null);
+    try {
+      final List<MusicServerTrack> tracks = await widget.browser.playlistTracks(
+        widget.playlist.id,
+      );
+      if (mounted && gen == _gen) setState(() => _tracks = tracks);
+    } on Object catch (e) {
+      if (mounted && gen == _gen) setState(() => _error = e);
+    }
+  }
 
   void _play(
     List<MusicServerTrack> tracks, {
@@ -1392,138 +2559,396 @@ class _MusicServerPlaylistPageState
         source: MusicPlaySource.serverPlaylist(
           widget.browser.serverId,
           p.id,
-          title: p.title,
+          title: _title,
           cover: widget.browser.coverUri(p.coverRef)?.toString(),
         ),
       ),
     );
   }
 
-  @override
-  Widget build(BuildContext context) {
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final MusicServerPlaylist p = widget.playlist;
-    return musicBrowseScaffold(
-      context,
-      title: p.title,
-      body: FutureBuilder<List<MusicServerTrack>>(
-        future: _tracks,
-        builder:
-            (BuildContext context, AsyncSnapshot<List<MusicServerTrack>> snap) {
-              if (snap.hasError) {
-                return musicBrowseErrorView(context, snap.error!, _reload);
-              }
-              final List<MusicServerTrack>? tracks = snap.data;
-              if (tracks == null) return const FushiLoadingView();
-              final List<Widget> children = <Widget>[
-                Wrap(
-                  spacing: tokens.spacing.section,
-                  runSpacing: tokens.spacing.gap,
-                  crossAxisAlignment: WrapCrossAlignment.end,
-                  children: <Widget>[
-                    musicAlbumDetailCover(
-                      MusicCover(
-                        coverPath: widget.browser
-                            .coverUri(p.coverRef)
-                            ?.toString(),
-                        size: kMusicAlbumDetailCoverSize,
-                      ),
-                    ),
-                    ConstrainedBox(
-                      constraints: const BoxConstraints(maxWidth: 420),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        mainAxisSize: MainAxisSize.min,
-                        spacing: tokens.spacing.gap * 0.5,
-                        children: <Widget>[
-                          Text(p.title, style: context.fushiType.headlineSmall),
-                          Text(
-                            <String>[
-                              if (p.curator != null)
-                                t.music_plugin_playlist_by(name: p.curator!),
-                              t.music_tracks_count(count: tracks.length),
-                              widget.browser.displayName,
-                            ].join(' · '),
-                            style: context.fushiType.bodyMedium,
-                          ),
-                          if (p.description != null)
-                            Text(
-                              p.description!,
-                              maxLines: 4,
-                              overflow: TextOverflow.ellipsis,
-                              style: context.fushiType.bodySmall,
-                            ),
-                          Wrap(
-                            spacing: tokens.spacing.gap,
-                            runSpacing: tokens.spacing.gap,
-                            children: <Widget>[
-                              FushiPressScale(
-                                child: FushiFilledButton.icon(
-                                  size: FushiButtonSize.m,
-                                  key: const ValueKey<String>(
-                                    'music_server_playlist_play',
-                                  ),
-                                  onPressed: tracks.isEmpty
-                                      ? null
-                                      : () => _play(tracks),
-                                  icon: const FushiIcon(FushiIcons.play),
-                                  label: Text(t.music_play_all),
-                                ),
-                              ),
-                              FushiPressScale(
-                                child: FushiFilledButton.tonalIcon(
-                                  size: FushiButtonSize.m,
-                                  onPressed: tracks.isEmpty
-                                      ? null
-                                      : () => _play(tracks, shuffle: true),
-                                  icon: const FushiIcon(FushiIcons.shuffle),
-                                  label: Text(t.music_shuffle_play),
-                                ),
-                              ),
-                              ...appleMusicCollectionActions(
-                                context,
-                                ref,
-                                widget.browser,
-                                playlist: p,
-                              ),
-                            ],
-                          ),
-                        ],
-                      ),
-                    ),
-                  ],
-                ),
-                if (tracks.isEmpty)
-                  FushiPlaceholderMessage(
-                    icon: FushiIcons.playlist,
-                    message: t.music_server_playlist_empty,
-                  ),
-                for (int i = 0; i < tracks.length; i++)
-                  MusicServerTrackTile(
-                    key: ValueKey<String>(
-                      'music-server-playlist-track-$i-${tracks[i].id}',
-                    ),
-                    browser: widget.browser,
-                    tracks: tracks,
-                    index: i,
-                    onPlay: (int i) => _play(tracks, start: i),
-                    leading: MusicServerTrackLeading.position,
-                    showAlbum: true,
-                  ),
-              ];
-              return FushiEntranceScope(
-                child: ListView.separated(
-                  padding: musicBrowsePagePadding(context),
-                  itemCount: children.length,
-                  separatorBuilder: (_, int i) =>
-                      SizedBox(height: i == 0 ? tokens.spacing.gap : 0),
-                  itemBuilder: fushiStaggeredItemBuilder(
-                    (BuildContext context, int i) => children[i],
-                  ),
-                ),
-              );
-            },
+  /// 改动成功后：通知网格、按服务器结果重读（条目 id 以服务器为准）。
+  void _changed() {
+    widget.onChanged?.call();
+    unawaited(_reload());
+  }
+
+  Future<void> _reorder(int from, int to) async {
+    final List<MusicServerTrack>? tracks = _tracks;
+    final MusicServerPlaylistEditing? editing = _editing;
+    if (tracks == null || editing == null || from == to) return;
+    final String? entryId = tracks[from].playlistEntryId;
+    if (entryId == null) return;
+    final List<MusicServerTrack> next = List<MusicServerTrack>.of(tracks);
+    next.insert(to, next.removeAt(from));
+    setState(() => _tracks = next);
+    try {
+      await editing.movePlaylistEntry(widget.playlist.id, entryId, to);
+    } on Object catch (e) {
+      FushiToast.show(
+        msg: musicPlaylistErrorText(e),
+        severity: ToastSeverity.error,
+      );
+    }
+    _changed();
+  }
+
+  Future<void> _remove(MusicServerTrack track) async {
+    final MusicServerPlaylistEditing? editing = _editing;
+    final String? entryId = track.playlistEntryId;
+    if (editing == null || entryId == null) return;
+    await editing.removeFromPlaylist(widget.playlist.id, <String>[entryId]);
+    FushiToast.show(
+      msg: t.music_action_removed_from_playlist(name: _title),
+      severity: ToastSeverity.success,
+    );
+    _changed();
+  }
+
+  MusicItemMenu? _rowMenu(BuildContext context, int i) {
+    final MusicServerTrack track = _tracks![i];
+    final MusicServerPlaylistEditor? editor = MusicServerPlaylistEditor.of(
+      widget.browser,
+    );
+    if (editor == null) {
+      return appleMusicTrackMenu(context, widget.browser, track);
+    }
+    return MusicItemMenu(
+      buttonKey: ValueKey<String>(
+        'music-server-playlist-row-menu-$i-${track.id}',
+      ),
+      open: (MusicMenuAnchor? anchor) => unawaited(
+        showMusicActionMenu(
+          context,
+          anchor: anchor,
+          errorText: musicPlaylistErrorText,
+          actions: <MusicMenuAction>[
+            if (_editable && track.playlistEntryId != null)
+              MusicMenuAction(
+                id: 'remove',
+                label: t.music_action_remove_from_playlist,
+                icon: FushiIcons.removeCircle,
+                run: (_) => _remove(track),
+              ),
+            MusicMenuAction(
+              id: 'addToPlaylist',
+              label: t.music_action_add_to_playlist,
+              icon: FushiIcons.playlist,
+              run: (BuildContext c) async {
+                if (await musicAddToPlaylist(c, editor, <String>[track.id])) {
+                  widget.onChanged?.call();
+                }
+              },
+            ),
+          ],
+        ),
       ),
     );
   }
+
+  List<Widget> _editActions(
+    BuildContext context,
+    List<MusicServerTrack> tracks,
+  ) {
+    final MusicServerPlaylistEditing? editing = _editing;
+    if (editing == null) return const <Widget>[];
+    return <Widget>[
+      if (_editable)
+        FushiIconButton(
+          key: const ValueKey<String>('music_server_playlist_rename'),
+          icon: FushiIcons.edit,
+          tooltip: t.music_action_rename_playlist,
+          padTouchTarget: true,
+          onTap: () async {
+            final String? name = await musicRenamePlaylist(
+              context,
+              current: _title,
+              rename: (String name) =>
+                  editing.renamePlaylist(widget.playlist.id, name),
+            );
+            if (name == null || !mounted) return;
+            setState(() => _title = name);
+            widget.onChanged?.call();
+          },
+        ),
+      FushiIconButton(
+        key: const ValueKey<String>('music_server_playlist_export'),
+        icon: FushiIcons.share,
+        tooltip: t.music_action_export_playlist,
+        padTouchTarget: true,
+        onTap: tracks.isEmpty
+            ? null
+            : () {
+                final ({List<MusicPlaylistExportItem> items, int skipped}) r =
+                    musicServerExportItems(tracks);
+                unawaited(
+                  musicExportPlaylistM3u8(
+                    name: _title,
+                    items: r.items,
+                    skipped: r.skipped,
+                  ),
+                );
+              },
+      ),
+      if (_editable)
+        FushiIconButton(
+          key: const ValueKey<String>('music_server_playlist_delete'),
+          icon: FushiIcons.delete,
+          tooltip: t.music_action_delete_playlist,
+          padTouchTarget: true,
+          onTap: () async {
+            final bool deleted = await musicDeletePlaylist(
+              context,
+              name: _title,
+              delete: () => editing.deletePlaylist(widget.playlist.id),
+            );
+            if (!deleted || !context.mounted) return;
+            widget.onChanged?.call();
+            unawaited(Navigator.of(context).maybePop());
+          },
+        ),
+    ];
+  }
+
+  @override
+  Widget build(BuildContext context) => MusicViewStyleBuilder(
+    kind: MusicViewKind.tracks,
+    fallback: MusicViewStyle.blocks,
+    builder: _buildPage,
+  );
+
+  Widget _buildPage(BuildContext context, MusicViewStyle layout) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final MusicServerPlaylist p = widget.playlist;
+    final List<MusicServerTrack>? tracks = _tracks;
+    final Object? error = _error;
+    // 不可编辑的歌单曲目区可在色块 / 列表之间切换；可编辑的（要拖动排序）恒为
+    // 单列曲目行，不给切换键。
+    final bool switchable =
+        tracks != null &&
+        tracks.isNotEmpty &&
+        _editing == null &&
+        musicTrackRowSurfaceActive(context);
+    // 正文是构建器：留白（[musicBrowsePagePadding]）要用脚手架之下的 context 量。
+    final WidgetBuilder body;
+    if (error != null && tracks == null) {
+      body = (BuildContext context) =>
+          musicBrowseErrorView(context, error, () => unawaited(_reload()));
+    } else if (tracks == null) {
+      body = (_) => const FushiLoadingView();
+    } else {
+      final bool reorderable =
+          _editable &&
+          tracks.every((MusicServerTrack tr) => tr.playlistEntryId != null);
+      final String? cover = widget.browser.coverUri(p.coverRef)?.toString();
+      final String meta = <String>[
+        if (p.curator != null) t.music_plugin_playlist_by(name: p.curator!),
+        t.music_tracks_count(count: tracks.length),
+        widget.browser.displayName,
+      ].join(' · ');
+      final String? description = p.description;
+      final List<Widget> actions = <Widget>[
+        FushiPressScale(
+          child: FushiFilledButton.icon(
+            size: FushiButtonSize.m,
+            key: const ValueKey<String>('music_server_playlist_play'),
+            onPressed: tracks.isEmpty ? null : () => _play(tracks),
+            icon: const FushiIcon(FushiIcons.play),
+            label: Text(t.music_play_all),
+          ),
+        ),
+        FushiPressScale(
+          child: FushiFilledButton.tonalIcon(
+            size: FushiButtonSize.m,
+            onPressed: tracks.isEmpty
+                ? null
+                : () => _play(tracks, shuffle: true),
+            icon: const FushiIcon(FushiIcons.shuffle),
+            label: Text(t.music_shuffle_play),
+          ),
+        ),
+        ...appleMusicCollectionActions(
+          context,
+          ref,
+          widget.browser,
+          playlist: p,
+        ),
+        ..._editActions(context, tracks),
+      ];
+      final List<Widget> children = <Widget>[
+        MusicDetailHero(
+          title: _title,
+          coverPath: cover,
+          eyebrow: t.music_section_playlists,
+          meta: meta,
+          note: description == null
+              ? null
+              : (BuildContext context, TextStyle style, Color _) => Text(
+                  description,
+                  maxLines: 4,
+                  overflow: TextOverflow.ellipsis,
+                  style: style,
+                ),
+          actions: actions,
+          legacy: Wrap(
+            spacing: tokens.spacing.section,
+            runSpacing: tokens.spacing.gap,
+            crossAxisAlignment: WrapCrossAlignment.end,
+            children: <Widget>[
+              musicAlbumDetailCover(
+                MusicCover(coverPath: cover, size: kMusicAlbumDetailCoverSize),
+              ),
+              ConstrainedBox(
+                constraints: const BoxConstraints(maxWidth: 420),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisSize: MainAxisSize.min,
+                  spacing: tokens.spacing.gap * 0.5,
+                  children: <Widget>[
+                    Text(_title, style: context.fushiType.headlineSmall),
+                    Text(meta, style: context.fushiType.bodyMedium),
+                    if (description != null)
+                      Text(
+                        description,
+                        maxLines: 4,
+                        overflow: TextOverflow.ellipsis,
+                        style: context.fushiType.bodySmall,
+                      ),
+                    Wrap(
+                      spacing: tokens.spacing.gap,
+                      runSpacing: tokens.spacing.gap,
+                      crossAxisAlignment: WrapCrossAlignment.center,
+                      children: actions,
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (tracks.isEmpty)
+          FushiPlaceholderMessage(
+            icon: FushiIcons.playlist,
+            message: t.music_server_playlist_empty,
+          )
+        else if (_editing != null)
+          MusicPlaylistTrackColumn(
+            rows: <MusicPlaylistTrackRowData>[
+              for (int i = 0; i < tracks.length; i++)
+                MusicPlaylistTrackRowData(
+                  key: tracks[i].playlistEntryId ?? '$i-${tracks[i].id}',
+                  title: tracks[i].title,
+                  subtitle: <String>[
+                    ?tracks[i].artist,
+                    ?tracks[i].album,
+                  ].join(' · '),
+                  durationMs: tracks[i].durationMs,
+                  trackUid: musicServerTrackUid(
+                    widget.browser.serverId,
+                    tracks[i].id,
+                  ),
+                  coverPath: widget.browser
+                      .coverUri(tracks[i].coverRef)
+                      ?.toString(),
+                ),
+            ],
+            onPlay: (int i) => _play(tracks, start: i),
+            onReorder: reorderable
+                ? (int from, int to) => unawaited(_reorder(from, to))
+                : null,
+            menuOf: _rowMenu,
+          )
+        else
+          for (int i = 0; i < tracks.length; i++)
+            MusicServerTrackTile(
+              key: ValueKey<String>(
+                'music-server-playlist-track-$i-${tracks[i].id}',
+              ),
+              browser: widget.browser,
+              tracks: tracks,
+              index: i,
+              onPlay: (int i) => _play(tracks, start: i),
+              leading: MusicServerTrackLeading.position,
+              showAlbum: true,
+            ),
+      ];
+      final double heroGap = musicDetailHeroGap(context, tokens.spacing.gap);
+      // 重设计外壳、不可编辑的歌单：曲目排成多列封面色块，按行惰性构建。可编辑
+      // 的（[MusicPlaylistTrackColumn]，要拖动排序）仍是单列曲目行。
+      final bool blocks = switchable && musicCoverBlocksActive(context, layout);
+      body = (BuildContext context) => blocks
+          ? FushiEntranceScope(
+              child: CustomScrollView(
+                slivers: <Widget>[
+                  SliverPadding(
+                    padding: musicBrowsePagePadding(context),
+                    sliver: SliverMainAxisGroup(
+                      slivers: <Widget>[
+                        SliverToBoxAdapter(
+                          child: FushiStaggeredEntrance(
+                            index: 0,
+                            child: children.first,
+                          ),
+                        ),
+                        SliverToBoxAdapter(child: SizedBox(height: heroGap)),
+                        SliverFushiCoverBlocks(
+                          itemCount: tracks.length,
+                          itemBuilder:
+                              (
+                                BuildContext context,
+                                int i,
+                                FushiCoverBlockSize size,
+                              ) => MusicServerTrackTile(
+                                key: ValueKey<String>(
+                                  'music-server-playlist-track-$i-${tracks[i].id}',
+                                ),
+                                browser: widget.browser,
+                                tracks: tracks,
+                                index: i,
+                                onPlay: (int i) => _play(tracks, start: i),
+                                leading: MusicServerTrackLeading.position,
+                                showAlbum: true,
+                                block: size,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+            )
+          : FushiEntranceScope(
+              child: ListView.separated(
+                padding: musicBrowsePagePadding(context),
+                itemCount: children.length,
+                separatorBuilder: (_, int i) =>
+                    SizedBox(height: i == 0 ? heroGap : 0),
+                itemBuilder: fushiStaggeredItemBuilder(
+                  (BuildContext context, int i) => children[i],
+                ),
+              ),
+            );
+    }
+    return musicBrowseScaffold(
+      context,
+      title: _title,
+      titleInBody: tracks != null,
+      actions: <FushiToolbarItem>[
+        if (switchable) musicViewStyleToggle(MusicViewKind.tracks, layout),
+      ],
+      body: body,
+    );
+  }
+}
+
+/// Cupertino 平封面卡副行尾的服务器标记：一枚云朵（在服务器上），试听来源再加试听角标。
+Widget _appleServerBadges(BuildContext context, MusicServerBrowser browser) {
+  final FushiAppleColors c = appleColorsOf(context);
+  return Row(
+    mainAxisSize: MainAxisSize.min,
+    spacing: 4,
+    children: <Widget>[
+      FushiIcon(FushiIcons.cloud, size: 12, color: c.tertiaryLabel),
+      if (musicServerPreviewOnly(browser)) const MusicPreviewBadge(),
+    ],
+  );
 }

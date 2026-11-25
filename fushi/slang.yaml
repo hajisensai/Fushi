@@ -7,3 +7,10 @@ output_file_name: strings.g.dart
 # strings.g.dart 不入库，由 tool/gen_i18n.dart（slang + dart format）生成。关掉文件头的
 # 「Built on <时刻>」：生成结果只取决于输入，gen_i18n 的戳记与「同输入同字节」才成立。
 timestamp: false
+# BUG-4640：不生成 flat map（每种语言一个 `_flatMapFunction`，1.2 万分支的 string switch +
+# `operator []`）。它只服务于 slang 的 translation_overrides，本仓没开；留着的代价是
+# ① Windows release AOT 编它时 gen_snapshot 在 SSA 构建里递归爆 1 MB 主线程栈（BUG-1589，
+# 靠 editbin 拉大栈才过）② 五端 Dart AOT 体积约 +15 MB（iOS App.framework 实测 15.06 MB）。
+# 动态 `t['key']` 取文案因此编译不过——一律走生成的 getter。
+# 守卫：test/build/slang_flat_map_disabled_guard_test.dart。
+flat_map: false

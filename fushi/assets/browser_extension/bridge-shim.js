@@ -58,6 +58,27 @@ async function fushiSrsTermStatusBatch(arg) {
     return null;
   }
 }
+// 反馈 8KlXeA-A0f：页面层弹窗（本 content script 所在的 realm）里 `new Audio(url)` 创建的
+// <audio> 属于**页面文档**，加载受页面 CSP 的 media-src 约束。X（twitter）的 media-src 只放
+// 自家 CDN + blob: / data:，sync server 的 http://127.0.0.1:…/api/lookup/audio/file 被拦 →
+// 第一层查词完全无声；嵌套层是扩展自己的 iframe（扩展源，不吃页面 CSP）所以正常。播放
+// 交给扩展自有上下文：popup.js 见到 __fushiWordAudioViaHost 就走 playWordAudioNative，这里
+// 经 background 送进 offscreen 文档播（不受任何页面 CSP 影响）；offscreen 不可用 / 播放失败
+// 回 false，popup.js 照旧回落页面内 <audio>（CSP 宽松的站点仍能出声）。
+window.__fushiWordAudioViaHost = true;
+async function fushiPlayWordAudioInExtension(url) {
+  try {
+    var v = window.lookupAudioVolume;
+    var resp = await chrome.runtime.sendMessage({
+      type: 'playWordAudio',
+      url: String(url || ''),
+      volume: (typeof v === 'number' && isFinite(v)) ? v : 1,
+    });
+    return !!(resp && resp.ok === true);
+  } catch (_) {
+    return false;
+  }
+}
 window.flutter_inappwebview = {
   callHandler: function (name, ...args) {
     switch (name) {
@@ -156,14 +177,21 @@ window.flutter_inappwebview = {
               });
             return;
           }
-          var res = (typeof window.fushiEnqueue === 'function')
+          // fushiEnqueue 只在队列真的落盘后才兑现 ok（反馈 heMh1hn8n4：此前同步报成功、写盘
+          // fire-and-forget，写不进去也弹「已加入 N」）。这里必须等它的结果再弹提示。
+          var pending = (typeof window.fushiEnqueue === 'function')
             ? window.fushiEnqueue(args[0], sentence) : { ok: false, reason: 'no-queue' };
-          if (res && res.ok && res.duplicate) toast('✓ ' + fushiShimT('mine_already_queued_n', { n: res.count }));
-          else if (res && res.ok) toast('✓ ' + fushiShimT('mine_queued_n', { n: res.count }) + '\n' + fushiShimT('mine_queued_generate_later'));
-          else if (res && res.reason === 'no-cue') toast('✗ ' + fushiShimT('mine_no_cue'));
-          else toast('✗ ' + fushiShimT('mine_enqueue_failed'));
-          // Queue membership is not an Anki note: preserve that distinction for the button.
-          resolve({ queued: !!(res && res.ok), ankiConnect: false });
+          Promise.resolve(pending).catch(function () {
+            return { ok: false, reason: 'persist-failed' };
+          }).then(function (res) {
+            if (res && res.ok && res.duplicate) toast('✓ ' + fushiShimT('mine_already_queued_n', { n: res.count }));
+            else if (res && res.ok) toast('✓ ' + fushiShimT('mine_queued_n', { n: res.count }) + '\n' + fushiShimT('mine_queued_generate_later'));
+            else if (res && res.reason === 'no-cue') toast('✗ ' + fushiShimT('mine_no_cue'));
+            else if (res && res.reason === 'context-invalidated') toast('✗ ' + fushiShimT('mine_enqueue_context_invalidated'));
+            else toast('✗ ' + fushiShimT('mine_enqueue_failed'));
+            // Queue membership is not an Anki note: preserve that distinction for the button.
+            resolve({ queued: !!(res && res.ok), ankiConnect: false });
+          });
         });
       case 'duplicateCheck':
         // TODO-1176：真查重（+→✓，与 app 内一致）。经 background.js 转发到 server
@@ -334,6 +362,9 @@ window.flutter_inappwebview = {
             return null;
           }
         })();
+      case 'playWordAudioNative':
+        // 单词音频②播放：见文件上方 fushiPlayWordAudioInExtension（反馈 8KlXeA-A0f）。
+        return fushiPlayWordAudioInExtension(args[0]);
       case 'listWordAudioSources':
         // 「选择音频源」菜单（♪ 长按 / 右键）：经 background 向 server POST
         // /api/lookup/audio/list，拿回每个启用源各自的短命取字节 URL
@@ -372,10 +403,9 @@ window.flutter_inappwebview = {
             return null;
           }
         })();
-      // 单词音频播放已统一到 popup.js 自身（playWordAudio 直接 new Audio(url).play()），
-      // 三端同一路径，不再经 callHandler('playWordAudio')。故此处旧的 playWordAudio 桥
-      // 已删除。resolveWordAudio 仍返回可直接播放的 URL（扩展侧是 sync server 的
-      // /api/lookup/audio/file 短命 URL），popup.js 拿到后本地播放。
+      // resolveWordAudio 返回可直接播放的 URL（扩展侧是 sync server 的
+      // /api/lookup/audio/file 短命 URL）；页面层的播放走上面的 playWordAudioNative
+      // （offscreen 文档），失败才由 popup.js 回落页面内 <audio>。
       default:
         return Promise.resolve(null);
     }

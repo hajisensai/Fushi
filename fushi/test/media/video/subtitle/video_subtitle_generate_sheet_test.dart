@@ -8,13 +8,19 @@ import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dar
 import 'package:fushi/src/media/video/subtitle/video_subtitle_model_ports.dart';
 import 'package:fushi/src/media/video/video_playback_remote.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiModalSheetFrame;
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
+import 'package:fushi_asr_core/asr_core.dart'
+    show AsrAudioProfile, ModelDownloadEvent;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_pipeline.dart'
+    show VideoSubtitleEpisodeResult;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_recognizer_factory.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:material_ui/material_ui.dart';
@@ -24,7 +30,31 @@ import '../../../helpers/fake_ai_text_completer.dart';
 import '../../../helpers/fake_video_subtitle.dart';
 
 class _FakePrefs implements VideoSubtitleGeneratePrefs {
-  _FakePrefs({this.proofread = false, this.consented = false});
+  _FakePrefs({
+    this.proofread = false,
+    this.consented = false,
+    this.saveBesideVideo = true,
+    this.frames = false,
+    this.framesConsented = false,
+  });
+
+  @override
+  bool frames;
+
+  @override
+  bool framesConsented;
+
+  @override
+  Future<void> setFrames(bool value) async => frames = value;
+
+  @override
+  Future<void> setFramesConsented(bool value) async => framesConsented = value;
+
+  @override
+  bool saveBesideVideo;
+
+  @override
+  Future<void> setSaveBesideVideo(bool value) async => saveBesideVideo = value;
 
   @override
   bool proofread;
@@ -65,11 +95,13 @@ class _DownloadingAsr implements VideoSubtitleAsrModelPort {
   @override
   Future<bool> isReady({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) async => false;
 
   @override
   Stream<ModelDownloadEvent> download({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) {
     downloads++;
     return running.stream;
@@ -78,6 +110,7 @@ class _DownloadingAsr implements VideoSubtitleAsrModelPort {
   @override
   Stream<ModelDownloadEvent>? resumeDownload({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) => running.isClosed ? null : running.stream;
 }
 
@@ -89,11 +122,13 @@ class _PerLanguageAsr implements VideoSubtitleAsrModelPort {
   @override
   Future<bool> isReady({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) async => false;
 
   @override
   Stream<ModelDownloadEvent> download({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) => language == VideoSubtitleLanguage.japanese
       ? japanese.stream
       : const Stream<ModelDownloadEvent>.empty();
@@ -101,6 +136,7 @@ class _PerLanguageAsr implements VideoSubtitleAsrModelPort {
   @override
   Stream<ModelDownloadEvent>? resumeDownload({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) => language == VideoSubtitleLanguage.japanese && !japanese.isClosed
       ? japanese.stream
       : null;
@@ -162,17 +198,23 @@ void main() {
           required VideoSubtitleSegmenterMode mode,
           MossBackendPreference mossBackend = MossBackendPreference.auto,
           VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+          AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
         }) async =>
             VideoSubtitleRecognizerChoice(recognizer: FakeVideoRecognizer()),
+    // 音乐的歌曲档判定（真实现会探内存、建 ASR 服务）：测试里固定按歌曲。
+    musicAudioProfile: (VideoSubtitleLanguage _) async => AsrAudioProfile.song,
     completerFactory: (AiProviderConfig _) =>
         (completer: completer, close: () {}),
+    // widget 测试里不起真 ffmpeg：画面一律取不到（开关与选项照常走）。
+    frameSource: (String videoPath, int atMs) async => null,
   );
 
   Future<int> pumpSheet(
     WidgetTester tester,
     AppVideoSubtitleService service,
-    _FakePrefs prefs,
-  ) async {
+    _FakePrefs prefs, {
+    VideoSubtitleInAppTranscribe? onTranscribeInApp,
+  }) async {
     int openedSettings = 0;
     await tester.pumpWidget(
       MaterialApp(
@@ -184,6 +226,7 @@ void main() {
               target: target,
               prefs: prefs,
               openAiSettings: (BuildContext _) async => openedSettings++,
+              onTranscribeInApp: onTranscribeInApp,
             ),
           ),
         ),
@@ -306,6 +349,142 @@ void main() {
     expect(startPressed(tester), isNotNull);
   });
 
+  // 字幕工作台把面板直接嵌进工具栏：选项与「开始」都在，但没有弹层外框和「关闭」
+  // 按钮（那里 pop 掉的会是整个工作台），滚动交给外层。
+  testWidgets('嵌入形态：选项与开始按钮照常，没有弹层外框和关闭按钮', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final _FakePrefs prefs = _FakePrefs();
+    await tester.pumpWidget(
+      MaterialApp(
+        home: Scaffold(
+          body: SingleChildScrollView(
+            child: VideoSubtitleGenerateSheet(
+              embedded: true,
+              service: buildService(),
+              target: target,
+              prefs: prefs,
+              openAiSettings: (BuildContext _) async {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.byType(FushiModalSheetFrame), findsNothing);
+    expect(find.byType(FushiTextButton), findsNothing);
+    expect(
+      find.byKey(const ValueKey<String>('video-subtitle-ai-language')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-subtitle-ai-start')),
+      findsOneWidget,
+    );
+  });
+
+  // 反馈 6Tj3ECtB0Q：视频页单集入口合并后，面板里「保存字幕文件」决定走哪条原流程。
+  group('保存字幕文件（合并入口）', () {
+    Finder byKey(String key) => find.byKey(ValueKey<String>(key));
+
+    testWidgets('整季 / 音乐入口不传回调：没有保存开关，照旧是管线面板', (WidgetTester tester) async {
+      tester.view
+        ..physicalSize = const Size(900, 1400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpSheet(
+        tester,
+        buildService(),
+        _FakePrefs(saveBesideVideo: false),
+      );
+      expect(byKey('video-subtitle-save-beside'), findsNothing);
+      expect(byKey('video-subtitle-ai-language'), findsOneWidget);
+      expect(byKey('video-subtitle-ai-start'), findsOneWidget);
+      expect(byKey('video-subtitle-transcribe-start'), findsNothing);
+    });
+
+    testWidgets('默认开着保存：管线全部选项都在，「开始」起管线任务', (WidgetTester tester) async {
+      tester.view
+        ..physicalSize = const Size(900, 1400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final List<bool> handedOff = <bool>[];
+      final AppVideoSubtitleService service = buildService();
+      await pumpSheet(
+        tester,
+        service,
+        _FakePrefs(),
+        onTranscribeInApp: ({required bool proofread}) =>
+            handedOff.add(proofread),
+      );
+      expect(byKey('video-subtitle-save-beside'), findsOneWidget);
+      expect(byKey('video-subtitle-save-beside-hint'), findsOneWidget);
+      expect(byKey('video-subtitle-ai-language'), findsOneWidget);
+      expect(byKey('video-subtitle-ai-segmenter'), findsOneWidget);
+      expect(byKey('video-subtitle-transcribe-start'), findsNothing);
+      await tester.tap(byKey('video-subtitle-ai-start'));
+      await tester.pump();
+      expect(handedOff, isEmpty);
+      expect(service.latestJobFor(target), isNotNull);
+    });
+
+    testWidgets('关掉保存：只剩 AI 校对，「开始」交给本机转录并带上校对开关', (WidgetTester tester) async {
+      tester.view
+        ..physicalSize = const Size(900, 1400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      settings.provider = testProvider();
+      final _FakePrefs prefs = _FakePrefs(proofread: true, consented: true);
+      final List<bool> handedOff = <bool>[];
+      final AppVideoSubtitleService service = buildService();
+      await pumpSheet(
+        tester,
+        service,
+        prefs,
+        onTranscribeInApp: ({required bool proofread}) =>
+            handedOff.add(proofread),
+      );
+      expect(byKey('video-subtitle-ai-glossary'), findsOneWidget);
+
+      await tester.tap(byKey('video-subtitle-save-beside'));
+      await tester.pumpAndSettle();
+      expect(prefs.saveBesideVideo, isFalse);
+      expect(byKey('video-subtitle-save-off-hint'), findsOneWidget);
+      expect(byKey('video-subtitle-ai-language'), findsNothing);
+      expect(byKey('video-subtitle-ai-segmenter'), findsNothing);
+      expect(byKey('video-subtitle-ai-glossary'), findsNothing);
+      expect(byKey('video-subtitle-ai-estimate'), findsNothing);
+      expect(byKey('video-subtitle-ai-proofread'), findsOneWidget);
+      expect(byKey('video-subtitle-ai-start'), findsNothing);
+
+      await tester.tap(byKey('video-subtitle-transcribe-start'));
+      await tester.pumpAndSettle();
+      expect(handedOff, <bool>[true]);
+      expect(service.latestJobFor(target), isNull);
+    });
+
+    testWidgets('记住上次关了保存；不开 AI 时交出的校对开关为 false', (WidgetTester tester) async {
+      tester.view
+        ..physicalSize = const Size(900, 1400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final List<bool> handedOff = <bool>[];
+      await pumpSheet(
+        tester,
+        buildService(),
+        _FakePrefs(saveBesideVideo: false),
+        onTranscribeInApp: ({required bool proofread}) =>
+            handedOff.add(proofread),
+      );
+      expect(byKey('video-subtitle-save-off-hint'), findsOneWidget);
+      await tester.tap(byKey('video-subtitle-transcribe-start'));
+      await tester.pumpAndSettle();
+      expect(handedOff, <bool>[false]);
+    });
+  });
+
   testWidgets('开 AI 时「开始」先过联网搜索抓页确认', (WidgetTester tester) async {
     tester.view
       ..physicalSize = const Size(900, 1400)
@@ -368,6 +547,255 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('What AI proofreading sends'), findsNothing);
     expect(prefs.proofread, isTrue);
+  });
+
+  testWidgets('参考画面：首次打开先说明会发送什么，取消不开、同意才开并记下；'
+      '提供商没开图片输入时直说画面不会发送', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    settings.provider = testProvider();
+    final _FakePrefs prefs = _FakePrefs(proofread: true, consented: true);
+    await pumpSheet(tester, buildService(), prefs);
+    final Finder toggle = find.byKey(
+      const ValueKey<String>('video-subtitle-ai-frames'),
+    );
+    final Finder unsupported = find.byKey(
+      const ValueKey<String>('video-subtitle-ai-frames-unsupported'),
+    );
+    expect(toggle, findsOneWidget);
+    expect(unsupported, findsNothing);
+
+    await tester.ensureVisible(toggle);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(find.text('Send video frames to the AI?'), findsOneWidget);
+    await tester.tap(find.text("Don't send frames"));
+    await tester.pumpAndSettle();
+    expect(prefs.frames, isFalse);
+    expect(prefs.framesConsented, isFalse);
+
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Turn on'));
+    await tester.pumpAndSettle();
+    expect(prefs.frames, isTrue);
+    expect(prefs.framesConsented, isTrue);
+    // 这个提供商没开图片输入：开关开着也发不出去，面板直说。
+    expect(unsupported, findsOneWidget);
+
+    // 同意过：再关再开不再弹说明。
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(prefs.frames, isFalse);
+    await tester.tap(toggle);
+    await tester.pumpAndSettle();
+    expect(find.text('Send video frames to the AI?'), findsNothing);
+    expect(prefs.frames, isTrue);
+  });
+
+  testWidgets('参考画面开着且提供商能收图：任务带上画面选项与视频页交来的参考字幕；'
+      '没开 AI 校对时不带画面', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    settings.provider = testProvider().copyWith(acceptsImages: true);
+    const SubtitleEvidenceTrack pinned = SubtitleEvidenceTrack(
+      label: 'player-secondary',
+      kind: SubtitleEvidenceKind.text,
+      language: 'zh',
+      cues: <SubtitleEvidenceCue>[
+        SubtitleEvidenceCue(startMs: 0, endMs: 1000, text: '你好'),
+      ],
+    );
+    final String videoPath = target.episodes.single.videoPath;
+
+    Future<AppVideoSubtitleOptions> startWith(_FakePrefs prefs) async {
+      final AppVideoSubtitleService service = buildService();
+      await tester.pumpWidget(
+        MaterialApp(
+          key: UniqueKey(),
+          home: Scaffold(
+            body: SizedBox(
+              height: 900,
+              child: VideoSubtitleGenerateSheet(
+                service: service,
+                target: target,
+                prefs: prefs,
+                openAiSettings: (BuildContext _) async {},
+                pinnedEvidence: <String, List<SubtitleEvidenceTrack>>{
+                  videoPath: const <SubtitleEvidenceTrack>[pinned],
+                },
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(
+          const ValueKey<String>('video-subtitle-ai-frames-unsupported'),
+        ),
+        findsNothing,
+      );
+      await tester.tap(
+        find.byKey(const ValueKey<String>('video-subtitle-ai-start')),
+      );
+      // 任务跑起来后进度条一直在动，不能 pumpAndSettle。
+      await tester.pump();
+      final AppVideoSubtitleJob job = service.latestJobFor(target)!;
+      job.cancel();
+      await tester.pump();
+      return job.options;
+    }
+
+    final AppVideoSubtitleOptions withAi = await startWith(
+      _FakePrefs(
+        proofread: true,
+        consented: true,
+        frames: true,
+        framesConsented: true,
+      ),
+    );
+    expect(withAi.frames, isTrue);
+    expect(withAi.pinnedEvidence[videoPath], <SubtitleEvidenceTrack>[pinned]);
+
+    final AppVideoSubtitleOptions withoutAi = await startWith(
+      _FakePrefs(frames: true, framesConsented: true),
+    );
+    expect(withoutAi.proofread, isFalse);
+    expect(withoutAi.frames, isFalse);
+  });
+
+  testWidgets('在旧说明下同意过的用户：开始时补看一次画面说明——点「不发画面」关掉开关、'
+      '任务照常按纯文字开始；同意则带画面并记下', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    settings.provider = testProvider().copyWith(acceptsImages: true);
+
+    Future<AppVideoSubtitleOptions> startAndAnswer(
+      _FakePrefs prefs,
+      String answer,
+    ) async {
+      final AppVideoSubtitleService service = buildService();
+      await tester.pumpWidget(
+        MaterialApp(
+          key: UniqueKey(),
+          home: Scaffold(
+            body: SizedBox(
+              height: 900,
+              child: VideoSubtitleGenerateSheet(
+                service: service,
+                target: target,
+                prefs: prefs,
+                openAiSettings: (BuildContext _) async {},
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpAndSettle();
+      await tester.tap(
+        find.byKey(const ValueKey<String>('video-subtitle-ai-start')),
+      );
+      await tester.pumpAndSettle();
+      expect(find.text('Send video frames to the AI?'), findsOneWidget);
+      expect(service.latestJobFor(target), isNull);
+      await tester.tap(find.text(answer));
+      // 任务跑起来后进度条一直在动，不能 pumpAndSettle。
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 400));
+      final AppVideoSubtitleJob job = service.latestJobFor(target)!;
+      job.cancel();
+      await tester.pump();
+      return job.options;
+    }
+
+    final _FakePrefs declined = _FakePrefs(
+      proofread: true,
+      consented: true,
+      frames: true,
+    );
+    final AppVideoSubtitleOptions plain = await startAndAnswer(
+      declined,
+      "Don't send frames",
+    );
+    expect(plain.proofread, isTrue);
+    expect(plain.frames, isFalse);
+    expect(declined.frames, isFalse);
+    expect(declined.framesConsented, isFalse);
+
+    final _FakePrefs accepted = _FakePrefs(
+      proofread: true,
+      consented: true,
+      frames: true,
+    );
+    final AppVideoSubtitleOptions withFrames = await startAndAnswer(
+      accepted,
+      'Turn on',
+    );
+    expect(withFrames.frames, isTrue);
+    expect(accepted.frames, isTrue);
+    expect(accepted.framesConsented, isTrue);
+  });
+
+  testWidgets('首次开 AI 校对的说明写明了画面：同意即两样都记下；提供商收不了图时开着也不带画面、'
+      '不打扰用户', (WidgetTester tester) async {
+    tester.view
+      ..physicalSize = const Size(900, 1400)
+      ..devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    settings.provider = testProvider();
+    final _FakePrefs prefs = _FakePrefs(frames: true);
+    final AppVideoSubtitleService service = buildService();
+    await pumpSheet(tester, service, prefs);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-subtitle-ai-proofread')),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Turn on'));
+    await tester.pumpAndSettle();
+    expect(prefs.consented, isTrue);
+    expect(prefs.framesConsented, isTrue);
+
+    // 纯文字提供商：开关开着，画面不会发，开始时也不弹画面说明。
+    final _FakePrefs textOnly = _FakePrefs(
+      proofread: true,
+      consented: true,
+      frames: true,
+    );
+    final AppVideoSubtitleService plainService = buildService();
+    await tester.pumpWidget(
+      MaterialApp(
+        key: UniqueKey(),
+        home: Scaffold(
+          body: SizedBox(
+            height: 900,
+            child: VideoSubtitleGenerateSheet(
+              service: plainService,
+              target: target,
+              prefs: textOnly,
+              openAiSettings: (BuildContext _) async {},
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(
+      find.byKey(const ValueKey<String>('video-subtitle-ai-start')),
+    );
+    await tester.pump();
+    expect(find.text('Send video frames to the AI?'), findsNothing);
+    final AppVideoSubtitleJob job = plainService.latestJobFor(target)!;
+    job.cancel();
+    await tester.pump();
+    expect(job.options.frames, isFalse);
+    expect(textOnly.frames, isTrue);
   });
 
   testWidgets('AI 请求失败的任务：重开面板接回，显示「暂停：AI 请求失败（原因）」与「继续」', (
@@ -585,4 +1013,116 @@ void main() {
     expect(selectedLanguage(tester), VideoSubtitleLanguage.japanese);
     expect(languageHint(tester), t.video_subtitle_ai_language_from_default);
   });
+
+  group('音乐「先分离人声」开关（拍板 W_wrz-ZPU8）', () {
+    Finder byKey(String key) => find.byKey(ValueKey<String>(key));
+
+    AppVideoSubtitleTarget musicTarget() {
+      final File song = File(p.join(tmp.path, 'news.flac'))
+        ..writeAsBytesSync(List<int>.filled(32, 1));
+      return AppVideoSubtitleTarget(
+        title: 'NHK ニュース',
+        work: const SubtitleWorkContext(workKey: 'album:nhk', title: 'NHK'),
+        episodes: <AppVideoSubtitleEpisode>[
+          AppVideoSubtitleEpisode(videoPath: song.path, title: 'NHK ニュース'),
+        ],
+        sink: _MusicSink(),
+        key: 'music:track:n1',
+        settingScopes: const <String>['music:track:n1', 'music:album:nhk'],
+      );
+    }
+
+    bool switchValue(WidgetTester tester) => tester
+        .widget<Switch>(
+          find.descendant(
+            of: byKey('music-subtitle-vocal-separation'),
+            matching: find.byType(Switch),
+          ),
+        )
+        .value;
+
+    testWidgets('歌曲默认开：按歌曲档；关掉后按原音频档跑、记在条目上', (WidgetTester tester) async {
+      tester.view
+        ..physicalSize = const Size(900, 1400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      target = musicTarget();
+      final AppVideoSubtitleService service = buildService();
+      await pumpSheet(tester, service, _FakePrefs());
+      expect(switchValue(tester), isTrue);
+      expect(byKey('music-subtitle-vocal-separation-on'), findsOneWidget);
+
+      await tester.tap(byKey('music-subtitle-vocal-separation'));
+      await tester.pumpAndSettle();
+      expect(switchValue(tester), isFalse);
+      expect(byKey('music-subtitle-vocal-separation-off'), findsOneWidget);
+      expect(settings.vocalSeparation, <String, bool>{'music:track:n1': false});
+
+      await tester.tap(byKey('video-subtitle-ai-start'));
+      await tester.pump();
+      final AppVideoSubtitleJob job = service.latestJobFor(target)!;
+      expect(job.options.audioProfile, AsrAudioProfile.mixedAudio);
+    });
+
+    testWidgets('整张专辑上关过：单曲打开时沿用（关着），开回来只记在单曲上', (WidgetTester tester) async {
+      tester.view
+        ..physicalSize = const Size(900, 1400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      target = musicTarget();
+      settings.vocalSeparation['music:album:nhk'] = false;
+      await pumpSheet(tester, buildService(), _FakePrefs());
+      expect(switchValue(tester), isFalse);
+      expect(byKey('music-subtitle-vocal-separation-off'), findsOneWidget);
+
+      await tester.tap(byKey('music-subtitle-vocal-separation'));
+      await tester.pumpAndSettle();
+      expect(switchValue(tester), isTrue);
+      expect(settings.vocalSeparation, <String, bool>{
+        'music:album:nhk': false,
+        'music:track:n1': true,
+      });
+    });
+
+    testWidgets('视频目标没有这个开关', (WidgetTester tester) async {
+      tester.view
+        ..physicalSize = const Size(900, 1400)
+        ..devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      await pumpSheet(tester, buildService(), _FakePrefs());
+      expect(byKey('music-subtitle-vocal-separation'), findsNothing);
+    });
+  });
+}
+
+/// 音乐库落点替身：面板只看 [domain]（音乐），任务登记什么都不写。
+class _MusicSink implements AppSubtitleOutputSink {
+  @override
+  AppSubtitleTargetDomain get domain => AppSubtitleTargetDomain.music;
+
+  @override
+  Directory? exportDirFor(String mediaPath) => null;
+
+  @override
+  bool get usesStyleReference => false;
+
+  @override
+  VideoRemoteJobKind get mirrorKind => VideoRemoteJobKind.subtitleGenerate;
+
+  @override
+  String mirrorSubject(AppVideoSubtitleTarget target) => target.key;
+
+  @override
+  Future<List<String>> extraEvidenceFiles(
+    AppVideoSubtitleEpisode episode,
+  ) async => const <String>[];
+
+  @override
+  bool get registersSkippedExisting => false;
+
+  @override
+  Future<List<String>> register(
+    AppVideoSubtitleEpisode episode,
+    VideoSubtitleEpisodeResult result,
+  ) async => const <String>[];
 }

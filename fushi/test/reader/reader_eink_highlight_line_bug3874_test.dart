@@ -13,6 +13,8 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_vertical_punctuation_font.dart';
 import 'package:fushi_core/fushi_core.dart';
 
+import '../helpers/node_runtime.dart';
+
 /// BUG-3886：墨水屏下有声书当前句的线在注音词、着重号处断开，字形被切。
 ///
 /// 墨水屏原来关掉窄条层、给 `::highlight(fushi-sentence-audio)` 加下划线：Blink 把生效的 CSS
@@ -101,8 +103,13 @@ void main() {
         '<style id="fushi-reader-style">$css</style>'
         // 段落离开页顶 / 页右：连续模式页顶有渐隐，线的取样带不能落在里面。
         '<style>.em { text-emphasis: sesame; } p { margin-block-start: 4em; }</style>'
-        '<script>window.flutter_inappwebview = { callHandler: function() '
-        '{ return Promise.resolve(null); } };'
+        // The bridge stub records onRestoreComplete -- the engine's content-ready signal that
+        // lifts the app's loading mask -- so the harness waits on it, not on a fixed sleep.
+        '<script>window.__fushiRestored = new Promise(function(r) '
+        '{ window.__fushiMarkRestored = r; });'
+        'window.flutter_inappwebview = { callHandler: function(name) '
+        '{ if (name === "onRestoreComplete") window.__fushiMarkRestored(); '
+        'return Promise.resolve(null); } };'
         'window.__fushiApplyReaderMargins = function() {};</script>'
         '</head><body><p>$lead$cue</p>'
         '<script>${ReaderSelectionScripts.source()}</script>$engine'
@@ -113,7 +120,7 @@ void main() {
   test(
     'e-ink current-sentence line runs unbroken across ruby and emphasis',
     () async {
-      final String? nodeExe = _resolveNode();
+      final String? nodeExe = resolveNodeExecutable();
       if (nodeExe == null) {
         markTestSkipped('node not found on PATH; skipping JS execution');
         return;
@@ -134,29 +141,18 @@ void main() {
           });
         }
       }
-      final Directory temp = Directory.systemTemp.createTempSync(
-        'eink-highlight-line-',
+      final Map<String, Object> payload = <String, Object>{'pages': pages};
+      final NodeHarnessResult result = await runNodeHarness(
+        nodeExe,
+        'test/reader/reader_eink_highlight_line_bug3874_harness.mjs',
+        payload,
       );
-      try {
-        final File payload = File('${temp.path}/pages.json')
-          ..writeAsStringSync(jsonEncode(<String, Object>{'pages': pages}));
-        final ProcessResult result = await Process.run(nodeExe, <String>[
-          'test/reader/reader_eink_highlight_line_bug3874_harness.mjs',
-          payload.path,
-        ]);
-        if (result.exitCode == 77) {
-          markTestSkipped('Chrome unavailable: ${result.stdout}');
-          return;
-        }
-        expect(
-          result.exitCode,
-          0,
-          reason: '${result.stdout}\n${result.stderr}',
-        );
-        expect(result.stdout, contains('PASS 6 e-ink pages'));
-      } finally {
-        temp.deleteSync(recursive: true);
+      if (result.exitCode == 77) {
+        markTestSkipped('Chrome unavailable: ${result.stdout}');
+        return;
       }
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(result.stdout, contains('PASS 6 e-ink pages'));
     },
     timeout: const Timeout(Duration(seconds: 120)),
   );
@@ -164,19 +160,3 @@ void main() {
 
 /// 测试夹具 CJK 字体的 family 名；harness 按同名断言它已加载。
 const String _fixtureFamily = 'Fushi Eink Fixture CJK';
-
-/// Resolve Node before launching the browser harness so missing CI tools skip.
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) return name;
-    } on ProcessException {
-      // Try the next executable name.
-    }
-  }
-  return null;
-}

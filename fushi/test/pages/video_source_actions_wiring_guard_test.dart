@@ -2,36 +2,39 @@ import 'dart:io';
 
 import 'package:test/test.dart';
 
+import '../helpers/source_guard.dart';
+
 void main() {
-  test('视频来源页页头显式提供全部刮削、清理记录与后台任务', () {
+  test('视频导入视图把整库刮削、后台任务与清理记录登记进浮动顶栏（IM18）', () {
     final String source = File(
-      'lib/src/pages/implementations/media_sources_page.dart',
+      'lib/src/pages/implementations/video_import_page.dart',
     ).readAsStringSync();
-    final int add = source.indexOf('tooltip: t.media_source_add');
+    // Material：平铺「整库刮削」「后台任务」，「清空刮削记录」进 ⋯；Apple 三项都进 ⋯。
     final int scrape = source.indexOf('tooltip: t.scrape_all');
-    final int clear = source.indexOf(
-      'tooltip: t.video_source_scrape_clear_all',
-    );
     final int tasks = source.indexOf(
       'tooltip: t.video_source_scrape_tasks_open',
     );
-    expect(add, greaterThanOrEqualTo(0));
-    expect(scrape, greaterThan(add));
-    expect(clear, greaterThan(scrape));
-    expect(tasks, greaterThan(clear));
-    expect(source, contains("widget.mediaKind == 'video' &&"));
-    expect(source, contains('widget.onScrapeAll != null'));
+    expect(scrape, greaterThanOrEqualTo(0));
+    expect(tasks, greaterThan(scrape));
+    expect(source, contains('label: t.video_source_scrape_clear_all'));
+    expect(source, contains('FushiHeaderMoreButton('));
+    expect(source, contains('widget.onScrapeAll'));
     expect(source, contains('widget.onClearAllScrapeRecords != null'));
+    // 两套设计系统都建页头（此前 Cupertino 不建，iOS 看不到这三项）。
+    expect(
+      source,
+      isNot(contains('if (!isCupertinoPlatform(context)) _buildHeader')),
+    );
   });
 
   test('视频来源页与 HomePage 提供可重复进入的后台任务面板', () {
     final String page = File(
-      'lib/src/pages/implementations/media_sources_page.dart',
+      'lib/src/pages/implementations/video_import_page.dart',
     ).readAsStringSync();
     final String home = File(
       'lib/src/pages/implementations/home_page.dart',
     ).readAsStringSync();
-    expect(page, contains('widget.onOpenScrapeTasks != null'));
+    expect(page, contains('widget.onOpenScrapeTasks'));
     expect(page, contains('t.video_source_scrape_tasks_open'));
     expect(home, contains('showVideoSourceScrapeTaskPanel'));
     expect(home, contains('video-source-background-task-panel'));
@@ -41,7 +44,7 @@ void main() {
 
   test('导入页与设置页复用同一清理动作，成功后重读保活来源页', () {
     final String page = File(
-      'lib/src/pages/implementations/media_sources_page.dart',
+      'lib/src/pages/implementations/video_import_page.dart',
     ).readAsStringSync();
     final String view = File(
       'lib/src/pages/implementations/media_sources_view.dart',
@@ -53,9 +56,23 @@ void main() {
       'lib/src/media/video/metadata/video_scrape_cleanup_action.dart',
     ).readAsStringSync();
 
-    expect(page, contains('onTap: _clearAllScrapeRecords'));
+    expect(page, contains('onSelected: _clearAllScrapeRecords'));
     expect(settings, contains('showClearAllVideoScrapeRecordsAction'));
     expect(action, contains('VideoScrapeCleanupService('));
+    // Feedback 7NBVwW-6Qc：确认框必须给出「只清记录 / 连同生成文件」两种方式，
+    // 勾选态真正传到清理服务，CLI 也能选。
+    expect(
+      action,
+      contains('checkboxLabel: t.video_source_scrape_clear_all_delete_files'),
+    );
+    expect(
+      action,
+      contains(
+        'videoScrapeCleanupModeFor(deleteGeneratedFiles: confirmed.checked)',
+      ),
+    );
+    expect(action, contains('.clearAll(mode: mode)'));
+    expect(settings, contains("deleteGeneratedFiles: files == 'delete'"));
     expect(action, contains('videoScrapeCleanupRevision.value += 1'));
     expect(
       view,
@@ -74,10 +91,15 @@ void main() {
     final String source = File(
       'lib/src/pages/implementations/media_sources_view.dart',
     ).readAsStringSync();
-    expect(source, contains('showAppDialog<_AddSourceChoice>'));
+    expect(source, contains('showImportChoiceDialog<_AddSourceChoice>'));
     expect(source, contains('await addLocalFolder();'));
+    // 传输集只在 import_surface_spec.dart 定义一次（BUG-4858 / IM10），来源视图委托它。
+    final String spec = File(
+      'lib/src/media/import/import_surface_spec.dart',
+    ).readAsStringSync();
+    expect(source, contains('importNetworkTransports(widget.mediaKind)'));
     expect(
-      source,
+      spec,
       // 音乐网络来源与视频同一套可流播 transport（逐曲远程播放同样要按偏移读）。
       contains(
         "'video' || 'music' => const <String>['sftp', 'webdav', 'alist']",
@@ -85,7 +107,7 @@ void main() {
       reason: '视频 / 音乐网络 transport 必须收窄到可原地流播的 sftp + webdav + alist',
     );
     expect(
-      source,
+      spec,
       isNot(contains(RegExp(r"'video'[^=\n]*=> const <String>\[[^\]]*'ftp'"))),
       reason: 'ftp 不能按偏移读、拖不了进度条，不得进视频域',
     );
@@ -94,7 +116,7 @@ void main() {
 
   test('视频来源行独占刮削、共享互斥锁并开放受确认保护的策略设置', () {
     final String page = File(
-      'lib/src/pages/implementations/media_sources_page.dart',
+      'lib/src/pages/implementations/video_import_page.dart',
     ).readAsStringSync();
     final String view = File(
       'lib/src/pages/implementations/media_sources_view.dart',
@@ -117,7 +139,7 @@ void main() {
     expect(view, contains('controller.runSourceScan(row.id, scan)'));
     expect(
       view,
-      contains('await onVideoScanCompleted(updated ?? row, summary)'),
+      contains('await onVideoScanCompleted(updated ?? row, scanned)'),
     );
     expect(view, contains('nfoPolicy: Value<String>(draft.nfoPolicy)'));
     expect(view, contains('imagePolicy: Value<String>(draft.imagePolicy)'));
@@ -132,7 +154,14 @@ void main() {
     ).readAsStringSync();
     expect(home, contains('ValueNotifier<int> _videoLibraryRefreshSignal'));
     expect(home, contains('libraryRefreshSignal: _videoLibraryRefreshSignal'));
-    expect(home, contains('onLibraryChanged: _notifyVideoLibraryChanged'));
+    // 来源页的库变更回调经 _onVideoSourcesChangedLibrary（拍板台
+    // gtpgyff3l7-oneshot-scrape：顺带补发一轮补刮），它必须仍先发同一个刷新信号。
+    expect(home, contains('onLibraryChanged: _onVideoSourcesChangedLibrary'));
+    expect(
+      methodBody(maskComments(home), 'void _onVideoSourcesChangedLibrary()'),
+      contains('_notifyVideoLibraryChanged();'),
+      reason: '来源页改动视频库后，保活视频库必须收到同一刷新信号',
+    );
     expect(home, contains('onScrapeAll: _scrapeAllVideosFromSources'));
     expect(
       home,

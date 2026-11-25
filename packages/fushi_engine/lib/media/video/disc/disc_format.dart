@@ -21,6 +21,8 @@ import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/video/bluray/bluray_angle.dart'
+    show blurayMemberBackingPlaylistPath;
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
     show blurayDiscRootForPlaylistPath, isBlurayPlaylistPath;
 import 'package:fushi_engine/media/video/disc/disc_image_probe.dart'
@@ -50,6 +52,34 @@ String? discRootForMemberPath(String memberPath) {
   return null;
 }
 
+/// [path] 是不是原盘**内部的流文件**：蓝光 `BDMV/STREAM/*.m2ts`（含 3D 的
+/// `BDMV/STREAM/SSIF/*.ssif`）或 DVD `VIDEO_TS/*.VOB`。纯函数，不碰文件系统。
+///
+/// 这些文件是盘的组成部分，不是独立的视频：盘由它的标题（[isDiscMemberPath]）代表，
+/// 流文件名 `00002.m2ts` 只是片段号，没有任何作品信息。BUG-4245 修复前的导入（逐个
+/// `.m2ts` 入库）留下的这种行，不能被当成作品去识别（BUG-5280）。
+///
+/// 两种分隔符都认：库里的路径可能来自另一平台（Windows 端经互联交给 Linux 上的
+/// fushi_server），按宿主平台的 `package:path` 切会让 Linux 认不出 `D:\…\BDMV\STREAM`。
+bool isDiscStreamFilePath(String path) {
+  final List<String> parts = path
+      .split(RegExp(r'[\\/]+'))
+      .where((String s) => s.isNotEmpty)
+      .toList(growable: false);
+  if (parts.length < 3) return false;
+  final String extension = p.extension(parts.last).toLowerCase();
+  final String parent = parts[parts.length - 2].toUpperCase();
+  if (extension == '.vob') return parent == 'VIDEO_TS';
+  if (extension == '.ssif') {
+    return parts.length >= 4 &&
+        parent == 'SSIF' &&
+        parts[parts.length - 3].toUpperCase() == 'STREAM' &&
+        parts[parts.length - 4].toUpperCase() == 'BDMV';
+  }
+  if (extension != '.m2ts') return false;
+  return parent == 'STREAM' && parts[parts.length - 3].toUpperCase() == 'BDMV';
+}
+
 /// 只看路径能定下的规格：DVD 成员 → [DiscFormat.dvd]；蓝光成员 → [DiscFormat.bluray]
 /// （**还没区分 UHD**，要确证用 [DiscFormatResolver]）；其它 → null。
 DiscFormat? discFormatHintForMemberPath(String memberPath) {
@@ -64,14 +94,15 @@ DiscFormat? discFormatHintForMemberPath(String memberPath) {
   return null;
 }
 
-/// 成员路径背后真实存在的文件：蓝光就是 `.mpls` 本身；DVD 是盘的 `VIDEO_TS.IFO`，
+/// 成员路径背后真实存在的文件：蓝光就是 `.mpls` 本身（按集展开的分集路径、按角度读的角度成员路径是虚拟的，
+/// 换成它切自的那条 `.mpls`）；DVD 是盘的 `VIDEO_TS.IFO`，
 /// 镜像形态是 `.iso` 本身（title 路径是虚拟的）。下游「这一条还在不在」先过它再 `existsSync`。不是原盘
 /// 成员时原样返回 [memberPath]。
 String discMemberBackingFilePath(String memberPath) {
   if (isDvdTitlePath(memberPath)) {
     return dvdTitleBackingFilePath(memberPath) ?? memberPath;
   }
-  return memberPath;
+  return blurayMemberBackingPlaylistPath(memberPath);
 }
 
 /// 按 `index.bdmv` 头 8 字节定蓝光规格；头不对返回 null。

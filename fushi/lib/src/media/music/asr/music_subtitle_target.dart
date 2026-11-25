@@ -8,8 +8,11 @@
 /// 解析规则：
 /// - 按**文件**去重成「集」：CUE 整轨多曲共用一个音频文件，只转写一次，登记时再按曲目
 ///   区间切（[MusicAsrTrackSlot]）；
-/// - 插件 / 服务器 / Apple Music 等不是本机文件的曲目 → 不可处理（remote）；文件不在 →
-///   missingFile；
+/// - 曲库表里不是本机文件的曲目（网络音乐来源的 sftp / http 条目等）→ 不可处理（remote）；
+///   文件不在 → missingFile。不在曲库表里的曲目走 [MusicSubtitleTargets.forRemoteTracks]：
+///   歌词页对**正在播放的在线音源插件曲目**、媒体服务器（Jellyfin / Subsonic）曲目的单曲 /
+///   专辑入口，调用方先把音频取到本机（`MusicPluginAsrAudioStager`），这里按那份副本建目标、
+///   登记到那首的 uid（服务器曲目即 `musicServerTrackUid`，从服务器页与音乐库播都认）；
 /// - 批量（专辑 / 来源）时已有生成字幕（`asr` 行）的曲目跳过，整个文件的曲目都有了就不
 ///   排这个文件；文件已转写导出过、只是还有曲目没登记的，管线跳过转写、由落点直接用已有
 ///   导出补登（[AppSubtitleOutputSink.registersSkippedExisting]）；单曲入口总是重新生成
@@ -29,10 +32,16 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/music/asr/music_asr_subtitle_sink.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
+import 'package:fushi/src/media/music/music_output_backend.dart'
+    show MusicPlayItem;
 import 'package:fushi/src/media/music/plugin/music_plugins.dart'
     show parseMusicPluginTrackPath;
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_types.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+
+/// 一首不在曲库表里的曲目的转写输入：播放项身份 + 本机音频（[staged] = 取到本机的副本，
+/// 登记完删）。
+typedef MusicRemoteAsrTrack = ({MusicPlayItem item, File audio, bool staged});
 
 /// 纯函数：这首曲目是不是本机能转写的文件（插件 URI / 服务器流 / 相对路径都不是）。
 bool isMusicTrackLocallyTranscribable(String path) =>
@@ -69,12 +78,89 @@ class MusicSubtitleTargets {
       throw AppVideoSubtitleTargetNotFound('track $trackUid');
     }
     final MusicAlbumRow? album = await _album(row.albumUid);
+    final String key = 'music:track:$trackUid';
     return _build(
       rows: <MusicTrackRow>[row],
       title: row.title,
-      key: 'music:track:$trackUid',
+      key: key,
       batch: false,
       work: _work(album, fallbackTitle: row.title, fallbackKey: trackUid),
+      // 专辑 / 来源上记过的选择（如整个来源都是广播、关了人声分离）单曲也沿用。
+      settingScopes: <String>[
+        key,
+        if (row.albumUid case final String albumUid) 'music:album:$albumUid',
+        if (row.sourceId case final int sourceId) 'music:source:$sourceId',
+      ],
+    );
+  }
+
+  /// 在线音源插件曲目（歌词页对当前曲目）：插件曲目不进曲库表，身份与元数据取自播放项；
+  /// [audio] 是已取到本机的音频副本（`MusicPluginAsrAudioStager.stage`），转写它、产物
+  /// 登记成 [item] 的 `asr` 歌词行，登记完删掉副本。总是重新生成（与 [forTrack] 同）。
+  Future<AppVideoSubtitleTarget> forPluginTrack(
+    MusicPlayItem item,
+    File audio,
+  ) => forRemoteTracks(
+    tracks: <MusicRemoteAsrTrack>[(item: item, audio: audio, staged: true)],
+    title: item.title,
+    key: 'music:track:${item.trackUid}',
+  );
+
+  /// 不在曲库表里的曲目（插件曲目、媒体服务器曲目）：身份与元数据取自播放项，每首的音频已在
+  /// 本机（[MusicRemoteAsrTrack.audio]：取到本机的副本 staged = true，登记完删；离线副本
+  /// staged = false，不删）。产物登记成各自 `item.trackUid` 的 `asr` 歌词行。
+  ///
+  /// 单曲（一首）总是重新生成；多首（服务器专辑批量）按专辑建作品上下文、面板按批量显示，
+  /// 已有生成字幕的曲目由调用方在取音频前就滤掉（[MusicLyricsService.tracksWithGenerated]）。
+  Future<AppVideoSubtitleTarget> forRemoteTracks({
+    required List<MusicRemoteAsrTrack> tracks,
+    required String title,
+    required String key,
+    List<AppVideoSubtitleUnavailable> unavailable =
+        const <AppVideoSubtitleUnavailable>[],
+    int skipped = 0,
+  }) async {
+    final MusicPlayItem? first = tracks.isEmpty ? null : tracks.first.item;
+    final String? albumUid = first?.albumUid;
+    final bool batch = tracks.length > 1 || skipped > 0;
+    final String albumScope = 'music:album:$albumUid';
+    return AppVideoSubtitleTarget(
+      title: title,
+      work: albumUid == null || first == null
+          ? SubtitleWorkContext(
+              workKey: 'music-track:${first?.trackUid ?? key}',
+              title: title,
+            )
+          : SubtitleWorkContext(
+              workKey: 'album:$albumUid',
+              title: first.album ?? title,
+            ),
+      episodes: <AppVideoSubtitleEpisode>[
+        for (final MusicRemoteAsrTrack t in tracks)
+          AppVideoSubtitleEpisode(videoPath: t.audio.path, title: t.item.title),
+      ],
+      unavailable: unavailable,
+      trackCounts: (pending: tracks.length, skipped: skipped),
+      sink: MusicAsrSubtitleSink(
+        outRoot: await _outRoot(),
+        lyrics: lyrics,
+        slotsByPath: <String, List<MusicAsrTrackSlot>>{
+          for (final MusicRemoteAsrTrack t in tracks)
+            t.audio.path: <MusicAsrTrackSlot>[
+              MusicAsrTrackSlot(trackUid: t.item.trackUid),
+            ],
+        },
+        stagedAudio: <String>{
+          for (final MusicRemoteAsrTrack t in tracks)
+            if (t.staged) t.audio.path,
+        },
+      ),
+      wholeSeason: batch,
+      key: key,
+      settingScopes: <String>[
+        key,
+        if (albumUid != null && albumScope != key) albumScope,
+      ],
     );
   }
 
@@ -153,6 +239,7 @@ class MusicSubtitleTargets {
     required String key,
     required bool batch,
     required SubtitleWorkContext work,
+    List<String>? settingScopes,
   }) async {
     final Set<String> done = batch
         ? await lyrics.tracksWithGenerated(<String>[
@@ -252,6 +339,7 @@ class MusicSubtitleTargets {
       ),
       wholeSeason: batch,
       key: key,
+      settingScopes: settingScopes,
     );
   }
 }

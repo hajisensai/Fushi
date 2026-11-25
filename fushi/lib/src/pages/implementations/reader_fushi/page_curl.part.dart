@@ -13,9 +13,44 @@ class _ReaderPageCurlHost implements PageCurlHost {
   @override
   Future<ui.Image?> capturePage() => capturePageCurlWebView(_state._controller);
 
-  /// 小说的纸就是整个视口（页边距也是纸）。
+  /// 单页：纸就是整个视口（页边距也是纸）。双页：在两页之间的中缝（正文 content-box
+  /// 中线，与正文 CSS 的两栏 / 对开几何同一条线，折叠屏上就是折痕）处一分为二，外侧
+  /// 那半是纸、靠里那半是对面页。竖排对开只在 WebView 真正排成两页（支持
+  /// `column-wrap`）时才算双页——不支持时正文退回单页竖排，按单页卷。
   @override
-  Future<Rect?> paperRect() async => null;
+  Future<PageCurlPaper?> paperRect() async {
+    final ReaderSettings? settings = _state._settings;
+    if (settings == null) return null;
+    final ReaderSpreadLayout layout = _state._spreadLayout;
+    if (!layout.isDouble) return null;
+    if (layout.verticalSpread && !await _verticalSpreadRendered()) return null;
+    final Size view = _state._pageCurlSize;
+    final double marginLeftPx =
+        view.width * math.max(0, settings.marginLeft) / 100;
+    final double marginRightPx =
+        view.width * math.max(0, settings.marginRight) / 100;
+    return pageCurlSpreadPaper(
+      view: view,
+      spineX: marginLeftPx + (view.width - marginLeftPx - marginRightPx) / 2,
+      mirror: !_state._readerSwipeLeftIsForward,
+    );
+  }
+
+  /// 正文此刻是否真的排成了竖排对开（计算样式 `column-wrap: wrap`，与 JS 翻页轴的
+  /// 判据同源）。
+  Future<bool> _verticalSpreadRendered() async {
+    final InAppWebViewController? controller = _state._controller;
+    if (controller == null) return false;
+    try {
+      final Object? result = await controller.evaluateJavascript(
+        source: kReaderVerticalSpreadRenderedInvocation,
+      );
+      return result == true;
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ReaderPageCurl.spreadProbe', e, stack);
+      return false;
+    }
+  }
 
   @override
   Future<bool> previewNeighbour({required bool forward}) async {
@@ -80,6 +115,12 @@ class _ReaderPageCurlHost implements PageCurlHost {
   @override
   Future<void> waitForPaint() => waitPageCurlWebViewPaint(_state._controller);
 }
+
+/// 正文是否排成了竖排对开：`column-wrap` 只有支持它的 WebView（Chromium 145+）才会
+/// 在计算样式里回读成 `wrap`（CSS 包在 `@supports` 里，不支持时整段不生效）。
+const String kReaderVerticalSpreadRenderedInvocation =
+    "(function(){try{return getComputedStyle(document.body).columnWrap === 'wrap';}"
+    'catch(e){return false;}})();';
 
 extension _ReaderPageCurl on _ReaderFushiPageState {
   /// 当前是否用卷页翻页：翻页模式（不含滚动 / VN / 歌词）且实际效果为卷页（墨水屏 /

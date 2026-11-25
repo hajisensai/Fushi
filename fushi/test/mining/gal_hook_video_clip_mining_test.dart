@@ -3,6 +3,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_window_video.dart';
@@ -105,6 +106,7 @@ void main() {
           required String lineId,
           required String sentence,
           required String outputExtension,
+          required GalMiningAudioLimit limit,
         }) async {
           await Future<void>.delayed(audioDelay);
           events.add('audio');
@@ -326,6 +328,7 @@ void main() {
             required String lineId,
             required String sentence,
             required String outputExtension,
+            required GalMiningAudioLimit limit,
           }) async => Uint8List.fromList(<int>[7]),
       exportRecording:
           ({

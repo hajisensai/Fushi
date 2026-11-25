@@ -408,6 +408,11 @@ class MaterialVideoControlsThemeData {
   /// PATCHES.md.
   final VideoSeekBarTrackBuilder? seekBarTrackBuilder;
 
+  /// Fushi patch (glass chrome fade): replaces the controls' show / hide
+  /// fade. Null (upstream default) = one `Opacity` over the whole layer. See
+  /// [VideoControlsFadeBuilder] and PATCHES.md.
+  final VideoControlsFadeBuilder? controlsFadeBuilder;
+
   /// Fushi patch (BUG-2731 follow-up): the base position that **relative**
   /// seeks (horizontal swipe, double-tap ±N s) are measured from. On a remote
   /// stream a seek re-buffers for seconds while `player.state.position` still
@@ -495,6 +500,7 @@ class MaterialVideoControlsThemeData {
     this.seekOnDrag = true,
     this.relativeSeekBasePosition,
     this.seekBarTrackBuilder,
+    this.controlsFadeBuilder,
   });
 
   /// Creates a copy of this [MaterialVideoControlsThemeData] with the given fields replaced by the non-null parameter values.
@@ -560,6 +566,7 @@ class MaterialVideoControlsThemeData {
     bool? seekOnDrag,
     Duration Function()? relativeSeekBasePosition,
     VideoSeekBarTrackBuilder? seekBarTrackBuilder,
+    VideoControlsFadeBuilder? controlsFadeBuilder,
   }) {
     return MaterialVideoControlsThemeData(
       displaySeekBar: displaySeekBar ?? this.displaySeekBar,
@@ -649,6 +656,7 @@ class MaterialVideoControlsThemeData {
       relativeSeekBasePosition:
           relativeSeekBasePosition ?? this.relativeSeekBasePosition,
       seekBarTrackBuilder: seekBarTrackBuilder ?? this.seekBarTrackBuilder,
+      controlsFadeBuilder: controlsFadeBuilder ?? this.controlsFadeBuilder,
     );
   }
 }
@@ -1218,9 +1226,14 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
               alignment: Alignment.center,
               children: [
                 // Controls:
-                AnimatedOpacity(
+                // Fushi patch (glass chrome fade): same curve / duration /
+                // onEnd as the upstream AnimatedOpacity, but the host may
+                // take the fade over ([controlsFadeBuilder]) so no
+                // OpacityLayer sits over its backdrop-filter glass. See
+                // PATCHES.md.
+                TweenAnimationBuilder<double>(
                   curve: Curves.easeInOut,
-                  opacity: visible ? 1.0 : 0.0,
+                  tween: Tween<double>(end: visible ? 1.0 : 0.0),
                   duration: _theme(context).controlsTransitionDuration,
                   onEnd: () {
                     setState(() {
@@ -1229,13 +1242,20 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                       }
                     });
                   },
+                  builder: (context, opacity, child) => VideoControlsFade(
+                    opacity: opacity,
+                    builder: _theme(context).controlsFadeBuilder,
+                    child: child!,
+                  ),
                   child: Stack(
                     clipBehavior: Clip.none,
                     alignment: Alignment.center,
                     children: [
                       Positioned.fill(
-                        child: Container(
-                          color: _theme(context).backdropColor,
+                        child: VideoControlsLeafFade(
+                          child: Container(
+                            color: _theme(context).backdropColor,
+                          ),
                         ),
                       ),
                       // Fushi patch (TODO-1073/BUG-555): tap hit-region MUST
@@ -1447,7 +1467,8 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                 alignment: Alignment.bottomCenter,
                                 children: [
                                   if (_theme(context).displaySeekBar)
-                                    MaterialSeekBar(
+                                    VideoControlsLeafFade(
+                                        child: MaterialSeekBar(
                                       onSeekStart: () {
                                         _theme(context).onSeekStart?.call();
                                         _timer?.cancel();
@@ -1472,7 +1493,7 @@ class _MaterialVideoControlsState extends State<_MaterialVideoControls> {
                                           },
                                         );
                                       },
-                                    ),
+                                    )),
                                   Container(
                                     height: _theme(context).buttonBarHeight,
                                     margin:

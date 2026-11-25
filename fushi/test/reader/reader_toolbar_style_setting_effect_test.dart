@@ -89,6 +89,8 @@ void main() {
                       totalChars: 1000,
                       showTimer: true,
                       showProgress: true,
+                      showChars: true,
+                      showSpeed: true,
                       textColor: Colors.white,
                       backgroundColor: Colors.black,
                       floating: readerToolbarsFloating(

@@ -63,7 +63,8 @@ void main() {
           'FushiContinueCardRow.grid(',
       'lib/src/pages/implementations/galgame_home_page.dart':
           'FushiContinueSpotlight(',
-      'lib/src/pages/implementations/home_dashboard_page.dart':
+      // 首页小组件网格（2026-11-15）：「继续」格子在 part 文件里。
+      'lib/src/pages/implementations/home_dashboard_widget_cells.part.dart':
           'FushiContinueSpotlight(',
       'lib/src/pages/implementations/music/music_library_page.dart':
           'FushiContinueSpotlight(',

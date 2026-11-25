@@ -307,7 +307,10 @@ List<SrsCssRule> srsParseStylesheet(String css, {int orderBase = 0}) {
       srsHtmlUnsupported('css: at-rule "${_short(prelude)}"');
     }
     if (prelude.isEmpty) continue;
-    final List<SrsCssDeclaration> decls = srsParseDeclarations(body);
+    final List<SrsCssDeclaration> decls = srsParseDeclarations(
+      body,
+      deferUnsupported: true,
+    );
     for (final String raw in srsCssSplitTopLevel(prelude, ',')) {
       final SrsCssSelector? sel = SrsCssSelector.parse(raw.trim(), decls);
       if (sel == null) continue;
@@ -349,8 +352,21 @@ int _matchingBrace(String s, int open) {
   return -1;
 }
 
+/// 样式表规则里原生画不了的声明，解析期记成这个属性名的占位（值是原因），规则真的命中元素时
+/// 才抛 [SrsHtmlUnsupported]（见 `_Cascade.compute`）：Anki 牌组的样式表常带用不上的规则
+/// （卡面里根本没有 `<table>` 却写了 `table { border-collapse: collapse }`），不该因此整张卡回退。
+const String kSrsCssUnsupportedProperty = '\u0000unsupported';
+
+/// 可能是真实 CSS 属性的名字（含 `--自定义属性`，其名字允许任意标识符字符）。
+final RegExp _kPropertyName = RegExp(r'^(?:--.+|-?[a-z][a-z0-9-]*)$');
+
 /// 解析声明块（`style` 属性也走这里），简写展开成长写；不认识的属性抛 [SrsHtmlUnsupported]。
-List<SrsCssDeclaration> srsParseDeclarations(String block) {
+/// [deferUnsupported]（样式表规则用）：不认识的属性不抛，记成 [kSrsCssUnsupportedProperty]
+/// 占位，留到命中时再判。
+List<SrsCssDeclaration> srsParseDeclarations(
+  String block, {
+  bool deferUnsupported = false,
+}) {
   final List<SrsCssDeclaration> out = <SrsCssDeclaration>[];
   for (final String raw in srsCssSplitTopLevel(
     srsCssStripComments(block),
@@ -375,7 +391,18 @@ List<SrsCssDeclaration> srsParseDeclarations(String block) {
       value = value.substring(0, imp.start).trim();
     }
     if (prop.isEmpty) continue;
-    out.addAll(_expand(prop, value, important));
+    // 属性名里有 CSS 属性不可能出现的字符（字段里手误混进的全角引号 `”text-align` 等）：
+    // 不会是哪个真实属性，浏览器同样整条丢掉。
+    if (!_kPropertyName.hasMatch(prop)) continue;
+    if (!deferUnsupported) {
+      out.addAll(_expand(prop, value, important));
+      continue;
+    }
+    try {
+      out.addAll(_expand(prop, value, important));
+    } on SrsHtmlUnsupported catch (e) {
+      out.add(SrsCssDeclaration(kSrsCssUnsupportedProperty, e.reason));
+    }
   }
   return out;
 }

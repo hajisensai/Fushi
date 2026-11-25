@@ -18,8 +18,12 @@
 #include <flutter/standard_method_codec.h>
 
 #include <algorithm>
+#include <chrono>
+#include <cstdint>
+#include <cwchar>
 #include <map>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 
@@ -100,6 +104,30 @@ class FlutterOnnxruntimePluginImpl {
 public:
   FlutterOnnxruntimePluginImpl() = default;
 
+  // Explicit teardown order (HBK-AUDIT-015). The queues' tasks and the idle
+  // timer reach into each other -- a CUDA close task still queued on the GPU
+  // queue arms the timer (cudaIdleMutex_ + cudaIdleRelease_), the timer posts
+  // to the GPU queue -- so no member declaration order is safe on its own:
+  // with the timer last, the GPU queue drains its close task after the timer
+  // and its mutex are destroyed; with the timer first, a firing timer posts to
+  // a queue already destroyed. Retire them here instead, while every member
+  // is still alive:
+  //   1. the timer stops accepting work and joins: no fire after this, and a
+  //      fire in flight finishes its (non-blocking) post to the live GPU queue;
+  //      a close task drained below then re-arms a stopped timer, a no-op;
+  //   2. the worker queues stop accepting work and drain what is queued
+  //      (session closes, a pending CUDA release) -- the managers, the
+  //      dispatcher and the idle mutex are all still alive while they do.
+  // Only then are members destroyed, with no thread left to touch them.
+  ~FlutterOnnxruntimePluginImpl() {
+    cudaIdleRelease_.Shutdown();
+    for (auto &entry : cpuSessionQueues_) {
+      entry.second->Shutdown();
+    }
+    cpuQueue_.Shutdown();
+    gpuQueue_.Shutdown();
+  }
+
   // Manager instances. Fushi fork: created on the first call that needs ONNX
   // Runtime (EnsureRuntime), not at plugin registration — both constructors
   // call into ORT, and the core must stay unbound until the app has had the
@@ -152,6 +180,71 @@ public:
 
   // Drop a closed session's worker (joins its thread; it is idle by then).
   void dropSessionQueue(const std::string &session_id) { cpuSessionQueues_.erase(session_id); }
+
+  // Fushi: CUDA idle release. Closing the last CUDA session arms it; when it
+  // fires and no CUDA session has been created since (cudaGeneration
+  // unchanged), the plugin library is unloaded and the CUDA primary context
+  // reset on the GPU queue. Measured on an RTX 4070 Ti after an ASR job: the
+  // context alone holds ~180 MiB of device memory and ~620 MiB of private
+  // commit that never come back otherwise (cudart retains it for the life of
+  // the process; unloading the library frees nothing by itself). The next
+  // CUDA session reloads the library and builds a new context.
+  //
+  // Delay: FLUTTER_ONNXRUNTIME_CUDA_IDLE_MS (0 = never), default 60 s, long
+  // enough that chapter-by-chapter jobs reopening their sessions do not pay
+  // the reload each time.
+  static std::chrono::milliseconds CudaIdleReleaseDelay() {
+    static const long long ms = [] {
+      wchar_t buffer[24] = {};
+      DWORD n = GetEnvironmentVariableW(L"FLUTTER_ONNXRUNTIME_CUDA_IDLE_MS", buffer, 24);
+      if (n == 0 || n >= 24) {
+        return 60000LL;
+      }
+      wchar_t *end = nullptr;
+      const long long value = std::wcstoll(buffer, &end, 10);
+      return (end == buffer || value < 0) ? 60000LL : value;
+    }();
+    return std::chrono::milliseconds(ms);
+  }
+
+  // Platform thread or GPU queue; [generation] = cudaGeneration() when the
+  // last CUDA session closed.
+  void ArmCudaIdleRelease(uint64_t generation) {
+    const std::chrono::milliseconds delay = CudaIdleReleaseDelay();
+    if (delay.count() == 0) {
+      return;
+    }
+    {
+      std::lock_guard<std::mutex> lock(cudaIdleMutex_);
+      cudaIdleGeneration_ = generation;
+    }
+    cudaIdleRelease_.Schedule(delay);
+  }
+
+  void FireCudaIdleRelease() {
+    uint64_t generation = 0;
+    {
+      std::lock_guard<std::mutex> lock(cudaIdleMutex_);
+      generation = cudaIdleGeneration_;
+    }
+    SessionManager *session_manager = sessionManager_.get();
+    if (session_manager == nullptr) {
+      return;
+    }
+    gpuQueue_.Post([session_manager, generation]() {
+      if (session_manager->cudaGeneration() != generation || session_manager->openCudaSessions() != 0) {
+        return;
+      }
+      int open = 0;
+      session_manager->releaseCudaPlugin(true, &open);
+    });
+  }
+
+  std::mutex cudaIdleMutex_;
+  uint64_t cudaIdleGeneration_ = 0;
+  // Shut down explicitly in ~FlutterOnnxruntimePluginImpl() before the queues
+  // drain; its position among the members carries no lifetime guarantee.
+  DelayedTask cudaIdleRelease_{[this]() { FireCudaIdleRelease(); }};
 
   // Complete [result] on the platform thread with [outcome].
   void reply(const SharedResult &result, std::shared_ptr<TaskOutcome> outcome) {
@@ -251,6 +344,9 @@ void FlutterOnnxruntimePlugin::HandleMethodCall(
     return;
   } else if (method_name == "registerCudaRuntime") {
     HandleRegisterCudaRuntime(method_call, std::move(result));
+    return;
+  } else if (method_name == "releaseCudaRuntime") {
+    HandleReleaseCudaRuntime(method_call, std::move(result));
     return;
   } else if (method_name == "getAvailableProviders") {
     HandleGetAvailableProviders(method_call, std::move(result));
@@ -588,6 +684,8 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
     // Create session options
     Ort::SessionOptions session_options;
     bool is_gpu = false;
+    // CUDA device to append on the GPU queue (-1: none). See below.
+    int cuda_device = -1;
 
     // Configure session options if provided
     auto session_options_it = args->find(flutter::EncodableValue("sessionOptions"));
@@ -679,7 +777,12 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
             // next to onnxruntime.dll. Not registered -> Ort::Exception ->
             // PROVIDER_ERROR, which the Dart fallback reports as a visible
             // downgrade instead of silently running elsewhere.
-            impl_->sessionManager_->appendCudaProvider(session_options, device_id);
+            //
+            // Appended on the GPU queue right before the session is built, not
+            // here: releaseCudaRuntime (same queue) may unload the library and
+            // free the device in between. Providers are appended in order, so
+            // CUDA ends up after any DirectML entry; the app never asks for both.
+            cuda_device = device_id;
             is_gpu = true;
           } else if (provider == "DIRECT_ML") {
             // DirectML requires sequential execution. Memory patterns are
@@ -711,10 +814,20 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
     auto options = std::make_shared<Ort::SessionOptions>(std::move(session_options));
     SessionManager *session_manager = impl_->sessionManager_.get();
     FlutterOnnxruntimePluginImpl *impl = impl_.get();
-    impl_->queueFor(is_gpu).Post([impl, session_manager, shared_result, options, model_path, is_gpu]() {
+    impl_->queueFor(is_gpu).Post([impl, session_manager, shared_result, options, model_path, is_gpu, cuda_device]() {
       auto outcome = std::make_shared<TaskOutcome>();
+      if (cuda_device >= 0) {
+        try {
+          session_manager->appendCudaProvider(*options, cuda_device);
+        } catch (const std::exception &e) {
+          outcome->error_code = "PROVIDER_ERROR";
+          outcome->error_message = e.what();
+          impl->reply(shared_result, outcome);
+          return;
+        }
+      }
       try {
-        std::string session_id = session_manager->createSession(model_path.c_str(), *options, is_gpu);
+        std::string session_id = session_manager->createSession(model_path.c_str(), *options, is_gpu, cuda_device >= 0);
         if (session_id.empty()) {
           outcome->error_code = "SESSION_CREATION_ERROR";
           outcome->error_message = "Failed to create ONNX Runtime session";
@@ -757,25 +870,51 @@ void FlutterOnnxruntimePlugin::HandleCreateSession(
   }
 }
 
-// Fushi: DXGI budget for adapter `deviceId` (default 0). Errors as
-// UNAVAILABLE so the Dart side can treat "unknown" distinctly from a number.
+// Fushi: DXGI budget. With an explicit `deviceId` it answers for that DXGI
+// adapter. Without one it answers for the adapter GPU sessions run on: the
+// CUDA device's adapter once the CUDA plugin EP is registered (a process runs
+// either CUDA on the bundled core or DirectML on the downloaded one, never
+// both), DXGI adapter 0 otherwise (what DirectML device 0 is). On a
+// hybrid-graphics laptop adapter 0 is usually the integrated GPU, whose
+// "budget" is a slice of system RAM: sizing CUDA batches from it overflows the
+// NVIDIA card (issue #3380 follow-up). Errors as UNAVAILABLE so the Dart side
+// can treat "unknown" distinctly from a number.
 void FlutterOnnxruntimePlugin::HandleGetDeviceMemoryInfo(
     const flutter::MethodCall<flutter::EncodableValue> &method_call,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  bool has_device_id = false;
   int device_id = 0;
   const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments());
   if (args != nullptr) {
     auto it = args->find(flutter::EncodableValue("deviceId"));
     if (it != args->end() && std::holds_alternative<int32_t>(it->second)) {
       device_id = std::get<int32_t>(it->second);
+      has_device_id = true;
     }
   }
   DeviceMemoryInfo info;
-  if (!QueryDeviceMemoryInfo(device_id, &info)) {
+  // Which rule picked the adapter; reported back for logs and probes.
+  const char *selection = has_device_id ? "explicit" : "default";
+  bool ok = false;
+  // sessionManager_ exists only once ORT is bound; this method must not bind it.
+  if (!has_device_id && impl_->sessionManager_ && impl_->sessionManager_->isCudaRegistered()) {
+    constexpr uint32_t kNvidiaVendorId = 0x10DE;
+    uint8_t luid[8] = {0};
+    if (CudaDeviceLuid(0, luid) && QueryDeviceMemoryInfoByLuid(luid, &info)) {
+      ok = true;
+      selection = "cuda-luid";
+    } else if (QueryDeviceMemoryInfoByVendor(kNvidiaVendorId, &info)) {
+      ok = true;
+      selection = "cuda-vendor";
+    }
+  }
+  if (!ok && !QueryDeviceMemoryInfo(device_id, &info)) {
     FailWith(result, "UNAVAILABLE", "DXGI video memory info unavailable for this adapter");
     return;
   }
   flutter::EncodableMap reply;
+  reply[flutter::EncodableValue("adapterName")] = flutter::EncodableValue(WideToUtf8(info.description));
+  reply[flutter::EncodableValue("selection")] = flutter::EncodableValue(std::string(selection));
   reply[flutter::EncodableValue("dedicatedVideoMemory")] = flutter::EncodableValue(info.dedicated_video_memory);
   reply[flutter::EncodableValue("budget")] = flutter::EncodableValue(info.budget);
   reply[flutter::EncodableValue("currentUsage")] = flutter::EncodableValue(info.current_usage);
@@ -948,6 +1087,43 @@ void FlutterOnnxruntimePlugin::HandleRegisterCudaRuntime(
                                    : flutter::EncodableValue(WindowsUtils::toUtf8Message(registration.error));
     reply[flutter::EncodableValue("deviceCount")] =
         flutter::EncodableValue(static_cast<int32_t>(registration.device_count));
+    outcome->reply = flutter::EncodableValue(reply);
+    impl->reply(shared_result, outcome);
+  });
+}
+
+void FlutterOnnxruntimePlugin::HandleReleaseCudaRuntime(
+    const flutter::MethodCall<flutter::EncodableValue> &method_call,
+    std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
+  bool reset_context = false;
+  if (const auto *args = std::get_if<flutter::EncodableMap>(method_call.arguments())) {
+    auto it = args->find(flutter::EncodableValue("resetContext"));
+    if (it != args->end() && std::holds_alternative<bool>(it->second)) {
+      reset_context = std::get<bool>(it->second);
+    }
+  }
+  SharedResult shared_result(std::move(result));
+  SessionManager *session_manager = impl_->sessionManager_.get();
+  FlutterOnnxruntimePluginImpl *impl = impl_.get();
+  // GPU queue: serialised with CUDA session creation and every CUDA run.
+  impl_->gpuQueue_.Post([impl, session_manager, shared_result, reset_context]() {
+    auto outcome = std::make_shared<TaskOutcome>();
+    int open_sessions = 0;
+    CudaReleaseResult release;
+    try {
+      release = session_manager->releaseCudaPlugin(reset_context, &open_sessions);
+    } catch (const std::exception &e) {
+      release.error = e.what();
+    } catch (...) {
+      release.error = "Unknown error occurred";
+    }
+    flutter::EncodableMap reply;
+    reply[flutter::EncodableValue("released")] = flutter::EncodableValue(release.released);
+    reply[flutter::EncodableValue("contextReset")] = flutter::EncodableValue(release.context_reset);
+    reply[flutter::EncodableValue("openCudaSessions")] = flutter::EncodableValue(static_cast<int32_t>(open_sessions));
+    reply[flutter::EncodableValue("error")] =
+        release.error.empty() ? flutter::EncodableValue()
+                              : flutter::EncodableValue(WindowsUtils::toUtf8Message(release.error));
     outcome->reply = flutter::EncodableValue(reply);
     impl->reply(shared_result, outcome);
   });
@@ -1156,7 +1332,12 @@ void FlutterOnnxruntimePlugin::HandleCloseSession(
     impl_->queueFor(is_gpu, session_id).Post([impl, session_manager, shared_result, session_id]() {
       auto outcome = std::make_shared<TaskOutcome>();
       try {
+        const bool was_cuda = session_manager->isCudaSession(session_id);
         session_manager->closeSession(session_id);
+        // GPU queue: no CUDA session can be created between these reads.
+        if (was_cuda && session_manager->openCudaSessions() == 0) {
+          impl->ArmCudaIdleRelease(session_manager->cudaGeneration());
+        }
         outcome->reply = flutter::EncodableValue();
       } catch (const Ort::Exception &e) {
         outcome->error_code = "ORT_ERROR";

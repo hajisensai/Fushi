@@ -10,6 +10,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/metadata/anidb_app_client.dart';
+import 'package:fushi_engine/media/video/metadata/anidb_text.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_title_catalog.dart';
 import 'package:fushi_engine/media/video/metadata/anidb_udp_file_client.dart'
     show AnidbEpisodeInfo;
@@ -17,6 +18,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_json.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_languages.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_related_works.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart';
 import 'package:http/http.dart' as http;
 import 'package:path/path.dart' as p;
@@ -31,6 +33,13 @@ import 'package:xml/xml.dart' show XmlParserException, XmlTagException;
 class AniDbBannedException extends VideoMetadataNetworkException {
   const AniDbBannedException(super.message);
 }
+
+/// 自动识别里，AniDB 目录**模糊**命中至少要这么像才进待确认候选。
+///
+/// 实测（真实 anime-titles 目录）：同作品的模糊命中在 0.67 以上（`K-ON! 04` →
+/// `K-On!` 0.80、`Eiga K-On!` 0.67），只共享一个音节的噪声在 0.62 以下（`Kanon
+/// \`06` 0.62、`konobi` 0.50、`Kono Oto Tomare!` 0.31）。精确 / 前缀命中不受此限。
+const double kAniDbReviewMinFuzzySimilarity = 0.65;
 
 typedef AniDbProviderNow = DateTime Function();
 typedef AniDbProviderSleep = Future<void> Function(Duration duration);
@@ -91,6 +100,24 @@ class AniDbVideoMetadataProvider
   static const Duration _banCooldown = Duration(hours: 24);
   static const Duration _animeCacheTtl = Duration(hours: 24);
   static const String catalogOnlyPayloadKey = 'anidbCatalogOnly';
+
+  /// 标题目录搜索命中的证据（[search] 产出的摘要才带）：只有 3-gram 模糊命中、
+  /// 相似度还低于 [kAniDbReviewMinFuzzySimilarity] 的条目是噪声。
+  static const String catalogFuzzySimilarityPayloadKey =
+      'anidbCatalogFuzzySimilarity';
+
+  /// 这条 [search] 摘要是不是低相似度的模糊目录命中。
+  ///
+  /// 目录搜索在精确 / 前缀都落空时退到 3-gram 模糊召回（下限 0.2）：整串原始
+  /// 文件名 `[K-ON!][04][BIG5][x264_aac][BDrip_720P]` 会召回 `Kono Oto
+  /// Tomare!`、`Kekkon Yubiwa Monogatari II` 这类只共享 `kon` 的作品（0.28～
+  /// 0.33）。手动搜索保留它们供用户翻找；自动识别不能把它们当待确认候选。
+  static bool isWeakCatalogMatch(VideoMetadataWork work) {
+    final Object? similarity =
+        work.rawPayload?[catalogFuzzySimilarityPayloadKey];
+    return similarity is num && similarity < kAniDbReviewMinFuzzySimilarity;
+  }
+
   static final AniDbTitleCatalog _sharedTitleCatalog = AniDbTitleCatalog();
   // AniDB throttling belongs to the endpoint, not to one configured client
   // identity. Old/new settings can briefly coexist during a coordinator swap;
@@ -163,10 +190,9 @@ class AniDbVideoMetadataProvider
       return 'AniDB 已封禁本客户端，约 ${ban.inMinutes} 分钟后解除';
     }
     if (!_hasHttpClientIdentity) {
-      // 随包配置就落在这里：内置 `fushiplayer` 只登记了 UDP，HTTP 身份为空，
-      // 请求根本没发（BUG-2623 根治），不是被 AniDB 拒绝。
+      // 身份缺失时请求根本没发（BUG-2623），不是被 AniDB 拒绝。
       return '未配置已登记的 AniDB HTTP 客户端身份'
-          '（内置客户端只登记了 UDP，仅 UDP 哈希识别与离线标题目录可用）';
+          '（HTTP 详情不可用，仍可使用 UDP 哈希识别与离线标题目录）';
     }
     final String? lastError = _lastAnimeXmlError;
     return lastError == null ? 'anime XML 未取到' : 'anime XML 请求失败：$lastError';
@@ -206,6 +232,9 @@ class AniDbVideoMetadataProvider
           match.record,
           request.mediaKind,
           matchedTitle: match.matchedTitle,
+          fuzzySimilarity: match.kind == AniDbTitleMatchKind.similar
+              ? match.similarity
+              : null,
         ),
     ];
   }
@@ -644,12 +673,9 @@ class AniDbVideoMetadataProvider
       ..._mapStaffCredits(creators),
       ..._parseCharacterCredits(root.getElement('characters')),
     ];
-    final List<String> tags = <String>[
-      for (final FfcXmlElement tag
-          in root.getElement('tags')?.findElements('tag') ??
-              const <FfcXmlElement>[])
-        if (_text(tag.getElement('name')) case final String name) name,
-    ];
+    final List<String> tags = aniDbLeafTagNames(
+      root.getElement('tags')?.findElements('tag') ?? const <FfcXmlElement>[],
+    );
     final String restricted = (root.getAttribute('restricted') ?? '')
         .trim()
         .toLowerCase();
@@ -659,7 +685,7 @@ class AniDbVideoMetadataProvider
       titles: titles,
       premiered: premiered,
       endDate: endDate,
-      plot: _text(root.getElement('description')),
+      plot: _prose(root.getElement('description')),
       rating: rating.value,
       ratingVotes: rating.votes,
       picture: _text(root.getElement('picture')),
@@ -676,6 +702,7 @@ class AniDbVideoMetadataProvider
       specials: specials,
       malIds: malIds.toSet().toList(growable: false),
       prequelIds: prequelIds.toSet().toList(growable: false),
+      related: aniDbRelatedWorksFromRoot(root),
       episodeTitles: episodeTitles,
     );
   }
@@ -755,6 +782,11 @@ class AniDbVideoMetadataProvider
         'aid': anime.animeId,
         'type': anime.animeType,
         'restricted': anime.restricted,
+        // 系列关系（全部 relatedanime 类型）：随 details 快照落库，作品资料写库时
+        // 落进 collection_relations（video_collection_relation_sync.dart）。
+        kAniDbRelatedPayloadKey: <Map<String, Object?>>[
+          for (final VideoRelatedWork r in anime.related) r.toPayload(),
+        ],
       },
     );
   }
@@ -800,6 +832,7 @@ class AniDbVideoMetadataProvider
     AniDbTitleRecord record,
     VideoMetadataMediaKind kind, {
     AniDbTitle? matchedTitle,
+    double? fuzzySimilarity,
   }) {
     final _SelectedTitles selected = _selectTitles(record);
     final List<String> aliases = metadataUniqueStrings(<String?>[
@@ -823,7 +856,11 @@ class AniDbVideoMetadataProvider
           isDefault: true,
         ),
       ],
-      rawPayload: const <String, Object?>{catalogOnlyPayloadKey: true},
+      rawPayload: <String, Object?>{
+        catalogOnlyPayloadKey: true,
+        if (fuzzySimilarity != null)
+          catalogFuzzySimilarityPayloadKey: fuzzySimilarity,
+      },
     );
   }
 
@@ -907,7 +944,7 @@ class AniDbVideoMetadataProvider
           seasonNumber: seasonNumber,
           episodeNumber: episodeNumber,
           title: _selectTitles(record).title,
-          plot: _text(element.getElement('summary')),
+          plot: _prose(element.getElement('summary')),
           airDate: airDate,
           year: metadataYear(airDate),
           absoluteNumber: specials ? null : episodeNumber,
@@ -936,7 +973,7 @@ class AniDbVideoMetadataProvider
   List<_AniDbCreator> _parseCreators(FfcXmlElement? parent) => <_AniDbCreator>[
     for (final FfcXmlElement element
         in parent?.findElements('name') ?? const <FfcXmlElement>[])
-      if (_text(element) case final String name)
+      if (_prose(element) case final String name)
         _AniDbCreator(
           id: int.tryParse(element.getAttribute('id') ?? ''),
           name: name,
@@ -972,13 +1009,13 @@ class AniDbVideoMetadataProvider
     final List<VideoMetadataCredit> credits = <VideoMetadataCredit>[];
     for (final FfcXmlElement element
         in parent?.findElements('character') ?? const <FfcXmlElement>[]) {
-      final String? characterName = _text(element.getElement('name'));
+      final String? characterName = _prose(element.getElement('name'));
       if (characterName == null) continue;
       final int? characterId = int.tryParse(element.getAttribute('id') ?? '');
       final VideoMetadataCharacter character = VideoMetadataCharacter(
         id: characterId?.toString(),
         name: characterName,
-        description: _text(element.getElement('description')),
+        description: _prose(element.getElement('description')),
         imageUrl: _imageUrl(_text(element.getElement('picture'))),
         ids: <VideoMetadataId>[
           if (characterId != null)
@@ -986,7 +1023,7 @@ class AniDbVideoMetadataProvider
         ],
       );
       for (final FfcXmlElement seiyuu in element.findElements('seiyuu')) {
-        final String? personName = _text(seiyuu);
+        final String? personName = _prose(seiyuu);
         if (personName == null) continue;
         final int? personId = int.tryParse(seiyuu.getAttribute('id') ?? '');
         credits.add(
@@ -1317,6 +1354,12 @@ String? _text(FfcXmlElement? element) {
   return value.isEmpty ? null : value;
 }
 
+/// 给人看的 AniDB 文本（简介、集简介、人名、角色名）：反引号换回撇号。
+String? _prose(FfcXmlElement? element) => switch (_text(element)) {
+  final String value => aniDbDisplayText(value),
+  null => null,
+};
+
 String _xmlLanguage(FfcXmlElement element) =>
     (element.getAttribute('xml:lang') ??
             element.getAttributeNs(
@@ -1402,6 +1445,7 @@ class _AniDbAnime {
     this.specials = const <VideoMetadataEpisode>[],
     this.malIds = const <int>[],
     this.prequelIds = const <int>[],
+    this.related = const <VideoRelatedWork>[],
     this.episodeTitles = const <int, List<AniDbTitle>>{},
   });
 
@@ -1410,6 +1454,9 @@ class _AniDbAnime {
 
   /// `<relatedanime type="Prequel">` 的 aid。
   final List<int> prequelIds;
+
+  /// `<relatedanime>` 全部条目（各类型，已映射成 collection_relations 落库值）。
+  final List<VideoRelatedWork> related;
 
   /// eid → 该集全部语言标题（逐集链接与 UDP 兜底用）。
   final Map<int, List<AniDbTitle>> episodeTitles;

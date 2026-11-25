@@ -18,7 +18,10 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteCollectionMembership, RemoteVideoInfo;
 import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
+import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
 import 'package:path/path.dart' as p;
+
+import '../media/video/bluray_menu_info_test.dart' show indexFixture;
 
 // 远端原盘第二期 client 侧：共享会话解析、整盘下载（续传 / 取消 / 校验）、落地认领、
 // 按盘分组、流式能力判定与缓冲提示判据。
@@ -441,6 +444,270 @@ void main() {
       );
       expect(await source.readMenuInfo(), isNull);
       expect(read, <String>['BDMV/index.bdmv', 'BDMV/BACKUP/index.bdmv']);
+    });
+
+    test('remote BD index is read once per source: the page and the controller '
+        'share one read; an unreadable index is not remembered', () async {
+      int reads = 0;
+      Uint8List? body = Uint8List(4); // unreadable at first
+      final Completer<void> gate = Completer<void>();
+      final RemoteDiscMenuSource source = RemoteDiscMenuSource(
+        share: RemoteDiscShare(
+          baseUrl: Uri.parse('http://h:1/api/library/disc/t/'),
+          manifest: _manifest(
+            files: const <DiscShareFile>[
+              DiscShareFile(path: 'BDMV/index.bdmv', size: 4, modifiedAt: 0),
+            ],
+          ),
+        ),
+        title: 'Disc',
+        readFile: (String path, int _) async {
+          reads++;
+          await gate.future;
+          return body;
+        },
+      );
+      // Two overlapping callers (page probe + controller open) → one read.
+      final Future<BlurayMenuInfo?> page = source.readMenuInfo();
+      final Future<BlurayMenuInfo?> controller = source.readMenuInfo();
+      gate.complete();
+      expect(await page, isNull);
+      expect(await controller, isNull);
+      expect(reads, 1);
+
+      // A failed read is not remembered: the next call reads again.
+      body = indexFixture();
+      final BlurayMenuInfo? first = await source.readMenuInfo();
+      expect(first, isNotNull);
+      expect(reads, 2);
+
+      // A parsed index is remembered: no further network read.
+      expect(identical(await source.readMenuInfo(), first), isTrue);
+      expect(identical(await source.readMenuInfo(), first), isTrue);
+      expect(reads, 2);
+    });
+
+    test('remote BD index read that throws is not remembered', () async {
+      int reads = 0;
+      final RemoteDiscMenuSource source = RemoteDiscMenuSource(
+        share: RemoteDiscShare(
+          baseUrl: Uri.parse('http://h:1/api/library/disc/t/'),
+          manifest: _manifest(
+            files: const <DiscShareFile>[
+              DiscShareFile(path: 'BDMV/index.bdmv', size: 4, modifiedAt: 0),
+            ],
+          ),
+        ),
+        title: 'Disc',
+        readFile: (String path, int _) async {
+          reads++;
+          if (reads == 1) throw const SocketException('x');
+          return indexFixture();
+        },
+      );
+      await expectLater(source.readMenuInfo(), throwsA(isA<SocketException>()));
+      expect(await source.readMenuInfo(), isNotNull);
+      expect(reads, 2);
+    });
+  });
+
+  group('远端原盘 title 在 host 上的定位（字幕管线 / 取音频）', () {
+    RemoteDiscMenuSource source({
+      List<RemoteDiscShareTitle> titles = const <RemoteDiscShareTitle>[
+        RemoteDiscShareTitle(id: 'host/t1', path: 'BDMV/PLAYLIST/00001.mpls'),
+        RemoteDiscShareTitle(id: 'host/t8', path: 'BDMV/PLAYLIST/00800.MPLS'),
+      ],
+      RemoteDiscTitleAudioFetch? fetchTitleAudio,
+    }) => RemoteDiscMenuSource(
+      share: RemoteDiscShare(
+        baseUrl: Uri.parse('http://h:1/api/library/disc/t/'),
+        manifest: _manifest(),
+        titles: titles,
+      ),
+      title: 'Disc',
+      readFile: (String _, int _) async => null,
+      fetchTitleAudio: fetchTitleAudio,
+    );
+
+    String member(RemoteDiscMenuSource s, String name) =>
+        p.join(s.identityRoot, 'BDMV', 'PLAYLIST', name);
+
+    test('host 库里有这条 title 的行：直接用它，不带 discTitle（老 host 也认）', () {
+      final RemoteDiscMenuSource s = source();
+      expect(
+        s.hostTitleFor(member(s, '00001.mpls')),
+        const RemoteDiscHostTitle(
+          videoId: 'host/t1',
+          memberPath: 'BDMV/PLAYLIST/00001.mpls',
+        ),
+      );
+      // 盘上目录 / 文件名大小写与 libbluray 报的不一致也认得出。
+      expect(s.hostTitleFor(member(s, '00800.mpls'))!.videoId, 'host/t8');
+    });
+
+    test('库里没有行的 title：同盘蓝光行当锚点 + discTitle；各条 title 键互不相同', () {
+      final RemoteDiscMenuSource s = source();
+      final RemoteDiscHostTitle bonus = s.hostTitleFor(
+        member(s, '00005.mpls'),
+      )!;
+      expect(bonus.videoId, 'host/t1');
+      expect(bonus.discTitle, 'BDMV/PLAYLIST/00005.mpls');
+      expect(bonus.memberPath, 'BDMV/PLAYLIST/00005.mpls');
+      expect(bonus.key, isNot(s.hostTitleFor(member(s, '00001.mpls'))!.key));
+      expect(bonus.key, isNot(s.hostTitleFor(member(s, '00006.mpls'))!.key));
+    });
+
+    test('多角度 title 的非第 1 个角度：按 title 找行，总带角度成员路径的 discTitle', () {
+      final RemoteDiscMenuSource s = source();
+      // host 库里有这条 title 的行：仍用它，但要 host 按第 2 个角度读。
+      final RemoteDiscHostTitle angle = s.hostTitleFor(
+        member(s, '00001.a2.mpls'),
+      )!;
+      expect(angle.videoId, 'host/t1');
+      expect(angle.memberPath, 'BDMV/PLAYLIST/00001.a2.mpls');
+      expect(angle.discTitle, 'BDMV/PLAYLIST/00001.a2.mpls');
+      expect(angle.readsAngle, isTrue);
+      expect(angle.key, isNot(s.hostTitleFor(member(s, '00001.mpls'))!.key));
+      // 库里没有行的 title：同盘锚点 + 角度成员路径。
+      final RemoteDiscHostTitle bonus = s.hostTitleFor(
+        member(s, '00005.a3.mpls'),
+      )!;
+      expect(bonus.videoId, 'host/t1');
+      expect(bonus.discTitle, 'BDMV/PLAYLIST/00005.a3.mpls');
+      expect(bonus.readsAngle, isTrue);
+      // 第 1 个角度不带后缀，老 host 也认。
+      expect(s.hostTitleFor(member(s, '00001.mpls'))!.readsAngle, isFalse);
+      expect(s.hostTitleFor(member(s, '00005.mpls'))!.readsAngle, isFalse);
+    });
+
+    test('DVD title：锚在这条 title 自己的行（没有就锚在同盘 DVD 行），总带 discTitle', () {
+      final RemoteDiscMenuSource s = source(
+        titles: const <RemoteDiscShareTitle>[
+          RemoteDiscShareTitle(
+            id: 'host/d1',
+            path: 'VIDEO_TS/TITLE_01.dvdtitle',
+          ),
+          RemoteDiscShareTitle(
+            id: 'host/d3',
+            path: 'VIDEO_TS/TITLE_03.dvdtitle',
+          ),
+        ],
+      );
+      String dvd(String name) => p.join(s.identityRoot, 'VIDEO_TS', name);
+      final RemoteDiscHostTitle own = s.hostTitleFor(dvd('TITLE_03.dvdtitle'))!;
+      expect(own.videoId, 'host/d3');
+      expect(own.memberPath, 'VIDEO_TS/TITLE_03.dvdtitle');
+      expect(own.discTitle, 'VIDEO_TS/TITLE_03.dvdtitle');
+      expect(own.readsDvd, isTrue, reason: '老 host 判 DVD title 读不到，要它声明才发');
+      expect(own.readsAngle, isFalse);
+      final RemoteDiscHostTitle bonus = s.hostTitleFor(
+        dvd('TITLE_07.dvdtitle'),
+      )!;
+      expect(bonus.videoId, 'host/d1', reason: '库里没有行：同盘 DVD 行当锚点');
+      expect(bonus.discTitle, 'VIDEO_TS/TITLE_07.dvdtitle');
+      expect(bonus.key, isNot(own.key));
+      // 蓝光会话的 title 不会锚到 DVD 行上，反之亦然。
+      expect(s.hostTitleFor(member(s, '00001.mpls')), isNull);
+      expect(source().hostTitleFor(dvd('TITLE_01.dvdtitle')), isNull);
+      expect(source().hostTitleFor(member(s, '00001.mpls'))!.readsDvd, isFalse);
+    });
+
+    test('DVD 多角度 title 的非第 1 个角度：按不带角度的 title 找行，discTitle 带角度', () {
+      final RemoteDiscMenuSource s = source(
+        titles: const <RemoteDiscShareTitle>[
+          RemoteDiscShareTitle(
+            id: 'host/d1',
+            path: 'VIDEO_TS/TITLE_01.dvdtitle',
+          ),
+          RemoteDiscShareTitle(
+            id: 'host/d3',
+            path: 'VIDEO_TS/TITLE_03.dvdtitle',
+          ),
+        ],
+      );
+      String dvd(String name) => p.join(s.identityRoot, 'VIDEO_TS', name);
+      final RemoteDiscHostTitle angle = s.hostTitleFor(
+        dvd('TITLE_03.a2.dvdtitle'),
+      )!;
+      expect(angle.videoId, 'host/d3', reason: '库里这条 title 的行');
+      expect(angle.memberPath, 'VIDEO_TS/TITLE_03.a2.dvdtitle');
+      expect(angle.discTitle, 'VIDEO_TS/TITLE_03.a2.dvdtitle');
+      expect(angle.readsDvd, isTrue);
+      expect(angle.readsDvdAngle, isTrue);
+      expect(angle.readsAngle, isFalse, reason: '蓝光角度位管不到 DVD');
+      expect(angle.key, isNot(s.hostTitleFor(dvd('TITLE_03.dvdtitle'))!.key));
+      final RemoteDiscHostTitle bonus = s.hostTitleFor(
+        dvd('TITLE_07.a3.dvdtitle'),
+      )!;
+      expect(bonus.videoId, 'host/d1');
+      expect(bonus.discTitle, 'VIDEO_TS/TITLE_07.a3.dvdtitle');
+      expect(bonus.readsDvdAngle, isTrue);
+      // 第 1 个角度不带后缀：只要 host 认 DVD title。
+      expect(s.hostTitleFor(dvd('TITLE_03.dvdtitle'))!.readsDvdAngle, isFalse);
+    });
+
+    test('不在这张盘的身份根下 / DVD title 没有 DVD 行可当锚点 / 没有蓝光行可当锚点 → null', () {
+      final RemoteDiscMenuSource s = source();
+      expect(
+        s.hostTitleFor(
+          p.join(
+            'fushi-remote-disc',
+            'other',
+            'Disc 2',
+            'BDMV',
+            'PLAYLIST',
+            '00001.mpls',
+          ),
+        ),
+        isNull,
+      );
+      expect(
+        s.hostTitleFor(p.join(s.identityRoot, 'VIDEO_TS', 'TITLE_01.dvdtitle')),
+        isNull,
+      );
+      expect(
+        s.hostTitleFor(p.join(s.identityRoot, 'BDMV', 'STREAM', '00001.m2ts')),
+        isNull,
+      );
+      expect(
+        source(
+          titles: const <RemoteDiscShareTitle>[],
+        ).hostTitleFor(member(s, '00005.mpls')),
+        isNull,
+      );
+    });
+
+    test('RemoteDiscActions 把 host 取音频接到会话盘源上', () async {
+      final List<(RemoteDiscHostTitle, int, int?)> asked =
+          <(RemoteDiscHostTitle, int, int?)>[];
+      final RemoteDiscActions actions = RemoteDiscActions(
+        openShare: (String _) async => RemoteDiscShare.fromJson(_issueBody())!,
+        readFile: (RemoteDiscShare _, String _, int _) async => null,
+        fetchTitleAudio:
+            (
+              RemoteDiscHostTitle title,
+              File dest, {
+              required int startMs,
+              required int endMs,
+              int? audioStreamIndex,
+              int? audioStreamCount,
+            }) async => asked.add((title, endMs, audioStreamIndex)),
+      );
+      final RemoteDiscMenuSource s = actions.menuSource(
+        RemoteDiscShare.fromJson(_issueBody())!,
+        'Box',
+      );
+      final RemoteDiscHostTitle title = s.hostTitleFor(
+        member(s, '00001.mpls'),
+      )!;
+      await s.fetchTitleAudio!(
+        title,
+        File(p.join(temp.path, 'a.aac')),
+        startMs: 0,
+        endMs: 5000,
+        audioStreamIndex: 1,
+      );
+      expect(asked.single, (title, 5000, 1));
     });
   });
 

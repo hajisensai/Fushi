@@ -74,6 +74,39 @@ AnkiOverwriteScope ankiOverwriteScopeFromName(String? name) {
   }
 }
 
+/// 解析持久化的 [AnkiSettings.overwriteFieldsByNoteType]：缺键 / 形状不对一律视为空表
+/// （= 每种笔记类型都覆写全部字段，旧存档升级后行为不变）。
+///
+/// 拍板 lt2wobUYfE：空清单**保留**——它表示「一个字段都不写」（用户在覆写弹窗里点
+/// 「全部字段」取消了全选），覆写会被拒绝而不是退回整卡替换。旧存档从来没存过空
+/// 清单（旧 [AnkiSettings.withOverwriteFields] 把空选择当删条目），不需要迁移。
+Map<String, List<String>> overwriteFieldsByNoteTypeFromJson(Object? raw) {
+  if (raw is! Map) return const <String, List<String>>{};
+  final Map<String, List<String>> out = <String, List<String>>{};
+  for (final MapEntry<Object?, Object?> e in raw.entries) {
+    final Object? key = e.key;
+    final Object? value = e.value;
+    if (key is! String || value is! List) continue;
+    out[key] = <String>[
+      for (final Object? f in value)
+        if (f is String && f.isNotEmpty) f,
+    ];
+  }
+  return out;
+}
+
+/// 拍板 lt2wobUYfE：用户在「覆写哪些字段」里一个都没勾（[onlyFields] 是
+/// [AnkiSettings.overwriteFieldsFor] 返回的空集）时拒绝覆写，错误码
+/// [AnkiErrorCode.overwriteNoFieldsSelected]。各后端在渲染前就调（查词弹窗直接点 ✓
+/// 覆写也走这里），不白渲染 / 白下载媒体。不拒绝时返回 null。
+MineOutcome? rejectNoOverwriteFieldsSelectedOutcome(Set<String>? onlyFields) {
+  if (onlyFields == null || onlyFields.isNotEmpty) return null;
+  return MineOutcome.failure(
+    'No fields are checked in "Fields to overwrite" — nothing was changed.',
+    errorCode: AnkiErrorCode.overwriteNoFieldsSelected,
+  );
+}
+
 /// 查重（以及据同一条件反查已存在卡）的**搜索范围**。
 ///
 /// 用户痛点：Anki 的 `deck:X` 搜索包含 X 的子卡组，但**不包含**它的父卡组与兄弟
@@ -218,6 +251,7 @@ class AnkiSettings {
     this.compactGlossaries = false,
     this.embedMedia = true,
     this.overwriteScope = AnkiOverwriteScope.latest,
+    this.overwriteFieldsByNoteType = const <String, List<String>>{},
     this.duplicateScope = AnkiDuplicateScope.deck,
     this.ankiConnectHost = 'localhost',
     this.ankiConnectPort = 8765,
@@ -280,6 +314,9 @@ class AnkiSettings {
     embedMedia: json['embedMedia'] as bool? ?? true,
     overwriteScope: ankiOverwriteScopeFromName(
       json['overwriteScope'] as String?,
+    ),
+    overwriteFieldsByNoteType: overwriteFieldsByNoteTypeFromJson(
+      json['overwriteFieldsByNoteType'],
     ),
     duplicateScope: ankiDuplicateScopeFromName(
       json['duplicateScope'] as String?,
@@ -364,6 +401,44 @@ class AnkiSettings {
 
   /// TODO-614：覆写已制卡片的范围（默认 [AnkiOverwriteScope.latest] = 仅最近一张）。
   final AnkiOverwriteScope overwriteScope;
+
+  /// 反馈 nWWjBp3Clo：覆写已有卡时**只改哪些字段**，按笔记类型名记住。
+  ///
+  /// 笔记类型名 → 要覆写的字段名清单。**没有条目 = 覆写全部字段**（BUG-2606 的整卡
+  /// 替换，旧行为不变）；有条目时只写清单里的字段，其余字段原样保留——预制卡组里的
+  /// 释义、JLPT 标注等不会被清空，Fushi 只补句子 / 图片 / 音频。标签照旧只增不减。
+  ///
+  /// 不进 Profile 快照：键是笔记类型名，切 Profile 换笔记类型时各自的选择互不干扰。
+  /// 读写一律经 [overwriteFieldsFor] / [withOverwriteFields]，不直接拼这张表。
+  final Map<String, List<String>> overwriteFieldsByNoteType;
+
+  /// [noteTypeName] 这种笔记类型覆写时要写的字段；`null` = 全部字段（旧行为），
+  /// 空集 = 一个都不写（拍板 lt2wobUYfE：覆写被拒绝，见
+  /// [rejectNoOverwriteFieldsSelectedOutcome]）。
+  Set<String>? overwriteFieldsFor(String? noteTypeName) {
+    if (noteTypeName == null) return null;
+    final List<String>? fields = overwriteFieldsByNoteType[noteTypeName];
+    if (fields == null) return null;
+    return fields.toSet();
+  }
+
+  /// 记住 [noteTypeName] 的覆写字段选择。[fields] 为 `null` = 恢复「全部字段」，
+  /// 删掉这个笔记类型的条目；空 = 一个字段都不写（拍板 lt2wobUYfE：「全部字段」可以
+  /// 取消全选，空选择要持久化，覆写入口据此禁用 / 拒绝）。
+  AnkiSettings withOverwriteFields(
+    String noteTypeName,
+    Iterable<String>? fields,
+  ) {
+    final Map<String, List<String>> next = <String, List<String>>{
+      ...overwriteFieldsByNoteType,
+    };
+    if (fields == null) {
+      next.remove(noteTypeName);
+    } else {
+      next[noteTypeName] = fields.toSet().toList();
+    }
+    return copyWith(overwriteFieldsByNoteType: next);
+  }
 
   /// 查重 / 反查已存在卡的搜索范围（默认 [AnkiDuplicateScope.deck] = 旧行为：
   /// 只查当前卡组及其子卡组）。仅 AnkiConnect 生效，见 [AnkiDuplicateScope]。
@@ -566,6 +641,7 @@ class AnkiSettings {
     bool? compactGlossaries,
     bool? embedMedia,
     AnkiOverwriteScope? overwriteScope,
+    Map<String, List<String>>? overwriteFieldsByNoteType,
     AnkiDuplicateScope? duplicateScope,
     String? ankiConnectHost,
     int? ankiConnectPort,
@@ -620,6 +696,8 @@ class AnkiSettings {
     compactGlossaries: compactGlossaries ?? this.compactGlossaries,
     embedMedia: embedMedia ?? this.embedMedia,
     overwriteScope: overwriteScope ?? this.overwriteScope,
+    overwriteFieldsByNoteType:
+        overwriteFieldsByNoteType ?? this.overwriteFieldsByNoteType,
     duplicateScope: duplicateScope ?? this.duplicateScope,
     ankiConnectHost: ankiConnectHost ?? this.ankiConnectHost,
     ankiConnectPort: ankiConnectPort ?? this.ankiConnectPort,
@@ -676,6 +754,7 @@ class AnkiSettings {
     'compactGlossaries': compactGlossaries,
     'embedMedia': embedMedia,
     'overwriteScope': overwriteScope.name,
+    'overwriteFieldsByNoteType': overwriteFieldsByNoteType,
     'duplicateScope': duplicateScope.name,
     'ankiConnectHost': ankiConnectHost,
     'ankiConnectPort': ankiConnectPort,
@@ -715,10 +794,13 @@ class AnkiMiningPayload {
     this.furiganaPlain = '',
     this.frequenciesHtml = '',
     this.freqHarmonicRank = '',
+    this.singleFrequencyNumbers = const {},
+    this.singleFrequenciesHtml = const {},
     this.glossary = '',
     this.glossaryFirst = '',
     this.singleGlossaries = const {},
     this.pitchPositions = '',
+    this.pitchPositionsInline = '',
     this.pitchCategories = '',
     this.phoneticTranscriptions = '',
     this.popupSelectionText = '',
@@ -769,18 +851,31 @@ class AnkiMiningPayload {
     return false;
   }
 
-  factory AnkiMiningPayload.fromJson(Map<String, dynamic> json) {
-    var singleGlossaries = <String, String>{};
-    final sgRaw = json['singleGlossaries'];
-    if (sgRaw is String && sgRaw.isNotEmpty) {
+  /// 「词典名 → 字符串」的逐词典字段（`singleGlossaries` / `singleFrequencyNumbers` /
+  /// `singleFrequenciesHtml`）在两条 wire 上的形态：WebView 桥上是 popup.js
+  /// `JSON.stringify` 出来的字符串，保类型 JSON 线上是原生 Map。缺失 / 空串给空 Map。
+  static Map<String, String> _stringMapFromPayloadWire(
+    Map<String, dynamic> json,
+    String key,
+  ) {
+    final Object? raw = json[key];
+    if (raw is String && raw.isNotEmpty) {
       try {
-        singleGlossaries = Map<String, String>.from(jsonDecode(sgRaw) as Map);
+        return Map<String, String>.from(jsonDecode(raw) as Map);
       } catch (e, stack) {
-        fushiDebugPrint('AnkiMiningPayload.singleGlossaries: $e\n$stack');
+        fushiDebugPrint('AnkiMiningPayload.$key: $e\n$stack');
       }
-    } else if (sgRaw is Map) {
-      singleGlossaries = Map<String, String>.from(sgRaw);
+    } else if (raw is Map) {
+      return Map<String, String>.from(raw);
     }
+    return <String, String>{};
+  }
+
+  factory AnkiMiningPayload.fromJson(Map<String, dynamic> json) {
+    final Map<String, String> singleGlossaries = _stringMapFromPayloadWire(
+      json,
+      'singleGlossaries',
+    );
 
     var dictionaryMedia = <DictionaryMedia>[];
     final dmRaw = json['dictionaryMedia'];
@@ -805,10 +900,19 @@ class AnkiMiningPayload {
       furiganaPlain: json['furiganaPlain'] as String? ?? '',
       frequenciesHtml: json['frequenciesHtml'] as String? ?? '',
       freqHarmonicRank: json['freqHarmonicRank'] as String? ?? '',
+      singleFrequencyNumbers: _stringMapFromPayloadWire(
+        json,
+        'singleFrequencyNumbers',
+      ),
+      singleFrequenciesHtml: _stringMapFromPayloadWire(
+        json,
+        'singleFrequenciesHtml',
+      ),
       glossary: json['glossary'] as String? ?? '',
       glossaryFirst: json['glossaryFirst'] as String? ?? '',
       singleGlossaries: singleGlossaries,
       pitchPositions: json['pitchPositions'] as String? ?? '',
+      pitchPositionsInline: json['pitchPositionsInline'] as String? ?? '',
       pitchCategories: json['pitchCategories'] as String? ?? '',
       phoneticTranscriptions: json['phoneticTranscriptions'] as String? ?? '',
       popupSelectionText: json['popupSelectionText'] as String? ?? '',
@@ -829,10 +933,24 @@ class AnkiMiningPayload {
   final String furiganaPlain;
   final String frequenciesHtml;
   final String freqHarmonicRank;
+
+  /// 词典名 → 该词典的频率数（popup.js `constructSingleFrequencyNumbers`，与
+  /// [freqHarmonicRank] 同一份逐词典取数）。供 Yomitan 的
+  /// `{single-frequency-number-<词典>}` 使用（BUG-4272）；没有可用数值的词典不在表里。
+  final Map<String, String> singleFrequencyNumbers;
+
+  /// 词典名 → 只含该词典的 `{frequencies}` 列表 HTML（popup.js
+  /// `constructSingleFrequenciesHtml`）。供 Yomitan 的 `{single-frequency-<词典>}`。
+  final Map<String, String> singleFrequenciesHtml;
   final String glossary;
   final String glossaryFirst;
   final Map<String, String> singleGlossaries;
   final String pitchPositions;
+
+  /// `{pitch-accent-positions-inline}`：与 [pitchPositions] 同一组条目的单行变体
+  /// （popup.js `constructPitchPositionInlineHtml`，不包 `<ul>`，条目间用「・」连接）。
+  /// [pitchPositions] 保持 `<ul>`（BUG-2151，Lapis 靠 `#pitch-tags ul` 归一样式）。
+  final String pitchPositionsInline;
   final String pitchCategories;
 
   /// Yomitan `ipa`-mode 词典的音标（IPA）HTML；纯声调（positions）词典恒为空。
@@ -851,10 +969,10 @@ class AnkiMiningPayload {
   /// 本次制卡里，用户选中的那一段是否**真的**作为 `<mark>` 落进了导出的释义树
   /// （popup.js 的 applyGlossarySelectionHighlight 确实插入了标记）。
   ///
-  /// 只是「上报事实」，不是「已经让位」：SelectionText 该不该让位取决于笔记类型
-  /// 和字段映射，而 popup.js 那一层两个都看不见。判据见
-  /// [BaseAnkiRepository.shouldYieldSelectionText]。旧 payload 没有这个键 →
-  /// `false` → 行为逐字节不变。
+  /// 只是「上报事实」，不影响 `{popup-selection-text}` / `{popup-selection-html}`
+  /// 的渲染——选中内容总是照填（BUG-4756）。保留这个线上键是为了 payload 契约
+  /// （互联 host 白名单、草稿持久化、BUG-2089 的类型容错）。旧 payload 没有这个键 →
+  /// `false`。
   final bool glossarySelectionHighlighted;
 
   /// 用户在「卡已在 Anki」对话框里明确选了「新增为重复卡」（BUG-2605）。
@@ -917,6 +1035,11 @@ enum AnkiMiningSource {
   /// （写入 Anki 的标签字面量为 `music`）。所有者 2026-10-24 拍板：此前沿用收藏夹
   /// 口径打成 `book`；只决定新卡，旧卡不迁移不重写。
   music,
+
+  /// 漫画阅读器制卡（OCR 气泡查词 / 收藏夹里的漫画句）—— 归「漫画」分类标签
+  /// （写入 Anki 的标签字面量为 `manga`）。反馈 uOanUXUIDt 拍板：此前漫画卡沿用
+  /// 书籍口径打成 `book`；只决定新卡，旧卡不迁移不重写。
+  manga,
 }
 
 class AnkiMiningContext {
@@ -931,6 +1054,7 @@ class AnkiMiningContext {
     this.source,
     this.bookTitleTag,
     this.collectionTag,
+    this.seriesTitle,
     this.charPositionText,
     this.clipStartMs,
     this.clipEndMs,
@@ -970,6 +1094,11 @@ class AnkiMiningContext {
   /// 二者字面量不同则各成一个 tag（Anki 里可按系列聚合、也可按单集/单本区分）；相同时由
   /// [buildNoteTags] 去重合并。见视频 `lookup_mining` / reader `mining` 注入点。
   final String? collectionTag;
+
+  /// 出处的上一级（系列 / 合集 / 播放列表的**原样名字**，不清洗）：SRS 出处按「系列 → 集」两级分组
+  /// （`SrsSourceRef.seriesTitle`，反馈 MCJLSBR5Wg）。与 [collectionTag] 是同一个来源，但不受「自动添加书名到
+  /// 标签」开关影响、也不做标签清洗——它是出处层级，不是标签。不属任何系列时 null。
+  final String? seriesTitle;
 
   /// 「制卡位置写入 MiscInfo」开关（冻结偏好键 `auto_add_char_position_to_tags`）开启时，
   /// 调用方（小说阅读器）按界面语言格式化好的**制卡位置文本**（如「制卡位置：第 12345 字」）：
@@ -1022,6 +1151,7 @@ class AnkiMiningContext {
     source: source,
     bookTitleTag: bookTitleTag,
     collectionTag: collectionTag,
+    seriesTitle: seriesTitle,
     charPositionText: charPositionText,
     clipStartMs: clipStartMs,
     clipEndMs: clipEndMs,
@@ -1053,6 +1183,7 @@ class AnkiMiningContext {
     source: source,
     bookTitleTag: bookTitleTag,
     collectionTag: collectionTag,
+    seriesTitle: seriesTitle,
     charPositionText: charPositionText,
     clipStartMs: clipStartMs,
     clipEndMs: clipEndMs,
@@ -1065,6 +1196,11 @@ class AnkiHandlebarRenderer {
   static final _handlebarRegex = RegExp(r'\{[^}]*\}');
   static const _singleGlossaryPrefix = '{single-glossary-';
 
+  /// Yomitan 逐词典频率标记（BUG-4272）。`-number-` 版必须先于短前缀判断：
+  /// `{single-frequency-number-x}` 同样以 `{single-frequency-` 开头。
+  static const _singleFrequencyNumberPrefix = '{single-frequency-number-';
+  static const _singleFrequencyPrefix = '{single-frequency-';
+
   /// `{glossary-first-<n>}`：前 n 本词典的释义（`{glossary-first}` 的多本版）。
   static final RegExp _glossaryFirstNPattern = RegExp(
     r'^\{glossary-first-(\d+)\}$',
@@ -1073,30 +1209,41 @@ class AnkiHandlebarRenderer {
   static String render(
     String template,
     AnkiMiningPayload payload,
-    AnkiMiningContext context, {
-    bool yieldSelectionText = false,
-  }) => template.replaceAllMapped(
+    AnkiMiningContext context,
+  ) => template.replaceAllMapped(
     _handlebarRegex,
-    (match) => _handlebarToValue(
-      match.group(0)!,
-      payload,
-      context,
-      yieldSelectionText: yieldSelectionText,
-    ),
+    (match) => _handlebarToValue(match.group(0)!, payload, context),
   );
 
   static String _handlebarToValue(
     String handlebar,
     AnkiMiningPayload payload,
-    AnkiMiningContext context, {
-    bool yieldSelectionText = false,
-  }) {
+    AnkiMiningContext context,
+  ) {
     if (handlebar.startsWith(_singleGlossaryPrefix)) {
       final dictionary = handlebar.substring(
         _singleGlossaryPrefix.length,
         handlebar.length - 1,
       );
       return _singleGlossaryForDictionary(payload, dictionary);
+    }
+    if (handlebar.startsWith(_singleFrequencyNumberPrefix)) {
+      return _valueForDictionary(
+        payload.singleFrequencyNumbers,
+        handlebar.substring(
+          _singleFrequencyNumberPrefix.length,
+          handlebar.length - 1,
+        ),
+      );
+    }
+    if (handlebar.startsWith(_singleFrequencyPrefix)) {
+      return _valueForDictionary(
+        payload.singleFrequenciesHtml,
+        handlebar.substring(
+          _singleFrequencyPrefix.length,
+          handlebar.length - 1,
+        ),
+      );
     }
     final RegExpMatch? firstN = _glossaryFirstNPattern.firstMatch(handlebar);
     if (firstN != null) {
@@ -1143,14 +1290,11 @@ class AnkiHandlebarRenderer {
           payload.selectedDictionary,
         );
       case '{popup-selection-text}':
-        // 选中的那段已经作为 <mark> 进了释义字段时，是否还要在这里再放一份，
-        // 由知道笔记类型和字段映射的那一层决定
-        // （[BaseAnkiRepository.shouldYieldSelectionText]）。
-        return yieldSelectionText ? '' : payload.popupSelectionText;
+        // 选中内容总是如实填入，即使同一段已作为 <mark> 高亮进了释义字段
+        // （BUG-4756：此前在 Lapis 下让位成空，SelectionText 字段就丢了选中文字）。
+        return payload.popupSelectionText;
       case '{popup-selection-html}':
-        // 同一个选区的带样式版本，让位判据与纯文本版相同：让位的理由（Lapis 卡背
-        // 轮播被一段选区占住默认页）与内容是纯文本还是 HTML 无关。
-        return yieldSelectionText ? '' : payload.popupSelectionHtml;
+        return popupSelectionHtmlValue(payload);
       case '{sentence}':
         return _sentenceValue(payload, context);
       case '{cue-sentence}':
@@ -1161,6 +1305,8 @@ class AnkiHandlebarRenderer {
         return payload.freqHarmonicRank;
       case '{pitch-accent-positions}':
         return payload.pitchPositions;
+      case '{pitch-accent-positions-inline}':
+        return payload.pitchPositionsInline;
       case '{pitch-accent-categories}':
         return payload.pitchCategories;
       case '{phonetic-transcriptions}':
@@ -1255,28 +1401,74 @@ class AnkiHandlebarRenderer {
     return '$hh:$mm:$ss';
   }
 
+  /// `{popup-selection-html}` 的值：有选区快照 HTML 就用它（带所属词典 scoped CSS）；
+  /// 快照缺席而纯文本在（旧 payload / 草稿、调用方传的文本不是这次快照、快照失败）时
+  /// 退回转义后的纯文本，换行转 `<br>`。三个预设的选中字段默认映射到这个占位符
+  /// （拍板 RdmYdegMPJ），不退回就会在这些情况下把原本有内容的字段写成空。
+  @visibleForTesting
+  static String popupSelectionHtmlValue(AnkiMiningPayload payload) {
+    if (payload.popupSelectionHtml.isNotEmpty) {
+      return payload.popupSelectionHtml;
+    }
+    final String text = payload.popupSelectionText;
+    if (text.isEmpty) return '';
+    return const HtmlEscape(
+      HtmlEscapeMode.element,
+    ).convert(text).replaceAll(RegExp(r'\r\n|\r|\n'), '<br>');
+  }
+
   static String _singleGlossaryForDictionary(
     AnkiMiningPayload payload,
     String dictionary,
   ) {
-    final String? key = _singleGlossaryKeyForDictionary(payload, dictionary);
-    return key == null ? '' : payload.singleGlossaries[key]!;
+    return _valueForDictionary(payload.singleGlossaries, dictionary);
   }
 
-  /// [dictionary] 在 [AnkiMiningPayload.singleGlossaries] 里对应的键：先精确命中，
-  /// 再按去掉 `[n]` 后缀的归一化名命中；查不到返回 null。
   static String? _singleGlossaryKeyForDictionary(
     AnkiMiningPayload payload,
     String dictionary,
+  ) => _dictionaryKeyIn(payload.singleGlossaries.keys, dictionary);
+
+  /// 逐词典表 [byDictionary] 里 [dictionary] 对应的值；查不到给空串。
+  static String _valueForDictionary(
+    Map<String, String> byDictionary,
+    String dictionary,
   ) {
+    final String? key = _dictionaryKeyIn(byDictionary.keys, dictionary);
+    return key == null ? '' : byDictionary[key]!;
+  }
+
+  /// 模板里写的 [dictionary] 在逐词典表键 [keys]（词典真名）里对应的键，依次：
+  /// 1. 精确命中；
+  /// 2. 去掉 `[n]` 后缀的归一化名命中；
+  /// 3. Yomitan 的 kebab 名命中——Yomitan 生成的逐词典标记一律是
+  ///    `getKebabCase(词典名)`（`anki-template-util.js`），用户从 Yomitan 抄来的
+  ///    `{single-frequency-number-jiten}` 写的是 `jiten` 而不是词典真名 `Jiten`。
+  /// 查不到返回 null。
+  static String? _dictionaryKeyIn(Iterable<String> keys, String dictionary) {
     if (dictionary.isEmpty) return null;
-    if (payload.singleGlossaries.containsKey(dictionary)) return dictionary;
-    final normalized = _normalizeDictionaryName(dictionary);
-    for (final String key in payload.singleGlossaries.keys) {
+    if (keys.contains(dictionary)) return dictionary;
+    final String normalized = _normalizeDictionaryName(dictionary);
+    for (final String key in keys) {
       if (_normalizeDictionaryName(key) == normalized) return key;
+    }
+    final String kebab = yomitanKebabCase(dictionary);
+    if (kebab.isEmpty) return null;
+    for (final String key in keys) {
+      if (yomitanKebabCase(key) == kebab) return key;
     }
     return null;
   }
+
+  /// Yomitan `getKebabCase`（`ext/js/data/anki-template-util.js`）的逐字移植：
+  /// 空白 / 下划线 / 全角空格 → `-`，去掉字母数字与 `-` 以外的字符，合并连续 `-`，
+  /// 去首尾 `-`，转小写。
+  static String yomitanKebabCase(String name) => name
+      .replaceAll(RegExp(r'[\s_\u3000]'), '-')
+      .replaceAll(RegExp(r'[^\p{L}\p{N}-]', unicode: true), '')
+      .replaceAll(RegExp(r'--+'), '-')
+      .replaceAll(RegExp(r'^-|-$'), '')
+      .toLowerCase();
 
   /// `{glossary-first-<n>}`：前 [count] 本词典的释义，按弹窗里的词典顺序拼接。
   ///
@@ -1349,6 +1541,7 @@ class AnkiHandlebarOptions {
     '{frequencies}',
     '{frequency-harmonic-rank}',
     '{pitch-accent-positions}',
+    '{pitch-accent-positions-inline}',
     '{pitch-accent-categories}',
     '{phonetic-transcriptions}',
     '{document-title}',
@@ -1361,9 +1554,18 @@ class AnkiHandlebarOptions {
     '{sentence-audio}',
   ];
 
-  static List<String> forTermDictionaries(List<String> dictionaryNames) => [
+  /// [frequencyDictionaryNames]：频率词典名，各出一个 Yomitan 同名的
+  /// `{single-frequency-number-<名>}`（BUG-4272，Yomitan 下拉框里也只列这一个；
+  /// `{single-frequency-<名>}` 渲染器同样认，只是不占候选位）。
+  static List<String> forTermDictionaries(
+    List<String> dictionaryNames, {
+    List<String> frequencyDictionaryNames = const <String>[],
+  }) => [
     ...coreOptions,
     ...dictionaryNames.toSet().map((name) => '{single-glossary-$name}'),
+    ...frequencyDictionaryNames.toSet().map(
+      (name) => '{single-frequency-number-$name}',
+    ),
   ];
 
   /// 旧别名（历史命名）：语义与新键完全等价、渲染同一个值，保留只为兼容老配置与
@@ -1387,13 +1589,18 @@ class AnkiHandlebarOptions {
   static List<String> optionsForField({
     required List<String> dictionaryNames,
     required String currentValue,
-  }) => forTermDictionaries(dictionaryNames)
-      .where(
-        (String option) =>
-            !deprecatedAliases.contains(option) ||
-            currentValue.contains(option),
-      )
-      .toList();
+    List<String> frequencyDictionaryNames = const <String>[],
+  }) =>
+      forTermDictionaries(
+            dictionaryNames,
+            frequencyDictionaryNames: frequencyDictionaryNames,
+          )
+          .where(
+            (String option) =>
+                !deprecatedAliases.contains(option) ||
+                currentValue.contains(option),
+          )
+          .toList();
 
   /// TODO-948/952 诊断（纯函数）：当前 note-type 的 [fieldMappings]（Anki 字段名 →
   /// handlebar 模板）里是否**有任何一个字段消费了** [token]（如 `{sentence}` /
@@ -1824,12 +2031,40 @@ class AnkiErrorCode {
   static const String pairedDeviceUnreachable =
       'ANKI_PAIRED_DEVICE_UNREACHABLE';
 
+  /// 互联远端制卡连上了已配对主机，但它此刻不收卡（制卡端点 404 / 405：主机上没有任何可写的落点，例如服务端没带
+  /// Anki helper、复习库又因为要升级而停用）。请求没被执行，卡确定没送到——与 [pairedDeviceUnreachable] 一样可以
+  /// 进待发队列，等主机能收卡了再发；文案要告诉用户「连上了、是那台主机没收这张卡」，不是「连不上」——客户端只看得到
+  /// 404 / 405，分不清是没有落点还是主机版本没有这个端点，文案不咬定原因。
+  static const String pairedDeviceMiningUnavailable =
+      'ANKI_PAIRED_DEVICE_MINING_UNAVAILABLE';
+
   /// 反馈 E52FUMdbR6：互联远端制卡**送到了**已配对设备，但那台设备上的 Anki 落卡失败
   /// （它的 AnkiConnect 没开、牌组缺失……）。[MineOutcome.errorDetail] 是主机回传的
   /// 原因；主 app 必须把它包成「已配对设备上的 Anki 制卡失败：…」——否则用户看到
   /// 「连不上 AnkiConnect」会以为是本机的 Anki，根本想不到卡是发去了电脑。
   /// 主机已经收到请求，所以它**不是**「确定没送到」，不进待发队列。
   static const String pairedDeviceMineFailed = 'ANKI_PAIRED_DEVICE_MINE_FAILED';
+
+  /// BUG-5085：互联远端制卡送到了已配对设备，但那台设备上的 **Fushi 复习**库在换代途中（主机回包的
+  /// `errorCode` 是下面四个 `srs*` 之一），卡没写进去。与 [pairedDeviceMineFailed] 分开：那条的文案说的是
+  /// 「那台设备上的 Anki」，这里卡要去的是复习，要在那台设备上完成升级。主机已收到请求，不进待发队列。
+  static const String pairedDeviceReviewBlocked =
+      'ANKI_PAIRED_DEVICE_REVIEW_BLOCKED';
+
+  /// BUG-5085：挖词目标是 Fushi 复习，但复习库在换代途中、此刻不收卡（打开时内核报
+  /// `SrsStoreOpenBlocked` / 主库还留着协议 1 的数据）。四类按「用户下一步」分：
+  ///
+  /// - `srsNeedsMigration`：要做一次升级（去复习页「开始升级」，非主进程去主窗口）；
+  /// - `srsMigrationFailed`：上次升级没完成（去复习页重新升级）；
+  /// - `srsMigrating`：别的窗口 / 进程正在升级（等完成再试）；
+  /// - `srsNeedsAttention`：只剩封存旧库 / 旁边有没迁移的旧库 / 主库里还有协议 1 数据，要人处理（去复习页看说明）。
+  ///
+  /// 分类在 app 的 `srs_generation_kind.dart`（与代际状态页同一个判据）；这里只放与 locale 无关的码，互联主机原样
+  /// 回传，客户端据此包成 [pairedDeviceReviewBlocked]。
+  static const String srsNeedsMigration = 'SRS_NEEDS_MIGRATION';
+  static const String srsMigrationFailed = 'SRS_MIGRATION_FAILED';
+  static const String srsMigrating = 'SRS_MIGRATING';
+  static const String srsNeedsAttention = 'SRS_NEEDS_ATTENTION';
 
   /// BUG-1900：配置的字段名**一个都不属于**当前笔记类型。
   ///
@@ -1852,6 +2087,18 @@ class AnkiErrorCode {
   /// 此前这条失败不带码，toast 里直接是后端的英文原文（用户 2026-10-21 iOS 反馈）。
   static const String allFieldsEmpty = 'ANKI_ALL_FIELDS_EMPTY';
 
+  /// 反馈 nWWjBp3Clo：用户选了「覆写时只改这些字段」，但这次渲染出来这些字段**全是空**
+  /// （或选中的字段一个都不在这张卡的笔记类型里）——写下去只会清空它们，本地拒绝。
+  /// 与具体词条有关（这次没有图 / 没有音频），**不是**字段映射配错，不进
+  /// [isFieldMappingConfigError]。
+  static const String overwriteFieldsEmpty = 'ANKI_OVERWRITE_FIELDS_EMPTY';
+
+  /// 拍板 lt2wobUYfE：「覆写哪些字段」一个都没勾（[AnkiSettings.overwriteFieldsFor]
+  /// 返回空集）——这是用户的选择，不是渲染结果为空，也不是字段映射配错，单列一码给
+  /// 「先勾至少一个字段」的文案；不进 [isFieldMappingConfigError]。
+  static const String overwriteNoFieldsSelected =
+      'ANKI_OVERWRITE_NO_FIELDS_SELECTED';
+
   /// BUG-2380：「创建并选用 Lapis」建完之后，Lapis 牌组 / 笔记类型仍然不在后端
   /// 回读的清单里 —— 也就是后端把创建**静默吞掉**了（AnkiDroid 的 `addNewDeck`
   /// 失败返回 null 而 native 侧照样 `result.success`，是已知形态）。
@@ -1868,6 +2115,14 @@ class AnkiErrorCode {
   /// 本机找不到 `fushi-anki-sync`（这个平台 / 安装包没带它）。
   static const String syncClientUnavailable = 'ANKI_SYNC_UNAVAILABLE';
 }
+
+/// [code] 是不是「复习库在换代途中」一类（[AnkiErrorCode.srsNeedsMigration] 等四个，BUG-5085）。与具体词条无关，
+/// 批量制卡同样应整批中止。
+bool isSrsGenerationErrorCode(String? code) =>
+    code == AnkiErrorCode.srsNeedsMigration ||
+    code == AnkiErrorCode.srsMigrationFailed ||
+    code == AnkiErrorCode.srsMigrating ||
+    code == AnkiErrorCode.srsNeedsAttention;
 
 /// [code] 是不是「字段映射配错」一类：映射整体为空、字段名全不属于笔记类型、首字段空。
 /// 这类失败与具体词条无关，同一批里后面每一条都会一样失败，批量制卡应整批中止。
@@ -1922,6 +2177,7 @@ class MineOutcome {
     this.noteId,
     this.deckName,
     this.audioWarning,
+    this.notice,
     this.errorDetail,
     this.errorCode,
     this.error,
@@ -1945,18 +2201,27 @@ class MineOutcome {
   /// 成功 toast 的「已添加到『…』」只认它——此前调用点事后用
   /// `loadSettings().selectedDeckName` 猜，旧存档/旧 Profile 快照只有 id 没有
   /// name 时（AnkiConnect 按 id 照样落卡成功）toast 显示空引号。
-  const MineOutcome.success({this.noteId, this.deckName, this.audioWarning})
-    : result = MineResult.success,
-      errorDetail = null,
-      errorCode = null,
-      error = null,
-      stackTrace = null;
+  ///
+  /// [notice]：随成功结果一起告诉用户的另一件事（已本地化的整句），例如「保存到」所选的落点
+  /// 主机已不再提供、卡落进了它的默认（BUG-4287）。它必须跟结果走同一条提示：单独再弹一条
+  /// 会被紧随其后的结果提示顶掉。
+  const MineOutcome.success({
+    this.noteId,
+    this.deckName,
+    this.audioWarning,
+    this.notice,
+  }) : result = MineResult.success,
+       errorDetail = null,
+       errorCode = null,
+       error = null,
+       stackTrace = null;
 
   const MineOutcome.duplicate()
     : result = MineResult.duplicate,
       noteId = null,
       deckName = null,
       audioWarning = null,
+      notice = null,
       errorDetail = null,
       errorCode = null,
       error = null,
@@ -1971,6 +2236,7 @@ class MineOutcome {
     : result = MineResult.queued,
       noteId = null,
       audioWarning = null,
+      notice = null,
       errorDetail = null,
       errorCode = null,
       error = null,
@@ -1981,6 +2247,7 @@ class MineOutcome {
       noteId = null,
       deckName = null,
       audioWarning = null,
+      notice = null,
       errorDetail = null,
       errorCode = null,
       error = null,
@@ -1999,6 +2266,7 @@ class MineOutcome {
        noteId = null,
        deckName = null,
        audioWarning = null,
+       notice = null,
        errorDetail = detail,
        errorCode = errorCode,
        error = error,
@@ -2022,6 +2290,9 @@ class MineOutcome {
   /// 主 app 据它在成功 toast 后追加「音频获取失败」提示。`null` = 音频本就没有或
   /// 下载成功（TODO-779）。
   final String? audioWarning;
+
+  /// 仅成功时可能非空：随结果一起提示的另一件事（见 [MineOutcome.success]）。
+  final String? notice;
 
   /// 仅在 [result] == [MineResult.error] 时非空：简短的人类可读失败原因（回退文案）。
   final String? errorDetail;

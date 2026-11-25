@@ -16,6 +16,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart'
     show BackgroundIsolateBinaryMessenger, RootIsolateToken;
 
+import 'package:fushi/src/asr_host/asr_memory_gate.dart';
 import 'package:fushi/src/asr_host/asr_model_catalog.dart';
 import 'package:fushi/src/asr_host/gpu_acceleration.dart';
 import 'package:fushi/src/onnx/onnx_inference_ort.dart';
@@ -26,6 +27,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/video_subtitle_r
 import 'package:fushi_engine/utils/misc/helper_process_registry.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart';
+export 'package:fushi/src/asr_host/asr_memory_gate.dart'
+    show AsrInsufficientMemoryException, MemoryGatedAsrTranscriptionService;
 export 'package:fushi_engine/asr/fushi_asr_ffmpeg_backend.dart'
     show FushiAsrFfmpegBackend;
 export 'package:fushi_engine/media/video/subtitle/asr_proofread/moss_provisioning.dart'
@@ -94,10 +97,10 @@ asr.AsrIsolateBackend fushiAsrBackend() => asr.AsrIsolateBackend(
 
 /// 把 `fushi_asr_core` 的三个装配点接到本仓的实现上。
 ///
-/// 在 `main()` 里、`runApp` 之前调用一次。**不要**放进 `AppModel.initialise()`：
-/// 弹窗词典与悬浮词典是另外两个 Flutter entry point，走的是
-/// `initialiseForDictionaryPopup()`，不经 `initialise()`；装配放在 main 里，
-/// 哪个入口都不会漏。
+/// 经 `installEntryPointHostBindings()` 在每个 Dart entry point 的 `runApp` 之前
+/// 调用。**不要**放进 `AppModel.initialise()`：弹窗词典等 entry point 走的是
+/// `initialiseForDictionaryPopup()`，不经 `initialise()`；副 engine 也不跑
+/// `main()`，所以各入口自己调（BUG-4940）。
 ///
 /// 注意这三个装配点都是**根 isolate 的全局变量**，`Isolate.spawn` 出去的后台
 /// 转录 isolate 一个都带不过去（Dart 全局按 isolate 隔离）。后台那边的装配走
@@ -171,9 +174,14 @@ Future<void> saveAsrModelCatalog(AsrModelCatalog catalog) async {
 ///   门限够用且免掉每 32 ms 一次 ONNX 前向；
 /// - 视频（动画 / 影视 / 带 BGM 的音源）必须传 mixedAudio：日语会换成 Parakeet
 ///   并走无 VAD 滑窗——2026-10-15 在 8 集动画上读音 CER 20.7% → 13.9%。
+///
+/// 返回的是 [MemoryGatedAsrTranscriptionService]：Android / iOS 上 `start` 前先按
+/// 设备可用内存（Android `/proc`、iOS jetsam 额度）判模型跑不跑得动，跑不动抛
+/// [AsrInsufficientMemoryException]（反馈 jbTZ4GIEyU / EnDAyv9ouF：手机转录被系统
+/// 杀）。所有生产入口都经这里，门槛只此一处。
 asr.AsrTranscriptionService createAsrTranscriptionService({
   asr.AsrAudioProfile audioProfile = asr.AsrAudioProfile.cleanSpeech,
-}) => asr.AsrTranscriptionService(
+}) => MemoryGatedAsrTranscriptionService(
   audioProfile: audioProfile,
   backend: fushiAsrBackend(),
   // 根 isolate 的装载器（plan 探测 EP、进程内路径装载）先确保 GPU 环境已
@@ -201,14 +209,36 @@ Future<VideoSubtitleRecognizerChoice> resolveAppVideoSubtitleRecognizer({
   required VideoSubtitleSegmenterMode mode,
   MossBackendPreference mossBackend = MossBackendPreference.auto,
   VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  asr.AsrAudioProfile audioProfile = asr.AsrAudioProfile.mixedAudio,
 }) => resolveVideoSubtitleRecognizer(
   mode: mode,
   mossBackend: mossBackend,
   language: language,
+  audioProfile: audioProfile,
   serviceFactory: (asr.AsrAudioProfile profile) =>
       createAsrTranscriptionService(audioProfile: profile),
   startProcess: appAsrProcessStarter,
 );
+
+/// 音乐库歌词转录用哪种素材：默认 `song`（识别前先做人声分离，上游
+/// `asr_vocal_separation.dart`）；手机上按内存门槛估算放不下分离那一截时退回
+/// `mixedAudio`（判据 [songAsrAudioProfileFor]）。桌面端不探测、不建服务。
+Future<asr.AsrAudioProfile> appMusicAsrAudioProfile(
+  asr.AsrLanguage language, {
+  DeviceMemorySnapshot? Function() memoryProbe = readDeviceMemorySnapshot,
+}) async {
+  final DeviceMemorySnapshot? memory = memoryProbe();
+  if (memory == null) return asr.AsrAudioProfile.song;
+  // 估算要按真正会跑的变体（已在盘的优先），与开跑时内存门槛同一个口径。
+  final asr.AsrTranscribePlan plan = await createAsrTranscriptionService(
+    audioProfile: asr.AsrAudioProfile.song,
+  ).plan(language: language, preference: asr.AsrAccelerationPreference.auto);
+  return songAsrAudioProfileFor(
+    songPack: asr.asrModelPackFor(language, profile: asr.AsrAudioProfile.song),
+    variant: plan.variant,
+    memory: memory,
+  );
+}
 
 /// 本机 MOSS（audio.cpp 运行库 + 权重）在 [backend] 偏好下的就绪状态。
 Future<MossProvisionStatus> appMossProvisionStatus(

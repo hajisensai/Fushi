@@ -1,6 +1,6 @@
 // TODO-1087：自动配置默认值。app 安装助手在解压时把当前 server 真值写进 fushi-defaults.js，
 // 于是加载已解压扩展后无需手填。用户仍可在 options 手动覆盖（chrome.storage.local 优先于默认）。
-try { importScripts('fushi-defaults.js', 'auto-config.js', 'locales/en.js', 'i18n.js', 'connection-diagnostics.js', 'mine-outcome.js', 'self-update.js', 'site-cookie-export.js', 'profile-selection.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
+try { importScripts('fushi-defaults.js', 'auto-config.js', 'locales/en.js', 'i18n.js', 'connection-diagnostics.js', 'mine-outcome.js', 'self-update.js', 'site-cookie-export.js', 'dict-media-key.js', 'profile-selection.js'); } catch (_) { /* 缺省文件时回落硬编码默认 */ }
 const FUSHI_DEFAULTS =
     (self.FUSHI_DEFAULTS) || { host: '127.0.0.1', port: 19633, token: '' };
 // 自动配置的连接三元组。初值 = SW 启动时 importScripts 读到的 fushi-defaults.js；app 改密钥 /
@@ -258,6 +258,50 @@ function statusRequestBody() {
 }
 
 let connectionCache = null;
+
+// BUG-4394：词典媒体 query 凭据的能力位缓存。host 在 /api/extension/status 里报
+// dictionaryMediaKey（'fmk1'）时，dictMediaConfig 回由 token 派生的作用域 key
+// （dict-media-key.js），不再把 token 原值拼进 <img> URL；没报（旧 host / FushiApiServer）
+// 回原 token。connKey = base + '|' + token：与当前 cfg() 不一致（换 host / 端口 / 密钥）即视为
+// 未命中；SW 回收后内存清空同样未命中。
+// connKey 初值用空串（未查过）：与真 key 同为字符串，且真 key 必含 '|'，不会相等。
+let dictMediaCapability = { connKey: '', scheme: null };
+let dictMediaCapabilityInflight = null;
+function rememberDictMediaCapability(base, token, status) {
+  const scheme = status && typeof status.dictionaryMediaKey === 'string'
+    ? status.dictionaryMediaKey : null;
+  dictMediaCapability = { connKey: base + '|' + token, scheme };
+}
+// 未命中时单飞地查一次 status；查询失败（非 2xx / 网络错误）返回 null、不写缓存。
+// send 把「给定连接 → fetch」工厂发出去并返回 fetchWithAutoConfigRetry 形状的
+// { response, base, token }；本函数返回 { base, token, scheme } 或 null。
+function lookupDictMediaCapability(send) {
+  if (!dictMediaCapabilityInflight) {
+    dictMediaCapabilityInflight = (async () => {
+      try {
+        const out = await send(({ base, token }) => fetch(base + '/api/extension/status', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: statusRequestBody(),
+        }));
+        if (!out.response.ok) return null;
+        const status = await responseJson(out.response);
+        rememberDictMediaCapability(out.base, out.token, status);
+        return { base: out.base, token: out.token, scheme: dictMediaCapability.scheme };
+      } catch (_) {
+        return null;
+      }
+    })().finally(() => { dictMediaCapabilityInflight = null; });
+  }
+  return dictMediaCapabilityInflight;
+}
+// dictMediaConfig 回给 content script 的 query 凭据：能力位是 fmk1 时派生 key，否则原 token。
+async function dictMediaQueryToken(scheme, token) {
+  if (scheme === 'fmk1' && self.FUSHI_DICT_MEDIA_KEY) {
+    return self.FUSHI_DICT_MEDIA_KEY.derive(token);
+  }
+  return token;
+}
 // 扩展主题（options 的 extensionTheme，见 theme.js）。显式 light/dark 时查词请求带
 // colorScheme 提示，app 按该明暗生成弹窗 --md-* 配色；auto 不带（app 按自己当前明暗）。
 // SW 里没有 matchMedia，「跟随系统」只能由各页面自己决议，这里只关心显式值。
@@ -525,6 +569,99 @@ function rememberAppTheme(theme) {
 // POST /api/extension/study（与 popup-size 同一鉴权）。app 没开 / 旧 app 无此端点时退避
 // 15s 再试，避免每秒一次白打；样本本身是幂等状态快照，丢几条不影响口径。
 let studyBackoffUntil = 0;
+
+// 标签页 → 这页此刻正在统计的网页视频 {mediaKey, title}（反馈 PtsjrnVmH9）。同一标签页里的
+// 查词 / 制卡请求带上它（请求体 `study`），app 把这次查词 / 制卡记到该视频名下，统计中心
+// 的观看页才有网页视频的查词 / 制卡数。按标签页而不是按「最近一条样本」认：两个标签页同时
+// 开着视频时，在哪页查的就记哪页；页内查词弹窗 / 嵌套弹窗是扩展 iframe，sender.tab 仍是
+// 这一页；独立打开的侧边栏没有 sender.tab，见 sidePanelStudyTabFor。ended 样本（换视频 /
+// 关字幕 / 关页）与标签页关闭即删。标题在该视频第一条样本时
+// 冻结（app 侧统计段的标题同样取第一条），document.title 中途变了不让计数分叉成两行。
+// 只放内存：会话进行中样本每 1～5 秒一条，SW 不会被回收；万一重启，下一条样本即补回。
+const studyTabSessions = new Map();
+
+/**
+ * 按样本更新标签页的统计身份。
+ * @param {object|undefined} sender chrome.runtime 消息的 sender
+ * @param {object} sample study-tracker.js 的样本
+ */
+function noteStudySample(sender, sample) {
+  const tabId = sender && sender.tab && Number.isInteger(sender.tab.id) ? sender.tab.id : null;
+  if (tabId == null || !sample || typeof sample.mediaKey !== 'string' || !sample.mediaKey) return;
+  if (sample.ended === true) {
+    const cur = studyTabSessions.get(tabId);
+    if (cur && cur.mediaKey === sample.mediaKey) studyTabSessions.delete(tabId);
+    return;
+  }
+  const cur = studyTabSessions.get(tabId);
+  if (cur && cur.mediaKey === sample.mediaKey) return;
+  studyTabSessions.set(tabId, {
+    mediaKey: sample.mediaKey,
+    title: typeof sample.title === 'string' ? sample.title : '',
+  });
+}
+
+/**
+ * 查词 / 制卡请求要带的统计身份：消息里显式带的（批量队列项入队时冻结的）优先，否则取发
+ * 消息的标签页此刻正在统计的视频；都没有 = null（不带字段，app 不归属）。
+ * @param {object|undefined} sender
+ * @param {object|undefined} explicit
+ * @returns {Promise<{mediaKey: string, title: string}|null>}
+ */
+async function studyIdentityFor(sender, explicit) {
+  if (explicit && typeof explicit.mediaKey === 'string' && explicit.mediaKey) {
+    return { mediaKey: explicit.mediaKey, title: typeof explicit.title === 'string' ? explicit.title : '' };
+  }
+  const tabId = sender && sender.tab && Number.isInteger(sender.tab.id)
+    ? sender.tab.id
+    : await sidePanelStudyTabFor(sender);
+  if (tabId == null) return null;
+  return studyTabSessions.get(tabId) || null;
+}
+
+/**
+ * 独立侧边栏（浏览器侧栏里的 side-panel.html，没有 sender.tab）发来的查词归属到哪个标签页
+ * （拍板 PtsjrnVmH9-sidepanel）。侧边栏**仍不许自报 tabId**（side-panel.js 顶部 #1295 /
+ * BUG-2426 的约束），身份全由浏览器背书：
+ *   ① 发件人必须是本扩展的 side-panel.html 文档（sender.id / sender.url 由浏览器填，网页伪造
+ *      不了；被网页嵌进 iframe 的侧边栏有 sender.tab，根本走不到这里）；
+ *   ② 用 sender.documentId 在 runtime.getContexts 里找到这份 SIDE_PANEL 上下文，取浏览器给的
+ *      tabId（按标签页打开的侧栏）或 windowId（全窗口侧栏）；
+ *   ③ 全窗口侧栏取**该窗口此刻**的活动标签页——请求到达时现查浏览器，切页即以浏览器的活动
+ *      标签页为准，不缓存会滞后的副本。
+ * 是否真有在统计的视频仍由调用方查 studyTabSessions：活动页没在统计视频就不归属。任何一环
+ * 拿不到（旧浏览器无 getContexts、上下文已销毁）一律 null，不猜。
+ * @param {object|undefined} sender chrome.runtime 消息的 sender
+ * @returns {Promise<number|null>}
+ */
+async function sidePanelStudyTabFor(sender) {
+  try {
+    if (!sender || sender.tab || sender.id !== chrome.runtime.id) return null;
+    if (typeof sender.url !== 'string' || typeof sender.documentId !== 'string' || !sender.documentId) return null;
+    if (sender.url.split(/[?#]/)[0] !== chrome.runtime.getURL('side-panel.html')) return null;
+    if (typeof chrome.runtime.getContexts !== 'function') return null;
+    const contexts = await chrome.runtime.getContexts({
+      contextTypes: ['SIDE_PANEL'],
+      documentIds: [sender.documentId],
+    });
+    const ctx = Array.isArray(contexts)
+      ? contexts.find((c) => c && c.documentId === sender.documentId && c.contextType === 'SIDE_PANEL')
+      : null;
+    if (!ctx) return null;
+    if (Number.isInteger(ctx.tabId) && ctx.tabId >= 0) return ctx.tabId;
+    if (!Number.isInteger(ctx.windowId) || ctx.windowId < 0) return null;
+    const tabs = await chrome.tabs.query({ active: true, windowId: ctx.windowId });
+    const tab = Array.isArray(tabs) ? tabs[0] : null;
+    return tab && Number.isInteger(tab.id) ? tab.id : null;
+  } catch (_) {
+    return null;
+  }
+}
+
+try {
+  chrome.tabs.onRemoved.addListener((tabId) => { studyTabSessions.delete(tabId); });
+} catch (_) {}
+
 async function forwardStudySample(sample) {
   if (!sample || typeof sample !== 'object') return { ok: false, error: 'no sample' };
   if (Date.now() < studyBackoffUntil) return { ok: false, error: 'backoff' };
@@ -670,13 +807,14 @@ async function checkVersionOnStartup() {
     // BUG-1079：请求体自报 build/version（不再写死 '{}'），app 端据此显示「浏览器中
     // 实际加载的版本」并在与内置指纹不一致时给出更新提示。心跳每分钟走这里一次，
     // 401 / 连不上时顺带重读自动配置——app 改密钥 / 端口后 ≤1 分钟自愈。
-    const { response: r } = await fushiFetch(({ base, token }) => fetch(base + '/api/extension/status', {
+    const { response: r, base, token } = await fushiFetch(({ base, token }) => fetch(base + '/api/extension/status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
       body: statusRequestBody(),
     }));
     if (!r.ok) return;
     const status = await responseJson(r);
+    rememberDictMediaCapability(base, token, status);
     if (status) await maybeSelfReload(status);
   } catch (_) { /* server 未开 / 离线：启动检查静默失败，下次查词仍会兜底比对 */ }
 }
@@ -719,13 +857,15 @@ async function fetchCookieImportRequest() {
   if (!api) return null;
   const conn = await cfg();
   try {
-    const { response: r } = await fetchWithAutoConfigRetry(conn, ({ base, token }) => fetch(base + '/api/extension/status', {
+    const { response: r, base, token } = await fetchWithAutoConfigRetry(conn, ({ base, token }) => fetch(base + '/api/extension/status', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
       body: statusRequestBody(),
     }));
     if (!r.ok) return null;
-    return api.parseImportRequest(await responseJson(r));
+    const status = await responseJson(r);
+    rememberDictMediaCapability(base, token, status);
+    return api.parseImportRequest(status);
   } catch (_) {
     return null;
   }
@@ -780,14 +920,38 @@ if (chrome.tabs && chrome.tabs.onUpdated) {
 // Fushi 转 GIF+句子音频。点扩展图标启动（需 activeTab 手势 + 关硬件加速才非黑），跨集自动切换。
 let captureActive = false;
 
+// 同一扩展只允许一个 offscreen 文档：录制与单词发音（反馈 8KlXeA-A0f）共用这一份，声明两种
+// 用途。并发调用（查词连点 ♪ / 发音撞上起录）共享同一次在途 createDocument，否则第二次
+// create 会抛「Only a single offscreen document may be created」。
+let offscreenCreating = null;
+
 async function ensureOffscreen() {
   const has = await chrome.offscreen.hasDocument?.();
   if (has) return;
-  await chrome.offscreen.createDocument({
-    url: 'offscreen.html',
-    reasons: ['USER_MEDIA'],
-    justification: 'Record the streaming tab to build Anki GIF cards (TODO-1000).',
-  });
+  if (!offscreenCreating) {
+    offscreenCreating = chrome.offscreen.createDocument({
+      url: 'offscreen.html',
+      reasons: ['USER_MEDIA', 'AUDIO_PLAYBACK'],
+      justification: 'Record the streaming tab to build Anki GIF cards (TODO-1000), '
+        + 'and play dictionary word audio outside the page CSP.',
+    }).finally(() => { offscreenCreating = null; });
+  }
+  await offscreenCreating;
+}
+
+// 反馈 8KlXeA-A0f：页面层查词弹窗的单词发音交 offscreen 文档播（页面里的 <audio> 吃页面
+// CSP 的 media-src，X 等站点会拦掉 sync server 的音频端点）。浏览器没有 offscreen API
+// （部分移动端 Chromium）或播放失败 → {ok:false}，content 侧回落页面内 <audio>。
+async function playWordAudioOffscreen(url, volume) {
+  try {
+    await ensureOffscreen();
+    const resp = await chrome.runtime.sendMessage({
+      target: 'offscreen', type: 'playWordAudio', url, volume,
+    });
+    return { ok: !!(resp && resp.ok === true), error: resp && resp.error ? String(resp.error) : undefined };
+  } catch (e) {
+    return { ok: false, error: String(e && e.message || e) };
+  }
 }
 
 // 徽标反馈：录制中在扩展图标上打红点，让用户**看得见**正在录（否则不知道录没录 → 制卡无音频
@@ -884,6 +1048,11 @@ async function fushiMineYoutubeItem(q) {
         fields: q.fields, sentence: q.sentence || '',
         youtubeVideoId: q.youtubeId,
         clipStartMs: q.startV, clipEndMs: q.endV,
+        // 入队那一刻冻结的统计身份（content.js fushiEnqueue）：批量生成时不在视频页，
+        // 只能靠它把成功的卡记到那条视频名下（反馈 PtsjrnVmH9）。旧队列项没有就不带。
+        ...(q.study && typeof q.study.mediaKey === 'string' && q.study.mediaKey
+          ? { study: { mediaKey: q.study.mediaKey, title: typeof q.study.title === 'string' ? q.study.title : '' } }
+          : {}),
       }),
     }));
     return { ok: r.ok, status: r.status, data: r.ok ? await r.json() : null };
@@ -1328,7 +1497,12 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
     selectFushiProfile(msg.profile).then(sendResponse, (e) => sendResponse({ ok: false, error: String(e && e.message || e) }));
     return true;
   }
+  if (msg && msg.type === 'playWordAudio') {
+    playWordAudioOffscreen(msg.url, msg.volume).then(sendResponse);
+    return true;
+  }
   if (msg && msg.type === 'studySample') {
+    noteStudySample(_sender, msg.sample);
     forwardStudySample(msg.sample).then(sendResponse, () => sendResponse({ ok: false }));
     return true;
   }
@@ -1422,6 +1596,22 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         // TODO-1215: content-script dict media image rewrite needs the server
         // base URL + token to build GET /api/media/dictionary. Same source as
         // lookup/mine (cfg()): installer-injected defaults or options override.
+        // BUG-4394：host 报了 fmk1 能力位时，token 换成派生的作用域 key（见
+        // dictMediaQueryToken）；能力位未知时单飞地查一次 status，查不到本次回原 token。
+        let scheme = null;
+        if (dictMediaCapability.connKey === base + '|' + token) {
+          scheme = dictMediaCapability.scheme;
+        } else {
+          // 401 / 连不上时随自动配置重读换连接（同 fushiRequest）；回包的 base / token 是
+          // 实际用上的那份，并发的同条消息共用同一次查询的结果。
+          const looked = await lookupDictMediaCapability(
+            (request) => fetchWithAutoConfigRetry({ base, token }, request));
+          if (looked) {
+            ({ base, token } = looked);
+            scheme = looked.scheme;
+          }
+        }
+        token = await dictMediaQueryToken(scheme, token);
         sendResponse({ ok: true, base, token });
       } else if (msg.type === 'subtitleFonts') {
         // 字幕外观的字体下拉 + 覆盖层 @font-face：字体真源在 app（自定义字体目录）。
@@ -1477,6 +1667,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const lookupId = lookupTrace.id;
         const maximumTerms = lookupTrace.maximumTerms;
         const colorScheme = await extensionColorScheme();
+        const study = await studyIdentityFor(_sender, null);
         lookupTrace.phase = 'fetch-headers';
         const fetchStartedAt = performance.now();
         // 查词 fetch 必须有上限：app 侧一旦长阻塞（词典重载/磁盘 stall），无超时的 await 会让
@@ -1503,6 +1694,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             // 原文自带振假名 `[{s,e,r}]`（以 term 为坐标系）：app 让引擎把读音吻合的同长度
             // 候选排前面。只在非空时带（旧 app 忽略该字段）。
             ...(Array.isArray(msg.ruby) && msg.ruby.length ? { ruby: msg.ruby } : {}),
+            // 本标签页正在统计的网页视频：有结果的查词记到它名下（反馈 PtsjrnVmH9；旧 app 忽略）。
+            ...(study ? { study } : {}),
           }),
         }));
         const headersAt = performance.now();
@@ -1667,6 +1860,27 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
           data: r.ok ? await r.json() : null,
           ...(!r.ok ? { connection: await diagnoseConnectionCapped(base) } : {}),
         });
+      } else if (msg.type === 'subtitleAlign') {
+        // 反馈 0wkJImhZUp：网页视频自动对轴。subtitle-align.js 边播边听攒的 100ms 栅格能量包络 +
+        // 当前轨（已套偏移）的 cue → app 的自动对轴算法（与 app 视频页同一套互相关，Rust 本体），
+        // 回「再平移多少」。纯 CPU 小活，给 15 秒上限，app 不应答时如实回 offline。
+        const r = await fushiRequest(({ base, token }) => fetch(base + '/api/subtitle/align', {
+          method: 'POST',
+          signal: AbortSignal.timeout(15000),
+          headers: { 'Content-Type': 'application/json', Authorization: authHeader(token) },
+          body: JSON.stringify({
+            binMs: msg.binMs,
+            startMs: msg.startMs,
+            rmsDb: Array.isArray(msg.rmsDb) ? msg.rmsDb : [],
+            cues: Array.isArray(msg.cues) ? msg.cues : [],
+          }),
+        }));
+        sendResponse({
+          ok: r.ok,
+          status: r.status,
+          data: r.ok ? await r.json() : null,
+          ...(!r.ok ? { connection: await diagnoseConnection(true) } : {}),
+        });
       } else if (msg.type === 'subtitleSearch') {
         // 查字幕①：Side Panel 搜索框 → server /api/subtitle/search。server 扇出
         // **用户已配好的全部在线字幕来源**（Jimaku / OpenSubtitles / AJATT，与 app 内
@@ -1734,6 +1948,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         const clipSourceKind = (msg.clipSourceKind === 'bilibili-pgc' && !pgcPlayurlBody)
           ? null
           : msg.clipSourceKind;
+        const mineStudy = await studyIdentityFor(_sender, msg.study);
         const r = await fushiRequest(({ base, token, profileId }) => fetch(base + '/api/mine', {
           method: 'POST',
           headers: profileHeaders({ 'Content-Type': 'application/json', Authorization: authHeader(token) }, profileId),
@@ -1750,6 +1965,8 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
             ...(typeof msg.clipSourcePart === 'number'
               ? { clipSourcePart: msg.clipSourcePart } : {}),
             ...(msg.documentTitle ? { documentTitle: msg.documentTitle } : {}),
+            // 成功的卡记到这条网页视频名下（反馈 PtsjrnVmH9；旧 app 忽略）。
+            ...(mineStudy ? { study: mineStudy } : {}),
           }),
         }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
@@ -1855,6 +2072,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
         }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });
       } else if (msg.type === 'mineClip') {
+        const clipStudy = await studyIdentityFor(_sender, msg.study);
         // Netflix 回放录到的整段 webm → 服务端整段裁 [0,时长] 转 GIF+音频（无偏移运算）。
         // BUG-676（TODO-1361 ③）：带上剧名 documentTitle（服务端映射到 Anki {document-title} 视频名
         // 字段）；不发时服务端回落字面「Netflix」。空串不发（保持旧行为 → 回落 Netflix）。
@@ -1879,6 +2097,7 @@ chrome.runtime.onMessage.addListener((msg, _sender, sendResponse) => {
               ? { clipStartMs: msg.clipStartMs, clipEndMs: msg.clipEndMs } : {}),
             ...(typeof msg.mineAtMs === 'number' ? { mineAtMs: msg.mineAtMs } : {}),
             ...(msg.documentTitle ? { documentTitle: msg.documentTitle } : {}),
+            ...(clipStudy ? { study: clipStudy } : {}),
           }),
         }));
         sendResponse({ ok: r.ok, status: r.status, data: r.ok ? await r.json() : null });

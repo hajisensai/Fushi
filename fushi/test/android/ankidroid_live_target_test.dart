@@ -54,6 +54,7 @@ void main() {
     'absent-available-absent',
     'parallel-main-priority',
     'provider-disabled-reenabled',
+    'kuma3-fork-main-priority',
   ]) {
     test('resolver observes $scenario within the same process', () async {
       final ProcessResult result = await Process.run(jdkTool('java'), <String>[
@@ -144,6 +145,8 @@ public final class LiveTargetHarness {
     // 自己编的 ".A"，与当时同样写错的生产候选表一起错，于是这条用例恒绿——
     // 用户装着 AnkiDroid.E 被判「未安装」，这个「实跑 resolve」的测试却毫无反应。
     private static final String PARALLEL = MAIN + ".e";
+    // 改版 AnkiDroid：kuma3 Anki 的 release 包名（上游 build.gradle 的 onVariants 钉死）。
+    private static final String KUMA3 = "io.github.pedrubik2000.kuma3";
 
     private static final class MutablePackages extends PackageManager {
         final Set<String> authorities = new HashSet<>();
@@ -212,6 +215,16 @@ public final class LiveTargetHarness {
                 expectTarget(device, null);
                 device.packages.enable(MAIN);
                 expectTarget(device, MAIN);
+                break;
+            case "kuma3-fork-main-priority":
+                device.packages.enable(KUMA3);
+                expectTarget(device, KUMA3);
+                device.packages.enable(MAIN);
+                expectTarget(device, MAIN);
+                device.packages.disable(MAIN);
+                expectTarget(device, KUMA3);
+                device.packages.disable(KUMA3);
+                expectTarget(device, null);
                 break;
             default: throw new AssertionError("Unknown scenario: " + args[0]);
         }

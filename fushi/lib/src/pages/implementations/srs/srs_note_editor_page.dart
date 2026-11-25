@@ -26,7 +26,9 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
+import 'package:fushi_engine/srs/srs_canonical_ids.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
@@ -42,8 +44,11 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart' as catalog;
-import 'package:fushi/src/srs/srs_mining.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
+import 'package:fushi/src/srs/srs_field_speech.dart' show srsSpeechSourcesOf;
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -54,7 +59,7 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
@@ -62,15 +67,24 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 class SrsNoteEditorPage extends ConsumerStatefulWidget {
-  const SrsNoteEditorPage({super.key, this.noteId, this.initialDeckId});
+  const SrsNoteEditorPage({
+    super.key,
+    this.noteId,
+    this.initialDeckId,
+    this.onSaved,
+  });
 
   /// 非 null = 编辑已有笔记；null = 新建。
   final String? noteId;
 
   /// 新建时的初始牌组（null = 默认牌组）。
   final String? initialDeckId;
+
+  /// 编辑已有笔记、保存成功后交回这次保存的撤销凭据（复习页压进撤销栈；没改动时凭据为空）。
+  final void Function(SrsEditUndo undo)? onSaved;
 
   @override
   ConsumerState<SrsNoteEditorPage> createState() => _SrsNoteEditorPageState();
@@ -97,6 +111,9 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
   /// fieldId → 制卡映射（ⓘ 里的「制卡时自动填入」）；按笔记类型缓存，换类型清空。
   Map<String, String>? _miningSlots;
 
+  /// 制卡落点换成规范 ID 之后的样子（G9-6，载入时问一次）：字段映射按规范的 type.id 查。
+  SrsMiningDestination _mining = const SrsMiningDestination();
+
   /// 预览常驻在宽窗右栏、且一屏看得到（不是横屏手机那种矮窗）；否则顶栏多一个「预览」
   /// 打开底部抽屉。
   bool _inlinePreview = false;
@@ -114,6 +131,14 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
     }
     _tags.dispose();
     super.dispose();
+  }
+
+  void _retryLoad() {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    unawaited(_load());
   }
 
   Future<void> _load() async {
@@ -138,9 +163,15 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
                 .firstOrNull ??
             types.firstOrNull;
       }
+      final SrsMiningDestination mining =
+          await srsCanonicalizeMiningDestination(
+            ref.read(appProvider).srsMiningDestination,
+            srsStoreCanonicalIds(store),
+          );
       if (!mounted) return;
       setState(() {
         _store = store;
+        _mining = mining;
         _types = types;
         _decks = decks;
         _note = note;
@@ -296,25 +327,46 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
           e.key: e.value.value,
       };
       if (_editing) {
-        await store.updateNote(
-          widget.noteId!,
-          fieldsById: values,
-          tags: _parseTags(),
+        final String noteId = widget.noteId!;
+        final String? deck = _deckId != null && _deckId != _note?.deckId
+            ? _deckId
+            : null;
+        // 一次可撤销写入：字段、标签；笔记的首选牌组改了时只改「之后生成的卡」的初始牌组，已有卡片按卡移动。
+        final SrsEditUndo undo = await store.editFieldsUndoable(
+          <SrsFieldChange>[
+            for (final MapEntry<String, String> e in values.entries)
+              SrsFieldChange(
+                SrsEntityKind.note,
+                noteId,
+                SrsFieldKeys.noteField(e.key),
+                e.value,
+              ),
+            SrsFieldChange(
+              SrsEntityKind.note,
+              noteId,
+              SrsFieldKeys.noteTags,
+              _parseTags(),
+            ),
+            if (deck != null) ...<SrsFieldChange>[
+              SrsFieldChange(
+                SrsEntityKind.note,
+                noteId,
+                SrsFieldKeys.noteDeck,
+                deck,
+              ),
+              for (final SrsCardCacheRow card in await store.cardsOfNote(
+                noteId,
+              ))
+                SrsFieldChange(
+                  SrsEntityKind.card,
+                  card.id,
+                  SrsFieldKeys.cardDeck,
+                  deck,
+                ),
+            ],
+          ],
         );
-        // 笔记的首选牌组改了：只改「之后生成的卡」的初始牌组；已有卡片按卡移动。
-        if (_deckId != null && _deckId != _note?.deckId) {
-          await store.editField(
-            SrsEntityKind.note,
-            widget.noteId!,
-            SrsFieldKeys.noteDeck,
-            _deckId,
-          );
-          for (final SrsCardCacheRow card in await store.cardsOfNote(
-            widget.noteId!,
-          )) {
-            await store.moveCard(card.id, _deckId!);
-          }
-        }
+        widget.onSaved?.call(undo);
         if (!mounted) return;
         bumpSrsRevision(ref);
         await Navigator.of(context).maybePop();
@@ -335,7 +387,10 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       }
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsNoteEditorPage.save', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -517,10 +572,12 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     return FushiPageScaffold(
       title: _title,
+      masthead: true,
       header: apple ? null : _buildTopBar(context),
-      actions: apple
+      actions: apple || masthead
           ? <Widget>[
               for (final FushiToolbarItem item in <FushiToolbarItem>[
                 ?_previewItem,
@@ -580,16 +637,10 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
     final Object? error = _error;
     final SrsNoteTypeView? type = _type;
     if (error != null || type == null) {
-      return SafeArea(
-        bottom: false,
-        child: Center(
-          child: FushiPlaceholderMessage(
-            icon: FushiIcons.error,
-            tone: FushiPlaceholderTone.error,
-            message: t.error_load_failed,
-            detail: error == null ? null : '$error',
-          ),
-        ),
+      return SrsLoadErrorView(
+        error: error,
+        retryKey: const ValueKey<String>('srs-note-editor-load-retry'),
+        onRetry: _retryLoad,
       );
     }
     final (List<_FieldGroup> primary, List<_FieldGroup> rest) = _splitFields(
@@ -808,6 +859,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       fieldLabel: catalog.srsFieldDisplayName(field),
       fieldName: field.name,
       current: model.value,
+      promptStore: ref.read(appProvider).prefsRepo,
       run: (AiSrsFieldTask task, String instruction) async {
         final AiChatClient client = AiChatClient();
         try {
@@ -863,10 +915,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       type: type,
       builtinKey: type.builtinKey,
       profileUid: store.profileUid,
-      stored: ref
-          .read(appProvider)
-          .srsMiningDestination
-          .fieldMappingsByType[type.id],
+      stored: _mining.fieldMappingsByType[type.id],
     );
   }
 
@@ -924,6 +973,13 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       help: SrsFieldHelp.of(field, miningSlot: _miningSlotsOf(type)[field.id]),
       headerActions: _fieldActions(type, field),
       model: _fields[field.id]!,
+      speechSources: srsSpeechSourcesOf<SrsFieldModel>(
+        field.name,
+        <({String name, SrsFieldModel value})>[
+          for (final SrsFieldDef f in type.fields)
+            (name: f.name, value: _fields[f.id]!),
+        ],
+      ),
       toggle: builtin && kFushiCardSwitchFields.contains(field.name),
       css: type.css,
       fushiCard: type.builtinKey == kSrsBuiltinFushiCardKey,

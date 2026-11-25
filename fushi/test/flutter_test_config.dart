@@ -5,10 +5,16 @@ import 'package:flutter_cache_manager/flutter_cache_manager.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import 'helpers/fake_audiobook_duration_probe.dart';
 import 'helpers/fake_inappwebview_platform.dart';
 import 'helpers/fake_video_specs_probe.dart';
 import 'package:fushi/src/engine_bindings.dart';
+import 'package:fushi/src/media/video/cover_backfill_ledger.dart'
+    show debugVideoCoverBackfillEnabled;
+import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
+import 'package:fushi_core/fushi_core.dart' show DatabaseBackgroundWork;
+import 'package:fushi_engine/stats/stat_facts.dart' show debugStatFactsInline;
 import 'package:fushi_web_core/testing.dart';
 
 /// Suite-wide setup for all tests under `test/`.
@@ -31,6 +37,18 @@ import 'package:fushi_web_core/testing.dart';
 ///    FakeAsync's 20s timeout timer. See [installFakeVideoSpecsProbe].
 /// 5. Pins the disk image cache's metadata repository to the host-independent
 ///    JSON one. See [installHostIndependentImageCacheRepository].
+/// 6. Makes the audiobook duration probe return 0 instead of building a real
+///    just_audio player. See [installFakeAudiobookDurationProbe].
+/// 7. Keeps galgame capture sessions off the host's real process table. See
+///    [installNoGalgameProcessProbe].
+/// 8. Runs `loadStatFacts` on the calling isolate (FakeAsync can't drive the
+///    production background isolate). See [installInlineStatFacts].
+/// 9. Keeps the video library's background cover backfill off (its real file
+///    I/O never completes under FakeAsync and `db.close()` waits for it). See
+///    [installNoVideoCoverBackfill].
+/// 10. Lets `FushiDatabase.close()` stop waiting for background work whose
+///    continuations are parked in a finished test's FakeAsync zone. See
+///    [installReleaseOfParkedDatabaseWork].
 Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   // 引擎（fushi_engine）的日志 / 数据根 / ffmpeg 平台后端装配点：与 main() 同一份，
   // 让测试里的引擎代码拿到与从前逐字节一致的行为（AppPaths 路径、ErrorLogService）。
@@ -40,10 +58,61 @@ Future<void> testExecutable(FutureOr<void> Function() testMain) async {
   installToleranceGoldenComparator();
   installFakeVideoSpecsProbe();
   installHostIndependentImageCacheRepository();
+  installFakeAudiobookDurationProbe();
+  installNoGalgameProcessProbe();
+  installInlineStatFacts();
+  installNoVideoCoverBackfill();
+  installReleaseOfParkedDatabaseWork();
   // 网页内容核心（fushi_web_core）是硬依赖：指向本仓刚编好的原生库（或 FUSHI_WEB_CORE_LIB）。
   // 找不到不在这里报错——用到它的测试第一次加载时抛 FushiWebCoreLibraryMissing，照常失败。
   useDevFushiWebCoreLibrary();
   await testMain();
+}
+
+/// 统计事实面（`loadStatFacts`）在整个 app 测试套件里**在调用方 isolate 里**读库与派生
+/// （BUG-4960 起生产路径是一次性后台 isolate）。
+///
+/// 组件测试跑在 FakeAsync 里，真实的跨 isolate 消息推不动：首页 / 统计中心 / 各统计页 /
+/// 伴屏等几十个界面测试会卡到超时。派生本身照样走 Rust（`ffc_stats_derive`），只是执行
+/// 位置不同；「真后台 isolate + 与迁移前逐条对拍」由
+/// `packages/fushi_engine/test/stats/stat_facts_parity_test.dart` 钉住。
+void installInlineStatFacts() {
+  debugStatFactsInline = true;
+}
+
+/// 视频库页的缺封面后台抽帧回填（[debugVideoCoverBackfillEnabled]）在整个
+/// `test/` 套件里默认**不起**。
+///
+/// 回填登记成库上的后台工作，关库（`FushiDatabase.close()`）要等它退出（BUG-5387）；
+/// 它逐行做真实文件 I/O 与 ffmpeg，这些回调落在组件测试的 FakeAsync 里，用例体结束后
+/// 没人再推，tearDown 的 `db.close()` 就永远等下去（BUG-5422 修好 debug 下回填被断言
+/// 掀掉之后，几十个挂载视频库页的测试会成片挂到超时）。测回填本身的用例显式打开、
+/// 用例体内卸页并推进到关库完成（`home_video_floating_toolbar_test.dart`）。
+void installNoVideoCoverBackfill() {
+  debugVideoCoverBackfillEnabled = false;
+}
+
+/// 关库（`FushiDatabase.close()`）不再等「续体停在已结束用例的 FakeAsync Zone 里」的
+/// 后台工作（[DatabaseBackgroundWork.debugReleaseWorkInStalledZones]）。
+///
+/// 组件测试用例体里触发的登记后台工作（sidecar 封面、下载入库、媒体服务器 / 在线源
+/// 入库……，BUG-5449 起全部经 `runBackgroundWork` 登记），真实 I/O 完成后的续体排进
+/// 用例的 FakeAsync 队列，用例体结束后没人再推；tearDown 的 `db.close()` 等它就永远
+/// 挂死。这里一次覆盖所有登记写手：关库时对仍在跑的工作做一次确定性的 Zone 推进探针，
+/// 不推进的放掉（库已封口，它即便被推也写不进库）；能推进的照样等到退出。
+void installReleaseOfParkedDatabaseWork() {
+  DatabaseBackgroundWork.debugReleaseWorkInStalledZones = true;
+}
+
+/// galgame 捕获会话的游戏进程退出监视（BUG-4002）在整个 `test/` 套件里默认**不起**：
+/// 没注入 `gameProcessProbe` 的 [GalHookSessionController] 不再去读宿主真实进程表。
+///
+/// 用例里的引擎都是假的，PID 是 4242 之类的常数；Windows 开发机上真实 probe 会拿它去
+/// `OpenProcess`——不存在就判退出、碰巧是别人的进程就判活。Linux CI 上
+/// `Platform.isWindows == false` 本来就不监视，钉成「没有 probe」= 两个宿主同一个行为。
+/// 测退出监视的用例显式注入假 probe，优先于此默认。
+void installNoGalgameProcessProbe() {
+  GalHookSessionController.debugDefaultGameProcessProbe = () => null;
 }
 
 /// 磁盘缓存图片（[AppImageCacheManager]）的元数据仓库在整个 `test/` 套件里钉成

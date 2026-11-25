@@ -1,8 +1,9 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/downloads/download_batch.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 
 /// Presentation metadata only. The source service remains the owner of actions.
-enum DownloadTaskKind { video, novel, audiobook, game, manga }
+enum DownloadTaskKind { video, novel, audiobook, game, manga, music }
 
 enum DownloadTaskStatus {
   attention,
@@ -37,6 +38,7 @@ class DownloadTaskActions {
     this.deletesFiles = false,
     this.deleteFilesRemovesLibraryEntries = false,
     this.setPriority,
+    this.batchMember,
   });
 
   /// 不支持任何动作（默认值）。
@@ -84,6 +86,54 @@ class DownloadTaskActions {
 
   /// 设置任务级调度优先级（1 高 / 0 普通 / -1 低）。
   final Future<void> Function(int priority)? setPriority;
+
+  /// 批量时与同组条目合成一次执行（HBK-AUDIT-025）。null = 只能逐条执行。
+  ///
+  /// 单条槽位（[pause] / [resume] …）仍是这条任务**能否**做某动作的唯一判据，
+  /// 也是单条入口；本字段只决定批量时**怎么**执行：同一个
+  /// [DownloadTaskBatchMember.group] 的条目交给它一次跑完，让来源复用后端枚举、
+  /// 整批只刷新一次，而不是 N 条各自列一遍后端、各刷新一次。
+  final DownloadTaskBatchMember<Object?>? batchMember;
+}
+
+/// 能把同一来源的一批条目合成一次执行的执行器。实现方按对象身份分组，所以
+/// 一个来源（如一个 video job 面板）应共用同一个实例。
+abstract interface class DownloadTaskBatchGroup<T> {
+  /// 本组接管哪些批量动作；不接管的动作照常逐条执行单条槽位。
+  bool handlesBatchAction(DownloadBatchAction action);
+
+  /// 对 [items] 整批执行 [action]。只会收到对 [action] 有单条执行体的条目。
+  /// 返回与 [items] 一一对应的结果：null = 成功，否则为该条的失败。
+  Future<List<DownloadTaskBatchFailure?>> runBatch(
+    DownloadBatchAction action,
+    List<T> items,
+  );
+}
+
+/// 批量里一条的失败（错误 + 栈，供批量报告与日志）。
+class DownloadTaskBatchFailure {
+  const DownloadTaskBatchFailure(this.error, this.stackTrace);
+
+  final Object error;
+  final StackTrace stackTrace;
+}
+
+/// 一条任务在 [group] 里的身份：[item] 是来源自己的载荷（如 job 行 + 快照）。
+class DownloadTaskBatchMember<T> {
+  const DownloadTaskBatchMember({required this.group, required this.item});
+
+  final DownloadTaskBatchGroup<T> group;
+  final T item;
+
+  /// 把同组的 [members]（含自己）交给 [group] 一次执行。载荷类型由本实例的
+  /// `T` 还原，调用方不必知道来源的载荷类型。
+  Future<List<DownloadTaskBatchFailure?>> runGroup(
+    DownloadBatchAction action,
+    List<DownloadTaskBatchMember<Object?>> members,
+  ) => group.runBatch(action, <T>[
+    for (final DownloadTaskBatchMember<Object?> member in members)
+      member.item as T,
+  ]);
 }
 
 /// 一条任务所属作品的元数据身份（provider + externalId），只有来源本身记着
@@ -168,7 +218,16 @@ class DownloadTaskEntry {
     this.downRateBps,
     this.upRateBps,
     this.workIdentity,
+    this.coverUrl,
+    this.subtitle,
   });
+
+  /// 卡片副行（资源名 / 来源 / 设备等，与 [builder] 画的卡同一句）；列表外的摘要
+  /// （侧栏下载速览）用它区分同名任务。来源没有时为 null。
+  final String? subtitle;
+
+  /// 作品海报（远端 URL）；来源没有时为 null。分组头取组内第一条的海报。
+  final String? coverUrl;
 
   /// 所属作品的元数据身份；来源不记身份时为 null（见 [DownloadTaskWorkIdentity]）。
   final DownloadTaskWorkIdentity? workIdentity;

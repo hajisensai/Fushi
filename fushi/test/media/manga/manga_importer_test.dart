@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +8,7 @@ import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/manga/manga_storage.dart';
+import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:image/image.dart' as img;
 import 'package:path/path.dart' as p;
@@ -163,6 +165,132 @@ void main() {
       );
     },
   );
+
+  group('page transfer into the book directory', () {
+    // 压缩包 / 栅格化导入的页图先落在自建暂存目录，再进书目录。此前一律拷贝，
+    // 4 GiB 的包磁盘峰值是「原包 + 暂存 4 GiB + 书目录 4 GiB」；暂存目录是自己的、
+    // 导完即删，页图直接移动（同卷 rename）。用户自己的目录仍只拷不动。
+    late Directory staging;
+    late String bookDir;
+    final List<int> first = <int>[1, 2, 3];
+    final List<int> second = <int>[4, 5, 6, 7];
+
+    setUp(() {
+      staging = Directory(p.join(srcRoot.path, 'staging'))..createSync();
+      File(p.join(staging.path, '1.jpg')).writeAsBytesSync(first);
+      File(p.join(staging.path, '2.jpg')).writeAsBytesSync(second);
+      bookDir = p.join(appDocDir.path, 'book');
+    });
+
+    MokuroPayload payloadOf(List<String> urls) => MokuroPayload(
+      images: <MokuroImage>[
+        for (final String url in urls)
+          MokuroImage(
+            url: url,
+            size: const MokuroSize(10, 20),
+            blocks: const <MokuroBlock>[],
+          ),
+      ],
+    );
+
+    Future<void> transfer(
+      MokuroPayload payload,
+      MangaPageSource pageSource,
+    ) async {
+      await MangaImporter.copyMangaArtifacts(
+        srcDir: staging,
+        payload: payload,
+        destRels: MangaImporter.planMangaDestRels(
+          srcDir: staging,
+          payload: payload,
+        ),
+        bookDir: bookDir,
+        pageSource: pageSource,
+      );
+    }
+
+    test('disposable staging pages are moved, byte-for-byte', () async {
+      await transfer(
+        payloadOf(<String>['1.jpg', '2.jpg']),
+        MangaPageSource.disposable,
+      );
+      expect(File(p.join(bookDir, 'images', '1.jpg')).readAsBytesSync(), first);
+      expect(
+        File(p.join(bookDir, 'images', '2.jpg')).readAsBytesSync(),
+        second,
+      );
+      expect(
+        File(p.join(staging.path, '1.jpg')).existsSync(),
+        isFalse,
+        reason: 'moved, not copied: the staging copy is gone',
+      );
+      expect(File(p.join(staging.path, '2.jpg')).existsSync(), isFalse);
+    });
+
+    test('borrowed (user) folders are copied and left untouched', () async {
+      await transfer(
+        payloadOf(<String>['1.jpg', '2.jpg']),
+        MangaPageSource.borrowed,
+      );
+      expect(File(p.join(bookDir, 'images', '1.jpg')).readAsBytesSync(), first);
+      expect(File(p.join(staging.path, '1.jpg')).readAsBytesSync(), first);
+      expect(File(p.join(staging.path, '2.jpg')).readAsBytesSync(), second);
+    });
+
+    test(
+      'a source page referenced twice still lands twice when moving',
+      () async {
+        await transfer(
+          payloadOf(<String>['1.jpg', '1.jpg', '2.jpg']),
+          MangaPageSource.disposable,
+        );
+        final List<String> pages =
+            Directory(p.join(bookDir, 'images'))
+                .listSync()
+                .whereType<File>()
+                .map((File f) => p.basename(f.path))
+                .toList()
+              ..sort();
+        expect(pages, hasLength(3));
+        for (final String name in pages) {
+          final List<int> bytes = File(
+            p.join(bookDir, 'images', name),
+          ).readAsBytesSync();
+          expect(bytes, anyOf(equals(first), equals(second)), reason: name);
+        }
+      },
+    );
+
+    test(
+      'moving replaces a previous build of the same page (rebuild)',
+      () async {
+        final File stale = File(p.join(bookDir, 'images', '1.jpg'))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(<int>[9, 9, 9, 9, 9]);
+        await transfer(
+          payloadOf(<String>['1.jpg']),
+          MangaPageSource.disposable,
+        );
+        expect(stale.readAsBytesSync(), first);
+      },
+    );
+
+    test('importFromImageFolder defaults to copying the user folder', () async {
+      final Uint8List png = Uint8List.fromList(
+        img.encodePng(img.Image(width: 12, height: 18)),
+      );
+      final Directory user = Directory(p.join(srcRoot.path, 'user'))
+        ..createSync();
+      File(p.join(user.path, '001.png')).writeAsBytesSync(png);
+
+      await MangaImporter.importFromImageFolder(
+        db: db,
+        imageDirPath: user.path,
+        title: 'user folder',
+      );
+      expect(File(p.join(user.path, '001.png')).readAsBytesSync(), png);
+    });
+  });
 
   test(
     'image folder imports immediately readable empty-OCR manga in natural order',
@@ -708,5 +836,82 @@ void main() {
       ),
     );
     expect(await db.getAllEpubBooks(), isEmpty);
+  });
+
+  // 反馈 Wn0wo9OTVe：archive.org 老扫描多是 TIFF，阅读器（WebView）与封面（Flutter codec）
+  // 都不认。导入时转成 PNG 落盘，manga.json 的 url / 封面都指向 PNG，像素无损。
+  test('TIFF pages are transcoded to lossless PNG on import', () async {
+    final Directory source = Directory(p.join(srcRoot.path, 'scan'))
+      ..createSync(recursive: true);
+    final img.Image gray = img.Image(width: 30, height: 50, numChannels: 1);
+    for (final img.Pixel px in gray) {
+      px.r = (px.x * 7 + px.y) % 256;
+    }
+    final img.Image rgb = img.Image(width: 40, height: 20);
+    for (final img.Pixel px in rgb) {
+      px
+        ..r = px.x * 5
+        ..g = px.y * 9
+        ..b = 77;
+    }
+    File(p.join(source.path, '1.tif')).writeAsBytesSync(img.encodeTiff(gray));
+    File(p.join(source.path, '2.TIFF')).writeAsBytesSync(img.encodeTiff(rgb));
+    // 与 1.tif 转码后同名：去重后两页都在，互不覆盖。
+    File(
+      p.join(source.path, '1.png'),
+    ).writeAsBytesSync(img.encodePng(img.Image(width: 8, height: 8)));
+
+    final String bookKey = await MangaImporter.importFromImageFolder(
+      db: db,
+      imageDirPath: source.path,
+      title: 'TIFF Scan',
+    );
+    final EpubBookRow row = (await db.getEpubBook(bookKey))!;
+    final List<Map<Object?, Object?>> pages =
+        (_readMangaJson(row.extractDir)['pages']! as List<Object?>)
+            .cast<Map<Object?, Object?>>();
+    final List<String> urls = pages
+        .map((Map<Object?, Object?> page) => page['url']! as String)
+        .toList();
+    expect(urls, hasLength(3));
+    expect(urls.every((String u) => u.endsWith('.png')), isTrue);
+    expect(urls.toSet(), hasLength(3));
+    expect(row.coverPath, urls.first);
+    expect(
+      Directory(row.extractDir)
+          .listSync(recursive: true)
+          .whereType<File>()
+          .where(
+            (File f) => p.extension(f.path).toLowerCase().startsWith('.tif'),
+          ),
+      isEmpty,
+    );
+
+    Map<Object?, Object?> pageFrom(String sourceName) => pages.firstWhere(
+      (Map<Object?, Object?> page) =>
+          (page['url']! as String) != 'images/1.png' &&
+          p.basenameWithoutExtension(page['url']! as String).toLowerCase() ==
+              p.basenameWithoutExtension(sourceName).toLowerCase(),
+    );
+    img.Image decodedPage(Map<Object?, Object?> page) => img.decodePng(
+      MangaStorage.destFile(
+        row.extractDir,
+        page['url']! as String,
+      ).readAsBytesSync(),
+    )!;
+
+    final Map<Object?, Object?> grayPage = pages.firstWhere(
+      (Map<Object?, Object?> page) =>
+          (page['img_width'] ?? page['width']) == 30,
+    );
+    final img.Image grayOut = decodedPage(grayPage);
+    expect(grayOut.numChannels, 1);
+    expect((grayOut.width, grayOut.height), (30, 50));
+    expect(grayOut.getPixel(13, 29).r, (13 * 7 + 29) % 256);
+
+    final img.Image rgbOut = decodedPage(pageFrom('2.TIFF'));
+    expect((rgbOut.width, rgbOut.height), (40, 20));
+    final img.Pixel probe = rgbOut.getPixel(11, 3);
+    expect(<num>[probe.r, probe.g, probe.b], <num>[55, 27, 77]);
   });
 }

@@ -41,6 +41,8 @@ IconData readerControlItemIcon(ReaderControlItem item) {
       return FushiIcons.bulletList;
     case ReaderControlItem.bookmarks:
       return FushiIcons.bookmark;
+    case ReaderControlItem.jumpHistory:
+      return FushiIcons.history;
     case ReaderControlItem.gallery:
       return FushiIcons.collections;
     case ReaderControlItem.statistics:
@@ -82,6 +84,8 @@ String readerControlItemLabel(ReaderControlItem item) {
       return t.section_navigation;
     case ReaderControlItem.bookmarks:
       return t.reader_control_bookmarks;
+    case ReaderControlItem.jumpHistory:
+      return t.media_jump_history_title;
     case ReaderControlItem.gallery:
       return t.reader_gallery_tooltip;
     case ReaderControlItem.statistics:
@@ -842,6 +846,7 @@ class _ReaderToolbarPreview extends StatelessWidget {
         ? FushiFloatingTopBar(
             leading: _items(ReaderControlSlot.topLeft),
             title: title,
+            titleBacking: true,
             actions: <List<FushiToolbarItem>>[
               _items(ReaderControlSlot.topRight),
             ],

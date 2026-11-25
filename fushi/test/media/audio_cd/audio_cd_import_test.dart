@@ -409,8 +409,14 @@ void main() {
     final String importer = File(
       'lib/src/media/audio_cd/audio_cd_import.dart',
     ).readAsStringSync();
+    // BUG-5123 起抓好的目录经 [importRippedAudioCd]（与控制通道 `music audio-cd` 共用）
+    // 导入：两跳都得原样转交 onScanning。
     expect(
-      callArgs(importer, 'await importLocalFolderOnceAt'),
+      callArgs(importer, 'await importRippedAudioCd'),
+      contains('onScanning: onScanning'),
+    );
+    expect(
+      callArgs(importer, '=> importLocalFolderOnceAt'),
       contains('onScanning: onScanning'),
     );
     final String view = File(
@@ -486,6 +492,7 @@ void main() {
       int? scanningId;
       final SourceScanSummary? summary = await importLocalFolderOnceAt(
         db: db,
+        transcribeAudiobook: null,
         mediaKind: 'video',
         path: dirWith('ripped', <String>[]).path,
         videoGroupingMode: 'folder',

@@ -9,6 +9,11 @@
 // 删除的笔记、同一创建时刻的笔记（按 id 定序）。
 //
 // 重新生成（只在有意改变浏览语义时；旧实现已删，生成的就是当前实现的输出）：SRS_BROWSE_VECTORS_WRITE=1 跑本文件。
+//
+// 2026-11-18 重新生成过一次（SRS gen4 第五波，交接 §38「第五波 导入与写接口」）：G9-7 把笔记 / 卡的 ID 换成规范口径，
+// 旧向量里的 ID 全变。重生成前按「排序字段 + 牌组 + 笔记类型」把新旧 16 张卡一一对上（无歧义）核过：行的其余列除两张
+// 复习卡的到期天数（重放的 fuzz 以卡 ID 为种子，338→346、344→347）外逐项相同；2340 条结果里 396 条不同，全部是
+// 「同一创建时刻 / 同排序值的两行按 ID 定序」的相邻对换，没有别的差异。
 import 'dart:convert';
 import 'dart:io';
 
@@ -98,12 +103,15 @@ Future<SrsDbStore> buildBrowseVecLibrary(
   final SrsDbStore s = await openTestStore(
     profileUid: kBrowseVecProfile,
     deviceId: 'bv',
+    localOffsetMin: () => 540,
     now: now,
   );
   await s.editField(
     SrsEntityKind.profile,
     kBrowseVecProfile,
-    SrsFieldKeys.utcOffsetMin,
+    // 旧版声明过、从没有写入方的 profile 键：现在不读（时区恒为本机，由打开时的 localOffsetMin 钉住），
+    // 留着这条写入让写入序号与生成向量时一致。
+    'utcOffsetMin',
     540,
   );
   await s.editField(

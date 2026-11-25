@@ -5,6 +5,7 @@
 // OneDrive「按需文件」会把 `~/Documents` 下的词典文件驱逐成 dataless，同步读它会
 // 在内核里无限期等云端回填，Timer 看门狗全部失效。探测跑在后台 isolate、带总预算，
 // 预算内没证明可读的词典本次不装。
+import 'dart:async';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
@@ -149,28 +150,183 @@ void main() {
     expectPartition(r, dirs);
   });
 
-  test('生产接线守卫：_rebuildDictPathsCacheAsync 在 scheduleTyped 之前做物化探测', () {
+  group('DictResourceAvailability（BUG-4510）', () {
+    /// 可控的假探测器：每次调用记一笔，返回预设结果，并把 onLateReport 交给测试，
+    /// 由测试决定「预算后回报」何时到达——不赌机器快慢。
+    late List<List<String>> calls;
+    late List<void Function(String dir, String? error)> lateSinks;
+    late DictResourceMaterializeResult Function(List<String>) answer;
+
+    DictResourceAvailability makeTracker({void Function()? onLateReady}) {
+      calls = <List<String>>[];
+      lateSinks = <void Function(String dir, String? error)>[];
+      return DictResourceAvailability(
+        probe:
+            (
+              List<String> dirs, {
+              void Function(String dir, String? error)? onLateReport,
+            }) async {
+              calls.add(List<String>.of(dirs));
+              if (onLateReport != null) lateSinks.add(onLateReport);
+              return answer(dirs);
+            },
+        onLateReady: onLateReady,
+      );
+    }
+
+    DictResourceMaterializeResult allPending(List<String> dirs) =>
+        DictResourceMaterializeResult(
+          ready: const <String>[],
+          pending: dirs,
+          failed: const <String, String>{},
+        );
+
+    test('在途目录不重复探：第二轮 resolve 不为预算内没读完的目录再起 worker', () async {
+      final DictResourceAvailability t = makeTracker();
+      answer = allPending;
+      final List<String> dirs = <String>['/d/a', '/d/b', '/d/c'];
+
+      final DictResourceResolution first = await t.resolve(dirs);
+      expect(first.pending, dirs);
+      expect(first.ready, isEmpty);
+
+      // 旧实现：每次重装都对全部目录重起 worker → worker 无界叠加、彼此抢 IO。
+      final DictResourceResolution second = await t.resolve(dirs);
+      expect(calls, hasLength(1), reason: '在途目录不能再交给新的探测 worker');
+      expect(second.probedNow, isEmpty);
+      expect(second.pending, dirs);
+      expect(t.inFlightCount, 3);
+    });
+
+    test('已证明物化的目录单调累积：后续轮次不覆盖、不重探', () async {
+      final DictResourceAvailability t = makeTracker();
+      answer = (List<String> dirs) => DictResourceMaterializeResult(
+        ready: <String>[
+          for (final String d in dirs)
+            if (d != '/d/slow') d,
+        ],
+        pending: <String>[
+          for (final String d in dirs)
+            if (d == '/d/slow') d,
+        ],
+        failed: const <String, String>{},
+      );
+      await t.resolve(<String>['/d/a', '/d/slow']);
+      expect(t.isReady('/d/a'), isTrue);
+      expect(t.isLoadable('/d/slow'), isFalse, reason: '探过且未证明可读的不进引擎');
+
+      lateSinks.single('/d/slow', null);
+      expect(t.isReady('/d/slow'), isTrue);
+
+      // 旧实现在下一轮用「本轮 ready」覆盖可读集；这里再 resolve 不探任何目录，
+      // 两本都保持可读。
+      final DictResourceResolution again = await t.resolve(<String>[
+        '/d/a',
+        '/d/slow',
+      ]);
+      expect(calls, hasLength(1));
+      expect(again.ready, <String>['/d/a', '/d/slow']);
+    });
+
+    test('预算后回报：在途全部到齐才触发一次 onLateReady，不是每本一次', () async {
+      int reloads = 0;
+      final DictResourceAvailability t = makeTracker(
+        onLateReady: () => reloads++,
+      );
+      answer = allPending;
+      await t.resolve(<String>['/d/a', '/d/b', '/d/c']);
+
+      lateSinks.single('/d/a', null);
+      lateSinks.single('/d/b', null);
+      expect(reloads, 0, reason: '还有在途目录时不重装（旧实现每本回报后 2s 就重装一次）');
+      lateSinks.single('/d/c', null);
+      expect(reloads, 1);
+      expect(t.inFlightCount, 0);
+    });
+
+    test('预算后全部失败：不触发重装（没有新可读的目录）', () async {
+      int reloads = 0;
+      final DictResourceAvailability t = makeTracker(
+        onLateReady: () => reloads++,
+      );
+      answer = allPending;
+      await t.resolve(<String>['/d/a']);
+      lateSinks.single('/d/a', 'boom');
+      expect(reloads, 0);
+      expect(t.isLoadable('/d/a'), isFalse);
+    });
+
+    test('失败的目录下一轮会重探；没探过的目录放行给同步路径', () async {
+      final DictResourceAvailability t = makeTracker();
+      answer = (List<String> dirs) => DictResourceMaterializeResult(
+        ready: const <String>[],
+        pending: const <String>[],
+        failed: <String, String>{for (final String d in dirs) d: 'io'},
+      );
+      expect(t.isLoadable('/d/new'), isTrue, reason: '没探过（刚导入）的目录放行');
+      await t.resolve(<String>['/d/x']);
+      expect(t.isLoadable('/d/x'), isFalse);
+      await t.resolve(<String>['/d/x']);
+      expect(calls, <List<String>>[
+        <String>['/d/x'],
+        <String>['/d/x'],
+      ]);
+    });
+
+    test('真探测器：预算后到齐只重装一次，重装那轮不再起 worker', () async {
+      final List<String> dirs = <String>[
+        for (int i = 0; i < 3; i++) makeDictDir('real_$i'),
+      ];
+      int probes = 0;
+      final Completer<DictResourceResolution> reloaded =
+          Completer<DictResourceResolution>();
+      late final DictResourceAvailability t;
+      t = DictResourceAvailability(
+        probe:
+            (
+              List<String> d, {
+              void Function(String dir, String? error)? onLateReport,
+            }) {
+              probes++;
+              return materializeDictResources(
+                d,
+                budget: const Duration(milliseconds: 20),
+                debugPerDirectoryDelay: const Duration(milliseconds: 100),
+                onLateReport: onLateReport,
+              );
+            },
+        onLateReady: () {
+          t.resolve(dirs).then(reloaded.complete);
+        },
+      );
+      final DictResourceResolution first = await t.resolve(dirs);
+      expect(first.pending, dirs);
+      final DictResourceResolution after = await reloaded.future.timeout(
+        const Duration(seconds: 10),
+      );
+      expect(after.ready, dirs);
+      expect(probes, 1, reason: '重装那轮所有目录都已证明可读，不应再起 worker');
+    });
+  });
+
+  test('生产接线守卫：异步重建经 _dictResources 探测、先探后排期再装载', () {
     final String src = File('lib/src/models/app_model.dart').readAsStringSync();
     final String body = maskCommentsAndStrings(
-      methodBody(src, 'Future<void> _rebuildDictPathsCacheAsync() async {'),
+      methodBody(
+        src,
+        'Future<bool> _scheduleDictPathsAsync([bool onlyIfChanged = false]) async {',
+      ),
     );
-    final int materialize = body.indexOf('materializeDictResources(');
+    final int resolve = body.indexOf('await _dictResources.resolve(');
+    final int migrate = body.indexOf('_migrateDictionaryTypes();');
     final int schedule = body.indexOf('FushiDicts.scheduleTyped(');
-    final int load = body.indexOf('FushiDicts.loadPendingAsync(');
+    expect(resolve, greaterThanOrEqualTo(0), reason: '装载前必须先做触读物化探测（BUG-2504）');
+    expect(schedule, greaterThan(resolve), reason: '物化探测必须在 scheduleTyped 之前');
     expect(
-      materialize,
-      greaterThanOrEqualTo(0),
-      reason: '装载前必须先做触读物化探测（BUG-2504）',
+      migrate,
+      greaterThan(resolve),
+      reason: '类型自愈是主 isolate 同步读，必须在物化探测之后（BUG-4510）',
     );
-    expect(schedule, greaterThanOrEqualTo(0));
-    expect(load, greaterThanOrEqualTo(0));
-    expect(
-      materialize,
-      lessThan(schedule),
-      reason: '物化探测必须在 scheduleTyped 之前——分桶之后再探就晚了',
-    );
-    expect(schedule, lessThan(load));
-    // 探测结果必须真的喂进 exists 判据，而不是只调一下、结果丢掉。
     expect(
       body,
       contains('readyDirs.contains('),
@@ -178,16 +334,33 @@ void main() {
     );
     expect(
       body,
-      contains('await materializeDictResources('),
-      reason: '探测必须被 await，否则装载照样先跑',
+      isNot(contains('materializeDictResources(')),
+      reason: '物化状态只归 DictResourceAvailability 持有，不许旁路另起 worker',
     );
-    // 探测结论要留给同步路径复用，而不是用完即丢。
-    expect(body, contains('_probedDictDirs = existingDirs.toSet();'));
-    expect(body, contains('_materializedDictDirs = readyDirs;'));
+
+    final String rebuild = maskCommentsAndStrings(
+      methodBody(src, 'Future<void> _rebuildDictPathsCacheAsync() async {'),
+    );
+    final int sched = rebuild.indexOf('await _scheduleDictPathsAsync();');
+    final int load = rebuild.indexOf('FushiDicts.loadPendingAsync(');
+    expect(sched, greaterThanOrEqualTo(0));
+    expect(load, greaterThan(sched));
+
+    // 启动看门狗只罩「数据根 IO」那一段，不罩逐本让出的装载（BUG-4510）。
+    final String code = maskComments(src);
     expect(
-      body,
-      contains('onLateReport: _onDictDirMaterializedLate'),
-      reason: '预算后拉回本地的目录要能补进可读集并触发重装，不能只打日志',
+      code,
+      contains("_guardInitIo('rebuild-dict-paths', _scheduleDictPathsAsync())"),
+    );
+    expect(code, isNot(contains('_rebuildDictPathsCacheAsync());')));
+
+    final String migrateBody = maskCommentsAndStrings(
+      methodBody(src, 'void _migrateDictionaryTypes() {'),
+    );
+    expect(
+      migrateBody,
+      contains('_dictResources.isReady('),
+      reason: '类型自愈只能同步读已证明物化的目录',
     );
   });
 
@@ -202,14 +375,10 @@ void main() {
     expect(body, contains('FushiDicts.scheduleTyped('));
     expect(
       body,
-      contains('exists: Directory(p).existsSync() && _dictDirMaterialized(p)'),
-      reason: '同步路径的 exists 判据必须与上一轮物化探测的结论相与',
+      contains(
+        'exists: Directory(p).existsSync() && _dictResources.isLoadable(p)',
+      ),
+      reason: '同步路径的 exists 判据必须与物化探测的结论相与',
     );
-    // 判据本身：没探过的目录（刚导入 / 互联传输落盘）放行，探过且未证明可读的挡住。
-    final String predicate = maskCommentsAndStrings(
-      methodBody(src, 'bool _dictDirMaterialized(String dir) =>'),
-    );
-    expect(predicate, contains('!_probedDictDirs.contains(dir)'));
-    expect(predicate, contains('_materializedDictDirs.contains(dir)'));
   });
 }

@@ -71,12 +71,19 @@ enum LyricsIllustrationVerdict {
 
   /// 排在文字行内且不够大（外字、标题小图标）。
   inlineGlyph,
+
+  /// 文件头认不出是 Flutter 能解码的位图（PNG / JPEG / GIF / BMP / WebP）：
+  /// SVG、残缺或被加扰的文件（BUG-5408：BookWalker 版 EPUB 里加扰过的
+  /// `bookwalker.png`）。插图卡与大图浏览都用 `Image(FileImage)` 画，这类文件
+  /// 放进来只会显示成坏图。
+  undecodable,
 }
 
 /// 判一张书中图片能否当歌词模式插图。
 ///
-/// * [size]：图片真实像素尺寸（读文件头得到）；null = 读不出来（SVG 等），此时
-///   只看排版：独占一块的当插图，排在文字行内的当字。
+/// * [size]：图片真实像素尺寸（读文件头得到）；null = 文件头认不出位图格式
+///   （SVG、残缺 / 加扰的文件），判 [LyricsIllustrationVerdict.undecodable]——
+///   歌词页用 Flutter `Image` 画插图，认不出头的文件画出来就是坏图。
 /// * [sharesLineWithText]：图片在排版里是否与文字同处一个块（行内嵌字）。
 /// * [isCover]：是 OPF 封面，或与封面是同一张图。
 LyricsIllustrationVerdict classifyLyricsIllustration({
@@ -85,11 +92,7 @@ LyricsIllustrationVerdict classifyLyricsIllustration({
   bool isCover = false,
 }) {
   if (isCover) return LyricsIllustrationVerdict.cover;
-  if (size == null) {
-    return sharesLineWithText
-        ? LyricsIllustrationVerdict.inlineGlyph
-        : LyricsIllustrationVerdict.illustration;
-  }
+  if (size == null) return LyricsIllustrationVerdict.undecodable;
   if (isInlineSizedImage(size)) return LyricsIllustrationVerdict.inlineSized;
   final int shortSide = math.min(size.width, size.height);
   final int longSide = math.max(size.width, size.height);
@@ -111,7 +114,7 @@ LyricsIllustrationVerdict classifyLyricsIllustration({
 typedef LyricsIllustrationFileProbe = ({int width, int height, int bytes});
 
 /// `compute()` 入口：批量读图片文件头拿像素尺寸与文件大小。读不出尺寸的文件
-/// 不进结果（调用方按「尺寸未知」处理）。
+/// 不进结果（调用方判 [LyricsIllustrationVerdict.undecodable]）。
 Map<String, LyricsIllustrationFileProbe> probeLyricsIllustrationFiles(
   List<String> paths,
 ) {
@@ -347,10 +350,17 @@ bool isContinuousLyricsPlayback({
 
 /// 歌词模式插图状态。
 ///
-/// * [reached]：已听到的最后一张插图下标（-1 = 一张都没听到）。可浏览的范围
-///   是 `0..reached`——还没听到的插图不给看（不剧透，与阅读器「未读到的插图
-///   打码」同一取向）。
+/// * [reached]：已听到的最后一张插图下标（-1 = 一张都没听到）。大图浏览列出
+///   **全部**插图（反馈 wV1kvoLjI3，2026-11-24 维护者要求）；[reached] 之后、又没被
+///   揭开过的插图是「未解锁」（[isLocked]），大图浏览里盖模糊遮罩、点一下揭开
+///   （[reveal]），与阅读器「未读到的插图打码」同一套：揭开状态与阅读器共用
+///   （[load] 的 `revealed` 种子 + [onReveal] 回写 `revealed_images`）。
 /// * [shown]：插图位（横屏左栏 / 竖屏小方块）当前显示的插图；null = 显示封面。
+///   插图位只放**已解锁**的插图（缩略图 / 插图卡不画遮罩，放未解锁的图等于剧透）。
+/// * 已看过（[isSeen] / [shownUnseen]）：打开过大图（[markSeen]）或插图卡完整
+///   展示过（弹卡后自动收起 / 停留结束 [closeCard]）的插图。缩略图的「新插图」
+///   提示点只在插图位换上**没看过**的插图时出现。按插图 [LyricsIllustration.key]
+///   记，生命周期跟控制器走（一次歌词模式会话，不持久化）。
 ///
 /// 播放顺着走过一张插图的位置时自动换上它并停住；用户 [dismiss] 才回封面。
 class LyricsIllustrationController extends ChangeNotifier {
@@ -360,6 +370,18 @@ class LyricsIllustrationController extends ChangeNotifier {
   int? _lastAudioMs;
   bool _cardOpen = false;
   bool _rightToLeft = false;
+
+  /// 已看过的插图（[LyricsIllustration.key]）。只增不减，[load] 也不清：同一
+  /// 会话里重新装入同一批插图时，看过的仍算看过。
+  final Set<String> _seen = <String>{};
+
+  /// 已揭开的插图（[LyricsIllustration.key] = `EpubImageRef.revealKey`，与阅读器
+  /// `revealed_images` 同一把 key）。只增不减。
+  final Set<String> _revealed = <String>{};
+
+  /// 用户在大图浏览里揭开一张未解锁插图时回调（参数是 key）：宿主据此写进阅读器的
+  /// 揭开状态（内存集 + Drift），正文 / 插图册随之不再遮这张。
+  ValueChanged<String>? onReveal;
 
   /// 卡片自动收起计时（[observe] 弹卡时起；停留接管 / 用户接手 / 收起时作废）。
   Timer? _cardAutoCloseTimer;
@@ -405,25 +427,73 @@ class LyricsIllustrationController extends ChangeNotifier {
     return index == null ? null : _items[index];
   }
 
-  /// 是否有可浏览的插图（至少听到了一张）。
+  /// 第 [index] 张插图是否已看过（打开过大图或插图卡完整展示过）。
+  bool isSeen(int index) =>
+      index >= 0 && index < _items.length && _seen.contains(_items[index].key);
+
+  /// 插图位上是一张还没看过的插图：缩略图据此画「新插图」提示点。
+  bool get shownUnseen {
+    final int? index = _shown;
+    return index != null && !isSeen(index);
+  }
+
+  /// 把第 [index] 张记为已看过（大图浏览打开 / 翻到这一页时调用）。
+  void markSeen(int index) {
+    if (index < 0 || index >= _items.length) return;
+    if (_seen.add(_items[index].key)) notifyListeners();
+  }
+
+  /// 是否至少听到了一张插图（插图位的「最近一张」常态据此出现）。
   bool get hasReached => _reached >= 0;
 
-  bool get canShowPrevious => (_shown ?? 0) > 0;
+  /// 第 [index] 张是否未解锁：还没听到（在 [reached] 之后）且没被揭开过。越界视为
+  /// 未解锁（不给画）。
+  bool isLocked(int index) {
+    if (index < 0 || index >= _items.length) return true;
+    return index > _reached && !_revealed.contains(_items[index].key);
+  }
+
+  /// 揭开第 [index] 张（大图浏览里点遮罩）：此后不再遮，并经 [onReveal] 回写宿主。
+  void reveal(int index) {
+    if (index < 0 || index >= _items.length) return;
+    final String key = _items[index].key;
+    if (!_revealed.add(key)) return;
+    onReveal?.call(key);
+    notifyListeners();
+  }
+
+  /// [from] 之前（[step] = -1）/ 之后（[step] = 1）最近的一张已解锁插图；没有为 null。
+  int? _neighbourUnlocked(int from, int step) {
+    for (int i = from + step; i >= 0 && i < _items.length; i += step) {
+      if (!isLocked(i)) return i;
+    }
+    return null;
+  }
+
+  bool get canShowPrevious {
+    final int? index = _shown;
+    return index != null && _neighbourUnlocked(index, -1) != null;
+  }
 
   bool get canShowNext {
     final int? index = _shown;
-    return index != null && index < _reached;
+    return index != null && _neighbourUnlocked(index, 1) != null;
   }
 
   /// 装入插图表，并把 [position] 之前的插图记为已听到（**不**弹出——进歌词
   /// 模式时已经过去的插图不该一进来就盖住封面）。[position] 为 null 时下一次
   /// [observe] 只建立基线、不弹出。
+  ///
+  /// [revealed]：宿主已揭开的插图 key（阅读器 `revealed_images`），这些图即使没听到
+  /// 也不遮。
   void load(
     List<LyricsIllustration> items, {
     LyricsBookPosition? position,
     Duration? audioPosition,
+    Iterable<String> revealed = const <String>[],
   }) {
     _items = List<LyricsIllustration>.unmodifiable(items);
+    _revealed.addAll(revealed);
     _reached = position == null
         ? -1
         : lastReachedLyricsIllustration(_items, position);
@@ -473,7 +543,8 @@ class LyricsIllustrationController extends ChangeNotifier {
       }
     } else {
       final int? shown = _shown;
-      if (shown != null && shown > next) {
+      // 往回 seek 后插图位上的图又成了「未解锁」：收回封面（揭开过的不收）。
+      if (shown != null && isLocked(shown)) {
         _shown = null;
         _cardOpen = false;
         _cancelCardAutoClose();
@@ -492,40 +563,48 @@ class LyricsIllustrationController extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 只收起插图卡，插图位仍是这张插图的缩略图（带提示点，点它还能看大图）。
-  /// 「弹出停留」到点自动收起走这里。
+  /// 只收起插图卡，插图位仍是这张插图的缩略图（点它还能看大图）。「弹出停留」
+  /// 到点 / 展示时长到点自动收起走这里：卡已完整展示过，这张记为已看过，缩略图
+  /// 不再带「新插图」提示点。
   void closeCard() {
     _cancelCardAutoClose();
     if (!_cardOpen) return;
     _cardOpen = false;
+    final int? shown = _shown;
+    if (shown != null) _seen.add(_items[shown].key);
     notifyListeners();
   }
 
-  /// 插图位显示第 [index] 张（夹到已听到范围内；一张都没听到则不动）。
+  /// 插图位显示第 [index] 张（夹到插图表范围内）；未解锁的不放上插图位（不动）。
   void showAt(int index) {
-    if (_reached < 0) return;
-    final int target = index.clamp(0, _reached);
-    if (target == _shown) return;
+    if (_items.isEmpty) return;
+    final int target = index.clamp(0, _items.length - 1);
+    if (target == _shown || isLocked(target)) return;
     // 用户在翻看插图：不再自动收起，卡留到用户自己关。
     _cancelCardAutoClose();
     _shown = target;
     notifyListeners();
   }
 
-  /// 从封面打开插图时从哪张看起：正在显示的那张，否则最近听到的那张；没有为
-  /// null。
-  int? get browseStart => _shown ?? (_reached >= 0 ? _reached : null);
+  /// 打开插图大图浏览时从哪张看起：正在显示的那张，否则最近听到的那张，一张都
+  /// 没听到时从第一张（遮着）看起；这本书没有插图为 null。
+  int? get browseStart {
+    if (_items.isEmpty) return null;
+    return _shown ?? (_reached >= 0 ? _reached : 0);
+  }
 
   void showPrevious() {
     final int? index = _shown;
-    if (index == null || index <= 0) return;
-    showAt(index - 1);
+    if (index == null) return;
+    final int? target = _neighbourUnlocked(index, -1);
+    if (target != null) showAt(target);
   }
 
   void showNext() {
     final int? index = _shown;
-    if (index == null || index >= _reached) return;
-    showAt(index + 1);
+    if (index == null) return;
+    final int? target = _neighbourUnlocked(index, 1);
+    if (target != null) showAt(target);
   }
 
   /// 调用方开始了「停留」（播放器按图片暂停秒数停住）：卡的收起改由停留结束负责，

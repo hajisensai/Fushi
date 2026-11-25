@@ -7,8 +7,8 @@ import 'package:fushi_anki/fushi_anki.dart';
 /// 带样式 HTML。`{popup-selection-text}` 保持 Yomitan 兼容的纯文本，一字不变。
 ///
 /// HTML 的产出与净化在 popup.js（`fushi/test/anki/popup_selection_html_test.js`）；
-/// 这里守 Dart 侧：wire 键解析、占位符渲染、媒体二次渲染不丢字段、让位判据与纯文本
-/// 版一致、picker 里能选到。
+/// 这里守 Dart 侧：wire 键解析、占位符渲染、媒体二次渲染不丢字段、与纯文本版一样
+/// 不让位（BUG-4756）、picker 里能选到。
 void main() {
   const String kText = '物事の大事な点';
   const String kHtml =
@@ -71,7 +71,7 @@ void main() {
     expect(fields['Plain'], kText);
   });
 
-  test('让位判据与纯文本版相同：Lapis + 高亮落地 + 映了 glossary → 两者都让位', () {
+  test('与纯文本版一样不让位：Lapis + 高亮落地 + 映了 glossary → 照填（BUG-4756）', () {
     const Map<String, String> mappings = <String, String>{
       'SelectionText': '{popup-selection-html}',
       'Glossary': '{glossary}',
@@ -81,8 +81,8 @@ void main() {
         fieldMappings: mappings,
         noteTypeName: LapisNoteType.modelName,
         highlighted: true,
-      ).containsKey('SelectionText'),
-      isFalse,
+      )['SelectionText'],
+      kHtml,
     );
     expect(
       render(
@@ -94,15 +94,56 @@ void main() {
     );
   });
 
-  test('picker 能选到，且出厂预设的映射不被改动', () {
+  test('picker 能选到；三个预设的选中字段默认保留样式（拍板 RdmYdegMPJ 选 a）', () {
     expect(
       AnkiHandlebarOptions.coreOptions,
       contains('{popup-selection-html}'),
     );
     expect(
       LapisNoteType.defaultFieldMappings['SelectionText'],
-      '{popup-selection-text}',
+      '{popup-selection-html}',
     );
+    expect(
+      SenrenPreset.defaultFieldMappings['selectionText'],
+      '{popup-selection-html}',
+    );
+    expect(
+      FushiCardNoteType.defaultFieldMappings['LookupSelection'],
+      '{popup-selection-html}',
+    );
+  });
+
+  test('没有 HTML 快照只有纯文本 → 退回转义后的纯文本，不写空', () {
+    String renderOnly(Map<String, dynamic> json) =>
+        _TestRepo()
+            .renderFor(
+              settings: const AnkiSettings(
+                fieldMappings: <String, String>{
+                  'Styled': '{popup-selection-html}',
+                },
+              ),
+              payload: AnkiMiningPayload.fromJson(<String, dynamic>{
+                'expression': '点',
+                ...json,
+              }),
+              context: const AnkiMiningContext(sentence: ''),
+            )
+            // 空值字段不进结果 map。
+            .fields['Styled'] ??
+        '';
+
+    expect(
+      renderOnly(<String, dynamic>{'popupSelectionText': 'a<b>&c\n二行目'}),
+      'a&lt;b&gt;&amp;c<br>二行目',
+    );
+    expect(
+      renderOnly(<String, dynamic>{
+        'popupSelectionText': kText,
+        'popupSelectionHtml': kHtml,
+      }),
+      kHtml,
+    );
+    expect(renderOnly(const <String, dynamic>{}), isEmpty);
   });
 }
 

@@ -48,6 +48,10 @@ class _FakeAppModel extends AppModel {
 
   @override
   Color? get systemPrimaryColor => null;
+
+  // 70fa19f9f1：编辑页 hero 下按取色覆盖来源给提示，读 themeNotifier。
+  @override
+  ThemeAccentOverrideSource? get activeAccentOverrideSource => null;
 }
 
 Future<void> _pumpPage(
@@ -61,7 +65,7 @@ Future<void> _pumpPage(
   final ThemeData theme = buildFushiThemeData(
     scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
     textTheme: Typography.material2021().black,
-    glass: apple ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glass: apple ? FushiGlassMaterial.premium : FushiGlassMaterial.off,
     glassDesign: apple,
   );
   await tester.pumpWidget(

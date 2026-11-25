@@ -37,13 +37,13 @@ allprojects {
 // Fix for old Flutter plugins that don't declare namespace (required by AGP 8.x)
 // Also fix Kotlin JVM target to match Java target and avoid mismatch errors
 subprojects {
-    // Force all subprojects (including buildscript classpath) to use Kotlin 2.2.20,
+    // Force all subprojects (including buildscript classpath) to use Kotlin 2.4.20,
     // overriding old plugins that ship older Kotlin versions
     buildscript {
         configurations.all {
             resolutionStrategy.eachDependency { details ->
                 if (details.requested.group == 'org.jetbrains.kotlin') {
-                    details.useVersion '2.2.20'
+                    details.useVersion '2.4.20'
                 }
             }
         }
@@ -51,7 +51,7 @@ subprojects {
     configurations.all {
         resolutionStrategy.eachDependency { details ->
             if (details.requested.group == 'org.jetbrains.kotlin') {
-                details.useVersion '2.2.20'
+                details.useVersion '2.4.20'
             }
         }
     }
@@ -60,24 +60,22 @@ subprojects {
         if (proj.plugins.hasPlugin('com.android.library') || proj.plugins.hasPlugin('com.android.application')) {
             def android = proj.extensions.findByName('android')
             if (android != null) {
-                // Force compileSdk for all subprojects so Material You attrs (lStar etc.) resolve
-                // App uses 36; plugins stay at 34 to avoid null-safety breakage.
-                // Exception: bonsoir_android references API-36 symbols
-                // (NsdServiceInfo.hostname / hostAddresses) behind runtime SDK guards, so it must be
-                // compiled against 36 or it fails with "Unresolved reference 'hostname'".
-                if (proj.plugins.hasPlugin('com.android.application') ||
-                        proj.name == 'bonsoir_android') {
-                    android.compileSdkVersion 36
-                } else {
-                    android.compileSdkVersion 34
-                }
+                // Compile every Android module against API 36, the app's compileSdk and
+                // Flutter 3.50's flutter.compileSdkVersion. AGP 9 runs checkReleaseAarMetadata
+                // on every library module, so a plugin must compile against at least the
+                // highest minCompileSdk of its dependencies: flutter_plugin_android_lifecycle
+                // and androidx.camera 1.6 (mobile_scanner) both require 36, and file_picker,
+                // image_picker_android etc. depend on the former. 36 also gives older plugins
+                // the Material You attrs (lStar etc.) and covers bonsoir_android's API-36
+                // symbols (NsdServiceInfo.hostname / hostAddresses, behind runtime guards).
+                android.compileSdk = 36
 
                 // Fix missing namespace
                 if (!android.namespace) {
                     def manifestFile = android.sourceSets?.main?.manifest?.srcFile
                     if (manifestFile?.exists()) {
                         try {
-                            def pkg = new XmlParser().parse(manifestFile)?.attribute('package')
+                            def pkg = new groovy.xml.XmlParser().parse(manifestFile)?.attribute('package')
                             if (pkg) {
                                 android.namespace = pkg
                             }
@@ -92,8 +90,8 @@ subprojects {
         // kotlin.jvm.target.validation.mode=WARNING suppresses mismatch errors.
         if (proj.name != 'app') {
             proj.tasks.withType(org.jetbrains.kotlin.gradle.tasks.KotlinCompile).configureEach {
-                kotlinOptions {
-                    jvmTarget = '1.8'
+                compilerOptions {
+                    jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_1_8
                 }
             }
         }
@@ -105,16 +103,16 @@ subprojects {
     }
 }
 
-rootProject.buildDir = '../build'
+rootProject.layout.buildDirectory.value(rootProject.layout.projectDirectory.dir('../build'))
 subprojects {
-    project.buildDir = "${rootProject.buildDir}/${project.name}"
+    project.layout.buildDirectory.value(rootProject.layout.buildDirectory.dir(project.name))
 }
 subprojects {
     project.evaluationDependsOn(':app')
 }
 
 tasks.register("clean", Delete) {
-    delete rootProject.buildDir
+    delete rootProject.layout.buildDirectory
 }
 
 ext {

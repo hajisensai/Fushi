@@ -104,7 +104,8 @@ class DevStore {
 
 export class PluginRunner {
   /// [log] receives (level, message) for plugin logs and host-call traces.
-  constructor(dir, manifest, { log = () => {}, trace = false, budgetMs = LIMITS.cpuBudgetMs } = {}) {
+  /// [knownCapabilities] is the plugin kind's vocabulary (default: music), used only for boot warnings.
+  constructor(dir, manifest, { log = () => {}, trace = false, budgetMs = LIMITS.cpuBudgetMs, knownCapabilities = KNOWN_CAPABILITIES } = {}) {
     this.dir = dir;
     this.manifest = manifest;
     this.policy = new Policy(manifest);
@@ -112,6 +113,7 @@ export class PluginRunner {
     this.log = log;
     this.trace = trace;
     this.budgetMs = budgetMs;
+    this.knownCapabilities = knownCapabilities;
     this.storage = new DevStore(dir, 'storage');
     this.credentials = new DevStore(dir, 'credentials');
     this.nextCall = 0;
@@ -214,7 +216,7 @@ export class PluginRunner {
       if (!exported.includes(cap)) throw new Error(`清单声明了能力 ${cap}，入口却没有导出同名函数 (module.exports.${cap})`);
     }
     this.bootWarnings = exported
-      .filter((fn) => !(this.manifest.capabilities ?? []).includes(fn) && KNOWN_CAPABILITIES.includes(fn))
+      .filter((fn) => !(this.manifest.capabilities ?? []).includes(fn) && this.knownCapabilities.includes(fn))
       .map((fn) => `module.exports.${fn} exists but "${fn}" is not in manifest.capabilities — the host never calls it`);
     return exported;
   }

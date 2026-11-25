@@ -32,6 +32,12 @@ class _NeverRecognizer implements OcrRecognizer {
 
 /// 逐页可控的识别器：每页一个 completer，测试决定何时完成。
 class _ControlledRecognizer implements MangaStreamPageRecognizer {
+  @override
+  Future<MokuroImage> recognizePixels(
+    OcrRgbaImage image, {
+    required String url,
+  }) => throw UnimplementedError();
+
   final List<String> started = <String>[];
   final Map<String, Completer<MokuroImage>> pending =
       <String, Completer<MokuroImage>>{};
@@ -143,25 +149,25 @@ void main() {
   group('MangaOcrPageFocus', () {
     test('take 取走最近一次请求，监听者收到每一次', () {
       final MangaOcrPageFocus focus = MangaOcrPageFocus();
-      final List<int> heard = <int>[];
-      void listener(int page) => heard.add(page);
+      final List<String> heard = <String>[];
+      void listener(String page) => heard.add(page);
       focus.addListener(listener);
       expect(focus.take(), isNull);
       focus
-        ..request(2)
-        ..request(4)
-        ..request(-1);
-      expect(focus.take(), 4);
+        ..request('images/p2.jpg')
+        ..request('images/p4.jpg')
+        ..request('');
+      expect(focus.take(), 'images/p4.jpg');
       expect(focus.take(), isNull);
       focus.removeListener(listener);
-      focus.request(6);
-      expect(heard, <int>[2, 4]);
+      focus.request('images/p6.jpg');
+      expect(heard, <String>['images/p2.jpg', 'images/p4.jpg']);
     });
   });
 
   test('整卷流水线：处理中途读者翻页，下一页就跑读者那页', () async {
     final List<int> loaded = <int>[];
-    final MangaOcrPageFocus focus = MangaOcrPageFocus();
+    final List<int?> focus = <int?>[];
     await MangaOcrPipeline(
       detector: _EmptyDetector(),
       recognizer: _NeverRecognizer(),
@@ -171,10 +177,10 @@ void main() {
       loadPage: (int pageIndex) async {
         loaded.add(pageIndex);
         // 第 0 页识别期间读者翻到了第 4 页。
-        if (pageIndex == 0) focus.request(4);
+        if (pageIndex == 0) focus.add(4);
         return img.Image(width: 10, height: 10);
       },
-      takeFocus: focus.take,
+      takeFocus: () => focus.isEmpty ? null : focus.removeLast(),
     );
     expect(loaded, <int>[0, 4, 5, 1, 2, 3]);
   });
@@ -280,6 +286,73 @@ void main() {
       ocr.focus(1);
       await _settle();
       expect(recognizer.started, <String>['p1.jpg', 'p2.jpg', 'p1.jpg']);
+    });
+
+    test('request：预取页失败后再要（读到这页 / 失败态重试）必定重跑并有结局', () async {
+      // 复现路径：读者在第 1 页，朗读预取第 2 页；第 2 页识别失败。读到第 2 页时
+      // 再要一次——以前借 focus 预取，_focus 已停在第 2 页，失败标记不清、也不再
+      // 回调，等待者永久挂起。
+      final _ControlledRecognizer recognizer = _ControlledRecognizer();
+      final List<int> delivered = <int>[];
+      final List<int> failed = <int>[];
+      final MangaStreamPageOcr ocr = MangaStreamPageOcr(
+        pageCount: 5,
+        pageFile: pageFile,
+        recognizer: recognizer,
+        onPage: (int index, MokuroImage _) => delivered.add(index),
+        onPageFailed: failed.add,
+        lookahead: 0,
+      );
+      ocr.focus(1);
+      await _settle();
+      ocr.request(2);
+      recognizer.finish('p1.jpg');
+      await _settle();
+      expect(recognizer.started, <String>['p1.jpg', 'p2.jpg']);
+      recognizer.fail('p2.jpg');
+      await _settle();
+      expect(failed, <int>[2]);
+      // 读到第 2 页：再要一次，必须重跑并回报。
+      ocr.request(2);
+      await _settle();
+      expect(recognizer.started, <String>['p1.jpg', 'p2.jpg', 'p2.jpg']);
+      recognizer.fail('p2.jpg');
+      await _settle();
+      expect(failed, <int>[2, 2]);
+      // 失败态按「重试」：同一页再要，依旧重跑。
+      ocr.request(2);
+      await _settle();
+      recognizer.finish('p2.jpg');
+      await _settle();
+      expect(delivered, <int>[1, 2]);
+      expect(recognizer.maxActive, 1);
+    });
+
+    test('request 不挪读者窗口；已识别的页同步交出最新结果', () async {
+      final _ControlledRecognizer recognizer = _ControlledRecognizer();
+      final List<int> delivered = <int>[];
+      final MangaStreamPageOcr ocr = MangaStreamPageOcr(
+        pageCount: 10,
+        pageFile: pageFile,
+        recognizer: recognizer,
+        onPage: (int index, MokuroImage _) => delivered.add(index),
+        lookahead: 1,
+      );
+      ocr.focus(0);
+      await _settle();
+      // 预取远处一页：插队跑，但跑完回到读者窗口 [0, 1]，不是 [7, 8]。
+      ocr.request(7);
+      recognizer.finish('p0.jpg');
+      await _settle();
+      recognizer.finish('p7.jpg');
+      await _settle();
+      recognizer.finish('p1.jpg');
+      await _settle();
+      expect(recognizer.started, <String>['p0.jpg', 'p7.jpg', 'p1.jpg']);
+      expect(ocr.isBusy, isFalse, reason: '读者窗口没被挪走，第 8 页不识别');
+      ocr.request(7);
+      expect(delivered, <int>[0, 7, 1, 7], reason: '已识别的页同步回报');
+      expect(recognizer.started, hasLength(3), reason: '不重复识别');
     });
 
     test('close：在跑那页的结果丢弃、不再调度，识别器被释放', () async {

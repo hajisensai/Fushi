@@ -4,14 +4,21 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
+import 'package:fushi_engine/media/collections/book_series_grouper.dart';
+import 'package:fushi/src/media/collections/collection_ai_order.dart'
+    show scheduleAutomaticCollectionAiOrder;
 import 'package:fushi/src/media/import/import_carrier.dart';
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
+import 'package:fushi_engine/media/manga/manga_archive_probe.dart'
+    show looksLikeImageArchiveInBackground;
 import 'package:fushi/src/media/manga/import/manga_pdf_importer.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart'
     show isLegacyMokuroHtmlVolume, isMokuroLegacyHtmlPath;
+import 'package:fushi_engine/media/manga/manga_folder_plan.dart'
+    show mangaImageDirsClaimedByCarriers;
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
-    show enumerateMangaPages, naturalCompare;
+    show MangaOcrPageFile, enumerateMangaPages, naturalCompare;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 一个目录里「每个文件一卷」的整卷载体文件，按文件名自然序。
@@ -72,11 +79,31 @@ List<File> mangaMokuroFilesIn(Directory dir) => <File>[
       file,
 ];
 
-/// 目录里有没有页图。判据与真正执行导入的枚举同源，不另写一套。
+/// 目录里有没有**成卷的**页图。页图枚举与真正执行导入的 [enumerateMangaPages]
+/// 同源，不另写一套。
+///
+/// 页图全是直接子层整卷文件的附属图（`卷01.epub` + `卷02.epub` + `cover.jpg`）时
+/// 答「没有」：那几张散图是封面 / 目录图，这个目录是一批卷，不是一卷页图
+/// （iycDWb7ys6）。让位判据与来源库扫描是同一个引擎函数
+/// [mangaImageDirsClaimedByCarriers]——此前这里「有图就算」，同一个文件夹在「导入
+/// 文件夹」（扫描）里逐卷导入，在漫画导入框里却被判成一卷只有封面的页图目录。
+///
+/// 只拿**直接子层**的整卷文件（[mangaCarrierFilesIn]）去认领：批量展开也只导直接
+/// 子层，更深处的包认领不了上面的图——否则 `ch01/*.jpg` 旁边多一层 `extra/x.cbz`
+/// 就会让真页图被判没了、批量又展不出任何一卷。
 bool mangaDirectoryHasPageImages(String path) {
   final Directory dir = Directory(path);
   if (!dir.existsSync()) return false;
-  return enumerateMangaPages(dir).isNotEmpty;
+  final List<MangaOcrPageFile> pages = enumerateMangaPages(dir);
+  if (pages.isEmpty) return false;
+  final List<File> carriers = mangaCarrierFilesIn(dir);
+  if (carriers.isEmpty) return true;
+  return !mangaImageDirsClaimedByCarriers(
+    imageDirs: <String>{
+      for (final MangaOcrPageFile page in pages) p.dirname(page.file.path),
+    },
+    carrierPaths: <String>[for (final File file in carriers) file.path],
+  );
 }
 
 /// 一卷的导入结局。
@@ -139,19 +166,16 @@ class MangaBatchImportReport {
 /// 重复策略固定 [DuplicatePolicy.skip]：批量路径不该弹 20 次询问框（术语表里
 /// 批量后台就是 skip），已在库的卷跳过并计数，重跑同一个文件夹因此是幂等的。
 ///
-/// [classify] 是测试缝，生产传 null 即走真实判据（开包）。
 Future<MangaBatchImportReport> importMangaBatchFolder({
   required FushiDatabase db,
   required String path,
   void Function(int done, int total)? onVolumeProgress,
-  ImportCarrier Function(String path)? classify,
 }) => importMangaBatchPaths(
   db: db,
   paths: <String>[
     for (final File file in mangaCarrierFilesIn(Directory(path))) file.path,
   ],
   onVolumeProgress: onVolumeProgress,
-  classify: classify ?? _classifyCarrierFile,
 );
 
 /// 一组用户**同时选中 / 拖入**的漫画载体逐卷导入：每个路径各成一本。
@@ -163,15 +187,14 @@ Future<MangaBatchImportReport> importMangaBatchFolder({
 ///
 /// 列表里的**目录**按它自己的载体身份处理（[classifyImportCarrier] 的目录分支）：
 /// 页图目录 = 一卷；只装一个 `.mokuro` 的目录 = 那一卷 `.mokuro`；装着整卷文件的
-/// 目录 = 展开成其中每一卷。[classify] 是测试缝，生产传 null 即走真实文件系统判据。
+/// 目录 = 展开成其中每一卷。
+///
+/// 载体判定见 [_resolveBatchCarrier]：`.epub` 不预定性，交给导入阶段自己判。
 Future<MangaBatchImportReport> importMangaBatchPaths({
   required FushiDatabase db,
   required List<String> paths,
   void Function(int done, int total)? onVolumeProgress,
-  ImportCarrier Function(String path)? classify,
 }) async {
-  final ImportCarrier Function(String path) resolve =
-      classify ?? _classifyCarrierPath;
   final List<(String, ImportCarrier)> volumes = <(String, ImportCarrier)>[];
   final Set<String> seen = <String>{};
   void addVolume(String volumePath, ImportCarrier carrier) {
@@ -179,10 +202,10 @@ Future<MangaBatchImportReport> importMangaBatchPaths({
   }
 
   for (final String path in paths) {
-    final ImportCarrier carrier = resolve(path);
+    final ImportCarrier carrier = await _resolveBatchCarrier(db, path);
     if (carrier == ImportCarrier.mangaBatchFolder) {
       for (final File file in mangaCarrierFilesIn(Directory(path))) {
-        addVolume(file.path, resolve(file.path));
+        addVolume(file.path, await _resolveBatchCarrier(db, file.path));
       }
       continue;
     }
@@ -205,7 +228,27 @@ Future<MangaBatchImportReport> importMangaBatchPaths({
     );
     onVolumeProgress?.call(index + 1, volumes.length);
   }
-  return MangaBatchImportReport(results);
+  final MangaBatchImportReport report = MangaBatchImportReport(results);
+  if (!report.isEmpty) await _groupImportedSeries(db);
+  return report;
+}
+
+/// 逐卷导入完把分卷按系列归进合集（iycDWb7ys6：拖入 / 导入框批量导进来的卷是散的）。
+///
+/// 与来源库扫描漫画分支同一个归组器（`SourceLibraryScanner` 扫完调
+/// [BookSeriesGrouper.groupAll]），不再指望书架页刚好挂着、重载时顺手归：从「导入」
+/// 视图、操作目录（`ctl_library_import`）进来的批量，书架页不一定在，本机作为互联
+/// host / 合集云同步源时对端拿到的归属也来自这里。归组幂等，已在合集里的卷、用户
+/// 删过 / 移出过的不动；规则判不出卷号的再交自动 AI 排序（与书架页同一个门）。
+Future<void> _groupImportedSeries(FushiDatabase db) async {
+  final BookSeriesGroupSummary grouped = await BookSeriesGrouper(db).groupAll();
+  scheduleAutomaticCollectionAiOrder(
+    db: db,
+    collectionIds: <int>[
+      ...grouped.createdCollectionIds,
+      ...grouped.updatedCollectionIds,
+    ],
+  );
 }
 
 Future<MangaBatchVolumeResult> _importOneVolume({
@@ -250,8 +293,11 @@ Future<MangaBatchVolumeResult> _importOneVolume({
           policy: const DuplicatePolicy.skip(),
         );
       case ImportCarrier.mangaBatchFolder:
+      case ImportCarrier.mangaAudioPackage:
       case ImportCarrier.epub:
       case ImportCarrier.text:
+        // 有声漫画包不是一卷漫画，要走它自己的导入页（逐卷认本机同一卷、确认替换），
+        // 不在逐卷批量里导。
         // 扩展名对得上但内容不是漫画：词典 `.zip`、文字 `.epub`。不静默吞，
         // 计数后在汇总里如实报出来。（整卷目录在这里不可达——
         // [importMangaBatchPaths] 已把它展开成其中的每一卷。）
@@ -268,6 +314,13 @@ Future<MangaBatchVolumeResult> _importOneVolume({
     return MangaBatchVolumeResult(
       path: volumePath,
       status: MangaBatchVolumeStatus.duplicate,
+    );
+  } on MangaArchiveNotMangaException {
+    // `.epub` 没有预定性（[_resolveBatchCarrier]），「文字 EPUB 不是漫画」由导入器
+    // 自己的判据在页图落盘之前给出（理由已记进诊断日志）。与预定性时一样计为跳过。
+    return MangaBatchVolumeResult(
+      path: volumePath,
+      status: MangaBatchVolumeStatus.notManga,
     );
   } catch (error, stack) {
     // 逐卷失败原因必须在**吞掉它的这一层**落盘。批量路径把每卷异常收进报告、只给
@@ -288,26 +341,35 @@ Future<MangaBatchVolumeResult> _importOneVolume({
   }
 }
 
-/// 批量里单个候选**文件**的真定性。目录判据在这里恒为 false / 0——候选集本身
-/// 就只有文件（[mangaCarrierFilesIn] 只收 `entity is File`）。
-ImportCarrier _classifyCarrierFile(String path) => classifyImportCarrier(
-  path,
-  isDirectory: (String _) => false,
-  isImageArchive: MangaArchiveImporter.looksLikeImageArchive,
-  directoryHasPageImages: (String _) => false,
-  directoryCarrierFileCount: (String _) => 0,
-  directoryMokuroFileCount: (String _) => 0,
-);
-
-/// [importMangaBatchPaths] 的生产判据：路径可能是文件也可能是目录（拖入 / 多选），
+/// [importMangaBatchPaths] 的载体判定：路径可能是文件也可能是目录（拖入 / 多选），
 /// 目录判据与漫画导入框同源（[mangaDirectoryHasPageImages] / [mangaCarrierFilesIn]）。
-ImportCarrier _classifyCarrierPath(String path) => classifyImportCarrier(
-  path,
-  isDirectory: (String pth) => Directory(pth).existsSync(),
-  isImageArchive: MangaArchiveImporter.looksLikeImageArchive,
-  directoryHasPageImages: mangaDirectoryHasPageImages,
-  directoryCarrierFileCount: (String pth) =>
-      mangaCarrierFilesIn(Directory(pth)).length,
-  directoryMokuroFileCount: (String pth) =>
-      mangaMokuroFilesIn(Directory(pth)).length,
-);
+///
+/// 开包判定只对 `.zip` 做，且跑在后台 isolate（[looksLikeImageArchiveInBackground]）：
+/// 词典包一票否决必须在导入前判，否则一个带插图的 Yomitan 词典会被导成漫画。
+///
+/// `.epub` **不预定性**（manga-3）：此前每本 EPUB 在 UI isolate 上先同步探测一遍
+/// （解出 container / OPF / spine 文档、整本解析），导入时再解析一遍。现在一律按
+/// 漫画包交给 [MangaArchiveImporter.importArchive]，由它在页图落盘之前用同一判据
+/// 否决文字 EPUB（[MangaArchiveNotMangaException]，见 [_importOneVolume]）。
+Future<ImportCarrier> _resolveBatchCarrier(
+  FushiDatabase db,
+  String path,
+) async {
+  final bool isDirectory = Directory(path).existsSync();
+  final String extension = p.extension(path).toLowerCase();
+  final bool zipIsImageArchive =
+      !isDirectory &&
+      extension == '.zip' &&
+      await looksLikeImageArchiveInBackground(path, db: db);
+  return classifyImportCarrier(
+    path,
+    isDirectory: (String _) => isDirectory,
+    isImageArchive: (String pth) =>
+        p.extension(pth).toLowerCase() == '.epub' || zipIsImageArchive,
+    directoryHasPageImages: mangaDirectoryHasPageImages,
+    directoryCarrierFileCount: (String pth) =>
+        mangaCarrierFilesIn(Directory(pth)).length,
+    directoryMokuroFileCount: (String pth) =>
+        mangaMokuroFilesIn(Directory(pth)).length,
+  );
+}

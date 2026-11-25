@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi/src/media/display_title.dart';
 import 'package:fushi/src/media/favorites/favorite_batch_mining_plan.dart';
 import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
+import 'package:fushi/src/media/nsfw/nsfw_card_image.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -29,6 +30,18 @@ class FavoriteBatchMineOutcome {
 
   final FavoriteBatchItemResult result;
   final bool abortBatch;
+}
+
+/// 成功写入的一条在批量列表里附的那句话：音频缺失原因，加上结果带回的提示
+/// （[MineOutcome.notice]，如「保存到」被主机退回默认，BUG-4287）。批量制卡不弹逐张的结果
+/// 提示，这一行就是用户唯一能看到的地方；都没有时 null。
+@visibleForTesting
+String? favoriteBatchAddedMessage(MineOutcome outcome) {
+  final List<String> parts = <String>[
+    for (final String? part in <String?>[outcome.audioWarning, outcome.notice])
+      if (part != null && part.isNotEmpty) part,
+  ];
+  return parts.isEmpty ? null : parts.join('\n');
 }
 
 /// 收藏夹一键制卡的「媒体 + 落卡」执行层：拿到一条收藏和弹窗产出的词典字段后，
@@ -311,6 +324,14 @@ class FavoriteBatchMiningRunner {
           extractDir: book.extractDir,
           coverPath: book.coverPath,
         );
+        // NSFW 书 +「制卡图片也模糊」：与阅读器制卡同一出口（失败则不带图）。
+        coverPath = await resolveNsfwCardImagePath(
+          db: appModel.database,
+          path: coverPath,
+          blurCardImages: appModel.prefsRepo.blurNsfwCardImages,
+          kind: TagHostKind.epub,
+          entryKey: bookKey,
+        );
       }
     }
     // 卡片上给人看的标题过显示门面（与阅读器 `displayTitleForBook` 同口径）；统计
@@ -350,13 +371,12 @@ class FavoriteBatchMiningRunner {
             statTitle: statTitle,
           );
         }
-        final String? warning = outcome.audioWarning;
         return FavoriteBatchMineOutcome(
           FavoriteBatchItemResult(
             status: FavoriteBatchItemStatus.added,
             noteId: outcome.noteId,
             textOnlyReason: textOnlyReason,
-            message: warning == null || warning.isEmpty ? null : warning,
+            message: favoriteBatchAddedMessage(outcome),
           ),
         );
       case MineResult.queued:
@@ -400,8 +420,11 @@ class FavoriteBatchMiningRunner {
             message: described.message,
           ),
           // 字段映射整体为空 / 首字段为空是配置问题，后面每一条都会同样失败：
-          // 与 notConfigured 同待遇整批中止，只报一次（反馈 AGLC0BuaKB）。
-          abortBatch: isFieldMappingConfigError(outcome.errorCode),
+          // 与 notConfigured 同待遇整批中止，只报一次（反馈 AGLC0BuaKB）。复习库在换代途中
+          // （BUG-5085）同理：升级完成前每一条都写不进去。
+          abortBatch:
+              isFieldMappingConfigError(outcome.errorCode) ||
+              isSrsGenerationErrorCode(outcome.errorCode),
         );
     }
   }

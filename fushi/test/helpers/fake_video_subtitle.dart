@@ -5,7 +5,8 @@ import 'dart:io';
 
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_model_ports.dart';
-import 'package:fushi_asr_core/asr_core.dart' show ModelDownloadEvent;
+import 'package:fushi_asr_core/asr_core.dart'
+    show AsrAudioProfile, ModelDownloadEvent;
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/ai/web_search.dart';
@@ -28,14 +29,19 @@ class FakeVideoRecognizer implements VideoSubtitleRecognizer {
   final String id;
   final List<String> calls = <String>[];
 
+  /// 每次识别收到的音轨（全局流序号；null = 按语言挑）。
+  final List<int?> audioStreams = <int?>[];
+
   @override
   Future<List<SubtitleDraftCue>> recognize({
     required String videoPath,
     required Directory workDir,
     required VideoSubtitleRecognizeProgress onProgress,
     required SubtitleCancelToken cancel,
+    int? audioStreamIndex,
   }) async {
     calls.add(p.basename(videoPath));
+    audioStreams.add(audioStreamIndex);
     onProgress(0.5, 'half');
     return <SubtitleDraftCue>[
       for (int i = 0; i < 4; i++)
@@ -59,6 +65,16 @@ class FakeVideoSubtitleSettings implements AppVideoSubtitleSettings {
 
   @override
   WebSearchConfig? webSearch;
+
+  /// 按条目记住的「先分离人声」（条目身份 → 开 / 关）。
+  final Map<String, bool> vocalSeparation = <String, bool>{};
+
+  @override
+  bool? musicVocalSeparation(String scope) => vocalSeparation[scope];
+
+  @override
+  Future<void> setMusicVocalSeparation(String scope, bool on) async =>
+      vocalSeparation[scope] = on;
 }
 
 class MemoryGlossaryStore implements SubtitleGlossaryStore {
@@ -78,16 +94,19 @@ class ReadyModels implements VideoSubtitleAsrModelPort, VideoSubtitleMossPort {
   @override
   Future<bool> isReady({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) async => true;
 
   @override
   Stream<ModelDownloadEvent> download({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) => const Stream<ModelDownloadEvent>.empty();
 
   @override
   Stream<ModelDownloadEvent>? resumeDownload({
     VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+    AsrAudioProfile audioProfile = AsrAudioProfile.mixedAudio,
   }) => null;
 
   @override

@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/dictionary_repository.dart';
@@ -114,28 +116,77 @@ void main() {
   group('buildSearchCacheKey byte-identical cache key', () {
     test('format len:term/maxTerms/maxResults', () {
       expect(
-        buildSearchCacheKey(term: '図書館', maxTerms: 8, maxResults: 32),
+        buildSearchCacheKey(
+          term: '図書館',
+          maxTerms: 8,
+          maxResults: 32,
+          scanLength: FushiDicts.defaultScanLength,
+        ),
         '3:図書館/8/32',
+      );
+    });
+
+    test('非出厂扫描窗口带 /s<n>，出厂值键不变（反馈 ezCjUoU2QM）', () {
+      expect(
+        buildSearchCacheKey(
+          term: '図書館',
+          maxTerms: 8,
+          maxResults: 8,
+          scanLength: 24,
+          chineseSimpToTrad: true,
+        ),
+        '3:図書館/8/8/s24/zh',
+      );
+      expect(
+        buildSearchCacheKey(
+          term: '図書館',
+          maxTerms: 8,
+          maxResults: 8,
+          scanLength: 24,
+        ),
+        isNot(
+          buildSearchCacheKey(
+            term: '図書館',
+            maxTerms: 8,
+            maxResults: 8,
+            scanLength: FushiDicts.defaultScanLength,
+          ),
+        ),
       );
     });
 
     test('term.length uses UTF-16 code units', () {
       expect(
-        buildSearchCacheKey(term: '\u{2000B}', maxTerms: 1, maxResults: 1),
+        buildSearchCacheKey(
+          term: '\u{2000B}',
+          maxTerms: 1,
+          maxResults: 1,
+          scanLength: FushiDicts.defaultScanLength,
+        ),
         '2:\u{2000B}/1/1',
       );
     });
 
     test('empty term key', () {
       expect(
-        buildSearchCacheKey(term: '', maxTerms: 0, maxResults: 0),
+        buildSearchCacheKey(
+          term: '',
+          maxTerms: 0,
+          maxResults: 0,
+          scanLength: FushiDicts.defaultScanLength,
+        ),
         '0:/0/0',
       );
     });
 
     test('term with slash/colon not escaped', () {
       expect(
-        buildSearchCacheKey(term: 'a/b:c', maxTerms: 5, maxResults: 100),
+        buildSearchCacheKey(
+          term: 'a/b:c',
+          maxTerms: 5,
+          maxResults: 100,
+          scanLength: FushiDicts.defaultScanLength,
+        ),
         '5:a/b:c/5/100',
       );
     });
@@ -151,7 +202,12 @@ void main() {
         'long word here',
       ]) {
         expect(
-          buildSearchCacheKey(term: term, maxTerms: 8, maxResults: 32),
+          buildSearchCacheKey(
+            term: term,
+            maxTerms: 8,
+            maxResults: 32,
+            scanLength: FushiDicts.defaultScanLength,
+          ),
           legacyKey(term, 8, 32),
           reason: 'cacheKey drift busts the cache',
         );
@@ -213,7 +269,41 @@ void main() {
       expect(decodeDictTypeFromBlobHeader(<int>[]), null);
     });
 
-    test('flag != 0x01 -> null', () {
+    // 新格式：纯 freq / pitch / ipa 词典的记录是 type 3（预解析），前缀与 type 1 相同
+    // （meta_record.hpp）。新导入写进 blobs.bin，存量升级写进 blobs3.bin。
+    test('type 3 (pre-parsed meta) shares the prefix: freq/pitch/ipa', () {
+      expect(
+        decodeDictTypeFromBlobHeader(
+          blob(flag: 0x03, exprLen: 6, mode: 'freq'),
+        ),
+        DictionaryType.frequency,
+      );
+      expect(
+        decodeDictTypeFromBlobHeader(
+          blob(flag: 0x03, exprLen: 0, mode: 'pitch'),
+        ),
+        DictionaryType.pitch,
+      );
+      expect(
+        decodeDictTypeFromBlobHeader(blob(flag: 0x03, exprLen: 3, mode: 'ipa')),
+        DictionaryType.pitch,
+      );
+    });
+
+    test('type 1 ipa -> pitch', () {
+      expect(
+        decodeDictTypeFromBlobHeader(blob(exprLen: 3, mode: 'ipa')),
+        DictionaryType.pitch,
+      );
+    });
+
+    test('flag not a meta record type (0x01 / 0x03) -> null', () {
+      expect(
+        decodeDictTypeFromBlobHeader(
+          blob(flag: 0x02, exprLen: 0, mode: 'freq'),
+        ),
+        null,
+      );
       expect(
         decodeDictTypeFromBlobHeader(
           blob(flag: 0x00, exprLen: 0, mode: 'freq'),
@@ -257,6 +347,35 @@ void main() {
     test('mode starts exactly at EOF -> empty -> null', () {
       final b = <int>[0x01, 0x00, 0x00, 0x02];
       expect(decodeDictTypeFromBlobHeader(b), null);
+    });
+  });
+
+  group('dictRecordFileIn: which file holds the records', () {
+    late Directory dir;
+
+    setUp(() => dir = Directory.systemTemp.createTempSync('dict_records'));
+    tearDown(() => dir.deleteSync(recursive: true));
+
+    String nameOf(File? f) => f!.uri.pathSegments.last;
+
+    test('freshly imported / never upgraded: blobs.bin', () {
+      File('${dir.path}/blobs.bin').writeAsBytesSync(<int>[1]);
+      expect(nameOf(dictRecordFileIn(dir.path)), 'blobs.bin');
+    });
+
+    test('upgraded meta dictionary: only blobs3.bin left', () {
+      File('${dir.path}/blobs3.bin').writeAsBytesSync(<int>[3]);
+      expect(nameOf(dictRecordFileIn(dir.path)), 'blobs3.bin');
+    });
+
+    test('both present (old file not deletable yet): blobs.bin wins', () {
+      File('${dir.path}/blobs.bin').writeAsBytesSync(<int>[1]);
+      File('${dir.path}/blobs3.bin').writeAsBytesSync(<int>[3]);
+      expect(nameOf(dictRecordFileIn(dir.path)), 'blobs.bin');
+    });
+
+    test('neither: null', () {
+      expect(dictRecordFileIn(dir.path), isNull);
     });
   });
 
@@ -342,6 +461,7 @@ void main() {
       for (final String? unknown in <String?>[null, '', '  ']) {
         expect(
           lookupUsesChineseScriptVariants(
+            enabled: true,
             lookupLanguage: unknown,
             filters: withZh,
           ),
@@ -350,6 +470,7 @@ void main() {
         );
         expect(
           lookupUsesChineseScriptVariants(
+            enabled: true,
             lookupLanguage: unknown,
             filters: withoutZh,
           ),
@@ -359,12 +480,17 @@ void main() {
       }
       // 语言已知：只看语言，词典集合不改变结论。
       expect(
-        lookupUsesChineseScriptVariants(lookupLanguage: 'ja', filters: withZh),
+        lookupUsesChineseScriptVariants(
+          enabled: true,
+          lookupLanguage: 'ja',
+          filters: withZh,
+        ),
         isFalse,
         reason: '日语书里查词不因装了中文词典而多出简繁变体',
       );
       expect(
         lookupUsesChineseScriptVariants(
+          enabled: true,
           lookupLanguage: 'zh-Hant',
           filters: withoutZh,
         ),
@@ -372,9 +498,39 @@ void main() {
       );
     });
 
+    test('开关关着（默认）时一律不展开简繁，语言与词典都不改变结论', () {
+      const DictionaryLookupFilters withZh = DictionaryLookupFilters(
+        hiddenDictionaryNames: <String>{},
+        termDictionaryOrder: <String>['ABC', 'DrEye'],
+        hasChineseTermDictionary: true,
+      );
+      for (final String? language in <String?>[
+        null,
+        '',
+        'zh',
+        'zh-Hant',
+        'ja',
+      ]) {
+        expect(
+          lookupUsesChineseScriptVariants(
+            enabled: false,
+            lookupLanguage: language,
+            filters: withZh,
+          ),
+          isFalse,
+          reason: '开关关 + "$language" → 只查原文字形',
+        );
+      }
+    });
+
     test('缓存键：关着时与旧格式逐字相同，开着时带 /zh 后缀不与之共用', () {
       expect(
-        buildSearchCacheKey(term: '这个', maxTerms: 8, maxResults: 8),
+        buildSearchCacheKey(
+          term: '这个',
+          maxTerms: 8,
+          maxResults: 8,
+          scanLength: FushiDicts.defaultScanLength,
+        ),
         '2:这个/8/8',
       );
       expect(
@@ -382,6 +538,7 @@ void main() {
           term: '这个',
           maxTerms: 8,
           maxResults: 8,
+          scanLength: FushiDicts.defaultScanLength,
           chineseSimpToTrad: true,
         ),
         '2:这个/8/8/zh',

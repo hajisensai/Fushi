@@ -1,6 +1,8 @@
 import 'package:fushi/src/media/collections/add_to_collection_dialog.dart'
     show CollectionMemberVisibility;
 import 'package:fushi/src/media/video/disc/remote_disc_actions.dart';
+import 'package:fushi_engine/media/collections/collection_season_groups.dart'
+    show collectionGroupKeyForFilename;
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart'
     show
@@ -68,6 +70,14 @@ class CollectionEpisodeSlot {
   /// （[RemoteVideoInfo.parseName]：host 刮削后标题已是分集名，按标题解析季号会
   /// 让几十集排成一列，BUG-3613；旧 host / 媒体服务器回落标题）。
   String get filename => local?.videoPath ?? remote!.parseName;
+
+  /// 分栏键的底子：本地槽按文件路径派生（手动分栏 / 手动季集指定由调用方经
+  /// `loadCollectionSections` 叠上去）；远端槽用 host 下发的生效分栏
+  /// （[RemoteVideoInfo.collectionGroupKey]：host 的覆盖表本机没有，BUG-5084），
+  /// 旧 host 不下发时按文件名派生。
+  String get baseSectionKey => local != null
+      ? collectionGroupKeyForFilename(local!.videoPath)
+      : remote!.collectionGroupKey;
 
   int get positionMs => local?.lastPositionMs ?? remote!.positionMs;
 
@@ -193,6 +203,16 @@ CollectionMemberVisibility videoCollectionMemberVisibility({
         !mirroredRemoteIds.contains(entryKey);
   };
 }
+
+/// 合集成员的**展示集号**（BUG-1544 / BUG-2369 / BUG-4921）：[filenames] 按成员顺序
+/// 给出（本地是视频路径，远端是 [RemoteVideoInfo.parseName]，即
+/// [CollectionEpisodeSlot.filename]），**整批**解析出第 [index] 个成员的真实集号；
+/// 解析不出才回落顺位号 `index + 1`。
+///
+/// 与合集详情页集卡序号同一判据：库页合集卡「继续看 第 N 集」走这里，不再用续播
+/// 下标 +1——只导入后半季时顺位号与真实集号错位（第 151 集写成第 1 集）。
+int collectionMemberEpisodeNumber(List<String> filenames, int index) =>
+    parsedEpisodeNumbersOf(filenames)[index] ?? index + 1;
 
 /// 跨来源的分集身份：季号（解析不出视作第 1 季，与分季分组同口径）+ 集号。
 typedef CollectionEpisodeIdentity = ({int season, int episode});

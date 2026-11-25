@@ -47,12 +47,20 @@ class GalAudioSlice {
 /// native 侧（`fushi/windows/runner/audio_loopback_capture.cpp`）注册 `audio_loopback`
 /// MethodChannel，方法：
 ///   - `start` `{userDataFolder?, silent?}` -> `Map`：`{sampleRate, channels, bitsPerSample,
-///     isFloat}` 或 `{error, code}`。带 userDataFolder = 进程树模式（只录该 WebView2 环境
-///     浏览器进程树的声音）；silent 再把它的音频会话压到 -100 dB 不出扬声器、采集侧还原。
+///     isFloat, lease}` 或 `{error, code}`。带 userDataFolder = 进程树模式（只录该 WebView2
+///     环境浏览器进程树的声音）；silent 再把它的音频会话压到 -100 dB 不出扬声器、采集侧还原。
+///     同一来源已在跑时共用那一路，另发一张租约 `lease`。
 ///   - `restoreDucked` `{userDataFolder}` -> int：崩溃残留兜底（见 [restoreDuckedSessions]）。
-///   - `stop` -> void。
-///   - `grabRecent` `{backMs}` -> `Map`：`{pcm:Uint8List, sampleRate, channels,
+///   - `stop` `{lease}` -> void：只交回本实例的租约；同一路还有别的持有者（galgame 会话 /
+///     常驻的跨应用语音缓存）时不停。
+///   - `grabRecent` `{backMs, lease}` -> `Map`：`{pcm:Uint8List, sampleRate, channels,
 ///     bitsPerSample, isFloat}` 或 `{error}`。
+///   - `pinSnapshot` `{backMs, lease}` -> `{id}` 或 `{error, code}`（`code: stopped` = 这一路
+///     采集线程已退出，需重新 start）；`saveSnapshot` `{id, path}` ->
+///     格式 map 或 `{error}`（跨应用语音缓存：查词那一刻钉住，制卡时才落盘）。
+///
+/// 一个实例至多持有一张租约：[start] 成功后持有，[stop] 交回。没持有租约时 [stop] 是
+/// 无操作——失败的 start 之后的兜底 stop 不再能停掉别人的那一路。
 ///
 /// native 缺失（未构建 / 非 Windows）时所有方法以 [MissingPluginException] /
 /// [PlatformException] 收敛为 null（调用方降级）。
@@ -75,6 +83,12 @@ class LoopbackGalAudioSource implements GalAudioSource {
   /// 进程树模式下不从扬声器出声（见类注释）。
   final bool silent;
 
+  /// 本实例持有的 native 租约（[start] 成功后非空，[stop] 后清空）。
+  int? _lease;
+
+  /// 是否持有租约（= 本实例启动的采集还在为它跑）。
+  bool get holdsLease => _lease != null;
+
   /// 最近一次 [start] 失败时 native 给的原因码（`target_not_found` / `unsupported` /
   /// `busy` / `start_failed`；native 缺失为 `missing_plugin`）；成功为 null。
   String? get lastStartError => _lastStartError;
@@ -96,7 +110,15 @@ class LoopbackGalAudioSource implements GalAudioSource {
         _lastStartError = (r?['code'] as String?) ?? 'start_failed';
         return null;
       }
-      return _parseFormat(r);
+      final PcmFormat? format = _parseFormat(r);
+      final Object? lease = r['lease'];
+      if (lease is int && lease != 0) {
+        // 重复 start：先拿到新租约再交回旧的，这一路中间不会因计数归零被停。
+        final int? previous = _lease;
+        _lease = lease;
+        if (previous != null && previous != lease) await _release(previous);
+      }
+      return format;
     } on PlatformException {
       _lastStartError = 'start_failed';
       return null;
@@ -127,8 +149,17 @@ class LoopbackGalAudioSource implements GalAudioSource {
 
   @override
   Future<void> stop() async {
+    final int? lease = _lease;
+    _lease = null;
+    if (lease == null) return;
+    await _release(lease);
+  }
+
+  Future<void> _release(int lease) async {
     try {
-      await _channel.invokeMethod<void>('stop');
+      await _channel.invokeMethod<void>('stop', <String, Object?>{
+        'lease': lease,
+      });
     } on PlatformException {
       // 停不掉不该崩上层（native 会在进程退出兜底释放）。
     } on MissingPluginException {
@@ -145,6 +176,7 @@ class LoopbackGalAudioSource implements GalAudioSource {
       final Map<Object?, Object?>? r = await _channel
           .invokeMethod<Map<Object?, Object?>>('grabRecent', <String, Object?>{
             'backMs': backMs,
+            if (_lease != null) 'lease': _lease,
           });
       if (r == null || r['error'] != null) {
         return null;
@@ -155,6 +187,59 @@ class LoopbackGalAudioSource implements GalAudioSource {
         return null;
       }
       return GalAudioSlice(pcm: pcm, format: fmt);
+    } on PlatformException {
+      return null;
+    } on MissingPluginException {
+      return null;
+    }
+  }
+
+  /// 把最近 [backMs] 毫秒钉在 native 内存里（只留最近一份，顶替上一份），返回快照 `id`；
+  /// 没持有租约 / 环里没东西 / native 缺失时 `id` 为 null。不跨通道搬 PCM、不落盘。
+  ///
+  /// `captureStopped`：租约还在，但这一路的采集线程已自行退出（渲染端点被拔掉等，native
+  /// 回 `code: stopped`）——环里是退出前的旧声音，native 不钉。持有方应对同一来源重新
+  /// [start]（native 重起一路并把旧租约迁过去），否则常驻持有方从此再也取不到声音。
+  Future<({int? id, bool captureStopped})> pinSnapshot(int backMs) async {
+    const ({int? id, bool captureStopped}) none = (
+      id: null,
+      captureStopped: false,
+    );
+    final int? lease = _lease;
+    if (lease == null || backMs <= 0) return none;
+    try {
+      final Map<Object?, Object?>? r = await _channel
+          .invokeMethod<Map<Object?, Object?>>('pinSnapshot', <String, Object?>{
+            'lease': lease,
+            'backMs': backMs,
+          });
+      final Object? id = r?['id'];
+      return (
+        id: id is int && id != 0 ? id : null,
+        captureStopped: r?['code'] == 'stopped',
+      );
+    } on PlatformException {
+      return none;
+    } on MissingPluginException {
+      return none;
+    }
+  }
+
+  /// 把 [pinSnapshot] 钉住的快照 [id] 写成裸 PCM 文件 [path]，返回它的格式；快照已被
+  /// 后来的查词顶替 / 写失败 / native 缺失返回 null。
+  static Future<PcmFormat?> saveSnapshot(
+    int id,
+    String path, {
+    MethodChannel channel = kAudioLoopbackChannel,
+  }) async {
+    try {
+      final Map<Object?, Object?>? r = await channel
+          .invokeMethod<Map<Object?, Object?>>(
+            'saveSnapshot',
+            <String, Object?>{'id': id, 'path': path},
+          );
+      if (r == null || r['error'] != null) return null;
+      return _parseFormat(r);
     } on PlatformException {
       return null;
     } on MissingPluginException {
@@ -859,6 +944,8 @@ List<String> pickPairedVoiceOggs({
     if (isGalNonVoiceBasename(parsed.basename)) {
       continue;
     }
+    // TyranoScript DOM 语音已由引擎状态绑定到某一句 DOM 文本，绝不当时间邻近候选。
+    if (parsed.domVoiceGroup != null) continue;
     final int tick = parsed.tick;
     if (parsed.textEventId != null) {
       // KiriKiri 的资源先于文本，AI6 的 voice.arc 读取晚于文本；两者都由 native
@@ -902,6 +989,11 @@ List<String> pickPairedVoiceOggs({
 ///    等于同时播放）。带事件 ID 的资源在这条分支里被排除：它已被 native 绑给某条具体
 ///    文本，凑巧同 tick 不构成归属。
 ///
+///  - 主资源是 TyranoScript DOM 语音（`<tick>_fushi_domvoice<group>_<basename>`）→
+///    只收同一 group（同一 DOM 句子）的其余 DOM 语音。这些文件是引擎在声明的语音缓冲区
+///    （`stat.map_vo.vobuf`）上播放的原件，是否语音由引擎状态判定，不再套 BGM/SE 文件名
+///    启发式；其它资源一律不是它的伴音，它也不是别人的伴音。
+///
 /// 返回**不含**主语音自身，按文件名升序（目录枚举顺序不保证，排序才让制卡结果可复现）。
 /// 主资源名不可解析、或是 BGM/SE/系统音时返回空。
 List<String> companionVoiceResourceNames({
@@ -910,7 +1002,18 @@ List<String> companionVoiceResourceNames({
   int? textTsMs,
 }) {
   final GalVoiceResourceName? primary = parseGalVoiceResourceName(primaryName);
-  if (primary == null || isGalNonVoiceBasename(primary.basename)) {
+  if (primary == null) return const <String>[];
+  final int? domGroup = primary.domVoiceGroup;
+  if (domGroup != null) {
+    final List<String> sameSentence = <String>[
+      for (final String name in candidateNames)
+        if (name != primaryName &&
+            parseGalVoiceResourceName(name)?.domVoiceGroup == domGroup)
+          name,
+    ]..sort();
+    return sameSentence;
+  }
+  if (isGalNonVoiceBasename(primary.basename)) {
     return const <String>[];
   }
   final List<String> companions = <String>[];
@@ -918,6 +1021,7 @@ List<String> companionVoiceResourceNames({
     if (name == primaryName) continue;
     final GalVoiceResourceName? other = parseGalVoiceResourceName(name);
     if (other == null || isGalNonVoiceBasename(other.basename)) continue;
+    if (other.domVoiceGroup != null) continue;
     final bool sameEvent =
         primary.textEventId != null &&
         other.textEventId == primary.textEventId &&
@@ -994,6 +1098,8 @@ List<String> pickPairedUnityVoiceWavs({
   for (final String name in wavFileNames) {
     final GalVoiceResourceName? parsed = parseGalVoiceResourceName(name);
     if (parsed == null || isGalNonVoiceBasename(parsed.basename)) continue;
+    // TyranoScript DOM 语音只属于它的 DOM 句子，不参与按时间 / 事件的配对。
+    if (parsed.domVoiceGroup != null) continue;
     final int distance = (parsed.tick - textTsMs).abs();
     if (parsed.textEventId != null &&
         textEventId != null &&
@@ -2731,7 +2837,9 @@ class EngineHookGalAudioSource implements GalAudioSource {
     if (!lower.endsWith('.ogg') &&
         !lower.endsWith('.opus') &&
         !lower.endsWith('.wav') &&
-        !lower.endsWith('.xwma')) {
+        !lower.endsWith('.xwma') &&
+        // TyranoScript DOM 语音的 M4A 原件（签名已校验，见 storeDomVoiceResource）。
+        !lower.endsWith('.m4a')) {
       return null;
     }
     final File file = File(
@@ -2847,6 +2955,43 @@ class EngineHookGalAudioSource implements GalAudioSource {
     } catch (_) {
       // 清理是尽力而为，绝不影响制卡。
     }
+  }
+
+  /// 把 TyranoScript DOM 源从游戏归档里取出的语音原件写进 dump 目录，返回资源 ID
+  /// （= 文件名，可直接作 `updateLineAudio(resourceId:)`）。
+  ///
+  /// [fileName] 必须是 [galDomVoiceResourceName] 造的单段文件名：带
+  /// `fushi_domvoice<group>` 标记，dump 索引据此把它排除在 native 时间 / 事件配对之外，
+  /// [_companionVoiceFiles] 只把同 group 的文件当伴音，[pruneVoiceDump] 照常清理。
+  /// 先写 `.part` 再改名：索引与 [awaitStableVoiceDumpFile] 不会看到半个文件。
+  /// 非 Windows、文件名不合法或写盘失败返回 null（不配对）。
+  Future<String?> storeDomVoiceResource({
+    required String fileName,
+    required Uint8List bytes,
+  }) async {
+    if (!Platform.isWindows ||
+        fileName.isEmpty ||
+        _fileBaseName(fileName) != fileName ||
+        parseGalVoiceResourceName(fileName)?.domVoiceGroup == null) {
+      return null;
+    }
+    final Directory dir = _galVoiceDumpDir();
+    final String target = '${dir.path}${Platform.pathSeparator}$fileName';
+    final File part = File('$target.part');
+    try {
+      await dir.create(recursive: true);
+      await part.writeAsBytes(bytes, flush: true);
+      await part.rename(target);
+    } on FileSystemException {
+      try {
+        if (part.existsSync()) await part.delete();
+      } on FileSystemException {
+        // 残留 .part 由 pruneVoiceDump 按年龄清掉。
+      }
+      return null;
+    }
+    _voiceDumpIndex.requestFreshness();
+    return _voiceFileForResourceId(fileName) == null ? null : fileName;
   }
 
   /// hook DLL dump 语音 OGG 的目录：`<GetTempPath>fushi_gal_voice`（hook DLL 用 `GetTempPathW`
@@ -3008,6 +3153,15 @@ class GalHookedLine {
   /// Kogado Hy) do not set it.
   static const int flagLaneUniqueHookCode = 0x4;
 
+  /// Native event flag (`kTextEventFlagDialogueSurface`): the writer proved
+  /// structurally that this lane is the game's dialogue surface **now**
+  /// (Unity Mono canvas texts, `unity_mono_dialogue_core.h`: the shown line
+  /// is replaced after the player's advance inputs, clearly more often than
+  /// any other canvas text). Current state, not history: every event of the
+  /// lane carries the writer's current verdict, and a lane that loses it gets
+  /// one thread-discovered event without the flag.
+  static const int flagDialogueSurface = 0x8;
+
   const GalHookedLine({
     required this.seq,
     required this.timestampMs,
@@ -3055,6 +3209,8 @@ class GalHookedLine {
 
   bool get hookCodeIsLaneUnique => (eventFlags & flagLaneUniqueHookCode) != 0;
 
+  bool get isDialogueSurface => (eventFlags & flagDialogueSurface) != 0;
+
   String? get textThreadKey {
     if (threadId == 0) return null;
     final String source = switch (sourceKind) {
@@ -3073,6 +3229,10 @@ class GalHookedLine {
       13 => 'knife',
       15 => 'malie',
       16 => 'softpal',
+      17 => 'system4',
+      18 => 'nitroplus',
+      19 => 'kirikiri',
+      22 => 'entisgls',
       _ => 'hook',
     };
     return '$source:${threadId.toUnsigned(64).toRadixString(16)}';
@@ -3098,6 +3258,10 @@ class GalHookedLine {
             13 => 'knife exact',
             15 => 'Malie exact',
             16 => 'SoftPal exact',
+            17 => 'System4 exact',
+            18 => 'Nitroplus exact',
+            19 => 'KiriKiri KAG exact',
+            22 => 'EntisGLS exact',
             _ => 'Text hook',
           };
     if (threadAddress == 0) return source;

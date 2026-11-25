@@ -4,6 +4,27 @@ part of '../fushi_sync_server.dart';
 /// 配对会话 TTL 与上限。公开回调（onPairRequest 等）留在 [FushiSyncServer] 本体；
 /// 方法逐字搬自 FushiSyncServer。
 extension _FushiSyncServerPairing on FushiSyncServer {
+  /// 本请求的来源分类（BUG-4390），见 [_classifyRequestOrigin]。
+  _RequestOrigin _requestOrigin(shelf.Request request) {
+    final List<String> proxies =
+        trustedProxiesProvider?.call() ?? const <String>[];
+    FushiAddressRangeSet trusted = FushiAddressRangeSet.empty;
+    if (proxies.isNotEmpty) {
+      try {
+        trusted = FushiAddressRangeSet.parse(proxies);
+      } on FormatException {
+        // 配置加载处已校验；万一漏进非法条目，按「没有可信代理」处理——只会让
+        // 展示 / 限速键退回 TCP 对端，不影响 LAN 判定（带转发头恒按公网）。
+        trusted = FushiAddressRangeSet.empty;
+      }
+    }
+    return _classifyRequestOrigin(
+      request,
+      loopbackPeerIsLan: loopbackPeerIsLan,
+      trustedProxies: trusted,
+    );
+  }
+
   Future<shelf.Response> _handlePair(shelf.Request request) async {
     if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
     final Future<bool> Function(FushiPairRequest)? approve = onPairRequest;
@@ -21,15 +42,19 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     // 旧客户端继续可配对；变的只是「本就该要 PIN 的会话」——那些会话以前能拿到
     // 共享 token 本身就是漏洞，现在必须走 v2（Fushi 自己的 client 早已先试 v2，
     // 只在对端不支持 v2 时才回落 v1）。
-    final String? pairRemote = _remoteAddress(request);
+    final _RequestOrigin origin = _requestOrigin(request);
+    final String? pairRemote = origin.display;
     final bool v1PinRequired = FushiPairingProtocol.computePinRequired(
-      isLanPeer: _isLanPeerRequest(request, pairRemote),
+      isLanPeer: origin.isLanPeer,
       lanRequiresPin:
           await (lanRequiresPinProvider?.call() ?? Future<bool>.value(false)),
     );
     if (v1PinRequired) return _pairDenied('upgrade_required');
     String? name;
-    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(
+      request,
+      maxBytes: kPairingBodyMaxBytes,
+    );
     final String? reported = body?['name']?.toString().trim();
     // Reject a "localhost"/loopback advertisement so it is never stored as this
     // peer's device name — the paired-devices list would otherwise show
@@ -40,10 +65,23 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       name = reported;
     }
     final bool approved = await approve(
-      FushiPairRequest(deviceName: name, remoteAddress: pairRemote),
+      FushiPairRequest(
+        deviceName: name,
+        remoteAddress: pairRemote,
+        sourceKey: origin.trustedSourceKey,
+      ),
     );
     if (!approved) return _pairDenied('declined');
-    return jsonResponse(<String, dynamic>{'token': _token});
+    // BUG-4393：v1 没有稳定 deviceId——接了落库回调时发 legacy- 行 token（能单独吊销，
+    // 权限同共享 token），不再把共享 token 本身交出去。
+    final String issued = await _issueAccessToken(
+      clientDeviceId: null,
+      deviceName: name,
+      remoteAddress: pairRemote,
+      ownerDevice: false,
+      deviceKeyFingerprint: null,
+    );
+    return jsonResponse(<String, dynamic>{'token': issued});
   }
 
   /// A 403 carrying a machine-readable [reason] ('declined' | 'unavailable' |
@@ -66,7 +104,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
     // No approval UI wired → never start a pairing handshake unattended.
     if (onPairRequest == null) return _pairDenied('unavailable');
-    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(
+      request,
+      maxBytes: kPairingBodyMaxBytes,
+    );
     final String? clientNonce = body?['clientNonce']?.toString();
     if (clientNonce == null || clientNonce.trim().isEmpty) {
       return shelf.Response(400, body: 'Missing clientNonce');
@@ -96,7 +137,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
             interconnectDeviceKeyFingerprint(reportedPubkey) != null)
         ? reportedPubkey
         : null;
-    final String? remote = _remoteAddress(request);
+    final _RequestOrigin origin = _requestOrigin(request);
+    final String? remote = origin.display;
     final String? tunnelPeer = request.context[kFushiP2pPeer] as String?;
 
     // 扫码 / 复制链接配对：凭 host 签发的一次性票据
@@ -111,16 +153,34 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         clientDeviceId: clientDeviceId,
         tunnelPeer: tunnelPeer,
         devicePubkey: devicePubkey,
+        origin: origin,
       );
     }
 
-    final bool isLanPeer = _isLanPeerRequest(request, remote);
+    final bool isLanPeer = origin.isLanPeer;
     final bool lanRequiresPin =
         await (lanRequiresPinProvider?.call() ?? Future<bool>.value(false));
     final bool pinRequired = FushiPairingProtocol.computePinRequired(
       isLanPeer: isLanPeer,
       lanRequiresPin: lanRequiresPin,
     );
+
+    // BUG-4391：本来源或本来源类别因 PIN 失败过多锁定中 → 不建会话、不生成 PIN、
+    // 不弹审批 / 不刷无头日志。免 PIN 会话不猜 PIN，不受锁定影响。
+    if (pinRequired &&
+        _pinLockedOut(origin.originClass, origin.trustedSourceKey)) {
+      return _pairRateLimited();
+    }
+    // 人工批准过的 PIN 会话受淘汰保护（攻击者不经主人点头占不住它们）。
+    final bool protectedFromEviction = pinRequired && pinApprovalIsManual;
+
+    // 先 prune 过期会话 + 守本类别上限：杜绝「只发 pair/v2 不 confirm」的慢速 DoS 把
+    // _pairSessions 撑爆（对照 audio/video token 的 prune 模式）。类别里全是受保护会话
+    // 时腾不出位置 → 429。
+    _prunePairSessions();
+    if (!_enforcePairSessionCap(origin)) return _pairRateLimited();
+    // 同步回收已冷却的 PIN 失败记录，防限速器内存随开会话数无界增长。
+    _pinRateLimiter.prune(_now());
 
     final String sessionId = FushiPairingProtocol.generateNonce();
     final String hostNonce = FushiPairingProtocol.generateNonce();
@@ -143,17 +203,18 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       tunnelPeer: tunnelPeer,
       devicePubkey: devicePubkey,
       ownerDeviceGrant: ownerDeviceGrant,
+      sourceKey: origin.sourceKey,
+      sourceKeyTrusted: origin.sourceKeyTrusted,
+      originClass: origin.originClass,
+      protectedFromEviction: protectedFromEviction,
     );
-    // 先 prune 过期会话 + 守上限：杜绝「只发 pair/v2 不 confirm」的慢速 DoS 把
-    // _pairSessions 撑爆（对照 audio/video token 的 prune 模式）。
-    _prunePairSessions();
-    _enforcePairSessionCap();
-    // 同步回收已冷却的 PIN 失败记录，防限速器内存随开会话数无界增长。
-    _pinRateLimiter.prune(_now());
 
-    // host UI 供给器返回真正显示给用户的 PIN（同值用于 confirm 重算比对）。未接线
-    // 时保留随机兜底 PIN——它不显示给任何人，故 pinRequired 会话无法被 confirm（拒）。
-    final String shownPin = onPairPinGenerated?.call(session) ?? session.pin;
+    // 屏显 PIN 只给要 PIN 的会话生成（免 PIN 会话没有 PIN 可显示，也不该惊动宿主的
+    // 供给器）。供给器未接线时用随机兜底 PIN，经 [FushiPairRequest.pin] 交给宿主显示。
+    // PIN 跟着会话走：同值存进本会话、随审批请求传递，宿主不再从共享单槽读。
+    final String shownPin = pinRequired
+        ? (onPairPinGenerated?.call(session) ?? session.pin)
+        : session.pin;
 
     // TODO-1296 / BUG-592: pinRequired（公网 / 跨网段 / host 要求 PIN）会话在 CREATE
     // 阶段就弹 host 审批——审批弹窗会显示本会话 PIN，让 client 被要求输入前 host 屏上
@@ -171,6 +232,9 @@ extension _FushiSyncServerPairing on FushiSyncServer {
           pinRequired: true,
           clientDeviceId: clientDeviceId,
           ownerDeviceGrant: ownerDeviceGrant,
+          sessionId: sessionId,
+          pin: shownPin,
+          sourceKey: origin.trustedSourceKey,
         ),
       );
       if (!approved) return _pairDenied('declined');
@@ -195,6 +259,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       tunnelPeer: tunnelPeer,
       devicePubkey: devicePubkey,
       ownerDeviceGrant: ownerDeviceGrant,
+      sourceKey: origin.sourceKey,
+      sourceKeyTrusted: origin.sourceKeyTrusted,
+      originClass: origin.originClass,
+      protectedFromEviction: protectedFromEviction,
     );
     _pairSessions[sessionId] = stored;
 
@@ -220,6 +288,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     required String? clientDeviceId,
     required String? tunnelPeer,
     required String? devicePubkey,
+    required _RequestOrigin origin,
   }) {
     final FushiPairTicket? ticket = _pairTicket;
     if (ticket == null ||
@@ -233,9 +302,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     // 一票一会话：建会话即消耗票据。否则拍到二维码的人（直播 / 屏幕共享）能在
     // 5 分钟内预开任意多个会话，合法设备配完、二维码关掉之后照样逐个 confirm
     // 拿 token（审查问题 3）。输错 secret 的合法设备重新打开二维码即可。
-    _pairTicket = null;
+    // 腾不出会话位置（本类别全是受保护会话）时不消耗票据，稍后重试仍可用。
     _prunePairSessions();
-    _enforcePairSessionCap();
+    if (!_enforcePairSessionCap(origin)) return _pairRateLimited();
+    _pairTicket = null;
     _pinRateLimiter.prune(_now());
     final String sessionId = FushiPairingProtocol.generateNonce();
     final String hostNonce = FushiPairingProtocol.generateNonce();
@@ -252,6 +322,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
       ticketId: ticket.id,
       tunnelPeer: tunnelPeer,
       devicePubkey: devicePubkey,
+      sourceKey: origin.sourceKey,
+      sourceKeyTrusted: origin.sourceKeyTrusted,
+      originClass: origin.originClass,
+      // 票据会话凭 192-bit secret，host 屏上打开二维码即视为批准：不被灌满的会话挤掉。
+      protectedFromEviction: true,
     );
     return jsonResponse(<String, dynamic>{
       'sessionId': sessionId,
@@ -267,7 +342,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     if (request.method.toUpperCase() != 'POST') return shelf.Response(405);
     final Future<bool> Function(FushiPairRequest)? approve = onPairRequest;
     if (approve == null) return _pairDenied('unavailable');
-    final Map<String, dynamic>? body = await readJsonObjectBody(request);
+    final Map<String, dynamic>? body = await readJsonObjectBody(
+      request,
+      maxBytes: kPairingBodyMaxBytes,
+    );
     final String? sessionId = body?['sessionId']?.toString();
     if (sessionId == null || sessionId.trim().isEmpty) {
       return shelf.Response(400, body: 'Missing sessionId');
@@ -278,11 +356,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     // 方向全错。现在过期返回专用 reason='expired'，client 据此说人话。
     final FushiPairSession? found = _pairSessions[sessionId];
     if (found != null &&
-        found.createdAt.isBefore(_now().subtract(_pairSessionTtl))) {
+        found.createdAt.isBefore(_now().subtract(kFushiPairSessionTtl))) {
       _pairSessions.remove(sessionId);
       // 过期会话同样消耗掉它的 PIN：host 屏上那个常驻 PIN 弹窗该收起，
       // 否则用户盯着一个已经没用的 PIN 继续等（对齐 pinRequired 成功路径）。
-      if (found.pinRequired) onPairSessionResolved?.call();
+      if (found.pinRequired) onPairSessionResolved?.call(found.sessionId);
       _prunePairSessions();
       _pinRateLimiter.prune(_now());
       return _pairDenied('expired');
@@ -307,42 +385,47 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     // 分支各自补一遍。免 PIN 会话没有常驻弹窗，不触发。
     // 票据会话没有屏显 PIN 弹窗可收（收了反而会误关同时进行的另一次 PIN 配对）。
     if (session.pinRequired && session.ticketId == null) {
-      onPairSessionResolved?.call();
+      onPairSessionResolved?.call(session.sessionId);
     }
 
-    // TODO-961 M3：本会话来源标识，供爆破限速按来源聚合失败计数。优先 client 自报的
-    // 稳定 deviceId，回退来源 IP；二者都缺时为 null → 无稳定身份可锁，退化为不限速的
-    // 单会话路径（该路径已被 session.consumed 单次消费保护，一个会话只能撞一次）。
-    final String? sourceKey = _pinRateLimitSourceKey(session);
+    // TODO-961 M3 / BUG-4391：来源标识在建会话时由 [_requestOrigin] 算好存进会话
+    // （IP，IPv6 按 /64；隧道按 NodeId；**不**认自报 deviceId）。只取能区分真实来源的
+    // 键（[FushiPairSession.trustedSourceKey]）：经本机反代 / 穿透进来的共用键背后是
+    // 所有人，按它锁会株连全体（含票据配对）。为 null 时不按来源限速，只受来源类别
+    // 预算约束（单会话本就被 session.consumed 限成只撞一次）。
+    final String? sourceKey = session.trustedSourceKey;
+    final bool isTicket = session.ticketId != null;
     if (session.pinRequired) {
       // 先查锁定态（再触碰 PIN 比对）：锁定则直接拒，杜绝继续撞。锁定判定只看来源与
-      // 时钟，与 PIN 内容完全无关，故不引入「前缀正确就更慢」的计时侧信道。
-      if (sourceKey != null && _pinRateLimiter.isLockedOut(sourceKey, _now())) {
+      // 时钟，与 PIN 内容完全无关，故不引入「前缀正确就更慢」的计时侧信道。票据会话
+      // 凭 192-bit secret，不进类别预算（否则公网被刷锁时扫码配对也一起瘫掉）。
+      if (isTicket
+          ? (sourceKey != null &&
+                _pinRateLimiter.isLockedOut(sourceKey, _now()))
+          : _pinLockedOut(session.originClass, sourceKey)) {
         return _pairRateLimited();
       }
       final String? pinProof = body?['pinProof']?.toString();
-      if (pinProof == null || pinProof.trim().isEmpty) {
-        // 缺 proof 同样计一次失败：否则攻击者可用「开会话→空 proof」零成本探测锁定态
-        // 之外的东西。记后若已锁定，返回 429 让 client 知道被限速。
-        if (sourceKey != null &&
-            _pinRateLimiter.recordFailure(sourceKey, _now())) {
-          return _pairRateLimited();
-        }
-        // 401：PIN 校验未通过（缺 proof）——不再问 host（不弹窗）。
-        return _pairUnauthorized();
-      }
-      final bool ok = FushiPairingProtocol.verifyPinProof(
-        pin: session.pin,
-        clientNonce: session.clientNonce,
-        hostNonce: session.hostNonce,
-        submittedProof: pinProof,
-      );
+      // 缺 proof 同样计一次失败：否则攻击者可用「开会话→空 proof」零成本探测锁定态
+      // 之外的东西。
+      final bool ok =
+          pinProof != null &&
+          pinProof.trim().isNotEmpty &&
+          FushiPairingProtocol.verifyPinProof(
+            pin: session.pin,
+            clientNonce: session.clientNonce,
+            hostNonce: session.hostNonce,
+            submittedProof: pinProof,
+          );
       if (!ok) {
-        // 记一次来源级失败；若因此达阈值进入锁定，返回 429（限速），否则 401（PIN 错）。
-        if (sourceKey != null &&
-            _pinRateLimiter.recordFailure(sourceKey, _now())) {
-          return _pairRateLimited();
-        }
+        // 记一次来源级失败 + 类别级失败；任一因此进入锁定 → 429（限速），否则 401
+        // （PIN 错 / 缺 proof，不再问 host、不弹窗）。
+        final DateTime now = _now();
+        final bool sourceLocked =
+            sourceKey != null && _pinRateLimiter.recordFailure(sourceKey, now);
+        final bool classLocked =
+            !isTicket && _pinBudgets[session.originClass]!.recordFailure(now);
+        if (sourceLocked || classLocked) return _pairRateLimited();
         return _pairUnauthorized();
       }
     }
@@ -372,6 +455,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
           pinRequired: false,
           clientDeviceId: session.clientDeviceId,
           ownerDeviceGrant: ownerDeviceGrant,
+          sessionId: session.sessionId,
+          sourceKey: session.trustedSourceKey,
         ),
       );
       if (!approved) return _pairDenied('declined');
@@ -379,17 +464,22 @@ extension _FushiSyncServerPairing on FushiSyncServer {
 
     // TODO-961 M3：成功配对 → 清零该来源的 PIN 失败计数与锁定态（不株连未来尝试）。
     if (sourceKey != null) _pinRateLimiter.recordSuccess(sourceKey);
+    // BUG-4391：本类别有 PIN 会话配对成功 → 类别预算的级数与计数清零。
+    if (session.pinRequired && !isTicket) {
+      _pinBudgets[session.originClass]!.recordSuccess();
+    }
     // 一次性票据：配成一台就作废（二维码被别人再扫一次也没用）。
     if (session.ticketId != null && _pairTicket?.id == session.ticketId) {
       _pairTicket = null;
     }
 
-    // TODO-961 M1b：per-peer token 派发。仅当 host 接线了落库回调（onPeerPaired）
-    // **且** client 上报了稳定 deviceId 时，才生成本设备专属 token 并写库、回给该
-    // client。任一缺失（纯协议单测无 DB / 旧 client 不上报 deviceId）则回退共享
-    // [_token]——既有行为零变化、老设备继续可配对（Never break userspace）。
-    final String issuedToken = await _issuePeerTokenOrFallback(
-      session,
+    // TODO-961 M1b / BUG-4393：host 接线了落库回调（onPeerPaired）时一律派发可单独
+    // 吊销的 per-peer token：带稳定 deviceId 的按 deviceId 落行，旧 client 不上报
+    // deviceId 的落一行 legacy-（权限同共享 token）。没接线（纯协议单测）回共享 token。
+    final String issuedToken = await _issueAccessToken(
+      clientDeviceId: session.clientDeviceId,
+      deviceName: session.deviceName,
+      remoteAddress: session.remoteAddress,
       ownerDevice: ownerDeviceGrant?.granted ?? false,
       deviceKeyFingerprint: deviceKeyFingerprint,
     );
@@ -400,29 +490,35 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     });
   }
 
-  /// confirm 成功后派发访问 token：有 [onPeerPaired] 回调且会话带 clientDeviceId
-  /// 时生成 per-peer token、经回调落库并清 token 缓存（吊销/新增即时生效），返回该
-  /// token；否则回退共享 [_token]（无 DB 接线 / 旧 client 无 deviceId 的兼容路径）。
-  Future<String> _issuePeerTokenOrFallback(
-    FushiPairSession session, {
+  /// 配对成功后派发访问 token。没接 [onPeerPaired]（纯协议单测）→ 共享 [_token]。
+  /// 否则生成 per-peer token、经回调落库并清 token 缓存（吊销/新增即时生效）：
+  /// 有稳定 [clientDeviceId] 的以它为 peerId；没有的（v1 / 旧 v2 client）落一行
+  /// [kFushiLegacyPeerIdPrefix] 开头的随机 peerId——恒非「我的设备」、不记设备钥匙，
+  /// 只过普通鉴权（BUG-4393）。落库失败把异常抛出（500），绝不回退共享 token。
+  Future<String> _issueAccessToken({
+    required String? clientDeviceId,
+    required String? deviceName,
+    required String? remoteAddress,
     required bool ownerDevice,
     required String? deviceKeyFingerprint,
   }) async {
     final Future<void> Function(FushiPairedPeerRegistration)? persist =
         onPeerPaired;
-    final String? peerId = session.clientDeviceId?.trim();
-    if (persist == null || peerId == null || peerId.isEmpty) {
-      return _token;
-    }
+    if (persist == null) return _token;
+    final String? deviceId = clientDeviceId?.trim();
+    final bool legacy = deviceId == null || deviceId.isEmpty;
+    final String peerId = legacy
+        ? '$kFushiLegacyPeerIdPrefix${FushiPairingProtocol.generateNonce()}'
+        : deviceId;
     final String peerToken = FushiSyncServer.generateToken();
     await persist(
       FushiPairedPeerRegistration(
         peerId: peerId,
         token: peerToken,
-        deviceName: session.deviceName,
-        remoteAddress: session.remoteAddress,
-        ownerDevice: ownerDevice && deviceKeyFingerprint != null,
-        deviceKeyFingerprint: deviceKeyFingerprint,
+        deviceName: deviceName,
+        remoteAddress: remoteAddress,
+        ownerDevice: !legacy && ownerDevice && deviceKeyFingerprint != null,
+        deviceKeyFingerprint: legacy ? null : deviceKeyFingerprint,
       ),
     );
     // 新 token 立即受理：清缓存促下次 auth 从 provider 重载（含刚写入的这行）。
@@ -491,29 +587,14 @@ extension _FushiSyncServerPairing on FushiSyncServer {
 
   Future<shelf.Response> _handleCapabilities() async {
     final bool lib = _libraryService != null;
-    // 漫画 P3 能力协商：仅接线了 OCR 任务管理器的 host 带 `mangaOcr` 字段；老
-    // host 响应里没有该字段 → client 隐藏「已配对主机」OCR 选项（零破坏）。
-    final Map<String, Object?>? mangaOcr = await _mangaOcrJobs?.capability();
-    final Map<String, Object?>? jobs = await _hostJobs?.capability();
-    final Map<String, Object?>? downloads = await _downloads?.capability();
-    final Map<String, Object?>? subscriptions = await _subscriptions
-        ?.capability();
-    final Map<String, Object?>? assistant = await _assistant?.capability();
+    // 互联模块的能力位（漫画 OCR `mangaOcr`、通用任务 `jobs`、代下载 `downloads`、借 BT 引擎
+    // `torrentEngine`、订阅 `subscriptions`、助手 `assistant`，以及新模块如 `music`）：模块各给各的，
+    // 未接线 → null → 键不出现（老 client 读不到也不崩）。按注册顺序插在这里，键序与迁移前相同。
+    final Map<String, Object?> modules = await _modules.capabilities();
     return jsonResponse(<String, dynamic>{
       // 复习同步的长轮询通知（`GET /api/srs/changes`）。老 host 没有这一位，客户端只按定时同步。
       'srsChangesV1': true,
-      if (mangaOcr != null) 'mangaOcr': mangaOcr,
-      // 通用任务能力位：`jobs.kinds` + 每种 kind 的就绪信息；老 client 读不到也不崩。
-      if (jobs != null) 'jobs': jobs,
-      // `deleteFilesParam`：本路由的 DELETE 认 `?deleteFiles=`（BUG-3437）；老 host
-      // 没有这个键，client 据此决定能不能让用户选「同时删除已下载文件」。
-      if (downloads != null)
-        'downloads': <String, Object?>{
-          ...downloads,
-          kHostDownloadDeleteFilesParamCapability: true,
-        },
-      if (subscriptions != null) 'subscriptions': subscriptions,
-      if (assistant != null) 'assistant': assistant,
+      ...modules,
       // 查词 / 制卡 / 查词历史 / 游戏串流：这台 host 是否接了对应 service（老 host
       // 无这些字段，client 照旧以端点 404 判断）。只说「懂不懂这条路由」，不代表此刻
       // 一定成功——例如制卡还要 host 已登录 Anki、查词还要 host 装了词典。
@@ -521,7 +602,7 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         'dictionary': _remoteLookupService != null,
         'history': _historyService != null,
       },
-      'mining': _miningService != null,
+      'mining': activeRemoteMiningService(_miningService) != null,
       'gameStream': _gameStreamService != null,
       // 远程更新 host（反馈 Pp8XPyve0N）：client 据此决定是否显示「主机版本」行。
       'hostUpdate': hostSelfUpdater != null,
@@ -535,6 +616,9 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         'dictionaries': lib,
         'books': lib,
         'audio': lib,
+        // 本地音频清单带内容身份 contentId、单项端点认 contentId（拍板 pr3481）。
+        // 老 host 无此字段 → client 退回按显示名匹配并在报告里提示升级对端。
+        kLiveLibraryLocalAudioContentIdCapability: lib,
         'videos': lib,
         // 互联漫画源（按页在线阅读，`/api/library/manga/**`）。老 host 无此字段 →
         // client 的漫画「来源」页把这一行标成「对端版本过低」，而不是让用户点进去
@@ -546,9 +630,31 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 互联标签同步（`/api/library/tags`）。老 host 无此字段 / false → client
         // 跳过标签维度（下载时搬一次标签的旧行为不受影响）。
         'tags': _libraryService is TagSyncHost,
+        // 能否收下对端推来的 PDF 书（反馈 Jq1_ujHa4t）。app host 接了 PDF 导入器 →
+        // true；无头服务端没有 PDF 渲染引擎 → false。老 host 无此字段 → client
+        // 不推 PDF（老 host 会把 PDF 当 EPUB 导入、必然失败）。
+        kLiveLibraryPdfBooksCapability: switch (_libraryService) {
+          final PdfBookImportHost host => host.acceptsPdfBooks,
+          _ => false,
+        },
         // 互联作品图谱同步（`/api/library/media-links`）。老 host 无此字段 / false
         // → client 跳过作品图谱维度。
         'mediaLinks': _libraryService is MediaLinkSyncHost,
+        // 在线源条目清单（`/api/library/online-items`，拍板台 mY5VWg1nD-）。老 host
+        // 无此字段 → client 遇 404 时提示升级对端。
+        kLiveLibraryOnlineItemsCapability:
+            _libraryService is OnlineLibrarySyncHost,
+        // 流媒体书注册（`PUT /api/library/videos/<id>/streamentry`，拍板台
+        // Z2OhxAjKVv）。老 host 无此字段 → client 不推（见该端点注释）。
+        kLiveLibraryStreamVideosCapability:
+            _libraryService is StreamVideoSyncHost,
+        // 删除墓碑列举（`GET /api/tombstones`）与视频删除（`DELETE
+        // /api/library/videos/<id>`）。老 host 无这两位 → client 遇到 404 时在同步报告
+        // 里提示升级对端；有位但 false（host 实现不带这项能力）→ 不叫用户去升级。
+        kLiveLibraryDeletionTombstonesCapability:
+            _libraryService is DeletionTombstoneHost,
+        kLiveLibraryVideoDeletionCapability:
+            _libraryService is VideoDeletionHost,
         // 弱网实时转码（`/streamurl?maxHeight=&maxBitrate=`）。老 host 无此字段 →
         // client 不显示画质档，行为与从前一致。字段随用户开关与本机 ffmpeg 可用性
         // 实时变化，不是启动时的快照；最终真相仍是 `/streamurl` 回的 `transcoded`。
@@ -559,9 +665,19 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 不认那个 header，会走 live push 的旧路径按 client 报的后缀落盘，
         // `rename` 直接覆盖 host 上同名的旧字幕且不留备份（BUG-2728）。
         'videoSubtitleDefault': _libraryService is VideoSubtitleDefaultHost,
+        // 同一端点带 `?episode=N` 时落到播放列表第 N 集旁。老 host 无此字段 → client
+        // 对第 N 集**不上传**：老 host 不认 `episode`，会把字幕落到第 0 集旁、压掉
+        // 第 0 集的默认字幕。
+        'videoSubtitleDefaultEpisode':
+            _libraryService is VideoSubtitleDefaultHost,
         // `DELETE .../subtitle?which=`（清字幕源 + 备份本视频 sidecar）与
         // `POST .../subtitle/backfill`（立即补字幕）。老 host 无此字段 → 404。
         'videoSubtitleClear': _libraryService is VideoSubtitleClearHost,
+        // 列出一集的全部外挂字幕（`/streamurl` 的 `sidecarSubtitles`）+ 按名下载
+        // （`GET .../subtitle?sidecar=`，反馈 -CaVsioFhG）。老 host 无此字段 →
+        // `/streamurl` 也不带列表，client 只有默认那一条。
+        kVideoSidecarSubtitlesCapability:
+            _libraryService is VideoSidecarSubtitleListHost,
         // 远端原盘：整盘下载 + 流式原盘菜单共用的只读盘目录服务
         // （`/api/library/videos/<id>/disc` + `/api/library/disc/<token>/**`）。老 host
         // 无此字段 → client 的远端原盘按钮说明「对端版本过低」，不发请求。
@@ -569,6 +685,24 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // 互联远端片段导出（`GET .../clipvideo`，反馈 6nBmSBj_2W）。老 host 无此字段
         // → client 提示「对端版本过低」，不发请求。
         kVideoClipExportCapability: _libraryService is VideoClipExportHost,
+        // `clipaudio?discTitle=`：按（盘, title）裁音频，远端原盘会话里库中没有行的
+        // title 也能本机转录 / 重定时 / 对轴。老 host 无此字段 → client 不带
+        // `discTitle` 请求（老 host 会照 `<id>` 那一行裁）。
+        kVideoClipAudioDiscTitleCapability:
+            _libraryService is VideoDiscTitleAudioHost,
+        // `clipaudio?discTitle=` 认多角度 title 的角度成员路径（`00001.a2.mpls`），按
+        // 会话里正在播的角度裁。老 host 无此字段 → client 不发角度路径。
+        kVideoClipAudioDiscTitleAngleCapability:
+            _libraryService is VideoDiscTitleAudioHost,
+        // `clipaudio?discTitle=` 认 DVD title（`VIDEO_TS/TITLE_nn.dvdtitle`）。老 host 无此
+        // 字段 → client 不发 DVD title。
+        kVideoClipAudioDiscTitleDvdCapability:
+            _libraryService is VideoDiscTitleAudioHost,
+        // `clipaudio?discTitle=` 认 DVD 多角度 title 的角度成员路径
+        // （`TITLE_nn.aK.dvdtitle`），按会话里正在播的角度裁。老 host 无此字段 → client
+        // 不发 DVD 角度路径。
+        kVideoClipAudioDiscTitleDvdAngleCapability:
+            _libraryService is VideoDiscTitleAudioHost,
         'videoSubtitleBackfill': lib && videoSubtitleBackfill != null,
         // 图形字幕整轨回传（`GET .../graphicsubtitle?embeddedStreamIndex=`）。老 host
         // 无此字段 / 没注入抽取实现 → false，client 不请求、时间表只靠边播边记。
@@ -579,6 +713,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         'serviceConfig':
             _securityContext != null &&
             _libraryService is InterconnectServiceConfigHost,
+        // 互联「来源共享」（服务器来源 + 插件包）：必须 TLS，端点另查开关与「我的设备」。
+        kInterconnectSourceShareFeature: _sourceShareAvailable,
+        // 互联「插件中继」（替没有插件运行时的「我的设备」代跑插件）：同来源共享，必须 TLS。
+        kInterconnectPluginRelayFeature: _pluginRelayAvailable,
         // 互联「配置文件」（Profile）双向搬运：与 serviceConfig 同门槛（必须 TLS）。
         // 能力位只说「这台 host 懂这个端点」，不代表此刻允许——端点还会再查一次
         // 用户开关，关着时返回 403，client 如实报错而不是当成不支持。
@@ -595,8 +733,11 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     });
   }
 
-  /// GET /api/host/addresses → `{hostId, addresses:[{url, kind}]}`
+  /// GET /api/host/addresses → `{hostId, deviceName?, addresses:[{url, kind}]}`
   /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
+  ///
+  /// `deviceName`（BUG-4322）：与 `/api/ping` 同一个 host 展示名。client 定期从这里学地址集时顺带给
+  /// 还没有名字的条目补上（升级前用手动地址配对的 host 只有 URL，`peer ls` / 远程复习标题都显示主机名）。
   ///
   /// 需鉴权——不放无鉴权的 /api/ping：不向任何能探到端口的人泄露内网拓扑。也不
   /// 并进 capabilities：那是「支持什么」，这是「在哪里」；capabilities 被各功能
@@ -607,6 +748,8 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     if (id == null) return shelf.Response.notFound('No host id');
     return jsonResponse(<String, dynamic>{
       'hostId': id,
+      if (_deviceName != null && _deviceName.isNotEmpty)
+        'deviceName': _deviceName,
       'addresses': <Map<String, Object?>>[
         for (final InterconnectHostAddress a in await _hostAddresses())
           a.toJson(),
@@ -614,34 +757,105 @@ extension _FushiSyncServerPairing on FushiSyncServer {
     });
   }
 
-  /// TODO-961 M1：清掉 [_pairSessionTtl] 之前创建的配对会话。对照
+  /// TODO-961 M1：清掉 [kFushiPairSessionTtl] 之前创建的配对会话。对照
   /// [RemoteAudioTokenStore.prune] / [_pruneVideoTokens]：按 createdAt + 注入的 [_now] 判定，
   /// 可单测。在 pair/v2 创建与 confirm 两处调用，使过期会话既不堆积也不可被 confirm。
   void _prunePairSessions() {
-    final DateTime cutoff = _now().subtract(_pairSessionTtl);
+    final DateTime cutoff = _now().subtract(kFushiPairSessionTtl);
     _pairSessions.removeWhere(
       (String _, FushiPairSession s) => s.createdAt.isBefore(cutoff),
     );
   }
 
-  /// TODO-961 M1：守住会话上限。prune 之后仍超过 [_maxPairSessions] 时，按 createdAt
-  /// 淘汰最旧的会话直到回到上限内（攻击者用全新 nonce 高频发起 pair/v2、每个都还在
-  /// TTL 内时的兜底）。正常一次一会话（_pairDialogOpen 串行审批），此路径几乎不触发。
-  void _enforcePairSessionCap() {
-    while (_pairSessions.length >= _maxPairSessions) {
-      String? oldestKey;
-      DateTime? oldestAt;
-      for (final MapEntry<String, FushiPairSession> e
-          in _pairSessions.entries) {
-        if (oldestAt == null || e.value.createdAt.isBefore(oldestAt)) {
-          oldestAt = e.value.createdAt;
-          oldestKey = e.key;
-        }
+  /// BUG-4391：PIN 会话是否因失败过多被拒——本来源类别的总预算锁定，或（来源可识别时）
+  /// 本来源被 [_pinRateLimiter] 锁定。
+  bool _pinLockedOut(FushiPairOriginClass originClass, String? sourceKey) {
+    final DateTime now = _now();
+    if (_pinBudgets[originClass]!.isLockedOut(now)) return true;
+    return sourceKey != null && _pinRateLimiter.isLockedOut(sourceKey, now);
+  }
+
+  /// TODO-961 M1 / BUG-4391：为 [origin] 即将新建的会话腾位置；腾不出返回 false。
+  ///
+  /// 上限按来源类别分区（[_maxPairSessionsPerClass]），公网刷会话挤不掉局域网 / 隧道
+  /// 的会话；可信来源键再限每来源 [_maxPairSessionsPerSource] 个，超了只淘汰它自己的。
+  /// 类别满时淘汰该类别里会话最多的来源（null 键各自算一个来源）的最旧会话，所以单一
+  /// 来源只能挤掉自己的。受保护会话（票据、人工批准过的 PIN 会话）永不淘汰；类别里
+  /// 全是受保护会话仍满 → false（调用方回 429）。
+  bool _enforcePairSessionCap(_RequestOrigin origin) {
+    final FushiPairOriginClass cls = origin.originClass;
+    final String? sourceKey = origin.sourceKey;
+    bool evictable(FushiPairSession s) =>
+        s.originClass == cls && !s.protectedFromEviction;
+
+    // 1. 每来源限额：只对能区分真实来源的键做（回环未经可信代理、`p2p:?` 跳过——
+    //    否则经本机反代进来的所有人共用一个名额）。
+    if (origin.sourceKeyTrusted && sourceKey != null) {
+      while (true) {
+        final List<MapEntry<String, FushiPairSession>>
+        mine = <MapEntry<String, FushiPairSession>>[
+          for (final MapEntry<String, FushiPairSession> e
+              in _pairSessions.entries)
+            if (e.value.originClass == cls && e.value.sourceKey == sourceKey) e,
+        ];
+        if (mine.length < _maxPairSessionsPerSource) break;
+        final MapEntry<String, FushiPairSession>? oldest = _oldestOf(
+          mine.where(
+            (MapEntry<String, FushiPairSession> e) => evictable(e.value),
+          ),
+        );
+        if (oldest == null) break;
+        _pairSessions.remove(oldest.key);
       }
-      if (oldestKey == null) break;
-      _pairSessions.remove(oldestKey);
+    }
+
+    // 2. 类别上限：淘汰会话最多的来源的最旧可淘汰会话，直到低于上限。
+    while (true) {
+      final List<MapEntry<String, FushiPairSession>> inClass =
+          <MapEntry<String, FushiPairSession>>[
+            for (final MapEntry<String, FushiPairSession> e
+                in _pairSessions.entries)
+              if (e.value.originClass == cls) e,
+          ];
+      if (inClass.length < _maxPairSessionsPerClass) return true;
+      final List<MapEntry<String, FushiPairSession>> candidates =
+          <MapEntry<String, FushiPairSession>>[
+            for (final MapEntry<String, FushiPairSession> e in inClass)
+              if (!e.value.protectedFromEviction) e,
+          ];
+      if (candidates.isEmpty) return false;
+      // 每来源会话数（含受保护的：占得多就是占得多）；null 键不合并。
+      final Map<String, int> perSource = <String, int>{};
+      for (final MapEntry<String, FushiPairSession> e in inClass) {
+        final String? k = e.value.sourceKey;
+        if (k != null) perSource[k] = (perSource[k] ?? 0) + 1;
+      }
+      int weight(FushiPairSession s) =>
+          s.sourceKey == null ? 1 : perSource[s.sourceKey]!;
+      final int heaviest = candidates
+          .map((MapEntry<String, FushiPairSession> e) => weight(e.value))
+          .reduce((int a, int b) => a > b ? a : b);
+      final MapEntry<String, FushiPairSession> victim = _oldestOf(
+        candidates.where(
+          (MapEntry<String, FushiPairSession> e) => weight(e.value) == heaviest,
+        ),
+      )!;
+      _pairSessions.remove(victim.key);
     }
   }
+}
+
+/// [entries] 里 createdAt 最早的一项；为空时 null。
+MapEntry<String, FushiPairSession>? _oldestOf(
+  Iterable<MapEntry<String, FushiPairSession>> entries,
+) {
+  MapEntry<String, FushiPairSession>? oldest;
+  for (final MapEntry<String, FushiPairSession> e in entries) {
+    if (oldest == null || e.value.createdAt.isBefore(oldest.value.createdAt)) {
+      oldest = e;
+    }
+  }
+  return oldest;
 }
 
 // ── 本域私有的顶层 helper（原 FushiSyncServer 的 private static；extension 体内看不到
@@ -649,50 +863,178 @@ extension _FushiSyncServerPairing on FushiSyncServer {
 
 /// TODO-961 M1（会话 TTL/上限，对照 audio/video token 的 prune 模式）：只发
 /// pair/v2 却不 confirm 的攻击者会留下永久驻留会话（慢速 DoS）。每个会话
-/// [_pairSessionTtl] 后过期，超过 [_maxPairSessions] 时先 prune 再淘汰最旧者。
+/// [kFushiPairSessionTtl] 后过期；超过分区上限时先 prune 再按 [_enforcePairSessionCap]
+/// 的规则淘汰（BUG-4391）。
 /// TTL 与现有 host 60s 自动 deny（[FushiSyncServerController]）对齐：会话生命周期
 /// 不应长于一次审批窗口（留 90s 余量覆盖审批弹窗 + 用户输 PIN）。
-const Duration _pairSessionTtl = Duration(seconds: 90);
+const Duration kFushiPairSessionTtl = Duration(seconds: 90);
 
-const int _maxPairSessions = 64;
+/// 每个来源类别（局域网 / 隧道 / 公网）最多同时挂起的配对会话数（BUG-4391）。
+const int _maxPairSessionsPerClass = 32;
 
-/// TODO-961 M3：本会话在 PIN 爆破限速里的来源标识。优先 client 自报的稳定
-/// deviceId（同一物理设备换 IP 也锁得住），回退请求来源 IP。二者都缺（无稳定身份）
-/// 时返回 null → 调用方退化为不限速的单会话路径（已由 consumed 单次消费保护）。
-///
-/// 隧道会话例外：一律按对端 NodeId 分桶，**不认**自报 deviceId。deviceId 谁都能
-/// 冒报（报成受害者的就能把受害者锁在外面），NodeId 是隧道握手证明过的密钥；而
-/// 来源 IP 恒为 127.0.0.1 毫无区分度。查不到 NodeId（解析器未接线）时所有这类
-/// 会话共用一个桶——宁可误伤也不放开。
-String? _pinRateLimitSourceKey(FushiPairSession session) {
-  if (session.tunnelPeer != null) return 'p2p:${session.tunnelPeer}';
-  if (session.remoteAddress == kFushiP2pRemoteAddress) return 'p2p:?';
-  final String? deviceId = session.clientDeviceId?.trim();
-  if (deviceId != null && deviceId.isNotEmpty) return 'dev:$deviceId';
-  final String? remote = session.remoteAddress?.trim();
-  if (remote != null && remote.isNotEmpty) return 'ip:$remote';
-  return null;
+/// 每个可信来源键最多同时挂起的配对会话数（BUG-4391）。
+const int _maxPairSessionsPerSource = 4;
+
+/// 转发层会附带的来源头（BUG-4390）。带任一个就说明请求经过了反代 / 穿透 / CDN，
+/// TCP 对端只是转发者，不能据它判局域网。
+const List<String> _kForwardingHeaders = <String>[
+  'x-forwarded-for',
+  'forwarded',
+  'x-real-ip',
+  'cf-connecting-ip',
+  'true-client-ip',
+];
+
+/// 一次配对请求的来源（BUG-4390）：类别（是否局域网）、展示串、限速来源键。
+/// 由 [_classifyRequestOrigin] 一处算出，配对 v1 / v2 / 票据会话都只读它。
+class _RequestOrigin {
+  const _RequestOrigin({
+    required this.originClass,
+    required this.display,
+    required this.sourceKey,
+    required this.sourceKeyTrusted,
+  });
+
+  final FushiPairOriginClass originClass;
+
+  bool get isLanPeer => originClass == FushiPairOriginClass.lan;
+
+  /// 审批框 / 落库 lastSeenIp / 无头 pending 展示用。
+  final String? display;
+
+  /// 限速与会话分桶用的来源键（步骤 5 消费）；null = 无法识别。
+  final String? sourceKey;
+
+  /// [sourceKey] 能否区分不同的真实来源：P2P NodeId、非回环 TCP 对端（不论带不带转发
+  /// 头——头是请求方自填的，不能让它自选降级）、经可信代理解析出的转发 IP 为 true；
+  /// 回环对端（未经可信代理解析）与 `p2p:?` 为 false。
+  final bool sourceKeyTrusted;
+
+  /// 能区分真实来源时的 [sourceKey]，否则 null：按来源的 PIN 限速 / 锁定与宿主同源
+  /// 判定只认它（见 [FushiPairSession.trustedSourceKey]）。
+  String? get trustedSourceKey => sourceKeyTrusted ? sourceKey : null;
 }
 
-/// 配对的「局域网对端」判据：P2P 隧道进来的请求来源永远是 127.0.0.1，必须按
-/// 公网处理（强制 PIN / 票据），否则拿到 NodeId 的任何人都能免 PIN 配上。
-bool _isLanPeerRequest(shelf.Request request, String? remote) =>
-    request.context[kFushiRequestZone] != 'p2p' &&
-    FushiPairingProtocol.isPrivateLanAddress(remote);
-
-/// Source IP of the request's TCP connection, or null when shelf_io did not
-/// attach connection info (e.g. some test harnesses).
-String? _remoteAddress(shelf.Request request) {
-  // P2P 隧道进来的连接在 TCP 层恒为 127.0.0.1：原样上屏会让 host 审批框里的公网
-  // 陌生人看起来像「本机」（审查问题 4）。如实标成隧道。
+/// 请求来源分类（BUG-4390）。判定顺序：
+/// 1. P2P 区域 → `p2p`；**不读任何转发头**（隧道里的头全是对端自填的）。
+/// 2. 拿不到 TCP 对端 → `public`。
+/// 3. 带任一转发头 → `public`，不论对端是否可信——伪造这些头只会让请求方自己被要 PIN。
+/// 4. 回环对端且 `!loopbackPeerIsLan`（无头端）→ `public`。
+/// 5. 否则对端是私网地址 → `lan`，不是 → `public`。
+///
+/// [trustedProxies] 只影响 [_RequestOrigin.sourceKey] / [_RequestOrigin.display]：对端
+/// 命中且带转发头时取 `X-Forwarded-For` / `Forwarded: for=` 的最后一跳作真实来源。
+_RequestOrigin _classifyRequestOrigin(
+  shelf.Request request, {
+  required bool loopbackPeerIsLan,
+  required FushiAddressRangeSet trustedProxies,
+}) {
   if (request.context[kFushiRequestZone] == 'p2p') {
-    return kFushiP2pRemoteAddress;
-  }
-  final Object? info = request.context['shelf.io.connection_info'];
-  if (info is HttpConnectionInfo) {
-    return FushiPairingProtocol.unmapIPv4MappedAddress(
-      info.remoteAddress.address,
+    final String? node = (request.context[kFushiP2pPeer] as String?)?.trim();
+    final bool known = node != null && node.isNotEmpty;
+    return _RequestOrigin(
+      originClass: FushiPairOriginClass.p2p,
+      // P2P 隧道进来的连接在 TCP 层恒为 127.0.0.1：原样上屏会让 host 审批框里的公网
+      // 陌生人看起来像「本机」（审查问题 4）。如实标成隧道。
+      display: kFushiP2pRemoteAddress,
+      sourceKey: known ? 'p2p:$node' : 'p2p:?',
+      sourceKeyTrusted: known,
     );
   }
-  return null;
+  final Object? info = request.context['shelf.io.connection_info'];
+  if (info is! HttpConnectionInfo) {
+    return const _RequestOrigin(
+      originClass: FushiPairOriginClass.public,
+      display: null,
+      sourceKey: null,
+      sourceKeyTrusted: false,
+    );
+  }
+  final InternetAddress peer = _unmappedAddress(info.remoteAddress);
+  final String peerText = peer.address;
+  final bool peerIsLoopback = peer.isLoopback;
+  final bool forwarded = _kForwardingHeaders.any(request.headers.containsKey);
+
+  final FushiPairOriginClass originClass;
+  if (forwarded) {
+    originClass = FushiPairOriginClass.public;
+  } else if (peerIsLoopback && !loopbackPeerIsLan) {
+    originClass = FushiPairOriginClass.public;
+  } else {
+    originClass = FushiPairingProtocol.isPrivateLanAddress(peerText)
+        ? FushiPairOriginClass.lan
+        : FushiPairOriginClass.public;
+  }
+
+  if (forwarded && trustedProxies.contains(peer)) {
+    final InternetAddress? client = _forwardedClientAddress(request.headers);
+    if (client != null) {
+      final InternetAddress real = _unmappedAddress(client);
+      return _RequestOrigin(
+        originClass: originClass,
+        display: '${real.address} (via $peerText)',
+        sourceKey: fushiRateKeyForAddress(real),
+        sourceKeyTrusted: true,
+      );
+    }
+  }
+  return _RequestOrigin(
+    originClass: originClass,
+    display: forwarded ? '$peerText (proxied)' : peerText,
+    sourceKey: fushiRateKeyForAddress(peer),
+    // 非回环的直连对端 IP 是 TCP 层的真实地址、请求方伪造不了：转发头是请求方自填的，
+    // 不能拿它把自己降成不可信键、绕开按来源的锁定与会话限额（评审 recheck-1，回退
+    // compat-3 的 `&& !forwarded`）。局域网反代背后多人共用一个 IP 的部署，要靠
+    // trusted_proxies 把反代登记成可信代理来区分来源。
+    sourceKeyTrusted: !peerIsLoopback,
+  );
+}
+
+/// v4 映射的 v6 地址还原成 v4（来源地址的唯一规范化口径，见
+/// [FushiPairingProtocol.unmapIPv4MappedAddress]）。
+InternetAddress _unmappedAddress(InternetAddress address) {
+  final List<int> raw = fushiUnmapIPv4MappedRaw(address.rawAddress);
+  if (raw.length == address.rawAddress.length) return address;
+  return InternetAddress.fromRawAddress(
+    Uint8List.fromList(raw),
+    type: InternetAddressType.IPv4,
+  );
+}
+
+/// 可信代理附带的真实来源：`X-Forwarded-For` 的最后一个条目，没有时取 RFC 7239
+/// `Forwarded` 最后一个 `for=`。取不到或解析不了 → null（按对端处理）。
+InternetAddress? _forwardedClientAddress(Map<String, String> headers) {
+  final String? xff = headers['x-forwarded-for'];
+  if (xff != null && xff.trim().isNotEmpty) {
+    return _parseForwardedNode(xff.split(',').last);
+  }
+  final String? fwd = headers['forwarded'];
+  if (fwd == null) return null;
+  String? last;
+  for (final String element in fwd.split(',')) {
+    for (final String pair in element.split(';')) {
+      final int eq = pair.indexOf('=');
+      if (eq < 0) continue;
+      if (pair.substring(0, eq).trim().toLowerCase() == 'for') {
+        last = pair.substring(eq + 1);
+      }
+    }
+  }
+  return last == null ? null : _parseForwardedNode(last);
+}
+
+/// 一跳节点值：去引号；`[v6]:port` 取方括号内；`v4:port` 去端口。
+InternetAddress? _parseForwardedNode(String raw) {
+  String v = raw.trim();
+  if (v.length >= 2 && v.startsWith('"') && v.endsWith('"')) {
+    v = v.substring(1, v.length - 1).trim();
+  }
+  if (v.startsWith('[')) {
+    final int close = v.indexOf(']');
+    if (close < 0) return null;
+    v = v.substring(1, close);
+  } else if (':'.allMatches(v).length == 1) {
+    v = v.substring(0, v.indexOf(':'));
+  }
+  return InternetAddress.tryParse(v);
 }

@@ -16,6 +16,7 @@ import 'package:fushi/src/pages/implementations/video_remote/video_remote_models
 import 'package:fushi/src/pages/implementations/video_remote/video_remote_scaffold.dart';
 import 'package:fushi/src/pages/implementations/video_remote_page.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/video_remote_client.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -69,6 +70,17 @@ class _RemotePageAppModel extends AppModel {
 }
 
 void main() {
+  // V-B4：明文地址拿凭据前要当场 ping 核对 hostId；这些用例的对端是 MockClient，
+  // 把身份核对视为通过。
+  setUp(() {
+    resetInterconnectRaceCache();
+    debugInterconnectAddressProbeOverride =
+        (FushiClientUrl candidate, String? hostId) async => true;
+  });
+  tearDown(() {
+    debugInterconnectAddressProbeOverride = null;
+    resetInterconnectRaceCache();
+  });
   setUpAll(installFakeInAppWebViewPlatform);
   const FushiClientUrl peer = FushiClientUrl(
     url: 'http://phone-test:8765',
@@ -638,6 +650,37 @@ void main() {
     expect(
       videoRemoteErrorText(
         const VideoRemoteError('favorite_source_unavailable', statusCode: 409),
+      ),
+      t.video_remote_error_favorite_source_unavailable,
+    );
+    // 新版电脑附上的细分原因按原因说清；不认识的原因（更新版本电脑）退回笼统文案。
+    expect(
+      videoRemoteErrorText(
+        const VideoRemoteError(
+          'favorite_source_unavailable',
+          statusCode: 404,
+          reason: 'peer_offline',
+        ),
+      ),
+      t.video_favorite_peer_offline,
+    );
+    expect(
+      videoRemoteErrorText(
+        const VideoRemoteError(
+          'favorite_source_unavailable',
+          statusCode: 404,
+          reason: 'online_source_missing',
+        ),
+      ),
+      t.video_favorite_online_source_missing,
+    );
+    expect(
+      videoRemoteErrorText(
+        const VideoRemoteError(
+          'favorite_source_unavailable',
+          statusCode: 404,
+          reason: 'from_the_future',
+        ),
       ),
       t.video_remote_error_favorite_source_unavailable,
     );

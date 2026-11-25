@@ -4,6 +4,7 @@
 library;
 
 import 'package:fushi_engine/media/music/server/music_server.dart';
+import 'package:fushi_engine/media/music/server/music_server_loudness.dart';
 
 /// Jellyfin 的 `RunTimeTicks` 是 100 ns。
 int? jellyfinTicksToMs(Object? ticks) => ticks is num ? ticks ~/ 10000 : null;
@@ -26,6 +27,14 @@ List<Map<String, Object?>> _maps(Object? v) => <Map<String, Object?>>[
     for (final Object? e in v)
       if (e is Map<String, Object?>) e,
 ];
+
+/// `UserData.IsFavorite`；服务器没报 UserData 时为 null。
+bool? jellyfinIsFavorite(Map<String, Object?> j) {
+  final Object? ud = j['UserData'];
+  if (ud is! Map<String, Object?>) return null;
+  final Object? fav = ud['IsFavorite'];
+  return fav is bool ? fav : null;
+}
 
 bool _hasPrimary(Map<String, Object?> j) {
   final Object? tags = j['ImageTags'];
@@ -63,6 +72,7 @@ MusicServerAlbum? parseJellyfinMusicAlbum(Map<String, Object?> j) {
     trackCount: _int(j['ChildCount']) ?? _int(j['SongCount']),
     durationMs: jellyfinTicksToMs(j['RunTimeTicks']),
     coverRef: _hasPrimary(j) ? id : null,
+    favorite: jellyfinIsFavorite(j),
   );
 }
 
@@ -75,7 +85,52 @@ MusicServerArtist? parseJellyfinMusicArtist(Map<String, Object?> j) {
     name: name,
     albumCount: _int(j['AlbumCount']),
     coverRef: _hasPrimary(j) ? id : null,
+    favorite: jellyfinIsFavorite(j),
   );
+}
+
+/// 一个流派（`/MusicGenres` 的行）。
+MusicServerGenre? parseJellyfinMusicGenre(Map<String, Object?> j) {
+  final String? id = _str(j['Id']);
+  final String? name = _str(j['Name']);
+  if (id == null || name == null) return null;
+  return MusicServerGenre(
+    id: id,
+    name: name,
+    albumCount: _int(j['AlbumCount']),
+    trackCount: _int(j['SongCount']),
+    coverRef: _hasPrimary(j) ? id : null,
+  );
+}
+
+/// `/Audio/{id}/Lyrics` 的响应 → 歌词（`Lyrics[].Text` + `Start` 100 ns 刻度）。没有行回 null。
+MusicServerLyrics? parseJellyfinLyrics(Object? json) {
+  if (json is! Map<String, Object?>) return null;
+  final List<MusicServerLyricLine> lines = <MusicServerLyricLine>[
+    for (final Map<String, Object?> l in _maps(json['Lyrics']))
+      if (l['Text'] is String)
+        MusicServerLyricLine(
+          text: (l['Text']! as String).trimRight(),
+          startMs: jellyfinTicksToMs(l['Start']),
+        ),
+  ];
+  if (lines.every((MusicServerLyricLine l) => l.text.trim().isEmpty)) {
+    return null;
+  }
+  return MusicServerLyrics(lines: lines);
+}
+
+/// [jellyfinMusicStreamRequest] 拼出的流地址 → 曲目（`/Audio/{id}/stream` 直出、
+/// `/Audio/{id}/universal` 转码）。服务器挂在子路径（反代 `/jellyfin`）时前缀不影响。
+MusicServerStreamRef? jellyfinStreamRefOf(Uri uri) {
+  final List<String> seg = uri.pathSegments;
+  if (seg.length < 3) return null;
+  final String last = seg[seg.length - 1].toLowerCase();
+  if (seg[seg.length - 3].toLowerCase() != 'audio') return null;
+  if (last != 'stream' && last != 'universal') return null;
+  final String id = seg[seg.length - 2];
+  if (id.isEmpty) return null;
+  return MusicServerStreamRef(trackId: id, transcoded: last == 'universal');
 }
 
 MusicServerTrack? parseJellyfinMusicTrack(Map<String, Object?> j) {
@@ -124,9 +179,13 @@ MusicServerTrack? parseJellyfinMusicTrack(Map<String, Object?> j) {
     bitDepth: _int(audio?['BitDepth']),
     channels: _int(audio?['Channels']),
     sizeBytes: _int(source?['Size']),
+    playlistEntryId: _str(j['PlaylistItemId']),
+    path: _str(j['Path']) ?? _str(source?['Path']),
+    favorite: jellyfinIsFavorite(j),
     coverRef: _hasPrimary(j)
         ? id
         : (_str(j['AlbumPrimaryImageTag']) != null ? albumId : null),
+    loudness: jellyfinTrackLoudnessOf(j),
   );
 }
 
@@ -165,6 +224,9 @@ MusicServerPlaylist? parseJellyfinMusicPlaylist(Map<String, Object?> j) {
     trackCount: _int(j['ChildCount']) ?? _int(j['SongCount']),
     durationMs: jellyfinTicksToMs(j['RunTimeTicks']),
     coverRef: _hasPrimary(j) ? id : null,
+    // 只有明确报了 `CanDelete: false`（别人的歌单）才不让改；兼容层不报这个字段时按可改
+    // 处理，真没权限由服务器拒绝、页面提示。
+    editable: j['CanDelete'] != false,
   );
 }
 

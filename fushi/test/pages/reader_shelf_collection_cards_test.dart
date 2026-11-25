@@ -19,6 +19,7 @@ import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 /// 书架合集一律「单个格子」+ 两个书架 bug 的页面级回归：
 ///  - 合集渲染成 [SeriesShelfCard]（叠层封面），与散书在**同一个网格、同一套排序**
@@ -141,6 +142,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: ReaderFushiHistoryPage(
             remoteBookClientLoader: () async => null,
@@ -279,7 +281,6 @@ void main() {
       findsOneWidget,
       reason: '合集内成员菜单必须含「标签」（与书架书卡同一个菜单）',
     );
-    expect(find.text(t.book_rename), findsOneWidget);
     expect(
       find.text(t.collection_remove_member),
       findsOneWidget,
@@ -290,6 +291,14 @@ void main() {
       findsNothing,
       reason: '不再是详情页自绘的「打开 / 移出」精简菜单',
     );
+    // #3803 起「重命名」与其它编辑类动作收进「编辑信息」簇（二级菜单），进簇后可见。
+    final Finder editGroup = find.byKey(
+      const ValueKey<String>('item_menu_edit_group'),
+    );
+    expect(editGroup, findsOneWidget, reason: '成员菜单有编辑簇');
+    await tester.tap(editGroup);
+    await tester.pumpAndSettle();
+    expect(find.text(t.book_rename), findsOneWidget);
   });
 
   testWidgets('BUG-2968：书打了标签、合集没打 → 按标签筛选仍能找到这本书', (

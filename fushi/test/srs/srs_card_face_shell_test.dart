@@ -402,6 +402,10 @@ function cssAll(){
 globalThis.document = {
   body: { className: '' },
   head,
+  // 外壳等第一帧画出再上报可见发音（BUG-5353）时挂 / 摘 visibilitychange；这里没有
+  // rAF，那条路径立刻收尾，只需要真 document 都有的这对方法。
+  addEventListener(){},
+  removeEventListener(){},
   getElementById(id){
     return { 'fushi-card-root': root, 'fushi-theme-css': themeCss,
       'fushi-css-tpl': tplAnchor, 'fushi-css-body': bodyAnchor }[id] || null;

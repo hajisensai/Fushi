@@ -9,11 +9,14 @@ import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/fushi_apple_surface.dart';
+import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
@@ -160,6 +163,80 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final Widget body = ListenableBuilder(
+      listenable: Listenable.merge(<Listenable>[
+        widget.session,
+        widget.attachedText,
+      ]),
+      builder: (BuildContext context, Widget? child) {
+        // 选中线程是用户自己的动作，弹窗该让位并且**不**回滚「本会话已提示
+        // 过」的标记。
+        //
+        // 这里原本还有第二条腿：`needsUnsafeRiskAcceptance` 为真时也自动关，
+        // 好让游戏窗盖住本弹窗时用户仍能够到工具条上的「确认点击风险」。
+        // BUG-2154 把那道门整个去掉之后（风险恒定接受），它恒为假、这条腿
+        // 恒不可达 —— 留着只会让「弹窗会不会自己关」多一个永远不成立的答案。
+        // `yieldingToRiskConsent` 参数本身保留：它是 _scheduleAutoClose 的
+        // 回滚语义，门若哪天按引擎重开，接回来只是一个 else-if。
+        if (widget.session.selectedTextThreadKey != null) {
+          _scheduleAutoClose(yieldingToRiskConsent: false);
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            Text(
+              t.game_capture_setup_hint,
+              style: isGlassDesign(context)
+                  ? FushiAppleMetrics.of(context).subtitleStyle(context)
+                  : Theme.of(context).textTheme.bodyMedium,
+            ),
+            const SizedBox(height: 16),
+            Expanded(
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints box) {
+                  final Widget threads = _buildThreadPane(context);
+                  final Widget audio = _buildAudioPane(context);
+                  if (box.maxWidth >= 760) {
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        Expanded(flex: 6, child: threads),
+                        const SizedBox(width: 12),
+                        Expanded(flex: 5, child: audio),
+                      ],
+                    );
+                  }
+                  return Column(
+                    children: <Widget>[
+                      Expanded(flex: 6, child: threads),
+                      const SizedBox(height: 12),
+                      Expanded(flex: 5, child: audio),
+                    ],
+                  );
+                },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+    final Widget close = FushiTextButton(
+      onPressed: () => _dismissOnce(yieldingToRiskConsent: false),
+      child: Text(t.dialog_close),
+    );
+    // Apple：macOS 档窗口 sheet / iOS 档整页（showAdaptiveDialogSurface 推出来时
+    // 才有这个 scope）。整页返回即关，「关闭」只放在 sheet 底部。
+    final FushiAppleSurfaceForm? appleForm = FushiAppleSurfaceScope.maybeFormOf(
+      context,
+    );
+    if (appleForm != null) {
+      return FushiAppleSurfaceFrame(
+        title: t.game_capture_setup_title,
+        scrollable: false,
+        actions: <Widget>[if (appleForm == FushiAppleSurfaceForm.sheet) close],
+        body: body,
+      );
+    }
     final Size screen = MediaQuery.sizeOf(context);
     final double dialogHeight = (screen.height * 0.72).clamp(420.0, 680.0);
     // BUG-1474：宽度原先是硬编码 900。AlertDialog 默认 insetPadding 左右各 40，
@@ -168,71 +245,8 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
     final double dialogWidth = (screen.width - 80).clamp(320.0, 900.0);
     return FushiAlertDialog(
       title: Text(t.game_capture_setup_title),
-      content: SizedBox(
-        width: dialogWidth,
-        height: dialogHeight,
-        child: ListenableBuilder(
-          listenable: Listenable.merge(<Listenable>[
-            widget.session,
-            widget.attachedText,
-          ]),
-          builder: (BuildContext context, Widget? child) {
-            // 选中线程是用户自己的动作，弹窗该让位并且**不**回滚「本会话已提示
-            // 过」的标记。
-            //
-            // 这里原本还有第二条腿：`needsUnsafeRiskAcceptance` 为真时也自动关，
-            // 好让游戏窗盖住本弹窗时用户仍能够到工具条上的「确认点击风险」。
-            // BUG-2154 把那道门整个去掉之后（风险恒定接受），它恒为假、这条腿
-            // 恒不可达 —— 留着只会让「弹窗会不会自己关」多一个永远不成立的答案。
-            // `yieldingToRiskConsent` 参数本身保留：它是 _scheduleAutoClose 的
-            // 回滚语义，门若哪天按引擎重开，接回来只是一个 else-if。
-            if (widget.session.selectedTextThreadKey != null) {
-              _scheduleAutoClose(yieldingToRiskConsent: false);
-            }
-            return Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: <Widget>[
-                Text(
-                  t.game_capture_setup_hint,
-                  style: Theme.of(context).textTheme.bodyMedium,
-                ),
-                const SizedBox(height: 16),
-                Expanded(
-                  child: LayoutBuilder(
-                    builder: (BuildContext context, BoxConstraints box) {
-                      final Widget threads = _buildThreadPane(context);
-                      final Widget audio = _buildAudioPane(context);
-                      if (box.maxWidth >= 760) {
-                        return Row(
-                          crossAxisAlignment: CrossAxisAlignment.stretch,
-                          children: <Widget>[
-                            Expanded(flex: 6, child: threads),
-                            const SizedBox(width: 12),
-                            Expanded(flex: 5, child: audio),
-                          ],
-                        );
-                      }
-                      return Column(
-                        children: <Widget>[
-                          Expanded(flex: 6, child: threads),
-                          const SizedBox(height: 12),
-                          Expanded(flex: 5, child: audio),
-                        ],
-                      );
-                    },
-                  ),
-                ),
-              ],
-            );
-          },
-        ),
-      ),
-      actions: <Widget>[
-        FushiTextButton(
-          onPressed: () => _dismissOnce(yieldingToRiskConsent: false),
-          child: Text(t.dialog_close),
-        ),
-      ],
+      content: SizedBox(width: dialogWidth, height: dialogHeight, child: body),
+      actions: <Widget>[close],
     );
   }
 
@@ -255,7 +269,13 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
                 ? null
                 : Text(
                     '${threads.length}',
-                    style: context.fushiType.labelLarge.tabular,
+                    style:
+                        (glass
+                                ? FushiAppleMetrics.of(
+                                    context,
+                                  ).subtitleStyle(context)
+                                : context.fushiType.labelLarge)
+                            .tabular,
                   ),
           ),
           Expanded(
@@ -370,7 +390,9 @@ class _GalCaptureSetupDialogState extends State<GalCaptureSetupDialog> {
                   Text(
                     t.game_audio_requires_thread,
                     style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                      color: Theme.of(context).colorScheme.onSurfaceVariant,
+                      color: isGlassDesign(context)
+                          ? appleColorsOf(context).secondaryLabel
+                          : Theme.of(context).colorScheme.onSurfaceVariant,
                     ),
                   ),
                   const SizedBox(height: 8),
@@ -399,6 +421,26 @@ class _AudioSourceSummary extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    if (isGlassDesign(context)) {
+      // Apple：一行 inset grouped 单元格（系统色图标方块 + 标题 / 灰色副标题），
+      // 不铺 M3E 饱和色块。
+      return FushiGroupedListItem(
+        index: 0,
+        count: 1,
+        child: FushiListItem(
+          leading: const FushiListLeadingIcon(FushiIcons.audio),
+          title: Text(source),
+          subtitle: format == null
+              ? null
+              : Text(
+                  format!,
+                  style: FushiAppleMetrics.of(
+                    context,
+                  ).subtitleStyle(context).tabular,
+                ),
+        ),
+      );
+    }
     // M3E 饱和色块：音频采集源是这一栏的「结论」，与下面的逐轨列表分开。
     final Color? foreground = fushiCardToneColors(
       context,
@@ -411,7 +453,7 @@ class _AudioSourceSummary extends StatelessWidget {
       child: Row(
         children: <Widget>[
           const FushiListLeadingIcon(
-            Icons.graphic_eq_outlined,
+            FushiIcons.audio,
             tone: FushiCardTone.primary,
             size: 40,
           ),
@@ -460,7 +502,16 @@ class _PaneHeader extends StatelessWidget {
           ),
           const SizedBox(width: 10),
           Expanded(
-            child: Text(title, style: context.fushiType.titleMediumEmphasized),
+            child: Text(
+              title,
+              style: isGlassDesign(context)
+                  ? appleTextStyle(
+                      context,
+                      size: FushiAppleMetrics.of(context).titleSize,
+                      weight: FontWeight.w600,
+                    )
+                  : context.fushiType.titleMediumEmphasized,
+            ),
           ),
           if (trailing != null) trailing!,
         ],

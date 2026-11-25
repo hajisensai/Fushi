@@ -13,7 +13,7 @@ import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_anki_migration.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -58,12 +58,9 @@ void main() {
       );
       final Directory mediaDir = Directory(p.join(work.path, 'srs_media', 'p'));
       const String uid = '01928c3e-0000-7000-8000-0000000be4c6';
-      final SrsStorage srs = await SrsStorage.open(
-        path: p.join(work.path, 'srs.db'),
-      );
+      final SrsStorage srs = await SrsStorage.open(directory: work.path);
       addTearDown(srs.close);
       final SrsDbStore store = await SrsDbStore.open(
-        db: srs.db,
         core: srs.core,
         profileUid: uid,
         deviceId: 'bench',

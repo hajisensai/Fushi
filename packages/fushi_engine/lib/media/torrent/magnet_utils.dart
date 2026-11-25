@@ -31,6 +31,14 @@ String? parseMagnetInfoHash(String magnet) {
   return null;
 }
 
+/// [value] 是否磁力链接（`magnet:` scheme，折全角后判；不要求能解析出 infoHash）。
+///
+/// 只回答「是不是磁链」这一个形态问题：磁链不是可串流的地址，也不是本地路径，
+/// 交给播放器只会被当成相对文件名打开（反馈 xAeextyOV1）。能不能真正下载
+/// （有没有 btih）由 [parseMagnetInfoHash] 在下载入口判。
+bool isMagnetUri(String value) =>
+    normalizeUrlInput(value).toLowerCase().startsWith('magnet:');
+
 /// 由 v1 infoHash 拼一条最小磁力链接（`xt=urn:btih:<hash>[&dn=<name>]`）。
 ///
 /// 资源索引器（Torznab 一类）常常只给 `.torrent` 下载地址 + infoHash 而没有现成

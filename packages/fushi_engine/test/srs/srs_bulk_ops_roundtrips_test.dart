@@ -189,25 +189,14 @@ void main() {
     );
   });
 
-  test('缓存刷新找后继卡：查询走前身链接的部分覆盖索引，不全表扫描修改记录表', () async {
-    // 每次缓存刷新（每次评分、每次改卡）都要找「哪些卡继承了这张卡的历史」。修前按无索引的
-    // field_key 扫整张修改记录表：语句数不变，但每次的扫描量随表长线性增长。
+  test('缓存刷新找后继卡：单次改卡 / 评分的语句数是常数', () async {
+    // 每次缓存刷新（每次评分、每次改卡）都要找「哪些卡继承了这张卡的历史」。协议 3 这里还用 EXPLAIN 钉住按
+    // `srs_field_edits` 的部分覆盖索引找；新代没有这张表（继承关系在内核的血统索引里，native/fushi_fsrs/src/store/
+    // gen4/inherit.rs），那段查询计划断言删了，语句数是常数照旧钉住。新代缓存刷新找后继 / 前身的语句在
+    // gen4/cache.rs `load_links`（`reg_ix` 按 `(col, ekind, key)` / `(col, ekind, ent)` 取），查询计划由 Rust
+    // `store::gen4::schema::tests::lookups_with_a_key_never_walk_the_whole_collection` 钉住（逐条 EXPLAIN cache.rs 里的
+    // 同一份语句常量，不许整集合扫描或只按 `col` 找）。
     final BulkFixture f = await BulkFixture.open(notes: 20);
-    final String plan =
-        (await f.db
-                .customSelect(
-                  'EXPLAIN QUERY PLAN SELECT entity_id, field_key '
-                  'FROM srs_field_edits WHERE $kSrsHistoryFromCondition '
-                  "AND +entity_kind = 'card'",
-                )
-                .get())
-            .map((QueryRow r) => r.read<String>('detail'))
-            .join(' / ');
-    expect(
-      plan,
-      contains('COVERING INDEX idx_srs_field_edits_history_from'),
-      reason: plan,
-    );
     // 部分索引的条件与 fushi_srs 的前缀一致（fushi_core 不依赖 fushi_srs，另写了一次）。
     const String prefix = SrsFieldKeys.cardHistoryFromPrefix;
     expect(
@@ -222,19 +211,21 @@ void main() {
     expect(f.counter.total, lessThan(40), reason: f.counter.summary());
   });
 
-  test('同步：应用对端事件：语句数不随事件数增长', () async {
-    Future<int> applyAt(int notes) async {
+  // 协议 3 这里量「成批应用对端已盖戳事件」；新代 `apply` 按设计拒绝它们，对端数据经集合并入进来（`.fushisrs` 导入 →
+  // 内核 `import` + `collection_adopt`），量的是同一件事：并进来的事件多了，执行器语句数不跟着涨。
+  test('同步：并入对端集合：语句数不随事件数增长', () async {
+    Future<int> joinAt(int notes) async {
       final BulkFixture src = await BulkFixture.open(notes: notes);
-      final List<SrsEvent> events = await src.store.exportAll();
       final BulkFixture dst = await BulkFixture.open(
         notes: 0,
         deviceId: 'other',
       );
       dst.counter.reset();
-      await dst.store.applyRemote(events, serverTimeMs: 1);
+      await joinCollectionFrom(dst.store, src.store);
+      expect(await dst.store.userNoteCount(), notes);
       return dst.counter.total;
     }
 
-    expectFlat('applyRemote', (await applyAt(40), await applyAt(160)));
+    expectFlat('joinCollection', (await joinAt(40), await joinAt(160)));
   });
 }

@@ -444,7 +444,9 @@ class _FushiIconButtonState extends State<FushiIconButton>
       );
     }
     if (widget.isWideTapArea && glass) {
-      final double extent = fushiAppleCompact(context) ? 36 : 44;
+      final double extent = fushiAppleCompact(context)
+          ? 36 * fushiAppleMacScale(context)
+          : 44;
       return _focusable(
         context,
         _withTooltip(_buildAppleIcon(context, tokens, minTapExtent: extent)),
@@ -712,8 +714,9 @@ class _FushiIconButtonState extends State<FushiIconButton>
   Widget _buildAppleLabelPill(BuildContext context, String label) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     final bool inGroup = FushiToolbarScope.inGlassGroupOf(context);
-    final double height = compact ? 32 : 36;
+    final double height = compact ? 32 * macScale : 36;
     final Color contentColor = enabled
         ? (widget.enabledColor ?? apple.label)
         : (widget.disabledColor ?? apple.tertiaryLabel);
@@ -727,15 +730,15 @@ class _FushiIconButtonState extends State<FushiIconButton>
         height: height,
         child: Padding(
           padding: EdgeInsetsDirectional.only(
-            start: compact ? 10 : 12,
-            end: compact ? 12 : 14,
+            start: compact ? 10 * macScale : 12,
+            end: compact ? 12 * macScale : 14,
           ),
           child: Row(
             mainAxisSize: MainAxisSize.min,
             children: <Widget>[
               FushiIcon(
                 widget.icon,
-                size: widget.size ?? (compact ? 15 : 17),
+                size: widget.size ?? (compact ? 15 * macScale : 17),
                 color: contentColor,
               ),
               const SizedBox(width: 6),
@@ -746,7 +749,7 @@ class _FushiIconButtonState extends State<FushiIconButton>
                             const TextStyle())
                         .copyWith(
                           color: contentColor,
-                          fontSize: compact ? 13 : 15,
+                          fontSize: compact ? 13 * macScale : 15,
                           fontWeight: FontWeight.w500,
                         ),
               ),
@@ -783,6 +786,7 @@ class _FushiIconButtonState extends State<FushiIconButton>
   }) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool compact = fushiAppleCompact(context);
+    final double macScale = fushiAppleMacScale(context);
     final bool selected = widget.selected ?? false;
     final bool inGroup = FushiToolbarScope.inGlassGroupOf(context);
     final Color iconColor = !enabled
@@ -806,7 +810,7 @@ class _FushiIconButtonState extends State<FushiIconButton>
           padding: widget.padding ?? EdgeInsets.all(tokens.spacing.gap),
           child: FushiIcon(
             widget.icon,
-            size: widget.size ?? (compact ? 18 : 20),
+            size: widget.size ?? (compact ? 18 * macScale : 20),
             color: iconColor,
           ),
         ),
@@ -878,7 +882,13 @@ class _FushiIconButtonState extends State<FushiIconButton>
         // reachable by gamepad/keyboard; an explicit focusId overrides it.
         id: widget.focusId ?? _fallbackFocusId,
         enabled: enabled,
-        child: button,
+        // The target is the button's ONE focus stop (same contract as the
+        // settings rows' _SettingsRowFocusTarget). Without ExcludeFocus the inner
+        // IconButton / InkWell keeps its own focus node, so every icon button
+        // cost two Tab presses — the second stop ring-less and outside the
+        // controller's registry. Pointer taps are unaffected; Enter / Space reach
+        // the ActivateIntent above via the target's node.
+        child: ExcludeFocus(child: button),
       ),
     );
   }

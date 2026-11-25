@@ -68,6 +68,9 @@ ui-*.xml
 # 浏览器扩展图标（tools/browser-extension 真源的镜像，sync-mirrors.mjs 同步）：manifest
 # icons 引用，不入库则安装助手解压出的扩展缺图标文件、Chrome 拒装。
 !assets/browser_extension/*.png
+# macOS 26 的 Icon Composer 图标包（AppIcon.icon/icon.json 引用 Assets 下的图层图），是
+# 手工设计的源素材而非 Flutter 生成物，必须入库，同样不受上面的 *.png 全局忽略影响。
+!macos/Runner/AppIcon.icon/Assets/*.png
 test_screenshots/
 
 # Codex test outputs

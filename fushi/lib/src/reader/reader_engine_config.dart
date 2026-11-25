@@ -1,6 +1,7 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show immutable;
+import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 
 /// BUG-1140 第二阶段①：阅读器引擎 JS 的**每次导航参数**。
 ///
@@ -35,6 +36,8 @@ class ReaderEngineConfig {
     required this.swipeFastDistThreshold,
     required this.swipeFastVelocity,
     required this.wheelGestureQuietMs,
+    required this.continuousTurnPullPx,
+    required this.continuousTurnPinMidGesture,
     this.pageTurnAnimation = 'none',
     this.pageTurnDurationMs = 0,
     this.pageTurnFollowDrag = false,
@@ -64,6 +67,10 @@ class ReaderEngineConfig {
     required this.vnPreserveDialogue,
     required this.vnMergeCrossScreenSentenceAudioCues,
     this.sentenceAudioCuesJson,
+    this.audiobookLineAlignFollow = false,
+    this.seamlessChapters = false,
+    this.seamlessChapterIndex = -1,
+    this.seamlessChapterOrder = const <ReaderSeamlessChapterEntry>[],
   });
 
   /// Immutable token identifying the document/navigation that owns this
@@ -95,6 +102,14 @@ class ReaderEngineConfig {
   /// [ReaderSettings.swipePageTurnDistThresholds]，随灵敏度一起缩放。
   final int swipeFastVelocity;
   final int wheelGestureQuietMs;
+
+  // ── 连续模式切章阻尼（只连续 shell 的触摸控制器读，反馈 R7k887yaJI）────────
+  /// 正文贴在章首 / 章末后，手指还要沿同方向拉动的距离（CSS px），取自
+  /// [ContinuousChapterTurnResistance.pullPx]。
+  final int continuousTurnPullPx;
+
+  /// 同一手势中途滚到边界后继续推是否也算（[ContinuousChapterTurnResistance.pinMidGesture]）。
+  final bool continuousTurnPinMidGesture;
 
   // ── 翻页动画（只分页 shell 读，见 reader_page_turn_script.dart）──────────
   /// 实际播放的效果 key（`none` / `slide` / `cover` / `fade`），Dart 侧已按墨水屏与
@@ -157,6 +172,23 @@ class ReaderEngineConfig {
   /// 产物）。原样嵌进 config 字面量，避免「解码再编码」多走一遍。`null` = 本章无 cue。
   final String? sentenceAudioCuesJson;
 
+  /// 连续模式有声书跟读是否用「整行对齐」（反馈 tUJsiLpL9d 方案 B，偏好
+  /// `audiobook_scroll_follow` == `line_align`）：整句在屏内不滚，否则把句首所在行的
+  /// 行框起始边滚到正文起始边。false = 旧的「离屏边 15% 就滚」。只连续 shell 读，可热更新。
+  final bool audiobookLineAlignFollow;
+
+  // ── 连续模式章节无缝衔接（反馈 R7k887yaJI ③，只连续 shell 读）────────────
+  /// 是否在本文档里挂邻章（`reader_seamless_chapters_script.dart`）。只在「连续模式 +
+  /// 开关开 + 非双页文档」时为 true（[readerSeamlessChaptersActive]）；false 时 JS 侧
+  /// 模块整段不装，连续 shell 行为与没有这项功能时逐字一致。
+  final bool seamlessChapters;
+
+  /// 本文档加载的章号（JS 侧活动章的初值）。
+  final int seamlessChapterIndex;
+
+  /// 阅读序里的章节（去掉被图片合并吸收的单图章）及其文档 URL。
+  final List<ReaderSeamlessChapterEntry> seamlessChapterOrder;
+
   /// 除 [sasayakiCuesJson] 外的全部字段（它是已编码的 JSON 片段，见 [toJsLiteral]）。
   Map<String, Object?> toJson() => <String, Object?>{
     'navigationGeneration': navigationGeneration,
@@ -174,6 +206,8 @@ class ReaderEngineConfig {
     'swipeFastDistThreshold': swipeFastDistThreshold,
     'swipeFastVelocity': swipeFastVelocity,
     'wheelGestureQuietMs': wheelGestureQuietMs,
+    'continuousTurnPullPx': continuousTurnPullPx,
+    'continuousTurnPinMidGesture': continuousTurnPinMidGesture,
     'pageTurnAnimation': pageTurnAnimation,
     'pageTurnDurationMs': pageTurnDurationMs,
     'pageTurnFollowDrag': pageTurnFollowDrag,
@@ -202,6 +236,13 @@ class ReaderEngineConfig {
     'vnSentencesPerScreen': vnSentencesPerScreen,
     'vnPreserveDialogue': vnPreserveDialogue,
     'vnMergeCrossScreenSentenceAudioCues': vnMergeCrossScreenSentenceAudioCues,
+    'audiobookLineAlignFollow': audiobookLineAlignFollow,
+    'seamlessChapters': seamlessChapters,
+    'seamlessChapterIndex': seamlessChapterIndex,
+    'seamlessChapterOrder': <Map<String, Object?>>[
+      for (final ReaderSeamlessChapterEntry e in seamlessChapterOrder)
+        <String, Object?>{'index': e.index, 'url': e.url},
+    ],
   };
 
   /// 运行时可**热更新**的那一小份（BUG-2471）：`window.__fushiEngine.updateLive(patch)`
@@ -232,6 +273,9 @@ class ReaderEngineConfig {
     int? pageTurnDurationMs,
     bool? pageTurnFollowDrag,
     bool? swipeLeftIsForward,
+    int? continuousTurnPullPx,
+    bool? continuousTurnPinMidGesture,
+    bool? audiobookLineAlignFollow,
   }) {
     final String patch = jsonEncode(<String, Object?>{
       'marginTop': marginTop,
@@ -247,6 +291,12 @@ class ReaderEngineConfig {
       if (pageTurnDurationMs != null) 'pageTurnDurationMs': pageTurnDurationMs,
       if (pageTurnFollowDrag != null) 'pageTurnFollowDrag': pageTurnFollowDrag,
       if (swipeLeftIsForward != null) 'swipeLeftIsForward': swipeLeftIsForward,
+      if (continuousTurnPullPx != null)
+        'continuousTurnPullPx': continuousTurnPullPx,
+      if (continuousTurnPinMidGesture != null)
+        'continuousTurnPinMidGesture': continuousTurnPinMidGesture,
+      if (audiobookLineAlignFollow != null)
+        'audiobookLineAlignFollow': audiobookLineAlignFollow,
     });
     return '(window.__fushiEngine && window.__fushiEngine.updateLive) '
         '? window.__fushiEngine.updateLive($patch) : false;';
@@ -263,4 +313,49 @@ class ReaderEngineConfig {
     final String cues = sentenceAudioCuesJson ?? 'null';
     return '{$body,"sentenceAudioCues":$cues}';
   }
+}
+
+/// 无缝衔接章序里的一项：章号 + 该章文档 URL（与 `loadUrl` 用的同一个）。
+@immutable
+class ReaderSeamlessChapterEntry {
+  const ReaderSeamlessChapterEntry({required this.index, required this.url});
+
+  final int index;
+  final String url;
+}
+
+/// 本次文档是否启用章节无缝衔接（反馈 R7k887yaJI ③）。三个条件缺一不可：
+/// 连续模式（翻页 / VN 不挂邻章）、用户开了开关、当前不是双页图片文档（spread 是
+/// 独立文档，没有正文引擎）。
+bool readerSeamlessChaptersActive({
+  required bool continuousMode,
+  required bool settingEnabled,
+  required bool spreadDocument,
+}) => continuousMode && settingEnabled && !spreadDocument;
+
+/// 阅读序：全书章号去掉被「图片合并」吸收的单图章（它们的图已内联到宿主文本章顶部，
+/// 与 `_resolveNavChapter` 同口径）。[isAbsorbed] 为 null 表示没有合并。
+List<ReaderSeamlessChapterEntry> readerSeamlessChapterOrder({
+  required int chapterCount,
+  required String Function(int index) urlOf,
+  bool Function(int index)? isAbsorbed,
+}) => <ReaderSeamlessChapterEntry>[
+  for (int i = 0; i < chapterCount; i++)
+    if (isAbsorbed == null || !isAbsorbed(i))
+      ReaderSeamlessChapterEntry(index: i, url: urlOf(i)),
+];
+
+/// 网页小说书阅读中途 spine 末尾长出新章（novel-d6）：把 [appended]（只含新章）
+/// 接到已装文档的阅读序末尾（`window.__fushiSeamless.extendOrder`）。阅读序只在
+/// 装页时随配置下发一次，不补这一步时，正读着原来末章的文档不知道后面还有章。
+/// 本文档没装无缝模块（非连续模式 / 开关关）时是空操作。
+String readerSeamlessExtendOrderInvocation(
+  List<ReaderSeamlessChapterEntry> appended,
+) {
+  final String entries = jsonEncode(<Map<String, Object?>>[
+    for (final ReaderSeamlessChapterEntry e in appended)
+      <String, Object?>{'index': e.index, 'url': e.url},
+  ]);
+  return 'window.__fushiSeamless && '
+      'window.__fushiSeamless.extendOrder($entries);';
 }

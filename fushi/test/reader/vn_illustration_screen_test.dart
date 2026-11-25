@@ -1,19 +1,19 @@
 @Tags(<String>['chrome'])
 library;
 
-import 'dart:convert';
-import 'dart:io';
-
 import 'package:drift/drift.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart';
 import 'package:fushi/src/reader/reader_sentence_audio_ownership_script.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_relocation_script.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/reader/reader_study_unit_script.dart';
 import 'package:fushi/src/reader/reader_visual_novel_scripts.dart';
 import 'package:fushi_core/fushi_core.dart';
+
+import '../helpers/node_runtime.dart';
 
 /// BUG-3395：VN 插图屏 / 句子屏的真 Chrome 几何与有声书跟随。
 ///
@@ -27,7 +27,7 @@ void main() {
   test(
     'VN illustration gets a full screen and the following sentence stays visible',
     () async {
-      final String? nodeExe = _resolveNode();
+      final String? nodeExe = resolveNodeExecutable();
       if (nodeExe == null) {
         markTestSkipped('node not found on PATH; skipping JS execution');
         return;
@@ -51,58 +51,30 @@ void main() {
       await settings.setWritingMode('horizontal-tb');
       final String cssHorizontal = ReaderContentStyles.css(settings: settings);
 
-      final Directory temp = Directory.systemTemp.createTempSync(
-        'vn-illustration-screen-',
+      final Map<String, String> payload = <String, String>{
+        'shell': ReaderVisualNovelScripts.vnShellScript(),
+        'selection': ReaderSelectionScripts.source(),
+        'units':
+            '$kStudyUnitJs\n$kSentenceAudioOwnershipJs\n$kSentenceAudioRelocationJs',
+        'cssVertical': cssVertical,
+        'cssVerticalWideRight': cssVerticalWideRight,
+        'cssHorizontal': cssHorizontal,
+      };
+      final NodeHarnessResult result = await runNodeHarness(
+        nodeExe,
+        'test/reader/vn_illustration_screen_harness.mjs',
+        payload,
       );
-      try {
-        final File payload = File('${temp.path}/scripts.json')
-          ..writeAsStringSync(
-            jsonEncode(<String, String>{
-              'shell': ReaderVisualNovelScripts.vnShellScript(),
-              'selection': ReaderSelectionScripts.source(),
-              'units': '$kStudyUnitJs\n$kSentenceAudioOwnershipJs',
-              'cssVertical': cssVertical,
-              'cssVerticalWideRight': cssVerticalWideRight,
-              'cssHorizontal': cssHorizontal,
-            }),
-          );
-        final ProcessResult result = await Process.run(nodeExe, <String>[
-          'test/reader/vn_illustration_screen_harness.mjs',
-          payload.path,
-        ]);
-        if (result.exitCode == 77) {
-          markTestSkipped('Chrome unavailable: ${result.stdout}');
-          return;
-        }
-        expect(
-          result.exitCode,
-          0,
-          reason: '${result.stdout}\n${result.stderr}',
-        );
-        expect(
-          result.stdout,
-          contains('PASS 6 VN illustration/sentence screens'),
-        );
-      } finally {
-        temp.deleteSync(recursive: true);
+      if (result.exitCode == 77) {
+        markTestSkipped('Chrome unavailable: ${result.stdout}');
+        return;
       }
+      expect(result.exitCode, 0, reason: '${result.stdout}\n${result.stderr}');
+      expect(
+        result.stdout,
+        contains('PASS 6 VN illustration/sentence screens'),
+      );
     },
     timeout: const Timeout(Duration(seconds: 90)),
   );
-}
-
-/// Resolve Node before launching the browser harness so missing CI tools skip.
-String? _resolveNode() {
-  final List<String> candidates = Platform.isWindows
-      ? <String>['node.exe', 'node']
-      : <String>['node'];
-  for (final String name in candidates) {
-    try {
-      final ProcessResult probe = Process.runSync(name, <String>['--version']);
-      if (probe.exitCode == 0) return name;
-    } on ProcessException {
-      // Try the next executable name.
-    }
-  }
-  return null;
 }

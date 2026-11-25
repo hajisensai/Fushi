@@ -1421,12 +1421,44 @@
           'window.__fushiWordAudio.load();window.__fushiWordAudio=null;}}catch(_e){}' +
           'try{var s=window.getSelection&&window.getSelection();' +
           'if(s&&s.removeAllRanges)s.removeAllRanges();}catch(_e){}' +
-          'try{window.scrollTo(0,0);}catch(_e){}' +
-          'try{document.documentElement.scrollTop=0;document.body.scrollTop=0;}' +
-          'catch(_e){}' +
           '})();');
     } catch (e) {
       // A not-yet-loaded standby has no realm state to clear.
+    }
+    resetRealmScroll(record);
+  }
+
+  // A new lookup session starts at the top of the card. popup.js owns the single
+  // implementation (window.__fushiResetPopupScroll, shared with the in-app warm
+  // slot); an older cached document without it falls back to zeroing the
+  // document scroll surface directly. Called for parked / standby realms being
+  // reused AND for the stable-id root on every beginLookup (TODO-1095 keeps that
+  // iframe alive across lookups and hides, so its scrollTop otherwise leaked into
+  // the next hotkey / in-game lookup — a same-word re-lookup does not even
+  // re-render, contentChanged=false).
+  function resetRealmScroll(record) {
+    var win = null;
+    try {
+      win = record.iframe.contentWindow;
+    } catch (e) {
+      win = null;
+    }
+    if (!win) {
+      return;
+    }
+    if (typeof win.__fushiResetPopupScroll === 'function') {
+      win.__fushiResetPopupScroll();
+      return;
+    }
+    var doc = win.document || record.iframe.contentDocument;
+    if (typeof win.scrollTo === 'function') {
+      win.scrollTo(0, 0);
+    }
+    if (doc && doc.documentElement) {
+      doc.documentElement.scrollTop = 0;
+    }
+    if (doc && doc.body) {
+      doc.body.scrollTop = 0;
     }
   }
 
@@ -2811,6 +2843,12 @@
     if (!record) {
       return; // First-ever lookup for this id: createRecord gates it fresh.
     }
+    // The reused root iframe still holds the previous lookup's scroll offset;
+    // reset it before the following renderStack injects (or, for an unchanged
+    // same-word body, markContentReady's) the fresh card. Not done in renderJs
+    // (must stay byte-stable) nor on hide (nested child open/close keeps the
+    // parent's scroll) — beginLookup is the one new-session boundary.
+    resetRealmScroll(record);
     // Re-arm the content half of the reveal gate for the reused shell.
     record.contentReady = false;
     if (record.shell && typeof record.shell.setAttribute === 'function') {
@@ -3892,6 +3930,51 @@
     return acted;
   }
 
+  // review-gal-overlay-mine-fail — 宿主（native SettleQueuedMine）推来的「后台写卡
+  // 结局」：查词卡制卡时只拿到 queued、按钮画成「已加入」，卡后来落地 / 失败由 Dart
+  // 推到这里。转发进**每一个**卡片帧的 popup.js fushiSettleQueuedMine——发起制卡的
+  // 那颗按钮可能在根卡里，用户此后又点开了嵌套子卡，只送顶层卡会漏掉它。哪颗按钮
+  // 认领由 popup.js 自己判（只有本弹窗排过队的那颗才撤「已加入」、才就地说原因）。
+  //
+  // jsonText 是 Dart 双重编码后的 JSON 文本；解析失败 / 形状不对一律 no-op，绝不抛
+  // （本函数由 fire-and-forget 的 ExecuteScript 调用）。返回转发到的帧数（诊断 / 测试）。
+  function settleQueuedMine(jsonText) {
+    var settlement = null;
+    try {
+      settlement = typeof jsonText === 'string' ? JSON.parse(jsonText) : jsonText;
+    } catch (e) {
+      return 0;
+    }
+    if (!settlement || typeof settlement !== 'object' ||
+        typeof settlement.expression !== 'string') {
+      return 0;
+    }
+    var forwarded = 0;
+    frames.forEach(function (record) {
+      var win = frameWindowOf(record);
+      if (!win || typeof win.fushiSettleQueuedMine !== 'function') {
+        return;
+      }
+      forwarded++;
+      var done = function () {
+        // 卡片是离屏渲染后 blit 进游戏 Layer 的：按钮翻面 / 就地提示要显式补一次
+        // 重采（同 gamepadAction），不能只赌 MutationObserver 的时机。
+        requestGalFrameDirty(record.route);
+      };
+      try {
+        var pending = win.fushiSettleQueuedMine(settlement);
+        if (pending && typeof pending.then === 'function') {
+          pending.then(done, done);
+        } else {
+          done();
+        }
+      } catch (e) {
+        done();
+      }
+    });
+    return forwarded;
+  }
+
   // TODO-1188 — the contentWindow of a frame record, or null when unavailable
   // (cross-origin guard / torn-down iframe / node harness).
   function frameWindowOf(record) {
@@ -4192,6 +4275,92 @@
     reportSelectionState();
   }
 
+  // BUG-5310 — app 外查词热键（键盘 / 手柄 / 鼠标侧键）按下时卡片里有非空选区：
+  // native 已据 overlaySelection 判定由卡片接手（LookupOverlaySelection），这里把
+  // 选区当作「点了释义正文」交给它所在的卡片 realm，经 realm 自己的桥发
+  // textSelected —— wrapFrameBridge 照常盖 __frameId / 路由、把锚框换成窗口坐标，
+  // Dart 走与单击正文完全相同的嵌套查词链，不另开一条。只认卡片 iframe 的 realm
+  // （宿主文档自己没有词条，也没有可挂子卡的 frame id）。
+  function selectionRealm() {
+    if (lastSelectionWindow && lastSelectionWindow !== window &&
+        selectionTextOf(lastSelectionWindow)) {
+      return lastSelectionWindow;
+    }
+    var found = null;
+    frames.forEach(function (record) {
+      if (found || !record || !record.active || !record.iframe) {
+        return;
+      }
+      var win = null;
+      try {
+        win = record.iframe.contentWindow;
+      } catch (e) {
+        win = null;
+      }
+      if (selectionTextOf(win)) {
+        found = win;
+      }
+    });
+    return found;
+  }
+
+  function lookupSelection() {
+    var win = selectionRealm();
+    if (!win) {
+      // native 以为有选区而现场没有：与 Ctrl+C 的空选区分支同样复位，下一次
+      // 按键就回到抓前台程序的选区。
+      resetSelectionReport();
+      return false;
+    }
+    try {
+      var selection = win.getSelection();
+      // 注音不进查询词（popup.js __fushiSelectionPlainText，与复制同口径）。
+      var text = typeof win.__fushiSelectionPlainText === 'function'
+          ? win.__fushiSelectionPlainText(selection)
+          : String(selection.toString() || '');
+      text = String(text || '').trim();
+      var bridge = win.flutter_inappwebview;
+      if (!text || !bridge || typeof bridge.callHandler !== 'function') {
+        return false;
+      }
+      var helper = win.fushiSelection;
+      var rect = null;
+      if (selection.rangeCount > 0) {
+        var range = selection.getRangeAt(0);
+        var rects = range.getClientRects ? range.getClientRects() : null;
+        var raw = rects && rects.length ? rects[0]
+            : range.getBoundingClientRect();
+        var node = range.startContainer;
+        var element = node && node.nodeType === 1 ? node
+            : (node ? node.parentElement : null);
+        // 与 selection.js getSelectionRect 同一换算：字框换回客户区坐标（CSS zoom）。
+        var client = helper && element &&
+            typeof helper.rectToClientSpace === 'function'
+            ? helper.rectToClientSpace(element, raw)
+            : raw;
+        if (client) {
+          rect = {
+            x: client.left,
+            y: client.top,
+            width: client.width,
+            height: client.height,
+          };
+        }
+      }
+      // selection.js 记着的是上一次「单击扫词」的选区；嵌套查词随后会让它
+      // highlightSelection，残留就会把高亮打到旧位置。拖选的原生选区本身已可见，
+      // 清掉记录让高亮回报 null，子卡锚在选区首段字框上。
+      if (helper && typeof helper === 'object') {
+        helper.selection = null;
+      }
+      bridge.callHandler('textSelected', text, rect);
+      return true;
+    } catch (e) {
+      window.console?.debug?.('[global-lookup] lookupSelection failed', e);
+      return false;
+    }
+  }
+
   // Must run BEFORE the shell leaves the DOM: a detached iframe's contentWindow
   // is null, so the identity check against lastSelectionWindow is impossible
   // afterwards.
@@ -4252,6 +4421,7 @@
     __installed: true,
     selectedText: selectedText,
     resetSelectionReport: resetSelectionReport,
+    lookupSelection: lookupSelection,
     _watchFrameSelection: watchFrameSelection,
     renderStack: renderStack,
     prewarmStatic: prewarmStatic,
@@ -4268,6 +4438,7 @@
     armGalFrameDirty: requestGalFrameDirty,
     requestGalFrameDirty: requestGalFrameDirty,
     gamepadAction: gamepadAction,
+    settleQueuedMine: settleQueuedMine,
     measureAndReport: measureAndReport,
     commitLayerShift: commitLayerShift,
     resetLayerOffsetForLegacyReveal: resetLayerOffsetForLegacyReveal,

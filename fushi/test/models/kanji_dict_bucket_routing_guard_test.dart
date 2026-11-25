@@ -111,25 +111,23 @@ void main() {
       );
     });
 
-    test(
-      '_rebuildDictPathsCacheAsync passes the kanji bucket to initializeTyped',
-      () {
-        final String body = bodyOf(
-          appModel,
-          'Future<void> _rebuildDictPathsCacheAsync(',
-        );
-        expect(
-          body.contains('bucketDictPaths('),
-          isTrue,
-          reason: 'async rebuild must bucket via bucketDictPaths',
-        );
-        expect(
-          body.contains('kanjiPaths: b.kanji'),
-          isTrue,
-          reason: 'async initializeTyped must receive the kanji bucket',
-        );
-      },
-    );
+    test('_scheduleDictPathsAsync (async rebuild) passes the kanji bucket to '
+        'scheduleTyped', () {
+      final String body = bodyOf(
+        appModel,
+        'Future<bool> _scheduleDictPathsAsync(',
+      );
+      expect(
+        body.contains('bucketDictPaths('),
+        isTrue,
+        reason: 'async rebuild must bucket via bucketDictPaths',
+      );
+      expect(
+        body.contains('kanjiPaths: b.kanji'),
+        isTrue,
+        reason: 'async scheduleTyped must receive the kanji bucket',
+      );
+    });
   });
 
   /// Slices the source between the [start] signature and the next method

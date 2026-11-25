@@ -7,8 +7,8 @@ import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 
-/// 参数在设置页的输入形态。
-enum TtsParamKind { url, text, secret, choice, voice }
+/// 参数在设置页的输入形态。[multiline] 是多行文本（请求模板、请求头这类）。
+enum TtsParamKind { url, text, secret, choice, voice, multiline }
 
 /// 引擎的一个可配置参数。UI 按 [key] 取文案（app 侧 i18n），按 [kind] 选控件。
 class TtsParamSpec {
@@ -115,6 +115,15 @@ abstract class TtsProviderDescriptor {
     }
     return problems;
   }
+
+  /// 用户在 [paramKey] 的选择列表里选中 [option]（`null` = 清空）时，连同 [paramKey]
+  /// 一起写进预设的其他参数；值为 `null` 表示删掉该键。用来把合成要用、但只有服务端
+  /// 知道的属性（克隆声音的参考文字稿 / 参考语言）快照进预设，让 [audioIdentity]
+  /// 看得到它们。默认不写。
+  Map<String, String?> paramsForPickedOption(
+    String paramKey,
+    TtsVoice? option,
+  ) => const <String, String?>{};
 
   /// 进缓存键的音色身份：引擎 id + 影响声音的参数 + 预设版本。
   Map<String, Object?> audioIdentity(

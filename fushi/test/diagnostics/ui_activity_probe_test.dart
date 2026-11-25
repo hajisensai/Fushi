@@ -22,6 +22,34 @@ class _HiddenTabPage extends StatelessWidget {
   Widget build(BuildContext context) => const SizedBox();
 }
 
+/// 一长串同构子树里的一行：半透明 → 每行一个 OpacityLayer（[describeLayerHotspots] 的扇出）。
+class _HeavyRow extends StatelessWidget {
+  const _HeavyRow();
+  @override
+  Widget build(BuildContext context) => const Opacity(
+    opacity: 0.5,
+    child: SizedBox(
+      height: 4,
+      width: 10,
+      child: ColoredBox(color: Color(0xFF000000)),
+    ),
+  );
+}
+
+class _HeavyList extends StatelessWidget {
+  const _HeavyList({required this.rows});
+  final int rows;
+  @override
+  Widget build(BuildContext context) => Directionality(
+    textDirection: TextDirection.ltr,
+    child: SingleChildScrollView(
+      child: Column(
+        children: <Widget>[for (int i = 0; i < rows; i++) const _HeavyRow()],
+      ),
+    ),
+  );
+}
+
 class _GenericPage<T> extends StatelessWidget {
   const _GenericPage();
   @override
@@ -299,6 +327,68 @@ void main() {
       expect(UiActivityProbe.probe(), isNot(contains('req=')));
     });
 
+    testWidgets('已知具体调用点的回调逐帧以非续排身份重注册：不再抓栈、仍按首个调用点归账', (
+      WidgetTester tester,
+    ) async {
+      // BUG-5444：OverlayPortal.overlayChildLayoutBuilder 每次布局都以
+      // rescheduling: false 重新注册同一个回调。
+      UiActivityProbe.resetFrames();
+      UiActivityProbe.beginFrameCallbackRegistration(
+        tick,
+        rescheduling: false,
+        stack: started,
+      );
+      UiActivityProbe.endFrameCallbackRegistration();
+      for (int i = 0; i < 4; i++) {
+        UiActivityProbe.beginFrameCallbackRegistration(
+          tick,
+          rescheduling: false,
+          // 生产里这里会抓当前栈；已知调用点时不该被解析。
+          stack: st(
+            '#0      _Other.layout (package:fushi/src/foo/other.dart:9:1)\n',
+          ),
+        );
+        UiActivityProbe.endFrameCallbackRegistration();
+      }
+      expect(
+        UiActivityProbe.probe(),
+        contains('fcb=[_OrphanState._resume@orphan.dart:77×5]'),
+      );
+    });
+
+    testWidgets('只知 `~` 调用点的回调：节流窗内首个具体注册仍能补上，之后不再逐帧抓栈', (
+      WidgetTester tester,
+    ) async {
+      UiActivityProbe.resetFrames();
+      // 先被纯框架路径注册（解除静音），只记得到 `~`。
+      UiActivityProbe.beginFrameCallbackRegistration(
+        tick,
+        rescheduling: false,
+        stack: frameworkOnly,
+      );
+      UiActivityProbe.endFrameCallbackRegistration();
+      // 应用代码启动：补成具体调用点。
+      UiActivityProbe.beginFrameCallbackRegistration(
+        tick,
+        rescheduling: false,
+        stack: started,
+      );
+      UiActivityProbe.endFrameCallbackRegistration();
+      // 之后的纯框架重注册沿用具体调用点。
+      for (int i = 0; i < 3; i++) {
+        UiActivityProbe.beginFrameCallbackRegistration(
+          tick,
+          rescheduling: false,
+          stack: frameworkOnly,
+        );
+        UiActivityProbe.endFrameCallbackRegistration();
+      }
+      expect(
+        UiActivityProbe.probe(),
+        contains('_OrphanState._resume@orphan.dart:77×4'),
+      );
+    });
+
     testWidgets('3.47 Ticker 顺序（先要帧、后注册且不再要帧）：仍按启动点逐帧计入 fcb', (
       WidgetTester tester,
     ) async {
@@ -369,6 +459,51 @@ void main() {
       expect(layers['OpacityLayer'], 1);
       expect(layers['PictureLayer'], greaterThanOrEqualTo(1));
       expect(layers['TransformLayer'], greaterThanOrEqualTo(1));
+    });
+
+    testWidgets('lhot：点名扇出点和那串同构子树的归属（#E5IZOyVcbm）', (
+      WidgetTester tester,
+    ) async {
+      // 非懒建的一列 300 行（视口裁不掉屏外行）：300 个 OpacityLayer 全挂在同一个父 layer 下。
+      await tester.pumpWidget(const _HeavyList(rows: 300));
+      final List<String> hotspots = describeLayerHotspots(
+        tester.binding.renderViews,
+        tester.binding.rootElement,
+        minLayers: 200,
+      );
+      expect(hotspots, hasLength(1), reason: '$hotspots');
+      final String hotspot = hotspots.single;
+      // 子树大小打头（300 个 OpacityLayer + 各自的 PictureLayer + 扇出点自身）。
+      final int size = int.parse(hotspot.substring(0, hotspot.indexOf(' ')));
+      expect(size, greaterThanOrEqualTo(600));
+      expect(
+        hotspot,
+        contains('Opacity<_HeavyRow'),
+        reason: '子 layer 要按持有它的 widget 与往上的组件 widget 归属',
+      );
+      expect(hotspot, contains('×300'));
+      expect(hotspot, isNot(contains('@')), reason: '日志脱敏会把 x@y 当邮箱抹掉');
+    });
+
+    testWidgets('lhot：普通页面没有扇出点时为空', (WidgetTester tester) async {
+      await tester.pumpWidget(const _HeavyList(rows: 20));
+      expect(
+        describeLayerHotspots(
+          tester.binding.renderViews,
+          tester.binding.rootElement,
+        ),
+        isEmpty,
+      );
+    });
+
+    testWidgets('describeElementChain：自身 widget 名 + 往上的组件 widget 名', (
+      WidgetTester tester,
+    ) async {
+      await tester.pumpWidget(const _HeavyList(rows: 1));
+      final Element opacity = tester.element(find.byType(Opacity));
+      final String chain = describeElementChain(opacity, depth: 3);
+      expect(chain, startsWith('Opacity<_HeavyRow<'));
+      expect(chain.split('<'), hasLength(3));
     });
 
     testWidgets('已有 binding（测试 / integration_test 先建）时原样返回、不另建', (

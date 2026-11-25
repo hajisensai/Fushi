@@ -19,20 +19,29 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
 import 'package:fushi/src/anki/mine_failure_notice.dart';
 import 'package:fushi/src/lookup/overlay_auto_read.dart';
+import 'package:fushi/src/lookup/gal_hook_text_overlay_controller.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/lookup/gal_lookup_latency_trace.dart';
+import 'package:fushi/src/lookup/advanced_mining_handoff.dart';
+import 'package:fushi/src/lookup/captured_context_sentences.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_layout.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/lookup/global_lookup_render.dart';
 import 'package:fushi/src/lookup/global_lookup_stack.dart';
+import 'package:fushi/src/floating_ball/floating_ball_config.dart'
+    show linuxSessionIsX11;
 import 'package:fushi/src/lookup/linux_lookup_card.dart';
 import 'package:fushi/src/lookup/overlay_bridge_handlers.dart';
 import 'package:fushi/src/lookup/overlay_stat_source.dart';
 import 'package:fushi/src/lookup/selection_capture_ffi.dart';
+import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
+import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
+    show CrossAppAudioSnapshot;
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
     show
         PopupSettingsOptions,
@@ -46,14 +55,22 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/swipe_dismiss_threshold.dart'
     show swipeDismissThreshold;
 import 'package:fushi/src/shortcuts/global_external_lookup_route.dart';
+import 'package:fushi/src/shortcuts/fallback_global_hotkey_backend.dart';
+import 'package:fushi/src/shortcuts/global_hotkey_backend.dart';
+import 'package:fushi/src/shortcuts/global_hotkey_chords.dart';
+import 'package:fushi/src/shortcuts/global_shortcuts_portal.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
+import 'package:fushi/src/shortcuts/native_global_hotkey_backend.dart';
+import 'package:fushi/src/shortcuts/portal_global_hotkey_backend.dart';
+import 'package:fushi/src/shortcuts/shortcut_labels.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
+import 'package:fushi/src/storage/legacy_support_dir_migration.dart'
+    show kFushiLinuxApplicationId;
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi_core/fushi_core.dart'
     show kStatSourceBook, kStatSourceGame, mimeTypeForFilePath;
 import 'package:fushi_dictionary/fushi_dictionary.dart';
-import 'package:hotkey_manager/hotkey_manager.dart';
 import 'package:path/path.dart' as p;
 
 /// Per-lookup placement facts supplied by a native hit surface.
@@ -129,12 +146,45 @@ class GlobalLookupController {
 
   AppModel? _appModel;
 
-  /// 本进程当前已注册到 OS 的热键，按动作索引。表驱动而不是每个动作一个字段：
-  /// 撤销/重注册只有一条路径，加动作不必再抄一遍生命周期。
-  final Map<ShortcutAction, HotKey> _hotKeys = <ShortcutAction, HotKey>{};
+  /// The OS mechanism the app-outside hotkeys go through (created on the
+  /// first registration): `hotkey_manager` on Windows / macOS / Linux X11, the
+  /// XDG GlobalShortcuts portal on a Linux Wayland desktop. See
+  /// `global_hotkey_backend.dart`.
+  GlobalHotKeyBackend? _hotKeyBackend;
+  StreamSubscription<GlobalHotKeyStatus>? _hotKeyStatusSub;
 
-  /// 热键(重)注册的串行链。见 [_registerHotKeysFromRegistry] 的重入说明。
-  Future<void> _hotKeyRegistration = Future<void>.value();
+  /// Set by [releaseHotKeys] (exit chain): a registry change after it must not
+  /// create a fresh backend (a new portal session) on the way out.
+  bool _hotKeysReleased = false;
+
+  /// What the hotkey backend reports, for the shortcut settings page (null
+  /// until the controller started). On the portal it carries the triggers the
+  /// desktop actually bound and why hotkeys may be unavailable.
+  final ValueNotifier<GlobalHotKeyStatus?> hotKeyStatus =
+      ValueNotifier<GlobalHotKeyStatus?>(null);
+
+  /// Test seam: replaces the platform backend.
+  @visibleForTesting
+  static GlobalHotKeyBackend Function()? hotKeyBackendOverride;
+
+  /// Which hotkey backend this platform uses; null = none (mobile).
+  static GlobalHotKeyBackendKind? get platformHotKeyBackendKind =>
+      globalHotKeyBackendKindFor(
+        isWindows: Platform.isWindows,
+        isMacOS: Platform.isMacOS,
+        isLinux: Platform.isLinux,
+        environment: Platform.environment,
+      );
+
+  /// Whether this process registers app-outside hotkeys at all. Independent of
+  /// [isSupported]: a Linux Wayland desktop has no lookup card overlay, yet its
+  /// hotkeys still work through the portal (selection lookup then lands in the
+  /// main window, see [triggerSelectionLookup]).
+  static bool get osHotKeysSupported =>
+      hotKeyBackendOverride != null || platformHotKeyBackendKind != null;
+
+  /// [start]'s gate: either surface is reason enough to start.
+  static bool get _startable => isSupported || osHotKeysSupported;
   // TODO-1066 — the live shortcut registry we read the global-lookup hotkey
   // from (was a hard-coded Ctrl+Alt+D). Listened to so a user remapping the
   // key in settings (or a profile switch that reloads bindings) re-registers
@@ -162,6 +212,22 @@ class GlobalLookupController {
       _hiddenListeners.add(listener);
   void removeHiddenListener(VoidCallback listener) =>
       _hiddenListeners.remove(listener);
+
+  /// 宿主主动关掉桌面查词卡（拍板台 8ldy3d8XFA：网页视频窗口宿主档制卡后按「制卡后
+  /// 行为」关卡）。与卡内 `dismiss` 同一条路径：原生侧关窗后回报 overlayHidden，
+  /// [onHidden] / hidden 监听照常触发（续不续播由宿主在调用前处理暂停标记决定）。
+  /// 当前不是桌面路由（游戏内查词卡）或没有在场的查词时什么都不做。
+  void dismissDesktopLookup() {
+    final GlobalLookupRoute? route = _activeRoute;
+    if (route == null || route.source != 'desktop') return;
+    _nestedLookupGeneration++;
+    // 在这次查词的 route zone 里发：hide 带上它的 epoch，原生侧回报的 overlayHidden
+    // 才对得上这张卡（与卡内消息在 route zone 里派发同口径）。
+    unawaited(
+      GlobalLookupChannel.runWithRoute(route, () => GlobalLookupChannel.hide()),
+    );
+  }
+
   void Function(GlobalLookupRoute route)? onRoutedHidden;
   // KiriKiri 游戏内查词 — 卡片「内容已渲染、尺寸已定」的**唯一可靠**信号。
   //
@@ -290,7 +356,16 @@ class GlobalLookupController {
   // BUG-730). The card itself never renders it. Empty when no sentence was
   // captured. Reset per lookup in _lookupExternal.
   String _currentSentence = '';
+  // 拍板台 rf--UcsGta-overlay：这次根查词「抓取上下文」切好的前后句（热键查词开了抓取
+  // 上下文才有）。唯一用途是卡上「高级制卡」转交主窗时随词带过去，让主窗的高级制卡
+  // 对话框能加减前后句。每次根查词重置（_lookupExternal）。
+  CapturedSentenceContext? _currentCapturedContext;
   OverlayMiningHandler? _currentMiningHandler;
+  // 拍板 design-cross-app-audio-desktop：本次**应用外**查词那一刻钉住的最近一段其他 app
+  // 声音（跨应用语音缓存开着才有；调用方没给的表面——应用内文字、galgame——为 null）。
+  // 默认制卡 / 覆写据此截出查词前最后一句语音当句子音频，查词卡的「调整句子音频」面板
+  // 据此试听 + 调起止。每次根查词重置（_lookupExternal）。
+  Future<CrossAppAudioSnapshot?>? _currentSentenceAudio;
 
   GlobalLookupStack _stack = GlobalLookupStack.empty;
   final Map<String, DictionarySearchResult> _frameResults =
@@ -346,46 +421,62 @@ class GlobalLookupController {
   // runner reports later lands in the SAME CSS scale the cards render in.
   double _workDpr = 0;
 
-  /// 让覆盖窗跟随查词模块：现在开着就起；会话中途才打开查词模块也沿同一条
-  /// [start] 补起（此前只在启动时判一次，中途打开模块要等下次启动，桌面悬浮球
-  /// 的「应用外查词」等入口在这段时间里点了什么都不发生）。[start] 自带
-  /// `_started` 闩，重复触发不会重复建窗。
-  ///
-  /// 关模块不停：沿用启动链「不切断进行中的任务」的取舍（见 main.dart），钩子
-  /// 要到下次启动才不再装。启动链在首帧后调用一次。
-  Future<void> followLookupModule(AppModel appModel) async {
-    appModel.addListener(() => unawaited(_startFromModuleChange(appModel)));
-    await startIfLookupModuleEnabled(appModel);
-  }
-
-  /// 查词模块开着、平台支持且覆盖窗还没起：起它。
-  Future<void> startIfLookupModuleEnabled(AppModel appModel) async {
-    // 先判闩再调 start：AppModel 通知很频繁，别每次都往 glog 里记一条 start。
-    if (!isSupported || _started) return;
-    if (!appModel.moduleVisibility.isEnabled(ModuleId.lookup)) return;
-    await start(appModel: appModel);
-  }
-
-  /// [followLookupModule] 的监听路径：失败与启动链一样落盘，不静默。
-  Future<void> _startFromModuleChange(AppModel appModel) async {
-    try {
-      await startIfLookupModuleEnabled(appModel);
-    } catch (error, stack) {
-      glog('start (module enabled mid-session) FAILED: $error');
-      ErrorLogService.instance.log('global_lookup.start', error, stack);
-    }
-  }
-
   /// Wires the overlay assets + reverse handlers + the global trigger hotkey.
   /// Safe to call once after AppModel.initialise() on desktop.
+  ///
+  /// Not gated on the `ModuleId.lookup` module switch: the overlay is the
+  /// shared lookup-card surface (galgame in-game lookup, the desktop system
+  /// floating ball, app-outside hotkeys), and the lookup module only hides the
+  /// lookup page (BUG-4846). Platform capability is the sole gate, here.
+  ///
+  /// The overlay part needs [isSupported]; the app-outside triggers (OS
+  /// hotkeys, gamepad route) only need [osHotKeysSupported] — on a Linux
+  /// Wayland desktop there is no overlay, but the hotkeys still work through
+  /// the GlobalShortcuts portal.
   Future<void> start({required AppModel appModel}) async {
-    glog('start: called (supported=$isSupported started=$_started)');
-    if (!isSupported || _started) {
+    glog(
+      'start: called (supported=$isSupported '
+      'hotkeys=$osHotKeysSupported started=$_started)',
+    );
+    if (!_startable || _started) {
       return;
     }
     _started = true;
     _appModel = appModel;
+    if (isSupported) await _startOverlay(appModel);
 
+    // TODO-1066 — read the trigger hotkey from the shortcut registry (was a
+    // hard-coded Ctrl+Alt+D that bypassed the whole registry, so it never showed
+    // up in the settings page and could not be remapped). Register it now and
+    // re-register whenever the registry changes (user remap / profile switch).
+    _registry = appModel.shortcutRegistry;
+    _registry!.addListener(_onRegistryChanged);
+    await _registerHotKeysFromRegistry();
+
+    // TODO-1066 — 另外两条非键盘触发源（手柄按钮 / 鼠标侧键）。它们与上面的键盘
+    // 热键是**同一个执行体、不同的 OS 机制**（见 ShortcutScope.globalExternal 的
+    // channels 注释）：手柄经 shortcuts 层的进程级登记处拿到入口，鼠标侧键在
+    // native 侧按绑定注册 RawInput 监听（随覆盖窗的 native 通道，没有覆盖窗就没有）。
+    // 两者都随注册表变更重推（_onRegistryChanged）。
+    // 三条触发源都受「应用外快捷键」总开关管（[_appExternalTriggersEnabled]）。
+    _syncGamepadRoute();
+    if (!isSupported) return;
+    await _registerMouseTriggerFromRegistry();
+
+    // TODO-1079 — root-cause fix: PREWARM the overlay WebView2 off-screen now,
+    // so the first hotkey lookup hits a WARM surface instead of racing a cold
+    // create chain (>450ms) against the reveal. Sized to the current card size ×
+    // dpr so its off-screen self-measure is at a sane size; the real geometry is
+    // applied on the first showAt/reveal. Non-fatal on failure (the lazy create
+    // path in showAt still works, just cold). Semantics mirror the in-app
+    // keepWebViewWarm hot slot, but for THIS bare overlay window (which
+    // webview_prewarm.dart never warmed — that gap was the root cause).
+    unawaited(_prewarmOverlay(appModel));
+  }
+
+  /// The overlay half of [start]: popup assets, reverse handlers, capture
+  /// blocking.
+  Future<void> _startOverlay(AppModel appModel) async {
     final String assetsDir = _popupAssetsDir();
     glog('start: assetsDir=$assetsDir');
     await GlobalLookupChannel.prepare(assetsDir);
@@ -409,33 +500,6 @@ class GlobalLookupController {
     } catch (e) {
       glog('start: setBlockCapture FAILED (non-fatal): $e');
     }
-
-    // TODO-1066 — read the trigger hotkey from the shortcut registry (was a
-    // hard-coded Ctrl+Alt+D that bypassed the whole registry, so it never showed
-    // up in the settings page and could not be remapped). Register it now and
-    // re-register whenever the registry changes (user remap / profile switch).
-    _registry = appModel.shortcutRegistry;
-    _registry!.addListener(_onRegistryChanged);
-    await _registerHotKeysFromRegistry();
-
-    // TODO-1066 — 另外两条非键盘触发源（手柄按钮 / 鼠标侧键）。它们与上面的键盘
-    // 热键是**同一个执行体、不同的 OS 机制**（见 ShortcutScope.globalExternal 的
-    // channels 注释）：手柄经 shortcuts 层的进程级登记处拿到入口，鼠标侧键在
-    // native 侧按绑定注册 RawInput 监听。两者都随注册表变更重推（_onRegistryChanged）。
-    GlobalExternalLookupRoute.set(
-      () => triggerSelectionLookup(source: 'gamepad'),
-    );
-    await _registerMouseTriggerFromRegistry();
-
-    // TODO-1079 — root-cause fix: PREWARM the overlay WebView2 off-screen now,
-    // so the first hotkey lookup hits a WARM surface instead of racing a cold
-    // create chain (>450ms) against the reveal. Sized to the current card size ×
-    // dpr so its off-screen self-measure is at a sane size; the real geometry is
-    // applied on the first showAt/reveal. Non-fatal on failure (the lazy create
-    // path in showAt still works, just cold). Semantics mirror the in-app
-    // keepWebViewWarm hot slot, but for THIS bare overlay window (which
-    // webview_prewarm.dart never warmed — that gap was the root cause).
-    unawaited(_prewarmOverlay(appModel));
   }
 
   /// 「防截屏」pref（lookupBlockCapture）即时重应用到覆盖窗。设置页开关是唯一
@@ -551,7 +615,90 @@ class GlobalLookupController {
         ShortcutAction.globalExternalOpenLookupPage: openLookupPageInMainWindow,
         // 截屏识字：执行体在悬浮球宿主（与桌面应用外球的同名按钮共用）。
         ShortcutAction.globalExternalScreenOcr: triggerScreenOcr,
+        // 有声书悬浮字幕（反馈 uvIcQB5gPG）：显隐 + 悬浮窗按钮同款播放控制。
+        ShortcutAction.globalExternalFloatingLyricToggle:
+            toggleAudiobookFloatingLyric,
+        ShortcutAction.globalExternalAudiobookPlayPause: () =>
+            _runAudiobookHotKey(
+              'playPause',
+              (AudiobookPlayerController c) => c.togglePlayPause(),
+            ),
+        ShortcutAction.globalExternalAudiobookPrevSentence: () =>
+            _runAudiobookHotKey(
+              'prevSentence',
+              (AudiobookPlayerController c) => c.skipToPrevCue(),
+            ),
+        ShortcutAction.globalExternalAudiobookNextSentence: () =>
+            _runAudiobookHotKey(
+              'nextSentence',
+              (AudiobookPlayerController c) => c.skipToNextCue(),
+            ),
+        ShortcutAction.globalExternalAudiobookReplaySentence: () =>
+            _runAudiobookHotKey(
+              'replaySentence',
+              (AudiobookPlayerController c) => c.replayCurrentCue(),
+            ),
+        // galgame 台词朗读（反馈 N8qzDdzIvD）：台词浮窗「朗读」按钮的同一个方法。
+        ShortcutAction.globalExternalGalgameSpeakLine: speakGalgameLine,
+        // galgame 台词浮窗显隐（反馈 fMicnouU6V）。
+        ShortcutAction.globalExternalGalgameOverlayToggle: toggleGalgameOverlay,
       };
+
+  /// [ShortcutAction.globalExternalGalgameOverlayToggle] 的执行体：显示 / 隐藏
+  /// galgame 台词浮窗。落到 [GalHookTextOverlayController.toggleVisibility]——浮窗
+  /// 「关闭」按钮与文本钩子页「显示 Hook 浮窗」各自调的同一对方法，热键与按钮行为
+  /// 一致。没在 Hook 游戏（浮窗没启动）时首行直接返回，按热键静默无动作。
+  Future<void> toggleGalgameOverlay() =>
+      GalHookTextOverlayController.instance.toggleVisibility();
+
+  /// [ShortcutAction.globalExternalGalgameSpeakLine] 的执行体：朗读 / 停止当前显示
+  /// 的 galgame 台词。直接调台词浮窗「朗读」按钮（`onSpeakLine`）接的
+  /// [GalHookTextOverlayController.speakCurrentLine]——按钮与热键同一条路径（朗读中
+  /// 再按即停、浮窗已启动但没有当前台词时提示），不另写一套 TTS 调度。台词浮窗
+  /// 没启动（没在 Hook 游戏）时 `speakCurrentLine` 首行直接返回，按热键静默无动作。
+  Future<void> speakGalgameLine() =>
+      GalHookTextOverlayController.instance.speakCurrentLine();
+
+  /// 有声书全局热键的播放控制执行体：落到 app 级会话的控制器——悬浮字幕窗的
+  /// 「上一句 / 播放暂停 / 下一句」按钮（`AudiobookSession._setupFloatingLyricHandlers`）
+  /// 调的就是同一个控制器，热键与按钮行为一致。没有活动会话（没在听书）时按键
+  /// 没有可作用的对象，记一条日志后返回。
+  Future<void> _runAudiobookHotKey(
+    String what,
+    Future<void> Function(AudiobookPlayerController controller) run,
+  ) async {
+    final AudiobookPlayerController? controller =
+        _appModel?.audiobookSession.controller;
+    if (controller == null) {
+      glog('audiobookHotKey: $what — no active audiobook session, ignored');
+      return;
+    }
+    await run(controller);
+  }
+
+  /// [ShortcutAction.globalExternalFloatingLyricToggle] 的执行体：显示 / 隐藏有声书
+  /// 悬浮字幕。走 [AppModel.setFloatingLyricEnabled]——设置页开关的同一个「置位」
+  /// 入口，原生窗显隐与意图 pref 原子同步（书内翻转与设置页不会再反相，TODO-1069）。
+  ///
+  /// 只在有活动会话时动作：没在听书时悬浮窗本来就不在，热键若只悄悄翻转意图 pref，
+  /// 用户按下去什么都看不到，下次进书却发现悬浮窗开关被改了。开启失败（缺悬浮窗
+  /// 权限 / 原生窗建不出来）记错误日志，不静默吞掉。
+  Future<void> toggleAudiobookFloatingLyric() async {
+    final AppModel? model = _appModel;
+    if (model == null || !model.audiobookSession.isActive) {
+      glog('audiobookHotKey: floatingLyric — no active audiobook session');
+      return;
+    }
+    final bool target = !model.showFloatingLyric;
+    final bool ok = await model.setFloatingLyricEnabled(target);
+    if (!ok) {
+      ErrorLogService.instance.log(
+        'GlobalLookupController.toggleAudiobookFloatingLyric',
+        StateError('floating subtitles could not be shown (target=$target)'),
+        StackTrace.current,
+      );
+    }
+  }
 
   /// 桌面截屏识字的执行体，由常驻的 `AppFloatingBallHost` 装上 / 卸下（截屏、冻结
   /// 层、点字查词的整套状态都在那边，与应用外悬浮球的「截屏识字」按钮同一条路径）。
@@ -573,104 +720,170 @@ class GlobalLookupController {
     await handler();
   }
 
-  /// TODO-1066 — (un)registers the OS-level hotkeys from the current
-  /// [_osHotKeyActions] bindings in the registry. Unregisters everything
-  /// previously registered first so a remap does not leak the old combo. For
-  /// each action the first keyboard binding is used (there is at most one
-  /// meaningful global hotkey per action); when an action has no keyboard
-  /// binding (e.g. the user cleared it, or a platform with no default) nothing
-  /// is registered for it and that one action is simply off until a key is
-  /// assigned — the others still register. Non-fatal on failure.
-  Future<void> _registerHotKeysFromRegistry() {
-    // 串行化：本方法从「同步清空 _hotKeys」到「逐个 register 完」之间有多个 await，
-    // 而调用方 [_onRegistryChanged] 是 fire-and-forget、registry 每次 notifyListeners
-    // 都触发一次（改键 + 恢复默认 + 切 profile 可以连着来）。若第二次调用在第一次的
-    // await 缝里进来，它看到的 _hotKeys 已被清空 ⇒ **跳过注销**，同一组合键被注册两
-    // 遍，而表里只留得下最后一个 —— 另一个再也注销不掉（旧键继续生效 / 一次按键触发
-    // 两遍）。接在上一轮尾巴上跑，缝就不存在了。
-    final Future<void> next = _hotKeyRegistration
-        .then((_) => _registerHotKeysNow())
-        // 上一轮失败不能卡死整条链（内部已逐条 catch，这里只兜底）。
-        .catchError(
-          (Object e) => glog('hotkey: registration round FAILED: $e'),
-        );
-    _hotKeyRegistration = next;
-    return next;
-  }
-
-  /// 串行链上的一轮实际注册，只由 [_registerHotKeysFromRegistry] 调用。
-  Future<void> _registerHotKeysNow() async {
-    // Drop everything registered last round (idempotent: safe when empty).
-    final List<MapEntry<ShortcutAction, HotKey>> previous = _hotKeys.entries
-        .toList(growable: false);
-    _hotKeys.clear();
-    for (final MapEntry<ShortcutAction, HotKey> entry in previous) {
-      try {
-        await hotKeyManager.unregister(entry.value);
-      } catch (e) {
-        glog(
-          'hotkey: unregister previous ${entry.key.key} '
-          'FAILED (non-fatal): $e',
-        );
-      }
-    }
-    final FushiShortcutRegistry? registry = _registry;
-    if (registry == null) {
+  /// TODO-1066 — (re)registers the OS-level hotkeys from the current
+  /// [_osHotKeyActions] bindings in the registry, through the platform's
+  /// [GlobalHotKeyBackend]. The backend replaces the whole set (so a remap
+  /// never leaks the old combo) and serializes overlapping rounds. For each
+  /// action the first keyboard binding is used (there is at most one
+  /// meaningful global hotkey per action). Native backend: an action without a
+  /// keyboard binding stays off until a key is assigned. Portal backend: the
+  /// binding is only the preferred-trigger hint; the desktop owns the key.
+  /// Non-fatal on failure (the backends log every failure visibly).
+  Future<void> _registerHotKeysFromRegistry() async {
+    if (_hotKeysReleased) return;
+    if (!_appExternalTriggersEnabled) {
+      // 总开关关：一个系统钩子都不留——不是 apply 空集，而是连后端一起拆掉
+      // （portal 上那是一条常驻的 GlobalShortcuts 会话），重新打开时再新建。
+      await _disposeHotKeyBackend();
       return;
     }
+    final GlobalHotKeyBackend backend = _hotKeyBackend ??=
+        _createHotKeyBackend();
+    return backend.apply(_hotKeyRequests());
+  }
+
+  /// 「应用外快捷键」总开关（pref `app_external_hotkeys_enabled`，默认开；
+  /// 维护者拍板 pr3605：热键要有自己的开关，不挂在查词页模块上）。关掉时
+  /// OS 热键、鼠标侧键 RawInput 监听、手柄触发三条 app 外触发源全部撤掉；
+  /// 查词卡覆盖窗本身（galgame 点词、系统悬浮球要用）不受影响。
+  bool get _appExternalTriggersEnabled =>
+      _appModel?.appExternalHotkeysEnabled ?? true;
+
+  /// 设置页切换总开关后调用：按当前 pref 装上 / 撤掉全部 app 外触发源。
+  /// 未 start（移动端 / 平台不支持）时什么都不做。
+  Future<void> applyAppExternalTriggersEnabled() async {
+    if (!_started) return;
+    glog('externalTriggers: enabled=$_appExternalTriggersEnabled');
+    _syncGamepadRoute();
+    await _registerHotKeysFromRegistry();
+    if (isSupported) await _registerMouseTriggerFromRegistry();
+  }
+
+  /// 手柄触发入口随总开关登记 / 注销；注销后 [GlobalExternalLookupRoute.current]
+  /// 为 null，按钮沿原派发路径继续，不被吞掉。
+  void _syncGamepadRoute() {
+    GlobalExternalLookupRoute.set(
+      _appExternalTriggersEnabled
+          ? () => triggerSelectionLookup(source: 'gamepad')
+          : null,
+    );
+  }
+
+  Future<void> _disposeHotKeyBackend() async {
+    final GlobalHotKeyBackend? backend = _hotKeyBackend;
+    _hotKeyBackend = null;
+    await _hotKeyStatusSub?.cancel();
+    _hotKeyStatusSub = null;
+    hotKeyStatus.value = null;
+    await backend?.dispose();
+  }
+
+  GlobalHotKeyBackend _createHotKeyBackend() {
+    final GlobalHotKeyBackend backend =
+        hotKeyBackendOverride?.call() ??
+        switch (platformHotKeyBackendKind) {
+          // No GlobalShortcuts on this desktop but GTK on XWayland (Flatpak,
+          // Steam Game Mode launcher): keep the X11 grab it had before the
+          // portal backend, instead of reporting "not supported".
+          GlobalHotKeyBackendKind.portal => FallbackGlobalHotKeyBackend(
+            primary: PortalGlobalHotKeyBackend(
+              portal: DBusGlobalShortcutsPortal(log: glog),
+              appId: kFushiLinuxApplicationId,
+              log: glog,
+              onError: (String context, Object error, StackTrace? stack) =>
+                  ErrorLogService.instance.log(
+                    'GlobalLookupController.$context',
+                    error,
+                    stack ?? StackTrace.current,
+                  ),
+            ),
+            createFallback: NativeGlobalHotKeyBackend.new,
+            shouldFallBack: (GlobalHotKeyStatus status) =>
+                portalShouldFallBackToX11Grab(
+                  status,
+                  gtkDrawsOnX11: linuxSessionIsX11(Platform.environment),
+                ),
+            log: glog,
+          ),
+          _ => NativeGlobalHotKeyBackend(),
+        };
+    glog('hotkey: backend=${backend.kind.name}');
+    hotKeyStatus.value = backend.status;
+    _hotKeyStatusSub = backend.statusChanges.listen(
+      (GlobalHotKeyStatus status) => hotKeyStatus.value = status,
+    );
+    return backend;
+  }
+
+  /// One request per [_osHotKeyActions] entry whose executor works in this
+  /// session.
+  List<GlobalHotKeyRequest> _hotKeyRequests() {
+    final FushiShortcutRegistry? registry = _registry;
+    if (registry == null) return const <GlobalHotKeyRequest>[];
+    final List<GlobalHotKeyRequest> requests = <GlobalHotKeyRequest>[];
     for (final MapEntry<ShortcutAction, Future<void> Function()> entry
         in _osHotKeyActions.entries) {
-      await _registerOneHotKey(registry, entry.key, entry.value);
+      final ShortcutAction action = entry.key;
+      if (!osHotKeyActionWorksHere(action)) {
+        glog('hotkey: ${action.key} not available in this session — skipped');
+        continue;
+      }
+      final ShortcutBindingSet set = registry.bindingsFor(action);
+      final GlobalHotKeyChord? chord = set.keyboardBindings.isEmpty
+          ? null
+          : globalHotKeyChordFor(set.keyboardBindings.first);
+      if (set.keyboardBindings.isNotEmpty && chord == null) {
+        glog('hotkey: ${action.key} binding has no mappable physical key');
+      }
+      final Future<void> Function() run = entry.value;
+      requests.add(
+        GlobalHotKeyRequest(
+          id: action.key,
+          description: action.label,
+          chord: chord,
+          onActivated: (GlobalHotKeyActivation activation) =>
+              DesktopLookupService.runWithActivationToken<void>(
+                activation.activationToken,
+                run,
+              ),
+        ),
+      );
     }
+    return requests;
   }
 
-  /// 注册单个 OS 热键。失败只影响这一个动作，其余照常注册。
-  Future<void> _registerOneHotKey(
-    FushiShortcutRegistry registry,
-    ShortcutAction action,
-    Future<void> Function() run,
-  ) async {
-    final ShortcutBindingSet set = registry.bindingsFor(action);
-    if (set.keyboardBindings.isEmpty) {
-      glog(
-        'hotkey: no keyboard binding for ${action.key} — not '
-        'registered (feature off until a key is assigned)',
-      );
-      return;
-    }
-    final HotKey? hotKey = _hotKeyFromBinding(set.keyboardBindings.first);
-    if (hotKey == null) {
-      glog(
-        'hotkey: ${action.key} binding has no mappable physical key — '
-        'not registered',
-      );
-      return;
-    }
-    _hotKeys[action] = hotKey;
-    try {
-      await hotKeyManager.register(
-        hotKey,
-        keyDownHandler: (_) => unawaited(run()),
-      );
-      glog(
-        'hotkey: registered ${action.key} = '
-        '${set.keyboardBindings.first.displayLabel} from registry OK',
-      );
-    } catch (e, st) {
-      // 注册失败要能被撤销逻辑之外的人看见：本表已记下它，但 OS 侧其实没接上，
-      // 下一轮 unregister 对未注册的 HotKey 是无害 no-op，故不必回滚这条记录。
-      glog('hotkey: register ${action.key} FAILED: $e');
-      // TODO-1086 可见化：全局查词热键注册失败过去只写进 glog 临时诊断文件，用户/开发者
-      // 都看不到「应用外查词唤不出来」的真正原因（热键没注册上）。这里额外把失败记进
-      // ErrorLogService（用户可见的错误日志页 + 随复制/上传链路带走），让此失败成为可诊断
-      // 项而不是静默吞掉。别的注册/系统热键冲突（另一个 app 已占用同一组合键）也会经此暴露。
-      ErrorLogService.instance.log(
-        'GlobalLookupController.registerHotKey',
-        'Failed to register global hotkey ${action.key} = '
-            '${set.keyboardBindings.first.displayLabel}: $e',
-        st,
-      );
-    }
+  /// Screen OCR needs the overlay (freeze layer + lookup card); showing /
+  /// hiding the audiobook floating subtitles needs a native floating-lyric
+  /// window (none on iOS, see [floatingLyricBackendAvailableOn]); reading the
+  /// galgame line aloud needs the galgame text overlay (Windows only). The other
+  /// actions work without either ([triggerSelectionLookup] falls back to the
+  /// main window, [openLookupPageInMainWindow] never needed it, the audiobook
+  /// playback controls only drive the player).
+  static bool osHotKeyActionWorksHere(ShortcutAction action) =>
+      switch (action) {
+        ShortcutAction.globalExternalScreenOcr => isSupported,
+        ShortcutAction.globalExternalFloatingLyricToggle =>
+          FloatingLyricChannel.supported,
+        // 台词浮窗（与它的 TTS）只在 Windows 有：别的平台注册了也没有执行对象。
+        ShortcutAction.globalExternalGalgameSpeakLine ||
+        ShortcutAction.globalExternalGalgameOverlayToggle =>
+          GalHookTextOverlayController.isSupported,
+        _ => true,
+      };
+
+  /// Settings page: bind the hotkeys again after the user dismissed the
+  /// desktop's shortcut dialog or the desktop closed the session.
+  Future<void> rebindHotKeys() async => _hotKeyBackend?.rebind();
+
+  /// Settings page: let the desktop open its shortcut editor for Fushi
+  /// (portal version 2). false = it cannot; the page explains where instead.
+  Future<bool> configureHotKeysInSystem() async =>
+      await _hotKeyBackend?.configure() ?? false;
+
+  /// Exit chain: unregister the hotkeys / close the portal session.
+  Future<void> releaseHotKeys() async {
+    _hotKeysReleased = true;
+    await _disposeHotKeyBackend();
   }
 
   /// 用户请求：一个键把 Fushi 主窗**唤到前台**并直接落在**查词页**上
@@ -722,7 +935,8 @@ class GlobalLookupController {
   Future<void> _registerMouseTriggerFromRegistry() async {
     final FushiShortcutRegistry? registry = _registry;
     int button = 0;
-    if (registry != null) {
+    // 总开关关：不留 RawInput 监听（button 0 = native 侧注销）。
+    if (registry != null && _appExternalTriggersEnabled) {
       final ShortcutBindingSet set = registry.bindingsFor(
         ShortcutAction.globalExternalLookup,
       );
@@ -769,42 +983,7 @@ class GlobalLookupController {
   /// 同步的 OS 侧状态）。
   void _onRegistryChanged() {
     unawaited(_registerHotKeysFromRegistry());
-    unawaited(_registerMouseTriggerFromRegistry());
-  }
-
-  /// TODO-1066 — maps a registry keyboard [binding] to a hotkey_manager [HotKey].
-  /// hotkey_manager keys off the USB-HID [PhysicalKeyboardKey]; the registry
-  /// stores a logical key + [ModifierKey] set. [InputBinding.physicalKey] reuses
-  /// the same logical→physical table normalizeCapturedKey indexes (US-QWERTY). Returns
-  /// null when the logical key has no physical mapping (e.g. game* / numpad keys
-  /// that are not valid global hotkeys anyway).
-  HotKey? _hotKeyFromBinding(InputBinding binding) {
-    final PhysicalKeyboardKey? physical = binding.physicalKey;
-    if (physical == null) {
-      return null;
-    }
-    final List<HotKeyModifier> modifiers = <HotKeyModifier>[];
-    for (final ModifierKey mod in binding.modifiers) {
-      switch (mod) {
-        case ModifierKey.ctrl:
-          modifiers.add(HotKeyModifier.control);
-          break;
-        case ModifierKey.shift:
-          modifiers.add(HotKeyModifier.shift);
-          break;
-        case ModifierKey.alt:
-          modifiers.add(HotKeyModifier.alt);
-          break;
-        case ModifierKey.meta:
-          modifiers.add(HotKeyModifier.meta);
-          break;
-      }
-    }
-    return HotKey(
-      key: physical,
-      modifiers: modifiers,
-      scope: HotKeyScope.system,
-    );
+    if (isSupported) unawaited(_registerMouseTriggerFromRegistry());
   }
 
   /// Absolute folder that holds popup.html — see [popupAssetsDirFor].
@@ -856,7 +1035,15 @@ class GlobalLookupController {
   ///
   /// 方法体里没有任何键盘/修饰键相关的逻辑——它本来就是触发源无关的，改成公开
   /// 是零行为变更。[source] 只进诊断日志，用来区分是哪个触发源点的火。
+  ///
+  /// 没有覆盖窗（Linux Wayland 桌面：查词卡要自己摆窗口，Wayland 不许）时，热键经
+  /// GlobalShortcuts portal 照样会到这里，走同一条链（route、stillWanted 都一样）：
+  /// 选中文本照样取，只有出口不同——结果落到主窗查词页，而不是对着一个不存在的
+  /// 覆盖窗调 showAt。见 [_onHotKeyRouted] 里的 `overlay` 分支。
   Future<void> triggerSelectionLookup({String source = 'hotkey'}) async {
+    if (await _handOffToCardSelection(source)) {
+      return;
+    }
     final GlobalLookupRoute route = GlobalLookupRoute.desktop(
       lookupEpoch: ++_desktopLookupEpoch,
     );
@@ -866,9 +1053,61 @@ class GlobalLookupController {
     );
   }
 
+  /// BUG-5310 — 卡片在屏、用户在卡片里选了一段字再按查词触发：这次触发归卡片，
+  /// 在卡片里按这段选区嵌套查词，而不是走下面的「收卡 → 抓前台选区」。
+  ///
+  /// 卡片窗口 WS_EX_NOACTIVATE 且激活被 native 否决，永远不是前台；旧路径先
+  /// [GlobalLookupChannel.hide] 把卡收掉，再对前台程序抓选区，抓到的是底下程序里
+  /// 原来那个词——表现为卡片闪一下、在鼠标处重新弹出同一个词，嵌套查词从不发生。
+  ///
+  /// 判据在 native（host 经 overlaySelection 上报的选区 && 卡片在屏，与卡片内
+  /// Ctrl+C 接管同源），Dart 不存镜像。必须在铸新路由**之前**问：host 发回的
+  /// `textSelected` 盖的是卡片自己的路由，铸新路由会先把它作废，嵌套结果被丢弃。
+  /// 卡片不在场（没有在途的 desktop 路由）时同步返回 false，不多一次往返，
+  /// 原有「入口在首个 await 前激活路由」的时序不变。
+  Future<bool> _handOffToCardSelection(String source) async {
+    final GlobalLookupRoute? active = _activeRoute;
+    if (!isSupported ||
+        active == null ||
+        active.source != 'desktop' ||
+        !GlobalLookupChannel.isRouteValid(active)) {
+      return false;
+    }
+    final bool taken;
+    try {
+      taken = await GlobalLookupChannel.runWithRoute(
+        active,
+        GlobalLookupChannel.lookupOverlaySelection,
+      );
+    } catch (e, st) {
+      // 问不到就当卡片不接手：这次按键照旧查前台选区，并留下诊断。
+      glog('hotkey: card-selection hand-off EXCEPTION $e\n$st');
+      return false;
+    }
+    if (taken) {
+      glog('hotkey: card selection -> nested lookup (source=$source)');
+    }
+    return taken;
+  }
+
+  /// 测试缝：铸一条 desktop 路由并设为当前路由，等价于「一张桌面查词卡在场」。
+  @visibleForTesting
+  GlobalLookupRoute debugActivateDesktopRoute() {
+    final GlobalLookupRoute route = GlobalLookupRoute.desktop(
+      lookupEpoch: ++_desktopLookupEpoch,
+    );
+    _activateRoute(route);
+    return route;
+  }
+
   Future<void> _onHotKeyRouted(GlobalLookupRoute route, String source) async {
     _activateRoute(route);
     glog('hotkey: FIRED (source=$source)');
+    // 跨应用语音缓存：按下的这一刻就钉住前台程序刚播过的声音，不被后面的选区捕获
+    // （UIA / 模拟 Ctrl+C，可能几百毫秒）推迟。没开缓存时秒回 null。
+    final Future<CrossAppAudioSnapshot?> sentenceAudio = CrossAppAudioCapture
+        .instance
+        .snapshot();
     // 只有查词窗真正显示出来，这条路由才继续活着（之后由关窗 [_onOverlayHidden] 作废）；
     // 任何中止（空选区 / 无辅助功能权限 / showAt 被拒 / 异常）都要在 finally 里结束它的
     // 生命周期，否则 [desktopLookupInFlight] 永远为真、台词浮窗预热被静默跳过。
@@ -900,22 +1139,51 @@ class GlobalLookupController {
       // TODO-1233 — notify:false: this is the between-lookups reset, NOT a user
       // dismissal, so it must not fire overlayHidden (which would resume a paused
       // video mid re-lookup).
-      await GlobalLookupChannel.hide(notify: false);
+      //
+      // No overlay (native Wayland desktop): there is no card to hide; the
+      // result goes to the main window's dictionary page instead. The raise
+      // comes BEFORE the capture on purpose: a compositor without data control
+      // (GNOME) offers the primary selection only to the focused client, and
+      // the runner waits for the main window to become active before reading
+      // (linux/runner/global_lookup_channel.cc `CaptureGtkPrimary`). The other
+      // app's selection stays primary after it loses focus; raising selects
+      // nothing in Fushi, so it cannot replace that selection.
+      //
+      // Linux context capture (AT-SPI) runs BEFORE that: it finds the text by
+      // the foreground window's ACTIVE / FOCUSED state, which raising Fushi
+      // takes away. Reading it needs no focus and touches no selection.
+      final bool contextFirst =
+          Platform.isLinux && model.globalContextCaptureEnabled;
+      ForegroundSelectionContext? earlyContext;
+      if (contextFirst) {
+        earlyContext = await SelectionCapture.captureForegroundContext();
+        if (!_isCurrentRoute) return;
+      }
+      final bool overlay = isSupported;
+      if (overlay) {
+        await GlobalLookupChannel.hide(notify: false);
+      } else {
+        await DesktopLookupService.instance.bringMainWindowToFront();
+      }
       if (!_isCurrentRoute) return;
       // TODO-1030 M0 — when the user opted into context capture, try UI
-      // Automation first: it yields the selected term PLUS the sentence it sits
-      // in. On any miss (no UIA text element, non-Windows, channel unavailable)
+      // Automation / AX / AT-SPI first: it yields the selected term PLUS the
+      // sentence it sits in. On any miss (no accessible text element, channel
+      // or accessibility bus unavailable)
       // fall back to the clipboard capture (inject Ctrl+C), which yields only
       // the bare selection — never break the existing path.
       String text = '';
       String sentence = '';
+      CapturedSentenceContext? sentences;
       if (model.globalContextCaptureEnabled) {
-        final ForegroundSelectionContext? ctx =
-            await SelectionCapture.captureForegroundContext();
+        final ForegroundSelectionContext? ctx = contextFirst
+            ? earlyContext
+            : await SelectionCapture.captureForegroundContext();
         if (!_isCurrentRoute) return;
         if (ctx != null) {
           text = ctx.selectedText.trim();
           sentence = ctx.sentence;
+          sentences = ctx.sentences;
         }
       }
       if (text.isEmpty) {
@@ -931,6 +1199,26 @@ class GlobalLookupController {
                 .trim();
         if (!_isCurrentRoute) return;
         sentence = '';
+        sentences = null;
+      }
+      if (!overlay) {
+        // Main-window exit ([AppModel.queueExternalLookup], the same one
+        // `fushi://lookup` uses). Nothing selected: open the lookup page with
+        // the search box focused, so the key press always does something
+        // visible. The route ends in `finally` (no card is shown, so nothing
+        // else would retire it). The captured sentences ride along so the
+        // lookup page's advanced-mining dialog can add the previous / next
+        // sentences (rf--UcsGta); without context capture there are none.
+        glog(
+          'hotkey(main window): selection='
+          '${text.isEmpty ? 'empty' : '${text.length} chars'}',
+        );
+        if (text.isEmpty) {
+          model.requestHomeDictionaryTab(focusSearch: true);
+        } else {
+          model.queueExternalLookup(text, capturedContext: sentences);
+        }
+        return;
       }
       if (text.isEmpty) {
         glog('hotkey: empty selection — abort');
@@ -943,6 +1231,9 @@ class GlobalLookupController {
         physicalPlacement: null,
         autoRead: true,
         miningHandler: null,
+        sentenceAudio: sentenceAudio,
+        // 卡上「高级制卡」转交主窗时带过去的前后句（拍板台 rf--UcsGta-overlay）。
+        capturedContext: sentences,
       );
     } catch (e, st) {
       glog('hotkey: EXCEPTION $e\n$st');
@@ -1127,6 +1418,9 @@ class GlobalLookupController {
   /// 打开的桌面弹窗必须带上游戏 HWND——「点卡外关闭」那一记 down/up 要成对
   /// 吞掉，不得穿透到游戏推进台词（与 direct galCard 同一条消费策略）。null =
   /// 普通桌面查词（热键 / 浮窗点词），不发这条 channel，点击照旧交给原应用。
+  ///
+  /// [sentenceAudio]：调用方在查词那一刻钉住的跨应用语音快照（只有查的是**其他应用**
+  /// 里的文字时才给，见 [CrossAppAudioCapture.snapshot]）；默认制卡路径据此带句子音频。
   Future<bool> lookupText(
     String text, {
     String sentence = '',
@@ -1136,6 +1430,7 @@ class GlobalLookupController {
     OverlayMiningHandler? miningHandler,
     int? consumeOutsideClicksOwnerHwnd,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    Future<CrossAppAudioSnapshot?>? sentenceAudio,
   }) async {
     final GlobalLookupRoute inherited = GlobalLookupChannel.currentRoute;
     final GlobalLookupRoute route = inherited.source == 'galCard'
@@ -1152,6 +1447,7 @@ class GlobalLookupController {
         miningHandler: miningHandler,
         consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
         rubySpans: rubySpans,
+        sentenceAudio: sentenceAudio,
       ),
     );
   }
@@ -1165,6 +1461,7 @@ class GlobalLookupController {
     required OverlayMiningHandler? miningHandler,
     int? consumeOutsideClicksOwnerHwnd,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
+    Future<CrossAppAudioSnapshot?>? sentenceAudio,
   }) async {
     final String term = text.trim();
     if (!isSupported || !_started || _appModel == null || term.isEmpty) {
@@ -1215,6 +1512,7 @@ class GlobalLookupController {
         consumeOutsideClicksOwnerHwnd: consumeOutsideClicksOwnerHwnd,
         rubySpans: termRubySpans,
         pendingSearch: search,
+        sentenceAudio: sentenceAudio,
       );
       return shown;
     } finally {
@@ -1269,7 +1567,9 @@ class GlobalLookupController {
   /// 桌面查词窗上是否有一次查词在途或在场：当前路由是 desktop 且仍有效（真正关窗
   /// [_onOverlayHidden]、下一次查词与查词中止 [_endAbortedRoute] 都会作废它）。查词入口在
   /// 第一个 await 之前就 [_activateRoute]，所以「刚发起、还在 hide→show 之间」也算。
-  @visibleForTesting
+  ///
+  /// 生产读者：视频页学习计时门——焦点在查词窗里时主窗报 `inactive`，这不算失焦
+  /// （`StudyClockRunGate` 的 `focusHeldByOwnWindow`）。
   bool get desktopLookupInFlight {
     final GlobalLookupRoute? active = _activeRoute;
     return active != null &&
@@ -1332,6 +1632,8 @@ class GlobalLookupController {
     int? consumeOutsideClicksOwnerHwnd,
     List<FushiRubySpan> rubySpans = const <FushiRubySpan>[],
     Future<DictionarySearchResult>? pendingSearch,
+    Future<CrossAppAudioSnapshot?>? sentenceAudio,
+    CapturedSentenceContext? capturedContext,
   }) async {
     final AppModel? model = _appModel;
     if (model == null) {
@@ -1368,7 +1670,12 @@ class GlobalLookupController {
         if (!_isCurrentRoute) return false;
       }
       _currentSentence = sentence;
+      _currentCapturedContext = capturedContext;
       _currentMiningHandler = miningHandler;
+      // 默认制卡路径据此带句子音频；带委托的表面（截屏识字、galgame、网页视频）由委托
+      // 自己决定（截屏识字的委托拿的是同一份快照）。查词卡的「调整句子音频」面板两种
+      // 表面都读它（拍板 design-cross-app-audio-trim-ui）——调用方不给就没有面板。
+      _currentSentenceAudio = sentenceAudio;
       // Retire every acknowledgement belonging to the previous lookup before
       // the asynchronous dictionary search yields. The renderer's epoch itself
       // is host-global and is intentionally NOT reset here.
@@ -1809,6 +2116,7 @@ class GlobalLookupController {
     _originFloorLeft = 0;
     _originFloorTop = 0;
     _currentMiningHandler = null;
+    _currentCapturedContext = null;
     glog('overlayHidden: dismissed — reveal state reset');
     try {
       // Notify the route owner while its token is still valid. Galgame's owner
@@ -2087,6 +2395,14 @@ class GlobalLookupController {
     // BUG-2770：JS 带上指针种类，触摸 / 触控笔改看触摸半边
     // （enableTouchSwipeToClose，未设置时默认开）——瞬态覆盖窗是 windowed WebView2，
     // 触屏手指在这里就是真 touch 事件，此前却被鼠标默认值一并关掉。
+    // 拍板台 rf--UcsGta-overlay：卡上「高级制卡」→ 转交主窗查词页。覆盖窗本身画不了
+    // Flutter 对话框（失焦即自关，见 overlay_bridge_handlers.dart 文件头），所以把词条
+    // 身份 + 抓到的上下文交给主窗出口，主窗查完同一段文字后打开完整的高级制卡对话框。
+    // 不是 deferred 桥：popup.js 不等回包（原生层已即时回 null）。
+    if (handler == 'openAdvancedMining') {
+      _handOffAdvancedMining(message);
+      return;
+    }
     if (handler == 'topPullReleased') {
       final Object? args = message['args'];
       if (popupTopPullDismissAllowed(
@@ -2128,6 +2444,7 @@ class GlobalLookupController {
       // sentence）。与句子横幅同一 `_currentSentence`（嵌套子查词无句 → ''）。
       sentenceContext: _currentSentence,
       miningHandler: _currentMiningHandler,
+      sentenceAudio: _currentSentenceAudio,
       // BUG-3652 续：本消息在发起它的查词 route 的 zone 里派发；回包时这张卡还在屏上
       // ⇔ 那条 route 仍是当前 route 且未作废（关窗、换词都会作废它）。
       isOriginOnScreen: _mineOriginProbe(GlobalLookupChannel.currentRoute),
@@ -2706,6 +3023,7 @@ class GlobalLookupController {
       // the children and must not be nudged inside the window-local frame, or
       // the runner's pinned root/bbox relationship would no longer hold.
       clampRootShellToWorkArea: route.source != 'galCard',
+      advancedMiningHandoff: _advancedMiningHandoffAvailable(route),
       staticRevisions: _hostStaticRevisions,
       hostKey: hostKey,
       entriesStore: entriesStore,
@@ -2764,6 +3082,56 @@ class GlobalLookupController {
   /// TODO-867 P3c C3 — insertion-order index (stack depth, 0 = root) of the frame
   /// with [frameId], or -1 when unknown. The host stamps tapOutside with the
   /// frame id; Dart maps it to the layer index for closeChildPopups.
+  /// 这张覆盖窗卡给不给「高级制卡」（转交主窗）入口（拍板台 rf--UcsGta-overlay）。
+  ///
+  /// 只给走默认制卡路径的卡（[_currentMiningHandler] 为 null：热键查词、悬浮字幕 /
+  /// 歌词行……）——主窗查词页制出来的卡与覆盖窗「+」同一条默认路径、同一句例句。
+  /// 带制卡委托的表面（galgame 台词浮窗、截屏识字、网页视频）会往卡里加游戏画面 /
+  /// 截图 / 视频片段，主窗重现不了，转交过去反而少东西，不给；游戏内查词卡
+  /// （`galCard`）同理。制卡模块关着时 popup.js 自己不渲染（「+」都没有）。
+  bool _advancedMiningHandoffAvailable(GlobalLookupRoute route) =>
+      route.source != 'galCard' && _currentMiningHandler == null;
+
+  /// 卡上点了「高级制卡」：收起覆盖窗，把这一层的查询串 + 上下文 + 词条身份交给主窗
+  /// 出口（[AppModel.queueExternalLookup]），主窗查词页唤到前台、查完后打开对话框。
+  void _handOffAdvancedMining(Map<String, Object?> message) {
+    final AppModel? model = _appModel;
+    final AdvancedMiningHandoff? handoff = AdvancedMiningHandoff.fromBridgeArgs(
+      message['args'],
+    );
+    if (model == null || handoff == null) {
+      glog('advancedMining handoff: ignored (model=${model != null})');
+      return;
+    }
+    // 入口门控之外的来源（理论上不会渲染按钮）一律不转交，免得主窗制出缺媒体的卡。
+    if (!_advancedMiningHandoffAvailable(GlobalLookupChannel.currentRoute)) {
+      glog('advancedMining handoff: ignored on a delegated-mining surface');
+      return;
+    }
+    final OverlayHandoffSource? source = resolveOverlayHandoffSource(
+      stack: _stack,
+      frameId: message['__frameId'] as String?,
+      captured: _currentCapturedContext,
+      sentence: _currentSentence,
+    );
+    if (source == null) {
+      glog('advancedMining handoff: source layer gone');
+      return;
+    }
+    glog(
+      'advancedMining handoff: ${source.text.length} chars, '
+      'neighbours=${source.capturedContext?.hasNeighbours ?? false}',
+    );
+    // 先收起卡片：主窗一到前台覆盖窗本来也会因失焦自关，这里显式关掉，状态在
+    // overlayHidden 里按正常关窗复位。
+    GlobalLookupChannel.hide();
+    model.queueExternalLookup(
+      source.text,
+      capturedContext: source.capturedContext,
+      advancedMining: handoff,
+    );
+  }
+
   int _layerIndexForFrameId(String frameId) {
     final List<GlobalLookupFrame> frames = _stack.frames;
     for (int i = 0; i < frames.length; i++) {

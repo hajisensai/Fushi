@@ -12,6 +12,11 @@ import 'video_fushi_page_source_corpus.dart';
 /// 修复：抽取前后包一层不可关的加载遮罩，并把抽取改为单趟全轨缓存（同视频后续切换
 /// 瞬时命中）。
 ///
+/// 反馈 ZTDA2WQJj4 之后：内封文本轨的整轨抽取在慢盘上一分钟以上，锁住整个菜单等于把
+/// 用户关在里面。内封分支改成不锁菜单——借播放器解码即时出字，面板顶部挂一行「正在
+/// 读取完整字幕」+ 停止按钮；外挂文件解析很快，仍用置灰面板的加载状态。「抽取期间必须
+/// 有反馈、任何路径都要收起」这条不变。
+///
 /// 用源码扫描守卫：media_kit 在 headless test 跑不起来真视频 widget（与
 /// [video_lookup_resume_static_test] / [video_mobile_controls_static_test] 同理），
 /// 故断言源码层的遮罩配对与 try/finally 包裹结构。
@@ -23,7 +28,7 @@ void main() {
 
   test('定义了配对的加载遮罩 show/hide 方法', () {
     expect(
-      src.contains('void _showSubtitleLoadingOverlay()'),
+      src.contains('void _showSubtitleLoadingOverlay({'),
       isTrue,
       reason: '应有弹出字幕抽取加载遮罩的方法',
     );
@@ -34,7 +39,7 @@ void main() {
     );
   });
 
-  test('抽取期间面板不可交互（行 disabled + 进度圈），等价旧不可关遮罩', () {
+  test('加载状态期间面板不可交互（行 disabled + 进度圈），等价旧不可关遮罩', () {
     // TODO-274：加载从独立 barrier dialog 迁到字幕源 side panel —— 抽取期间靠
     // [_subtitleLoadingShown] 标记把面板所有行 `enabled: !_subtitleLoadingShown`
     // 置灰（点不动 = 不可关/不可误触），并显示进度圈，与旧 barrierDismissible:false
@@ -52,37 +57,99 @@ void main() {
     );
   });
 
-  test('_selectSubtitleSource 在抽取前后包裹遮罩（show…try/finally hide）', () {
-    // 截取 _selectSubtitleSource 方法体，断言遮罩 show 在 loadSubtitleCueResult 之前、
-    // hide 在 finally 里，保证任何返回/异常路径都会收起遮罩、不留死遮罩。
-    // 上界=方法体的右花括号（花括号配对），不再是 `loadAt + 200` 定长窗口：
-    // try/finally 到 hide 之间多写两行（如加一条 OSD 提示）就会把 hide 挤出旧
-    // 窗口，要求型断言凭空变红。下界仍保持在 show 处，「show 之后才出现的
-    // try/finally/hide」这条语义不放松（不是拿整个方法体去 contains）。
+  test('_selectSubtitleSource：外挂分支包加载状态，内封分支用可停止的读取行，两者都在 finally 收起', () {
+    // 两个分支各有一种「加载中」反馈，都必须在 finally 里收起——任何返回 / 异常路径都
+    // 不留死状态：
+    //  - 外挂文件（解析很快）：show…try/finally hide，期间面板行置灰；
+    //  - 内封文本轨（整轨抽取，慢盘一分钟以上）：不锁菜单，抽取真正开始时
+    //    （onExtractionStarted）挂上「正在读取完整字幕」行，finally 撤下。
+    // 上界=方法体的右花括号（花括号配对），不用定长窗口。
     final String method = methodBody(
       src,
       'Future<bool> _selectSubtitleSource(',
     );
-    final int loadAt = method.indexOf(
-      'loadSubtitleCueResult(source, videoPath',
+
+    // 内封分支：带取消信号的那次调用。
+    final int embeddedLoadAt =
+        RegExp(
+          r'loadSubtitleCueResult\(\s*source,\s*videoPath,\s*bookUid,\s*cancel:',
+        ).firstMatch(method)?.start ??
+        -1;
+    expect(embeddedLoadAt, greaterThan(-1), reason: '缺内封轨的可取消抽取调用');
+    final int showAt = method.indexOf(
+      '_showSubtitleLoadingOverlay(origin: origin);',
     );
-    expect(loadAt, greaterThan(-1), reason: '缺 loadSubtitleCueResult 抽取调用');
+    expect(showAt, greaterThan(-1), reason: '缺外挂分支的加载状态 show 调用');
+    expect(
+      showAt,
+      greaterThan(embeddedLoadAt),
+      reason: '内封抽取期间不得锁菜单：加载状态只属于其后的外挂分支',
+    );
 
-    final int showAt = method.indexOf('_showSubtitleLoadingOverlay();');
-    expect(showAt, greaterThan(-1), reason: '缺遮罩 show 调用');
-    expect(showAt, lessThan(loadAt), reason: '遮罩必须在抽取开始前弹出');
+    final String embedded = method.substring(
+      method.lastIndexOf('try {', embeddedLoadAt),
+      showAt,
+    );
+    final int rowShownAt = embedded.indexOf(
+      '_primaryEmbeddedFullLoad = _EmbeddedTextFullLoad(',
+    );
+    final int embeddedFinallyAt = embedded.indexOf('} finally {');
+    expect(
+      embedded.indexOf('onExtractionStarted:'),
+      greaterThan(-1),
+      reason: '读取行要等抽取真正开始（缓存未命中）才挂',
+    );
+    expect(rowShownAt, greaterThan(-1), reason: '抽取开始时应挂上读取行');
+    expect(
+      embeddedFinallyAt,
+      greaterThan(rowShownAt),
+      reason: '内封抽取应在 try 块内，读取行在 finally 撤下',
+    );
+    expect(
+      embedded.substring(embeddedFinallyAt),
+      contains('_primaryEmbeddedFullLoad = null'),
+      reason: 'finally 必须撤下读取行，避免任何路径残留一行永远在转的「正在读取」',
+    );
 
+    // 外挂分支：show 之后才出现的 try / 抽取 / finally / hide。
     final String afterShow = method.substring(showAt);
-    expect(afterShow.contains('try {'), isTrue, reason: '抽取应在 try 块内');
+    final int tryAt = afterShow.indexOf('try {');
+    final int externalLoadAt = afterShow.indexOf(
+      'loadSubtitleCueResult(source, videoPath, bookUid);',
+    );
+    final int finallyAt = afterShow.indexOf('} finally {');
+    final int hideAt = afterShow.indexOf('_hideSubtitleLoadingOverlay();');
+    expect(tryAt, greaterThan(-1), reason: '外挂解析应在 try 块内');
+    expect(externalLoadAt, greaterThan(tryAt), reason: '加载状态必须在解析开始前弹出');
     expect(
-      afterShow.contains('} finally {'),
-      isTrue,
-      reason: '遮罩应在 finally 中收起',
+      finallyAt,
+      greaterThan(externalLoadAt),
+      reason: '加载状态应在 finally 中收起',
     );
     expect(
-      afterShow.contains('_hideSubtitleLoadingOverlay();'),
-      isTrue,
+      hideAt,
+      greaterThan(finallyAt),
       reason: 'finally 必须调用 hide，避免任何路径残留死遮罩',
+    );
+  });
+
+  test('_selectSecondarySubtitleSource：内封分支的读取行同样在 finally 撤下', () {
+    final String method = methodBody(
+      src,
+      'Future<bool> _selectSecondarySubtitleSource(',
+    );
+    final int rowShownAt = method.indexOf(
+      '_secondaryEmbeddedFullLoad = _EmbeddedTextFullLoad(',
+    );
+    expect(rowShownAt, greaterThan(-1), reason: '抽取开始时应挂上读取行');
+    final int finallyAt = method.indexOf('} finally {', rowShownAt);
+    final int showAt = method.indexOf('_showSubtitleLoadingOverlay(');
+    expect(finallyAt, greaterThan(rowShownAt));
+    expect(showAt, greaterThan(finallyAt), reason: '内封抽取期间不得锁菜单');
+    expect(
+      method.substring(finallyAt, showAt),
+      contains('_secondaryEmbeddedFullLoad = null'),
+      reason: 'finally 必须撤下读取行',
     );
   });
 
@@ -100,10 +167,10 @@ void main() {
       'final (String uid, int episodeIndex) = _watchStatsIdentity;',
       start,
     );
-    final int prewarmAt = src.indexOf(
-      'unawaited(prewarmEmbeddedSubtitleCache(videoPath));',
-      start,
-    );
+    // BUG-4838：调用多了取消信号参数，按调用形状（不看换行）找。
+    final int prewarmAt = RegExp(
+      r'unawaited\(\s*prewarmEmbeddedSubtitleCache\(\s*videoPath,',
+    ).allMatches(src).firstWhere((Match m) => m.start > start).start;
     expect(prewarmAt, greaterThan(seedAt), reason: '预抽应在视频打开成功后的 warmup 区域触发');
     expect(
       prewarmAt,

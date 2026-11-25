@@ -19,8 +19,10 @@
 ///   与代下载同口径以 `unsupportedOnThisHost` 报失败，不假装导入了。
 /// - `import auto` 对 zip / rar / 7z 小说包沿用代下载执行器的行为：解到**压缩包旁**
 ///   的同名目录再分类（执行器为下载目录设计，会在输入目录里留下解压产物）。
-/// - 7z / rar 需要 7-Zip 命令行（`FUSHI_7ZA` / 可执行文件旁 / PATH），找不到时
-///   rar 漫画包报 `archiveToolMissing`。
+/// - zip / 7z（含加密包）由原生库 `fushi_compute` 解；rar 需要 7-Zip 命令行
+///   （`FUSHI_7ZA` / 可执行文件旁 / PATH），找不到时报 `archiveToolMissing`。无头服务端
+///   没有口令来源，加密包报 `archivePasswordRequired`（漫画包抛
+///   `MangaArchivePasswordException`）。
 library;
 
 import 'dart:io';
@@ -43,30 +45,44 @@ import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.d
 import 'package:fushi_engine/media/discovery/import/discovery_import_executor.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 import 'package:fushi_engine/media/manga/manga_archive_importer.dart';
+import 'package:fushi_engine/media/manga/manga_archive_probe.dart'
+    show looksLikeImageArchiveInBackground;
 import 'package:fushi_engine/media/manga/manga_folder_plan.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/media/source_library/book_library_prune.dart'
     show listEpubSourceFiles;
 import 'package:fushi_engine/ocr/manga_ocr_folder_job.dart'
     show kMangaOcrOutDirName, kMangaOcrOutputFileName;
+import 'package:fushi_engine/utils/archive/archive_volumes.dart';
 import 'package:fushi_server/src/commands/cli_module.dart';
 import 'package:fushi_server/src/commands/command_io.dart';
 import 'package:fushi_server/src/discovery_import_host.dart';
+import 'package:fushi_server/src/server_language.dart';
 import 'package:fushi_server/src/server_log.dart';
 import 'package:fushi_server/src/server_runtime.dart';
 import 'package:path/path.dart' as p;
 
-const String kImportUsage = '''
+String get kImportUsage => tr(
+  '''
 import epub  <file.epub|dir…>                          导入 EPUB（目录 = 递归收其中全部 .epub）
 import manga <dir|archive|.mokuro|manga.json…> [--title t]
                                                      导入漫画（mokuro 卷 / 纯页图目录 / cbz·zip·cbr·rar·cb7 / 纯图 EPUB）
 import text  <file.txt…> [--title t] [--author a]     文本（txt/md/html…）转 EPUB 后入库
 import auto  <path…>                                  按扩展名 / 目录内容分域入库（书 / 漫画 / 有声书）
 books backfill-isbn                                  给缺 ISBN 的存量 EPUB 回填 ISBN
-（以上都支持 --json；重复条目跳过不报错）''';
+（以上都支持 --json；重复条目跳过不报错）''',
+  '''
+import epub  <file.epub|dir…>                          import EPUBs (directory = recursively collect all .epub files in it)
+import manga <dir|archive|.mokuro|manga.json…> [--title t]
+                                                     import manga (mokuro volume / image-only directory / cbz·zip·cbr·rar·cb7 / image-only EPUB)
+import text  <file.txt…> [--title t] [--author a]     convert text (txt/md/html…) to EPUB and import it
+import auto  <path…>                                  import by extension / directory content (books / manga / audiobooks)
+books backfill-isbn                                  backfill ISBN for existing EPUBs that lack one
+(All of the above support --json; duplicates are skipped without error)''',
+);
 
 /// 漫画图包载体（与 `MangaArchiveImporter.importArchive` 能吃的格式一致；`.7z` 不在内：
-/// 它只认 ZIP 容器 + 7-Zip 处理的 rar/cbr/cb7）。
+/// 它只认 ZIP 容器 + 归档解包点处理的 rar/cbr/cb7）。
 const Set<String> _kMangaArchiveExtensions = <String>{
   '.cbz',
   '.zip',
@@ -123,11 +139,16 @@ bool _isMangaJson(String path) =>
 /// `import auto` 的分域判据（只读文件系统，不落库；单测直接调）。
 ///
 /// 单文件按扩展名；zip / rar / epub 先看包里是不是纯图（`looksLikeImageArchive`，
-/// 与漫画导入同一判据）。目录按内容，优先级：有音频 → 有声书；有 `.mokuro` →
+/// 与漫画导入同一判据，跑在后台 isolate：服务端事件循环上同步整本解析一本几百 MB
+/// 的文字 EPUB，期间所有请求都停住——BUG-4909 遗留）。给了 [db] 时 `.epub` 探测的
+/// 解压落点建在书库根的 `.tmp-*`（崩溃残留归导入残留清扫管），不进系统临时目录。目录按内容，优先级：有音频 → 有声书；有 `.mokuro` →
 /// 漫画卷；有漫画图包 → 漫画；有 EPUB / 文本 / PDF → 书；有页图目录 → 漫画卷；
 /// 只剩 zip / rar / 7z → 书（执行器解开再分类）。书优先于页图是因为小说目录里常带
 /// 封面图，而漫画目录里很少混正文。
-AutoImportRoute routeAutoImport(String path) {
+Future<AutoImportRoute> routeAutoImport(
+  String path, {
+  FushiDatabase? db,
+}) async {
   final FileSystemEntityType type = FileSystemEntity.typeSync(path);
   if (type == FileSystemEntityType.directory) {
     final List<String> files = <String>[
@@ -141,7 +162,10 @@ AutoImportRoute routeAutoImport(String path) {
           e.path,
     ]..sort();
     if (files.isEmpty) {
-      return const AutoImportRoute(AutoImportKind.unsupported, reason: '空目录');
+      return AutoImportRoute(
+        AutoImportKind.unsupported,
+        reason: tr('空目录', 'Empty directory'),
+      );
     }
     if (files.any(
       (String f) => AudiobookStorage.audioExtensions.contains(_ext(f)),
@@ -167,9 +191,12 @@ AutoImportRoute routeAutoImport(String path) {
     if (files.any(isDiscoveryArchivePath)) {
       return AutoImportRoute(AutoImportKind.novel, files: files);
     }
-    return const AutoImportRoute(
+    return AutoImportRoute(
       AutoImportKind.unsupported,
-      reason: '目录里没有可导入的书 / 漫画 / 有声书',
+      reason: tr(
+        '目录里没有可导入的书 / 漫画 / 有声书',
+        'No importable books / manga / audiobooks in the directory',
+      ),
     );
   }
   final String ext = _ext(path);
@@ -180,17 +207,30 @@ AutoImportRoute routeAutoImport(String path) {
     return const AutoImportRoute(AutoImportKind.mangaArchive);
   }
   if (ext == '.epub') {
-    return MangaArchiveImporter.looksLikeImageArchive(path)
+    return await looksLikeImageArchiveInBackground(path, db: db)
         ? const AutoImportRoute(AutoImportKind.mangaLocal)
         : const AutoImportRoute(AutoImportKind.novel);
   }
   if (ext == '.zip' || ext == '.rar') {
-    return MangaArchiveImporter.looksLikeImageArchive(path)
+    return await looksLikeImageArchiveInBackground(path, db: db)
         ? const AutoImportRoute(AutoImportKind.mangaArchive)
         : const AutoImportRoute(AutoImportKind.novel);
   }
   if (ext == '.7z' || ext == '.pdf' || _isText(path)) {
     return const AutoImportRoute(AutoImportKind.novel);
+  }
+  // 分卷包：第一卷当整个包（执行器解开再分类），后续卷随第一卷解开、不单独导入。
+  if (isFirstSplitArchiveVolume(path)) {
+    return const AutoImportRoute(AutoImportKind.novel);
+  }
+  if (isLaterSplitArchiveVolume(path)) {
+    return AutoImportRoute(
+      AutoImportKind.unsupported,
+      reason: tr(
+        '分卷压缩包的后续卷：从第一卷（.001）导入',
+        'Later volume of a split archive: import the first volume (.001)',
+      ),
+    );
   }
   if (AudiobookStorage.audioExtensions.contains(ext) ||
       kDiscoverySubtitleExtensions.contains(ext)) {
@@ -199,7 +239,10 @@ AutoImportRoute routeAutoImport(String path) {
   }
   return AutoImportRoute(
     AutoImportKind.unsupported,
-    reason: '认不出的文件类型 ${ext.isEmpty ? '(无扩展名)' : ext}',
+    reason: tr(
+      '认不出的文件类型 ${ext.isEmpty ? '(无扩展名)' : ext}',
+      'Unrecognized file type ${ext.isEmpty ? '(no extension)' : ext}',
+    ),
   );
 }
 
@@ -244,7 +287,12 @@ class _Importer {
     ImportItem item,
     Future<List<String>?> Function() action,
   ) async {
-    err.writeln('导入 ${item.domain}: ${item.path}');
+    err.writeln(
+      tr(
+        '导入 ${item.domain}: ${item.path}',
+        'Importing ${item.domain}: ${item.path}',
+      ),
+    );
     try {
       final List<String>? keys = await action();
       if (keys == null || keys.isEmpty) {
@@ -275,7 +323,8 @@ class _Importer {
         : <String>[path];
     if (files.isEmpty) {
       return <ImportItem>[
-        ImportItem(path: path, domain: 'book')..error = '目录里没有 .epub',
+        ImportItem(path: path, domain: 'book')
+          ..error = tr('目录里没有 .epub', 'No .epub in the directory'),
       ];
     }
     return <ImportItem>[
@@ -340,11 +389,20 @@ class _Importer {
         (ocrOut.existsSync() ? 1 : 0);
     if (volumes == 0) {
       return <ImportItem>[
-        ImportItem(path: path, domain: 'manga')..error = '目录里没有可导入的漫画卷',
+        ImportItem(path: path, domain: 'manga')
+          ..error = tr(
+            '目录里没有可导入的漫画卷',
+            'No importable manga volumes in the directory',
+          ),
       ];
     }
     if (title != null && volumes > 1) {
-      err.writeln('目录里有 $volumes 卷，--title 只对单卷生效，已忽略');
+      err.writeln(
+        tr(
+          '目录里有 $volumes 卷，--title 只对单卷生效，已忽略',
+          'The directory has $volumes volumes; --title only applies to a single volume and was ignored',
+        ),
+      );
     }
     final String? single = volumes == 1 ? title : null;
     final List<ImportItem> items = <ImportItem>[];
@@ -427,13 +485,15 @@ class _Importer {
         ),
       );
     }
-    item.error =
-        '不是漫画卷（只收目录 / .mokuro / manga.json / cbz·zip·cbr·rar·cb7 / 纯图 EPUB）';
+    item.error = tr(
+      '不是漫画卷（只收目录 / .mokuro / manga.json / cbz·zip·cbr·rar·cb7 / 纯图 EPUB）',
+      'Not a manga volume (only directories / .mokuro / manga.json / cbz·zip·cbr·rar·cb7 / image-only EPUB are accepted)',
+    );
     return Future<ImportItem>.value(item);
   }
 
   Future<List<ImportItem>> auto(String path) async {
-    final AutoImportRoute route = routeAutoImport(path);
+    final AutoImportRoute route = await routeAutoImport(path, db: db);
     switch (route.kind) {
       case AutoImportKind.mangaLocal:
         return manga(path);
@@ -500,12 +560,16 @@ class ImportCommands extends CliModule {
   void register(ArgParser parser) {
     final ArgParser import = parser.addCommand('import');
     addJsonFlag(import.addCommand('epub'));
-    addJsonFlag(
-      import.addCommand('manga'),
-    ).addOption('title', help: '卷标题（只对单卷生效）');
+    addJsonFlag(import.addCommand('manga')).addOption(
+      'title',
+      help: tr('卷标题（只对单卷生效）', 'Volume title (only applies to a single volume)'),
+    );
     addJsonFlag(import.addCommand('text'))
-      ..addOption('title', help: '书名（缺省取文件名）')
-      ..addOption('author', help: '作者');
+      ..addOption(
+        'title',
+        help: tr('书名（缺省取文件名）', 'Book title (defaults to the file name)'),
+      )
+      ..addOption('author', help: tr('作者', 'Author'));
     addJsonFlag(import.addCommand('auto'));
     addJsonFlag(parser.addCommand('books').addCommand('backfill-isbn'));
   }
@@ -518,14 +582,20 @@ class ImportCommands extends CliModule {
     final ArgResults? leaf = command.command;
     if (name == 'books') {
       if (leaf == null) {
-        return _io.usage('缺少子命令', 'books backfill-isbn [--json]');
+        return _io.usage(
+          tr('缺少子命令', 'Missing subcommand'),
+          'books backfill-isbn [--json]',
+        );
       }
       return ctx.withRuntime(
         (ServerRuntime rt) => _backfillIsbn(rt, json: wantsJson(leaf)),
       );
     }
     if (leaf == null) {
-      return _io.usage('缺少子命令', 'import epub|manga|text|auto <path…> [--json]');
+      return _io.usage(
+        tr('缺少子命令', 'Missing subcommand'),
+        'import epub|manga|text|auto <path…> [--json]',
+      );
     }
     return _import(leaf, ctx);
   }
@@ -539,7 +609,9 @@ class ImportCommands extends CliModule {
       'text' => 'import text <file.txt…> [--title t] [--author a] [--json]',
       _ => 'import auto <path…> [--json]',
     };
-    if (leaf.rest.isEmpty) return _io.usage('缺少输入路径', usageLine);
+    if (leaf.rest.isEmpty) {
+      return _io.usage(tr('缺少输入路径', 'Missing input path'), usageLine);
+    }
     final List<String> paths = <String>[
       for (final String raw in leaf.rest) p.normalize(p.absolute(raw)),
     ];
@@ -550,7 +622,10 @@ class ImportCommands extends CliModule {
         ? leaf['author'] as String?
         : null;
     if (title != null && paths.length != 1) {
-      return _io.usage('--title 只能配一个输入', usageLine);
+      return _io.usage(
+        tr('--title 只能配一个输入', '--title only works with a single input'),
+        usageLine,
+      );
     }
     final List<String> missing = <String>[
       for (final String path in paths)
@@ -559,14 +634,17 @@ class ImportCommands extends CliModule {
     ];
     if (missing.isNotEmpty) {
       for (final String path in missing) {
-        _io.err.writeln('找不到: $path');
+        _io.err.writeln(tr('找不到: $path', 'Not found: $path'));
       }
       return kExitNoInput;
     }
     if (sub == 'epub') {
       for (final String path in paths) {
         if (!FileSystemEntity.isDirectorySync(path) && _ext(path) != '.epub') {
-          return _io.usage('不是 .epub: $path', usageLine);
+          return _io.usage(
+            tr('不是 .epub: $path', 'Not an .epub: $path'),
+            usageLine,
+          );
         }
       }
     }
@@ -575,7 +653,10 @@ class ImportCommands extends CliModule {
         if (FileSystemEntity.isDirectorySync(path) ||
             !TextToEpub.isSupported(path)) {
           return _io.usage(
-            '不支持的文本格式: $path（支持 ${TextToEpub.supportedExtensions.join(' / ')}）',
+            tr(
+              '不支持的文本格式: $path（支持 ${TextToEpub.supportedExtensions.join(' / ')}）',
+              'Unsupported text format: $path (supported: ${TextToEpub.supportedExtensions.join(' / ')})',
+            ),
             usageLine,
           );
         }
@@ -621,12 +702,22 @@ class ImportCommands extends CliModule {
           case 'imported':
             _io.out.writeln('imported  ${i.bookKeys.join(', ')}  ← ${i.path}');
           case 'skipped':
-            _io.out.writeln('skipped   （同名已在库）${i.path}');
+            _io.out.writeln(
+              tr(
+                'skipped   （同名已在库）${i.path}',
+                'skipped   (same name already in the library) ${i.path}',
+              ),
+            );
           default:
             _io.out.writeln('failed    ${i.path}: ${i.error}');
         }
       }
-      _io.out.writeln('导入完成: +$imported, 跳过 $skipped, 失败 $failed');
+      _io.out.writeln(
+        tr(
+          '导入完成: +$imported, 跳过 $skipped, 失败 $failed',
+          'Import done: +$imported, skipped $skipped, failed $failed',
+        ),
+      );
     }
     return failed == 0 ? kExitOk : kExitFailure;
   }
@@ -636,7 +727,9 @@ class ImportCommands extends CliModule {
     if (json) {
       _io.json(<String, Object?>{'written': written});
     } else {
-      _io.out.writeln('已回填 ISBN: $written 本');
+      _io.out.writeln(
+        tr('已回填 ISBN: $written 本', 'ISBN backfilled: $written books'),
+      );
     }
     return kExitOk;
   }

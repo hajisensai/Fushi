@@ -1,12 +1,12 @@
 import 'dart:io';
 
 import 'package:drift/native.dart';
-import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_engine/media/import/epub_backed_srt_book.dart';
-import 'package:fushi/src/media/import/srt_book_reimport.dart';
+import 'package:fushi_engine/media/audiobook/srt_book_reimport.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:test/test.dart';
 
 /// 用户报「有声书没办法重新导入 / 导入音频没用 / 导不了字幕文件」的写入侧回归。
 ///
@@ -416,5 +416,193 @@ void main() {
     expect(outcome.audioReplaced, isFalse);
     expect(outcome.subtitleReplaced, isFalse);
     expect((await repo.findByUid('srtbook_4'))!.srtPath, srt.path);
+  });
+
+  // ── BUG-4810：换字幕是「拷新 → 重建正文 → 写库 → 删旧」 ─────────────────
+
+  /// 先正常换一次字幕，让书的 srtPath 指向持久目录里的副本（首次导入后的常态）。
+  Future<SrtBook> seedWithPersistedSubtitle({
+    required String uid,
+    required String bookKey,
+  }) async {
+    final File seedSrt = writeSubtitle('seed.srt', <(String, String, String)>[
+      ('00:00:01,000', '00:00:02,000', '旧句一'),
+    ]);
+    await seedBook(uid: uid, bookKey: bookKey, srtPath: seedSrt.path);
+    await reimportSrtBook(
+      db: db,
+      repo: repo,
+      uid: uid,
+      subtitlePath: seedSrt.path,
+    );
+    rebuildCalls.clear();
+    return (await repo.findByUid(uid))!;
+  }
+
+  List<String> persistedNames(Directory dir) => <String>[
+    for (final FileSystemEntity f in dir.listSync())
+      if (f is File) p.basename(f.path),
+  ]..sort();
+
+  test('换字幕成功：旧副本在写库后删掉，持久目录只留新的一份', () async {
+    final SrtBook before = await seedWithPersistedSubtitle(
+      uid: 'srtbook_swap',
+      bookKey: '',
+    );
+    final Directory dir = await AudiobookStorage.ensurePersistDir(
+      'srtbook_swap',
+    );
+    expect(persistedNames(dir), <String>['seed.srt']);
+
+    final File newSrt = writeSubtitle('next.srt', <(String, String, String)>[
+      ('00:00:03,000', '00:00:04,000', '新句一'),
+    ]);
+    await reimportSrtBook(
+      db: db,
+      repo: repo,
+      uid: 'srtbook_swap',
+      subtitlePath: newSrt.path,
+    );
+
+    final SrtBook after = (await repo.findByUid('srtbook_swap'))!;
+    expect(after.srtPath, isNot(before.srtPath));
+    expect(persistedNames(dir), <String>['next.srt']);
+  });
+
+  test('拷新字幕失败：旧副本还在、库与正文都没动', () async {
+    const String bookKey = 'generated-body-copy-fail';
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: 'Generated',
+        epubPath: 'generated.epub',
+        extractDir: p.join(workDir.path, 'gen-extract'),
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1,
+      ),
+    );
+    final SrtBook before = await seedWithPersistedSubtitle(
+      uid: 'srtbook_copyfail',
+      bookKey: bookKey,
+    );
+    final Directory dir = await AudiobookStorage.ensurePersistDir(
+      'srtbook_copyfail',
+    );
+    final File newSrt = writeSubtitle('next.srt', <(String, String, String)>[
+      ('00:00:03,000', '00:00:04,000', '新句一'),
+    ]);
+    // 落点被一个同名目录占着：写文件必然失败（磁盘满 / 无权限的替身）。
+    Directory(p.join(dir.path, 'next.srt')).createSync();
+
+    await expectLater(
+      reimportSrtBook(
+        db: db,
+        repo: repo,
+        uid: 'srtbook_copyfail',
+        subtitlePath: newSrt.path,
+      ),
+      throwsA(isA<FileSystemException>()),
+    );
+
+    expect(
+      File(before.srtPath).existsSync(),
+      isTrue,
+      reason: '库里指着的旧字幕副本不能在新副本落地之前删',
+    );
+    expect((await repo.findByUid('srtbook_copyfail'))!.srtPath, before.srtPath);
+    expect(
+      (await repo.cuesFor('srtbook_copyfail')).map((AudioCue c) => c.text),
+      <String>['旧句一'],
+    );
+    expect(rebuildCalls, isEmpty, reason: '字幕副本没落地就不该动正文');
+  });
+
+  test('正文重建失败：新副本收走，旧副本与库原样', () async {
+    const String bookKey = 'generated-body-rebuild-fail';
+    await db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: bookKey,
+        title: 'Generated',
+        epubPath: 'generated.epub',
+        extractDir: p.join(workDir.path, 'gen-extract'),
+        chapterCount: 1,
+        chaptersJson: '[]',
+        importedAt: 1,
+      ),
+    );
+    final SrtBook before = await seedWithPersistedSubtitle(
+      uid: 'srtbook_rebuildfail',
+      bookKey: bookKey,
+    );
+    final Directory dir = await AudiobookStorage.ensurePersistDir(
+      'srtbook_rebuildfail',
+    );
+    debugBodyRebuilder =
+        ({
+          required FushiDatabase db,
+          required EpubBookRow row,
+          required SrtBook book,
+          required List<AudioCue> cues,
+        }) async => throw StateError('rebuild failed');
+    final File newSrt = writeSubtitle('next.srt', <(String, String, String)>[
+      ('00:00:03,000', '00:00:04,000', '新句一'),
+    ]);
+
+    await expectLater(
+      reimportSrtBook(
+        db: db,
+        repo: repo,
+        uid: 'srtbook_rebuildfail',
+        subtitlePath: newSrt.path,
+      ),
+      throwsA(isA<StateError>()),
+    );
+
+    expect(persistedNames(dir), <String>['seed.srt']);
+    expect(
+      (await repo.findByUid('srtbook_rebuildfail'))!.srtPath,
+      before.srtPath,
+    );
+    expect(
+      (await repo.cuesFor('srtbook_rebuildfail')).map((AudioCue c) => c.text),
+      <String>['旧句一'],
+    );
+  });
+
+  test('写库失败：cue 与 srtPath 一起回滚，新副本收走', () async {
+    final SrtBook before = await seedWithPersistedSubtitle(
+      uid: 'srtbook_dbfail',
+      bookKey: '',
+    );
+    final Directory dir = await AudiobookStorage.ensurePersistDir(
+      'srtbook_dbfail',
+    );
+    // cue 先写、行后写：行写失败时 cue 必须跟着回滚。
+    await db.customStatement(
+      'CREATE TRIGGER fail_srt_write BEFORE UPDATE ON srt_books '
+      "BEGIN SELECT RAISE(ABORT, 'injected'); END",
+    );
+    final File newSrt = writeSubtitle('next.srt', <(String, String, String)>[
+      ('00:00:03,000', '00:00:04,000', '新句一'),
+    ]);
+
+    await expectLater(
+      reimportSrtBook(
+        db: db,
+        repo: repo,
+        uid: 'srtbook_dbfail',
+        subtitlePath: newSrt.path,
+      ),
+      throwsA(anything),
+    );
+
+    await db.customStatement('DROP TRIGGER fail_srt_write');
+    expect(persistedNames(dir), <String>['seed.srt']);
+    expect((await repo.findByUid('srtbook_dbfail'))!.srtPath, before.srtPath);
+    expect(
+      (await repo.cuesFor('srtbook_dbfail')).map((AudioCue c) => c.text),
+      <String>['旧句一'],
+    );
   });
 }

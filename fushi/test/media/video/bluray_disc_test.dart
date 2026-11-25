@@ -106,6 +106,59 @@ void main() {
       ]);
     });
 
+    test('菜单背景循环不是标题：总时长再长也不能顶掉正片（BUG-4697）', () {
+      // 用户盘实测（《魔女の旅々》BD 上巻）：00001 是 6 集串起来的正片 143 分钟，
+      // 00008 是菜单背景 3.6 分钟 × 149 次 = 540 分钟。修前 00008 成了最长标题，
+      // 正片被特典划分挤出刮削计划。
+      final List<BlurayTitle> titles = select(<BlurayPlaylist>[
+        _make('00001', <(String, int)>[
+          for (int i = 3; i <= 8; i++) ('0000$i', 1430),
+        ]),
+        _make('00002', <(String, int)>[('00016', 90)]),
+        _make('00008', <(String, int)>[
+          ('00009', 216),
+          for (int i = 0; i < 149; i++) ('00010', 216),
+        ]),
+      ]);
+
+      expect(titles.map((BlurayTitle t) => t.playlist.id), <String>['00001']);
+      expect(titles.single.name, 'Show');
+      expect(titles.single.isMainFeature, isTrue);
+    });
+
+    test('每集前复用同一段 OP 的「全部播放」不是菜单循环', () {
+      final BlurayPlaylist playAll = _make('00001', <(String, int)>[
+        for (int i = 1; i <= 6; i++) ...<(String, int)>[
+          ('00020', 90),
+          ('0001$i', 1350),
+        ],
+      ]);
+      expect(isBlurayMenuLoop(playAll), isFalse);
+      expect(select(<BlurayPlaylist>[playAll]), hasLength(1));
+    });
+
+    test('串着几集的播放列表判剧集形状，单段正片 + 片尾不是', () {
+      expect(
+        blurayPlaylistLooksEpisodic(
+          _make('00001', <(String, int)>[
+            for (int i = 3; i <= 8; i++) ('0000$i', i.isEven ? 1440 : 1422),
+          ]),
+        ),
+        isTrue,
+      );
+      // 《特別編 響け！ユーフォニアム》：57 分钟正片 + 两段不到一分钟的片尾。
+      expect(
+        blurayPlaylistLooksEpisodic(
+          _make('00001', <(String, int)>[
+            ('00001', 3432),
+            ('00002', 48),
+            ('00003', 24),
+          ]),
+        ),
+        isFalse,
+      );
+    });
+
     test('play-all 多含一段各集里没有的过场时 ⑤ 漏网：⑥ 不能拿它当锚砍掉各集', () {
       // 8 集 × 24 min，play-all 把 8 集 + 一段 90 s 的 NCOP 串起来；NCOP 没有自己的
       // 播放列表。⑤ 的「恰好等于并集」放过 play-all；若 ⑥ 以它（3.2 h）为锚，

@@ -419,11 +419,20 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
 /// 以 [targetWidth]（合集卡目标宽）为基准算响应式列数（floor→卡只会比目标更宽不
 /// 会更窄），返回列数 + 两处共用的**实际卡宽**：网格 FixedCrossAxisCount 的 cell
 /// 宽与行内 SizedBox 宽取同一值，散卡与合集成员卡逐像素同尺寸。
+///
+/// [fixedColumns]：库页「每行数量」里用户定的列数（null = 自动按 [targetWidth]
+/// 算）。定了列数时卡宽由可用宽平分，[targetWidth] 不再参与。
 ({int columns, double cardWidth}) unifiedShelfCardLayout({
   required double availableWidth,
   required double targetWidth,
   double spacing = 12,
+  int? fixedColumns,
 }) {
+  if (fixedColumns != null && fixedColumns > 0 && availableWidth > 0) {
+    final double cardWidth =
+        (availableWidth - (fixedColumns - 1) * spacing) / fixedColumns;
+    return (columns: fixedColumns, cardWidth: cardWidth > 1 ? cardWidth : 1);
+  }
   if (availableWidth <= 0 || targetWidth <= 0) {
     return (columns: 1, cardWidth: targetWidth > 0 ? targetWidth : 1);
   }
@@ -432,4 +441,28 @@ class _CollectionShelfRowState extends State<CollectionShelfRow> {
       .clamp(1, 1 << 10);
   final double cardWidth = (availableWidth - (columns - 1) * spacing) / columns;
   return (columns: columns, cardWidth: cardWidth);
+}
+
+/// 书架 / 漫画库网格（格子之间无间距、卡片自带内边距）的列数与格宽。
+///
+/// 网格左右各缩 [gridInset] 只为封面外缘对齐顶栏，**不参与自动列数**：自动列数
+/// 按整个 [contentWidth] 算，格宽 = 内缩后的宽 ÷ 列数（BUG-4219：内缩一度也算进
+/// 列数，360dp 手机 80% 缩放从 3 列掉成 2 列）。[fixedColumns] 见
+/// [unifiedShelfCardLayout]。
+({int columns, double cardWidth}) shelfGridCardLayout({
+  required double contentWidth,
+  required double gridInset,
+  required double targetWidth,
+  int? fixedColumns,
+}) {
+  final int columns = (fixedColumns != null && fixedColumns > 0)
+      ? fixedColumns
+      : unifiedShelfCardLayout(
+          availableWidth: contentWidth,
+          targetWidth: targetWidth,
+          spacing: 0,
+        ).columns;
+  final double gridWidth = contentWidth - gridInset * 2;
+  final double cardWidth = gridWidth / columns;
+  return (columns: columns, cardWidth: cardWidth > 1 ? cardWidth : 1);
 }

@@ -13,6 +13,8 @@ import 'package:fushi_engine/media/torrent/video_resource_provider.dart'
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart'
     show VideoMetadataLookup;
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart'
+    show kSourcelessLocalVideoScrapeScopeId, sourcelessLocalVideoScrapeScope;
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart'
     show VideoSourceScrapeWork;
@@ -122,6 +124,10 @@ void main() {
       expect(
         first('POST', '/api/admin/video/scrape/cancel')?.pattern,
         '/api/admin/video/scrape/cancel',
+      );
+      expect(
+        first('POST', '/api/admin/video/relations/refresh')?.pattern,
+        '/api/admin/video/relations/refresh',
       );
       expect(
         first('GET', '/api/admin/video/discovery/works/vw3/resources')?.pattern,
@@ -271,6 +277,39 @@ void main() {
     });
   });
 
+  test('补齐系列关系 JSON：有 TMDB 时带 tmdb 计数，没配时不带', () {
+    expect(
+      videoSeriesRelationRefreshJson((
+        tmdb: (missing: 29, refreshed: 28, requests: 5, failed: 1),
+        backfill: (works: 40, worksWithRelations: 28, rows: 56, bound: 2),
+      )),
+      <String, Object?>{
+        'tmdb': <String, Object?>{
+          'missing': 29,
+          'refreshed': 28,
+          'requests': 5,
+          'failed': 1,
+        },
+        'works': 40,
+        'worksWithRelations': 28,
+        'rows': 56,
+        'bound': 2,
+      },
+    );
+    expect(
+      videoSeriesRelationRefreshJson((
+        tmdb: null,
+        backfill: (works: 3, worksWithRelations: 1, rows: 2, bound: 0),
+      )),
+      <String, Object?>{
+        'works': 3,
+        'worksWithRelations': 1,
+        'rows': 2,
+        'bound': 0,
+      },
+    );
+  });
+
   test('刮削报告 JSON 带计数与问题原文', () {
     const SourceScrapeReport report = SourceScrapeReport(
       sourceIds: <int>[1],
@@ -286,6 +325,27 @@ void main() {
     expect(json['failedWorks'], 1);
     expect(json['errors'], <Object?>[
       <String, Object?>{'work': 'W', 'message': 'boom', 'workId': 'book:x'},
+    ]);
+  });
+
+  test('刮削报告 JSON 给范围级问题带结构化 scope，作品级问题不带', () {
+    final SourceScrapeReport report = SourceScrapeReport(
+      sourceIds: const <int>[kSourcelessLocalVideoScrapeScopeId],
+      errors: <SourceScrapeIssue>[
+        SourceScrapeIssue.scope(
+          sourcelessLocalVideoScrapeScope,
+          message: 'no provider',
+        ),
+        const SourceScrapeIssue(workTitle: 'W', message: 'boom'),
+      ],
+    );
+    expect(ctlVideoReportJson(report)['errors'], <Object?>[
+      <String, Object?>{
+        'work': '',
+        'message': 'no provider',
+        'scope': kSourcelessLocalVideoScrapeScopeId,
+      },
+      <String, Object?>{'work': 'W', 'message': 'boom'},
     ]);
   });
 
@@ -354,6 +414,7 @@ void main() {
       recursive: true,
       videoGroupingMode: 'series',
       isPrivate: false,
+      autoScan: false,
       configJson: null,
       mediaCount: 0,
       lastScannedAt: null,

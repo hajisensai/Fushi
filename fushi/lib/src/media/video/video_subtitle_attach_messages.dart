@@ -35,6 +35,8 @@ String _cueFailureMessage(SubtitleCueLoadFailure failure, String label) {
       // 拖进来的扩展名不在 srt/ass/ssa/vtt 里——这句比「无法加载」更能指路。
       return t.video_subtitle_import_unsupported;
     case SubtitleCueLoadFailure.extractionFailed:
+    case SubtitleCueLoadFailure.extractionStalled:
+    case SubtitleCueLoadFailure.extractionCancelled:
       // 挂载路径永远是外挂文件，不经 ffmpeg 抽取；列在这里只为穷尽 switch，
       // 将来分类扩展时编译器会逼着重新决策。
       return t.video_subtitle_load_failed(label: label);

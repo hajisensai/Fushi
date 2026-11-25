@@ -103,51 +103,75 @@ void main() {
     });
   });
 
-  group('resolveVideoOnlineMiningMode', () {
-    VideoOnlineMiningMode resolve(
+  group('resolveVideoMineDispatch（反馈 OeS0m8tLHc：弹窗不陪等）', () {
+    VideoMineDispatch resolve(
       String? source, {
       VideoOnlineMiningMode preferred = VideoOnlineMiningMode.deferred,
       bool overwrite = false,
       bool review = false,
-    }) => resolveVideoOnlineMiningMode(
+      bool awaitLocal = false,
+    }) => resolveVideoMineDispatch(
       preferred: preferred,
       mediaSource: source,
       overwrite: overwrite,
       sourceReview: review,
+      awaitLocalLanding: awaitLocal,
     );
 
-    test('网络流按偏好', () {
+    test('网络流按偏好走（后台 / 看完再制）', () {
       expect(
         resolve('https://emby/Videos/1/stream'),
-        VideoOnlineMiningMode.deferred,
+        VideoMineDispatch.deferred,
       );
       expect(
         resolve(
           'http://127.0.0.1:1234/relay',
           preferred: VideoOnlineMiningMode.background,
         ),
-        VideoOnlineMiningMode.background,
+        VideoMineDispatch.background,
       );
     });
 
-    test('本地文件 / 无源恒等待（本来就秒出，保留最新可改）', () {
-      expect(resolve(r'D:\anime\01.mkv'), VideoOnlineMiningMode.wait);
-      expect(resolve('file:///anime/01.mkv'), VideoOnlineMiningMode.wait);
-      expect(resolve(null), VideoOnlineMiningMode.wait);
+    test('查词弹窗制卡：本地文件 / 无源也走后台，弹窗不等卡落地', () {
+      expect(resolve(r'D:\anime\01.mkv'), VideoMineDispatch.background);
+      expect(resolve('file:///anime/01.mkv'), VideoMineDispatch.background);
+      expect(resolve(null), VideoMineDispatch.background);
+    });
+
+    test('本地视频不吃「看完再制卡」偏好（那档只管在线视频）', () {
+      expect(
+        resolve(r'D:\anime\01.mkv', preferred: VideoOnlineMiningMode.deferred),
+        VideoMineDispatch.background,
+      );
+    });
+
+    test('遥控制卡（要真实结局）：本地等落地，网络流仍按偏好', () {
+      expect(
+        resolve(r'D:\anime\01.mkv', awaitLocal: true),
+        VideoMineDispatch.awaitLanding,
+      );
+      expect(
+        resolve('https://emby/x', awaitLocal: true),
+        VideoMineDispatch.deferred,
+      );
     });
 
     test('覆盖已有卡 / 回看会话恒等待', () {
       expect(
         resolve('https://emby/x', overwrite: true),
-        VideoOnlineMiningMode.wait,
+        VideoMineDispatch.awaitLanding,
       );
       expect(
         resolve('https://emby/x', review: true),
-        VideoOnlineMiningMode.wait,
+        VideoMineDispatch.awaitLanding,
+      );
+      expect(
+        resolve(r'D:\anime\01.mkv', overwrite: true),
+        VideoMineDispatch.awaitLanding,
       );
     });
 
-    test('偏好解析：未知值回退后台', () {
+    test('偏好解析：未知值与已删除的 wait 档都回退后台', () {
       expect(
         VideoOnlineMiningMode.fromWireName(null),
         VideoOnlineMiningMode.background,
@@ -157,8 +181,18 @@ void main() {
         VideoOnlineMiningMode.background,
       );
       expect(
+        VideoOnlineMiningMode.fromWireName('wait'),
+        VideoOnlineMiningMode.background,
+      );
+      expect(
         VideoOnlineMiningMode.fromWireName('deferred'),
         VideoOnlineMiningMode.deferred,
+      );
+      expect(
+        VideoOnlineMiningMode.values.map(
+          (VideoOnlineMiningMode m) => m.wireName,
+        ),
+        <String>['background', 'deferred'],
       );
     });
   });

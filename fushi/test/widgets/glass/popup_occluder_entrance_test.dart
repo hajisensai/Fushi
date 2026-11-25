@@ -68,7 +68,21 @@ class _HostState extends State<_Host> {
   }
 }
 
+/// 下层里「真的在挖洞」的 [ClipPath]：有 clipper 且推裁剪层。
+///
+/// [PopupOccluderClip] 恒包一层 [ClipPath]（BUG-4230 / 5hnsRtTrQj：平台视图上方的
+/// 祖先结构必须恒定），不裁时 clipper 为 null + [Clip.none]——绘制直接 paintChild、
+/// 命中不受限，等于没有这一层。所以「被挖洞」判的是这层是否生效，不是它在不在。
 Finder _lowerClip() => find.descendant(
+  of: find.byKey(ObjectKey(_lower)),
+  matching: find.byWidgetPredicate(
+    (Widget w) =>
+        w is ClipPath && w.clipper != null && w.clipBehavior != Clip.none,
+  ),
+);
+
+/// 下层的 [ClipPath] 包装本身：整个过程恒为一个，不随 occluders 翻转增删。
+Finder _lowerClipWrapper() => find.descendant(
   of: find.byKey(ObjectKey(_lower)),
   matching: find.byType(ClipPath),
 );
@@ -100,6 +114,7 @@ void main() {
       expect(_lower.entranceSettled, isTrue);
       expect(upper.entranceSettled, isFalse);
       expect(_lowerClip(), findsNothing);
+      expect(_lowerClipWrapper(), findsOneWidget);
 
       // 嵌套查词：上层翻可见，开始从 0 淡入。
       upper.visible = true;
@@ -122,6 +137,7 @@ void main() {
       );
       // 关键断言：上层还半透明时，下层不得被挖洞（否则洞口直接露出视频）。
       expect(_lowerClip(), findsNothing);
+      expect(_lowerClipWrapper(), findsOneWidget);
 
       // 淡入走完 → 回报 settled → 下层才裁掉被盖住的部分（玻璃叠玻璃修正照常生效）。
       await tester.pumpAndSettle();
@@ -133,6 +149,7 @@ void main() {
       hostKey.currentState!.rebuild();
       await tester.pump();
       expect(_lowerClip(), findsNothing);
+      expect(_lowerClipWrapper(), findsOneWidget);
       await tester.pumpAndSettle();
       expect(upper.entranceSettled, isFalse);
     },

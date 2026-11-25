@@ -276,3 +276,19 @@ Future<int> applyAdoptedSettings(
   }
   return changed;
 }
+
+/// 本机快照相对上一份已发布快照新增 / 改了值的设置项数（BUG-4501，手动同步摘要的
+/// 「↑N 项设置」）。[adopted] 是本轮刚从对端采纳的 key：它们只是把合并结果回写进本机
+/// 快照，不是本机发出的变更，不计数。
+int countOutgoingSettingChanges({
+  required Map<String, PortableSettingValue> previous,
+  required Map<String, PortableSettingValue> current,
+  required Set<String> adopted,
+}) {
+  int n = 0;
+  current.forEach((String k, PortableSettingValue v) {
+    if (adopted.contains(k)) return;
+    if (previous[k]?.value != v.value) n++;
+  });
+  return n;
+}

@@ -10,6 +10,7 @@ import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// BUG-2959：互联端口被占时 `start()` 抛 [SyncServerPortInUseException]，但在它之前
 /// 已经起来的下载管线（含订阅检查）没人收回；CLI 随即关库，在途的订阅事务撞上已关
@@ -43,6 +44,7 @@ void main() {
         );
     final ServerPrefs prefs = ServerPrefs(db);
     final HeadlessHost host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: ServerPaths(config.dataDir),
       db: db,

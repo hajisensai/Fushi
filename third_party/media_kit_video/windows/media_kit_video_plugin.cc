@@ -175,8 +175,18 @@ void MediaKitVideoPlugin::HandleMethodCall(
     auto handle =
         std::get<std::string>(arguments[flutter::EncodableValue("handle")]);
     auto handle_value = static_cast<int64_t>(std::stoll(handle.c_str()));
-    video_output_manager_->Dispose(handle_value);
-    result->Success(flutter::EncodableValue(std::monostate{}));
+    // FUSHI FORK (BUG-4339): reply only once the |VideoOutput| (and with it
+    // libmpv's render context) is gone. |Player.dispose| awaits this reply
+    // before it schedules |mpv_terminate_destroy|; replying up front left the
+    // order to a 5 s timer, and libmpv aborts the process when the core is
+    // destroyed while a render context is still alive.
+    std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>
+        shared_result(std::move(result));
+    video_output_manager_->Dispose(handle_value, [this, shared_result]() {
+      RunOnMainThread([shared_result]() {
+        shared_result->Success(flutter::EncodableValue(std::monostate{}));
+      });
+    });
   } else if (method_call.method_name().compare("VideoOutputManager.SetSize") ==
              0) {
     auto arguments = std::get<flutter::EncodableMap>(*method_call.arguments());
@@ -221,6 +231,33 @@ void MediaKitVideoPlugin::HandleMethodCall(
                 shared_result->Success(flutter::EncodableValue(active));
               });
         });
+  } else if (method_call.method_name().compare(
+                 "VideoOutputManager.FrameStats") == 0) {
+    // FUSHI FORK (BUG-5200): cumulative presentation counters, or null when
+    // the output is gone / busy (never blocks the platform thread).
+    auto arguments = std::get<flutter::EncodableMap>(*method_call.arguments());
+    auto handle =
+        std::get<std::string>(arguments[flutter::EncodableValue("handle")]);
+    auto handle_value = static_cast<int64_t>(std::stoll(handle.c_str()));
+    auto stats = video_output_manager_->FrameStats(handle_value);
+    if (!stats.has_value()) {
+      result->Success(flutter::EncodableValue(std::monostate{}));
+    } else {
+      result->Success(flutter::EncodableValue(flutter::EncodableMap{
+          {flutter::EncodableValue("published"),
+           flutter::EncodableValue(static_cast<int64_t>(stats->published))},
+          {flutter::EncodableValue("shown"),
+           flutter::EncodableValue(static_cast<int64_t>(stats->shown))},
+          {flutter::EncodableValue("lost"),
+           flutter::EncodableValue(static_cast<int64_t>(stats->lost))},
+          {flutter::EncodableValue("latencySumUs"),
+           flutter::EncodableValue(
+               static_cast<int64_t>(stats->latency_sum_us))},
+          {flutter::EncodableValue("latencyMaxUs"),
+           flutter::EncodableValue(
+               static_cast<int64_t>(stats->latency_max_us))},
+      }));
+    }
   } else if (method_call.method_name().compare("Utils.EnterNativeFullscreen") ==
              0) {
     auto window =

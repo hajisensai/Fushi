@@ -88,6 +88,14 @@ void main() {
       // 它挂在首页键事件节点之下、先于 home 页的 _executeShortcutAction，库页
       // 之外 home 解析到它时返回 ignored 冒泡——与 globalExternalLookup 同类。
       'lib/src/pages/shared/fushi_header_search_keys.dart',
+      // libraryGridZoomIn / Out（库页网格每行个数，2026-11-24 方案 C）的执行体：
+      // 库页网格外的 LibraryGridZoom 读注册表里本动作的绑定、命中即调列数；与
+      // librarySearch 同类，挂在首页键事件节点之下、先于 home 页派发。
+      'lib/src/pages/implementations/library_layout/library_grid_zoom.dart',
+      // musicRecommendRefresh（音乐推荐页重载全部来源，2026-11-24 Apple 方案 A）
+      // 的执行体：推荐页 Apple 布局的键事件节点读注册表里本动作的绑定、命中即刷新；
+      // 与 libraryGridZoomIn 同类，挂在首页键事件节点之下、先于 home 页派发。
+      'lib/src/pages/implementations/music/apple/apple_music_recommend_layout.part.dart',
       // app 内浏览器（webBrowser scope）：页面键事件节点
       // `resolveKeyboard(event, scope: ShortcutScope.webBrowser)` 后按动作派发
       // （新建 / 关闭标签页、地址栏、页内查找、缩放…），未命中再兜底 universal。
@@ -97,6 +105,9 @@ void main() {
       // SRS 复习页（ShortcutScope.srsReview）的执行体：_onKey / 卡面键盘桥 /
       // _handleGamepadButton → _executeShortcut。
       'lib/src/pages/implementations/srs/srs_review_page.dart',
+      // 手柄查词模式（ShortcutScope.controllerLookup）的执行体：模式激活时
+      // `resolveGamepad(scope: controllerLookup)` → `_runAction`。
+      'lib/src/second_screen/input/controller_lookup_mode.dart',
     ];
 
     final StringBuffer corpus = StringBuffer();

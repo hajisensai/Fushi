@@ -118,7 +118,8 @@ class FushiPairLink {
 }
 
 /// host 签发的一次性配对票据：屏上显示二维码 = 用户已批准；[secret] 代替 PIN 进
-/// HMAC（128+ bit，不可爆破），过期或配对成功即作废。
+/// HMAC（24 字节 = 192 bit 随机数，见 `FushiPairingProtocol.generateNonce`，不可
+/// 爆破），过期或配对成功即作废。
 class FushiPairTicket {
   const FushiPairTicket({
     required this.id,

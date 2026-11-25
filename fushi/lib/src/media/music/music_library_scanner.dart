@@ -18,7 +18,10 @@ import 'package:fushi_music/fushi_music.dart';
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/music/disc/music_disc_import.dart';
+import 'package:fushi/src/media/music/music_local_playlists.dart';
 import 'package:fushi/src/media/source_library/source_file_system.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kMusicScanParserRevisionPrefKeyPrefix;
 import 'package:fushi/src/storage/app_paths.dart';
 
 /// 音乐来源扫描完一次后的装配点（AppModel 接到后台响度扫描，设计 §7.3）。
@@ -32,6 +35,7 @@ class MusicScanSummary {
     required this.unchangedFileCount,
     required this.removedTrackCount,
     required this.errors,
+    this.importedPlaylistCount = 0,
   });
 
   /// 扫描后本来源的在库曲目数。
@@ -48,6 +52,9 @@ class MusicScanSummary {
 
   /// 读不了的文件 / 目录（路径 → 原因）。
   final List<MusicScanError> errors;
+
+  /// 本次新导入的播放列表文件数（`.m3u` / `.m3u8`，见 music_local_playlists.dart）。
+  final int importedPlaylistCount;
 
   /// 给来源行 `lastScanError` 的摘要；全部成功为 null。
   String? get errorSummary => errors.isEmpty
@@ -255,6 +262,10 @@ String _imageExtensionOf(Uint8List b) {
 typedef MusicDiscRegistrar =
     Future<Map<String, String>> Function(String root, {bool recursive});
 
+/// 播放列表文件字节 → 条目（真 app = Rust [parseMusicPlaylistFile]；测试注入替身）。
+typedef MusicPlaylistParser =
+    MusicPlaylistFile Function(Uint8List bytes, {String? baseDir});
+
 class MusicLibraryScanner {
   MusicLibraryScanner(
     this._db, {
@@ -262,7 +273,11 @@ class MusicLibraryScanner {
     MusicDiscRegistrar? discRegistrar,
     MusicListingScanner? listingScanner,
     Future<Directory> Function()? coverDirectory,
-  }) : _scanner = scanner ?? _nativeScanner,
+    MusicPlaylistParser? playlistParser,
+    int Function()? parserRevision,
+  }) : _playlistParser = playlistParser ?? parseMusicPlaylistFile,
+       _parserRevision = parserRevision ?? musicScanParserRevision,
+       _scanner = scanner ?? _nativeScanner,
        _discRegistrar =
            discRegistrar ?? MusicDiscImportService(_db).registerDiscsUnder,
        _listingScanner = listingScanner ?? _nativeListingScanner,
@@ -273,6 +288,10 @@ class MusicLibraryScanner {
   final MusicDiscRegistrar _discRegistrar;
   final MusicListingScanner _listingScanner;
   final Future<Directory> Function() _coverDirectory;
+  final MusicPlaylistParser _playlistParser;
+
+  /// Rust 扫描的解析修订号来源（真 app = [musicScanParserRevision]；测试注入替身）。
+  final int Function() _parserRevision;
 
   /// 扫一个**远程**音乐来源（SFTP / WebDAV / AList）：[entries] 是来源访问层列出的条目
   /// （SFTP 已换进 `sftp://` 命名空间，与视频行、播放期解析同一口径），[bytes] 按区间
@@ -294,6 +313,19 @@ class MusicLibraryScanner {
         if (f.path.toLowerCase().endsWith('.cue'))
           f.path: await bytes.readBytes(f.path),
     };
+    // 播放列表文件：Rust 远程游标不认它们，这里读字节、解析、按远程路径拼相对条目。
+    final List<MusicScanPlaylist> playlists = <MusicScanPlaylist>[
+      for (final MusicListedFile f in files)
+        if (_isPlaylistFile(f.path))
+          MusicScanPlaylist(
+            f.path,
+            mtimeMs: f.mtimeMs ?? 0,
+            playlist: resolveRemoteMusicPlaylistEntries(
+              f.path,
+              _playlistParser(await bytes.readBytes(f.path)),
+            ),
+          ),
+    ];
     final Map<String, String> coverCache = <String, String>{};
     Directory? coverDir;
     Future<String> cacheCover(String remotePath, Uint8List data) async {
@@ -339,6 +371,7 @@ class MusicLibraryScanner {
         return coverCache[t.path];
       },
       embeddedCoverReadable: false,
+      extraPlaylists: playlists,
     );
   }
 
@@ -354,15 +387,24 @@ class MusicLibraryScanner {
     Future<void> Function(List<MusicScannedTrack> tracks)? prepareBatch,
     String? Function(MusicScannedTrack track)? coverPathOf,
     bool embeddedCoverReadable = true,
+    List<MusicScanPlaylist> extraPlaylists = const <MusicScanPlaylist>[],
   }) async {
     final List<({String path, int mtimeAt, int size, String trackUid})> known =
         await _db.musicTrackFilesOfSource(sourceId);
-    final Map<String, ({int mtimeMs, int size})> knownFiles =
-        <String, ({int mtimeMs, int size})>{
-          for (final ({String path, int mtimeAt, int size, String trackUid}) k
-              in known)
-            k.path: (mtimeMs: k.mtimeAt, size: k.size),
-        };
+    // 解析修订号变了（或这个来源从没按当前修订号全量解析过）就不传已知文件：mtime / size
+    // 没变的文件也整源重新解析，解析改动（BUG-4493 合写署名拆分等）才落得到存量曲目上——
+    // writeMusicScanBatch 按曲目重写 music_track_credits。扫完才记新值，中途失败下次照样全量。
+    final String revision = '${_parserRevision()}';
+    final String revisionKey =
+        '$kMusicScanParserRevisionPrefKeyPrefix$sourceId';
+    final bool reparseAll = await _db.getPref(revisionKey) != revision;
+    final Map<String, ({int mtimeMs, int size})> knownFiles = reparseAll
+        ? <String, ({int mtimeMs, int size})>{}
+        : <String, ({int mtimeMs, int size})>{
+            for (final ({String path, int mtimeAt, int size, String trackUid}) k
+                in known)
+              k.path: (mtimeMs: k.mtimeAt, size: k.size),
+          };
     // Rust 把「没变」的文件按它的统一拼法报回来，库里存的可能是旧版本的混合分隔符
     // 写法：按路径键（[musicTrackPathKey]）对，不按原文对，否则没变的曲目全被当成消失。
     final Map<String, List<String>> uidsByPath = <String, List<String>>{};
@@ -375,6 +417,9 @@ class MusicLibraryScanner {
 
     final Set<String> seen = <String>{};
     final List<MusicScanError> errors = <MusicScanError>[];
+    final List<MusicScanPlaylist> playlists = <MusicScanPlaylist>[
+      ...extraPlaylists,
+    ];
     int parsed = 0;
     int unchanged = 0;
     final int now = DateTime.now().millisecondsSinceEpoch;
@@ -394,6 +439,8 @@ class MusicLibraryScanner {
           case MusicScanCover():
             // 远程曲目的内嵌封面：本地扫描不会产出这种记录（封面之后按路径现读）。
             await onCover?.call(r);
+          case MusicScanPlaylist():
+            playlists.add(r);
         }
       }
       if (tracks.isNotEmpty) {
@@ -419,13 +466,59 @@ class MusicLibraryScanner {
       seenTrackUids: seen,
       deletedAt: DateTime.now().millisecondsSinceEpoch,
     );
+    // 同一张 CD 只有部分曲目写了专辑艺人时的「同目录同名」并回一张（BUG-5164）不在这里
+    // 整源再做：writeMusicScanBatch / softDeleteMissingMusicTracks 各自在同一事务里只对
+    // 改动到的目录重算（HBK-AUDIT-027），零变化的增量扫描不读任何归组数据。
+    if (reparseAll) await _db.setPref(revisionKey, revision);
+    final int imported = await _importPlaylists(playlists, errors);
     return MusicScanSummary(
       trackCount: seen.length,
       parsedTrackCount: parsed,
       unchangedFileCount: unchanged,
       removedTrackCount: removed,
       errors: errors,
+      importedPlaylistCount: imported,
     );
+  }
+
+  static bool _isPlaylistFile(String path) {
+    final int dot = path.lastIndexOf('.');
+    return dot >= 0 &&
+        kMusicPlaylistFileExtensions.contains(
+          path.substring(dot + 1).toLowerCase(),
+        );
+  }
+
+  /// 曲目落库之后再导入本次见到的播放列表文件（条目要对上刚扫进来的曲目）。导入过的文件
+  /// 跳过；一条都没对上的不建歌单，下次扫描再试。单份列表出错记进 [errors]，不影响其余。
+  Future<int> _importPlaylists(
+    List<MusicScanPlaylist> playlists,
+    List<MusicScanError> errors,
+  ) async {
+    if (playlists.isEmpty) return 0;
+    final List<MusicTrackRow> library = await _db.listMusicTracks();
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    int imported = 0;
+    for (final MusicScanPlaylist pl in playlists) {
+      try {
+        final ({
+          MusicPlaylistImportOutcome outcome,
+          String playlistUid,
+          int matched,
+        })
+        r = await importMusicPlaylistFile(
+          _db,
+          path: pl.path,
+          file: pl.playlist,
+          now: now,
+          libraryTracks: library,
+        );
+        if (r.outcome == MusicPlaylistImportOutcome.imported) imported++;
+      } on Object catch (e) {
+        errors.add(MusicScanError(pl.path, '$e'));
+      }
+    }
+    return imported;
   }
 
   /// 扫一个音乐来源（本地目录）。原生库缺失（[FushiMusicUnavailableError]）与根不可读
@@ -455,6 +548,7 @@ class MusicLibraryScanner {
       unchangedFileCount: summary.unchangedFileCount,
       removedTrackCount: summary.removedTrackCount,
       errors: <MusicScanError>[...summary.errors, ...discErrors],
+      importedPlaylistCount: summary.importedPlaylistCount,
     );
   }
 }

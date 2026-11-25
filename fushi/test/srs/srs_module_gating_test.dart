@@ -25,7 +25,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/onboarding/onboarding_steps.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/settings/settings_schema_appearance.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/sync/desktop_lookup_service.dart';
 import 'package:fushi/src/utils/misc/update_checker.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -166,8 +166,9 @@ void main() {
 
   group('出厂默认', () {
     test('出厂默认全开（含复习），复习五端都存在（不是商店受限能力）', () {
+      // Media tracking is the one module that is off by default.
       for (final ModuleId m in ModuleId.values) {
-        expect(m.defaultEnabled, isTrue, reason: '$m');
+        expect(m.defaultEnabled, m != ModuleId.tracking, reason: '$m');
       }
       for (final (bool w, bool d, bool i, bool a) p
           in <(bool, bool, bool, bool)>[

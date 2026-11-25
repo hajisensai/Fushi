@@ -75,16 +75,42 @@ void main() {
     });
 
     test('移动端分享失败不得报「已保存」', () {
+      // 交付步抽成小说 / 漫画有声书共用的 audiobook_clip_delivery.dart
+      // （反馈 pZhONQTAap），判据跟着落到那一份上。
+      final String delivery = libFile(
+        'lib/src/media/audiobook/audiobook_clip_delivery.dart',
+      );
       expect(
-        audiobookPart,
+        delivery,
         contains('final bool shared = await FushiShare'),
         reason: '必须消费分享返回值；fire-and-forget 就会弹出假成功',
       );
       expect(
-        audiobookPart,
+        delivery,
         contains('audiobook_export_clip_share_unavailable'),
         reason: '面板没呈现时必须给诚实文案，而不是复用 saved',
       );
+      for (final String caller in <String>[
+        'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
+        'lib/src/media/manga/reader/manga_fushi/read_aloud.part.dart',
+      ]) {
+        final String source = libFile(caller);
+        expect(
+          source,
+          contains('await deliverAudiobookClipVideo('),
+          reason: '$caller 必须走共用交付步，不得另写一份存盘 / 分享',
+        );
+        expect(
+          source,
+          contains('toastAudiobookClipDelivery(delivered)'),
+          reason: '$caller 必须按交付结果给诚实提示',
+        );
+        expect(
+          source,
+          isNot(contains('FushiShare.shareFiles')),
+          reason: '$caller 不得绕过共用交付步自己分享',
+        );
+      }
     });
   });
 

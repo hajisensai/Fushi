@@ -12,6 +12,8 @@ class QbConnectionConfig {
   const QbConnectionConfig({
     this.backend = backendAuto,
     this.baseUrl = '',
+    this.remoteHostId = '',
+    this.remoteHostUrl = '',
     this.username = '',
     this.password = '',
     this.category = 'fushi',
@@ -60,6 +62,10 @@ class QbConnectionConfig {
   /// 后端标识：内置 libtorrent 引擎（见 EmbeddedTorrentHost）。
   static const String backendEmbedded = 'embedded';
 
+  /// 后端标识：借一台已配对 Fushi（互联 host）的 BT 引擎（`/api/torrent-engine`）。
+  /// 本机的下载管线照常跑，只有 BT 在对端；不依赖本平台有没有内置引擎（iOS 也可用）。
+  static const String backendFushiHost = 'fushi_host';
+
   /// 后端标识：自动（默认，开箱即用）——有内置引擎的平台用内置引擎、
   /// 其余平台外接 qb。用户没显式选过后端时的值。
   static const String backendAuto = 'auto';
@@ -87,6 +93,8 @@ class QbConnectionConfig {
   /// 仍是 true、解析结果是 embedded，但宿主 open 失败后运行时仍会按上述 null
   /// 路径回退 qb——行为与 Windows 缺 DLL 完全一致，不是新特例。
   String resolveBackend({required bool embeddedSupported}) {
+    // 互联设备的引擎与本平台能力无关：显式选了就是它。
+    if (backend == backendFushiHost) return backendFushiHost;
     if (!embeddedSupported) return backendQbittorrent;
     if (backend == backendAuto) return backendEmbedded;
     return backend;
@@ -94,6 +102,13 @@ class QbConnectionConfig {
 
   /// WebUI 地址（如 `http://127.0.0.1:8080`）；空 = 未配置。
   final String baseUrl;
+
+  /// [backendFushiHost] 时借用引擎的那台 host 的 hostId（配对时记下的稳定身份；
+  /// 换 IP / 换线路不变）。空 = 老配对条目没有 hostId，按 [remoteHostUrl] 认。
+  final String remoteHostId;
+
+  /// [backendFushiHost] 时那台 host 的持久地址（`fushi_client_urls` 里的一条）。
+  final String remoteHostUrl;
 
   /// WebUI 登录用户名。
   final String username;
@@ -163,11 +178,19 @@ class QbConnectionConfig {
   /// 匿名模式（不在握手/tracker 暴露客户端指纹与本机 IP；会牺牲部分连通性）。
   final bool anonymousMode;
 
-  /// 最大活跃下载数（0 = 引擎默认）。
+  /// 最大活跃下载数（0 = 引擎默认，libtorrent 为 3；[activeLimitUnlimited] =
+  /// 不限）。种子一律 auto-managed，超出名额的下载会被队列管理器挂起（不连
+  /// peer、状态 pausedDL），见 BUG-5160。
   final int maxActiveDownloads;
 
-  /// 最大活跃做种数（0 = 引擎默认）。
+  /// 最大活跃做种数（0 = 引擎默认，libtorrent 为 5；[activeLimitUnlimited] =
+  /// 不限）。
   final int maxActiveSeeds;
+
+  /// [maxActiveDownloads] / [maxActiveSeeds] 的「不限」取值。app 偏好的 codec
+  /// 只收非负数（设置页没有这一档），目前只有无头服务端的
+  /// `torrent.max_active_*` 会写它。
+  static const int activeLimitUnlimited = -1;
 
   /// 最大上传槽位（同时上传的 peer 数，0 = 引擎默认）。
   final int maxUploadSlots;
@@ -196,12 +219,17 @@ class QbConnectionConfig {
 
   /// 是否已配置：内置引擎/自动无需连接参数恒为真（桌面开箱即用）；外接 qb
   /// 要求 [baseUrl] 非空。未配置时下载入队与完成监听均不动作。
-  bool get isConfigured =>
-      backend != backendQbittorrent || baseUrl.trim().isNotEmpty;
+  bool get isConfigured => switch (backend) {
+    backendQbittorrent => baseUrl.trim().isNotEmpty,
+    backendFushiHost => remoteHostUrl.trim().isNotEmpty,
+    _ => true,
+  };
 
   QbConnectionConfig copyWith({
     String? backend,
     String? baseUrl,
+    String? remoteHostId,
+    String? remoteHostUrl,
     String? username,
     String? password,
     String? category,
@@ -234,6 +262,8 @@ class QbConnectionConfig {
     return QbConnectionConfig(
       backend: backend ?? this.backend,
       baseUrl: baseUrl ?? this.baseUrl,
+      remoteHostId: remoteHostId ?? this.remoteHostId,
+      remoteHostUrl: remoteHostUrl ?? this.remoteHostUrl,
       username: username ?? this.username,
       password: password ?? this.password,
       category: category ?? this.category,
@@ -283,6 +313,9 @@ String _decodeBackend(Object? raw, String baseUrl) {
   if (raw == QbConnectionConfig.backendAuto) {
     return QbConnectionConfig.backendAuto;
   }
+  if (raw == QbConnectionConfig.backendFushiHost) {
+    return QbConnectionConfig.backendFushiHost;
+  }
   return baseUrl.trim().isNotEmpty
       ? QbConnectionConfig.backendQbittorrent
       : QbConnectionConfig.backendAuto;
@@ -324,6 +357,12 @@ QbConnectionConfig? decodeQbConnectionConfig(String raw) {
     return QbConnectionConfig(
       backend: _decodeBackend(json['backend'], baseUrl),
       baseUrl: baseUrl,
+      remoteHostId: json['remoteHostId'] is String
+          ? json['remoteHostId'] as String
+          : '',
+      remoteHostUrl: json['remoteHostUrl'] is String
+          ? json['remoteHostUrl'] as String
+          : '',
       username: json['username'] is String ? json['username'] as String : '',
       password: json['password'] is String ? json['password'] as String : '',
       category: category is String && category.isNotEmpty
@@ -386,6 +425,8 @@ String encodeQbConnectionConfig(QbConnectionConfig config) {
   return jsonEncode(<String, dynamic>{
     'backend': config.backend,
     'baseUrl': config.baseUrl,
+    'remoteHostId': config.remoteHostId,
+    'remoteHostUrl': config.remoteHostUrl,
     'username': config.username,
     'password': config.password,
     'category': config.category,

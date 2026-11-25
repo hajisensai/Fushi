@@ -82,6 +82,7 @@ void main() {
           onRename: (SrsDeviceView _) {},
           onRetire: (SrsDeviceView _) {},
           onUnretire: (SrsDeviceView _) {},
+          onReviewTrust: (SrsDeviceView _) {},
         ),
       ),
     );

@@ -324,12 +324,12 @@ void main() {
     setUp(() async {
       spill = await Directory.systemTemp.createTemp('gsc');
     });
-    tearDown(() => GameStreamCompanionPipe.clearSpills(spill));
+    tearDown(() => SecondScreenPipe.clearSpills(spill));
 
     test('a message too big for one Binder transaction crosses as a file, '
         'in order, and the file is removed once read', () async {
       final List<String> wire = <String>[];
-      final GameStreamCompanionPipe sender = GameStreamCompanionPipe(
+      final SecondScreenPipe sender = SecondScreenPipe(
         post: (String raw) async {
           wire.add(raw);
           return true;
@@ -342,10 +342,14 @@ void main() {
       await sender.send(big);
       await sender.send('{"b":2}');
       expect(wire[0], '{"a":1}');
-      expect(wire[1].length, lessThan(big.length));
+      // 线上只走文件引用、不带正文。不比长度：引用里是溢出文件的绝对路径，macOS 的
+      // systemTemp（/var/folders/…/T/）比这 88 个字符的正文还长。
+      expect(wire[1], isNot(contains('猫')));
+      expect(wire[1], startsWith('@file:${spill.path}'));
+      expect(wire[1], endsWith('.json'));
       expect(Directory('${spill.path}/host').listSync(), hasLength(1));
 
-      final GameStreamCompanionPipe receiver = GameStreamCompanionPipe(
+      final SecondScreenPipe receiver = SecondScreenPipe(
         post: (String raw) async => true,
         spillDirectory: Directory('${spill.path}/panel'),
       );
@@ -374,13 +378,13 @@ void main() {
           ),
         ),
       ).encode();
-      expect(reply.length, greaterThan(kGameStreamCompanionInlineMessageUnits));
-      expect(kGameStreamCompanionInlineMessageUnits * 2, lessThan(256 * 1024));
+      expect(reply.length, greaterThan(kSecondScreenInlineMessageUnits));
+      expect(kSecondScreenInlineMessageUnits * 2, lessThan(256 * 1024));
     });
 
     test('a message the relay did not take fails the send and its '
         'request', () async {
-      final GameStreamCompanionPipe pipe = GameStreamCompanionPipe(
+      final SecondScreenPipe pipe = SecondScreenPipe(
         post: (String raw) async => false,
         spillDirectory: spill,
         inlineLimit: 4,
@@ -396,14 +400,14 @@ void main() {
     });
 
     test('clearing the spill root removes unread messages', () async {
-      final GameStreamCompanionPipe pipe = GameStreamCompanionPipe(
+      final SecondScreenPipe pipe = SecondScreenPipe(
         post: (String raw) async => true,
         spillDirectory: Directory('${spill.path}/panel'),
         inlineLimit: 4,
       );
       await pipe.send('{"type":"unread"}');
       expect(Directory('${spill.path}/panel').listSync(), hasLength(1));
-      await GameStreamCompanionPipe.clearSpills(spill);
+      await SecondScreenPipe.clearSpills(spill);
       expect(spill.existsSync(), isFalse);
     });
   });

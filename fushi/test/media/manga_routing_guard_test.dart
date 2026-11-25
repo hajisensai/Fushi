@@ -225,7 +225,13 @@ void main() {
       isTrue,
       reason: '卡图经 coverPath 传**文件路径**（页图本就在盘上）',
     );
-    expect(src.contains('AnkiMiningSource.book'), isTrue);
+    // 反馈 uOanUXUIDt：漫画卡的分类标签是 `manga`，不再沿用书籍的 `book`。
+    expect(
+      src.contains('source: AnkiMiningSource.manga'),
+      isTrue,
+      reason: '漫画制卡必须声明 manga 来源，分类标签才是 manga',
+    );
+    expect(src.contains('AnkiMiningSource.book'), isFalse);
     expect(src.contains('mineEntry('), isTrue);
     expect(
       src.contains('_updateCurrentPageImagePath'),

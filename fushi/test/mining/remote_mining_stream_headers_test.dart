@@ -65,6 +65,7 @@ class _HeaderSpy {
     String audioBitrate = '64k',
     String? tlsPinSha256,
     Map<String, String> httpHeaders = const {},
+    double? gainDb,
   }) async {
     audio = httpHeaders;
     return outputPath;

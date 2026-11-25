@@ -16,6 +16,13 @@ import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart'
     show dbSourcePrefKey, kReaderSourcePersistedKey;
 
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
+    show
+        kPageBackdropLandscapeImagePrefKey,
+        kPageBackdropModuleImagesPrefKey,
+        kPageBackdropPortraitImagePrefKey,
+        kPageBackdropSeedCachePrefKey;
+
 /// 一个持久化字段在数据根迁移里的处置。
 enum PathRebaseKind {
   /// 落在 **documents（内容/书库）根**下的绝对路径 —— 迁移必须 rebase 到新 documents 根。
@@ -271,6 +278,14 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     '<documents>/audiobooks/<hash>/ 下的字幕副本绝对路径。',
   ),
 
+  // ── audio_cues ────────────────────────────────────────────────────
+  PathRebaseColumn(
+    'AudioCues',
+    'tokenTimingJson',
+    PathRebaseKind.notAPath,
+    'v160 逐 token 发射时间 JSON（token 文本 + 相对毫秒偏移），无路径。',
+  ),
+
   // ── srt_books ─────────────────────────────────────────────────────
   PathRebaseColumn(
     'SrtBooks',
@@ -323,10 +338,32 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     '语言代码列表 JSON，无路径。',
   ),
   PathRebaseColumn(
+    'RemoteDictionaryMetadata',
+    'sourceLanguage',
+    PathRebaseKind.notAPath,
+    '服务器托管词典的词头语言（BCP-47 标签），无路径。',
+  ),
+  PathRebaseColumn(
     'DictionaryHistory',
     'resultJson',
     PathRebaseKind.notAPath,
     '查询结果快照 JSON（词条文本），无路径。',
+  ),
+
+  // ── media_tracking_mappings / media_tracking_suggestions（媒体追踪）────
+  PathRebaseColumn(
+    'MediaTrackingMappings',
+    'linkSource',
+    PathRebaseKind.notAPath,
+    'v145 关联来源标记 manual / id / auto / suggestion（TrackingLinkSource），'
+        '不是来源路径。',
+  ),
+  PathRebaseColumn(
+    'MediaTrackingSuggestions',
+    'detailsJson',
+    PathRebaseKind.notAPath,
+    '远端条目事实 JSON（titles / authors / totalChapters / finalVolume / '
+        'finished，见 toDetailsJson），无路径。',
   ),
 
   // ── epub_books ────────────────────────────────────────────────────
@@ -457,6 +494,19 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
   ),
 
   // ── 统计 / 收藏 ────────────────────────────────────────────────────
+  PathRebaseColumn(
+    'FavoriteSentences',
+    'source',
+    PathRebaseKind.notAPath,
+    '收藏来源枚举值（book/video/audiobook/lyrics/game/manga/music/web），不是路径。',
+  ),
+  PathRebaseColumn(
+    'FavoriteSentences',
+    'originSourceId',
+    PathRebaseKind.notAPath,
+    '远端来源身份（v179，`jellyfin:<地址>|<用户>` / `plex:<机器>|<账号>`），'
+        '与 MediaServerConfig.sourceId 同口径，不是本机路径。',
+  ),
   PathRebaseColumn(
     'FavoriteWords',
     'sourceType',
@@ -637,8 +687,53 @@ const List<PathRebaseColumn> kPathRebaseColumns = <PathRebaseColumn>[
     PathRebaseKind.notAPath,
     '来源远程 URL（重下/诊断用），不是本机路径。',
   ),
+  // ── item_scrape_meta / item_images（单本书 / 字幕书 / 游戏刮削资料，v155）──
+  PathRebaseColumn(
+    'ItemScrapeMeta',
+    'source',
+    PathRebaseKind.notAPath,
+    '刮削源名（bangumi / dlsite / vndb / manual …），不是路径。',
+  ),
+  PathRebaseColumn(
+    'ItemScrapeMeta',
+    'tagsJson',
+    PathRebaseKind.notAPath,
+    '标签 JSON 数组，无路径。',
+  ),
+  PathRebaseColumn(
+    'ItemScrapeMeta',
+    'detailUrl',
+    PathRebaseKind.notAPath,
+    '远端条目详情页 URL，不是本机路径。',
+  ),
+  PathRebaseColumn(
+    'ItemImages',
+    'path',
+    PathRebaseKind.documentsRooted,
+    'v161 条目附加图落盘位：<documents>/video_covers/items/（与 media_images '
+        '同目录族）→ 不改写 = 换数据根后书架 / 游戏库系列色块的横版背景全部死链，'
+        '静默退回书封摆法（DataRootMigrator._rebaseItemImages）。',
+  ),
+  PathRebaseColumn(
+    'ItemImages',
+    'sourceUrl',
+    PathRebaseKind.notAPath,
+    '来源远程 URL（重下/诊断用），不是本机路径。',
+  ),
 
   // ── collection_relations（合集相关作品边表，schema v66 / TODO-2484）──
+  PathRebaseColumn(
+    'CollectionRelations',
+    'bookUid',
+    PathRebaseKind.notAPath,
+    'v162 单视频起点的 bookUid 外键，不是路径。',
+  ),
+  PathRebaseColumn(
+    'CollectionRelations',
+    'targetBookUid',
+    PathRebaseKind.notAPath,
+    'v162 已绑定单视频目标的 bookUid 外键，不是路径。',
+  ),
   PathRebaseColumn(
     'CollectionRelations',
     'source',
@@ -1337,6 +1432,13 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
     '用户本机 mpv 着色器目录，外部路径，不随数据根走。',
   ),
   PathRebasePref(
+    'video_subtitle_series_dirs',
+    PathRebaseKind.externalUserPath,
+    PathValueShape.none,
+    '0PZAhFd1RO：按系列记住的字幕文件夹（`{系列键: {dir, template?}}`），dir 是用户'
+        '自己放整季字幕的外部目录，不在 Fushi 数据根下，跟着数据根改写只会把它改坏。',
+  ),
+  PathRebasePref(
     'audiobook_material_dirs',
     PathRebaseKind.externalUserPath,
     PathValueShape.none,
@@ -1381,6 +1483,35 @@ final List<PathRebasePref> kPathRebasePrefs = <PathRebasePref>[
     PathRebaseKind.notAPath,
     PathValueShape.none,
     '旧单库显示名（与 local_audio_db_path 同族），不是路径。',
+  ),
+  // BUG-5370：页面背景图键名不像路径（守卫的 key 正则扫不到），值却曾是
+  // `<support>/page_backdrop/...` 的绝对路径——iOS 更新换容器后整批悬空。现在只存文件名、
+  // 读时按当前目录拼；守卫按 kPageBackdropDeviceLocalPrefKeys 逐个要求在这里登记。
+  // 各配置的停放副本（`<键>::<uid>`）同形同处置。
+  PathRebasePref(
+    kPageBackdropLandscapeImagePrefKey,
+    PathRebaseKind.notAPath,
+    PathValueShape.none,
+    '页面背景横屏图：<support>/page_backdrop 里的文件名，读时按当前目录拼成路径，与根无关。'
+    '早先写下的绝对路径由 ThemeNotifier 载入时按文件名改写（文件在目录里才改）。',
+  ),
+  PathRebasePref(
+    kPageBackdropPortraitImagePrefKey,
+    PathRebaseKind.notAPath,
+    PathValueShape.none,
+    '页面背景竖屏图：同横屏图，存文件名。',
+  ),
+  PathRebasePref(
+    kPageBackdropModuleImagesPrefKey,
+    PathRebaseKind.notAPath,
+    PathValueShape.none,
+    '按模块 / 页面的背景图 JSON（{层级 wire: {landscape, portrait}}），值同横屏图存文件名。',
+  ),
+  PathRebasePref(
+    kPageBackdropSeedCachePrefKey,
+    PathRebaseKind.notAPath,
+    PathValueShape.none,
+    '背景图取色缓存 `<图>|<mtime:size>|<种子>`：图按文件名比对，旧根路径不影响命中。',
   ),
 ];
 

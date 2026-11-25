@@ -9,7 +9,7 @@ import 'package:fushi/i18n/strings.g.dart';
 /// 挡成 declined、看不到新申请框，用户只见「失败」。
 ///
 /// 修复：`_promptPairApproval` 把「先收起旧框再开新框」的取代条件从「仅 lingering(已允许
-/// 常驻 PIN)」扩到「lingering 或**同源(remoteAddress)**」——同一 client 重试即取代滞留的
+/// 常驻 PIN)」扩到「lingering 或**同源**」（同源按 sourceKey 判）——同一 client 重试即取代滞留的
 /// 未决框、重开新框；不同来源仍走防叠弹拒绝（防恶意 peer 顶掉别人正在审批的框）。
 void main() {
   setUp(() {
@@ -51,6 +51,7 @@ void main() {
       deviceName: 'Phone A',
       remoteAddress: '192.168.1.50',
       pinRequired: false,
+      sourceKey: 'ip:192.168.1.50',
     );
     final Future<bool> first = controller.debugPromptPairApproval(firstReq);
     await tester.pump();
@@ -67,6 +68,7 @@ void main() {
       deviceName: 'Phone A (retry)',
       remoteAddress: '192.168.1.50',
       pinRequired: false,
+      sourceKey: 'ip:192.168.1.50',
     );
     final Future<bool> second = controller.debugPromptPairApproval(retryReq);
     await tester.pumpAndSettle();
@@ -104,6 +106,7 @@ void main() {
       deviceName: 'Phone A',
       remoteAddress: '192.168.1.50',
       pinRequired: false,
+      sourceKey: 'ip:192.168.1.50',
     );
     final Future<bool> first = controller.debugPromptPairApproval(reqA);
     await tester.pump();
@@ -114,6 +117,7 @@ void main() {
       deviceName: 'Attacker B',
       remoteAddress: '192.168.1.99',
       pinRequired: false,
+      sourceKey: 'ip:192.168.1.99',
     );
     final Future<bool> second = controller.debugPromptPairApproval(reqB);
     await tester.pump();

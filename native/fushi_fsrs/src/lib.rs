@@ -4,7 +4,7 @@
 //! - 五个平台 + 无头服务端都调这一份 Rust，不维护第二套公式。
 //! - 每个接口带 algorithm（"fsrs6" / "fsrs7"），两种算法编进同一个库。
 //! - 请求 / 响应走 UTF-8 JSON：签名少、Dart 侧不用为每个结构体写 FFI 布局，
-//!   未发版的 fsrs-rs API 变化只影响这一层（Dart 不感知 rev）。
+//!   fsrs-rs 升级带来的 API 变化只影响这一层（Dart 不感知 rev）。
 //! - elapsed 一律是**小数天**（f32）：FSRS-7 的优势来自当天内复习（含当天复习那张表），
 //!   传整数天会把它抹掉（第六轮审查第 12 条）。FSRS-6 在 fsrs-rs 内部按 Anki 口径取整。
 //! - 响应恒为 `{"ok": <结果>}` 或 `{"error": "<原因>"}`；任何 panic 都被接住转成 error，不越过 FFI 边界。
@@ -22,10 +22,20 @@
 //!   ffsrs_memory_input / ffsrs_rwkv_now_rows
 //!   （投影：记忆状态输入、RWKV 此刻行，见 projection.rs；srs.db 直读命令在 store/ffi.rs）/
 //!   ffsrs_boot_time_ms
-//!   （开机时钟：含睡眠、不受改系统时间影响，可信时间按它推算，见 boot_clock.rs）
+//!   （开机时钟：含睡眠、不受改系统时间影响，可信时间按它推算，见 boot_clock.rs）/
+//!   ffsrs_predict_tss / ffsrs_calibration_report
+//!   （复习统计页的校准图与 UM+：FSRS 时间序列切分的留出预测、分箱与自助法区间，见 calibration.rs）
 
+// 让 cargo 的新鲜度指纹带上「这是哪个 worktree」：多个 worktree 共用一个 CARGO_TARGET_DIR 时，没有它会把别的
+// worktree 编出的产物当成本 worktree 的直接用（假绿 / 假红）。值来自仓库根 .cargo/config.toml 的 [env]，不进产物。
+// 每个 native crate 的入口文件都要有这一行（守卫 fushi/test/build/native_crate_worktree_fingerprint_guard_test.dart）。
+const _: Option<&str> = option_env!("FUSHI_WORKTREE_ROOT");
+
+pub mod anki_import_rules;
 pub mod boot_clock;
+pub mod calibration;
 pub mod card_cache;
+pub mod gen4;
 pub mod history;
 pub mod ordering;
 pub mod projection;
@@ -34,6 +44,10 @@ pub mod search;
 pub mod store;
 pub mod style_dedup;
 pub mod sync2;
+pub mod text_import;
+
+/// 协议 4 的规范 ID 与别名规则；Dart 经 `ffsrs_call` 的 `ids` 向它要 ID（见模块说明）。
+pub mod gen4_ids;
 
 use std::ffi::{CStr, CString, c_char};
 use std::io::Read;
@@ -45,17 +59,39 @@ use std::time::Duration;
 
 use fsrs::{
     CombinedProgressState, ComputeParametersInput, ComputeParametersVersion, DEFAULT_PARAMETERS,
-    FSRS, FSRS6_DEFAULT_PARAMETERS, FSRSItem, FSRSReview, MemoryState,
+    FSRS, FSRS6_DEFAULT_PARAMETERS, FSRSError, FSRSItem, FSRSReview, MemoryState,
 };
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 /// C ABI 版本。Dart 侧加载时比对，不一致视为库不可用（不崩）。4：删掉整批搜索语料的 `ffsrs_search_corpus_*` / `ffsrs_search_chunk_*`（L-5）。
 /// 5：`ffsrs_history_select` 列模式每条日志从 3 个串改为 4 个串（多 cardId，`offs` 长 `4n+1`；BUG-4218）。
-pub const ABI_VERSION: i32 = 5;
+/// 6：复习统计页的校准图 / UM+（`ffsrs_predict_tss` / `ffsrs_calibration_report` / `ffsrs_store_calibration_items`）。
+/// 7：删掉 srs.db 只读会话 `ffsrs_store_read_begin` / `_read_query` / `_read_end`（G5：Dart 读 srs.db 只发内核读命令），
+/// `ffsrs_store_diag_counts` 去掉「没结束的只读会话」一项（8 → 7 项）。
+/// 8：SRS 换代（S1）：删掉 `ffsrs_store_open`（按 `srs.db` 路径打开协议 3 的库），换成 `ffsrs_store_open_mode`（按 profile
+/// 目录打开新代库 `srs4.db`，Primary / Secondary，新返回码 `STORE_NOT_MIGRATED` / `STORE_MIGRATING` /
+/// `STORE_LEGACY_UNMIGRATED`）；`ffsrs_store_sync2` 的命令经新代分发器；迁移的全局命令 `gen4_migrate_*` 走 [dispatch]。
+/// 同列车（G7-6）另删协议 1 主库搬迁的 `ffsrs_store_legacy_abort` / `_begin` / `_commit` / `_mark_none` / `_page` /
+/// `_state`（换代后只报 Unwired）；ABI 8 尚未发布（develop 仍是 7），所以不另升 9，verify_abi.sh 下界同步改 35。
+pub const ABI_VERSION: i32 = 8;
 
-/// 钉定的 fsrs-rs 源码版本，写进参数组的 algorithmRev。
-pub const FSRS_RS_REV: &str = "0a5737406a0c5c7a5259b144738cbe4a0b649d76";
+/// 钉定的 fsrs-rs 源码版本，写进参数组的 algorithmRev：crates.io `fsrs = "=7.0.0"` 包内 `.cargo_vcs_info.json`
+/// 记的发布提交（与 GitHub tag v7.0.0 的 `47b8a16f…` 是同父的两个 bump 提交，只差 Cargo.toml / Cargo.lock）。
+/// 升级 fsrs 时改成新包 `.cargo_vcs_info.json` 的提交，并把旧值移进 [`SUPERSEDED_FSRS_RS_REVS`]。
+pub const FSRS_RS_REV: &str = "c114a02fcd3108024e62c2bf8529be4329d7cbb6";
+
+/// 本库取代了的旧 fsrs-rs 源码版本（只增不删）。这些 rev 产出的参数组本机认识：照常参与自动优化，
+/// 不当成「更新版本产出、本机不认识」的参数组（设计稿铁律 F）。
+/// - `0a5737406a0c…`：FSRS-7 发版前钉的 fsrs-rs 主干 git rev（2026-10-14 至 7.0.0）。
+pub const SUPERSEDED_FSRS_RS_REVS: &[&str] = &["0a5737406a0c5c7a5259b144738cbe4a0b649d76"];
+
+/// 本库认识的全部 fsrs-rs 源码版本：当前版本在前，其后是取代了的旧版本。
+fn known_fsrs_rs_revs() -> Vec<&'static str> {
+    std::iter::once(FSRS_RS_REV)
+        .chain(SUPERSEDED_FSRS_RS_REVS.iter().copied())
+        .collect()
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Algorithm {
@@ -113,22 +149,6 @@ impl Memory {
             stability_fast: self.sf.unwrap_or(self.s),
         }
     }
-
-    fn from_fsrs(state: MemoryState) -> Self {
-        Self {
-            s: state.stability,
-            d: state.difficulty,
-            sf: Some(state.stability_fast),
-        }
-    }
-}
-
-#[derive(Debug, Clone, Copy, Deserialize)]
-pub struct Review {
-    pub rating: u32,
-    /// 距上一次评分的天数（小数）；第一条必须为 0。
-    #[serde(rename = "deltaT")]
-    pub delta_t: f32,
 }
 
 /// 优化 / 评估的训练集，打包形态（`ffsrs_fit` 的输入，BUG-3745）。
@@ -259,7 +279,22 @@ fn memory_field(req: &Value, key: &str) -> Result<Option<Memory>, String> {
 fn dispatch(req: &Value) -> Result<Value, String> {
     let op = str_field(req, "op")?;
     match op {
-        "version" => Ok(json!({ "abi": ABI_VERSION, "fsrsRev": FSRS_RS_REV })),
+        "version" => Ok(json!({
+            "abi": ABI_VERSION,
+            "fsrsRev": FSRS_RS_REV,
+            "knownFsrsRevs": known_fsrs_rs_revs(),
+        })),
+        // 根上的 ID 与同步目录名（gen4_ids/derive.rs）。
+        "ids" => gen4_ids::derive::derive(req),
+        // SRS 换代的迁移（store/gen4/kernel.rs `global`）：不针对已打开的库（没迁移的目录根本打不开新代库）。
+        "gen4_migrate_status"
+        | "gen4_migrate_profiles"
+        | "gen4_migrate_run"
+        | "gen4_migrate_cancel"
+        | "gen4_retained_state"
+        | "gen4_retained_delete" => store::gen4::kernel::global(op, req),
+        // 复习卡文本导入（CSV / TSV / TXT）的解析：一次读完整个文件（text_import.rs）。
+        "text_import_parse" => text_import::dispatch(req),
         "defaults" => {
             let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
             Ok(json!({ "params": algorithm.defaults(), "count": algorithm.param_len() }))
@@ -268,62 +303,6 @@ fn dispatch(req: &Value) -> Result<Value, String> {
             let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
             build_model(algorithm, req.get("params"))?;
             Ok(json!(true))
-        }
-        "next_states" => {
-            let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
-            let model = build_model(algorithm, req.get("params"))?;
-            let retention = f32_field(req, "desiredRetention")?;
-            let elapsed = f32_field(req, "elapsedDays").unwrap_or(0.0).max(0.0);
-            let memory = memory_field(req, "memory")?.map(Memory::to_fsrs);
-            let next = model
-                .next_states_with_elapsed_days(memory, retention, elapsed)
-                .map_err(|e| format!("next_states: {e:?}"))?;
-            let item = |s: &fsrs::ItemState| json!({ "memory": Memory::from_fsrs(s.memory), "interval": s.interval });
-            Ok(json!({
-                "again": item(&next.again),
-                "hard": item(&next.hard),
-                "good": item(&next.good),
-                "easy": item(&next.easy),
-            }))
-        }
-        "memory_state" => {
-            // 由历史重建记忆状态（铁律 A ②③）。starting = 锚点换算出的起点（可空 = 新卡）。
-            let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
-            let model = build_model(algorithm, req.get("params"))?;
-            let reviews: Vec<Review> =
-                serde_json::from_value(req.get("reviews").cloned().unwrap_or(Value::Array(vec![])))
-                    .map_err(|e| format!("bad reviews: {e}"))?;
-            let starting = memory_field(req, "starting")?.map(Memory::to_fsrs);
-            if reviews.is_empty() {
-                return Ok(match starting {
-                    Some(s) => json!(Memory::from_fsrs(s)),
-                    None => Value::Null,
-                });
-            }
-            let item = FSRSItem {
-                reviews: reviews
-                    .into_iter()
-                    .map(|r| FSRSReview {
-                        rating: r.rating,
-                        delta_t: r.delta_t,
-                    })
-                    .collect(),
-            };
-            let state = model
-                .memory_state(item, starting)
-                .map_err(|e| format!("memory_state: {e:?}"))?;
-            Ok(json!(Memory::from_fsrs(state)))
-        }
-        "memory_state_from_sm2" => {
-            let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
-            let model = build_model(algorithm, req.get("params"))?;
-            let ease = f32_field(req, "easeFactor")?;
-            let interval = f32_field(req, "interval")?;
-            let retention = f32_field(req, "sm2Retention")?;
-            let state = model
-                .memory_state_from_sm2(ease, interval, retention)
-                .map_err(|e| format!("memory_state_from_sm2: {e:?}"))?;
-            Ok(json!(Memory::from_fsrs(state)))
         }
         "retrievability" => {
             let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
@@ -334,14 +313,6 @@ fn dispatch(req: &Value) -> Result<Value, String> {
             Ok(json!(
                 model.current_retrievability(memory.to_fsrs(), elapsed)
             ))
-        }
-        "next_interval" => {
-            let algorithm = Algorithm::parse(str_field(req, "algorithm")?)?;
-            let model = build_model(algorithm, req.get("params"))?;
-            let retention = f32_field(req, "desiredRetention")?;
-            let memory =
-                memory_field(req, "memory")?.ok_or_else(|| "missing `memory`".to_string())?;
-            Ok(json!(model.next_interval(Some(memory.s), retention, 3)))
         }
         other => Err(format!("unknown op: {other}")),
     }
@@ -392,6 +363,39 @@ pub extern "C" fn ffsrs_call(request: *const c_char) -> *mut c_char {
 /// - `cancel`：调用方持有的 int32，任意线程写非 0 即请求取消；取消后返回 `{"error":"cancelled"}`，不留半成品。
 /// - `progress`：长度 2 的 int64 数组 [已处理, 总数]，参数优化运行中持续写入，可从别的 isolate 读。
 ///   两者都可为空指针，只对 `compute_parameters` 生效。
+/// `ffsrs_fit` / `ffsrs_predict_tss` 共用的训练集入口：校验缓冲指针、按长度切片并整体校验。
+/// 调用方自己的输出缓冲（`out`）由调用方先行检查。
+#[allow(clippy::too_many_arguments)]
+fn training_set_from_raw<'a>(
+    ratings: *const u8,
+    delta_days: *const f32,
+    n_reviews: usize,
+    card_offsets: *const u32,
+    card_ids: *const i64,
+    n_cards: usize,
+    item_cards: *const u32,
+    item_lengths: *const u32,
+    n_items: usize,
+) -> Result<TrainingSet<'a>, String> {
+    if card_offsets.is_null()
+        || item_cards.is_null()
+        || item_lengths.is_null()
+        || (n_reviews > 0 && (ratings.is_null() || delta_days.is_null()))
+    {
+        return Err("null buffer".into());
+    }
+    let set = TrainingSet {
+        ratings: bytes(ratings, n_reviews),
+        delta_days: bytes(delta_days, n_reviews),
+        card_offsets: bytes(card_offsets, n_cards + 1),
+        card_ids: (!card_ids.is_null()).then(|| bytes(card_ids, n_cards)),
+        item_cards: bytes(item_cards, n_items),
+        item_lengths: bytes(item_lengths, n_items),
+    };
+    set.validate()?;
+    Ok(set)
+}
+
 #[no_mangle]
 #[allow(clippy::too_many_arguments)]
 pub extern "C" fn ffsrs_fit(
@@ -417,22 +421,17 @@ pub extern "C" fn ffsrs_fit(
         if n_items == 0 {
             return Err("not enough data".into());
         }
-        if card_offsets.is_null()
-            || item_cards.is_null()
-            || item_lengths.is_null()
-            || (n_reviews > 0 && (ratings.is_null() || delta_days.is_null()))
-        {
-            return Err("null buffer".into());
-        }
-        let set = TrainingSet {
-            ratings: bytes(ratings, n_reviews),
-            delta_days: bytes(delta_days, n_reviews),
-            card_offsets: bytes(card_offsets, n_cards + 1),
-            card_ids: (!card_ids.is_null()).then(|| bytes(card_ids, n_cards)),
-            item_cards: bytes(item_cards, n_items),
-            item_lengths: bytes(item_lengths, n_items),
-        };
-        set.validate()?;
+        let set = training_set_from_raw(
+            ratings,
+            delta_days,
+            n_reviews,
+            card_offsets,
+            card_ids,
+            n_cards,
+            item_cards,
+            item_lengths,
+            n_items,
+        )?;
         match op {
             "compute_parameters" => {
                 let (items, card_ids) = set.expand(true);
@@ -514,6 +513,237 @@ fn spawn_watcher(
             thread::sleep(Duration::from_millis(50));
         }
     })
+}
+
+/// 时间序列切分的留出预测（复习统计页的校准图 / UM+）：训练集按评分时刻切成 `folds + 1` 段，第 k 折只用第 k 段
+/// 之前的条目训练参数，再预测第 k 段每一条作答前的可提取度——模型从没见过它预测的那些复习（与
+/// `evaluate_tss` 同一切分，fsrs-rs `TimeSeriesSplit`；kuma3-anki-core 的 `FsrsCalibrationFinalFit` 同一做法）。
+/// 第一段只训练不预测。某一折数据不够训练（fsrs-rs NotEnoughData）就跳过那一折。
+///
+/// 训练集参数同 [ffsrs_fit]（条目必须按复习时间排好序，要有卡 ID）；`request` = `{"algorithm", "folds"?}`（缺省 5）；
+/// `out` 长 `n_items`：第 i 条的预测，没预测的写 NaN。`progress` = `[已完成, 总数]`（按折累加各折的训练进度）。
+/// 响应 `{"ok":{"folds":训练成功的折数,"predicted":条数}}` / `{"error":"…"}`，用 [ffsrs_free_string] 释放。
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn ffsrs_predict_tss(
+    request: *const c_char,
+    ratings: *const u8,
+    delta_days: *const f32,
+    n_reviews: usize,
+    card_offsets: *const u32,
+    card_ids: *const i64,
+    n_cards: usize,
+    item_cards: *const u32,
+    item_lengths: *const u32,
+    n_items: usize,
+    out: *mut f32,
+    cancel: *const AtomicI32,
+    progress: *const AtomicI64,
+) -> *mut c_char {
+    let cancel_addr = cancel as usize;
+    let progress_addr = progress as usize;
+    let out_addr = out as usize;
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Value, String> {
+        let req = read_request(request)?;
+        let algorithm = Algorithm::parse(str_field(&req, "algorithm")?)?;
+        let folds = req.get("folds").and_then(Value::as_u64).unwrap_or(5) as usize;
+        if folds == 0 {
+            return Err("folds must be positive".into());
+        }
+        if n_items == 0 {
+            return Err("not enough data".into());
+        }
+        if out_addr == 0 {
+            return Err("null buffer".into());
+        }
+        let set = training_set_from_raw(
+            ratings,
+            delta_days,
+            n_reviews,
+            card_offsets,
+            card_ids,
+            n_cards,
+            item_cards,
+            item_lengths,
+            n_items,
+        )?;
+        let (items, ids) = set.expand(true);
+        let ids = ids.ok_or("card ids required")?;
+        let out = unsafe { std::slice::from_raw_parts_mut(out_addr as *mut f32, n_items) };
+        out.fill(f32::NAN);
+        let segment = n_items / (folds + 1);
+        if segment == 0 {
+            return Err("not enough data".into());
+        }
+        let cancelled = || {
+            cancel_addr != 0
+                && unsafe { &*(cancel_addr as *const AtomicI32) }.load(Ordering::SeqCst) != 0
+        };
+        let mut trained = 0usize;
+        let mut predicted = 0usize;
+        for k in 0..folds {
+            let start = (k + 1) * segment;
+            let end = if k == folds - 1 {
+                n_items
+            } else {
+                (k + 2) * segment
+            };
+            let state = CombinedProgressState::new_shared();
+            let done = Arc::new(AtomicBool::new(false));
+            let watcher = spawn_fold_watcher(
+                state.clone(),
+                done.clone(),
+                cancel_addr,
+                progress_addr,
+                k,
+                folds,
+            );
+            let result = fsrs::compute_parameters(ComputeParametersInput {
+                train_set: items[..start].to_vec(),
+                card_ids: Some(ids[..start].to_vec()),
+                progress: Some(state.clone()),
+                model_version: algorithm.compute_version(),
+                ..Default::default()
+            });
+            done.store(true, Ordering::SeqCst);
+            let _ = watcher.join();
+            if cancelled() {
+                return Err("cancelled".into());
+            }
+            let params = match result {
+                Ok(p) => p,
+                Err(FSRSError::NotEnoughData) => continue,
+                Err(e) => return Err(format!("compute_parameters: {e:?}")),
+            };
+            let model = FSRS::new(&params).map_err(|e| format!("invalid parameters: {e:?}"))?;
+            let fold = model
+                .predict_retrievability_with_card_ids(
+                    items[start..end].to_vec(),
+                    ids[start..end].to_vec(),
+                    |_| !cancelled(),
+                )
+                .map_err(|e| match e {
+                    FSRSError::Interrupted => "cancelled".to_string(),
+                    e => format!("predict: {e:?}"),
+                })?;
+            out[start..end].copy_from_slice(&fold);
+            trained += 1;
+            predicted += fold.len();
+        }
+        Ok(json!({ "folds": trained, "predicted": predicted }))
+    }));
+    respond(outcome.unwrap_or_else(|_| Err("panic in fushi_fsrs".into())))
+}
+
+/// [ffsrs_predict_tss] 的看门线程：第 `fold` 折的训练进度折进总进度 `[fold·T + 当前, folds·T]`（T = 一折的总量）。
+fn spawn_fold_watcher(
+    state: Arc<Mutex<CombinedProgressState>>,
+    done: Arc<AtomicBool>,
+    cancel_addr: usize,
+    progress_addr: usize,
+    fold: usize,
+    folds: usize,
+) -> thread::JoinHandle<()> {
+    thread::spawn(move || {
+        loop {
+            let finished = done.load(Ordering::SeqCst);
+            if let Ok(mut s) = state.lock() {
+                if cancel_addr != 0
+                    && unsafe { &*(cancel_addr as *const AtomicI32) }.load(Ordering::SeqCst) != 0
+                {
+                    s.want_abort = true;
+                }
+                if progress_addr != 0 {
+                    let total = s.total().max(1) as i64;
+                    let current = if finished { total } else { s.current() as i64 };
+                    let p = progress_addr as *const AtomicI64;
+                    unsafe {
+                        (*p).store(fold as i64 * total + current, Ordering::SeqCst);
+                        (*p.add(1)).store(folds as i64 * total, Ordering::SeqCst);
+                    }
+                }
+            }
+            if finished {
+                break;
+            }
+            thread::sleep(Duration::from_millis(50));
+        }
+    })
+}
+
+/// 校准图与 UM+ 的一整份结果（[calibration::report]），一次调用：
+///
+/// - 样本 `n` 条（与 `ffsrs_store_calibration_items` 的条目一一对应）：`cards` / `tags`（复习日志数字 ID）/ `ats`（毫秒）/
+///   `elapsed`（距上次评分的复习日天数）/ `actual`（1 = 记住）/ `fsrs`（[ffsrs_predict_tss] 的预测，NaN = 没有）；
+/// - RWKV 回放预测 `n_rwkv` 条：`rwkv_tags` 与 `rwkv_preds`（可为 0 条）；
+/// - 范围 `n_scope` 张卡（0 = 全部）。
+///
+/// `request` = `{"from"?: 毫秒, "to"?: 毫秒, "minElapsedDays"?: 1}`；响应见 [calibration::report]。
+#[no_mangle]
+#[allow(clippy::too_many_arguments)]
+pub extern "C" fn ffsrs_calibration_report(
+    request: *const c_char,
+    n: usize,
+    cards: *const i64,
+    tags: *const i64,
+    ats: *const i64,
+    elapsed: *const i64,
+    actual: *const i64,
+    fsrs: *const f32,
+    n_rwkv: usize,
+    rwkv_tags: *const i64,
+    rwkv_preds: *const f32,
+    n_scope: usize,
+    scope_cards: *const i64,
+) -> *mut c_char {
+    let outcome = catch_unwind(AssertUnwindSafe(|| -> Result<Value, String> {
+        let req = read_request(request)?;
+        if n > 0
+            && (cards.is_null()
+                || tags.is_null()
+                || ats.is_null()
+                || elapsed.is_null()
+                || actual.is_null()
+                || fsrs.is_null())
+        {
+            return Err("null buffer".into());
+        }
+        if (n_rwkv > 0 && (rwkv_tags.is_null() || rwkv_preds.is_null()))
+            || (n_scope > 0 && scope_cards.is_null())
+        {
+            return Err("null buffer".into());
+        }
+        let samples = calibration::Samples {
+            cards: bytes(cards, n),
+            tags: bytes(tags, n),
+            ats: bytes(ats, n),
+            elapsed: bytes(elapsed, n),
+            actual: bytes(actual, n),
+            fsrs: bytes(fsrs, n),
+        };
+        let rwkv: std::collections::HashMap<i64, f32> = bytes(rwkv_tags, n_rwkv)
+            .iter()
+            .copied()
+            .zip(bytes(rwkv_preds, n_rwkv).iter().copied())
+            .collect();
+        let scope: Option<std::collections::HashSet<i64>> =
+            (n_scope > 0).then(|| bytes(scope_cards, n_scope).iter().copied().collect());
+        let ms = |key: &str| req.get(key).and_then(Value::as_i64);
+        Ok(calibration::report(
+            &samples,
+            &rwkv,
+            calibration::Filter {
+                from: ms("from"),
+                to: ms("to"),
+                min_elapsed: req
+                    .get("minElapsedDays")
+                    .and_then(Value::as_i64)
+                    .unwrap_or(1),
+                scope: scope.as_ref(),
+            },
+        ))
+    }));
+    respond(outcome.unwrap_or_else(|_| Err("panic in fushi_fsrs".into())))
 }
 
 /// 批量可提取度：同一组参数下一次算完一整批卡（统计页）。
@@ -1007,25 +1237,28 @@ mod tests {
     }
 
     #[test]
+    fn version_lists_current_and_superseded_fsrs_revs() {
+        let v = call(json!({"op":"version"}));
+        assert_eq!(v["ok"]["fsrsRev"], FSRS_RS_REV);
+        let known: Vec<&str> = v["ok"]["knownFsrsRevs"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|r| r.as_str().unwrap())
+            .collect();
+        assert_eq!(known[0], FSRS_RS_REV);
+        // 发版前钉的 git rev 产出的参数组升级后仍认识（否则老用户的自动优化永久停掉）。
+        assert!(known.contains(&"0a5737406a0c5c7a5259b144738cbe4a0b649d76"));
+        let unique: std::collections::HashSet<&str> = known.iter().copied().collect();
+        assert_eq!(unique.len(), known.len());
+    }
+
+    #[test]
     fn defaults_have_expected_lengths() {
         let v6 = call(json!({"op":"defaults","algorithm":"fsrs6"}));
         assert_eq!(v6["ok"]["count"], 21);
         let v7 = call(json!({"op":"defaults","algorithm":"fsrs7"}));
         assert_eq!(v7["ok"]["count"], 34);
-    }
-
-    #[test]
-    fn next_states_new_card_orders_intervals() {
-        for alg in ["fsrs6", "fsrs7"] {
-            let r = call(
-                json!({"op":"next_states","algorithm":alg,"desiredRetention":0.9,"elapsedDays":0}),
-            );
-            let ok = &r["ok"];
-            let again = ok["again"]["interval"].as_f64().unwrap();
-            let good = ok["good"]["interval"].as_f64().unwrap();
-            let easy = ok["easy"]["interval"].as_f64().unwrap();
-            assert!(again < good && good < easy, "{alg}: {r}");
-        }
     }
 
     #[test]
@@ -1037,28 +1270,6 @@ mod tests {
         assert!(
             r.get("error").is_some(),
             "fsrs6 params must not validate as fsrs7"
-        );
-    }
-
-    #[test]
-    fn memory_state_from_history_matches_stepwise() {
-        let r = call(json!({"op":"memory_state","algorithm":"fsrs6","reviews":[
-            {"rating":3,"deltaT":0},{"rating":3,"deltaT":3},{"rating":1,"deltaT":10}]}));
-        assert!(r["ok"]["s"].as_f64().unwrap() > 0.0, "{r}");
-    }
-
-    #[test]
-    fn fractional_elapsed_changes_fsrs7_result() {
-        let mem = json!({"s":1.0,"d":5.0,"sf":1.0});
-        let a = call(
-            json!({"op":"next_states","algorithm":"fsrs7","desiredRetention":0.9,"elapsedDays":0.1,"memory":mem}),
-        );
-        let b = call(
-            json!({"op":"next_states","algorithm":"fsrs7","desiredRetention":0.9,"elapsedDays":0.9,"memory":mem}),
-        );
-        assert_ne!(
-            a["ok"]["good"]["memory"]["s"],
-            b["ok"]["good"]["memory"]["s"]
         );
     }
 

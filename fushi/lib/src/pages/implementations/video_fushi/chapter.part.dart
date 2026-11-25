@@ -56,6 +56,9 @@ extension _VideoChapter on _VideoFushiPageState {
   /// 的片时也跟着隐藏）。只在「有无章节」真变化时 setState，避免 cue 同步等高频通知抖动。
   void _onControllerChaptersChanged(VideoPlayerController controller) {
     _syncControllerChapterAvailability(controller);
+    // 同一条 controller 通知里顺带看画面尺寸（拍板台 P9AS-fvjJh 竖版视频判据），
+    // 只在比例真变时重建。
+    _syncVideoAspectRatio(controller);
   }
 
   void _syncControllerChapterAvailability(VideoPlayerController controller) {
@@ -86,8 +89,11 @@ extension _VideoChapter on _VideoFushiPageState {
   Widget _buildChapterMarkersOverlay(VideoPlayerController controller) {
     // mini 档没有进度条（进度交给底部细线），刻度无处可落。
     // 作品图谱 L2 的 OP / ED 段首段尾（[_themeSongChapters]）同样画成刻度。
+    // Apple 桌面（方案 C）：刻度画在底部条行内的进度条道里
+    // （[_VideoAppleChrome._appleInlineSeekLaneContent]）。
     if ((!_hasChapters && _themeSongChapters.value.isEmpty) ||
-        !_controlsDensity.showSeekBar) {
+        !_controlsDensity.showSeekBar ||
+        _appleInlineSeekLane) {
       return const SizedBox.shrink();
     }
     // 刻度竖线高度：比轨道再高一截（约轨道高 + 8px×缩放），让标记探出轨道上下、清晰可见，
@@ -159,7 +165,10 @@ extension _VideoChapter on _VideoFushiPageState {
   /// 淡入淡出（控制条隐时 hover 也无意义）。
   Widget _buildThumbnailPreviewOverlay(VideoPlayerController controller) {
     final VideoThumbnailPreviewController? preview = _thumbnailPreview;
-    if (preview == null) return const SizedBox.shrink();
+    // Apple 桌面（方案 C）：缩略图挂在行内进度条道里，按道宽对齐。
+    if (preview == null || _appleInlineSeekLane) {
+      return const SizedBox.shrink();
+    }
     // 缩略图轨道竖直锚点：与刻度层同样的 band，浮层底缘抬到轨道带上沿 + 间距。
     final double tickHeight =
         (_videoSeekBarTrackHeight + 8.0 * _videoUiScale) *
@@ -240,6 +249,8 @@ extension _VideoChapter on _VideoFushiPageState {
     VideoPlayerController _, {
     VideoControlSlot? sourceSlot,
   }) {
+    // 竖屏学习版式：章节是下半屏的一个页签（拍板台 P9AS-fvjJh）。
+    if (_routeToPortraitPane(VideoPortraitTab.chapters)) return;
     _showVideoSidePanel(_VideoSidePanelKind.chapters, sourceSlot: sourceSlot);
   }
 }

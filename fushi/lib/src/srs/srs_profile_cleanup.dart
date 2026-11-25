@@ -11,7 +11,10 @@
 ///    每张 `srs_*` / `sync2_*` 表里的行；再删 `srs_media/<uid>`（媒体与释义样式同目录）和这个 uid 的 RWKV 快照。
 ///    远端存储位置上已同步的集合不动（只删本机）。
 /// 4. **存量**（[sweepOrphans]）：进 Profile 管理时扫一次 srs.db 里不属于任何现存 profile 的 uid，同样先备份再清；
-///    全部清完在 srs.db 记下完成标记，之后不再扫。
+///    收尾（`srsFinishOrphanSweep`，内核一条命令）再清表里已经没有行、只剩 `srs_meta` 键的无主 uid 的键，和没有
+///    任何操作引用的 `sync2_deps`；全部清完在 srs.db 记下完成标记，之后不再扫。标记换过两次键（BUG-4463
+///    `profile_orphan_sweep_v2`：BUG-4292 之前采用 / 并入的手抄删除留下的残留；`…_v3`：只剩 meta 键的 uid 与孤立的
+///    `sync2_deps`），已扫过的库各再扫一次。进行中并入涉及的 uid 不算无主。
 ///
 /// 删数据的那一刻，这个 uid 的副本（[SrsDbStore]）先 [SrsDbStore.retire]：在途写入做完、之后的写入一律失败，
 /// 不会有迟到的写把行写回一个已删的 uid。所有对共用写连接的操作都排进当前副本的独占区：Rust 命令在写连接上是
@@ -20,10 +23,17 @@ library;
 
 import 'dart:io';
 
+import 'package:fushi_srs/fushi_srs.dart' show SrsColumns, SrsStringColumn;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart' show ProfileRow;
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_profile_data.dart';
+import 'package:fushi_engine/srs/srs_reads.dart' show srsReadLib;
+import 'package:fushi_engine/srs/srs_profile_merge.dart'
+    show
+        SrsPendingProfileMerge,
+        kSrsProfileMergeMarkerPrefix,
+        srsPendingProfileMerges;
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
@@ -31,7 +41,9 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_generation_kind.dart'
+    show isSrsGenerationBlocked;
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -98,13 +110,25 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
     };
     // 主库一个 profile 都读不出来时绝不能把 srs.db 当成全部无主。
     if (liveUids.isEmpty) return 0;
-    final SrsStorage? storage = await _deps.storage();
+    final SrsStorage? storage;
+    try {
+      storage = await _openStorage();
+    } on ProfileDeletionSrsUnavailableException catch (e) {
+      // 库在换代途中（要升级 / 上次升级没完成 / 别的进程在升级……）：这时没有可扫的新代库，复习页自己会把状态
+      // 摆给用户。什么都不扫、不记标记，升级完下次进来再扫（BUG-5275：这里原先每进一次页面就报一次错）。
+      // 库真的打不开（不是换代状态）照常抛给调用方记日志。
+      if (isSrsGenerationBlocked(e.cause)) return 0;
+      rethrow;
+    }
     if (storage == null) return 0;
     final SrsStoredProfiles stored = await srsStoredProfiles(storage.core);
     if (stored.orphanSweptAt != null) return 0;
+    // 没做完的并入（srs_profile_merge.dart）：改主库 uid 之前目标 uid、之后旧 uid 都不在主库里，却是并入还要用的
+    // 数据（旧 uid 那份要等第二遍并入收完才删）。它们不算无主；有这种 uid 时也不记完成标记，等并入做完再扫。
+    final Set<String> merging = await _mergingUids(storage);
     final List<String> orphans = <String>[
       for (final String uid in stored.uids)
-        if (!liveUids.contains(uid)) uid,
+        if (!liveUids.contains(uid) && !merging.contains(uid)) uid,
     ];
     for (final String uid in orphans) {
       final ProfileDeletionCleanup cleanup = await _prepareUid(
@@ -113,11 +137,36 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
       );
       await cleanup.run();
     }
-    await srsMarkOrphanSweepDone(
+    // 收尾：表里已经没有任何行、只剩 srs_meta 键的无主 uid（旧版删除实现留下的 `…/<uid>/…` 键；没有行就没有可备份
+    // 的东西，也不为它开副本），和没有任何操作引用的 sync2_deps。判定与删除在内核的一个 savepoint 里；进行中并入
+    // 的 uid 同样不动，那时也不记完成标记。
+    final SrsOrphanSweepRest rest = await srsFinishOrphanSweep(
       storage.core,
       _deps.clock().millisecondsSinceEpoch,
+      keep: <String>{...liveUids, ...merging},
+      mark: merging.isEmpty,
     );
-    return orphans.length;
+    return orphans.length + rest.metaUids.length;
+  }
+
+  /// srs.db 里记着进行中并入（`profile_merge/<旧 uid>` 标记）的旧 uid 与目标 uid。标记值读不懂时旧 uid 照样算上
+  /// （宁可少清）。
+  static Future<Set<String>> _mergingUids(SrsStorage storage) async {
+    final Set<String> out = <String>{
+      for (final SrsPendingProfileMerge m in await srsPendingProfileMerges(
+        storage.core,
+      )) ...<String>[m.oldUid, m.newUid],
+    };
+    // 标记值读不懂的（[srsPendingProfileMerges] 跳过它）：旧 uid 照样算上。
+    final SrsColumns marks = (await srsReadLib(
+      storage.core,
+      'profile_merges',
+    )).table;
+    final SrsStringColumn keys = marks.strings('key');
+    for (int i = 0; i < marks.rows; i++) {
+      out.add(keys[i].substring(kSrsProfileMergeMarkerPrefix.length));
+    }
+    return out;
   }
 
   static String? _uidOf(ProfileRow profile) {
@@ -128,8 +177,22 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
   Future<Directory> _mediaDir(String uid) async =>
       SrsMediaStore.directoryFor(await _deps.supportRoot(), uid);
 
+  /// 打开本机 srs.db；打不开（换代状态 [SrsStoreOpenBlocked] 等任何原因）一律包成
+  /// [ProfileDeletionSrsUnavailableException]：统计、备份都做不了，删除要明确中止并告诉用户原因，而不是让原始
+  /// 异常逃出按钮回调、确认框不弹（BUG-5275）。
+  Future<SrsStorage?> _openStorage() async {
+    try {
+      return await _deps.storage();
+    } on Object catch (e, stack) {
+      Error.throwWithStackTrace(
+        ProfileDeletionSrsUnavailableException(e),
+        stack,
+      );
+    }
+  }
+
   Future<_Scan> _scan(String uid) async {
-    final SrsStorage? storage = await _deps.storage();
+    final SrsStorage? storage = await _openStorage();
     final SrsProfileFootprint footprint = storage == null
         ? const SrsProfileFootprint.empty()
         : await srsProfileFootprint(storage.core, uid);
@@ -144,16 +207,6 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
         hasSrsData: !footprint.isEmpty || hasMedia,
       ),
     );
-  }
-
-  /// 在当前副本的独占区里跑 [body]（[target] 就是当前副本时直接跑：它自己的命令已在它的独占区里排队）。
-  Future<T> _serialized<T>(
-    SrsDbStore? target,
-    Future<T> Function() body,
-  ) async {
-    final SrsDbStore? active = await _deps.activeStore();
-    if (active == null || identical(active, target)) return body();
-    return active.runExclusive(body);
   }
 
   Future<ProfileDeletionCleanup> _prepareUid(
@@ -174,6 +227,7 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
         mediaDir: mediaDir,
         impact: scan.impact,
         backupPath: null,
+        collection: null,
       );
     }
     final SrsDbStore store;
@@ -184,20 +238,13 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
       if (!isActive) await _deps.releaseForeign(uid);
       store = isActive
           ? active
-          : await _serialized(
-              null,
-              () async => SrsDbStore.open(
-                db: storage.db,
-                core: storage.core,
-                profileUid: uid,
-                deviceId: await _deps.deviceId(),
-              ),
+          : await SrsDbStore.open(
+              core: storage.core,
+              profileUid: uid,
+              deviceId: await _deps.deviceId(),
             );
       backup = await _backupFile(label);
-      await _serialized(
-        store,
-        () => srsExportFushiSrs(store, backup, mediaRoot: mediaDir),
-      );
+      await srsExportFushiSrs(store, backup, mediaRoot: mediaDir);
     } on Object catch (e, stack) {
       Error.throwWithStackTrace(ProfileDeletionBackupException(e), stack);
     }
@@ -209,6 +256,9 @@ class SrsProfileCleanup implements ProfileDeletionCascade {
       mediaDir: mediaDir,
       impact: scan.impact,
       backupPath: backup.path,
+      // 给用户看的规模、导出的备份都是这个集合的：删的时候让内核核对 profile 此刻还绑着它（确认之后改绑 / 并入过
+      // 就报错、什么都不删，G9-5 `profile_purge`）。
+      collection: store.sync2Collection,
     );
   }
 
@@ -282,6 +332,7 @@ class _SrsCleanup implements ProfileDeletionCleanup {
     required this.mediaDir,
     required this.impact,
     required this.backupPath,
+    required this.collection,
   });
 
   final SrsProfileCleanup owner;
@@ -294,14 +345,16 @@ class _SrsCleanup implements ProfileDeletionCleanup {
   @override
   final String? backupPath;
 
+  /// 准备时 profile 绑着的集合（用户确认删的就是它）；null = 库里没有它的行，不删库。
+  final String? collection;
+
   @override
   Future<void> run() async {
     final SrsStorage? s = storage;
     final SrsDbStore? target = store;
     if (s != null && target != null) {
-      await owner._serialized(
-        target,
-        () => target.retire(() => srsPurgeProfileRows(s.core, uid)),
+      await target.retire(
+        () => srsPurgeProfileRows(s.core, uid, collection: collection),
       );
     }
     if (mediaDir.existsSync()) await mediaDir.delete(recursive: true);

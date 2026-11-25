@@ -2,6 +2,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 
+import 'package:fushi/src/media/manga/web/web_comic_reader_launch.dart';
+import 'package:fushi/src/media/manga/web/web_comic_site_detector.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_host_feature.dart';
@@ -36,7 +38,12 @@ List<WebBrowserFeature> buildWebBrowserFeatures(
   final AppModel app = ref.read(appProvider);
   final WebBrowserVideoActivity videoActivity = WebBrowserVideoActivity();
   // 「用 Fushi 播放 / 阅读」三个入口共用的页面内容探针：谁上工具栏由它定。
-  final WebPageContentFeature pageContent = WebPageContentFeature();
+  // 站点适配判定（随包漫画站规则）只在网页漫画合规门开时装：门关时没有漫画动作可抬。
+  final WebPageContentFeature pageContent = WebPageContentFeature(
+    siteComic: webComicReaderActionAvailable()
+        ? WebComicSiteComicDetector()
+        : null,
+  );
   final WebBrowserExtensionHostFeature extensionHost =
       WebBrowserExtensionHostFeature(
         // 与「浏览器设置」里的扩展分组共用同一个实例（见 provider 说明）。

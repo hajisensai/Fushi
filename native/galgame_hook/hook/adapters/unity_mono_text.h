@@ -85,7 +85,10 @@ enum class MonoTextHookId : uint8_t {
   kTextMeshSetText = 3,
   kMessageRendererMes = 4,
   kFungusSayDialogDoSay = 5,
-  kCount = 6,
+  // TMP 3.2+ 的独立 `SetText(string)`（见规格表下方说明）。诊断字位与 kTmpSetTextBool
+  // 共用（同属 TMP SetText 一族；adapter 的 bit 8..13 / 16..21 只容 6 个 id）。
+  kTmpSetTextSingle = 6,
+  kCount = 7,
 };
 constexpr size_t kMonoTextHookCount = static_cast<size_t>(MonoTextHookId::kCount);
 
@@ -168,7 +171,18 @@ constexpr MonoTextHookSpec kUnityMonoTextHookSpecs[kMonoTextHookCount] = {
      {kMonoTypeString, kMonoTypeBoolean, kMonoTypeBoolean, kMonoTypeBoolean,
       kMonoTypeBoolean, kMonoTypeBoolean, kMonoTypeClass, kMonoTypeClass},
      "Unity Mono Fungus Say", L"Mono:Fungus.SayDialog.DoSay", true},
+    {MonoTextHookId::kTmpSetTextSingle, MonoTextHookScope::kAnyAssembly,
+     "TMPro", "TMP_Text", "SetText", true, kMonoTypeVoid, 1,
+     {kMonoTypeString, 0}, "Unity Mono TMP_Text",
+     L"Mono:TMPro.TMP_Text.SetText(string)", false},
 };
+// kTmpSetTextSingle：TMP 3.2 起 `SetText(string)` 是**自己的方法体**（直接写 m_text /
+// 文本处理数组），不再转调 `SetText(string,bool)`（后者标了 Obsolete），也不经过
+// `text` 属性。按 3.2 编译的游戏代码 `tmp.SetText(s)` 绑定到它——只挂另外两个入口时
+// 这类游戏的对白一条 Mono 文本道都没有（实测 2026-11-11：一款 TMP_CharacterInfo
+// 以 elementType 开头、character 在 +4 的 x64 Mono 作品，对白显示时无任何 Mono 道）。
+// TMP 1.x 的 `SetText(string)` 只是 `SetText(text, true)` 的转调：adapter 用主线程
+// 嵌套深度让内层那次不再重复发布（见 unity_mono_adapter.inc）。
 // kFungusSayDialogDoSay：公开 Unity VN 框架 Fungus 的整句入口
 //   IEnumerator SayDialog.DoSay(string text, bool clearPrevious, bool waitForInput,
 //                               bool fadeWhenDone, bool stopVoiceover, bool waitForVO,
@@ -476,7 +490,10 @@ inline uint32_t PlanUnityMonoTextHooks(const MonoTextResolution& resolution) {
   uint32_t plan = found;
   const uint32_t tmp_pair = MonoTextHookBit(MonoTextHookId::kTmpSetText) |
                             MonoTextHookBit(MonoTextHookId::kTmpSetTextBool);
-  if ((plan & tmp_pair) != tmp_pair) plan &= ~tmp_pair;
+  // SetText(string) 只随完整的一对装（它是同一个 TMP_Text 的第三个入口）。
+  if ((plan & tmp_pair) != tmp_pair) {
+    plan &= ~(tmp_pair | MonoTextHookBit(MonoTextHookId::kTmpSetTextSingle));
+  }
   const uint32_t mes = MonoTextHookBit(MonoTextHookId::kMessageRendererMes);
   if ((plan & mes) != 0 && resolution.message_renderer_companion) {
     plan &= ~MonoTextHookBit(MonoTextHookId::kTextMeshSetText);

@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.50.0-02569B?logo=flutter&logoColor=white)
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | **Español** | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | [Tiếng Việt](README.vi.md) | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
@@ -24,7 +24,7 @@
 
 | Plataforma | Estado | Notas |
 |---|---|---|
-| Android | ✅ | Android 7.0 (API 24) o posterior |
+| Android | ✅ | Android 8.0 (API 26) o posterior |
 | Windows | ✅ | El hooking de texto y voz de galgames solo está disponible en Windows |
 | macOS | ✅ | Solo Apple Silicon; los Mac con Intel no son compatibles |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Sin descubrimiento, fuentes en línea ni centro de descargas (directrices de la App Store) |
@@ -43,7 +43,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 Descarga la última versión desde el [sitio web de Fushi](https://fushi.moe/): hay disponibles el APK de Android, el instalador de Windows y las compilaciones de macOS (solo Apple Silicon; los Mac con Intel no son compatibles); iOS se instala mediante [TestFlight](https://testflight.apple.com/join/j88d69jx). Linux aún no tiene una versión precompilada de la aplicación; compílala desde el código fuente. Fushi Server, el servidor sin interfaz, se publica por separado en [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases).
 
-> Requiere Android 7.0 (API 24) o superior.
+> Requiere Android 8.0 (API 26) o superior.
 
 ## Compilación
 
@@ -67,14 +67,14 @@ flutter build ipa --release
 dart build cli
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` agrupan `flutter pub get` y `ci/apply-patches.sh` en un único comando. Este proyecto está fijado a Flutter 3.47.6 (Dart SDK `>=3.8.0 <4.0.0`); las versiones anteriores de Flutter no pueden compilarlo porque Material y Cupertino se consumen como los paquetes `material_ui` / `cupertino_ui`. Algunas dependencias upstream están incluidas en `third_party/` o parcheadas por `ci/apply-patches.sh`; consulta [docs/agent/build.md](../agent/build.md) para más detalles, incluidas las dependencias de compilación del escritorio Linux.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` agrupan `flutter pub get` y `ci/apply-patches.sh` en un único comando. Este proyecto está fijado a Flutter 3.50.0 (Dart SDK `>=3.8.0 <4.0.0`); las versiones anteriores de Flutter no pueden compilarlo porque Material y Cupertino se consumen como los paquetes `material_ui` / `cupertino_ui`. Algunas dependencias upstream están incluidas en `third_party/` o parcheadas por `ci/apply-patches.sh`; consulta [docs/agent/build.md](../agent/build.md) para más detalles, incluidas las dependencias de compilación del escritorio Linux.
 
 <details>
 <summary><b>Pila tecnológica</b></summary>
 
 | Capa | Tecnología |
 |---|---|
-| Framework | Flutter 3.47.6 (Dart SDK `>=3.8.0 <4.0.0`), Riverpod |
+| Framework | Flutter 3.50.0 (Dart SDK `>=3.8.0 <4.0.0`), Riverpod |
 | Plataformas | Android / Windows / macOS / iOS / Linux, más un servidor sin interfaz |
 | UI | `material_ui` (Material 3 Expressive) / `cupertino_ui` (Cupertino) |
 | Lector | Motor de paginación WebView (derivado de la familia Hoshi Reader) |

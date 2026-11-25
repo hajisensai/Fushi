@@ -94,6 +94,8 @@ Widget _host({
   bool disableAnimations = false,
   bool tapLooksUp = false,
   bool Function(int buttons)? isSeekPointer,
+  KaraokeLyricsCursor? cursor,
+  bool blurInactive = true,
 }) => MaterialApp(
   home: MediaQuery(
     data: MediaQueryData(
@@ -112,7 +114,11 @@ Widget _host({
           onLookup: onLookup,
           tapLooksUp: tapLooksUp,
           isSeekPointer: isSeekPointer,
-          appearance: const KaraokeLyricsAppearance(fontSize: 24),
+          cursor: cursor,
+          appearance: KaraokeLyricsAppearance(
+            fontSize: 24,
+            blurInactive: blurInactive,
+          ),
         ),
       ),
     ),
@@ -178,6 +184,80 @@ void main() {
         reason: '翻译副行在下方',
       );
       l.dispose();
+    });
+
+    test('歌词显示开关关掉：不排注音、不排罗马音 / 翻译副行', () {
+      final LyricLine line = LyricLine(
+        startMs: 0,
+        endMs: 1000,
+        romanization: 'yoru ni',
+        syllables: const <LyricSyllable>[
+          LyricSyllable(text: '夜', startMs: 0, endMs: 500, ruby: 'よる'),
+          LyricSyllable(text: 'に', startMs: 500, endMs: 1000),
+        ],
+        translations: const <LyricTranslation>[LyricTranslation('zh', '在夜里')],
+      );
+      KaraokeLineLayout layout({
+        required bool ruby,
+        required bool translation,
+        required bool romanization,
+      }) {
+        final KaraokeResolvedStyle base = _style();
+        final KaraokeResolvedStyle resolved = KaraokeResolvedStyle(
+          main: base.main,
+          background: base.background,
+          ruby: base.ruby,
+          sub: base.sub,
+          active: base.active,
+          inactive: base.inactive,
+          secondary: base.secondary,
+          textScaler: base.textScaler,
+          showRuby: ruby,
+          showTranslation: translation,
+          showRomanization: romanization,
+          glow: base.glow,
+        );
+        return KaraokeLineLayout.build(
+          line: line,
+          width: 400,
+          style: resolved.main,
+          resolved: resolved,
+          align: TextAlign.left,
+          lineLevel: false,
+        );
+      }
+
+      final KaraokeLineLayout all = layout(
+        ruby: true,
+        translation: true,
+        romanization: true,
+      );
+      final KaraokeLineLayout noTranslation = layout(
+        ruby: true,
+        translation: false,
+        romanization: true,
+      );
+      final KaraokeLineLayout bare = layout(
+        ruby: false,
+        translation: false,
+        romanization: false,
+      );
+      expect(all.syllables[0].rubyInactive, isNotNull);
+      expect(bare.syllables[0].rubyInactive, isNull, reason: '注音关');
+      expect(bare.textTop, 0, reason: '注音关不再给 ruby 预留顶部空间');
+      expect(
+        noTranslation.size.height,
+        lessThan(all.size.height),
+        reason: '翻译关少一条副行',
+      );
+      expect(
+        bare.size.height,
+        closeTo(bare.syllables[0].boxes.first.bottom, 0.5),
+        reason: '罗马音 / 翻译都关：主行下面没有副行',
+      );
+      all.dispose();
+      noTranslation.dispose();
+      bare.dispose();
     });
 
     test('折行的当前行：逐字裁剪 / 辉光不越到同一句的另一视觉行', () {
@@ -336,6 +416,48 @@ void main() {
         _host(timeline: _timeline(), clock: clock, playing: false),
       );
       await tester.pump(const Duration(seconds: 2));
+    });
+
+    // GitHub #3354：学习时要看清上一句 / 下一句，「非当前行模糊」可关。
+    testWidgets('blurInactive：开时非当前行模糊，关时没有任何一行模糊', (
+      WidgetTester tester,
+    ) async {
+      final _Clock clock = _Clock()..ms = 1100;
+      List<ImageFiltered> filters() => tester
+          .widgetList<ImageFiltered>(
+            find.descendant(
+              of: find.byType(KaraokeLyricsView),
+              matching: find.byType(ImageFiltered),
+            ),
+          )
+          .toList();
+
+      await tester.pumpWidget(
+        _host(timeline: _timeline(), clock: clock, playing: false),
+      );
+      await tester.pump();
+      expect(filters(), isNotEmpty);
+      expect(
+        filters().where((ImageFiltered f) => f.enabled),
+        isNotEmpty,
+        reason: '默认开：非当前行有模糊',
+      );
+
+      await tester.pumpWidget(
+        _host(
+          timeline: _timeline(),
+          clock: clock,
+          playing: false,
+          blurInactive: false,
+        ),
+      );
+      await tester.pump(const Duration(seconds: 1));
+      expect(filters(), isNotEmpty);
+      expect(
+        filters().where((ImageFiltered f) => f.enabled),
+        isEmpty,
+        reason: '关掉后上下句都清晰',
+      );
     });
 
     testWidgets('点行跳到该行起点', (WidgetTester tester) async {
@@ -548,6 +670,78 @@ void main() {
       await tester.tap(_row('one'));
       await tester.pump(const Duration(seconds: 4));
       expect(seeks, isEmpty);
+    });
+  });
+
+  group('KaraokeLyricsCursor (controller lookup mode)', () {
+    testWidgets('attaches, keeps its row at the anchor and resolves the hit '
+        'of its glyph', (WidgetTester tester) async {
+      final _Clock clock = _Clock()..ms = 1100;
+      final KaraokeLyricsCursor cursor = KaraokeLyricsCursor();
+      addTearDown(cursor.dispose);
+      expect(cursor.attached, isFalse);
+      await tester.pumpWidget(
+        _host(
+          timeline: _timeline(),
+          clock: clock,
+          playing: false,
+          cursor: cursor,
+          disableAnimations: true,
+        ),
+      );
+      await tester.pump();
+      expect(cursor.attached, isTrue);
+      expect(cursor.hitAtCursor(), isNull, reason: 'hidden cursor');
+
+      cursor.moveTo(3, 1); // 'klm', the 'l'
+      await tester.pump();
+      await tester.pump();
+      expect(
+        tester.getTopLeft(_row('klm')).dy,
+        closeTo(600 * 0.38, 1),
+        reason: 'the cursor row sits at the anchor, not the playing row',
+      );
+      final KaraokeLookupHit hit = cursor.hitAtCursor()!;
+      expect(hit.lineIndex, 3);
+      expect(hit.charIndexInLine, 1);
+      expect(hit.lineText, 'klm');
+      expect(hit.syllableIndex, 0);
+      final Rect row = tester.getRect(_row('klm'));
+      expect(hit.globalRect.width, greaterThan(0));
+      expect(row.inflate(1).contains(hit.globalRect.center), isTrue);
+
+      cursor.moveTo(2, 3); // 'fghij', second syllable 'ij'
+      await tester.pump();
+      expect(cursor.hitAtCursor()!.syllableIndex, 1);
+
+      cursor.clear();
+      await tester.pump();
+      await tester.pump();
+      expect(
+        tester.getTopLeft(_row('abcde')).dy,
+        closeTo(600 * 0.38, 1),
+        reason: 'cleared: back to following the playing row',
+      );
+
+      await tester.pumpWidget(const SizedBox());
+      expect(cursor.attached, isFalse, reason: 'unmount detaches');
+    });
+
+    test('KaraokeLineLayout.charRect: per-glyph box, null outside', () {
+      final KaraokeLineLayout l = KaraokeLineLayout.build(
+        line: _syllables(0, <(String, int)>[('abc', 500)]),
+        width: 400,
+        style: _style().main,
+        resolved: _style(),
+        align: TextAlign.left,
+        lineLevel: false,
+      );
+      final Rect a = l.charRect(0)!;
+      final Rect b = l.charRect(1)!;
+      expect(b.left, greaterThanOrEqualTo(a.right - 0.5));
+      expect(l.charRect(3), isNull);
+      expect(l.charRect(-1), isNull);
+      l.dispose();
     });
   });
 }

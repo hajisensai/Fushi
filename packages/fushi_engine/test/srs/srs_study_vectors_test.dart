@@ -8,6 +8,12 @@
 // 「按位置」新卡顺序。
 //
 // 重新生成（只在有意改变排队语义时）：SRS_STUDY_VECTORS_WRITE=1 跑本文件。
+// 2026-11-07 重新生成：RWKV 牌组不再按复习量调整新卡，RWKV 牌组行的复习预算列变成 0（新卡配额、调整原因与 FSRS 的
+// Root::B / Root::B1 行逐项不变，脚本逐值核对过）。
+// 2026-11-22 重新生成：BUG-5052（33039f2941，原号 BUG-4915）把 RWKV 同日间隔守卫改成按参数归属牌组数作答、不随
+// 排队范围变。rwkv_mixed 只有 step 20 一步变：旧向量里牌组列表（全部牌组范围）把 c5 算成到期（Root / Root::A /
+// Root::A::A1 的到期列 1、instantDue [c5]），同一步从 A1 出卡却是「-」——正是那条 bug 的「列表显示到期、复习页
+// 一张不出」；新值列表与出卡一致（到期 0、instantDue 空），其余 35 步与另两个场景逐项不变。
 import 'dart:convert';
 import 'dart:io';
 
@@ -83,6 +89,7 @@ void main() {
     final SrsDbStore s = await openTestStore(
       profileUid: kVecProfile,
       deviceId: 'v',
+      localOffsetMin: () => 0,
       now: () => t,
     );
     final Map<String, String> label = <String, String>{};
@@ -90,7 +97,9 @@ void main() {
     await s.editField(
       SrsEntityKind.profile,
       kVecProfile,
-      SrsFieldKeys.utcOffsetMin,
+      // 旧版声明过、从没有写入方的 profile 键：现在不读（时区恒为本机，由打开时的 localOffsetMin 钉住），
+      // 留着这条写入让写入序号与生成向量时一致。
+      'utcOffsetMin',
       0,
     );
     await s.editField(

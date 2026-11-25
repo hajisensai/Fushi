@@ -4,6 +4,7 @@ import 'package:drift/native.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/stat_day_reset_hour_dialog.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
@@ -276,4 +277,36 @@ void main() {
     );
     expect(reading, isNot(contains('setStatDayResetHour(')));
   });
+
+  // PR #3130：复习模块开着时，日界下面多一行说明（这个时刻也是复习的「今天」、随复习数据同步）；关着时不显示。
+  for (final bool srsOn in <bool>[true, false]) {
+    testWidgets(
+      'SRS note under the day boundary row: srs ${srsOn ? 'on' : 'off'}',
+      (WidgetTester tester) async {
+        final (FushiDatabase db, AppModel appModel, Directory tmpDir) =
+            await harness();
+        addTearDown(() async {
+          await db.close();
+          tmpDir.deleteSync(recursive: true);
+        });
+        await appModel.prefsRepo.setModuleEnabled(ModuleId.srs, srsOn);
+        expect(appModel.moduleVisibility.isEnabled(ModuleId.srs), srsOn);
+
+        await tester.pumpWidget(
+          TranslationProvider(
+            child: MaterialApp(
+              home: Scaffold(body: StatSettingsDialog(appModel: appModel)),
+            ),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(tester.takeException(), isNull);
+        expect(
+          find.text(t.stat_center_day_reset_hour_srs_note),
+          srsOn ? findsOneWidget : findsNothing,
+        );
+      },
+    );
+  }
 }

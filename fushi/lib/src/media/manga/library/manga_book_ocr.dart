@@ -14,12 +14,12 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/manga/library/manga_chapter_storage.dart';
 import 'package:fushi/src/media/manga/library/online_manga_chapter_updates.dart';
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
-import 'package:fushi/src/media/manga/manga_ocr_background_job.dart';
 import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart';
 import 'package:fushi/src/media/manga/manga_ocr_job_stream.dart';
 import 'package:fushi/src/media/manga/manga_ocr_wizard_engines.dart';
@@ -30,7 +30,6 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/media/manga/manga_storage.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart' show MangaOcrPageFocus;
 import 'package:path/path.dart' as p;
@@ -79,6 +78,40 @@ Future<MangaOcrResultState> readMangaOcrResultState(File mangaJson) async {
   } on Object {
     return MangaOcrResultState.unreadable;
   }
+}
+
+/// [chapterKeys] 里**已有识别结果**的章（章 `manga.json` 至少一个 block，
+/// [MangaOcrResultState.hasResult]）。章节列表逐章「已识别文字」标识的唯一来源：
+/// 直接读识别结果本身，不另存镜像状态（反馈 wCgL364tgM）。调用方只该传已下载的
+/// 章——没下载的章没有 `manga.json`，读失败会被当作 [MangaOcrResultState.unreadable]
+/// 排除。
+///
+/// 每章都要整份解析 `manga.json`（识别过的章带全部 blocks，常见几百 KB 到数
+/// MB），已下载章一多就是几十 ms 以上：放后台 isolate 跑，不卡作品页。
+Future<Set<String>> ocrCompletedChapterKeys(
+  String bookDir,
+  Iterable<String> chapterKeys,
+) {
+  final List<String> keys = chapterKeys.toList(growable: false);
+  if (keys.isEmpty) return Future<Set<String>>.value(const <String>{});
+  return Isolate.run(() => _ocrCompletedChapterKeys(bookDir, keys));
+}
+
+Future<Set<String>> _ocrCompletedChapterKeys(
+  String bookDir,
+  List<String> keys,
+) async {
+  final List<MangaOcrResultState> states =
+      await Future.wait(<Future<MangaOcrResultState>>[
+        for (final String key in keys)
+          readMangaOcrResultState(
+            mangaChapterJsonFile(mangaChapterDirectory(bookDir, key)),
+          ),
+      ]);
+  return <String>{
+    for (int i = 0; i < keys.length; i++)
+      if (states[i] == MangaOcrResultState.hasResult) keys[i],
+  };
 }
 
 /// 在线作品某一章的识别目标（章目录约定见 `manga_download_auto_ocr.dart`）。
@@ -134,7 +167,8 @@ Future<List<MangaOcrTarget>> mangaOcrTargetsForBook(
       ),
     ];
   }
-  final String bookDir = await MangaStorage.bookPath(row.bookKey);
+  // [row] 是书架行本身（不是章目录副本），extractDir 就是书目录。
+  final String bookDir = row.extractDir;
   final List<MangaOcrTarget> targets = <MangaOcrTarget>[];
   for (final OnlineMangaChapter chapter in entry.chapters.reversed) {
     if (!await isChapterDownloaded(bookDir, chapter.key)) continue;
@@ -167,11 +201,13 @@ Future<int> enqueueMangaOcrTargets({
   final MangaOcrWizardEngines engines =
       enginesOverride ??
       MangaOcrWizardEngines.resolve(context: context, db: appModel.database);
-  final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
-    engines,
-  );
   final MangaOcrEnginePreference preference =
       MangaOcrEnginePreferenceKey.fromKey(appModel.mangaOcrEnginePreference);
+  // 本次点名的引擎 / 显式偏好只探那一个；auto 要完整能力表，全探。
+  final MangaOcrEngineAvailability availability = await probeMangaOcrEngines(
+    engines,
+    only: mangaOcrProbeTargetFor(preference, engineChoice: engineChoice),
+  );
   // [engineChoice]：调用方为**本次**点名的引擎（整卷 OCR 向导选引擎同一语义，
   // 不写偏好）；null = 按用户偏好解析。可用性判据两条路一样（isUsable）。
   final MangaOcrEngineId? engine =
@@ -210,14 +246,7 @@ Future<int> enqueueMangaOcrTargets({
     // 刻意不 await 启动：同书上一章还在识别时 enqueue 要等它结束。
     unawaited(
       registry.enqueue(
-        job: MangaOcrBackgroundJob(
-          bookKey: target.bookKey,
-          managedDirectory: target.directory,
-          engine: engine,
-          events: mangaOcrBackgroundEvents(spec),
-          focus: focus,
-          follower: mangaOcrJobFollower(spec),
-        ),
+        job: mangaOcrBackgroundJob(bookKey: target.bookKey, spec: spec),
         mangaJsonPath: target.mangaJsonPath,
       ),
     );

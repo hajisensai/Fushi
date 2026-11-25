@@ -3,8 +3,10 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/sync/sync_backend_type.dart';
 
 FushiDatabase _testDb() {
   return FushiDatabase.forTesting(DatabaseConnection(NativeDatabase.memory()));
@@ -428,6 +430,55 @@ void main() {
     });
   });
 
+  // C14：URL 是行主键，hostId 是行的归属。归属另一台 host 的行不得被静默写入凭据。
+  group('C14 地址归属闸', () {
+    const String u = 'http://10.0.0.5:38765';
+
+    test('已归 A 的地址拿 B 签发的 token → 抛冲突，行与全局 token 都不动', () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+      await repo.addFushiClientUrl(u);
+      await repo.setFushiClientTokenForUrl(u, 'a', hostId: 'A');
+
+      await expectLater(
+        repo.setFushiClientTokenForUrl(u, 'b', hostId: 'B'),
+        throwsA(isA<InterconnectAddressOwnerConflict>()),
+      );
+      final List<FushiClientUrl> rows = await repo.getFushiClientUrls();
+      expect(rows, hasLength(1));
+      expect(rows.single.hostId, 'A');
+      expect(rows.single.token, 'a');
+      expect(await repo.getFushiClientToken(), 'a');
+
+      // 用户确认「作为新设备配对」后才改归 B。
+      await repo.setFushiClientTokenForUrl(
+        u,
+        'b',
+        hostId: 'B',
+        reassignOwner: true,
+      );
+      final List<FushiClientUrl> after = await repo.getFushiClientUrls();
+      expect(after.single.hostId, 'B');
+      expect(after.single.token, 'b');
+      expect(await repo.getFushiClientToken(), 'b');
+    });
+
+    test('TOFU 守卫不看 hostId：已归组的 https 地址换指纹仍抛 MITM 异常', () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+      const String s = 'https://10.0.0.5:38765';
+      await repo.addFushiClientUrl(s, fingerprint: 'aa:aa');
+      await repo.setFushiClientTokenForUrl(s, 'a', hostId: 'A');
+      await expectLater(
+        repo.addFushiClientUrl(s, fingerprint: 'bb:bb'),
+        throwsA(isA<FushiFingerprintMismatchException>()),
+      );
+      expect(await repo.getFushiClientFingerprint(s), 'aa:aa');
+    });
+  });
+
   group('audiobook position', () {
     test('round-trips through the typed accessor', () async {
       final FushiDatabase db = _testDb();
@@ -474,6 +525,51 @@ void main() {
 
     test('sync_device_id is in the device-local key catalog', () {
       expect(SyncRepository.deviceLocalPrefKeys, contains('sync_device_id'));
+    });
+  });
+
+  group('cloud content sniff cache (ecNgkRQcTk)', () {
+    test('round-trips per channel and stays out of other channels', () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncRepository repo = SyncRepository(db);
+      final SyncChannelScope drive = SyncChannelScope.forBackendType(
+        SyncBackendType.googleDrive,
+      );
+      final SyncChannelScope dropbox = SyncChannelScope.forBackendType(
+        SyncBackendType.dropbox,
+      );
+
+      expect(await repo.getContentSniffCache(drive), isEmpty);
+      await repo.setContentSniffCache(drive, <String, Object?>{
+        'asset': <String, Object?>{'folder': 'f', 'kind': 'manga'},
+      });
+
+      expect(
+        (await repo.getContentSniffCache(drive))['asset'],
+        <String, Object?>{'folder': 'f', 'kind': 'manga'},
+      );
+      expect(await repo.getContentSniffCache(dropbox), isEmpty);
+    });
+
+    test('a corrupt row reads as an empty cache', () async {
+      final FushiDatabase db = _testDb();
+      addTearDown(db.close);
+      final SyncChannelScope drive = SyncChannelScope.forBackendType(
+        SyncBackendType.googleDrive,
+      );
+      await db.setPref(drive.key('sync_content_sniff_cache'), '{not json');
+
+      expect(await SyncRepository(db).getContentSniffCache(drive), isEmpty);
+    });
+
+    test('is device-local in every channel slot', () {
+      for (final SyncChannelScope scope in SyncChannelScope.all) {
+        expect(
+          SyncRepository.deviceLocalPrefKeys,
+          contains(scope.key('sync_content_sniff_cache')),
+        );
+      }
     });
   });
 

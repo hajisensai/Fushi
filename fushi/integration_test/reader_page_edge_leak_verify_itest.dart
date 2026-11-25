@@ -12,6 +12,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:integration_test/integration_test.dart';
 
 import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 
 /// TODO-1285 真机验证：分页阅读器「翻页时看到上/下页内容」（相邻页/列泄露到页边距带）。
@@ -274,7 +275,9 @@ void main() {
         final int cols = layout['cols'] as int;
         final bool vertical = wm.startsWith('vertical');
         await settings.setWritingMode(wm);
-        await settings.setPageColumns(cols);
+        await settings.setPageSpread(
+          cols >= 2 ? ReaderPageSpread.double : ReaderPageSpread.single,
+        );
 
         final String fullCss = ReaderContentStyles.css(settings: settings);
 

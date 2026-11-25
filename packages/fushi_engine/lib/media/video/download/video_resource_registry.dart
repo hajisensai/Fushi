@@ -6,6 +6,7 @@ import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/torrent/video_resource_relevance.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
+import 'package:fushi_engine/media/video/download/video_release_scope_evidence.dart';
 
 class VideoResourceSelection {
   const VideoResourceSelection({
@@ -132,6 +133,13 @@ class VideoResourceRegistry {
         deduplicateVideoResources(merged.items),
         query: request.effectiveQuery,
         season: request.effectiveSeason,
+        workTitles: <String>[
+          if (request.media case final VideoMediaReference media) ...<String>[
+            media.title,
+            ?media.originalTitle,
+            ...media.aliases,
+          ],
+        ],
       ),
       failures: merged.failures,
       successfulProviderCount: merged.successfulProviderCount,
@@ -175,6 +183,21 @@ class VideoResourceRegistry {
       kind: ExternalProviderFailureKind.notFound,
       message: 'selected resource is no longer available',
     );
+  }
+
+  /// 取一条发布的种子文件列表（下载规划的整包证据）。负责它的 provider 经
+  /// [resolveProvider] 找；provider 给不出列表（只有磁链的索引器）→ null。
+  Future<VideoReleaseManifest?> inspectRelease(
+    VideoResourceCandidate candidate,
+  ) async {
+    final VideoResourceProvider? provider = resolveProvider(
+      persistedVideoResourceProviderId(candidate),
+    );
+    if (provider is! VideoReleaseFileListingProvider) return null;
+    final VideoReleaseFileListingProvider listing =
+        provider as VideoReleaseFileListingProvider;
+    final List<String>? files = await listing.listReleaseFiles(candidate);
+    return files == null ? null : VideoReleaseManifest(files);
   }
 
   void close() {

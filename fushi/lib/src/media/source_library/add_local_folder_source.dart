@@ -1,9 +1,15 @@
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
+    show BookAudiobookTranscribePort;
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart'
+    show sourcelessLocalVideoScrapeScope;
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart';
+import 'package:fushi/src/media/source_library/source_scan_temp.dart';
+import 'package:fushi/src/media/video/metadata/video_local_index_rebuild.dart';
 
 /// 把一个**本地文件夹**登记成常驻扫描根并立即扫一遍。
 ///
@@ -38,8 +44,13 @@ import 'package:fushi/src/media/source_library/source_library_scanner.dart';
 /// [autoOwnerSourceId]：音乐库收视频来源里的纯音频时，记下是哪个视频来源登记的（v145，
 /// 删视频来源时连带移除）。null = 用户手动添加：撞上同根的**自动**来源时把它转成手动
 /// 来源（之后删视频来源它也留着），并解除所有视频来源对这个目录的「不再登记」。
+///
+/// [transcribeAudiobook]：书籍来源里「配上了有声书音频却没有字幕」的书交给转录队列
+/// 的端口（`AppModel.folderImportTranscribePort`）。必填的可空参数：每个调用方显式
+/// 表态，音乐 / 视频入口传 null。
 Future<AddLocalFolderResult> addLocalFolderAsSource({
   required FushiDatabase db,
+  required BookAudiobookTranscribePort? transcribeAudiobook,
   required String mediaKind,
   required String path,
   String videoGroupingMode = 'series',
@@ -82,7 +93,10 @@ Future<AddLocalFolderResult> addLocalFolderAsSource({
   // 插入后立刻扫描：不扫的话来源列表里是一条 0 媒体的空行，用户以为没生效。
   final SourceLibraryRow? fresh = await db.getMediaSourceById(newId);
   if (fresh != null) {
-    await SourceLibraryScanner(db).scan(fresh);
+    await SourceLibraryScanner(
+      db,
+      transcribeAudiobook: transcribeAudiobook,
+    ).scan(fresh);
   }
   return AddLocalFolderResult(
     outcome: AddLocalFolderOutcome.added,
@@ -138,8 +152,11 @@ int _nextSortOrder(List<MediaSourceRow> existing) => existing.isEmpty
 /// [bookmark]：iOS 安全作用域书签（BUG-3697），只撑这一次扫描的访问窗口，删临时行
 /// 前释放。书 / 漫画扫描时已拷进 app，扫完即可停；视频是原地引用，扫完停掉访问后
 /// 原文件在 iOS 上不可再读——要长期播放请登记成常驻来源。
+///
+/// [transcribeAudiobook]：同 [addLocalFolderAsSource]。
 Future<SourceScanSummary?> importLocalFolderOnceAt({
   required FushiDatabase db,
+  required BookAudiobookTranscribePort? transcribeAudiobook,
   required String mediaKind,
   required String path,
   String videoGroupingMode = 'series',
@@ -157,22 +174,45 @@ Future<SourceScanSummary?> importLocalFolderOnceAt({
       mediaKind: Value(mediaKind),
       transport: const Value('local'),
       rootPath: Value(norm),
-      configJson: sourceConfigValueForBookmark(bookmark),
+      // 带「临时行」标记：进程在扫描中途被杀时 finally 跑不到，下一次进程靠这个
+      // 标记认出并清掉它（[sweepStaleOneShotSources]）。
+      configJson: Value<String?>(oneShotSourceConfig(bookmark)),
       recursive: Value(recursive),
       videoGroupingMode: Value(videoGroupingMode),
       sortOrder: Value(sortOrder),
       createdAt: Value(DateTime.now().millisecondsSinceEpoch),
     ),
   );
+  markOneShotSourceLive(tempId);
+  final SourceScanSummary? summary;
   try {
     final SourceLibraryRow? temp = await db.getMediaSourceById(tempId);
     if (temp == null) return null;
     onScanning?.call(tempId);
-    return await SourceLibraryScanner(db).scan(temp, oneShot: true);
+    summary = await SourceLibraryScanner(
+      db,
+      transcribeAudiobook: transcribeAudiobook,
+    ).scan(temp, oneShot: true);
   } finally {
-    await SourceFolderAccess.instance.release(tempId);
-    await db.deleteMediaSource(tempId);
+    try {
+      await SourceFolderAccess.instance.release(tempId);
+      await db.deleteMediaSource(tempId);
+    } finally {
+      markOneShotSourceDone(tempId);
+    }
   }
+  // 临时行删掉后，导入的视频（FK 归 NULL）落进无来源范围。扫描里那次本地索引对临时行
+  // 不立项（[VideoSourceMetadataIndexer.index]），这里对无来源范围补上：建本地作品、
+  // 把 `SPs` / `Menus` 里的 NCOP / PV / CM / Menu 挂到正片作品下。修前一次性导入的
+  // 视频永远没有特典绑定，在系列墙上各自成卡（BUG-5418）。
+  if (mediaKind == SourceLibraryKind.video.dbValue) {
+    await indexLocalVideoScope(
+      db,
+      sourcelessLocalVideoScrapeScope,
+      logSource: 'source.importOnce.index',
+    );
+  }
+  return summary;
 }
 
 enum AddLocalFolderOutcome { added, duplicate }

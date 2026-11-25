@@ -904,6 +904,37 @@ void main() {
       );
     });
 
+    test('桌面 OCR 字格可拖选文本，且文本拖动不会翻页', () {
+      final String doc = mangaWindowDocument(
+        <MokuroImage>[_pageWithTwoBlocks()],
+        <String>['p.jpg'],
+        mode: MangaReadingMode.spread,
+        spreadDirection: 'rtl',
+        inlineSelectionJs: ReaderSelectionScripts.source(),
+        enableMouseTextSelection: true,
+      );
+
+      expect(
+        doc.contains('.ocr-char{-webkit-user-select:text;user-select:text;}'),
+        isTrue,
+        reason: 'desktop OCR text must opt back into native selection',
+      );
+      expect(
+        doc.contains("window.matchMedia('(any-pointer:fine)').matches"),
+        isTrue,
+      );
+      expect(
+        doc.contains("e.target.closest('.ocr-char')"),
+        isTrue,
+        reason: 'selection starts only when the mouse is on OCR text',
+      );
+      expect(
+        doc.contains('if (textDrag) {'),
+        isTrue,
+        reason: 'mouse text drags must not turn the page',
+      );
+    });
+
     test('webtoon → 竖向堆叠（column）', () {
       final MokuroImage page = _pageWithTwoBlocks();
       final String doc = mangaWindowDocument(
@@ -1490,25 +1521,31 @@ void main() {
         inlineSelectionJs: '',
         pageAnimation: animation,
       );
+      // 只看 #manga-root 那张过渡样式表：浮层按钮等别的规则也有自己的 transition。
+      String rootCss(String doc) => RegExp(
+        r'<style id="manga-anim-css">(.*?)</style>',
+      ).firstMatch(doc)!.group(1)!;
       // 默认速度 normal（FushiMotion token），缓动统一 cubic-bezier(.2,.7,.2,1)。
       final int normalMs = PageTurnAnimationSpeed.normal.durationMs;
       expect(
-        docFor(MangaPageAnimation.slide).contains(
+        rootCss(docFor(MangaPageAnimation.slide)).contains(
           'transition:transform ${normalMs}ms cubic-bezier(.2,.7,.2,1);',
         ),
         isTrue,
       );
       // none = 完全不声明过渡（要极限响应的用户）。
       final String none = docFor(MangaPageAnimation.none);
-      expect(none.contains('transition:transform '), isFalse);
-      expect(none.contains('transition:opacity '), isFalse);
+      expect(rootCss(none).contains('transition:transform '), isFalse);
+      expect(rootCss(none).contains('transition:opacity '), isFalse);
       // fade 只过渡 opacity（淡出 / 淡入各半程），位移在淡出后瞬时完成。
       final String fade = docFor(MangaPageAnimation.fade);
       expect(
-        fade.contains('transition:opacity ${(normalMs / 2).round()}ms '),
+        rootCss(
+          fade,
+        ).contains('transition:opacity ${(normalMs / 2).round()}ms '),
         isTrue,
       );
-      expect(fade.contains('transition:transform '), isFalse);
+      expect(rootCss(fade).contains('transition:transform '), isFalse);
       // 被拖动跟手过的翻页按平移收尾（BUG-3624），淡入淡出只给点按 / 按键翻页。
       expect(
         fade.contains(
@@ -1519,8 +1556,8 @@ void main() {
       // cover：strip 本身瞬时定位（root 不声明过渡），动的是克隆覆盖层。
       final String cover = docFor(MangaPageAnimation.cover);
       expect(cover.contains("var PAGE_ANIM = 'cover';"), isTrue);
-      expect(cover.contains('transition:transform '), isFalse);
-      expect(cover.contains('transition:opacity '), isFalse);
+      expect(rootCss(cover).contains('transition:transform '), isFalse);
+      expect(rootCss(cover).contains('transition:opacity '), isFalse);
       expect(cover.contains('.manga-cover-layer{position:absolute;'), isTrue);
       expect(cover.contains('function _coverBegin(from, to){'), isTrue);
     });
@@ -1570,8 +1607,14 @@ void main() {
         docFor(followDrag: false).contains('var FOLLOW_DRAG = false;'),
         isTrue,
       );
-      expect(on.contains('var FOLLOW_COMMIT = 0.25;'), isTrue);
-      expect(on.contains('var FOLLOW_FLING = 0.6;'), isTrue);
+      // 灵敏度默认 1.0 = 原先写死的 0.25 屏宽 / 24px+0.6px/ms / 72px / 36px+900px/s。
+      expect(
+        on.contains(
+          'window.__mangaSetSwipeThresholds({followCommit:0.25,followFling:0.6,'
+          'followFlingMinPx:24,dist:72,fastDist:36,fastVel:900});',
+        ),
+        isTrue,
+      );
       expect(on.contains('var MAX_ANIM_DIST = 1;'), isTrue);
       // 跟手只看开关、与翻页效果无关（BUG-3624，对齐 Mihon）；阈值分支按是否
       // 真跟了手选择。行为由 manga_swipe_follow_js_test 逐效果跑真实 JS 钉住。
@@ -1777,7 +1820,7 @@ void main() {
           reason: 'webtoon 的锚点屏幕坐标是 layout*ZOOM - scrollY',
         );
         expect(
-          doc.contains('window.scrollTo(0, Math.max(0, localY * ZOOM - ay));'),
+          doc.contains('_zoomAnchorScrollTo(Math.max(0, localY * ZOOM - ay));'),
           isTrue,
           reason: '捏合后必须把锚点补偿写回 scrollY，否则画面跟着缩放跳走',
         );
@@ -1825,6 +1868,73 @@ void main() {
           reason: '放大后必须能平移查看页面各处',
         );
       });
+    });
+  });
+
+  // BUG-4927：Windows WebView2 不认 InAppWebViewSettings 的滚动条开关（只在 Android
+  // 生效），经典滚动条占位让 100vw/100vh 布局互相撑出四边滚动条。文档必须自己
+  // 隐藏视口滚动条，并按位置所有权限定原生滚动轴。
+  group('BUG-4927 文档自管视口滚动条', () {
+    String docFor(MangaReadingMode mode) => mangaWindowDocument(
+      <MokuroImage>[_pageWithTwoBlocks()],
+      <String>['p.jpg'],
+      mode: mode,
+      spreadDirection: 'ltr',
+      inlineSelectionJs: '',
+    );
+
+    String htmlRule(String doc) {
+      final RegExpMatch? m = RegExp(
+        r'(?<![,\w-])html\{([^}]*)\}',
+      ).firstMatch(doc);
+      expect(m, isNotNull, reason: '文档必须有独立的 html{...} 规则');
+      return m!.group(1)!;
+    }
+
+    test('所有模式都隐藏视口滚动条且不占位', () {
+      for (final MangaReadingMode mode in MangaReadingMode.values) {
+        final String doc = docFor(mode);
+        expect(
+          htmlRule(doc),
+          contains('scrollbar-width:none;'),
+          reason: '$mode',
+        );
+        expect(
+          doc.contains('::-webkit-scrollbar{display:none;width:0;height:0;}'),
+          isTrue,
+          reason: '$mode',
+        );
+      }
+    });
+
+    test('溢出只写在 html 上，body 不得自成滚动容器', () {
+      for (final MangaReadingMode mode in MangaReadingMode.values) {
+        final RegExpMatch m = RegExp(
+          r'html,body\{([^}]*)\}',
+        ).firstMatch(docFor(mode))!;
+        expect(m.group(1)!, isNot(contains('overflow')), reason: '$mode');
+      }
+    });
+
+    test('spread 两轴都由 JS 拥有：html overflow:hidden', () {
+      for (final MangaReadingMode mode in MangaReadingMode.values) {
+        if (mode.isContinuous) continue;
+        expect(
+          htmlRule(docFor(mode)),
+          contains('overflow:hidden;'),
+          reason: '$mode',
+        );
+      }
+    });
+
+    test('长条 / 纵向分页保留原生竖滚，只关横向', () {
+      for (final MangaReadingMode mode in MangaReadingMode.values) {
+        if (!mode.isContinuous) continue;
+        final String rule = htmlRule(docFor(mode));
+        expect(rule, contains('overflow-x:hidden;'), reason: '$mode');
+        expect(rule, isNot(contains('overflow:hidden')), reason: '$mode');
+        expect(rule, isNot(contains('overflow-y')), reason: '$mode');
+      }
     });
   });
 }

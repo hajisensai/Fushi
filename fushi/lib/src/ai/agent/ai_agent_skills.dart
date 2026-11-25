@@ -1,5 +1,7 @@
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 
+import 'package:fushi/src/ai/agent/ai_agent_library_skill.dart';
+
 /// AI 助手的组合技能（spec `docs/specs/2026-10-26-ai-operations-agent-design.md`
 /// §6.3）：确定性的多步配方。模型只负责选技能、填参数；每一步都调操作目录里的
 /// 现有操作（与按钮同一个 handler），照常走确认 / 记账 / 撤销。
@@ -10,6 +12,8 @@ List<AiAgentAppSkill> buildAiAgentSkills() => <AiAgentAppSkill>[
   ScrapeResolveSkill(),
   ExtensionFindSkill(),
   SrsConflictsResolveSkill(),
+  CurateLibrarySkill(),
+  ReorganizeLibrarySkill(),
 ];
 
 /// app 侧技能：声明它要用的操作；任一当前不可用（模块关、平台 / 合规不支持）时
@@ -226,9 +230,11 @@ class SubtitleFillSkill extends AiAgentAppSkill {
 /// 每部作品搜候选（`video.work.candidates`），出一张候选卡让用户点；点中的那一项
 /// 就是确认，直接认领（`video.work.identify`）。用户点「都不是」就留在待确认队列。
 ///
-/// 与设计稿的差异：设计稿要「高置信的直接认领（撤销 = 退回待确认）」，但目前没有
-/// 「清除作品身份、退回待确认」的路由，认领撤销不了；所以每一部都让用户在卡片上
-/// 点，不自动认领。
+/// 与设计稿的差异：设计稿要「高置信的直接认领（撤销 = 退回待确认）」。当初认领撤销
+/// 不了，所以每一部都让用户在卡片上点、不自动认领。2026-11-18 起 `video.work.identify`
+/// 与 `video.scrape.confirm` 已可撤销（执行前整块快照，撤销恢复认领前状态、无身份的
+/// 作品退回待确认队列），但本技能行为暂不改：自动认领由后续的 AI 库管家来做
+/// （`docs/specs/2026-11-18-ai-library-curator-design.md` §6）。
 class ScrapeResolveSkill extends AiAgentAppSkill {
   @override
   List<String> get requiredOps => const <String>[
@@ -723,6 +729,79 @@ class SrsConflictsResolveSkill extends AiAgentAppSkill {
         listed.data,
         'pendingNotes',
       ).length,
+    };
+  }
+}
+
+/// 「整理整个库」（AI 库管家设计稿 `docs/specs/2026-11-18-ai-library-curator-design.md`
+/// §3 / §9）：先估算这一趟大约要发多少次 AI 请求，再跑一趟库管家（合集归属 → 认
+/// 身份 → 作品关系 → 作品层）。步骤全由库管家的代码编排，模型只决定要不要跑、
+/// 全量还是增量；整趟作为一条操作记录落在本会话里，撤销它 = 整趟撤销。
+class CurateLibrarySkill extends AiAgentAppSkill {
+  @override
+  List<String> get requiredOps => const <String>[
+    'library.curate.estimate',
+    'library.curate.run',
+  ];
+
+  @override
+  AgentToolSpec get spec => const AgentToolSpec(
+    name: 'skill.curate_library',
+    description:
+        'Run the fixed, incremental curator pipeline once (the same one that '
+        'runs automatically after imports): organize collection membership '
+        'of new items, identify unscraped video works, link related works '
+        'and refresh the work layer. Only items added since the last run '
+        'unless full=true. Cheap but shallow; for a thorough reorganization '
+        'of the whole library (fix wrong collections, rewrite relations) use '
+        'skill.library.reorganize instead. Undo reverts the whole run.',
+    parameters: <String, Object?>{
+      'type': 'object',
+      'properties': <String, Object?>{
+        'full': <String, Object?>{
+          'type': 'boolean',
+          'description': 'Go through the whole library, not just new items.',
+        },
+      },
+    },
+    risk: AgentToolRisk.write,
+    undoable: true,
+    longRunning: true,
+  );
+
+  @override
+  Future<Object?> run(
+    AgentSkillContext context,
+    Map<String, Object?> args,
+  ) async {
+    final bool full = args['full'] == true;
+    final AgentToolResult estimate = await context.call(
+      'library.curate.estimate',
+      <String, Object?>{if (full) 'full': true},
+    );
+    if (estimate.isError) {
+      throw AgentSkillFailure(estimate.errorCode!, estimate.errorMessage);
+    }
+    if (context.cancelled) return <String, Object?>{'cancelled': true};
+    final AgentToolResult run = await context.call(
+      'library.curate.run',
+      <String, Object?>{if (full) 'full': true},
+    );
+    if (run.isError) {
+      throw AgentSkillFailure(run.errorCode!, run.errorMessage);
+    }
+    final Map<String, Object?> r = _map(run.data);
+    return <String, Object?>{
+      'estimate': estimate.data,
+      'runId': r['id'],
+      'status': r['status'],
+      'changes': r['changes'],
+      'pending': r['pending'],
+      'requests': r['requests'],
+      'stages': r['stages'],
+      'note':
+          'Items left for the user are listed by library.curate.pending; '
+          'undo this action to revert the whole run.',
     };
   }
 }

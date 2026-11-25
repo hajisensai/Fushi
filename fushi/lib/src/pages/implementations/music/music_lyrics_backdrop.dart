@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:io';
 import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
@@ -10,11 +9,10 @@ import 'package:flutter/foundation.dart'
 import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
 
-import 'package:fushi/src/pages/implementations/music/music_cover.dart'
-    show kMusicCoverRequestHeaders;
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart'
+    show lyricVisualizerCoverProvider;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
-import 'package:fushi/src/utils/net/app_http_image.dart';
 
 // 歌词页流体背景（参照 QPlayer / Apple Music-like Lyrics 的三种背景思路，实现是
 // 本仓自写的 Canvas 版，不含上游代码）：
@@ -47,12 +45,15 @@ enum MusicLyricsBackdropStyle {
   /// 持久化值（冻结）。
   final String prefValue;
 
-  /// 未知 / 缺省值回落到默认 [meshGradient]。
+  /// 出厂默认（反馈 l1ERGmWxjF：默认用 Pixi 渲染器）。
+  static const MusicLyricsBackdropStyle defaultStyle = pixi;
+
+  /// 未知 / 缺省值回落到默认 [defaultStyle]。
   static MusicLyricsBackdropStyle fromPref(String? value) {
     for (final MusicLyricsBackdropStyle s in values) {
       if (s.prefValue == value) return s;
     }
-    return meshGradient;
+    return defaultStyle;
   }
 }
 
@@ -648,16 +649,10 @@ Size musicBackdropRenderSize(Size logical) {
   );
 }
 
-/// 封面地址 → ImageProvider：`http(s)://` 走全应用代理装配的 [AppHttpImage]，
-/// 本地文件存在才用 [FileImage]，其余 null（背景改用主题色 mesh）。
-ImageProvider? musicLyricsBackdropCoverProvider(String? coverPath) {
-  if (coverPath == null || coverPath.isEmpty) return null;
-  if (coverPath.startsWith('http://') || coverPath.startsWith('https://')) {
-    return AppHttpImage(coverPath, headers: kMusicCoverRequestHeaders);
-  }
-  final File file = File(coverPath);
-  return file.existsSync() ? FileImage(file) : null;
-}
+/// 封面地址 → ImageProvider（委托歌词动画框架的共享封面工具 [lyricVisualizerCoverProvider]）：
+/// `http(s)://` 走全应用代理，本地文件存在才用 [FileImage]，其余 null（背景改用主题色 mesh）。
+ImageProvider? musicLyricsBackdropCoverProvider(String? coverPath) =>
+    lyricVisualizerCoverProvider(coverPath);
 
 // ---------------------------------------------------------------------------
 // 组件
@@ -669,7 +664,7 @@ class MusicLyricsBackdrop extends StatefulWidget {
   const MusicLyricsBackdrop({
     super.key,
     required this.coverPath,
-    this.style = MusicLyricsBackdropStyle.meshGradient,
+    this.style = MusicLyricsBackdropStyle.defaultStyle,
     this.animate = true,
     this.saturation = kMusicLyricsBackdropSaturationDefault,
   });
@@ -1417,16 +1412,22 @@ class _BackdropPainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant _BackdropPainter old) {
+    // 离屏图只由回退画法（[_paintScene]）产出，内容只取决于下面这些；pixi 着色器
+    // 与它的小贴图只决定走不走着色器直绘、不进离屏图，变了只重绘、不作废缓存。
+    // 否则着色器异步加载完的那次 setState 会让静态模式（无封面 / 贴图未就绪时
+    // 走回退）把同一帧再离屏渲染一遍（pixi 成默认后暴露，BUG-5167）。
     final bool content =
         old.style != style ||
         !identical(old.image, image) ||
         !identical(old.meshTexture, meshTexture) ||
-        !identical(old.pixiShader, pixiShader) ||
-        !identical(old.pixiTexture, pixiTexture) ||
         old.base != base ||
         !listEquals(old.grid, grid);
     if (content) cache.invalidate();
-    return content || old.phase != phase || !listEquals(old.matrix, matrix);
+    return content ||
+        !identical(old.pixiShader, pixiShader) ||
+        !identical(old.pixiTexture, pixiTexture) ||
+        old.phase != phase ||
+        !listEquals(old.matrix, matrix);
   }
 }
 

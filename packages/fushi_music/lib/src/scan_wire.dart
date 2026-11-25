@@ -2,7 +2,7 @@ import 'dart:convert';
 import 'dart:typed_data';
 
 /// 批次格式版本，与 native/fushi_music/src/wire.rs 的 `BATCH_FORMAT_VERSION` 一致。
-const int kMusicScanBatchFormatVersion = 2;
+const int kMusicScanBatchFormatVersion = 3;
 
 /// 远程扫描清单格式版本，与 native/fushi_music/src/remote.rs 的 `LISTING_FORMAT_VERSION` 一致。
 const int kMusicListingFormatVersion = 1;
@@ -47,6 +47,29 @@ final class MusicScanCover extends MusicScanRecord {
   const MusicScanCover(super.path, this.bytes);
 
   final Uint8List bytes;
+}
+
+/// 一份解析好的播放列表文件（`.m3u` / `.m3u8`，native/fushi_music/src/playlist.rs）。
+final class MusicPlaylistFile {
+  const MusicPlaylistFile({required this.name, required this.entries});
+
+  /// `#PLAYLIST:` 给的名字；没写为 null（调用方用文件名）。
+  final String? name;
+
+  /// 条目（列表顺序，可重复）：本地文件是与曲库同一拼法的绝对路径，网络地址原样。
+  final List<String> entries;
+}
+
+/// 本地扫描遇到的播放列表文件（[path] 是列表文件自己的路径）。
+final class MusicScanPlaylist extends MusicScanRecord {
+  const MusicScanPlaylist(
+    super.path, {
+    required this.mtimeMs,
+    required this.playlist,
+  });
+
+  final int mtimeMs;
+  final MusicPlaylistFile playlist;
 }
 
 /// 一首曲目（普通文件或 CUE 虚拟曲目）。字段语义见 wire.rs 文件头。
@@ -248,12 +271,37 @@ MusicScanBatch decodeMusicScanBatch(Uint8List bytes) {
         records.add(MusicScanError(r.str(), r.str()));
       case 3:
         records.add(MusicScanCover(r.str(), r.bytes()));
+      case 4:
+        records.add(
+          MusicScanPlaylist(
+            r.str(),
+            mtimeMs: r.i64(),
+            playlist: _readPlaylist(r),
+          ),
+        );
       default:
         throw MusicScanWireError('unknown record kind $kind');
     }
   }
   if (!r.atEnd) throw const MusicScanWireError('trailing bytes after batch');
   return MusicScanBatch(done: done, records: records);
+}
+
+MusicPlaylistFile _readPlaylist(_Reader r) {
+  final String? name = r.optStr();
+  final int count = r.u32();
+  return MusicPlaylistFile(
+    name: name,
+    entries: <String>[for (int i = 0; i < count; i++) r.str()],
+  );
+}
+
+/// 解码 `ffm_playlist_parse` 交回的字节（`opt_str name | u32 count | str entry*count`）。
+MusicPlaylistFile decodeMusicPlaylistFile(Uint8List bytes) {
+  final _Reader r = _Reader(bytes);
+  final MusicPlaylistFile out = _readPlaylist(r);
+  if (!r.atEnd) throw const MusicScanWireError('trailing bytes after playlist');
+  return out;
 }
 
 MusicScannedTrack _readTrack(_Reader r) {

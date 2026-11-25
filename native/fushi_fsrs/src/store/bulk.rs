@@ -17,20 +17,22 @@
 //!   6 str?     行数个有值标志（补齐）+ 同 5
 //! ```
 //!
-//! 一个结果可以有几张表（统计：卡 / 复习 / 出处），各自一块，放在 sync2 命令结果的 `files` 里。
+//! 一个结果可以有几张表，各自一块，放在 sync2 命令结果的 `files` 里。
 use rusqlite::Connection;
 use rusqlite::types::ValueRef;
+#[cfg(test)]
 use serde_json::{Value, json};
+#[cfg(test)]
 use std::collections::HashMap;
 
 use super::sync2::sql;
 
-const KIND_I64: u32 = 1;
-const KIND_F64: u32 = 2;
-const KIND_OPT_I64: u32 = 3;
-const KIND_OPT_F64: u32 = 4;
-const KIND_STR: u32 = 5;
-const KIND_OPT_STR: u32 = 6;
+pub(crate) const KIND_I64: u32 = 1;
+pub(crate) const KIND_F64: u32 = 2;
+pub(crate) const KIND_OPT_I64: u32 = 3;
+pub(crate) const KIND_OPT_F64: u32 = 4;
+pub(crate) const KIND_STR: u32 = 5;
+pub(crate) const KIND_OPT_STR: u32 = 6;
 
 /// 一张列式表的编码器。
 pub struct Columns {
@@ -139,7 +141,7 @@ impl Columns {
 }
 
 /// 一列从 SQL 读出的值（按声明类型收集）。
-enum Col {
+pub(crate) enum Col {
     I64(Vec<i64>),
     F64(Vec<f64>),
     OptI64(Vec<Option<i64>>),
@@ -148,8 +150,9 @@ enum Col {
     OptStr(Vec<Option<String>>),
 }
 
-/// 卡片缓存的列：(列名, 类型)。`card_columns` 默认交回全部（`SrsCardCacheRow` 的每个字段，`profile_uid` 除外）。
-const CARD_COLUMNS: [(&str, u32); 23] = [
+/// 卡片缓存的列：(列名, 类型)。`card_columns` 与 `read` 的 `cards`（store/reads.rs）默认交回全部（`SrsCardCacheRow` 的
+/// 每个字段，`profile_uid` 除外）。
+pub(crate) const CARD_COLUMNS: [(&str, u32); 23] = [
     ("id", KIND_STR),
     ("note_id", KIND_STR),
     ("template_id", KIND_STR),
@@ -175,7 +178,8 @@ const CARD_COLUMNS: [(&str, u32); 23] = [
     ("freq_rank", KIND_OPT_I64),
 ];
 
-fn read_cols(
+/// 跑一条查询，按 [kinds]（与 SELECT 的列一一对应）逐列收集。
+pub(crate) fn read_cols(
     c: &Connection,
     q: &str,
     params: &[&dyn rusqlite::ToSql],
@@ -234,7 +238,7 @@ fn read_cols(
     Ok((n, cols))
 }
 
-fn encode(rows: usize, names: &[&str], cols: &[Col]) -> Vec<u8> {
+pub(crate) fn encode(rows: usize, names: &[&str], cols: &[Col]) -> Vec<u8> {
     let mut out = Columns::new(rows);
     for (name, col) in names.iter().zip(cols) {
         match col {
@@ -252,6 +256,7 @@ fn encode(rows: usize, names: &[&str], cols: &[Col]) -> Vec<u8> {
 /// `card_columns`：本 profile 的卡片缓存行（含隐藏；`visibleOnly` 为真只要可见的）按列交回。`fields` 限定要哪几列
 /// （缺省全部，见 [CARD_COLUMNS]）。行序与 Drift 以前发的 `SELECT * FROM srs_cards_cache WHERE profile_uid = srs_id(?)`
 /// 相同（同一条件、同一张表的同一查询计划）。
+#[cfg(test)]
 pub fn card_columns(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let wanted: Vec<&str> = match req.get("fields").and_then(Value::as_array) {
         Some(xs) => xs.iter().filter_map(Value::as_str).collect(),
@@ -277,174 +282,10 @@ pub fn card_columns(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8
     Ok(encode(rows, &names, &cols))
 }
 
-/// `stats_bundle`：统计页要的三张表（store 层只读快照里一次读完）。
-///
-/// - `cards`：可见卡（`hidden = 0`）的统计列；`added_at` = 笔记缓存的创建时刻（没有笔记缓存行时用卡片行上记的），
-///   `src` = 这张卡所属笔记的出处在 `sources` 里的下标（-1 = 没有笔记缓存行）。
-/// - `sources`：出处字典（kind, 原样 title；没有出处 = 两个空串），按首次出现的顺序。
-/// - `reviews`：有效复习投影（`srs_stat_reviews`）按时刻升序；`card` 是归属卡在「卡 ID 表」里的下标——可见卡就是
-///   它在 `cards` 里的行号，不可见的归属卡在 `cards` 行数之后、按 `extra_ids` 的顺序编号。
-/// - `extra_ids`：复习归属到的、不在 `cards` 里的卡 ID。
-pub fn stats_bundle(
-    c: &Connection,
-    profile: &str,
-    files: &mut Vec<(String, Vec<u8>)>,
-) -> Result<Value, String> {
-    const CARD_NAMES: [&str; 17] = [
-        "id",
-        "note_id",
-        "deck_id",
-        "queue",
-        "scheduled_days",
-        "suspended",
-        "buried_until_day",
-        "scheduler",
-        "due_day",
-        "due_at",
-        "stability",
-        "difficulty",
-        "last_reviewed_at",
-        "lapses",
-        "reps",
-        "added_at",
-        "last_log_id",
-    ];
-    const CARD_KINDS: [u32; 19] = [
-        KIND_STR,
-        KIND_STR,
-        KIND_STR,
-        KIND_STR,
-        KIND_I64,
-        KIND_I64,
-        KIND_OPT_I64,
-        KIND_STR,
-        KIND_OPT_I64,
-        KIND_OPT_I64,
-        KIND_OPT_F64,
-        KIND_OPT_F64,
-        KIND_OPT_I64,
-        KIND_I64,
-        KIND_I64,
-        KIND_I64,
-        KIND_OPT_STR,
-        KIND_OPT_STR,
-        KIND_OPT_STR,
-    ];
-    let (rows, mut cols) = read_cols(
-        c,
-        "SELECT c.id, c.note_id, c.deck_id, c.queue, c.scheduled_days, c.suspended, c.buried_until_day, c.scheduler, \
-         c.due_day, c.due_at, c.stability, c.difficulty, c.last_reviewed_at, c.lapses, c.reps, \
-         COALESCE(n.created_at, c.note_created_at), c.last_log_id, n.source_kind, n.source_title \
-         FROM srs_cards_cache c LEFT JOIN srs_notes_cache n ON n.id = c.note_id \
-         WHERE c.profile_uid = srs_id(?1) AND c.hidden = 0",
-        &[&profile],
-        &CARD_KINDS,
-    )?;
-    // 出处字典。
-    let (Some(Col::OptStr(titles)), Some(Col::OptStr(kinds))) = (cols.pop(), cols.pop()) else {
-        return Err("stats_bundle: source columns".into());
-    };
-    let mut dict: HashMap<(String, String), i64> = HashMap::new();
-    let mut src_kind: Vec<String> = Vec::new();
-    let mut src_title: Vec<String> = Vec::new();
-    let mut src: Vec<i64> = Vec::with_capacity(rows);
-    for (k, t) in kinds.into_iter().zip(titles) {
-        match k {
-            None => src.push(-1),
-            Some(k) => {
-                let t = t.unwrap_or_default();
-                let next = src_kind.len() as i64;
-                let i = *dict.entry((k.clone(), t.clone())).or_insert_with(|| {
-                    src_kind.push(k);
-                    src_title.push(t);
-                    next
-                });
-                src.push(i);
-            }
-        }
-    }
-    let mut cards = Columns::new(rows);
-    let mut index: HashMap<String, i64> = HashMap::with_capacity(rows);
-    if let Col::Str(ids) = &cols[0] {
-        for (i, id) in ids.iter().enumerate() {
-            index.insert(id.clone(), i as i64);
-        }
-    }
-    for (name, col) in CARD_NAMES.iter().zip(&cols) {
-        match col {
-            Col::I64(x) => cards.i64s(name, x),
-            Col::F64(x) => cards.f64s(name, x),
-            Col::OptI64(x) => cards.opt_i64s(name, x),
-            Col::OptF64(x) => cards.opt_f64s(name, x),
-            Col::Str(x) => cards.strs(name, x),
-            Col::OptStr(x) => cards.opt_strs(name, x),
-        }
-    }
-    cards.i64s("src", &src);
-    let mut sources = Columns::new(src_kind.len());
-    sources.strs("kind", &src_kind);
-    sources.strs("title", &src_title);
-
-    // 复习投影。
-    let mut stmt = c
-        .prepare_cached(
-            "SELECT card_id, occurred_at, utc_offset_min, rating, kind, duration_ms, prev_due_day, maturity_delta \
-             FROM srs_stat_reviews WHERE profile_uid = srs_id(?1) ORDER BY occurred_at",
-        )
-        .map_err(sql)?;
-    let mut it = stmt.query([profile]).map_err(sql)?;
-    let (mut card, mut at, mut off, mut rating, mut kind, mut dur, mut prev, mut mat) = (
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-        Vec::new(),
-    );
-    let mut extra: Vec<String> = Vec::new();
-    while let Some(r) = it.next().map_err(sql)? {
-        let id = super::ids::col(r, 0).map_err(sql)?;
-        let next = rows as i64 + extra.len() as i64;
-        let i = match index.get(&id) {
-            Some(i) => *i,
-            None => {
-                index.insert(id.clone(), next);
-                extra.push(id);
-                next
-            }
-        };
-        card.push(i);
-        at.push(r.get::<_, i64>(1).map_err(sql)?);
-        off.push(r.get::<_, i64>(2).map_err(sql)?);
-        rating.push(r.get::<_, Option<i64>>(3).map_err(sql)?);
-        kind.push(r.get::<_, i64>(4).map_err(sql)?);
-        dur.push(r.get::<_, i64>(5).map_err(sql)?);
-        prev.push(r.get::<_, Option<i64>>(6).map_err(sql)?);
-        mat.push(r.get::<_, i64>(7).map_err(sql)?);
-    }
-    let mut reviews = Columns::new(card.len());
-    reviews.i64s("card", &card);
-    reviews.i64s("occurred_at", &at);
-    reviews.i64s("utc_offset_min", &off);
-    reviews.opt_i64s("rating", &rating);
-    reviews.i64s("kind", &kind);
-    reviews.i64s("duration_ms", &dur);
-    reviews.opt_i64s("prev_due_day", &prev);
-    reviews.i64s("maturity_delta", &mat);
-    let mut extras = Columns::new(extra.len());
-    extras.strs("id", &extra);
-    files.push(("cards".to_owned(), cards.finish()));
-    files.push(("sources".to_owned(), sources.finish()));
-    files.push(("reviews".to_owned(), reviews.finish()));
-    files.push(("extra_ids".to_owned(), extras.finish()));
-    Ok(json!({"cards": rows, "reviews": card.len()}))
-}
-
 /// `anki_resolve`：AnkiConnect 数字 id → UUID（`notes` / `cards` 两组，查 v13 的 `anki_id` 索引）。结果与请求等长，
 /// 查不到 = null（同一个数字撞上两行时取 ID 最小的一行，与以前 Dart 整表映射「后写的覆盖」不同但都确定；53 位下
 /// 实际不会撞）。
+#[cfg(test)]
 pub fn anki_resolve(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
     let mut out = serde_json::Map::new();
     for (key, table) in [("notes", "srs_notes_cache"), ("cards", "srs_cards_cache")] {
@@ -479,6 +320,7 @@ pub fn anki_resolve(c: &Connection, profile: &str, req: &Value) -> Result<Value,
 /// 以前 Dart 侧为这一个动作把每条笔记的身份记录与**全部**修改记录读成 Drift 行对象、组装成 `SrsEntitySource`、
 /// 物化后再连同修改记录列表建 `SrsNoteView`，另读一遍卡片缓存行；这里在只读快照上直接读、物化（与缓存行刷新
 /// 同一个寄存器内核与同一套 SQL，store/caches.rs [super::caches::note_infos]），只交回要用的值。
+#[cfg(test)]
 pub fn anki_notes_info(c: &Connection, profile: &str, req: &Value) -> Result<Value, String> {
     let nums: Vec<Option<i64>> = req
         .get("notes")
@@ -593,30 +435,6 @@ mod tests {
             ),
             -2
         );
-    }
-
-    #[test]
-    fn stats_bundle_dictionary_encodes_sources_and_indexes_review_cards() {
-        let c = store();
-        c.execute_batch(
-            "INSERT INTO srs_notes_cache (id, profile_uid, note_type_id, guid, created_at, source_kind, source_title) VALUES
-               ('n1', 'p', 'T', 'g1', 100, 'book', ' A '), ('n2', 'p', 'T', 'g2', 200, '', ''),
-               ('n3', 'p', 'T', 'g3', 300, 'book', ' A ');
-             INSERT INTO srs_cards_cache (id, profile_uid, note_id, template_id, deck_id, hidden, note_created_at) VALUES
-               ('c1', 'p', 'n1', 't', 'd', 0, 1), ('c2', 'p', 'n2', 't', 'd', 0, 2), ('c3', 'p', 'n3', 't', 'd', 0, 3),
-               ('c4', 'p', 'nx', 't', 'd', 0, 4), ('h', 'p', 'n1', 't', 'd', 1, 5);
-             INSERT INTO srs_stat_reviews (log_id, profile_uid, card_id, occurred_at, rating) VALUES
-               ('l1', 'p', 'c2', 10, 3), ('l2', 'p', 'gone', 20, 1), ('l3', 'p', 'c1', 30, NULL);",
-        )
-        .unwrap();
-        let mut files = Vec::new();
-        let v = stats_bundle(&c, "p", &mut files).unwrap();
-        assert_eq!(v, json!({"cards": 4, "reviews": 3}));
-        let names: Vec<&str> = files.iter().map(|(n, _)| n.as_str()).collect();
-        assert_eq!(names, ["cards", "sources", "reviews", "extra_ids"]);
-        // 两个出处（book " A " 与无出处），c4 没有笔记缓存行。
-        assert_eq!(u32::from_le_bytes(files[1].1[4..8].try_into().unwrap()), 2);
-        assert_eq!(u32::from_le_bytes(files[3].1[4..8].try_into().unwrap()), 1);
     }
 
     #[test]

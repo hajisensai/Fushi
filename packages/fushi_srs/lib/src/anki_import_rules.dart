@@ -11,6 +11,12 @@ const String srsAnkiWriterId = 'anki';
 Hlc srsImportedRevlogHlc(int ankiRevlogId) =>
     Hlc(ankiRevlogId, 0, srsAnkiWriterId);
 
+/// 回导的外来原生日志（Fushi 导出包 fushi-ext 里别的设备 / profile 写的复习，`srs_apkg_import.dart`
+/// `_remapExtLog`）的标记键：日志 JSON 顶层带 `foreignLog: true`。新代内核不收作者 HLC，按这个标记把它的排序键
+/// 派生成 `(occurredAt, 0, "fushi")`（native/fushi_fsrs/src/anki_import_rules.rs `derived_log_hlc`），不按导入时刻排
+/// ——否则更早的外来复习会排到本机更晚的复习之后、改掉当前排程。
+const String srsForeignLogKey = 'foreignLog';
+
 /// 导入锚点的 HLC：(T, **1**, "anki")。
 ///
 /// 第六轮审查第 5 条（锚点同刻）：锚点时刻 T 就是来源最后一条排程相关 revlog 的时刻，两者物理时间相同、
@@ -96,6 +102,6 @@ SrsAnchorDecision srsDecideAnchor({
 ///
 /// 第六轮审查「handOff 卡回导」：修订版 8 里，Anki 里复习过 → 锚点把 scheduler 改回 fushi（卡被收回）；
 /// 没复习过 → 不写锚点（卡仍只读）。同一个操作两种结果。改为：导入从不改归属；
-/// 收回只能由显式的「收回到 Fushi」动作（SrsCardOps.reclaim，也是一条 handOff 事件）完成。
+/// 收回只能由显式的「收回到 Fushi」动作（一条 handOff 事件，重放按 Rust `sched::hand_off` 算）完成。
 /// 这样锚点内容仍只由来源决定（铁律 C），不读本机状态。
 const String srsAnchorScheduler = SrsScheduler.fushi;

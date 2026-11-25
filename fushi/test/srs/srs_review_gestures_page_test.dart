@@ -1,6 +1,6 @@
 // 「复习选项」→「手势」设置页（MD3 / Apple 两套设计系统）：
 //
-// - 两面各一组、每个手势一行，副标题是当前动作；
+// - 两面各一组：先一张手势示意图（手势图 + 当前动作），再每个手势一行，副标题是当前动作；
 // - 选动作走整页选择，写回 AppModel（映射偏好）；问题面的选项里没有评分，答案面没有
 //   「显示答案」；
 // - 「只留重来 / 良好」时绑在困难 / 简单上的行注明不生效；
@@ -11,6 +11,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_gesture_diagram.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_gestures_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_layout_sheet.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
@@ -103,7 +104,7 @@ void main() {
       }
       expect(find.byType(FushiEntranceScope), findsOneWidget);
       expect(find.byType(FushiStaggeredEntrance), findsNWidgets(3));
-      // 默认：单击三区切换顶栏，其余什么都不做。
+      // 默认开启：问题面点左 / 点中间 = 切换顶栏、左滑 = 显示答案；答案面左滑 = 良好；双击不绑。
       expect(
         find.descendant(
           of: _row(SrsReviewSide.front, SrsReviewGesture.tapLeft),
@@ -113,7 +114,28 @@ void main() {
       );
       expect(
         find.descendant(
+          of: _row(SrsReviewSide.front, SrsReviewGesture.swipeLeft),
+          matching: find.text(t.srs_review_show_answer),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: _row(SrsReviewSide.front, SrsReviewGesture.tapCenter),
+          matching: find.text(t.srs_review_gestures_action_toggle_toolbar),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
           of: _row(SrsReviewSide.back, SrsReviewGesture.swipeLeft),
+          matching: find.text(t.srs_rating_good),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: _row(SrsReviewSide.back, SrsReviewGesture.doubleTap),
           matching: find.text(t.srs_review_gestures_action_none),
         ),
         findsOneWidget,
@@ -140,15 +162,13 @@ void main() {
       expect(find.text(t.srs_rating_good), findsNothing);
       await tester.tap(
         find
-            .text(
-              srsReviewGestureActionLabel(SrsReviewGestureAction.showAnswer),
-            )
+            .text(srsReviewGestureActionLabel(SrsReviewGestureAction.undo))
             .last,
       );
       await tester.pumpAndSettle();
       expect(
         app.map.actionFor(SrsReviewSide.front, SrsReviewGesture.tapLeft),
-        SrsReviewGestureAction.showAnswer,
+        SrsReviewGestureAction.undo,
       );
 
       await tester.tap(_row(SrsReviewSide.back, SrsReviewGesture.swipeLeft));
@@ -159,23 +179,23 @@ void main() {
         ),
         findsNothing,
       );
-      await tester.tap(find.text(t.srs_rating_good).last);
+      await tester.tap(find.text(t.srs_rating_hard).last);
       await tester.pumpAndSettle();
       expect(
         app.map.actionFor(SrsReviewSide.back, SrsReviewGesture.swipeLeft),
-        SrsReviewGestureAction.rateGood,
+        SrsReviewGestureAction.rateHard,
       );
       expect(
         find.descendant(
           of: _row(SrsReviewSide.back, SrsReviewGesture.swipeLeft),
-          matching: find.text(t.srs_rating_good),
+          matching: find.text(t.srs_rating_hard),
         ),
         findsOneWidget,
       );
       // 另一面同一手势不受影响。
       expect(
         app.map.actionFor(SrsReviewSide.front, SrsReviewGesture.swipeLeft),
-        SrsReviewGestureAction.none,
+        SrsReviewGestureAction.showAnswer,
       );
 
       // 重置回默认。
@@ -184,6 +204,94 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(app.map, SrsReviewGestureMap.defaults);
+    });
+
+    testWidgets('[$ds] 每面一张手势示意图：标出当前生效的动作，改绑后跟着变', (
+      WidgetTester tester,
+    ) async {
+      final _GesturesApp app = _GesturesApp();
+      await _pump(tester, app, apple: apple);
+      Finder spot(SrsReviewSide side, SrsReviewGesture g) => find.byKey(
+        ValueKey<String>('srs-gesture-diagram-${side.name}-${g.wire}'),
+      );
+      for (final SrsReviewSide side in SrsReviewSide.values) {
+        expect(
+          find.byKey(ValueKey<String>('srs-gestures-diagram-${side.name}')),
+          findsOneWidget,
+        );
+        for (final SrsReviewGesture g in SrsReviewGesture.values) {
+          expect(spot(side, g), findsOneWidget, reason: '${side.name} $g');
+          expect(
+            find.descendant(
+              of: spot(side, g),
+              matching: find.byType(SrsGestureGlyph),
+            ),
+            findsOneWidget,
+            reason: '每个手势都有手势图：${side.name} $g',
+          );
+        }
+      }
+      expect(
+        find.descendant(
+          of: spot(SrsReviewSide.back, SrsReviewGesture.swipeRight),
+          matching: find.text(t.srs_rating_again),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.descendant(
+          of: spot(SrsReviewSide.front, SrsReviewGesture.tapCenter),
+          matching: find.text(t.srs_review_gestures_action_toggle_toolbar),
+        ),
+        findsOneWidget,
+      );
+      // 没绑的手势显示占位，不显示「无」字样。
+      expect(
+        find.descendant(
+          of: spot(SrsReviewSide.front, SrsReviewGesture.doubleTap),
+          matching: find.text('—'),
+        ),
+        findsOneWidget,
+      );
+
+      await app.setSrsReviewGestures(
+        app.map.withBinding(
+          SrsReviewSide.back,
+          SrsReviewGesture.swipeRight,
+          SrsReviewGestureAction.flag,
+        ),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        find.descendant(
+          of: spot(SrsReviewSide.back, SrsReviewGesture.swipeRight),
+          matching: find.text(t.srs_card_flag),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('[$ds] 只留重来 / 良好：示意图上被屏蔽的评分显示为不生效', (
+      WidgetTester tester,
+    ) async {
+      await _pump(
+        tester,
+        _GesturesApp(hideHardEasy: true)
+          ..map = SrsReviewGestureMap.defaults.withBinding(
+            SrsReviewSide.back,
+            SrsReviewGesture.swipeUp,
+            SrsReviewGestureAction.rateEasy,
+          ),
+        apple: apple,
+      );
+      final Finder up = find.byKey(
+        const ValueKey<String>('srs-gesture-diagram-back-swipe_up'),
+      );
+      expect(
+        find.descendant(of: up, matching: find.text(t.srs_rating_easy)),
+        findsNothing,
+      );
+      expect(find.descendant(of: up, matching: find.text('—')), findsOneWidget);
     });
 
     testWidgets('[$ds] 只留重来 / 良好：绑在困难上的行注明不生效', (WidgetTester tester) async {

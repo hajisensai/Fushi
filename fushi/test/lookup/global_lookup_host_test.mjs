@@ -3559,4 +3559,201 @@ function flushTimers() {
     'after a native reset the next real selection is reported again');
 }
 
+// 48. 换词 / 同词重查必须从顶部开始：TODO-1095 让根 iframe 跨查词（含关窗）常驻，
+//     而它的文档滚动位此前从不归零——上一次滚到哪，下一次热键 / 游戏内嵌查词就停在哪
+//     （同词命中缓存时 contentChanged=false，连重渲染都没有）。beginLookup 是唯一的新会话
+//     边界：它调 popup.js 的 __fushiResetPopupScroll；嵌套子卡的 renderStack 不经
+//     beginLookup，父卡滚动保持不动。
+{
+  const { host, document } = freshHost();
+  const stableRoot = { id: 'global-lookup-root', parentIndex: -1,
+    frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' };
+  host.renderStack({ popups: [stableRoot] });
+  const rootIframe = shellsOf(document)[0].children.find((c) => c.tagName === 'IFRAME');
+  let resetCount = 0;
+  rootIframe.contentWindow.__fushiResetPopupScroll = () => { resetCount++; };
+
+  // 嵌套子卡开 / 关：不是新会话，父卡滚动不得被动。
+  const child = { id: 'frame-child', parentIndex: 0,
+    frame: { left: 40, top: 60, width: 300, height: 300 }, settingsJs: '' };
+  host.renderStack({ popups: [stableRoot, child] });
+  host.renderStack({ popups: [stableRoot] });
+  assert.strictEqual(resetCount, 0,
+    'nested child render / close keeps the parent card scroll position');
+
+  // 同词重查（payload 完全相同）与换词都经 beginLookup → 归零一次。
+  host.beginLookup('global-lookup-root');
+  host.renderStack({ popups: [stableRoot] });
+  assert.strictEqual(resetCount, 1,
+    'beginLookup resets the reused root iframe scroll (same-word re-lookup)');
+  host.beginLookup('global-lookup-root');
+  host.renderStack({ popups: [{ ...stableRoot, settingsJs: '/*B*/' }] });
+  assert.strictEqual(resetCount, 2,
+    'beginLookup resets the reused root iframe scroll (different word)');
+
+  // 旧缓存文档没有 popup.js 钩子：直接把文档滚动面归零。
+  delete rootIframe.contentWindow.__fushiResetPopupScroll;
+  const scrolled = [];
+  rootIframe.contentWindow.scrollTo = (x, y) => scrolled.push([x, y]);
+  rootIframe.contentWindow.document = {
+    documentElement: { scrollTop: 800 },
+    body: { scrollTop: 800 },
+  };
+  host.beginLookup('global-lookup-root');
+  assert.deepStrictEqual(scrolled, [[0, 0]]);
+  assert.strictEqual(rootIframe.contentWindow.document.documentElement.scrollTop, 0);
+  assert.strictEqual(rootIframe.contentWindow.document.body.scrollTop, 0);
+}
+
+// BUG-5310 — the app-external lookup hotkey pressed while a card holds a
+// selection: native decides the card owns the press (selection_present_ &&
+// IsShowing()) and calls host.lookupSelection(). The host must hand the
+// selection to the realm it lives in (most recent selection wins) and post it
+// through THAT realm's bridge as `textSelected`, so the message gets the same
+// __frameId stamp and window-local anchor transform as tapping glossary text —
+// Dart then runs the existing nested-lookup chain. A stale native view (no live
+// selection) must reset the report de-dup instead of posting anything.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 200, top: 30, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const iframeOf = (id) => shellsOf(document)
+    .find((s) => s.getAttribute('data-frame-id') === id)
+    .children.find((c) => c.tagName === 'IFRAME');
+  function armRealm(id, rect) {
+    const win = iframeOf(id).contentWindow;
+    const listeners = [];
+    win._selected = '';
+    const range = {
+      startContainer: { nodeType: 3, parentElement: { tagName: 'SPAN' } },
+      getClientRects: () => [rect],
+      getBoundingClientRect: () => rect,
+    };
+    win.getSelection = () => ({
+      isCollapsed: win._selected === '',
+      rangeCount: win._selected === '' ? 0 : 1,
+      toString: () => win._selected,
+      getRangeAt: () => range,
+    });
+    win.document = {
+      addEventListener(type, fn) {
+        if (type === 'selectionchange') listeners.push(fn);
+      },
+    };
+    // popup_bridge_adapter's callHandler: posts through the realm's (wrapped)
+    // chrome.webview bridge, looked up at call time.
+    win.flutter_inappwebview = {
+      callHandler(name, ...args) {
+        win.chrome.webview.postMessage({ handler: name, args });
+      },
+    };
+    // selection.js: a stale click-scan record + the CSS-zoom rect transform.
+    win.fushiSelection = {
+      selection: { stale: true },
+      rectToClientSpace(node, r) {
+        return { left: r.left * 2, top: r.top * 2, width: r.width * 2, height: r.height * 2 };
+      },
+    };
+    host._watchFrameSelection(host._frames.get(id));
+    win._select = (text) => {
+      win._selected = text;
+      listeners.forEach((fn) => fn());
+    };
+    return win;
+  }
+  const w0 = armRealm('frame-0', { left: 1, top: 2, width: 8, height: 9 });
+  const w1 = armRealm('frame-1', { left: 5, top: 6, width: 16, height: 18 });
+  w0._select('猫');
+  w1._select('犬が');
+
+  // Reference envelope: what tapping glossary text in frame-1 at the same
+  // client rect produces (selection.js -> callHandler('textSelected', ...)).
+  hostPostLog = [];
+  w1.chrome.webview.postMessage({
+    handler: 'textSelected',
+    args: ['犬が', { x: 10, y: 12, width: 32, height: 36 }],
+  });
+  const tapped = hostPostLog.find((m) => m.handler === 'textSelected');
+  assert.ok(tapped, 'a tap in frame-1 reaches native as textSelected');
+
+  hostPostLog = [];
+  assert.strictEqual(host.lookupSelection(), true, 'card selection is looked up');
+  const posted = hostPostLog.filter((m) => m.handler === 'textSelected');
+  assert.strictEqual(posted.length, 1, 'exactly one nested lookup request');
+  assert.strictEqual(posted[0].__frameId, 'frame-1',
+    'the realm holding the most recent selection is the nested source');
+  assert.strictEqual(posted[0].args[0], '犬が');
+  assert.deepStrictEqual(posted[0].args[1], tapped.args[1],
+    'same window-local anchor transform as tapping that text');
+  assert.strictEqual(w1.fushiSelection.selection, null,
+    'stale click-scan record cleared so highlightSelection cannot mark old text');
+  assert.strictEqual(w0.fushiSelection.selection.stale, true,
+    'other realms untouched');
+
+  // Native still believes a selection exists, but it vanished without a
+  // selectionchange: nothing is posted, and the de-dup is reset so the next
+  // real selection is reported again.
+  w0._selected = '';
+  w1._selected = '';
+  hostPostLog = [];
+  assert.strictEqual(host.lookupSelection(), false, 'no live selection -> no lookup');
+  assert.strictEqual(
+    hostPostLog.filter((m) => m.handler === 'textSelected').length, 0);
+  w0._select('鳥');
+  assert.deepStrictEqual(
+    hostPostLog.filter((m) => m.handler === 'overlaySelection').map((m) => m.args[0]),
+    [true],
+    'after the reset the next selection is reported again');
+
+  // A selection with nothing lookup-able (whitespace only) still counts as
+  // "present" for Ctrl+C, but must NOT be claimed: lookupSelection returns
+  // false so native answers Dart false and the press falls back to the
+  // foreground capture instead of being swallowed.
+  w0._select('  ');
+  hostPostLog = [];
+  assert.strictEqual(host.lookupSelection(), false, 'blank selection -> not claimed');
+  assert.strictEqual(
+    hostPostLog.filter((m) => m.handler === 'textSelected').length, 0);
+}
+
+// review-gal-overlay-mine-fail: native SettleQueuedMine pushes a background
+// card write's outcome. The host must forward it into EVERY card frame (the
+// button that queued the card may sit in the root card under a nested child),
+// parse the double-encoded JSON text, and never throw on garbage.
+{
+  const { host, document } = freshHost();
+  host.renderStack({
+    popups: [
+      { id: 'frame-0', parentIndex: -1, frame: { left: 0, top: 0, width: 360, height: 480 }, settingsJs: '' },
+      { id: 'frame-1', parentIndex: 0, frame: { left: 200, top: 30, width: 360, height: 480 }, settingsJs: '' },
+    ],
+  });
+  const shells = shellsOf(document);
+  const received = [];
+  for (const shell of shells) {
+    const iframe = shell.children.find((c) => c.tagName === 'IFRAME');
+    const id = shell.getAttribute('data-frame-id');
+    iframe.contentWindow.fushiSettleQueuedMine = (settlement) => {
+      received.push({ id, settlement });
+      return Promise.resolve(1);
+    };
+  }
+  const forwarded = host.settleQueuedMine(JSON.stringify({
+    expression: '猫', reading: 'ねこ', outcome: 'failed', message: 'ANKI_DOWN',
+  }));
+  assert.strictEqual(forwarded, 2, 'forwarded into both the root and the child card');
+  assert.deepStrictEqual(received.map((r) => r.id).sort((a, b) => a.localeCompare(b)), ['frame-0', 'frame-1']);
+  // host.js runs in its own vm realm: compare by value, not by prototype.
+  assert.strictEqual(JSON.stringify(received[0].settlement), JSON.stringify({
+    expression: '猫', reading: 'ねこ', outcome: 'failed', message: 'ANKI_DOWN',
+  }), 'the settlement arrives parsed, field for field');
+  assert.strictEqual(host.settleQueuedMine('{not json'), 0, 'bad JSON is a no-op');
+  assert.strictEqual(host.settleQueuedMine(JSON.stringify({ outcome: 'failed' })), 0,
+    'no expression -> no-op');
+}
+
 console.log('global_lookup_host_test: PASS');

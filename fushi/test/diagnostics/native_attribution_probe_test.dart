@@ -43,6 +43,38 @@ void main() {
     expect(out, 'cpu=19.3s[fushi-rwkv-#×2 19.0s R2; DartWorker 0.3s]');
   });
 
+  // BUG-4757（反馈 Z9FwhY9377）：MIUI 熄屏耗电检查说「25 分钟用了 45 分钟 CPU」，而每 30 s 的
+  // cpu= 只覆盖最后几个窗口（那时进程已闲）；累计读数回答整段时间里谁在吃 CPU。
+  test('cpuSum：进程总数取 /proc/self/stat，分组取活线程累计、按累计排序取前 3', () {
+    final Map<int, ProcThreadStat> threads = <int, ProcThreadStat>{
+      1: const ProcThreadStat(name: '1.ui', state: 'S', ticks: 1200),
+      2: const ProcThreadStat(
+        name: 'Chrome_InProcGp',
+        state: 'R',
+        ticks: 250000,
+      ),
+      3: const ProcThreadStat(name: 'DartWorker', state: 'S', ticks: 300),
+      4: const ProcThreadStat(name: 'DartWorker', state: 'S', ticks: 200),
+      5: const ProcThreadStat(name: 'mpv/vo', state: 'S', ticks: 100),
+      6: const ProcThreadStat(name: 'idle', state: 'S', ticks: 0),
+    };
+    expect(
+      describeCumulativeCpu(270190, threads),
+      'cpuSum=2701.9s[Chrome_InProcGp 2500.0s R1; #.ui 12.0s; DartWorker×2 5.0s; +1]',
+    );
+    // 读不到 /proc/self/stat：总数退回活线程之和，不含已退出线程，只是下限，标成 ≥。
+    expect(
+      describeCumulativeCpu(null, threads, top: 1),
+      'cpuSum≥2518.0s[Chrome_InProcGp 2500.0s R1; +3]',
+    );
+    // 没有活线程吃过 CPU：只给进程总数；都没有返回 null。
+    expect(
+      describeCumulativeCpu(50, const <int, ProcThreadStat>{}),
+      'cpuSum=0.5s',
+    );
+    expect(describeCumulativeCpu(null, const <int, ProcThreadStat>{}), isNull);
+  });
+
   test('线程名归组', () {
     expect(threadGroupOf('fushi-rwkv-12'), 'fushi-rwkv-#');
     expect(threadGroupOf('DartWorker'), 'DartWorker');
@@ -77,7 +109,7 @@ ffffffffff600000-ffffffffff601000 r-xp 00000000 00:00 0                  [vsysca
     });
   });
 
-  test('smaps 按映射组累计 Rss，文件映射按文件名', () {
+  test('smaps 按映射组累计 Rss，文件映射按「上级目录/文件名」', () {
     const String smaps = '''
 7000000000-7000100000 rw-p 00000000 00:00 0                              [anon:scudo:secondary]
 Size:               1024 kB
@@ -86,7 +118,39 @@ Rss:                1024 kB
 Rss:                 512 kB
 7300000000-7300100000 r--s 00000000 fd:01 99                             /data/user/0/app/srs.db
 Rss:                2048 kB
+7400000000-7400300000 r--s 00000000 fd:01 100                            /data/user/0/app/dicts/jmdict/blobs.bin
+Rss:                3072 kB
+7500000000-7500100000 r--s 00000000 fd:01 101                            /data/user/0/app/dicts/daijirin/blobs.bin
+Rss:                1024 kB
 ''';
-    expect(describeSmapsRss(smaps), 'srs.db 2.0MB; scudo:secondary 1.5MB');
+    // 词典各自一个目录、文件名相同：只按文件名归组会把几本词典并成一项，看不出是哪本。
+    expect(
+      describeSmapsRss(smaps),
+      'jmdict/blobs.bin 3.0MB; app/srs.db 2.0MB; scudo:secondary 1.5MB; '
+      'daijirin/blobs.bin 1.0MB',
+    );
+  });
+
+  test('#hw7f_pogDW：malloc 不高、文件映射常驻越档也要 dump，每档只一次', () {
+    resetNativeAttributionProbe();
+    addTearDown(resetNativeAttributionProbe);
+    // 那份报告：malloc=72MB、file=2300MB。
+    expect(nativeAttributionDumpTrigger(72, 900), isNull);
+    expect(nativeAttributionDumpTrigger(72, 2300), 'file≥1024MB');
+    expect(nativeAttributionDumpTrigger(72, 2300), 'file≥2048MB');
+    expect(nativeAttributionDumpTrigger(72, 2300), isNull);
+    // malloc 越档优先于文件档，且两套档位各记各的。
+    expect(nativeAttributionDumpTrigger(900, 2300), 'malloc≥800MB');
+    expect(nativeAttributionDumpTrigger(900, null), isNull);
+    expect(nativeAttributionDumpTrigger(null, null), isNull);
+  });
+
+  test('RssFile 读数：kB → MB，缺行返回 null', () {
+    expect(
+      parseProcStatusFileRssMb('VmRSS:\t2610176 kB\nRssFile:\t 2355200 kB\n'),
+      2300,
+    );
+    expect(parseProcStatusFileRssMb('VmRSS:\t1 kB\n'), isNull);
+    expect(parseProcStatusFileRssMb(null), isNull);
   });
 }

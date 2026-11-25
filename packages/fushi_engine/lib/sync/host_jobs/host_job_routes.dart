@@ -22,7 +22,19 @@ import 'dart:io';
 import 'package:fushi_engine/sync/host_jobs/host_input_matcher.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job.dart';
 import 'package:fushi_engine/sync/host_jobs/host_job_manager.dart';
+import 'package:fushi_engine/sync/interconnect_module.dart';
+import 'package:fushi_engine/sync/remote_lookup_routes.dart'
+    show readBoundedBodyString;
 import 'package:shelf/shelf.dart' as shelf;
+
+/// `POST /api/jobs` 建任务的请求体上限：只有 kind + 一小份 params（输入文件另走
+/// `input` 上传），64 KiB 足够。超限抛 BodyTooLargeException，由 host pipeline 回 413。
+const int kHostJobCreateBodyMaxBytes = 64 * 1024;
+
+/// `POST /api/jobs/<id>/inputs/match` 的请求体上限：每个输入一条
+/// `{name, sha256, size}`（约 150–300 字节），1 MiB 容得下数千个文件的有声书 /
+/// 合集；超限时 client 把这步当可选失败、退回逐个上传。
+const int kHostJobMatchBodyMaxBytes = 1024 * 1024;
 
 shelf.Response _json(Object body, {int status = 200}) => shelf.Response(
   status,
@@ -36,7 +48,7 @@ Future<shelf.Response> handleHostJobRequest(
   String method,
   String reqPath,
 ) async {
-  await jobs.load();
+  await jobs.housekeep();
   final List<String> seg = reqPath
       .substring('/api/jobs'.length)
       .split('/')
@@ -51,7 +63,12 @@ Future<shelf.Response> handleHostJobRequest(
         });
       }
       if (method == 'POST') {
-        final Object? decoded = jsonDecode(await request.readAsString());
+        final Object? decoded = jsonDecode(
+          await readBoundedBodyString(
+            request,
+            maxBytes: kHostJobCreateBodyMaxBytes,
+          ),
+        );
         if (decoded is! Map) {
           return shelf.Response(400, body: 'JSON object body required');
         }
@@ -86,7 +103,12 @@ Future<shelf.Response> handleHostJobRequest(
     }
     if (action == 'inputs' && seg.length == 3 && seg[2] == 'match') {
       if (method != 'POST') return shelf.Response(405);
-      final Object? decoded = jsonDecode(await request.readAsString());
+      final Object? decoded = jsonDecode(
+        await readBoundedBodyString(
+          request,
+          maxBytes: kHostJobMatchBodyMaxBytes,
+        ),
+      );
       if (decoded is! Map || decoded['files'] is! List) {
         return shelf.Response(400, body: 'JSON {files: [...]} required');
       }
@@ -141,4 +163,36 @@ Future<shelf.Response> handleHostJobRequest(
   } on FormatException catch (e) {
     return shelf.Response(400, body: e.message);
   }
+}
+
+/// 通用任务协议（ASR 等，设计 §3.4）的互联模块（`/api/jobs*` + 能力位 `jobs`）。[jobs] 为 null =
+/// host 不提供：端点 404、能力位无 `jobs`。
+class HostJobsInterconnectModule extends InterconnectHostModule {
+  HostJobsInterconnectModule(this.jobs);
+
+  final HostJobManager? jobs;
+
+  @override
+  String get capabilityKey => 'jobs';
+
+  @override
+  Future<Object?> capability() async => jobs?.capability();
+
+  @override
+  List<String> get routePrefixes => const <String>['/api/jobs'];
+
+  @override
+  Future<shelf.Response> handle(InterconnectRequest request) async {
+    final HostJobManager? j = jobs;
+    if (j == null) return shelf.Response.notFound('Host jobs off');
+    return handleHostJobRequest(
+      j,
+      request.raw,
+      request.method.toUpperCase(),
+      request.path,
+    );
+  }
+
+  @override
+  Future<void> dispose() async => jobs?.disposeAll();
 }

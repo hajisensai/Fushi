@@ -1,7 +1,8 @@
 // 源码接线守卫（反馈批次 bluray-mediaserver）：
 // - BUG-3290：原盘菜单的方向键 / 点击走「是否被原盘接收」的入口，不再把未接收当错误；
 // - st-N1qypUF：原盘菜单顶栏替换了常规控制条，必须另给全屏键；
-// - 5m4b74SHhv：媒体服务器流的波形 / 自动对轴走只裁前 N 分钟的对轴音源，ASR 仍只认整集音源。
+// - 5m4b74SHhv：媒体服务器流的自动对轴走只裁前 N 分钟的对轴音源，ASR 仍只认整集音源；
+// - EUvw-RjUE4：波形视图不再沿用自动对轴的探测上界（片长全程、按段抽，流只拉被请求的段）。
 // 这三处都在超大页面 / 控制器里，行为测试要起真播放器，故钉源码接线。
 import 'dart:io';
 
@@ -61,7 +62,6 @@ void main() {
       'lib/src/pages/implementations/video_fushi_page.dart',
     );
     for (final String start in <String>[
-      'Future<List<double>> _loadSubtitleWaveformEnvelope(',
       'Future<void> _openSubtitleWaveformAlign(',
       'Future<int?> _autoAlignSubtitle(',
     ]) {
@@ -77,9 +77,20 @@ void main() {
         reason: start,
       );
     }
+    // 波形分段：整集音源走整集音源解析（按段 -ss 切），只能读流时走流对轴音源、只拉该段。
+    final String waveform = _member(
+      subtitle,
+      'Future<List<double>> _loadSubtitleWaveformSegment(',
+    );
+    // 判据是「本机 / host 现成的整集音源」：`_canResolveSubtitleTimingAudio` 自字幕工作台
+    // 起还包含「在线流能把整集音频拉到本机」（转录用），波形若沿用它就会为看一段波形
+    // 去拉整集流音频。
+    expect(waveform, contains('if (_hasLocalOrHostTimingAudio)'));
+    expect(waveform, isNot(contains('_canResolveSubtitleTimingAudio')));
+    expect(waveform, contains('_streamAlignAudioSource'));
     expect(
-      _member(subtitle, 'Future<List<double>> _loadSubtitleWaveformEnvelope('),
-      contains('_resolveSubtitleAlignAudio()'),
+      _member(subtitle, 'Future<List<double>> _extractStreamWaveformSegment('),
+      contains('startMs: startMs'),
     );
     expect(
       _member(subtitle, 'Future<String?> _transcribeVideoSpeech('),
@@ -99,7 +110,7 @@ void main() {
     );
     expect(
       RegExp(
-        r'_canResolveSubtitleAlignAudio\s*\n?\s*\? _loadSubtitleWaveformEnvelope',
+        r'_canResolveSubtitleAlignAudio\s*\n?\s*\? _loadSubtitleWaveformSegment',
       ).hasMatch(page),
       isTrue,
     );
@@ -111,12 +122,46 @@ void main() {
     );
   });
 
-  test('stream align audio, envelope and window share one probe limit', () {
+  // 拍板台 design-nmv-autosync-epoch：图形字幕 OCR 边识别边发布时，只有首次发布
+  // （图形轨 → 文本）算换源；之后的补发走 updateCuesInSameSource，不推进
+  // cueSourceEpoch，否则期间跑着的自动对轴会把同一源的结果当过期丢掉。
+  test('graphic OCR live re-publish keeps the cue source epoch', () {
     final String subtitle = _read(
       'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
     );
-    // 流只拉前 3 分钟：抽音 / -t / cue 栅格化 / 波形窗口都取同一个 getter，
-    // 页面里不许再直接用 20 分钟常量（否则两侧栅格长度不一致、窗口与音频错位）。
+    const String start = 'Future<void> publishLive() async {';
+    final int at = subtitle.indexOf(start);
+    expect(at, isNonNegative);
+    final int end = subtitle.indexOf(
+      'final List<GraphicSubtitleTextCue>? texts',
+      at,
+    );
+    expect(end, greaterThan(at));
+    final String body = subtitle.substring(at, end);
+    final int firstPublish = body.indexOf('if (!livePublished) {');
+    final int sameSource = body.indexOf(
+      'controller.updateCuesInSameSource(live);',
+    );
+    expect(firstPublish, isNonNegative);
+    expect(sameSource, greaterThan(firstPublish));
+    expect(
+      'controller.setCues(live);'.allMatches(body).length,
+      1,
+      reason: '只有首次发布用 setCues',
+    );
+    expect(
+      body.indexOf('controller.setCues(live);'),
+      lessThan(sameSource),
+      reason: 'setCues 只能在首次发布分支里',
+    );
+  });
+
+  test('auto-align audio, envelope and cue raster share one probe limit', () {
+    final String subtitle = _read(
+      'lib/src/pages/implementations/video_fushi/subtitle.part.dart',
+    );
+    // 流只拉前 3 分钟：自动对轴的抽音 / -t / cue 栅格化都取同一个 getter，
+    // 页面里不许再直接用 20 分钟常量（否则两侧栅格长度不一致、互相关错位）。
     expect(
       _member(subtitle, 'int get _subtitleAlignProbeLimitMs'),
       contains('subtitleAlignProbeLimitMs('),
@@ -136,9 +181,30 @@ void main() {
       ),
       contains('_subtitleAlignProbeLimitMs'),
     );
+    // EUvw-RjUE4：波形视图时间窗是片长全程，探测上界只属于自动对轴——波形抽取、
+    // 键盘直达弹窗与快速设置面板都不许再拿它截时间窗 / 截包络。
+    for (final String start in <String>[
+      'Future<List<double>> _loadSubtitleWaveformSegment(',
+      'Future<List<double>> _extractStreamWaveformSegment(',
+      'Future<void> _openSubtitleWaveformAlign(',
+    ]) {
+      expect(
+        _member(subtitle, start),
+        isNot(contains('_subtitleAlignProbeLimitMs')),
+        reason: start,
+      );
+    }
+    expect(
+      _member(subtitle, 'Future<void> _openSubtitleWaveformAlign('),
+      contains('subtitleWaveformWindowEndMs('),
+    );
     final String page = _read(
       'lib/src/pages/implementations/video_fushi_page.dart',
     );
-    expect(page, contains('subtitleProbeLimitMs: _subtitleAlignProbeLimitMs'));
+    expect(page, isNot(contains('subtitleProbeLimitMs')));
+    expect(
+      _read('lib/src/media/video/subtitle_waveform_align_panel.dart'),
+      isNot(contains('probeLimitMs')),
+    );
   });
 }

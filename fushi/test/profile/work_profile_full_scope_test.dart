@@ -15,6 +15,7 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/profile/combo/settings_tree.dart' show ComboScope;
 import 'package:material_ui/material_ui.dart';
 
 import '../helpers/fake_anki_repository.dart';
@@ -107,6 +108,8 @@ void main() {
       'app_theme_key',
       'brightness_mode',
       'design_system',
+      ThemeNotifier.readerPaperLightPrefKey,
+      ThemeNotifier.readerPaperDarkPrefKey,
       'custom_themes',
       'custom_theme_seed',
       'page_backdrop_preset',
@@ -466,23 +469,39 @@ void main() {
     expect((await anki.loadSettings()).selectedDeckName, 'Active');
   });
 
-  test('弹窗进程镜像：按发布的配置 id 装上同一套覆盖层', () async {
-    expect(parseWorkProfileSessionProfileId(''), isNull);
-    expect(parseWorkProfileSessionProfileId('0:3'), isNull);
-    expect(parseWorkProfileSessionProfileId('junk'), isNull);
-    expect(parseWorkProfileSessionProfileId('$boundId:7'), boundId);
+  test('弹窗进程镜像：按发布的绑定层装上同一套覆盖层', () async {
+    expect(parseWorkProfileSessionLayers(''), isEmpty);
+    expect(parseWorkProfileSessionLayers('0:3'), isEmpty);
+    expect(parseWorkProfileSessionLayers('junk'), isEmpty);
+    expect(parseWorkProfileSessionLayers(',,:3'), isEmpty);
+    expect(parseWorkProfileSessionLayers('1,2:3'), isEmpty, reason: '层数不对');
+    // 旧格式（升级瞬间主进程刚发布的值）当作作品层。
+    expect(parseWorkProfileSessionLayers('$boundId:7'), <ComboScope, int>{
+      ComboScope.work: boundId,
+    });
+    expect(parseWorkProfileSessionLayers(',5,7:2'), <ComboScope, int>{
+      ComboScope.mediaType: 5,
+      ComboScope.language: 7,
+    });
+    expect(
+      encodeWorkProfileSessionLayers(<ComboScope, int>{
+        ComboScope.work: 3,
+        ComboScope.language: 9,
+      }),
+      '3,,9',
+    );
 
     // 主进程：发布值随会话装上 / 会话内写入 / 离开变化。
     expect(scope.publishedSessionValue, '');
     await openBook();
-    expect(scope.publishedSessionValue, '$boundId:0');
+    expect(scope.publishedSessionValue, '$boundId,,:0');
     await scope.write('video_subtitle_style', PrefCodec.encode('{"x":1}'));
     final String published = scope.publishedSessionValue;
-    expect(published, '$boundId:1', reason: '会话内写入让弹窗重新镜像');
+    expect(published, '$boundId,,:1', reason: '会话内写入让弹窗重新镜像');
     vm.leaveWorkSession(reader);
     expect(scope.publishedSessionValue, '');
 
-    // 弹窗进程：按发布值镜像（同一条 enterProfile，读到主进程写进快照的值）。
+    // 弹窗进程：按发布值镜像（同一条 enterCombos，读到主进程写进快照的值）。
     final Object popup = Object();
     await scope.mirrorPublishedSession(
       owner: popup,
@@ -543,10 +562,19 @@ void main() {
       isTrue,
       reason: '替对端制卡链的复习侧不叠本机作品会话',
     );
+    // 「制卡到主机」开着时查重与落卡都在主机（docs/specs/2026-11-05-server-srs-design.md §4.8），
+    // 不再套本机复习层，只剩本地那条返回路径叠作品会话的复习侧。
     expect(
       'followWorkSession: true,'.allMatches(anki).length,
-      2,
-      reason: '本机制卡链（本地 / 制卡到主机）两条返回路径都跟着作品会话',
+      1,
+      reason: '本机制卡链只有本地那条返回路径套本机复习层并跟着作品会话',
+    );
+    expect(
+      anki.contains(
+        'return _withPendingQueue(ref, _withAutoReposition(ref, remote));',
+      ),
+      isTrue,
+      reason: '制卡到主机的返回路径不套本机复习层（§4.8）',
     );
     final String floating = File(
       'lib/src/pages/implementations/floating_dict_page.dart',

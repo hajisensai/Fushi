@@ -14,6 +14,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart';
+import 'package:meta/meta.dart' show visibleForTesting;
 import 'package:path/path.dart' as p;
 
 /// `cover_meta.json` 的读写器：惰性加载 + 内存缓存 + 原子写入 + 写入串行化。
@@ -28,6 +29,13 @@ class CoverMetaStore {
   static final Map<String, _CoverMetaStoreState> _states =
       <String, _CoverMetaStoreState>{};
   static int _tempSerial = 0;
+
+  /// 测试专用：丢弃全部目录的共享状态（缓存 / 在途加载 / 写锁）。
+  ///
+  /// 仍在飞的操作握着旧状态对象照常跑完，只是之后新建的 store 拿到全新状态。
+  /// 生产代码不得调用：同目录两套状态会让写锁失去互斥。
+  @visibleForTesting
+  static void debugResetForTesting() => _states.clear();
 
   /// 封面元数据文件所在目录。
   final Directory directory;
@@ -218,32 +226,82 @@ class CoverMetaStore {
   }
 
   /// 串行化写操作：前一个完成后才跑下一个，避免并发 persist 丢数据。
+  ///
+  /// 调用方拿到的是自己 Zone 里的移交 future（见 [_handOff]），共享的锁链只活在
+  /// 根 Zone 里（见 [_runDetached]）。
   Future<T> _synchronized<T>(Future<T> Function() action) {
-    final Future<T> result = _state.writeLock.then((_) => action());
-    // 无论成功失败都释放锁，让后续操作继续。
-    _state.writeLock = result.then((_) {}, onError: (Object _) {});
-    return result;
+    return _handOff(_synchronizedShared(action));
+  }
+
+  /// 把 [action] 排到同目录写锁链尾，返回**根 Zone** 里的共享 future。
+  ///
+  /// 锁链是跨调用者共享的：若链上的 future 建在某个调用者的 Zone 里，它们完成时的
+  /// 传播要排进那个 Zone 的微任务队列；该 Zone 停摆（测试 fakeAsync 弃置、或任何
+  /// 自定义调度的 Zone 不再推进）时整条链就永远不前进，同目录后来者全部挂死。
+  /// 链和 [action] 本体因此一律在根 Zone 里创建、推进，与发起者 Zone 无关。
+  Future<T> _synchronizedShared<T>(Future<T> Function() action) {
+    return _runDetached(() {
+      final Future<T> result = _state.writeLock.then((_) => action());
+      // 无论成功失败都释放锁，让后续操作继续。
+      _state.writeLock = result.then((_) {}, onError: (Object _) {});
+      return result;
+    });
   }
 
   /// 惰性加载：首次访问也进入同目录写锁，避免旧 reader 读到损坏 JSON 后，恰在
   /// 并发 set 已持久化合法文件之后把新文件 rename 成 `.corrupt`。后续直接命中缓存。
+  ///
+  /// 在途加载在并发读者间共享，但共享的只是根 Zone 里的 future；每个读者各拿一个
+  /// 自己 Zone 里的移交 future，某个读者的 Zone 停摆只挂它自己。
   Future<Map<String, CoverMeta>> _ensureLoaded() {
     final Map<String, CoverMeta>? cached = _state.cache;
     if (cached != null) {
       return Future<Map<String, CoverMeta>>.value(cached);
     }
-    final Future<Map<String, CoverMeta>>? loading = _state.loading;
-    if (loading != null) return loading;
-    final Future<Map<String, CoverMeta>> result = _synchronized(() async {
-      // 排队期间写者可能已发布缓存；此时不再重复读盘或 quarantine。
-      final Map<String, CoverMeta>? published = _state.cache;
-      if (published != null) return published;
-      final Map<String, CoverMeta> loaded = await _load();
-      _state.cache = loaded;
-      return loaded;
+    final Future<Map<String, CoverMeta>> loading =
+        _state.loading ??
+        _runDetached(() {
+          final Future<Map<String, CoverMeta>> result = _synchronizedShared(
+            () async {
+              // 排队期间写者可能已发布缓存；此时不再重复读盘或 quarantine。
+              final Map<String, CoverMeta>? published = _state.cache;
+              if (published != null) return published;
+              final Map<String, CoverMeta> loaded = await _load();
+              _state.cache = loaded;
+              return loaded;
+            },
+          );
+          return _state.loading = result.whenComplete(
+            () => _state.loading = null,
+          );
+        });
+    return _handOff(loading);
+  }
+
+  /// 在根 Zone 里跑 [body]，让它创建的 future / 微任务不经发起者 Zone 调度。
+  ///
+  /// 只把发起者生效的 [IOOverrides] 带过去（文件 API 按 Zone 取覆盖层，测试用它
+  /// 模拟网络盘），其余 Zone 行为（微任务 / 定时器拦截、错误处理）一概不继承。
+  static Future<T> _runDetached<T>(Future<T> Function() body) {
+    final IOOverrides? overrides = IOOverrides.current;
+    return Zone.root.run<Future<T>>(() {
+      if (overrides == null) return body();
+      return IOOverrides.runWithIOOverrides<Future<T>>(body, overrides);
     });
-    _state.loading = result.whenComplete(() => _state.loading = null);
-    return _state.loading!;
+  }
+
+  /// 把根 Zone 里的共享 [shared] 移交成调用者 Zone 里的独立 future。
+  ///
+  /// 监听注册在根 Zone，由完成方在根 Zone 里唤醒，再完成这个调用者私有的
+  /// [Completer]；调用者 Zone 停摆只会让它自己的 future 不前进，不影响 [shared]
+  /// 与其它等待者。[shared] 的错误总有这个监听接住，不会作为未处理错误漏进根 Zone；
+  /// 调用者若不 await 自己那份，错误照旧在调用者 Zone 里按未处理报告。
+  static Future<T> _handOff<T>(Future<T> shared) {
+    final Completer<T> waiter = Completer<T>();
+    Zone.root.run<void>(() {
+      shared.then<void>(waiter.complete, onError: waiter.completeError);
+    });
+    return waiter.future;
   }
 
   Future<Map<String, CoverMeta>> _load() async {
@@ -313,8 +371,13 @@ class CoverMetaStore {
   }
 }
 
+/// 同目录共享状态。[loading] 与 [writeLock] 都是根 Zone 里的 future（见
+/// [CoverMetaStore._runDetached]），永不挂在某个调用者的 Zone 上。
 class _CoverMetaStoreState {
   Map<String, CoverMeta>? cache;
   Future<Map<String, CoverMeta>>? loading;
-  Future<void> writeLock = Future<void>.value();
+
+  /// 初始的已完成 future 也必须建在根 Zone：对已完成 future 的 `then` 会经它所属
+  /// Zone 的微任务队列派发，构造者若在停摆的 Zone 里，第一把锁就永不移交。
+  Future<void> writeLock = Zone.root.run<Future<void>>(Future<void>.value);
 }

@@ -13,8 +13,10 @@ import 'dart:async';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
+import 'package:fushi_engine/tts/tts_text_split.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi_engine/tts/tts_reject_split.dart';
 
 import 'package:fushi/src/lookup/gal_line_tts.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
@@ -79,12 +81,14 @@ class _Utterance {
 class GalLineTtsPlayer {
   GalLineTtsPlayer({
     required GalLineTtsSettings Function() settings,
+    GalLineTtsVoiceContext Function()? voiceContext,
     TtsServices Function()? services,
     GalLineTtsSynthesizer? synthesize,
     GalLineTtsPlayToEnd? playToEnd,
     GalLineTtsStopPlayback? stopPlayback,
     int Function(String? presetId)? maxInputLength,
   }) : _settings = settings,
+       _voiceContext = voiceContext ?? (() => const GalLineTtsVoiceContext()),
        _synthesize =
            synthesize ??
            ((
@@ -112,6 +116,10 @@ class GalLineTtsPlayer {
                galLineTtsMaxInputLength(services!(), presetId));
 
   final GalLineTtsSettings Function() _settings;
+
+  /// 这一局的声音上下文（当前游戏 / 内容语言），每次裁决现取：会话中途换了游戏
+  /// 或用户刚改了游戏语言，下一句就用新声音。
+  final GalLineTtsVoiceContext Function() _voiceContext;
   final GalLineTtsSynthesizer _synthesize;
   final GalLineTtsPlayToEnd _playToEnd;
   final GalLineTtsStopPlayback _stopPlayback;
@@ -198,11 +206,13 @@ class GalLineTtsPlayer {
     required bool manual,
   }) {
     final GalLineTtsSettings settings = _settings();
+    final GalLineTtsVoiceContext voiceContext = _voiceContext();
     final GalLineTtsDecision decision = decideGalLineTts(
       settings: settings,
       rawText: line.text,
       evidence: evidence,
       manual: manual,
+      voiceContext: voiceContext,
     );
     switch (decision) {
       case GalLineTtsSkip(:final String reason):
@@ -219,7 +229,7 @@ class GalLineTtsPlayer {
         _prepare(
           utterance,
           text: galLineTtsText(settings, line.text),
-          presetId: settings.presetId,
+          presetId: settings.voiceFor(voiceContext),
         );
       case GalLineTtsSpeak(:final String text, :final String? presetId):
         _settledLineId = line.id;
@@ -289,7 +299,7 @@ class GalLineTtsPlayer {
     required String? presetId,
     required TtsCancelToken cancel,
   }) async {
-    final List<String> chunks = splitGalLineTtsText(
+    final List<String> chunks = splitTtsTextForInputLimit(
       text,
       maxLength: _maxInputLength(presetId),
     );
@@ -358,44 +368,6 @@ class GalLineTtsPlayer {
   }
 }
 
-/// 按引擎单次输入上限切句：先按句末标点切，单句仍超长再硬切。
-List<String> splitGalLineTtsText(String text, {required int maxLength}) {
-  final String trimmed = text.trim();
-  if (trimmed.isEmpty) return const <String>[];
-  if (maxLength <= 0 || trimmed.length <= maxLength) return <String>[trimmed];
-  final List<String> sentences = <String>[
-    for (final Match m in RegExp(
-      r'[^。！？!?…\n]+[。！？!?…」』]*|[。！？!?…]+',
-    ).allMatches(trimmed))
-      if (m.group(0)!.trim().isNotEmpty) m.group(0)!.trim(),
-  ];
-  final List<String> out = <String>[];
-  final StringBuffer buffer = StringBuffer();
-  void flush() {
-    if (buffer.isNotEmpty) out.add(buffer.toString());
-    buffer.clear();
-  }
-
-  for (final String sentence in sentences) {
-    if (sentence.length > maxLength) {
-      flush();
-      for (int i = 0; i < sentence.length; i += maxLength) {
-        out.add(
-          sentence.substring(
-            i,
-            i + maxLength > sentence.length ? sentence.length : i + maxLength,
-          ),
-        );
-      }
-      continue;
-    }
-    if (buffer.length + sentence.length > maxLength) flush();
-    buffer.write(sentence);
-  }
-  flush();
-  return out;
-}
-
 /// 解析这次要用的声音：[presetId] 指定的预设，否则「朗读声音」的当前声音。
 ({TtsVoicePreset preset, TtsProviderDescriptor descriptor})
 resolveGalLineTtsVoice(TtsServices services, String? presetId) {
@@ -443,8 +415,12 @@ Future<String> synthesizeGalLineTtsWithServices(
     );
     final TtsCachedAudio audio = await cache.obtain(
       key,
-      (String out) =>
-          provider.synthesize(text, outputPath: out, cancel: cancel),
+      (String out) => ttsSynthesizeSplittingOnReject(
+        provider,
+        text,
+        outputPath: out,
+        cancel: cancel,
+      ),
     );
     return audio.path;
   } finally {

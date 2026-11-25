@@ -24,25 +24,16 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/srs/srs_card_video_channel.dart';
 import 'package:fushi/src/srs/srs_fushi_card_media.dart'
     show srsDedupeMediaNames;
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_sound_tag.dart';
 import 'package:fushi/src/utils/misc/desktop_audio_playback.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-final RegExp _soundTag = RegExp(r'\[sound:([^\]]+)\]');
-
-String _htmlUnescape(String s) => s
-    .replaceAll('&quot;', '"')
-    .replaceAll('&#39;', "'")
-    .replaceAll('&lt;', '<')
-    .replaceAll('&gt;', '>')
-    .replaceAll('&amp;', '&');
-
 /// 卡面 HTML 里的 `[sound:x]` 文件名，按出现顺序（与卡面播放按钮同一套解码）。
 List<String> srsCardSoundNames(String html) => <String>[
-  for (final Match m in _soundTag.allMatches(html))
-    if (_htmlUnescape(m.group(1)!.trim()).isNotEmpty)
-      _htmlUnescape(m.group(1)!.trim()),
+  for (final Match m in srsSoundTagPattern.allMatches(html))
+    if (srsSoundTagName(m.group(1)!).isNotEmpty) srsSoundTagName(m.group(1)!),
 ];
 
 final RegExp _inlineMediaTag = RegExp(
@@ -50,7 +41,7 @@ final RegExp _inlineMediaTag = RegExp(
   caseSensitive: false,
 );
 final RegExp _srcAttr = RegExp(
-  r'''\ssrc\s*=\s*(["'])([^"']*)\1''',
+  r'''\ssrc\s*=\s*(?:(["'])([^"']*)\1|([^\s"'=<>`]+))''',
   caseSensitive: false,
 );
 final RegExp _classAttr = RegExp(
@@ -64,13 +55,13 @@ final RegExp _classAttr = RegExp(
 /// 片段自带句子声音。整面 WebView 卡面里这些标签由页内脚本自己播，不走这里。
 List<String> srsCardMediaNames(String html) {
   final List<(int, String, String)> found = <(int, String, String)>[
-    for (final Match m in _soundTag.allMatches(html))
-      (m.start, _htmlUnescape(m.group(1)!.trim()), 'sound'),
+    for (final Match m in srsSoundTagPattern.allMatches(html))
+      (m.start, srsSoundTagName(m.group(1)!), 'sound'),
     for (final Match m in _inlineMediaTag.allMatches(html))
       if (_srcAttr.firstMatch(m.group(2)!) case final Match src)
         (
           m.start,
-          _htmlUnescape(src.group(2)!.trim()),
+          srsUnescapeMediaName((src.group(2) ?? src.group(3)!).trim()),
           m.group(1)!.toLowerCase() == 'video'
               ? 'video'
               : (_classAttr.firstMatch(m.group(2)!)?.group(2) ?? '').contains(
@@ -327,7 +318,10 @@ class SrsCardAudioSequencer {
 ///   改认「元素带 `controls` + 此刻有瞬时用户激活（`navigator.userActivation`）」。
 /// - `play()`：包一层 `HTMLMediaElement.prototype.play`，手势外的调用直接返回以
 ///   `NotAllowedError` 拒绝的 Promise（与浏览器自动播放策略同一形态，现有片段脚本的
-///   `catch` 照常吞掉）。
+///   `catch` 照常吞掉）。放行的 `play()` 若是源为公网 http(s) 的 `<audio>`，先经宿主取回、
+///   换成 `blob:` 再开播（`window.__fushiSrsRemoteAudio`，srs_card_remote_audio.dart：
+///   WebKit 播不了不支持 Range 的在线 TTS，反馈 ffWC0TPq1I）；许可在手势里就记下，取回后的
+///   开播不再看手势。
 /// - `autoplay`：不经 `play()`，插入后再设也照样生效（BUG-3546 第一版只看
 ///   childList，`el.autoplay = true` / `setAttribute('autoplay')` / 不进文档的
 ///   `new Audio()` 都绕过去了）。手势外把 `autoplay` 属性 setter 与
@@ -378,17 +372,59 @@ const String kSrsCardAutoplayGateScript = r'''
   // 的那些会接着响到播完（N-JACNGS-K：换卡后上一张的音频不停）。
   var sounding = typeof Set === 'function' ? new Set() : null;
   function track(el){ if (sounding && isMedia(el)) sounding.add(el); }
+  // 远程音频（源是公网 http(s) 的 `<audio>`）：先经宿主取回换成 `blob:` 再播
+  // （srs_card_remote_audio.dart，反馈 ffWC0TPq1I）。取回期间：`pause()` 取消这次开播
+  // （与浏览器「play() 被 pause() 打断」同形态），换卡 / 翻面（代号 `remoteGen` 自增）同样作废。
+  // 换源时 `src` 赋值触发的 `emptied` 不算停播，手势里放行过的许可留着（`swapping`）。
+  var remoteGen = 0;
+  var pendingRemote = typeof WeakMap === 'function' ? new WeakMap() : null;
+  var swapping = typeof WeakSet === 'function' ? new WeakSet() : null;
+  function interrupted(){
+    var msg = 'The play() request was interrupted';
+    try { return new DOMException(msg, 'AbortError'); }
+    catch (e) { var err = new Error(msg); err.name = 'AbortError'; return err; }
+  }
   var proto = window.HTMLMediaElement && window.HTMLMediaElement.prototype;
   if (proto && typeof proto.play === 'function') {
     var nativePlay = proto.play;
+    var playRemote = function(el, urls, args){
+      var token = { gen: remoteGen };
+      pendingRemote.set(el, token);
+      return window.__fushiSrsRemoteAudio.load(urls).then(function(blobUrl){
+        if (pendingRemote.get(el) !== token || token.gen !== remoteGen) {
+          throw interrupted();
+        }
+        pendingRemote['delete'](el);
+        if (swapping) swapping.add(el);
+        el.src = blobUrl;
+        permit(el);
+        track(el);
+        return nativePlay.apply(el, args);
+      }, function(err){
+        if (pendingRemote.get(el) === token) pendingRemote['delete'](el);
+        throw err;
+      });
+    };
     proto.play = function(){
       if (blocked()) return Promise.reject(refusal());
       permit(this);
       track(this);
+      var remote = window.__fushiSrsRemoteAudio;
+      var urls = pendingRemote && remote ? remote.sources(this) : null;
+      if (urls) return playRemote(this, urls, arguments);
       return nativePlay.apply(this, arguments);
     };
   }
+  if (proto && typeof proto.pause === 'function') {
+    var nativePause = proto.pause;
+    proto.pause = function(){
+      if (pendingRemote) pendingRemote['delete'](this);
+      return nativePause.apply(this, arguments);
+    };
+  }
   window.__fushiSrsStopAllMedia = function(){
+    remoteGen++;
+    if (window.__fushiSrsRemoteAudio) window.__fushiSrsRemoteAudio.release();
     if (!sounding) return;
     sounding.forEach(function(el){ try { el.pause(); } catch (e) {} });
     sounding.clear();
@@ -462,6 +498,10 @@ const String kSrsCardAutoplayGateScript = r'''
   }
   function onStop(e){
     if (!e || !isMedia(e.target)) return;
+    if (e.type === 'emptied' && swapping && swapping.has(e.target)) {
+      swapping['delete'](e.target);
+      return;
+    }
     if (permitted) permitted['delete'](e.target);
     if (sounding) sounding['delete'](e.target);
   }
@@ -514,8 +554,16 @@ String srsCardSetFaceTokenScript(String token) =>
 /// 以前宿主用正则扫整张答案 HTML 的 `[sound:]`：CSS 隐藏的容器（Lapis 把音频容器复制多份、
 /// 只显示一处）、收起的 `<details>` 里的音频全被收进自动播放与重播（「隐藏的也播」）。可见性
 /// 只有页面自己知道，所以由页面判定：没有布局盒（`display:none` 祖先 / 收起的 `<details>`
-/// 内容 / 不在文档里）、自身 `visibility:hidden`、祖先链上 `opacity:0` 的都不算。
-/// 外壳在卡片脚本与钩子都跑完后（以及换主题后）调用一次，经 [kSrsVisibleSoundsHandler] 上报。
+/// 内容 / 不在文档里）、自身 `visibility:hidden`、祖先链上**定住的** `opacity:0` 的都不算。
+///
+/// 入场效果不算隐藏（BUG-5353，反馈 FJXqvneRRp）：模板常让答案块从 opacity:0 淡入（CSS 关键帧、
+/// 脚本加类名触发的过渡、`element.animate`），判定那一刻正停在 0 附近。祖先上有一条还在跑、
+/// 且动的是 opacity 的动画 / 过渡时，这一层的 opacity 是过渡态，不当隐藏——否则整面发音键被
+/// 判成看不见、自动播放什么都不播（Anki 播这一面所有 `[sound:]`）。只认**会把 opacity 带到大于 0**
+/// 的动画（按剩余迭代、direction、playbackRate 方向扫过的关键帧判）：关键帧 opacity 始终为 0、
+/// 反向 / 交替后不再回到可见值的动画不算淡入，里面的发音键不报（HBK-AUDIT-006）。
+/// 外壳在卡片脚本与钩子都跑完、且这一面已经渲染出来之后（以及换主题后）调用，经
+/// [kSrsVisibleSoundsHandler] 上报（见 srs_card_face.dart 的 `reportSounds`）。
 const String kSrsCardVisibleSoundsScript = r'''
 (function(){
   if (window.__fushiSrsVisibleSounds) return;
@@ -532,6 +580,85 @@ const String kSrsCardVisibleSoundsScript = r'''
     }
     return false;
   }
+  // 一条动画关键帧里的 opacity 点：[{o: computedOffset, v: 数值}]；没有 opacity 返回 null。
+  function opacityPoints(frames){
+    var pts = [];
+    for (var k = 0; k < frames.length; k++) {
+      var f = frames[k];
+      if (f.opacity === undefined || f.opacity === null || f.opacity === '') continue;
+      var off = typeof f.computedOffset === 'number' ? f.computedOffset : f.offset;
+      pts.push({ o: typeof off === 'number' ? off : NaN, v: parseFloat(f.opacity) });
+    }
+    return pts.length ? pts : null;
+  }
+  // 方向化进度区间 [lo, hi] 内（含端点 e）opacity 会不会大于 0。分段线性插值的最大值落在
+  // 区间内的关键帧或端点上；起点就是当前值（已知为 0）。端点 e 上没有显式关键帧时，
+  // 那一端是隐式的底层值，页面读不到，按「可能可见」算（不把淡入误判成隐藏）。
+  function rangeVisible(pts, lo, hi, e){
+    var hasEnd = false;
+    for (var i = 0; i < pts.length; i++) {
+      var pt = pts[i];
+      if (isNaN(pt.o) || isNaN(pt.v)) return true;
+      if (pt.o === e) hasEnd = true;
+      if (pt.o >= lo && pt.o <= hi && pt.v > 0) return true;
+    }
+    return !hasEnd;
+  }
+  // a 这条正在跑的动画从现在起（按 playbackRate 的方向、剩余的迭代、direction 的交替 / 反向）
+  // 会不会把 opacity 带到大于 0。只看动画自身还会扫过的关键帧值；fill 不含 forwards 时结束后
+  // 回到的底层值读不到，不算淡入（真正的入场淡入关键帧本身就会到达可见值）。
+  function headsVisible(a, pts){
+    var rate = typeof a.playbackRate === 'number' ? a.playbackRate : 1;
+    if (!(rate > 0 || rate < 0)) return false;
+    var any = rangeVisible(pts, 0, 1, 0) || rangeVisible(pts, 0, 1, 1);
+    var t = null;
+    try { t = a.effect.getComputedTiming(); } catch (e) {}
+    if (!t || typeof t.localTime !== 'number') return any;
+    var begin = t.delay || 0;
+    var stop = begin + (t.activeDuration || 0);
+    var lt = t.localTime;
+    if (lt < begin) return rate > 0 ? any : false;
+    if (lt >= stop) return rate < 0 ? any : false;
+    var p = t.progress;
+    var ci = t.currentIteration;
+    if (typeof p !== 'number' || typeof ci !== 'number') return any;
+    var s = t.iterationStart || 0;
+    var n = t.iterations;
+    var more;
+    if (rate > 0) more = n === Infinity || ci < Math.ceil(s + n) - 1;
+    else more = ci > Math.floor(s);
+    if (more) return any;
+    var dir = t.direction || 'normal';
+    var fwd = dir === 'normal' ||
+      (dir === 'alternate' && ci % 2 === 0) ||
+      (dir === 'alternate-reverse' && ci % 2 === 1);
+    var e = fwd === (rate > 0) ? 1 : 0;
+    return rangeVisible(pts, Math.min(p, e), Math.max(p, e), e);
+  }
+  // n 上有没有一条还在跑（含 delay 阶段）、且会把 opacity 带向可见值（>0）的动画 / 过渡（入场
+  // 淡入）。关键帧 opacity 始终为 0（只拿动画移动隐藏的容器）、反向 / 交替后不再回到可见值
+  // 的都不算（HBK-AUDIT-006）。
+  function fadingOpacity(n){
+    if (typeof n.getAnimations !== 'function') return false;
+    var list;
+    try { list = n.getAnimations(); } catch (e) { return false; }
+    for (var i = 0; i < list.length; i++) {
+      var a = list[i];
+      if (a.playState !== 'running') continue;
+      var frames = null;
+      try {
+        frames = a.effect && a.effect.getKeyframes ? a.effect.getKeyframes() : null;
+      } catch (e) {}
+      if (!frames) {
+        // 拿不到关键帧的旧引擎：opacity 过渡只能按入场淡入算。
+        if (a.transitionProperty === 'opacity') return true;
+        continue;
+      }
+      var pts = opacityPoints(frames);
+      if (pts && headsVisible(a, pts)) return true;
+    }
+    return false;
+  }
   function shown(el){
     if (typeof el.getClientRects !== 'function') return false;
     if (el.getClientRects().length === 0) return false;
@@ -544,7 +671,7 @@ const String kSrsCardVisibleSoundsScript = r'''
       var cs = n === el ? own : styleOf(n);
       if (!cs) continue;
       if (cs.display === 'none') return false;
-      if (parseFloat(cs.opacity) === 0) return false;
+      if (parseFloat(cs.opacity) === 0 && !fadingOpacity(n)) return false;
     }
     return true;
   }

@@ -13,7 +13,11 @@
 #
 #   hello                              platform, Flutter, cores, memory, pause,
 #                                      toolchains for compile checks
-#   lock <slot> <runId>                take checkout <slot> for one run
+#   lock <slot> <runId> [wait]         take checkout <slot>: queued behind
+#                                      the runs already asking, waiting up to
+#                                      [wait] seconds (slot.sh `take`)
+#   yield <slot> <runId>               after a batch: let a waiting run have
+#                                      the checkout (`yielded`) or keep it
 #   git-receive-pack '<work|work-N>'   receive the run's snapshot commit
 #   prepare <slot> <sha>               check it out, pub get, native libraries
 #   run <slot> <concurrency> [args]    one batch; test files on stdin
@@ -21,7 +25,8 @@
 #   build <slot> flutter|gradle ...    compile check (worker_build.sh); only
 #                                      its log comes back, never what it built
 #   kill <slot>                        stop that slot's batch / analyze / build
-#   finish <slot> <runId>              drop the run's ref and lock
+#   finish <slot> <runId>              drop the run's ref, lock and place
+#                                      in the queue
 #
 # Anything else is refused. Nothing outside $FUSHI_WORKER_HOME is written by
 # the shim itself; the tests and builds it runs are the requester's code (that
@@ -227,6 +232,7 @@ cmd_hello() {
   echo "max_concurrency=$(max_concurrency)"
   echo "paused=$(paused && echo yes || echo no)"
   echo "analyze=yes"
+  echo "queue=$([ -f "$W/slot.sh" ] && echo yes || echo no)"
   # With the owner's prepare.env, which a build runs under too.
   echo "build=$(
     load_prepare_env
@@ -236,9 +242,11 @@ cmd_hello() {
 }
 
 cmd_lock() {
-  [ $# -eq 2 ] || die "usage: lock <slot> <runId>"
+  [ $# -eq 2 ] || [ $# -eq 3 ] || die "usage: lock <slot> <runId> [wait]"
   check_slot "$1"
   check_run_id "$2"
+  local wait=${3:-0}
+  case "$wait" in ''|*[!0-9]*) die "bad wait '$wait'" ;; esac
   paused && busy "paused by the owner"
   local disk need
   disk=$(free_disk_gb)
@@ -250,6 +258,10 @@ cmd_lock() {
   [ -d .git ] || git init -q || die "git init failed"
   # Pack and build paths under a Windows profile pass MAX_PATH easily.
   [ "$(os_kind)" = windows ] && git config core.longpaths true
+  # No gc inside receive-pack: it runs after the ref report and before the
+  # push returns, silent, and the coordinator kills a push that prints
+  # nothing for two minutes. worker_prepare.sh runs `git gc --auto` instead.
+  git config receive.autogc false
   # Borrow objects so a push only carries what is new: secondary slots from
   # the first checkout, the first one from the owner's seed clone
   # (worker_setup clones the public repo there), if any.
@@ -270,6 +282,11 @@ cmd_lock() {
     fi
   fi
   mkdir -p .git/fushi-dist
+  # The queue (worker_setup installs worker_slot.sh as slot.sh): runs take
+  # the checkout in the order they asked, one batch at a time.
+  if [ -f "$W/slot.sh" ]; then
+    exec bash "$W/slot.sh" take "$dir" "$2" "$wait"
+  fi
   if ! mkdir .git/fushi-dist/lock 2>/dev/null; then
     if [ -n "$(find .git/fushi-dist/lock -maxdepth 0 -mmin +$STALE_MIN)" ]; then
       rm -rf .git/fushi-dist/lock && mkdir .git/fushi-dist/lock ||
@@ -296,7 +313,7 @@ cmd_receive() {
   local dir
   dir=$(slot_dir "$slot")
   check_owner "$dir"
-  exec git receive-pack "$dir"
+  exec git -c receive.autogc=false receive-pack "$dir"
 }
 
 cmd_prepare() {
@@ -408,12 +425,29 @@ cmd_kill() {
   cd "$dir" && exec bash fushi/tool/dist_test/worker_kill.sh
 }
 
+cmd_yield() {
+  [ $# -eq 2 ] || die "usage: yield <slot> <runId>"
+  check_slot "$1"
+  check_run_id "$2"
+  local dir
+  dir=$(slot_dir "$1")
+  # No check_owner: a lock taken over meanwhile is slot.sh's `lost`.
+  if [ -f "$W/slot.sh" ] && [ -d "$dir/.git" ]; then
+    exec bash "$W/slot.sh" yield "$dir" "$2"
+  fi
+  echo kept
+}
+
 cmd_finish() {
   [ $# -eq 2 ] || die "usage: finish <slot> <runId>"
   check_slot "$1"
   check_run_id "$2"
   local dir
   dir=$(slot_dir "$1")
+  [ -d "$dir/.git" ] || exit 0
+  if [ -f "$W/slot.sh" ]; then
+    exec bash "$W/slot.sh" drop "$dir" "$2"
+  fi
   cd "$dir" 2>/dev/null || exit 0
   git update-ref -d "refs/dist/$2" 2>/dev/null
   if [ "$(cat .git/fushi-dist/lock/owner 2>/dev/null)" = "$2" ]; then
@@ -451,6 +485,7 @@ case "$verb" in
   analyze) cmd_analyze ${args[@]+"${args[@]}"} ;;
   build) cmd_build ${args[@]+"${args[@]}"} ;;
   kill) cmd_kill ${args[@]+"${args[@]}"} ;;
+  yield) cmd_yield ${args[@]+"${args[@]}"} ;;
   finish) cmd_finish ${args[@]+"${args[@]}"} ;;
   *) die "not allowed: $verb" ;;
 esac

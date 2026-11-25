@@ -84,7 +84,7 @@ void main() {
   test('lib/ 不新增硬编码 Curves.*（用 FushiMotion / 弹簧 token）', () {
     final List<String> offenders = overBudget(
       scan(_curvePattern),
-      _curveBudget,
+      <String, int>{..._curveBudget, ..._lyricVisualizerArtCurveBudget},
     );
     expect(
       offenders,
@@ -96,10 +96,15 @@ void main() {
   });
 
   test('lib/ 不新增裸数字 fontSize（用 context.fushiType / textTheme）', () {
-    final List<String> offenders = overBudget(
-      scan(_fontSizePattern),
-      <String, int>{..._fontSizeBudget, ..._fontSpecimenBudget},
-    );
+    final List<String> offenders =
+        overBudget(scan(_fontSizePattern), <String, int>{
+          ..._fontSizeBudget,
+          ..._fontSpecimenBudget,
+          ..._subtitleContentBudget,
+          ..._typeScaleTokenBudget,
+          ..._lyricVisualizerContentFontBudget,
+          ..._lyricsContentFontBudget,
+        });
     expect(
       offenders,
       isEmpty,
@@ -135,6 +140,59 @@ int _curveCount(String path, String code) {
 /// 保持对照样张的固定字号，周围标题、按钮与说明仍须走主题字阶。
 const Map<String, int> _fontSpecimenBudget = <String, int>{
   'lib/src/pages/implementations/font_preview/font_library_widgets.dart': 5,
+};
+
+/// 竖屏学习版式的「当前字幕」条是字幕内容区（用户字幕字体链），按本文件头的
+/// 约定不走 UI 字阶；与横屏字幕层同一基线（22 × 视频页界面缩放）。
+const Map<String, int> _subtitleContentBudget = <String, int>{
+  'lib/src/pages/implementations/video_fushi/portrait.part.dart': 1,
+};
+
+/// 页头大字字阶表本身就是字号 token 的定义处（「页面里不写死字号」的那个来源，
+/// 设计稿 11-20 #18、用户拍板以书架为准）：这里的数字是 token 值，不是调用点的
+/// 裸字号。只豁免这一张表里 [FushiPageTitleScale] 两档的 `fontSize:`。
+const Map<String, int> _typeScaleTokenBudget = <String, int>{
+  'lib/src/utils/components/fushi_page_title_metrics.dart': 2,
+};
+
+/// 全屏歌词动画（PR #4211，照 folia-major 移植）的场景内缓动：每处都对应 folia 源码里
+/// 写死的 CSS / framer-motion 缓动（`ease-in-out`、`easeOut` 等），是画面内容的一部分，
+/// 不是 UI 控件动效；换成弹簧 token 会让移植样式的节奏偏离原作。只豁免这些场景文件，
+/// 歌词页工具栏、选样式面板、参数面板等 UI 仍须走 FushiMotion。
+const Map<String, int> _lyricVisualizerArtCurveBudget = <String, int>{
+  'lib/src/media/music/lyrics/visualizer/backgrounds/monet_background.dart': 1,
+  'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_scene.dart': 8,
+  'lib/src/media/music/lyrics/visualizer/modes/luminous/luminous_timing.dart':
+      2,
+  'lib/src/media/music/lyrics/visualizer/modes/monet/monet_floating_decor.dart':
+      1,
+  // chaotic 晃动的逐段 easeInOut + 离开 chaotic 回正的 easeOut（folia framer
+  // `{ duration: 0.8, ease: 'easeOut' }`）。
+  'lib/src/media/music/lyrics/visualizer/modes/monet/monet_lyrics_model.dart':
+      2,
+  'lib/src/media/music/lyrics/visualizer/modes/monet/monet_rail.dart': 2,
+  'lib/src/media/music/lyrics/visualizer/modes/monet/monet_visualizer.dart': 3,
+  'lib/src/media/music/lyrics/visualizer/modes/partita/partita_painter.dart': 1,
+  'lib/src/media/music/lyrics/visualizer/modes/tilt/tilt_scene.dart': 2,
+};
+
+/// 全屏歌词动画的场景内文字（歌词、标题 / 歌手占位、场景里的段落标签）是歌词内容区：
+/// 字号照 folia 的 px / rem 写死，再乘场景缩放与用户字号倍率（`fontScale`），按本文件头
+/// 的约定不走 UI 字阶。
+const Map<String, int> _lyricVisualizerContentFontBudget = <String, int>{
+  'lib/src/media/music/lyrics/visualizer/lyric_visualizer_placeholder.dart': 1,
+  'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text.dart': 1,
+  'lib/src/media/music/lyrics/visualizer/modes/machi/machi_text.dart': 1,
+  'lib/src/media/music/lyrics/visualizer/modes/monet/monet_visualizer.dart': 2,
+  'lib/src/media/music/lyrics/visualizer/modes/still/still_layout.dart': 2,
+  'lib/src/pages/implementations/music/music_lyric_visualizer_view.dart': 3,
+};
+
+/// 逐字歌词页的歌词正文是歌词内容区（按本文件头的约定不走 UI 字阶）：Apple 设计系统
+/// 下 [musicAppleLyricsAppearance] 的主行字号与 M3E 的 `KaraokeLyricsAppearance`
+/// 默认字号同属歌词外观常量（再乘系统文字缩放），只豁免这一处。
+const Map<String, int> _lyricsContentFontBudget = <String, int>{
+  'lib/src/pages/implementations/music/music_lyrics_page_apple.part.dart': 1,
 };
 
 /// 2026-10-05 存量：`Curves.` 每文件出现次数（只许减少）。
@@ -177,7 +235,7 @@ const Map<String, int> _fontSizeBudget = <String, int>{
   'lib/src/pages/implementations/reader_fushi/chrome.part.dart': 5,
   'lib/src/pages/implementations/shortcut_settings/action_tile.part.dart': 1,
   'lib/src/pages/implementations/video_fushi/controls_theme.part.dart': 2,
-  'lib/src/pages/implementations/video_fushi/episode.part.dart': 3,
+  'lib/src/pages/implementations/video_fushi/episode.part.dart': 2,
   'lib/src/pages/implementations/video_fushi/subtitle.part.dart': 1,
   'lib/src/pages/implementations/video_fushi_page.dart': 7,
   'lib/src/reader/illustration_zoom_viewer.dart': 2,

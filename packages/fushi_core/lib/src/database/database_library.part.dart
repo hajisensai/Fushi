@@ -3,6 +3,18 @@
 // （extension 方案在此翻车过）；私有 mixin 不进公共 API 面。
 part of 'database.dart';
 
+/// [FushiDatabase.removeFromCollectionAutomatically] 的结果。
+enum CollectionAutoRemoveResult {
+  /// 已移出（写了成员墓碑，合集所有权不变）。
+  removed,
+
+  /// 成员行是用户亲手放进来的（`pinned_by_user`），拒绝移出。
+  pinned,
+
+  /// 不是这个合集的成员，什么也没做。
+  notMember,
+}
+
 mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   // ── media_sources ───────────────────────────────────────────────
   // TODO-817：网络/本地来源库 CRUD。configJson 绝不裸存明文密码（本地恒 NULL，
@@ -274,6 +286,23 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       (update(mediaSources)..where((t) => t.id.equals(id))).write(
         MediaSourcesCompanion(isPrivate: Value(isPrivate)),
       );
+
+  /// 设置来源的自动扫描开关（v157，`media_sources.auto_scan`）。只写这一列。
+  Future<void> updateMediaSourceAutoScan(int id, bool autoScan) =>
+      (update(mediaSources)..where((t) => t.id.equals(id))).write(
+        MediaSourcesCompanion(autoScan: Value(autoScan)),
+      );
+
+  /// 开着自动扫描的来源（启动 / 回前台的自动扫描调度读它），按来源页同一顺序
+  /// （sortOrder, id）。
+  Future<List<MediaSourceRow>> getAutoScanMediaSources() =>
+      (select(mediaSources)
+            ..where((t) => t.autoScan.equals(true))
+            ..orderBy([
+              (t) => OrderingTerm(expression: t.sortOrder),
+              (t) => OrderingTerm(expression: t.id),
+            ]))
+          .get();
 
   /// 开着隐私开关的来源 id（排行榜 / Bangumi 等出站路径的私密判定读它）。
   Future<Set<int>> privateMediaSourceIds() async => <int>{
@@ -686,6 +715,42 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     return controller.stream;
   }
 
+  /// 书架上「有哪些书」变了：书（[epubBooks]）或有声书（[srtBooks]）行被插入或删除
+  /// （任何导入 / 删除路径）。行内字段更新（进度、读完、改名）不算。
+  ///
+  /// 书架的分卷归组随映射重载才跑，书列表自己订阅了书集合，映射却没有：BUG-4521
+  /// 两卷先后导入后一直是散卡。同 [watchCollectionTablesChanged]：手动
+  /// [StreamController] + [tableUpdates]，不用 drift keyed `.watch()`（BUG-834）。
+  Stream<void> watchShelfBookSetChanged() {
+    late final StreamController<void> controller;
+    StreamSubscription<void>? updatesSub;
+    controller = StreamController<void>(
+      onListen: () {
+        updatesSub =
+            tableUpdates(
+              TableUpdateQuery.allOf(<TableUpdateQuery>[
+                for (final ResultSetImplementation<dynamic, dynamic> table
+                    in <ResultSetImplementation<dynamic, dynamic>>[
+                      epubBooks,
+                      srtBooks,
+                    ])
+                  for (final UpdateKind kind in <UpdateKind>[
+                    UpdateKind.insert,
+                    UpdateKind.delete,
+                  ])
+                    TableUpdateQuery.onTable(table, limitUpdateKind: kind),
+              ]),
+            ).listen((_) {
+              if (!controller.isClosed) controller.add(null);
+            });
+      },
+      onCancel: () async {
+        await updatesSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
   /// 全部合集，按 sortOrder 升序、id 升序（卡片列表稳定排序，同 [getAllSeries] 范式）。
   Future<List<MediaCollectionRow>> getAllMediaCollections() =>
       (select(mediaCollections)..orderBy([
@@ -824,14 +889,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     );
     if (existing != null) return existing.id;
     final int nextOrder = await _nextMediaCollectionSortOrder();
-    await (delete(collectionMemberTombstones)..where(
-          (t) =>
-              t.collectionName.equals(name) &
-              t.collectionType.equals(collectionType) &
-              t.mediaType.equals(FushiDatabase.collectionTombstoneSentinel) &
-              t.entryKey.equals(FushiDatabase.collectionTombstoneSentinel),
-        ))
-        .go();
+    await _clearCollectionDeletionTombstone(name, collectionType);
     return into(mediaCollections).insert(
       MediaCollectionsCompanion.insert(
         name: name,
@@ -936,9 +994,42 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     }
     final String oldName = col.name;
     final String type = col.collectionType;
+    // 成员墓碑跟着合集走：「用户移出过 X」是对这个合集的表态，改个名不该把它忘掉
+    // （否则改名后 AI 整理 / 同步并集会把移出过的成员放回来）。只搬成员行，不搬
+    // 合集级哨兵；新名下已有同一成员的墓碑时取较新的 deletedAt。
+    final List<CollectionMemberTombstoneRow> carried =
+        await (select(collectionMemberTombstones)..where(
+              (t) =>
+                  t.collectionName.equals(oldName) &
+                  t.collectionType.equals(type) &
+                  t.mediaType
+                      .equals(FushiDatabase.collectionTombstoneSentinel)
+                      .not(),
+            ))
+            .get();
     await (update(mediaCollections)..where((t) => t.id.equals(id))).write(
       MediaCollectionsCompanion(name: Value(name)),
     );
+    for (final CollectionMemberTombstoneRow m in carried) {
+      if (m.entryKey.isEmpty) continue;
+      final CollectionMemberTombstoneRow? existing =
+          await (select(collectionMemberTombstones)..where(
+                (t) =>
+                    t.collectionName.equals(name) &
+                    t.collectionType.equals(type) &
+                    t.mediaType.equals(m.mediaType) &
+                    t.entryKey.equals(m.entryKey),
+              ))
+              .getSingleOrNull();
+      if (existing != null && existing.deletedAt >= m.deletedAt) continue;
+      await upsertCollectionMemberTombstone(
+        collectionName: name,
+        collectionType: type,
+        mediaType: m.mediaType,
+        entryKey: m.entryKey,
+        deletedAt: m.deletedAt,
+      );
+    }
     // 旧 (oldName, type)：清其全部墓碑，只留合集级哨兵（镜像删除，让对端删旧名副本）。
     await (delete(collectionMemberTombstones)..where(
           (t) =>
@@ -985,35 +1076,44 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         MediaCollectionsCompanion(coverPath: Value(coverPath)),
       );
 
-  /// 私密合集（v122 `media_privacy_flags`）的成员离开它之前，把私密落到成员自己
-  /// 身上（fail-closed）。成员的私密原本只是「在私密合集里」继承来的：合集被删 /
-  /// 合并解散 / 按季或按 AniDB 作品拆走 / 成员被移出时，继承随成员关系一起消失，
-  /// 那部作品就会在下一轮排行榜上传、Bangumi 推送里静默变回公开——其中 AniDB 拆分
-  /// 是刮削后台自动做的，用户根本没表达过「公开」。取消私密只认用户在作品自己的私密
-  /// 开关上拨回去。合集本身不私密时什么都不做；成员已私密的不重写（不推进时钟）。
+  /// 私密 / 上锁合集（v122 `media_privacy_flags` / v171 `media_locked_flags`）的
+  /// 成员离开它之前，把私密 / 上锁落到成员自己身上（fail-closed）。成员的私密 /
+  /// 上锁原本只是「在合集里」继承来的：合集被删 / 合并解散 / 按季或按 AniDB 作品
+  /// 拆走 / 成员被移出时，继承随成员关系一起消失，那部作品就会在下一轮排行榜上传、
+  /// Bangumi 推送里静默变回公开，或者在库里突然露出来——其中 AniDB 拆分是刮削后台
+  /// 自动做的，用户根本没表达过「公开」。取消只认用户在作品自己的隐私分级上改回去。
+  /// 合集本身两样都没有时什么都不做；成员已有的不重写（不推进时钟）。
   Future<void> _carryCollectionPrivacyToMembers(
     int collectionId,
     Iterable<({String mediaType, String entryKey})> leaving,
   ) async {
-    if (!await isMediaPrivate(
+    final String collectionKey = collectionTagEntryKey(collectionId);
+    final bool private = await isMediaPrivate(
       TagHostKind.collection,
-      collectionTagEntryKey(collectionId),
-    )) {
-      return;
-    }
+      collectionKey,
+    );
+    final bool locked = await isMediaLocked(
+      TagHostKind.collection,
+      collectionKey,
+    );
+    if (!private && !locked) return;
     final int now = DateTime.now().millisecondsSinceEpoch;
     for (final (:String mediaType, :String entryKey) in leaving) {
       final MediaKind? kind = MediaKind.tryParse(mediaType);
       // 对端未知种类：本机没有对应宿主、也没有出站路径，无从落标记。
       if (kind == null) continue;
-      // EPUB 成员键 v83 起是 uid，私密标记键是 bookKey；反查不上 = 透传行（原值
-      // 本就是 bookKey），照抄。
+      // EPUB 成员键 v83 起是 uid，私密 / 上锁标记键是 bookKey；反查不上 = 透传行
+      // （原值本就是 bookKey），照抄。
       final String hostKey = kind == MediaKind.epub
           ? (await resolveEpubBookKeyByUid(entryKey) ?? entryKey)
           : entryKey;
       final TagHostKind host = tagHostKindOfMediaKind(kind);
-      if (await isMediaPrivate(host, hostKey)) continue;
-      await setMediaPrivate(host, hostKey, true, at: now);
+      if (private && !await isMediaPrivate(host, hostKey)) {
+        await setMediaPrivate(host, hostKey, true, at: now);
+      }
+      if (locked && !await isMediaLocked(host, hostKey)) {
+        await setMediaLocked(host, hostKey, true, at: now);
+      }
     }
   }
 
@@ -1265,6 +1365,13 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 收养 DTO 携带的主合集成员；远端刷新没有撤销删除或覆盖手动排序的权限。
   /// 返回自然键对应的最小合集 ID；任一身份被墓碑阻止时返回 null。
   /// 占位提升和去重在同一事务完成，不产生用户删除墓碑。
+  ///
+  /// [userIntent]：用户**亲手**把这部作品加进库 / 下载它（作品页「加入媒体库」、
+  /// 下载完成入库）时传 true——同事务先清该自然键的合集级删除墓碑，与
+  /// [createMediaCollection]「重建 = 撤销删除」同一语义；否则删过一次合集后，
+  /// 用户再怎么显式加入，集都只会散落在库里、永不归组（BUG-5016）。成员级墓碑
+  /// （用户把某一集单独移出合集）仍照常拦，只有 [addToCollection] 逐键撤销。
+  /// 同步 / 目录刷新 / 后台库更新探针等被动路径保持默认 false，墓碑让路。
   Future<int?> adoptRemoteCollectionMember({
     required String name,
     required String collectionType,
@@ -1272,8 +1379,11 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     required String remoteEntryKey,
     required int sortIndex,
     String? localEntryKey,
+    bool userIntent = false,
   }) => transaction(() async {
-    if (await hasCollectionDeletionTombstone(name, collectionType)) {
+    if (userIntent) {
+      await _clearCollectionDeletionTombstone(name, collectionType);
+    } else if (await hasCollectionDeletionTombstone(name, collectionType)) {
       return null;
     }
     final Set<String> keys = <String>{remoteEntryKey};
@@ -1343,6 +1453,8 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
           mediaType: mediaType.dbValue,
           entryKey: targetKey,
           sortIndex: Value(index),
+          // 远端占位行换成本机键：「用户亲手放进来」跟着搬（v159）。
+          pinnedByUser: Value<bool>(placeholder?.pinnedByUser ?? false),
         ),
         mode: InsertMode.insertOrIgnore,
       );
@@ -1380,13 +1492,21 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// [addToCollection] 的裸串版：合集合并/转移把**现有成员行原样搬家**时用——
   /// 行值可能是对端未来新增的未知种类（或旧值域残留），tryParse 丢弃会静默丢
   /// 成员（Never break userspace）。新增本机成员一律走类型化 [addToCollection]。
+  ///
+  /// [pinnedByUser]（v159，缺省跟随 [userIntent]）：成员行记成「用户亲手放进来」，
+  /// AI 整理不再移出（[removeFromCollectionAutomatically]）。只升不降：传 false 时
+  /// 新插入的行为 0，已是 1 的行不改回 0。整理撤销「移出」传 `userIntent: false,
+  /// pinnedByUser: true`（用户否决了这次移出，但不接手合集所有权）；合并 / 收敛把
+  /// 成员搬家时传源行的值。
   Future<void> addToCollectionRaw(
     int collectionId,
     String mediaType,
     String entryKey, {
     bool userIntent = true,
+    bool? pinnedByUser,
   }) => transaction(() async {
     if (userIntent) await _claimCollectionForUser(collectionId);
+    final bool pin = pinnedByUser ?? userIntent;
     final int next = await _nextCollectionSortIndex(collectionId);
     await into(mediaCollectionItems).insert(
       MediaCollectionItemsCompanion.insert(
@@ -1394,9 +1514,24 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         mediaType: mediaType,
         entryKey: entryKey,
         sortIndex: Value(next),
+        pinnedByUser: Value<bool>(pin),
       ),
       mode: InsertMode.insertOrIgnore,
     );
+    if (pin) {
+      await (update(mediaCollectionItems)..where(
+            (t) =>
+                t.collectionId.equals(collectionId) &
+                t.mediaType.equals(mediaType) &
+                t.entryKey.equals(entryKey) &
+                t.pinnedByUser.equals(false),
+          ))
+          .write(
+            const MediaCollectionItemsCompanion(
+              pinnedByUser: Value<bool>(true),
+            ),
+          );
+    }
     final MediaCollectionRow? col = await getMediaCollectionById(collectionId);
     if (col != null) {
       await deleteCollectionMemberTombstone(
@@ -1406,6 +1541,124 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         entryKey: await _tombstoneEntryKeyOf(mediaType, entryKey),
       );
     }
+  });
+
+  /// 配对有声书（`srt_books.book_key` 非空，书架上由 SRT 卡顶替原书卡）继承原书
+  /// （`epub|<uid>`，旧行 `epub|<bookKey>`）所属合集：每个「原书在、SRT 不在、且该
+  /// 合集没有 `('srt', srtUid)` 成员移出墓碑」的合集补一行 `('srt', srtUid)`，紧邻
+  /// 原书之后，全表落成致密 `sortIndex`。
+  ///
+  /// 为什么落库而不是在渲染层把 SRT 卡映射到原书的归属：合集归属的消费方遍布书架
+  /// 折叠、合集详情、首页、互联 host、操作目录、制卡溯源……每处都得记得「被顶替的
+  /// 书去查原书键」是纪律不是结构；成员行在库里，所有消费方天然一致。
+  ///
+  /// 判据按**合集逐个**算，不是「SRT 已在任一合集就整体跳过」：原书同属 A、B 而 SRT
+  /// 只在 A 时 B 里同样要补，否则 B 的书架卡与详情页少这一卷。用户意图由成员墓碑
+  /// 表达——用户从某合集移出过这张卡（墓碑键非 epub 域原样 = srt uid）就不再加回。
+  /// 只对支持有声书的格式（[BookFormat.supportsAudiobook]，与顶替规则同口径）生效。
+  ///
+  /// 自动整理：不 bump `orderUpdatedAt`、不接管合集（[reorderCollectionItemsAutomatically]
+  /// 同一不变量）；`pinnedByUser` 继承原书行（SRT 卡是原书在书架上的替身）。
+  ///
+  /// 一条集合查询选出全部缺口（稳态返回空集，可放在 `BookSeriesGrouper.groupAll`
+  /// 这种热路径上），只对真缺的合集写。[srtUid] 给定时只处理这一本（导入 / 制作
+  /// 落库后调用，须在 `srt_books` 行写好 `book_key` 之后）。返回实际补过行的合集 id。
+  Future<List<int>> inheritPairedSrtCollections({
+    String? srtUid,
+  }) => transaction(() async {
+    final String epub = MediaKind.epub.dbValue;
+    final String srt = MediaKind.srt.dbValue;
+    final List<QueryRow> rows = await customSelect(
+      'SELECT i.collection_id AS cid, s.uid AS srt_uid, '
+      '       i.entry_key AS anchor, i.pinned_by_user AS pinned, '
+      '       e.format AS format '
+      'FROM srt_books s '
+      'JOIN epub_books e ON e.book_key = s.book_key '
+      'JOIN media_collection_items i '
+      '  ON i.media_type = ?1 '
+      " AND (i.entry_key = e.book_key OR (e.uid <> '' AND i.entry_key = e.uid)) "
+      'JOIN media_collections c ON c.id = i.collection_id '
+      "WHERE s.book_key <> '' AND s.uid <> '' "
+      '${srtUid == null ? '' : 'AND s.uid = ?3 '}'
+      'AND NOT EXISTS (SELECT 1 FROM media_collection_items x '
+      '  WHERE x.collection_id = i.collection_id '
+      '    AND x.media_type = ?2 AND x.entry_key = s.uid) '
+      'AND NOT EXISTS (SELECT 1 FROM collection_member_tombstones t '
+      '  WHERE t.collection_name = c.name '
+      '    AND t.collection_type = c.collection_type '
+      '    AND t.media_type = ?2 AND t.entry_key = s.uid) '
+      'ORDER BY i.collection_id, s.uid, i.sort_index, i.entry_key',
+      variables: <Variable<Object>>[
+        Variable<String>(epub),
+        Variable<String>(srt),
+        if (srtUid != null) Variable<String>(srtUid),
+      ],
+      readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+        srtBooks,
+        epubBooks,
+        mediaCollectionItems,
+        mediaCollections,
+        collectionMemberTombstones,
+      },
+    ).get();
+    // collectionId → srtUid → (原书成员键, pinned)。原书同时挂 uid 与 bookKey
+    // 两行时取排序靠前那行当锚点，pinned 取或。
+    final Map<int, Map<String, ({String anchor, bool pinned})>> gaps =
+        <int, Map<String, ({String anchor, bool pinned})>>{};
+    for (final QueryRow r in rows) {
+      if (!BookFormat.parseOrEpub(r.read<String>('format')).supportsAudiobook) {
+        continue;
+      }
+      final Map<String, ({String anchor, bool pinned})> byUid = gaps
+          .putIfAbsent(
+            r.read<int>('cid'),
+            () => <String, ({String anchor, bool pinned})>{},
+          );
+      final String uid = r.read<String>('srt_uid');
+      final bool pinned = r.read<bool>('pinned');
+      final ({String anchor, bool pinned})? prev = byUid[uid];
+      byUid[uid] = prev == null
+          ? (anchor: r.read<String>('anchor'), pinned: pinned)
+          : (anchor: prev.anchor, pinned: prev.pinned || pinned);
+    }
+    final List<int> updated = gaps.keys.toList()..sort();
+    for (final int collectionId in updated) {
+      final Map<String, ({String anchor, bool pinned})> byUid =
+          gaps[collectionId]!;
+      final Map<String, List<CollectionMemberKey>> afterAnchor =
+          <String, List<CollectionMemberKey>>{};
+      for (final MapEntry<String, ({String anchor, bool pinned})> g
+          in byUid.entries) {
+        await into(mediaCollectionItems).insert(
+          MediaCollectionItemsCompanion.insert(
+            collectionId: collectionId,
+            mediaType: srt,
+            entryKey: g.key,
+            pinnedByUser: Value<bool>(g.value.pinned),
+          ),
+          mode: InsertMode.insertOrIgnore,
+        );
+        afterAnchor
+            .putIfAbsent(g.value.anchor, () => <CollectionMemberKey>[])
+            .add((mediaType: srt, entryKey: g.key));
+      }
+      final List<CollectionMemberKey> order = <CollectionMemberKey>[];
+      for (final MediaCollectionItemRow item in await getCollectionItems(
+        collectionId,
+      )) {
+        if (item.mediaType == srt && byUid.containsKey(item.entryKey)) {
+          continue; // 新插入的行由下面的锚点带入。
+        }
+        order.add((mediaType: item.mediaType, entryKey: item.entryKey));
+        if (item.mediaType == epub) {
+          order.addAll(
+            afterAnchor[item.entryKey] ?? const <CollectionMemberKey>[],
+          );
+        }
+      }
+      await _writeDenseCollectionOrder(collectionId, order);
+    }
+    return updated;
   });
 
   /// uid → bookKey 反向换算口（v83；resolveEpubBookUid 的对偶，住本 mixin 是
@@ -1421,6 +1674,46 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
             .map((r) => r.read(epubBooks.bookKey))
             .getSingleOrNull();
     return bookKey;
+  }
+
+  /// 合集 epub 成员行键 → 本机书 bookKey 的批量换算（[resolveEpubBookKeyByUid] 的
+  /// 批量版）。v83 起成员行 entryKey 是书行 uid，v83 前的存量行是 bookKey：两种都认。
+  /// 不在本机库的键（远端透传行）不出现在结果里。按 bookKey 读书的消费者（书图刮削层
+  /// 等）拿合集成员前必须经此换算，不能把 entryKey 当 bookKey 用。
+  Future<Map<String, String>> resolveEpubBookKeysForMembers(
+    Iterable<String> entryKeys,
+  ) async {
+    final List<String> keys = <String>{
+      for (final String k in entryKeys)
+        if (k.isNotEmpty) k,
+    }.toList();
+    final Map<String, String> out = <String, String>{};
+    // 分批绑定参数（每批两组 IN），不撞 SQLite 变量上限。
+    const int chunk = 400;
+    for (int i = 0; i < keys.length; i += chunk) {
+      final List<String> part = keys.sublist(
+        i,
+        i + chunk < keys.length ? i + chunk : keys.length,
+      );
+      final Set<String> wanted = part.toSet();
+      final List<TypedResult> rows =
+          await (selectOnly(epubBooks)
+                ..addColumns(<Expression<Object>>[
+                  epubBooks.bookKey,
+                  epubBooks.uid,
+                ])
+                ..where(
+                  epubBooks.uid.isIn(part) | epubBooks.bookKey.isIn(part),
+                ))
+              .get();
+      for (final TypedResult r in rows) {
+        final String bookKey = r.read(epubBooks.bookKey)!;
+        final String? uid = r.read(epubBooks.uid);
+        if (uid != null && wanted.contains(uid)) out[uid] = bookKey;
+        if (wanted.contains(bookKey)) out[bookKey] = bookKey;
+      }
+    }
+    return out;
   }
 
   /// 成员墓碑键域归一（v83）：墓碑冻结在 **bookKey 域**（= wire 域）——它是
@@ -1533,6 +1826,38 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     userIntent: userIntent,
   );
 
+  /// 自动路径（AI 整理）移出一个成员（AI 库管家设计稿 §7）。成员行
+  /// `pinned_by_user == 1`（用户亲手放进来 / 撤销过 AI 的移出）→ 拒绝，返回
+  /// [CollectionAutoRemoveResult.pinned]；不是成员 → [CollectionAutoRemoveResult.
+  /// notMember]；否则按 [removeFromCollectionRaw]（`userIntent: false`）移出：写成员
+  /// 墓碑（防同步把它并回来）、**不改合集所有权**（不把 `origin` 转成 `user`，见
+  /// `docs/specs/2026-10-20-ai-library-organize-design.md` §5.1）。移空自删沿用
+  /// [removeFromCollectionRaw] 的语义（合集清单里 0 成员的活合集会被各端同步删掉，
+  /// 本机单独保留空壳也留不住）。
+  Future<CollectionAutoRemoveResult> removeFromCollectionAutomatically(
+    int collectionId,
+    String mediaType,
+    String entryKey,
+  ) => transaction(() async {
+    final MediaCollectionItemRow? row =
+        await (select(mediaCollectionItems)..where(
+              (t) =>
+                  t.collectionId.equals(collectionId) &
+                  t.mediaType.equals(mediaType) &
+                  t.entryKey.equals(entryKey),
+            ))
+            .getSingleOrNull();
+    if (row == null) return CollectionAutoRemoveResult.notMember;
+    if (row.pinnedByUser) return CollectionAutoRemoveResult.pinned;
+    await removeFromCollectionRaw(
+      collectionId,
+      mediaType,
+      entryKey,
+      userIntent: false,
+    );
+    return CollectionAutoRemoveResult.removed;
+  });
+
   /// [removeFromCollection] 的裸串版：详情页按现有成员行移出时，行值可能是对端
   /// 未来新增的未知种类——必须能原样移出，tryParse 丢弃会让该成员永远移不掉。
   Future<void> removeFromCollectionRaw(
@@ -1638,15 +1963,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       subset: ordered,
       keyOf: (CollectionMemberKey k) => k,
     );
-    for (int i = 0; i < merged.length; i++) {
-      await (update(mediaCollectionItems)..where(
-            (t) =>
-                t.collectionId.equals(collectionId) &
-                t.mediaType.equals(merged[i].mediaType) &
-                t.entryKey.equals(merged[i].entryKey),
-          ))
-          .write(MediaCollectionItemsCompanion(sortIndex: Value(i)));
-    }
+    await _writeDenseCollectionOrder(collectionId, merged);
     if (bumpOrderUpdatedAt) {
       await (update(
         mediaCollections,
@@ -1657,6 +1974,24 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       );
     }
   });
+
+  /// 把 [order]（须是该合集**全表**成员的新顺序）落成致密 `sortIndex = 0..n-1`。
+  /// 合集成员序的唯一写入口：手动 / 自动重排与配对有声书继承合集
+  /// （[inheritPairedSrtCollections]）共用，不变量只在这一处。调用方负责事务。
+  Future<void> _writeDenseCollectionOrder(
+    int collectionId,
+    List<CollectionMemberKey> order,
+  ) async {
+    for (int i = 0; i < order.length; i++) {
+      await (update(mediaCollectionItems)..where(
+            (t) =>
+                t.collectionId.equals(collectionId) &
+                t.mediaType.equals(order[i].mediaType) &
+                t.entryKey.equals(order[i].entryKey),
+          ))
+          .write(MediaCollectionItemsCompanion(sortIndex: Value<int>(i)));
+    }
+  }
 
   /// 删条目时清其全部合集引用（逻辑外键无 DB cascade，删书路径主动调用）；被清空的
   /// 合集随之删除。
@@ -1765,6 +2100,22 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
           .getSingleOrNull() !=
       null;
 
+  /// 删掉该自然键的**合集级**删除墓碑（空哨兵行）＝撤销「用户删了这个合集」。
+  /// 只供用户显式重建 / 显式加入的入口用（[createMediaCollection]、
+  /// [adoptRemoteCollectionMember] 的 `userIntent`）；成员墓碑不动。
+  Future<void> _clearCollectionDeletionTombstone(
+    String name,
+    String collectionType,
+  ) =>
+      (delete(collectionMemberTombstones)..where(
+            (t) =>
+                t.collectionName.equals(name) &
+                t.collectionType.equals(collectionType) &
+                t.mediaType.equals(FushiDatabase.collectionTombstoneSentinel) &
+                t.entryKey.equals(FushiDatabase.collectionTombstoneSentinel),
+          ))
+          .go();
+
   /// upsert 一条墓碑（重复移出刷新 deletedAt，单行 LWW）。
   Future<void> upsertCollectionMemberTombstone({
     required String collectionName,
@@ -1832,17 +2183,28 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
 
   /// 同步应用端专用：按显式 sortIndex upsert 一条成员行（不走尾插、不清墓碑——
   /// 墓碑状态由清单镜像 [replaceCollectionTombstonesFor] 统一处理）。
+  ///
+  /// [pinnedByUser]（v159）与本机已有值取或：清单说了 1 就升到 1，清单没说（0 /
+  /// 旧对端缺字段）不把本机的 1 改回 0。
   Future<void> upsertCollectionItemAt(
     int collectionId,
     String mediaType,
     String entryKey,
-    int sortIndex,
-  ) => into(mediaCollectionItems).insertOnConflictUpdate(
+    int sortIndex, {
+    bool pinnedByUser = false,
+  }) => into(mediaCollectionItems).insert(
     MediaCollectionItemsCompanion.insert(
       collectionId: collectionId,
       mediaType: mediaType,
       entryKey: entryKey,
       sortIndex: Value(sortIndex),
+      pinnedByUser: Value<bool>(pinnedByUser),
+    ),
+    onConflict: DoUpdate(
+      (old) => MediaCollectionItemsCompanion.custom(
+        sortIndex: Variable<int>(sortIndex),
+        pinnedByUser: old.pinnedByUser | Variable<bool>(pinnedByUser),
+      ),
     ),
   );
 
@@ -1976,6 +2338,8 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     // 见 deleteEpubBook）。
     await removeEntryFromAllCollections(MediaKind.srt, uid);
     await deleteTagAssignmentsForHost(TagHostKind.srt, uid);
+    // v155：单本刮削资料 / 附加图（逻辑外键）同事务清。
+    await _purgeItemScrapeRows(this, MediaKind.srt, <String>[uid]);
     // v137：远端音频绑定同事务清（逻辑外键，没有级联）。
     await (delete(
       remoteAudioBindings,

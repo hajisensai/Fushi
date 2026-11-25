@@ -5,20 +5,35 @@
 //   POST /dev/login  {email,code} 验码 → 账户 role 必须是 dev → 写会话 Cookie
 //   POST /dev/logout
 //   GET  /dev/f/:id               详情：正文、设备信息、截图、日志、时间线、修复 commit 与各通道发布版本（只读）、处理表单
-//   GET  /dev/f/:id/a/:slot       附件（日志 ?view=text 解压成文本；视频 v0 支持 Range，?download=1 下载）
+//   GET  /dev/f/:id/a/:slot       附件（日志 ?view=text 解压成文本；视频 v0 支持 Range，?download=1 下载；
+//                                 样本文件 f0..f2 一律作附件下载，文本类 ?view=text 以纯文本查看）
 //   POST /dev/f/:id  {status,reply}
 //   GET  /dev/project             项目数据：GitHub star / fork / Release 下载与官网访问量的每日快照（project_stats.js）
 //   POST /dev/project/refresh     立即重新取一遍外部数据（不等定时任务的节流间隔）
-//   GET  /dev/stats               安装统计：日活 / 周活 / 月活、近 30 天每日活跃与新增、平台 / 通道 / 版本分布（installs.js）
-//   GET  /dev/stats.json          同一份数据的 JSON（installStats），给维护者自己的看板（Fushi Pulse）取数；没有会话 → 401 JSON
+//   GET  /dev/stats               安装统计（读定时快照，迁移 0021）：日活 / 周活 / 月活、近 30 天每日活跃与新增、平台 / 通道 / 版本分布（installs.js）
+//   GET  /dev/stats.json          同一份数据的 JSON（安装统计快照 + computedAt），给维护者自己的看板（Fushi Pulse）取数；没有会话 → 401 JSON
+//   POST /dev/stats/refresh       立即重算安装统计快照（距上次不足 15 分钟则不重算）
+//   GET  /dev/notices             服务端公告：规则、已登记摘要与按构建信息的计数（只读；增改走 /admin/api/notices/**，notices.js）
+//   GET  /dev/decisions           拍板台：AI 代理写入的待拍事项（decisions.js）
+//   GET  /dev/decisions.json      拍板台同步（?sig= 没变回 {same:true}）
+//   GET  /dev/decisions.js        拍板台客户端脚本（decisions_client.js）
+//   POST /dev/d/:id/files         拍板台网页上传附件（multipart file，可多个；拖放 / 粘贴 / 选文件）
+//   GET  /dev/d/:id/f/:n          拍板台附件（设计图 html / md / 图片；CSP sandbox，见 decisions.js）
+//   POST /dev/d/:id/f/:n/share    给附件签发公开分享链接 /share/f/<token>（已有就回原来的；Accept: application/json → 回新卡片 + 链接）
+//   POST /dev/d/:id/f/:n/unshare  撤销该附件的公开分享链接（撤销后 /share/f/<token> 404）
+//   POST /dev/d/:id  {v,text,back} 拍板并 / 或留言（Accept: application/json → 回新卡片 JSON，不跳转）
+//   GET  /dev/keys                拍板台个人密钥：本人签发过的密钥（只显示末 4 位）与用法（decisions_api.js）
+//   POST /dev/keys   {label}      签发一把新密钥，明文只在这次的响应页里显示
+//   POST /dev/keys/:id/revoke     吊销本人的一把密钥
 //
-// 安全：页面无脚本（CSP script-src 为 none）；会话 Cookie HttpOnly + Secure + SameSite=Strict，
+// 安全：页面默认无脚本（CSP script-src 为 none），只有拍板台放行本站脚本 /dev/decisions.js；会话 Cookie HttpOnly + Secure + SameSite=Strict，
 // 只发往 /dev；所有 POST 另验 Origin 与本站一致（双保险防 CSRF）。会话 7 天，库里只存 token 哈希。
 // 业务一律复用 feedback.js 的函数，与 App 端开发者接口同一份逻辑。
 
 import { HttpError, hex, json, sha256 } from './util.js';
 import { consumeCode, requestCode, resolveEmailAccount } from './email.js';
 import { esc } from './pages.js';
+import { FILE_EXTENSIONS } from './feedback_files.js';
 import {
   STATUSES,
   attachmentResponse,
@@ -30,8 +45,15 @@ import {
   feedbackById,
   newSessionToken,
 } from './feedback.js';
-import { PING_PLATFORMS, installStats, versionIncludes } from './installs.js';
+import { PING_PLATFORMS, loadInstallStats, refreshInstallStatsSnapshot, versionIncludes } from './installs.js';
 import { RELEASE_PLATFORMS, projectStats, refreshProjectStats } from './project_stats.js';
+import {
+  DECISIONS_STYLE, DECISION_LIMITS, decisionItem, decisionStageParam, decisionsPayload, decisionsSig, getDecision,
+  DECISION_UPLOAD_BODY_MAX, ORIGINAL_IMAGE_ORIGINS, decisionFileResponse, revokeDecisionFileShare, shareDecisionFile, uploadDecisionFiles, listDecisions, renderDecisions, submitDecision,
+} from './decisions.js';
+import { DECISIONS_CLIENT_JS } from './decisions_client.js';
+import { NOTICE_LIMITS, listKnown, listRules, seenSummary } from './notices.js';
+import { DECISION_KEY_LIMITS, createDecisionKey, listDecisionKeys, revokeDecisionKey } from './decisions_api.js';
 
 export const SESSION_COOKIE = 'fushi_dev';
 export const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
@@ -74,6 +96,18 @@ const CSP = [
   "frame-ancestors 'none'",
 ].join('; ');
 
+/** 拍板台页面放行本站脚本与 fetch，其余照旧。 */
+const DECISIONS_CSP = CSP.replace("default-src 'none'", "default-src 'none'; script-src 'self'; connect-src 'self'")
+  .replace("img-src 'self'", `img-src 'self' ${ORIGINAL_IMAGE_ORIGINS.join(' ')}; frame-src 'self'`);
+
+/** 脚本内容的短哈希，拼进 URL 防缓存旧版。 */
+function shortHash(text) {
+  let h = 0x811c9dc5;
+  for (let i = 0; i < text.length; i += 1) h = Math.imul(h ^ text.charCodeAt(i), 0x01000193);
+  return (h >>> 0).toString(36);
+}
+const DECISIONS_SCRIPT_URL = `/dev/decisions.js?v=${shortHash(DECISIONS_CLIENT_JS)}`;
+
 export function isDevConsolePath(path) {
   return path === '/dev' || path.startsWith('/dev/');
 }
@@ -110,7 +144,7 @@ function fmtBytes(n) {
 
 function layout(title, body, { signedIn = false } = {}) {
   const logout = signedIn
-    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a>'
+    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/decisions">拍板</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a><a href="/dev/notices">公告</a><a href="/dev/keys">密钥</a>'
       + '<form method="post" action="/dev/logout" class="inline"><button class="link">退出</button></form></nav>'
     : '';
   return `<!doctype html>
@@ -121,7 +155,7 @@ function layout(title, body, { signedIn = false } = {}) {
 <meta name="color-scheme" content="light dark">
 <meta name="robots" content="noindex">
 <title>${esc(title)} · Fushi 反馈处理台</title>
-<style>${STYLE}</style>
+<style>${STYLE}${DECISIONS_STYLE}</style>
 </head>
 <body>
 <header><a class="brand" href="/dev">Fushi 反馈处理台</a>${logout}</header>
@@ -508,14 +542,16 @@ function distTable(rows, label = (k) => k) {
 }
 
 async function statsPage(env, now) {
-  const st = await installStats(env, now);
+  const { computedAt, stats: st } = await loadInstallStats(env, now);
   const kpi = (label, n) => `<div class="kpi"><span class="muted">${esc(label)}</span><b>${n}</b></div>`;
   const head = `<tr><th>日期（UTC）</th><th>活跃</th><th>新增</th>${PING_PLATFORMS.map((p) => `<th>${esc(p)}</th>`).join('')}`
     + '<th class="muted">未验证</th></tr>';
   const daily = st.daily.map((d) => `<tr><td>${esc(d.day)}</td><td>${d.n}</td><td>${d.fresh}</td>`
     + `${PING_PLATFORMS.map((p) => `<td>${d.platforms[p]}</td>`).join('')}<td class="muted">${d.unverified}</td></tr>`).join('');
   const u = st.unverified;
-  return html(layout('统计', `<h1>安装统计</h1>
+  return html(layout('统计', `<div class="title"><h1>安装统计</h1>
+<form method="post" action="/dev/stats/refresh" class="inline"><button class="small">刷新</button></form></div>
+<p class="muted">快照算于 ${esc(fmtTime(computedAt))}（定时任务每 6 小时重算一次；「刷新」距上次不足 15 分钟时不重算——每次重算要读全部统计表，D1 按读取行数计额度）。</p>
 <p class="muted">来自 App 每天一次的匿名心跳（Android / Windows / macOS / Linux；iOS 看 App Store Connect）。
 按安装 id 去重，关了统计的安装不计；日期按 UTC。分布取近 30 天活跃安装各自最近一次上报的值。
 数字只算<b>已验证</b>安装（出示了安装证明：签名 + 工作量证明）；未验证的（旧版客户端或自报伪造）另列。</p>
@@ -655,7 +691,7 @@ async function projectPage(env, now) {
   const today = new Date(now).toISOString().slice(0, 10);
   const kpi = (label, v) => `<div class="kpi"><span class="muted">${esc(label)}</span><b>${v}</b></div>`;
   // App 用户：与 /dev/stats 同口径（只数已验证安装），这里只放总数和每日走势。
-  const users = await installStats(env, now);
+  const { stats: users } = await loadInstallStats(env, now);
   const ud = [...users.daily].reverse().filter((d) => d.day < today);
   const usersSection = `<h2>App 用户 <a class="more" href="/dev/stats">详细统计 →</a></h2>
 <div class="kpis">${kpi('今日活跃', fmtInt(users.dau))}${kpi('7 日活跃', fmtInt(users.wau))}`
@@ -741,6 +777,8 @@ async function detailPage(env, id, dev) {
     .map(([k, v]) => `<tr><td>${esc(k)}</td><td>${esc(v)}</td></tr>`).join('');
   const o = f.origin || {};
   const origin = [
+    // 开发者 CLI 建的条目没有请求、也没有账户签名：标明创建方式，免得「带账户签名：否」被读成匿名提交。
+    ['创建方式', o.via === 'dev_cli' ? '开发者 CLI' : 'App / 网页'],
     ['国家 / 地区', o.country || '未知'],
     ['ASN', o.asn ?? '未知'],
     ['User-Agent', o.ua || ''],
@@ -753,6 +791,16 @@ async function detailPage(env, id, dev) {
   const videoBlock = video
     ? `<h2>视频</h2><div class="card"><video controls preload="metadata" src="/dev/f/${esc(f.id)}/a/${esc(video.slot)}"></video>
 <p><a href="/dev/f/${esc(f.id)}/a/${esc(video.slot)}?download=1">下载视频（${esc(fmtBytes(video.bytes))}）</a></p></div>`
+    : '';
+  // 样本文件（f0..f2）：不可信文件，只给下载链接（服务端一律作附件下发、不渲染）；文本类可纯文本查看。
+  const files = f.attachments.filter((a) => a.kind === 'file').map((a) => {
+    const href = `/dev/f/${esc(f.id)}/a/${esc(a.slot)}`;
+    const ext = String(a.name || '').split('.').pop().toLowerCase();
+    const text = FILE_EXTENSIONS[ext] === 'text' ? ` · <a href="${href}?view=text">查看文本</a>` : '';
+    return `<li>${esc(a.name || a.slot)} <span class="muted">(${esc(fmtBytes(a.bytes))})</span> · <a href="${href}">下载</a>${text}</li>`;
+  }).join('');
+  const filesBlock = files
+    ? `<h2>样本文件 <span class="muted">（用户上传的不可信文件：下载后隔离处理，不要直接运行或用会执行脚本的程序打开）</span></h2><div class="card"><ul>${files}</ul></div>`
     : '';
   const log = f.attachments.find((a) => a.kind === 'log');
   const logLinks = log
@@ -796,6 +844,7 @@ ${f.devNoteAt ? `<p class="muted">上次保存 ${esc(fmtTime(f.devNoteAt))}</p>`
 <div class="card"><div class="body">${esc(f.body)}</div></div>
 ${shots ? `<h2>截图</h2><div class="shots">${shots}</div>` : ''}
 ${videoBlock}
+${filesBlock}
 <h2>日志</h2>${logLinks}
 <h2>服务端记录</h2><div class="card"><table>${origin}</table></div>
 ${meta ? `<h2>设备信息（客户端自报）</h2><div class="card"><table>${meta}</table></div>` : ''}
@@ -813,6 +862,85 @@ ${installSection(f.install, f.fix)}
 }
 
 /** /dev 下的全部请求。 */
+const NOTICE_KIND_LABEL = {
+  h: '摘要等于',
+  id: '应用 id 等于',
+  h_unlisted: '摘要都未登记',
+  hk_disjoint: '两组摘要不相交',
+  all: '全部',
+};
+
+/** 摘要缩写（全文放 title 里悬停看）。 */
+function shortDigest(h) {
+  return h ? `<span title="${esc(h)}">${esc(h.slice(0, 12))}…</span>` : '<span class="muted">—</span>';
+}
+
+async function noticesPage(env, now) {
+  const [rules, known, seen] = await Promise.all([listRules(env), listKnown(env), seenSummary(env, now)]);
+  const ruleRows = rules.map((r) => `<tr${r.enabled ? '' : ' class="muted"'}><td>r${r.id}</td>`
+    + `<td>${esc(NOTICE_KIND_LABEL[r.kind] || r.kind)}${r.value ? ` ${r.kind === 'h' ? shortDigest(r.value) : esc(r.value)}` : ''}</td>`
+    + `<td>${esc(r.platform || '任意')}</td><td>${esc(r.level)}</td>`
+    + `<td>${esc(r.title_zh || '')}${r.title_en ? `<br><span class="muted">${esc(r.title_en)}</span>` : ''}</td>`
+    + `<td>${r.enabled ? '启用' : '停用'}</td></tr>`).join('');
+  const knownRows = known.map((k) => `<tr><td>${shortDigest(k.h)}</td><td>${esc(k.label || '')}</td>`
+    + `<td>${esc(fmtTime(k.created_at))}</td></tr>`).join('');
+  const seenRows = seen.map((r) => `<tr><td>${esc(r.id || '—')}</td><td>${shortDigest(r.h)}</td>`
+    + `<td>${esc(r.label || '')}</td><td>${r.hkDisjoint ? '是' : ''}</td><td>${esc(r.v)}</td><td>${esc(r.p)}</td>`
+    + `<td>${esc(r.country ? countryLabel(r.country) : '—')}</td><td>${r.n}</td>`
+    + `<td>${esc(r.firstDay)} ~ ${esc(r.lastDay)}</td></tr>`).join('');
+  return html(layout('公告', `<h1>服务端公告</h1>
+<p class="muted">App 按构建信息来问有没有公告，服务端按下面的规则匹配后下发（notices.js）。本页只读；增改规则与登记摘要走管理端
+<code>/admin/api/notices/**</code>。block（全屏锁）只能用「未登记摘要」「两组摘要不相交」或具体的非官方摘要；请求里带着已登记摘要时 block 一律不下发。</p>
+<h2>规则</h2>
+<div class="card">${ruleRows ? `<table class="grid"><tr><th>id</th><th>匹配</th><th>平台</th><th>级别</th><th>标题</th><th>状态</th></tr>${ruleRows}</table>`
+    : '<p class="muted">还没有规则。</p>'}</div>
+<h2>已登记摘要</h2>
+<div class="card">${knownRows ? `<table class="grid"><tr><th>摘要</th><th>备注</th><th>登记于</th></tr>${knownRows}</table>`
+    : '<p class="muted">还没有登记。</p>'}</div>
+<h2>近 ${NOTICE_LIMITS.seenDays} 天的构建信息</h2>
+<p class="muted">按「应用 id × 首个摘要 × 两组摘要是否不相交 × 版本 × 平台 × 国家 / 地区」合计的请求次数（只计开着「发送使用统计」的客户端，是下限；不存 IP；当天计数预算用完后只匹配不计数）。</p>
+<div class="card">${seenRows ? `<table class="grid"><tr><th>应用 id</th><th>摘要</th><th>备注</th><th>不相交</th><th>版本</th><th>平台</th>`
+    + `<th>国家 / 地区</th><th>次数</th><th>日期</th></tr>${seenRows}</table>` : '<p class="muted">还没有数据。</p>'}</div>`,
+  { signedIn: true }));
+}
+
+/** 签发 / 吊销失败的错误码 → 中文。 */
+const KEY_ERROR_TEXT = {
+  too_many_keys: `每人最多 ${DECISION_KEY_LIMITS.activePerAccount} 把未吊销的密钥，先吊销不用的。`,
+  bad_label: `备注最多 ${DECISION_KEY_LIMITS.labelMax} 字、不能换行。`,
+};
+
+/**
+ * /dev/keys：本人的拍板台密钥。fresh = 刚签发的明文（只在签发那次的响应里出现，不进 URL、不入库）。
+ * @param {object} env
+ * @param {{id: string}} dev
+ * @param {{fresh?: string|null, error?: string}} [opts]
+ * @returns {Promise<Response>}
+ */
+async function keysPage(env, dev, { fresh = null, error = '' } = {}) {
+  const keys = await listDecisionKeys(env, dev.id);
+  const rows = keys.map((k) => `<tr${k.revoked_at ? ' class="muted"' : ''}><td><code>fdk_…${esc(k.hint)}</code></td>`
+    + `<td>${esc(k.label || '')}</td><td>${esc(fmtTime(k.created_at))}</td><td>${esc(k.last_used_at ? fmtTime(k.last_used_at) : '没用过')}</td>`
+    + `<td>${k.revoked_at ? `已吊销 ${esc(fmtTime(k.revoked_at))}` : `<form method="post" action="/dev/keys/${esc(k.id)}/revoke" class="inline">`
+      + '<button class="link">吊销</button></form>'}</td></tr>`).join('');
+  const freshBlock = fresh ? `<div class="card"><p><b>新密钥（只显示这一次，关掉页面就再也看不到了）</b></p>
+<p><code>${esc(fresh)}</code></p>
+<p class="muted">存进代理所在机器的环境变量 <code>FUSHI_DECISIONS_TOKEN</code>，不要提交进仓库、不要发到群里。丢了就吊销重签。</p></div>` : '';
+  return html(layout('密钥', `<h1>拍板台密钥</h1>
+<p class="muted">给自己的 AI 代理用：带上密钥后 <code>node scripts/decisions.mjs</code> 直接走 HTTPS 读写拍板台，不需要 Cloudflare 凭据。
+密钥只能读写拍板台（列事项、写待拍事项、留言、结单、校正决定、附件），碰不到反馈和账户数据；你的账户被撤开发者后全部失效。</p>
+${error ? `<p class="err">${esc(error)}</p>` : ''}${freshBlock}
+<div class="card"><p>用法（PowerShell）：</p>
+<p><code>$env:FUSHI_DECISIONS_TOKEN = "fdk_…"</code><br><code>node services/leaderboard/scripts/decisions.mjs list</code></p>
+<p class="muted">设了这个环境变量就走 HTTP 模式；另可用 <code>FUSHI_DECISIONS_URL</code> 改服务地址（默认 https://rank.fushi.moe）。</p></div>
+<h2>我的密钥</h2>
+<div class="card">${rows ? `<table class="grid"><tr><th>密钥</th><th>备注</th><th>签发</th><th>最近使用</th><th></th></tr>${rows}</table>`
+    : '<p class="muted">还没有签发过。</p>'}</div>
+<form method="post" action="/dev/keys" class="card">
+<label>备注（可选，比如哪台机器）<input name="label" maxlength="${DECISION_KEY_LIMITS.labelMax}"></label>
+<button>签发新密钥</button></form>`, { signedIn: true }));
+}
+
 export async function routeDevConsole(request, env, url, now, ctx, ip) {
   const path = url.pathname;
   const method = request.method;
@@ -863,7 +991,16 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
 
   if (method === 'GET' && path === '/dev') return listPage(env, url, dev);
   if (method === 'GET' && path === '/dev/stats') return statsPage(env, now);
-  if (method === 'GET' && path === '/dev/stats.json') return json(await installStats(env, now));
+  if (method === 'GET' && path === '/dev/notices') return noticesPage(env, now);
+  if (method === 'GET' && path === '/dev/stats.json') {
+    // 快照内容 + computedAt（毫秒时间戳）：数字最多滞后 snapshotEveryMs。
+    const { computedAt, stats } = await loadInstallStats(env, now);
+    return json({ ...stats, computedAt });
+  }
+  if (method === 'POST' && path === '/dev/stats/refresh') {
+    await refreshInstallStatsSnapshot(env, now, { force: true });
+    return redirect('/dev/stats');
+  }
   if (method === 'GET' && path === '/dev/feedback.json') {
     // 与 /dev 列表同一份数据（devList），给 Fushi Pulse 之类的本机面板用；status 缺省 = 未结案，all = 全部。
     const status = url.searchParams.get('status') || 'active';
@@ -876,6 +1013,94 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   }
   if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\.json$/.exec(path))) {
     return json(await devView(env, await feedbackById(env, m[1])));
+  }
+  if (method === 'GET' && path === '/dev/decisions') {
+    const stage = decisionStageParam(url.searchParams.get('stage'));
+    const [rows, sig] = await Promise.all([listDecisions(env), decisionsSig(env)]);
+    return html(layout('拍板台', renderDecisions(rows, stage, {
+      sig, script: DECISIONS_SCRIPT_URL, conflict: url.searchParams.get('conflict') === '1',
+    }), { signedIn: true }),
+      200, { 'Content-Security-Policy': DECISIONS_CSP });
+  }
+  if (method === 'GET' && path === '/dev/decisions.json') {
+    return json(await decisionsPayload(env, url.searchParams.get('sig') || ''), 200, { 'Cache-Control': 'private, no-store' });
+  }
+  if (method === 'GET' && path === '/dev/decisions.js') {
+    return new Response(DECISIONS_CLIENT_JS, {
+      headers: {
+        'Content-Type': 'text/javascript; charset=utf-8',
+        // URL 带内容哈希，可以放心长缓存。
+        'Cache-Control': 'private, max-age=31536000, immutable',
+        'X-Content-Type-Options': 'nosniff',
+      },
+    });
+  }
+  if (method === 'GET' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})\/f\/(\d{1,2})$/.exec(path))) {
+    return decisionFileResponse(env, m[1], Number(m[2]));
+  }
+  if (method === 'POST' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})\/f\/(\d{1,2})\/(share|unshare)$/.exec(path))) {
+    const form = await readForm(request);
+    const n = Number(m[2]);
+    const out = m[3] === 'share'
+      ? await shareDecisionFile(env, dev, m[1], n, now)
+      : await revokeDecisionFileShare(env, m[1], n, now);
+    if ((request.headers.get('Accept') || '').includes('application/json')) {
+      const [row, sig] = await Promise.all([getDecision(env, m[1]), decisionsSig(env)]);
+      return json({ ...(out.path ? { path: out.path } : {}), item: decisionItem(row), sig }, 200, { 'Cache-Control': 'no-store' });
+    }
+    return redirect(`/dev/decisions?stage=${decisionStageParam(form.get('back'))}#d-${m[1]}`);
+  }
+  if (method === 'POST' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})\/files$/.exec(path))) {
+    if (Number(request.headers.get('Content-Length') || '0') > DECISION_UPLOAD_BODY_MAX) throw new HttpError(413, 'file_too_large');
+    let form;
+    try {
+      form = await request.formData();
+    } catch {
+      throw new HttpError(400, 'bad_upload');
+    }
+    await uploadDecisionFiles(env, dev, m[1], form.getAll('file'), now);
+    if ((request.headers.get('Accept') || '').includes('application/json')) {
+      const [row, sig] = await Promise.all([getDecision(env, m[1]), decisionsSig(env)]);
+      return json({ item: decisionItem(row), sig }, 200, { 'Cache-Control': 'no-store' });
+    }
+    return redirect(`/dev/decisions?stage=${decisionStageParam(form.get('back'))}#d-${m[1]}`);
+  }
+  if (method === 'POST' && (m = /^\/dev\/d\/([A-Za-z0-9_-]{1,40})$/.exec(path))) {
+    const form = await readForm(request, formLimit(DECISION_LIMITS.noteMax));
+    const wantsJson = (request.headers.get('Accept') || '').includes('application/json');
+    let conflict = false;
+    try {
+      await submitDecision(env, dev, m[1], {
+        v: form.get('v') || 'note', text: form.get('text') || '', base: form.has('base') ? form.get('base') : null,
+      }, now);
+    } catch (e) {
+      if (!(e instanceof HttpError) || e.code !== 'verdict_conflict') throw e;
+      conflict = true;
+    }
+    if (wantsJson) {
+      // 冲突时也回最新的卡：页面换上别人刚拍的结果，留言草稿留在框里。
+      const [row, sig] = await Promise.all([getDecision(env, m[1]), decisionsSig(env)]);
+      return json({ ...(conflict ? { error: 'verdict_conflict' } : {}), item: decisionItem(row), sig },
+        conflict ? 409 : 200, { 'Cache-Control': 'no-store' });
+    }
+    if (conflict) return redirect(`/dev/decisions?stage=all&conflict=1#d-${m[1]}`);
+    // 回到原来那一栏、定位到这条（拍完它可能已离开当前栏，锚点找不到就停在栏顶）。
+    return redirect(`/dev/decisions?stage=${decisionStageParam(form.get('back'))}#d-${m[1]}`);
+  }
+  if (method === 'GET' && path === '/dev/keys') return keysPage(env, dev);
+  if (method === 'POST' && path === '/dev/keys') {
+    const form = await readForm(request);
+    try {
+      const { token } = await createDecisionKey(env, dev, form.get('label') || '', now);
+      return keysPage(env, dev, { fresh: token });
+    } catch (e) {
+      if (e instanceof HttpError && KEY_ERROR_TEXT[e.code]) return keysPage(env, dev, { error: KEY_ERROR_TEXT[e.code] });
+      throw e;
+    }
+  }
+  if (method === 'POST' && (m = /^\/dev\/keys\/([A-Za-z0-9_-]{1,16})\/revoke$/.exec(path))) {
+    await revokeDecisionKey(env, dev, m[1], now);
+    return redirect('/dev/keys');
   }
   if (method === 'GET' && path === '/dev/project') return projectPage(env, now);
   if (method === 'POST' && path === '/dev/project/refresh') {

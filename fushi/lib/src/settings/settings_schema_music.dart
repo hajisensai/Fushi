@@ -3,22 +3,25 @@ import 'dart:async';
 import 'package:fushi/src/media/audiobook/floating_lyric_channel.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
     show MusicAssRenderPreference;
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer.dart';
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_registry.dart';
 import 'package:fushi/src/media/music/metadata/music_scrape_service.dart';
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_crossfade.dart';
-import 'package:fushi/src/media/music/music_equalizer.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/media/music/music_signal_path.dart';
-import 'package:fushi/src/media/music/server/music_servers.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_gate.dart';
-import 'package:fushi/src/pages/implementations/music/music_library_page.dart'
-    show showMusicSourcesDialog;
+import 'package:fushi/src/pages/implementations/music/music_audio_effects_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_analysis_models_dialog.dart';
+import 'package:fushi/src/pages/implementations/music/music_quality_sheet.dart'
+    show musicPluginQualityLabel;
+import 'package:fushi_music/fushi_music.dart' show MusicPluginQuality;
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_providers.dart';
-import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart';
-import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
+import 'package:fushi/src/pages/implementations/music/music_plugin_settings.dart'
+    show MusicPluginDropTarget;
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -29,12 +32,21 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 「音乐」一级设置分类（音乐模块，docs/specs/2026-10-23-music-module-design.md §11.1）：
-/// 曲库入口 + 播放（无缝 / ReplayGain）。与 music 顶层 tab 同一个模块门。
+/// 与 music 顶层 tab 同一个模块门。
 ///
-/// 音乐来源（文件夹）的管理是库页共用的来源管理对话框（[MediaSourcesDialog]，
-/// 曲库页顶栏同一个入口）；这里只是又一条路进同一间屋子，不另做一份。「曲库」那行
-/// 只是跳到音乐页，副标题照实说，不再写成「来源」（用户 2026-10-30：点了直接跳页、
-/// 文案却像能管理来源）。
+/// 每个分区都有标题（与视频 / 有声书等分类一致；反馈 983broef-P：前三组无标题，
+/// 第一个有标题的「识别」要滚下去才看到）。不放「打开曲库」这种跳页捷径——它不是
+/// 设置，其他媒体分类也没有，进曲库走底栏 / 侧栏的音乐 tab 这一个主入口。
+///
+/// 也不放**来源管理**（本地文件夹、插件音源）：视频 / 书 / 漫画 / 有声书的设置分类里
+/// 都没有来源或扩展管理，它们只在模块页里（库页导航壳的「来源」「扩展」视图、浏览模块），
+/// 设置只管行为与凭据。音乐同理：本地文件夹在曲库页的「导入」视图，在线音源的排序 /
+/// 开关与歌词来源在「在线 › 来源」（`MusicOnlineSourcesView`），插件在「在线 › 插件」
+/// （`MusicPluginsView`），与其它库页「在线」组同位（拍板台 4GBgF6TrNr）。
+/// 服务器曲库（OpenSubsonic / Apple Music 增删、混排开关、串流音质）也不在这里：它和
+/// Jellyfin / Plex / Audiobookshelf 一样是用户自填地址的服务器凭据，住设置 › 在线服务 ›
+/// 媒体服务器（`services.music_servers`，`buildMusicServersDestination`）。歌词来源留在
+/// 这里，对应视频的字幕来源。
 SettingsDestination buildMusicDestination() {
   return SettingsDestination(
     id: SettingsDestinationId.music,
@@ -48,28 +60,7 @@ SettingsDestination buildMusicDestination() {
     ),
     sections: <SettingsSection>[
       SettingsSection(
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'music.library',
-            title: t.music_open_library,
-            subtitle: t.music_open_library_hint,
-            icon: FushiIcons.music,
-            showIcon: true,
-            onTap: (SettingsContext settingsContext) {
-              homeShellTabNotifier.value = HomeTab.music;
-            },
-          ),
-          SettingsNavigationItem(
-            id: 'music.sources',
-            title: t.music_sources_manage,
-            icon: FushiIcons.libraryAdd,
-            showIcon: true,
-            onTap: (SettingsContext settingsContext) =>
-                showMusicSourcesDialog(settingsContext.context),
-          ),
-        ],
-      ),
-      SettingsSection(
+        title: t.music_playback_section,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'music.gapless',
@@ -156,6 +147,34 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setMusicCrossfadeContinuous(value),
           ),
+          // 在线插件取流音质：本机能用插件音源时出现（自己跑或经互联中继，中继时同样
+          // 按这一档向 host 上的插件要流）。媒体服务器的转码码率是另一回事，在设置 ›
+          // 在线服务 › 媒体服务器。
+          SettingsSegmentedItem<String>(
+            id: 'music.plugin_quality',
+            visible: (SettingsContext c) => isMusicPluginSourcesUsable,
+            title: t.music_quality_plugin_default_title,
+            subtitle: t.music_quality_plugin_default_hint,
+            icon: FushiIcons.highQuality,
+            defaultValue: MusicPluginQuality.lossless.wire,
+            options: <SettingsSegmentOption<String>>[
+              for (final MusicPluginQuality q in MusicPluginQuality.values)
+                SettingsSegmentOption<String>(
+                  value: q.wire,
+                  label: musicPluginQualityLabel(q),
+                ),
+            ],
+            selected: (SettingsContext c) => c.appModel.musicPluginQuality.wire,
+            onChanged: (SettingsContext c, String v) => c.appModel
+                .setMusicPluginQuality(MusicPluginQuality.fromWire(v)),
+          ),
+        ],
+      ),
+      // 响度单独成组：ReplayGain 与响度测量都是让不同曲目听起来一样响，不属于播放行为。
+      SettingsSection(
+        id: 'music.section.loudness',
+        title: t.settings_music_loudness_section_title,
+        items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'music.replaygain',
             title: t.music_replaygain_title,
@@ -171,6 +190,7 @@ SettingsDestination buildMusicDestination() {
           SettingsSliderItem(
             id: 'music.replaygain_preamp',
             title: t.music_replaygain_preamp_title,
+            subtitle: t.settings_music_replaygain_preamp_hint,
             icon: FushiIcons.volumeUp,
             min: -15,
             max: 15,
@@ -196,6 +216,7 @@ SettingsDestination buildMusicDestination() {
           SettingsActionItem(
             id: 'music.loudness_scan_now',
             title: t.music_loudness_scan_now,
+            subtitle: t.settings_music_loudness_scan_now_hint,
             icon: FushiIcons.highQuality,
             cli: const SettingsCliAction.tap(),
             onTap: (SettingsContext c) =>
@@ -204,6 +225,7 @@ SettingsDestination buildMusicDestination() {
         ],
       ),
       SettingsSection(
+        title: t.music_output_section,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'music.exclusive',
@@ -238,22 +260,25 @@ SettingsDestination buildMusicDestination() {
             ),
             onTap: _pickAudioDevice,
           ),
-          // 图示均衡器（P5，可选）：子页里开关 + 10 段；开且不平直即非 bit-perfect（信号路径
-          // 面板单独标「均衡器」），关 / 平直时不挂任何滤镜。
+          // 音效（P5，可选；id 沿用图示均衡器时代）：子页里总开关、预设、均衡 + 前级、
+          // 音色、声场、限幅器。任何一项生效即非 bit-perfect（信号路径面板单独标「音效」），
+          // 关 / 全部中性时不挂任何滤镜。
           SettingsNavigationItem(
             id: 'music.equalizer',
-            title: t.music_eq_title,
+            title: t.music_effects_title,
             subtitleBuilder: (SettingsContext c) =>
-                c.appModel.prefsRepo.musicEqEnabled
-                ? t.music_eq_on
-                : t.music_eq_off,
+                musicAudioEffectsStatusLabel(
+                  c.appModel.musicAudioEffects,
+                  c.appModel.musicEqPreset,
+                ),
             icon: FushiIcons.barChart,
             showIcon: true,
-            child: _equalizerDestination,
+            child: buildMusicAudioEffectsDestination,
           ),
           SettingsSegmentedItem<int>(
             id: 'music.dsd_rate',
             title: t.music_dsd_rate_title,
+            subtitle: t.settings_music_dsd_rate_hint,
             icon: FushiIcons.highQuality,
             defaultValue: MusicDsdPcmRate.khz176.hz,
             options: <SettingsSegmentOption<int>>[
@@ -272,7 +297,7 @@ SettingsDestination buildMusicDestination() {
       // 识别（P4，设计 §8.1）：MusicBrainz 主源；AcoustID 需要用户自己的应用 key（本仓
       // 不内置任何 key），没填时声纹这一步跳过并在这里说明；VGMdb 默认关。
       SettingsSection(
-        title: t.music_scrape_section,
+        title: t.settings_music_scrape_section_title,
         items: <SettingsItem>[
           SettingsTextItem(
             id: 'music.acoustid_api_key',
@@ -315,72 +340,9 @@ SettingsDestination buildMusicDestination() {
                   'unmatched': r.unmatched,
                   'failed': r.failed,
                   'byMethod': r.byMethod,
+                  'dlsite': r.dlsite.toJson(),
                 };
               },
-            ),
-          ),
-        ],
-      ),
-      // 服务器曲库（P5）：Jellyfin 家族复用视频的媒体服务器登录，OpenSubsonic 在子页里增删；
-      // 混排进曲库是每台服务器的显式开关（子页）。
-      SettingsSection(
-        title: t.music_servers_title,
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'music.servers',
-            title: t.music_servers_manage,
-            subtitle: t.music_servers_settings_hint,
-            icon: FushiIcons.server,
-            showIcon: true,
-            child: () => SettingsDestination(
-              id: SettingsDestinationId.music,
-              title: t.music_servers_title,
-              icon: FushiIcons.server,
-              sections: const <SettingsSection>[],
-              body: (SettingsContext c) =>
-                  MusicServerSettingsBody(appModel: c.appModel),
-            ),
-          ),
-          SettingsSegmentedItem<int>(
-            id: 'music.server_bitrate',
-            title: t.music_server_bitrate_title,
-            subtitle: t.music_server_bitrate_hint,
-            icon: FushiIcons.highQuality,
-            defaultValue: 0,
-            options: <SettingsSegmentOption<int>>[
-              SettingsSegmentOption<int>(
-                value: 0,
-                label: t.music_server_bitrate_original,
-              ),
-              for (final int kbps in kMusicServerBitrateChoices)
-                SettingsSegmentOption<int>(value: kbps, label: '$kbps kbps'),
-            ],
-            selected: (SettingsContext c) =>
-                c.appModel.prefsRepo.musicServerMaxBitrate,
-            onChanged: (SettingsContext c, int v) =>
-                c.appModel.prefsRepo.setMusicServerMaxBitrate(v),
-          ),
-        ],
-      ),
-      // 插件音源（docs/specs/2026-10-28-music-plugins.md）：iOS 整节不渲染（合规门，
-      // section 级 visible 同时管住分类正文 / 主从详情 / 设置搜索索引三条渲染路径）。
-      SettingsSection(
-        title: t.music_plugins_title,
-        visible: (_) => isMusicPluginSourcesAvailable,
-        items: <SettingsItem>[
-          SettingsNavigationItem(
-            id: 'music.plugins',
-            title: t.music_plugins_title,
-            subtitle: t.music_plugins_hint,
-            icon: FushiIcons.browserExtension,
-            showIcon: true,
-            child: () => SettingsDestination(
-              id: SettingsDestinationId.music,
-              title: t.music_plugins_title,
-              icon: FushiIcons.browserExtension,
-              sections: const <SettingsSection>[],
-              body: (SettingsContext c) =>
-                  MusicPluginSettingsBody(appModel: c.appModel),
             ),
           ),
         ],
@@ -407,20 +369,30 @@ SettingsDestination buildMusicDestination() {
             subtitle: t.music_lyrics_providers_hint,
             icon: FushiIcons.lyrics,
             showIcon: true,
-            // 与「插件音源」同一道合规门（iOS 不渲染）。
-            visible: (_) => isMusicPluginSourcesAvailable,
+            // 能「用」插件歌词就要能启停 / 排序（iOS 经互联中继用 host 的歌词插件，查歌词也
+            // 走 isMusicPluginSourcesUsable）；安装入口与拖放只在本机能跑插件时出现。
+            visible: (_) => isMusicPluginSourcesUsable,
             child: () => SettingsDestination(
               id: SettingsDestinationId.music,
               title: t.music_lyrics_providers_title,
               icon: FushiIcons.lyrics,
               sections: const <SettingsSection>[],
-              body: (SettingsContext c) =>
-                  MusicLyricsProvidersBody(appModel: c.appModel),
+              // 设置里的歌词来源页同样收 .fushiplug 拖放（BUG-4712）。
+              body: (SettingsContext c) => isMusicPluginSourcesAvailable
+                  ? MusicPluginDropTarget(
+                      manager: c.appModel.musicPluginManager,
+                      child: MusicLyricsProvidersBody(appModel: c.appModel),
+                    )
+                  : MusicLyricsProvidersBody(
+                      appModel: c.appModel,
+                      canInstall: false,
+                    ),
             ),
           ),
           SettingsSwitchItem(
             id: 'music.lyrics_lookup_pause',
             title: t.music_lyrics_lookup_pause_title,
+            subtitle: t.settings_music_lyrics_lookup_pause_hint,
             icon: FushiIcons.pause,
             defaultValue: true,
             value: (SettingsContext settingsContext) =>
@@ -428,6 +400,51 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext settingsContext, bool value) async {
               await settingsContext.appModel.setMusicLyricsLookupPause(value);
             },
+          ),
+          // 非当前行轻模糊（GitHub #3354：学日语要看清上一句 / 下一句）。高对比度 /
+          // 减弱动态效果下视图本来就不模糊，这里只管用户自己的偏好。
+          SettingsSwitchItem(
+            id: 'music.lyrics_blur_inactive',
+            title: t.music_lyrics_blur_inactive_title,
+            subtitle: t.music_lyrics_blur_inactive_hint,
+            icon: FushiIcons.lyrics,
+            defaultValue: true,
+            value: (SettingsContext c) => c.appModel.musicLyricsBlurInactive,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicLyricsBlurInactive(value),
+          ),
+          // 歌词副行：翻译（关 = 单语）/ 罗马音 / 注音（只显示歌词源自带的 ruby，不现算）。
+          // 播放页顶栏「歌词显示」是同一组开关的快切。
+          SettingsSwitchItem(
+            id: 'music.lyrics_show_translation',
+            title: t.music_lyrics_show_translation_title,
+            subtitle: t.music_lyrics_show_translation_hint,
+            icon: FushiIcons.language,
+            defaultValue: true,
+            value: (SettingsContext c) => c.appModel.musicLyricsShowTranslation,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicLyricsShowTranslation(value),
+          ),
+          SettingsSwitchItem(
+            id: 'music.lyrics_show_romanization',
+            title: t.music_lyrics_show_romanization_title,
+            subtitle: t.music_lyrics_show_romanization_hint,
+            icon: FushiIcons.textFields,
+            defaultValue: true,
+            value: (SettingsContext c) =>
+                c.appModel.musicLyricsShowRomanization,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicLyricsShowRomanization(value),
+          ),
+          SettingsSwitchItem(
+            id: 'music.lyrics_show_ruby',
+            title: t.music_lyrics_show_ruby_title,
+            subtitle: t.music_lyrics_show_ruby_hint,
+            icon: FushiIcons.title,
+            defaultValue: true,
+            value: (SettingsContext c) => c.appModel.musicLyricsShowRuby,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.setMusicLyricsShowRuby(value),
           ),
           SettingsSwitchItem(
             id: 'music.desktop_lyrics',
@@ -479,23 +496,27 @@ SettingsDestination buildMusicDestination() {
                 c.appModel.setMusicKaraokeAssRender(value),
             defaultValue: MusicAssRenderPreference.auto,
           ),
-          SettingsSwitchItem(
-            id: 'music.listening_counts_as_study',
-            title: t.music_listening_study_title,
-            subtitle: t.music_listening_study_hint,
-            icon: FushiIcons.timer,
-            defaultValue: false,
-            value: (SettingsContext c) =>
-                c.appModel.musicListeningCountsAsStudy,
-            onChanged: (SettingsContext c, bool value) =>
-                c.appModel.setMusicListeningCountsAsStudy(value),
-          ),
         ],
       ),
       // 歌词页流体背景（MusicLyricsBackdrop；参照 QPlayer「背景」组）。
       SettingsSection(
         title: t.music_lyrics_backdrop_title,
         items: <SettingsItem>[
+          // 有 MV 默认放 MV（MusicMvBackdropController）；关掉回到下面的动画背景。
+          SettingsSwitchItem(
+            id: 'music.lyrics_mv_backdrop',
+            title: t.music_lyrics_mv_backdrop_title,
+            subtitle: t.music_lyrics_mv_backdrop_hint,
+            icon: FushiIcons.video,
+            defaultValue: true,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicLyricsMvBackdrop,
+            onChanged: (SettingsContext c, bool value) async {
+              await c.appModel.prefsRepo.setMusicLyricsMvBackdrop(value);
+              // 打开时补一轮后台匹配（只对没对过的）。
+              if (value) unawaited(c.appModel.musicVideoAutoMatch.schedule());
+            },
+          ),
           SettingsSegmentedItem<bool>(
             id: 'music.lyrics_backdrop_animate',
             title: t.music_lyrics_backdrop_motion_title,
@@ -537,7 +558,15 @@ SettingsDestination buildMusicDestination() {
                 .appModel
                 .prefsRepo
                 .setMusicLyricsBackdropStyle(value.prefValue),
-            defaultValue: MusicLyricsBackdropStyle.meshGradient,
+            defaultValue: MusicLyricsBackdropStyle.defaultStyle,
+            // 恢复默认 = 删行回到「跟出厂默认」，不把默认值钉成手选（BUG-5167）；
+            // 手选回 Pixi 的显式行也能被页级恢复删掉（HBK-AUDIT-235）。
+            storedChoice: SettingsStoredChoice(
+              isStored: (SettingsContext c) =>
+                  c.appModel.prefsRepo.hasStoredMusicLyricsBackdropStyle,
+              clear: (SettingsContext c) =>
+                  c.appModel.prefsRepo.clearMusicLyricsBackdropStyle(),
+            ),
           ),
           SettingsSliderItem(
             id: 'music.lyrics_backdrop_saturation',
@@ -556,9 +585,243 @@ SettingsDestination buildMusicDestination() {
             onChanged: (SettingsContext c, double v) => c.appModel.prefsRepo
                 .setMusicLyricsBackdropSaturation((v / 10).round() / 10),
           ),
+          // 全屏歌词动画（歌词页工具栏「歌词动画」进入；各样式参数在选择面板里调）。
+          SettingsSegmentedItem<LyricVisualizerMode>(
+            id: 'music.visualizer_mode',
+            dropdown: true,
+            title: t.music_visualizer_title,
+            icon: FushiIcons.animation,
+            options: <SettingsSegmentOption<LyricVisualizerMode>>[
+              for (final LyricVisualizerMode m in LyricVisualizerMode.values)
+                SettingsSegmentOption<LyricVisualizerMode>(
+                  value: m,
+                  label: lyricVisualizerEntryOf(m).label(),
+                ),
+            ],
+            selected: (SettingsContext c) => LyricVisualizerMode.fromPref(
+              c.appModel.prefsRepo.musicVisualizerMode,
+            ),
+            onChanged: (SettingsContext c, LyricVisualizerMode value) =>
+                c.appModel.prefsRepo.setMusicVisualizerMode(value.prefValue),
+            defaultValue: LyricVisualizerMode.defaultMode,
+          ),
+          SettingsSwitchItem(
+            id: 'music.visualizer_random',
+            title: t.music_visualizer_random,
+            subtitle: t.music_visualizer_random_hint,
+            icon: FushiIcons.shuffle,
+            defaultValue: false,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicVisualizerRandom,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setMusicVisualizerRandom(value),
+          ),
+          // AI 主题（AiFeature.musicVisualizerTheme）：AI 模块关着整行不出现。
+          SettingsSwitchItem(
+            id: 'music.visualizer_ai_theme_auto',
+            title: t.music_visualizer_ai_theme_auto,
+            subtitle: t.music_visualizer_ai_theme_auto_hint,
+            icon: FushiIcons.aiAssistant,
+            defaultValue: false,
+            visible: (SettingsContext c) =>
+                isAiModuleEnabled(c.appModel.moduleVisibility),
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicVisualizerAiThemeAuto,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setMusicVisualizerAiThemeAuto(value),
+          ),
+          SettingsSegmentedItem<LyricVisualizerIntensity>(
+            id: 'music.visualizer_intensity',
+            title: t.music_visualizer_intensity,
+            subtitle: t.music_visualizer_intensity_hint,
+            icon: FushiIcons.animation,
+            options: <SettingsSegmentOption<LyricVisualizerIntensity>>[
+              SettingsSegmentOption<LyricVisualizerIntensity>(
+                value: LyricVisualizerIntensity.calm,
+                label: t.music_visualizer_intensity_calm,
+              ),
+              SettingsSegmentOption<LyricVisualizerIntensity>(
+                value: LyricVisualizerIntensity.normal,
+                label: t.music_visualizer_intensity_normal,
+              ),
+              SettingsSegmentOption<LyricVisualizerIntensity>(
+                value: LyricVisualizerIntensity.chaotic,
+                label: t.music_visualizer_intensity_chaotic,
+              ),
+            ],
+            selected: (SettingsContext c) => LyricVisualizerIntensity.fromPref(
+              c.appModel.prefsRepo.musicVisualizerIntensity,
+            ),
+            onChanged: (SettingsContext c, LyricVisualizerIntensity value) => c
+                .appModel
+                .prefsRepo
+                .setMusicVisualizerIntensity(value.prefValue),
+            defaultValue: LyricVisualizerIntensity.defaultIntensity,
+          ),
+          SettingsSegmentedItem<String>(
+            id: 'music.visualizer_background',
+            dropdown: true,
+            title: t.music_visualizer_background,
+            subtitle: t.music_visualizer_background_hint,
+            icon: FushiIcons.image,
+            options: <SettingsSegmentOption<String>>[
+              for (final LyricVisualizerBackgroundEntry b
+                  in lyricVisualizerBackgrounds)
+                SettingsSegmentOption<String>(value: b.id, label: b.label()),
+            ],
+            selected: (SettingsContext c) => lyricVisualizerBackgroundOf(
+              c.appModel.prefsRepo.musicVisualizerBackground,
+            ).id,
+            onChanged: (SettingsContext c, String value) =>
+                c.appModel.prefsRepo.setMusicVisualizerBackground(value),
+            defaultValue: lyricVisualizerFluidBackgroundId,
+          ),
+          SettingsSliderItem(
+            id: 'music.visualizer_font_scale',
+            title: t.music_visualizer_font_scale,
+            icon: FushiIcons.fontSize,
+            min: 60,
+            max: 200,
+            divisions: 14,
+            defaultValue: 100,
+            titleReadout: true,
+            commitOnRelease: true,
+            label: (double v) => '${v.round()}%',
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicVisualizerFontScale * 100,
+            onChanged: (SettingsContext c, double v) => c.appModel.prefsRepo
+                .setMusicVisualizerFontScale((v / 10).round() / 10),
+          ),
+          // 全局字幕偏好（folia subtitleContentMode / hideTranslationSubtitle / subtitleFontScale /
+          // subtitleTheme）：共享底部字幕与自己排译文的样式（静止 / 莫奈 / 时计）都读。
+          SettingsSwitchItem(
+            id: 'music.visualizer_subtitle_hide',
+            title: t.music_visualizer_subtitle_hide,
+            subtitle: t.music_visualizer_subtitle_hide_hint,
+            icon: FushiIcons.subtitlesOff,
+            defaultValue: false,
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicVisualizerSubtitleHide,
+            onChanged: (SettingsContext c, bool value) =>
+                c.appModel.prefsRepo.setMusicVisualizerSubtitleHide(value),
+          ),
+          SettingsSegmentedItem<LyricVisualizerSubtitleContent>(
+            id: 'music.visualizer_subtitle_content',
+            dropdown: true,
+            title: t.music_visualizer_subtitle_content,
+            subtitle: t.music_visualizer_subtitle_content_hint,
+            icon: FushiIcons.subtitles,
+            options: <SettingsSegmentOption<LyricVisualizerSubtitleContent>>[
+              SettingsSegmentOption<LyricVisualizerSubtitleContent>(
+                value: LyricVisualizerSubtitleContent.translation,
+                label: t.music_visualizer_subtitle_content_translation,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleContent>(
+                value: LyricVisualizerSubtitleContent.romanization,
+                label: t.music_visualizer_subtitle_content_romanization,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleContent>(
+                value: LyricVisualizerSubtitleContent.both,
+                label: t.music_visualizer_subtitle_content_both,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleContent>(
+                value: LyricVisualizerSubtitleContent.none,
+                label: t.music_visualizer_subtitle_content_none,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                LyricVisualizerSubtitleContent.fromPref(
+                  c.appModel.prefsRepo.musicVisualizerSubtitleContent,
+                ),
+            onChanged:
+                (SettingsContext c, LyricVisualizerSubtitleContent value) => c
+                    .appModel
+                    .prefsRepo
+                    .setMusicVisualizerSubtitleContent(value.prefValue),
+            defaultValue: LyricVisualizerSubtitleContent.defaultContent,
+          ),
+          SettingsSliderItem(
+            id: 'music.visualizer_subtitle_font_scale',
+            title: t.music_visualizer_subtitle_font_scale,
+            icon: FushiIcons.textFields,
+            min: 60,
+            max: 200,
+            divisions: 14,
+            defaultValue: 100,
+            titleReadout: true,
+            commitOnRelease: true,
+            label: (double v) => '${v.round()}%',
+            value: (SettingsContext c) =>
+                c.appModel.prefsRepo.musicVisualizerSubtitleFontScale * 100,
+            onChanged: (SettingsContext c, double v) => c.appModel.prefsRepo
+                .setMusicVisualizerSubtitleFontScale((v / 10).round() / 10),
+          ),
+          SettingsSegmentedItem<LyricVisualizerSubtitleFont>(
+            id: 'music.visualizer_subtitle_font',
+            dropdown: true,
+            title: t.music_visualizer_subtitle_font,
+            icon: FushiIcons.font,
+            options: <SettingsSegmentOption<LyricVisualizerSubtitleFont>>[
+              SettingsSegmentOption<LyricVisualizerSubtitleFont>(
+                value: LyricVisualizerSubtitleFont.inherit,
+                label: t.music_visualizer_subtitle_font_inherit,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleFont>(
+                value: LyricVisualizerSubtitleFont.sans,
+                label: t.music_visualizer_subtitle_font_sans,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleFont>(
+                value: LyricVisualizerSubtitleFont.serif,
+                label: t.music_visualizer_subtitle_font_serif,
+              ),
+              SettingsSegmentOption<LyricVisualizerSubtitleFont>(
+                value: LyricVisualizerSubtitleFont.mono,
+                label: t.music_visualizer_subtitle_font_mono,
+              ),
+            ],
+            selected: (SettingsContext c) =>
+                LyricVisualizerSubtitleFont.fromPref(
+                  c.appModel.prefsRepo.musicVisualizerSubtitleFont,
+                ),
+            onChanged: (SettingsContext c, LyricVisualizerSubtitleFont value) =>
+                c.appModel.prefsRepo.setMusicVisualizerSubtitleFont(
+                  value.prefValue,
+                ),
+            defaultValue: LyricVisualizerSubtitleFont.defaultFont,
+          ),
+          SettingsActionItem(
+            id: 'music.visualizer_models',
+            title: t.music_visualizer_models_title,
+            subtitle: t.music_visualizer_models_hint,
+            icon: FushiIcons.download,
+            cli: const SettingsCliAction.unsupported(
+              '模型下载 / 删除只在界面里做（带下载进度与确认）',
+            ),
+            onTap: (SettingsContext c) =>
+                showMusicAnalysisModelsDialog(c.context),
+          ),
         ],
       ),
     ],
+  );
+}
+
+/// 「听歌计入学习」开关。它是学习统计口径，主家在设置 › 通用；这里只持有 id、偏好键与
+/// 回调，由通用分类调用。离开音乐分类后要自带模块门：音乐模块关掉时不显示。
+SettingsItem buildMusicListeningCountsAsStudyItem() {
+  return SettingsSwitchItem(
+    id: 'music.listening_counts_as_study',
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.music,
+      c.appModel.moduleVisibility,
+    ),
+    title: t.music_listening_study_title,
+    subtitle: t.music_listening_study_hint,
+    icon: FushiIcons.timer,
+    defaultValue: false,
+    value: (SettingsContext c) => c.appModel.musicListeningCountsAsStudy,
+    onChanged: (SettingsContext c, bool value) =>
+        c.appModel.setMusicListeningCountsAsStudy(value),
   );
 }
 
@@ -571,83 +834,75 @@ String musicLyricsBackdropStyleLabel(MusicLyricsBackdropStyle style) =>
       MusicLyricsBackdropStyle.classic => t.music_lyrics_backdrop_style_classic,
     };
 
-/// 均衡器子页：开关 + 每段一个 ±12 dB 滑块 + 复位。改动立即经引擎重新下发（`af`）。
-SettingsDestination _equalizerDestination() => SettingsDestination(
+/// 音效子页：正文是自绘的 [MusicAudioEffectsBody]（曲线 / 竖推子 / 宽屏双栏，schema 行
+/// 表达不了）；控制通道条目在 `ops/ctl_settings_body_music_effects.dart` 用同一套 item
+/// 声明，搜索元数据在 [SettingsDestination.bodySearchEntries]。
+SettingsDestination buildMusicAudioEffectsDestination() => SettingsDestination(
   id: SettingsDestinationId.music,
-  title: t.music_eq_title,
+  title: t.music_effects_title,
   icon: FushiIcons.barChart,
-  sections: <SettingsSection>[
-    SettingsSection(
-      items: <SettingsItem>[
-        SettingsSwitchItem(
-          id: 'music.eq_enabled',
-          title: t.music_eq_enabled_title,
-          subtitle: t.music_eq_enabled_hint,
-          icon: FushiIcons.barChart,
-          defaultValue: false,
-          value: (SettingsContext c) => c.appModel.prefsRepo.musicEqEnabled,
-          onChanged: (SettingsContext c, bool v) async {
-            await c.appModel.prefsRepo.setMusicEqEnabled(v);
-            await c.appModel.musicSession.engine.reapplySettings();
-          },
-        ),
-      ],
+  sections: const <SettingsSection>[],
+  body: (SettingsContext c) => MusicAudioEffectsBody(host: c.appModel),
+  bodySearchEntries: <SettingsBodySearchEntry>[
+    SettingsBodySearchEntry(
+      id: 'music.effects.enabled',
+      title: t.music_effects_enabled_title,
+      subtitle: t.music_effects_enabled_hint,
     ),
-    SettingsSection(
-      title: t.music_eq_bands,
-      items: <SettingsItem>[
-        for (int i = 0; i < kMusicEqualizerBandsHz.length; i++)
-          SettingsSliderItem(
-            id: 'music.eq_band_${kMusicEqualizerBandsHz[i]}',
-            title: musicEqualizerBandLabel(kMusicEqualizerBandsHz[i]),
-            icon: FushiIcons.barChart,
-            min: -kMusicEqualizerMaxGainDb,
-            max: kMusicEqualizerMaxGainDb,
-            divisions: (kMusicEqualizerMaxGainDb * 4).round(),
-            defaultValue: 0,
-            titleReadout: true,
-            commitOnRelease: true,
-            label: (double v) =>
-                '${v >= 0 ? '+' : ''}${v.toStringAsFixed(1)} dB',
-            value: (SettingsContext c) => MusicEqualizerSettings.parseGains(
-              c.appModel.prefsRepo.musicEqGains,
-            )[i],
-            onChanged: (SettingsContext c, double v) async {
-              final List<double> gains = MusicEqualizerSettings.parseGains(
-                c.appModel.prefsRepo.musicEqGains,
-              );
-              gains[i] = (v * 2).roundToDouble() / 2;
-              await c.appModel.prefsRepo.setMusicEqGains(
-                MusicEqualizerSettings.encodeGains(gains),
-              );
-              await c.appModel.musicSession.engine.reapplySettings();
-            },
-          ),
-        SettingsActionItem(
-          id: 'music.eq_reset',
-          title: t.music_eq_reset,
-          icon: FushiIcons.restart,
-          cli: const SettingsCliAction.tap(),
-          onTap: (SettingsContext c) async {
-            await c.appModel.prefsRepo.setMusicEqGains('');
-            await c.appModel.musicSession.engine.reapplySettings();
-            c.refresh();
-          },
-        ),
-      ],
+    SettingsBodySearchEntry(
+      id: 'music.effects.preset',
+      title: t.music_eq_preset_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.equalizer',
+      title: t.music_eq_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.preamp',
+      title: t.music_eq_preamp_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.bass',
+      title: t.music_effects_bass_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.treble',
+      title: t.music_effects_treble_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.balance',
+      title: t.music_effects_balance_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.width',
+      title: t.music_effects_width_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.mono',
+      title: t.music_effects_mono_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.swap',
+      title: t.music_effects_swap_title,
+    ),
+    SettingsBodySearchEntry(
+      id: 'music.effects.limiter',
+      title: t.music_effects_limiter_title,
     ),
   ],
 );
-
-/// 频段名（`31 Hz` / `1 kHz`）：单位是国际通用写法，不翻译。
-String musicEqualizerBandLabel(int hz) =>
-    hz >= 1000 ? '${hz ~/ 1000} kHz' : '$hz Hz';
 
 /// 识别整个曲库：串行跑（MusicBrainz 1 req/s），进度与结果走 toast。
 Future<void> _identifyLibrary(SettingsContext c) async {
   FushiToast.show(msg: t.music_scrape_identifying);
   final MusicLibraryScrapeReport r = await c.appModel.musicScrape
       .scrapeLibrary();
+  if (r.dlsite.matched > 0) {
+    FushiToast.show(
+      msg: t.music_dlsite_library_done(count: r.dlsite.matched),
+      severity: ToastSeverity.success,
+    );
+  }
   FushiToast.show(
     msg: t.music_scrape_library_done(matched: r.matched, total: r.total),
     severity: r.failed > 0 ? ToastSeverity.warning : ToastSeverity.success,

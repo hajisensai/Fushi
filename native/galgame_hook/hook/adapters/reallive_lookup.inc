@@ -597,12 +597,7 @@ bool InstallRealliveLookup() {
           GetModuleHandleW(nullptr), &image)) {
     rt.site_result = reallive_lookup::SiteResult::kGlyphPathMissing;
   } else {
-    imports.get_keyboard_state = reallive_lookup::FindImportSlotRva(
-        image, "user32.dll", "GetKeyboardState");
-    imports.get_focus = reallive_lookup::FindImportSlotRva(
-        image, "user32.dll", "GetFocus");
-    imports.get_glyph_outline = reallive_lookup::FindImportSlotRva(
-        image, "gdi32.dll", "GetGlyphOutlineA");
+    imports = reallive_lookup::FindLookupImportSlots(image);
     rt.site_result = reallive_lookup::ResolveSites(image, imports, &rt.sites);
   }
   QueryPerformanceCounter(&finished);

@@ -1,14 +1,22 @@
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/diagnostics/fushi_binding.dart'
+    show FushiSecondaryWidgetsFlutterBinding;
 import 'package:fushi/src/utils/adaptive/legacy_design_compat.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:fushi/src/engine_bindings.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_clip.dart'
+    show CrossAppAudioSnapshot;
 import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart'
+    show withoutFushiPageBackdrop;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
@@ -28,7 +36,10 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart';
 void popupMain() {
   runZonedGuarded<Future<void>>(
     () async {
-      WidgetsFlutterBinding.ensureInitialized();
+      FushiSecondaryWidgetsFlutterBinding.ensureInitialized();
+      // 本 engine 不跑 main()：引擎数据根 / 日志等装配点自己装，否则在线 TTS
+      // 兜底取缓存目录即抛，app 外查词没有兜底发音（BUG-4940）。
+      installEntryPointHostBindings();
       // BUG-2790：本引擎缓存复用、关窗只 detach，查词 WebView 必须走 TLHC，见
       // [dictionaryPopupWebViewUsesHybridComposition]。
       dictionaryPopupWebViewUsesHybridComposition = false;
@@ -76,10 +87,15 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   /// （系统 PROCESS_TEXT / fushi://lookup）。BUG-2899：整行原样交给查词页，由它在
   /// 源文本条上做扫描查词，不再在这里切成单词把整行丢掉。
   int _sourceCharIndex = -1;
+  bool _sourceTextCollapsed = false;
 
   /// BUG-3487：截屏识字带来的被点字所在 OCR text block（全文 + 本行起点），制卡句子
   /// 据此截整句；其它入口为 null。
   PopupSourceBlock? _sourceBlock;
+
+  /// 跨应用语音挖掘（拍板 oqk37s3QFL）：收到新词那一刻向主进程要的「最近一段其他 app
+  /// 声音」快照；没开缓存时解析为 null。制卡时由查词页截出最后一句语音。
+  Future<CrossAppAudioSnapshot?>? _miningAudio;
 
   /// TODO-872：浮动字幕条点字传来的「被查字屏幕矩形」（**物理像素**，原点=物理屏幕顶
   /// 含状态栏）。为 null 即非浮动字幕入口（系统 PROCESS_TEXT / fushi://lookup）→ 弹窗走
@@ -91,9 +107,17 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
   /// 坐标系）。非空时作为弹窗避让锚（超集，覆盖被查字）；为 null 时回退只避让被查字。
   Rect? _subtitlePhysical;
 
+  /// 弹窗词卡页的 navigator。交给 [FushiToast] 后，弹窗里的提示（制卡结果、「保存到」退回
+  /// 主机默认等）画成应用自己的通知胶囊；此前没有 overlay，退回系统原生 toast，Android 12+
+  /// 把文字 toast 截成两行（BUG-4287）。只给 toast 用，不复用 [AppModel.navigatorKey]——
+  /// 那把挂着主 app 的全局弹窗入口，弹窗进程里不该被它们够到。
+  final GlobalKey<NavigatorState> _toastNavigatorKey =
+      GlobalKey<NavigatorState>();
+
   @override
   void initState() {
     super.initState();
+    FushiToast.navigatorKey = _toastNavigatorKey;
 
     PopupChannel.instance.init(
       onNewProcessText:
@@ -103,7 +127,12 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
             Rect? anchor,
             Rect? subtitle,
             PopupSourceBlock? sourceBlock,
+            bool sourceTextCollapsed,
           ) async {
+            // 先于任何 await 发起：快照要的是「查词这一刻」之前的声音，不能被偏好刷新
+            // 推迟；不等它，查词照常秒出。
+            final Future<CrossAppAudioSnapshot?> miningAudio =
+                CrossAppAudioCapture.instance.snapshot();
             final appModel = ref.read(appProvider);
             // TODO-855: warm-reuse hot path. Don't unconditionally re-scan the whole
             // preferences table on every external ProcessText (the v0.4.1 path was a
@@ -135,7 +164,9 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
             setState(() {
               _searchTerm = text;
               _sourceCharIndex = charIndex;
+              _sourceTextCollapsed = sourceTextCollapsed;
               _sourceBlock = sourceBlock;
+              _miningAudio = miningAudio;
               _anchorPhysical = anchor;
               _subtitlePhysical = subtitle;
               _searchGeneration++;
@@ -182,7 +213,9 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
       // 是贴顶的 M3E 面板（错误色块图标 + 原因 + 关闭），点外面也能关窗。
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ThemeData fallbackTheme = withoutFushiPageBackdrop(
+        buildFushiFallbackTheme(brightness),
+      );
       return TranslationProvider(
         child: MaterialApp(
           debugShowCheckedModeBanner: false,
@@ -203,7 +236,9 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
     if (!appModel.isInitialised) {
       final brightness =
           WidgetsBinding.instance.platformDispatcher.platformBrightness;
-      final ThemeData fallbackTheme = buildFushiFallbackTheme(brightness);
+      final ThemeData fallbackTheme = withoutFushiPageBackdrop(
+        buildFushiFallbackTheme(brightness),
+      );
       final ColorScheme cs = fallbackTheme.colorScheme;
       return TranslationProvider(
         child: MaterialApp(
@@ -227,12 +262,16 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
 
     return TranslationProvider(
       child: MaterialApp(
+        navigatorKey: _toastNavigatorKey,
         debugShowCheckedModeBanner: false,
         builder: _buildWithSpacing,
-        theme: appModel.overrideDictionaryTheme ?? appModel.theme,
+        // 透明浮窗不垫页面背景层（底色 + 形状），见 [withoutFushiPageBackdrop]。
+        theme: withoutFushiPageBackdrop(
+          appModel.overrideDictionaryTheme ?? appModel.theme,
+        ),
         darkTheme: appModel.overrideDictionaryTheme != null
             ? null
-            : appModel.darkTheme,
+            : withoutFushiPageBackdrop(appModel.darkTheme),
         themeMode: appModel.overrideDictionaryTheme != null
             ? ThemeMode.light
             : appModel.themeMode,
@@ -246,9 +285,11 @@ class _PopupDictAppState extends ConsumerState<PopupDictApp> {
           searchTerm: _searchTerm,
           searchGeneration: _searchGeneration,
           sourceCharIndex: _sourceCharIndex,
+          sourceTextCollapsed: _sourceTextCollapsed,
           sourceBlock: _sourceBlock?.text,
           sourceBlockOffset: _sourceBlock?.offset ?? -1,
           cardImage: _sourceBlock?.cardImage,
+          miningAudio: _miningAudio,
           // TODO-872：浮动字幕条点字带屏幕锚点 → 弹窗贴被查字旁；其它入口 null → topCenter。
           // TODO-708 P1 ⑤：物理→逻辑换算含状态栏平移在此处（build，视图 metrics 稳定）完成。
           anchorRect: _toLogicalRect(_anchorPhysical),

@@ -1,9 +1,9 @@
-/// 桌面应用外悬浮球「截屏识字」在 Linux 上的识别器。
+/// 桌面应用外悬浮球「截屏识字」的本机模型识别器：截屏识字引擎解析到本机模型时用它
+/// （`screen_ocr_engine.dart`；Linux 没有系统 OCR，只能用它或 Lens）。
 ///
-/// Linux 没有系统 OCR（macOS Vision / Windows.Media.Ocr / Android ML Kit 那一档），
-/// 所以截屏识字改用 Fushi 自己的本机 OCR 模型（设置里的漫画 OCR 本机模型，离线、
-/// 不上传）。走「整帧当一块文字图」那条现成路径（[MangaOcrTextImageSession]：PP 行
-/// 检测 + 逐行识别，不加载漫画检测器）——图形字幕整轨识别同一个入口；Steam Deck
+/// 用 Fushi 自己的本机 OCR 模型（设置里的 OCR 本机模型，离线、不上传），走「整帧
+/// 当一块文字图」那条现成路径（[MangaOcrTextImageSession]：PP 行检测 + 逐行识别，
+/// 不加载漫画检测器）——图形字幕整轨识别同一个入口；Steam Deck
 /// 实测（2026-11-04，游戏画面 40 帧）中位约 0.5 s。
 ///
 /// 对外仍是 [SystemOcrPlatform]：冻结层、命中测试、查词那一整套不分平台。模型没下
@@ -11,7 +11,8 @@
 /// 在冻结层提示条上让用户去设置里下载。
 ///
 /// 会话常驻复用（建会话约 0.7 s），空闲 [idleTimeout] 后关掉释放 ORT 内存。空闲
-/// 计时只在没有识别在跑时走：关会话会让在跑的识别失败。
+/// 计时只在没有识别在跑时走：关会话会让在跑的识别失败。[dispose] 同理，先等在跑的
+/// 识别全部结束再关会话，之后的识别直接报 [StateError]。
 library;
 
 import 'dart:async';
@@ -45,6 +46,10 @@ class LocalScreenOcr implements SystemOcrPlatform {
   Future<MangaOcrPageSession>? _session;
   Timer? _idleTimer;
   int _running = 0;
+  bool _disposed = false;
+
+  /// [dispose] 在等在跑的识别收尾：`_running` 归零时完成。
+  Completer<void>? _drained;
 
   @override
   Future<bool> isAvailable() async {
@@ -52,7 +57,8 @@ class LocalScreenOcr implements SystemOcrPlatform {
     if (service is! MangaOcrPageService || !service.isSupportedPlatform) {
       return false;
     }
-    return (await service.modelStatus()).recognizerReady;
+    final MangaOcrModelStatus status = await service.modelStatus();
+    return status.recognizerReady || status.supersededReady;
   }
 
   /// [language] 不用：本机模型按日文训练，没有按语言挑识别器这一步。
@@ -62,6 +68,21 @@ class LocalScreenOcr implements SystemOcrPlatform {
     required String language,
     List<Rect> tiles = const <Rect>[],
   }) async {
+    final _Rgba? frame = await Isolate.run(() => _decodeRgba(imageBytes));
+    if (frame == null) {
+      throw const FormatException('screenshot could not be decoded');
+    }
+    return recognizeRgba(frame.rgba, width: frame.width, height: frame.height);
+  }
+
+  /// 直接识别一块 RGBA 像素（`width * height * 4` 字节），省掉编码 / 解码——给已经
+  /// 拿到原始像素的调用方（智能遮布抽帧）用。结果坐标是这块图的像素坐标。
+  Future<SystemOcrPageResult> recognizeRgba(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+  }) async {
+    if (_disposed) throw StateError('LocalScreenOcr has been disposed');
     _idleTimer?.cancel();
     _idleTimer = null;
     _running++;
@@ -71,31 +92,30 @@ class LocalScreenOcr implements SystemOcrPlatform {
           kSystemOcrModelUnavailableReason,
         );
       }
-      final _Rgba? frame = await Isolate.run(() => _decodeRgba(imageBytes));
-      if (frame == null) {
-        throw const FormatException('screenshot could not be decoded');
-      }
       final MangaOcrTextImageSession session = await _textSession();
       final OcrRecognition result = await session.recognizeTextImage(
-        frame.rgba,
-        width: frame.width,
-        height: frame.height,
+        rgba,
+        width: width,
+        height: height,
       );
-      return systemOcrPageFromRecognition(
-        result,
-        width: frame.width,
-        height: frame.height,
-      );
+      return systemOcrPageFromRecognition(result, width: width, height: height);
     } finally {
       _running--;
-      if (_running == 0 && _session != null) _armIdleTimer();
+      if (_running == 0) {
+        final Completer<void>? drained = _drained;
+        _drained = null;
+        drained?.complete();
+        if (!_disposed && _session != null) _armIdleTimer();
+      }
     }
   }
 
-  /// 释放会话（宿主销毁时）。
+  /// 释放会话（宿主销毁时）。在跑的识别先跑完再关：会话关在 native 调用途中不安全。
   Future<void> dispose() async {
+    _disposed = true;
     _idleTimer?.cancel();
     _idleTimer = null;
+    if (_running > 0) await (_drained ??= Completer<void>()).future;
     await _closeSession();
   }
 
@@ -139,6 +159,10 @@ class LocalScreenOcr implements SystemOcrPlatform {
 
 /// 识别结果 → 冻结层要的行（截图像素坐标）。有行几何时逐行给出；识别器只给了整块
 /// 文字时退成一行、框为整张图（点哪都查这段文字的开头附近，好过什么都点不到）。
+///
+/// 识别器给了逐字命中格（[OcrRecognition.glyphBoxes]，区间按各行无分隔拼接记）时，
+/// 切到各行、换成行内区间作词框（[SystemOcrTextLine.segments]）：点字按字格定位，
+/// 与 Windows OCR 的词框同一条路径（BUG-4367），不再按整行等分估计。
 @visibleForTesting
 SystemOcrPageResult systemOcrPageFromRecognition(
   OcrRecognition result, {
@@ -149,17 +173,31 @@ SystemOcrPageResult systemOcrPageFromRecognition(
   final List<String>? texts = result.lines;
   final List<OcrRect>? boxes = result.lineBoxes;
   if (texts != null && boxes != null) {
+    final List<OcrGlyphBox>? glyphs = result.glyphBoxes;
+    int offset = 0;
     for (int i = 0; i < texts.length && i < boxes.length; i++) {
-      final String text = texts[i].trim();
+      final String raw = texts[i];
+      final int lineStart = offset;
+      offset += raw.length;
+      final String text = raw.trim();
       final OcrRect box = boxes[i];
       if (text.isEmpty || box.right <= box.left || box.bottom <= box.top) {
         continue;
       }
+      // trim 掉的行首空白：字格区间要跟着左移。
+      final int lead = raw.length - raw.trimLeft().length;
       lines.add(
         SystemOcrTextLine(
           text: text,
           rect: Rect.fromLTRB(box.left, box.top, box.right, box.bottom),
           isVertical: result.vertical,
+          segments: glyphs == null
+              ? const <SystemOcrTextSegment>[]
+              : _lineSegments(
+                  glyphs,
+                  from: lineStart + lead,
+                  textLength: text.length,
+                ),
         ),
       );
     }
@@ -177,6 +215,34 @@ SystemOcrPageResult systemOcrPageFromRecognition(
     imageWidth: width,
     imageHeight: height,
   );
+}
+
+/// 落在 `[from, from + textLength)` 里的字格 → 行内区间的词框（按序、互不重叠；
+/// 不满足的整行不带词框，退回按行等分）。
+List<SystemOcrTextSegment> _lineSegments(
+  List<OcrGlyphBox> glyphs, {
+  required int from,
+  required int textLength,
+}) {
+  final List<SystemOcrTextSegment> out = <SystemOcrTextSegment>[];
+  int cursor = 0;
+  for (final OcrGlyphBox glyph in glyphs) {
+    final int start = glyph.start - from;
+    final int end = glyph.end - from;
+    if (start < 0 || end > textLength) continue;
+    final OcrRect r = glyph.rect;
+    if (r.right <= r.left || r.bottom <= r.top) continue;
+    if (start < cursor || end <= start) return const <SystemOcrTextSegment>[];
+    out.add(
+      SystemOcrTextSegment(
+        start: start,
+        length: end - start,
+        rect: Rect.fromLTRB(r.left, r.top, r.right, r.bottom),
+      ),
+    );
+    cursor = end;
+  }
+  return out;
 }
 
 class _Rgba {

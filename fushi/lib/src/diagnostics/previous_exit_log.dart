@@ -14,14 +14,17 @@
 //   里的前台内存耗尽闪退（BUG-4075 `Eg5thU2wox`）也留得下崩前的内存曲线。
 // - Android 11+：`ActivityManager.getHistoricalProcessExitReasons`（原生
 //   `ProcessExitChannel.java`）：reason / description / importance / pss / rss / 时间，
-//   native crash 与 ANR 附 trace 摘要；外加进程级 `onTrimMemory` 级别记录。
+//   native crash 与 ANR 附 trace 摘要；Java 层崩溃（`CRASH`）系统不给 trace，由原生
+//   `JavaCrashCapture` 的链式未捕获异常处理器落盘、按 pid + 时间窗并进同一个 trace 字段；
+//   外加进程级 `onTrimMemory` 级别记录，与主进程按 pid 记的界面可见性切换（判前台服务
+//   进程死时界面在不在屏幕上）。
 // - Windows：`crash_dump.cpp` 的未处理异常过滤器在写 minidump 的同时追加一行
 //   `crash_summary.log`（异常码、模块+偏移、线程、x64 栈前若干帧）。不上传 minidump。
 //   过滤器接不到的死法（`__fastfail` / 堆损坏 / 栈溢出）与卡死被结束，从「应用程序」
 //   事件日志按 pid 读 Windows 错误报告（Application Error 1000 / Application Hang 1002）。
 // - macOS：`~/Library/Logs/DiagnosticReports/<进程名>-*.ips`（系统崩溃报告）。
 // - iOS：MetricKit `MXCrashDiagnostic`（`AppDelegate.swift` 订阅，JSON 落
-//   `Documents/metrickit/`）。
+//   `<ApplicationSupport>/logs/metrickit/`，即诊断目录下的 `metrickit/`）。
 //
 // 隐私：所有摘要都过 [redactExitReportPaths]，把路径里的用户名换成 `<user>`；不带
 // 完整 dump / 完整 tombstone，只带有限长度的摘要。
@@ -94,6 +97,34 @@ enum PreviousExitKind {
   /// 用户主动强停（Android `USER_REQUESTED` / `USER_STOPPED`：设置里强行停止等）。
   userStopped,
 
+  /// 被厂商系统按应用结束：ColorOS / OxygenOS / realme UI 的 `o-stop`（Android 记成
+  /// `OTHER` +「`stop <包名> due to o-stop(<码>)`」，OPlus 框架主动停应用——划掉最近任务、
+  /// 一键清理、后台 / 耗电管理），MIUI / HyperOS 的 `SwipeUpClean`（`OTHER` +
+  /// 「`SwipeUpClean`」，在最近任务里上划清掉应用；「`OneKeyClean`」，一键清理 / 全部清除），
+  /// MIUI / HyperOS 熄屏耗电检查（`OTHER` +
+  /// 「`ScreenOffCPUCheckKill over … used … (…%) threshold …`」）。平台给了明确原因，不是
+  /// 闪退；真崩溃 / ANR 系统另记 `CRASH*` / `ANR`。否则用户每在最近任务里划掉一次（死时界面
+  /// 还在最上层、importance=100，或在跑前台服务、importance=125），下次启动都弹「意外退出」
+  /// （反馈 HqhXJvwgq3 / lN8b_hBgKD / PojVLNyNtZ）。耗电检查杀进程说明熄屏时真的在吃 CPU，那条记录按
+  /// [androidExitSevere] 落进用户可见的错误日志，不因为不弹闪退报告就藏起来（反馈
+  /// Z9FwhY9377）。
+  vendorStopped,
+
+  /// 权限变更时被系统按 uid 结束（Android `PERMISSION_CHANGE`：撤销运行时权限；或
+  /// `OTHER` + AOSP 框架描述 `[KILL UID] <OP> changed.`：在系统设置里改「所有文件访问
+  /// 权限」等 appop；或 `OTHER` + 厂商形态 `[KILL UID] Permission related app op changed`：
+  /// OnePlus ColorOS 15 改应用权限时记的，反馈 4u4HnlOcv2）。平台给了明确原因、是系统对用户操作的标准反应，不是闪退——否则
+  /// 用户每改一次权限，下次启动都弹「意外退出」（反馈 DyamYE6bPL / g8AEGUyQBU）。
+  permissionChanged,
+
+  /// 被系统安全组件当成恶意软件按 uid 结束（Android `OTHER` + 描述整串是
+  /// `[KILL UID] malware`：Play Protect 或厂商「设备保护」类组件扫描后杀进程；这串不是
+  /// AOSP 框架写的，具体是哪家拿不到）。不是应用内崩溃（没有 Java / Dart / 原生栈），
+  /// 上报只会进闪退队列当噪音（反馈 5wMNgObn0U，三星 SM-S9180，启动约 2.7 s 被杀）。
+  /// 不弹闪退报告，改在首页出来后提示用户去安全设置里放行
+  /// （[offerSecurityKillNoticeAfterStartup]）。
+  securityKilled,
+
   /// 安装新版本时被系统停掉（Android `PACKAGE_UPDATED`：`installPackageLI`，自动更新 /
   /// 覆盖安装）。平台给了明确原因，压过会话标记的「停在前台时没了」——否则每次应用内
   /// 更新装完都弹一次「意外退出」（反馈 8z1tk0jEna / U_gWy3lDbx / jmgMk1gHG2）。
@@ -117,11 +148,15 @@ enum PreviousExitKind {
   backgroundReclaim;
 
   /// 这种退出值得问用户要不要把日志发给开发者。内存回收只在发生在前台时算（用户眼里
-  /// 就是闪退，且多半是 Fushi 自己吃内存）；用户强停与后台回收不算。
+  /// 就是闪退，且多半是 Fushi 自己吃内存）；用户强停与后台回收不算。前后台按
+  /// [androidDiedInForeground]：前台服务（125）只在会话标记也说界面在前台时算前台。
   bool worthReporting({required bool foreground}) => switch (this) {
     nativeCrash || crash || anr || unexpected => true,
     memoryKill => foreground,
     userStopped ||
+    vendorStopped ||
+    permissionChanged ||
+    securityKilled ||
     appUpdated ||
     systemSessionEnd ||
     exitInterrupted ||
@@ -274,7 +309,17 @@ const int kSessionMemorySampleCount = 6;
 /// 内存采样间隔。
 const Duration kMemorySampleInterval = Duration(seconds: 30);
 
-/// 会话标记文件：每次状态变化**同步**整份覆写（几十字节），进程下一刻被杀也已落盘。
+/// 会话标记文件：每次状态变化**同步**整份覆写（几十字节），写进内核页缓存后进程下一刻被杀
+/// 也不丢。
+///
+/// 诊断标记（会话标记、活动 / 查词 / 导入 / 启动步进面包屑、致命错误同步追加）的落盘语义
+/// （BUG-4943，反馈 OU6bZvpCd0）：**同步 `write` 进内核页缓存，不 fsync**。这些标记要防的是「进程下一刻没了」——Dart 接不到的原生崩溃、SIGKILL、系统回收、
+/// 看门狗强杀。进程死不丢页缓存：`write(2)` 返回后数据归内核，进程怎么死都会照常回写。
+/// fsync 只多防「整机掉电 / 内核崩溃」，而那种情况下「上次怎么没的」本来就判不准。
+/// 代价却落在主线程上：Flutter 3.29 起 Android 的 UI isolate 跑在平台主线程，低端机
+/// IO 拥塞时一次 fsync 能卡几秒，每 30 秒的内存采样、每次生命周期 / 内存压力都同步
+/// fsync 会话标记，被系统判 ANR（主线程 state=D 停在 `libc fsync`）。所以这些标记一律
+/// 只同步写、不带 `flush: true`；守卫见 `test/diagnostics/diagnostic_marker_no_fsync_guard_test.dart`。
 class SessionMarker {
   SessionMarker(this.file, {required this.pid, required this.version});
 
@@ -321,10 +366,21 @@ class SessionMarker {
     return previous;
   }
 
+  /// 记一次生命周期变化。
+  ///
+  /// 无界面会话（[kSessionLifecycleHeadless]）只在收到 `resumed`（界面真的到了屏幕上、
+  /// 用户能看见）时才升级为普通前台状态：iOS 后台拉起时引擎的初始生命周期就是
+  /// `inactive`，[PreviousExitLog.foldIntoErrorLog] 补记它会把 headless 覆盖成「算前台」的
+  /// `inactive`，之后在后台被回收就被判成「启动即闪退」（反馈 1jhwtJQIZq、BUG-4265）。
+  /// `detached` 照常标 clean。
   void recordLifecycle(String state, {required int nowMs}) {
-    _lifecycle = state;
-    _lifecycleAt = nowMs;
     if (state == 'detached') _clean = true;
+    if (_lifecycle != kSessionLifecycleHeadless || state == 'resumed') {
+      _lifecycle = state;
+      _lifecycleAt = nowMs;
+    } else if (state != 'detached') {
+      return;
+    }
     _write();
   }
 
@@ -405,7 +461,7 @@ class SessionMarker {
           'launchDetail': _launchDetail,
           if (_memorySamples.isNotEmpty) 'memorySamples': _memorySamples,
         }),
-        flush: true,
+        // 不 fsync（BUG-4943）：进程死不丢页缓存，见 [SessionMarker] 文档。
       );
     } on FileSystemException catch (e) {
       debugPrint('[PreviousExitLog] session marker write failed: $e');
@@ -420,14 +476,28 @@ class SessionMarker {
 /// `launching` / `inactive` 不等于用户看着——无界面启动的引擎（媒体按键 / 系统媒体续播
 /// 拉起的 audio_service 引擎）从来收不到生命周期，进入后台的瞬间被厂商后台管理杀掉时
 /// 标记也还停在 `inactive`（崩溃分诊 e1_jaKAeiF：`o-stop(40)` importance=400）。
+///
+/// [androidUiVisibleAtDeath]：同一进程死前界面可不可见的原生证据
+/// （[androidSessionUiVisibleAtDeath]），按 [androidDiedInForeground] 的次序压过标记推断。
+///
+/// [currentVersion]：本次进程的版本（与标记里的 [PreviousSession.version] 同一来源）。
+/// 两边都已知且不同 = 上次进程之后装了新版本：iOS（TestFlight / App Store）与 macOS
+/// 装新版时由系统结束旧进程，平台不留原因（没有 Android `PACKAGE_UPDATED` 那样的记录），
+/// 标记只会停在 resumed，按「停在前台时没了」会每次更新都误报一次闪退（反馈
+/// QL5TsHwY78）。这时归 [PreviousExitKind.appUpdated]；真有崩溃证据（MetricKit、`.ips`、
+/// Android `CRASH*`）时 [classifyPreviousExit] 按优先级照常压过它。
 ExitReportEntry? describeUncleanPreviousSession(
   PreviousSession? previous, {
   int? androidImportanceAtDeath,
+  bool? androidUiVisibleAtDeath,
+  String? currentVersion,
 }) {
   if (previous == null || previous.clean) return null;
-  final bool diedInForeground = androidImportanceAtDeath != null
-      ? androidImportanceAtDeath <= kAndroidForegroundImportance
-      : previous.diedInForeground;
+  final bool diedInForeground = androidDiedInForeground(
+    androidImportanceAtDeath,
+    sessionSaysForeground: previous.diedInForeground,
+    uiVisible: androidUiVisibleAtDeath,
+  );
   final StringBuffer b = StringBuffer()
     ..write('上次进程没有走正常退出（崩溃、被系统杀、或被强杀）：')
     ..write('pid=${previous.pid} version=${previous.version} ')
@@ -437,6 +507,9 @@ ExitReportEntry? describeUncleanPreviousSession(
     );
   if (androidImportanceAtDeath != null) {
     b.write(' androidImportanceAtDeath=$androidImportanceAtDeath');
+  }
+  if (androidUiVisibleAtDeath != null) {
+    b.write(' androidUiAtDeath=${_uiVisibilityLabel(androidUiVisibleAtDeath)}');
   }
   final String? launchDetail = previous.launchDetail;
   if (launchDetail != null) b.write(' launch={$launchDetail}');
@@ -484,6 +557,25 @@ ExitReportEntry? describeUncleanPreviousSession(
       atMs: previous.lifecycleAt,
     );
   }
+  final String? previousVersion = knownSessionVersion(previous.version);
+  final String? runningVersion = knownSessionVersion(currentVersion);
+  if (previousVersion != null &&
+      runningVersion != null &&
+      previousVersion != runningVersion) {
+    b.write(
+      '（本次已是 $runningVersion：上次进程之后装了新版本，'
+      '多半是安装更新时被系统结束，按更新处理）',
+    );
+    return ExitReportEntry(
+      kPreviousExitUncleanSource,
+      b.toString(),
+      severe: false,
+      kind: PreviousExitKind.appUpdated,
+      foreground: diedInForeground,
+      duringStartup: !previous.initialised,
+      atMs: previous.lifecycleAt,
+    );
+  }
   b.write(
     diedInForeground
         ? '（停在前台时没了，疑似闪退）'
@@ -502,6 +594,15 @@ ExitReportEntry? describeUncleanPreviousSession(
     duringStartup: !previous.initialised,
     atMs: previous.lifecycleAt,
   );
+}
+
+/// 版本拿不到（没注入 `FUSHI_BUILD_VERSION`）时会话标记里记的占位值。
+const String kUnknownSessionVersion = 'unknown';
+
+/// 会话标记里的版本能不能参与比较：空串 / [kUnknownSessionVersion] 是「不知道」，返回 null。
+String? knownSessionVersion(String? version) {
+  final String? v = version?.trim();
+  return v == null || v.isEmpty || v == kUnknownSessionVersion ? null : v;
 }
 
 /// 日志 source：上次退出链超出预算、被退出看门狗结束（有意退出，只作诊断）。
@@ -542,21 +643,287 @@ const Set<String> kSevereAndroidExitReasons = <String>{
   'FREEZER',
 };
 
-/// Android 退出原因 → [PreviousExitKind]；包更新映射成 [PreviousExitKind.appUpdated]
-/// （明确的良性原因，要压过会话标记的「疑似闪退」）；不说明问题的原因（自行退出、
-/// `SIGNALED`——lmkd 与 `Process.killProcess` 重启都报它，分不清）返回 null，交给会话标记。
-PreviousExitKind? androidExitKind(String reason) => switch (reason) {
-  'CRASH_NATIVE' => PreviousExitKind.nativeCrash,
-  'CRASH' || 'INITIALIZATION_FAILURE' => PreviousExitKind.crash,
-  'ANR' => PreviousExitKind.anr,
-  'LOW_MEMORY' || 'EXCESSIVE_RESOURCE_USAGE' => PreviousExitKind.memoryKill,
-  'USER_REQUESTED' || 'USER_STOPPED' => PreviousExitKind.userStopped,
-  'PACKAGE_UPDATED' => PreviousExitKind.appUpdated,
-  _ => null,
+/// AOSP 框架在 appop 变更时按 uid 杀进程写下的 `ApplicationExitInfo` 描述：
+/// `StorageManagerService.killAppForOpChange` 等调 `ActivityManager.killUid(appId, userId,
+/// opToName(op) + " changed.")`，`AppExitInfoTracker` 再加上子原因前缀
+/// `[KILL UID]`（`SUBREASON_KILL_UID`），原因码是 `REASON_OTHER`。子原因前缀可缺：华为
+/// EMUI / HarmonyOS 的 `AppExitInfoTracker` 不加前缀，只记 `MANAGE_EXTERNAL_STORAGE
+/// changed.`（反馈 w_dTs9eQ45，BUG-4491）。整串锚定，只认「全大写 appop 名 + changed」这一
+/// 形态，外加一条整串原样的权限类 appop 描述 `Permission related app op changed`
+/// （OnePlus ColorOS 15 / Android 15 在用户改应用权限时记下，前缀照样是 `[KILL UID]`；
+/// AOSP 源码里没查到这串，按观测到的形态收；反馈 4u4HnlOcv2，BUG-5183）。厂商 `OTHER`
+/// （`OneKeyClean`、`o-stop(40)` 等）与 `[KILL UID]` 下的其它原因（`malware` 等）不在此列。
+final RegExp _aospKillUidOpChanged = RegExp(
+  r'^(?:\[KILL UID\] )?(?:[A-Z][A-Z0-9_]*|Permission related app op) changed\.?$',
+);
+
+/// 安全组件按 uid 结束「恶意软件」时写下的 `ApplicationExitInfo` 描述：原因码
+/// `REASON_OTHER`，描述 `[KILL UID] malware`（`[KILL UID]` 是 `AppExitInfoTracker` 的
+/// `SUBREASON_KILL_UID` 前缀，后面是调用方传给 `killUid` 的原因串；反馈 5wMNgObn0U）。
+/// 整串锚定、区分大小写；前缀可缺（同 BUG-4491：有的 ROM 的 `AppExitInfoTracker` 不加前缀）。
+final RegExp _securityKillMalware = RegExp(r'^(?:\[KILL UID\] )?malware$');
+
+/// AOSP `ProcessErrorStateRecord.scheduleCrashLocked` 想让进程自己崩（例如广播投递失败时
+/// 的 `can't deliver broadcast`）、但连 `IApplicationThread.scheduleCrash` 这次 binder 调用
+/// 都失败了——进程已死或被冻结（缓存进程冻结器，importance=400）——于是系统直接
+/// `killLocked("scheduleCrash for '<msg>' failed", REASON_CRASH)`。原因码虽是 `CRASH`，
+/// 应用里并没有发生崩溃（没有 Java / Dart / 原生栈），是系统结束了够不着的进程（反馈
+/// rInNABPqPl，BUG-4490）。整串锚定；子原因前缀可有可无。
+final RegExp _aospScheduleCrashFailed = RegExp(
+  r"^(?:\[[A-Z0-9_ ]+\] )?scheduleCrash for '.+' failed$",
+);
+
+/// OPlus（ColorOS / OxygenOS / realme UI）框架停应用时写下的 `ApplicationExitInfo` 描述：
+/// 原因码 `REASON_OTHER`，描述形如 `[UNKNOWN] stop app.fushi.reader due to o-stop(40)`
+/// （`[...]` 是 `AppExitInfoTracker` 加的子原因前缀，括号里是 OPlus 的停止来源码）。整串
+/// 锚定，只认这一形态。
+final RegExp _oplusAppStop = RegExp(
+  r'^(?:\[[A-Z0-9_ ]+\] )?stop [A-Za-z0-9_.:]+ due to o-stop\(\d+\)$',
+);
+
+/// MIUI / HyperOS 在最近任务里上划清掉应用时写下的 `ApplicationExitInfo` 描述：原因码
+/// `REASON_OTHER`，描述是 `SwipeUpClean`（反馈 lN8b_hBgKD；BUG-4238 备注里的
+/// `#hw7f_pogDW` 也是它）。整串锚定，子原因前缀可有可无。
+final RegExp _miuiSwipeUpClean = RegExp(r'^(?:\[[A-Z0-9_ ]+\] )?SwipeUpClean$');
+
+/// MIUI / HyperOS 一键清理（最近任务里的「全部清除」、安全中心加速）结束应用时写下的
+/// `ApplicationExitInfo` 描述：原因码 `REASON_OTHER`，描述是 `OneKeyClean`（反馈
+/// PojVLNyNtZ，Xiaomi 22041219G，SDK 34；死时在跑前台服务，importance=125）。整串锚定，
+/// 子原因前缀可有可无。
+final RegExp _miuiOneKeyClean = RegExp(r'^(?:\[[A-Z0-9_ ]+\] )?OneKeyClean$');
+
+/// MIUI / HyperOS 熄屏 CPU 检查杀进程时写下的 `ApplicationExitInfo` 描述：原因码
+/// `REASON_OTHER`，描述形如 `ScreenOffCPUCheckKill over +25m0s475ms used +45m1s910ms
+/// (180.07031%) threshold 6.0`（熄屏窗口里进程 CPU 占比超过阈值，反馈 Z9FwhY9377）。
+/// 子原因前缀可有可无；只锚定开头的标记词，后面的读数格式随 ROM 版本变，不做要求。
+final RegExp _miuiScreenOffCpuKill = RegExp(
+  r'^(?:\[[A-Z0-9_ ]+\] )?ScreenOffCPUCheckKill(?: .*)?$',
+);
+
+/// 厂商框架结束应用时写在 `OTHER` 描述里的已知形态，命中任一条即
+/// [PreviousExitKind.vendorStopped]。新厂商形态加在这里，不在 [androidExitKind] 里另开分支。
+final List<RegExp> _vendorStopDescriptions = <RegExp>[
+  _oplusAppStop,
+  _miuiSwipeUpClean,
+  _miuiOneKeyClean,
+  _miuiScreenOffCpuKill,
+];
+
+/// [description]（已 trim）整串匹配某条厂商停应用形态。
+bool _isVendorStopDescription(String description) =>
+    _vendorStopDescriptions.any((RegExp re) => re.hasMatch(description));
+
+/// 这条 Android 退出记录要不要走 `log`（落盘、用户可见）：[kSevereAndroidExitReasons]，
+/// 外加厂商按 CPU 耗电杀进程（MIUI `ScreenOffCPUCheckKill`）——它按
+/// [PreviousExitKind.vendorStopped] 不弹闪退报告，但说明熄屏时真的在吃 CPU，是要查的
+/// 耗电问题，不能只留在诊断段里；以及安全组件按「恶意软件」杀进程（
+/// [PreviousExitKind.securityKilled]）——不弹闪退报告，但用户要能在错误日志里看到原因。
+bool androidExitSevere(String reason, {String? description}) =>
+    kSevereAndroidExitReasons.contains(reason) ||
+    (reason == 'OTHER' &&
+        description != null &&
+        (_miuiScreenOffCpuKill.hasMatch(description.trim()) ||
+            _securityKillMalware.hasMatch(description.trim())));
+
+/// Android 退出原因 → [PreviousExitKind]；包更新 / 权限变更映射成
+/// [PreviousExitKind.appUpdated] / [PreviousExitKind.permissionChanged]（明确的良性原因，
+/// 要压过会话标记的「疑似闪退」）；不说明问题的原因（自行退出、`SIGNALED`——lmkd 与
+/// `Process.killProcess` 重启都报它，分不清；`CRASH` 但描述是系统
+/// 「scheduleCrash for '…' failed」——系统结束了够不着的进程，应用里没崩）返回 null，
+/// 交给会话标记。`OTHER` 只在
+/// [description] 是 AOSP 自己写的 appop 变更杀进程描述时才算权限变更、是 OPlus 的
+/// `o-stop` 停应用描述、MIUI / HyperOS 的 `SwipeUpClean` / `OneKeyClean` / 熄屏耗电检查描述时算厂商停止
+/// （[PreviousExitKind.vendorStopped]，见 [_vendorStopDescriptions]），是安全组件的
+/// `[KILL UID] malware` 时算 [PreviousExitKind.securityKilled]，其它照旧 null。
+PreviousExitKind? androidExitKind(String reason, {String? description}) =>
+    switch (reason) {
+      'CRASH_NATIVE' => PreviousExitKind.nativeCrash,
+      'CRASH'
+          when description != null &&
+              _aospScheduleCrashFailed.hasMatch(description.trim()) =>
+        null,
+      'CRASH' || 'INITIALIZATION_FAILURE' => PreviousExitKind.crash,
+      'ANR' => PreviousExitKind.anr,
+      'LOW_MEMORY' || 'EXCESSIVE_RESOURCE_USAGE' => PreviousExitKind.memoryKill,
+      'USER_REQUESTED' || 'USER_STOPPED' => PreviousExitKind.userStopped,
+      'PACKAGE_UPDATED' => PreviousExitKind.appUpdated,
+      'PERMISSION_CHANGE' => PreviousExitKind.permissionChanged,
+      'OTHER'
+          when description != null &&
+              _aospKillUidOpChanged.hasMatch(description.trim()) =>
+        PreviousExitKind.permissionChanged,
+      'OTHER'
+          when description != null &&
+              _isVendorStopDescription(description.trim()) =>
+        PreviousExitKind.vendorStopped,
+      'OTHER'
+          when description != null &&
+              _securityKillMalware.hasMatch(description.trim()) =>
+        PreviousExitKind.securityKilled,
+      _ => null,
+    };
+
+/// `RunningAppProcessInfo.IMPORTANCE_FOREGROUND`（100）：界面在屏幕最上层、用户正在用。
+const int kAndroidForegroundUiImportance = 100;
+
+/// `RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE`（125）：进程在跑前台服务（放歌、
+/// 下载保活、悬浮窗），界面**不一定**在屏幕上；落在它与 [kAndroidForegroundUiImportance]
+/// 之间时是不是「停在前台时没了」另看会话标记（[androidDiedInForeground]）。
+const int kAndroidForegroundServiceImportance = 125;
+
+/// Android 进程死时算不算「停在前台」——会话标记推断（[describeUncleanPreviousSession]）与
+/// `ApplicationExitInfo` 条目（[formatAndroidExitReports]）共用这一个判定，不另写阈值。
+///
+/// 重要性只在两头是硬事实：<= IMPORTANCE_FOREGROUND（界面在最上层）一定是前台；
+/// > IMPORTANCE_FOREGROUND_SERVICE 一定没在用户眼前。落在 101–125（前台服务：放歌 /
+/// 下载保活 / 悬浮窗）时界面可能早已退到后台，交给会话标记的生命周期判断（反馈
+/// vJrUPZW9I8：标记停在 paused 48 分钟后被杀，却按 125 判成「停在前台时没了」，BUG-4266）。
+///
+/// 落在 101–125（或没有重要性）时证据按可靠程度依次看：
+/// 1. [uiVisible]：原生按 pid 记的同一进程死前最后一次界面可见性
+///    （[androidUiVisibleAtDeath]：Activity 可见性切换 + 界面已隐藏的 trim 级别）。它不依赖
+///    Dart 起没起来、标记有没有被别的进程覆写，最可靠。
+/// 2. [sessionSaysForeground]：同一进程会话标记的 [PreviousSession.diedInForeground]；
+///    这条记录对不上会话标记（别的进程 / pid、没有标记）时为 null。
+/// 3. 都没有时按前台算（平台没说清时宁可多问一次，与 [ExitReportEntry.foreground] 的缺省一致）。
+///
+/// 反馈 gTrf6djABo：pid 19272 LOW_MEMORY importance=125，会话标记对不上（中间夹了一个
+/// Flutter 没起来的进程），同一 pid 28 分钟前已收到 TRIM_MEMORY_BACKGROUND，旧判定没看
+/// 原生旁证、按前台算 → 弹了「低内存闪退」报告（BUG-4744）。
+bool androidDiedInForeground(
+  int? importance, {
+  required bool? sessionSaysForeground,
+  bool? uiVisible,
+}) => switch (importance) {
+  null => uiVisible ?? sessionSaysForeground ?? true,
+  final int i when i <= kAndroidForegroundUiImportance => true,
+  final int i when i <= kAndroidForegroundServiceImportance =>
+    uiVisible ?? sessionSaysForeground ?? true,
+  _ => false,
 };
 
-/// `RunningAppProcessInfo.IMPORTANCE_FOREGROUND_SERVICE`：重要性数值不大于它 = 用户看得见。
-const int kAndroidForegroundImportance = 125;
+/// 日志 source：原生按 pid 记的界面可见性切换（旁证，不说明退出方式）。
+const String kAndroidUiVisibilitySource = 'Process.androidUiVisibility';
+
+/// 说明「界面已不在屏幕上」的 `onTrimMemory` 级别：UI_HIDDEN（20）/ BACKGROUND（40）/
+/// MODERATE（60）只发给界面不可见的进程。RUNNING_*（5 / 10 / 15）前台也会收到；
+/// COMPLETE（80）在 trim 环里与 `onLowMemory`（系统整体内存紧张，前台进程也收）记成同一个
+/// 值，分不开，都不算。
+bool _trimLevelMeansUiHidden(int level) => level >= 20 && level < 80;
+
+/// 进程 [pid] 在 [deathMs] 死前界面可不可见的原生证据：同一 pid、落在 [sinceMs, deathMs]
+/// 里的 Activity 可见性切换（`uiEvents`，原生 `ProcessExitChannel.installUiVisibilityTracking`）与
+/// 「界面已隐藏」的 trim（`trims`，[_trimLevelMeansUiHidden]），取最晚的一条。没有证据返回
+/// null。
+///
+/// 旧版本只记了 trim：trim 之后界面又回到前台再被杀时只看 trim 会误判后台。importance 落在
+/// 125 本身就说明死时进程不在最上层（界面在最上层是 100），这一取舍可接受；新版本有可见性
+/// 切换，回到前台会留下更晚的 `visible`，不再误判。
+bool? androidUiVisibleAtDeath(
+  Map<Object?, Object?> payload, {
+  required int pid,
+  required int deathMs,
+  int sinceMs = 0,
+}) {
+  int? latestAt;
+  bool? latestVisible;
+  void consider(int at, bool visible) {
+    if (at < sinceMs || at > deathMs) return;
+    if (latestAt != null && at < latestAt!) return;
+    latestAt = at;
+    latestVisible = visible;
+  }
+
+  final Object? trims = payload['trims'];
+  if (trims is List) {
+    for (final Map<Object?, Object?> t
+        in trims.whereType<Map<Object?, Object?>>()) {
+      final Object? level = t['level'];
+      final Object? at = t['timestamp'];
+      if (t['pid'] != pid || level is! int || at is! int) continue;
+      if (_trimLevelMeansUiHidden(level)) consider(at, false);
+    }
+  }
+  // 可见性切换后看：同一毫秒里切换记录压过 trim。
+  final Object? events = payload['uiEvents'];
+  if (events is List) {
+    for (final Map<Object?, Object?> e
+        in events.whereType<Map<Object?, Object?>>()) {
+      final Object? visible = e['visible'];
+      final Object? at = e['timestamp'];
+      if (e['pid'] != pid || visible is! bool || at is! int) continue;
+      consider(at, visible);
+    }
+  }
+  return latestVisible;
+}
+
+/// 会话标记那个进程（[pid]，且死在 [startedAtMs] 之后）的 `ApplicationExitInfo` 记录；
+/// 没有返回 null。
+Map<Object?, Object?>? _androidExitRecordOf(
+  Map<Object?, Object?> payload, {
+  required int pid,
+  required int startedAtMs,
+}) {
+  final Object? reasons = payload['reasons'];
+  if (reasons is! List) return null;
+  for (final Map<Object?, Object?> r
+      in reasons.whereType<Map<Object?, Object?>>()) {
+    if (r['pid'] != pid) continue;
+    final Object? timestamp = r['timestamp'];
+    if (timestamp is int && timestamp < startedAtMs) continue;
+    return r;
+  }
+  return null;
+}
+
+/// 会话标记那个进程死前界面可不可见（[androidUiVisibleAtDeath]）；没有证据返回 null。
+///
+/// 死亡时刻优先取同一进程的 `ApplicationExitInfo` 记录。没有对得上的记录时——API < 30
+/// 根本没有 `reasons`（`ProcessExitChannel` 只在 R 及以上读），或者系统没留这条——用
+/// [nextProcessStartedAtMs]（本次进程启动、读会话标记的时刻）作死亡时刻的上界：同名进程
+/// 同时只活一个，旧进程一定死在它之前，上界是确定的事实。旧实现拿不到死亡时刻就直接
+/// 返回 null，把同一 pid 死前已收到的 UI_HIDDEN 丢掉，回落到停在 inactive 的标记，按前台
+/// 误报闪退（反馈 ywhUI7Adc1，realme RMX1971 / Android 10，BUG-5166）。
+///
+/// [currentPid]：本次进程的 pid。与 [pid] 相同（pid 复用）时用上界会把本次进程自己的
+/// trim / 可见性记录算到旧进程头上，这时不用上界。
+bool? androidSessionUiVisibleAtDeath(
+  Map<Object?, Object?> payload, {
+  required int pid,
+  int startedAtMs = 0,
+  int? nextProcessStartedAtMs,
+  int? currentPid,
+}) {
+  final Object? recordedDeathMs = _androidExitRecordOf(
+    payload,
+    pid: pid,
+    startedAtMs: startedAtMs,
+  )?['timestamp'];
+  final int? deathMs = recordedDeathMs is int
+      ? recordedDeathMs
+      : (pid == currentPid ? null : nextProcessStartedAtMs);
+  if (deathMs == null) return null;
+  return androidUiVisibleAtDeath(
+    payload,
+    pid: pid,
+    deathMs: deathMs,
+    sinceMs: startedAtMs,
+  );
+}
+
+String _uiVisibilityLabel(bool visible) => visible ? 'visible' : 'hidden';
+
+/// [record]（一条 `ApplicationExitInfo`）是不是会话标记 [previous] 那个进程的：pid 相同、
+/// 且死在它启动之后（pid 会被复用）；没有时间戳时只看 pid。
+bool _isExitRecordOfSession(
+  Map<Object?, Object?> record,
+  PreviousSession previous,
+) {
+  if (record['pid'] != previous.pid) return false;
+  final Object? timestamp = record['timestamp'];
+  return timestamp is! int || timestamp >= previous.startedAt;
+}
 
 /// `ComponentCallbacks2.TRIM_MEMORY_*` 的可读名。
 String androidTrimLevelName(int level) => switch (level) {
@@ -577,22 +944,23 @@ int? androidImportanceAtDeath(
   required int pid,
   int startedAtMs = 0,
 }) {
-  final Object? reasons = payload['reasons'];
-  if (reasons is! List) return null;
-  for (final Object? r in reasons) {
-    if (r is! Map) continue;
-    final Object? recordPid = r['pid'];
-    final Object? importance = r['importance'];
-    final Object? timestamp = r['timestamp'];
-    if (recordPid != pid || importance is! int) continue;
-    if (timestamp is int && timestamp < startedAtMs) continue;
-    return importance;
-  }
-  return null;
+  final Object? importance = _androidExitRecordOf(
+    payload,
+    pid: pid,
+    startedAtMs: startedAtMs,
+  )?['importance'];
+  return importance is int ? importance : null;
 }
 
 /// 把 `ProcessExitChannel.consumeExitReports` 的返回值整理成摘要。
-List<ExitReportEntry> formatAndroidExitReports(Map<Object?, Object?> payload) {
+///
+/// [previous]：上次会话标记。会话标记那个进程的记录，前后台按 [androidDiedInForeground]
+/// 结合原生的界面可见性证据与标记的生命周期判（前台服务 125 时界面已退后台、被 LOW_MEMORY
+/// 杀，不算前台内存回收）；别的进程的记录只看原生证据。
+List<ExitReportEntry> formatAndroidExitReports(
+  Map<Object?, Object?> payload, {
+  PreviousSession? previous,
+}) {
   final List<ExitReportEntry> out = <ExitReportEntry>[];
   final Object? reasons = payload['reasons'];
   if (reasons is List) {
@@ -607,6 +975,26 @@ List<ExitReportEntry> formatAndroidExitReports(Map<Object?, Object?> payload) {
         ..write(
           'at=${r['timestamp'] is int ? _iso(r['timestamp'] as int) : r['timestamp']}',
         );
+      final Object? importance = r['importance'];
+      final Object? timestamp = r['timestamp'];
+      final Object? pid = r['pid'];
+      final PreviousSession? session =
+          previous != null && _isExitRecordOfSession(r, previous)
+          ? previous
+          : null;
+      final bool? uiVisible = pid is int && timestamp is int
+          ? androidUiVisibleAtDeath(
+              payload,
+              pid: pid,
+              deathMs: timestamp,
+              sinceMs: session?.startedAt ?? 0,
+            )
+          : null;
+      if (uiVisible != null) {
+        b.write('\nuiAtDeath=${_uiVisibilityLabel(uiVisible)}');
+      }
+      // uiAtDeath 先于 description / trace 写入：长 trace 摘要会被 _cap 截断，
+      // 判定标签必须留在截断点之前。
       final Object? description = r['description'];
       if (description is String && description.isNotEmpty) {
         b.write('\ndescription: $description');
@@ -615,16 +1003,23 @@ List<ExitReportEntry> formatAndroidExitReports(Map<Object?, Object?> payload) {
       if (trace is String && trace.isNotEmpty) {
         b.write('\ntrace summary:\n$trace');
       }
-      final Object? importance = r['importance'];
-      final Object? timestamp = r['timestamp'];
       out.add(
         ExitReportEntry(
           kAndroidExitInfoSource,
           _cap(redactExitReportPaths(b.toString())),
-          severe: kSevereAndroidExitReasons.contains(reason),
-          kind: androidExitKind(reason),
-          foreground:
-              importance is! int || importance <= kAndroidForegroundImportance,
+          severe: androidExitSevere(
+            reason,
+            description: description is String ? description : null,
+          ),
+          kind: androidExitKind(
+            reason,
+            description: description is String ? description : null,
+          ),
+          foreground: androidDiedInForeground(
+            importance is int ? importance : null,
+            sessionSaysForeground: session?.diedInForeground,
+            uiVisible: uiVisible,
+          ),
           atMs: timestamp is int ? timestamp : null,
         ),
       );
@@ -653,6 +1048,25 @@ List<ExitReportEntry> formatAndroidExitReports(Map<Object?, Object?> payload) {
         kAndroidTrimMemorySource,
         _cap('onTrimMemory（最近若干次，含上次进程）：$lines'),
         severe: severe,
+      ),
+    );
+  }
+  final Object? uiEvents = payload['uiEvents'];
+  if (uiEvents is List && uiEvents.isNotEmpty) {
+    final String lines = uiEvents
+        .whereType<Map<Object?, Object?>>()
+        .map((Map<Object?, Object?> e) {
+          final Object? visible = e['visible'];
+          final Object? at = e['timestamp'];
+          return '${visible is bool ? _uiVisibilityLabel(visible) : visible}'
+              '@${at is int ? _iso(at) : at} pid=${e['pid']}';
+        })
+        .join('; ');
+    out.add(
+      ExitReportEntry(
+        kAndroidUiVisibilitySource,
+        _cap('界面可见性切换（最近若干次，含上次进程）：$lines'),
+        severe: false,
       ),
     );
   }
@@ -1066,6 +1480,42 @@ String? summarizeMacIpsReport(String content, {int maxFrames = 12}) {
   return _cap(redactExitReportPaths(out.toString()));
 }
 
+/// `.ips` 头部 JSON 的 `app_version`（`CFBundleShortVersionString`）；解析不了 / 没有返回 null。
+String? macIpsAppVersion(String content) {
+  final int newline = content.indexOf('\n');
+  try {
+    final Object? h = jsonDecode(
+      newline < 0 ? content : content.substring(0, newline),
+    );
+    final Object? v = h is Map ? h['app_version'] : null;
+    return v is String && v.trim().isNotEmpty ? v.trim() : null;
+  } on FormatException {
+    return null;
+  }
+}
+
+/// 版本号的数字主干（`3.3.0-debug.24438+24438` → `3.3.0`）；不是以数字开头的（`unknown`、
+/// 本地构建的占位）返回 null。Apple 包的 `CFBundleShortVersionString` 剥掉了预发布段，
+/// 会话标记里记的却是完整 build-name，所以只能比主干。
+String? _versionCore(String? version) => version == null
+    ? null
+    : RegExp(r'^\d+(?:\.\d+)*').stringMatch(version.trim());
+
+/// macOS 崩溃报告的版本 [reportVersion] 是否属于 [candidates]（上次会话 / 本次进程的版本）
+/// 之一。任一方不知道版本时无从判断，按属于处理（不丢真崩溃）。
+bool macCrashReportVersionMatches(
+  String? reportVersion,
+  Iterable<String?> candidates,
+) {
+  final String? report = _versionCore(reportVersion);
+  if (report == null) return true;
+  final Set<String> known = <String>{
+    for (final String? c in candidates)
+      if (_versionCore(c) case final String core) core,
+  };
+  return known.isEmpty || known.contains(report);
+}
+
 /// 列出 [dir] 里 [processName] 在 [sinceMs] 之后的 `.ips`，按修改时间升序。
 List<File> listMacCrashReports(
   Directory dir, {
@@ -1213,10 +1663,8 @@ abstract final class ActivityBreadcrumb {
     final File? f = _file(activity);
     if (f == null) return;
     try {
-      f.writeAsStringSync(
-        '[${DateTime.now().toIso8601String()}] $detail',
-        flush: true,
-      );
+      // 不 fsync（BUG-4943）：进程死不丢页缓存，见 [SessionMarker] 文档。
+      f.writeAsStringSync('[${DateTime.now().toIso8601String()}] $detail');
     } on FileSystemException catch (e) {
       debugPrint('[ActivityBreadcrumb] mark $activity failed: $e');
     }
@@ -1233,9 +1681,19 @@ abstract final class ActivityBreadcrumb {
   }
 }
 
-/// 读出并删除 [dir] 里上次进程留下的活动面包屑。
-List<ExitReportEntry> collectActivityBreadcrumbs(Directory dir) {
-  final List<ExitReportEntry> out = <ExitReportEntry>[];
+/// 上次进程留下的一个活动面包屑：活动名 + 文件内容（[ActivityBreadcrumb.mark] 写的那行）。
+@immutable
+class ActivityBreadcrumbRecord {
+  const ActivityBreadcrumbRecord(this.activity, this.detail);
+
+  final String activity;
+  final String detail;
+}
+
+/// 读出并删除 [dir] 里上次进程留下的活动面包屑。只读文件、不下结论：严重级要等上次
+/// 会话的前后台判定出来后由 [describeActivityBreadcrumb] 定。
+List<ActivityBreadcrumbRecord> takeActivityBreadcrumbs(Directory dir) {
+  final List<ActivityBreadcrumbRecord> out = <ActivityBreadcrumbRecord>[];
   if (!dir.existsSync()) return out;
   for (final FileSystemEntity e in dir.listSync(followLinks: false)) {
     if (e is! File) continue;
@@ -1245,23 +1703,69 @@ List<ExitReportEntry> collectActivityBreadcrumbs(Directory dir) {
     try {
       final String detail = e.readAsStringSync().trim();
       e.deleteSync();
-      out.add(
-        ExitReportEntry(
-          kActivityCrashRecoveredSource,
-          _cap(
-            redactExitReportPaths(
-              '上次进程在「$activity」进行中没了（原生崩溃 / 被系统杀 / 强杀）：$detail',
-            ),
-          ),
-          severe: true,
-        ),
-      );
+      out.add(ActivityBreadcrumbRecord(activity, detail));
     } on FileSystemException catch (err) {
       debugPrint('[ActivityBreadcrumb] recover $activity failed: $err');
     }
   }
   return out;
 }
+
+/// 把面包屑折成日志条目，严重级与上次会话的判定统一（拍板台 left3525）：面包屑只说明
+/// 「死的时候在做什么」，不说明怎么死的，所以不自带严重级，跟同一次启动的会话判定走——
+/// - 有会话判定（[unclean]，[describeUncleanPreviousSession] 的结果，已服从 Android
+///   死时重要性 / 界面可见性）：它算严重（停在前台时没了）才严重；后台被系统回收、退出
+///   途中没了、停在闪退提示上被关掉都只作诊断，内容（模型 / need / headroom 等）照样进日志。
+/// - 上次会话标了 clean（[previous] 非 null 且 clean）：活动没收尾但退出链走完了，只作诊断。
+/// - 没有上次会话标记（[previous] 为 null）：前后台不知道，按严重记（与
+///   [ExitReportEntry.foreground] 的缺省一致，宁可多记一次）。
+/// 面包屑条目不带 [ExitReportEntry.kind]，不参与 [classifyPreviousExit] 选种类。
+ExitReportEntry describeActivityBreadcrumb(
+  ActivityBreadcrumbRecord record, {
+  required PreviousSession? previous,
+  required ExitReportEntry? unclean,
+}) {
+  final bool severe;
+  final bool foreground;
+  final String judgement;
+  if (unclean != null) {
+    severe = unclean.severe;
+    foreground = unclean.foreground;
+    judgement = severe
+        ? '（会话判定：停在前台时没了，疑似原生崩溃 / 被杀）'
+        : '（会话判定：${unclean.kind?.name ?? 'unknown'}，'
+              '${foreground ? '' : '停在后台、'}不按崩溃记，只作诊断）';
+  } else if (previous != null) {
+    severe = false;
+    foreground = previous.diedInForeground;
+    judgement = '（上次会话已标正常退出：活动没收尾就走完了退出链，只作诊断）';
+  } else {
+    severe = true;
+    foreground = true;
+    judgement = '（没有上次会话标记，前后台未知：原生崩溃 / 被系统杀 / 强杀）';
+  }
+  return ExitReportEntry(
+    kActivityCrashRecoveredSource,
+    _cap(
+      redactExitReportPaths(
+        '上次进程在「${record.activity}」进行中没了$judgement：${record.detail}',
+      ),
+    ),
+    severe: severe,
+    foreground: foreground,
+  );
+}
+
+/// 读出、删除并折成日志条目（[takeActivityBreadcrumbs] + [describeActivityBreadcrumb]）。
+/// 不传会话判定时按「没有上次会话标记」处理。
+List<ExitReportEntry> collectActivityBreadcrumbs(
+  Directory dir, {
+  PreviousSession? previous,
+  ExitReportEntry? unclean,
+}) => <ExitReportEntry>[
+  for (final ActivityBreadcrumbRecord r in takeActivityBreadcrumbs(dir))
+    describeActivityBreadcrumb(r, previous: previous, unclean: unclean),
+];
 
 // ───────────────────────── 判定 ─────────────────────────
 
@@ -1497,13 +2001,32 @@ abstract final class PreviousExitLog {
   /// 开始周期内存采样（[foldIntoErrorLog] 之后、生产启动时调一次；重复调用只换探针）：每
   /// [kMemorySampleInterval] 把进程 RSS 与 [probes] 的读数写进会话标记，下次启动若上次没正常
   /// 退出，「上次未正常退出」那条带上崩前最近几次采样。
+  ///
+  /// 开始时那一次采样默认立即采。它要同步读一遍各探针（Android 上含 /proc 的各线程
+  /// CPU、匿名映射分组，小米平板 5 实测 60–70 ms），所以生产启动传 [firstSampleAfter]
+  /// （首帧上屏且入场动效跑完）把它挪出首帧关键路径；周期定时器照旧立即开始，
+  /// [firstSampleAfter] 一直不完成也只是少了开头这一次。
   static void startMemorySampling({
     List<MemoryProbe> probes = const <MemoryProbe>[],
+    Future<void>? firstSampleAfter,
   }) {
     _memoryProbes = probes;
     if (_marker == null || _memoryTimer != null) return;
-    sampleMemory(trigger: 'start');
-    _memoryTimer = Timer.periodic(kMemorySampleInterval, (_) => sampleMemory());
+    final Timer timer = Timer.periodic(
+      kMemorySampleInterval,
+      (_) => sampleMemory(),
+    );
+    _memoryTimer = timer;
+    if (firstSampleAfter == null) {
+      sampleMemory(trigger: 'start');
+      return;
+    }
+    unawaited(
+      firstSampleAfter.then((_) {
+        // 等待期间采样被停掉（测试收尾）就不再补这一次。
+        if (identical(_memoryTimer, timer)) sampleMemory(trigger: 'start');
+      }),
+    );
   }
 
   /// 停止周期采样（测试收尾用）。
@@ -1568,14 +2091,14 @@ abstract final class PreviousExitLog {
           ? await collector(appDir)
           : await collect(
               appDir: appDir,
-              version: fushiRunningCodeVersion ?? 'unknown',
+              version: fushiRunningCodeVersion ?? kUnknownSessionVersion,
             );
       final String? previousVersion = _previous?.version;
       _verdict = classifyPreviousExit(
         entries,
         version: previousVersion != null && previousVersion.isNotEmpty
             ? previousVersion
-            : fushiRunningCodeVersion ?? 'unknown',
+            : fushiRunningCodeVersion ?? kUnknownSessionVersion,
         nowMs: DateTime.now().millisecondsSinceEpoch,
       );
       for (final ExitReportEntry e in entries) {
@@ -1627,8 +2150,11 @@ abstract final class PreviousExitLog {
     final int now = nowMs ?? DateTime.now().millisecondsSinceEpoch;
     final List<ExitReportEntry> out = <ExitReportEntry>[];
 
-    // 启动早期（复习同步等长活动开跑之前）收走上次进程留下的活动面包屑。
-    out.addAll(collectActivityBreadcrumbs(appDir));
+    // 启动早期（复习同步等长活动开跑之前）收走上次进程留下的活动面包屑；严重级等下面
+    // 会话判定出来后统一定（[describeActivityBreadcrumb]）。
+    final List<ActivityBreadcrumbRecord> breadcrumbs = takeActivityBreadcrumbs(
+      appDir,
+    );
 
     final SessionMarker marker = SessionMarker(
       File('${appDir.path}${Platform.pathSeparator}session_marker.json'),
@@ -1669,6 +2195,7 @@ abstract final class PreviousExitLog {
 
     final ExitReportEntry? unclean = describeUncleanPreviousSession(
       previous,
+      currentVersion: version,
       androidImportanceAtDeath: previous == null || androidPayload == null
           ? null
           : androidImportanceAtDeath(
@@ -1676,12 +2203,26 @@ abstract final class PreviousExitLog {
               pid: previous.pid,
               startedAtMs: previous.startedAt,
             ),
+      androidUiVisibleAtDeath: previous == null || androidPayload == null
+          ? null
+          : androidSessionUiVisibleAtDeath(
+              androidPayload,
+              pid: previous.pid,
+              startedAtMs: previous.startedAt,
+              nextProcessStartedAtMs: now,
+              currentPid: pid,
+            ),
     );
+    for (final ActivityBreadcrumbRecord r in breadcrumbs) {
+      out.add(
+        describeActivityBreadcrumb(r, previous: previous, unclean: unclean),
+      );
+    }
     if (unclean != null) out.add(unclean);
     final ExitReportEntry? forced = describeForcedPreviousExit(previous);
     if (forced != null) out.add(forced);
     if (androidPayload != null) {
-      out.addAll(formatAndroidExitReports(androidPayload));
+      out.addAll(formatAndroidExitReports(androidPayload, previous: previous));
     }
 
     if (isWindows ?? Platform.isWindows) {
@@ -1739,10 +2280,13 @@ abstract final class PreviousExitLog {
         File('${appDir.path}/previous_exit_state.json'),
       );
       final int seen = state.readMacSeenAt();
-      final int since = math.max(
+      // 只收上次会话启动之后的报告：更早的属于更早的进程，不是「上次怎么没的」
+      // （反馈 J1ZWNUeaCT、BUG-4268）。没有上次会话（首次启动 / 标记丢了）时退回回看窗口。
+      final int since = <int>[
         seen,
         now - kExitReportLookback.inMilliseconds,
-      );
+        previous?.startedAt ?? 0,
+      ].reduce(math.max);
       final List<File> reports = listMacCrashReports(
         dir,
         processName: processName,
@@ -1755,6 +2299,26 @@ abstract final class PreviousExitLog {
         try {
           final String raw = f.readAsStringSync();
           final String? summary = summarizeMacIpsReport(raw);
+          final String? reportVersion = macIpsAppVersion(raw);
+          if (summary != null &&
+              !macCrashReportVersionMatches(reportVersion, <String?>[
+                previous?.version,
+                version,
+              ])) {
+            // 同进程名、版本却对不上（别处留着的旧副本、旧安装启动失败）：不是上次那个
+            // 进程的崩溃，只作诊断，不判定退出方式（反馈 J1ZWNUeaCT：3.3.0 上报了
+            // 3.0.1 三天前的 dyld「Library missing」，BUG-4268）。
+            out.add(
+              ExitReportEntry(
+                kMacCrashReportSource,
+                '$summary\n（崩溃报告版本 $reportVersion 与上次会话 '
+                '${previous?.version ?? '?'} / 本次 $version 都不符，'
+                '不是上次进程的崩溃，只作诊断）',
+                severe: false,
+              ),
+            );
+            continue;
+          }
           out.add(
             summary != null
                 ? ExitReportEntry(

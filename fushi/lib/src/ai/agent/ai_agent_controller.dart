@@ -11,14 +11,17 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
+import 'package:fushi_engine/ai/mcp_client/mcp_client_config.dart';
+import 'package:fushi_engine/ai/mcp_client/mcp_client_toolbox.dart';
 
 import 'package:fushi/src/ai/agent/ai_agent_conversation_controller.dart';
 import 'package:fushi/src/ai/agent/ai_agent_in_process_ops.dart';
 import 'package:fushi/src/ai/agent/ai_agent_session_archive.dart';
 import 'package:fushi/src/ai/agent/ai_agent_toolbox.dart';
+import 'package:fushi/src/ai/mcp_client/ai_mcp_client_runtime.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ops/app_op_context.dart';
 import 'package:fushi/src/ops/op_context.dart';
-import 'package:fushi/src/ops/op_routes.dart';
 
 /// 「AI 助手」当前可用的提供商；null = 未指派（不发任何请求，引导去设置）。
 AiProviderConfig? resolveAiAgentProvider(AiSettingsSource settings) => settings
@@ -77,6 +80,19 @@ class AiAgentUiHost implements AgentHost {
   }
 }
 
+/// 没人看着的会话用的界面回调：要确认的一律拒绝，要选的一律取消（模型据此把那一处
+/// 留给用户），立即返回、不挂起。
+class AiAgentUnattendedHost extends AiAgentUiHost {
+  @override
+  Future<bool> confirm(AgentConfirmRequest request) async => false;
+
+  @override
+  Future<String?> askChoice(
+    String prompt,
+    List<AgentChoiceOption> options,
+  ) async => null;
+}
+
 /// 一场进行中的 AI 助手对话 + 它的存档。整页与浮层拿同一个对象，展开 / 收回
 /// 都不丢对话（spec §6.4）。
 ///
@@ -92,12 +108,16 @@ class AiAgentController extends ChangeNotifier
     AgentLlm Function(AiProviderConfig provider)? llmFactory,
     DateTime Function()? clock,
     AgentLiveSessions? live,
+    AiAgentUiHost? host,
+    AgentLimits limits = const AgentLimits(),
   }) : _opContext = opContext,
        _llmFactory = llmFactory,
+       _limits = limits,
        _clock = clock ?? DateTime.now,
-       _live = live ?? appAgentLiveSessions {
+       _live = live ?? appAgentLiveSessions,
+       host = host ?? AiAgentUiHost() {
     // 待答卡片的变化也通知监听者（[AiAgentConversationController] 的约定）。
-    host.pending.addListener(notifyListeners);
+    this.host.pending.addListener(notifyListeners);
   }
 
   /// app 内唯一实例（需要 [appOpContext] 已登记）。
@@ -121,6 +141,22 @@ class AiAgentController extends ChangeNotifier
     opContext: context,
   );
 
+  /// 没人看着的独立会话（AI 管库自动复查，spec
+  /// `docs/specs/2026-11-22-ai-library-agent-design.md` §7）：确认卡一律按拒绝、候选卡
+  /// 一律按取消收尾（[AiAgentUnattendedHost]），绝不替用户表态，也不会挂住等人。
+  /// 对话照常存档，「AI 操作记录」里能看、能整场撤销。没人能按「停止」，[limits]
+  /// 用来给这场对话设 token 上限（[AgentLimits.maxSessionTokens]，BUG-5365）。
+  static AiAgentController unattended(
+    OpContext context, {
+    AgentLimits limits = const AgentLimits(),
+  }) => AiAgentController._(
+    database: context.appModel.database,
+    settings: context.appModel.prefsRepo,
+    opContext: context,
+    host: AiAgentUnattendedHost(),
+    limits: limits,
+  );
+
   @visibleForTesting
   static AiAgentController forTesting({
     required FushiDatabase database,
@@ -130,27 +166,38 @@ class AiAgentController extends ChangeNotifier
     OpInvoker? invoker,
     DateTime Function()? clock,
     AgentLiveSessions? live,
-  }) => AiAgentController._(
-    database: database,
-    settings: settings,
-    opContext: opContext,
-    llmFactory: llmFactory,
-    clock: clock,
-    live: live ?? AgentLiveSessions(),
-  ).._invoker = invoker;
+    McpClientToolbox? mcpToolbox,
+    AgentLimits limits = const AgentLimits(),
+  }) =>
+      AiAgentController._(
+          database: database,
+          settings: settings,
+          opContext: opContext,
+          llmFactory: llmFactory,
+          clock: clock,
+          live: live ?? AgentLiveSessions(),
+          limits: limits,
+        )
+        .._invoker = invoker
+        .._mcp = mcpToolbox;
 
   final FushiDatabase database;
   final AiSettingsSource settings;
   final OpContext _opContext;
   final AgentLlm Function(AiProviderConfig provider)? _llmFactory;
   final DateTime Function() _clock;
-  final AiAgentUiHost host = AiAgentUiHost();
+  final AiAgentUiHost host;
+
+  /// 本控制器新开会话的运行时限额（无人值守的复查设 token 上限）。
+  final AgentLimits _limits;
 
   /// 进程里正打开着的会话（与互联 host 的远端会话共用）：别处开着的不续接。
   final AgentLiveSessions _live;
 
   OpInvoker? _invoker;
   AiAgentToolbox? _toolbox;
+  McpClientToolbox? _mcp;
+  ComposedAgentToolbox? _sessionToolbox;
   AgentSession? _session;
   AiChatClient? _client;
   StreamSubscription<void>? _changes;
@@ -200,10 +247,28 @@ class AiAgentController extends ChangeNotifier
   bool get awaitingChoice => host.awaitingChoice;
 
   @override
-  void answerConfirm(bool approved) => host.answerConfirm(approved);
+  void answerConfirm(bool approved, {String? entryId}) {
+    if (!_answers(AgentEntryKind.confirm, entryId)) return;
+    host.answerConfirm(approved);
+  }
 
   @override
-  void answerChoice(String? id) => host.answerChoice(id);
+  void answerChoice(String? id, {String? entryId}) {
+    if (!_answers(AgentEntryKind.choice, entryId)) return;
+    host.answerChoice(id);
+  }
+
+  /// [entryId] 为空（不指定卡片）或正是此刻最后一张 [kind] 卡片且仍待答时才作答。
+  bool _answers(AgentEntryKind kind, String? entryId) {
+    if (entryId == null) return true;
+    final List<AgentEntry> all = entries;
+    for (int i = all.length - 1; i >= 0; i--) {
+      final AgentEntry entry = all[i];
+      if (entry.kind != kind) continue;
+      return entry.id == entryId && entry.status == AgentEntryStatus.pending;
+    }
+    return false;
+  }
 
   /// 本机执行。
   @override
@@ -226,13 +291,31 @@ class AiAgentController extends ChangeNotifier
   ValueListenable<int> get sessionsRevision => _sessionsRevision;
 
   AiAgentToolbox get toolbox => _toolbox ??= AiAgentToolbox(
-    invoker: _invoker ??= buildInProcessOpInvoker(
+    invoker: _invoker ??= buildAppInProcessOpInvoker(
       _opContext,
       extra: buildAiAgentInProcessOps(_opContext),
     ),
     database: database,
     clock: _clock,
   )..onTaskFinished = _onTaskFinished;
+
+  /// 用户接入的外部 MCP server 的工具箱（spec
+  /// `docs/specs/2026-11-05-ai-mcp-client-design.md`）。每轮对话前 [send] 先
+  /// `prepare()`，按设置增量连接 / 断开。
+  McpClientToolbox get mcpToolbox =>
+      _mcp ??= buildAiMcpClientToolbox(_mcpServers);
+
+  /// 设置里的 MCP server 清单。只有真实偏好库才有（测试替身的 [settings] 没有）。
+  List<McpServerConfig> _mcpServers() => switch (settings) {
+    final PreferencesRepository prefs => prefs.aiMcpClientServers,
+    _ => const <McpServerConfig>[],
+  };
+
+  /// 交给会话的工具箱：操作目录 + 外部 MCP 工具。
+  AgentToolbox get _agentToolbox => _sessionToolbox ??= ComposedAgentToolbox(
+    toolbox,
+    <AgentToolbox>[mcpToolbox],
+  );
 
   /// 长任务结束（spec §6.1）：还是当前这场对话就报告并自动续一轮；对话已换掉的
   /// 只在操作记录里留着（下次恢复那场对话时条目仍显示为进行中）。
@@ -271,8 +354,9 @@ class AiAgentController extends ChangeNotifier
     final AgentSession session = AgentSession(
       id: _newSessionId(),
       llm: _llm(provider),
-      toolbox: toolbox,
+      toolbox: _agentToolbox,
       host: host,
+      limits: _limits,
       clock: _clock,
     );
     _attach(session);
@@ -290,6 +374,9 @@ class AiAgentController extends ChangeNotifier
     final AgentSession session = ensureSession(scene: context?.scene ?? _scene);
     _sessionProfileUid ??= await database.resolveActiveProfileUid();
     unawaited(_pruneOnce());
+    // MCP 工具按需加载，工具箱接口是同步的：本轮的 search / describe 读这次 prepare
+    // 的结果。连不上的 server 只记状态，不挡对话。
+    await mcpToolbox.prepare();
     try {
       await session.send(text, context: context, images: images);
     } finally {
@@ -341,7 +428,7 @@ class AiAgentController extends ChangeNotifier
       AgentSession.fromJson(
         Map<String, Object?>.from(json),
         llm: _llm(provider),
-        toolbox: toolbox,
+        toolbox: _agentToolbox,
         host: host,
         clock: _clock,
       ),
@@ -505,6 +592,7 @@ class AiAgentController extends ChangeNotifier
     _detach();
     _sessionsRevision.dispose();
     _toolbox?.dispose();
+    unawaited(_mcp?.close());
     _client?.close();
     super.dispose();
   }

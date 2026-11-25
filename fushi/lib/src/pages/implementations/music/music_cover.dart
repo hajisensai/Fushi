@@ -5,6 +5,17 @@ import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_music/fushi_music.dart';
 
+import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart'
+    show kMusicCoverRequestHeaders;
+import 'package:fushi/src/media/music/server/interconnect_music_client.dart'
+    show fushiHostMusicCoverProvider;
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+
+// 在线封面请求头定义在歌词动画框架的封面工具里（样式不 import 页面文件），这里转出给页面用。
+export 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart'
+    show kMusicCoverRequestHeaders;
+import 'package:fushi/src/pages/implementations/music/music_disc_face.dart';
+import 'package:fushi/src/utils/components/fushi_generated_cover.dart';
 import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
@@ -76,11 +87,6 @@ Widget musicMaterialCover(
 }
 
 /// 专辑 / 曲目封面：目录封面文件优先，其次曲目内嵌封面，都没有画音符占位。
-/// 在线封面请求头：部分音乐 CDN 对 `Dart/x (dart:io)` 这个默认 UA 一律回 403，
-/// 浏览器形态的 UA 才放行（2026-10-29 实测）。
-const Map<String, String> kMusicCoverRequestHeaders = <String, String>{
-  'User-Agent': 'Mozilla/5.0',
-};
 
 class MusicCover extends StatelessWidget {
   const MusicCover({
@@ -89,7 +95,12 @@ class MusicCover extends StatelessWidget {
     this.embeddedFromPath,
     this.size,
     this.borderRadius,
+    this.title,
   });
+
+  /// 没有封面（或封面读不出）时按它生成封面（[FushiGeneratedCover]，设计稿 M2：
+  /// 不放空 ♪ 方块）；null = 音符占位（不知道标题的小缩略图）。
+  final String? title;
 
   /// 目录封面 / 缓存封面文件；服务器曲库的封面是 `http(s)://` 地址（服务器侧缩放）。
   final String? coverPath;
@@ -106,19 +117,35 @@ class MusicCover extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final Widget placeholder = ColoredBox(
-      color: scheme.secondaryContainer,
-      child: Center(
-        child: FushiIcon(
-          FushiIcons.music,
-          color: scheme.onSecondaryContainer,
-          size: size == null ? 40 : size! * 0.4,
-        ),
-      ),
-    );
+    final String? generatedTitle = title;
+    final Widget placeholder = generatedTitle != null
+        ? FushiGeneratedCover(title: generatedTitle)
+        : ColoredBox(
+            color: scheme.secondaryContainer,
+            child: Center(
+              child: FushiIcon(
+                FushiIcons.music,
+                color: scheme.onSecondaryContainer,
+                size: size == null ? 40 : size! * 0.4,
+              ),
+            ),
+          );
     final String? file = coverPath;
+    final ImageProvider? hostCover = fushiHostMusicCoverProvider(file);
     Widget child;
-    if (file != null &&
+    if (hostCover != null) {
+      // 互联 host 的封面占位：经钉扎通道取字节（自签证书不能走 AppHttpImage）。
+      child = Image(
+        image: ResizeImage.resizeIfNeeded(
+          size == null ? 512 : (size! * 2).round(),
+          null,
+          hostCover,
+        ),
+        fit: BoxFit.cover,
+        gaplessPlayback: true,
+        errorBuilder: (_, _, _) => placeholder,
+      );
+    } else if (file != null &&
         (file.startsWith('http://') || file.startsWith('https://'))) {
       // 服务器曲库封面走全应用代理装配（裸 Image.network 会绕过代理）。
       child = Image(
@@ -156,20 +183,47 @@ class MusicCover extends StatelessWidget {
     } else {
       child = placeholder;
     }
-    return ClipRRect(
-      borderRadius:
-          borderRadius ??
-          (shelfCoverMaterialOf(context) != null
-              ? shelfCoverRadius(context)
-              : FushiDesignTokens.of(context).radii.cardRadius),
-      child: SizedBox(
-        width: size,
-        height: size,
-        child: AspectRatio(aspectRatio: 1, child: child),
+    final Widget sized = SizedBox(
+      width: size,
+      height: size,
+      child: AspectRatio(
+        aspectRatio: 1,
+        // NSFW 专辑的封面按图源认（拍板台 NCzkl6oLnf-adult-cover）：网格、详情、
+        // 曲目行、播放条、播放页、队列、艺人头像都经这里，不用逐处传专辑 uid。
+        child: MusicNsfwCover(
+          coverPath: file,
+          embeddedFromPath: embeddedFromPath,
+          // 列表行 / 播放条的小缩略图压不下「已隐藏」图标，只模糊。
+          showIcon: size == null || size! >= 64,
+          child: child,
+        ),
       ),
+    );
+    final BorderRadius? explicit = borderRadius;
+    if (explicit != null) {
+      return ClipRRect(borderRadius: explicit, child: sized);
+    }
+    // 材质封面框里：与框同一外形裁切（Cupertino 专辑是按尺寸取半径的连续曲率），
+    // 内外轮廓重合、角上不露衬底。
+    final ShelfCoverShape? shape = shelfCoverShapeOf(context);
+    if (shape != null) return shape.clip(child: sized);
+    return ClipRRect(
+      borderRadius: FushiDesignTokens.of(context).radii.cardRadius,
+      child: sized,
     );
   }
 }
+
+/// 专辑盘面扫描图（[MusicDiscArtIndex] 认出的本地文件）画进唱片色块
+/// （[FushiCoverBlock.disc]）的唱片：[MusicDiscFace] 按量出的印刷区对正、轮毂
+/// 透明，自带投影（原型 `.dc`：`0 10px 26px rgba(0,0,0,.55)`；投影在轮毂处裁掉，
+/// 所以不能由色块画整圆投影）。
+Widget musicDiscArtImage(String path) => MusicDiscFace(
+  path: path,
+  shadows: const <BoxShadow>[
+    BoxShadow(color: Color(0x8C000000), offset: Offset(0, 10), blurRadius: 26),
+  ],
+);
 
 /// [MusicCover] 同一套来源规则下的封面 provider（取色用，[size] 同显示尺寸）：
 /// `http(s)://` 走 [AppHttpImage]，本地文件走 [FileImage]；内嵌封面 / 没有封面
@@ -185,6 +239,45 @@ ImageProvider? musicCoverImageProvider(String? coverPath, {double size = 64}) {
       AppHttpImage(file, headers: kMusicCoverRequestHeaders),
     );
   }
+  final ImageProvider? host = fushiHostMusicCoverProvider(file);
+  if (host != null) return ResizeImage.resizeIfNeeded(width, null, host);
   if (!File(file).existsSync()) return null;
   return ResizeImage.resizeIfNeeded(width, null, FileImage(File(file)));
+}
+
+/// 专辑有没有封面来源（目录 / 缓存封面文件，或曲目内嵌封面）。没有时色块不放
+/// [MusicCover]，交给色块画生成封面（与块底同一色相，设计稿 M2）。
+bool musicHasCoverSource(String? coverPath, String? embeddedFromPath) =>
+    (coverPath != null && coverPath.isNotEmpty) || embeddedFromPath != null;
+
+/// 取色图源，与 [MusicCover] 同一条来源链：目录 / 缓存封面文件
+/// （[musicCoverImageProvider]）优先；没有时取曲目内嵌封面——字节来自
+/// [MusicEmbeddedCoverCache]（与 [MusicCover] 显示的同一份缓存，同一音频路径恒
+/// 返回同一份字节，故 [MemoryImage] 作取色缓存的 key 稳定）。都没有才给 null
+/// （中性色）。
+class MusicCoverTintSource extends StatelessWidget {
+  const MusicCoverTintSource({
+    required this.coverPath,
+    required this.embeddedFromPath,
+    required this.builder,
+    super.key,
+  });
+
+  final String? coverPath;
+  final String? embeddedFromPath;
+  final Widget Function(BuildContext context, ImageProvider? tint) builder;
+
+  @override
+  Widget build(BuildContext context) {
+    final ImageProvider? file = musicCoverImageProvider(coverPath, size: 128);
+    final String? embedded = embeddedFromPath;
+    if (file != null || embedded == null) return builder(context, file);
+    return FutureBuilder<Uint8List?>(
+      future: MusicEmbeddedCoverCache.instance.load(embedded),
+      builder: (BuildContext context, AsyncSnapshot<Uint8List?> snap) {
+        final Uint8List? bytes = snap.data;
+        return builder(context, bytes == null ? null : MemoryImage(bytes));
+      },
+    );
+  }
 }

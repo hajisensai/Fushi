@@ -17,6 +17,7 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart';
 import 'package:fushi/src/mining/serial_job_queue.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/utils/misc/card_screenshot_downsampler.dart';
@@ -37,6 +38,7 @@ typedef GalHookAudioCapture =
       required String lineId,
       required String sentence,
       required String outputExtension,
+      required GalMiningAudioLimit limit,
     });
 
 /// 该台词行到达时刻（hook 侧 tick 毫秒域，与录制帧同一时钟）；无时间戳返回 null。
@@ -73,19 +75,51 @@ class GalHookLineScreenshot {
   final Uint8List pngBytes;
 }
 
+/// 一次 gal 场景卡**没走到制卡结局**（[GalHookMiningResult.aborted]）时停在哪一步。
+///
+/// 提示文案按它分流（[GalHookMiningResult.failureStage]）：写卡阶段被引擎中止、行已失效
+/// 这些都不是「窗口截图失败」，不能一律报成截图失败（#4362 审查遗留）。
+enum GalHookMiningFailureStage {
+  /// 采样前这句台词已失效：不在当前会话、出现位置已变、或冻结截图与该行对不上。
+  lineUnavailable,
+
+  /// 没有绑定游戏窗口（或不在外部窗口模式）。
+  windowUnbound,
+
+  /// 抓游戏窗口画面失败。
+  capture,
+
+  /// 「只用游戏原始资源」的音频门禁：没拿到对应语音，按设置拒绝制卡。
+  audioGate,
+
+  /// 画面与句音都已到手，写卡阶段被制卡引擎中止（缺必需音频 / 封面与音频都没产出等）。
+  write,
+
+  /// 编排本身抛了未预期的异常（串行队列兜底）。
+  internal,
+}
+
 class GalHookMiningResult {
   const GalHookMiningResult({
     this.outcome,
+    this.failureStage,
     this.failureReason,
     this.sentenceAudioMissing = false,
     this.degradedToStill = false,
     this.degradedToAnimated = false,
     this.staleScene = false,
-    this.audioFallbackDisabled = false,
     this.unmappedTokens = const <String>[],
-  });
+    this.retryWrite,
+  }) : assert(
+         (outcome == null) == (failureStage != null),
+         'an aborted result must say which stage stopped it; '
+         'a result with an outcome has no failure stage',
+       );
 
   final MineOutcome? outcome;
+
+  /// [aborted] 时非空：停在哪一步。有 [outcome]（含失败结局）时为空。
+  final GalHookMiningFailureStage? failureStage;
   final String? failureReason;
   final bool sentenceAudioMissing;
   final bool degradedToStill;
@@ -98,8 +132,19 @@ class GalHookMiningResult {
   /// 无法重建历史行当时的画面，故显式标注「画面可能与该台词不对应」，供调用方提示用户
   /// （BUG-955：禁止把当前画面冒充成历史台词的画面而不告知）。
   final bool staleScene;
-  final bool audioFallbackDisabled;
+
+  /// 被「只用游戏原始资源」音频门禁拒绝（[GalHookMiningFailureStage.audioGate]）。
+  bool get audioFallbackDisabled =>
+      failureStage == GalHookMiningFailureStage.audioGate;
   final List<String> unmappedTokens;
+
+  /// 反馈 y90oiVojic：写卡这一步失败（Anki 没开 / 没配置 / 引擎中止）时非空。用**这一次
+  /// 已经做好的**画面与句音重新写卡，不重新抓窗口——后台落地时那句台词早已不在屏上，
+  /// 重抓只会抓到别的画面。重复卡片、音频门禁、画面失败不给重试（重来结果不会变）。
+  ///
+  /// [repo] 是**点重试这一刻**的制卡仓库：失败多半是「没配置 / 后端没开」，用户改完
+  /// 设置（可能换了制卡目标）再点重试，要写进现在的目标，而不是失败那一刻的旧仓库。
+  final GalHookRetryWrite? retryWrite;
 
   bool get aborted => outcome == null;
   bool get success => outcome?.result == MineResult.success;
@@ -129,6 +174,31 @@ class GalHookMiningResult {
     if (duplicate) 'duplicate': true,
     if (queued) 'queued': true,
   };
+
+  /// 反馈 y90oiVojic：新卡采样完成、写卡转后台时立刻回给查词弹窗的回包。popup.js 据
+  /// `queued` 把按钮画成「已加入制卡队列」的 ✓ 并解锁（与在线视频后台制卡同一形态），
+  /// 用户可以马上挖下一个词；结局由宿主在落地时报。
+  static const Map<String, Object?> queuedPopupReply = <String, Object?>{
+    'ankiConnect': false,
+    'noteId': null,
+    'queued': true,
+  };
+}
+
+/// 写卡失败后的重写入口（见 [GalHookMiningResult.retryWrite]）。
+typedef GalHookRetryWrite =
+    Future<GalHookMiningResult> Function({required BaseAnkiRepository repo});
+
+/// [GalHookMiningCoordinator.startMineLine] 的回执：采样阶段已经结束。
+///
+/// [captured] 为假 = 采样阶段就有了结论（行失效 / 窗口没绑 / 截图失败），[result]
+/// 已经完成；为真 = 画面与句音已到手，[result] 是还在 [_finishQueue] 里排着的收尾
+/// （编码 + 写卡），可能还要好几秒。
+class GalHookMiningTicket {
+  const GalHookMiningTicket._({required this.captured, required this.result});
+
+  final bool captured;
+  final Future<GalHookMiningResult> result;
 }
 
 /// Hook 场景卡的唯一编排入口。
@@ -293,6 +363,8 @@ class GalHookMiningCoordinator {
     }
   }
 
+  /// 整张卡（采样 + 收尾）都等完才返回。要「采样完就放手、写卡后台落地」的调用方
+  /// （游戏内 / 浮窗查词弹窗，反馈 y90oiVojic）用 [startMineLine]。
   Future<GalHookMiningResult> mineLine({
     required String lineId,
     required Map<String, String> fields,
@@ -312,6 +384,69 @@ class GalHookMiningCoordinator {
     MiningStillFormat stillFormat = MiningStillFormat.jpg,
     // 音画同步片段格式。缺省 mp4 = 旧行为；调用方透传 [AppModel.galMiningClipFormat]。
     MiningClipFormat clipFormat = MiningClipFormat.mp4H264,
+    // 句子音频长度策略（反馈 II3jOBIhT5）。缺省不裁 = 旧行为；调用方透传
+    // [AppModel.galMiningSettingsForCurrentGame] 的 audioLimit（全局 + 本游戏覆盖）。
+    GalMiningAudioLimit audioLimit = GalMiningAudioLimit.unlimited,
+    // 仅游戏内嵌 popup 的制卡入口传入。普通 texthooker/浮窗制卡没有画在游戏窗口
+    // 里的查词层，不需要也不应触发这条屏障。
+    GalHookCaptureLeaseFactory? captureLeaseFactory,
+    GalHookLineScreenshot? providedLineScreenshot,
+    // 高级制卡「打码」：相对那一帧截图的归一化区域。非空时只出静图，且在降采样前
+    // 打码（见 [_mosaicStill]）；空 = 旧行为逐字等价。
+    List<MiningMosaicRegion> mosaic = const <MiningMosaicRegion>[],
+    // 高级制卡对话框打开时为这一行冻结的截图（对话框里打码看的就是它）。只在
+    // [mosaic] 非空时使用：出卡图与预览必须是同一张图。
+    GalHookLineScreenshot? previewStill,
+  }) async {
+    final GalHookMiningTicket ticket = await startMineLine(
+      lineId: lineId,
+      fields: fields,
+      sentenceOverride: sentenceOverride,
+      occurrence: occurrence,
+      compression: compression,
+      repo: repo,
+      updateNoteId: updateNoteId,
+      addTitleTag: addTitleTag,
+      imageMode: imageMode,
+      animatedFormat: animatedFormat,
+      stillFormat: stillFormat,
+      clipFormat: clipFormat,
+      audioLimit: audioLimit,
+      captureLeaseFactory: captureLeaseFactory,
+      providedLineScreenshot: providedLineScreenshot,
+      mosaic: mosaic,
+      previewStill: previewStill,
+    );
+    return ticket.result;
+  }
+
+  /// 只等**采样**阶段（行校验、画面像素、句音启动）结束就返回回执；编码与写卡留在
+  /// [GalHookMiningTicket.result] 里后台进行。
+  ///
+  /// 反馈 y90oiVojic：查词弹窗以前 await 的是 [mineLine] 的完整结果，默认 avif 动图
+  /// 的 ffmpeg 编码 + 写卡要 10 秒上下，按钮一直锁着、提示成功前挖不了下一句。
+  Future<GalHookMiningTicket> startMineLine({
+    required String lineId,
+    required Map<String, String> fields,
+    String? sentenceOverride,
+    GalIngameMiningBinding? occurrence,
+    required MiningMediaCompression compression,
+    required BaseAnkiRepository repo,
+    int? updateNoteId,
+    bool addTitleTag = false,
+    // 缺省 gif = 旧行为逐字等价（Never break userspace）；调用方透传
+    // [AppModel.galMiningImageMode]。
+    VideoMiningImageMode imageMode = VideoMiningImageMode.gif,
+    // 缺省 gif = 旧行为逐字等价；调用方透传 [AppModel.galMiningAnimatedFormat]（默认 avif）。
+    MiningAnimatedFormat animatedFormat = MiningAnimatedFormat.gif,
+    // 静图编码格式。缺省 jpg = 旧行为（BUG-1473 起 gal 截图就走降采样重编码 JPEG）；
+    // 调用方透传 [AppModel.galMiningStillFormat]。
+    MiningStillFormat stillFormat = MiningStillFormat.jpg,
+    // 音画同步片段格式。缺省 mp4 = 旧行为；调用方透传 [AppModel.galMiningClipFormat]。
+    MiningClipFormat clipFormat = MiningClipFormat.mp4H264,
+    // 句子音频长度策略（反馈 II3jOBIhT5）。缺省不裁 = 旧行为；调用方透传
+    // [AppModel.galMiningSettingsForCurrentGame] 的 audioLimit（全局 + 本游戏覆盖）。
+    GalMiningAudioLimit audioLimit = GalMiningAudioLimit.unlimited,
     // 仅游戏内嵌 popup 的制卡入口传入。普通 texthooker/浮窗制卡没有画在游戏窗口
     // 里的查词层，不需要也不应触发这条屏障。
     GalHookCaptureLeaseFactory? captureLeaseFactory,
@@ -324,7 +459,10 @@ class GalHookMiningCoordinator {
     GalHookLineScreenshot? previewStill,
   }) async {
     GalHookMiningResult failure(Object error, StackTrace stack) =>
-        GalHookMiningResult(failureReason: error.toString());
+        GalHookMiningResult(
+          failureStage: GalHookMiningFailureStage.internal,
+          failureReason: error.toString(),
+        );
     void logFailure(Object error, StackTrace stack) => ErrorLogService.instance
         .log('GalHookMiningCoordinator.mineLine', error, stack);
     // 两段队列都是「串行 + 永不毒化」（BUG-956）：单次制卡异常（含错误日志自身抛）
@@ -352,6 +490,7 @@ class GalHookMiningCoordinator {
                   animatedFormat: animatedFormat,
                   stillFormat: stillFormat,
                   clipFormat: clipFormat,
+                  audioLimit: audioLimit,
                   captureLeaseFactory: captureLeaseFactory,
                   providedLineScreenshot: providedLineScreenshot,
                   mosaic: List<MiningMosaicRegion>.unmodifiable(mosaic),
@@ -361,6 +500,7 @@ class GalHookMiningCoordinator {
             if (job == null) {
               return _PendingSceneCard(
                 Future<GalHookMiningResult>.value(captured.done!),
+                captured: false,
               );
             }
             // 在采样作业**之内**同步入队收尾：收尾顺序严格等于采样顺序，不靠
@@ -371,14 +511,19 @@ class GalHookMiningCoordinator {
                 buildFailure: failure,
                 onError: logFailure,
               ),
+              captured: true,
             );
           },
           buildFailure: (Object error, StackTrace stack) => _PendingSceneCard(
             Future<GalHookMiningResult>.value(failure(error, stack)),
+            captured: false,
           ),
           onError: logFailure,
         );
-    return pending.result;
+    return GalHookMiningTicket._(
+      captured: pending.captured,
+      result: pending.result,
+    );
   }
 
   /// 采样阶段：行校验、画面像素、句音启动。只做必须在这句台词仍在屏上时完成的事；
@@ -396,6 +541,7 @@ class GalHookMiningCoordinator {
     required MiningAnimatedFormat animatedFormat,
     required MiningStillFormat stillFormat,
     required MiningClipFormat clipFormat,
+    required GalMiningAudioLimit audioLimit,
     required GalHookLineScreenshot? providedLineScreenshot,
     required GalHookCaptureLeaseFactory? captureLeaseFactory,
     required List<MiningMosaicRegion> mosaic,
@@ -409,6 +555,7 @@ class GalHookMiningCoordinator {
     if (entry == null || !_lineValidator(entry)) {
       return done(
         const GalHookMiningResult(
+          failureStage: GalHookMiningFailureStage.lineUnavailable,
           failureReason: 'captured line is no longer available',
         ),
       );
@@ -418,6 +565,7 @@ class GalHookMiningCoordinator {
             providedLineScreenshot.pngBytes.isEmpty)) {
       return done(
         const GalHookMiningResult(
+          failureStage: GalHookMiningFailureStage.lineUnavailable,
           failureReason: 'screenshot does not match captured line',
         ),
       );
@@ -428,6 +576,7 @@ class GalHookMiningCoordinator {
       // 打码位置是在那张预览图上框的：换了一行就不是同一张图，不能把码打到别的画面上。
       return done(
         const GalHookMiningResult(
+          failureStage: GalHookMiningFailureStage.lineUnavailable,
           failureReason: 'screenshot does not match captured line',
         ),
       );
@@ -448,13 +597,17 @@ class GalHookMiningCoordinator {
     if (!occurrenceIsCurrent()) {
       return done(
         const GalHookMiningResult(
+          failureStage: GalHookMiningFailureStage.lineUnavailable,
           failureReason: 'captured occurrence is no longer available',
         ),
       );
     }
     if (!state.externalWindowMode || window == null) {
       return done(
-        const GalHookMiningResult(failureReason: 'game window is not bound'),
+        const GalHookMiningResult(
+          failureStage: GalHookMiningFailureStage.windowUnbound,
+          failureReason: 'game window is not bound',
+        ),
       );
     }
 
@@ -502,6 +655,7 @@ class GalHookMiningCoordinator {
 
     GalHookMiningResult captureFailed(WindowCaptureResult still) =>
         GalHookMiningResult(
+          failureStage: GalHookMiningFailureStage.capture,
           failureReason: still.error ?? 'game window capture failed',
         );
 
@@ -516,17 +670,24 @@ class GalHookMiningCoordinator {
     // 就成了 unhandled async error（Flutter 下直接上报成崩溃）。暂存 + 重抛保持
     // 与串行版逐字一致的抛出语义。
     final String audioExtension = immersionMiningAudioExtension();
+    //
+    // 用户选了「不截取音频」（反馈 II3jOBIhT5）：根本不去取——无配音游戏取到的只会是
+    // BGM。卡照做、不带句子音频，也不算「缺音频」（见收尾的 sentenceAudioMissing）。
     final _SceneAudio audio = _SceneAudio(
-      occurrence != null
+      audioLimit.skipsAudio
+          ? Future<Uint8List?>.value()
+          : occurrence != null
           ? _session.captureAudioForOccurrence(
               occurrence: occurrence,
               outputExtension: audioExtension,
+              limit: audioLimit,
             )
           : _captureAudio(
               lineId: entry.id,
               // sentenceOverride only changes card text, not audio identity.
               sentence: entry.text,
               outputExtension: audioExtension,
+              limit: audioLimit,
             ),
     );
     final Future<Uint8List?> audioFuture = audio.future;
@@ -661,6 +822,7 @@ class GalHookMiningCoordinator {
         cover: cover,
         compression: compression,
         stillFormat: stillFormat,
+        audioLimit: audioLimit,
         repo: repo,
         updateNoteId: updateNoteId,
         addTitleTag: addTitleTag,
@@ -707,6 +869,7 @@ class GalHookMiningCoordinator {
             stack,
           );
           return const GalHookMiningResult(
+            failureStage: GalHookMiningFailureStage.capture,
             failureReason: 'game window capture failed',
           );
         }
@@ -737,17 +900,21 @@ class GalHookMiningCoordinator {
 
     // 视频片段分支已经 await 过同一个 Future；对已完成的 Future 再 await 只是取值。
     final Uint8List? audioBytes = await job.audio.value();
-    final bool sentenceAudioMissing = audioBytes == null || audioBytes.isEmpty;
+    final bool hasSentenceAudio = audioBytes != null && audioBytes.isNotEmpty;
+    // 用户关掉了句子音频：没有音频是选择的结果，不是「缺」——不弹缺音频警告，
+    // 也不按 resourceOnly 拒绝制卡。
+    final bool sentenceAudioMissing =
+        !hasSentenceAudio && !job.audioLimit.skipsAudio;
     // 只有最严格的 resourceOnly 才因为「没抓到音频」拒绝制卡。cleanOnly 的立场是
     // 「这句本来就没配音很正常」——旁白/心理描写句照样成卡，只是不带音频；把它也
     // 拦成制卡失败，等于逼用户在「收一段 BGM」和「这张卡做不了」之间二选一。
     if (sentenceAudioMissing &&
         job.state.audioFallbackPolicy.blocksMiningWhenMissing) {
       return const GalHookMiningResult(
+        failureStage: GalHookMiningFailureStage.audioGate,
         failureReason:
             'no matching game resource audio; audio fallback is disabled',
         sentenceAudioMissing: true,
-        audioFallbackDisabled: true,
       );
     }
     await writeDictionaryMediaCache(
@@ -755,85 +922,119 @@ class GalHookMiningCoordinator {
     );
 
     final ExternalWindowInfo window = job.window;
-    final Directory jobDirectory = await _createTempDirectory();
-    try {
-      if (!job.occurrenceIsCurrent()) {
-        return const GalHookMiningResult(
-          failureReason: 'captured occurrence is no longer available',
+    // 反馈 y90oiVojic：写卡失败的「重试」只重跑下面这一步，用的是这一次已经做好的
+    // 画面与句音（[coverBytes] / [audioBytes] 已在内存里）。重试仍进 [_finishQueue]，
+    // 与正常收尾同一条串行车道。
+    late final GalHookRetryWrite retryWrite;
+    Future<GalHookMiningResult> writeCard({
+      required bool retrying,
+      required BaseAnkiRepository repo,
+    }) async {
+      final Directory jobDirectory = await _createTempDirectory();
+      try {
+        // 行身份只在首次写卡时校验：重试写的是那一刻已经冻结的材料，与此刻会话里
+        // 还有没有这一行无关。
+        if (!retrying && !job.occurrenceIsCurrent()) {
+          return const GalHookMiningResult(
+            failureStage: GalHookMiningFailureStage.lineUnavailable,
+            failureReason: 'captured occurrence is no longer available',
+          );
+        }
+        final ImmersionMiningResult mined = await _engine.mine(
+          buildExternalWindowRequest(
+            fields: job.effectiveFields,
+            sentence: job.effectiveSentence,
+            screenshotBytes: coverBytes,
+            coverName: coverName,
+            audioBytes: audioBytes,
+            audioName: hasSentenceAudio
+                ? 'galgame_audio.${job.audioExtension}'
+                : null,
+            documentTitle: window.title.isEmpty
+                ? 'External window'
+                : window.title,
+            // BUG-1137：gal 场景卡归「游戏」分类标签（曾吃默认 video 被误标）。
+            source: AnkiMiningSource.game,
+            // 「自动添加书名到标签」开启时把游戏窗口标题作为标题标签（与 reader 书名 /
+            // video 番名同语义，同走 sanitizeTitleTag 清洗去重）。
+            bookTitleTag: job.addTitleTag && window.title.isNotEmpty
+                ? window.title
+                : null,
+            updateNoteId: job.updateNoteId,
+            stillFormat: job.stillFormat,
+            synchronizedClip: cover.synchronizedClip,
+            // 覆写既有卡（updateNoteId）时不新给出处：旧卡没有链接就保持没有。
+            sourceLink:
+                job.updateNoteId != null || _session.activityGameKey == null
+                ? null
+                : CardSourceLink.tryGame(gameId: _session.activityGameKey!),
+          ),
+          compression: job.compression,
+          tempDir: jobDirectory.path,
+          repo: repo,
         );
-      }
-      final ImmersionMiningResult mined = await _engine.mine(
-        buildExternalWindowRequest(
-          fields: job.effectiveFields,
-          sentence: job.effectiveSentence,
-          screenshotBytes: coverBytes,
-          coverName: coverName,
-          audioBytes: audioBytes,
-          audioName: sentenceAudioMissing
-              ? null
-              : 'galgame_audio.${job.audioExtension}',
-          documentTitle: window.title.isEmpty
-              ? 'External window'
-              : window.title,
-          // BUG-1137：gal 场景卡归「游戏」分类标签（曾吃默认 video 被误标）。
-          source: AnkiMiningSource.game,
-          // 「自动添加书名到标签」开启时把游戏窗口标题作为标题标签（与 reader 书名 /
-          // video 番名同语义，同走 sanitizeTitleTag 清洗去重）。
-          bookTitleTag: job.addTitleTag && window.title.isNotEmpty
-              ? window.title
-              : null,
-          updateNoteId: job.updateNoteId,
-          stillFormat: job.stillFormat,
-          synchronizedClip: cover.synchronizedClip,
-          // 覆写既有卡（updateNoteId）时不新给出处：旧卡没有链接就保持没有。
-          sourceLink:
-              job.updateNoteId != null || _session.activityGameKey == null
-              ? null
-              : CardSourceLink.tryGame(gameId: _session.activityGameKey!),
-        ),
-        compression: job.compression,
-        tempDir: jobDirectory.path,
-        repo: job.repo,
-      );
-      if (mined.aborted || mined.outcome is! MineOutcome) {
+        if (mined.aborted || mined.outcome is! MineOutcome) {
+          return GalHookMiningResult(
+            failureStage: GalHookMiningFailureStage.write,
+            failureReason: mined.abortReason ?? 'scene card mining aborted',
+            sentenceAudioMissing: sentenceAudioMissing,
+            degradedToStill: degradedToStill,
+            degradedToAnimated: degradedToAnimated,
+            staleScene: job.staleScene,
+            retryWrite: retryWrite,
+          );
+        }
+        final MineOutcome outcome = mined.outcome! as MineOutcome;
+        // 制卡成功回写行模型：把该行标记为「已制卡」，供捕获工作台列表显示徽章。
+        // 幂等（markLineMined 内部去重），覆写既有卡（updateNoteId）成功同样视作已制卡。
+        //
+        // BUG-1799：连同后端回传的 note id 一起记下，这行日后才能向 Anki 复核那张卡
+        // 是否还活着（用户在 Anki 里删了就把徽章清掉）。覆写既有卡时 outcome 不带新 id，
+        // 退回本次覆写的目标 id —— 那正是这行现在对应的那张卡。
+        if (outcome.result == MineResult.success) {
+          _textService.markLineMined(
+            job.entry.id,
+            noteId: outcome.noteId ?? job.updateNoteId,
+          );
+        }
         return GalHookMiningResult(
-          failureReason: mined.abortReason ?? 'scene card mining aborted',
+          outcome: outcome,
           sentenceAudioMissing: sentenceAudioMissing,
           degradedToStill: degradedToStill,
           degradedToAnimated: degradedToAnimated,
           staleScene: job.staleScene,
+          unmappedTokens: await _unmappedTokens(
+            repo,
+            hasSentenceAudio: hasSentenceAudio,
+          ),
+          retryWrite: _writeIsRetryable(outcome.result) ? retryWrite : null,
         );
+      } finally {
+        try {
+          await jobDirectory.delete(recursive: true);
+        } catch (_) {}
       }
-      final MineOutcome outcome = mined.outcome! as MineOutcome;
-      // 制卡成功回写行模型：把该行标记为「已制卡」，供捕获工作台列表显示徽章。
-      // 幂等（markLineMined 内部去重），覆写既有卡（updateNoteId）成功同样视作已制卡。
-      //
-      // BUG-1799：连同后端回传的 note id 一起记下，这行日后才能向 Anki 复核那张卡
-      // 是否还活着（用户在 Anki 里删了就把徽章清掉）。覆写既有卡时 outcome 不带新 id，
-      // 退回本次覆写的目标 id —— 那正是这行现在对应的那张卡。
-      if (outcome.result == MineResult.success) {
-        _textService.markLineMined(
-          job.entry.id,
-          noteId: outcome.noteId ?? job.updateNoteId,
-        );
-      }
-      return GalHookMiningResult(
-        outcome: outcome,
-        sentenceAudioMissing: sentenceAudioMissing,
-        degradedToStill: degradedToStill,
-        degradedToAnimated: degradedToAnimated,
-        staleScene: job.staleScene,
-        unmappedTokens: await _unmappedTokens(
-          job.repo,
-          hasSentenceAudio: !sentenceAudioMissing,
-        ),
-      );
-    } finally {
-      try {
-        await jobDirectory.delete(recursive: true);
-      } catch (_) {}
     }
+
+    retryWrite = ({required BaseAnkiRepository repo}) =>
+        _finishQueue.enqueue<GalHookMiningResult>(
+          () => writeCard(retrying: true, repo: repo),
+          buildFailure: (Object error, StackTrace stack) => GalHookMiningResult(
+            failureStage: GalHookMiningFailureStage.internal,
+            failureReason: error.toString(),
+          ),
+          onError: (Object error, StackTrace stack) => ErrorLogService.instance
+              .log('GalHookMiningCoordinator.retryWrite', error, stack),
+        );
+    return writeCard(retrying: false, repo: job.repo);
   }
+
+  /// 写卡结果值不值得原样重写一次：后端没开 / 没配置 / 出错会随用户处理而变；成功、
+  /// 重复（卡已在）、进了待发队列（之后自动补发）重来结果不会变。
+  static bool _writeIsRetryable(MineResult result) => switch (result) {
+    MineResult.notConfigured || MineResult.error => true,
+    MineResult.success || MineResult.duplicate || MineResult.queued => false,
+  };
 
   /// 视频片段：从会话录制环导出 `[台词到达 - 300ms, 现在]` 的帧，与句子音频混成 mp4。
   ///
@@ -1018,6 +1219,7 @@ class _SceneJob {
     required this.cover,
     required this.compression,
     required this.stillFormat,
+    required this.audioLimit,
     required this.repo,
     required this.updateNoteId,
     required this.addTitleTag,
@@ -1035,6 +1237,7 @@ class _SceneJob {
   final _SceneCover cover;
   final MiningMediaCompression compression;
   final MiningStillFormat stillFormat;
+  final GalMiningAudioLimit audioLimit;
   final BaseAnkiRepository repo;
   final int? updateNoteId;
   final bool addTitleTag;
@@ -1043,7 +1246,10 @@ class _SceneJob {
 /// 包住收尾 Future 的壳。直接把 Future 当采样队列的结果会被 async 返回 / Completer
 /// 拍平，采样队列就会一直等到写卡结束——那正是要拆掉的串行。
 class _PendingSceneCard {
-  const _PendingSceneCard(this.result);
+  const _PendingSceneCard(this.result, {required this.captured});
 
   final Future<GalHookMiningResult> result;
+
+  /// 采样成功、[result] 是排队中的收尾（见 [GalHookMiningTicket.captured]）。
+  final bool captured;
 }

@@ -4,6 +4,7 @@ import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_core/fushi_core.dart' show DatabaseWorkCancelledException;
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:path/path.dart' as p;
@@ -300,6 +301,33 @@ void main() {
       expect(
         sidecarPathFor(p.join('/dl', 'Show - 01.mkv'), noExt),
         p.join('/dl', 'Show - 01.srt'),
+      );
+    });
+
+    test('带 lang 段的名字会被 stem 更长的同目录视频认领时省掉 lang 段（最长主干认领）', () {
+      const PlanSubtitle sub = PlanSubtitle(
+        episode: 1,
+        fileName: 'EP01.srt',
+        stagedPath: '/s/x.srt',
+        language: 'ja',
+      );
+      // `EP01.ja.srt` 归 `EP01.ja.mkv`：照原名写会盖掉 / 冒充人家的字幕。
+      expect(
+        sidecarPathFor(
+          p.join('/dl', 'EP01.mkv'),
+          sub,
+          dirFiles: const <String>['EP01.mkv', 'EP01.ja.mkv', 'EP01.ja.srt'],
+        ),
+        p.join('/dl', 'EP01.srt'),
+      );
+      // 没有更长 stem 的视频：照常带 lang 段。
+      expect(
+        sidecarPathFor(
+          p.join('/dl', 'EP01.mkv'),
+          sub,
+          dirFiles: const <String>['EP01.mkv', 'EP02.mkv'],
+        ),
+        p.join('/dl', 'EP01.ja.srt'),
       );
     });
   });
@@ -984,6 +1012,24 @@ void main() {
       expect(qb.factoryCalls, factoryCallsBefore);
       expect(importCalls, hasLength(1));
     });
+
+    test(
+      '换库 / 关库中断入库（DatabaseWorkCancelledException）→ 不标 failed，留待重放',
+      () async {
+        importerOverride = (AnimeDownloadPlan plan, List<String> videos) async {
+          throw const DatabaseWorkCancelledException('torrent.animeImport');
+        };
+        await store.save(_plan());
+        qb.torrents = <Map<String, dynamic>>[
+          _torrentJson(contentPath: '/dl/movie.mkv', savePath: '/dl'),
+        ];
+        await buildService().tick();
+        final AnimeDownloadPlan saved = (await store.loadAll()).single;
+        expect(saved.status, AnimeDownloadPlan.statusDownloading);
+        expect(saved.importInProgress, isTrue, reason: '下次启动按幂等重放补完');
+        expect(saved.failReason, isNull);
+      },
+    );
 
     test('importer 返回 null → 计划标 failed', () async {
       importerOverride = (AnimeDownloadPlan plan, List<String> videos) async =>

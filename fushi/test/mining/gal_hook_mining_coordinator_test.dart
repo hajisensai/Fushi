@@ -6,12 +6,19 @@ import 'dart:typed_data';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:image/image.dart' as img;
 import 'package:fushi/src/lookup/gal_ingame_mining_binding.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
 import 'package:fushi/src/mining/galgame_window_gif.dart'
     show GalWindowAnimatedCapture;
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
-    show MiningAnimatedFormat, MiningStillFormat, VideoMiningImageMode;
+    show
+        ImmersionMiningRequest,
+        ImmersionMiningResult,
+        MiningAnimatedFormat,
+        MiningStillFormat,
+        VideoMiningImageMode;
+import 'package:fushi/src/mining/immersion_mining_engine.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
@@ -33,6 +40,7 @@ class _OccurrenceSession extends GalHookSessionController {
   Future<Uint8List?> captureAudioForOccurrence({
     required GalIngameMiningBinding occurrence,
     required String outputExtension,
+    GalMiningAudioLimit limit = GalMiningAudioLimit.unlimited,
   }) async {
     captured.add(occurrence);
     return Uint8List.fromList(<int>[7, 8, 9]);
@@ -110,6 +118,51 @@ class _CoverBytesRepo extends _RecordingRepo {
   }
 }
 
+/// 写卡阶段被制卡引擎中止（缺必需音频 / 封面与音频都没产出）的替身。
+class _AbortingEngine extends ImmersionMiningEngine {
+  int calls = 0;
+
+  @override
+  Future<ImmersionMiningResult> mine(
+    ImmersionMiningRequest req, {
+    required MiningMediaCompression compression,
+    required FutureOr<String> tempDir,
+    required BaseAnkiRepository repo,
+    FfmpegFailureReporter? onFailure,
+    FfmpegFailureReporter? onCoverFailure,
+    FfmpegFailureReporter? onAudioFailure,
+    AudioSourceFallbackReporter? onAudioSourceFallback,
+  }) async {
+    calls++;
+    return const ImmersionMiningResult(
+      aborted: true,
+      abortReason: 'required audio missing',
+    );
+  }
+}
+
+/// 反馈 y90oiVojic：按脚本依次回写卡结果；[gate] 非空时每次写卡先等它（模拟慢编码 /
+/// 慢后端）。
+class _ScriptedRepo extends _RecordingRepo {
+  _ScriptedRepo(this.script);
+
+  final List<MineOutcome> script;
+  Completer<void>? gate;
+  int writes = 0;
+
+  @override
+  Future<MineOutcome> mineEntry({
+    required String rawPayloadJson,
+    required AnkiMiningContext context,
+  }) async {
+    final Completer<void>? waitFor = gate;
+    if (waitFor != null) await waitFor.future;
+    final MineOutcome outcome = script[writes];
+    writes++;
+    return outcome;
+  }
+}
+
 void main() {
   late TexthookerService service;
   late Directory testRoot;
@@ -141,6 +194,7 @@ void main() {
       required String lineId,
       required String sentence,
       required String outputExtension,
+      required GalMiningAudioLimit limit,
     })?
     audio,
     Future<GalWindowAnimatedCapture?> Function({
@@ -150,8 +204,10 @@ void main() {
     gif,
     Future<WindowCaptureResult> Function(int hwnd)? still,
     Future<Directory> Function()? tempFactory,
+    ImmersionMiningEngine? engine,
   }) => GalHookMiningCoordinator(
     session: session,
+    engine: engine,
     textService: service,
     lineLookup: service.entryById,
     lineValidator: validator,
@@ -162,6 +218,7 @@ void main() {
           required String lineId,
           required String sentence,
           required String outputExtension,
+          required GalMiningAudioLimit limit,
         }) async => Uint8List.fromList(<int>[7, 8, 9]),
     captureGif:
         gif ??
@@ -308,6 +365,7 @@ void main() {
                   required String lineId,
                   required String sentence,
                   required String outputExtension,
+                  required GalMiningAudioLimit limit,
                 }) async {
                   audioLineIds.add(lineId);
                   return Uint8List.fromList(<int>[7, 8, 9]);
@@ -402,6 +460,7 @@ void main() {
                   required String lineId,
                   required String sentence,
                   required String outputExtension,
+                  required GalMiningAudioLimit limit,
                 }) async {
                   audioSentences.add(sentence);
                   return Uint8List.fromList(<int>[7, 8, 9]);
@@ -438,6 +497,7 @@ void main() {
                   required String lineId,
                   required String sentence,
                   required String outputExtension,
+                  required GalMiningAudioLimit limit,
                 }) async {
                   audioLineIds.add(lineId);
                   expect(sentence, '前\n後');
@@ -485,6 +545,7 @@ void main() {
             required String lineId,
             required String sentence,
             required String outputExtension,
+            required GalMiningAudioLimit limit,
           }) async {
             audioLineIds.add(lineId);
             return Uint8List.fromList(<int>[audioLineIds.length]);
@@ -563,6 +624,7 @@ void main() {
         );
 
     expect(failed.aborted, isTrue);
+    expect(failed.failureStage, GalHookMiningFailureStage.capture);
     expect(failed.failureReason, 'window disappeared');
     expect(failedRepo.contexts, isEmpty);
   });
@@ -837,6 +899,7 @@ void main() {
                 required String lineId,
                 required String sentence,
                 required String outputExtension,
+                required GalMiningAudioLimit limit,
               }) async {
                 audioCalls++;
                 return null;
@@ -849,6 +912,7 @@ void main() {
         );
 
     expect(result.aborted, isTrue);
+    expect(result.failureStage, GalHookMiningFailureStage.lineUnavailable);
     expect(result.failureReason, contains('no longer available'));
     expect(gifCalls, 0);
     expect(audioCalls, 0);
@@ -871,6 +935,7 @@ void main() {
                   required String lineId,
                   required String sentence,
                   required String outputExtension,
+                  required GalMiningAudioLimit limit,
                 }) async => null,
           ).mineLine(
             lineId: entry.id,
@@ -919,6 +984,7 @@ void main() {
                 required String lineId,
                 required String sentence,
                 required String outputExtension,
+                required GalMiningAudioLimit limit,
               }) async => Uint8List.fromList(<int>[1]),
         ).mineLine(
           lineId: entry.id,
@@ -976,6 +1042,7 @@ void main() {
                   required String lineId,
                   required String sentence,
                   required String outputExtension,
+                  required GalMiningAudioLimit limit,
                 }) async => null,
           ).mineLine(
             lineId: entry.id,
@@ -985,6 +1052,7 @@ void main() {
           );
 
       expect(result.aborted, isTrue);
+      expect(result.failureStage, GalHookMiningFailureStage.audioGate);
       expect(result.audioFallbackDisabled, isTrue);
       expect(result.sentenceAudioMissing, isTrue);
       expect(repo.contexts, isEmpty);
@@ -1008,6 +1076,7 @@ void main() {
                   required String lineId,
                   required String sentence,
                   required String outputExtension,
+                  required GalMiningAudioLimit limit,
                 }) async => null,
           ).mineLine(
             lineId: entry.id,
@@ -1022,6 +1091,84 @@ void main() {
       expect(result.audioFallbackDisabled, isFalse);
       expect(result.sentenceAudioMissing, isTrue);
       expect(repo.contexts, isNotEmpty);
+    },
+  );
+
+  // 反馈 II3jOBIhT5：用户选「不截取音频」时根本不去取（无配音游戏只会取到 BGM），
+  // 卡照做、不带句子音频，也不算「缺音频」——不弹缺音频警告，resourceOnly 也不拒卡。
+  test(
+    'audio mode off skips capture and mines without a missing-audio flag',
+    () async {
+      activeState = activeState.copyWith(
+        audioFallbackPolicy: GalAudioFallbackPolicy.resourceOnly,
+      );
+      final TexthookerLineEntry entry = service.appendLine('BGMしか流れない地の文')!;
+      final _RecordingRepo repo = _RecordingRepo();
+      int captureCalls = 0;
+
+      final GalHookMiningResult result =
+          await coordinator(
+            validator: (_) => true,
+            audio:
+                ({
+                  required String lineId,
+                  required String sentence,
+                  required String outputExtension,
+                  required GalMiningAudioLimit limit,
+                }) async {
+                  captureCalls++;
+                  return Uint8List.fromList(<int>[7, 8, 9]);
+                },
+          ).mineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '地の文'},
+            compression: MiningMediaCompression.compressed,
+            repo: repo,
+            audioLimit: const GalMiningAudioLimit(mode: GalMiningAudioMode.off),
+          );
+
+      expect(captureCalls, 0, reason: 'off 不得启动任何音频采集');
+      expect(result.aborted, isFalse);
+      expect(result.audioFallbackDisabled, isFalse);
+      expect(result.sentenceAudioMissing, isFalse);
+      expect(repo.contexts, hasLength(1));
+      expect(repo.contexts.single.sentenceAudioPath, isNull);
+    },
+  );
+
+  test(
+    'the effective audio length limit is forwarded to the capture',
+    () async {
+      final TexthookerLineEntry entry = service.appendLine('長さ制限付き')!;
+      final List<GalMiningAudioLimit> seen = <GalMiningAudioLimit>[];
+      const GalMiningAudioLimit limit = GalMiningAudioLimit(
+        mode: GalMiningAudioMode.maxLength,
+        seconds: 6,
+      );
+
+      final GalHookMiningResult result =
+          await coordinator(
+            validator: (_) => true,
+            audio:
+                ({
+                  required String lineId,
+                  required String sentence,
+                  required String outputExtension,
+                  required GalMiningAudioLimit limit,
+                }) async {
+                  seen.add(limit);
+                  return Uint8List.fromList(<int>[7, 8, 9]);
+                },
+          ).mineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '制限'},
+            compression: MiningMediaCompression.compressed,
+            repo: _RecordingRepo(),
+            audioLimit: limit,
+          );
+
+      expect(result.success, isTrue);
+      expect(seen, <GalMiningAudioLimit>[limit]);
     },
   );
 
@@ -1231,6 +1378,151 @@ void main() {
           );
       expect(result.success, isTrue);
       expect(gifCalls, 1);
+    });
+  });
+
+  group('反馈 y90oiVojic：查词弹窗只等采样，写卡后台落地', () {
+    test('startMineLine 采样完即返回，写卡还在跑', () async {
+      final TexthookerLineEntry entry = service.appendLine('慢い台詞')!;
+      final _ScriptedRepo repo = _ScriptedRepo(<MineOutcome>[
+        const MineOutcome.success(noteId: 42),
+      ])..gate = Completer<void>();
+
+      final GalHookMiningTicket ticket =
+          await coordinator(validator: (_) => true).startMineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '台詞'},
+            compression: MiningMediaCompression.compressed,
+            repo: repo,
+          );
+
+      expect(ticket.captured, isTrue);
+      bool landed = false;
+      unawaited(ticket.result.then((_) => landed = true));
+      await pumpEventQueue();
+      expect(landed, isFalse, reason: '写卡被 gate 挡着，回执不能等它');
+      expect(repo.writes, 0);
+
+      repo.gate!.complete();
+      final GalHookMiningResult result = await ticket.result;
+      expect(result.success, isTrue);
+      expect(result.outcome!.noteId, 42);
+      expect(result.retryWrite, isNull);
+    });
+
+    test('采样阶段就失败：captured 为假，结论现成', () async {
+      final TexthookerLineEntry entry = service.appendLine('消えた台詞')!;
+      final GalHookMiningTicket ticket =
+          await coordinator(validator: (_) => false).startMineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '台詞'},
+            compression: MiningMediaCompression.compressed,
+            repo: _ScriptedRepo(<MineOutcome>[]),
+          );
+      expect(ticket.captured, isFalse);
+      final GalHookMiningResult result = await ticket.result;
+      expect(result.aborted, isTrue);
+      expect(result.retryWrite, isNull);
+    });
+
+    test('写卡失败可重试：用已做好的画面与句音重写，不重抓窗口', () async {
+      final TexthookerLineEntry entry = service.appendLine('重試の台詞')!;
+      int gifCalls = 0;
+      int audioCalls = 0;
+      final _ScriptedRepo repo = _ScriptedRepo(<MineOutcome>[
+        MineOutcome.failure('AnkiConnect unreachable'),
+      ]);
+      // 用户看到失败后去改了设置（换了制卡目标）：重试写进点重试那一刻的仓库。
+      final _ScriptedRepo retryRepo = _ScriptedRepo(<MineOutcome>[
+        const MineOutcome.success(noteId: 7),
+      ]);
+      final GalHookMiningCoordinator subject = coordinator(
+        validator: (_) => true,
+        gif:
+            ({
+              required int hwnd,
+              MiningAnimatedFormat format = MiningAnimatedFormat.gif,
+            }) async {
+              gifCalls++;
+              return (
+                bytes: Uint8List.fromList(<int>[71, 73, 70]),
+                format: format,
+              );
+            },
+        audio:
+            ({
+              required String lineId,
+              required String sentence,
+              required String outputExtension,
+              required GalMiningAudioLimit limit,
+            }) async {
+              audioCalls++;
+              return Uint8List.fromList(<int>[7, 8, 9]);
+            },
+      );
+
+      final GalHookMiningResult failed = await (await subject.startMineLine(
+        lineId: entry.id,
+        fields: const <String, String>{'expression': '台詞'},
+        compression: MiningMediaCompression.compressed,
+        repo: repo,
+      )).result;
+      expect(failed.success, isFalse);
+      expect(failed.retryWrite, isNotNull);
+
+      // 重试时这一行已经不在会话里了（台词早翻过去）：重写的是冻结的材料，照样能写。
+      service.appendLine('次の台詞');
+      final GalHookMiningResult retried = await failed.retryWrite!(
+        repo: retryRepo,
+      );
+      expect(retried.success, isTrue);
+      expect(retried.outcome!.noteId, 7);
+      expect(repo.writes, 1, reason: '重试不能写回失败那一刻的旧仓库');
+      expect(retryRepo.writes, 1);
+      expect(gifCalls, 1, reason: '重试不能重抓窗口画面');
+      expect(audioCalls, 1, reason: '重试不能重抓句子音频');
+    });
+
+    test('重复卡片不给重试', () async {
+      final TexthookerLineEntry entry = service.appendLine('重複の台詞')!;
+      final GalHookMiningResult result =
+          await coordinator(validator: (_) => true).mineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '台詞'},
+            compression: MiningMediaCompression.compressed,
+            repo: _ScriptedRepo(<MineOutcome>[const MineOutcome.duplicate()]),
+          );
+      expect(result.duplicate, isTrue);
+      expect(result.retryWrite, isNull);
+    });
+
+    // #4362 审查遗留：画面与句音都已到手、写卡阶段被引擎中止，结果必须标成写卡阶段，
+    // 提示才不会再说成「窗口截图失败」。
+    test('写卡阶段被引擎中止：failureStage = write，可重试', () async {
+      final TexthookerLineEntry entry = service.appendLine('中止の台詞')!;
+      final _AbortingEngine engine = _AbortingEngine();
+      final GalHookMiningResult result =
+          await coordinator(validator: (_) => true, engine: engine).mineLine(
+            lineId: entry.id,
+            fields: const <String, String>{'expression': '中止'},
+            compression: MiningMediaCompression.compressed,
+            repo: _RecordingRepo(),
+          );
+      expect(engine.calls, 1);
+      expect(result.aborted, isTrue);
+      expect(result.failureStage, GalHookMiningFailureStage.write);
+      expect(result.failureReason, 'required audio missing');
+      expect(result.audioFallbackDisabled, isFalse);
+      expect(result.retryWrite, isNotNull);
+    });
+
+    test('queued 回包：popup.js 画「已加入」并解锁，不报失败', () {
+      expect(GalHookMiningResult.queuedPopupReply['queued'], isTrue);
+      expect(GalHookMiningResult.queuedPopupReply['ankiConnect'], isFalse);
+      expect(
+        GalHookMiningResult.queuedPopupReply.containsKey('message'),
+        isFalse,
+      );
     });
   });
 }

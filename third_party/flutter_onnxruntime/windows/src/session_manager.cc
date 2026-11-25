@@ -38,8 +38,41 @@ void SessionManager::appendCudaProvider(Ort::SessionOptions &session_options, in
   cuda_.AppendToSessionOptions(env_, session_options, device_index);
 }
 
+bool SessionManager::isCudaSession(const std::string &session_id) {
+  std::lock_guard<std::mutex> lock(mutex_);
+  auto it = sessions_.find(session_id);
+  return it != sessions_.end() && it->second.is_cuda;
+}
+
+int SessionManager::openCudaSessions() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  int open = 0;
+  for (const auto &entry : sessions_) {
+    if (entry.second.is_cuda) {
+      open++;
+    }
+  }
+  return open;
+}
+
+uint64_t SessionManager::cudaGeneration() {
+  std::lock_guard<std::mutex> lock(mutex_);
+  return cuda_generation_;
+}
+
+CudaReleaseResult SessionManager::releaseCudaPlugin(bool reset_context, int *open_cuda_sessions) {
+  const int open = openCudaSessions();
+  if (open_cuda_sessions != nullptr) {
+    *open_cuda_sessions = open;
+  }
+  if (open > 0) {
+    return CudaReleaseResult();
+  }
+  return cuda_.Release(env_, reset_context);
+}
+
 std::string SessionManager::createSession(const char *model_path, const Ort::SessionOptions &session_options,
-                                          bool is_gpu) {
+                                          bool is_gpu, bool is_cuda) {
   // Only the id allocation and the final insert take the lock: building a
   // session can take seconds (static-shape DirectML graphs), and holding the
   // lock that long would stall every run on the other worker queue.
@@ -69,6 +102,7 @@ std::string SessionManager::createSession(const char *model_path, const Ort::Ses
     SessionInfo session_info;
     session_info.session = std::move(ort_session);
     session_info.is_gpu = is_gpu;
+    session_info.is_cuda = is_cuda;
 
     // Get input names
     Ort::AllocatorWithDefaultOptions allocator;
@@ -92,6 +126,9 @@ std::string SessionManager::createSession(const char *model_path, const Ort::Ses
     // Store the session info
     {
       std::lock_guard<std::mutex> lock(mutex_);
+      if (is_cuda) {
+        cuda_generation_++;
+      }
       sessions_[session_id] = std::move(session_info);
     }
 

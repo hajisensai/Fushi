@@ -113,8 +113,16 @@ void main() {
       }
 
       test('换主字幕（setCues）即重挂镜像', () {
+        // setCues 的本体在 _replaceCues：内封轨抽完换装完整列表
+        // （completeEmbeddedTextBridge）走的也是它，两条入口都要重挂。
         expect(
           body('void setCues(List<AudioCue> cues) {'),
+          contains('_replaceCues(cues, newSource: true);'),
+        );
+        expect(
+          body(
+            'void _replaceCues(List<AudioCue> cues, {required bool newSource}) {',
+          ),
           contains('_scheduleLuaSubtitleMirrorSync();'),
         );
       });

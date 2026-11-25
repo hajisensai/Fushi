@@ -13,32 +13,40 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
+import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_folder_location.dart';
 import 'package:fushi_engine/srs/sync2/srs_fushisrs.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:material_ui/material_ui.dart';
-import 'package:path/path.dart' as p;
+import 'package:fushi/src/utils/components/fushi_date_time_picker.dart';
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_devices_section.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
+import 'package:fushi/src/srs/srs_navigation.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_import_entry.dart' show srsNewRootMissingText;
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/srs/srs_sync_scheduler.dart';
-import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_progress_banner.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/srs/srs_retained_copy.dart' show SrsScrubErrorNotice;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -51,6 +59,7 @@ import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
@@ -61,13 +70,31 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
+/// 复习运行时还没装好时（模块关着 / 正在打开）摘要行听的空集合。
+final ValueListenable<Set<String>> _noPeersNotJoined =
+    ValueNotifier<Set<String>>(const <String>{});
+
+/// 「旧设备的数据等确认」提示行（[srsHeritagePendingProvider] 非空时显示）：本机有那几台设备的旧历史，因为它们在本机
+/// 还待确认，不替它们传到位置上；在下面的设备列表里确认后下一轮补传。已拒绝的设备不提示（用户有意为之）。
+Widget srsHeritagePendingRow(Set<String> pending) => AdaptiveSettingsRow(
+  key: const ValueKey<String>('srs_timeline_status_heritage_unvouched'),
+  title: t.srs_sync_heritage_unvouched(n: pending.length),
+  subtitle: t.srs_sync_heritage_unvouched_hint,
+  icon: FushiIcons.warning,
+  showIcon: true,
+  subtitleMaxLines: 3,
+);
+
 /// 「同步状态」摘要行标题：同步在跑时说进行中（不能说「所有改动都已同步」——数字是开跑前的
-/// 快照），否则按未上传条数说。
+/// 快照）；已配对设备（互联 host）报告还没加入复习同步时如实说（BUG-4320：本机未上传条数为 0 只说明
+/// 发出去了，对端没并入、也没发它的数据）；否则按未上传条数说。
 String srsTimelineSummaryTitle({
   required SrsSyncProgress? syncing,
   required int unpublished,
+  bool peerNotJoined = false,
 }) {
   if (syncing != null) return t.srs_timeline_syncing;
+  if (peerNotJoined) return t.srs_sync_peer_not_joined;
   return unpublished > 0
       ? t.srs_timeline_unpublished(n: unpublished)
       : t.srs_timeline_all_published;
@@ -162,6 +189,9 @@ class SrsHistoryPage extends ConsumerStatefulWidget {
 
 class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   bool _loading = true;
+
+  /// 复习库打开失败（[readSrsStore] 原样抛出的错误）：页面显示错误态 + 重试，不停在转圈。
+  Object? _loadError;
   bool _busy = false;
   Map<String, Object?> _status = const <String, Object?>{};
   List<SrsCheckpointView> _checkpoints = const <SrsCheckpointView>[];
@@ -197,7 +227,19 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   }
 
   Future<void> _reload() async {
-    final SrsDbStore? store = await readSrsStore(ref);
+    final SrsDbStore? store;
+    try {
+      store = await readSrsStore(ref);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsHistoryPage.openStore', e, stack);
+      if (mounted) {
+        setState(() {
+          _loadError = e;
+          _loading = false;
+        });
+      }
+      return;
+    }
     Map<String, Object?> status = const <String, Object?>{};
     List<SrsCheckpointView> checkpoints = const <SrsCheckpointView>[];
     if (store != null) {
@@ -230,15 +272,27 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       _hostNames = hostNames;
       _status = status;
       _checkpoints = checkpoints;
+      _loadError = null;
       _loading = false;
     });
   }
 
-  /// 跑一个会改动复习库的操作：期间禁用按钮，失败统一提示。
+  /// 错误态的「重试」：作废缓存着失败的复习库 provider 再重读。
+  void _retryLoad() {
+    retrySrsStoreOpen(ref);
+    setState(() {
+      _loadError = null;
+      _loading = true;
+    });
+    unawaited(_reload());
+  }
+
+  /// 跑一个会改动复习库的操作：期间禁用按钮，失败统一提示。[failure] 拿到抛出的错误对象再给提示（按错误类型选文案，
+  /// 如一条改动超过 16 MiB → [srsActionFailedText]）；不在调用时就定死一句话。
   Future<void> _run(
     String where,
     Future<void> Function() body, {
-    required String failure,
+    required String Function(Object error) failure,
   }) async {
     if (_busy) return;
     setState(() => _busy = true);
@@ -246,7 +300,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       await body();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsHistoryPage.$where', e, stack);
-      FushiToast.show(msg: failure, severity: ToastSeverity.error);
+      FushiToast.show(msg: failure(e), severity: ToastSeverity.error);
     } finally {
       if (mounted) setState(() => _busy = false);
       await _reload();
@@ -257,14 +311,14 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
 
   Future<void> _pickMoment() async {
     final DateTime now = DateTime.now();
-    final DateTime? day = await showDatePicker(
+    final DateTime? day = await showFushiDatePicker(
       context: context,
       initialDate: now,
       firstDate: DateTime(now.year - 20),
       lastDate: now,
     );
     if (day == null || !mounted) return;
-    final TimeOfDay? time = await showTimePicker(
+    final TimeOfDay? time = await showFushiTimePicker(
       context: context,
       initialTime: TimeOfDay.fromDateTime(now),
     );
@@ -329,7 +383,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         msg: t.srs_timeline_restore_done(time: time),
         severity: ToastSeverity.success,
       );
-    }, failure: t.srs_timeline_restore_failed);
+    }, failure: (_) => t.srs_timeline_restore_failed);
   }
 
   Future<void> _addCheckpoint() => _run('checkpoint', () async {
@@ -341,7 +395,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       msg: t.srs_timeline_checkpoint_done,
       severity: ToastSeverity.success,
     );
-  }, failure: t.srs_timeline_checkpoint_failed);
+  }, failure: (_) => t.srs_timeline_checkpoint_failed);
 
   // ---------------------------------------------------------------- 存储位置
 
@@ -433,7 +487,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
           path: path,
         ),
       ]);
-    }, failure: t.srs_timeline_location_unavailable);
+    }, failure: (_) => t.srs_timeline_location_unavailable);
   }
 
   Future<void> _editFolder(SrsFolderLocation l) async {
@@ -449,7 +503,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
             in ref.read(appProvider).srsFolderLocations)
           x.id == l.id ? edited : x,
       ]);
-    }, failure: t.srs_timeline_location_unavailable);
+    }, failure: (_) => t.srs_timeline_location_unavailable);
   }
 
   Future<void> _removeFolder(SrsFolderLocation l) async {
@@ -463,12 +517,23 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       destructive: true,
     );
     if (!ok || !mounted) return;
-    await ref.read(appProvider).setSrsFolderLocations(<SrsFolderLocation>[
-      for (final SrsFolderLocation x
-          in ref.read(appProvider).srsFolderLocations)
-        if (x.id != l.id) x,
-    ]);
-    if (mounted) setState(() {});
+    await _run('removeFolder', () async {
+      // 配置里去掉、同一个事务里记进「内核待忘」清单；内核忘掉这个位置的同步状态、不再向它转发（`location_forget`）
+      // 由同步调度器做——复习模块没起（没有运行时）时等它起来再忘，忘不掉的留在清单里下一轮再来。位置上的文件与本机
+      // 卡片不动。
+      await ref.read(appProvider).removeSrsFolderLocation(l.id);
+      final SrsSyncScheduler? sync = ref.read(srsAppRuntimeProvider)?.sync;
+      if (sync != null) {
+        unawaited(
+          sync.forgetPendingLocations().catchError((
+            Object e,
+            StackTrace stack,
+          ) {
+            ErrorLogService.instance.log('SrsHistory.forgetLocation', e, stack);
+          }),
+        );
+      }
+    }, failure: (_) => t.srs_timeline_location_remove_failed);
   }
 
   /// 位置的加密状态（最近一轮同步看到的；还没同步过的位置按本机记的密钥推断）。
@@ -515,7 +580,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
           msg: t.srs_timeline_location_encrypt_done,
           severity: ToastSeverity.success,
         );
-      }, failure: t.srs_timeline_location_encrypt_failed);
+      }, failure: (_) => t.srs_timeline_location_encrypt_failed);
       return;
     }
     if (s?.error == kSrsSync2BadKdf) {
@@ -550,7 +615,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
               : t.srs_timeline_location_unlocked,
           severity: err == null ? ToastSeverity.success : ToastSeverity.error,
         );
-      }, failure: t.srs_timeline_location_encrypt_failed);
+      }, failure: (_) => t.srs_timeline_location_encrypt_failed);
       return;
     }
     if ((s?.encrypted ?? false) || k != null) {
@@ -574,7 +639,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         msg: t.srs_timeline_location_encrypt_done,
         severity: ToastSeverity.success,
       );
-    }, failure: t.srs_timeline_location_encrypt_failed);
+    }, failure: (_) => t.srs_timeline_location_encrypt_failed);
   }
 
   String _purposesLabel(SrsFolderLocation l) {
@@ -671,7 +736,16 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
             subtitle: <String>[
               _purposesLabel(l),
               ?_cryptoLabel(l.locationId),
-              if (errors.containsKey(l.id))
+              if (errors[l.id] case SrsSyncReportError(
+                message: kSrsLocationProtocol1Root,
+              ))
+                t.srs_sync_location_protocol1_root
+              else if (errors[l.id] case SrsSyncReportError(
+                message: kSrsLocationNewRootMissing,
+                :final String? locationDir,
+              ))
+                srsNewRootMissingText(locationDir, folderPath: l.path)
+              else if (errors.containsKey(l.id))
                 t.srs_timeline_location_unavailable
               else
                 _lastOkLabel(context, lastOk[l.locationId]),
@@ -765,7 +839,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     await FushiShare.shareFiles(<XFile>[
       XFile(out.path, mimeType: 'application/zip'),
     ], subject: name);
-  }, failure: t.srs_timeline_export_failed);
+  }, failure: (_) => t.srs_timeline_export_failed);
 
   Future<void> _import() async {
     final String? path = await pickSystemFilePath(
@@ -782,33 +856,41 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       icon: FushiIcons.importFile,
     );
     if (!ok || !mounted) return;
-    String failure = t.srs_timeline_import_failed;
     await _run('import', () async {
       final SrsDbStore? store = await readSrsStore(ref);
       if (store == null) return;
-      final SrsFushiSrsImport r;
-      try {
-        r = await srsImportFushiSrs(
-          store,
-          File(path),
-          mediaRoot: await _mediaRoot(store),
-          // 旧格式（v2 之前的定时 / 手动备份）没内嵌媒体时，到本机旧备份的共享媒体池里找。
-          legacyMediaPool: Directory(
-            p.join((await AppPaths.srsBackupsDirectory()).path, 'media'),
-          ),
-        );
-      } on FormatException catch (e) {
-        failure = e.message.contains('another profile')
-            ? t.srs_timeline_import_other_profile
-            : t.srs_timeline_import_invalid;
-        rethrow;
-      }
+      final SrsFushiSrsImport r = await srsImportFushiSrs(
+        store,
+        File(path),
+        mediaRoot: await _mediaRoot(store),
+        // 文件来自另一个复习库，或同一个库的文件带来新的旧 profile 标识 / 设备：确认之前不合并（内核什么都没写）。
+        confirmForeign: (SrsFushiSrsForeign f) async =>
+            mounted &&
+            await showFushiConfirmDialog(
+              context: context,
+              title: t.srs_timeline_import,
+              message: switch (f.reason) {
+                SrsFushiSrsConfirmReason.join =>
+                  t.srs_timeline_import_foreign_confirm,
+                SrsFushiSrsConfirmReason.identity =>
+                  t.srs_timeline_import_identity_confirm(
+                    salts: f.newSalts.length,
+                    devices: f.newPeers.length,
+                  ),
+              },
+              confirmLabel: t.srs_timeline_import,
+              cancelLabel: t.cancel,
+              icon: FushiIcons.importFile,
+            ),
+      );
+      if (r.declined) return;
       if (mounted) bumpSrsRevision(ref);
       FushiToast.show(
         msg: t.srs_timeline_import_done(n: r.applied),
         severity: ToastSeverity.success,
       );
-    }, failure: failure);
+      // 失败文案按抛出的错误对象选（另一个复习库 / 坏文件 / 一条超过 16 MiB / 其他）。
+    }, failure: srsFushiSrsImportFailureText);
   }
 
   // ---------------------------------------------------------------- 顶栏
@@ -843,10 +925,12 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     return FushiPageScaffold(
       title: t.srs_timeline_title,
+      masthead: true,
       header: apple ? null : _buildTopBar(context),
-      actions: apple
+      actions: apple || masthead
           ? <Widget>[
               for (final FushiToolbarItem a in _actions)
                 FushiIconButton(
@@ -891,39 +975,70 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
     final int unpublished = (_status['unpublished'] as num?)?.toInt() ?? 0;
     final int pending = (_status['pending'] as num?)?.toInt() ?? 0;
     final int ops = (_status['ops'] as num?)?.toInt() ?? 0;
+    // 已配对设备（互联 host）报告还没加入复习同步的位置（BUG-4320）：调度器一轮跑完问到的。
+    final ValueListenable<Set<String>> peersNotJoined =
+        ref.read(srsAppRuntimeProvider)?.sync.peersNotJoined ??
+        _noPeersNotJoined;
+    // 本机因作者待确认而扣着不替传的旧设备承袭日志（G10-4）：调度器最近一轮承袭上传问到的。
+    final ValueListenable<Set<String>> heritagePending = ref.read(
+      srsHeritagePendingProvider,
+    );
     // 状态数字是上次重读时的快照；同步在跑时它们正在变，不能说「都已同步」，
     // 摘要行换成进行中的阶段与进度，对端行的「没收到」换成「正在接收」。
-    return ValueListenableBuilder<SrsSyncProgress?>(
-      valueListenable: srsSyncProgress,
-      builder: (BuildContext context, SrsSyncProgress? syncing, _) =>
-          AdaptiveSettingsSection(
-            title: t.srs_timeline_status,
-            children: <Widget>[
-              AdaptiveSettingsRow(
-                key: const ValueKey<String>('srs_timeline_status_summary'),
-                title: srsTimelineSummaryTitle(
-                  syncing: syncing,
-                  unpublished: unpublished,
+    return ValueListenableBuilder<Set<String>>(
+      valueListenable: heritagePending,
+      builder: (BuildContext context, Set<String> heritage, _) =>
+          ValueListenableBuilder<Set<String>>(
+            valueListenable: peersNotJoined,
+            builder: (BuildContext context, Set<String> notJoined, _) =>
+                ValueListenableBuilder<SrsSyncProgress?>(
+                  valueListenable: srsSyncProgress,
+                  builder: (BuildContext context, SrsSyncProgress? syncing, _) {
+                    final bool peerNotJoined =
+                        syncing == null && notJoined.isNotEmpty;
+                    return AdaptiveSettingsSection(
+                      title: t.srs_timeline_status,
+                      children: <Widget>[
+                        AdaptiveSettingsRow(
+                          key: const ValueKey<String>(
+                            'srs_timeline_status_summary',
+                          ),
+                          title: srsTimelineSummaryTitle(
+                            syncing: syncing,
+                            unpublished: unpublished,
+                            peerNotJoined: peerNotJoined,
+                          ),
+                          subtitle: syncing != null
+                              ? srsSyncProgressLine(syncing)
+                              : (peerNotJoined
+                                    ? t.srs_sync_peer_not_joined_hint
+                                    : t.srs_timeline_ops(n: ops)),
+                          icon: syncing != null
+                              ? FushiIcons.sync
+                              : (peerNotJoined
+                                    ? FushiIcons.warning
+                                    : (unpublished > 0
+                                          ? FushiIcons.cloudSync
+                                          : FushiIcons.success)),
+                          showIcon: true,
+                          subtitleMaxLines: 3,
+                        ),
+                        if (pending > 0)
+                          AdaptiveSettingsRow(
+                            key: const ValueKey<String>(
+                              'srs_timeline_status_pending',
+                            ),
+                            title: t.srs_timeline_waiting(n: pending),
+                            subtitle: t.srs_timeline_waiting_hint,
+                            icon: FushiIcons.schedule,
+                            showIcon: true,
+                          ),
+                        if (heritage.isNotEmpty)
+                          srsHeritagePendingRow(heritage),
+                      ],
+                    );
+                  },
                 ),
-                subtitle: syncing != null
-                    ? srsSyncProgressLine(syncing)
-                    : t.srs_timeline_ops(n: ops),
-                icon: syncing != null
-                    ? FushiIcons.sync
-                    : (unpublished > 0
-                          ? FushiIcons.cloudSync
-                          : FushiIcons.success),
-                showIcon: true,
-              ),
-              if (pending > 0)
-                AdaptiveSettingsRow(
-                  key: const ValueKey<String>('srs_timeline_status_pending'),
-                  title: t.srs_timeline_waiting(n: pending),
-                  subtitle: t.srs_timeline_waiting_hint,
-                  icon: FushiIcons.schedule,
-                  showIcon: true,
-                ),
-            ],
           ),
     );
   }
@@ -944,8 +1059,18 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
                   srsRunLogged('SrsHistory.retireDevice', () => _retire(d)),
               onUnretire: (SrsDeviceView d) =>
                   srsRunLogged('SrsHistory.unretireDevice', () => _unretire(d)),
+              onReviewTrust: (SrsDeviceView d) =>
+                  srsRunLogged('SrsHistory.reviewTrust', _openConflicts),
             ),
       );
+
+  /// 去冲突中心确认 / 拒绝一台还没信任的设备；回来时重读状态。
+  Future<void> _openConflicts() async {
+    await srsPushPage<void>(context, (_) => const SrsConflictsPage());
+    if (!mounted) return;
+    bumpSrsRevision(ref);
+    await _reload();
+  }
 
   String _deviceName(SrsDeviceView d) =>
       d.displayName(formatTime: (DateTime x) => srsTimeLabel(context, x));
@@ -973,7 +1098,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
       await store.sync2DeviceInfo(nick: nick);
       // 名字随 head 发布：跑一轮让别的设备尽快看到。
       unawaited(ref.read(srsAppRuntimeProvider)?.sync.syncNow());
-    }, failure: t.srs_action_failed);
+    }, failure: srsActionFailedText);
   }
 
   /// 「这台设备不用了」：确认框说明后果（卡住的修改立即应用、它没同步出来的不会出现、不删数据、可恢复）。
@@ -996,7 +1121,7 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         msg: t.srs_device_retired_toast(device: name),
         severity: ToastSeverity.success,
       );
-    }, failure: t.srs_action_failed);
+    }, failure: srsActionFailedText);
   }
 
   Future<void> _unretire(SrsDeviceView d) async {
@@ -1009,12 +1134,20 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
         msg: t.srs_device_unretired_toast(device: name),
         severity: ToastSeverity.success,
       );
-    }, failure: t.srs_action_failed);
+    }, failure: srsActionFailedText);
   }
 
   Widget _buildBody(BuildContext context) {
     if (_loading) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
+    }
+    final Object? loadError = _loadError;
+    if (loadError != null) {
+      return SrsLoadErrorView(
+        error: loadError,
+        retryKey: const ValueKey<String>('srs-history-load-retry'),
+        onRetry: _retryLoad,
+      );
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<Widget> items = <Widget>[
@@ -1027,6 +1160,8 @@ class _SrsHistoryPageState extends ConsumerState<SrsHistoryPage> {
           modules: ref.watch(appProvider).moduleVisibility,
         ),
       ),
+      // 彻底清除的字节层收尾出错（内核 `scrub_state`）：清除的原文还在磁盘上。
+      const SrsScrubErrorNotice(),
       if (_status['enabled'] == true) _buildStatus(context),
       if (_status['enabled'] == true && _devices.isNotEmpty)
         _buildDevices(context),

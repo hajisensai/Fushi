@@ -11,7 +11,10 @@ import 'package:fushi_engine/media/audiobook/standalone_subtitle_book.dart'
         generatedSubtitleBodyRow,
         importGeneratedSubtitleBody,
         rebuildGeneratedSubtitleBody;
+import 'package:fushi_engine/models/local_audio_content_id.dart';
 import 'package:fushi_engine/models/local_audio_source_pref.dart';
+import 'package:fushi_engine/sync/audiobook_content_revision.dart'
+    show audiobookContentState;
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_audio/fushi_audio_core.dart';
@@ -27,11 +30,17 @@ class LocalAudioPackageContents {
     required this.displayName,
     required this.enabled,
     required this.sources,
+    this.contentId,
   });
   final File dbFile;
   final String displayName;
   final bool enabled;
   final List<LocalAudioSourcePref> sources;
+
+  /// 库的内容身份（拍板 pr3481）。新版本导出的包在 manifest 里带着；旧版本的包
+  /// 没有，由 [SyncAssetPackageService.importLocalAudioPackage] 对解出的 .db 现算。
+  /// 只有 .db 读不出（损坏 / 不是音频库）时为 null。
+  final String? contentId;
 }
 
 /// 有声书资产包缺**必需**资源：manifest 的 `resources` 映射里找不到 [sourcePath]
@@ -202,6 +211,20 @@ class SyncAssetPackageService {
     );
   }
 
+  /// 读 `.fushiaudio` 包 manifest 里的 `contentRevision`（打包时 host 的内容版本，
+  /// 见 [exportAudioDatabasePackage]）。旧 host 打的包没有这个键 → null。只读中央
+  /// 目录与 manifest，不解压资源。包不是合法 zip / 没有 manifest 时照抛。
+  static Future<String?> readAudioPackageContentRevision(
+    File packageFile,
+  ) async {
+    final Object? manifest = jsonDecode(
+      await _readManifestInIsolate(packageFile.path),
+    );
+    if (manifest is! Map) return null;
+    final Object? revision = manifest['contentRevision'];
+    return revision is String && revision.isNotEmpty ? revision : null;
+  }
+
   /// 打包一本有声书为 `.fushiaudio`。支持两类：
   /// - **srt-backed**（EPUB 配对）：[bookKey] 非空、host 有 Audiobooks 行 → manifest
   ///   带 `audiobook` 段、cue 走 bookKey 命名空间（原行为，逐字节不变）。
@@ -295,9 +318,17 @@ class SyncAssetPackageService {
       }
     }
 
+    // 这份包是 host 哪一版内容打的（与互联清单的 `contentRevision`、导出缓存的
+    // 版本同一个值）。在打包前算：文件若在打包途中又变了，记下的只会比包旧——下载端
+    // 最多多提示一次「有更新」，不会漏报。旧导入端忽略未知键。
+    final String contentRevision = (await audiobookContentState(
+      audiobook: audiobook,
+      srtBook: srtBook,
+    )).revision;
     final String manifestJson = jsonEncode(<String, Object?>{
       'schemaVersion': 1,
       'kind': 'audioDatabase',
+      'contentRevision': contentRevision,
       // 纯 SRT 有声书无 Audiobooks 行 → audiobook 段为 null，导入端据此走纯 SRT 分支。
       'audiobook': audiobook != null
           ? _audiobookManifest(audiobook, audiobookAudio.paths)
@@ -478,12 +509,14 @@ class SyncAssetPackageService {
         bookKey: bookKey,
         uid: _stringValue(srtBook, 'uid'),
       );
+      final String importedSrtUid =
+          existingSrt?.uid ?? _stringValue(srtBook, 'uid');
       await _db.upsertSrtBook(
         SrtBooksCompanion.insert(
           id: existingSrt == null
               ? const Value.absent()
               : Value(existingSrt.id),
-          uid: existingSrt?.uid ?? _stringValue(srtBook, 'uid'),
+          uid: importedSrtUid,
           title: _stringValue(srtBook, 'title'),
           author: Value(_nullableString(srtBook, 'author')),
           audioRoot: Value(targetDir.path),
@@ -494,6 +527,7 @@ class SyncAssetPackageService {
           bookKey: Value(bookKey),
         ),
       );
+      await _db.inheritPairedSrtCollections(srtUid: importedSrtUid);
 
       // TODO-1165：按标签名重建 SRT 书标签映射（manifest 按名带来，只增不删）。
       // 缺 'tags' 键（旧包）时安全降级空列表——不能用严格的 _stringList（它对缺键抛）。
@@ -505,8 +539,6 @@ class SyncAssetPackageService {
             ]
           : const <String>[];
       if (srtTagNames.isNotEmpty) {
-        final String importedSrtUid =
-            existingSrt?.uid ?? _stringValue(srtBook, 'uid');
         for (final String name in srtTagNames) {
           if (name.isEmpty) continue;
           final int tagId = await _db.getOrCreateTagByName(name);
@@ -527,6 +559,7 @@ class SyncAssetPackageService {
             startMs: _intValue(cue, 'startMs'),
             endMs: _intValue(cue, 'endMs'),
             audioFileIndex: _intValue(cue, 'audioFileIndex'),
+            tokenTimingJson: Value(_cueTokenTimingJson(cue)),
           );
         }).toList(),
       );
@@ -680,6 +713,7 @@ class SyncAssetPackageService {
               startMs: _intValue(cue, 'startMs'),
               endMs: _intValue(cue, 'endMs'),
               audioFileIndex: _intValue(cue, 'audioFileIndex'),
+              tokenTimingJson: Value(_cueTokenTimingJson(cue)),
             );
           }).toList(),
         );
@@ -711,7 +745,8 @@ class SyncAssetPackageService {
       ..text = _stringValue(cue, 'cueText')
       ..startMs = _intValue(cue, 'startMs')
       ..endMs = _intValue(cue, 'endMs')
-      ..audioFileIndex = _intValue(cue, 'audioFileIndex');
+      ..audioFileIndex = _intValue(cue, 'audioFileIndex')
+      ..tokenTiming = CueTokenTiming.tryParseJson(_cueTokenTimingJson(cue));
   }
 
   /// 撤掉一本刚生成、还没被任何 SrtBooks 行引用的正文（行 + 解包目录）。失败只留痕：
@@ -882,6 +917,7 @@ class SyncAssetPackageService {
             startMs: _intValue(cue, 'startMs'),
             endMs: _intValue(cue, 'endMs'),
             audioFileIndex: _intValue(cue, 'audioFileIndex'),
+            tokenTimingJson: Value(_cueTokenTimingJson(cue)),
           );
         }).toList();
 
@@ -1048,14 +1084,20 @@ class SyncAssetPackageService {
 
   /// 打包一个本地音频库：单个 .db（STORE 流式）+ manifest（displayName/enabled/子来源）。
   /// [dbFile] 是该库的本机 .db 主文件（不含 -wal/-shm，导入后由 sqlite 自建）。
+  /// [contentId] 是库的内容身份（调用方已解析好就传，省得接收端再扫一遍库）；
+  /// 不传时这里现算——接收端按它去重，manifest 里总要带上。
   Future<File> exportLocalAudioPackage({
     required String displayName,
     required bool enabled,
     required List<LocalAudioSourcePref> sources,
     required File dbFile,
     required File outputFile,
+    String? contentId,
   }) async {
     final String dbFileName = p.basename(dbFile.path);
+    final String? id = isLocalAudioContentId(contentId)
+        ? contentId
+        : await computeLocalAudioContentIdInBackground(dbFile.path);
     final String manifestJson = jsonEncode(<String, Object?>{
       'schemaVersion': 1,
       'kind': 'localAudio',
@@ -1064,6 +1106,7 @@ class SyncAssetPackageService {
         'enabled': enabled,
         'dbFileName': dbFileName,
         'sources': sources.map((LocalAudioSourcePref s) => s.toJson()).toList(),
+        'contentId': ?id,
       },
     });
     outputFile.parent.createSync(recursive: true);
@@ -1114,11 +1157,20 @@ class SyncAssetPackageService {
       targetDirPath: stagingDir.path,
       prefix: 'resources',
     );
+    final File dbFile = File(p.join(stagingDir.path, dbFileName));
+    // manifest 的身份只当提示：旧版本的包没有，wire 上来的串也可能不合格式，
+    // 这两种情况都对解出的 .db 现算，保证登记的身份与库内容一致。
+    final Object? manifestId = meta['contentId'];
+    final String? contentId =
+        manifestId is String && isLocalAudioContentId(manifestId)
+        ? manifestId
+        : await computeLocalAudioContentIdInBackground(dbFile.path);
     return LocalAudioPackageContents(
-      dbFile: File(p.join(stagingDir.path, dbFileName)),
+      dbFile: dbFile,
       displayName: displayName,
       enabled: enabled,
       sources: sources,
+      contentId: contentId,
     );
   }
 
@@ -1181,9 +1233,19 @@ class SyncAssetPackageService {
       'startMs': row.startMs,
       'endMs': row.endMs,
       'audioFileIndex': row.audioFileIndex,
+      // v160 逐 token 时间随 cue 进包（没有就不写键）：接收端不再重匹配，直接落库
+      // 包里的 cue，不带过去对端就永远没有半句命中能用的时间。
+      if (row.tokenTimingJson != null) 'tokenTimingJson': row.tokenTimingJson,
     };
   }
 }
+
+/// manifest 里一条 cue 的逐 token 时间（v160 起导出端写；旧包没有这个键 = null）。
+/// 先过一遍 [CueTokenTiming.tryParseJson]：坏数据不落库。
+String? _cueTokenTimingJson(Map<String, Object?> cue) =>
+    CueTokenTiming.tryParseJson(
+      _nullableString(cue, 'tokenTimingJson'),
+    )?.toJson();
 
 /// Sanitizes a logical id into a filesystem-safe directory name (replaces the
 /// Windows-invalid `\ / : * ? " < > |` and control chars with `_`).

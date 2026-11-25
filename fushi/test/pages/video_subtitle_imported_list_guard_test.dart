@@ -346,11 +346,11 @@ void main() {
           clear.allMatches(code).length - decl.allMatches(code).length;
       expect(
         clears,
-        2,
+        3,
         reason:
-            '恰好两处清空：本地 _applyLoad 的换源分支、原盘 _bindDiscPlaylist；'
-            '远端 _loadRemoteEpisode 改为按集从持久化**整体重建**（BUG-3984），'
-            '同样不让上一集的档留在新集列表里（BUG-1861）',
+            '恰好三处清空：本地 _applyLoad 的换源分支、原盘 _bindDiscPlaylist 的'
+            '本机换标题与远端原盘换标题两支；远端 _loadRemoteEpisode 改为按集从持久化'
+            '**整体重建**（BUG-3984），同样不让上一集的档留在新集列表里（BUG-1861）',
       );
 
       // 本地：清空必须落在 `clipExportSourceChanged` 那个块里（与枚举缓存同一作用域），
@@ -374,9 +374,12 @@ void main() {
             '源的档案会继续挂在列表上（BUG-1861）',
       );
 
-      final String remote = region(
-        '_remoteSubtitleUserDismissed = false;',
-        'final int initialPositionMs =',
+      // 取整个 _loadRemoteEpisode：`_remoteSubtitleUserDismissed = false;` 也是字段声明
+      // 的子串（indexOf 先命中声明），而赋值自 BUG-4304 起排在起播位置解析之后
+      // （先过 `_episodeLoadSeq` 作废检查再落），按两句锚点切窗口会把它切掉。
+      final String remote = methodBody(
+        code,
+        'Future<void> _loadRemoteEpisode(',
       );
       // 远端换集：整体替换成本集持久化列表（不是追加），上一集的档因此出局。
       expect(
@@ -386,9 +389,15 @@ void main() {
             '远端换集必须整体替换导入档（远端 _currentVideoPath 恒 null，走不到本地'
             '换源分支的那次清空；BUG-3984 起按集重建而不是清空）',
       );
+      // 本集起播字幕重放会把那条档前插进列表（`..._importedSubtitleSources`），那时列表
+      // 已是本集的；只要求替换先于任何展开——展开出现在替换之前才是把上一集的档并进来。
+      final int replaced = remote.indexOf(
+        '_importedSubtitleSources = restoredLocalSubtitles;',
+      );
+      final int firstSpread = remote.indexOf('..._importedSubtitleSources');
       expect(
-        remote.contains('..._importedSubtitleSources'),
-        isFalse,
+        firstSpread < 0 || firstSpread > replaced,
+        isTrue,
         reason: '换集不得把上一集的导入档并进新列表',
       );
 
@@ -399,6 +408,24 @@ void main() {
         reason: '原盘菜单在同一页面切换标题，需要绑定实际播放列表的书目身份',
       );
       expect(disc, contains(clear), reason: '原盘切标题也必须清导入档，不能让上一条播放列表的字幕进入新标题');
+      // 远端原盘会话换 title 在早退分支里（没有本机书行可绑），那一支同样要清：
+      // 上一条 title 生成 / 转录取回登记的外挂字幕不属于新 title。
+      final int remoteDisc = disc.indexOf(
+        'if (controller.isRemoteDiscSession) {',
+      );
+      final int remoteDiscReturn = disc.indexOf(
+        'controller.bindRemoteDiscTitle(',
+      );
+      expect(
+        remoteDisc >= 0 && remoteDiscReturn > remoteDisc,
+        isTrue,
+        reason: '窗口自校验：远端原盘早退分支必须在 _bindDiscPlaylist 里',
+      );
+      expect(
+        disc.substring(remoteDisc, remoteDiscReturn),
+        contains(clear),
+        reason: '远端原盘换 title 也必须清导入档（与本机原盘换标题同理）',
+      );
     });
   });
 }

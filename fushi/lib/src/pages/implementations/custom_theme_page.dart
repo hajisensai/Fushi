@@ -72,6 +72,9 @@ enum _ThemeRole {
   /// 查词选区高亮。
   selection,
 
+  /// 查词高亮里被选中文字的字色（拍板台 -8azTfJh_v）：默认跟随正文，改了能做反色高亮。
+  selectionText,
+
   /// 有声书当前句高亮（全局偏好，对所有主题生效）。
   audioHighlight,
 
@@ -255,6 +258,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       ..[_ThemeRole.readerBackground] = roleColor(entry.bgColor)
       ..[_ThemeRole.link] = roleColor(entry.linkColor)
       ..[_ThemeRole.selection] = roleColor(entry.selectionColor)
+      ..[_ThemeRole.selectionText] = roleColor(entry.selectionTextColor)
       ..[_ThemeRole.secondary] = roleColor(entry.secondaryColor)
       ..[_ThemeRole.tertiary] = roleColor(entry.tertiaryColor)
       ..[_ThemeRole.container] = roleColor(entry.containerColor)
@@ -324,6 +328,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         bg: _overrides[_ThemeRole.readerBackground],
         fg: _overrides[_ThemeRole.readerText],
         selection: _overrides[_ThemeRole.selection],
+        selectionText: _overrides[_ThemeRole.selectionText],
         link: _overrides[_ThemeRole.link],
       ),
       audioHighlightOverride: _overrides[_ThemeRole.audioHighlight],
@@ -347,6 +352,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         return reader.link;
       case _ThemeRole.selection:
         return reader.selection;
+      case _ThemeRole.selectionText:
+        return reader.selectionText ?? reader.fg;
       case _ThemeRole.audioHighlight:
         return reader.sentenceAudioHighlight;
       case _ThemeRole.secondary:
@@ -387,6 +394,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         return t.theme_role_link;
       case _ThemeRole.selection:
         return t.theme_role_selection;
+      case _ThemeRole.selectionText:
+        return t.theme_role_selection_text;
       case _ThemeRole.audioHighlight:
         return t.theme_role_audio_highlight;
       case _ThemeRole.secondary:
@@ -412,6 +421,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         return t.theme_role_link_desc;
       case _ThemeRole.selection:
         return t.theme_role_selection_desc;
+      case _ThemeRole.selectionText:
+        return t.theme_role_selection_text_desc;
       case _ThemeRole.audioHighlight:
         return t.theme_role_audio_highlight_desc;
       case _ThemeRole.secondary:
@@ -437,6 +448,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         return FushiIcons.link;
       case _ThemeRole.selection:
         return FushiIcons.lookup;
+      case _ThemeRole.selectionText:
+        return FushiIcons.textFields;
       case _ThemeRole.audioHighlight:
         return FushiIcons.audio;
       case _ThemeRole.secondary:
@@ -453,6 +466,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     switch (role) {
       case _ThemeRole.readerText:
       case _ThemeRole.selection:
+      case _ThemeRole.selectionText:
       case _ThemeRole.audioHighlight:
         return true;
       case _ThemeRole.accent:
@@ -524,6 +538,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       fontColor: argb(_overrides[_ThemeRole.readerText]),
       bgColor: argb(_overrides[_ThemeRole.readerBackground]),
       selectionColor: argb(_overrides[_ThemeRole.selection]),
+      selectionTextColor: argb(_overrides[_ThemeRole.selectionText]),
       linkColor: argb(_overrides[_ThemeRole.link]),
       secondaryColor: argb(_overrides[_ThemeRole.secondary]),
       tertiaryColor: argb(_overrides[_ThemeRole.tertiary]),
@@ -556,6 +571,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     segment('fc', entry.fontColor);
     segment('bg', entry.bgColor);
     segment('sc', entry.selectionColor);
+    segment('st', entry.selectionTextColor);
     segment('pr', entry.primaryColor);
     segment('sr', entry.secondaryColor);
     segment('tr', entry.tertiaryColor);
@@ -590,6 +606,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
       fontColor: segments['fc'],
       bgColor: segments['bg'],
       selectionColor: segments['sc'],
+      selectionTextColor: segments['st'],
       primaryColor: segments['pr'],
       secondaryColor: segments['sr'],
       tertiaryColor: segments['tr'],
@@ -620,84 +637,21 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
   }
 
   Future<void> _importTheme() async {
-    final controller = TextEditingController();
-    try {
-      await showAppDialog(
-        context: context,
-        builder: (ctx) {
-          final FushiDesignTokens tokens = FushiDesignTokens.of(ctx);
-          return FushiDialogFrame(
-            maxWidth: 480,
-            maxHeightFactor: 0.78,
-            scrollable: false,
-            child: FushiModalSheetFrame(
-              title: t.import_theme,
-              leadingIcon: FushiIcons.importFile,
-              bodyPadding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                0,
-                tokens.spacing.card,
-                tokens.spacing.gap,
-              ),
-              footerPadding: EdgeInsets.fromLTRB(
-                tokens.spacing.card,
-                tokens.spacing.gap,
-                tokens.spacing.card,
-                tokens.spacing.card,
-              ),
-              body: FushiTextField(
-                controller: controller,
-                hintText: t.import_theme_hint,
-                autofocus: true,
-              ),
-              footer: Wrap(
-                alignment: WrapAlignment.end,
-                spacing: tokens.spacing.gap,
-                runSpacing: tokens.spacing.gap,
-                children: [
-                  adaptiveDialogAction(
-                    context: ctx,
-                    onPressed: () => Navigator.pop(ctx),
-                    child: Text(t.dialog_close),
-                  ),
-                  adaptiveDialogAction(
-                    context: ctx,
-                    isDefaultAction: true,
-                    onPressed: () {
-                      final CustomThemeEntry? result = _decodeTheme(
-                        controller.text,
-                      );
-                      if (result == null) {
-                        FushiToast.show(
-                          msg: t.import_theme_invalid,
-                          severity: ToastSeverity.error,
-                        );
-                        return;
-                      }
-                      Navigator.pop(ctx);
-                      _applyImportedTheme(
-                        result,
-                        audioHighlight:
-                            result.sentenceAudioHighlightColor != null
-                            ? Color(result.sentenceAudioHighlightColor!)
-                            : null,
-                      );
-                      FushiToast.show(
-                        msg: t.import_theme_success,
-                        severity: ToastSeverity.success,
-                      );
-                    },
-                    child: Text(t.dialog_import),
-                  ),
-                ],
-              ),
-            ),
-          );
-        },
-      );
-    } finally {
-      controller.dispose();
-    }
+    final CustomThemeEntry? result = await showAppDialog<CustomThemeEntry>(
+      context: context,
+      builder: (BuildContext _) => _ThemeImportDialog(decode: _decodeTheme),
+    );
+    if (result == null || !mounted) return;
+    _applyImportedTheme(
+      result,
+      audioHighlight: result.sentenceAudioHighlightColor != null
+          ? Color(result.sentenceAudioHighlightColor!)
+          : null,
+    );
+    FushiToast.show(
+      msg: t.import_theme_success,
+      severity: ToastSeverity.success,
+    );
   }
 
   // ── AI 生成 ──
@@ -894,6 +848,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                   scene: AiPromptScene.theme,
                   controller: _aiRequestController,
                   enabled: !_aiBusy,
+                  storeOf: () => appModel.prefsRepo,
                 ),
                 SizedBox(width: gap),
                 FushiFilledButton.icon(
@@ -1112,6 +1067,12 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     final double card = tokens.spacing.card;
     final bool lowLight = _accentLowContrast(Brightness.light);
     final bool lowDark = _accentLowContrast(Brightness.dark);
+    final String? overrideNote = switch (appModel.activeAccentOverrideSource) {
+      ThemeAccentOverrideSource.pageBackdrop =>
+        t.theme_accent_override_page_backdrop,
+      ThemeAccentOverrideSource.appIcon => t.theme_accent_override_app_icon,
+      null => null,
+    };
     return <Widget>[
       // ── hero：名称 + 导入 / 分享 / 更多 + 预览明暗 ──
       _buildHeaderCard(),
@@ -1176,12 +1137,20 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
             _ThemeRole.readerBackground,
             _ThemeRole.link,
             _ThemeRole.selection,
+            _ThemeRole.selectionText,
             _ThemeRole.audioHighlight,
           ]),
         ],
       ),
       // TODO-072：视频字幕颜色不在此页配置，只放一行说明。
       _buildNoteRow(t.video_subtitle_color_note),
+      // 背景图 / 图标取色正在覆盖主题时，「应用」会关掉那个取色开关（与主题选择色卡
+      // 同一入口）：在按钮上方说明，用户才知道应用后取色为什么没了。
+      if (overrideNote != null)
+        KeyedSubtree(
+          key: const ValueKey<String>('custom-theme-accent-override-note'),
+          child: _buildNoteRow(overrideNote),
+        ),
       SizedBox(height: card),
       FushiFilledButton.icon(
         key: const ValueKey<String>('custom-theme-apply'),
@@ -1264,7 +1233,8 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     final CustomThemeEntry entry = _buildEntry();
     await appModel.upsertCustomTheme(entry);
     await appModel.selectCustomTheme(entry.id);
-    await appModel.setAppThemeKey('custom-theme:${entry.id}');
+    // 「应用」= 用户明确要这个主题：与主题选择色卡同一入口，先关掉背景图 / 图标取色覆盖。
+    await appModel.pickAppThemeKey('custom-theme:${entry.id}');
     if (!mounted) return;
     navigator.pop();
   }
@@ -1916,6 +1886,11 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     );
   }
 
+  /// 「跟随」态的标签：查词高亮文字默认跟随的是正文字色而不是主题，单独说明。
+  String _followLabel(_ThemeRole role) => role == _ThemeRole.selectionText
+      ? t.theme_role_follows_body_text
+      : t.theme_role_follows_theme;
+
   /// tile 上的「跟随主题 / 自定义」小切换：未选 = 跟随主题，选中 = 自定义；
   /// 取消选中即恢复跟随主题。
   Widget _buildFollowToggle(_ThemeRole role, bool custom) {
@@ -1928,7 +1903,7 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
         visualDensity: VisualDensity.compact,
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
         label: Text(
-          custom ? t.theme_role_customize : t.theme_role_follows_theme,
+          custom ? t.theme_role_customize : _followLabel(role),
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
         ),
@@ -2236,11 +2211,17 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
     );
     final Widget toggle = _spot(
       _ThemeRole.container,
-      // 紧凑（窄屏吸顶）预览里示意开关按 28 高等比缩小：原尺寸（MD3 开关
+      // 紧凑（窄屏吸顶）预览里示意开关等比缩进 46×28 的框：原尺寸（MD3 开关
       // 约 66×46）在约 130 宽的 app 截面里把「按钮 / 标签 / 开关」挤成三行，
-      // 吸顶预览超过视口高度的三分之一。
+      // 吸顶预览超过视口高度的三分之一。宽高都要封顶——iOS 27 开关本身就是
+      // 28 高、63 宽（宽高比 2.25），只封高度时它不缩，标签行放不下开关。
+      // FittedBox 在松约束下按子件宽高比取尺寸，MD3 开关（高度先触顶）不受宽度
+      // 上限影响。
       compact
-          ? SizedBox(height: 28, child: FittedBox(child: previewSwitch))
+          ? ConstrainedBox(
+              constraints: const BoxConstraints(maxWidth: 46, maxHeight: 28),
+              child: FittedBox(child: previewSwitch),
+            )
           : previewSwitch,
     );
     final Widget progress = _spot(
@@ -2429,7 +2410,15 @@ class _CustomThemePageState extends BasePageState<CustomThemePage> {
                   _ThemeRole.selection,
                   ColoredBox(
                     color: selectionOnPage,
-                    child: Text('テキスト', style: bodyStyle),
+                    child: _spot(
+                      _ThemeRole.selectionText,
+                      Text(
+                        'テキスト',
+                        style: bodyStyle.copyWith(
+                          color: reader.selectionText ?? reader.fg,
+                        ),
+                      ),
+                    ),
                   ),
                 ),
                 Text('を読む。', style: bodyStyle),
@@ -2788,6 +2777,91 @@ class _ThemeColorPickerState extends State<_ThemeColorPicker> {
           ),
         ],
       ],
+    );
+  }
+}
+
+/// 粘贴主题 JSON 的导入弹窗。返回 null = 关闭；否则返回解析好的主题。
+///
+/// BUG-4221：输入框控制器归本 State 持有、路由移除时才释放；调用方在
+/// `await showAppDialog` 结束后立刻释放会撞上关窗动画里输入框的重建。
+class _ThemeImportDialog extends StatefulWidget {
+  const _ThemeImportDialog({required this.decode});
+
+  /// 解析粘贴的文本；不是合法主题返回 null。
+  final CustomThemeEntry? Function(String raw) decode;
+
+  @override
+  State<_ThemeImportDialog> createState() => _ThemeImportDialogState();
+}
+
+class _ThemeImportDialogState extends State<_ThemeImportDialog> {
+  final TextEditingController _controller = TextEditingController();
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    return FushiDialogFrame(
+      maxWidth: 480,
+      maxHeightFactor: 0.78,
+      scrollable: false,
+      child: FushiModalSheetFrame(
+        title: t.import_theme,
+        leadingIcon: FushiIcons.importFile,
+        bodyPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          0,
+          tokens.spacing.card,
+          tokens.spacing.gap,
+        ),
+        footerPadding: EdgeInsets.fromLTRB(
+          tokens.spacing.card,
+          tokens.spacing.gap,
+          tokens.spacing.card,
+          tokens.spacing.card,
+        ),
+        body: FushiTextField(
+          controller: _controller,
+          hintText: t.import_theme_hint,
+          autofocus: true,
+        ),
+        footer: Wrap(
+          alignment: WrapAlignment.end,
+          spacing: tokens.spacing.gap,
+          runSpacing: tokens.spacing.gap,
+          children: <Widget>[
+            adaptiveDialogAction(
+              context: context,
+              onPressed: () => Navigator.pop(context),
+              child: Text(t.dialog_close),
+            ),
+            adaptiveDialogAction(
+              context: context,
+              isDefaultAction: true,
+              onPressed: () {
+                final CustomThemeEntry? result = widget.decode(
+                  _controller.text,
+                );
+                if (result == null) {
+                  FushiToast.show(
+                    msg: t.import_theme_invalid,
+                    severity: ToastSeverity.error,
+                  );
+                  return;
+                }
+                Navigator.pop(context, result);
+              },
+              child: Text(t.dialog_import),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

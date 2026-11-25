@@ -28,6 +28,7 @@ import 'package:fushi_server/src/server_prefs.dart';
 import 'package:path/path.dart' as p;
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
+import 'support/fake_rwkv.dart';
 
 /// 假排行榜 Worker：只认 host 账户的设备钥匙；`POST /v1/me/devices` 验签后回新设备视角的账户。
 class _FakeLeaderboard {
@@ -136,6 +137,7 @@ void main() {
     paths = ServerPaths(config.dataDir);
     await paths.ensureLayout();
     host = HeadlessHost(
+      srsRwkvHttpClient: noNetworkHttpClient,
       config: config,
       paths: paths,
       db: db,

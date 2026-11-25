@@ -23,6 +23,29 @@ import 'dart:async';
 
 import 'package:flutter/services.dart';
 
+/// 行里的一段（平台的「词」，Windows OCR 对日文常常逐字）：在 [SystemOcrTextLine.text]
+/// 里的位置（UTF-16 码元）+ 它自己的框（送检图像素）。
+class SystemOcrTextSegment {
+  const SystemOcrTextSegment({
+    required this.start,
+    required this.length,
+    required this.rect,
+  });
+
+  /// 在行文本里的起点（UTF-16 码元下标）。
+  final int start;
+
+  /// 码元数。
+  final int length;
+
+  final Rect rect;
+
+  int get end => start + length;
+
+  @override
+  String toString() => 'SystemOcrTextSegment($start+$length, $rect)';
+}
+
 /// 平台识别出的一条文本行，坐标是**送检图的像素坐标**。
 class SystemOcrTextLine {
   const SystemOcrTextLine({
@@ -30,6 +53,7 @@ class SystemOcrTextLine {
     required this.rect,
     required this.isVertical,
     this.tile,
+    this.segments = const <SystemOcrTextSegment>[],
   });
 
   final String text;
@@ -44,6 +68,11 @@ class SystemOcrTextLine {
   /// 整页识别（没切、或平台忽略了切片请求）时为 null。
   final int? tile;
 
+  /// 平台给的词框（按行内顺序、互不重叠地覆盖 [text] 的一部分）。空 = 平台只给
+  /// 行框（点字时按字数等分行框估计）。Windows OCR 给（BUG-4367）；Apple 截屏识字、
+  /// 本机模型与 Google Lens 的截屏识字给逐字框（BUG-4069）。
+  final List<SystemOcrTextSegment> segments;
+
   @override
   String toString() =>
       'SystemOcrTextLine($text, $rect, vertical: $isVertical, tile: $tile)';
@@ -55,6 +84,9 @@ class SystemOcrPageResult {
     required this.lines,
     required this.imageWidth,
     required this.imageHeight,
+    this.recognizedWidth,
+    this.recognizedHeight,
+    this.maxImageDimension,
   });
 
   final List<SystemOcrTextLine> lines;
@@ -62,6 +94,14 @@ class SystemOcrPageResult {
   /// 送检图尺寸；坐标换算的分母，缺了它没法映射回页图。
   final int imageWidth;
   final int imageHeight;
+
+  /// 实际送进识别器的位图尺寸（Windows：超过 [maxImageDimension] 时被等比缩小）。
+  /// 平台不报时为 null。只用于诊断日志（BUG-4367）。
+  final int? recognizedWidth;
+  final int? recognizedHeight;
+
+  /// 识别器的最大边长（Windows `OcrEngine.MaxImageDimension`）；平台不报时为 null。
+  final int? maxImageDimension;
 
   bool get isEmpty => lines.isEmpty;
 }
@@ -105,6 +145,19 @@ abstract interface class SystemOcrPlatform {
   });
 }
 
+/// 平台能力的可选扩展：直接识别一整块**不透明** RGBA 像素（`width * height * 4` 字节，
+/// 行优先紧排），不经 PNG / JPEG 编码与平台解码（视频暂停 OCR 的播放器截帧）。语义同
+/// [SystemOcrPlatform.recognize]：[tiles] 是这块像素坐标里的切片，回传坐标也是这块像素的。
+abstract interface class SystemOcrPixelPlatform implements SystemOcrPlatform {
+  Future<SystemOcrPageResult> recognizePixels(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+    required String language,
+    List<Rect> tiles = const <Rect>[],
+  });
+}
+
 /// 系统 OCR 模型的就绪状态（BUG-2906）。
 ///
 /// 只有 Android 会出现「未就绪」：ML Kit 模型由 Google Play 服务保管，安装时的
@@ -137,7 +190,20 @@ enum SystemOcrModelStatus {
   playServicesInvalid,
 
   /// 其它让 Play 服务用不了的情况：系统 OCR 在这台设备上用不了。
-  playServicesUnavailable,
+  playServicesUnavailable;
+
+  /// 这台设备**根本没有可用的 Play 服务**（没装 / 非正版或已损坏 / 其它用不了），
+  /// 不是「装着但停用 / 版本旧 / 正在更新」这类用户点一下就能修好的情况。
+  ///
+  /// 自动选引擎据此跳过系统 OCR（BUG-4705）：Android 的 ML Kit 文字识别是 Play
+  /// 服务里的动态模块，这类设备上每一页都必然失败，自动档不该替用户选一个注定
+  /// 失败的引擎。手动选仍然允许——选中后由引导弹窗说明原因。
+  bool get playServicesAbsent => switch (this) {
+    SystemOcrModelStatus.playServicesMissing ||
+    SystemOcrModelStatus.playServicesInvalid ||
+    SystemOcrModelStatus.playServicesUnavailable => true,
+    _ => false,
+  };
 }
 
 /// `com.google.android.gms.common.ConnectionResult` 里与 Play 服务可用性有关的码。
@@ -294,11 +360,19 @@ abstract interface class SystemOcrModelSetup {
 }
 
 /// 生产实现：走平台通道。
-class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
-  const MethodChannelSystemOcr({MethodChannel? channel})
-    : _channel = channel ?? kSystemOcrChannel;
+class MethodChannelSystemOcr
+    implements SystemOcrPixelPlatform, SystemOcrModelSetup {
+  const MethodChannelSystemOcr({
+    MethodChannel? channel,
+    this.screenText = false,
+  }) : _channel = channel ?? kSystemOcrChannel;
 
   final MethodChannel _channel;
+
+  /// 送检图是一整块屏幕截图（桌面应用外截屏识字）：下发 `purpose: screen`。Apple 据此
+  /// 走行识别 + 逐字框，不对整屏做文档版面分析（反馈 Eemf0HOZhj / BUG-4069，4K 屏一分钟
+  /// 以上才出行框）；其它平台忽略这个字段。
+  final bool screenText;
 
   @override
   Future<bool> isAvailable() async {
@@ -318,20 +392,54 @@ class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
     Uint8List imageBytes, {
     required String language,
     List<Rect> tiles = const <Rect>[],
-  }) async {
+  }) => _invokeRecognize(<String, Object?>{
+    'bytes': imageBytes,
+    'language': language,
+    ..._tilesArgument(tiles),
+  });
+
+  /// 原生侧收 `pixels`（RGBA）+ `width` / `height` 时跳过解码，直接把像素交给识别器
+  /// （Windows SoftwareBitmap / Android Bitmap / Apple CGImage）。
+  @override
+  Future<SystemOcrPageResult> recognizePixels(
+    Uint8List rgba, {
+    required int width,
+    required int height,
+    required String language,
+    List<Rect> tiles = const <Rect>[],
+  }) {
+    if (width <= 0 || height <= 0 || rgba.length != width * height * 4) {
+      throw ArgumentError(
+        'recognizePixels needs width*height*4 bytes, got ${rgba.length} for '
+        '${width}x$height',
+      );
+    }
+    return _invokeRecognize(<String, Object?>{
+      'pixels': rgba,
+      'width': width,
+      'height': height,
+      'language': language,
+      ..._tilesArgument(tiles),
+    });
+  }
+
+  Map<String, Object?> _tilesArgument(List<Rect> tiles) => <String, Object?>{
+    if (screenText) 'purpose': kSystemOcrScreenPurpose,
+    if (tiles.isNotEmpty)
+      'tiles': <List<double>>[
+        for (final Rect tile in tiles)
+          <double>[tile.left, tile.top, tile.right, tile.bottom],
+      ],
+  };
+
+  Future<SystemOcrPageResult> _invokeRecognize(
+    Map<String, Object?> arguments,
+  ) async {
     final Map<Object?, Object?>? raw;
     try {
       raw = await _channel.invokeMapMethod<Object?, Object?>(
         'recognize',
-        <String, Object?>{
-          'bytes': imageBytes,
-          'language': language,
-          if (tiles.isNotEmpty)
-            'tiles': <List<double>>[
-              for (final Rect tile in tiles)
-                <double>[tile.left, tile.top, tile.right, tile.bottom],
-            ],
-        },
+        arguments,
       );
     } on PlatformException catch (error) {
       // 模型没就绪（unbundled ML Kit 的模型由 Google Play 服务保管，可能还在下、
@@ -412,6 +520,9 @@ class MethodChannelSystemOcr implements SystemOcrPlatform, SystemOcrModelSetup {
   }
 }
 
+/// `recognize` 的 `purpose` 取值：送检图是屏幕截图（见 [MethodChannelSystemOcr.screenText]）。
+const String kSystemOcrScreenPurpose = 'screen';
+
 /// 平台通道。原生侧实现同名方法。
 const MethodChannel kSystemOcrChannel = MethodChannel(
   'app.fushi.reader/system_ocr',
@@ -451,6 +562,7 @@ SystemOcrPageResult parseSystemOcrPayload(Map<Object?, Object?> raw) {
               ? vertical
               : inferSystemOcrVertical(rect),
           tile: tile is num ? tile.toInt() : null,
+          segments: _parseSegments(entry['words'], text.length),
         ),
       );
     }
@@ -459,7 +571,46 @@ SystemOcrPageResult parseSystemOcrPayload(Map<Object?, Object?> raw) {
     lines: lines,
     imageWidth: width,
     imageHeight: height,
+    recognizedWidth: _asOptionalPositiveInt(raw['recognizedWidth']),
+    recognizedHeight: _asOptionalPositiveInt(raw['recognizedHeight']),
+    maxImageDimension: _asOptionalPositiveInt(raw['maxImageDimension']),
   );
+}
+
+/// 行的词框（BUG-4367）。越出行文本、没面积、与前一段重叠或倒序的段丢掉——
+/// 剩下的保证按行内顺序、互不重叠，点字定位可以直接按顺序找。
+List<SystemOcrTextSegment> _parseSegments(Object? raw, int textLength) {
+  if (raw is! List || raw.isEmpty) return const <SystemOcrTextSegment>[];
+  final List<SystemOcrTextSegment> out = <SystemOcrTextSegment>[];
+  int cursor = 0;
+  for (final Object? entry in raw) {
+    if (entry is! Map) continue;
+    final Object? start = entry['start'];
+    final Object? length = entry['length'];
+    if (start is! num || length is! num) continue;
+    final int s = start.toInt();
+    final int n = length.toInt();
+    if (s < cursor || n <= 0 || s + n > textLength) continue;
+    final double left = _asDouble(entry['left']);
+    final double top = _asDouble(entry['top']);
+    final double right = _asDouble(entry['right']);
+    final double bottom = _asDouble(entry['bottom']);
+    if (!(right > left) || !(bottom > top)) continue;
+    out.add(
+      SystemOcrTextSegment(
+        start: s,
+        length: n,
+        rect: Rect.fromLTRB(left, top, right, bottom),
+      ),
+    );
+    cursor = s + n;
+  }
+  return out;
+}
+
+int? _asOptionalPositiveInt(Object? value) {
+  final int parsed = _asInt(value);
+  return parsed > 0 ? parsed : null;
 }
 
 /// 平台不表态时按包围盒推断竖排：高远大于宽的行就是竖排。漫画气泡里这条

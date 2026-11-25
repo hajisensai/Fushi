@@ -18,13 +18,15 @@ class _ReaderPageSessionRemote implements ReaderSessionRemote {
   ReaderSessionSnapshot? snapshot() {
     final EpubBook? book = _book;
     if (book == null) return null;
+    // 章号与 currentChars 同源：歌词模式 = 当前句所在章（正文停着的章不是阅读位置）。
+    final int chapter = _state._readingChapter;
     return ReaderSessionSnapshot(
       kind: ReaderSessionKind.epub,
       bookKey: _state.widget.bookKey,
       title: book.title,
-      chapterIndex: _state._currentChapter,
+      chapterIndex: chapter,
       chapterCount: book.chapters.length,
-      chapterProgress: _state._lastProgressSection == _state._currentChapter
+      chapterProgress: _state._lastProgressSection == chapter
           ? _state._lastProgressValue
           : 0,
       currentChars: _state._progressCurrentChars,

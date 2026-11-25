@@ -45,8 +45,10 @@ const AnimationStyle fushiThemeAnimationStyle = AnimationStyle(
 // - fast（小组件：按钮、开关、图标）/ default（局部区域：卡片展开、侧板）/
 //   slow（整屏：页面、全屏 sheet）。
 //
-// 数值取自 material-components-android `motion/res/values/tokens.xml` 与 Compose
-// `MotionScheme.expressive()`（两者一致）：
+// 数值的唯一真相源是 material_ui 1.11 起的官方 token [Springs]（expressive 一族，
+// 与 material-components-android `motion/res/values/tokens.xml`、Compose
+// `MotionScheme.expressive()` 一致）；[FushiSprings] 经
+// [FushiSpringSpec.material] 直接取官方常量，不再手抄数值：
 //
 // | token          | dampingRatio | stiffness |
 // |----------------|--------------|-----------|
@@ -90,6 +92,14 @@ class FushiSpringSpec {
     final double omega = 2 * math.pi / durationSeconds;
     return FushiSpringSpec(dampingRatio: 1 - bounce, stiffness: omega * omega);
   }
+
+  /// 由官方 Material 弹簧 token（[Springs]）构造。官方常量存的是
+  /// [SpringDescription.damping]（质量 1），这里还原成阻尼比
+  /// `ζ = damping / (2·√(stiffness·mass))`，与官方文档同一换算。
+  FushiSpringSpec.material(SpringDescription spring, {this.enabled = true})
+    : dampingRatio =
+          spring.damping / (2 * math.sqrt(spring.stiffness * spring.mass)),
+      stiffness = spring.stiffness;
 
   final double dampingRatio;
   final double stiffness;
@@ -161,25 +171,21 @@ class FushiSpringSpec {
       'FushiSpringSpec(ζ=$dampingRatio, k=$stiffness${enabled ? '' : ', reduced'})';
 }
 
-/// M3 Expressive 的六个弹簧 token（Material 设计系统；常量，可在 const 上下文
-/// 与无 BuildContext 处直接用）。需要随设计系统 / 降级切换时用
-/// [FushiMotionScheme.of]。
+/// M3 Expressive 的六个弹簧 token（Material 设计系统；无 BuildContext 处直接
+/// 用）。取官方 [Springs] 的 expressive 一族，不手抄数值。需要随设计系统 / 降级
+/// 切换时用 [FushiMotionScheme.of]。
 abstract final class FushiSprings {
-  static const FushiSpringSpec spatialFast = FushiSpringSpec(
-    dampingRatio: 0.6,
-    stiffness: 800,
+  static final FushiSpringSpec spatialFast = FushiSpringSpec.material(
+    Springs.expressiveFastSpatial,
   );
-  static const FushiSpringSpec spatialDefault = FushiSpringSpec(
-    dampingRatio: 0.8,
-    stiffness: 380,
+  static final FushiSpringSpec spatialDefault = FushiSpringSpec.material(
+    Springs.expressiveDefaultSpatial,
   );
-  static const FushiSpringSpec spatialSlow = FushiSpringSpec(
-    dampingRatio: 0.8,
-    stiffness: 200,
+  static final FushiSpringSpec spatialSlow = FushiSpringSpec.material(
+    Springs.expressiveSlowSpatial,
   );
-  static const FushiSpringSpec effectsFast = FushiSpringSpec(
-    dampingRatio: 1,
-    stiffness: 3800,
+  static final FushiSpringSpec effectsFast = FushiSpringSpec.material(
+    Springs.expressiveFastEffects,
   );
 
   /// 树状组件展开（Material）：ζ 0.7 的俏皮回弹，刚度与 [spatialDefault] 同档。
@@ -188,13 +194,11 @@ abstract final class FushiSprings {
     dampingRatio: 0.7,
     stiffness: 380,
   );
-  static const FushiSpringSpec effectsDefault = FushiSpringSpec(
-    dampingRatio: 1,
-    stiffness: 1600,
+  static final FushiSpringSpec effectsDefault = FushiSpringSpec.material(
+    Springs.expressiveDefaultEffects,
   );
-  static const FushiSpringSpec effectsSlow = FushiSpringSpec(
-    dampingRatio: 1,
-    stiffness: 800,
+  static final FushiSpringSpec effectsSlow = FushiSpringSpec.material(
+    Springs.expressiveSlowEffects,
   );
 }
 
@@ -220,8 +224,8 @@ class FushiMotionScheme {
     required this.effectsSlow,
   });
 
-  /// Material 设计系统：M3 Expressive 弹簧。
-  static const FushiMotionScheme expressive = FushiMotionScheme(
+  /// Material 设计系统：M3 Expressive 弹簧（官方 [Springs]）。
+  static final FushiMotionScheme expressive = FushiMotionScheme(
     spatialFast: FushiSprings.spatialFast,
     spatialDefault: FushiSprings.spatialDefault,
     spatialSlow: FushiSprings.spatialSlow,
@@ -473,6 +477,17 @@ abstract final class FushiMotion {
 
   /// 环境动效：背景大形状自转一圈的时长。
   static const Duration ambientSpin = Duration(seconds: 120);
+
+  /// 环境动效（吉祥物光晕）：空闲时一呼一吸的单程时长，接近静息呼吸的节奏。
+  static const Duration ambientBreath = Duration(milliseconds: 2800);
+
+  /// 环境动效（吉祥物光晕）：有后台任务在跑时的单程时长，比 [ambientBreath] 快一倍。
+  static const Duration ambientBreathBusy = Duration(milliseconds: 1400);
+
+  /// 环境动效（ambient ticker）两次 tick 之间的最小间隔：加上等下一个 vsync，实际约
+  /// 30 fps。环境动效慢到几十秒一个来回、光晕呼吸每步透明度变化不到 2/255，采样变稀
+  /// 看不出差别，却省下高刷屏上绝大多数整窗合成（BUG-4961）。
+  static const Duration ambientFrameInterval = Duration(milliseconds: 25);
 
   /// 环境动效（[ambientDrift] 往返）的曲线：两端速度为零，掉头处无顿挫。
   static const Curve ambient = _AmbientSine();

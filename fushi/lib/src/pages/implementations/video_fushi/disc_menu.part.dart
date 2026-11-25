@@ -3,11 +3,14 @@ part of '../video_fushi_page.dart';
 /// The disc supplies the picture and buttons. Flutter only forwards input and
 /// binds a selected physical playlist to the existing learning pipeline.
 extension _VideoDiscMenu on _VideoFushiPageState {
-  Future<bool> _ensureDiscMenuRuntime(String playlistPath) async {
+  Future<_DiscMenuRuntimeCheck?> _ensureDiscMenuRuntime(
+    String playlistPath,
+  ) async {
     // DVD menus run in libdvdnav: no BD-J runtime to provision.
-    if (isDvdTitlePath(playlistPath)) return true;
+    if (isDvdTitlePath(playlistPath)) return const _DiscMenuRuntimeCheck();
     final String? root = discRootForMemberPath(playlistPath);
-    if (root == null) return true; // Controller reports malformed input.
+    // Controller reports malformed input.
+    if (root == null) return const _DiscMenuRuntimeCheck();
     final BlurayMenuInfo? info;
     try {
       info = await readBlurayMenuInfo(root);
@@ -19,40 +22,44 @@ extension _VideoDiscMenu on _VideoFushiPageState {
           _failReason = t.video_disc_runtime_required;
         });
       }
-      return false;
+      return null;
     }
     return _ensureDiscMenuRuntimeFor(info);
   }
 
   /// BD-J 运行时检查本体：本地盘读本机 `index.bdmv`，远端盘读共享里的同一文件，
-  /// 之后完全相同。
-  Future<bool> _ensureDiscMenuRuntimeFor(BlurayMenuInfo? info) async {
+  /// 之后完全相同。null = 不开盘（失败态已写好）；否则带上这次已验证的 Java 目录，
+  /// 交给 `controller.load` 免得它再探测一遍。
+  Future<_DiscMenuRuntimeCheck?> _ensureDiscMenuRuntimeFor(
+    BlurayMenuInfo? info,
+  ) async {
     try {
-      if (!mounted) return false;
-      if (info?.requiresJava != true) return true;
+      if (!mounted) return null;
+      if (info?.requiresJava != true) return const _DiscMenuRuntimeCheck();
       final BlurayJavaRuntimeManager manager = BlurayJavaRuntimeManager();
-      if (await manager.probeJavaHome() != null) return mounted;
-      if (!mounted) return false;
+      final String? probed = await manager.probeJavaHome();
+      if (!mounted) return null;
+      if (probed != null) return _DiscMenuRuntimeCheck(javaHome: probed);
       if (!manager.canInstall) {
-        if (!Platform.isWindows) return true;
+        if (!Platform.isWindows) return const _DiscMenuRuntimeCheck();
         throw const VideoDiscMenuException('java-runtime-unavailable');
       }
-      final bool installed =
-          await _focusOwnership.guardOverlay(
-            () => showAppDialog<bool>(
-              context: context,
-              barrierDismissible: false,
-              builder: (_) => _BlurayJavaRuntimeInstallDialog(manager: manager),
-            ),
-          ) ??
-          false;
-      if (!installed && mounted) {
+      final String? installed = await _focusOwnership.guardOverlay(
+        () => showAppDialog<String>(
+          context: context,
+          barrierDismissible: false,
+          builder: (_) => _BlurayJavaRuntimeInstallDialog(manager: manager),
+        ),
+      );
+      if (!mounted) return null;
+      if (installed == null) {
         _rebuild(() {
           _failed = true;
           _failReason = t.video_disc_runtime_required;
         });
+        return null;
       }
-      return installed && mounted;
+      return _DiscMenuRuntimeCheck(javaHome: installed);
     } catch (error, stack) {
       ErrorLogService.instance.log('VideoDiscMenu.runtime', error, stack);
       if (mounted) {
@@ -61,7 +68,7 @@ extension _VideoDiscMenu on _VideoFushiPageState {
           _failReason = t.video_disc_runtime_required;
         });
       }
-      return false;
+      return null;
     }
   }
 
@@ -69,7 +76,6 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     if (!controller.isBlurayNavigationSession) return true;
     if (controller.discMiningAvailable && !_discLearningBlocked) return true;
     final String message = switch (controller.discMiningUnavailableReason) {
-      'multi-angle-source' => t.video_disc_angle_extraction_unavailable,
       'audio-track-unavailable' => t.video_disc_audio_selection_pending,
       'extraction-source-unavailable' => t.video_clip_export_input_missing,
       'encrypted-extraction-source' => t.video_disc_extraction_unavailable,
@@ -79,6 +85,16 @@ extension _VideoDiscMenu on _VideoFushiPageState {
     };
     _showOsd(message, severity: ToastSeverity.warning);
     return false;
+  }
+
+  /// 生成字幕 / 本机转录要读当前 title 的音轨：远端原盘会话里由放盘的 host 读（当前
+  /// title 能在 host 上定位就放行，见 `_remoteDiscHostTitle`）；其余与制卡抽取同一道闸门
+  /// （[_discExtractionAllowed]，抽不了时说明原因）。
+  bool _discSubtitleAudioAllowed(VideoPlayerController controller) {
+    if (controller.isRemoteDiscSession && _remoteDiscHostTitle() != null) {
+      return true;
+    }
+    return _discExtractionAllowed(controller);
   }
 
   // Pending menus still own input so arrows cannot leak into seek/volume.
@@ -197,16 +213,67 @@ extension _VideoDiscMenu on _VideoFushiPageState {
       !isMobilePlatform &&
       appModel.videoDiscAutoFullscreen;
 
-  /// 「返回」在原盘会话里的第一步（页面浮层已由调用方先关）：控制栏收着就只把它呼出来
-  /// 并返回 true；开着返回 false，调用方照常退出。
-  bool _discSessionShowBarOnBack() {
-    if (!_discSessionSurfaceActive || _discSessionExitRequested) return false;
-    if (resolveDiscSessionBack(barVisible: _discMenuChromeVisible.value) !=
-        DiscSessionBackRoute.showBar) {
-      return false;
+  /// 原盘会话里「返回」此刻落在哪一级（页面浮层、全屏已由调用方先处理）；不是原盘会话
+  /// 或已在退出时为 null。层级：正片全屏 → 正片窗口 → 盘自己的菜单 → 详情页。
+  DiscSessionBackRoute? _discSessionBackRoute() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null ||
+        !controller.isBlurayNavigationSession ||
+        _discSessionExitRequested) {
+      return null;
     }
+    final VideoDiscNavigationState? state = controller.discNavigationState;
+    return resolveDiscSessionBack(
+      onMenu: _discSessionSurfaceActive,
+      barVisible: _discMenuChromeVisible.value,
+      menuCallAllowed:
+          controller.discNavigationSupported &&
+          !controller.discMenuEntryPending &&
+          state != null &&
+          videoDiscMenuKeyAllowed(state, VideoDiscMenuKey.topMenu),
+    );
+  }
+
+  /// 「返回」在原盘菜单阶段的第一步：控制栏收着就只把它呼出来并返回 true；开着返回
+  /// false，调用方照常退出。正片阶段不在这里处理——全屏路由里的返回先退全屏
+  /// （[_exitVideoFullscreenOnBack]），窗口里才由 [_discSessionReturnToMenuOnBack] 回菜单。
+  bool _discSessionShowBarOnBack() {
+    if (_discSessionBackRoute() != DiscSessionBackRoute.showBar) return false;
     _pokeDiscMenuChrome();
     return true;
+  }
+
+  /// 「返回」在正片阶段（窗口里）的一级：回到盘自己的菜单，而不是退出整个原盘会话
+  /// ——正片是从盘菜单进来的，它的上一级就是盘菜单（拍板台 58EoAZOXVN）。盘不允许
+  /// 调菜单（UO 屏蔽 / 没有顶层菜单）时没有这一级，返回 false 由调用方退出会话。
+  /// 回菜单请求在途时再按返回直接吞掉，不重复发 topMenu。
+  bool _discSessionReturnToMenuOnBack() {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return false;
+    bool current() => mounted && identical(_controller, controller);
+    return _discMenuReturn.handleBack(
+      _discSessionBackRoute(),
+      send: () => controller.discMenuKey(VideoDiscMenuKey.topMenu),
+      // 快照说允许、盘却拒了这次菜单调用：这张盘此刻没有菜单这一级可回，按层级
+      // 表的下一级退出会话（与 [resolveDiscSessionBack] 的 menuCallAllowed=false 同义）。
+      onRefused: () async {
+        ErrorLogService.instance.logDiagnostic(
+          'VideoDiscMenu.backToMenu',
+          'disc refused the top-menu call; leaving the session',
+        );
+        if (current()) await _exitDiscSession();
+      },
+      // 菜单还在初始化、会话此刻不可发、桥接 / mpv 出错：都不是盘的回答，留在正片。
+      onFailed: (Object error, StackTrace stack) {
+        ErrorLogService.instance.log('VideoDiscMenu.backToMenu', error, stack);
+        if (current()) {
+          _showOsd(
+            t.video_disc_navigation_failed,
+            severity: ToastSeverity.error,
+          );
+        }
+      },
+    );
   }
 
   /// Esc / 手柄 B 短按：先关页面浮层，再按控制栏状态呼出或退出。
@@ -331,6 +398,7 @@ extension _VideoDiscMenu on _VideoFushiPageState {
       // 换了光盘标题：旧标题的图形字幕整轨转文字作废，强杀在途抽轨（见 _applyLoad）。
       _cancelGraphicSubtitleOcr();
       _discBindingPath = selected;
+      _discMenuEpisodes = null;
       final int generation = ++_discBindingGeneration;
       if (selected != null) {
         unawaited(
@@ -367,16 +435,40 @@ extension _VideoDiscMenu on _VideoFushiPageState {
       // Remote disc: the title is the host's; there is no row to bind here.
       if (controller.isRemoteDiscSession) {
         if (!current()) return;
+        // 换了 title：上一条 title 登记 / 选中的外挂字幕（生成、转录取回的）不属于这一条，
+        // 与本机原盘换 title 同样清掉。
+        _rebuild(() {
+          _currentSubtitleSource = null;
+          _importedSubtitleSources = const <SubtitleSource>[];
+          _subtitleMenuSources = const <SubtitleSource>[];
+          _subtitleMenuSourcesPath = null;
+          _subtitleMenuLoading = false;
+        });
         controller.bindRemoteDiscTitle(expectedGeneration: nativeGeneration);
         return;
       }
-      final VideoBookRow? row = isDvdTitlePath(path)
-          ? await ensureDvdTitleInLibrary(appModel.database, path)
-          : await ensureBlurayTitleInLibrary(appModel.database, path);
+      // A playlist the scanner split into episodes (a disc's "play all") has no
+      // row of its own: the library holds its episodes, and the one under the
+      // playhead is the identity (BUG-5312). Progress is mapped onto that
+      // episode's own axis in [_discMenuEpisodeProgress].
+      BlurayMenuTitleBinding? menu;
+      final VideoBookRow? row;
+      if (isDvdTitlePath(path)) {
+        row = await ensureDvdTitleInLibrary(appModel.database, path);
+      } else {
+        menu = await ensureBlurayMenuTitleInLibrary(appModel.database, path);
+        final int playheadMs =
+            ((controller.discNavigationState?.positionSeconds ?? 0) * 1000)
+                .round();
+        row = menu?.row ?? menu?.episodeAt(playheadMs)?.row;
+      }
       if (!current() || row == null) return;
       final VideoBookRow selected = row;
+      final BlurayMenuTitleBinding? episodes =
+          menu != null && menu.episodes.isNotEmpty ? menu : null;
       // Identity changes atomically before enabling title playback consumers.
       _rebuild(() {
+        _discMenuEpisodes = episodes;
         _discBookUid = selected.bookUid;
         _bookRow = selected;
         final int episode = _episodes.indexWhere(
@@ -418,6 +510,95 @@ extension _VideoDiscMenu on _VideoFushiPageState {
         );
       }
     }
+  }
+
+  // ── 原盘分集时间轴（BUG-5356）──────────────────────────────────────────────
+  //
+  // 菜单「全部播放」时播放器（及字幕、制卡裁剪、跳转记录）都在整条播放列表的时间轴
+  // 上，库身份却是播放头所在的那一集。凡是「键是某一集、时间是锚点」的落库 / 判定
+  // （观看采集器、收藏句、制卡历史、收藏词）都在这里换算：写入减去该集起点，读回
+  // （收藏镜像、遥控打开收藏）加回起点。页内的状态（镜像、跳转记录、字幕高亮）一律
+  // 留在播放器时间轴上，跨集不作废。
+
+  /// 当前库身份（[_discBookUid]）在原盘「全部播放」里对应的那一集；其余为 null。
+  BlurayMenuEpisode? get _discMenuActiveEpisode {
+    final BlurayMenuTitleBinding? menu = _discMenuEpisodes;
+    final String? uid = _discBookUid;
+    return menu == null || uid == null ? null : menu.episodeOf(uid);
+  }
+
+  /// 播放器时间轴（字幕句起点同）上的 [playerMs] 在库里记到哪一行的哪一刻：原盘
+  /// 「全部播放」按句子所在的那一集换算；其余就是 `(_activeBookUid, playerMs)`。
+  ({String bookUid, int ms}) _libraryAnchorAt(int playerMs) =>
+      _discMenuEpisodes?.anchorAt(playerMs) ??
+      (bookUid: _activeBookUid, ms: playerMs);
+
+  /// [_libraryAnchorAt] 的反向：库行 [bookKey] 时间轴上的 [ms] 在播放器时间轴上是
+  /// 哪一刻；锚点不属于本页此刻所播的视频时为 null。
+  int? _playerMsOfAnchor(String? bookKey, int ms) {
+    final BlurayMenuTitleBinding? menu = _discMenuEpisodes;
+    if (menu == null) return bookKey == _activeBookUid ? ms : null;
+    return bookKey == null ? null : menu.playlistMsOf(bookKey, ms);
+  }
+
+  /// 播放器时间轴上的 [playerMs] 在**当前这一集**时间轴上的位置（键已定为
+  /// [_activeBookUid] 的写入用，如收藏词）；不是原盘「全部播放」时原样返回。
+  int _activeEpisodeAxisMs(int playerMs) {
+    final BlurayMenuEpisode? episode = _discMenuActiveEpisode;
+    if (episode == null) return playerMs;
+    final int relative = playerMs - episode.startMs;
+    final int length = episode.endMs - episode.startMs;
+    return relative < 0 ? 0 : (relative > length ? length : relative);
+  }
+
+  /// 播放器时间轴的身份：同一值下页内按播放器毫秒记的状态（收藏镜像、跳转记录）
+  /// 仍然有效。原盘「全部播放」跨集只换库身份、不换时间轴，所以按绑定的播放列表算。
+  String get _playerAxisScope {
+    final String? path = _discBindingPath;
+    return _discMenuEpisodes != null && path != null
+        ? 'disc-title:$path'
+        : _activeBookUid;
+  }
+
+  /// 原盘菜单「全部播放」这类按集切开的播放列表：把播放列表时间轴上的一次进度写入
+  /// [posMs] 改记到播放头所在的那一集（这一集自己的时间轴），播放头跨进下一集时
+  /// 顺带把页面与控制器的库身份换过去（BUG-5312）。不是分集绑定、或 [uid] 不是本次
+  /// 绑定里的集（迟到的旧标题写入）时返回 null，调用方照原样写。
+  ({String uid, int positionMs, int durationMs})? _discMenuEpisodeProgress(
+    String uid,
+    int posMs,
+  ) {
+    final BlurayMenuTitleBinding? menu = _discMenuEpisodes;
+    final VideoPlayerController? controller = _controller;
+    if (menu == null || controller == null || !menu.hasEpisode(uid)) {
+      return null;
+    }
+    final ({BlurayMenuEpisode episode, int positionMs})? progress = menu
+        .progressAt(posMs);
+    if (progress == null) return null;
+    final VideoBookRow row = progress.episode.row;
+    if (row.bookUid != _discBookUid && mounted) {
+      _rebuild(() {
+        _discBookUid = row.bookUid;
+        _bookRow = row;
+        final int episode = _episodes.indexWhere(
+          (_PlaylistEpisodeRef entry) => entry.bookUid == row.bookUid,
+        );
+        _currentEpisode = episode < 0 ? 0 : episode;
+        _title = row.title;
+      });
+      _titleNotifier.value = row.title;
+      controller.retargetDiscTitleBook(row.bookUid);
+      // 按新一集重建观看采集器（旧采集器离开时按旧集的区间结算，见
+      // [EpisodeAxisPlaybackSource]）。收藏镜像覆盖整条播放列表的各集（见
+      // [_refreshFavoritedCueCache]），跨集照样有效，这里不必等重读。
+      _ensureWatchTracker(controller, row.title);
+    }
+    return (
+      uid: row.bookUid,
+      positionMs: progress.positionMs,
+      durationMs: progress.episode.endMs - progress.episode.startMs,
+    );
   }
 
   /// 原盘菜单顶栏的自动隐藏：任何指针活动都把它唤出，静置
@@ -896,6 +1077,14 @@ extension _VideoDiscMenu on _VideoFushiPageState {
   }
 }
 
+/// 开盘前 BD-J 运行时检查通过后的结论。[javaHome] 是这次刚探测到 / 装好并验证过的
+/// 私有 Java 目录；null = 不需要 Java 或本机没有私有运行时（controller 照原路径处理）。
+class _DiscMenuRuntimeCheck {
+  const _DiscMenuRuntimeCheck({this.javaHome});
+  final String? javaHome;
+}
+
+/// 安装成功时以 [BlurayJavaRuntimeManager.install] 返回的 Java 目录关闭，取消关闭为 null。
 class _BlurayJavaRuntimeInstallDialog extends StatefulWidget {
   const _BlurayJavaRuntimeInstallDialog({required this.manager});
   final BlurayJavaRuntimeManager manager;
@@ -916,7 +1105,7 @@ class _BlurayJavaRuntimeInstallDialogState
       _failed = false;
     });
     try {
-      await widget.manager.install(
+      final String javaHome = await widget.manager.install(
         onProgress: (int received, int? total) {
           if (mounted) {
             setState(
@@ -927,7 +1116,7 @@ class _BlurayJavaRuntimeInstallDialogState
           }
         },
       );
-      if (mounted) Navigator.of(context).pop(true);
+      if (mounted) Navigator.of(context).pop(javaHome);
     } catch (error, stack) {
       ErrorLogService.instance.log(
         'VideoDiscMenu.installRuntime',
@@ -973,7 +1162,7 @@ class _BlurayJavaRuntimeInstallDialogState
         FushiTextButton(
           onPressed: () {
             widget.manager.cancel();
-            Navigator.of(context).pop(false);
+            Navigator.of(context).pop();
           },
           child: Text(t.cancel),
         ),

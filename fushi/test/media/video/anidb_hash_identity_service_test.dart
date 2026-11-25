@@ -13,6 +13,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_transport.dart'
 const AnidbUdpConfig config = AnidbUdpConfig(
   username: 'testuser',
   password: 'secret',
+  apiKey: 'udp-key',
   clientName: 'testclient',
   clientVersion: 1,
 );
@@ -69,6 +70,7 @@ void main() {
         config: const AnidbUdpConfig(
           username: '',
           password: '',
+          apiKey: 'udp-key',
           clientName: '',
           clientVersion: 0,
         ),
@@ -359,6 +361,79 @@ void main() {
         expect(store.records.single.missAttempts, 2);
       },
     );
+
+    // video-10：到期复查「查无」的文件时，同路径 + 同大小 + 同 mtime 的记录里
+    // 已有 ED2K，不再整文件重读（每个未收录文件最多复查 14 次）。
+    test('a due recheck of an unchanged miss reuses the stored ED2K instead of '
+        're-hashing the file', () async {
+      final Directory dir = await Directory.systemTemp.createTemp(
+        'anidb-store-',
+      );
+      addTearDown(() => dir.delete(recursive: true));
+      final File file = await File('${dir.path}/video.mkv').writeAsString('a');
+      final _MemoryStore store = _MemoryStore();
+      int hashes = 0;
+      final List<String> lookups = <String>[];
+      DateTime now = DateTime(2026, 9, 18);
+      // 每次新建 service = 进程重启：内存哈希缓存不在，只剩持久层记录。
+      AnidbHashIdentityService make() => service(
+        store,
+        onHash: () => hashes++,
+        onLookup: lookups.add,
+        lookupResult: null,
+        now: () => now,
+      );
+      await make().identifyFile(file.path);
+      expect(hashes, 1);
+      now = now.add(const Duration(days: 2));
+      int progressDone = -1;
+      final AnidbHashIdentityResult again = await make().identifyFile(
+        file.path,
+        onProgress: (int done, int total) => progressDone = done,
+      );
+
+      expect(hashes, 1, reason: '复查不重算哈希');
+      expect(lookups, <String>['a', 'a'], reason: '照旧拿记录里的 ED2K 再问一次');
+      expect(again.status, AnidbHashIdentityStatus.notFound);
+      expect(again.fromStore, isFalse);
+      expect(again.missAttempts, 2);
+      expect(again.hash?.ed2k, 'a');
+      expect(progressDone, 1, reason: '进度照常报满');
+      expect(store.records.single.missAttempts, 2);
+
+      // 内容变了（大小 / mtime 对不上记录）：记录不再代表这份内容，照常重算。
+      await file.writeAsString('changed');
+      now = now.add(const Duration(days: 2));
+      await make().identifyFile(file.path);
+      expect(hashes, 2);
+    });
+
+    test('a file sized an exact multiple of the ED2K chunk is still re-hashed '
+        'on recheck (the stored row has no blue-variant hash)', () async {
+      final Directory dir = await Directory.systemTemp.createTemp(
+        'anidb-store-',
+      );
+      addTearDown(() => dir.delete(recursive: true));
+      final File file = File('${dir.path}/video.mkv');
+      final RandomAccessFile handle = await file.open(mode: FileMode.write);
+      await handle.truncate(anidbEd2kChunkSize);
+      await handle.close();
+      final _MemoryStore store = _MemoryStore();
+      int hashes = 0;
+      DateTime now = DateTime(2026, 9, 18);
+      AnidbHashIdentityService make() => service(
+        store,
+        onHash: () => hashes++,
+        onLookup: (_) {},
+        lookupResult: null,
+        now: () => now,
+      );
+      await make().identifyFile(file.path);
+      now = now.add(const Duration(days: 2));
+      await make().identifyFile(file.path);
+
+      expect(hashes, 2, reason: '整数倍文件有备用哈希，记录里没存，必须重算');
+    });
 
     test('after 15 misses the file is no longer re-queried automatically '
         '(Shoko MaxAutoScanAttemptsPerFile)', () async {

@@ -1,7 +1,6 @@
-import 'dart:io';
-
-import 'package:test/test.dart';
+import 'package:fushi/src/reader/reader_sentence_audio_relocation_script.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:test/test.dart';
 
 /// G7：日文归一化码点原语（`hibiki_core` `jp_codepoint_fold.dart`）。
 ///
@@ -10,8 +9,9 @@ import 'package:fushi_core/fushi_core.dart';
 /// 各自策略层行为由各自既有测试锁定。本文件锁两件事：
 /// ① 原语本身的码点变换逐字节冻结（参与搜索归一化与 sasayaki 匹配坐标系，
 ///    输出一变即改变既有匹配/高亮行为）；
-/// ② 运行期 reader JS 持有的半角片假名查表副本（`hwKataToFw`，跨语言无法引用
-///    Dart 常量）与共享 Dart 表逐项一致（跨语言 parity 锁）。
+/// ② 运行期 reader JS 持有的半角片假名查表副本（`kSentenceAudioRelocationJs` 的
+///    `HW_KATA_TO_FW`，跨语言无法引用 Dart 常量）与共享 Dart 表逐项一致（跨语言
+///    parity 锁）。
 void main() {
   group('fullwidthAsciiToHalfwidth', () {
     test('U+FF01..U+FF5E 整段平移 -0xFEE0', () {
@@ -64,20 +64,27 @@ void main() {
     });
   });
 
-  group('reader JS hwKataToFw 副本 parity（跨语言锁）', () {
-    test('JS 查表与共享 Dart 表逐项一致、基址 0xFF66', () {
-      final String src = File(
-        'lib/src/reader/reader_pagination_scripts.dart',
-      ).readAsStringSync();
+  // 运行期 JS 副本住在 `kSentenceAudioRelocationJs`（三种 view mode 共用的句子音频
+  // 重定位脚本，`foldCodePoint` 的唯一出处；以前是 reader_pagination_scripts.dart 里
+  // 的 `hwKataToFw` 对象属性）。直接读生产常量，而不是按文件路径抠源码：脚本换文件
+  // 不会让这把锁失效，副本被删也会当场红。
+  group('reader JS 半角片假名查表副本 parity（跨语言锁）', () {
+    test('JS 查表与共享 Dart 表逐项一致、基址 0xFF66、foldCodePoint 经它折叠', () {
+      const String src = kSentenceAudioRelocationJs;
       expect(
-        src.contains('hwKataToFwBase: 0xFF66'),
+        RegExp(r'var HW_KATA_BASE = 0xFF66;').hasMatch(src),
         isTrue,
         reason: 'JS 查表基址必须是 0xFF66（与 Dart 表索引约定一致）',
       );
+      expect(
+        src.contains('out = HW_KATA_TO_FW[cp - HW_KATA_BASE]'),
+        isTrue,
+        reason: 'JS foldCodePoint 的半角片假名腿必须按基址查这张表',
+      );
       final RegExpMatch? m = RegExp(
-        r'hwKataToFw:\s*\[([0-9xA-Fa-f,\s]+)\]',
+        r'var HW_KATA_TO_FW = \[([0-9xA-Fa-f,\s]+)\];',
       ).firstMatch(src);
-      expect(m, isNotNull, reason: '运行期 JS 必须持有 hwKataToFw 查表副本');
+      expect(m, isNotNull, reason: '运行期 JS 必须持有半角片假名查表副本');
       final List<int> jsTable = m!
           .group(1)!
           .split(',')

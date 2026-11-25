@@ -10,6 +10,9 @@ import 'video_fushi_page_source_corpus.dart';
 const Map<String, String> kVideoConstructionSites = <String, String>{
   'lib/src/pages/implementations/video_fushi/layout.part.dart': '窗口模式',
   'lib/src/pages/implementations/video_fushi/fullscreen.part.dart': '全屏路由',
+  // 歌词页 MV 背景：控制器自己按 App 生命周期停画面、回前台按音频位置重新对齐。
+  'lib/src/pages/implementations/music/music_lyrics_mv_backdrop.dart':
+      '歌词页 MV 背景',
 };
 
 /// 没有页面级生命周期接管、直接用 media_kit 自带那套的 [Video] 构造点：必须显式写成

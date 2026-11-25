@@ -175,9 +175,8 @@ void main() {
         'srsTermStatus',
         'srsTermStatusBatch',
         'srsOpenCard',
-        // 「我库里的例句」（作品图谱 L4）。
-        'librarySentences',
-        'librarySentenceOpen',
+        // review-gal-overlay-mine-fail：「已加入」的 ✓ 再点，Dart 照后台写卡台账回答。
+        'queueOverwrite',
       ]) {
         expect(
           cpp,

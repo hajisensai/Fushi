@@ -2,7 +2,7 @@ library;
 
 export 'package:fushi_engine/media/video/metadata/video_local_extra_classifier.dart';
 
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show BooleanExpressionOperators, Value;
 import 'package:fushi_engine/media/video/bluray/bluray_disc_extras.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_library_title.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_source.dart'
@@ -17,6 +17,7 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
 import 'package:fushi_engine/media/video/metadata/video_nfo_reader.dart';
 import 'package:fushi_engine/media/video/metadata/video_sidecar_artifact_store.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -24,6 +25,13 @@ import 'package:path/path.dart' as p;
 
 /// 扫描完成后的本地作品索引：即使尚未联网刮削，也建立可展示的规范作品；同时绑定
 /// 唯一可判定归属的本地预告/花絮。
+///
+/// 索引的单位是刮削范围（`video_scrape_scope.dart`）：已登记的本机视频来源，或
+/// 无来源范围 [sourcelessLocalVideoScrapeScope]（「导入文件夹（仅此一次）」扫完删掉
+/// 临时来源行后、手动导入的单文件、来源被移除后留下的视频）。无来源范围与刮削链
+/// 同口径：成员按 [videoBookInScrapeScope] 取，NFO / 作品根的边界按
+/// [videoScrapeRootFor] 现算（BUG-5418：修前只认来源行，一次性导入的视频永远没有
+/// 本地作品与特典绑定，`SPs\` 里的特典在系列墙上各自成卡）。
 class VideoSourceMetadataIndexer {
   const VideoSourceMetadataIndexer(this.database);
 
@@ -38,7 +46,10 @@ class VideoSourceMetadataIndexer {
   Future<bool> index(SourceLibraryRow source) {
     if (source.mediaKind != 'video' ||
         source.transport != 'local' ||
-        source.videoGroupingMode == 'folder') {
+        source.videoGroupingMode == 'folder' ||
+        // 一次性导入的临时行扫完即删：在它上面建的绑定没有意义，行删掉后由无来源
+        // 范围（调用方在删行后索引 [sourcelessLocalVideoScrapeScope]）接手。
+        isOneShotImportSource(source)) {
       return Future<bool>.value(false);
     }
     final VideoScrapeOperationLease? lease =
@@ -48,7 +59,11 @@ class VideoSourceMetadataIndexer {
   }
 
   Future<bool> _indexUnlocked(SourceLibraryRow source) async {
-    bool changed = await _adoptOrphanBlurayTitles(source);
+    // 认领孤儿蓝光标题要把它们挂到一个真实来源行上；无来源范围没有扫描根、也没有
+    // 可写的来源 id，不认领（它们本身就落在无来源范围里，下面照常索引）。
+    bool changed =
+        !isSourcelessVideoScrapeScope(source) &&
+        await _adoptOrphanBlurayTitles(source);
     final List<VideoSourceScrapeWork> allWorks = await VideoSourceWorkPlanner(
       database,
     ).plan(source);
@@ -80,26 +95,27 @@ class VideoSourceMetadataIndexer {
       final List<String> videoPaths = <String>[
         for (final VideoBookRow member in work.members) member.videoPath,
       ];
+      final String scopeRoot = videoScrapeRootFor(source, videoPaths);
       if (existing != null) {
         // 已建档作品：NFO 自作品行上次落库后没改过（或根本没有 NFO），这次读到的
         // 内容上次已经吃进去了（在线刮削也经 mergeNfoAuthority 合并过），下面的
         // 分支必然保留现行——只 stat 不解析，直接跳过。
         final DateTime? nfoModifiedAt = await nfoReader.newestModifiedAt(
-          sourceRoot: source.rootPath,
+          sourceRoot: scopeRoot,
           videoPaths: videoPaths,
         );
         if (nfoModifiedAt == null ||
             nfoModifiedAt.millisecondsSinceEpoch <= existing.updatedAt) {
           indexed[existing.id] = _IndexedWorkRoot(
             workId: existing.id,
-            root: _workRoot(work.members, source.rootPath),
+            root: _workRoot(work.members, scopeRoot),
             memberPaths: _memberPaths(work),
           );
           continue;
         }
       }
       final VideoMetadataWork? nfoMetadata = await nfoReader.readForPaths(
-        sourceRoot: source.rootPath,
+        sourceRoot: scopeRoot,
         fallbackTitle: work.title,
         videoPaths: videoPaths,
       );
@@ -121,19 +137,22 @@ class VideoSourceMetadataIndexer {
         workId = (await store.apply(
           work,
           metadata,
+          // 占位作品（没有 NFO）只补旧投影的空位：库里已有的旧刮削行带着在线身份与
+          // 简介，不能被文件名推出的空壳顶掉（BUG-5418 审查）。
+          preserveExistingLegacyProjection: nfoMetadata == null,
           seasonEpisodesAuthoritative: metadata.seasons.isNotEmpty,
         )).workId;
         changed = true;
       }
       indexed[workId] = _IndexedWorkRoot(
         workId: workId,
-        root: _workRoot(work.members, source.rootPath),
+        root: _workRoot(work.members, scopeRoot),
         memberPaths: _memberPaths(work),
       );
     }
 
     final List<VideoBookRow> books = (await database.allVideoBooks())
-        .where((VideoBookRow row) => row.sourceId == source.id)
+        .where((VideoBookRow row) => videoBookInScrapeScope(row, source))
         .toList(growable: false);
     final Map<String, String> discExtras = await discMemberExtras(
       books.map((VideoBookRow row) => row.videoPath),
@@ -147,6 +166,7 @@ class VideoSourceMetadataIndexer {
       if (match != null) {
         candidates = _candidatesByDirectory(indexed.values, book.videoPath);
       } else if (discMain != null) {
+        if (await _dropStaleDiscExtraEpisode(book)) changed = true;
         // 蓝光特典挂在同盘父标题的作品下：同一个 PLAYLIST 目录里可能并排着几条
         // 正片级标题，按目录就近会二义，按「含父标题那条 .mpls 的作品」才唯一。
         // 正片不在库时父标题是顶上来的最长特典，它自己进了计划、有作品
@@ -203,6 +223,38 @@ class VideoSourceMetadataIndexer {
       );
     }
     return changed;
+  }
+
+  /// 原盘特典 [book] 身上残留的刮削身份：选片判据改过之前它被选成盘标题、进了盘
+  /// 合集，刮削按合集顺序给了它集号（《ぼっち・ざ・ろっく！》BD 每卷的采访被编成
+  /// 第 3 集，集名、剧照都是「馳せサンズ」），或者单独成过一部作品（临时资料行顶着
+  /// 「BOCCHI THE ROCK! 6 - 03」）。特典不进刮削计划，重刮不会再写它，这些行只会
+  /// 一直顶着正片的集名 / 剧照。结构上已确证它是特典：删掉它的刮削行、解开分集
+  /// 绑定——用户手动钉死的绑定（[kUserVerifiedMatchRating]）除外。有改动时返回 true。
+  Future<bool> _dropStaleDiscExtraEpisode(VideoBookRow book) async {
+    bool changed = false;
+    final VideoScrapeMetaRow? meta = await database.getVideoScrapeMeta(
+      book.bookUid,
+    );
+    if (meta != null) {
+      await database.deleteVideoScrapeMeta(book.bookUid);
+      changed = true;
+    }
+    final int unbound =
+        await (database.update(database.videoMetadataEpisodes)..where(
+              (table) =>
+                  table.bookUid.equals(book.bookUid) &
+                  (table.anidbMatchRating.isNull() |
+                      table.anidbMatchRating
+                          .equals(kUserVerifiedMatchRating)
+                          .not()),
+            ))
+            .write(
+              const VideoMetadataEpisodesCompanion(
+                bookUid: Value<String?>(null),
+              ),
+            );
+    return changed || unbound > 0;
   }
 
   /// 认领本来源目录下没有来源的蓝光盘标题（BUG-3231 / 3233）。

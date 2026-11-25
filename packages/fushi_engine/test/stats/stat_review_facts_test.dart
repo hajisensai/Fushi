@@ -35,7 +35,6 @@ void main() {
     otherProfileId = await addProfile('B');
     srs = await openTestSrsStorage();
     store = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: await db.profileUidOf(profileId),
       deviceId: 'dev',
@@ -43,16 +42,10 @@ void main() {
       trustedClock: SrsTrustedClock(
         wallClockMs: () => now,
         bootClockMs: () => now,
-        bootId: 'b',
       ),
       fallbackRolloverHour: () => 4,
-    );
-    // 日志的 UTC 偏移取 profile 设置（没有时是本机偏移，随跑测试的机器变）：钉成 JST，期望日期可以写死。
-    await store.editField(
-      SrsEntityKind.profile,
-      store.profileUid,
-      SrsFieldKeys.utcOffsetMin,
-      540,
+      // 日志的 UTC 偏移恒取本机偏移（随跑测试的机器变）：钉成 JST，期望日期可以写死。
+      localOffsetMin: () => 540,
     );
   });
 
@@ -83,7 +76,7 @@ void main() {
       db,
       activityLimit: 0,
       profileId: profileId,
-      reviewsFrom: srs.db,
+      reviewsFrom: srs.core,
     );
     expect(reviewMs(f), 2 * 3 * 5000 + 4000);
     // 日面 / 小时面各一份（与段同形），不并进同一列表。
@@ -128,7 +121,7 @@ void main() {
       db,
       activityLimit: 0,
       profileId: otherProfileId,
-      reviewsFrom: srs.db,
+      reviewsFrom: srs.core,
     );
     expect(reviews(other), isEmpty);
     // 对照：同一份 srs.db、本 profile 有复习。
@@ -136,7 +129,7 @@ void main() {
       db,
       activityLimit: 0,
       profileId: profileId,
-      reviewsFrom: srs.db,
+      reviewsFrom: srs.core,
     );
     expect(reviews(mine), isNotEmpty);
   });
@@ -154,7 +147,7 @@ void main() {
         db,
         activityLimit: 0,
         profileId: profileId,
-        reviewsFrom: srs.db,
+        reviewsFrom: srs.core,
       );
       return reviews(
         f,
@@ -181,7 +174,7 @@ void main() {
           db,
           activityLimit: 0,
           profileId: profileId,
-          reviewsFrom: srs.db,
+          reviewsFrom: srs.core,
         ),
       ).singleWhere((StatFact x) => x.lastActiveMs == late.occurredAt).dateKey;
     }

@@ -1,24 +1,34 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
+import 'dart:math';
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/novel/online/lnreader_book_download.dart';
+import 'package:fushi/src/media/novel/online/lnreader_downloaded_book_images.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
+import 'package:fushi/src/media/novel/online/lnreader_missing_images.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
 import 'package:fushi/src/media/novel/online/lnreader_online_book.dart';
+import 'package:fushi/src/media/novel/online/online_novel_chapter_loader.dart';
+import 'package:fushi/src/media/novel/online/online_novel_missing_images.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:path/path.dart' as p;
 
+import '../../helpers/event_loop_stall.dart';
 import 'fake_lnreader_runtime.dart';
 
 /// 1×1 PNG。
 final Uint8List _png = base64Decode(
   'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNkYAAAAAYAAjCB0C8AAAAASUVORK5CYII=',
 );
+
+const int _imageBytes = 192 * 1024;
 
 void _unzipInto(Uint8List bytes, String dir) {
   for (final ArchiveFile file in ZipDecoder().decodeBytes(bytes)) {
@@ -29,8 +39,50 @@ void _unzipInto(Uint8List bytes, String dir) {
   }
 }
 
+/// 顶层函数：交给 `Isolate.run` 的闭包只捕获参数，不把测试组里的数据库 /
+/// HTTP 服务器带过 isolate 边界。
+Future<void> _unzipInBackground(Uint8List bytes, String dir) =>
+    Isolate.run(() => _unzipInto(bytes, dir));
+
+Future<({int chapterCount, String chaptersJson, String? coverPath})>
+_rebuildInBackground(
+  String epubFilePath,
+  String extractDir,
+  int chapterCount,
+) => Isolate.run(() {
+  Directory(extractDir).deleteSync(recursive: true);
+  _unzipInto(File(epubFilePath).readAsBytesSync(), extractDir);
+  return (chapterCount: chapterCount, chaptersJson: '[]', coverPath: null);
+});
+
 /// 🔴 本文件**不能**调 `TestWidgetsFlutterBinding.ensureInitialized()`：绑定会把
 /// HttpClient 换成恒回 400 的模拟实现，插图下载全部「失败」。
+/// 可以把某一章的取章卡在半路的执行面：测排队顺序用。
+class _GatedLnReaderRuntime extends FakeLnReaderRuntime {
+  _GatedLnReaderRuntime({super.chapterHtml});
+
+  /// 章节路径 → 放行闸。取到这一章时先等闸开。
+  final Map<String, Completer<void>> gates = <String, Completer<void>>{};
+
+  /// 章节路径 → 「已经开始取这一章」。
+  final Map<String, Completer<void>> reached = <String, Completer<void>>{};
+
+  void gate(String path) {
+    gates[path] = Completer<void>();
+    reached[path] = Completer<void>();
+  }
+
+  @override
+  Future<String> chapter(String pluginId, String path) async {
+    final Completer<void>? gate = gates[path];
+    if (gate != null) {
+      reached[path]!.complete();
+      await gate.future;
+    }
+    return super.chapter(pluginId, path);
+  }
+}
+
 void main() {
   const LnReaderInstalledPlugin plugin = LnReaderInstalledPlugin(
     id: 'test.plugin',
@@ -96,6 +148,41 @@ void main() {
         isNull,
       );
     });
+
+    test('头部信息（简介 / 作者 / 状态 / 类型）编码往返；旧描述符没有这几个键照样认', () {
+      const LnReaderNovelDetails details = LnReaderNovelDetails(
+        summary: '<p>あらすじ</p>',
+        author: '作者',
+        status: 'Ongoing',
+        genres: 'ファンタジー,恋愛',
+      );
+      final LnReaderOnlineBookDescriptor parsed =
+          LnReaderOnlineBookDescriptor.tryParse(
+            const LnReaderOnlineBookDescriptor(
+              pluginId: 'p',
+              novelPath: '/n',
+              chapters: chapters,
+              details: details,
+            ).encode(),
+          )!;
+      expect(parsed.details, details);
+      expect(parsed.chapters.length, 3);
+
+      // 头部字段出现之前建的书：描述符只有章节，照样是在线书，头部信息为空。
+      final LnReaderOnlineBookDescriptor legacy =
+          LnReaderOnlineBookDescriptor.tryParse(
+            '{"type":"${LnReaderOnlineBookDescriptor.marker}","version":1,'
+            '"pluginId":"p","novelPath":"/n",'
+            '"chapters":[{"path":"/1","name":"一"}]}',
+          )!;
+      expect(legacy.chapters.single.path, '/1');
+      expect(legacy.details, LnReaderNovelDetails.empty);
+      // 没取到的字段不写键。
+      expect(
+        jsonDecode(legacy.encode()) as Map<String, Object?>,
+        isNot(contains('summary')),
+      );
+    });
   });
 
   group('LnReaderOnlineLibrary / LnReaderOnlineChapterLoader', () {
@@ -105,15 +192,21 @@ void main() {
     late String imageBase;
     late FushiDatabase db;
     late LnReaderManager manager;
-    late FakeLnReaderRuntime runtime;
+    late _GatedLnReaderRuntime runtime;
     late int imports;
     late int rebuilds;
+
+    /// `/flaky.png` 能不能取到（缺图补取测试用）。
+    late bool flakyOk;
+    late int flakyHits;
     final List<LnReaderOnlineChapterLoader> loaders =
         <LnReaderOnlineChapterLoader>[];
 
     setUp(() async {
       imports = 0;
       rebuilds = 0;
+      flakyOk = false;
+      flakyHits = 0;
       root = await Directory.systemTemp.createTemp('lnreader_online_');
       books = Directory(p.join(root.path, 'books'))..createSync();
       images = await HttpServer.bind(InternetAddress.loopbackIPv4, 0);
@@ -121,6 +214,13 @@ void main() {
       images.listen((HttpRequest request) async {
         if (request.uri.path == '/ok.png') {
           request.response.add(_png);
+        } else if (request.uri.path == '/flaky.png') {
+          flakyHits++;
+          if (flakyOk) {
+            request.response.add(_png);
+          } else {
+            request.response.statusCode = HttpStatus.forbidden;
+          }
         } else {
           request.response.statusCode = HttpStatus.notFound;
         }
@@ -151,7 +251,7 @@ void main() {
           ],
         }),
       );
-      runtime = FakeLnReaderRuntime(
+      runtime = _GatedLnReaderRuntime(
         chapterHtml: <String, String>{
           '/2': '<p>本文です<img src="$imageBase/ok.png"/></p>',
           '/3': '<p>第三章の本文</p>',
@@ -300,6 +400,71 @@ void main() {
       expect(rebuilds, 0);
     });
 
+    test('建书时头部信息写进描述符；之后源站详情变了，章节不变也补写、章节列表不动', () async {
+      const LnReaderNovel detailed = LnReaderNovel(
+        name: 'テスト小説',
+        path: '/novel',
+        chapters: chapters,
+        totalPages: 1,
+        summary: '<p>あらすじ</p>',
+        author: '作者',
+        status: 'Ongoing',
+        genres: 'ファンタジー',
+      );
+      final String key = await library().ensureBook(
+        plugin: plugin,
+        novel: detailed,
+        pendingText: 'PENDING',
+      );
+      Future<LnReaderOnlineBookDescriptor> read() async =>
+          LnReaderOnlineBookDescriptor.tryParse(
+            (await db.getEpubBook(key))!.sourceMetadata,
+          )!;
+      expect((await read()).details, LnReaderNovelDetails.of(detailed));
+
+      // 源站完结了、改了简介：作品页拿到新详情后补写，不重建占位树。
+      const LnReaderNovel finished = LnReaderNovel(
+        name: 'テスト小説',
+        path: '/novel',
+        chapters: <LnReaderChapter>[LnReaderChapter(name: '零', path: '/0')],
+        totalPages: 1,
+        summary: '完結',
+        author: '作者',
+        status: 'Completed',
+      );
+      await library().refreshDetails(plugin.id, finished);
+      final LnReaderOnlineBookDescriptor refreshed = await read();
+      expect(refreshed.details, LnReaderNovelDetails.of(finished));
+      expect(refreshed.chapters.map((LnReaderChapter c) => c.path), <String>[
+        '/1',
+        '/2',
+        '/3',
+      ], reason: '章节列表 = 解压树的 spine，只有重建占位树时才能换。');
+      expect(rebuilds, 0);
+
+      // 章节没变的 ensureBook（旧目录阶段点「继续阅读」）也顺手补写头部信息。
+      await library().ensureBook(
+        plugin: plugin,
+        novel: detailed,
+        pendingText: 'PENDING',
+      );
+      expect((await read()).details, LnReaderNovelDetails.of(detailed));
+      expect(rebuilds, 0);
+
+      // 不在书架的作品：什么都不写。
+      await library().refreshDetails(
+        plugin.id,
+        const LnReaderNovel(
+          name: 'other',
+          path: '/other',
+          chapters: chapters,
+          totalPages: 1,
+          author: 'x',
+        ),
+      );
+      expect(await library().findBook(plugin.id, '/other'), isNull);
+    });
+
     test('在线书的书行才建加载器；普通书连 LNReader 管理器都不碰', () async {
       final String key = await library().ensureBook(
         plugin: plugin,
@@ -345,11 +510,14 @@ void main() {
       final String dir = loader.extractDir;
       final String second = lnReaderOnlineChapterFile(dir, 1).path;
 
-      final List<bool> results = await Future.wait(<Future<bool>>[
-        loader.ensureLoaded(second),
-        loader.ensureLoaded(second),
-      ]);
-      expect(results, <bool>[true, true]);
+      final List<OnlineNovelChapterLoaded?> results = await Future.wait(
+        <Future<OnlineNovelChapterLoaded?>>[
+          loader.ensureLoaded(second),
+          loader.ensureLoaded(second),
+        ],
+      );
+      expect(results, everyElement(isNotNull));
+      expect(results.first!.index, 1);
       expect(runtime.calls.where((String c) => c == 'chapter:/2').length, 1);
 
       final String xhtml = File(second).readAsStringSync();
@@ -367,12 +535,18 @@ void main() {
         greaterThan(0),
       );
       expect((counts[0]! as Map<String, Object?>)['characters'], 0);
+      // 新字数同时交回调用方（阅读器据此换掉内存里那一章的字数，BUG-4809），
+      // 与写进书行的是同一个数。
+      expect(
+        results.first!.characters,
+        (counts[1]! as Map<String, Object?>)['characters'],
+      );
 
       // 已取过的章不再取；不是正文文件的请求不管。
-      expect(await loader.ensureLoaded(second), isFalse);
+      expect(await loader.ensureLoaded(second), isNull);
       expect(
         await loader.ensureLoaded(p.join(dir, 'OEBPS', 'nav.xhtml')),
-        isFalse,
+        isNull,
       );
 
       // 预取的下一章在后台落盘。
@@ -381,6 +555,245 @@ void main() {
       expect(third.readAsStringSync(), contains('第三章の本文'));
       // 第一章没人要，就不取。
       expect(runtime.calls, isNot(contains('chapter:/1')));
+    });
+
+    test('插图没取到：留占位不摘图；自动补取至多 3 轮（次数随文件持久化），手动补到后换回 <img>', () async {
+      runtime.chapterHtml = <String, String>{
+        ...runtime.chapterHtml,
+        '/1': '<p>一の本文<img src="$imageBase/flaky.png"/>続き</p>',
+      };
+      final String key = await library().ensureBook(
+        plugin: plugin,
+        novel: novel,
+        pendingText: 'PENDING',
+      );
+      final LnReaderOnlineChapterLoader loader = await loaderFor(key);
+      final String dir = loader.extractDir;
+      final File first = lnReaderOnlineChapterFile(dir, 0);
+      final OnlineNovelChapterLoaded? loaded = await loader.ensureLoaded(
+        first.path,
+      );
+      expect(loaded, isNotNull);
+      final String imageName = '${lnReaderOnlineImagePrefix('/1')}0.png';
+      String xhtml = first.readAsStringSync();
+      expect(xhtml, isNot(contains('<img')));
+      expect(xhtml, contains(kLnReaderMissingImageAttribute));
+      expect(xhtml, contains('一の本文'));
+      final int characters = loaded!.characters!;
+
+      OnlineNovelMissingImages missing = await loader.missingImages(0);
+      expect(missing.count, 1);
+      expect(missing.autoRetryAvailable, isTrue);
+      // 占位页 / 不缺图的章：0。
+      expect((await loader.missingImages(2)).count, 0);
+
+      // 三轮自动补取都失败：每轮记一次，用尽后自动补取不再发请求。
+      for (int i = 0; i < kLnReaderMissingImageAutoRetries; i++) {
+        final OnlineNovelMissingImagesRetry retry = await loader
+            .retryMissingImages(0, automatic: true);
+        expect(retry.recovered, 0);
+        expect(retry.remaining, 1);
+      }
+      expect(flakyHits, 1 + kLnReaderMissingImageAutoRetries);
+      missing = await loader.missingImages(0);
+      expect(missing.autoRetryAvailable, isFalse);
+      expect(
+        parseLnReaderMissingImages(first.readAsStringSync()).single.tries,
+        1 + kLnReaderMissingImageAutoRetries,
+      );
+      final OnlineNovelMissingImagesRetry exhausted = await loader
+          .retryMissingImages(0, automatic: true);
+      expect(exhausted.remaining, 1);
+      expect(flakyHits, 1 + kLnReaderMissingImageAutoRetries);
+
+      // 图床恢复：手动补取不受自动次数限制，补到后换回 <img>、图落盘、字数不变。
+      flakyOk = true;
+      final OnlineNovelMissingImagesRetry manual = await loader
+          .retryMissingImages(0, automatic: false);
+      expect(manual.recovered, 1);
+      expect(manual.remaining, 0);
+      xhtml = first.readAsStringSync();
+      expect(xhtml, isNot(contains(kLnReaderMissingImageAttribute)));
+      expect(xhtml, contains('src="$imageName"'));
+      expect(File(p.join(dir, 'OEBPS', imageName)).readAsBytesSync(), _png);
+      expect((await loader.missingImages(0)).count, 0);
+      await loader.whenIdle();
+      final EpubBookRow row = (await db.getEpubBook(key))!;
+      expect(
+        (jsonDecode(row.chaptersJson) as List<Object?>)[0],
+        containsPair('characters', characters),
+      );
+    });
+
+    test('下载成 EPUB 的书丢图：留带来源的占位；打开后按占位补取（自动至多 3 轮、手动不限），'
+        '插件被删时整轮不补并报出', () async {
+      runtime.chapterHtml = <String, String>{
+        ...runtime.chapterHtml,
+        '/1': '<p>一の本文<img src="$imageBase/flaky.png"/>続き</p>',
+      };
+      final String dir = p.join(books.path, 'downloaded');
+      await LnReaderBookDownload(
+        manager: manager,
+        database: db,
+        httpClientFactory: HttpClient.new,
+        isBlockedHost: (String _) => false,
+        isBlockedAddress: (InternetAddress _) => false,
+        importEpub:
+            ({
+              required FushiDatabase db,
+              required Uint8List bytes,
+              required String fileName,
+              required DuplicatePolicy policy,
+            }) async {
+              _unzipInto(bytes, dir);
+              return 'downloaded';
+            },
+      ).run(
+        plugin: plugin,
+        novel: novel,
+        chapters: chapters,
+        policy: const DuplicatePolicy.skip(),
+      );
+      expect(flakyHits, 1);
+      final File first = lnReaderOnlineChapterFile(dir, 0);
+      expect(first.readAsStringSync(), isNot(contains('<img')));
+      expect(first.readAsStringSync(), contains('一の本文'));
+
+      int managerCreations = 0;
+      final LnReaderDownloadedBookImages images = LnReaderDownloadedBookImages(
+        extractDir: dir,
+        manager: () {
+          managerCreations++;
+          return manager;
+        },
+        download: (LnReaderManager _) => download(),
+      );
+      expect(images.chapterIndexForFile(first.path), 0);
+      expect(
+        images.chapterIndexForFile(p.join(dir, 'OEBPS', 'nav.xhtml')),
+        isNull,
+      );
+      OnlineNovelMissingImages missing = await images.missingImages(0);
+      expect(missing.count, 1);
+      expect(missing.autoRetryAvailable, isTrue);
+      // 不缺图的章：0，且不为此拉起 LNReader 运行时。
+      expect((await images.missingImages(2)).count, 0);
+      expect(
+        (await images.retryMissingImages(2, automatic: true)).remaining,
+        0,
+      );
+      expect(managerCreations, 0);
+
+      for (int i = 0; i < kLnReaderMissingImageAutoRetries; i++) {
+        final OnlineNovelMissingImagesRetry retry = await images
+            .retryMissingImages(0, automatic: true);
+        expect(retry.recovered, 0);
+        expect(retry.remaining, 1);
+      }
+      expect(flakyHits, 1 + kLnReaderMissingImageAutoRetries);
+      missing = await images.missingImages(0);
+      expect(missing.autoRetryAvailable, isFalse);
+      await images.retryMissingImages(0, automatic: true);
+      expect(flakyHits, 1 + kLnReaderMissingImageAutoRetries);
+
+      // 插件被删：手动补取整轮不补（文件不动），抛出交给阅读器提示。
+      final LnReaderDownloadedBookImages orphan = LnReaderDownloadedBookImages(
+        extractDir: dir,
+        manager: () => manager,
+        download: (LnReaderManager _) => download(),
+      );
+      final String before = first.readAsStringSync();
+      await manager.uninstall(manager.installed.single);
+      await expectLater(
+        orphan.retryMissingImages(0, automatic: false),
+        throwsA(isA<LnReaderOnlinePluginMissing>()),
+      );
+      expect(first.readAsStringSync(), before);
+      expect(flakyHits, 1 + kLnReaderMissingImageAutoRetries);
+    });
+
+    test('下载书补取：图床恢复后手动补到，换回 <img>、图落盘', () async {
+      runtime.chapterHtml = <String, String>{
+        ...runtime.chapterHtml,
+        '/1': '<p>一の本文<img src="$imageBase/flaky.png"/>続き</p>',
+      };
+      final String dir = p.join(books.path, 'downloaded');
+      await LnReaderBookDownload(
+        manager: manager,
+        database: db,
+        httpClientFactory: HttpClient.new,
+        isBlockedHost: (String _) => false,
+        isBlockedAddress: (InternetAddress _) => false,
+        importEpub:
+            ({
+              required FushiDatabase db,
+              required Uint8List bytes,
+              required String fileName,
+              required DuplicatePolicy policy,
+            }) async {
+              _unzipInto(bytes, dir);
+              return 'downloaded';
+            },
+      ).run(
+        plugin: plugin,
+        novel: novel,
+        chapters: chapters,
+        policy: const DuplicatePolicy.skip(),
+      );
+      flakyOk = true;
+      final LnReaderDownloadedBookImages images = LnReaderDownloadedBookImages(
+        extractDir: dir,
+        manager: () => manager,
+        download: (LnReaderManager _) => download(),
+      );
+      final OnlineNovelMissingImagesRetry manual = await images
+          .retryMissingImages(0, automatic: false);
+      expect(manual.recovered, 1);
+      expect(manual.remaining, 0);
+      final File first = lnReaderOnlineChapterFile(dir, 0);
+      final String xhtml = first.readAsStringSync();
+      expect(xhtml, isNot(contains(kLnReaderMissingImageAttribute)));
+      expect(xhtml, contains('src="images/c1-0.png"'));
+      expect(
+        File(p.join(dir, 'OEBPS', 'images', 'c1-0.png')).readAsBytesSync(),
+        _png,
+      );
+      expect((await images.missingImages(0)).count, 0);
+    });
+
+    test('下载书补取只在合规门开时给（iOS / 无 headless WebView 的平台为 null）', () async {
+      await db.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'plain',
+          title: 'plain',
+          epubPath: 'plain.epub',
+          extractDir: books.path,
+          chapterCount: 0,
+          chaptersJson: '[]',
+          importedAt: 0,
+        ),
+      );
+      final EpubBookRow row = (await db.getEpubBook('plain'))!;
+      expect(
+        lnReaderDownloadedBookImagesFor(
+          row: row,
+          extractDir: books.path,
+          database: db,
+          manager: () => manager,
+          onlineSourcesAvailable: false,
+        ),
+        isNull,
+      );
+      expect(
+        lnReaderDownloadedBookImagesFor(
+          row: row,
+          extractDir: books.path,
+          database: db,
+          manager: () => fail('不该为建补取器拉起 LNReader'),
+          onlineSourcesAvailable: true,
+        ),
+        isNotNull,
+      );
     });
 
     test('后台预取的章：翻到时仍报「刚换成正文」，阅读器据此丢掉预热进缓存的占位页', () async {
@@ -393,7 +806,7 @@ void main() {
       final String dir = loader.extractDir;
       expect(
         await loader.ensureLoaded(lnReaderOnlineChapterFile(dir, 1).path),
-        isTrue,
+        isNotNull,
       );
       // 第三章在后台预取落盘——阅读器自己的相邻章预热可能在此之前已把它的占位
       // 页读进了缓存。
@@ -401,10 +814,194 @@ void main() {
       final String third = lnReaderOnlineChapterFile(dir, 2).path;
       expect(File(third).readAsStringSync(), contains('第三章の本文'));
 
-      expect(await loader.ensureLoaded(third), isTrue);
+      final OnlineNovelChapterLoaded? acknowledged = await loader.ensureLoaded(
+        third,
+      );
+      expect(acknowledged?.index, 2);
+      // 预取时算好的字数留到确认这一刻才交出去：阅读器只能在翻到这一章（导航
+      // 中）时换字数，预取落盘那会儿用户还在读上一章。
+      expect(acknowledged?.characters, greaterThan(0));
       expect(runtime.calls.where((String c) => c == 'chapter:/3').length, 1);
       // 确认过一次就不再报。
-      expect(await loader.ensureLoaded(third), isFalse);
+      expect(await loader.ensureLoaded(third), isNull);
+    });
+
+    test('顺序连读：翻到已被预取的章照样接着预取再下一章（不是隔一章才预取一次）', () async {
+      const List<LnReaderChapter> five = <LnReaderChapter>[
+        LnReaderChapter(name: '一', path: '/1'),
+        LnReaderChapter(name: '二', path: '/2'),
+        LnReaderChapter(name: '三', path: '/3'),
+        LnReaderChapter(name: '四', path: '/4'),
+        LnReaderChapter(name: '五', path: '/5'),
+      ];
+      final String key = await library().ensureBook(
+        plugin: plugin,
+        novel: const LnReaderNovel(
+          name: 'テスト小説',
+          path: '/novel',
+          chapters: five,
+          totalPages: 1,
+        ),
+        pendingText: 'PENDING',
+      );
+      final LnReaderOnlineChapterLoader loader = await loaderFor(key);
+      final String dir = loader.extractDir;
+      String chapter(int index) => lnReaderOnlineChapterFile(dir, index).path;
+      List<String> fetched() =>
+          runtime.calls.where((String c) => c.startsWith('chapter:')).toList();
+
+      // 开第一章：亲手取它，预取第二章。
+      expect(await loader.ensureLoaded(chapter(0)), isNotNull);
+      await loader.whenIdle();
+      expect(fetched(), <String>['chapter:/1', 'chapter:/2']);
+
+      // 一章一章往后翻：每翻到一章（都已被预取，本次什么都不用取），再下一章
+      // 就该已经在后台取好——前台从头到尾没等过网络。
+      for (int index = 1; index < five.length; index++) {
+        expect(
+          File(chapter(index)).readAsStringSync(),
+          isNot(contains(kLnReaderPendingChapterAttribute)),
+          reason: '翻到第 ${index + 1} 章时它应已被预取',
+        );
+        expect(await loader.ensureLoaded(chapter(index)), isNotNull);
+        await loader.whenIdle();
+      }
+      expect(fetched(), <String>[
+        'chapter:/1',
+        'chapter:/2',
+        'chapter:/3',
+        'chapter:/4',
+        'chapter:/5',
+      ]);
+
+      // 回头重进已确认过的章：不再报、也不再触发预取。
+      expect(await loader.ensureLoaded(chapter(2)), isNull);
+      await loader.whenIdle();
+      expect(fetched().length, 5);
+    });
+
+    test('前台请求排到排队中的后台预取前面（预取在真实加载器上确实按后台入队）', () async {
+      const List<LnReaderChapter> five = <LnReaderChapter>[
+        LnReaderChapter(name: '一', path: '/1'),
+        LnReaderChapter(name: '二', path: '/2'),
+        LnReaderChapter(name: '三', path: '/3'),
+        LnReaderChapter(name: '四', path: '/4'),
+        LnReaderChapter(name: '五', path: '/5'),
+      ];
+      final String key = await library().ensureBook(
+        plugin: plugin,
+        novel: const LnReaderNovel(
+          name: 'テスト小説',
+          path: '/novel',
+          chapters: five,
+          totalPages: 1,
+        ),
+        pendingText: 'PENDING',
+      );
+      final LnReaderOnlineChapterLoader loader = await loaderFor(key);
+      String chapter(int index) =>
+          lnReaderOnlineChapterFile(loader.extractDir, index).path;
+
+      // 第 1 章在取（卡住）时目录跳到第 4 章：前台排队。
+      runtime
+        ..gate('/1')
+        ..gate('/4');
+      final Future<OnlineNovelChapterLoaded?> first = loader.ensureLoaded(
+        chapter(0),
+      );
+      final Future<OnlineNovelChapterLoaded?> fourth = loader.ensureLoaded(
+        chapter(3),
+      );
+      await runtime.reached['/1']!.future;
+      runtime.gates['/1']!.complete();
+      // 第 1 章落定：它的预取（第 2 章）入队；此刻在取的是第 4 章（卡住）。
+      expect(await first, isNotNull);
+      await runtime.reached['/4']!.future;
+      // 第 4 章还在取时又跳到第 3 章：这个前台请求入队晚于第 2 章的预取。
+      final Future<OnlineNovelChapterLoaded?> third = loader.ensureLoaded(
+        chapter(2),
+      );
+      runtime.gates['/4']!.complete();
+      expect(await fourth, isNotNull);
+      expect(await third, isNotNull);
+      await loader.whenIdle();
+
+      final List<String> order = runtime.calls
+          .where((String c) => c.startsWith('chapter:'))
+          .toList();
+      expect(
+        order.indexOf('chapter:/3'),
+        lessThan(order.indexOf('chapter:/2')),
+        reason: '前台要的第 3 章先于更早入队的第 2 章预取；实际顺序 $order',
+      );
+      expect(order.take(3), <String>['chapter:/1', 'chapter:/4', 'chapter:/3']);
+    });
+
+    test('预取之后解压树被就地重建：过期的字数不交给阅读器，缓存照样要丢', () async {
+      final String key = await library().ensureBook(
+        plugin: plugin,
+        novel: novel,
+        pendingText: 'PENDING',
+      );
+      final LnReaderOnlineChapterLoader loader = await loaderFor(key);
+      final String dir = loader.extractDir;
+      expect(
+        await loader.ensureLoaded(lnReaderOnlineChapterFile(dir, 1).path),
+        isNotNull,
+      );
+      // 第 3 章已被后台预取、字数记在加载器里，阅读器还没翻到它。
+      await loader.whenIdle();
+      expect(
+        lnReaderOnlineChapterFile(dir, 2).readAsStringSync(),
+        contains('第三章の本文'),
+      );
+
+      // 作品页刷新：站点在最前面插了一章，书行里的描述符换了（第 3 个文件
+      // 现在是「二」）。阅读器手里的加载器还是旧描述符。
+      await db.updateEpubBookMihonState(
+        key,
+        sourceMetadata: const LnReaderOnlineBookDescriptor(
+          pluginId: 'test.plugin',
+          novelPath: '/novel',
+          chapters: <LnReaderChapter>[
+            LnReaderChapter(name: '零', path: '/0'),
+            ...chapters,
+          ],
+        ).encode(),
+        chapterCount: 4,
+        chaptersJson: chaptersJson(4),
+      );
+
+      final OnlineNovelChapterLoaded? stale = await loader.ensureLoaded(
+        lnReaderOnlineChapterFile(dir, 2).path,
+      );
+      expect(stale?.index, 2, reason: '文件变过，阅读器仍要丢这一章的缓存');
+      expect(stale?.characters, isNull, reason: '预取时记下的字数已不是这一章的');
+      expect(
+        await loader.ensureLoaded(lnReaderOnlineChapterFile(dir, 2).path),
+        isNull,
+      );
+    });
+
+    test('关书（dispose）之后不再取章', () async {
+      final String key = await library().ensureBook(
+        plugin: plugin,
+        novel: novel,
+        pendingText: 'PENDING',
+      );
+      final LnReaderOnlineChapterLoader loader = await loaderFor(key);
+      final String first = lnReaderOnlineChapterFile(loader.extractDir, 0).path;
+      loader.dispose();
+      expect(await loader.ensureLoaded(first), isNull);
+      await loader.whenIdle();
+      expect(
+        runtime.calls.where((String c) => c.startsWith('chapter:')),
+        isEmpty,
+      );
+      expect(
+        File(first).readAsStringSync(),
+        contains(kLnReaderPendingChapterAttribute),
+      );
     });
 
     test('在线源平台门没过（iOS 合规 / Linux）：不建加载器，也不碰 LNReader 管理器', () async {
@@ -445,7 +1042,7 @@ void main() {
       expect(File(first).readAsStringSync(), contains('PENDING'));
 
       runtime.failingChapters = <String>{};
-      expect(await loader.ensureLoaded(first), isTrue);
+      expect(await loader.ensureLoaded(first), isNotNull);
       await loader.whenIdle();
 
       await manager.uninstall(manager.installed.single);
@@ -467,7 +1064,7 @@ void main() {
         await loader.ensureLoaded(
           lnReaderOnlineChapterFile(loader.extractDir, 1).path,
         ),
-        isTrue,
+        isNotNull,
       );
       await loader.whenIdle();
 
@@ -544,9 +1141,209 @@ void main() {
         chaptersJson: chaptersJson(4),
       );
       final File second = lnReaderOnlineChapterFile(loader.extractDir, 1);
-      expect(await loader.ensureLoaded(second.path), isFalse);
+      expect(await loader.ensureLoaded(second.path), isNull);
       expect(
         second.readAsStringSync(),
+        contains(kLnReaderPendingChapterAttribute),
+      );
+    });
+    // c40 顺带：state.json 读不出来时，以前 loadChapter 走 initialise（不抛、已装
+    // 列表是空占位），于是报「插件没装」，把真正的读盘错误藏了起来。
+    test('插件状态读盘失败：报读盘错误本身，不误报「插件没装」', () async {
+      final String key = await library().ensureBook(
+        plugin: plugin,
+        novel: novel,
+        pendingText: 'PENDING',
+      );
+      final EpubBookRow row = (await db.getEpubBook(key))!;
+      // 根目录位置被一个普通文件占着：建目录 / 读 state.json 必然 IO 失败。
+      final File blocker = File(p.join(root.path, 'not-a-dir'))
+        ..writeAsStringSync('x');
+      final LnReaderManager broken = LnReaderManager(
+        rootDirectory: Directory(blocker.path),
+        runtime: runtime,
+        httpClientFactory: HttpClient.new,
+      );
+      addTearDown(broken.dispose);
+      final LnReaderOnlineChapterLoader loader = LnReaderOnlineChapterLoader(
+        manager: broken,
+        database: db,
+        download: download(),
+        bookKey: key,
+        extractDir: row.extractDir,
+        descriptor: LnReaderOnlineBookDescriptor.tryParse(row.sourceMetadata)!,
+      );
+      loaders.add(loader);
+      await expectLater(
+        loader.ensureLoaded(lnReaderOnlineChapterFile(row.extractDir, 0).path),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(
+        lnReaderOnlineChapterFile(row.extractDir, 0).readAsStringSync(),
+        contains('PENDING'),
+      );
+    });
+
+    // c40 novel-14：连载更新的就地重建以前在 UI isolate 上逐章同步读正文与插图、
+    // 再整本同步打 ZIP，几百章带图的书整段卡住界面。自校准：先在本 isolate 同步
+    // 组装同样的输入量出耗时 D，再断言经 ensureBook 走连载更新时本 isolate 最长
+    // 的一段卡顿不到 D 的一半，且已取过的章照样按路径搬过去。两边都取
+    // kEventLoopStallSamples 次里的最小值滤掉并发负载下的抢占噪声；每次更新都
+    // 在最前面多一章，章节列表次次不同，每一次 ensureBook 都真走一遍重建。
+    test('连载更新的重建（读旧章 + 打包）不在调用方 isolate 上同步跑', () async {
+      // 300 章 × 192 KB 插图 ≈ 56 MB：快机器（M 系 Mac）上同步组装也有几十毫秒。
+      const int count = 300;
+      final List<LnReaderChapter> many = <LnReaderChapter>[
+        for (int i = 0; i < count; i++)
+          LnReaderChapter(name: '第$i話', path: '/m$i'),
+      ];
+      final LnReaderNovel big = LnReaderNovel(
+        name: 'テスト小説',
+        path: '/novel',
+        chapters: many,
+        totalPages: 1,
+      );
+      // 就地重建被调用的次数：第 n 次重建后共 count + n 章（每次更新多一章）。
+      int rebuilds = 0;
+      final LnReaderOnlineLibrary offloaded = LnReaderOnlineLibrary(
+        manager: manager,
+        database: db,
+        download: download(),
+        importEpub:
+            ({
+              required FushiDatabase db,
+              required Uint8List bytes,
+              required String fileName,
+              required DuplicatePolicy policy,
+            }) async {
+              final String dir = p.join(books.path, 'big');
+              await _unzipInBackground(bytes, dir);
+              await db.insertEpubBook(
+                EpubBooksCompanion.insert(
+                  bookKey: 'big',
+                  title: big.name,
+                  epubPath: fileName,
+                  extractDir: dir,
+                  chapterCount: count,
+                  chaptersJson: chaptersJson(count),
+                  importedAt: 0,
+                ),
+              );
+              return 'big';
+            },
+        // 测试替身的解包同样放后台，量到的卡顿只来自被测代码。
+        rebuildInPlace:
+            ({required String epubFilePath, required String extractDir}) =>
+                _rebuildInBackground(
+                  epubFilePath,
+                  extractDir,
+                  count + ++rebuilds,
+                ),
+      );
+      final String key = await offloaded.ensureBook(
+        plugin: plugin,
+        novel: big,
+        pendingText: 'PENDING',
+      );
+      final EpubBookRow row = (await db.getEpubBook(key))!;
+      // 每章都已取过正文，带一张不可压缩的插图（PNG 签名 + 随机字节）。
+      // 每张图独立压缩，同一块随机字节复用也照样不可压缩。
+      final Random random = Random(7);
+      final Uint8List bytes = Uint8List(_imageBytes);
+      for (int b = 0; b < bytes.length; b++) {
+        bytes[b] = random.nextInt(256);
+      }
+      bytes.setRange(0, 8, _png);
+      for (int i = 0; i < count; i++) {
+        final String image = '${lnReaderOnlineImagePrefix('/m$i')}0.png';
+        File(p.join(row.extractDir, 'OEBPS', image))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(bytes);
+        lnReaderOnlineChapterFile(row.extractDir, i).writeAsStringSync(
+          '<html><body><section>\n<p>第$i話の本文<img src="$image"/></p>\n</section></body></html>',
+        );
+      }
+
+      // 第 run 次更新：最前面依次多出 /new{run}…/new0，原有各章整体后移。
+      List<LnReaderChapter> updatedChapters(int run) => <LnReaderChapter>[
+        for (int j = run; j >= 0; j--)
+          LnReaderChapter(name: '新$j', path: '/new$j'),
+        ...many,
+      ];
+      final Duration syncCost = measureMinSync(kEventLoopStallSamples, () {
+        buildLnReaderOnlineEpub(
+          LnReaderOnlineEpubRequest(
+            title: row.title,
+            languageTag: 'ja',
+            identifier: 'x',
+            chapters: <({String name, String path})>[
+              for (final LnReaderChapter c in updatedChapters(0))
+                (name: c.name, path: c.path),
+            ],
+            pendingText: 'PENDING',
+            reuse: (
+              extractDir: row.extractDir,
+              previousChapterPaths: <String>[
+                for (final LnReaderChapter c in many) c.path,
+              ],
+              coverPath: row.coverPath,
+            ),
+          ),
+        );
+      });
+      expect(
+        syncCost,
+        greaterThan(const Duration(milliseconds: 40)),
+        reason: '输入要大到同步组装有可测的耗时，否则断言没有区分力',
+      );
+
+      final ({List<String> results, Duration minStall, List<Duration> stalls})
+      measured = await measureMinEventLoopStall(kEventLoopStallSamples, (
+        int run,
+      ) {
+        return offloaded.ensureBook(
+          plugin: plugin,
+          novel: LnReaderNovel(
+            name: 'テスト小説',
+            path: '/novel',
+            chapters: updatedChapters(run),
+            totalPages: 1,
+          ),
+          pendingText: 'PENDING',
+        );
+      });
+      expect(measured.results, everyElement(key));
+      expect(
+        measured.minStall,
+        lessThan(syncCost ~/ 2),
+        reason: 'sync=$syncCost stalls=${measured.stalls}',
+      );
+      // 每一次采样都真走了重建（没有命中「章节没变」的快路径），最小值才有区分力。
+      expect(rebuilds, kEventLoopStallSamples);
+      expect(
+        (await db.getEpubBook(key))!.chapterCount,
+        count + kEventLoopStallSamples,
+      );
+      // 原第 0 章现在排在新增各章之后，正文与插图跟着章节路径走；新章是占位页。
+      expect(
+        lnReaderOnlineChapterFile(
+          row.extractDir,
+          kEventLoopStallSamples,
+        ).readAsStringSync(),
+        contains('第0話の本文'),
+      );
+      expect(
+        File(
+          p.join(
+            row.extractDir,
+            'OEBPS',
+            '${lnReaderOnlineImagePrefix('/m0')}0.png',
+          ),
+        ).lengthSync(),
+        _imageBytes,
+      );
+      expect(
+        lnReaderOnlineChapterFile(row.extractDir, 0).readAsStringSync(),
         contains(kLnReaderPendingChapterAttribute),
       );
     });

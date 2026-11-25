@@ -3,7 +3,9 @@ import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { test } from 'node:test';
 
-import { handle as routeHandle, routeAgentInput } from './subagent_model_router.mjs';
+import { readdirSync, readFileSync } from 'node:fs';
+
+import { handle as routeHandle, pinnedModel, routeAgentInput } from './subagent_model_router.mjs';
 import { HELPER, MARKER, handle as wfHandle, rewrite } from './workflow_agent_type_default.mjs';
 
 const SCRIPT = `export const meta = {
@@ -72,6 +74,73 @@ test('rewritten script defaults agentType and pins model by type at runtime', as
   ]);
 });
 
+// The type -> model map lives in three places (agent frontmatter, the router sets, the workflow
+// helper literal) and the report contract in four agent bodies; nothing but this test ties them.
+test('agent definitions, router and workflow helper agree', () => {
+  const agentsDir = fileURLToPath(new URL('../../.claude/agents/', import.meta.url));
+  /** @type {Record<string, string>} */
+  const declared = {};
+  for (const file of readdirSync(agentsDir).filter((f) => f.endsWith('.md')).sort()) {
+    const text = readFileSync(`${agentsDir}${file}`, 'utf8');
+    const front = /^---\n([\s\S]*?)\n---\n/.exec(text.replace(/\r\n/g, '\n'));
+    assert.ok(front, `${file}: missing frontmatter`);
+    const field = (/** @type {string} */ key) => new RegExp(`^${key}:\\s*(\\S+)\\s*$`, 'm').exec(front[1])?.[1];
+    const name = field('name');
+    assert.equal(`${name}.md`, file, `${file}: frontmatter name must match the file name`);
+    declared[/** @type {string} */ (name)] = /** @type {string} */ (field('model'));
+    // The dispatcher triages on the first line of every report (docs/agent/fast-workflow.md).
+    assert.ok(text.includes('第一行写状态'), `${file}: report contract (status on the first line) is missing`);
+  }
+  assert.deepEqual(Object.keys(declared), ['general', 'reviewer', 'scout', 'worker']);
+  for (const [name, model] of Object.entries(declared)) {
+    assert.equal(pinnedModel(name), model, `${name}: router pins a different model than its frontmatter`);
+  }
+  const helperMap = JSON.parse(/** @type {RegExpExecArray} */ (/const m = (\{[^}]*\})\[q\.agentType\]/.exec(HELPER))[1]);
+  assert.deepEqual(helperMap, declared);
+});
+
+// BUG-5086: workflow subagents of one session share a scratchpad. The old template
+// (`<命令> > <日志> ...; echo "exit=$?"` + `grep -q '^exit='`) let two agents both pick
+// `test.log`: each truncated the other's file and the waiter matched the other run's
+// `exit=` line. Every log path and exit marker in the template must carry the run's tag.
+test('long-command log template names logs and exit lines by a unique tag', () => {
+  const agentsDir = fileURLToPath(new URL('../../.claude/agents/', import.meta.url));
+  const LOG = '<scratchpad>/<标签>.log';
+  /** @type {string[]} */
+  const withTemplate = [];
+  for (const file of readdirSync(agentsDir).filter((f) => f.endsWith('.md')).sort()) {
+    const text = readFileSync(`${agentsDir}${file}`, 'utf8');
+    assert.ok(!text.includes('"exit=$?"'), `${file}: exit line without the run tag`);
+    assert.ok(!/'\^exit='/.test(text), `${file}: wait loop matches any run's exit line`);
+    const spans = [...text.matchAll(/`([^`\n]+)`/g)].map((m) => m[1]);
+    const runs = spans.filter((s) => /\becho\b/.test(s) && s.includes('exit='));
+    const waits = spans.filter((s) => /\buntil grep\b/.test(s));
+    if (runs.length === 0 && waits.length === 0) continue;
+    withTemplate.push(file.replace(/\.md$/, ''));
+    for (const span of [...runs, ...waits]) {
+      // Any spelling of the marker (`echo exit=$?`, `'exit='$?`, `grep -q "^exit="`) must carry
+      // the tag, otherwise the run never writes what the waiter greps for (or vice versa).
+      const untagged = [...span.matchAll(/exit=/g)].filter((m) => !span.slice(0, m.index).endsWith('<标签> '));
+      assert.equal(untagged.length, 0, `${file}: exit marker without the run tag: ${span}`);
+      const echoes = [...span.matchAll(/\becho\s+"([^"]*)"/g)].map((m) => m[1]);
+      if (runs.includes(span)) assert.ok(echoes.length > 0, `${file}: run template must echo the tagged exit line: ${span}`);
+      for (const e of echoes) assert.equal(e, '<标签> exit=$?', `${file}: ${span}`);
+      const greps = [...span.matchAll(/\bgrep\s+-q\s+'([^']*)'\s+(\S+?);/g)];
+      if (waits.includes(span)) assert.ok(greps.length > 0, `${file}: wait template must grep the tagged log: ${span}`);
+      for (const [, pattern, target] of greps) {
+        assert.equal(pattern, '^<标签> exit=', `${file}: ${span}`);
+        assert.equal(target, LOG, `${file}: ${span}`);
+      }
+      // Redirections and tails stand alone (`<命令>` / `<标签>` contain `>` themselves).
+      const targets = [...span.matchAll(/(?:^|\s)(?:\d?>>?|tail -n \d+)\s+([^\s;"]+)/g)].map((m) => m[1]);
+      assert.ok(targets.length > 0, `${file}: no log target found in ${span}`);
+      for (const t of targets) assert.equal(t, LOG, `${file}: log target must be the tagged log: ${span}`);
+    }
+    assert.ok(runs.length > 0 && waits.length > 0, `${file}: run and wait templates must come together`);
+  }
+  assert.deepEqual(withTemplate, ['general', 'reviewer', 'worker']);
+});
+
 test('hooks answer on stdin as real processes', () => {
   const dir = fileURLToPath(new URL('.', import.meta.url));
   const wf = spawnSync(process.execPath, [`${dir}workflow_agent_type_default.mjs`], {
@@ -87,4 +156,24 @@ test('hooks answer on stdin as real processes', () => {
   assert.equal(rt.status, 0);
   assert.equal(JSON.parse(rt.stdout).hookSpecificOutput.updatedInput.model, 'sonnet');
   assert.equal(wfHandle('{"tool_name":"Bash"}'), '');
+});
+
+test('agent definitions carry the current root CLAUDE.md and omit the loaded copy', async () => {
+  const { AGENTS, BEGIN, END, plan, render } = await import('./sync_agent_claude_md.mjs');
+  const stale = plan().filter((p) => p.current !== p.wanted).map((p) => p.file);
+  assert.deepEqual(stale, [], 'CLAUDE.md 改了但代理定义没同步：跑 node tool/claude_hooks/sync_agent_claude_md.mjs');
+  for (const p of plan()) {
+    assert.match(p.current, /^---\n[\s\S]*?\nomitClaudeMd: true\n[\s\S]*?\n---\n/, p.file);
+    assert.equal(p.current.split(BEGIN).length, 2, p.file);
+    assert.equal(p.current.split(END).length, 2, p.file);
+  }
+  assert.equal(AGENTS.length, 4);
+  // Re-rendering replaces the old block instead of stacking a second one.
+  const once = render('---\nname: x\nmodel: opus\n---\nbody\n', 'RULES v1\n');
+  const twice = render(once, 'RULES v2\n');
+  assert.equal(twice.split(BEGIN).length, 2);
+  assert.match(twice, /RULES v2/);
+  assert.doesNotMatch(twice, /RULES v1/);
+  const front = /^---\n([\s\S]*?)\n---\n/.exec(twice)[1];
+  assert.equal(front.match(/^omitClaudeMd: true$/gm).length, 1);
 });

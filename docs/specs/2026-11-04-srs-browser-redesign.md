@@ -56,6 +56,8 @@
 
 章节、页码、时间区间、字符偏移一律不进键。没有出处（`source` 寄存器空 / 不是带字符串 `kind` 的对象）= null。
 
+**系列（「系列 → 集」两级，反馈 MCJLSBR5Wg，2026-11-11）**：出处带 `seriesTitle`（`SrsSourceRef.seriesTitle`，去两侧空白后非空的字符串；视频制卡从播放列表合集名 / 远端作品名取）时，`sourceKey` 是**系列键** `<kind>::<系列名>`，上表的 `<kind>:<身份>` 降为第二级的**作品键**（内核 `source_item_key`）。`src:"<键>"` 同时认系列键（整个系列）与作品键（一集）；`browse_sources` 的系列组带 `series`（系列名）与 `children`（按作品键分的各集，口径同组）；按出处排序时系列键后接作品键，同一系列里同一集挨着；笔记缓存行 `source_key` = 系列键、`source_title` = 系列名（统计页「制卡来源」按系列计，「只复习这一作」按系列出卡）。定位字段不变，「回到出处」仍到具体的集与时间。没有 `seriesTitle` 的旧出处照旧只有作品这一级。
+
 编码（粗粒度，一页一条命令）：字符串类进现有 JSON 行（下标 8..14：`fieldPreview, imageRef, audioRef, sourceKey, sourceKind, sourceData, fieldPreviewNames`）；`rows.i64` 每行由 7 个扩到 11 个 i64（追加 `intervalDays, addedAt, modifiedAt, lastReviewAt`，null = `i64::MIN`）；新增 `rows.f64` 每行 2 个 f64（`difficulty, retention`，null = NaN）。字段原文、修改时刻、出处只对**这一页**的笔记从修改记录读一次（会话里按笔记缓存，写入后按笔记失效），不为取行装全库字段。
 
 ### 2.2 排序列
@@ -72,7 +74,7 @@
 | `rated:N` | 最近 N 天内（含今天，按日界）作答过（N ≥ 1 的整数；0 当 1） |
 | `rated:N:E` | 且那次作答评分为 E（1 重来 / 2 困难 / 3 良好 / 4 简单）；E 不是 1..4 报语法错误 |
 | `is:emptyfield` | **调整**：笔记的排序字段（第一个字段）去 HTML、trim 后为空。原稿写「任一字段为空」——Fushi 卡片类型有一串可选字段（图片、备注、例句翻译…），按「任一」几乎每张卡都命中，「对空字段的卡给出删除建议」会建议删掉正常卡，所以改成主字段为空 |
-| `has:audio` / `has:image` | 笔记任一字段原文含 `[sound:` / `<img`（不区分大小写） |
+| `has:audio` / `has:image` | 笔记任一字段原文含 `[sound:` 或 `<audio` 标签 / `<img` 标签（标签名不区分大小写）。`<audio` 是 WebM 内嵌片段制卡写出的单词 / 句子音频形态（`<audio class="fushi-*-audio" src>`，BUG-4710），不认它会把这类卡都算成缺音频 |
 | `is:dupe` | 同笔记类型（未删除）下首字段查重规范形（`anki_dupes` 用的 `dupe_norm`：去 HTML、trim）相同且非空的笔记，≥ 2 条才算 |
 | `src:none` | 没有出处 |
 | `src:<kind>`（值里没有 `:`） | 出处种类为 kind（如 `src:book`、`src:onlineVideo`；大小写敏感，整值相等） |

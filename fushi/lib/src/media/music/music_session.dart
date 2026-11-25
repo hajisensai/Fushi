@@ -9,6 +9,7 @@ import 'dart:io';
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/privacy/media_nsfw.dart';
 
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/music/music_history.dart';
@@ -20,6 +21,11 @@ import 'package:fushi/src/media/music/music_resume_points_watch.dart';
 import 'package:fushi/src/media/video/video_episode_start_policy.dart';
 import 'package:fushi/src/media/music/apple_music/apple_music_favorites.dart';
 import 'package:fushi/src/media/music/plugin/music_plugin_favorites.dart';
+import 'package:fushi/src/media/music/server/music_server_favorites.dart'
+    show MusicServerTrackFavorites;
+import 'package:fushi/src/media/music/server/music_server_loudness_measurer.dart'
+    show MusicServerLoudnessMeasurer;
+import 'package:fushi/src/media/music/server/music_server_playback_reporter.dart';
 import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_audio_handler.dart';
@@ -34,6 +40,14 @@ const Duration kMusicResumeWriteStep = Duration(seconds: 5);
 
 /// 断点写入节流：没在播（暂停 / 播完 / 暂停时拖动）时，位置变了这么多就写。
 const Duration kMusicResumeIdleWriteStep = Duration(seconds: 1);
+
+/// 系统媒体卡片（通知栏 / 锁屏 / SMTC）进度条用的时长，与应用内进度条同一个口径：
+/// 普通曲目 = [MusicPlayItem.playbackDuration]；试听片段不拿整首的元数据时长画
+/// 0:30 / 4:00，用引擎拿到的媒体实际长度（[engineDuration]，报出前为 null，反馈 okvRZINcQU）。
+Duration? musicMediaSessionDuration(
+  MusicPlayItem item,
+  Duration? engineDuration,
+) => item.isPreview ? engineDuration : item.playbackDuration;
 
 /// 播放失败的提示文字。
 String musicPlaybackFailureText(MusicBackendFailed failure) =>
@@ -52,6 +66,21 @@ String musicPlaybackFailureText(MusicBackendFailed failure) =>
       null => t.music_play_failed(error: failure.message),
     };
 
+/// 系统媒体控件 / 锁屏卡上要不要去掉 [item] 的封面：「模糊 NSFW 封面」开着、且曲目
+/// 所在专辑（或封面图源）是 NSFW。系统控件上没法打模糊，只能不给图。[snapshot] 还没
+/// 读到时，本地专辑的曲目先不给图（fail-closed，读到后立刻补推一次）。
+bool musicMediaSessionArtHidden({
+  required bool blur,
+  required MediaNsfwSnapshot? snapshot,
+  required MusicPlayItem item,
+}) {
+  if (!blur) return false;
+  final String? albumUid = item.albumUid;
+  if (snapshot == null) return albumUid != null;
+  return (albumUid != null && snapshot.isMusicAlbumNsfw(albumUid)) ||
+      snapshot.isMusicCoverNsfw(coverPath: item.coverPath);
+}
+
 class MusicSession extends ChangeNotifier {
   MusicSession({
     required this.engine,
@@ -63,7 +92,11 @@ class MusicSession extends ChangeNotifier {
     this.appleMusicFavorites,
     MusicResumeMode Function()? resumeMode,
     required bool hasSystemMediaSession,
+    Stream<MediaNsfwSnapshot> Function(FushiDatabase db)? watchNsfw,
+    ValueListenable<bool>? blurNsfwCovers,
   }) : _audio = audio,
+       _watchNsfw = watchNsfw,
+       _blurNsfwCovers = blurNsfwCovers,
        _hasSystemMediaSession = hasSystemMediaSession,
        _audiobook = audiobook,
        _database = database,
@@ -91,6 +124,11 @@ class MusicSession extends ChangeNotifier {
       ..resolveStartPosition = _resolveStartPosition
       ..addListener(_onEngineChanged);
     _audiobook.addListener(_onAudiobookChanged);
+    // 会话被别人抢走（视频进后台继续放声音、有声书开播）：音乐暂停，不停会话。
+    _audio.seat(MediaSessionOwner.music).onPreempted = _onMediaSessionPreempted;
+    // 开关一变就重发当前媒体卡：暂停时没有进度 tick，不主动重发的话锁屏会一直挂着
+    // 开关变化前发布的原图（HBK-AUDIT-217）。
+    _blurNsfwCovers?.addListener(_publishMediaSession);
     favorites?.addListener(notifyListeners);
     appleMusicFavorites?.addListener(notifyListeners);
     _subs.addAll(<StreamSubscription<Object?>>[
@@ -132,6 +170,35 @@ class MusicSession extends ChangeNotifier {
   final FushiDatabase? Function() _database;
   final bool Function() _showMediaNotification;
 
+  /// NSFW 标记快照的来源（生产 = app 端 `watchMediaNsfwSnapshot`）与「模糊 NSFW
+  /// 封面」开关：NSFW 专辑的封面不进系统媒体控件 / 锁屏（拍板台
+  /// NCzkl6oLnf-adult-cover）。两者缺一 = 不管（测试 / 无库）。开关是可监听的：
+  /// 值一变就重发媒体卡（见构造函数）。
+  final Stream<MediaNsfwSnapshot> Function(FushiDatabase db)? _watchNsfw;
+  final ValueListenable<bool>? _blurNsfwCovers;
+  StreamSubscription<MediaNsfwSnapshot>? _nsfwSub;
+
+  /// 首份快照到之前为 null（这段时间本地专辑的曲目一律不带封面，见
+  /// [musicMediaSessionArtHidden]）。
+  MediaNsfwSnapshot? _nsfw;
+
+  /// 第一次要推媒体卡、库已就绪时才开始订阅（库在会话建好之后才打开）。
+  void _ensureNsfwWatch() {
+    final Stream<MediaNsfwSnapshot> Function(FushiDatabase db)? watch =
+        _watchNsfw;
+    if (_nsfwSub != null || watch == null || _blurNsfwCovers == null) return;
+    final FushiDatabase? db = _database();
+    if (db == null) return;
+    _nsfwSub = watch(db).listen(
+      (MediaNsfwSnapshot s) {
+        _nsfw = s;
+        _publishMediaSession();
+      },
+      onError: (Object e, StackTrace st) =>
+          ErrorLogService.instance.log('MusicSession.nsfwWatch', e, st),
+    );
+  }
+
   /// 断点续播模式（设置 `music_resume_mode`）。
   final MusicResumeMode Function() _resumeMode;
   final List<StreamSubscription<Object?>> _subs =
@@ -145,16 +212,38 @@ class MusicSession extends ChangeNotifier {
   /// [AppleMusicFavorites.canFavorite] 为 false。变化时本会话也 [notifyListeners]。
   final AppleMusicFavorites? appleMusicFavorites;
 
-  /// 这一首能不能收藏：声明了 `like` 的插件曲目，或已连接账号时的 Apple Music 整曲；
-  /// 本地 / 其它服务器曲目为 false。
+  /// 服务器曲目的播放上报（Jellyfin / Subsonic 的播放次数 / 最近播放）；app 装配，测试 /
+  /// 无头入口为 null。挂在本会话的曲目生命周期上（开播 / 换下 / 引擎状态）。
+  MusicServerPlaybackReporter? serverReporting;
+
+  /// 服务器没给响度的服务器曲目：播过之后在后台测一次（app 装配，测试 / 无头入口为 null）。
+  MusicServerLoudnessMeasurer? serverLoudnessMeasurer;
+
+  /// 服务器曲目（Jellyfin / Subsonic）的收藏；app 装配，测试 / 无头入口为 null。变化时本会话
+  /// 也 [notifyListeners]。
+  MusicServerTrackFavorites? get serverFavorites => _serverFavorites;
+  MusicServerTrackFavorites? _serverFavorites;
+  set serverFavorites(MusicServerTrackFavorites? value) {
+    _serverFavorites?.removeListener(notifyListeners);
+    _serverFavorites = value;
+    value?.addListener(notifyListeners);
+  }
+
+  /// 这一首能不能收藏：声明了 `like` 的插件曲目、已连接账号时的 Apple Music 整曲，或
+  /// Jellyfin / Subsonic 曲目；本地曲目为 false。
   bool canFavorite(MusicPlayItem item) =>
       (favorites?.canFavorite(item) ?? false) ||
-      (appleMusicFavorites?.canFavorite(item) ?? false);
+      (appleMusicFavorites?.canFavorite(item) ?? false) ||
+      (serverFavorites?.canFavorite(item) ?? false);
 
   /// 这一首是否已在平台上喜欢（同步读内存缓存，首次读时后台拉取）。
   bool isFavorite(MusicPlayItem item) {
     final AppleMusicFavorites? am = appleMusicFavorites;
     if (am != null && am.canFavorite(item)) return am.isFavorite(item);
+    final MusicServerTrackFavorites? server = serverFavorites;
+    if (server != null && server.canFavorite(item)) {
+      return server.isFavorite(item);
+    }
     return favorites?.isFavorite(item) ?? false;
   }
 
@@ -164,6 +253,8 @@ class MusicSession extends ChangeNotifier {
   Future<void> toggleFavorite(MusicPlayItem item) {
     final AppleMusicFavorites? am = appleMusicFavorites;
     if (am != null && am.canFavorite(item)) return am.toggle(item);
+    final MusicServerTrackFavorites? server = serverFavorites;
+    if (server != null && server.canFavorite(item)) return server.toggle(item);
     final MusicPluginFavorites? f = favorites;
     if (f == null) {
       return Future<void>.error(const MusicFavoriteUnsupported());
@@ -275,6 +366,11 @@ class MusicSession extends ChangeNotifier {
     }
   }
 
+  /// 媒体会话被另一方认领（[AudioController.claimSession]）：音乐暂停。
+  void _onMediaSessionPreempted() {
+    if (engine.isPlaying) unawaited(engine.pause());
+  }
+
   /// 有声书开始出声：把会话让回去，音乐暂停。
   void _onAudiobookChanged() {
     final controller = _audiobook.controller;
@@ -287,6 +383,7 @@ class MusicSession extends ChangeNotifier {
 
   void _onTrackStarted(MusicPlayItem item) {
     _startedProgressed = false;
+    serverReporting?.trackStarted(item);
     // 引擎此时已把位置清零给新曲：上一首播到哪要读它清零前存下的值（同步读，免得被后续
     // 位置推送覆盖）。
     unawaited(_rotatePlayEvent(item, listened: engine.listenedBeforeStart));
@@ -344,6 +441,7 @@ class MusicSession extends ChangeNotifier {
   }
 
   void _onEngineChanged() {
+    serverReporting?.engineChanged();
     _publishMediaSession();
     _maybeWriteResumePoint();
     notifyListeners();
@@ -427,6 +525,8 @@ class MusicSession extends ChangeNotifier {
   /// 这次打开还没放过（位置 0）不写（见 [_startedProgressed]）；后端自然推进换下的按
   /// 听完删行（交叉淡入推进时的位置停在淡入起点，见 [MusicTrackLeave.completed]）。
   void _onTrackLeft(MusicTrackLeave leave) {
+    serverReporting?.trackLeft(leave);
+    serverLoudnessMeasurer?.trackLeft(leave);
     final bool progressed = _startedProgressed;
     _startedProgressed = false;
     if (leave.restoring) return;
@@ -551,28 +651,32 @@ class MusicSession extends ChangeNotifier {
       handler.clearNotification();
       return;
     }
-    final String? cover = item.coverPath;
+    _ensureNsfwWatch();
+    final ValueListenable<bool>? blurNsfwCovers = _blurNsfwCovers;
+    final bool hideArt =
+        blurNsfwCovers != null &&
+        _watchNsfw != null &&
+        musicMediaSessionArtHidden(
+          blur: blurNsfwCovers.value,
+          snapshot: _nsfw,
+          item: item,
+        );
+    final String? cover = hideArt ? null : item.coverPath;
+    // 基础信息与当前歌词行一次组成最终卡片：本方法挂在每个进度 tick 上，分两次推
+    // （先无歌词卡、再有歌词卡）会让两张卡交替、去重失效，每 tick 真推两次
+    // setMediaItem（BUG-4507）。
     handler.setMediaItemInfo(
       title: item.title,
       artist: item.artist,
-      duration: item.durationMs == null
-          ? null
-          : Duration(milliseconds: item.durationMs!),
+      duration: musicMediaSessionDuration(item, engine.duration),
       // 服务器曲库的封面是 http(s) 地址（audio_service 自己下载），本地封面是文件。
       artUri: cover == null
           ? null
           : (cover.startsWith('http://') || cover.startsWith('https://'))
           ? Uri.parse(cover)
           : (File(cover).existsSync() ? Uri.file(cover) : null),
+      subtitle: mediaSessionLyricLine?.call(),
     );
-    final String? line = mediaSessionLyricLine?.call();
-    if (line != null) {
-      handler.updateNotificationSubtitle(
-        title: item.title,
-        subtitle: line,
-        fallbackArtist: item.artist,
-      );
-    }
     handler.updatePlaybackState(
       playing: engine.isPlaying,
       position: engine.position,
@@ -599,7 +703,10 @@ class MusicSession extends ChangeNotifier {
     for (final StreamSubscription<Object?> s in _subs) {
       unawaited(s.cancel());
     }
+    unawaited(_nsfwSub?.cancel());
+    _blurNsfwCovers?.removeListener(_publishMediaSession);
     _audiobook.removeListener(_onAudiobookChanged);
+    _audio.seat(MediaSessionOwner.music).onPreempted = null;
     favorites?.removeListener(notifyListeners);
     favorites?.dispose();
     appleMusicFavorites?.removeListener(notifyListeners);

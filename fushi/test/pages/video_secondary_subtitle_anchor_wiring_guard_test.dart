@@ -20,7 +20,7 @@ void main() {
     final String page = read(
       'lib/src/pages/implementations/video_fushi_page.dart',
     );
-    final int start = page.indexOf('void _handleSubtitleLookupTap(');
+    final int start = page.indexOf('Future<int> _handleSubtitleLookupTap(');
     expect(start, greaterThanOrEqualTo(0));
     // 用 `\n  }\n` 而不是 `\n  }`：后者会提前命中签名收尾的 `  }) {`（方法带可选
     // 命名参数块时），body 只剩签名、下面的断言全部落空 = 守卫静默失效。
@@ -67,13 +67,20 @@ void main() {
     final String favorite = read(
       'lib/src/pages/implementations/video_fushi/lookup_favorite.part.dart',
     );
+    // 只看查词锚点解析这一处调用：同文件里「复制当前主字幕台词」快捷键本来就只取主流
+    // （副字幕另有一条快捷键），不能被整文件扫描误伤。
+    final Match? call = RegExp(
+      r'resolveVideoLookupAnchorCue\(([^;]*)\);',
+    ).firstMatch(favorite);
+    expect(call, isNotNull, reason: '查词锚点必须经 resolveVideoLookupAnchorCue 解析');
+    final String args = call!.group(1)!;
     expect(
-      favorite.contains('cues: controller.miningCues'),
+      args.contains('cues: controller.miningCues'),
       isTrue,
       reason: '硬认 controller.cues 会让只开副字幕时按位置解析恒 null',
     );
     expect(
-      favorite.contains('cues: controller.cues'),
+      args.contains('cues: controller.cues'),
       isFalse,
       reason: '不得回潮到只认主字幕流',
     );

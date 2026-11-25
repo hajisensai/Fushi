@@ -688,7 +688,11 @@ final class GalVoiceDumpIndex {
     final GalVoiceResourceName? parsed = parseGalVoiceResourceName(entry.name);
     if (entry.kind == null ||
         parsed == null ||
-        isGalNonVoiceBasename(parsed.basename)) {
+        isGalNonVoiceBasename(parsed.basename) ||
+        // TyranoScript DOM voices are already bound to one DOM sentence by the
+        // engine's own voice-buffer state; they stay listed (prune, companions,
+        // byName) but never enter tick/event pairing for native text events.
+        parsed.domVoiceGroup != null) {
       return;
     }
     final _IndexedVoice voice = _IndexedVoice(
@@ -815,7 +819,11 @@ final class GalVoiceDumpIndex {
     final GalVoiceDumpKind? kind =
         lower.endsWith('.ogg') ||
             lower.endsWith('.opus') ||
-            lower.endsWith('.xwma')
+            lower.endsWith('.xwma') ||
+            // M4A only ever comes from the DOM source (signature-checked copy of
+            // the archive member); native m4a dumps keep their unindexed status.
+            (lower.endsWith('.m4a') &&
+                parseGalVoiceResourceName(name)?.domVoiceGroup != null)
         ? GalVoiceDumpKind.oggLike
         : lower.endsWith('.wav')
         ? GalVoiceDumpKind.wav

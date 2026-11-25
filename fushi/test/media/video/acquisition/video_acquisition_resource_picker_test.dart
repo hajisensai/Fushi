@@ -252,13 +252,24 @@ void main() {
       );
     });
 
-    test('tv All 有合集 → 只取做种最多的合集，usesBatch', () {
-      final VideoResourceVersionGroup group = _single(<VideoResourceCandidate>[
-        _episode('SubsPlease', '1080p', 1, seeders: 300),
-        _episode('SubsPlease', '1080p', 2, seeders: 300),
-        _batch('SubsPlease', '1080p', seeders: 50),
-        _batch('SubsPlease', '1080p', seeders: 200, marker: '[01-12]'),
-      ]);
+    test('tv All 合集卡 → 只取做种最多的合集，usesBatch；逐集另成一张卡（BUG-4246）', () {
+      final List<VideoResourceVersionGroup> groups =
+          _groupsOf(<VideoResourceCandidate>[
+            _episode('SubsPlease', '1080p', 1, seeders: 300),
+            _episode('SubsPlease', '1080p', 2, seeders: 300),
+            _batch('SubsPlease', '1080p', seeders: 50),
+            _batch('SubsPlease', '1080p', seeders: 200, marker: '[01-12]'),
+          ]);
+      expect(groups, hasLength(2), reason: '逐集与整包是两个版本');
+      expect(
+        groups
+            .firstWhere((VideoResourceVersionGroup g) => !g.wholeRelease)
+            .episodes,
+        <int>{1, 2},
+      );
+      final VideoResourceVersionGroup group = groups.firstWhere(
+        (VideoResourceVersionGroup g) => g.wholeRelease,
+      );
       final VideoAcquisitionResourcePlan? plan = planResourceFromGroup(
         group,
         mode: VideoAcquisitionMode.download,
@@ -316,6 +327,92 @@ void main() {
         ),
         isNull,
       );
+    });
+
+    test('tv All 只写季号的 BD 季包给出整包计划（BUG-4267）', () {
+      final VideoResourceVersionGroup group = _single(<VideoResourceCandidate>[
+        _FakeCandidate(
+          remoteId: 'cappy',
+          title:
+              '[cappybara] BanG Dream! Ave Mujica (2025) - S01 (BD 1080p HEVC '
+              'x265 Opus 2.0) | Ave Mujica: The Die is Cast',
+          releaseGroup: 'cappybara',
+          resolution: '1080p',
+          seeders: 54,
+        ),
+      ]);
+      final VideoAcquisitionResourcePlan? plan = planResourceFromGroup(
+        group,
+        mode: VideoAcquisitionMode.download,
+        kind: VideoMetadataMediaKind.tv,
+        episodes: const VideoAcquisitionAllEpisodes(),
+      );
+      expect(plan, isNotNull, reason: '做种最多的季包不能被静默跳过');
+      expect(plan!.usesBatch, isTrue);
+      expect(plan.picks.single.remoteId, 'cappy');
+    });
+
+    test('Ave Mujica 实测候选：首个可规划的版本卡是做种最多的 BD 季包（BUG-4267）', () {
+      // 输入次序 = registry 相关度重排后的次序（作品全部已知标题都算贴合 →
+      // 同分按做种数），这里直接给做种降序。
+      final List<VideoResourceCandidate> items = <VideoResourceCandidate>[
+        _FakeCandidate(
+          remoteId: 'cappy',
+          title:
+              '[cappybara] BanG Dream! Ave Mujica (2025) - S01 (BD 1080p HEVC '
+              'x265 Opus 2.0) | Ave Mujica: The Die is Cast',
+          releaseGroup: 'cappybara',
+          resolution: '1080p',
+          seeders: 54,
+        ),
+        for (int ep = 1; ep <= 13; ep++)
+          _FakeCandidate(
+            remoteId: 'sp$ep',
+            title:
+                '[SubsPlease] BanG Dream! Ave Mujica - '
+                '${ep.toString().padLeft(2, '0')} (1080p)',
+            releaseGroup: 'SubsPlease',
+            resolution: '1080p',
+            seeders: 38,
+          ),
+        _FakeCandidate(
+          remoteId: 'tsun',
+          title:
+              'Ave Mujica - The Die is Cast S01 VOSTFR 1080p WEB x264 AAC '
+              '-Tsundere-Raws (CR)',
+          resolution: '1080p',
+          seeders: 9,
+        ),
+        for (int ep = 7; ep <= 13; ep++)
+          _FakeCandidate(
+            remoteId: 'th$ep',
+            title:
+                '[ToonsHub] BanG Dream! Ave Mujica S01E$ep 1080p UNEXT WEB-DL '
+                'AAC2.0 H.264',
+            releaseGroup: 'ToonsHub',
+            resolution: '1080p',
+            seeders: 2,
+          ),
+      ];
+      final VideoAcquisitionResourceOutcome outcome = filterResourceGroups(
+        _groupsOf(items),
+        mode: VideoAcquisitionMode.download,
+        quality: VideoAcquisitionQuality.best,
+        workYear: 2025,
+      );
+      final VideoAcquisitionResourcePlan first = outcome.eligible
+          .map(
+            (VideoResourceVersionGroup g) => planResourceFromGroup(
+              g,
+              mode: VideoAcquisitionMode.download,
+              kind: VideoMetadataMediaKind.tv,
+              episodes: const VideoAcquisitionAllEpisodes(),
+            ),
+          )
+          .whereType<VideoAcquisitionResourcePlan>()
+          .first;
+      expect(first.usesBatch, isTrue);
+      expect(first.picks.single.remoteId, 'cappy');
     });
 
     test('Single(3) 命中取做种最多的那条；未命中 → null', () {
@@ -633,30 +730,35 @@ void main() {
       );
     });
 
-    test('每集体积只数单集发布，合集不参与估算', () {
-      final VideoResourceVersionGroup group = _single(<VideoResourceCandidate>[
-        _FakeCandidate(
-          remoteId: 'e1',
-          title: '[G] Show - 01 (1080p)',
-          releaseGroup: 'G',
-          resolution: '1080p',
-          sizeBytes: 100,
-        ),
-        _FakeCandidate(
-          remoteId: 'e2',
-          title: '[G] Show - 02 (1080p)',
-          releaseGroup: 'G',
-          resolution: '1080p',
-          sizeBytes: 300,
-        ),
-        _FakeCandidate(
-          remoteId: 'b',
-          title: '[G] Show (01-12) (Batch) (1080p)',
-          releaseGroup: 'G',
-          resolution: '1080p',
-          sizeBytes: 999999,
-        ),
-      ]);
+    test('每集体积只数单集发布，合集另成一张卡、不参与估算（BUG-4246）', () {
+      final List<VideoResourceVersionGroup> groups =
+          _groupsOf(<VideoResourceCandidate>[
+            _FakeCandidate(
+              remoteId: 'e1',
+              title: '[G] Show - 01 (1080p)',
+              releaseGroup: 'G',
+              resolution: '1080p',
+              sizeBytes: 100,
+            ),
+            _FakeCandidate(
+              remoteId: 'e2',
+              title: '[G] Show - 02 (1080p)',
+              releaseGroup: 'G',
+              resolution: '1080p',
+              sizeBytes: 300,
+            ),
+            _FakeCandidate(
+              remoteId: 'b',
+              title: '[G] Show (01-12) (Batch) (1080p)',
+              releaseGroup: 'G',
+              resolution: '1080p',
+              sizeBytes: 999999,
+            ),
+          ]);
+      expect(groups, hasLength(2));
+      final VideoResourceVersionGroup group = groups.firstWhere(
+        (VideoResourceVersionGroup g) => !g.wholeRelease,
+      );
       expect(estimatedBytesPerEpisode(group), 200);
     });
   });

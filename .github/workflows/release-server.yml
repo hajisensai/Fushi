@@ -15,11 +15,17 @@
 #   「已是最新」判成「远端不比本机新」而永远停更。把 Release 整体搬去独立仓后这个
 #   冲突不存在了——formal 在 fushi-server 里就是正常的 Latest。断言让这条硬规则
 #   不再依赖「记得 make_latest 恒 false」。
-# * 版本号独立：取 packages/fushi_server/pubspec.yaml 的 `version:`，与 fushi/pubspec
-#   无关；发布序号仍共用 tool/release_sequence.sh（同一条单调序列，从 fushi 的
-#   checkout 上算，别再造第二条）。
-# * 通道只有 beta / formal，没有 push 自动 debug：服务端装在别人的 NAS 上，滚动
-#   debug 包没有消费者。
+# * 版本号与 app 一致（2026-11-24 用户拍板）：取 fushi/pubspec.yaml 的 `version:`，
+#   tag 与 app 同形（`v<x.y.z>` / `v<x.y.z>-beta.<seq>`）；发布序号共用
+#   tool/release_sequence.sh（同一条单调序列，从 fushi 的 checkout 上算，别再造第二条）。
+# * 三个通道与 app 对齐（2026-11-24）：formal = 正式版 + Latest；beta = prerelease；
+#   debug = 固定滚动 release `debug-rolling`（与 app 的 fushi-debug-rolling 同理，不堆
+#   prerelease），body 里记 `source-sha: <sha>`。
+# * 自动发布：channel = auto 时 plan job 跑 tool/server_release_plan.py，按「app 的正式版 →
+#   app 的最新 beta → develop 新提交」挑一个还没发的目标；fushi-server 的 release.yml 定时
+#   以 auto 调本 workflow（跨仓事件要 PAT，所以是轮询）。
+# * Docker 镜像：publish 之后 docker job 用同一份 Linux 包打 ghcr.io/<owner>/fushi-server
+#   并冒烟、推送；tag 见 channel job 的 docker_tags。镜像随 release 发，不另设入口。
 # * concurrency 组带 workflow 名：与 release.yml / release-desktop.yml 曾共用一个组
 #   时同 sha 触发的第一条会被取消（PR#1302 教训）。
 #
@@ -30,7 +36,8 @@
 # libtorrent 的 .so；Windows 是 vcpkg 出的 DLL + 3 个运行时 DLL）、onnxruntime 1.22.0
 # CPU 版、互联 P2P 隧道 fushi_p2p（Rust/iroh，只依赖 libc）、SRS 排程内核 fushi_fsrs
 # （Rust/fsrs-rs，只依赖 libc）、计算内核 fushi_compute（Rust，只依赖 libc，硬依赖）、RWKV-Instant
-# 排程推理 fushi_rwkv（Rust，只依赖 libc，硬依赖，AGPL-3.0-or-later）。目标机不需要任何
+# 排程推理 fushi_rwkv（Rust，只依赖 libc，硬依赖，AGPL-3.0-or-later）、词典引擎 fushidicts
+# （C++；两个平台都随包，变形表放 share/fushi/transforms）。目标机不需要任何
 # libtorrent / ssl 运行库（README「安装」）。
 name: release-server
 
@@ -38,7 +45,7 @@ on:
   workflow_call:
     inputs:
       channel:
-        description: Release channel (beta = prerelease; formal = non-prerelease + Latest)
+        description: Release channel (debug = rolling debug-rolling; beta = prerelease; formal = non-prerelease + Latest; auto = pick the next unreleased app channel)
         type: string
         required: false
         default: beta
@@ -69,15 +76,88 @@ env:
   SOURCE_REPO: hajisensai/Fushi
 
 jobs:
-  channel:
+  # 决定这一轮发什么：显式通道原样透传；auto 由 tool/server_release_plan.py 按
+  # 「app 正式版 → app 最新 beta → develop 新提交」挑一个 fushi-server 还没发的目标
+  # （连续失败 2 次的目标跳过并告警，免得坏 tag 每半小时重编一次）。channel 为空 = 无事可做，
+  # 下游全部跳过。脚本取自本 workflow 自己那一版，与 workflow 定义同步：可复用 workflow 里
+  # github.job_workflow_sha 是空的（2026-11-24 fushi-server run 45422872785 实测），所以从调用方
+  # run 的 referenced_workflows 读本文件被解析到的提交，经 workflow_sha 输出给 docker job。
+  plan:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
+      channel: ${{ steps.plan.outputs.channel }}
+      source_ref: ${{ steps.plan.outputs.source_ref }}
+      tag_name: ${{ steps.plan.outputs.tag_name }}
+      workflow_sha: ${{ steps.self.outputs.sha }}
+    steps:
+      - name: Resolve this workflow's commit
+        id: self
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CALLER_REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          prefix="${SOURCE_REPO,,}/.github/workflows/release-server.yml@"
+          sha="$(gh api "repos/$CALLER_REPO/actions/runs/$RUN_ID" \
+            --jq "[.referenced_workflows[] | select(.path | ascii_downcase | startswith(\"$prefix\"))][0].sha // empty")"
+          if ! [[ "$sha" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error title=Workflow commit unknown::run $RUN_ID has no referenced release-server.yml (got '$sha')"
+            exit 1
+          fi
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          echo "release-server.yml resolved to $sha"
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: hajisensai/Fushi
+          ref: ${{ steps.self.outputs.sha }}
+          sparse-checkout: tool/server_release_plan.py
+          sparse-checkout-cone-mode: false
+      - name: Plan
+        id: plan
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          INPUT_CHANNEL: ${{ inputs.channel }}
+          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
+          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+          CALLER_REPO: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: python3 tool/server_release_plan.py
+      # 公开仓 60 天没有活动会停掉定时 workflow；每轮 auto 调一次 enable（已启用时是空操作）
+      # 续期。失败不影响发布。
+      - name: Keep the schedule alive
+        if: inputs.channel == 'auto'
+        continue-on-error: true
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CALLER_REPO: ${{ github.repository }}
+          WORKFLOW_REF: ${{ github.workflow_ref }}
+        run: |
+          set -euo pipefail
+          wf="${WORKFLOW_REF#*/.github/workflows/}"
+          gh api -X PUT "repos/$CALLER_REPO/actions/workflows/${wf%%@*}/enable"
+
+  channel:
+    needs: plan
+    if: needs.plan.outputs.channel != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      channel: ${{ steps.resolve.outputs.channel }}
       version: ${{ steps.resolve.outputs.version }}
       release_sequence: ${{ steps.resolve.outputs.release_sequence }}
+      source_sha: ${{ steps.resolve.outputs.source_sha }}
+      target: ${{ steps.resolve.outputs.target }}
       tag: ${{ steps.resolve.outputs.tag }}
       name: ${{ steps.resolve.outputs.name }}
       prerelease: ${{ steps.resolve.outputs.prerelease }}
       make_latest: ${{ steps.resolve.outputs.make_latest }}
+      docker_tags: ${{ steps.resolve.outputs.docker_tags }}
+      workflow_sha: ${{ needs.plan.outputs.workflow_sha }}
       body: ${{ steps.resolve.outputs.body }}
     steps:
       - name: Refuse to publish server releases into the app repo
@@ -92,10 +172,10 @@ jobs:
             echo "::error title=Wrong repository::fushi_server releases live in hajisensai/fushi-server; a server release in $SOURCE_REPO would become the app updater's releases/latest. Dispatch from the fushi-server repo."
             exit 1
           fi
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: hajisensai/Fushi
-          ref: ${{ inputs.source_ref }}
+          ref: ${{ needs.plan.outputs.source_ref }}
           fetch-depth: 0
       - name: Validate unified release policy
         shell: pwsh
@@ -104,33 +184,47 @@ jobs:
         id: resolve
         shell: bash
         env:
-          INPUT_CHANNEL: ${{ inputs.channel }}
-          INPUT_TAG_NAME: ${{ inputs.tag_name }}
+          INPUT_CHANNEL: ${{ needs.plan.outputs.channel }}
+          INPUT_TAG_NAME: ${{ needs.plan.outputs.tag_name }}
           INPUT_RELEASE_NAME: ${{ inputs.release_name }}
-          INPUT_SOURCE_REF: ${{ inputs.source_ref }}
+          INPUT_SOURCE_REF: ${{ needs.plan.outputs.source_ref }}
         run: |
           set -euo pipefail
-          VERSION=$(grep '^version:' packages/fushi_server/pubspec.yaml | sed 's/version: *//;s/+.*//' | tr -d '"'"'"'')
-          [ -n "$VERSION" ] || { echo "::error::packages/fushi_server/pubspec.yaml has no version:"; exit 1; }
+          # 版本与 app 同一个（fushi/pubspec.yaml），不再用 packages/fushi_server 的包版本。
+          VERSION=$(grep '^version:' fushi/pubspec.yaml | sed 's/version: *//;s/+.*//' | tr -d '"'"'"'')
+          [ -n "$VERSION" ] || { echo "::error::fushi/pubspec.yaml has no version:"; exit 1; }
           RELEASE_SEQUENCE=$(bash tool/release_sequence.sh)
           if ! [[ "$RELEASE_SEQUENCE" =~ ^[0-9]+$ ]] || [ "$RELEASE_SEQUENCE" -le 0 ]; then
             echo "::error title=Invalid release sequence::Expected positive git rev-list count, got $RELEASE_SEQUENCE"
             exit 1
           fi
           # 源码 sha 是 fushi checkout 的 HEAD，不是 GITHUB_SHA（那是调用方仓库的）。
-          SOURCE_SHA="$(git rev-parse --short HEAD)"
+          # 后续 job 一律按这个完整 sha 检出，develop 在 job 之间前进也不会混进两份源码。
+          SOURCE_SHA_FULL="$(git rev-parse HEAD)"
+          SOURCE_SHA="${SOURCE_SHA_FULL:0:12}"
           SOURCE="${SOURCE_REPO}@${INPUT_SOURCE_REF} (${SOURCE_SHA})"
           CHANNEL="${INPUT_CHANNEL:-beta}"
           TAG="${INPUT_TAG_NAME:-}"
           NAME="${INPUT_RELEASE_NAME:-}"
           NOTES_FILE="docs/release-notes/server-${VERSION}.md"
+          DEBUG_TAG=debug-rolling
           PRERELEASE=true
           MAKE_LATEST=false
           case "$CHANNEL" in
+            debug)
+              # 固定滚动 tag，不接受覆盖：自更新与 plan 都按这个名字找 debug 包。
+              TAG="$DEBUG_TAG"
+              NAME="${NAME:-fushi_server ${VERSION} debug ${RELEASE_SEQUENCE} (${SOURCE_SHA})}"
+              BODY="Rolling fushi_server debug build from ${SOURCE}. Replaced on every develop build; prerelease, never Latest."
+              TARGET="debug@${SOURCE_SHA}"
+              DOCKER_TAGS="debug debug-${RELEASE_SEQUENCE}"
+              ;;
             beta)
               TAG="${TAG:-v${VERSION}-beta.${RELEASE_SEQUENCE}}"
               NAME="${NAME:-fushi_server ${VERSION} beta ${RELEASE_SEQUENCE}}"
               BODY="fushi_server beta build from ${SOURCE}."
+              TARGET="$TAG"
+              DOCKER_TAGS="${TAG#v} beta"
               ;;
             formal)
               TAG="${TAG:-v${VERSION}}"
@@ -138,27 +232,41 @@ jobs:
               BODY="fushi_server ${VERSION} from ${SOURCE}."
               PRERELEASE=false
               MAKE_LATEST=true
+              TARGET="$TAG"
+              v="${TAG#v}"
+              DOCKER_TAGS="$v latest"
+              # x.y.z 再挂 x.y 与 x，用户可以钉小版本 / 大版本。
+              if [[ "$v" =~ ^([0-9]+)\.([0-9]+)\.[0-9]+$ ]]; then
+                DOCKER_TAGS="$DOCKER_TAGS ${BASH_REMATCH[1]}.${BASH_REMATCH[2]} ${BASH_REMATCH[1]}"
+              fi
               ;;
             *)
-              echo "::error title=Invalid release channel::Use beta or formal."
+              echo "::error title=Invalid release channel::Use debug, beta, formal or auto."
               exit 1
               ;;
           esac
-          if [ -f "$NOTES_FILE" ]; then
+          if [ "$CHANNEL" != debug ] && [ -f "$NOTES_FILE" ]; then
             BODY="$(cat "$NOTES_FILE")"
             BODY="${BODY}"$'\n\n'"Built from ${SOURCE}."
           fi
+          # plan 的 debug 判据：body 里的完整源码 sha。
+          BODY="${BODY}"$'\n\n'"source-sha: ${SOURCE_SHA_FULL}"
           case "$TAG" in
             v[0-9]*) : ;;
+            "$DEBUG_TAG") [ "$CHANNEL" = debug ] || { echo "::error title=Bad tag::$DEBUG_TAG is reserved for the debug channel"; exit 1; } ;;
             *) echo "::error title=Bad tag::server release tags must look like v<version>[-beta.<seq>] (got $TAG)"; exit 1 ;;
           esac
           {
+            echo "channel=$CHANNEL"
             echo "version=$VERSION"
             echo "release_sequence=$RELEASE_SEQUENCE"
+            echo "source_sha=$SOURCE_SHA_FULL"
+            echo "target=$TARGET"
             echo "tag=$TAG"
             echo "name=$NAME"
             echo "prerelease=$PRERELEASE"
             echo "make_latest=$MAKE_LATEST"
+            echo "docker_tags=$DOCKER_TAGS"
             echo "body<<EOF"
             echo "$BODY"
             echo "EOF"
@@ -167,32 +275,30 @@ jobs:
   # ubuntu-22.04（glibc 2.35）而不是 latest：bundle 里除 glibc 全是静态的，构建机的
   # glibc 就是产物的最低要求，老一点覆盖面大一点（Debian 12 / Ubuntu 22.04+ / 主流 NAS）。
   linux:
+    name: linux [target:${{ needs.channel.outputs.target }}]
     needs: channel
     runs-on: ubuntu-22.04
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: hajisensai/Fushi
-          ref: ${{ inputs.source_ref }}
-      - uses: subosito/flutter-action@v2
+          ref: ${{ needs.channel.outputs.source_sha }}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: '3.47.6'
+          flutter-version: '3.50.0'
           cache: true
       - name: Install build tools
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends ninja-build cmake pkg-config
-      - name: Pub get (workspace)
-        working-directory: fushi
-        run: flutter pub get
+      # 构建命令与 bundle 布局只在 packages/fushi_server/tool/build_linux_bundle.sh 写一次
+      # （Docker 的 Dockerfile.source 用同一份 `all`）；这里每个子命令一步，缓存与日志按件分。
       # 与 build-multiplatform.yml 各 job 同一步：fushi_asr_onnx_ffi 钉 archive ^4 而本仓钉
       # ^3.6.1，ci/patches/ 里那一行 readBytes→content 补丁不打，dart build cli 直接
-      # 编译失败（首跑 run 34798601057 实测，两个平台同一原因）。
-      - name: Apply pub cache patches
+      # 编译失败（首跑 run 34798601057 实测，两个平台同一原因）。prepare 两件都做。
+      - name: Pub get (workspace) + pub cache patches
         shell: bash
-        run: |
-          chmod +x ci/apply-patches.sh
-          bash ci/apply-patches.sh
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh prepare
       - name: Resolve vcpkg cache identity
         id: vcpkg_cache_id
         shell: bash
@@ -202,7 +308,7 @@ jobs:
           image="$(echo "$image" | tr -c '0-9A-Za-z._-' '-')"
           echo "image=$image" >> "$GITHUB_OUTPUT"
       - name: Cache vcpkg source distfiles (libtorrent linux)
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ${{ runner.temp }}/vcpkg-downloads
@@ -211,7 +317,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-downloads-libtorrent-linux-v1-
       - name: Cache vcpkg binary archives (libtorrent linux)
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~/.cache/vcpkg/archives
           # 末段 = vcpkg.json / overlay ports / triplets 的哈希：改钉版自动换 key，不再靠手动
@@ -224,89 +330,62 @@ jobs:
         shell: bash
         env:
           VCPKG_DOWNLOADS: ${{ runner.temp }}/vcpkg-downloads
-        run: |
-          set -euo pipefail
-          chmod +x native/fushi_torrent/build_linux_so.sh
-          bash native/fushi_torrent/build_linux_so.sh "$VCPKG_INSTALLATION_ROOT"
-          bash .github/scripts/verify_torrent_abi.sh native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so nm
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh torrent "$VCPKG_INSTALLATION_ROOT"
       # 互联 P2P 隧道（iroh）.so：服务端按 bin/../lib/libfushi_p2p.so 定位。只依赖
       # glibc（Rust 静态链其余一切），在本 job 的 ubuntu-22.04 上编即继承同一条 glibc 下限。
       # 失败口径同 torrent bridge：构建失败即 job 失败，不发缺库的服务端包。
       - name: Set up Rust (fushi_p2p)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: '1.95.0'
       - name: Cache Rust build (fushi_p2p)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-linux-x64-ubuntu22
       - name: Build fushi_p2p (Linux x64)
         shell: bash
-        run: |
-          set -euo pipefail
-          bash native/fushi_p2p/build_linux_so.sh
-          bash native/fushi_p2p/verify_abi.sh native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so nm
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh rust fushi_p2p
       # SRS 排程内核（fsrs-rs）.so：服务端按 bin/../lib/libfushi_fsrs.so 定位。同 fushi_p2p：
       # 只依赖 glibc，构建失败即 job 失败。
       - name: Cache Rust build (fushi_fsrs)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_fsrs -> target
           key: fushi-fsrs-linux-x64-ubuntu22
       - name: Build fushi_fsrs (Linux x64)
         shell: bash
-        run: |
-          set -euo pipefail
-          bash native/fushi_fsrs/build_linux_so.sh
-          bash native/fushi_fsrs/verify_abi.sh native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so nm
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh rust fushi_fsrs
       # 计算内核（哈希 / 图像 / 文本）.so：**硬依赖**，服务端按 bin/../lib/libfushi_compute.so
       # 定位。同 fushi_fsrs：只依赖 glibc，构建失败即 job 失败。
       - name: Cache Rust build (fushi_compute)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_compute -> target
           key: fushi-compute-linux-x64-ubuntu22
       - name: Build fushi_compute (Linux x64)
         shell: bash
-        run: |
-          set -euo pipefail
-          bash native/fushi_compute/build_linux_so.sh
-          bash native/fushi_compute/verify_abi.sh native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so nm
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh rust fushi_compute
       # RWKV-Instant 排程推理 .so：**硬依赖**，服务端按 bin/../lib/libfushi_rwkv.so 定位（经
       # fushi_srs → fushi_engine）。同 fushi_compute：只依赖 glibc，构建失败即 job 失败。
       - name: Cache Rust build (fushi_rwkv)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_rwkv -> target
           key: fushi-rwkv-linux-x64-ubuntu22
       - name: Build fushi_rwkv (Linux x64)
         shell: bash
-        run: |
-          set -euo pipefail
-          bash native/fushi_rwkv/build_linux_so.sh
-          bash native/fushi_rwkv/verify_abi.sh native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so nm
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh rust fushi_rwkv
+      # dart build cli + 上面几件 .so 进 bundle/lib + onnxruntime（microsoft/onnxruntime 的
+      # GitHub release 自 2026-11-17 起 404，脚本改走 NuGet、钉 sha256）。
       - name: Build fushi_server bundle
         shell: bash
-        run: |
-          set -euo pipefail
-          dart build cli --target packages/fushi_server/bin/fushi_server.dart --output build/fushi_server_linux
-          mkdir -p build/fushi_server_linux/bundle/lib
-          cp native/fushi_torrent/prebuilt/linux-x64/libfushi_torrent_ffi.so build/fushi_server_linux/bundle/lib/
-          cp native/fushi_p2p/prebuilt/linux-x64/libfushi_p2p.so build/fushi_server_linux/bundle/lib/
-          cp native/fushi_fsrs/prebuilt/linux-x64/libfushi_fsrs.so build/fushi_server_linux/bundle/lib/
-          cp native/fushi_compute/prebuilt/linux-x64/libfushi_compute.so build/fushi_server_linux/bundle/lib/
-          cp native/fushi_rwkv/prebuilt/linux-x64/libfushi_rwkv.so build/fushi_server_linux/bundle/lib/
-          curl -fsSL --retry 3 -o "$RUNNER_TEMP/ort.tgz" \
-            "https://github.com/microsoft/onnxruntime/releases/download/v${ORT_VERSION}/onnxruntime-linux-x64-${ORT_VERSION}.tgz"
-          tar -xzf "$RUNNER_TEMP/ort.tgz" -C "$RUNNER_TEMP"
-          cp -a "$RUNNER_TEMP/onnxruntime-linux-x64-${ORT_VERSION}/lib/"libonnxruntime.so* build/fushi_server_linux/bundle/lib/
-          ls -la build/fushi_server_linux/bundle/bin build/fushi_server_linux/bundle/lib
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh cli
       # 词典引擎 libfushidicts_ffi.so：服务端查词按 bin/../lib/ 定位、变形表按
       # bin/../share/fushi/transforms 定位。fushidicts 要 C++23（std::ranges::to 等），
       # 下限 GCC 14；ubuntu-22.04 系统源只到 gcc-12，所以从 ubuntu-toolchain-r/test PPA
       # 装 g++-14。libstdc++ / libgcc 静态链进 .so，目标机不需要这个 PPA 的运行库；
-      # 下面断言产物的 GLIBC 符号版本不超过 2.35，守住本 job 承诺的 glibc 下限。
+      # glibc 下限由冒烟前「Verify glibc baseline」一步对整个 bundle 统一核（BUG-4843）。
       # 失败口径同 torrent bridge：构建失败即 job 失败，不发缺查词能力的服务端包。
       - name: Install gcc-14 (ubuntu-toolchain-r/test PPA)
         shell: bash
@@ -321,34 +400,7 @@ jobs:
         env:
           CC: gcc-14
           CXX: g++-14
-        run: |
-          set -euo pipefail
-          bash native/fushidicts/build_linux_so.sh
-          lib=build/fushi_server_linux/bundle/lib/libfushidicts_ffi.so
-          mkdir -p "$(dirname "$lib")"
-          cp native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so "$lib"
-          max_glibc="$(objdump -T "$lib" | grep -o 'GLIBC_[0-9.]*' | sed 's/GLIBC_//' | sort -V | tail -n 1)"
-          echo "libfushidicts_ffi.so requires glibc >= $max_glibc"
-          if [ "$(printf '%s\n' "$max_glibc" 2.35 | sort -V | tail -n 1)" != "2.35" ]; then
-            echo "::error::libfushidicts_ffi.so needs glibc $max_glibc (> 2.35)"; exit 1
-          fi
-          DICTS_LIB="$lib" python3 - <<'PY'
-          import ctypes
-          import os
-          lib = ctypes.CDLL(os.environ["DICTS_LIB"])
-          lib.fushidicts_create.restype = ctypes.c_void_p
-          lib.fushidicts_destroy.argtypes = [ctypes.c_void_p]
-          handle = lib.fushidicts_create()
-          if not handle:
-              raise SystemExit("fushidicts_create returned null")
-          lib.fushidicts_destroy(handle)
-          print("fushidicts .so smoke ok")
-          PY
-          share=build/fushi_server_linux/bundle/share/fushi
-          mkdir -p "$share"
-          rm -rf "$share/transforms"
-          cp -a fushi/assets/transforms "$share/transforms"
-          test -f "$share/transforms/manifest.json"
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh fushidicts
       # fushi-anki-sync（native/fushi_anki_sync，链 Anki 官方 rslib 的 AGPL helper）放
       # bundle/bin/，与 fushi_server 可执行文件同级。build.sh 生成 AGPL 源码说明
       # fushi-anki-sync.SOURCE.txt（commit 取 fushi checkout 的 HEAD——这里 GITHUB_SHA
@@ -357,9 +409,15 @@ jobs:
         uses: ./.github/actions/setup-fushi-anki-sync
       - name: Build and bundle fushi-anki-sync
         shell: bash
-        run: |
-          set -euo pipefail
-          bash native/fushi_anki_sync/build.sh --install-dir build/fushi_server_linux/bundle/bin
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh anki-sync
+      - name: Verify bundle contents
+        shell: bash
+        run: bash packages/fushi_server/tool/build_linux_bundle.sh verify
+      # README 声明的 glibc 基线（BUG-4843）：bundle 里每个 ELF（含 fushi-anki-sync、
+      # onnxruntime、sqlite3 native asset）的最大 GLIBC_ 符号版本都不得超过它，超了不发版。
+      - name: Verify glibc baseline of bundled ELFs
+        shell: bash
+        run: bash .github/scripts/check_glibc_baseline.sh build/fushi_server_linux/bundle
       - name: Smoke (serve + embedded engine + models)
         shell: bash
         run: |
@@ -460,30 +518,35 @@ jobs:
         env:
           VERSION: ${{ needs.channel.outputs.version }}
           SEQ: ${{ needs.channel.outputs.release_sequence }}
+          TAG: ${{ needs.channel.outputs.tag }}
+          CHANNEL: ${{ needs.channel.outputs.channel }}
         run: |
           set -euo pipefail
           mkdir -p build/release-artifacts stage
           cp -a build/fushi_server_linux/bundle stage/fushi_server
           cp packages/fushi_server/README.md stage/fushi_server/README.md
+          # 版本身份：互联远程自更新据此判新旧（server_release.dart）；没有它 = 不是发布包。
+          printf '{"version":"%s","sequence":%s,"tag":"%s","channel":"%s"}\n' "$VERSION" "$SEQ" "$TAG" "$CHANNEL" > stage/fushi_server/release.json
           tar -C stage -czf "build/release-artifacts/fushi_server-${VERSION}-${SEQ}-linux-x64.tar.gz" fushi_server
           ls -la build/release-artifacts
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fushi_server-linux-x64
           path: build/release-artifacts/*.tar.gz
           if-no-files-found: error
 
   windows:
+    name: windows [target:${{ needs.channel.outputs.target }}]
     needs: channel
     runs-on: windows-2022
     steps:
-      - uses: actions/checkout@v6
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
         with:
           repository: hajisensai/Fushi
-          ref: ${{ inputs.source_ref }}
-      - uses: subosito/flutter-action@v2
+          ref: ${{ needs.channel.outputs.source_sha }}
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: '3.47.6'
+          flutter-version: '3.50.0'
           cache: true
       - name: Pub get (workspace)
         working-directory: fushi
@@ -505,7 +568,7 @@ jobs:
           $image = ($image -replace '[^0-9A-Za-z._-]', '-')
           "image=$image" >> $env:GITHUB_OUTPUT
       - name: Cache vcpkg source distfiles (libtorrent)
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: |
             ${{ runner.temp }}\vcpkg-downloads
@@ -514,7 +577,7 @@ jobs:
           restore-keys: |
             ${{ runner.os }}-vcpkg-downloads-libtorrent-v1-
       - name: Cache vcpkg binary archives (libtorrent)
-        uses: actions/cache@v4
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: ~\AppData\Local\vcpkg\archives
           # 末段 = vcpkg.json / overlay ports / triplets 的哈希：改钉版自动换 key，不再靠手动
@@ -532,12 +595,12 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 failed" }
       # 互联 P2P 隧道（iroh）DLL：服务端按 bin/../lib/fushi_p2p.dll 定位。失败即 job 失败。
       - name: Set up Rust (fushi_p2p)
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@df2a88e9fe4098bad09cb42c3dec7187f15861fc # master
         with:
           toolchain: '1.95.0'
           targets: x86_64-pc-windows-msvc
       - name: Cache Rust build (fushi_p2p)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_p2p -> target
           key: fushi-p2p-windows-x64
@@ -548,7 +611,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_p2p) failed" }
       # SRS 排程内核（fsrs-rs）DLL：服务端按 bin/../lib/fushi_fsrs.dll 定位。失败即 job 失败。
       - name: Cache Rust build (fushi_fsrs)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_fsrs -> target
           key: fushi-fsrs-windows-x64
@@ -560,7 +623,7 @@ jobs:
       # 计算内核（哈希 / 图像 / 文本）DLL：**硬依赖**，服务端按 bin/../lib/fushi_compute.dll 定位。
       # 失败即 job 失败。
       - name: Cache Rust build (fushi_compute)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_compute -> target
           key: fushi-compute-windows-x64
@@ -571,7 +634,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "build_windows_dll.ps1 (fushi_compute) failed" }
       # RWKV-Instant 排程推理 DLL：**硬依赖**，服务端按 bin/../lib/fushi_rwkv.dll 定位。失败即 job 失败。
       - name: Cache Rust build (fushi_rwkv)
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
         with:
           workspaces: native/fushi_rwkv -> target
           key: fushi-rwkv-windows-x64
@@ -592,11 +655,45 @@ jobs:
           Copy-Item native/fushi_fsrs/prebuilt/windows-x64/fushi_fsrs.dll $lib -Force
           Copy-Item native/fushi_compute/prebuilt/windows-x64/fushi_compute.dll $lib -Force
           Copy-Item native/fushi_rwkv/prebuilt/windows-x64/fushi_rwkv.dll $lib -Force
-          $zip = "$env:RUNNER_TEMP/ort.zip"
-          Invoke-WebRequest -Uri "https://github.com/microsoft/onnxruntime/releases/download/v$env:ORT_VERSION/onnxruntime-win-x64-$env:ORT_VERSION.zip" -OutFile $zip
-          Expand-Archive -Path $zip -DestinationPath "$env:RUNNER_TEMP/ort" -Force
-          Copy-Item "$env:RUNNER_TEMP/ort/onnxruntime-win-x64-$env:ORT_VERSION/lib/onnxruntime.dll" $lib -Force
+          # microsoft/onnxruntime 的 GitHub release 自 2026-11-17 起 404，改走 NuGet（钉 sha256）。
+          python .github/scripts/fetch_onnxruntime_nuget.py $env:ORT_VERSION win-x64 $lib
+          if ($LASTEXITCODE -ne 0) { throw "fetch onnxruntime failed" }
           Get-ChildItem build/fushi_server_win/bundle -Recurse | Select-Object FullName, Length
+      # 词典引擎 fushidicts_ffi.dll：同 linux job，服务端查词按 bin/../lib/ 定位、变形表按
+      # bin/../share/fushi/transforms 定位。此前 Windows 包漏了这一步，互联查词在 Windows
+      # 服务端上不可用（启动日志「fushidicts 原生库加载失败 … error code: 126」）。
+      # 编法同 native-fushidicts-gate.yml 的 ctest-msvc：VS 生成器（不用先 source vcvars），
+      # 构建目录放 RUNNER_TEMP 短路径（深路径撞 CMAKE_OBJECT_PATH_MAX）。运行库同 torrent
+      # DLL / app：动态 MSVC 运行库（VC++ 运行库）。失败即 job 失败，不发缺查词能力的包。
+      - name: Build and bundle fushidicts (Windows x64)
+        shell: pwsh
+        run: |
+          $build = "$env:RUNNER_TEMP\fushidicts"
+          cmake -S native/fushidicts -B $build -G "Visual Studio 17 2022" -A x64
+          if ($LASTEXITCODE -ne 0) { throw "fushidicts cmake configure failed ($LASTEXITCODE)" }
+          cmake --build $build --config Release --target fushidicts_ffi
+          if ($LASTEXITCODE -ne 0) { throw "fushidicts cmake build failed ($LASTEXITCODE)" }
+          $lib = "build/fushi_server_win/bundle/lib/fushidicts_ffi.dll"
+          Copy-Item "$build/Release/fushidicts_ffi.dll" $lib -Force
+          $env:DICTS_LIB = (Resolve-Path $lib).Path
+          @'
+          import ctypes
+          import os
+          lib = ctypes.CDLL(os.environ["DICTS_LIB"])
+          lib.fushidicts_create.restype = ctypes.c_void_p
+          lib.fushidicts_destroy.argtypes = [ctypes.c_void_p]
+          handle = lib.fushidicts_create()
+          if not handle:
+              raise SystemExit("fushidicts_create returned null")
+          lib.fushidicts_destroy(handle)
+          print("fushidicts .dll smoke ok")
+          '@ | python -
+          if ($LASTEXITCODE -ne 0) { throw "fushidicts .dll smoke failed ($LASTEXITCODE)" }
+          $share = "build/fushi_server_win/bundle/share/fushi"
+          New-Item -ItemType Directory -Force $share | Out-Null
+          if (Test-Path "$share/transforms") { Remove-Item -Recurse -Force "$share/transforms" }
+          Copy-Item fushi/assets/transforms "$share/transforms" -Recurse
+          if (-not (Test-Path "$share/transforms/manifest.json")) { throw "transforms/manifest.json missing from bundle" }
       # fushi-anki-sync：同 linux job，放 bundle\bin\ 与 fushi_server.exe 同级。
       - name: Set up fushi-anki-sync toolchain
         uses: ./.github/actions/setup-fushi-anki-sync
@@ -704,30 +801,37 @@ jobs:
         env:
           VERSION: ${{ needs.channel.outputs.version }}
           SEQ: ${{ needs.channel.outputs.release_sequence }}
+          TAG: ${{ needs.channel.outputs.tag }}
+          CHANNEL: ${{ needs.channel.outputs.channel }}
         run: |
           New-Item -ItemType Directory -Force build/release-artifacts, stage | Out-Null
           Copy-Item build/fushi_server_win/bundle stage/fushi_server -Recurse -Force
           Copy-Item packages/fushi_server/README.md stage/fushi_server/README.md -Force
+          # 版本身份：互联远程自更新据此判新旧（server_release.dart）；没有它 = 不是发布包。
+          [ordered]@{ version = $env:VERSION; sequence = [int]$env:SEQ; tag = $env:TAG; channel = $env:CHANNEL } |
+            ConvertTo-Json -Compress | Set-Content -Encoding utf8NoBOM stage/fushi_server/release.json
           Compress-Archive -Path stage/fushi_server -DestinationPath "build/release-artifacts/fushi_server-$env:VERSION-$env:SEQ-windows-x64.zip" -Force
           Get-ChildItem build/release-artifacts
-      - uses: actions/upload-artifact@v7
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: fushi_server-windows-x64
           path: build/release-artifacts/*.zip
           if-no-files-found: error
 
   publish:
+    name: publish [target:${{ needs.channel.outputs.target }}]
     needs:
       - channel
       - linux
       - windows
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     # 可复用 workflow 的权限上限由调用方决定；调用方（fushi-server 的 release.yml）
     # 给 contents: write，这里的 GITHUB_TOKEN 就是 fushi-server 的。
     permissions:
       contents: write
     steps:
-      - uses: actions/download-artifact@v7
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
         with:
           pattern: fushi_server-*
           path: release-artifacts
@@ -735,7 +839,7 @@ jobs:
       - name: List assets
         run: ls -la release-artifacts
       - name: Publish GitHub Release
-        uses: softprops/action-gh-release@v3
+        uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
           tag_name: ${{ needs.channel.outputs.tag }}
           target_commitish: ${{ github.sha }}
@@ -748,3 +852,90 @@ jobs:
           files: |
             release-artifacts/fushi_server-*-linux-x64.tar.gz
             release-artifacts/fushi_server-*-windows-x64.zip
+      # 滚动 debug release 每次只留这一轮的两个包：新包先传上去，再删旧序号的，
+      # 中途失败也不会出现「release 里一个包都没有」的窗口。
+      - name: Drop superseded debug assets
+        if: needs.channel.outputs.channel == 'debug'
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          TAG: ${{ needs.channel.outputs.tag }}
+        run: |
+          set -euo pipefail
+          keep="$(ls release-artifacts)"
+          gh release view "$TAG" --repo "$REPO" --json assets --jq '.assets[].name' | while read -r name; do
+            if ! grep -qxF "$name" <<<"$keep"; then
+              echo "deleting superseded $name"
+              gh release delete-asset "$TAG" "$name" --repo "$REPO" --yes
+            fi
+          done
+
+  # 镜像只在 release 发出之后推：GHCR 上有的 tag 一定对得上一个 release。镜像打的就是本 run
+  # 刚出的 Linux 包（Dockerfile 优先用 dist/ 里的 tarball），不再从 GitHub 下载一遍。
+  # 打包文件（Dockerfile / entrypoint / smoke_test）取本 workflow 自己那一版，与
+  # workflow 定义同步；被打包的程序来自 source_sha。
+  docker:
+    name: docker [target:${{ needs.channel.outputs.target }}]
+    needs:
+      - channel
+      - publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+        with:
+          repository: hajisensai/Fushi
+          ref: ${{ needs.channel.outputs.workflow_sha }}
+          sparse-checkout: packages/fushi_server/docker
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: fushi_server-linux-x64
+          path: packages/fushi_server/docker/dist
+      - name: Build image
+        id: build
+        shell: bash
+        env:
+          OWNER: ${{ github.repository_owner }}
+          CALLER_REPO: ${{ github.repository }}
+          TAG: ${{ needs.channel.outputs.tag }}
+          VERSION: ${{ needs.channel.outputs.version }}
+          SEQ: ${{ needs.channel.outputs.release_sequence }}
+          CHANNEL: ${{ needs.channel.outputs.channel }}
+          SOURCE_SHA: ${{ needs.channel.outputs.source_sha }}
+        run: |
+          set -euo pipefail
+          ls -la packages/fushi_server/docker/dist
+          version="${TAG#v}"
+          [ "$CHANNEL" = debug ] && version="${VERSION}-debug.${SEQ}"
+          # source 标签指向发布仓：GHCR 据此把包挂到 fushi-server 仓下，GITHUB_TOKEN 才有写权限。
+          docker build -t fushi-server:release \
+            --label org.opencontainers.image.source="https://github.com/${CALLER_REPO}" \
+            --label org.opencontainers.image.revision="$SOURCE_SHA" \
+            --label org.opencontainers.image.version="$version" \
+            --label org.opencontainers.image.title=fushi-server \
+            --label org.opencontainers.image.description="Headless Fushi server (${CHANNEL} channel)" \
+            packages/fushi_server/docker
+          echo "image=ghcr.io/${OWNER,,}/fushi-server" >> "$GITHUB_OUTPUT"
+      - name: Smoke test
+        run: bash packages/fushi_server/docker/smoke_test.sh fushi-server:release
+      - uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ github.token }}
+      - name: Push
+        shell: bash
+        env:
+          IMAGE: ${{ steps.build.outputs.image }}
+          DOCKER_TAGS: ${{ needs.channel.outputs.docker_tags }}
+        run: |
+          set -euo pipefail
+          for t in $DOCKER_TAGS; do
+            docker tag fushi-server:release "$IMAGE:$t"
+            docker push "$IMAGE:$t"
+            echo "pushed \`$IMAGE:$t\`" >> "$GITHUB_STEP_SUMMARY"
+          done

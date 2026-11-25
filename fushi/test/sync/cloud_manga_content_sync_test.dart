@@ -87,6 +87,9 @@ class _RecordingBackend implements SyncBackend {
   final List<({String folderId, String name})> jsonAssets =
       <({String folderId, String name})>[];
 
+  /// 写过的 sidecar 内容，按资产名（后写覆盖先写）。
+  final Map<String, Object?> jsonBodies = <String, Object?>{};
+
   int listChildrenCalls = 0;
 
   /// 上传过的 (fileName, 内容字节)，顺序即上传顺序。
@@ -163,6 +166,7 @@ class _RecordingBackend implements SyncBackend {
     Object? json,
   ) async {
     jsonAssets.add((folderId: namespaceId, name: name));
+    jsonBodies[name] = json;
   }
 
   // ── Cache ───────────────────────────────────────────────────────────
@@ -515,6 +519,123 @@ void main() {
     expect(backend.uploads, isEmpty);
   });
 
+  group('旧名 `<title>.epub` 漫画包的格式标记（ecNgkRQcTk）', () {
+    late Directory src;
+    late FushiDatabase db;
+
+    setUp(() {
+      src = _mangaBookDir();
+      db = _memDb();
+    });
+    tearDown(() async {
+      await db.close();
+      src.deleteSync(recursive: true);
+    });
+
+    Future<EpubBookRow> insertManga() => _insertBook(
+      db,
+      title: 'ワンピース 01',
+      extractDir: src.path,
+      format: BookFormat.manga,
+    );
+
+    List<String> markerFolders(_RecordingBackend backend) => <String>[
+      for (final ({String folderId, String name}) a in backend.jsonAssets)
+        if (a.name == kCloudLegacyMangaMarkerAssetName) a.folderId,
+    ];
+
+    test('远端只有旧名包：补写标记，不重传、不碰旧包', () async {
+      final EpubBookRow book = await insertManga();
+      final _RecordingBackend backend = _RecordingBackend(
+        listedNames: <String>{'ワンピース 01.epub'},
+      );
+
+      await _exportBook(db, backend, book);
+      expect(backend.uploads, isEmpty, reason: '旧包仍是旧客户端唯一认得的内容，不重传第二份');
+      expect(markerFolders(backend), <String>[
+        '${_RecordingBackend.root}ワンピース 01/',
+      ]);
+      expect(
+        backend.jsonBodies[kCloudLegacyMangaMarkerAssetName],
+        <String, Object?>{
+          'schemaVersion': 1,
+          'format': BookFormat.manga.dbValue,
+          'contentFile': 'ワンピース 01.epub',
+        },
+      );
+      // 写入方补的标记 + 远端旧包，读取方同一判据归漫画。
+      expect(
+        cloudBookContentKindOf(<String>[
+          'ワンピース 01.epub',
+          kCloudLegacyMangaMarkerAssetName,
+        ]),
+        CloudBookContentKind.manga,
+      );
+    });
+
+    test('旧名包只在探针里可见（快照陈旧）时同样补写标记', () async {
+      final EpubBookRow book = await insertManga();
+      final _RecordingBackend backend = _RecordingBackend(
+        probedNames: <String>{'ワンピース 01.epub'},
+      );
+
+      await _exportBook(db, backend, book);
+      expect(backend.uploads, isEmpty);
+      expect(markerFolders(backend), hasLength(1));
+    });
+
+    test('标记已在：不重复写', () async {
+      final EpubBookRow book = await insertManga();
+      final _RecordingBackend backend = _RecordingBackend(
+        listedNames: <String>{
+          'ワンピース 01.epub',
+          kCloudLegacyMangaMarkerAssetName,
+        },
+      );
+
+      await _exportBook(db, backend, book);
+      expect(markerFolders(backend), isEmpty);
+    });
+
+    test('远端是新名 `.manga.zip`：不写标记', () async {
+      final EpubBookRow book = await insertManga();
+      final _RecordingBackend backend = _RecordingBackend(
+        listedNames: <String>{'ワンピース 01.manga.zip'},
+      );
+
+      await _exportBook(db, backend, book);
+      expect(markerFolders(backend), isEmpty);
+    });
+
+    test('本机首传漫画（远端无内容）：传新名，不写标记', () async {
+      final EpubBookRow book = await insertManga();
+      final _RecordingBackend backend = _RecordingBackend();
+
+      await _exportBook(db, backend, book);
+      expect(backend.uploads.map((u) => u.fileName), <String>[
+        'ワンピース 01.manga.zip',
+      ]);
+      expect(markerFolders(backend), isEmpty);
+    });
+
+    test('EPUB 书远端已有 `<title>.epub`：绝不写漫画标记', () async {
+      final Directory epubSrc = _epubBookDir();
+      addTearDown(() => epubSrc.deleteSync(recursive: true));
+      final EpubBookRow book = await _insertBook(
+        db,
+        title: 'Novel B',
+        extractDir: epubSrc.path,
+        format: BookFormat.epub,
+      );
+      final _RecordingBackend backend = _RecordingBackend(
+        listedNames: <String>{'Novel B.epub'},
+      );
+
+      await _exportBook(db, backend, book);
+      expect(markerFolders(backend), isEmpty);
+    });
+  });
+
   test('云盘 push：远端已有新名 `.manga.zip` 时不重传', () async {
     final Directory src = _mangaBookDir();
     addTearDown(() => src.deleteSync(recursive: true));
@@ -670,6 +791,33 @@ void main() {
           'cover.jpg',
         ], (String n) => n),
         isNull,
+      );
+    });
+
+    test('cloudBookContentKindOf：旧名 .epub 只有带标记才归漫画', () {
+      expect(
+        cloudBookContentKindOf(<String>['t.epub', 'tags.json']),
+        CloudBookContentKind.epub,
+      );
+      expect(
+        cloudBookContentKindOf(<String>[
+          kCloudLegacyMangaMarkerAssetName,
+          't.EPUB',
+        ]),
+        CloudBookContentKind.manga,
+      );
+      expect(
+        cloudBookContentKindOf(<String>['t.manga.zip']),
+        CloudBookContentKind.manga,
+      );
+      // 只有标记、没有内容资产：不是可读内容（不放出幽灵书）。
+      expect(
+        cloudBookContentKindOf(<String>[kCloudLegacyMangaMarkerAssetName]),
+        isNull,
+      );
+      expect(
+        isRemoteBookContentName(kCloudLegacyMangaMarkerAssetName),
+        isFalse,
       );
     });
 

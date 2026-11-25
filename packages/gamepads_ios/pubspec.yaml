@@ -1,0 +1,33 @@
+# Vendored fork of gamepads_ios 0.1.3+3 (pub.dev). Workspace member, so the
+# package name shadows the pub.dev upstream without a dependency_override (see
+# the root pubspec.yaml comment). Fushi change: GamepadsIosPlugin.swift also
+# wires controllers that expose NO extendedGamepad profile (a single Nintendo
+# Switch Joy-Con, iOS 16+) through GCController.physicalInputProfile — upstream
+# `guard let gamepad = controller.extendedGamepad else { return }` dropped them
+# entirely (feedback 2F3oApV21V / GitHub #3122). Also reports LT/RT as digital
+# button events: upstream sent them as analog "leftTrigger"/"rightTrigger",
+# which the gamepads IosMapping only lists in its button map, so they
+# normalized to nothing and triggers were dead on iOS.
+name: gamepads_ios
+resolution: workspace
+publish_to: none
+description: iOS implementation of gamepads, a Flutter plugin to handle gamepad input across multiple platforms.
+version: 0.1.3+3
+homepage: https://github.com/flame-engine/gamepads
+repository: https://github.com/flame-engine/gamepads/tree/main/packages/gamepads_ios
+
+flutter:
+  plugin:
+    implements: gamepads
+    platforms:
+      ios:
+        pluginClass: GamepadsIosPlugin
+
+environment:
+  sdk: ">=3.9.0 <4.0.0"
+  flutter: ">=3.35.0"
+
+dependencies:
+  flutter:
+    sdk: flutter
+  gamepads_platform_interface: ^0.1.3

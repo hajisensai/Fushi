@@ -28,6 +28,7 @@ class AgentToolSpec {
     this.confirm = false,
     this.undoable = false,
     this.longRunning = false,
+    this.preapproved = false,
   });
 
   final String name;
@@ -42,8 +43,14 @@ class AgentToolSpec {
   final bool undoable;
   final bool longRunning;
 
-  /// 执行前要不要用户在 UI 上点确认。只由描述决定，模型改不了（spec §10）。
-  bool get needsConfirmation => risk == AgentToolRisk.irreversible || confirm;
+  /// 用户已对这条操作给过「首次确认」并记在本机（spec §5.2 补「首次确认」，例如
+  /// AI 助手联网搜索）：不再逐次出确认卡。由宿主按本机偏好填，模型改不了。
+  final bool preapproved;
+
+  /// 执行前要不要用户在 UI 上点确认。只由描述与本机的长期同意决定，模型改不了
+  /// （spec §10）。
+  bool get needsConfirmation =>
+      (risk == AgentToolRisk.irreversible || confirm) && !preapproved;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'name': name,
@@ -53,6 +60,7 @@ class AgentToolSpec {
     if (confirm) 'confirm': true,
     if (undoable) 'undoable': true,
     if (longRunning) 'longRunning': true,
+    if (preapproved) 'preapproved': true,
   };
 
   static AgentToolSpec fromJson(Map<String, Object?> json) => AgentToolSpec(
@@ -65,6 +73,7 @@ class AgentToolSpec {
     confirm: json['confirm'] == true,
     undoable: json['undoable'] == true,
     longRunning: json['longRunning'] == true,
+    preapproved: json['preapproved'] == true,
   );
 }
 
@@ -188,8 +197,8 @@ class AgentToolResult {
   bool get isError => errorCode != null;
 }
 
-/// 撤销结果（与 `fushi_cli` 的 `OpUndoStatus` 对应）。
-enum AgentUndoStatus { done, superseded, failed, notUndoable }
+/// 撤销结果（与 `fushi_cli` 的 `OpUndoStatus` 对应；[partial] = 部分撤销，之后又被改过的部分保留现值）。
+enum AgentUndoStatus { done, superseded, partial, failed, notUndoable }
 
 class AgentUndoResult {
   const AgentUndoResult(this.status, [this.message]);
@@ -294,6 +303,14 @@ abstract interface class AgentSkillContext {
   /// 出候选卡片等用户点；取消返回 null。
   Future<String?> askChoice(String prompt, List<AgentChoiceOption> options);
 
+  /// 把本场切进长程模式（spec `2026-11-22-ai-library-agent-design.md` §3.4）：
+  /// [tools] 里工具箱认得的 id（目录工具或技能）直接装进本场，等同模型
+  /// `ops.describe` 过；本轮剩下的工具调用上限提到 [maxToolCalls]（省略 =
+  /// `AgentLimits.longTaskMaxToolCalls`）。只升不降：已经更高的上限不被调低。
+  /// 连错熔断照旧。下一轮（用户下一句话 / 任务结果续轮）恢复默认上限，已装的
+  /// 工具留在本场。
+  void beginLongTask({required Iterable<String> tools, int? maxToolCalls});
+
   /// 用户按了停止：技能应尽快收尾。
   bool get cancelled;
 }
@@ -301,4 +318,11 @@ abstract interface class AgentSkillContext {
 /// 工具箱可选实现：提供技能。
 abstract interface class AgentSkillProvider {
   List<AgentSkill> skills();
+}
+
+/// 工具箱可选实现：给 system prompt 末尾附一段说明（例如「接了哪些外部 MCP
+/// server、它们有哪些工具」，spec `docs/specs/2026-11-05-ai-mcp-client-design.md` §5）。
+/// 返回 null 或空串表示不附。每轮现取：server 连上 / 断开会变。
+abstract interface class AgentPromptNoteProvider {
+  String? promptNote();
 }

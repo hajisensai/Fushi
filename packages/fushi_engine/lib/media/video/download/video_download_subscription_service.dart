@@ -41,10 +41,58 @@ const int _subscriptionResourceMaxPages = 20;
 /// 按一次会把 `attemptCount` 清零，自动预算随之恢复。
 const int kVideoDownloadSubscriptionAutoRetryBudget = 3;
 
-class VideoDownloadSubscriptionConfigurationError implements Exception {
-  const VideoDownloadSubscriptionConfigurationError(this.message);
+/// 订阅配置错误的稳定分类。
+///
+/// [message] 是落进订阅行 `lastError` 的英文诊断串（已持久化的旧行里就是这些
+/// 原文，**冻结不改**）；UI 用 [fromLastError] 认回分类再给本地化文案，不把
+/// 英文串直接摆给用户。
+enum VideoDownloadSubscriptionConfigIssue {
+  invalidMode('The subscription mode is invalid'),
+  targetSourceUnavailable('The subscription target source is unavailable'),
+  backendBindingIncomplete(
+    'The subscription download backend binding is incomplete',
+  ),
+  legacyOrganization(
+    'Legacy organization subscriptions require the legacy scheduler',
+  ),
+  providerNotConfigured(
+    'The selected resource provider is not configured on this device',
+  ),
+  invalidVersionFilter('The subscription version filter is invalid'),
+  nonStrictVersionFilter('The subscription version filter must remain strict'),
+  nyaaRulesIncomplete(
+    'Nyaa subscriptions require release group, resolution, and trust rules',
+  ),
+  torznabRulesMissing(
+    'Torznab subscriptions require at least one strict version rule',
+  ),
+  invalidMediaKind('The subscription media kind is invalid'),
+  invalidSubtitlePolicy('The subscription subtitle policy is invalid'),
+  btSiteMissing(kVideoSubscriptionBtSiteMissingError);
+
+  const VideoDownloadSubscriptionConfigIssue(this.message);
 
   final String message;
+
+  /// 订阅行 `lastError` 对应的配置错误分类；不是配置错误（来源站失败等）时 null。
+  static VideoDownloadSubscriptionConfigIssue? fromLastError(
+    String? lastError,
+  ) {
+    final String? value = lastError?.trim();
+    if (value == null || value.isEmpty) return null;
+    for (final VideoDownloadSubscriptionConfigIssue issue in values) {
+      if (issue.message == value) return issue;
+    }
+    return null;
+  }
+}
+
+class VideoDownloadSubscriptionConfigurationError implements Exception {
+  const VideoDownloadSubscriptionConfigurationError(this.issue);
+
+  final VideoDownloadSubscriptionConfigIssue issue;
+
+  String get message => issue.message;
 
   @override
   String toString() => message;
@@ -54,6 +102,10 @@ class VideoDownloadSubscriptionConfigurationError implements Exception {
 /// [isVideoSubscriptionBtSiteMissingError] 认它并显示「请先添加 BT 站」入口）。
 const String kVideoSubscriptionBtSiteMissingError =
     'bt-site-missing: no enabled BT site covers this subscription';
+
+/// 订阅检查因未分类的异常失败时落在 `lastError` 上的固定文案（不透出异常原文；
+/// UI 认它给本地化的「检查失败」）。
+const String kVideoSubscriptionCheckFailedError = 'subscription check failed';
 
 /// 订阅行的 `lastError` 是不是「没有可用的 BT 站」。
 bool isVideoSubscriptionBtSiteMissingError(String? lastError) =>
@@ -66,7 +118,7 @@ bool isVideoSubscriptionBtSiteMissingError(String? lastError) =>
 class VideoDownloadSubscriptionBtSiteMissing
     extends VideoDownloadSubscriptionConfigurationError {
   const VideoDownloadSubscriptionBtSiteMissing()
-    : super(kVideoSubscriptionBtSiteMissingError);
+    : super(VideoDownloadSubscriptionConfigIssue.btSiteMissing);
 }
 
 /// v78 订阅调度器。
@@ -458,7 +510,7 @@ class VideoDownloadSubscriptionService {
         throw const VideoDownloadSubscriptionBtSiteMissing();
       }
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The selected resource provider is not configured on this device',
+        VideoDownloadSubscriptionConfigIssue.providerNotConfigured,
       );
     }
     // BT 站订阅按「解析到的那个站」认候选；其余（Torznab 的 `torznab:<indexer>`）
@@ -714,41 +766,22 @@ class VideoDownloadSubscriptionService {
     final List<VideoDownloadJobRow> jobs = await database
         .getVideoDownloadJobs();
     _ensureLeaseHeld();
+    // 认既有任务只有一套判据：同一指纹下 provider+remoteId 相同，**或** infohash
+    // 相同（后者正是 pipeline 判重用的唯一索引，别的 provider / AI 下视频 / 发现页
+    // 先建的同种任务只能靠它认出来）。两种命中都走 [_claimExistingJob] 的同一段
+    // 生命周期处理，失败任务按预算恢复，不会被当成「已在队列」挂在死任务上。
+    final String? candidateHash = candidate.infoHash?.trim().toLowerCase();
     for (final VideoDownloadJobRow job in jobs) {
-      if (job.fingerprint != subscription.fingerprint ||
-          !sameProvider(job.resourceProvider) ||
-          job.selectedResourceId != candidate.remoteId) {
-        continue;
-      }
-      if (videoDownloadJobLifecycleStillCounts(job.lifecycle)) {
-        await _markItemQueued(item.id, job.jobId);
-        return true;
-      }
-      // failed / needsAttention：**恢复**这一条既有任务，不再 enqueue 一份新的。
-      //
-      // `pipeline.enqueue` 每次调用都 `generateVideoDownloadInstallationId()`
-      // 生成全新 jobId，而 `VideoDownloadJobs` 对
-      // (fingerprint, resourceProvider, selectedResourceId) / torrentHash
-      // 没有任何唯一约束。生产 checkInterval 是 15 分钟，一个持续性故障
-      // （实测例：内置下载引擎运行时缺失）下这等于每集每天往下载面板堆约 96 条
-      // 死任务行，永不收敛。`needsAttention` 更糟：它是「需要用户处理的可恢复
-      // 状态」，backendTaskId 还在、后端 torrent 可能仍在跑，再派一份同 magnet
-      // 的任务会让两条持久工作流指向同一个 infohash，各自 organize/import。
-      // BUG-2755：旧任务的目标来源被删了（FK 清空）或不可用时，恢复前先改绑到
-      // 订阅的当前来源，否则恢复后整理阶段照样撞「受管来源不存在」。
-      await _rebindUnusableJobSource(job, subscription);
-      _ensureLeaseHeld();
-      final bool revived = await database.reviveVideoDownloadJobForSubscription(
-        jobId: job.jobId,
-        autoRetryBudget: autoRetryBudget,
-        nowAt: _now().millisecondsSinceEpoch,
-      );
-      _ensureLeaseHeld();
-      if (revived) await _markItemQueued(item.id, job.jobId);
-      // 预算借满时任务原样停在 failed / needsAttention 等用户处理。即便如此它
-      // 仍然是这一集的持久任务，不能当成「没人管」再派一份 —— 所以这里一律
-      // 返回 true，不落到下面的 enqueue。
-      return true;
+      if (job.fingerprint != subscription.fingerprint) continue;
+      final bool sameResource =
+          sameProvider(job.resourceProvider) &&
+          job.selectedResourceId == candidate.remoteId;
+      final bool sameTorrent =
+          candidateHash != null &&
+          candidateHash.isNotEmpty &&
+          job.torrentHash?.toLowerCase() == candidateHash;
+      if (!sameResource && !sameTorrent) continue;
+      return _claimExistingJob(job, subscription, item);
     }
 
     try {
@@ -794,6 +827,20 @@ class VideoDownloadSubscriptionService {
       return true;
     } on VideoDownloadLeaseLost {
       rethrow;
+    } on VideoDownloadAlreadyQueued catch (error) {
+      // BUG-4270：并发竞态兜底——预扫描之后、enqueue 之前别处刚建了同种任务
+      // （或命中同包多卷 / 选集重叠的兄弟任务）。按 existingJobId 读回任务，交给
+      // 与预扫描同一段生命周期处理：仍算数才挂上去，failed / needsAttention 走
+      // 恢复与重试预算，绝不无条件标 queued。
+      final String? existingJobId = error.existingJobId;
+      if (existingJobId == null) rethrow;
+      _ensureLeaseHeld();
+      final VideoDownloadJobRow? existing = await database.getVideoDownloadJob(
+        existingJobId,
+      );
+      _ensureLeaseHeld();
+      if (existing == null) rethrow;
+      return _claimExistingJob(existing, subscription, item);
     } on Object catch (error) {
       _ensureLeaseHeld();
       await database.updateVideoDownloadSubscriptionItem(
@@ -808,6 +855,44 @@ class VideoDownloadSubscriptionService {
       );
       rethrow;
     }
+  }
+
+  /// 这一集命中了既有任务 [job]：仍算数就挂上去；failed / needsAttention 则
+  /// **恢复**这一条，不再 enqueue 一份新的。一律返回 true——哪怕预算借满、任务
+  /// 原样停着，它仍是这一集的持久任务，不能当成「没人管」再派。
+  Future<bool> _claimExistingJob(
+    VideoDownloadJobRow job,
+    VideoDownloadSubscriptionRow subscription,
+    VideoDownloadSubscriptionItemRow item,
+  ) async {
+    if (videoDownloadJobLifecycleStillCounts(job.lifecycle)) {
+      await _markItemQueued(item.id, job.jobId);
+      return true;
+    }
+    // failed / needsAttention：**恢复**这一条既有任务，不再 enqueue 一份新的。
+    //
+    // `pipeline.enqueue` 只按 (fingerprint, torrentHash) 判重（那是唯一索引），
+    // 对 (fingerprint, resourceProvider, selectedResourceId) 没有约束：没有
+    // infoHash 的候选每次都会新建 jobId。生产 checkInterval 是 15 分钟，一个持续性故障
+    // （实测例：内置下载引擎运行时缺失）下这等于每集每天往下载面板堆约 96 条
+    // 死任务行，永不收敛。`needsAttention` 更糟：它是「需要用户处理的可恢复
+    // 状态」，backendTaskId 还在、后端 torrent 可能仍在跑，再派一份同 magnet
+    // 的任务会让两条持久工作流指向同一个 infohash，各自 organize/import。
+    // BUG-2755：旧任务的目标来源被删了（FK 清空）或不可用时，恢复前先改绑到
+    // 订阅的当前来源，否则恢复后整理阶段照样撞「受管来源不存在」。
+    await _rebindUnusableJobSource(job, subscription);
+    _ensureLeaseHeld();
+    final bool revived = await database.reviveVideoDownloadJobForSubscription(
+      jobId: job.jobId,
+      autoRetryBudget: autoRetryBudget,
+      nowAt: _now().millisecondsSinceEpoch,
+    );
+    _ensureLeaseHeld();
+    if (revived) await _markItemQueued(item.id, job.jobId);
+    // 预算借满时任务原样停在 failed / needsAttention 等用户处理。即便如此它
+    // 仍然是这一集的持久任务，不能当成「没人管」再派一份 —— 所以这里一律
+    // 返回 true，调用方不再走 enqueue。
+    return true;
   }
 
   Future<void> _rebindUnusableJobSource(
@@ -892,23 +977,23 @@ class VideoDownloadSubscriptionService {
   void _validateSubscription(VideoDownloadSubscriptionRow subscription) {
     if (subscription.mode != 'oneShot' && subscription.mode != 'ongoing') {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The subscription mode is invalid',
+        VideoDownloadSubscriptionConfigIssue.invalidMode,
       );
     }
     if (subscription.targetSourceId == null) {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The subscription target source is unavailable',
+        VideoDownloadSubscriptionConfigIssue.targetSourceUnavailable,
       );
     }
     if (subscription.backendProfileId?.trim().isEmpty != false ||
         subscription.category?.trim().isEmpty != false) {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The subscription download backend binding is incomplete',
+        VideoDownloadSubscriptionConfigIssue.backendBindingIncomplete,
       );
     }
     if (subscription.organizationPolicy != 'library') {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'Legacy organization subscriptions require the legacy scheduler',
+        VideoDownloadSubscriptionConfigIssue.legacyOrganization,
       );
     }
     _mediaKind(subscription.mediaKind);
@@ -1029,17 +1114,17 @@ class _SubscriptionFilter {
       decoded = jsonDecode(raw);
     } on FormatException {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The subscription version filter is invalid',
+        VideoDownloadSubscriptionConfigIssue.invalidVersionFilter,
       );
     }
     if (decoded is! Map<String, dynamic>) {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The subscription version filter is invalid',
+        VideoDownloadSubscriptionConfigIssue.invalidVersionFilter,
       );
     }
     if (decoded.containsKey('strict') && decoded['strict'] != true) {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The subscription version filter must remain strict',
+        VideoDownloadSubscriptionConfigIssue.nonStrictVersionFilter,
       );
     }
     final List<String> releaseGroups = _filterValues(decoded, 'releaseGroup');
@@ -1072,7 +1157,7 @@ class _SubscriptionFilter {
             (resolutions.isEmpty && qualities.isEmpty) ||
             (trusted == null && trustedOnly == null))) {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'Nyaa subscriptions require release group, resolution, and trust rules',
+        VideoDownloadSubscriptionConfigIssue.nyaaRulesIncomplete,
       );
     }
     if (providerBase == 'torznab' &&
@@ -1083,7 +1168,7 @@ class _SubscriptionFilter {
         codecs.isEmpty &&
         languages.isEmpty) {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'Torznab subscriptions require at least one strict version rule',
+        VideoDownloadSubscriptionConfigIssue.torznabRulesMissing,
       );
     }
     return _SubscriptionFilter(
@@ -1217,7 +1302,7 @@ VideoMetadataMediaKind _mediaKind(String raw) {
     if (value.name == raw) return value;
   }
   throw const VideoDownloadSubscriptionConfigurationError(
-    'The subscription media kind is invalid',
+    VideoDownloadSubscriptionConfigIssue.invalidMediaKind,
   );
 }
 
@@ -1242,7 +1327,7 @@ VideoDownloadSubtitlePolicy _subtitlePolicy(String raw) {
     if (value.name == raw) return value;
   }
   throw const VideoDownloadSubscriptionConfigurationError(
-    'The subscription subtitle policy is invalid',
+    VideoDownloadSubscriptionConfigIssue.invalidSubtitlePolicy,
   );
 }
 
@@ -1384,13 +1469,13 @@ List<String> _filterValues(Map<String, dynamic> raw, String key) {
       : value is String
       ? <Object?>[value]
       : throw const VideoDownloadSubscriptionConfigurationError(
-          'The subscription version filter is invalid',
+          VideoDownloadSubscriptionConfigIssue.invalidVersionFilter,
         );
   final List<String> result = <String>[];
   for (final Object? item in values) {
     if (item is! String || item.trim().isEmpty) {
       throw const VideoDownloadSubscriptionConfigurationError(
-        'The subscription version filter is invalid',
+        VideoDownloadSubscriptionConfigIssue.invalidVersionFilter,
       );
     }
     result.add(item.trim());
@@ -1410,7 +1495,7 @@ bool? _optionalBool(Map<String, dynamic> raw, String key) {
   final Object value = raw[key]!;
   if (value is bool) return value;
   throw const VideoDownloadSubscriptionConfigurationError(
-    'The subscription version filter is invalid',
+    VideoDownloadSubscriptionConfigIssue.invalidVersionFilter,
   );
 }
 
@@ -1468,7 +1553,7 @@ String _safeSubscriptionError(Object error) {
     final String message = redactCredentialsInText(error.message);
     return '$provider ${error.kind.name}: $message';
   }
-  return 'subscription check failed';
+  return kVideoSubscriptionCheckFailedError;
 }
 
 Never _throwSubscriptionError(Object error) {

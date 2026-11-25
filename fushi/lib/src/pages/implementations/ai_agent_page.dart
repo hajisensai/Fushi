@@ -15,6 +15,7 @@ import 'package:flutter_markdown/flutter_markdown.dart';
 import 'package:fushi_engine/ai/agent/agent_session.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
+import 'package:fushi_engine/ai/web_search.dart' show WebSearchConfig;
 import 'package:intl/intl.dart' show Intl, NumberFormat;
 import 'package:material_ui/material_ui.dart';
 
@@ -22,6 +23,8 @@ import 'package:fushi/src/ai/agent/ai_agent_controller.dart';
 import 'package:fushi/src/ai/agent/ai_agent_conversation_controller.dart';
 import 'package:fushi/src/ai/agent/remote_ai_agent_session.dart';
 import 'package:fushi/src/sync/interconnect_assistant_client.dart';
+import 'package:fushi/src/sync/interconnect_host_channel.dart';
+import 'package:fushi/src/sync/interconnect_host_failure_text.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
@@ -31,6 +34,7 @@ import 'package:fushi_engine/sync/assistant/video_acquisition_assistant_host.dar
         kHostAssistantReasonNoProvider,
         kHostAssistantReasonNotReady;
 import 'package:fushi/src/ai/agent/ai_agent_in_process_ops.dart';
+import 'package:fushi/src/ai/ai_agent_web_search_policy.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show kAiAgentExecutorLocal, kAiAgentExecutorRemote;
 import 'package:fushi/src/ocr/screen_ocr_language.dart';
@@ -70,6 +74,39 @@ import 'package:url_launcher/url_launcher.dart';
 /// 侧栏 / 浮层判宽阈值：宽于它的窗口用靠边侧栏，窄的用底部半屏面板。
 const double kAiAgentSidePanelBreakpoint = 840;
 
+/// 靠边侧栏的宽度（窗口放不下时收到窗口宽减去两侧外边距）。
+const double kAiAgentSidePanelWidth = 440;
+
+/// 靠边侧栏与窗口边缘的外边距。
+const double kAiAgentSidePanelMargin = 12;
+
+/// 底部半屏面板占窗口高度的比例。
+const double kAiAgentBottomSheetHeightFactor = 0.55;
+
+/// [AiAgentSidePanelFrame] 里定尺寸那一层的 key，测试按它量尺寸。
+const ValueKey<String> kAiAgentSidePanelKey = ValueKey<String>(
+  'ai-agent-side-panel',
+);
+
+/// 浮层摆成靠边侧栏（true）还是底部半屏面板（false）。
+///
+/// 宽窗口（≥ [kAiAgentSidePanelBreakpoint]）与**横屏窗口**都用侧栏：底部面板只拿
+/// 窗口高度的 [kAiAgentBottomSheetHeightFactor]，横屏手机（如播视频时的 792×360dp）
+/// 只剩 ~198dp，一打开就低于 [kAiAgentTightHeight]，被压成标题 + 输入框、对话几乎
+/// 看不见；横屏的富余在宽度上，侧栏吃满窗口高度，视频仍露在另一侧（反馈
+/// cP3rFztWT2）。竖屏窄窗口照旧弹底部半屏面板。
+bool aiAgentUsesSidePanel(Size window) =>
+    window.width >= kAiAgentSidePanelBreakpoint || window.width > window.height;
+
+/// 侧栏宽度：[kAiAgentSidePanelWidth]；窄横屏窗口里不超过窗口宽减两侧外边距。
+double aiAgentSidePanelWidth(Size window) {
+  final double available = window.width - kAiAgentSidePanelMargin * 2;
+  if (available <= 0) return 0;
+  return available < kAiAgentSidePanelWidth
+      ? available
+      : kAiAgentSidePanelWidth;
+}
+
 /// 浮层 / 侧栏里对话区可用高度低于它（横屏手机弹出软键盘时只剩 130~175dp）就进
 /// 「紧凑」排版：藏掉标题栏和上下文 chip，只留对话列表 + 输入栏。否则标题栏 + chip
 /// 把高度吃光，输入框被裁掉，用户既输入不了也滚不动。
@@ -84,27 +121,49 @@ final RegExp _kExtensionInstallOp = RegExp(
   r'^online\.(extension\.(install|update)\w*|repo\.add)$',
 );
 
+/// 联网搜索确认卡里写的后端名：本机配的那个后端；没配（远端执行等）写泛称。
+String _agentWebSearchBackendName() {
+  final WebSearchConfig? config =
+      appOpContext?.appModel.prefsRepo.aiWebSearchConfig;
+  return config == null
+      ? t.ai_web_search_backend
+      : webSearchBackendLabel(config);
+}
+
 /// 打开 AI 助手（悬浮球「AI」、首页卡片、快捷键共用这一个入口）。
 ///
 /// 没指派提供商时不开会话、不发请求：提示并引导去「设置 › 模型 › LLM」
-/// （BUG-2694 的约定）。窄屏弹底部半屏面板，宽屏从右侧滑出侧栏。
-Future<void> openAiAgent(
+/// （BUG-2694 的约定）。竖屏窄窗口弹底部半屏面板，宽屏 / 横屏从右侧滑出侧栏
+/// （[aiAgentUsesSidePanel]）。
+///
+/// [initialPrompt]（首页 AI 块里直接输入的那句）：浮层里的对话就绪后当作用户的第一
+/// 句话直接发出，与在浮层输入框里回车同一条路径（带同样的页面上下文）。只发一次：
+/// 浮层里切换「本地 / 远端 AI」重建对话区时不重发。没指派提供商时浮层根本不开，
+/// 这句话也就不会发出去（只引导去设置）。
+///
+/// 返回浮层是否真的开过（关掉后才完成）：false = 没开（没指派提供商只引导去设置 /
+/// 宿主已卸载），调用方据此把没发出去的 [initialPrompt] 还给用户，不让它丢掉。
+Future<bool> openAiAgent(
   BuildContext context, {
   AgentUiContext? uiContext,
+  String? initialPrompt,
 }) async {
   final _AiAgentResolution? resolution = await _resolveAiAgentConversation(
     context,
   );
-  if (resolution == null || !context.mounted) return;
-  if (MediaQuery.sizeOf(context).width >= kAiAgentSidePanelBreakpoint) {
-    await _showSidePanel(context, resolution, uiContext);
-    return;
+  if (resolution == null || !context.mounted) return false;
+  final AiAgentInitialPrompt? prompt = AiAgentInitialPrompt.of(initialPrompt);
+  if (aiAgentUsesSidePanel(MediaQuery.sizeOf(context))) {
+    await _showSidePanel(context, resolution, uiContext, prompt);
+    return true;
   }
   await adaptiveModalSheet<void>(
     context: context,
     expandable: true,
     builder: (BuildContext sheetContext) => SizedBox(
-      height: MediaQuery.sizeOf(sheetContext).height * 0.55,
+      height:
+          MediaQuery.sizeOf(sheetContext).height *
+          kAiAgentBottomSheetHeightFactor,
       child: _AiAgentExecutorSwitcher(
         initial: resolution,
         builder:
@@ -115,6 +174,7 @@ Future<void> openAiAgent(
             ) => AiAgentConversation(
               controller: controller,
               uiContext: uiContext,
+              initialPrompt: prompt,
               compact: true,
               onSwitchExecutor: toggle?.onSwitch,
               switchExecutorTooltip: toggle?.tooltip,
@@ -126,6 +186,29 @@ Future<void> openAiAgent(
       ),
     ),
   );
+  return true;
+}
+
+/// 浮层打开时随带的第一句话（[openAiAgent] 的 `initialPrompt`）：一次性的，
+/// [take] 只在第一次返回文本，之后恒为 null——浮层里切换执行端会以新的控制器
+/// 重建对话区，重建出来的那一份拿不到它，不会把同一句话再发一遍。
+class AiAgentInitialPrompt {
+  AiAgentInitialPrompt._(this._text);
+
+  /// [text] 去掉首尾空白后为空（或 null）时返回 null：没有要发的话。
+  static AiAgentInitialPrompt? of(String? text) {
+    final String trimmed = text?.trim() ?? '';
+    return trimmed.isEmpty ? null : AiAgentInitialPrompt._(trimmed);
+  }
+
+  String? _text;
+
+  /// 取走这句话（只有第一次非 null）。
+  String? take() {
+    final String? text = _text;
+    _text = null;
+    return text;
+  }
 }
 
 /// 整页（浮层右上角「展开成整页」也走这里）。
@@ -268,23 +351,65 @@ Future<RemoteAiAgentSession?> _openRemoteAiAgent(
   required String locale,
 }) async {
   final RemoteAiAgentSession? existing = RemoteAiAgentSession.active;
-  if (existing != null && existing.isUsable && existing.target.baseUrl == url) {
+  // 认的是「那台 host」：偏好存的那条地址与会话当初经的地址可以不同。
+  if (existing != null &&
+      existing.isUsable &&
+      existing.target.hostRef ==
+          interconnectHostRefForUrl(await repo.getFushiClientUrls(), url)) {
     return existing;
   }
   existing?.dispose();
   final InterconnectAssistantClient client = InterconnectAssistantClient(
     repo: repo,
   );
-  final HostAssistantTarget? target = await client.probeUrl(url);
-  if (!context.mounted) return null;
-  if (target == null) {
-    _showAiAgentMessage(
-      context,
-      t.ai_agent_remote_unreachable(device: deviceLabel),
-    );
+  final InterconnectCapabilityOutcome<HostAssistantTarget> outcome =
+      await client.probeUrlOutcome(url);
+  if (!context.mounted) {
+    client.dispose();
     return null;
   }
+  // 不把推迟赋值的 final 带出 switch：Dart 3.14.0 对「switch 里赋值、之后被闭包
+  // 捕获的推迟 final」AOT 编译崩溃（dart-lang/sdk#64917，只在 release 暴露；修复
+  // dart-lang/sdk@7848cfe821d）。这里眼下没有闭包捕获，但一起改成不推迟赋值的
+  // 形状，免得以后加闭包时复发。升到含该修复的 Flutter 补丁版后可不再受此约束。
+  switch (outcome) {
+    case InterconnectCapabilityAvailable<HostAssistantTarget>(
+      :final HostAssistantTarget target,
+    ):
+      return _openRemoteAiAgentOn(
+        context,
+        client: client,
+        target: target,
+        locale: locale,
+      );
+    case InterconnectCapabilityUnavailable<HostAssistantTarget>(
+      :final InterconnectHostFailure failure,
+      :final int? statusCode,
+    ):
+      client.dispose();
+      _showAiAgentMessage(
+        context,
+        failure == InterconnectHostFailure.unreachable
+            ? t.ai_agent_remote_unreachable(device: deviceLabel)
+            : interconnectHostFailureLine(
+                failure,
+                device: deviceLabel,
+                statusCode: statusCode,
+              ),
+      );
+      return null;
+  }
+}
+
+/// host 探测可用后：确认它支持 agent、开会话。[client] 归本函数。
+Future<RemoteAiAgentSession?> _openRemoteAiAgentOn(
+  BuildContext context, {
+  required InterconnectAssistantClient client,
+  required HostAssistantTarget target,
+  required String locale,
+}) async {
   if (!target.supports(kHostAssistantFeatureAgent)) {
+    client.dispose();
     _showAiAgentMessage(
       context,
       _remoteBlockedText(
@@ -307,6 +432,8 @@ Future<RemoteAiAgentSession?> _openRemoteAiAgent(
     RemoteAiAgentSession.active = session;
     return session;
   } on HostAssistantException catch (error) {
+    // 会话没开成：client 仍归这里。
+    client.dispose();
     if (context.mounted) {
       _showAiAgentMessage(
         context,
@@ -320,6 +447,7 @@ Future<RemoteAiAgentSession?> _openRemoteAiAgent(
     }
     return null;
   } on Object {
+    client.dispose();
     if (context.mounted) {
       _showAiAgentMessage(
         context,
@@ -463,6 +591,7 @@ Future<void> _showSidePanel(
   BuildContext context,
   _AiAgentResolution resolution,
   AgentUiContext? uiContext,
+  AiAgentInitialPrompt? initialPrompt,
 ) {
   return showGeneralDialog<void>(
     context: context,
@@ -476,46 +605,26 @@ Future<void> _showSidePanel(
           Animation<double> animation,
           Animation<double> secondaryAnimation,
         ) {
-          final ColorScheme scheme = Theme.of(dialogContext).colorScheme;
-          // 软键盘把面板整块抬到键盘上方（对话框路由不会自己让位）。
-          final double keyboard = MediaQuery.viewInsetsOf(dialogContext).bottom;
-          return Align(
-            alignment: AlignmentDirectional.centerEnd,
-            child: AnimatedPadding(
-              duration: fushiMotionDuration(dialogContext, FushiMotion.short),
-              curve: FushiMotion.standard,
-              padding: EdgeInsets.all(12) + EdgeInsets.only(bottom: keyboard),
-              child: Material(
-                color: scheme.surfaceContainerLow,
-                elevation: 6,
-                borderRadius: FushiBorderRadius.dialog,
-                clipBehavior: Clip.antiAlias,
-                child: SizedBox(
-                  width: 440,
-                  height: double.infinity,
-                  child: _AiAgentExecutorSwitcher(
-                    initial: resolution,
-                    builder:
-                        (
-                          BuildContext _,
-                          AiAgentConversationController controller,
-                          _AiAgentExecutorToggle? toggle,
-                        ) => AiAgentConversation(
-                          controller: controller,
-                          uiContext: uiContext,
-                          compact: true,
-                          onSwitchExecutor: toggle?.onSwitch,
-                          switchExecutorTooltip: toggle?.tooltip,
-                          onExpand: () {
-                            Navigator.of(dialogContext).pop();
-                            unawaited(
-                              pushAiAgentPage(context, uiContext: uiContext),
-                            );
-                          },
-                        ),
+          return AiAgentSidePanelFrame(
+            child: _AiAgentExecutorSwitcher(
+              initial: resolution,
+              builder:
+                  (
+                    BuildContext _,
+                    AiAgentConversationController controller,
+                    _AiAgentExecutorToggle? toggle,
+                  ) => AiAgentConversation(
+                    controller: controller,
+                    uiContext: uiContext,
+                    initialPrompt: initialPrompt,
+                    compact: true,
+                    onSwitchExecutor: toggle?.onSwitch,
+                    switchExecutorTooltip: toggle?.tooltip,
+                    onExpand: () {
+                      Navigator.of(dialogContext).pop();
+                      unawaited(pushAiAgentPage(context, uiContext: uiContext));
+                    },
                   ),
-                ),
-              ),
             ),
           );
         },
@@ -544,6 +653,57 @@ Future<void> _showSidePanel(
           );
         },
   );
+}
+
+/// 靠边侧栏的外框：贴窗口尾侧、吃满窗口高度（减外边距），软键盘弹起时整块抬到
+/// 键盘上方（对话框路由不会自己让位）；宽度按 [aiAgentSidePanelWidth]。表面 MD3 用
+/// surfaceContainerLow 面板，Apple 用 [FushiAppleDialogPanel]。
+class AiAgentSidePanelFrame extends StatelessWidget {
+  const AiAgentSidePanelFrame({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final double keyboard = MediaQuery.viewInsetsOf(context).bottom;
+    // 对话框路由不套 SafeArea：横屏手机 / iPhone 的刘海、挖孔与 Home 指示条落在
+    // 侧栏所在的尾侧与底边，外边距要叠上系统安全区，否则输入栏被遮。软键盘弹起时
+    // paddingOf 的底边已归零，与 viewInsets 不重复。
+    final EdgeInsets safe = MediaQuery.paddingOf(context);
+    final Size window = MediaQuery.sizeOf(context);
+    final Widget sized = SizedBox(
+      key: kAiAgentSidePanelKey,
+      width: aiAgentSidePanelWidth(
+        Size(window.width - safe.horizontal, window.height),
+      ),
+      height: double.infinity,
+      child: child,
+    );
+    final Widget surface;
+    if (isGlassDesign(context)) {
+      surface = FushiAppleDialogPanel(radius: 24, child: sized);
+    } else {
+      surface = Material(
+        color: Theme.of(context).colorScheme.surfaceContainerLow,
+        elevation: 6,
+        borderRadius: FushiBorderRadius.dialog,
+        clipBehavior: Clip.antiAlias,
+        child: sized,
+      );
+    }
+    return Align(
+      alignment: AlignmentDirectional.centerEnd,
+      child: AnimatedPadding(
+        duration: fushiMotionDuration(context, FushiMotion.short),
+        curve: FushiMotion.standard,
+        padding:
+            const EdgeInsets.all(kAiAgentSidePanelMargin) +
+            safe +
+            EdgeInsets.only(bottom: keyboard),
+        child: surface,
+      ),
+    );
+  }
 }
 
 /// 会话列表常驻在整页左侧的宽度（窗口宽于 [kAiAgentSidePanelBreakpoint] 时）。
@@ -586,6 +746,7 @@ class AiAgentPage extends StatelessWidget {
         library != null &&
         MediaQuery.sizeOf(context).width >= kAiAgentSidePanelBreakpoint;
     return FushiPageScaffold(
+      masthead: true,
       title: t.ai_agent_title,
       actions: <Widget>[
         if (switchExecutorTooltip != null)
@@ -647,6 +808,7 @@ class AiAgentConversation extends StatefulWidget {
   const AiAgentConversation({
     required this.controller,
     this.uiContext,
+    this.initialPrompt,
     this.compact = false,
     this.onExpand,
     this.onSwitchExecutor,
@@ -663,6 +825,11 @@ class AiAgentConversation extends StatefulWidget {
 
   /// 打开时所在的页面 / 条目（悬浮球按场景带上，spec §6.4），随每句话注入。
   final AgentUiContext? uiContext;
+
+  /// 打开时就要发出的第一句话（首页 AI 块的输入，见 [openAiAgent]）。挂上树后的
+  /// 第一帧取走并按输入框回车同一条路径发出；正在跑一轮时不打断，只把这句话填进
+  /// 输入框留给用户自己发。
+  final AiAgentInitialPrompt? initialPrompt;
 
   /// 浮层 / 侧栏：自带一行紧凑顶栏（整页由页头承担标题）。
   final bool compact;
@@ -704,6 +871,16 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     super.initState();
     AiAgentConversation._openCount++;
     _controller.addListener(_onChanged);
+    final String? prompt = widget.initialPrompt?.take();
+    if (prompt != null) {
+      _input.text = prompt;
+      // 等首帧：发送失败的引导（没指派提供商）要用到挂好的 context。
+      // addPostFrameCallback 本身不调度帧，补一次 ensureVisualUpdate。
+      WidgetsBinding.instance.addPostFrameCallback((Duration _) {
+        if (mounted) unawaited(_send());
+      });
+      WidgetsBinding.instance.ensureVisualUpdate();
+    }
   }
 
   @override
@@ -765,6 +942,7 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     final String? message = switch (result.status) {
       AgentUndoStatus.done => null,
       AgentUndoStatus.superseded => t.ai_agent_superseded,
+      AgentUndoStatus.partial => t.ai_agent_undo_partial,
       AgentUndoStatus.failed || AgentUndoStatus.notUndoable =>
         t.ai_agent_undo_failed(reason: result.message ?? result.status.name),
     };
@@ -777,7 +955,14 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     final int superseded = results
         .where((AgentUndoResult r) => r.status == AgentUndoStatus.superseded)
         .length;
-    if (superseded > 0) FushiToast.show(msg: t.ai_agent_superseded);
+    final bool partial = results.any(
+      (AgentUndoResult r) => r.status == AgentUndoStatus.partial,
+    );
+    if (superseded > 0) {
+      FushiToast.show(msg: t.ai_agent_superseded);
+    } else if (partial) {
+      FushiToast.show(msg: t.ai_agent_undo_partial);
+    }
   }
 
   @override
@@ -1287,6 +1472,8 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final TextTheme text = Theme.of(context).textTheme;
     final bool install = _kExtensionInstallOp.hasMatch(entry.toolName ?? '');
+    // 联网搜索（web.search / web.read）的首次确认：写明发给哪个后端、同意后记住。
+    final bool webSearch = kAgentWebSearchOp.hasMatch(entry.toolName ?? '');
     final bool irreversible = entry.risk == AgentToolRisk.irreversible;
     final bool pending =
         entry.status == AgentEntryStatus.pending &&
@@ -1308,6 +1495,8 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
               Text(
                 install
                     ? t.ai_agent_confirm_install_title
+                    : webSearch
+                    ? t.ai_agent_web_search_consent_title
                     : t.ai_agent_confirm_title,
                 style: text.titleSmall,
               ),
@@ -1323,7 +1512,11 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                 ),
               const SizedBox(height: 6),
               Text(
-                irreversible
+                webSearch
+                    ? t.ai_agent_web_search_consent_body(
+                        backend: _agentWebSearchBackendName(),
+                      )
+                    : irreversible
                     ? t.ai_agent_confirm_irreversible
                     : t.ai_agent_confirm_undoable,
                 style: text.bodySmall?.copyWith(
@@ -1337,12 +1530,14 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                   children: <Widget>[
                     FushiFilledButton(
                       key: const ValueKey<String>('ai-agent-confirm-approve'),
-                      onPressed: () => _controller.answerConfirm(true),
+                      onPressed: () =>
+                          _controller.answerConfirm(true, entryId: entry.id),
                       child: Text(t.ai_agent_confirm_approve),
                     ),
                     FushiTextButton(
                       key: const ValueKey<String>('ai-agent-confirm-decline'),
-                      onPressed: () => _controller.answerConfirm(false),
+                      onPressed: () =>
+                          _controller.answerConfirm(false, entryId: entry.id),
                       child: Text(t.ai_agent_confirm_decline),
                     ),
                   ],
@@ -1398,13 +1593,17 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
                     _AgentChoiceOptionTile(
                       key: ValueKey<String>('ai-agent-choice-${option.id}'),
                       option: option,
-                      onPressed: () => _controller.answerChoice(option.id),
+                      onPressed: () => _controller.answerChoice(
+                        option.id,
+                        entryId: entry.id,
+                      ),
                     ),
                   FushiActionChipControl(
                     key: const ValueKey<String>('ai-agent-choice-cancel'),
                     avatar: const FushiIcon(FushiIcons.close, size: 16),
                     label: Text(t.ai_agent_choice_cancel),
-                    onPressed: () => _controller.answerChoice(null),
+                    onPressed: () =>
+                        _controller.answerChoice(null, entryId: entry.id),
                   ),
                 ],
               )
@@ -1502,12 +1701,20 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
         // 提示语只占一行：默认跟随 maxLines（4），输入框一变窄（紧凑排版里与
         // 上下文 chip 同行）提示语就折成多行把输入栏撑高、挤掉对话区。
         hintMaxLines: 1,
+        // 各状态都关掉描边：只写 border 时主题的 focused / enabled 描边照样画，
+        // 聚焦后悬浮面板里又框出一圈强调色框（用户 2026-11-16「很丑」截图）。
         border: InputBorder.none,
+        enabledBorder: InputBorder.none,
+        focusedBorder: InputBorder.none,
+        disabledBorder: InputBorder.none,
         filled: false,
         isDense: true,
+        // 单行时输入框与右侧 48dp 按钮等高（12 + 24 行高 + 12）：输入行按底边对齐
+        // （多行时按钮贴底），高度不一致时单行提示语就偏离按钮的中线（用户
+        // 2026-11-16「输入框没居中」）。
         contentPadding: EdgeInsets.symmetric(
           horizontal: panel ? 8 : 20,
-          vertical: 14,
+          vertical: 12,
         ),
       ),
     );
@@ -1583,7 +1790,8 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
             icon: const FushiIcon(FushiIcons.stop),
           )
         else
-          FushiIconButtonControl.filled(
+          // 色调填充：纯主色实心在浅色悬浮面板上过于刺眼（用户 2026-11-16）。
+          FushiIconButtonControl.filledTonal(
             key: const ValueKey<String>('ai-agent-send'),
             tooltip: t.ai_agent_send,
             onPressed: () => unawaited(_send()),
@@ -1620,7 +1828,12 @@ class _AiAgentConversationState extends State<AiAgentConversation> {
             ],
           ),
         ),
-        row,
+        // 与上方 chip 行的 4 顶距对称：没有 chip 时单行输入才落在面板正中
+        // （用户 2026-11-16「还是不居中」：上空比下空多 4）。
+        if (panel)
+          Padding(padding: const EdgeInsets.only(bottom: 4), child: row)
+        else
+          row,
       ],
     );
     final EdgeInsets outer = EdgeInsets.fromLTRB(

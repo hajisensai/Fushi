@@ -12,7 +12,6 @@
 /// 也不允许删除它的内置字段**（挖词与词状态按内置 fieldId 写入 / 读取，删了会让新挖的词落进看不见的字段）。
 library;
 
-import 'package:drift/drift.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
@@ -74,6 +73,32 @@ class SrsNoteTypeChangePreview {
     0,
     (int sum, SrsNoteTypeChangePlan p) => sum + p.cardLinks.length,
   );
+
+  /// 执行这次更改要写的修改记录：逐条笔记的类型键、字段值与新卡的前身链接。
+  List<SrsEditSpec> get edits => <SrsEditSpec>[
+    for (final SrsNoteTypeChangePlan plan in plans) ...<SrsEditSpec>[
+      SrsEditSpec(
+        SrsEntityKind.note,
+        plan.noteId,
+        SrsFieldKeys.noteType,
+        to.id,
+      ),
+      for (final MapEntry<String, String> f in plan.fieldValues.entries)
+        SrsEditSpec(
+          SrsEntityKind.note,
+          plan.noteId,
+          SrsFieldKeys.noteField(f.key),
+          f.value,
+        ),
+      for (final MapEntry<String, String> l in plan.cardLinks.entries)
+        SrsEditSpec(
+          SrsEntityKind.card,
+          l.key,
+          SrsFieldKeys.cardHistoryFrom(l.value),
+          true,
+        ),
+    ],
+  ];
 }
 
 extension SrsNoteTypeStoreOps on SrsDbStore {
@@ -100,23 +125,12 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
 
   /// 每个笔记类型的笔记数（未删除的笔记；按笔记**当前**类型计）。SQLite 侧分组计数（走
   /// idx_srs_notes_cache_type），不把笔记缓存行读回来逐行数。
-  Future<Map<String, int>> noteCountsByType() async => <String, int>{
-    for (final QueryRow r
-        in await db
-            .customSelect(
-              'SELECT note_type_id AS t, COUNT(*) AS c FROM srs_notes_cache '
-              'WHERE profile_uid = ? AND deleted_at IS NULL '
-              'GROUP BY note_type_id',
-              variables: <Variable<Object>>[
-                Variable<String>(profileUid, srsIdType),
-              ],
-              readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
-                db.srsNotesCache,
-              },
-            )
-            .get())
-      r.read<String>('t'): r.read<int>('c'),
-  };
+  Future<Map<String, int>> noteCountsByType() async {
+    final SrsColumns c = await readNoteTypeCounts();
+    final SrsStringColumn t = c.strings('t');
+    final SrsIntColumn n = c.ints('c');
+    return <String, int>{for (int i = 0; i < c.rows; i++) t[i]: n[i]};
+  }
 
   /// 某笔记类型下的笔记（未删除），按落库顺序。走 idx_srs_notes_cache_type、只读 id 列；
   /// [limit] 给了就只取前几条（取样本预览用）。
@@ -128,17 +142,10 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
         limit: limit,
       );
     }
-    final $SrsNotesCacheTable n = db.srsNotesCache;
-    final JoinedSelectStatement<$SrsNotesCacheTable, SrsNoteCacheRow> q =
-        db.selectOnly(n)
-          ..addColumns(<Expression<Object>>[n.id])
-          ..where(
-            n.profileUid.equals(profileUid) &
-                n.noteTypeId.equals(noteTypeId) &
-                n.deletedAt.isNull(),
-          );
-    if (limit != null) q.limit(limit);
-    return <String>[for (final TypedResult r in await q.get()) r.read(n.id)!];
+    return (await noteColumns(
+      const <String>['id'],
+      <String, Object?>{'typeId': noteTypeId, 'alive': true, 'limit': ?limit},
+    )).strings('id').toList();
   }
 
   /// 这个字段里有内容的笔记数（删字段前的提示用）。
@@ -166,9 +173,9 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
         i,
         i + 500 > ids.length ? ids.length : i + 500,
       );
-      for (final SrsCardCacheRow c in await (db.select(
-        db.srsCardsCache,
-      )..where((x) => x.noteId.isIn(chunk))).get()) {
+      for (final SrsCardCacheRow c in await cardRowsWhere(<String, Object?>{
+        'notes': chunk,
+      })) {
         out[c.noteId]!.add(c);
       }
     }
@@ -177,19 +184,21 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
 
   /// 这个模板现在可见的卡数（删模板前的提示用：删了这些卡就不再出现）。
   Future<int> visibleCardsOfTemplate(String templateId) async =>
-      (await (db.select(db.srsCardsCache)..where(
-                (c) =>
-                    c.profileUid.equals(profileUid) &
-                    c.templateId.equals(templateId) &
-                    c.hidden.equals(false),
-              ))
-              .get())
-          .length;
+      (await cardColumnsWhere(
+        const <String>['id'],
+        <String, Object?>{
+          'templates': <String>[templateId],
+          'visibleOnly': true,
+        },
+      )).rows;
 
   // ------------------------------------------------------------------ 新建 / 删除
 
+  /// 返回内核落下的规范 ID（回包 `entityWrites`，[writeEdits] 的 `onRecords`）。
   Future<String> _writeNewType(SrsNewNoteType nt) async {
+    String landed = nt.id;
     await writeEdits(
+      onRecords: (List<String> ids) => landed = ids.single,
       <SrsEditSpec>[
         SrsEditSpec(SrsEntityKind.noteType, nt.id, SrsFieldKeys.name, nt.name),
         for (final SrsFieldDef f in nt.fields)
@@ -230,10 +239,24 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
             SrsFieldKeys.freqField,
             nt.freqFieldId,
           ),
+        if (nt.sortFieldId != null)
+          SrsEditSpec(
+            SrsEntityKind.noteType,
+            nt.id,
+            SrsFieldKeys.sortField,
+            nt.sortFieldId,
+          ),
+        if (nt.browseFieldIds != null)
+          SrsEditSpec(
+            SrsEntityKind.noteType,
+            nt.id,
+            SrsFieldKeys.browseFields,
+            nt.browseFieldIds,
+          ),
       ],
       records: <SrsEntityRecord>[nt.record],
     );
-    return nt.id;
+    return landed;
   }
 
   /// 新建一个基础笔记类型。
@@ -449,6 +472,27 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
           SrsFieldKeys.freqField,
           null,
         ),
+      if (t.sortFieldId == fieldId)
+        SrsEditSpec(
+          SrsEntityKind.noteType,
+          noteTypeId,
+          SrsFieldKeys.sortField,
+          null,
+        ),
+      // 删的是最后一个选中的副字段：回到自动（null），不写空列表——空列表是「不显示副字段」。
+      if (t.browseFieldIds?.contains(fieldId) ?? false)
+        SrsEditSpec(
+          SrsEntityKind.noteType,
+          noteTypeId,
+          SrsFieldKeys.browseFields,
+          switch (<String>[
+            for (final String id in t.browseFieldIds!)
+              if (id != fieldId) id,
+          ]) {
+            final List<String> rest when rest.isNotEmpty => rest,
+            _ => null,
+          },
+        ),
     ]);
   }
 
@@ -500,6 +544,28 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
           noteTypeId,
           SrsFieldKeys.freqField,
           fieldId,
+        ),
+      ]);
+
+  /// 排序字段（浏览页主字段、「排序字段」排序列、笔记缓存 `sort_field`）；null = 清掉显式设置，回到第一个字段。
+  Future<void> setSortField(String noteTypeId, String? fieldId) =>
+      writeEdits(<SrsEditSpec>[
+        SrsEditSpec(
+          SrsEntityKind.noteType,
+          noteTypeId,
+          SrsFieldKeys.sortField,
+          fieldId,
+        ),
+      ]);
+
+  /// 浏览预览的副字段（按字段顺序显示，最多 [srsBrowseFieldsMax] 个）；null = 回到自动。
+  Future<void> setBrowseFields(String noteTypeId, List<String>? fieldIds) =>
+      writeEdits(<SrsEditSpec>[
+        SrsEditSpec(
+          SrsEntityKind.noteType,
+          noteTypeId,
+          SrsFieldKeys.browseFields,
+          fieldIds,
         ),
       ]);
 
@@ -680,11 +746,16 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
   }
 
   /// 预演一次更改笔记类型（不写库）。映射见 [srsPlanNoteTypeChange]。
+  ///
+  /// [views]：调用方刚读过这批笔记（[SrsDbStore.notes] 对 [noteIds] 的结果）、接着还要用同一份视图算别的东西时
+  /// 给它，这里就不再读一遍（旧 Lapis 迁移：换类型的计划与补迁要基于同一份现值，各读各的既多物化一遍，两次读
+  /// 之间落了别的写入时还会一半按旧值、一半按新值算）。远程复习库不看它（预演在主机上做）。
   Future<SrsNoteTypeChangePreview> previewNoteTypeChange({
     required List<String> noteIds,
     required String targetTypeId,
     required Map<String, String?> fieldMap,
     required Map<String, String?> templateMap,
+    Map<String, SrsNoteView?>? views,
   }) async {
     final SrsDbStore self = this;
     if (self is SrsRemoteForwarding) {
@@ -696,15 +767,15 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
       );
     }
     // 笔记与它们的卡各按块一次读（以前每条笔记各读两遍笔记、一遍卡，BUG-3543）。
-    final Map<String, SrsNoteView?> views = await notes(noteIds);
-    final SrsNoteTypeView from = await _sourceTypeIn(noteIds, views);
+    final Map<String, SrsNoteView?> byId = views ?? await notes(noteIds);
+    final SrsNoteTypeView from = await _sourceTypeIn(noteIds, byId);
     final SrsNoteTypeView to = await _requireType(targetTypeId);
     final Map<String, List<SrsCardCacheRow>> cards = await cardsOfNotes(
       noteIds,
     );
     final List<SrsNoteTypeChangePlan> plans = <SrsNoteTypeChangePlan>[];
     for (final String id in noteIds) {
-      final SrsNoteView n = views[id]!;
+      final SrsNoteView n = byId[id]!;
       plans.add(
         srsPlanNoteTypeChange(
           note: n,
@@ -727,7 +798,8 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
     return SrsNoteTypeChangePreview(from: from, to: to, plans: plans);
   }
 
-  /// 执行更改笔记类型：一个事务写完全部笔记的类型键、字段值与新卡的前身链接。
+  /// 执行更改笔记类型：还原点与全部笔记的类型键、字段值、新卡的前身链接同一条内核命令、一笔写完
+  /// （[SrsDbStore.writeChange]）。
   /// 复习日志一条不改；新卡的历史 = 自己 + 前身卡的日志（见 [SrsDbStore.history]）。
   /// 预演与写入在同一个独占区里：算计划时读到的现值就是落库时的现值。
   Future<void> changeNoteType({
@@ -766,30 +838,9 @@ extension SrsNoteTypeStoreOps on SrsDbStore {
       templateMap: templateMap,
     );
     if (p.from.id == p.to.id) return;
-    await sync2Checkpoint(p.to.name, 'note_type');
-    await writeEdits(<SrsEditSpec>[
-      for (final SrsNoteTypeChangePlan plan in p.plans) ...<SrsEditSpec>[
-        SrsEditSpec(
-          SrsEntityKind.note,
-          plan.noteId,
-          SrsFieldKeys.noteType,
-          p.to.id,
-        ),
-        for (final MapEntry<String, String> f in plan.fieldValues.entries)
-          SrsEditSpec(
-            SrsEntityKind.note,
-            plan.noteId,
-            SrsFieldKeys.noteField(f.key),
-            f.value,
-          ),
-        for (final MapEntry<String, String> l in plan.cardLinks.entries)
-          SrsEditSpec(
-            SrsEntityKind.card,
-            l.key,
-            SrsFieldKeys.cardHistoryFrom(l.value),
-            true,
-          ),
-      ],
-    ]);
+    await writeChange(
+      p.edits,
+      checkpoint: (name: p.to.name, reason: 'note_type'),
+    );
   });
 }

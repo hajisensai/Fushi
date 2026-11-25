@@ -1,0 +1,23 @@
+{
+  "schema": 1,
+  "kind": "tracking",
+  "id": "moe.fushi.tracking.bangumi",
+  "name": "Bangumi",
+  "version": "1.0.0",
+  "api": 1,
+  "entry": "main.js",
+  "description": "Keeps your Bangumi anime, book and game collection in step with Fushi. Built into Fushi.",
+  "homepage": "https://github.com/hajisensai/Fushi",
+  "capabilities": ["login", "account", "trackingEntry", "trackingSubject", "trackingSearch", "trackingList"],
+  "permissions": ["network", "credentials"],
+  "network": { "domains": ["api.bgm.tv", "next.bgm.tv"], "methods": ["GET", "POST", "PATCH"] },
+  "tracking": {
+    "siteId": "bangumi",
+    "siteHost": "bgm.tv",
+    "kinds": ["anime", "manga", "novel", "game"],
+    "defaultKinds": ["anime", "manga", "novel", "game"],
+    "modes": ["episode", "chapter", "volume", "status"],
+    "requestsPerMinute": 60,
+    "subjectUrl": "https://bgm.tv/subject/{id}"
+  }
+}

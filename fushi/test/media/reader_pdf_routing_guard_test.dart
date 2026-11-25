@@ -135,8 +135,15 @@ void main() {
       isTrue,
       reason: '文档坐标要换算成页内 PDF 坐标（原点左下）才能与 charRects 比对',
     );
+    // charRects 来自结构化文本：阅读页统一走 pdfLoadPageText（BUG-5226：逐步加载下先等页
+    // 真正加载），由它调 loadStructuredText。
     expect(
-      src.contains('loadStructuredText()'),
+      src.contains('pdfLoadPageText('),
+      isTrue,
+      reason: '文本层统一经 pdfLoadPageText 读取',
+    );
+    expect(
+      read('lib/src/pdf/pdf_page_ready.dart').contains('loadStructuredText()'),
       isTrue,
       reason: 'charRects 来自结构化文本',
     );

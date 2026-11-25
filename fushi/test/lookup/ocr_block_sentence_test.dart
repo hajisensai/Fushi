@@ -90,4 +90,90 @@ void main() {
     expect(ocrBlockSentenceAt('あいう', -1), isNull);
     expect(ocrBlockSentenceAt('あいう', 3), isNull);
   });
+
+  group('ocrBlockSpanAroundLine (feedback 8Su1XoCjtl)', () {
+    test('a wrapped line is widened to the sentences at both of its ends', () {
+      const String block = '前の文。今日は\n良い天気ですね。散歩\nに行こう。次';
+      const String line = '良い天気ですね。散歩';
+      final int start = indexOf(block, line);
+      final OcrBlockSpan span = ocrBlockSpanAroundLine(
+        block,
+        lineStart: start,
+        lineEnd: start + line.length,
+      )!;
+      expect(span.text, '今日は良い天気ですね。散歩に行こう。');
+      expect(span.blockStart, indexOf(block, '今'));
+      expect(span.blockEnd, indexOf(block, '次'));
+      // 块下标 ↔ 条上下标一一对应（跨过被拼掉的折行）。
+      expect(span.textIndexOf(indexOf(block, '良')), 3);
+      expect(span.textIndexOf(indexOf(block, 'に')), '今日は良い天気ですね。散歩'.length);
+      expect(span.blockIndexOf(3), indexOf(block, '良'));
+      expect(span.blockIndexOf('今日は良い天気ですね。散歩'.length), indexOf(block, 'に'));
+    });
+
+    test('Latin lines: the joining space maps to the next line start', () {
+      const String block = 'I like the\nweather today. Next';
+      final OcrBlockSpan span = ocrBlockSpanAroundLine(
+        block,
+        lineStart: 0,
+        lineEnd: indexOf(block, '\n'),
+      )!;
+      expect(span.text, 'I like the weather today.');
+      expect(span.textIndexOf(indexOf(block, 'w')), 'I like the '.length);
+      expect(span.blockIndexOf('I like the'.length), indexOf(block, 'w'));
+    });
+
+    test('an end whose sentence is too long stops at the line edge', () {
+      final String tail = List<String>.filled(30, 'あいうえお').join();
+      final String block = '前の文。今日は\n良い天気$tail';
+      final int start = indexOf(block, '良');
+      final OcrBlockSpan span = ocrBlockSpanAroundLine(
+        block,
+        lineStart: start,
+        lineEnd: block.length,
+        maxLength: 20,
+      )!;
+      expect(span.text, block.substring(start));
+    });
+
+    test('an empty or out-of-range line yields null', () {
+      expect(ocrBlockSpanAroundLine('あ\nい', lineStart: 1, lineEnd: 1), isNull);
+      expect(ocrBlockSpanAroundLine('あ', lineStart: 0, lineEnd: 5), isNull);
+    });
+  });
+
+  group('ocrBlockContinuationAfterLine (BUG-4707)', () {
+    test(
+      'CJK: the following lines are joined directly, line breaks dropped',
+      () {
+        const String block = '今日は良い天\n気ですね。\n散歩に行こう。';
+        expect(
+          ocrBlockContinuationAfterLine(block, lineEnd: block.indexOf('\n')),
+          '気ですね。散歩に行こう。',
+        );
+      },
+    );
+
+    test('Latin: a word wrapped at the line end resumes with one space', () {
+      const String block = 'I like the\nweather today';
+      expect(
+        ocrBlockContinuationAfterLine(block, lineEnd: block.indexOf('\n')),
+        ' weather today',
+      );
+    });
+
+    test('the last line of the block has no continuation', () {
+      const String block = '今日は\n良い天気';
+      expect(ocrBlockContinuationAfterLine(block, lineEnd: block.length), '');
+      expect(ocrBlockContinuationAfterLine(block, lineEnd: 0), '');
+    });
+
+    test('the continuation is capped and never splits a surrogate pair', () {
+      const String block = 'あ\n𠮷𠮷𠮷';
+      expect(
+        ocrBlockContinuationAfterLine(block, lineEnd: 1, maxLength: 3),
+        '𠮷',
+      );
+    });
+  });
 }

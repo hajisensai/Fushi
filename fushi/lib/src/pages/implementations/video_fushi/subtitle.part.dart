@@ -97,6 +97,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }
 
   void _toggleSubtitleJumpList() {
+    // 竖屏学习版式：字幕列表常驻下半屏，按钮只把页签切回字幕（拍板台 P9AS-fvjJh）。
+    if (_routeToPortraitPane(VideoPortraitTab.subtitles)) return;
     final bool next = !_subtitleListVisible.value;
     if (next) {
       // PR#1032 审查 B1：面板会话开始 = 搜索请求水位线归零。放在**打开**分支而不是关闭分支，
@@ -110,6 +112,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if (_episodeListVisible.value) {
         _closeEpisodeList();
       }
+      // 与聊天回放栏互斥（同为右侧推挤式侧栏）。
+      if (_liveChatVisible.value) _liveChatVisible.value = false;
       _subtitleListVisible.value = true;
       if (_videoSidePanel.value != null) {
         _hideVideoSidePanel();
@@ -197,6 +201,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final Color? selectedFg = videoPanelSelectedForeground(context);
     final List<Widget> rows = <Widget>[
       if (_subtitleMenuLoading) const FushiLinearProgressIndicator(),
+      if (_primaryEmbeddedFullLoad case final _EmbeddedTextFullLoad load)
+        _embeddedTextFullLoadTile(load, secondary: false),
+      if (_secondaryEmbeddedFullLoad case final _EmbeddedTextFullLoad load)
+        _embeddedTextFullLoadTile(load, secondary: true),
       // TODO-573：「自动获取字幕(Jimaku)」对本地和远端视频都显示。Jimaku 只需要一个
       // 番名 query + 一个本地落盘目录；远端流没有本地视频文件（_currentVideoPath 恒
       // null），但有 host 下发的标题（_title / remoteInfo.title）可作 query，下载的
@@ -223,65 +231,27 @@ extension _VideoSubtitle on _VideoFushiPageState {
                     : _pickAndImportSubtitle(controller),
               ),
       ),
-      // 模型重定时：与上面两行同属「拿到 / 修好一份字幕」，所以并在同一组。
-      // 它要把整条音轨喂给设备端转录：本地视频直接用文件，互联远端视频由 host 在
-      // 本地裁出整集音轨回传（[_resolveSubtitleTimingAudio]）；其它远端流拿不到音轨。
-      // 空 cue 时也显示（点了会说「先选一条字幕轨」），不显示反而更像功能坏了。
-      if (_canResolveSubtitleTimingAudio && isAsrSupported)
+      // 反馈 0PZAhFd1RO：本系列的字幕文件夹（整季字幕放在单独文件夹时，之后各集按集号
+      // 自动挂）。远端流没有本机文件夹可匹配，不显示；iOS 选出的文件夹 `dart:io` 读不了
+      // （BUG-2786），露出来只会每次报「读不到」，也不显示。
+      if (!_isRemote &&
+          _currentVideoPath != null &&
+          canRelistPickedDirectoryInPlace)
+        _subtitleFolderTile(controller),
+      // 字幕工作台（反馈 E1pq561P2q）：原「生成字幕」入口改成工作台——生成字幕（管线 /
+      // 本机转录分流不变，见 [_openSubtitleGeneration]）、拆出双语字幕中的日语、按每句
+      // 语音逐句对轴（模型重定时）、按内嵌字幕对齐都收进去，并带画面截图与其它语言
+      // 字幕的逐句对照。与上面两行同属「拿到 / 修好一份字幕」，所以并在同一组。
+      if (_subtitleStudioAvailable(controller))
         FushiListTileControl(
-          leading: const FushiIcon(Icons.transcribe_outlined),
-          title: Text(t.video_subtitle_asr_generate),
-          subtitle: Text(t.video_subtitle_asr_generate_hint),
+          key: const ValueKey<String>('video-subtitle-studio'),
+          leading: const FushiIcon(FushiIcons.transcribe),
+          title: Text(t.video_subtitle_studio_title),
+          subtitle: Text(t.video_subtitle_studio_entry_hint),
           enabled: !_subtitleLoadingShown,
           onTap: _subtitleLoadingShown
               ? null
-              : () => unawaited(_generateSubtitleWithSpeechModel(controller)),
-        ),
-      // 生成日语字幕（ASR + 可选 AI 校对管线）：本机视频在本机跑，产物写在视频文件旁
-      // （`<视频名>.ja.srt`）；互联远端视频在放视频的那台 host 上跑（host 任务
-      // `video_subtitle`，老 host 面板里说明不支持），取回 SRT 当本机外挂字幕加载。
-      // 其它远端 / 流（YouTube、媒体服务器）没有能跑任务的 host，入口不出现；上一行
-      // 「语音转写（不校对）」照常可用。蓝光走盘结构、没有单个视频文件，同样不出现。
-      if ((_currentVideoPath != null &&
-              !_isRemote &&
-              _discBookUid == null &&
-              isAsrSupported) ||
-          (_isRemote && _remoteHostVideoTarget() != null))
-        FushiListTileControl(
-          key: const ValueKey<String>('video-subtitle-ai-generate'),
-          leading: const FushiIcon(FushiIcons.ai),
-          title: Text(t.video_subtitle_ai_generate_title),
-          subtitle: Text(t.video_subtitle_ai_entry_hint),
-          enabled: !_subtitleLoadingShown,
-          onTap: _subtitleLoadingShown
-              ? null
-              : () => unawaited(
-                  _isRemote
-                      ? _openRemoteJapaneseSubtitlePipeline(controller)
-                      : _openJapaneseSubtitlePipeline(controller),
-                ),
-        ),
-      if (_canResolveSubtitleTimingAudio && isAsrSupported)
-        FushiListTileControl(
-          leading: const FushiIcon(Icons.model_training_outlined),
-          title: Text(t.video_subtitle_retime_action),
-          enabled: !_subtitleLoadingShown,
-          onTap: _subtitleLoadingShown
-              ? null
-              : () => unawaited(_retimeSubtitleWithSpeechModel(controller)),
-        ),
-      // 按视频自带文本字幕轨对轴：只看开口时刻，不需要转录。参考轨要从本机容器文件里
-      // 抽，判据就是「有没有本机视频文件」：远端 / 流视频的 _currentVideoPath 恒为 null
-      // （见 _applyLoad 的 TODO-1000），不另按 _isRemote 身份判。当前不是外挂
-      // 字幕时点了会说明原因，不隐藏入口。
-      if (_currentVideoPath != null)
-        FushiListTileControl(
-          leading: const FushiIcon(Icons.sync_alt_outlined),
-          title: Text(t.video_subtitle_reference_sync_action),
-          enabled: !_subtitleLoadingShown,
-          onTap: _subtitleLoadingShown
-              ? null
-              : () => unawaited(_alignSubtitleToEmbeddedTracks(controller)),
+              : () => unawaited(_openSubtitleStudio(controller)),
         ),
       const FushiDividerControl(height: 1),
       FushiListTileControl(
@@ -327,21 +297,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
             context,
             controller,
             entry,
-            selected: entry.local == null
-                ? _currentSubtitleSource == entry.path
-                : subtitleSourceMatchesPersistedForMenu(
-                    entry.local!,
-                    _currentSubtitleSource,
-                  ),
+            selected: entry.isSelectedBy(_currentSubtitleSource),
             selectedColor: selectedFg,
             onTap: _subtitleLoadingShown
                 ? null
                 : () => unawaited(
-                    _applyRemoteSubtitle(
-                      controller,
-                      entry.path,
-                      label: entry.local == null ? null : entry.label,
-                    ),
+                    _applyRemoteSubtitleFileEntry(controller, entry),
                   ),
           ),
       if (_isRemote)
@@ -483,9 +444,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 选中行前景：M3E 交给面板列表主题（secondaryContainer 色块 +
     // onSecondaryContainer），Apple 照旧强调色。
     final Color? selectedFg = videoPanelSelectedForeground(context);
-    // TODO-2837 远端分支：可用源 = host sidecar（已下载在 [_remoteSubtitlePath]）+
-    // host 内嵌文本轨（抽取下载）+ 本地字幕文件导入；全部归一成本地文件 → cue →
-    // setSecondaryCues。选中高亮按持久化编码（文件路径 / `embedded:<n>`）比对。
+    // TODO-2837 远端分支：可用源 = YouTube 字幕轨（在线 YouTube 视频，懒下载 cue）+
+    // host sidecar（已下载在 [_remoteSubtitlePath]）+ host 内嵌文本轨（抽取下载）+
+    // 本地字幕文件导入；全部归一成 cue → setSecondaryCues。选中高亮按持久化编码（文件路径 / `embedded:<n>`）比对。
     if (_isRemote) {
       return <Widget>[
         FushiListTileControl(
@@ -511,6 +472,21 @@ extension _VideoSubtitle on _VideoFushiPageState {
                   _pickAndImportRemoteSecondarySubtitle(controller),
                 ),
         ),
+        // 反馈 A41_cyNKcc：与主字幕轨行同一份 YouTube 字幕轨表（[_youtubeCaptionTracks]），
+        // 同一标签；选中态按 trackKey 比对副字幕源，点选懒下载 cue 挂副层。
+        for (final YoutubeCaptionTrack track in _youtubeCaptionTracks)
+          FushiListTileControl(
+            leading: const FushiIcon(Icons.closed_caption_outlined),
+            title: Text(_youtubeCaptionTrackLabel(track)),
+            selected: _currentSecondarySubtitleSource == track.trackKey,
+            selectedColor: selectedFg,
+            enabled: !_subtitleLoadingShown,
+            onTap: _subtitleLoadingShown
+                ? null
+                : () => unawaited(
+                    _applyYoutubeSecondaryCaptionTrack(controller, track),
+                  ),
+          ),
         // Xt3RCTPKhX：与主字幕菜单 / 手机遥控字幕列表同一份行模型
         // （[_remoteSubtitleFileRows]）：后端默认字幕 + 本机字幕档（可长按删除）。
         for (final RemoteSubtitleFileEntry entry in _remoteSubtitleFileRows)
@@ -518,21 +494,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
             context,
             controller,
             entry,
-            selected: entry.local == null
-                ? _currentSecondarySubtitleSource == entry.path
-                : subtitleSourceMatchesPersistedForMenu(
-                    entry.local!,
-                    _currentSecondarySubtitleSource,
-                  ),
+            selected: entry.isSelectedBy(_currentSecondarySubtitleSource),
             selectedColor: selectedFg,
             onTap: _subtitleLoadingShown
                 ? null
                 : () => unawaited(
-                    _applyRemoteSecondarySubtitle(
-                      controller,
-                      entry.path,
-                      label: entry.local == null ? null : entry.label,
-                    ),
+                    _applyRemoteSecondarySubtitleFileEntry(controller, entry),
                   ),
           ),
         for (final RemoteVideoEmbeddedSubtitleTrack track
@@ -792,6 +759,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
   Future<void> _forgetDeletedSubtitleSelection(
     VideoPlayerController controller,
   ) async {
+    _primarySubtitleSelectSeq++;
+    if (_primaryEmbeddedFullLoad != null) {
+      _rebuild(() => _primaryEmbeddedFullLoad = null);
+    }
     controller.claimDiscTrackOwnership();
     controller.setCues(const <AudioCue>[]);
     await controller.selectSubtitleTrack(SubtitleTrack.no());
@@ -1069,7 +1040,120 @@ extension _VideoSubtitle on _VideoFushiPageState {
       remoteSubtitleFileEntries(
         backendDefaultPath: _remoteSubtitlePath,
         localFiles: _importedSubtitleSources,
+        hostSidecars: _remoteSidecarSubtitles,
       );
+
+  /// 主字幕选中远端字幕文件行：host 外挂字幕行（反馈 -CaVsioFhG）按文件名懒下载，
+  /// 其余行（已下好的后端默认字幕 / 本机档）直接按路径挂。主字幕菜单与手机遥控共用。
+  Future<void> _applyRemoteSubtitleFileEntry(
+    VideoPlayerController controller,
+    RemoteSubtitleFileEntry entry, {
+    VideoSubtitlePickOrigin origin = VideoSubtitlePickOrigin.player,
+  }) async {
+    final RemoteVideoSidecarSubtitle? sidecar =
+        entry.kind == RemoteSubtitleFileKind.hostSidecar
+        ? entry.hostSidecar
+        : null;
+    if (sidecar != null) {
+      await _applyRemoteHostSidecarSubtitle(
+        controller,
+        sidecar,
+        origin: origin,
+      );
+      return;
+    }
+    await _applyRemoteSubtitle(
+      controller,
+      entry.path,
+      label: entry.local == null ? null : entry.label,
+      origin: origin,
+    );
+  }
+
+  /// [_applyRemoteSubtitleFileEntry] 的副字幕版。
+  Future<void> _applyRemoteSecondarySubtitleFileEntry(
+    VideoPlayerController controller,
+    RemoteSubtitleFileEntry entry,
+  ) async {
+    final RemoteVideoSidecarSubtitle? sidecar =
+        entry.kind == RemoteSubtitleFileKind.hostSidecar
+        ? entry.hostSidecar
+        : null;
+    if (sidecar != null) {
+      await _applyRemoteHostSidecarSecondarySubtitle(controller, sidecar);
+      return;
+    }
+    await _applyRemoteSecondarySubtitle(
+      controller,
+      entry.path,
+      label: entry.local == null ? null : entry.label,
+    );
+  }
+
+  /// 按文件名下载当前集 host 上的外挂字幕 [sidecar]（失败记日志并提示），返回本地档；
+  /// 失败 / 页面已卸载返回 null。
+  Future<File?> _fetchRemoteHostSidecarSubtitle(
+    RemoteVideoSidecarSubtitle sidecar,
+  ) async {
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
+    if (client == null || info == null) return null;
+    // 与内嵌轨同口径：按**当前集**取主机侧集序号（合集连播每个成员恒 0）。
+    final (_, int ep) = _remotePositionKeyForIndex(_currentEpisode);
+    try {
+      return await _downloadRemoteHostSidecarSubtitle(
+        client,
+        info,
+        sidecar,
+        index: _currentEpisode,
+        streamEpisodeIndex: ep,
+      );
+    } catch (e, stack) {
+      ErrorLogService.instance.log('VideoFushi.remoteSubtitle', e, stack);
+      if (mounted) {
+        _showOsd(
+          t.video_subtitle_load_failed(label: sidecar.fileName),
+          severity: ToastSeverity.error,
+        );
+      }
+      return null;
+    }
+  }
+
+  /// 主字幕选中互联 host 上的某一条外挂字幕（反馈 -CaVsioFhG）：按需下载后与其它远端
+  /// 字幕文件同一条挂载链路，选择按 `hostsidecar:<文件名>` 持久化（重进按名重下）。
+  Future<void> _applyRemoteHostSidecarSubtitle(
+    VideoPlayerController controller,
+    RemoteVideoSidecarSubtitle sidecar, {
+    VideoSubtitlePickOrigin origin = VideoSubtitlePickOrigin.player,
+  }) async {
+    final int seq = _episodeLoadSeq;
+    final File? subtitle = await _fetchRemoteHostSidecarSubtitle(sidecar);
+    if (subtitle == null || !mounted || seq != _episodeLoadSeq) return;
+    await _applyRemoteSubtitle(
+      controller,
+      subtitle.path,
+      selectedSource: remoteHostSidecarSubtitleSource(sidecar.fileName),
+      label: sidecar.fileName,
+      origin: origin,
+    );
+  }
+
+  /// [_applyRemoteHostSidecarSubtitle] 的副字幕版。
+  Future<void> _applyRemoteHostSidecarSecondarySubtitle(
+    VideoPlayerController controller,
+    RemoteVideoSidecarSubtitle sidecar,
+  ) async {
+    final int seq = _episodeLoadSeq;
+    final File? subtitle = await _fetchRemoteHostSidecarSubtitle(sidecar);
+    if (subtitle == null || !mounted || seq != _episodeLoadSeq) return;
+    await _applyRemoteSecondarySubtitle(
+      controller,
+      subtitle.path,
+      selectedSource: remoteHostSidecarSubtitleSource(sidecar.fileName),
+      label: sidecar.fileName,
+    );
+  }
 
   /// 远端字幕文件行 → 字幕菜单里的一行。本机档包删除菜单（长按 / 右键删除），
   /// 后端默认字幕不可删。[selected] / [onTap] 由主、副字幕各自给。
@@ -1083,8 +1167,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }) {
     final SubtitleSource? local = entry.local;
     if (local == null) {
+      // 后端来的行（默认字幕 + 互联 host 的其余外挂字幕，反馈 -CaVsioFhG）一律按后端
+      // 来源标注标题、文件名作副标题；还没下到本地的 host 外挂字幕用「待下载」图标。
       return FushiListTileControl(
-        leading: const FushiIcon(Icons.cloud_done_outlined),
+        leading: FushiIcon(
+          entry.kind == RemoteSubtitleFileKind.hostSidecar
+              ? Icons.cloud_download_outlined
+              : Icons.cloud_done_outlined,
+        ),
         title: Text(_remoteDefaultSubtitleTitle),
         subtitle: Text(entry.label),
         selected: selected,
@@ -1125,7 +1215,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
     switch (failure) {
       case SubtitleCueLoadFailure.unsupportedFormat:
       case SubtitleCueLoadFailure.extractionFailed:
+      // 取消来自退页 / 换集（结果按世代丢弃）或用户点了「停止读取」（调用方不提示），
+      // 都到不了这里；列出只为穷尽 switch。
+      case SubtitleCueLoadFailure.extractionCancelled:
         return t.video_subtitle_load_failed(label: label);
+      // 轨没问题、是读视频文件卡住（BUG-4838）：不能说成「图形或不支持的轨」。
+      case SubtitleCueLoadFailure.extractionStalled:
+        return t.video_subtitle_extract_stalled(label: label);
       case SubtitleCueLoadFailure.fileUnreadable:
       case SubtitleCueLoadFailure.parseFailed:
         return t.video_subtitle_read_failed(label: label);
@@ -1153,15 +1249,54 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
     final String? videoPath = _currentVideoPath;
     if (videoPath == null) return false;
-    _showSubtitleLoadingOverlay();
-    final SubtitleCueLoadResult result;
-    try {
-      result = await loadSubtitleCueResult(source, videoPath, bookUid);
-    } finally {
-      _hideSubtitleLoadingOverlay();
+    // 本次选择的世代：内封整轨抽取很慢、期间菜单不锁，结束时用户已另选就作废。
+    final int selectSeq = ++_secondarySubtitleSelectSeq;
+    bool stillChosen() => current() && selectSeq == _secondarySubtitleSelectSeq;
+    if (_secondaryEmbeddedFullLoad != null) {
+      _rebuild(() => _secondaryEmbeddedFullLoad = null);
     }
-    if (!current()) return false;
+    final SubtitleCueLoadResult result;
+    if (source.isEmbedded) {
+      // 内封轨缓存未命中要整轨抽取（慢盘上一分钟以上）：不上锁菜单的加载遮罩，改在字幕
+      // 面板顶部显示「正在读取完整字幕」+ 停止入口（[_EmbeddedTextFullLoad]）。
+      try {
+        result = await loadSubtitleCueResult(
+          source,
+          videoPath,
+          bookUid,
+          cancel: _embeddedSubtitleExtractCancelFor(videoPath),
+          onExtractionStarted: () {
+            if (!stillChosen()) return;
+            _rebuild(
+              () => _secondaryEmbeddedFullLoad = _EmbeddedTextFullLoad(
+                label: source.label,
+                videoPath: videoPath,
+                selectSeq: selectSeq,
+              ),
+            );
+          },
+        );
+      } finally {
+        // 任何返回 / 异常路径都撤下读取行，不留一行永远在转的「正在读取」。
+        if (mounted && _secondaryEmbeddedFullLoad?.selectSeq == selectSeq) {
+          _rebuild(() => _secondaryEmbeddedFullLoad = null);
+        }
+      }
+    } else {
+      // 副字幕只在播放器侧（设置面板 / 遥控 / CLI）选，第二屏面板没有副字幕入口。
+      _showSubtitleLoadingOverlay(origin: VideoSubtitlePickOrigin.player);
+      try {
+        result = await loadSubtitleCueResult(source, videoPath, bookUid);
+      } finally {
+        _hideSubtitleLoadingOverlay();
+      }
+    }
+    if (!stillChosen()) return false;
     if (result.isFailure) {
+      // 用户点了「停止读取」：不当失败提示。
+      if (result.failure == SubtitleCueLoadFailure.extractionCancelled) {
+        return false;
+      }
       _showOsd(
         _subtitleFailureMessage(result.failure!, source.label),
         severity: ToastSeverity.error,
@@ -1195,6 +1330,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
     VideoPlayerController controller,
   ) async {
     if (_discLearningBlocked) return;
+    // 在途的内封副字幕读取作废（结束时不再挂上来）。
+    _secondarySubtitleSelectSeq++;
+    if (_secondaryEmbeddedFullLoad != null) {
+      _rebuild(() => _secondaryEmbeddedFullLoad = null);
+    }
     final String bookUid = _activeBookUid;
     final int generation = _episodeLoadSeq;
     bool current() =>
@@ -1287,6 +1427,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       source,
       videoPath,
       bookUid,
+      cancel: _embeddedSubtitleExtractCancelFor(videoPath),
     );
     if (!mounted ||
         _controller != controller ||
@@ -1494,7 +1635,32 @@ extension _VideoSubtitle on _VideoFushiPageState {
         if (row != null) members.add(row);
       }
       if (members.isEmpty) return null;
-      return SubtitleCollectionSpec(collection: collection, members: members);
+      // 「当前季」= 正在播的这一集在面板分季里的季，与合集详情页季 tab 同口径；
+      // 不用 [_jimakuSeasonNumber]：它只认文件名里的显式季号，`Season 2/01.mkv`
+      // 这类父目录写季号的集会被当成「不知道」。
+      final String? playingPath = _currentVideoPath;
+      VideoBookRow? playing;
+      for (final VideoBookRow row in members) {
+        if (row.bookUid == _activeBookUid ||
+            (playingPath != null && row.videoPath == playingPath)) {
+          playing = row;
+          break;
+        }
+      }
+      // 分季与合集详情页同口径（手动分栏 / 手动季集指定优先）。
+      final Map<String, String> sectionKeys =
+          await loadCollectionSubtitleSectionKeys(appModel.database, members);
+      return SubtitleCollectionSpec(
+        collection: collection,
+        members: members,
+        sectionKeys: sectionKeys,
+        initialSeason: playing == null
+            ? null
+            : subtitleCollectionSeasonOfMember(
+                playing,
+                sectionKeys: sectionKeys,
+              ),
+      );
     } on Object catch (error) {
       ErrorLogService.instance.logDiagnostic(
         'VideoFushiPage._subtitleCollectionSpec',
@@ -1520,6 +1686,24 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final SubtitleSearchSeed seed = await _buildJimakuSeed(query);
     final SubtitleCollectionSpec? collection = await _subtitleCollectionSpec();
     if (!context.mounted) return;
+    // BUG-4496：「整个合集」批量下载只把字幕写进存储（本地 DB / 远端 prefs），本页
+    // 的字幕列表与 cue 是开视频时读进内存的，不会自己变——当前集下好了字幕，列表
+    // 仍是空的，要重开视频才有。工作台盖着本页期间不会换集，按打开时的当前集收下
+    // 落到它的那条，关闭后与「本集」下载同一条链路登记并应用。批量途中关掉工作台
+    // 时批量不取消、之后才落盘，那条按事件到达时直接应用（仍在同一集才应用）。
+    final String workbenchBookUid = _activeBookUid;
+    final WorkbenchCollectionPersistRouter collectionRouter =
+        WorkbenchCollectionPersistRouter(
+          workbenchBookUid: workbenchBookUid,
+          applyLate: (String path) {
+            if (!mounted ||
+                _activeBookUid != workbenchBookUid ||
+                !identical(_controller, controller)) {
+              return;
+            }
+            unawaited(_applyDownloadedSubtitles(controller, <String>[path]));
+          },
+        );
     final List<String>? downloadedPaths = await SubtitleWorkbenchPage.open(
       context,
       host: AppSubtitleWorkbenchHost(appModel),
@@ -1536,15 +1720,17 @@ extension _VideoSubtitle on _VideoFushiPageState {
         videoPath: _isRemote ? null : _currentVideoPath,
       ),
       collection: collection,
+      onCollectionSubtitlePersisted: collectionRouter.onPersisted,
     );
+    final String? collectionPathForCurrent = collectionRouter.close();
     // 工作台内含联网搜索/下载，会夺焦；关闭后把焦点还给 Video。
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
-    if (downloadedPaths == null ||
-        downloadedPaths.isEmpty ||
-        !context.mounted) {
-      return;
-    }
-    await _applyDownloadedSubtitles(controller, downloadedPaths);
+    final List<String> toApply = workbenchPathsToApply(
+      episodePaths: downloadedPaths,
+      collectionPathForCurrent: collectionPathForCurrent,
+    );
+    if (toApply.isEmpty || !context.mounted) return;
+    await _applyDownloadedSubtitles(controller, toApply);
   }
 
   /// 在线下载的字幕落盘后：登记进字幕轨列表并把第一条应用为主字幕。字幕工作台
@@ -1588,14 +1774,216 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
   /// 弹系统文件选择器挑一个字幕文件（srt/ass/ssa/vtt）→ 经 [_importExternalSubtitle]
   /// 落盘并应用。FilePicker 会夺走视频键盘焦点，关闭后 [_focusOwnership] 归还。
+  ///
+  /// 反馈 0PZAhFd1RO：选到的是用户原始位置的文件（出处见 [PickedFilePath.isRealPath]）
+  /// 时，顺带判断它所在文件夹是不是整季字幕文件夹，是就为本系列记住（见
+  /// [_rememberSubtitleFolderFromPick]）。安卓 / iOS 系统选择器交回的是缓存副本，
+  /// 不记——那边用字幕面板里的「字幕文件夹」入口直接指定文件夹。
   Future<void> _pickAndImportSubtitle(VideoPlayerController controller) async {
-    final String? path = await pickSystemFilePath(
+    final PickedFilePath? picked = await pickSystemFilePathDetailed(
       context: context,
       allowedExtensions: const <String>{'srt', 'vtt', 'ass', 'ssa'},
     );
     _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
-    if (path == null) return;
-    await _importExternalSubtitle(controller, path);
+    if (picked == null) return;
+    final String? videoPath = _currentVideoPath;
+    await _importExternalSubtitle(controller, picked.path);
+    if (!picked.isRealPath || videoPath == null || !mounted) return;
+    await _rememberSubtitleFolderFromPick(videoPath, picked.path);
+  }
+
+  /// 本集所属系列的字幕文件夹记忆键（合集优先，否则视频所在目录）。
+  String _subtitleFolderSeriesKey(String videoPath) =>
+      videoSubtitleFolderSeriesKey(
+        collectionId: widget.playlistCollectionId,
+        videoPath: videoPath,
+      );
+
+  /// 列出 [folder] 里的文件，按集号给 [videoPath] 挑字幕。文件夹读不到（被删 / 外接盘
+  /// 没插 / 无权限）返回 null 并记诊断——本集照常走别的字幕来源，记忆不删（盘插回来
+  /// 就又能用）。
+  Future<SubtitleDirectoryMatch?> _matchSubtitleFolder(
+    VideoSubtitleFolder folder,
+    String videoPath,
+  ) async {
+    final List<String>? names = await _listSubtitleFolderNames(
+      folder.directory,
+    );
+    if (names == null) return null;
+    return matchEpisodeSubtitleInDirectory(
+      videoPath: videoPath,
+      fileNames: names,
+      langCode: _targetLangCode,
+      templateFileName: folder.templateFileName,
+    );
+  }
+
+  /// [directory] 下的文件名（不递归）；读不到返回 null 并记诊断。async 列目录：字幕
+  /// 文件夹常在网络盘 / 外接盘上，同步 stat 会冻结 UI isolate（BUG-3756 同理）。
+  Future<List<String>?> _listSubtitleFolderNames(String directory) async {
+    final List<String> names = <String>[];
+    try {
+      await for (final FileSystemEntity e in Directory(
+        directory,
+      ).list(followLinks: false)) {
+        if (e is File) names.add(p.basename(e.path));
+      }
+    } on FileSystemException catch (error) {
+      ErrorLogService.instance.logDiagnostic(
+        'VideoFushiPage._listSubtitleFolderNames',
+        error,
+      );
+      return null;
+    }
+    return names;
+  }
+
+  /// 用户从原始位置手选了字幕 [pickedPath] 后：它所在文件夹里有不止一集的字幕、且按
+  /// 集号给本集挑出来的正是这一份，就为本系列记住这个文件夹（以这份为命名模板）。
+  /// 两条都要成立——只有一集字幕的文件夹（下载目录里随手一份）、或集号对不上的文件夹
+  /// 都不记，免得之后各集被误配。
+  Future<void> _rememberSubtitleFolderFromPick(
+    String videoPath,
+    String pickedPath,
+  ) async {
+    final String directory = p.dirname(pickedPath);
+    final String fileName = p.basename(pickedPath);
+    final List<String>? names = await _listSubtitleFolderNames(directory);
+    if (names == null || subtitleDirectoryEpisodeCount(names) < 2) return;
+    final VideoSubtitleFolder folder = VideoSubtitleFolder(
+      directory: directory,
+      templateFileName: fileName,
+    );
+    final SubtitleDirectoryMatch match = matchEpisodeSubtitleInDirectory(
+      videoPath: videoPath,
+      fileNames: names,
+      langCode: _targetLangCode,
+      templateFileName: fileName,
+    );
+    if (match.fileName != fileName) return;
+    final String key = _subtitleFolderSeriesKey(videoPath);
+    final VideoSubtitleFolder? previous = appModel.prefsRepo
+        .videoSubtitleFolder(key);
+    await appModel.prefsRepo.setVideoSubtitleFolder(key, folder);
+    if (!mounted) return;
+    _rebuild(() {});
+    if (previous?.directory != directory) {
+      _showOsd(t.video_subtitle_folder_remembered);
+    }
+  }
+
+  /// 字幕面板「字幕文件夹」入口：选一个文件夹 → 为本系列记住 → 当场按集号给本集挑
+  /// 字幕并应用。安卓走 SAF 解析出真实路径（需全文件访问，见 [pickRealDirectoryPath]）。
+  Future<void> _pickSubtitleFolder(VideoPlayerController controller) async {
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null) return;
+    final String key = _subtitleFolderSeriesKey(videoPath);
+    final VideoSubtitleFolder? previous = appModel.prefsRepo
+        .videoSubtitleFolder(key);
+    final String? directory = await pickRealDirectoryPath(
+      context: context,
+      appModel: appModel,
+      dialogTitle: t.video_subtitle_folder_title,
+      initialDirectory: previous?.directory,
+    );
+    _focusOwnership.reclaim(FocusReclaimCause.overlayClosed);
+    if (directory == null || !mounted || _currentVideoPath != videoPath) return;
+    // 换了文件夹，旧模板（上一个文件夹里的命名）不再适用。
+    final VideoSubtitleFolder folder =
+        previous != null && p.equals(previous.directory, directory)
+        ? previous
+        : VideoSubtitleFolder(directory: directory);
+    await appModel.prefsRepo.setVideoSubtitleFolder(key, folder);
+    if (!mounted) return;
+    _rebuild(() {});
+    await _applySubtitleFolderMatch(controller, folder, videoPath);
+  }
+
+  /// 按集号在 [folder] 里给本集挑字幕并应用；挑不出时如实说明原因（字幕仍可手选）。
+  Future<void> _applySubtitleFolderMatch(
+    VideoPlayerController controller,
+    VideoSubtitleFolder folder,
+    String videoPath,
+  ) async {
+    final SubtitleDirectoryMatch? match = await _matchSubtitleFolder(
+      folder,
+      videoPath,
+    );
+    if (!mounted || _currentVideoPath != videoPath) return;
+    final String? name = match?.fileName;
+    if (name == null) {
+      _showOsd(switch (match?.status) {
+        null => t.video_subtitle_folder_unreadable,
+        SubtitleDirectoryMatchStatus.noEpisodeNumber =>
+          t.video_subtitle_folder_no_episode,
+        SubtitleDirectoryMatchStatus.ambiguous =>
+          t.video_subtitle_folder_ambiguous,
+        SubtitleDirectoryMatchStatus.notFound ||
+        SubtitleDirectoryMatchStatus.matched =>
+          t.video_subtitle_folder_not_found,
+      }, severity: ToastSeverity.warning);
+      return;
+    }
+    final String path = p.join(folder.directory, name);
+    final SubtitleSource source = SubtitleSource.external(
+      externalPath: path,
+      label: name,
+    );
+    await _selectSubtitleSource(controller, source);
+    if (!mounted) return;
+    _registerImportedSubtitleSource(path);
+  }
+
+  /// 忘掉本系列的字幕文件夹（已挂上的字幕不动）。
+  Future<void> _clearSubtitleFolder() async {
+    final String? videoPath = _currentVideoPath;
+    if (videoPath == null) return;
+    await appModel.prefsRepo.setVideoSubtitleFolder(
+      _subtitleFolderSeriesKey(videoPath),
+      null,
+    );
+    if (!mounted) return;
+    _rebuild(() {});
+    _showOsd(t.video_subtitle_folder_cleared);
+  }
+
+  /// 字幕面板里的「字幕文件夹」行：没记时提示用途，记了显示路径并给「清除」按钮；点行
+  /// 选择 / 更改文件夹。只对本机视频（远端流没有本机文件夹可匹配）。
+  Widget _subtitleFolderTile(VideoPlayerController controller) {
+    final String? videoPath = _currentVideoPath;
+    final VideoSubtitleFolder? folder = videoPath == null
+        ? null
+        : appModel.prefsRepo.videoSubtitleFolder(
+            _subtitleFolderSeriesKey(videoPath),
+          );
+    return FushiListTileControl(
+      key: const ValueKey<String>('video-subtitle-folder'),
+      leading: const FushiIcon(Icons.folder_open_outlined),
+      title: Text(
+        folder == null
+            ? t.video_subtitle_folder_title
+            : t.video_subtitle_folder_change,
+      ),
+      subtitle: Text(
+        folder?.directory ?? t.video_subtitle_folder_hint,
+        maxLines: 2,
+        overflow: TextOverflow.ellipsis,
+      ),
+      trailing: folder == null
+          ? null
+          : FushiIconButtonControl(
+              key: const ValueKey<String>('video-subtitle-folder-clear'),
+              tooltip: t.video_subtitle_folder_clear,
+              icon: const FushiIcon(Icons.close),
+              onPressed: _subtitleLoadingShown
+                  ? null
+                  : () => unawaited(_clearSubtitleFolder()),
+            ),
+      enabled: !_subtitleLoadingShown,
+      onTap: _subtitleLoadingShown
+          ? null
+          : () => unawaited(_pickSubtitleFolder(controller)),
+    );
   }
 
   /// 远端模式：弹文件选择器挑字幕 → 直接在内存里应用到当前流（不拷盘、不持久化）。
@@ -1655,13 +2043,49 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final RemoteVideoClient? client = _effectiveRemoteClient;
     final RemoteVideoInfo? info = _effectiveRemoteInfo;
     if (client is! InterconnectSyncBackend || info == null) return null;
-    return (client, info.id, _isRemoteCollection ? 0 : _currentEpisode);
+    return (
+      client,
+      info.id,
+      _isRemoteCollection || _streamBookEpisodes ? 0 : _currentEpisode,
+    );
   }
+
+  /// 远端原盘会话（盘在互联 host 上，本机没有文件）里当前 title 在 host 上的定位
+  /// （[RemoteDiscMenuSource.hostTitleFor]：host 库里有这条 title 的行就是它，没有就用
+  /// 同盘一行当锚点、带相对盘根的 title 路径）。不在远端原盘会话、title 还没就绪（盘菜单
+  /// 在前台 / 还没绑定）、或定位不到（共享里没有同类行可当锚点）时为 null。DVD title 也走
+  /// 这里：host 经 `dvdvideo` demuxer 按 title 读（[RemoteDiscHostTitle.readsDvd]）。
+  RemoteDiscHostTitle? _remoteDiscHostTitle() {
+    final RemoteDiscMenuSource? source = widget.remoteDisc;
+    final VideoPlayerController? controller = _controller;
+    if (source == null ||
+        controller == null ||
+        !controller.isRemoteDiscSession ||
+        _discLearningBlocked) {
+      return null;
+    }
+    final String? path = controller.selectedDiscPlaylistPath;
+    if (path == null) return null;
+    final bool dvd = isDvdTitlePath(path);
+    if (!dvd && !isBlurayPlaylistPath(path)) return null;
+    // 多角度 title 按正在播的角度交给 host（角度成员路径：蓝光 `00001.a2.mpls`、DVD
+    // `TITLE_03.a2.dvdtitle`）；角度还没报上来时与本机抽取同口径，不定位。
+    final String? member = discExtractionPathForAngle(
+      path,
+      angle: controller.discNavigationState?.angle ?? -1,
+      dvd: dvd,
+    );
+    return member == null ? null : source.hostTitleFor(member);
+  }
+
+  /// 生成 / 转录 / 重定时得到的字幕只在内存里应用（[_applyRemoteSubtitle]），不落本机库：
+  /// 互联 / 流远端视频，以及远端原盘会话（本机没有这张盘的库行，会话里的 title 不写库）。
+  bool get _subtitleAppliesInMemory => _isRemote || widget.remoteDisc != null;
 
   /// 把远端视频上用户导入 / 重定时得到的字幕 [path] 上传到互联 host，设为该集默认
   /// 字幕（host 让位旧 sidecar，见 `VideoSubtitleDefaultHost`）。本机的应用与持久化
-  /// 已经完成，上传失败只提示、不回滚。host 的 sidecar 只能挂在主视频文件旁，
-  /// host 播放列表里的第 2 集起（集下标 > 0）没有落点，跳过。
+  /// 已经完成，上传失败只提示、不回滚。host 播放列表的第 N 集带集下标，host 落到那一集
+  /// 文件旁；老 host 不认集下标时 backend 不上传（见 `putRemoteVideoSubtitleAsDefault`）。
   ///
   /// 设置「导入的字幕自动上传到服务端」（`video_subtitle_auto_upload_to_host`）关掉
   /// 时直接返回：不发请求、不提示，字幕只在本机生效——上传会改掉所有 peer 在这一
@@ -1672,7 +2096,6 @@ extension _VideoSubtitle on _VideoFushiPageState {
         _remoteHostVideoTarget();
     if (target == null) return;
     final (InterconnectSyncBackend backend, String id, int episode) = target;
-    if (episode > 0) return;
     final String? suffix = defaultSidecarSubtitleSuffix(
       p.extension(path),
       langCode: _targetLangCode,
@@ -1687,6 +2110,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
         id,
         File(path),
         suffix: suffix,
+        episodeIndex: episode,
       );
     } catch (e, st) {
       ErrorLogService.instance.log('video.uploadRemoteSubtitle', e, st);
@@ -1720,10 +2144,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
     String? selectedSource,
     String? label,
     Future<bool> Function()? onEmptyCues,
+    VideoSubtitlePickOrigin origin = VideoSubtitlePickOrigin.player,
   }) async {
     final int loadSeq = _episodeLoadSeq;
     final String displayLabel = label ?? p.basename(path);
-    _showSubtitleLoadingOverlay();
+    _showSubtitleLoadingOverlay(origin: origin);
     final List<AudioCue> cues;
     try {
       cues = await _loadExternalSubtitleCues(path, _activeBookUid);
@@ -1744,6 +2169,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       );
       return false;
     }
+    // 原盘会话（远端原盘）：Fushi 的字幕接管这一 title 的字幕选择，盘的 VM 不再改它。
+    controller.claimDiscTrackOwnership();
     controller.setCues(cues);
     await controller.selectSubtitleTrack(SubtitleTrack.no());
     if (!mounted ||
@@ -1753,6 +2180,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
     final String source = selectedSource ?? path;
     _rebuild(() => _currentSubtitleSource = source);
+    // 远端原盘会话的 title 没有可记忆的远端集身份（会话不写库、不写进度）。
+    if (widget.remoteDisc != null) {
+      _showOsd(t.video_subtitle_switched(label: displayLabel));
+      return true;
+    }
     // 持久化用户为该远端集的字幕选择（根因修复：远端字幕原本只进内存、退出即丢）。
     // 本地已下载/导入的字幕文件路径（Jimaku 落 video_subtitles/、导入亦复制到该目录）可
     // 在重进时按路径重放；embedded:<n> 等非文件源退出后落回 host 默认，不阻塞当前应用。
@@ -1796,8 +2228,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
   Future<void> _applyRemoteEmbeddedSubtitle(
     VideoPlayerController controller,
-    RemoteVideoEmbeddedSubtitleTrack track,
-  ) async {
+    RemoteVideoEmbeddedSubtitleTrack track, {
+    VideoSubtitlePickOrigin origin = VideoSubtitlePickOrigin.player,
+  }) async {
     if (!track.isText) {
       // 图形轨没有文字可下：直接交给 libmpv 渲染（流里就有这条轨）。
       final bool shown = await _showRemoteGraphicTrackViaPlayer(
@@ -1867,6 +2300,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       subtitle.path,
       selectedSource: source,
       label: label,
+      origin: origin,
       // 外挂文件轨下载到了却解析不出 cue：先别报失败，交给 libmpv 原格式再读一次。
       // 读的是刚下好的本地文件（BUG-3260）：下载可能是 DeliveryUrl 失效后回落到手拼
       // 端点才成功的，轨的 url 仍是那条失效的 DeliveryUrl。
@@ -1910,11 +2344,16 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 返回 false = 流不是原始容器（转码 HLS 不带轨）/ 轨本来就是外挂文件、不在流里
   /// （[RemoteVideoEmbeddedSubtitleTrack.isExternalFile]）/ 轨未就绪 / 序号越界，调用方
   /// 按下载失败提示。
+  ///
+  /// [remember] = false：起播按「app 偏好 > 服务器默认标记」自动挑中的轨（反馈
+  /// wCQIR4Pvz9）只是本次默认、不写持久化选择——否则服务器抽不出、走 libmpv 回落
+  /// 的那一次会把自动挑选固化成「用户选择」，之后改偏好也不再生效。
   Future<bool> _showRemoteEmbeddedTrackViaPlayer(
     VideoPlayerController controller,
     RemoteVideoEmbeddedSubtitleTrack track, {
     required String source,
     required String label,
+    bool remember = true,
   }) async {
     final int seq = _episodeLoadSeq;
     final bool shown;
@@ -1933,10 +2372,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
     if (!shown || !mounted || seq != _episodeLoadSeq) return shown;
     _rebuild(() => _currentSubtitleSource = source);
-    final (String subUid, int subEp) = _remotePositionKeyForIndex(
-      _currentEpisode,
-    );
-    _rememberRemoteSubtitleSource(subUid, subEp, source);
+    if (remember) {
+      final (String subUid, int subEp) = _remotePositionKeyForIndex(
+        _currentEpisode,
+      );
+      _rememberRemoteSubtitleSource(subUid, subEp, source);
+    }
     _showOsd(t.video_subtitle_remote_player_decoded(label: label));
     return true;
   }
@@ -2019,7 +2460,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     String? label,
   }) async {
     final String displayLabel = label ?? p.basename(path);
-    _showSubtitleLoadingOverlay();
+    // 副字幕只在播放器侧选（见 [_selectSecondarySubtitleSource]）。
+    _showSubtitleLoadingOverlay(origin: VideoSubtitlePickOrigin.player);
     final List<AudioCue> cues;
     try {
       cues = await _loadExternalSubtitleCues(path, _activeBookUid);
@@ -2281,6 +2723,30 @@ extension _VideoSubtitle on _VideoFushiPageState {
         );
         return;
       }
+    } else if (SubtitleSource.isHostSidecarPersisted(persisted)) {
+      // 互联 host 上的某一条外挂字幕（反馈 -CaVsioFhG）：按文件名重新下载；host
+      // 这一集已没有它 / 下载失败 → 静默保持无副字幕。
+      final RemoteVideoClient? client = _effectiveRemoteClient;
+      final RemoteVideoInfo? info = _effectiveRemoteInfo;
+      final RemoteVideoSidecarSubtitle? sidecar = remoteHostSidecarForSource(
+        persisted,
+        _remoteSidecarSubtitles,
+      );
+      if (client == null || info == null || sidecar == null) return;
+      final (_, int ep) = _remotePositionKeyForIndex(_currentEpisode);
+      try {
+        final File subtitle = await _downloadRemoteHostSidecarSubtitle(
+          client,
+          info,
+          sidecar,
+          index: _currentEpisode,
+          streamEpisodeIndex: ep,
+        );
+        cues = await _loadExternalSubtitleCues(subtitle.path, _activeBookUid);
+      } catch (e) {
+        debugPrint('[VideoFushiPage] secondary host sidecar replay failed: $e');
+        return;
+      }
     } else if (await File(persisted).exists()) {
       cues = await _loadExternalSubtitleCues(persisted, _activeBookUid);
     } else {
@@ -2331,26 +2797,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
     YoutubeCaptionTrack track, {
     int? loadSeq,
   }) async {
-    final RemoteVideoClient? client = _effectiveRemoteClient;
-    if (client is! UrlStreamVideoClient) return;
-    List<AudioCue> cues = client.cachedCaptionCues(track.trackKey);
-    if (cues.isEmpty) {
-      if (mounted) _rebuild(() => _subtitleMenuLoading = true);
-      try {
-        cues = await resolveYoutubeCaptionCues(
-          track,
-          bookKey: 'yt:$_activeBookUid',
-        );
-      } finally {
-        // BUG-1329：cue 解析抛错（网络/解析异常）时也必须收掉加载态。原来靠三条各自
-        // 复位的 return 路径，抛错那条谁也没走到，[_subtitleMenuLoading] 就永久留在
-        // true——字幕轨区顶部的进度条从此一直转，且再没有任何入口能把它关掉。
-        if (mounted) _rebuild(() => _subtitleMenuLoading = false);
-      }
-      if (!mounted) return;
-      if (loadSeq != null && loadSeq != _episodeLoadSeq) return;
-      if (cues.isNotEmpty) client.cacheCaptionCues(track.trackKey, cues);
-    }
+    final List<AudioCue>? cues = await _resolveYoutubeTrackCues(
+      track,
+      loadSeq: loadSeq,
+    );
+    if (cues == null) return;
     if (cues.isEmpty) {
       // 手选到空轨（机翻失败 / 该轨无文字）：提示；自动应用（loadSeq!=null）静默不打扰。
       if (loadSeq == null) {
@@ -2367,6 +2818,62 @@ extension _VideoSubtitle on _VideoFushiPageState {
         t.video_subtitle_switched(label: _youtubeCaptionTrackLabel(track)),
       );
     }
+  }
+
+  /// YouTube 字幕轨的取 cue（主 / 副字幕共用，反馈 A41_cyNKcc）：缓存命中直接用，否则
+  /// [resolveYoutubeCaptionCues] 懒下载并写回 per-track 缓存。返回 null = 结果作废
+  /// （非 YouTube 客户端 / 页面已卸载 / [loadSeq] 非空且已切到别的集），调用方什么都不做；
+  /// 返回空表 = 该轨确实没有文字，由调用方决定是否提示。
+  Future<List<AudioCue>?> _resolveYoutubeTrackCues(
+    YoutubeCaptionTrack track, {
+    int? loadSeq,
+  }) async {
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    if (client is! UrlStreamVideoClient) return null;
+    List<AudioCue> cues = client.cachedCaptionCues(track.trackKey);
+    if (cues.isNotEmpty) return cues;
+    if (mounted) _rebuild(() => _subtitleMenuLoading = true);
+    try {
+      cues = await resolveYoutubeCaptionCues(
+        track,
+        bookKey: 'yt:$_activeBookUid',
+      );
+    } finally {
+      // BUG-1329：cue 解析抛错（网络/解析异常）时也必须收掉加载态。原来靠三条各自
+      // 复位的 return 路径，抛错那条谁也没走到，[_subtitleMenuLoading] 就永久留在
+      // true——字幕轨区顶部的进度条从此一直转，且再没有任何入口能把它关掉。
+      if (mounted) _rebuild(() => _subtitleMenuLoading = false);
+    }
+    if (!mounted) return null;
+    if (loadSeq != null && loadSeq != _episodeLoadSeq) return null;
+    if (cues.isNotEmpty) client.cacheCaptionCues(track.trackKey, cues);
+    return cues;
+  }
+
+  /// 把 YouTube 字幕轨 [track] 选为**副字幕**（反馈 A41_cyNKcc：此前远端副字幕区只列 host
+  /// 外挂 / 内封轨 / 本地导入，在线 YouTube 视频的副字幕一条 YouTube 轨都选不到，与「副字幕
+  /// 与主字幕同一份可选来源」的双字幕设计矛盾）。取 cue 与主字幕同一条
+  /// [_resolveYoutubeTrackCues]，落点是 overlay 副层 [VideoPlayerController.setSecondaryCues]，
+  /// 登记 [YoutubeCaptionTrack.trackKey] 为当前副字幕源。与主字幕的 YouTube 轨一样只记内存、
+  /// 不落库（轨表是每次起播现取的，trackKey 跨会话无从重放）。下载期间切集则作废。
+  Future<void> _applyYoutubeSecondaryCaptionTrack(
+    VideoPlayerController controller,
+    YoutubeCaptionTrack track,
+  ) async {
+    final List<AudioCue>? cues = await _resolveYoutubeTrackCues(
+      track,
+      loadSeq: _episodeLoadSeq,
+    );
+    if (cues == null || _controller != controller) return;
+    if (cues.isEmpty) {
+      _showOsd(t.video_subtitle_youtube_empty, severity: ToastSeverity.error);
+      return;
+    }
+    controller.setSecondaryCues(cues);
+    _rebuild(() => _currentSecondarySubtitleSource = track.trackKey);
+    _showOsd(
+      t.video_subtitle_switched(label: _youtubeCaptionTrackLabel(track)),
+    );
   }
 
   /// 本地 / 本机媒体库条目（含网络流书）的图形轨整轨取数输入：与控制器取逐句时间表
@@ -2386,7 +2893,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
   }
 
   /// 远端图形轨的整轨取数输入：互联 host 回传它抽好的整轨（client **不读**整片流，
-  /// [buildRemoteGraphicSubtitleTimingInput]）；媒体服务器 / URL 流按当前流地址 + 播放
+  /// [buildRemoteGraphicSubtitleTimingInput]；这条轨正当图形轨显示时用控制器手里那份，
+  /// 与逐句时间表 / 遮蔽层共用一次下载）；媒体服务器 / URL 流按当前流地址 + 播放
   /// 会话请求头抽（与控制器的逐句时间表同一口径）。轨不在 libmpv 正 demux 的原始容器里
   /// （[_remoteGraphicTrackSelectable]）/ 编码解不了 / 推导不出返回 null。
   GraphicSubtitleTimingInput? _remoteGraphicTrackOcrInput(
@@ -2401,6 +2909,12 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (client != null &&
         info != null &&
         client is RemoteVideoGraphicSubtitleTrackFetch) {
+      final GraphicSubtitleTimingInput? active = controller
+          .graphicSubtitleTimingInputForTrack(
+            streamIndex: ordinal,
+            codec: track.codec,
+          );
+      if (active is GraphicSubtitleTimingHostTrack) return active;
       final (String _, int episode) = _remotePositionKeyForIndex(
         _currentEpisode,
       );
@@ -2519,6 +3033,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
     );
     Directory? work;
     Future<bool>? extraction;
+    // 网络 / 本地流抽轨走共享表：模糊遮蔽 / 制卡时间表正在抽同一条轨时直接加入，
+    // 不再让 ffmpeg 把整个视频读第二遍。
+    GraphicSubtitleTrackLease? lease;
+    void Function()? stopProgress;
     Timer? livePublishTimer;
     bool livePublished = false;
     bool succeeded = false;
@@ -2547,28 +3065,55 @@ extension _VideoSubtitle on _VideoFushiPageState {
           aiLabel: engine.aiProvider,
         ),
       );
-      work = await Directory.systemTemp.createTemp('fushi_graphic_sub_track_');
       // 载荷格式随编码（PGS 段流 / VobSub、DVB 单轨 TS + 轨头），读取一律按轨头解码。
-      final String payloadPath = p.join(work.path, 'track.bin');
+      final String payloadPath;
       // 边抽边识别（边看边 OCR）：抽轨进程写载荷的同时反复读出已落盘的 cue，
       // 播放头附近的先识别，识别一条就补进可点字幕；不必等整个文件读完。
       bool extractDone = false;
-      extraction = materializeGraphicSubtitleTrack(
-        input: input,
-        outputPath: payloadPath,
-        cancel: cancel.future,
-        onProgress: (Duration processed) => _updateGraphicSubtitleOcrJob(
-          (GraphicSubtitleOcrJobState job) =>
-              job.copyWith(processed: processed),
-        ),
-        onFailure: (String summary) => ErrorLogService.instance.log(
-          'video.graphicSubtitleOcr.extract',
-          summary,
-          StackTrace.current,
-        ),
-      ).whenComplete(() => extractDone = true);
+      void reportProgress(Duration processed) => _updateGraphicSubtitleOcrJob(
+        (GraphicSubtitleOcrJobState job) => job.copyWith(processed: processed),
+      );
+      void reportFailure(String summary) => ErrorLogService.instance.log(
+        'video.graphicSubtitleOcr.extract',
+        summary,
+        StackTrace.current,
+      );
+      if (input case GraphicSubtitleTimingStream(input: final source)) {
+        final GraphicSubtitleTrackLease shared = lease =
+            GraphicSubtitleTrackExtractionHub.shared.acquire(
+              input: source,
+              streamIndex: input.streamIndex,
+              codec: input.codec,
+            );
+        payloadPath = shared.payloadPath;
+        stopProgress = shared.listenProgress(reportProgress);
+        // 取消只结束这边的等待；租约在 finally 里交回，别的使用方还在用时抽轨照跑。
+        extraction = Future.any(<Future<bool>>[
+          shared.outcome.then((GraphicSubtitleTrackExtractOutcome outcome) {
+            if (outcome.failure case final String summary) {
+              reportFailure(summary);
+            }
+            return outcome.ok;
+          }),
+          cancel.future.then((_) => false),
+        ]).whenComplete(() => extractDone = true);
+      } else {
+        final Directory dir = work = await Directory.systemTemp.createTemp(
+          'fushi_graphic_sub_track_',
+        );
+        payloadPath = p.join(dir.path, 'track.bin');
+        extraction = materializeGraphicSubtitleTrack(
+          input: input,
+          outputPath: payloadPath,
+          cancel: cancel.future,
+          onProgress: reportProgress,
+          onFailure: reportFailure,
+        ).whenComplete(() => extractDone = true);
+      }
       final Future<bool> extractionResult = extraction;
       List<GraphicSubtitleTextCue> pending = const <GraphicSubtitleTextCue>[];
+      // 单条识别失败只跳过那一条（整轨不作废），收尾时告诉用户跳过了几条。
+      int failedCues = 0;
       DateTime? lastPublishAt;
       Future<void> publishLive() async {
         livePublishTimer?.cancel();
@@ -2584,8 +3129,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
           if (!isCurrent()) return;
           await _setDelayMs(0);
           if (!isCurrent()) return;
+          // 首次发布：图形轨 → OCR 文本，算换源。
+          controller.setCues(live);
+          return;
         }
-        controller.setCues(live);
+        // 之后每次只是同一份 OCR 结果多识别了几句：时间轴不变，不能让期间跑着的
+        // 自动对轴把结果当成「字幕源已换」丢掉。
+        controller.updateCuesInSameSource(live);
       }
 
       final List<GraphicSubtitleTextCue>? texts =
@@ -2636,6 +3186,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
             onRefineError: (Object error, StackTrace stack) => ErrorLogService
                 .instance
                 .log('video.graphicSubtitleOcr.refine', error, stack),
+            onCueError: (Object error, StackTrace stack) {
+              failedCues++;
+              ErrorLogService.instance.log(
+                'video.graphicSubtitleOcr.cue',
+                error,
+                stack,
+              );
+            },
           );
       livePublishTimer?.cancel();
       livePublishTimer = null;
@@ -2678,12 +3236,18 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if (!userKeepsSource()) {
         // 用户中途换了别的字幕：产物只进轨道列表，不抢当前选择。
         _registerImportedSubtitleSource(target);
-        return;
+      } else {
+        await applyResult(target);
+        if (!isCurrent()) return;
+        if (controller.cues.isNotEmpty && _currentSubtitleSource == target) {
+          await _setDelayMs(0);
+        }
       }
-      await applyResult(target);
-      if (!isCurrent()) return;
-      if (controller.cues.isNotEmpty && _currentSubtitleSource == target) {
-        await _setDelayMs(0);
+      if (failedCues > 0) {
+        _showOsd(
+          t.video_subtitle_graphic_ocr_cues_skipped(count: failedCues),
+          severity: ToastSeverity.warning,
+        );
       }
     } on GraphicSubtitleOcrUnavailable catch (error) {
       if (isCurrent()) _reportGraphicSubtitleOcrUnavailable(error.reason);
@@ -2714,6 +3278,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
         await restoreGraphic();
       }
       try {
+        stopProgress?.call();
+        await lease?.release();
         await work?.delete(recursive: true);
       } on FileSystemException {
         // 临时目录，删不掉留给系统清理。
@@ -2736,6 +3302,99 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final Completer<void>? cancel = _graphicSubtitleOcrCancel;
     if (cancel == null || cancel.isCompleted) return;
     cancel.complete();
+  }
+
+  /// [videoPath] 的内封文本字幕抽取取消信号（BUG-4838，见
+  /// [_VideoFushiPageState._embeddedSubtitleExtractCancels]）。
+  Future<void> _embeddedSubtitleExtractCancelFor(String videoPath) =>
+      (_embeddedSubtitleExtractCancels[videoPath] ??= Completer<void>()).future;
+
+  /// 撤掉本页对内封文本字幕抽取的等待：[keepVideoPath] 的那份保留，其余全撤。
+  /// 还在排队、没开始的下一集预热随之撤掉（`prewarmEmbeddedSubtitleCache` 的
+  /// background 排队）。调用方紧接着会重建（换源）或页面已在销毁，这里不单独 setState。
+  void _cancelEmbeddedSubtitleExtracts([String? keepVideoPath]) {
+    final List<String> stale = <String>[
+      for (final String path in _embeddedSubtitleExtractCancels.keys)
+        if (path != keepVideoPath) path,
+    ];
+    for (final String path in stale) {
+      _cancelEmbeddedSubtitleExtractFor(path);
+    }
+    if (_primaryEmbeddedFullLoad?.videoPath != keepVideoPath) {
+      _primaryEmbeddedFullLoad = null;
+    }
+    if (_secondaryEmbeddedFullLoad?.videoPath != keepVideoPath) {
+      _secondaryEmbeddedFullLoad = null;
+    }
+  }
+
+  void _cancelEmbeddedSubtitleExtractFor(String videoPath) {
+    final Completer<void>? cancel = _embeddedSubtitleExtractCancels.remove(
+      videoPath,
+    );
+    if (cancel != null && !cancel.isCompleted) cancel.complete();
+    // 被撤掉的若正是预热过（或排着队）的下一集，忘掉「已预热」记号：之后再回到它的
+    // 上一集时要重新预热，否则那一集换过去时字幕又得现读。
+    if (_lastPrewarmedEpisodePath == videoPath) {
+      _lastPrewarmedEpisodePath = null;
+    }
+  }
+
+  /// 字幕面板上「正在读取完整字幕」行的「停止」：撤掉本页（当前集预热 / 菜单切轨）与
+  /// 播放器自动加载对这个视频整轨抽取的全部等待——没有别的等待方时 ffmpeg 被强杀，
+  /// 不再占着盘。播放器已在解码的那条轨照常显示（停的只是「补全列表」），字幕列表
+  /// 之后只随播放累积；用户之后再选一条需要抽取的轨会重新开始读取。
+  void _cancelEmbeddedTextFullLoad() {
+    final String? videoPath =
+        _primaryEmbeddedFullLoad?.videoPath ??
+        _secondaryEmbeddedFullLoad?.videoPath;
+    if (videoPath == null) return;
+    _cancelEmbeddedSubtitleExtractFor(videoPath);
+    _controller?.cancelEmbeddedTextAutoLoadExtract();
+    final bool live = _controller?.isPlayerDecodedTextSubtitleActive ?? false;
+    _rebuild(() {
+      _primaryEmbeddedFullLoad = null;
+      _secondaryEmbeddedFullLoad = null;
+    });
+    _showOsd(
+      live
+          ? t.video_subtitle_full_load_stopped_live
+          : t.video_subtitle_full_load_stopped,
+    );
+  }
+
+  /// 「正在读取完整字幕」行：转圈 + 哪条轨 + 说明 + 停止按钮。不禁用任何别的行。
+  Widget _embeddedTextFullLoadTile(
+    _EmbeddedTextFullLoad load, {
+    required bool secondary,
+  }) {
+    return FushiListTileControl(
+      key: ValueKey<String>(
+        secondary
+            ? 'video-subtitle-full-load-secondary'
+            : 'video-subtitle-full-load',
+      ),
+      leading: const SizedBox.square(
+        dimension: 24,
+        child: FushiCircularProgressIndicator(strokeWidth: 2.5),
+      ),
+      title: Text(t.video_subtitle_full_load_title(label: load.label)),
+      subtitle: Text(
+        secondary
+            ? t.video_subtitle_full_load_hint_secondary
+            : t.video_subtitle_full_load_hint,
+      ),
+      trailing: FushiIconButtonControl(
+        key: ValueKey<String>(
+          secondary
+              ? 'video-subtitle-full-load-secondary-cancel'
+              : 'video-subtitle-full-load-cancel',
+        ),
+        tooltip: t.video_subtitle_full_load_stop,
+        icon: const FushiIcon(FushiIcons.stop),
+        onPressed: _cancelEmbeddedTextFullLoad,
+      ),
+    );
   }
 
   /// 开始整轨转文字前的确认框：说明会用哪个识别引擎（漫画 OCR 设置里的引擎偏好 /
@@ -2815,12 +3474,453 @@ extension _VideoSubtitle on _VideoFushiPageState {
     return start ?? false;
   }
 
+  /// 本机转录当前音轨（转录弹层）：本地视频直接用文件，互联远端视频由 host 在本地
+  /// 裁出整集音轨回传，其它远端流（在线源 / 媒体服务器 / 云盘流）把整集音频拉到本机
+  /// （[_resolveSubtitleTimingAudio]）。蓝光盘也能走（抽当前音轨）。
+  bool get _canTranscribeVideoSpeech =>
+      _canResolveSubtitleTimingAudio && isAsrSupported;
+
+  /// 生成字幕管线（ASR + 可选专名表 AI 校对，字幕写在视频旁 `<视频名>.<语言>.srt`；
+  /// 原盘写进 app 自有目录，见 `videoSubtitleDiscExportDir`）：本机读得到媒体的视频在
+  /// 本机跑——含蓝光原盘会话（当前 title 的 `.mpls` 由 ffmpeg 按播放列表读），判据只看
+  /// 原盘 VM 给的可抽取性（[canRunLocalVideoSubtitlePipeline]）；互联远端视频在放视频的
+  /// 那台 host 上跑（host 任务 `video_subtitle`，老 host 面板里说明不支持），取回 SRT
+  /// 当本机外挂字幕加载；其它远端流把整集音频拉到本机后在本机跑
+  /// （[_canRunStreamSubtitlePipeline]）；网页档（站点自己的播放器）从页面取媒体地址、
+  /// 同样把整集音频拉到本机后在本机跑（[_canRunWebSubtitlePipeline]）；互联远端的
+  /// 蓝光原盘会话（本机没有文件）由放盘的 host 跑，title 按（盘, title）定位
+  /// （[_remoteDiscHostTitle]）。
+  bool get _canRunSubtitlePipeline =>
+      canRunLocalVideoSubtitlePipeline(
+        videoPath: _localPipelineMediaPath,
+        isRemote: _isRemote,
+        asrSupported: isAsrSupported,
+        discSession: _controller?.isBlurayNavigationSession ?? false,
+        discExtractionAvailable:
+            (_controller?.discMiningAvailable ?? false) &&
+            !_discLearningBlocked,
+      ) ||
+      (_isRemote && _remoteHostVideoTarget() != null) ||
+      _remoteDiscHostTitle() != null ||
+      _canRunStreamSubtitlePipeline ||
+      _canRunWebSubtitlePipeline;
+
+  /// 本机管线（与它的参考画面）读媒体的路径（[localVideoSubtitlePipelineMediaPath]）：
+  /// 原盘会话是原盘 VM 给的抽取路径——多角度 title 带着正在播的角度
+  /// （`discExtractionPathForAngle`），抽不了时为 null；其余就是当前这一集的路径。
+  String? get _localPipelineMediaPath => localVideoSubtitlePipelineMediaPath(
+    currentVideoPath: _currentVideoPath,
+    discSession: _controller?.isBlurayNavigationSession ?? false,
+    discExtractionPath: _controller?.videoPath,
+  );
+
+  /// 非互联的远端流（在线视频源、粘贴的流 / YouTube、音乐 MV、媒体服务器、云盘流）：
+  /// 整集音频拉到本机（[appVideoStreamSubtitleAudioStager]）后在本机跑同一条管线
+  /// （[AppVideoSubtitleService.resolveStream]），产物落 app 字幕目录。
+  bool get _canRunStreamSubtitlePipeline =>
+      _streamWholeAudioAvailable && isAsrSupported;
+
+  /// 字幕工作台里至少有一项能用：能生成（有音轨 / 能跑管线）、能对内嵌轨（本机文件）、
+  /// 或已经有一条文本字幕可拆分 / 对照。
+  bool _subtitleStudioAvailable(VideoPlayerController controller) =>
+      _canTranscribeVideoSpeech ||
+      _canRunSubtitlePipeline ||
+      _currentVideoPath != null ||
+      controller.cues.isNotEmpty;
+
+  /// 「交给 AI 的参考」区（[VideoSubtitleStudioAiReference]）：只有本机能跑带 AI 校对的
+  /// 生成管线时才有（互联远端的管线在 host 上跑，用 host 自己的文件与指派；在线流在
+  /// 本机跑，画面从播放中的流里抽）。「参考画面」是与生成面板共用的偏好；发不出去的
+  /// 原因现读（提供商指派 / 图片输入可能在面板开着时被改掉）。
+  Future<VideoSubtitleStudioAiReference?> _subtitleStudioAiReference() async {
+    final String? videoPath = _localPipelineMediaPath;
+    final bool stream = _canRunStreamSubtitlePipeline;
+    final bool web = _canRunWebSubtitlePipeline;
+    final WebVideoSession? webSession = _webSession;
+    if (!_canRunSubtitlePipeline) return null;
+    if (!stream && !web && (videoPath == null || _isRemote)) return null;
+    final PrefsRepoVideoSubtitleGeneratePrefs prefs =
+        PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo);
+    final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
+    // 异步 stat：视频在网络盘上时同步 stat 会冻结 UI isolate（BUG-3756）。在线流的
+    // 画面从播放中的流里抽（[videoStreamSubtitleFrameSource]），不看本机文件；网页档
+    // 从页面给的视频地址抽，YouTube 现取的是纯音频流、没有画面（[_webSubtitleFrameInput]）。
+    final bool localFile =
+        stream ||
+        (web &&
+            webSession != null &&
+            await _webSubtitleFrameInput(webSession) != null) ||
+        (videoPath != null &&
+            !isNetworkMediaPath(videoPath) &&
+            await hasLocalMediaFile(videoPath));
+    return VideoSubtitleStudioAiReference(
+      framesEnabled: () => prefs.frames,
+      setFramesEnabled: (BuildContext context, bool value) async {
+        if (value && !await confirmVideoSubtitleAiFrames(context, prefs)) {
+          return;
+        }
+        await prefs.setFrames(value);
+      },
+      framesProblem: () => !localFile
+          ? VideoSubtitleStudioFramesProblem.notLocalFile
+          : service.proofreadProvider == null
+          ? VideoSubtitleStudioFramesProblem.noProvider
+          : !service.proofreadAcceptsImages
+          ? VideoSubtitleStudioFramesProblem.providerRejectsImages
+          : null,
+    );
+  }
+
+  /// 播放器里正显示的主 / 副字幕 → 交给 AI 校对的参考轨（视频路径 → 轨），各自按
+  /// 当前的调轴偏移摆到视频时间上。与目标语言相同的轨由管线丢掉（只收其它语言）。
+  Map<String, List<SubtitleEvidenceTrack>> _playerSubtitleEvidence(
+    VideoPlayerController controller,
+    String videoPath,
+  ) {
+    final List<SubtitleEvidenceTrack> tracks = <SubtitleEvidenceTrack>[
+      ?videoSubtitleStudioEvidenceTrack(
+        cues: controller.secondaryCues,
+        delayMs: controller.effectiveSecondaryDelayMs,
+        label: 'player-secondary',
+      ),
+      ?videoSubtitleStudioEvidenceTrack(
+        cues: controller.cues,
+        delayMs: controller.delayMs,
+        label: 'player-primary',
+      ),
+    ];
+    return tracks.isEmpty
+        ? const <String, List<SubtitleEvidenceTrack>>{}
+        : <String, List<SubtitleEvidenceTrack>>{videoPath: tracks};
+  }
+
+  /// 「生成字幕」嵌进工作台工具栏的选项面板（[VideoSubtitleStudioActions.generatePanel]）：
+  /// 与 [_openJapaneseSubtitlePipeline] / [_openRemoteJapaneseSubtitlePipeline] 同一个
+  /// 面板、同一套参数，只是不另起弹层——本机视频嵌本机管线面板，互联远端视频（含 host
+  /// 播放列表的任意一集，以及可抽取的蓝光原盘 title）嵌 host / 本机管线面板。管线认不到
+  /// 这一集时返回 null（原盘当前 title 不可抽取）：工作台退回「生成字幕」那一行按钮走
+  /// [_openSubtitleGeneration]，由它说明原因或走本机转录。非互联的远端流嵌「先拉整集
+  /// 音频」的前置面板，拉好后原地换成同一个本机管线面板（[_streamSubtitleStudioPanel]）。
+  Future<WidgetBuilder?> _subtitleStudioGeneratePanel(
+    VideoPlayerController controller,
+  ) async {
+    if (!_canRunSubtitlePipeline) return null;
+    final VideoSubtitleInAppTranscribe? inApp = _canTranscribeVideoSpeech
+        ? ({required bool proofread}) => unawaited(
+            _generateSubtitleWithSpeechModel(
+              controller,
+              autoProofread: proofread,
+            ),
+          )
+        : null;
+    // 网页档：先从页面取媒体地址把整集音频拉到本机，再换成本机管线面板。
+    if (_webMode) return _webSubtitleStudioPanel(controller);
+    // 远端原盘会话：盘在 host 上，由 host 跑管线（产物落它的 disc_out、随任务取回）。
+    final RemoteDiscHostTitle? discTitle = _remoteDiscHostTitle();
+    if (discTitle != null) {
+      final RemoteVideoSubtitleService remoteService =
+          appRemoteVideoSubtitleService(appModel);
+      final RemoteVideoSubtitleTarget remoteTarget = _remoteDiscSubtitleTarget(
+        discTitle,
+        audioTrack: controller.currentAudioStreamIndex,
+        audioLanguages: _audioTrackLanguagesOf(controller),
+      );
+      return (BuildContext context) => RemoteVideoSubtitleSheet(
+        embedded: true,
+        service: remoteService,
+        target: remoteTarget,
+        prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
+        onJobStarted: (RemoteVideoSubtitleJob job) => unawaited(
+          _applyRemoteDiscPipelineSubtitleWhenDone(controller, job, discTitle),
+        ),
+        onTranscribeInApp: inApp,
+      );
+    }
+    if (_isRemote) {
+      final (InterconnectSyncBackend, String, int)? host =
+          _remoteHostVideoTarget();
+      if (host == null) return _streamSubtitleStudioPanel(controller, inApp);
+      final (InterconnectSyncBackend _, String videoId, int episode) = host;
+      final RemoteVideoSubtitleTarget remoteTarget = _remoteHostSubtitleTarget(
+        videoId,
+        episode,
+        audioTrack: controller.currentAudioStreamIndex,
+        audioLanguages: _audioTrackLanguagesOf(controller),
+      );
+      final RemoteVideoSubtitleService remoteService =
+          appRemoteVideoSubtitleService(appModel);
+      return (BuildContext context) => RemoteVideoSubtitleSheet(
+        embedded: true,
+        service: remoteService,
+        target: remoteTarget,
+        prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
+        onJobStarted: (RemoteVideoSubtitleJob job) => unawaited(
+          _applyRemotePipelineSubtitleWhenDone(
+            controller,
+            job,
+            videoId,
+            episode,
+          ),
+        ),
+        onTranscribeInApp: inApp,
+      );
+    }
+    // 原盘多角度 title 是带当前角度的抽取路径（[_localPipelineMediaPath]）。
+    final String? videoPath = _localPipelineMediaPath;
+    if (videoPath == null) return null;
+    final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
+    final AppVideoSubtitleTarget target;
+    try {
+      // 库里没有这一行（直接打开的文件）时按文件解析，同样走完整管线。
+      target = await service.resolvePlaying(
+        _activeBookUid,
+        videoPath: videoPath,
+        title: _title ?? p.basenameWithoutExtension(videoPath),
+        // 识别正在听的那条轨（与「仅本机转录」同口径）。
+        audioTrack: controller.currentAudioStreamIndex,
+      );
+    } on AppVideoSubtitleTargetNotFound {
+      return null;
+    }
+    // 播放器里正对照着的其它语言字幕交给 AI 校对当参考：工作台盖着播放页期间换不了
+    // 副字幕，打开时取一次即可。
+    final Map<String, List<SubtitleEvidenceTrack>> pinnedEvidence =
+        _playerSubtitleEvidence(controller, videoPath);
+    return (BuildContext context) => VideoSubtitleGenerateSheet(
+      embedded: true,
+      service: service,
+      target: target,
+      prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
+      openAiSettings: pushAiSettingsPage,
+      onJobStarted: (AppVideoSubtitleJob job) =>
+          unawaited(_applyPipelineSubtitleWhenDone(controller, job, videoPath)),
+      onTranscribeInApp: inApp,
+      pinnedEvidence: pinnedEvidence,
+    );
+  }
+
+  /// 打开字幕工作台（[openVideoSubtitleStudioPage]）。参考区读的都是播放器的现值
+  /// （主 / 副字幕 cue、各自扣过调轴的等效位置、裸画面截图），页面开着时随播放实时
+  /// 刷新；工具全部复用本页既有路径，就地跑、进度与结果经 OSD 转给工作台显示。
+  Future<void> _openSubtitleStudio(VideoPlayerController controller) async {
+    // 主字幕语言随工具换轨变化（拆分 / 对轴另存的新档会被选中）：按 cue 列表身份缓存。
+    List<AudioCue> languageCues = controller.cues;
+    SubtitleContentLanguage detect(List<AudioCue> cues) =>
+        detectSubtitleContentLanguage(
+          <String>[
+            for (final AudioCue c in cues)
+              if (!c.isRenderOnly) c.text,
+          ].join('\n'),
+        );
+    SubtitleContentLanguage language = detect(languageCues);
+    final bool canGenerate =
+        _canTranscribeVideoSpeech || _canRunSubtitlePipeline;
+    final VideoSubtitleStudioAiReference? aiReference =
+        await _subtitleStudioAiReference();
+    if (!context.mounted || !identical(_controller, controller)) return;
+    final WidgetBuilder? generatePanel = await _subtitleStudioGeneratePanel(
+      controller,
+    );
+    if (!context.mounted || !identical(_controller, controller)) return;
+    await openVideoSubtitleStudioPage(
+      context: context,
+      reference: VideoSubtitleStudioReference(
+        listenable: controller.positionMsListenable,
+        primaryCues: () => controller.cues,
+        secondaryCues: () => controller.secondaryCues,
+        primaryPositionMs: () => effectiveSubtitlePositionMs(
+          controller.positionMs ?? 0,
+          controller.delayMs,
+        ),
+        secondaryPositionMs: () => effectiveSubtitlePositionMs(
+          controller.positionMs ?? 0,
+          controller.effectiveSecondaryDelayMs,
+        ),
+        primaryLanguage: () {
+          final List<AudioCue> now = controller.cues;
+          if (!identical(now, languageCues)) {
+            languageCues = now;
+            language = detect(now);
+          }
+          return language;
+        },
+        captureFrame: controller.screenshot,
+        jumpToCue: (AudioCue cue) => unawaited(controller.skipToCue(cue)),
+        notice: () => switch (_osdNotifier.value) {
+          null => null,
+          final _VideoOsdMessage osd => VideoSubtitleStudioNotice(
+            message: osd.message,
+            severity: osd.severity,
+          ),
+        },
+        noticeListenable: _osdNotifier,
+      ),
+      aiReference: aiReference,
+      actions: VideoSubtitleStudioActions(
+        generate: canGenerate
+            ? () => _openSubtitleGeneration(controller)
+            : null,
+        generatePanel: generatePanel,
+        splitBilingual: controller.cues.isEmpty
+            ? null
+            : () => _extractJapaneseFromBilingualSubtitle(controller),
+        retime: _canTranscribeVideoSpeech
+            ? () => _retimeSubtitleWithSpeechModel(controller)
+            : null,
+        alignEmbedded: _currentVideoPath != null
+            ? () => _alignSubtitleToEmbeddedTracks(controller)
+            : null,
+      ),
+    );
+  }
+
+  /// 拆出双语字幕中的日语（反馈 E1pq561P2q）：当前主字幕的 cue 交给
+  /// [extractJapaneseFromBilingual]（只删行、不改字、不动时间轴），结果另存一份新的
+  /// SRT 并走既有外挂字幕链路选中——原字幕一个字节都不动，字幕轨列表里随时切回去。
+  /// 远端视频走远端导入同一条链路（内存应用 + 按集记住选择），再上传给 host。
+  Future<void> _extractJapaneseFromBilingualSubtitle(
+    VideoPlayerController controller,
+  ) async {
+    final List<SubtitleTextCue> input = <SubtitleTextCue>[
+      for (final AudioCue c in controller.cues)
+        if (!c.isRenderOnly && c.text.trim().isNotEmpty)
+          SubtitleTextCue(startMs: c.startMs, endMs: c.endMs, text: c.text),
+    ];
+    if (input.isEmpty) {
+      _showOsd(
+        t.video_subtitle_retime_no_track,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final BilingualSplitResult split = extractJapaneseFromBilingual(input);
+    if (split.cues.isEmpty) {
+      _showOsd(
+        t.video_subtitle_studio_split_failed,
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    final int loadSeq = _episodeLoadSeq;
+    final String? videoPath = _currentVideoPath;
+    // 网页档站内换集不走 [_episodeLoadSeq]，按这一集的书判。
+    final String bookUid = _activeBookUid;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _episodeLoadSeq == loadSeq &&
+        _currentVideoPath == videoPath &&
+        _activeBookUid == bookUid;
+    // 远端片名直接拼进档名：「Re:Zero」这类带 `:` / `/` 的标题在 Windows 上写不出
+    // 文件（或被当成子目录），先按全仓唯一的文件名安全化规则清洗。
+    final String rawBaseName = _isRemote || _webMode
+        ? (_title ?? _effectiveRemoteInfo?.title ?? '')
+        : p.basenameWithoutExtension(videoPath ?? '');
+    final String safeBaseName = safeWindowsFileName(rawBaseName).trim();
+    final String baseName = safeBaseName.isEmpty ? 'subtitle' : safeBaseName;
+    final String videoKey = sha256
+        .convert(utf8.encode('$_activeBookUid|$videoPath|$_currentEpisode'))
+        .toString()
+        .substring(0, 8);
+    try {
+      final Directory directory = await AppPaths.videoSubtitlesDirectory();
+      await directory.create(recursive: true);
+      final String target = p.join(
+        directory.path,
+        '$baseName.ja-split-$videoKey.srt',
+      );
+      await File(
+        target,
+      ).writeAsString(subtitleTextCuesToSrt(split.cues), flush: true);
+      if (!isCurrent()) return;
+      if (_webMode) {
+        // 网页档：与手机下载的字幕同一条路，作为一条本机轨并进站点轨并选中。
+        final List<AudioCue> cues = await _loadExternalSubtitleCues(
+          target,
+          _activeBookUid,
+        );
+        if (!isCurrent()) return;
+        _selectWebLocalSubtitleTrack(target, cues);
+      } else if (_subtitleAppliesInMemory) {
+        _registerImportedSubtitleSource(target);
+        if (await _applyRemoteSubtitle(controller, target)) {
+          if (!isCurrent()) return;
+          unawaited(_uploadRemoteSubtitleToHost(target));
+        }
+      } else {
+        await _importExternalSubtitle(controller, target);
+      }
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'video.subtitleBilingualSplit',
+        error,
+        stack,
+      );
+      if (isCurrent()) {
+        _showOsd(t.video_subtitle_import_failed, severity: ToastSeverity.error);
+      }
+      return;
+    }
+    if (!isCurrent()) return;
+    _showOsd(
+      t.video_subtitle_studio_split_done(
+        kept: split.cues.length,
+        dropped: split.droppedCues,
+      ),
+      severity: ToastSeverity.success,
+    );
+  }
+
+  /// 「生成字幕」入口（反馈 6Tj3ECtB0Q：原来两个入口功能重叠）。管线能跑时打开管线
+  /// 面板，面板里多一项「保存字幕文件」：开 = 管线（原「生成日语字幕」），关 = 本机
+  /// 转录弹层（原「语音识别生成字幕」，可选转录完自动 AI 校对）。只有一条路能走时
+  /// 直接走那条，不多弹一层。
+  Future<void> _openSubtitleGeneration(VideoPlayerController controller) async {
+    // 原盘会话里当前 title 抽不了（AACS 没密钥 / 多角度 / 片段缺失 / 菜单在前台）时
+    // 两条路都读不到音轨：直接说明原因，不静默无反应。远端原盘的 title 由 host 读盘。
+    if (!_discSubtitleAudioAllowed(controller)) return;
+    final bool canTranscribe = _canTranscribeVideoSpeech;
+    if (!_canRunSubtitlePipeline) {
+      if (canTranscribe) await _generateSubtitleWithSpeechModel(controller);
+      return;
+    }
+    final VideoSubtitleInAppTranscribe? inApp = canTranscribe
+        ? ({required bool proofread}) => unawaited(
+            _generateSubtitleWithSpeechModel(
+              controller,
+              autoProofread: proofread,
+            ),
+          )
+        : null;
+    final RemoteDiscHostTitle? discTitle = _remoteDiscHostTitle();
+    if (_webMode) {
+      await _openWebSubtitlePipeline(controller);
+    } else if (discTitle != null) {
+      await _openRemoteDiscSubtitlePipeline(
+        controller,
+        discTitle,
+        onTranscribeInApp: inApp,
+      );
+    } else if (_isRemote && _remoteHostVideoTarget() == null) {
+      await _openStreamSubtitlePipeline(controller, onTranscribeInApp: inApp);
+    } else if (_isRemote) {
+      await _openRemoteJapaneseSubtitlePipeline(
+        controller,
+        onTranscribeInApp: inApp,
+      );
+    } else {
+      await _openJapaneseSubtitlePipeline(controller, onTranscribeInApp: inApp);
+    }
+  }
+
   /// 从视频音轨生成文字字幕，允许无字幕或仅有 PGS 的视频直接进入查词和制卡链路。
   ///
-  /// [transcribe] 见 [_transcribeVideoSpeech]。
+  /// [transcribe] 见 [_transcribeVideoSpeech]。[autoProofread]：转录完自动 AI 校对一次
+  /// （「生成字幕」面板里关了保存、开了 AI 校对）。
   Future<void> _generateSubtitleWithSpeechModel(
     VideoPlayerController controller, {
     _VideoSpeechTranscriber? transcribe,
+    bool autoProofread = false,
   }) async {
     final int loadSeq = _episodeLoadSeq;
     final String? videoPath = _currentVideoPath;
@@ -2834,6 +3934,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       final String? transcriptSrt = await _transcribeVideoSpeech(
         controller,
         transcribe: transcribe,
+        autoProofread: autoProofread,
       );
       // 转录可能持续数分钟；取消、换集或重建播放器后保留产物，但不串到新视频。
       if (transcriptSrt == null || !isCurrent()) return;
@@ -2849,7 +3950,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       await directory.create(recursive: true);
       await File(transcriptSrt).copy(target);
       if (!isCurrent()) return;
-      if (_isRemote) {
+      if (_subtitleAppliesInMemory) {
         _registerImportedSubtitleSource(target);
         if (await _applyRemoteSubtitle(controller, target)) {
           if (!isCurrent()) return;
@@ -2876,26 +3977,41 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
   }
 
-  /// 「生成日语字幕」面板（[showVideoSubtitleGenerateSheet]）：编排全在
+  /// 「生成字幕」管线面板（[showVideoSubtitleGenerateSheet]）：编排全在
   /// [AppVideoSubtitleService]（与合集页整季、桌面 CLI 同一个服务），这里只解析当前这
   /// 一集的目标，并在任务结束后把产物切成当前字幕（面板关掉了也照样切）。
+  /// [onTranscribeInApp] 见 [_openSubtitleGeneration]。
   Future<void> _openJapaneseSubtitlePipeline(
-    VideoPlayerController controller,
-  ) async {
-    final String? videoPath = _currentVideoPath;
+    VideoPlayerController controller, {
+    VideoSubtitleInAppTranscribe? onTranscribeInApp,
+  }) async {
+    // 原盘多角度 title 是带当前角度的抽取路径（[_localPipelineMediaPath]）。
+    final String? videoPath = _localPipelineMediaPath;
     if (videoPath == null || _isRemote) return;
     final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
     final AppVideoSubtitleTarget target;
     try {
-      target = await service.resolveBook(_activeBookUid, videoPath: videoPath);
+      // 库里没有这一行（直接打开的文件）时按文件解析，同样走完整管线。
+      target = await service.resolvePlaying(
+        _activeBookUid,
+        videoPath: videoPath,
+        title: _title ?? p.basenameWithoutExtension(videoPath),
+        // 识别正在听的那条轨（与「仅本机转录」同口径）。
+        audioTrack: controller.currentAudioStreamIndex,
+      );
     } on AppVideoSubtitleTargetNotFound {
+      // 管线认不到这一集（文件已不在本机）时本机转录照样能用：直接走那条。
+      if (onTranscribeInApp != null) {
+        await _generateSubtitleWithSpeechModel(controller);
+        return;
+      }
       _showOsd(
         t.video_subtitle_ai_no_local_episodes,
         severity: ToastSeverity.error,
       );
       return;
     }
-    if (!context.mounted || _currentVideoPath != videoPath) return;
+    if (!context.mounted || _localPipelineMediaPath != videoPath) return;
     await showVideoSubtitleGenerateSheet(
       context: context,
       service: service,
@@ -2904,63 +4020,203 @@ extension _VideoSubtitle on _VideoFushiPageState {
       openAiSettings: pushAiSettingsPage,
       onJobStarted: (AppVideoSubtitleJob job) =>
           unawaited(_applyPipelineSubtitleWhenDone(controller, job, videoPath)),
+      onTranscribeInApp: onTranscribeInApp,
+      // 播放器里正对照着的其它语言字幕交给 AI 校对当参考（工作台的「参考」不只给人看）。
+      pinnedEvidence: _playerSubtitleEvidence(controller, videoPath),
     );
   }
 
   /// 互联远端视频：在放视频的 host 上跑同一条管线（[RemoteVideoSubtitleService]），
   /// AI 用 host 自己的指派；结束后取回的 SRT 走「远端视频加外挂字幕」同一条路加载。
-  /// host 播放列表从第 2 集起 host 任务认不到那一集的文件，直接说明。
+  /// host 播放列表的第 N 集带集下标交给 host（host 按集解析那一集的文件）。
   Future<void> _openRemoteJapaneseSubtitlePipeline(
-    VideoPlayerController controller,
-  ) async {
+    VideoPlayerController controller, {
+    VideoSubtitleInAppTranscribe? onTranscribeInApp,
+  }) async {
     final (InterconnectSyncBackend, String, int)? host =
         _remoteHostVideoTarget();
     if (host == null) return;
     final (InterconnectSyncBackend _, String videoId, int episode) = host;
-    if (episode > 0) {
-      _showOsd(
-        t.video_subtitle_ai_remote_episode_unsupported,
-        severity: ToastSeverity.warning,
-      );
-      return;
-    }
-    final String title = _title ?? _effectiveRemoteInfo?.title ?? videoId;
     await showRemoteVideoSubtitleSheet(
       context: context,
       service: appRemoteVideoSubtitleService(appModel),
-      target: RemoteVideoSubtitleTarget(
-        title: title,
-        episodes: <RemoteVideoSubtitleEpisode>[
-          RemoteVideoSubtitleEpisode(videoId: videoId, title: title),
-        ],
+      target: _remoteHostSubtitleTarget(
+        videoId,
+        episode,
+        audioTrack: controller.currentAudioStreamIndex,
+        audioLanguages: _audioTrackLanguagesOf(controller),
       ),
       prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
       onJobStarted: (RemoteVideoSubtitleJob job) => unawaited(
-        _applyRemotePipelineSubtitleWhenDone(controller, job, videoId),
+        _applyRemotePipelineSubtitleWhenDone(controller, job, videoId, episode),
       ),
+      onTranscribeInApp: onTranscribeInApp,
     );
   }
 
-  /// 远端任务结束后：页面还停在这一集就加载取回的 SRT（并入字幕轨列表、调轴归零）。
-  /// host 已经在它那边的视频旁写了字幕，这里不再上传回去。
-  Future<void> _applyRemotePipelineSubtitleWhenDone(
+  /// 播放器当前片源真实音轨（去掉 libmpv 的 auto/no 伪轨）的语言标签，远端面板猜
+  /// 识别语言用（[RemoteVideoSubtitleTarget.languageGuess]）。没标签的轨不列。
+  List<String> _audioTrackLanguagesOf(VideoPlayerController controller) =>
+      <String>[
+        for (final AudioTrack track in controller.audioTracks)
+          if (track.id != 'auto' &&
+              track.id != 'no' &&
+              (track.language ?? '').trim().isNotEmpty)
+            track.language!.trim(),
+      ];
+
+  /// host 管线的单集目标：host 上的 ([videoId], 集下标 [episode])。播放列表的集名取剧集
+  /// 面板那一集的名字（与选集列表同口径），单视频 / 合集成员取视频标题。[audioTrack] 是
+  /// 播放器当前音轨（0 起的音轨序号）：远端直传播放的就是 host 上这份文件，序号与 host
+  /// ffmpeg 的 `0:a:N` 同口径（转码流只有一条音轨，[VideoPlayerController.currentAudioStreamIndex]
+  /// 为 null，host 按语言挑）。
+  RemoteVideoSubtitleTarget _remoteHostSubtitleTarget(
+    String videoId,
+    int episode, {
+    int? audioTrack,
+    List<String> audioLanguages = const <String>[],
+  }) {
+    final _PlaylistEpisodeRef? ref =
+        !_isRemoteCollection &&
+            !_streamBookEpisodes &&
+            _isPlaylist &&
+            episode < _episodes.length
+        ? _episodes[episode]
+        : null;
+    final String title =
+        (ref == null ? null : ref.displayTitle ?? ref.title) ??
+        _title ??
+        _effectiveRemoteInfo?.title ??
+        videoId;
+    return RemoteVideoSubtitleTarget(
+      title: title,
+      audioLanguages: audioLanguages,
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: videoId,
+          episodeIndex: episode,
+          title: title,
+          audioTrack: audioTrack,
+        ),
+      ],
+    );
+  }
+
+  /// 远端原盘会话：当前 title 交给放盘的 host 跑同一条管线（host 读它盘上的 `.mpls`，
+  /// 产物落 host 的 `disc_out`、随任务产物取回），结束后在本机内存里选中。
+  Future<void> _openRemoteDiscSubtitlePipeline(
+    VideoPlayerController controller,
+    RemoteDiscHostTitle title, {
+    VideoSubtitleInAppTranscribe? onTranscribeInApp,
+  }) async {
+    await showRemoteVideoSubtitleSheet(
+      context: context,
+      service: appRemoteVideoSubtitleService(appModel),
+      target: _remoteDiscSubtitleTarget(
+        title,
+        audioTrack: controller.currentAudioStreamIndex,
+        audioLanguages: _audioTrackLanguagesOf(controller),
+      ),
+      prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
+      onJobStarted: (RemoteVideoSubtitleJob job) => unawaited(
+        _applyRemoteDiscPipelineSubtitleWhenDone(controller, job, title),
+      ),
+      onTranscribeInApp: onTranscribeInApp,
+    );
+  }
+
+  /// 远端原盘 title 的单集目标：名字取「盘名 · 播放列表号」（远端 title 没有库行标题）。
+  /// [audioTrack] 是播放器当前音轨，与按（盘, title）裁音频（`clipaudio?discTitle=`）同口径。
+  RemoteVideoSubtitleTarget _remoteDiscSubtitleTarget(
+    RemoteDiscHostTitle title, {
+    int? audioTrack,
+    List<String> audioLanguages = const <String>[],
+  }) {
+    final String disc = widget.remoteDisc?.title ?? _title ?? '';
+    final String name = p.basenameWithoutExtension(title.memberPath);
+    final String label = disc.isEmpty ? name : '$disc · $name';
+    return RemoteVideoSubtitleTarget(
+      title: label,
+      audioLanguages: audioLanguages,
+      episodes: <RemoteVideoSubtitleEpisode>[
+        RemoteVideoSubtitleEpisode(
+          videoId: title.videoId,
+          discTitle: title.discTitle,
+          title: label,
+          audioTrack: audioTrack,
+        ),
+      ],
+    );
+  }
+
+  /// 远端原盘的 host 任务结束后：还是同一次加载、同一个原盘 title 世代、页面仍停在
+  /// （盘, title）[title] 上，就登记取回的字幕并在内存里选中（调轴归零）。换了 title
+  /// （包括同一个播放列表号的另一次进入）都不挂。
+  Future<void> _applyRemoteDiscPipelineSubtitleWhenDone(
     VideoPlayerController controller,
     RemoteVideoSubtitleJob job,
-    String videoId,
+    RemoteDiscHostTitle title,
   ) async {
     final int loadSeq = _episodeLoadSeq;
+    final int generation = controller.discTitleGeneration;
     await job.done;
     if (!mounted ||
         !identical(_controller, controller) ||
         _episodeLoadSeq != loadSeq ||
-        _effectiveRemoteInfo?.id != videoId ||
+        controller.discTitleGeneration != generation ||
+        _remoteDiscHostTitle() != title ||
         job.status != RemoteVideoSubtitleJobStatus.succeeded) {
       return;
     }
     final RemoteVideoSubtitleEpisodeProgress? episode = job.episodes
         .firstWhereOrNull(
           (RemoteVideoSubtitleEpisodeProgress e) =>
-              e.episode.videoId == videoId,
+              e.episode.matchesDiscTitle(title.videoId, title.discTitle),
+        );
+    final String? path = episode?.subtitle?.path;
+    if (path == null) {
+      final String? label = episode == null
+          ? null
+          : remoteVideoSubtitleEpisodeResultLabel(episode);
+      if (label != null) _showOsd(label, severity: ToastSeverity.warning);
+      return;
+    }
+    _registerImportedSubtitleSource(path);
+    if (await _applyRemoteSubtitle(controller, path)) {
+      if (!mounted) return;
+      await _setDelayMs(0);
+    }
+  }
+
+  /// 远端任务结束后：页面还停在 host 上的这一集（[videoId], 集下标 [episodeIndex]）就
+  /// 加载取回的 SRT（并入字幕轨列表、调轴归零）。host 已经在它那边那一集的视频旁写了
+  /// 字幕，这里不再上传回去。
+  Future<void> _applyRemotePipelineSubtitleWhenDone(
+    VideoPlayerController controller,
+    RemoteVideoSubtitleJob job,
+    String videoId,
+    int episodeIndex,
+  ) async {
+    final int loadSeq = _episodeLoadSeq;
+    await job.done;
+    if (!mounted ||
+        !identical(_controller, controller) ||
+        _episodeLoadSeq != loadSeq ||
+        job.status != RemoteVideoSubtitleJobStatus.succeeded) {
+      return;
+    }
+    // 换集（同一播放列表的另一集同 videoId）后不能把这一集的字幕挂到别的集上。
+    final (InterconnectSyncBackend, String, int)? current =
+        _remoteHostVideoTarget();
+    if (current == null ||
+        current.$2 != videoId ||
+        current.$3 != episodeIndex) {
+      return;
+    }
+    final RemoteVideoSubtitleEpisodeProgress? episode = job.episodes
+        .firstWhereOrNull(
+          (RemoteVideoSubtitleEpisodeProgress e) =>
+              e.episode.matches(videoId, episodeIndex),
         );
     final String? path = episode?.subtitle?.path;
     if (path == null) {
@@ -2979,6 +4235,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
   /// 管线结束后：这一集导出了字幕且页面还停在这一集，就选中它（落库 + 加载 + 并入
   /// 字幕轨列表）；跳过了（同名字幕都已存在 / 判为歌曲……）就说明原因。
+  ///
+  /// [videoPath] 是管线读的媒体路径（原盘多角度 title 带角度，见
+  /// [_localPipelineMediaPath]），用来在结果里认出这一集；「还停在这一集」按它去掉角度
+  /// 后的这一集身份与页面的 [_currentVideoPath]（原盘是不带角度的 title）比——各角度
+  /// 共用 title 的时间轴，中途换了角度产物照样对得上。
   Future<void> _applyPipelineSubtitleWhenDone(
     VideoPlayerController controller,
     AppVideoSubtitleJob job,
@@ -2989,7 +4250,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (!mounted ||
         !identical(_controller, controller) ||
         _episodeLoadSeq != loadSeq ||
-        _currentVideoPath != videoPath ||
+        _currentVideoPath != discAngleBaseMemberPath(videoPath) ||
         job.status != AppVideoSubtitleJobStatus.succeeded) {
       return;
     }
@@ -3015,6 +4276,362 @@ extension _VideoSubtitle on _VideoFushiPageState {
     await _setDelayMs(0);
   }
 
+  /// 在线流当前这一集整集音频副本的身份：键（来源 + 视频 id + 集下标 + 音轨，见
+  /// [videoStreamSubtitleAudioKey]）与标题（副本 / 导出字幕的文件名用）。不是可拉的
+  /// 在线流时 null。
+  ({String key, String title, String videoId, RemoteVideoClient client})?
+  _streamWholeAudioIdentity() {
+    final VideoPlayerController? controller = _controller;
+    final RemoteVideoClient? client = _effectiveRemoteClient;
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
+    if (controller == null ||
+        client == null ||
+        info == null ||
+        !_streamWholeAudioAvailable) {
+      return null;
+    }
+    final ({String url, bool audioOnly})? audio =
+        currentVideoStreamSubtitleAudio(
+          miningSource: controller.miningSource,
+          miningAudioSource: controller.miningAudioSource,
+        );
+    if (audio == null) return null;
+    return (
+      key: videoStreamSubtitleAudioKey(
+        sourceId: client.remoteLibrarySourceId,
+        videoId: info.id,
+        episode: _isRemoteCollection || _streamBookEpisodes
+            ? 0
+            : _currentEpisode,
+        audioTrack:
+            '${audio.audioOnly ? 'ext' : 'a'}:'
+            '${controller.currentAudioStreamIndex ?? '-'}',
+      ),
+      title: _title ?? info.title,
+      videoId: info.id,
+      client: client,
+    );
+  }
+
+  /// 开拉前现取输入：来源能现取地址（[RemoteVideoSubtitleAudioRefresh]：在线源的短 TTL
+  /// 签名链接）就现取一条，否则读当前播放的地址（媒体服务器 / 云盘流的地址不过期）；
+  /// 需要时登记本机中继（与制卡同一判据 [videoMiningInputUsesPlaybackRelay]）。
+  Future<VideoStreamSubtitleAudioInput> _prepareStreamWholeAudio(
+    VideoPlayerController controller,
+    RemoteVideoClient client,
+    String videoId,
+  ) async {
+    final ({String url, bool audioOnly})? current =
+        currentVideoStreamSubtitleAudio(
+          miningSource: controller.miningSource,
+          miningAudioSource: controller.miningAudioSource,
+        );
+    if (current == null) {
+      throw const VideoStreamSubtitleAudioUnavailable('no stream source');
+    }
+    String url = current.url;
+    Map<String, String> headers = _streamHttpHeaderFields;
+    bool audioOnly = current.audioOnly;
+    final Object refreshable = client;
+    if (refreshable is RemoteVideoSubtitleAudioRefresh) {
+      final RemoteVideoSubtitleAudio fresh = await refreshable
+          .freshSubtitleAudio(
+            videoId,
+            currentAudioUrl: current.audioOnly ? current.url : null,
+          );
+      url = fresh.url;
+      headers = fresh.headers;
+      audioOnly = fresh.audioOnly;
+    }
+    final int? audioStreamIndex = audioOnly
+        ? null
+        : controller.currentAudioStreamIndex;
+    final int? audioStreamCount = audioOnly
+        ? null
+        : controller.realAudioStreamCount;
+    if (videoMiningInputUsesPlaybackRelay(
+      remoteClient: client,
+      mediaSource: url,
+    )) {
+      final ({String url, Future<void> ready}) relayed = relayFfmpegRemoteInput(
+        url,
+        // 纯音频流（YouTube audio-only / 外挂音轨）不是 HLS；音视频同轨的流与播放器
+        // 打开的是同一种容器。
+        isHls: audioOnly ? Future<bool>.value(false) : controller.isHlsStream(),
+        headers: headers,
+      );
+      await relayed.ready;
+      url = relayed.url;
+    }
+    return VideoStreamSubtitleAudioInput(
+      url: url,
+      headers: headers,
+      audioStreamIndex: audioStreamIndex,
+      audioStreamCount: audioStreamCount,
+    );
+  }
+
+  /// 开拉这一集的整集音频（同一集已在拉就接上那一次）；不是可拉的在线流时 null。
+  VideoStreamSubtitleAudioStaging? _startStreamWholeAudio() {
+    final VideoPlayerController? controller = _controller;
+    final ({
+      String key,
+      String title,
+      String videoId,
+      RemoteVideoClient client,
+    })?
+    id = _streamWholeAudioIdentity();
+    if (controller == null || id == null) return null;
+    return appVideoStreamSubtitleAudioStager.start(
+      key: id.key,
+      title: id.title,
+      durationMs: controller.durationMs ?? 0,
+      prepare: () =>
+          _prepareStreamWholeAudio(controller, id.client, id.videoId),
+    );
+  }
+
+  /// 这一集的整集音频副本：已拉好直接用；否则在进度对话框里拉（可取消）。取消返回
+  /// null；失败记日志、提示原因后返回 null。
+  Future<File?> _stageStreamWholeAudioWithDialog() async {
+    final ({
+      String key,
+      String title,
+      String videoId,
+      RemoteVideoClient client,
+    })?
+    id = _streamWholeAudioIdentity();
+    if (id == null) return null;
+    return _stageWholeAudioWithDialog(
+      key: id.key,
+      title: id.title,
+      start: _startStreamWholeAudio,
+      logTag: 'video.streamSubtitleAudio',
+    );
+  }
+
+  /// 整集音频副本（[key] / [title] 见 `videoStreamSubtitleAudioFileIn`）：已拉好直接用；
+  /// 否则 [start] 开拉（同一集已在拉就接上那一次），在进度对话框里等（可取消）。取消
+  /// 返回 null；失败按 [logTag] 记日志、OSD 提示原因后返回 null。在线流与网页档共用
+  /// （对话框本体 [stageVideoStreamSubtitleAudioWithDialog] 与内置网页播放器页共用）。
+  Future<File?> _stageWholeAudioWithDialog({
+    required String key,
+    required String title,
+    required VideoStreamSubtitleAudioStaging? Function() start,
+    required String logTag,
+  }) => stageVideoStreamSubtitleAudioWithDialog(
+    context,
+    key: key,
+    title: title,
+    start: start,
+    logTag: logTag,
+    onUnavailable: (String message) {
+      if (mounted) _showOsd(message, severity: ToastSeverity.error);
+    },
+  );
+
+  /// 在线流这一集的管线目标：[audio] 是整集音频副本；作品身份按来源给的作品名
+  /// （[remoteVideoWorkTitle]：在线源的合集名），产物落 app 字幕目录，结束后记成这一集
+  /// 的字幕选择（按集的 prefs，页面关了也生效），参考画面从播放中的流里抽。副本已被
+  /// 清掉（存储页清理）时 null。
+  Future<AppVideoSubtitleTarget?> _streamSubtitleTarget(
+    VideoPlayerController controller,
+    File audio,
+  ) async {
+    final ({
+      String key,
+      String title,
+      String videoId,
+      RemoteVideoClient client,
+    })?
+    id = _streamWholeAudioIdentity();
+    final RemoteVideoInfo? info = _effectiveRemoteInfo;
+    if (id == null || info == null) return null;
+    final AppModel model = appModel;
+    final (String subUid, int subEp) = _remotePositionKeyForIndex(
+      _currentEpisode,
+    );
+    final String? frameVideo = controller.miningSource;
+    final Map<String, String> frameHeaders = _streamHttpHeaderFields;
+    final RemoteVideoClient client = id.client;
+    final bool frameRelay =
+        frameVideo != null &&
+        videoMiningInputUsesPlaybackRelay(
+          remoteClient: client,
+          mediaSource: frameVideo,
+        );
+    final Future<bool> frameHls = controller.isHlsStream();
+    try {
+      return await appVideoSubtitleService(model).resolveStream(
+        audioPath: audio.path,
+        title: id.title,
+        key: id.key,
+        exportDir: videoStreamSubtitleExportDirUnder(
+          await AppPaths.videoSubtitlesDirectory(),
+        ),
+        workTitle: remoteVideoWorkTitle(info),
+        contentLanguage: controller.currentAudioLanguage,
+        remember: (String subtitlePath) =>
+            model.setRemoteSubtitleSource(subUid, subEp, subtitlePath),
+        frameSource: frameVideo == null
+            ? null
+            : videoStreamSubtitleFrameSource(
+                headers: frameHeaders,
+                input: () async {
+                  if (!frameRelay) return frameVideo;
+                  final ({String url, Future<void> ready}) relayed =
+                      relayFfmpegRemoteInput(
+                        frameVideo,
+                        isHls: frameHls,
+                        headers: frameHeaders,
+                      );
+                  await relayed.ready;
+                  return relayed.url;
+                },
+              ),
+      );
+    } on AppVideoSubtitleTargetNotFound {
+      return null;
+    }
+  }
+
+  /// 在线流：先把整集音频拉到本机（进度对话框，可取消），再打开与本机视频同一个管线
+  /// 面板；任务结束后把产物切成当前字幕（面板关掉了也照样切）。
+  /// [onTranscribeInApp] 见 [_openSubtitleGeneration]。
+  Future<void> _openStreamSubtitlePipeline(
+    VideoPlayerController controller, {
+    VideoSubtitleInAppTranscribe? onTranscribeInApp,
+  }) async {
+    final int loadSeq = _episodeLoadSeq;
+    final String? key = _streamWholeAudioIdentity()?.key;
+    if (key == null) return;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _episodeLoadSeq == loadSeq &&
+        _streamWholeAudioIdentity()?.key == key;
+    final File? audio = await _stageStreamWholeAudioWithDialog();
+    if (audio == null || !isCurrent()) return;
+    final AppVideoSubtitleTarget? target = await _streamSubtitleTarget(
+      controller,
+      audio,
+    );
+    if (target == null || !isCurrent() || !context.mounted) return;
+    await showVideoSubtitleGenerateSheet(
+      context: context,
+      service: appVideoSubtitleService(appModel),
+      target: target,
+      prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
+      openAiSettings: pushAiSettingsPage,
+      onJobStarted: (AppVideoSubtitleJob job) => unawaited(
+        _applyStreamPipelineSubtitleWhenDone(controller, job, audio.path, key),
+      ),
+      onTranscribeInApp: onTranscribeInApp,
+      // 播放器里正对照着的其它语言字幕交给 AI 校对当参考（按副本路径对上这一集）。
+      pinnedEvidence: _playerSubtitleEvidence(controller, audio.path),
+    );
+  }
+
+  /// 工作台内嵌的在线流生成面板：先拉整集音频（[VideoStreamSubtitleAudioPanel]，有进度、
+  /// 可取消，已拉好 / 正在拉时直接接上），拉好后原地换成本机管线面板。换了集 / 播放器
+  /// 重建之后不再开拉、不再出面板。
+  WidgetBuilder? _streamSubtitleStudioPanel(
+    VideoPlayerController controller,
+    VideoSubtitleInAppTranscribe? inApp,
+  ) {
+    final ({
+      String key,
+      String title,
+      String videoId,
+      RemoteVideoClient client,
+    })?
+    id = _streamWholeAudioIdentity();
+    if (id == null) return null;
+    final int loadSeq = _episodeLoadSeq;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _episodeLoadSeq == loadSeq &&
+        _streamWholeAudioIdentity()?.key == id.key;
+    final AppVideoSubtitleService service = appVideoSubtitleService(appModel);
+    return (BuildContext context) => VideoStreamSubtitleAudioPanel(
+      existing: () => appVideoStreamSubtitleAudioStager.existing(
+        key: id.key,
+        title: id.title,
+      ),
+      inflight: () => appVideoStreamSubtitleAudioStager.inflight(id.key),
+      start: () => isCurrent() ? _startStreamWholeAudio() : null,
+      onFailed: (Object error, StackTrace stack) => ErrorLogService.instance
+          .log('video.streamSubtitleAudio', error, stack),
+      ready: (File audio) async {
+        if (!isCurrent()) return null;
+        final AppVideoSubtitleTarget? target = await _streamSubtitleTarget(
+          controller,
+          audio,
+        );
+        if (target == null || !isCurrent()) return null;
+        // 工作台里的拆分 / 对轴可能换过主字幕：参考取拉好那一刻播放器上的现值。
+        final Map<String, List<SubtitleEvidenceTrack>> pinnedEvidence =
+            _playerSubtitleEvidence(controller, audio.path);
+        return (BuildContext context) => VideoSubtitleGenerateSheet(
+          embedded: true,
+          service: service,
+          target: target,
+          prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
+          openAiSettings: pushAiSettingsPage,
+          onJobStarted: (AppVideoSubtitleJob job) => unawaited(
+            _applyStreamPipelineSubtitleWhenDone(
+              controller,
+              job,
+              audio.path,
+              id.key,
+            ),
+          ),
+          onTranscribeInApp: inApp,
+          pinnedEvidence: pinnedEvidence,
+        );
+      },
+    );
+  }
+
+  /// 在线流的管线结束后：页面还停在同一个视频、同一次加载（[_episodeLoadSeq] 与整集
+  /// 音频身份 [streamKey] 都没变）就加载产物（并入字幕轨列表、记住选择、调轴归零），
+  /// 与远端「加外挂字幕」同一条路；跳过了就说明原因。
+  Future<void> _applyStreamPipelineSubtitleWhenDone(
+    VideoPlayerController controller,
+    AppVideoSubtitleJob job,
+    String audioPath,
+    String streamKey,
+  ) async {
+    final int loadSeq = _episodeLoadSeq;
+    await job.done;
+    if (!mounted ||
+        !identical(_controller, controller) ||
+        _episodeLoadSeq != loadSeq ||
+        _streamWholeAudioIdentity()?.key != streamKey ||
+        job.status != AppVideoSubtitleJobStatus.succeeded) {
+      return;
+    }
+    final VideoSubtitleEpisodeResult? result = job.result?.episodes
+        .firstWhereOrNull(
+          (VideoSubtitleEpisodeResult r) => p.equals(r.videoPath, audioPath),
+        );
+    if (result == null) return;
+    final String? output = result.outputPath;
+    if (!result.exported || output == null) {
+      _showOsd(
+        videoSubtitleEpisodeStatusLabel(result, language: job.options.language),
+        severity: ToastSeverity.warning,
+      );
+      return;
+    }
+    _registerImportedSubtitleSource(output);
+    if (await _applyRemoteSubtitle(controller, output)) {
+      if (!mounted) return;
+      await _setDelayMs(0);
+    }
+  }
+
   /// ASR 只接单音轨文件；先抽当前所选音轨，避免双语盘识别到默认配音。
   ///
   /// [transcribe] 替换最后「把这条音轨转成 SRT」那一步：缺省弹转录弹层
@@ -3024,8 +4641,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
   Future<String?> _transcribeVideoSpeech(
     VideoPlayerController controller, {
     _VideoSpeechTranscriber? transcribe,
+    bool autoProofread = false,
   }) async {
-    if (!_discExtractionAllowed(controller)) return null;
+    if (!_discSubtitleAudioAllowed(controller)) return null;
     final int loadSeq = _episodeLoadSeq;
     bool isCurrent() =>
         mounted &&
@@ -3037,7 +4655,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (audio.audioStreamCount != null) {
       final int durationMs = controller.durationMs ?? 0;
       if (durationMs <= 0) return null;
-      _showSubtitleLoadingOverlay();
+      _showSubtitleLoadingOverlay(origin: VideoSubtitlePickOrigin.player);
       try {
         final String key = 'asr|${audio.path}|${audio.audioStreamIndex}';
         final Future<String?> fetch = _remoteTimingAudioFetches.putIfAbsent(
@@ -3077,6 +4695,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     if (!isCurrent() || !context.mounted) return null;
     if (transcribe != null) return transcribe(audioPath);
     return showAsrTranscribeSheet(
+      tone: ImportTone.cyan,
       context: context,
       audioPaths: <String>[audioPath],
       // 视频是混音素材（BGM / 音效）：断言 mixedAudio。日语因此换成 Parakeet、
@@ -3084,6 +4703,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // 素材上把大段音乐也送进模型，时间轴精确率 0.74（现 0.86）。
       service: createAsrTranscriptionService(
         audioProfile: AsrAudioProfile.mixedAudio,
+      ),
+      autoProofread: autoProofread,
+      // 转录稿的时间轴就是视频时间（音轨从 0 抽到片尾）：校对时可以附上这个视频的
+      // 画面。取不到本机字节的路径（远端 / 流）取帧那边自己跳过。
+      proofreadHost: appAsrProofreadHost(
+        appModel.prefsRepo,
+        // 原盘多角度 title 取正在播的角度的画面（[_localPipelineMediaPath]）。
+        framesVideoPath: _localPipelineMediaPath,
       ),
     );
   }
@@ -3153,7 +4780,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 落盘的新档走既有外挂字幕链路：拷进字幕目录（同目录时跳过）、选中、并入字幕轨
     // 列表。这条路径已经处理好持久化与「当场出现在列表里」（BUG-1329 / BUG-1861）。
     // 远端视频走远端导入同一条链路（内存应用 + 按集记住选择），再上传给 host。
-    if (_isRemote) {
+    if (_subtitleAppliesInMemory) {
       _registerImportedSubtitleSource(retimed.path);
       if (await _applyRemoteSubtitle(controller, retimed.path)) {
         if (!isCurrent()) return;
@@ -3408,15 +5035,38 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 有效调轴从 0 起算：系列级 / 本集持久化的调轴是给没对齐的字幕调的，对齐后的
   /// 时间轴已经贴着视频，再叠上去只会推歪。换回别的档时恢复原调轴。持久化值本身
   /// 不动——系列级调轴对同系列其它没对齐的集仍然有效。
-  Future<void> _refreshPrimarySubtitleAlignment(String? source) async {
+  Future<void> _refreshPrimarySubtitleAlignment(String? source) =>
+      _applyPrimarySubtitleAlignment(
+        _startPrimarySubtitleAlignmentCheck(source),
+      );
+
+  /// 起一次「是不是对齐产物」检查：代次此刻前进（之后起跑的检查会作废它），结果
+  /// future 可以先和别的 IO 并行，稍后交给 [_applyPrimarySubtitleAlignment]。本次载入
+  /// 已读过同一份字幕时直接用 [_loadAlignmentHint]，不重读。
+  _SubtitleAlignmentCheck _startPrimarySubtitleAlignmentCheck(String? source) {
     final int generation = ++_subtitleAlignmentCheckGeneration;
-    final bool aligned =
+    final bool candidate =
         !_isRemote &&
         source != null &&
         !SubtitleSource.isOff(source) &&
-        !SubtitleSource.isEmbeddedPersisted(source) &&
-        await isSubtitleAlignmentProduct(source);
-    if (!mounted || generation != _subtitleAlignmentCheckGeneration) return;
+        !SubtitleSource.isEmbeddedPersisted(source);
+    final ({String path, Future<bool> aligned})? hint = _loadAlignmentHint;
+    final Future<bool> aligned = !candidate
+        ? Future<bool>.value(false)
+        : hint != null && hint.path == source
+        ? hint.aligned
+        : isSubtitleAlignmentProduct(source);
+    return (generation: generation, aligned: aligned);
+  }
+
+  /// 按 [check] 的结果改调轴；期间又起了新检查（换源 / 换集）就丢掉这次结果。
+  Future<void> _applyPrimarySubtitleAlignment(
+    _SubtitleAlignmentCheck check,
+  ) async {
+    final bool aligned = await check.aligned;
+    if (!mounted || check.generation != _subtitleAlignmentCheckGeneration) {
+      return;
+    }
     if (aligned == _primarySubtitleAligned) return;
     _primarySubtitleAligned = aligned;
     if (aligned) {
@@ -3517,10 +5167,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
 
   /// 在字幕源视图里展示非阻塞加载状态（BUG-104：大容器内嵌字幕 demux 可达数十秒）。
   /// TODO-1351：字幕源已收进设置面板「字幕」分类，加载态确保设置面板开在该分类可见。
-  void _showSubtitleLoadingOverlay() {
+  /// [origin] 是这次选择从哪来：第二屏面板选的进度显示在面板上（快照
+  /// `subtitleLoading` 读同一个 [_subtitleLoadingShown]），播放器不弹设置面板。
+  void _showSubtitleLoadingOverlay({required VideoSubtitlePickOrigin origin}) {
     if (_subtitleLoadingShown || !mounted) return;
     _rebuild(() => _subtitleLoadingShown = true);
-    if (_videoSidePanel.value?.kind != _VideoSidePanelKind.subtitle) {
+    if (origin.opensPlayerSettings(
+      subtitlePanelOpen:
+          _videoSidePanel.value?.kind == _VideoSidePanelKind.subtitle,
+    )) {
       _showPlayerSettings(initialCategory: 'subtitle');
     }
   }
@@ -3540,13 +5195,27 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 失败（已弹失败提示、未切换、未持久化、未覆盖当前可用字幕）。
   Future<bool> _selectSubtitleSource(
     VideoPlayerController controller,
-    SubtitleSource source,
-  ) async {
+    SubtitleSource source, {
+    VideoSubtitlePickOrigin origin = VideoSubtitlePickOrigin.player,
+  }) async {
     if (_discLearningBlocked ||
         (source.isEmbedded &&
             !source.isGraphicEmbedded &&
             !_discExtractionAllowed(controller))) {
       return false;
+    }
+    // 远端原盘会话：本机没有这张盘的库行，列表里登记的外挂字幕（生成 / 转录 / 重定时
+    // 取回的）只在内存里切换，与它们登记时同一条路。
+    final String? remoteDiscExternal = widget.remoteDisc != null
+        ? source.externalPath
+        : null;
+    if (remoteDiscExternal != null) {
+      return _applyRemoteSubtitle(
+        controller,
+        remoteDiscExternal,
+        label: source.label,
+        origin: origin,
+      );
     }
     final String bookUid = _activeBookUid;
     final String? videoPath = _currentVideoPath;
@@ -3557,6 +5226,14 @@ extension _VideoSubtitle on _VideoFushiPageState {
         identical(_controller, controller) &&
         _currentVideoPath == videoPath &&
         _episodeLoadSeq == loadSeq;
+    // 本次选择的世代：内封整轨抽取很慢、期间菜单不锁，结束时用户已另选（含关字幕）就作废，
+    // 不把新选择盖掉。上一次选择的「正在读取」行随之撤下（它的抽取若与本次共用同一个
+    // 视频，照样在跑、本次直接接着等，不重读）。
+    final int selectSeq = ++_primarySubtitleSelectSeq;
+    bool stillChosen() => isCurrent() && selectSeq == _primarySubtitleSelectSeq;
+    if (_primaryEmbeddedFullLoad != null) {
+      _rebuild(() => _primaryEmbeddedFullLoad = null);
+    }
 
     // BUG-122: 图形内封轨（PGS/DVD 等位图）无法转文本 cue（ffmpeg 抽 srt 直接报
     // bitmap→bitmap 拒绝），交给 libmpv 当画面字幕渲染：看得到、不可逐字查词。瞬时
@@ -3596,38 +5273,109 @@ extension _VideoSubtitle on _VideoFushiPageState {
       return true;
     }
 
-    // BUG-104: 内嵌字幕要从容器里 demux 抽取，大文件（如 27GB REMUX）首次可达
-    // ~20s。期间给一个不可关的加载遮罩，否则底栏菜单一关、画面字幕没变，用户会以为
-    // 「点了没反应、没切换过去」。抽取走单趟全轨缓存，同一视频后续切换瞬时命中。
-    _showSubtitleLoadingOverlay();
+    final String persisted = source.toPersistedValue();
     final SubtitleCueLoadResult result;
-    try {
-      result = await loadSubtitleCueResult(source, videoPath, bookUid);
-    } finally {
-      _hideSubtitleLoadingOverlay();
+    // 播放器解码顶上的「桥」（[VideoPlayerController.beginEmbeddedTextBridge]）。
+    Future<Object?>? bridge;
+    if (source.isEmbedded) {
+      // BUG-104：内嵌字幕要从容器里 demux 抽取，整轨顺序读完整个文件——27GB REMUX
+      // 首次约 20s，慢盘 / 与播放抢盘时一分钟以上（反馈 ZTDA2WQJj4）。抽取走单趟全轨
+      // 缓存，同一视频后续切换瞬时命中。
+      //
+      // 缓存未命中时**不锁菜单**：先借播放器解码这条轨即时出字（可点、可查词，与远端
+      // 直出容器同一条回流），字幕面板顶部显示「正在读取完整字幕」+ 停止入口
+      // （[_EmbeddedTextFullLoad]）；用户随时可以停止读取、改选别的轨 / 关字幕 / 选外挂，
+      // 本次结果按 [selectSeq] 作废。抽完把边播边累积的 cue 换成完整列表。
+      try {
+        result = await loadSubtitleCueResult(
+          source,
+          videoPath,
+          bookUid,
+          cancel: _embeddedSubtitleExtractCancelFor(videoPath),
+          onExtractionStarted: () {
+            if (!stillChosen()) return;
+            _rebuild(
+              () => _primaryEmbeddedFullLoad = _EmbeddedTextFullLoad(
+                label: source.label,
+                videoPath: videoPath,
+                selectSeq: selectSeq,
+              ),
+            );
+            final int? streamIndex = source.streamIndex;
+            if (streamIndex == null) return;
+            bridge = controller.beginEmbeddedTextBridge(streamIndex).then((
+              Object? token,
+            ) {
+              if (token != null && stillChosen()) {
+                _rebuild(() => _currentSubtitleSource = persisted);
+                _showOsd(t.video_subtitle_full_load_live(label: source.label));
+              }
+              return token;
+            });
+          },
+        );
+      } finally {
+        // 任何返回 / 异常路径都撤下读取行，不留一行永远在转的「正在读取」。
+        if (mounted && _primaryEmbeddedFullLoad?.selectSeq == selectSeq) {
+          _rebuild(() => _primaryEmbeddedFullLoad = null);
+        }
+      }
+    } else {
+      // 外挂文件解析很快：沿用加载状态（锁菜单的时间可以忽略）。
+      _showSubtitleLoadingOverlay(origin: origin);
+      try {
+        result = await loadSubtitleCueResult(source, videoPath, bookUid);
+      } finally {
+        _hideSubtitleLoadingOverlay();
+      }
     }
-    if (!isCurrent()) return false;
-    // 抽取/解析后无任何 cue（图形字幕、ffmpeg 缺失、轨损坏、文件读不出等）：诚实告知
-    // 失败，**不切换、不持久化**——避免谎报「已切换」却空屏，也避免用一个坏内封轨覆盖
-    // 掉当前正常工作的字幕源（下次进来还是空）。文案按失败原因分流，见
-    // [_subtitleFailureMessage]（BUG-1490）。
+    final Object? bridgeToken = await bridge;
+    if (!stillChosen()) return false;
+    // 桥装上过、但已被别的路径换掉了字幕（不经本页选择世代的换源）：同样作废。
+    if (bridgeToken != null &&
+        !controller.isEmbeddedTextBridgeLive(bridgeToken)) {
+      return false;
+    }
     if (result.isFailure) {
-      _showOsd(
-        _subtitleFailureMessage(result.failure!, source.label),
-        severity: ToastSeverity.error,
-      );
+      final SubtitleCueLoadFailure failure = result.failure!;
+      if (bridgeToken != null) {
+        // 完整列表没读出来（卡死 / 失败 / 用户停止），但播放器解码的字幕一直在显示：
+        // 保留它——对用户最好，字幕没断、照样可查词制卡，只是列表不会预先补全。停止时
+        // 停止入口已提示过。不持久化：下次打开仍按上次成功落库的选择来，并会再试读取。
+        if (failure != SubtitleCueLoadFailure.extractionCancelled) {
+          _showOsd(
+            t.video_subtitle_full_load_failed_live(label: source.label),
+            severity: ToastSeverity.warning,
+          );
+        }
+        return true;
+      }
+      // 抽取/解析后无任何 cue（图形字幕、ffmpeg 缺失、轨损坏、文件读不出等）：诚实告知
+      // 失败，**不切换、不持久化**——避免谎报「已切换」却空屏，也避免用一个坏内封轨覆盖
+      // 掉当前正常工作的字幕源（下次进来还是空）。文案按失败原因分流，见
+      // [_subtitleFailureMessage]（BUG-1490）。用户停止读取不当失败提示。
+      if (failure != SubtitleCueLoadFailure.extractionCancelled) {
+        _showOsd(
+          _subtitleFailureMessage(failure, source.label),
+          severity: ToastSeverity.error,
+        );
+      }
       return false;
     }
     final List<AudioCue> cues = result.cues;
-    controller.claimDiscTrackOwnership();
-    controller.setCues(cues);
-    // 选了文本字幕源就关掉 libmpv 画面字幕，避免与可点 overlay 双重渲染。
-    await controller.selectSubtitleTrack(SubtitleTrack.no());
+    if (bridgeToken != null) {
+      // 边播边累积的 cue 换成完整列表：同一帧内换装并按位置找回当前句，不闪、不重复。
+      controller.completeEmbeddedTextBridge(bridgeToken, cues);
+    } else {
+      controller.claimDiscTrackOwnership();
+      controller.setCues(cues);
+      // 选了文本字幕源就关掉 libmpv 画面字幕，避免与可点 overlay 双重渲染。
+      await controller.selectSubtitleTrack(SubtitleTrack.no());
+    }
 
     if (!isCurrent()) {
       return false;
     }
-    final String persisted = source.toPersistedValue();
     // BUG-081: 单视频把解析出的 cue 落库，重进时 `_loadSingle` 的 `loadCues`
     // 直接命中，无需用户再手动加载。cue 与字幕源指针**原子**写入（事务），避免
     // 半落库导致下次恢复内容与源标签不一致。播放列表各集有意不存 cue（每集外部
@@ -3660,6 +5408,11 @@ extension _VideoSubtitle on _VideoFushiPageState {
   /// 并短路掉 sidecar 探测与内嵌轨自动抽取两个自动重选向量。
   Future<void> _selectSubtitleOff(VideoPlayerController controller) async {
     if (_discLearningBlocked) return;
+    // 在途的内封读取作废（结束时不再把字幕挂回来）。
+    _primarySubtitleSelectSeq++;
+    if (_primaryEmbeddedFullLoad != null) {
+      _rebuild(() => _primaryEmbeddedFullLoad = null);
+    }
     final String bookUid = _activeBookUid;
     final int generation = _episodeLoadSeq;
     bool current() =>
@@ -3781,69 +5534,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
           // 改宽度并持久化；Stack 让把手浮在面板左边缘、不占面板内容宽度。
           Stack(
             children: <Widget>[
-              VideoSubtitleJumpPanel(
+              _buildSubtitleJumpPanel(
+                controller,
                 key: const ValueKey<String>('video-subtitle-jump-panel'),
-                safeAreaInsets: panelSafeInsets,
-                controller: controller,
-                onTapCue: _handleSubtitleJumpTap,
-                onLookupCue: _handleSubtitleListLookup,
-                // BUG-874：把命中句柄绑给面板，查词浮层 dismiss barrier 据此把
-                // 「点列表下一个词」切换查词而非吞成关闭浮层。
-                hitTester: _subtitleListHitTester,
-                onCopyCue: _copyCueText,
-                onFavoriteCue: _toggleFavoriteCueForVideo,
-                isCueFavorited: _isCueFavorited,
-                // 反馈 gleDreKAvo / dpAsMkUjKT：行菜单里手改 / 还原单条字幕。
-                onEditCue: _editCueText,
-                onRestoreCue: _restoreCueText,
-                // 列表行跟用户设的字幕字体（FontTarget.videoSubtitle），
-                // 与画面上的字幕同一套，不再各用各的。
-                fontFamily: appModel.subtitleFontFamily,
-                // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
-                initialAutoScroll: appModel.videoSubtitleListAutoScroll,
-                onAutoScrollChanged: (bool value) =>
-                    unawaited(appModel.setVideoSubtitleListAutoScroll(value)),
-                // 「点字幕查词」开关：关掉后列表只做跳转，不再误触查词。
-                initialTapLookup: appModel.videoSubtitleListTapLookup,
-                onTapLookupChanged: (bool value) =>
-                    unawaited(appModel.setVideoSubtitleListTapLookup(value)),
-                // xlzGuK5YmD：记住上次打开的页签（全部 / 收藏），下次恢复。
-                initialFilter: videoSubtitleListFilterFromName(
-                  appModel.videoSubtitleListFilter,
-                ),
-                onFilterChanged: (VideoSubtitleListFilter value) =>
-                    unawaited(appModel.setVideoSubtitleListFilter(value.name)),
-                // BUG-878：行字号档位初值从 Drift preferences 读，A+/A- 或
-                // Ctrl+滚轮调节时落盘，跨开关 / 跨重启记住。
-                initialFontScaleIndex: appModel.videoSubtitleListFontScaleIndex,
-                onFontScaleIndexChanged: (int value) => unawaited(
-                  appModel.setVideoSubtitleListFontScaleIndex(value),
-                ),
-                // BUG-879：列表行文本 Shift-悬停查词门控，与画面字幕同源。
-                hoverAutoLookupEnabled:
-                    ReaderFushiSource.instance.hoverAutoLookup,
-                hoverLookupModifier:
-                    ReaderFushiSource.instance.hoverLookupModifier,
-                onClose: _closeSubtitleJumpList,
-                colorScheme: cs,
-                title: t.video_subtitle_list,
-                emptyHint: t.video_subtitle_list_empty,
-                loadingHint: t.video_subtitle_list_loading,
-                fontSize: 14 * _videoUiScale,
                 width: panelWidth,
-                // BUG-1907：Ctrl+F 的 activator 从快捷键注册表取
-                // （唯一真相源，用户改绑后面板跟着变）。面板必须自带
-                // 一份：整表快捷键只包 media_kit controls 子树，焦点
-                // 一进面板就收不到按键了。
-                searchActivators: <ShortcutActivator>[
-                  for (final InputBinding b
-                      in appModel.shortcutRegistry
-                          .bindingsFor(ShortcutAction.videoSearchSubtitleList)
-                          .keyboardBindings)
-                    b.toActivator(includeRepeats: false),
-                ],
-                searchRequests: _subtitleSearchRequests,
-                onExportFavorites: _exportFavoriteCues,
+                safeInsets: panelSafeInsets,
+                colorScheme: cs,
+                onClose: _closeSubtitleJumpList,
               ),
               Positioned(
                 left: 0,
@@ -3860,6 +5557,85 @@ extension _VideoSubtitle on _VideoFushiPageState {
           ),
         ),
       ),
+    );
+  }
+
+  /// 字幕跳转列表面板本体（[VideoSubtitleJumpPanel] 的全部接线）。横屏 push-aside 侧栏
+  /// （[_subtitleJumpSidePanel]）与竖屏学习版式的下半屏（portrait.part.dart）共用这一份，
+  /// 两处行为（查词 / 收藏 / 编辑 / 自动滚动 / 字号 / 页签记忆）不分叉。[onClose] 为 null
+  /// 时不出 × 按钮（竖屏版式里列表常驻）。
+  Widget _buildSubtitleJumpPanel(
+    VideoPlayerController controller, {
+    required double width,
+    required EdgeInsets safeInsets,
+    required ColorScheme colorScheme,
+    VoidCallback? onClose,
+    Key? key,
+  }) {
+    return VideoSubtitleJumpPanel(
+      key: key,
+      safeAreaInsets: safeInsets,
+      controller: controller,
+      onTapCue: _handleSubtitleJumpTap,
+      onLookupCue: _handleSubtitleListLookup,
+      // BUG-874：把命中句柄绑给面板，查词浮层 dismiss barrier 据此把
+      // 「点列表下一个词」切换查词而非吞成关闭浮层。
+      hitTester: _subtitleListHitTester,
+      onCopyCue: _copyCueText,
+      onFavoriteCue: _toggleFavoriteCueForVideo,
+      isCueFavorited: _isCueFavorited,
+      // 反馈 gleDreKAvo / dpAsMkUjKT：行菜单里手改 / 还原单条字幕。
+      onEditCue: _editCueText,
+      onRestoreCue: _restoreCueText,
+      // 列表行跟用户设的字幕字体（FontTarget.videoSubtitle），
+      // 与画面上的字幕同一套，不再各用各的。
+      fontFamily: appModel.subtitleFontFamily,
+      // TODO-613：自动滚动开关初值从 Drift preferences 读，切换时落盘。
+      initialAutoScroll: appModel.videoSubtitleListAutoScroll,
+      onAutoScrollChanged: (bool value) =>
+          unawaited(appModel.setVideoSubtitleListAutoScroll(value)),
+      // 「点字幕查词」开关：关掉后列表只做跳转，不再误触查词。
+      initialTapLookup: appModel.videoSubtitleListTapLookup,
+      onTapLookupChanged: (bool value) =>
+          unawaited(appModel.setVideoSubtitleListTapLookup(value)),
+      // H7r4mf_z2n：「显示特效字幕」开关跨开关 / 跨重启记住。
+      initialShowEffects: appModel.videoSubtitleListShowEffects,
+      onShowEffectsChanged: (bool value) =>
+          unawaited(appModel.setVideoSubtitleListShowEffects(value)),
+      // xlzGuK5YmD：记住上次打开的页签（全部 / 收藏），下次恢复。
+      initialFilter: videoSubtitleListFilterFromName(
+        appModel.videoSubtitleListFilter,
+      ),
+      onFilterChanged: (VideoSubtitleListFilter value) =>
+          unawaited(appModel.setVideoSubtitleListFilter(value.name)),
+      // BUG-878：行字号档位初值从 Drift preferences 读，A+/A- 或
+      // Ctrl+滚轮调节时落盘，跨开关 / 跨重启记住。
+      initialFontScaleIndex: appModel.videoSubtitleListFontScaleIndex,
+      onFontScaleIndexChanged: (int value) =>
+          unawaited(appModel.setVideoSubtitleListFontScaleIndex(value)),
+      // BUG-879：列表行文本 Shift-悬停查词门控，与画面字幕同源。
+      hoverAutoLookupEnabled: ReaderFushiSource.instance.hoverAutoLookup,
+      hoverLookupModifier: ReaderFushiSource.instance.hoverLookupModifier,
+      onClose: onClose,
+      colorScheme: colorScheme,
+      title: t.video_subtitle_list,
+      emptyHint: t.video_subtitle_list_empty,
+      loadingHint: t.video_subtitle_list_loading,
+      fontSize: 14 * _videoUiScale,
+      width: width,
+      // BUG-1907：Ctrl+F 的 activator 从快捷键注册表取
+      // （唯一真相源，用户改绑后面板跟着变）。面板必须自带
+      // 一份：整表快捷键只包 media_kit controls 子树，焦点
+      // 一进面板就收不到按键了。
+      searchActivators: <ShortcutActivator>[
+        for (final InputBinding b
+            in appModel.shortcutRegistry
+                .bindingsFor(ShortcutAction.videoSearchSubtitleList)
+                .keyboardBindings)
+          b.toActivator(includeRepeats: false),
+      ],
+      searchRequests: _subtitleSearchRequests,
+      onExportFavorites: _exportFavoriteCues,
     );
   }
 
@@ -3947,17 +5723,35 @@ extension _VideoSubtitle on _VideoFushiPageState {
     return newDelayMs;
   }
 
-  /// 字幕对轴 / 重定时有没有音源可用（同步判据，决定入口显不显示）：本地视频有文件，
-  /// 或互联远端视频能请 host 裁整集音轨。
-  bool get _canResolveSubtitleTimingAudio =>
+  /// 本机 / host 现成的整集音源（同步判据）：本地视频有文件，或互联远端视频能请 host
+  /// 裁整集音轨。自动对轴与波形只认它——在线流那两样只从流里裁要看的那一段
+  /// （[_streamAlignAudioSource]），不为它们拉整集。
+  bool get _hasLocalOrHostTimingAudio =>
       (_controller?.videoPath?.isNotEmpty ?? false) ||
-      _remoteHostVideoTarget() != null;
+      _remoteHostVideoTarget() != null ||
+      (widget.remoteDisc?.fetchTitleAudio != null &&
+          _remoteDiscHostTitle() != null);
+
+  /// 非互联的远端流能不能把整集音频拉到本机（[videoStreamSubtitleAudioAvailable]）。
+  bool get _streamWholeAudioAvailable => videoStreamSubtitleAudioAvailable(
+    isRemote: _isRemote,
+    hasHostTarget: _remoteHostVideoTarget() != null,
+    miningSource: _controller?.miningSource,
+    miningAudioSource: _controller?.miningAudioSource,
+  );
+
+  /// 转录 / 重定时有没有整集音源可用（同步判据，决定入口显不显示）：本机 / host 现成的
+  /// （[_hasLocalOrHostTimingAudio]），或在线流能把整集音频拉到本机。
+  bool get _canResolveSubtitleTimingAudio =>
+      _hasLocalOrHostTimingAudio || _streamWholeAudioAvailable;
 
   /// 字幕对轴 / 重定时的音频输入。本地视频就是视频文件本身（带当前音轨下标）；互联
   /// 远端视频请 host 在本地裁出**整集**当前音轨（复用制卡的 clipaudio 端点，老 host
   /// 也有）落到本机临时文件——远端流本身 client ffmpeg 抓不动（自签 https / token，
   /// BUG-891 / BUG-1004），而波形、互相关、设备端转录都要一个本地文件。产物是单音轨
-  /// 音频，下标不再适用。拿不到时返回 null（调用方各自降级）。
+  /// 音频，下标不再适用。其它远端流（在线源 / 媒体服务器 / 云盘流）把整集音频拉到
+  /// 本机稳定副本（[_stageStreamWholeAudioWithDialog]：有进度、可取消，拉前现取地址），
+  /// 同样是单音轨。拿不到时返回 null（调用方各自降级）。
   Future<_SubtitleTimingAudio?> _resolveSubtitleTimingAudio() async {
     final VideoPlayerController? controller = _controller;
     if (controller == null) return null;
@@ -3969,23 +5763,67 @@ extension _VideoSubtitle on _VideoFushiPageState {
         audioStreamCount: controller.realAudioStreamCount,
       );
     }
+    // 远端原盘会话：请 host 在它本地裁出当前 title 的整集当前音轨（库里没有行的 title
+    // 带 discTitle，见 [RemoteDiscMenuSource.hostTitleFor]）。
+    final RemoteDiscHostTitle? discTitle = _remoteDiscHostTitle();
+    final RemoteDiscTitleAudioFetch? discFetch =
+        widget.remoteDisc?.fetchTitleAudio;
+    if (discTitle != null && discFetch != null) {
+      final int durationMs = controller.durationMs ?? 0;
+      if (durationMs <= 0) return null;
+      final int? audioStreamIndex = controller.currentAudioStreamIndex;
+      final int audioStreamCount = controller.realAudioStreamCount;
+      return _cachedRemoteTimingAudio(
+        'disc|${discTitle.key}|${audioStreamIndex ?? '-'}',
+        (File dest) => discFetch(
+          discTitle,
+          dest,
+          startMs: 0,
+          endMs: durationMs,
+          audioStreamIndex: audioStreamIndex,
+          audioStreamCount: audioStreamCount,
+        ),
+      );
+    }
+    if (_remoteHostVideoTarget() == null && _streamWholeAudioAvailable) {
+      final File? staged = await _stageStreamWholeAudioWithDialog();
+      if (staged == null) return null;
+      return (
+        path: staged.path,
+        audioStreamIndex: null,
+        audioStreamCount: null,
+      );
+    }
     final (InterconnectSyncBackend, String, int)? target =
         _remoteHostVideoTarget();
     final int durationMs = controller.durationMs ?? 0;
     if (target == null || durationMs <= 0) return null;
     final (InterconnectSyncBackend backend, String id, int episode) = target;
     final int? audioStreamIndex = controller.currentAudioStreamIndex;
-    final String key = '$id|$episode|${audioStreamIndex ?? '-'}';
+    final int audioStreamCount = controller.realAudioStreamCount;
+    return _cachedRemoteTimingAudio(
+      '$id|$episode|${audioStreamIndex ?? '-'}',
+      (File dest) => backend.getRemoteVideoAudioClip(
+        id,
+        dest,
+        startMs: 0,
+        endMs: durationMs,
+        episodeIndex: episode,
+        audioStreamIndex: audioStreamIndex,
+        audioStreamCount: audioStreamCount,
+      ),
+    );
+  }
+
+  /// host 裁好的整集音轨（[download] 把它落到给定文件），按 [key]（来源 + 音轨）缓存在
+  /// [_remoteTimingAudioFetches]。产物是单音轨音频，下标不再适用。
+  Future<_SubtitleTimingAudio?> _cachedRemoteTimingAudio(
+    String key,
+    Future<void> Function(File dest) download,
+  ) async {
     final Future<String?> fetch = _remoteTimingAudioFetches.putIfAbsent(
       key,
-      () => _fetchRemoteTimingAudio(
-        backend,
-        id,
-        episode: episode,
-        durationMs: durationMs,
-        audioStreamIndex: audioStreamIndex,
-        audioStreamCount: controller.realAudioStreamCount,
-      ),
+      () => _fetchRemoteTimingAudio(download),
     );
     final String? path = await fetch;
     if (path == null) {
@@ -4012,21 +5850,23 @@ extension _VideoSubtitle on _VideoFushiPageState {
         : null;
   }
 
-  /// 波形 / 自动对轴有没有音源：整集音源（[_canResolveSubtitleTimingAudio]）或
-  /// 可读的流。ASR 转录 / 重定时要整集，仍只认前者。
+  /// 波形 / 自动对轴有没有音源：本机 / host 现成的整集音源（[_hasLocalOrHostTimingAudio]）
+  /// 或可读的流。ASR 转录 / 重定时要整集，在线流为它们把整集拉到本机
+  /// （[_canResolveSubtitleTimingAudio]）。
   bool get _canResolveSubtitleAlignAudio =>
-      _canResolveSubtitleTimingAudio || _streamAlignAudioSource != null;
+      _hasLocalOrHostTimingAudio || _streamAlignAudioSource != null;
 
-  /// 本次波形 / 自动对轴的探测上界：整集音源（本地文件 / 互联 host）读
+  /// 本次**自动对轴**的探测上界：整集音源（本地文件 / 互联 host）读
   /// [kSubtitleAutoAlignProbeLimitMs]；只能读流时只拉前 [kStreamSubtitleAlignProbeLimitMs]，
-  /// 抽音、`-t`、cue 栅格化上界与波形时间窗都取它（见 [subtitleAlignProbeLimitMs]）。
+  /// 抽音、`-t` 与 cue 栅格化上界都取它（见 [subtitleAlignProbeLimitMs]）。人工波形视图
+  /// **不**用它：时间窗是片长全程、按段懒抽（[_loadSubtitleWaveformSegment]，反馈 EUvw-RjUE4）。
   int get _subtitleAlignProbeLimitMs =>
-      subtitleAlignProbeLimitMs(fromStream: !_canResolveSubtitleTimingAudio);
+      subtitleAlignProbeLimitMs(fromStream: !_hasLocalOrHostTimingAudio);
 
-  /// 波形 / 自动对轴的音频输入。整集音源优先；否则从流里只裁出这两者实际会看的
-  /// 前 [_subtitleAlignProbeLimitMs]（时间轴与本地视频完全同源），不必拉整集。按「流 + 音轨」缓存，失败不缓存。
+  /// 自动对轴的音频输入。整集音源优先；否则从流里只裁出它实际会看的前
+  /// [_subtitleAlignProbeLimitMs]（时间轴与本地视频完全同源），不必拉整集。按「流 + 音轨」缓存，失败不缓存。
   Future<_SubtitleTimingAudio?> _resolveSubtitleAlignAudio() async {
-    if (_canResolveSubtitleTimingAudio) return _resolveSubtitleTimingAudio();
+    if (_hasLocalOrHostTimingAudio) return _resolveSubtitleTimingAudio();
     final VideoPlayerController? controller = _controller;
     final String? source = _streamAlignAudioSource;
     final int durationMs = controller?.durationMs ?? 0;
@@ -4038,6 +5878,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       () => _fetchStreamAlignAudio(
         controller,
         source,
+        startMs: 0,
         endMs: math.min(durationMs, _subtitleAlignProbeLimitMs),
         audioStreamIndex: audioStreamIndex,
         audioStreamCount: controller.realAudioStreamCount,
@@ -4053,14 +5894,19 @@ extension _VideoSubtitle on _VideoFushiPageState {
     return (path: path, audioStreamIndex: null, audioStreamCount: null);
   }
 
+  /// 从流里裁出 `[startMs, endMs)` 的音频到临时文件（自动对轴的前 N 分钟 / 波形视图的
+  /// 一段）。[announce] = 弹「正在拉取远端音频」OSD（波形视图按段抽时不弹：视图里有段级
+  /// 加载遮罩，且 OSD 会被对轴弹窗盖住）。
   Future<String?> _fetchStreamAlignAudio(
     VideoPlayerController controller,
     String source, {
+    required int startMs,
     required int endMs,
     required int? audioStreamIndex,
     required int audioStreamCount,
+    bool announce = true,
   }) async {
-    if (mounted) {
+    if (announce && mounted) {
       _showOsd(
         t.video_subtitle_remote_audio_fetching,
         icon: FushiIcons.audio,
@@ -4080,7 +5926,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     await dir.create(recursive: true);
     return extractAudioSegmentViaFfmpeg(
       inputPath: ffmpegRemoteInputFor(relayed.url),
-      startMs: 0,
+      startMs: startMs,
       endMs: endMs,
       outputPath: p.join(
         dir.path,
@@ -4090,18 +5936,13 @@ extension _VideoSubtitle on _VideoFushiPageState {
       audioStreamCount: audioStreamCount,
       httpHeaders: headers,
       // 读流至多与实时播放一样慢；再留两分钟连接 / 收尾余量。
-      timeout: Duration(milliseconds: endMs + 120000),
+      timeout: Duration(milliseconds: endMs - startMs + 120000),
     );
   }
 
   Future<String?> _fetchRemoteTimingAudio(
-    InterconnectSyncBackend backend,
-    String id, {
-    required int episode,
-    required int durationMs,
-    required int? audioStreamIndex,
-    required int audioStreamCount,
-  }) async {
+    Future<void> Function(File dest) download,
+  ) async {
     if (mounted) {
       _showOsd(
         t.video_subtitle_remote_audio_fetching,
@@ -4118,17 +5959,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
       dest = File(
         p.join(dir.path, 'timing_${DateTime.now().microsecondsSinceEpoch}.aac'),
       );
-      // 单声道 64k：与制卡压缩档同规格，波形 / 互相关 / 16 kHz 转录都绰绰有余，
-      // 24 分钟一集约 11 MB。
-      await backend.getRemoteVideoAudioClip(
-        id,
-        dest,
-        startMs: 0,
-        endMs: durationMs,
-        episodeIndex: episode,
-        audioStreamIndex: audioStreamIndex,
-        audioStreamCount: audioStreamCount,
-      );
+      // 单声道 64k（clipaudio 默认）：与制卡压缩档同规格，波形 / 互相关 / 16 kHz 转录
+      // 都绰绰有余，24 分钟一集约 11 MB。
+      await download(dest);
       if (dest.existsSync() && dest.lengthSync() > 0) return dest.path;
     } catch (e, st) {
       ErrorLogService.instance.log('video.remoteTimingAudio', e, st);
@@ -4187,6 +6020,15 @@ extension _VideoSubtitle on _VideoFushiPageState {
     // 超界的 cue 在 [buildCueActivityEnvelope] 内按 length 自然 clamp/跳过（不进活动序列）。
     final int probeLimitMs = _subtitleAlignProbeLimitMs;
     final int effectiveDurationMs = math.min(rawDurationMs, probeLimitMs);
+    // 抽音频要几十秒：期间原地换集（远端 / 在线合集复用同一个 controller）或换了字幕源，
+    // 算出的平移量就不属于现在的视频，丢弃而不是写进新一集的调轴。
+    final int loadSeq = _episodeLoadSeq;
+    final int cueEpoch = controller.cueSourceEpoch;
+    bool isCurrent() =>
+        mounted &&
+        identical(_controller, controller) &&
+        _episodeLoadSeq == loadSeq &&
+        controller.cueSourceEpoch == cueEpoch;
 
     _showOsd(
       t.video_subtitle_auto_align_running,
@@ -4194,36 +6036,30 @@ extension _VideoSubtitle on _VideoFushiPageState {
       severity: ToastSeverity.info,
     );
 
-    final _SubtitleTimingAudio? audio = await _resolveSubtitleAlignAudio();
-    if (!mounted) return null;
-    final List<double> rawRms = audio == null
-        ? const <double>[]
-        : await extractAudioEnergyEnvelope(
-            videoPath: audio.path,
-            windowMs: kSubtitleAutoAlignBinMs,
-            audioStreamIndex: audio.audioStreamIndex,
-            audioStreamCount: audio.audioStreamCount,
-            limitMs: probeLimitMs,
-          );
-    if (!mounted) return null;
-
-    final List<double> audioActivity = normalizeAudioEnergyEnvelope(rawRms);
-    final List<double> cueActivity = buildCueActivityEnvelope(
-      cues,
-      effectiveDurationMs,
-      binMs: kSubtitleAutoAlignBinMs,
+    final SubtitleAutoAlignResult? result = await runSubtitleAutoAlign(
+      cues: cues,
+      durationMs: effectiveDurationMs,
+      isCurrent: isCurrent,
+      loadAudioEnergy: () async {
+        final _SubtitleTimingAudio? audio = await _resolveSubtitleAlignAudio();
+        if (audio == null || !isCurrent()) return const <double>[];
+        return extractAudioEnergyEnvelope(
+          videoPath: audio.path,
+          windowMs: kSubtitleAutoAlignBinMs,
+          audioStreamIndex: audio.audioStreamIndex,
+          audioStreamCount: audio.audioStreamCount,
+          limitMs: probeLimitMs,
+        );
+      },
     );
-    final SubtitleAutoAlignResult result = bestOffsetMsByCrossCorrelation(
-      audioActivity,
-      cueActivity,
-      binMs: kSubtitleAutoAlignBinMs,
-    );
+    // await 返回到这里之间也可能换集：写延迟前再核一次身份。
+    if (result == null || !isCurrent()) return null;
 
     switch (result.status) {
       case SubtitleAutoAlignStatus.aligned:
         // 走现有写穿路径：controller 即时重算 cue + 落盘 delayMs + 角标 OSD。
         await _setDelayMs(result.offsetMs);
-        if (!mounted) return null;
+        if (!isCurrent()) return null;
         _showOsd(
           t.video_subtitle_auto_align_done(ms: result.offsetMs),
           icon: Icons.auto_fix_high,
@@ -4241,34 +6077,94 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
   }
 
-  /// TODO-1051 阶段B：为字幕对轴波形面板抽当前视频的逐帧音频能量包络（原始 dB 序列）。
+  /// TODO-1051 阶段B / 反馈 EUvw-RjUE4：为字幕对轴波形视图抽一段 `[startMs, endMs)` 的
+  /// 逐帧音频能量包络（原始 dB 序列）。
   ///
-  /// 复用与 [_autoAlignSubtitle] 同一探测入口 [extractAudioEnergyEnvelope]（同音轨、同前
-  /// N 分钟截断），返回原始逐帧包络交给面板降采样成 0..1 波形桶（降采样在面板层随宽度算，
-  /// 不在此处、不在 paint 里跑 ffmpeg）。无 controller / 无视频路径 / ffmpeg 抽不出音轨时
-  /// 返回空列表，面板据此退化成纯 stepper（不崩不空白）。
-  Future<List<double>> _loadSubtitleWaveformEnvelope() async {
+  /// 波形视图的时间窗是**片长全程**、按段懒抽（[SubtitleWaveformSegments]：视口滚到哪段才
+  /// 请求哪段），这里只抽被请求的那一段：整集音源（本地文件 / 互联 host 裁好的整集音轨）
+  /// 用输入端 `-ss`/`-t` 从文件里切；只能读流时只从流里拉这一段音频再抽——不会一打开就把
+  /// 整集拉下来。历史上这里沿用自动对轴的探测上界 [_subtitleAlignProbeLimitMs]（本地 20
+  /// 分钟），24 分钟的一集 20:00 之后无波形、拖不过去；该上界只属于互相关，这里**不再**用。
+  ///
+  /// 按「音源 + 当前音轨 + 段区间」缓存非空结果（[WaveformEnvelopeCache]）：重开视图、滚回
+  /// 看过的段不再重跑 ffmpeg；切视频 / 切音轨换音源 key 即清空。无 controller / 无音源 /
+  /// ffmpeg 抽不出时返回空列表，视图按段降级（首段为空则入口提示不可用、不崩不空白）。
+  Future<List<double>> _loadSubtitleWaveformSegment(
+    int startMs,
+    int endMs,
+  ) async {
     final VideoPlayerController? controller = _controller;
-    if (controller == null) return const <double>[];
-    final _SubtitleTimingAudio? audio = await _resolveSubtitleAlignAudio();
-    if (audio == null) return const <double>[];
-    final String videoPath = audio.path;
-    // TODO-1244：按「视频路径 + 当前音轨」缓存已抽出的波形包络。同一视频/音轨重复打开
-    // 快速设置面板或波形对轴视图时直接复用，不再重跑 ffmpeg（抽整轨对大 REMUX 要数十秒）。
-    // 切视频或切音轨时 key 变化 → miss → 重抽（不显示旧音频波形），只缓存非空结果。
-    final String cacheKey = '$videoPath|${controller.currentAudioStreamIndex}';
+    if (controller == null || endMs <= startMs) return const <double>[];
+    final int? audioStreamIndex = controller.currentAudioStreamIndex;
+    if (_hasLocalOrHostTimingAudio) {
+      final _SubtitleTimingAudio? audio = await _resolveSubtitleTimingAudio();
+      if (audio == null) return const <double>[];
+      return _subtitleWaveformCache.resolve(
+        '${audio.path}|$audioStreamIndex',
+        startMs,
+        endMs,
+        // TODO-1244：波形显示走更细的 [kSubtitleWaveformWindowMs]（20ms=50 帧/秒），密度接近
+        // 成熟波形工具、句间静音可辨；自动对轴仍用 100ms 采样，两者互不影响（独立探测/缓存）。
+        () => extractAudioEnergyEnvelope(
+          videoPath: audio.path,
+          windowMs: kSubtitleWaveformWindowMs,
+          audioStreamIndex: audio.audioStreamIndex,
+          audioStreamCount: audio.audioStreamCount,
+          startMs: startMs,
+          limitMs: endMs - startMs,
+        ),
+      );
+    }
+    final String? source = _streamAlignAudioSource;
+    if (source == null) return const <double>[];
     return _subtitleWaveformCache.resolve(
-      cacheKey,
-      // TODO-1244：波形显示走更细的 [kSubtitleWaveformWindowMs]（20ms=50 帧/秒），密度接近
-      // 成熟波形工具、句间静音可辨；自动对轴仍用 100ms 采样，两者互不影响（独立探测/缓存）。
-      () => extractAudioEnergyEnvelope(
-        videoPath: videoPath,
-        windowMs: kSubtitleWaveformWindowMs,
-        audioStreamIndex: audio.audioStreamIndex,
-        audioStreamCount: audio.audioStreamCount,
-        limitMs: _subtitleAlignProbeLimitMs,
+      'stream|$source|$audioStreamIndex',
+      startMs,
+      endMs,
+      () => _extractStreamWaveformSegment(
+        controller,
+        source,
+        startMs: startMs,
+        endMs: endMs,
+        audioStreamIndex: audioStreamIndex,
+        audioStreamCount: controller.realAudioStreamCount,
       ),
     );
+  }
+
+  /// 流音源的一段波形：只从流里裁出 `[startMs, endMs)` 的音频到临时文件，抽完包络即删。
+  Future<List<double>> _extractStreamWaveformSegment(
+    VideoPlayerController controller,
+    String source, {
+    required int startMs,
+    required int endMs,
+    required int? audioStreamIndex,
+    required int audioStreamCount,
+  }) async {
+    final String? path = await _fetchStreamAlignAudio(
+      controller,
+      source,
+      startMs: startMs,
+      endMs: endMs,
+      audioStreamIndex: audioStreamIndex,
+      audioStreamCount: audioStreamCount,
+      announce: false,
+    );
+    if (path == null) return const <double>[];
+    try {
+      // 裁出的文件时间轴从 0 起、只含这一段（单音轨），按段长截断即可。
+      return await extractAudioEnergyEnvelope(
+        videoPath: path,
+        windowMs: kSubtitleWaveformWindowMs,
+        limitMs: endMs - startMs,
+      );
+    } finally {
+      try {
+        await File(path).delete();
+      } on FileSystemException catch (e) {
+        debugPrint('[subtitle-waveform] temp segment cleanup failed: $e');
+      }
+    }
   }
 
   /// 字幕对轴/匹配快捷键（用户请求，默认 Shift+A）：从键盘一键弹波形对轴放大视图，
@@ -4290,74 +6186,84 @@ extension _VideoSubtitle on _VideoFushiPageState {
       );
       return;
     }
-    final List<double> env = await _loadSubtitleWaveformEnvelope();
-    if (!mounted) return;
-    if (env.isEmpty) {
-      _showOsd(
-        t.video_subtitle_waveform_unavailable,
-        severity: ToastSeverity.warning,
-      );
+    // 波形时间窗 = 片长全程（与面板入口 _SubtitleWaveformAlignPanelState 同一算式
+    // [subtitleWaveformWindowEndMs]），包络按段懒抽：先抽播放头所在那段，非空才弹窗。
+    final SubtitleWaveformSegments segments = SubtitleWaveformSegments(
+      durationMs: subtitleWaveformWindowEndMs(
+        durationMs: controller.durationMs ?? 0,
+        cues: cues,
+      ),
+      loadSegment: _loadSubtitleWaveformSegment,
+    );
+    final int anchorMs = controller.subtitleClockMs ?? 0;
+    final bool ready = await segments.ensureSegmentAt(anchorMs);
+    if (!mounted || !ready) {
+      segments.dispose();
+      if (mounted) {
+        _showOsd(
+          t.video_subtitle_waveform_unavailable,
+          severity: ToastSeverity.warning,
+        );
+      }
       return;
     }
-    // 波形时间窗上界：与 extractAudioEnergyEnvelope 探测上界同源（前 N 分钟截断），
-    // 与 _SubtitleWaveformAlignPanelState._windowEndMs 同一算式，保证键盘直达路径与
-    // 面板入口路径画出的时间轴一致。
-    final int durationMs = controller.durationMs ?? 0;
-    final int probeLimitMs = _subtitleAlignProbeLimitMs;
-    final int windowEndMs = (durationMs > 0 && durationMs < probeLimitMs)
-        ? durationMs
-        : probeLimitMs;
     final bool canAutoAlign = cues.isNotEmpty;
-    if (!context.mounted) return;
+    if (!context.mounted) {
+      segments.dispose();
+      return;
+    }
     // guardOverlay：对轴弹窗（root navigator）会夺走视频键盘焦点，任何退出路径
     // （Esc / 点外部 / 抛异常）都必须归还——此前这里漏了归还，关掉弹窗后视频快捷键
     // 直到下次点画面才恢复，与同文件 Jimaku 对话框 / FilePicker 的既有范式不一致。
-    await _focusOwnership.guardOverlay(
-      () => showAppDialog<void>(
-        context: context,
-        useRootNavigator: true,
-        builder: (BuildContext _) => SubtitleWaveformZoomView(
-          rawEnvelope: env,
-          cues: cues,
-          windowEndMs: windowEndMs,
-          initialDelayMs: _delayMs,
-          onCommitDelay: _setDelayMs,
-          onAutoAlign: canAutoAlign ? _autoAlignSubtitle : null,
-          // 「上/下一句对齐到当前时间」：本弹窗必然有 cue（进入前已判空并降级），故直接
-          // 接上执行体，与快速设置面板路径同源。
-          onSnapDelayToCue: _snapSubtitleDelayToCue,
-          onPlayCue: (int startMs) async {
-            await controller.seekMs(startMs);
-            await controller.play();
-          },
-          isPlaying: () => controller.isPlaying,
-          onTogglePlayPause: () async {
-            await controller.togglePlayPause();
-          },
-          // 弹窗内复用视频页 registry 驱动的整表（尊重重映射）；排除会破坏弹窗自身的动作
-          // （Escape 关弹窗 / 全屏 / 打开字幕列表 / 沉浸锁 / 再次打开对轴弹窗——避免递归叠栈）。
-          keyboardShortcuts: buildVideoPlayerShortcutsFromRegistry(
-            appModel.shortcutRegistry,
-            _buildVideoShortcutActions(controller),
-            exclude: const <ShortcutAction>{
-              ShortcutAction.globalBack,
-              ShortcutAction.videoToggleFullscreen,
-              // BUG-2462：F11 也是视频全屏了，同样不在弹窗里切路由。
-              ShortcutAction.globalToggleFullscreen,
-              ShortcutAction.videoToggleSubtitleList,
-              ShortcutAction.videoToggleImmersiveLock,
-              ShortcutAction.videoOpenSubtitleAlign,
+    try {
+      await _focusOwnership.guardOverlay(
+        () => showAppDialog<void>(
+          context: context,
+          useRootNavigator: true,
+          builder: (BuildContext _) => SubtitleWaveformZoomView(
+            segments: segments,
+            cues: cues,
+            initialDelayMs: _delayMs,
+            onCommitDelay: _setDelayMs,
+            onAutoAlign: canAutoAlign ? _autoAlignSubtitle : null,
+            // 「上/下一句对齐到当前时间」：本弹窗必然有 cue（进入前已判空并降级），故直接
+            // 接上执行体，与快速设置面板路径同源。
+            onSnapDelayToCue: _snapSubtitleDelayToCue,
+            onPlayCue: (int startMs) async {
+              await controller.seekMs(startMs);
+              await controller.play();
             },
+            isPlaying: () => controller.isPlaying,
+            onTogglePlayPause: () async {
+              await controller.togglePlayPause();
+            },
+            // 弹窗内复用视频页 registry 驱动的整表（尊重重映射）；排除会破坏弹窗自身的动作
+            // （Escape 关弹窗 / 全屏 / 打开字幕列表 / 沉浸锁 / 再次打开对轴弹窗——避免递归叠栈）。
+            keyboardShortcuts: buildVideoPlayerShortcutsFromRegistry(
+              appModel.shortcutRegistry,
+              _buildVideoShortcutActions(controller),
+              exclude: const <ShortcutAction>{
+                ShortcutAction.globalBack,
+                ShortcutAction.videoToggleFullscreen,
+                // BUG-2462：F11 也是视频全屏了，同样不在弹窗里切路由。
+                ShortcutAction.globalToggleFullscreen,
+                ShortcutAction.videoToggleSubtitleList,
+                ShortcutAction.videoToggleImmersiveLock,
+                ShortcutAction.videoOpenSubtitleAlign,
+              },
+            ),
+            onSeek: (int ms) async {
+              await controller.seekMs(ms);
+            },
+            positionListenable: controller,
+            // positionMs 可空（未就绪）；与快速设置面板路径同用 -1 哨兵 = 不画播放头。
+            currentPositionMs: () => controller.subtitleClockMs ?? -1,
           ),
-          onSeek: (int ms) async {
-            await controller.seekMs(ms);
-          },
-          positionListenable: controller,
-          // positionMs 可空（未就绪）；与快速设置面板路径同用 -1 哨兵 = 不画播放头。
-          currentPositionMs: () => controller.subtitleClockMs ?? -1,
         ),
-      ),
-    );
+      );
+    } finally {
+      segments.dispose();
+    }
   }
 }
 
@@ -4469,4 +6375,26 @@ class _GraphicOcrConsentGates {
 
   /// 替换 Google Lens 上传披露（`ensureGoogleLensDisclosure`）；false = 未同意。
   final Future<bool> Function() confirmLensUpload;
+}
+
+/// 本地视频内封文本轨正在后台读取完整字幕（整轨抽取）的一份状态：字幕面板顶部据此显示
+/// 「正在读取完整字幕」行与停止按钮（[_VideoSubtitle._cancelEmbeddedTextFullLoad]）。
+///
+/// 只描述「还在读」，不锁任何菜单项——抽取期间主字幕已由播放器解码顶着显示，用户随时
+/// 可以另选；另选时按 [selectSeq] 作废本次结果。
+class _EmbeddedTextFullLoad {
+  const _EmbeddedTextFullLoad({
+    required this.label,
+    required this.videoPath,
+    required this.selectSeq,
+  });
+
+  /// 正在读取的那条轨的菜单标签。
+  final String label;
+
+  /// 读的是哪个视频（换集时据此撤掉）。
+  final String videoPath;
+
+  /// 发起它的那次用户选择的世代；null = 播放器起播后的自动加载。
+  final int? selectSeq;
 }

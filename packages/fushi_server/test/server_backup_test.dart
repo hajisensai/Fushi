@@ -19,6 +19,7 @@ import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
 
 import 'command_harness.dart';
+import 'support/fake_rwkv.dart';
 
 void _write(String path, String content) {
   File(path)
@@ -305,7 +306,7 @@ void main() {
         ]),
         65,
       );
-      expect(h.err.toString(), contains('配置'));
+      expect(h.err.toString(), contains('config file'));
 
       expect(await getPref(), 'keep');
       expect(h.configFile.readAsStringSync(), config);
@@ -391,6 +392,7 @@ void main() {
           db: db,
           identity: identity,
           host: HeadlessHost(
+            srsRwkvHttpClient: noNetworkHttpClient,
             config: config,
             paths: paths,
             db: db,

@@ -50,7 +50,9 @@ void main() {
   test('mining resolves fresh audio (bypasses the playback cache)', () {
     // The mining audio path must call fetchAudioUrl directly (re-sign a token).
     expect(
-      mineBlock.contains('await fetchAudioUrl(expression, audioReading)'),
+      mineBlock.contains(
+        'await fetchAudioUrl(expression, audioReading, matched)',
+      ),
       isTrue,
       reason:
           'buildMinePayload must do a fresh fetchAudioUrl so the host re-signs a '
@@ -74,7 +76,7 @@ void main() {
     // there. Only mining was decoupled.
     expect(
       source.contains(
-        'const audioUrl = await resolveCachedAudioUrl(expression, reading || expression, entryIndex);',
+        'const audioUrl = await resolveCachedAudioUrl(expression, reading || expression, entryIndex, matched);',
       ),
       isTrue,
       reason:

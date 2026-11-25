@@ -149,4 +149,35 @@ void main() {
       );
     },
   );
+
+  test('ocrProgressBadge：默认完整；完整 / 贴边 / 隐藏往返；非法值继承而不重置', () {
+    expect(
+      const MangaReaderPreferences().ocrProgressBadge,
+      MangaOcrProgressBadgeStyle.full,
+    );
+    for (final MangaOcrProgressBadgeStyle style
+        in MangaOcrProgressBadgeStyle.values) {
+      final MangaReaderPreferences value = MangaReaderPreferences.fromJson(
+        <String, Object?>{'ocrProgressBadge': style.key},
+      );
+      expect(value.ocrProgressBadge, style);
+      expect(value.toJson()['ocrProgressBadge'], style.key);
+    }
+    const MangaReaderPreferences global = MangaReaderPreferences(
+      ocrProgressBadge: MangaOcrProgressBadgeStyle.edge,
+    );
+    expect(
+      MangaReaderPreferences.resolve(global, <String, Object?>{
+        'ocrProgressBadge': 'hidden',
+      }).ocrProgressBadge,
+      MangaOcrProgressBadgeStyle.hidden,
+    );
+    expect(
+      MangaReaderPreferences.resolve(global, <String, Object?>{
+        'ocrProgressBadge': 'floating',
+      }).ocrProgressBadge,
+      MangaOcrProgressBadgeStyle.edge,
+      reason: '非法值不覆盖全局',
+    );
+  });
 }

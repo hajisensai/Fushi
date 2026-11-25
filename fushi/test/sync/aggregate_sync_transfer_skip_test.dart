@@ -1,10 +1,12 @@
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/webdav_ops.dart';
 import 'package:fushi_engine/sync/aggregate_peer_snapshot_cache.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/aggregate_sync_service.dart';
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -36,12 +38,12 @@ class _RevisionedStore extends FakeAssetStore {
   final List<String> downloads = <String>[];
 
   @override
-  Future<void> putJsonAsset(
+  Future<void> putBytesAsset(
     String namespaceId,
     String name,
-    Object? json,
+    Uint8List bytes,
   ) async {
-    await super.putJsonAsset(namespaceId, name, json);
+    await super.putBytesAsset(namespaceId, name, bytes);
     final String id = '$namespaceId/$name';
     _versions[id] = (_versions[id] ?? 0) + 1;
   }
@@ -62,9 +64,9 @@ class _RevisionedStore extends FakeAssetStore {
       ];
 
   @override
-  Future<Object?> getJsonAsset(String assetId) {
+  Future<Uint8List?> getBytesAsset(String assetId) {
     downloads.add(assetId);
-    return super.getJsonAsset(assetId);
+    return super.getBytesAsset(assetId);
   }
 }
 
@@ -170,9 +172,9 @@ void main() {
       name: 'dev-B.fushiaggregate',
       revision: 'r1',
     );
-    await cache.write('ch', original, <String, Object?>{'x': 1});
+    await cache.write('ch', original, Uint8List.fromList(<int>[1, 2, 3]));
 
-    expect(await cache.read('ch', original), <String, Object?>{'x': 1});
+    expect(await cache.read('ch', original), <int>[1, 2, 3]);
     expect(await cache.read('ch', moved), isNull);
     expect(await cache.read('other-channel', original), isNull);
   });
@@ -188,8 +190,8 @@ void main() {
       name: 'dev-C.fushiaggregate',
       revision: 'r1',
     );
-    await cache.write('ch', gone, <String, Object?>{});
-    await cache.write('ch', alive, <String, Object?>{});
+    await cache.write('ch', gone, Uint8List(0));
+    await cache.write('ch', alive, Uint8List(0));
 
     await cache.retainOnly('ch', <String>{alive.name});
 
@@ -204,8 +206,8 @@ void main() {
     ) async {
       int pushes = 0;
       await AggregateSyncService(db).syncOverClient(
-        fetchRemote: () async => hostJson,
-        pushMerged: (Object _) async => pushes++,
+        fetchRemote: () async => encodeAggregateWireJson(hostJson),
+        pushMerged: (Uint8List _) async => pushes++,
       );
       return pushes;
     }

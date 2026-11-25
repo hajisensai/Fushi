@@ -17,54 +17,13 @@ import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_option_selection_page.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_review_gesture_diagram.dart';
 
-/// 手势的界面名。
-String srsReviewGestureLabel(SrsReviewGesture g) => switch (g) {
-  SrsReviewGesture.tapLeft => t.srs_review_gestures_tap_left,
-  SrsReviewGesture.tapCenter => t.srs_review_gestures_tap_center,
-  SrsReviewGesture.tapRight => t.srs_review_gestures_tap_right,
-  SrsReviewGesture.doubleTap => t.srs_review_gestures_double_tap,
-  SrsReviewGesture.longPress => t.srs_review_gestures_long_press,
-  SrsReviewGesture.swipeLeft => t.srs_review_gestures_swipe_left,
-  SrsReviewGesture.swipeRight => t.srs_review_gestures_swipe_right,
-  SrsReviewGesture.swipeUp => t.srs_review_gestures_swipe_up,
-  SrsReviewGesture.swipeDown => t.srs_review_gestures_swipe_down,
-};
-
-/// 动作的界面名：与复习页上对应按钮同一个词。
-String srsReviewGestureActionLabel(SrsReviewGestureAction a) => switch (a) {
-  SrsReviewGestureAction.none => t.srs_review_gestures_action_none,
-  SrsReviewGestureAction.showAnswer => t.srs_review_show_answer,
-  SrsReviewGestureAction.rateAgain => t.srs_rating_again,
-  SrsReviewGestureAction.rateHard => t.srs_rating_hard,
-  SrsReviewGestureAction.rateGood => t.srs_rating_good,
-  SrsReviewGestureAction.rateEasy => t.srs_rating_easy,
-  SrsReviewGestureAction.undo => t.undo,
-  SrsReviewGestureAction.replayAudio => t.srs_review_replay_audio,
-  SrsReviewGestureAction.toggleToolbar =>
-    t.srs_review_gestures_action_toggle_toolbar,
-  SrsReviewGestureAction.editNote => t.srs_note_edit,
-  SrsReviewGestureAction.bury => t.srs_card_bury,
-  SrsReviewGestureAction.suspend => t.srs_card_suspend,
-  SrsReviewGestureAction.flag => t.srs_card_flag,
-};
-
-/// 动作的图标（与复习页上对应按钮同一个）；评分没有图标，按评分色调显示。
-IconData? srsReviewGestureActionIcon(SrsReviewGestureAction a) => switch (a) {
-  SrsReviewGestureAction.none => null,
-  SrsReviewGestureAction.showAnswer => FushiIcons.visibility,
-  SrsReviewGestureAction.rateAgain ||
-  SrsReviewGestureAction.rateHard ||
-  SrsReviewGestureAction.rateGood ||
-  SrsReviewGestureAction.rateEasy => null,
-  SrsReviewGestureAction.undo => FushiIcons.undo,
-  SrsReviewGestureAction.replayAudio => FushiIcons.replay,
-  SrsReviewGestureAction.toggleToolbar => FushiIcons.dashboardCustomize,
-  SrsReviewGestureAction.editNote => FushiIcons.edit,
-  SrsReviewGestureAction.bury => FushiIcons.schedule,
-  SrsReviewGestureAction.suspend => FushiIcons.pause,
-  SrsReviewGestureAction.flag => FushiIcons.flag,
-};
+export 'package:fushi/src/pages/implementations/srs/srs_review_gesture_diagram.dart'
+    show
+        srsReviewGestureActionIcon,
+        srsReviewGestureActionLabel,
+        srsReviewGestureLabel;
 
 /// 打开「手势」设置页。
 Future<void> openSrsReviewGesturesPage(BuildContext context) =>
@@ -121,12 +80,20 @@ class SrsReviewGesturesPage extends ConsumerWidget {
       );
     }
 
+    // 每面先一张示意图（哪里点 / 往哪滑 = 做什么，比逐行文字直观），下面是逐个手势
+    // 的设置行。
     Widget section(SrsReviewSide side) => AdaptiveSettingsSection(
       key: ValueKey<String>('srs-gestures-section-${side.name}'),
       title: side == SrsReviewSide.front
           ? t.srs_review_gestures_front
           : t.srs_review_gestures_back,
       children: <Widget>[
+        SrsReviewGestureDiagram(
+          key: ValueKey<String>('srs-gestures-diagram-${side.name}'),
+          map: map,
+          side: side,
+          hideHardEasy: hideHardEasy,
+        ),
         for (final SrsReviewGesture g in SrsReviewGesture.values) row(side, g),
       ],
     );

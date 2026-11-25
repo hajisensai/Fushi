@@ -1,6 +1,6 @@
 import 'dart:convert';
 
-import 'package:flutter/foundation.dart' show protected;
+import 'package:flutter/foundation.dart' show protected, visibleForTesting;
 import 'package:fushi/src/sync/desktop_oauth.dart';
 import 'package:fushi/src/sync/pkce_oauth.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -59,6 +59,10 @@ mixin PkceOAuthBackendMixin on SyncBackend {
 
   @protected
   String? accessToken;
+
+  /// 测试注入：跳过 OAuth 直接给定 bearer token（null = 未登录）。
+  @visibleForTesting
+  void debugSetAccessToken(String? token) => accessToken = token;
   @protected
   String? refreshToken;
   @protected

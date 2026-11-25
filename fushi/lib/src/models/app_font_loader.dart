@@ -5,6 +5,7 @@ import 'dart:typed_data';
 import 'package:flutter/services.dart' show FontLoader;
 import 'package:fushi/src/media/video/ass_font_metrics.dart';
 import 'package:fushi/src/models/font_decoder.dart';
+import 'package:fushi/src/models/font_face_weight.dart';
 import 'package:fushi/src/reader/reader_settings.dart' show ReaderCustomFontCss;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_compute/fushi_compute.dart' show FushiFont;
@@ -239,6 +240,9 @@ class AppFontLoader {
         );
       await loader.load();
       _loadedFamilies.add(family);
+      // 这个 family 只有这一个 face：登记它的字重，卡面等强调处据此避开引擎合成
+      // 假粗体（单字重手写体被 w600/w700 描边糊字，反馈 KuZmUL3U-l）。
+      FontFaceWeightRegistry.register(family, sfntWeightClass(bytes));
       // BUG-897：自定义字体不在系统字体目录（扫描不到），把字节同步喂进 ASS 字号
       // 换算索引（OS/2 win cell 语义），别名=本处注册的家族名——视频字幕用自定义
       // 字体时字号也与 mpv/libass 同源。

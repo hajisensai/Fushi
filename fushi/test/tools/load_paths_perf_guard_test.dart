@@ -136,12 +136,12 @@ void main() {
         page,
         'Future<void> _loadWatchRecency() async {',
       );
-      expect(recency.contains('_buildWatchRecency('), isTrue);
+      expect(recency.contains('buildVideoWatchRecency('), isTrue);
       final String full = methodBody(
         page,
         'Future<void> _loadLibraryMapsInner(int requestGeneration)',
       );
-      expect(full.contains('_buildWatchRecency('), isTrue);
+      expect(full.contains('buildVideoWatchRecency('), isTrue);
       // 两条路径各记各的代，互不取消。
       expect(recency.contains('_watchRecencyRequestGeneration'), isTrue);
       expect(full.contains('_libraryMapsRequestGeneration'), isTrue);
@@ -173,9 +173,10 @@ void main() {
       final String src = read(
         '../packages/fushi_engine/lib/stats/stat_facts.dart',
       );
+      // BUG-4960：读库 + 派生整体在后台 isolate 的 _loadStatFactsHere 里。
       final String body = methodBody(
         src,
-        'Future<StatFacts> loadStatFacts(',
+        'Future<StatFacts> _loadStatFactsHere(',
         topLevel: true,
       );
       expect(body.contains('await Future.wait<Object?>('), isTrue);
@@ -199,14 +200,16 @@ void main() {
       expect(body.contains('getPrimaryCollectionIdByEntry()'), isFalse);
       expect(body.contains('getAllCollectionItems()'), isFalse);
       // 游戏库与追踪状态与其余读同批并发发出（此前排在整批之后串行），
-      // 且追踪状态只查一次。
+      // 且追踪状态只查一次（#3372 起追踪首页数据入口是 loadHomeSnapshot，
+      // 取代旧的 loadStatus）。
       final String batch = body.substring(
         body.indexOf('await Future.wait<Object?>('),
         body.indexOf(']);', body.indexOf('await Future.wait<Object?>(')),
       );
       expect(batch.contains('gamesF'), isTrue);
       expect(batch.contains('trackingF'), isTrue);
-      expect('loadStatus()'.allMatches(body).length, 1);
+      expect('loadHomeSnapshot()'.allMatches(body).length, 1);
+      expect(body.contains('loadStatus()'), isFalse);
       // 重建首帧用上一轮快照（首页不保活，切回首页不再每次挂骨架等整批）。
       expect(body.contains('_snapshots[db] = snapshot;'), isTrue);
     });

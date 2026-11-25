@@ -177,10 +177,12 @@ void main() {
       ),
     ];
 
-    final List<BangumiWatchedItem> watched = await service.loadWatchedAnime();
+    final List<TrackingWatchedItem> watched = await service.loadWatchedAnime();
 
     expect(await repository.listMappings(), isEmpty);
-    expect(watched.single.subject.displayName, '以前看过的番剧');
+    expect(watched.single.name, '以前看过的番剧');
+    expect(watched.single.subjectId, 42);
+    expect(watched.single.progress, 12);
   });
 
   test(
@@ -1087,6 +1089,115 @@ void main() {
       completed: false,
     );
     expect(api.searches, isNotEmpty, reason: '对照：公开书照常自动映射搜索');
+  });
+
+  group('recordBookProgress 的返回值 = 这份进度是否落定（BUG-4807）', () {
+    Future<void> seedNovel() => db.insertEpubBook(
+      EpubBooksCompanion.insert(
+        bookKey: 'novel-key',
+        title: '药屋少女的呢喃',
+        epubPath: '/tmp/novel.epub',
+        extractDir: '/tmp/novel',
+        chapterCount: 12,
+        chaptersJson: '[]',
+        importedAt: 1,
+      ),
+    );
+    Future<bool> record({int chapters = 3}) => service.recordBookProgress(
+      bookKey: 'novel-key',
+      completedChapterCount: chapters,
+      completed: false,
+    );
+
+    test('站点搜索失败：正常返回但没落定；映射建好后同一份进度才落定', () async {
+      await seedNovel();
+      // 阅读器的去重只认这个返回值：搜索的网络错误被服务吞成正常返回，若把
+      // 「没抛错」当成已报，这本书要到完成章数变了才会再报。
+      api.error = Exception('offline');
+      expect(await record(), isFalse);
+      expect(api.searches, hasLength(1));
+      expect(await repository.pendingCount(), 0);
+
+      // 未命中窗内再来：不再搜索，仍然没落定。
+      expect(await record(), isFalse);
+      expect(api.searches, hasLength(1));
+
+      // 网络恢复，用户手动关联（或窗过后搜索命中）——同一份进度这次入队。
+      api.error = null;
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'novel-key',
+        mediaTitle: '药屋少女的呢喃',
+        kind: TrackingKind.novel,
+        subjectId: 225878,
+        subjectName: '薬屋のひとりごと',
+        progressMode: TrackingProgressMode.chapter,
+        progressOffset: 0,
+      );
+      expect(await record(), isTrue);
+      expect(await repository.pendingCount(), 1);
+
+      // 已在队列里的进度再报一次：没有新东西入队，仍算落定。
+      expect(await record(), isTrue);
+      // 入队会起一轮后台同步：等它跑完再让 tearDown 关库。
+      await service.syncNow();
+    });
+
+    test('搜索没有唯一高置信结果：没落定', () async {
+      await seedNovel();
+      api.searchResults = const <BangumiSubject>[];
+      expect(await record(), isFalse);
+      expect(api.searches, hasLength(1));
+    });
+
+    test('搜索命中并入队：第一次调用就落定', () async {
+      await seedNovel();
+      api.searchResults = const <BangumiSubject>[
+        BangumiSubject(
+          id: 225878,
+          type: 1,
+          name: '薬屋のひとりごと',
+          nameCn: '药屋少女的呢喃',
+          platform: '书籍',
+          episodeCount: 12,
+          volumeCount: 1,
+        ),
+      ];
+      expect(await record(), isTrue);
+      expect(await repository.pendingCount(), 1);
+      await service.syncNow();
+    });
+
+    test('追踪关着：不算落定', () async {
+      await seedNovel();
+      await repository.saveMapping(
+        mediaType: TrackingMediaType.book,
+        mediaKey: 'novel-key',
+        mediaTitle: '药屋少女的呢喃',
+        kind: TrackingKind.novel,
+        subjectId: 225878,
+        subjectName: '薬屋のひとりごと',
+        progressMode: TrackingProgressMode.chapter,
+        progressOffset: 0,
+      );
+      final MediaTrackingService off = MediaTrackingService(
+        repository: repository,
+        preferences: preferences,
+        userAgent: 'test-agent',
+        apiFactory: (_) => api,
+        trackingOn: () => false,
+      );
+      addTearDown(off.dispose);
+      expect(
+        await off.recordBookProgress(
+          bookKey: 'novel-key',
+          completedChapterCount: 3,
+          completed: false,
+        ),
+        isFalse,
+      );
+      expect(await repository.pendingCount(), 0);
+    });
   });
 
   test(

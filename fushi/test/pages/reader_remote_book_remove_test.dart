@@ -15,6 +15,7 @@ import 'package:fushi/src/pages/implementations/reader_fushi_history_page.dart';
 import 'package:fushi/src/pages/implementations/hidden_remote_books_page.dart';
 import 'package:fushi/src/sync/cloud_remote_book_client.dart';
 import 'package:fushi/src/sync/hidden_remote_books.dart';
+import 'package:fushi/src/sync/remote_book_source_host.dart';
 import 'package:fushi/src/sync/hidden_remote_book.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_book_client.dart';
@@ -25,6 +26,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 /// 反馈 nvlhtczbro：云端（互联）书从书架移除给两个明确的按钮。
 ///
@@ -91,6 +93,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: ReaderFushiHistoryPage(
             remoteBookClientLoader: () async => client,

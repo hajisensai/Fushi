@@ -2,12 +2,12 @@
 //!
 //! fsrs-rs 的推理用 `f32::powf / exp / ln`，它们落到各平台自己的 libm（MSVC CRT / bionic / Apple
 //! libm / glibc），末位可能不同 —— 五台设备重放同一段历史会得到不同的 stability，Merkle 摘要永远对不上。
-//! 这里把重放用到的推理路径**逐行**移植自 Cargo.lock 钉住的 fsrs-rs rev（`model_v6.rs` / `model_v7.rs` /
+//! 这里把重放用到的推理路径**逐行**移植自 Cargo.toml 钉住的 fsrs-rs 版本（`model_v6.rs` / `model_v7.rs` /
 //! `model.rs` 的 step / next_states / memory_state / memory_state_from_sm2 / 参数补全与裁剪），超越函数一律
 //! 换成纯 Rust 的 `libm`（musl 移植，逐位确定），`mul_add` 换成 `libm::fmaf`（软件实现也是正确舍入）。
 //!
 //! 与 fsrs crate 的差别只在超越函数的末位舍入；`tests::matches_fsrs_crate_within_ulps` 在本机对拍。
-//! 升级 fsrs-rs rev 时必须同步本文件（`tests` 里的对拍会先红）。
+//! 升级 fsrs-rs 版本时必须同步本文件（`tests` 里的对拍会先红）。
 
 use libm::{expf, expm1f, fmaf, logf, powf, roundf};
 
@@ -173,18 +173,36 @@ impl Model {
         reviews: &[(u32, f32)],
         starting: Option<Memory>,
     ) -> Result<Memory, String> {
-        let (mut state, start) = match starting {
-            Some(s) => (s, 0),
-            None if reviews.is_empty() => (Memory::ZERO, 0),
-            None => (self.init_from_first(reviews[0].0), 1),
+        self.validate(self.forward(reviews, starting, None))
+    }
+
+    /// [Model::memory_state] 的逐次评审，不校验结果。[resume] = (已经算过 [reviews] 的前几次, 那之后的状态)：从那里
+    /// 接着算，与从头算逐位相同——状态只按顺序经 [Model::step] 递推，第 i 次只看前一个状态、这一次的评分与间隔、
+    /// 以及 i 本身。没有起点时第 0 次不走 [Model::step]（`init_from_first`），所以那种情况下接着算至少要已经算过
+    /// 1 次（调用方保证）。
+    pub fn forward(
+        &self,
+        reviews: &[(u32, f32)],
+        starting: Option<Memory>,
+        resume: Option<(usize, Memory)>,
+    ) -> Memory {
+        let (mut state, start) = match (resume, starting) {
+            (Some((done, state)), _) => {
+                debug_assert!(done <= reviews.len() && (done > 0 || starting.is_some()));
+                (state, done)
+            }
+            (None, Some(s)) => (s, 0),
+            (None, None) if reviews.is_empty() => (Memory::ZERO, 0),
+            (None, None) => (self.init_from_first(reviews[0].0), 1),
         };
         for (i, &(rating, dt)) in reviews.iter().enumerate().skip(start) {
             state = self.step(dt, rating, state, i);
         }
-        self.validate(state)
+        state
     }
 
-    fn validate(&self, m: Memory) -> Result<Memory, String> {
+    /// [Model::memory_state] 的校验：状态有限。
+    pub fn validate(&self, m: Memory) -> Result<Memory, String> {
         if m.s.is_finite()
             && m.d.is_finite()
             && (self.version == Version::Fsrs6 || m.sf.is_finite())

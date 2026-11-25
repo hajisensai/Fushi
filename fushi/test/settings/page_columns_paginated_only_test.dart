@@ -6,6 +6,7 @@ import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/reader/reader_content_styles.dart';
+import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -26,14 +27,18 @@ import '../helpers/test_platform_services.dart';
 /// ② CSS 层：连续模式即便 pageColumns>0 也不发 `column-count`，翻页模式才发——
 ///    证明隐藏是对的（连续下它确实无效），而非藏掉一个本可工作的功能。
 void main() {
-  /// 从真实生产 schema 取出「每页列数」这条 stepper（测的是生产配置本身）。
-  SettingsStepperItem pageColumnsItem(SettingsContext settingsContext) {
+  /// 从真实生产 schema 取出「单双页」这条分段选择（测的是生产配置本身；id 沿用旧
+  /// 「每页列数」的 `reading_display.page_columns`）。
+  SettingsSegmentedItem<ReaderPageSpread> pageColumnsItem(
+    SettingsContext settingsContext,
+  ) {
     return buildSettingsSchema(settingsContext)
         .expand((SettingsDestination d) => d.sections)
         .expand((SettingsSection s) => s.items)
-        .whereType<SettingsStepperItem>()
+        .whereType<SettingsSegmentedItem<ReaderPageSpread>>()
         .firstWhere(
-          (SettingsStepperItem i) => i.id == 'reading_display.page_columns',
+          (SettingsSegmentedItem<ReaderPageSpread> i) =>
+              i.id == 'reading_display.page_columns',
         );
   }
 
@@ -60,7 +65,7 @@ void main() {
       // 捕获真实 SettingsContext + 生产 schema 里的该项；`isVisible` 只读
       // `readerSource.readerViewMode`，不依赖 BuildContext，故可在帧外异步切模式后复查。
       late SettingsContext settingsContext;
-      late SettingsStepperItem item;
+      late SettingsSegmentedItem<ReaderPageSpread> item;
       await tester.pumpWidget(
         ProviderScope(
           child: MaterialApp(
@@ -85,14 +90,14 @@ void main() {
       expect(
         item.isVisible(settingsContext),
         isTrue,
-        reason: '翻页模式：每页列数生效，必须显示',
+        reason: '翻页模式：单双页生效，必须显示',
       );
 
       await readerSettings.setViewMode('continuous');
       expect(
         item.isVisible(settingsContext),
         isFalse,
-        reason: '连续滚动无「页」可分列 → 该项无效 → 隐藏，避免误导',
+        reason: '连续滚动无「页」可分单双 → 该项无效 → 隐藏，避免误导',
       );
 
       await readerSettings.setViewMode('vn');
@@ -112,16 +117,16 @@ void main() {
       db = FushiDatabase.forTesting(NativeDatabase.memory());
       settings = ReaderSettings(db);
       await settings.refreshFromDb();
-      // 用户实测场景：竖排、列数设成 4。
-      await settings.setWritingMode('vertical-rl');
-      await settings.setPageColumns(4);
+      // 横排双页（multicol 两栏）。
+      await settings.setWritingMode('horizontal-tb');
+      await settings.setPageSpread(ReaderPageSpread.double);
     });
 
     tearDown(() async {
       await db.close();
     });
 
-    test('continuous mode ignores pageColumns (no column-count)', () async {
+    test('continuous mode ignores the page spread (no column-count)', () async {
       await settings.setViewMode('continuous');
       final String css = ReaderContentStyles.css(settings: settings);
       expect(
@@ -131,13 +136,13 @@ void main() {
       );
     });
 
-    test('paginated mode honors pageColumns (column-count: 4)', () async {
+    test('paginated mode honors two pages (column-count: 2)', () async {
       await settings.setViewMode('paginated');
       final String css = ReaderContentStyles.css(settings: settings);
       expect(
         css,
-        contains('column-count: 4'),
-        reason: '翻页模式必须真发 column-count:4，每页排 4 列',
+        contains('column-count: 2'),
+        reason: '翻页模式必须真发 column-count:2，一屏排两页',
       );
     });
   });

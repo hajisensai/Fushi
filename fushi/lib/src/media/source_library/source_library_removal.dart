@@ -1,5 +1,6 @@
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi/src/media/music/music_remote_media.dart';
+import 'package:fushi/src/media/source_library/game_source_scanner.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_credential_store.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
@@ -25,6 +26,8 @@ import 'package:fushi_engine/media/video/download/video_download_pipeline_servic
 /// - 视频来源自动登记的音乐来源（v145，反馈 QAondMh4M5）随它一起移除（[retireMusicSources]，
 ///   用户手动添加的音乐来源不动）。用户直接移除一个自动来源时（[recordAutoSourceDismissal]）
 ///   记进「不再登记」清单，之后再扫 owner 视频来源不会把它加回来。
+/// - 游戏来源（反馈 9Rm_8JEkGM）：游戏留在库里（与书 / 视频来源移除后条目保留同口径），
+///   只清掉它的来源扫描索引（[clearGameSourceIndex]）。
 Future<void> removeSourceLibrary({
   required FushiDatabase database,
   required PreferencesRepository prefs,
@@ -50,6 +53,9 @@ Future<void> removeSourceLibrary({
     await database.addMusicAutoSourceDismissal(owner, row.rootPath);
   }
   await database.releaseMusicTracksOfSource(sourceId);
+  if (row?.mediaKind == SourceLibraryKind.game.dbValue) {
+    await clearGameSourceIndex(database, sourceId);
+  }
   await database.deleteMediaSource(
     sourceId,
     migrateVideoDownloadsTo: migrateVideoDownloadsTo,

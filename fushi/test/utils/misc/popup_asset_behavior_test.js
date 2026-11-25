@@ -149,6 +149,16 @@ class FakeElement {
     return child;
   }
 
+  // 「调整句子音频」面板把波形 / 试听按钮插在动作行之前（openCrossAppAudioPanel）。
+  insertBefore(child, reference) {
+    const at = reference ? this.children.indexOf(reference) : -1;
+    if (at < 0) return this.appendChild(child);
+    this.children.splice(at, 0, child);
+    child.parentElement = this;
+    child.parentNode = this;
+    return child;
+  }
+
   append(...children) {
     for (const child of children) {
       // 真 DOM 的 append 接受字符串（建文本节点）；注音 <ruby> 的读音片段就是这么塞的。
@@ -1578,6 +1588,80 @@ async function testMiningResolvesFreshAudioEvenWhenCacheHoldsSameWord() {
     'the mined card carries the freshly-signed URL, not the stale cached one');
 }
 
+// 反馈 WJFhjUGaTn：词头带替换写法（`quite a/the something`）时 TTS 兜底要念查词命中的
+// 原文，所以 ♪ 单击、「选择音频源」菜单与制卡取音频三条路都要把 matched 交给宿主；
+// 同一下标同一词头换了命中原文时不能复用播放缓存（TTS 念的字不同）。
+async function testWordAudioBridgesCarryMatchedSource() {
+  const context = loadPopup();
+  const resolved = [];
+  const listed = [];
+  const mined = [];
+  context.window.audioSources = ['https://audio.example/?term={term}'];
+  context.window.needsAudio = true;
+  context.window.lookupEntries = [
+    {
+      expression: 'quite a/the something',
+      reading: '',
+      matched: 'quite some',
+      glossaries: [
+        {
+          dictionary: 'dict',
+          content: {tag: 'span', content: 'a large amount'},
+          definitionTags: '',
+          termTags: '',
+        },
+      ],
+    },
+  ];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'resolveWordAudio') {
+      resolved.push(payload);
+      return Promise.resolve(`audio://${payload.matched}#${resolved.length}`);
+    }
+    if (name === 'listWordAudioSources') {
+      listed.push(payload);
+      return Promise.resolve([]);
+    }
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      return Promise.resolve(true);
+    }
+    return Promise.resolve(true);
+  };
+
+  const headword = 'quite a/the something';
+  const first = await context.resolveCachedAudioUrl(headword, headword, 0, 'quite some');
+  assert.equal(resolved.length, 1);
+  assert.equal(resolved[0].expression, headword);
+  assert.equal(resolved[0].reading, headword);
+  assert.equal(resolved[0].matched, 'quite some',
+    'the play path must hand the matched source text to the host');
+  assert.equal(first, 'audio://quite some#1');
+
+  assert.equal(
+    await context.resolveCachedAudioUrl(headword, headword, 0, 'quite some'),
+    first,
+    'same headword + same matched source reuses the playback cache');
+  assert.equal(resolved.length, 1);
+
+  await context.resolveCachedAudioUrl(headword, headword, 0, 'quite the');
+  assert.equal(resolved.length, 2,
+    'a different matched source at the same index must resolve again');
+  assert.equal(resolved[1].matched, 'quite the');
+
+  await context.fetchAudioSourceChoices(headword, headword, 'quite some');
+  assert.equal(listed.length, 1);
+  assert.equal(listed[0].matched, 'quite some',
+    'the audio-source menu must hand the matched source text to the host');
+
+  await context.mineEntry(headword, '', [], [], [], 'quite some', 0, '');
+  assert.equal(resolved.length, 3, 'mining does a fresh resolve');
+  assert.equal(resolved[2].matched, 'quite some',
+    'the mining audio resolve must hand the matched source text to the host');
+  assert.equal(mined.length, 1);
+  assert.equal(mined[0].audio, 'audio://quite some#3');
+}
+
 // ── TODO-084/087: mine button state is DETECTED AT LOOKUP TIME ─────────────
 // Builds an entry header, finds its mine button, and drives the duplicateCheck
 // handler. The button's 已制卡 ✓ / 可制卡 + state is the real Anki status
@@ -2287,7 +2371,9 @@ function testKanjiCardRendersAllFields() {
 
   const section = context.buildKanjiCards();
   assert.ok(section, 'kanji section should render for a non-empty payload');
-  assert.equal(section.className, 'kanji-card-section');
+  // 拍板台 6uasoIUvSR：根是可折叠的 <details>，沿用词典卡皮肤（glossary-group）。
+  assert.equal(section.className, 'kanji-card-section glossary-group');
+  assert.equal(section.tagName, 'DETAILS');
 
   const card = findByClass(section, 'kanji-card');
   assert.ok(card, 'a kanji card should be produced');
@@ -2498,6 +2584,11 @@ testMineEntryDoesNotReuseAudioFromPreviousExpression().catch((error) => {
 });
 
 testMiningResolvesFreshAudioEvenWhenCacheHoldsSameWord().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});
+
+testWordAudioBridgesCarryMatchedSource().catch((error) => {
   console.error(error);
   process.exitCode = 1;
 });
@@ -2991,7 +3082,15 @@ async function testAppExternalManageGestureAlwaysOpensChooser() {
   stubDupesAwareExternalHost(context, calls, true);
   const mineButton = buildMineHeader(context);
   await flush();
-  assert.ok(mineButton.title, 'a mined ✓ advertises the manage gesture in its tooltip');
+  // 反馈 3UHYaFPP8g / BUG-842: the hint is the DOM-drawn .fushi-btn-tip (via
+  // setInlineButtonTip), never the native `title` — on the off-screen WebView2
+  // the native tooltip is positioned in unscaled coordinates and lands over the
+  // previous entry.
+  assert.ok(!mineButton.title, 'a mined ✓ must not use the native title tooltip');
+  assert.ok(!mineButton.hasAttribute('title'), 'a mined ✓ must not carry a title attribute');
+  assert.ok(mineButton.dataset.fushiTip, 'a mined ✓ advertises the manage gesture in its DOM tooltip');
+  assert.equal(mineButton.getAttribute('aria-label'), mineButton.dataset.fushiTip,
+    'the manage hint stays accessible via aria-label');
 
   let prevented = false;
   mineButton.dispatchEvent({
@@ -3073,6 +3172,127 @@ async function testNativeLanePassesOpenChooserIntent() {
     'the menu key hands the host openChooser:true (always the chooser)');
 }
 
+// 反馈 3UHYaFPP8g：✓ / ♪ 的「长按」以前只认 touch / pen，桌面鼠标按住不放什么都不发生，
+// 可提示写的是「右键或长按」。现在长按 / 右键 / 菜单键共用 bindPopupSecondaryActionTriggers，
+// 鼠标主键按住同样打开次级菜单。
+function pointerEvent(type, extra) {
+  return Object.assign({
+    type,
+    pointerType: 'mouse',
+    button: 0,
+    clientX: 10,
+    clientY: 10,
+    preventDefault() {},
+    stopPropagation() {},
+  }, extra || {});
+}
+
+function pendingLongPressTimers(context) {
+  return [...context.__timers.values()].filter(
+    (timer) => !timer.cleared && timer.delay === 450);
+}
+
+function fireLongPressTimer(context) {
+  const timers = pendingLongPressTimers(context);
+  assert.equal(timers.length, 1, 'exactly one long-press timer is armed');
+  timers[0].cleared = true;
+  timers[0].callback();
+}
+
+async function testMouseLongPressOnMinedButtonOpensChooser() {
+  const context = loadPopup();
+  const calls = newCalls();
+  stubDupesAwareExternalHost(context, calls, true);
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.dataset.mined, '1');
+
+  mineButton.dispatchEvent(pointerEvent('pointerdown'));
+  fireLongPressTimer(context);
+  await flush();
+  await flush();
+
+  assert.equal(calls.findMinedMatches.length, 1,
+    'a mouse long-press on a mined ✓ is the manage gesture');
+  assert.equal(calls.findMinedMatches[0].openChooser, true);
+  assert.ok(context.document.querySelector('.mined-action-panel'),
+    'the mouse long-press opens the overwrite / view chooser');
+
+  // 松手后内核补发的 click 不能再当单击制一张。
+  mineButton.dispatchEvent(pointerEvent('pointerup'));
+  await mineButton.onclick();
+  await flush();
+  assert.equal(calls.findMinedMatches.length, 1, 'the follow-up click is swallowed');
+  assert.equal(calls.mineEntry.length, 0, 'nothing is mined by the release');
+}
+
+async function testMouseLongPressArmingRules() {
+  const context = loadPopup();
+  const calls = newCalls();
+  stubDupesAwareExternalHost(context, calls, true);
+  const mineButton = buildMineHeader(context);
+  await flush();
+
+  // 右键按下不武装长按（右键走 contextmenu）。
+  mineButton.dispatchEvent(pointerEvent('pointerdown', { button: 2 }));
+  assert.equal(pendingLongPressTimers(context).length, 0, 'right button does not arm');
+
+  // 鼠标主键按住后拖出容差 = 框选 / 拖动，不是长按。
+  mineButton.dispatchEvent(pointerEvent('pointerdown'));
+  assert.equal(pendingLongPressTimers(context).length, 1, 'primary mouse button arms');
+  mineButton.dispatchEvent(pointerEvent('pointermove', { clientX: 40 }));
+  assert.equal(pendingLongPressTimers(context).length, 0, 'moving past tolerance cancels');
+
+  // 按住不到时长就松手 = 普通单击。
+  mineButton.dispatchEvent(pointerEvent('pointerdown'));
+  mineButton.dispatchEvent(pointerEvent('pointerup'));
+  assert.equal(pendingLongPressTimers(context).length, 0, 'an early release cancels');
+  await flush();
+  assert.equal(calls.findMinedMatches.length, 0, 'no manage gesture fired');
+}
+
+async function testMouseLongPressIgnoredOnUnminedButton() {
+  const context = loadPopup();
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    return Promise.resolve(null);
+  };
+  const mineButton = buildMineHeader(context);
+  await flush();
+  assert.equal(mineButton.dataset.mined, '');
+  mineButton.dispatchEvent(pointerEvent('pointerdown'));
+  assert.equal(pendingLongPressTimers(context).length, 0,
+    'a "+" offers no secondary menu, so a long-press never arms');
+}
+
+async function testMouseLongPressOnAudioButtonOpensSourceMenu() {
+  const context = loadPopup();
+  const opened = [];
+  context.openAudioSourceMenu = (button, expression, reading, options) => {
+    opened.push({ expression, focusFirst: options.focusFirst });
+  };
+  const button = context.createAudioButton('刀', '刀', 0);
+
+  button.dispatchEvent(pointerEvent('pointerdown'));
+  fireLongPressTimer(context);
+  assert.deepEqual(JSON.parse(JSON.stringify(opened)),
+    [{ expression: '刀', focusFirst: false }],
+    'a mouse long-press on ♪ opens the source menu');
+  assert.equal(button.dataset.fushiSuppressClick, '1',
+    'the follow-up click must not also play the default source');
+  await button.onclick();
+  assert.equal(button.dataset.fushiSuppressClick, undefined, 'the swallow is one-shot');
+
+  // 右键与菜单键仍走同一入口。
+  button.dispatchEvent(pointerEvent('pointerdown', { button: 2 }));
+  button.dispatchEvent(pointerEvent('contextmenu'));
+  button.dispatchEvent({
+    type: 'keydown', key: 'F10', shiftKey: true,
+    preventDefault() {}, stopPropagation() {},
+  });
+  assert.deepEqual(opened.map((o) => o.focusFirst), [false, false, true]);
+}
+
 // 这几条在旧实现上会卡在「等用户在面板里选」——一个永不 settle 的 promise 不会报错，
 // 进程照样 0 退出。所以记账：退出时还没跑完的一律判红（不让挂起冒充通过）。
 const pendingAllowDupesTests = new Set();
@@ -3086,6 +3306,10 @@ for (const t of [
   testAppExternalManageGestureAlwaysOpensChooser,
   testManageGestureIgnoredOnUnminedButton,
   testNativeLanePassesOpenChooserIntent,
+  testMouseLongPressOnMinedButtonOpensChooser,
+  testMouseLongPressArmingRules,
+  testMouseLongPressIgnoredOnUnminedButton,
+  testMouseLongPressOnAudioButtonOpensSourceMenu,
 ]) {
   pendingAllowDupesTests.add(t.name);
   t().then(() => pendingAllowDupesTests.delete(t.name)).catch((error) => {
@@ -3557,7 +3781,8 @@ async function testQueuedMineStateTracksQueueWithoutAnkiRefresh() {
   assert.equal(button.textContent, '✓');
   assert.ok(button.classList.contains('duplicate'), 'queued mark must hide the CSS plus');
   assert.notEqual(button.dataset.mined, '1', 'queued is not an Anki card');
-  assert.equal(button.title, '已加入制卡队列');
+  assert.equal(button.dataset.fushiTip, '已加入制卡队列');
+  assert.ok(!button.title, 'queued hint is the DOM tooltip, not the native title');
   assert.equal(duplicates, before, 'queue success must not probe Anki');
   await button.onclick();
   assert.equal(mines, 1, 'repeated click must not enqueue again');
@@ -3585,9 +3810,39 @@ async function testQueueFailureKeepsPlusAndAllowsRetry() {
   assert.equal(calls, 2);
 }
 
+// 拍板 EuOLprw_dV：截屏识字「制卡时框选截图」页点了「×」，宿主回 cancelled——用户自己
+// 放弃了这张卡，不是失败：按钮放回可点的「+」，不说「制卡失败」，也不回查 Anki。
+async function testCancelledMineRestoresPlusSilently() {
+  const context = loadPopup();
+  let mines = 0;
+  let duplicates = 0;
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    if (name === 'duplicateCheck') { duplicates++; return Promise.resolve(false); }
+    if (name === 'mineEntry') {
+      mines++;
+      return Promise.resolve({ ankiConnect: false, noteId: null, cancelled: true });
+    }
+    if (name === 'mineFailureUnseen') throw new Error('cancel must not be reported as a failure');
+    return Promise.resolve(null);
+  };
+  const button = buildMineHeaderFor(context, '猫');
+  await flush();
+  const before = duplicates;
+  await button.onclick();
+  await flush();
+  assert.equal(button.textContent, '+', 'cancelled mine goes back to a clickable +');
+  assert.notEqual(button.dataset.mined, '1');
+  assert.notEqual(button.dataset.queued, '1');
+  assert.equal(inlineHintText(context), null, 'cancel is not a failure: no inline hint');
+  assert.equal(duplicates, before, 'cancel must not probe Anki');
+  await button.onclick();
+  assert.equal(mines, 2, 'the user can click + again right away');
+}
+
 Promise.all([
   testQueuedMineStateTracksQueueWithoutAnkiRefresh(),
   testQueueFailureKeepsPlusAndAllowsRetry(),
+  testCancelledMineRestoresPlusSilently(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
 
 // BUG-3492：app 内（在线视频后台制卡）没有宿主队列，「已加入」只是本弹窗的一个标记。
@@ -3745,6 +4000,308 @@ Promise.all([
   testSettledFailedReplyClearsQueuedMark(),
   testAppQueuedMarkAnswersClicksAndYieldsToOverwriteOnceLanded(),
   testHostRefreshAfterBackgroundLandingClearsAppQueuedMark(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });
+
+// review-gal-overlay-mine-fail：gal 查词制卡采样完就回 queued（按钮「已加入」），写卡在
+// 宿主后台完成。结局以前只走主窗 toast——游戏全屏时看不见（回退 BUG-1908），「已加入」
+// 也永远撤不掉。宿主现在落地时推 window.fushiSettleQueuedMine(settlement)。
+// mountMineHeaderFor 把按钮挂在 window.__fushiRoot（shadow-root 车道）下，提示也画在那里。
+function mountedHintText(context) {
+  const root = context.window.__fushiRoot;
+  const hint = root?.querySelector('.inline-hint') ||
+    context.document.querySelector('.inline-hint');
+  return hint ? (hint.textContent || '') : null;
+}
+
+async function testHostSettledFailureClearsQueuedMarkInPlace() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  const button = mountMineHeaderFor(context, '離陸');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '1');
+  const probesBefore = state.mines;
+  const claimed = await context.window.fushiSettleQueuedMine({
+    expression: '離陸',
+    reading: '',
+    outcome: 'failed',
+    message: 'ANKI_DOWN',
+  });
+  await flush();
+  assert.equal(claimed, 1, '排过队的那颗按钮认领结局');
+  assert.equal(mountedHintText(context), 'ANKI_DOWN', '失败原因必须在查词卡上就地说');
+  assert.equal(button.dataset.queued, '', '「已加入」必须撤掉');
+  assert.equal(button.textContent, '+', '写卡失败：回可点的 +');
+  assert.equal(state.mines, probesBefore);
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 2, '失败后再点按新卡制作，不再走排队');
+  assert.equal(state.queueCalls.length, 0);
+}
+
+async function testHostSettledLandingPaintsLatestEditableCheck() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  const button = mountMineHeaderFor(context, '離脱');
+  await flush();
+  await button.onclick();
+  await flush();
+  state.inAnki = true;
+  const claimed = await context.window.fushiSettleQueuedMine({
+    expression: '離脱',
+    reading: '',
+    outcome: 'landed',
+    noteId: 42,
+  });
+  await flush();
+  assert.equal(claimed, 1);
+  assert.equal(button.dataset.queued, '', '落地：「已加入」撤掉');
+  assert.equal(button.dataset.mined, '1', '落地：重问 Anki 后画 ✓');
+  assert.equal(button.dataset.latest, '1', '带回真 note id 的卡是「最新可改」✓↩');
+  assert.equal(mountedHintText(context), null, '成功不说话');
+}
+
+async function testHostSettledDuplicatePaintsCheckWithoutProbe() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  let probes = 0;
+  const base = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') probes++;
+    return base(name, payload);
+  };
+  const button = mountMineHeaderFor(context, '離農');
+  await flush();
+  await button.onclick();
+  await flush();
+  const before = probes;
+  await context.window.fushiSettleQueuedMine({
+    expression: '離農',
+    outcome: 'duplicate',
+    message: 'DUP',
+  });
+  await flush();
+  assert.equal(probes, before, '失败 / 重复按宿主给的事实画，不回查（TODO-448）');
+  assert.equal(button.dataset.mined, '1', '重复 = 卡确实在 Anki 里');
+  assert.equal(mountedHintText(context), 'DUP');
+  assert.equal(state.mines, 1);
+}
+
+async function testHostSettledFailureIgnoresButtonsThatDidNotQueue() {
+  const context = loadPopup();
+  appQueuedHarness(context);
+  const button = mountMineHeaderFor(context, '離任');
+  await flush();
+  const claimed = await context.window.fushiSettleQueuedMine({
+    expression: '離任',
+    outcome: 'failed',
+    message: 'NOT_MINE',
+  });
+  await flush();
+  assert.equal(claimed, 0, '没排过队的按钮不认领');
+  assert.equal(mountedHintText(context), null, '不在没排队的按钮旁说别人的失败');
+  assert.equal(button.textContent, '+');
+  assert.equal(await context.window.fushiSettleQueuedMine({ outcome: 'failed' }), 0);
+}
+
+// 结局推送与 queued 回包是宿主两条各自异步的出口：写卡失败得够快时结局先到，那一刻
+// 还没有按钮排过队。凭 token 暂存、回包一到当场兑现，按钮不得挂着「已加入」。
+async function testHostSettlementArrivingBeforeQueuedReplyIsHonoured() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  const base = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = async (name, payload) => {
+    if (name !== 'mineEntry') return base(name, payload);
+    state.mines++;
+    const early = await context.window.fushiSettleQueuedMine({
+      expression: '離島',
+      reading: '',
+      outcome: 'failed',
+      message: 'EARLY_FAIL',
+      token: 7,
+    });
+    assert.equal(early, 0, '回包未到：没有按钮能认领，只暂存');
+    return { queued: true, ankiConnect: false, queuedToken: 7 };
+  };
+  const button = mountMineHeaderFor(context, '離島');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '', '先到的失败结局当场兑现，不挂「已加入」');
+  assert.equal(button.textContent, '+');
+  assert.equal(mountedHintText(context), 'EARLY_FAIL', '失败原因照样就地说');
+}
+
+// 同一个词排过两次队：旧那次的结局（token 不同）不得撤掉新那次的「已加入」。
+async function testHostSettlementWithOtherTokenDoesNotClaim() {
+  const context = loadPopup();
+  const state = appQueuedHarness(context);
+  const base = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name !== 'mineEntry') return base(name, payload);
+    state.mines++;
+    return Promise.resolve({ queued: true, ankiConnect: false, queuedToken: 2 });
+  };
+  const button = mountMineHeaderFor(context, '離脚');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(button.dataset.queued, '1');
+  const stale = await context.window.fushiSettleQueuedMine({
+    expression: '離脚',
+    outcome: 'failed',
+    message: 'OLD_FAIL',
+    token: 1,
+  });
+  await flush();
+  assert.equal(stale, 0, '别的那次排队的结局不认领');
+  assert.equal(button.dataset.queued, '1', '本次「已加入」依然属实');
+  assert.equal(mountedHintText(context), null);
+  const own = await context.window.fushiSettleQueuedMine({
+    expression: '離脚',
+    outcome: 'failed',
+    message: 'OWN_FAIL',
+    token: 2,
+  });
+  await flush();
+  assert.equal(own, 1);
+  assert.equal(button.dataset.queued, '');
+  assert.equal(mountedHintText(context), 'OWN_FAIL');
+}
+
+// 后台写卡失败、宿主还留着那张卡的画面与句音（retryable）：卡上的 + 就是「重试」——
+// 走 retryQueuedMine（宿主原样重写，与主窗 toast 的重试共用一次性入口），不重新制卡
+// （那会重抓已经换掉的游戏画面）。全屏游戏里这是唯一看得见的重试入口。
+function retryHarness(context, expression, retryReply) {
+  const state = appQueuedHarness(context);
+  state.retryCalls = [];
+  const base = context.window.flutter_inappwebview.callHandler;
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'retryQueuedMine') {
+      state.retryCalls.push(payload);
+      return Promise.resolve(retryReply);
+    }
+    if (name !== 'mineEntry') return base(name, payload);
+    state.mines++;
+    return Promise.resolve({ queued: true, ankiConnect: false, queuedToken: 9 });
+  };
+  return state;
+}
+
+async function testRetryableFailureTurnsPlusIntoRetry() {
+  const context = loadPopup();
+  context.window.i18nMineRetryHint = 'RETRY_HINT';
+  const state = retryHarness(context, '離宮', { accepted: true });
+  const button = mountMineHeaderFor(context, '離宮');
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 1);
+  const claimed = await context.window.fushiSettleQueuedMine({
+    expression: '離宮', outcome: 'failed', message: 'ANKI_DOWN', token: 9, retryable: true,
+  });
+  await flush();
+  assert.equal(claimed, 1);
+  assert.equal(mountedHintText(context), 'ANKI_DOWN RETRY_HINT', '原因后面说可以点 + 重试');
+  assert.equal(button.dataset.queued, '');
+  assert.equal(button.textContent, '+');
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 1, '重试不得重新制卡（会重抓已换掉的画面）');
+  assert.equal(state.retryCalls.length, 1);
+  assert.equal(state.retryCalls[0], 9, '凭 token 请宿主原样重写');
+  assert.equal(button.dataset.queued, '1', '重写在路上：画回「已加入」');
+  const landed = await context.window.fushiSettleQueuedMine({
+    expression: '離宮', outcome: 'landed', noteId: 5, token: 9,
+  });
+  await flush();
+  assert.equal(landed, 1, '重写的结局凭同一 token 认领');
+  assert.equal(button.dataset.queued, '');
+}
+
+async function testRejectedRetrySaysSoInPlace() {
+  const context = loadPopup();
+  context.window.i18nMineRetryUnavailable = 'RETRY_GONE';
+  const state = retryHarness(context, '離散', { accepted: false });
+  const button = mountMineHeaderFor(context, '離散');
+  await flush();
+  await button.onclick();
+  await flush();
+  await context.window.fushiSettleQueuedMine({
+    expression: '離散', outcome: 'failed', message: 'X', token: 9, retryable: true,
+  });
+  await flush();
+  await button.onclick();
+  await flush();
+  assert.equal(state.retryCalls.length, 1);
+  assert.equal(mountedHintText(context), 'RETRY_GONE', '入口已失效（toast 上已点过）要就地说明');
+  assert.equal(button.dataset.queued, '', '不能挂着「已加入」');
+  assert.equal(button.textContent, '+');
+  await button.onclick();
+  await flush();
+  assert.equal(state.mines, 2, '入口失效后再点按新卡制作');
+}
+
+async function testToastRetryRequeuesTheCardButton() {
+  const context = loadPopup();
+  const state = retryHarness(context, '離縁', { accepted: true });
+  const button = mountMineHeaderFor(context, '離縁');
+  await flush();
+  await button.onclick();
+  await flush();
+  await context.window.fushiSettleQueuedMine({
+    expression: '離縁', outcome: 'failed', message: 'X', token: 9, retryable: true,
+  });
+  await flush();
+  assert.equal(button.dataset.queued, '');
+  // 主窗 toast 上点了重试：宿主推 requeued，卡上的按钮跟着画回「已加入」。
+  const requeued = await context.window.fushiSettleQueuedMine({
+    expression: '離縁', outcome: 'requeued', token: 9,
+  });
+  await flush();
+  assert.equal(requeued, 1);
+  assert.equal(button.dataset.queued, '1');
+  await button.onclick();
+  await flush();
+  assert.equal(state.retryCalls.length, 0, '已在重写：+ 不再是重试入口');
+  assert.equal(state.mines, 1);
+}
+
+// 不带 retryable 的失败（素材已不在）：+ 照旧按新卡制作。
+async function testNonRetryableFailureMinesAnew() {
+  const context = loadPopup();
+  context.window.i18nMineRetryHint = 'RETRY_HINT';
+  const state = retryHarness(context, '離床', { accepted: true });
+  const button = mountMineHeaderFor(context, '離床');
+  await flush();
+  await button.onclick();
+  await flush();
+  await context.window.fushiSettleQueuedMine({
+    expression: '離床', outcome: 'failed', message: 'ONLY_REASON', token: 9,
+  });
+  await flush();
+  assert.equal(mountedHintText(context), 'ONLY_REASON');
+  await button.onclick();
+  await flush();
+  assert.equal(state.retryCalls.length, 0);
+  assert.equal(state.mines, 2);
+}
+
+Promise.all([
+  testRetryableFailureTurnsPlusIntoRetry(),
+  testRejectedRetrySaysSoInPlace(),
+  testToastRetryRequeuesTheCardButton(),
+  testNonRetryableFailureMinesAnew(),
+]).catch((error) => { console.error(error); process.exitCode = 1; });
+
+Promise.all([
+  testHostSettledFailureClearsQueuedMarkInPlace(),
+  testHostSettledLandingPaintsLatestEditableCheck(),
+  testHostSettledDuplicatePaintsCheckWithoutProbe(),
+  testHostSettledFailureIgnoresButtonsThatDidNotQueue(),
+  testHostSettlementArrivingBeforeQueuedReplyIsHonoured(),
+  testHostSettlementWithOtherTokenDoesNotClaim(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
 
 // 宿主主动刷新已渲染的「已制卡 ✓ / 可制卡 +」（window.fushiRefreshMineStates）。
@@ -4230,11 +4787,140 @@ async function testShortcutMineCapturesLiveSelection() {
     'shortcut mining must carry what is selected right now');
 }
 
+// 快捷键 / 手柄制卡跟随当前词条：Alt+滚轮 / 十字键把 .entry-current 移到第 3 个词条后
+// 按 Ctrl+Enter / X，制的必须是第 3 个词条（旧实现永远点全文第一颗「+」）。
+function entryNodes(context) {
+  return context.window.__fushiRoot.children[0].children;
+}
+
+async function testShortcutMineFollowsFocusedEntry() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  mountEntriesWith(context, ['辞書', '事典', '事項']);
+  await flush();
+
+  // 还没移动过：第一个词条。
+  assert.equal(await context.window.fushiPopupMineFirstEntry(), true);
+  await flush();
+  assert.equal(mined[0].expression, '辞書');
+
+  entryNodes(context)[2].classList.add('entry-current');
+  assert.equal(await context.window.fushiPopupMineFirstEntry(), true);
+  await flush();
+  assert.equal(mined.length, 2);
+  assert.equal(mined[1].expression, '事項',
+    'shortcut mining must create the card for the focused entry');
+}
+
+async function testShortcutMineNeverFallsBackFromFocusedEntry() {
+  const context = loadPopup();
+  const mined = [];
+  stubMineBridge(context, mined);
+  const buttons = mountEntriesWith(context, ['辞書', '事典']);
+  await flush();
+  const focused = entryNodes(context)[1];
+  focused.classList.add('entry-current');
+  buttons[1].remove();
+  assert.equal(await context.window.fushiPopupMineFirstEntry(), false,
+    'a focused entry without a + must not mine a different entry');
+  await flush();
+  assert.equal(mined.length, 0);
+}
+
+async function testShortcutAudioFollowsFocusedEntry() {
+  const context = loadPopup();
+  stubMineBridge(context, []);
+  context.window.audioSources = ['https://audio.example/?term={term}'];
+  mountEntriesWith(context, ['辞書', '事典']);
+  await flush();
+  const played = [];
+  const entries = entryNodes(context);
+  for (let i = 0; i < entries.length; i++) {
+    const audio = findByClassName(entries[i], 'audio-button');
+    assert.ok(audio, `audio button missing for entry ${i}`);
+    audio.onclick = () => { played.push(i); };
+  }
+  entries[1].classList.add('entry-current');
+  assert.equal(await context.window.fushiPopupPlayFirstAudio(), true);
+  assert.deepEqual(played, [1], 'audio shortcut must play the focused entry');
+}
+
+// 「＋」的快捷键提示：宿主注入整句才显示；没注入（浏览器扩展）/ 空串 = 不提示。
+async function testMineButtonShowsShortcutHint() {
+  const hinted = loadPopup();
+  stubMineBridge(hinted, []);
+  hinted.window.i18nMineShortcutHint = 'Create card (Ctrl+Enter)';
+  const [button] = mountEntriesWith(hinted, ['辞書']);
+  assert.equal(button.dataset.fushiTip, 'Create card (Ctrl+Enter)',
+    'the + carries the hint before the lazy duplicate probe answers');
+  await flush();
+  assert.equal(button.dataset.fushiTip, 'Create card (Ctrl+Enter)');
+  assert.equal(button.getAttribute('aria-label'), 'Create card (Ctrl+Enter)');
+
+  for (const value of [undefined, '']) {
+    const bare = loadPopup();
+    stubMineBridge(bare, []);
+    if (value !== undefined) bare.window.i18nMineShortcutHint = value;
+    const [plain] = mountEntriesWith(bare, ['辞書']);
+    await flush();
+    assert.equal(plain.dataset.fushiTip, undefined,
+      'no injected hint → no tooltip on the +');
+  }
+}
+
+// 拍板台 rf--UcsGta-overlay：覆盖窗的「高级制卡」转交主窗后，主窗按词条身份在自己的结果里
+// 找回 DOM 序（不沿用覆盖窗下标）。钉住：三档匹配（表记+读音+命中 → 表记+读音 → 表记）、
+// 被过滤掉没有 DOM 的词条跳过、尾批还在画时回 -2、找不到回 -1。
+async function testEntryDomIndexForHandoff() {
+  const context = loadPopup();
+  context.window._renderInProgress = false;
+  context.window.lookupEntries = [
+    { expression: '辞書', reading: 'じしょ', matched: '辞書' },
+    { expression: '事典', reading: 'じてん', matched: '事典' },
+    { expression: '事典', reading: 'ことてん', matched: '事典' },
+    { expression: '自体', reading: 'じたい', matched: '自体' },
+  ];
+  // 第 0 条被隐藏词典过滤掉（没有 DOM），后面的 DOM 序因此前移一位。
+  context.window._entryDomIndex = [-1, 0, 1, 2];
+  const find = context.window.fushiPopupEntryDomIndexFor;
+  assert.equal(find('事典', 'ことてん', '事典'), 1, 'exact identity wins over the first same-expression entry');
+  assert.equal(find('事典', 'じてん', '事'), 0, 'expression + reading when the matched span differs');
+  // HBK-AUDIT-005：带了读音就必须表记 + 读音都对上，同表记异读音不是同一个词条。
+  assert.equal(find('自体', 'ちがう', ''), -1, 'a different reading is a different entry, never the expression-only fallback');
+  assert.equal(find('自体', '', ''), 2, 'expression alone only when the handoff carries no reading');
+  assert.equal(find('辞書', 'じしょ', '辞書'), -1, 'an entry without DOM is never targeted');
+  assert.equal(find('無い', '', ''), -1, 'unknown entry → -1, never a guessed index');
+  context.window._renderInProgress = true;
+  assert.equal(find('自体', 'じたい', '自体'), -2, 'tail still rendering → ask again later');
+
+  // 覆盖窗选的是 生（なま），主窗结果已完整加载、只剩 生（せい）：不得回后者的下标。
+  context.window._renderInProgress = false;
+  context.window.lookupEntries = [
+    { expression: '生', reading: 'せい', matched: '生' },
+  ];
+  context.window._entryDomIndex = [0];
+  assert.equal(find('生', 'なま', '生'), -1, 'nama handoff must not land on sei');
+  assert.equal(find('生', 'せい', '生'), 0, 'same reading still resolves');
+  // なま 那条被隐藏词典过滤掉（无 DOM），只剩 せい 有 DOM：同样找不到，不落到 せい。
+  context.window.lookupEntries = [
+    { expression: '生', reading: 'なま', matched: '生' },
+    { expression: '生', reading: 'せい', matched: '生' },
+  ];
+  context.window._entryDomIndex = [-1, 0];
+  assert.equal(find('生', 'なま', '生'), -1, 'hidden nama entry is not replaced by visible sei');
+}
+
 Promise.all([
+  testShortcutMineFollowsFocusedEntry(),
+  testShortcutMineNeverFallsBackFromFocusedEntry(),
+  testShortcutAudioFollowsFocusedEntry(),
+  testMineButtonShowsShortcutHint(),
   testNewLookupDropsPreviousSelectionSnapshot(),
   testAdjustContextButtonSnapshotsSelectionForConfirm(),
   testAdvancedMiningButtonOpensHostDialog(),
   testAdvancedMiningButtonGating(),
+  testEntryDomIndexForHandoff(),
   testShortcutMineUsesLiveSelection(),
   testShortcutMineCapturesLiveSelection(),
 ]).catch((error) => { console.error(error); process.exitCode = 1; });
@@ -4449,11 +5135,50 @@ async function testOpenAnkiButtonMergedIntoSrsBadgeWhenTargetIsSrs() {
     'no SRS badge -> open-in-Anki button stays');
 }
 
+// BUG-4720（反馈 CGtu-HjN15）：制卡目标 = Fushi 复习时徽标接管了 ↗ 的位置，可点开的却
+// 不是 ↗ 那条笔记——徽标按状态回包的 noteId（「最需要复习那张卡」的笔记，且是取状态那一刻
+// 的快照）走 srsOpenCard，↗ 按词走 openInAnki（SrsMiningAnkiRepository.openWordInAnki，
+// 最新那条笔记）。哪颗可见取决于状态取回没有，同一个词有几条笔记时制完卡当下和重开弹窗
+// 跳到不同的笔记。徽标接管时必须与 ↗ 走同一根桥、同一份参数，回包里的 noteId 不参与。
+async function testSrsOwnedBadgeOpensSameNoteAsOpenAnkiButton() {
+  const context = loadPopup();
+  context.window.__fushiSrsEnabled = true;
+  context.window.__fushiSrsMiningTarget = true;
+  const opened = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(true);
+    if (name === 'srsTermStatus') {
+      return Promise.resolve({
+        queue: 'review', dueLabel: '复习中', suspended: false,
+        cardId: 'urgent-card', noteId: 'older-note', cardCount: 2, tooltip: 'Open',
+      });
+    }
+    if (name === 'srsOpenCard' || name === 'openInAnki') {
+      opened.push({ name, payload: JSON.parse(JSON.stringify(payload)) });
+      return Promise.resolve(name === 'openInAnki' ? 'opened' : true);
+    }
+    return Promise.resolve(null);
+  };
+  const header = context.createEntryHeader(srsEntry(), 0);
+  await flush();
+  const badge = findByClassDeep(header, 'srs-status-badge');
+  const openAnki = findByClassDeep(header, 'open-anki-button');
+  assert.ok(!badge.classList.contains('srs-status-hidden'), 'status known -> badge visible');
+  await badge.onclick({ stopPropagation() {} });
+  await openAnki.onclick();
+  await flush();
+  assert.deepEqual(opened, [
+    { name: 'openInAnki', payload: { expression: '刀', reading: '刀' } },
+    { name: 'openInAnki', payload: { expression: '刀', reading: '刀' } },
+  ], 'SRS-owned badge and ↗ open the word through one bridge with one criterion');
+}
+
 Promise.all([
   testSrsBadgeAbsentAndSilentWhenModuleOff(),
   testSrsBadgeShowsHostLabelAndOpensCard(),
   testSrsBadgeHiddenWhenWordNotInSrs(),
   testOpenAnkiButtonMergedIntoSrsBadgeWhenTargetIsSrs(),
+  testSrsOwnedBadgeOpensSameNoteAsOpenAnkiButton(),
 ]).then(() => console.log('SRS badge tests passed'))
   .catch((error) => { console.error(error); process.exitCode = 1; });
 
@@ -4753,3 +5478,328 @@ function testHeadwordClickEndingDragSelectionKeepsSelection() {
 
 testHeadwordClickEndingDragSelectionKeepsSelection();
 console.log('headword drag-selection tests passed');
+
+// 拍板 design-cross-app-audio-trim-ui：应用外查词卡的「调整句子音频」面板。
+// 区间几何（拖哪端只动哪端、整体平移保长度、不短于最短时长）与写进 payload 的覆盖项
+// （相对自动截句的偏移；没动 = 不带覆盖项），以及入口探测只在宿主声明有跨应用语音时才发。
+async function testCrossAppAudioPanelGeometryAndProbe() {
+  const context = loadPopup();
+  const plain = (value) => JSON.parse(JSON.stringify(value));
+  const clamp = context.crossAppAudioClampRange;
+
+  assert.deepStrictEqual(plain(clamp({startMs: 1950, endMs: 2000}, 5000, 100, 'start')),
+    {startMs: 1900, endMs: 2000}, 'dragging the start past the end keeps the minimum clip');
+  assert.deepStrictEqual(plain(clamp({startMs: 1000, endMs: 1020}, 5000, 100, 'end')),
+    {startMs: 1000, endMs: 1100}, 'dragging the end before the start keeps the minimum clip');
+  assert.deepStrictEqual(plain(clamp({startMs: -300, endMs: 700}, 5000, 100, 'move')),
+    {startMs: 0, endMs: 1000}, 'moving the whole clip keeps its length inside the snapshot');
+  assert.deepStrictEqual(plain(clamp({startMs: 4500, endMs: 5500}, 5000, 100, 'move')),
+    {startMs: 4000, endMs: 5000});
+  assert.deepStrictEqual(plain(clamp({startMs: 200, endMs: 9000}, 5000, 100, 'end')),
+    {startMs: 200, endMs: 5000});
+
+  const overrides = context.crossAppAudioOverrides;
+  const base = {startMs: 1000, endMs: 2000};
+  assert.equal(overrides(base, {startMs: 1000, endMs: 2000}), null,
+    'an untouched range must mine exactly like the one-click +');
+  assert.deepStrictEqual(plain(overrides(base, {startMs: 600, endMs: 2000})),
+    {audioStartDeltaMs: -400});
+  assert.deepStrictEqual(plain(overrides(base, {startMs: 1250, endMs: 2400})),
+    {audioStartDeltaMs: 250, audioEndDeltaMs: 400});
+
+  assert.equal(fs.readFileSync(popupPath, 'utf8').includes('__fushiPendingMineOverrides'), false,
+    'HBK-AUDIT-211: trim overrides travel with their own mine request, never through a page global');
+
+  const calls = [];
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    calls.push(name);
+    return Promise.resolve(true);
+  };
+  assert.equal(await context.crossAppAudioAvailable(), false,
+    'hosts that never declared cross-app audio must not be probed');
+  assert.deepStrictEqual(calls, []);
+  context.window.__fushiCrossAppAudioHost = true;
+  assert.equal(await context.crossAppAudioAvailable(), true);
+  assert.equal(await context.crossAppAudioAvailable(), true);
+  assert.deepStrictEqual(calls, ['crossAppAudioAvailable'],
+    'one probe per render, shared by every entry button');
+  context.__fushiResetCrossAppAudioProbe();
+  context.window.flutter_inappwebview.callHandler = (name) => {
+    calls.push(name);
+    return Promise.reject(new Error('bridge gone'));
+  };
+  assert.equal(await context.crossAppAudioAvailable(), false,
+    'a failing probe hides the entry instead of throwing');
+}
+
+function deferred() {
+  let resolve;
+  const promise = new Promise((r) => { resolve = r; });
+  return {promise, resolve};
+}
+
+const CROSS_APP_PREVIEW = {
+  totalMs: 5000,
+  startMs: 1000,
+  endMs: 2000,
+  minClipMs: 100,
+  peaks: [0.2, 0.6, 0.4],
+  audio: 'data:audio/wav;base64,AAAA',
+};
+
+// 打开第 idx 个词条的「调整句子音频」面板并等编辑器建好，回各控件。
+async function openCrossAppAudioPanelForTest(context, idx) {
+  // 替身 DOM 没有布局：波形画布量出 0 宽，drawCrossAppAudioWave 直接跳过绘制。
+  const createElement = context.document.createElement;
+  context.document.createElement = (tagName) => {
+    const element = createElement.call(context.document, tagName);
+    if (String(tagName).toLowerCase() === 'canvas') {
+      element.clientWidth = 0;
+      element.clientHeight = 0;
+    }
+    return element;
+  };
+  context.openCrossAppAudioPanel(idx);
+  await flush();
+  const host = context.window.__fushiRoot || context.document.body;
+  const panel = findByClass(host, 'crossapp-audio-panel');
+  assert.ok(panel, 'cross-app audio panel must mount');
+  const controls = {
+    panel,
+    play: findByClass(panel, 'crossapp-audio-play'),
+    mine: findByClass(panel, 'crossapp-audio-mine'),
+    startHandle: findByClass(panel, 'start'),
+    endHandle: findByClass(panel, 'end'),
+    cancel: findByClass(panel, 'mined-action-actions').children
+      .find((child) => child.className === 'mined-action-btn ghost'),
+  };
+  assert.ok(controls.play && controls.mine && controls.startHandle && controls.endHandle,
+    'the editor must be built from the preview');
+  return controls;
+}
+
+function pressKey(target, key, extra = {}) {
+  target.dispatchEvent({
+    type: 'keydown',
+    key,
+    ...extra,
+    preventDefault() {},
+    stopPropagation() {},
+  });
+}
+
+// HBK-AUDIT-211（#4137）：裁剪偏移只属于确认它的那一笔制卡。以前面板把偏移写进页面全局
+// 再回点「+」，裁剪制卡还在等取音时，另一个词条的普通「+」组包也读到同一份偏移——两张卡
+// 都带了裁剪。这里让裁剪那笔卡在取音上，期间点别的词条的「+」。
+async function testCrossAppAudioTrimOffsetStaysWithItsOwnRequest() {
+  const context = loadPopup();
+  context.window.audioSources = ['https://audio.example/?term={term}'];
+  context.window.needsAudio = true;
+  const slowAudio = deferred();
+  const mined = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'crossAppAudioPreview') return Promise.resolve(CROSS_APP_PREVIEW);
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'resolveWordAudio') {
+      return payload.expression === '猫'
+        ? slowAudio.promise
+        : Promise.resolve(`audio://${payload.expression}`);
+    }
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      return Promise.resolve({ankiConnect: true, noteId: mined.length});
+    }
+    return Promise.resolve(null);
+  };
+  const mineButtons = mountEntriesWith(context, ['猫', '犬']);
+  await flush();
+
+  const panel = await openCrossAppAudioPanelForTest(context, 0);
+  // Shift + ← 把起点往前挪 500ms。
+  pressKey(panel.startHandle, 'ArrowLeft', {shiftKey: true});
+  const trimmed = panel.mine.onclick();
+  await flush();
+  assert.equal(mined.length, 0, 'the trimmed request is still waiting for its word audio');
+
+  // 裁剪那笔还卡在取音上时，用户点另一个词条的普通「+」。
+  await mineButtons[1].onclick();
+  await flush();
+  slowAudio.resolve('audio://猫');
+  await trimmed;
+  await flush();
+
+  const byExpression = new Map(mined.map((p) => [p.expression, p]));
+  assert.equal(mined.length, 2, 'both cards are mined');
+  assert.equal(byExpression.get('犬').miningOverrides, undefined,
+    'a plain + on another entry must not inherit the trim offset');
+  assert.deepStrictEqual(JSON.parse(byExpression.get('猫').miningOverrides),
+    {audioStartDeltaMs: -500}, 'the trimmed card carries exactly the confirmed offset');
+
+  // 之后同一词条再点一次普通「+」也不能沾上那次的偏移。
+  mineButtons[0].dataset.mined = '';
+  await mineButtons[0].onclick();
+  await flush();
+  assert.equal(mined[mined.length - 1].miningOverrides, undefined,
+    'a later plain + on the trimmed entry mines without overrides');
+}
+
+// HBK-AUDIT-212（#4137）：试听要等解码。以前播放对象在解码完成后才登记，解码期间换了范围
+// 再点试听会排进第二个 BufferSource，两段一起响，「停止」只停得掉后一个。试听请求必须在
+// 等待前登记、可被停止 / 换范围 / 关面板取消，解码回来时核对自己仍是当前请求。
+async function testCrossAppAudioPreviewSupersedesPendingDecode() {
+  const starts = [];
+  const decodes = [];
+  class FakeAudioContext {
+    constructor() {
+      this.state = 'running';
+      this.currentTime = 0;
+      this.destination = {};
+    }
+    decodeAudioData() {
+      const d = deferred();
+      decodes.push(d);
+      return d.promise;
+    }
+    createBufferSource() {
+      const node = {
+        stopped: false,
+        connect() {},
+        start(when, offset, duration) {
+          starts.push({node, offset, duration});
+        },
+        stop() {
+          node.stopped = true;
+        },
+      };
+      return node;
+    }
+    createGain() {
+      return {gain: {value: 1}, connect() {}};
+    }
+    resume() {
+      return Promise.resolve();
+    }
+    close() {}
+  }
+  const configure = (context) => {
+    // 面板播放时逐帧推播放头；同步回调的 rAF 替身会无限递归，这里只登记不回调。
+    context.requestAnimationFrame = () => 1;
+    context.cancelAnimationFrame = () => {};
+    context.atob = (s) => Buffer.from(s, 'base64').toString('binary');
+    context.window.AudioContext = FakeAudioContext;
+    context.window.flutter_inappwebview.callHandler = (name) =>
+      Promise.resolve(name === 'crossAppAudioPreview' ? CROSS_APP_PREVIEW : null);
+  };
+
+  // ① 解码中换了范围再点试听：只播新范围一段。
+  let context = loadPopup(configure);
+  let panel = await openCrossAppAudioPanelForTest(context, 0);
+  panel.play.onclick();
+  await flush();
+  pressKey(panel.endHandle, 'ArrowRight', {shiftKey: true});
+  panel.play.onclick();
+  await flush();
+  assert.equal(decodes.length, 1, 'the snapshot is decoded once and shared');
+  decodes[0].resolve({duration: 5});
+  await flush();
+  assert.equal(starts.length, 1,
+    'a preview superseded while decoding must never start its own BufferSource');
+  assert.equal(starts[0].offset, 1);
+  assert.equal(starts[0].duration, 1.5, 'only the range chosen last is auditioned');
+  // 「停止」停的正是在响的那一段。
+  panel.play.onclick();
+  assert.equal(starts[0].node.stopped, true, 'stop reaches the only playing source');
+
+  // ② 解码中只换范围（没再点试听）：旧范围那次试听作废，不出声。
+  starts.length = 0;
+  decodes.length = 0;
+  context = loadPopup(configure);
+  panel = await openCrossAppAudioPanelForTest(context, 0);
+  panel.play.onclick();
+  await flush();
+  pressKey(panel.startHandle, 'ArrowLeft');
+  decodes[0].resolve({duration: 5});
+  await flush();
+  assert.equal(starts.length, 0, 'changing the range cancels a preview that is still decoding');
+
+  // ③ 解码中关面板：不出声。
+  decodes.length = 0;
+  context = loadPopup(configure);
+  panel = await openCrossAppAudioPanelForTest(context, 0);
+  panel.play.onclick();
+  await flush();
+  panel.cancel.onclick();
+  decodes[0].resolve({duration: 5});
+  await flush();
+  assert.equal(starts.length, 0, 'closing the panel cancels a preview that is still decoding');
+}
+
+// 拍板 Z0DtSVYC7A（方案 b）：查的词本来没有句子语音时，面板里「不带句子音频制卡」按次跳过——
+// 这一笔带 omitAudio，宿主不截录环；不必等试听数据（读取中就能点），也不沾到之后的普通「+」。
+async function testCrossAppAudioSkipSentenceAudioForThisCard() {
+  const context = loadPopup();
+  const preview = deferred();
+  const mined = [];
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'crossAppAudioPreview') return preview.promise;
+    if (name === 'duplicateCheck') return Promise.resolve(false);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      return Promise.resolve({ankiConnect: true, noteId: mined.length});
+    }
+    return Promise.resolve(null);
+  };
+  assert.equal(JSON.stringify(context.crossAppAudioSkipOverrides()), JSON.stringify({omitAudio: true}));
+  const mineButtons = mountEntriesWith(context, ['猫', '犬']);
+  await flush();
+
+  // ① 试听数据还在读：跳过按钮已经在，点了直接制卡、关面板。
+  context.openCrossAppAudioPanel(1);
+  await flush();
+  const host = context.window.__fushiRoot || context.document.body;
+  let panel = findByClass(host, 'crossapp-audio-panel');
+  const skip = findByClass(panel, 'crossapp-audio-skip');
+  assert.ok(skip, 'the skip button is available before the preview loads');
+  assert.equal(findByClass(panel, 'crossapp-audio-mine'), null,
+    'the trim editor is not built yet');
+  await skip.onclick();
+  await flush();
+  assert.equal(findByClass(host, 'crossapp-audio-panel'), null, 'skipping closes the panel');
+  assert.equal(mined.length, 1);
+  assert.equal(mined[0].expression, '犬');
+  assert.deepStrictEqual(JSON.parse(mined[0].miningOverrides), {omitAudio: true},
+    'the skipped card asks the host to omit the sentence audio');
+  preview.resolve(CROSS_APP_PREVIEW);
+  await flush();
+
+  // ② 编辑器建好后照样能跳过（拖过的起止不带上）。
+  const controls = await openCrossAppAudioPanelForTest(context, 0);
+  pressKey(controls.startHandle, 'ArrowLeft', {shiftKey: true});
+  panel = controls.panel;
+  await findByClass(panel, 'crossapp-audio-skip').onclick();
+  await flush();
+  assert.equal(mined.length, 2);
+  assert.deepStrictEqual(JSON.parse(mined[1].miningOverrides), {omitAudio: true},
+    'skip ignores the dragged range: no audio at all');
+
+  // ③ 之后的普通「+」照常带句子音频（跳过只管那一笔）。
+  mineButtons[0].dataset.mined = '';
+  await mineButtons[0].onclick();
+  await flush();
+  assert.equal(mined[mined.length - 1].miningOverrides, undefined,
+    'a later plain + is not affected by an earlier skip');
+}
+
+testCrossAppAudioPanelGeometryAndProbe()
+  .then(testCrossAppAudioTrimOffsetStaysWithItsOwnRequest)
+  .then(testCrossAppAudioPreviewSupersedesPendingDecode)
+  .then(testCrossAppAudioSkipSentenceAudioForThisCard)
+  .then(
+  () => console.log('cross-app audio panel tests passed'),
+  (error) => {
+    console.error(error);
+    process.exitCode = 1;
+  },
+);

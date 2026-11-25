@@ -20,6 +20,46 @@
   container.id = 'entries-container';
   root.appendChild(container);
 
+  // 嵌套弹窗是独立 realm，看不到 content.js 注入的钩子；不自己装的话 vendor/popup.js 退回
+  // 「Shift、立即扫」，与用户设的触发键 / 扫描延迟不符（反馈 ulS75hVkAK / r4tpeIzVuD）。
+  // 本页是扩展页，直接读同一份 storage.scanModifier / scanDelay。下面四个函数是 content.js
+  // 同名函数的副本，shift-hover.test.js 与 content.js / side-panel.js 逐例交叉比对。
+  var FUSHI_SCAN_MODIFIER_KEYS = { shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta' };
+  var FUSHI_SCAN_DELAY_MAX_MS = 2000;
+  function fushiNormalizeScanModifier(value) {
+    return value === 'none' || Object.prototype.hasOwnProperty.call(FUSHI_SCAN_MODIFIER_KEYS, value) ? value : 'shift';
+  }
+  function fushiScanModifierHeld(event, modifier) {
+    if (!event) return false;
+    var mod = fushiNormalizeScanModifier(modifier);
+    if (mod === 'none') return true;
+    return event[mod + 'Key'] === true;
+  }
+  function fushiNormalizeScanDelay(value) {
+    if (typeof value !== 'number' || !isFinite(value)) return 0;
+    var ms = Math.round(value);
+    return ms <= 0 ? 0 : Math.min(FUSHI_SCAN_DELAY_MAX_MS, ms);
+  }
+  function fushiEffectiveScanDelay(modifier, delay) {
+    return fushiNormalizeScanModifier(modifier) === 'none' ? fushiNormalizeScanDelay(delay) : 0;
+  }
+  let scanModifier = 'shift';
+  let scanDelayMs = 0;
+  window.__fushiScanModifierHeld = function (e) { return fushiScanModifierHeld(e, scanModifier); };
+  window.__fushiScanDelayMs = function () { return fushiEffectiveScanDelay(scanModifier, scanDelayMs); };
+  try {
+    chrome.storage.local.get(['scanModifier', 'scanDelay'], function (saved) {
+      try { if (chrome.runtime.lastError) return; } catch (_) { return; }
+      if (saved && typeof saved.scanModifier === 'string') scanModifier = fushiNormalizeScanModifier(saved.scanModifier);
+      if (saved && Object.prototype.hasOwnProperty.call(saved, 'scanDelay')) scanDelayMs = fushiNormalizeScanDelay(saved.scanDelay);
+    });
+    chrome.storage.onChanged.addListener(function (changes, area) {
+      if (area !== 'local' || !changes) return;
+      if (changes.scanModifier) scanModifier = fushiNormalizeScanModifier(changes.scanModifier.newValue);
+      if (changes.scanDelay) scanDelayMs = fushiNormalizeScanDelay(changes.scanDelay.newValue);
+    });
+  } catch (_) { /* storage 不可用：按默认（Shift、无延迟）走 */ }
+
   let parentPort = null;
   let nextId = 0;
   const pending = new Map();
@@ -124,6 +164,8 @@
     }
     const wheelSpeed = Number.parseFloat(theme['--fushi-wheel-speed']);
     window.__fushiPopupWheelSpeed = Number.isFinite(wheelSpeed) && wheelSpeed > 0 ? wheelSpeed : 1;
+    // BUG-4935：弹窗显示偏好与第一层同一解码点（嵌套层是独立 realm，全局要自己落一份）。
+    applyFushiPopupDisplayPrefs(theme);
     applyFushiPopupCss(data);
     installDictMediaPlaceholderResolver(root);
     window.renderPopup();

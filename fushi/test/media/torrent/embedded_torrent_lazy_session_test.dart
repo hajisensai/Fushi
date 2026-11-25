@@ -102,16 +102,46 @@ void main() {
 
     test('就绪判定走能力探测，不再等价于「已开 session」', () {
       // 窗口=该表达式体成员的完整声明（顶层分号收口），不是 `+400` 定长窗口：
-      // getter 一旦多包一层三元或换行，probeAvailable 就漂出窗口、断言凭空变假。
-      final String body = _expressionBodyMember(
+      // getter 一旦多包一层三元或换行，探测调用就漂出窗口、断言凭空变假。
+      final String ready = _expressionBodyMember(
         appModel,
         'bool get isEmbeddedTorrentReady',
       );
       expect(
-        body.contains('EmbeddedTorrentHost.probeAvailable()'),
+        ready.contains('isEmbeddedTorrentRuntimeAvailable'),
         isTrue,
         reason: 'BUG-1053：就绪判定若仍要求 session 存在，启动就又得开 session',
       );
+      final String runtime = _expressionBodyMember(
+        appModel,
+        'bool get isEmbeddedTorrentRuntimeAvailable',
+      );
+      expect(runtime.contains('probeEmbeddedTorrentRuntime()'), isTrue);
+      final String probe = _expressionBodyMember(
+        appModel,
+        'bool probeEmbeddedTorrentRuntime()',
+      );
+      expect(probe.contains('EmbeddedTorrentHost.probeAvailable()'), isTrue);
+    });
+
+    test('运行库判据只看 DLL，不掺下载服务是否已备好路径', () {
+      // 反馈 cliIUL82nf：两者用 `&&` 合在一起时，服务没起就短路、不探测 DLL，
+      // 下载后端引导把「服务未启动」误报成「本次安装缺少内置引擎运行库」。
+      final String runtime = _expressionBodyMember(
+        appModel,
+        'bool get isEmbeddedTorrentRuntimeAvailable',
+      );
+      for (final String serviceState in <String>[
+        '_embeddedTorrentSaveRoots',
+        '_embeddedTorrentResumeDir',
+        'isEmbeddedTorrentHostPrepared',
+      ]) {
+        expect(
+          runtime.contains(serviceState),
+          isFalse,
+          reason: '运行库判据不得依赖下载服务状态：$serviceState',
+        );
+      }
     });
 
     test('probeAvailable 只加载引擎，绝不创建 session', () {

@@ -4,6 +4,8 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/sources/book_media_identifier.dart'
+    show kMangaMediaSourceKey;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_media_source.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
@@ -47,7 +49,7 @@ class MangaFushiSource extends ReaderMediaSource {
 
   /// 媒体源唯一键（持久化标识，与 `reader_fushi`/`reader_pdf` 互异）。
   /// [ReaderFushiSource] 的 `_bookToMediaItem` 用它把 `format=='manga'` 的行路由到本源。
-  static const String kUniqueKey = 'reader_manga';
+  static const String kUniqueKey = kMangaMediaSourceKey;
 
   static MangaFushiSource get instance => _instance;
   static final MangaFushiSource _instance = MangaFushiSource._();
@@ -159,22 +161,4 @@ class MangaFushiSource extends ReaderMediaSource {
   BasePage buildHistoryPage({MediaItem? item, Widget? navigation}) {
     return ReaderFushiHistoryPage(navigation: navigation);
   }
-
-  /// 漫画是 `EpubBooks`（`format=='manga'`）的行，和 EPUB 共用可编辑的 `author` 列，
-  /// 因此同样开放作者编辑。此前 `MangaFushiSource extends ReaderMediaSource` 未覆盖，
-  /// 沿用基类默认 `false`，导致漫画长按编辑里缺作者字段（EPUB 有）——补齐这条缺口。
-  @override
-  bool get supportsAuthorEdit => true;
-
-  /// 委托给 [ReaderFushiSource]：作者写库逻辑（按 bookKey 写 `epubBooks.author`）与源
-  /// 实例无关（走 sharedDatabase + item.mediaIdentifier），漫画行的 bookKey 解析一致，
-  /// 直接复用同一条写入路径，不重复实现。
-  @override
-  Future<void> setAuthorFromMediaItem({
-    required MediaItem item,
-    required String? author,
-  }) => ReaderFushiSource.instance.setAuthorFromMediaItem(
-    item: item,
-    author: author,
-  );
 }

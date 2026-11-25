@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/manga/manga_reader_preferences.dart';
+import 'package:fushi/src/media/manga/manga_swipe_thresholds.dart';
 import 'package:fushi/src/media/manga/manga_view_prefs.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_panel_kit.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_sheet.dart';
@@ -50,6 +51,15 @@ void main() {
     expect(keys, contains('downloadAhead'));
     expect(keys, isNot(contains('skipFiltered')));
     expect(keys, isNot(contains('alwaysShowChapterTransition')));
+  });
+
+  test('OCR 进度浮标三选一（完整 / 贴边 / 隐藏）出现在设置面板（IpdWk54b_G）', () {
+    final MangaReaderPreferenceDescriptor badge =
+        mangaReaderPreferenceDescriptors(<String>{}).firstWhere(
+          (MangaReaderPreferenceDescriptor d) => d.key == 'ocrProgressBadge',
+        );
+    expect(badge.kind, MangaReaderPreferenceKind.choice);
+    expect(badge.choices, <String>['full', 'edge', 'hidden']);
   });
 
   Widget host(MangaReaderSettingsSheet sheet, {double? width = 400}) =>
@@ -251,7 +261,13 @@ void main() {
         MangaReaderSettingsSheet(
           globalDefaults: const MangaReaderPreferences(),
           // 纵向分页：只对它生效的「显示页间距」也要出现（见下一条测试）。
-          overrides: const <String, Object?>{'mode': 'paged_vertical'},
+          // 台词文字条开着：只在它开着时才有意义的「文字条字号」也要出现。
+          // 桌面放大触发选「停留」：只在它下才有意义的「停留时长」也要出现（默认是按住 Ctrl）。
+          overrides: const <String, Object?>{
+            'mode': 'paged_vertical',
+            'bubbleTextStrip': true,
+            'bubbleZoomHover': 'dwell',
+          },
           onChanged: (Map<String, Object?> next) async {},
         ),
         width: null,
@@ -326,6 +342,56 @@ void main() {
     }
   });
 
+  testWidgets('gamma switch is disabled until quality scaling is on', (
+    WidgetTester tester,
+  ) async {
+    // Gamma 校正只在画质缩放开着时参与转码（MangaFitQuality.fromPreferences）：
+    // 主开关关着时子开关还能拨，拨了也没有任何效果。
+    tester.view.physicalSize = const Size(400, 6000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final List<MangaReaderPreferenceDescriptor> descriptors =
+        mangaReaderPreferenceDescriptors(const <String>{});
+    String titleOf(String key) => descriptors
+        .firstWhere((MangaReaderPreferenceDescriptor d) => d.key == key)
+        .title;
+    AdaptiveSettingsSwitchRow rowOf(String key) =>
+        tester.widget<AdaptiveSettingsSwitchRow>(
+          find.ancestor(
+            of: find.text(titleOf(key)),
+            matching: find.byType(AdaptiveSettingsSwitchRow),
+          ),
+        );
+    // 画质缩放默认开：本作品先关掉它。
+    Map<String, Object?> saved = <String, Object?>{'enhancedScaling': false};
+    await tester.pumpWidget(
+      host(
+        MangaReaderSettingsSheet(
+          globalDefaults: const MangaReaderPreferences(),
+          overrides: saved,
+          onChanged: (Map<String, Object?> next) async => saved = next,
+        ),
+        width: null,
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(tabLabel(2));
+    await tester.pumpAndSettle();
+    expect(rowOf('enhancedScaling').onChanged, isNotNull);
+    expect(rowOf('gammaCorrectScaling').onChanged, isNull);
+    await tester.tap(find.text(titleOf('enhancedScaling')));
+    await tester.pumpAndSettle();
+    expect(saved['enhancedScaling'], true);
+    expect(rowOf('gammaCorrectScaling').onChanged, isNotNull);
+    await tester.tap(find.text(titleOf('gammaCorrectScaling')));
+    await tester.pumpAndSettle();
+    // 拨一下就是把默认值取反（文字感知 Gamma 校正默认开）。
+    expect(
+      saved['gammaCorrectScaling'],
+      !const MangaReaderPreferences().gammaCorrectScaling,
+    );
+  });
+
   testWidgets('list leaves room for the floating scope bar', (
     WidgetTester tester,
   ) async {
@@ -377,6 +443,58 @@ void main() {
       <String, Object?>{'invertColors': true},
     ]);
     expect(overrides, isEmpty);
+  });
+
+  // 反馈 lIoB_rGP7l：「保持屏幕常亮」在全局作用域下必须可改（它的全局值就是
+  // 阅读器全局偏好 keep_screen_awake），不再显示「只能按作品设置」。
+  testWidgets('keep-screen-on is editable in global scope', (
+    WidgetTester tester,
+  ) async {
+    final List<Map<String, Object?>> overrides = <Map<String, Object?>>[];
+    final List<Map<String, Object?>> patches = <Map<String, Object?>>[];
+    await tester.pumpWidget(
+      host(
+        MangaReaderSettingsSheet(
+          globalDefaults: const MangaReaderPreferences(),
+          overrides: const <String, Object?>{},
+          onChanged: (Map<String, Object?> next) async => overrides.add(next),
+          onGlobalChanged: (Map<String, Object?> patch) async =>
+              patches.add(patch),
+          supportedDeviceKeys: const <String>{'fullscreen', 'keepScreenOn'},
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Global'));
+    await tester.pumpAndSettle();
+    await tester.tap(tabLabel(1));
+    await tester.pumpAndSettle();
+    final Finder row = find.text('Keep screen on');
+    await tester.scrollUntilVisible(row, 200, scrollable: tabScrollable(1));
+    await tester.pumpAndSettle();
+    // 全屏仍只能按作品设置，常亮不再是。
+    expect(find.text('Can only be set per title'), findsOneWidget);
+    await tester.tap(row);
+    await tester.pumpAndSettle();
+    expect(patches, <Map<String, Object?>>[
+      <String, Object?>{'keepScreenOn': false},
+    ]);
+    expect(overrides, isEmpty);
+  });
+
+  test('global patch routes keepScreenOn to the reader-wide preference', () {
+    final ({Map<String, Object?> mangaPatch, bool? keepScreenAwake}) split =
+        splitMangaGlobalPatch(<String, Object?>{
+          'keepScreenOn': false,
+          'invertColors': true,
+        });
+    expect(split.keepScreenAwake, isFalse);
+    expect(split.mangaPatch, <String, Object?>{'invertColors': true});
+
+    final ({Map<String, Object?> mangaPatch, bool? keepScreenAwake}) plain =
+        splitMangaGlobalPatch(<String, Object?>{'grayscale': true});
+    expect(plain.keepScreenAwake, isNull);
+    expect(plain.mangaPatch, <String, Object?>{'grayscale': true});
   });
 
   test('old animateTransitions toggle is merged into the page-turn choice', () {
@@ -471,6 +589,50 @@ void main() {
       findsOneWidget,
     );
     expect(writes.last.animation, MangaPageAnimation.none);
+    expect(tester.takeException(), isNull);
+  });
+  testWidgets('swipe page-turn sensitivity slider writes the global setting '
+      'on release (R721ZgWVSB)', (WidgetTester tester) async {
+    tester.view.physicalSize = const Size(400, 4000);
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    final List<MangaPageTurnSettings> writes = <MangaPageTurnSettings>[];
+    await tester.pumpWidget(
+      host(
+        MangaReaderSettingsSheet(
+          globalDefaults: const MangaReaderPreferences(),
+          overrides: const <String, Object?>{},
+          onChanged: (Map<String, Object?> next) async {},
+          pageTurn: const MangaPageTurnSettings(followDrag: false),
+          onPageTurnChanged: (MangaPageTurnSettings v) async => writes.add(v),
+        ),
+        width: null,
+      ),
+    );
+    await tester.pumpAndSettle();
+    final Finder row = find.byKey(
+      const ValueKey<String>('manga_swipe_page_turn_sensitivity'),
+    );
+    expect(row, findsOneWidget);
+    AdaptiveSettingsSliderRow slider() =>
+        tester.widget<AdaptiveSettingsSliderRow>(row);
+    expect(slider().value, kMangaSwipePageTurnSensitivityDefault);
+    expect(slider().min, kMangaSwipePageTurnSensitivityMin);
+    expect(slider().max, kMangaSwipePageTurnSensitivityMax);
+
+    // 拖动中只改草稿（读数跟手），不写偏好。
+    slider().onChanged(2.2);
+    await tester.pump();
+    expect(writes, isEmpty);
+    expect(slider().readout, '2.2');
+
+    // 松手写一次，其余翻页设置原样带上。
+    slider().onChangeEnd!(2.2);
+    await tester.pumpAndSettle();
+    expect(writes, hasLength(1));
+    expect(writes.single.swipeSensitivity, closeTo(2.2, 1e-9));
+    expect(writes.single.followDrag, isFalse);
+    expect(slider().value, closeTo(2.2, 1e-9));
     expect(tester.takeException(), isNull);
   });
 }

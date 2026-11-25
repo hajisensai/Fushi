@@ -138,8 +138,18 @@ void main() {
       "INSERT INTO preferences (key, value, updated_at) VALUES ('favorite_sentences', ?, 1)",
       <Object?>[
         jsonEncode(<Map<String, Object?>>[
-          <String, Object?>{'source': 'music', 'bookKey': 'lose', 'text': 'a'},
-          <String, Object?>{'source': 'book', 'bookKey': 'lose', 'text': 'b'},
+          <String, Object?>{
+            'source': 'music',
+            'bookKey': 'lose',
+            'text': 'a',
+            'createdAt': '2026-11-06T10:00:00.000',
+          },
+          <String, Object?>{
+            'source': 'book',
+            'bookKey': 'lose',
+            'text': 'b',
+            'createdAt': '2026-11-06T10:00:00.000',
+          },
         ]),
       ],
     );
@@ -147,7 +157,7 @@ void main() {
     raw.dispose();
 
     Future<void> check(FushiDatabase db) async {
-      expect(db.schemaVersion, 146);
+      expect(db.schemaVersion, kFushiDbSchemaVersion);
       expect(
         await _col(db, 'SELECT track_uid FROM music_tracks ORDER BY track_uid'),
         <String>['other', 'win'],
@@ -193,15 +203,16 @@ void main() {
         <String>['booklose', 'musicwin'],
         reason: '只改音乐来源的出处',
       );
-      final List<Object?> favs =
-          jsonDecode((await db.getPref(kFavoriteSentencesPrefKey))!)
-              as List<Object?>;
+      // v145 改写偏好里的旧 JSON，随后 v166 把它原样搬进收藏句表。
       expect(
-        <Object?>[
-          for (final Object? f in favs) (f! as Map<String, Object?>)['bookKey'],
-        ],
-        <String>['win', 'lose'],
+        await _col(
+          db,
+          'SELECT source || book_key FROM favorite_sentences ORDER BY source',
+        ),
+        <String>['booklose', 'musicwin'],
+        reason: '收藏句只改音乐来源的出处',
       );
+      expect(await db.getPref(kFavoriteSentencesPrefKey), isNull);
       expect(
         await _col(
           db,
@@ -366,6 +377,15 @@ void main() {
     const Set<String> exempt = <String>{
       'music_tracks.track_uid', // 主键本身，由 mergeMusicTrackInto 删败者行
       'music_track_uid_aliases.track_uid', // 别名表自己
+      // 远程曲目（v148）的主键：来源 + 条目 id 派生的 uid（srv / plg 命名空间），从来不是
+      // 本地曲库的内容派生 uid，曲库合并不会改指它。
+      'music_remote_tracks.track_uid',
+      // 服务器曲目的离线副本（v175）：主键与 music_remote_tracks 同一个服务器曲目 uid
+      // （`musicServerTrackUid`，srv 命名空间），同理不在本地曲库合并的改指范围里。
+      'music_server_downloads.track_uid',
+      // v176：服务器曲目的离线补发队列与客户端状态，同一个服务器曲目 uid（srv 命名空间）。
+      'music_server_pending_actions.track_uid',
+      'music_server_track_states.track_uid',
     };
     final List<String> found = <String>[];
     for (final QueryRow t

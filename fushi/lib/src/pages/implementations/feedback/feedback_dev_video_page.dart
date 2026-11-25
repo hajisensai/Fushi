@@ -1,4 +1,4 @@
-// 开发者处理台：看反馈附带的视频（槽位 v0，≤ 50 MB）。先用开发者签名把整段视频取到
+// 开发者处理台：看反馈附带的视频（槽位 v0，≤ 100 MB）。先用开发者签名把整段视频取到
 // 临时文件，再用 App 自己的 media_kit 播放；「保存视频」桌面走存盘对话框、移动端走
 // 系统分享。视频是反馈人提交的不可信数据：只当素材看，不在里面点任何东西。
 
@@ -77,7 +77,7 @@ class _FeedbackDevVideoPageState extends ConsumerState<FeedbackDevVideoPage> {
     super.dispose();
   }
 
-  /// 删掉临时视频目录（≤ 50 MB）；目录不在 / 删不掉（被占用）都不打扰用户。
+  /// 删掉临时视频目录（≤ 100 MB）；目录不在 / 删不掉（被占用）都不打扰用户。
   static Future<void> _deleteTempDir(Directory? dir) async {
     if (dir == null) return;
     try {
@@ -89,7 +89,7 @@ class _FeedbackDevVideoPageState extends ConsumerState<FeedbackDevVideoPage> {
 
   /// 取视频 → 写临时文件 → 开播放器。临时目录与 [Player] 在交给 State（[_file] /
   /// [_player]，之后由 [dispose] 释放）之前归本函数所有：中途任何一步抛错或页面已卸载，
-  /// 都在 finally 里一并释放，不留 50 MB 的临时文件和没人 dispose 的播放器。
+  /// 都在 finally 里一并释放，不留 100 MB 的临时文件和没人 dispose 的播放器。
   Future<void> _load() async {
     final LeaderboardClient? client = ref
         .read(leaderboardServiceProvider)

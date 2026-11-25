@@ -32,15 +32,49 @@ void main() {
   test('completed handler gates on the auto-play-next toggle + playlist '
       'and reentry guards (TODO-639)', () {
     expect(pageSource, contains('bool _autoAdvanceInFlight = false'));
+    // 媒体服务器线路故障转移落地后，EOF 回调分三层：_handlePlaybackCompleted
+    // 取 EOF 那一刻的位置 → _handlePlaybackEnded 先问能否换线路续播（流中途断了）
+    // → 换不了 / 真播完才进 _finishPlaybackCompleted 做连播门控。前两层只许转发，
+    // 门控整段钉在 _finishPlaybackCompleted（连同它调用的 _autoAdvanceTargetEpisode）。
+    final String entry = _functionSource(
+      pageSource,
+      '  void _handlePlaybackCompleted() =>',
+      '  /// 播放器报 EOF',
+    );
+    expect(entry, contains('_handlePlaybackEnded('));
+    final String ended = _functionSource(
+      pageSource,
+      '  void _handlePlaybackEnded({',
+      '  /// 流断了之后换线路重载',
+    );
+    expect(ended, contains('_finishPlaybackCompleted(positionMs);'));
+    expect(
+      ended,
+      isNot(contains('_startAutoAdvanceCountdown(')),
+      reason: '连播只能经 _finishPlaybackCompleted 的门控进倒计时',
+    );
     final String fn = _functionSource(
       pageSource,
-      '  void _handlePlaybackCompleted() {',
+      '  void _finishPlaybackCompleted(int? positionMs) {',
       '  /// 启动自动连播倒计时',
     );
 
     expect(fn, contains('if (!mounted) return'));
-    // 统一合集 Phase 3：下一集索引内联计算（有下一集才连播；末集/单集/越界 → null）。
-    expect(fn, contains('cur < _episodes.length - 1'));
+    // 拍板台 QHbRRctQdW：目标集由连播顺序决定——顺序模式走纯函数
+    // sequentialNextEpisode（末集/单集/越界 → null），随机模式走跨页面的轮次记录。
+    expect(
+      fn,
+      contains('final int? nextEpisode = _autoAdvanceTargetEpisode();'),
+    );
+    expect(
+      fn,
+      contains('appModel.videoPlaylistOrder == VideoPlaylistOrder.sequential'),
+    );
+    expect(
+      fn,
+      contains('sequentialNextEpisode(count: episodes.length, current: cur)'),
+    );
+    expect(fn, contains('VideoShuffleRounds.instance.next('));
     // TODO-639: the advance decision is the pure predicate gating on the
     // user's auto-play-next preference, next-episode existence, and reentry.
     expect(fn, contains('shouldAutoPlayNextOnCompletion('));
@@ -182,9 +216,12 @@ void main() {
       // 以调用行本身作尾界标。
       '    _ensureWatchTracker(controller, title);',
     );
-    final int currentAt = fn.indexOf(
-      'unawaited(prewarmEmbeddedSubtitleCache(videoPath));',
-    );
+    // BUG-4838：调用多了取消信号参数，按调用形状（不看换行）找。
+    final int currentAt =
+        RegExp(
+          r'unawaited\(\s*prewarmEmbeddedSubtitleCache\(\s*videoPath,',
+        ).firstMatch(fn)?.start ??
+        -1;
     final int nextAt = fn.indexOf('_prewarmNextEpisodeSubtitleCache();');
 
     expect(currentAt, greaterThan(-1));

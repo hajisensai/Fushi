@@ -61,7 +61,7 @@ ThemeData _theme({
   return buildFushiThemeData(
     scheme: ColorScheme.fromSeed(seedColor: const Color(0xFF8B6F2F)),
     textTheme: Typography.material2021().black,
-    glass: glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glass: glass ? FushiGlassMaterial.premium : FushiGlassMaterial.off,
     glassDesign: glass,
   ).copyWith(platform: platform);
 }

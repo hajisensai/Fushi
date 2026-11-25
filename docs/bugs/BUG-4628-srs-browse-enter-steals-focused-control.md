@@ -1,0 +1,6 @@
+## BUG-4628 · SRS 浏览页按键处理抢走持焦控件的 Enter
+- **报告**：2026-11-15（主会话：PR #3424 的检查器自动保存测试只能先聚焦分段按钮再发 `ActivateIntent` 绕开，真按 Enter 切不了页签）
+- **真实性**：✅ 真 bug。按键先到主焦点、再沿祖先链冒泡；浏览页整页外层 `Focus(onKeyEvent: _onKey)`（`fushi/lib/src/pages/implementations/srs/srs_browse_page.dart:1838`）位于 `WidgetsApp` 应用级 `Shortcuts`（Enter / 手柄 A → `ActivateIntent`）之下，先看到键。`_onKey` 里 Enter / 小键盘 Enter / 手柄 A 无条件当「翻面 / 打开详情」返回 handled（`srs_browse_page.dart:1718`），持焦的检查器分段按钮（`srs_browse_inspector.dart` 的 `adaptiveSegmentedButton`）永远收不到激活。窄屏全屏详情页 `_SrsBrowseDetailPageState._onKey`（`srs_browse_inspector.dart:1236`）同构：空格 / Enter / 手柄 A 一律翻面。
+- **[x] ① 已修复** — 新增 `fushi/lib/src/focus/focus_activation.dart` 的 `focusedDescendantClaimsActivation(owner, key)`：确认键（Enter / 小键盘 Enter / 手柄 A / Select；裸空格本应用全局中和、不是确认键）且主焦点是 key sink 子树里另一个挂着启用 `ActivateIntent` 的控件时返回 true，页面返回 ignored 让键冒泡到应用级激活。两个 `_onKey` 都先过这道判据；整页 key sink 自己持焦（卡面区）时照常翻面。约定写进 `docs/agent/focus-ownership.md`。
+- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_browse_ime_and_inline_edit_focus_test.dart`：宽屏卡面区持焦 Enter 翻面、焦点在页签上 Enter 切页签不翻面；窄屏详情页空格 / Enter 翻面、页签上 Enter 切页签；#3424 那条自动保存测试改回真按 Enter 切页签。全部 `sendKeyEvent`，不点按。
+- **备注**：方向键（宽屏 ↑↓ 换卡、详情页 ←→ 换卡）在页签持焦时仍归页面，属既定设计，未改。

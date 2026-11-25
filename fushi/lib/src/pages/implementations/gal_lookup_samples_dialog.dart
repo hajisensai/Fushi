@@ -11,6 +11,9 @@ import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/pages/implementations/gal_lookup_calibration_canvas.dart';
 import 'package:fushi/src/pages/implementations/gal_workbench_chrome.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/adaptive/fushi_apple_surface.dart';
+import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -902,41 +905,46 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
 
   @override
   Widget build(BuildContext context) {
-    return PopScope(
-      canPop: !_busy && !_dirty,
-      onPopInvokedWithResult: (bool didPop, Object? result) {
-        if (!didPop && !_busy) unawaited(_finish());
-      },
-      child: FushiDialog.fullscreen(
+    // Apple：macOS 档窗口 sheet / iOS 档整页（showAdaptiveDialogSurface 推出来时
+    // 才有这个 scope）；M3E 仍是全屏对话框。状态与保存出口（_finish）只有一份。
+    final FushiAppleSurfaceForm? appleForm = FushiAppleSurfaceScope.maybeFormOf(
+      context,
+    );
+    final Widget captureButton = FushiIconButtonControl(
+      onPressed: _busy ? null : _capture,
+      icon: const FushiIcon(Icons.add_photo_alternate_outlined),
+      tooltip: _captureTooltip,
+    );
+    final Widget removeButton = FushiIconButtonControl(
+      key: const ValueKey<String>('calibration-remove-sample'),
+      onPressed: _busy || _sample == null ? null : _removeSample,
+      icon: const FushiIcon(Icons.delete_outline),
+      tooltip: t.game_lookup_samples_remove,
+    );
+    final Widget applyButton = FushiFilledButton.icon(
+      onPressed:
+          _busy ||
+              !_canPreview ||
+              _samples.isEmpty ||
+              _previewRunning ||
+              !_applyPreviewsAccepted
+          ? null
+          : () => _finish(apply: true),
+      icon: const FushiIcon(Icons.sports_esports_outlined),
+      label: Text(t.game_lookup_samples_apply),
+    );
+    final Widget surface;
+    if (appleForm == null) {
+      surface = FushiDialog.fullscreen(
         child: Scaffold(
           appBar: FushiAppBar(
             automaticallyImplyLeading: false,
             title: _canSwitchSlot ? _slotSwitch() : Text(_title),
             actions: [
-              FushiIconButtonControl(
-                onPressed: _busy ? null : _capture,
-                icon: const FushiIcon(Icons.add_photo_alternate_outlined),
-                tooltip: _captureTooltip,
-              ),
-              FushiIconButtonControl(
-                key: const ValueKey<String>('calibration-remove-sample'),
-                onPressed: _busy || _sample == null ? null : _removeSample,
-                icon: const FushiIcon(Icons.delete_outline),
-                tooltip: t.game_lookup_samples_remove,
-              ),
+              captureButton,
+              removeButton,
               const SizedBox(width: 8),
-              FushiFilledButton.icon(
-                onPressed:
-                    _busy ||
-                        !_canPreview ||
-                        _samples.isEmpty ||
-                        _previewRunning ||
-                        !_applyPreviewsAccepted
-                    ? null
-                    : () => _finish(apply: true),
-                icon: const FushiIcon(Icons.sports_esports_outlined),
-                label: Text(t.game_lookup_samples_apply),
-              ),
+              applyButton,
               const SizedBox(width: 4),
               CloseButton(onPressed: _busy ? null : () => _finish()),
               const SizedBox(width: 4),
@@ -947,85 +955,123 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
               if (_busy || _previewRunning)
                 const FushiLinearProgressIndicator(),
               _statusBanner(),
-              Expanded(
-                child: Row(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: [
-                    Expanded(
-                      child: LayoutBuilder(
-                        builder:
-                            (
-                              BuildContext context,
-                              BoxConstraints constraints,
-                            ) => Column(
-                              children: [
-                                if (_samples.length > 1)
-                                  ConstrainedBox(
-                                    constraints: BoxConstraints(
-                                      maxHeight: constraints.maxHeight * 0.2,
-                                    ),
-                                    child: SingleChildScrollView(
-                                      padding: const EdgeInsets.fromLTRB(
-                                        16,
-                                        8,
-                                        16,
-                                        0,
-                                      ),
-                                      child: Wrap(
-                                        spacing: 6,
-                                        runSpacing: 6,
-                                        children: [
-                                          for (
-                                            int i = 0;
-                                            i < _samples.length;
-                                            i++
-                                          )
-                                            FushiChoiceChip(
-                                              label: Text('${i + 1}'),
-                                              selected: i == _selected,
-                                              showCheckmark: false,
-                                              onSelected: _busy
-                                                  ? null
-                                                  : (_) => setState(() {
-                                                      _selected = i;
-                                                      _hoverIndex = null;
-                                                    }),
-                                            ),
-                                        ],
-                                      ),
-                                    ),
-                                  ),
-                                Expanded(
-                                  child: Padding(
-                                    padding: const EdgeInsets.fromLTRB(
-                                      16,
-                                      12,
-                                      16,
-                                      8,
-                                    ),
-                                    child: _image(),
-                                  ),
-                                ),
-                                if (_sample != null) _sampleControls(),
-                              ],
-                            ),
-                      ),
-                    ),
-                    const FushiVerticalDivider(width: 1),
-                    SizedBox(
-                      width: 340,
-                      child: SingleChildScrollView(
-                        padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
-                        child: _controls(),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
+              Expanded(child: _workspace(stacked: false)),
             ],
           ),
         ),
+      );
+    } else {
+      surface = FushiAppleSurfaceFrame(
+        title: _title,
+        scrollable: false,
+        bodyPadding: EdgeInsets.zero,
+        // 整页返回 = 关闭（PopScope 把它接到 _finish），sheet 才放「关闭」。
+        actions: <Widget>[
+          captureButton,
+          removeButton,
+          if (appleForm == FushiAppleSurfaceForm.sheet)
+            FushiTextButton(
+              key: const ValueKey<String>('calibration-close'),
+              onPressed: _busy ? null : () => _finish(),
+              child: Text(t.dialog_close),
+            ),
+          applyButton,
+        ],
+        body: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            if (_canSwitchSlot)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 8),
+                child: _slotSwitch(),
+              ),
+            if (_busy || _previewRunning) const FushiLinearProgressIndicator(),
+            _statusBanner(),
+            // sheet（≤ 640 宽）与 iPhone 放不下左右两栏：窄于 720 时样张在上、
+            // 参数在下。
+            Expanded(
+              child: LayoutBuilder(
+                builder: (BuildContext context, BoxConstraints box) =>
+                    _workspace(stacked: box.maxWidth < 720),
+              ),
+            ),
+          ],
+        ),
+      );
+    }
+    return PopScope(
+      canPop: !_busy && !_dirty,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (!didPop && !_busy) unawaited(_finish());
+      },
+      child: surface,
+    );
+  }
+
+  /// 样张区（缩略切换 + 画布 + 样张控件）与参数栏。[stacked] = 上下排（Apple 窄
+  /// 面），否则左右两栏（参数栏 340 宽）。
+  Widget _workspace({required bool stacked}) {
+    final Widget preview = LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints constraints) => Column(
+        children: [
+          if (_samples.length > 1)
+            ConstrainedBox(
+              constraints: BoxConstraints(
+                maxHeight: constraints.maxHeight * 0.2,
+              ),
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.fromLTRB(16, 8, 16, 0),
+                child: Wrap(
+                  spacing: 6,
+                  runSpacing: 6,
+                  children: [
+                    for (int i = 0; i < _samples.length; i++)
+                      FushiChoiceChip(
+                        label: Text('${i + 1}'),
+                        selected: i == _selected,
+                        showCheckmark: false,
+                        onSelected: _busy
+                            ? null
+                            : (_) => setState(() {
+                                _selected = i;
+                                _hoverIndex = null;
+                              }),
+                      ),
+                  ],
+                ),
+              ),
+            ),
+          Expanded(
+            child: Padding(
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+              child: _image(),
+            ),
+          ),
+          if (_sample != null) _sampleControls(),
+        ],
       ),
+    );
+    final Widget controls = SingleChildScrollView(
+      padding: const EdgeInsets.fromLTRB(16, 16, 16, 24),
+      child: _controls(),
+    );
+    if (stacked) {
+      return Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: [
+          Expanded(flex: 3, child: preview),
+          const FushiDividerControl(height: 1),
+          Expanded(flex: 2, child: controls),
+        ],
+      );
+    }
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: [
+        Expanded(child: preview),
+        const FushiVerticalDivider(width: 1),
+        SizedBox(width: 340, child: controls),
+      ],
     );
   }
 
@@ -1098,19 +1144,28 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
         // 中性步骤圆（无当前步概念）。
         FushiStepNumberBadge(number: step, size: 22),
         const SizedBox(width: 8),
-        Expanded(
-          child: Text(title, style: context.fushiType.titleSmallEmphasized),
-        ),
+        Expanded(child: Text(title, style: _sectionTitleStyle())),
       ],
     );
   }
 
   Widget _secondaryText(String value) => Text(
     value,
-    style: Theme.of(context).textTheme.bodySmall?.copyWith(
-      color: Theme.of(context).colorScheme.onSurfaceVariant,
-    ),
+    style: isGlassDesign(context)
+        ? FushiAppleMetrics.of(context).subtitleStyle(context)
+        : Theme.of(context).textTheme.bodySmall?.copyWith(
+            color: Theme.of(context).colorScheme.onSurfaceVariant,
+          ),
   );
+
+  /// 步骤 / 「高级」的小节标题：M3E titleSmall emphasized，Apple 行标题字号 semibold。
+  TextStyle _sectionTitleStyle() => isGlassDesign(context)
+      ? appleTextStyle(
+          context,
+          size: FushiAppleMetrics.of(context).titleSize,
+          weight: FontWeight.w600,
+        )
+      : context.fushiType.titleSmallEmphasized;
 
   bool get _canSwitchSlot =>
       widget.slot != null &&
@@ -1592,7 +1647,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
           collapsedShape: const Border(),
           title: Text(
             t.game_lookup_samples_advanced,
-            style: context.fushiType.titleSmallEmphasized,
+            style: _sectionTitleStyle(),
           ),
           subtitle: _secondaryText(t.game_lookup_samples_advanced_hint),
           onExpansionChanged: (bool value) =>

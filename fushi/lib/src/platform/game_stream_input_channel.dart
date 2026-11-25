@@ -38,6 +38,17 @@ abstract final class GameStreamInputChannel {
     return result;
   }
 
+  /// Silences the bound game on the host speakers ([muted] true) or restores
+  /// it; the stream audio keeps full volume either way. Turning it off also
+  /// clears a duck left behind by a previous run that was killed mid-stream.
+  /// Unbinding restores the speakers as well. Throws [PlatformException]
+  /// (`not_bound`, `mute_failed`) when the host cannot apply it.
+  static Future<void> setHostMuted(bool muted) async {
+    await _channel.invokeMethod<void>('setHostMuted', <String, Object?>{
+      'muted': muted,
+    });
+  }
+
   static Future<void> release() async {
     await _channel.invokeMethod<void>('release');
   }

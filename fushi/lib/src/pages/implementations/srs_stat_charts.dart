@@ -5,6 +5,7 @@ import 'package:flutter/gestures.dart' show PointerHoverEvent;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/stats/stat_window.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -13,6 +14,16 @@ import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:material_color_utilities/material_color_utilities.dart'
     show Hct;
 import 'package:fushi_srs/fushi_srs.dart' show srsDayToDate;
+import 'package:fushi_engine/srs/srs_calibration.dart'
+    show
+        SrsCalibrationBin,
+        SrsCalibrationSeries,
+        SrsUmPlusBin,
+        kSrsUmPlusSmallBucket,
+        srsUmPlusDisagreementDomain,
+        srsUmPlusErrorDomain;
+
+part 'srs_calibration_charts.dart';
 
 /// 复习统计（统计中心「复习」分区）的图表件：可点按 / 悬停看数值的柱状图与折线
 /// 图、环形图、日历热力图、百分比堆叠条与图例。
@@ -1195,21 +1206,22 @@ class _SrsCalendarHeatmapState extends State<SrsCalendarHeatmap> {
         final double width = box.maxWidth;
         final int weeks = ((width + _gap) / (11 + _gap)).floor().clamp(8, 53);
         final double cell = math.min(16, (width - (weeks - 1) * _gap) / weeks);
-        // 最右一列 = 今天所在周（周一起）。
-        final int todayWeekday = srsDayToDateWeekday(widget.today);
-        final int lastMonday = widget.today - (todayWeekday - 1);
-        final int firstMonday = lastMonday - (weeks - 1) * 7;
+        // 最右一列 = 今天所在周（从 [StatWindow.weekStartDay] 起）。
+        final int lastWeekStart =
+            widget.today -
+            StatWindow.dayOfWeek(srsDayToDateWeekday(widget.today));
+        final int firstWeekStart = lastWeekStart - (weeks - 1) * 7;
         int max = 0;
-        for (int d = firstMonday; d <= widget.today; d++) {
+        for (int d = firstWeekStart; d <= widget.today; d++) {
           max = math.max(max, widget.countsByDay[d] ?? 0);
         }
         final double gridWidth = weeks * cell + (weeks - 1) * _gap;
         final int? sel = _selected;
         final List<Widget> monthLabels = <Widget>[];
         for (int w = 0; w < weeks; w++) {
-          final int monday = firstMonday + w * 7;
+          final int weekStart = firstWeekStart + w * 7;
           for (int k = 0; k < 7; k++) {
-            final int d = monday + k;
+            final int d = weekStart + k;
             if (srsDayOfMonth(d) == 1 && w < weeks - 1) {
               monthLabels.add(
                 Positioned(
@@ -1242,7 +1254,7 @@ class _SrsCalendarHeatmapState extends State<SrsCalendarHeatmap> {
                         for (int k = 0; k < 7; k++) ...<Widget>[
                           if (k > 0) const SizedBox(height: _gap),
                           _cell(
-                            firstMonday + w * 7 + k,
+                            firstWeekStart + w * 7 + k,
                             cell,
                             colors,
                             max,

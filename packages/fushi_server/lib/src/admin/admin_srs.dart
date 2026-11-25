@@ -1,0 +1,513 @@
+/// admin API 的复习（SRS）端点（docs/specs/2026-11-05-server-srs-design.md §4.1 / §4.5）：
+///
+/// - `GET  /api/admin/srs`           状态（各份 profile、调度器、AnkiConnect 监听）+ 当前配置；
+/// - `PUT  /api/admin/srs`           改配置（只改给了的字段）：`profiles`（整份）/ `addProfiles` / `removeProfiles`、
+///                                   `defaultProfile`、`rolloverHour`、`rwkvModel`（`small` / `tiny`：RWKV 模型
+///                                   档位，写的是整台设备的 `<support>/srs_rwkv/model_size`，当场生效）、
+///                                   `miningTarget`、`miningDecks`（整份替换）/ `miningDecksPatch`（只改给了的
+///                                   那几份，空串 = 删掉那一项）、`profileNames`（整份替换，空串 = 不起名、用设备报的；
+///                                   服务端发布的 profile 说明文件与选择列表用它）、`ankiConnect: {enabled, bind, port, apiKey,
+///                                   profileKeys, corsOrigins}`；
+/// - `GET  /api/admin/srs/profiles`  同步目录里能选的 profile（名字、设备、笔记数、是否已提供）；
+/// - `POST /api/admin/srs/sync`      立即同步（正文 `{"profile": uid}` 只同步那份）；
+/// - `GET  /api/admin/srs/devices`   各份可用 profile 里还没信任的设备（`?profile=uid` 只看那份）：设备 ID、名字、
+///                                   首次出现、扣着几条删除 / 彻底清除、待确认还是已拒绝；
+/// - `POST /api/admin/srs/devices/trust`  信任 / 拒绝一台：`{"device": id, "trust": true|false, "profile": uid}`；
+///                                   `profile` 可省（只在一份里待确认 / 已拒绝时自动认出那份）。
+/// - `GET  /api/admin/srs/migration` 复习库换代（协议 3 → 新代）的状态：`generation`（状态、步骤进度、上次结论、内核
+///                                   `code` / 原因、报告路径、处置说明 `advice`）+ 各份 profile 的状态；
+/// - `POST /api/admin/srs/migration/start`   开始 / 重新开始迁移（后台跑，202 后看状态）；在跑 / 不需要 / 别的进程在迁
+///                                   → 409 `srs_migration_running` / `srs_migration_not_needed` / `srs_migrating_elsewhere`；
+///                                   整机备份正在拷库目录 → 409 `srs_backup_running`（备份完再开始）；
+/// - `POST /api/admin/srs/migration/cancel`  叫停（提交点之前）；没在跑 / 过了提交点 → 409。
+///
+/// 复习库在升级 / 升级受阻时，按 profile 取库的端点回 503 `srs_upgrading` / `srs_upgrade_blocked`（server_srs.dart
+/// [ServerSrsUpgradeRefusal]），不是 409 `profile_unavailable`。
+///
+/// 设备信任（BUG-4306，native/fushi_fsrs/src/store/sync2/trust.rs）：服务端开库后第一次见到的设备，它的删除与彻底
+/// 清除在服务端的库里扣着，直到这里确认。逻辑在 engine `srs_devices.dart`，与 app 冲突中心同一条路径。
+///
+/// AnkiConnect 的 key 是凭据：读的时候只报「设没设」，不回显；写的时候空串 = 清掉，不给 = 不动。
+library;
+
+import 'dart:convert';
+
+import 'package:fushi_engine/srs/srs_devices.dart';
+import 'package:fushi_engine/srs/srs_profile_link.dart';
+import 'package:fushi_engine/srs/srs_rwkv_models.dart';
+import 'package:fushi_server/src/admin/admin_context.dart';
+import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/config/server_srs_config.dart';
+import 'package:fushi_server/src/server_ankiconnect.dart';
+import 'package:fushi_server/src/server_srs.dart';
+import 'package:shelf/shelf.dart' as shelf;
+
+const String kAdminSrsPath = '/api/admin/srs';
+
+/// profile uid 的形状（同步目录名 `fushi-srs/<uid>/`）。
+final RegExp _uid = RegExp(
+  r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$',
+);
+
+class AdminSrs {
+  AdminSrs(this.ctx);
+
+  final AdminContext ctx;
+
+  Future<shelf.Response?> route(
+    String method,
+    String path,
+    shelf.Request request,
+  ) async {
+    switch ((method, path)) {
+      case ('GET', kAdminSrsPath):
+        return _json(status());
+      case ('PUT', kAdminSrsPath):
+        return _put(await _body(request));
+      case ('GET', '$kAdminSrsPath/profiles'):
+        return _json(<String, Object?>{'profiles': await profiles()});
+      case ('POST', '$kAdminSrsPath/sync'):
+        final Object? uid = (await _body(request))['profile'];
+        final ServerSrs? srs = ctx.host.srs;
+        if (srs == null) return _err(409, 'srs_unavailable');
+        if (uid != null && (uid is! String || srs.profile(uid) == null)) {
+          return _err(404, 'profile_not_served');
+        }
+        await srs.syncNow(uid as String?);
+        return _json(status());
+      case ('GET', '$kAdminSrsPath/migration'):
+        final ServerSrs? srs = ctx.host.srs;
+        if (srs == null) return _err(409, 'srs_unavailable');
+        return _json(_migrationView(srs));
+      case ('POST', '$kAdminSrsPath/migration/start'):
+        final ServerSrs? srs = ctx.host.srs;
+        if (srs == null) return _err(409, 'srs_unavailable');
+        final String? refused = await srs.startMigration();
+        if (refused != null) return _err(409, refused);
+        return _json(_migrationView(srs), status: 202);
+      case ('POST', '$kAdminSrsPath/migration/cancel'):
+        final ServerSrs? srs = ctx.host.srs;
+        if (srs == null) return _err(409, 'srs_unavailable');
+        final String? refused = srs.cancelMigration();
+        if (refused != null) return _err(409, refused);
+        return _json(_migrationView(srs));
+      case ('GET', '$kAdminSrsPath/devices'):
+        return _devices(request.url.queryParameters['profile']);
+      case ('POST', '$kAdminSrsPath/devices/trust'):
+        return _trust(await _body(request));
+    }
+    return null;
+  }
+
+  /// `GET /api/admin/srs/devices`（`ctl srs devices` 也用它）。
+  Future<shelf.Response> _devices(String? uid) async {
+    final ServerSrs? srs = ctx.host.srs;
+    if (srs == null) return _err(409, 'srs_unavailable');
+    final List<ServerSrsProfile> targets;
+    if (uid == null || uid.isEmpty) {
+      targets = srs.readyProfiles;
+    } else {
+      final ServerSrsProfile? prof = srs.profile(uid);
+      if (prof == null) return _err(404, 'profile_not_served');
+      if (prof.store == null) return _unavailable(srs);
+      targets = <ServerSrsProfile>[prof];
+    }
+    return _json(<String, Object?>{
+      'profiles': <Map<String, Object?>>[
+        for (final ServerSrsProfile prof in targets)
+          await _profileDevices(srs, prof),
+      ],
+    });
+  }
+
+  Future<Map<String, Object?>> _profileDevices(
+    ServerSrs srs,
+    ServerSrsProfile prof,
+  ) async => <String, Object?>{
+    'uid': prof.uid,
+    'name': prof.name,
+    'untrusted': <Map<String, Object?>>[
+      for (final SrsDeviceView d
+          in await srs.untrustedDevices(prof.uid) ?? const <SrsDeviceView>[])
+        d.toJson(),
+    ],
+  };
+
+  /// `POST /api/admin/srs/devices/trust`。
+  Future<shelf.Response> _trust(Map<String, dynamic> body) async {
+    final Object? device = body['device'];
+    if (device is! String || device.trim().isEmpty) {
+      throw const FormatException('device must be a device id');
+    }
+    final Object? trust = body['trust'];
+    if (trust is! bool) {
+      throw const FormatException('trust must be true or false');
+    }
+    final Object? uid = body['profile'];
+    if (uid != null && uid is! String) {
+      throw const FormatException('profile must be a profile uid');
+    }
+    final ServerSrs? srs = ctx.host.srs;
+    if (srs == null) return _err(409, 'srs_unavailable');
+    final ServerSrsProfile prof;
+    if (uid is String && uid.isNotEmpty) {
+      final ServerSrsProfile? hit = srs.profile(uid);
+      if (hit == null) return _err(404, 'profile_not_served');
+      if (hit.store == null) return _unavailable(srs);
+      prof = hit;
+    } else {
+      // 没点名：在哪份里还没信任就是哪份；几份里都有（同一台设备在几门语言里都待确认）要点名。
+      final String key = srsDeviceKey(device);
+      final List<ServerSrsProfile> hits = <ServerSrsProfile>[
+        for (final ServerSrsProfile p in srs.readyProfiles)
+          if ((await srs.untrustedDevices(p.uid) ?? const <SrsDeviceView>[])
+              .any((SrsDeviceView d) => srsDeviceKey(d.id) == key))
+            p,
+      ];
+      if (hits.isEmpty) return _err(404, 'device_unknown');
+      if (hits.length > 1) return _err(409, 'profile_required');
+      prof = hits.single;
+    }
+    final SrsDeviceView view;
+    try {
+      view = await srs.setDeviceTrust(prof.uid, device.trim(), trust: trust);
+    } on SrsDeviceTrustException catch (e) {
+      return _err(
+        e.refusal == SrsDeviceTrustRefusal.unknownDevice ? 404 : 409,
+        e.refusal.reason,
+      );
+    }
+    return _json(<String, Object?>{
+      'device': view.toJson(),
+      'profile': await _profileDevices(srs, prof),
+    });
+  }
+
+  /// `GET /api/admin/srs` 的回包（`ctl srs status` 也用它）。
+  Map<String, Object?> status() {
+    final ServerSrsConfig cfg = ctx.config.srs;
+    final ServerAnkiConnectConfig ac = ctx.config.ankiConnect;
+    final ServerAnkiConnect? listener = ctx.host.ankiConnect;
+    return <String, Object?>{
+      ...?ctx.host.srs?.status(),
+      'enabled': cfg.enabled,
+      'config': <String, Object?>{
+        'profiles': cfg.profiles,
+        'defaultProfile': cfg.defaultProfile,
+        'rolloverHour': cfg.rolloverHour,
+        'miningTarget': cfg.miningTarget.wire,
+        'miningDecks': cfg.miningDecks,
+        'profileNames': cfg.profileNames,
+        // RWKV 模型档位：不在 config.yaml 里，是整台设备的设置文件（`<support>/srs_rwkv/model_size`，与 app
+        // 同一个），这里读写的就是它。
+        'rwkvModel': ctx.host.srs?.rwkvModelSize.persistedName,
+      },
+      'ankiConnect': <String, Object?>{
+        'enabled': ac.enabled,
+        'bind': ac.bind,
+        'port': ac.port,
+        'apiKeySet': ac.apiKey.isNotEmpty,
+        'profileKeysSet': <String, bool>{
+          for (final MapEntry<String, String> e in ac.profileKeys.entries)
+            e.key: e.value.isNotEmpty,
+        },
+        'corsOrigins': ac.corsOrigins,
+        'listening': listener?.listening ?? false,
+        'listeningPort': listener?.port,
+        'lastError':
+            listener?.lastError ?? (ac.enabled ? ac.startProblem : null),
+      },
+    };
+  }
+
+  /// 同步目录里的 profile，标上已不已提供（`ctl srs profiles` 也用它）。
+  Future<List<Map<String, Object?>>> profiles() async {
+    final ServerSrs? srs = ctx.host.srs;
+    final List<SrsRemoteProfile> found = srs == null
+        ? const <SrsRemoteProfile>[]
+        : await srs.discoverProfiles();
+    final Set<String> served = ctx.config.srs.profiles.toSet();
+    final Set<String> listed = <String>{};
+    return <Map<String, Object?>>[
+      for (final SrsRemoteProfile r in found)
+        if (listed.add(r.uid))
+          <String, Object?>{
+            'uid': r.uid,
+            'name': r.displayName,
+            'devices': r.devices,
+            'updatedAt': r.updatedAt,
+            'noteCount': r.noteCount,
+            'hasNotes': r.hasNotes,
+            'served': served.contains(r.uid),
+          },
+      // 配置里选了、同步目录里却已经没有的（被别的设备清掉 / 换了目录）：照样列出来，好让管理员取消。
+      for (final String uid in served)
+        if (!listed.contains(uid))
+          <String, Object?>{'uid': uid, 'served': true, 'missing': true},
+    ];
+  }
+
+  Future<shelf.Response> _put(Map<String, dynamic> body) async {
+    final ServerSrsConfig cur = ctx.config.srs;
+    final List<String>? profiles = _uidList(body['profiles']);
+    final List<String> add = _uidList(body['addProfiles']) ?? const <String>[];
+    final Set<String> remove =
+        (_uidList(body['removeProfiles']) ?? const <String>[]).toSet();
+    final List<String> nextProfiles = <String>[
+      for (final String uid in <String>{...(profiles ?? cur.profiles), ...add})
+        if (!remove.contains(uid)) uid,
+    ];
+    final Object? def = body['defaultProfile'];
+    if (def != null && def is! String) {
+      throw const FormatException('defaultProfile must be a string');
+    }
+    if (def is String && def.isNotEmpty && !nextProfiles.contains(def)) {
+      throw const FormatException('defaultProfile must be one of profiles');
+    }
+    final Object? hour = body['rolloverHour'];
+    if (hour != null && (hour is! int || hour < 0 || hour > 23)) {
+      throw const FormatException('rolloverHour must be an integer 0-23');
+    }
+    final Object? rwkvModel = body['rwkvModel'];
+    final SrsRwkvModelSize? rwkvSize = switch (rwkvModel) {
+      null => null,
+      final String name =>
+        SrsRwkvModelSize.values
+            .where((SrsRwkvModelSize s) => s.persistedName == name)
+            .firstOrNull,
+      _ => null,
+    };
+    if (rwkvModel != null && rwkvSize == null) {
+      throw FormatException(
+        'rwkvModel must be one of ${SrsRwkvModelSize.values.map((SrsRwkvModelSize s) => s.persistedName).join(' / ')}',
+      );
+    }
+    final Object? target = body['miningTarget'];
+    if (target != null &&
+        !ServerMiningTarget.values.any(
+          (ServerMiningTarget t) => t.wire == target,
+        )) {
+      throw const FormatException('miningTarget must be auto / anki / review');
+    }
+    final Map<String, String>? decks = _uidMap(
+      body['miningDecks'],
+      'miningDecks',
+    );
+    // 只改给了的那几份（与 ankiConnect.profileKeys 同一口径）：在这次配置更新里合并到
+    // 整份（同时给了 miningDecks 就合到它上面），调用方不必先读再整份写回。
+    final Map<String, String>? deckPatch = _uidMap(
+      body['miningDecksPatch'],
+      'miningDecksPatch',
+    );
+    final Map<String, String>? nextDecks = decks == null && deckPatch == null
+        ? null
+        : <String, String>{...(decks ?? cur.miningDecks), ...?deckPatch};
+    final Map<String, String>? names = _uidMap(
+      body['profileNames'],
+      'profileNames',
+    );
+    for (final String name in names?.values ?? const <String>[]) {
+      // 发布到同步位置给别的设备看：限长，不收控制字符。
+      if (!serverSrsProfileNameOk(name)) {
+        throw const FormatException(
+          'profileNames: a name must be at most $kServerSrsProfileNameMax characters without control characters',
+        );
+      }
+    }
+    final ServerSrsConfig nextSrs = cur.copyWith(
+      profiles: nextProfiles,
+      // 默认那份被取消了：清空（= 列表第一份），别留一个不再提供的 uid。
+      defaultProfile:
+          def as String? ??
+          (nextProfiles.contains(cur.defaultProfile) ? null : ''),
+      rolloverHour: hour as int?,
+      miningTarget: target == null
+          ? null
+          : ServerMiningTarget.parse(target as String),
+      // 空串 = 那份用内置默认牌组（不留这一项）。
+      miningDecks: nextDecks == null
+          ? null
+          : <String, String>{
+              for (final MapEntry<String, String> e in nextDecks.entries)
+                if (e.value.isNotEmpty) e.key: e.value,
+            },
+      profileNames: names == null
+          ? null
+          : <String, String>{
+              for (final MapEntry<String, String> e in names.entries)
+                if (e.value.isNotEmpty) e.key: e.value,
+            },
+    );
+    final ServerAnkiConnectConfig nextAc = _ankiConnect(
+      body['ankiConnect'],
+      ctx.config.ankiConnect,
+    );
+    if (nextAc.enabled) {
+      final String? problem = nextAc.startProblem;
+      if (problem != null) {
+        return _json(<String, Object?>{
+          'error': problem,
+          'reason': 'ankiconnect_invalid',
+        }, status: 409);
+      }
+    }
+    final ServerConfig next = ctx.config.copyWith(
+      srs: nextSrs,
+      ankiConnect: nextAc,
+    );
+    final ServerSrs? srs = ctx.host.srs;
+    if (rwkvSize != null && srs == null) {
+      return _json(<String, Object?>{
+        'error': 'review is not running',
+        'reason': 'srs_unavailable',
+      }, status: 409);
+    }
+    if (rwkvSize == null) {
+      await ctx.updateConfig(next);
+      return _json(status());
+    }
+    // 先写设备的档位设置文件：写不进去（磁盘满 / 权限）就整次 500、config.yaml 一个字段都不动——
+    // 不能让其它字段已生效、客户端却以为整次失败了。config.yaml 没写进去时把档位写回原值再抛；
+    // 已写盘、只是推给 host 时失败（配置已落地）就不回滚档位，免得档位与已落地的配置分家。
+    final ServerSrs running = srs!;
+    final SrsRwkvModelSize prevSize = running.rwkvModelSize;
+    await running.writeRwkvModelSize(rwkvSize);
+    try {
+      await ctx.updateConfig(next);
+    } catch (_) {
+      if (!identical(ctx.config, next)) {
+        await running.writeRwkvModelSize(prevSize);
+      }
+      rethrow;
+    }
+    // 已打开的库的 RWKV 服务当场换成新档位的（不重启；对齐时按设置文件里的档位）。
+    await running.applyConfig();
+    return _json(status());
+  }
+
+  ServerAnkiConnectConfig _ankiConnect(
+    Object? raw,
+    ServerAnkiConnectConfig cur,
+  ) {
+    if (raw == null) return cur;
+    if (raw is! Map) {
+      throw const FormatException('ankiConnect must be an object');
+    }
+    final Object? enabled = raw['enabled'];
+    if (enabled != null && enabled is! bool) {
+      throw const FormatException('ankiConnect.enabled must be a boolean');
+    }
+    final Object? port = raw['port'];
+    if (port != null && (port is! int || port < 1 || port > 65535)) {
+      throw const FormatException('ankiConnect.port must be 1-65535');
+    }
+    final Object? bind = raw['bind'];
+    if (bind != null && (bind is! String || bind.trim().isEmpty)) {
+      throw const FormatException('ankiConnect.bind must be a host address');
+    }
+    final Object? apiKey = raw['apiKey'];
+    if (apiKey != null && apiKey is! String) {
+      throw const FormatException('ankiConnect.apiKey must be a string');
+    }
+    final Map<String, String>? keys = _uidMap(
+      raw['profileKeys'],
+      'ankiConnect.profileKeys',
+    );
+    final Object? origins = raw['corsOrigins'];
+    if (origins != null &&
+        (origins is! List || origins.any((Object? o) => o is! String))) {
+      throw const FormatException('ankiConnect.corsOrigins must be strings');
+    }
+    return cur.copyWith(
+      enabled: enabled as bool?,
+      bind: (bind as String?)?.trim(),
+      port: port as int?,
+      apiKey: (apiKey as String?)?.trim(),
+      // 空串 = 清掉那份的 key。
+      profileKeys: keys == null
+          ? null
+          : <String, String>{
+              for (final MapEntry<String, String> e in <String, String>{
+                ...cur.profileKeys,
+                ...keys,
+              }.entries)
+                if (e.value.isNotEmpty) e.key: e.value,
+            },
+      corsOrigins: origins == null
+          ? null
+          : <String>[
+              for (final Object? o in origins as List)
+                if ((o as String).trim().isNotEmpty) o.trim(),
+            ],
+    );
+  }
+}
+
+List<String>? _uidList(Object? raw) {
+  if (raw == null) return null;
+  if (raw is! List) throw const FormatException('profiles must be a list');
+  final List<String> out = <String>[];
+  for (final Object? v in raw) {
+    if (v is! String || !_uid.hasMatch(v)) {
+      throw FormatException('not a profile uid: $v');
+    }
+    if (!out.contains(v)) out.add(v);
+  }
+  return out;
+}
+
+Map<String, String>? _uidMap(Object? raw, String field) {
+  if (raw == null) return null;
+  if (raw is! Map) throw FormatException('$field must be an object');
+  final Map<String, String> out = <String, String>{};
+  for (final MapEntry<Object?, Object?> e in raw.entries) {
+    final Object? k = e.key;
+    final Object? v = e.value;
+    if (k is! String || !_uid.hasMatch(k) || v is! String) {
+      throw FormatException('$field: bad entry $k');
+    }
+    out[k] = v.trim();
+  }
+  return out;
+}
+
+Future<Map<String, dynamic>> _body(shelf.Request request) async {
+  final String raw = await request.readAsString();
+  if (raw.trim().isEmpty) return <String, dynamic>{};
+  final Object? decoded = jsonDecode(raw);
+  if (decoded is! Map) {
+    throw const FormatException('body must be a JSON object');
+  }
+  return Map<String, dynamic>.from(decoded);
+}
+
+shelf.Response _json(Map<String, Object?> body, {int status = 200}) =>
+    shelf.Response(
+      status,
+      body: jsonEncode(body),
+      headers: const <String, String>{
+        'Content-Type': 'application/json; charset=utf-8',
+      },
+    );
+
+shelf.Response _err(int status, String reason) =>
+    _json(<String, Object?>{'error': reason, 'reason': reason}, status: status);
+
+/// 那份 profile 不可用：复习库在升级 / 升级受阻时回类型化的 503（[ServerSrsUpgradeRefusal]），其余 409。
+shelf.Response _unavailable(ServerSrs srs) => switch (srs.upgradeRefusal) {
+  final ServerSrsUpgradeRefusal r => _err(r.status, r.reason),
+  null => _err(409, 'profile_unavailable'),
+};
+
+/// `GET /api/admin/srs/migration` 等的回包：代际状态 + 各份 profile 的状态。
+Map<String, Object?> _migrationView(ServerSrs srs) => <String, Object?>{
+  'generation': srs.generation.toJson(),
+  'profiles': <Map<String, Object?>>[
+    for (final ServerSrsProfile prof in srs.profiles)
+      <String, Object?>{
+        'uid': prof.uid,
+        'state': prof.state.wire,
+        'lastError': prof.lastError,
+      },
+  ],
+};

@@ -245,6 +245,17 @@ class FushiP2pEndpoint {
     return id is String ? id : null;
   }
 
+  /// 系统默认网络变了（切 Wi-Fi / 蜂窝、唤醒）：通知 iroh 重新探测本机地址与到各
+  /// 对端的路径。原生侧投到端点自己的 runtime 上执行，本调用立即返回。原生库太旧、
+  /// 没有 `fp2p_network_change` → false（其余能力照常）；已送达 → true。
+  bool networkChange() {
+    final Pointer<Char> Function(Pointer<Fp2pEndpoint>)? fn =
+        _b.fp2p_network_change;
+    if (fn == null) return false;
+    _call(fn(_h));
+    return true;
+  }
+
   /// 关闭端点并释放原生资源（同步）。可重复调用。
   ///
   /// iroh 会等对端确认连接关闭：有过连接时实测 0.8~2 秒、上限约 4 秒，

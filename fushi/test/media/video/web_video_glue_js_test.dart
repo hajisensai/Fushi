@@ -24,6 +24,7 @@ void main() {
     String scenario, {
     String setup = '',
     String prelude = '',
+    bool bridgeTwice = false,
   }) async {
     final String harness =
         '''
@@ -92,6 +93,7 @@ h.video = Object.assign(makeEl('video'), { currentTime: 5, paused: false, durati
 function out(x) { console.log(JSON.stringify(x)); }
 $setup
 ${asset(kWebVideoNetflixBridgeAsset)}
+${bridgeTwice ? asset(kWebVideoNetflixBridgeAsset) : ''}
 ${asset(kWebVideoAdaptersAsset)}
 ${asset(kWebVideoProvidersAsset)}
 $prelude
@@ -416,6 +418,56 @@ out(picks);
     expect(r, <String>['hd720', 'hd1080', 'hd1080', 'hd2160', 'medium']);
   }, skip: !hasNode);
 
+  // 字幕生成拉整集音频（web_video_subtitle_media.dart）：MSE 播放时 currentSrc 是 blob:，地址从
+  // 页面为当前视频请求过的清单里认（Resource Timing，按 videoKey 归属）；EME 如实上报。
+  test('mediaSource：清单按当前视频归属、去重、只认 http(s) 的 m3u8 / mpd；EME 进回执与快照', () async {
+    final Object? r = await run(
+      '''
+const note = (names) => h.perf({ getEntries: () => names.map((name) => ({ name })) });
+note(['https://cdn.example.com/hls/master.m3u8?token=a', 'https://cdn.example.com/hls/seg-1.ts',
+  'https://cdn.example.com/hls/master.m3u8?token=a', 'data:text/plain,x.m3u8']);
+h.video.currentSrc = 'blob:https://anime.example.com/abc';
+const first = JSON.parse(fw.mediaSource());
+location.pathname = '/ep/2'; location.href = 'https://anime.example.com/ep/2';
+const second = JSON.parse(fw.mediaSource());
+note(['https://cdn.example.com/dash/manifest.mpd']);
+const third = JSON.parse(fw.mediaSource());
+h.video.mediaKeys = {};
+const enc = JSON.parse(fw.mediaSource());
+out({ opts: h.perfOpts, first, second, third, enc, snapEme: JSON.parse(fw.state()).eme });
+''',
+      setup: '''
+location.hostname = 'anime.example.com'; location.href = 'https://anime.example.com/ep/1';
+location.pathname = '/ep/1'; location.origin = 'https://anime.example.com'; window.origin = location.origin;
+globalThis.PerformanceObserver = class { constructor(cb) { h.perf = cb; } observe(o) { h.perfOpts = o; } };
+''',
+    );
+    final Map<String, dynamic> m = r! as Map<String, dynamic>;
+    expect(m['opts'], <String, Object>{'type': 'resource', 'buffered': true});
+    final Map<String, dynamic> first = m['first'] as Map<String, dynamic>;
+    expect(first['hasVideo'], isTrue);
+    expect(first['src'], 'blob:https://anime.example.com/abc');
+    expect(first['eme'], isFalse);
+    expect(first['href'], 'https://anime.example.com/ep/1');
+    expect(first['manifests'], <String>[
+      'https://cdn.example.com/hls/master.m3u8?token=a',
+    ]);
+    // 换了视频（videoKey = host + path）：上一个视频的清单不归它。
+    expect((m['second'] as Map<String, dynamic>)['manifests'], isEmpty);
+    expect((m['third'] as Map<String, dynamic>)['manifests'], <String>[
+      'https://cdn.example.com/dash/manifest.mpd',
+    ]);
+    expect((m['enc'] as Map<String, dynamic>)['eme'], isTrue);
+    expect(m['snapEme'], isTrue);
+  }, skip: !hasNode);
+
+  test('mediaSource：Netflix 一律报 EME 加密', () async {
+    final Object? r = await run(
+      'out([JSON.parse(fw.mediaSource()).eme, JSON.parse(fw.state()).eme]);',
+    );
+    expect(r, <bool>[true, true]);
+  }, skip: !hasNode);
+
   test('站点 bridge 按当前文档 host 自判：别的站上包住的 bridge 不执行', () async {
     Future<Object?> probe(String host) async {
       final Directory dir = await Directory.systemTemp.createTemp(
@@ -459,6 +511,27 @@ console.log(JSON.stringify({ ran, global: typeof streamGlobal }));
     expect(
       ((await probe('hulu.jp'))! as Map<String, dynamic>)['ran'],
       <String>[],
+    );
+  }, skip: !hasNode);
+
+  // BUG-4186：bridge 在同一文档被注入两次（扩展 + 播放器注入 / 重复 document-start）时，第二份
+  // 不装：一条 seek 只发一次 player.seek、只回一次 seekDone，诊断记下重复注入。
+  test('netflix-bridge 注入两次：seek 不叠发、回执只一条，诊断带 dup=1', () async {
+    final Object? r = await run('''
+const res = fw.seek(90000, 4);
+out({ res, calls: h.player.calls,
+  done: h.posted.filter((m) => m.type === 'seekDone') });
+''', bridgeTwice: true);
+    final Map<String, dynamic> m = r! as Map<String, dynamic>;
+    expect(m['res'], 'bridge');
+    expect(m['calls'], <String>['seek:90000']);
+    final List<dynamic> done = m['done'] as List<dynamic>;
+    expect(done, hasLength(1));
+    expect(done.single['id'], 4);
+    final String diag = done.single['diag'] as String;
+    expect(
+      diag.split(' '),
+      containsAll(<String>['dup=1', 'videos=1', 'rs=4', 'nfSessions=1/1']),
     );
   }, skip: !hasNode);
 }

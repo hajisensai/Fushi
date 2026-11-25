@@ -79,7 +79,8 @@ MusicPlayItem musicPluginPlayItem(
   sourceAlbumId: track.albumId,
 );
 
-/// 设置里的服务器码率上限（kbps，0 = 原样）→ 插件取流音质档：同一个「流媒体音质」设置。
+/// 服务器码率上限（kbps，0 = 原样）→ 插件取流音质档。只用于「在线插件音质」没单独设过时的
+/// 缺省值（[AppModel.musicPluginQuality]）：在它独立出来之前两者共用一个设置，升级后听到的不变。
 MusicPluginQuality musicPluginQualityForBitrate(int maxKbps) =>
     switch (maxKbps) {
       <= 0 => MusicPluginQuality.lossless,
@@ -112,7 +113,9 @@ class MusicPluginPlaybackHost {
   const MusicPluginPlaybackHost({required this.manager, required this.quality});
 
   final MusicPluginManager Function() manager;
-  final MusicPluginQuality Function() quality;
+
+  /// 这首（插件占位路径）按哪一档取流：播放器里「只对这首」的临时选择优先，其次是默认档。
+  final MusicPluginQuality Function(String path) quality;
 }
 
 MusicPluginPlaybackHost? musicPluginPlaybackHost;
@@ -126,14 +129,29 @@ Future<MusicPluginStream> resolveMusicPluginStream(String path) async {
   if (ref == null || host == null) {
     throw const MusicPluginStreamUnavailable('插件音源不可用');
   }
+  return fetchFullMusicPluginStream(
+    host.manager().source(ref.pluginId),
+    ref.trackId,
+    quality: host.quality(path),
+  );
+}
+
+/// 只给了试听片段的曲目：播放、转写、下载都拒绝（下载入口据此提示，见
+/// music_plugin_download.dart）。
+final class MusicPluginTrialOnly extends MusicPluginStreamUnavailable {
+  const MusicPluginTrialOnly() : super('该曲目只能试听片段');
+}
+
+/// 向插件取一首的完整流（播放 [resolveMusicPluginStream] 与下载共用这一条判据）：插件报错
+/// 抛 [MusicPluginStreamUnavailable]，只给试听片段抛 [MusicPluginTrialOnly]。
+Future<MusicPluginStream> fetchFullMusicPluginStream(
+  MusicPluginSource source,
+  String trackId, {
+  required MusicPluginQuality quality,
+}) async {
   try {
-    final MusicPluginStream s = await host
-        .manager()
-        .source(ref.pluginId)
-        .stream(ref.trackId, quality: host.quality());
-    if (s.isTrial) {
-      throw const MusicPluginStreamUnavailable('该曲目只能试听片段');
-    }
+    final MusicPluginStream s = await source.stream(trackId, quality: quality);
+    if (s.isTrial) throw const MusicPluginTrialOnly();
     return s;
   } on MusicPluginException catch (e) {
     throw MusicPluginStreamUnavailable(e.message);

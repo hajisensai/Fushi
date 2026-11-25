@@ -1,6 +1,7 @@
-// TODO-935 E2/E3: 桌面端「数据存储位置」设置项 —— 显示当前数据根、选新目录、触发
-// 已实现的 DataRootMigrator 整目录迁移、迁移成功后自动重启。仅桌面有效（移动端沙箱
-// 固定，整个 section 在 sync_settings_schema.dart 里用 isDesktopPlatform 门控隐藏）。
+// TODO-935 E2/E3: 「数据存储位置」设置项 —— 显示当前数据根、触发已实现的
+// DataRootMigrator 迁移、迁移成功后自动重启。桌面：选任意新目录（documents + support
+// 一起搬）。Android：书库根在内部 `app_flutter` 与外部 `Android/data/<包名>/files/data`
+// 之间切换（数据库留在内部）。iOS 沙箱固定，整个 section 不显示。
 part of '../sync_settings_schema.dart';
 
 /// 迁移触发前的纯校验：用户挑的新目录是否是一个可接受的迁移目标。把判定从 UI 抽出
@@ -254,6 +255,14 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
           _DataRootWidgetState._closeRuntimeResources(appModel),
       commitLocation: (DataRootMigrationTarget t) async {
         final SharedPreferences sp = await SharedPreferences.getInstance();
+        final String? androidLocation = t.androidDocumentsLocation;
+        if (androidLocation != null) {
+          await _DataRootWidgetState._commitAndroidLocation(
+            sp,
+            androidLocation,
+          );
+          return;
+        }
         if (t.isDefaultLocation) {
           await _DataRootWidgetState._commitDefaultLocation(sp);
           return;
@@ -320,6 +329,121 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
       : DataRootMigrationRunOutcome.restarting;
 }
 
+/// Android：书库根在内部 / 外部之间迁移的计划（数据库不动）。
+///
+/// [toExternal] 为真 = 迁到 `Android/data/<包名>/files/data`，否则迁回内部
+/// `app_flutter/<容器>/data`。目标是固定位置、不是用户挑的：上次迁移中途被杀进程留下的
+/// 半成品（引擎复制阶段不删源、提交前位置锚点没写）要先清掉，否则引擎会以「目标已有
+/// 数据」永远拒绝这个固定目标。
+///
+/// 但「目标一定不是活数据」只在位置锚点正确时成立。锚点错指空根时（反馈 RCv76PPoiJ），
+/// 用户点「移回内部」的目标恰好就是真正的书库（#4366 指出）。所以清之前先核实它确是
+/// 半成品——每个文件在源里都有同名相对路径（[AppPaths.firstAndroidMigrationTargetOnlyFile]）；
+/// 有源里没有的文件就拒绝，一个字节都不删。
+Future<DataRootMigrationPlan> planAndroidDocumentsMigration({
+  required AppModel appModel,
+  required bool toExternal,
+}) async {
+  final String oldDocs = appModel.appDirectory.path;
+  final String oldSupport = appModel.databaseDirectory.path;
+  final Directory newDocs;
+  final bool sharedDocumentsRoot;
+  try {
+    newDocs = toExternal
+        ? await AppPaths.androidExternalDocumentsRoot()
+        : await AppPaths.androidInternalDocumentsRoot();
+    // 老 flat 布局的内部书库根就是 `app_flutter` 本身：里面还有插件与诊断文件，
+    // 只能按白名单搬 Fushi 自己的顶层项，绝不整树搬走 / 删掉。
+    sharedDocumentsRoot = p.equals(
+      oldDocs,
+      (await getApplicationDocumentsDirectory()).path,
+    );
+  } catch (e, stack) {
+    ErrorLogService.instance.logFatal(
+      'DataRootMigration.androidResolveTarget',
+      e,
+      stack,
+    );
+    throw DataRootMigrationPrecheckFailure(
+      t.data_storage_migrate_failed(message: e.toString()),
+    );
+  }
+  if (p.equals(newDocs.path, oldDocs) ||
+      p.isWithin(newDocs.path, oldDocs) ||
+      p.isWithin(oldDocs, newDocs.path)) {
+    throw DataRootMigrationPrecheckFailure(
+      t.data_storage_migrate_failed(message: newDocs.path),
+    );
+  }
+  try {
+    final String? targetOnly =
+        await AppPaths.firstAndroidMigrationTargetOnlyFile(
+          target: newDocs,
+          source: Directory(oldDocs),
+        );
+    if (targetOnly != null) {
+      ErrorLogService.instance.logDiagnostic(
+        'DataRootMigration.androidClearStaleTarget',
+        '拒绝清空目标 ${newDocs.path}：$targetOnly 在当前书库根 $oldDocs 里没有，'
+            '目标可能是真正的书库',
+      );
+      throw DataRootMigrationPrecheckFailure(
+        t.data_storage_migrate_target_has_library(
+          path: newDocs.path,
+          file: targetOnly,
+        ),
+      );
+    }
+    if (await newDocs.exists()) await newDocs.delete(recursive: true);
+  } on FileSystemException catch (e, stack) {
+    ErrorLogService.instance.logFatal(
+      'DataRootMigration.androidClearStaleTarget',
+      e,
+      stack,
+    );
+    throw DataRootMigrationPrecheckFailure(
+      t.data_storage_migrate_failed(message: e.toString()),
+    );
+  }
+  return DataRootMigrationPlan(
+    picked: newDocs.path,
+    target: DataRootMigrationTarget.androidDocuments(
+      documentsRoot: newDocs.path,
+      supportRoot: oldSupport,
+      location: toExternal
+          ? AppPaths.androidDocumentsLocationExternal
+          : AppPaths.androidDocumentsLocationInternal,
+    ),
+    oldDocumentsRoot: oldDocs,
+    oldSupportRoot: oldSupport,
+    sharedDocumentsRoot: sharedDocumentsRoot,
+  );
+}
+
+/// Android：规划并执行书库根迁移（调用方已取得用户确认）。设置页与首页一次性提示共用。
+/// 触发前失败（解析不到外部目录 / 清不掉残留）弹 snackbar、什么都没动；搬移失败由迁移
+/// 遮罩的失败态承接（见 [runDataRootMigration]）。
+Future<void> startAndroidDocumentsMigration({
+  required BuildContext context,
+  required AppModel appModel,
+  required bool toExternal,
+  void Function()? onStarted,
+}) async {
+  try {
+    final DataRootMigrationPlan plan = await planAndroidDocumentsMigration(
+      appModel: appModel,
+      toExternal: toExternal,
+    );
+    await runDataRootMigration(
+      appModel: appModel,
+      plan: plan,
+      onStarted: onStarted,
+    );
+  } on DataRootMigrationPrecheckFailure catch (e) {
+    if (context.mounted) _showSnackBar(context, e.message);
+  }
+}
+
 /// TODO-1182：迁移失败 → 切到**失败态遮罩**（原因 + 建议 + 重启按钮），由根 widget 渲染。
 /// **不**在这里直接重启：旧实现桌面 supportsRestart=true 时立刻 `restartApp()`，用户永远
 /// 看不到失败原因（「换数据位置不生效且无提示」根因之一）。而且迁移期间根 widget 树已被
@@ -343,12 +467,65 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
   bool _migrating = false;
   SharedPreferences? _prefs;
 
+  /// Android：书库当前是否在外部 app 专属目录（null = 还没读到 / 非 Android）。
+  bool? _androidExternal;
+
   @override
   void initState() {
     super.initState();
     SharedPreferences.getInstance().then((SharedPreferences sp) {
       if (mounted) setState(() => _prefs = sp);
     });
+    if (Platform.isAndroid) {
+      AppPaths.androidDocumentsAreExternal().then((bool external) {
+        if (mounted) setState(() => _androidExternal = external);
+      });
+    }
+  }
+
+  /// Android：内部 / 外部切换。目标固定，不弹目录选择器；确认框照样列出解析后的落点。
+  Future<void> _changeAndroidLocation() async {
+    final bool? external = _androidExternal;
+    if (_migrating || external == null) return;
+    final AppModel appModel = widget.settingsContext.appModel;
+    final bool toExternal = !external;
+    final Directory target;
+    try {
+      target = toExternal
+          ? await AppPaths.androidExternalDocumentsRoot()
+          : await AppPaths.androidInternalDocumentsRoot();
+    } catch (e) {
+      if (mounted) {
+        _showSnackBar(
+          context,
+          t.data_storage_migrate_failed(message: e.toString()),
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    final bool confirmed = await _confirmMigrate(
+      DataRootMigrationTarget.androidDocuments(
+        documentsRoot: target.path,
+        supportRoot: appModel.databaseDirectory.path,
+        location: toExternal
+            ? AppPaths.androidDocumentsLocationExternal
+            : AppPaths.androidDocumentsLocationInternal,
+      ),
+    );
+    if (!confirmed || !mounted) return;
+    try {
+      await startAndroidDocumentsMigration(
+        context: context,
+        appModel: appModel,
+        toExternal: toExternal,
+        onStarted: () {
+          if (mounted) setState(() => _migrating = true);
+        },
+      );
+    } finally {
+      if (mounted) setState(() => _migrating = false);
+    }
   }
 
   /// 当前数据根展示串：有自定义 data_root（存在）显示其绝对路径，否则直接显示默认根的
@@ -379,6 +556,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
   Future<void> _changeLocation() async {
     // 再入保护：行 Activate（A/Enter）和 trailing 按钮都进这里，迁移中忽略二次触发。
     if (_migrating) return;
+    if (Platform.isAndroid) return _changeAndroidLocation();
 
     // 数据根是整个 app 长期读写的落点，必须是真实文件系统路径（见
     // pickRealDirectoryPath）。这一项今天只对桌面可见（`sync_settings_schema.dart`
@@ -461,6 +639,58 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
         throw DataRootMigrationException('写入新数据根设置失败，且恢复旧授权失败', cause: e);
       }
       throw DataRootMigrationException('写入新数据根设置失败', cause: e);
+    }
+  }
+
+  /// Android 书库位置迁移的提交：写位置锚点，并把一次性迁移提示记成已处理（用户已经自己
+  /// 迁过，不再弹）。迁回内部时布局锚点一起锚成 nested——目标就是 `app_flutter/<容器>/data`，
+  /// 留着 flat 锚点会让下次启动解析回 `app_flutter` 根，书库在 UI 上集体消失。任一步失败
+  /// 复原已改的键并抛错，由引擎回滚整次迁移。
+  ///
+  /// 位置与布局的真相源是 support 根下的锚点文件（[AndroidLibraryAnchor]，多进程安全，
+  /// 反馈 RCv76PPoiJ）；布局键在 prefs 里照写一份，供不经 Android 锚点的通用布局判定读。
+  static Future<void> _commitAndroidLocation(
+    SharedPreferences sp,
+    String location,
+  ) async {
+    final String? previousLayout = sp.getString(
+      AppPaths.documentsLayoutPrefKey,
+    );
+    final bool toInternal =
+        location == AppPaths.androidDocumentsLocationInternal;
+    try {
+      if (toInternal &&
+          !await sp.setString(
+            AppPaths.documentsLayoutPrefKey,
+            AppPaths.documentsLayoutNested,
+          )) {
+        throw const DataRootMigrationException('写入数据位置布局设置失败');
+      }
+      // 锚点是最后一步：它写成功 = 提交成功；它抛错时锚点文件原子替换没发生，
+      // 只需复原上面的布局键。
+      await AppPaths.commitAndroidLibraryAnchor(
+        AndroidLibraryAnchor(
+          location: location,
+          layout: toInternal ? AppPaths.documentsLayoutNested : null,
+          // 迁回内部的目标 `app_flutter/<容器>/data` 用的就是本进程的容器名，锚死它，
+          // 下次启动不再依赖 prefs 里那份可能被别的进程冲掉的容器锚点。
+          container: AppPaths.defaultDocumentsChildSegments.first,
+        ),
+      );
+    } catch (e) {
+      await _restorePrefString(
+        sp,
+        AppPaths.documentsLayoutPrefKey,
+        previousLayout,
+      );
+      if (e is DataRootMigrationException) rethrow;
+      throw DataRootMigrationException('写入数据位置设置失败', cause: e);
+    }
+    // 提示标记只是 UI 状态：写不进去顶多再弹一次，不回滚已经成功的迁移。
+    try {
+      await sp.setBool(AppPaths.androidDocumentsMovePromptedPrefKey, true);
+    } catch (e) {
+      debugPrint('DataRoot migrate: 记录迁移提示已处理失败: $e');
     }
   }
 
@@ -762,13 +992,29 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     return false;
   }
 
+  /// 设置行说明：桌面讲「可改到任意目录」，Android 讲内部 / 外部两档。
+  String get _locationHint {
+    if (!Platform.isAndroid) return t.data_storage_location_hint;
+    return _androidExternal == true
+        ? t.data_storage_android_external_hint
+        : t.data_storage_android_internal_hint;
+  }
+
+  /// 按钮文案：桌面「更改位置」；Android 按当前位置给出要去的那一档。
+  String get _changeButtonLabel {
+    if (!Platform.isAndroid) return t.data_storage_change_button;
+    return _androidExternal == true
+        ? t.data_storage_android_move_internal
+        : t.data_storage_android_move_external;
+  }
+
   @override
   Widget build(BuildContext context) {
     return AdaptiveSettingsRow(
       title: t.data_storage_location_title,
       subtitle: _migrating
           ? t.data_storage_migrating
-          : '${t.data_storage_location_hint}\n${_currentLocationLabel()}',
+          : '$_locationHint\n${_currentLocationLabel()}',
       icon: FushiIcons.folder,
       controlBelow: true,
       // 行 onTap 注册焦点目标（方向导航可达）；trailing 按钮是视觉入口。
@@ -793,7 +1039,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
                 children: <Widget>[
                   const FushiIcon(FushiIcons.moveFile, size: 18),
                   const SizedBox(width: 8),
-                  Text(t.data_storage_change_button),
+                  Text(_changeButtonLabel),
                 ],
               ),
             ),

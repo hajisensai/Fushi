@@ -25,26 +25,34 @@ import 'package:fushi_engine/media/torrent/embedded_torrent_host.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host_client.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_host_slot.dart';
 import 'package:fushi_engine/media/torrent/embedded_torrent_worker.dart'
-    show EmbeddedTorrentHostOpenArgs;
+    show
+        EmbeddedTorrentHostFactory,
+        EmbeddedTorrentHostOpenArgs,
+        openEmbeddedTorrentHost;
 import 'package:fushi_engine/media/torrent/qb_torrent_backend.dart';
+import 'package:fushi_engine/media/torrent/remote_torrent_wire.dart';
 import 'package:fushi_engine/media/torrent/qbittorrent_client.dart';
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/torrent/video_resource_provider.dart';
 import 'package:fushi_engine/media/video/download/video_download_backend_identity.dart';
 import 'package:fushi_engine/media/video/download/video_download_pipeline_service.dart';
+import 'package:fushi_engine/media/video/download/video_download_subtitle_language.dart';
 import 'package:fushi_engine/media/video/download/video_download_subscription_auto_disable.dart';
 import 'package:fushi_engine/media/video/download/video_download_subscription_service.dart';
 import 'package:fushi_engine/media/video/download/video_resource_prefs.dart';
 import 'package:fushi_engine/media/video/download/video_resource_registry.dart';
 import 'package:fushi_engine/media/video/download/video_subtitle_registry.dart';
+import 'package:fushi_engine/media/video/download/video_subtitle_registry_source.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/sync/downloads/host_download_host.dart';
+import 'package:fushi_engine/sync/torrent_engine/host_torrent_engine.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/pipeline_subscription_host.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart'
     show DiscoveryMediaKind;
 import 'package:fushi_server/src/config/server_config.dart';
+import 'package:fushi_server/src/config/server_torrent_session_config.dart';
 import 'package:fushi_server/src/discovery_import_host.dart';
 import 'package:fushi_server/src/native_libs.dart';
 import 'package:fushi_server/src/server_identity.dart';
@@ -64,14 +72,36 @@ class ServerDownloadHost implements HostDownloadHost {
     required this.scrape,
     this.backendOverride,
     this.pollInterval = const Duration(seconds: 5),
+    this.maintenanceInterval = const Duration(seconds: 20),
     String Function()? subtitleLanguage,
     VideoSubtitleRegistry Function()? subtitleRegistryFactory,
-  }) : _subtitleLanguage = subtitleLanguage ?? (() => config.subtitleLanguage),
-       _subtitleRegistryFactory =
-           subtitleRegistryFactory ??
-           (() => buildServerSubtitleRegistry(prefs));
+    List<String> Function()? peerTorrentRoots,
+    ServerTorrentSessionConfig Function()? torrentSession,
+    bool Function()? embeddedEngineProbe,
+    EmbeddedTorrentHostFactory embeddedHostFactory = openEmbeddedTorrentHost,
+  }) : _embeddedEngineProbe = embeddedEngineProbe,
+       _embeddedHostFactory = embeddedHostFactory,
+       _torrentSession = torrentSession ?? (() => config.torrentSession),
+       _subtitleLanguage = subtitleLanguage ?? (() => config.subtitleLanguage),
+       _peerTorrentRoots = peerTorrentRoots ?? (() => config.torrentPeerRoots),
+       _subtitleSource = PerUseVideoSubtitleRegistrySource(
+         subtitleRegistryFactory ?? (() => buildServerSubtitleRegistry(prefs)),
+       );
 
   final ServerConfig config;
+
+  /// `torrent.peer_roots`（运行期现读：WebUI / `ctl settings set` 改完即生效）。
+  final List<String> Function() _peerTorrentRoots;
+
+  /// `torrent:` 段的内置引擎会话设置（运行期现读：WebUI 改完经
+  /// [applyTorrentSessionSettings] 重新铺到常驻会话，不用重启）。
+  final ServerTorrentSessionConfig Function() _torrentSession;
+
+  /// 内置引擎可用性探测（测试接缝；默认加载原生库判断，不建 session）。
+  final bool Function()? _embeddedEngineProbe;
+
+  /// 工作 isolate 里建宿主的工厂（测试接缝：顶层函数，伪造 C ABI 而不加载原生库）。
+  final EmbeddedTorrentHostFactory _embeddedHostFactory;
   final ServerPaths paths;
   final FushiDatabase db;
   final ServerPrefs prefs;
@@ -87,13 +117,21 @@ class ServerDownloadHost implements HostDownloadHost {
   /// 管线轮询间隔（测试缩短；生产 5 秒，与 app 同）。
   final Duration pollInterval;
 
-  /// 配置里的字幕语言（`subtitle_language`，现读：WebUI 改完下一次重建管线生效）。
+  /// 内置引擎维护周期（反吸血 + 上传 / 做种策略扫描 + resume 落盘；生产 20 秒，
+  /// 与 app 的下载服务 tick 同）。
+  final Duration maintenanceInterval;
+
+  /// 内置引擎维护定时器（[start] 解析到内置引擎时起，[stop] 停）。
+  Timer? _maintenanceTimer;
+
+  /// 配置里的字幕语言（`subtitle_language`，每轮字幕阶段现读：WebUI 改完下一个任务生效）。
   final String Function() _subtitleLanguage;
 
-  /// 字幕阶段的 registry（生产 = [buildServerSubtitleRegistry]：只装偏好开着且有
-  /// key 的来源）。测试缝：注入不联网的假来源。
-  final VideoSubtitleRegistry Function() _subtitleRegistryFactory;
-  VideoSubtitleRegistry? _subtitleRegistry;
+  /// 字幕阶段的来源入口：每进一次字幕阶段按当前偏好 / 环境现建一份 registry（生产 =
+  /// [buildServerSubtitleRegistry]：只装偏好开着且有 key 的来源），阶段结束即关。
+  /// 运行期经互联 / WebUI / ctl 改了 key 或开关，下一轮字幕阶段就用新的，不用重建
+  /// 管线；在飞的那一轮用到结束，不会被拔掉 client。测试缝：注入不联网的假来源。
+  final VideoSubtitleRegistrySource _subtitleSource;
 
   VideoDownloadPipelineService? _pipeline;
   VideoResourceRegistry? _registry;
@@ -140,6 +178,100 @@ class ServerDownloadHost implements HostDownloadHost {
   Directory get downloadRoot =>
       Directory(p.join(paths.documents.path, 'downloads'));
 
+  /// 已配对设备借本机引擎下载时登记的种子（`/api/torrent-engine`）。内置引擎的
+  /// resume 保留集合 = 本机任务行 ∪ 这些租约，否则重启剪枝会删掉远程任务。
+  late final PeerTorrentLeaseStore peerTorrentLeases = PeerTorrentLeaseStore(
+    File(p.join(paths.torrentResume.parent.path, kPeerTorrentLeaseFileName)),
+  );
+
+  /// 远程任务允许落盘的根：本机下载根 + `torrent.peer_roots`（典型：挂载进来的
+  /// 对端媒体库共享目录）。
+  HostTorrentPathPolicy peerTorrentPathPolicy() => HostTorrentPathPolicy(
+    <String>[downloadRoot.absolute.path, ..._peerTorrentRoots()],
+  );
+
+  /// 启动时解析定的后端（`embedded` / `qbittorrent`；null = 都不可用）。
+  String? get resolvedBackend => _resolvedBackend;
+
+  /// 用本机当前的下载后端执行 [action]（远程引擎路由用）；没有可用后端 → null。
+  /// 内置引擎每次派一个短命视图、用完即关（不连累常驻 session）；外接 qb 复用
+  /// 管线那一份客户端，不关。
+  Future<R?> withPeerBackend<R>(
+    Future<R> Function(TorrentBackend backend) action,
+  ) async {
+    final TorrentBackend? override = backendOverride;
+    if (override != null) return action(override);
+    switch (_resolvedBackend) {
+      case ServerConfig.torrentEngineEmbedded:
+        final EmbeddedTorrentHostClient? host = await _ensureEmbedded();
+        if (host == null) return null;
+        final TorrentBackend view = host.backendView();
+        try {
+          return await action(view);
+        } finally {
+          view.close();
+        }
+      case ServerConfig.torrentEngineQbittorrent:
+        return action(_qbBackend());
+    }
+    return null;
+  }
+
+  /// 远程引擎能力位的只读快照（`/api/pairing` 的 `torrentEngine` 用）：**不拉起**
+  /// 内置引擎——任何已配对设备探一次能力就在本机起 libtorrent 是不该有的副作用。
+  /// 引擎还没起时按类型报全套能力、运行期能力位报 null（未知；对端乐观处理，真不
+  /// 支持时命令如实回失败）。没有可用后端 → null。
+  ({Set<String> features, bool? pause, bool? detail})? peerBackendTraits() {
+    final TorrentBackend? override = backendOverride;
+    if (override != null) return _traitsOf(override);
+    switch (_resolvedBackend) {
+      case ServerConfig.torrentEngineEmbedded:
+        final EmbeddedTorrentHostClient? host = _embedded.current;
+        if (host == null) {
+          return (
+            features: kAllTorrentEngineFeatures,
+            pause: null,
+            detail: null,
+          );
+        }
+        final TorrentBackend view = host.backendView();
+        try {
+          return _traitsOf(view);
+        } finally {
+          view.close();
+        }
+      case ServerConfig.torrentEngineQbittorrent:
+        return _traitsOf(_qbBackend());
+    }
+    return null;
+  }
+
+  /// 内置引擎 session 是否已起 / 在起（诊断与测试用：能力探测不得改变它）。
+  bool get embeddedEngineActive =>
+      _embedded.current != null || _embedded.isOpening;
+
+  static ({Set<String> features, bool? pause, bool? detail}) _traitsOf(
+    TorrentBackend b,
+  ) => (
+    features: torrentEngineFeaturesOf(b),
+    pause: b is TorrentPauseBackend && b.pauseControlAvailable,
+    detail: b is TorrentDetailBackend && b.detailAvailable,
+  );
+
+  TorrentBackend _qbBackend() => _backend ??= QbTorrentBackend(
+    QBittorrentClient(
+      baseUrl: config.qbittorrentUrl!,
+      username: config.qbittorrentUsername ?? '',
+      password: config.qbittorrentPassword ?? '',
+    ),
+  );
+
+  /// 内置引擎的 resume 保留集合：本机任务行 + 远程租约。
+  Future<Set<String>> _embeddedKeepIds() async => <String>{
+    ...await loadEmbeddedTorrentResumeIds(db),
+    ...await peerTorrentLeases.hashes(),
+  };
+
   // ── 「AI 下视频」助手会话（assistant_host.dart）的装配面：与 app 的
   // `createAppVideoAcquisitionService` 接同一组端口。后端没起来时前三项为 null。
 
@@ -162,22 +294,52 @@ class ServerDownloadHost implements HostDownloadHost {
   Future<void> checkSubscriptionsNow() async =>
       _subscriptionService?.checkNow();
 
-  QbConnectionConfig get _qbConfig => QbConnectionConfig(
-    backend: _resolvedBackend == ServerConfig.torrentEngineEmbedded
-        ? QbConnectionConfig.backendEmbedded
-        : QbConnectionConfig.backendQbittorrent,
-    baseUrl: config.qbittorrentUrl ?? '',
-    username: config.qbittorrentUsername ?? '',
-    password: config.qbittorrentPassword ?? '',
+  QbConnectionConfig get _qbConfig => _torrentSession().applyTo(
+    QbConnectionConfig(
+      backend: _resolvedBackend == ServerConfig.torrentEngineEmbedded
+          ? QbConnectionConfig.backendEmbedded
+          : QbConnectionConfig.backendQbittorrent,
+      baseUrl: config.qbittorrentUrl ?? '',
+      username: config.qbittorrentUsername ?? '',
+      password: config.qbittorrentPassword ?? '',
+    ),
   );
+
+  /// 当前下发给下载后端的完整配置（含 `torrent:` 段会话设置；诊断与测试读映射用）。
+  QbConnectionConfig get torrentBackendConfig => _qbConfig;
+
+  /// `torrent:` 段的会话设置改了（WebUI / admin API 保存）：引擎已起就立即按
+  /// 新配置整套重铺（限速 / 活跃名额 / 上传策略…），没起则下次起引擎时自然用
+  /// 新值。返回是否真的铺到了一个在跑的会话。
+  bool applyTorrentSessionSettings() {
+    final EmbeddedTorrentHostClient? host = _embedded.current;
+    if (host == null) return false;
+    host.postConfig(_qbConfig);
+    return true;
+  }
+
+  /// 维护 tick（BUG-5160）：上传 / 做种策略只能靠周期扫描兑现（做种时长、分享
+  /// 率上限，以及新加进来的已完成种子按「关上传」暂停），反吸血同理；resume
+  /// 周期落盘（宿主内部按 resumeSaveInterval 节流），进程被强杀也不丢续传进度。
+  /// 引擎没起时什么也不做，不为维护拉起 session。
+  Future<void> _maintenanceTick() async {
+    final EmbeddedTorrentHostClient? host = _embedded.current;
+    if (host == null) return;
+    host.postMaintenanceSweep();
+    try {
+      await host.saveResumeSnapshot(await _embeddedKeepIds());
+    } on Object catch (e, st) {
+      engineLog.log('ServerDownloadHost.saveResumeSnapshot', e, st);
+    }
+  }
 
   /// `torrent.engine` 三态 → 实际后端。探测只加载库、不建 session。
   String? _resolveEngine() {
     if (backendOverride != null) return ServerConfig.torrentEngineEmbedded;
     final String want = config.torrentEngine;
-    final bool embeddedOk = EmbeddedTorrentHost.probeAvailable(
-      libraryPath: _torrentLibraryPath,
-    );
+    final bool embeddedOk =
+        _embeddedEngineProbe?.call() ??
+        EmbeddedTorrentHost.probeAvailable(libraryPath: _torrentLibraryPath);
     switch (want) {
       case ServerConfig.torrentEngineEmbedded:
         return embeddedOk ? ServerConfig.torrentEngineEmbedded : null;
@@ -206,37 +368,58 @@ class ServerDownloadHost implements HostDownloadHost {
     // 资源索引器：与 app 同一份用户 BT 站清单 + 同一个 Torznab 偏好键（同一张
     // preferences 表）。订阅服务的在场校验看它，客户端搜到的 provider id 才对得上。
     _startPipeline(_buildRegistry());
+    if (_resolvedBackend == ServerConfig.torrentEngineEmbedded) {
+      _maintenanceTimer ??= Timer.periodic(
+        maintenanceInterval,
+        (_) => unawaited(_maintenanceTick()),
+      );
+    }
+    // 有远程租约就立刻起内置引擎：已配对设备交来的种子随本机启动续传，而不是等
+    // 对端下一次轮询才把 session 拉起来。
+    if (_resolvedBackend == ServerConfig.torrentEngineEmbedded &&
+        (await peerTorrentLeases.hashes()).isNotEmpty) {
+      unawaited(_ensureEmbedded());
+    }
+    // getter 每次现建一份 registry（见 [subtitleProviderIds]），这里只算一次。
+    final List<String> subtitleIds = subtitleProviderIds;
     engineLog.logDiagnostic(
       'ServerDownloadHost',
       'pipeline started (backend=$_resolvedBackend'
           '${_resolvedBackend == ServerConfig.torrentEngineQbittorrent ? ' ${config.qbittorrentUrl}' : ''}, '
           'root ${downloadRoot.path}, '
-          'subtitles ${subtitleProviderIds.isEmpty ? 'none' : subtitleProviderIds.join('+')})',
+          'subtitles ${subtitleIds.isEmpty ? 'none' : subtitleIds.join('+')})',
     );
   }
 
-  /// 正在跑的管线字幕阶段装了哪些来源（没起管线 / 一家没配时为空）。
-  List<String> get subtitleProviderIds => <String>[
-    for (final VideoSubtitleProvider provider
-        in _subtitleRegistry?.providers ?? const <VideoSubtitleProvider>[])
-      provider.id,
-  ];
+  /// 下一轮字幕阶段会用哪些来源（按当前偏好 / 环境现算；一家没配时为空）。
+  List<String> get subtitleProviderIds {
+    final VideoSubtitleRegistryLease? lease = _subtitleSource.acquire();
+    if (lease == null) return const <String>[];
+    try {
+      return <String>[
+        for (final VideoSubtitleProvider provider in lease.registry.providers)
+          provider.id,
+      ];
+    } finally {
+      lease.release();
+    }
+  }
 
   void _startPipeline(VideoResourceRegistry registry) {
     _registry = registry;
-    // 字幕来源与资源索引器同起停：每次（重）建管线按当前偏好 / 环境重读一份。
-    // 一家都没配时传 null——管线按「本机没配字幕」处理（best-effort 直接入库，
-    // required 的任务如实报 needsAttention），而不是拿空 registry 白搜一轮。
-    final VideoSubtitleRegistry subtitles = _subtitleRegistryFactory();
-    _subtitleRegistry = subtitles;
     final VideoDownloadPipelineService pipeline = VideoDownloadPipelineService(
       database: db,
       resourceRegistry: registry,
-      subtitleRegistry: subtitles.providers.isEmpty ? null : subtitles,
-      preferredSubtitleLanguages: serverPreferredSubtitleLanguages(
-        _subtitleLanguage(),
+      // 字幕来源不跟管线起停：每轮字幕阶段现借（见 [_subtitleSource]）。一家都没配
+      // 时借不到——管线按「本机没配字幕」处理（best-effort 直接入库，required 的
+      // 任务如实报 needsAttention），而不是拿空 registry 白搜一轮。
+      subtitleRegistrySource: _subtitleSource,
+      // 全局字幕语言（配置 `subtitle_language` + 偏好 `default_content_language`）：
+      // 每轮字幕阶段开头现读，WebUI / 互联改了下一个任务即生效，在飞的那一轮不变。
+      subtitleLanguages: () => VideoDownloadSubtitleLanguages(
+        preferred: serverPreferredSubtitleLanguages(_subtitleLanguage()),
+        defaultContentLanguage: serverDefaultContentLanguage(prefs),
       ),
-      defaultContentLanguage: serverDefaultContentLanguage(prefs),
       // 按作品的字幕语言：读每系列记忆（app 写、经互联同步过来的同一个偏好键）。
       subtitleLanguageResolver: serverDownloadSubtitleLanguageResolver(prefs),
       // 按内嵌字幕轨对时间轴（开关每次现读，默认开）。
@@ -296,7 +479,6 @@ class ServerDownloadHost implements HostDownloadHost {
     final VideoDownloadPipelineService? oldPipeline = _pipeline;
     final VideoDownloadSubscriptionService? oldSubscriptions =
         _subscriptionService;
-    final VideoSubtitleRegistry? oldSubtitles = _subtitleRegistry;
     if (oldPipeline == null) {
       // 后端没起来：没有管线在用 registry，只换订阅面（能力位 providers 跟着新配置）。
       _registry = null;
@@ -312,11 +494,9 @@ class ServerDownloadHost implements HostDownloadHost {
     _pipeline = null;
     await oldPipeline.dispose(drainTimeout: const Duration(seconds: 5));
     _startPipeline(_buildRegistry());
-    // 旧字幕 registry 同理：在飞的字幕阶段还拿着它。
     unawaited(
       oldPipeline.stop().whenComplete(() {
         oldRegistry?.close();
-        oldSubtitles?.close();
       }),
     );
     engineLog.logDiagnostic(
@@ -350,8 +530,9 @@ class ServerDownloadHost implements HostDownloadHost {
 
   Future<EmbeddedTorrentHostClient?> _openEmbedded() async {
     await paths.torrentResume.create(recursive: true);
-    // 计划集合 = video_download_jobs 里仍活着的 embedded 任务；resume 目录只是它的镜像。
-    final Set<String> restoreIds = await loadEmbeddedTorrentResumeIds(db);
+    // 计划集合 = video_download_jobs 里仍活着的 embedded 任务 + 已配对设备的远程
+    // 租约；resume 目录只是它的镜像。
+    final Set<String> restoreIds = await _embeddedKeepIds();
     final EmbeddedTorrentHostClient? host =
         await EmbeddedTorrentHostClient.open(
           EmbeddedTorrentHostOpenArgs(
@@ -361,6 +542,7 @@ class ServerDownloadHost implements HostDownloadHost {
             restoreIds: restoreIds,
             listenInterfaces: config.torrentListen,
           ),
+          factory: _embeddedHostFactory,
         );
     if (host == null) {
       engineLog.logDiagnostic(
@@ -369,7 +551,10 @@ class ServerDownloadHost implements HostDownloadHost {
       );
       return null;
     }
-    host.post('applySessionSettings', host.applySessionSettings(_qbConfig));
+    // 整套配置（限速 / 内存 / 会话 / 反吸血 / 上传策略）与 app 同一份下发序列。
+    // BUG-5160：此前这里只铺会话级设置，上传策略从未下发、也没有维护 tick，
+    // unchoke 槽位停在 libtorrent 默认值，「关上传」在服务端从未生效。
+    host.postConfig(_qbConfig);
     engineLog.logDiagnostic(
       'ServerDownloadHost',
       'embedded libtorrent ${host.libtorrentVersion} on ${config.torrentListen}',
@@ -449,6 +634,8 @@ class ServerDownloadHost implements HostDownloadHost {
   Future<void> stop() async {
     // 等在途的索引器重载落地，否则它会在 stop 之后再起一套没人关的管线。
     await _reloadOps;
+    _maintenanceTimer?.cancel();
+    _maintenanceTimer = null;
     final VideoDownloadSubscriptionService? subscriptions =
         _subscriptionService;
     _subscriptionService = null;
@@ -461,13 +648,11 @@ class ServerDownloadHost implements HostDownloadHost {
     }
     _registry?.close();
     _registry = null;
-    _subtitleRegistry?.close();
-    _subtitleRegistry = null;
     _backend?.close();
     _backend = null;
     final EmbeddedTorrentHostClient? embedded = await _embedded.take();
     if (embedded != null) {
-      await embedded.dispose(keepIds: await loadEmbeddedTorrentResumeIds(db));
+      await embedded.dispose(keepIds: await _embeddedKeepIds());
     }
   }
 
@@ -523,15 +708,8 @@ class ServerDownloadHost implements HostDownloadHost {
           identity: _identity(),
         );
       case ServerConfig.torrentEngineQbittorrent:
-        _backend ??= QbTorrentBackend(
-          QBittorrentClient(
-            baseUrl: config.qbittorrentUrl!,
-            username: config.qbittorrentUsername ?? '',
-            password: config.qbittorrentPassword ?? '',
-          ),
-        );
         return VideoDownloadBackendBinding(
-          backend: _backend!,
+          backend: _qbBackend(),
           identity: _identity(),
         );
     }

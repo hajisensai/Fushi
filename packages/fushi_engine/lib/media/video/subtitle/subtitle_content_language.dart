@@ -76,6 +76,13 @@ bool _isHan(int rune) =>
     (rune >= 0x3400 && rune <= 0x4DBF) ||
     rune == 0x3005; // 々
 
+/// 假名判据的公开出口（与正文语言检测同一套：平 / 片 / 半角片假名）。双语拆分
+/// （`bilingual_subtitle_split.dart`）逐行判日语要和这里判「是不是双语」口径一致。
+bool isSubtitleKanaRune(int rune) => _isKana(rune);
+
+/// 汉字判据的公开出口（含扩展 A 与「々」），口径同 [isSubtitleKanaRune]。
+bool isSubtitleHanRune(int rune) => _isHan(rune);
+
 bool _isLatinLetter(int rune) =>
     (rune >= 0x41 && rune <= 0x5A) || (rune >= 0x61 && rune <= 0x7A);
 

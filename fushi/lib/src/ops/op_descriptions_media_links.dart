@@ -3,8 +3,7 @@ import 'package:fushi_core/fushi_core.dart';
 
 import 'package:fushi/src/ops/ctl_media_links_routes.dart';
 import 'package:fushi/src/ops/op_describe_kit.dart';
-import 'package:fushi/src/ops/op_descriptions_library.dart'
-    show opCustomUndo, opUndoDisplay, opUndoStrings;
+import 'package:fushi/src/ops/op_descriptions_library.dart' show opUndoDisplay;
 
 /// 作品图谱（跨媒体关联建议的接受 / 拒绝）与人物的操作描述（spec §4）。
 ///
@@ -14,7 +13,9 @@ import 'package:fushi/src/ops/op_descriptions_library.dart'
 /// - 关联作品 / 移除关联 → `restoreMediaLinkSnapshot` 把这一行恢复成执行前的快照
 ///   （执行前没有这一行就写墓碑，不删行）；
 /// - 查找相关作品 → `discardMediaLinkSuggestion` 删掉这轮刚写入、用户还没处理过的
-///   建议（不写墓碑：撤销推断不是否决，下次推断仍可再提）；
+///   建议（不写墓碑，下次推断仍可再提）；`revertAiMediaLink` 撤回这轮 AI 直接生效、
+///   用户还没确认 / 否决的连接：凭空新建的写墓碑（已同步出去的副本不会被拉回来，
+///   这一对也不再自动连），把已有建议升成生效的退回那条建议；
 /// - 确认 / 否决同一人 → `restoreManualPersonBridge` 把这一对的手动桥恢复成执行前
 ///   （执行前没有就删掉）。
 /// 执行后用户又处理过（确认 / 否决 / 改判）的，撤销报 superseded、不覆盖。
@@ -101,7 +102,10 @@ List<OpDescription> describeMediaLinksOps(OpDescribeKit kit) {
           'the detail page; the link is confirmed at once). Use this when the '
           'user names the works to link: e.g. a bonus CD / soundtrack album '
           'with its anime (same_work), a novel with its anime adaptation '
-          '(adaptation), an OP / ED song with the anime (theme_song). Look up '
+          '(adaptation), an OP / ED song with the anime (theme_song), a '
+          'sequel novel / season 2 / sequel game (sequel), a side story / '
+          'spin-off / movie / fan disc (side_story). sequel and side_story '
+          'link different works of one series and never merge them. Look up '
           'both endpoints with links.candidates first.',
       risk: OpRisk.write,
       params: const <OpParam>[
@@ -116,17 +120,36 @@ List<OpDescription> describeMediaLinksOps(OpDescribeKit kit) {
           description:
               'adaptation = one is the source material of the other; '
               'theme_song = a music track / album is an OP / ED / insert song '
-              'of a video (one side music, other side video); same_work = any '
-              'other "belongs to the same work" pairing.',
+              'of a video (one side music, other side video); sequel = one is '
+              'a later installment of the other; side_story = one is a side '
+              'story / spin-off / movie of the other; same_work = any other '
+              '"belongs to the same work" pairing.',
           required: true,
-          enumValues: <String>['adaptation', 'same_work', 'theme_song'],
+          enumValues: <String>[
+            'adaptation',
+            'same_work',
+            'theme_song',
+            'sequel',
+            'side_story',
+          ],
         ),
         OpParam.string(
           'selfIs',
           description:
-              'Required for adaptation: original = endpoint is the source '
-              'material, adaptation = endpoint is the adaptation.',
-          enumValues: <String>['original', 'adaptation'],
+              'Direction, required for adaptation / sequel / side_story. '
+              'adaptation: original = endpoint is the source material, '
+              'adaptation = endpoint is the adaptation. sequel: prequel = '
+              'endpoint comes first, sequel = endpoint is the sequel. '
+              'side_story: main = endpoint is the main story, side_story = '
+              'endpoint is the side story.',
+          enumValues: <String>[
+            'original',
+            'adaptation',
+            'prequel',
+            'sequel',
+            'main',
+            'side_story',
+          ],
         ),
         OpParam.string(
           'role',
@@ -158,10 +181,17 @@ List<OpDescription> describeMediaLinksOps(OpDescribeKit kit) {
       method: 'POST',
       pattern: '$kMediaLinksCtlRoot/:endpoint/infer',
       summary:
-          'Find related works for an item and store them as suggestions '
-          '(shared external ids, MAL source material, title match). Queries '
-          'MAL / Wikidata; when an LLM is assigned to "media links" the '
-          'candidates are also sent to that LLM for a verdict. Slow.',
+          'Find related works for an item (shared external ids, MAL source '
+          'material, title match; for a music album / track: the anime or '
+          'game it belongs to, from audio-fingerprint hits and album / track '
+          'titles naming the work plus OST / OP / ED keywords). Strong '
+          'evidence and high-confidence LLM '
+          'verdicts are linked directly (confirmed_by=ai, undoable); the rest '
+          'are stored as suggestions. Queries MAL / Wikidata; when an LLM is '
+          'assigned to "media links" the candidates are also sent to that LLM '
+          'for a verdict, and same-kind items with overlapping titles (two '
+          'video collections / movies, two games) that no metadata source '
+          'relates are sent too, to find sequels and side stories. Slow.',
       risk: OpRisk.write,
       params: const <OpParam>[_endpointParam],
       undo: opCustomUndo(
@@ -172,24 +202,55 @@ List<OpDescription> describeMediaLinksOps(OpDescribeKit kit) {
                   for (final Object? s in r['suggestions'] as List)
                     if (s is Map) s['id'],
               ],
+              // AI 把已有建议升成生效的：id + 升级前的行（撤销退回建议）。
+              'upgraded': <Object?>[
+                if (r is Map && r['upgraded'] is List)
+                  for (final Object? u in r['upgraded'] as List)
+                    if (u is Map)
+                      <String, Object?>{
+                        'id': u['id'],
+                        'previous': u['previous'],
+                      },
+              ],
             },
         describe: (Map<String, Object?> p) =>
-            '${(p['ids'] as List? ?? const <Object?>[]).length} suggestion(s)',
+            '${(p['ids'] as List? ?? const <Object?>[]).length + (p['upgraded'] as List? ?? const <Object?>[]).length} link(s)',
         revert: (Map<String, Object?> payload) async {
           final List<Object?> ids =
               payload['ids'] as List? ?? const <Object?>[];
-          int discarded = 0;
+          final List<Object?> upgraded =
+              payload['upgraded'] as List? ?? const <Object?>[];
+          int reverted = 0;
           for (final Object? raw in ids) {
             final MediaLinkId? id = mediaLinkIdFromJson(raw);
-            if (id != null && await db().discardMediaLinkSuggestion(id)) {
-              discarded++;
+            if (id == null) continue;
+            // 这一轮新写的行：建议直接删；AI 生效的写墓碑（之前没有这一行）。用户
+            // 之后确认 / 否决过的两者都拒绝，算已被处理。
+            if (await db().discardMediaLinkSuggestion(id) ||
+                await db().revertAiMediaLink(id)) {
+              reverted++;
             }
           }
-          if (ids.isNotEmpty && discarded == 0) {
-            return const OpUndoOutcome.superseded('这些建议都已被处理过');
+          for (final Object? raw in upgraded) {
+            if (raw is! Map) continue;
+            final MediaLinkId? id = mediaLinkIdFromJson(raw['id']);
+            final Object? previous = raw['previous'];
+            if (id == null || previous is! Map) continue;
+            if (await db().revertAiMediaLink(
+              id,
+              previous: MediaLinkRow.fromJson(
+                Map<String, dynamic>.from(previous),
+              ),
+            )) {
+              reverted++;
+            }
+          }
+          final int total = ids.length + upgraded.length;
+          if (total > 0 && reverted == 0) {
+            return const OpUndoOutcome.superseded('这些连接都已被处理过');
           }
           return OpUndoOutcome.done(
-            discarded < ids.length ? '已撤回 $discarded 条，其余已被处理过，保留' : null,
+            reverted < total ? '已撤回 $reverted 条，其余已被处理过，保留' : null,
           );
         },
       ),
@@ -312,7 +373,7 @@ const List<OpParam> _pickParams = <OpParam>[
     'relation',
     description:
         'Only needed when the two items have several links: adaptation / '
-        'theme_song / soundtrack / same_work / cast.',
+        'theme_song / soundtrack / same_work / cast / sequel / side_story.',
   ),
 ];
 

@@ -92,7 +92,7 @@ class _MangaPanelModelSettingsState extends State<MangaPanelModelSettings> {
         FushiListItem(
           // 裸 ListTile 会被 MD3 守卫（m3e_design_system_static_test）判违规：
           // 普通页面 chrome 一律走共享组件，本仓把 ListTile 整体收口到了它。
-          title: Text(t.manga_panel_model),
+          title: Text(t.settings_manga_panel_model_title),
           subtitle: Text(
             _busy
                 ? t.manga_panel_model_downloading_bytes(bytes: '$_received')

@@ -10,6 +10,13 @@ import 'package:fushi/src/sync/interconnect_assistant_client.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_engine/sync/assistant/host_assistant.dart';
 
+/// 远端会话停下来的失败提示码（再试也不会好，停止轮询）：凭据被拒 / 证书不符 /
+/// 已不在配对表。与 [kVideoAcquisitionFailureRemoteUnavailable]（会自己恢复）区分。
+const String kRemoteVideoAcquisitionAuthRejected = 'remote_auth_rejected';
+const String kRemoteVideoAcquisitionCertificateMismatch =
+    'remote_certificate_mismatch';
+const String kRemoteVideoAcquisitionNotPaired = 'remote_not_paired';
+
 class RemoteVideoAcquisitionSession implements VideoAcquisitionSession {
   RemoteVideoAcquisitionSession._({
     required InterconnectAssistantClient client,
@@ -28,7 +35,9 @@ class RemoteVideoAcquisitionSession implements VideoAcquisitionSession {
   }
 
   /// 在 [target] 上开一场会话。失败原样抛 [HostAssistantException]（409 的 detail 是
-  /// host 的 reason 短码），由入口翻成引导文案。
+  /// host 的 reason 短码），由入口翻成引导文案；此时 [client] 仍归调用方。
+  ///
+  /// 开成功后会话接管 [client]：[dispose] 关完 host 上的会话再释放它。
   static Future<RemoteVideoAcquisitionSession> open({
     required InterconnectAssistantClient client,
     required HostAssistantTarget target,
@@ -66,12 +75,12 @@ class RemoteVideoAcquisitionSession implements VideoAcquisitionSession {
   final List<(int, VideoAcquisitionMessage)> _notices =
       <(int, VideoAcquisitionMessage)>[];
 
-  /// 当前是否处于「连不上」状态（只提示一次，恢复后清掉）。
-  bool _unreachable = false;
-
-  /// host 上的会话已经没了（过期 / host 重启）：不再轮询，动作一律报失败。
-  bool _lost = false;
+  _RemoteState _state = _RemoteState.live;
   bool _disposed = false;
+
+  /// 停下来了（[_RemoteState.gone] / [_RemoteState.halted]）：不再轮询、不再发请求。
+  bool get _stopped =>
+      _state == _RemoteState.gone || _state == _RemoteState.halted;
 
   String get deviceLabel => _target.label;
 
@@ -118,9 +127,14 @@ class RemoteVideoAcquisitionSession implements VideoAcquisitionSession {
     if (_disposed) return;
     _disposed = true;
     _views.close();
-    if (_lost) return;
-    // 页面退出即关 host 上的会话；失败只记诊断（host 闲置回收兜底）。
-    unawaited(_closeHostSession());
+    if (_stopped) {
+      // 会话已没了 / 凭据证书不认：关会话的请求也不会成功，直接释放 client。
+      _client.dispose();
+      return;
+    }
+    // 页面退出即关 host 上的会话；失败只记诊断（host 闲置回收兜底）。关完再释放
+    // client（在途的长轮询随之以 cancelled 收尾）。
+    unawaited(_closeHostSession().whenComplete(_client.dispose));
   }
 
   Future<void> _closeHostSession() async {
@@ -135,11 +149,8 @@ class RemoteVideoAcquisitionSession implements VideoAcquisitionSession {
   }
 
   Future<void> _act(Map<String, Object?> action) async {
-    if (_disposed) return;
-    if (_lost) {
-      _markUnavailable();
-      return;
-    }
+    // 停下来之后不再发请求：失败提示在进入该状态时已经插过一次。
+    if (_disposed || _stopped) return;
     try {
       _apply(await _client.act(_target, _id, action));
     } on Object catch (error) {
@@ -148,7 +159,8 @@ class RemoteVideoAcquisitionSession implements VideoAcquisitionSession {
   }
 
   Future<void> _pollLoop() async {
-    while (!_disposed && !_lost) {
+    // 每次读都经通道重新选路：同一台 host 换了可达地址照样续得上。
+    while (!_disposed && !_stopped) {
       try {
         final HostAssistantEnvelope envelope = await _client.read(
           _target,
@@ -159,16 +171,17 @@ class RemoteVideoAcquisitionSession implements VideoAcquisitionSession {
         _apply(envelope);
       } on Object catch (error) {
         _onError(error, 'poll');
-        if (_disposed || _lost) return;
+        if (_disposed || _stopped) return;
+        // 连不上是长轮询会话的常态（换网、休眠），按固定节奏再读。
         await Future<void>.delayed(_retryDelay);
       }
     }
   }
 
   void _apply(HostAssistantEnvelope envelope) {
-    if (_disposed) return;
-    final bool recovered = _unreachable;
-    _unreachable = false;
+    if (_disposed || _stopped) return;
+    final bool recovered = _state == _RemoteState.unreachable;
+    _state = _RemoteState.live;
     if (envelope.revision <= _revision && !recovered) return;
     _revision = envelope.revision;
     _hostView = VideoAcquisitionView.fromJson(envelope.view);
@@ -177,25 +190,47 @@ class RemoteVideoAcquisitionSession implements VideoAcquisitionSession {
 
   void _onError(Object error, String where) {
     if (_disposed) return;
+    // 本机 client 已关（dispose 路径）：不是 host 的问题，静默。
+    if (error is HostAssistantException && error.cancelled) return;
     ErrorLogService.instance.logDiagnostic(
       'RemoteVideoAcquisition.$where',
       '${_target.label}: $error',
     );
-    if (error is HostAssistantException && error.sessionGone) _lost = true;
-    _markUnavailable();
+    if (_stopped) return;
+    if (error is HostAssistantException && error.permanent) {
+      _enter(_RemoteState.halted, _haltedMessage(error.code));
+    } else if (error is HostAssistantException && error.sessionGone) {
+      _enter(_RemoteState.gone, kVideoAcquisitionFailureRemoteUnavailable);
+    } else {
+      _enter(
+        _RemoteState.unreachable,
+        kVideoAcquisitionFailureRemoteUnavailable,
+      );
+    }
   }
 
-  void _markUnavailable() {
-    if (_unreachable) return;
-    _unreachable = true;
+  /// 永久失败的提示码。
+  static String _haltedMessage(String code) => switch (code) {
+    'certificate_mismatch' => kRemoteVideoAcquisitionCertificateMismatch,
+    'no_host' => kRemoteVideoAcquisitionNotPaired,
+    _ => kRemoteVideoAcquisitionAuthRejected,
+  };
+
+  /// 转入非 live 状态。提示只在「从 live 断开」与「转为永久失败」时插一条：持续
+  /// 连不上、连不上之后发现会话没了都不重复提示。
+  void _enter(_RemoteState next, String message) {
+    final _RemoteState previous = _state;
+    _state = next;
+    final bool notify = next == _RemoteState.halted
+        ? previous != _RemoteState.halted
+        : previous == _RemoteState.live;
+    if (!notify) return;
     _notices.add((
       _hostView.transcript.length,
-      const VideoAcquisitionAssistantMessage(
+      VideoAcquisitionAssistantMessage(
         VideoAcquisitionSay(
           VideoAcquisitionSayKind.failed,
-          args: <String, Object?>{
-            'message': kVideoAcquisitionFailureRemoteUnavailable,
-          },
+          args: <String, Object?>{'message': message},
         ),
       ),
     ));
@@ -209,7 +244,7 @@ class RemoteVideoAcquisitionSession implements VideoAcquisitionSession {
 
   VideoAcquisitionView _compose() {
     final VideoAcquisitionView host = _hostView;
-    final bool offline = _unreachable || _lost;
+    final bool offline = _state != _RemoteState.live;
     if (_notices.isEmpty && !offline) return host;
     final List<VideoAcquisitionMessage> transcript = <VideoAcquisitionMessage>[
       ...host.transcript,
@@ -225,4 +260,19 @@ class RemoteVideoAcquisitionSession implements VideoAcquisitionSession {
       failureHint: offline ? VideoAcquisitionFailureHint.none : null,
     );
   }
+}
+
+/// 远端会话的连接状态。
+enum _RemoteState {
+  /// 收到过快照、连接正常。
+  live,
+
+  /// 暂时连不上：继续按固定节奏轮询，通道每次都重新选路。
+  unreachable,
+
+  /// host 上的会话没了（过期 / host 重启）：停止。
+  gone,
+
+  /// 凭据被拒 / 证书不符 / 已不在配对表：再试也不会好，停止。
+  halted,
 }

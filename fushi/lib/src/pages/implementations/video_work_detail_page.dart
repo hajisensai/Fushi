@@ -4,15 +4,22 @@ import 'package:fushi/src/media/video/disc/disc_session_entry.dart';
 import 'package:fushi/src/media/video/disc/disc_session_launcher.dart';
 
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
-import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/media/collections/collection_detail_layout.dart';
 import 'package:fushi/src/media/collections/collection_episode_slot.dart';
 import 'package:fushi/src/media/detail/media_detail_kit.dart';
+import 'package:fushi/src/media/detail/media_poster_detail.dart';
+import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart'
+    show fushiPageBackgroundColor;
+import 'package:fushi/src/media/video/cover_ui/video_poster_detail_hero.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi/src/media/video/metadata/video_metadata_credit_repository.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_edit_dialog.dart';
 import 'package:fushi/src/media/video/metadata/video_credit_rail.dart';
+import 'package:fushi/src/media/video/metadata/video_metadata_image_provider.dart';
 import 'package:fushi/src/media/video/metadata/video_country_display.dart';
 import 'package:fushi/src/media/video/cover_ui/video_specs_panel.dart';
 import 'package:fushi/src/media/video/video_specs_service.dart';
@@ -37,9 +44,24 @@ import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
     show RemoteVideoInfo;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_manual_edit.dart';
 
 /// Stable reference to a canonical video work. A work is owned by either a
 /// collection (episodic TV) or one VideoBook (standalone movie).
+/// 视频详情加载中 / 找不到的页面外壳。重设计外壳下与加载完成后同一个裸图标页头
+/// （[MediaPosterDetailChrome]），加载完成换成海报面板时顶栏不跳；墨水屏照旧挂
+/// [FushiAppBar]。不套 [MediaPosterDetailTheme]：此时还没有封面，按作品名折出的
+/// 占位色相会在封面取色后再换一次，骨架与错误态留在页面底色上。
+Widget _videoDetailStateScaffold(BuildContext context, {required Widget body}) {
+  if (!shellRedesignActive(context)) {
+    return Scaffold(appBar: FushiAppBar(), body: body);
+  }
+  return Scaffold(
+    backgroundColor: fushiPageBackgroundColor(context),
+    body: MediaPosterDetailChrome(child: body),
+  );
+}
+
 class VideoWorkRef {
   const VideoWorkRef.collection(this.collectionId) : bookUid = null;
   const VideoWorkRef.book(this.bookUid) : collectionId = null;
@@ -64,6 +86,7 @@ class VideoWorkDetailPage extends StatefulWidget {
     this.onRescrapeCollection,
     this.onChooseTmdbOrdering,
     this.onPickOnlineCover,
+    this.onOrganizeFilenames,
     this.collectionAiSettings,
     super.key,
   });
@@ -109,6 +132,9 @@ class VideoWorkDetailPage extends StatefulWidget {
 
   /// 透传给合集详情页的「在线搜索封面」（BUG-2999）。null = 不渲染该菜单项。
   final Future<File?> Function(String workTitle)? onPickOnlineCover;
+
+  /// 透传给合集详情页单集菜单的「整理文件名」。null = 不渲染该菜单项。
+  final Future<void> Function(List<String> bookUids)? onOrganizeFilenames;
 
   @override
   State<VideoWorkDetailPage> createState() => _VideoWorkDetailPageState();
@@ -162,14 +188,14 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
               if (snapshot.connectionState != ConnectionState.done) {
                 // BUG-2230：同上 —— 加载态与它下面的 `collection == null` 终态口径一致，
                 // 都带 AppBar。future 悬挂时这里就是用户能看到的全部界面。
-                return Scaffold(
-                  appBar: FushiAppBar(),
+                return _videoDetailStateScaffold(
+                  context,
                   body: Center(child: adaptiveIndicator(context: context)),
                 );
               }
               if (collection == null) {
-                return Scaffold(
-                  appBar: FushiAppBar(),
+                return _videoDetailStateScaffold(
+                  context,
                   body: Center(child: Text(t.video_load_failed_not_found)),
                 );
               }
@@ -208,6 +234,7 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
                 onRescrapeCollection: widget.onRescrapeCollection,
                 onChooseTmdbOrdering: widget.onChooseTmdbOrdering,
                 onPickOnlineCover: widget.onPickOnlineCover,
+                onOrganizeFilenames: widget.onOrganizeFilenames,
               );
             },
       );
@@ -331,19 +358,31 @@ class _StandaloneVideoWorkDetailState
     });
   }
 
-  ImageProvider? _image(String kind) {
-    for (final VideoMetadataImageRow image in _images) {
-      if (image.kind != kind) continue;
-      final String? path = image.localPath;
-      if (path != null && _existingImagePaths.contains(path)) {
-        return FileImage(File(path));
-      }
-      if (image.remoteUrl.isNotEmpty) {
-        return AppCachedHttpImage(image.remoteUrl);
-      }
-    }
-    return null;
+  /// 手填作品资料（BUG-5082）：没有作品行时挂在这个视频上新建，改过的字段上锁。
+  Future<void> _editMetadata(VideoBookRow book) async {
+    final VideoWorkManualTarget target = await videoWorkManualTargetForBook(
+      widget.database,
+      book.bookUid,
+    );
+    if (!mounted) return;
+    final bool saved = await editVideoWorkManualMetadata(
+      context: context,
+      database: widget.database,
+      target: target,
+      fallbackTitle: book.title,
+    );
+    if (!saved || !mounted) return;
+    FushiToast.show(msg: t.video_work_edit_metadata_saved);
+    widget.onChanged();
+    await _loadGuarded();
   }
+
+  /// 本地图 / 远程图都按种类封顶解码（#3722 video-18，见 [videoMetadataRowImage]）。
+  ImageProvider? _image(String kind) => videoMetadataRowImage(
+    _images,
+    kind,
+    localExists: _existingImagePaths.contains,
+  );
 
   @override
   Widget build(BuildContext context) {
@@ -351,15 +390,15 @@ class _StandaloneVideoWorkDetailState
       // BUG-2230：加载态与它的兄弟终态（下面 `book == null` 分支）口径必须一致 ——
       // 都带 AppBar（= 返回键）。桌面端没有系统返回键，`_load` 若久久不返回，
       // 无顶栏的骨架就是一个没有出口的页面。
-      return Scaffold(
-        appBar: FushiAppBar(),
+      return _videoDetailStateScaffold(
+        context,
         body: const MediaDetailSkeleton(rows: 3),
       );
     }
     final VideoBookRow? book = _book;
     if (book == null) {
-      return Scaffold(
-        appBar: FushiAppBar(),
+      return _videoDetailStateScaffold(
+        context,
         body: FushiPlaceholderMessage(
           icon: FushiIcons.searchOff,
           tone: FushiPlaceholderTone.error,
@@ -385,6 +424,130 @@ class _StandaloneVideoWorkDetailState
     final DiscRef? disc = _disc;
     final bool discPrimary = _discPrimaryKind == DiscPrimaryKind.playDisc;
     final bool started = book.lastPositionMs > 0;
+    final Widget fab = MediaDetailResumeFab(
+      buttonKey: const ValueKey<String>('video-work-resume-fab'),
+      watching: true,
+      started: book.lastPositionMs > 0,
+      labelOverride: discPrimary ? t.video_disc_play : null,
+      icon: discPrimary ? FushiIcons.toc : null,
+      onPressed: () => _onPrimaryPlay(book),
+    );
+    final List<Widget> secondaryActions = <Widget>[
+      if (disc != null && discPrimary)
+        started
+            ? MediaDetailSecondaryButton(
+                buttonKey: const ValueKey<String>('video-work-disc-continue'),
+                icon: FushiIcons.history,
+                label: t.video_disc_continue_at(
+                  time: formatDiscResumePosition(book.lastPositionMs),
+                ),
+                onPressed: () => _playBook(book),
+              )
+            : MediaDetailSecondaryButton(
+                buttonKey: const ValueKey<String>('video-work-disc-main-title'),
+                icon: FushiIcons.playCircle,
+                label: t.video_disc_play_main_title,
+                onPressed: () => _playBook(book),
+              )
+      else if (disc != null && _discUnavailable == null)
+        // 「原盘默认进入菜单」关着：主按钮直接播正片，菜单入口留在这里。
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('video-work-disc-menu'),
+          icon: FushiIcons.toc,
+          label: t.video_disc_play,
+          onPressed: () => _openDisc(disc),
+        ),
+      // 手填资料（BUG-5082）：刮削全失败的散装视频也能补简介 / 年份等。
+      MediaDetailSecondaryButton(
+        buttonKey: const ValueKey<String>('video-work-edit-metadata'),
+        icon: FushiIcons.edit,
+        label: t.video_work_edit_metadata,
+        onPressed: () => unawaited(_editMetadata(book)),
+      ),
+    ];
+    final String playLabel = discPrimary
+        ? t.video_disc_play
+        : MediaDetailResumeFab.labelFor(watching: true, started: started);
+    final String? continueLabel = disc != null && _discUnavailable != null
+        ? discMenuUnavailableText(_discUnavailable!)
+        : null;
+    final List<Widget> slivers = <Widget>[
+      // v95：技术规格。这一页是「一个文件 = 一部作品」，规格无歧义，摊开
+      // 显示。探不到时整块不占位（VideoSpecsPanel 内部返回 shrink）。
+      SliverToBoxAdapter(
+        child: Padding(
+          padding: EdgeInsets.fromLTRB(
+            tokens.spacing.page,
+            tokens.spacing.section,
+            tokens.spacing.page,
+            0,
+          ),
+          child: VideoSpecsPanel(
+            service: widget.videoSpecs,
+            filePath: book.videoPath,
+          ),
+        ),
+      ),
+      SliverToBoxAdapter(child: _buildTerms(tokens)),
+      SliverToBoxAdapter(child: _buildCredits(tokens)),
+      SliverToBoxAdapter(child: _buildExtras(tokens)),
+    ];
+    if (shellRedesignActive(context)) {
+      // 重设计外壳：海报面板版式（与系列详情同一套，见 media_poster_detail.dart）；
+      // 不挂 AppBar，返回键是 [MediaPosterDetailChrome] 的裸图标页头。
+      return Scaffold(
+        body: MediaPosterDetailTheme(
+          image: poster,
+          fallbackKey: title,
+          child: MediaPosterDetailChrome(
+            title: title,
+            child: FushiEntranceScope(
+              child: MediaPosterDetailLayout(
+                bottomPadding: tokens.spacing.page,
+                fab: fab,
+                header: VideoPosterDetailHero(
+                  title: title,
+                  originalTitle: originalTitle == title ? null : originalTitle,
+                  cover: poster,
+                  backdrop: fanart,
+                  logo: _image('logo'),
+                  mediaType: work?.mediaType,
+                  status: status,
+                  pills: <MediaDetailChip>[
+                    if (rating != null && rating > 0)
+                      MediaDetailChip(
+                        '★ ${rating.toStringAsFixed(1)}',
+                        tone: MediaDetailChipTone.primary,
+                      ),
+                    if (work?.year case final int year)
+                      MediaDetailChip('$year'),
+                    for (final VideoMetadataTermRow term
+                        in _terms
+                            .where(
+                              (VideoMetadataTermRow e) => e.kind == 'genre',
+                            )
+                            .take(3))
+                      MediaDetailChip(term.name),
+                    if (runtime != null && runtime > 0)
+                      MediaDetailChip(t.video_runtime_minutes(n: runtime)),
+                  ],
+                  summary: work?.overview,
+                  continueLabel: continueLabel,
+                  primaryAction: MediaDetailPrimaryButton(
+                    icon: discPrimary ? FushiIcons.toc : FushiIcons.play,
+                    label: playLabel,
+                    buttonKey: const ValueKey<String>('video-work-play'),
+                    onPressed: () => _onPrimaryPlay(book),
+                  ),
+                  secondaryActions: secondaryActions,
+                ),
+                slivers: slivers,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     // M3E 作品详情：宽屏两栏（左 hero sticky、右规格 / 资料 / 人物 / 附件），
     // 窄屏单列。大背景 fanart 优先、没有就拿海报模糊垫底（与系列详情同一判据）。
     return Scaffold(
@@ -399,14 +562,7 @@ class _StandaloneVideoWorkDetailState
           ),
           backdropBlur: collectionHeroBackdropBlur(backdrop: fanart),
           bottomPadding: tokens.spacing.page,
-          fab: MediaDetailResumeFab(
-            buttonKey: const ValueKey<String>('video-work-resume-fab'),
-            watching: true,
-            started: book.lastPositionMs > 0,
-            labelOverride: discPrimary ? t.video_disc_play : null,
-            icon: discPrimary ? FushiIcons.toc : null,
-            onPressed: () => _onPrimaryPlay(book),
-          ),
+          fab: fab,
           header: CollectionDetailHero(
             backdrop: fanart,
             cover: poster,
@@ -432,70 +588,14 @@ class _StandaloneVideoWorkDetailState
             ],
             summary: work?.overview,
             // 原盘开不了菜单时写明原因（主按钮退回普通播放）。
-            continueLabel: disc != null && _discUnavailable != null
-                ? discMenuUnavailableText(_discUnavailable!)
-                : null,
-            playLabel: discPrimary
-                ? t.video_disc_play
-                : MediaDetailResumeFab.labelFor(
-                    watching: true,
-                    started: started,
-                  ),
+            continueLabel: continueLabel,
+            playLabel: playLabel,
             playIcon: discPrimary ? FushiIcons.toc : null,
             playButtonKey: const ValueKey<String>('video-work-play'),
             onPlay: () => _onPrimaryPlay(book),
-            secondaryActions: <Widget>[
-              if (disc != null && discPrimary)
-                started
-                    ? MediaDetailSecondaryButton(
-                        buttonKey: const ValueKey<String>(
-                          'video-work-disc-continue',
-                        ),
-                        icon: FushiIcons.history,
-                        label: t.video_disc_continue_at(
-                          time: formatDiscResumePosition(book.lastPositionMs),
-                        ),
-                        onPressed: () => _playBook(book),
-                      )
-                    : MediaDetailSecondaryButton(
-                        buttonKey: const ValueKey<String>(
-                          'video-work-disc-main-title',
-                        ),
-                        icon: FushiIcons.playCircle,
-                        label: t.video_disc_play_main_title,
-                        onPressed: () => _playBook(book),
-                      )
-              else if (disc != null && _discUnavailable == null)
-                // 「原盘默认进入菜单」关着：主按钮直接播正片，菜单入口留在这里。
-                MediaDetailSecondaryButton(
-                  buttonKey: const ValueKey<String>('video-work-disc-menu'),
-                  icon: FushiIcons.toc,
-                  label: t.video_disc_play,
-                  onPressed: () => _openDisc(disc),
-                ),
-            ],
+            secondaryActions: secondaryActions,
           ),
-          slivers: <Widget>[
-            // v95：技术规格。这一页是「一个文件 = 一部作品」，规格无歧义，摊开
-            // 显示。探不到时整块不占位（VideoSpecsPanel 内部返回 shrink）。
-            SliverToBoxAdapter(
-              child: Padding(
-                padding: EdgeInsets.fromLTRB(
-                  tokens.spacing.page,
-                  tokens.spacing.section,
-                  tokens.spacing.page,
-                  0,
-                ),
-                child: VideoSpecsPanel(
-                  service: widget.videoSpecs,
-                  filePath: book.videoPath,
-                ),
-              ),
-            ),
-            SliverToBoxAdapter(child: _buildTerms(tokens)),
-            SliverToBoxAdapter(child: _buildCredits(tokens)),
-            SliverToBoxAdapter(child: _buildExtras(tokens)),
-          ],
+          slivers: slivers,
         ),
       ),
     );
@@ -696,7 +796,13 @@ class _StandaloneVideoWorkDetailState
           ),
         ),
       );
-    } on Object {
+    } on Object catch (error) {
+      // 在线预告片 / 花絮解析失败（视频已下架、网络到不了 YouTube…）是预期内的失败，
+      // 但原先吞掉异常、只弹「无法加载该视频」，反馈里查不到原因（aBGenWuGns）。
+      ErrorLogService.instance.logDiagnostic(
+        'VideoWorkDetailPage.playExtra',
+        '${extra.remoteUrl}: $error',
+      );
       if (mounted) FushiToast.show(msg: t.video_load_failed_generic);
     }
   }
@@ -785,7 +891,10 @@ class _RemoteVideoWorkDetailPageState extends State<RemoteVideoWorkDetailPage> {
     for (final VideoMetadataImage image
         in _work?.images ?? const <VideoMetadataImage>[]) {
       if (image.kind == kind && image.url.isNotEmpty) {
-        return AppCachedHttpImage(image.url);
+        return metadataRemoteImage(
+          image.url,
+          width: videoMetadataImageKindDecodeWidth(kind),
+        );
       }
     }
     return null;
@@ -794,8 +903,8 @@ class _RemoteVideoWorkDetailPageState extends State<RemoteVideoWorkDetailPage> {
   @override
   Widget build(BuildContext context) {
     if (_loading) {
-      return Scaffold(
-        appBar: FushiAppBar(),
+      return _videoDetailStateScaffold(
+        context,
         body: const MediaDetailSkeleton(rows: 3),
       );
     }
@@ -817,6 +926,92 @@ class _RemoteVideoWorkDetailPageState extends State<RemoteVideoWorkDetailPage> {
         ('keyword', work.keywords),
       ],
     ].where(((String, List<String>) e) => e.$2.isNotEmpty).toList();
+    final Widget fab = MediaDetailResumeFab(
+      buttonKey: const ValueKey<String>('remote-video-work-resume-fab'),
+      watching: true,
+      started: widget.info.positionMs > 0,
+      onPressed: widget.onPlay,
+    );
+    final String playLabel = MediaDetailResumeFab.labelFor(
+      watching: true,
+      started: widget.info.positionMs > 0,
+    );
+    final List<Widget> slivers = <Widget>[
+      if (terms.isNotEmpty)
+        SliverToBoxAdapter(
+          child: Padding(
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.page,
+              tokens.spacing.section,
+              tokens.spacing.page,
+              0,
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                MediaDetailSectionHeader(t.video_work_details),
+                MediaDetailChipRow(
+                  chips: <MediaDetailChip>[
+                    for (final (String kind, List<String> names) in terms)
+                      MediaDetailChip(
+                        videoWorkTermChipText(kind, names),
+                        tone: MediaDetailChipTone.secondary,
+                      ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+    ];
+    if (shellRedesignActive(context)) {
+      // 重设计外壳：海报面板版式（与系列详情同一套）；返回键是裸图标页头。
+      return Scaffold(
+        body: MediaPosterDetailTheme(
+          image: poster,
+          fallbackKey: title,
+          child: MediaPosterDetailChrome(
+            title: title,
+            child: FushiEntranceScope(
+              child: MediaPosterDetailLayout(
+                bottomPadding: tokens.spacing.page,
+                fab: fab,
+                header: VideoPosterDetailHero(
+                  title: title,
+                  originalTitle: originalTitle == title ? null : originalTitle,
+                  cover: poster,
+                  backdrop: fanart,
+                  logo: _image(VideoMetadataImageKind.logo),
+                  status: status,
+                  pills: <MediaDetailChip>[
+                    if (rating != null && rating > 0)
+                      MediaDetailChip(
+                        '★ ${rating.toStringAsFixed(1)}',
+                        tone: MediaDetailChipTone.primary,
+                      ),
+                    if (work?.year case final int year)
+                      MediaDetailChip('$year'),
+                    for (final String genre
+                        in work?.genres.take(3) ?? const <String>[])
+                      MediaDetailChip(genre),
+                    if (runtime != null && runtime > 0)
+                      MediaDetailChip(t.video_runtime_minutes(n: runtime)),
+                  ],
+                  summary: work?.plot,
+                  primaryAction: MediaDetailPrimaryButton(
+                    icon: FushiIcons.play,
+                    label: playLabel,
+                    buttonKey: const ValueKey<String>('remote-video-work-play'),
+                    onPressed: widget.onPlay,
+                  ),
+                ),
+                slivers: slivers,
+              ),
+            ),
+          ),
+        ),
+      );
+    }
     return Scaffold(
       extendBodyBehindAppBar: true,
       appBar: FushiAppBar(),
@@ -828,12 +1023,7 @@ class _RemoteVideoWorkDetailPageState extends State<RemoteVideoWorkDetailPage> {
           ),
           backdropBlur: collectionHeroBackdropBlur(backdrop: fanart),
           bottomPadding: tokens.spacing.page,
-          fab: MediaDetailResumeFab(
-            buttonKey: const ValueKey<String>('remote-video-work-resume-fab'),
-            watching: true,
-            started: widget.info.positionMs > 0,
-            onPressed: widget.onPlay,
-          ),
+          fab: fab,
           header: CollectionDetailHero(
             backdrop: fanart,
             cover: poster,
@@ -858,41 +1048,11 @@ class _RemoteVideoWorkDetailPageState extends State<RemoteVideoWorkDetailPage> {
                 ),
             ],
             summary: work?.plot,
-            playLabel: MediaDetailResumeFab.labelFor(
-              watching: true,
-              started: widget.info.positionMs > 0,
-            ),
+            playLabel: playLabel,
             playButtonKey: const ValueKey<String>('remote-video-work-play'),
             onPlay: widget.onPlay,
           ),
-          slivers: <Widget>[
-            if (terms.isNotEmpty)
-              SliverToBoxAdapter(
-                child: Padding(
-                  padding: EdgeInsets.fromLTRB(
-                    tokens.spacing.page,
-                    tokens.spacing.section,
-                    tokens.spacing.page,
-                    0,
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.stretch,
-                    children: <Widget>[
-                      MediaDetailSectionHeader(t.video_work_details),
-                      MediaDetailChipRow(
-                        chips: <MediaDetailChip>[
-                          for (final (String kind, List<String> names) in terms)
-                            MediaDetailChip(
-                              videoWorkTermChipText(kind, names),
-                              tone: MediaDetailChipTone.secondary,
-                            ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-          ],
+          slivers: slivers,
         ),
       ),
     );

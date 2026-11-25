@@ -1,6 +1,10 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
+import 'package:flutter/scheduler.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/media/collections/collection_grouping.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
@@ -24,12 +28,18 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 /// 标签、排序、删除，删除时连带成员本体的语义按库页域各自决定），与库页上的
 /// 合集卡同一个入口。任何写入经 [FushiDatabase.watchCollectionTablesChanged]
 /// 回来重载列表，不靠各动作逐个通知。
+///
+/// 成员数不在本页数 `media_collection_items` 原始行：那张表里有有声书 SRT 与配对
+/// EPUB 各一行（库页只显示一张卡）、已删条目的悬空行、以及折叠归属被更小 id 合集
+/// 抢走的成员——照原始行数会和库页合集卡的「N 卷 / N 项」对不上。本页只读库页
+/// 折叠结果发布的 [displayCounts]（与卡片同一份 [groupByCollections] 输出）。
 class CollectionManagementPage extends StatefulWidget {
   const CollectionManagementPage({
     required this.database,
     required this.domain,
     required this.onOpenCollection,
     required this.onShowCollectionMenu,
+    required this.displayCounts,
     super.key,
   });
 
@@ -46,6 +56,10 @@ class CollectionManagementPage extends StatefulWidget {
   final Future<void> Function(MediaCollectionRow collection)
   onShowCollectionMenu;
 
+  /// 库页折叠后每个合集卡实际折进的显示单元数（[CollectionDisplayCounts]）。
+  /// 不在映射里的合集 = 库页上没有它的卡（成员全被删 / 全折进别的合集）→ 0。
+  final ValueListenable<Map<int, int>> displayCounts;
+
   @override
   State<CollectionManagementPage> createState() =>
       _CollectionManagementPageState();
@@ -53,7 +67,6 @@ class CollectionManagementPage extends StatefulWidget {
 
 class _CollectionManagementPageState extends State<CollectionManagementPage> {
   List<MediaCollectionRow> _collections = const <MediaCollectionRow>[];
-  final Map<int, int> _memberCounts = <int, int>{};
   final TextEditingController _search = TextEditingController();
   final FocusNode _searchFocus = FocusNode();
   StreamSubscription<void>? _changes;
@@ -80,17 +93,9 @@ class _CollectionManagementPageState extends State<CollectionManagementPage> {
     final FushiDatabase db = widget.database;
     final List<MediaCollectionRow> collections = await db
         .getMediaCollectionsInDomain(widget.domain);
-    final Map<int, int> counts = <int, int>{};
-    for (final MediaCollectionItemRow item
-        in await db.getAllCollectionItems()) {
-      counts.update(item.collectionId, (int n) => n + 1, ifAbsent: () => 1);
-    }
     if (!mounted) return;
     setState(() {
       _collections = collections;
-      _memberCounts
-        ..clear()
-        ..addAll(counts);
       _loaded = true;
     });
   }
@@ -105,8 +110,17 @@ class _CollectionManagementPageState extends State<CollectionManagementPage> {
     final bool apple = isGlassDesign(context);
     final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
     final double leadingWidth = apple ? metrics.leadingIconSize : 40;
+    // 上锁（未解锁）的合集不列（[MediaVisibility]，唯一的上锁过滤入口）。
+    // 顶部合集总数与空态也只按可见的算——数上锁合集等于告诉人「这里藏了东西」。
+    final MediaVisibility lockVisibility = MediaVisibility.of(context);
+    final List<MediaCollectionRow> unlocked = lockVisibility.hidesAnything
+        ? <MediaCollectionRow>[
+            for (final MediaCollectionRow c in _collections)
+              if (!lockVisibility.hidesCollection(c.id)) c,
+          ]
+        : _collections;
     final List<MediaCollectionRow> visible = filterByMediaSearch(
-      _collections,
+      unlocked,
       _search.text,
       (MediaCollectionRow c) => <String>[c.name],
     );
@@ -155,10 +169,14 @@ class _CollectionManagementPageState extends State<CollectionManagementPage> {
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
               ),
-              subtitle: Text(
-                t.collection_detail_member_count(
-                  n: _memberCounts[collection.id] ?? 0,
-                ),
+              subtitle: ValueListenableBuilder<Map<int, int>>(
+                valueListenable: widget.displayCounts,
+                builder: (BuildContext context, Map<int, int> counts, _) =>
+                    Text(
+                      t.collection_detail_member_count(
+                        n: counts[collection.id] ?? 0,
+                      ),
+                    ),
               ),
               trailing: FushiIconButtonControl(
                 tooltip: t.shelf_toolbar_more,
@@ -182,7 +200,7 @@ class _CollectionManagementPageState extends State<CollectionManagementPage> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
-          _CollectionSummaryCard(count: _collections.length),
+          _CollectionSummaryCard(count: unlocked.length),
           SizedBox(height: tokens.spacing.gap * 1.5),
           FushiSearchField(
             fieldKey: const ValueKey<String>('collection_management_search'),
@@ -206,7 +224,7 @@ class _CollectionManagementPageState extends State<CollectionManagementPage> {
           child: Center(child: adaptiveIndicator(context: context)),
         );
       }
-      if (_collections.isEmpty) {
+      if (unlocked.isEmpty) {
         return SafeArea(
           bottom: false,
           child: Center(
@@ -311,5 +329,41 @@ class _CollectionSummaryCard extends StatelessWidget {
         ],
       ),
     );
+  }
+}
+
+/// 库页 → 「管理合集」页的成员数通道：库页每次 build 折叠出合集组后调
+/// [publish]，值 = 合集 id → 该合集卡折进的显示单元数。
+///
+/// 值在 build 期算出，但帧末才写入：管理页是另一条路由上的监听者，库页 build
+/// 中途通知它会触发「build 期间 markNeedsBuild」断言。同一帧多次 publish 只落
+/// 最后一次；库页已 dispose 时丢弃。
+class CollectionDisplayCounts extends ValueNotifier<Map<int, int>> {
+  CollectionDisplayCounts() : super(const <int, int>{});
+
+  Map<int, int>? _pending;
+  bool _disposed = false;
+
+  void publish<T>(Iterable<CollectionGroup<T>> groups) {
+    publishCounts(collectionDisplayCountsOf<T>(groups));
+  }
+
+  void publishCounts(Map<int, int> counts) {
+    if (mapEquals(counts, _pending ?? value)) return;
+    final bool scheduled = _pending != null;
+    _pending = counts;
+    if (scheduled) return;
+    SchedulerBinding.instance.addPostFrameCallback((Duration _) {
+      final Map<int, int>? next = _pending;
+      _pending = null;
+      if (_disposed || next == null) return;
+      value = next;
+    });
+  }
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
   }
 }

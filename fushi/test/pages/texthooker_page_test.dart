@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
@@ -6,18 +7,27 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/lookup/gal_attached_text_controller.dart';
 import 'package:fushi/src/lookup/gal_lookup_surface_profile.dart';
+import 'package:fushi/src/lookup/lookup_overlay_navigator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/gal_attached_lookup_workbench.dart';
 import 'package:fushi/src/pages/implementations/gal_workbench_chrome.dart';
 import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/texthooker_page.dart';
+import 'package:fushi/src/pages/implementations/shared_lookup_popup_host.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
+import 'package:fushi/src/utils/components/fushi_toolbar.dart';
+import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../helpers/fake_inappwebview_platform.dart';
+import '../helpers/inert_profile_repository.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 健康卡 Anki 行接真实配置状态（BUG-1007）后，页面 watch AnkiViewModel →
@@ -60,6 +70,76 @@ Future<void> _selectFirstLine(WidgetTester tester) async {
   expect(card, findsWidgets, reason: '台词列表里应至少有一句');
   await tester.tapAt(tester.getTopLeft(card.first) + const Offset(24, 20));
   await tester.pumpAndSettle();
+}
+
+/// 「新句自动查词」测试用：查词弹窗要读的显示设置给定值，查词本身只记下查询串
+/// （测试环境没有词典库）。其余 getter 照旧走真 [AppModel]。
+class _AutoLookupAppModel extends AppModel {
+  _AutoLookupAppModel() : super(testPlatformServices(isWindows: true));
+
+  final List<String> searches = <String>[];
+
+  @override
+  Future<DictionarySearchResult> searchDictionaryWithRuby({
+    required String searchTerm,
+    required List<FushiRubySpan> rubySpans,
+    bool searchWithWildcards = false,
+    int? overrideMaximumTerms,
+  }) {
+    searches.add(searchTerm);
+    // 永不完成：浮层停在「查询中」，不往下渲染要连 Anki / 数据库的结果卡——本组
+    // 只验证「新句到达时发起了哪次查词」。
+    return Completer<DictionarySearchResult>().future;
+  }
+
+  @override
+  int get maximumTerms => 10;
+  @override
+  double get popupMaxWidth => 360;
+  @override
+  double get popupMaxHeight => 360;
+  @override
+  bool get popupBottomDocked => false;
+  @override
+  double get appUiScale => 1.0;
+  @override
+  bool get lowMemoryMode => false;
+  @override
+  List<String> get enabledAudioSources => const <String>[];
+  @override
+  List<AudioSourceConfig> get audioSourceConfigs => const <AudioSourceConfig>[];
+  @override
+  double get dictionaryFontSize => 16;
+  @override
+  double get popupWheelSpeed => 1.0;
+  @override
+  bool get popupInstantScroll => false;
+  @override
+  double get popupInstantScrollWheelStep => 0.5;
+  @override
+  double get popupInstantScrollTouchStep => 0.25;
+  @override
+  bool get compactGlossaries => false;
+  @override
+  bool get dictionaryUnifiedStyle => true;
+  @override
+  int get popupDictionaryColumns => 1;
+  @override
+  int get popupAutoExpandDictionaries => 0;
+  @override
+  bool get deduplicatePitchAccents => false;
+  @override
+  bool get harmonicFrequency => false;
+  @override
+  bool get showExpressionTags => false;
+  @override
+  bool get collapseDictionaries => false;
+  @override
+  List<Dictionary> get dictionaries => const <Dictionary>[];
+  @override
+  Map<String, String> get customDictCSS => const <String, String>{};
+  @override
+  String get globalDictCSS => '';
 }
 
 void main() {
@@ -469,7 +549,7 @@ void main() {
         reason: '旧的 bool「允许音频降级」开关已被三档策略取代',
       );
       // BUG-1191：超分改成**每游戏一档**后，入口挪到了游戏库卡片的右键菜单
-      // （`games_library_page.dart` 的 `_menuItems`）——这里不该再有它。工作台是
+      // （`games/galgame_item_menu.dart` 的 `galgameItemMenuItems`）——这里不该再有它。工作台是
       // 「当前会话」的界面，而档位是「这个游戏」的属性，放这儿只会诱使人以为改的是
       // 全局值。守卫用 `textContaining`：档位后缀（「· 关闭」）变了也照样红。
       expect(
@@ -545,6 +625,91 @@ void main() {
         findsOneWidget,
       );
       expect(find.byIcon(Icons.more_vert), findsNothing);
+    },
+  );
+
+  // BUG（反馈 J4GKVdgo2s）：会话卡里的工具组曾是 FushiToolbar(floating: true)——
+  // 浮动顶栏 / 底栏用的带投影胶囊，硬塞进卡内的动作行，又被固定 3:2 比例切出的
+  // Flexible 动作区收窄，整组悬在卡片中段、和主操作不在同一视觉层。
+  //
+  // 2026-11 拼贴改版（PR #3515）后结构换了：起点是状态色块里的两张大动作卡，
+  // 会话工具不再与主操作挤同一行，而是带名称的分区——宽屏（≥
+  // kGalWorkbenchSideColumnBreakpoint）在侧栏里色块正下方，与色块同宽贴齐。
+  // 原「工具组与主操作同一行 / 动作行贴卡片右缘」的断言因此按新布局改写；本 bug
+  // 钉的不变式不变：会话区里没有浮动胶囊工具栏、工具组不悬在半空、没有「⋯」。
+  testWidgets(
+    'session card tools sit inline with the primary action (J4GKVdgo2s)',
+    (WidgetTester tester) async {
+      await tester.binding.setSurfaceSize(const Size(1600, 900));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
+      await tester.pumpWidget(
+        _wrapPageOn(
+          const Scaffold(body: TexthookerPage(embedded: true)),
+          isWindows: true,
+        ),
+      );
+      await tester.pump();
+      expect(tester.takeException(), isNull);
+
+      final Finder card = find.byKey(
+        const ValueKey<String>('game-session-overview'),
+      );
+      final Finder sessionArea = find.byKey(
+        const ValueKey<String>('game-session-actions'),
+      );
+      final Finder tools = find.byKey(
+        const ValueKey<String>('game-session-tools'),
+      );
+      expect(find.descendant(of: sessionArea, matching: card), findsOneWidget);
+      expect(find.descendant(of: sessionArea, matching: tools), findsOneWidget);
+
+      // 会话区内不得再有浮动样式的工具栏。
+      expect(
+        find.descendant(
+          of: sessionArea,
+          matching: find.byWidgetPredicate(
+            (Widget w) => w is FushiToolbar && w.floating,
+          ),
+        ),
+        findsNothing,
+      );
+
+      // 主操作在状态色块里，工具组在色块正下方的工具分区里。
+      final Finder launch = find.byKey(
+        const ValueKey<String>('game-action-launch'),
+      );
+      final Finder health = find.byKey(
+        const ValueKey<String>('game-toolbar-health'),
+      );
+      expect(find.descendant(of: card, matching: launch), findsOneWidget);
+      expect(find.descendant(of: tools, matching: health), findsOneWidget);
+      expect(
+        tester.getTopLeft(tools).dy,
+        greaterThanOrEqualTo(tester.getBottomLeft(card).dy),
+        reason: '工具分区在状态色块下方，不浮在色块上',
+      );
+
+      // 工具全部带名称平铺，没有「⋯」。
+      expect(
+        find.byKey(const ValueKey<String>('game-session-tools-more')),
+        findsNothing,
+      );
+
+      // 清空台词也在工具分区里；分区与色块左右贴齐，不悬在中段。
+      expect(
+        find.descendant(of: tools, matching: find.byIcon(Icons.delete_outline)),
+        findsOneWidget,
+      );
+      expect(
+        (tester.getTopRight(card).dx - tester.getTopRight(tools).dx).abs(),
+        lessThan(20),
+        reason: '工具分区应与状态色块右缘贴齐',
+      );
+      expect(
+        (tester.getTopLeft(card).dx - tester.getTopLeft(tools).dx).abs(),
+        lessThan(20),
+        reason: '工具分区应与状态色块左缘贴齐',
+      );
     },
   );
 
@@ -835,7 +1000,11 @@ void main() {
   ) async {
     await tester.binding.setSurfaceSize(const Size(1440, 850));
     addTearDown(() => tester.binding.setSurfaceSize(null));
-    await tester.pumpWidget(_wrapPage(const TexthookerPage()));
+    // 起点动作卡只在嵌入模式（游戏 › 工作台，唯一的生产入口：HomeGamePage /
+    // GameStreamClientPage）的会话状态块里；独立模式的起点在 AppBar 图标里。
+    await tester.pumpWidget(
+      _wrapPage(const Scaffold(body: TexthookerPage(embedded: true))),
+    );
     await tester.pump();
 
     expect(tester.takeException(), isNull);
@@ -845,14 +1014,34 @@ void main() {
     );
     expect(find.text('Tracks for this line'), findsNothing);
     if (Platform.isWindows) {
-      // 未开始捕获：空状态直接给「启动并捕获 / 附着并捕获」。
+      // 未开始捕获：下一步「启动并捕获 / 附着并捕获」必须同屏可点。2026-11 拼贴
+      // 改版（PR #3515）把两个起点做成会话状态色块里的大动作卡，空态只留一句指引、
+      // 不再重复一套同样的按钮（同屏两套会让人困惑），所以这里改钉状态块里的
+      // 起点，并反向钉住空态里不再有重复按钮。
+      final Finder card = find.byKey(
+        const ValueKey<String>('game-session-overview'),
+      );
       expect(
-        find.byKey(const ValueKey<String>('game-empty-launch')),
+        find.descendant(
+          of: card,
+          matching: find.byKey(const ValueKey<String>('game-action-launch')),
+        ),
         findsOneWidget,
       );
       expect(
-        find.byKey(const ValueKey<String>('game-empty-attach')),
+        find.descendant(
+          of: card,
+          matching: find.byKey(const ValueKey<String>('game-action-attach')),
+        ),
         findsOneWidget,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('game-empty-launch')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('game-empty-attach')),
+        findsNothing,
       );
     }
   });
@@ -910,6 +1099,244 @@ void main() {
       find.byKey(const ValueKey<String>('game-text-thread-selector')),
       findsOneWidget,
     );
+  });
+
+  testWidgets('首页外壳里与查词 tab 共用查词宿主，外壳外私有一个（design-shared-lookup-webview）', (
+    WidgetTester tester,
+  ) async {
+    final SharedLookupPopupHost shared = SharedLookupPopupHost();
+    addTearDown(shared.dispose);
+    final ValueNotifier<bool> show = ValueNotifier<bool>(true);
+    addTearDown(show.dispose);
+    await tester.pumpWidget(
+      _wrapPage(
+        SharedLookupPopupScope(
+          host: shared,
+          child: Scaffold(
+            body: ValueListenableBuilder<bool>(
+              valueListenable: show,
+              builder: (BuildContext context, bool v, _) =>
+                  v ? const TexthookerPage() : const SizedBox.shrink(),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final dynamic state = tester.state(find.byType(TexthookerPage));
+    expect(
+      identical(state.debugPopupHost, shared),
+      isTrue,
+      reason: '外壳下发的宿主必须被采用，否则两个 tab 各挂一个热槽 WebView',
+    );
+    expect(shared.debugOwnerCount, 1);
+    expect(shared.isRenderOwner(state as SharedLookupPopupOwner), isTrue);
+
+    // 页面销毁只注销，不得把外壳持有的宿主（controller）一并释放。
+    show.value = false;
+    await tester.pump();
+    await tester.pump();
+    expect(shared.debugOwnerCount, 0);
+    expect(() => shared.controller.hasVisiblePopup, returnsNormally);
+
+    // 外壳外：私有一个。
+    show.value = true;
+    await tester.pumpWidget(_wrapPage(const Scaffold(body: TexthookerPage())));
+    await tester.pump();
+    final dynamic standalone = tester.state(find.byType(TexthookerPage));
+    expect(identical(standalone.debugPopupHost, shared), isFalse);
+  });
+
+  group('反馈 q9Jcu_Zr2_：新句自动查词', () {
+    late _AutoLookupAppModel app;
+
+    // 查词浮层会真的建出来：WebView 走假平台，制卡目标菜单读的配置仓库给惰性实现。
+    setUpAll(installFakeInAppWebViewPlatform);
+
+    Future<SharedLookupPopupHost> pumpWithSharedHost(
+      WidgetTester tester,
+    ) async {
+      app = _AutoLookupAppModel();
+      final SharedLookupPopupHost shared = SharedLookupPopupHost();
+      addTearDown(shared.dispose);
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: <Override>[
+            platformServicesProvider.overrideWithValue(
+              testPlatformServices(isWindows: true),
+            ),
+            appProvider.overrideWith((ref) => app),
+            profileRepositoryProvider.overrideWith(
+              (ref) => InertProfileRepository(),
+            ),
+          ],
+          child: TranslationProvider(
+            child: MaterialApp(
+              home: SharedLookupPopupScope(
+                host: shared,
+                child: const Scaffold(body: TexthookerPage()),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      return shared;
+    }
+
+    /// 实际发起过的查词：查询串进了查词数据源，且对应的顶层浮层登记在共用宿主上。
+    Iterable<String> lookedUp(SharedLookupPopupHost shared) =>
+        app.searches.where(
+          (String term) => shared.controller.entries.any(
+            (DictionaryPopupEntry e) => e.searchTerm == term,
+          ),
+        );
+
+    Future<void> pumpFrames(WidgetTester tester) async {
+      for (int i = 0; i < 4; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+    }
+
+    testWidgets('默认关：新句到达只显示，不弹查词', (WidgetTester tester) async {
+      final SharedLookupPopupHost shared = await pumpWithSharedHost(tester);
+      final FushiSelectableChip chip = tester.widget<FushiSelectableChip>(
+        find.byKey(const ValueKey<String>('game-auto-lookup')),
+      );
+      expect(chip.selected, isFalse, reason: '自动弹窗挡画面，默认必须关');
+
+      TexthookerService.instance.appendLine('「今日は晴れ」');
+      await pumpFrames(tester);
+      expect(lookedUp(shared), isEmpty);
+    });
+
+    testWidgets('打开后新句到达自动从第一个可查字起查词', (WidgetTester tester) async {
+      final SharedLookupPopupHost shared = await pumpWithSharedHost(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('game-auto-lookup')));
+      await tester.pump();
+
+      TexthookerService.instance.appendLine('「今日は晴れ」');
+      await pumpFrames(tester);
+      expect(
+        lookedUp(shared),
+        contains('今日は晴れ」'),
+        reason: '跳过开引号，从「今」起把到行尾的一段交给最长匹配，与手点「今」同一查询串',
+      );
+      final String lineId = TexthookerService.instance.entries.last.id;
+      final FushiCard card = tester.widget<FushiCard>(
+        find.byKey(ValueKey<String>('game-line-$lineId')),
+      );
+      expect(card.selected, isTrue, reason: '自动查词与手点一样选中该句，制卡取这句');
+
+      // 每来一句都跟着查最新那句。
+      TexthookerService.instance.appendLine('明日は雨');
+      await pumpFrames(tester);
+      expect(lookedUp(shared), contains('明日は雨'));
+    });
+
+    testWidgets('关掉跟随实时（在回看历史）时不自动查词', (WidgetTester tester) async {
+      final SharedLookupPopupHost shared = await pumpWithSharedHost(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('game-auto-lookup')));
+      await tester.pump();
+      await tester.tap(find.byKey(const ValueKey<String>('game-follow-live')));
+      await tester.pump();
+
+      TexthookerService.instance.appendLine('「今日は晴れ」');
+      await pumpFrames(tester);
+      expect(lookedUp(shared), isEmpty);
+    });
+
+    testWidgets('整句没有可查字时不弹卡', (WidgetTester tester) async {
+      final SharedLookupPopupHost shared = await pumpWithSharedHost(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('game-auto-lookup')));
+      await tester.pump();
+
+      TexthookerService.instance.appendLine('「……」');
+      await pumpFrames(tester);
+      expect(lookedUp(shared), isEmpty);
+    });
+
+    testWidgets('上一句还没弹出就来了不可查的新句：旧目标作废，不弹旧句', (WidgetTester tester) async {
+      final SharedLookupPopupHost shared = await pumpWithSharedHost(tester);
+      await tester.tap(find.byKey(const ValueKey<String>('game-auto-lookup')));
+      await tester.pump();
+
+      // 同一帧内连到两句：前一句可查、后一句整句没有可查字。只查最新那句 = 都不弹。
+      TexthookerService.instance.appendLine('今日は晴れ');
+      TexthookerService.instance.appendLine('「……」');
+      await pumpFrames(tester);
+      expect(lookedUp(shared), isEmpty);
+    });
+  });
+
+  testWidgets('制卡热键只作用于本页在屏上的会话：tab 藏起或栈归查词 tab 时不武装', (
+    WidgetTester tester,
+  ) async {
+    final SharedLookupPopupHost shared = SharedLookupPopupHost();
+    addTearDown(shared.dispose);
+    final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
+    addTearDown(visible.dispose);
+    await tester.pumpWidget(
+      _wrapPage(
+        SharedLookupPopupScope(
+          host: shared,
+          child: Scaffold(
+            body: ValueListenableBuilder<bool>(
+              valueListenable: visible,
+              builder: (BuildContext context, bool v, _) =>
+                  TickerMode(enabled: v, child: const TexthookerPage()),
+            ),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    bool armed() =>
+        (tester.state(find.byType(TexthookerPage)) as dynamic)
+                .debugPopupMineHotkeyArmed
+            as bool;
+    void openSession() => shared.controller.beginTop(
+      term: '食べる',
+      rect: const Rect.fromLTWH(10, 10, 20, 20),
+      reuseWarmSlot: false,
+      replaceStack: false,
+      visible: true,
+    );
+
+    // 真实弹窗层要完整初始化的 AppModel 才能建，这里只验热键门：每次开会话、读门、
+    // 清栈都在两帧之间做完，不让带着 texthooker 弹窗层的浮层真的建出来。
+    void expectArmed(bool expected, String reason) {
+      openSession();
+      expect(armed(), expected, reason: reason);
+      shared.controller.clear();
+    }
+
+    expectArmed(true, '本页可见、栈归本页、有可见弹窗');
+
+    // 切到别的 tab：弹窗随 tab 藏起（Offstage），Ctrl+Enter 不能对看不见的弹窗制卡。
+    visible.value = false;
+    await tester.pump();
+    expectArmed(false, 'tab 藏起时热键不得作用于看不见的弹窗');
+
+    visible.value = true;
+    await tester.pump();
+    expectArmed(true, '切回可见后恢复');
+
+    // 查词 tab 真正查词接管了栈：那是别人的会话，本页的热键不能碰（浮层此时由替身
+    // 出空层，可以照常走帧）。
+    final _OtherLookupOwner dict = _OtherLookupOwner();
+    shared.attach(dict);
+    shared.setOwnerVisible(dict, true);
+    shared.claimForLookup(dict);
+    openSession();
+    await tester.pump();
+    expect(shared.overlayInert, isFalse);
+    expect(shared.controller.hasVisiblePopup, isTrue);
+    expect(armed(), isFalse, reason: '栈归查词 tab 时 texthooker 的热键不得武装');
+    shared.detach(dict);
+    await tester.pump();
   });
 
   testWidgets('保活 tab 被 TickerMode 隐藏时查词浮层置 inert，恢复可见时复原（BUG-953）', (
@@ -984,6 +1411,66 @@ void main() {
     );
   });
 
+  testWidgets('tab 藏起时查词浮层留在树上只是 Offstage，切回是同一棵子树（BUG-4896）', (
+    WidgetTester tester,
+  ) async {
+    final ValueNotifier<bool> visible = ValueNotifier<bool>(true);
+    addTearDown(visible.dispose);
+    await tester.pumpWidget(
+      _wrapPage(
+        Scaffold(
+          body: ValueListenableBuilder<bool>(
+            valueListenable: visible,
+            builder: (BuildContext context, bool v, _) =>
+                TickerMode(enabled: v, child: const TexthookerPage()),
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+
+    final dynamic state = tester.state(find.byType(TexthookerPage));
+    state.debugMountPopupOverlayForTesting();
+    await tester.pump();
+
+    // 浮层子树的根（真实运行时常驻热槽的查词 WebView 就挂在它下面）。
+    final Finder onstage = find.byType(LookupOverlayNavigator);
+    final Finder mounted = find.byType(
+      LookupOverlayNavigator,
+      skipOffstage: false,
+    );
+    expect(onstage, findsOneWidget, reason: '前置：可见时浮层在屏上');
+    final State<StatefulWidget> before = tester.state(mounted);
+
+    // 等价于切到别的 home tab（games 被 Offstage 隐藏 + TickerMode off）。
+    visible.value = false;
+    await tester.pump();
+    await tester.pump();
+    expect(onstage, findsNothing, reason: 'tab 藏起时浮层不得留在屏上遮挡新 tab（BUG-953）');
+    expect(
+      mounted,
+      findsOneWidget,
+      reason:
+          '藏起只能 Offstage、不能把子树拆掉：拆掉 = 每次切出游戏 tab 销毁预热好的'
+          '查词 WebView，切回再冷建一个',
+    );
+    expect(
+      identical(tester.state(mounted), before),
+      isTrue,
+      reason: '藏起期间必须是同一个 State',
+    );
+
+    visible.value = true;
+    await tester.pump();
+    await tester.pump();
+    expect(onstage, findsOneWidget, reason: '切回后浮层回到屏上');
+    expect(
+      identical(tester.state(mounted), before),
+      isTrue,
+      reason: '切回必须复用同一棵子树，而不是重建',
+    );
+  });
+
   group('injectActiveSentence（BUG-954：fallback 制卡带上活跃台词）', () {
     test('fields 无 sentence + 有活跃台词 → 注入活跃台词，其它字段不变', () {
       final Map<String, String> r = injectActiveSentence(<String, String>{
@@ -1011,4 +1498,22 @@ void main() {
       );
     });
   });
+}
+
+/// 共用查词宿主里的「另一个宿主页」（查词 tab）替身：只出空层。
+class _OtherLookupOwner implements SharedLookupPopupOwner {
+  @override
+  List<Widget> buildSharedLookupPopupLayers(
+    BuildContext context,
+    Size screen,
+  ) => const <Widget>[];
+
+  @override
+  ThemeData? get sharedLookupPopupTheme => null;
+
+  @override
+  bool get sharedLookupPopupOwnerAlive => true;
+
+  @override
+  void onSharedLookupPopupClaimed(DictionaryPopupController controller) {}
 }

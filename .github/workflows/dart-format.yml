@@ -42,10 +42,10 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v6
-      - uses: subosito/flutter-action@v2
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6.1.0
+      - uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2 # v2.23.0
         with:
-          flutter-version: '3.47.6'
+          flutter-version: '3.50.0'
           cache: true
       # The formatter reads each package's language version from the workspace
       # package_config.json, so resolve first (no build hooks run here).

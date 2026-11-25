@@ -60,11 +60,16 @@ String galLineTtsVoiceLabel(TtsServices services, String? presetId) {
   return t.models_tts_fallback_voice_missing;
 }
 
-/// 选声音。返回 `(picked: true, presetId: …)`；取消 / 去了管理页返回 null。
+/// 选声音。返回 `(presetId: …)`；取消 / 去了管理页返回 null。
+///
+/// 第一项（返回 `presetId: null`）默认是「跟随朗读声音」；按游戏 / 按语言的覆盖项
+/// 里它的语义是「删掉这一项、回落到下一层」，由 [nullLabel] / [nullHint] 改文案。
 Future<({String? presetId})?> showGalLineTtsVoicePicker(
   BuildContext context,
   TtsServices services, {
   required String? current,
+  String? nullLabel,
+  String? nullHint,
 }) async {
   await services.seedBuiltinVoiceIfUnset();
   if (!context.mounted) return null;
@@ -76,8 +81,8 @@ Future<({String? presetId})?> showGalLineTtsVoicePicker(
     options: <FushiChoiceOption<String>>[
       FushiChoiceOption<String>(
         value: _kFollowActiveVoice,
-        label: t.gal_line_tts_voice_follow,
-        subtitle: t.gal_line_tts_voice_follow_hint,
+        label: nullLabel ?? t.gal_line_tts_voice_follow,
+        subtitle: nullHint ?? t.gal_line_tts_voice_follow_hint,
         icon: FushiIcons.volumeUp,
       ),
       for (final TtsVoiceSwitchEntry e in ttsVoiceSwitchEntries(
@@ -297,9 +302,8 @@ class _GalLineTtsRulesPageState extends State<GalLineTtsRulesPage> {
     String? hint,
     String? error,
     required ValueChanged<String> onChanged,
-  }) => Padding(
-    padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-    child: FushiTextField(
+  }) => _groupField(
+    FushiTextField(
       key: key,
       initialValue: initial,
       labelText: label,
@@ -311,6 +315,12 @@ class _GalLineTtsRulesPageState extends State<GalLineTtsRulesPage> {
       onChanged: onChanged,
     ),
   );
+
+  /// 分组里一整行的输入框：Apple 下直接交给分组排成表单行
+  /// （[FushiAppleFormRowScope]，无填充框、行间分隔线），MD3 照旧按行内边距排。
+  Widget _groupField(FushiTextField field) => isGlassDesign(context)
+      ? field
+      : Padding(padding: const EdgeInsets.fromLTRB(16, 8, 16, 8), child: field);
 
   Widget _speakerSection() => AdaptiveSettingsSection(
     title: t.gal_line_tts_speaker_section,
@@ -560,9 +570,8 @@ class _GalLineTtsRulesPageState extends State<GalLineTtsRulesPage> {
     return AdaptiveSettingsSection(
       title: t.gal_line_tts_test_section,
       children: <Widget>[
-        Padding(
-          padding: const EdgeInsets.fromLTRB(16, 8, 16, 8),
-          child: FushiTextField(
+        _groupField(
+          FushiTextField(
             key: const ValueKey<String>('gal-tts-test-input'),
             controller: _sample,
             minLines: 1,

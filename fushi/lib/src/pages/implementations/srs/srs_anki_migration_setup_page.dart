@@ -104,6 +104,7 @@ class _SrsAnkiMigrationSetupPageState extends State<SrsAnkiMigrationSetupPage> {
     final bool apple = isGlassDesign(context);
     return FushiPageScaffold(
       title: t.srs_anki_migrate_setup_title,
+      masthead: true,
       header: apple ? null : _buildTopBar(context),
       body: Builder(builder: _buildBody),
     );

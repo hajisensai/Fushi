@@ -130,9 +130,11 @@ void main() {
 
       expect(tester.takeException(), isNull);
       expect(find.text('Chapter 1'), findsOneWidget);
-      // 2048 宽走两栏（≥ kMediaDetailTwoPaneMinWidth）：左栏紧凑 hero 的次按钮
-      // 是图标钮，文案进 tooltip。
-      expect(find.byTooltip('Add to manga shelf'), findsOneWidget);
+      // 海报详情 hero 的动作栏：「加入书架」是带文字的次按钮。
+      expect(
+        find.byKey(const ValueKey<String>('manga_series_add_to_bookshelf')),
+        findsOneWidget,
+      );
     },
   );
 
@@ -184,7 +186,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(find.textContaining('stage: details'), findsOneWidget);
       expect(find.textContaining('at fixture.Stack'), findsOneWidget);
-      await tester.tap(find.text('CLOSE'));
+      await tester.tap(find.text('Close'));
       await tester.pumpAndSettle();
 
       runtime.detailsFailure = null;
@@ -201,6 +203,10 @@ void main() {
   testWidgets(
     'wrapped detail challenge verifies explicitly then retries details',
     (WidgetTester tester) async {
+      // 海报 hero 比旧详情头高：800×600 下章节列表排在首屏以下（懒构建），
+      // 与上一条用例同用 1400×1000。
+      await tester.binding.setSurfaceSize(const Size(1400, 1000));
+      addTearDown(() => tester.binding.setSurfaceSize(null));
       runtime.detailsFailure = MihonCloudflareChallengeException(
         Uri.parse('https://fixture.invalid/challenge'),
       );

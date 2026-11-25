@@ -1,7 +1,8 @@
-// 音乐「来源」页与「推荐」来源 chip：排序 / 开关写回偏好时保留暂时不在场的来源；
+// 音乐「在线 › 来源」视图与「推荐」来源 chip：排序 / 开关写回偏好时保留暂时不在场的来源；
 // 「全部」里服务器那排专辑跟着数据源（换 storefront = 换浏览器）重新拉取；选中的来源消失后
 // chip 与内容一起回到「全部」；服务器从推荐页 chip 进入：专辑 → 曲目。
 
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/native.dart';
@@ -15,15 +16,32 @@ import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
 import 'package:fushi/src/media/music/music_online_sources.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/models/theme_notifier.dart' show buildFushiThemeData;
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_sources_layout.dart';
+import 'package:fushi/src/utils/components/fushi_reorderable_column.dart'
+    show FushiReorderableDragHandle;
+import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_list_layout.dart';
+import 'package:fushi/src/utils/components/settings_shared.dart'
+    show AdaptiveSettingsSection;
+import 'package:flutter/services.dart' show LogicalKeyboardKey;
+import 'package:fushi/src/pages/implementations/music/music_apple_music_pages.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_page.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
 import 'package:fushi/src/pages/implementations/music/music_sources_recommend.dart';
+import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_services.dart'
+    show buildMusicServersDestination;
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/music/server/music_server.dart';
 import 'package:fushi_engine/media/music/server/subsonic_server_config.dart';
 import 'package:fushi_music/fushi_music.dart' show MusicPluginManager;
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:material_ui/material_ui.dart';
 
+import '../../helpers/cover_block_title_finder.dart';
 import '../../helpers/test_platform_services.dart';
 
 /// 假服务器：记 [listAlbums] 调了几次，专辑名带 serverId 以区分数据源。
@@ -113,11 +131,26 @@ MusicPluginManager _noPlugins() => MusicPluginManager(
 
 typedef _Env = ({AppModel app, PreferencesRepository prefs});
 
+/// YouTube 启用开关的写入卡在 [gate] 上，直到测试放行：用来造「写入途中切走」。
+class _GatedPrefs extends PreferencesRepository {
+  _GatedPrefs(super.db);
+
+  final Completer<void> gate = Completer<void>();
+
+  @override
+  Future<void> setMusicYoutubeEnabled(bool value) async {
+    await gate.future;
+    await super.setMusicYoutubeEnabled(value);
+  }
+}
+
 /// 真 IO / 数据库在 testWidgets 的假时钟里不会完成：环境搭建与偏好写入一律走 runAsync。
-Future<_Env> _env(WidgetTester tester) async {
+Future<_Env> _env(WidgetTester tester, {bool gatedPrefs = false}) async {
   final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
   addTearDown(db.close);
-  final PreferencesRepository prefs = PreferencesRepository(db);
+  final PreferencesRepository prefs = gatedPrefs
+      ? _GatedPrefs(db)
+      : PreferencesRepository(db);
   await tester.runAsync(prefs.loadFromDb);
   // 不建临时目录：这些页面不碰数据库目录下的文件。
   final Directory dir = Directory.systemTemp;
@@ -128,18 +161,26 @@ Future<_Env> _env(WidgetTester tester) async {
   return (app: app, prefs: prefs);
 }
 
-Widget _host(AppModel app, Widget home) {
+Widget _host(AppModel app, Widget home, {bool glass = false}) {
   LocaleSettings.setLocale(AppLocale.en);
   return ProviderScope(
     overrides: [appProvider.overrideWith((Ref ref) => app)],
     child: TranslationProvider(
       child: MaterialApp(
-        theme: ThemeData(useMaterial3: true),
+        theme: glass
+            ? buildFushiThemeData(
+                scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+                textTheme: Typography.material2021().black,
+                glassDesign: true,
+              ).copyWith(platform: TargetPlatform.macOS)
+            : ThemeData(useMaterial3: true),
         builder: (BuildContext context, Widget? child) => MediaQuery(
           data: MediaQuery.of(context).copyWith(disableAnimations: true),
           child: child!,
         ),
-        home: Scaffold(body: home),
+        home: glass
+            ? FushiGlassScope(child: Scaffold(body: home))
+            : Scaffold(body: home),
       ),
     ),
   );
@@ -196,6 +237,32 @@ void main() {
         );
   });
 
+  testWidgets('来源页「添加 › 服务器」推的是 设置 › 在线服务 › 媒体服务器 里那一页（同一棵树）', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
+    final _Env env = await _env(tester);
+    await tester.pumpWidget(_host(env.app, const MusicOnlineSourcesView()));
+    await _settle(tester);
+
+    await tester.tap(find.text(t.music_sources_add));
+    await _settle(tester);
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music_sources_add_server')),
+    );
+    await _settle(tester);
+
+    final SettingsDetailPage page = tester.widget<SettingsDetailPage>(
+      find.byType(SettingsDetailPage),
+    );
+    expect(page.subPageBuilder, equals(buildMusicServersDestination));
+    expect(find.byType(MusicServerSettingsBody), findsOneWidget);
+    expect(find.text(t.music_server_bitrate_title), findsOneWidget);
+    await _teardown(tester);
+  });
+
   testWidgets('来源页：排序 / 开关写回时，停用中的服务器的顺序与隐藏原样保留', (WidgetTester tester) async {
     tester.view.devicePixelRatio = 1;
     tester.view.physicalSize = const Size(1200, 1600);
@@ -216,14 +283,14 @@ void main() {
         ]),
       );
     });
-    await tester.pumpWidget(_host(env.app, const MusicSourcesPage()));
+    await tester.pumpWidget(_host(env.app, const MusicOnlineSourcesView()));
     await _settle(tester);
 
     expect(
       find.byKey(const ValueKey<String>('music-source-server:subsonic-b')),
       findsNothing,
     );
-    // a 下移一位：可见顺序 c, a, apple-music。
+    // a 下移一位：可见顺序 c, a, apple-music, youtube（后两者是关着时的占位行）。
     await tester.tap(
       find.byKey(const ValueKey<String>('music-source-down-server:subsonic-a')),
     );
@@ -235,6 +302,7 @@ void main() {
         'server:subsonic-c',
         'server:subsonic-a',
         kAppleMusicSourceKey,
+        kYoutubeMusicSourceKey,
       ],
     );
     expect(_stored(env.prefs).first.enabled, isFalse);
@@ -270,6 +338,84 @@ void main() {
     await _teardown(tester);
   });
 
+  testWidgets('来源页：YouTube 占位行的开关就是启用开关（反馈 0tRY-D2JgG）', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
+    final _Env env = await _env(tester);
+    expect(env.prefs.musicYoutubeEnabled, isFalse, reason: '默认关（显式 opt-in）');
+    int changed = 0;
+    await tester.pumpWidget(
+      _host(env.app, MusicOnlineSourcesView(onChanged: () => changed++)),
+    );
+    await _settle(tester);
+
+    final Finder toggle = find.descendant(
+      of: find.byKey(
+        const ValueKey<String>('music-source-toggle-$kYoutubeMusicSourceKey'),
+      ),
+      matching: find.byType(Switch),
+    );
+    expect(toggle, findsOneWidget);
+    expect(tester.widget<Switch>(toggle).value, isFalse);
+
+    await tester.tap(toggle);
+    await _settle(tester);
+    expect(env.prefs.musicYoutubeEnabled, isTrue);
+    expect(tester.widget<Switch>(toggle).value, isTrue);
+    expect(changed, greaterThan(0), reason: '启用开关一变就告诉曲库页重读推荐 / 搜索来源');
+    final List<MusicOrderedSource> loaded = (await tester.runAsync(
+      () => loadOrderedMusicOnlineSources(env.app),
+    ))!;
+    final MusicOrderedSource yt = loaded.singleWhere(
+      (MusicOrderedSource o) => o.source.key == kYoutubeMusicSourceKey,
+    );
+    expect(yt.enabled, isTrue);
+    expect(
+      (yt.source as MusicServerOnlineSource).browser.kind,
+      MusicServerKind.youtube,
+    );
+    // 只有搜索、没有浏览树：不进「推荐」。
+    expect(musicSourceHasRecommend(yt.source), isFalse);
+    await _teardown(tester);
+  });
+
+  // HBK-AUDIT-218：来源视图嵌在曲库页「在线」组里，切页签就 dispose。启用开关的写入
+  // 还没落地时切走，写完宿主仍要收到通知（推荐 / 统一搜索的来源由宿主重读），且不抛。
+  testWidgets('来源页：启用开关写入途中切走，写完照样通知宿主', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
+    final _Env env = await _env(tester, gatedPrefs: true);
+    int changed = 0;
+    void onChanged() => changed++;
+    await tester.pumpWidget(
+      _host(env.app, MusicOnlineSourcesView(onChanged: onChanged)),
+    );
+    await _settle(tester);
+
+    final Finder toggle = find.descendant(
+      of: find.byKey(
+        const ValueKey<String>('music-source-toggle-$kYoutubeMusicSourceKey'),
+      ),
+      matching: find.byType(Switch),
+    );
+    await tester.tap(toggle);
+    // 写入（真 IO）还没落地就切到别的页签：来源视图 dispose，宿主还在。
+    await tester.pumpWidget(_host(env.app, const SizedBox.shrink()));
+    expect(find.byType(MusicOnlineSourcesView), findsNothing);
+    expect(changed, 0);
+    (env.prefs as _GatedPrefs).gate.complete();
+    await _settle(tester);
+
+    expect(env.prefs.musicYoutubeEnabled, isTrue);
+    expect(changed, 1, reason: '写完必须告诉宿主，宿主才会按新来源重读');
+    expect(tester.takeException(), isNull);
+    await _teardown(tester);
+  });
+
   testWidgets('推荐「全部」：换数据源（如 Apple Music 换地区）后服务器那排专辑按新来源重新拉取', (
     WidgetTester tester,
   ) async {
@@ -285,7 +431,7 @@ void main() {
       ),
     );
     await _settle(tester);
-    expect(find.text('Album apple-music:jp'), findsOneWidget);
+    expect(findCoverBlockTitle('Album apple-music:jp'), findsOneWidget);
     expect(jp.listAlbumsCalls, 1);
 
     final _FakeBrowser us = _FakeBrowser('apple-music:us');
@@ -300,8 +446,8 @@ void main() {
     );
     await _settle(tester);
     expect(us.listAlbumsCalls, 1);
-    expect(find.text('Album apple-music:us'), findsOneWidget);
-    expect(find.text('Album apple-music:jp'), findsNothing);
+    expect(findCoverBlockTitle('Album apple-music:us'), findsOneWidget);
+    expect(findCoverBlockTitle('Album apple-music:jp'), findsNothing);
 
     // 同一 serverId、新浏览器实例（连接配置变了）也按新实例重新取。
     final _FakeBrowser us2 = _FakeBrowser('apple-music:us');
@@ -370,7 +516,7 @@ void main() {
     );
     await _settle(tester);
     // 「全部」里这台服务器一排专辑，「查看全部」切到它。
-    expect(find.text('Album subsonic-1'), findsOneWidget);
+    expect(findCoverBlockTitle('Album subsonic-1'), findsOneWidget);
     await tester.tap(
       find.byKey(const ValueKey<String>('music-recommend-view-all-subsonic-1')),
     );
@@ -382,12 +528,153 @@ void main() {
       ),
       isTrue,
     );
-    expect(find.text('Album subsonic-1'), findsOneWidget);
-    await tester.tap(find.text('Album subsonic-1'));
+    expect(findCoverBlockTitle('Album subsonic-1'), findsOneWidget);
+    await tester.tap(
+      findCoverBlockTitle('Album subsonic-1'),
+      // 装盒大字在 IgnorePointer 里，点到的是它下面的卡片本身。
+      warnIfMissed: false,
+    );
     await _settle(tester);
     expect(find.text('First'), findsOneWidget);
     expect(find.text('Second'), findsOneWidget);
     expect(find.text('1:01'), findsOneWidget);
     await _teardown(tester);
   });
+
+  testWidgets('横排货架行高随卡片副行走：两行标题 + 副行的专辑卡在放大字号下也不溢出', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
+    final _Env env = await _env(tester);
+    final _FakeBrowser navi = _FakeBrowser('subsonic-1');
+    await tester.pumpWidget(
+      _host(
+        env.app,
+        Builder(
+          builder: (BuildContext context) => MediaQuery(
+            data: MediaQuery.of(
+              context,
+            ).copyWith(textScaler: const TextScaler.linear(1.5)),
+            child: MusicShelfRow(
+              title: 'Recently added',
+              children: <Widget>[
+                for (int i = 0; i < 3; i++)
+                  MusicServerAlbumCard(
+                    browser: navi,
+                    album: MusicServerAlbum(
+                      id: 'a$i',
+                      title: 'A rather long album title that wraps $i',
+                      artist: 'Band',
+                      year: 2020,
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ),
+      ),
+    );
+    await _settle(tester);
+    // 写死 220 的行高在这里会报 RenderFlex overflow。
+    expect(tester.takeException(), isNull);
+    expect(find.text('Band · 2020'), findsNWidgets(3));
+    await _teardown(tester);
+  });
+
+  testWidgets(
+    '来源页 Cupertino：Apple 分组（组头 / 组脚 / 开关行 / + 添加行），编辑态 ≡ 把手 Alt+↓ 重排写回',
+    (WidgetTester tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(1400, 1600);
+      addTearDown(tester.view.reset);
+      final _Env env = await _env(tester);
+      await tester.runAsync(() async {
+        await env.prefs.setMusicSubsonicServers(<SubsonicServerConfig>[
+          _subsonic('a'),
+          _subsonic('c'),
+        ]);
+      });
+      await tester.pumpWidget(
+        _host(env.app, const MusicOnlineSourcesView(), glass: true),
+      );
+      await _settle(tester);
+
+      expect(find.byType(AppleMusicSourcesLayout), findsOneWidget);
+      expect(find.text(t.music_sources_section_title), findsOneWidget);
+      expect(find.text(t.music_sources_online_hint), findsOneWidget);
+      // 行尾只有开关：没有 M3E 的 ↑↓ 键与常驻拖把。
+      expect(
+        find.byKey(
+          const ValueKey<String>('music-source-toggle-server:subsonic-a'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('music-source-down-server:subsonic-a'),
+        ),
+        findsNothing,
+      );
+      expect(find.byType(FushiReorderableDragHandle), findsNothing);
+      // 「添加来源…」是组内强调色动作行（与歌单页「新建歌单…」同款），不是胶囊按钮；
+      // 行是歌单同款列表行，不是「设置」式 inset grouped 卡片。
+      expect(find.text('${t.music_sources_add}…'), findsOneWidget);
+      expect(find.byType(AppleMusicListActionRow), findsWidgets);
+      expect(find.byType(FushiOutlinedButton), findsNothing);
+      expect(find.byType(FushiFilledButton), findsNothing);
+      expect(find.byType(AdaptiveSettingsSection), findsNothing);
+      expect(find.byType(AppleMusicListSectionHeader), findsWidgets);
+      expect(
+        find.byWidgetPredicate(
+          (Widget w) =>
+              w is AppleMusicListRow &&
+              w.key ==
+                  const ValueKey<String>(
+                    'music-source-toggle-server:subsonic-a',
+                  ),
+        ),
+        findsOneWidget,
+      );
+      // macOS 档内容限宽。
+      expect(
+        tester
+            .getSize(find.byKey(const ValueKey<String>('music-sources-group')))
+            .width,
+        lessThanOrEqualTo(kAppleMusicSourcesMaxWidth * 1.15 + 0.5),
+      );
+
+      // 编辑：行尾换 ≡ 把手；Alt+↓ 把 a 移到 c 后面并写回偏好。
+      await tester.tap(
+        find.byKey(const ValueKey<String>('music-sources-edit')),
+      );
+      await _settle(tester);
+      final Finder handle = find.byKey(
+        const ValueKey<String>('music-source-handle-server:subsonic-a'),
+      );
+      expect(handle, findsOneWidget);
+      Focus.of(
+        tester.element(
+          find.descendant(
+            of: handle,
+            matching: find.byType(FushiReorderableDragHandle),
+          ),
+        ),
+      ).requestFocus();
+      await tester.pump();
+      await tester.sendKeyDownEvent(LogicalKeyboardKey.altLeft);
+      await tester.sendKeyEvent(LogicalKeyboardKey.arrowDown);
+      await tester.sendKeyUpEvent(LogicalKeyboardKey.altLeft);
+      await _settle(tester);
+      final List<String> order = _stored(
+        env.prefs,
+      ).map((LyricsProviderEntry e) => e.id).toList();
+      expect(
+        order.indexOf('server:subsonic-a'),
+        greaterThan(order.indexOf('server:subsonic-c')),
+      );
+      await _teardown(tester);
+    },
+  );
 }

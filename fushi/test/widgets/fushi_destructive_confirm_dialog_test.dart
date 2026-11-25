@@ -50,14 +50,14 @@ void main() {
     expect(find.text('删除书籍'), findsOneWidget);
     expect(find.text('此操作不可撤销。'), findsOneWidget);
 
-    await tester.tap(find.text('CANCEL'));
+    await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
     expect(await dialogResult, isNull);
   });
 
   testWidgets('确认 pop 结果（无勾选项时 checked=false）', (WidgetTester tester) async {
     await openDialog(tester);
-    await tester.tap(find.text('DELETE'));
+    await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
     final FushiDestructiveConfirmResult? value = await dialogResult;
     expect(value, isNotNull);
@@ -75,7 +75,7 @@ void main() {
     );
     expect(checkbox.value, isTrue);
 
-    await tester.tap(find.text('DELETE'));
+    await tester.tap(find.text('Delete'));
     await tester.pumpAndSettle();
     expect((await dialogResult)!.checked, isTrue);
   });
@@ -100,7 +100,7 @@ void main() {
     expect(find.byType(DeletionDisclosureView), findsOneWidget);
     expect(tester.takeException(), isNull);
 
-    final Finder confirm = find.text('DELETE');
+    final Finder confirm = find.text('Delete');
     expect(
       confirm.hitTestable(),
       findsOneWidget,
@@ -158,7 +158,7 @@ void main() {
 
     // 同一个 [MaterialApp] element 会被复用，上一个 dialog route 仍压在
     // Navigator 栈上会挡住 open 按钮，先关掉再开第二个。
-    await tester.tap(find.text('CANCEL'));
+    await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
 
     const String shortLabel = '删除';
@@ -208,7 +208,7 @@ void main() {
       await tester.pumpAndSettle();
     }
 
-    Finder confirm() => find.widgetWithText(FilledButton, 'DELETE');
+    Finder confirm() => find.widgetWithText(FilledButton, 'Delete');
 
     test('开闸却没给勾选项 = 一颗永远点不动的按钮，构造期就 assert', () {
       expect(
@@ -275,7 +275,7 @@ void main() {
         reason: '没有主勾选也要摆出统计行',
       );
 
-      await tester.tap(find.text('DELETE'));
+      await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
       final FushiDestructiveConfirmResult value = (await dialogResult)!;
       expect(value.checked, isFalse);
@@ -286,7 +286,7 @@ void main() {
       await openDialog(tester, statisticsSubtitle: '游戏统计口径');
       await tester.tap(find.text(t.delete_statistics));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('DELETE'));
+      await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
       expect((await dialogResult)!.deleteStatistics, isTrue);
     });
@@ -337,7 +337,7 @@ void main() {
         reason: '勾了删统计还把它列在「会被保留」就是在说反话（BUG-1305 同型）',
       );
 
-      await tester.tap(find.text('DELETE'));
+      await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
       final FushiDestructiveConfirmResult value = (await dialogResult)!;
       expect(value.checked, isTrue);
@@ -354,7 +354,7 @@ void main() {
         ),
         findsNothing,
       );
-      await tester.tap(find.text('DELETE'));
+      await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
       expect((await dialogResult)!.deleteSubscriptions, isFalse);
     });
@@ -365,7 +365,7 @@ void main() {
         checkboxLabel: '连同本体删除',
         deleteSubscriptionsLabel: '同时删除 2 个下载订阅',
       );
-      await tester.tap(find.text('DELETE'));
+      await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
       FushiDestructiveConfirmResult value = (await dialogResult)!;
       expect(value.checked, isFalse, reason: '主勾选没勾');
@@ -374,7 +374,7 @@ void main() {
       await openDialog(tester, deleteSubscriptionsLabel: '同时删除 2 个下载订阅');
       await tester.tap(find.text('同时删除 2 个下载订阅'));
       await tester.pumpAndSettle();
-      await tester.tap(find.text('DELETE'));
+      await tester.tap(find.text('Delete'));
       await tester.pumpAndSettle();
       value = (await dialogResult)!;
       expect(value.deleteSubscriptions, isFalse);

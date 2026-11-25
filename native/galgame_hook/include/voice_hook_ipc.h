@@ -392,6 +392,24 @@ constexpr uint32_t kTextSourceFvp = 10;
 // PalSpriteUnlock transaction lays out with PalFontDrawText, speaker plate
 // excluded (16 = first unused id on every local branch, checked 2026-11-03).
 constexpr uint32_t kTextSourceSoftpal = 16;
+// AliceSoft System 4 exact text: the lines of one page as the VM's MSG
+// instruction hands them to the game's message function (17 = first unused
+// id on develop and every open PR, checked 2026-11-11).
+constexpr uint32_t kTextSourceSystem4 = 17;
+// Nitroplus N2System (nss/.npa) exact text: one shown line of the engine's
+// backlog append stream (BacklogAppendChar), ended by its 0x0a (18 = first
+// unused id after System 4 took 17 on upstream/develop, checked 2026-11-15).
+constexpr uint32_t kTextSourceNitroplus = 18;
+// EntisGLS (ECSSakura2 VM) exact text: the click unit the VM hands
+// SGLSpriteMessage::AddMessage, ruby readings removed.  22, not 17: 17-21
+// are left to the engine adapters in flight in parallel (2026-11-11).
+constexpr uint32_t kTextSourceEntisGls = 22;
+// KiriKiri (KiriKiri2 / KiriKiri Z) KAG exact text: the characters the current message layer's
+// processCh drew, committed at KAG's own click waits (showLineBreak /
+// showPageBreak), ruby annotations dropped. 19 = first unused id after
+// System 4 (17) and Nitroplus (18) landed on upstream/develop and EntisGLS
+// took 22 (checked across all upstream branches 2026-11-15).
+constexpr uint32_t kTextSourceKirikiri = 19;
 constexpr uint32_t kTextEventLine = 0;
 constexpr uint32_t kTextEventThreadDiscovered = 1;
 // Some Luna engine hooks expose scenario text and system controls from the
@@ -406,6 +424,16 @@ constexpr uint32_t kTextEventFlagExactThreadContext = 0x00000002u;
 // keep one hook code for several lanes (FVP per text buffer, Luca, BGI,
 // YU-RIS, Kogado Hy per identity) must not set it.
 constexpr uint32_t kTextEventFlagLaneUniqueHookCode = 0x00000004u;
+// The writer proved structurally that this lane is the game's dialogue
+// surface *now* (Unity Mono canvas texts: unity_mono_dialogue_core.h -- the
+// shown line is replaced after the player's advance inputs, strictly more
+// often than any other canvas text).  The mark is current state, not
+// history: every event of the lane carries the writer's current verdict, and
+// a lane that loses the mark gets one thread-discovered event without it.
+// Consumers treat a marked lane like an engine-exact thread (auto-select it,
+// respecting the user's own choice) and the latest event of a lane wins.
+// 0x8 = first unused bit on every local/remote ref (checked 2026-11-11).
+constexpr uint32_t kTextEventFlagDialogueSurface = 0x00000008u;
 
 // 语音 clip 索引：最近 kClipCount 条语音片段的位置记录（按 source voice / DirectSound buffer
 // 的一次提交切一条；galgame 一句台词≈一条语音）。指向音频环形里的 [ring_offset, byte_len)。
@@ -966,6 +994,9 @@ constexpr uint32_t kLookupGeometryProviderIdFvp = 23u;
 // SoftPal ADV System (Pal.dll) sprite text-transaction exact layout provider
 // (append-only id; 29 = first unused id on every local branch, 2026-11-03).
 constexpr uint32_t kLookupGeometryProviderIdSoftpal = 29u;
+// AliceSoft System 4 SACT2 sprite text exact layout provider (append-only id;
+// 30 = first unused id on develop and every open PR, 2026-11-11).
+constexpr uint32_t kLookupGeometryProviderIdSystem4 = 30u;
 
 constexpr uint32_t kLookupGeometryStatusUnavailable = 0u;
 constexpr uint32_t kLookupGeometryStatusReady = 1u;

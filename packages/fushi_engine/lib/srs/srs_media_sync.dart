@@ -10,7 +10,7 @@
 ///    本机不认识的文件不删）。别的设备若还看不到那次删除，会把它再传上来，不丢。**归档位置永不删**。
 ///
 /// 位置上只有内容目录这一种布局（协议 2）。协议 1 的按名字存的 `media/<名字>`、整份封装的加密媒体与更老的写入者目录
-/// 只在一次性迁移里读（sync2/srs_location_migration.dart：按内容重写进内容目录、补绑定、删旧文件），这里不再兜底。
+/// 都不再读（协议 1 位置的一次性迁移已删，只有协议 1 旧根的位置一律拒绝，D21）。
 library;
 
 import 'dart:convert';
@@ -31,6 +31,27 @@ const String kSrsMediaFolder = 'media';
 
 /// 被删笔记的媒体在同步 / 媒体位置上的保留期（设计 §10.5；本机媒体回收同一口径，见 srs_purge.dart）。
 const Duration kSrsMediaRetention = Duration(days: 90);
+
+/// 发段之前那一步媒体上传（[srsSyncMedia] 的 `uploadOnly`）最多占的时长：到点不再开始新的一项（准备阶段的本机哈希与
+/// 列位置目录同样分批守这个预算，HBK-AUDIT-011），剩下的交给发段之后
+/// 的完整对账 / 下一轮（BUG-5061，反馈 arw7eXO895：以前把本机全部没上传的媒体整份传完才发复习记录段，1 GB 媒体
+/// 连 Google Drive 慢时整轮停在「同步卡片媒体」，另一端一直看不到进度）。平时新加几张卡的媒体远用不到这么久，
+/// 「媒体先于引用它的段」照旧成立；积压很多时段先发出去，读者暂缺的媒体按缺失记、下一轮再拿（[srsSyncMedia]）。
+const Duration kSrsMediaBeforeUploadBudget = Duration(seconds: 15);
+
+/// 本机媒体哈希（内核 `media_hash`）一批的名字数：[srsSyncMedia] 每批开始前问一次 `deferRemaining`（HBK-AUDIT-011）。
+/// 缓存命中（大小与修改时间没变）的一批只是几十次 stat，毫秒级；首次哈希时一批的耗时由其中的文件大小定。
+const int kSrsMediaPrepareBatch = 64;
+
+/// [budget] 计时的「该收手了」判断（[srsSyncMedia] 的 `deferRemaining`）：从调用这一刻起满 [budget]，或
+/// [shouldStop] 为真。
+bool Function() srsMediaDeadline(
+  Duration budget, {
+  bool Function()? shouldStop,
+}) {
+  final Stopwatch clock = Stopwatch()..start();
+  return () => (shouldStop?.call() ?? false) || clock.elapsed >= budget;
+}
 
 /// 一轮媒体同步的结果。
 class SrsMediaSyncReport {
@@ -60,6 +81,28 @@ class SrsMediaSyncReport {
 
   /// 整轮跑完（没有中途抛错）。
   bool completed = false;
+
+  /// `deferRemaining` 为真时还没开始、留给下一轮的数目（[srsSyncMedia]）：准备阶段还没哈希的名字 + 已排进来但
+  /// 还没开始的媒体项。大于 0 时这一轮也不做过期清理，调用方也不记成已对账。
+  int deferred = 0;
+
+  /// 对账中途本机文件没了（列出来之后被删 / 被换走）而这一轮没传的名字。不中断整轮：下一轮哈希时它已不在本机，
+  /// 不会再排进来（BUG-5061：以前一个这样的文件抛 PathNotFoundException 就让整趟媒体上传作废）。
+  final Set<String> vanished = <String>{};
+
+  /// 这一趟从 v3.0.x 写入者目录搬进本机媒体目录的媒体数（`srsRescueLegacyWriterMedia`，拍板台
+  /// `bug-5017-legacy-writer-media`；也算在 [downloaded] 里）。
+  int legacyMediaImported = 0;
+
+  /// 这一趟从 v3.0.x 写入者目录删掉的、不必搬的媒体数（集合不引用 / 本机已有同名文件）。
+  int legacyMediaDropped = 0;
+
+  /// 这一趟收尾后整个删掉的 v3.0.x 写入者目录。只供诊断。
+  final List<String> legacyWritersRemoved = <String>[];
+
+  /// 收 v3.0.x 写入者目录媒体时没做成的（`<写入者目录>[/media/<名字>]: <原因>`）：那些文件留着，下一趟再来；不算
+  /// 这一趟媒体同步失败。只供记日志。
+  final List<String> legacyWriterErrors = <String>[];
 }
 
 /// 本 profile 全部未删除笔记（含模板正文里下划线开头的静态文件）引用的媒体文件名。
@@ -84,26 +127,14 @@ Future<Set<String>> srsReferencedMedia(
 }
 
 /// 媒体回收 / 位置清理用的「存活引用」：存活笔记、删除未满 [retention] 的笔记、全部笔记类型（含已删除的）的
-/// 模板与 CSS。比 [srsReferencedMedia] 多算已删除的笔记类型（可能被恢复）。
+/// 模板与 CSS。比 [srsReferencedMedia] 多算已删除的笔记类型（可能被恢复）。口径只在内核一处
+/// （[SrsDbStore.liveMediaRefs]），本机媒体回收用的是同一份。
 Future<Set<String>> srsLiveMediaReferences(
   SrsDbStore store, {
   Duration retention = kSrsMediaRetention,
-}) async {
-  final int cutoff = store.now().$1 - retention.inMilliseconds;
-  final Set<String> out = await store.noteMediaRefs(deletedAfterMs: cutoff);
-  final Map<String, SrsNoteTypeView?> types = await store.noteTypesById(
-    await store.entityIds(SrsEntityKind.noteType),
-  );
-  for (final SrsNoteTypeView? t in types.values) {
-    if (t == null) continue;
-    for (final SrsTemplateDef tpl in t.templates) {
-      out.addAll(srsMediaRefsIn(tpl.front, includeStatic: true));
-      out.addAll(srsMediaRefsIn(tpl.back, includeStatic: true));
-    }
-    out.addAll(srsMediaRefsIn(t.css, includeStatic: true));
-  }
-  return out.where(srsIsBareMediaName).toSet();
-}
+}) => store.liveMediaRefs(
+  aliveAfterMs: store.now().$1 - retention.inMilliseconds,
+);
 
 /// 只认裸文件名（不含路径分隔、不是 `.` / `..`）：媒体目录外的路径一律不碰。
 bool srsIsBareMediaName(String n) =>
@@ -290,6 +321,15 @@ class _MediaItem {
 /// [onTransferStart] 在真有内容要传 / 要查（筛掉本机与位置都已一致的之后还剩下）时、开始做之前调一次；什么都不用做
 /// 的一轮不调——调用方据此报「媒体」阶段，不在每轮发件前都闪一下。
 ///
+/// [onProgress] 报媒体项的进度：开始做之前一次 `(0, 总数)`，之后每做完一项一次（总数 = 筛掉已一致的之后真要做的项）。
+/// [deferRemaining] 管整轮，准备阶段也算（HBK-AUDIT-011：以前只在开始传之前问，首次哈希整个媒体库、列位置上的
+/// 256 个前缀目录都不受预算约束，发段前那一步照样能把复习记录段挡几分钟）：
+/// - 本机哈希每 [kSrsMediaPrepareBatch] 个名字之前问一次，为真就停，没哈希的名字这一轮不处理；
+/// - [uploadOnly] 时列位置目录每个前缀目录之前问一次，为真就停（没列全不记「已列举」，见下）；
+/// - 每开始一项之前问一次，为真就不再开始新的（在途的做完）。
+/// 没做的都记进 [SrsMediaSyncReport.deferred] 留给下一轮，也不做过期清理（调用方用 [srsMediaDeadline] 给时间预算 /
+/// 收手）。
+///
 /// [locationId]（位置的稳定身份，各设备相同）给出时，位置上有什么读日志投影（内核 `media_known`），不列目录：
 /// - 日志里还没有任何设备对这个位置的内容目录完整列举过 → 列一次（256 个前缀子目录），结果带「已列举」写进日志；
 /// - 之后只对投影里不认识的内容逐个查，确认结果同样写回日志；读取时发现投影说在、实际不在 → 记「不在」，持有它的
@@ -304,6 +344,8 @@ Future<SrsMediaSyncReport> srsSyncMedia({
   String? locationId,
   bool uploadOnly = false,
   void Function()? onTransferStart,
+  void Function(int done, int total)? onProgress,
+  bool Function()? deferRemaining,
 }) async {
   final SrsMediaSyncReport report = SrsMediaSyncReport();
   // 加密媒体按密钥指纹分目录（换了密钥 = 新目录，全部按新密钥重传）。
@@ -330,20 +372,36 @@ Future<SrsMediaSyncReport> srsSyncMedia({
     store,
     deletedAfterMs: store.now().$1 - kSrsMediaRetention.inMilliseconds,
   )).toList()..sort();
+  bool stop() => deferRemaining?.call() ?? false;
 
-  // 1. 本机文件 → 内容（不进写锁：首次对账要把每个文件读一遍）→ 该做什么（写锁里，顺带写绑定）。
-  final Map<String, Object?> hashed = (await store.sync2Command(
-    <String, Object?>{
-      'op': 'media_hash',
-      'root': mediaRoot.path,
-      'names': names,
-    },
-  )).map;
+  // 1. 本机文件 → 内容（不进写锁：首次对账要把每个文件读一遍）→ 该做什么（写锁里，顺带写绑定）。哈希按
+  // [kSrsMediaPrepareBatch] 个名字一批、每批开始前问一次 [deferRemaining]（HBK-AUDIT-011：以前整个媒体库一次哈希完
+  // 才第一次看预算，首次对账的大库在发段前那一步就能占掉几分钟）。只把哈希过的名字交给 `media_scan`：没哈希的名字
+  // 这一轮不下结论（交给 scan 会被当成「本机没有」去下载），记进 [SrsMediaSyncReport.deferred]；scan 把哈希过的写进
+  // 本机文件缓存（`media_local`），下一轮这些只 stat、不重算，准备阶段逐轮往后推进。
+  final List<Object?> files = <Object?>[];
+  int prepared = 0;
+  while (prepared < names.length && !stop()) {
+    final List<String> batch = names.sublist(
+      prepared,
+      min(prepared + kSrsMediaPrepareBatch, names.length),
+    );
+    files.addAll(
+      (await store.sync2Command(<String, Object?>{
+            'op': 'media_hash',
+            'root': mediaRoot.path,
+            'names': batch,
+          })).map['files']!
+          as List<Object?>,
+    );
+    prepared += batch.length;
+  }
+  report.deferred += names.length - prepared;
   final Map<String, Object?> scanned =
       (await store.sync2Command(<String, Object?>{
         'op': 'media_scan',
-        'names': names,
-        'files': hashed['files'],
+        'names': names.sublist(0, prepared),
+        'files': files,
         'now': store.now().$1,
       })).map;
   final List<_MediaItem> items = <_MediaItem>[
@@ -360,6 +418,15 @@ Future<SrsMediaSyncReport> srsSyncMedia({
     report.listedRemote = true;
     for (final SrsLocationEntry d in await location.list(folder)) {
       if (!d.isFolder || d.name.length != 2) continue;
+      // 发段前那一步：最多 256 个前缀目录、慢云盘上每个一次往返，同样守预算（HBK-AUDIT-011）。列到一半就停：已列到的
+      // 「在」照样是确认过的事实（写回日志），其余按「不知道」走逐个查；没列全就不算列举过（[content.listed]
+      // 置回 false，不写「已列举」）。完整对账不在这里停：它要把列举做完才能记「已列举」，否则慢位置上每轮都列到
+      // 一半、永远列不完。
+      if (uploadOnly && stop()) {
+        content.listed = false;
+        report.listedRemote = false;
+        break;
+      }
       for (final SrsLocationEntry f in await location.list(
         '$folder/${d.name}',
       )) {
@@ -389,9 +456,18 @@ Future<SrsMediaSyncReport> srsSyncMedia({
   Future<bool> putContent(File src, String sha) async {
     final File staged = scratch('up');
     try {
-      final String got = cipher == null
-          ? await _copyHashing(src, staged)
-          : await cipher.sealFile(sha, src, staged);
+      final String got;
+      try {
+        got = cipher == null
+            ? await _copyHashing(src, staged)
+            : await cipher.sealFile(sha, src, staged);
+      } on Object {
+        // 列出来之后本机文件没了（被删 / 被换走）：这一项这一轮传不了，记下、接着做别的（BUG-5061）。文件还在却
+        // 读不了（被占用、读错、临时目录写不了）不是这种情况，照旧抛出。
+        if (await src.exists()) rethrow;
+        report.vanished.add(p.relative(src.path, from: mediaRoot.path));
+        return false;
+      }
       if (got != sha) return false;
       final String path = srsMediaContentPath(folder, sha);
       if (content.stateOf(sha) == _Remote.suspect) {
@@ -514,7 +590,10 @@ Future<SrsMediaSyncReport> srsSyncMedia({
       if (!it.have || content.stateOf(it.sha!) != _Remote.present)
         if (it.have || !uploadOnly) it,
   ];
-  if (work.isNotEmpty) onTransferStart?.call();
+  if (work.isNotEmpty) {
+    onTransferStart?.call();
+    onProgress?.call(0, work.length);
+  }
 
   try {
     await _reconcile(
@@ -526,6 +605,8 @@ Future<SrsMediaSyncReport> srsSyncMedia({
       content: content,
       prune: !archive && !uploadOnly,
       syncOne: syncOne,
+      onProgress: onProgress,
+      deferRemaining: deferRemaining,
     );
   } finally {
     if (landed.isNotEmpty) {
@@ -554,6 +635,8 @@ Future<void> _reconcile({
   required _Presence content,
   required bool prune,
   required Future<void> Function(_MediaItem item) syncOne,
+  void Function(int done, int total)? onProgress,
+  bool Function()? deferRemaining,
 }) async {
   // 媒体彼此无先后：同时最多 [kSrsSync2Concurrency] 个在途（首次同步一个牌组上千个图片 / 音频时，逐个等每个请求
   // 的固定延迟是主要耗时）。只差大小写的名字在不分大小写的文件系统上是同一个本机文件，归成一组在同一个任务里
@@ -562,14 +645,21 @@ Future<void> _reconcile({
   for (final _MediaItem it in work) {
     byFolded.putIfAbsent(it.name.toLowerCase(), () => <_MediaItem>[]).add(it);
   }
+  final int total = work.length;
+  int done = 0;
   await srsRunPooled(byFolded.values.toList(), kSrsSync2Concurrency, (
     List<_MediaItem> group,
   ) async {
+    if (deferRemaining?.call() ?? false) {
+      report.deferred += group.length;
+      return;
+    }
     for (final _MediaItem it in group) {
       await syncOne(it);
+      onProgress?.call(++done, total);
     }
   });
-  if (prune) {
+  if (prune && report.deferred == 0) {
     // 只删有正面证据的：被「删除已满保留期」的笔记引用、且不被任何存活引用。本机不认识的文件一律不删——
     // 它可能是别的设备新笔记的媒体，而本机还没收到那条笔记。
     final List<String> live = (await srsLiveMediaReferences(store)).toList();

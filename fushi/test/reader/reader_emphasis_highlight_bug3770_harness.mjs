@@ -2,23 +2,30 @@
 // it covers. Runs the generated production reader CSS + engine shell + selection script in
 // real Chrome (default and custom cue text colour), screenshots the emphasis-mark strip before and after the cue highlight and
 // compares the mark ink. Only the Flutter bridge is replaced by a recorder.
-import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const payload = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
 // The only argument is the temp payload file the Dart test just wrote.
-const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));  // NOSONAR: S8707 path comes from the Dart test harness
 
 // Show the screen holding the cue (VN renders it on the first highlight call), clear the
 // highlight and return the emphasis-mark strip: the band beside the emphasised text on the
 // marks' side (right in vertical-rl, 0.6em thick; above in horizontal-tb, 1em thick).
 const PREP = String.raw`(async () => {
   const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-  await new Promise((r) => setTimeout(r, 700));
+  // Wait for the engine's content-ready signal (onRestoreComplete, recorded by the Dart page
+  // stub), not a fixed sleep: the shells lay out after document.fonts.ready, and under load
+  // that came later than a fixed 700 ms, so the checks ran on a page not yet laid out.
+  // The 30 s cap only turns a page that never reports ready into a clear failure.
+  const restored = await Promise.race([window.__fushiRestored.then(() => true),
+    new Promise((r) => setTimeout(() => r(false), 30000))]);
+  if (!restored) throw new Error('the reader engine never reported onRestoreComplete');
+  await frames();
   const R = window.fushiReader;
   R.highlightSentenceAudioCue('c1', true);
   await frames();
@@ -96,6 +103,26 @@ const UNREVEALED = String.raw`(() => {
   if (painted) painted.forEach((r) => { if (r.intersectsNode(emText)) hidesEmphasis = true; });
   CSS.highlights.delete('fushi-vn-unrevealed');
   return { hidesEmphasis };
+})()`;
+
+// Lookup selection over the whole paragraph (the selection script registers it the same way):
+// with a lookup-highlight text colour (inverted highlight, white text on a dark lane) the
+// emphasised text must still reach the engine, or it stays dark on the dark lane; without one
+// the selection highlight is a no-op for every character and none of it is painted.
+const SELECT = String.raw`(() => {
+  const root = document.querySelector('.fushi-vn-content') || document.body;
+  const el = root.querySelector('.em');
+  const range = document.createRange();
+  range.selectNodeContents(root.querySelector('p'));
+  CSS.highlights.set('fushi-selection', new Highlight(range));
+  const painted = HighlightRegistry.prototype.get.call(CSS.highlights, 'fushi-selection');
+  const emText = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode();
+  let paintsEmphasis = false;
+  let paintsAny = false;
+  if (painted) painted.forEach((r) => { paintsAny = true; if (r.intersectsNode(emText)) paintsEmphasis = true; });
+  const emColor = getComputedStyle(el, '::highlight(fushi-selection)').color;
+  CSS.highlights.delete('fushi-selection');
+  return { paintsEmphasis, paintsAny, emColor };
 })()`;
 
 function decodePng(buf) {
@@ -176,6 +203,13 @@ try {
     if (page.customColor && play.rangeMode) fail('a custom cue text colour still goes through a CSS highlight');
     if (page.customColor && play.emColor !== 'rgb(30, 90, 200)') fail('emphasised text did not take the custom cue colour: ' + play.emColor);
     if (play.rangeMode && !page.customColor && play.paintsPlain) fail('a no-op cue highlight is still painted by the engine');
+    const sel = await driver.evalHere(SELECT);
+    if (page.selectionText) {
+      if (!sel.paintsEmphasis) fail('the inverted lookup highlight leaves emphasised text in the body colour on its lane');
+      if (sel.emColor !== 'rgb(255, 255, 255)') fail('emphasised text does not take the lookup highlight text colour: ' + sel.emColor);
+    } else if (sel.paintsAny) {
+      fail('a no-op lookup highlight is still painted by the engine');
+    }
     const unrevealed = await driver.evalHere(UNREVEALED);
     if (!unrevealed.hidesEmphasis) fail('the VN unrevealed highlight no longer covers emphasised text (marks show before their turn)');
     console.log(page.name + ': ink ' + before + ' -> ' + after + (play.rangeMode ? ' (range)' : ' (wrapper)'));

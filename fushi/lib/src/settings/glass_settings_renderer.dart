@@ -57,10 +57,9 @@ class GlassSettingsRenderer implements SettingsRenderer {
   /// 宽屏侧栏宽。
   static const double sidebarWidth = 240;
 
-  /// 详情正文的水平内边距：桌面 28（macOS 详情窗格的留白）、触屏 16
-  /// （iOS inset grouped 卡片离屏幕边 16）。
+  /// 详情正文的水平内边距，见 [settingsGlassDetailHorizontalInset]。
   static double detailHorizontalInset(BuildContext context) =>
-      FushiAppleMetrics.of(context).desktop ? 28 : 16;
+      settingsGlassDetailHorizontalInset(context);
 
   static Route<void> _route(BuildContext context, WidgetBuilder builder) =>
       MaterialPageRoute<void>(builder: builder);
@@ -83,6 +82,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
     // 分类列表的内边距按外层 context 算、不含页头让位：整体让开页头（Apple
     // 设计系统本就上下排，这里与 M3E 渲染器同一写法）。
     return FushiPageScaffold(
+      masthead: true,
       title: settingsContext.context.t.settings,
       body: SafeArea(bottom: false, child: list),
     );
@@ -125,7 +125,8 @@ class GlassSettingsRenderer implements SettingsRenderer {
   }
 
   /// iOS「设置」首页的分组分类列表（不含滚动容器）：每组一张 inset grouped
-  /// 卡，行 = 强调色单色图标 + 标题 + chevron，点进去 push 详情页。设置主页的
+  /// 卡，行 = 标题 + chevron（不带行首图标，用户 2026-11-24「这排图标好丑」），
+  /// 点进去 push 详情页。设置主页的
   /// 窄屏布局把它和大标题、搜索框放进同一个滚动视图。
   Widget buildDestinationGroups({
     required SettingsContext settingsContext,
@@ -148,7 +149,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
                   key: ValueKey<SettingsDestinationId>(destination.id),
                   title: destination.title,
                   icon: destination.icon,
-                  showIcon: true,
+                  showIcon: false,
                   onTap: () {
                     onDestinationSelected(destination.id);
                     Navigator.of(context).push(
@@ -287,7 +288,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
         : 0;
     final EdgeInsets padding = EdgeInsets.fromLTRB(
       horizontal,
-      (inlineHeader ? (metrics.desktop ? 22 : 12) : 12) +
+      (inlineHeader ? (metrics.desktop ? 22 * metrics.scale : 12) : 12) +
           (consumeTopPadding ? MediaQuery.paddingOf(context).top : 0) +
           topInset,
       horizontal,
@@ -316,10 +317,10 @@ class GlassSettingsRenderer implements SettingsRenderer {
       if (inlineHeader)
         Padding(
           padding: EdgeInsets.fromLTRB(
-            metrics.desktop ? 2 : 4,
+            metrics.desktop ? 2 * metrics.scale : 4,
             0,
             0,
-            metrics.desktop ? 18 : 14,
+            metrics.desktop ? 18 * metrics.scale : 14,
           ),
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -327,7 +328,7 @@ class GlassSettingsRenderer implements SettingsRenderer {
               Text(
                 destination.title,
                 style: TextStyle(
-                  fontSize: metrics.desktop ? 24 : 30,
+                  fontSize: metrics.desktop ? 24 * metrics.scale : 30,
                   fontWeight: FontWeight.w700,
                   height: 1.2,
                   letterSpacing: metrics.desktop ? 0 : 0.2,
@@ -416,7 +417,8 @@ class GlassSettingsRenderer implements SettingsRenderer {
 }
 
 /// macOS「系统设置」侧栏的分类列表（不含滚动容器）：分组之间留 14 的空隙，
-/// 组首一行克制的 11 号 semibold 灰字；行 = 单色强调色图标 + 单行标题。
+/// 组首一行克制的 11 号 semibold 灰字；行 = 单行标题，不带行首图标（用户
+/// 2026-11-24 截图「这排图标好丑，要么直接去掉吧」），标题与组标题同一左缘。
 class GlassSettingsSidebarList extends StatelessWidget {
   const GlassSettingsSidebarList({
     required this.destinations,
@@ -463,8 +465,6 @@ class GlassSettingsSidebarList extends StatelessWidget {
                     in groups[g].destinations)
                   GlassSettingsSidebarRow(
                     key: ValueKey<SettingsDestinationId>(destination.id),
-                    icon: destination.icon,
-                    tone: settingsIconToneFor(destination.id),
                     title: destination.title,
                     selected: destination.id == selectedDestinationId,
                     onTap: () => onDestinationSelected(destination.id),
@@ -477,28 +477,27 @@ class GlassSettingsSidebarList extends StatelessWidget {
   }
 }
 
-/// macOS 侧栏行：行高 32、圆角 8；选中 = 强调色实底 + onAccent 图标 / 文字，
-/// 悬停 = tertiaryFill，按下 = systemFill。可选 [subtitle] 给搜索结果的面包屑
-/// 用（行随之长高）。
+/// macOS 27 源列表行（与主侧栏 `apple_sidebar_tabs.part.dart` 同规格）：行高
+/// 28、圆角 8、13 号常规字重标题；选中 = 中性色 secondaryFill 圆角底（不着强调
+/// 色），可选行首图标为强调色；窗口失焦时选中底淡到一半、强调色图标退成
+/// secondaryLabel（macOS 非激活窗口的源列表）。悬停 = tertiaryFill，按下 =
+/// systemFill。可选 [subtitle] 给搜索结果的面包屑用（行随之长高）。
 ///
 /// 焦点契约同 [FushiListItem]：有 [FushiFocusRoot] 时外包一个焦点目标（方向键
 /// / 手柄可达，Enter / A 经 [ActivateIntent] 触发），行自身不再是停靠点；没有
 /// 焦点根时行自己可 Tab、Enter 激活。
 class GlassSettingsSidebarRow extends StatefulWidget {
   const GlassSettingsSidebarRow({
-    required this.icon,
     required this.title,
     required this.onTap,
     super.key,
+    this.icon,
     this.subtitle,
     this.selected = false,
-    this.tone,
   });
 
-  final IconData icon;
-
-  /// 分类色调（iOS 系统色着色字形）；null = 强调色（搜索结果等）。
-  final SettingsIconTone? tone;
+  /// 行首强调色单色图标；null = 纯文字行（设置分类列表），标题从行内边距起。
+  final IconData? icon;
   final String title;
   final String? subtitle;
   final bool selected;
@@ -509,26 +508,59 @@ class GlassSettingsSidebarRow extends StatefulWidget {
       _GlassSettingsSidebarRowState();
 }
 
-class _GlassSettingsSidebarRowState extends State<GlassSettingsSidebarRow> {
+class _GlassSettingsSidebarRowState extends State<GlassSettingsSidebarRow>
+    with WidgetsBindingObserver {
   late final FushiFocusId _focusId = FushiFocusId(
     'settings-sidebar-${identityHashCode(this)}',
   );
+
+  /// 窗口是否前台激活（桌面失焦时引擎报 [AppLifecycleState.inactive]）。
+  late bool _windowActive = _isActive(WidgetsBinding.instance.lifecycleState);
+
+  static bool _isActive(AppLifecycleState? state) =>
+      state == null || state == AppLifecycleState.resumed;
+
+  @override
+  void initState() {
+    super.initState();
+    WidgetsBinding.instance.addObserver(this);
+  }
+
+  @override
+  void dispose() {
+    WidgetsBinding.instance.removeObserver(this);
+    super.dispose();
+  }
+
+  @override
+  void didChangeAppLifecycleState(AppLifecycleState state) {
+    final bool active = _isActive(state);
+    if (active != _windowActive && mounted) {
+      setState(() => _windowActive = active);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final FushiAppleColors apple = appleColorsOf(context);
     final bool selected = widget.selected;
-    final Color fg = selected ? apple.onAccent : apple.label;
+    final Color fg = apple.label;
+    final Color selectedFill = _windowActive
+        ? apple.secondaryFill
+        : apple.secondaryFill.withValues(alpha: apple.secondaryFill.a * 0.5);
+    final Color accentIcon = _windowActive
+        ? apple.accent
+        : apple.secondaryLabel;
     final bool hasFocusRoot = FushiFocusRoot.maybeControllerOf(context) != null;
     final String? subtitle = widget.subtitle;
     final Widget row = FushiAppleRow(
       onTap: widget.onTap,
       selected: selected,
-      selectedBackground: apple.accent,
+      selectedBackground: selectedFill,
       focusable: !hasFocusRoot,
       borderRadius: BorderRadius.circular(8),
       child: ConstrainedBox(
-        constraints: const BoxConstraints(minHeight: 32),
+        constraints: const BoxConstraints(minHeight: 28),
         child: Padding(
           padding: EdgeInsets.symmetric(
             horizontal: 10,
@@ -536,20 +568,10 @@ class _GlassSettingsSidebarRowState extends State<GlassSettingsSidebarRow> {
           ),
           child: Row(
             children: <Widget>[
-              if (widget.tone == null)
-                FushiIcon(
-                  widget.icon,
-                  size: 17,
-                  color: selected ? apple.onAccent : apple.accent,
-                )
-              else
-                SettingsShapeIcon(
-                  icon: widget.icon,
-                  tone: widget.tone!,
-                  selected: selected,
-                  size: 22,
-                ),
-              const SizedBox(width: 9),
+              if (widget.icon case final IconData icon) ...<Widget>[
+                FushiIcon(icon, size: 16, color: accentIcon),
+                const SizedBox(width: 8),
+              ],
               Expanded(
                 child: Column(
                   mainAxisSize: MainAxisSize.min,
@@ -560,11 +582,9 @@ class _GlassSettingsSidebarRowState extends State<GlassSettingsSidebarRow> {
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                        fontSize: 14,
+                        fontSize: 13,
                         height: 1.25,
-                        fontWeight: selected
-                            ? FontWeight.w600
-                            : FontWeight.w400,
+                        fontWeight: FontWeight.w400,
                         color: fg,
                       ),
                     ),
@@ -576,9 +596,7 @@ class _GlassSettingsSidebarRowState extends State<GlassSettingsSidebarRow> {
                         style: TextStyle(
                           fontSize: 11,
                           height: 1.3,
-                          color: selected
-                              ? apple.onAccent.withValues(alpha: 0.8)
-                              : apple.secondaryLabel,
+                          color: apple.secondaryLabel,
                         ),
                       ),
                   ],

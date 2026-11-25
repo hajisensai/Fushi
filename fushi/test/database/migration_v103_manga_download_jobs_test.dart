@@ -125,7 +125,7 @@ void main() {
           .read<int>('user_version'),
       upgraded.schemaVersion,
     );
-    expect(upgraded.schemaVersion, 146);
+    expect(upgraded.schemaVersion, kFushiDbSchemaVersion);
 
     // 邻居表原样在（Never break userspace）。
     expect(await upgraded.updateFeedEntriesPage(), hasLength(1));
@@ -209,7 +209,8 @@ void main() {
       "$prefix ('j', 'volume', 'b', 'c', 'mihon', 't', 'ct', 'queued', 0, 0, 1, 1)",
     );
     await expectRejected(
-      "$prefix ('j', 'chapter', 'b', 'c', 'mihon', 't', 'ct', 'paused', 0, 0, 1, 1)",
+      // v155 起 paused 合法（暂停态），值域外的照旧拒。
+      "$prefix ('j', 'chapter', 'b', 'c', 'mihon', 't', 'ct', 'bogus', 0, 0, 1, 1)",
     );
     await expectRejected(
       "$prefix ('j', 'chapter', 'b', 'c', 'mihon', 't', 'ct', 'queued', -1, 0, 1, 1)",

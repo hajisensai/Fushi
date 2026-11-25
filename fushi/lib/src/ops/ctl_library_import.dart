@@ -24,11 +24,15 @@ import 'package:fushi_dictionary/fushi_dictionary.dart'
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/video/external_video.dart';
+import 'package:fushi_engine/media/audiobook/book_audiobook_pairing.dart'
+    show BookAudiobookTranscribePort;
 import 'package:fushi_engine/media/audiobook/text_to_epub.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart'
     show DiscoveryMediaKind;
 import 'package:fushi_engine/media/discovery/import/discovery_engine_importers.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
+import 'package:fushi_engine/media/manga/manga_archive_probe.dart'
+    show mangaArchiveNeedsContentProbe;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/drag_drop/drop_classification.dart';
@@ -69,7 +73,9 @@ class LibraryCtlImporter {
     Future<String?> Function(String path)? ingestVideoFile,
     AskOnDuplicate? askOnDuplicate,
     LibraryCtlEnqueueTranscription? enqueueTranscription,
+    required BookAudiobookTranscribePort? folderTranscribeAudiobook,
   }) : _ingestVideoFile = ingestVideoFile,
+       _folderTranscribeAudiobook = folderTranscribeAudiobook,
        _enqueueTranscription = enqueueTranscription,
        _db = db,
        _galgameRepo = galgameRepo,
@@ -88,6 +94,10 @@ class LibraryCtlImporter {
   final DuplicatePolicy _policy;
   final Future<String?> Function(String path)? _ingestVideoFile;
   final LibraryCtlEnqueueTranscription? _enqueueTranscription;
+
+  /// 书目录登记成来源时，扫描器把「配上了有声书音频却没有字幕」的书交给的转录端口
+  /// （`AppModel.folderImportTranscribePort`，与 app 内导入文件夹同一个）。
+  final BookAudiobookTranscribePort? _folderTranscribeAudiobook;
 
   /// 视频单文件：走外部打开同一个入库入口（按路径去重，同一文件重复导入复用旧条目）。
   Future<LibraryCtlImportResult> _importVideoFile(String path) async {
@@ -210,7 +220,11 @@ class LibraryCtlImporter {
         }
         return _importBookLike(path, explicitBook: true);
       case LibraryCtlKind.manga:
-        return _importMangaCarrier(path, _carrierOf(path), allowPdf: true);
+        return _importMangaCarrier(
+          path,
+          await _carrierOf(path),
+          allowPdf: true,
+        );
       case LibraryCtlKind.pdf:
       case LibraryCtlKind.audiobook:
       case null:
@@ -218,7 +232,7 @@ class LibraryCtlImporter {
     }
     if (isDirectory) {
       // 与书架 / 漫画库拖目录同义：目录 = 一卷（或一批卷）漫画。
-      return _importMangaCarrier(path, _carrierOf(path), allowPdf: false);
+      return _importMangaCarrier(path, await _carrierOf(path), allowPdf: false);
     }
     if (p.extension(path).toLowerCase() == '.exe') {
       return _importGame(path, isDirectory: false);
@@ -226,14 +240,29 @@ class LibraryCtlImporter {
     return _importBookLike(path);
   }
 
-  ImportCarrier _carrierOf(String path) => classifyImportCarrier(
-    path,
-    isDirectory: (String candidate) => Directory(candidate).existsSync(),
-    isImageArchive: MangaModule.isImageArchive,
-    directoryHasPageImages: MangaModule.directoryHasPageImages,
-    directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
-    directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
-  );
+  /// `.zip` / `.epub` 是不是页图包：开包判定跑在后台 isolate，`.epub` 探测的解压
+  /// 落点建在书库根的 `.tmp-*`（[MangaModule.probeImageArchive]）。ctl 跑在 app 的
+  /// UI isolate 上，以前同步调 `MangaModule.isImageArchive`：一本几百 MB 的文字
+  /// EPUB 要整本解析 spine 才分得清，界面跟着停住，探测还解进系统临时目录（崩溃
+  /// 残留 app 内清不掉）——BUG-4909 遗留。其余扩展名不开包，直接 false。
+  Future<bool> _probeImageArchive(String path) async =>
+      mangaArchiveNeedsContentProbe(path) &&
+      !Directory(path).existsSync() &&
+      await MangaModule.probeImageArchive(_db, path);
+
+  /// 载体身份。[imageArchive] 是调用方已经问过的开包结论（同一路径不开两次包）。
+  Future<ImportCarrier> _carrierOf(String path, {bool? imageArchive}) async {
+    final bool image = imageArchive ?? await _probeImageArchive(path);
+    return classifyImportCarrier(
+      path,
+      isDirectory: (String candidate) => Directory(candidate).existsSync(),
+      // 判据只对二义扩展名（.zip / .epub）问，答案已在后台算好。
+      isImageArchive: (String _) => image,
+      directoryHasPageImages: MangaModule.directoryHasPageImages,
+      directoryCarrierFileCount: MangaModule.directoryCarrierFileCount,
+      directoryMokuroFileCount: MangaModule.directoryMokuroFileCount,
+    );
+  }
 
   /// 单个文件、没指定（或指定 book）种类：先过拖放分类筛掉非书非漫画的东西，
   /// 再按载体身份落到书或漫画。
@@ -245,14 +274,22 @@ class LibraryCtlImporter {
     String path, {
     bool explicitBook = false,
   }) async {
+    final bool imageArchive = await _probeImageArchive(path);
     final DroppedFiles dropped = classifyDroppedFiles(<String>[
       path,
-    ], isImageArchive: MangaModule.isImageArchive);
+    ], isImageArchive: (String _) => imageArchive);
     if (dropped.mangas.isNotEmpty) {
-      return _importMangaCarrier(path, _carrierOf(path), allowPdf: false);
+      return _importMangaCarrier(
+        path,
+        await _carrierOf(path, imageArchive: imageArchive),
+        allowPdf: false,
+      );
     }
     if (dropped.books.isNotEmpty) {
-      final ImportCarrier carrier = _carrierOf(path);
+      final ImportCarrier carrier = await _carrierOf(
+        path,
+        imageArchive: imageArchive,
+      );
       if (carrier.isManga) {
         if (explicitBook && canImportMangaCarrierAsBook(path, carrier)) {
           return _importBookCarrier(path, ImportCarrier.epub);
@@ -331,6 +368,7 @@ class LibraryCtlImporter {
       case ImportCarrier.mangaBatchFolder:
       case ImportCarrier.mangaMokuro:
       case ImportCarrier.mangaArchive:
+      case ImportCarrier.mangaAudioPackage:
         return _importMangaCarrier(path, carrier, allowPdf: false);
     }
     return _imported(path, kind, bookKey);
@@ -414,6 +452,12 @@ class LibraryCtlImporter {
             policy: _policy,
           ),
         );
+      case ImportCarrier.mangaAudioPackage:
+        return _unsupported(
+          path,
+          '有声漫画包要用 tts import-package 导入（逐卷认本机同一卷，替换已有成品要确认）',
+          kind: LibraryCtlKind.manga,
+        );
       case ImportCarrier.epub:
       case ImportCarrier.text:
         return _unsupported(
@@ -454,6 +498,9 @@ class LibraryCtlImporter {
     if (gated != null) return gated;
     final AddLocalFolderResult result = await addLocalFolderAsSource(
       db: _db,
+      transcribeAudiobook: sourceKind == SourceLibraryKind.book
+          ? _folderTranscribeAudiobook
+          : null,
       mediaKind: sourceKind.dbValue,
       path: path,
     );
@@ -714,4 +761,8 @@ String libraryCtlBlockerMessage(DiscoveryImportBlocker blocker) =>
       DiscoveryImportBlocker.archiveToolMissing => '解压需要 7-Zip 命令行',
       DiscoveryImportBlocker.archiveExtractionFailed => '解压失败',
       DiscoveryImportBlocker.unsupportedOnThisHost => '本机不支持这种导入',
+      DiscoveryImportBlocker.archivePasswordRequired =>
+        '压缩包有密码，没拿到口令（取消了口令对话框或当前不能交互）',
+      DiscoveryImportBlocker.archiveVolumesMissing =>
+        '分卷压缩包不全：要从第一卷（.001）导入，其余各卷放在同一个文件夹里',
     };

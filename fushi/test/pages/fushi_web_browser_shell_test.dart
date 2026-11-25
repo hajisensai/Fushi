@@ -24,6 +24,9 @@ import 'package:fushi/src/pages/implementations/fushi_web_browser_page.dart';
 import 'package:fushi/src/pages/implementations/web_hub_page.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show FushiFloatingChromeInset;
+import 'package:fushi/src/shortcuts/gamepad_service.dart'
+    show GamepadButtonIntent;
+import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart';
 import 'package:fushi/src/utils/components/fushi_desktop_title_bar.dart';
@@ -507,6 +510,88 @@ void main() {
     expect(tester.takeException(), isNull);
   });
 
+  // 回归（反馈 WtYMwfPjpe，Windows）：网页全屏（YouTube 全屏键被截成页内伪全屏）
+  // 收起了浏览器 chrome，但只走了移动端的系统栏隐藏——桌面自绘顶栏没收到，最小化 /
+  // 最大化 / 关闭三枚窗口按钮一直浮在全屏画面右上角。
+  testWidgets('桌面自绘标题栏：网页全屏时窗口按钮随顶栏一起收起，退出 / 离开浏览页还原', (
+    WidgetTester tester,
+  ) async {
+    const MethodChannel windowManager = MethodChannel('window_manager');
+    tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+      windowManager,
+      (MethodCall call) async => call.method.startsWith('is') ? false : null,
+    );
+    final TargetPlatform Function() savedHost =
+        FushiDesktopTitleBar.debugHostPlatform;
+    FushiDesktopTitleBar.debugIsEnabled = true;
+    FushiDesktopTitleBar.debugHostPlatform = () => TargetPlatform.windows;
+    addTearDown(() {
+      tester.binding.defaultBinaryMessenger.setMockMethodCallHandler(
+        windowManager,
+        null,
+      );
+      FushiDesktopTitleBar.debugIsEnabled = false;
+      FushiDesktopTitleBar.debugHostPlatform = savedHost;
+    });
+
+    const Size size = Size(1280, 720);
+    tester.view.physicalSize = size;
+    tester.view.devicePixelRatio = 1;
+    addTearDown(tester.view.reset);
+    await tester.pumpWidget(
+      ProviderScope(
+        overrides: overrides(),
+        child: TranslationProvider(
+          child: MaterialApp(
+            builder: (BuildContext context, Widget? child) =>
+                FushiDesktopTitleBar(
+                  title: const SizedBox.shrink(),
+                  child: child!,
+                ),
+            home: const FushiWebBrowserHomePage(),
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await tester.tap(find.text('Example'));
+    await tester.pumpAndSettle();
+    final FushiWebBrowserPageState state = page(tester);
+    final WebBrowserTab tab = state.tabsController.activeTab!;
+    expect(find.byKey(FushiDesktopTitleBar.closeButtonKey), findsOneWidget);
+    expect(FushiDesktopTitleBar.contentFullscreen.value, isFalse);
+
+    state.onFullscreenChanged(tab, fullscreen: true);
+    await tester.pumpAndSettle();
+    expect(FushiDesktopTitleBar.contentFullscreen.value, isTrue);
+    expect(
+      find.byKey(FushiDesktopTitleBar.closeButtonKey),
+      findsNothing,
+      reason: '网页全屏时窗口按钮不再浮在画面上',
+    );
+    expect(
+      tester.getRect(byKey('stub-webview')),
+      Offset.zero & size,
+      reason: '顶栏收起后网页从窗口顶端铺满整窗',
+    );
+
+    state.onFullscreenChanged(tab, fullscreen: false);
+    await tester.pumpAndSettle();
+    expect(FushiDesktopTitleBar.contentFullscreen.value, isFalse);
+    expect(find.byKey(FushiDesktopTitleBar.closeButtonKey), findsOneWidget);
+
+    // 全屏中直接离开浏览页（不先退全屏）：页面卸载即交还顶栏。
+    state.onFullscreenChanged(tab, fullscreen: true);
+    await tester.pumpAndSettle();
+    expect(find.byKey(FushiDesktopTitleBar.closeButtonKey), findsNothing);
+    Navigator.of(tester.element(byKey('stub-webview'))).pop();
+    await tester.pumpAndSettle();
+    expect(find.byType(FushiWebBrowserPage), findsNothing);
+    expect(FushiDesktopTitleBar.contentFullscreen.value, isFalse);
+    expect(find.byKey(FushiDesktopTitleBar.closeButtonKey), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
   testWidgets('⋯ 菜单里有「退出浏览器」，点了直接回到入口页', (WidgetTester tester) async {
     await pumpApp(
       tester,
@@ -667,6 +752,48 @@ void main() {
     expect(byKey('web-browser-tab-grid'), findsNothing);
     expect(state.tabsController.activeTab, first);
     expect(byKey('stub-webview'), findsOneWidget);
+    expect(tester.takeException(), isNull);
+  });
+
+  // 反馈 wegu0vewts：浏览器快捷键映射只能映射键盘键。webBrowser scope 现在开了手柄
+  // 通道，浏览页根上的 Actions 把 GamepadButtonIntent 按 webBrowser scope 解析；没绑的
+  // 按钮原样往上交（焦点导航 / B 返回不能被这层吞掉）。
+  testWidgets('手柄键：绑到浏览器动作的按钮执行动作，没绑的按钮不消费', (WidgetTester tester) async {
+    expect(
+      ShortcutScope.webBrowser.channels,
+      contains(ShortcutChannel.gamepad),
+    );
+    appModel.shortcutRegistry.loadDefaults(TargetPlatform.android);
+    appModel.shortcutRegistry.updateBinding(
+      ShortcutAction.webBrowserNewTab,
+      const ShortcutBindingSet(
+        gamepadBindings: <GamepadBinding>[GamepadBinding(GamepadButton.rb)],
+      ),
+    );
+    await pumpBrowser(tester, const Size(1280, 720));
+    final FushiWebBrowserPageState state = page(tester);
+    expect(state.tabsController.length, 1);
+
+    final BuildContext focusContext =
+        FocusManager.instance.primaryFocus!.context!;
+    final Object? bound = Actions.maybeInvoke<GamepadButtonIntent>(
+      focusContext,
+      const GamepadButtonIntent(GamepadButton.rb),
+    );
+    await tester.pumpAndSettle();
+    expect(bound, isTrue);
+    expect(state.tabsController.length, 2);
+
+    // 没绑到 webBrowser 的按钮：本层不消费（返回非 true），标签页不变。
+    final BuildContext again = FocusManager.instance.primaryFocus!.context!;
+    final Object? unbound = Actions.maybeInvoke<GamepadButtonIntent>(
+      again,
+      const GamepadButtonIntent(GamepadButton.lt),
+    );
+    await tester.pumpAndSettle();
+    expect(unbound, isNot(true));
+    expect(state.tabsController.length, 2);
+    expect(state.handleGamepadButton(GamepadButton.lt), isFalse);
     expect(tester.takeException(), isNull);
   });
 
@@ -884,6 +1011,56 @@ void main() {
     });
   }
 
+  // 回归（反馈 kd7syQrdFd，iOS）：手机旋转在竖屏底栏壳与横屏顶栏 / 侧边栏壳之间
+  // 切换，曾经两套壳是结构不同的两棵树，标签页的父链一变 WebBrowserTabView 的
+  // State 被销毁重建——真机上 InAppWebView 重建、网页重载、YouTube 播放中断。
+  for (final Size wide in <Size>[const Size(844, 390), const Size(1280, 800)]) {
+    testWidgets(
+      '旋转（窄 ↔ 宽 ${wide.width.toInt()}×${wide.height.toInt()}）不重建标签页 State',
+      (WidgetTester tester) async {
+        FushiWebBrowserPage.debugTabViewBuilder =
+            (BuildContext _, WebBrowserTab tab) => _TabViewStateProbe(
+              key: const ValueKey<String>('stub-webview'),
+              label: 'page ${tab.url}',
+            );
+        const Size narrow = Size(390, 844);
+        await pumpBrowser(tester, narrow);
+        expect(
+          byKey('web-browser-tab-count'),
+          findsOneWidget,
+          reason: '前提：竖屏底栏壳',
+        );
+        final State<StatefulWidget> before = tester.state(
+          byKey('stub-webview'),
+        );
+
+        tester.view.physicalSize = wide;
+        await tester.pumpAndSettle();
+        expect(
+          byKey('web-browser-tab-count'),
+          findsNothing,
+          reason: '前提：已切到宽屏壳',
+        );
+        expect(byKey('web-browser-toolbar'), findsOneWidget);
+        expect(
+          identical(tester.state(byKey('stub-webview')), before),
+          isTrue,
+          reason: '窄 → 宽：标签页是同一个 State，WebView 没有被销毁重建',
+        );
+
+        tester.view.physicalSize = narrow;
+        await tester.pumpAndSettle();
+        expect(byKey('web-browser-tab-count'), findsOneWidget);
+        expect(
+          identical(tester.state(byKey('stub-webview')), before),
+          isTrue,
+          reason: '宽 → 窄：标签页仍是同一个 State',
+        );
+        expect(tester.takeException(), isNull);
+      },
+    );
+  }
+
   testWidgets('标签页网格有普通「新标签页」按钮（Android 不支持无痕时也能新建）', (
     WidgetTester tester,
   ) async {
@@ -977,4 +1154,21 @@ void main() {
     expect(MediaQuery.sizeOf(pageContext).width, closeTo(411, 0.01));
     expect(tester.takeException(), isNull);
   });
+}
+
+/// 代替 WebBrowserTabView 的有状态桩：State 被销毁重建就换成新实例（真机上即
+/// InAppWebView 重建、网页重载）。
+class _TabViewStateProbe extends StatefulWidget {
+  const _TabViewStateProbe({super.key, required this.label});
+
+  final String label;
+
+  @override
+  State<_TabViewStateProbe> createState() => _TabViewStateProbeState();
+}
+
+class _TabViewStateProbeState extends State<_TabViewStateProbe> {
+  @override
+  Widget build(BuildContext context) =>
+      ColoredBox(color: Colors.white, child: Text(widget.label));
 }

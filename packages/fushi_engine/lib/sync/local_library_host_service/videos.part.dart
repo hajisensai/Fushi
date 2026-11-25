@@ -67,6 +67,20 @@ mixin _LocalLibraryHostVideos
         .allVideoTagAddedAtByName();
     final Map<String, Map<String, int>> tagTombByUid = await _db
         .allTagTombstonesByName(MediaKind.video);
+    // 生效分栏（BUG-5084）：与本机合集详情页 / 剧集面板同一入口
+    // （[loadCollectionSections]：手动分栏 → 手动季集指定 → 文件名派生），派生键用
+    // host 的完整路径（季号可能只写在父目录上，client 只拿得到 basename）。两次批量
+    // 查询，与清单行数无关。
+    // 整批派生（[collectionGroupKeysForPaths]）：切了集的原盘上，分集进第 1 季、
+    // 整条标题进 PV·特典（BUG-5391）。
+    final List<String> derivedSections = collectionGroupKeysForPaths(<String>[
+      for (final VideoBookRow row in rows) row.videoPath,
+    ]);
+    final Map<String, CollectionSectionResolution> sections =
+        await loadCollectionSections(_db, <String, String>{
+          for (int i = 0; i < rows.length; i++)
+            rows[i].bookUid: derivedSections[i],
+        });
     // 文件系统事实（体积 / sidecar 字幕 / 封面存在性）一律走 async IO 预取：host 跑在
     // app 主 isolate 上，同步 stat 一个在网络盘（rclone / SMB / WinFsp 挂载）上的视频，
     // 挂载端目录缓存过期时要逐级 PROPFIND 重列目录，单次数秒——整条主 isolate（全部
@@ -96,10 +110,17 @@ mixin _LocalLibraryHostVideos
           prefs: allPrefs,
           tagsAddedAt: tagAddedAtByUid[row.bookUid] ?? const <String, int>{},
           tagTombstones: tagTombByUid[row.bookUid] ?? const <String, int>{},
+          sectionKey: sections[row.bookUid]?.groupKey,
         ),
       );
     }
-    return videos;
+    // 上锁的视频（含在上锁合集里的）标 locked：对端未解锁时不出占位卡。
+    final MediaLockSnapshot locks = await MediaLockSnapshot.load(_db);
+    if (locks.isEmpty) return videos;
+    return <RemoteVideoInfo>[
+      for (final RemoteVideoInfo v in videos)
+        locks.isVideoLocked(v.id) ? v.copyWith(locked: true) : v,
+    ];
   }
 
   /// 预取 [row] 的文件系统事实（全部 async IO，不阻塞调用方 isolate；见 [listVideos]）。
@@ -189,6 +210,7 @@ mixin _LocalLibraryHostVideos
     List<String> tags = const <String>[],
     RemoteCollectionMembership? collection,
     MediaCollectionRow? collectionRow,
+    String? sectionKey,
   }) {
     final int? sizeBytes = fileFacts.sizeBytes;
     final bool hasSubtitle = fileFacts.hasSubtitle;
@@ -196,9 +218,10 @@ mixin _LocalLibraryHostVideos
     final String? fileName = fileFacts.fileName;
     final String? coverPath = fileFacts.coverPath;
     // TODO-653: 把 host 端记录的播放断点带进清单条目，供 client 跨设备恢复。
-    // 语义与 [getVideoPosition]\(id, episodeIndex: 0\) 完全一致：prefs 断点（本机/
-    // 远端播放统一键）与旧 `VideoBooks.lastPositionMs`（时间戳 0）取较新——只是行
-    // 已在手、prefs 已批量预取，不再逐行发查询。
+    // 语义与 [getVideoPosition]\(id, episodeIndex: 0\) 完全一致（同一个
+    // [_hostVideoPositionOf]）：prefs 断点（本机/远端播放统一键）与旧
+    // `VideoBooks.lastPositionMs`（戳取 importedAt）取较新——只是行已在手、prefs 已
+    // 批量预取，不再逐行发查询。
     // 系列级播放偏好（schema v52 同系列共享）：合集成员的无戳基底 = 系列级 ?? 本集
     // row 值（与本机播放页 [effectiveSeriesDelayMs] 同一决议）。此前只读 row，host
     // 在合集里调的轴远端永远看不到。
@@ -271,17 +294,20 @@ mixin _LocalLibraryHostVideos
         ),
       ),
     );
-    final ({int positionMs, int updatedAtMs}) progress = resolvePositionLww(
-      localPositionMs: PrefCodec.decode<int>(
+    // BUG-4430：与 [getVideoPosition] 同一个派生函数（行位置戳取 importedAt），清单、
+    // GET 与 PUT 判定对同一断点给出同一对 (位置, 戳)。整书键与第 0 集键是同一个
+    // （[videoRemotePositionEpisodePrefKey] 对 episodeIndex<=0 回退整书键）。
+    final ({int positionMs, int updatedAtMs}) progress = _hostVideoPositionOf(
+      prefsPositionMs: PrefCodec.decode<int>(
         prefs[videoRemotePositionPrefKey(row.bookUid)] ?? '',
         0,
       ),
-      localUpdatedAtMs: PrefCodec.decode<int>(
+      prefsUpdatedAtMs: PrefCodec.decode<int>(
         prefs[videoRemotePositionAtPrefKey(row.bookUid)] ?? '',
         0,
       ),
-      remotePositionMs: row.lastPositionMs,
-      remoteUpdatedAtMs: 0,
+      rowPositionMs: row.lastPositionMs,
+      rowImportedAtMs: row.importedAt ?? 0,
     );
     // TODO-885: 解析 playlistJson → 远端剧集（只 index+title，绝不带 host path）。
     final List<RemoteVideoEpisode> episodes = _episodesFromRow(row);
@@ -326,7 +352,17 @@ mixin _LocalLibraryHostVideos
       // 给远端占位造假 importedAt，远端条目结构上进不了「最近添加」。
       importedAt: row.importedAt,
       fileName: fileName,
+      sectionKey: sectionKey,
       peerPlayable: _hostServesVideoBytes(row.videoPath),
+      // 流媒体书带上重开信息，对端据此落同 uid 的行（拍板台 Z2OhxAjKVv）。
+      stream:
+          isSyncableStreamVideo(bookUid: row.bookUid, videoPath: row.videoPath)
+          ? RemoteStreamVideoEntry(
+              url: row.videoPath.trim(),
+              streamSpecJson: row.streamSpecJson,
+              addedAt: row.localAddedAt ?? row.importedAt,
+            )
+          : null,
     );
   }
 
@@ -368,8 +404,8 @@ mixin _LocalLibraryHostVideos
     ];
   }
 
-  /// 纯解析 `playlistJson` 为 [PlaylistEntry] 列表（坏 JSON 返回空）。host 端按集反查
-  /// 文件 path 用（[_resolveEpisodeVideoPath]）。
+  /// 纯解析 `playlistJson` 为 [PlaylistEntry] 列表（坏 JSON 返回空）。下标与
+  /// [videoBookEpisodePath]（按集反查文件）一致。
   List<PlaylistEntry> _parsePlaylistEntries(String? playlistJson) {
     if (playlistJson == null || playlistJson.isEmpty) {
       return const <PlaylistEntry>[];
@@ -390,20 +426,17 @@ mixin _LocalLibraryHostVideos
   ///
   /// **DB-only 安全契约**：path 永远来自 host 自己 `playlistJson` 解析，绝不接受外部
   /// 传入。[episodeIndex]<=0 或非播放列表时回退 `videoPath`（当前选中集 / 单视频）。
-  /// 越界 [episodeIndex] 返回 null（安全拒绝）。
+  /// 越界 [episodeIndex] 返回 null（安全拒绝）。判据是 [videoBookEpisodePath]，与
+  /// host 字幕任务按集取文件同一份。
   Future<String?> _resolveEpisodeVideoPath(String id, int episodeIndex) async {
     if (episodeIndex < 0) return null; // 非法下标安全拒绝。
     final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
     if (row == null) return null;
-    // 当前集 / 单视频（episodeIndex==0）：用 row.videoPath，等价旧行为。
-    if (episodeIndex == 0) {
-      return row.videoPath.isEmpty ? null : row.videoPath;
-    }
-    // 播放列表按集：DB 解析 playlistJson，越界安全拒绝。
-    final List<PlaylistEntry> entries = _parsePlaylistEntries(row.playlistJson);
-    if (episodeIndex >= entries.length) return null;
-    final String path = entries[episodeIndex].path;
-    return path.isEmpty ? null : path;
+    return videoBookEpisodePath(
+      videoPath: row.videoPath,
+      playlistJson: row.playlistJson,
+      episodeIndex: episodeIndex,
+    );
   }
 
   /// 按 [id]（即 `VideoBooks.bookUid`）反查真实视频文件。
@@ -502,6 +535,37 @@ mixin _LocalLibraryHostVideos
     return existing == null ? null : File(existing);
   }
 
+  /// 这一集视频旁的全部 sidecar 字幕（[VideoSidecarSubtitleListHost]，反馈
+  /// -CaVsioFhG）：与 [resolveVideoSubtitle] 同一份「这一集是哪个文件」，判据是
+  /// [listSidecarSubtitles]，只留真实存在的普通文件，按文件名（不区分大小写）排序。
+  @override
+  Future<List<File>> listVideoSidecarSubtitles(
+    String id, {
+    int episodeIndex = 0,
+  }) async {
+    final String? videoPath = await _resolveEpisodeVideoPath(id, episodeIndex);
+    if (videoPath == null ||
+        videoPath.isEmpty ||
+        isNetworkOnlyVideoPath(videoPath)) {
+      return const <File>[];
+    }
+    final String dir = p.dirname(videoPath);
+    final List<String>? dirFiles = await _listDirFileNamesAsync(dir);
+    if (dirFiles == null) return const <File>[];
+    final List<String> names = listSidecarSubtitles(
+      p.basenameWithoutExtension(videoPath),
+      dirFiles,
+    )..sort((String a, String b) => a.toLowerCase().compareTo(b.toLowerCase()));
+    final List<File> files = <File>[];
+    for (final String name in names) {
+      final String? existing = await _existingFilePathAsync(
+        p.normalize(p.join(dir, name)),
+      );
+      if (existing != null) files.add(File(existing));
+    }
+    return files;
+  }
+
   /// BUG-1004：host 端本地裁 mining 句子音频（见抽象声明）。用 [resolveVideoFile] 反查真实
   /// 本地文件后调 [extractAudioSegmentViaFfmpeg]（本地路径、不经网络/TLS——绕开 client
   /// ffmpeg 抓 host 自签 https/token 流的整类失败）。裁到独立临时目录，产物返回给调用方，
@@ -520,12 +584,67 @@ mixin _LocalLibraryHostVideos
     if (endMs <= startMs) return null;
     final File? file = await resolveVideoFile(id, episodeIndex: episodeIndex);
     if (file == null) return null;
+    return _clipAudioFrom(
+      file.path,
+      startMs: startMs,
+      endMs: endMs,
+      audioStreamIndex: audioStreamIndex,
+      audioStreamCount: audioStreamCount,
+      audioChannels: audioChannels,
+      audioBitrate: audioBitrate,
+    );
+  }
+
+  /// 远端原盘会话：按（盘, title）裁音频（见 [VideoDiscTitleAudioHost]）。title 的成员
+  /// 路径只由 [id] 那一行自己的盘根拼出（[videoBookDiscTitlePath]），ffmpeg 经蓝光后端
+  /// 按播放列表读盘上的 m2ts，与 [clipVideoAudio] 对蓝光行同一条路。
+  @override
+  Future<File?> clipVideoDiscTitleAudio(
+    String id, {
+    required String discTitle,
+    required int startMs,
+    required int endMs,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  }) async {
+    if (endMs <= startMs) return null;
+    final VideoBookRow? row = await _db.getVideoBookByBookUid(id);
+    if (row == null) return null;
+    final String? path = videoBookDiscTitlePath(
+      videoPath: row.videoPath,
+      discTitle: discTitle,
+    );
+    if (path == null || !await hasLocalMediaFile(path)) return null;
+    return _clipAudioFrom(
+      path,
+      startMs: startMs,
+      endMs: endMs,
+      audioStreamIndex: audioStreamIndex,
+      audioStreamCount: audioStreamCount,
+      audioChannels: audioChannels,
+      audioBitrate: audioBitrate,
+    );
+  }
+
+  /// 把本机媒体 [inputPath] 的 `[startMs, endMs)` 裁进独立临时目录（调用方读完删该
+  /// 目录）；失败清掉临时目录并返回 null。
+  Future<File?> _clipAudioFrom(
+    String inputPath, {
+    required int startMs,
+    required int endMs,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    required int audioChannels,
+    required String audioBitrate,
+  }) async {
     final Directory tmp = await Directory.systemTemp.createTemp(
       'fushi_clip_audio',
     );
     final String out = p.join(tmp.path, 'clip.aac');
     final String? result = await extractAudioSegmentViaFfmpeg(
-      inputPath: file.path,
+      inputPath: inputPath,
       startMs: startMs,
       endMs: endMs,
       outputPath: out,
@@ -611,24 +730,16 @@ mixin _LocalLibraryHostVideos
     final VideoBookRow? row = episodeIndex <= 0
         ? await _db.getVideoBookByBookUid(id)
         : null;
-    final int rowPos = row?.lastPositionMs ?? 0;
-    // BUG-996：lastPositionMs 列无时间戳，此前硬编码 remoteUpdatedAtMs:0，使 host 的真
-    // 进度在跨设备 LWW 里恒输给任何带 now 戳的本地断点（client 一旦碰过就再也拉不回
-    // host 的桌面新进度）。用 importedAt 作「进度至少和导入一样旧」的可辩护下界戳——
-    // client 真更近才看过仍会赢（语义可接受），但 client 无有效断点时 host 能续上。
-    final int rowAt = rowPos > 0 ? (row?.importedAt ?? 0) : 0;
-    return resolvePositionLww(
-      localPositionMs: prefsPos,
-      localUpdatedAtMs: prefsAt,
-      remotePositionMs: rowPos,
-      remoteUpdatedAtMs: rowAt,
+    return _hostVideoPositionOf(
+      prefsPositionMs: prefsPos,
+      prefsUpdatedAtMs: prefsAt,
+      rowPositionMs: row?.lastPositionMs ?? 0,
+      rowImportedAtMs: row?.importedAt ?? 0,
     );
   }
 
-  /// 把 client 上报的 [id] 视频断点写入 host（TODO-653）。
-  ///
-  /// 冲突解决「取较新时间戳」（[resolvePositionLww]）：仅当 [updatedAtMs] 严格
-  /// 新于 host 已存时间戳才覆盖，避免旧设备滞后上报回退新进度。负位置 clamp 0。
+  /// 把 client 上报的 [id] 视频断点写入 host（TODO-653）。旧口径（无前置条件、
+  /// 丢弃回执），等价于 [putVideoPositionChecked]`(expectedPositionsMs: null)`。
   @override
   Future<void> putVideoPosition(
     String id,
@@ -636,33 +747,58 @@ mixin _LocalLibraryHostVideos
     int updatedAtMs, {
     int episodeIndex = 0,
   }) async {
+    await putVideoPositionChecked(
+      id,
+      positionMs,
+      updatedAtMs,
+      episodeIndex: episodeIndex,
+    );
+  }
+
+  /// 带回执与可选前置条件的视频断点写入（BUG-4431，[LivePositionWriteHost]）。判定
+  /// 口径只在 [resolveLivePositionWrite] 一处；host 当前值取 [getVideoPosition]
+  /// （与清单同一派生函数，BUG-4430）。存在性闸门在端点（404），这里不重复。
+  @override
+  Future<LivePositionWriteOutcome> putVideoPositionChecked(
+    String id,
+    int positionMs,
+    int updatedAtMs, {
+    int episodeIndex = 0,
+    List<int>? expectedPositionsMs,
+  }) async {
     // 读-比较-写在同步状态窄锁内（与 [putBookProgress] 同纪律）：两个对端并发上报
     // 不会互相用旧值盖掉对方；不用 _runExclusive，免得排在本机整轮同步后面超时。
     // 同时放进一个 DB 事务（BUG-3537）：本机出站同步落地在事务里比较后写入，这里
     // 的读-比较-写也须原子，否则出站落地插在「读 current」与「写 winner」之间会被
-    // 按旧 current 算出的 winner 盖掉。
+    // 按旧 current 算出的 winner 盖掉。前置条件也在同一事务里比较。
+    late LivePositionWriteOutcome outcome;
     await _runSyncStateExclusive(
       () => _db.transaction(() async {
         final ({int positionMs, int updatedAtMs}) current =
             await getVideoPosition(id, episodeIndex: episodeIndex);
         // BUG-3367：上报戳截到 host 当前时刻 + 余量；已存的超限毒戳按 0 比较以便自愈。
-        final int nowMs = DateTime.now().millisecondsSinceEpoch;
-        final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
-          localPositionMs: current.positionMs,
-          localUpdatedAtMs: trustedStoredSyncStamp(
-            current.updatedAtMs,
-            nowMs: nowMs,
-          ),
-          remotePositionMs: positionMs < 0 ? 0 : positionMs,
-          remoteUpdatedAtMs: capFutureSyncStamp(updatedAtMs, nowMs: nowMs),
+        final ({
+          LiveWriteResult result,
+          ({int positionMs, int updatedAtMs}) next,
+        })
+        decision = resolveLivePositionWrite(
+          current: current,
+          positionMs: positionMs,
+          updatedAtMs: updatedAtMs,
+          expectedPositionsMs: expectedPositionsMs,
+          nowMs: DateTime.now().millisecondsSinceEpoch,
         );
-        if (winner.updatedAtMs == current.updatedAtMs &&
-            winner.positionMs == current.positionMs) {
-          return; // host 已存更新或相等，no-op。
+        if (decision.result == LiveWriteResult.applied) {
+          await _writeVideoPositionWinner(id, episodeIndex, decision.next);
         }
-        await _writeVideoPositionWinner(id, episodeIndex, winner);
+        outcome = LivePositionWriteOutcome(
+          result: decision.result,
+          positionMs: decision.next.positionMs,
+          updatedAtMs: decision.next.updatedAtMs,
+        );
       }),
     );
+    return outcome;
   }
 
   Future<void> _writeVideoPositionWinner(
@@ -919,7 +1055,7 @@ mixin _LocalLibraryHostVideos
     _assertSafeVideoId(id);
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) throw VideoScrapeMaintenanceActiveError();
     try {
       await _runExclusive(
         () => VideoCoverMutationGate.runExclusive(() async {
@@ -1043,6 +1179,51 @@ mixin _LocalLibraryHostVideos
     }
   }
 
+  /// 收下对端注册的流媒体书（[StreamVideoSyncHost]，拍板台 Z2OhxAjKVv）。
+  ///
+  /// 只建行、不碰任何视频字节：URL + 重开规格 + 标题。host 已有同 uid 的行一律不动
+  /// （host 的标题 / 封面 / 进度是它自己的真相）。删除墓碑闸门在端点（409），这里
+  /// 不重复；新建的行经 `upsertVideoBook` 清掉同 uid 的旧墓碑——端点已确认这是删除
+  /// 之后的重新加入。YouTube 行随后尽力补一张缩略图封面，失败只是没封面。
+  @override
+  Future<bool> registerStreamVideo(
+    String id,
+    StreamVideoRegistration entry,
+  ) async {
+    if (!isSyncableStreamVideo(bookUid: id, videoPath: entry.url)) {
+      throw ArgumentError.value(id, 'id', 'not a syncable stream video');
+    }
+    bool created = false;
+    await _runExclusive(() async {
+      if (await _db.getVideoBookByBookUid(id) != null) return;
+      await _db.upsertVideoBook(
+        streamVideoRowCompanion(
+          bookUid: id,
+          title: entry.title,
+          url: entry.url,
+          streamSpecJson: entry.streamSpecJson,
+          importedAt: entry.importedAt,
+          nowMs: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      created = true;
+    });
+    if (created) {
+      try {
+        await backfillStreamVideoThumbnailCover(
+          _db,
+          bookUid: id,
+          url: entry.url,
+          coversDir: _videoCoversDirectory ?? await VideoStorage.coversDir(),
+        );
+      } catch (error, stack) {
+        // best-effort：封面失败不影响注册成功。
+        engineLog.log('sync.streamVideo.cover', error, stack);
+      }
+    }
+    return created;
+  }
+
   /// 接收 client 上传的视频外挂字幕并落到视频同目录（BUG-964，client→host live push）。
   ///
   /// 落盘名 = `<host 视频文件 stem><suffix>`，与 [resolveVideoSubtitle] 的同 stem
@@ -1064,7 +1245,11 @@ mixin _LocalLibraryHostVideos
     }
     await _runExclusive(() async {
       final VideoBookRow row = await _videoRowWithLocalFile(id);
-      await _placeVideoSubtitleSidecar(subtitleFile, row: row, suffix: suffix);
+      await _placeVideoSubtitleSidecar(
+        subtitleFile,
+        row: row,
+        suffix: await _ownedSidecarSuffixFor(row.videoPath, suffix),
+      );
     });
   }
 
@@ -1074,8 +1259,12 @@ mixin _LocalLibraryHostVideos
     File subtitleFile, {
     required String id,
     required String format,
+    int episodeIndex = 0,
   }) async {
     _assertSafeVideoId(id);
+    if (episodeIndex < 0) {
+      throw ArgumentError.value(episodeIndex, 'episodeIndex', 'negative');
+    }
     final String? suffix = defaultSidecarSubtitleSuffix(
       format,
       langCode: _videoSubtitleLangCode,
@@ -1083,12 +1272,62 @@ mixin _LocalLibraryHostVideos
     if (suffix == null) {
       throw ArgumentError.value(format, 'format', 'not a subtitle format');
     }
+    // 实际落盘后缀：名字会被同目录 stem 更长的视频认领时省掉语言标记
+    // （[_ownedSidecarSuffixFor]），回给 client 的是这个。
+    String placed = suffix;
     await _runExclusive(() async {
       final VideoBookRow row = await _videoRowWithLocalFile(id);
-      await _displaceSidecarsFor(row.videoPath, suffix);
-      await _placeVideoSubtitleSidecar(subtitleFile, row: row, suffix: suffix);
+      if (episodeIndex == 0) {
+        placed = await _ownedSidecarSuffixFor(row.videoPath, suffix);
+        await _displaceSidecarsFor(row.videoPath, placed);
+        await _placeVideoSubtitleSidecar(
+          subtitleFile,
+          row: row,
+          suffix: placed,
+        );
+        return;
+      }
+      // 播放列表第 N 集：落到那一集文件旁。行上的 `subtitleSource` / cue 属于第 0 集
+      // （[resolveVideoSubtitle] 只对第 0 集读它），这里不碰；第 N 集的默认字幕由
+      // sidecar 优先级决定，让位规则与第 0 集相同。
+      final String? episodePath = videoBookEpisodePath(
+        videoPath: row.videoPath,
+        playlistJson: row.playlistJson,
+        episodeIndex: episodeIndex,
+      );
+      if (episodePath == null ||
+          lacksLocalMediaFile(episodePath) ||
+          await _existingFilePathAsync(episodePath) == null) {
+        throw StateError('video $id has no local episode $episodeIndex');
+      }
+      placed = await _ownedSidecarSuffixFor(episodePath, suffix);
+      await _displaceSidecarsFor(episodePath, placed);
+      await _moveFileInto(
+        subtitleFile,
+        File(
+          p.join(
+            p.dirname(episodePath),
+            '${p.basenameWithoutExtension(episodePath)}$placed',
+          ),
+        ),
+      );
     });
-    return suffix;
+    return placed;
+  }
+
+  /// [videoPath] 旁落一份后缀 [suffix] 的 sidecar 实际该用的后缀：与播放器选字幕
+  /// 同一条「最长主干认领」（[ownedSidecarSuffix]）——`<stem><suffix>` 会被同目录
+  /// stem 更长的视频认领时省掉语言标记，不把字幕落成别的视频的。目录读不了按原样。
+  Future<String> _ownedSidecarSuffixFor(String videoPath, String suffix) async {
+    final List<String>? names = await _listDirFileNamesAsync(
+      p.dirname(videoPath),
+    );
+    if (names == null) return suffix;
+    return ownedSidecarSuffix(
+      p.basenameWithoutExtension(videoPath),
+      suffix,
+      names,
+    );
   }
 
   /// 清掉视频字幕（[VideoSubtitleClearHost]）。
@@ -1224,7 +1463,9 @@ mixin _LocalLibraryHostVideos
     return row;
   }
 
-  /// 把会压过（或同名覆盖）[suffix] 的旧 sidecar 改名成 `<原名>.fushi-bak`。
+  /// 把会压过（或同名覆盖）[suffix] 的旧 sidecar 改名成 `<原名>.fushi-bak`。只动
+  /// 归这个视频的（[listSidecarSubtitles]，「最长主干认领」）：同目录 stem 更长的
+  /// 视频认领的同名字幕是人家的，不碰。
   /// 备份名已被占用说明原始文件早就备份过，眼前这份是之前某次上传的产物，直接删。
   /// 全程 async IO：视频目录常在网络盘上（BUG-3756）。
   Future<void> _displaceSidecarsFor(String videoPath, String suffix) async {
@@ -1246,8 +1487,15 @@ mixin _LocalLibraryHostVideos
     } on FileSystemException {
       return;
     }
+    final Set<String> owned = listSidecarSubtitles(
+      p.basenameWithoutExtension(videoPath),
+      <String>[for (final File f in siblings) p.basename(f.path)],
+    ).map((String n) => n.toLowerCase()).toSet();
     for (final File f in siblings) {
-      if (!displaced.contains(p.basename(f.path).toLowerCase())) continue;
+      final String nameLower = p.basename(f.path).toLowerCase();
+      if (!displaced.contains(nameLower) || !owned.contains(nameLower)) {
+        continue;
+      }
       final File backup = File('${f.path}$kDisplacedSidecarBackupSuffix');
       if (await backup.exists()) {
         await f.delete();
@@ -1284,7 +1532,7 @@ mixin _LocalLibraryHostVideos
         .toLowerCase();
     List<AudioCue> cues = const <AudioCue>[];
     try {
-      cues = parseSubtitleCues(
+      cues = await parseSubtitleCues(
         content: await readTextWithEncoding(File(preferred)),
         format: ext,
         bookUid: id,
@@ -1307,6 +1555,25 @@ mixin _LocalLibraryHostVideos
     }
   }
 }
+
+/// host 视频播放断点的唯一派生口径（BUG-4430）：清单条目、`GET .../position` 与
+/// `PUT .../position` 的判定都经它，同一条视频永远给出同一对 (位置, 戳)。
+///
+/// prefs 断点（本机 / 远端播放统一键）与旧 `VideoBooks.lastPositionMs` 经
+/// [resolvePositionLww] 取较新。BUG-996：行位置列无时间戳，用 importedAt 作「进度至少
+/// 和导入一样旧」的下界戳——client 真更近才看过仍会赢，但 client 无有效断点时 host
+/// 能续上；行位置为 0 时戳也记 0。
+({int positionMs, int updatedAtMs}) _hostVideoPositionOf({
+  required int prefsPositionMs,
+  required int prefsUpdatedAtMs,
+  required int rowPositionMs,
+  required int rowImportedAtMs,
+}) => resolvePositionLww(
+  localPositionMs: prefsPositionMs,
+  localUpdatedAtMs: prefsUpdatedAtMs,
+  remotePositionMs: rowPositionMs,
+  remoteUpdatedAtMs: rowPositionMs > 0 ? rowImportedAtMs : 0,
+);
 
 /// [clipVideoAudio] 的 ffmpeg 超时：句子片段沿用 120s；整集音轨（client 远端对轴 /
 /// 重定时拉整条音轨）按「至少 10 倍速转码」放大，两小时电影给到 12 分钟。

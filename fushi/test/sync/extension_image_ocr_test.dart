@@ -21,8 +21,13 @@ import 'package:fushi/src/sync/extension_image_ocr_service.dart';
 import 'package:fushi/src/sync/fushi_extension_api_core.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_messages.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
+import 'package:image/image.dart' as img;
 
 final Uint8List _png = Uint8List.fromList(<int>[0x89, 0x50, 0x4E, 0x47, 1, 2]);
+
+/// 能真解开的截图（识别服务先把它解成像素）。
+final Uint8List _decodablePng = img.encodePng(img.Image(width: 8, height: 6));
 
 GraphicSubtitleOcrFrame _frame() => const GraphicSubtitleOcrFrame(
   imageSize: Size(800, 600),
@@ -41,8 +46,15 @@ class _FakeRecognizer implements MangaStreamPageRecognizer {
   bool closed = false;
 
   @override
-  Future<MokuroImage> recognize(File pageFile) async {
-    expect(pageFile.existsSync(), isTrue, reason: '截图应落成文件交给页级识别');
+  Future<MokuroImage> recognize(File pageFile) =>
+      throw StateError('截图解成像素交给引擎，不再落盘');
+
+  @override
+  Future<MokuroImage> recognizePixels(
+    OcrRgbaImage image, {
+    required String url,
+  }) async {
+    expect((image.width, image.height), (8, 6), reason: '截图应解成原尺寸像素');
     calls++;
     return MokuroImage(
       url: 'frame.png',
@@ -239,17 +251,19 @@ void main() {
         configKey: () => 'k',
       );
       await expectLater(
-        service.recognize(_png),
+        service.recognize(_decodablePng),
         throwsA(isA<GraphicSubtitleOcrUnavailable>()),
       );
-      final GraphicSubtitleOcrFrame frame = await service.recognize(_png);
+      final GraphicSubtitleOcrFrame frame = await service.recognize(
+        _decodablePng,
+      );
       expect(prepares, 2);
       expect(
         frame.chars.map((GraphicSubtitleOcrChar c) => c.sentence).toSet(),
         <String>{'猫である'},
       );
       // 同一设置下复用会话：引擎只解析一次。
-      await service.recognize(_png);
+      await service.recognize(_decodablePng);
       expect(prepares, 2);
       expect(recognizer.calls, 2);
       await service.close();
@@ -269,9 +283,9 @@ void main() {
         },
         configKey: () => key,
       );
-      await service.recognize(_png);
+      await service.recognize(_decodablePng);
       key = 'b';
-      await service.recognize(_png);
+      await service.recognize(_decodablePng);
       expect(prepares, 2);
       expect(made.first.closed, isTrue, reason: '换会话前要先关旧会话，免得两份模型同时常驻');
       await service.close();

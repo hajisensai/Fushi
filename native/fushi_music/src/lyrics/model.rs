@@ -153,6 +153,8 @@ pub struct Line {
     pub romanization: Option<String>,
     /// 来自 ASS 时的样式名（原样渲染用的样式指针）。
     pub style: Option<String>,
+    /// 来源标注的段落（Apple TTML `<div itunes:song-part="Verse|Chorus|…">`，原样保留）。
+    pub song_part: Option<String>,
 }
 
 impl Line {
@@ -207,6 +209,9 @@ pub struct Meta {
     pub is_user_edited: bool,
     /// ASS 里检测到 `\t` `\move` `\clip` 等特效 / templater 产物：推荐原样渲染（§6.3）。
     pub has_effects: bool,
+    /// 来源自带注音轨（QRC `[kana:]`），但和正文对不上、整首没挂：界面据此提示「注音对不上，
+    /// 已隐藏」，免得用户以为这首歌本来就没注音（拍板台 left3645 方案 B）。
+    pub ruby_dropped: bool,
     pub title: Option<String>,
     pub artist: Option<String>,
 }

@@ -24,6 +24,7 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsFieldDef, SrsNoteTypeView;
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi/src/anki/anki_backup_word_reader.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_dialogs.dart';
@@ -54,6 +55,8 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
+import 'package:fushi/src/mining/gal_mining_settings_text.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
 import 'package:fushi/src/mining/sentence_audio_source_text.dart';
 import 'package:fushi_engine/mining/sentence_audio_source.dart'
@@ -61,16 +64,13 @@ import 'package:fushi_engine/mining/sentence_audio_source.dart'
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/profile/profile_selector.dart';
-import 'package:fushi/src/settings/settings_schema_widgets.dart'
-    show SettingsSectionFooter;
 import 'package:fushi/src/settings/settings_search.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart'
     show kSrsBuiltinFushiCardKey, srsBuiltinNoteTypeSpec;
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart'
     show openSrsCardAppearancePage;
 import 'package:fushi/src/pages/implementations/srs/srs_note_type_editor_page.dart';
-import 'package:fushi/src/srs/srs_mining.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 
 enum AnkiSettingsPanel { connection, lapis, maintenance, fields, media }
@@ -80,9 +80,6 @@ enum AnkiSettingsPanel { connection, lapis, maintenance, fields, media }
 /// `SettingsCustomItem.rows` 逐行渲染（每行一个 [AnkiSettingsBody]，与同组的子页
 /// 入口行同一分段规则）；哪些行出现由 schema 侧的 `ankiSectionRowsFor` 决定。
 enum AnkiSectionRow {
-  /// 「制卡到 Fushi 互联服务端」：与互联设置里那一项同一个偏好。开着时卡片落在
-  /// 服务端的 Anki，本机的牌组 / 笔记类型不参与——所以排在「Anki」分组第一行。
-  mineToServer,
   profile,
   fetch,
   createLapis,
@@ -131,16 +128,6 @@ class AnkiSettingsBody extends ConsumerStatefulWidget {
   @override
   ConsumerState<AnkiSettingsBody> createState() => _AnkiSettingsBodyState();
 }
-
-/// 片段格式选项的文案。五端随包的统一 FFmpeg（tool/ffmpeg-unified）都带 libvpx-vp9 +
-/// SVT-AV1 + libopus，三档在各端都编得出；[MiningClipFormat.encodeAttempts] 的降级只给
-/// 用户自带的外部 ffmpeg 兜底。
-@visibleForTesting
-String miningClipFormatLabel(MiningClipFormat format) => switch (format) {
-  MiningClipFormat.webmVp9 => t.mining_clip_format_webm_vp9,
-  MiningClipFormat.webmAv1 => t.mining_clip_format_webm_av1,
-  MiningClipFormat.mp4H264 => t.mining_clip_format_mp4_h264,
-};
 
 class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   AppModel get appModel => ref.watch(appProvider);
@@ -293,29 +280,19 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          // 挖词目标：与「下载」的后端选择同一形态——一个分组、一条分段条，脚注说明
-          // 当前目标；选中哪个，下面才展开哪个的设置。
+          // 挖词目标：与「下载」的引擎选择同一形态——一个分组、一条分段行，说明随
+          // 当前目标变化、在卡片内；选中哪个，下面才展开哪个的设置。
           enter(
             'card_section_target',
-            Column(
-              mainAxisSize: MainAxisSize.min,
-              crossAxisAlignment: CrossAxisAlignment.stretch,
+            AdaptiveSettingsSection(
+              title: t.settings_card_creation_section_destination,
               children: <Widget>[
-                AdaptiveSettingsSection(
-                  title: t.srs_mining_target_title,
-                  children: <Widget>[
-                    SettingsSearchTarget(
-                      id: 'card_creation.anki.srs_mining_target',
-                      child: _buildMiningTargetStrip(
-                        tokens,
-                        srsEnabled: srsEnabled,
-                        toReview: toReview,
-                      ),
-                    ),
-                  ],
-                ),
-                SettingsSectionFooter(
-                  toReview ? t.card_target_srs_hint : t.card_target_anki_hint,
+                SettingsSearchTarget(
+                  id: 'card_creation.anki.srs_mining_target',
+                  child: _buildMiningTargetRow(
+                    srsEnabled: srsEnabled,
+                    toReview: toReview,
+                  ),
                 ),
               ],
             ),
@@ -360,39 +337,34 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
 
   /// 挖词目标分段条（Fushi 复习 / Anki）。复习模块关着时选「Fushi 复习」先确认一次：
   /// 开模块 + 改目标（[_enableFushiReview]）；取消则仍是 Anki。
-  Widget _buildMiningTargetStrip(
-    FushiDesignTokens tokens, {
+  Widget _buildMiningTargetRow({
     required bool srsEnabled,
     required bool toReview,
   }) {
-    return Padding(
-      padding: EdgeInsets.symmetric(
-        horizontal: tokens.spacing.rowHorizontal,
-        vertical: tokens.spacing.gap,
-      ),
-      child: FushiSegmentedStrip<SrsMiningTarget>(
-        key: const ValueKey<String>('card-target-switch'),
-        segments: <ButtonSegment<SrsMiningTarget>>[
-          ButtonSegment<SrsMiningTarget>(
-            value: SrsMiningTarget.srs,
-            icon: const Icon(FushiIcons.repeat),
-            label: Text(t.srs_mining_target_srs),
-          ),
-          ButtonSegment<SrsMiningTarget>(
-            value: SrsMiningTarget.anki,
-            icon: const Icon(FushiIcons.ankiCard),
-            label: Text(t.srs_mining_target_anki),
-          ),
-        ],
-        selected: toReview ? SrsMiningTarget.srs : SrsMiningTarget.anki,
-        onChanged: (SrsMiningTarget target) {
-          if (target == SrsMiningTarget.srs && !srsEnabled) {
-            unawaited(_enableFushiReview());
-            return;
-          }
-          unawaited(ref.read(appProvider).setSrsMiningTarget(target));
-        },
-      ),
+    return AdaptiveSettingsSegmentedRow<SrsMiningTarget>(
+      key: const ValueKey<String>('card-target-switch'),
+      title: t.card_target_destination_title,
+      subtitle: toReview ? t.card_target_srs_hint : t.card_target_anki_hint,
+      segments: <ButtonSegment<SrsMiningTarget>>[
+        ButtonSegment<SrsMiningTarget>(
+          value: SrsMiningTarget.srs,
+          icon: const Icon(FushiIcons.repeat),
+          label: Text(t.srs_mining_target_srs),
+        ),
+        ButtonSegment<SrsMiningTarget>(
+          value: SrsMiningTarget.anki,
+          icon: const Icon(FushiIcons.ankiCard),
+          label: Text(t.srs_mining_target_anki),
+        ),
+      ],
+      selected: toReview ? SrsMiningTarget.srs : SrsMiningTarget.anki,
+      onChanged: (SrsMiningTarget target) {
+        if (target == SrsMiningTarget.srs && !srsEnabled) {
+          unawaited(_enableFushiReview());
+          return;
+        }
+        unawaited(ref.read(appProvider).setSrsMiningTarget(target));
+      },
     );
   }
 
@@ -420,21 +392,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
   ) {
     final AnkiSettings settings = uiState.settings;
     return switch (row) {
-      // 与互联设置里的同一个开关（id 不同：那边是 interconnect.mine_to_server）。
-      AnkiSectionRow.mineToServer => SettingsSearchTarget(
-        id: 'card_creation.anki.mine_to_server',
-        child: AdaptiveSettingsSwitchRow(
-          icon: FushiIcons.devices,
-          showIcon: true,
-          title: t.anki_mine_to_server,
-          subtitle: t.anki_mine_to_server_hint,
-          value: appModel.mineToServerEnabled,
-          onChanged: (bool value) async {
-            await appModel.setMineToServer(value);
-            if (mounted) setState(() {});
-          },
-        ),
-      ),
       // showIcon 与同组的刷新 / Lapis 行一致，左栏图标对齐。
       AnkiSectionRow.profile => SettingsSearchTarget(
         id: 'card_creation.anki.profile',
@@ -675,9 +632,12 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     // 内置类型（Lapis、Fushi 卡片）恒用各自的默认映射，不给逐字段改。
     final bool builtinMapping =
         noteType == null || srsBuiltinNoteTypeSpec(noteType.builtinKey) != null;
+    // 按换成规范 ID 的落点查（G9-6，解析落点时已归一）：偏好里可能还是成员 ID 键（作品级覆盖层、开库归一之前），
+    // 拿规范的 type.id 去查原样的偏好会显示按字段名猜的映射。
     final Map<String, String>? stored = builtinMapping
         ? null
-        : appModel.srsMiningDestination.fieldMappingsByType[noteType.id];
+        : (resolved.destination ?? appModel.srsMiningDestination)
+              .fieldMappingsByType[noteType.id];
     final Map<String, String> mappings = builtinMapping
         ? const <String, String>{}
         : srsEffectiveFieldMappings(noteType, stored);
@@ -1231,6 +1191,20 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             },
           ),
         ),
+        // 反馈 d7mXlstcv9：句子音频跟随播放音量（歌曲 ReplayGain + 音量、有声书音量）。
+        SettingsSearchTarget(
+          id: 'card_creation.anki.mining_audio_follow_playback_volume',
+          child: AdaptiveSettingsSwitchRow(
+            title: t.mining_audio_follow_playback_volume,
+            subtitle: t.mining_audio_follow_playback_volume_hint,
+            icon: FushiIcons.volumeUp,
+            value: appModel.miningAudioFollowPlaybackVolume,
+            onChanged: (bool value) {
+              appModel.toggleMiningAudioFollowPlaybackVolume();
+              setState(() {});
+            },
+          ),
+        ),
         // 反馈 pNF2ZL7Kfc：视频卡句子音频从哪里取（当前播放音轨 / 中置声道 / 指定音轨）。
         SettingsSearchTarget(
           id: 'card_creation.anki.video_mining_audio_source',
@@ -1289,6 +1263,16 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           SettingsSearchTarget(
             id: 'card_creation.anki.gal_mining_still_format',
             child: _buildGalMiningStillFormatPicker(),
+          ),
+          // 反馈 II3jOBIhT5：无配音游戏截到的只有 BGM，可限长 / 定长 / 不截。
+          // 秒数行常显（理由同上面按模式不抽行的守卫约定），说明里写清只对两档生效。
+          SettingsSearchTarget(
+            id: 'card_creation.anki.gal_mining_audio_mode',
+            child: _buildGalMiningAudioModePicker(),
+          ),
+          SettingsSearchTarget(
+            id: 'card_creation.anki.gal_mining_audio_seconds',
+            child: _buildGalMiningAudioSecondsSlider(),
           ),
         ],
       ],
@@ -1443,9 +1427,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     );
   }
 
-  /// 在线视频（媒体服务器 / 在线源扩展等网络流）点制卡后弹窗等不等：后台（默认）/
-  /// 看完再制卡 / 等待完成。副标题随选中项说明取舍，透传
-  /// [AppModel.videoOnlineMiningMode]。本地视频不受影响（恒等待，本来就秒出）。
+  /// 在线视频（媒体服务器 / 在线源扩展等网络流）点制卡后卡往哪去：后台写入（默认）/
+  /// 看完再制卡。弹窗不陪等（反馈 OeS0m8tLHc 删了「等待完成」档）。副标题随选中项说明
+  /// 取舍，透传 [AppModel.videoOnlineMiningMode]。本地视频恒后台写入，不受影响。
   Widget _buildVideoOnlineMiningModePicker() {
     final VideoOnlineMiningMode mode = appModel.videoOnlineMiningMode;
     return AdaptiveSettingsPickerRow<VideoOnlineMiningMode>(
@@ -1455,7 +1439,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           t.video_online_mining_mode_background_hint,
         VideoOnlineMiningMode.deferred =>
           t.video_online_mining_mode_deferred_hint,
-        VideoOnlineMiningMode.wait => t.video_online_mining_mode_wait_hint,
       },
       icon: FushiIcons.cloudDownload,
       controlBelow: true,
@@ -1468,10 +1451,6 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         AdaptiveSettingsPickerOption<VideoOnlineMiningMode>(
           value: VideoOnlineMiningMode.deferred,
           label: t.video_online_mining_mode_deferred,
-        ),
-        AdaptiveSettingsPickerOption<VideoOnlineMiningMode>(
-          value: VideoOnlineMiningMode.wait,
-          label: t.video_online_mining_mode_wait,
         ),
       ],
       onChanged: (VideoOnlineMiningMode value) async {
@@ -1664,6 +1643,50 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     selected: appModel.galMiningClipFormat,
     onChanged: appModel.setGalMiningClipFormat,
   );
+
+  /// galgame 制卡句子音频长度策略（全局默认；单游戏在游戏详情页「本游戏制卡设置」
+  /// 覆盖）。选项文案与详情页共用 [galMiningAudioModeLabel]。
+  Widget _buildGalMiningAudioModePicker() {
+    return AdaptiveSettingsPickerRow<GalMiningAudioMode>(
+      title: t.gal_mining_audio_mode,
+      subtitle: t.gal_mining_audio_mode_hint,
+      icon: FushiIcons.audio,
+      controlBelow: true,
+      selected: appModel.galMiningAudioMode,
+      options: <AdaptiveSettingsPickerOption<GalMiningAudioMode>>[
+        for (final GalMiningAudioMode mode in GalMiningAudioMode.values)
+          AdaptiveSettingsPickerOption<GalMiningAudioMode>(
+            value: mode,
+            label: galMiningAudioModeLabel(mode),
+          ),
+      ],
+      onChanged: (GalMiningAudioMode mode) async {
+        await appModel.setGalMiningAudioMode(mode);
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  Widget _buildGalMiningAudioSecondsSlider() {
+    final int seconds = appModel.galMiningAudioSeconds;
+    final String readout = t.gal_mining_audio_seconds_readout(seconds: seconds);
+    return AdaptiveSettingsSliderRow(
+      title: t.gal_mining_audio_seconds,
+      subtitle: t.gal_mining_audio_seconds_hint,
+      icon: FushiIcons.timer,
+      value: seconds.toDouble(),
+      min: kGalMiningAudioSecondsMin.toDouble(),
+      max: kGalMiningAudioSecondsMax.toDouble(),
+      divisions: kGalMiningAudioSecondsMax - kGalMiningAudioSecondsMin,
+      step: 1,
+      label: readout,
+      readout: readout,
+      onChanged: (double value) async {
+        await appModel.setGalMiningAudioSeconds(value.round());
+        if (mounted) setState(() {});
+      },
+    );
+  }
 
   Widget _buildAnkiBackupImportRow() {
     return AdaptiveSettingsRow(
@@ -1905,6 +1928,7 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
           // 「让 AI 帮忙」的提供商按功能指派解析；编辑器本身零 Riverpod 依赖，
           // 所以在这里读偏好再传进去。
           aiEnabled: isAiModuleEnabled(ref.read(appProvider).moduleVisibility),
+          savedPromptStoreOf: () => ref.read(appProvider).prefsRepo,
           resolveAiProvider: () {
             final PreferencesRepository prefs = ref.read(appProvider).prefsRepo;
             return prefs.aiFeatureAssignments.resolve(
@@ -2451,6 +2475,9 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
     // 隐藏没被用到的旧别名；当前字段正用着的旧别名仍会出现（并标「已弃用」）。
     final options = AnkiHandlebarOptions.optionsForField(
       dictionaryNames: dictionaryNames,
+      frequencyDictionaryNames: appModel.dictRepo.freqDictionaries
+          .map((d) => d.name)
+          .toList(),
       currentValue: currentValue,
     );
 
@@ -2674,6 +2701,8 @@ String _ankiHandlebarBaseLabel(String option) {
       return t.handlebar_frequency_harmonic_rank;
     case '{pitch-accent-positions}':
       return t.handlebar_pitch_accent_positions;
+    case '{pitch-accent-positions-inline}':
+      return t.handlebar_pitch_accent_positions_inline;
     case '{pitch-accent-categories}':
       return t.handlebar_pitch_accent_categories;
     case '{phonetic-transcriptions}':

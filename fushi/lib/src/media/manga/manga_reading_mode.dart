@@ -62,6 +62,17 @@ extension MangaReadingModeSemantics on MangaReadingMode {
 /// auto-detected as webtoon strips; otherwise spread. Initial value 2.0.
 const double kWebtoonAspectThreshold = 2.0;
 
+/// 单页是否「条漫长条」：`height / width` 严格大于 [kWebtoonAspectThreshold]
+/// （与整卷自动判定 [detectReadingMode] 同一阈值）。按**页面形状**判，不按阅读
+/// 模式判——普通分镜漫画用 webtoon 模式读时，每一页仍是有分镜格的普通页。
+///
+/// 宽或高非正（缺尺寸的在线页占位）一律判 false：当普通页处理，交给分镜检测自己
+/// 判定可不可用（不可用即整页），不因一条坏数据关掉分镜。
+bool isMangaStripPage({required double width, required double height}) {
+  if (width <= 0 || height <= 0) return false;
+  return height / width > kWebtoonAspectThreshold;
+}
+
 /// Auto-detect the reading mode from mokuro-reported page dimensions.
 ///
 /// Takes the median of every page's `img_height / img_width` ratio (using the

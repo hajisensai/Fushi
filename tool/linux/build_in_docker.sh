@@ -63,6 +63,7 @@ run_args=(
   --rm -i
   --cpus "$CPUS" --memory "$MEMORY"
   -e FUSHI_SOURCE_COMMIT="$commit"
+  -e FUSHI_BUILD_NAME -e FUSHI_BUILD_NUMBER
   -v "$SRC_VOL:/src"
   -v fushi-linux-pub:/root/.pub-cache
   -v fushi-linux-cargo-registry:/opt/cargo/registry

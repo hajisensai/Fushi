@@ -1,5 +1,6 @@
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 
+import 'package:fushi/src/shortcuts/directional_page_turn.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 
@@ -58,28 +59,36 @@ ShortcutAction? resolveReaderArrowPageTurn({
   bool reverse = false,
 }) {
   if (modifiers.isNotEmpty) return null;
-  final bool leftIsForward = rtl ^ reverse;
-  final bool isLeft = key == LogicalKeyboardKey.arrowLeft;
-  final bool isRight = key == LogicalKeyboardKey.arrowRight;
-  // 阅读方向校正只接管「出厂的物理方向绑定」：左 = 后退、右 = 前进（见
-  // shortcut_defaults.dart）。用户把该键改绑成别的动作、解绑，或改成**相反**的
-  // 翻页方向，都是明确意图 → 不覆写，交回注册表解析真实绑定。此前只判「是不是
-  // 翻页动作」，把右键绑成「上一页」照样被按阅读方向改回「下一页」（反馈 aiRZmYl5zS）。
-  final ShortcutAction factoryBinding = isLeft
-      ? ShortcutAction.readerPageBackward
-      : ShortcutAction.readerPageForward;
-  if ((!isLeft && !isRight) || boundAction != factoryBinding) return null;
-  if (isLeft) {
-    return leftIsForward
-        ? ShortcutAction.readerPageForward
-        : ShortcutAction.readerPageBackward;
-  }
-  if (isRight) {
-    return leftIsForward
-        ? ShortcutAction.readerPageBackward
-        : ShortcutAction.readerPageForward;
-  }
-  return null;
+  // 出厂绑定判据、`rtl ^ reverse` 与漫画共用同一原语（反馈 uz_2m0E_Eu）。
+  return resolveDirectionalPageTurn(
+    side: directionalPageTurnSideForKey(key),
+    boundAction: boundAction,
+    forward: ShortcutAction.readerPageForward,
+    backward: ShortcutAction.readerPageBackward,
+    rtl: rtl,
+    reverse: reverse,
+  );
+}
+
+/// 小说阅读器手柄 D-pad 左 / 右跟随阅读方向——[resolveReaderArrowPageTurn] 的手柄
+/// 同构，与漫画 `resolveMangaDpadPageTurn` 走同一原语（反馈 uz_2m0E_Eu）。
+///
+/// 此前小说的手柄路径直接按注册表执行，竖排（vertical-rl）书里 D-pad 左是「上一页」，
+/// 而同一本书的键盘左键、同一个手柄在日漫里的 D-pad 左都是「下一页」。只接管出厂
+/// 绑定（D-pad 左 = 后退、右 = 前进），用户改绑后让路。「反转方向键翻页」开关只管
+/// 键盘（TODO-120 定义），不传 reverse。
+ShortcutAction? resolveReaderDpadPageTurn({
+  required GamepadButton button,
+  required bool rtl,
+  required ShortcutAction? boundAction,
+}) {
+  return resolveDirectionalPageTurn(
+    side: directionalPageTurnSideForGamepad(button),
+    boundAction: boundAction,
+    forward: ShortcutAction.readerPageForward,
+    backward: ShortcutAction.readerPageBackward,
+    rtl: rtl,
+  );
 }
 
 /// 触摸 / 鼠标滑动翻页方向必须跟随书写方向（横排 LTR 与竖排 vertical-rl 相反），

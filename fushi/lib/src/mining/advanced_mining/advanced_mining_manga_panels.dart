@@ -39,7 +39,10 @@ Size mangaPageSizeOf(AdvancedMiningController c) =>
 
 /// 摘要行里的取景说明：`所在分镜 · 输出 820×934`。
 String mangaCropSummary(AdvancedMiningController c) {
-  final String label = mangaCropChoiceLabel(c.cropChoice);
+  final String label = mangaCropChoiceLabel(
+    c.cropChoice,
+    screenshot: c.cropsScreenshot,
+  );
   final Rect? rect = c.cropRect;
   if (rect == null) return label;
   final ({int width, int height}) px = cropOutputPixels(
@@ -165,7 +168,9 @@ class MangaCropWorkspace extends StatelessWidget {
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
         if (header != null) ...<Widget>[header!, const SizedBox(height: 10)],
-        if (!c.panelModelAvailable && !c.mangaLoading) ...<Widget>[
+        if (!c.cropsScreenshot &&
+            !c.panelModelAvailable &&
+            !c.mangaLoading) ...<Widget>[
           MangaPanelModelNotice(controller: c),
           const SizedBox(height: 10),
         ],
@@ -192,7 +197,7 @@ class MangaCropWorkspace extends StatelessWidget {
           ),
           const SizedBox(height: 8),
         ],
-        _MangaCropLegend(touch: touch),
+        _MangaCropLegend(touch: touch, panels: !c.cropsScreenshot),
       ],
     );
   }
@@ -215,7 +220,10 @@ class MangaCropChoiceChips extends StatelessWidget {
         for (final MangaCropChoice choice in MangaCropChoice.values)
           if (c.isCropChoiceAvailable(choice))
             AdvancedMiningChoiceChip(
-              label: mangaCropChoiceLabel(choice),
+              label: mangaCropChoiceLabel(
+                choice,
+                screenshot: c.cropsScreenshot,
+              ),
               selected: c.cropChoice == choice,
               onSelected: c.locked || c.mangaLoading
                   ? null
@@ -227,9 +235,12 @@ class MangaCropChoiceChips extends StatelessWidget {
 }
 
 class _MangaCropLegend extends StatelessWidget {
-  const _MangaCropLegend({required this.touch});
+  const _MangaCropLegend({required this.touch, required this.panels});
 
   final bool touch;
+
+  /// 有分镜（漫画页）才画「检测到的分镜」图例、提示里才提 Tab 切分镜。
+  final bool panels;
 
   @override
   Widget build(BuildContext context) {
@@ -242,22 +253,23 @@ class _MangaCropLegend extends StatelessWidget {
       runSpacing: 4,
       crossAxisAlignment: WrapCrossAlignment.center,
       children: <Widget>[
-        Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Container(
-              width: 14,
-              height: 0,
-              decoration: BoxDecoration(
-                border: Border(
-                  top: BorderSide(color: scheme.primary, width: 1.5),
+        if (panels)
+          Row(
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Container(
+                width: 14,
+                height: 0,
+                decoration: BoxDecoration(
+                  border: Border(
+                    top: BorderSide(color: scheme.primary, width: 1.5),
+                  ),
                 ),
               ),
-            ),
-            const SizedBox(width: 6),
-            Text(t.popup_advanced_mining_crop_legend_panels, style: style),
-          ],
-        ),
+              const SizedBox(width: 6),
+              Text(t.popup_advanced_mining_crop_legend_panels, style: style),
+            ],
+          ),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: <Widget>[
@@ -273,7 +285,12 @@ class _MangaCropLegend extends StatelessWidget {
             Text(t.popup_advanced_mining_crop_legend_text, style: style),
           ],
         ),
-        Text(t.popup_advanced_mining_crop_hint, style: style),
+        Text(
+          panels
+              ? t.popup_advanced_mining_crop_hint
+              : t.popup_advanced_mining_crop_hint_no_panels,
+          style: style,
+        ),
       ],
     );
   }
@@ -417,53 +434,73 @@ class MangaCropThumbnail extends StatelessWidget {
 ///
 /// 直接操作同一个控制器：「完成」即保留，「×」按进页时的快照还原——窄屏摘要行的
 /// 取景说明与确认产出都只认控制器这一份状态。
+///
+/// 截屏识字「制卡时框选」（拍板 EuOLprw_dV 选 b）也直接推这一页，不经对话框：
+/// [confirmLabel] 把「完成」换成「制卡」，[open] 的结果区分「完成」与「×」。
 class MangaCropFullscreenPage extends StatefulWidget {
-  const MangaCropFullscreenPage({super.key, required this.controller});
+  const MangaCropFullscreenPage({
+    super.key,
+    required this.controller,
+    this.confirmLabel,
+  });
 
   final AdvancedMiningController controller;
 
+  /// 顶栏主按钮文案；null = 「完成」。
+  final String? confirmLabel;
+
   /// 以从下往上的滑入转场推出全屏页（共享轴语义：它是对话框的下一层）。
-  static Future<void> open(
+  /// 返回 true = 点了主按钮（保留），false = 「×」/ 系统返回（已还原）。
+  static Future<bool> open(
     BuildContext context,
-    AdvancedMiningController controller,
-  ) {
+    AdvancedMiningController controller, {
+    String? confirmLabel,
+  }) async {
     final Duration duration = fushiMotionDuration(context, FushiMotion.medium);
-    return Navigator.of(context, rootNavigator: true).push<void>(
-      PageRouteBuilder<void>(
-        fullscreenDialog: true,
-        transitionDuration: duration,
-        reverseTransitionDuration: fushiMotionDuration(
-          context,
-          FushiMotion.longReverse,
-        ),
-        pageBuilder:
-            (BuildContext context, Animation<double> a, Animation<double> b) =>
-                MangaCropFullscreenPage(controller: controller),
-        transitionsBuilder:
-            (
-              BuildContext context,
-              Animation<double> animation,
-              Animation<double> secondary,
-              Widget child,
-            ) {
-              final Animation<double> curved = CurvedAnimation(
-                parent: animation,
-                curve: FushiMotion.enter,
-                reverseCurve: FushiMotion.exit,
-              );
-              return FadeTransition(
-                opacity: curved,
-                child: SlideTransition(
-                  position: Tween<Offset>(
-                    begin: const Offset(0, 0.06),
-                    end: Offset.zero,
-                  ).animate(curved),
-                  child: child,
+    final bool? kept = await Navigator.of(context, rootNavigator: true)
+        .push<bool>(
+          PageRouteBuilder<bool>(
+            fullscreenDialog: true,
+            transitionDuration: duration,
+            reverseTransitionDuration: fushiMotionDuration(
+              context,
+              FushiMotion.longReverse,
+            ),
+            pageBuilder:
+                (
+                  BuildContext context,
+                  Animation<double> a,
+                  Animation<double> b,
+                ) => MangaCropFullscreenPage(
+                  controller: controller,
+                  confirmLabel: confirmLabel,
                 ),
-              );
-            },
-      ),
-    );
+            transitionsBuilder:
+                (
+                  BuildContext context,
+                  Animation<double> animation,
+                  Animation<double> secondary,
+                  Widget child,
+                ) {
+                  final Animation<double> curved = CurvedAnimation(
+                    parent: animation,
+                    curve: FushiMotion.enter,
+                    reverseCurve: FushiMotion.exit,
+                  );
+                  return FadeTransition(
+                    opacity: curved,
+                    child: SlideTransition(
+                      position: Tween<Offset>(
+                        begin: const Offset(0, 0.06),
+                        end: Offset.zero,
+                      ).animate(curved),
+                      child: child,
+                    ),
+                  );
+                },
+          ),
+        );
+    return kept ?? false;
   }
 
   @override
@@ -480,7 +517,7 @@ class _MangaCropFullscreenPageState extends State<MangaCropFullscreenPage> {
   void _close({required bool keep}) {
     _done = true;
     if (!keep) widget.controller.restoreCrop(_snapshot);
-    Navigator.of(context).pop();
+    Navigator.of(context).pop(keep);
   }
 
   /// 底部分段的第二段：有所在分镜就是它，否则退到文字周围（交互稿 ④ 无模型回退态）。
@@ -523,7 +560,9 @@ class _MangaCropFullscreenPageState extends State<MangaCropFullscreenPage> {
             actions: <Widget>[
               FushiFilledButton(
                 onPressed: () => _close(keep: true),
-                child: Text(t.popup_advanced_mining_crop_done),
+                child: Text(
+                  widget.confirmLabel ?? t.popup_advanced_mining_crop_done,
+                ),
               ),
             ],
           ),
@@ -547,6 +586,7 @@ class _MangaCropFullscreenPageState extends State<MangaCropFullscreenPage> {
                     choices: segments,
                     selected: c.cropChoice,
                     onSelected: c.locked ? null : c.selectCropChoice,
+                    screenshot: c.cropsScreenshot,
                   ),
                 ],
               ),
@@ -572,7 +612,11 @@ class MangaCropChoiceSegments extends StatelessWidget {
     required this.choices,
     required this.selected,
     required this.onSelected,
+    this.screenshot = false,
   });
+
+  /// 框的是截屏识字的截图（「整页」叫「整张截图」）。
+  final bool screenshot;
 
   /// 段高与轨道内边距：与共享胶囊分段同一几何。
   static const double segmentHeight = FushiPillSegmentedButton.segmentHeight;
@@ -633,7 +677,7 @@ class MangaCropChoiceSegments extends StatelessWidget {
               child: FittedBox(
                 fit: BoxFit.scaleDown,
                 child: Text(
-                  mangaCropChoiceLabel(choice),
+                  mangaCropChoiceLabel(choice, screenshot: screenshot),
                   maxLines: 1,
                   softWrap: false,
                   style: base.copyWith(

@@ -93,7 +93,9 @@ class SeriesShelfCard extends StatelessWidget {
     final Widget card = ContextMenuTrigger(
       onInvoke: contextMenuInvoker(selectionMode ? null : onSecondaryTap),
       child: Padding(
-        padding: EdgeInsets.all(tokens.spacing.rowVertical),
+        padding: EdgeInsets.all(
+          ShelfGridCellInset.of(context, tokens.spacing.rowVertical),
+        ),
         child: Material(
           type: MaterialType.transparency,
           child: InkWell(

@@ -1,7 +1,7 @@
 /// 声明顺序**就是**快捷键设置页的卡片顺序（页面直接遍历 `values`，不另存一份
 /// 显示顺序表）：跨页面通用（global / universal / globalExternal）→ 各页面
 /// （home / reader / audiobook / manga / video / webBrowser / music / srsReview）→ 输入设备
-/// （gamepad）→ 查词弹窗。
+/// （gamepad 焦点导航、controllerLookup 手柄查词模式）→ 查词弹窗。
 /// 没有任何地方按 index 持久化或解析 scope，调整顺序只影响显示。
 enum ShortcutScope {
   global,
@@ -44,8 +44,14 @@ enum ShortcutScope {
   // 肌肉记忆（新建 / 关闭标签页、地址栏、页内查找、缩放…），与任何其它页面都不
   // 同时激活，故自成 co-active 组。
   webBrowser,
-  // 音乐播放（播放 / 上下曲 / ±5 s）。音乐页自成 co-active 组，与视频 / 阅读器不同时激活。
+  // 音乐播放（播放 / 上下曲 / ±5 s）。曲库页与播放页（歌词页）都解析，与视频 / 阅读器
+  // 不同时激活。
   music,
+  // 音乐全屏播放页 / 歌词页**独有**的键（拍板台 vo1KPp0_Rh：裸 ←/→ ±5 秒，与视频页
+  // 习惯一致）。曲库页的裸方向键是网格焦点移动，不能被播放控制夺走，所以这组绑定单独
+  // 成 scope、只在播放页解析：播放页先解析本 scope、未命中再解析 [music]；曲库页只解析
+  // [music]。两者在播放页同时激活，故与 music 同一 co-active 组。
+  musicPlayer,
   // SRS 复习页（翻面 / 四个评分 / 重播音频 / 撤销 / 卡面缩放，反馈 itlb0djDq6 要求可改键）。
   // 复习页只解析自己这一组绑定，未命中的键（Esc / Alt+← / 手柄 B）冒泡到根上由
   // universal 的「返回上一级」兜底，故自成 co-active 组。
@@ -65,6 +71,14 @@ enum ShortcutScope {
   // 默认的裸方向键在媒体页仍是翻页 / seek / 句子导航（行为不变），用户要在这些页面
   // 移焦就给焦点导航绑一个页面没占用的键。
   gamepad,
+
+  // 手柄查词模式（`ControllerLookupMode`，2026-11-22 手柄查词统一，见
+  // docs/specs/2026-11-22-gamepad-lookup-unification-design.md）：模式激活期间
+  // 十字键挪光标、右摇杆左右调选区右端、X/Y 制卡/发音……全部按本 scope 解析，
+  // 可在设置里改键。**只在模式激活时解析**（模式在页面派发之前截键），模式关着时
+  // 这些键照常归页面，所以它不与任何页面 scope 同时解析，自成 co-active 组。
+  // 进入模式的键（按住 L1 / Select）不在这里：由偏好 `controller_lookup_style` 决定。
+  controllerLookup,
 
   // 查词弹窗内部的导航动作（Yomitan 式「上/下一个词条」）。这些动作**不经
   // resolveKeyboard / 页面派发**：弹窗内容是 WebView，输入事件先到 WebView 的
@@ -111,9 +125,12 @@ enum ShortcutScope {
       // 只扫 webBrowser（与 video / manga 同理）。
       case webBrowser:
         return const <ShortcutScope>[webBrowser];
-      // 音乐库页只解析自己的绑定（与 video / manga 同理），自成 co-active 组。
+      // 音乐：播放页（歌词页）先解析 musicPlayer、再解析 music，曲库页只解析 music
+      // （见 music_shortcuts.dart 的 MusicShortcutSurface）。两者在播放页同时激活，
+      // 冲突检测要扫整组；与 video / manga 等其它页面不同时激活。
       case music:
-        return const <ShortcutScope>[music];
+      case musicPlayer:
+        return const <ShortcutScope>[musicPlayer, music];
       // SRS 复习页只解析自己的绑定（与 music / video 同理），自成 co-active 组。
       case srsReview:
         return const <ShortcutScope>[srsReview];
@@ -121,6 +138,10 @@ enum ShortcutScope {
       // 按钮跨组冲突，冲突检测只扫 gamepad 自身。
       case gamepad:
         return const <ShortcutScope>[gamepad];
+      // 手柄查词模式只在模式激活时、由 `ControllerLookupMode` 单独解析（它在页面
+      // 派发之前截键），与任何页面 scope 都不在同一次解析里，自成 co-active 组。
+      case controllerLookup:
+        return const <ShortcutScope>[controllerLookup];
       // globalExternal（系统级 app 外查词）是独立 co-active 组：**运行时解析**永不与
       // 任何应用内 scope 牵连（`resolveMouse` / `reverse_binding_index` 都按这里扫）。
       //
@@ -240,19 +261,36 @@ enum ShortcutScope {
           ShortcutChannel.keyboard,
           ShortcutChannel.gamepad,
         };
-      // app 内浏览器：只开键盘。派发点是浏览器页的键事件节点
-      // （`resolveKeyboard(event, scope: webBrowser)` → 未命中兜底 universal）。
-      //   · 手柄**不开**：浏览器里手柄走普通焦点遍历（摇杆 / dpad → 焦点移动、A 确认），
-      //     没有 `resolveGamepad(scope: webBrowser)` 的派发点，开了就是死通道；
+      // 手柄查词模式：只有手柄。解析入口是 `ControllerLookupMode` 的
+      // `resolveGamepad(button, scope: ShortcutScope.controllerLookup)`（桌面轮询与
+      // Android 早期键处理两条路都先进模式）。键盘有自己的光标模式，不走这里。
+      case controllerLookup:
+        return const <ShortcutChannel>{ShortcutChannel.gamepad};
+      // app 内浏览器：键盘 + 手柄（反馈 wegu0vewts：「浏览器里的快捷键映射只能映射
+      // 键盘」）。
+      //   · 键盘：浏览器页的键事件节点 `resolveKeyboard(event, scope: webBrowser)`
+      //     （→ 未命中兜底 universal）；网页持焦时经键盘桥回传的 token 走同一个解析；
+      //   · 手柄：浏览器页根上的 `Actions(GamepadButtonIntent: …)` →
+      //     `_handleGamepadButton` → `resolveGamepad(scope: webBrowser)`（桌面轮询的
+      //     GamepadButtonIntent 与 Android gameButton* 键事件经全局 wrapper 汇合到同一
+      //     Intent，与 SRS 复习页同构）。未命中的按钮显式转发给祖先，焦点遍历 / B 返回
+      //     照旧。默认不给任何手柄绑定——浏览器里的手柄默认就是焦点导航，给默认值等于
+      //     抢走导航键。
       //   · 鼠标**不开**：正文是原生 WebView，指针归 WebView，侧键「后退 / 前进」由
       //     WebView 自己按浏览器语义处理，宿主没有 `resolveMouse(scope: webBrowser)`。
-      // 要开任一通道，先在页面里接上对应的解析入口（守卫
+      // 要开鼠标通道，先在页面里接上对应的解析入口（守卫
       // `shortcut_channel_wiring_guard_test` 盯着）。
       case webBrowser:
+        return const <ShortcutChannel>{
+          ShortcutChannel.keyboard,
+          ShortcutChannel.gamepad,
+        };
       // 音乐：只有键盘有解析入口（曲库页 / 歌词页的键事件节点 →
       // music_shortcuts.dart 的 `resolveKeyboard(scope: music)`）；手柄 / 鼠标还没有
       // 派发点，不开通道（歌词行中键跳转复用 audiobook 的点句绑定，不走 music scope）。
+      // musicPlayer 同理：只有播放页的键事件节点解析它（`MusicShortcutSurface.player`）。
       case music:
+      case musicPlayer:
         return const <ShortcutChannel>{ShortcutChannel.keyboard};
       // SRS 复习页：键盘 + 手柄。
       //   · 键盘：srs_review_page.dart 的 `_onKey` → `resolveKeyboard(scope: srsReview)`；
@@ -407,6 +445,19 @@ enum ShortcutAction {
   // homeFocusSearch **之后**：老用户若把两者绑成同一个键，库页之外 resolve 按
   // 声明序先命中 homeFocusSearch，跳查词照旧。
   librarySearch(ShortcutScope.home, 'library_search'),
+
+  // 库页网格「每行数量」缩放（2026-11-24 方案 C，Apple 外壳的捏合同一件事）：
+  // 默认 Ctrl + = / −（macOS ⌘）。执行体是库页网格的 `LibraryGridZoom`（挂在
+  // home 键事件节点之下，先读本动作绑定命中即调列数），不经 home 页派发；M3E
+  // 外壳不接（列数在「排序与显示」里选）。
+  libraryGridZoomIn(ShortcutScope.home, 'library_grid_zoom_in'),
+  libraryGridZoomOut(ShortcutScope.home, 'library_grid_zoom_out'),
+
+  // 音乐「推荐」（在线）重载全部来源（2026-11-24 Apple 方案 A 拍板 Q7）：默认
+  // Ctrl + R（macOS ⌘R）。执行体是推荐页 Apple 布局的键事件节点（挂在 home 键事件
+  // 节点之下，焦点在推荐页内时先读本动作绑定命中即刷新），不经 home 页派发；M3E 版
+  // 推荐页刷新在各来源段头，不接。
+  musicRecommendRefresh(ShortcutScope.home, 'music_recommend_refresh'),
 
   // Universal —— 全 app 唯一的「返回上一级 / 退出当前界面」。
   //
@@ -563,6 +614,17 @@ enum ShortcutAction {
     ShortcutScope.video,
     'video_toggle_loop_current_subtitle',
   ),
+  // 逐句学习工具（副屏 S6，2026-11-08）：重播当前句并在句尾暂停（精听）、开关「每句
+  // 播完自动暂停」、A-B 循环三态（标 A → 标 B 开始循环 → 清除）。默认键盘
+  // Ctrl+Shift+R / P / B，手柄留空。执行体在 video_player_shortcuts →
+  // VideoPlayerController（replayCurrentCueThenPause / setAutoPauseAtCueEnd /
+  // toggleAbLoop），副屏视频面板走同一组控制器方法。
+  videoReplayCueThenPause(ShortcutScope.video, 'video_replay_cue_then_pause'),
+  videoToggleAutoPauseAtCueEnd(
+    ShortcutScope.video,
+    'video_toggle_auto_pause_at_cue_end',
+  ),
+  videoToggleAbLoop(ShortcutScope.video, 'video_toggle_ab_loop'),
   // 内封章节上/下一章（TODO-424，默认 PageUp / PageDown）：seek 到相邻章起点，无章节
   // 时 no-op。与「上/下一句字幕」(Ctrl+←/→) 正交——后者按字幕 cue，这里按容器章节。
   videoPreviousChapter(ShortcutScope.video, 'video_previous_chapter'),
@@ -593,27 +655,11 @@ enum ShortcutAction {
     ShortcutScope.video,
     'video_toggle_secondary_subtitle_hide',
   ),
-  // 手柄/键盘字级选词查词（对齐阅读器 readerEnterCaret）：进入后光标停在当前字幕
-  // 首个可见字符，D-pad/方向键逐字移动、A/Enter 对光标字符查词（浮层内继续用手柄
-  // 翻词条/跳词典/制卡）、B/Esc 退出。激活期的方向/确认/退出键在页面侧**先于**注册
-  // 表截获（reader caret 同款contextual 路由），见 video_fushi/subtitle_caret.part.dart。
+  // 键盘字级选词查词（对齐阅读器 readerEnterCaret）：进入后光标停在当前字幕首个可见
+  // 字符，方向键逐字移动、Enter 对光标字符查词、Esc 退出。激活期的光标键在页面侧
+  // **先于**注册表截获，见 video_fushi/subtitle_caret.part.dart。只有键盘通道（见
+  // [channels]）：手柄查词统一走 ControllerLookupMode（2026-11-22）。
   videoEnterCaret(ShortcutScope.video, 'video_enter_caret'),
-
-  // 暂停句「整句扫词」（2026-10-09）：手柄查词的无光标形态，把「选谁」与「做什么」
-  // 正交——扫词只在数据层移动一个**词游标**（暂停句分词后的词序列下标），每停一词
-  // 就复用点击查词链路弹/换同一张浮层；动词（翻词条 / 制卡 / 发音）全部交给既有
-  // dictionaryPopup 表，不新增任何模态。
-  //
-  // 与 videoEnterCaret 的关系是**互不依赖**：扫词不进 caret，故浮层的 X=制卡 /
-  // Y=发音在扫词中永远可达——进了 caret 就被 `_handleCaretGamepadButton` 的模态
-  // 路由吞掉（见 video_fushi/subtitle_caret.part.dart），这正是本动作存在的理由。
-  //
-  // 默认**空绑定**、由用户自配：video scope 内的手柄键已占满（B 另属 universal
-  // 的「返回上一级」），唯一空闲的 L3/R3 是摇杆按下键、易误触，且
-  // `video_gamepad_mapping_test` 明确断言它们保持空闲，故不设默认。二者是同一
-  // 件事的两个方向（上一词 / 下一词），句尾按用户要求**循环**回句首。
-  videoLookupNextWord(ShortcutScope.video, 'video_lookup_next_word'),
-  videoLookupPrevWord(ShortcutScope.video, 'video_lookup_prev_word'),
 
   // 字幕对轴/匹配快捷键（用户请求）：把埋在快速设置面板深处的「字幕调轴」直接搬到
   // 键盘。videoOpenSubtitleAlign 一键弹波形对轴放大视图（复用 SubtitleWaveformZoomView，
@@ -668,6 +714,10 @@ enum ShortcutAction {
     ShortcutScope.video,
     'video_toggle_favorite_sentence',
   ),
+  // 视频的统计侧栏 / 停续学习计时（执行体 = 控制条 statistics / studyTimer 键同一入口）。
+  // 小说 / 漫画用的 I / P 在 video 组里已被快进 / 播放暂停占用，**默认不绑键**，用户自绑。
+  videoOpenStatistics(ShortcutScope.video, 'video_open_statistics'),
+  videoToggleStudyClock(ShortcutScope.video, 'video_toggle_study_clock'),
 
   // 漫画：翻页存的是**页序语义**（forward=下一页），左右方向键再按跨页方向
   // （日漫默认 rtl）校正——与 reader 的 resolveReaderArrowPageTurn 同构，见
@@ -691,6 +741,26 @@ enum ShortcutAction {
   mangaPanDown(ShortcutScope.manga, 'manga_pan_down'),
   mangaPanLeft(ShortcutScope.manga, 'manga_pan_left'),
   mangaPanRight(ShortcutScope.manga, 'manga_pan_right'),
+  // 漫画的统计侧栏 / 停续学习计时（执行体 = 控制条 statistics / studyTimer 键同一
+  // 入口）。与 reader 组的 readerOpenStatistics(I) / readerToggleStudyClock(P) 同键：
+  // manga scope 内 I / P 未被占用，与小说分属不同 co-active 组、绝不同时激活，
+  // 肌肉记忆跨阅读器复用。手柄留空，用户可自绑。
+  mangaOpenStatistics(ShortcutScope.manga, 'manga_open_statistics'),
+  mangaToggleStudyClock(ShortcutScope.manga, 'manga_toggle_study_clock'),
+  // 当前页书签（反馈 FhspOXxPl_）：屏上没有书签就加一条，有就移除——与书签面板
+  // 顶部「当前页」那一行、浏览器 webBrowserToggleBookmark 同一 toggle 语义，执行体
+  // 与书签面板同一入口 `_toggleBookmarkHere`。默认键盘 B（manga scope 内空闲），
+  // 手柄留空（B 归 universal 返回）。
+  mangaToggleBookmark(ShortcutScope.manga, 'manga_toggle_bookmark'),
+  // 逐格读（气泡聚焦）进 / 出：视图缩放到当前气泡、按阅读顺序跳气泡。默认键盘 Z
+  // （manga scope 内空闲；video 的 Z 是字幕延迟，分属不同 co-active 组）。手柄留空。
+  mangaToggleBubbleFocus(ShortcutScope.manga, 'manga_toggle_bubble_focus'),
+  // 朗读 / 漫画有声（成品音频）的播放暂停 / 上一句 / 下一句：执行体 = 播放条同名按钮。
+  // 只开键盘通道：漫画页手柄的方向键 / 肩键归翻页、B 归 universal 返回（见
+  // docs/agent/focus-ownership.md 漫画页第③条），手柄默认不绑。
+  mangaAudioPlayPause(ShortcutScope.manga, 'manga_audio_play_pause'),
+  mangaAudioPreviousLine(ShortcutScope.manga, 'manga_audio_previous_line'),
+  mangaAudioNextLine(ShortcutScope.manga, 'manga_audio_next_line'),
 
   // Web browser：app 内浏览器（[ShortcutScope.webBrowser]）。声明顺序 = 设置页展示
   // 顺序：标签页 → 导航 → 页面工具 → 缩放。执行体在 fushi_web_browser_page 的
@@ -755,6 +825,16 @@ enum ShortcutAction {
   musicPreviousTrack(ShortcutScope.music, 'music_previous_track'),
   musicSeekForward(ShortcutScope.music, 'music_seek_forward'),
   musicSeekBackward(ShortcutScope.music, 'music_seek_backward'),
+  // ShortcutScope.musicPlayer：只在全屏播放页 / 歌词页解析（拍板台 vo1KPp0_Rh），
+  // 默认裸 ←/→ ±5 秒；曲库页的裸方向键仍是焦点移动。执行体同 music_shortcuts.dart。
+  musicPlayerSeekForward(
+    ShortcutScope.musicPlayer,
+    'music_player_seek_forward',
+  ),
+  musicPlayerSeekBackward(
+    ShortcutScope.musicPlayer,
+    'music_player_seek_backward',
+  ),
 
   // SRS 复习页（[ShortcutScope.srsReview]，反馈 itlb0djDq6）。执行体在
   // srs_review_page.dart 的 `_executeShortcut`；键盘 / WebView 键盘桥 / 手柄三条入口
@@ -832,6 +912,70 @@ enum ShortcutAction {
     'global_external_screen_ocr',
   ),
 
+  // 反馈 uvIcQB5gPG：有声书悬浮字幕的全局快捷键（Fushi 不在前台、用户盯着别的程序
+  // 听书时也能控制）。悬浮字幕窗自己的按钮是「上一句 / 播放暂停 / 下一句 / 关闭」，
+  // 这里把它们连同「显示 / 隐藏悬浮字幕」与「重播当前句」做成 OS 级热键。
+  //
+  // 执行体同样登记在 GlobalLookupController._osHotKeyActions（本 scope 的动作一律由
+  // 它读绑定注册进 hotkey_manager / GlobalShortcuts portal，不经页面派发）；播放控制
+  // 落到 app 级 `AudiobookSession.controller`（悬浮窗按钮走的同一个控制器），显隐落到
+  // `AppModel.setFloatingLyricEnabled`（设置页开关的同一个置位入口，窗与意图 pref
+  // 原子同步）。没有活动的有声书会话时什么都不做（记日志），不偷偷改 pref。
+  //
+  // 键盘-only，理由同 globalExternalOpenLookupPage。桌面默认**不绑键**：OS 级热键
+  // 全系统吞键（Ctrl+Alt+字母在欧洲键盘上就是 AltGr 字符），不听书的用户不该为它
+  // 付这个代价；要用的人在快捷键设置里自己录。
+  globalExternalFloatingLyricToggle(
+    ShortcutScope.globalExternal,
+    'global_external_floating_lyric_toggle',
+  ),
+  globalExternalAudiobookPlayPause(
+    ShortcutScope.globalExternal,
+    'global_external_audiobook_play_pause',
+  ),
+  globalExternalAudiobookPrevSentence(
+    ShortcutScope.globalExternal,
+    'global_external_audiobook_prev_sentence',
+  ),
+  globalExternalAudiobookNextSentence(
+    ShortcutScope.globalExternal,
+    'global_external_audiobook_next_sentence',
+  ),
+  globalExternalAudiobookReplaySentence(
+    ShortcutScope.globalExternal,
+    'global_external_audiobook_replay_sentence',
+  ),
+
+  // 反馈 N8qzDdzIvD（拍板台「做」）：galgame 台词朗读（TTS）的全局快捷键，方便跟读。
+  // 游戏窗口在前台、Fushi 不在前台时也要能按，所以只能是 OS 级热键（本 scope）。
+  //
+  // 执行体登记在 GlobalLookupController._osHotKeyActions，落到
+  // `GalHookTextOverlayController.speakCurrentLine`——台词浮窗「朗读」按钮
+  // （`onSpeakLine`）调的同一个方法，热键与按钮行为一致：朗读当前显示的台词，
+  // 正在朗读时再按即停止，再按一次从头重读（= 重播）。
+  //
+  // 只在有台词浮窗的平台注册（`GalHookTextOverlayController.isSupported`，即
+  // Windows，见 GlobalLookupController.osHotKeyActionWorksHere）。键盘-only，理由同
+  // globalExternalOpenLookupPage：鼠标侧键的 native 触发链只登记了
+  // globalExternalLookup 一个消费者。桌面默认不绑键，理由同有声书热键。
+  globalExternalGalgameSpeakLine(
+    ShortcutScope.globalExternal,
+    'global_external_galgame_speak_line',
+  ),
+
+  // 反馈 fMicnouU6V（拍板台「做」）：显示 / 隐藏 galgame 台词浮窗（游戏内 overlay）
+  // 的全局快捷键。游戏窗口在前台时要能按，所以同样只能是 OS 级热键（本 scope）。
+  //
+  // 执行体登记在 GlobalLookupController._osHotKeyActions，落到
+  // `GalHookTextOverlayController.toggleVisibility`：浮窗可见时走浮窗「关闭」按钮
+  // （`onClose`）的同一个 `closeForCurrentSession`（本局不再自动弹），不可见时走
+  // 文本钩子页「显示 Hook 浮窗」的同一个 `showManually`。平台门、键盘-only、默认
+  // 不绑键的理由与 globalExternalGalgameSpeakLine 相同。
+  globalExternalGalgameOverlayToggle(
+    ShortcutScope.globalExternal,
+    'global_external_galgame_overlay_toggle',
+  ),
+
   // 查词弹窗「上/下一个词条」（用户请求，Yomitan 的 Next/Previous entry）：一次查询
   // 常返回多个词条（.entry），这两个动作把弹窗的词条级焦点（蓝三角 .entry-current）
   // 移到相邻词条并滚进视口。默认 Alt+滚轮下 / Alt+滚轮上，与 Yomitan 手感一致。
@@ -870,7 +1014,64 @@ enum ShortcutAction {
   // 手柄重设计 P2：播放第一个可见词条的发音（点既有 `.audio-button`，与制卡同一
   // 「点按钮不另起桥」纪律，JS 入口 `fushiPopupPlayFirstAudio`）。默认只有手柄 Y
   // ——键盘上鼠标点按钮已经够近，而手柄用户没有任何非光标模式的发音入口。
-  popupPlayAudio(ShortcutScope.dictionaryPopup, 'popup_play_audio');
+  popupPlayAudio(ShortcutScope.dictionaryPopup, 'popup_play_audio'),
+
+  // 手柄查词模式（ShortcutScope.controllerLookup）。执行体是
+  // `ControllerLookupMode._runAction`：模式激活时按本 scope 解析手柄键。
+  // 默认键位：十字键挪光标 / 换行、L3 切按词 / 按字、右摇杆 ←/→ 调选区右端、
+  // X 制卡、Y 发音、RT / LT 下 / 上一词条、A 进入结果、B 关结果 / 退出模式。
+  controllerLookupCursorLeft(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_cursor_left',
+  ),
+  controllerLookupCursorRight(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_cursor_right',
+  ),
+  controllerLookupLineUp(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_line_up',
+  ),
+  controllerLookupLineDown(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_line_down',
+  ),
+  controllerLookupToggleGranularity(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_toggle_granularity',
+  ),
+  controllerLookupShrinkEnd(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_shrink_end',
+  ),
+  controllerLookupExtendEnd(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_extend_end',
+  ),
+  controllerLookupMine(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_mine',
+  ),
+  controllerLookupPlayAudio(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_play_audio',
+  ),
+  controllerLookupNextEntry(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_next_entry',
+  ),
+  controllerLookupPrevEntry(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_prev_entry',
+  ),
+  controllerLookupEnterResult(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_enter_result',
+  ),
+  controllerLookupCloseOrExit(
+    ShortcutScope.controllerLookup,
+    'controller_lookup_close_or_exit',
+  );
 
   const ShortcutAction(this.scope, this.key);
 
@@ -915,9 +1116,24 @@ enum ShortcutAction {
     // `GlobalExternalLookupRoute`。开着它俩就是两条死通道：设置里能录、能保存、
     // 能回显，按下去什么都不发生。
     ShortcutAction.globalExternalOpenLookupPage ||
-    ShortcutAction.globalExternalScreenOcr => const <ShortcutChannel>{
-      ShortcutChannel.keyboard,
-    },
+    ShortcutAction.globalExternalScreenOcr ||
+    ShortcutAction.globalExternalFloatingLyricToggle ||
+    ShortcutAction.globalExternalAudiobookPlayPause ||
+    ShortcutAction.globalExternalAudiobookPrevSentence ||
+    ShortcutAction.globalExternalAudiobookNextSentence ||
+    ShortcutAction.globalExternalAudiobookReplaySentence ||
+    ShortcutAction.globalExternalGalgameSpeakLine ||
+    ShortcutAction.globalExternalGalgameOverlayToggle =>
+      const <ShortcutChannel>{ShortcutChannel.keyboard},
+    // 手柄查词统一（2026-11-22，docs/specs/2026-11-22-gamepad-lookup-unification-design.md）：
+    // 手柄只剩 ControllerLookupMode 一套查词，光标模式的三个入口去掉手柄通道（默认
+    // 手柄绑定已删；老快照里的自定义手柄绑定在 [FushiShortcutRegistry] 装载时剥掉）。
+    // 键盘与鼠标通道照旧。
+    ShortcutAction.videoEnterCaret ||
+    ShortcutAction.readerEnterCaret ||
+    ShortcutAction.readerLookupAtCursor => scope.channels.difference(
+      const <ShortcutChannel>{ShortcutChannel.gamepad},
+    ),
     _ => scope.channels,
   };
 

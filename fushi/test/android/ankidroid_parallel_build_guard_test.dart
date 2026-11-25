@@ -49,6 +49,14 @@ void main() {
         packages.add('com.ichi2.anki');
         continue;
       }
+      if (entry == 'KUMA3_PACKAGE') {
+        final RegExpMatch? kuma3 = RegExp(
+          r'KUMA3_PACKAGE\s*=\s*"([^"]+)"',
+        ).firstMatch(source);
+        expect(kuma3, isNotNull, reason: 'KUMA3_PACKAGE 必须是字面量常量');
+        packages.add(kuma3!.group(1)!);
+        continue;
+      }
       final RegExpMatch? m = RegExp(
         r'MAIN_PACKAGE\s*\+\s*"([^"]+)"',
       ).firstMatch(entry);
@@ -98,6 +106,20 @@ void main() {
       reason: '同时装了主包和并行版时，主包必须先命中（与修复前行为一致）',
     );
     expect(packages.toSet().length, packages.length, reason: '候选不得重复');
+  });
+
+  test('改版 AnkiDroid：kuma3 Anki 的 release 包名在候选里（反馈 f8ING_Sh_m）', () {
+    // 上游 Pedrubik2000/kuma3-anki-app 的 AnkiDroid/build.gradle：
+    //   androidComponents.onVariants(selector().withBuildType("release")) {
+    //     variant.applicationId.set("io.github.pedrubik2000.kuma3") }
+    // provider / 权限沿用 ${applicationId}.flashcards / .permission.READ_WRITE_DATABASE。
+    final List<String> packages = candidatePackages();
+    expect(packages, contains('io.github.pedrubik2000.kuma3'));
+    expect(
+      packages.indexOf('io.github.pedrubik2000.kuma3'),
+      greaterThan(packages.indexOf('com.ichi2.anki')),
+      reason: '同时装了官方 AnkiDroid 和改版时，官方主包仍先命中',
+    );
   });
 
   test('每个候选包都在 manifest 的 <queries> 里声明了包可见性', () {

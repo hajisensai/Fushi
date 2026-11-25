@@ -20,6 +20,7 @@
 #include "fushidicts/query.hpp"
 #include "fushidicts/popup_json.hpp"
 #include "fushidicts/tokenize.hpp"
+#include "fushidicts/upgrade.hpp"
 #include <utf8.h>
 #include <zstd.h>
 
@@ -450,6 +451,39 @@ int32_t fushidicts_ensure_redirect_flag(const char* dir) {
       []() -> int32_t { return -1; });
 }
 
+// 存量词典原地升级（语义见 fushidicts/upgrade.hpp）：0 已是最新 / 1 已升级 /
+// 2 不适用（留在旧式、照常可用）/ -1 失败（词典原样可用）。不需要句柄；只创建新文件、
+// 改名提交，绝不改动已有文件，所以引擎正装着这本词典时也可以调。升级要读遍索引与
+// 记录、写一份新索引（大词典百毫秒级），宿主应在后台 isolate 调用。新索引在下一次
+// add_*_dict 装载时生效。
+FUSHI_EXPORT
+int32_t fushidicts_upgrade_dictionary(const char* dict_dir, int32_t allow_meta_rewrite) {
+  return ffi_guard_or(
+      "fushidicts_upgrade_dictionary",
+      [&]() -> int32_t {
+        if (!dict_dir) return static_cast<int32_t>(fushidicts::UpgradeResult::Failed);
+        return static_cast<int32_t>(fushidicts::upgrade_dictionary(std::string(dict_dir), allow_meta_rewrite != 0));
+      },
+      []() -> int32_t { return static_cast<int32_t>(fushidicts::UpgradeResult::Failed); });
+}
+
+// 存量词典的只检查 + 清理（语义见 fushidicts/upgrade.hpp 的 convert = false）：0 已是
+// 最新（顺带清理遗留旧文件、把完成标记换成 .fushidicts_3）/ 3 旧式、待升级（本次什么都
+// 没写）/ 2 不适用（留在旧式）/ -1 失败。宿主每次启动对全部词典静默调用；有待升级的
+// 先征得用户同意，再调 fushidicts_upgrade_dictionary。不需要句柄；会碰磁盘，宿主应在
+// 后台 isolate 调用。
+FUSHI_EXPORT
+int32_t fushidicts_tidy_dictionary(const char* dict_dir) {
+  return ffi_guard_or(
+      "fushidicts_tidy_dictionary",
+      [&]() -> int32_t {
+        if (!dict_dir) return static_cast<int32_t>(fushidicts::UpgradeResult::Failed);
+        return static_cast<int32_t>(
+            fushidicts::upgrade_dictionary(std::string(dict_dir), /*allow_meta_rewrite=*/false, /*convert=*/false));
+      },
+      []() -> int32_t { return static_cast<int32_t>(fushidicts::UpgradeResult::Failed); });
+}
+
 // ── query handle ────────────────────────────────────────────────────
 
 // 当前存活（尚未真正 delete）的句柄数；只给测试观测「退役后最后一次 release 才销毁、
@@ -623,6 +657,19 @@ void fushidicts_add_term_dict(void* handle, const char* path) {
   });
 }
 
+// 同 fushidicts_add_term_dict，另带这本词典词头的语言（BCP-47 / ISO 639 码；NULL 或
+// 空串 = 未标注，与 fushidicts_add_term_dict 等价）。见 DictionaryQuery::add_term_dict。
+// 语言是装载时的属性：宿主改了某本词典的语言就重装词典集合，查词调用不带语言参数。
+FUSHI_EXPORT
+void fushidicts_add_term_dict_with_language(void* handle, const char* path, const char* language) {
+  ffi_guard_void("fushidicts_add_term_dict_with_language", [&]() {
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    std::unique_lock lock(h->rw);
+    h->query.add_term_dict(path, language ? std::string_view(language) : std::string_view());
+    h->match_cache.clear();
+  });
+}
+
 FUSHI_EXPORT
 void fushidicts_add_freq_dict(void* handle, const char* path) {
   ffi_guard_void("fushidicts_add_freq_dict", [&]() {
@@ -663,6 +710,31 @@ void fushidicts_load_transforms(void* handle, const char* json) {
   });
 }
 
+// 联合过滤器（native hash/union_filter.hpp）：宿主装完全部词典后调一次。cache_dir 非空
+// 时过滤器落盘在该目录（下次直接映射），空 / null = 只在内存里建。wait != 0 时同步
+// 建完才返回；否则立刻返回、在引擎自己的后台线程里建，建好之前查询照走旧路径，查词
+// 结果不变。取共享锁：只读词典表、写自带互斥的发布槽，同步构建期间不挡在飞的查询。
+FUSHI_EXPORT
+void fushidicts_prepare_union_filter(void* handle, const char* cache_dir, int32_t wait) {
+  ffi_guard_void("fushidicts_prepare_union_filter", [&]() {
+    if (!handle) return;
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    std::shared_lock lock(h->rw);
+    h->query.prepare_union_filter(cache_dir ? std::string(cache_dir) : std::string(), wait != 0);
+  });
+}
+
+// 联合过滤器状态：0 没有 / 1 后台构建中 / 2 已就绪（UnionFilterState）。
+FUSHI_EXPORT
+int32_t fushidicts_union_filter_state(void* handle) {
+  return ffi_guard("fushidicts_union_filter_state", [&]() -> int32_t {
+    if (!handle) return 0;
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    std::shared_lock lock(h->rw);
+    return static_cast<int32_t>(h->query.union_filter_state());
+  });
+}
+
 // ── query ───────────────────────────────────────────────────────────
 
 FUSHI_EXPORT
@@ -673,6 +745,24 @@ FfiQueryResult fushidicts_query(void* handle, const char* expression) {
     std::shared_lock lock(h->rw);
     auto& q = h->query;
     auto terms = q.query(expression);
+    r.count = static_cast<int32_t>(terms.size());
+    r.terms = alloc_array<FfiTermResult>(r.count);
+    for (int i = 0; i < r.count; i++) {
+      r.terms[i] = convert_term(terms[i]);
+    }
+    return r;
+  });
+}
+
+// 只要词频的 fushidicts_query（DictionaryQuery::query_frequencies）：词条的 glossary /
+// pitch 计数恒为 0。结果同样用 fushidicts_free_query_result 释放。
+FUSHI_EXPORT
+FfiQueryResult fushidicts_query_frequencies(void* handle, const char* expression) {
+  return ffi_guard("fushidicts_query_frequencies", [&]() -> FfiQueryResult {
+    FfiQueryResult r{};
+    auto* h = static_cast<FushidictsHandle*>(handle);
+    std::shared_lock lock(h->rw);
+    auto terms = h->query.query_frequencies(expression);
     r.count = static_cast<int32_t>(terms.size());
     r.terms = alloc_array<FfiTermResult>(r.count);
     for (int i = 0; i < r.count; i++) {
@@ -824,6 +914,10 @@ struct LookupOptionArgs {
   const int32_t* ruby_bounds = nullptr;
   const char* ruby_readings = nullptr;
   int32_t ruby_count = 0;
+  // 本次排除的词典名：excluded_count 个 NUL 结尾 UTF-8 串的指针数组。
+  // count<=0 / 指针为空 = 不排除；数组里的空指针 / 空串跳过。
+  const char* const* excluded_names = nullptr;
+  int32_t excluded_count = 0;
 };
 
 std::vector<RubyReading> parse_ruby_readings(const LookupOptionArgs& args) {
@@ -860,6 +954,13 @@ LookupOptions make_lookup_options(const LookupOptionArgs& args) {
   }
   options.chinese_simp_to_trad = (args.flags & kLookupFlagChineseSimpToTrad) != 0;
   options.ruby_readings = parse_ruby_readings(args);
+  if (args.excluded_count > 0 && args.excluded_names) {
+    options.excluded_dictionaries.reserve(static_cast<std::size_t>(args.excluded_count));
+    for (int32_t i = 0; i < args.excluded_count; ++i) {
+      const char* name = args.excluded_names[i];
+      if (name && name[0] != '\0') options.excluded_dictionaries.emplace_back(name);
+    }
+  }
   return options;
 }
 
@@ -908,6 +1009,26 @@ FfiLookupResults fushidicts_lookup_with_ruby(void* handle, const char* text, int
     return lookup_with_option_args(
         handle, text, max_results, scan_length,
         LookupOptionArgs{freq_dict, freq_order, primary_reading, flags, ruby_bounds, ruby_readings, ruby_count});
+  });
+}
+
+// 带排除词典的 lookup（其余参数同 fushidicts_lookup_with_ruby；无 ruby 时
+// ruby_bounds / ruby_readings 传 NULL、ruby_count 传 0）。excluded_names：
+// excluded_count 个 NUL 结尾 UTF-8 词典名的指针数组，见
+// LookupOptions::excluded_dictionaries。老导出不动（Never break ABI）。
+FUSHI_EXPORT
+FfiLookupResults fushidicts_lookup_with_exclusions(void* handle, const char* text, int32_t max_results,
+                                                   int32_t scan_length, const char* freq_dict, int32_t freq_order,
+                                                   const char* primary_reading, int32_t flags,
+                                                   const int32_t* ruby_bounds, const char* ruby_readings,
+                                                   int32_t ruby_count, const char* const* excluded_names,
+                                                   int32_t excluded_count) {
+  return ffi_guard("fushidicts_lookup_with_exclusions", [handle, text, max_results, scan_length, freq_dict, freq_order,
+                                                          primary_reading, flags, ruby_bounds, ruby_readings, ruby_count,
+                                                          excluded_names, excluded_count]() {
+    return lookup_with_option_args(handle, text, max_results, scan_length,
+                                   LookupOptionArgs{freq_dict, freq_order, primary_reading, flags, ruby_bounds,
+                                                    ruby_readings, ruby_count, excluded_names, excluded_count});
   });
 }
 

@@ -26,6 +26,7 @@ import 'package:fushi_engine/tts/tts_provider.dart';
 import 'package:fushi_engine/tts/tts_synthesis_scheduler.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi_engine/tts/tts_pronunciation.dart';
 
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/media/audiobook/audiobook_session.dart';
@@ -260,23 +261,25 @@ class TtsReadAlong extends ChangeNotifier {
       300 + spokenText.length * 140;
 
   /// 建计划、起会话、定位到起点。失败抛 [TtsStartException] / 透传会话加载异常。
+  ///
+  /// [voice] 是这本书的默认声音（[TtsServices.voiceForMedia]：本书 → 系列 + 语言 →
+  /// 全局使用中），null = 一个可用的声音都没有。
   static Future<TtsReadAlong> start({
     required AudiobookSession session,
     required TtsServices services,
     required EpubBook book,
     required SessionBookInfo info,
     required TtsStartPoint startPoint,
+    required TtsResolvedVoice? voice,
     bool autoplay = true,
     TtsCast? cast,
   }) async {
     final TtsServices tts = services;
-    final ({TtsVoicePreset preset, TtsProviderDescriptor descriptor})? voice =
-        tts.activeVoice();
     if (voice == null) throw const TtsStartException(TtsStartProblem.noVoice);
     if (voice.descriptor.validate(voice.preset).isNotEmpty) {
       throw const TtsStartException(TtsStartProblem.voiceIncomplete);
     }
-    final TtsCast? castInUse = cast == null || cast.voices.isEmpty
+    final TtsCast? castInUse = cast == null || !ttsCastAssignsVoices(cast)
         ? null
         : cast;
     // 多声优：分句必须与制作台同一口径（选角表按制作台计划的句首坐标记说话人），
@@ -286,7 +289,8 @@ class TtsReadAlong extends ChangeNotifier {
       maxLength: castInUse == null
           ? voice.descriptor.capabilities.maxInputLength
           : kStudioSentenceMaxLength,
-      pronunciation: tts.pronunciation.load(),
+      pronunciation: tts.textRules.load(TtsTextRuleKind.pronunciation),
+      preSynthesis: tts.textRules.load(TtsTextRuleKind.preSynthesis),
     );
     final Map<String, TtsResolvedVoice> slotVoices = castInUse == null
         ? const <String, TtsResolvedVoice>{}
@@ -409,7 +413,7 @@ class TtsReadAlong extends ChangeNotifier {
     for (final TtsPlanSentence s in plan.sentences) {
       final String slot = ttsVoiceSlotOf(cast, s);
       if (slot == kTtsDefaultVoiceSlot || out.containsKey(slot)) continue;
-      final TtsVoicePreset? preset = presets[cast.voices[slot]];
+      final TtsVoicePreset? preset = presets[slot];
       final TtsProviderDescriptor? descriptor = preset == null
           ? null
           : tts.registry[preset.providerId];

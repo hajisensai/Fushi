@@ -71,6 +71,24 @@
       },
       "referer": "origin",
       "verified": false
+    },
+    {
+      "id": "hitomi",
+      "name": "Hitomi",
+      "comment": "Mirrors ComicRead's hitomi adapter (hymbz/ComicReadScript src/site/hitomi.tsx): gallery and reader pages both load galleries/<id>.js into window.galleryinfo; page URLs come from the site's own url_from_url_from_hash(id, file, 'webp'). The reader page loads galleryinfo asynchronously, hence detect/images wait for it.",
+      "hosts": [
+        "hitomi.la"
+      ],
+      "chapterUrlPattern": "^/(?:reader|doujinshi|manga|artistcg|gamecg|imageset)/(?:[^/?#]*-)?(?<id>\\d+)\\.html$",
+      "seriesKeyPattern": "(\\d+)\\.html(?:[?#]|$)",
+      "chapterKeyPattern": "(\\d+)\\.html(?:[?#]|$)",
+      "detect": "var g = window.galleryinfo;\nreturn !!(g && Array.isArray(g.files) && g.files.length > 0 && g.type !== 'anime');",
+      "images": {
+        "mode": "script",
+        "code": "for (var i = 0; i < 30 && !(window.galleryinfo && Array.isArray(window.galleryinfo.files)); i++) {\n  await new Promise(function (r) { setTimeout(r, 200); });\n}\nvar g = window.galleryinfo;\nif (!g || !Array.isArray(g.files) || g.type === 'anime' || typeof window.url_from_url_from_hash !== 'function') return [];\nreturn g.files.map(function (f) { return window.url_from_url_from_hash(g.id, f, 'webp'); });"
+      },
+      "referer": "origin",
+      "verified": false
     }
   ]
 }

@@ -19,12 +19,12 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_optimizer.dart';
 import 'package:fushi_engine/srs/srs_rwkv_models.dart';
 import 'package:fushi_engine/srs/srs_rwkv_service.dart';
-import 'package:fushi_engine/srs/srs_stats_loader.dart';
 import 'package:fushi_rwkv/fushi_rwkv.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
+import 'support/srs_stats_rows.dart';
 import 'support/srs_test_storage.dart';
 import 'apkg/srs_apkg_import_test.dart'
     show
@@ -169,10 +169,7 @@ void main() {
         Platform.environment['FUSHI_SRS_P6_BENCH_REVS'] ?? '10',
       );
       final Directory tmp = Directory.systemTemp.createTempSync('srs_p6_');
-      final TestSrs srs = await openTestSrsAt(
-        '${tmp.path}/srs.db',
-        inline: false,
-      );
+      final TestSrs srs = openTestSrsIn(tmp.path);
       addTearDown(() async {
         try {
           tmp.deleteSync(recursive: true);
@@ -181,7 +178,6 @@ void main() {
         }
       });
       final SrsDbStore store = await SrsDbStore.open(
-        db: srs.db,
         core: srs.core,
         profileUid: '01928c3e-0000-7000-8000-0000000be4c8',
         deviceId: 'bench',
@@ -244,7 +240,7 @@ void main() {
         final int replay = await timed(rwkv.rebuild);
         int reviews = 0;
         final int stats = await timed(() async {
-          reviews = (await loadSrsStats(store)).data.reviews.length;
+          reviews = (await statsRowsOf(store)).reviews.length;
         });
         // ignore: avoid_print
         print(

@@ -699,6 +699,12 @@ class MdnsServiceBrowser {
 
   Stream<MdnsBrowseEvent> get events => _events.stream;
 
+  /// Cached SRV / TXT / A entry counts, so tests can pin that records of
+  /// other services are never cached and stale host names are reclaimed.
+  @visibleForTesting
+  ({int srv, int txt, int a}) get debugCacheSizes =>
+      (srv: _srv.length, txt: _txt.length, a: _a.length);
+
   Future<void> start() async {
     if (_sub != null) return;
     _sub = _transport.datagrams.listen(
@@ -739,6 +745,11 @@ class MdnsServiceBrowser {
     final MdnsMessage? message = decodeMdnsMessage(data);
     if (message == null || !message.isResponse) return;
     final DateTime now = _now();
+    // C10: only records that belong to our service are cached — responders
+    // put every service they run (printers, AirPlay, ...) in one packet. Pass
+    // one takes PTR / SRV / TXT so pass two can keep only the A records of a
+    // host one of our SRV records targets. An A that arrives before its SRV
+    // is dropped; [_reconcile] asks for it again once the SRV lacks addresses.
     for (final MdnsRecord r in message.allRecords) {
       final DateTime expires = now.add(Duration(seconds: r.ttl));
       switch (r) {
@@ -750,31 +761,44 @@ class MdnsServiceBrowser {
             _ptr[r.target] = _Cached<void>(null, expires);
           }
         case MdnsSrvRecord():
+          if (!_isOurInstance(r.name)) continue;
           if (r.ttl == 0) {
             _srv.remove(r.name);
           } else {
             _srv[r.name] = _Cached<MdnsSrvRecord>(r, expires);
           }
         case MdnsTxtRecord():
+          if (!_isOurInstance(r.name)) continue;
           if (r.ttl == 0) {
             _txt.remove(r.name);
           } else {
             _txt[r.name] = _Cached<Map<String, String>>(r.attributes, expires);
           }
         case MdnsARecord():
-          final Map<String, DateTime> addrs = _a.putIfAbsent(
-            r.name,
-            () => <String, DateTime>{},
-          );
-          if (r.ttl == 0) {
-            addrs.remove(r.address.address);
-          } else {
-            addrs[r.address.address] = expires;
-          }
+          break;
+      }
+    }
+    for (final MdnsRecord r in message.allRecords) {
+      if (r is! MdnsARecord || !_isSrvTarget(r.name)) continue;
+      if (r.ttl == 0) {
+        final Map<String, DateTime>? addrs = _a[r.name];
+        addrs?.remove(r.address.address);
+        if (addrs != null && addrs.isEmpty) _a.remove(r.name);
+      } else {
+        _a.putIfAbsent(r.name, () => <String, DateTime>{})[r.address.address] =
+            now.add(Duration(seconds: r.ttl));
       }
     }
     _reconcile(now);
   }
+
+  /// An instance name of our service type: `<instance>.<_serviceName>`.
+  bool _isOurInstance(MdnsName n) =>
+      n.labels.length > _serviceName.labels.length &&
+      MdnsName(n.labels.sublist(1)) == _serviceName;
+
+  bool _isSrvTarget(MdnsName host) =>
+      _srv.values.any((_Cached<MdnsSrvRecord> c) => c.value.target == host);
 
   /// Drops expired records and reports what changed (the 5 s timer; tests
   /// call it after moving the clock).
@@ -789,6 +813,11 @@ class MdnsServiceBrowser {
     for (final Map<String, DateTime> addrs in _a.values) {
       addrs.removeWhere((_, DateTime e) => !e.isAfter(now));
     }
+    // Reclaim host names left empty or no longer targeted by any SRV.
+    _a.removeWhere(
+      (MdnsName name, Map<String, DateTime> addrs) =>
+          addrs.isEmpty || !_isSrvTarget(name),
+    );
     _reconcile(now);
   }
 
@@ -813,8 +842,8 @@ class MdnsServiceBrowser {
             missing.add(MdnsQuestion(srv.target, _typeA));
           }
         }
-        // Wait for TXT too: Fushi keys peers by its `id` attribute, and
-        // reporting first without it would list the same peer twice.
+        // Wait for TXT too: the peer's `id` / `tls` attributes come from it,
+        // and reporting without them would show a wrong id / scheme first.
         continue;
       }
       final MdnsServiceResolved resolved = MdnsServiceResolved(

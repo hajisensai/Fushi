@@ -97,8 +97,16 @@
             </label>
           </div>
           <details class="more" id="moreLookup">
-            <summary><span class="more-label" data-i18n="opt_more_options">更多选项</span><span class="more-count">6</span><span class="more-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span></summary>
+            <summary><span class="more-label" data-i18n="opt_more_options">更多选项</span><span class="more-count">7</span><span class="more-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span></summary>
             <div class="setting-list">
+              <label class="setting-row" for="scanDelay">
+                <span class="setting-copy">
+                  <strong data-i18n="opt_scanDelay_title">扫描延迟（毫秒）</strong>
+                  <small data-i18n="opt_scanDelay_desc">查词按键为「不按键」时，指针停稳这么久才查词（0–2000，0 为立即）。</small>
+                </span>
+                <input class="size-input" id="scanDelay" type="number" min="0" max="2000" step="10"
+                       inputmode="numeric" placeholder="0">
+              </label>
               <label class="setting-row" for="popupFontSize">
                 <span class="setting-copy">
                   <strong data-i18n="opt_popupFontSize_title">词典字号</strong>
@@ -195,8 +203,46 @@
             </label>
           </div>
           <details class="more" id="moreSubtitle">
-            <summary><span class="more-label" data-i18n="opt_more_options">更多选项</span><span class="more-count">8</span><span class="more-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span></summary>
+            <summary><span class="more-label" data-i18n="opt_more_options">更多选项</span><span class="more-count">13</span><span class="more-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span></summary>
             <div class="setting-list">
+              <label class="setting-row" for="subtitleMergeAsrSentences">
+                <span class="setting-copy">
+                  <strong data-i18n="opt_subtitleMergeAsrSentences_title">自动字幕分句整合</strong>
+                  <small data-i18n="opt_subtitleMergeAsrSentences_desc">按标点和停顿把 YouTube 自动字幕的碎片合成整句。字幕没有标点时断句可能不准。</small>
+                </span>
+                <span class="switch"><input id="subtitleMergeAsrSentences" type="checkbox"><span aria-hidden="true"></span></span>
+              </label>
+              <label class="setting-row" for="subtitleMaskEnabled">
+                <span class="setting-copy">
+                  <strong data-i18n="opt_subtitleMask_title">字幕遮布</strong>
+                  <small data-i18n="opt_subtitleMask_desc">遮住画面里烧录的硬字幕，Fushi 字幕仍显示在遮布上方。</small>
+                </span>
+                <span class="switch"><input id="subtitleMaskEnabled" type="checkbox"><span aria-hidden="true"></span></span>
+              </label>
+              <label class="setting-row" for="subtitleMaskAppearance">
+                <span class="setting-copy">
+                  <strong data-i18n="opt_subtitleMaskAppearance_title">遮布外观</strong>
+                  <small data-i18n="opt_subtitleMaskAppearance_desc">模糊保留画面轮廓，纯色完全遮住。</small>
+                </span>
+                <select class="select-input" id="subtitleMaskAppearance">
+                  <option value="blur" data-i18n="opt_subtitleMaskAppearance_blur">模糊</option>
+                  <option value="solid" data-i18n="opt_subtitleMaskAppearance_solid">纯色</option>
+                </select>
+              </label>
+              <label class="setting-row" for="subtitleMaskStrength">
+                <span class="setting-copy">
+                  <strong id="subtitleMaskStrengthTitle" data-i18n="opt_subtitleMaskBlur_title">模糊强度</strong>
+                  <small data-i18n="opt_subtitleMaskStrength_desc">遮布遮挡画面的程度。</small>
+                </span>
+                <span class="range-wrap"><input class="range-input" id="subtitleMaskStrength" type="range" min="2" max="40" step="1"><output for="subtitleMaskStrength" data-unit="px"></output></span>
+              </label>
+              <div class="setting-row setting-row-static">
+                <span class="setting-copy">
+                  <strong data-i18n="opt_subtitleMaskPosition_title">遮布位置</strong>
+                  <small data-i18n="opt_subtitleMaskPosition_desc">在视频上通过播放器里的 Fushi 按钮或快捷键调整。</small>
+                </span>
+                <button class="text-button" id="resetSubtitleMaskPosition" type="button" data-i18n="opt_resetSubtitleOverlayPosition_button">重置位置</button>
+              </div>
               <label class="setting-row" for="subtitleOverlayBlur">
                 <span class="setting-copy">
                   <strong data-i18n="opt_subtitleOverlayBlur_title">防剧透模糊</strong>
@@ -299,7 +345,7 @@
             </label>
             <label class="setting-row" for="subtitleStyleShadow">
               <span class="setting-copy">
-                <strong data-i18n="opt_subtitleStyleShadow_title">描边</strong>
+                <strong data-i18n="opt_subtitleStyleShadow_title">阴影</strong>
                 <small data-i18n="opt_subtitleStyleShadow_desc">没有底板时让文字保持可读。</small>
               </span>
               <select class="select-input" id="subtitleStyleShadow">
@@ -308,9 +354,16 @@
                 <option value="strong" data-i18n="opt_shadow_strong">加粗</option>
               </select>
             </label>
+            <label class="setting-row" for="subtitleStyleOutlineWidth">
+              <span class="setting-copy">
+                <strong data-i18n="opt_subtitleStyleOutlineWidth_title">描边</strong>
+                <small data-i18n="opt_subtitleStyleOutlineWidth_desc">沿字形轮廓的硬描边，与 Fushi app 同一粗细。0 = 不描边。</small>
+              </span>
+              <span class="range-wrap"><input class="range-input" id="subtitleStyleOutlineWidth" type="range" min="0" max="8" step="0.5"><output for="subtitleStyleOutlineWidth" data-unit="px" data-zero="opt_shadow_none"></output></span>
+            </label>
           </div>
           <details class="more" id="moreSubtitleStyle">
-            <summary><span class="more-label" data-i18n="opt_more_subtitle_style">排版与底板</span><span class="more-count">14</span><span class="more-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span></summary>
+            <summary><span class="more-label" data-i18n="opt_more_subtitle_style">排版与底板</span><span class="more-count">15</span><span class="more-chevron msr-slot" data-fushi-icon="expand_more" data-fushi-icon-size="20" aria-hidden="true"></span></summary>
             <div class="setting-list">
               <div class="setting-row setting-row-static font-library" id="subtitleFontLibrary">
                 <span class="setting-copy">
@@ -360,6 +413,13 @@
                   <option value="right" data-i18n="opt_align_right">右对齐</option>
                 </select>
               </label>
+              <div class="setting-row setting-row-static">
+                <span class="setting-copy">
+                  <strong data-i18n="opt_subtitleStyleOutlineColor_title">描边颜色</strong>
+                  <small data-i18n="opt_subtitleStyleOutlineColor_desc">默认纯黑。</small>
+                </span>
+                <span class="color-wrap"><input class="color-input" id="subtitleStyleOutlineColor" type="color" aria-labelledby="subtitleStyleOutlineColor-label"><span id="subtitleStyleOutlineColor-label" hidden data-i18n="opt_subtitleStyleOutlineColor_title">描边颜色</span><button class="text-button" id="subtitleStyleOutlineColorReset" type="button" data-i18n="opt_subtitleStyle_default_color">默认</button></span>
+              </div>
               <div class="setting-row setting-row-static">
                 <span class="setting-copy">
                   <strong data-i18n="opt_subtitleStyleTextColor_title">文字颜色</strong>
@@ -412,7 +472,7 @@
               <label class="setting-row" for="subtitleStyleBoxAutoFit">
                 <span class="setting-copy">
                   <strong data-i18n="opt_subtitleStyleBoxAutoFit_title">自适应缩放</strong>
-                  <small data-i18n="opt_subtitleStyleBoxAutoFit_desc">底板固定高度时，字号自动缩放到正好放下。</small>
+                  <small data-i18n="opt_subtitleStyleBoxAutoFit_desc">底板固定高度时，放不下的字幕才缩小到正好放下；不会放大。</small>
                 </span>
                 <span class="switch"><input id="subtitleStyleBoxAutoFit" type="checkbox"><span aria-hidden="true"></span></span>
               </label>
@@ -605,6 +665,11 @@
               <span class="setting-copy"><strong data-i18n="opt_videoShortcutToggleSubtitleHide_title">隐藏或显示字幕</strong></span>
               <span class="switch"><input id="videoShortcutToggleSubtitleHide" type="checkbox"><span aria-hidden="true"></span></span>
             </label>
+            <label class="setting-row shortcut-row" for="videoShortcutToggleSubtitleMask">
+              <button class="keycap keycap-edit" type="button" data-shortcut-action="toggle-subtitle-mask" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Shift+B</button>
+              <span class="setting-copy"><strong data-i18n="opt_videoShortcutToggleSubtitleMask_title">显示或隐藏字幕遮布</strong></span>
+              <span class="switch"><input id="videoShortcutToggleSubtitleMask" type="checkbox"><span aria-hidden="true"></span></span>
+            </label>
             <label class="setting-row shortcut-row" for="videoShortcutCopyCue">
               <button class="keycap keycap-edit" type="button" data-shortcut-action="copy-cue" data-i18n-title="opt_shortcut_edit_title" title="点击后按下新的组合键；Backspace 恢复默认，Esc 取消">Ctrl+Shift+Z</button>
               <span class="setting-copy"><strong data-i18n="opt_videoShortcutCopyCue_title">复制当前字幕</strong></span>
@@ -789,6 +854,7 @@
   <script src="auto-config.js"></script>
   <script src="popup-size.js"></script>
   <script src="video-shortcuts.js"></script>
+  <script src="subtitle-mask.js"></script>
   <script src="connection-diagnostics.js"></script>
   <script src="self-update.js"></script>
   <script src="options.js"></script>

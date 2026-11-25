@@ -227,6 +227,8 @@ SubtitleMarkup readSubtitleMarkup(
     shearY: fay,
     drawing: drawing,
     drawingStyle: drawingStyle,
+    // 第 16 位：特效字幕标志（无负载，判据在 Rust `Markup::effect`）。
+    isEffect: has(16),
   );
 }
 

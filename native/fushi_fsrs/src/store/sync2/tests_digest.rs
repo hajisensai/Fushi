@@ -342,3 +342,83 @@ fn v14_migration_rebuilds_drifted_buckets_idempotently() {
     assert_eq!(incremental(&a), scanned(&a));
     assert_counts_match(&a);
 }
+
+/// 派生规则版本以摘要前缀为唯一真相：常量与前缀同值，对端规则从摘要串解析（不带前缀的最早格式 = 1）。
+#[test]
+fn derive_rules_and_prefix_move_together() {
+    assert_eq!(digest::VV_PREFIX, format!("{}:", digest::DERIVE_RULES));
+    assert_eq!(
+        digest::derive_rules_of(&format!("ab@{}cd", digest::VV_PREFIX)),
+        Some(digest::DERIVE_RULES)
+    );
+    assert_eq!(digest::derive_rules_of("ab@4:cd"), Some(4));
+    assert_eq!(digest::derive_rules_of("ab@12:cd"), Some(12));
+    assert_eq!(digest::derive_rules_of("ab@cd"), Some(1));
+    assert_eq!(digest::derive_rules_of(""), None);
+    assert_eq!(digest::derive_rules_of("ab@"), None);
+    assert_eq!(digest::derive_rules_of("ab"), None);
+    assert_eq!(digest::derive_rules_of("ab@x:cd"), None);
+}
+
+/// 同步状态：对端摘要的规则前缀与本机不同就带上 `rules`（界面提示「对方规则 vN」），不报摘要不一致；同规则不带。
+#[test]
+fn status_names_a_peer_on_other_derive_rules() {
+    let a = Device::new("dr-a");
+    let b = Device::new("dr-b");
+    let mut bucket = Bucket::default();
+    a.apply(T0, vec![review("r1", "C1", T0, 3, "learn")]);
+    a.sync(&mut bucket, "loc", T0);
+    b.sync(&mut bucket, "loc", T0 + 1);
+    a.sync(&mut bucket, "loc", T0 + 2);
+    b.sync(&mut bucket, "loc", T0 + 3);
+    let da = a.core.sync2_identity(P, T0).unwrap()["device"]
+        .as_str()
+        .unwrap()
+        .to_owned();
+    let row = |st: &Value| -> Value {
+        st["devices"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .find(|d| d["device"] == json!(da))
+            .cloned()
+            .unwrap()
+    };
+    let st = b.core.sync2_status(P).unwrap();
+    assert!(row(&st).get("rules").is_none(), "{st}");
+    assert_eq!(row(&st)["digestMismatch"], json!(false));
+    // a 的摘要串换成旧规则 4 的前缀（v3.3.0 设备写的就是这样）。
+    let blob = crate::sync2::id::Id::parse(&da).unwrap().0.to_vec();
+    let w = b.core.writer().unwrap();
+    let digest_of_a: String = w
+        .query_row(
+            "SELECT digest FROM sync2_devices WHERE device = ?1",
+            [&blob],
+            |r| r.get(0),
+        )
+        .unwrap();
+    let (root, vv) = digest_of_a.split_once('@').unwrap();
+    let old = format!("{root}@4:{}", vv.split_once(':').unwrap().1);
+    w.execute(
+        "UPDATE sync2_devices SET digest = ?1 WHERE device = ?2",
+        rusqlite::params![old, blob],
+    )
+    .unwrap();
+    drop(w);
+    let st = b.core.sync2_status(P).unwrap();
+    assert_eq!(
+        row(&st)["rules"],
+        json!({"theirs": 4, "mine": digest::DERIVE_RULES}),
+        "{st}"
+    );
+    assert_eq!(row(&st)["digestMismatch"], json!(false));
+    // 本机那一行永远不带。
+    let me = st["devices"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|d| d["self"] == json!(true))
+        .cloned()
+        .unwrap();
+    assert!(me.get("rules").is_none());
+}

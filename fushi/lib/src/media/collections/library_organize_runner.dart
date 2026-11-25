@@ -8,15 +8,26 @@ import 'package:fushi_engine/media/collections/library_organize/library_organize
 import 'package:fushi_engine/media/collections/library_organize/library_organize_facts.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_service.dart';
+import 'package:fushi_engine/media/library_curate/library_curator.dart';
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
     show scheduleAutomaticCollectionAiOrder;
+import 'package:fushi/src/media/library_curate/library_curate_auto.dart'
+    show
+        appLibraryCurator,
+        libraryCurateAiOf,
+        libraryCurateAutoOwnsTriggers,
+        scheduleAutomaticLibraryCurate;
+import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
+import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/library_organize_history_page.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiListItem;
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -250,7 +261,17 @@ final Set<CollectionShelfDomain> _autoInFlight = <CollectionShelfDomain>{};
 
 /// 库页加载 / 来源扫描后调：开了「导入后自动整理」、同意过、有提供商时，去抖后对
 /// [domain] 里**本机上次自动整理之后新入库**的条目跑一次。不阻塞调用方。
+///
+/// AI 库管家自动路径开着（`library_curate_auto`，默认开）时改由它接管：去抖后跑一
+/// 趟库管家（第一阶段就是这个整理，四个域一起），旧的自动整理不再单独跑，两套自动
+/// 任务不会对同一批新条目重复花钱。
 void scheduleAutomaticLibraryOrganize(CollectionShelfDomain domain) {
+  if (libraryCurateAutoOwnsTriggers()) {
+    scheduleAutomaticLibraryCurate();
+    return;
+  }
+  // 库管家关着时它只排 AI 助手自动复查（开着才排；流水线那一段按它自己的开关不跑）。
+  scheduleAutomaticLibraryCurate();
   final LibraryOrganizeAutoHost? host = _autoHost;
   if (!_autoEnabled(host)) return;
   _debounce[domain]?.cancel();
@@ -262,6 +283,7 @@ void scheduleAutomaticLibraryOrganize(CollectionShelfDomain domain) {
 
 bool _autoEnabled(LibraryOrganizeAutoHost? host) =>
     host != null &&
+    !libraryCurateAutoOwnsTriggers() &&
     host.prefs.libraryOrganizeAuto &&
     host.prefs.libraryOrganizeConsented &&
     resolveLibraryOrganizeAiProvider(host.prefs) != null;
@@ -316,3 +338,201 @@ Future<LibraryOrganizeResult?> runAutomaticLibraryOrganize(
 
 @visibleForTesting
 bool get debugLibraryOrganizeAutoScheduled => _debounce.isNotEmpty;
+
+// ---------------------------------------------------------------------------
+// AI 库管家：设置 › AI 里的「立即整理整个库」
+// ---------------------------------------------------------------------------
+
+/// 阶段的展示名。
+String libraryCurateStageLabel(LibraryCurateStage stage) => switch (stage) {
+  LibraryCurateStage.organizeBooks => t.library_curate_stage_organize(
+    domain: libraryOrganizeDomainLabel(CollectionShelfDomain.books),
+  ),
+  LibraryCurateStage.organizeManga => t.library_curate_stage_organize(
+    domain: libraryOrganizeDomainLabel(CollectionShelfDomain.manga),
+  ),
+  LibraryCurateStage.organizeVideo => t.library_curate_stage_organize(
+    domain: libraryOrganizeDomainLabel(CollectionShelfDomain.video),
+  ),
+  LibraryCurateStage.organizeGames => t.library_curate_stage_organize(
+    domain: libraryOrganizeDomainLabel(CollectionShelfDomain.games),
+  ),
+  LibraryCurateStage.videoStructure => t.library_curate_stage_video_structure,
+  LibraryCurateStage.scrape => t.library_curate_stage_scrape,
+  LibraryCurateStage.scrapeBooks => t.library_curate_stage_scrape_books,
+  LibraryCurateStage.scrapeGames => t.library_curate_stage_scrape_games,
+  LibraryCurateStage.links => t.library_curate_stage_links,
+  LibraryCurateStage.music => t.library_curate_stage_music,
+  LibraryCurateStage.works => t.library_curate_stage_works,
+};
+
+String _curateStatusLabel(LibraryCurateStageStatus status) => switch (status) {
+  LibraryCurateStageStatus.done => t.library_curate_status_done,
+  LibraryCurateStageStatus.partial => t.library_curate_status_partial,
+  LibraryCurateStageStatus.skipped => t.library_curate_status_skipped,
+  LibraryCurateStageStatus.failed => t.library_curate_status_failed,
+  LibraryCurateStageStatus.cancelled => t.library_curate_status_cancelled,
+};
+
+/// 手动跑一趟库管家（spec 2026-11-18 §9）：同意（与 AI 整理库共用，没指派任何 AI
+/// 时不问）→ 费用预估确认 → 进度（可取消）→ 结果摘要（各阶段结论、整趟撤销、待
+/// 确认入口跳整理记录页）。
+Future<void> runLibraryCurateInteractive({
+  required BuildContext context,
+  required AppModel appModel,
+}) async {
+  final LibraryCurator? curator = appLibraryCurator();
+  if (curator == null) {
+    FushiToast.show(msg: t.library_curate_not_ready);
+    return;
+  }
+  if (curator.isRunning) {
+    FushiToast.show(msg: t.library_curate_busy);
+    return;
+  }
+  final PreferencesRepository prefs = appModel.prefsRepo;
+  final LibraryCurateAiAvailability ai = libraryCurateAiOf(
+    prefs,
+    aiModuleEnabled: isAiModuleEnabled(appModel.moduleVisibility),
+  );
+  if (ai.organize || ai.videoIdentify || ai.mediaLinks) {
+    if (!await ensureLibraryOrganizeConsent(context, prefs)) return;
+  }
+  final LibraryCurateEstimate estimate;
+  try {
+    estimate = await curator.estimate();
+  } on Object catch (error, stack) {
+    ErrorLogService.instance.log('libraryCurate.estimate', error, stack);
+    return;
+  }
+  if (!context.mounted) return;
+  final bool? go = await showAppDialog<bool>(
+    context: context,
+    builder: (BuildContext dialogContext) => FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(
+        icon: FushiIcons.aiAssistant,
+        tone: FushiHeroTone.neutral,
+      ),
+      title: Text(t.library_curate_estimate_title),
+      content: Text(
+        t.library_curate_estimate_body(
+          items: estimate.items,
+          requests: estimate.requests,
+        ),
+      ),
+      actions: <Widget>[
+        FushiDialogAction(
+          label: MaterialLocalizations.of(dialogContext).cancelButtonLabel,
+          onPressed: () => Navigator.of(dialogContext).pop(false),
+        ),
+        FushiDialogAction(
+          key: const ValueKey<String>('library_curate_start'),
+          label: t.library_curate_start,
+          kind: FushiDialogActionKind.primary,
+          onPressed: () => Navigator.of(dialogContext).pop(true),
+        ),
+      ],
+    ),
+  );
+  if (go != true || !context.mounted) return;
+  bool cancelled = false;
+  final FushiProgressDialogHandle handle = showFushiProgressDialog(
+    context: context,
+    title: t.library_curate_run_action,
+    onCancel: () => cancelled = true,
+    cancelLabel: t.library_organize_cancel,
+  );
+  LibraryCurateRun? run;
+  try {
+    run = await curator.run(
+      trigger: LibraryCurateTrigger.manual,
+      isCancelled: () => cancelled,
+      onProgress: (LibraryCurateStage stage, int index, int total) {
+        handle.progress.value = total == 0 ? null : index / total;
+        handle.message.value = libraryCurateStageLabel(stage);
+      },
+    );
+  } on LibraryCurateBusy {
+    FushiToast.show(msg: t.library_curate_busy);
+  } on Object catch (error, stack) {
+    ErrorLogService.instance.log('libraryCurate.manual', error, stack);
+  } finally {
+    handle.close();
+  }
+  if (run == null || !context.mounted) return;
+  await _showCurateResult(context, appModel, curator, run);
+}
+
+Future<void> _showCurateResult(
+  BuildContext context,
+  AppModel appModel,
+  LibraryCurator curator,
+  LibraryCurateRun run,
+) async {
+  final String title = run.changes == 0 && run.pending == 0
+      ? t.library_curate_result_nothing
+      : t.library_curate_result_title(
+          changes: run.changes,
+          pending: run.pending,
+        );
+  final String? choice = await showAppDialog<String>(
+    context: context,
+    builder: (BuildContext dialogContext) => FushiAlertDialog(
+      icon: const FushiDialogHeroIcon(
+        icon: FushiIcons.aiAssistant,
+        tone: FushiHeroTone.neutral,
+      ),
+      title: Text(title),
+      content: FushiEntranceScope(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            for (final (int i, LibraryCurateStageResult s)
+                in run.stages.indexed)
+              FushiStaggeredEntrance(
+                index: i,
+                child: FushiListItem(
+                  key: ValueKey<String>('library_curate_stage_${s.stage.wire}'),
+                  padding: EdgeInsets.zero,
+                  title: Text(libraryCurateStageLabel(s.stage)),
+                  trailing: Text(
+                    s.changes > 0 || s.pending > 0
+                        ? '${_curateStatusLabel(s.status)} · '
+                              '+${s.changes} / ${s.pending}'
+                        : _curateStatusLabel(s.status),
+                  ),
+                ),
+              ),
+          ],
+        ),
+      ),
+      actions: <Widget>[
+        if (run.changes > 0)
+          FushiDialogAction(
+            key: const ValueKey<String>('library_curate_result_undo'),
+            label: t.library_curate_undo_run,
+            onPressed: () => Navigator.of(dialogContext).pop('undo'),
+          ),
+        if (run.pending > 0)
+          FushiDialogAction(
+            key: const ValueKey<String>('library_curate_result_pending'),
+            label: t.library_curate_view_pending,
+            onPressed: () => Navigator.of(dialogContext).pop('pending'),
+          ),
+        FushiDialogAction(
+          label: MaterialLocalizations.of(dialogContext).okButtonLabel,
+          kind: FushiDialogActionKind.primary,
+          onPressed: () => Navigator.of(dialogContext).pop(),
+        ),
+      ],
+    ),
+  );
+  if (choice == 'undo') {
+    final LibraryCurateUndoResult r = await curator.undoRun(run.id);
+    FushiToast.show(msg: t.library_curate_undone(n: r.undone));
+  } else if (choice == 'pending' && context.mounted) {
+    // 待确认的合集级建议与「挪走」记录都在整理记录页（那里有确认卡），不另做一份。
+    await openLibraryOrganizeHistoryPage(context, appModel);
+  }
+}

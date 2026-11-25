@@ -1,7 +1,9 @@
 // 暂停 OCR 覆盖层：识别完成标记到时淡出（反馈 YtbinN_pBG / -6dAnq8S6f）、
-// 无图形字幕的视频按 VideoPauseOcrScope 识别（反馈 i5A0mu1-AT / BUG-3314）。
+// 无图形字幕的视频按 VideoPauseOcrScope 识别（反馈 i5A0mu1-AT / BUG-3314）、
+// 字框重叠时按几何裁决点中哪个字（BUG-5177，反馈 WgeFHwdQ65）。
 import 'dart:typed_data';
 
+import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRgbaImage;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart'
@@ -46,17 +48,20 @@ Future<MangaStreamOcrSetup> _noPrepare(String _) =>
     throw StateError('recognizeFrame is injected; prepare must not run');
 
 class _Probe {
-  _Probe({this.failFirst = 0});
+  _Probe({this.failFirst = 0, this.frame = _frame});
+
+  /// 识别交回的结果。
+  final GraphicSubtitleOcrFrame frame;
 
   /// 前几次截帧返回 null（mpv 新帧还没显示时 `screenshot-raw` 无结果）。
   final int failFirst;
 
   int captures = 0;
 
-  Future<Uint8List?> capture() async {
+  Future<OcrRgbaImage?> capture() async {
     captures++;
     if (captures <= failFirst) return null;
-    return Uint8List.fromList(<int>[1, 2, 3]);
+    return OcrRgbaImage(rgba: Uint8List(4 * 4), width: 2, height: 2);
   }
 
   int recognitions = 0;
@@ -64,14 +69,14 @@ class _Probe {
   /// 识别抛「引擎不可用」（没配 OCR 引擎）。
   bool unavailable = false;
 
-  Future<GraphicSubtitleOcrFrame?> recognize(Uint8List _) async {
+  Future<GraphicSubtitleOcrFrame?> recognize(OcrRgbaImage _) async {
     recognitions++;
     if (unavailable) {
       throw const GraphicSubtitleOcrUnavailable(
         GraphicSubtitleOcrUnavailableReason.noEngine,
       );
     }
-    return _frame;
+    return frame;
   }
 }
 
@@ -83,6 +88,7 @@ Widget _overlay(
   void Function(Object error, StackTrace stack)? onError,
   int manualRequestSerial = 0,
   void Function(GraphicSubtitleOcrUnavailableReason reason)? onUnavailable,
+  void Function(String sentence, int graphemeIndex, Rect globalRect)? onCharTap,
 }) {
   return MaterialApp(
     home: Scaffold(
@@ -93,7 +99,7 @@ Widget _overlay(
           controller: c,
           fit: BoxFit.contain,
           prepare: _noPrepare,
-          onCharTap: (_, _, _) {},
+          onCharTap: onCharTap ?? (_, _, _) {},
           captureFrame: probe.capture,
           recognizeFrame: probe.recognize,
           scope: scope,
@@ -705,6 +711,159 @@ void main() {
       expect(hint, findsNothing);
       expect(_hitBoxes, findsNWidgets(_frame.chars.length));
       await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
+    });
+  });
+
+  group('点字命中裁决（BUG-5177，反馈 WgeFHwdQ65）', () {
+    // 斜着的两行：上一行行尾的字「末」是正常大小的框；下一行（排在后面）行尾那一格按
+    // 斜行的轴对齐外接框铺，又高又往上伸，盖住了上一行的「末」。以前每个字一个手势框，
+    // 重叠处全凭叠放顺序——点「末」的正中也命中下一行。
+    const String sentence = '上の行の末次の行の字';
+    const Rect upperEnd = Rect.fromLTWH(1500, 200, 60, 60); // 「末」grapheme 4
+    const Rect lowerEndTall = Rect.fromLTWH(
+      1500,
+      180,
+      60,
+      180,
+    ); // 「字」grapheme 9
+    const GraphicSubtitleOcrFrame tiltedFrame = GraphicSubtitleOcrFrame(
+      imageSize: Size(1920, 1080),
+      chars: <GraphicSubtitleOcrChar>[
+        (sentence: sentence, graphemeIndex: 4, rect: upperEnd),
+        (sentence: sentence, graphemeIndex: 9, rect: lowerEndTall),
+      ],
+    );
+
+    test('落点在两个框里：取落点更深的那个，与排列顺序无关', () {
+      final Offset tap = upperEnd.center;
+      expect(
+        graphicSubtitleOcrHitTest(
+          charRects: const <Rect>[upperEnd, lowerEndTall],
+          point: tap,
+        ),
+        0,
+      );
+      expect(
+        graphicSubtitleOcrHitTest(
+          charRects: const <Rect>[lowerEndTall, upperEnd],
+          point: tap,
+        ),
+        1,
+      );
+      // 只落在高框里（上一行的框之外）：命中高框。
+      expect(
+        graphicSubtitleOcrHitTest(
+          charRects: const <Rect>[upperEnd, lowerEndTall],
+          point: const Offset(1530, 330),
+        ),
+        1,
+      );
+    });
+
+    test('没有框盖住落点：不归本层', () {
+      expect(
+        graphicSubtitleOcrHitTest(
+          charRects: const <Rect>[upperEnd, lowerEndTall],
+          point: const Offset(10, 10),
+        ),
+        isNull,
+      );
+    });
+
+    test('一样深：取面积小的；再一样取排在后面的（同以前的叠放顺序）', () {
+      const Rect big = Rect.fromLTWH(0, 0, 100, 100);
+      const Rect small = Rect.fromLTWH(25, 25, 50, 50);
+      expect(
+        graphicSubtitleOcrHitTest(
+          charRects: const <Rect>[small, big],
+          point: const Offset(50, 50),
+        ),
+        0,
+      );
+      expect(
+        graphicSubtitleOcrHitTest(
+          charRects: const <Rect>[big, big],
+          point: const Offset(50, 50),
+        ),
+        1,
+      );
+    });
+
+    testWidgets('真覆盖层：点上一行「末」的正中，查的是「末」不是下一行的字', (WidgetTester tester) async {
+      // 默认测试画布 800 宽，会把 960×540 的视频控件压窄；放大画布，控件就是 960×540。
+      tester.view.physicalSize = const Size(1280, 720);
+      tester.view.devicePixelRatio = 1;
+      addTearDown(tester.view.reset);
+      final VideoPlayerController c = _pausedController(graphic: true);
+      addTearDown(c.dispose);
+      final _Probe probe = _Probe(frame: tiltedFrame);
+      final List<(String, int, Rect)> taps = <(String, int, Rect)>[];
+      await tester.pumpWidget(
+        _overlay(
+          c,
+          probe,
+          onCharTap: (String s, int i, Rect r) => taps.add((s, i, r)),
+        ),
+      );
+      await tester.pump(kGraphicSubtitleOcrSettleDelay);
+      await tester.pump(const Duration(milliseconds: 500));
+      expect(_hitBoxes, findsNWidgets(2));
+      expect(
+        tester.getSize(find.byType(VideoGraphicSubtitleOcrOverlay)),
+        const Size(960, 540),
+      );
+
+      // 960×540 控件、contain：帧图 1920×1080 正好缩一半。
+      final Offset origin = tester.getTopLeft(
+        find.byType(VideoGraphicSubtitleOcrOverlay),
+      );
+      await tester.tapAt(origin + upperEnd.center / 2);
+      expect(taps, hasLength(1));
+      expect(taps.single.$1, sentence);
+      expect(taps.single.$2, 4);
+      expect(
+        taps.single.$3,
+        Rect.fromLTWH(
+          origin.dx + upperEnd.left / 2,
+          origin.dy + upperEnd.top / 2,
+          upperEnd.width / 2,
+          upperEnd.height / 2,
+        ),
+      );
+
+      // 只落在下一行那一格里：照常命中它。
+      await tester.tapAt(origin + const Offset(1530, 330) / 2);
+      expect(taps, hasLength(2));
+      expect(taps.last.$2, 9);
+      await tester.pump(kGraphicSubtitleOcrStatusHintDuration);
+    });
+
+    test('点字诊断：记下落点、尺寸、命中的字与附近字框，能回放这一击', () {
+      final String line = graphicSubtitleOcrTapDiagnostic(
+        frame: tiltedFrame,
+        viewRects: <Rect>[
+          for (final GraphicSubtitleOcrChar ch in tiltedFrame.chars)
+            Rect.fromLTRB(
+              ch.rect.left / 2,
+              ch.rect.top / 2,
+              ch.rect.right / 2,
+              ch.rect.bottom / 2,
+            ),
+        ],
+        point: upperEnd.center / 2,
+        hit: 0,
+        viewSize: const Size(960, 540),
+        displaySize: const Size(1920, 1080),
+        fit: BoxFit.contain,
+      );
+      expect(line, contains('point=(765,115)'));
+      expect(line, contains('view=960x540 display=1920x1080 image=1920x1080'));
+      expect(line, contains('fit=contain'));
+      expect(line, contains('covering=2'));
+      expect(line, contains('hit=#0"末" grapheme=4'));
+      expect(line, contains('charImage=1500,200,1560,260'));
+      expect(line, contains('#1"字"@1500,180,1560,360'));
+      expect(line, contains('text="$sentence"'));
     });
   });
 

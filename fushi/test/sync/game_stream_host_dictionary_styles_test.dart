@@ -6,6 +6,7 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/fushi_remote_lookup_client.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -18,6 +19,17 @@ import 'package:http/testing.dart';
 /// Glossary 也在本机导出。远端查词客户端必须按 `stylesRevision` 协议取回并缓存
 /// **host** 的词典样式，并交给弹窗；老 host 不认该字段时照旧（回落样式端点）。
 void main() {
+  // V-B4：明文地址拿凭据前要当场 ping 核对 hostId；这些用例的对端是 MockClient，
+  // 把身份核对视为通过。
+  setUp(() {
+    resetInterconnectRaceCache();
+    debugInterconnectAddressProbeOverride =
+        (FushiClientUrl candidate, String? hostId) async => true;
+  });
+  tearDown(() {
+    debugInterconnectAddressProbeOverride = null;
+    resetInterconnectRaceCache();
+  });
   const FushiClientUrl pinned = FushiClientUrl(
     url: 'http://desk:8765',
     hostId: 'desk',

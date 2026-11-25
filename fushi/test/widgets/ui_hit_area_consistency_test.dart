@@ -420,7 +420,9 @@ void main() {
     expect(body, contains('bandExtent: _kGlassTopEdgeExtent'));
   });
 
-  testWidgets('设置页头：返回 / 标题 / 动作三块胶囊同高、块间留距', (WidgetTester tester) async {
+  testWidgets('设置页头（页头大字外壳）：返回 / 动作同高的方形命中区，标题不贴动作', (
+    WidgetTester tester,
+  ) async {
     await tester.pumpWidget(
       _host(
         SizedBox(
@@ -441,29 +443,33 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final Finder slots = find.byType(FushiFillSlot);
-    expect(slots, findsNWidgets(2), reason: '返回键与单个动作都是撑满的圆胶囊');
-    final Rect back = tester.getRect(slots.first);
-    final Rect more = tester.getRect(slots.last);
-    _expectSquare(back.size, _kScaledExtent);
-    _expectSquare(more.size, _kScaledExtent);
-    final Rect title = tester.getRect(
-      find
-          .ancestor(
-            of: find.text('外观与交互'),
-            matching: find.byWidgetPredicate(
-              (Widget w) =>
-                  w is ConstrainedBox &&
-                  w.constraints.minHeight == kFushiFloatingToolbarCompactExtent,
-            ),
-          )
-          .first,
+    // 重设计外壳（非墨水屏，PR #3397）的设置页头是页头大字一行
+    // （[FushiMastheadHeader]）：返回键与尾部动作是同一尺寸的方形命中区，
+    // 页名大字与动作之间留距。旧的三块悬浮胶囊只剩墨水屏。
+    final Rect back = tester.getRect(
+      find.byTooltip(const DefaultMaterialLocalizations().backButtonTooltip),
     );
-    expect(title.height, moreOrLessEquals(_kScaledExtent));
+    final Rect more = tester.getRect(find.byTooltip('more'));
+    expect(back.width, moreOrLessEquals(back.height));
+    expect(more.width, moreOrLessEquals(more.height));
+    // #3515 起二级页 FushiPageScaffold 默认也走这条页头：返回键保持被取代的
+    // AppBar BackButton 的 48×48 命中区（不缩到动作钮的 40），与动作同一行居中。
+    expect(
+      back.height,
+      greaterThanOrEqualTo(kMinInteractiveDimension),
+      reason: '返回键命中区不小于 48',
+    );
+    expect(back.height, greaterThanOrEqualTo(more.height));
+    expect(
+      back.center.dy,
+      moreOrLessEquals(more.center.dy, epsilon: 1),
+      reason: '返回键与动作同一行居中',
+    );
+    final Rect title = tester.getRect(find.text('外观与交互'));
     expect(
       more.left - title.right,
-      greaterThanOrEqualTo(4 * kFushiFloatingCapsuleScale),
-      reason: '标题胶囊与动作胶囊不能贴在一起',
+      greaterThanOrEqualTo(4),
+      reason: '标题与动作不能贴在一起',
     );
   });
 

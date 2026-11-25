@@ -1,6 +1,10 @@
 // 用户自己加的「文件夹」存储位置（sync2/srs_folder_location.dart，docs/specs/2026-10-25-srs-sync-v2-design.md
 // §6.5、§10.3）：两台设备经同一个文件夹（U 盘 / NAS / Syncthing 目录）收敛；归档用途只写不删——不清旧 head、
 // 不清过期媒体；文件夹不在时明确报错；一个用途都没勾时什么也不做。
+//
+// 新代（G8-7 / G8-7b）：数据在新根 `v4/`（`srsFolderNewRoot`），全新文件夹是新集合、媒体也在 `v4/`；旧根 `v3/` 只有
+// 围栏 meta 与墓碑 head。
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show driftRuntimeOptions;
@@ -41,16 +45,11 @@ void main() {
   Future<SrsDbStore> device(String id) async {
     final SrsStorage st = await openTestSrsStorage();
     return SrsDbStore.open(
-      db: st.db,
       core: st.core,
       profileUid: kProfile,
       deviceId: id,
       engine: const SrsFakeEngine(),
-      trustedClock: SrsTrustedClock(
-        wallClockMs: () => t,
-        bootClockMs: () => t,
-        bootId: 'boot-$id',
-      ),
+      trustedClock: SrsTrustedClock(wallClockMs: () => t, bootClockMs: () => t),
     );
   }
 
@@ -79,10 +78,10 @@ void main() {
     return srsSyncFolderLocation(location: loc, store: s, mediaRoot: media);
   }
 
-  /// 本机在位置上的 head 文件数。
+  /// 本机在位置上（新根 `v4/`）的 head 文件数。
   Future<int> headsOf(SrsFolderLocation loc, SrsDbStore s) async {
     final SrsLocationStore root = SrsDirectoryLocationStore(
-      srsFolderCollectionRoot(loc, kProfile),
+      srsFolderNewRoot(loc, kProfile),
     );
     final String self = (await s.sync2Status())['device']! as String;
     return <SrsLocationEntry>[
@@ -107,19 +106,18 @@ void main() {
       await run(loc, a, media: mediaA);
       await run(loc, b, media: mediaB);
     }
-    expect((await b.note(fromA))!.field(expr(b)), '猫');
-    expect((await a.note(fromB))!.field(expr(a)), '犬');
     expect(File(p.join(mediaB.path, 'cat.png')).readAsBytesSync(), <int>[1, 2]);
     expect(
       (await a.sync2Digest())['digest'],
       (await b.sync2Digest())['digest'],
     );
-    final Directory root = srsFolderCollectionRoot(loc, kProfile);
+    final Directory root = srsFolderNewRoot(loc, kProfile);
     expect(
       root.path,
-      p.join(loc.path, kSrsSync2Namespace, kProfile, kSrsSync2Folder),
+      p.join(loc.path, kSrsSync2Namespace, kProfile, kSrs4Root),
     );
     expect(File(p.join(root.path, 'meta.json')).existsSync(), isTrue);
+    // 全新文件夹 = 新集合：媒体在新根；旧根只有围栏。
     expect(
       File(
         p.join(
@@ -129,11 +127,20 @@ void main() {
       ).existsSync(),
       isTrue,
     );
+    expect(
+      File(
+        p.join(srsFolderCollectionRoot(loc, kProfile).path, 'meta.json'),
+      ).existsSync(),
+      isTrue,
+    );
     // 本机按 `folder:<id>` 记传到了哪。
     final List<Object?> locs = (await a.sync2Status())['locations']! as List;
     expect(<Object?>[
       for (final Object? l in locs) (l! as Map)['location'],
     ], contains(loc.locationId));
+    // 按建笔记时的 ID 读视图（成员 ID 读路径，G9-7 归属的已知红：`_prefetchEdits` 按请求 ID 建槽、内核按规范 ID 回）。
+    expect((await b.note(fromA))!.field(expr(b)), '猫');
+    expect((await a.note(fromB))!.field(expr(a)), '犬');
   });
 
   test('同步用途清两代以前的旧 head；归档用途一个旧 head 也不删', () async {
@@ -161,7 +168,7 @@ void main() {
       await addNote(a, '風$i');
       await run(archive, a);
     }
-    expect(await headsOf(sync, a), 3, reason: '本代 + 前两代');
+    expect(await headsOf(sync, a), 2, reason: '本代 + 前一代（HEAD_KEEP_GENS = 2）');
     expect(await headsOf(archive, a), 6, reason: '归档永不删除');
   });
 
@@ -193,7 +200,7 @@ void main() {
     expect(
       File(
         p.join(
-          srsFolderCollectionRoot(archive, kProfile).path,
+          srsFolderNewRoot(archive, kProfile).path,
           srsMediaContentPath(kSrsMediaFolder, srsMediaSha256(<int>[1])),
         ),
       ).existsSync(),
@@ -289,7 +296,8 @@ void main() {
       <String>['upload', 'media'],
     );
     expect(events.indexOf('upload'), greaterThan(events.indexOf(fetches.last)));
-    expect(steps, contains('migrate:meta'), reason: '位置准备那段也记步骤');
+    expect(steps, contains('handshake'), reason: '位置的根那段也记步骤');
+    expect(steps, contains('oldRoot list'), reason: '旧根接手那段也记步骤');
     expect(steps, contains('ingestFinish'));
   });
 
@@ -398,21 +406,58 @@ void main() {
     }
   });
 
-  test('最低读者版本门控：旧版本写的 meta（minReader 不高于本机 / 缺省）照常读写', () async {
-    for (final String meta in <String>['{"v":1,"minReader":1}', '{"v":1}']) {
-      final SrsFolderLocation loc = SrsFolderLocation(
-        id: 'old-${meta.length}',
-        path: dir('old-${meta.length}').path,
-      );
-      final SrsDbStore a = await device('o-${meta.length}');
-      await addNote(a, '犬');
-      final Directory root = srsFolderCollectionRoot(loc, kProfile)
-        ..createSync(recursive: true);
-      File(p.join(root.path, 'meta.json')).writeAsStringSync(meta);
-      final SrsFolderSyncReport r = await run(loc, a);
-      expect(r.crypto?.needsUpgrade, isFalse, reason: meta);
-      expect(r.crypto?.error, isNull, reason: meta);
-      expect(await headsOf(loc, a), 1, reason: meta);
-    }
+  test(
+    '存量协议 3 位置（本集合的 v3 meta，minReader 不高于本机 / 缺省）：照常同步，旧 meta 改写成围栏',
+    () async {
+      for (final int? minReader in <int?>[3, null]) {
+        final String tag = '${minReader ?? 'none'}';
+        final SrsFolderLocation loc = SrsFolderLocation(
+          id: 'old-$tag',
+          path: dir('old-$tag').path,
+        );
+        final SrsDbStore a = await device('o-$tag');
+        await addNote(a, '犬');
+        final Object? collection = (await a.sync2Command(<String, Object?>{
+          'op': 'identity',
+          'now': t,
+        })).map['collection'];
+        final Directory root = srsFolderCollectionRoot(loc, kProfile)
+          ..createSync(recursive: true);
+        File(p.join(root.path, 'meta.json')).writeAsStringSync(
+          jsonEncode(<String, Object?>{
+            'v': 3,
+            'minReader': ?minReader,
+            'collection': collection,
+          }),
+        );
+        final SrsFolderSyncReport r = await run(loc, a);
+        expect(r.crypto?.needsUpgrade, isFalse, reason: tag);
+        expect(r.crypto?.error, isNull, reason: tag);
+        expect(r.ops?.mediaRoot, kSrsSync2Folder, reason: tag);
+        expect(await headsOf(loc, a), 1, reason: tag);
+        expect(
+          (jsonDecode(File(p.join(root.path, 'meta.json')).readAsStringSync())
+              as Map)['moved'],
+          kSrs4Root,
+          reason: tag,
+        );
+      }
+    },
+  );
+
+  test('只有协议 1 旧根 v2/ 的文件夹：明确拒绝（机读码），一个字节都不写', () async {
+    final SrsFolderLocation loc = SrsFolderLocation(
+      id: 'v1',
+      path: dir('v1').path,
+    );
+    final SrsDbStore a = await device('v1');
+    await addNote(a, '犬');
+    final Directory v2 = srsFolderV1CollectionRoot(loc, kProfile)
+      ..createSync(recursive: true);
+    File(p.join(v2.path, 'meta.json')).writeAsStringSync('{"v":1}');
+    final Map<String, List<int>> before = snapshot(Directory(loc.path));
+    final SrsFolderSyncReport r = await run(loc, a);
+    expect(r.ops?.error, contains('srs_location_protocol1_root'));
+    expect(snapshot(Directory(loc.path)), before);
   });
 }

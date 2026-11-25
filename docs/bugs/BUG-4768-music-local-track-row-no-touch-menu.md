@@ -1,0 +1,6 @@
+## BUG-4768 · 触屏上本地曲目行打不开菜单：歌曲 / 艺人 / 歌单页进不了多选、点不到「从这个歌单移除」
+- **报告**：2026-11-17（PR #3620 落地时发现的遗留）
+- **真实性**：✅ 真 bug。`fushi/lib/src/pages/implementations/music/music_track_list.dart` 本地曲目行（重设计行与 eink 旧行两个分支）行尾只有「曲目详情」按钮和拖拽把手，没有 `menu.button()`；长按非多选态是 `openMusicTrackDetail`（:779）；整行菜单只挂在 `menu.contextMenu`（`music_track_actions.dart` `ContextMenuTrigger`，只响应右键 / 上下文菜单键）。PR #3620 把「多选」（`_selectAction`，:443）与「从这个歌单移除」（`_playlistActions`，:616）只加进这份菜单，触屏用户在歌曲 / 艺人 / 歌单页走不到；统一搜索的本地曲目行（`music_unified_search.dart` 原 :416/:432 `menuButton = false`）同样只接右键，理由「本地菜单只有播放 / 详情」已过时（菜单早已有接着播 / 加入队列 / 加入歌单 / 从音乐库移除）。
+- **[x] ① 已修复** — 本地曲目行行尾按远程行写法补 `menu.button()`（「⋯」，`padTouchTarget` 命中区 ≥48dp）：`music_track_list.dart:824`（重设计行）/ `:875`（eink 旧行）；统一搜索去掉本地曲目的 `menuButton = false` 特例，有菜单的行都挂「⋯」（`music_unified_search.dart:516`）。长按语义（详情 / 进多选）未动，属交互取舍。
+- **[x] ② 已加自动化测试** — `fushi/test/pages/music/music_track_selection_test.dart`「触屏：歌单页本地曲目行尾「⋯」开菜单，有多选与从歌单移除」（eink=false / true 两个分支各一条，触屏点「⋯」→ 菜单有 select，点 removeFromPlaylist 真落库）；`music_unified_search_servers_test.dart` 本地曲目行触屏点「⋯」开菜单；`music_plugin_track_actions_test.dart` 原「不加行尾「⋯」」断言随之改为有。
+- **备注**：色块样式（`MusicTrackBlock`）的同类缺口另见 BUG-4769。Android / iOS 真机未复测。

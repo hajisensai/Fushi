@@ -20,7 +20,7 @@
 /// Audiobookshelf、Jellyfin / Plex 在 iOS 上照常设置、浏览、阅读 / 串流与下载到本机。
 library;
 
-import 'dart:io' show Platform;
+import 'package:fushi/src/platform/host_platform.dart';
 
 /// 一类因商店合规而在 iOS 构建里整体缺席的能力。
 enum StoreRestrictedCapability {
@@ -53,7 +53,18 @@ enum StoreRestrictedCapability {
   /// 在线音源插件宿主：用户安装的 JS 插件接入第三方音乐平台（搜索 / 取流 / 歌词）。同一条
   /// 合规理由——运行时加载并执行第三方代码、接入未授权来源的媒体；iOS 伞形静态库也不编入
   /// JS 引擎。iOS 只保留本地曲库与用户自配的服务器曲库（docs/specs/2026-10-28-music-plugins.md）。
+  ///
+  /// 同一个值也覆盖音乐模块的 **YouTube 内置音源**（反馈 0tRY-D2JgG）：它虽是原生 Dart 实现、
+  /// 不加载第三方代码，但同样是「从未授权的第三方平台串流媒体」（审核指南 5.2.3 点名
+  /// YouTube），理由与插件音源的后半条相同。消费端问 `youtube_music_gate.dart`。
   onlineMusicSource,
+
+  /// Tracking site plugins: user-installed JS plugins that read and write the
+  /// user's list on a third-party tracking site. Same reason as
+  /// [onlineMusicSource]: the app downloads and runs third-party code, and the
+  /// iOS umbrella library has no JS engine
+  /// (docs/specs/2026-11-10-tracking-plugins.md).
+  trackingPlugins,
 
   /// 统一下载中心（torrent / 磁力 / 任意直链队列），含外接 qBittorrent 后端。
   ///
@@ -90,7 +101,7 @@ enum StoreRestrictedCapability {
   ///
   /// 要在测试里断言「某平台上这条边界如何」，用 [availableOn] 显式注入平台，
   /// 别依赖宿主真实平台——否则同一条用例在 Windows 本机与 macOS CI 上结论相反。
-  bool get isAvailable => availableOn(isIOS: Platform.isIOS);
+  bool get isAvailable => availableOn(isIOS: hostPlatform.isIOS);
 }
 
 /// 用户自己填地址的服务器在目标平台上是否存在：**不是**受限能力，iOS 也保留
@@ -121,7 +132,41 @@ bool userConfiguredServersAvailableOn({required bool isIOS}) => true;
 
 /// 真实平台上的 [userConfiguredServersAvailableOn]。
 bool get userConfiguredServersAvailable =>
-    userConfiguredServersAvailableOn(isIOS: Platform.isIOS);
+    userConfiguredServersAvailableOn(isIOS: hostPlatform.isIOS);
+
+/// 经 Fushi 互联用**自己另一台设备**上的在线音源插件（插件中继）在目标平台上是否存在：**不是**
+/// 受限能力（维护者 2026-11-16 在拍板台 wOMR4_Er7s 拍「a、b」并留言「可以放行」，即接受这条
+/// 的审核风险）。
+///
+/// 与 [StoreRestrictedCapability.onlineMusicSource] 的分界：那一条管的是「本机下载并执行第三方
+/// 插件代码」，iOS 依然不装插件宿主、伞形静态库依然不编入 JS 引擎，iOS 上不能装插件。中继是另一
+/// 种形态——插件只在用户自己的、已配对且被标为「我的设备」的 host 上运行，iOS 只收 host 代跑的
+/// 结果与经 host 转发的媒体字节，本机不执行第三方代码、不连插件的平台取流 / 调接口。**例外：封面图**
+/// ——host 只核对封面地址（授权、不落私网），图片仍由 iOS 直接从插件平台的图片 CDN 加载
+/// （`docs/specs/2026-11-16-interconnect-source-share.md` §5「封面」）。评估审核风险时按这个实际行为算。
+///
+/// 恒 true 仍保留成函数：消费端（`music_plugin_gate.dart` 的中继门）只问这里，若审核以此拒绝，
+/// 收回只改这一行；守卫 `test/build/ios_store_compliance_guard_test.dart` 钉住它。
+bool interconnectPluginRelayAvailableOn({required bool isIOS}) => true;
+
+/// 真实平台上的 [interconnectPluginRelayAvailableOn]。
+bool get interconnectPluginRelayAvailable =>
+    interconnectPluginRelayAvailableOn(isIOS: hostPlatform.isIOS);
+
+/// 经 Fushi 互联浏览 / 播放**自己另一台设备**上的本地音乐库（互联共享音乐库，设计
+/// `docs/specs/2026-11-23-interconnect-music-library-design.md`）在目标平台上是否存在：**不是**受限
+/// 能力（拍板 design-imusic-q10「做」：单独一条判据，不并进 [userConfiguredServersAvailableOn]）。
+/// 内容是用户自己设备上的本地文件，经已配对的钉扎通道取，与 Jellyfin / Subsonic 自配服务器同性质；
+/// 不是在线漫画 / 视频 / 小说源宿主，也不经本机跑第三方代码。
+///
+/// 恒 true 仍保留成函数：消费端（`music_servers.dart` 列服务器、`music_remote_tracks.dart` 远程
+/// 曲目可用性）只问这里，若审核以此拒绝，收回只改这一行；守卫
+/// `test/build/ios_store_compliance_guard_test.dart` 钉住它。
+bool interconnectMusicLibraryAvailableOn({required bool isIOS}) => true;
+
+/// 真实平台上的 [interconnectMusicLibraryAvailableOn]。
+bool get interconnectMusicLibraryAvailable =>
+    interconnectMusicLibraryAvailableOn(isIOS: hostPlatform.isIOS);
 
 /// DVD CSS 解密（随包 libdvdcss，`tool/dvd`）**不是**受限能力：所有者 2026-10-24
 /// 拍板五端一致随包，iOS 也链接 libdvdcss（见
@@ -137,4 +182,4 @@ bool dvdCssDecryptionAvailableOn({required bool isIOS}) => true;
 
 /// 真实平台上的 [dvdCssDecryptionAvailableOn]。
 bool get dvdCssDecryptionAvailable =>
-    dvdCssDecryptionAvailableOn(isIOS: Platform.isIOS);
+    dvdCssDecryptionAvailableOn(isIOS: hostPlatform.isIOS);

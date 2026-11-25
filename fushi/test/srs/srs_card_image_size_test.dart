@@ -144,6 +144,223 @@ assert.deepEqual(calls, [], '链接 / onclick 里的图、已拦截、右键、�
     });
   });
 
+  // BUG-4734（反馈 w4RAto8R0x）：BUG-2825 起词典插图照上游导出成
+  // `<a class="gloss-image-link" href="<媒体文件名>"><span class="gloss-image-container">…<img>`。
+  // 链接脚本（捕获）与点图脚本（冒泡）同时挂在页面上，跑生产常量本身，一次点击走完两段：
+  // 以前链接脚本把它当查词链接（preventDefault + 按链接文字查词，文字为空就返回），点图脚本
+  // 又因 defaultPrevented / `closest('a[href]')` 不收，插图点了没反应。
+  group('词典插图链接（a.gloss-image-link）点按放大', () {
+    Future<void> runJs(String body) async {
+      final Directory dir = Directory.systemTemp.createTempSync('srs-gloss-');
+      try {
+        final File script = File('${dir.path}/verify.js')
+          ..writeAsStringSync('''
+const assert = require('assert');
+const calls = [];
+globalThis.window = {
+  flutter_inappwebview: { callHandler(name, v){ calls.push([name, v]); } },
+};
+globalThis.URLSearchParams = URLSearchParams;
+const listeners = [];
+globalThis.document = {
+  addEventListener(type, fn, capture){ listeners.push([type, fn, !!capture]); },
+};
+// 最小 DOM：tag / 类名 / 属性 / 父节点 / 子节点；选择器只认本测试用到的
+// 「tag? (.类)* ([属性])*」并以逗号分隔。
+function matches(node, sel){
+  return sel.split(',').some((one) => {
+    const m = /^([a-z]*)((?:\\.[\\w-]+)*)((?:\\[[\\w-]+\\])*)\$/i.exec(one.trim());
+    if (!m) throw new Error('selector ' + one);
+    if (m[1] && node.tagName !== m[1].toUpperCase()) return false;
+    for (const c of (m[2].match(/[\\w-]+/g) || [])) if (!node.cls.includes(c)) return false;
+    for (const a of (m[3].match(/[\\w-]+/g) || [])) if (!(a in node.attrs)) return false;
+    return true;
+  });
+}
+function el(tag, opts, kids){
+  const o = opts || {};
+  const node = {
+    nodeType: 1, tagName: tag, cls: o.cls || [],
+    attrs: Object.assign({}, o.attrs, o.src ? { src: o.src } : {}),
+    childNodes: kids || [], parent: null,
+    currentSrc: o.src || '', src: o.src || '',
+    textContent: '',
+    get classList(){ return { contains: (c) => node.cls.includes(c) }; },
+    get firstElementChild(){ return node.childNodes.find((k) => k.nodeType === 1) || null; },
+    getAttribute(n){ return n in node.attrs ? node.attrs[n] : null; },
+    getBoundingClientRect(){ return { left: 0, top: 0, width: 0, height: 0 }; },
+    closest(sel){
+      for (let n = node; n; n = n.parent) if (matches(n, sel)) return n;
+      return null;
+    },
+    querySelector(sel){
+      return node.querySelectorAll(sel)[0] || null;
+    },
+    querySelectorAll(sel){
+      const out = [];
+      for (const k of node.childNodes) {
+        if (k.nodeType !== 1) continue;
+        if (matches(k, sel)) out.push(k);
+        out.push(...k.querySelectorAll(sel));
+      }
+      return out;
+    },
+  };
+  for (const k of node.childNodes) k.parent = node;
+  return node;
+}
+function click(target, opts){
+  const e = Object.assign({ target, button: 0, defaultPrevented: false,
+    preventDefault(){ this.defaultPrevented = true; } }, opts || {});
+  // 先捕获阶段（链接脚本），再冒泡阶段（点图脚本）。
+  for (const [type, fn, capture] of listeners) if (type === 'click' && capture) fn(e);
+  for (const [type, fn, capture] of listeners) if (type === 'click' && !capture) fn(e);
+  return e;
+}
+const SRC = 'https://srs.local/media/fushi_dict_1.png';
+// 照 popup.js 导出（exporting）分支的结构：图片盒里 sizer / 底色层 / img。
+function glossImage(){
+  const img = el('IMG', { cls: ['gloss-image'], src: SRC });
+  const background = el('SPAN', { cls: ['gloss-image-background'] });
+  const container = el('SPAN', { cls: ['gloss-image-container'] }, [
+    el('SPAN', { cls: ['gloss-image-sizer'] }), background, img,
+  ]);
+  const link = el('A', { cls: ['gloss-image-link'], attrs: { href: 'fushi_dict_1.png' } },
+    [container]);
+  return { link, container, background, img };
+}
+// 现行导出（BUG-5181）：gloss-* class 已换成内联样式剥掉（popup.js
+// inlineStructuredContentExportStyles），只剩 <a href=媒体文件名><span 盒子><span sizer>…<img>。
+function exportedImage(href, src){
+  const img = el('IMG', { src: src || SRC });
+  const sizer = el('SPAN');
+  const container = el('SPAN', {}, [sizer, el('SPAN'), el('SPAN'), img]);
+  const link = el('A', { attrs: { href: href || 'fushi_dict_1.png' } }, [container]);
+  return { link, container, sizer, img };
+}
+$kSrsCardLinkScript
+$kSrsCardImageTapScript
+$body
+''');
+        final ProcessResult result = await Process.run(
+          'node',
+          <String>[script.path],
+          runInShell: Platform.isWindows,
+          stdoutEncoding: utf8,
+          stderrEncoding: utf8,
+        );
+        expect(
+          result.exitCode,
+          0,
+          reason: '${result.stdout}\n${result.stderr}',
+        );
+      } finally {
+        dir.deleteSync(recursive: true);
+      }
+    }
+
+    test('点 img 或图片盒内其他层：拦导航、不查词、回传图片地址', () async {
+      await runJs(r'''
+const g = glossImage();
+el('DIV', { cls: ['card'] }, [el('DIV', { cls: ['fc-gloss'] }, [g.link])]);
+let e = click(g.img);
+assert.ok(e.defaultPrevented, '媒体文件名 href 不许把卡面外壳导航走');
+assert.deepEqual(calls, [['onSrsImageTap', SRC]]);
+calls.length = 0;
+e = click(g.background);
+assert.ok(e.defaultPrevented);
+assert.deepEqual(calls, [['onSrsImageTap', SRC]], '点在图片盒的底色层上同样放大');
+''');
+    });
+
+    test(
+      '现行导出没有 gloss-image-link class：按结构认插图，点 img / 盒内占位层都放大（BUG-5181）',
+      () async {
+        await runJs(r'''
+const g = exportedImage();
+el('DIV', { cls: ['card'] }, [el('DIV', { cls: ['fc-gloss'] }, [g.link])]);
+let e = click(g.img);
+assert.ok(e.defaultPrevented, '媒体文件名 href 不许把卡面外壳导航走');
+assert.deepEqual(calls, [['onSrsImageTap', SRC]]);
+calls.length = 0;
+e = click(g.sizer);
+assert.deepEqual(calls, [['onSrsImageTap', SRC]], '点在盒内占位层上同样放大');
+calls.length = 0;
+// 同样结构但 href 是外链 / 查词 / 来源：不是插图，照原来的链接处理。
+const ext = exportedImage('https://example.com/a.png');
+const lookup = exportedImage('?query=%E8%AA%9E');
+el('DIV', { cls: ['card'] }, [ext.link, lookup.link]);
+click(ext.img);
+click(lookup.img);
+assert.deepEqual(calls.map((c) => c[0]), ['onSrsCardLink', 'onSrsCardLink']);
+''');
+      },
+    );
+
+    test('带图标的相对查词链接仍查词；插图按「href 就是链接里那张图的媒体文件名」认（HBK-AUDIT-222）', () async {
+      await runJs(r'''
+// 普通查词链接：相对 href、首个子元素是装着图标的 span、后面跟词头文字。结构与插图一样，
+// 但图标不是 href 指的那个文件：照旧按链接文字查词。
+const icon = el('IMG', { src: 'https://srs.local/media/arrow.png' });
+const box = el('SPAN', {}, [icon]);
+const lookup = el('A', { attrs: { href: '語彙' } },
+  [box, { nodeType: 3, textContent: '語彙' }]);
+el('DIV', { cls: ['card'] }, [lookup]);
+let e = click(icon);
+assert.ok(e.defaultPrevented, '相对链接不许把卡面外壳导航走');
+assert.deepEqual(calls.map((c) => c[0]), ['onSrsCardLink']);
+assert.equal(calls[0][1].kind, 'lookup');
+assert.equal(calls[0][1].query, '語彙');
+calls.length = 0;
+click(box);
+assert.deepEqual(calls.map((c) => [c[0], c[1].query]), [['onSrsCardLink', '語彙']],
+  '点在图标盒上同样查词');
+calls.length = 0;
+// 真插图：文件名带空格与非 ASCII，卡面渲染把 src 编码成媒体 URL，解码后就是 href。
+const name = 'ネクタイ 1.avif';
+const src = 'https://srs.local/media/' + encodeURIComponent(name);
+const g = exportedImage(name, src);
+el('DIV', { cls: ['card'] }, [g.link]);
+e = click(g.img);
+assert.ok(e.defaultPrevented);
+assert.deepEqual(calls, [['onSrsImageTap', src]]);
+calls.length = 0;
+click(g.sizer);
+assert.deepEqual(calls, [['onSrsImageTap', src]], '点在盒内占位层上同样放大');
+calls.length = 0;
+// 文件名本身带 `%xx`：href 是原样文件名，src 是编码后的（%25 打头），解码 src 才等于 href。
+const pctName = 'fushi%20dict.png';
+const pctSrc = 'https://srs.local/media/' + encodeURIComponent(pctName);
+const pg = exportedImage(pctName, pctSrc);
+el('DIV', { cls: ['card'] }, [pg.link]);
+click(pg.img);
+assert.deepEqual(calls, [['onSrsImageTap', pctSrc]], '文件名带 %xx 的插图照样放大');
+''');
+    });
+
+    test('普通链接里的图、onclick 里的插图、卡外、右键照旧不收', () async {
+      await runJs(r'''
+const query = el('A', { attrs: { href: '?query=%E8%AA%9E' } },
+  [el('IMG', { src: SRC })]);
+const g1 = glossImage();
+const g2 = glossImage();
+el('DIV', { cls: ['card'] }, [
+  query,
+  el('DIV', { attrs: { onclick: '' } }, [g1.link]),
+]);
+click(query.childNodes[0]);
+assert.deepEqual(calls.map((c) => c[0]), ['onSrsCardLink'], '查词链接里的图仍是查词');
+calls.length = 0;
+click(g1.img);
+click(g2.img);
+const g3 = glossImage();
+el('DIV', { cls: ['card'] }, [g3.link]);
+click(g3.img, { button: 2 });
+assert.deepEqual(calls, []);
+''');
+    });
+  });
+
   group('srsPictureLimits', () {
     test('原样 = 旧上限（220 / 矮视口 120，视口高于 520 才铺满）', () {
       final SrsPictureLimits tall = srsPictureLimits(

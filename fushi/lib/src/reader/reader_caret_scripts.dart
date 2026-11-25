@@ -75,7 +75,42 @@ class ReaderCaretScripts {
       "JSON.stringify(window.fushiCaret.reanchor('$edge'))";
 
   /// Look up the word at the caret (reuses the tap dictionary pipeline).
-  static String lookupInvocation() => 'window.fushiCaret.lookup()';
+  ///
+  /// A controller lookup passes its [token] (> 0): the one `onTextSelected`
+  /// payload this call sends carries it as `controllerLookup`
+  /// ([controllerLookupSelectJs]), so the page claims exactly the lookup it
+  /// asked for, never a tap / hover lookup that lands in between.
+  static String lookupInvocation({int token = 0}) => token > 0
+      ? 'window.fushiCaret.lookup($token)'
+      : 'window.fushiCaret.lookup()';
+
+  /// JS function expression `(selection, node, offset, token)` shared by the
+  /// book caret and the lyrics caret ([ReaderLyricsCaretScripts]): selects from
+  /// the caret like a tap (`selectFromPosition`, 400 chars) and, with a
+  /// non-zero `token`, stamps it as `controllerLookup` on the payload this one
+  /// synchronous call builds (the ruby-snap alternative selection included);
+  /// the payload builder is restored before returning. Same stamp as the manga
+  /// controller cursor (`MangaControllerCursorScripts.place`).
+  static const String controllerLookupSelectJs = r'''
+(function(s, node, offset, token) {
+  if (!token) return s.selectFromPosition(node, offset, 400);
+  var build = s.buildSelectionPayload;
+  s.buildSelectionPayload = function() {
+    var payload = build.apply(this, arguments);
+    if (payload) {
+      payload.controllerLookup = token;
+      if (payload.rubySnap && payload.rubySnap.selection) {
+        payload.rubySnap.selection.controllerLookup = token;
+      }
+    }
+    return payload;
+  };
+  try {
+    return s.selectFromPosition(node, offset, 400);
+  } finally {
+    s.buildSelectionPayload = build;
+  }
+})''';
 
   /// Context "click" at the caret: follow a hyperlink, click an interactive
   /// control (popup audio/expand buttons), or — on plain text — look up the
@@ -164,7 +199,8 @@ class ReaderCaretScripts {
   // 同步）：_isStop（本文件含弹窗标点/scope/clickable 门控）、_ensureRing（ring id fushi-caret-ring
   // vs fushi-lyrics-caret-ring）、_drawRing（本文件做视口 clamp）、_walker（本文件走 document.body
   // 全文）。
-  static String source() => r"""
+  static String source() =>
+      r"""
 window.fushiCaret = {
   active: false,
   node: null,
@@ -461,11 +497,92 @@ window.fushiCaret = {
     };
   },
   _inViewport: function(rect) {
+    return this._rectInViewport(rect, this._viewport());
+  },
+  _rectInViewport: function(rect, vp) {
     if (!rect || rect.width <= 0 || rect.height <= 0) return false;
-    var vp = this._viewport();
     return rect.right > vp.left && rect.left < vp.right &&
            rect.bottom > vp.top && rect.top < vp.bottom;
   },
+  // The [start, end) UTF-16 offset span of [node] that can hold a glyph inside
+  // [vp], or null when none of its line boxes intersects [vp].
+  //
+  // A glyph's rect lies inside one of its text node's line-box rects (one per
+  // line fragment, in content order), so:
+  //  - a node with no line box on the page cannot hold a visible stop — the
+  //    per-glyph scans below skip it (BUG-5021: a 100k-char chapter cost one
+  //    getClientRects per glyph, ~600 ms per D-pad line move);
+  //  - inside a node that does touch the page, only glyphs on the visible line
+  //    boxes can be visible. A long paragraph (one text node spanning many
+  //    pages) must not be measured glyph by glyph from its first character to
+  //    its last (HBK-AUDIT-023), so the span is narrowed to the first / last
+  //    visible line box by binary search over glyph offsets: each probe measures
+  //    one glyph and maps it to its line box, which is monotone in the offset.
+  // Probes that cannot be mapped (zero-size glyph rects — collapsed whitespace,
+  // which is never a visible stop anyway) count as "inside", which can only
+  // widen the span, never drop a visible glyph.
+  _visibleSpan: function(node, text, vp) {
+    var range = document.createRange();
+    range.selectNodeContents(node);
+    var lines = range.getClientRects();
+    var first = -1, last = -1;
+    for (var i = 0; i < lines.length; i++) {
+      if (this._rectInViewport(lines[i], vp)) {
+        if (first < 0) first = i;
+        last = i;
+      }
+    }
+    if (first < 0) return null;
+    var len = text.length;
+    if (len <= this._spanScanMin || (first === 0 && last === lines.length - 1)) {
+      return { start: 0, end: len };
+    }
+    var self = this;
+    var lineOf = function(i) {
+      var r = self._charRect(node, i);
+      if (!r || r.width <= 0 || r.height <= 0) return -1;
+      var best = -1, bestArea = 0;
+      for (var j = 0; j < lines.length; j++) {
+        var l = lines[j];
+        var w = Math.min(r.right, l.right) - Math.max(r.left, l.left);
+        var h = Math.min(r.bottom, l.bottom) - Math.max(r.top, l.top);
+        if (w > 0 && h > 0 && w * h > bestArea) { best = j; bestArea = w * h; }
+      }
+      return best;
+    };
+    var start = 0;
+    if (first > 0) {
+      // smallest offset whose glyph sits on a line >= first
+      var lo = 0, hi = len;
+      while (lo < hi) {
+        var mid = (lo + hi) >> 1;
+        var lm = lineOf(mid);
+        if (lm < 0 || lm >= first) hi = mid; else lo = mid + 1;
+      }
+      start = lo;
+    }
+    var end = len;
+    if (last < lines.length - 1) {
+      // one past the largest offset whose glyph sits on a line <= last
+      var lo2 = start, hi2 = len;
+      while (lo2 < hi2) {
+        var mid2 = (lo2 + hi2) >> 1;
+        var lm2 = lineOf(mid2);
+        if (lm2 < 0 || lm2 <= last) lo2 = mid2 + 1; else hi2 = mid2;
+      }
+      end = lo2;
+    }
+    // Never start on the low half of a surrogate pair: the scan steps by
+    // code point from [start].
+    if (start > 0 && start < len) {
+      var c = text.charCodeAt(start);
+      if (c >= 0xDC00 && c <= 0xDFFF) start -= 1;
+    }
+    return { start: start, end: end };
+  },
+  // Below this length a node is scanned whole: the binary search's ~2·log2(n)
+  // probes would not save measurements.
+  _spanScanMin: 64,
 
   // ── Stepping ───────────────────────────────────────────────────────
   _nextStop: function(node, offset) {
@@ -508,13 +625,16 @@ window.fushiCaret = {
     var out = [];
     var node;
     var seenRows = {};
+    var vp = this._viewport();
     while (node = walker.nextNode()) {
       var text = node.textContent;
-      for (var i = 0; i < text.length;) {
+      var span = this._visibleSpan(node, text, vp);
+      if (!span) continue;
+      for (var i = span.start; i < span.end;) {
         var len = this._charLen(text, i);
         if (this._isStop(node, i)) {
           var rect = this._charRect(node, i);
-          if (this._inViewport(rect)) {
+          if (this._rectInViewport(rect, vp)) {
             var rowKey = lineLevel ? Math.round(rect.top) : -1;
             if (!lineLevel || !seenRows[rowKey]) {
               if (lineLevel) seenRows[rowKey] = true;
@@ -532,7 +652,7 @@ window.fushiCaret = {
     var els = this._interactiveEls();
     for (var k = 0; k < els.length; k++) {
       var er = this._elRect(els[k]);
-      if (this._inViewport(er)) {
+      if (this._rectInViewport(er, vp)) {
         out.push({
           node: null, offset: 0, el: els[k], rect: er,
           cx: er.left + er.width / 2,
@@ -609,13 +729,16 @@ window.fushiCaret = {
   _firstVisibleStop: function() {
     var walker = this._walker();
     var node;
+    var vp = this._viewport();
     while (node = walker.nextNode()) {
       var text = node.textContent;
-      for (var i = 0; i < text.length;) {
+      var span = this._visibleSpan(node, text, vp);
+      if (!span) continue;
+      for (var i = span.start; i < span.end;) {
         var len = this._charLen(text, i);
         if (this._isStop(node, i)) {
           var rect = this._charRect(node, i);
-          if (this._inViewport(rect)) return { node: node, offset: i, rect: rect };
+          if (this._rectInViewport(rect, vp)) return { node: node, offset: i, rect: rect };
         }
         i += len;
       }
@@ -1027,12 +1150,16 @@ window.fushiCaret = {
     return { ok: true, rect: this._rectJson(pos.rect) };
   },
 
-  lookup: function() {
+  // token (optional, controller lookup mode): stamped on this lookup's
+  // onTextSelected payload as controllerLookup (see controllerLookupSelectJs).
+  lookup: function(token) {
     if (!this.active || !this.node) return false;
     var s = window.fushiSelection;
     if (!s || typeof s.selectFromPosition !== 'function') return false;
     s.clearSelection();
-    var text = s.selectFromPosition(this.node, this.offset, 400);
+    var text = (""" +
+      controllerLookupSelectJs +
+      r""")(s, this.node, this.offset, token || 0);
     return !!text;
   },
 

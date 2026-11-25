@@ -10,6 +10,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
+import 'package:fushi/src/media/video/cover_backfill_ledger.dart'
+    show debugVideoCoverBackfillEnabled;
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/video_library_shell.dart';
@@ -17,8 +19,6 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/utils/components/batch_action_bar.dart';
 import 'package:fushi/src/utils/components/fushi_floating_chrome.dart';
-import 'package:fushi/src/pages/shared/library_section_tabs.dart';
-import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
@@ -28,6 +28,9 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/masthead_tabs.dart';
+import '../helpers/unmount_and_close_db.dart';
+import '../helpers/shell_layout.dart';
 
 class _NoopScrapeRunner implements VideoSourceScrapeRunner {
   @override
@@ -77,8 +80,14 @@ void main() {
   late Directory storeDir;
   late VideoSourceScrapeTaskController scrapeController;
   late ChangeNotifier refreshSignal;
+  bool dbClosed = false;
 
   setUp(() async {
+    dbClosed = false;
+    // 套件默认关掉视频库页的封面回填（flutter_test_config）；本文件挂载视频库页即覆盖
+    // 回填入口（BUG-5422：回填从 initState 同步进来时不得 watch provider），所以显式
+    // 打开，并在用例体内卸页、推进到关库完成（unmountAndCloseDb）。
+    debugVideoCoverBackfillEnabled = true;
     LocaleSettings.setLocale(AppLocale.zhCn);
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
@@ -102,9 +111,10 @@ void main() {
   });
 
   tearDown(() async {
+    debugVideoCoverBackfillEnabled = false;
     scrapeController.dispose();
     refreshSignal.dispose();
-    await db.close();
+    if (!dbClosed) await db.close();
     try {
       storeDir.deleteSync(recursive: true);
     } catch (_) {}
@@ -118,6 +128,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: VideoLibraryShell(
             repository: VideoBookRepository(db),
@@ -135,6 +146,12 @@ void main() {
     ),
   );
 
+  // 视频库页挂载即起后台封面回填，关库前要在用例体内卸页推进（见 helper）。
+  Future<void> closeDbInBody(WidgetTester tester) async {
+    await unmountAndCloseDb(tester, db);
+    dbClosed = true;
+  }
+
   Finder inPill(Finder matching) => find.descendant(
     of: find.byType(FushiFloatingActionsPill),
     matching: matching,
@@ -143,7 +160,7 @@ void main() {
   testWidgets('多选：悬浮动作组切成「已选 N · 退出」，底部批量栏浮起；退出后换回', (
     WidgetTester tester,
   ) async {
-    // 刷新按钮只在桌面平台出现（触屏下拉即入口，反馈 #7m1x-R3yOn）。
+    // 刷新只在桌面平台出现（触屏下拉即入口，反馈 #7m1x-R3yOn）。
     debugDefaultTargetPlatformOverride = TargetPlatform.windows;
     tester.view.physicalSize = const Size(1600, 1000);
     tester.view.devicePixelRatio = 1;
@@ -151,20 +168,41 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
-      find.byType(FushiSectionTabBar<VideoLibrarySection>).first,
-    );
-    strip.onChanged!(VideoLibrarySection.allVideos);
+    // 页头大字顶栏（PR #3397）：全部视频在媒体库组的二级页签里。
+    readMastheadTabs<VideoLibrarySection>(
+      tester,
+      mastheadSecondaryTabs<VideoLibrarySection>(),
+    ).onChanged(VideoLibrarySection.allVideos);
     await tester.pumpAndSettle();
 
+    // 设计稿 #video V2：页头常驻搜索 / 筛选与排序 / 后台任务 / 添加，低频动作
+    // （刷新、选择、管理标签…）挂在页面「⋯」上；宽窗放得下时由页头统一收纳
+    // 平铺成独立图标钮（沿用菜单项 key），一项都没收时不出「⋯」（用户
+    // 2026-11-24「有空间还是展开最好」，fushiResolveHeaderActions）。
     expect(
-      inPill(find.byKey(const ValueKey<String>('video-library-refresh'))),
+      inPill(find.byKey(const ValueKey<String>('library_select_toggle'))),
       findsOneWidget,
-      reason: '视频库页头的刷新等动作由浮动工具栏的悬浮动作组画出',
+      reason: '视频库页头的低频动作由浮动工具栏的悬浮动作组画出（宽窗平铺）',
+    );
+    expect(
+      inPill(find.byKey(const ValueKey<String>('video-library-more'))),
+      findsNothing,
+      reason: '1600 宽放得下全部平铺，不再收进「⋯」',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-library-refresh')),
+      findsNothing,
+      reason: '刷新空闲时是「⋯」项（此处平铺），不另画转圈刷新钮',
+    );
+    expect(
+      inPill(find.byKey(const ValueKey<String>('video-library-refresh-menu'))),
+      findsOneWidget,
     );
     expect(find.byType(BatchActionBar), findsNothing);
 
-    await tester.tap(find.byIcon(FushiIcons.checklist));
+    await tester.tap(
+      inPill(find.byKey(const ValueKey<String>('library_select_toggle'))),
+    );
     await tester.pumpAndSettle();
 
     expect(
@@ -173,7 +211,7 @@ void main() {
       reason: '多选态是浮动工具栏的上下文切换',
     );
     expect(
-      inPill(find.byKey(const ValueKey<String>('video-library-refresh'))),
+      inPill(find.byKey(const ValueKey<String>('library_select_toggle'))),
       findsNothing,
     );
     expect(inPill(find.text(t.batch_selected_count(n: 0))), findsOneWidget);
@@ -185,9 +223,10 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.byType(BatchActionBar), findsNothing, reason: '批量栏沉下去后卸掉');
     expect(
-      inPill(find.byKey(const ValueKey<String>('video-library-refresh'))),
+      inPill(find.byKey(const ValueKey<String>('library_select_toggle'))),
       findsOneWidget,
     );
+    await closeDbInBody(tester);
     debugDefaultTargetPlatformOverride = null; // 须在用例体内复位：不变量先于 tearDown 校验
   });
 
@@ -199,16 +238,30 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    final FushiSectionTabBar<VideoLibrarySection> strip = tester.widget(
-      find.byType(FushiSectionTabBar<VideoLibrarySection>).first,
-    );
-    strip.onChanged!(VideoLibrarySection.allVideos);
+    // 页头大字顶栏（PR #3397）：全部视频在媒体库组的二级页签里。
+    readMastheadTabs<VideoLibrarySection>(
+      tester,
+      mastheadSecondaryTabs<VideoLibrarySection>(),
+    ).onChanged(VideoLibrarySection.allVideos);
     await tester.pumpAndSettle();
 
     expect(
       find.byKey(const ValueKey<String>('video-library-refresh')),
       findsNothing,
     );
+    // 宽窗下「⋯」的项平铺成独立图标钮（fushiResolveHeaderActions），刷新项
+    // 无论平铺还是收进「⋯」都沿用同一个 key。
+    expect(
+      find.byKey(const ValueKey<String>('library_select_toggle')),
+      findsOneWidget,
+      reason: '其余低频动作照常平铺，排除「整行没画」的假绿',
+    );
+    expect(
+      find.byKey(const ValueKey<String>('video-library-refresh-menu')),
+      findsNothing,
+      reason: '触屏下拉即刷新入口，「⋯」项里也不重复',
+    );
+    await closeDbInBody(tester);
     debugDefaultTargetPlatformOverride = null;
   });
 }

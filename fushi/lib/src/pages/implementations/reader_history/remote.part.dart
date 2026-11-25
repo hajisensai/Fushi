@@ -101,7 +101,9 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           }
         }
       }
-      // 分架过滤（互联完整支持批次）：普通书架 = 可下载 EPUB（hasContent）；漫画
+      // 分架过滤（互联完整支持批次）：普通书架 = 可下载 EPUB / PDF 原件
+      // （hasBookShelfContent；PDF 见反馈 Jq1_ujHa4t——此前只认 hasContent，host 上
+      // 的 PDF 在这里整本被滤掉）；漫画
       // 书架 = 可读漫画（format='manga' + hasMangaContent 的单卷漫画包，或
       // hasMangaChapters 的对端在线条目——BUG-2474：后者根目录只有占位 manga.json，
       // 按 hasMangaContent 判永远 false，修复前整体从漫画架消失）。判据与互联漫画源
@@ -114,7 +116,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           : books
                 .where(
                   (RemoteBookInfo book) =>
-                      book.hasContent && !book.isSubtitleBookBody,
+                      book.hasBookShelfContent && !book.isSubtitleBookBody,
                 )
                 .toList();
       // 章节式条目加入本机后是一条 runtime=interconnect 的在线书架行，bookKey 由
@@ -136,6 +138,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           ? (
               audiobooks: const <RemoteAudiobookInfo>[],
               refetch: const <String, RemoteAudiobookInfo>{},
+              revisions: const <String, String>{},
               failed: false,
             )
           : await _loadStandaloneRemoteSrtAudiobooks(
@@ -144,6 +147,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
             );
       // 「仅从本机移除」过的远端书不再出占位卡（对端那份不动）。互联按对端身份区分：
       // 在 A 机隐藏的书换到 B 机不受牵连。
+      final Map<String, RemoteBookInfo> audiobookRefetch =
+          remoteAudiobookRefetchCandidates(
+            remote: withContent,
+            localBookKeys: localKeys,
+            localAudiobookKeys: localAudiobookKeys,
+            keyOf: sanitizeTtuFilename,
+          );
       final List<HiddenRemoteBook> hidden =
           appModelNoUpdate.prefsRepo.hiddenRemoteBooks;
       final String? sourceHost = hidden.isEmpty
@@ -174,15 +184,27 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           localAudiobookKeys: localAudiobookKeys,
           keyOf: sanitizeTtuFilename,
         ),
-        audiobookRefetch: remoteAudiobookRefetchCandidates(
-          remote: withContent,
-          localBookKeys: localKeys,
-          localAudiobookKeys: localAudiobookKeys,
-          keyOf: sanitizeTtuFilename,
-        ),
+        audiobookRefetch: audiobookRefetch,
         srtAudiobooks: remoteSrt.audiobooks,
         srtRefetch: remoteSrt.refetch,
         srtFailed: remoteSrt.failed,
+        // 本机下载过、host 上之后换过音频 / 字幕的有声书：书卡副行与菜单提示有更新。
+        audiobookUpdates: remoteAudiobookUpdateKeys(
+          bookRefetch: <String, String>{
+            for (final MapEntry<String, RemoteBookInfo> e
+                in audiobookRefetch.entries)
+              e.key: e.value.downloadId,
+          },
+          srtRefetchUids: remoteSrt.refetch.keys,
+          remoteRevisions: remoteSrt.revisions,
+          stored: await RemoteAudiobookRevisionStore(
+            appModelNoUpdate.database,
+          ).load(),
+          sourceId: await remoteAudiobookRevisionSource(
+            appModelNoUpdate.database,
+            client,
+          ),
+        ),
       );
     } catch (e) {
       // spec §2.4 离线语义：拉取失败 → 占位卡不出现（failed 门控），只剩本地库。
@@ -191,13 +213,38 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     }
   }
 
-  /// 非强制的远端书重载：切回书架 tab（BUG-992）、本地有声书列表变动等「可能只是本地
-  /// 变了」的信号走这里。远端清单本身经 [RemoteLibraryCache] 的 TTL 判断是否真要联网，
-  /// 所以切页面不会再变成一轮网络往返（BUG-1180）。要**强制**穿透缓存只有一个入口：
-  /// 用户显式下拉刷新（[_pullToRefreshBooks]）。
+  /// 非强制的远端书重载：本地有声书列表变动、占位卡落地成本地书等「本地确实变了」
+  /// 的事件走这里。远端清单本身经 [RemoteLibraryCache] 的 TTL 判断是否真要联网，
+  /// 所以不会变成一轮网络往返（BUG-1180）。要**强制**穿透缓存只有一个入口：
+  /// 用户显式下拉刷新（[_pullToRefreshBooks]）。切回 tab 的对账不走这里，见
+  /// [_reconcileRemoteBooksOnActivation]。
   void _refreshRemoteBooks() {
     _rebuild(() {
       _remoteBooksFuture = _loadRemoteBooks();
+    });
+  }
+
+  /// 切回本书架所在 tab 时的远端对账（BUG-992）：重算一遍远端态，**内容变了才换上**。
+  ///
+  /// BUG-4847：这里曾无条件走 [_refreshRemoteBooks]——换 future 那一下整页重建
+  /// 一遍，future 完成（TTL 内是下一帧）再整页重建一遍，书架网格连同全部卡片每次
+  /// 切回都白建两轮（实测两帧 33 + 24 ms）。绝大多数切回远端态一字未变，于是先在
+  /// 后台算完、与屏上那份比内容（[_remoteBookStateSignature]），相同就什么都不动。
+  Future<void> _reconcileRemoteBooksOnActivation() async {
+    final Future<_RemoteBookState?>? shownFuture = _remoteBooksFuture;
+    // 首次取数还没发起（书列表未就绪）：交给 build 里那条 `??=`。
+    if (shownFuture == null) return;
+    final Future<_RemoteBookState?> pending = _loadRemoteBooks();
+    final _RemoteBookState? next = await pending;
+    final _RemoteBookState? shown = await shownFuture;
+    if (!mounted) return;
+    // 对账期间别处已经换上了更新的一次取数（下拉刷新、本地变动）：以那一次为准。
+    if (!identical(_remoteBooksFuture, shownFuture)) return;
+    if (_remoteBookStateSignature(shown) == _remoteBookStateSignature(next)) {
+      return;
+    }
+    _rebuild(() {
+      _remoteBooksFuture = pending;
     });
   }
 
@@ -209,24 +256,15 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   ///
   /// 同步必须排在重读列表**之前**：同步会往本地库里落新书和新进度，先刷列表就会漏掉
   /// 本次同步的产物，用户得再下拉一次才看得见。没配同步后端时
-  /// [runManualSyncWithFeedback] 直接返回 notConfigured（且不弹提示），退化成纯列表
+  /// [runPullToRefreshSync] 直接返回 notConfigured（且不弹提示），退化成纯列表
   /// 刷新——与加同步之前的行为一字不差。
   /// [_loadRemoteBooks] 内部吞异常返回 failed 态，await 不会抛，指示器必定收起；
   /// 失败态在 await 后消费成一条可见 SnackBar（BUG-1693 批审计 P1——此前
   /// `failed:true` 置了没人读，显式下拉失败与成功在 UI 上一模一样）。
   Future<void> _pullToRefreshBooks() async {
-    // 同步模块关掉时只摘掉「同步」这一段，下拉手势本身保留（后半段重读本地列表照跑）
-    // ——下拉刷新本地书架与同步无关，一起关掉是误伤。
-    if (_moduleVisibility.isEnabled(ModuleId.sync)) {
-      await runManualSyncWithFeedback(
-        context: context,
-        appModel: appModel,
-        // 绝大多数用户没配云同步，每次下拉都弹「同步不可用」是纯噪音；已有同步在飞时
-        // 用户下拉，数据照样会更新，不必打断。冲突/错误提示仍然照给。
-        announceNotConfigured: false,
-        announceBusy: false,
-      );
-    }
+    // 同步模块关掉时只摘掉「同步」这一段（门在 [runPullToRefreshSync] 里），下拉手势
+    // 本身保留（后半段重读本地列表照跑）——下拉刷新本地书架与同步无关，一起关掉是误伤。
+    await runPullToRefreshSync(context: context, appModel: appModel);
     if (!mounted) return;
     ref.invalidate(fushiBooksProvider);
     ref.invalidate(srtBooksProvider);
@@ -409,17 +447,21 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         audiobook ? '${t.section_audiobook} · $status' : status;
     switch (task?.status) {
       case InterconnectDownloadStatus.running:
-        final double? progress = task!.percent < 0 ? null : task.percent / 100;
+        // 多阶段书任务：副行写「下载中 38%」/「导入中…」/「有声书 45%」，环下
+        // 写阶段名——与正文落地后接手的本地卡（[_landedDownloadOverlay]）同一口径。
+        final double? progress = _stageOverlayProgress(task!);
+        final String status = _stageStatusText(task);
         return _RemoteCardTaskView(
           overlay: RemoteDownloadProgressBadge(
             key: ValueKey<String>('${keyPrefix}_downloading_$safeKey'),
             progress: progress,
-            tooltip: t.remote_book_downloading,
+            tooltip: status,
+            caption: task.stage == null
+                ? null
+                : interconnectDownloadStageLabel(task.stage!),
           ),
           meta: _ShelfMetaSpec(
-            status: progress == null
-                ? t.remote_book_downloading
-                : '${task.percent}%',
+            status: status,
             icon: FushiIcons.cloudDownload,
             progress: progress,
           ),
@@ -846,11 +888,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         downloadId: book.downloadId,
         title: book.displayName,
         dest: dest,
+        stages: _remoteBookDownloadStages(book, client),
         run: (File target, {void Function(double progress)? onProgress}) =>
             _runRemoteBookDownload(
               book,
               client,
               target,
+              manager: manager,
               onProgress: onProgress,
             ),
       );
@@ -952,178 +996,191 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// 远端书下载任务本体（在 [InterconnectDownloadManager] 的任务里跑，**不得
   /// 依赖本页存活**）：拉 EPUB/漫画包 → 导入落库 → 回填阅读模式/标签/显示名/
   /// 进度 → 按需接有声书包。DB 写入经 [appModel]（dispose 后回落缓存实例，见
-  /// base_page.dart），与页面生命周期无关；唯一的页面态（BUG-990 有声书空窗
-  /// 覆盖层）经 [_markAudiobookDownloading] 只在 mounted 时 setState。
+  /// base_page.dart），与页面生命周期无关。阶段 / 进度 / 落地的本地书键都直报
+  /// [manager]（null 只出现在测试直调），书架页从任务上读，不另存页面态。
   Future<void> _runRemoteBookDownload(
     RemoteBookInfo book,
     RemoteBookClient client,
     File dest, {
+    InterconnectDownloadManager? manager,
     void Function(double progress)? onProgress,
   }) async {
-    // BUG-990：在 try 外持有「已标记有声书下载中的本地 bookKey」，供 finally 清理
-    // （localBookKey 在 try 内声明、finally 不可见）。
-    String? markedAudiobookKey;
-    try {
-      await client.getRemoteBook(
-        book.downloadId,
-        dest,
-        onProgress: (double progress) {
-          // EPUB 占前半段进度，留后半段给有声书（有声书包通常更大）。否则
-          // EPUB 下完后进度卡 100% 但有声书还在拉，用户以为完了。
-          onProgress?.call(book.hasAudiobook ? progress * 0.5 : progress);
-        },
+    final String taskId = InterconnectDownloadManager.bookTaskId(
+      book.downloadId,
+    );
+    // 每个阶段的进度各自 0..1（阶段名由任务的 stage 说明，见
+    // [InterconnectDownloadStage]）——不再把正文 / 有声书硬折成前后两半。
+    await client.getRemoteBook(book.downloadId, dest, onProgress: onProgress);
+    manager?.reportStage(taskId, InterconnectDownloadStage.importing);
+    // 后续有声书失败可重试，已经落地的 EPUB/漫画必须复用实际行。
+    final CollectionBookIdentityIndex identities =
+        await CollectionBookIdentityIndex.load(appModel.database);
+    final String? existingUid = identities.uidByKey[book.downloadId];
+    final EpubBookRow? existingBook = existingUid == null
+        ? null
+        : await appModel.database.getEpubBookByUid(existingUid);
+    final bool hasExistingContent =
+        existingBook != null &&
+        switch (BookFormat.parseOrEpub(existingBook.format)) {
+          BookFormat.manga => hasExportableMangaContent(
+            existingBook.extractDir,
+          ),
+          BookFormat.pdf => hasExportablePdfContent(existingBook),
+          BookFormat.epub =>
+            resolveExtractedEpubRoot(existingBook.extractDir) != null,
+        };
+    final String? localBookKey =
+        (hasExistingContent ? existingBook.bookKey : null) ??
+        await _importRemoteBookFile(dest, title: book.title);
+    // BUG-3452：刚从对端落地的书沿用它在对端的入库时刻。书架「最近阅读」对没有
+    // 阅读记录的书回落到入库时刻、「导入时间」直接按它排；不改的话入库时刻 = 下载
+    // 那一刻，对端没读过的书一下完就顶到最前，和下载前占位卡的位置（同样按 host
+    // 的入库时刻排）对不上。只动这次新导入的行：已在本机的书（有声书补拉重试）
+    // 是用户自己的入库记录，不改；旧 host 不带该字段时保持本机时刻。
+    // 只改 importedAt（原始入库时刻）：本机开始拥有的时刻 localAddedAt 由
+    // insertEpubBook 记成落地那一刻、这里不动——删除墓碑仲裁与首页「最近添加」
+    // 读的是它（v118）。
+    final int? hostImportedAt = book.importedAt;
+    if (!hasExistingContent &&
+        localBookKey != null &&
+        hostImportedAt != null &&
+        hostImportedAt > 0) {
+      final FushiDatabase db = appModel.database;
+      await (db.update(db.epubBooks)
+            ..where(($EpubBooksTable t) => t.bookKey.equals(localBookKey)))
+          .write(EpubBooksCompanion(importedAt: Value<int>(hostImportedAt)));
+    }
+    if (localBookKey != null) {
+      final EpubBookRow? localBook = await appModel.database.getEpubBook(
+        localBookKey,
       );
-      // 后续有声书失败可重试，已经落地的 EPUB/漫画必须复用实际行。
-      final CollectionBookIdentityIndex identities =
-          await CollectionBookIdentityIndex.load(appModel.database);
-      final String? existingUid = identities.uidByKey[book.downloadId];
-      final EpubBookRow? existingBook = existingUid == null
-          ? null
-          : await appModel.database.getEpubBookByUid(existingUid);
-      final bool hasExistingContent =
-          existingBook != null &&
-          (existingBook.format == BookFormat.manga.dbValue
-              ? hasExportableMangaContent(existingBook.extractDir)
-              : resolveExtractedEpubRoot(existingBook.extractDir) != null);
-      final String? localBookKey =
-          (hasExistingContent ? existingBook.bookKey : null) ??
-          await _importRemoteBookFile(dest, mangaTitleHint: book.title);
-      // BUG-3452：刚从对端落地的书沿用它在对端的入库时刻。书架「最近阅读」对没有
-      // 阅读记录的书回落到入库时刻、「导入时间」直接按它排；不改的话入库时刻 = 下载
-      // 那一刻，对端没读过的书一下完就顶到最前，和下载前占位卡的位置（同样按 host
-      // 的入库时刻排）对不上。只动这次新导入的行：已在本机的书（有声书补拉重试）
-      // 是用户自己的入库记录，不改；旧 host 不带该字段时保持本机时刻。
-      // 只改 importedAt（原始入库时刻）：本机开始拥有的时刻 localAddedAt 由
-      // insertEpubBook 记成落地那一刻、这里不动——删除墓碑仲裁与首页「最近添加」
-      // 读的是它（v118）。
-      final int? hostImportedAt = book.importedAt;
-      if (!hasExistingContent &&
-          localBookKey != null &&
-          hostImportedAt != null &&
-          hostImportedAt > 0) {
-        final FushiDatabase db = appModel.database;
-        await (db.update(db.epubBooks)
-              ..where(($EpubBooksTable t) => t.bookKey.equals(localBookKey)))
-            .write(EpubBooksCompanion(importedAt: Value<int>(hostImportedAt)));
+      if (localBook != null) {
+        await RemoteCollectionAdoptionService(
+          appModel.database,
+        ).adoptBook(book, localBook: localBook);
       }
-      if (localBookKey != null) {
+      // 先把「本地卡接手这条任务的进度」登记到任务上，再让占位卡让位：本地卡
+      // 一出现就带着任务遮罩，中间没有一帧「普通书」。
+      manager?.reportLanded(taskId, localBookKey);
+      // 本机身份（入库行 + 别名 + 合集归属）此刻已齐：占位卡让位，不等整个
+      // 任务（进度回填、有声书包）跑完。
+      _onRemoteBookLanded(book.downloadId);
+    }
+    // 漫画：把 host 端按本阅读模式作为初始值落地（互联完整支持批次；一次性，
+    // 之后两端各自记忆）。best-effort，不阻塞下载主流程。
+    if (localBookKey != null &&
+        book.format == BookFormat.manga.dbValue &&
+        book.mangaReadingMode != null) {
+      try {
+        final FushiDatabase db = appModel.database;
+        await (db.update(
+          db.epubBooks,
+        )..where(($EpubBooksTable t) => t.bookKey.equals(localBookKey))).write(
+          EpubBooksCompanion(
+            mangaReadingMode: Value<String?>(book.mangaReadingMode),
+          ),
+        );
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+          'ReaderFushiHistoryPage.adoptRemoteMangaReadingMode',
+          e,
+          stack,
+        );
+      }
+    }
+    if (localBookKey != null &&
+        book.format == BookFormat.manga.dbValue &&
+        (book.mangaReaderOverrides.isNotEmpty ||
+            book.mangaReaderOverrideDeleted) &&
+        book.mangaReaderOverrideUpdatedAt >= 0) {
+      try {
         final EpubBookRow? localBook = await appModel.database.getEpubBook(
           localBookKey,
         );
-        if (localBook != null) {
-          await RemoteCollectionAdoptionService(
-            appModel.database,
-          ).adoptBook(book, localBook: localBook);
-        }
-        // 本机身份（入库行 + 别名 + 合集归属）此刻已齐：占位卡立刻让位，不等整个
-        // 任务（进度回填、有声书包）跑完。
-        _onRemoteBookLanded(book.downloadId);
-      }
-      // 漫画：把 host 端按本阅读模式作为初始值落地（互联完整支持批次；一次性，
-      // 之后两端各自记忆）。best-effort，不阻塞下载主流程。
-      if (localBookKey != null &&
-          book.format == BookFormat.manga.dbValue &&
-          book.mangaReadingMode != null) {
-        try {
-          final FushiDatabase db = appModel.database;
-          await (db.update(db.epubBooks)
-                ..where(($EpubBooksTable t) => t.bookKey.equals(localBookKey)))
-              .write(
-                EpubBooksCompanion(
-                  mangaReadingMode: Value<String?>(book.mangaReadingMode),
-                ),
-              );
-        } catch (e, stack) {
-          ErrorLogService.instance.log(
-            'ReaderFushiHistoryPage.adoptRemoteMangaReadingMode',
-            e,
-            stack,
+        if (localBook != null && localBook.uid.isNotEmpty) {
+          await appModel.database.mergeMangaReaderOverride(
+            localBook.uid,
+            overrides: book.mangaReaderOverrides,
+            updatedAt: book.mangaReaderOverrideUpdatedAt,
+            deleted: book.mangaReaderOverrideDeleted,
           );
         }
-      }
-      if (localBookKey != null &&
-          book.format == BookFormat.manga.dbValue &&
-          (book.mangaReaderOverrides.isNotEmpty ||
-              book.mangaReaderOverrideDeleted) &&
-          book.mangaReaderOverrideUpdatedAt >= 0) {
-        try {
-          final EpubBookRow? localBook = await appModel.database.getEpubBook(
-            localBookKey,
-          );
-          if (localBook != null && localBook.uid.isNotEmpty) {
-            await appModel.database.mergeMangaReaderOverride(
-              localBook.uid,
-              overrides: book.mangaReaderOverrides,
-              updatedAt: book.mangaReaderOverrideUpdatedAt,
-              deleted: book.mangaReaderOverrideDeleted,
-            );
-          }
-        } catch (e, stack) {
-          ErrorLogService.instance.log(
-            'ReaderFushiHistoryPage.adoptRemoteMangaReaderOverride',
-            e,
-            stack,
-          );
-        }
-      }
-      // v83：旧「远端书下载后 bookKey 漂移改键迁移」（TODO-616 §0🔴2）已删——
-      // epub 域 entryKey 换稳定 uid 后导入时刻定死；且该路径删除前已恒 no-op
-      //（能建 downloadId 行的写入方早随 shelf_reorder_page 消亡）。
-      // tags 稳健档：LWW 合并 host 传来的标签时钟 + 移除墓碑（删除/改名跨端传播、
-      // 防复活）。host 带 tagsAddedAt/tagTombstones（v2）→ mergeRemoteBookTags；旧 host
-      // 只有 tags 名单 → 合成 addedAt=1 退化为「只增 + 尊重本地移除墓碑」（向后兼容）。
-      // localBookKey 为 null（注入测试 importer 不返 key）即跳过。
-      if (localBookKey != null &&
-          (book.tagsAddedAt.isNotEmpty ||
-              book.tagTombstones.isNotEmpty ||
-              book.tags.isNotEmpty)) {
-        final Map<String, int> remoteAddedAt = book.tagsAddedAt.isNotEmpty
-            ? book.tagsAddedAt
-            : <String, int>{
-                for (final String name in book.tags)
-                  if (name.isNotEmpty) name: 1,
-              };
-        await appModel.database.mergeRemoteBookTags(
-          localBookKey,
-          remoteAddedAt: remoteAddedAt,
-          remoteTombstones: book.tagTombstones,
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+          'ReaderFushiHistoryPage.adoptRemoteMangaReaderOverride',
+          e,
+          stack,
         );
       }
-      // BUG-1488：把 host 上的自定义书名一并落成本地 override，否则下载后的本地卡
-      // 又变回原始书名（本地书的显示名只认 override 偏好，raw title 来自 EPUB 元
-      // 数据）。放在标签之后、进度之前，与它们同样独立吞错。
-      await _adoptRemoteBookDisplayTitle(book, localBookKey);
-      // BUG-813：把该书在 host 端的阅读进度 + 有声书播放断点一并拉回本地，手动下载
-      // 远端书时不再丢「阅读记录」（放在有声书下载之前、独立吞错，保证进度回填不被
-      // 有声书失败连带跳过）。
-      await _downloadRemoteBookProgress(book, client, localBookKey);
-      // BUG-3452：刚写进的对端阅读时刻要进「最近阅读」排序。最后阅读时间 provider
-      // 平时只在关书时失效，不失效的话这本书查不到阅读记录、回落到入库时刻。
-      if (mounted) ref.invalidate(bookLastReadAtProvider);
-      // BUG-990：EPUB 已落库、有声书未落库的空窗起点——标记本地 bookKey「有声书下载中」，
-      // 让被 provider 自动刷新顶替出来的本地卡（EPUB / SRT）继续显示加载覆盖层，不露出
-      // 「无转圈的普通书」。清理统一在下方 finally（覆盖成功 / 失败全部出口）。
-      if (localBookKey != null && book.hasAudiobook) {
-        markedAudiobookKey = localBookKey;
-        _markAudiobookDownloading(localBookKey, downloading: true);
-      }
-      // EPUB 导入成功后才接有声书；EPUB 失败已在上面 throw，不会走到这里。
-      // 失败包成 [_RemoteAudiobookException] 上抛：任务在管理器里落 failed 账，
-      // [_downloadRemoteBook] 的 catch 再按「EPUB 已入库」给专用提示。
-      await _downloadRemoteAudiobook(
-        book,
-        client,
-        localBookKey,
-        // 有声书占整书任务进度后半段（0.5..1.0），直报管理器、与页面无关。
-        onProgress: (double progress) => onProgress?.call(0.5 + progress * 0.5),
-      );
-    } finally {
-      // 单点清理（覆盖成功 + 有声书失败 + EPUB 失败全部出口）：Dart 的 finally
-      // 在 throw 之后仍执行，故 audiobook 键只在此清一次即可。
-      if (markedAudiobookKey != null) {
-        _markAudiobookDownloading(markedAudiobookKey, downloading: false);
-      }
     }
+    // v83：旧「远端书下载后 bookKey 漂移改键迁移」（TODO-616 §0🔴2）已删——
+    // epub 域 entryKey 换稳定 uid 后导入时刻定死；且该路径删除前已恒 no-op
+    //（能建 downloadId 行的写入方早随 shelf_reorder_page 消亡）。
+    // tags 稳健档：LWW 合并 host 传来的标签时钟 + 移除墓碑（删除/改名跨端传播、
+    // 防复活）。host 带 tagsAddedAt/tagTombstones（v2）→ mergeRemoteBookTags；旧 host
+    // 只有 tags 名单 → 合成 addedAt=1 退化为「只增 + 尊重本地移除墓碑」（向后兼容）。
+    // localBookKey 为 null（注入测试 importer 不返 key）即跳过。
+    if (localBookKey != null &&
+        (book.tagsAddedAt.isNotEmpty ||
+            book.tagTombstones.isNotEmpty ||
+            book.tags.isNotEmpty)) {
+      final Map<String, int> remoteAddedAt = book.tagsAddedAt.isNotEmpty
+          ? book.tagsAddedAt
+          : <String, int>{
+              for (final String name in book.tags)
+                if (name.isNotEmpty) name: 1,
+            };
+      await appModel.database.mergeRemoteBookTags(
+        localBookKey,
+        remoteAddedAt: remoteAddedAt,
+        remoteTombstones: book.tagTombstones,
+      );
+    }
+    // BUG-1488：把 host 上的自定义书名一并落成本地 override，否则下载后的本地卡
+    // 又变回原始书名（本地书的显示名只认 override 偏好，raw title 来自 EPUB 元
+    // 数据）。放在标签之后、进度之前，与它们同样独立吞错。
+    await _adoptRemoteBookDisplayTitle(book, localBookKey);
+    // BUG-813：把该书在 host 端的阅读进度 + 有声书播放断点一并拉回本地，手动下载
+    // 远端书时不再丢「阅读记录」（放在有声书下载之前、独立吞错，保证进度回填不被
+    // 有声书失败连带跳过）。
+    await _downloadRemoteBookProgress(book, client, localBookKey);
+    // BUG-3452：刚写进的对端阅读时刻要进「最近阅读」排序。最后阅读时间 provider
+    // 平时只在关书时失效，不失效的话这本书查不到阅读记录、回落到入库时刻。
+    if (mounted) ref.invalidate(bookLastReadAtProvider);
+    // EPUB 导入成功后才接有声书；EPUB 失败已在上面 throw，不会走到这里。
+    // 失败包成 [_RemoteAudiobookException] 上抛：任务在管理器里落 failed 账，
+    // [_downloadRemoteBook] 的 catch 再按「EPUB 已入库」给专用提示。
+    manager?.reportStage(taskId, InterconnectDownloadStage.audiobook);
+    await _downloadRemoteAudiobook(
+      book,
+      client,
+      localBookKey,
+      onProgress: onProgress,
+      onBytes: manager == null
+          ? null
+          : (int received, int? total) =>
+                manager.reportBytes(taskId, received, total),
+    );
+  }
+
+  /// 远端书下载任务会经过的阶段：正文 → 导入；对端有配套有声书、且来源能端
+  /// 有声书（互联后端，或测试注入的有声书钩子——与 [_downloadRemoteAudiobook]
+  /// 的门同一判据）时再加有声书阶段。不在表里的阶段 [InterconnectDownloadManager
+  /// .reportStage] 不认，所以没有有声书的书不会出现空的有声书阶段。
+  List<InterconnectDownloadStage> _remoteBookDownloadStages(
+    RemoteBookInfo book,
+    RemoteBookClient client,
+  ) {
+    final bool audiobook =
+        book.hasAudiobook &&
+        (client is InterconnectSyncBackend ||
+            _pageWidget.remoteAudiobookFetcher != null ||
+            _pageWidget.remoteAudiobookImporter != null);
+    return <InterconnectDownloadStage>[
+      InterconnectDownloadStage.content,
+      InterconnectDownloadStage.importing,
+      if (audiobook) InterconnectDownloadStage.audiobook,
+    ];
   }
 
   /// 对端书在本机落地（入库 + 别名 / 合集归属已写完）后的书架收尾（BUG-3452）。
@@ -1140,28 +1197,29 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
   /// 未挂载时什么都不做（重建的页面实例首帧就会按 DB 现状重新取数）。
   void _onRemoteBookLanded(String downloadId) {
     if (!mounted) return;
-    _landedRemoteDownloadIds.add(downloadId);
-    final Future<_RemoteBookState?> reload = _loadRemoteBooks();
-    // 先于 FutureBuilder 的订阅注册：同一轮完成回调里先摘记号、再按新清单重建。
-    unawaited(reload.then((_) => _landedRemoteDownloadIds.remove(downloadId)));
+    // 交接顺序：先重载折叠映射（新书的 uid / 入库时刻 / 合集归属），**映射到位
+    // 之后**才在同一帧里藏占位卡、放出本地卡——此前两步同时发生，本地卡先以
+    // 「入库时刻 0、不在合集」的散卡出现在别处，映射回来再跳回原位。等映射期间
+    // 本地卡被折叠规则挡着（[_foldShelfUnits]），占位卡带着同一条任务的进度顶着。
+    final Future<void> maps = _loadShelfMaps();
+    // 块体而非箭头：setState 的回调不得返回 Future（赋值表达式的值就是 Future）。
     _rebuild(() {
-      _remoteBooksFuture = reload;
-      _shelfMapsFuture = _loadShelfMaps();
+      _shelfMapsFuture = maps;
     });
-  }
-
-  /// BUG-990 空窗覆盖层的页面态开关。任务活在 app 级管理器里、可能在页面
-  /// dispose 后仍推进到这里：未挂载时只改集合不 setState（State 实例随任务闭包
-  /// 存活，安全；重建的新页面实例自带空集合，覆盖层缺席只是次要视觉损失）。
-  void _markAudiobookDownloading(String bookKey, {required bool downloading}) {
-    void apply() => downloading
-        ? _downloadingAudiobookKeys.add(bookKey)
-        : _downloadingAudiobookKeys.remove(bookKey);
-    if (mounted) {
-      _rebuild(apply);
-    } else {
-      apply();
-    }
+    unawaited(
+      maps.then((_) {
+        if (!mounted) return;
+        _landedRemoteDownloadIds.add(downloadId);
+        final Future<_RemoteBookState?> reload = _loadRemoteBooks();
+        // 先于 FutureBuilder 的订阅注册：同一轮完成回调里先摘记号、再按新清单重建。
+        unawaited(
+          reload.then((_) => _landedRemoteDownloadIds.remove(downloadId)),
+        );
+        _rebuild(() {
+          _remoteBooksFuture = reload;
+        });
+      }),
+    );
   }
 
   /// EPUB 导入成功后，把 host 端用户改过的书名落成本地 override（BUG-1488）。
@@ -1249,26 +1307,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     // 有声书播放断点 → prefs（与 resume/播放写键空间同源，见 sync sweep）。
     // `remoteAudiobookPosition` 仅互联后端具备（live API），故此段按类型门控。
     if (book.hasAudiobook && client is InterconnectSyncBackend) {
-      try {
-        final ({int positionMs, int updatedAtMs}) pos = await client
-            .remoteAudiobookPosition(book.downloadId);
-        if (pos.updatedAtMs > 0) {
-          await appModel.database.setPrefTyped<int>(
-            audiobookPositionPrefKey(localBookKey),
-            pos.positionMs,
-          );
-          await appModel.database.setPrefTyped<int>(
-            audiobookPositionAtPrefKey(localBookKey),
-            pos.updatedAtMs,
-          );
-        }
-      } catch (e, stack) {
-        ErrorLogService.instance.log(
-          'ReaderFushiHistoryPage.downloadRemoteAudiobookPosition',
-          e,
-          stack,
-        );
-      }
+      await backfillRemoteAudiobookPosition(
+        client: client,
+        database: appModel.database,
+        remoteKey: book.downloadId,
+        localKey: localBookKey,
+        logSource: 'ReaderFushiHistoryPage.downloadRemoteAudiobookPosition',
+      );
     }
   }
 
@@ -1293,6 +1338,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     RemoteBookClient client,
     String? localBookKey, {
     void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
     bool fresh = false,
   }) async {
     if (!book.hasAudiobook) return;
@@ -1324,9 +1370,10 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         await (client as InterconnectSyncBackend).getRemoteAudiobook(
           remoteBookKey,
           audioTmp,
-          // 原始 0..1；整书任务里由调用方映射到后半段（0.5..1.0），只补有声书的
-          // 任务（BUG-2505）则整条进度就是它。
-          onProgress: syncTransferFractionOnly(onProgress),
+          // 原始 0..1 = 有声书阶段的进度（整书任务此时已切到有声书阶段；只补
+          // 有声书的任务（BUG-2505）整条就这一个阶段）。传输层数得出字节就一并
+          // 报，后台任务弹层据此写「144 / 320 MB」。
+          onProgress: _audiobookTransferProgress(onProgress, onBytes),
           fresh: fresh,
         );
       }
@@ -1340,6 +1387,14 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
           packageFile: audioTmp,
           audioDatabaseRoot: _audiobookDatabaseRoot(),
           bookKeyOverride: localBookKey,
+        );
+      }
+      if (localBookKey != null) {
+        await recordRemoteAudiobookPackageDownload(
+          db: appModelNoUpdate.database,
+          client: client,
+          key: remoteAudiobookRevisionKeyForBook(localBookKey),
+          package: audioTmp,
         );
       }
     } catch (e, stack) {
@@ -1360,6 +1415,24 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         }
       }
     }
+  }
+
+  /// [_downloadRemoteAudiobook] 的传输回调：比例照转 [onProgress]，带字节时再转
+  /// [onBytes]（总量 = 已传 ÷ 比例，比例为 0 时未知）。
+  static SyncTransferProgress? _audiobookTransferProgress(
+    void Function(double progress)? onProgress,
+    void Function(int received, int? total)? onBytes,
+  ) {
+    if (onBytes == null) return syncTransferFractionOnly(onProgress);
+    return (double fraction, [int? bytesDone]) {
+      onProgress?.call(fraction);
+      if (bytesDone != null) {
+        onBytes(
+          bytesDone,
+          fraction > 0 ? (bytesDone / fraction).round() : null,
+        );
+      }
+    };
   }
 
   /// 本地已有这本书、只从对端补拉它的有声书（BUG-2505）。
@@ -1394,18 +1467,26 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     // 管理器要一个 dest 作任务登记；本任务的临时包路径由 [_downloadRemoteAudiobook]
     // 自己解析并用完即删，这里传同一路径只为登记。
     final File dest = await _remoteAudiobookDestination(book);
+    final String taskId = InterconnectDownloadManager.bookTaskId(
+      book.downloadId,
+    );
     try {
-      _markAudiobookDownloading(localBookKey, downloading: true);
       await manager.startBookDownload(
         downloadId: book.downloadId,
         title: book.displayName,
         dest: dest,
+        landedBookKey: localBookKey,
+        stages: const <InterconnectDownloadStage>[
+          InterconnectDownloadStage.audiobook,
+        ],
         run: (File target, {void Function(double progress)? onProgress}) =>
             _downloadRemoteAudiobook(
               book,
               client,
               localBookKey,
               onProgress: onProgress,
+              onBytes: (int received, int? total) =>
+                  manager.reportBytes(taskId, received, total),
             ),
       );
     } catch (e, stack) {
@@ -1420,31 +1501,16 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         FushiSnackBar(content: Text(t.remote_book_audiobook_download_failed)),
       );
       return;
-    } finally {
-      _markAudiobookDownloading(localBookKey, downloading: false);
-    }
+    } finally {}
     // 与整书下载同样把 host 端听书断点拉回来（best-effort，独立吞错）。
     if (client is InterconnectSyncBackend) {
-      try {
-        final ({int positionMs, int updatedAtMs}) pos = await client
-            .remoteAudiobookPosition(book.downloadId);
-        if (pos.updatedAtMs > 0) {
-          await appModel.database.setPrefTyped<int>(
-            audiobookPositionPrefKey(localBookKey),
-            pos.positionMs,
-          );
-          await appModel.database.setPrefTyped<int>(
-            audiobookPositionAtPrefKey(localBookKey),
-            pos.updatedAtMs,
-          );
-        }
-      } catch (e, stack) {
-        ErrorLogService.instance.log(
-          'ReaderFushiHistoryPage.downloadRemoteAudiobookPosition',
-          e,
-          stack,
-        );
-      }
+      await backfillRemoteAudiobookPosition(
+        client: client,
+        database: appModel.database,
+        remoteKey: book.downloadId,
+        localKey: localBookKey,
+        logSource: 'ReaderFushiHistoryPage.downloadRemoteAudiobookPosition',
+      );
     }
     if (!mounted) return;
     ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
@@ -1455,6 +1521,37 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     ScaffoldMessenger.of(
       context,
     ).showSnackBar(FushiSnackBar(content: Text(t.remote_book_downloaded)));
+  }
+
+  /// 本机这本有声书（记录键 [key]）在对端有更新：下载后 host 换过音频 / 字幕。
+  bool _remoteAudiobookHasUpdate(String key) =>
+      _shouldLoadRemoteBooks &&
+      (_lastRemoteState?.audiobookUpdates.contains(key) ?? false);
+
+  /// 书卡 / 纯字幕书详情里「从对端更新字幕」「重新下载有声书」两项。[updateAvailable]
+  /// （host 上下载之后换过内容）时重新下载那项改叫「下载更新」、换下载图标、排第一。
+  List<DialogAction> _remoteRefetchActions({
+    required bool updateAvailable,
+    required VoidCallback refreshSubtitles,
+    required VoidCallback redownload,
+  }) {
+    final DialogListAction subtitles = DialogListAction(
+      label: t.remote_book_subtitles_refresh,
+      icon: FushiIcons.subtitles,
+      group: DialogActionGroup.content,
+      onPressed: refreshSubtitles,
+    );
+    final DialogListAction whole = DialogListAction(
+      label: updateAvailable
+          ? t.remote_book_audiobook_update_download
+          : t.remote_book_audiobook_redownload,
+      icon: updateAvailable ? FushiIcons.cloudDownload : FushiIcons.cloudSync,
+      group: DialogActionGroup.content,
+      onPressed: redownload,
+    );
+    return updateAvailable
+        ? <DialogAction>[whole, subtitles]
+        : <DialogAction>[subtitles, whole];
   }
 
   /// 本机已有书**和**有声书时，从互联对端重新拉取它：[subtitlesOnly] 为 true 只拉
@@ -1489,12 +1586,18 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       return;
     }
     final File dest = await _remoteAudiobookDestination(book);
+    final String taskId = InterconnectDownloadManager.bookTaskId(
+      book.downloadId,
+    );
     try {
-      _markAudiobookDownloading(localBookKey, downloading: true);
       await manager.startBookDownload(
         downloadId: book.downloadId,
         title: book.displayName,
         dest: dest,
+        landedBookKey: localBookKey,
+        stages: const <InterconnectDownloadStage>[
+          InterconnectDownloadStage.audiobook,
+        ],
         run: (File target, {void Function(double progress)? onProgress}) =>
             subtitlesOnly
             ? _runRemoteAudiobookSubtitleRefetch(
@@ -1509,6 +1612,8 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
                 client,
                 localBookKey,
                 onProgress: onProgress,
+                onBytes: (int received, int? total) =>
+                    manager.reportBytes(taskId, received, total),
                 fresh: true,
               ),
       );
@@ -1533,9 +1638,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         context,
       ).showSnackBar(FushiSnackBar(content: Text(message)));
       return;
-    } finally {
-      _markAudiobookDownloading(localBookKey, downloading: false);
-    }
+    } finally {}
     if (!mounted) return;
     ref.invalidate(fushiBooksProvider(JapaneseLanguage.instance));
     _refreshSrtBooks();
@@ -1574,6 +1677,9 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         audioDatabaseRoot: _audiobookDatabaseRoot(),
         bookKeyOverride: localBookKey,
       );
+      // 只换了字幕侧：**不**记内容版本。host 若同时换了音频（条数相同时上面不会抛
+      // audioMismatch），记下 host 当前版本就把这次换音频藏起来了；「有更新」提示
+      // 留着，直到整包下载更新。
     } finally {
       try {
         if (package.existsSync()) package.deleteSync();
@@ -1602,6 +1708,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       return (
         audiobooks: const <RemoteAudiobookInfo>[],
         refetch: const <String, RemoteAudiobookInfo>{},
+        revisions: const <String, String>{},
         failed: false,
       );
     }
@@ -1619,6 +1726,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
       return (
         audiobooks: const <RemoteAudiobookInfo>[],
         refetch: const <String, RemoteAudiobookInfo>{},
+        revisions: const <String, String>{},
         failed: true,
       );
     }
@@ -1661,6 +1769,11 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         localSrtUids: localUids,
         excludeUids: needsAudio,
       ),
+      revisions: <String, String>{
+        for (final RemoteAudiobookInfo ab in all)
+          if (ab.identity.isNotEmpty && ab.contentRevision != null)
+            ab.identity: ab.contentRevision!,
+      },
       failed: false,
     );
   }
@@ -1894,26 +2007,13 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     // [_downloadRemoteBookProgress] 有声书段对称——此前纯 SRT 下载完从 0 开始，
     // 且 sweep 交集键 bug 让它之后也永远同步不上）。standalone 的 identity=uid
     // 恰为本地 `audiobook_pos_<uid>` 进度键，写穿即正确命名空间。best-effort。
-    try {
-      final ({int positionMs, int updatedAtMs}) pos = await client
-          .remoteAudiobookPosition(book.identity);
-      if (pos.updatedAtMs > 0) {
-        await appModel.database.setPrefTyped<int>(
-          audiobookPositionPrefKey(book.identity),
-          pos.positionMs,
-        );
-        await appModel.database.setPrefTyped<int>(
-          audiobookPositionAtPrefKey(book.identity),
-          pos.updatedAtMs,
-        );
-      }
-    } catch (e, stack) {
-      ErrorLogService.instance.log(
-        'ReaderFushiHistoryPage.downloadRemoteSrtAudiobookPosition',
-        e,
-        stack,
-      );
-    }
+    await backfillRemoteAudiobookPosition(
+      client: client,
+      database: appModel.database,
+      remoteKey: book.identity,
+      localKey: book.identity,
+      logSource: 'ReaderFushiHistoryPage.downloadRemoteSrtAudiobookPosition',
+    );
     if (!mounted) return;
     _refreshSrtBooks(); // 失效本地 SRT provider + 重拉远端（按 uid dedup 隐藏占位）
     ScaffoldMessenger.of(
@@ -1947,6 +2047,12 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         // 纯 SRT 包无 audiobook 段：importAudioDatabasePackage 走 standalone
         // 分支、忽略 bookKeyOverride，bookKey 保持空、身份=uid。二次导入同一 uid
         // 按 uid 原位更新（BUG-3098）。
+      );
+      await recordRemoteAudiobookPackageDownload(
+        db: appModelNoUpdate.database,
+        client: client,
+        key: remoteAudiobookRevisionKeyForSrt(book.identity),
+        package: target,
       );
     } finally {
       // 临时音频包成功/失败都即删（导入已落盘到 audiobook 根目录，不依赖
@@ -2065,6 +2171,7 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
         packageFile: package,
         audioDatabaseRoot: _audiobookDatabaseRoot(),
       );
+      // 只换了字幕侧：不记内容版本（理由同 [_runRemoteAudiobookSubtitleRefetch]）。
     } finally {
       try {
         if (package.existsSync()) package.deleteSync();
@@ -2126,34 +2233,24 @@ extension _ReaderHistoryRemote on _ReaderFushiHistoryPageState {
     return file;
   }
 
-  /// 导入下载到本地的 EPUB，返回本地入库的 bookKey（= `sanitizeTtuFilename`
-  /// 后的存储标题，可能因同名冲突重命名而与远端书名派生 key 不同）。注入的测试
-  /// importer 不返回 key 时返回 null（音频接线据此降级跳过 override 绑定）。
-  Future<String?> _importRemoteBookFile(
-    File file, {
-    String? mangaTitleHint,
-  }) async {
+  /// 导入下载到本地的书包（EPUB / 漫画包 / PDF 原件），返回本地入库的 bookKey
+  /// （= `sanitizeTtuFilename` 后的存储标题，可能因同名冲突重命名而与远端书名派生
+  /// key 不同）。注入的测试 importer 不返回 key 时返回 null（音频接线据此降级跳过
+  /// override 绑定）。
+  Future<String?> _importRemoteBookFile(File file, {String? title}) async {
     final Future<String?> Function(File file)? injected =
         _pageWidget.remoteBookImporter;
     if (injected != null) {
       return injected(file);
     }
-    // 互联完整支持批次：漫画包内容嗅探（zip 根含 manga.json = 书目录整树包）→
-    // 走 MangaImporter 既有两遍式校验落库；否则按 EPUB。与 host 侧
-    // importBookFromFile 的嗅探完全同语义（内容即真相，扩展名不参与判定）。
-    // 标题用 [mangaTitleHint]（远端 raw title——身份键 bookKey 由它派生）而非本地
-    // 临时文件名（`_safeRemoteBookKey` 已把非 ASCII 打成下划线，用它当标题会漂键）。
-    if (await isMangaPackage(file)) {
-      return importMangaPackageFile(
-        db: appModel.database,
-        file: file,
-        title: mangaTitleHint,
-      );
-    }
-    return EpubImporter.importFromPath(
+    // 按内容嗅探分流（PDF / 漫画包 / EPUB），与「同步对比」弹窗下载同一个入口。
+    // 标题用 [title]（远端 raw title——漫画 / PDF 的身份键 bookKey 由它派生）而非
+    // 本地临时文件名（`_safeRemoteBookKey` 已把非 ASCII 打成下划线，会漂键）。
+    return importSyncedBookFile(
       db: appModel.database,
-      filePath: file.path,
-      fileName: p.basename(file.path),
+      file: file,
+      title: title,
+      epubFileName: p.basename(file.path),
     );
   }
 
@@ -2175,6 +2272,8 @@ class _RemoteCardTaskView {
 typedef _RemoteSrtLists = ({
   List<RemoteAudiobookInfo> audiobooks,
   Map<String, RemoteAudiobookInfo> refetch,
+  // 对端清单里每本有声书（含 EPUB 有声书）的内容版本，身份 → contentRevision。
+  Map<String, String> revisions,
   bool failed,
 });
 
@@ -2187,7 +2286,11 @@ class _RemoteBookState {
     this.srtRefetch = const <String, RemoteAudiobookInfo>{},
     this.failed = false,
     this.srtFailed = false,
+    this.audiobookUpdates = const <String>{},
   });
+
+  /// 该提示「对端有更新」的本机有声书（记录键，见 `remote_audiobook_revision.dart`）。
+  final Set<String> audiobookUpdates;
 
   final List<RemoteBookInfo> books;
 
@@ -2223,6 +2326,48 @@ class _RemoteBookState {
   bool get anyFailed => failed || srtFailed;
 }
 
+/// [_RemoteBookState] 的内容签名：两份状态签名相同 ⇔ 书架据它画出来的东西相同。
+/// 每个状态对象只算一次（[_remoteBookStateSignatures]）。
+final Expando<String> _remoteBookStateSignatures = Expando<String>();
+
+String _remoteBookStateSignature(_RemoteBookState? state) {
+  if (state == null) return '';
+  return _remoteBookStateSignatures[state] ??= jsonEncode(<Object?>[
+    state.failed,
+    state.srtFailed,
+    <Object?>[
+      for (final RemoteBookInfo book in state.books) _remoteBookSignature(book),
+    ],
+    <String, Object?>{
+      for (final MapEntry<String, RemoteBookInfo> e
+          in state.audiobookOnly.entries)
+        e.key: _remoteBookSignature(e.value),
+    },
+    <String, Object?>{
+      for (final MapEntry<String, RemoteBookInfo> e
+          in state.audiobookRefetch.entries)
+        e.key: _remoteBookSignature(e.value),
+    },
+    <Object?>[
+      for (final RemoteAudiobookInfo audiobook in state.srtAudiobooks)
+        audiobook.toJson(),
+    ],
+    <String, Object?>{
+      for (final MapEntry<String, RemoteAudiobookInfo> e
+          in state.srtRefetch.entries)
+        e.key: e.value.toJson(),
+    },
+    state.audiobookUpdates.toList()..sort(),
+  ]);
+}
+
+/// 线上字段（[RemoteBookInfo.toJson]）之外，再带上本端解析出的下载身份与封面路径。
+List<Object?> _remoteBookSignature(RemoteBookInfo book) => <Object?>[
+  book.downloadId,
+  book.coverPath,
+  book.toJson(),
+];
+
 /// 有声书下载/导入失败的内部信号：[_downloadRemoteBook] 据此与 EPUB 失败区分，
 /// 弹专用提示而非通用「下载失败」。[cause] 是底层真实异常（已记日志）。
 class _RemoteAudiobookException implements Exception {
@@ -2231,4 +2376,34 @@ class _RemoteAudiobookException implements Exception {
 
   @override
   String toString() => '_RemoteAudiobookException: $cause';
+}
+
+/// 互联下载编排里「把 host 端听书断点拉回本机」的唯一实现（gap-novelmisc-6：整书下载、
+/// 补拉有声书、纯 SRT 有声书下载三处原先各抄一份）。
+///
+/// 用 host 端真实 key [remoteKey] 拉，写本机键空间 [localKey]（`audiobook_pos_*` 与
+/// 时间戳两键，与 resume / 播放 / sync sweep 同源）。host 没有记录（updatedAtMs == 0）
+/// 不写；拉取或落库出错记进 [logSource] 后吞掉——best-effort，绝不阻断主下载。
+Future<void> backfillRemoteAudiobookPosition({
+  required InterconnectSyncBackend client,
+  required FushiDatabase database,
+  required String remoteKey,
+  required String localKey,
+  required String logSource,
+}) async {
+  try {
+    final ({int positionMs, int updatedAtMs}) pos = await client
+        .remoteAudiobookPosition(remoteKey);
+    if (pos.updatedAtMs <= 0) return;
+    await database.setPrefTyped<int>(
+      audiobookPositionPrefKey(localKey),
+      pos.positionMs,
+    );
+    await database.setPrefTyped<int>(
+      audiobookPositionAtPrefKey(localKey),
+      pos.updatedAtMs,
+    );
+  } catch (e, stack) {
+    ErrorLogService.instance.log(logSource, e, stack);
+  }
 }

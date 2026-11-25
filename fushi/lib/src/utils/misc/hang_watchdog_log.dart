@@ -7,10 +7,10 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 /// BUG-2588：把 native runner 主线程停泵看门狗（`fushi/windows/runner/hang_watchdog.cpp`）
 /// 上次运行留下的记录折进 [ErrorLogService]。
 ///
-/// 卡死（主线程不再泵消息）不是崩溃：没有异常、`SetUnhandledExceptionFilter` 不会触发、
+/// 卡死 / 卡顿（主线程不再泵消息）不是崩溃：没有异常、`SetUnhandledExceptionFilter` 不会触发、
 /// WER 不留 dump，Dart 侧的查词面包屑下次启动只能报一条 `Lookup.crashRecovered`——分不清
 /// 「崩了」还是「卡死后被强杀」，更看不到主线程当时卡在哪。看门狗在主线程连续停泵超过
-/// 阈值时从旁路线程抓一份全线程栈 minidump（`crashdumps\hang-<pid>-<tick>.dmp`，诊断区
+/// 阈值（`kStallDumpThresholdMs`，3 s）时从旁路线程抓一份全线程栈 minidump（`crashdumps\hang-<pid>-<tick>.dmp`，诊断区
 /// 「崩溃转储」页自动列出），并往同目录 `hang_watchdog.log` 追加一行「什么时候、卡了多久、
 /// dump 在哪」。本类在启动时（[ErrorLogService.init] 之后）把这一行读出折成
 /// `MainThread.hangRecovered`，与 `Lookup.crashRecovered` 并排出现在错误日志里；读后清空
@@ -65,7 +65,7 @@ class HangWatchdogLog {
       // 开发者的一行——它指向诊断区里那份可分享的 hang dump。
       ErrorLogService.instance.log(
         'MainThread.hangRecovered',
-        '上次运行主线程停泵（app 卡死、键鼠无响应），看门狗已抓取全线程栈 dump——'
+        '上次运行看门狗抓过全线程栈 dump（主线程停泵 ≥3 秒，或主线程在泵消息但 Dart 心跳静默 ≥10 秒，界面卡住 / 黑屏）——'
             '请在「诊断 → 崩溃转储」分享 hang-*.dmp：\n$content',
       );
     } catch (e) {

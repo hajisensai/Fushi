@@ -3,8 +3,20 @@ import 'dart:io';
 import 'package:crypto/crypto.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/item_scrape/item_scrape_store.dart';
+import 'package:fushi_engine/media/metadata/books/anilist_books.dart'
+    show parseAniListMediaUrl;
+import 'package:fushi_engine/media/metadata/books/itunes_music.dart'
+    show parseItunesUrl;
+import 'package:fushi_engine/media/metadata/books/book_catalog.dart'
+    show findIsbnIn;
+import 'package:fushi_engine/media/metadata/books/book_search_query.dart';
+import 'package:fushi_engine/models/content_language.dart'
+    show contentLanguageKey;
+import 'package:fushi_engine/media/metadata/books/rakuten_books.dart';
 import 'package:fushi_engine/media/metadata/dlsite/dlsite_client.dart';
 import 'package:fushi_engine/media/metadata/image_download.dart';
+import 'package:fushi_engine/privacy/media_nsfw.dart' show isMediaNsfwEffective;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/media_cover_service.dart';
@@ -13,9 +25,30 @@ import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/metadata/bangumi_api_client.dart'
     show parseBangumiSubjectUrl;
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
+import 'package:fushi/src/media/metadata/undo_backup_retention.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+
+/// 封面下载器（测试注入桩）；[headers] 是源要求的额外请求头。
+typedef BookCoverDownloader =
+    Future<File> Function(String url, {Map<String, String>? headers});
+
+/// 一次搜索的结果：给用户看的候选 + 因作品没标 NSFW 而藏起来的 NSFW 候选条数
+/// （弹窗据此提示「标为 NSFW 后显示」）。AniList 在服务端就过滤掉了成人向条目，
+/// 那部分不计入 [hiddenNsfw]。
+///
+/// [query] 是实际命中的搜索词：原词零结果时按 `bookSearchQueries` 改写后重试
+/// （去卷号 / 拆混写名 / 去打头标签，BUG-5395），弹窗据此提示「显示的是 X 的结果」。
+typedef BookScrapeSearchResult = ({
+  List<BookScrapeCandidate> candidates,
+  int hiddenNsfw,
+  String query,
+});
+
+/// 书在 NSFW 标记表（`media_nsfw_flags`）里的宿主身份：EPUB / 漫画 / PDF =
+/// `(epub, bookKey)`，独立字幕书 = `(srt, uid)`，与书架菜单的「NSFW」开关同一口径。
+typedef BookNsfwHost = ({TagHostKind kind, String entryKey});
 
 /// 书的元数据写回会碰到的字段。
 enum BookMetadataField {
@@ -26,7 +59,11 @@ enum BookMetadataField {
   author,
 
   /// override 封面文件。
-  cover;
+  cover,
+
+  /// 条目刮削资料（简介 / 日期 / 评分 / 标签 / 横版背景，v161 `item_scrape_meta`
+  /// + `item_images`）——书架系列色块的数据源。
+  details;
 
   static BookMetadataField? tryParse(String raw) {
     for (final BookMetadataField f in values) {
@@ -38,13 +75,21 @@ enum BookMetadataField {
 
 /// 一本书当前的元数据（显示名覆盖 / 作者 / override 封面内容摘要）。可 JSON 往返。
 class BookMetadataState {
-  const BookMetadataState({this.overrideTitle, this.author, this.coverSha});
+  const BookMetadataState({
+    this.overrideTitle,
+    this.author,
+    this.coverSha,
+    this.details,
+  });
 
   factory BookMetadataState.fromJson(Map<String, Object?> json) =>
       BookMetadataState(
         overrideTitle: json['overrideTitle'] as String?,
         author: json['author'] as String?,
         coverSha: json['coverSha'] as String?,
+        details: json['details'] == null
+            ? null
+            : Map<String, Object?>.from(json['details']! as Map),
       );
 
   /// 显示名覆盖；null = 没改过名（显示原始书名）。
@@ -54,6 +99,9 @@ class BookMetadataState {
   /// override 封面文件的 sha256；null = 没有 override 封面（显示源默认封面）。
   final String? coverSha;
 
+  /// 条目刮削资料（[itemScrapeDetailsToJson] 形状，不含写入时刻）；null = 没有。
+  final Map<String, Object?>? details;
+
   /// 只取 [fields] 那几项（判「之后被手动改过」时只比这次动过的字段）。
   Map<String, Object?> project(Iterable<BookMetadataField> fields) =>
       <String, Object?>{
@@ -62,6 +110,7 @@ class BookMetadataState {
             BookMetadataField.title => overrideTitle,
             BookMetadataField.author => author,
             BookMetadataField.cover => coverSha,
+            BookMetadataField.details => details,
           },
       };
 
@@ -69,12 +118,17 @@ class BookMetadataState {
     'overrideTitle': overrideTitle,
     'author': author,
     'coverSha': coverSha,
+    'details': details,
   };
 }
 
 /// 写回前的快照：[state] + 被替换前那张 override 封面的备份文件（可恢复）。
 class BookMetadataSnapshot {
-  const BookMetadataSnapshot({required this.state, this.coverBackupPath});
+  const BookMetadataSnapshot({
+    required this.state,
+    this.coverBackupPath,
+    this.hadBackdrop = false,
+  });
 
   factory BookMetadataSnapshot.fromJson(Map<String, Object?> json) =>
       BookMetadataSnapshot(
@@ -82,6 +136,7 @@ class BookMetadataSnapshot {
           Map<String, Object?>.from(json['state'] as Map? ?? const {}),
         ),
         coverBackupPath: json['coverBackupPath'] as String?,
+        hadBackdrop: json['hadBackdrop'] == true,
       );
 
   final BookMetadataState state;
@@ -89,9 +144,14 @@ class BookMetadataSnapshot {
   /// 执行前有 override 封面且要求留备份时，那张图的备份路径。
   final String? coverBackupPath;
 
+  /// 执行前条目已有横版背景（有则撤销不清背景——旧图已被同路径覆盖，无从恢复；
+  /// 没有则撤销连这次写入的背景一起清掉）。
+  final bool hadBackdrop;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'state': state.toJson(),
     'coverBackupPath': coverBackupPath,
+    'hadBackdrop': hadBackdrop,
   };
 }
 
@@ -116,7 +176,7 @@ class BookMetadataApplyResult {
 /// 此前候选解析（贴 Bangumi URL 直取、纯数字关键词「搜索 + id 直取」并列、DLsite
 /// 编号直取）与封面下载写在弹窗 State 里、写回写在书架页里，控制通道 / AI 助手没法调
 /// 「同一个方法」。现在弹窗、书架页、`fushi_cli book …` 都只经本门面：
-/// - [search] / [fetchById]：候选；
+/// - [searchDetailed] / [fetchById]：候选；
 /// - [downloadCover]：选中候选后下载封面到临时文件（编辑信息弹窗拿它先预览、保存时
 ///   再落地，所以下载与写回分两步）；
 /// - [applyToBook]：写回显示名 / 作者 / 封面。`keepBackup` 时先把将被替换的 override
@@ -124,22 +184,104 @@ class BookMetadataApplyResult {
 ///   没了，撤销无从谈起；
 /// - [currentState] / [restore]：AI 撤销用（执行前快照写回）。
 class BookMetadataScrapeFacade {
-  /// [scraper] 注入时门面不负责关闭它；不注入则按需自建、[close] 时关闭。
+  /// [scraper] 注入时门面不负责关闭它；不注入则按需自建（带上 [rakuten] 凭据）、
+  /// [close] 时关闭。
   BookMetadataScrapeFacade({
     BookMetadataScraper? scraper,
-    Future<File> Function(String url)? downloadImage,
+    BookCoverDownloader? downloadImage,
     DateTime Function() now = DateTime.now,
+    RakutenBooksCredentials? rakuten,
   }) : _injected = scraper,
-       _download = downloadImage ?? downloadImageToTempFile,
-       _now = now;
+       _download = downloadImage ?? _defaultDownload,
+       _now = now,
+       _rakuten = rakuten;
 
   final BookMetadataScraper? _injected;
-  final Future<File> Function(String url) _download;
+  final BookCoverDownloader _download;
   final DateTime Function() _now;
+  final RakutenBooksCredentials? _rakuten;
   BookMetadataScraper? _owned;
 
   BookMetadataScraper get _scraper =>
-      _injected ?? (_owned ??= BookMetadataScraper());
+      _injected ?? (_owned ??= BookMetadataScraper(rakuten: _rakuten));
+
+  static Future<File> _defaultDownload(
+    String url, {
+    Map<String, String>? headers,
+  }) => downloadImageToTempFile(url, headers: headers);
+
+  /// [item] 的 NSFW 宿主身份（认不出为 null）。
+  static BookNsfwHost? nsfwHostForItem(MediaItem item) {
+    final String? bookKey = ReaderFushiSource.parseBookKey(
+      item.mediaIdentifier,
+    );
+    if (bookKey != null) return (kind: TagHostKind.epub, entryKey: bookKey);
+    final String? srtUid = ReaderFushiSource.parseSrtBookUid(
+      item.mediaIdentifier,
+    );
+    if (srtUid != null && srtUid.isNotEmpty) {
+      return (kind: TagHostKind.srt, entryKey: srtUid);
+    }
+    return null;
+  }
+
+  /// [host] 的**有效** NSFW（自己被标，或在 NSFW 合集里）。刮削搜索据此决定显不显示
+  /// NSFW 候选；null（认不出的书）按没标处理。
+  static Future<bool> isNsfwHost(FushiDatabase db, BookNsfwHost? host) async =>
+      host != null && await isMediaNsfwEffective(db, host.kind, host.entryKey);
+
+  /// [item] 是不是「以有声书导入的歌曲」：同步文件是 LRC 歌词（字幕书的字幕文件，或
+  /// EPUB 有声书的对齐文件）。是的话刮削弹窗默认选音乐封面源（[BookScrapeSource.itunes]），
+  /// 不再先去 Bangumi 搜出一堆动画 / 漫画条目（应用内反馈 T_KdsLEY9l）。
+  static Future<bool> isSongForItem(FushiDatabase db, MediaItem item) async {
+    final String? srtUid = ReaderFushiSource.parseSrtBookUid(
+      item.mediaIdentifier,
+    );
+    if (srtUid != null) {
+      final SrtBookRow? row = await db.getSrtBookByUid(srtUid);
+      return row != null && isLyricsSyncPath(row.srtPath);
+    }
+    final String? bookKey = ReaderFushiSource.parseBookKey(
+      item.mediaIdentifier,
+    );
+    if (bookKey == null) return false;
+    final AudiobookRow? audiobook = await db.getAudiobookByBookKey(bookKey);
+    if (audiobook == null) return false;
+    return audiobook.alignmentFormat.trim().toLowerCase() == 'lrc' ||
+        isLyricsSyncPath(audiobook.alignmentPath);
+  }
+
+  /// 同步文件路径是不是 LRC 歌词（按扩展名，大小写不敏感）。
+  static bool isLyricsSyncPath(String path) =>
+      p.extension(path.trim()).toLowerCase() == '.lrc';
+
+  /// [source] 在当前凭据下能不能用（楽天要 applicationId + accessKey）。
+  bool isSourceAvailable(BookScrapeSource source) =>
+      !source.needsCredentials || _scraper.rakutenAvailable;
+
+  /// 书的版本语言（EPUB / 漫画 `dc:language`，主子标签；认不出 / 不是书为空串）：
+  /// MangaBaka 卷封面按它挑（中文版用中文版封面）。
+  static Future<String> languageForItem(
+    FushiDatabase db,
+    MediaItem item,
+  ) async {
+    final String? bookKey = ReaderFushiSource.parseBookKey(
+      item.mediaIdentifier,
+    );
+    if (bookKey == null) return '';
+    return contentLanguageKey((await db.getEpubBook(bookKey))?.language);
+  }
+
+  /// [item] 的 ISBN-13（EPUB 导入时从 OPF `dc:identifier` 规范化写进
+  /// `epub_books.isbn`；字幕书 / 漫画 / 没有 ISBN 的书返回 null）。openBD 等按 ISBN
+  /// 查的源用它预填。
+  static Future<String?> isbnForItem(FushiDatabase db, MediaItem item) async {
+    final String? bookKey = ReaderFushiSource.parseBookKey(
+      item.mediaIdentifier,
+    );
+    if (bookKey == null) return null;
+    return (await db.getEpubBook(bookKey))?.isbn;
+  }
 
   /// 备份保留多久（与回收站同口径）；之后的撤销报失败（封面备份已过期）。
   static const Duration backupRetention = Duration(days: 30);
@@ -147,14 +289,117 @@ class BookMetadataScrapeFacade {
   /// 关键词 → 候选。Bangumi：贴条目 URL = 按 id 直取（跳过关键词搜索）；纯数字既
   /// 可能是 id 也可能是书名（如《1984》）——搜索 + id 直取并列，直取命中置顶、按
   /// subjectId 去重；其余走关键词搜索。DLsite：贴作品页 URL / 编号 → 直取；其余按名
-  /// 搜音声 / 漫画 / 小说。失败抛 [BookScrapeException]。
-  Future<List<BookScrapeCandidate>> search({
+  /// 搜音声 / 漫画 / 小说。AniList：贴 `anilist.co/manga/<id>` = 按 id 直取，其余按名搜
+  /// 轻小说。openBD：只按输入里的 ISBN 查（没有 ISBN → 空表）。NDL / 楽天：输入里有
+  /// ISBN 按 ISBN，否则按书名。iTunes：贴 Apple Music 链接 / 数字 id = 按 id 直取（数字直取
+  /// 不中再当歌名搜），其余按歌名 / 歌手搜歌曲。失败抛 [BookScrapeException]。
+  ///
+  /// NSFW 候选（[BookScrapeCandidate.isAdult]）只在 [includeNsfw] 时返回——这是对**所有
+  /// 源**统一的一条规则，跟随作品自己的 NSFW 标记（拍板台 pr3497）；不再靠「把 DLsite
+  /// 单独做成一个源、默认不选」来把成人向结果挡在普通书搜索外。
+  ///
+  /// 返回可见候选与因 [includeNsfw] 为 false 而藏起来的 NSFW 候选条数（弹窗据此
+  /// 提示「藏了 N 条」）。弹窗与控制通道的候选搜索路由（`kBookMetadataCtlSearch`）
+  /// 都走这一个方法。
+  Future<BookScrapeSearchResult> searchDetailed({
     required BookScrapeSource source,
     required String query,
+    bool includeNsfw = false,
   }) async {
-    final String keyword = query.trim();
+    final List<String> queries = searchQueriesFor(source, query);
+    BookScrapeSearchResult result = (
+      candidates: const <BookScrapeCandidate>[],
+      hiddenNsfw: 0,
+      query: query.trim(),
+    );
+    // 依次试改写后的词，第一个有结果（含藏起来的 NSFW 条目）的为准；请求失败照常
+    // 抛出（不吞、不换下一个词掩盖）。
+    for (final String q in queries) {
+      final List<BookScrapeCandidate> all = await _searchAll(
+        source,
+        q,
+        includeNsfw: includeNsfw,
+      );
+      final List<BookScrapeCandidate> shown = includeNsfw
+          ? all
+          : <BookScrapeCandidate>[
+              for (final BookScrapeCandidate c in all)
+                if (!c.isAdult) c,
+            ];
+      result = (
+        candidates: shown,
+        hiddenNsfw: all.length - shown.length,
+        query: q,
+      );
+      if (all.isNotEmpty) return result;
+    }
+    return (
+      candidates: result.candidates,
+      hiddenNsfw: result.hiddenNsfw,
+      query: query.trim(),
+    );
+  }
+
+  /// [query] 在 [source] 上要依次试的搜索词（纯函数）。贴的是链接 / 纯数字 id /
+  /// ISBN，或源不按书名搜（[BookScrapeSource.searchGranularity] 为 null）时只有原词。
+  static List<String> searchQueriesFor(BookScrapeSource source, String query) {
+    final String q = query.trim();
+    if (q.isEmpty) return const <String>[];
+    final BookSearchGranularity? granularity = source.searchGranularity;
+    if (granularity == null ||
+        q.contains('://') ||
+        RegExp(r'^\d+$').hasMatch(q) ||
+        findIsbnIn(q) != null) {
+      return <String>[q];
+    }
+    return bookSearchQueries(q, granularity: granularity);
+  }
+
+  Future<List<BookScrapeCandidate>> _searchAll(
+    BookScrapeSource source,
+    String keyword, {
+    required bool includeNsfw,
+  }) async {
     if (keyword.isEmpty) return const <BookScrapeCandidate>[];
-    if (source == BookScrapeSource.dlsite) return _searchDlsite(keyword);
+    switch (source) {
+      case BookScrapeSource.dlsite:
+        return _searchDlsite(keyword);
+      case BookScrapeSource.anilist:
+        final String? id = parseAniListMediaUrl(keyword);
+        if (id != null) {
+          final BookScrapeCandidate? c = await _scraper.fetchCatalogById(
+            source,
+            id,
+          );
+          return c == null
+              ? const <BookScrapeCandidate>[]
+              : <BookScrapeCandidate>[c];
+        }
+        return _scraper.searchAniList(keyword, includeNsfw: includeNsfw);
+      case BookScrapeSource.openbd:
+        return _scraper.searchOpenBd(keyword);
+      case BookScrapeSource.ndl:
+        return _scraper.searchNdl(keyword);
+      case BookScrapeSource.rakuten:
+        return _scraper.searchRakuten(keyword);
+      case BookScrapeSource.itunes:
+        // 贴 Apple Music / iTunes 链接（或纯数字 id）= 按 id 直取。
+        final String? itunesId = parseItunesUrl(keyword);
+        if (itunesId != null) {
+          final BookScrapeCandidate? c = await _scraper.fetchCatalogById(
+            source,
+            itunesId,
+          );
+          if (c != null) return <BookScrapeCandidate>[c];
+          // 纯数字也可能是歌名（「1984」「22」）：直取不中再按关键词搜。
+          if (itunesId != keyword) return const <BookScrapeCandidate>[];
+        }
+        return _scraper.searchItunes(keyword);
+      case BookScrapeSource.mangabaka:
+        return _searchMangaBaka(keyword);
+      case BookScrapeSource.bangumi:
+        break;
+    }
     final String? mappedSubjectId = parseBangumiSubjectUrl(keyword);
     if (mappedSubjectId != null) {
       final BookScrapeCandidate? candidate = await _scraper.fetchById(
@@ -204,19 +449,77 @@ class BookMetadataScrapeFacade {
     return _scraper.searchDlsite(keyword);
   }
 
-  /// 按源内 id 直取一个候选（Bangumi subject id / DLsite 作品编号）。查无此条 / 无
-  /// 封面返回 null；失败抛 [BookScrapeException]。
+  /// MangaBaka：贴系列页 URL → 直取；纯数字既可能是 id 也可能是书名（《86》）——
+  /// 搜索 + id 直取并列，直取命中置顶；其余按名搜。
+  Future<List<BookScrapeCandidate>> _searchMangaBaka(String keyword) async {
+    final String? id = parseMangaBakaSeriesId(keyword);
+    final bool numeric = RegExp(r'^\d+$').hasMatch(keyword);
+    if (id != null && !numeric) {
+      final BookScrapeCandidate? c = await _scraper.fetchMangaBakaById(id);
+      return c == null
+          ? const <BookScrapeCandidate>[]
+          : <BookScrapeCandidate>[c];
+    }
+    final List<BookScrapeCandidate> searched = await _scraper.searchMangaBaka(
+      keyword,
+    );
+    if (id == null) return searched;
+    BookScrapeCandidate? direct;
+    try {
+      direct = await _scraper.fetchMangaBakaById(id);
+    } on BookScrapeException catch (e) {
+      // 与 Bangumi 数字关键词同口径：第二路尽力而为，主搜索失败仍会冒泡。
+      ErrorLogService.instance.logDiagnostic(
+        'BookMetadataScrapeFacade.fetchMangaBakaById',
+        'numeric keyword direct fetch failed: $e',
+      );
+    }
+    if (direct == null) return searched;
+    final String directId = direct.subjectId;
+    return <BookScrapeCandidate>[
+      direct,
+      ...searched.where((BookScrapeCandidate c) => c.subjectId != directId),
+    ];
+  }
+
+  /// MangaBaka 系列 [seriesId] 的每卷封面（弹窗的卷网格）。
+  Future<List<BookVolumeCover>> volumeCovers(
+    String seriesId, {
+    String language = '',
+  }) => _scraper.fetchMangaBakaVolumeCovers(seriesId, language: language);
+
+  /// [volumeCovers] 连同实际用的版本语言（本语言没有卷封面时回落日文版，弹窗据此
+  /// 提示）。
+  Future<BookVolumeCoverSet> volumeCoverSet(
+    String seriesId, {
+    String language = '',
+  }) => _scraper.fetchMangaBakaVolumeCoverSet(seriesId, language: language);
+
+  /// 下载某卷封面到临时文件（失败抛 [ImageDownloadException]）。
+  Future<File> downloadVolumeCover(BookVolumeCover cover) =>
+      _download(cover.url);
+
+  /// 按源内 id 直取一个候选（Bangumi subject id / DLsite 作品编号 / MangaBaka 系列 id /
+  /// AniList media id / openBD·NDL·楽天的 ISBN）。查无此条 / 无封面返回 null；失败抛
+  /// [BookScrapeException]。
   Future<BookScrapeCandidate?> fetchById({
     required BookScrapeSource source,
     required String id,
   }) => switch (source) {
     BookScrapeSource.bangumi => _scraper.fetchById(id.trim()),
     BookScrapeSource.dlsite => _scraper.fetchDlsiteById(id.trim()),
+    BookScrapeSource.mangabaka => _scraper.fetchMangaBakaById(id.trim()),
+    BookScrapeSource.anilist ||
+    BookScrapeSource.openbd ||
+    BookScrapeSource.ndl ||
+    BookScrapeSource.rakuten ||
+    BookScrapeSource.itunes => _scraper.fetchCatalogById(source, id.trim()),
   };
 
-  /// 选中候选后把封面下到临时文件（失败抛 [ImageDownloadException]）。
+  /// 选中候选后把封面下到临时文件（失败抛 [ImageDownloadException]）。源要求的请求头
+  /// （NDL 缩略图的 Referer）一并带上。
   Future<File> downloadCover(BookScrapeCandidate candidate) =>
-      _download(candidate.coverUrl);
+      _download(candidate.coverUrl, headers: candidate.coverHeaders);
 
   /// 把选中的元数据写回 [item]：[title] 非空 → 显示名覆盖；[author] 非 null → 作者
   /// （源不支持改作者时跳过）；[cover] 非 null → override 封面。全部走书架 / 编辑
@@ -230,6 +533,8 @@ class BookMetadataScrapeFacade {
     File? cover,
     String? title,
     String? author,
+    BookScrapeCandidate? details,
+    File? backdrop,
     bool keepBackup = false,
   }) async {
     final MediaSource source = item.getMediaSource(appModel: appModel);
@@ -237,6 +542,16 @@ class BookMetadataScrapeFacade {
       appModel: appModel,
       item: item,
     );
+    final ItemScrapeKey? itemKey = await itemScrapeKeyForBook(
+      appModel.database,
+      item,
+    );
+    final bool hadBackdrop =
+        itemKey != null &&
+        (await appModel.database.getItemImages(
+          itemKey.mediaType,
+          itemKey.entryKey,
+        )).any((ItemImageRow r) => r.kind == MediaImageKind.backdrop.dbValue);
     String? backupPath;
     if (cover != null && keepBackup && beforeState.coverSha != null) {
       backupPath = await _backupCover(appModel, source, item);
@@ -275,10 +590,40 @@ class BookMetadataScrapeFacade {
         backupPath = null;
       }
     }
+    if (details != null && itemKey != null) {
+      // 资料先落（简介 / 评分 / 标签本身就够画系列色块）；横版图下载失败只记日志，
+      // 不让整次写回失败——封面 / 书名已经写进去了。
+      final ItemScrapeStore store = _itemStore(appModel.database);
+      await store.writeMeta(itemKey, itemScrapeDetailsOfCandidate(details));
+      try {
+        if (backdrop != null) {
+          await store.setImageFromFile(
+            itemKey,
+            MediaImageKind.backdrop,
+            backdrop,
+            sourceUrl: details.backdropUrl,
+          );
+        } else if (details.backdropUrl != null) {
+          await store.setImageFromUrl(
+            itemKey,
+            MediaImageKind.backdrop,
+            details.backdropUrl!,
+          );
+        }
+      } catch (e, stack) {
+        ErrorLogService.instance.log(
+          'BookMetadataScrapeFacade.backdrop',
+          e,
+          stack,
+        );
+      }
+      applied.add(BookMetadataField.details);
+    }
     return BookMetadataApplyResult(
       before: BookMetadataSnapshot(
         state: beforeState,
         coverBackupPath: backupPath,
+        hadBackdrop: hadBackdrop,
       ),
       after: await currentState(appModel: appModel, item: item),
       applied: applied,
@@ -296,10 +641,23 @@ class BookMetadataScrapeFacade {
       appModel: appModel,
       item: item,
     );
+    final ItemScrapeKey? itemKey = await itemScrapeKeyForBook(
+      appModel.database,
+      item,
+    );
+    final ItemScrapeMetaRow? meta = itemKey == null
+        ? null
+        : await appModel.database.getItemScrapeMeta(
+            itemKey.mediaType,
+            itemKey.entryKey,
+          );
     return BookMetadataState(
       overrideTitle: source.getOverrideTitleFromMediaItem(item),
       author: await _author(appModel.database, item),
       coverSha: cover == null ? null : await _sha(cover),
+      details: meta == null
+          ? null
+          : itemScrapeDetailsToJson(ItemScrapeDetails.fromRow(meta)),
     );
   }
 
@@ -349,7 +707,35 @@ class BookMetadataScrapeFacade {
         author: snapshot.state.author,
       );
     }
+    if (fields.contains(BookMetadataField.details)) {
+      final ItemScrapeKey? itemKey = await itemScrapeKeyForBook(
+        appModel.database,
+        item,
+      );
+      if (itemKey != null) {
+        final Map<String, Object?>? previous = snapshot.state.details;
+        if (previous == null) {
+          await appModel.database.deleteItemScrapeMeta(
+            itemKey.mediaType,
+            itemKey.entryKey,
+          );
+        } else {
+          // 原样写回（含字段锁）：撤销不该被现有的锁挡住。
+          await _itemStore(
+            appModel.database,
+          ).restoreMeta(itemKey, itemScrapeDetailsFromJson(previous));
+        }
+        if (!snapshot.hadBackdrop) {
+          await _itemStore(
+            appModel.database,
+          ).clearImage(itemKey, MediaImageKind.backdrop);
+        }
+      }
+    }
   }
+
+  ItemScrapeStore _itemStore(FushiDatabase db) =>
+      ItemScrapeStore(db, downloadImage: _download, now: _now);
 
   /// 关闭自建的 scraper（注入的不关）。
   void close() {
@@ -390,24 +776,18 @@ class BookMetadataScrapeFacade {
       dir.path,
       '${now.microsecondsSinceEpoch}_${item.mediaIdentifier.hashCode.toUnsigned(32)}',
     );
-    await current.copy(path);
+    final File backup = await current.copy(path);
+    // 复制会沿用源文件的修改时间；保留期按「备份建立时刻」算，所以这里改成现在，
+    // 否则一张 30 天前就在用的旧封面，备份刚建好就会被下一次清理删掉。
+    await backup.setLastModified(now);
     return path;
   }
 
-  Future<void> _pruneBackups(Directory dir) async {
-    final DateTime cutoff = _now().subtract(backupRetention);
-    await for (final FileSystemEntity e in dir.list()) {
-      if (e is! File) continue;
-      try {
-        if ((await e.lastModified()).isBefore(cutoff)) await e.delete();
-      } on FileSystemException catch (err) {
-        ErrorLogService.instance.logDiagnostic(
-          'BookMetadataScrapeFacade.prune',
-          '$err',
-        );
-      }
-    }
-  }
+  Future<void> _pruneBackups(Directory dir) => pruneUndoBackups(
+    dir,
+    cutoff: _now().subtract(backupRetention),
+    logTag: 'BookMetadataScrapeFacade.prune',
+  );
 
   static Future<void> _deleteQuietly(String path) async {
     try {
@@ -424,3 +804,86 @@ class BookMetadataScrapeFacade {
   static Future<String> _sha(File file) async =>
       sha256.convert(await file.readAsBytes()).toString();
 }
+
+/// 书架条目（[MediaItem]）在 `item_scrape_meta` / `item_images` 里的身份：EPUB /
+/// 漫画 / PDF = `(epub, EpubBooks.uid)`，独立字幕书 = `(srt, SrtBooks.uid)`（与合集
+/// 成员同一口径）。认不出（书行已删 / uid 为空）为 null。
+Future<ItemScrapeKey?> itemScrapeKeyForBook(
+  FushiDatabase db,
+  MediaItem item,
+) async {
+  final String? bookKey = ReaderFushiSource.parseBookKey(item.mediaIdentifier);
+  if (bookKey != null) {
+    final String? uid = await db.resolveEpubBookUid(bookKey);
+    return uid == null || uid.isEmpty
+        ? null
+        : ItemScrapeKey(MediaKind.epub, uid);
+  }
+  final String? srtUid = ReaderFushiSource.parseSrtBookUid(
+    item.mediaIdentifier,
+  );
+  if (srtUid != null && srtUid.isNotEmpty) {
+    return ItemScrapeKey(MediaKind.srt, srtUid);
+  }
+  return null;
+}
+
+/// 书籍刮削候选 → 与媒体无关的条目资料（日期优先源侧原文，退回年份）。
+ItemScrapeDetails itemScrapeDetailsOfCandidate(BookScrapeCandidate c) =>
+    ItemScrapeDetails(
+      source: c.source.name,
+      subjectId: c.subjectId,
+      title: c.title,
+      originalTitle: c.originalTitle,
+      summary: c.summary,
+      airDate: c.date ?? c.year?.toString(),
+      rating: c.rating,
+      ratingCount: c.ratingCount,
+      tags: c.tags,
+      detailUrl: c.detailUrl,
+    );
+
+/// [ItemScrapeDetails] ↔ JSON（撤销快照 / 控制通道用；不含写入时刻，含 v177 字段锁）。
+Map<String, Object?> itemScrapeDetailsToJson(ItemScrapeDetails d) =>
+    <String, Object?>{
+      'source': d.source,
+      'subjectId': d.subjectId,
+      'title': d.title,
+      'originalTitle': d.originalTitle,
+      'summary': d.summary,
+      'airDate': d.airDate,
+      'rating': d.rating,
+      'ratingCount': d.ratingCount,
+      'tags': d.tags,
+      'detailUrl': d.detailUrl,
+      'lockedFields': <String>[
+        for (final ItemScrapeLockableField f in ItemScrapeLockableField.values)
+          if (d.lockedFields.contains(f)) f.name,
+      ],
+    };
+
+ItemScrapeDetails itemScrapeDetailsFromJson(Map<String, Object?> json) =>
+    ItemScrapeDetails(
+      source: json['source'] as String? ?? ItemScrapeStore.manualSource,
+      subjectId: json['subjectId'] as String?,
+      title: json['title'] as String?,
+      originalTitle: json['originalTitle'] as String?,
+      summary: json['summary'] as String?,
+      airDate: json['airDate'] as String?,
+      rating: (json['rating'] as num?)?.toDouble(),
+      ratingCount: (json['ratingCount'] as num?)?.toInt(),
+      tags: <String>[
+        for (final Object? t
+            in (json['tags'] as List<Object?>? ?? const <Object?>[]))
+          if (t is String) t,
+      ],
+      detailUrl: json['detailUrl'] as String?,
+      lockedFields: <ItemScrapeLockableField>{
+        for (final Object? f
+            in (json['lockedFields'] as List<Object?>? ?? const <Object?>[]))
+          if (f is String)
+            if (ItemScrapeLockableField.tryParse(f)
+                case final ItemScrapeLockableField field)
+              field,
+      },
+    );

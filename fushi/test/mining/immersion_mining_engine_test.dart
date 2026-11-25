@@ -12,12 +12,20 @@ class _FakeRepo implements BaseAnkiRepository {
   AnkiMiningContext? minedContext;
   int? updatedNoteId;
 
+  /// 落卡那一刻封面文件的字节数。引擎落卡后就删掉本张卡的私有临时目录（video-30），
+  /// 事后按路径量会扑空。
+  int? coverLengthAtImport;
+
   @override
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
     minedContext = context;
+    final String? cover = context.coverPath;
+    coverLengthAtImport = cover != null && File(cover).existsSync()
+        ? File(cover).lengthSync()
+        : null;
     return const MineOutcome.success(noteId: 42);
   }
 
@@ -95,6 +103,7 @@ void main() {
     String audioBitrate = '64k',
     String? tlsPinSha256,
     Map<String, String> httpHeaders = const {},
+    double? gainDb,
   }) async => outputPath;
   Future<String?> nullAudio({
     required String inputPath,
@@ -108,6 +117,7 @@ void main() {
     String audioBitrate = '64k',
     String? tlsPinSha256,
     Map<String, String> httpHeaders = const {},
+    double? gainDb,
   }) async => null;
   Future<String?> okFrame({
     required String inputPath,
@@ -240,6 +250,7 @@ void main() {
         String audioBitrate = '64k',
         String? tlsPinSha256,
         Map<String, String> httpHeaders = const {},
+        double? gainDb,
       }) async {
         audioCalled = true;
         return outputPath;
@@ -297,6 +308,7 @@ void main() {
       String audioBitrate = '64k',
       String? tlsPinSha256,
       Map<String, String> httpHeaders = const {},
+      double? gainDb,
     }) async {
       audioCalled = true;
       return outputPath;
@@ -422,10 +434,7 @@ void main() {
       expect(calls, <({int fps, int width})>[(fps: 12, width: 720)]);
       expect(res.degradedToStill, isFalse);
       expect(repo.minedContext!.coverPath, endsWith('immersion_clip.gif'));
-      expect(
-        File(repo.minedContext!.coverPath!).lengthSync(),
-        greaterThan(4 * 1024 * 1024),
-      );
+      expect(repo.coverLengthAtImport, greaterThan(4 * 1024 * 1024));
     },
   );
 
@@ -511,6 +520,7 @@ void main() {
         String audioBitrate = '64k',
         String? tlsPinSha256,
         Map<String, String> httpHeaders = const {},
+        double? gainDb,
       }) async {
         audioInput = inputPath;
         return outputPath;
@@ -579,6 +589,7 @@ void main() {
         String audioBitrate = '64k',
         String? tlsPinSha256,
         Map<String, String> httpHeaders = const {},
+        double? gainDb,
       }) async {
         audioInput = inputPath;
         return outputPath;
@@ -740,6 +751,7 @@ void main() {
     String audioBitrate = '64k',
     String? tlsPinSha256,
     Map<String, String> httpHeaders = const {},
+    double? gainDb,
   }) async {
     onFailure?.call(
       'ffmpeg launch failed: executable=ffmpeg; '
@@ -824,6 +836,7 @@ void main() {
       String audioBitrate = '64k',
       String? tlsPinSha256,
       Map<String, String> httpHeaders = const {},
+      double? gainDb,
     }) async {
       onFailure?.call(longCause);
       return null;
@@ -1065,6 +1078,7 @@ void main() {
       String audioBitrate = '64k',
       String? tlsPinSha256,
       Map<String, String> httpHeaders = const {},
+      double? gainDb,
     }) async {
       calls.add('audio');
       return outputPath;

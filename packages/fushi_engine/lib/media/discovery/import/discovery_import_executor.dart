@@ -9,6 +9,7 @@ import 'dart:io';
 
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
 import 'package:fushi_engine/media/discovery/discovery_models.dart';
+import 'package:fushi_engine/utils/archive/archive_volumes.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_archive_extractor.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
 
@@ -224,7 +225,10 @@ class DiscoveryImportExecutor {
       DiscoveryImportOutcome(importedCount: key == null ? 0 : 1, summary: key);
 
   static String _stemOf(String path) {
-    final String base = _fileName(path);
+    // 分卷第一卷 `book.7z.001` 的解压目录叫 `book`，不叫 `book.7z`。
+    final String base = _fileName(
+      splitArchiveVolume(path)?.archivePath ?? path,
+    );
     final int dot = base.lastIndexOf('.');
     return dot <= 0 ? base : base.substring(0, dot);
   }

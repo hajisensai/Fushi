@@ -70,6 +70,37 @@ void main() {
     expect(b.p2pRelays, a.p2pRelays);
   });
 
+  test('简繁互查 lookup_chinese_script_variants：默认关（与 app 一致），往返一致', () {
+    final ServerConfig defaults = ServerConfig.parse(
+      'port: 1\n',
+      configDir: '/etc/fushi',
+    );
+    expect(defaults.lookupChineseScriptVariants, isFalse);
+    expect(
+      ServerConfig.defaults(dataDir: '/srv/d').lookupChineseScriptVariants,
+      isFalse,
+    );
+
+    final ServerConfig on = ServerConfig.defaults(
+      dataDir: '/srv/d',
+    ).copyWith(lookupChineseScriptVariants: true);
+    expect(on.toYaml(), contains('lookup_chinese_script_variants: true'));
+    expect(
+      ServerConfig.parse(
+        on.toYaml(),
+        configDir: '/etc/fushi',
+      ).lookupChineseScriptVariants,
+      isTrue,
+    );
+    expect(
+      ServerConfig.parse(
+        'lookup_chinese_script_variants: true\n',
+        configDir: '/etc/fushi',
+      ).lookupChineseScriptVariants,
+      isTrue,
+    );
+  });
+
   test('缺项取默认，相对 data_dir 按配置目录解析', () {
     final ServerConfig c = ServerConfig.parse(
       'port: 1234\n',
@@ -80,5 +111,46 @@ void main() {
     expect(c.tls, isTrue);
     expect(c.lanRequiresPin, isTrue);
     expect(c.dataDir.replaceAll('\\', '/'), endsWith('/etc/fushi/data'));
+  });
+
+  test('界面语言 language：新装英文、旧配置没写保持中文，往返一致，大小写不敏感，非法值报错', () {
+    expect(
+      ServerConfig.defaults(dataDir: '/srv/d').language,
+      ServerConfig.languageEnglish,
+    );
+    expect(
+      ServerConfig.parse('port: 1\n', configDir: '/etc/fushi').language,
+      ServerConfig.languageChinese,
+      reason: '加 language 之前装的服务端一直是中文界面',
+    );
+    expect(
+      ServerConfig.parse(
+        ServerConfig.defaults(dataDir: '/srv/d').toYaml(),
+        configDir: '/etc/fushi',
+      ).language,
+      ServerConfig.languageEnglish,
+      reason: 'init 写出的配置显式带 language: en',
+    );
+    final ServerConfig zh = ServerConfig.defaults(
+      dataDir: '/srv/d',
+    ).copyWith(language: ServerConfig.languageChinese);
+    expect(
+      zh.toYaml(),
+      contains(RegExp(r'^language: "?zh"?$', multiLine: true)),
+    );
+    expect(
+      ServerConfig.parse(zh.toYaml(), configDir: '/etc/fushi').language,
+      ServerConfig.languageChinese,
+    );
+    expect(
+      ServerConfig.parse('language: " ZH "\n', configDir: '/e').language,
+      ServerConfig.languageChinese,
+    );
+    expect(ServerConfig.parseLanguage(null), isNull);
+    expect(ServerConfig.parseLanguage(''), isNull);
+    expect(
+      () => ServerConfig.parse('language: fr\n', configDir: '/e'),
+      throwsFormatException,
+    );
   });
 }

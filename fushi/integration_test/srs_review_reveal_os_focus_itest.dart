@@ -14,7 +14,7 @@ import 'dart:typed_data';
 import 'package:flutter/gestures.dart' show PointerDeviceKind;
 import 'package:flutter/services.dart';
 import 'package:fushi/src/focus/main_window_focus_gate.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
 
 import 'package:ffi/ffi.dart';

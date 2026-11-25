@@ -3,14 +3,17 @@ import 'dart:io';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/epub/book_original_layout.dart';
 import 'package:fushi_engine/media/media_pref_keys.dart'
     show dbSourcePrefKey, kReaderSourcePersistedKey;
 import 'package:fushi/src/pages/implementations/font_preview/font_file_metadata.dart'
     show FontFaceWeight, readFontFaceWeightSync;
 import 'package:fushi/src/profile/work_profile_scope.dart';
+import 'package:fushi/src/reader/continuous_chapter_turn_resistance.dart';
 import 'package:fushi/src/reader/font_catalog.dart';
 import 'package:fushi/src/reader/highlight_stroke_style.dart';
 import 'package:fushi/src/reader/page_turn_animation.dart';
+import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_tap_zones.dart';
 import 'package:fushi/src/reader/reader_chrome_floating.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -54,9 +57,10 @@ enum FontTarget {
 
   /// 有声书**悬浮字幕** / 音乐桌面歌词的字体：Windows native 分层窗
   /// `FloatingLyricWindow`（与 [gameLookup] 同一个原生窗类，DirectWrite 自绘）与
-  /// macOS `FushiFloatingLyric.swift`（NSPanel + TextKit，CTFontManager 读字体文件）。
+  /// macOS `FushiFloatingLyric.swift`（NSPanel + TextKit，CTFontManager 读字体文件）
+  /// 与 Linux `floating_lyric_window.cc`（Pango，fontconfig 注册字体文件）。
   ///
-  /// 语义与导入格式限制都与 [gameLookup] 相同（平台多一个 macOS）：
+  /// 语义与导入格式限制都与 [gameLookup] 相同（平台多 macOS / Linux）：
   /// native 只吃**第一条可用**的 family/file，且只认 `.ttf/.otf/.ttc`；
   /// 缺字回退靠 native 追加的系统字体集。
   floatingLyric,
@@ -70,12 +74,13 @@ enum FontTarget {
 /// 这个用途在当前平台**是否真有消费端**。
 ///
 /// [FontTarget.gameLookup] 只有 Windows 有 native 消费端（分层窗 DirectWrite），
-/// [FontTarget.floatingLyric] 是 Windows + macOS（悬浮字幕原生窗），
+/// [FontTarget.floatingLyric] 是 Windows + macOS + Linux（悬浮字幕原生窗），
 /// 其余平台勾上等于写一个永远没人读的偏好键——UI 必须据此隐藏，否则用户会以为
 /// 自己已经设好了。其余用途五平台通用。
 bool isFontTargetAvailableOnPlatform(FontTarget target) => switch (target) {
   FontTarget.gameLookup => Platform.isWindows,
-  FontTarget.floatingLyric => Platform.isWindows || Platform.isMacOS,
+  FontTarget.floatingLyric =>
+    Platform.isWindows || Platform.isMacOS || Platform.isLinux,
   FontTarget.appUi ||
   FontTarget.body ||
   FontTarget.dictionary ||
@@ -361,6 +366,19 @@ class ReaderSettings {
   Future<void> setAudioHighlightTextColor(int v) =>
       _set<int>('audio_highlight_text_color', v);
 
+  /// 新收藏句的颜色（反馈 fMicnouU6V）：五色之一（`kFavoriteHighlightColors` 的键），
+  /// 收藏时写进 `FavoriteSentence.color`；已收藏的句子各自保留原色。
+  String get favoriteHighlightColor => normalizeFavoriteHighlightColor(
+    _get<String>(
+      kFavoriteHighlightColorPrefKey,
+      kDefaultFavoriteHighlightColor,
+    ),
+  );
+  Future<void> setFavoriteHighlightColor(String v) => _set<String>(
+    kFavoriteHighlightColorPrefKey,
+    normalizeFavoriteHighlightColor(v),
+  );
+
   /// 一类高亮的笔触配置：`<前缀>_style` / `_thickness` / `_opacity` / `_cover_ruby` /
   /// `_roughness` / `_animate` / `_underline_form` / `_underline_offset` 八个键，前缀见
   /// [HighlightKind.prefPrefix]（收藏
@@ -428,8 +446,56 @@ class ReaderSettings {
   double get lineHeight => _get<double>('line_height', 1.65);
   Future<void> setLineHeight(double v) => _set<double>('line_height', v);
 
-  String get writingMode => _get<String>('writing_mode', 'vertical-rl');
+  /// **生效**的排版方向：「跟随原书」开着且当前打开的书声明了方向时取书本的
+  /// （[bookWritingModeOverride]），否则取用户设置（[storedWritingMode]）。
+  /// 渲染 / 分页 / 查词等所有消费点都读这一个 getter，书本覆盖只在这里决定一次。
+  String get writingMode => bookWritingModeOverride ?? storedWritingMode;
+
+  /// 用户设置的排版方向（持久化值，不含书本覆盖）。
+  String get storedWritingMode => _get<String>('writing_mode', 'vertical-rl');
   Future<void> setWritingMode(String v) => _set<String>('writing_mode', v);
+
+  // ── 跟随原书（反馈 sYPkmtitOM）──────────────────────────────────────
+
+  static const String followBookLayoutKey = 'follow_book_layout';
+  static const bool defaultFollowBookLayout = true;
+
+  /// 「跟随原书排版」：开着时，书本元数据（EPUB `page-progression-direction` /
+  /// `primary-writing-mode`，两项都没写时退到 `dc:language` 推只横排书写的语言）
+  /// 给出的排版方向与翻页方向优先于全局设置；推不出的项照旧用全局设置。默认开。
+  bool get followBookLayout =>
+      _get<bool>(followBookLayoutKey, defaultFollowBookLayout);
+  Future<void> setFollowBookLayout(bool v) =>
+      _set<bool>(followBookLayoutKey, v);
+
+  /// 打开中的书各自登记的书本排版（不持久化）。按登记顺序排，最后登记的生效；
+  /// 一本书关闭时只撤自己那条，叠在下面的阅读器（若有）自动恢复它的书本排版。
+  final Map<Object, BookOriginalLayout> _bookLayouts =
+      <Object, BookOriginalLayout>{};
+
+  /// 阅读器打开一本书时登记它的 [BookOriginalLayout]；同一 [owner] 重复登记会移到
+  /// 最上层并替换旧值。
+  void enterBookLayout(Object owner, BookOriginalLayout layout) {
+    _bookLayouts.remove(owner);
+    _bookLayouts[owner] = layout;
+  }
+
+  /// 撤销 [owner] 的登记（阅读器关闭时调用）。不是自己登记的不受影响。
+  void leaveBookLayout(Object owner) {
+    _bookLayouts.remove(owner);
+  }
+
+  /// 当前生效的书本排版（最后登记的那本）；没有打开的书为 null。
+  BookOriginalLayout? get activeBookLayout =>
+      _bookLayouts.isEmpty ? null : _bookLayouts.values.last;
+
+  /// 「跟随原书」开着且当前书声明了排版方向时为书本值，否则 null。
+  String? get bookWritingModeOverride =>
+      followBookLayout ? activeBookLayout?.writingMode : null;
+
+  /// 「跟随原书」开着且当前书声明了翻页方向时为书本值，否则 null。
+  String? get bookSpreadDirectionOverride =>
+      followBookLayout ? activeBookLayout?.spreadDirection : null;
 
   String get viewMode => _get<String>('view_mode', 'paginated');
   Future<void> setViewMode(String v) => _set<String>('view_mode', v);
@@ -566,8 +632,12 @@ class ReaderSettings {
   Future<void> setMarginRight(double v) =>
       _set<double>('margin_right', normalizeMarginPercent(v));
 
-  int get pageColumns => _get<int>('page_columns', 0);
-  Future<void> setPageColumns(int v) => _set<int>('page_columns', v);
+  /// 单双页（[ReaderPageSpread]）。持久化键沿用旧「每页列数」的 `page_columns`
+  /// （冻结不改名）：0 = 自动、1 = 单页、≥ 2 = 双页（旧版的 3、4 栏读出来是双页）。
+  ReaderPageSpread get pageSpread =>
+      ReaderPageSpread.fromStored(_get<int>('page_columns', 0));
+  Future<void> setPageSpread(ReaderPageSpread v) =>
+      _set<int>('page_columns', v.storedValue);
 
   /// 「中缝折痕」显示风格：翻页模式一屏两栏时在两页之间画书脊阴影（见
   /// [ReaderContentStyles.pageCreaseCss]）。默认关：不改变既有书面观感。
@@ -584,8 +654,14 @@ class ReaderSettings {
   String get spreadMode => _get<String>('spread_mode', 'off');
   Future<void> setSpreadMode(String v) => _set<String>('spread_mode', v);
 
-  /// `ltr` or `rtl`.
-  String get spreadDirection => _get<String>('spread_direction', 'rtl');
+  /// **生效**的页序，`ltr` or `rtl`：「跟随原书」开着且书声明了
+  /// `page-progression-direction` 时取书本的（[bookSpreadDirectionOverride]），
+  /// 否则取用户设置（[storedSpreadDirection]）。
+  String get spreadDirection =>
+      bookSpreadDirectionOverride ?? storedSpreadDirection;
+
+  /// 用户设置的页序（持久化值，不含书本覆盖）。
+  String get storedSpreadDirection => _get<String>('spread_direction', 'rtl');
   Future<void> setSpreadDirection(String v) =>
       _set<String>('spread_direction', v);
 
@@ -817,6 +893,30 @@ class ReaderSettings {
   Future<void> setTapZoneLayout(ReaderTapZoneLayout v) =>
       _set<String>(tapZoneLayoutKey, v.key);
 
+  /// 连续（滚动）模式拉过章首 / 章末切章的阻尼档（反馈 R7k887yaJI）。语义见
+  /// [ContinuousChapterTurnResistance]；只在连续模式的触摸手势上生效。
+  static const String continuousChapterTurnResistanceKey =
+      'continuous_chapter_turn_resistance';
+
+  ContinuousChapterTurnResistance get continuousChapterTurnResistance =>
+      ContinuousChapterTurnResistance.fromKey(
+        _cache[continuousChapterTurnResistanceKey]?.toString(),
+      );
+  Future<void> setContinuousChapterTurnResistance(
+    ContinuousChapterTurnResistance v,
+  ) => _set<String>(continuousChapterTurnResistanceKey, v.key);
+
+  /// 连续（滚动）模式章节无缝衔接（反馈 R7k887yaJI ③，默认关）：前后章挂在同一文档里
+  /// 一起滚动，滚过章界不再整章重载。设计见
+  /// `docs/specs/2026-11-07-continuous-seamless-chapters-design.md`。
+  static const String continuousSeamlessChaptersKey =
+      'continuous_seamless_chapters';
+
+  bool get continuousSeamlessChapters =>
+      _get<bool>(continuousSeamlessChaptersKey, false);
+  Future<void> setContinuousSeamlessChapters(bool v) =>
+      _set<bool>(continuousSeamlessChaptersKey, v);
+
   bool get highlightOnTap => _get<bool>('highlight_on_tap', true);
   Future<void> toggleHighlightOnTap() =>
       _set<bool>('highlight_on_tap', !highlightOnTap);
@@ -833,9 +933,29 @@ class ReaderSettings {
   Future<void> toggleShowReadingTimer() =>
       _set<bool>('show_reading_timer', !showReadingTimer);
 
+  /// 读数胶囊里的「本次字数」段是否显示（per-reader）。默认 false（反馈 9BZA2runry
+  /// 拍板：字数 / 阅读速度读数做成开关、默认关，想看的人在阅读设置里打开）。
+  bool get showSessionChars => _get<bool>('show_session_chars', false);
+  Future<void> toggleShowSessionChars() =>
+      _set<bool>('show_session_chars', !showSessionChars);
+
+  /// 读数胶囊里的「本次字每时」段是否显示（per-reader）。默认 false（同上，9BZA2runry）。
+  bool get showCharsPerHour => _get<bool>('show_chars_per_hour', false);
+  Future<void> toggleShowCharsPerHour() =>
+      _set<bool>('show_chars_per_hour', !showCharsPerHour);
+
+  /// 悬浮控制栏收起后读数胶囊是否留在屏上（per-reader）。默认 true；false = 读数
+  /// 随控制栏一起收起、屏底只剩细进度线（此前行为）。
+  bool get statusFooterPersistent =>
+      _get<bool>('status_footer_persistent', true);
+  Future<void> toggleStatusFooterPersistent() =>
+      _set<bool>('status_footer_persistent', !statusFooterPersistent);
+
   bool get keepScreenAwake => _get<bool>('keep_screen_awake', true);
   Future<void> toggleKeepScreenAwake() =>
       _set<bool>('keep_screen_awake', !keepScreenAwake);
+  Future<void> setKeepScreenAwake(bool value) =>
+      _set<bool>('keep_screen_awake', value);
 
   // TODO-728②：有声书底栏是否显示「当前句子」cue 文本（per-reader，每本书各自
   // 记忆）。默认 true = 现状（始终显示）；false = 隐藏 cue 文本但保留布局占位，
@@ -953,6 +1073,14 @@ class ReaderSettings {
     fontKeyGameLookup,
     fontKeyFloatingLyric,
     fontKeySrsCard,
+  ];
+
+  /// 全部字体持久化短键（目录 + 各用途成员表 + 旧列表键）：「组合」设置树把它们整组归到
+  /// 「外观 › 字体」叶子（`fushi_settings_tree.dart`），与其余阅读样式分开继承。
+  static const List<String> fontPersistenceKeys = <String>[
+    fontCatalogKey,
+    fontTargetsKey,
+    ..._fontTargetKeys,
   ];
 
   bool get _hasAnyFontPrefs =>

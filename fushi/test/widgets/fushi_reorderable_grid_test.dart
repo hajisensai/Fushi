@@ -521,4 +521,134 @@ void main() {
       expect(tester.takeException(), isNull);
     },
   );
+
+  group('viewport window (only rows near the viewport are built)', () {
+    // 3 列 × 60 项 = 20 行、cellH=100 → 内容高 2000；视口 240，上下各外扩半屏
+    //（120）→ 首帧只建 0..3 行（0–360）。
+    Future<ScrollController> pumpScrolling(WidgetTester tester) async {
+      final ScrollController controller = ScrollController();
+      addTearDown(controller.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 300,
+                height: 240,
+                child: SingleChildScrollView(
+                  controller: controller,
+                  child: _Harness(
+                    items: <String>[for (int i = 0; i < 60; i++) 'i$i'],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      return controller;
+    }
+
+    Finder built(String label) => find.text(label, skipOffstage: false);
+
+    testWidgets('first frame builds only the rows around the viewport', (
+      WidgetTester tester,
+    ) async {
+      await pumpScrolling(tester);
+      expect(built('i0'), findsOneWidget);
+      expect(built('i11'), findsOneWidget, reason: 'row 3 is in the cache');
+      expect(built('i12'), findsNothing, reason: 'row 4 starts at 400 > 360');
+      expect(built('i59'), findsNothing);
+    });
+
+    testWidgets('scrolling builds the newly reached rows and drops far ones', (
+      WidgetTester tester,
+    ) async {
+      final ScrollController controller = await pumpScrolling(tester);
+      controller.jumpTo(1000);
+      await tester.pump(); // 布局到新位置，帧末重量窗口
+      await tester.pump(); // 按新窗口重建
+      expect(built('i30'), findsOneWidget, reason: 'row 10 is at 1000–1100');
+      expect(built('i0'), findsNothing);
+      expect(tester.getTopLeft(built('i30')).dy, lessThan(500));
+    });
+
+    testWidgets('a grid that moves without scrolling re-measures its window', (
+      WidgetTester tester,
+    ) async {
+      final ValueNotifier<double> header = ValueNotifier<double>(1000);
+      addTearDown(header.dispose);
+      await tester.pumpWidget(
+        MaterialApp(
+          home: Scaffold(
+            body: Center(
+              child: SizedBox(
+                width: 300,
+                height: 240,
+                child: SingleChildScrollView(
+                  child: Column(
+                    children: <Widget>[
+                      ValueListenableBuilder<double>(
+                        valueListenable: header,
+                        builder: (_, double h, _) => SizedBox(height: h),
+                      ),
+                      _Harness(
+                        items: <String>[for (int i = 0; i < 60; i++) 'i$i'],
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pump();
+      // 网格在视口下方 1000 处：首帧估算建了前几行，实测后一行也不在窗口里。
+      await tester.pump();
+      expect(built('i0'), findsNothing);
+      // 上方内容收起（不是滚动）→ 网格上移到视口内 → 行必须补建。
+      header.value = 0;
+      await tester.pump();
+      await tester.pump();
+      expect(built('i0'), findsOneWidget);
+    });
+
+    testWidgets('the dragged cell stays built after auto-scroll leaves its row '
+        'outside the window (its recognizer owns the active drag)', (
+      WidgetTester tester,
+    ) async {
+      final ScrollController controller = await pumpScrolling(tester);
+      final Rect viewport = tester.getRect(find.byType(SingleChildScrollView));
+      final TestGesture gesture = await tester.startGesture(
+        tester.getCenter(find.text('i0')),
+      ); // touch
+      await tester.pump(const Duration(milliseconds: 600)); // 长按起拖
+      await gesture.moveTo(Offset(viewport.center.dx, viewport.bottom - 8));
+      await tester.pump();
+      for (int i = 0; i < 60 && controller.offset < 700; i++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+      expect(controller.offset, greaterThanOrEqualTo(700));
+      expect(
+        find.byKey(const ValueKey<String>('__reorder_grid_feedback__')),
+        findsOneWidget,
+        reason: 'the drag must still be alive',
+      );
+      await gesture.up();
+      await tester.pumpAndSettle();
+      expect(tester.takeException(), isNull);
+    });
+
+    testWidgets('without a vertical Scrollable every cell is built', (
+      WidgetTester tester,
+    ) async {
+      await _pumpGrid(
+        tester,
+        order: <String>[for (int i = 0; i < 60; i++) 'i$i'],
+      );
+      expect(built('i59'), findsOneWidget);
+    });
+  });
 }

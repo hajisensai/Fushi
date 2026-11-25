@@ -317,6 +317,9 @@ class AppleMusicCatalogClient implements MusicServerBrowser {
   /// [appleMusicSongUri]），否则只放预览。
   final bool fullTracks;
 
+  /// 只能放试听片段（没有整曲播放）：曲目列表 / 播放项据此打「试听」标记。
+  bool get previewOnly => !fullTracks;
+
   /// 本实例列出过的曲目 → 预览地址（[streamFor] 只收本实例列出的曲目）。
   final Map<String, Uri> _previews = <String, Uri>{};
 
@@ -842,7 +845,12 @@ class AppleMusicCatalogClient implements MusicServerBrowser {
     if (preview == null) {
       throw StateError('Apple Music track ${track.id} has no preview');
     }
-    return MusicServerStream(uri: preview, transcoded: false, codec: 'aac');
+    return MusicServerStream(
+      uri: preview,
+      transcoded: false,
+      codec: 'aac',
+      isPreview: true,
+    );
   }
 
   @override

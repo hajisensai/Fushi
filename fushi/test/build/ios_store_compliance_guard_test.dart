@@ -75,6 +75,7 @@ void main() {
             StoreRestrictedCapability.onlineVideoSource,
             StoreRestrictedCapability.onlineNovelSource,
             StoreRestrictedCapability.onlineMusicSource,
+            StoreRestrictedCapability.trackingPlugins,
             StoreRestrictedCapability.downloads,
           ]) {
         expect(
@@ -613,6 +614,8 @@ void main() {
         'services.alist_sites',
         'services.kavita_servers',
         'services.audiobookshelf_servers',
+        // 音乐服务器曲库（OpenSubsonic 等用户自填地址的服务器）同理。
+        'services.music_servers',
       ]) {
         expect(resourcesSection, isNot(contains("id:'$id'")), reason: id);
         expect(mediaSection, contains("id:'$id'"), reason: id);
@@ -718,6 +721,14 @@ void main() {
       );
       expect(
         features,
+        contains(
+          'siteComic:webComicReaderActionAvailable()'
+          '?WebComicSiteComicDetector():null',
+        ),
+        reason: '漫画站点适配判定（随包站点规则）也只在同一道合规门开时装。',
+      );
+      expect(
+        features,
         contains('.where((WebBrowserFeaturef)=>f.available)'),
         reason: '装配点只保留 available 的插件。',
       );
@@ -820,7 +831,7 @@ void main() {
       );
       expect(
         compactCode(
-          read('lib/src/pages/implementations/media_sources_page.dart'),
+          read('lib/src/pages/implementations/video_import_page.dart'),
         ),
         isNot(contains('animeMihonManager')),
         reason: '视频导入页只剩本地来源，不得再取 animeMihonManager。',
@@ -899,6 +910,35 @@ void main() {
       }
     });
 
+    test('收藏跳回在线源集时，重建客户端挂在同一道门后', () {
+      // 在线源收藏（originSourceId = anime-source:…）经同步出现在任何平台上；收藏夹 /
+      // 手机遥控跳回它时若在门外取扩展 manager，iOS 上就会起在线源宿主。真实来源只在
+      // AppModel 装配一处，门的判据由 live 工厂接 isVideoOnlineSourcesAvailable，
+      // 解析器先问门、门不过不碰 onlineEpisode。
+      final String resolver = compactCode(
+        read('lib/src/media/favorites/favorite_video_origin.dart'),
+      );
+      expect(
+        resolver,
+        contains('onlineSourcesAvailable:isVideoOnlineSourcesAvailable,'),
+      );
+      const String gate =
+          'if(!sources.onlineSourcesAvailable){'
+          'returnconstFavoriteVideoOriginResult.failed('
+          'FavoriteVideoOriginFailure.onlineSourceUnsupported,);}';
+      expect(resolver, contains(gate));
+      expect(
+        resolver.indexOf(gate),
+        lessThan(resolver.indexOf('awaitsources.onlineEpisode(')),
+        reason: '门必须先于重建在线集。',
+      );
+      expect(
+        'animeMihonManager'.allMatches(resolver).length,
+        0,
+        reason: '解析器不自己取 manager，由调用方经 live 工厂的回调给。',
+      );
+    });
+
     test('小说源三段（LNReader，浏览模块）由 onlineNovelSource 门控', () {
       final String gate = compactCode(
         read('lib/src/media/novel/online/novel_online_sources_gate.dart'),
@@ -918,7 +958,7 @@ void main() {
       );
       expect(
         compactCode(
-          read('lib/src/pages/implementations/media_sources_page.dart'),
+          read('lib/src/pages/implementations/book_import_page.dart'),
         ),
         isNot(contains('lnReaderManager')),
         reason: '书导入页只剩本地来源，不得再取 lnReaderManager。',
@@ -959,6 +999,159 @@ void main() {
     });
   });
 
+  group('音乐 YouTube 内置音源（onlineMusicSource，反馈 0tRY-D2JgG）', () {
+    test('门只写在 youtube_music_gate.dart，装配 / 「来源」页 / 取流都只问它', () {
+      final String gate = compactCode(
+        read('lib/src/media/music/server/youtube_music_gate.dart'),
+      );
+      expect(
+        gate,
+        contains(
+          'boolgetisYoutubeMusicSourceAvailable=>'
+          'StoreRestrictedCapability.onlineMusicSource.isAvailable;',
+        ),
+      );
+      expect(gate, isNot(contains('Platform.isIOS')));
+      // 取流本身也过门：iOS 上即便队列里残留了 YouTube 曲目也取不到流。
+      expect(
+        gate,
+        contains(
+          'Future<MusicYoutubeStream>resolveMusicYoutubeStream(StringvideoId)'
+          'async{if(!isYoutubeMusicSourceAvailable){',
+        ),
+      );
+      expect(
+        compactCode(read('lib/src/media/music/server/music_servers.dart')),
+        contains(
+          'if(isYoutubeMusicSourceAvailable&&app.prefsRepo.musicYoutubeEnabled)'
+          '{out.add(YoutubeMusicClient(',
+        ),
+        reason: '在线来源清单里的 YouTube 浏览器只在门后建。',
+      );
+      expect(
+        compactCode(
+          read('lib/src/pages/implementations/music/music_sources_page.dart'),
+        ),
+        contains(
+          'if(isYoutubeMusicSourceAvailable&&'
+          '!sources.any((MusicOnlineSources)=>s.key==kYoutubeMusicSourceKey,))'
+          '{sources.add(const_YoutubeOffSource());',
+        ),
+        reason: '「来源」页的 YouTube 占位开关行只在门后出现。',
+      );
+      expect(
+        StoreRestrictedCapability.onlineMusicSource.availableOn(isIOS: true),
+        isFalse,
+      );
+    });
+  });
+
+  group('音乐远程曲目入库 / 本地歌单（onlineMusicSource，v148，反馈 0tRY-D2JgG）', () {
+    test('门只写在 music_remote_tracks.dart；入口、曲库与歌单显示都只问它', () {
+      final String gate = compactCode(
+        read('lib/src/media/music/music_remote_tracks.dart'),
+      );
+      expect(
+        gate,
+        contains(
+          'boolgetmusicRemoteTracksAvailable=>'
+          'StoreRestrictedCapability.onlineMusicSource.isAvailable;',
+        ),
+      );
+      expect(gate, isNot(contains('Platform.isIOS')));
+      final String actions = compactCode(
+        read(
+          'lib/src/pages/implementations/music/'
+          'music_local_playlist_actions.dart',
+        ),
+      );
+      expect(actions, isNot(contains('Platform.isIOS')));
+      // 「加入音乐库 / 本地歌单」菜单项与搜索结果菜单都在门后。
+      expect(
+        actions,
+        contains(
+          'if(!musicRemoteTracksAvailable||!musicItemIsRemoteTrack(item)){'
+          'returnconst<MusicMenuAction>[];}',
+        ),
+      );
+      expect(
+        actions,
+        contains(
+          'if(!musicRemoteTracksAvailable||!musicItemIsRemoteTrack(item)){'
+          'returnnull;}',
+        ),
+      );
+      // 曲库快照与歌单解析：都经 musicRemoteEntriesOf 按种类过门（v149 起服务器曲目不受
+      // 这个门约束，YouTube / 插件仍只问它），门值缺省取真实平台。
+      final String data = compactCode(
+        read('lib/src/media/music/music_library_data.dart'),
+      );
+      expect(
+        data,
+        contains(
+          'remoteTracks:awaitmusicRemoteEntriesOf(awaitdb.listMusicRemoteLibraryTracks(),'
+          'online:remoteAvailable??musicRemoteTracksAvailable,',
+        ),
+      );
+      expect(
+        data,
+        contains(
+          'awaitmusicRemoteEntriesOf((awaitdb.listMusicRemoteTracks(uids)).values,'
+          'online:remoteAvailable??musicRemoteTracksAvailable,',
+        ),
+      );
+      expect(
+        data,
+        contains('whenmusicRemoteKindAvailable(k,online:online)'),
+        reason: '条目只在这一种在本平台可用时列出',
+      );
+      // 种类判据：只有 YouTube / 插件受合规门约束（媒体服务器在 iOS 上照常可用；互联 host 曲目
+      // 只问它自己的判据 interconnectMusicLibraryAvailable，design-imusic-q10）。
+      expect(
+        gate,
+        contains(
+          'MusicRemoteTrackKind.server=>true,'
+          'MusicRemoteTrackKind.fushiHost=>interconnectMusicLibraryAvailable,'
+          'MusicRemoteTrackKind.youtube||MusicRemoteTrackKind.plugin=>online,',
+        ),
+      );
+    });
+  });
+
+  group('互联共享音乐库（design-imusic-q10）', () {
+    test('判据单独一条写在 store_compliance.dart，消费端都只问它', () {
+      expect(
+        compactCode(read('lib/src/models/store_compliance.dart')),
+        contains(
+          'boolinterconnectMusicLibraryAvailableOn({requiredboolisIOS})=>true;',
+        ),
+      );
+      expect(interconnectMusicLibraryAvailableOn(isIOS: true), isTrue);
+      final String servers = compactCode(
+        read('lib/src/media/music/server/music_servers.dart'),
+      );
+      expect(
+        servers,
+        contains('if(interconnectMusicLibraryAvailable&&hosts!=null)'),
+      );
+      expect(servers, isNot(contains('Platform.isIOS')));
+      final String remote = compactCode(
+        read('lib/src/media/music/music_remote_tracks.dart'),
+      );
+      expect(
+        remote,
+        contains(
+          'MusicRemoteTrackKind.fushiHost=>interconnectMusicLibraryAvailable,',
+        ),
+      );
+      final String client = read(
+        'lib/src/media/music/server/interconnect_music_client.dart',
+      );
+      expect(client, isNot(contains('Platform.isIOS')));
+      expect(client, isNot(contains('isIOS')));
+    });
+  });
+
   group('音乐在线音源插件（onlineMusicSource）', () {
     test('门只写在 music_plugin_gate.dart，消费端都只问它', () {
       final String gate = compactCode(
@@ -973,15 +1166,65 @@ void main() {
         ),
       );
       expect(gate, isNot(contains('Platform.isIOS')));
-      // 设置 › 音乐 › 插件音源：整节 visible 走门（分类正文 / 主从详情 / 搜索索引三条路径共用）。
+      // 插件中继（拍板台 wOMR4_Er7s 方案 b，维护者 2026-11-16「可以放行」）：本机跑不了插件时
+      // 经互联用「我的设备」host 上的插件。判据在 store_compliance.dart 单独一条，不动
+      // onlineMusicSource（iOS 依然不装插件宿主）；「能用插件」与「能装 / 管理插件」是两道门。
       expect(
-        compactCode(read('lib/src/settings/settings_schema_music.dart')),
+        gate,
         contains(
-          'title:t.music_plugins_title,visible:(_)=>isMusicPluginSourcesAvailable,',
+          'boolgetisMusicPluginRelayClient=>'
+          '!isMusicPluginSourcesAvailable&&interconnectPluginRelayAvailable;',
         ),
       );
-      // 「来源」页「添加」菜单里的插件管理入口：门没过时不出现（旧的服务器清单页已删，
-      // 插件管理入口只剩这里与设置页）。
+      expect(
+        gate,
+        contains(
+          'boolgetisMusicPluginSourcesUsable=>'
+          'isMusicPluginSourcesAvailable||isMusicPluginRelayClient;',
+        ),
+      );
+      expect(
+        compactCode(read('lib/src/models/store_compliance.dart')),
+        contains(
+          'boolinterconnectPluginRelayAvailableOn({requiredboolisIOS})=>true;',
+        ),
+      );
+      expect(interconnectPluginRelayAvailableOn(isIOS: true), isTrue);
+      expect(
+        StoreRestrictedCapability.onlineMusicSource.availableOn(isIOS: true),
+        isFalse,
+        reason: '中继放行不等于 iOS 能装插件：本机插件宿主仍在合规门后。',
+      );
+      // 设置 › 音乐：不再挂插件管理（来源管理只在曲库「来源」页，与其他媒体一致），
+      // 歌词来源那行（含插件歌词来源）整行 visible 走「能用」门：经中继用 host 歌词插件的
+      // iOS 也要能启停 / 排序；安装（拖放落点 + 安装按钮）仍只在本机能跑插件时出现。
+      final String musicSettings = compactCode(
+        read('lib/src/settings/settings_schema_music.dart'),
+      );
+      expect(musicSettings, isNot(contains('MusicPluginSettingsBody')));
+      expect(
+        musicSettings,
+        contains(
+          "id:'music.lyrics_providers',title:t.music_lyrics_providers_title,"
+          'subtitle:t.music_lyrics_providers_hint,icon:FushiIcons.lyrics,'
+          'showIcon:true,visible:(_)=>isMusicPluginSourcesUsable,',
+        ),
+      );
+      expect(
+        musicSettings,
+        contains(
+          'body:(SettingsContextc)=>isMusicPluginSourcesAvailable'
+          '?MusicPluginDropTarget(',
+        ),
+      );
+      expect(
+        musicSettings,
+        contains(
+          ':MusicLyricsProvidersBody(appModel:c.appModel,canInstall:false,)',
+        ),
+      );
+      // 「来源」页「添加」菜单里的插件管理入口：门没过时不出现（插件管理的设置入口
+      // 已撤，入口只剩这里与服务器曲库页）。
       expect(
         compactCode(
           read('lib/src/pages/implementations/music/music_sources_page.dart'),
@@ -998,7 +1241,7 @@ void main() {
           read('lib/src/pages/implementations/music/music_sources_page.dart'),
         ),
         contains(
-          'if(isMusicPluginSourcesAvailable){'
+          'if(isMusicPluginSourcesUsable){'
           'for(finalInstalledMusicPluginpinawaitapp.musicPluginManager.list()){',
         ),
       );
@@ -1016,9 +1259,18 @@ void main() {
       final String app = compactCode(read('lib/src/models/app_model.dart'));
       expect(
         app,
-        contains('if(isMusicPluginSourcesAvailable){musicPluginPlaybackHost='),
+        contains('if(isMusicPluginSourcesUsable){musicPluginPlaybackHost='),
       );
-      expect(app, contains('pluginLyrics:isMusicPluginSourcesAvailable?'));
+      expect(app, contains('pluginLyrics:isMusicPluginSourcesUsable?'));
+      // 中继只在本机跑不了插件时装配；替别人代跑只在本机自己能跑时接线。
+      expect(
+        app,
+        contains('relay:_musicPluginRelay=isMusicPluginRelayClient?'),
+      );
+      expect(
+        app,
+        contains('pluginRelayHost:()=>isMusicPluginSourcesAvailable?'),
+      );
       expect(
         compactCode(read('lib/src/media/music/plugin/music_plugins.dart')),
         contains(
@@ -1044,6 +1296,74 @@ void main() {
         ),
         reason: 'JS 引擎只能经 plugin 特性带入。',
       );
+    });
+  });
+
+  group('Tracking plugins (trackingPlugins)', () {
+    test('the gate is only in tracking_plugin_gate.dart and the app model '
+        'creates the manager behind it', () {
+      final String gate = compactCode(
+        read('lib/src/media/tracking/plugin/tracking_plugin_gate.dart'),
+      );
+      expect(
+        gate,
+        contains(
+          'boolgetisTrackingPluginsAvailable=>'
+          'StoreRestrictedCapability.trackingPlugins.isAvailable&&'
+          'SharedTrackingPluginEngine.supported;',
+        ),
+      );
+      expect(gate, isNot(contains('Platform.isIOS')));
+      expect(
+        compactCode(read('lib/src/models/app_model.dart')),
+        contains('if(!isTrackingPluginsAvailable)returnnull;'),
+      );
+    });
+
+    test('which implementation serves Bangumi is decided once, next to the '
+        'gate (bundled plugin where plugins run, built-in Dart elsewhere)', () {
+      final String gate = compactCode(
+        read('lib/src/media/tracking/plugin/tracking_plugin_gate.dart'),
+      );
+      expect(
+        gate,
+        contains('boolgetisBangumiServedByPlugin=>isTrackingPluginsAvailable;'),
+      );
+      // The app asks it once, where the tracking service is assembled: the
+      // service then serves `bangumi` with the built-in Dart provider or
+      // only with the bundled plugin, and every consumer follows the service.
+      final String appModel = compactCode(
+        read('lib/src/models/app_model.dart'),
+      );
+      expect(appModel, contains('builtInBangumi:!isBangumiServedByPlugin,'));
+      final List<String> askers = <String>[
+        for (final FileSystemEntity entity in Directory(
+          'lib',
+        ).listSync(recursive: true))
+          if (entity is File &&
+              entity.path.endsWith('.dart') &&
+              !entity.path
+                  .replaceAll(r'\', '/')
+                  .endsWith(
+                    'media/tracking/plugin/tracking_plugin_gate.dart',
+                  ) &&
+              RegExp(
+                r'^(?!\s*///).*\bisBangumiServedByPlugin\b',
+                multiLine: true,
+              ).hasMatch(entity.readAsStringSync()))
+            entity.path.replaceAll(r'\', '/'),
+      ];
+      expect(askers, <String>['lib/src/models/app_model.dart']);
+      final List<String> offenders = <String>[
+        for (final FileSystemEntity entity in Directory(
+          'lib/src/media/tracking',
+        ).listSync(recursive: true))
+          if (entity is File &&
+              entity.path.endsWith('.dart') &&
+              entity.readAsStringSync().contains('Platform.isIOS'))
+            entity.path,
+      ];
+      expect(offenders, isEmpty);
     });
   });
 

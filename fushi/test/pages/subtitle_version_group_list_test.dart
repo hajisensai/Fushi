@@ -2,6 +2,7 @@
 // 锁住四条契约：① 聚类后一版本一卡；② 指定集数点卡直接命中该集文件；
 // ③ 解析不出唯一文件时点卡展开文件行；④ 对话框默认版本视图、可切文件视图。
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/media/video/subtitle/subtitle_version_groups.dart';
@@ -98,6 +99,92 @@ void main() {
       findsNothing,
       reason: 'min/max 伪装成连续范围正是 BUG-1986 本体',
     );
+  });
+
+  testWidgets('BUG-4348 版本视图文件行完整显示文件名，末尾的版本差异可见', (WidgetTester tester) async {
+    // 反馈 UMW99yDWTE：横屏手机上同集两个文件都截在「...HEVC-10bit AAC」，区分
+    // 版本的末尾段被 maxLines: 2 吃掉。文件名前缀刻意做得很长且相同，只有末尾不同。
+    const String prefix =
+        '[SweetSub&LoliHouse] Tensei Shitara Slime Datta Ken Season 3 - 05 '
+        '[WebRip 1080p HEVC-10bit AAC]';
+    final List<VideoSubtitleCandidate> sameEpisode = <VideoSubtitleCandidate>[
+      _FakeCandidate(
+        remoteId: '9:a',
+        fileName: '$prefix [Simplified Chinese & Japanese].ass',
+        episode: 5,
+        collectionId: '9',
+        collectionLabel: 'Slime S3',
+      ),
+      _FakeCandidate(
+        remoteId: '9:b',
+        fileName: '$prefix [Traditional Chinese & Japanese].ass',
+        episode: 5,
+        collectionId: '9',
+        collectionLabel: 'Slime S3',
+      ),
+    ];
+    final List<SubtitleVersionGroup> groups = buildSubtitleVersionGroups(
+      sameEpisode,
+    );
+    // 横屏手机的逻辑宽度（反馈设备 window 792x363）；高度给足让文件行都被构建。
+    tester.view.physicalSize = const Size(792, 1600);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(
+      MaterialApp(
+        theme: ThemeData.dark(useMaterial3: true),
+        home: Scaffold(
+          body: SubtitleVersionGroupList(
+            groups: groups,
+            requestedEpisode: null,
+            busyIdentityKey: null,
+            onPickCandidate: (_) {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+    // 展开所有版本卡的文件行（不管聚类把两份文件分进一组还是两组）。
+    while (find.byIcon(Icons.expand_more).evaluate().isNotEmpty) {
+      await tester.tap(find.byIcon(Icons.expand_more).first);
+      await tester.pumpAndSettle();
+    }
+
+    for (final VideoSubtitleCandidate candidate in sameEpisode) {
+      final Finder row = find.byKey(
+        ValueKey<String>('subtitle-file-${candidate.identityKey}'),
+      );
+      expect(row, findsOneWidget);
+      final Finder title = find.descendant(
+        of: row,
+        matching: find.byWidgetPredicate(
+          (Widget w) =>
+              w is RichText && w.text.toPlainText() == candidate.fileName,
+        ),
+      );
+      expect(title, findsOneWidget, reason: '文件行标题应是完整文件名');
+      final RenderParagraph paragraph = tester.renderObject<RenderParagraph>(
+        title,
+      );
+      expect(paragraph.maxLines, isNull, reason: '文件名不应设行数上限');
+      expect(paragraph.didExceedMaxLines, isFalse, reason: '区分版本的末尾段不能被截掉');
+      expect(
+        paragraph
+            .getBoxesForSelection(
+              TextSelection(
+                baseOffset: 0,
+                extentOffset: paragraph.text.toPlainText().length,
+              ),
+            )
+            .map((TextBox box) => box.top)
+            .toSet()
+            .length,
+        greaterThan(2),
+        reason: '这么长的文件名在横屏手机宽度下应超过旧上限 2 行，证明没被截断',
+      );
+    }
+    expect(tester.takeException(), isNull, reason: '换行只让行变高，不溢出');
   });
 
   testWidgets('一版本一卡：ass 与 srt 两组各渲染一张卡', (WidgetTester tester) async {
@@ -224,6 +311,8 @@ void main() {
       required List<SubtitleVersionGroup> groups,
       required Set<String> selected,
       required void Function(VideoSubtitleCandidate) onToggle,
+      void Function(VideoSubtitleCandidate)? onPick,
+      int? requestedEpisode,
     }) async {
       tester.view.physicalSize = const Size(1000, 900);
       tester.view.devicePixelRatio = 1.0;
@@ -235,9 +324,9 @@ void main() {
           home: Scaffold(
             body: SubtitleVersionGroupList(
               groups: groups,
-              requestedEpisode: null,
+              requestedEpisode: requestedEpisode,
               busyIdentityKey: null,
-              onPickCandidate: (_) {},
+              onPickCandidate: onPick ?? (_) {},
               selectedIdentityKeys: selected,
               onToggleCandidate: onToggle,
             ),
@@ -322,6 +411,94 @@ void main() {
         ),
       );
       expect(box.value, isTrue);
+    });
+
+    testWidgets('BUG-4802 已有勾选时点文件行只切换勾选，不下载', (WidgetTester tester) async {
+      final List<SubtitleVersionGroup> groups = buildSubtitleVersionGroups(
+        _seasonPack(),
+      );
+      final SubtitleVersionGroup group = groups.firstWhere(
+        (SubtitleVersionGroup g) => g.members.length > 1,
+      );
+      final List<String> toggled = <String>[];
+      final List<String> picked = <String>[];
+      await pumpMultiSelect(
+        tester,
+        groups: groups,
+        selected: <String>{group.members.first.identityKey},
+        onToggle: (VideoSubtitleCandidate c) => toggled.add(c.identityKey),
+        onPick: (VideoSubtitleCandidate c) => picked.add(c.identityKey),
+      );
+      await tester.tap(
+        find.byKey(ValueKey<String>('subtitle-version-${group.key}')),
+      );
+      await tester.pumpAndSettle();
+
+      // 点的是行本身（文件名），不是勾选框：宿主的下载回调会当场关页，手滑一下
+      // 勾选就全丢了。
+      final VideoSubtitleCandidate other = group.members[1];
+      await tester.tap(find.text(other.fileName));
+      await tester.pumpAndSettle();
+      expect(toggled, <String>[other.identityKey]);
+      expect(picked, isEmpty, reason: '多选态下点行不得触发下载');
+    });
+
+    testWidgets('BUG-4802 已有勾选时点卡片只展开，不替用户挑一集下载', (WidgetTester tester) async {
+      final List<SubtitleVersionGroup> groups = buildSubtitleVersionGroups(
+        _seasonPack(),
+      );
+      final SubtitleVersionGroup group = groups.firstWhere(
+        (SubtitleVersionGroup g) => g.members.length > 1,
+      );
+      final List<String> picked = <String>[];
+      await pumpMultiSelect(
+        tester,
+        groups: groups,
+        selected: <String>{group.members.first.identityKey},
+        onToggle: (_) {},
+        onPick: (VideoSubtitleCandidate c) => picked.add(c.identityKey),
+        // 没有勾选时，带目标集点卡片会直接下载第 2 集（见上面的单选用例）。
+        requestedEpisode: 2,
+      );
+      await tester.tap(
+        find.byKey(ValueKey<String>('subtitle-version-${group.key}')),
+      );
+      await tester.pumpAndSettle();
+      expect(picked, isEmpty, reason: '多选态下点卡片不得触发下载');
+      expect(
+        find.byKey(
+          ValueKey<String>('subtitle-file-${group.members[1].identityKey}'),
+        ),
+        findsOneWidget,
+        reason: '卡片展开，逐文件可勾',
+      );
+    });
+
+    testWidgets('没有勾选时点文件行仍是直接下载（单选路径不变）', (WidgetTester tester) async {
+      final List<SubtitleVersionGroup> groups = buildSubtitleVersionGroups(
+        _seasonPack(),
+      );
+      final SubtitleVersionGroup group = groups.firstWhere(
+        (SubtitleVersionGroup g) => g.members.length > 1,
+      );
+      final List<String> toggled = <String>[];
+      final List<String> picked = <String>[];
+      await pumpMultiSelect(
+        tester,
+        groups: groups,
+        selected: const <String>{},
+        onToggle: (VideoSubtitleCandidate c) => toggled.add(c.identityKey),
+        onPick: (VideoSubtitleCandidate c) => picked.add(c.identityKey),
+      );
+      await tester.tap(
+        find.byKey(ValueKey<String>('subtitle-version-${group.key}')),
+      );
+      await tester.pumpAndSettle();
+      final VideoSubtitleCandidate other = group.members[1];
+      await tester.tap(find.text(other.fileName));
+      await tester.pumpAndSettle();
+      expect(picked, <String>[other.identityKey]);
+      expect(toggled, isEmpty);
     });
   });
 }

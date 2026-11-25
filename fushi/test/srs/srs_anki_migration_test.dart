@@ -8,8 +8,8 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_anki_migration_page.dart';
 import 'package:fushi/src/srs/srs_anki_migration.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -168,8 +168,8 @@ void main() {
 
     final String stored = SrsMediaStore.contentName('a.png', <int>[1, 2, 3]);
     expect(await media.load(stored), <int>[1, 2, 3]);
-    final String nt = SrsIds.noteType(kSrsTestProfile, _kBasic);
-    final String noteId = SrsIds.note(kSrsTestProfile, 'g1');
+    final String nt = SrsKernelIds(kSrsTestProfile).noteType(_kBasic);
+    final String noteId = SrsKernelIds(kSrsTestProfile).note('g1');
     expect(
       (await store.note(noteId))!.field(SrsIds.field(nt, 111)),
       '猫<img src="$stored">',

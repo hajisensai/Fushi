@@ -23,6 +23,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_engine/srs/srs_calibration.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
@@ -41,11 +42,38 @@ import 'package:fushi_srs/fushi_srs.dart';
 /// 保留率（真实 vs 期望 + 成熟卡增长）→ 记忆分布（间隔 / 稳定性 / 难度 / 可提取度）
 /// → 按小时 → 评分按钮 → 新增卡片 → 易忘卡 → 制卡来源。
 class SrsStatisticsTab extends ConsumerStatefulWidget {
-  const SrsStatisticsTab({super.key});
+  const SrsStatisticsTab({
+    super.key,
+    this.debugCalibrationLoader,
+    this.debugCalibrationReporter,
+  });
+
+  /// 测试替身：校准原料（FSRS 留出预测 + RWKV 回放）。null = 真实原生管线。
+  @visibleForTesting
+  final SrsCalibrationLoader? debugCalibrationLoader;
+
+  /// 测试替身：按牌组出一份校准报告。null = 真实原生管线（后台 isolate）。
+  @visibleForTesting
+  final SrsCalibrationReporter? debugCalibrationReporter;
 
   @override
   ConsumerState<SrsStatisticsTab> createState() => _SrsStatisticsTabState();
 }
+
+/// 校准原料（与牌组无关，见 `srs_calibration.dart` 第 1、2 步）。
+typedef SrsCalibrationLoader =
+    Future<SrsCalibrationData> Function(
+      SrsDbStore store,
+      NativeSrsOptimizerControl control,
+      SrsCalibrationProgress onProgress,
+    );
+
+/// 按牌组（[scopeCardIds] null = 全部）出一份校准报告（第 3 步）。
+typedef SrsCalibrationReporter =
+    Future<SrsCalibrationReport> Function(
+      SrsCalibrationData data,
+      List<String>? scopeCardIds,
+    );
 
 /// 两列的最小内容宽度（手机横屏 / 平板竖屏起）。
 const double kSrsStatsTwoColumnMinWidth = 760;
@@ -57,8 +85,16 @@ const double kSrsStatsThreeColumnMinWidth = 1240;
 enum _MemoryView { interval, stability, difficulty, retrievability }
 
 class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
-  SrsStatsBundle? _bundle;
-  SrsStatsData? _data;
+  SrsStatsLoad? _bundle;
+
+  /// 当前范围 + 牌组的统计（内核 `stats_report`）；换范围 / 牌组时新的一份到之前照旧显示这份。
+  SrsStatsReport? _data;
+
+  /// [_data] 是哪个牌组的（入场动画只在换范围 / 牌组时重放，重读不重放）。
+  String _dataDeck = '';
+
+  /// 每次取统计递增；回来时序号已过期（期间又换了范围 / 牌组 / 重读了）就丢弃。
+  int _reportSeq = 0;
   bool _loading = true;
   bool _unavailable = false;
   bool _failed = false;
@@ -78,6 +114,31 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
   bool _reviewsTime = false;
   _MemoryView _memory = _MemoryView.interval;
 
+  /// 校准原料（[srsCalibrationData]：FSRS 留出预测 + RWKV 回放，与牌组无关）。空 = 还没算；不自动跑，由用户点
+  /// 按钮触发（FSRS 留出预测要按参数组逐组训练，RWKV 还要全量回放，几秒到几分钟）。换牌组只用它重出报告。
+  SrsCalibrationData? _calibrationData;
+
+  /// [_calibrationData] 算的是哪份历史（[SrsStatsLoad.fingerprint]）；与当前不一致就是「算完之后又有复习」。
+  String _calibrationFingerprint = '';
+
+  /// 按 [_calibrationDeck] 出的那份报告（[srsCalibrationReportInBackground]）。
+  SrsCalibrationReport? _calibration;
+
+  /// [_calibration] 对应的牌组；与 [_deckId] 不同 = 新牌组的报告还在出（不把上一个牌组的图当成这个牌组的）。
+  String _calibrationDeck = '';
+
+  /// 每次出报告递增；后台 isolate 回来时序号已过期（期间又换了牌组 / 重算了原料）就丢弃。
+  int _calibrationReportSeq = 0;
+  bool _calibrationBusy = false;
+  bool _calibrationFailed = false;
+  SrsCalibrationPhase _calibrationPhase = SrsCalibrationPhase.fsrs;
+  int _calibrationDone = 0;
+  int _calibrationTotal = 0;
+  bool _umPlusSmall = false;
+
+  /// 正在跑的那次计算的取消把手（离开页面时取消，不再白跑）。
+  NativeSrsOptimizerControl? _calibrationControl;
+
   @override
   void initState() {
     super.initState();
@@ -89,6 +150,13 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     WidgetsBinding.instance.addPostFrameCallback((_) => unawaited(_load()));
   }
 
+  @override
+  void dispose() {
+    // 只取消不 dispose：算完之后由那次计算自己的 finally 释放。
+    _calibrationControl?.cancel();
+    super.dispose();
+  }
+
   /// [srsRevisionProvider] 的一跳：只有会改变统计结果的事件落了库（[SrsDbStore.statsFingerprint] 变了）才重读。
   /// 以前任何写（牌组收起 / 展开、同步空轮、媒体、去重跳过的制卡…）都整份重跑统计。
   Future<void> _onRevision() async {
@@ -96,7 +164,7 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
   }
 
   Future<bool> _needsReload() async {
-    final SrsStatsBundle? b = _bundle;
+    final SrsStatsLoad? b = _bundle;
     final SrsDbStore? loaded = _loadedStore;
     if (b == null || loaded == null) return true;
     final SrsDbStore? store = await ref.read(srsStoreProvider.future);
@@ -133,19 +201,31 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
         }
         return;
       }
-      final SrsStatsBundle bundle = await loadSrsStats(store);
+      final SrsStatsLoad bundle = await loadSrsStats(store);
       if (!mounted) return;
+      if (_deckId.isNotEmpty && bundle.tree[_deckId] == null) _deckId = '';
+      final int seq = ++_reportSeq;
+      final String deck = _deckId;
+      final SrsStatsReport report = await _reportOf(bundle);
+      if (!mounted) return;
+      if (seq != _reportSeq) {
+        // 取的途中换了范围 / 牌组：那次用的是旧装载，按这份装载再取一次。
+        _bundle = bundle;
+        _loadedStore = store;
+        await _refreshReport();
+        return;
+      }
       setState(() {
         _bundle = bundle;
+        _data = report;
+        _dataDeck = deck;
         _loadedStore = store;
         _loading = false;
         _unavailable = false;
         _failed = false;
-        if (_deckId.isNotEmpty && bundle.index.tree[_deckId] == null) {
-          _deckId = '';
-        }
-        _applyFilter();
       });
+      // 报告 = f(原料, 牌组的卡集)：重读后牌组可能被删（回落到全部）或卡换了牌组，按新的卡集重出。
+      unawaited(_refreshCalibrationReport());
     } catch (error, stack) {
       ErrorLogService.instance.log('SrsStatisticsTab.load', error, stack);
       if (mounted) {
@@ -157,13 +237,41 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     }
   }
 
-  /// 牌组子树 → 统计数据的子集。
-  void _applyFilter() {
-    final SrsStatsBundle? b = _bundle;
+  /// 保留率表的时间窗。
+  static const Map<String, SrsStatsWindow> _windows = <String, SrsStatsWindow>{
+    'today': SrsStatsWindow(0, 0),
+    'yesterday': SrsStatsWindow(1, 1),
+    'week': SrsStatsWindow.last(7),
+    'month': SrsStatsWindow.last(30),
+    'year': SrsStatsWindow.last(365),
+    'all': SrsStatsWindow.all(),
+  };
+
+  /// 当前范围 + 牌组子树的统计（内核聚合）。
+  Future<SrsStatsReport> _reportOf(SrsStatsLoad b) => b.report(
+    range: _range,
+    decks: _deckId.isEmpty ? null : b.subtree(_deckId),
+    windows: _windows,
+  );
+
+  /// 换了范围 / 牌组：按新条件重取统计（原料留在内核，不重读库）。
+  Future<void> _refreshReport() async {
+    final SrsStatsLoad? b = _bundle;
     if (b == null) return;
-    _data = _deckId.isEmpty
-        ? b.data
-        : b.data.subset(b.index.cardIdsInDeck(_deckId));
+    final int seq = ++_reportSeq;
+    final String deck = _deckId;
+    try {
+      final SrsStatsReport report = await _reportOf(b);
+      if (!mounted || seq != _reportSeq) return;
+      setState(() {
+        _data = report;
+        _dataDeck = deck;
+        _loading = false;
+      });
+    } catch (error, stack) {
+      ErrorLogService.instance.log('SrsStatisticsTab.report', error, stack);
+      if (mounted && seq == _reportSeq) setState(() => _failed = true);
+    }
   }
 
   // ------------------------------------------------------------- 格式
@@ -320,7 +428,7 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
         ),
       );
     }
-    final SrsStatsData data = _data!;
+    final SrsStatsReport data = _data!;
     final SrsStatColors colors = SrsStatColors.of(context);
     final bool empty = data.isEmpty;
     final List<_Section> sections = empty
@@ -335,11 +443,12 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
             _Section(_cardCountSection(data, colors), 3),
             _Section(_retentionSection(data, colors), 4),
             _Section(_memorySection(data, colors), 3.2),
+            ..._calibrationSections(colors),
             _Section(_addedSection(data, colors), 2.6),
             _Section(_sourceSection(data, colors), 2.6),
           ];
     return FushiEntranceScope(
-      replayKey: Object.hash(_range, _deckId),
+      replayKey: Object.hash(data.range, _dataDeck),
       child: LayoutBuilder(
         builder: (BuildContext context, BoxConstraints box) {
           final int columns = box.maxWidth >= kSrsStatsThreeColumnMinWidth
@@ -386,10 +495,10 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
 
   Widget _filters(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final SrsStatsBundle bundle = _bundle!;
+    final SrsStatsLoad bundle = _bundle!;
     final List<(String, String)> decks = <(String, String)>[
       ('', t.srs_stats_deck_all),
-      ...bundle.index.decks,
+      ...bundle.decks,
     ];
     return Padding(
       padding: EdgeInsets.fromLTRB(
@@ -435,7 +544,9 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
                         ),
                       ),
                       onSelectionChanged: (Set<SrsStatsRange> s) {
-                        if (s.isNotEmpty) setState(() => _range = s.first);
+                        if (s.isEmpty) return;
+                        setState(() => _range = s.first);
+                        unawaited(_refreshReport());
                       },
                     ),
                   ),
@@ -456,10 +567,12 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
                               orElse: () => (id, id),
                             )
                             .$2,
-                        onChanged: (String? id) => setState(() {
-                          _deckId = id ?? '';
-                          _applyFilter();
-                        }),
+                        onChanged: (String? id) {
+                          setState(() => _deckId = id ?? '');
+                          unawaited(_refreshReport());
+                          // 原料与牌组无关：只按新牌组重出报告（不重跑训练 / 回放）。
+                          unawaited(_refreshCalibrationReport());
+                        },
                       ),
                     ),
                 ],
@@ -473,9 +586,9 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
 
   // ------------------------------------------------------------- 今日
 
-  Widget _todayHero(SrsStatsData data) {
-    final SrsTodayStats s = data.todayStats();
-    final SrsStreak streak = data.streak();
+  Widget _todayHero(SrsStatsReport data) {
+    final SrsTodayStats s = data.todayStats;
+    final SrsStreak streak = data.streak;
     return StatHero(
       key: const ValueKey<String>('srs-stats-today'),
       tiles: <Widget>[
@@ -512,10 +625,10 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     );
   }
 
-  Widget _todayDetail(SrsStatsData data, SrsStatColors colors) {
+  Widget _todayDetail(SrsStatsReport data, SrsStatColors colors) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final SrsTodayStats s = data.todayStats();
+    final SrsTodayStats s = data.todayStats;
     final TextStyle meta = tokens.type.metadata.copyWith(
       color: scheme.onSurfaceVariant,
     );
@@ -646,14 +759,8 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
 
   // ------------------------------------------------------------- 未来到期
 
-  int _futureDays(SrsStatsData data) => switch (_range) {
-    SrsStatsRange.month => 31,
-    SrsStatsRange.threeMonths => 91,
-    SrsStatsRange.year => 366,
-    SrsStatsRange.all => data.furthestDueOffset(),
-  };
-
-  /// RWKV 牌组：此刻该复习 / 接近目标线的张数与过去 30 天日均（都是测量，RWKV 不预测到期日）。
+  /// RWKV 牌组：此刻低于目标 / 接近目标线的张数与过去 30 天日均（都是测量，RWKV 不预测到期日）。「低于目标」不叫
+  /// 「到期」：牌组列表的到期数是今天的出卡队列，另按「每天最少复习数」补足、按同日间隔与上限暂缓（BUG-5170）。
   Widget _rwkvNowSection(SrsRwkvNow now) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     return StatSectionCard(
@@ -664,24 +771,24 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           _statLine(<(String, String)>[
-            (t.srs_stats_rwkv_now_due, '${now.due}'),
+            (t.srs_stats_rwkv_now_below_target, '${now.due}'),
             (t.srs_stats_rwkv_now_near, '${now.near}'),
             (t.srs_stats_rwkv_now_avg, _decimal(now.dailyAverage)),
           ]),
           SizedBox(height: tokens.spacing.gap),
-          Text(t.srs_stats_rwkv_now_hint, style: context.fushiType.bodySmall),
+          Text(
+            t.srs_stats_rwkv_now_explain,
+            style: context.fushiType.bodySmall,
+          ),
         ],
       ),
     );
   }
 
-  Widget _futureSection(SrsStatsData data, SrsStatColors colors) {
+  Widget _futureSection(SrsStatsReport data, SrsStatColors colors) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final SrsFutureDue f = data.futureDue(_futureDays(data));
-    final (SrsBucketUnit unit, List<SrsDayBucket> spans) = srsStatsBuckets(
-      data.today,
-      data.today + f.perDay.length - 1,
-    );
+    final SrsFutureDue f = data.future;
+    final SrsBucketUnit unit = f.unit;
     String label(SrsDayBucket b) {
       final int off = b.firstDay - data.today;
       if (unit == SrsBucketUnit.day) return off == 0 ? '0' : '+$off';
@@ -708,19 +815,12 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
           title: t.srs_stats_future_overdue,
           values: <int>[0, f.overdue],
         ),
-      for (final SrsDayBucket b in spans)
-        () {
-          int young = 0, all = 0;
-          for (int d = b.firstDay; d <= b.lastDay; d++) {
-            all += f.perDay[d - data.today];
-            young += f.youngPerDay[d - data.today];
-          }
-          return SrsBarDatum(
-            label: label(b),
-            title: title(b),
-            values: <int>[all - young, young],
-          );
-        }(),
+      for (final SrsFutureBucket b in f.buckets)
+        SrsBarDatum(
+          label: label(b.bucket),
+          title: title(b.bucket),
+          values: <int>[b.all - b.young, b.young],
+        ),
     ];
     final List<SrsChartSeries> series = <SrsChartSeries>[
       SrsChartSeries(t.srs_stats_kind_mature, colors.mature),
@@ -804,11 +904,10 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
 
   // ------------------------------------------------------------- 日历
 
-  Widget _calendarSection(SrsStatsData data) {
+  Widget _calendarSection(SrsStatsReport data) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final SrsStreak streak = data.streak();
-    final int first = data.firstDayOf(_range);
-    final SrsReviewTotals tot = data.reviewTotalsBetween(first, data.today);
+    final SrsStreak streak = data.streak;
+    final SrsReviewTotals tot = data.rangeTotals;
     return StatSectionCard(
       key: const ValueKey<String>('srs-stats-calendar'),
       title: t.srs_stats_calendar_title,
@@ -817,7 +916,7 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           SrsCalendarHeatmap(
-            countsByDay: data.countsByDay(),
+            countsByDay: data.countsByDay,
             today: data.today,
             dayLabel: _ymd,
             monthLabel: _month,
@@ -844,11 +943,11 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
 
   // ------------------------------------------------------------- 复习量 / 用时
 
-  Widget _reviewsSection(SrsStatsData data, SrsStatColors colors) {
+  Widget _reviewsSection(SrsStatsReport data, SrsStatColors colors) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final (SrsBucketUnit unit, List<SrsReviewBucket> buckets) = data
-        .reviewBuckets(_range);
-    final SrsReviewTotals tot = data.reviewTotals(_range);
+    final SrsBucketUnit unit = data.reviewUnit;
+    final List<SrsReviewBucket> buckets = data.reviewBuckets;
+    final SrsReviewTotals tot = data.rangeTotals;
     final List<SrsChartSeries> series = <SrsChartSeries>[
       for (final SrsStatReviewKind k in _stackOrder)
         SrsChartSeries(_kindLabel(k), _kindColor(colors, k)),
@@ -919,8 +1018,8 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
 
   // ------------------------------------------------------------- 卡片状态
 
-  Widget _cardCountSection(SrsStatsData data, SrsStatColors colors) {
-    final SrsCardCounts c = data.cardCounts();
+  Widget _cardCountSection(SrsStatsReport data, SrsStatColors colors) {
+    final SrsCardCounts c = data.cardCounts;
     return StatSectionCard(
       key: const ValueKey<String>('srs-stats-card-counts'),
       title: t.srs_stats_cards_title,
@@ -950,22 +1049,18 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
 
   // ------------------------------------------------------------- 保留率
 
-  Widget _retentionSection(SrsStatsData data, SrsStatColors colors) {
+  Widget _retentionSection(SrsStatsReport data, SrsStatColors colors) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final int today = data.today;
     final List<(String, SrsRetention)> rows = <(String, SrsRetention)>[
-      (t.stat_today, data.retentionBetween(today, today)),
-      (
-        t.srs_stats_period_yesterday,
-        data.retentionBetween(today - 1, today - 1),
-      ),
-      (t.srs_stats_period_week, data.retentionBetween(today - 6, today)),
-      (t.srs_stats_period_month, data.retentionBetween(today - 29, today)),
-      (t.srs_stats_period_year, data.retentionBetween(today - 364, today)),
-      (t.stat_all_time, data.retentionBetween(data.earliestDay, today)),
+      (t.stat_today, data.windows['today']!.retention),
+      (t.srs_stats_period_yesterday, data.windows['yesterday']!.retention),
+      (t.srs_stats_period_week, data.windows['week']!.retention),
+      (t.srs_stats_period_month, data.windows['month']!.retention),
+      (t.srs_stats_period_year, data.windows['year']!.retention),
+      (t.stat_all_time, data.windows['all']!.retention),
     ];
-    final double? desired = data.desiredRetention();
+    final double? desired = data.desiredRetention;
     final TextStyle head = tokens.type.metadata.copyWith(
       color: scheme.onSurfaceVariant,
       fontWeight: FontWeight.w600,
@@ -982,15 +1077,11 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
         ),
       ),
     );
-    final (_, List<SrsReviewBucket> buckets) = data.reviewBuckets(_range);
-    final (SrsBucketUnit unit, _) = srsStatsBuckets(
-      data.firstDayOf(_range),
-      today,
-    );
+    final SrsBucketUnit unit = data.reviewUnit;
     final List<SrsDayBucket> spans = <SrsDayBucket>[
-      for (final SrsReviewBucket b in buckets) b.bucket,
+      for (final SrsReviewBucket b in data.reviewBuckets) b.bucket,
     ];
-    final List<int> mature = data.matureCountsAt(spans);
+    final List<int> mature = data.matureCounts;
     return StatSectionCard(
       key: const ValueKey<String>('srs-stats-retention'),
       title: t.srs_stats_retention_title,
@@ -999,12 +1090,7 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: <Widget>[
           _statLine(<(String, String)>[
-            (
-              t.srs_stats_retention_true,
-              _percent(
-                data.retentionBetween(data.firstDayOf(_range), today).rate,
-              ),
-            ),
+            (t.srs_stats_retention_true, _percent(data.rangeRetention.rate)),
             (t.srs_stats_retention_desired, _percent(desired)),
           ]),
           SizedBox(height: tokens.spacing.gap),
@@ -1092,16 +1178,16 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
 
   // ------------------------------------------------------------- 记忆分布
 
-  Widget _memorySection(SrsStatsData data, SrsStatColors colors) {
+  Widget _memorySection(SrsStatsReport data, SrsStatColors colors) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool days =
         _memory == _MemoryView.interval || _memory == _MemoryView.stability;
     final SrsHistogram h = switch (_memory) {
-      _MemoryView.interval => data.intervalHistogram(),
-      _MemoryView.stability => data.stabilityHistogram(),
-      _MemoryView.difficulty => data.difficultyHistogram(),
-      _MemoryView.retrievability => data.retrievabilityHistogram(),
+      _MemoryView.interval => data.intervalHistogram,
+      _MemoryView.stability => data.stabilityHistogram,
+      _MemoryView.difficulty => data.difficultyHistogram,
+      _MemoryView.retrievability => data.retrievabilityHistogram,
     };
     String valueOf(double v) =>
         days ? t.srs_stats_days(n: _decimal(v)) : '${(v * 100).round()}%';
@@ -1207,15 +1293,15 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
 
   // ------------------------------------------------------------- 添加 / 来源
 
-  Widget _addedSection(SrsStatsData data, SrsStatColors colors) {
+  Widget _addedSection(SrsStatsReport data, SrsStatColors colors) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    final (SrsBucketUnit unit, List<SrsDayBucket> spans) = srsStatsBuckets(
-      data.firstDayOf(_range),
-      data.today,
-    );
-    final List<int> added = data.addedCounts(spans);
+    final SrsBucketUnit unit = data.reviewUnit;
+    final List<SrsDayBucket> spans = <SrsDayBucket>[
+      for (final SrsReviewBucket b in data.reviewBuckets) b.bucket,
+    ];
+    final List<int> added = data.addedCounts;
     final int total = added.fold<int>(0, (int a, int b) => a + b);
-    final int days = math.max(1, data.today - data.firstDayOf(_range) + 1);
+    final int days = math.max(1, data.today - data.firstDay + 1);
     return StatSectionCard(
       key: const ValueKey<String>('srs-stats-added'),
       title: t.srs_stats_added_title,
@@ -1278,10 +1364,10 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     _ => FushiIcons.edit,
   };
 
-  Widget _sourceSection(SrsStatsData data, SrsStatColors colors) {
+  Widget _sourceSection(SrsStatsReport data, SrsStatColors colors) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
-    final List<SrsSourceShare> all = data.sourceShares();
+    final List<SrsSourceShare> all = data.sources;
     const int shown = 8;
     final List<SrsSourceShare> rows = all.take(shown).toList();
     final int rest = all
@@ -1363,6 +1449,380 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
       ),
     );
   }
+
+  // ------------------------------------------------------------- 模型校准
+
+  /// 校准原料（训练 / 回放）。两个模型都要同一批复习：FSRS 留出预测、RWKV 从头回放，取两者都有预测的那些条
+  /// （见 `srs_calibration.dart`）。原料与牌组无关，算完按当前牌组出报告（[_refreshCalibrationReport]）。
+  Future<void> _computeCalibration() async {
+    if (_calibrationBusy) return;
+    final SrsStatsLoad? bundle = _bundle;
+    final SrsDbStore? store = _loadedStore;
+    if (bundle == null || store == null) return;
+    final NativeSrsOptimizerControl control = NativeSrsOptimizerControl();
+    final String fingerprint = bundle.fingerprint;
+    setState(() {
+      _calibrationBusy = true;
+      _calibrationFailed = false;
+      _calibrationPhase = SrsCalibrationPhase.fsrs;
+      _calibrationDone = 0;
+      _calibrationTotal = 0;
+      _calibrationControl = control;
+    });
+    try {
+      void onProgress(SrsCalibrationPhase phase, int done, int total) {
+        if (!mounted) return;
+        setState(() {
+          _calibrationPhase = phase;
+          _calibrationDone = done;
+          _calibrationTotal = total;
+        });
+      }
+
+      final SrsCalibrationLoader? loader = widget.debugCalibrationLoader;
+      // 范围：整段历史（校准要每张卡的完整复习史，切成 30 天会饿死训练集），牌组在出报告时按当前筛选走。
+      final SrsCalibrationData data = loader != null
+          ? await loader(store, control, onProgress)
+          : await srsCalibrationData(
+              store,
+              rwkv: await ref.read(srsRwkvServiceProvider.future),
+              fsrsLibraryPath: srsFsrsLibraryPath(),
+              control: control,
+              onProgress: onProgress,
+            );
+      if (!mounted) return;
+      setState(() {
+        _calibrationData = data;
+        _calibrationFingerprint = fingerprint;
+        _calibration = null;
+      });
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'SrsStatisticsTab.calibration',
+        error,
+        stack,
+      );
+      if (mounted) setState(() => _calibrationFailed = true);
+      return;
+    } finally {
+      _calibrationControl = null;
+      control.dispose();
+      if (mounted) setState(() => _calibrationBusy = false);
+    }
+    await _refreshCalibrationReport();
+  }
+
+  /// 第 3 步：按**当前**牌组用 [_calibrationData] 出一份报告（后台 isolate，自助法不占 UI isolate）。
+  /// 换牌组 / 重读统计 / 原料算完都走这里；回来时序号过期（期间又换了牌组）就丢弃，只认最后一次。
+  Future<void> _refreshCalibrationReport() async {
+    final SrsCalibrationData? data = _calibrationData;
+    final SrsStatsLoad? bundle = _bundle;
+    if (data == null || bundle == null || !mounted) return;
+    final int seq = ++_calibrationReportSeq;
+    final String deck = _deckId;
+    final List<String>? scope = deck.isEmpty
+        ? null
+        : await bundle.cardIdsInDeck(deck);
+    setState(() => _calibrationFailed = false);
+    try {
+      final SrsCalibrationReporter? reporter = widget.debugCalibrationReporter;
+      final SrsCalibrationReport report = reporter != null
+          ? await reporter(data, scope)
+          : await srsCalibrationReportInBackground(
+              data,
+              fsrsLibraryPath: srsFsrsLibraryPath(),
+              scopeCardIds: scope,
+            );
+      if (!mounted || seq != _calibrationReportSeq) return;
+      setState(() {
+        _calibration = report;
+        _calibrationDeck = deck;
+      });
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'SrsStatisticsTab.calibrationReport',
+        error,
+        stack,
+      );
+      if (mounted && seq == _calibrationReportSeq) {
+        setState(() {
+          _calibration = null;
+          _calibrationFailed = true;
+        });
+      }
+    }
+  }
+
+  List<_Section> _calibrationSections(SrsStatColors colors) {
+    // 只显示当前牌组的报告：换牌组后新报告出来之前不把上一个牌组的图挂在这个牌组名下。
+    final SrsCalibrationReport? report = _calibrationDeck == _deckId
+        ? _calibration
+        : null;
+    final bool pending =
+        _calibrationData != null && report == null && !_calibrationFailed;
+    final bool stale =
+        report != null &&
+        _calibrationFingerprint != (_bundle?.fingerprint ?? '');
+    final SrsUmPlus? um = report?.hasRwkv == true ? report?.umPlus : null;
+    final bool hasUm = um != null && um.count > 0;
+    return <_Section>[
+      _Section(
+        _calibrationSection(
+          report,
+          stale: stale,
+          pending: pending,
+          colors: colors,
+        ),
+        4,
+      ),
+      if (hasUm) _Section(_umPlusSection(um, colors), 3.6),
+      if (report != null && !report.hasRwkv && report.eligible > 0)
+        _Section(_noRwkvSection(), 2),
+    ];
+  }
+
+  Widget _calibrationSection(
+    SrsCalibrationReport? report, {
+    required bool stale,
+    required bool pending,
+    required SrsStatColors colors,
+  }) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final TextStyle small = context.fushiType.bodySmall;
+    final List<Widget> body = <Widget>[];
+    if (pending && !_calibrationBusy) {
+      // 原料已有、正在按当前牌组出报告（自助法，通常不到一秒）：不定进度条。
+      body.add(
+        FushiLinearProgressIndicator(
+          key: const ValueKey<String>('srs-stats-calibration-reporting'),
+          minHeight: 6,
+          color: colors.accent,
+          backgroundColor: colors.empty,
+        ),
+      );
+    } else if (_calibrationBusy) {
+      final int percent = _calibrationTotal <= 0
+          ? 0
+          : (_calibrationDone * 100 ~/ _calibrationTotal).clamp(0, 100);
+      body.addAll(<Widget>[
+        Text(
+          _calibrationPhase == SrsCalibrationPhase.fsrs
+              ? t.srs_stats_calibration_progress_fsrs(percent: percent)
+              : t.srs_stats_calibration_progress_rwkv(percent: percent),
+          key: const ValueKey<String>('srs-stats-calibration-progress'),
+          style: small,
+        ),
+        SizedBox(height: tokens.spacing.gap),
+        FushiLinearProgressIndicator(
+          value: _calibrationTotal <= 0 ? null : percent / 100,
+          minHeight: 6,
+          color: colors.accent,
+          backgroundColor: colors.empty,
+        ),
+      ]);
+    } else if (report == null) {
+      body.addAll(<Widget>[
+        Text(t.srs_stats_calibration_hint, style: small),
+        if (_calibrationFailed) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap),
+          Text(
+            t.srs_stats_calibration_failed,
+            key: const ValueKey<String>('srs-stats-calibration-failed'),
+            style: small.copyWith(color: Theme.of(context).colorScheme.error),
+          ),
+        ],
+        SizedBox(height: tokens.spacing.gap),
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FushiTextButton.icon(
+            key: const ValueKey<String>('srs-stats-calibration-compute'),
+            onPressed: () => unawaited(_computeCalibration()),
+            icon: const FushiIcon(FushiIcons.refresh),
+            label: Text(
+              _calibrationFailed
+                  ? t.srs_stats_calibration_recompute
+                  : t.srs_stats_calibration_compute,
+            ),
+          ),
+        ),
+      ]);
+    } else {
+      final bool empty = report.fsrs == null && report.rwkv == null;
+      if (empty) {
+        body.add(Text(t.srs_stats_calibration_empty, style: small));
+      } else {
+        body.add(
+          SrsCalibrationChart(
+            key: const ValueKey<String>('srs-stats-calibration-chart'),
+            lines: <SrsCalibrationLine>[
+              if (report.fsrs case final SrsCalibrationSeries s)
+                SrsCalibrationLine(
+                  t.srs_stats_calibration_fsrs,
+                  colors.accent,
+                  s,
+                ),
+              if (report.rwkv case final SrsCalibrationSeries s)
+                SrsCalibrationLine(
+                  t.srs_stats_calibration_rwkv,
+                  colors.newCard,
+                  s,
+                ),
+            ],
+            countLabel: t.srs_stats_calibration_count,
+            predictedLabel: t.srs_stats_calibration_predicted,
+            actualLabel: t.srs_stats_calibration_actual,
+            intervalLabel: (String lower, String upper) =>
+                t.srs_stats_calibration_interval(lower: lower, upper: upper),
+          ),
+        );
+        for (final (String model, SrsCalibrationSeries s)
+            in <(String, SrsCalibrationSeries)>[
+              if (report.fsrs != null)
+                (t.srs_stats_calibration_fsrs, report.fsrs!),
+              if (report.rwkv != null)
+                (t.srs_stats_calibration_rwkv, report.rwkv!),
+            ]) {
+          body.add(
+            Padding(
+              padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+              child: Text(
+                t.srs_stats_calibration_metric(
+                  model: model,
+                  loss: s.logLoss.toStringAsFixed(3),
+                  rmse: s.rmse.toStringAsFixed(3),
+                  n: s.count,
+                ),
+                style: tokens.type.metadata.tabular,
+              ),
+            ),
+          );
+        }
+      }
+      body.addAll(<Widget>[
+        SizedBox(height: tokens.spacing.gap),
+        Text(t.srs_stats_calibration_hint, style: small),
+        if (stale) ...<Widget>[
+          SizedBox(height: tokens.spacing.gap),
+          Text(
+            t.srs_stats_calibration_stale,
+            key: const ValueKey<String>('srs-stats-calibration-stale'),
+            style: small.copyWith(color: Theme.of(context).colorScheme.error),
+          ),
+        ],
+        Align(
+          alignment: AlignmentDirectional.centerStart,
+          child: FushiTextButton.icon(
+            key: const ValueKey<String>('srs-stats-calibration-recompute'),
+            onPressed: () => unawaited(_computeCalibration()),
+            icon: const FushiIcon(FushiIcons.refresh),
+            label: Text(t.srs_stats_calibration_recompute),
+          ),
+        ),
+      ]);
+    }
+    return StatSectionCard(
+      key: const ValueKey<String>('srs-stats-calibration'),
+      title: t.srs_stats_calibration_title,
+      icon: FushiIcons.lineChart,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: body,
+      ),
+    );
+  }
+
+  Widget _umPlusSection(SrsUmPlus um, SrsStatColors colors) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final TextStyle small = context.fushiType.bodySmall;
+    final String fsrsLabel = t.srs_stats_calibration_fsrs;
+    final String rwkvLabel = t.srs_stats_calibration_rwkv;
+    final List<SrsUmPlusBin> bins = um.visibleBins(showSmall: _umPlusSmall);
+    final List<SrsChartSeries> series = <SrsChartSeries>[
+      SrsChartSeries(fsrsLabel, colors.accent),
+      SrsChartSeries(rwkvLabel, colors.newCard),
+    ];
+    String score(String model, double value, double? slope) =>
+        t.srs_stats_umplus_score(
+          model: model,
+          score: value.toStringAsFixed(3),
+          slope: slope == null ? kStatEmptyValue : slope.toStringAsFixed(2),
+        );
+    return StatSectionCard(
+      key: const ValueKey<String>('srs-stats-umplus'),
+      title: t.srs_stats_umplus_title,
+      icon: FushiIcons.functions,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          if (bins.length < 2)
+            Text(t.srs_stats_calibration_empty, style: small)
+          else ...<Widget>[
+            SrsUmPlusChart(
+              key: const ValueKey<String>('srs-stats-umplus-chart'),
+              bins: bins,
+              total: um.count,
+              fsrs: series.first,
+              rwkv: series.last,
+              tooltipOf: (SrsUmPlusBin b) => <String>[
+                t.srs_stats_umplus_tip_bucket(
+                  d: b.disagreement.toStringAsFixed(2),
+                  n: b.count,
+                ),
+                t.srs_stats_umplus_tip_error(
+                  model: fsrsLabel,
+                  e: b.fsrsError.toStringAsFixed(3),
+                ),
+                t.srs_stats_umplus_tip_error(
+                  model: rwkvLabel,
+                  e: b.rwkvError.toStringAsFixed(3),
+                ),
+              ],
+            ),
+            SizedBox(height: tokens.spacing.gap),
+            SrsChartLegend(series: series),
+          ],
+          SizedBox(height: tokens.spacing.gap),
+          Text(
+            score(
+              fsrsLabel,
+              um.fsrsScore,
+              srsUmPlusSlope(bins, (SrsUmPlusBin b) => b.fsrsError),
+            ),
+            style: tokens.type.metadata.tabular,
+          ),
+          Text(
+            score(
+              rwkvLabel,
+              um.rwkvScore,
+              srsUmPlusSlope(bins, (SrsUmPlusBin b) => b.rwkvError),
+            ),
+            style: tokens.type.metadata.tabular,
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          Row(
+            children: <Widget>[
+              Expanded(child: Text(t.srs_stats_umplus_small, style: small)),
+              SizedBox(width: tokens.spacing.gap),
+              FushiSwitch(
+                key: const ValueKey<String>('srs-stats-umplus-small'),
+                value: _umPlusSmall,
+                onChanged: (bool v) => setState(() => _umPlusSmall = v),
+              ),
+            ],
+          ),
+          SizedBox(height: tokens.spacing.gap),
+          Text(t.srs_stats_umplus_hint, style: small),
+        ],
+      ),
+    );
+  }
+
+  Widget _noRwkvSection() => StatSectionCard(
+    key: const ValueKey<String>('srs-stats-umplus-no-rwkv'),
+    title: t.srs_stats_umplus_title,
+    icon: FushiIcons.functions,
+    child: Text(t.srs_stats_umplus_no_rwkv, style: context.fushiType.bodySmall),
+  );
 
   // ------------------------------------------------------------- 小件
 

@@ -22,7 +22,6 @@ void main() {
   Future<SrsDbStore> device(String id) async {
     final SrsStorage st = await openTestSrsStorage();
     return SrsDbStore.open(
-      db: st.db,
       core: st.core,
       profileUid: kProfile,
       deviceId: id,
@@ -64,7 +63,7 @@ void main() {
     String pad(Object? n) => '$n'.padLeft(12, '0');
     return <String>[
       for (final List<Object?> s
-          in (head['segments']! as List<Object?>).cast<List<Object?>>())
+          in (head['segs']! as List<Object?>).cast<List<Object?>>())
         'devices/$dev/seg-${pad(s[0])}-${pad(s[1])}-${s[2]}.bin',
     ];
   }

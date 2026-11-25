@@ -17,6 +17,15 @@
 //
 // Run through geometry_reanchor_roundtrip_behavior_test.dart.
 const assert = require('node:assert/strict');
+// The chapter text index shared by both shells asks a MutationObserver whether
+// the DOM changed since it was built. The installer resolves it as a global; this
+// model has no observer, so the stub reports "changed" on every read and the
+// index is rebuilt from the modeled walker each time.
+globalThis.MutationObserver = class {
+  observe() {}
+  disconnect() {}
+  takeRecords() { return [{}]; }
+};
 const WIDTH = 400;
 const HEIGHT = 824;
 const GAP = 22;
@@ -105,6 +114,10 @@ function createModel(installProductionShell, initialTop = 0,
           this.setEnd(nodes[Math.floor((end - 1) / NODE_CHARS)], (end - 1) % NODE_CHARS + 1);
         }
       },
+      // The modeled element box is exactly its text, so selecting the node and its
+      // contents cover the same glyphs (the paginated revealAudioCue selects the cue
+      // element itself, like __fushiRevealTarget).
+      selectNode(node) { this.selectNodeContents(node); },
       getClientRects() {
         return fragments(this.startContainer.modelStart + this.startOffset,
           this.endContainer.modelStart + this.endOffset);
@@ -328,7 +341,7 @@ async function runCases(installProductionShell) {
     'audio cue reveal': async m => {
       const wrapper = m.element(12000);
       // Cue segmentation/wrapping is outside this geometry test. The actual
-      // highlighter -> revealElement -> scrollToRange chain runs unmodified.
+      // highlighter -> revealAudioCue -> scrollToRange chain runs unmodified.
       m.reader.cueWrappers.set('test-cue', [wrapper]);
       m.reader.highlightSentenceAudioCue('test-cue', true);
       assert.equal(wrapper.classList.contains('fushi-sentence-audio-active'), true);

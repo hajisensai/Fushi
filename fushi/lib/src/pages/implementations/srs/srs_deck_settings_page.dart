@@ -9,6 +9,7 @@ library;
 import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/foundation.dart' show listEquals;
 import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -16,10 +17,12 @@ import 'package:fushi_engine/srs/srs_optimizer.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/srs/srs_app_runtime.dart';
-import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
+import 'package:fushi_engine/srs/srs_optimization_scheduler.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_rwkv_panel.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -33,15 +36,18 @@ import 'package:fushi/src/utils/components/fushi_loading_view.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 步长输入（「1 10」/「1, 10」，单位分钟）→ 列表；有解析不了的项返回 null。
 List<double>? parseSrsSteps(String text) {
@@ -126,6 +132,11 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   bool _autoplayAudio = true;
   bool _replayQuestionAudio = true;
   SrsNewCardOrder _newCardOrder = SrsNewCardOrder.frequency;
+  SrsNewCardMix _newCardMix = SrsNewCardMix.afterReviews;
+
+  /// 每日上限（复习上限与 RWKV 每天最少复习数）的单位。牌组自己的值（同每日上限）。
+  SrsLimitUnit _limitUnit = SrsLimitUnit.reviews;
+  SrsReviewCardOrder _reviewCardOrder = SrsReviewCardOrder.retrievability;
 
   /// 父牌组那条继承链上的参数归属牌组的算法（切到「随上级」后本牌组按它排程）；顶层为 null。
   SrsAlgorithm? _parentOwnerAlgorithm;
@@ -133,46 +144,159 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   String? _learnError;
   String? _relearnError;
 
+  /// 库里的值填进表单时的样子（进页面、优化 / 恢复参数 / 子牌组继承后重读都会更新）；当前
+  /// [_formSnapshot] 与它不同 = 有没保存的改动，按返回时拦下来问（[_onPopBlocked]）。
+  List<Object?> _baseline = const <Object?>[];
+
+  /// 表单里所有会被保存的项，顺序即 [_formSnapshot] 的顺序。重读（[_load]）时按项比对：与上次基准相同的项
+  /// 换成库里的新值，用户改过的项原样放回。
+  late final List<_FormField> _fields = <_FormField>[
+    _textField(_name),
+    _textField(_newPerDay),
+    _textField(_reviewsPerDay),
+    _valueField<SrsLimitUnit>(
+      () => _limitUnit,
+      (SrsLimitUnit v) => _limitUnit = v,
+    ),
+    _textField(_learnSteps, steps: true),
+    _textField(_relearnSteps, steps: true),
+    _textField(_maxInterval),
+    _valueField<double>(() => _retention, (double v) => _retention = v),
+    _valueField<SrsAlgorithm>(
+      () => _algorithm,
+      (SrsAlgorithm v) => _algorithm = v,
+    ),
+    _valueField<bool>(() => _autoOptimize, (bool v) => _autoOptimize = v),
+    _valueField<bool>(() => _ownParams, (bool v) => _ownParams = v),
+    _valueField<bool>(() => _autoplayAudio, (bool v) => _autoplayAudio = v),
+    _valueField<bool>(
+      () => _replayQuestionAudio,
+      (bool v) => _replayQuestionAudio = v,
+    ),
+    _valueField<SrsNewCardOrder>(
+      () => _newCardOrder,
+      (SrsNewCardOrder v) => _newCardOrder = v,
+    ),
+    _valueField<SrsNewCardMix>(
+      () => _newCardMix,
+      (SrsNewCardMix v) => _newCardMix = v,
+    ),
+    _valueField<SrsReviewCardOrder>(
+      () => _reviewCardOrder,
+      (SrsReviewCardOrder v) => _reviewCardOrder = v,
+    ),
+    _textField(_rwkvMinReviews),
+    _textField(_rwkvRepeatReviews),
+    _textField(_rwkvRepeatSeconds),
+    _textField(_rwkvRefreshEvery),
+    _valueField<bool>(() => _rwkvIgnoreLimit, (bool v) => _rwkvIgnoreLimit = v),
+    _valueField<bool>(() => _newLoadAuto, (bool v) => _newLoadAuto = v),
+    _textField(_newLoadBudget),
+    _textField(_newLoadBoost),
+  ];
+
+  /// 输入框一项：数字框比较时去掉首尾空白；步长按解析后的规范写法比（「1,10」与「1 10」算同一个）。
+  static _FormField _textField(TextEditingController c, {bool steps = false}) {
+    Object? key() {
+      if (!steps) return c.text.trim();
+      final List<double>? parsed = parseSrsSteps(c.text);
+      return parsed == null ? c.text.trim() : _formatSteps(parsed);
+    }
+
+    return (
+      key: key,
+      raw: () => c.text,
+      restore: (Object? v) => c.text = v! as String,
+    );
+  }
+
+  /// 开关 / 选项 / 滑杆一项：值本身就是比较键。
+  static _FormField _valueField<T>(T Function() read, void Function(T) write) =>
+      (key: read, raw: read, restore: (Object? v) => write(v as T));
+
+  List<TextEditingController> get _controllers => <TextEditingController>[
+    _name,
+    _newPerDay,
+    _reviewsPerDay,
+    _learnSteps,
+    _relearnSteps,
+    _maxInterval,
+    _rwkvMinReviews,
+    _rwkvRepeatReviews,
+    _rwkvRepeatSeconds,
+    _rwkvRefreshEvery,
+    _newLoadBudget,
+    _newLoadBoost,
+  ];
+
   @override
   void initState() {
     super.initState();
-    // 每日上限卡片里的联动提示（复习上限 < 10× 新卡、最少复习数超过上限）随输入实时刷新。
-    // RWKV 牌组「还带着步长」的提示随步长输入实时出现 / 消失。
-    for (final TextEditingController c in <TextEditingController>[
-      _newPerDay,
-      _reviewsPerDay,
-      _rwkvMinReviews,
-      _learnSteps,
-      _relearnSteps,
-    ]) {
-      c.addListener(_onLimitsEdited);
+    // 每个输入框一改就重建：每日上限卡片里的联动提示（复习上限 < 10× 新卡、最少复习数超过上限）、
+    // RWKV 牌组「还带着步长」的提示随输入实时刷新；返回拦截（PopScope.canPop）也要跟着
+    // 「有没有没保存的改动」走，漏掉哪个框，改了它再按返回就会不问直接丢。
+    for (final TextEditingController c in _controllers) {
+      c.addListener(_onFormEdited);
     }
     unawaited(_load());
   }
 
-  void _onLimitsEdited() {
+  void _onFormEdited() {
     if (mounted) setState(() {});
   }
 
   @override
   void dispose() {
-    for (final TextEditingController c in <TextEditingController>[
-      _name,
-      _newPerDay,
-      _reviewsPerDay,
-      _learnSteps,
-      _relearnSteps,
-      _maxInterval,
-      _rwkvMinReviews,
-      _rwkvRepeatReviews,
-      _rwkvRepeatSeconds,
-      _rwkvRefreshEvery,
-      _newLoadBudget,
-      _newLoadBoost,
-    ]) {
+    for (final TextEditingController c in _controllers) {
       c.dispose();
     }
     super.dispose();
+  }
+
+  /// 表单里所有会被保存的值（逐项的比较键，见 [_fields]）。
+  List<Object?> _formSnapshot() => <Object?>[
+    for (final _FormField f in _fields) f.key(),
+  ];
+
+  /// 有没保存的改动（载入中 / 载入失败时没有表单，不算）。
+  bool get _dirty =>
+      !_loading && _deck != null && !listEquals(_formSnapshot(), _baseline);
+
+  /// 有改动时按返回（系统返回键、手势、顶栏返回、Esc）：问「保存 / 放弃 / 取消」。保存走
+  /// [_save]（成功后它自己退出，步长不合法或写库失败就留在页面）；放弃直接 [NavigatorState.pop]
+  /// （不经 PopScope）；取消、点遮罩什么都不做。
+  Future<void> _onPopBlocked() async {
+    final NavigatorState navigator = Navigator.of(context);
+    // 直接 pop 不经 PopScope；页面是导航栈里唯一一页（没处可退）时不 pop，与 canPop 为 true 时
+    // maybePop 把返回交给上层的行为一致。
+    void leave() {
+      if (navigator.canPop()) navigator.pop();
+    }
+
+    // 刚保存完的那次 maybePop：此时 canPop 还是上一帧的 false，但已经没有改动了。
+    if (!_dirty) {
+      leave();
+      return;
+    }
+    final _UnsavedChoice? choice = await _showUnsavedDialog(context);
+    if (!mounted) return;
+    switch (choice) {
+      case _UnsavedChoice.save:
+        await _save();
+      case _UnsavedChoice.discard:
+        leave();
+      case _UnsavedChoice.cancel:
+      case null:
+        break;
+    }
+  }
+
+  void _retryLoad() {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    unawaited(_load());
   }
 
   Future<void> _load() async {
@@ -191,6 +315,17 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       };
       if (!mounted) return;
       setState(() {
+        // 重读（优化 / 恢复参数 / 子牌组继承之后）时表单可能已有没保存的改动：先记下哪些项改过、改成了什么，
+        // 填完库里的新值后放回去——这几个动作不改这些项，重读只是为了刷新参数组 / 归属 / 子树 / 冲突键，
+        // 不能把用户的编辑静默盖掉、再把基准一并重置（那样按返回也不再拦）。
+        final List<Object?> before = _baseline;
+        final bool keepEdits = _deck != null && before.length == _fields.length;
+        final List<Object?> edited = keepEdits
+            ? _formSnapshot()
+            : const <Object?>[];
+        final List<Object?> raws = keepEdits
+            ? <Object?>[for (final _FormField f in _fields) f.raw()]
+            : const <Object?>[];
         _store = store;
         _deck = deck;
         _owner = tree.paramsOwner(deck.id);
@@ -203,6 +338,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _name.text = deck.name;
         _newPerDay.text = '${deck.newPerDay}';
         _reviewsPerDay.text = '${deck.reviewsPerDay}';
+        _limitUnit = deck.limitUnit;
         final String? parent = tree.parentOf(deck.id);
         _parentOwnerAlgorithm = parent == null
             ? null
@@ -215,6 +351,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _autoplayAudio = deck.autoplayAudio;
         _replayQuestionAudio = deck.replayQuestionAudio;
         _newCardOrder = deck.newCardOrder;
+        _newCardMix = deck.newCardMix;
+        _reviewCardOrder = deck.reviewCardOrder;
         _rwkvMinReviews.text = '${deck.rwkvQueue.minReviewsPerDay}';
         _rwkvRepeatReviews.text = '${deck.rwkvQueue.repeatMinReviews}';
         _rwkvRepeatSeconds.text = '${deck.rwkvQueue.repeatMinSeconds}';
@@ -228,6 +366,12 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _learnSteps.text = _formatSteps(_baselineLearn);
         _relearnSteps.text = _formatSteps(_baselineRelearn);
         _loading = false;
+        _baseline = _formSnapshot();
+        if (keepEdits) {
+          for (int i = 0; i < _fields.length; i++) {
+            if (edited[i] != before[i]) _fields[i].restore(raws[i]);
+          }
+        }
       });
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsDeckSettingsPage.load', e, stack);
@@ -245,6 +389,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   SrsAlgorithm get _stepsAlgorithm => (_ownParams || !_hasParent)
       ? _algorithm
       : (_parentOwnerAlgorithm ?? _algorithm);
+
+  /// 保存后按 RWKV 排程（与内核 `DeckTree::uses_rwkv` 同一口径：参数归属祖先的算法）：「按复习量自动调整新卡」
+  /// 不生效（内核恒给每日新卡上限），开关禁用、预算 / 多出两项收起。
+  bool get _newPlanUnderRwkv => _stepsAlgorithm.usesRwkv;
 
   /// 不改步长、按 [_stepsAlgorithm] 保存后实际生效的学习 / 重学步长。
   List<double> get _baselineLearn => _deck!.learnStepsFor(_stepsAlgorithm);
@@ -340,6 +488,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         'review': reviewsPerDay.clamp(0, 99999),
       };
     }
+    // 单位单独一个键（数值仍在 limits / rwkvQueue 里），与每日上限一样是牌组自己的值。
+    if (_limitUnit != deck.limitUnit) {
+      out[SrsFieldKeys.deckLimitUnit] = _limitUnit.wire;
+    }
     // 新卡计划与每日上限一样是牌组自己的值（不随参数继承）。
     final SrsNewCardPlan plan = _newCardPlan(deck.newCardPlan);
     if (plan != deck.newCardPlan) {
@@ -396,6 +548,12 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       if (_newCardOrder != deck.newCardOrder) {
         out[SrsFieldKeys.deckNewOrder] = _newCardOrder.wire;
       }
+      if (_newCardMix != deck.newCardMix) {
+        out[SrsFieldKeys.deckNewMix] = _newCardMix.wire;
+      }
+      if (_reviewCardOrder != deck.reviewCardOrder) {
+        out[SrsFieldKeys.deckReviewOrder] = _reviewCardOrder.wire;
+      }
       final SrsRwkvQueueSettings queue = _rwkvQueue(deck.rwkvQueue);
       if (queue != deck.rwkvQueue) {
         out[SrsFieldKeys.deckRwkvQueue] = queue.toValue();
@@ -418,6 +576,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         await store.editFields(SrsEntityKind.deck, widget.deckId, changes);
       }
       if (!mounted) return;
+      // 已落库：表单此刻的样子就是新的基准，下面的 maybePop 不再被当成「有改动」拦下。
+      _baseline = _formSnapshot();
       bumpSrsRevision(ref);
       FushiToast.show(
         msg: t.srs_settings_saved,
@@ -426,7 +586,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       await Navigator.of(context).maybePop();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsDeckSettingsPage.save', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _saving = false);
     }
@@ -512,7 +675,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       await _load();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsDeckSettingsPage.optimize', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _optimizing = false);
     }
@@ -552,7 +718,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       await _load();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsDeckSettingsPage.resetParams', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -624,12 +793,42 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     final String title = t.srs_deck_settings;
+    final String? deckName = _deck?.name;
+    return PopScope<Object?>(
+      canPop: !_dirty,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (!didPop) unawaited(_onPopBlocked());
+      },
+      child: _buildScaffold(context, apple, masthead, title, deckName),
+    );
+  }
+
+  Widget _buildScaffold(
+    BuildContext context,
+    bool apple,
+    bool masthead,
+    String title,
+    String? deckName,
+  ) {
     return FushiPageScaffold(
       title: title,
-      subtitle: _deck?.name,
+      subtitle: deckName,
+      masthead: true,
+      // 页头大字形态不画副标题：牌组名作页名下一行。
+      mastheadBottom: deckName == null
+          ? null
+          : Text(
+              deckName,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: context.fushiType.titleMedium.copyWith(
+                color: Theme.of(context).colorScheme.onSurfaceVariant,
+              ),
+            ),
       header: apple ? null : _buildTopBar(context, title),
-      actions: apple
+      actions: apple || masthead
           ? <Widget>[
               FushiIconButton(
                 key: _saveItem.key,
@@ -672,6 +871,17 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     );
   }
 
+  /// 复习顺序选项的显示名。
+  String _reviewOrderLabel(SrsReviewCardOrder o) => switch (o) {
+    SrsReviewCardOrder.retrievability =>
+      t.srs_settings_review_order_retrievability,
+    SrsReviewCardOrder.dueDate => t.srs_settings_review_order_due_date,
+    SrsReviewCardOrder.difficulty => t.srs_settings_review_order_difficulty,
+    SrsReviewCardOrder.intervalAscending =>
+      t.srs_settings_review_order_interval,
+    SrsReviewCardOrder.random => t.srs_settings_review_order_random,
+  };
+
   /// 这项设置被另一台设备的修改替换了：项旁一行提示。
   Widget? _conflictNote(BuildContext context, String key) {
     if (!_conflictKeys.contains(key)) return null;
@@ -687,6 +897,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     TextEditingController controller,
     String label, {
     String? helper,
+    String? suffix,
     bool enabled = true,
     Key? key,
   }) => FushiTextField(
@@ -695,6 +906,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     enabled: enabled,
     labelText: label,
     helperText: helper,
+    suffixText: suffix,
     keyboardType: TextInputType.number,
     inputFormatters: <TextInputFormatter>[
       FilteringTextInputFormatter.digitsOnly,
@@ -803,16 +1015,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     }
     final SrsDeckView? deck = _deck;
     if (_error != null || deck == null) {
-      return SafeArea(
-        bottom: false,
-        child: Center(
-          child: FushiPlaceholderMessage(
-            icon: FushiIcons.error,
-            tone: FushiPlaceholderTone.error,
-            message: t.error_load_failed,
-            detail: _error == null ? null : '$_error',
-          ),
-        ),
+      return SrsLoadErrorView(
+        error: _error,
+        retryKey: const ValueKey<String>('srs-deck-settings-load-retry'),
+        onRetry: _retryLoad,
       );
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -853,12 +1059,20 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     );
   }
 
-  /// 每日上限：新卡 → 最多复习 →（RWKV）忽略上限 / 最少复习，三个值挨在一起，并就地提示它们之间的关系
+  /// 每日上限：新卡 → 上限单位 → 最多复习 →（RWKV）忽略上限 / 最少复习，挨在一起，并就地提示它们之间的关系
   /// （复习上限至少新卡的 10 倍、最少复习不超过上限），每条提示带一键改成参考值。只提示不联动改值：
-  /// 用户写下的数不被悄悄覆盖。
+  /// 用户写下的数不被悄悄覆盖。上限单位（[SrsLimitUnit]）同时管最多复习与最少复习，两个输入框的后缀随它变；
+  /// 「至少新卡的 10 倍」是按张数换算的，单位是分钟时不提示。
   Widget _limitsGroup(BuildContext context, bool ownsParams) {
     final bool rwkv = (ownsParams ? _algorithm : _stepsAlgorithm).usesRwkv;
     final bool ignored = _reviewLimitIgnored;
+    final SrsLimitUnit unit = _limitUnit;
+    final bool minutes = unit == SrsLimitUnit.minutes;
+    final String suffix = switch (unit) {
+      SrsLimitUnit.reviews => t.srs_settings_limit_suffix_reviews,
+      SrsLimitUnit.cards => t.srs_settings_limit_suffix_cards,
+      SrsLimitUnit.minutes => t.srs_settings_limit_suffix_minutes,
+    };
     final int newLimit = _newLimit;
     final int reviewLimit = _reviewsLimit;
     final int recommendedReviews = SrsDeckView.recommendedReviewsPerDay(
@@ -866,7 +1080,10 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     );
     final int minReviews = int.tryParse(_rwkvMinReviews.text.trim()) ?? 0;
     final List<Widget> notices = <Widget>[
-      if (!ignored && newLimit > 0 && reviewLimit < recommendedReviews)
+      if (unit.counts &&
+          !ignored &&
+          newLimit > 0 &&
+          reviewLimit < recommendedReviews)
         FushiInlineNotice(
           key: const ValueKey<String>('srs-settings-review-limit-low'),
           severity: FushiNoticeSeverity.warning,
@@ -886,10 +1103,15 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         FushiInlineNotice(
           key: const ValueKey<String>('srs-settings-min-over-limit'),
           severity: FushiNoticeSeverity.warning,
-          message: t.srs_settings_rwkv_min_over_limit(
-            min: minReviews,
-            limit: reviewLimit,
-          ),
+          message: minutes
+              ? t.srs_settings_rwkv_min_over_limit_minutes(
+                  min: minReviews,
+                  limit: reviewLimit,
+                )
+              : t.srs_settings_rwkv_min_over_limit(
+                  min: minReviews,
+                  limit: reviewLimit,
+                ),
           actions: <Widget>[
             FushiTextButton(
               key: const ValueKey<String>('srs-settings-min-reviews-fix'),
@@ -912,14 +1134,43 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         helper: t.srs_settings_new_per_day_hint,
         key: const ValueKey<String>('srs-settings-new'),
       ),
+      AdaptiveSettingsSegmentedRow<SrsLimitUnit>(
+        key: const ValueKey<String>('srs-settings-limit-unit'),
+        title: t.srs_settings_limit_unit,
+        subtitle: switch (unit) {
+          SrsLimitUnit.reviews => t.srs_settings_limit_unit_reviews_hint,
+          SrsLimitUnit.cards => t.srs_settings_limit_unit_cards_hint,
+          SrsLimitUnit.minutes => t.srs_settings_limit_unit_minutes_hint,
+        },
+        segments: <ButtonSegment<SrsLimitUnit>>[
+          ButtonSegment<SrsLimitUnit>(
+            value: SrsLimitUnit.reviews,
+            label: Text(t.srs_settings_limit_unit_reviews),
+          ),
+          ButtonSegment<SrsLimitUnit>(
+            value: SrsLimitUnit.cards,
+            label: Text(t.srs_settings_limit_unit_cards),
+          ),
+          ButtonSegment<SrsLimitUnit>(
+            value: SrsLimitUnit.minutes,
+            label: Text(t.srs_settings_limit_unit_minutes),
+          ),
+        ],
+        selected: unit,
+        onChanged: (SrsLimitUnit v) => setState(() => _limitUnit = v),
+      ),
+      _conflictNote(context, SrsFieldKeys.deckLimitUnit),
       _numberField(
         _reviewsPerDay,
         t.srs_settings_reviews_per_day,
         helper: ignored
             ? t.srs_settings_reviews_per_day_ignored
             : rwkv
-            ? t.srs_settings_reviews_per_day_rwkv_hint
+            ? (minutes
+                  ? t.srs_settings_reviews_per_day_rwkv_minutes_hint
+                  : t.srs_settings_reviews_per_day_rwkv_hint)
             : null,
+        suffix: suffix,
         enabled: !ignored,
         key: const ValueKey<String>('srs-settings-review'),
       ),
@@ -927,8 +1178,15 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       if (rwkv && ownsParams) ...<Widget?>[
         _numberField(
           _rwkvMinReviews,
-          t.srs_settings_rwkv_min_reviews,
-          helper: t.srs_settings_rwkv_min_reviews_shared_hint,
+          minutes
+              ? t.srs_settings_rwkv_min_minutes
+              : t.srs_settings_rwkv_min_reviews,
+          helper: switch (unit) {
+            SrsLimitUnit.reviews => t.srs_settings_rwkv_min_reviews_hint,
+            SrsLimitUnit.cards => t.srs_settings_rwkv_min_cards_hint,
+            SrsLimitUnit.minutes => t.srs_settings_rwkv_min_minutes_hint,
+          },
+          suffix: suffix,
           key: const ValueKey<String>('srs-settings-rwkv-min-reviews'),
         ),
         AdaptiveSettingsSwitchRow(
@@ -1051,8 +1309,13 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           ),
       ]),
       if (!_stepsUnderRwkv) _group(context, _stepsFields(context)),
-      // 新卡顺序与记忆率同一条继承（只看 own 祖先，见 [SrsDeckView.newCardOrder]）。
+      // 出卡顺序（新卡顺序 / 新卡与复习 / 复习顺序）与记忆率同一条继承（只看 own 祖先，见
+      // [SrsDeckView.newCardOrder]）。规则全在 Rust 排队（store/study.rs），这里只读写寄存器。
       _group(context, <Widget?>[
+        Text(
+          t.srs_settings_display_order,
+          style: context.fushiType.titleSmallEmphasized,
+        ),
         if (ownsParams) ...<Widget?>[
           AdaptiveSettingsSegmentedRow<SrsNewCardOrder>(
             key: const ValueKey<String>('srs-settings-new-order'),
@@ -1077,6 +1340,67 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
             onChanged: (SrsNewCardOrder v) => setState(() => _newCardOrder = v),
           ),
           _conflictNote(context, SrsFieldKeys.deckNewOrder),
+          AdaptiveSettingsSegmentedRow<SrsNewCardMix>(
+            key: const ValueKey<String>('srs-settings-new-mix'),
+            title: t.srs_settings_new_mix,
+            subtitle: switch (_newCardMix) {
+              SrsNewCardMix.afterReviews => t.srs_settings_new_mix_after_hint,
+              SrsNewCardMix.beforeReviews => t.srs_settings_new_mix_before_hint,
+              SrsNewCardMix.mixed => t.srs_settings_new_mix_mixed_hint,
+            },
+            segments: <ButtonSegment<SrsNewCardMix>>[
+              ButtonSegment<SrsNewCardMix>(
+                value: SrsNewCardMix.afterReviews,
+                label: Text(t.srs_settings_new_mix_after),
+              ),
+              ButtonSegment<SrsNewCardMix>(
+                value: SrsNewCardMix.beforeReviews,
+                label: Text(t.srs_settings_new_mix_before),
+              ),
+              ButtonSegment<SrsNewCardMix>(
+                value: SrsNewCardMix.mixed,
+                label: Text(t.srs_settings_new_mix_mixed),
+              ),
+            ],
+            selected: _newCardMix,
+            onChanged: (SrsNewCardMix v) => setState(() => _newCardMix = v),
+          ),
+          _conflictNote(context, SrsFieldKeys.deckNewMix),
+          // RWKV 一路的分数只有 R：按 RWKV 排程时整棵子树固定按可提取度（内核 `DeckTree::review_order`），这一行
+          // 只读、不让选；寄存器里存的值照存不改，切回 FSRS 后照旧生效。
+          if (_algorithm.usesRwkv)
+            AdaptiveSettingsRow(
+              key: const ValueKey<String>('srs-settings-review-order-rwkv'),
+              title: t.srs_settings_review_order,
+              subtitle: t.srs_settings_review_order_rwkv_hint,
+              // 只读值是一段文字（「Lowest retrievability first」），不是自定宽的控件：
+              // 非 flex 的 trailing 会按固有宽度量，窄屏上把标题挤成一字一行、整行横向溢出。
+              // 给有界宽度让它自己换行。
+              trailingFlexible: true,
+              trailing: Text(
+                t.srs_settings_review_order_retrievability,
+                textAlign: TextAlign.end,
+                style: context.fushiType.bodyMedium.copyWith(
+                  color: Theme.of(context).disabledColor,
+                ),
+              ),
+            )
+          else
+            AdaptiveSettingsPickerRow<SrsReviewCardOrder>(
+              key: const ValueKey<String>('srs-settings-review-order'),
+              title: t.srs_settings_review_order,
+              options: <AdaptiveSettingsPickerOption<SrsReviewCardOrder>>[
+                for (final SrsReviewCardOrder o in SrsReviewCardOrder.values)
+                  AdaptiveSettingsPickerOption<SrsReviewCardOrder>(
+                    value: o,
+                    label: _reviewOrderLabel(o),
+                  ),
+              ],
+              selected: _reviewCardOrder,
+              onChanged: (SrsReviewCardOrder v) =>
+                  setState(() => _reviewCardOrder = v),
+            ),
+          _conflictNote(context, SrsFieldKeys.deckReviewOrder),
         ] else
           Text(
             t.srs_settings_inherited_from(name: _owner?.name ?? ''),
@@ -1093,10 +1417,18 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
           key: const ValueKey<String>('srs-settings-new-load-auto'),
           title: t.srs_settings_new_load_auto,
           subtitle: t.srs_settings_new_load_auto_hint,
-          value: _newLoadAuto,
-          onChanged: (bool v) => setState(() => _newLoadAuto = v),
+          // RWKV 下显示实际生效值（关）并禁用；`_newLoadAuto` 照存，切回 FSRS 恢复、保存也不改写。
+          value: _newPlanUnderRwkv ? false : _newLoadAuto,
+          onChanged: _newPlanUnderRwkv
+              ? null
+              : (bool v) => setState(() => _newLoadAuto = v),
         ),
-        if (_newLoadAuto) ...<Widget?>[
+        if (_newPlanUnderRwkv)
+          Text(
+            t.srs_settings_new_load_rwkv_note,
+            style: context.fushiType.bodySmall,
+          ),
+        if (_newLoadAuto && !_newPlanUnderRwkv) ...<Widget?>[
           _numberField(
             _newLoadBudget,
             t.srs_settings_new_load_budget,
@@ -1273,3 +1605,50 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     return out;
   }
 }
+
+/// 表单里的一项（见 [_SrsDeckSettingsPageState._fields]）：[key] 是比较「改没改」用的值，[raw] / [restore]
+/// 原样取出 / 放回用户的输入。
+typedef _FormField = ({
+  Object? Function() key,
+  Object? Function() raw,
+  void Function(Object? value) restore,
+});
+
+/// 有改动时按返回的三个选择。
+enum _UnsavedChoice { save, discard, cancel }
+
+/// 「设置未保存」对话框：保存（主按钮、默认焦点，Enter 即保存）/ 放弃更改 / 取消。点遮罩、Esc、
+/// 手柄 B 返回 null（= 取消，留在页面）。
+Future<_UnsavedChoice?> _showUnsavedDialog(BuildContext context) =>
+    showAppDialog<_UnsavedChoice>(
+      context: context,
+      builder: (BuildContext dialogContext) => FushiAlertDialog(
+        key: const ValueKey<String>('srs-settings-unsaved-dialog'),
+        icon: const FushiDialogHeroIcon(icon: FushiIcons.warning),
+        title: Text(t.srs_deck_settings_unsaved_title),
+        content: Text(t.srs_deck_settings_unsaved_body),
+        actions: <Widget>[
+          FushiDialogAction(
+            key: const ValueKey<String>('srs-settings-unsaved-cancel'),
+            label: t.cancel,
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(_UnsavedChoice.cancel),
+          ),
+          FushiDialogAction(
+            key: const ValueKey<String>('srs-settings-unsaved-discard'),
+            label: t.srs_deck_settings_unsaved_discard,
+            kind: FushiDialogActionKind.destructive,
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(_UnsavedChoice.discard),
+          ),
+          FushiDialogAction(
+            key: const ValueKey<String>('srs-settings-unsaved-save'),
+            label: t.srs_settings_save,
+            kind: FushiDialogActionKind.primary,
+            autofocus: true,
+            onPressed: () =>
+                Navigator.of(dialogContext).pop(_UnsavedChoice.save),
+          ),
+        ],
+      ),
+    );

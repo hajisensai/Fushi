@@ -215,6 +215,37 @@ void main() {
       expect(urls, hasLength(1));
       expect(urls.single, endsWith('ok.png'));
     });
+
+    test('跳过群晖 @eaDir、__MACOSX 与 ._ AppleDouble（BUG-4916）', () {
+      // 放在 NAS 上 / 从 macOS 压缩包解出来的页图目录：缩略图与资源叉都是 .jpg，
+      // 递归枚举不过滤就当成真页插进卷里（页数翻倍、空白页、OCR 白跑）。
+      final Directory root = Directory.systemTemp.createTempSync(
+        'manga_enum_junk_',
+      );
+      addTearDown(() => root.deleteSync(recursive: true));
+      _writePng(p.join(root.path, '001.png'), 10, 10);
+      _writePng(p.join(root.path, 'ch2', '002.png'), 10, 10);
+      _writePng(
+        p.join(root.path, '@eaDir', '001.png', 'SYNOPHOTO_THUMB_M.png'),
+        10,
+        10,
+      );
+      _writePng(
+        p.join(root.path, 'ch2', '@EADIR', '002.png', 'SYNOPHOTO_THUMB_S.png'),
+        10,
+        10,
+      );
+      _writePng(p.join(root.path, '__MACOSX', 'ch2', '002.png'), 10, 10);
+      File(p.join(root.path, '._001.png')).writeAsBytesSync(<int>[0, 5, 22, 7]);
+      File(
+        p.join(root.path, 'ch2', '._002.png'),
+      ).writeAsBytesSync(<int>[0, 5, 22, 7]);
+
+      final List<String> urls = enumerateMangaPages(
+        root,
+      ).map((MangaOcrPageFile page) => page.relativeUrl).toList();
+      expect(urls, <String>['001.png', 'ch2/002.png']);
+    });
   });
 
   group('runMangaOcrFolderJob', () {
@@ -348,6 +379,51 @@ void main() {
       );
     });
 
+    test('BUG-5384 改道按页身份：目录多一张不在页表里的图，任务仍去识别读者那页', () async {
+      // 书目录：images/ 下 3 页 + 一张排在最前、不在阅读器页表里的图。任务页表
+      // = [000_extra, p1, p2, p3]，阅读器页表 = [p1, p2, p3]。
+      final Directory book = Directory.systemTemp.createTempSync(
+        'manga_job_identity_',
+      );
+      addTearDown(() => book.deleteSync(recursive: true));
+      _writePng(p.join(book.path, 'images', '000_extra.png'), 30, 80);
+      _writePng(p.join(book.path, 'images', 'p1.png'), 40, 80);
+      _writePng(p.join(book.path, 'images', 'p2.png'), 50, 80);
+      _writePng(p.join(book.path, 'images', 'p3.png'), 60, 80);
+
+      // 读者在阅读器第 3 页（p3，阅读器页号 2）。按旧的裸页号改道，任务会去跑
+      // 它自己的第 2 张（p2）；按身份改道必须先跑 p3。
+      final List<String?> requests = <String?>['images/p3.png'];
+      final _FakeDetector detector = _FakeDetector();
+      final List<int> progressPages = <int>[];
+      await runMangaOcrFolderJob(
+        imageDirPath: book.path,
+        engineSignature: kLocalMangaOcrEngineSignature,
+        detector: detector,
+        recognizer: _FakeRecognizer(),
+        onProgress: (int done, int total, int pageIndex) =>
+            progressPages.add(pageIndex),
+        takeFocus: () => requests.isEmpty ? null : requests.removeAt(0),
+      );
+
+      expect(detector.detectedSizes.first, '60x80', reason: '先识别的是 p3');
+      expect(progressPages.first, 3, reason: '进度报的是任务自己页表里的页号');
+    });
+
+    test('BUG-5384 改道到不在任务页表里的身份：忽略，不挪游标', () async {
+      final List<String?> requests = <String?>['images/missing.png'];
+      final _FakeDetector detector = _FakeDetector();
+      await runMangaOcrFolderJob(
+        imageDirPath: root.path,
+        engineSignature: kLocalMangaOcrEngineSignature,
+        detector: detector,
+        recognizer: _FakeRecognizer(),
+        startPage: 1,
+        takeFocus: () => requests.isEmpty ? null : requests.removeAt(0),
+      );
+      expect(detector.detectedSizes, <String>['50x80', '60x80', '40x80']);
+    });
+
     test('startPage：当前页先识别、进度带真实页号，manga.json 与从头跑一致', () async {
       final Directory fromStart = Directory.systemTemp.createTempSync(
         'manga_job_start0_',
@@ -385,9 +461,14 @@ void main() {
         <int>[2, 3, 2],
         <int>[3, 3, 0],
       ]);
+      // 落盘时刻（completed_at_ms）随运行而变，不属于产物内容。
+      String withoutCompletedAt(String path) => File(
+        path,
+      ).readAsStringSync().replaceAll(RegExp(r',"completed_at_ms":\d+'), '');
+      expect(File(outPath).readAsStringSync(), contains('"completed_at_ms":'));
       expect(
-        File(outPath).readAsStringSync(),
-        File(baselinePath).readAsStringSync(),
+        withoutCompletedAt(outPath),
+        withoutCompletedAt(baselinePath),
         reason: '起点只影响处理顺序，不影响产物内容与页序',
       );
     });

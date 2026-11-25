@@ -137,6 +137,10 @@ final class SrsStringColumn {
 
   String? at(int i) => (_valid == null || _valid[i] != 0) ? this[i] : null;
 
+  /// 第 [i] 行的 UTF-8 原文（同一块缓冲上的视图，不拷贝、不解码）。
+  Uint8List bytes(int i) =>
+      Uint8List.sublistView(_text, _offsets[i], _offsets[i + 1]);
+
   /// 全部行（空值为 null）。
   List<String?> toNullableList() => <String?>[
     for (int i = 0; i < length; i++) at(i),

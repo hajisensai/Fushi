@@ -7,6 +7,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 
+import '../helpers/apple_design_sources.dart';
 import '../helpers/source_guard.dart';
 import '../pages/reader_history_source_corpus.dart';
 import '../pages/reader_fushi_page_source_corpus.dart';
@@ -79,7 +80,12 @@ void main() {
       'AdaptiveSettingsSegmentedRow',
       'AdaptiveSettingsSliderRow',
     ],
-    'lib/src/settings/settings_home_page.dart': <String>['FushiPageHeader'],
+    // 宽屏全平台同壳后不再画「返回 + 设置」外壳页头（FushiPageHeader）：窄屏
+    // 页头走共享的页头大字 / 浮动折叠页头，宽屏由右窗格分类页头承担。
+    'lib/src/settings/settings_home_page.dart': <String>[
+      'FushiStaticMasthead',
+      'SettingsFloatingHeader',
+    ],
     'lib/src/utils/components/fushi_list_tile.dart': <String>['FushiListItem'],
     'lib/src/utils/components/fushi_text_selection_controls.dart': <String>[
       // 选区工具条是浮层（MD3 浮层面 / Apple 玻璃胶囊），不是内容卡片。
@@ -133,15 +139,18 @@ void main() {
       'FushiCard',
       'FushiDialogFrame',
     ],
+    // 2026-11 导入对话框第二版：文件选择是外层拼贴的缩小版色块
+    // （ImportPickBlock 主选择 / ImportPickTile 次要选择，import_dialog_blocks）。
     'lib/src/media/audiobook/book_import_dialog.dart': <String>[
       'AdaptiveSettingsSection',
       'AdaptiveSettingsSwitchRow',
-      'FushiFilePickerRow',
+      'ImportPickBlock',
+      'ImportPickTile',
       'FushiTextField',
     ],
     'lib/src/media/audiobook/audiobook_import_dialog.dart': <String>[
       'AdaptiveSettingsSection',
-      'FushiFilePickerRow',
+      'ImportPickBlock',
     ],
     // 2026-10-25 库页定版：书卡封面不再压标签 chip / 类型角标，信息进共享
     // 文字块 ShelfCardMeta（标签以「#名字」接在副行里）。
@@ -294,21 +303,26 @@ void main() {
       'adaptiveDialogAction',
     ],
     'lib/src/pages/implementations/games_library_page.dart': <String>[
-      'showAppDialog<GalgamePlayStatus>(',
-      'showAppDialog<String>(',
       // 筛选面板 2026-10-14 收进库页共用的 showLibraryFilterPanel（其窄窗形态
       // 仍是 adaptiveModalSheet + FushiModalSheetFrame，见下一条）。
       'showLibraryFilterPanel(',
+      'AdaptiveSettingsSwitchRow',
+      // 合集横排行长按/右键有统一合集上下文菜单。
+      'showCollectionContextDialog(',
+      // 卡菜单收进与游戏首页共用的 galgame_item_menu.dart（见下一条）。
+      'showGalgameItemActionsMenu(',
+    ],
+    // 游戏卡菜单执行体（游戏库 / 游戏首页共用）：游玩状态框、重命名框走共享
+    // 对话框骨架；「刮削元数据」直开统一弹窗；「移除」先过统一销毁确认框。
+    'lib/src/pages/implementations/games/galgame_item_menu.dart': <String>[
+      'showAppDialog<GalgamePlayStatus>(',
+      'showAppDialog<String>(',
       'FushiDialogFrame',
       'FushiModalSheetFrame',
       'FushiTextField',
       'adaptiveDialogAction',
-      'AdaptiveSettingsSwitchRow',
-      // 卡菜单「刮削元数据」直开统一弹窗；「移除」先过统一销毁确认框；
-      // 合集横排行长按/右键有统一合集上下文菜单。
       'showGalgameScrapeDialog(',
       'FushiDestructiveConfirmDialog(',
-      'showCollectionContextDialog(',
     ],
     // 库页筛选面板（游戏库 / 视频库共用）：窄窗 / Apple 走共享弹层骨架。
     'lib/src/pages/implementations/library_filter_panel.dart': <String>[
@@ -614,10 +628,16 @@ void main() {
       'lib/src/pages/implementations/games_library_page.dart': <String>[
         'showDialog<',
         'AlertDialog(',
-        // 游玩状态选择框已收口设计系统骨架（FushiListItem 行），不再裸 SimpleDialog。
         'SimpleDialog(',
         'showModalBottomSheet<',
         'SwitchListTile(',
+      ],
+      'lib/src/pages/implementations/games/galgame_item_menu.dart': <String>[
+        'showDialog<',
+        'AlertDialog(',
+        // 游玩状态选择框已收口设计系统骨架（FushiListItem 行），不再裸 SimpleDialog。
+        'SimpleDialog(',
+        'showModalBottomSheet<',
       ],
       'lib/src/pages/implementations/texthooker_page.dart': <String>[
         'showDialog<',
@@ -739,11 +759,29 @@ class AnotherPopupPart {
         'MD3 / Apple dual rendering of the component owns its radii, surface '
         'roles and label sizes — same reviewed exception class as '
         'fushi_material_components / settings_shared.';
+    // 全屏歌词动画（PR #4211，照 folia-major 移植）的场景内容：画面里的歌词、标题 / 歌手占位、
+    // 段落标签、主题图标字形与莫奈的封面框都是画进场景的内容，字号照 folia 的 px / rem 写死再乘
+    // 场景缩放与用户字号倍率（fontScale），与 motion_type_token_guard_test 的
+    // _lyricVisualizerContentFontBudget 同一类豁免。歌词页的控件条、选样式面板、参数面板、
+    // 素材库与 AI 主题面板是 UI chrome，不在此列，仍走共享 M3E 组件与令牌。
+    const String kLyricVisualizerSceneContent =
+        'Full-screen lyric visualizer scene content (PR #4211, ported from '
+        'folia-major): lyrics, title / artist placeholders, section labels, '
+        'theme-icon glyphs and the Monet cover frames are painted into the '
+        'scene at folia px / rem sizes times the scene scale and the user '
+        'font scale — content, not page chrome (same class as karaoke '
+        'lyrics). The lyric page controls, style picker, parameter panel, '
+        'asset library and AI theme sheet stay on shared M3E components.';
     const Map<String, String> allowedFiles = <String, String>{
       'lib/src/media/panorama/panorama_atlas.dart':
           'Library panorama glyph atlas: words are rasterized once at the atlas em size into GPU sprites (3D content scaled per frame by the Rust core), not page chrome.',
       'lib/src/media/panorama/panorama_book_flip.dart':
           'Library panorama book flip: the opened page lays out vertical body text sized from the page height (book content), not page chrome.',
+      'lib/src/pages/implementations/srs_calibration_charts.dart':
+          'SRS calibration / UM+ chart painters draw the low-emphasis data dots '
+          'with the tonal role directly on the plot canvas; the dots are chart '
+          'content (same class as the allowlisted reading/video statistics '
+          'pages), not page chrome.',
       'lib/src/pages/implementations/srs/srs_field_editors.dart':
           'Ruby format key icon draws the reading glyph at 0.6x the body size (the icon is the ruby itself); derived from context.fushiType, not a free-standing size.',
       'lib/src/pages/implementations/srs/srs_fushi_card_view.dart':
@@ -752,15 +790,14 @@ class AnotherPopupPart {
           'Native HTML card face: every fontSize: is the computed CSS font-size of the note\'s own card HTML (times the card zoom), and the <details> marker is 0.7x its summary\'s computed size; card content typography, not page chrome (same class as srs_fushi_card_view).',
       'lib/src/pages/implementations/srs/srs_html_layout_editor.dart':
           'Layout editor renders note content at the per-field user size scale (look.scale x body size); content typography, not page chrome.',
-      'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart':
-          'Apple design-system sidebar/tab strip: radii follow the iOS/macOS sidebar selection and tab-pill metrics (Apple branch, not M3E).',
       'lib/src/utils/components/fushi_design_tokens.dart':
           'Token source owns app radii and semantic surface roles.',
       'lib/src/utils/components/fushi_material_components.dart':
           'Shared MD3 component implementation may map tokens to framework widgets.',
       'lib/src/utils/components/settings_shared.dart':
           'Shared adaptive settings primitives own compact settings controls '
-          '(including the Apple pop-up button capsule radius).',
+          '(including the Apple pop-up button and macOS 27 stepper capsule '
+          'radii).',
       'lib/src/media/music/lyrics/karaoke/karaoke_appearance.dart':
           'Karaoke lyrics are content, not chrome: the main-line size is the '
           'user-adjustable lyric font size (KaraokeLyricsAppearance.fontSize, '
@@ -770,6 +807,74 @@ class AnotherPopupPart {
       'lib/src/media/music/lyrics/karaoke/karaoke_line_layout.dart':
           'Pre-layout of karaoke lyric rows derives the ruby row size from the '
           'line font size (content ratio, see karaoke_appearance.dart).',
+      'lib/src/media/music/lyrics/visualizer/lyric_visualizer_placeholder.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/lyric_visualizer_subtitle.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/lyric_visualizer_theme_icons.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_avatar.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_layout.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/claddagh/claddagh_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/diorama/diorama_text_raster.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/fume/fume_article_layout.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_ambient.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_collage.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_ornaments.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_glyph_atlas.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/luminous/luminous_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/machi/machi_text.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_glyphs.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/mindscape/mindscape_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/monet/monet_floating_decor.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/monet/monet_rail.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/monet/monet_visualizer.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_glyphs.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_painter.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/partita/partita_line_cache.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/pendolo/pendolo_text.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_typography.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/still/still_layout.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/still/still_visualizer.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/tempera/tempera_layout.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/tempera/tempera_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/media/music/lyrics/visualizer/modes/tilt/tilt_scene.dart':
+          kLyricVisualizerSceneContent,
+      'lib/src/pages/implementations/music/music_lyric_visualizer_view.dart':
+          kLyricVisualizerSceneContent,
       'lib/src/models/theme_notifier.dart':
           'Theme preview content intentionally displays generated surface '
           'roles. buildFushiThemeData is also the ThemeData source for both '
@@ -847,13 +952,6 @@ class AnotherPopupPart {
           'user content passed to LyricsModeHtml / the platform overlay '
           'channel, not page chrome — same rationale as the parent '
           'reader_fushi_page.dart allowlist (extracted verbatim).',
-      // 2026-10-04 歌词覆盖层 Apple 外观：按用户要求逐值复刻 Niratan 的 Apple Music
-      // 播放面板（封面圆角 12、进度条 / 元数据 / 读数的固定字号），画在恒深色的
-      // 模糊封面媒体面上，是播放器内容而非普通页面 chrome；MD3 外观仍走设计令牌。
-      'lib/src/media/audiobook/lyrics_player/lyrics_player_apple.dart':
-          'Apple Music-style lyrics player reproduces Niratan player metrics '
-          '(artwork radius, scrubber and metadata type sizes) on a fixed-dark '
-          'blurred-cover media surface; player content, not page chrome.',
       // TODO-589 batch7: reader chrome 域(底栏/设置 sheet/进度条/主题/收藏句/图片查看)
       // 拆到 reader_fushi/chrome.part.dart；同一份「reader content / 阅读器 chrome」
       // 豁免随搬运延伸到该 part（零行为变化，逐字符搬运自父文件）。
@@ -887,14 +985,6 @@ class AnotherPopupPart {
           'Android / Win32 window via FloatingLyricChannel.show (content data, '
           'renders no Flutter widgets) — same reviewed exception as '
           'audiobook_session.',
-      'lib/src/media/audiobook/now_listening_mini_bar.dart':
-          'Now-listening media mini-bar: surface role + book-cover thumbnail '
-          'radius are media-subsystem content chrome (same category as the '
-          'allowlisted reader-shelf book covers / media_item_dialog cover '
-          'hero), driven off the active ColorScheme. M3E redesign: the '
-          'Material branch is a floating capsule sharing the floating '
-          'toolbar pill decoration (surfaceContainer, full radius); only the '
-          'e-ink strip (surfaceContainerHighest) and the cover radius remain.',
       // 悬浮字幕 M3E 改造：app 级 / reader 级两个样式构造点收敛到同一个纯函数
       // buildFloatingLyricStyle，它从 AppModel / reader 搬出的正是同一类 payload。
       'lib/src/media/audiobook/floating_lyric_style.dart':
@@ -953,11 +1043,31 @@ class AnotherPopupPart {
           'fontSize: is rendered media content sized in video pixels, '
           'never app UI — same reviewed exception class as '
           'audiobook_clip_text_render.',
+      'lib/src/media/video/video_live_chat_panel.dart':
+          'YouTube live chat replay side panel (decision zTedU_pOQF): message '
+          'rows, author names and the panel title are sized from the chat '
+          'font size the video page hands in (14 x _videoUiScale), the same '
+          'video-subsystem content class as the sibling subtitle jump panel; '
+          'controls use shared Fushi* buttons.',
+      'lib/src/pages/implementations/video_fushi/live_chat.part.dart':
+          'Live chat panel wiring: the only fontSize: is the chat content size '
+          '(14 x _videoUiScale) handed to the allowlisted live chat panel -- '
+          'same pattern as portrait.part.dart.',
       'lib/src/media/video/video_subtitle_jump_panel.dart':
           'Subtitle jump list (asbplayer-style transcript panel) renders cue '
           'text + timestamp rows as video-subsystem content; row/timestamp '
           'font size scales with appUiScale, not ordinary page chrome '
           '(same content rationale as the allowlisted subtitle overlay).',
+      'lib/src/media/video/video_portrait_layout.dart':
+          'Portrait study layout (decision P9AS-fvjJh): fontSize: is the '
+          'current subtitle cue itself, passed in from the user subtitle '
+          'font size scaled with appUiScale -- the same reviewed content '
+          'exception as video_subtitle_jump_panel / subtitle_transcript_text.',
+      'lib/src/pages/implementations/video_fushi/portrait.part.dart':
+          'Portrait study layout wiring (decision P9AS-fvjJh): the only '
+          'fontSize: values are the current cue and episode rows scaled with '
+          '_videoUiScale, handed to the allowlisted video content panels -- '
+          'same content rationale as the sibling episode.part.dart.',
       'lib/src/media/video/video_chapter_panel.dart':
           'Chapter list panel (TODO-424) renders chapter index + title + start '
           'timestamp rows as video-subsystem content; row font size scales '
@@ -972,6 +1082,12 @@ class AnotherPopupPart {
           'and playback state as video-subsystem content in the player overlay '
           'and collection hero; card typography scales with appUiScale in the '
           'player, the same reviewed content exception as video_episode_panel.',
+      'lib/src/media/video/web_video_mode_chip.dart':
+          'Web video mode chip lives in the video player top bar next to the '
+          'other player chrome buttons; its label is the labelLarge token size '
+          'times the player control scale (_videoUiScale) so it grows with the '
+          'rest of the controls -- the same reviewed exception as '
+          'video_m3e_chrome / controls_theme.part.dart.',
       'lib/src/media/video/video_subtitle_style.dart':
           'Subtitle appearance model holds user-configurable caption font '
           'size (content), defaults mirror the allowlisted overlay caption.',
@@ -1141,6 +1257,14 @@ class AnotherPopupPart {
       // `MokuroBlock.fontSize` 与 mokuro_payload / manga_ocr_folder_job 里被
       // 豁免的是同一个数据字段（气泡文字尺寸，落盘给 overlay 用），文件本身
       // 零 UI。属既有 reviewed 豁免类跟随新生产者，不是放宽判据。
+      // #3717 用词替换的上传页图：按 OCR 块的 MokuroBlock.fontSize（乘页图缩放）
+      // 把替换文字用 dart:ui Paragraph 重绘进发给 AI 的 JPEG 副本。字号来自 OCR
+      // 几何、画在漫画页像素上，是内容而不是界面排版；文件零 Widget。与上面
+      // manga.json 生产者同一 fontSize 数据字段的消费端。
+      'lib/src/media/manga/audio/manga_audio_substitution_image.dart':
+          'Repaints substituted text onto the manga page JPEG sent to the AI, '
+          'sized from the OCR block MokuroBlock.fontSize scaled to the page '
+          'image; page-pixel content, no Flutter widget typography.',
       'lib/src/media/manga/ocr/google_lens_ocr_service.dart':
           'Writes the MokuroBlock.fontSize data field for Lens-produced '
           'manga.json blocks; pure data layer, no UI typography.',
@@ -1243,7 +1367,15 @@ class AnotherPopupPart {
           kGlassDesignSystemImplementation,
       'lib/src/utils/components/glass/fushi_glass_toggles.dart':
           kGlassDesignSystemImplementation,
+      // iOS 27 / macOS 27 输入框（UITextField / NSTextField / 搜索框）的字号与
+      // 键盘焦点内环圆角就是组件自身度量。
+      'lib/src/utils/components/glass/fushi_glass_inputs.dart':
+          kGlassDesignSystemImplementation,
       'lib/src/settings/glass_settings_renderer.dart':
+          kSharedComponentImplementation,
+      // 日期 / 时间选择的 Apple 分支：CupertinoDatePicker 的滚轮字号（iOS 21 /
+      // macOS 15）经 CupertinoTextThemeData 下发，是组件自身度量。
+      'lib/src/utils/components/fushi_date_time_picker.dart':
           kSharedComponentImplementation,
       // settings kit（2026-10）：设置模块的共享设计积木（M3E 形状色块 / 胶囊
       // 搜索栏 / 浮动页头 + Apple 分支的 iOS 字号），同「共享原语本身」类。
@@ -1268,8 +1400,69 @@ class AnotherPopupPart {
       'lib/src/pages/shared/library_section_tabs.dart':
           kSharedComponentImplementation,
       'lib/src/utils/misc/fushi_toast.dart': kSharedComponentImplementation,
+      // PR #3397 外壳改版（M3E 色块 + 页头大字）的共享积木本体：库页封面色块、
+      // 「继续」色块、海报色块、页头大字（页名字阶 / 连体页签）、溢出标题、海报
+      // 详情外壳（按封面取色派生整套 surfaceContainer 色阶 + 海报面板圆角）。
+      // 页面经它们出图、不再各自拍板，与 fushi_material_components 同一「共享
+      // 原语本身」类；字号由页头 / 色块的固定版式比例算出（设计稿定值），
+      // FushiTypeRoles 没有对应字阶。
+      'lib/src/media/detail/media_poster_detail.dart':
+          kSharedComponentImplementation,
+      // 带色卡片的局部配色（色块子树 / 从色块弹出的弹层）：按块配色派生整套
+      // surfaceContainer 色阶，海报详情外壳也走这一份。
+      'lib/src/utils/components/fushi_block_color_scope.dart':
+          kSharedComponentImplementation,
+      'lib/src/pages/implementations/music/music_detail_chrome.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_continue_blocks.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_cover_block.dart':
+          kSharedComponentImplementation,
+      // 导入拼贴（导入稿 v2）：引导首块 / 方式块 / 格式气泡、常驻来源色块与拖动
+      // 重排落点框——六个模块导入视图共用的积木本体，圆角按色块边长取。
+      'lib/src/media/import/import_collage_blocks.dart':
+          kSharedComponentImplementation,
+      'lib/src/media/import/import_source_blocks.dart':
+          kSharedComponentImplementation,
+      // 拼贴打磨（设计稿 G2 / M2）：装盒大字（字号按盒子二分求出）与无封面时按
+      // 标题生成的封面（字号随封面边长缩放）——色块 / 海报水印共用的积木本体。
+      'lib/src/utils/components/fushi_fit_title.dart':
+          kSharedComponentImplementation,
+      // 同判据的真文字版（条目标题要进语义树 / 被找到）：字号同样由盒子求出。
+      'lib/src/utils/components/fushi_fit_text.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_generated_cover.dart':
+          kSharedComponentImplementation,
+      // 拼贴打磨（设计稿 G3 / H2）：游戏库与首页拼贴的积木本体——游戏时长大字
+      // （字号随色块高度）、横版背景 / 进度条 / 状态胶囊的圆角按色块边长取、
+      // 时长色块底色取容器色阶；首页统计块的大数字同理随块高缩放。
+      'lib/src/pages/implementations/games/galgame_home_blocks.dart':
+          kSharedComponentImplementation,
+      'lib/src/pages/implementations/home_collage_widgets.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_page_masthead.dart':
+          kSharedComponentImplementation,
+      'lib/src/utils/components/fushi_page_title_metrics.dart':
+          'Module-page masthead title spec (11-20 #18): the single source the '
+          'shared masthead components read their title / switch sizes from; '
+          'pages never set a title font size themselves.',
+      'lib/src/utils/components/fushi_poster_block.dart':
+          kSharedComponentImplementation,
       // 2) 页面 / 功能模块里逐条审过的内容类例外（封面美术、预览、播放器浮层、
       //    Apple 分支的 HIG 尺寸——FushiTypeRoles 暂无 Apple 字阶）。
+      'lib/src/settings/shell_style_preview.dart':
+          'Shell style preview draws a scaled mock of the library page (rail, '
+          'masthead, cover blocks / grid tiles) with the current theme so the '
+          'user can compare sidebar styles and library layouts; radii, surface '
+          'tones scale with the preview box and '
+          'are preview content, not page chrome — same reviewed exception '
+          'class as lookup_popup_size_preview.',
+      'lib/src/pages/implementations/music/music_cd_detail.dart':
+          'CD detail hero (design M3): kicker / title / version headings and '
+          'the disc label are sized by the fixed hero layout ratios of the '
+          'collage design (phone 28 / desktop 44 title, 26 disc numeral); '
+          'FushiTypeRoles has no matching steps — same reviewed exception '
+          'class as music_detail_chrome.',
       'lib/src/lookup/lookup_popup_size_preview.dart':
           'Popup size preview draws a scaled mock screen (frame fill, fake text '
           'lines, popup rectangle) so the user can see where the lookup popup '
@@ -1313,11 +1506,16 @@ class AnotherPopupPart {
           'Apple branch of the shortcut key-cap chip pins its label to 12 w500 '
           '(macOS key-cap label); the MD3 branch stays on the shared tag chip '
           'type. FushiTypeRoles has no Apple key-cap role yet.',
-      'lib/src/settings/settings_home_page.dart':
-          'Settings shell under the Apple design system: the iOS large title '
-          '(34 bold) and the CupertinoSearchTextField metrics (radius, 13 / 17 '
-          'text) reproduce the iOS / macOS Settings app header; the MD3 branch '
-          'stays on the shared settings primitives.',
+      // M3E-only 拆分文件：Apple 行在 lookup/apple/apple_lookup_history_row.dart，
+      // 查词页按 isGlassDesign 分派（home_dictionary_page `if (glass)`），本文件
+      // 不会在 Apple 下渲染，「漏出 Material 色调」的风险不存在；但判据
+      // （[_m3eChromeHits] 看文件内有无 Apple 分支）对拆分后的纯 M3E 文件无从识别。
+      'lib/src/pages/implementations/lookup_history_row.dart':
+          'M3E-only split of the lookup history row (the Apple row lives in '
+          'lookup/apple/apple_lookup_history_row.dart and the lookup page '
+          'dispatches on isGlassDesign): the hover fill and the dictionary '
+          'count pill read the M3E tonal role surfaceContainerHigh directly, '
+          'which is spec usage — no Apple branch can leak Material tones here.',
     };
 
     // TODO-2715 ①：豁免的**粒度**从「整份文件」收到「这份文件里被审过的那几个 token」。
@@ -1344,6 +1542,9 @@ class AnotherPopupPart {
     const Map<String, Set<String>> allowedTokens = <String, Set<String>>{
       'lib/src/media/panorama/panorama_atlas.dart': <String>{'fontSize:'},
       'lib/src/media/panorama/panorama_book_flip.dart': <String>{'fontSize:'},
+      'lib/src/pages/implementations/srs_calibration_charts.dart': <String>{
+        'surfaceContainerLow',
+      },
       'lib/src/pages/implementations/srs/srs_field_editors.dart': <String>{
         'fontSize:',
       },
@@ -1356,15 +1557,80 @@ class AnotherPopupPart {
       'lib/src/pages/implementations/srs/srs_html_layout_editor.dart': <String>{
         'fontSize:',
       },
-      'lib/src/utils/adaptive/nav_rail/apple_sidebar_tabs.part.dart': <String>{
-        'BorderRadius.circular(',
-      },
       'lib/src/media/music/lyrics/karaoke/karaoke_appearance.dart': <String>{
         'fontSize:',
       },
       'lib/src/media/music/lyrics/karaoke/karaoke_line_layout.dart': <String>{
         'fontSize:',
       },
+      'lib/src/media/music/lyrics/visualizer/lyric_visualizer_placeholder.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/lyric_visualizer_subtitle.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/lyric_visualizer_theme_icons.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_avatar.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_layout.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/cappella/cappella_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/claddagh/claddagh_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/diorama/diorama_text_raster.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/fume/fume_article_layout.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_ambient.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_collage.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_ornaments.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/hanabi/hanabi_text.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/lumiere/lumiere_glyph_atlas.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/luminous/luminous_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/machi/machi_text.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/metaphor/metaphor_glyphs.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/mindscape/mindscape_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/monet/monet_floating_decor.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/monet/monet_rail.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/monet/monet_visualizer.dart':
+          <String>{'BorderRadius.circular(', 'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_glyphs.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/nebbia/nebbia_painter.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/partita/partita_line_cache.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/pendolo/pendolo_text.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/sonnet/sonnet_typography.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/still/still_layout.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/still/still_visualizer.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/tempera/tempera_layout.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/tempera/tempera_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/media/music/lyrics/visualizer/modes/tilt/tilt_scene.dart':
+          <String>{'fontSize:'},
+      'lib/src/pages/implementations/music/music_lyric_visualizer_view.dart':
+          <String>{'fontSize:'},
       'lib/src/creator/fields/image_field.dart': <String>{'fontSize:'},
       'lib/src/floating_ball/desktop_system_ball_assets.dart': <String>{
         'fontSize:',
@@ -1386,10 +1652,10 @@ class AnotherPopupPart {
         'surfaceContainerHigh',
         'fontSize:',
       },
-      'lib/src/media/audiobook/now_listening_mini_bar.dart': <String>{
-        'BorderRadius.circular(',
-      },
       'lib/src/media/video/video_clip_subtitle_image.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/media/manga/audio/manga_audio_substitution_image.dart': <String>{
         'fontSize:',
       },
       'lib/src/media/manga/ocr/google_lens_ocr_service.dart': <String>{
@@ -1399,9 +1665,9 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/media/video/graphic_subtitle_ocr.dart': <String>{'fontSize:'},
+      // 面板已带 Apple 分支（_alignPanelScheme），色调容器按判据不再计入。
       'lib/src/media/video/subtitle_waveform_align_panel.dart': <String>{
         'BorderRadius.circular(',
-        'surfaceContainerHighest',
       },
       'lib/src/media/video/video_chapter_panel.dart': <String>{'fontSize:'},
       'lib/src/media/video/video_danmaku_text_metrics.dart': <String>{
@@ -1409,6 +1675,7 @@ class AnotherPopupPart {
       },
       'lib/src/media/video/video_episode_panel.dart': <String>{'fontSize:'},
       'lib/src/media/video/video_episode_rail.dart': <String>{'fontSize:'},
+      'lib/src/media/video/web_video_mode_chip.dart': <String>{'fontSize:'},
       'lib/src/media/video/video_m3e_chrome.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
@@ -1418,6 +1685,10 @@ class AnotherPopupPart {
       },
       'lib/src/media/video/video_long_press_speed_badge.dart': <String>{
         'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/media/video/video_live_chat_panel.dart': <String>{'fontSize:'},
+      'lib/src/pages/implementations/video_fushi/live_chat.part.dart': <String>{
         'fontSize:',
       },
       'lib/src/media/video/video_subtitle_jump_panel.dart': <String>{
@@ -1523,8 +1794,6 @@ class AnotherPopupPart {
       'lib/src/pages/implementations/reader_fushi/lyrics.part.dart': <String>{
         'fontSize:',
       },
-      'lib/src/media/audiobook/lyrics_player/lyrics_player_apple.dart':
-          <String>{'fontSize:'},
       'lib/src/pages/implementations/reader_fushi_page.dart': <String>{
         'BorderRadius.circular(',
       },
@@ -1561,6 +1830,7 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/utils/components/settings_shared.dart': <String>{
+        'BorderRadius.circular(',
         'VisualDensity.compact',
         'fontSize:',
       },
@@ -1601,7 +1871,6 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/settings/settings_kit_core.dart': <String>{'fontSize:'},
-      'lib/src/settings/settings_home_page.dart': <String>{'fontSize:'},
       'lib/src/utils/adaptive/adaptive_navigation.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
@@ -1620,6 +1889,62 @@ class AnotherPopupPart {
         'fontSize:',
       },
       'lib/src/utils/components/fushi_tag.dart': <String>{'fontSize:'},
+      'lib/src/media/detail/media_poster_detail.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_block_color_scope.dart': <String>{
+        'surfaceContainerLow',
+        'surfaceContainerLowest',
+        'surfaceContainerHigh',
+        'surfaceContainerHighest',
+      },
+      'lib/src/pages/implementations/music/music_detail_chrome.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_fit_title.dart': <String>{'fontSize:'},
+      'lib/src/utils/components/fushi_fit_text.dart': <String>{'fontSize:'},
+      'lib/src/utils/components/fushi_generated_cover.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/games/galgame_home_blocks.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerHigh',
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/home_collage_widgets.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/settings/shell_style_preview.dart': <String>{
+        'BorderRadius.circular(',
+        'surfaceContainerLow',
+        'surfaceContainerLowest',
+        'surfaceContainerHigh',
+        'surfaceContainerHighest',
+      },
+      'lib/src/pages/implementations/music/music_cd_detail.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_continue_blocks.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_cover_block.dart': <String>{
+        'BorderRadius.circular(',
+        'fontSize:',
+      },
+      'lib/src/media/import/import_collage_blocks.dart': <String>{
+        'surfaceContainerHighest',
+      },
+      'lib/src/media/import/import_source_blocks.dart': <String>{
+        'BorderRadius.circular(',
+      },
+      'lib/src/utils/components/fushi_page_masthead.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_page_title_metrics.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_poster_block.dart': <String>{'fontSize:'},
       'lib/src/utils/components/glass/fushi_glass_bars.dart': <String>{
         'BorderRadius.circular(',
         'fontSize:',
@@ -1649,6 +1974,20 @@ class AnotherPopupPart {
         'fontSize:',
         'SwitchListTile(',
         'CheckboxListTile(',
+      },
+      // 输入框外壳 / 焦点框圆角已走 FushiAppleRadii，只剩字号是组件自身度量。
+      'lib/src/utils/components/glass/fushi_glass_inputs.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/utils/components/fushi_date_time_picker.dart': <String>{
+        'fontSize:',
+      },
+      'lib/src/pages/implementations/lookup_history_row.dart': <String>{
+        'surfaceContainerHigh',
+      },
+      'lib/src/media/video/video_portrait_layout.dart': <String>{'fontSize:'},
+      'lib/src/pages/implementations/video_fushi/portrait.part.dart': <String>{
+        'fontSize:',
       },
       'lib/src/pages/shared/library_section_tabs.dart': <String>{'fontSize:'},
       'lib/src/utils/misc/fushi_toast.dart': <String>{'fontSize:'},
@@ -1686,6 +2025,10 @@ class AnotherPopupPart {
     );
     for (final File file in dartFiles) {
       final String path = file.path.replaceAll(r'\', '/');
+      // Apple 专属文件（`isGlassDesign` 分派后才渲染的 Cupertino 版面 / 原语）
+      // 不画 M3E chrome，本守卫的「M3E 决策」无从谈起，不在扫描面内；它们由
+      // apple_design_tokens_guard_test 按 Apple 令牌审（判据两边共用）。
+      if (isAppleDesignOnlySource(path)) continue;
       final String? reason = allowedFiles[path];
       // TODO-2715：先剥注释。判据是禁止型（isNot），注释里写着 `fontSize:` 的说明
       // 文字会被当成命中——既制造假红，又会把一条注释登记进豁免范围。
@@ -2232,8 +2575,15 @@ class AnotherPopupPart {
     expect(frame, contains('kSettingsSegmentInnerRadius'));
     expect(frame, contains('apple ? 0 : kSettingsSegmentGap'));
     expect(frame, contains('FushiFilledButton.tonalIcon('));
-    // E：设置组收进子菜单。
-    expect(frame, contains('_ContextSubmenuRow('));
+    // E（2026-11-20 #4b 统一骨架）：右键菜单与手机底部面板共用 _ItemMenuPanel，
+    // 低频项收进「更多 ›」二级菜单（_ItemSubmenuRow），右键里浮出、面板里下钻。
+    expect(frame, contains('_ItemMenuPanel('));
+    final String menu = File(
+      'lib/src/pages/implementations/media_item_context_menu.part.dart',
+    ).readAsStringSync();
+    expect(menu, contains('class _ItemSubmenuRow'));
+    expect(menu, contains('FushiStaggeredEntrance('));
+    expect(menu, contains('FushiPressScale('));
     // 动效：错峰进场 + 按压缩放。
     expect(frame, contains('FushiEntranceScope('));
     expect(frame, contains('FushiStaggeredEntrance('));
@@ -2252,10 +2602,18 @@ class AnotherPopupPart {
       1,
       reason: '封面 widget 只画一次：在前景封面卡里',
     );
+    // 唯一一次解包落在前景封面变量上，它只进前景裁切：无材质旧卡的圆角
+    // ClipRRect，或材质封面的 ShelfCoverShape 裁切（Cupertino 专辑连续曲率）。
+    expect(frame, contains('final Widget coverImage = cover!;'));
     expect(
       frame,
-      matches(RegExp(r'ClipRRect\([^;]*?child: cover!,')),
+      matches(RegExp(r'ClipRRect\([^;]*?child: coverImage,')),
       reason: '前景封面必须在圆角封面卡（ClipRRect）里画，不是背景层',
+    );
+    expect(
+      RegExp(r'coverImage\b').allMatches(frame).length,
+      3,
+      reason: '前景封面变量只用在声明 + 两种前景裁切里，不另铺背景层',
     );
   });
 
@@ -2593,8 +2951,10 @@ class AnotherPopupPart {
           _nextWidgetAfter(source, startToken),
         );
 
-        expect(section, contains('FushiFilePickerRow('));
-        expect(section, contains('FushiIconButton('));
+        // 2026-11 导入对话框第二版：每个文件选择都是共享拼贴色块（主选择
+        // ImportPickBlock / 次要选择 ImportPickTile），块内动作钮走
+        // ImportBlockIconButton（下方断言它委托 FushiIconButton）。
+        expect(section, matches(RegExp(r'ImportPick(Block|Tile)\(')));
         // 原写法先把 FushiIconButton 换名再做裸子串匹配 —— 那是白名单，白名单
         // 永远漏：仓内还有 `_RepeatIconButton(` / `_InBookIconButton(` /
         // `_CompactSearchIconButton(` 没登记，用上任何一个就假红；反向也漏，裸子串
@@ -2610,6 +2970,19 @@ class AnotherPopupPart {
         expect(section, isNot(contains('size: 20')));
       }
     }
+  });
+
+  test('import dialog block buttons delegate to shared M3E icon button', () {
+    final String blocks = File(
+      'lib/src/media/import/import_dialog_blocks.dart',
+    ).readAsStringSync();
+    final String button = _sectionSource(
+      blocks,
+      'class ImportBlockIconButton',
+      '/// glyph 槽',
+    );
+    expect(button, contains('FushiIconButton('));
+    expect(containsIdentifierCall(button, 'IconButton'), isFalse);
   });
 
   test('audiobook import progress chrome uses shared M3E tokens', () {
@@ -2648,12 +3021,15 @@ class AnotherPopupPart {
       isNot(contains('Theme.of(context).colorScheme.primary')),
     );
 
+    // 书籍导入框已改成导入拼贴积木（2026-11 导入对话框统一）：块间距统一走
+    // 共享节奏 [importDialogRhythm]（import_dialog_blocks），不再逐处取 tokens.spacing。
+    expect(bookImportFlow, contains('importDialogRhythm'));
+    expect(audiobookImportFlow, contains('FushiDesignTokens.of(context)'));
+    expect(audiobookImportFlow, contains('tokens.spacing'));
     for (final String section in <String>[
       bookImportFlow,
       audiobookImportFlow,
     ]) {
-      expect(section, contains('FushiDesignTokens.of(context)'));
-      expect(section, contains('tokens.spacing'));
       // M3E：导入中进度收敛成共享 ImportProgressCard（下方钉住它的排版走
       // context.fushiType），flow 不再自己拼 metadata 文本行。
       expect(section, contains('ImportProgressCard('));
@@ -2672,10 +3048,13 @@ class AnotherPopupPart {
       expect(section, isNot(contains('height: 64')));
     }
 
+    final String progressCardSource = File(
+      'lib/src/media/import/import_progress_card.dart',
+    ).readAsStringSync();
     final String progressCard = _sectionSource(
-      bookImportSource,
+      progressCardSource,
       'class ImportProgressCard',
-      bookImportSource.length,
+      progressCardSource.length,
     );
     expect(progressCard, contains('FushiCard('));
     expect(progressCard, contains('context.fushiType'));
@@ -3300,13 +3679,19 @@ class AnotherPopupPart {
     final String source = File(
       'lib/src/pages/implementations/custom_theme_page.dart',
     ).readAsStringSync();
-    // 结束锚点随 BUG-2187 重设计更新：_importTheme 之后紧接的已不是
-    // _buildPreviewCard 而是 build()。守的不变式没变：导入弹窗走共享
-    // FushiDialogFrame + FushiModalSheetFrame，不得回退到 adaptiveAlertDialog。
-    final String importDialog = _functionSource(
-      source,
-      'Future<void> _importTheme()',
-      '  Widget build(BuildContext context)',
+    // 守的不变式：导入弹窗走共享 FushiDialogFrame + FushiModalSheetFrame，不得回退到
+    // adaptiveAlertDialog。BUG-4220 起弹窗内容是自持控制器的 `_ThemeImportDialog`
+    // （文件末尾的 State），不再内联在 `_importTheme` 里。
+    expect(
+      _functionSource(
+        source,
+        'Future<void> _importTheme()',
+        '  Widget build(BuildContext context)',
+      ),
+      contains('_ThemeImportDialog('),
+    );
+    final String importDialog = source.substring(
+      source.indexOf('class _ThemeImportDialogState'),
     );
 
     expect(importDialog, contains('FushiDialogFrame('));

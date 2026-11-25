@@ -12,6 +12,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_template_duplicates.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_card_appearance_page.dart';
@@ -19,6 +20,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_legacy_lapis_migration_p
 import 'package:fushi/src/pages/implementations/srs/srs_note_type_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -29,6 +32,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
@@ -107,9 +112,45 @@ class _SrsNoteTypesPageState extends ConsumerState<SrsNoteTypesPage> {
     unawaited(_reload());
   }
 
+  /// 读失败（复习库打开失败原样抛出、或读的途中出错）：页面显示错误态 + 重试，不停在转圈、不变成未处理异常。
+  Object? _loadError;
+
   Future<void> _reload() async {
+    try {
+      await _load();
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsNoteTypesPage.reload', e, stack);
+      if (mounted) {
+        setState(() {
+          _loadError = e;
+          _loading = false;
+        });
+      }
+    }
+  }
+
+  /// 错误态的「重试」：作废缓存着失败的复习库 provider 再重读。
+  void _retryLoad() {
+    retrySrsStoreOpen(ref);
+    setState(() {
+      _loadError = null;
+      _loading = true;
+    });
+    unawaited(_reload());
+  }
+
+  Future<void> _load() async {
     final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return;
+    if (store == null) {
+      // 这里没有复习库（模块关着 / 存储此刻不可用）：说明原因，不停在转圈。
+      if (mounted) {
+        setState(() {
+          _loadError = t.module_disabled_hint;
+          _loading = false;
+        });
+      }
+      return;
+    }
     final List<SrsNoteTypeView> types = await store.noteTypes();
     final Map<String, int> counts = await store.noteCountsByType();
     final ({int migratable, int backfill}) pending = await store
@@ -120,6 +161,7 @@ class _SrsNoteTypesPageState extends ConsumerState<SrsNoteTypesPage> {
       _types = types;
       _counts = counts;
       _lapisPending = pending.migratable + pending.backfill;
+      _loadError = null;
       _loading = false;
     });
   }
@@ -296,10 +338,12 @@ class _SrsNoteTypesPageState extends ConsumerState<SrsNoteTypesPage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     return FushiPageScaffold(
       title: t.srs_note_types_title,
+      masthead: true,
       header: apple ? null : _buildTopBar(context),
-      actions: apple
+      actions: apple || masthead
           ? <Widget>[
               FushiIconButton(
                 key: _addItem.key,
@@ -345,9 +389,42 @@ class _SrsNoteTypesPageState extends ConsumerState<SrsNoteTypesPage> {
     if (_loading) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
     }
+    final Object? loadError = _loadError;
+    if (loadError != null) {
+      return SrsLoadErrorView(
+        error: loadError,
+        retryKey: const ValueKey<String>('srs-note-types-load-retry'),
+        onRetry: _retryLoad,
+      );
+    }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final SrsDbStore store = _store!;
+    // 有重复卡片模板（正面相同 = 同一道题考两遍）的类型：顶部提示，点进去在编辑页一键删除重复模板。
+    final List<SrsNoteTypeView> duplicated = <SrsNoteTypeView>[
+      for (final SrsNoteTypeView x in _types)
+        if (srsDuplicateFrontGroups(x).isNotEmpty) x,
+    ];
     final List<Widget> items = <Widget>[
+      if (duplicated.isNotEmpty)
+        Padding(
+          padding: EdgeInsets.only(bottom: tokens.spacing.gap * 1.5),
+          child: FushiCard(
+            key: const ValueKey<String>('srs-note-types-duplicates'),
+            tone: FushiCardTone.error,
+            padding: EdgeInsets.zero,
+            onTap: () => srsRunLogged(
+              'SrsNoteTypes.duplicates',
+              () => _open(duplicated.first),
+            ),
+            child: FushiListItem(
+              leading: const FushiListLeadingIcon(FushiIcons.warning),
+              title: Text(
+                t.srs_note_types_duplicate_list_banner(n: duplicated.length),
+              ),
+              trailing: const FushiIcon(FushiIcons.chevronRight),
+            ),
+          ),
+        ),
       if (_lapisPending > 0)
         Padding(
           padding: EdgeInsets.only(bottom: tokens.spacing.gap * 1.5),
@@ -465,6 +542,12 @@ class _TypeRow extends StatelessWidget {
                 FushiTooltip(
                   message: t.srs_note_types_conflict,
                   child: const FushiIcon(FushiIcons.warning),
+                ),
+              if (srsDuplicateFrontGroups(type).isNotEmpty)
+                FushiTooltip(
+                  key: ValueKey<String>('srs-note-types-duplicate-${type.id}'),
+                  message: t.srs_note_types_duplicate_hint,
+                  child: const FushiIcon(FushiIcons.merge),
                 ),
               FushiPopupMenuButton<_TypeAction>(
                 tooltip: t.srs_deck_menu,

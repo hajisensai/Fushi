@@ -331,12 +331,24 @@ class BgiEthornellAdapter final : public fushi_voice_hook::EngineAdapter {
   bool install() override {
     // 文本道与查词站点只来自 exe 自身结构、与语音归档无关：身份成立就装（语音层失败时
     // 文本照常）。结构不符的映像一个钩子也不装。
-    if (probe()) text_installed_ = InstallBgiLookup() || text_installed_;
+    // install() 只在启动时被 InstallStartupAdapters 调一次，而加壳 exe（Settec 等）
+    // 此刻代码还没解开；首扫零匹配时站点解析留在待定态，由 ProcessPendingEvents 在
+    // HookWorker 上按 bgi_lookup_core.h 的有界窗口续扫，不在这里定终态。
+    if (probe()) {
+      text_candidate_ = true;
+      text_installed_ = InstallBgiLookup() || text_installed_;
+    }
     ready_ = TryHookBgiArcVoice();
     installed_ = installed_ || ready_;
     return ready_;
   }
   void ProcessPendingEvents() {
+    // Hydration can finish after startup: advance a pending site scan (the
+    // schedule owns the interval and the window; a final verdict returns at
+    // once) before draining the lane it installs.
+    if (text_candidate_ && !text_installed_ && BgiLookupSitesPending()) {
+      text_installed_ = InstallBgiLookup();
+    }
     ProcessBgiVoiceTasks();
     ProcessBgiLookupTick();
   }
@@ -346,8 +358,10 @@ class BgiEthornellAdapter final : public fushi_voice_hook::EngineAdapter {
       report.state = fushi_voice_hook::kLookupAdmissionSensorInstalled;
       return report;
     }
-    // Sites were resolved and rejected: terminal for this executable, so the
-    // host gets the digest to report instead of waiting for a gate.
+    // The site scan settled without hooks: terminal for this executable, so
+    // the host gets the digest to report instead of waiting for a gate.  While
+    // a protected image is still being re-scanned the answer below stays
+    // IdentityAccepted (the "waiting on a byte-signature gate" state).
     if (BgiLookupSitesRejected()) {
       report.state = fushi_voice_hook::kLookupAdmissionIdentityRejected;
       strncpy_s(report.executable_sha256,
@@ -366,6 +380,7 @@ class BgiEthornellAdapter final : public fushi_voice_hook::EngineAdapter {
   void onModuleLoaded(const wchar_t*) override {}
   void shutdown() override {
     ShutdownBgiLookup();
+    text_candidate_ = false;
     text_installed_ = false;
     StopBgiArcVoice();
     installed_ = false;
@@ -379,5 +394,6 @@ class BgiEthornellAdapter final : public fushi_voice_hook::EngineAdapter {
  private:
   bool installed_ = false;
   bool ready_ = false;
+  bool text_candidate_ = false;  // probe() held at install(); worker-owned
   bool text_installed_ = false;
 };

@@ -1,4 +1,3 @@
-import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_control_metrics.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -8,8 +7,12 @@ import 'package:fushi/src/shortcuts/gamepad_service.dart'
     show GamepadButtonIntent;
 import 'package:fushi/src/shortcuts/input_binding.dart' show GamepadButton;
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_popup_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// A single (value, label) choice for [GamepadMenuDropdown].
 typedef GamepadDropdownEntry<T> = ({T value, String label});
@@ -43,6 +46,9 @@ bool _isPolledGamepadPlatform(BuildContext context) {
 /// route-pop. Only on Android does it fall back to a stock [DropdownMenu] (the
 /// engine delivers real key events there). Looks like an expand-in-place
 /// dropdown.
+///
+/// @design dual —— Apple 分支的触发器是 [FushiApplePopUpButtonFace]（iOS 27 灰
+/// 填充胶囊 / macOS 27 pop-up button），菜单走 `showFushiMenu`。
 class GamepadMenuDropdown<T> extends StatefulWidget {
   const GamepadMenuDropdown({
     required this.entries,
@@ -129,7 +135,10 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
 
   @override
   Widget build(BuildContext context) {
-    if (!_isPolledGamepadPlatform(context)) {
+    // Apple 设计系统（含安卓上选 Cupertino）一律走 Apple pop-up 按钮 + 统一
+    // Apple 菜单（showFushiMenu 自带焦点进菜单、方向键 / 手柄导航），不落到
+    // 安卓的原生 DropdownMenu。
+    if (!isGlassDesign(context) && !_isPolledGamepadPlatform(context)) {
       return _buildStockDropdown(context);
     }
     return _buildMenuAnchor(context);
@@ -329,7 +338,9 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
           maxLines: 1,
           overflow: TextOverflow.ellipsis,
           style: TextStyle(
-            fontSize: fushiAppleCompact(context) ? 11 : 13,
+            fontSize: fushiAppleCompact(context)
+                ? 11 * fushiAppleMacScale(context)
+                : 13,
             color: appleColorsOf(context).secondaryLabel,
           ),
         ),
@@ -383,6 +394,7 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
                         ? controller.close()
                         : controller.open()
                   : null,
+              open: controller.isOpen,
             );
           },
     );
@@ -396,8 +408,9 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
   Widget _trigger(
     BuildContext context,
     FushiDesignTokens tokens,
-    VoidCallback? onPressed,
-  ) {
+    VoidCallback? onPressed, {
+    bool open = false,
+  }) {
     // 行内用法（与搜索框同排）同样画成全胶囊，并钉成行内控件高度。
     final bool capsule = widget.width != null || widget.inline;
     final double? inlineHeight = widget.inline
@@ -432,81 +445,33 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
       );
     }
     if (isGlassDesign(context)) {
-      // iOS / macOS 26 的 pop-up button（Niratan「Klee ⌃⌄」）：控件层，无色
-      // 透明液态玻璃 bezel（不是 systemFill 灰块），label 色文字、上下双箭头，
-      // 悬停 / 按下由 FushiPlainButton 给；降低透明度时玻璃回落实色。
-      final FushiAppleColors apple = appleColorsOf(context);
-      final bool compact = fushiAppleCompact(context);
+      // iOS 27 / macOS 27 的 pop-up button：公共外观 [FushiApplePopUpButtonFace]
+      // （iOS tertiarySystemFill 灰胶囊、macOS secondarySystemFill 圆角 6），
+      // 实色内容层控件、不是玻璃。底由 FushiPlainButton 画（悬停 / 按下在底色
+      // 上叠前景色、键盘焦点环），外观只画文字与双箭头。行内用法钉成行内控件
+      // 高度、内容自适应宽；表单 / 设置行（撑满父级）整宽、长选项可折两行。
       final bool enabled = onPressed != null;
-      final double minHeight = inlineHeight ?? (compact ? 34 : 44);
-      final double radius = capsule ? minHeight / 2 : 10;
-      // 深色下无色透明玻璃（黑 14%）压在纯黑分组底上是隐形的，只剩文字和
-      // 箭头飘着：静止态自绘 tertiarySystemFill + 0.5px 低 alpha 细描边给出
-      // 轮廓（与玻璃搜索胶囊同一口径）；浅色玻璃本身是白雾面 + 投影，不叠。
-      final bool dark =
-          Theme.of(context).colorScheme.brightness == Brightness.dark;
-      return fushiClearGlassBezel(
-        context,
-        radius: radius,
-        child: FushiPlainButton(
-          focusNode: _triggerFocus,
-          onPressed: onPressed,
-          borderRadius: BorderRadius.circular(radius),
-          child: DecoratedBox(
-            decoration: BoxDecoration(
-              color: dark ? apple.tertiaryFill : null,
-              borderRadius: BorderRadius.circular(radius),
-              border: dark
-                  ? Border.all(
-                      color: Colors.white.withValues(alpha: 0.12),
-                      width: 0.5,
-                    )
-                  : null,
-            ),
-            child: ConstrainedBox(
-              constraints: inlineHeight != null
-                  ? BoxConstraints.tightFor(height: inlineHeight)
-                  : BoxConstraints(minHeight: minHeight),
-              child: Opacity(
-                opacity: enabled ? 1 : 0.4,
-                child: Padding(
-                  padding: EdgeInsetsDirectional.only(
-                    start: capsule ? 14 : 12,
-                    end: 10,
-                    top: inlineHeight != null ? 0 : 6,
-                    bottom: inlineHeight != null ? 0 : 6,
-                  ),
-                  child: Row(
-                    children: <Widget>[
-                      Expanded(
-                        child: Text(
-                          text,
-                          maxLines: inlineHeight != null ? 1 : 2,
-                          softWrap: true,
-                          overflow: inlineHeight != null
-                              ? TextOverflow.ellipsis
-                              : null,
-                          style: tokens.type.listTitle.copyWith(
-                            color: apple.label,
-                          ),
-                        ),
-                      ),
-                      const SizedBox(width: 6),
-                      Icon(
-                        CupertinoIcons.chevron_up_chevron_down,
-                        size: 13,
-                        color: apple.secondaryLabel,
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          ),
+      final bool expand = !capsule || widget.width != null;
+      final double height =
+          inlineHeight ?? FushiApplePopUpButtonFace.defaultHeightOf(context);
+      return FushiPlainButton(
+        focusNode: _triggerFocus,
+        onPressed: onPressed,
+        semanticLabel: widget.label,
+        borderRadius: FushiApplePopUpButtonFace.radiusOf(context, height),
+        fill: FushiApplePopUpButtonFace.fillOf(context),
+        child: FushiApplePopUpButtonFace(
+          label: text,
+          enabled: enabled,
+          height: height,
+          expand: expand,
+          paintFill: false,
+          labelMaxLines: inlineHeight != null ? 1 : 2,
         ),
       );
     }
     final ColorScheme cs = Theme.of(context).colorScheme;
+    if (!capsule) return _md3FieldTrigger(context, tokens, onPressed, open);
     final Widget md3 = FushiOutlinedButton(
       focusNode: _triggerFocus,
       onPressed: onPressed,
@@ -527,7 +492,8 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
           top: inlineHeight != null ? 0 : tokens.spacing.rowVertical,
           bottom: inlineHeight != null ? 0 : tokens.spacing.rowVertical,
         ),
-        backgroundColor: cs.surfaceContainerHigh,
+        // 与并排的填充式输入框同色（对话框里升一级，见 fushiMd3FieldFill）。
+        backgroundColor: fushiMd3FieldFill(context),
         disabledBackgroundColor: cs.onSurface.withValues(alpha: 0.04),
         foregroundColor: cs.onSurface,
         side: BorderSide.none,
@@ -554,6 +520,103 @@ class _GamepadMenuDropdownState<T> extends State<GamepadMenuDropdown<T>> {
     return inlineHeight == null
         ? md3
         : SizedBox(height: inlineHeight, child: md3);
+  }
+
+  /// 撑满父级的表单式触发器（2026-11 M3E）：M3 filled text field 同款——上两角
+  /// [FushiM3eShape.textFieldRadius]、下两角方、下沿活动指示线（静止 1dp、
+  /// 聚焦 / 展开 2dp primary，[FushiFieldIndicatorHost] 以 FushiMotion 补间）；
+  /// 有 [GamepadMenuDropdown.label] 时标题浮在填充块内顶端、值在下；尾部箭头在
+  /// M3 尾部图标位。色块里（[FushiFieldFillScope]）随块取色。
+  Widget _md3FieldTrigger(
+    BuildContext context,
+    FushiDesignTokens tokens,
+    VoidCallback? onPressed,
+    bool open,
+  ) {
+    final String? label = widget.label;
+    final String? value = _selectedLabel ?? widget.hintText;
+    return FushiFieldIndicatorHost(
+      enabled: widget.enabled,
+      active: open,
+      builder: (BuildContext context) {
+        final ColorScheme cs = Theme.of(context).colorScheme;
+        final Color? scopedFg = FushiFieldFillScope.foregroundOf(context);
+        final Color quiet =
+            scopedFg?.withValues(alpha: 0.72) ?? cs.onSurfaceVariant;
+        final bool hasValue = _selectedLabel != null;
+        final Widget text = label == null
+            ? Text(
+                value ?? '',
+                maxLines: 2,
+                softWrap: true,
+                style: tokens.type.listTitle.copyWith(
+                  color: hasValue ? cs.onSurface : quiet,
+                ),
+              )
+            : Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  AnimatedDefaultTextStyle(
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    curve: FushiMotion.standard,
+                    style: context.fushiType.bodySmall.copyWith(
+                      color: open ? cs.primary : quiet,
+                    ),
+                    child: Text(label, maxLines: 1),
+                  ),
+                  if (value != null)
+                    Text(
+                      value,
+                      maxLines: 2,
+                      softWrap: true,
+                      style: tokens.type.listTitle.copyWith(
+                        color: hasValue ? cs.onSurface : quiet,
+                      ),
+                    ),
+                ],
+              );
+        return FushiFieldIndicatorLine(
+          child: FushiOutlinedButton(
+            focusNode: _triggerFocus,
+            onPressed: onPressed,
+            style: OutlinedButton.styleFrom(
+              alignment: Alignment.centerLeft,
+              minimumSize: const Size(0, 56),
+              padding: const EdgeInsetsDirectional.only(
+                start: 16,
+                end: 12,
+                top: 8,
+                bottom: 8,
+              ),
+              backgroundColor: fushiMd3FieldFill(context),
+              disabledBackgroundColor: cs.onSurface.withValues(alpha: 0.04),
+              foregroundColor: cs.onSurface,
+              side: BorderSide.none,
+              shape: const RoundedRectangleBorder(
+                borderRadius: FushiM3eShape.textFieldRadius,
+              ),
+            ),
+            child: Row(
+              children: <Widget>[
+                Expanded(child: text),
+                const SizedBox(width: 4),
+                AnimatedRotation(
+                  turns: open ? 0.5 : 0,
+                  duration: fushiMotionDuration(context, FushiMotion.short),
+                  curve: FushiMotion.standard,
+                  child: FushiIcon(
+                    FushiIcons.expandMore,
+                    size: 24,
+                    color: quiet,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        );
+      },
+    );
   }
 
   /// One menu entry. The selected entry gets the MD3 "selected" state — a

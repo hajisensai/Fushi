@@ -92,8 +92,19 @@ enum ModuleId {
   /// 制卡：Anki（AnkiConnect / AnkiDroid）与查词弹窗上的制卡入口。
   cardCreation('module_card_creation_enabled'),
 
-  /// 在线服务与追踪：第三方 API / 索引器 / 媒体服务器凭据 + 媒体追踪。
+  /// 在线服务：第三方 API / 索引器 / 媒体服务器凭据。
   services('module_services_enabled'),
+
+  /// Media tracking: sending watch / read / play progress to tracking sites
+  /// (Bangumi, AniList, MangaBaka, tracking plugins). Off by default (night
+  /// plan decision 1, 2026-11-10); replaces the build flag
+  /// `FUSHI_MEDIA_TRACKING` and the dependency on [services]. Off hides every
+  /// tracking surface and stops recording and sending; links, queued updates,
+  /// sign-ins and plugins are kept. An install that already had a tracking
+  /// sign-in starts on once, see
+  /// `PreferencesRepository.settleTrackingModuleInstallDefault`. UI and
+  /// runtime ask [isMediaTrackingEnabled].
+  tracking('module_tracking_enabled'),
 
   /// AI：用户自配的大模型提供商与全部 AI 辅助功能（AI 下载、刮削 AI 识别、
   /// 词典 / Lapis / 主题样式生成、galgame 文本处理规则生成、漫画 OCR 大模型
@@ -161,13 +172,16 @@ enum ModuleId {
     ModuleId.listening ||
     ModuleId.cardCreation ||
     ModuleId.services ||
+    // Built-in sites are allowed on iOS; plugins keep their own store gate
+    // ([StoreRestrictedCapability.trackingPlugins]).
+    ModuleId.tracking ||
     ModuleId.ai ||
     ModuleId.sync => true,
   };
 
   /// 偏好里还没有这个键时的取值（出厂默认）。
   ///
-  /// 全部默认开（[srs] 自 2026-10-16 起也默认开：新装默认就用 Fushi 复习；老用户的
+  /// 除 [tracking] 外全部默认开（[srs] 自 2026-10-16 起也默认开：新装默认就用 Fushi 复习；老用户的
   /// 「默认关」由一次性迁移显式写入，见 [srs] 的说明）。读取端
   /// （`PreferencesRepository.moduleEnabled`、偏好未就绪时的 `AppModel.moduleEnabled`）
   /// 与设置开关的 `defaultValue` 一律取这里，不各写一份。
@@ -187,6 +201,8 @@ enum ModuleId {
     ModuleId.services ||
     ModuleId.ai ||
     ModuleId.sync => true,
+    // Off by default; existing sign-ins turn it on once (see [tracking]).
+    ModuleId.tracking => false,
   };
 
   /// 把持久化键解析回枚举；未知键返回 `null`（备份/同步可能带来旧键或对端新键，
@@ -418,9 +434,52 @@ class ModuleVisibility {
       'ModuleVisibility(${enabled.map((ModuleId e) => e.name).join(', ')})';
 }
 
-/// 浏览器扩展（「浏览器」模块的次级子页、扩展安装引导、扩展副本刷新）在本平台是否
-/// 存在：手机浏览器不支持加载未解压扩展，故只在桌面。
+/// Fushi 浏览器扩展在本平台的安装方式。
+enum BrowserExtensionInstallFlow {
+  /// 桌面 Chromium 系浏览器：扩展管理页 › 开发者模式 › 加载已解压的扩展程序，
+  /// 选 app-support 下解压出的扩展目录。
+  desktop,
+
+  /// 安卓：Vivaldi（官方帮助页写明安卓版支持「开发者模式 › Load unpacked」选文件夹），
+  /// 扩展目录解压到公共 Download 下，浏览器的文件夹选择器才选得到。Chrome 安卓版
+  /// 不支持扩展；Firefox 安卓版只认 AMO 签名的扩展，本扩展也没有 gecko 清单。
+  android,
+}
+
+/// 本平台能不能装 Fushi 浏览器扩展、用哪套安装引导——「浏览器」模块的扩展子页、
+/// 新手引导的「浏览器扩展」一步、设置里的入口、启动时刷新已解压副本，全都问这里，
+/// 平台判据只写这一处。
 ///
-/// 2026-10-19 前这条判据就是整个模块的 `availableOn`；模块改为五端都有后，扩展
-/// 相关的消费端一律问这里，不各自写 `isDesktop`。
+/// iOS 返回 null：本仓没有 Safari Web Extension 目标（`fushi/ios` 下只有 Runner 与
+/// 小组件），iOS 浏览器装不了这个 Chromium MV3 扩展。这与 `store_compliance.dart` 的
+/// 三类受限能力无关，那里不需要为扩展加条目。
+BrowserExtensionInstallFlow? browserExtensionInstallFlowOn(
+  TargetPlatform platform,
+) => switch (platform) {
+  TargetPlatform.windows ||
+  TargetPlatform.macOS ||
+  TargetPlatform.linux => BrowserExtensionInstallFlow.desktop,
+  TargetPlatform.android => BrowserExtensionInstallFlow.android,
+  TargetPlatform.iOS || TargetPlatform.fuchsia => null,
+};
+
+/// 本平台有没有浏览器扩展安装引导（[browserExtensionInstallFlowOn] 非 null）。
+bool browserExtensionInstallAvailableOn(TargetPlatform platform) =>
+    browserExtensionInstallFlowOn(platform) != null;
+
+/// 扩展与 app 之间的**桌面桥**（「从浏览器导入登录状态」：扩展读浏览器里的站点
+/// 会话交给 app）在本平台是否存在。只在桌面验证过，安卓上的扩展暂不接这条桥。
+/// 安装引导问 [browserExtensionInstallFlowOn]，不问这里。
 bool browserExtensionSupportedOn({required bool isDesktop}) => isDesktop;
+
+/// "Is media tracking on": the **only** answer, for UI and runtime alike.
+///
+/// Every tracking surface asks here (settings category, Home strip and its
+/// Appearance row, Continue marks, Track buttons, control-channel ops) and
+/// `AppModel.isMediaTrackingOn` hands the same answer to
+/// `MediaTrackingService` (recording and sending stop while off). Platform:
+/// the module exists everywhere; tracking plugins keep their own store gate
+/// (`isTrackingPluginsAvailable`). Lives here, not in `module_registry.dart`,
+/// so `AppModel` can ask it without importing the UI value domains.
+bool isMediaTrackingEnabled(ModuleVisibility visibility) =>
+    visibility.isEnabled(ModuleId.tracking);

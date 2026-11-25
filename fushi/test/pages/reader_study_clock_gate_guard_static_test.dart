@@ -388,16 +388,15 @@ void main() {
         '  Future<void> _refreshProgress() async {',
         '\n  }\n',
       );
-      // 2026-10-04 歌词覆盖层：正文在歌词层下面照常采样记账，门里不再有歌词态。
+      // 2026-11-10 歌词模式是独立模式：正文在歌词模式期间不采样，同一条门挡。
       const String gate =
-          'if (_controller == null || _restoreInFlight) return;';
+          'if (_controller == null || _restoreInFlight || _lyricsMode) return;';
       final int gateIdx = body.indexOf(gate);
       expect(gateIdx, isNonNegative, reason: '重载在飞时瞬态 atEnd 会把本章剩余计入');
-      expect(
-        gateIdx,
-        lessThan(body.indexOf('evaluateJavascript')),
-        reason: '门必须在采样之前',
-      );
+      // 采样收在共用取样口 `_takeStableProgressSnapshot`（evaluateJavascript 在它里面）。
+      final int sampleIdx = body.indexOf('await _takeStableProgressSnapshot(');
+      expect(sampleIdx, isNonNegative, reason: '_refreshProgress 必须经共用取样口采样');
+      expect(gateIdx, lessThan(sampleIdx), reason: '门必须在采样之前');
     });
   });
 

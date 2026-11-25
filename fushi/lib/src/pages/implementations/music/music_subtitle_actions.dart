@@ -5,28 +5,54 @@
 ///   （[showVideoSubtitleGenerateSheet]：模型下载、分段、AI 校对、进度、取消都在里面）。
 ///   入口只在 [musicSubtitleGenerationAvailable] 时出现：没有本地 ONNX Runtime 的平台 /
 ///   架构（[isAsrSupported]）不显示，而不是点了才报错。
+/// - 在线音源插件曲目（歌词页当前曲目，反馈 NXOjldMQZd）：先在进度对话框里把这首的音频
+///   取到本机（[MusicPluginAsrAudioStager]，可取消），再按那份副本打开同一个面板
+///   （[openMusicPluginSubtitleGenerateSheet]）；生成的字幕登记成这首的 `asr` 歌词行。
+/// - 媒体服务器曲目（Jellyfin / Subsonic：歌词页当前曲目、服务器页曲目菜单、服务器专辑页
+///   批量）同样先从服务器取音频再开面板（[openMusicServerSubtitleGenerateSheet]）。
 /// - 曲内搜索：在当前歌词 / 字幕行里做子串搜索（与有声书歌词模式同一个
 ///   [searchLyricsCueTextsOffUi] 与归一化口径），点结果跳到那一行的时间。
 library;
 
 import 'dart:async';
+import 'dart:io';
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi_engine/media/music/server/music_server.dart'
+    show MusicServerBrowser, MusicServerTrack;
 import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/asr_host/asr_host.dart' show isAsrSupported;
+import 'package:fushi/src/media/music/asr/music_plugin_asr_audio.dart';
+import 'package:fushi/src/media/music/asr/music_server_asr_audio.dart';
 import 'package:fushi/src/media/music/asr/music_subtitle_target.dart';
+import 'package:fushi/src/media/music/music_output_backend.dart'
+    show MusicPlayItem;
+import 'package:fushi/src/media/music/music_remote_tracks.dart'
+    show
+        MusicServerBindingLoader,
+        musicServerBindingLoader,
+        musicServerKindStorable;
+import 'package:fushi/src/media/music/server/music_server_play_item.dart'
+    show musicServerPlayItem;
+import 'package:fushi/src/media/music/plugin/music_plugins.dart'
+    show isMusicPluginPath, musicPluginPlaybackHost;
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_actions.dart'
+    show MusicMenuAction;
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
     show pushAiSettingsPage;
 import 'package:fushi/src/reader/lyrics_cue_search.dart';
 import 'package:fushi/src/reader/reader_panel_kit.dart'
     show ReaderQuoteCard, readerHighlightSpans;
+import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart'
+    show FushiProgressDialogHandle, showFushiProgressDialog;
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -43,6 +69,21 @@ bool musicSubtitleGenerationSupported() => musicSubtitleAsrSupported();
 /// 这首（路径）能不能出「生成日语字幕」入口：本机有转录能力，且是本机文件。
 bool musicSubtitleGenerationAvailable(String trackPath) =>
     musicSubtitleAsrSupported() && isMusicTrackLocallyTranscribable(trackPath);
+
+/// 插件取流是否已装配（合规门没过 / 未装配时插件曲目放不了，也取不到音频；测试可覆盖）。
+@visibleForTesting
+bool Function() musicPluginAsrStreamReady = () =>
+    musicPluginPlaybackHost != null;
+
+/// 正在播放的这一首（歌词页）能不能出「生成日语字幕」入口：本机文件同
+/// [musicSubtitleGenerationAvailable]；在线音源插件曲目在插件取流可用时、媒体服务器
+/// （Jellyfin / Subsonic）曲目也能（先取音频到本机再转写）。网络音乐来源 / Apple Music /
+/// YouTube 等其余远端曲目仍不出。
+bool musicSubtitleGenerationAvailableForItem(MusicPlayItem item) =>
+    musicSubtitleGenerationAvailable(item.path) ||
+    (musicSubtitleAsrSupported() &&
+        ((isMusicPluginPath(item.path) && musicPluginAsrStreamReady()) ||
+            musicItemIsTranscribableServerTrack(item)));
 
 /// 一批曲目里有没有能生成的（专辑 / 来源批量入口）。
 bool musicSubtitleGenerationAvailableForAny(Iterable<String> trackPaths) =>
@@ -82,6 +123,208 @@ Future<void> openMusicSubtitleGenerateSheet({
     target: target,
     prefs: PrefsRepoVideoSubtitleGeneratePrefs(appModel.prefsRepo),
     openAiSettings: pushAiSettingsPage,
+  );
+}
+
+/// 在线音源插件曲目（[item] 必须是插件曲目）：进度对话框里把音频取到本机（可取消），
+/// 再按那份副本打开生成面板。取不到（插件报错 / 只给试听 / 解码失败）时提示原因。
+///
+/// [stager] 仅供测试注入；缺省副本放 `<数据根>/asr_jobs/music_subtitles/plugin_audio`。
+Future<void> openMusicPluginSubtitleGenerateSheet({
+  required BuildContext context,
+  required AppModel appModel,
+  required MusicPlayItem item,
+  MusicPluginAsrAudioStager? stager,
+}) async {
+  final MusicPluginAsrAudioStager s = stager ?? await _defaultAsrStager();
+  if (!context.mounted) return;
+  await _stageAndOpenRemote(
+    context: context,
+    appModel: appModel,
+    items: <MusicPlayItem>[item],
+    title: item.title,
+    key: 'music:track:${item.trackUid}',
+    stage:
+        (
+          MusicPlayItem it,
+          void Function(double?) onProgress,
+          Future<void> cancel,
+        ) async => (
+          audio: await s.stage(it, onProgress: onProgress, cancel: cancel),
+          staged: true,
+        ),
+  );
+}
+
+/// 媒体服务器曲目（Jellyfin / Subsonic，每项都带 [MusicPlayItem.serverTrack]）：进度对话框里
+/// 逐首把音频从服务器取到本机（可取消），再按这些副本打开生成面板，产物登记成各首的服务器
+/// 曲目 uid（从服务器页与音乐库播都认）。一首是单曲入口（总是重新生成）；多首是专辑批量：
+/// 已有生成字幕的先滤掉、不下载，全都有了只提示一句。
+///
+/// [title] / [key] 是面板标题与任务键；[servers] / [stager] 仅供测试注入。
+Future<void> openMusicServerSubtitleGenerateSheet({
+  required BuildContext context,
+  required AppModel appModel,
+  required List<MusicPlayItem> items,
+  required String title,
+  required String key,
+  MusicServerBindingLoader? servers,
+  MusicPluginAsrAudioStager? stager,
+}) async {
+  final MusicServerBindingLoader? loader = servers ?? musicServerBindingLoader;
+  final List<MusicPlayItem> candidates = <MusicPlayItem>[
+    for (final MusicPlayItem i in items)
+      if (musicItemIsTranscribableServerTrack(i)) i,
+  ];
+  if (loader == null || candidates.isEmpty) return;
+  final Set<String> done = candidates.length > 1
+      ? await appModel.musicLyrics.tracksWithGenerated(<String>[
+          for (final MusicPlayItem i in candidates) i.trackUid,
+        ])
+      : const <String>{};
+  final List<MusicPlayItem> pending = <MusicPlayItem>[
+    for (final MusicPlayItem i in candidates)
+      if (!done.contains(i.trackUid)) i,
+  ];
+  if (pending.isEmpty) {
+    FushiToast.show(msg: t.music_subtitle_all_generated);
+    return;
+  }
+  final MusicPluginAsrAudioStager s = stager ?? await _defaultAsrStager();
+  if (!context.mounted) return;
+  await _stageAndOpenRemote(
+    context: context,
+    appModel: appModel,
+    items: pending,
+    title: title,
+    key: key,
+    skipped: done.length,
+    stage:
+        (
+          MusicPlayItem it,
+          void Function(double?) onProgress,
+          Future<void> cancel,
+        ) async => musicAsrAudioFileOf(
+          await musicServerAsrAudioInput(it.serverTrack!, servers: loader),
+          item: it,
+          stager: s,
+          onProgress: onProgress,
+          cancel: cancel,
+        ),
+  );
+}
+
+/// 服务器页曲目菜单里的「生成日语字幕」（Jellyfin / Subsonic，本机有转录能力时才有）。
+List<MusicMenuAction> musicServerSubtitleMenuActions(
+  AppModel app,
+  MusicServerBrowser browser,
+  MusicServerTrack track, {
+  String? albumTitle,
+}) {
+  if (!musicSubtitleGenerationSupported() ||
+      !musicServerKindStorable(browser.kind)) {
+    return const <MusicMenuAction>[];
+  }
+  return <MusicMenuAction>[
+    MusicMenuAction(
+      id: 'generateSubtitles',
+      label: t.music_subtitle_generate,
+      icon: FushiIcons.subtitles,
+      run: (BuildContext c) {
+        final MusicPlayItem item = musicServerPlayItem(
+          browser,
+          track,
+          albumTitle: albumTitle,
+        );
+        return openMusicServerSubtitleGenerateSheet(
+          context: c,
+          appModel: app,
+          items: <MusicPlayItem>[item],
+          title: item.title,
+          key: 'music:track:${item.trackUid}',
+        );
+      },
+    ),
+  ];
+}
+
+Future<MusicPluginAsrAudioStager> _defaultAsrStager() async =>
+    MusicPluginAsrAudioStager(
+      root: musicPluginAsrAudioRootUnder(await AppPaths.supportRootDirectory()),
+    );
+
+/// 不在曲库表里的曲目（插件 / 服务器）共用的取音频 → 开面板：一个可取消的进度对话框里
+/// 逐首 [stage]（多首时进度按总量折算、消息写第几首），任何一首取不到就提示原因并停下
+/// （已取到的副本留着，下次直接用、不重下）。
+Future<void> _stageAndOpenRemote({
+  required BuildContext context,
+  required AppModel appModel,
+  required List<MusicPlayItem> items,
+  required String title,
+  required String key,
+  required Future<({File audio, bool staged})> Function(
+    MusicPlayItem item,
+    void Function(double? fraction) onProgress,
+    Future<void> cancel,
+  )
+  stage,
+  int skipped = 0,
+}) async {
+  final int n = items.length;
+  final Completer<void> cancel = Completer<void>();
+  final FushiProgressDialogHandle dialog = showFushiProgressDialog(
+    context: context,
+    title: t.music_subtitle_plugin_fetch_title,
+    message: n > 1
+        ? t.music_subtitle_server_fetch_hint_batch
+        : t.music_subtitle_plugin_fetch_hint,
+    onCancel: () {
+      if (!cancel.isCompleted) cancel.complete();
+    },
+  );
+  final List<MusicRemoteAsrTrack> staged = <MusicRemoteAsrTrack>[];
+  try {
+    for (int i = 0; i < n; i++) {
+      final MusicPlayItem item = items[i];
+      if (n > 1) {
+        dialog.message.value = t.music_subtitle_server_fetch_progress(
+          i: i + 1,
+          n: n,
+          title: item.title,
+        );
+      }
+      final ({File audio, bool staged}) got = await stage(
+        item,
+        (double? f) => dialog.progress.value = n == 1 ? f : (i + (f ?? 0)) / n,
+        cancel.future,
+      );
+      staged.add((item: item, audio: got.audio, staged: got.staged));
+    }
+  } on MusicPluginAsrAudioCancelled {
+    return;
+  } on MusicPluginAsrAudioUnavailable catch (e) {
+    FushiToast.show(
+      msg: t.music_subtitle_plugin_fetch_failed(reason: e.message),
+      severity: ToastSeverity.error,
+    );
+    return;
+  } finally {
+    dialog.close();
+  }
+  // 取完之前用户已点了取消：不再开面板（副本留着，下次直接用）。
+  if (cancel.isCompleted) return;
+  // 等进度对话框真正出栈再推面板，免得面板被压在正在退场的对话框下面。
+  await dialog.done;
+  if (!context.mounted) return;
+  await openMusicSubtitleGenerateSheet(
+    context: context,
+    appModel: appModel,
+    resolve: (MusicSubtitleTargets targets) => targets.forRemoteTracks(
+      tracks: staged,
+      title: title,
+      key: key,
+      skipped: skipped,
+    ),
   );
 }
 

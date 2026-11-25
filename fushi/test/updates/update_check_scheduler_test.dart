@@ -194,4 +194,33 @@ void main() {
     );
     expect(scheduler.isDue(UpdateFeedKind.videoEpisode), isFalse);
   });
+
+  test('探针被换库 / 关库中断：这一轮整体停下，不记时刻、不跑后面的域', () async {
+    prefs = await makePrefs();
+    final List<UpdateFeedKind> ran = <UpdateFeedKind>[];
+    final UpdateCheckScheduler scheduler = UpdateCheckScheduler(
+      prefs: prefs,
+      isKindEnabled: (_) => true,
+      probes: <UpdateFeedKind, UpdateProbe>{
+        UpdateFeedKind.videoEpisode: () async {
+          ran.add(UpdateFeedKind.videoEpisode);
+          throw const DatabaseWorkCancelledException('updates.videoEpisode');
+        },
+        UpdateFeedKind.mangaChapter: () async {
+          ran.add(UpdateFeedKind.mangaChapter);
+        },
+      },
+      now: () => clock,
+    );
+    await scheduler.runDue();
+    expect(ran, <UpdateFeedKind>[UpdateFeedKind.videoEpisode]);
+    expect(scheduler.isDue(UpdateFeedKind.videoEpisode), isTrue);
+    expect(scheduler.isDue(UpdateFeedKind.mangaChapter), isTrue);
+
+    await expectLater(
+      scheduler.checkNow(UpdateFeedKind.videoEpisode),
+      throwsA(isA<DatabaseWorkCancelledException>()),
+    );
+    expect(scheduler.isDue(UpdateFeedKind.videoEpisode), isTrue);
+  });
 }

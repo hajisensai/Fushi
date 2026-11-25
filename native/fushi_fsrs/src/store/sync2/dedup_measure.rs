@@ -93,7 +93,7 @@ fn world(core: &SrsCore, profile: &str) -> (Vec<Vec<u8>>, Vec<Vec<u8>>, Vec<(Str
         let head = Head {
             gen: 1,
             protocol: segment::PROTOCOL,
-            min_reader: segment::MIN_READER,
+            min_reader: segment::CONTENT_FLOOR,
             collection: local.collection,
             device,
             public: local.key.public(),
@@ -117,7 +117,7 @@ fn cmd(core: &SrsCore, profile: &str, req: Value, blobs: Vec<Vec<u8>>) -> Value 
     req["profile"] = json!(profile);
     req["caches"] = json!({"defaultDeck": super::config::default_deck_id(profile)});
     let (mut blobs, mut files) = (blobs, Vec::new());
-    crate::store::ffi::sync2_dispatch(core, &req, &mut blobs, &mut files).unwrap()
+    crate::store::legacy3::sync2_dispatch(core, &req, &mut blobs, &mut files).unwrap()
 }
 
 /// 新设备经生产的分批会话收完（约 8 MiB 一批，默认时间片）。返回它的状态摘要。
@@ -129,7 +129,7 @@ fn fresh_ingest(dir: &Path, profile: &str, heads: &[Vec<u8>], segs: &[Vec<u8>]) 
         cmd(&core, profile, json!({"op": "ingest_begin"}), vec![]);
         let mut batch: Vec<Vec<u8>> = Vec::new();
         let mut size = 0;
-        let mut send = |batch: &mut Vec<Vec<u8>>| {
+        let send = |batch: &mut Vec<Vec<u8>>| {
             cmd(
                 &core,
                 profile,

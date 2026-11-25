@@ -215,6 +215,40 @@ void main() {
     expect(reason('<span><div>块</div></span>'), contains('inside inline'));
   });
 
+  test('样式表里画不了的声明只在规则命中元素时才回退', () {
+    String? reason(String html, String css) =>
+        srsHtmlCardProbe(question: html, answer: html, css: css).reason;
+    // 「JLPT N1 真题」牌组：卡面没有表格，却带 table 规则。
+    const String css =
+        'table { border-collapse: collapse; width: 100%; } .q { color: #333 }';
+    expect(reason('<div class="q">問題</div>', css), isNull);
+    // 命中了照旧回退，原因不变。
+    expect(
+      reason('<div class="t">x</div>', '.t { border-collapse: collapse }'),
+      contains('border-collapse'),
+    );
+    expect(
+      reason('<div class="q">x</div>', '.q { color: frobnicate }'),
+      contains('color'),
+    );
+    // 行内样式本来就命中自己的元素：仍立即判。
+    expect(
+      reason('<div style="border-collapse: collapse">x</div>', ''),
+      contains('border-collapse'),
+    );
+  });
+
+  test('属性名混进非法字符（字段手误）：浏览器丢掉，原生同样忽略', () {
+    expect(
+      srsHtmlCardProbe(
+        question: '<div style="”text-align: left; color: red">x</div>',
+        answer: '<div style="”text-align: left">x</div>',
+        css: '.a { ”margin: 0 }',
+      ).reason,
+      isNull,
+    );
+  });
+
   test('交互伪类 / 渲染提示属性忽略，不影响原生', () {
     expect(
       srsHtmlCardProbe(

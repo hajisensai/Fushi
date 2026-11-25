@@ -17,6 +17,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:fushi_compute/fushi_compute.dart';
+import 'package:fushi_core/fushi_core.dart' show kFushiDbSchemaVersion;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/scheduler.dart';
 import 'package:flutter/services.dart';
@@ -29,6 +30,8 @@ import 'package:fushi/src/platform/mobile/android_download_keep_alive.dart';
 import 'package:fushi/src/platform/mobile/download_keep_alive_hub.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/mac_update_handoff.dart';
+import 'package:fushi/src/utils/misc/flatpak_updater.dart'
+    show describeManagedInstallFailure;
 import 'package:fushi/src/utils/misc/platform_updater.dart';
 import 'package:fushi_engine/utils/misc/resumable_downloader.dart';
 import 'package:fushi/src/utils/misc/update_handoff.dart';
@@ -58,5 +61,6 @@ part 'update_checker_net.dart';
 part 'update_checker_download.dart';
 part 'update_checker_race.dart';
 part 'update_checker_release.dart';
+part 'update_checker_version.dart';
 part 'update_checker_ui.dart';
 part 'update_checker_headless.dart';

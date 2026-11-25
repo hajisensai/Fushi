@@ -28,6 +28,17 @@
 `fetch_model.sh` / `fetch_model.ps1` 下载到 `model/`（已 gitignore）并校验 SHA-256。权重随上游仓库
 以 AGPL-3.0-or-later 发布（上游未单列权重许可）。
 
+## 权重镜像（运行时首选来源）
+
+| | |
+|---|---|
+| 位置 | GitHub release `hajisensai/Fushi` tag `rwkv-models`，资产 URL `https://github.com/hajisensai/Fushi/releases/download/rwkv-models/<名>` |
+| 命名 | `<SHA-256 前 16 位十六进制>-<模型>-<原文件名>`，如 `b2f335bd712b9d60-sm98-weights.int8.bin` |
+| 约定 | **内容寻址、永不覆盖**：已发布的资产不删、不替换；换权重 = 新增一个新名字的资产，旧版本的 app 继续命中旧名字。上游作者曾原地替换 release zip（正式版因钉了可变 zip 而下载失败），所以运行时不钉上游 release，只钉上游**提交**的 raw URL 作备用 |
+| 现有资产 | `b2f335bd712b9d60-sm98-weights.int8.bin`（436,391 字节）、`77703dd2f2a21a1b-sm101-weights.int8.bin`（409,483 字节）、`ff626af2e974346e-sm72e25-weights.int8.bin`、`479b3e2bc6a1c900-sm56-weights.int8.bin`（旧版本 app 用） |
+| 谁用 | `packages/fushi_engine/lib/srs/srs_rwkv_models.dart`（app 与无头服务端）、`fetch_model.*`（CI / 本地测试）：镜像在前、上游提交 raw URL 在后，**只认字节数 + SHA-256**，任一来源下错都换下一个，全失败时报出每个来源的原因 |
+| 不在镜像里 | 测试用的 `weights.f32.bin`、`architecture.json`、`*-vectors.json.gz` 只从上游提交取 |
+
 ## 搬了什么
 
 | 上游文件（行数） | 本 crate（行数） | 处理 |
@@ -99,13 +110,21 @@
 INTEGRATION.md 与 `reference/small_model_recurrent.py` 实现；不含发布包的代码。2026-10-27 起用的权重换成
 同架构重训的 release `small-model-sm56-2026-10-24`（包 `sm56-package.zip`，当时 5,581,795 字节、SHA-256
 `7b1790f49fdabf1279510247cc9bc3bf3ac461b67cf0135ab8e51589b5efe71a`；`architecture.json` 与参考代码
-与 sm40v2 逐字节相同，代码无需改动）。作者 2026-11-13 原地替换了这个包：测试向量从两位真实数据集用户
-换成合成用户 `user_900001` / `user_900002`，权重与 `architecture.json` 逐字节未变；现钉新包
-（4,136,639 字节，SHA-256 `22a4df807806615c0d58e382127eeb8cf764ae3233ac577115f112130f268361`），
-首选本仓库 release `rwkv-models` 上的内容寻址镜像。app 运行时不再下包，直接下包内的
-`sm56/weights.int8.bin`（436,391 字节，SHA-256 `479b3e2b…`，同样首选 `rwkv-models` 镜像，备用
-JSchoreels/anki 钉死提交的 raw 文件，见 `packages/fushi_engine/lib/srs/srs_rwkv_models.dart`）。权重与测试向量不入库，
-许可作者尚未声明（2026-10-20 核对：仓库 license 为空），Fushi 只在用户启用时下载。
+与 sm40v2 逐字节相同，代码无需改动）。2026-11-07 起换成无泄漏的 sm72e25：JSchoreels/anki 提交
+`986963d23e7ec9f22771c38998ef9042214c2b98` 的 `qt/aqt/rwkv_inference/sm72e25/weights.{int8,f32}.bin`、
+`architecture.json`（与 SM56 逐字节相同）与 `rslib/src/rwkv/testdata/sm72e25-vectors.json.gz`，哈希见
+`src/lib.rs` 的 `SMALL_MODEL_*_SHA256`（与该提交的 `manifest.json` 一致）；随之加入无泄漏输入规则（输入
+13–15 恒为 0，README「sm72e25」）。2026-11-15 起换成 **Instant-Only 的 sm98**：上游 release
+`JSchoreels/anki-rwkv` tag `rwkv-family-2026-11-13` 的 Small Instant-Only，钉 JSchoreels/anki 提交
+`001440b03395f24ffc1714b18ad3d9d4d89d2067`（release 说明写明 fork 里的文件与 release「byte for byte」相同）的
+`qt/aqt/rwkv_inference/sm98/weights.{int8,f32}.bin`、`architecture.json`（与 sm72e25 逐字节相同，SHA-256
+`9bd41f11…`）与 `rslib/src/rwkv/testdata/sm98-vectors.json.gz`，哈希见 `src/lib.rs`（与该提交的 `manifest.json`
+一致）；随之加入回放预测的 show-time 查询行（INTEGRATION.md §6.10，README「sm98」），并让 RWKV-Curve 拒绝
+Instant-Only 小模型。同一提交的 Tiny Instant-Only **sm101**（`qt/aqt/rwkv_inference/sm101/` 与
+`rslib/src/rwkv/testdata/sm101-vectors.json.gz`，哈希见 `src/lib.rs` 的 `TINY_MODEL_*_SHA256`）作设置里可选的
+省内存档，同一套代码加载、测试两套都对拍。上游 kuma3 / JSchoreels 的回放预测（`warm_up_reviews_sequential` 的 `query_input`）仍用作答
+间隔；Fushi 按 §6.10 改，只影响小模型。权重与测试向量不入库，Fushi 只在用户启用时按钉死 URL 下载（运行时首选上面
+的镜像）。
 
 ## 黄金值（tests/fixtures/）
 

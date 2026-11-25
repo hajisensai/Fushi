@@ -1,0 +1,12 @@
+## BUG-4234 · Windows 内存采样只有工作集没有分项
+- **报告**：2026-11-07（崩溃报告 `#8qHvq2p0oU`、`#laXmRta9VS`（x2）、`#9OjURIuBIx`：同一类 Win11 26100，3.3.0-debug.23880，「停在前台时没了」）
+- **真实性**：✅ 真 bug（取证端）；崩溃本身**未定位**。
+  - 分拣的假设「`MaterialDesktopPositionIndicatorState.setState@material_desktop.dart:2089` 每帧重建」**不成立**：那一行是 `setState` 覆写本身（`third_party/media_kit_video/lib/media_kit_video_controls/src/controls/material_desktop.dart:2089`），位置流已按 `kPositionUiThrottleStep` 量化（TODO-1243），采样里它每 30 s 只 9–107 次（≤ 4 次/秒），各窗口 build 总数 241–1638、frames 283–2538，是正常播放的量级。`who=` 是「谁要的重建最多」，不是「谁占的内存」。
+  - 真正的现象：工作集 `rss` 2.2–4.4 GB、峰值 `max` 5.4–6.5 GB；`#laXmRta9VS` 第三个进程**启动 30 s 就 max=2103MB**（停在首页，rss 812 MB），60 s 时 2203 MB（`VideoDiscoveryPage`），说明有秒级的大块瞬时分配，不只是视频页。`#9OjURIuBIx` 停在 `VideoDiscoveryDetailPage` 3 分钟 `frames=0`、rss 平稳 1.7 GB 后没了——没有在涨。
+  - 已排除：mpv 网络缓存（`fushi/lib/src/media/video/video_mpv_config.dart` 桌面前向 128 MiB + 后向 64 MiB 封顶）；Mihon 视频源（Windows 上是独立 JVM sidecar 进程，`desktop_mihon_runtime.dart`，不算进 Fushi 的工作集）。
+  - 根因（取证端）：`fushi/lib/src/diagnostics/previous_exit_log.dart` 的 `anon/file/malloc/thr` 探针全是 `/proc`，Windows 上只剩 `rss=`（WorkingSetSize）与 `max=`（PeakWorkingSetSize）。工作集把映射文件页、共享图形内存也算进去，分不清是进程私有提交在涨还是映射；也不知道死前整机还剩多少物理内存 / 提交余量（Windows 不按内存杀进程，提交到顶时是分配失败 → 原生崩溃 / Dart OOM）。
+- **[x] ① 已修复（取证）** — 新 `fushi/lib/src/diagnostics/windows_memory_probe.dart`，接进 `main.dart` 的采样探针：`priv=`（`K32GetProcessMemoryInfo` 的 PrivateUsage）、`sys=可用/总物理MB`、`commit=已提交/上限MB`（`GlobalMemoryStatusEx`）；另加各平台都有的 `img=当前/上限MB n= live=`（Flutter `ImageCache`，解码图常驻的大头）。API 失败抛 `StateError`，采样层记 `probe!`，不吞成空读数。
+- **[x] ② 已加自动化测试** — `fushi/test/diagnostics/windows_memory_probe_test.dart`：读数排版；Windows 上真调 Win32（本机 Windows 跑过：私有提交 > 0、可用 ≤ 总、已提交 ≤ 上限），非 Windows 返回 null；图缓存读数。
+- **备注**：
+  - 这三份报告来自 23880，那时还没有 BUG-4076 的「按 pid 读事件日志 Application Error / Hang」取证（`6b5369b375`，2026-11-06）。下一份同机报告应同时带上异常码 + 模块偏移（或「事件日志查无 = 外部强杀」）与本条的提交 / 系统余量，两者合起来才能判是进程泄漏、整机吃紧还是用户结束进程。
+  - `PopupJs.window.onerror ResizeObserver loop completed with undelivered notifications` 是词典弹窗 WebView（WebView2 独立进程）里的浏览器良性告警，与退出无关。

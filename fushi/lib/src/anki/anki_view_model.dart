@@ -4,12 +4,14 @@ import 'package:flutter/services.dart' show PlatformException;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi_anki/fushi_anki.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi/src/anki/anki_auto_reposition.dart';
 import 'package:fushi/src/anki/anki_deck_reposition_runner.dart';
 import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/anki/auto_reposition_anki_repository.dart';
 import 'package:fushi/src/anki/anki_media_dedup_runner.dart';
+import 'package:fushi/src/anki/mined_expression_cache.dart';
 import 'package:fushi/src/anki/lapis_template_service.dart';
 import 'package:fushi/src/anki/anki_video_template_service.dart';
 import 'package:fushi/src/anki/pending_mining/pending_mine_store.dart';
@@ -21,7 +23,8 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/profile/work_profile_anki_settings_store.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_generation_kind.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_app_host.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -527,6 +530,10 @@ class AnkiViewModel extends StateNotifier<AnkiUiState> {
   /// 本后端能不能读卡组新卡并改写位置（只有 AnkiConnect 能）。
   bool get supportsDeckReposition => _repository.supportsDeckReposition;
 
+  /// 重排读写的是 Fushi 复习（挖词目标 = Fushi 复习，装饰链里有 SRS 层）而不是 Anki：
+  /// 弹窗据此选文案，别把「从 Anki 读取」显示给没装 Anki 的复习用户。
+  bool get repositionTargetsSrs => repositionTargetsSrsFor(_repository);
+
   /// 本后端要不要「制卡后自动重排」（Fushi 复习不要：出卡直接按词频名次排）。
   bool get supportsAutoReposition => _repository.supportsAutoReposition;
 
@@ -747,9 +754,14 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
     appProvider.select((AppModel m) => m.mineToServerEnabled),
   );
   if (!mineToServer) {
+    // 反馈 JAEwvc6Lmr：离线已制卡缓存包在本机后端最里层——待发队列补发、自动重排
+    // 都经过它，补发进 Anki 的卡同样落进缓存；Anki 连不上时查词照样画 ✓。
+    final BaseAnkiRepository cached = MinedExpressionCacheAnkiRepository(
+      inner: local,
+    );
     return _withSrsMining(
       ref,
-      _withPendingQueue(ref, _withAutoReposition(ref, local)),
+      _withPendingQueue(ref, _withAutoReposition(ref, cached)),
       followWorkSession: true,
       background: true,
     );
@@ -757,7 +769,10 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   final AppModel appModel = ref.read(appProvider);
   final RemoteMiningAnkiRepository remote = RemoteMiningAnkiRepository(
     local: local,
+    // 「保存到」被主机退回默认时的提示跟着制卡结果走（RemoteMiningAnkiRepository 填
+    // MineOutcome.notice）：单独弹一条会被紧随其后的结果提示顶掉（BUG-4287）。
     client: appModel.createRemoteMiningClient(),
+    targetResetNotice: () => t.anki_mine_to_server_target_reset,
     // BUG-1185：主机拒绝互联 token 时查重根本没跑成。bool 契约表达不了「不知道」，
     // 所以在这里把它变成用户可见的失败提示，而不是让用户收到一个静默的「不重复」。
     onAuthRejected: (String message) =>
@@ -765,12 +780,12 @@ final ankiRepositoryProvider = Provider<BaseAnkiRepository>((ref) {
   );
   // 远端制卡的仓库 `supportsAutoReposition` 为 false，装饰器里的判据会跳过——
   // 包上只是让两条返回路径形状一致，将来主机端支持了不必再改这里。
-  return _withSrsMining(
-    ref,
-    _withPendingQueue(ref, _withAutoReposition(ref, remote)),
-    followWorkSession: true,
-    background: true,
-  );
+  //
+  // 不套本机的复习层（[_withSrsMining]）：开关承诺的是「卡交给已配对设备」，查重与落卡都在主机——
+  // 主机的挖词目标 / 手机选的「保存到」决定落进主机的 Anki 还是复习（§4.8）。此前复习层包在最外面，
+  // 本机挖词目标是 Fushi 复习时卡和查重都留在本机，没有本机复习副本的手机永远显示「不在牌组里」。
+  // 本机挖词目标只在开关关着时生效；后台制卡同理不适用（主机要给确定结果）。
+  return _withPendingQueue(ref, _withAutoReposition(ref, remote));
 });
 
 /// 互联主机**替别的设备**制卡（收转发、浏览器扩展、读写出处笔记）用的仓库：裸本机后端，
@@ -850,7 +865,11 @@ Future<bool> _openSrsNote(
 /// 后台制卡（[SrsMiningAnkiRepository] 的后台队列）写完一张后的提示：入队时已经提示过
 /// 「已加入后台制卡」，成功且无音频警告时不再打扰；失败 / 重复 / 音频缺失必须让用户看见
 /// （失败原因经 [describeMineOutcome] 同时进错误日志）。
-void showSrsBackgroundMineOutcome(String expression, MineOutcome outcome) {
+void showSrsBackgroundMineOutcome(
+  String expression,
+  MineOutcome outcome, {
+  Future<void> Function()? addAnyway,
+}) {
   final described = describeMineOutcome(outcome);
   if (outcome.result == MineResult.success &&
       described.status != MineToastStatus.addedWithWarning) {
@@ -866,6 +885,12 @@ void showSrsBackgroundMineOutcome(String expression, MineOutcome outcome) {
     status: described.success || outcome.result == MineResult.duplicate
         ? described.status
         : MineToastStatus.failed,
+    term: expression,
+    detail: described.detail,
+    // BUG-5085：复习库要升级时带「打开复习」；重复时带「仍要添加」（同一份冻结载荷允许重复再排）。
+    action:
+        mineFailureToastAction(outcome) ??
+        mineAddAnywayToastAction(outcome, addAnyway),
   );
 }
 
@@ -884,6 +909,12 @@ String ankiRepositoryChainLabel(BaseAnkiRepository repo) {
   return names.join(' > ');
 }
 
+/// 重排读写的是不是 Fushi 复习：与 [repositionSnapshotFolderFor] 同一个判据（装饰链里
+/// 有 [SrsMiningAnkiRepository] 层），纯函数，不需要构造 [AnkiViewModel]。
+bool repositionTargetsSrsFor(BaseAnkiRepository repo) =>
+    repositionSnapshotFolderFor(repo) ==
+    AnkiDeckRepositionRunner.kSrsSnapshotFolder;
+
 String repositionSnapshotFolderFor(BaseAnkiRepository repo) {
   BaseAnkiRepository cur = repo;
   while (true) {
@@ -897,7 +928,7 @@ String repositionSnapshotFolderFor(BaseAnkiRepository repo) {
   }
 }
 
-/// 当前 profile 的 SRS 制卡器（store / 媒体目录打不开时为 null，并留痕）。
+/// 当前 profile 的 SRS 制卡器（store / 媒体目录打不开时为 null，并留痕；库在换代途中原样抛出代际异常）。
 /// [followWorkSession] 见 [_withSrsMining]。
 Future<SrsMiner?> _readSrsMiner(
   Ref ref, {
@@ -907,15 +938,17 @@ Future<SrsMiner?> _readSrsMiner(
     // 反馈 kEFPY4cuKZ：打开的作品带着作品级配置时，卡落进**那份配置**的复习副本（牌组 /
     // 笔记类型 id 带它的 uid）；落点（[AppModel.srsMiningDestination]）读的就是作品会话。
     // 绑定的就是激活配置时没有会话，走下面的激活副本。
-    final WorkProfileSession? session = followWorkSession
-        ? WorkProfileScope.instance.active
+    // 组合模型下取复习落点（牌组 / 笔记类型叶子）的来源组合（[WorkProfileSession.miningProfileId]）；
+    // 落点都继承默认组合时同样走激活副本。
+    final int? miningProfileId = followWorkSession
+        ? WorkProfileScope.instance.active?.miningProfileId
         : null;
-    if (session != null) {
+    if (miningProfileId != null) {
       final AppModel app = ref.read(appProvider);
       return await ref
           .read(srsProfileStoresProvider)
           .minerFor(
-            profileUid: await app.database.profileUidOf(session.profileId),
+            profileUid: await app.database.profileUidOf(miningProfileId),
             destination: app.srsMiningDestination,
             fallbackRolloverHour: () => app.statDayResetHour,
           );
@@ -934,6 +967,9 @@ Future<SrsMiner?> _readSrsMiner(
           : app.hostSrsMiningDestination,
     );
   } catch (e, stack) {
+    // 库在换代途中不是「打不开」：原样交给 [SrsMiningAnkiRepository]，制卡失败据它提示去复习页完成升级
+    // （BUG-5085，[SrsMinerResolver] 的契约）。
+    if (isSrsGenerationBlocked(e)) rethrow;
     ErrorLogService.instance.log('ankiRepositoryProvider.srsMiner', e, stack);
     return null;
   }

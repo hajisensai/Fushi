@@ -11,6 +11,7 @@
 // no BuildContext needs to be threaded from the (UI-less) controller.
 
 import 'dart:convert';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:material_ui/material_ui.dart';
@@ -76,6 +77,7 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   required AppModel appModel,
   required DictionarySearchResult result,
   GlobalLookupEntriesStore? entriesStore,
+  bool advancedMiningHandoff = false,
 }) {
   final PopupStaticSettingsJs staticSettings = buildPopupStaticSettingsJs(
     appModel: appModel,
@@ -111,10 +113,18 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
   // BUG-2770 — the overlay has no Flutter pointer tree, so the mobile-style
   // horizontal "swipe to close" has to be recognised in the page. Overlay only:
   // the in-app popup already has the Flutter body detector for the same swipe.
-  const String renderJs =
+  //
+  // 拍板台 rf--UcsGta-overlay — `window.advancedMiningEnabled` 是 popup.js 渲染词条头
+  // 「高级制卡」按钮的门控（与 app 内 DictionaryPopupWebView 同一个 flag），必须在
+  // renderPopup 之前写。放在这里而不是静态段：同一个宿主（desktop）既服务热键查词，
+  // 也服务带制卡委托的表面（台词浮窗 / 截屏识字），两者的入口不同；写进静态段会让
+  // 静态版本号在两类查词间来回翻、每次重发几十 MB 的字体静态段。它在一次查词内恒定，
+  // 不破坏上面「同一帧同一结果跨渲染字节稳定」的约束。
+  final String renderJs =
       '''
     $kPopupTopPullReleaseJs
     $kPopupTouchSideSwipeReleaseJs
+    window.advancedMiningEnabled = $advancedMiningHandoff;
     if (window.resetSentenceContextMirror) window.resetSentenceContextMirror();
     if (window.resetSelectedDictionaries) window.resetSelectedDictionaries();
     window.renderPopup && window.renderPopup();
@@ -174,8 +184,24 @@ GlobalLookupFrameSettingsJs buildFrameSettingsJsParts({
 /// 旧实现共用一份——[retain] 只看当前宿主的栈，桌面一渲染就把游戏卡片还没取走的字节删掉
 /// （反之亦然），对面随即取回 404，又把 [fetchUnavailable] 置成全进程永久生效。现在地址
 /// 里带宿主键（`<prefix><hostKey>/<token>.json`），字节、保留与回退都只作用于本宿主。
+///
+/// **只有 Windows 宿主接得住这个地址**（BUG-4939）：[urlPrefix] 是 https 地址，靠的是
+/// WebView2 `WebResourceRequested` 拦截。macOS 的 WKWebView 不能给 https 装 scheme
+/// handler（`GlobalLookupOverlay.swift` 只拦 `fushi-popup` / `image` / `dictmedia`），
+/// Linux WebKitGTK 卡片（`card_overlay.cc`）同样只注册了自定义 scheme——请求会落到
+/// 真网络（macOS 上 `.local` 走 mDNS，要数秒才失败）。取回挂着时卡片 realm 里还是上一次
+/// 的词条，显示门的兜底计时一到就把旧卡亮出来；期间再查一次，令牌一换，旧取回的失败
+/// 回报被作废，回退永远触发不了。所以不支持的宿主从一开始就走字面量（与 in-app 的
+/// `kPopupEntriesFetchSupported` 同一判据形态）。
 class GlobalLookupEntriesStore {
-  GlobalLookupEntriesStore({this.hostKey = 'desktop'});
+  GlobalLookupEntriesStore({this.hostKey = 'desktop', bool? fetchSupported})
+    : fetchSupported = fetchSupported ?? globalLookupEntriesFetchSupported;
+
+  /// 本进程的应用外宿主能否拦截 [urlPrefix] 取回：只有 Windows（见类注释）。
+  static bool get globalLookupEntriesFetchSupported => Platform.isWindows;
+
+  /// 这个宿主的原生层能否接住 [urlPrefix] 地址；false 时 [register] 恒走字面量。
+  final bool fetchSupported;
 
   /// 原生拦截按这个前缀把请求转给 Dart（`global_lookup_window.cpp`
   /// `kGlobalLookupEntriesUrlPrefix`，两处字面量由守卫测试钉成一致）。
@@ -202,7 +228,9 @@ class GlobalLookupEntriesStore {
 
   /// 结果够大且取回可用时登记字节并返回取回地址；否则 null（走字面量）。
   String? register(int token, String entriesJson) {
-    if (fetchUnavailable || entriesJson.length < kPopupEntriesFetchMinChars) {
+    if (!fetchSupported ||
+        fetchUnavailable ||
+        entriesJson.length < kPopupEntriesFetchMinChars) {
       return null;
     }
     _bytes.putIfAbsent(token, () => utf8.encode(entriesJson));
@@ -474,6 +502,9 @@ StackRenderScript buildStackRenderScript({
   // (glyph-anchored in the client area) and pins it there; the layout root is
   // only the children's coordinate origin, so it must stay at window-local 0.
   bool clampRootShellToWorkArea = true,
+  // 拍板台 rf--UcsGta-overlay — 卡上给不给「高级制卡」（转交主窗）入口，见
+  // [buildFrameSettingsJsParts]。调用方按表面决定（带制卡委托的表面不给）。
+  bool advancedMiningHandoff = false,
   // BUG-1833 — static settings revisions already acknowledged by this physical
   // host. The stable root iframe survives lookup-to-lookup, so a custom font
   // (two CJK faces already run to tens of MB once base64-inlined) must not ride
@@ -528,6 +559,7 @@ StackRenderScript buildStackRenderScript({
       appModel: appModel,
       result: p.result,
       entriesStore: entriesStore,
+      advancedMiningHandoff: advancedMiningHandoff,
     );
     final Map<String, Object?> map = p.frame.toRenderMap();
     map['theme'] = shellTheme;

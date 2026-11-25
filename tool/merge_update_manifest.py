@@ -131,7 +131,8 @@ def _platform_key(name: str) -> str:
     legacy one instead of both lingering side by side. The *-macos-arm64.dmg
     (website first-install download; the in-app updater only selects the zip)
     joins the same slot so it is replaced together with the zip of its
-    release instead of a stale dmg outliving a newer zip. Unknown shape becomes its own
+    release instead of a stale dmg outliving a newer zip. The Linux Flatpak
+    (*-linux-x86_64.flatpak) has a slot of its own. Unknown shape becomes its own
     singleton slot other:<name> unioned by exact name.
     """
     n = name.lower()
@@ -143,6 +144,8 @@ def _platform_key(name: str) -> str:
         return "macos"
     if n.endswith(".ipa"):
         return "ios"
+    if n.endswith("-linux-x86_64.flatpak"):
+        return "linux"
     return "other:" + name
 
 
@@ -180,6 +183,14 @@ def _with_integrity(out: dict[str, Any], asset: dict[str, Any]) -> dict[str, Any
         sha = sha.strip().lower()
         if len(sha) == 64 and all(c in "0123456789abcdef" for c in sha):
             out["sha256"] = sha
+    # The user-DB schema the asset's build ships (kFushiDbSchemaVersion). The
+    # client refuses any asset whose schema is below its own: installing it would
+    # leave the user DB "newer than the app", which the app refuses to open.
+    # Assets retained from older manifests carry none; the client then falls
+    # back to the release-sequence ordering alone.
+    schema = asset.get("dbSchemaVersion")
+    if isinstance(schema, int) and not isinstance(schema, bool) and schema > 0:
+        out["dbSchemaVersion"] = schema
     return out
 
 

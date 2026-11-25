@@ -8,6 +8,8 @@
 ///   旧栈随旧 store 一起回收，不会把别的 profile 的评分撤到当前库上。
 /// - 进程内、不落库：重启 app 后为空（与 Anki 关闭集合后撤销队列清空一致）。
 /// - 评分撤销仍走 [SrsDbStore.undo] 的历史校验（别的设备已复习过这张卡时返回 false）。
+/// - 暂停 / 搁置 / 旗标 / 移牌组 / 删除笔记 / 编辑的撤销按撤销凭据走 [SrsDbStore.revertEdits]：只还原之后没被
+///   别人动过的字段，被动过的保留现值（srs_edit_undo.dart）。
 /// - 栈深上限 [kSrsReviewUndoLimit]，超出丢最早一步。
 library;
 
@@ -16,14 +18,14 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 /// 撤销栈最多保留的步数（超出丢最早的）。
 const int kSrsReviewUndoLimit = 50;
 
-/// 撤销栈的一步。[logId] 非 null = 撤一条评分 / 重置日志；否则执行 [revert] 改回原值。
+/// 撤销栈的一步。[logId] 非 null = 撤一条评分 / 重置日志；否则按 [edits] 还原字段。
 class SrsReviewUndoStep {
-  const SrsReviewUndoStep({required this.cardId, this.logId, this.revert})
-    : assert(logId != null || revert != null);
+  const SrsReviewUndoStep({required this.cardId, this.logId, this.edits})
+    : assert(logId != null || edits != null);
 
   final String cardId;
   final String? logId;
-  final Future<void> Function(SrsDbStore store)? revert;
+  final SrsEditUndo? edits;
 }
 
 /// 一个 store 的复习撤销栈（[SrsReviewUndoStack.of]）。

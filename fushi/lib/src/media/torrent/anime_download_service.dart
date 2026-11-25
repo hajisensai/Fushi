@@ -6,6 +6,7 @@ import 'package:collection/collection.dart' show ListEquality;
 
 import 'package:flutter/foundation.dart'
     show ValueNotifier, immutable, mapEquals;
+import 'package:fushi_core/fushi_core.dart' show DatabaseWorkCancelledException;
 import 'package:path/path.dart' as p;
 
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart'
@@ -21,7 +22,7 @@ import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/video/subtitle/embedded_reference_subtitle_sync.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart'
-    show listSidecarSubtitles;
+    show listSidecarSubtitles, ownedSidecarSuffix;
 
 /// 入库回调的结果：入库成功后新合集的 id（回填进计划）。
 class AnimeDownloadImportOutcome {
@@ -217,8 +218,14 @@ Map<String, PlanSubtitle> pairSubtitlesToVideos(
 
 /// 字幕 sidecar 目标路径：`<视频目录>/<视频名去扩展>[.<lang>].<字幕扩展名>`。
 /// 纯函数。language 为 null/空省略 lang 段；字幕扩展名从 [PlanSubtitle.fileName]
-/// 取（小写），取不到退化 `.srt`。
-String sidecarPathFor(String videoAbsolutePath, PlanSubtitle sub) {
+/// 取（小写），取不到退化 `.srt`。[dirFiles] 是视频目录的文件名清单：带 lang 段的
+/// 名字会被 stem 更长的同目录视频认领时（「最长主干认领」，[ownedSidecarSuffix]）
+/// 省掉 lang 段，不把字幕落成别的视频的、也不盖掉人家的字幕。
+String sidecarPathFor(
+  String videoAbsolutePath,
+  PlanSubtitle sub, {
+  List<String> dirFiles = const <String>[],
+}) {
   final String dir = p.dirname(videoAbsolutePath);
   final String stem = p.basenameWithoutExtension(videoAbsolutePath);
   String ext = p.extension(sub.fileName).toLowerCase();
@@ -227,7 +234,10 @@ String sidecarPathFor(String videoAbsolutePath, PlanSubtitle sub) {
   final String langSegment = (language == null || language.isEmpty)
       ? ''
       : '.$language';
-  return p.join(dir, '$stem$langSegment$ext');
+  return p.join(
+    dir,
+    '$stem${ownedSidecarSuffix(stem, '$langSegment$ext', dirFiles)}',
+  );
 }
 
 /// 番剧下载完成监听服务：周期轮询种子后端，对完成的计划落位字幕 sidecar
@@ -876,6 +886,10 @@ class AnimeDownloadService {
         if (await store.save(resolved)) {
           try {
             outcome = await _importer(resolved, videos);
+          } on DatabaseWorkCancelledException {
+            // 换库 / 关库中断了入库（BUG-5387 审查遗留）：不是失败。计划保持
+            // downloading + importInProgress，下次启动按幂等重放补完，不标 failed。
+            rethrow;
           } catch (e) {
             importError = 'video import failed: $e';
           }
@@ -894,6 +908,8 @@ class AnimeDownloadService {
       } else {
         try {
           booksImported = await bookImporter(plan, books) ?? 0;
+        } on DatabaseWorkCancelledException {
+          rethrow;
         } catch (e) {
           importError ??= 'book import failed: $e';
         }
@@ -963,6 +979,9 @@ class AnimeDownloadService {
         // 内容问题（缺字幕/同名书已在库/解压失败…）落稳定原因码，任务行翻译成
         // 用户能照着做的文案，不把异常 toString 甩给用户（BUG-2775）。
         importError = animeDownloadBlockedFailReason(e.blocker);
+      } on DatabaseWorkCancelledException {
+        // 换库 / 关库中断：计划留在 downloading，下次启动重新收尾，不标 failed。
+        rethrow;
       } catch (e) {
         importError = 'discovery import failed: $e';
       }
@@ -1121,7 +1140,13 @@ class AnimeDownloadService {
           continue;
         }
         await staged.writeAsBytes(aligned, flush: true);
-        final File sidecar = File(sidecarPathFor(entry.key, entry.value));
+        final File sidecar = File(
+          sidecarPathFor(
+            entry.key,
+            entry.value,
+            dirFiles: await _videoDirFileNames(entry.key),
+          ),
+        );
         if (await sidecar.exists() &&
             const ListEquality<int>().equals(
               await sidecar.readAsBytes(),
@@ -1159,8 +1184,19 @@ class AnimeDownloadService {
     );
     for (final MapEntry<String, PlanSubtitle> entry in pairs.entries) {
       try {
-        final File target = File(sidecarPathFor(entry.key, entry.value));
-        if (await _episodeAlreadyHasSidecar(entry.key)) continue;
+        final List<String> names = await _videoDirFileNames(entry.key);
+        // 这一集在同目录里已经有 sidecar 字幕（**任何语言、任何格式**）就不放：判据
+        // 是 [listSidecarSubtitles]——「属于这个视频的 sidecar」的既有唯一判据（互联
+        // 字幕推送也用它），不在这里另写一套后缀匹配。
+        if (listSidecarSubtitles(
+          p.basenameWithoutExtension(entry.key),
+          names,
+        ).isNotEmpty) {
+          continue;
+        }
+        final File target = File(
+          sidecarPathFor(entry.key, entry.value, dirFiles: names),
+        );
         final File staged = File(entry.value.stagedPath);
         if (!await staged.exists()) continue;
         await target.parent.create(recursive: true);
@@ -1171,22 +1207,16 @@ class AnimeDownloadService {
     }
   }
 
-  /// [videoAbsolutePath] 这一集在同目录里是否已经有 sidecar 字幕（**任何语言、任何
-  /// 格式**）。复用 [listSidecarSubtitles]——它是「属于这个视频的 sidecar」的既有唯一
-  /// 判据（互联字幕推送也用它），不在这里另写一套后缀匹配。
+  /// [videoAbsolutePath] 所在目录的文件名清单（判已有 sidecar、定 sidecar 落名用）。
   ///
-  /// 目录不存在 / 读不动 → false（当作没有，让复制照常尝试；真失败会落到调用方的
+  /// 目录不存在 → 空（当作没有，让复制照常尝试；读不动的真失败落到调用方的
   /// try/catch）。
-  Future<bool> _episodeAlreadyHasSidecar(String videoAbsolutePath) async {
+  Future<List<String>> _videoDirFileNames(String videoAbsolutePath) async {
     final Directory dir = Directory(p.dirname(videoAbsolutePath));
-    if (!await dir.exists()) return false;
-    final List<String> names = <String>[];
-    await for (final FileSystemEntity e in dir.list(followLinks: false)) {
-      if (e is File) names.add(p.basename(e.path));
-    }
-    return listSidecarSubtitles(
-      p.basenameWithoutExtension(videoAbsolutePath),
-      names,
-    ).isNotEmpty;
+    if (!await dir.exists()) return const <String>[];
+    return <String>[
+      await for (final FileSystemEntity e in dir.list(followLinks: false))
+        if (e is File) p.basename(e.path),
+    ];
   }
 }

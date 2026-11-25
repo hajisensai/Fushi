@@ -21,23 +21,22 @@ import 'dart:ui' show Offset, Rect, Size;
 import 'package:characters/characters.dart';
 import 'package:flutter/painting.dart'
     show Alignment, BoxFit, FittedSizes, applyBoxFit;
-import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/video/graphic_subtitle_ocr_types.dart';
-import 'package:fushi/src/media/manga/manga_overlay_html.dart'
-    show mangaEffectiveTextRegions;
+import 'package:fushi/src/ocr/ocr_text_regions.dart' show ocrTextRegions;
 import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
-import 'package:fushi/src/media/manga/reader/manga_reader_stream_ocr.dart';
+import 'package:fushi/src/media/manga/reader/manga_stream_ocr_types.dart';
 import 'package:fushi_engine/media/video/bitmap_subtitle/bitmap_subtitle_cue.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart'
     show
         MangaAiOcrCropRequest,
         applyMangaAiOcrText,
-        cropMangaAiOcrBlocks,
+        cropMangaAiOcrBlocksRgba,
         kMangaAiOcrBlocksPerRequest,
         kMangaAiOcrMaxNearbyLines;
-import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRecognition, OcrRect;
+import 'package:fushi_engine/ocr/ocr_types.dart'
+    show OcrRecognition, OcrRect, OcrRgbaImage;
 
 /// 本会话实际用的引擎：识别引擎 + AI 重读来源（供应商 · 模型；没开为 null）。
 typedef GraphicSubtitleOcrEngineInfo = ({
@@ -51,8 +50,9 @@ typedef GraphicSubtitleOcrPrepare =
 
 /// 一次播放会话内的图形字幕识别器：引擎只解析一次，识别串行执行。
 ///
-/// 每帧落成唯一文件名（递增序号）——本地 ONNX 页会话按相对 URL 缓存结果，同名
-/// 文件会命中上一帧的旧结果。
+/// 帧以内存像素（[OcrRgbaImage]）直接交给引擎（[MangaStreamPageRecognizer.recognizePixels]），
+/// 不编 PNG、不落盘、不再解码（#3828 测量：1080p 帧的纯 Dart PNG 编码约 0.9 s，编码 + 解码
+/// 占整条链约 95%）。临时目录只给引擎放会话级缓存（本地 ONNX 页会话目录、大模型重读缓存）。
 class GraphicSubtitleOcrSession {
   GraphicSubtitleOcrSession({required GraphicSubtitleOcrPrepare prepare})
     : _prepare = prepare;
@@ -75,10 +75,10 @@ class GraphicSubtitleOcrSession {
     return (engine: ready.engine, aiProvider: ready.ai?.providerLabel);
   }
 
-  /// 识别一帧 [frameBytes]（PNG/JPEG）。本地结果直接返回；有 AI 重读时，重读出的
-  /// 新结果经 [onRefined] 再交一次（没有替换任何块则不回调）。会话已关闭返回 null。
+  /// 识别一帧 [frame]（播放器截帧的不透明 RGBA）。本地结果直接返回；有 AI 重读时，重读
+  /// 出的新结果经 [onRefined] 再交一次（没有替换任何块则不回调）。会话已关闭返回 null。
   Future<GraphicSubtitleOcrFrame?> recognize(
-    Uint8List frameBytes, {
+    OcrRgbaImage frame, {
     void Function(GraphicSubtitleOcrFrame refined)? onRefined,
     void Function(Object error, StackTrace stack)? onRefineError,
   }) {
@@ -86,9 +86,7 @@ class GraphicSubtitleOcrSession {
         Completer<GraphicSubtitleOcrFrame?>();
     _tail = _tail.then((_) async {
       try {
-        done.complete(
-          await _recognizeOne(frameBytes, onRefined, onRefineError),
-        );
+        done.complete(await _recognizeOne(frame, onRefined, onRefineError));
       } catch (error, stack) {
         done.completeError(error, stack);
       }
@@ -97,25 +95,23 @@ class GraphicSubtitleOcrSession {
   }
 
   Future<GraphicSubtitleOcrFrame?> _recognizeOne(
-    Uint8List frameBytes,
+    OcrRgbaImage frame,
     void Function(GraphicSubtitleOcrFrame refined)? onRefined,
     void Function(Object error, StackTrace stack)? onRefineError,
   ) async {
     if (_closed) return null;
     final MangaStreamOcrReady ready = await _ensureReady();
     if (_closed) return null;
-    final File file = File(p.join(_dir!.path, 'frame_${_frameSeq++}.png'));
-    await file.writeAsBytes(frameBytes, flush: true);
-    final MokuroImage local = await ready.recognizer.recognize(file);
+    final MokuroImage local = await ready.recognizer.recognizePixels(
+      frame,
+      url: 'frame_${_frameSeq++}',
+    );
     final MangaStreamAiRefinement? ai = ready.ai;
-    if (ai == null || _closed) {
-      await _deleteQuietly(file);
-      return graphicSubtitleOcrFrameOf(local);
-    }
+    if (ai == null || _closed) return graphicSubtitleOcrFrameOf(local);
     // AI 重读不阻塞本地结果：先交本地文字层，重读完再热替换。
     unawaited(
       ai
-          .refine(local, file)
+          .refinePixels(local, frame)
           .then(
             (MokuroImage? refined) {
               if (refined != null && !_closed) {
@@ -125,8 +121,7 @@ class GraphicSubtitleOcrSession {
             onError: (Object error, StackTrace stack) {
               if (!_closed) onRefineError?.call(error, stack);
             },
-          )
-          .whenComplete(() => _deleteQuietly(file)),
+          ),
     );
     return graphicSubtitleOcrFrameOf(local);
   }
@@ -238,21 +233,16 @@ class GraphicSubtitleOcrSession {
         confidence: read.confidence,
       );
     } else {
-      // Lens / 系统 OCR：只认图片文件，走页级入口。
-      final Uint8List png = await Isolate.run(image.encodePng);
+      // Lens / 系统 OCR：没有文字图入口，位图像素走页级入口（不编 PNG、不落盘）。
+      final MokuroImage page = await recognizer.recognizePixels(
+        image.toOcrImage(),
+        url: 'subtitle_${_frameSeq++}',
+      );
       if (_closed) return null;
-      final File file = File(p.join(_dir!.path, 'frame_${_frameSeq++}.png'));
-      await file.writeAsBytes(png, flush: true);
-      try {
-        final MokuroImage page = await recognizer.recognize(file);
-        if (_closed) return null;
-        text = page.blocks
-            .map((MokuroBlock b) => b.lines.join().trim())
-            .where((String s) => s.isNotEmpty)
-            .join('\n');
-      } finally {
-        await _deleteQuietly(file);
-      }
+      text = page.blocks
+          .map((MokuroBlock b) => b.lines.join().trim())
+          .where((String s) => s.isNotEmpty)
+          .join('\n');
       block = MokuroBlock(
         rectangle: full,
         isVertical: false,
@@ -484,8 +474,8 @@ class _SubtitleAiItem {
 /// 字幕位图 → 交给大模型的裁图（与漫画同一套外扩 / 缩放规则）。顶层函数：给
 /// `Isolate.run` 用。
 Uint8List? graphicSubtitleAiCrop(BitmapSubtitleImage image) =>
-    cropMangaAiOcrBlocks(
-      image.encodePng(),
+    cropMangaAiOcrBlocksRgba(
+      image.toOcrImage(),
       pageWidth: image.width.toDouble(),
       pageHeight: image.height.toDouble(),
       boxes: <MokuroRect>[
@@ -497,14 +487,6 @@ Uint8List? graphicSubtitleAiCrop(BitmapSubtitleImage image) =>
         ),
       ],
     ).single;
-
-Future<void> _deleteQuietly(File file) async {
-  try {
-    await file.delete();
-  } on FileSystemException {
-    // 临时文件，随会话目录一起删。
-  }
-}
 
 /// 把一页 OCR 结果摊成可点的字。
 GraphicSubtitleOcrFrame graphicSubtitleOcrFrameOf(MokuroImage image) {
@@ -518,16 +500,16 @@ GraphicSubtitleOcrFrame graphicSubtitleOcrFrameOf(MokuroImage image) {
   );
 }
 
-/// 一个块里每个字的位置。整句是块内各行直接拼接（与漫画查词同一口径）。
+/// 一个块里每个字的位置。整句保留 OCR 原文，块内各行直接拼接。
 ///
-/// 字级几何与漫画覆盖层同一份（[mangaEffectiveTextRegions]）：引擎给了字级区域
+/// 字级几何使用不改写文本的基础字框（[ocrTextRegions]）：引擎给了字级区域
 /// （Lens）就用它；否则按识别器交回的每行框（`linesCoords`）切行、行内按字素分格。
 /// 不能按行数均分整个块：字幕带振假名时检测框把注音也框进来，注音行又比正文矮得多，
 /// 均分后每个可点框都偏离真实的字（BUG-3314）。
 ///
 /// 引擎给的字级区域只要有一个对不上文字（例如大模型改写过文字、区域还是旧文字的
-/// 偏移），整块改走行几何——判据在 [mangaEffectiveTextRegions] 里与漫画覆盖层共用
-/// 同一份；逐个丢掉对不上的区域会留下残缺的可点框，有的字点不到。
+/// 偏移），整块改走行几何——判据在 [ocrTextRegions] 里与原始文本匹配；
+/// 逐个丢掉对不上的区域会留下残缺的可点框，有的字点不到。
 List<GraphicSubtitleOcrChar> graphicSubtitleOcrCharsOf(MokuroBlock block) {
   final String sentence = block.lines.join();
   if (sentence.trim().isEmpty) return const <GraphicSubtitleOcrChar>[];
@@ -540,7 +522,7 @@ List<GraphicSubtitleOcrChar> graphicSubtitleOcrCharsOf(MokuroBlock block) {
     offset += g.length;
   }
   return <GraphicSubtitleOcrChar>[
-    for (final MangaOcrTextRegion region in mangaEffectiveTextRegions(block))
+    for (final MangaOcrTextRegion region in ocrTextRegions(block))
       (
         sentence: sentence,
         graphemeIndex: graphemeAtUtf16[region.utf16Start]!,

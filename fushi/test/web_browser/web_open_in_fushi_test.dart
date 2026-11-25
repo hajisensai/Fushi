@@ -1,6 +1,9 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'dart:async';
+
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
@@ -14,6 +17,36 @@ import 'package:fushi/src/web_browser/features/open_in_fushi/web_page_content.da
 import 'package:fushi/src/web_browser/features/web_browser_feature.dart';
 import 'package:fushi/src/web_browser/tab_view/features/web_novel_feature.dart';
 import 'package:fushi/src/web_browser/tabs/web_browser_tab.dart';
+
+/// 只回页面内容探针读数的假 WebView。
+class _FakeProbeController implements InAppWebViewController {
+  _FakeProbeController(this.reading);
+
+  String reading;
+
+  @override
+  Future<dynamic> evaluateJavascript({
+    required String source,
+    ContentWorld? contentWorld,
+  }) async => reading;
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+/// 可控的站点判定：每次调用排一个 [Completer]，测试决定何时、给什么结果。
+class _ManualSiteDetector implements WebPageSiteComicDetector {
+  final List<Completer<bool?>> pending = <Completer<bool?>>[];
+  final List<Uri> urls = <Uri>[];
+
+  @override
+  Future<bool?> isComicPage(InAppWebViewController controller, Uri url) {
+    urls.add(url);
+    final Completer<bool?> c = Completer<bool?>();
+    pending.add(c);
+    return c.future;
+  }
+}
 
 /// 用户只看到一个浏览器（docs/specs/2026-11-01-one-browser.md）：浏览器工具条按页面内容给
 /// 一个上下文按钮，视频「用 Fushi 播放」、漫画 / 小说「用 Fushi 阅读」，同一个入口模型。
@@ -206,6 +239,36 @@ if (JSON.stringify(out) !== want) {
       });
     });
 
+    test('站点规则认作漫画页时优先于通用读数（拍板台 PWWovB_nw2：hitomi 画廊页只有缩略图）', () {
+      // hitomi 画廊页的通用读数：长滚动、只有小缩略图、几乎没有正文 → 通用启发式认不出。
+      final WebPageContentProbe gallery = WebPageContentProbe.tryParse(
+        '{"v":0,"i":0,"t":120,"p":[],"w":1280,"h":800,"s":1}',
+      )!;
+      expect(classifyWebPageContent(gallery), isNull);
+      expect(
+        resolveWebPageContentKind(siteComic: true, reading: gallery),
+        WebPageContentKind.comic,
+      );
+      // 读数缺失（探针失败）也照站点判定。
+      expect(
+        resolveWebPageContentKind(siteComic: true, reading: null),
+        WebPageContentKind.comic,
+      );
+      // 规则说不是（如 anime 画廊）/ 没有规则：回到通用启发式。
+      expect(
+        resolveWebPageContentKind(siteComic: false, reading: gallery),
+        isNull,
+      );
+      expect(
+        resolveWebPageContentKind(siteComic: null, reading: probe(v: 1)),
+        WebPageContentKind.video,
+      );
+      expect(
+        resolveWebPageContentKind(siteComic: false, reading: probe(t: 4000)),
+        WebPageContentKind.novel,
+      );
+    });
+
     test('探针脚本只读：不写 DOM', () {
       expect(kWebPageContentProbeScript, isNot(contains('.innerHTML=')));
       expect(kWebPageContentProbeScript, isNot(contains('appendChild')));
@@ -225,6 +288,146 @@ if (JSON.stringify(out) !== want) {
       expect(notified, 1);
       expect(feature.kindOf(tab), WebPageContentKind.comic);
       feature.onTabClosed(tab);
+      expect(feature.kindOf(tab), isNull);
+      feature.dispose();
+    });
+  });
+
+  group('站点判定接线（WebPageContentFeature.probe）', () {
+    // hitomi 画廊页读数：只有小缩略图、几乎没有正文 → 通用启发式认不出。
+    const String galleryReading =
+        '{"v":0,"i":0,"t":120,"p":[],"w":1280,"h":800,"s":1}';
+    const String novelReading =
+        '{"v":0,"i":0,"t":4000,"p":[],"w":1280,"h":800,"s":1}';
+    const String comicReading =
+        '{"v":0,"i":9,"t":0,"p":[],"w":1280,"h":800,"s":1}';
+
+    test('先上通用结果，站点判定到了再覆盖', () async {
+      final _ManualSiteDetector site = _ManualSiteDetector();
+      final WebPageContentFeature feature = WebPageContentFeature(
+        siteComic: site,
+      );
+      final WebBrowserTab tab = WebBrowserTab(
+        id: 't',
+        url: Uri.parse('https://hitomi.la/reader/42.html'),
+      );
+      final Future<void> done = feature.probe(
+        tab,
+        _FakeProbeController(novelReading),
+      );
+      await pumpEventQueue();
+      expect(feature.kindOf(tab), WebPageContentKind.novel);
+      expect(site.urls, <Uri>[Uri.parse('https://hitomi.la/reader/42.html')]);
+      site.pending.single.complete(true);
+      await done;
+      expect(feature.kindOf(tab), WebPageContentKind.comic);
+      feature.dispose();
+    });
+
+    test('规则说不是 / 没规则：保持通用结果', () async {
+      for (final bool? verdict in <bool?>[false, null]) {
+        final _ManualSiteDetector site = _ManualSiteDetector();
+        final WebPageContentFeature feature = WebPageContentFeature(
+          siteComic: site,
+        );
+        final WebBrowserTab tab = WebBrowserTab(
+          id: 't',
+          url: Uri.parse('https://example.com/a'),
+        );
+        final Future<void> done = feature.probe(
+          tab,
+          _FakeProbeController(novelReading),
+        );
+        await pumpEventQueue();
+        site.pending.single.complete(verdict);
+        await done;
+        expect(
+          feature.kindOf(tab),
+          WebPageContentKind.novel,
+          reason: '$verdict',
+        );
+        feature.dispose();
+      }
+    });
+
+    test('通用读数已是漫画：不再问站点判定', () async {
+      final _ManualSiteDetector site = _ManualSiteDetector();
+      final WebPageContentFeature feature = WebPageContentFeature(
+        siteComic: site,
+      );
+      final WebBrowserTab tab = WebBrowserTab(
+        id: 't',
+        url: Uri.parse('https://hitomi.la/reader/42.html'),
+      );
+      await feature.probe(tab, _FakeProbeController(comicReading));
+      expect(feature.kindOf(tab), WebPageContentKind.comic);
+      expect(site.urls, isEmpty);
+      feature.dispose();
+    });
+
+    test('判定回来前标签页换了地址 / 又探了一次：旧判定作废', () async {
+      final _ManualSiteDetector site = _ManualSiteDetector();
+      final WebPageContentFeature feature = WebPageContentFeature(
+        siteComic: site,
+      );
+      final WebBrowserTab tab = WebBrowserTab(
+        id: 't',
+        url: Uri.parse('https://hitomi.la/reader/42.html'),
+      );
+      final _FakeProbeController controller = _FakeProbeController(
+        galleryReading,
+      );
+      final Future<void> stale = feature.probe(tab, controller);
+      await pumpEventQueue();
+      expect(feature.kindOf(tab), isNull);
+      // 换到别的页（通用读数是小说），旧页的「是漫画」不能盖上来。
+      tab.update(url: Uri.parse('https://example.com/novel/1'));
+      controller.reading = novelReading;
+      final Future<void> fresh = feature.probe(tab, controller);
+      await pumpEventQueue();
+      site.pending.first.complete(true);
+      await stale;
+      expect(feature.kindOf(tab), WebPageContentKind.novel);
+      site.pending.last.complete(null);
+      await fresh;
+      expect(feature.kindOf(tab), WebPageContentKind.novel);
+      feature.dispose();
+    });
+
+    test('同一页只换 fragment（翻页）：沿用「是漫画」，不先掉回通用结果、不重跑判定', () async {
+      final _ManualSiteDetector site = _ManualSiteDetector();
+      final WebPageContentFeature feature = WebPageContentFeature(
+        siteComic: site,
+      );
+      final WebBrowserTab tab = WebBrowserTab(
+        id: 't',
+        url: Uri.parse('https://hitomi.la/reader/42.html#1'),
+      );
+      final _FakeProbeController controller = _FakeProbeController(
+        galleryReading,
+      );
+      final Future<void> first = feature.probe(tab, controller);
+      await pumpEventQueue();
+      site.pending.single.complete(true);
+      await first;
+      expect(feature.kindOf(tab), WebPageContentKind.comic);
+
+      final List<WebPageContentKind?> seen = <WebPageContentKind?>[];
+      feature.actionsChanged.addListener(() => seen.add(feature.kindOf(tab)));
+      tab.update(url: Uri.parse('https://hitomi.la/reader/42.html#2'));
+      await feature.probe(tab, controller);
+      expect(feature.kindOf(tab), WebPageContentKind.comic);
+      expect(seen, isEmpty, reason: '不该闪回通用结果');
+      expect(site.urls, hasLength(1));
+
+      // 换成别的画廊：重新判定。
+      tab.update(url: Uri.parse('https://hitomi.la/reader/43.html'));
+      final Future<void> other = feature.probe(tab, controller);
+      await pumpEventQueue();
+      expect(feature.kindOf(tab), isNull);
+      expect(site.urls, hasLength(2));
+      site.pending.last.complete(false);
+      await other;
       expect(feature.kindOf(tab), isNull);
       feature.dispose();
     });

@@ -29,8 +29,29 @@ void main() {
   final String corpus = readReaderPageSource();
   final String masked = maskComments(corpus);
 
+  test('_syncPositionFromWebViewProgress 不把旧文档快照写进新章恢复锚', () {
+    // 取样与「JS 往返后换了章 / 重载 / 换了 WebView 就丢」的闸收在共用取样口
+    // `_takeStableProgressSnapshot`（判据由
+    // reader_progress_snapshot_generation_guard_test 钉）；这里只钉退出读经它取样、
+    // 拿到 null 先 return、之后才解析。
+    final String code = maskComments(
+      methodBody(
+        corpus,
+        'Future<void> _syncPositionFromWebViewProgress() async',
+      ),
+    );
+    final int take = code.indexOf('await _takeStableProgressSnapshot(');
+    expect(take, isNonNegative);
+    expect(containsIdentifierCall(code, 'evaluateJavascript'), isFalse);
+    final int nullReturn = code.indexOf('if (result == null) {', take);
+    expect(nullReturn, greaterThan(take));
+    expect(
+      code.indexOf('parseReaderStableProgressDetails(result)'),
+      greaterThan(nullReturn),
+    );
+  });
+
   for (final String method in <String>[
-    'Future<void> _syncPositionFromWebViewProgress() async',
     'Future<void> _reloadWithCurrentSettings() async',
   ]) {
     test('$method 不把旧文档快照写进新章恢复锚', () {
@@ -64,44 +85,59 @@ void main() {
     });
   }
 
-  group('arrive：_refreshProgress 是唯一记字入口', () {
+  group('arrive：_refreshProgress 是正文唯一记字入口', () {
     final String body = methodBody(
       corpus,
       'Future<void> _refreshProgress() async',
     );
 
+    // 取样与在途闸收在共用取样口 `_takeStableProgressSnapshot`，与退出读共用。
+    final String take = maskComments(
+      methodBody(
+        corpus,
+        'Future<Object?> _takeStableProgressSnapshot(String errorSource) async',
+      ),
+    );
+
     test('跨章 JS 请求捕获发起时的文档身份', () {
-      final String code = maskComments(body);
-      final int request = code.indexOf('await controller.evaluateJavascript(');
+      final int request = take.indexOf('await controller.evaluateJavascript(');
       expect(request, isNonNegative);
       for (final String capture in <String>[
-        'final InAppWebViewController controller = _controller!;',
+        'final InAppWebViewController? controller = _controller;',
         'final int generation = _navigateGeneration;',
         'final int chapter = _currentChapter;',
       ]) {
-        final int at = code.indexOf(capture);
+        final int at = take.indexOf(capture);
         expect(at, isNonNegative);
         expect(at, lessThan(request));
       }
     });
 
     test('旧章晚到结果在解析、图片兜底、记账和保存之前被丢弃', () {
-      final String code = maskComments(body);
-      final int request = code.indexOf('await controller.evaluateJavascript(');
-      final int gate = code.indexOf('if (!mounted ||', request);
+      final int request = take.indexOf('await controller.evaluateJavascript(');
+      final int gate = take.indexOf('if (!mounted ||', request);
       expect(gate, greaterThan(request));
-      final int gateEnd = code.indexOf('}', gate);
-      final String guard = code.substring(gate, gateEnd);
+      final int gateEnd = take.indexOf('}', gate);
+      final String guard = take.substring(gate, gateEnd);
       for (final String rejection in <String>[
         'generation != _navigateGeneration',
         'chapter != _currentChapter',
         '!identical(controller, _controller)',
         '_restoreInFlight',
-        // 2026-10-04 歌词覆盖层：正文在歌词层下面照常记账，这道闸不再看歌词态。
-        'return;',
+        // 歌词态在首条门就挡掉了（2026-11-10 独立模式），这道在途闸不重复看。
+        'return null;',
       ]) {
         expect(guard, contains(rejection));
       }
+      // _refreshProgress：取样口交回 null（被丢弃）先 return，之后才有任何消费。
+      final String code = maskComments(body);
+      final int sample = code.indexOf('await _takeStableProgressSnapshot(');
+      expect(sample, isNonNegative);
+      expect(containsIdentifierCall(code, 'evaluateJavascript'), isFalse);
+      final int discard = code.indexOf('if (result == null) {', sample);
+      expect(discard, greaterThan(sample));
+      final int gateEnd2 = code.indexOf('}', discard);
+      expect(code.substring(discard, gateEnd2), contains('return;'));
       for (final String consumer in <String>[
         'parseReaderStableProgressDetails(result)',
         '_applyImagePageProgressFallback()',
@@ -111,7 +147,7 @@ void main() {
         'arriveReadUnitThroughStartGate(',
         '_debouncedSavePosition(',
       ]) {
-        expect(code.indexOf(consumer), greaterThan(gateEnd));
+        expect(code.indexOf(consumer), greaterThan(gateEnd2));
       }
     });
 
@@ -139,17 +175,31 @@ void main() {
       expect(containsIdentifier(body, 'addChars'), isFalse);
     });
 
-    test('全语料只有 _refreshProgress 落定入账（歌词覆盖层不入账）', () {
-      // 2026-10-04 歌词覆盖层（对齐 Niratan，取代 BUG-2597 的「歌词单元入账」）：
-      // 歌词模式是盖在正文上的一层，正文在下面照常跟随音频翻页，字数照常由正文的
-      // _refreshProgress 入账；歌词层不写任何统计，全语料只剩这一处 arrive。
-      // BUG-3100 起这唯一一处经 arriveReadUnitThroughStartGate(ledger: _readLedger)。
+    test('全语料恰两处落定入账：正文的页（_refreshProgress）与歌词的句（_settleLyricsCue）', () {
+      // 2026-11-10 歌词模式是独立模式（取代 10-04 的「覆盖层 + 正文在下面按页入账」）：
+      // 歌词模式的单元是当前句，换句即 arrive；正文在歌词模式期间不采样
+      // （_refreshProgress 首条门挡 _lyricsMode），两处互斥、不会轮流 arrive。
+      // 两处都经 arriveReadUnitThroughStartGate(ledger: _readLedger)（BUG-3100）。
       expect(
         'arriveReadUnitThroughStartGate('.allMatches(masked),
-        hasLength(1),
+        hasLength(2),
       );
       expect('_readLedger.arrive('.allMatches(masked), isEmpty);
-      expect(masked.contains('_arriveLyricsCueUnit'), isFalse);
+      expect(
+        containsIdentifierCall(
+          methodBody(corpus, 'void _settleLyricsCue('),
+          'arriveReadUnitThroughStartGate',
+        ),
+        isTrue,
+      );
+      expect(
+        containsCodeLine(
+          methodBody(corpus, 'Future<void> _refreshProgress()'),
+          'if (_controller == null || _restoreInFlight || _lyricsMode) return;',
+        ),
+        isTrue,
+        reason: '歌词模式期间正文那页不采样，否则与当前句轮流 arrive、账本来回撤回',
+      );
     });
   });
 
@@ -290,11 +340,20 @@ void main() {
     });
 
     test('内容就绪兜底超时经 _failNavigation（同一份收尾）', () {
+      // BUG-4975：兜底超时与 JS 失败回执共用 _abortStalledRestore，由它调 _failNavigation。
       final String body = methodBody(
         corpus,
         'void _startContentReadyTimeout()',
       );
-      expect(containsCodeLine(body, '_failNavigation();'), isTrue);
+      expect(
+        containsCodeLine(
+          body,
+          '_abortStalledRestore(message: t.reader_content_timeout);',
+        ),
+        isTrue,
+      );
+      final String abort = methodBody(corpus, 'void _abortStalledRestore(');
+      expect(containsCodeLine(abort, '_failNavigation();'), isTrue);
     });
 
     test('全语料只有 _failNavigation 调 discard', () {
@@ -314,10 +373,17 @@ void main() {
       expect(reset, greaterThan(adopt), reason: '先换口径再清账本');
     });
 
-    test('全语料只有补算落定与「回看转正常阅读」调 reset', () {
+    test('全语料只有补算落定、「回看转正常阅读」与在线书取章换字数调 reset', () {
       // 第二处：卡片来源回看会话（BUG-2503）是隔离回看、不计统计，用户点「继续阅读」
       // 转成正常阅读那一刻清掉回看期间的并集，从下一次采样重新起单元。
-      expect('_readLedger.reset('.allMatches(masked), hasLength(2));
+      // 第三处：在线小说书按需取回一章正文、那一章字数从占位页的换成正文的
+      // （BUG-4807，`_switchOnlineChapterCharCounts`；何时能走到它见
+      // `reader_online_chapter_char_count_test.dart`）。
+      expect('_readLedger.reset('.allMatches(masked), hasLength(3));
+      expect(
+        methodBody(corpus, 'void _switchOnlineChapterCharCounts('),
+        contains('_readLedger.reset();'),
+      );
       final int review = masked.indexOf('void _onSourceReviewChanged() {');
       expect(review, isNonNegative);
       final String body = masked.substring(
@@ -329,6 +395,21 @@ void main() {
   });
 
   group('leave：显式跳句；关书三条路不碰账本（BUG-2264）', () {
+    test('无缝衔接软换章在第一个 await 之前 leave（与 _beginNavigation 同一采样点）', () {
+      final String body = maskComments(
+        methodBody(corpus, 'Future<void> _onSeamlessChapterActivated({'),
+      );
+      final int leave = body.indexOf('_readLedger.leave();');
+      final int switched = body.indexOf('_currentChapter = to;');
+      final int firstAwait = body.indexOf(
+        'await controller.evaluateJavascript(',
+      );
+      expect(leave, isNonNegative);
+      expect(switched, greaterThan(leave), reason: '先结算旧章再换章号');
+      expect(firstAwait, greaterThan(switched));
+      expect('_readLedger.leave('.allMatches(body), hasLength(1));
+    });
+
     test('_handleExplicitCueJump 体内只 leave', () {
       final String body = methodBody(
         corpus,
@@ -374,7 +455,7 @@ void main() {
       expect(
         containsCodeLine(
           body,
-          'ExitFlushRegistry.instance.defer(_flushPosition);',
+          'ExitFlushRegistry.instance.defer(_flushPositionAndTrackingReport);',
         ),
         isTrue,
         reason: '退出那一刻的位置改为登记到退出汇合点，由退出路径统一 await',
@@ -420,19 +501,26 @@ void main() {
       expect(containsCodeLine(body, 'await _studyClock?.flushNow();'), isTrue);
     });
 
-    test('leave 恰七处：跳句 + _beginNavigation + 五个同章跳转入口；'
-        '关书三条路（dispose / onSourcePagePop / 进程退出）零账本动作', () {
-      // 2026-10-04 歌词覆盖层：进歌词不再换掉正文文档，正文仍站在当前页并继续跟随，
-      // 所以进歌词**不**结算正文页（旧 BUG-2597 的第六处 leave 随之删除）。
+    test('leave 恰十处：跳句 + _beginNavigation + 五个同章跳转入口 + 无缝衔接换章 + '
+        '进 / 出歌词；关书三条路（dispose / onSourcePagePop / 进程退出）零账本动作', () {
+      // 2026-11-10 歌词模式是独立模式：进歌词离开正文页（结算它）、出歌词离开
+      // 当前句——两次都是「离开当前单元且不进入新单元」，与跳走同律。
       // 五个同章跳转入口：进度条 / 收藏 / 脚注，加上书签（#2485）与跳回历史
       // （#2486）——后两处同章分支同样绕过 _beginNavigation，见上面的逐方法断言。
-      expect('_readLedger.leave('.allMatches(masked), hasLength(7));
+      // 第八处：连续模式章节无缝衔接的软换章（反馈 R7k887yaJI ③）不走
+      // _beginNavigation，在离开那章的那一刻（第一个 await 之前）自己 leave。
+      expect('_readLedger.leave('.allMatches(masked), hasLength(10));
       expect(
-        containsIdentifier(
+        '_readLedger.leave('.allMatches(
           methodBody(corpus, 'Future<void> _toggleLyricsMode()'),
-          '_readLedger',
         ),
-        isFalse,
+        hasLength(1),
+      );
+      expect(
+        '_readLedger.leave('.allMatches(
+          methodBody(corpus, 'Future<void> _exitLyricsMode()'),
+        ),
+        hasLength(1),
       );
       // BUG-2264：关书不是翻走。dispose 只 detach() 停表；`settle` 已从账本删除，
       // 任何形式的「关书结算当前页」回潮都会让开关一次涨一次。
@@ -508,9 +596,13 @@ void main() {
       );
       expect(
         '_scheduleReanchorSettleProgressRefresh('.allMatches(masked),
-        hasLength(4),
+        hasLength(6),
         // 2026-10-04：退出歌词覆盖层时把正文 reveal 到当前句，同一个补刷。
-        reason: '定义 + 听书 reveal + B-3 丢弃 + 退出歌词 reveal，共用一个单 Timer',
+        // 2026-11-23（反馈 tUJsiLpL9d）：分页跨页句读到页边翻到后半截、音频退回分界前
+        // 重揭句首页，这两次程序化翻页同样先武装 B-3 窗，落定后排同一个补刷。
+        reason:
+            '定义 + 听书 reveal + B-3 丢弃 + 退出歌词 reveal + 页边翻后半截 + '
+            '退回重揭句首，共用一个单 Timer',
       );
     });
   });

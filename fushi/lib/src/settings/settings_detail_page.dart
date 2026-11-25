@@ -1,5 +1,7 @@
 import 'package:flutter/widgets.dart';
 import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/second_screen/companion/companion_context.dart';
+import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
 import 'package:fushi/src/settings/cupertino_settings_renderer.dart';
 import 'package:fushi/src/settings/glass_settings_renderer.dart';
 import 'package:fushi/src/settings/material_settings_renderer.dart';
@@ -93,6 +95,22 @@ class _SettingsDetailPageState extends BasePageState<SettingsDetailPage>
       // 本帧还得返回点什么；pop 在帧末执行，用户看不到这一帧的空白。
       return const SizedBox.shrink();
     }
+    // 第二屏伴屏：本页在顶层时，伴屏设置页先列这个分类（子页与父分类同 id）。
+    return CompanionContextClaim(
+      companionContext: CompanionContext(
+        CompanionContextKind.settings,
+        title: destination.title,
+        settingsCategory: destination.id.name,
+      ),
+      child: _buildRenderer(context, settingsContext, destination),
+    );
+  }
+
+  Widget _buildRenderer(
+    BuildContext context,
+    SettingsContext settingsContext,
+    SettingsDestination destination,
+  ) {
     // 「玻璃」设计系统：iOS / macOS 设置详情（见 GlassSettingsRenderer）。
     if (isGlassDesign(context) && !isCupertinoPlatform(context)) {
       return const GlassSettingsRenderer().buildDetailPage(

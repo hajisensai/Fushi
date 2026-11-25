@@ -68,6 +68,9 @@ void main() {
         srsImageSources('<img src="p&amp;q.webp"> <img alt=x src=\'r.png\'>'),
         <String>['p&q.webp', 'r.png'],
       );
+      // 不带引号（真实牌组的 Media 字段）。
+      expect(srsImageSources('<img src=b9.jpg>'), <String>['b9.jpg']);
+      expect(srsAudioSources('<audio src=w.mp3></audio>'), <String>['w.mp3']);
     });
 
     test('pitch positions from Yomitan list and kana notation', () {

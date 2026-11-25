@@ -59,7 +59,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(migrated.schemaVersion, 146);
+    expect(migrated.schemaVersion, kFushiDbSchemaVersion);
     final List<AiAgentSessionSummary> all = await migrated
         .listAiAgentSessionSummaries();
     expect(
@@ -114,7 +114,10 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 146);
+    expect(
+      probe.select('PRAGMA user_version').first.values.first,
+      kFushiDbSchemaVersion,
+    );
     expect(columnsOf(probe), contains('origin_peer_id'));
     expect(indexExists(probe), isTrue);
   });
@@ -149,6 +152,9 @@ void main() {
 
     final sqlite.Database probe = sqlite.sqlite3.open(path);
     addTearDown(probe.dispose);
-    expect(probe.select('PRAGMA user_version').first.values.first, 146);
+    expect(
+      probe.select('PRAGMA user_version').first.values.first,
+      kFushiDbSchemaVersion,
+    );
   });
 }

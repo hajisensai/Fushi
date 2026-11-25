@@ -1,0 +1,6 @@
+## BUG-5208 · Apple 深色档与书内查词弹窗重建主题时丢掉用户外壳样式
+- **报告**：2026-11-22（代码审查发现：审外部 PR #4147 / BUG-5195 时顺带找到同类问题）
+- **真实性**：✅ 真 bug（在 origin/develop `ce54f05ee9` 上核对）。`FushiAppleDarkTier.darkTierOf`（`fushi/lib/src/utils/components/glass/fushi_glass_scope.dart:282`）经 `buildFushiThemeData` 重建深色档时没传 `shell:`，只 `copyWith(platform:)`、不合并源主题扩展：工厂缺省 `const FushiShellTheme()` 成了子树里唯一的外壳扩展，平滑圆角还烤进菜单 / 对话框 / 卡片等组件形状；源主题上工厂以外的扩展也整个丢失。受影响：Apple 设计系统 + 浅色 app 下所有经 `darkTierOf` / `FushiAppleDarkTier` 渲染的子树（漫画阅读器 chrome、视频控件、歌词页 / 歌词浮层、页图空状态）。同类路径：`resolveDictionaryPopupTheme`（`fushi/lib/src/pages/implementations/dictionary_popup_theme.dart:86,101`）两处调工厂都没有外壳样式入参，书内查词弹窗同样回到默认外壳。工厂产出的其余扩展（设计系统 / 墨水屏 / 玻璃 / `FushiAppleColors`）在两处都已按源值传入或有意按深色档重建，不受影响。
+- **[x] ① 已修复** — `darkTierOf` 把源主题的 `FushiShellTheme` 传回工厂，并按 `rethemeFushiWithScheme` 的做法合并扩展（源在前、工厂产物在后优先）；`resolveDictionaryPopupTheme` 新增 `shell` 入参交给两处工厂调用，阅读器 `_syncDictionaryTheme`（`reader_fushi/chrome.part.dart`）传 `themeNotifier.shellTheme`。
+- **[x] ② 已加自动化测试** — `fushi/test/widgets/apple_dark_tier_keeps_shell_theme_test.dart`：MD3 / Apple 两套下 `FushiAppleDarkTier` 子树读到用户的外壳样式与工厂外扩展、烤进卡片 / 对话框的形状跟随用户的平滑圆角设置，书内查词弹窗（含歌词模式）覆盖主题带上用户外壳样式。
+- **备注**：`rethemeFushiWithScheme` 的同类问题由外部 PR #4147（BUG-5195）修，本修复不碰该函数。

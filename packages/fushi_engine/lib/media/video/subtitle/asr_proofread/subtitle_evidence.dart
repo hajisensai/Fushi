@@ -90,6 +90,7 @@ class SubtitleEvidenceTrack {
     required this.kind,
     required this.cues,
     this.language,
+    this.pinned = false,
   });
 
   factory SubtitleEvidenceTrack.fromJson(Map<String, Object?> json) =>
@@ -99,6 +100,7 @@ class SubtitleEvidenceTrack {
             SubtitleEvidenceKind.fromName(json['kind']) ??
             SubtitleEvidenceKind.text,
         language: json['language'] as String?,
+        pinned: json['pinned'] as bool? ?? false,
         cues: <SubtitleEvidenceCue>[
           for (final Object? c
               in (json['cues'] as List<Object?>? ?? const <Object?>[]))
@@ -117,6 +119,10 @@ class SubtitleEvidenceTrack {
   /// 按开始时间升序。
   final List<SubtitleEvidenceCue> cues;
 
+  /// 用户亲手指定的参考（播放器里正对照着的那条字幕，时间轴已按用户的调轴摆好）：
+  /// 选轨时压过自动找到的同语言轨，他言語名额也排最前（[SubtitleEvidenceIndex]）。
+  final bool pinned;
+
   int get dialogueCount => cues
       .where((SubtitleEvidenceCue c) => c.role == SubtitleEvidenceRole.dialogue)
       .length;
@@ -125,6 +131,7 @@ class SubtitleEvidenceTrack {
     'label': label,
     'kind': kind.name,
     if (language != null) 'language': language,
+    if (pinned) 'pinned': true,
     'cues': <Map<String, Object?>>[
       for (final SubtitleEvidenceCue c in cues) c.toJson(),
     ],
@@ -239,12 +246,10 @@ bool sameSubtitleLanguage(String? a, String? b) {
 // 角色分类
 // ---------------------------------------------------------------------------
 
-/// 样式名 / Name / Effect 命中这些就是歌词（OP / ED / 插曲 / 卡拉 OK）。
-final RegExp _songStyle = RegExp(
-  r'(^|[^a-z])(op|ed|song|songs|insert|ins|karaoke|kara|lyric|lyrics|opening|ending|theme)([^a-z]|$)|歌|曲|歌词|歌詞|op[0-9]|ed[0-9]',
-  caseSensitive: false,
-);
-final RegExp _karaokeTag = RegExp(r'\\(k|kf|ko|K)\d');
+/// 样式名 / Name / Effect 命中这些就是歌词（OP / ED / 插曲 / 卡拉 OK）；与 ASS 导出
+/// 判歌词行共用一份（`subtitle_ass_style_transfer.dart`）。
+final RegExp _songStyle = assSongStylePattern;
+final RegExp _karaokeTag = assKaraokeTagPattern;
 final RegExp _songMark = RegExp(r'^[\s　]*[♪♫♬〜～]');
 
 /// ASS 事件的角色：排版（定位 / 绘图）→ sign；样式像歌 / 带 `\k` → song；其余台词。
@@ -326,7 +331,8 @@ class SubtitleEvidenceIndex {
   /// OCR 时两条都给：两种错误互相校正）。
   final List<SubtitleEvidenceTrack> same;
 
-  /// 他言語证据轨（每种语言一条，英 / 中优先，最多 [maxOtherLanguages] 条）。
+  /// 他言語证据轨（每种语言一条；用户指定的 [SubtitleEvidenceTrack.pinned] 排最前，
+  /// 其后英 / 中优先，最多 [maxOtherLanguages] 条）。
   final List<SubtitleEvidenceTrack> others;
 
   bool get isEmpty => same.isEmpty && others.isEmpty;
@@ -399,19 +405,24 @@ class SubtitleEvidenceIndex {
       if (t.dialogueCount == 0) continue;
       final String key = lang.toLowerCase().split(RegExp('[-_]')).first;
       final SubtitleEvidenceTrack? old = byLanguage[key];
-      // 同语言里人工字幕优先，再比台词行数。
+      // 同语言里用户指定的轨最优先，其次人工字幕优先于 OCR，再比台词行数。
       if (old == null ||
-          (old.kind == SubtitleEvidenceKind.ocr &&
-              t.kind == SubtitleEvidenceKind.text) ||
-          (old.kind == t.kind && t.dialogueCount > old.dialogueCount)) {
+          (t.pinned && !old.pinned) ||
+          (t.pinned == old.pinned &&
+              ((old.kind == SubtitleEvidenceKind.ocr &&
+                      t.kind == SubtitleEvidenceKind.text) ||
+                  (old.kind == t.kind &&
+                      t.dialogueCount > old.dialogueCount)))) {
         byLanguage[key] = t;
       }
     }
-    int rank(String lang) => switch (lang) {
-      'en' => 0,
-      'zh' => 1,
-      _ => 2,
-    };
+    int rank(String lang) => byLanguage[lang]!.pinned
+        ? -1
+        : switch (lang) {
+            'en' => 0,
+            'zh' => 1,
+            _ => 2,
+          };
     final List<String> keys = byLanguage.keys.toList()
       ..sort((String a, String b) {
         final int c = rank(a).compareTo(rank(b));
@@ -426,3 +437,26 @@ class SubtitleEvidenceIndex {
     ];
   }
 }
+
+final RegExp _spellingRune = RegExp(r'[\p{L}\p{N}]', unicode: true);
+
+/// 比较字幕「写法」时算数的字：字母（汉字、假名、长音「ー」、「々」、拉丁…）与数字；
+/// 标点、空白、符号不算（硬字幕通常不带句号、两行直接拼接，不能因此判成不同）。
+bool isSubtitleSpellingRune(int rune) =>
+    _spellingRune.hasMatch(String.fromCharCode(rune));
+
+/// 比较写法时折叠：全角 ASCII → 半角、大写 → 小写。假名不折叠（平假名 / 片假名是不同
+/// 写法）。
+int foldSubtitleSpellingRune(int rune) {
+  int r = rune;
+  if (r >= 0xFF01 && r <= 0xFF5E) r -= 0xFEE0;
+  if (r >= 0x41 && r <= 0x5A) r += 0x20;
+  return r;
+}
+
+/// [text] 里算数的字（[isSubtitleSpellingRune]，经 [foldSubtitleSpellingRune] 折叠）：
+/// 两句的 key 相同 = 写法相同（只差标点 / 空白 / 全半角）。
+String subtitleSpellingKey(String text) => String.fromCharCodes(<int>[
+  for (final int r in text.runes)
+    if (isSubtitleSpellingRune(r)) foldSubtitleSpellingRune(r),
+]);

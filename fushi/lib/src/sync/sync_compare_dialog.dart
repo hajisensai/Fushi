@@ -1,17 +1,27 @@
 import 'dart:developer' as developer;
 import 'dart:io';
+import 'dart:typed_data';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
-import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
+import 'package:fushi/src/sync/book_change_gate.dart'
+    show publishOwnBookManifestAfterBookSync;
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
+import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/remote_audiobook_revision.dart'
+    show remoteAudiobookRevisionKeyForBook;
+import 'package:fushi/src/sync/remote_audiobook_revision_store.dart'
+    show recordRemoteAudiobookPackageDownload;
+import 'package:fushi/src/sync/sync_resource_locks.dart';
+import 'package:fushi/src/sync/sync_state_apply_lock.dart';
+import 'package:fushi_engine/sync/aggregate_sync_service.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi/src/sync/paged_book_sync_position.dart';
 import 'package:fushi/src/sync/position_converter.dart';
@@ -20,7 +30,10 @@ import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
+import 'package:fushi/src/sync/sync_baseline_scope.dart'
+    show SyncRemoteIdentityUnavailableError, progressBaselineStorageFor;
 import 'package:fushi/src/sync/sync_manager.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/sync/sync_message_dialog.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_progress_resolver.dart';
@@ -48,8 +61,7 @@ import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
-import 'package:fushi_engine/sync/manga_sync_package.dart'
-    show importMangaPackageFile, isMangaPackage;
+import 'package:fushi/src/sync/synced_book_import.dart';
 
 enum SyncChoice { skip, useLocal, useRemote }
 
@@ -59,8 +71,10 @@ class SyncCompareEntry {
     required this.bookKey,
     this.remoteFolderId,
     this.remoteLiveTitle,
+    this.syncsBookProgress = true,
     this.remoteHasContent = true,
     this.remoteAudioBookId,
+    this.remoteLiveAudiobookKey,
     this.localProgress,
     this.localUpdatedAt,
     this.remoteProgress,
@@ -71,6 +85,11 @@ class SyncCompareEntry {
     this.remoteAudioPosSec,
     this.base,
     this.liveAction,
+    this.liveLocalProgress,
+    this.liveRemoteProgress,
+    this.liveLocalAudio,
+    this.liveRemoteAudio,
+    this.liveHostPin,
     this.localPage,
     this.remotePage,
     this.pageCount,
@@ -86,6 +105,13 @@ class SyncCompareEntry {
   /// `/api/library/books/<title>`，不能交给 [importRemoteBookFolder]。
   final String? remoteLiveTitle;
 
+  /// 这一行的书级进度是否参与同步（BUG-5359）。互联通道上与 sweep / 退出书同步
+  /// 同一个判据 [InterconnectBookProgressSync.syncsBookProgress]：章节式互联漫画的
+  /// `reader_positions` 只是「当前章第几页」，没有可与 host 对齐的书级进度。为
+  /// false 时书级进度不判方向、不报冲突（[hasConflict] / [isSynced] /
+  /// [autoDirection]），「应用」也不碰书级端点；有声书断点照常走它自己的维度。
+  final bool syncsBookProgress;
+
   /// 该远端文件夹是否含可下载的书内容（`.epub` / `.manga.zip`）。仅对「远端独有」书有意义：为 false
   /// 时是只剩同步元数据的孤儿，不能当可下载书（避免 BUG-049 幽灵下载），但条目保留
   /// 以便删除。本端已有书 / 本端独有书恒为 true（不参与远端下载判定）。
@@ -99,6 +125,11 @@ class SyncCompareEntry {
 
   /// 远端有声书资产（audiobook.fushiaudio）的原生定位符；无远端有声书为 null。
   final String? remoteAudioBookId;
+
+  /// 互联 host 上与这本书对应的有声书身份（[RemoteAudiobookInfo.identity]）；host
+  /// 没有这本书的有声书、或不是互联通道时为 null。有它，「应用」才会按选择把有声书
+  /// 断点经 live 端点落到 host / 本机。
+  final String? remoteLiveAudiobookKey;
 
   final double? localProgress;
   final int? localUpdatedAt;
@@ -127,25 +158,47 @@ class SyncCompareEntry {
   /// host 从不读回，对互联通道它描述不了「host 与本机的分歧」。
   final BookProgressSyncAction? liveAction;
 
+  /// 加载时 live 探测读到的本机 / host 书进度（[liveAction] 的判定输入，BUG-4432）。
+  /// 「应用」按用户**在这一行看到的** host 值落地：选本机时它是推送的前置条件，
+  /// 选远端时 host 已不是它就不落地。加载时探测失败为 null。
+  final RemoteBookProgress? liveLocalProgress;
+  final RemoteBookProgress? liveRemoteProgress;
+
+  /// 加载时读到的本机 / host 有声书断点（带时间戳，只在互联通道填）。有声书断点
+  /// 有自己的三方判定，「应用」不把书的选择直接套给它：只有真分叉、且 host 仍是
+  /// 用户在这一行看到的 [liveRemoteAudio] 时才按这一行的选择落地。host 没有这本书
+  /// 的有声书或从没记过断点时为 null。
+  final PlaybackPosition? liveLocalAudio;
+  final PlaybackPosition? liveRemoteAudio;
+
+  /// 加载这一行的 live 值时会话所连的 host（BUG-4434，只在互联通道填）。「应用」时
+  /// 会话已换了 host，这一行看到的 host 值就不属于现在这台 host：不落地。
+  final InterconnectHostPin? liveHostPin;
+
   bool get hasLocal => localUpdatedAt != null;
   bool get hasRemote => remoteUpdatedAt != null;
 
   /// 冲突 = 双边都偏离共同祖先 base（真分叉），不再是简单的时间戳不等。
   /// 单边改动（一边等于 base）由 [resolveProgressSync] 判为自动方向，不算冲突。
   /// 互联 live 行按位置基线三方判定（[liveAction]，BUG-2506）。
-  bool get hasConflict => liveAction != null
+  bool get hasConflict => !syncsBookProgress
+      ? false
+      : liveAction != null
       ? liveAction == BookProgressSyncAction.conflict
       : resolveProgressSync(
           local: localUpdatedAt,
           remote: remoteUpdatedAt,
           base: base,
         ).isConflict;
-  bool get isSynced => liveAction != null
+  bool get isSynced => !syncsBookProgress
+      ? true
+      : liveAction != null
       ? liveAction == BookProgressSyncAction.synced
       : hasLocal && hasRemote && localUpdatedAt == remoteUpdatedAt;
   bool get needsManualChoice => hasConflict;
 
   SyncDirection get autoDirection {
+    if (!syncsBookProgress) return SyncDirection.synced;
     switch (liveAction) {
       case BookProgressSyncAction.synced:
         return SyncDirection.synced;
@@ -237,14 +290,24 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
 ) async {
   final repo = SyncRepository(db);
 
-  final rootId = await _ensureRoot(backend, repo);
-  // Reserved asset namespaces (e.g. __dictionaries__) live alongside book
-  // folders under the root; they are not books and must not appear as phantom
-  // compare entries.
-  final remoteBooks = (await backend.listBooks(
-    rootId,
-  )).where((SyncFileRef f) => !isReservedSyncFolderName(f.name)).toList();
-  backend.cacheBookFolderIds(remoteBooks);
+  // 反馈 kM-Gb_Xnu-：互联通道的真相源是 host 数据库，不是 host 上那个 WebDAV 文件箱。
+  // 文件箱只有本 client 自己写、host 从不读回（[SyncManager] 的
+  // `_fileBoxIsClientOwned`），多个 client 连同一台 host 时还会读到别的 client 的导出。
+  // 所以互联一律不列文件箱：远端书 = host 书库，进度 / 统计 / 有声书断点都取 host 的。
+  final bool live = backend is InterconnectSyncBackend;
+  final List<SyncFileRef> remoteBooks;
+  if (live) {
+    remoteBooks = const <SyncFileRef>[];
+  } else {
+    final rootId = await _ensureRoot(backend, repo);
+    // Reserved asset namespaces (e.g. __dictionaries__) live alongside book
+    // folders under the root; they are not books and must not appear as
+    // phantom compare entries.
+    remoteBooks = (await backend.listBooks(
+      rootId,
+    )).where((SyncFileRef f) => !isReservedSyncFolderName(f.name)).toList();
+    backend.cacheBookFolderIds(remoteBooks);
+  }
   final List<RemoteBookInfo> liveBooks = backend is InterconnectSyncBackend
       ? await backend.listRemoteBooks()
       : [];
@@ -303,14 +366,32 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
   // 的冲突和 sweep 报出来的冲突才是同一批。
   final Map<String, _LiveProgressRow> liveProgressByTitle =
       <String, _LiveProgressRow>{};
+  InterconnectHostPin? liveHostPin;
   if (backend is InterconnectSyncBackend) {
     final InterconnectBookProgressSync liveSync = InterconnectBookProgressSync(
       db: db,
       backend: backend,
     );
+    // 这次加载绑在此刻所连的 host 上（BUG-4434）；绑不上（连不到 host）时 live 行
+    // 都退回文件箱口径，与逐本 GET 失败同纪律。
+    bool bound = true;
+    try {
+      await liveSync.bind();
+      liveHostPin = liveSync.pin;
+    } catch (e) {
+      bound = false;
+      developer.log(
+        'Failed to bind live progress to the connected host',
+        error: e,
+        name: 'SyncCompare',
+      );
+    }
     final List<EpubBookRow> liveJobs = <EpubBookRow>[
-      for (final EpubBookRow b in localBooks)
-        if (liveByTitle.containsKey(b.title)) b,
+      if (bound)
+        for (final EpubBookRow b in localBooks)
+          if (liveByTitle.containsKey(b.title) &&
+              _rowSyncsBookProgress(backend, b))
+            b,
     ];
     for (var i = 0; i < liveJobs.length; i += batchSize) {
       final List<EpubBookRow> batch = liveJobs.skip(i).take(batchSize).toList();
@@ -324,6 +405,24 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     }
   }
 
+  // 互联：统计数与有声书断点同样取 host 的（host 聚合快照 / host 有声书清单）。
+  final _LiveCompareExtras? liveExtras = backend is InterconnectSyncBackend
+      ? await _fetchLiveCompareExtras(backend, localBooks)
+      : null;
+
+  // 文件箱进度基线的存储维度（BUG-4434）：挂在当前远端名下，与 SyncManager 读写
+  // 的是同一行。认不出远端账号（[SyncRemoteIdentityUnavailableError]）时没有可用
+  // 的共同祖先，按无基线展示（时间戳不等即冲突），不挑别人的槽。
+  String? fileBoxBaseDimension;
+  try {
+    fileBoxBaseDimension = (await progressBaselineStorageFor(
+      db,
+      backend,
+    )).storageDimension;
+  } on SyncRemoteIdentityUnavailableError {
+    fileBoxBaseDimension = null;
+  }
+
   final entries = <SyncCompareEntry>[];
 
   for (final title in allTitles) {
@@ -334,6 +433,7 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     int? localUpdatedAt;
     int? localStatsCount;
     int? localAudioMs;
+    PlaybackPosition? liveLocalAudio;
 
     if (local != null) {
       try {
@@ -359,7 +459,19 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
           localUpdatedAt = pos.updatedAt;
         }
         localStatsCount = statCountByTitle[title];
-        localAudioMs = await repo.getAudiobookPosition(local.bookKey);
+        final String? liveAudioKey =
+            liveExtras?.audiobookKeyByBookKey[local.bookKey];
+        if (liveAudioKey != null) {
+          // 互联：带时间戳读，「应用」按有声书自己的三方判定落地要用它。
+          liveLocalAudio = await InterconnectPlaybackPositionSync(
+            db: db,
+            backend: backend as InterconnectSyncBackend,
+            kind: PlaybackPositionKind.audiobook,
+          ).localPosition(liveAudioKey);
+          localAudioMs = liveLocalAudio.positionMs;
+        } else {
+          localAudioMs = await repo.getAudiobookPosition(local.bookKey);
+        }
         if (localAudioMs == 0) localAudioMs = null;
       } catch (e) {
         developer.log(
@@ -384,21 +496,24 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
     final bool remoteHasContent = local == null
         ? (remote != null
               ? await _remoteFolderHasContent(backend, remote.id)
-              // 互联 live 条目：host 对漫画恒 hasContent=false（那是 EPUB 内容树
-              // 判据），漫画内容走 hasMangaContent —— 只看 hasContent 会让互联漫画
-              // 在对比弹窗里连下载入口都不出现。与 _syncBooksContentLive 同判据取并。
+              // 互联 live 条目：host 对漫画 / PDF 恒 hasContent=false（那是 EPUB
+              // 内容树判据），漫画内容走 hasMangaContent、PDF 走 hasPdfContent ——
+              // 只看 hasContent 会让它们在对比弹窗里连下载入口都不出现。与
+              // _syncBooksContentLive 同判据取并。
               : (live == null
                     ? true
-                    : (live.hasContent || live.hasMangaContent)))
+                    : (live.hasBookShelfContent || live.hasMangaContent)))
         : true;
 
     // 跨设备资产身份与 SyncManager 一致：sanitizeTtuFilename(title)。读共同祖先
     // 基线，让「时间戳不等」收紧为「真分叉」冲突判定。基线行按通道分槽
-    // （[progressBaselineDimensionOf]），与 SyncManager 读写的是同一行。
-    final int? base = await db.getSyncBaseline(
-      sanitizeTtuFilename(title),
-      progressBaselineDimensionOf(backend),
-    );
+    // 并挂在远端名下（见上方 fileBoxBaseDimension），与 SyncManager 读写的是同一行。
+    final int? base = fileBoxBaseDimension == null
+        ? null
+        : await db.getSyncBaseline(
+            sanitizeTtuFilename(title),
+            fileBoxBaseDimension,
+          );
 
     // 互联 live 行：远端进度 / 时间戳换成 host DB 的（BUG-2506）；host 无记录时
     // 远端显示「无数据」而不是文件箱里 client 自己上次导出的旧值。
@@ -437,18 +552,36 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
         bookKey: local?.bookKey,
         remoteFolderId: remote?.id,
         remoteLiveTitle: live?.title,
+        syncsBookProgress:
+            local == null || _rowSyncsBookProgress(backend, local),
         remoteHasContent: remoteHasContent,
         remoteAudioBookId: remoteData?.audioBookId,
+        remoteLiveAudiobookKey: local == null
+            ? null
+            : liveExtras?.audiobookKeyByBookKey[local.bookKey],
         localProgress: localProg,
         localUpdatedAt: localUpdatedAt,
         remoteProgress: remoteProg,
         remoteUpdatedAt: remoteUpdatedAt,
         localStatsCount: localStatsCount,
-        remoteStatsCount: remoteData?.statsCount,
+        remoteStatsCount: liveExtras != null
+            ? liveExtras.statCountByTitle[title]
+            : remoteData?.statsCount,
         localAudioPosMs: localAudioMs,
-        remoteAudioPosSec: remoteData?.audioPosSec,
+        remoteAudioPosSec: liveExtras != null
+            ? (local == null
+                  ? null
+                  : liveExtras.audioPosSecByBookKey[local.bookKey])
+            : remoteData?.audioPosSec,
         base: base,
         liveAction: liveRow?.action,
+        liveLocalProgress: liveRow?.local,
+        liveRemoteProgress: liveRow?.remote,
+        liveLocalAudio: liveLocalAudio,
+        liveRemoteAudio: local == null
+            ? null
+            : liveExtras?.audioPositionByBookKey[local.bookKey],
+        liveHostPin: liveHostPin,
         localPage: localPage,
         remotePage: remotePage,
         pageCount: pageCount,
@@ -459,13 +592,123 @@ Future<List<SyncCompareEntry>> _fetchCompareData(
   // BUG-1576：folder 缓存按通道分槽落盘。对比对话框拿的是**某一条**已解析通道的
   // 后端（冲突提示器注入的就是出冲突那条通道），写回全局单份键会把另一条通道的
   // 目录布局覆盖掉。
-  final SyncChannelScope scope = syncChannelScopeOf(backend);
-  final rootIdNow = backend.cachedRootFolderId;
-  if (rootIdNow != null) await repo.setRootFolderId(scope, rootIdNow);
-  final cache = backend.cachedFolderIds;
-  if (cache.isNotEmpty) await repo.setFolderCache(scope, cache);
+  // 互联没碰文件箱，也就没有 folder 缓存要写回。
+  if (!live) {
+    final SyncChannelScope scope = syncChannelScopeOf(backend);
+    final rootIdNow = backend.cachedRootFolderId;
+    if (rootIdNow != null) await repo.setRootFolderId(scope, rootIdNow);
+    final cache = backend.cachedFolderIds;
+    if (cache.isNotEmpty) await repo.setFolderCache(scope, cache);
+  }
 
   return entries;
+}
+
+/// 互联对比表格里统计数 / 有声书列的 host 真相（反馈 kM-Gb_Xnu-）。
+class _LiveCompareExtras {
+  const _LiveCompareExtras({
+    required this.statCountByTitle,
+    required this.audiobookKeyByBookKey,
+    required this.audioPosSecByBookKey,
+    required this.audioPositionByBookKey,
+  });
+
+  /// 书名 → host `reading_statistics` 里这本书的行数（与本机列同口径：按天一行）。
+  /// 老 host（无聚合端点）/ 取数失败时为空 → 表格显示「无数据」。
+  final Map<String, int> statCountByTitle;
+
+  /// 本机 bookKey → host 上这本书的有声书身份。
+  final Map<String, String> audiobookKeyByBookKey;
+
+  /// 本机 bookKey → host 有声书断点（秒）。host 有有声书但从没记过断点时不在表里。
+  final Map<String, double> audioPosSecByBookKey;
+
+  /// 本机 bookKey → host 有声书断点（带时间戳），与 [audioPosSecByBookKey] 同口径
+  /// 同条目；「应用」以它为用户看到的 host 值（[SyncCompareEntry.liveRemoteAudio]）。
+  final Map<String, PlaybackPosition> audioPositionByBookKey;
+}
+
+/// 取 host 的统计与有声书断点。两样各自容错：一样取不到只让那一列显示「无数据」，
+/// 不让整个对比弹窗失败（与 [_fetchLiveProgress] 同纪律）。
+Future<_LiveCompareExtras> _fetchLiveCompareExtras(
+  InterconnectSyncBackend backend,
+  List<EpubBookRow> localBooks,
+) async {
+  final Map<String, int> statCountByTitle = <String, int>{};
+  try {
+    final Uint8List? body = await backend.getRemoteAggregateBody();
+    // HBK-AUDIT-028：整份快照在后台解码，只回「每本书几条统计」的小表；顶层非
+    // object 当空快照（无统计）。
+    if (body != null) {
+      statCountByTitle.addAll(
+        await AggregateSyncService.readingStatCountsByTitle(body),
+      );
+    }
+  } catch (e) {
+    developer.log(
+      'Failed to fetch host statistics for compare',
+      error: e,
+      name: 'SyncCompare',
+    );
+  }
+
+  final Map<String, String> audiobookKeyByBookKey = <String, String>{};
+  final Map<String, double> audioPosSecByBookKey = <String, double>{};
+  final Map<String, PlaybackPosition> audioPositionByBookKey =
+      <String, PlaybackPosition>{};
+  try {
+    final Map<String, RemoteAudiobookInfo> hostById =
+        <String, RemoteAudiobookInfo>{
+          for (final RemoteAudiobookInfo info
+              in await backend.listRemoteAudiobooks())
+            if (info.identity.isNotEmpty) info.identity: info,
+        };
+    final List<String> needsGet = <String>[];
+    for (final EpubBookRow book in localBooks) {
+      final RemoteAudiobookInfo? info = hostById[book.bookKey];
+      if (info == null) continue;
+      audiobookKeyByBookKey[book.bookKey] = info.identity;
+      if (info.positionUpdatedAtMs > 0) {
+        audioPosSecByBookKey[book.bookKey] = info.positionMs / 1000;
+        audioPositionByBookKey[book.bookKey] = (
+          positionMs: info.positionMs,
+          updatedAtMs: info.positionUpdatedAtMs,
+        );
+      } else {
+        // 老 host 的清单不内联断点：逐本问（与 sweep 的回落同口径）。
+        needsGet.add(book.bookKey);
+      }
+    }
+    const int batchSize = 5;
+    for (int i = 0; i < needsGet.length; i += batchSize) {
+      final List<String> batch = needsGet.skip(i).take(batchSize).toList();
+      final List<({int positionMs, int updatedAtMs})> positions =
+          await Future.wait(
+            batch.map(
+              (String key) =>
+                  backend.remoteAudiobookPosition(audiobookKeyByBookKey[key]!),
+            ),
+          );
+      for (int j = 0; j < batch.length; j++) {
+        if (positions[j].updatedAtMs > 0) {
+          audioPosSecByBookKey[batch[j]] = positions[j].positionMs / 1000;
+          audioPositionByBookKey[batch[j]] = positions[j];
+        }
+      }
+    }
+  } catch (e) {
+    developer.log(
+      'Failed to fetch host audiobooks for compare',
+      error: e,
+      name: 'SyncCompare',
+    );
+  }
+  return _LiveCompareExtras(
+    statCountByTitle: statCountByTitle,
+    audiobookKeyByBookKey: audiobookKeyByBookKey,
+    audioPosSecByBookKey: audioPosSecByBookKey,
+    audioPositionByBookKey: audioPositionByBookKey,
+  );
 }
 
 Future<List<SyncDictEntry>> _fetchDictEntries(
@@ -777,18 +1020,36 @@ seedSyncCompareChoices(
 
 /// [applySyncCompareChoices] 的结果。
 class SyncCompareApplyResult {
-  const SyncCompareApplyResult({required this.applied, required this.errors});
+  const SyncCompareApplyResult({
+    required this.applied,
+    required this.errors,
+    this.failureReasons = const <String, String>{},
+  });
 
   /// 真正写了东西的书数。
   final int applied;
 
   /// 失败的书名。
   final List<String> errors;
+
+  /// 失败书名 → 失败原因（拿得到原因的才有）。对比弹窗把它原样显示给用户，不能
+  /// 只报书名（BUG-4337：扩展源漫画「立即同步」失败时用户看不到任何原因）。
+  final Map<String, String> failureReasons;
+
+  /// 给用户看的失败明细：每本一行「书名: 原因」，没有原因的只列书名。
+  String describeFailures() => errors
+      .map((String title) {
+        final String? reason = failureReasons[title];
+        return reason == null ? title : '$title: $reason';
+      })
+      .join('\n');
 }
 
 /// 按 [choices]（书名 → 选择）应用 [actionable] 里的书：选本地 = 推本机这份过去，
-/// 选远端 = 拉远端这份回来（[SyncManager.syncBook]）；互联 live 行再按选择落一次书
-/// 进度（BUG-2506）。整段在同步互斥锁下跑（真实网络读写，BUG-083）。
+/// 选远端 = 拉远端这份回来。云通道走 [SyncManager.syncBook]；互联通道只走 live
+/// 端点（书进度、有声书断点按选择落地，统计按并集与 host 合并，反馈 kM-Gb_Xnu-），
+/// 不再读写 host 上没人读的文件箱。整段在 [runExclusiveWithSync] 下跑（真实网络读写，
+/// BUG-083），每本书再拿它自己的锁——互联通道的退出书同步只锁书，不等整轮。
 ///
 /// [onProgress]：`(总进度 0..1 或 null, 当前书标签或 null = 不变)`。
 /// [decisions]：跨通道裁决簿（见 [SyncCompareDialog.decisions]），null = 不记。
@@ -816,6 +1077,8 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
     final bool syncAudioBook = flags.syncAudioBookPosition;
     final bool syncContent = flags.syncContent;
     final bool syncMangaContent = flags.syncMangaContent;
+    // 互联这一轮有没有应用过本机已有的书（有才需要与 host 合并一次统计）。
+    bool liveBooksTouched = false;
 
     var done = 0;
     // Blend per-file transfer fraction into the overall book progress so the
@@ -832,6 +1095,7 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
 
     int applied = 0;
     final errors = <String>[];
+    final Map<String, String> failureReasons = <String, String>{};
     for (final entry in actionable) {
       final choice = choices[entry.title]!;
 
@@ -848,12 +1112,13 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
           if (imported) applied++;
         } on DuplicateImportCancelledException {
           // 良性：本机已有同名书，跳过。
-        } catch (e) {
+        } catch (e, stack) {
           errors.add(entry.title);
-          developer.log(
-            'Failed to download "${entry.title}"',
-            error: e,
-            name: 'SyncCompare',
+          failureReasons[entry.title] = friendlySyncErrorDetail(e);
+          ErrorLogService.instance.log(
+            'SyncCompare.download',
+            'title="${entry.title}": $e',
+            stack,
           );
         }
         done++;
@@ -878,62 +1143,54 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
       decisions?[entry.bookKey!] = choice;
 
       SyncApplyOutcome outcome;
+      // 失败原因：syncBook 把异常收进 [SyncBookResult.error]（它自己已记进 app 日志），
+      // 这里抛出来的（锁 / 互联 live）在下面 catch 里记。
+      String? failureReason;
       try {
-        final result = await manager.syncBook(
-          book: book,
-          direction: direction,
-          syncStats: syncStats,
-          statsSyncMode: StatisticsSyncMode.merge,
-          syncAudioBook: syncAudioBook,
-          syncContent: syncContent,
-          syncMangaContent: syncMangaContent,
+        outcome = await syncResourceLocks.withResources(
+          <String>{syncBookResource(book.bookKey)},
+          () async {
+            if (backend is InterconnectSyncBackend) {
+              return _applyLiveChoice(
+                db: db,
+                backend: backend,
+                book: book,
+                entry: entry,
+                useLocal: choice == SyncChoice.useLocal,
+                syncAudioBook: syncAudioBook,
+              );
+            }
+            final SyncBookResult bookResult = await manager.syncBook(
+              book: book,
+              direction: direction,
+              syncStats: syncStats,
+              statsSyncMode: StatisticsSyncMode.merge,
+              syncAudioBook: syncAudioBook,
+              syncContent: syncContent,
+              syncMangaContent: syncMangaContent,
+            );
+            failureReason = bookResult.error;
+            return classifySyncApply(bookResult);
+          },
         );
-        outcome = classifySyncApply(result);
-      } catch (e) {
+      } catch (e, stack) {
         outcome = SyncApplyOutcome.failed;
-        developer.log(
-          'Failed to sync "${entry.title}"',
-          error: e,
-          name: 'SyncCompare',
+        failureReason = friendlySyncErrorDetail(e);
+        ErrorLogService.instance.log(
+          'SyncCompare.apply',
+          'book=${book.bookKey} source=${syncBookSourceKind(book)} '
+              'title="${entry.title}": $e',
+          stack,
         );
       }
-      // BUG-2506：互联 live 行的**书进度**按用户的选择经 live 端点落地
-      // （host DB ↔ 本机 reader_positions），并记下新的位置基线。放在
-      // SyncManager 之后——它对互联仍会把文件箱里 client 自己的旧进度导回
-      // 本机，这里最后一步用用户选的那一侧把它盖正；也不依赖它成败——文件箱
-      // 那步对互联是 dead weight，它失败不该把用户刚做的选择判成失败。
-      //
-      // 门槛是「host 有这本书」（[SyncCompareEntry.remoteLiveTitle]），不是
-      // 「加载期那次 live 探测成功」（[liveAction]）：`_fetchLiveProgress`
-      // 一次 GET 失败会把这一行静默降级成文件箱行，若只按 liveAction 放行，
-      // 用户选的「本地」就只写进 host 上谁都不读的文件箱、host DB 原样不动，
-      // 下一轮 sweep 的 live 三方判定照旧报同一条冲突——弹窗解决不掉、反复弹
-      // （用户报告 2026-09-22）。这里改成只要 host 有书就推，推不动才是真失败。
-      if (backend is InterconnectSyncBackend &&
-          (entry.liveAction != null || entry.remoteLiveTitle != null)) {
-        try {
-          if (await _applyLiveProgressChoice(
-            db: db,
-            backend: backend,
-            book: book,
-            useLocal: choice == SyncChoice.useLocal,
-          )) {
-            outcome = SyncApplyOutcome.applied;
-          }
-        } catch (e) {
-          outcome = SyncApplyOutcome.failed;
-          developer.log(
-            'Failed to apply live progress for "${entry.title}"',
-            error: e,
-            name: 'SyncCompare',
-          );
-        }
-      }
+      if (backend is InterconnectSyncBackend) liveBooksTouched = true;
       switch (outcome) {
         case SyncApplyOutcome.applied:
           applied++;
         case SyncApplyOutcome.failed:
           errors.add(entry.title);
+          final String? reason = failureReason;
+          if (reason != null) failureReasons[entry.title] = reason;
         case SyncApplyOutcome.noop:
           // 良性跳过（无可传输内容）：既不计成功也不报错，避免误报「同步错误」。
           break;
@@ -941,33 +1198,221 @@ Future<SyncCompareApplyResult> applySyncCompareChoices({
       done++;
       onProgress?.call(done / total, null);
     }
-    return SyncCompareApplyResult(applied: applied, errors: errors);
+    // 统计不分方向（按天并集、值取大），与 sweep 的互联聚合阶段同一份实现，只合并
+    // 统计这一族。
+    if (backend is! InterconnectSyncBackend && applied > 0) {
+      // wiO0nN8aiG：手动应用改了书文件夹，让对端下一轮按书级清单看见。
+      await publishOwnBookManifestAfterBookSync(db: db, backend: backend);
+    }
+    if (backend is InterconnectSyncBackend && syncStats && liveBooksTouched) {
+      try {
+        await AggregateSyncService(
+          db,
+          scope: syncChannelScopeOf(backend),
+          localApplyLock: runExclusiveWithSyncStateApply,
+        ).syncOverClient(
+          fetchRemote: backend.getRemoteAggregateBody,
+          pushMerged: backend.putRemoteAggregateBody,
+          shareStats: true,
+          shareFavorites: false,
+          shareWebHistory: false,
+        );
+      } catch (e, stack) {
+        errors.add(t.sync_statistics);
+        failureReasons[t.sync_statistics] = friendlySyncErrorDetail(e);
+        ErrorLogService.instance.log('SyncCompare.mergeStatistics', e, stack);
+      }
+    }
+    return SyncCompareApplyResult(
+      applied: applied,
+      errors: errors,
+      failureReasons: failureReasons,
+    );
   });
+}
+
+/// 对比表这一行的书级进度是否参与同步：加载（live 探测、方向 / 冲突判定）与「应用」
+/// 共用这一个判据（BUG-5359）。互联通道按 [InterconnectBookProgressSync.syncsBookProgress]
+/// （sweep / 退出书同步同一判据）；云通道恒参与。
+bool _rowSyncsBookProgress(SyncBackend backend, EpubBookRow book) =>
+    backend is! InterconnectSyncBackend ||
+    InterconnectBookProgressSync.syncsBookProgress(book);
+
+/// 互联通道上应用一本书的选择：书进度按选择经 live 端点落地；有声书断点走它自己的
+/// 三方判定（[_applyLiveAudioChoice]，BUG-4433），不跟随书的选择。
+///
+/// 书进度的门槛是「host 有这本书」（[SyncCompareEntry.remoteLiveTitle]），不是
+/// 「加载期那次 live 探测成功」（[SyncCompareEntry.liveAction]）：一次 GET 失败会让
+/// 这一行没有 liveAction，若只按它放行，用户选的那一侧根本落不下去、下一轮 sweep
+/// 照旧报同一条冲突（用户报告 2026-09-22）。
+Future<SyncApplyOutcome> _applyLiveChoice({
+  required FushiDatabase db,
+  required InterconnectSyncBackend backend,
+  required EpubBookRow book,
+  required SyncCompareEntry entry,
+  required bool useLocal,
+  required bool syncAudioBook,
+}) async {
+  bool wrote = false;
+  // 书级进度资格与加载期同一个判据（[_rowSyncsBookProgress]，BUG-5359）：章节式
+  // 互联漫画没有书级进度，走到 host 读写会抛 ArgumentError，连带短路下面的有声书。
+  if (_rowSyncsBookProgress(backend, book) &&
+      (entry.liveAction != null || entry.remoteLiveTitle != null)) {
+    wrote = await _applyLiveProgressChoice(
+      db: db,
+      backend: backend,
+      book: book,
+      entry: entry,
+      useLocal: useLocal,
+    );
+  }
+  final String? audiobookKey = entry.remoteLiveAudiobookKey;
+  if (syncAudioBook && audiobookKey != null) {
+    final InterconnectPlaybackPositionSync audio =
+        InterconnectPlaybackPositionSync(
+          db: db,
+          backend: backend,
+          kind: PlaybackPositionKind.audiobook,
+        );
+    await audio.bind();
+    _requireSeenHost(audio.pin, entry.liveHostPin);
+    // 已持有书锁，再拿这条有声书断点的位置锁（书 → 位置，合法顺序，BUG-4432）。
+    final bool audioWrote = await syncResourceLocks.withResources(
+      <String>{
+        syncPlaybackPositionResource(
+          PlaybackPositionKind.audiobook,
+          audiobookKey,
+        ),
+      },
+      () => _applyLiveAudioChoice(
+        audio: audio,
+        audiobookKey: audiobookKey,
+        seenRemote: entry.liveRemoteAudio,
+        useLocal: useLocal,
+      ),
+    );
+    wrote = audioWrote || wrote;
+  }
+  return wrote ? SyncApplyOutcome.applied : SyncApplyOutcome.noop;
+}
+
+/// 有声书断点在对比弹窗「应用」时走它自己的三方判定（BUG-4433），不跟随用户对
+/// 书进度的选择：书与有声书是两个维度，各自的基线、各自的分叉。
+///
+/// - 单边变化（[BookProgressSyncAction.pushLocal] / [BookProgressSyncAction.applyRemote]
+///   / [BookProgressSyncAction.synced]）按三方结论落地，与这一行的选择无关——与
+///   sweep 同一结论，前置条件是这次重读的 host 值。
+/// - 真分叉：只有重读的 host 值仍是用户在这一行看到的 [seenRemote] 时才按这一行的
+///   选择落地；host 期间又变了（或加载时没读到 host 断点）就两端都不动、基线不动，
+///   交给播放位置冲突弹窗按新事实再问。
+///
+/// 返回是否真的写了东西（host 确认的推送 / 本端被改写）。调用方持有这条断点的
+/// [syncPlaybackPositionResource] 锁。
+Future<bool> _applyLiveAudioChoice({
+  required InterconnectPlaybackPositionSync audio,
+  required String audiobookKey,
+  required PlaybackPosition? seenRemote,
+  required bool useLocal,
+}) async {
+  final PlaybackPosition local = await audio.localPosition(audiobookKey);
+  final PlaybackPosition remote = await audio.remotePosition(audiobookKey);
+  final BookProgressSyncAction action = await audio.decide(
+    audiobookKey,
+    local: local,
+    remote: remote,
+  );
+  switch (action) {
+    case BookProgressSyncAction.synced:
+      return audio.alignSynced(
+        audiobookKey,
+        local: local,
+        remote: remote,
+        expectedRemotePositions: <int>[remote.positionMs],
+      );
+    case BookProgressSyncAction.pushLocal:
+      // BUG-4431：host 确认采纳才算写成功。
+      return (await audio.pushLocal(
+            audiobookKey,
+            local: local,
+            remote: remote,
+            expectedRemotePositions: <int>[remote.positionMs],
+          )).status ==
+          LivePushStatus.confirmed;
+    case BookProgressSyncAction.applyRemote:
+      return audio.applyRemote(audiobookKey, remote, local: local);
+    case BookProgressSyncAction.conflict:
+      if (seenRemote == null || seenRemote != remote) return false;
+      if (useLocal) {
+        return (await audio.pushLocal(
+              audiobookKey,
+              local: local,
+              remote: remote,
+              expectedRemotePositions: <int>[seenRemote.positionMs],
+            )).status ==
+            LivePushStatus.confirmed;
+      }
+      return audio.applyRemote(audiobookKey, remote, local: local);
+  }
 }
 
 /// 互联 live 行的书进度按用户选择落地（BUG-2506）：选本机 → 推给 host（时间戳
 /// 抬到严格新于 host，见 [InterconnectBookProgressSync.pushLocal]）；选远端 →
 /// host 进度落回本机。两者都记下新的位置基线，这本书不再以同一分叉重复弹出。
 /// 返回是否真的写了东西（host 无记录且本机也无记录时无事可做）。
+///
+/// 按「用户在这一行看到的 host 值」[SyncCompareEntry.liveRemoteProgress] 落地
+/// （BUG-4432）：选本机 → 推送重读的本机进度（加载后本机又读了也照推，那正是用户
+/// 要保留的一侧），前置条件是看到的 host 值，host 期间又被别的设备改了就不覆盖；
+/// 选远端 → 重读的 host 与看到的位置或戳不同就不落地（用户没见过新值）。加载时
+/// 探测失败（没有看到的值）时退回应用时重读的 host 值作前置条件，只关掉读写之间
+/// 的窗口。调用方持有这本书的书锁。
 Future<bool> _applyLiveProgressChoice({
   required FushiDatabase db,
   required InterconnectSyncBackend backend,
   required EpubBookRow book,
+  required SyncCompareEntry entry,
   required bool useLocal,
 }) async {
   final InterconnectBookProgressSync sync = InterconnectBookProgressSync(
     db: db,
     backend: backend,
   );
+  await sync.bind();
+  _requireSeenHost(sync.pin, entry.liveHostPin);
   final RemoteBookProgress local = await sync.localProgress(book);
   final RemoteBookProgress remote = await sync.remoteProgress(book);
+  final RemoteBookProgress? seen = entry.liveRemoteProgress;
   if (useLocal) {
     if (local.updatedAtMs <= 0) return false;
-    await sync.pushLocal(book, local: local, remote: remote);
-    return true;
+    // BUG-4431：host 确认采纳才算写成功。
+    return (await sync.pushLocal(
+          book,
+          local: local,
+          remote: remote,
+          expected: <BookProgressBaseline>[
+            BookProgressBaseline.of(seen ?? remote),
+          ],
+        )).status ==
+        LivePushStatus.confirmed;
+  }
+  if (seen != null &&
+      (!BookProgressBaseline.of(seen).matches(remote) ||
+          seen.updatedAtMs != remote.updatedAtMs)) {
+    return false;
   }
   if (remote.updatedAtMs <= 0) return false;
   return sync.applyRemote(book, remote, local: local);
+}
+
+/// 应用时绑定的 host [bound] 必须是加载这一行时的 host [seen]（BUG-4434）：否则这一行
+/// 展示的 host 值来自另一台 host，抛 [InterconnectHostChangedException]、不落地。
+/// [seen] 为 null（加载时没绑上）时不核对，退回应用时重读的 host 值（取舍 T7）。
+void _requireSeenHost(InterconnectHostPin? bound, InterconnectHostPin? seen) {
+  if (seen == null || bound == seen) return;
+  throw InterconnectHostChangedException(
+    expected: seen,
+    actual: bound?.identity,
+  );
 }
 
 /// 750a：互联下载远端独有书时补下其有声书包（若有）。
@@ -1019,6 +1464,12 @@ Future<void> _downloadLiveAudiobookFor(
       audioDatabaseRoot: audioRoot,
       bookKeyOverride: localBookKey,
     );
+    await recordRemoteAudiobookPackageDownload(
+      db: db,
+      client: backend,
+      key: remoteAudiobookRevisionKeyForBook(localBookKey),
+      package: audioTmp,
+    );
   } finally {
     try {
       if (audioTmp.existsSync()) audioTmp.deleteSync();
@@ -1050,21 +1501,16 @@ Future<bool> downloadSyncCompareRemoteOnly({
     );
     try {
       await backend.getRemoteBook(entry.remoteLiveTitle!, tmp);
-      // 互联 host 的书内容端点对 EPUB 与漫画共用 `.epub` 名（内容即真相），故按
-      // 内容嗅探分流——此前这里恒走 EpubImporter，从「同步对比」弹窗下载互联
-      // 漫画必然失败（书架页的下载路径早有同款嗅探，唯独这条漏了）。标题用远端
-      // raw title（bookKey 由它派生），不用本地临时文件名。
-      final String localBookKey = (await isMangaPackage(tmp))
-          ? await importMangaPackageFile(
-              db: db,
-              file: tmp,
-              title: entry.remoteLiveTitle,
-            )
-          : await EpubImporter.importFromPath(
-              db: db,
-              filePath: tmp.path,
-              fileName: '${entry.title}.epub',
-            );
+      // 互联 host 的书内容端点对 EPUB、漫画包与 PDF 原件共用 `.epub` 名（内容即
+      // 真相），故按内容嗅探分流——与书架页下载同一个入口（[importSyncedBookFile]），
+      // 此前两处各写一份，这里曾漏过漫画。标题用远端 raw title（bookKey 由它派生），
+      // 不用本地临时文件名。
+      final String localBookKey = await importSyncedBookFile(
+        db: db,
+        file: tmp,
+        title: entry.remoteLiveTitle,
+        epubFileName: '${entry.title}.epub',
+      );
       // 750a：EPUB 导入成功后，若该远端书带有声书则一并补下音频包（与书架
       // 互联下载同接线）。bookKeyOverride 绑定到本地刚导入 EPUB 的 bookKey。
       await _downloadLiveAudiobookFor(
@@ -1200,6 +1646,10 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
   double? _progress;
   String? _progressLabel;
 
+  /// 上一次应用里真正写了东西的书数。应用有失败时弹窗不关（失败原因留在框里给用户
+  /// 看），用户再点关闭时把它带回去——[SyncConflictPrompter] 按它判「解决了没有」。
+  int? _appliedCount;
+
   /// 「只看冲突」筛选（C3）：默认模式下用户可开关；冲突解决弹窗
   /// （[SyncCompareDialog.conflictsOnly]）恒为只看冲突。参与渲染 / 计数 / Apply 的
   /// 集合都跟着它走——渲染集 = 应用集，不给「看到的和应用的不一样」留口子。
@@ -1314,10 +1764,16 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       );
       if (mounted) {
         if (result.errors.isNotEmpty) {
-          showSyncMessage(
-            context,
-            t.sync_error(message: result.errors.join(', ')),
-          );
+          // BUG-4337：失败不再「提示一下就关框」——SnackBar 只有书名、没有原因，
+          // 关框后用户看到的就是「点了没反应」。弹窗留着，把每本的失败原因显示在框里。
+          setState(() {
+            _applying = false;
+            _progress = null;
+            _progressLabel = null;
+            _appliedCount = result.applied;
+            _error = t.sync_error(message: result.describeFailures());
+          });
+          return;
         }
         Navigator.pop(context, result.applied);
       }
@@ -1449,11 +1905,13 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         bookKey: e.bookKey,
         remoteFolderId: e.remoteFolderId,
         remoteLiveTitle: e.remoteLiveTitle,
+        syncsBookProgress: e.syncsBookProgress,
         // Carry the content flag: dropping it would reset to the default true
         // and re-expose the phantom download on a content-less orphan after its
         // remote audiobook is deleted (BUG-049 regression).
         remoteHasContent: e.remoteHasContent,
         remoteAudioBookId: null,
+        remoteLiveAudiobookKey: e.remoteLiveAudiobookKey,
         localProgress: e.localProgress,
         localUpdatedAt: e.localUpdatedAt,
         remoteProgress: e.remoteProgress,
@@ -1463,6 +1921,11 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
         localAudioPosMs: e.localAudioPosMs,
         remoteAudioPosSec: e.remoteAudioPosSec,
         base: e.base,
+        liveLocalProgress: e.liveLocalProgress,
+        liveRemoteProgress: e.liveRemoteProgress,
+        liveLocalAudio: e.liveLocalAudio,
+        liveRemoteAudio: e.liveRemoteAudio,
+        liveHostPin: e.liveHostPin,
         localPage: e.localPage,
         remotePage: e.remotePage,
         pageCount: e.pageCount,
@@ -1700,7 +2163,7 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
                 // 由 [SyncConflictPrompter] 自动弹出的那条更严重：用户根本没主动
                 // 进来。关闭只解绑 UI，传输继续在后台跑完（下面每处 setState /
                 // Navigator.pop 都有 mounted 守卫）。
-                onPressed: () => Navigator.pop(context),
+                onPressed: () => Navigator.pop(context, _appliedCount),
                 child: Text(
                   _applying ? t.dialog_background_close : t.sync_compare_close,
                 ),

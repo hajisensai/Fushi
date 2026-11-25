@@ -92,6 +92,13 @@ class VideoSubtitleRegistry {
     return false;
   }
 
+  /// 并行预热所有支持预热的来源连接（见 [VideoSubtitleConnectionWarmup]）。
+  Future<void> warmUpConnections() => Future.wait(<Future<void>>[
+    for (final VideoSubtitleProvider provider in providers)
+      if (provider is VideoSubtitleConnectionWarmup)
+        (provider as VideoSubtitleConnectionWarmup).warmUpConnection(),
+  ]);
+
   Future<VideoSubtitleDownload> download(VideoSubtitleCandidate candidate) {
     VideoSubtitleProvider? provider;
     for (final VideoSubtitleProvider value in providers) {

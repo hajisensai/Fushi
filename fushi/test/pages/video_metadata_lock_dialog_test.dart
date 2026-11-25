@@ -67,7 +67,7 @@ void main() {
     await tester.ensureVisible(lockTile('cover'));
     await tester.tap(lockTile('cover'));
     await tester.pump();
-    await tester.tap(find.text('SAVE'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
     expect(
@@ -82,7 +82,7 @@ void main() {
     await tester.ensureVisible(lockTile('title'));
     await tester.tap(lockTile('title'));
     await tester.pump();
-    await tester.tap(find.text('CANCEL'));
+    await tester.tap(find.text('Cancel'));
     await tester.pumpAndSettle();
 
     expect(
@@ -115,7 +115,7 @@ void main() {
     await tester.ensureVisible(lockTile('rating'));
     await tester.tap(lockTile('rating'));
     await tester.pump();
-    await tester.tap(find.text('SAVE'));
+    await tester.tap(find.text('Save'));
     await tester.pumpAndSettle();
 
     expect(

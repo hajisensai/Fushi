@@ -37,3 +37,10 @@ tracked, diffable source. Pointed at by `fushi/pubspec.yaml` dependency_override
    (`classifyDroppedFiles`) disambiguates URLs from file paths by scheme and routes
    them to the stream-URL import (`_importStreamUrl`). Guarded by
    `fushi/test/media/drag_drop/url_drop_native_guard_test.dart`.
+
+3. Flutter 3.50 / AGP 9 (`android/build.gradle`): the 3.50 Flutter Gradle plugin
+   requires Gradle >= 9.3.1, AGP >= 9.1.1 and KGP >= 2.4.10. KGP 2.4 removed the
+   `android { kotlinOptions { } }` DSL, so the JVM target moved to the top-level
+   `kotlin { compilerOptions { } }` block, and the buildscript pins follow the app
+   (AGP 9.3.1, Kotlin 2.4.20 since BUG-5148). The app keeps `android.builtInKotlin=false`, so the
+   plugin still applies `kotlin-android` itself.

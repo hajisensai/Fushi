@@ -3,7 +3,7 @@ part of '../fushi_sync_server.dart';
 /// 远程更新域（反馈 Pp8XPyve0N）：`GET/POST /api/host/update`。
 ///
 /// 门禁顺序（每一道拒绝都带 `{"error": code}`，client 据此说清原因）：
-///   1. 装配方没接 [FushiSyncServer.hostSelfUpdater] → 404（老 host / 无头服务端）；
+///   1. 装配方没接 [FushiSyncServer.hostSelfUpdater] → 404（老 host）；
 ///   2. 必须是已配对 peer 的专属 token（共享 token 不收）→ 403 peer_token_required；
 ///   3. GET：回状态 + 给这个 peer 签一个一次性 nonce；
 ///   4. POST：平台门 → 用户开关 → nonce 核销 → 交给 [HostSelfUpdater.startUpdate]。
@@ -42,7 +42,7 @@ extension _FushiSyncServerHostUpdate on FushiSyncServer {
       final HostUpdateStatus status = await updater.startUpdate();
       engineLog.logDiagnostic(
         'HostUpdate',
-        'remote update started by ${_remoteAddress(request) ?? '?'} '
+        'remote update started by ${_requestOrigin(request).display ?? '?'} '
             '(${status.currentVersion} -> ${status.latestVersion})',
       );
       return _hostUpdateJson(status);
@@ -74,7 +74,7 @@ extension _FushiSyncServerHostUpdate on FushiSyncServer {
   Future<String?> _readHostUpdateNonce(shelf.Request request) async {
     if (request.mimeType != 'application/json') return null;
     try {
-      final Object? decoded = jsonDecode(await request.readAsString());
+      final Object? decoded = jsonDecode(await readBoundedBodyString(request));
       if (decoded is! Map) return null;
       final Object? nonce = decoded['nonce'];
       return nonce is String ? nonce : null;
@@ -89,7 +89,7 @@ extension _FushiSyncServerHostUpdate on FushiSyncServer {
   ) {
     engineLog.logDiagnostic(
       'HostUpdate',
-      'denied ${request.method} from ${_remoteAddress(request) ?? '?'}: '
+      'denied ${request.method} from ${_requestOrigin(request).display ?? '?'}: '
           '${denial.code}',
     );
     return shelf.Response(

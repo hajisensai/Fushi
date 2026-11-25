@@ -340,6 +340,7 @@ void main() {
     final MediaSourceRow source = MediaSourceRow(
       videoGroupingMode: 'series',
       isPrivate: false,
+      autoScan: false,
       id: 1,
       label: '动画',
       mediaKind: 'video',

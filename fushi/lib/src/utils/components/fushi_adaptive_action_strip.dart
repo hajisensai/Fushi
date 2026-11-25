@@ -205,14 +205,16 @@ class _FushiAdaptiveActionStripState extends State<FushiAdaptiveActionStrip> {
                 itemBuilder: (BuildContext context) =>
                     _foldedItems(context, folded),
               );
-        return Row(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            if (more != null && widget.foldFromStart) more,
-            for (final FushiAdaptiveAction a in shown) _inline(context, a),
-            if (more != null && !widget.foldFromStart) more,
-          ],
-        );
+        final List<Widget> children = <Widget>[
+          if (more != null && widget.foldFromStart) more,
+          for (final FushiAdaptiveAction a in shown) _inline(context, a),
+          if (more != null && !widget.foldFromStart) more,
+        ];
+        // 只剩一颗钮时不套 Row：Row 给孩子的主轴约束是松的，父级下发的紧约束
+        // （Apple 顶栏的 bar button 槽把纯图标钮按 36 / 44 见方重排）传不到钮上，
+        // 44 宽的图标钮在 36 的 macOS 槽里溢出 8。
+        if (children.length == 1) return children.single;
+        return Row(mainAxisSize: MainAxisSize.min, children: children);
       },
     );
   }

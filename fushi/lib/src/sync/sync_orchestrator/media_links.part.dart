@@ -7,9 +7,9 @@ extension _SyncOrchestratorMediaLinks on SyncOrchestrator {
   /// 本地 → 本机清单未被 host 覆盖（[mediaLinkManifestCovers]）才 POST。
   ///
   /// 整行 LWW 与应用顺序无关、重放幂等，中途失败下轮原样重来。老 host 无端点
-  /// （GET 404 → null）只跳过这一维度：作品图谱是新功能，老 host 上本来就没有
-  /// 任何连接，不像标签那样「用户看见没同步」需要线索，计入 report.errors 只会让
-  /// 每轮同步报一条无从处理的错。
+  /// （GET 404 → null）跳过这一维度，并经 [_notePeerGapLive] 记一条「对端版本过旧」
+  /// （拍板 other-sync-peer-version-errors：本机的作品连接没传过去，用户要看得见、
+  /// 知道该升级哪台；可处理的办法就是升级对端）。
   Future<void> _syncMediaLinksLive(
     SyncRunReport report,
     InterconnectSyncBackend backend,
@@ -17,7 +17,14 @@ extension _SyncOrchestratorMediaLinks on SyncOrchestrator {
     try {
       final MediaLinkManifest? remote = await backend
           .getRemoteMediaLinkManifest();
-      if (remote == null) return;
+      if (remote == null) {
+        await _notePeerGapLive(
+          report,
+          backend,
+          SyncPeerGapDimension.mediaLinks,
+        );
+        return;
+      }
       late final MediaLinkManifest local;
       // 与本机作为 host 处理对端 POST 的 mergeMediaLinkManifest 持同一把窄锁。
       await runExclusiveWithSyncStateApply(() async {

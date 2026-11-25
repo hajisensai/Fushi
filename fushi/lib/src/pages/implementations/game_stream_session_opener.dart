@@ -8,10 +8,12 @@ import 'package:fushi/src/models/game_stream_lookup_layout.dart';
 import 'package:fushi/src/pages/implementations/game_stream_page.dart';
 import 'package:fushi/src/utils/app_ui_scale.dart'
     show FushiAppUiScaleNeutralizer;
-import 'package:fushi/src/platform/game_stream_companion_display_channel.dart';
+import 'package:fushi/src/second_screen/game_stream_panel_host.dart';
 import 'package:fushi/src/sync/game_stream_client.dart';
 import 'package:fushi/src/sync/game_stream_receiver.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart'
+    show RemoteLookupDictionaryConfig;
 import 'package:fushi_engine/sync/game_stream/game_stream_protocol.dart';
 
 /// Leaving the stream succeeded locally but the host was not told.
@@ -35,6 +37,10 @@ final String gameStreamReceiverClientId =
 /// Join failures throw; a failed stop after leaving throws
 /// [GameStreamLeaveError]. Both the library grid and the session list use
 /// this one path so settings, lookup and mining behave identically.
+///
+/// [dictionaryConfigFor] is this receiver's dictionary selection for the host
+/// (`AppModel.remoteLookupDictionaryConfigFor`): lookups run on the host, but
+/// the dictionaries the user hid / reordered for it on this device apply.
 Future<void> openGameStreamSession({
   required BuildContext context,
   required SyncRepository repository,
@@ -42,6 +48,8 @@ Future<void> openGameStreamSession({
   required FushiClientUrl peer,
   required GameStreamSession session,
   required GameStreamVideoSettings settings,
+  required RemoteLookupDictionaryConfig? Function(FushiClientUrl candidate)
+  dictionaryConfigFor,
   String? clientId,
   ValueChanged<GameStreamVideoSettings>? onSettingsChanged,
   GameStreamLookupLayout lookupLayout = const GameStreamLookupLayout(),
@@ -56,7 +64,7 @@ Future<void> openGameStreamSession({
   GameStreamLookupController? lookup;
   FushiGameStreamReceiver? receiver;
   GameStreamInputComposer? input;
-  GameStreamCompanionDisplay? companion;
+  GameStreamPanelHost? companion;
   String? joinedClientId;
   Object? leaveError;
   try {
@@ -75,6 +83,7 @@ Future<void> openGameStreamSession({
       lookupClient: InterconnectGameStreamDictionaryLookup(
         repo: repository,
         peer: peer,
+        dictionaryConfigFor: dictionaryConfigFor,
       ),
       streamClient: client,
       clientId: activeClientId,
@@ -98,8 +107,8 @@ Future<void> openGameStreamSession({
       settings: settings,
     );
     // One handle for the whole session: the route builder may run again.
-    final GameStreamCompanionDisplay? activeCompanion =
-        GameStreamCompanionDisplay.forCurrentPlatform();
+    final GameStreamPanelHost? activeCompanion =
+        GameStreamPanelHost.forCurrentPlatform();
     companion = activeCompanion;
     await navigator.push<void>(
       MaterialPageRoute<void>(

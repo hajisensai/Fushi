@@ -1,4 +1,4 @@
-/// 设置 › 音乐 › 插件音源（docs/specs/2026-10-28-music-plugins.md）：从 `.fushiplug` 文件
+/// 插件音源管理（曲库「来源」页添加菜单 / 服务器曲库页进，docs/specs/2026-10-28-music-plugins.md）：从 `.fushiplug` 文件
 /// 安装（先校验、展示清单 / 权限 / 网络域名 / 签名，用户确认后按确认时的摘要安装）、启停、卸载。
 library;
 
@@ -10,12 +10,26 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fushi_music/fushi_music.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/drag_drop/drop_classification.dart'
+    show kPluginPackageExtensions;
+import 'package:fushi/src/media/drag_drop/plugin_package_drop_target.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart'
+import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart'
     show MusicLyricsSource;
 import 'package:fushi/src/media/music/music_online_sources.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/import/apple/apple_import_rows.dart'
+    show AppleImportSectionAction;
+import 'package:fushi/src/pages/implementations/music/apple/apple_music_list_layout.dart';
 import 'package:fushi/src/pages/implementations/music/music_plugin_login.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_actions.dart'
+    show MusicItemMenu, MusicMenuAction, MusicMenuAnchor, showMusicActionMenu;
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleMetrics;
+import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart'
+    show FushiSwitch;
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -34,6 +48,7 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 /// 两种能力都有时，两份候选靠这个区分。
 String musicLyricsCandidateTitle(String source, String label) {
   if (source == MusicLyricsSource.asr) return t.music_lyrics_source_asr;
+  if (source == MusicLyricsSource.server) return t.music_lyrics_source_server;
   if (MusicLyricsSource.isPlugin(source)) {
     return '$label · ${musicPluginCapabilityLabel('lyrics')}';
   }
@@ -41,6 +56,12 @@ String musicLyricsCandidateTitle(String source, String label) {
     return '$label · ${musicPluginCapabilityLabel('lyricsSearch')}';
   }
   return label;
+}
+
+/// 在线搜索候选（`MusicLyricsService.searchOnline`）出自哪个来源：LRCLIB 或歌词插件 id。
+String musicLyricsOnlineSourceName(String source) {
+  if (source == MusicLyricsSource.lrclib) return 'LRCLIB';
+  return MusicLyricsSource.lyricsPluginIdOf(source) ?? source;
 }
 
 /// 能力 → 用户看得懂的名字。
@@ -68,21 +89,40 @@ String musicPluginErrorText(Object error) => musicPluginErrorSummary(
   error is MusicPluginException ? error.message : '$error',
 );
 
-/// 选 `.fushiplug` 文件 → 校验并展示清单 / 权限 / 签名 → 用户确认后安装。
-/// 插件音源设置页与歌词来源页共用同一条安装流程。返回是否真的装上了。
+/// 选 `.fushiplug` 文件 → [installMusicPluginPackage]。插件音源设置页与歌词来源页
+/// 的安装按钮共用。返回是否真的装上了。
 Future<bool> pickAndInstallMusicPlugin(
   BuildContext context,
   MusicPluginManager manager,
 ) async {
   final FilePickerResult? picked = await pickFilesByExtensions(
     context: context,
-    allowedExtensions: const <String>['fushiplug', 'zip'],
+    allowedExtensions: kPluginPackageExtensions.toList(),
     withData: true,
   );
   final PlatformFile? file = picked?.files.firstOrNull;
   if (file == null) return false;
+  final Uint8List bytes;
   try {
-    final Uint8List bytes = file.bytes ?? await File(file.path!).readAsBytes();
+    bytes = file.bytes ?? await File(file.path!).readAsBytes();
+  } on Object catch (e) {
+    _showInstallFailed(e);
+    return false;
+  }
+  if (!context.mounted) return false;
+  return installMusicPluginPackage(context, manager, bytes);
+}
+
+/// 一个插件包的字节 → 校验并展示清单 / 权限 / 签名 → 用户确认后按确认时的摘要安装。
+/// 安装按钮（[pickAndInstallMusicPlugin]）与拖放落点（[MusicPluginDropTarget]）共用
+/// 这一条流程（BUG-4712：此前它焊死在文件选择器里，拖放没有入口可接）。返回是否真的
+/// 装上了。装上后由 [MusicPluginManager.changes] 通知各列表刷新。
+Future<bool> installMusicPluginPackage(
+  BuildContext context,
+  MusicPluginManager manager,
+  Uint8List bytes,
+) async {
+  try {
     final MusicPluginPackageInfo info = await manager.inspect(bytes);
     final bool signerChanged = await manager.signerChanged(info);
     if (!context.mounted) return false;
@@ -104,12 +144,36 @@ Future<bool> pickAndInstallMusicPlugin(
     );
     return true;
   } on Object catch (e) {
-    FushiToast.show(
-      msg: t.music_plugins_install_failed(error: musicPluginErrorText(e)),
-      severity: ToastSeverity.error,
-    );
+    _showInstallFailed(e);
     return false;
   }
+}
+
+void _showInstallFailed(Object error) => FushiToast.show(
+  msg: t.music_plugins_install_failed(error: musicPluginErrorText(error)),
+  severity: ToastSeverity.error,
+);
+
+/// 音乐 / 歌词插件的拖放落点：拖入 `.fushiplug` 走 [installMusicPluginPackage]。
+/// 挂在插件音源管理页、音乐来源页、设置里的歌词来源页的页面体上（每条路由只挂一层，
+/// 不嵌套——desktop_drop 是全局广播，嵌套会装两遍）。
+class MusicPluginDropTarget extends StatelessWidget {
+  const MusicPluginDropTarget({
+    super.key,
+    required this.manager,
+    required this.child,
+  });
+
+  final MusicPluginManager manager;
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) => PluginPackageDropTarget(
+    debugLabel: 'music-plugin',
+    install: (BuildContext context, Uint8List bytes) =>
+        installMusicPluginPackage(context, manager, bytes),
+    child: child,
+  );
 }
 
 class MusicPluginSettingsBody extends StatefulWidget {
@@ -124,17 +188,36 @@ class MusicPluginSettingsBody extends StatefulWidget {
 
 class _MusicPluginSettingsBodyState extends State<MusicPluginSettingsBody> {
   MusicPluginManager get _manager => widget.appModel.musicPluginManager;
-  late Future<List<InstalledMusicPlugin>> _plugins = _manager.list();
+  late Future<List<InstalledMusicPlugin>> _plugins = _manager.listInstalled();
   bool _busy = false;
 
-  void _reload() => setState(() {
-    _plugins = _manager.list();
-  });
+  /// 安装 / 卸载 / 启停一律经 [MusicPluginManager.changes] 刷新：安装可能来自本页的
+  /// 按钮，也可能来自页面上的拖放落点（[MusicPluginDropTarget]），列表不该只认其一。
+  StreamSubscription<void>? _changes;
+
+  @override
+  void initState() {
+    super.initState();
+    _changes = _manager.changes.listen((_) => _reload());
+  }
+
+  @override
+  void dispose() {
+    unawaited(_changes?.cancel());
+    super.dispose();
+  }
+
+  void _reload() {
+    if (!mounted) return;
+    setState(() {
+      _plugins = _manager.listInstalled();
+    });
+  }
 
   Future<void> _install() async {
     setState(() => _busy = true);
     try {
-      if (await pickAndInstallMusicPlugin(context, _manager)) _reload();
+      await pickAndInstallMusicPlugin(context, _manager);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -149,20 +232,69 @@ class _MusicPluginSettingsBodyState extends State<MusicPluginSettingsBody> {
       destructive: true,
     );
     if (!ok) return;
-    await _manager.uninstall(p.id);
-    // 明确卸载才清它在「来源」页的顺序与开关（停用不清：重新启用后还在原位）。
-    if (widget.appModel.isPreferencesReady) {
-      await forgetMusicOnlineSource(
-        widget.appModel.prefsRepo,
-        musicPluginSourceKey(p.id),
-      );
-    }
+    await uninstallMusicPlugin(
+      _manager,
+      widget.appModel.isPreferencesReady ? widget.appModel.prefsRepo : null,
+      p.id,
+    );
     _reload();
   }
 
   Future<void> _toggle(InstalledMusicPlugin p, bool on) async {
     await _manager.setEnabled(p.id, on);
     _reload();
+  }
+
+  /// Cupertino：与曲库「歌单」「来源」同一套 Apple Music 资料库式列表——首行强调色
+  /// 「从文件安装…」动作行，其后每个插件一行（与封面同尺寸的图标方块 + 名称 +
+  /// 版本 / id / 作者 + 行尾 Apple 开关；点行 / Enter / 右键弹「权限 · 卸载」菜单），
+  /// 需要登录的插件下挂一条账号子行（状态 + 登录 / 退出文字按钮），末尾一行说明。
+  /// 状态与动作与 M3E 同一份（[_install] / [_toggle] / [_uninstall]）。
+  Widget _buildApple(
+    BuildContext context,
+    AsyncSnapshot<List<InstalledMusicPlugin>> snap,
+    List<InstalledMusicPlugin> plugins,
+  ) {
+    final bool loading = snap.connectionState != ConnectionState.done || _busy;
+    return FushiEntranceScope(
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          FushiStaggeredEntrance(
+            index: 0,
+            child: AppleMusicListActionRow(
+              key: const ValueKey<String>('music_plugin_install'),
+              icon: FushiIcons.importFile,
+              title: '${t.music_plugins_install}…',
+              separator: plugins.isNotEmpty,
+              onTap: _busy ? null : () => unawaited(_install()),
+            ),
+          ),
+          if (loading)
+            const Padding(
+              padding: EdgeInsets.symmetric(vertical: 16),
+              child: FushiLinearProgressIndicator(),
+            ),
+          for (int i = 0; i < plugins.length; i++)
+            FushiStaggeredEntrance(
+              index: i + 1,
+              child: _ApplePluginRow(
+                key: ValueKey<String>('music-plugin-setting-${plugins[i].id}'),
+                plugin: plugins[i],
+                appModel: widget.appModel,
+                last: i == plugins.length - 1,
+                onToggle: (bool v) => unawaited(_toggle(plugins[i], v)),
+                onUninstall: () => unawaited(_uninstall(plugins[i])),
+              ),
+            ),
+          AppleMusicListNote(
+            plugins.isEmpty && !loading
+                ? '${t.music_plugins_empty}\n${t.music_plugins_hint}'
+                : t.music_plugins_hint,
+          ),
+        ],
+      ),
+    );
   }
 
   @override
@@ -177,6 +309,9 @@ class _MusicPluginSettingsBodyState extends State<MusicPluginSettingsBody> {
           ) {
             final List<InstalledMusicPlugin> plugins =
                 snap.data ?? const <InstalledMusicPlugin>[];
+            if (isGlassDesign(context)) {
+              return _buildApple(context, snap, plugins);
+            }
             return FushiEntranceScope(
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -225,6 +360,125 @@ class _MusicPluginSettingsBodyState extends State<MusicPluginSettingsBody> {
   }
 }
 
+/// 插件行的副行：版本 · id · 作者（纯歌词插件再标「歌词搜索」）；包坏了说「已损坏」。
+/// M3E 与 Apple 行同一份。
+String _pluginSubtitle(InstalledMusicPlugin plugin) {
+  final MusicPluginManifest? m = plugin.info?.manifest;
+  if (m == null) return t.music_plugins_broken;
+  return <String>[
+    t.music_plugins_version(version: m.version),
+    m.id,
+    if (m.author != null) m.author!,
+    // 纯歌词插件（没有任何音乐来源能力）标一个小标签。
+    if (m.providesLyricsSource && !m.providesMusicSource)
+      t.music_plugins_cap_lyrics_search,
+  ].join(' · ');
+}
+
+/// 已装插件的详情（能力 / 权限 / 域名 / 签名）。M3E「权限」按钮与 Apple 行菜单同用。
+Future<void> _showPluginDetails(
+  BuildContext context,
+  InstalledMusicPlugin plugin,
+) async {
+  final MusicPluginPackageInfo? info = plugin.info;
+  if (info == null) return;
+  await showFushiConfirmDialog(
+    context: context,
+    title: info.manifest.name,
+    icon: FushiIcons.browserExtension,
+    cancelLabel: MaterialLocalizations.of(context).closeButtonLabel,
+    confirmLabel: MaterialLocalizations.of(context).okButtonLabel,
+    content: MusicPluginPackageDetails(info: info),
+  );
+}
+
+/// Apple 版的一个已装插件：[AppleMusicListRow]（行尾 Apple 开关）+ 需要登录时的账号
+/// 子行。点行 / Enter / 右键都弹同一份菜单（权限 · 卸载），菜单锚在行上。
+class _ApplePluginRow extends StatelessWidget {
+  const _ApplePluginRow({
+    super.key,
+    required this.plugin,
+    required this.appModel,
+    required this.last,
+    required this.onToggle,
+    required this.onUninstall,
+  });
+
+  final InstalledMusicPlugin plugin;
+  final AppModel appModel;
+  final bool last;
+  final ValueChanged<bool> onToggle;
+  final VoidCallback onUninstall;
+
+  MusicItemMenu _menu(BuildContext context) => MusicItemMenu(
+    buttonKey: ValueKey<String>('music-plugin-menu-${plugin.id}'),
+    open: (MusicMenuAnchor? anchor) => unawaited(
+      showMusicActionMenu(
+        context,
+        anchor: anchor,
+        errorText: musicPluginErrorText,
+        actions: <MusicMenuAction>[
+          if (plugin.info != null)
+            MusicMenuAction(
+              id: 'details',
+              label: t.music_plugins_permissions,
+              icon: FushiIcons.info,
+              run: (BuildContext c) => _showPluginDetails(c, plugin),
+            ),
+          MusicMenuAction(
+            id: 'uninstall',
+            label: t.music_plugins_uninstall,
+            icon: FushiIcons.delete,
+            run: (_) async => onUninstall(),
+          ),
+        ],
+      ),
+    ),
+  );
+
+  @override
+  Widget build(BuildContext context) {
+    final MusicPluginManifest? m = plugin.info?.manifest;
+    final bool account = plugin.usable && m!.can(MusicPluginCapability.login);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Builder(
+          builder: (BuildContext rowContext) {
+            final MusicItemMenu menu = _menu(rowContext);
+            return menu.contextMenu(
+              child: AppleMusicListRow(
+                key: ValueKey<String>('music-plugin-row-${plugin.id}'),
+                icon: plugin.info == null
+                    ? FushiIcons.warning
+                    : FushiIcons.browserExtension,
+                title: m?.name ?? plugin.id,
+                subtitle: _pluginSubtitle(plugin),
+                separator: account || !last,
+                onTap: () => menu.open(null),
+                trailing: FushiSwitch(
+                  key: ValueKey<String>('music-plugin-toggle-${plugin.id}'),
+                  value: plugin.enabled && plugin.info != null,
+                  onChanged: plugin.info == null ? null : onToggle,
+                ),
+              ),
+            );
+          },
+        ),
+        if (account)
+          AppleMusicListSubRow(
+            separator: !last,
+            child: _PluginAccountRow(
+              key: ValueKey<String>('music-plugin-account-${plugin.id}'),
+              appModel: appModel,
+              manifest: m,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
 class _PluginTile extends StatelessWidget {
   const _PluginTile({
     super.key,
@@ -252,16 +506,7 @@ class _PluginTile extends StatelessWidget {
               : FushiIcons.browserExtension,
           showIcon: true,
           title: m?.name ?? plugin.id,
-          subtitle: m == null
-              ? t.music_plugins_broken
-              : <String>[
-                  t.music_plugins_version(version: m.version),
-                  m.id,
-                  if (m.author != null) m.author!,
-                  // 纯歌词插件（没有任何音乐来源能力）标一个小标签。
-                  if (m.providesLyricsSource && !m.providesMusicSource)
-                    t.music_plugins_cap_lyrics_search,
-                ].join(' · '),
+          subtitle: _pluginSubtitle(plugin),
           value: plugin.enabled && plugin.info != null,
           onChanged: plugin.info == null ? null : onToggle,
         ),
@@ -279,20 +524,8 @@ class _PluginTile extends StatelessWidget {
               if (plugin.info != null)
                 FushiPressScale(
                   child: FushiTextButton.icon(
-                    onPressed: () => unawaited(
-                      showFushiConfirmDialog(
-                        context: context,
-                        title: m!.name,
-                        icon: FushiIcons.browserExtension,
-                        cancelLabel: MaterialLocalizations.of(
-                          context,
-                        ).closeButtonLabel,
-                        confirmLabel: MaterialLocalizations.of(
-                          context,
-                        ).okButtonLabel,
-                        content: MusicPluginPackageDetails(info: plugin.info!),
-                      ),
-                    ),
+                    onPressed: () =>
+                        unawaited(_showPluginDetails(context, plugin)),
                     icon: const FushiIcon(FushiIcons.info),
                     label: Text(t.music_plugins_permissions),
                   ),
@@ -494,6 +727,47 @@ class _PluginAccountRowState extends State<_PluginAccountRow> {
                 ?a.badge,
               ].join(' · ')
             : t.music_plugin_account_anonymous;
+        final bool login = a != null && !a.loggedIn || snap.hasError;
+        final bool logout = a != null && a.loggedIn;
+        if (isGlassDesign(context)) {
+          // Apple：账号子行——状态一行脚注字 + 行尾强调色文字按钮（登录 / 退出）。
+          final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+          return ConstrainedBox(
+            constraints: BoxConstraints(minHeight: metrics.rowMinHeight),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: Text(
+                    status,
+                    key: ValueKey<String>(
+                      'music-plugin-account-status-${widget.manifest.id}',
+                    ),
+                    maxLines: 2,
+                    overflow: TextOverflow.ellipsis,
+                    style: metrics.footnoteStyle(context),
+                  ),
+                ),
+                if (login)
+                  AppleImportSectionAction(
+                    key: ValueKey<String>(
+                      'music-plugin-login-${widget.manifest.id}',
+                    ),
+                    label: t.music_plugin_account_login,
+                    onTap: () => unawaited(_login()),
+                  ),
+                if (logout)
+                  AppleImportSectionAction(
+                    key: ValueKey<String>(
+                      'music-plugin-logout-${widget.manifest.id}',
+                    ),
+                    label: t.music_plugin_account_logout,
+                    onTap: () => unawaited(_logout()),
+                  ),
+                SizedBox(width: 6 * metrics.scale),
+              ],
+            ),
+          );
+        }
         return Padding(
           padding: EdgeInsets.only(left: tokens.spacing.gap),
           child: Wrap(
@@ -509,7 +783,7 @@ class _PluginAccountRowState extends State<_PluginAccountRow> {
                 ),
                 style: context.fushiType.bodyMedium,
               ),
-              if (a != null && !a.loggedIn || snap.hasError)
+              if (login)
                 FushiPressScale(
                   child: FushiTextButton.icon(
                     key: ValueKey<String>(
@@ -520,7 +794,7 @@ class _PluginAccountRowState extends State<_PluginAccountRow> {
                     label: Text(t.music_plugin_account_login),
                   ),
                 ),
-              if (a != null && a.loggedIn)
+              if (logout)
                 FushiPressScale(
                   child: FushiTextButton.icon(
                     key: ValueKey<String>(

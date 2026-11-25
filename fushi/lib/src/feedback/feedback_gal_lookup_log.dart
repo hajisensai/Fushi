@@ -31,6 +31,11 @@ const List<String> kFeedbackGalLookupLogPrefixes = <String>[
   'lookup reveal',
   'lookup activation',
   'lookup repark',
+  // 平台线程卡顿计量（`windows/runner/hang_watchdog.cpp`，反馈 JjjCk58rPZ）：
+  // 只含毫秒数与 dump 文件名。
+  'main-thread stall:',
+  // Dart 失联计量（同文件，BUG-5374）：只含毫秒数与 dump 文件名。
+  'dart-silence:',
 ];
 
 /// 从 [raw]（hibiki_glookup.log 的一段文本）里摘白名单诊断行，保留最近

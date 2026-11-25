@@ -62,6 +62,33 @@ void main() {
     });
   });
 
+  test('字幕生成拉整集音频前向插件现取一次流，不改播放用的请求头', () async {
+    int calls = 0;
+    final MusicOnlineMvVideoClient client = MusicOnlineMvVideoClient(
+      resolve: () async {
+        calls++;
+        return (
+          url: 'https://mv.example/$calls.mp4',
+          headers: <String, String>{'Referer': 'https://music.example/$calls'},
+        );
+      },
+    );
+    await client.remoteVideoStreamUrls('music-mv:x');
+    expect(client, isA<RemoteVideoSubtitleAudioRefresh>());
+    final RemoteVideoSubtitleAudio fresh = await client.freshSubtitleAudio(
+      'music-mv:x',
+    );
+    expect(calls, 2);
+    expect(fresh.url, 'https://mv.example/2.mp4');
+    expect(fresh.headers, <String, String>{
+      'Referer': 'https://music.example/2',
+    });
+    expect(fresh.audioOnly, isFalse, reason: 'MV 是 muxed 流');
+    expect(client.httpHeaderFields, <String, String>{
+      'Referer': 'https://music.example/1',
+    });
+  });
+
   test('musicOnlineMvVideoTitle', () {
     expect(musicOnlineMvVideoTitle('曲', null), '曲');
     expect(musicOnlineMvVideoTitle('曲', '  '), '曲');

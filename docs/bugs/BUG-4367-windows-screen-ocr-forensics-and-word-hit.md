@@ -1,0 +1,16 @@
+## BUG-4367 · Windows 应用外截屏识字「基本识别不出或错位」：点字按整行等分错位 + 无几何取证
+- **报告**：2026-11-04（开发者自提，应用内反馈 Z9fC87pZrY，Windows 11 build 26200，窗口 2560x1440@1.50 逻辑像素 → 显示器 3840x2160 / 150%，3.3.0-debug.23345）。反馈日志里没有任何截屏识字条目（BUG-4069 的分段计时 / 点字取证在 23345 之后才进包）。
+- **真实性**：⚠️ 部分确认。
+  - **已确认（错位的一个来源）**：点字定位丢掉了 Windows OCR 给的词框。`fushi/windows/runner/system_ocr_windows.cpp:348-395`（基线 704f8c6bd9 `CollectLines`）只把词框并成行框回给 Dart，`fushi/lib/src/floating_ball/screen_ocr_picker.dart:67-96` 再按「字数等分行框」估计被点的字。Windows OCR 的行框会把同一基线上的英文词、日文以及中间的大段空隙包成一行，整行等分在日英混排 / 行内有空隙时差出好几个字（单测反证：「Fushi の設定」点在「の」上，等分落到「設」）。
+  - **已排除（静态核对 + 本机 Windows.Media.Ocr 探针）**：
+    - 坐标系：进程 PerMonitorV2（`runner.exe.manifest`），截图按 `rcMonitor` 物理像素 BitBlt（`screen_ocr_overlay.cpp` `CaptureMonitor`），冻结层窗口 = 显示器物理矩形、D2D `SetDpi(96)`（1 DIP = 1 px），点击 `to_image` 按客户区 / 截图比例换回截图像素，Dart 命中 `scale: 1`，查词卡锚点 = 字框 + 显示器左上（物理像素通道）。全链路没有逻辑 / 物理像素混用。
+    - `MaxImageDimension`：本机实测 `OcrEngine.MaxImageDimension = 10000`，4K（3840x2160）不触发缩图，不需要分块。
+    - 整屏识别质量：本机合成 3840x2160 日文图（150% 下 9~14pt Yu Gothic UI，两栏同基线，亮 / 暗 / 低对比暗色三种底），整屏识别 50~52 行 / 约 1960 字，与 1.5x、2x 放大、1280x720 分块识别结果持平（分块 49~55 行）。即「整屏送检」本身不是识别不出的原因，分块不会改善。
+  - **未定位**：「基本识别不出」在本机无法复现，可能是截到的帧本身有问题（HDR：本机 Win11 走 GDI，BUG-3480 只在 build 29683 实测过 BitBlt 正确，build 26200 未测；或被截内容是游戏 / 视频的独占 / 硬件叠加层）或识别语言不对。需要带本修复取证日志的新反馈。
+- **[x] ① 已修复（错位部分）+ 加取证**：
+  - 原生 `CollectLines` 把每个 OcrWord 的框与它在行文本里的 UTF-16 起点（`screen_ocr_logic.h` `JoinOcrWordsWithOffsets`，与 Dart String 下标同口径）随行回传（通道字段 `words`）；Dart `SystemOcrTextLine.segments` 解析（越界 / 重叠 / 无面积的丢掉），`screenOcrHitTest` 有词框时先按词框沿阅读方向定位到词（空隙里取最近的词），再在词内等分；没有词框的平台（macOS / Linux / 漫画切片合并后的行）照旧整行等分。
+  - 取证（一次截屏一行，行框只记前 8 行）：`floating_ball.screen_ocr_geometry` 记显示器矩形、截图尺寸、两者是否一致（`screenMatchesImage`）、显示器 DPI、是否 HDR、取帧路径（`gdi` / `dxgi`）、实际送进 OcrEngine 的尺寸与 `MaxImageDimension`、行数、前 8 行行框 / 字数 / 词框数；`floating_ball.screen_ocr_tap` 追加词框数、字框（截图像素）与查词卡锚点（屏幕物理像素）。
+- **[x] ② 已加自动化测试**（未在本分支运行，统一在合并后验证）：
+  - `fushi/test/floating_ball/screen_ocr_geometry_test.dart`：词框解析与过滤；dpr 1 / 1.25 / 1.5 / 2 下按词框定位、词内等分、空隙取最近词，并以整行等分落到错字作反证；`DesktopScreenOcrCapture.fromWire` 解析 DPI / HDR / 路径；取证摘要字段与「显示器矩形与截图尺寸对不上」标记。
+  - `fushi/windows/runner/tests/screen_ocr_logic_test.cpp`：`JoinOcrWordsWithOffsets` 的起点（插入空格不计入、空词 -1、代理对两个码元）。
+- **备注**：没做 HDR 开 / 关真机复测（批次规则不做真机验证、不切系统 HDR）；没做分块与 HDR→SDR 改动——本机实测分块无收益，HDR 色调映射在 Win10 已有（BUG-3480），Win11 build 26200 上 BitBlt 是否正确等取证日志里的 `hdr=` / `path=` 再定。

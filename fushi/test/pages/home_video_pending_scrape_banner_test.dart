@@ -9,6 +9,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/home_tab.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
 import 'package:fushi_engine/media/video/metadata/video_library_scrape_sweep.dart';
@@ -83,8 +84,14 @@ void main() {
   late AppModel appModel;
   late VideoSourceScrapeTaskController controller;
 
+  late HomeTab tabBefore;
+
   setUp(() async {
     LocaleSettings.setLocale(AppLocale.en);
+    // 视频页在视频 tab 上才算「在用户眼前」：刮削写入只在眼前时跟着刷新
+    // （拍板 design-nmv-video16-scrape-refresh ①），本文件测的正是在眼前的页面。
+    tabBefore = homeShellTabNotifier.value;
+    homeShellTabNotifier.value = HomeTab.video;
     db = FushiDatabase.forTesting(NativeDatabase.memory());
     final PreferencesRepository prefs = PreferencesRepository(db);
     await prefs.loadFromDb();
@@ -100,6 +107,7 @@ void main() {
   });
 
   tearDown(() async {
+    homeShellTabNotifier.value = tabBefore;
     controller.dispose();
     await db.close();
   });
@@ -571,9 +579,9 @@ void main() {
     );
     await addVideo(
       'movie-b',
-      'D:/A/Bonus Feature (2019).mkv',
+      'D:/A/Unscraped OVA (2019).mkv',
       sourceId,
-      'Bonus Feature',
+      'Unscraped OVA',
     );
     final ValueNotifier<int> changed = ValueNotifier<int>(0);
     addTearDown(changed.dispose);

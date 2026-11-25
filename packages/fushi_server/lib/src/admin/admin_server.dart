@@ -14,6 +14,7 @@ import 'dart:io';
 
 import 'package:fushi_server/src/admin/admin_api.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
+import 'package:fushi_server/src/admin/web_kit.dart';
 import 'package:fushi_server/src/admin/web_ui.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:shelf/shelf_io.dart' as shelf_io;
@@ -63,7 +64,8 @@ class AdminServer {
         final shelf.Response response = await inner(request);
         return response.change(
           headers: <String, String>{
-            'Cache-Control': 'no-store',
+            // /kit/ 的版本化静态资源自带长缓存，其余一律不缓存。
+            'Cache-Control': response.headers['cache-control'] ?? 'no-store',
             'X-Content-Type-Options': 'nosniff',
             'X-Frame-Options': 'DENY',
           },
@@ -107,9 +109,15 @@ class AdminServer {
       return _api.handle(request);
     }
 
+    if (method == 'GET' && path.startsWith('/kit/')) {
+      return serveWebKitFile(path.substring('/kit/'.length));
+    }
+
     if (method == 'GET' && (path == '/' || path == '/index.html')) {
       return shelf.Response.ok(
-        _authorized(request) ? adminWebUiHtml : adminLoginHtml,
+        _authorized(request)
+            ? renderAdminWebUi(ctx.config.language)
+            : renderAdminLogin(ctx.config.language),
         headers: const <String, String>{
           'Content-Type': 'text/html; charset=utf-8',
         },
@@ -126,10 +134,7 @@ class AdminServer {
       // 失败故意慢一拍：单管理员 token 没有锁定策略，靠这一点抬高暴力成本。
       await Future<void>.delayed(const Duration(milliseconds: 800));
       return shelf.Response.ok(
-        adminLoginHtml.replaceFirst(
-          '<!--error-->',
-          '<p class="err">Token 不正确</p>',
-        ),
+        renderAdminLogin(ctx.config.language, tokenError: true),
         headers: const <String, String>{
           'Content-Type': 'text/html; charset=utf-8',
         },

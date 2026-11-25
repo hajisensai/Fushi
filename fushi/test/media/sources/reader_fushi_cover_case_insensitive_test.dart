@@ -5,9 +5,12 @@ import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
+import 'package:fushi/src/media/sources/book_cover_file_resolver.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+
+import '../../helpers/source_guard.dart';
 
 /// TODO-1319 / BUG-612: a book cover is detected at import (coverPath persisted)
 /// yet never renders on a case-SENSITIVE device (Android/Linux). Root cause:
@@ -78,6 +81,33 @@ void main() {
         listDir: listDir,
       );
       expect(r, isNull);
+    });
+
+    test('一次调用内同一目录只列一次 (novel-9)', () {
+      final Map<String, int> calls = <String, int>{};
+      List<String> countingListDir(String d) {
+        calls[d] = (calls[d] ?? 0) + 1;
+        return listDir(d);
+      }
+
+      // 书架对无封面书的真实候选：声明封面 + cover.jpg/jpeg/png 三个兜底，
+      // 全部落空时每个候选都要从 extractDir 起走。
+      final String? r = ReaderFushiSource.resolveCaseInsensitive(
+        extractDir: '/x/Book',
+        relPaths: <String>[
+          'oebps/images/missing.jpg',
+          'Cover.jpeg',
+          'cover.png',
+          'oebps/images/none.png',
+        ],
+        listDir: countingListDir,
+      );
+      expect(r, isNull);
+      expect(calls, <String, int>{
+        '/x/Book': 1,
+        '/x/Book/OEBPS/Images': 1,
+        '/x/Book/OEBPS': 1,
+      });
     });
   });
 
@@ -209,6 +239,27 @@ void main() {
         );
       });
 
+      test('阅读器制卡的封面入口 resolveReaderBookCoverFilePath 同样大小写不敏感'
+          '(BUG-4913 起制卡经它取封面)', () {
+        final String extractDir = p.join(tempDir.path, 'ReaderEntry');
+        File(p.join(extractDir, 'OEBPS', 'Images', 'Cover.jpg'))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(<int>[0xFF, 0xD8, 0xFF]);
+
+        // 没有配对字幕书封面：落到 EPUB 自己的封面，coverHref 被小写化过。
+        final String? resolved = resolveReaderBookCoverFilePath(
+          extractDir: extractDir,
+          coverHref: 'oebps/images/cover.jpg',
+        );
+
+        expect(resolved, isNotNull, reason: '大小写失配不得让制卡封面塌成 null');
+        expect(
+          p.basename(resolved!),
+          'Cover.jpg',
+          reason: '必须走 case-insensitive 逐段解析，返回磁盘真实大小写',
+        );
+      });
+
       test('coverHref 为 null 时回落 cover.jpg 约定兜底(与书架对称)', () {
         final String extractDir = p.join(tempDir.path, 'NoDeclaredCover');
         final String conventional = p.join(extractDir, 'cover.jpg');
@@ -274,19 +325,68 @@ void main() {
       // 源码扫描守卫: 无论平台大小写敏感与否恒定判定——若有人把制卡封面解析改回裸
       // `File(p.join(_extractDir!, coverHref)).existsSync()`(对大小写不敏感、Android
       // 上会丢封面)，此测试立即变红。这是修复本质(制卡与显示对称)的最强可落地守卫。
-      test('mining.part.dart 调用 ReaderFushiSource.resolveCoverFilePath', () {
+      // 接线链：mining.part.dart 的 coverPath 取 `_bookCoverFilePath`（BUG-4913：配对
+      // 字幕书封面与 EPUB 封面同序合成）→ 页面 getter 调 resolveReaderBookCoverFilePath
+      // → 它的 EPUB 腿调 resolveBookCoverFilePath，也就是书架
+      // ReaderFushiSource.resolveCoverFilePath 转发到的同一个 case-insensitive 解析。
+      // 链上任何一环改回裸探测或另起一份解析，下面对应那条就红。
+      test('mining.part.dart 的书封取阅读器共享封面入口，不裸探测', () {
         final String src = File(
           'lib/src/pages/implementations/reader_fushi/mining.part.dart',
         ).readAsStringSync();
+        final String? cover = initializerExpression(src, 'coverPath');
         expect(
-          src,
-          contains('ReaderFushiSource.resolveCoverFilePath('),
-          reason: '制卡封面必须复用书架同一个 case-insensitive 兜底解析',
+          cover,
+          isNotNull,
+          reason: '_prepareMiningContext 必须声明 coverPath',
         );
         expect(
-          src,
-          isNot(contains('File(p.join(_extractDir!, _book!.coverHref))')),
+          containsIdentifier(cover!, '_bookCoverFilePath'),
+          isTrue,
+          reason: '制卡封面必须取阅读器共享的 _bookCoverFilePath（与书架同源解析）',
+        );
+        expect(
+          maskComments(src),
+          isNot(contains('File(p.join(_extractDir!')),
           reason: '不得回退到裸大小写敏感 existsSync 探测(Android 上会丢封面)',
+        );
+      });
+
+      test('_bookCoverFilePath → resolveReaderBookCoverFilePath → '
+          'resolveBookCoverFilePath（与书架同一个解析）', () {
+        final String getter = methodBody(
+          File(
+            'lib/src/pages/implementations/reader_fushi_page.dart',
+          ).readAsStringSync(),
+          'String? get _bookCoverFilePath',
+        );
+        expect(
+          containsIdentifierCall(getter, 'resolveReaderBookCoverFilePath'),
+          isTrue,
+          reason: '阅读器封面 getter 必须走共享入口 resolveReaderBookCoverFilePath',
+        );
+        final String resolver = File(
+          'lib/src/media/sources/book_cover_file_resolver.dart',
+        ).readAsStringSync();
+        final String readerEntry = methodBody(
+          resolver,
+          'String? resolveReaderBookCoverFilePath(',
+        );
+        expect(
+          containsIdentifierCall(readerEntry, 'resolveBookCoverFilePath'),
+          isTrue,
+          reason: 'EPUB 封面腿必须走书架同一个 case-insensitive 解析',
+        );
+        final String shelfEntry = methodBody(
+          File(
+            'lib/src/media/sources/reader_fushi_source.dart',
+          ).readAsStringSync(),
+          'static String? resolveCoverFilePath(',
+        );
+        expect(
+          containsIdentifierCall(shelfEntry, 'resolveBookCoverFilePath'),
+          isTrue,
+          reason: '书架入口与制卡入口必须落到同一个解析函数',
         );
       });
 

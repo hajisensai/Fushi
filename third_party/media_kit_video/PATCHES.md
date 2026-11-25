@@ -988,7 +988,7 @@ A keyed mutex needs an engine patch that acquires it on the raster side first
 ### Keyed mutex (2026-11-05)
 
 That engine patch now exists:
-`ci/patches/flutter-engine/3.47.6/engine-d3d-keyed-mutex.patch`. A patched
+`ci/patches/flutter-engine/3.50.0/engine-d3d-keyed-mutex.patch`. A patched
 `flutter_windows.dll` exports `FlutterDesktopGpuSurfaceSupportsKeyedMutex`;
 `ANGLESurfaceManager::EngineSyncsKeyedMutexTextures()` resolves it once with
 `GetProcAddress`. Only when it returns true does `CreateD3DTexture` create the
@@ -998,3 +998,96 @@ texture Flutter reads with `D3D11_RESOURCE_MISC_SHARED_KEYEDMUTEX` (instead of
 its own `CopyResource` out of the texture into an engine-owned copy (it never
 samples the shared texture), so the wait is bounded by one copy call. On a
 stock engine nothing changes: legacy shared texture, `CopyResource` + `Flush`.
+
+## BUG-4339: Windows `VideoOutput` teardown order
+
+`windows/video_output.{h,cc}`, `windows/video_output_manager.{h,cc}`,
+`windows/media_kit_video_plugin.cc`, `windows/angle_surface_manager.{h,cc}`.
+
+Upstream `~VideoOutput` unregistered the texture, destroyed the
+`ANGLESurfaceManager` (the EGLContext libmpv renders with; for the last
+instance also the shared EGLDisplay and Direct3D 11 device libmpv decodes on)
+and only then *posted* `mpv_render_context_free` without waiting for it, with
+no GL context current. The `VideoOutputManager.Dispose` method call replied
+before any of that ran, so `Player.dispose` (which awaits the reply through
+`NativeVideoController._dispose`) scheduled `mpv_terminate_destroy` on its 5 s
+timer racing the free. libmpv aborts when its core is destroyed while a render
+context is alive (`client.c`: "Broken API use: mpv_render_context_free() not
+called"), and its renderer teardown ran against destroyed ANGLE state. Field:
+`libmpv-2.dll` abort 0x40000015 after the SRS review page opened and closed a
+card video player per card with RSS climbing to 8 GB; `libGLESv2.dll` read AV
+under `media_kit_video_plugin` -> `libmpv` on the video page.
+
+Fork:
+
+- `~VideoOutput` first clears libmpv's update callback (libmpv invokes it under
+  the lock `mpv_render_context_set_update_callback` takes, so no `Render` can
+  be queued afterwards), then runs one task on the render thread: unregister
+  the texture and wait for Flutter's callback, `mpv_render_context_free` with
+  the output's own GL context current, drop the textures, reset the surface
+  manager. The destructor waits for that task. The old "promise only fulfilled
+  from the unregister callback" deadlock (no texture -> wait forever, blocking
+  every later Create / Dispose behind the manager mutex) is gone with it.
+- `Render` / `CheckAndResize` return at once when `destroyed_` (now atomic) is
+  set, so a queued resize cannot register a texture that outlives the object.
+- `VideoOutputManager::Dispose` takes an `on_done` callback run after the
+  erase; the plugin replies to `VideoOutputManager.Dispose` from it (on the
+  platform thread, like `SetHdrOutput`). `mpv_terminate_destroy` therefore can
+  only run after the render context is freed.
+- `ANGLESurfaceManager` keeps the texture `eglBindTexImage` binds the pbuffer
+  to (`bound_texture_`), releases and deletes it in `CleanUp` (upstream leaked
+  one per `Create`; the texture is now generated with the manager's own
+  context current, surfaceless, so the name `CleanUp` deletes is never one of
+  another output's context that the render thread happened to leave current),
+  and releases the current context before
+  `eglDestroyContext` so the context and surface are freed instead of only
+  marked for deletion.
+
+Guard: `fushi/test/third_party/media_kit_video_teardown_order_guard_test.dart`.
+
+## Decision 42UUu_kcwD: no OpenGL ES work while the iOS app is in the background
+
+`ios/Classes/plugin/common/VideoOutput.swift` (kept byte-identical with the
+`common/darwin` and `macos` copies; the change is `#if os(iOS)` only).
+
+Fushi's video page can keep playing audio after the app goes to the background
+(video setting "Keep playing audio in background", off by default). iOS
+terminates an app that submits OpenGL ES commands after it entered the
+background (`gpus_ReturnNotPermittedKillClient`), and upstream `VideoOutput`
+renders on its worker thread every time libmpv signals a frame, with no notion
+of app state. The Dart side switches the video track off (`vid=no`) on
+`paused`, but that command lands some milliseconds after
+`applicationDidEnterBackground`, which is enough for one frame to slip through.
+
+Fork: `VideoOutput` observes `didEnterBackgroundNotification` /
+`willEnterForegroundNotification` (delivered synchronously on the main thread)
+and flips a `gpuSuspended` flag under `gpuLock`. `texture.resize` and
+`texture.render` run inside `beginGpuWork()` / `endGpuWork()`, which hold the
+same lock and skip the work while suspended. The lock never spans the
+`DispatchQueue.main.sync` hops, so the main thread taking it only waits for the
+in-flight frame. Returning to the foreground clears the flag and enqueues one
+redraw.
+
+Guard: `fushi/test/pages/video_background_play_guard_test.dart`.
+
+## Glass chrome fade: host-owned controls show / hide fade
+
+`lib/media_kit_video_controls/src/controls/video_controls_fade.dart` (new,
+exported), `material.dart`, `material_desktop.dart`.
+
+Upstream fades the whole controls layer with one `AnimatedOpacity`. Fushi's
+Apple (Liquid Glass) controls hold backdrop-filter glass, and a backdrop filter
+under an `OpacityLayer` only samples that (empty) layer, not the video: while
+the icons fade the glass turns into a grey empty capsule and pops at the end
+(user recording 2026-11-24, "the video controls flash").
+
+Fork: both themes gain `controlsFadeBuilder` (`VideoControlsFadeBuilder`). The
+layer fade is now a `TweenAnimationBuilder` with the same curve, duration and
+`onEnd`; null builder = upstream `Opacity` over the layer (pixel-identical).
+With a builder the fork pushes no opacity over the layer; the host fades its
+glass through the glass shader's own visibility and its non-glass content leaf
+by leaf, and the fork fades its own leaves (scrims, seek bar) through
+`VideoControlsLeafFade`.
+
+Guard: `fushi/test/utils/components/glass/fushi_glass_presence_test.dart`
+(the Fushi-side fade); the fork default path is unchanged.

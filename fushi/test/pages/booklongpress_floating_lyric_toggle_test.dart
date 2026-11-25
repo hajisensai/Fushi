@@ -87,9 +87,18 @@ void main() {
       contains('t.book_scrape_cover'),
       reason: '书卡菜单必须直挂「在线刮削封面」（统一刮削入口层级）。',
     );
+    // 拍板 left3612：有声书 / 字幕书卡对称直挂，同一刮削流程。
+    expect(
+      srtActions,
+      contains('t.book_scrape_cover'),
+      reason: '有声书卡菜单也要直挂「在线刮削封面」（拍板 left3612）。',
+    );
+    expect(srtActions, contains('_scrapeBookItem(item)'));
 
     expect(epubActions, contains('t.view_illustrations'));
-    expect(epubActions, contains('t.audiobook_import'));
+    // 「导入有声书」/「制作有声书」由 bookCardAudioWorkbenchActions 排（拍板
+    // Ew0AxAgycu，顺序与主次见 book_card_audio_actions_test.dart）。
+    expect(epubActions, contains('importAudiobook: canAttachAudiobook'));
     expect(epubActions, contains('t.profile_book_profile'));
     expect(epubActions, contains('t.book_css_editor_edit_css'));
     expect(epubActions, contains('floating_lyric_toggle_action'));
@@ -280,7 +289,9 @@ void main() {
       epubCard,
       matches(
         RegExp(
-          r'onLongPress: \(\) =>\s*_showEpubItemMenu\(item, removeFromCollection: removeFromCollection\),',
+          // 副屏「库」模式（S5）起长按先经 _companionPressed（副屏接管时转成焦点驱动），
+          // 本机仍落到 _showEpubItemMenu。
+          r'onLongPress: \(\) =>[\s\S]{0,240}?_showEpubItemMenu\(\s*item,\s*removeFromCollection: removeFromCollection\s*\),',
         ),
       ),
     );
@@ -292,8 +303,22 @@ void main() {
 
     expect(srtDialog, contains('showLaunchAction: false'));
     expect(epubDialog, contains('showLaunchAction: false'));
-    expect(src, contains('onTap: () async {'));
-    expect(src, contains('await appModel.openMedia('));
+    // 副屏「库」模式（S5）起点按书卡的打开逻辑抽成 _openEpubCard（副屏焦点驱动
+    // 与本机点按共用），它负责 openMedia 开书。#3515 起书卡 onTap 先经
+    // _activateEpubCard：刮削过的书进元数据详情页，没刮削的仍落到 _openEpubCard。
+    expect(epubCard, contains('onTap: () => _activateEpubCard(item),'));
+    final String activateCard = _sectionSource(
+      src,
+      'Future<void> _activateEpubCard(MediaItem item) async {',
+      '\n  }\n',
+    );
+    expect(activateCard, contains('await _openEpubCard(item);'));
+    final String openCard = _sectionSource(
+      src,
+      'Future<void> _openEpubCard(MediaItem item) async {',
+      '\n  }\n',
+    );
+    expect(openCard, contains('await appModel.openMedia('));
   });
 }
 

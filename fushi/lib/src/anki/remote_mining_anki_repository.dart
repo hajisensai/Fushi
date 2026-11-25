@@ -37,18 +37,29 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     DictMediaByteLoader? dictMediaLoader,
     LocalFileByteLoader? fileByteLoader,
     RemoteMiningAuthReporter? onAuthRejected,
+    String Function()? targetResetNotice,
   }) : _local = local,
        _client = client,
        _payloadBuilder = ForwardedMinePayloadBuilder(
          dictMediaLoader: dictMediaLoader,
          fileByteLoader: fileByteLoader,
        ),
-       _onAuthRejected = onAuthRejected;
+       _onAuthRejected = onAuthRejected,
+       _targetResetNotice = targetResetNotice;
 
   /// 主机拒绝互联 token 时给用户看的话。制卡失败与查重失败共用同一句，
   /// 因为它们是同一个 token 被同一台主机拒绝。
   static const String tokenRejectedMessage =
       'The Fushi Interconnect server rejected the interconnect token. Re-pair the device.';
+
+  /// 主机连上了、但制卡端点回 404 / 405（[RemoteMineRefused]）时给用户看的话：说清连上了、那台主机没收这张卡，
+  /// 卡没送出去——不能报成「连不上」，也不能报成「可能已收到」。客户端只看得到状态码，分不清是主机上没有能写的落点
+  /// （没配 Anki、复习库没提供 / 要升级）还是主机版本根本没有这个端点，所以只说原话和几种可能，不咬定原因。
+  static const String pairedDeviceMiningUnavailableMessage =
+      'The Fushi Interconnect server is reachable but did not accept the card '
+      '(it answered 404 / 405). Fushi cannot tell why from here: it may have '
+      'nowhere to save cards right now, or its Fushi version may not accept '
+      'cards from this device. The card was not sent.';
 
   /// 没有互联主机可接收制卡请求时，同时说明失败结果和两条恢复路径。
   /// 避免把内部术语 "server-side mining" 暴露给只想完成制卡的用户。
@@ -61,6 +72,10 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
   final RemoteMineSender _client;
   final ForwardedMinePayloadBuilder _payloadBuilder;
   final RemoteMiningAuthReporter? _onAuthRejected;
+
+  /// 主机回 `targetUnavailable`（手机点名的落点它没有、卡落进了它的默认，客户端同时把「保存到」退回
+  /// 主机默认）时附在成功结果上的那句话（BUG-4287）。注入本地化文案，本类保持无 Flutter 依赖。
+  final String Function()? _targetResetNotice;
 
   /// 同一个 repository 实例只报一次「token 被拒」——查重是每次查词都跑的高频路径，
   /// 逐次弹 toast 会刷屏。provider 在开关/配对变化时会重建实例，届时自然重新提示。
@@ -78,6 +93,11 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     try {
       final Map<String, dynamic>? json = await _client.mineForward(payload);
       return await _withLocalDeckNameFallback(_outcomeFromResponse(json));
+    } on RemoteMineRefused {
+      return MineOutcome.failure(
+        pairedDeviceMiningUnavailableMessage,
+        errorCode: AnkiErrorCode.pairedDeviceMiningUnavailable,
+      );
     } on SyncAuthError {
       return MineOutcome.failure(
         tokenRejectedMessage,
@@ -137,6 +157,10 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
       return MineOutcome.success(
         deckName: json['deckName'] as String?,
         audioWarning: message,
+        // 只有手机显式选过落点时主机才回 targetUnavailable，所以这句话总是成立。
+        notice: json['targetUnavailable'] == true
+            ? _targetResetNotice?.call()
+            : null,
       );
     }
     if (result == MineResult.duplicate.name) {
@@ -157,7 +181,11 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
     final String? hostCode = json['errorCode'] as String?;
     return MineOutcome.failure(
       reason,
-      errorCode: AnkiErrorCode.pairedDeviceMineFailed,
+      // BUG-5085：主机上卡要去的是 Fushi 复习、复习库在换代途中——不是「那台设备上的 Anki」失败，文案改说
+      // 那台设备上的复习要先完成升级（原因仍是主机回的那句）。
+      errorCode: isSrsGenerationErrorCode(hostCode)
+          ? AnkiErrorCode.pairedDeviceReviewBlocked
+          : AnkiErrorCode.pairedDeviceMineFailed,
       error: StateError(
         'Fushi Interconnect server could not create the card'
         '${hostCode == null ? '' : ' ($hostCode)'}: '
@@ -184,6 +212,7 @@ class RemoteMiningAnkiRepository extends BaseAnkiRepository {
         noteId: outcome.noteId,
         deckName: localDeckName,
         audioWarning: outcome.audioWarning,
+        notice: outcome.notice,
       );
     } catch (_) {
       return outcome;

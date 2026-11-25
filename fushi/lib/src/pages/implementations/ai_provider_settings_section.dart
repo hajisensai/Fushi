@@ -30,6 +30,7 @@ import 'package:fushi_engine/ai/ai_key_rotation.dart';
 import 'package:fushi_engine/ai/ai_model_pricing.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/ai/ai_relay.dart';
+import 'package:fushi_engine/ai/ai_upstream_model.dart';
 import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/ai/ai_interconnect_relay.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -123,8 +124,9 @@ class _AiProviderSettingsSectionState
   /// 每家的「测试连接 / 拉模型」结果（key = draft.id）。
   final Map<String, _ProbeState> _probes = <String, _ProbeState>{};
 
-  /// 每家拉回来的模型名（key = draft.id）。
-  final Map<String, List<String>> _models = <String, List<String>>{};
+  /// 每家拉回来的模型（key = draft.id），带上游给的显示名 / 收图能力 / 单价。
+  final Map<String, List<AiUpstreamModel>> _models =
+      <String, List<AiUpstreamModel>>{};
 
   /// 互联主机提供商：拉回来的主机提供商清单（key = draft.id）。
   final Map<String, AiRelayProviderList> _relayProviders =
@@ -137,6 +139,14 @@ class _AiProviderSettingsSectionState
   /// 纹丝不动，界面上两处显示着不同的模型名，而落盘的是用户看不见的那一个。
   final Map<String, TextEditingController> _modelControllers =
       <String, TextEditingController>{};
+
+  /// 「价格」各字段的 controller（key = draft.id → 字段 id，见 [_pricingTexts]）。
+  ///
+  /// 与「模型」同一个理由：选中上游模型时单价与币种由**程序**改写（上游给了价目
+  /// 就整组换成新模型的），吃 `initialValue` 的输入框跟不上，界面会显示着旧模型的
+  /// 价格、落盘的却是新的——BUG-2618 的同型错误。
+  final Map<String, Map<String, TextEditingController>> _pricingControllers =
+      <String, Map<String, TextEditingController>>{};
 
   /// 功能 → 提供商映射：没有草稿态，每次都读落盘真值（`fushi_cli ai assign`
   /// 等别处写入后页面立即看到，改动也总是基于最新值，不会拿旧快照整体覆盖）。
@@ -164,6 +174,12 @@ class _AiProviderSettingsSectionState
     if (pending) unawaited(_saveValidDrafts());
     for (final TextEditingController controller in _modelControllers.values) {
       controller.dispose();
+    }
+    for (final Map<String, TextEditingController> fields
+        in _pricingControllers.values) {
+      for (final TextEditingController controller in fields.values) {
+        controller.dispose();
+      }
     }
     super.dispose();
   }
@@ -215,6 +231,7 @@ class _AiProviderSettingsSectionState
         _probes.remove(config.id);
         _models.remove(config.id);
         _modelControllers[config.id]?.text = config.model;
+        _syncPricingControllers(config.id, config.pricing);
       }
     }
     for (final _AiProviderDraft draft in byId.values) {
@@ -223,6 +240,7 @@ class _AiProviderSettingsSectionState
         _probes.remove(draft.id);
         _models.remove(draft.id);
         _modelControllers.remove(draft.id)?.dispose();
+        _disposePricingControllers(draft.id);
         continue;
       }
       next.add(draft);
@@ -464,10 +482,15 @@ class _AiProviderSettingsSectionState
     final double rowInset = FushiDesignTokens.of(
       pageContext,
     ).spacing.rowHorizontal;
-    Widget field(Widget child) => Padding(
-      padding: EdgeInsets.fromLTRB(rowInset, 12, rowInset, 10),
-      child: child,
-    );
+    // Apple：直接是输入框的行交给分组排成表单行（[FushiAppleFormRowScope]），
+    // 不再自带内边距；其余（带开关 / 删除钮的组合行）照旧按行内边距排。
+    final bool glass = isGlassDesign(pageContext);
+    Widget field(Widget child) => glass && child is FushiAppleFormRowField
+        ? child
+        : Padding(
+            padding: EdgeInsets.fromLTRB(rowInset, 12, rowInset, 10),
+            child: child,
+          );
 
     return Column(
       key: ValueKey<String>('ai-provider-${draft.id}-editor'),
@@ -609,7 +632,11 @@ class _AiProviderSettingsSectionState
                 _textField(
                   key: ValueKey<String>('ai-provider-$index-price-$id'),
                   label: label,
-                  initialValue: _priceText(value),
+                  controller: _pricingController(
+                    draft.id,
+                    id,
+                    _priceText(value),
+                  ),
                   keyboardType: const TextInputType.numberWithOptions(
                     decimal: true,
                   ),
@@ -624,7 +651,11 @@ class _AiProviderSettingsSectionState
               _textField(
                 key: ValueKey<String>('ai-provider-$index-price-currency'),
                 label: t.ai_provider_price_currency,
-                initialValue: draft.pricing.currency,
+                controller: _pricingController(
+                  draft.id,
+                  'currency',
+                  draft.pricing.currency,
+                ),
                 hintText: kAiDefaultPricingCurrency,
                 onChanged: (String text) => _update(
                   index,
@@ -1275,6 +1306,39 @@ class _AiProviderSettingsSectionState
         () => TextEditingController(text: draft.model),
       );
 
+  /// 「价格」某个字段的 controller；首次 build 时按草稿值建。
+  TextEditingController _pricingController(
+    String draftId,
+    String field,
+    String text,
+  ) => _pricingControllers
+      .putIfAbsent(draftId, () => <String, TextEditingController>{})
+      .putIfAbsent(field, () => TextEditingController(text: text));
+
+  /// 把已建的单价输入框对齐到 [pricing]（还没建的首次 build 时自然按草稿建）。
+  void _syncPricingControllers(String draftId, AiModelPricing pricing) {
+    final Map<String, TextEditingController>? fields =
+        _pricingControllers[draftId];
+    if (fields == null) return;
+    for (final MapEntry<String, String> entry in _pricingTexts(
+      pricing,
+    ).entries) {
+      final TextEditingController? controller = fields[entry.key];
+      if (controller != null && controller.text != entry.value) {
+        controller.text = entry.value;
+      }
+    }
+  }
+
+  void _disposePricingControllers(String draftId) {
+    final Map<String, TextEditingController>? fields = _pricingControllers
+        .remove(draftId);
+    if (fields == null) return;
+    for (final TextEditingController controller in fields.values) {
+      controller.dispose();
+    }
+  }
+
   /// 贴在「模型」字段尾部的候选选择器。
   ///
   /// BUG-2618：此前候选是字段**外面**另起的一行下拉，于是同一个值有了两个输入
@@ -1304,18 +1368,24 @@ class _AiProviderSettingsSectionState
     );
   }
 
-  /// 弹出候选，把选中的模型写回「模型」字段。
+  /// 弹出候选，把选中的模型写回「模型」字段，并带入上游给的收图能力与单价。
+  ///
+  /// 候选显示上游的模型名（[AiUpstreamModel.label]），存的仍是 id。收图开关与单价
+  /// 描述的是**模型**而不是提供商：换了模型，旧值就是上一个模型的，所以上游给了
+  /// 哪项就用哪项覆盖（单价整组换，含币种 USD，没给的缓存价清空而不是留旧模型的）；
+  /// 上游没给的项（OpenAI 官方不回单价、Gemini 不回收图能力）保持用户原值。
   ///
   /// 还没拉过就先拉一次：用户点这个箭头的意思就是「给我看有哪些模型」，再要求他
   /// 先去点一次下面的按钮没有任何信息增量。
   Future<void> _pickModel(BuildContext anchor, String draftId) async {
     int at = _drafts.indexWhere((_AiProviderDraft d) => d.id == draftId);
     if (at < 0) return;
-    if ((_models[draftId] ?? const <String>[]).isEmpty) {
+    if ((_models[draftId] ?? const <AiUpstreamModel>[]).isEmpty) {
       await _fetchModels(_drafts[at]);
       if (!mounted) return;
     }
-    final List<String> fetched = _models[draftId] ?? const <String>[];
+    final List<AiUpstreamModel> fetched =
+        _models[draftId] ?? const <AiUpstreamModel>[];
     // 拉失败或一条都没有：原因已经在探测结果那行文案里，不再弹一个空菜单。
     if (fetched.isEmpty || !anchor.mounted) return;
     final RenderBox? button = anchor.findRenderObject() as RenderBox?;
@@ -1325,7 +1395,11 @@ class _AiProviderSettingsSectionState
     at = _drafts.indexWhere((_AiProviderDraft d) => d.id == draftId);
     if (at < 0) return;
     final String current = _drafts[at].model;
-    final String? picked = await showFushiMenu<String>(
+    AiUpstreamModel? selected;
+    for (final AiUpstreamModel model in fetched) {
+      if (model.id == current) selected = model;
+    }
+    final AiUpstreamModel? picked = await showFushiMenu<AiUpstreamModel>(
       context: anchor,
       position: RelativeRect.fromRect(
         Rect.fromPoints(
@@ -1340,21 +1414,51 @@ class _AiProviderSettingsSectionState
       // 按钮只有一个图标宽，菜单不跟着缩成一条——模型名普遍很长（OpenRouter 的
       // 还带组织前缀）。
       constraints: const BoxConstraints(minWidth: 240),
-      initialValue: fetched.contains(current) ? current : null,
-      items: <PopupMenuEntry<String>>[
-        for (final String model in fetched)
-          PopupMenuItem<String>(
+      initialValue: selected,
+      items: <PopupMenuEntry<AiUpstreamModel>>[
+        for (final AiUpstreamModel model in fetched)
+          PopupMenuItem<AiUpstreamModel>(
             value: model,
-            child: Text(model, overflow: TextOverflow.ellipsis),
+            child: _modelMenuLabel(anchor, model),
           ),
       ],
     );
     if (picked == null || !mounted) return;
     final int now = _drafts.indexWhere((_AiProviderDraft d) => d.id == draftId);
     if (now < 0) return;
-    // 字段吃的就是这只 controller，写它即所见；草稿同步推进，两者不存在中间态。
-    _modelController(_drafts[now]).text = picked;
-    _update(now, _drafts[now].copyWith(model: picked));
+    final _AiProviderDraft before = _drafts[now];
+    final _AiProviderDraft next = before.copyWith(
+      model: picked.id,
+      acceptsImages: picked.acceptsImages ?? before.acceptsImages,
+      pricing: picked.pricing ?? before.pricing,
+    );
+    // 字段吃的就是这些 controller，写它即所见；草稿同步推进，两者不存在中间态。
+    _modelController(next).text = next.model;
+    _syncPricingControllers(next.id, next.pricing);
+    _update(now, next);
+  }
+
+  /// 候选一行：上游给了显示名就显示名在上、id 在下（存的是 id，用户要能对上）。
+  Widget _modelMenuLabel(BuildContext context, AiUpstreamModel model) {
+    final String? name = model.displayName;
+    if (name == null) {
+      return Text(model.id, overflow: TextOverflow.ellipsis);
+    }
+    final ThemeData theme = Theme.of(context);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Text(name, overflow: TextOverflow.ellipsis),
+        Text(
+          model.id,
+          overflow: TextOverflow.ellipsis,
+          style: theme.textTheme.bodySmall?.copyWith(
+            color: theme.colorScheme.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
   }
 
   // ---------------------------------------------------------------------------
@@ -1502,11 +1606,13 @@ class _AiProviderSettingsSectionState
     AiFeature.acquire => FushiIcons.download,
     AiFeature.mangaOcr => FushiIcons.ocr,
     AiFeature.audiobookCast => FushiIcons.voice,
+    AiFeature.mangaAudio => FushiIcons.voice,
     AiFeature.collectionOrder => FushiIcons.sort,
     AiFeature.libraryOrganize => FushiIcons.aiAssistant,
     AiFeature.subtitleProofread => FushiIcons.edit,
     AiFeature.cloudTranscription => FushiIcons.subtitles,
     AiFeature.mediaLinks => FushiIcons.aiAssistant,
+    AiFeature.musicVisualizerTheme => FushiIcons.animation,
     AiFeature.agent => FushiIcons.aiAssistant,
   };
 
@@ -1534,6 +1640,7 @@ class _AiProviderSettingsSectionState
       _probes.remove(id);
       _models.remove(id);
       _modelControllers.remove(id)?.dispose();
+      _disposePricingControllers(id);
       _drafts.removeAt(index);
     });
     unawaited(_saveValidDrafts());
@@ -1727,10 +1834,10 @@ class _AiProviderSettingsSectionState
         widget.clientFactory?.call() ??
         AiChatClient(relayTransport: widget.relayTransport);
     _ProbeState result;
-    List<String>? models;
+    List<AiUpstreamModel>? models;
     try {
       if (collectModels) {
-        final List<String> fetched = await client.listModels(config);
+        final List<AiUpstreamModel> fetched = await client.listModels(config);
         models = fetched;
         result = _ProbeState.done(
           ok: true,
@@ -1779,11 +1886,13 @@ class _AiProviderSettingsSectionState
     AiFeature.acquire => t.ai_feature_acquire,
     AiFeature.mangaOcr => t.ai_feature_manga_ocr,
     AiFeature.audiobookCast => t.ai_feature_audiobook_cast,
+    AiFeature.mangaAudio => t.ai_feature_manga_audio,
     AiFeature.collectionOrder => t.ai_feature_collection_order,
     AiFeature.libraryOrganize => t.ai_feature_library_organize,
     AiFeature.subtitleProofread => t.ai_feature_subtitle_proofread,
     AiFeature.cloudTranscription => t.ai_feature_cloud_transcription,
     AiFeature.mediaLinks => t.ai_feature_media_links,
+    AiFeature.musicVisualizerTheme => t.ai_feature_music_visualizer_theme,
     AiFeature.agent => t.ai_feature_agent,
   };
 
@@ -1799,11 +1908,14 @@ class _AiProviderSettingsSectionState
     AiFeature.acquire => t.ai_feature_acquire_summary,
     AiFeature.mangaOcr => t.ai_feature_manga_ocr_summary,
     AiFeature.audiobookCast => t.ai_feature_audiobook_cast_summary,
+    AiFeature.mangaAudio => t.ai_feature_manga_audio_summary,
     AiFeature.collectionOrder => t.ai_feature_collection_order_summary,
     AiFeature.libraryOrganize => t.ai_feature_library_organize_summary,
     AiFeature.subtitleProofread => t.ai_feature_subtitle_proofread_summary,
     AiFeature.cloudTranscription => t.ai_feature_cloud_transcription_summary,
     AiFeature.mediaLinks => t.ai_feature_media_links_summary,
+    AiFeature.musicVisualizerTheme =>
+      t.ai_feature_music_visualizer_theme_summary,
     AiFeature.agent => t.ai_feature_agent_summary,
   };
 
@@ -1829,6 +1941,15 @@ String _priceText(double? value) {
       ? value.toStringAsFixed(0)
       : '$value';
 }
+
+/// 「价格」各输入框（字段 id → 显示文本），与 build 里的字段 id 同一套。
+Map<String, String> _pricingTexts(AiModelPricing pricing) => <String, String>{
+  'input': _priceText(pricing.inputPerMillion),
+  'output': _priceText(pricing.outputPerMillion),
+  'cache-read': _priceText(pricing.cacheReadPerMillion),
+  'cache-write': _priceText(pricing.cacheWritePerMillion),
+  'currency': pricing.currency,
+};
 
 /// 一条提供商的编辑中状态。
 ///

@@ -544,12 +544,13 @@ void main() {
         contains('Border(top: BorderSide(color: tokens.surfaces.outline))'),
       );
       expect(pack, contains('einkSafeProgressValue('));
+      // 「正在听书」条与音乐条共用 FushiNowPlayingBar：墨水屏下描一圈 outline。
       final String listen = read(
-        'lib/src/media/audiobook/now_listening_mini_bar.dart',
+        'lib/src/utils/components/fushi_now_playing_bar.dart',
       );
       expect(
         listen,
-        contains('Border(top: BorderSide(color: scheme.outline))'),
+        contains('side: BorderSide(color: theme.colorScheme.outline)'),
       );
       final String sync = read('lib/src/sync/sync_progress_banner.dart');
       // 常规同步与复习同步两条进度共用一个 _bar(fraction:)，墨水屏归零在那一处。

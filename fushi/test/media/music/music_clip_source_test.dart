@@ -31,6 +31,46 @@ void main() {
     expect(s.fileOffsetMs, 0);
   });
 
+  test('YouTube 内置音源曲目：交给 ffmpeg 的是 audio-only 流 + 回放头，起点 0', () async {
+    final MusicClipSource s = await resolveMusicClipSource(
+      const MusicPlayItem(
+        trackUid: 'y',
+        path: 'fushi-music-youtube://video/dQw4w9WgXcQ',
+        title: 'Y',
+      ),
+      youtubeResolver: (String id) async => (
+        url: 'https://rr1.googlevideo.com/videoplayback?id=$id',
+        headers: <String, String>{'User-Agent': 'UA'},
+        expiresAt: null,
+      ),
+    );
+    expect(
+      s.inputPath,
+      'https://rr1.googlevideo.com/videoplayback?id=dQw4w9WgXcQ',
+    );
+    expect(s.httpHeaders, <String, String>{'User-Agent': 'UA'});
+    expect(s.fileOffsetMs, 0);
+
+    await expectLater(
+      resolveMusicClipSource(
+        const MusicPlayItem(
+          trackUid: 'y',
+          path: 'fushi-music-youtube://video/dQw4w9WgXcQ',
+          title: 'Y',
+        ),
+        youtubeResolver: (String _) async =>
+            throw const MusicPluginStreamUnavailable('private video'),
+      ),
+      throwsA(
+        isA<MusicClipSourceUnavailable>().having(
+          (MusicClipSourceUnavailable e) => e.message,
+          'message',
+          contains('private video'),
+        ),
+      ),
+    );
+  });
+
   test('插件取流失败：抛带原因的 MusicClipSourceUnavailable（不悄悄降级）', () async {
     await expectLater(
       resolveMusicClipSource(
@@ -95,4 +135,88 @@ void main() {
       throwsA(isA<MusicClipSourceProtected>()),
     );
   });
+  group(
+    'materializeMusicClipSource（截音频前物化 googlevideo 流，TODO-1314 / BUG-600 同根因）',
+    () {
+      const MusicClipSource youtube = MusicClipSource(
+        inputPath: 'https://rr1---sn-x.googlevideo.com/videoplayback?id=a',
+        httpHeaders: <String, String>{'User-Agent': 'UA'},
+      );
+
+      test('googlevideo 流：先整段物化到工作目录，交给 ffmpeg 的是本地文件、不带请求头', () async {
+        final List<({String url, String out})> calls =
+            <({String url, String out})>[];
+        final MusicClipSource s = await materializeMusicClipSource(
+          youtube,
+          workDir: 'W',
+          materializer:
+              ({
+                required String audioUrl,
+                required String outputPath,
+                void Function(String summary)? onFailure,
+              }) async {
+                calls.add((url: audioUrl, out: outputPath));
+                return outputPath;
+              },
+        );
+        expect(calls, hasLength(1));
+        expect(calls.single.url, youtube.inputPath);
+        expect(calls.single.out, startsWith('W'));
+        expect(s.inputPath, calls.single.out);
+        expect(s.inputPath, isNot(startsWith('http')));
+        expect(s.httpHeaders, isEmpty);
+        expect(s.fileOffsetMs, 0);
+      });
+
+      test('物化失败：带下载失败原因抛 MusicClipSourceUnavailable，不回退成对 URL 裁', () async {
+        await expectLater(
+          materializeMusicClipSource(
+            youtube,
+            workDir: 'W',
+            materializer:
+                ({
+                  required String audioUrl,
+                  required String outputPath,
+                  void Function(String summary)? onFailure,
+                }) async {
+                  onFailure?.call('range chunk HTTP 403 at byte 0');
+                  return null;
+                },
+          ),
+          throwsA(
+            isA<MusicClipSourceUnavailable>().having(
+              (MusicClipSourceUnavailable e) => e.message,
+              'message',
+              contains('HTTP 403'),
+            ),
+          ),
+        );
+      });
+
+      test('非 googlevideo 源（本机文件 / CUE、插件 CDN）原样返回，不下载', () async {
+        for (final MusicClipSource src in <MusicClipSource>[
+          const MusicClipSource(
+            inputPath: '/music/album.flac',
+            fileOffsetMs: 183000,
+          ),
+          const MusicClipSource(
+            inputPath: 'https://cdn.example/t.flac',
+            httpHeaders: <String, String>{'Referer': 'https://example/'},
+          ),
+        ]) {
+          final MusicClipSource s = await materializeMusicClipSource(
+            src,
+            workDir: 'W',
+            materializer:
+                ({
+                  required String audioUrl,
+                  required String outputPath,
+                  void Function(String summary)? onFailure,
+                }) async => fail('不该物化 ${src.inputPath}'),
+          );
+          expect(identical(s, src), isTrue, reason: src.inputPath);
+        }
+      });
+    },
+  );
 }

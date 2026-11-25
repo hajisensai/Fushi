@@ -31,11 +31,27 @@ void main() {
         contains(
           'FushiStaggeredEntrance( index: index, '
           'child: _videoDragReorderCell( dragReorderKeys, index, '
-          'cells[index].build(VideoCardOrientation.$orientation), ), ),',
+          'cells[index].build(VideoCardOrientation.$orientation, null), ), ),',
         ),
         reason: '$orientation 网格格子应包在 FushiStaggeredEntrance 里',
       );
     }
+    // PR #3397：库页布局为拼贴 / 规整色块时墙改走 [SliverFushiCoverBlocks]，
+    // 逐格错峰进场由该组件统一包（同一个 FushiEntranceScope 窗口）。
+    expect(
+      flat,
+      contains(
+        'SliverFushiCoverBlocks( layout: layout, itemCount: cells.length,',
+      ),
+      reason: '色块布局的墙必须走 SliverFushiCoverBlocks（自带逐格进场）',
+    );
+    expect(
+      read(
+        'lib/src/utils/components/fushi_cover_block_layout.dart',
+      ).replaceAll(RegExp(r'\s+'), ' '),
+      contains('FushiStaggeredEntrance(index: index, child: child)'),
+      reason: 'SliverFushiCoverBlocks 的每格必须包 FushiStaggeredEntrance',
+    );
     // 横滚行版式本体 [_buildHorizontalRowFrame]（真实行与首屏骨架行共用）。
     expect(src, contains('child: itemBuilder(i)'));
     expect(
@@ -124,6 +140,8 @@ void main() {
       'lib/src/pages/implementations/discovery/video_work_acquisition_section.dart',
       // 2026-10-31 AI 助手多会话：会话列表（整页侧栏 / 弹出列表共用）。
       'lib/src/pages/implementations/ai_agent_sessions.dart',
+      // 2026-11-16 书 / 漫画 / 字幕书元数据详情页（视频作品详情同款海报面板）。
+      'lib/src/pages/implementations/book_detail_page.dart',
     ]) {
       final String src = read(path);
       expect(src, contains('FushiEntranceScope('), reason: path);

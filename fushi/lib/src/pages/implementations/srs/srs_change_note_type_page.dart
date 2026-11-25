@@ -16,6 +16,8 @@ import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -29,6 +31,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 class SrsChangeNoteTypePage extends ConsumerStatefulWidget {
   const SrsChangeNoteTypePage({
@@ -239,7 +242,10 @@ class _SrsChangeNoteTypePageState extends ConsumerState<SrsChangeNoteTypePage> {
       Navigator.of(context).pop(true);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsChangeNoteType.apply', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
       if (mounted) setState(() => _applying = false);
     }
   }
@@ -256,10 +262,12 @@ class _SrsChangeNoteTypePageState extends ConsumerState<SrsChangeNoteTypePage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     return FushiPageScaffold(
       title: t.srs_change_type_title,
+      masthead: true,
       header: apple ? null : _buildTopBar(context),
-      actions: apple
+      actions: apple || masthead
           ? <Widget>[
               FushiIconButton(
                 key: _applyItem.key,

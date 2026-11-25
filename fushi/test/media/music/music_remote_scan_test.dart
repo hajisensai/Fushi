@@ -226,7 +226,10 @@ void main() {
     final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
     late SourceScanSummary summary;
     await tester.runAsync(() async {
-      summary = await SourceLibraryScanner(db).scan(source, fs: fs);
+      summary = await SourceLibraryScanner(
+        db,
+        transcribeAudiobook: null,
+      ).scan(source, fs: fs);
     });
     expect(summary.error, isNull);
     expect(summary.importedMediaCount, _goldenTrackCount());
@@ -244,6 +247,7 @@ void main() {
     await tester.runAsync(() async {
       ftp = await SourceLibraryScanner(
         db,
+        transcribeAudiobook: null,
       ).scan((await db.getMediaSourceById(ftpId))!);
     });
     expect(ftp.error, contains('SFTP/WebDAV/AList'));

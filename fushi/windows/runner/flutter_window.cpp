@@ -28,6 +28,7 @@
 
 #include "crash_dump.h"
 #include "external_video_handoff.h"
+#include "startup_trace.h"
 #include "flutter/generated_plugin_registrant.h"
 #include "audio_loopback_capture.h"
 #include "clipboard_image_reader.h"
@@ -36,6 +37,7 @@
 #include "game_client_extent.h"
 #include "game_stream_input.h"
 #include "global_mouse_trigger.h"
+#include "hang_watchdog.h"
 #include "low_level_mouse_hook.h"
 #include "system_font_list.h"
 #include "system_transparency_channel.h"
@@ -476,6 +478,7 @@ bool FlutterWindow::OnCreate() {
     return false;
   }
 
+  ::fushi::StartupTraceMark("win32-window");
   RECT frame = GetClientArea();
 
   // The size here must match the window dimensions to avoid unnecessary surface
@@ -486,7 +489,9 @@ bool FlutterWindow::OnCreate() {
   if (!flutter_controller_->engine() || !flutter_controller_->view()) {
     return false;
   }
+  ::fushi::StartupTraceMark("engine-create");
   RegisterPlugins(flutter_controller_->engine());
+  ::fushi::StartupTraceMark("register-plugins");
 
   // Title-bar theming channel: Dart pushes surface/onSurface colors so the
   // native caption follows the in-app theme (see window_caption_channel.dart).
@@ -612,6 +617,10 @@ bool FlutterWindow::OnCreate() {
           result->Success();
         } else if (call.method_name() == "isFullscreen") {
           result->Success(flutter::EncodableValue(IsFullscreen()));
+        } else if (call.method_name() == "dartHeartbeat") {
+          // Dart 存活心跳（hang_watchdog.h：Dart 失联检测）。每秒一次、无参数。
+          ::fushi::NoteDartHeartbeat();
+          result->Success();
         } else if (call.method_name() == "reportRasterizedFrameSize") {
           // BUG-2462: Dart's rasterised-frame size report, the authoritative
           // "the engine now presents at this size" signal for the child
@@ -790,6 +799,9 @@ bool FlutterWindow::OnCreate() {
   RegisterGameStreamInputChannel();
   RegisterSystemFontListChannel(flutter_controller_->engine()->messenger());
   RegisterSystemTransparencyChannel(flutter_controller_->engine()->messenger());
+  ::fushi::RegisterStartupTraceChannel(
+      flutter_controller_->engine()->messenger());
+  ::fushi::StartupTraceMark("runner-channels");
 
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
   caption_snap_button_.Attach(
@@ -1768,6 +1780,8 @@ flutter::EncodableMap AttachedSnapshotMap(
        flutter::EncodableValue(snapshot.reason)},
       {flutter::EncodableValue("surfaceVisible"),
        flutter::EncodableValue(snapshot.surface_visible)},
+      {flutter::EncodableValue("layoutSource"),
+       flutter::EncodableValue(snapshot.layout_source)},
       {flutter::EncodableValue("riskAccepted"),
        flutter::EncodableValue(snapshot.risk_accepted)},
       {flutter::EncodableValue("textGeneration"),
@@ -1794,6 +1808,10 @@ flutter::EncodableMap AttachedSnapshotMap(
       {flutter::EncodableValue("shield"),
        flutter::EncodableValue(std::move(shield))},
   };
+  if (!snapshot.measured_source.empty()) {
+    result[flutter::EncodableValue("measuredSource")] =
+        flutter::EncodableValue(snapshot.measured_source);
+  }
   if (snapshot.probe_start_observed_index >= 0) {
     result[flutter::EncodableValue("probeStartObservedIndex")] =
         flutter::EncodableValue(snapshot.probe_start_observed_index);
@@ -2464,9 +2482,14 @@ flutter::EncodableValue FlutterWindow::StartScreenOcrCapture(
   // 下面藏球 / 关旧层那次合成就是要取的那帧（hdr_desktop_capture.h）。
   ScreenOcrOverlay::Capture capture;
   fushi::HdrMonitorDuplication hdr;
+  // 取证（BUG-4367）：被截显示器是不是开着 HDR。kNotHdr 也包括「判不了」（note 非空）。
+  bool hdr_monitor = false;
   {
     std::string note;
-    switch (hdr.Open(monitor, &note)) {
+    const fushi::HdrMonitorDuplication::OpenResult opened =
+        hdr.Open(monitor, &note);
+    hdr_monitor = opened != fushi::HdrMonitorDuplication::OpenResult::kNotHdr;
+    switch (opened) {
       case fushi::HdrMonitorDuplication::OpenResult::kOpened:
         // 成功取帧后由 Capture 的参数摘要覆盖；失败时 CaptureMonitor 写回落原因。
         break;
@@ -2504,6 +2527,9 @@ flutter::EncodableValue FlutterWindow::StartScreenOcrCapture(
   const int width = capture.width;
   const int height = capture.height;
   std::string diagnostic = capture.diagnostic;
+  const bool via_dxgi = capture.via_dxgi;
+  // 被截显示器的 DPI（截图本身是物理像素；记它是为了核对缩放下坐标有没有混用逻辑像素）。
+  const UINT monitor_dpi = FlutterDesktopGetDpiForMonitor(monitor);
   // 先盖冻结层（画面立刻「定格」并显示「识别中」），再编 PNG。
   if (!screen_ocr_overlay_->Show(std::move(capture), style)) {
     floating_ball_window_->RestoreAfterCapture();
@@ -2527,6 +2553,13 @@ flutter::EncodableValue FlutterWindow::StartScreenOcrCapture(
       {flutter::EncodableValue("png"), flutter::EncodableValue(std::move(png))},
       {flutter::EncodableValue("screen"),
        flutter::EncodableValue(std::move(screen_rect))},
+      // 取证字段（BUG-4367）：只进诊断日志，不影响流程。
+      {flutter::EncodableValue("dpi"),
+       flutter::EncodableValue(static_cast<int32_t>(monitor_dpi))},
+      {flutter::EncodableValue("hdrMonitor"),
+       flutter::EncodableValue(hdr_monitor)},
+      {flutter::EncodableValue("capturePath"),
+       flutter::EncodableValue(std::string(via_dxgi ? "dxgi" : "gdi"))},
   };
   // HDR 显示器的取帧路径 / 回落原因：Dart 记进诊断日志（不影响结果）。
   if (!diagnostic.empty()) {
@@ -3047,7 +3080,9 @@ void FlutterWindow::RegisterGalHookTextChannel() {
             method == "attachedCalibrationCommit" ||
             method == "attachedCalibrationCancel" ||
             method == "attachedConfigure" ||
+            method == "attachedConfigureMeasured" ||
             method == "attachedUpdateText" ||
+            method == "attachedUpdateMeasuredText" ||
             method == "attachedUpdateStyle" ||
             method == "attachedSuspendForCapture" ||
             method == "attachedRestoreAfterCapture" ||
@@ -3135,6 +3170,34 @@ void FlutterWindow::RegisterGalHookTextChannel() {
                    BoolFromValue(args, "riskAccepted", false),
                    StringFromValue(args, "inputMode", ""),
                    StringFromValue(args, "mode", "attachedOnly"), &error);
+            }
+          } else if (method == "attachedConfigureMeasured") {
+            request = attached_text_surface_window_->ConfigureMeasured(
+                epoch, target_pid, target_hwnd,
+                StringFromValue(args, "measuredSource", std::string()),
+                StringFromValue(args, "inputMode", ""), &error);
+          } else if (method == "attachedUpdateMeasuredText") {
+            // glyphs: Int32List [start, length, left, top, right, bottom] * n
+            // in source-client physical pixels (see attached_measured_layout.h).
+            const flutter::EncodableValue* glyphs_value = nullptr;
+            if (args != nullptr) {
+              const auto it = args->find(flutter::EncodableValue("glyphs"));
+              if (it != args->end()) glyphs_value = &it->second;
+            }
+            const auto* glyph_words =
+                glyphs_value != nullptr
+                    ? std::get_if<std::vector<int32_t>>(glyphs_value)
+                    : nullptr;
+            if (glyph_words == nullptr) {
+              error = "measured_glyphs_malformed";
+            } else {
+              request = attached_text_surface_window_->UpdateMeasuredText(
+                  epoch, target_pid, target_hwnd,
+                  WideFromValue(args, "sourceText", L""),
+                  Int64FromValue(args, "textGeneration", 0), *glyph_words,
+                  IntFromValue(args, "clientWidth", 0),
+                  IntFromValue(args, "clientHeight", 0),
+                  IntFromValue(args, "clientSizeTolerance", 0), &error);
             }
           } else if (method == "attachedUpdateText") {
             request = attached_text_surface_window_->UpdateText(
@@ -3597,6 +3660,15 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
           win->DispatchGamepadAction(StringFromValue(args, "action", ""),
                                      DoubleFromValue(args, "dy", 0.0));
           result->Success();
+        } else if (method == "lookupOverlaySelection") {
+          // BUG-5310 — 查词热键按下时卡片里有选区：交给卡片嵌套查词，回 true
+          // 表示 host 真的发出了嵌套查词（Dart 不收卡、不抓前台选区）。结果要等
+          // host 脚本跑完才知道，回调必须可拷贝，unique_ptr 转 shared_ptr。
+          std::shared_ptr<flutter::MethodResult<flutter::EncodableValue>>
+              pending(std::move(result));
+          win->LookupOverlaySelection([pending](bool taken) {
+            pending->Success(flutter::EncodableValue(taken));
+          });
         } else if (method == "resize") {
           if (win == gal_lookup_card_window_.get()) {
             win->ResizeOffscreen(IntFromValue(args, "width", 0),
@@ -3643,6 +3715,12 @@ void FlutterWindow::RegisterGlobalLookupChannel() {
                 DoubleFromValue(args, "top", 0.0),
                 Int64FromValue(args, "geometryEpoch", 0));
           }
+          result->Success();
+        } else if (method == "settleQueuedMine") {
+          // review-gal-overlay-mine-fail: background card write settled ->
+          // card frames drop "queued" and say the reason in place. "json" is a
+          // JS string literal (double-encoded in Dart).
+          win->SettleQueuedMine(StringFromValue(args, "json", ""));
           result->Success();
         } else if (method == "resolveBridge") {
           // Dart's real reply for a deferred audio handler. "value" is a JSON
@@ -3906,7 +3984,10 @@ void FlutterWindow::RegisterWindowCaptureChannel() {
 }
 
 // galgame 一键制卡 A 阶段 — audio_loopback channel（仅 Windows）。start 打开 WASAPI
-// loopback 采集进环形缓冲（同步握手拿格式）；grabRecent 拉最近 N 毫秒 PCM；stop 释放。
+// loopback 采集进环形缓冲（同步握手拿格式），回包带租约 lease；grabRecent{lease, backMs}
+// 拉最近 N 毫秒 PCM；stop{lease} 只交回这张租约（同一路的最后一张交回才真停——galgame
+// 会话与常驻的跨应用语音缓存共用系统混音那一路）。pinSnapshot{lease, backMs} /
+// saveSnapshot{id, path} 是跨应用语音缓存的「查词那一刻钉住、制卡时才落盘」。
 // start 带 {userDataFolder, silent} 时改走进程树模式（网页视频制卡队列：只录该 WebView2
 // 环境的声音，silent 时不从扬声器出声）；restoreDucked{userDataFolder} 是崩溃残留兜底。
 // 采集/环形缓冲逻辑在 AudioLoopbackCapture 单例（见 audio_loopback_capture.cpp）。native
@@ -3957,11 +4038,25 @@ void FlutterWindow::RegisterAudioLoopbackChannel() {
           }
           return options;
         };
+        // 租约（start 回包的 lease）：stop / grabRecent / pinSnapshot 都按它找到自己那一路。
+        auto read_int64 = [&call](const char* key) -> int64_t {
+          const auto* args =
+              std::get_if<flutter::EncodableMap>(call.arguments());
+          if (args == nullptr) {
+            return 0;
+          }
+          const auto it = args->find(flutter::EncodableValue(key));
+          if (it == args->end()) {
+            return 0;
+          }
+          return it->second.TryGetLongValue().value_or(0);
+        };
         if (method == "start") {
           fushi::LoopbackError error = fushi::LoopbackError::kNone;
+          uint64_t lease = 0;
           const fushi::LoopbackFormat f =
               fushi::AudioLoopbackCapture::Instance().Start(read_options(),
-                                                            &error);
+                                                            &lease, &error);
           if (!f.ok) {
             const char* code = "start_failed";
             switch (error) {
@@ -3985,7 +4080,10 @@ void FlutterWindow::RegisterAudioLoopbackChannel() {
                  flutter::EncodableValue(std::string(code))}}));
             return;
           }
-          result->Success(flutter::EncodableValue(format_map(f)));
+          flutter::EncodableMap started = format_map(f);
+          started[flutter::EncodableValue("lease")] =
+              flutter::EncodableValue(static_cast<int64_t>(lease));
+          result->Success(flutter::EncodableValue(std::move(started)));
           return;
         }
         if (method == "restoreDucked") {
@@ -4001,24 +4099,63 @@ void FlutterWindow::RegisterAudioLoopbackChannel() {
           return;
         }
         if (method == "stop") {
-          fushi::AudioLoopbackCapture::Instance().Stop();
+          // 只交回自己那张租约；别的使用方还在用这一路时不停（未知租约无操作）。
+          fushi::AudioLoopbackCapture::Instance().Release(
+              static_cast<uint64_t>(read_int64("lease")));
           result->Success();
           return;
         }
-        if (method == "grabRecent") {
-          const auto* args =
-              std::get_if<flutter::EncodableMap>(call.arguments());
-          int back_ms = 0;
-          if (args != nullptr) {
-            const auto it = args->find(flutter::EncodableValue("backMs"));
+        if (method == "pinSnapshot") {
+          bool stopped = false;
+          const uint64_t id = fushi::AudioLoopbackCapture::Instance().PinSnapshot(
+              static_cast<uint64_t>(read_int64("lease")),
+              static_cast<int>(read_int64("backMs")), &stopped);
+          if (id == 0) {
+            // code=stopped：租约那一路的采集线程已退出，持有方应重新 start 同一来源。
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string(
+                     stopped ? "capture stopped" : "no audio buffered"))},
+                {flutter::EncodableValue("code"),
+                 flutter::EncodableValue(
+                     std::string(stopped ? "stopped" : "empty"))}}));
+            return;
+          }
+          result->Success(flutter::EncodableValue(flutter::EncodableMap{
+              {flutter::EncodableValue("id"),
+               flutter::EncodableValue(static_cast<int64_t>(id))}}));
+          return;
+        }
+        if (method == "saveSnapshot") {
+          std::string path;
+          if (const auto* args =
+                  std::get_if<flutter::EncodableMap>(call.arguments())) {
+            const auto it = args->find(flutter::EncodableValue("path"));
             if (it != args->end()) {
-              back_ms = static_cast<int>(
-                  it->second.TryGetLongValue().value_or(0));
+              if (const auto* s = std::get_if<std::string>(&it->second)) {
+                path = *s;
+              }
             }
           }
+          const fushi::LoopbackFormat f =
+              fushi::AudioLoopbackCapture::Instance().SaveSnapshot(
+                  static_cast<uint64_t>(read_int64("id")),
+                  Utf8ToWideString(path));
+          if (!f.ok) {
+            result->Success(flutter::EncodableValue(flutter::EncodableMap{
+                {flutter::EncodableValue("error"),
+                 flutter::EncodableValue(std::string("snapshot unavailable"))}}));
+            return;
+          }
+          result->Success(flutter::EncodableValue(format_map(f)));
+          return;
+        }
+        if (method == "grabRecent") {
           std::vector<uint8_t> pcm;
           const fushi::LoopbackFormat f =
-              fushi::AudioLoopbackCapture::Instance().GrabRecent(back_ms, pcm);
+              fushi::AudioLoopbackCapture::Instance().GrabRecent(
+                  static_cast<uint64_t>(read_int64("lease")),
+                  static_cast<int>(read_int64("backMs")), pcm);
           if (!f.ok || pcm.empty()) {
             result->Success(flutter::EncodableValue(flutter::EncodableMap{
                 {flutter::EncodableValue("error"),
@@ -4741,7 +4878,42 @@ void FlutterWindow::RegisterGameStreamInputChannel() {
           }
           return;
         }
+        if (call.method_name() == "setHostMuted") {
+          // 静音主机：压低已绑定游戏进程树的音频会话；关掉时还原，并顺手清掉上次
+          // 进程被杀留下的压低残留（会话音量按可执行文件持久化）。
+          const bool* muted = nullptr;
+          if (args != nullptr) {
+            const auto it = args->find(flutter::EncodableValue("muted"));
+            if (it != args->end()) muted = std::get_if<bool>(&it->second);
+          }
+          if (muted == nullptr) {
+            result->Error("bad_args", "Missing muted flag");
+            return;
+          }
+          if (!*muted) {
+            // 先还原，再看绑定：解除静音不能因为窗口已没了而留着压低。
+            game_stream_host_mute_.Stop();
+          }
+          const fushi::GameStreamWindowInfo bound =
+              game_stream_input_->InspectBound();
+          if (!bound.alive || !bound.process_matches || bound.pid == 0) {
+            result->Error("not_bound", "No bound game window");
+            return;
+          }
+          if (*muted) {
+            if (!game_stream_host_mute_.Start(static_cast<DWORD>(bound.pid))) {
+              result->Error("mute_failed", "No audio render endpoint");
+              return;
+            }
+          } else {
+            game_stream_host_mute_.RestoreResidual(
+                static_cast<DWORD>(bound.pid));
+          }
+          result->Success();
+          return;
+        }
         if (call.method_name() == "unbind") {
+          game_stream_host_mute_.Stop();
           game_stream_input_->Unbind();
           result->Success();
           return;
@@ -4924,6 +5096,7 @@ void FlutterWindow::OnDestroy() {
   // （RIDEV_INPUTSINK 要求 hwndTarget），HWND 一销毁那条登记就成了悬空目标，
   // 必须在这里主动摘掉而不是等进程退出兜底。
   fushi::SetGlobalMouseTrigger(nullptr, fushi::kGlobalMouseTriggerNone);
+  game_stream_host_mute_.Stop();
   if (game_stream_input_) {
     game_stream_input_->Unbind();
   }
@@ -4977,6 +5150,10 @@ LRESULT
 FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
                               WPARAM const wparam,
                               LPARAM const lparam) noexcept {
+  // 主线程卡顿计量的心跳应答（hang_watchdog.h）：最先处理、不往下传。
+  if (::fushi::HandleHangWatchdogHeartbeat(message, wparam)) {
+    return 0;
+  }
   if (message == WM_TIMER && system_ocr_host_ &&
       system_ocr_host_->HandleTimer(wparam)) {
     return 0;

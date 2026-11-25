@@ -1,6 +1,10 @@
 //! 常驻复习队列（按 profile）：牌组计数原料、到期复习候选、学习卡与「今天」的作答日志留在内存里，随写入增量
 //! 更新；`study` 命令（store/study.rs）每次排队只读这份状态，不再按子树全部卡聚合 / 扫一遍到期卡。
 //!
+//! 协议 3 与新代共用这一份会话：「从哪读」抽成 [Feed]（协议 3 [P3Feed] 读 `srs_cards_cache` / `srs_review_logs`；新代
+//! `store/gen4/cmd/study.rs` 读缓存层 `cards` 与日志索引，会话按集合号分、由库句柄 `G4Core` 持有），「写入怎么记账」各自装
+//! 写连接上的临时触发器（下面是协议 3 的；新代的在那里，记进同一个 [StudyHub] 的待重读清单、同一套事务边界）。
+//!
 //! 以前（L2）每次排队：计数原料 `GROUP BY deck_id` 走覆盖索引扫子树全部卡、到期候选顺着到期索引扫全部到期卡
 //! 做有界排序，十万张到期卡一次排队约 100 ms，评一张卡就排一次。现在（对齐 Anki v3 queue builder 的「建一次、
 //! 答一张改一张」）：
@@ -29,6 +33,11 @@
 //! 当前最好的块整块跳过（[DueIndex::best]）。下界由同一组浮点运算在端点上算出：IEEE 除法 / 加法对每个参数单调，
 //! 所以下界对块里每张卡**按 SQL 同一条式子算出的** R 都成立，结果与旧的 `ORDER BY R, id LIMIT 1` 逐张相同
 //! （含 R 相等按 id、除以零得 NULL 排最前）。一次取最低只访问少数几块，不随到期卡数线性增长。
+//!
+//! 牌组设置「复习顺序」（`reviewOrder`，store/study.rs [ReviewOrder]）选了 R 以外的顺序时，排序键与此刻无关
+//! （[order_key]：到期日 / 难度 / 间隔 / 当天哈希），每个牌组另建一份按键有序的 `BTreeSet`。按需懒建
+//! （[Session::ensure_order]：第一次有人按这个顺序出卡时遍历到期候选建一次），之后随增量重读同步增删；会话
+//! 跨日整份重建，当天哈希里的「今天」随之换。
 
 use std::cmp::Ordering;
 use std::collections::{BTreeSet, BinaryHeap, HashMap, HashSet};
@@ -39,6 +48,7 @@ use rusqlite::{Connection, params_from_iter, types::Value as Sql};
 use serde_json::Value;
 
 use crate::projection::Day;
+use crate::store::study::{CardIx, P3Tables, ReviewOrder, Tables};
 use crate::store::sync2::sql;
 
 const DAY_MS: i64 = 86_400_000;
@@ -60,6 +70,9 @@ const TOUCH_CARD: i64 = 0;
 const TOUCH_LOG: i64 = 1;
 /// 笔记：笔记缓存行、笔记的修改记录、修改记录的服务器时刻（浏览会话 store/browse.rs 用）。
 const TOUCH_NOTE: i64 = 2;
+/// 「整份都可能变了」（新代：别名表变了，日志 / 卡归到的规范 ID 可能整批改变）：直接记成攒满（[Dirty::overflow]），
+/// 下次排队整份重建。
+pub(crate) const TOUCH_ALL: i64 = 3;
 
 /// 一个 profile 写过、还没重读进会话的卡 / 日志 / 笔记 id。
 #[derive(Default, Clone, Debug)]
@@ -74,6 +87,13 @@ pub(crate) struct Dirty {
 impl Dirty {
     fn add(&mut self, kind: i64, id: String) {
         if self.overflow {
+            return;
+        }
+        if kind == TOUCH_ALL {
+            self.overflow = true;
+            self.cards = HashSet::new();
+            self.logs = HashSet::new();
+            self.notes = HashSet::new();
             return;
         }
         match kind {
@@ -144,12 +164,22 @@ struct Touched {
     study: Consumer,
     /// 浏览会话（store/browse.rs）：卡与笔记。
     browse: Consumer,
+    /// 复习队列按「净变化」判整份重建的行（[StudyHub::touch_study_net]）：会话键 → 行 → 写连接上还没结束的事务里
+    /// 插入次数减删除次数。
+    study_net: HashMap<String, HashMap<String, i64>>,
+}
+
+/// 一个会话键下有没有净变化的行（插入与删除没有互相抵消）。
+fn net_moved(net: &HashMap<String, HashMap<String, i64>>, key: &str) -> bool {
+    net.get(key).is_some_and(|m| m.values().any(|n| *n != 0))
 }
 
 /// 一个 [crate::store::SrsCore] 的常驻复习队列：待重读清单 + 各 profile 的会话。
 #[derive(Default)]
 pub(crate) struct StudyHub {
     touched: Mutex<Touched>,
+    /// 统计原料的缓存与写入代数（store/stats.rs）：同一组触发器每记一次就推进代数。
+    pub(crate) stats: crate::store::stats::StatsCache,
     sessions: Mutex<HashMap<String, Session>>,
     /// 测试：整份重建过几次。
     #[cfg(test)]
@@ -157,7 +187,7 @@ pub(crate) struct StudyHub {
 }
 
 /// 写连接上的临时触发器（只在这条连接上、不进库文件、不随备份走）：缓存行与日志的每次增删改记下 id。
-const TRIGGERS: &str = "
+pub(crate) const TRIGGERS: &str = "
 CREATE TEMP TRIGGER IF NOT EXISTS srs_study_card_ins AFTER INSERT ON main.srs_cards_cache
   BEGIN SELECT srs_study_touch(0, NEW.profile_uid, NEW.id); END;
 CREATE TEMP TRIGGER IF NOT EXISTS srs_study_card_upd AFTER UPDATE ON main.srs_cards_cache
@@ -211,6 +241,7 @@ impl StudyHub {
                 // ID 列存编码后的值（store/ids.rs）：这里要文本。
                 let profile = crate::store::ids::text(ctx.get_raw(1)).unwrap_or_default();
                 let id = crate::store::ids::text(ctx.get_raw(2)).unwrap_or_default();
+                h.stats.touch();
                 let mut t = lock(&h.touched);
                 // 卡两边都要；日志只有复习队列要；笔记只有浏览要。
                 if kind != TOUCH_NOTE {
@@ -230,18 +261,62 @@ impl StudyHub {
         c.execute_batch(TRIGGERS).map_err(sql)
     }
 
+    /// 只给复习队列记一个待重读的 id（[kind] = 卡 / 日志 / [TOUCH_ALL]），记在 [key]（会话的键）名下、未提交一侧。
+    /// 新代（`store/gen4/cmd/study.rs`）写连接上的临时触发器经它记账：新代的卡缓存行与日志索引不是协议 3 的表，
+    /// 触发器另写，待重读清单与事务边界（[StudyHub::settle]）是同一份。
+    pub(crate) fn touch_study(&self, kind: i64, key: String, id: String) {
+        lock(&self.touched)
+            .study
+            .pending
+            .entry(key)
+            .or_default()
+            .add(kind, id);
+    }
+
+    /// 一行「整份都可能变了」的表（新代的别名表）的插入（[delta] = 1）/ 删除（-1），[row] = 这一行的值。同一个事务里删了
+    /// 又插回同一行（整表重算把没变的行原样写回）互相抵消；事务结束（[StudyHub::settle]）时还有净变化的会话键记成攒满、
+    /// 下次整份重建；排队时并上未提交的一侧（有净变化就整份重建，只读不清）。被回滚的事务也按净变化算（多重建一次，
+    /// 不会漏）。
+    pub(crate) fn touch_study_net(&self, key: String, row: String, delta: i64) {
+        *lock(&self.touched)
+            .study_net
+            .entry(key)
+            .or_default()
+            .entry(row)
+            .or_default() += delta;
+    }
+
     /// 写连接回到 autocommit（事务已提交或回滚完）：未提交的 id 挪进已提交。写锁守卫释放时调（还持着写锁）。
     pub(crate) fn settle(&self) {
         let mut t = lock(&self.touched);
+        for (key, rows) in std::mem::take(&mut t.study_net) {
+            if rows.values().any(|n| *n != 0) {
+                t.study
+                    .committed
+                    .entry(key)
+                    .or_default()
+                    .add(TOUCH_ALL, String::new());
+            }
+        }
         t.study.settle();
         t.browse.settle();
+        drop(t);
+        self.stats.settle();
     }
 
     /// 浏览会话（store/browse.rs）取走 [profile] 待重读的卡 / 笔记 id，并上未提交的（只读不清）：口径同
     /// [StudyHub::with_session]——COMMIT 对读连接可见早于 [settle]，只取已提交的会在这个窗口里漏读一次。
     /// [_uncommitted] 留给调用方表态，两种连接现在同一口径。
+    #[cfg(test)]
     pub(crate) fn take_browse(&self, profile: &str, _uncommitted: bool) -> Dirty {
         lock(&self.touched).browse.take(profile, true)
+    }
+
+    /// 测试：持着会话表的锁 panic（建 / 重读到一半）。
+    #[cfg(test)]
+    pub(crate) fn panic_holding_sessions(&self) {
+        let _sessions = self.sessions.lock().unwrap();
+        panic!("test: injected panic while holding the study sessions");
     }
 
     /// 测试：取走 [profile] 复习队列待重读的卡 / 日志 id（含未提交的），对拍两条投影路径触发的待重读用。
@@ -250,10 +325,8 @@ impl StudyHub {
         lock(&self.touched).study.take(profile, true)
     }
 
-    /// 在 [profile] 的会话上跑 [f]：先取走已提交的待重读 id、并上未提交的（只读不清，见文件头「事务边界」；
-    /// [_uncommitted] = [c] 是写连接上还没结束的事务，两种连接现在同一口径，参数留给调用方表态），会话不存在 /
-    /// 日界不同 / 攒满了就整份重建，否则只重读那几行。[c] 是这次排队的连接（读快照，或写连接上的 SAVEPOINT）；
-    /// 必须在这条连接这次读事务的第一条读之前调（先取 id 再开快照）。重建 / 重读出错时丢掉会话，下次整份重建。
+    /// 在 [profile] 的会话上跑 [f]（协议 3：数据来自 `srs_cards_cache` / `srs_review_logs`，[P3Feed]）。口径见
+    /// [StudyHub::with_feed]；[_uncommitted] = [c] 是写连接上还没结束的事务，两种连接现在同一口径，参数留给调用方表态。
     pub(crate) fn with_session<T>(
         &self,
         c: &Connection,
@@ -261,31 +334,118 @@ impl StudyHub {
         day: Day,
         today: i64,
         _uncommitted: bool,
-        f: impl FnOnce(&Session) -> Result<T, String>,
+        f: impl FnOnce(&mut Session) -> Result<T, String>,
     ) -> Result<T, String> {
-        let mut sessions = lock(&self.sessions);
-        let dirty = lock(&self.touched).study.take(profile, true);
-        let fresh = match sessions.get(profile) {
-            Some(s) => s.day != day || s.today != today || dirty.overflow,
+        let mut feed = P3Feed {
+            tb: P3Tables { c, profile },
+        };
+        self.with_feed(&mut feed, profile, day, today, None, |s, _| f(s))
+    }
+
+    /// 在键为 [key] 的会话上跑 [f]：先取走已提交的待重读 id、并上未提交的（只读不清，见文件头「事务边界」），会话
+    /// 不存在 / 日界不同 / 攒满了 / 印记（[stamp]）与会话记的不同就整份重建，否则只重读那几行。数据从 [feed] 读
+    /// （协议 3 [P3Feed]，新代 `store/gen4/cmd/study.rs`）；[feed] 的连接是这次排队的连接（读快照，或写连接上的事务），
+    /// 必须在这条连接这次读事务的第一条读之前调（先取 id 再开快照：SQLite 的 `BEGIN` 是延迟的，第一条读才定快照）。
+    /// [stamp]：没有写连接触发器可依的读者（新代 Secondary）给的「库变没变」印记，None = 只按待重读清单判。重建 / 重读
+    /// 出错时丢掉会话，下次整份重建。
+    pub(crate) fn with_feed<T>(
+        &self,
+        feed: &mut dyn Feed,
+        key: &str,
+        day: Day,
+        today: i64,
+        stamp: Option<&str>,
+        f: impl FnOnce(&mut Session, &mut dyn Feed) -> Result<T, String>,
+    ) -> Result<T, String> {
+        // 建 / 重读到一半 panic（锁被毒化）时会话停在半截、取走的待重读 id 也没用上：整表丢掉、下次整份重建（同重建 /
+        // 重读出错时丢会话，BUG-4297）。
+        let mut sessions = self.sessions.lock().unwrap_or_else(|poisoned| {
+            let mut s = poisoned.into_inner();
+            s.clear();
+            self.sessions.clear_poison();
+            s
+        });
+        let dirty = {
+            let mut t = lock(&self.touched);
+            let mut d = t.study.take(key, true);
+            if net_moved(&t.study_net, key) {
+                d.add(TOUCH_ALL, String::new());
+            }
+            d
+        };
+        let fresh = match sessions.get(key) {
+            Some(s) => {
+                s.day != day || s.today != today || dirty.overflow || s.stamp.as_deref() != stamp
+            }
             None => true,
         };
         let ready = if fresh {
             #[cfg(test)]
             self.builds
                 .fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-            sessions.remove(profile);
-            Session::build(c, profile, day, today).map(|s| {
-                sessions.insert(profile.to_owned(), s);
+            sessions.remove(key);
+            Session::build(feed, day, today, stamp).map(|s| {
+                sessions.insert(key.to_owned(), s);
             })
         } else {
-            let s = sessions.get_mut(profile).expect("checked above");
-            s.reread(c, profile, &dirty)
+            let s = sessions.get_mut(key).expect("checked above");
+            feed.normalize(dirty)
+                .and_then(|dirty| s.reread(feed, &dirty))
         };
         if let Err(e) = ready {
-            sessions.remove(profile);
+            sessions.remove(key);
             return Err(e);
         }
-        f(&sessions[profile])
+        f(sessions.get_mut(key).expect("ready above"), feed)
+    }
+}
+
+/// 常驻会话从哪读（[StudyHub::with_feed]）：卡行经 [Feed::tables]（`srs_cards_cache` 或新代缓存层的 `cards`，列相同，
+/// 见 [row_columns]），日志的计数上下文由各自的实现拼（协议 3 一条 SQL；新代从日志索引与操作体拼，`store/gen4/cmd/study.rs`）。
+/// 会话的增删改规则只有本文件这一份。
+pub(crate) trait Feed {
+    fn tables(&self) -> &dyn Tables;
+    /// 整份扫最近 30 天的日志。
+    fn scan_logs(&mut self, day: Day, today: i64) -> Result<LogState, String>;
+    /// 按 [dirty]（已经 [Feed::normalize] 过）重读日志的贡献：先减旧的、再按库里现在的加回。
+    fn reread_logs(
+        &mut self,
+        logs: &mut LogState,
+        dirty: &Dirty,
+        day: Day,
+        today: i64,
+    ) -> Result<(), String>;
+    /// 触发器记下的 id 换成会话里的口径（新代：归到规范 ID）。默认原样。
+    fn normalize(&mut self, dirty: Dirty) -> Result<Dirty, String> {
+        Ok(dirty)
+    }
+}
+
+/// 协议 3 的数据来源（按 profile 分区的 `srs_cards_cache` / `srs_review_logs`）。
+pub(crate) struct P3Feed<'a> {
+    pub(crate) tb: P3Tables<'a>,
+}
+
+impl Feed for P3Feed<'_> {
+    fn tables(&self) -> &dyn Tables {
+        &self.tb
+    }
+
+    fn scan_logs(&mut self, day: Day, today: i64) -> Result<LogState, String> {
+        LogState::scan(self.tb.c, self.tb.profile, day, today)
+    }
+
+    fn reread_logs(
+        &mut self,
+        logs: &mut LogState,
+        dirty: &Dirty,
+        day: Day,
+        today: i64,
+    ) -> Result<(), String> {
+        if dirty.logs.is_empty() {
+            return Ok(());
+        }
+        logs.reread(self.tb.c, self.tb.profile, day, today, &dirty.logs)
     }
 }
 
@@ -300,6 +460,8 @@ struct Fold {
     today: bool,
     reviewed: bool,
     introduced: bool,
+    /// 作答用时（`duration_ms`，负数按 0）。
+    duration_ms: i64,
 }
 
 /// 计数上下文里来自日志的部分：最近 30 天每天的复习数、今天已学的新卡 / 已复习的卡 / 全部作答。按日志 id 记
@@ -308,22 +470,41 @@ struct Fold {
 pub(crate) struct LogState {
     last30: Vec<i64>,
     introduced: HashMap<String, u32>,
+    /// 今天复习过的卡 → 今天对它的复习作答（`review_type = 'review'` 的日志）条数。
     reviewed: HashMap<String, u32>,
+    /// 今天复习过的卡 → 这些复习作答的用时之和（毫秒）。与 [Self::reviewed] 同一批日志、同增同减。
+    reviewed_ms: HashMap<String, i64>,
     /// 今天的作答：日志 id → (卡, 时刻)。
     answers: HashMap<String, (String, i64)>,
+    /// [Self::answers] 按卡的索引：卡 → 今天对它的作答的日志 id。与 [Self::answers] 同增同删（[Self::apply] /
+    /// [Self::unapply]）：增量重读（`store/gen4/cmd/study.rs` `reread_logs`）按碰到的卡找今天的作答，不扫整张作答表
+    /// （HBK-AUDIT-010：以前每答一张整表扫三遍，今天答 N 次累计 O(N²)）。
+    answers_by_card: HashMap<String, HashSet<String>>,
     folded: HashMap<String, Fold>,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// 测试：本线程上整表遍历「今天的作答」（[LogState::answers]）访问过的条目数。普通出卡不该整表遍历（HBK-AUDIT-010）。
+    static ANSWER_VISITS: std::cell::Cell<usize> = const { std::cell::Cell::new(0) };
+}
+
+/// 测试：本线程到现在为止整表遍历「今天的作答」访问过的条目数（[LogState::answers]）。
+#[cfg(test)]
+pub(crate) fn answer_visits() -> usize {
+    ANSWER_VISITS.with(std::cell::Cell::get)
 }
 
 /// 最近 30 天的复习日志（参数：profile, 30 天前的日界, 今天的日界）。
 pub(crate) const LOGS_SQL: &str = "SELECT srs_idt(card_id) AS card_id, occurred_at, review_type, \
-     CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, srs_idt(id) AS id \
+     CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, srs_idt(id) AS id, duration_ms \
      FROM srs_review_logs WHERE profile_uid = srs_id(?1) AND kind = 'review' AND occurred_at >= ?2";
 
 /// 按 id 重读几条日志（参数同 [LOGS_SQL]，其后是 id）：走主键，profile / 种类 / 时刻只当过滤（`+`），不让 SQLite 改走
 /// 区间索引把 30 天日志扫一遍。
 pub(crate) fn logs_by_id_sql(n: usize) -> String {
     format!(
-        "SELECT srs_idt(card_id) AS card_id, occurred_at, review_type, CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, srs_idt(id) AS id          FROM srs_review_logs WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND +kind = 'review' AND +occurred_at >= ?2",
+        "SELECT srs_idt(card_id) AS card_id, occurred_at, review_type, CASE WHEN review_type = 'learn' AND occurred_at >= ?3 THEN json END, srs_idt(id) AS id, duration_ms          FROM srs_review_logs WHERE id IN ({}) AND +profile_uid = srs_id(?1) AND +kind = 'review' AND +occurred_at >= ?2",
         marks(n)
     )
 }
@@ -350,14 +531,37 @@ impl LogState {
         self.reviewed.keys()
     }
 
+    /// 今天对 [card] 的复习作答条数（没复习过 = 0）。
+    pub(crate) fn review_answers(&self, card: &str) -> i64 {
+        self.reviewed.get(card).map_or(0, |n| i64::from(*n))
+    }
+
+    /// 今天对 [card] 的复习作答用时之和（毫秒；没复习过 = 0）。
+    pub(crate) fn review_ms(&self, card: &str) -> i64 {
+        self.reviewed_ms.get(card).copied().unwrap_or(0)
+    }
+
     /// 今天新学过的卡（去重）。
     pub(crate) fn introduced_cards(&self) -> impl Iterator<Item = &String> {
         self.introduced.keys()
     }
 
-    /// 今天的全部作答 (卡, 时刻)。
+    /// 今天的全部作答 (卡, 时刻)。整表遍历：只给确实要整份的读（自定义学习「会话里答过」、RWKV 间隔守卫）；按卡找用
+    /// [Self::answers_on]，按日志找用 [Self::answer_card]。
     pub(crate) fn answers(&self) -> impl Iterator<Item = (&String, i64)> {
+        #[cfg(test)]
+        ANSWER_VISITS.with(|v| v.set(v.get() + self.answers.len()));
         self.answers.values().map(|(c, at)| (c, *at))
+    }
+
+    /// 今天对 [card] 的作答的日志 id（按卡的索引，不扫整张作答表）。
+    pub(crate) fn answers_on(&self, card: &str) -> impl Iterator<Item = &String> {
+        self.answers_by_card.get(card).into_iter().flatten()
+    }
+
+    /// 今天的作答 [id] 记在哪张卡上（不是今天的作答 = None）。
+    pub(crate) fn answer_card(&self, id: &str) -> Option<&String> {
+        self.answers.get(id).map(|(c, _)| c)
     }
 
     /// 整份扫一遍最近 30 天的日志（`idx_srs_review_logs_profile_kind_time` 区间）。
@@ -367,11 +571,8 @@ impl LogState {
         day: Day,
         today: i64,
     ) -> Result<LogState, String> {
-        let mut s = LogState {
-            last30: vec![0; 30],
-            ..LogState::default()
-        };
-        let (from, today_start) = (day_start(&day, today - 29), day_start(&day, today));
+        let mut s = LogState::empty();
+        let (from, today_start) = LogState::window(day, today);
         let mut stmt = c.prepare_cached(LOGS_SQL).map_err(sql)?;
         let mut q = stmt
             .query(rusqlite::params![profile, from, today_start])
@@ -382,6 +583,7 @@ impl LogState {
         Ok(s)
     }
 
+    /// [LOGS_SQL] 的一行记进来；[today_start] = [LogState::window] 的第二项（调用方算一次，不逐行重算）。
     fn fold_row(
         &mut self,
         r: &rusqlite::Row<'_>,
@@ -390,17 +592,72 @@ impl LogState {
         today_start: i64,
     ) -> Result<(), String> {
         let at: i64 = r.get(1).map_err(sql)?;
+        let card: String = r.get(0).map_err(sql)?;
+        let id: String = r.get(4).map_err(sql)?;
+        let duration_ms: Option<i64> = r.get(5).map_err(sql)?;
+        let today_log = at >= today_start;
+        let (review_type, learn_json) = if today_log {
+            (
+                r.get::<_, String>(2).map_err(sql)?,
+                r.get::<_, Option<String>>(3).map_err(sql)?,
+            )
+        } else {
+            (String::new(), None)
+        };
+        self.fold(
+            id,
+            card,
+            at,
+            &review_type,
+            learn_json.as_deref(),
+            duration_ms,
+            day,
+            today,
+            today_start,
+        );
+        Ok(())
+    }
+
+    /// 一个空的计数上下文（最近 30 天全是 0）：调用方再逐条 [LogState::fold]。
+    pub(crate) fn empty() -> LogState {
+        LogState {
+            last30: vec![0; 30],
+            ..LogState::default()
+        }
+    }
+
+    /// 最近 30 天的窗口：(30 天前的日界, 今天的日界)。[LOGS_SQL] 的第 2、3 个参数。
+    pub(crate) fn window(day: Day, today: i64) -> (i64, i64) {
+        (day_start(&day, today - 29), day_start(&day, today))
+    }
+
+    /// 记一条 `kind = 'review'` 的日志（[LOGS_SQL] 的一行，列一一对应）：[review_type] / [learn_json] 只在今天的日志上
+    /// 读（[learn_json] = 今天的学习步日志的行 JSON，看 `res.reps` 是不是 1；别的日志给 None）。新代读命令
+    /// （`store/gen4/cmd/study.rs`）从操作里拼出同样的几列再调这里，计数规则只有这一份。[today_start] =
+    /// [LogState::window] 的第二项（调用方对一整批日志算一次）。
+    #[allow(clippy::too_many_arguments)]
+    pub(crate) fn fold(
+        &mut self,
+        id: String,
+        card: String,
+        at: i64,
+        review_type: &str,
+        learn_json: Option<&str>,
+        duration_ms: Option<i64>,
+        day: Day,
+        today: i64,
+        today_start: i64,
+    ) {
         let d = day.index(at);
         let slot = d - (today - 29);
         let slot = (0..30).contains(&slot).then_some(slot as usize);
-        let card: String = r.get(0).map_err(sql)?;
-        let id: String = r.get(4).map_err(sql)?;
+        let duration_ms = duration_ms.unwrap_or(0).max(0);
         let today_log = at >= today_start;
         let (mut reviewed, mut introduced) = (false, false);
         if today_log {
-            reviewed = r.get::<_, String>(2).map_err(sql)? == "review";
-            if let Some(j) = r.get::<_, Option<String>>(3).map_err(sql)? {
-                let v: Value = serde_json::from_str(&j).unwrap_or(Value::Null);
+            reviewed = review_type == "review";
+            if let Some(j) = learn_json {
+                let v: Value = serde_json::from_str(j).unwrap_or(Value::Null);
                 introduced = v["res"]["reps"].as_f64() == Some(1.0);
             }
         }
@@ -413,9 +670,9 @@ impl LogState {
                 today: today_log,
                 reviewed,
                 introduced,
+                duration_ms,
             },
         );
-        Ok(())
     }
 
     fn apply(&mut self, id: String, f: Fold) {
@@ -425,13 +682,25 @@ impl LogState {
         if f.today {
             if f.reviewed {
                 *self.reviewed.entry(f.card.clone()).or_default() += 1;
+                *self.reviewed_ms.entry(f.card.clone()).or_default() += f.duration_ms;
             }
             if f.introduced {
                 *self.introduced.entry(f.card.clone()).or_default() += 1;
             }
-            self.answers.insert(id.clone(), (f.card.clone(), f.at));
+            if let Some((old, _)) = self.answers.insert(id.clone(), (f.card.clone(), f.at)) {
+                self.unindex_answer(&old, &id);
+            }
+            self.answers_by_card
+                .entry(f.card.clone())
+                .or_default()
+                .insert(id.clone());
         }
         self.folded.insert(id, f);
+    }
+
+    /// 去掉日志 [id] 的贡献（没记过 = 什么都不做）：重读前先减旧的，新代的重读（`store/gen4/cmd/study.rs`）用。
+    pub(crate) fn forget(&mut self, id: &str) {
+        self.unapply(id);
     }
 
     fn unapply(&mut self, id: &str) {
@@ -452,11 +721,31 @@ impl LogState {
         if f.today {
             if f.reviewed {
                 dec(&mut self.reviewed, &f.card);
+                // 与 `reviewed` 同进同出：那张卡今天的复习作答减到 0 时一并删掉。
+                if self.reviewed.contains_key(&f.card) {
+                    if let Some(ms) = self.reviewed_ms.get_mut(&f.card) {
+                        *ms -= f.duration_ms;
+                    }
+                } else {
+                    self.reviewed_ms.remove(&f.card);
+                }
             }
             if f.introduced {
                 dec(&mut self.introduced, &f.card);
             }
-            self.answers.remove(id);
+            if let Some((card, _)) = self.answers.remove(id) {
+                self.unindex_answer(&card, id);
+            }
+        }
+    }
+
+    /// [Self::answers_by_card] 里去掉 [card] 上的作答 [id]（那张卡没有作答了就整条删掉）。
+    fn unindex_answer(&mut self, card: &str, id: &str) {
+        if let Some(ids) = self.answers_by_card.get_mut(card) {
+            ids.remove(id);
+            if ids.is_empty() {
+                self.answers_by_card.remove(card);
+            }
         }
     }
 
@@ -469,7 +758,7 @@ impl LogState {
         today: i64,
         ids: &HashSet<String>,
     ) -> Result<(), String> {
-        let (from, today_start) = (day_start(&day, today - 29), day_start(&day, today));
+        let (from, today_start) = LogState::window(day, today);
         let all: Vec<&String> = ids.iter().collect();
         for chunk in all.chunks(CHUNK) {
             for id in chunk {
@@ -521,6 +810,10 @@ struct Row {
     due_at: Option<i64>,
     last: Option<i64>,
     stab: Option<f64>,
+    /// `scheduled_days`（复习顺序「间隔从短到长」的键）。
+    ivl: i32,
+    /// `difficulty`（复习顺序「难度从高到低」的键）。
+    difficulty: Option<f32>,
 }
 
 impl Row {
@@ -530,8 +823,20 @@ impl Row {
     }
 }
 
+#[cfg(test)]
 pub(crate) const ROW_COLUMNS: &str = "SELECT srs_idt(id) AS id, srs_idt(deck_id) AS deck_id, hidden, suspended, scheduler = 'fushi', buried_until_day, queue, due_day, due_at, \
-     last_reviewed_at, stability FROM srs_cards_cache";
+     last_reviewed_at, stability, scheduled_days, difficulty FROM srs_cards_cache";
+
+/// 会话读卡行的列（[tb] 的表名与 ID 列写法）；协议 3 就是 [ROW_COLUMNS]。
+fn row_columns(tb: &dyn Tables) -> String {
+    format!(
+        "SELECT {} AS id, {} AS deck_id, hidden, suspended, scheduler = 'fushi', buried_until_day, queue, due_day, due_at, \
+         last_reviewed_at, stability, scheduled_days, difficulty FROM {}",
+        tb.id_sel("id"),
+        tb.id_sel("deck_id"),
+        tb.cards_via(CardIx::Rows)
+    )
+}
 
 /// 一个牌组自己（不含子牌组）的计数原料。
 #[derive(Clone, Copy, Default, Debug, PartialEq)]
@@ -550,12 +855,16 @@ struct DeckQueue {
     /// 可出的学习 / 重学卡：(COALESCE(due_at, 0), 卡)。
     learning: BTreeSet<(i64, Arc<str>)>,
     due: DueIndex,
+    /// 到期复习候选按 R 以外的复习顺序排好的索引（只给 [Session] 里建过的顺序）：(键, 卡)。
+    ordered: HashMap<ReviewOrder, BTreeSet<(OrdKey, u32)>>,
 }
 
 /// 一个 profile 的常驻队列状态（见文件头）。
 pub(crate) struct Session {
     day: Day,
     today: i64,
+    /// 建会话时的印记（[StudyHub::with_feed] 的 `stamp`）。
+    stamp: Option<String>,
     ids: Vec<Arc<str>>,
     index: HashMap<Arc<str>, u32>,
     rows: Vec<Option<Row>>,
@@ -563,6 +872,8 @@ pub(crate) struct Session {
     deck_index: HashMap<Arc<str>, u32>,
     decks: Vec<DeckQueue>,
     logs: LogState,
+    /// 已建过顺序索引（`DeckQueue::ordered`）的复习顺序。
+    orders: Vec<ReviewOrder>,
 }
 
 /// 一张到期复习候选：(卡, 上次作答, 稳定度)。
@@ -597,9 +908,9 @@ impl Session {
         i
     }
 
-    fn read_row(&mut self, r: &rusqlite::Row<'_>) -> Result<(u32, Row), String> {
-        let id: String = r.get(0).map_err(sql)?;
-        let deck_id: String = r.get(1).map_err(sql)?;
+    fn read_row(&mut self, tb: &dyn Tables, r: &rusqlite::Row<'_>) -> Result<(u32, Row), String> {
+        let id: String = tb.id_get(r, 0).map_err(sql)?;
+        let deck_id: String = tb.id_get(r, 1).map_err(sql)?;
         let queue: String = r.get(6).map_err(sql)?;
         let card = self.card(&id);
         let deck = self.deck(&deck_id);
@@ -620,31 +931,44 @@ impl Session {
                 due_at: r.get(8).map_err(sql)?,
                 last: r.get(9).map_err(sql)?,
                 stab: r.get(10).map_err(sql)?,
+                ivl: r.get(11).map_err(sql)?,
+                difficulty: r.get::<_, Option<f64>>(12).map_err(sql)?.map(|d| d as f32),
             },
         ))
     }
 
-    /// 整份建（一个 profile 的全部缓存行 + 最近 30 天日志）。
-    fn build(c: &Connection, profile: &str, day: Day, today: i64) -> Result<Session, String> {
+    /// 整份建（一个 profile / 集合的全部缓存行 + 最近 30 天日志）。
+    fn build(
+        feed: &mut dyn Feed,
+        day: Day,
+        today: i64,
+        stamp: Option<&str>,
+    ) -> Result<Session, String> {
+        let logs = feed.scan_logs(day, today)?;
+        let tb = feed.tables();
         let mut s = Session {
             day,
             today,
+            stamp: stamp.map(str::to_owned),
             ids: Vec::new(),
             index: HashMap::new(),
             rows: Vec::new(),
             deck_names: Vec::new(),
             deck_index: HashMap::new(),
             decks: Vec::new(),
-            logs: LogState::scan(c, profile, day, today)?,
+            logs,
+            orders: Vec::new(),
         };
-        // `+profile_uid`：整表顺扫比按 profile 前缀索引逐行回表快（一个 profile 通常就是全表）。
-        let mut stmt = c
-            .prepare_cached(&format!("{ROW_COLUMNS} WHERE +profile_uid = srs_id(?1)"))
+        // 协议 3 是 `+profile_uid`（[Tables::scope_by_id]）：整表顺扫比按 profile 前缀索引逐行回表快（一个 profile
+        // 通常就是全表）；新代是主键 `(col, id)` 的前缀扫。
+        let mut stmt = tb
+            .conn()
+            .prepare_cached(&format!("{} WHERE {}", row_columns(tb), tb.scope_by_id()))
             .map_err(sql)?;
-        let mut q = stmt.query([profile]).map_err(sql)?;
+        let mut q = stmt.query([tb.scope_arg()]).map_err(sql)?;
         let mut due: Vec<Vec<(u32, Option<i64>, Option<f64>)>> = Vec::new();
         while let Some(r) = q.next().map_err(sql)? {
-            let (card, row) = s.read_row(r)?;
+            let (card, row) = s.read_row(tb, r)?;
             s.rows[card as usize] = Some(row);
             if s.place(card, &row, 1) {
                 let d = row.deck as usize;
@@ -690,25 +1014,25 @@ impl Session {
     }
 
     /// 按 id 重读写过的卡与日志（见文件头）。
-    fn reread(&mut self, c: &Connection, profile: &str, dirty: &Dirty) -> Result<(), String> {
-        if !dirty.logs.is_empty() {
-            self.logs
-                .reread(c, profile, self.day, self.today, &dirty.logs)?;
-        }
+    fn reread(&mut self, feed: &mut dyn Feed, dirty: &Dirty) -> Result<(), String> {
+        feed.reread_logs(&mut self.logs, dirty, self.day, self.today)?;
+        let tb = feed.tables();
         let all: Vec<&String> = dirty.cards.iter().collect();
         for chunk in all.chunks(CHUNK) {
             let mut fetched: HashMap<u32, Row> = HashMap::new();
             {
                 let text = format!(
-                    "{ROW_COLUMNS} WHERE id IN ({}) AND +profile_uid = srs_id(?)",
-                    marks(chunk.len())
+                    "{} WHERE id IN ({}) AND {}",
+                    row_columns(tb),
+                    vec![tb.mark(); chunk.len()].join(", "),
+                    tb.scope_by_id()
                 );
-                let mut stmt = c.prepare_cached(&text).map_err(sql)?;
-                let mut args: Vec<Sql> = chunk.iter().map(|s| Sql::Text((*s).clone())).collect();
-                args.push(Sql::Text(profile.to_owned()));
+                let mut stmt = tb.conn().prepare_cached(&text).map_err(sql)?;
+                let mut args: Vec<Sql> = chunk.iter().map(|s| tb.id_arg(s)).collect();
+                args.push(tb.scope_arg());
                 let mut q = stmt.query(params_from_iter(args)).map_err(sql)?;
                 while let Some(r) = q.next().map_err(sql)? {
-                    let (card, row) = self.read_row(r)?;
+                    let (card, row) = self.read_row(tb, r)?;
                     fetched.insert(card, row);
                 }
             }
@@ -721,20 +1045,104 @@ impl Session {
                 }
                 if let Some(o) = old {
                     if self.place(card, &o, -1) {
-                        self.decks[o.deck as usize].due.remove(card, &self.ids);
+                        self.index_due(card, &o, false);
                     }
                 }
                 if let Some(n) = new {
                     if self.place(card, &n, 1) {
-                        self.decks[n.deck as usize]
-                            .due
-                            .insert(card, n.last, n.stab, &self.ids);
+                        self.index_due(card, &n, true);
                     }
                 }
                 self.rows[card as usize] = new;
             }
         }
         Ok(())
+    }
+
+    /// 把一张到期复习候选加进（[add]）/ 移出所在牌组的 R 索引与全部已建的顺序索引。
+    fn index_due(&mut self, card: u32, row: &Row, add: bool) {
+        let today = self.today;
+        let id = &self.ids[card as usize];
+        let dq = &mut self.decks[row.deck as usize];
+        if add {
+            dq.due.insert(card, row.last, row.stab, &self.ids);
+        } else {
+            dq.due.remove(card, &self.ids);
+        }
+        for order in &self.orders {
+            let k = (ord_key(*order, id, today, row), card);
+            let set = dq.ordered.entry(*order).or_default();
+            if add {
+                set.insert(k);
+            } else {
+                set.remove(&k);
+            }
+        }
+    }
+
+    /// 按需建 [order] 的顺序索引（R 顺序用块索引，不用建）：已建过直接返回，否则遍历各牌组的到期候选建一份，
+    /// 之后由 [Session::index_due] 随增量重读维护。
+    pub(crate) fn ensure_order(&mut self, order: ReviewOrder) {
+        if order == ReviewOrder::Retrievability || self.orders.contains(&order) {
+            return;
+        }
+        self.orders.push(order);
+        let today = self.today;
+        let (ids, rows) = (&self.ids, &self.rows);
+        for dq in &mut self.decks {
+            let set: BTreeSet<(OrdKey, u32)> = dq
+                .due
+                .at
+                .keys()
+                .map(|&c| {
+                    let row = rows[c as usize].expect("due cards have rows");
+                    (ord_key(order, &ids[c as usize], today, &row), c)
+                })
+                .collect();
+            dq.ordered.insert(order, set);
+        }
+    }
+
+    /// 几个牌组的到期复习卡里按 [order] 排第一的一张（排除 [exclude]）：R 顺序走 [Session::lowest_due]，其余
+    /// 取各牌组顺序索引里跳过排除后的第一张、牌组之间按（键, id）取最小。顺序索引要先 [Session::ensure_order]。
+    pub(crate) fn first_due(
+        &self,
+        decks: &[&str],
+        order: ReviewOrder,
+        now: i64,
+        exclude: &HashSet<&str>,
+    ) -> Result<Option<DueCand>, String> {
+        if order == ReviewOrder::Retrievability {
+            return Ok(self.lowest_due(decks, now, exclude));
+        }
+        if !self.orders.contains(&order) {
+            return Err(format!("study: review order {order:?} not indexed"));
+        }
+        let ex: HashSet<u32> = exclude
+            .iter()
+            .filter_map(|e| self.index.get(*e).copied())
+            .collect();
+        let lt = |a: &(OrdKey, u32), b: &(OrdKey, u32)| {
+            (a.0, &self.ids[a.1 as usize]) < (b.0, &self.ids[b.1 as usize])
+        };
+        let mut best: Option<(OrdKey, u32)> = None;
+        for d in decks {
+            let Some(di) = self.deck_index.get(*d) else {
+                continue;
+            };
+            let Some(set) = self.decks[*di as usize].ordered.get(&order) else {
+                continue;
+            };
+            if let Some(h) = set.iter().find(|(_, c)| !ex.contains(c)) {
+                if best.as_ref().is_none_or(|b| lt(h, b)) {
+                    best = Some(*h);
+                }
+            }
+        }
+        Ok(best.map(|(_, card)| {
+            let row = self.rows[card as usize].expect("due cards have rows");
+            (self.ids[card as usize].to_string(), row.last, row.stab)
+        }))
     }
 
     /// 几个牌组各自的计数原料（只给有 hidden = 0 的卡的牌组，与旧 SQL `GROUP BY deck_id` 出不出行一致）；
@@ -850,6 +1258,69 @@ impl Session {
             let row = self.rows[card as usize].expect("due cards have rows");
             (self.ids[card as usize].to_string(), row.last, row.stab)
         })
+    }
+}
+
+// ------------------------------------------------------------------ 复习顺序的静态键
+
+/// R 以外的复习顺序的排序键（升序）：(主键, 次键, 当天哈希)；整键相同（只在 64 位哈希碰撞时）再按卡。与此刻
+/// 无关，一天之内不变。
+pub(crate) type OrdKey = (i64, u32, u64);
+
+/// FNV-1a 64（自己实现：标准库的 `DefaultHasher` 不保证跨版本稳定，换个 Rust 版本出卡顺序就变）。
+fn fnv1a64(bytes: &[u8]) -> u64 {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in bytes {
+        h ^= u64::from(*b);
+        h = h.wrapping_mul(0x0000_0100_0000_01b3);
+    }
+    h
+}
+
+/// splitmix64 终混（把 FNV 与日序号的异或打散）。
+fn splitmix64(x: u64) -> u64 {
+    let mut z = x.wrapping_add(0x9e37_79b9_7f4a_7c15);
+    z = (z ^ (z >> 30)).wrapping_mul(0xbf58_476d_1ce4_e5b9);
+    z = (z ^ (z >> 27)).wrapping_mul(0x94d0_49bb_1331_11eb);
+    z ^ (z >> 31)
+}
+
+/// 当天哈希：同主键的卡按它断平（不按 id：id 与添加顺序相关，会悄悄变成「先加的先出」）；「随机」顺序只按它。
+/// 同一天内不变，第二天换一组。
+pub(crate) fn day_hash(id: &str, today: i64) -> u64 {
+    splitmix64(fnv1a64(id.as_bytes()) ^ today as u64)
+}
+
+/// f32 的全序位（与 `f32::total_cmp` 同序）：难度取负后按它升序 = 难度从高到低。
+fn total_order_bits(x: f32) -> u32 {
+    let b = x.to_bits();
+    if b >> 31 == 1 { !b } else { b | 0x8000_0000 }
+}
+
+/// 一张到期复习卡在 [order] 下的排序键。
+fn ord_key(order: ReviewOrder, id: &str, today: i64, row: &Row) -> OrdKey {
+    order_key(order, id, today, row.due_day, row.ivl, row.difficulty)
+}
+
+/// [ord_key] 的列版（store/study.rs [ReviewOrder] 的表；测试基准按 SQL 读出的列算同一个键）。
+pub(crate) fn order_key(
+    order: ReviewOrder,
+    id: &str,
+    today: i64,
+    due_day: Option<i64>,
+    ivl: i32,
+    difficulty: Option<f32>,
+) -> OrdKey {
+    let h = day_hash(id, today);
+    match order {
+        ReviewOrder::DueDate => (due_day.unwrap_or(0), 0, h),
+        // 最难的先出，没有难度的排最后。
+        ReviewOrder::Difficulty => match difficulty {
+            Some(d) => (0, total_order_bits(-d), h),
+            None => (1, 0, h),
+        },
+        ReviewOrder::IntervalAscending => (i64::from(ivl), 0, h),
+        ReviewOrder::Random | ReviewOrder::Retrievability => (0, 0, h),
     }
 }
 
@@ -1168,5 +1639,82 @@ impl DueIndex {
             }
         }
         best
+    }
+}
+
+#[cfg(test)]
+mod answer_index_tests {
+    use std::collections::{BTreeMap, BTreeSet};
+
+    use super::LogState;
+    use crate::projection::Day;
+
+    const DAY: Day = Day {
+        utc_offset_min: 0,
+        rollover_hour: 4,
+    };
+    const TODAY: i64 = 20_000;
+
+    /// 按卡的索引（[LogState::answers_on] / [LogState::answer_card]）与整张「今天的作答」按卡分组逐项相同。
+    fn assert_index_matches(s: &LogState, cards: &[&str]) {
+        let mut want: BTreeMap<String, BTreeSet<String>> = BTreeMap::new();
+        for (id, (card, _)) in &s.answers {
+            want.entry(card.clone()).or_default().insert(id.clone());
+            assert_eq!(s.answer_card(id), Some(card), "{id}");
+        }
+        for c in cards {
+            let got: BTreeSet<String> = s.answers_on(c).cloned().collect();
+            assert_eq!(got, want.remove(*c).unwrap_or_default(), "card {c}");
+        }
+        assert!(
+            want.is_empty(),
+            "answers on cards outside the list: {want:?}"
+        );
+        assert_eq!(
+            s.answers_by_card.len(),
+            s.answers_by_card.values().filter(|v| !v.is_empty()).count(),
+            "no empty entries"
+        );
+    }
+
+    /// HBK-AUDIT-010：会话按卡的作答索引随加、减、同一条日志改记到别的卡（重读时归到的规范卡变了）、昨天的日志始终与
+    /// 整张作答表一致——增量重读靠它找碰到的卡上今天的作答。
+    #[test]
+    fn the_per_card_answer_index_follows_every_fold_and_forget() {
+        let (_, start) = LogState::window(DAY, TODAY);
+        let mut s = LogState::empty();
+        let cards = ["a", "b", "c"];
+        let fold = |s: &mut LogState, id: &str, card: &str, at: i64| {
+            s.fold(
+                id.into(),
+                card.into(),
+                at,
+                "review",
+                None,
+                Some(1_000),
+                DAY,
+                TODAY,
+                start,
+            );
+        };
+        fold(&mut s, "l1", "a", start + 10);
+        fold(&mut s, "l2", "a", start + 20);
+        fold(&mut s, "l3", "b", start + 30);
+        // 昨天的日志：进 30 天计数，不是今天的作答。
+        fold(&mut s, "old", "c", start - 10);
+        assert_index_matches(&s, &cards);
+        assert_eq!(s.answer_card("old"), None);
+        // 重读：先减旧的再加回，归到了另一张规范卡。
+        s.forget("l2");
+        fold(&mut s, "l2", "c", start + 20);
+        assert_index_matches(&s, &cards);
+        // 没先减就再记同一条（覆盖）：索引跟着换卡，不留旧卡上的残项。
+        fold(&mut s, "l3", "a", start + 30);
+        assert_index_matches(&s, &cards);
+        for id in ["l1", "l2", "l3", "old", "never"] {
+            s.forget(id);
+            assert_index_matches(&s, &cards);
+        }
+        assert!(s.answers_on("a").next().is_none());
     }
 }

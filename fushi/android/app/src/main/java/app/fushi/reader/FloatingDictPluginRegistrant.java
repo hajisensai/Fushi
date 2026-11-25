@@ -42,11 +42,27 @@ final class FloatingDictPluginRegistrant {
         } catch (Exception e) {
             Log.e(TAG, "Error registering system proxy channel", e);
         }
+        // 跨应用语音缓存（拍板 oqk37s3QFL）：查词那一刻取主进程环里最近一段声音、制卡时
+        // 编码成 m4a。采集状态在主进程，走 CrossAppAudioProvider 跨进程。
+        try {
+            CrossAppAudioChannel.registerWith(flutterEngine, context, false);
+        } catch (Exception e) {
+            Log.e(TAG, "Error registering cross-app audio channel", e);
+        }
         try {
             flutterEngine.getPlugins().add(
                 new dev.fluttercommunity.plus.device_info.DeviceInfoPlusPlugin());
         } catch (Exception e) {
             Log.e(TAG, "Error registering plugin device_info_plus", e);
+        }
+        // 默认主题 system-theme 取壁纸色板（AppModel.initialiseForDictionaryPopup →
+        // refreshSystemPalette）。不注册时 getCorePalette 抛 MissingPluginException
+        // 被吞成 null，第二块屏面板 / 弹窗退回种子色，和主屏配色对不上。
+        try {
+            flutterEngine.getPlugins().add(
+                new io.material.plugins.dynamic_color.DynamicColorPlugin());
+        } catch (Exception e) {
+            Log.e(TAG, "Error registering plugin dynamic_color", e);
         }
         try {
             flutterEngine.getPlugins().add(

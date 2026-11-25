@@ -1,0 +1,209 @@
+import 'dart:async';
+import 'dart:io';
+
+import 'package:flutter_inappwebview/flutter_inappwebview.dart';
+import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/media/audiobook/audiobook_bridge.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi_audio/fushi_audio.dart';
+
+import '../../helpers/source_guard.dart';
+
+/// 只实现 `evaluateJavascript` 的假 WebView 控制器：记下每次送进来的脚本；
+/// [failure] 非空时模拟「WebView 正在销毁 / 换文档」——平台调用以异步错误收场。
+class _RecordingWebViewController implements InAppWebViewController {
+  _RecordingWebViewController({this.failure});
+
+  final StateError? failure;
+  final List<String> sources = <String>[];
+
+  @override
+  Future<dynamic> evaluateJavascript({
+    required String source,
+    ContentWorld? contentWorld,
+  }) async {
+    sources.add(source);
+    final StateError? error = failure;
+    if (error != null) throw error;
+    return null;
+  }
+
+  @override
+  dynamic noSuchMethod(Invocation invocation) => super.noSuchMethod(invocation);
+}
+
+AudioCue _sentenceCue() => AudioCue()
+  ..bookKey = ''
+  ..chapterHref = ''
+  ..sentenceIndex = 0
+  ..textFragmentId = SubtitleRematchCodec.encodeHit(
+    sectionIndex: 0,
+    normCharStart: 0,
+    normCharEnd: 5,
+  )
+  ..text = 'あいうえお'
+  ..startMs = 0
+  ..endMs = 1000
+  ..audioFileIndex = 0;
+
+void main() {
+  group('放飞的 AudiobookBridge.highlight 的错误出口（BUG-4811）', () {
+    test('接了 logHighlightError：抛错不成为未处理的异步错误，记进错误日志', () async {
+      final List<Object> uncaught = <Object>[];
+      final int before = ErrorLogService.instance.entries.length;
+      final StateError failure = StateError('webview disposed');
+
+      await runZonedGuarded<Future<void>>(() async {
+        unawaited(
+          AudiobookBridge.highlight(
+            _RecordingWebViewController(failure: failure),
+          ).catchError(AudiobookBridge.logHighlightError),
+        );
+        unawaited(
+          AudiobookBridge.highlight(
+            _RecordingWebViewController(failure: failure),
+            cue: _sentenceCue(),
+            reveal: false,
+          ).catchError(AudiobookBridge.logHighlightError),
+        );
+        // 让两条被放飞的 Future 跑完。
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+      }, (Object error, StackTrace stack) => uncaught.add(error));
+
+      expect(uncaught, isEmpty, reason: '放飞的高亮 Future 必须接住错误');
+      final List<ErrorLogEntry> logged = ErrorLogService.instance.entries
+          .sublist(before);
+      expect(logged.length, 2);
+      for (final ErrorLogEntry entry in logged) {
+        expect(entry.source, 'AudiobookBridge.highlight');
+        expect(entry.error, contains('webview disposed'));
+      }
+    });
+
+    test('对照：裸放飞的同一个失败会变成未处理的异步错误', () async {
+      final List<Object> uncaught = <Object>[];
+      await runZonedGuarded<Future<void>>(() async {
+        // 故意裸调——这正是修复前 _onCueChanged 的写法。
+        // ignore: unawaited_futures, discarded_futures
+        AudiobookBridge.highlight(
+          _RecordingWebViewController(failure: StateError('webview disposed')),
+        );
+        await Future<void>.delayed(Duration.zero);
+        await Future<void>.delayed(Duration.zero);
+      }, (Object error, StackTrace stack) => uncaught.add(error));
+      expect(uncaught.length, 1);
+    });
+  });
+
+  // reader 里放飞 highlight 的两个文件：audiobook.part.dart（cue 变更回调三处 + 跨页句
+  // 退回分界前重揭句首的一处 await，反馈 tUJsiLpL9d）与 lyrics.part.dart（退出歌词模式后
+  // 的显式 reveal，#3722 c48 收的第四处）。
+  _guardHighlightCallSites(
+    'lib/src/pages/implementations/reader_fushi/audiobook.part.dart',
+    expectedCallSites: 4,
+  );
+  _guardHighlightCallSites(
+    'lib/src/pages/implementations/reader_fushi/lyrics.part.dart',
+    expectedCallSites: 1,
+  );
+}
+
+void _guardHighlightCallSites(String path, {required int expectedCallSites}) {
+  group('reader 里放飞的 highlight 调用点（源码守卫，BUG-4811）：$path', () {
+    // `_onCueChanged` / `_exitLyricsMode` 都是页面私有、要真 InAppWebView 才能
+    // 行为驱动；这里钉调用点：每一处 highlight 调用要么被 await，要么紧跟
+    // `.catchError(AudiobookBridge.logHighlightError)`，要么先存进局部
+    // `final Future<void> x = ...`（揭示后还要接着挂页边观察，反馈 tUJsiLpL9d）——
+    // 那样所在方法里之后每一次用到 x 的语句都必须接 logHighlightError，且至少用一次。
+    //
+    // 语料先过 `maskComments`（行注释 + 块注释换成等长空白，下标与原文一致）：
+    // 注释里提到的 `AudiobookBridge.highlight(` 不算调用点，注释里的
+    // `.catchError(...)` 字面量也不能冒充已接错误处理。
+    final String source = maskComments(
+      File(path).readAsStringSync().replaceAll('\r\n', '\n'),
+    );
+    const String call = 'AudiobookBridge.highlight(';
+    const String handler = '.catchError(AudiobookBridge.logHighlightError)';
+
+    /// [open]（指向 `(`）配对的 `)` 之后的下标。调用实参里没有带括号的字符串字面量。
+    int afterMatchingParen(int open) {
+      int depth = 0;
+      for (int i = open; i < source.length; i++) {
+        final String ch = source[i];
+        if (ch == '(') depth++;
+        if (ch == ')' && --depth == 0) return i + 1;
+      }
+      return -1;
+    }
+
+    /// 调用点被存进局部 Future（[prefix] 是调用点所在行的前半截）时：从 [end] 到所在
+    /// 方法收尾（两格缩进的 `}`）之间，每一处用到该变量的语句（到下一个 `;`）要么接了
+    /// [handler]、要么被 await，且至少用到一次。
+    bool storedAndHandled(String prefix, int end) {
+      final Match? stored = RegExp(
+        r'^\s*final\s+Future<void>\s+([A-Za-z_][A-Za-z0-9_]*)\s*=\s*$',
+      ).firstMatch(prefix);
+      if (stored == null) return false;
+      final String name = stored.group(1)!;
+      final int methodEnd = source.indexOf('\n  }\n', end);
+      final String rest = source.substring(
+        end,
+        methodEnd < 0 ? source.length : methodEnd,
+      );
+      final List<Match> uses = RegExp(
+        '(?<![A-Za-z0-9_\$])${RegExp.escape(name)}(?![A-Za-z0-9_\$])',
+      ).allMatches(rest).toList();
+      if (uses.isEmpty) return false;
+      for (final Match use in uses) {
+        final int stop = rest.indexOf(';', use.end);
+        final String statement = rest.substring(
+          use.start,
+          stop < 0 ? rest.length : stop,
+        );
+        final int useLine = rest.lastIndexOf('\n', use.start) + 1;
+        final bool useAwaited = rest
+            .substring(useLine, use.start)
+            .trimLeft()
+            .startsWith('await ');
+        if (!useAwaited && !statement.contains(handler)) return false;
+      }
+      return true;
+    }
+
+    final List<int> callSites = <int>[
+      for (final Match m in RegExp(RegExp.escape(call)).allMatches(source))
+        m.start,
+    ];
+
+    test('调用点可定位（守卫不因改名而空转）', () {
+      expect(callSites.length, expectedCallSites);
+    });
+
+    test('每一处放飞的 highlight 都接了 logHighlightError', () {
+      final List<String> bare = <String>[];
+      for (final int at in callSites) {
+        final int lineStart = source.lastIndexOf('\n', at) + 1;
+        final bool awaited = source
+            .substring(lineStart, at)
+            .trimLeft()
+            .startsWith('await ');
+        final int end = afterMatchingParen(at + call.length - 1);
+        expect(end, greaterThan(at));
+        final bool handled =
+            source.startsWith(handler, end) ||
+            storedAndHandled(source.substring(lineStart, at), end);
+        if (!awaited && !handled) {
+          bare.add(
+            'line ${'\n'.allMatches(source.substring(0, at)).length + 1}',
+          );
+        }
+      }
+      expect(
+        bare,
+        isEmpty,
+        reason: '裸放飞的 highlight 会把 WebView 销毁中的异常变成未处理的异步错误',
+      );
+    });
+  });
+}

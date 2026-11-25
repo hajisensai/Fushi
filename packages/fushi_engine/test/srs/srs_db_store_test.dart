@@ -1,5 +1,9 @@
-import 'package:drift/drift.dart' show Variable, driftRuntimeOptions;
+import 'dart:io';
+
+import 'package:drift/drift.dart' show driftRuntimeOptions;
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/srs/srs_backup_bundle.dart';
+import 'package:fushi_engine/srs/srs_backup_merge.dart' show SrsBackupProfile;
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
@@ -16,57 +20,12 @@ class _FakeEngine implements FsrsEngine {
   @override
   String get fsrsRev => 'fake';
   @override
+  bool isKnownFsrsRev(String rev) => rev == fsrsRev;
+  @override
   List<double> defaultParams(SrsAlgorithm a) =>
       List<double>.filled(a.paramCount, 1);
   @override
   String? validateParams(SrsAlgorithm a, List<double> p) => null;
-  SrsMemory _step(SrsMemory? m, int r) => SrsMemory(
-    stability: switch (r) {
-      1 => 0.3,
-      2 => 1.5 + (m?.stability ?? 0),
-      3 => 3 + (m?.stability ?? 0) * 2,
-      _ => 6 + (m?.stability ?? 0) * 3,
-    },
-    difficulty: 5,
-  );
-  @override
-  SrsNextStates nextStates({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double desiredRetention,
-    required SrsMemory? memory,
-    required double elapsedDays,
-  }) {
-    SrsItemState st(int r) {
-      final SrsMemory m = _step(memory, r);
-      return SrsItemState(memory: m, interval: m.stability);
-    }
-
-    return SrsNextStates(again: st(1), hard: st(2), good: st(3), easy: st(4));
-  }
-
-  @override
-  SrsMemory? memoryState({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required List<SrsFsrsReview> reviews,
-    SrsMemory? starting,
-  }) {
-    SrsMemory? m = starting;
-    for (final SrsFsrsReview r in reviews) {
-      m = _step(m, r.rating);
-    }
-    return m;
-  }
-
-  @override
-  SrsMemory memoryStateFromSm2({
-    required SrsAlgorithm algorithm,
-    required List<double> params,
-    required double easeFactor,
-    required double intervalDays,
-    required double sm2Retention,
-  }) => SrsMemory(stability: intervalDays, difficulty: 5);
   @override
   double retrievability({
     required SrsAlgorithm algorithm,
@@ -104,10 +63,8 @@ void main() {
     final SrsTrustedClock clock = SrsTrustedClock(
       wallClockMs: () => t,
       bootClockMs: () => t,
-      bootId: 'boot-$id',
     );
     return SrsDbStore.open(
-      db: srsStorage.db,
       core: srsStorage.core,
       profileUid: kProfile,
       deviceId: id,
@@ -294,18 +251,16 @@ void main() {
     await b.setSuspended(cardId, false);
     await syncAll(<SrsDbStore>[a, b]);
 
-    final int concurrentContent =
-        (await a.db
-                .customSelect(
-                  'SELECT COUNT(*) AS c FROM (SELECT 1 FROM srs_field_edits '
-                  "WHERE entity_kind = 'note' AND field_key = ? "
-                  'GROUP BY entity_id HAVING COUNT(*) > 1)',
-                  variables: <Variable<Object>>[
-                    Variable<String>('f/$sentence'),
-                  ],
-                )
-                .getSingle())
-            .read<int>('c');
+    // 导出（`read events`）是投影后的修改记录：互不支配的并发记录都留着。
+    final Map<String, int> perNote = <String, int>{};
+    for (final SrsEvent e in await a.exportAll()) {
+      if (e case SrsEditEvent(:final SrsFieldEdit edit)
+          when edit.entityKind == SrsEntityKind.note &&
+              edit.fieldKey == 'f/$sentence') {
+        perNote[edit.entityId] = (perNote[edit.entityId] ?? 0) + 1;
+      }
+    }
+    final int concurrentContent = perNote.values.where((int n) => n > 1).length;
     expect(concurrentContent, notes.length, reason: '前提：每条笔记的正文都留着两条并发记录');
     expect(await a.notesPendingDecision(), isEmpty, reason: '值相同不待裁决');
 
@@ -407,6 +362,20 @@ void main() {
       delete: true,
     );
     await syncAll(<SrsDbStore>[a, b]);
+    // B 第一次出现时 A 已有内容，B 在 A 上待确认（BUG-4276）：B 的结论是一条删除，在 A 上扣到确认，
+    // A 的冲突与笔记原样留着（冲突中心顶部同时列出待确认的 B）。B 是全新库首轮认识的 A，A 在 B 上可信。
+    expect((await b.cardsOfNote(noteId)).single.hidden, isTrue);
+    expect((await a.cardsOfNote(noteId)).single.hidden, isFalse);
+    expect((await a.sync2Conflicts()).single['kind'], 'delete_edit');
+    final Map<String, Object?> pending = <Map<String, Object?>>[
+      for (final Object? d
+          in (await a.sync2Status())['devices']! as List<Object?>)
+        d! as Map<String, Object?>,
+    ].singleWhere((Map<String, Object?> d) => d['device'] == b.sync2Device);
+    expect(pending['trust'], 'pending');
+    expect(pending['heldDeletes'], 1);
+    await a.sync2Trust(b.sync2Device!, trust: true);
+    await syncAll(<SrsDbStore>[a, b]);
     for (final SrsDbStore s in <SrsDbStore>[a, b]) {
       expect((await s.cardsOfNote(noteId)).single.hidden, isTrue);
       expect(await s.sync2Conflicts(), isEmpty);
@@ -478,7 +447,12 @@ void main() {
     final String cardId = (await a.cardsOfNote(noteId)).single.id;
     await a.answer(cardId, 4);
     final SrsCardCacheRow before = (await a.cardRow(cardId))!;
-    await a.rebuildCaches();
+    // 经原始通道把卡行打回新卡形态：重建必须按日志重放回来（只比重建前后同值测不出重建坏掉）。
+    await expectRebuildRestores(
+      a,
+      'cards',
+      "UPDATE cards SET queue = 'new', due_day = NULL, reps = 0, last_log_id = NULL",
+    );
     final SrsCardCacheRow after = (await a.cardRow(cardId))!;
     expect(after.queue, before.queue);
     expect(after.dueDay, before.dueDay);
@@ -487,13 +461,9 @@ void main() {
 
   test('覆盖恢复备份后：换新化身、全部重新发布、缓存重建', () async {
     final SrsStorage srsStorage = await openTestSrsStorage();
-    SrsTrustedClock clock() => SrsTrustedClock(
-      wallClockMs: () => t,
-      bootClockMs: () => t,
-      bootId: 'boot',
-    );
+    SrsTrustedClock clock() =>
+        SrsTrustedClock(wallClockMs: () => t, bootClockMs: () => t);
     final SrsDbStore a = await SrsDbStore.open(
-      db: srsStorage.db,
       core: srsStorage.core,
       profileUid: kProfile,
       deviceId: 'a',
@@ -513,20 +483,46 @@ void main() {
       nowMs: () => t,
     );
     final String? oldDevice = a.sync2Device;
-    // 恢复备份：本机状态、缓存表与同步 v2 的本机身份被清空（备份快照剥掉设备本地表，见 SrsCore.snapshotInto）。
-    await srsStorage.db.delete(srsStorage.db.srsLocalState).go();
-    await srsStorage.db.delete(srsStorage.db.srsEventLocal).go();
-    await srsStorage.db.delete(srsStorage.db.srsCardsCache).go();
-    await srsStorage.db.delete(srsStorage.db.srsNotesCache).go();
-    await srsStorage.db.customStatement('DELETE FROM sync2_self');
-    final SrsDbStore restored = await SrsDbStore.open(
-      db: srsStorage.db,
+    // 覆盖恢复（新代，交接 §25 定案 4「空库 + 并入」）：整包备份里的复习部分是按集合的 FSRS4EXP 流（不带签名私钥），
+    // 落进一个空的新代库（[srsLandBackupUnit]，内核 `import` + `collection_adopt`），再按原 profile 打开。以前这里直接
+    // 删协议 3 的本机表模拟「剥掉设备本地表的快照」，新代没有那些表（G11-4 遗留，第五波 G9 身份收尾改写）。
+    final Directory work = Directory.systemTemp.createTempSync('srs_restore_');
+    addTearDown(() {
+      try {
+        work.deleteSync(recursive: true);
+      } on FileSystemException {
+        // 句柄尚未释放；临时目录留给系统清理。
+      }
+    });
+    final SrsBackupBundleManifest manifest = (await srsExportBackupStreams(
       core: srsStorage.core,
+      profiles: const <SrsBackupProfile>[
+        SrsBackupProfile(uid: kProfile, name: 'Default'),
+      ],
+      outDir: work.path,
+      nowMs: t,
+    ))!;
+    final SrsStorage staged = await openTestSrsStorage();
+    final SrsBackupUnit unit = manifest.units.single;
+    final SrsBackupLanded landed = await srsLandBackupUnit(
+      core: staged.core,
+      targetUid: kProfile,
+      file: SrsBackupStreamFile(
+        path: '${work.path}${Platform.pathSeparator}${unit.n}.bin',
+        unit: unit,
+      ),
+      confirmed: true,
+      nowMs: t,
+    );
+    expect(landed.reply['outcome'], 'bound', reason: '${landed.reply}');
+    final SrsDbStore restored = await SrsDbStore.open(
+      core: staged.core,
       profileUid: kProfile,
       deviceId: 'a',
       engine: const _FakeEngine(),
       trustedClock: clock(),
     );
+    expect(restored.sync2Collection, a.sync2Collection);
     // 恢复出来的库是一台新设备（新身份，设计 §7.3 的预防），旧身份按普通远端设备续收，不会分叉。
     expect(restored.sync2Device, isNot(oldDevice));
     expect((await restored.cardRow(cardId))!.reps, 1);

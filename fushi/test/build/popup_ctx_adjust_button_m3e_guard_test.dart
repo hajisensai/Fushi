@@ -11,8 +11,9 @@ import '../helpers/source_guard.dart';
 /// 明显不是一套（用户「查词框的选择上下文按钮还不是 m3e」）。这里钉住：
 ///  1. MD3 基础样式是 tonal 图标按钮：主色淡染容器 + 主色图标、整圆、状态层
 ///     （hover / focus-visible / pressed）、按下形状变形 + 缩放、带过渡。
-///  2. Apple 设计系统挂 `html.fushi-glass-host.fushi-apple`：胶囊灰填充、按下变暗、
-///     不做形状变形；且生成的扩展 content.css 丢弃这段（扩展没有 Apple 设计系统）。
+///  2. Apple 设计系统挂 `html.fushi-glass-host.fushi-apple`：词条头动作按钮一律裸字形
+///     （无灰底、44 命中区、悬停 / 按下只浮半透明圆）、不做形状变形；且生成的
+///     扩展 content.css 丢弃这段（扩展没有 Apple 设计系统）。
 ///  3. 墨水屏覆盖：描边 + 前景色，按下反色。
 ///  4. 减弱动态效果：popup.js 给按钮挂 `.no-motion`，CSS 把过渡 / 缩放归零。
 ///  5. Dart 注入 toggle `fushi-apple`。
@@ -91,24 +92,51 @@ void main() {
     );
   });
 
-  test('Apple：胶囊灰填充、按下变暗不变形', () {
+  test('Apple：词条头动作按钮是裸字形按钮（无灰底、44 命中区、按下只浮圆）', () {
+    const String apple = 'html.fushi-glass-host.fushi-apple';
+    // 分组选择器在 CSS 里每个一行。
+    const String nl = '\n';
     final String base = ruleBody(
       css,
-      'html.fushi-glass-host.fushi-apple .ctx-adjust-button',
+      '$apple .ctx-adjust-button,$nl'
+      '$apple .header-buttons > .inline-action-button',
     );
-    expect(base, contains('var(--text-color) 9%'));
+    expect(base, contains('width: 44px'));
+    expect(base, contains('height: 44px'));
+    expect(base, contains('background-color: transparent'));
+    expect(base, contains('background-clip: content-box'));
+    expect(
+      base,
+      contains('var(--text-color) 62%'),
+      reason: '静息 secondaryLabel',
+    );
+    expect(base, isNot(contains('var(--text-color) 9%')), reason: '旧的灰底胶囊不得回来');
     final String active = ruleBody(
       css,
-      'html.fushi-glass-host.fushi-apple .ctx-adjust-button:active',
+      '$apple .ctx-adjust-button:where(:not(:disabled)):active,$nl'
+      '$apple .header-buttons > .inline-action-button:where(:not(:disabled)):active',
     );
     expect(active, contains('transform: none'));
-    expect(active, contains('border-radius: 16px'));
-    expect(active, contains('opacity: 0.55'));
+    expect(active, contains('border-radius: 50%'));
     final String focus = ruleBody(
       css,
-      'html.fushi-glass-host.fushi-apple .ctx-adjust-button:focus-visible',
+      '$apple .ctx-adjust-button:focus-visible,$nl'
+      '$apple .header-buttons > .inline-action-button:focus-visible',
     );
-    expect(focus, contains('box-shadow: 0 0 0 3px'));
+    expect(focus, contains('outline: 3px solid'));
+    expect(
+      ruleBody(css, '$apple .header-buttons > .favorite-button.favorited'),
+      contains('color: #ffcc00'),
+    );
+    expect(
+      ruleBody(css, '$apple .header-buttons > .mine-button.latest'),
+      contains('color: #34c759'),
+    );
+    expect(
+      css,
+      isNot(contains('$apple .srs-status-badge {')),
+      reason: '复习徽标的灰底胶囊不得回来',
+    );
   });
 
   test('墨水屏：描边 + 前景色，按下反色', () {

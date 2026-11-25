@@ -43,7 +43,7 @@ ModuleId? moduleOfHomeTab(HomeTab tab) => switch (tab) {
 bool isHomeTabVisible(HomeTab tab, ModuleVisibility visibility) =>
     visibility.isEnabledOrUngated(moduleOfHomeTab(tab));
 
-/// 模块 → 它的顶层 tab。五个横切模块（听书/制卡/在线服务/AI/同步）**没有 tab**，
+/// 模块 → 它的顶层 tab。六个横切模块（听书/制卡/在线服务/媒体追踪/AI/同步）**没有 tab**，
 /// 返回 `null`——它们只有设置分类与散落在各页的入口。
 HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
   ModuleId.home => HomeTab.home,
@@ -59,6 +59,7 @@ HomeTab? homeTabOfModule(ModuleId module) => switch (module) {
   ModuleId.listening ||
   ModuleId.cardCreation ||
   ModuleId.services ||
+  ModuleId.tracking ||
   ModuleId.ai ||
   ModuleId.sync => null,
 };
@@ -98,6 +99,10 @@ bool hasAnyNavigationModule(ModuleVisibility visibility) =>
 ///   `videoQuickSettings` / `shortcuts`）不是设置主页上的一级分类，藏它们只会
 ///   让对应的合成面板整个消失。
 ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
+  // 通用 / 导航与首页 / 浏览器：设备级，不跟任何模块开关。
+  SettingsDestinationId.general => null,
+  SettingsDestinationId.navigation => null,
+  SettingsDestinationId.webBrowser => null,
   SettingsDestinationId.appearance => null,
   SettingsDestinationId.floatingBall => null,
   SettingsDestinationId.profiles => null,
@@ -114,19 +119,19 @@ ModuleId? moduleOfSettingsDestination(SettingsDestinationId id) => switch (id) {
   SettingsDestinationId.appIcon => null,
   SettingsDestinationId.videoQuickSettings => null,
   SettingsDestinationId.shortcuts => null,
-  // 模型是设备级资源（本机 OCR / ASR 模型、系统 TTS）：不属任何模块。其中的
-  // 「LLM」子页仍按 `ai` → services 门控，见下。
+  // 本机模型是设备级资源（本机 OCR / ASR 模型、系统 TTS）：不属任何模块。
   SettingsDestinationId.models => null,
+  SettingsDestinationId.listening => ModuleId.listening,
   SettingsDestinationId.manga => ModuleId.manga,
   SettingsDestinationId.video => ModuleId.video,
   SettingsDestinationId.music => ModuleId.music,
   SettingsDestinationId.cardCreation => ModuleId.cardCreation,
   SettingsDestinationId.downloads => ModuleId.browse,
   SettingsDestinationId.game => ModuleId.games,
-  // 在线服务与媒体追踪同属「第三方服务」一个开关：追踪本就是靠在线服务的
-  // 凭据跑的，分成两个开关只会让用户关了一半还留着另一半。
   SettingsDestinationId.services => ModuleId.services,
-  SettingsDestinationId.mediaTracking => ModuleId.services,
+  // Media tracking is its own module since 2026-11-10 (off by default; it no
+  // longer depends on Services).
+  SettingsDestinationId.mediaTracking => ModuleId.tracking,
   // AI 自 2026-10-13 起是独立模块（用户要能整块关掉 AI 而不连坐在线服务）。
   SettingsDestinationId.ai => ModuleId.ai,
   // 互联是从同步备份拆出去的一级分类，共享同一套后端与私有状态，同一个开关。
@@ -161,24 +166,33 @@ bool isAiModuleEnabled(ModuleVisibility visibility) =>
 ///
 /// `dictionaryPopup`（划词弹窗内部导航）判 `null`：它跨全部弹窗宿主常驻，属于
 /// 查词**能力**而非查词页面，与 lookup 模块开关无关。
-/// `globalExternal`（app 外系统级取词热键）判 lookup：它是把用户送进查词界面的
-/// 外部入口，模块关掉时不该还能装系统钩子。
+/// `globalExternal`（app 外系统级热键：取词、打开查词页、有声书播放控制）也判
+/// `null`：取词是查词**能力**（用户拍板「关掉查词模块只关页面入口、查词能力
+/// 全留」），有声书那几条更与 lookup 无关；打开查词页在模块关着时由独立路由
+/// 承载（`home_page.dart` 的 `_revealDictionary`）。此前判 lookup 会让关掉查词页
+/// 的用户连这一分区和 OS 热键一起丢掉（BUG-4846）。
 ModuleId? moduleOfShortcutScope(ShortcutScope scope) => switch (scope) {
   ShortcutScope.global => null,
   ShortcutScope.universal => null,
   ShortcutScope.home => null,
   ShortcutScope.gamepad => null,
   ShortcutScope.dictionaryPopup => null,
+  // 手柄查词模式跨阅读器 / 视频 / 漫画 / 歌词常驻，与 dictionaryPopup 同理是查词
+  // **能力**，不随任何单个模块藏起来。
+  ShortcutScope.controllerLookup => null,
   // app 内浏览器不只从「浏览器」模块（WebHubPage）进入：视频站点入口在拿不到底层
   // 合成时也改用它打开站点（video_fushi/web_source.part.dart）。跟着 web 模块藏起
   // 来就会出现「浏览器能用、快捷键却没处改」，故与 dictionaryPopup 同判恒在。
   ShortcutScope.webBrowser => null,
-  ShortcutScope.globalExternal => ModuleId.lookup,
+  // app 外热键不随查词页模块（BUG-4846），由自己的总开关
+  // `app_external_hotkeys_enabled` 管（拍板台 pr3605）。
+  ShortcutScope.globalExternal => null,
   ShortcutScope.reader => ModuleId.books,
   ShortcutScope.audiobook => ModuleId.listening,
   ShortcutScope.manga => ModuleId.manga,
   ShortcutScope.video => ModuleId.video,
   ShortcutScope.music => ModuleId.music,
+  ShortcutScope.musicPlayer => ModuleId.music,
   ShortcutScope.srsReview => ModuleId.srs,
 };
 

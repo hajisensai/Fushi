@@ -51,6 +51,32 @@ typedef _PowCheckDart =
     int Function(Pointer<Uint8>, int, Pointer<Uint8>, int, int);
 typedef _EqualC = Int32 Function(Pointer<Uint8>, Size, Pointer<Uint8>, Size);
 typedef _EqualDart = int Function(Pointer<Uint8>, int, Pointer<Uint8>, int);
+typedef _Sha256FileC =
+    Int32 Function(Pointer<Uint8>, Size, Pointer<Uint8>, Pointer<Uint64>);
+typedef _Sha256FileDart =
+    int Function(Pointer<Uint8>, int, Pointer<Uint8>, Pointer<Uint64>);
+typedef _Sha256FileCancellableC =
+    Int32 Function(
+      Pointer<Uint8>,
+      Size,
+      Pointer<Uint32>,
+      Pointer<Uint8>,
+      Pointer<Uint64>,
+    );
+typedef _Sha256FileCancellableDart =
+    int Function(
+      Pointer<Uint8>,
+      int,
+      Pointer<Uint32>,
+      Pointer<Uint8>,
+      Pointer<Uint64>,
+    );
+typedef _CancelC = Void Function(Pointer<Uint32>);
+typedef _CancelDart = void Function(Pointer<Uint32>);
+typedef _Crc32FileC =
+    Int32 Function(Pointer<Uint8>, Size, Pointer<Uint32>, Pointer<Uint64>);
+typedef _Crc32FileDart =
+    int Function(Pointer<Uint8>, int, Pointer<Uint32>, Pointer<Uint64>);
 typedef _FreeC = Void Function(Pointer<Void>);
 typedef _FreeDart = void Function(Pointer<Void>);
 
@@ -76,6 +102,23 @@ final class _HashBindings {
       ),
       sha256Free = lib.lookupFunction<_FreeC, _FreeDart>(
         'ffc_hash_sha256_free',
+      ),
+      // 读盘 + 哈希整个文件，几 GB 的片子要几十秒：**必须是非叶调用**——线程在原生代码里
+      // 处于 native 态、算 GC 安全点，同 isolate group 的 UI isolate 照常 GC（BUG-5088）。
+      sha256File = lib.lookupFunction<_Sha256FileC, _Sha256FileDart>(
+        'ffc_hash_sha256_file',
+      ),
+      sha256FileCancellable = lib
+          .lookupFunction<_Sha256FileCancellableC, _Sha256FileCancellableDart>(
+            'ffc_hash_sha256_file_cancellable',
+          ),
+      // 只做一次原子存储，可以是叶调用。
+      cancel = lib.lookupFunction<_CancelC, _CancelDart>(
+        'ffc_hash_cancel',
+        isLeaf: true,
+      ),
+      crc32File = lib.lookupFunction<_Crc32FileC, _Crc32FileDart>(
+        'ffc_hash_crc32_file',
       ),
       crc32 = lib.lookupFunction<_Crc32C, _Crc32Dart>(
         'ffc_hash_crc32',
@@ -110,6 +153,10 @@ final class _HashBindings {
   final _UpdateDart sha256Update;
   final _Sha256FinishDart sha256Finish;
   final _FreeDart sha256Free;
+  final _Sha256FileDart sha256File;
+  final _Sha256FileCancellableDart sha256FileCancellable;
+  final _CancelDart cancel;
+  final _Crc32FileDart crc32File;
   final _Crc32Dart crc32;
   final _UuidBatchDart uuidV5Batch;
   final _BatchDart hash53Batch;
@@ -347,26 +394,142 @@ Future<String> ffcSha256File(String path, {FushiCompute? library}) async {
   }
 }
 
-/// 用原生 SHA-256 哈希整个文件，返回 64 位十六进制小写摘要。
+/// 整个文件的 SHA-256（64 位十六进制小写），同步：读盘与哈希都在原生库里一次做完
+/// （`ffc_hash_sha256_file`），调用期间阻塞当前 isolate——只该在后台 isolate 里调。
 ///
-/// 同步读：只该在后台 isolate 里调。库不可用抛 [FushiComputeUnavailableError]。
-String ffcSha256FileSync(String path, {FushiCompute? library}) {
-  final FfcSha256Hasher hasher = FfcSha256Hasher.create(library: library);
-  try {
-    final RandomAccessFile input = File(path).openSync();
-    try {
-      while (true) {
-        final int count = input.readIntoSync(hasher.buffer);
-        if (count == 0) break;
-        hasher.update(count);
-      }
-    } finally {
-      input.closeSync();
-    }
-    return hasher.finishHex();
-  } finally {
-    hasher.close();
+/// 不在 Dart 里逐块 `readIntoSync(buffer)`：那条路径在 VM 里持有目标数组，整段磁盘读期间
+/// 线程不进 GC 安全点，同 isolate group 的 UI isolate 每次 GC 都得等它（BUG-5088，后台视频
+/// 指纹预热让整个界面掉帧）。原生调用全程处于 native 态，不挡 GC。
+///
+/// 给了 [cancel] 就走可取消的 `ffc_hash_sha256_file_cancellable`：别的 isolate 对同一面
+/// 标志 [FfcCancelFlag.cancel] 后，原生侧在读下一块（1 MiB）之前停下、关文件，这里抛
+/// [FfcCancelledException]（调用前已取消则不开文件直接抛）。
+///
+/// 打不开 / 读失败抛 [FileSystemException]；库不可用抛 [FushiComputeUnavailableError]。
+String ffcSha256FileSync(
+  String path, {
+  FushiCompute? library,
+  FfcCancelFlag? cancel,
+}) {
+  final _HashBindings b = _HashBindings.of(library ?? FushiCompute.require());
+  return using((Arena arena) {
+    final Pointer<Uint8> out = arena<Uint8>(32);
+    _fileHashCall(
+      arena,
+      path,
+      (Pointer<Uint8> p, int n, Pointer<Uint64> read) => cancel == null
+          ? b.sha256File(p, n, out, read)
+          : b.sha256FileCancellable(p, n, cancel._flag, out, read),
+    );
+    return _hex(out.asTypedListOutOfLine(32), 0, 32);
+  });
+}
+
+/// 整文件哈希被 [FfcCancelFlag] 取消（原生侧已停下、已关文件）。
+final class FfcCancelledException implements Exception {
+  const FfcCancelledException(this.path);
+
+  final String path;
+
+  @override
+  String toString() => 'FfcCancelledException: hashing cancelled ($path)';
+}
+
+/// 跨 isolate 的取消标志：原生内存里一个 4 字节对齐的 `u32`（初值 0），交给
+/// [ffcSha256FileSync] 的 `cancel`。
+///
+/// 典型用法：调用方 isolate [FfcCancelFlag.create] 一面标志，把 [address] 交给后台
+/// isolate，后台用 [FfcCancelFlag.attach] 包一层再调 [ffcSha256FileSync]；要打断时调用方
+/// [cancel]。置位走原生 `ffc_hash_cancel`（原子 Release 存储），原生读循环原子读它。
+///
+/// 内存归 [create] 的那一方：用到它的调用全部返回之后才能 [dispose]（[attach] 出来的视图
+/// 不能 [dispose]）。[dispose] 之后 [cancel] 是空操作，不会写已释放的内存。
+final class FfcCancelFlag {
+  FfcCancelFlag._(this._flag, this._bindings, {required bool owned})
+    : _owned = owned;
+
+  /// 新建一面未置位的标志（调用方负责 [dispose]）。库不可用抛
+  /// [FushiComputeUnavailableError]。
+  factory FfcCancelFlag.create({FushiCompute? library}) => FfcCancelFlag._(
+    calloc<Uint32>(),
+    _HashBindings.of(library ?? FushiCompute.require()),
+    owned: true,
+  );
+
+  /// 在另一个 isolate 里包住 [create] 出来的那面标志（同一进程，按 [address]）。不持有
+  /// 内存，不能 [dispose]。
+  factory FfcCancelFlag.attach(int address, {FushiCompute? library}) {
+    if (address == 0) throw ArgumentError.value(address, 'address');
+    return FfcCancelFlag._(
+      Pointer<Uint32>.fromAddress(address),
+      _HashBindings.of(library ?? FushiCompute.require()),
+      owned: false,
+    );
   }
+
+  final Pointer<Uint32> _flag;
+  final _HashBindings _bindings;
+  final bool _owned;
+  bool _disposed = false;
+
+  /// 原生内存地址，交给别的 isolate 的 [FfcCancelFlag.attach]。
+  int get address {
+    _checkAlive();
+    return _flag.address;
+  }
+
+  /// 置位（幂等）。已 [dispose] 时什么也不做。
+  void cancel() {
+    if (_disposed) return;
+    _bindings.cancel(_flag);
+  }
+
+  /// 释放标志内存（幂等）。只有 [create] 出来的那一方能调，且须在用到它的调用都返回之后。
+  void dispose() {
+    if (!_owned) throw StateError('attached cancel flag does not own memory');
+    if (_disposed) return;
+    _disposed = true;
+    calloc.free(_flag);
+  }
+
+  void _checkAlive() {
+    if (_disposed) throw StateError('cancel flag already disposed');
+  }
+}
+
+/// 整个文件的 CRC-32（IEEE，zip 用的那个），同步：读盘与计算都在原生库里一次做完
+/// （`ffc_hash_crc32_file`），不挡 GC，理由同 [ffcSha256FileSync]。只该在后台 isolate 里调。
+///
+/// 打不开 / 读失败抛 [FileSystemException]；库不可用抛 [FushiComputeUnavailableError]。
+int ffcCrc32FileSync(String path, {FushiCompute? library}) {
+  final _HashBindings b = _HashBindings.of(library ?? FushiCompute.require());
+  return using((Arena arena) {
+    final Pointer<Uint32> out = arena<Uint32>();
+    _fileHashCall(
+      arena,
+      path,
+      (Pointer<Uint8> p, int n, Pointer<Uint64> read) =>
+          b.crc32File(p, n, out, read),
+    );
+    return out.value;
+  });
+}
+
+/// 把 [path] 按 UTF-8 放进 [arena]，跑一次整文件哈希调用 [call]，按状态码抛错。
+void _fileHashCall(
+  Arena arena,
+  String path,
+  int Function(Pointer<Uint8> path, int pathLength, Pointer<Uint64> read) call,
+) {
+  final Uint8List bytes = utf8.encode(path);
+  final Pointer<Uint8> pathPtr = arena<Uint8>(max(bytes.length, 1));
+  pathPtr.asTypedListOutOfLine(bytes.length).setAll(0, bytes);
+  final int status = call(pathPtr, bytes.length, arena<Uint64>());
+  if (status == FfcStatus.ioError) {
+    throw FileSystemException('Cannot read file for hashing', path);
+  }
+  if (status == FfcStatus.cancelled) throw FfcCancelledException(path);
+  FfcStreamingHash._checkStatus(status);
 }
 
 String _hex(Uint8List bytes, int start, int end) {

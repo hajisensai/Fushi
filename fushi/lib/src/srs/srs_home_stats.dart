@@ -3,11 +3,13 @@
 /// - 今日计划条：今天已复习多少次、最近平均每次用时（估剩余时长）、连续学习天数；
 /// - 牌组行的细进度条：每个牌组今天已复习的次数（[SrsHomeStats.doneTodayIn]）；
 /// - 热力图卡：逐日复习数 + 当前 / 最长连续天数；
-/// - 未来 7 天卡：全库逐日到期预测；
+/// - 未来 7 天卡：全库逐日到期预测（只算按到期日排队的卡；全是 RWKV 牌组复习卡时不显示，见 [srsHomeShowsForecast]）；
+/// - RWKV 此刻卡：RWKV 牌组复习卡此刻低于 / 接近目标线的张数、停在这里的话之后会新增多少、此刻回忆率分布
+///   （[SrsHomeStats.rwkvNow]，统计页「RWKV 此刻」同一份数）；
 /// - 选中牌组的详情：该牌组（含子牌组）的到期预测、保持率、新卡 / 已掌握张数
-///   （[SrsHomeStats.detailFor]，按需算一次并记住）。
+///   （[SrsHomeStats.detailFor]，按需向内核要一次并记住）。
 ///
-/// 数据来自统计页同一份装载（[loadSrsStats]），装载按批让出事件循环，大集合不卡界面。
+/// 数据来自统计页同一条内核命令（[loadSrsStats] → `stats_report`，聚合在 Rust 里做完，后台 isolate）。
 /// 首页先按牌组计数画出来，这份统计到了再补上进度、时长与图表。
 library;
 
@@ -35,6 +37,8 @@ class SrsHomeDeckDetail {
     required this.retention,
     required this.reviewsRecent,
     required this.desiredRetention,
+    this.rwkvNow,
+    this.hasDueDateCards = true,
   });
 
   /// 新卡张数（未暂停 / 未搁置，与统计页「卡片状态」同口径）。
@@ -54,7 +58,24 @@ class SrsHomeDeckDetail {
 
   /// 目标保持率（牌组设置的平均）；没有卡时为 null。
   final double? desiredRetention;
+
+  /// 这个牌组（含子牌组）里 RWKV 排队的复习卡此刻的情况；没有这类卡时为 null。
+  final SrsRwkvNow? rwkvNow;
+
+  /// 有没有按到期日排队、会进 [forecast] 的卡。
+  final bool hasDueDateCards;
+
+  /// 要不要画 [forecast]（[srsHomeShowsForecast]）。
+  bool get showsForecast =>
+      srsHomeShowsForecast(hasDueDateCards: hasDueDateCards, rwkv: rwkvNow);
 }
+
+/// 到期日预测要不要画：只有 RWKV 排队的复习卡时不画——它们没有到期日、不进预测，画出来只是一张空图（统计页
+/// 同一判据：`srs_statistics_page.dart` 遇到纯 RWKV 范围时把未来到期换成「RWKV 此刻」）。
+bool srsHomeShowsForecast({
+  required bool hasDueDateCards,
+  required SrsRwkvNow? rwkv,
+}) => hasDueDateCards || rwkv == null;
 
 /// 首页统计快照。
 class SrsHomeStats {
@@ -67,8 +88,11 @@ class SrsHomeStats {
     this.countsByDay = const <int, int>{},
     this.forecast = const <int>[],
     this.doneTodayByDeck = const <String, int>{},
-    SrsStatsData? data,
-  }) : _data = data;
+    this.rwkvNow,
+    this.hasDueDateCards = true,
+    this.desiredRetention,
+    SrsStatsLoad? load,
+  }) : _load = load;
 
   /// 今天已经评过分的次数（同一张卡重复学习按次数计，与统计页「今天」同口径）。
   final int doneToday;
@@ -91,13 +115,39 @@ class SrsHomeStats {
   /// 全库未来 [kSrsHomeForecastDays] 天逐日到期（第 0 天含已逾期）。
   final List<int> forecast;
 
+  /// 截至今天最近 [days] 天（含今天，旧 → 新）逐日复习次数；没有记录的日子为 0。
+  List<int> recentCounts([int days = kSrsHomeForecastDays]) => <int>[
+    for (int d = today - days + 1; d <= today; d++) countsByDay[d] ?? 0,
+  ];
+
+  /// 有复习记录的天数（[countsByDay] 是全部历史，不限范围）。
+  int get studiedDays => countsByDay.values.where((int n) => n > 0).length;
+
+  /// 全部历史的复习次数。
+  int get totalReviews =>
+      countsByDay.values.fold<int>(0, (int sum, int n) => sum + n);
+
   /// 牌组 id（卡片直接所在的牌组，不含子牌组）→ 今天的复习次数。
   final Map<String, int> doneTodayByDeck;
 
-  /// 原始统计数据：详情面板按牌组取子集用；测试直接构造时可为 null。
-  final SrsStatsData? _data;
+  /// 全库 RWKV 排队的复习卡此刻的情况（含「停在这里的话」与回忆率分布）；没有这类卡时为 null。
+  final SrsRwkvNow? rwkvNow;
 
-  final Map<String, SrsHomeDeckDetail> _details = <String, SrsHomeDeckDetail>{};
+  /// 全库有没有按到期日排队、会进 [forecast] 的卡。
+  final bool hasDueDateCards;
+
+  /// 全库目标保留率（牌组设置的平均）；没有卡时为 null。
+  final double? desiredRetention;
+
+  /// 要不要画全库的 [forecast]（[srsHomeShowsForecast]）。
+  bool get showsForecast =>
+      srsHomeShowsForecast(hasDueDateCards: hasDueDateCards, rwkv: rwkvNow);
+
+  /// 这次装载的统计口径：详情面板按牌组向内核要子集用；测试直接构造时可为 null。
+  final SrsStatsLoad? _load;
+
+  final Map<String, Future<SrsHomeDeckDetail>> _details =
+      <String, Future<SrsHomeDeckDetail>>{};
 
   /// 估算平均用时所看的天数。
   static const int recentDays = 14;
@@ -123,11 +173,11 @@ class SrsHomeStats {
   }
 
   /// [deckIds]（一个牌组连同全部子牌组）的详情。按 [cacheKey]（通常是牌组 id）记住：
-  /// 同一份快照里切回已看过的牌组不再重算。没有原始数据时返回 null。
-  SrsHomeDeckDetail? detailFor(String cacheKey, Set<String> deckIds) {
-    final SrsStatsData? data = _data;
-    if (data == null) return null;
-    return _details[cacheKey] ??= srsHomeDeckDetailOf(data, deckIds);
+  /// 同一份快照里切回已看过的牌组不再重算。没有装载时返回 null。
+  Future<SrsHomeDeckDetail>? detailFor(String cacheKey, Set<String> deckIds) {
+    final SrsStatsLoad? load = _load;
+    if (load == null) return null;
+    return _details[cacheKey] ??= srsHomeDeckDetailOf(load, deckIds);
   }
 }
 
@@ -148,53 +198,57 @@ List<int> srsHomeForecastOf(SrsFutureDue due) => <int>[
     i == 0 ? due.perDay[0] + due.overdue : due.perDay[i],
 ];
 
-/// 一个牌组（[deckIds] = 它与全部子牌组）的详情：取这些牌组里的卡做统计子集。
-SrsHomeDeckDetail srsHomeDeckDetailOf(SrsStatsData data, Set<String> deckIds) {
-  final SrsStatsData sub = data.subset(<String>{
-    for (final SrsStatCard c in data.cards)
-      if (deckIds.contains(c.deckId)) c.id,
-  });
-  final int first = sub.today - kSrsHomeRetentionDays + 1;
-  final SrsCardCounts counts = sub.cardCounts();
+/// 一个牌组（[deckIds] = 它与全部子牌组）的详情：内核按这些牌组里的卡出一份统计。
+Future<SrsHomeDeckDetail> srsHomeDeckDetailOf(
+  SrsStatsLoad load,
+  Set<String> deckIds,
+) async {
+  final SrsStatsReport r = await load.report(
+    decks: deckIds,
+    futureDays: kSrsHomeForecastDays,
+    windows: const <String, SrsStatsWindow>{
+      _kRecent: SrsStatsWindow.last(kSrsHomeRetentionDays),
+    },
+  );
+  final SrsStatsWindowResult recent = r.windows[_kRecent]!;
   return SrsHomeDeckDetail(
-    newCards: counts.newCards,
-    matureCards: counts.mature,
-    forecast: srsHomeForecastOf(sub.futureDue(kSrsHomeForecastDays)),
-    retention: sub.retentionBetween(first, sub.today).rate,
-    reviewsRecent: sub.reviewTotalsBetween(first, sub.today).count,
-    desiredRetention: sub.desiredRetention(),
+    newCards: r.cardCounts.newCards,
+    matureCards: r.cardCounts.mature,
+    forecast: srsHomeForecastOf(r.future),
+    retention: recent.retention.rate,
+    reviewsRecent: recent.totals.count,
+    desiredRetention: r.desiredRetention,
+    rwkvNow: r.rwkvNow,
+    hasDueDateCards: r.hasDueDateCards,
   );
 }
 
-/// 从统计数据里取首页要的数（纯函数，测试直接喂 [SrsStatsData]）。
-SrsHomeStats srsHomeStatsOf(SrsStatsData data) {
-  final int today = data.today;
-  final SrsReviewTotals recent = data.reviewTotalsBetween(
-    today - SrsHomeStats.recentDays + 1,
-    today,
-  );
-  final SrsStreak streak = data.streak();
-  final Map<String, String> deckOfCard = <String, String>{
-    for (final SrsStatCard c in data.cards) c.id: c.deckId,
-  };
-  final Map<String, int> doneByDeck = <String, int>{};
-  for (final SrsStatReview r in data.reviewsBetween(today, today)) {
-    final String? deck = deckOfCard[r.cardId];
-    if (deck == null) continue;
-    doneByDeck[deck] = (doneByDeck[deck] ?? 0) + 1;
-  }
-  return SrsHomeStats(
-    doneToday: data.todayStats().count,
-    averageMsPerCard: recent.averageMsPerCard,
-    streak: streak.current,
-    longestStreak: streak.longest,
-    today: today,
-    countsByDay: data.countsByDay(),
-    forecast: srsHomeForecastOf(data.futureDue(kSrsHomeForecastDays)),
-    doneTodayByDeck: doneByDeck,
-    data: data,
-  );
-}
+const String _kRecent = 'recent';
+
+/// 首页要的那份统计（全库）：今天、最近 [SrsHomeStats.recentDays] 天、未来 [kSrsHomeForecastDays] 天。
+Future<SrsStatsReport> srsHomeReportOf(SrsStatsLoad load) => load.report(
+  futureDays: kSrsHomeForecastDays,
+  windows: const <String, SrsStatsWindow>{
+    _kRecent: SrsStatsWindow.last(SrsHomeStats.recentDays),
+  },
+);
+
+/// 从统计结果里取首页要的数（纯函数，[r] 是 [srsHomeReportOf] 的结果）。
+SrsHomeStats srsHomeStatsOf(SrsStatsReport r, {SrsStatsLoad? load}) =>
+    SrsHomeStats(
+      doneToday: r.todayStats.count,
+      averageMsPerCard: r.windows[_kRecent]!.totals.averageMsPerCard,
+      streak: r.streak.current,
+      longestStreak: r.streak.longest,
+      today: r.today,
+      countsByDay: r.countsByDay,
+      forecast: srsHomeForecastOf(r.future),
+      doneTodayByDeck: r.todayByDeck,
+      rwkvNow: r.rwkvNow,
+      hasDueDateCards: r.hasDueDateCards,
+      desiredRetention: r.desiredRetention,
+      load: load,
+    );
 
 /// 首页统计：随 [srsRevisionProvider] 重读（复习 / 编辑回来时 [bumpSrsRevision]）。
 ///
@@ -205,7 +259,9 @@ final FutureProvider<SrsHomeStats?> srsHomeStatsProvider =
       SrsOpLedger.mark('home_stats');
       final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
       if (store == null) return null;
-      final SrsStatsBundle bundle = await loadSrsStats(store);
+      // 首页显示「停在这里的话」：RWKV 卡多按几个将来时刻打分。
+      final SrsStatsLoad load = await loadSrsStats(store, rwkvAhead: true);
+      final SrsStatsReport report = await srsHomeReportOf(load);
       await initializeDateFormatting();
-      return srsHomeStatsOf(bundle.data);
+      return srsHomeStatsOf(report, load: load);
     });

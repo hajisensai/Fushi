@@ -677,6 +677,8 @@ class AnkiMobileRepository extends BaseAnkiRepository {
       furiganaPlain: payload.furiganaPlain,
       frequenciesHtml: payload.frequenciesHtml,
       freqHarmonicRank: payload.freqHarmonicRank,
+      singleFrequencyNumbers: payload.singleFrequencyNumbers,
+      singleFrequenciesHtml: payload.singleFrequenciesHtml,
       glossary: compactAnkiGlossaryHtml(
         cssSlimmer.slim(payload.glossary),
         enabled: compactGlossaries,
@@ -690,6 +692,7 @@ class AnkiMobileRepository extends BaseAnkiRepository {
         enabled: compactGlossaries,
       ),
       pitchPositions: payload.pitchPositions,
+      pitchPositionsInline: payload.pitchPositionsInline,
       pitchCategories: payload.pitchCategories,
       phoneticTranscriptions: payload.phoneticTranscriptions,
       popupSelectionText: payload.popupSelectionText,

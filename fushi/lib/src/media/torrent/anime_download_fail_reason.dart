@@ -29,5 +29,9 @@ String describeAnimeDownloadFailReason(String reason) {
       return t.download_task_import_blocked_archive_failed;
     case DiscoveryImportBlocker.unsupportedOnThisHost:
       return t.download_task_import_blocked_host_unsupported;
+    case DiscoveryImportBlocker.archivePasswordRequired:
+      return t.download_task_import_blocked_archive_password;
+    case DiscoveryImportBlocker.archiveVolumesMissing:
+      return t.download_task_import_blocked_archive_volumes;
   }
 }

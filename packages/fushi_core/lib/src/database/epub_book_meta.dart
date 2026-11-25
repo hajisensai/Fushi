@@ -37,3 +37,69 @@ class EpubBookMeta {
   final String extractDir;
   final DateTime? completedAt;
 }
+
+/// 书架一行所需的 `epub_books` 投影（novel-9）：[EpubBookMeta] 不够用（要作者 /
+/// 封面 / 章数 / `sourceMetadata`），整行 `EpubBookRow` 又太重（每本带几十到几百
+/// KB 的 `chaptersJson` / `tocJson`）。
+///
+/// 书架只要 `chaptersJson` 里每章的 `characters`，抽取在 SQLite 侧用 `json_each`
+/// 做完（[sectionChars]），整段章节 JSON 不再跨 SQLite→Dart 边界、也不在 UI isolate
+/// 上 `jsonDecode`。`tocJson` 不读。
+class EpubBookShelfRow {
+  const EpubBookShelfRow({
+    required this.bookKey,
+    required this.uid,
+    required this.title,
+    required this.author,
+    required this.coverPath,
+    required this.extractDir,
+    required this.chapterCount,
+    required this.format,
+    required this.sourceMetadata,
+    required this.sectionChars,
+  });
+
+  /// 跨设备书身份，主键。
+  final String bookKey;
+
+  /// 本机稳定 uid（v81），空串 = 异常旧行。
+  final String uid;
+  final String title;
+  final String? author;
+  final String? coverPath;
+  final String extractDir;
+  final int chapterCount;
+
+  /// `'epub'` / `'pdf'` / `'manga'`（见 `BookFormat`）。
+  final String format;
+
+  /// 系列声明 / 在线漫画描述符等小 JSON（不是章节 JSON）。
+  final String? sourceMetadata;
+
+  /// 每章字数，按 `chaptersJson` 数组顺序；章条目缺 `characters` / 不是对象记 0；
+  /// `chaptersJson` 为空、不是合法 JSON 数组时为空表。
+  final List<int> sectionChars;
+}
+
+/// 分卷归组器所需的 `epub_books` 投影（novel-9）：身份 + 书名 + 格式 +
+/// `sourceMetadata`（系列声明、在线漫画标记），不带章节 / 目录 JSON。
+class EpubBookSeriesFacts {
+  const EpubBookSeriesFacts({
+    required this.bookKey,
+    required this.uid,
+    required this.title,
+    required this.format,
+    required this.sourceMetadata,
+    this.language,
+  });
+
+  final String bookKey;
+  final String uid;
+  final String title;
+  final String format;
+  final String? sourceMetadata;
+
+  /// 本书的内容语言（`epub_books.language`：手动指定或导入回填的 `dc:language`）；
+  /// null = 未知。归组用它把同名、不同语言的版本分开（BUG-5286）。
+  final String? language;
+}

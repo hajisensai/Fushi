@@ -67,6 +67,8 @@ $sshDir = Join-Path $env:USERPROFILE '.ssh'
 New-Item -ItemType Directory -Force -Path $w, $sshDir | Out-Null
 
 Copy-Item -LiteralPath (Join-Path $here 'worker_shim.sh') -Destination (Join-Path $w 'shim') -Force
+# The shim's queue: who has a checkout, one batch at a time.
+Copy-Item -LiteralPath (Join-Path $here 'worker_slot.sh') -Destination (Join-Path $w 'slot.sh') -Force
 $cmd = "@echo off`r`n`"$bash`" `"%USERPROFILE%\.fushi-worker\shim`"`r`n"
 [IO.File]::WriteAllText((Join-Path $w 'shim.cmd'), $cmd, (New-Object Text.ASCIIEncoding))
 Write-Host "installed $w\shim (runs with $bash)"

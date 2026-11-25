@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:path/path.dart' as p;
 
@@ -53,7 +54,15 @@ class LocalDirectoryAssetStore implements SyncAssetStore {
   Future<AssetEntry?> findAsset(String namespaceId, String name) async {
     final File f = File(p.join(namespaceId, _safeName(name)));
     if (!f.existsSync()) return null;
-    return AssetEntry(id: f.path, name: name, sizeBytes: f.lengthSync());
+    // 与 [listChildren] 同一口径带上修改时刻：SRS 说明文件（`srsListRemoteProfiles`）按它分辨候选、在几台设备报的
+    // 名字里挑最新的；以前这里不给，本地目录后端读出来的时刻永远是 null。
+    final FileStat stat = f.statSync();
+    return AssetEntry(
+      id: f.path,
+      name: name,
+      sizeBytes: stat.size,
+      modifiedAt: stat.modified.millisecondsSinceEpoch,
+    );
   }
 
   @override
@@ -100,6 +109,31 @@ class LocalDirectoryAssetStore implements SyncAssetStore {
     final File target = File(p.join(namespaceId, _safeName(name)));
     final File tmp = File('${target.path}$_tmpSuffix');
     await tmp.writeAsString(jsonEncode(json), flush: true);
+    await tmp.rename(target.path);
+  }
+
+  @override
+  Future<Uint8List?> getBytesAsset(String assetId) async {
+    final File f = File(assetId);
+    if (!f.existsSync()) return null;
+    // 别的设备经 WebDAV 写进来的文件不受本机控制：先看大小再读，读的过程中照样
+    // 计数（读的同时还可能在被写长）。
+    return readSyncAssetBytesCapped(
+      f.openRead(),
+      assetId: assetId,
+      declaredLength: await f.length(),
+    );
+  }
+
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) async {
+    final File target = File(p.join(namespaceId, _safeName(name)));
+    final File tmp = File('${target.path}$_tmpSuffix');
+    await tmp.writeAsBytes(bytes, flush: true);
     await tmp.rename(target.path);
   }
 

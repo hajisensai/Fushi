@@ -26,7 +26,19 @@ bool _manualCheckInFlight = false;
 /// `autoInstall: false`（发现新版只弹确认对话框，不沿用自动安装偏好静默装）。
 /// 三种反馈走 toast：点击即时「检查中」、已是最新、检查失败；发现新版复用
 /// UpdateChecker 既有对话框 → 应用内下载安装。
-Future<void> checkAppUpdateNow(BuildContext context, AppModel appModel) async {
+///
+/// [channel] 为 null 时按 [appUpdateChannelOf]（设置 / 安装绑定）检查；调用方自己
+/// 代表某条时间线时显式传入（BUG-4987：调试版流水线面板的「更新」按钮恒按 debug
+/// 时间线查——通道设成 stable 却跑调试包的 TestFlight / 调试 APK 用户，面板说「有新
+/// 调试版」，按钮就不能拿 stable manifest 去比、回一句「已是最新」）。
+Future<void> checkAppUpdateNow(
+  BuildContext context,
+  AppModel appModel, {
+  UpdateChannel? channel,
+}) async {
+  final UpdateChannel effectiveChannel =
+      channel ?? appUpdateChannelOf(appModel);
+  if (revealDownloadForManualCheck(explicitChannel: channel)) return;
   if (_manualCheckInFlight) {
     // 更新中心条目 / 系统通知也从这里进来：在飞时静默早退等于「点了没反应」。
     FushiToast.show(msg: t.update_checking_now, severity: ToastSeverity.info);
@@ -43,7 +55,6 @@ Future<void> checkAppUpdateNow(BuildContext context, AppModel appModel) async {
     appModel.packageInfo.version,
   );
   final String currentBuildNumber = appModel.packageInfo.buildNumber;
-  final UpdateChannel channel = appUpdateChannelOf(appModel);
   // BUG-846「谁后用谁」：缓存乐观比较用本机 release sequence（无后缀 `X.Y.Z` 正式版包 /
   // beta/debug 包都能取到），与网络路径 scheduleCheck 同源。远端 seq 从缓存的 latestTag 串
   // 自取（beta/debug 带尾号；正式版无 → 保守走基版本比较，网络刷新随后收口）。
@@ -53,13 +64,13 @@ Future<void> checkAppUpdateNow(BuildContext context, AppModel appModel) async {
   );
   final UpdateCheckCacheEntry? cached = cachedEntryForChannel(
     appModel.updateCheckCache,
-    channel,
+    effectiveChannel,
   );
   if (cached != null) {
     final bool newer = updateTagIsNewerThanCurrent(
       cached.latestTag,
       currentVersion,
-      channel,
+      effectiveChannel,
       localSeq: currentReleaseSeq,
     );
     FushiToast.show(
@@ -78,8 +89,8 @@ Future<void> checkAppUpdateNow(BuildContext context, AppModel appModel) async {
       currentBuildNumber: currentBuildNumber,
       neverRemind: false,
       autoInstall: false,
-      betaChannel: appModel.updateBetaChannel,
-      debugChannel: appModel.updateDebugChannel,
+      betaChannel: effectiveChannel == UpdateChannel.beta,
+      debugChannel: effectiveChannel == UpdateChannel.debug,
       customProxy: appModel.updateCustomProxy,
       // 网络刷新跑完写回缓存，下次手动检查直接乐观显示（恒快）。
       cacheWriter: appModel.setUpdateCheckCache,
@@ -97,9 +108,25 @@ Future<void> checkAppUpdateNow(BuildContext context, AppModel appModel) async {
   }
 }
 
-/// 当前设置选中的更新通道（与 [UpdateChecker.scheduleCheck] 内的
-/// debug > beta > stable 优先级一致）。
+/// 手动「检查更新」先把在途下载的浮层拉回来（BUG-5168：浮层点过「隐藏」时，再点
+/// 「检查更新」就是要回去看进度，不再查一遍网络）。返回 true = 已拉起、这次检查到此为止。
+///
+/// [explicitChannel] 是调用方显式代表的时间线（BUG-4987 调试版面板恒按 debug 查）：
+/// 只拉回目标版本**恰好属于这条轨**的下载——stable 下载在途时，面板按 debug 查必须照样
+/// 去查 debug manifest，不能被 stable 浮层截走（HBK-AUDIT-230）。
+///
+/// 为 null（设置页 / 更新中心 / 反馈进度，按用户自己的通道查）时拉回任一在途下载：
+/// beta / debug 通道按嵌套合集也收正式版 / 预发布（BUG-846），用户通道下在途的下载
+/// 可能属于更稳的那条轨；按「生效通道」精确匹配会把它漏掉，退回去重查网络，甚至在
+/// 它还在下的时候又弹出另一版的对话框。
+bool revealDownloadForManualCheck({UpdateChannel? explicitChannel}) =>
+    UpdateChecker.revealActiveDownload(channel: explicitChannel);
+
+/// 当前生效的更新通道：安装方式绑定了通道（Flatpak 的 branch）时用它，否则用设置
+/// （与 [UpdateChecker.scheduleCheck] 内的 debug > beta > stable 优先级一致）。
 UpdateChannel appUpdateChannelOf(AppModel appModel) {
+  final UpdateChannel? installed = updaterForCurrentPlatform().installedChannel;
+  if (installed != null) return installed;
   if (appModel.updateDebugChannel) return UpdateChannel.debug;
   if (appModel.updateBetaChannel) return UpdateChannel.beta;
   return UpdateChannel.stable;

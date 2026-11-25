@@ -29,6 +29,25 @@ void main() {
       expect(r.body, <String, Object?>{'bookUid': 'book-1', 'proofread': true});
     });
 
+    test('--frames / --no-frames：明说才进 body（不给 = 交给 app 取「参考画面」设置）', () {
+      expect(
+        _build('subtitle-gen', <String>['book-1', '--frames']).body,
+        <String, Object?>{
+          'bookUid': 'book-1',
+          'proofread': true,
+          'frames': true,
+        },
+      );
+      expect(
+        _build('subtitle-gen', <String>['book-1', '--no-frames']).body,
+        <String, Object?>{
+          'bookUid': 'book-1',
+          'proofread': true,
+          'frames': false,
+        },
+      );
+    });
+
     test('整季 + 全部选项', () {
       final CtlRequestSpec r = _build('subtitle-gen', <String>[
         '--collection',

@@ -32,6 +32,7 @@ import 'package:fushi_engine/ocr/manga_ocr_pipeline.dart'
     show mangaOcrPageOrder;
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
 import 'package:fushi_engine/ocr/ocr_types.dart';
+import 'package:fushi_engine/utils/misc/atomic_text_file.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
 import 'package:fushi/i18n/strings.g.dart';
 
@@ -83,7 +84,46 @@ class MangaOcrJobSpec {
   /// 读者当前页：运行中跟着读者改道（本地 / Lens / 系统 OCR；远端与外部 CLI
   /// 不按页序处理，忽略）。阅读器经 `MangaOcrRunningJob.focusPage` 写入。
   final MangaOcrPageFocus? focus;
+
+  /// 暂停后继续用的同目录 spec：只补缺页（[onlyMissing] 恒为 true——重新识别的
+  /// 任务开跑时已丢过旧缓存，续跑时缓存里的都是本轮新结果），改道通道换一个新的
+  /// （旧的随旧任务一起结束）。
+  MangaOcrJobSpec resumed() => MangaOcrJobSpec(
+    engine: engine,
+    engines: engines,
+    imageDirPath: imageDirPath,
+    lensLanguage: lensLanguage,
+    startPage: startPage,
+    volumeTitle: volumeTitle,
+    remoteTarget: remoteTarget,
+    focus: focus == null ? null : MangaOcrPageFocus(),
+  );
 }
+
+/// 事件流构造口（测试注入；生产是 [mangaOcrBackgroundEvents]）。
+typedef MangaOcrEventsBuilder =
+    Stream<MangaOcrBackgroundEvent> Function(MangaOcrJobSpec spec);
+
+/// 由 [spec] 构造交给注册表的后台任务（唯一装配点）：事件流、改道通道、跟随步骤、
+/// 显示名与「暂停后继续」的重建口都从同一个 spec 来，入口之间不会抄漏某一项。
+MangaOcrBackgroundJob mangaOcrBackgroundJob({
+  required String bookKey,
+  required MangaOcrJobSpec spec,
+  MangaOcrEventsBuilder buildEvents = mangaOcrBackgroundEvents,
+}) => MangaOcrBackgroundJob(
+  bookKey: bookKey,
+  managedDirectory: spec.imageDirPath,
+  engine: spec.engine,
+  events: buildEvents(spec),
+  focus: spec.focus,
+  follower: mangaOcrJobFollower(spec),
+  title: spec.volumeTitle,
+  resume: () => mangaOcrBackgroundJob(
+    bookKey: bookKey,
+    spec: spec.resumed(),
+    buildEvents: buildEvents,
+  ),
+);
 
 /// 重新识别前丢掉某个引擎签名下的逐页缓存目录（不存在则无事）。
 ///
@@ -192,6 +232,7 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
         engine: 'local_onnx',
         engineSignature: engineSignature,
         schemaVersion: 1,
+        completedAt: DateTime.now().toUtc(),
       ),
     );
     final String output = await writeMangaOcrCachedOutput(dir, payload);
@@ -226,15 +267,18 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
           volumeTitle: spec.volumeTitle,
           startPage: spec.startPage,
         );
-  await for (final MangaOcrVolumeEvent event in events) {
+  // 必须 `yield*` 一条流，不能在这里 `await for`：async* 挂在 await for 上时收不到
+  // 取消，要等下一页的进度事件到了、走到下一个 yield 才收尾——取消请求晚一页才
+  // 传到 isolate，它因此还要再多跑一页才退出（BUG-4800）。`yield*` 期间的取消
+  // 直接转给这条流的订阅，取消的 Future（isolate 已退出）也原样传回去。
+  yield* events.asyncMap((MangaOcrVolumeEvent event) async {
     if (event.finished) {
-      yield MangaOcrBackgroundEvent.finished(
+      return MangaOcrBackgroundEvent.finished(
         pagesTotal: event.pagesTotal,
         resultPath: event.mangaJsonPath!,
         external: false,
         acceleration: event.acceleration,
       );
-      continue;
     }
     // 本地引擎从 startPage 旋转处理：完成计数不是页号，页号以事件为准。
     // 只有不报页号的实现（没按起点重排）才退回「第 N 个完成的就是第 N 页」。
@@ -249,14 +293,14 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLocalEvents(
         ).images.single;
       }
     }
-    yield MangaOcrBackgroundEvent.progress(
+    return MangaOcrBackgroundEvent.progress(
       pagesDone: event.pagesDone,
       pagesTotal: event.pagesTotal,
       pageIndex: pageIndex,
       page: page,
       acceleration: event.acceleration,
     );
-  }
+  });
 }
 
 Stream<MangaOcrBackgroundEvent> mangaOcrLensEvents(
@@ -293,6 +337,7 @@ Stream<MangaOcrBackgroundEvent> mangaOcrLensEvents(
         engine: 'google_lens',
         engineSignature: googleLensEngineSignature(spec.lensLanguage),
         schemaVersion: 1,
+        completedAt: DateTime.now().toUtc(),
       ),
     );
     final String output = await writeMangaOcrCachedOutput(dir, payload);
@@ -468,15 +513,9 @@ Future<String> writeMangaOcrCachedOutput(
   final File output = File(
     p.join(dir, kMangaOcrOutDirName, kMangaOcrOutputFileName),
   );
-  await output.parent.create(recursive: true);
-  final File temporary = File('${output.path}.tmp');
-  await temporary.writeAsString(
+  await writeTextFileAtomically(
+    output,
     jsonEncode(mangaPayloadToJson(payload)),
-    flush: true,
   );
-  if (output.existsSync()) {
-    await output.delete();
-  }
-  await temporary.rename(output.path);
   return output.path;
 }

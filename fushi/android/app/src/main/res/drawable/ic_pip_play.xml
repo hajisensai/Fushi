@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 系统画中画窗口上的「播放」键（PictureInPictureChannelHandler 的 RemoteAction）。
+     只有字形，颜色由系统 PiP 菜单着色。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M8,5v14l11,-7z" />
+</vector>

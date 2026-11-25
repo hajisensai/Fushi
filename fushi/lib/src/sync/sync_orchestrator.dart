@@ -1,18 +1,23 @@
+import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:crypto/crypto.dart' show sha1;
 import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'package:fushi/src/anki/pending_mining/pending_mine_relay.dart';
 import 'package:fushi/src/epub/book_css_repository.dart';
 import 'package:fushi_engine/media/video/video_member_file.dart';
+import 'package:fushi_engine/media/video/stream_video_sync.dart';
+import 'package:fushi_engine/media/video/video_storage.dart';
 import 'package:fushi_engine/epub/epub_importer.dart';
-import 'package:fushi_engine/media/video/strm_file.dart'
-    show lacksLocalMediaFile;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show listSidecarSubtitles;
+import 'package:fushi/src/models/dictionary_repository.dart'
+    show DictionaryRepository;
 import 'package:fushi/src/models/local_audio_manager.dart';
 import 'package:fushi/src/sync/peer_book_tombstone_alias.dart';
+import 'package:fushi_engine/models/local_audio_content_id.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/video_metadata_manifest.dart';
 import 'package:fushi_engine/sync/video_metadata_work_target.dart';
@@ -22,19 +27,42 @@ import 'package:fushi_engine/sync/manga_sync_package.dart'
         importMangaPackageFile,
         isMangaPackage,
         repackageMangaBook;
+import 'package:fushi_engine/sync/pdf_sync_package.dart'
+    show
+        hasExportablePdfContent,
+        kLiveLibraryPdfBooksCapability,
+        pdfBookFilePath;
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
 import 'package:fushi_engine/sync/tag_sync.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
 import 'package:fushi_engine/sync/deletion_propagation.dart';
 import 'package:fushi_engine/sync/deletion_tombstone_bundle.dart';
+import 'package:fushi/src/sync/book_change_gate.dart';
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
 import 'package:fushi/src/sync/font_sync.dart';
+import 'package:fushi/src/sync/online_library_items.dart';
+import 'package:fushi_engine/sync/online_library_sync.dart';
 import 'package:fushi/src/sync/interconnect_book_progress_sync.dart';
+import 'package:fushi/src/sync/interconnect_manga_chapter_sync.dart';
 import 'package:fushi/src/sync/interconnect_playback_position_sync.dart';
+import 'package:fushi/src/sync/interconnect_source_share_kinds.dart'
+    show sourceSharePluginStores, sourceSharePrefWriter, SharedPluginStore;
+import 'package:fushi/src/sync/interconnect_source_share_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/remote_audiobook_revision.dart'
+    show remoteAudiobookRevisionKeyForBook;
+import 'package:fushi/src/sync/remote_audiobook_revision_store.dart'
+    show
+        forgetRemoteAudiobookRevisionAfterPush,
+        recordRemoteAudiobookPackageDownload;
 import 'package:fushi_engine/sync/override_title_lookup.dart';
 import 'package:fushi_engine/sync/interconnect_service_config.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import 'package:fushi_engine/sync/manga_chapter_progress_sync.dart'
+    show kMangaChapterProgressCapability;
+import 'package:fushi/src/sync/sync_peer_gap.dart';
+import 'package:fushi/src/sync/remote_dictionary_catalog_service.dart'
+    show RemoteDictionaryCatalogService;
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/foundation/engine_paths.dart';
 import 'package:fushi_engine/sync/aggregate_peer_snapshot_cache.dart';
@@ -42,12 +70,17 @@ import 'package:fushi_engine/sync/aggregate_sync_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
+import 'package:fushi/src/sync/sync_baseline_scope.dart'
+    show SyncRemoteIdentityUnavailableError, progressBaselineStorageFor;
 import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/sync_manager.dart';
+import 'package:fushi/src/sync/sync_module_gate.dart';
 import 'package:fushi/src/sync/settings_sync.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
+import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi/src/sync/sync_state_apply_lock.dart';
+import 'package:fushi_engine/sync/sync_reserved_namespaces.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
 import 'package:fushi_engine/sync/online_novel_book.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
@@ -57,18 +90,25 @@ import 'package:fushi_audio/fushi_audio.dart'
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 
+// 报告里的「对端缺能力」类型随 SyncRunReport 一起给到消费方。
+export 'package:fushi/src/sync/sync_peer_gap.dart';
+
 part 'sync_orchestrator/aggregate.part.dart';
 part 'sync_orchestrator/collections.part.dart';
 part 'sync_orchestrator/tags.part.dart';
 part 'sync_orchestrator/media_links.part.dart';
+part 'sync_orchestrator/online_library.part.dart';
 part 'sync_orchestrator/video_metadata.part.dart';
 part 'sync_orchestrator/tombstones.part.dart';
 part 'sync_orchestrator/books.part.dart';
+part 'sync_orchestrator/book_change.part.dart';
 part 'sync_orchestrator/videos.part.dart';
+part 'sync_orchestrator/stream_videos.part.dart';
 part 'sync_orchestrator/audiobooks.part.dart';
 part 'sync_orchestrator/dictionaries.part.dart';
 part 'sync_orchestrator/local_audio.part.dart';
 part 'sync_orchestrator/settings.part.dart';
+part 'sync_orchestrator/peer_gaps.part.dart';
 
 /// Reserved top-level folder (under the backend root) that holds dictionary
 /// packages. It lives alongside the per-book folders, so every place that
@@ -136,6 +176,44 @@ String _stripLocalAudioAssetSuffix(String name) {
   return name;
 }
 
+/// 本地音源库包的**身份旁注**后缀（拍板 pr3481）：`<base>~<contentId>` + 本后缀，
+/// 空文件，只用文件名承载 `<base>.fushiaudiolib` 的内容身份。
+const String _localAudioIdentityMarkerSuffix = '.fushiaudioid';
+
+/// 库包基名 [base]（资产名去掉 `.fushiaudiolib`）的身份旁注资产名。
+@visibleForTesting
+String localAudioIdentityMarkerName(String base, String contentId) =>
+    '$base~$contentId$_localAudioIdentityMarkerSuffix';
+
+/// 解析身份旁注资产名，得到 `(库包基名, contentId)`；不是旁注 / 身份格式不对
+/// 返回 null。基名里本身可以有 `~`：按最后一个 `~` 切。
+({String base, String contentId})? _parseLocalAudioIdentityMarker(String name) {
+  if (!name.endsWith(_localAudioIdentityMarkerSuffix)) return null;
+  final String stem = name.substring(
+    0,
+    name.length - _localAudioIdentityMarkerSuffix.length,
+  );
+  final int cut = stem.lastIndexOf('~');
+  if (cut <= 0) return null;
+  final String id = stem.substring(cut + 1);
+  if (!isLocalAudioContentId(id)) return null;
+  return (base: stem.substring(0, cut), contentId: id);
+}
+
+/// 云上一个本地音源库包：资产、基名（去掉库包后缀，= 推送端的显示名或撞名后
+/// 另起的名）、身份旁注给出的内容身份（旧版本传的包没有旁注 → null）。
+class _CloudLocalAudio {
+  const _CloudLocalAudio({
+    required this.asset,
+    required this.base,
+    required this.contentId,
+  });
+
+  final AssetEntry asset;
+  final String base;
+  final String? contentId;
+}
+
 /// Reserved top-level folder holding the shared collection manifest
 /// (`collections.json`) for the collections union sync (多端库联合视图 §2.3).
 /// Must be filtered from any listing that treats root children as books
@@ -173,22 +251,16 @@ const String kSyncVideosManifestName = 'videos.json';
 /// True for reserved folder names that are NOT books and must be filtered from
 /// any listing of book folders (compare dialog, remote-book import).
 ///
+/// 保留命名空间的判据只在引擎的 [isReservedSyncNamespaceName] 写一次（互联 host 的文件箱
+/// 清理用同一个）；此前这里逐个列名，漏了 `__settings__` 与 `fushi-srs`，云盘上这两个
+/// 共享目录被当成只剩元数据的远端书列进对比弹窗、可被「删远端」整个删掉（BUG-5007）。
+///
 /// An empty / whitespace-only name is also reserved: it is never a real book
 /// folder (a book's folder name is a non-empty sanitized title), and treating it
 /// as one would import the sync root itself or an orphan collapsed onto the root
 /// (BUG-619, TODO-1329).
 bool isReservedSyncFolderName(String name) =>
-    name.trim().isEmpty ||
-    name == kSyncDictionaryNamespace ||
-    name == kSyncLocalAudioNamespace ||
-    name == kSyncAggregateNamespace ||
-    name == kSyncCollectionsNamespace ||
-    name == kSyncVideosNamespace ||
-    name == kSyncTombstonesNamespace ||
-    name == kSyncFontsNamespace ||
-    // 待发制卡跨设备中转（见 PendingMineRelay）：不是书；当成书列出来，用户在对比
-    // 弹窗里一「删远端书」就连认领带待落的卡一起删了。
-    name == PendingMineRelay.namespace;
+    name.trim().isEmpty || isReservedSyncNamespaceName(name);
 
 /// 云墓碑消费每轮至多 GET 多少条**未被合并清单覆盖**的逐条标记（SDbJAx1Db6）。
 ///
@@ -257,6 +329,12 @@ class SyncConflict {
 /// they are neither failures nor transfers, so they never feed `booksImported`
 /// nor `errors`.
 class SyncRunReport {
+  /// [onError]：每记下一条 [errors] 就同步回调一次（同步任务面板据此实时显示每项的
+  /// 失败，反馈 kM-Gb_Xnu-）。不论错误是经 [noteError] 还是直接 `errors.add` 进来的
+  /// 都会回调——观察点在列表本身，漏不掉。
+  SyncRunReport({void Function(String error)? onError})
+    : errors = _ObservedErrorList(onError);
+
   int booksImported = 0;
   int dictionariesImported = 0;
   int dictionariesExported = 0;
@@ -286,6 +364,42 @@ class SyncRunReport {
   /// reader_positions).
   int localBookProgressPulled = 0;
 
+  /// 本轮互联进度 / 断点 sweep 里**位置真的挪动了**的条目数，按种类、按方向
+  /// （BUG-4302）。`*Received` = host 的位置落到了本机（applyRemote 落地），
+  /// `*Sent` = 本机的位置推给了 host（pushLocal）。两端位置相同、只对齐时间戳的
+  /// 条目不计——那不是一次「变化」。
+  ///
+  /// 此前报告只有内容 / 文件传输的计数，进度类改动不进任何计数，于是一轮只同步了
+  /// 播放断点 / 阅读进度的手动同步摘要显示「无变化」。[localBookProgressPulled] 是
+  /// 书架刷新信号（含只对齐时间戳的情形），不能拿来当摘要计数。
+  int bookProgressReceived = 0;
+  int bookProgressSent = 0;
+  int videoPositionsReceived = 0;
+  int videoPositionsSent = 0;
+  int audiobookPositionsReceived = 0;
+  int audiobookPositionsSent = 0;
+
+  /// 记一次播放断点落到本机（[received] = true）或推给 host（false）。
+  void notePlaybackPositionMoved(
+    PlaybackPositionKind kind, {
+    required bool received,
+  }) {
+    switch (kind) {
+      case PlaybackPositionKind.video:
+        if (received) {
+          videoPositionsReceived++;
+        } else {
+          videoPositionsSent++;
+        }
+      case PlaybackPositionKind.audiobook:
+        if (received) {
+          audiobookPositionsReceived++;
+        } else {
+          audiobookPositionsSent++;
+        }
+    }
+  }
+
   /// Per-book metadata/cover files that had spilled directly into the sync root
   /// and were swept back out this run (BUG-619 re-report / TODO-1340). Purely a
   /// cleanup counter — spill removal is neither an import nor a failure, so it
@@ -307,28 +421,62 @@ class SyncRunReport {
   /// [needsLocalLibraryRefresh]。
   int mediaLinksUpdated = 0;
 
+  /// 本轮在线源条目同步在本机新建 / 改动的条目数（`online_library_items.dart`，
+  /// 拍板台 mY5VWg1nD-）。新落的漫画 / 小说 / 视频行要库页刷新，计入
+  /// [needsLocalLibraryRefresh]。
+  int onlineLibraryItemsApplied = 0;
+
   /// 7c：本轮从互联 host 落到本地的视频刮削元数据作品数（`applyRemoteVideoMetadata`）。
   /// >0 时合集详情页 / 视频卡的简介、评分、分集名会变，计入 [needsLocalLibraryRefresh]。
   int videoMetadataUpdated = 0;
+
+  /// 本轮从互联 host 落到本机的流媒体书（「粘贴 URL 导入」/ 网页视频站，拍板台
+  /// Z2OhxAjKVv）。视频库多出新行，计入 [needsLocalLibraryRefresh]。
+  int streamVideosPulled = 0;
+
+  /// 本轮注册到互联 host 的流媒体书（只推元数据，不传字节；export-only，不计入
+  /// [needsLocalLibraryRefresh]）。
+  int streamVideosPushed = 0;
 
   /// Host-owned external-service preferences imported over the authenticated
   /// interconnect channel. These require an AppModel preference-cache refresh
   /// even though no media row was imported.
   int serviceConfigsImported = 0;
 
+  /// 互联「来源共享」本轮在本机新增 / 更新 / 删除的服务器来源与插件条数
+  /// （`interconnect_source_share_sync.dart`）。与 [serviceConfigsImported] 同理要刷新偏好缓存。
+  int sourcesShared = 0;
+
+  /// 来源共享里签名者变了、没有自动更新、等用户在本机确认的插件名。
+  final List<String> sourceShareSignerChanged = <String>[];
+
   /// 本轮从别的设备采纳、写进本机的可移植设置项数（反馈 AWp-0BtDDv，「同步设置」）。
   /// 与 [serviceConfigsImported] 同理：没有媒体行变化，但 AppModel 的偏好缓存要刷新。
   int settingsImported = 0;
 
+  /// 本轮本机改过、随本机设置快照发给其它设备的设置项数（BUG-4501）。只进手动同步
+  /// 摘要，不触发本地刷新。
+  int settingsExported = 0;
+
   /// 本机（落地设备）经跨设备中转新收到、待交给 Anki 的卡数。
   int pendingMinesReceived = 0;
 
-  final List<String> errors = <String>[];
+  final List<String> errors;
 
   /// XVEF3huDTF：本轮各阶段耗时（毫秒，按执行顺序）。慢同步的反馈只附带错误日志，
   /// 看不出时间花在哪一步；[SyncOrchestrator.run] 跑完把它连同最慢的几本书写进
   /// 诊断日志（见 [describeTiming]），下一份反馈就能直接定位。
   final Map<String, int> phaseMs = <String, int>{};
+
+  /// 书阶段的书级变更筛选（wiO0nN8aiG）：null = 本轮没有筛选（互联 / 无设备 id /
+  /// 认不出远端），否则是 `snapshot` / `manifest`，manifest 模式触发全扫时带原因。
+  String? bookChangeMode;
+
+  /// 本轮真正进了逐本阶段的书数（有筛选时）。
+  int booksChecked = 0;
+
+  /// 本轮判定「未变」、没进逐本阶段的书数。
+  int booksUnchanged = 0;
 
   /// 「阅读数据」阶段里每本书的耗时（毫秒），只留最慢的 [_slowBookKeep] 本。
   final List<({String title, int ms})> slowestBooks =
@@ -355,6 +503,12 @@ class SyncRunReport {
             '${e.key}=${e.value}ms',
         ].join(', '),
       );
+    final String? mode = bookChangeMode;
+    if (mode != null) {
+      out.write(
+        '; books: $mode checked=$booksChecked unchanged=$booksUnchanged',
+      );
+    }
     if (slowestBooks.isNotEmpty) {
       out
         ..write('; slowest books: ')
@@ -375,6 +529,39 @@ class SyncRunReport {
   /// `errors.length` 就变成「N 项失败」，等于把两件事押成同一句废话。
   /// 本列表把类型保留到 UI，与 [errors] **并存**（日志行一字不变）。
   final List<SyncAuthFailure> authFailures = <SyncAuthFailure>[];
+
+  /// 本轮因对端版本过旧 / 不支持而没同步、或降级同步的维度（拍板
+  /// other-sync-peer-version-errors），每维度至多一条。与 [authFailures] 同理：
+  /// [errors] 里有同一句的日志行，这里把类型留给 UI（手动同步摘要据此提示升级对端）。
+  final List<SyncPeerGap> peerGaps = <SyncPeerGap>[];
+
+  /// 记一条「对端缺能力」：本轮该维度已记过就不再记（每轮每维度最多一条），否则
+  /// 进 [peerGaps] 并往 [errors] 写一行 [SyncPeerGap.message]。各维度统一走这里，
+  /// 不再各写各的提示句。
+  void notePeerGap(SyncPeerGapDimension dimension, {required bool outdated}) {
+    if (hasPeerGap(dimension)) return;
+    final SyncPeerGap gap = SyncPeerGap(
+      dimension: dimension,
+      outdated: outdated,
+    );
+    peerGaps.add(gap);
+    errors.add(gap.message);
+  }
+
+  /// 本轮是否已记过 [dimension] 的「对端缺能力」。
+  bool hasPeerGap(SyncPeerGapDimension dimension) =>
+      peerGaps.any((SyncPeerGap g) => g.dimension == dimension);
+
+  /// 本轮已经按能力位判过的维度——不论判下来记没记、能力表读没读到。同一维度在
+  /// 一轮里可能走不通很多次（删除推送逐条墓碑），判定与「能力表读不到」的错误行
+  /// 每轮每维度都只该出一次（`_notePeerGapLive`）。
+  final Set<SyncPeerGapDimension> _peerGapsJudged = <SyncPeerGapDimension>{};
+
+  /// 本轮对 host `/api/capabilities` 的那一次读取（连同它挂在哪个 backend 上）。各维度、
+  /// PDF 推送、本地音频身份判定共用，**每轮至多一次请求**；读取失败也复用同一个失败，
+  /// 不再为每个调用点重发。按轮持有、不跨轮：报告就是一轮的生命周期（host 换成老版本
+  /// 后下一轮必须重新读到）。
+  ({InterconnectSyncBackend backend, Future<Object?> read})? _hostCapabilities;
 
   final List<SyncConflict> conflicts = <SyncConflict>[];
 
@@ -419,7 +606,10 @@ class SyncRunReport {
       collectionsUpdated > 0 ||
       tagsUpdated > 0 ||
       videoMetadataUpdated > 0 ||
+      streamVideosPulled > 0 ||
+      onlineLibraryItemsApplied > 0 ||
       serviceConfigsImported > 0 ||
+      sourcesShared > 0 ||
       settingsImported > 0;
 
   /// 合并另一条通道的报告到本报告（option B 双通道：云备份 + 互联并行各跑一轮后，
@@ -436,16 +626,32 @@ class SyncRunReport {
     fontsExported += other.fontsExported;
     videosExported += other.videosExported;
     localBookProgressPulled += other.localBookProgressPulled;
+    bookProgressReceived += other.bookProgressReceived;
+    bookProgressSent += other.bookProgressSent;
+    videoPositionsReceived += other.videoPositionsReceived;
+    videoPositionsSent += other.videoPositionsSent;
+    audiobookPositionsReceived += other.audiobookPositionsReceived;
+    audiobookPositionsSent += other.audiobookPositionsSent;
     rootSpillFilesRemoved += other.rootSpillFilesRemoved;
     collectionsUpdated += other.collectionsUpdated;
     tagsUpdated += other.tagsUpdated;
     mediaLinksUpdated += other.mediaLinksUpdated;
+    onlineLibraryItemsApplied += other.onlineLibraryItemsApplied;
     videoMetadataUpdated += other.videoMetadataUpdated;
+    streamVideosPulled += other.streamVideosPulled;
+    streamVideosPushed += other.streamVideosPushed;
     serviceConfigsImported += other.serviceConfigsImported;
+    sourcesShared += other.sourcesShared;
+    sourceShareSignerChanged.addAll(other.sourceShareSignerChanged);
     settingsImported += other.settingsImported;
+    settingsExported += other.settingsExported;
     errors.addAll(other.errors);
     for (final SyncAuthFailure f in other.authFailures) {
       _addAuthFailure(f);
+    }
+    // 日志行已随 errors 拼过来，这里只补类型（同维度不重复）。
+    for (final SyncPeerGap g in other.peerGaps) {
+      if (!hasPeerGap(g.dimension)) peerGaps.add(g);
     }
     conflicts.addAll(other.conflicts);
     deletionCandidates.addAll(other.deletionCandidates);
@@ -546,6 +752,18 @@ enum SyncAssetDirection {
   bool get pushes => this != SyncAssetDirection.download;
 }
 
+/// 按 host 的单本词典传输（[SyncOrchestrator.runSingleDictionaryTransfer]）的结局。
+enum SingleDictionaryTransferOutcome {
+  /// 传完了（推送：host 已导入；下载：本机已导入）。
+  transferred,
+
+  /// 目标一侧已有同名词典，什么都没传（下载 = 本机已装；推送 = host 已有）。
+  alreadyPresent,
+
+  /// 来源一侧没有这本（下载 = host 清单里没有；推送 = 本机没装）。
+  notFound,
+}
+
 /// 显式传输的资产类别（[SyncOrchestrator.runAssetTransferOnly]）。
 enum SyncAssetKind {
   /// 词典包（含导入的词典资源）。
@@ -577,6 +795,39 @@ enum SyncAssetKind {
 /// 下载」动作驱动（[runAssetTransferOnly]），方向由用户在点击时给出，而不是从一个
 /// 开关反推。互联通道的词典也一样：原来的「上传词典到互联对端」自动 union 开关已删除
 /// （BUG-2762）。
+/// [SyncRunReport.errors] 的实现：普通列表，外加「每加一条就回调」。
+class _ObservedErrorList extends ListBase<String> {
+  _ObservedErrorList(this._onAdd);
+
+  final void Function(String error)? _onAdd;
+  final List<String> _items = <String>[];
+
+  @override
+  int get length => _items.length;
+
+  @override
+  set length(int value) => _items.length = value;
+
+  @override
+  String operator [](int index) => _items[index];
+
+  @override
+  void operator []=(int index, String value) => _items[index] = value;
+
+  @override
+  void add(String element) {
+    _items.add(element);
+    _onAdd?.call(element);
+  }
+
+  @override
+  void addAll(Iterable<String> iterable) {
+    for (final String e in iterable) {
+      add(e);
+    }
+  }
+}
+
 class SyncOrchestrator {
   SyncOrchestrator({
     required FushiDatabase db,
@@ -600,7 +851,9 @@ class SyncOrchestrator {
     this.fontSync,
     this.statsSyncMode = StatisticsSyncMode.merge,
     this.onProgress,
+    this.onError,
     this.pendingMineRelay,
+    this.cancellation = SyncCancellation.never,
     AggregatePeerSnapshotCache? remoteManifestMirror,
   }) : _db = db,
        _manifestMirror =
@@ -645,12 +898,29 @@ class SyncOrchestrator {
 
   /// 读一份 per-device 清单的 JSON：版本没变读镜像，否则下载并更新镜像。
   /// 下载失败 / 读回 null 的语义与直接 `getJsonAsset` 完全相同（照抛 / 照返 null）。
+  ///
+  /// 镜像存的是 UTF-8 JSON 字节（[AggregatePeerSnapshotCache] 是字节级的）；清单是
+  /// 每台设备一份的小文件，这里仍走 `getJsonAsset`，命中时就地解码。镜像解不开
+  /// （坏文件）当未命中，照常下载覆盖。
   Future<Object?> _readManifestJson(String family, AssetEntry entry) async {
     final String channel = '${_scope.id}.$family';
-    final Object? mirrored = await _manifestMirror.read(channel, entry);
-    if (mirrored != null) return mirrored;
+    final Uint8List? mirrored = await _manifestMirror.read(channel, entry);
+    if (mirrored != null) {
+      try {
+        final Object? json = jsonDecode(utf8.decode(mirrored));
+        if (json != null) return json;
+      } on FormatException {
+        // 坏镜像：下面重新下载并覆盖。
+      }
+    }
     final Object? json = await _backend.getJsonAsset(entry.id);
-    if (json != null) await _manifestMirror.write(channel, entry, json);
+    if (json != null) {
+      await _manifestMirror.write(
+        channel,
+        entry,
+        utf8.encode(jsonEncode(json)),
+      );
+    }
     return json;
   }
 
@@ -674,6 +944,19 @@ class SyncOrchestrator {
   /// 待发制卡的跨设备中转（见 [PendingMineRelay]）。null = 本轮不跑（轻量路径、
   /// 测试构造）。
   final PendingMineRelay? pendingMineRelay;
+
+  /// 本轮的取消信号（「同步与备份 + 互联」模块途中被关掉，`sync_module_gate.dart`）。
+  final SyncCancellation cancellation;
+
+  /// 安全检查点：已取消则抛 [SyncCancelledException]。
+  ///
+  /// 只放在「上一项已完整落地、下一项还没开始」的位置——阶段之间、逐项循环的循环头
+  /// （在逐项 try 之外，不会被逐项 catch 吞掉）。中止留下的状态与网络失败在同一处
+  /// 抛错同形：锁与临时文件由各自的 finally 收拾，冷却戳 `lastSyncMs` 只在整轮
+  /// 跑完才写。整段 try/catch 吞错的阶段在 catch 前先放行它（`on
+  /// SyncCancelledException { rethrow; }`），否则取消会被记成一条阶段错误、流水线
+  /// 接着往下跑。
+  void _checkpoint() => cancellation.throwIfCancelled();
 
   /// 收藏词 / 收藏句是否参与聚合同步。互联通道由「共享收藏夹」开关驱动，与
   /// [syncStats] 互相独立；云通道两者同源（见 [ChannelSyncFlags.syncFavorites]）。
@@ -720,6 +1003,9 @@ class SyncOrchestrator {
   /// which keeps its old silent behaviour.
   final SyncProgressCallback? onProgress;
 
+  /// 本轮每记下一条失败就回调一次（见 [SyncRunReport.new] 的 onError）。
+  final void Function(String error)? onError;
+
   void _emit(
     SyncPhase phase, {
     required int itemIndex,
@@ -727,6 +1013,7 @@ class SyncOrchestrator {
     String? title,
     double? fileFraction,
     int? fileBytes,
+    SyncItemKind? itemKind,
   }) {
     final cb = onProgress;
     if (cb == null) return;
@@ -736,6 +1023,7 @@ class SyncOrchestrator {
         itemIndex: itemIndex,
         itemTotal: itemTotal,
         title: title,
+        itemKind: itemKind,
         fileFraction: fileFraction,
         bytesPerSecond: fileBytes == null
             ? null
@@ -786,7 +1074,7 @@ class SyncOrchestrator {
   /// Existing local books still go through [SyncManager], so progress,
   /// statistics, and audiobook-position conflicts remain visible.
   Future<SyncRunReport> run() async {
-    final SyncRunReport report = SyncRunReport();
+    final SyncRunReport report = SyncRunReport(onError: onError);
     // XVEF3huDTF：分阶段计时。每个 [mark] 把「上一个 mark 到此刻」记成一个阶段。
     final Stopwatch total = Stopwatch()..start();
     int lastMarkMs = 0;
@@ -802,10 +1090,17 @@ class SyncOrchestrator {
     // 逐本问。每本书之后走的判定逻辑一字未改，也没有任何「快照说没变所以跳过」的
     // 中间结论——跳过是单边不安全的操作，一旦所依赖的结论与远端实情不符，漏掉的
     // 那次对端更新会被本地 LWW 覆盖掉，那是丢数据而不是慢。
+    _checkpoint();
     _emitPhaseStart(SyncPhase.remoteListing);
     final String root = await _backend.findOrCreateRootFolder();
     final SyncBackend backend = _backend;
-    final RemoteListingSnapshot? listing = backend is RemoteListingCapable
+    // 书籍文件开关是上传语义：只把本端已有 epub 内容补到远端。
+    // 远端独有书不会在自动同步中导入本机，必须通过 compare/interconnect UI 点击下载。
+    final SyncBackend b = _backend;
+    final bool isInterconnect = b is InterconnectSyncBackend;
+    // 整树列举只喂给下面的 SyncManager 书阶段；互联不跑那一段（见下），也就不列。
+    final RemoteListingSnapshot? listing =
+        !isInterconnect && backend is RemoteListingCapable
         ? await (backend as RemoteListingCapable).snapshotListing(root)
         : null;
 
@@ -817,38 +1112,34 @@ class SyncOrchestrator {
     // sweep so a spilled `progress_*` in the root can't be mistaken for a book's
     // remote state.
     mark('resolve+listing');
+    _checkpoint();
     await pruneRootSpill(root, report);
     mark('pruneRootSpill');
 
-    // 书籍文件开关是上传语义：只把本端已有 epub 内容补到远端。
-    // 远端独有书不会在自动同步中导入本机，必须通过 compare/interconnect UI 点击下载。
-    final SyncBackend b = _backend;
-    final bool isInterconnect = b is InterconnectSyncBackend;
-
     if (isInterconnect) {
+      _checkpoint();
       await _syncServiceConfigLive(report, b);
+      await _syncSourceShareLive(report, b);
       // 互联内容（EPUB / 漫画包）走 live 端点，书籍或漫画任一开关开时执行，进去后
-      // 按格式各看各的开关。元数据（进度/统计/有声书位置）由下方 SyncManager 以
-      // syncContent=false 处理。
+      // 按格式各看各的开关。
       if (syncContent || syncMangaContent) {
         await _syncBooksContentLive(report, b);
       }
       mark('serviceConfig+booksContentLive');
+      _checkpoint();
+      // 书进度 live 紧跟书内容之后（反馈 kM-Gb_Xnu-）：它只依赖上一步把本机独有书
+      // 推成 host 书（host 的 putBookProgress 对不在库的书是 no-op），与有声书 /
+      // 视频**文件**上传毫无关系。此前它排在那两段大文件上传之后，视频一多，读完
+      // 一本小说的进度要等所有视频传完才到对端。
+      _emitPhaseStart(SyncPhase.readingData);
+      await _syncBookProgressLive(report, b);
+      // 章节式互联漫画的章级进度（书级位置对它们不带章身份，上一步已排除）。
+      await _syncMangaChapterProgressLive(report, b);
+      mark('bookProgressLive');
     }
 
-    // Existing per-book progress / stats / content / audiobook-position sync
-    // for every local book (now including any just-imported remote books).
-    //
-    // 互联分支传 syncContent=false：epub 内容已由 _syncBooksContentLive 接管，
-    // 避免 SyncManager 再次经书文件夹路径重复传 epub。
-    // 进度/统计/有声书位置不受 syncContent 影响，仍正常同步。
-    //
-    // 注意：音频文件（有声书 .m4a/.mp3 等）在 SyncManager 里也被 syncContent 门控
-    // （_exportContentIfMissing / _importContentIfMissing 同时处理 epub + 音频）。
-    // 互联下有声书文件走 syncAudioBookFiles（fushiaudio 包路径），不走此处，
-    // 故互联分支传 syncContent=false 不会丢失音频同步。Phase 3 如需独立接管
-    // 音频文件 live 同步，请参考本方法的分流模式扩展。
-    final bool managerSyncContent = isInterconnect ? false : syncContent;
+    // 云通道：每本本地书的进度 / 统计 / 内容 / 有声书断点经 [SyncManager] 走书文件夹
+    // （互联不跑这段，见下方书阶段的说明）。
 
     // 云通道：书阶段之前先读一遍远端删除墓碑（反馈 R8duEiqRuy）。书阶段对每本本地书
     // 都 `ensureBookFolder` + 补传内容，云盘上被「从远端删除」/「从所有设备删除」删掉
@@ -858,6 +1149,7 @@ class SyncOrchestrator {
     CloudDeletionTombstoneScan? cloudTombstoneScan;
     Set<String> cloudVetoedBookKeys = const <String>{};
     if (!isInterconnect) {
+      _checkpoint();
       cloudTombstoneScan = await _scanCloudDeletionTombstones(report);
       if (cloudTombstoneScan != null) {
         cloudVetoedBookKeys = await _cloudPushVetoedBookKeys(
@@ -866,9 +1158,6 @@ class SyncOrchestrator {
       }
       mark('cloudTombstoneScan');
     }
-    final bool managerSyncMangaContent = isInterconnect
-        ? false
-        : syncMangaContent;
 
     int readingDone = 0;
     int readingTotal = 0;
@@ -892,53 +1181,97 @@ class SyncOrchestrator {
     // SyncAuthError 例外放行：它冲出 run() 是承重契约——manual_sync_ui 靠捕获它
     // 登出并引导重新登录（TODO-836 / BUG-1323），吞成 report.errors 会把「凭据已
     // 失效」降级成一条无操作性的杂项错误；且鉴权死了后续阶段本来也无法工作。
+    //
+    // 反馈 kM-Gb_Xnu-：互联通道**不跑**这一段。它在互联下读写的是 host 上的 WebDAV
+    // 文件箱（每本书 `progress_*` / `statistics_*` / `audioBook_*`），host 从不读回
+    // （[SyncManager] 的 `_fileBoxIsClientOwned`）；互联的三样真相各有 live 通道：
+    // 书进度 → [_syncBookProgressLive]（host `reader_positions`），统计 →
+    // [_syncAggregateLive]（全部统计表的并集折叠），有声书断点 →
+    // [_syncAudiobookProgressLive]。这一段对互联只是每本书多几次往返，外加多 client
+    // 共用一个 host 时把别的 client 的文件箱导出当「远端」读进来，报出冲突弹窗根本
+    // 不显示的幻象冲突。
     List<SyncBookResult> bookResults = const <SyncBookResult>[];
     // 书阶段对每个书文件夹的列举所见，同轮有声书包阶段复用（jHQpTfjrNB）。
     final BookFolderListingObservations bookFolderNames =
         BookFolderListingObservations();
-    try {
-      bookResults =
-          await SyncManager(
-            db: _db,
-            backend: _backend,
-            onContentProgress: (double f, [int? b]) => _emit(
-              SyncPhase.readingData,
-              itemIndex: readingDone,
-              itemTotal: readingTotal,
-              title: readingTitle,
-              fileFraction: f,
-              fileBytes: b,
-            ),
-          ).syncAllBooks(
-            syncStats: syncStats,
-            statsSyncMode: statsSyncMode,
-            syncAudioBook: syncAudioBookPosition,
-            syncContent: managerSyncContent,
-            syncMangaContent: managerSyncMangaContent,
-            listing: listing,
-            observations: bookFolderNames,
-            skipBookKeys: cloudVetoedBookKeys,
-            onBookProgress: (int done, int itemTotal, String title) {
-              settleReadingBook();
-              readingBookStartMs = total.elapsedMilliseconds;
-              readingDone = done;
-              readingTotal = itemTotal;
-              readingTitle = title;
-              _emit(
+    if (!isInterconnect) {
+      // wiO0nN8aiG：哪些书需要进逐本阶段（设计见
+      // docs/specs/2026-11-24-sync-book-change-manifest.md）。准备失败只是这一轮不筛。
+      _checkpoint();
+      final int bookStageStartMs = DateTime.now().millisecondsSinceEpoch;
+      final BookChangeGate? changeGate = await _prepareBookChangeGate(
+        report,
+        listing,
+      );
+      mark('bookChangeGate');
+      _emitPhaseStart(SyncPhase.readingData);
+      bool bookStageComplete = false;
+      try {
+        bookResults =
+            await SyncManager(
+              db: _db,
+              backend: _backend,
+              onContentProgress: (double f, [int? b]) => _emit(
                 SyncPhase.readingData,
-                itemIndex: done,
-                itemTotal: itemTotal,
-                title: title,
-              );
-            },
-          );
-    } on SyncAuthError {
-      rethrow;
-    } catch (e) {
-      report.errors.add('books: $e');
+                itemIndex: readingDone,
+                itemTotal: readingTotal,
+                title: readingTitle,
+                itemKind: SyncItemKind.book,
+                fileFraction: f,
+                fileBytes: b,
+              ),
+            ).syncAllBooks(
+              syncStats: syncStats,
+              statsSyncMode: statsSyncMode,
+              syncAudioBook: syncAudioBookPosition,
+              syncContent: syncContent,
+              syncMangaContent: syncMangaContent,
+              listing: listing,
+              observations: bookFolderNames,
+              skipBookKeys: cloudVetoedBookKeys,
+              changeGate: changeGate,
+              onBookProgress: (int done, int itemTotal, String title) {
+                // 安全检查点：在 [SyncManager.syncAllBooks] 的循环头、拿这本书的
+                // 锁之前回调，上一本已整本落地。
+                _checkpoint();
+                settleReadingBook();
+                readingBookStartMs = total.elapsedMilliseconds;
+                readingDone = done;
+                readingTotal = itemTotal;
+                readingTitle = title;
+                _emit(
+                  SyncPhase.readingData,
+                  itemIndex: done,
+                  itemTotal: itemTotal,
+                  title: title,
+                  itemKind: SyncItemKind.book,
+                );
+              },
+            );
+        bookStageComplete = true;
+      } on SyncAuthError {
+        rethrow;
+      } on SyncCancelledException {
+        rethrow;
+      } on SyncBooksIncompleteError catch (e) {
+        // 云后端这一轮认不出账号：书阶段已照常跑完能判的书，结果照收，只记一条错。
+        bookResults = e.results;
+        report.errors.add('books: ${e.cause}');
+      } catch (e) {
+        report.errors.add('books: $e');
+      }
+      settleReadingBook();
+      mark('readingData');
+      if (changeGate != null) {
+        await _finishBookChangeGate(
+          report,
+          changeGate,
+          bookStageComplete: bookStageComplete,
+          bookStageStartMs: bookStageStartMs,
+        );
+        mark('bookManifestPublish');
+      }
     }
-    settleReadingBook();
-    mark('readingData');
     _collectConflicts(bookResults, report);
     // 进度已落地、补传书文件 / 元数据失败的书：单独进报告（进度结果照实，不改判失败）。
     for (final SyncBookResult result in bookResults) {
@@ -951,6 +1284,7 @@ class SyncOrchestrator {
     // 生产侧的自动 sweep 恒传 [syncDictionary]=false（两条通道的词典都改由设置页的
     // 显式上传 / 下载驱动，见 [runAssetTransferOnly]，BUG-2762）；这里只剩编排器自身
     // 能力。
+    _checkpoint();
     if (syncDictionary) {
       await syncDictionaries(report, direction: SyncAssetDirection.both);
       mark('dictionaries');
@@ -961,12 +1295,15 @@ class SyncOrchestrator {
     //
     // 互联（InterconnectSyncBackend）有声书包走 live 端点；
     // 云后端仍走原暂存路径（不变）。
+    _HostVideoListSnapshot? hostVideosAfterFilePush;
     if (isInterconnect) {
       if (syncAudioBookFiles) await _syncAudiobooksLive(report, b);
       // 互联视频文件 live push（client→host）：单文件本地视频经 host 上传端点注册进
       // host 视频库。与云后端 syncVideoAssets 同为 syncVideoFiles 开关驱动、同为
       // upload-only（host→client 仍走按需流式/下载）。
-      if (syncVideoFiles) await _syncVideosLive(report, b);
+      if (syncVideoFiles) {
+        hostVideosAfterFilePush = await _syncVideosLive(report, b);
+      }
     } else {
       if (syncAudioBookFiles) {
         await syncAudiobookPackages(
@@ -980,23 +1317,26 @@ class SyncOrchestrator {
       if (syncVideoFiles) await syncVideoAssets(report);
     }
     mark('audiobook+videoFiles');
+    _checkpoint();
 
-    // 互联书籍 + 视频进度走 live 端点双向同步（TODO-767）。
-    //
-    // 书籍：上面 SyncManager 走的 WebDAV 文件箱进度（progress_*.json）host 端
-    // 从不回灌自己的 reader_positions DB（互联角色非对称：跑 sync 的是 client，
-    // host 只跑 server），故「立即同步」点了进度不过去。这里对称视频 TODO-653 补
-    // 书籍进度 live 端点：遍历本地 epub 书逐本 PUT 本地进度到 host DB + GET host
-    // 进度回灌本地（取较新时间戳）。
+    // 互联视频 + 有声书进度走 live 端点双向同步（TODO-767；书籍进度见上，紧跟书
+    // 内容阶段）。
     //
     // 视频：进度此前只在打开远端视频时按需同步（resume 路径），不进全量 sweep。
     // 这里遍历本地 VideoBooks 推/拉 lastPositionMs，让「立即同步」一次把书+视频
     // 进度都同步。
     if (isInterconnect) {
+      // 书进度已在书内容之后跑过（见上）。视频 / 有声书断点只对 host 也有的条目
+      // 同步，留在各自文件上传之后：本轮刚推上去的那一项这一轮就能对上。
       _emitPhaseStart(SyncPhase.readingData);
-      await _syncBookProgressLive(report, b);
-      mark('bookProgressLive');
-      await _syncVideoProgressLive(report, b);
+      // 文件阶段没向 host 推任何东西、且那份 host 清单还新（没超过
+      // [hostVideoListReuseMaxAge]）时不再取第二遍；推过或放久了就重取（见
+      // [_syncVideosLive] 的返回值约定）。
+      await _syncVideoProgressLive(
+        report,
+        b,
+        hostVideos: hostVideosAfterFilePush,
+      );
       mark('videoProgressLive');
       await _syncAudiobookProgressLive(report, b);
       mark('audiobookProgressLive');
@@ -1024,6 +1364,7 @@ class SyncOrchestrator {
       await _syncAggregate(report);
     }
     mark('aggregate');
+    _checkpoint();
 
     // 可移植设置（反馈 AWp-0BtDDv）：云与互联同走资产层 `__settings__/` 按设备分文件。
     if (syncSettings && deviceId.isNotEmpty) {
@@ -1039,7 +1380,15 @@ class SyncOrchestrator {
     //   __collections__ 资产（互联 backend 的资产层是 live 端点适配，语义不同）。
     // 两条通道调用同一 CollectionSyncEngine.merge / applyCollectionLocalChanges，
     // 成员并集 + 移出/删除墓碑 + 手动序整合集 LWW，仅通道不同。
+    _checkpoint();
     _emitPhaseStart(SyncPhase.collections);
+    // 在线源条目放在合集之前：对端在线条目的行先落到本机，同一轮的合集 / 标签 /
+    // 作品图谱就能把它们认领进去。
+    if (isInterconnect) {
+      await _syncOnlineLibraryLive(report, b);
+    } else {
+      await _syncOnlineLibraryCloud(report);
+    }
     if (isInterconnect) {
       await _syncCollectionsLive(report, b);
       // 标签紧跟合集之后：合集标签按合集自然键解析，要先让合集行落地。
@@ -1057,6 +1406,7 @@ class SyncOrchestrator {
     // 删除传播墓碑（显式确认式）：发布本机未发布删除标记 + 消费远端标记算 deleteLocal
     // 候选（塞 report，UI 弹逐条确认）。放合集之后、冷却戳之前：本地在库键此刻最稳定，
     // 且中断则下轮重跑。基线不在此推进（见 syncDeletionTombstones 文档）。
+    _checkpoint();
     _emitPhaseStart(SyncPhase.deletions);
     if (isInterconnect) {
       await _syncDeletionTombstonesLive(report, b);
@@ -1072,6 +1422,7 @@ class SyncOrchestrator {
     // 错误，不打断本轮——卡都还在各自设备的本地队列里，下一轮再传。阶段名只在中转
     // 真要碰远端时才公布：本机没认领落地、也没有要中转的卡时它一个请求都不发，
     // 挂出「同步待发制卡」只会让用户以为每轮都在传卡。
+    _checkpoint();
     final PendingMineRelay? relay = pendingMineRelay;
     if (relay != null) {
       try {
@@ -1092,6 +1443,9 @@ class SyncOrchestrator {
     // 冷却窗（[_syncCooldownMs]）压制、整轮重试——即「同步没完成就丢弃中间态、下次
     // 启动再同步」。此前该时间戳写在 SyncManager.syncAllBooks 书阶段末尾（sweep 中途），
     // 书阶段后被打断的残缺同步会误记冷却、错误地压制下次重试。
+    // 模块途中被关掉的一轮不算跑完：最后一道检查点必须在写冷却戳之前（上面的
+    // 待发制卡中转会吞掉自己阶段里的错误，取消信号到这里才兑现）。
+    _checkpoint();
     await SyncRepository(
       _db,
     ).setLastSyncMs(_scope, DateTime.now().millisecondsSinceEpoch);
@@ -1111,11 +1465,18 @@ class SyncOrchestrator {
   static const String _kTombstoneBundleMirror = 'tombstone_bundles';
   static const String _kCollectionsMirror = 'collections';
   static const String _kMediaLinksMirror = 'media_links';
+  static const String _kOnlineLibraryMirror = 'online_library';
   static const String _kVideoManifestMirror = 'videos';
+  static const String _kBookManifestMirror = 'book_manifests';
 
   /// 整轮超过这么久才把分阶段耗时写进诊断日志（快的同步每分钟都可能跑一次，
   /// 不该刷屏；慢到用户会来反馈的那种一定留下记录）。
   static const Duration slowRunDiagnosticThreshold = Duration(seconds: 30);
+
+  /// 互联视频：文件阶段取的 host 清单最多带到进度阶段多久，见
+  /// [kHostVideoListReuseMaxAge]。测试改它来走「清单放久了」那一支。
+  @visibleForTesting
+  Duration hostVideoListReuseMaxAge = kHostVideoListReuseMaxAge;
 
   /// 测试入口：直接调用 [_syncPortableSettings]（「同步设置」阶段）。
   @visibleForTesting
@@ -1128,6 +1489,13 @@ class SyncOrchestrator {
     SyncRunReport report,
     InterconnectSyncBackend backend,
   ) => _syncAggregateLive(report, backend);
+
+  /// 测试入口：直接调用 [_syncServiceConfigLive]。
+  @visibleForTesting
+  Future<void> syncServiceConfigLiveForTest(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+  ) => _syncServiceConfigLive(report, backend);
 
   /// 合集双向同步（多端库联合视图 §2.3 任务4，云后端通道）。
   ///
@@ -1150,8 +1518,9 @@ class SyncOrchestrator {
   /// 自捕获异常进 [SyncRunReport.errors]。**不写** lastSyncMs 冷却戳——那是完整
   /// sweep 的语义（TODO-1332），轻量路径不得压制下一次 app-open 全量同步。
   Future<SyncRunReport> runCollectionsOnly() async {
-    final SyncRunReport report = SyncRunReport();
+    final SyncRunReport report = SyncRunReport(onError: onError);
     final SyncBackend b = _backend;
+    _checkpoint();
     if (b is InterconnectSyncBackend) {
       // 合集防抖轻量路径同步合集 + 标签（标签增删同一个观察者触发，见
       // installCollectionsSyncWatcher）；刮削元数据整库拉取留给完整 sweep（审查 #4）。
@@ -1180,13 +1549,15 @@ class SyncOrchestrator {
     required SyncAssetKind kind,
     required SyncAssetDirection direction,
   }) async {
-    final SyncRunReport report = SyncRunReport();
+    final SyncRunReport report = SyncRunReport(onError: onError);
     // 字体两条通道都走同步根下的 `__fonts__` 命名空间（互联 host 的 WebDAV 存储同样
     // 提供它），所以不论通道都要先解析根；词典 / 本地音频的互联路径直打 live 端点、
     // 不需要根。
+    _checkpoint();
     if (_backend is! InterconnectSyncBackend || kind == SyncAssetKind.fonts) {
       await _backend.findOrCreateRootFolder();
     }
+    _checkpoint();
     switch (kind) {
       case SyncAssetKind.dictionary:
         await syncDictionaries(report, direction: direction);
@@ -1404,6 +1775,18 @@ class SyncOrchestrator {
     SyncRunReport report,
     InterconnectSyncBackend backend,
   ) => _syncMediaLinksLive(report, backend);
+
+  /// 测试入口：直接调用 [_syncOnlineLibraryLive]。
+  @visibleForTesting
+  Future<void> syncOnlineLibraryLiveForTest(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+  ) => _syncOnlineLibraryLive(report, backend);
+
+  /// 测试入口：直接调用 [_syncOnlineLibraryCloud]。
+  @visibleForTesting
+  Future<void> syncOnlineLibraryCloudForTest(SyncRunReport report) =>
+      _syncOnlineLibraryCloud(report);
 
   /// 测试入口：直接调用 [_syncMediaLinksCloud]。
   @visibleForTesting
@@ -1930,6 +2313,8 @@ class SyncOrchestrator {
       int index = 0;
 
       for (final VideoBookRow v in localVideos) {
+        // 安全检查点：上一项已完整落地，这一项还没开始。
+        _checkpoint();
         _emit(
           SyncPhase.videos,
           itemIndex: index,
@@ -1938,9 +2323,10 @@ class SyncOrchestrator {
         );
         try {
           // async 判存在：视频常在网络盘上，同步 stat 冷目录时会冻结主 isolate
-          // （BUG-3756）。没有本机媒体字节的路径（网络流 / `.strm` / DVD title）
-          // 一律按缺失处理（video_member_file.dart 第 2 种问法）。
-          if (!await hasLocalMediaFile(v.videoPath)) {
+          // （BUG-3756）。下面按字节上传，只认路径本身装着全部媒体字节的单文件
+          // （video_member_file.dart 第 3 种问法）：网络流 / `.strm` / 原盘成员一律
+          // 按缺失处理。
+          if (!await hasLocalSingleMediaFile(v.videoPath)) {
             report.errors.add(
               'video "${v.title}": local file missing: ${v.videoPath}',
             );
@@ -1967,7 +2353,7 @@ class SyncOrchestrator {
           // 视频文件：远端已存在同尺寸跳过（upload-only 幂等）。跳过判据**不能**用
           // 远端资产的物理尺寸——`resolveSyncBackend` 无条件包 ObfuscatingSyncBackend，
           // 上传体 = 8 字节 magic + XOR 正文（远端尺寸 = 明文 + 8，永不等于本地明文
-          // size），且 Dropbox/WebDAV/FTP 的 listChildren 根本不报 sizeBytes（null）。
+          // size），且 Dropbox/FTP 的 listChildren 根本不报 sizeBytes（null）。
           // 改用清单记录的**明文尺寸**（跨后端可靠）：远端按名存在 && 合并清单里该 uid
           // 条目 videoAsset 同名 && 记录的明文尺寸 == 本地明文尺寸 ⇒ 跳过。
           final RemoteVideoManifestEntry? priorEntry = byUid[v.bookUid];
@@ -2039,6 +2425,8 @@ class SyncOrchestrator {
           merged.toJson(),
         );
       }
+    } on SyncCancelledException {
+      rethrow;
     } catch (e) {
       report.noteError('video assets sync', e);
     }
@@ -2089,6 +2477,8 @@ class SyncOrchestrator {
 
     for (int i = 0; i < total; i++) {
       final SyncFileRef folder = toImport[i];
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.books,
         itemIndex: i,
@@ -2127,6 +2517,13 @@ class SyncOrchestrator {
     InterconnectSyncBackend backend,
   ) => _syncBookProgressLive(report, backend);
 
+  /// 测试入口：直接调用 [_syncMangaChapterProgressLive]。
+  @visibleForTesting
+  Future<void> syncMangaChapterProgressLiveForTest(
+    SyncRunReport report,
+    InterconnectSyncBackend backend,
+  ) => _syncMangaChapterProgressLive(report, backend);
+
   /// 测试入口：直接调用 [_syncVideoProgressLive]。
   @visibleForTesting
   Future<void> syncVideoProgressLiveForTest(
@@ -2163,6 +2560,85 @@ class SyncOrchestrator {
     InterconnectSyncBackend backend,
   ) => _syncAudiobooksLive(report, backend);
 
+  /// 按 host 的单本词典传输（词典管理页「推送到 <服务器>」/「下载到本机」）。
+  ///
+  /// 与词典同步阶段同一份包代码（[_pullLiveDictionary] / [_pushLiveDictionary]）
+  /// 与同一个后端：本编排器必须建在 [InterconnectSyncBackend.scopedToHost] 上，选
+  /// 哪台 host 由后端的候选筛选决定，这里不再选路。[direction] 只能是
+  /// [SyncAssetDirection.upload] 或 [SyncAssetDirection.download]。
+  ///
+  /// 先读两边清单：同名已在目标一侧 → [SingleDictionaryTransferOutcome.alreadyPresent]
+  /// （下载时本机同名 = 已装，不覆盖），来源一侧没有 →
+  /// [SingleDictionaryTransferOutcome.notFound]。传完后把这台 host 的清单对账进
+  /// 服务器词典目录（推送后重新取一次清单），管理页的行随之从「本机」/「服务器」
+  /// 翻成「两者」。导入计数写进 [report]，调用方的同步后置钩子据此重载词典与引擎。
+  /// 传输失败原样抛出；对账失败只记进 [report]（词典已经传成了）。
+  Future<SingleDictionaryTransferOutcome> runSingleDictionaryTransfer({
+    required String name,
+    required SyncAssetDirection direction,
+    required SyncRunReport report,
+    void Function()? onImporting,
+  }) async {
+    assert(
+      direction != SyncAssetDirection.both,
+      'single dictionary transfer has one direction',
+    );
+    final SyncBackend b = _backend;
+    if (b is! InterconnectSyncBackend) {
+      throw StateError('single dictionary transfer needs an interconnect host');
+    }
+    final bool installed = (await _db.getAllDictionaryMetadata()).any(
+      (DictionaryMetaRow d) => d.name == name,
+    );
+    List<RemoteDictionaryInfo> remote = await b.listRemoteDictionaries();
+    final bool onHost = remote.any((RemoteDictionaryInfo d) => d.name == name);
+    final SingleDictionaryTransferOutcome outcome;
+    if (direction == SyncAssetDirection.download) {
+      if (installed) {
+        outcome = SingleDictionaryTransferOutcome.alreadyPresent;
+      } else if (!onHost) {
+        outcome = SingleDictionaryTransferOutcome.notFound;
+      } else {
+        await _pullLiveDictionary(
+          b,
+          name,
+          itemIndex: 0,
+          itemTotal: 1,
+          onImporting: onImporting,
+        );
+        // 本机这份接替管理页上那条服务器行的位置与开关：在 [_pullLiveDictionary] 里
+        // 做（整轮同步的拉取同一条路径）。
+        report.dictionariesImported++;
+        outcome = SingleDictionaryTransferOutcome.transferred;
+      }
+    } else {
+      if (!installed) {
+        outcome = SingleDictionaryTransferOutcome.notFound;
+      } else if (onHost) {
+        outcome = SingleDictionaryTransferOutcome.alreadyPresent;
+      } else {
+        await _pushLiveDictionary(b, name, itemIndex: 0, itemTotal: 1);
+        report.dictionariesExported++;
+        outcome = SingleDictionaryTransferOutcome.transferred;
+      }
+    }
+    try {
+      if (direction == SyncAssetDirection.upload &&
+          outcome == SingleDictionaryTransferOutcome.transferred) {
+        remote = await b.listRemoteDictionaries();
+      }
+      await RemoteDictionaryCatalogService.reconcileHost(
+        _db,
+        hostId: await b.connectedHostIdentity(),
+        infos: remote,
+        now: DateTime.now().millisecondsSinceEpoch,
+      );
+    } catch (e) {
+      report.noteError('refresh server dictionary catalog', e);
+    }
+    return outcome;
+  }
+
   /// Union-syncs dictionaries. 互联（InterconnectSyncBackend）→ 直读对端实时库（无暂存）；
   /// 云后端 → 走现有 __dictionaries__ 暂存路径（不变）。无旧设备故无能力探测。
   Future<void> syncDictionaries(
@@ -2192,11 +2668,17 @@ class SyncOrchestrator {
   }
 
   /// Union-syncs local audio source DBs in the `__local_audio__` namespace.
-  /// 资产名 = displayName（[LocalAudioDbEntry.path] 含本机时间戳，每机不同不可用）。
-  /// push 本地独有（displayName 不在远端）/ pull 远端独有（displayName 不在本地）。
   ///
-  /// 已知限制：displayName 无唯一约束，撞名按「同一库」union 跳过（与词典按 name
-  /// 同语义）；真正的唯一性去重列为 follow-up。
+  /// 身份是库的**内容身份** contentId（拍板 pr3481，见
+  /// `local_audio_content_id.dart`），不再是 displayName：同一份库在各端名字不同
+  /// （`android.db` / 按子来源起的名 / 推荐包的 Japanese audio）也不再各传一份。
+  ///
+  /// 云盘只能列文件名，contentId 写在**身份旁注**的文件名里：每个库包
+  /// `<base>.fushiaudiolib` 旁边放一个空的 `<base>~<contentId>.fushiaudioid`
+  /// （[localAudioIdentityMarkerName]）。列一次目录就拿到全部身份，不必下载 GB
+  /// 级的包；旁注各写各的，没有共享清单的读-改-写竞态；旧版本只认库包后缀，
+  /// 看不见旁注。没有旁注的库包（旧版本传的）退回按 displayName 认；本端拉下来
+  /// 之后知道了它的身份，就替它补上旁注，云盘逐步收敛到全部可按内容认。
   Future<void> syncLocalAudioPackages(
     SyncRunReport report, {
     required SyncAssetDirection direction,
@@ -2204,39 +2686,69 @@ class SyncOrchestrator {
     final String ns = await _backend.ensureNamespace(kSyncLocalAudioNamespace);
     final List<AssetEntry> remote = await _backend.listChildren(ns);
 
-    final Set<String> remoteNames = <String>{
+    final Map<String, String> remoteIds = <String, String>{};
+    for (final AssetEntry e in remote) {
+      if (e.isFolder) continue;
+      final ({String base, String contentId})? marker =
+          _parseLocalAudioIdentityMarker(e.name);
+      if (marker != null) remoteIds[marker.base] = marker.contentId;
+    }
+    final List<_CloudLocalAudio> remoteLibs = <_CloudLocalAudio>[
       for (final AssetEntry e in remote)
         if (!e.isFolder && _isLocalAudioAsset(e.name))
-          _stripLocalAudioAssetSuffix(e.name),
-    };
+          _CloudLocalAudio(
+            asset: e,
+            base: _stripLocalAudioAssetSuffix(e.name),
+            contentId: remoteIds[_stripLocalAudioAssetSuffix(e.name)],
+          ),
+    ];
     // 「本端有」只认库文件真在本机的条目（同 _syncLocalAudioLive，BUG-3702）：
     // 文件不在本机的同名引用不能挡住远端那份被拉下来。
-    final Set<String> localNames = <String>{
-      for (final LocalAudioDbEntry d in localAudioEntries)
-        if (File(d.path).existsSync()) d.displayName,
-    };
+    final List<({LocalAudioDbEntry entry, String? contentId})> locals =
+        <({LocalAudioDbEntry entry, String? contentId})>[
+          for (final LocalAudioDbEntry d in localAudioEntries)
+            if (File(d.path).existsSync())
+              (entry: d, contentId: await resolveLocalAudioContentId(d)),
+        ];
+    bool same(
+      ({LocalAudioDbEntry entry, String? contentId}) l,
+      _CloudLocalAudio r,
+    ) => isSameLocalAudioLibrary(
+      nameA: l.entry.displayName,
+      contentIdA: l.contentId,
+      nameB: r.base,
+      contentIdB: r.contentId,
+    );
 
-    // Resolve both sides' work first so progress has a real denominator. The
-    // push side also drops libraries whose DB file is gone (nothing to send).
-    final List<LocalAudioDbEntry> toPush = <LocalAudioDbEntry>[
-      if (direction.pushes)
-        for (final LocalAudioDbEntry d in localAudioEntries)
-          if (!remoteNames.contains(d.displayName) && File(d.path).existsSync())
-            d,
-    ];
-    final List<AssetEntry> toPull = <AssetEntry>[
+    // Resolve both sides' work first so progress has a real denominator.
+    final List<({LocalAudioDbEntry entry, String? contentId})> toPush =
+        <({LocalAudioDbEntry entry, String? contentId})>[
+          if (direction.pushes)
+            for (final ({LocalAudioDbEntry entry, String? contentId}) l
+                in locals)
+              if (!remoteLibs.any((_CloudLocalAudio r) => same(l, r))) l,
+        ];
+    final List<_CloudLocalAudio> toPull = <_CloudLocalAudio>[
       if (direction.pulls)
-        for (final AssetEntry e in remote)
-          if (!e.isFolder &&
-              _isLocalAudioAsset(e.name) &&
-              !localNames.contains(_stripLocalAudioAssetSuffix(e.name)))
-            e,
+        for (final _CloudLocalAudio r in remoteLibs)
+          if (!locals.any(
+            (({LocalAudioDbEntry entry, String? contentId}) l) => same(l, r),
+          ))
+            r,
     ];
     final int total = toPush.length + toPull.length;
     int index = 0;
+    // 已占用的资产基名：内容不同的库撞了显示名，资产名必须另起，否则覆盖云上
+    // 那份别的库。
+    final Set<String> takenBases = <String>{
+      for (final _CloudLocalAudio r in remoteLibs) r.base,
+    };
 
     // Push local-only.
-    for (final LocalAudioDbEntry d in toPush) {
+    for (final ({LocalAudioDbEntry entry, String? contentId}) l in toPush) {
+      final LocalAudioDbEntry d = l.entry;
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.localAudio,
         itemIndex: index,
@@ -2246,6 +2758,11 @@ class SyncOrchestrator {
       final File dbFile = File(d.path);
       File? tmp;
       try {
+        final String base = uniqueLocalAudioDisplayName(
+          d.displayName,
+          takenBases,
+        );
+        takenBases.add(base);
         tmp = _tmpFile(_localAudioAssetSuffix);
         await _packages.exportLocalAudioPackage(
           displayName: d.displayName,
@@ -2253,10 +2770,11 @@ class SyncOrchestrator {
           sources: d.sources,
           dbFile: dbFile,
           outputFile: tmp,
+          contentId: l.contentId,
         );
         await _backend.putAsset(
           ns,
-          '${d.displayName}$_localAudioAssetSuffix',
+          '$base$_localAudioAssetSuffix',
           tmp,
           onProgress: (double f, [int? b]) => _emit(
             SyncPhase.localAudio,
@@ -2268,6 +2786,7 @@ class SyncOrchestrator {
           ),
         );
         report.localAudioExported++;
+        await _writeLocalAudioIdentityMarker(ns, base, l.contentId, report);
       } catch (e) {
         report.noteError('export local audio "${d.displayName}"', e);
       } finally {
@@ -2277,7 +2796,10 @@ class SyncOrchestrator {
     }
 
     // Pull remote-only.
-    for (final AssetEntry e in toPull) {
+    for (final _CloudLocalAudio r in toPull) {
+      final AssetEntry e = r.asset;
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.localAudio,
         itemIndex: index,
@@ -2311,6 +2833,15 @@ class SyncOrchestrator {
           await onLocalAudioImported!(contents);
           report.localAudioImported++;
         }
+        // 旧版本传的库包没有旁注：拉下来就知道了它的身份，替它补上。
+        if (r.contentId == null) {
+          await _writeLocalAudioIdentityMarker(
+            ns,
+            r.base,
+            contents.contentId,
+            report,
+          );
+        }
       } catch (err) {
         report.noteError('import local audio "${e.name}"', err);
       } finally {
@@ -2318,6 +2849,27 @@ class SyncOrchestrator {
         _safeDelete(stagingDb);
       }
       index++;
+    }
+  }
+
+  /// 写库包 [base] 的身份旁注（[localAudioIdentityMarkerName]）。[contentId] 读不出
+  /// 时不写（该库包照旧按名认）。旁注写失败只记一条错误：库包本身已经落地，下轮
+  /// 这份库按名认、不会重复上传。
+  Future<void> _writeLocalAudioIdentityMarker(
+    String ns,
+    String base,
+    String? contentId,
+    SyncRunReport report,
+  ) async {
+    if (!isLocalAudioContentId(contentId)) return;
+    try {
+      await _backend.putJsonAsset(
+        ns,
+        localAudioIdentityMarkerName(base, contentId!),
+        const <String, Object?>{},
+      );
+    } catch (e) {
+      report.noteError('write local audio identity "$base"', e);
     }
   }
 
@@ -2350,6 +2902,8 @@ class SyncOrchestrator {
     for (int i = 0; i < total; i++) {
       final EpubBookRow book = work[i].book;
       final SrtBookRow srt = work[i].srt;
+      // 安全检查点：上一项已完整落地，这一项还没开始。
+      _checkpoint();
       _emit(
         SyncPhase.audiobooks,
         itemIndex: i,

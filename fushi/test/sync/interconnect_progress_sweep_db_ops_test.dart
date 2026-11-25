@@ -27,6 +27,8 @@ import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/interconnect_legacy_host_scope.dart';
+
 /// 记下 client DB 上执行的每条语句（`S|I|U|D|C|B <sql>`）。
 class _CountingInterceptor extends QueryInterceptor {
   bool recording = false;
@@ -284,7 +286,10 @@ void main() {
         expect(
           await localDb.getSyncBaseline(
             'vid-0',
-            kInterconnectVideoPositionDimension,
+            credentialScopedDimension(
+              kInterconnectVideoPositionDimension,
+              token,
+            ),
           ),
           60000,
         );
@@ -482,7 +487,10 @@ void main() {
       expect(
         await localDb.getSyncBaseline(
           'ab-1',
-          kInterconnectAudiobookPositionDimension,
+          credentialScopedDimension(
+            kInterconnectAudiobookPositionDimension,
+            token,
+          ),
         ),
         5555,
       );
@@ -530,7 +538,10 @@ void main() {
         expect(
           await localDb.getSyncBaseline(
             'Book1',
-            kInterconnectBookProgressDimension,
+            credentialScopedDimension(
+              kInterconnectBookProgressDimension,
+              token,
+            ),
           ),
           BookProgressBaseline(sectionIndex: 1, normCharOffset: 100).encode(),
         );

@@ -1,5 +1,8 @@
 import 'dart:convert';
 
+import 'package:fushi/src/models/audio_source_config.dart' show AudioSourceKind;
+import 'package:fushi/src/sync/backup_path_rebase.dart'
+    show joinPrefTag, splitPrefTag;
 import 'package:fushi/src/sync/settings_sync.dart';
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_engine/media/override_title_key.dart';
@@ -11,14 +14,18 @@ import 'package:fushi_engine/media/video/strm_file.dart'
 import 'package:fushi_engine/sync/aggregate_merge_service.dart';
 import 'package:fushi/src/models/preference_keys.dart'
     show kProfileFallbackIdPrefKey, kWorkProfileSessionPrefKey;
-import 'package:fushi/src/sync/backup_srs_tables.dart' show hasLegacySrsTables;
 import 'package:fushi/src/sync/sync_repository.dart';
-import 'package:fushi_audio/fushi_audio.dart' show FavoriteSentence;
+import 'package:fushi_audio/fushi_audio.dart'
+    show FavoriteSentence, FavoriteSentenceRepository;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi_engine/srs/srs_backup_merge.dart'
-    show SrsBackupSource, mergeSrsFromBackup;
-import 'package:fushi_engine/srs/srs_storage.dart';
+    show
+        SrsBackupLandUnit,
+        SrsBackupMergeResult,
+        mergeSrsFromBackup,
+        srsLocalProfilesOf;
+import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
 
 /// ATTACH-then-upsert merge engine for backup "merge" import (TODO-888).
 ///
@@ -42,9 +49,9 @@ import 'package:fushi_engine/srs/srs_storage.dart';
 ///   id / same scrape identity / same exe path, see [_buildGameIdMap]); every
 ///   game-keyed child row (sources, sessions, study segments, activity rows,
 ///   tags) is remapped through that one map.
-/// - favorite SENTENCES (a `favorite_sentences` preference JSON blob, NOT a
-///   table) -> content dedupe-UNION, delegated to [AggregateMergeService] (the
-///   ATTACH SQL cannot merge a JSON blob, so this used to be dropped entirely).
+/// - favorite SENTENCES (the `favorite_sentences` table since v166; a
+///   preference JSON blob before) -> content dedupe-UNION, delegated to
+///   [AggregateMergeService] (identity is the content key, not the local id).
 /// - tags / profiles -> UNION by name with cross-DB id REMAPPING for every child
 ///   row referencing the autoincrement id.
 ///
@@ -59,7 +66,12 @@ import 'package:fushi_engine/srs/srs_storage.dart';
 /// scan paths), `sync_baselines` (would corrupt later incremental sync fork
 /// detection), the five durable video-download tables (backend fingerprints,
 /// local paths and schedule leases), and device-local sync prefs
-/// ([SyncRepository.deviceLocalPrefKeys]).
+/// ([SyncRepository.deviceLocalPrefKeys]). Rows that DO travel but carry an
+/// integer FK into a skipped table (`epub_books` / `video_books.source_id` →
+/// `media_sources`) get that FK remapped by the referenced row's cross-device
+/// identity, or NULL when this device has no such row — never the src integer
+/// verbatim ([_buildSourceIdMap], guarded by
+/// [_assertIntegerForeignKeysRemapped], BUG-5392).
 class BackupMergeEngine {
   BackupMergeEngine(
     this._db, {
@@ -68,25 +80,18 @@ class BackupMergeEngine {
     Set<String>? enabledCategoryNames,
     bool adoptSourcePreferences = false,
     bool mergePortableSettings = false,
-    SrsStorage? localSrs,
-    SrsDatabase? sourceSrs,
+    bool fillMissingOnly = false,
+    Set<String> excludedBookKeys = const <String>{},
   }) : _srcAlias = srcAlias,
        _mergePortableSettings = mergePortableSettings,
+       _fillMissingOnly = fillMissingOnly,
+       _excludedBookKeys = excludedBookKeys,
        _carriedVideoSourcePaths = carriedVideoSourcePaths,
        _enabledCategoryNames = enabledCategoryNames,
-       _adoptSourcePreferences = adoptSourcePreferences,
-       _localSrs = localSrs,
-       _sourceSrs = sourceSrs;
+       _adoptSourcePreferences = adoptSourcePreferences;
 
   final FushiDatabase _db;
   final String _srcAlias;
-
-  /// 本机 SRS 存储（srs.db）。null = 不合并 SRS（调用方没打开它，例如只做预览）。
-  final SrsStorage? _localSrs;
-
-  /// 新形态备份里 `srs.db` 解出的副本（Rust 打开，Drift 视图跑在它的连接上）。null = 备份是老
-  /// 形态（SRS 表在 ATTACH 的备份主库里）或没有 SRS 数据。
-  final SrsDatabase? _sourceSrs;
 
   /// 是否把源库的 `preferences` 整体接管过来（**只有同机换包名的迁移**该开）。
   ///
@@ -104,6 +109,41 @@ class BackupMergeEngine {
   /// （`PortableSettingsPolicy`）按修改时刻 LWW 并进来。默认关 = 合并导入一贯的
   /// 「不动本机设置」。
   final bool _mergePortableSettings;
+
+  /// 只补缺（「从覆盖导入前的快照恢复书库」用）：只插入本机缺的行，**不改任何既有
+  /// 行**——跳过全部 LWW / MAX-union 的 UPDATE、源库删除碑与合集身份合并。默认关 =
+  /// 备份合并导入的一贯语义（进度 LWW、统计 MAX-union）。
+  final bool _fillMissingOnly;
+
+  /// 这次合并里按删除墓碑同样处理的书（bookKey）：书库行、阅读进度、有声书 /
+  /// 字幕书行一律不落。「从覆盖前快照恢复书库」用它跳过书文件已不在盘上的书——
+  /// 插回来只是打不开的空壳（维护者 2026-11-16）。空 = 只认 `book_tombstones`。
+  final Set<String> _excludedBookKeys;
+
+  /// [_excludedBookKeys] 的连接级临时表，[_mergeMainDatabase] 事务开头建、结尾删。
+  static const String _excludedBookKeysTable = 'temp.merge_excluded_book_keys';
+
+  /// 「这本书不得落进本库」的 bookKey 子查询：删除墓碑，加上 [_excludedBookKeys]。
+  /// 只在 [_mergeMainDatabase] 内使用（临时表只在那里存在）。
+  String get _blockedBookKeysSubquery => _excludedBookKeys.isEmpty
+      ? '(SELECT book_key FROM book_tombstones)'
+      : '(SELECT book_key FROM book_tombstones '
+            'UNION ALL SELECT book_key FROM $_excludedBookKeysTable)';
+
+  Future<void> _createExcludedBookKeysTable() async {
+    if (_excludedBookKeys.isEmpty) return;
+    await _db.customStatement('DROP TABLE IF EXISTS $_excludedBookKeysTable');
+    await _db.customStatement(
+      'CREATE TEMP TABLE merge_excluded_book_keys '
+      '(book_key TEXT PRIMARY KEY)',
+    );
+    for (final String key in _excludedBookKeys) {
+      await _db.customStatement(
+        'INSERT OR IGNORE INTO $_excludedBookKeysTable (book_key) VALUES (?)',
+        <Object?>[key],
+      );
+    }
+  }
 
   /// Per-category merge gate (the `BackupCategory.name`s the user kept ticked in
   /// the import dialog); null = merge every category (legacy full merge). Only
@@ -163,11 +203,6 @@ class BackupMergeEngine {
   /// iterated when the predicate's placeholders are built.
   List<String> get _reachableVideoArgs => _carriedVideoSourcePaths.toList();
 
-  /// Preference key holding the favorite-sentence JSON list. Mirrors
-  /// `FavoriteSentenceRepository._key`; kept in sync behaviourally by
-  /// `favorite_sentence_merge_import_test.dart`.
-  static const String _favoriteSentencesPrefKey = 'favorite_sentences';
-
   /// Content-config preference keys carrying the local-audio registry (their
   /// referenced `.db` files travel in the backup), merged by
   /// [_mergeAudioSourcePrefs] instead of being dropped as device settings.
@@ -179,18 +214,16 @@ class BackupMergeEngine {
   /// Runs the whole merge inside a single transaction. The backup DB must
   /// already be ATTACHed as [_srcAlias] on [_db]'s connection by the caller.
   ///
-  /// SRS 在主库事务**提交之后**合并：它的事件写进另一个文件（srs.db，Rust 的连接），两个文件
-  /// 不能一起原子提交；放在后面，主库回滚时 SRS 一行都没写。SRS 合并本身幂等，中途失败重跑即收敛。
-  Future<void> merge() async {
-    await _mergeMainDatabase();
-    // v117 SRS（铁律 E）：必须在 Profile 并入之后——备份独有的 Profile 刚按名建出、
-    // 还没有 SRS 数据也没发布过，正好走「同名 → 采用备份 uid」而不是再建一个「（备份）」。
-    // 对话框开关是「复习」类别（备份里有 SRS 数据时才出现）；null = 全部合并。
-    if (_wants('srs')) await _mergeSrs();
-  }
+  /// 复习数据不在这里并：它落进另一个文件（新代库 `srs4.db`，内核的连接），两个文件不能一起原子提交。调用方在主库
+  /// 事务**提交之后**另走 [mergeSrsIntoLocal]（主库回滚时复习一行都没写；复习落库本身幂等，中途失败重跑即收敛）。
+  Future<void> merge() => _mergeMainDatabase();
 
   Future<void> _mergeMainDatabase() async {
     await _db.transaction(() async {
+      await _createExcludedBookKeysTable();
+      // 书 / 视频行的 source_id 是两库各自的 media_sources 自增 id，先建好
+      // src → 本机来源的身份映射，插行时逐行换（BUG-5392）。
+      await _buildSourceIdMap();
       // Content categories are gated by the import dialog's per-category
       // selection (merge mode). Rows with no dialog toggle (favorites / tags /
       // profiles / history / collections) always merge — they carry no bulk
@@ -228,8 +261,6 @@ class BackupMergeEngine {
       await _buildGameIdMap();
       if (_wants('games')) {
         await _insertMissingGalgames();
-        // v134：游戏台词跟着游戏走（唯一持久副本，「我库里的例句」由它派生）。
-        await _mergeGalgameTextLines();
       }
       // Media collections (unified-collections Phase 5) have no dialog toggle:
       // always merge the grouping itself; orphan members are kept and folded in
@@ -265,7 +296,7 @@ class BackupMergeEngine {
         // 目标库对应的游戏行上（2026-09 用户推翻旧的「游戏不参与合并」决策）。
         await _mergeGalgameSessions();
       }
-      await _mergeFavoriteSentencePrefs();
+      await _mergeFavoriteSentences();
       await _mergeTagsAndMappings();
       await _mergeCollectionTags();
       // v129：作品图谱连接——端点里的合集 id / 游戏 id 是 src 本地身份，要在
@@ -308,8 +339,159 @@ class BackupMergeEngine {
       // 本机曲库并掉过重复曲目（v145）：合进来的歌单项 / 歌词 / 播放记录 / 收藏句可能
       // 还挂着败者 uid（别的设备或旧备份），按别名表改指胜者。放在全部合并之后。
       await _db.applyMusicTrackUidAliases();
+      // BUG-5290：合进来的播放流快照可能带旧版本落的服务器凭据（备份库迁移到当前
+      // schema 时已清洗过一遍；同版本 / 外来拼出的备份不走迁移），合并后再清洗一次。
+      if (_wants('music')) await _db.scrubMusicPlayEventCredentials();
+      // 合进来的较新远程曲目行可能清了入库时刻（别的设备移出过）：本机有离线副本（v175，
+      // 设备本地的事实）的放回曲库，副本文件从不因合并被删。
+      if (_wants('music')) {
+        await _db.reconcileMusicServerDownloadsIntoLibrary(
+          at: DateTime.now().millisecondsSinceEpoch,
+        );
+      }
       await _db.customStatement('DROP TABLE IF EXISTS $_gameMapTable');
+      await _db.customStatement('DROP TABLE IF EXISTS $_sourceMapTable');
+      await _db.customStatement('DROP TABLE IF EXISTS $_excludedBookKeysTable');
     });
+  }
+
+  /// TEMP table `(src_id, dst_id)`：src `media_sources.id` → 本机代表**同一个
+  /// 来源**的 `media_sources.id`。连接级，[merge] 结束时删除。
+  static const String _sourceMapTable = 'temp.merge_source_map';
+
+  /// 建 [_sourceMapTable]（BUG-5392）。`media_sources` 是设备本地的扫描根，合并
+  /// 不搬它；但 `epub_books` / `video_books` 的 `source_id` 是指向它的**自增整数**
+  /// 外键，两库的 id 互不相干，原样搬进来就挂到本机碰巧同号的另一个来源上（或
+  /// 悬空）。来源的跨库身份是 `(media_kind, transport, root_path)`——与覆盖导入
+  /// 回填下载任务目标来源（`_insertVideoDownloadJobsFromBak`）同一判据；
+  /// `root_path` 落库时已按 `normalizeSourceRootPath` 归一，直接比字符串。多个本机
+  /// 候选取最小 id，结果确定。映射不到的 src 来源不进表，行上的 `source_id` 落 NULL
+  /// （见 [_mappedSourceIdSql]）。
+  Future<void> _buildSourceIdMap() async {
+    await _db.customStatement('DROP TABLE IF EXISTS $_sourceMapTable');
+    await _db.customStatement(
+      'CREATE TEMP TABLE merge_source_map '
+      '(src_id INTEGER PRIMARY KEY, dst_id INTEGER NOT NULL)',
+    );
+    _srcHasSources = await _srcTableExists('media_sources');
+    if (!_srcHasSources) return;
+    _srcSourcesHavePrivacy = await _srcColumnExists(
+      'media_sources',
+      'is_private',
+    );
+    await _db.customStatement(
+      'INSERT INTO $_sourceMapTable (src_id, dst_id) '
+      'SELECT s.id, MIN(t.id) FROM $_srcAlias.media_sources AS s '
+      'JOIN media_sources AS t ON t.media_kind = s.media_kind '
+      'AND t.transport = s.transport AND t.root_path = s.root_path '
+      'GROUP BY s.id',
+    );
+  }
+
+  /// src 库有没有 `media_sources` 表（手搓的旧库可能没有）。[_buildSourceIdMap] 写。
+  bool _srcHasSources = false;
+
+  /// src 库的 `media_sources` 有没有 `is_private` 列（v140）。[_buildSourceIdMap] 写。
+  bool _srcSourcesHavePrivacy = false;
+
+  /// src 行（别名 `s`）的 `source_id` 换成本机来源 id 的 SQL 表达式：映射到了用本机
+  /// 那一行，src 本就无来源 / 本机没有同一个来源时为 NULL——绝不落 src 的整数 id。
+  String get _mappedSourceIdSql => _srcHasSources
+      ? '(SELECT m.dst_id FROM $_sourceMapTable AS m '
+            'WHERE m.src_id = s.source_id)'
+      : 'NULL';
+
+  /// 「src 行原本有来源、本机却没有同一个来源」的 SQL 条件（别名 `s`）。这类行的
+  /// 来源归属在本机等同于「来源已移除」，按 [FushiDatabase.deleteMediaSource] 的
+  /// 语义保留来源留下的意图（视频的分组方式、隐私来源的私密）。
+  String get _sourceDroppedSql =>
+      's.source_id IS NOT NULL AND $_mappedSourceIdSql IS NULL';
+
+  /// 跨库整搬一张表之前的结构守卫（BUG-5392）：表里每个指向**整数主键**（自增
+  /// id，只在本库内有意义）的外键列都必须在 [remapped] 里——也就是调用方已经
+  /// 显式换过。新 schema 给被整搬的表加了这种外键而合并没跟上时，这里大声失败
+  /// （整个合并事务回滚），而不是把别的库的 id 静默落进来。指向文本键（book_key /
+  /// book_uid 这类跨库稳定身份）的外键不受限。
+  Future<void> _assertIntegerForeignKeysRemapped(
+    String table, {
+    Set<String> remapped = const <String>{},
+  }) async {
+    for (final QueryRow fk
+        in await _db.customSelect('PRAGMA foreign_key_list($table)').get()) {
+      final String from = fk.read<String>('from');
+      if (remapped.contains(from)) continue;
+      final String refTable = fk.read<String>('table');
+      final String? refColumn = fk.readNullable<String>('to');
+      final bool pointsAtIntegerKey =
+          (await _db.customSelect('PRAGMA table_info($refTable)').get()).any(
+            (QueryRow c) =>
+                c.read<int>('pk') > 0 &&
+                (refColumn == null || c.read<String>('name') == refColumn) &&
+                c.read<String>('type').toUpperCase().contains('INT'),
+          );
+      if (pointsAtIntegerKey) {
+        throw StateError(
+          'BackupMergeEngine: $table.$from references the local integer key '
+          '$refTable.${refColumn ?? 'rowid'} and would be copied verbatim from '
+          'the backup DB; remap it by a cross-device identity first.',
+        );
+      }
+    }
+  }
+
+  /// 本次合并新插入、而它在 src 设备上属于**隐私来源**、本机又没有同一个隐私
+  /// 来源承接的条目：照 [FushiDatabase.deleteMediaSource] 的做法写作品级私密
+  /// 标记，「别上排行榜」的意图跟着条目走，不因换了设备突然公开。本机已有该作品
+  /// 的私密时钟行（用户在本机表过态）就不动。[insertedKeys] 是插入前算好的
+  /// 候选（src 隐私来源下、这次会插入的行的键）。
+  Future<void> _carrySourcePrivacy(
+    TagHostKind kind,
+    String table,
+    String keyColumn,
+    List<String> insertedKeys,
+  ) async {
+    if (insertedKeys.isEmpty) return;
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    for (final String key in insertedKeys) {
+      final QueryRow? row = await _db
+          .customSelect(
+            'SELECT 1 FROM $table AS t WHERE t.$keyColumn = ? '
+            'AND NOT EXISTS (SELECT 1 FROM media_sources AS ts '
+            'WHERE ts.id = t.source_id AND ts.is_private = 1) '
+            'AND NOT EXISTS (SELECT 1 FROM media_privacy_flags AS f '
+            'WHERE f.media_kind = ? AND f.entry_key = t.$keyColumn)',
+            variables: <Variable<Object>>[
+              Variable<String>(key),
+              Variable<String>(kind.dbValue),
+            ],
+          )
+          .getSingleOrNull();
+      if (row == null) continue;
+      await _db.setMediaPrivate(kind, key, true, at: now);
+    }
+  }
+
+  /// 「这次会插入、且 src 来源是隐私来源」的 src 行键（别名 `s`，[whereSql] 与
+  /// 插入语句的 WHERE 逐字相同，[args] 是它的占位参数）。
+  Future<List<String>> _privateSourceKeysToInsert(
+    String table,
+    String keyColumn,
+    String whereSql,
+    List<Object?> args,
+  ) async {
+    if (!_srcHasSources || !_srcSourcesHavePrivacy) return const <String>[];
+    final List<QueryRow> rows = await _db
+        .customSelect(
+          'SELECT s.$keyColumn AS k FROM $_srcAlias.$table AS s '
+          'JOIN $_srcAlias.media_sources AS ss ON ss.id = s.source_id '
+          'AND ss.is_private = 1 '
+          'WHERE $whereSql',
+          variables: args
+              .map((Object? a) => Variable<String>(a as String?))
+              .toList(),
+        )
+        .get();
+    return rows.map((QueryRow r) => r.read<String>('k')).toList();
   }
 
   /// TEMP table `(src_id, dst_id)` mapping every src `galgames.id` that has a
@@ -372,6 +554,7 @@ class BackupMergeEngine {
   /// `cover_path` is inserted verbatim (source-device path) and re-homed by the
   /// caller's `_rebaseGameCoverPaths` after the covers are copied in.
   Future<void> _insertMissingGalgames() async {
+    await _assertIntegerForeignKeysRemapped('galgames');
     final List<String> cols = await _allColumns('galgames');
     final String colList = cols.join(', ');
     await _db.customStatement(
@@ -396,23 +579,6 @@ class BackupMergeEngine {
       'JOIN $_gameMapTable AS m ON m.src_id = ss.game_id '
       'WHERE NOT EXISTS (SELECT 1 FROM galgame_sources AS t '
       'WHERE t.game_id = m.dst_id AND t.source = ss.source)',
-    );
-  }
-
-  /// v134 文本钩子台词 dedupe-UNION under the remapped game id. Natural key =
-  /// `(game, text)`（表上的唯一键）：同一句台词在同一游戏里只留一行，所以同一份备份合并
-  /// 两次、或两台设备都录到同一句，都不会重复；保留本机已有行的 `received_at`。src 台词
-  /// 的游戏在本机没有宿主（游戏没勾 / 被裁掉）时跳过，不留悬空 `game_id`。`id` 不搬
-  /// （本机自增）：语料分块按本机 id 重新算。自守卫旧备份（v134 之前）没有这张表。
-  Future<void> _mergeGalgameTextLines() async {
-    if (!await _srcTableExists('galgame_text_lines')) return;
-    await _db.customStatement(
-      'INSERT OR IGNORE INTO galgame_text_lines (game_id, text, received_at) '
-      'SELECT m.dst_id, s.text, MIN(s.received_at) '
-      'FROM $_srcAlias.galgame_text_lines AS s '
-      'JOIN $_gameMapTable AS m ON m.src_id = s.game_id '
-      'GROUP BY m.dst_id, s.text '
-      'ORDER BY MIN(s.received_at)',
     );
   }
 
@@ -675,11 +841,12 @@ class BackupMergeEngine {
     bool skipBookTombstones = false,
     String? tombstoneKeyColumn,
   }) async {
+    await _assertIntegerForeignKeysRemapped(table);
     final List<String> cols = await _columnsExceptId(table);
     final String colList = cols.join(', ');
     final String tombCol = tombstoneKeyColumn ?? keyColumn;
     final String tombstoneGuard = skipBookTombstones
-        ? 'AND s.$tombCol NOT IN (SELECT book_key FROM book_tombstones) '
+        ? 'AND s.$tombCol NOT IN $_blockedBookKeysSubquery '
         : '';
     await _db.customStatement(
       'INSERT INTO $table ($colList) '
@@ -694,10 +861,17 @@ class BackupMergeEngine {
   /// merge 事务。撞时按同命名空间重生成（src rowid + 当前 epoch + `_m` 后缀，
   /// 批内唯一；万一再撞由唯一索引大声失败，绝不静默错配）。
   Future<void> _insertMissingEpubBooks() async {
+    await _assertIntegerForeignKeysRemapped(
+      'epub_books',
+      remapped: const <String>{'source_id'},
+    );
     final List<String> cols = await _columnsExceptId('epub_books');
     final String colList = cols.join(', ');
     final String selList = cols
         .map((String c) {
+          // BUG-5392：source_id 是 src 库 media_sources 的自增 id，按来源身份换成
+          // 本机 id，映射不到落 NULL（= 手动导入、无来源）。
+          if (c == '"source_id"') return _mappedSourceIdSql;
           if (c != '"uid"') return 's.$c';
           return "CASE WHEN s.uid != '' AND EXISTS "
               '(SELECT 1 FROM epub_books AS e WHERE e.uid = s.uid) '
@@ -705,12 +879,26 @@ class BackupMergeEngine {
               'ELSE s.uid END';
         })
         .join(', ');
+    final String where =
+        'NOT EXISTS (SELECT 1 FROM epub_books AS t '
+        'WHERE t.book_key = s.book_key) '
+        'AND s.book_key NOT IN $_blockedBookKeysSubquery';
+    final List<String> privateKeys = await _privateSourceKeysToInsert(
+      'epub_books',
+      'book_key',
+      where,
+      const <Object?>[],
+    );
     await _db.customStatement(
       'INSERT INTO epub_books ($colList) '
       'SELECT $selList FROM $_srcAlias.epub_books AS s '
-      'WHERE NOT EXISTS (SELECT 1 FROM epub_books AS t '
-      'WHERE t.book_key = s.book_key) '
-      'AND s.book_key NOT IN (SELECT book_key FROM book_tombstones)',
+      'WHERE $where',
+    );
+    await _carrySourcePrivacy(
+      TagHostKind.epub,
+      'epub_books',
+      'book_key',
+      privateKeys,
     );
   }
 
@@ -720,17 +908,56 @@ class BackupMergeEngine {
   /// carried.
   /// A local-file video whose file never travelled is skipped so it never lands
   /// as a dead "empty video" shell that can't play (TODO-1261). `video_books`
-  /// has no autoincrement id (PK is `book_uid`), so every column travels.
+  /// has no autoincrement id (PK is `book_uid`), so every column travels —
+  /// except `source_id`, an integer FK into the device-local `media_sources`,
+  /// which is remapped by source identity ([_buildSourceIdMap], BUG-5392).
   Future<void> _insertMissingVideoBooks() async {
+    await _assertIntegerForeignKeysRemapped(
+      'video_books',
+      remapped: const <String>{'source_id'},
+    );
     final List<String> cols = await _columnsExceptId('video_books');
     final String colList = cols.join(', ');
+    // BUG-5392：source_id 按来源身份换成本机 id（映射不到落 NULL）。来源在本机
+    // 没有对应行时，等同「来源已移除」：照 [FushiDatabase.deleteMediaSource] 把
+    // src 来源的分组方式（作品 / 目录）落到行上——有来源时分组以来源设置为准，
+    // 来源没了就靠这一列保住，否则视频会换一种分组方式归组。
+    final String groupingWhenDropped = _srcHasSources
+        ? 'CASE WHEN $_sourceDroppedSql THEN COALESCE('
+              '(SELECT ss.video_grouping_mode FROM $_srcAlias.media_sources '
+              'AS ss WHERE ss.id = s.source_id), s.video_grouping_mode) '
+              'ELSE s.video_grouping_mode END'
+        : 's.video_grouping_mode';
+    final String selList = cols
+        .map(
+          (String c) => switch (c) {
+            '"source_id"' => _mappedSourceIdSql,
+            '"video_grouping_mode"' => groupingWhenDropped,
+            _ => 's.$c',
+          },
+        )
+        .join(', ');
+    final String where =
+        'NOT EXISTS (SELECT 1 FROM video_books AS t '
+        'WHERE t.book_uid = s.book_uid) '
+        'AND $_reachableVideoPredicate';
+    final List<String> privateKeys = await _privateSourceKeysToInsert(
+      'video_books',
+      'book_uid',
+      where,
+      _reachableVideoArgs,
+    );
     await _db.customStatement(
       'INSERT INTO video_books ($colList) '
-      'SELECT $colList FROM $_srcAlias.video_books AS s '
-      'WHERE NOT EXISTS (SELECT 1 FROM video_books AS t '
-      'WHERE t.book_uid = s.book_uid) '
-      'AND $_reachableVideoPredicate',
+      'SELECT $selList FROM $_srcAlias.video_books AS s '
+      'WHERE $where',
       _reachableVideoArgs,
+    );
+    await _carrySourcePrivacy(
+      TagHostKind.video,
+      'video_books',
+      'book_uid',
+      privateKeys,
     );
   }
 
@@ -926,9 +1153,14 @@ class BackupMergeEngine {
 
     // 成员：collection_id 经映射改写后 INSERT OR IGNORE（复合主键去重）。命中本地成员
     // 移出墓碑（同自然键 + 成员键）的成员跳过——防旧备份复活用户已移出的成员（任务7）。
+    final bool srcHasPinned = await _srcColumnExists(
+      'media_collection_items',
+      'pinned_by_user',
+    );
     final List<QueryRow> srcItems = await _db
         .customSelect(
-          'SELECT collection_id, media_type, entry_key, sort_index '
+          'SELECT collection_id, media_type, entry_key, sort_index'
+          '${srcHasPinned ? ', pinned_by_user' : ''} '
           'FROM $_srcAlias.media_collection_items',
         )
         .get();
@@ -964,15 +1196,20 @@ class BackupMergeEngine {
       }
       // 落库键：epub 三级回落换到本库键域；同书的 uid 行与透传 bookKey 行换键后
       // 可能收敛为同一键——复合 PK 上的 INSERT OR IGNORE 顺带去重。
+      // v159 pinned_by_user 取或：备份里是 1 就升到 1，本机已是 1 的不降（旧备份
+      // 没有这一列按 0）。
       await _db.customStatement(
-        'INSERT OR IGNORE INTO media_collection_items '
-        '(collection_id, media_type, entry_key, sort_index) '
-        'VALUES (?, ?, ?, ?)',
+        'INSERT INTO media_collection_items '
+        '(collection_id, media_type, entry_key, sort_index, pinned_by_user) '
+        'VALUES (?, ?, ?, ?, ?) '
+        'ON CONFLICT (collection_id, media_type, entry_key) DO UPDATE SET '
+        'pinned_by_user = MAX(pinned_by_user, excluded.pinned_by_user)',
         <Object?>[
           tgt,
           mediaType,
           isEpub ? rekeyEpubEntryKey(entryKey) : entryKey,
           it.read<int>('sort_index'),
+          srcHasPinned && (it.read<int>('pinned_by_user') != 0) ? 1 : 0,
         ],
       );
     }
@@ -1018,6 +1255,8 @@ class BackupMergeEngine {
 
   /// 把备份里同名合集行 [src] 的整理身份并进本库合集 [targetId]。
   Future<void> _mergeOrganizeIdentityInto(int targetId, QueryRow src) async {
+    // 只补缺：不改本机既有合集的身份。
+    if (_fillMissingOnly) return;
     final QueryRow? t = await _db
         .customSelect(
           'SELECT origin, organize_key, organize_aliases FROM media_collections '
@@ -1072,6 +1311,7 @@ class BackupMergeEngine {
   /// AudioCues: import only cues for book_keys with no existing cues in the
   /// target (idempotent, no duplicate streams).
   Future<void> _insertAudioCues() async {
+    await _assertIntegerForeignKeysRemapped('audio_cues');
     final List<String> cols = await _columnsExceptId('audio_cues');
     final String colList = cols.join(', ');
     await _db.customStatement(
@@ -1080,7 +1320,7 @@ class BackupMergeEngine {
       'WHERE NOT EXISTS (SELECT 1 FROM audio_cues AS t '
       'WHERE t.book_key = s.book_key) '
       // TODO-1195 part B: never bring back a deleted book's cues.
-      'AND s.book_key NOT IN (SELECT book_key FROM book_tombstones)',
+      'AND s.book_key NOT IN $_blockedBookKeysSubquery',
     );
   }
 
@@ -1099,8 +1339,7 @@ class BackupMergeEngine {
       'WHERE NOT EXISTS (SELECT 1 FROM reader_positions AS t '
       'WHERE t.book_uid = $_srcBookUidRekey) '
       // TODO-1195 part B: never re-add a deleted book's reading position.
-      'AND $_srcBookKeyForTombstone NOT IN '
-      '(SELECT book_key FROM book_tombstones)',
+      'AND $_srcBookKeyForTombstone NOT IN $_blockedBookKeysSubquery',
     );
     final String setClause = cols
         .where((String c) => c != '"book_uid"')
@@ -1111,6 +1350,7 @@ class BackupMergeEngine {
               'WHERE $_srcBookUidRekey = reader_positions.book_uid)',
         )
         .join(', ');
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE reader_positions SET $setClause '
       'WHERE EXISTS (SELECT 1 FROM $_srcAlias.reader_positions AS s '
@@ -1134,6 +1374,7 @@ class BackupMergeEngine {
       'AND s.title NOT IN (SELECT title FROM statistics_tombstones '
       "WHERE source_type = 'book')",
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE reading_statistics SET '
       'characters_read = MAX(characters_read, ('
@@ -1176,6 +1417,7 @@ class BackupMergeEngine {
       'AND s.title NOT IN (SELECT title FROM statistics_tombstones '
       "WHERE source_type = 'video')",
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE video_watch_statistics AS t SET '
       'subtitle_chars = MAX(t.subtitle_chars, ('
@@ -1217,6 +1459,7 @@ class BackupMergeEngine {
       'WHERE NOT EXISTS (SELECT 1 FROM $table AS t '
       'WHERE $tEqS)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE $table SET '
       '$valueColumn = MAX($valueColumn, ('
@@ -1236,6 +1479,7 @@ class BackupMergeEngine {
       'AS s WHERE NOT EXISTS (SELECT 1 FROM mining_statistics AS t '
       'WHERE t.source_type = s.source_type AND t.date_key = s.date_key)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE mining_statistics SET "count" = MAX("count", ('
       'SELECT s."count" FROM $_srcAlias.mining_statistics AS s '
@@ -1284,6 +1528,7 @@ class BackupMergeEngine {
       'AND NOT EXISTS (SELECT 1 FROM statistics_tombstones st '
       'WHERE st.title = s.title AND st.source_type = s.source_type)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE lookup_mining_counters SET '
       'lookup_count = MAX(lookup_count, ('
@@ -1478,29 +1723,32 @@ class BackupMergeEngine {
     final String hasHost = _hasHost('s', 'm');
     final String profileJoin = _profileMapJoin('s', 'sp', 'tp');
     final String profileId = await _mappedProfileId('s', 'sp', 'tp');
-    // 几个 src 游戏可能映射到同一个本机游戏 → 同 (profile, kind, key) 多条碑，取 MAX。
-    await _db.customStatement(
-      'INSERT OR IGNORE INTO study_segment_tombstones '
-      '(profile_id, media_kind, media_key, deleted_at) '
-      'SELECT $profileId, s.media_kind, $key, MAX(s.deleted_at) '
-      'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
-      'WHERE $hasHost '
-      'GROUP BY $profileId, s.media_kind, $key',
-    );
-    await _db.customStatement(
-      'UPDATE study_segment_tombstones SET deleted_at = ('
-      'SELECT MAX(s.deleted_at) '
-      'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
-      'WHERE $profileId = study_segment_tombstones.profile_id '
-      'AND s.media_kind = study_segment_tombstones.media_kind '
-      'AND $key = study_segment_tombstones.media_key) '
-      'WHERE EXISTS (SELECT 1 '
-      'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
-      'WHERE $profileId = study_segment_tombstones.profile_id '
-      'AND s.media_kind = study_segment_tombstones.media_kind '
-      'AND $key = study_segment_tombstones.media_key '
-      'AND s.deleted_at > study_segment_tombstones.deleted_at)',
-    );
+    // 只补缺：不引入源库的删除碑（会删掉本机既有段）。
+    if (!_fillMissingOnly) {
+      // 几个 src 游戏可能映射到同一个本机游戏 → 同 (profile, kind, key) 多条碑，取 MAX。
+      await _db.customStatement(
+        'INSERT OR IGNORE INTO study_segment_tombstones '
+        '(profile_id, media_kind, media_key, deleted_at) '
+        'SELECT $profileId, s.media_kind, $key, MAX(s.deleted_at) '
+        'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
+        'WHERE $hasHost '
+        'GROUP BY $profileId, s.media_kind, $key',
+      );
+      await _db.customStatement(
+        'UPDATE study_segment_tombstones SET deleted_at = ('
+        'SELECT MAX(s.deleted_at) '
+        'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
+        'WHERE $profileId = study_segment_tombstones.profile_id '
+        'AND s.media_kind = study_segment_tombstones.media_kind '
+        'AND $key = study_segment_tombstones.media_key) '
+        'WHERE EXISTS (SELECT 1 '
+        'FROM $_srcAlias.study_segment_tombstones AS s $join$profileJoin'
+        'WHERE $profileId = study_segment_tombstones.profile_id '
+        'AND s.media_kind = study_segment_tombstones.media_kind '
+        'AND $key = study_segment_tombstones.media_key '
+        'AND s.deleted_at > study_segment_tombstones.deleted_at)',
+      );
+    }
     final List<String> cols = <String>[
       'uid',
       'device_id',
@@ -1515,12 +1763,19 @@ class BackupMergeEngine {
       'duration_ms',
       'chars',
       'pages',
+      'lookups',
       'updated_at',
       'profile_id',
     ];
+    // v178 前的备份没有 lookups 列：按 0 并入（那时查词全在按天计数表里）。
+    final bool srcHasLookups = await _srcColumnExists(
+      'study_segments',
+      'lookups',
+    );
     String srcCol(String c) => switch (c) {
       'media_key' => '$key AS media_key',
       'profile_id' => '$profileId AS profile_id',
+      'lookups' when !srcHasLookups => '0 AS lookups',
       _ => 's.$c',
     };
     final String colList = cols.join(', ');
@@ -1541,12 +1796,14 @@ class BackupMergeEngine {
               'WHERE s.uid = study_segments.uid)',
         )
         .join(', ');
-    await _db.customStatement(
-      'UPDATE study_segments SET $setClause '
-      'WHERE EXISTS (SELECT 1 FROM $_srcAlias.study_segments AS s $join'
-      'WHERE s.uid = study_segments.uid AND $hasHost '
-      'AND s.updated_at > study_segments.updated_at)',
-    );
+    if (!_fillMissingOnly) {
+      await _db.customStatement(
+        'UPDATE study_segments SET $setClause '
+        'WHERE EXISTS (SELECT 1 FROM $_srcAlias.study_segments AS s $join'
+        'WHERE s.uid = study_segments.uid AND $hasHost '
+        'AND s.updated_at > study_segments.updated_at)',
+      );
+    }
     await _db.customStatement(
       'DELETE FROM study_segments WHERE EXISTS ('
       'SELECT 1 FROM study_segment_tombstones AS t '
@@ -1579,72 +1836,26 @@ class BackupMergeEngine {
     );
   }
 
-  /// Favorite SENTENCES dedupe-UNION. Unlike favorite words / mined sentences
-  /// these are NOT a table but a JSON list stored in the target's and src's
-  /// `preferences` row `favorite_sentences`, so the ATTACH SQL merge cannot
-  /// touch them -- before this the backup's favorite sentences were silently
-  /// dropped. Read both blobs, delegate the union+dedupe to the pure
-  /// [AggregateMergeService.mergeFavoriteSentences] (single source of truth for
-  /// this semantic, shared with online sync), and write the merged blob back.
+  /// Favorite SENTENCES dedupe-UNION（v166 起是 `favorite_sentences` 表；备份库在
+  /// ATTACH 前已迁到当前 schema，旧备份偏好里的 JSON 列表已由 v166 搬进表）。去重
+  /// 并集只由纯函数 [AggregateMergeService.mergeFavoriteSentences] 决定（与在线同步
+  /// 同一语义），结果整表写回（与现有内容相同则不写）。
   ///
-  /// A missing/empty src blob is a no-op; a missing target blob just adopts the
-  /// merged src set. Runs inside the merge transaction, so a failure here rolls
-  /// the whole merge back with everything else.
-  Future<void> _mergeFavoriteSentencePrefs() async {
-    final String? targetRaw = await _readPref(isSrc: false);
-    final String? srcRaw = await _readPref(isSrc: true);
-    // Nothing to merge in from the backup: leave the device's blob untouched.
-    if (srcRaw == null || srcRaw.isEmpty) return;
-
-    final List<FavoriteSentence> localList = _decodeFavoriteSentences(
-      targetRaw,
+  /// 备份没有收藏句 = 不动本机。跑在合并事务里，失败随整个合并回滚。
+  Future<void> _mergeFavoriteSentences() async {
+    if (!await _srcTableExists('favorite_sentences')) return;
+    final List<FavoriteSentence> remote = <FavoriteSentence>[
+      for (final QueryRow row
+          in await _db
+              .customSelect('SELECT * FROM $_srcAlias.favorite_sentences')
+              .get())
+        FavoriteSentenceRepository.fromRow(_db.favoriteSentences.map(row.data)),
+    ];
+    if (remote.isEmpty) return;
+    final FavoriteSentenceRepository repo = FavoriteSentenceRepository(_db);
+    await repo.replaceAll(
+      AggregateMergeService.mergeFavoriteSentences(await repo.getAll(), remote),
     );
-    final List<FavoriteSentence> remoteList = _decodeFavoriteSentences(srcRaw);
-    final List<FavoriteSentence> merged =
-        AggregateMergeService.mergeFavoriteSentences(localList, remoteList);
-
-    final String mergedJson = jsonEncode(
-      merged.map((FavoriteSentence s) => s.toJson()).toList(),
-    );
-    // Upsert the target preference row (INSERT OR REPLACE on the key PK).
-    await _db.customStatement(
-      'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
-      <Object?>[_favoriteSentencesPrefKey, mergedJson],
-    );
-  }
-
-  /// Reads the `favorite_sentences` preference value from either the target
-  /// ([isSrc] false) or the ATTACHed src ([isSrc] true). Returns null when the
-  /// row is absent.
-  Future<String?> _readPref({required bool isSrc}) async {
-    final String table = isSrc ? '$_srcAlias.preferences' : 'preferences';
-    final rows = await _db
-        .customSelect(
-          'SELECT "value" FROM $table WHERE "key" = ?',
-          variables: <Variable<Object>>[
-            Variable<String>(_favoriteSentencesPrefKey),
-          ],
-        )
-        .get();
-    if (rows.isEmpty) return null;
-    return rows.first.data['value'] as String?;
-  }
-
-  /// Decodes a `favorite_sentences` JSON blob into models, tolerating a
-  /// null/empty/malformed value (returns an empty list) so a corrupt pref on
-  /// either side never aborts the whole merge.
-  static List<FavoriteSentence> _decodeFavoriteSentences(String? raw) {
-    if (raw == null || raw.isEmpty) return const <FavoriteSentence>[];
-    try {
-      final dynamic decoded = jsonDecode(raw);
-      if (decoded is! List) return const <FavoriteSentence>[];
-      return decoded
-          .whereType<Map<String, dynamic>>()
-          .map(FavoriteSentence.fromJson)
-          .toList();
-    } catch (_) {
-      return const <FavoriteSentence>[];
-    }
   }
 
   /// BookTags UNION by name (device keeps its own tag row + id on a name clash),
@@ -1758,6 +1969,12 @@ class BackupMergeEngine {
           null => null,
           _ => key,
         };
+    // v159：旧备份没有 confirmed_by——只认 is_user_confirmed，未确认的当「未知」
+    // 并入（不冲掉本机的 AI 生效，见 [FushiDatabase.mergeRemoteMediaLink]）。
+    final bool srcHasConfirmedBy = await _srcColumnExists(
+      'media_links',
+      'confirmed_by',
+    );
     final List<QueryRow> rows = await _db
         .customSelect('SELECT * FROM $_srcAlias.media_links')
         .get();
@@ -1796,13 +2013,20 @@ class BackupMergeEngine {
           source: r.read<String>('source'),
           confidence: r.readNullable<double>('confidence'),
           isUserConfirmed: r.read<int>('is_user_confirmed') != 0,
+          confirmedBy: srcHasConfirmedBy
+              ? r.readNullable<String>('confirmed_by')
+              : null,
           reason: r.readNullable<String>('reason'),
           createdAt: r.read<int>('created_at'),
           updatedAt: r.read<int>('updated_at'),
           deletedAt: r.readNullable<int>('deleted_at'),
         ),
+        confirmerKnown: srcHasConfirmedBy,
       );
     }
+    // 否决管一整对（不分关系与方向）：逐 id 合并完再按不变量收掉落在被否决一对上的
+    // AI 生效（[FushiDatabase.enforceMediaLinkVetoes]）。
+    await _db.enforceMediaLinkVetoes();
   }
 
   /// Profiles UNION by name (device keeps its own profile + id on a name clash),
@@ -1854,27 +2078,6 @@ class BackupMergeEngine {
     );
   }
 
-  /// SRS 专用合并：按 `profiles.uid` 归位后经本机 SRS 副本合并，规则与幂等性见
-  /// [mergeSrsFromBackup]。新形态备份的事件从 [_sourceSrs] 读，老形态从 ATTACH 的备份主库读。
-  Future<void> _mergeSrs() async {
-    final SrsStorage? local = _localSrs;
-    if (local == null) return;
-    final SrsDatabase? sourceSrs = _sourceSrs;
-    final SrsBackupSource source;
-    if (sourceSrs != null) {
-      source = SrsBackupSource.split(
-        profiles: _db,
-        profilesSchema: _srcAlias,
-        srs: sourceSrs,
-      );
-    } else if (await hasLegacySrsTables(_db, schema: _srcAlias)) {
-      source = SrsBackupSource.attached(_db, _srcAlias);
-    } else {
-      return;
-    }
-    await mergeSrsIntoLocal(db: _db, localSrs: local, source: source);
-  }
-
   /// Bookmarks dedupe-union by {book_uid, section_index, norm_char_offset,
   /// created_at}, existence-guarded on epub_books(uid) so a bookmark for a book
   /// the backup omitted is skipped（v82 换键后 guard 语义不变）.
@@ -1905,6 +2108,7 @@ class BackupMergeEngine {
   /// - 歌词：按 (track_uid, source) LWW（`updated_at`）。
   /// - MV 绑定：按 (track_uid, kind, ref) LWW（`updated_at`）。
   /// - 播放流：按 (track_uid, started_at) 去重并集。
+  /// - 远程曲目（v148）：按 `track_uid` LWW（`updated_at`，含「移出音乐库」）。
   /// 曲目身份是内容派生 uid，两边同一首歌同一个 uid，无需重映射。
   Future<void> _mergeMusicUserData() async {
     if (await _srcTableExists('music_playlists')) {
@@ -1944,6 +2148,32 @@ class BackupMergeEngine {
         );
       }
       await _db.customStatement('DROP TABLE IF EXISTS temp.merge_music_pl');
+    }
+    if (await _srcTableExists('music_remote_tracks')) {
+      // 远程曲目（v148）：歌单条目可能引用它们，与歌单同一类别。按 track_uid LWW：元数据
+      // 与入库状态（library_added_at，移出曲库时置 NULL）一起取较新的一方；created_at 留
+      // 先到的那份。v149 的 cover_ref / album_id / artist_refs 随元数据一起走（备份库合并前
+      // 已迁到当前版本，列一定在）；服务器曲目的行本身不含凭据，跨设备合并安全。
+      await _db.customStatement(
+        'INSERT INTO music_remote_tracks (track_uid, kind, source_key, '
+        'item_id, title, artist, album, duration_ms, cover_url, cover_ref, '
+        'album_id, artist_refs, library_added_at, created_at, updated_at) '
+        'SELECT s.track_uid, s.kind, s.source_key, s.item_id, s.title, '
+        's.artist, s.album, s.duration_ms, s.cover_url, s.cover_ref, '
+        's.album_id, s.artist_refs, s.library_added_at, '
+        's.created_at, s.updated_at '
+        'FROM $_srcAlias.music_remote_tracks AS s WHERE true '
+        'ON CONFLICT (track_uid) DO UPDATE SET '
+        'kind = excluded.kind, source_key = excluded.source_key, '
+        'item_id = excluded.item_id, title = excluded.title, '
+        'artist = excluded.artist, album = excluded.album, '
+        'duration_ms = excluded.duration_ms, cover_url = excluded.cover_url, '
+        'cover_ref = excluded.cover_ref, album_id = excluded.album_id, '
+        'artist_refs = excluded.artist_refs, '
+        'library_added_at = excluded.library_added_at, '
+        'updated_at = excluded.updated_at '
+        'WHERE excluded.updated_at > music_remote_tracks.updated_at',
+      );
     }
     if (await _srcTableExists('music_lyrics')) {
       await _db.customStatement(
@@ -2049,6 +2279,7 @@ class BackupMergeEngine {
       'WHERE t.book_uid = $_srcBookUidRekey '
       'AND t.relative_path = s.relative_path)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE book_custom_css SET '
       'content = (SELECT s.content FROM $_srcAlias.book_custom_css AS s '
@@ -2079,6 +2310,7 @@ class BackupMergeEngine {
       'AND NOT EXISTS (SELECT 1 FROM manga_reader_overrides AS t '
       'WHERE t.book_uid = $_srcBookUidRekey)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE manga_reader_overrides SET '
       'overrides_json = (SELECT s.overrides_json FROM '
@@ -2107,6 +2339,7 @@ class BackupMergeEngine {
       'AND NOT EXISTS (SELECT 1 FROM revealed_images AS t '
       'WHERE t.book_uid = $_srcBookUidRekey AND t.image_key = s.image_key)',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE revealed_images SET '
       'revealed_at = (SELECT s.revealed_at '
@@ -2124,14 +2357,32 @@ class BackupMergeEngine {
   /// exception is audiobook positions (per-book content): UNION push-only so the
   /// backup positions for books the device lacks are added, without clobbering
   /// the device's existing positions.
+  ///
+  /// 与书库行同一道「这本书不得落进本库」闸（[_blockedBookKeysSubquery]：删除墓碑 +
+  /// `excludedBookKeys`）：被挡住的书，它的进度也不落，否则恢复后留下没有书的孤儿
+  /// 进度，按同一 key 重新导入时还会捡回删除前的旧进度。
   Future<void> _mergeAudiobookPositionPrefs() async {
     await _db.customStatement(
       'INSERT INTO preferences ("key", "value") '
       'SELECT "key", "value" FROM $_srcAlias.preferences AS s '
       "WHERE s.\"key\" LIKE 'audiobook_pos_%' "
-      'AND NOT EXISTS (SELECT 1 FROM preferences AS t WHERE t."key" = s."key")',
+      'AND NOT EXISTS (SELECT 1 FROM preferences AS t WHERE t."key" = s."key") '
+      'AND $_audiobookPositionBookKey NOT IN $_blockedBookKeysSubquery',
     );
   }
+
+  /// `audiobook_pos_<身份>` / `audiobook_pos_at_<身份>`（位置与它的 LWW 时间戳孪生
+  /// 键）行 `s` 所属书的 bookKey。身份对普通有声书就是 bookKey
+  /// （`AudiobookRepository`），对字幕书是 `srt_books.uid`（`SrtBookRepository`），
+  /// 经源库 `srt_books` 换成该行的 `book_key` 再比。
+  static const String _audiobookPositionIdentity =
+      "CASE WHEN substr(s.\"key\", 1, 17) = 'audiobook_pos_at_' "
+      'THEN substr(s."key", 18) ELSE substr(s."key", 15) END';
+
+  String get _audiobookPositionBookKey =>
+      'COALESCE((SELECT sb.book_key FROM $_srcAlias.srt_books AS sb '
+      'WHERE sb.uid = $_audiobookPositionIdentity), '
+      '$_audiobookPositionIdentity)';
 
   /// 用户给书改的名字（BUG-1488）。
   ///
@@ -2158,6 +2409,7 @@ class BackupMergeEngine {
       "WHERE instr(s.\"key\", '$kOverrideTitleKeyMarker') > 0 "
       'AND NOT EXISTS (SELECT 1 FROM preferences AS t WHERE t."key" = s."key")',
     );
+    if (_fillMissingOnly) return;
     await _db.customStatement(
       'UPDATE preferences SET '
       '"value" = (SELECT s."value" FROM $_srcAlias.preferences AS s '
@@ -2176,22 +2428,98 @@ class BackupMergeEngine {
   /// under `localAudio/` and copied by [BackupRestoreService.mergeRestoreBackup]),
   /// so their config must travel too — otherwise the restored files are orphaned
   /// and "音频来源" is silently lost on a merge (the pref-non-merge default
-  /// dropped them). Adopt the backup's value when the device has none/an empty
-  /// list (a fresh app writes an empty `[]` placeholder, so a bare NOT-EXISTS on
-  /// the key is not enough); keep the device's own list otherwise (merge never
-  /// clobbers local). The raw value is copied verbatim so its typed prefix is
-  /// preserved; [BackupService] re-homes the embedded paths onto this device's
-  /// support dir afterwards.
+  /// dropped them).
+  ///
+  /// * Device has none / an empty list (a fresh app writes an empty `[]`
+  ///   placeholder, so a bare NOT-EXISTS on the key is not enough): adopt the
+  ///   backup's raw value verbatim (typed prefix preserved).
+  /// * Device has its own list: keep every local entry as-is (order = priority,
+  ///   never clobbered) and APPEND only the backup's FILE-BACKED local-audio
+  ///   entries this device does not have yet (see [_unionLocalAudioEntries]).
+  ///   Before this union the whole backup list was skipped as soon as the device
+  ///   had any entry (e.g. the always-present `fushiRemote` row once the user
+  ///   touched audio settings), so merging the recommended pack copied its
+  ///   `local_audio_*.db` files yet never registered them — the pack's
+  ///   pronunciation audio silently never worked.
+  ///
+  /// [BackupService] re-homes the embedded paths onto this device's support dir
+  /// afterwards (by filename), for adopted and appended entries alike.
   Future<void> _mergeAudioSourcePrefs() async {
     for (final String key in _audioSourcePrefKeys) {
       final String? src = await _readPrefValue(key, isSrc: true);
       if (_isEmptyListPref(src)) continue; // backup carries no audio sources
       final String? local = await _readPrefValue(key, isSrc: false);
-      if (!_isEmptyListPref(local)) continue; // keep the device's own list
+      final String? next = _isEmptyListPref(local)
+          ? src
+          : _unionLocalAudioEntries(
+              local: local!,
+              src: src!,
+              onlyLocalAudioKind: key == 'audio_source_configs',
+            );
+      if (next == null || next == local) continue;
       await _db.customStatement(
         'INSERT OR REPLACE INTO preferences ("key", "value") VALUES (?, ?)',
-        <Object?>[key, src],
+        <Object?>[key, next],
       );
+    }
+  }
+
+  /// Internal local-audio copies are named `local_audio_<digits>.db` and land
+  /// flat in the support dir with the SAME name on every device, so the
+  /// filename is their identity across machines (timestamp + pid naming makes
+  /// two different files with one name practically impossible).
+  static final RegExp _internalLocalAudioName = RegExp(
+    r'^local_audio_\d+\.db$',
+  );
+
+  /// Identity of a local-audio registry entry's [path]: the filename for an
+  /// internal copy (paths differ per device, the name does not), the full path
+  /// for an external reference. Null when there is no usable path.
+  static String? _localAudioIdentity(Object? path) {
+    if (path is! String || path.isEmpty) return null;
+    final String name = path.replaceAll(r'\', '/').split('/').last;
+    return _internalLocalAudioName.hasMatch(name) ? name : path;
+  }
+
+  /// Appends to the device's [local] list (a PrefCodec-tagged JSON list) every
+  /// entry of the backup's [src] list that points at a local-audio DB the
+  /// device does not already register. [onlyLocalAudioKind] restricts the
+  /// typed `audio_source_configs` union to `kind: localAudio` rows — remote /
+  /// built-in sources are this device's own settings and are never imported by
+  /// a merge. Entries without a path are skipped (nothing to point at). Returns
+  /// [local] unchanged when nothing is added or either value is unparsable
+  /// (never clobber local with a guess).
+  static String _unionLocalAudioEntries({
+    required String local,
+    required String src,
+    required bool onlyLocalAudioKind,
+  }) {
+    final ({String tag, String body}) localSplit = splitPrefTag(local);
+    try {
+      final Object? localDecoded = jsonDecode(localSplit.body);
+      final Object? srcDecoded = jsonDecode(splitPrefTag(src).body);
+      if (localDecoded is! List || srcDecoded is! List) return local;
+      bool isLocalAudio(Object? e) =>
+          !onlyLocalAudioKind ||
+          (e is Map && e['kind'] == AudioSourceKind.localAudio.wireName);
+      final Set<String> have = <String>{
+        for (final Object? e in localDecoded)
+          if (e is Map && isLocalAudio(e)) ?_localAudioIdentity(e['path']),
+      };
+      final List<Object?> added = <Object?>[];
+      for (final Object? e in srcDecoded) {
+        if (e is! Map || !isLocalAudio(e)) continue;
+        final String? id = _localAudioIdentity(e['path']);
+        if (id == null || !have.add(id)) continue;
+        added.add(e);
+      }
+      if (added.isEmpty) return local;
+      return joinPrefTag(
+        localSplit.tag,
+        jsonEncode(<Object?>[...localDecoded, ...added]),
+      );
+    } on FormatException {
+      return local;
     }
   }
 
@@ -2290,6 +2618,13 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       'music_disc_sources',
       // v131：OP / ED 声纹比对缓存——本机文件的实测结果，必须本机重算。
       'video_theme_song_spans',
+      // v163：作品图谱 AI 裁决缓存——本机配的模型给的结论，设备本地。
+      'media_link_ai_verdicts',
+      // v165：视频内容指纹——本机文件算出来的，必须本机重算。
+      'video_content_fingerprints',
+      // v172：本地 MV 自动匹配缓存——本机文件算出来的，必须本机重算。
+      'music_video_prints',
+      'music_video_match_checks',
       // v135：游戏 VNDB 配音表缓存——本机取得的缓存，按需重取。
       'game_voice_casts',
       // v133：音乐刮削三表（键含本机路径派生的 track_uid），设备本地。
@@ -2301,37 +2636,56 @@ List<String> mergeSkippedDeviceLocalTableNames() =>
       // v137：字幕书与远端音频的绑定。服务器配置 id 只在本机设置里有意义，合并进来
       // 只会造出指向不存在服务器的绑定。
       'remote_audio_bindings',
+      // v153：服务器托管词典的本机目录。键含本机配对的 hostId（老配对是本机记的服务器
+      // 地址），目录列由本机刷新建立；顺序 / 开关随配置快照走，不靠备份合并。
+      'remote_dictionary_metadata',
     ]);
 
-/// 把备份 [source] 里的 SRS 数据按 `profiles.uid` 归位并入本机（铁律 E，规则见
-/// [mergeSrsFromBackup]）：profile 行写主库 [db]，事件写本机 srs.db [localSrs]。合并导入
-/// （[BackupMergeEngine]）与覆盖恢复里「复习勾了、配置档案没来自备份」的那条路径共用
-/// 这一个入口。新建的「（备份）」Profile 与通用路径一样直接插 profiles 行。
-/// 老形态的源（ATTACH 的备份主库）须已迁到当前 schema。
-Future<void> mergeSrsIntoLocal({
+/// 把备份里的复习数据（[units]）按 profile uid / 名字对上本机 profile 落进本机新代库 [localSrs]（铁律 E 新代口径，规则
+/// 见 [mergeSrsFromBackup]）：profile 行写主库 [db]。合并导入与覆盖还原（[freshLibrary]：目标是新建的空库）共用这一个
+/// 入口。新建的「（备份）」profile 与通用路径一样直接插 profiles 行。[confirmed] 见 [mergeSrsFromBackup]。
+Future<List<SrsBackupMergeResult>> mergeSrsIntoLocal({
   required FushiDatabase db,
-  required SrsStorage localSrs,
-  required SrsBackupSource source,
+  required SrsCore localSrs,
+  required List<SrsBackupLandUnit> units,
+  required bool confirmed,
+  bool freshLibrary = false,
+}) => mergeSrsFromBackup(
+  units: units,
+  localProfiles: () => srsLocalProfilesOf(db),
+  localSrs: localSrs,
+  confirmed: confirmed,
+  freshLibrary: freshLibrary,
+  nowMs: DateTime.now().millisecondsSinceEpoch,
+  createProfile: (String name, String uid) =>
+      insertSrsRestoredProfile(db, name: name, uid: uid),
+);
+
+/// 插一个 profile 行「[name]」并让它用 uid [uid]（备份复习数据新建的「（备份）」profile），回自增 id。这个 uid 已经
+/// 有行时不重复插（覆盖还原的启动恢复会重放），回那一行的 id。
+Future<int> insertSrsRestoredProfile(
+  FushiDatabase db, {
+  required String name,
+  required String uid,
 }) async {
-  final String deviceId = await SyncRepository(db).getOrCreateDeviceId();
-  await mergeSrsFromBackup(
-    source: source,
-    local: db,
-    localSrs: localSrs,
-    deviceId: deviceId,
-    createProfile: (String name) async {
-      final int now = DateTime.now().millisecondsSinceEpoch;
-      await db.customStatement(
-        'INSERT INTO main.profiles (name, created_at, updated_at) '
-        'VALUES (?, ?, ?)',
-        <Object>[name, now, now],
-      );
-      final QueryRow row = await db
-          .customSelect('SELECT last_insert_rowid() AS id')
-          .getSingle();
-      return row.read<int>('id');
-    },
+  final QueryRow? existing = await db
+      .customSelect(
+        'SELECT id FROM main.profiles WHERE uid = ?',
+        variables: <Variable<Object>>[Variable<String>(uid)],
+      )
+      .getSingleOrNull();
+  if (existing != null) return existing.read<int>('id');
+  final int now = DateTime.now().millisecondsSinceEpoch;
+  await db.customStatement(
+    'INSERT INTO main.profiles (name, created_at, updated_at) '
+    'VALUES (?, ?, ?)',
+    <Object>[name, now, now],
   );
+  final int id =
+      (await db.customSelect('SELECT last_insert_rowid() AS id').getSingle())
+          .read<int>('id');
+  await db.adoptProfileUid(id, uid);
+  return id;
 }
 
 /// Read-only summary of what a backup MERGE import would change on this device

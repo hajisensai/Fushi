@@ -14,6 +14,8 @@
 /// 从此是普通本地视频，进度与合集归属不变。
 library;
 
+export 'package:fushi/src/media/video/online/anime_source_book_spec.dart';
+
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -35,7 +37,9 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/media/manga/mihon/mihon_manager.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_models.dart';
+import 'package:fushi/src/media/video/online/anime_source_book_spec.dart';
 import 'package:fushi/src/media/media_cover_service.dart';
+import 'package:fushi/src/media/video/online/anime_source_launch.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/interconnect_download_manager.dart';
@@ -43,65 +47,7 @@ import 'package:fushi/src/sync/remote_video_client.dart'
     show RemoteDownloadCancelled;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-/// 在线视频源入库集的重开规格（落 `VideoBooks.streamSpecJson`）。
-@immutable
-class AnimeSourceBookSpec {
-  const AnimeSourceBookSpec({
-    required this.extensionPackage,
-    required this.sourceId,
-    required this.anime,
-    required this.episode,
-  });
-
-  /// spec 的类型标记：与 TODO-1157 的直链 spec（`StreamVideoSpec`）同列共存，
-  /// 那边的 `fromStorageJson` 读到未知键只会得到空 spec，不会误用。
-  static const String kind = 'anime-source';
-
-  final String extensionPackage;
-  final String sourceId;
-  final MihonAnime anime;
-  final MihonEpisode episode;
-
-  String encode() => jsonEncode(<String, Object?>{
-    'kind': kind,
-    'extensionPackage': extensionPackage,
-    'sourceId': sourceId,
-    'anime': anime.toJson(),
-    'episode': episode.toJson(),
-  });
-
-  /// 解析失败（不是本种 spec / 旧数据 / 坏 JSON）返回 null，**绝不抛**。
-  static AnimeSourceBookSpec? tryParse(String? raw) {
-    if (raw == null || raw.isEmpty) return null;
-    try {
-      final Object? decoded = jsonDecode(raw);
-      if (decoded is! Map<String, Object?> || decoded['kind'] != kind) {
-        return null;
-      }
-      final Object? anime = decoded['anime'];
-      final Object? episode = decoded['episode'];
-      final String package = decoded['extensionPackage']?.toString() ?? '';
-      final String source = decoded['sourceId']?.toString() ?? '';
-      if (anime is! Map || episode is! Map || package.isEmpty) return null;
-      return AnimeSourceBookSpec(
-        extensionPackage: package,
-        sourceId: source,
-        anime: MihonAnime.fromJson(anime.cast<String, Object?>()),
-        episode: MihonEpisode.fromJson(episode.cast<String, Object?>()),
-      );
-    } on Object {
-      // 行上的数据来自扩展 / 备份 / 旧版本：字段类型不对（`status: "ongoing"`）会在
-      // `fromJson` 的强转里抛 TypeError，一样按「不是可用的规格」处理。
-      return null;
-    }
-  }
-
-  /// 同一部作品（同扩展、同源、同作品 URL）。
-  bool sameWorkAs(AnimeSourceBookSpec other) =>
-      extensionPackage == other.extensionPackage &&
-      sourceId == other.sourceId &&
-      anime.url == other.anime.url;
-}
+export 'package:fushi/src/media/video/online/anime_source_launch.dart';
 
 /// 一集的可读标签（`videoPath` 末段 / 下载文件名）：作品名 - E03。
 String animeSourceEpisodeLabel(MihonAnime anime, MihonEpisode episode) {
@@ -185,15 +131,29 @@ class AnimeSourceLibrary {
   }
 
   /// 加入媒体库：每集一行在线行，归进作品合集。已在库的集跳过（刷新后只补新集，
-  /// 不动已看 / 已下载的行）。返回新加的集数。
+  /// 不动已看 / 已下载的行）。返回新加的集数。用户亲手点的：用户删过的作品合集
+  /// 就此重建（BUG-5014）。
   Future<int> addToLibrary(AnimeSourceVideoClient client) async =>
-      (await addMissing(client)).length;
+      (await addMissing(client, userIntent: true)).length;
 
   /// [addToLibrary] 的本体：返回这次新加的集（后台库更新探针据此投递新集提醒，
-  /// 见 `video_library_update_probe.dart`）。
+  /// 见 `video_library_update_probe.dart`）。探针是被动刷新，[userIntent] 保持
+  /// false——用户删掉的合集不被它复活。
+  ///
+  /// 登记成库的后台工作（BUG-5387 审查遗留）：入库要联网取封面、逐集写行，探针在后台
+  /// 跑——换库时关库等它停稳，它的 SQL 与封面请求随关库中断。
   Future<List<RemoteVideoInfo>> addMissing(
-    AnimeSourceVideoClient client,
-  ) async {
+    AnimeSourceVideoClient client, {
+    bool userIntent = false,
+  }) => database.runBackgroundWork<List<RemoteVideoInfo>>(
+    'animeSource.addToLibrary',
+    (DatabaseWorkToken _) => _addMissingInWork(client, userIntent: userIntent),
+  );
+
+  Future<List<RemoteVideoInfo>> _addMissingInWork(
+    AnimeSourceVideoClient client, {
+    required bool userIntent,
+  }) async {
     final RemoteCollectionAdoptionService adoption =
         RemoteCollectionAdoptionService(database);
     final List<RemoteVideoInfo> infos = client.remoteVideos;
@@ -222,7 +182,7 @@ class AnimeSourceLibrary {
         addedInfos.add(info);
       }
       // 已在库的集也重新收养一次：合集被用户删掉后重新加入能回到合集里。
-      await adoption.adoptVideo(info);
+      await adoption.adoptVideo(info, userIntent: userIntent);
     }
     if (added.isNotEmpty) {
       await repository.recordVideoImportActivity(
@@ -250,7 +210,19 @@ class AnimeSourceLibrary {
 
   /// 下载完成：把 [file] 登记成本地视频行（同 bookUid 覆盖在线行），归进作品合集，
   /// 补封面与默认字幕，并把在线播放留下的断点接过来（见 [onlinePositionReader]）。
+  /// 下载是用户亲手发起的：用户删过的作品合集就此重建（BUG-5014）。
+  ///
+  /// 下载完成后的登记是后台写手（取默认字幕要联网），同样登记成库的后台工作。
   Future<void> registerDownloaded(
+    AnimeSourceVideoClient client,
+    RemoteVideoInfo info,
+    File file,
+  ) => database.runBackgroundWork<void>(
+    'animeSource.registerDownloaded',
+    (DatabaseWorkToken _) => _registerDownloadedInWork(client, info, file),
+  );
+
+  Future<void> _registerDownloadedInWork(
     AnimeSourceVideoClient client,
     RemoteVideoInfo info,
     File file,
@@ -296,7 +268,9 @@ class AnimeSourceLibrary {
         ),
       ),
     );
-    await RemoteCollectionAdoptionService(database).adoptVideo(info);
+    await RemoteCollectionAdoptionService(
+      database,
+    ).adoptVideo(info, userIntent: true);
     if (existing?.coverPath == null) {
       await _applyCovers(client, <String>[info.id]);
     }
@@ -385,7 +359,7 @@ class AnimeSourceLibrary {
   }) async {
     final VideoScrapeOperationLease? lease =
         VideoScrapeOperationGate.tryEnterOperation();
-    if (lease == null) throw StateError('视频刮削资料正在清理');
+    if (lease == null) throw VideoScrapeMaintenanceActiveError();
     try {
       return await VideoCoverMutationGate.runExclusive(() async {
         if (bytes != null) {
@@ -492,65 +466,13 @@ buildAnimeSourceLaunch({
       ..clear()
       ..add((bookUid: row.bookUid, episode: spec.episode));
   }
-  // 起播只要本地已装的扩展与源行：只读库（reload），不走 initialise()——那条会
-  // 联网刷新仓库索引（慢网 / 仓库站点不通时一挂就是几十秒），扩展装没装跟它无关。
-  // 真实 app 里 manager 首次取用时已在后台跑 initialise，这里不等它。
-  await manager.reload();
-  MangaOnlineSourceRow? sourceRow;
-  for (final MangaOnlineSourceRow candidate in manager.sources) {
-    if (candidate.extensionPackage == spec.extensionPackage &&
-        candidate.sourceId == spec.sourceId &&
-        candidate.enabled) {
-      sourceRow = candidate;
-      break;
-    }
-  }
-  if (sourceRow == null) {
-    throw AnimeSourceLaunchUnavailable(
-      'extension ${spec.extensionPackage} / source ${spec.sourceId} '
-      'is not installed or enabled',
-    );
-  }
-  final MihonSourceContext context;
-  try {
-    context = await manager.contextForSource(sourceRow);
-  } on Object catch (error) {
-    throw AnimeSourceLaunchUnavailable('$error');
-  }
-  final AnimeSourceVideoClient client = AnimeSourceVideoClient(
+  return launchAnimeSourceMembers(
+    spec: spec,
+    members: members,
+    startBookUid: row.bookUid,
     manager: manager,
-    context: context,
-    anime: spec.anime,
-    episodes: <MihonEpisode>[
-      for (final ({String bookUid, MihonEpisode episode}) m in members)
-        m.episode,
-    ],
-    episodeIds: <String>[
-      for (final ({String bookUid, MihonEpisode episode}) m in members)
-        m.bookUid,
-    ],
     subtitleLanguageResolver: subtitleLanguageResolver,
   );
-  final List<RemoteVideoInfo> infos = client.remoteVideos;
-  final int startIndex = infos.indexWhere(
-    (RemoteVideoInfo info) => info.id == row.bookUid,
-  );
-  return (
-    client: client,
-    info: infos[startIndex < 0 ? 0 : startIndex],
-    members: infos,
-    startIndex: startIndex < 0 ? 0 : startIndex,
-  );
-}
-
-/// 在线行重开不了：扩展被卸载 / 停用，或行上的规格坏了。
-class AnimeSourceLaunchUnavailable implements Exception {
-  const AnimeSourceLaunchUnavailable(this.message);
-
-  final String message;
-
-  @override
-  String toString() => 'AnimeSourceLaunchUnavailable: $message';
 }
 
 /// 下载落点文件名：可读标签 + 集 id 的哈希（与互联下载同一命名口径：标题只为好认，

@@ -52,14 +52,18 @@ final class MusicPluginVaultKey {
   MusicPluginVaultKey({
     required this.vaultRoot,
     required MusicPluginSecretStore store,
+    this.secretName = storageKey,
     bool? osManaged,
     Random? random,
   }) : _store = store,
        _osManaged = osManaged ?? Platform.isWindows,
        _random = random ?? Random.secure();
 
-  /// 安全存储里的条目名。
+  /// 音乐插件保险库在安全存储里的条目名（[secretName] 缺省值）。
   static const String storageKey = 'fushi.music_plugins.vault_key.v1';
+
+  /// 本实例在安全存储里的条目名：每个插件体系（音乐 / 追踪）各用各的，互不共用密钥。
+  final String secretName;
 
   final String vaultRoot;
   final MusicPluginSecretStore _store;
@@ -80,7 +84,7 @@ final class MusicPluginVaultKey {
   }
 
   Future<Uint8List> _load() async {
-    final Uint8List? stored = _decode(await _store.read(storageKey));
+    final Uint8List? stored = _decode(await _store.read(secretName));
     final Uint8List? legacy = _decode(
       (await _native(<String, Object?>{'op': 'legacyKey'}))['value'] as String?,
     );
@@ -106,10 +110,10 @@ final class MusicPluginVaultKey {
   /// 写进安全存储并读回核对；对不上抛错（不能拿一把没存住的密钥去加密）。
   Future<void> _persist(Uint8List key) async {
     final String encoded = base64.encode(key);
-    await _store.write(storageKey, encoded);
-    final Uint8List? back = _decode(await _store.read(storageKey));
+    await _store.write(secretName, encoded);
+    final Uint8List? back = _decode(await _store.read(secretName));
     if (back == null || !_same(back, key)) {
-      throw StateError('系统安全存储没有存住音乐插件凭据密钥');
+      throw StateError('系统安全存储没有存住插件凭据密钥（$secretName）');
     }
   }
 

@@ -5,6 +5,7 @@ import 'dart:ui' show Rect, Size;
 import 'package:fushi/src/media/audiobook/mining_sentence_draft.dart';
 import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_layout.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
 import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show VideoMiningImageMode;
@@ -41,6 +42,9 @@ class FakeAdvancedMiningHost {
 
   /// 每次成功起播交回的句柄（按顺序）；测试调 `finish` 模拟「这段播完了」。
   final List<RangePlayback> playbacks = <RangePlayback>[];
+
+  /// 非 null 时 describe 卡在这里，模拟宿主算区间还在途（返回值按调用时的偏移算）。
+  Completer<void>? describeGate;
 
   /// 非 null 时 preview 卡在这里，模拟起播（seek → play）还在途。
   Completer<void>? previewGate;
@@ -88,12 +92,20 @@ class FakeAdvancedMiningHost {
   final List<Set<String>> setVisibleFieldsCalls = <Set<String>>[];
   int closedCalls = 0;
 
+  // ── 布局（反馈 aZ99bm9R6K）──
+  /// 宿主记住的布局；null = 从没改过（对话框用默认布局）。
+  AdvancedMiningLayout? layout;
+  final List<AdvancedMiningLayout> setLayoutCalls = <AdvancedMiningLayout>[];
+
   // ── 视频 ──
   final List<int> frameRequests = <int>[];
 
   // ── 漫画 ──
   final List<int> suggestionLoads = <int>[];
   StreamController<int>? downloadController;
+
+  /// false 模拟旧宿主：预览里不带 `prevOriginal` / `nextOriginal`。
+  bool sendOriginals = true;
 
   Map<String, Object?> preview() {
     final List<String> prev = <String>[
@@ -120,6 +132,10 @@ class FakeAdvancedMiningHost {
       'nextRemoved': <bool>[
         for (int i = 0; i < nextCount; i++) nextRemoved[i] ?? false,
       ],
+      if (sendOriginals) ...<String, Object?>{
+        'prevOriginal': <String>[for (int i = 0; i < prevCount; i++) 'まえ$i。'],
+        'nextOriginal': <String>[for (int i = 0; i < nextCount; i++) 'あと$i。'],
+      },
       'total': prev.length + next.length - removed,
     };
   }
@@ -158,6 +174,8 @@ class FakeAdvancedMiningHost {
   AdvancedMiningAudioSection audio() => AdvancedMiningAudioSection(
     describe: (int s, int e) async {
       describeCalls.add(<int>[s, e]);
+      final Completer<void>? gate = describeGate;
+      if (gate != null) await gate.future;
       if (!audioAvailable) return null;
       final int count = prevCount + 1 + nextCount;
       return AdvancedMiningAudioWindow(
@@ -221,7 +239,9 @@ class FakeAdvancedMiningHost {
     Uint8List? pageBytes,
     MangaCropSuggestions? suggestions = mangaSuggestions,
     bool downloadable = true,
+    AdvancedMiningCropSource source = AdvancedMiningCropSource.mangaPage,
   }) => AdvancedMiningMangaImageSection(
+    source: source,
     loadPage: () async => pageBytes,
     loadSuggestions: () async {
       suggestionLoads.add(suggestionLoads.length);
@@ -317,6 +337,11 @@ class FakeAdvancedMiningHost {
     deck: deck,
     fields: fields,
     wordAudio: wordAudio,
+    layout: layout,
+    setLayout: (AdvancedMiningLayout next) async {
+      setLayoutCalls.add(next);
+      layout = next;
+    },
     sections: AdvancedMiningSections(
       sentence: sentence,
       audio: audio,
@@ -348,9 +373,14 @@ class FakeAdvancedMiningHost {
   AdvancedMiningCapabilities mangaPage({
     bool modelAvailable = true,
     Uint8List? pageBytes,
+    AdvancedMiningCropSource source = AdvancedMiningCropSource.mangaPage,
   }) => capabilities(
     deck: deck(),
     sentence: sentence(),
-    manga: manga(modelAvailable: modelAvailable, pageBytes: pageBytes),
+    manga: manga(
+      modelAvailable: modelAvailable,
+      pageBytes: pageBytes,
+      source: source,
+    ),
   );
 }

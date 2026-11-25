@@ -120,6 +120,8 @@ void main() {
         if (request.url.host == '127.0.0.1') return http.Response('down', 503);
         return http.Response(jsonEncode(<String, dynamic>{'ok': true}), 200);
       }),
+      // 两条明文地址的 ping 身份核对都通过（V-B4）。
+      probe: (FushiClientUrl candidate, String? hostId) async => hostId == 'A',
     );
     final InterconnectPostOutcome outcome = await transport.post(
       path: '/api/probe',

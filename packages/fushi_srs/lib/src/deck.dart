@@ -30,6 +30,93 @@ enum SrsNewCardOrder {
   }
 }
 
+/// 复习顺序（牌组设置 [SrsFieldKeys.deckReviewOrder]）。排序规则只在 Rust（`store/study.rs` `ReviewOrder`）：
+/// 除 [retrievability] 外都是一天内不变的静态键，同键按当天哈希断平。随参数继承走 own 祖先；
+/// own 祖先按 RWKV 排程时整棵子树固定按 [retrievability]。
+enum SrsReviewCardOrder {
+  /// 此刻可提取度从低到高（最可能忘的先出；缺省，加这项设置之前的行为）。
+  retrievability('retrievability'),
+
+  /// 到期日从早到晚。
+  dueDate('dueDate'),
+
+  /// 难度从高到低（最难的先出），没有难度的排最后。
+  difficulty('difficulty'),
+
+  /// 间隔从短到长。
+  intervalAscending('intervalAscending'),
+
+  /// 随机（每天换一次）。
+  random('random');
+
+  const SrsReviewCardOrder(this.wire);
+
+  final String wire;
+
+  /// 缺省与不认识的值（更新版本加的新顺序）都按 [retrievability]（与 Rust 同一条回落）。
+  static SrsReviewCardOrder fromWire(String? wire) {
+    for (final SrsReviewCardOrder o in values) {
+      if (o.wire == wire) return o;
+    }
+    return retrievability;
+  }
+}
+
+/// 新卡与复习怎么排（牌组设置 [SrsFieldKeys.deckNewMix]）。规则只在 Rust（`store/study.rs` `NewMix`）；
+/// 三种都是到期的学习卡最先。随参数继承走 own 祖先。
+enum SrsNewCardMix {
+  /// 复习全部出完再出新卡（缺省，加这项设置之前的行为）。
+  afterReviews('afterReviews'),
+
+  /// 新卡先出，新卡上限用完后再出复习。
+  beforeReviews('beforeReviews'),
+
+  /// 按今天的新卡 / 复习总量均匀穿插。
+  mixed('mixed');
+
+  const SrsNewCardMix(this.wire);
+
+  final String wire;
+
+  /// 缺省与不认识的值都按 [afterReviews]（与 Rust 同一条回落）。
+  static SrsNewCardMix fromWire(String? wire) {
+    for (final SrsNewCardMix m in values) {
+      if (m.wire == wire) return m;
+    }
+    return afterReviews;
+  }
+}
+
+/// 每日复习上限与 RWKV「每天最少复习数」按什么计（牌组设置 [SrsFieldKeys.deckLimitUnit]）。规则只在 Rust
+/// （`store/study.rs` `LimitUnit`）：三种都只看今天的复习作答（作答时卡在复习队列；新卡与学习 / 重学步长上的
+/// 作答不算），数值仍存在 [SrsFieldKeys.deckLimits] 的 `review` / [SrsRwkvQueueSettings.minReviewsPerDay] 里。
+/// 上限是牌组自己的值（不随参数继承），单位也是；「每天最少」随参数继承，用参数归属牌组的单位。
+enum SrsLimitUnit {
+  /// 今天的复习作答次数，同一张卡答几次算几次（缺省；没写过单位的存量牌组也按它算）。
+  reviews('reviews'),
+
+  /// 今天复习过的不同卡片数（加这项设置之前的口径）。
+  cards('cards'),
+
+  /// 今天复习作答用时之和，单位分钟：用满就不再出复习卡（不预估以后的耗时）。
+  minutes('minutes');
+
+  const SrsLimitUnit(this.wire);
+
+  final String wire;
+
+  /// 缺省与不认识的值都按 [reviews]（与 Rust 同一条回落）。
+  static SrsLimitUnit fromWire(String? wire) {
+    for (final SrsLimitUnit u in values) {
+      if (u.wire == wire) return u;
+    }
+    return reviews;
+  }
+
+  /// 按数量计（次数 / 卡片数）：「复习上限至少新卡 10 倍」这类按张数换算的提示只在这时成立。
+  bool get counts => this != minutes;
+}
+
 /// 一种算法的参数组（整体一个字段键，按铁律 H 设置类合并）。
 class SrsParamSet {
   const SrsParamSet({
@@ -89,9 +176,10 @@ class SrsRwkvQueueSettings {
   /// 每天最少复习数的参考值：每日复习上限的 1/5（上限 200 → 40）。
   static int recommendedMinReviews(int reviewsPerDay) => reviewsPerDay ~/ 5;
 
-  /// 每天最少复习数：今天在共用这套设置（同一个参数归属牌组，`SrsDeckTree.paramsOwner`）的牌组里复习过的卡
-  /// 不到这个数时，从回忆率高于目标保留率（本不该出）的复习卡里按回忆率从低到高补足。随参数继承的子牌组共用
-  /// 一份配额，不是每个子牌组各补一份。0 = 不启用。
+  /// 每天最少复习数：今天在共用这套设置（同一个参数归属牌组，`SrsDeckTree.paramsOwner`）的牌组里复习的量
+  /// （按归属牌组的 [SrsDeckView.limitUnit]：作答次数 / 卡片数 / 分钟）不到这个数时，从回忆率高于目标保留率
+  /// （本不该出）的复习卡里按回忆率从低到高补足。随参数继承的子牌组共用一份配额，不是每个子牌组各补一份。
+  /// 0 = 不启用。
   final int minReviewsPerDay;
 
   /// 同日重复：今天答过的卡，之后这组牌组里别的卡至少要有这么多次作答才再出。
@@ -188,7 +276,8 @@ class SrsNewCardPlan {
   });
 
   /// 按复习量自动调整新卡（规则在 Rust 排队内核 native/fushi_fsrs/src/store/study.rs
-  /// `new_card_budget`，读牌组视图的 `npl`）。
+  /// `new_card_budget`，读牌组视图的 `npl`）。按 RWKV 排程的牌组下不生效（值照存，
+  /// 切回 FSRS 恢复）；RWKV 牌组也不计入 FSRS 祖先的复习负荷。
   final bool autoLoad;
 
   /// 复习预算 = 最近 30 天日均复习数 × [budgetPercent]%。
@@ -373,6 +462,8 @@ class SrsDeckView {
     required this.ownParams,
     required this.newPerDay,
     required this.reviewsPerDay,
+    this.limitUnit = SrsLimitUnit.reviews,
+    this.limitUnitSet = true,
     required this.learnSteps,
     required this.relearnSteps,
     this.learnStepsSet = true,
@@ -388,6 +479,8 @@ class SrsDeckView {
     this.replayQuestionAudio = true,
     this.rwkvQueue = const SrsRwkvQueueSettings(),
     this.newCardOrder = SrsNewCardOrder.frequency,
+    this.reviewCardOrder = SrsReviewCardOrder.retrievability,
+    this.newCardMix = SrsNewCardMix.afterReviews,
     this.newCardPlan = const SrsNewCardPlan(),
     this.limitExtension,
     required this.optimizeBaselineAt,
@@ -415,6 +508,15 @@ class SrsDeckView {
   final bool ownParams;
   final int newPerDay;
   final int reviewsPerDay;
+
+  /// [reviewsPerDay] 的单位；参数归属牌组上的这一项同时是 [SrsRwkvQueueSettings.minReviewsPerDay] 的单位。
+  /// 牌组自己的值（同 [newPerDay]）。
+  final SrsLimitUnit limitUnit;
+
+  /// 牌组上写过 [SrsFieldKeys.deckLimitUnit]。没写过、又在本机升级到懂单位的版本之前用过的牌组以前按卡片数计、
+  /// 现在按缺省的作答次数计，牌组页据此提醒一次（`SrsDbStore.limitUnitLegacyDecks`），用户选「保持按卡片数」
+  /// 写 cards、否则写 reviews，写过就不再提醒。新建牌组（`SrsDbStore.createDeck`、导入新建）直接写 reviews。
+  final bool limitUnitSet;
   final List<double> learnSteps;
   final List<double> relearnSteps;
 
@@ -471,6 +573,13 @@ class SrsDeckView {
 
   /// 新卡出卡顺序。只看 own 祖先上的值（[SrsDeckTree.paramsOwner]）。
   final SrsNewCardOrder newCardOrder;
+
+  /// 复习顺序（寄存器里存的值）。只看 own 祖先上的值（[SrsDeckTree.paramsOwner]）；own 祖先按 RWKV 排程时
+  /// 实际按可提取度出卡，这里照存不改。
+  final SrsReviewCardOrder reviewCardOrder;
+
+  /// 新卡与复习怎么排。只看 own 祖先上的值（[SrsDeckTree.paramsOwner]）。
+  final SrsNewCardMix newCardMix;
 
   /// 每周新卡任务与按复习量自动调整。牌组自己的值（同 [newPerDay]）。
   final SrsNewCardPlan newCardPlan;

@@ -9,6 +9,7 @@ import 'package:fushi_engine/media/discovery/discovery_models.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_archive_extractor.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_executor.dart';
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart';
+import 'package:fushi_engine/utils/archive/archive_passwords.dart';
 
 DiscoveryDomainImporters _recordingImporters(List<String> log) {
   return DiscoveryDomainImporters(
@@ -225,14 +226,14 @@ void main() {
     expect(log.single, isNot(contains('unins')));
   });
 
-  test('缺 7-Zip 时 7z 包给稳定原因码', () async {
+  test('缺 7-Zip 时 rar 包给稳定原因码（zip / 7z 由原生库解，不需要 7-Zip）', () async {
     final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
       importers: _recordingImporters(<String>[]),
       extractor: DiscoveryArchiveExtractor(sevenZipOverride: ''),
       subtitleLangCode: 'ja',
     );
-    final File archive = File('${tempDir.path}${Platform.pathSeparator}x.7z');
-    await archive.writeAsBytes(<int>[0x37, 0x7a]);
+    final File archive = File('${tempDir.path}${Platform.pathSeparator}x.rar');
+    await archive.writeAsBytes(<int>[0x52, 0x61, 0x72]);
 
     expect(
       () => executor.importFile(DiscoveryMediaKind.game, archive),
@@ -250,9 +251,9 @@ void main() {
     final List<List<String>> calls = <List<String>>[];
     final DiscoveryArchiveExtractor extractor = DiscoveryArchiveExtractor(
       sevenZipOverride: '/fake/7za',
-      runProcess: (String exe, List<String> args) async {
+      runProcess: (String exe, List<String> args, {String? stdin}) async {
         calls.add(<String>[exe, ...args]);
-        return ProcessResult(0, 2, '', 'wrong password');
+        return ProcessResult(0, 2, '', 'ERROR: Data Error');
       },
     );
     final File archive = File('${tempDir.path}${Platform.pathSeparator}p.rar');
@@ -268,10 +269,78 @@ void main() {
         ),
       ),
     );
+    // 先列目录（顺带判是否加密），列目录就失败了不再解压。
     expect(calls.single.first, '/fake/7za');
-    expect(calls.single, contains('x'));
+    expect(calls.single[1], 'l');
     expect(calls.single, contains(archive.path));
   });
+
+  test('rar 条目表加密且没有口令来源 → archivePasswordRequired', () async {
+    final DiscoveryArchiveExtractor extractor = DiscoveryArchiveExtractor(
+      sevenZipOverride: '/fake/7za',
+      runProcess: (String exe, List<String> args, {String? stdin}) async =>
+          ProcessResult(
+            0,
+            2,
+            '',
+            'ERROR: p.rar : Can not open encrypted archive. Wrong password?',
+          ),
+    );
+    final File archive = File('${tempDir.path}${Platform.pathSeparator}p.rar');
+    await archive.writeAsBytes(<int>[0x52, 0x61, 0x72]);
+    await expectLater(
+      extractor.extract(archive.path, intoDir: '${tempDir.path}/out'),
+      throwsA(
+        isA<DiscoveryImportBlockedException>().having(
+          (DiscoveryImportBlockedException e) => e.blocker,
+          'blocker',
+          DiscoveryImportBlocker.archivePasswordRequired,
+        ),
+      ),
+    );
+  });
+
+  for (final String fixture in <String>['header_encrypted.7z', 'aes256.zip']) {
+    test('加密 $fixture：经口令来源解开后照常分类入库', () async {
+      final File archive = File(
+        '${tempDir.path}${Platform.pathSeparator}$fixture',
+      );
+      File(
+        '../packages/fushi_compute/test/fixtures/archive/$fixture',
+      ).copySync(archive.path);
+      final List<String> log = <String>[];
+      final _OnePassword passwords = _OnePassword('fushi-pw');
+      final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
+        importers: _recordingImporters(log),
+        extractor: DiscoveryArchiveExtractor(passwords: passwords),
+        subtitleLangCode: 'ja',
+      );
+      final DiscoveryImportOutcome outcome = await executor.importFile(
+        DiscoveryMediaKind.novel,
+        archive,
+      );
+      expect(passwords.asked, 1);
+      expect(outcome.importedCount, 1);
+      expect(log.single, startsWith('text:'));
+      expect(log.single, endsWith('读我.txt'));
+
+      // 取消口令对话框 → 稳定原因码，不是「解压失败」。
+      await expectLater(
+        DiscoveryImportExecutor(
+          importers: _recordingImporters(<String>[]),
+          extractor: DiscoveryArchiveExtractor(passwords: _OnePassword(null)),
+          subtitleLangCode: 'ja',
+        ).importFile(DiscoveryMediaKind.novel, archive),
+        throwsA(
+          isA<DiscoveryImportBlockedException>().having(
+            (DiscoveryImportBlockedException e) => e.blocker,
+            'blocker',
+            DiscoveryImportBlocker.archivePasswordRequired,
+          ),
+        ),
+      );
+    });
+  }
 
   test('恶意 zip(条目带 ..)被拒', () async {
     final DiscoveryImportExecutor executor = DiscoveryImportExecutor(
@@ -405,4 +474,28 @@ void main() {
       expect(log.single, startsWith('audiobook:'));
     });
   });
+}
+
+/// 每次都答同一个口令（null = 取消）的口令来源。
+final class _OnePassword implements ArchivePasswordProvider {
+  _OnePassword(this.password);
+
+  final String? password;
+  int asked = 0;
+
+  @override
+  Future<ArchivePasswordAnswer?> ask(ArchivePasswordRequest request) async {
+    asked++;
+    final String? value = password;
+    return value == null ? null : ArchivePasswordAnswer(value);
+  }
+
+  @override
+  Future<void> forget(String fingerprint) async {}
+
+  @override
+  Future<void> remember(String fingerprint, String password) async {}
+
+  @override
+  Future<String?> remembered(String fingerprint) async => null;
 }

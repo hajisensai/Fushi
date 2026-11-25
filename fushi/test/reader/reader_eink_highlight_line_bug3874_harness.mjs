@@ -4,21 +4,28 @@
 // production reader CSS (einkMode) + engine shell + selection script in real Chrome, plays the
 // cue, then scans the band just outside each cue line on its block-end side (left of a vertical
 // column, below a horizontal line) pixel by pixel along the line.
-import fs from 'node:fs';
 import zlib from 'node:zlib';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const payload = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
 // The only argument is the temp payload file the Dart test just wrote.
-const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));  // NOSONAR: S8707 path comes from the Dart test harness
 
 // Play the cue and return one band per visual line of cue text, plus what the engine paints.
 const PLAY = String.raw`(async () => {
   const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-  await new Promise((r) => setTimeout(r, 700));
+  // Wait for the engine's content-ready signal (onRestoreComplete, recorded by the Dart page
+  // stub), not a fixed sleep: the shells lay out after document.fonts.ready, and under load
+  // that came later than a fixed 700 ms, so the checks ran on a page not yet laid out.
+  // The 30 s cap only turns a page that never reports ready into a clear failure.
+  const restored = await Promise.race([window.__fushiRestored.then(() => true),
+    new Promise((r) => setTimeout(() => r(false), 30000))]);
+  if (!restored) throw new Error('the reader engine never reported onRestoreComplete');
+  await frames();
   // The page must be laid out in the fixture fonts the Dart test embeds, not a host fallback:
   // the fallback's glyph widths decide whether the cue wraps and where its lines sit.
   await document.fonts.ready;

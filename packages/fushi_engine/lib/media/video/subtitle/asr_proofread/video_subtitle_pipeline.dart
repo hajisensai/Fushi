@@ -23,9 +23,12 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:crypto/crypto.dart';
+import 'package:fushi_asr_core/asr_core.dart' show AsrCueTokenTiming;
 import 'package:fushi_core/fushi_core.dart' show fushiDebugPrint;
 import 'package:fushi_asr_subtitles/asr_subtitles.dart'
-    show SubtitleCue, SubtitleFormat, renderSubtitles;
+    show SubtitleCue, SubtitleFormat, renderSubtitles, subtitleCueCharTimes;
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show isDiscMemberPath;
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
@@ -38,6 +41,7 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.d
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence_fusion.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence_loader.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_frame_reference.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_song_lyrics.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary_builder.dart';
@@ -209,11 +213,17 @@ class VideoSubtitleAiConfig {
     this.webKnowledge,
     this.proofreadConcurrency = 4,
     this.regenerateGlossary = false,
+    this.frames,
   });
 
   final AiTextCompleter completer;
   final SubtitleGlossaryStore glossaryStore;
   final WebKnowledgeClient? webKnowledge;
+
+  /// 画面参考的取帧来源：非 null = S3 每批附上对应时刻的画面
+  /// （`subtitle_frame_reference.dart`）。**装配方只在提供商能收图
+  /// （`AiProviderConfig.acceptsImages`）且用户开了画面参考时才给**；null = 纯文字校对。
+  final SubtitleFrameSource? frames;
 
   /// S3 同时在途的批数（提供商 rpm 由 `AiChatClient` 限频器把关）。
   final int proofreadConcurrency;
@@ -228,14 +238,46 @@ class VideoSubtitleAiConfig {
 Directory videoSubtitleJobsRootUnder(Directory supportRoot) =>
     Directory(p.join(supportRoot.path, 'asr_jobs', 'video_subtitles'));
 
-/// 日语任务目录名：`sha1(视频文件名 + '|' + 字节数)`（文件不存在按 0 字节）。其它
-/// 语言用 [videoSubtitleJobIdFor]。
+/// 原盘成员（蓝光整卷 / 分集 `.mpls`、DVD title）的默认字幕导出目录：
+/// `<任务根>/disc_out/<videoSubtitleJobId(成员路径)>`。不是原盘成员返回 null。
+///
+/// 原盘的「媒体旁」是盘结构内部（`BDMV/PLAYLIST`）：挂载的 ISO、光驱、只读共享根本
+/// 写不进去，写得进也是往盘结构里塞文件；那里也不是播放页找字幕的地方（原盘会话的
+/// 外挂字幕靠库里登记的 `subtitleSource` 列出）。所以产物一律落在 app 自有目录，按成员
+/// 身份分目录（各盘同名 `00001.mpls` 很常见，同一目录会互相判成「已有同名字幕」）。
+/// app 本机、app / 服务端当 host、服务端 `subgen` 都经 [VideoSubtitlePipeline] 的默认
+/// 落点走这一处。
+Directory? videoSubtitleDiscExportDir(Directory jobsRoot, String mediaPath) =>
+    isDiscMemberPath(mediaPath)
+    ? Directory(
+        p.join(jobsRoot.path, 'disc_out', videoSubtitleJobId(mediaPath)),
+      )
+    : null;
+
+/// 没有指定导出目录时 [mediaPath] 的字幕落在哪：原盘成员 →
+/// [videoSubtitleDiscExportDir]，其余 → 媒体旁。
+String videoSubtitleDefaultExportDir(Directory jobsRoot, String mediaPath) =>
+    videoSubtitleDiscExportDir(jobsRoot, mediaPath)?.path ??
+    p.dirname(mediaPath);
+
+/// 日语任务目录名：`sha1(视频文件名 + '|' + 身份)`。其它语言用
+/// [videoSubtitleJobIdFor]。
+///
+/// 身份：路径本身装着全部媒体字节的单文件取字节数；原盘成员（蓝光整卷 / 分集 `.mpls`、
+/// DVD title）路径本身不是媒体文件（分集与 DVD title 是虚拟路径、整卷 `.mpls` 只是
+/// 几百字节的索引，各盘同名同长常见），取 `disc:<规整后的完整路径>`；其余（网络流、
+/// `.strm`、文件不在）按 0。
 String videoSubtitleJobId(String videoPath) {
-  final int bytes = hasLocalMediaFileSync(videoPath)
-      ? File(videoPath).lengthSync()
-      : 0;
+  final String identity;
+  if (hasLocalSingleMediaFileSync(videoPath)) {
+    identity = '${File(videoPath).lengthSync()}';
+  } else if (isDiscMemberPath(videoPath)) {
+    identity = 'disc:${p.normalize(videoPath)}';
+  } else {
+    identity = '0';
+  }
   return sha1
-      .convert(utf8.encode('${p.basename(videoPath)}|$bytes'))
+      .convert(utf8.encode('${p.basename(videoPath)}|$identity'))
       .toString();
 }
 
@@ -267,6 +309,23 @@ String videoSubtitleJobIdFor(
   String videoPath,
   VideoSubtitleLanguage language,
 ) => language.jobId(videoSubtitleJobId(videoPath));
+
+/// 从播放器当前音轨换算识别音轨（[resolveVideoSubtitleAudioStream]）：[audioTrack] 是
+/// 0 起的音轨序号，返回全局流序号；与按语言挑的同一条时返回 null。
+typedef VideoSubtitleAudioStreamResolver =
+    Future<int?> Function(String videoPath, int audioTrack);
+
+/// 识别阶段（S1/S2）的工作目录：按语言挑的音轨（[audioStream] 为 null）就是任务目录
+/// [jobDir] 本身（改版前的缓存照用）；指定了音轨的放进 `<任务目录>/<任务目录名>.s<序号>`。
+///
+/// 子目录名带任务目录名：抽出的音轨文件名取工作目录名（[videoSubtitleAudioFileName]），
+/// 上游转录缓存按「音频文件名 + 字节数」认任务——各视频同名会互相拿错转录稿。
+Directory videoSubtitleRecognizeDir(Directory jobDir, int? audioStream) =>
+    audioStream == null
+    ? jobDir
+    : Directory(
+        p.join(jobDir.path, '${p.basename(jobDir.path)}.s$audioStream'),
+      );
 
 /// 各阶段产物的文件名。
 abstract final class VideoSubtitleJobFiles {
@@ -341,10 +400,22 @@ class VideoSubtitlePipeline {
     this.evidence = const SubtitleEvidenceCollector(),
     this.lyricsFinder,
     Future<int?> Function(String videoPath)? probeDurationMs,
+    VideoSubtitleAudioStreamResolver? resolveAudioStream,
     DateTime Function()? clock,
   }) : subtitleSuffix = subtitleSuffix ?? language.tag,
        _probeDurationMs = probeDurationMs ?? probeVideoDurationMs,
+       _resolveAudioStream =
+           resolveAudioStream ?? _defaultAudioStreamResolver(language),
        _clock = clock ?? DateTime.now;
+
+  static VideoSubtitleAudioStreamResolver _defaultAudioStreamResolver(
+    VideoSubtitleLanguage language,
+  ) =>
+      (String videoPath, int audioTrack) => resolveVideoSubtitleAudioStream(
+        videoPath: videoPath,
+        audioTrack: audioTrack,
+        language: language,
+      );
 
   /// [recognizer] 必须是按同一语言建的（`resolveVideoSubtitleRecognizer(language:)`）。
   final VideoSubtitleRecognizer recognizer;
@@ -360,11 +431,12 @@ class VideoSubtitlePipeline {
   /// 输出文件后缀：`<视频名>.<后缀>.srt`；默认 [VideoSubtitleLanguage.tag]。
   final String subtitleSuffix;
 
-  /// 字幕写到哪个目录；null = 视频旁（播放页的 sidecar 探测直接加载）。给了就全部
-  /// 写进这个目录（CLI `--out-dir`：不碰视频目录），已有字幕的判定也看这个目录。
+  /// 字幕写到哪个目录；null = 默认落点（[videoSubtitleDefaultExportDir]：视频旁，播放页
+  /// 的 sidecar 探测直接加载；原盘成员落到任务根下的 `disc_out`）。给了就全部写进这个
+  /// 目录（CLI `--out-dir`：不碰视频目录），已有字幕的判定也看这个目录。
   final Directory? exportDir;
 
-  /// 按媒体路径给导出目录（优先于 [exportDir]；返回 null = 回落 [exportDir] / 媒体旁）。
+  /// 按媒体路径给导出目录（优先于 [exportDir]；返回 null = 回落 [exportDir] / 默认落点）。
   /// 音乐库用它把每个音频的字幕放进应用自有的独立目录：曲库里大量同名 `01.flac`
   /// 写进同一个 [exportDir] 会互相判成「已有同名字幕（非本管线）」。
   final Directory? Function(String mediaPath)? exportDirFor;
@@ -372,7 +444,7 @@ class VideoSubtitlePipeline {
   String _exportDirOf(String mediaPath) =>
       exportDirFor?.call(mediaPath)?.path ??
       exportDir?.path ??
-      p.dirname(mediaPath);
+      videoSubtitleDefaultExportDir(jobsRoot, mediaPath);
 
   /// 样式参考（同一视频已有的 ASS，通常是别的语言）：找得到参考时，SRT 之外再按
   /// 参考的样式 / 位置导出一份 `<视频名>.<后缀>.ass`。生产默认
@@ -389,6 +461,7 @@ class VideoSubtitlePipeline {
   /// 查歌词的后端：给了且开了 AI 才做歌词补齐（S4s）；null = 不补歌词。
   final SubtitleLyricsFinder? lyricsFinder;
   final Future<int?> Function(String videoPath) _probeDurationMs;
+  final VideoSubtitleAudioStreamResolver _resolveAudioStream;
   final DateTime Function() _clock;
 
   /// 目标字幕路径 `<目录>/<视频名>.<后缀>.srt`（目录见 [exportDirFor] / [exportDir]）。
@@ -415,6 +488,10 @@ class VideoSubtitlePipeline {
     p.join(jobsRoot.path, videoSubtitleJobIdFor(videoPath, language)),
   );
 
+  /// [audioTrack]（播放器当前音轨；null = 没有播放上下文）→ 识别音轨（null = 按语言挑）。
+  Future<int?> _audioStreamFor(String videoPath, int? audioTrack) async =>
+      audioTrack == null ? null : _resolveAudioStream(videoPath, audioTrack);
+
   /// [path] 是不是本管线的产物（不能当证据 / 样式参考读回来，否则上次的识别错误会被
   /// 当成人工字幕自我强化）：
   /// * 内容仍是本管线上次写进去的那份（[_JobState.wrote]，哈希对得上）——路径曾是导出、
@@ -436,12 +513,19 @@ class VideoSubtitlePipeline {
   /// 失败时抛出的 [SubtitleAiRequestFailure] / [SubtitleGlossaryValidationFailure] 带着
   /// 这次运行已经花掉的 AI 用量（`usage`）：各阶段自己的账在异常里丢了，这里经
   /// [SubtitleAiSpendingCompleter] 另记一份，失败也如实上报，不显示成 0 次调用。
+  ///
+  /// [audioTracks]：从播放页发起时各集的「播放器当前音轨」（视频路径 → 0 起的音轨
+  /// 序号，ffmpeg `0:a:N`），管线识别那条轨（[resolveVideoSubtitleAudioStream]）；没给的
+  /// 集按识别语言挑。[keepRecordedAudio]：沿用任务目录上次识别用的音轨（只重跑写法
+  /// 统一时不该因为没带音轨就换轨重识别）。
   Future<VideoSubtitlePipelineResult> run({
     required List<String> videoPaths,
     required SubtitleWorkContext work,
     bool wholeSeason = false,
     void Function(VideoSubtitleProgress progress)? onProgress,
     SubtitleCancelToken cancel = const SubtitleNeverCancel(),
+    Map<String, int> audioTracks = const <String, int>{},
+    bool keepRecordedAudio = false,
   }) async {
     final VideoSubtitleAiConfig? config = ai;
     final SubtitleAiSpendingCompleter? spending = config == null
@@ -455,6 +539,8 @@ class VideoSubtitlePipeline {
         onProgress: onProgress,
         cancel: cancel,
         completer: spending,
+        audioTracks: audioTracks,
+        keepRecordedAudio: keepRecordedAudio,
       );
     } on SubtitleAiRequestFailure catch (e, stack) {
       if (spending == null) rethrow;
@@ -472,6 +558,8 @@ class VideoSubtitlePipeline {
     required void Function(VideoSubtitleProgress progress)? onProgress,
     required SubtitleCancelToken cancel,
     required AiTextCompleter? completer,
+    required Map<String, int> audioTracks,
+    required bool keepRecordedAudio,
   }) async {
     void report(
       VideoSubtitleStage stage,
@@ -518,14 +606,29 @@ class VideoSubtitlePipeline {
       if (previousRecognizer != null && previousRecognizer != recognizer.id) {
         await resetVideoSubtitleJobFrom(dir, VideoSubtitleStage.proofread);
       }
+      // 识别哪条音轨：从播放页发起的按播放器当前音轨，其余按识别语言挑（null）。换了
+      // 轨，下游（校对起）都是从另一份稿派生的，同换识别器一样作废；识别稿与抽出的
+      // 音轨按轨分目录（[videoSubtitleRecognizeDir]），换回来还能续用。
+      final int? audioStream = keepRecordedAudio
+          ? state.audioStream
+          : await _audioStreamFor(video, audioTracks[video]);
+      if (state.recognizerId != null && state.audioStream != audioStream) {
+        await resetVideoSubtitleJobFrom(dir, VideoSubtitleStage.proofread);
+      }
+      final Directory recognizeDir = videoSubtitleRecognizeDir(
+        dir,
+        audioStream,
+      );
       final File draftsFile = File(
-        p.join(dir.path, VideoSubtitleJobFiles.drafts(recognizer.id)),
+        p.join(recognizeDir.path, VideoSubtitleJobFiles.drafts(recognizer.id)),
       );
       List<SubtitleDraftCue>? drafts = _readCues(draftsFile);
       if (drafts == null) {
+        await recognizeDir.create(recursive: true);
         drafts = await recognizer.recognize(
           videoPath: video,
-          workDir: dir,
+          workDir: recognizeDir,
+          audioStreamIndex: audioStream,
           cancel: cancel,
           onProgress: (double f, String message) => report(
             VideoSubtitleStage.recognize,
@@ -547,6 +650,7 @@ class VideoSubtitlePipeline {
       state
         ..videoPath = video
         ..recognizerId = recognizer.id
+        ..audioStream = audioStream
         ..durationMs = durationMs;
       await state.save(dir);
 
@@ -565,6 +669,13 @@ class VideoSubtitlePipeline {
         drafts: drafts,
         state: state,
         cancel: cancel,
+        onBurnedInProgress: (int done, int total) => report(
+          VideoSubtitleStage.recognize,
+          (i + 0.95 + 0.05 * done / total) / videoPaths.length,
+          'reading on-screen subtitles $done/$total',
+          videoPath: video,
+          index: i,
+        ),
       );
       final String fingerprint = subtitleEvidenceFingerprint(tracks);
       if ((state.evidenceFingerprint ?? '') != fingerprint) {
@@ -572,14 +683,28 @@ class VideoSubtitlePipeline {
         state.evidenceFingerprint = fingerprint;
         await state.save(dir);
       }
+      // 画面参考开关变了：看过画面与没看过画面的校对结果不能混用，从 S3 起作废。
+      // 只在开着 AI 时比——关 AI 跑一遍不应清掉花钱换来的批缓存。
+      final VideoSubtitleAiConfig? aiForFrames = ai;
+      if (aiForFrames != null &&
+          (state.frames ?? false) != (aiForFrames.frames != null)) {
+        await resetVideoSubtitleJobFrom(dir, VideoSubtitleStage.proofread);
+        state.frames = aiForFrames.frames != null;
+        await state.save(dir);
+      }
       final SubtitleEvidenceIndex index = SubtitleEvidenceIndex(
         tracks,
         targetLanguage: _targetLanguage,
       );
-      final List<SubtitleDraftCue> filled = fillSubtitleGapsFromEvidence(
+      final List<SubtitleDraftCue> gapFilled = fillSubtitleGapsFromEvidence(
         drafts,
         index,
       );
+      // 不开 AI：画面上的同语言字幕（OCR 证据）与识别行只差几个字时换成画面写法；
+      // 开着 AI 交给 S3（它同时看得到识别稿、证据与画面）。
+      final List<SubtitleDraftCue> filled = ai == null
+          ? correctSubtitleDraftsFromOcrEvidence(gapFilled, index)
+          : gapFilled;
       report(
         VideoSubtitleStage.recognize,
         (i + 1) / videoPaths.length,
@@ -615,6 +740,7 @@ class VideoSubtitlePipeline {
         proofread: aiConfig != null,
         evidence: e.state.evidenceFingerprint ?? '',
         lyrics: _lyricsEnabled,
+        frames: aiConfig?.frames != null,
       );
       if (done == null) {
         pending.add(e);
@@ -685,6 +811,13 @@ class VideoSubtitlePipeline {
               p.join(e.dir.path, VideoSubtitleJobFiles.proofreadDir),
             ),
             evidence: e.evidenceIndex,
+            frames: switch (aiConfig.frames) {
+              null => null,
+              final SubtitleFrameSource source => SubtitleProofreadFrames(
+                videoPath: e.video,
+                source: source,
+              ),
+            },
             cancel: cancel,
             onProgress: (int done, int total) => report(
               VideoSubtitleStage.proofread,
@@ -818,6 +951,8 @@ class VideoSubtitlePipeline {
             // 用了哪份证据、有没有补歌词：证据变了 / 后装上歌词后端，旧 final 不算完成。
             'evidence': e.state.evidenceFingerprint ?? '',
             'lyrics': _lyricsEnabled,
+            // 校对时有没有看画面：开关变了，旧 final 不算完成。
+            if (aiConfig?.frames != null) 'frames': true,
           }),
         );
         usage.addTally(e.usage);
@@ -958,13 +1093,15 @@ class VideoSubtitlePipeline {
   bool get _lyricsEnabled => ai != null && lyricsFinder != null;
 
   /// 本集证据：`evidence.json` 里来源身份与识别器都没变就复用，否则重收并落盘。
-  /// 收集失败（含宿主 OCR 抛错）只记日志、当没有证据——证据只能让字幕更好。
+  /// 收集失败（含宿主 OCR 抛错）只记日志、当没有证据——证据只能让字幕更好；不完整
+  /// （[SubtitleEvidenceIncomplete]）时用收到的部分、不落盘。
   Future<List<SubtitleEvidenceTrack>> _loadEvidence({
     required String video,
     required Directory dir,
     required List<SubtitleDraftCue> drafts,
     required _JobState state,
     required SubtitleCancelToken cancel,
+    void Function(int done, int total)? onBurnedInProgress,
   }) async {
     final SubtitleEvidenceSource? source = evidence;
     if (source == null) return const <SubtitleEvidenceTrack>[];
@@ -990,15 +1127,26 @@ class VideoSubtitlePipeline {
           // 半截文件：重收。
         }
       }
-      final List<SubtitleEvidenceTrack> tracks = await source.load(
-        SubtitleEvidenceLoadRequest(
-          videoPath: video,
-          drafts: drafts,
-          isOwnOutput: own,
-          targetLanguage: _targetLanguage,
-          cancel: cancel,
-        ),
-      );
+      final List<SubtitleEvidenceTrack> tracks;
+      try {
+        tracks = await source.load(
+          SubtitleEvidenceLoadRequest(
+            videoPath: video,
+            drafts: drafts,
+            isOwnOutput: own,
+            targetLanguage: _targetLanguage,
+            cancel: cancel,
+            onBurnedInProgress: onBurnedInProgress,
+          ),
+        );
+      } on SubtitleEvidenceIncomplete catch (e) {
+        // 某个来源读失败：这次用收到的部分，不落盘，下次重收。
+        fushiDebugPrint(
+          '[VideoSubtitlePipeline] $video: evidence incomplete, not cached: '
+          '${e.reason}',
+        );
+        return e.tracks;
+      }
       await writeSubtitleJobFileAtomic(
         cache,
         jsonEncode(<String, Object?>{
@@ -1076,6 +1224,10 @@ class VideoSubtitlePipeline {
             startMs: c.startMs,
             endMs: c.endMs < c.startMs + 300 ? c.startMs + 300 : c.endMs,
             text: c.text,
+            // 逐字时间按 cue 的**原始**时长算（token 偏移相对原起点）；上面的
+            // 300 ms 下限只拉长显示，扫光唱完后停在全亮。
+            charTimes: _cueCharTimes(c),
+            lyricsHint: isSubtitleLyricsCue(c) || _lyricsMark.hasMatch(c.text),
           ),
       ],
       reference: reference,
@@ -1083,6 +1235,19 @@ class VideoSubtitlePipeline {
     await writeSubtitleJobFileAtomic(File(path), ass);
     e.state.exports[path] = sha1.convert(utf8.encode(ass)).toString();
     return (path: path, label: reference.label);
+  }
+
+  static final RegExp _lyricsMark = RegExp(r'^[\s　]*[♪♫♬]');
+
+  /// 草稿行的逐字时间（来自日语音频的 ASR 逐 token 时间）；没有 token 时间、或校对
+  /// 后的文字与识别原文对不上（歌词被整段替换等）时为 null。
+  static List<AssCharTime>? _cueCharTimes(SubtitleDraftCue c) {
+    final AsrCueTokenTiming? timing = c.tokenTiming;
+    if (timing == null || c.endMs <= c.startMs) return null;
+    return subtitleCueCharTimes(
+      timing,
+      SubtitleCue(index: 1, startMs: c.startMs, endMs: c.endMs, text: c.text),
+    );
   }
 
   static List<SubtitleDraftCue>? _readCues(File f) {
@@ -1102,16 +1267,19 @@ class VideoSubtitlePipeline {
     required bool proofread,
     required String evidence,
     required bool lyrics,
+    required bool frames,
   }) {
     if (!f.existsSync()) return null;
     try {
       final Object? decoded = jsonDecode(f.readAsStringSync());
       if (decoded is! Map) return null;
-      // 改版前的 final 没记证据 / 歌词：按「无证据、无歌词」认，免得升级后整季重做。
+      // 改版前的 final 没记证据 / 歌词 / 画面：按「无证据、无歌词、没看画面」认，免得
+      // 升级后整季重做。
       if (decoded['recognizer'] != recognizerId ||
           decoded['proofread'] != proofread ||
           (decoded['evidence'] ?? '') != evidence ||
-          (decoded['lyrics'] ?? false) != lyrics) {
+          (decoded['lyrics'] ?? false) != lyrics ||
+          (decoded['frames'] ?? false) != frames) {
         return null;
       }
       final Object? u = decoded['usage'];
@@ -1194,7 +1362,9 @@ class _JobState {
         ..videoPath = decoded['videoPath'] as String?
         ..recognizerId = decoded['recognizer'] as String?
         ..durationMs = (decoded['durationMs'] as num?)?.round()
-        ..evidenceFingerprint = decoded['evidence'] as String?;
+        ..evidenceFingerprint = decoded['evidence'] as String?
+        ..audioStream = (decoded['audioStream'] as num?)?.round()
+        ..frames = decoded['frames'] as bool?;
       final Object? exports = decoded['exports'];
       if (exports is Map) {
         exports.forEach((Object? k, Object? v) {
@@ -1211,8 +1381,14 @@ class _JobState {
   String? recognizerId;
   int? durationMs;
 
+  /// 识别稿用的音轨（全局流序号）；null = 按识别语言挑的那条（改版前的任务同此）。
+  int? audioStream;
+
   /// 上一次 S3 用的证据指纹（[subtitleEvidenceFingerprint]；空 = 无证据）。
   String? evidenceFingerprint;
+
+  /// 上一次 S3 有没有带画面参考（null = 改版前的任务 / 没开过 AI，按没带认）。
+  bool? frames;
   final Map<String, String> exports = <String, String>{};
 
   /// [path] 现在的内容是不是本管线上次写进去的那份。
@@ -1230,7 +1406,9 @@ class _JobState {
       'videoPath': videoPath,
       'recognizer': recognizerId,
       'durationMs': durationMs,
+      if (audioStream != null) 'audioStream': audioStream,
       if (evidenceFingerprint != null) 'evidence': evidenceFingerprint,
+      if (frames != null) 'frames': frames,
       'exports': exports,
     }),
   );
@@ -1258,10 +1436,14 @@ class SubtitleProofreadCostEstimate {
     required this.promptChars,
     required this.inputTokens,
     required this.outputTokens,
+    this.frames = 0,
   });
 
   final int batches;
   final int promptChars;
+
+  /// 画面参考要发的图片张数（没开 = 0）；它们的 token 已算进 [inputTokens]。
+  final int frames;
 
   /// 全部输入 token（未区分缓存：缓存命中率取决于提供商与是否开了提示缓存）。
   final int inputTokens;
@@ -1270,6 +1452,8 @@ class SubtitleProofreadCostEstimate {
 
 /// 按待校对的字幕稿估 S3 的输入 / 输出 token：逐批重建真实提示词量字符，再乘标定
 /// 系数。[glossary] 为 null 时按 [assumedGlossaryEntries] 条、每条 40 字估专名表。
+/// [frames] = 开了画面参考：按 [planSubtitleReferenceFrames] 实际会取的张数、每张
+/// [kSubtitleReferenceFrameTokens] 个输入 token 加进去。
 SubtitleProofreadCostEstimate estimateSubtitleProofreadCost({
   required List<List<SubtitleDraftCue>> episodes,
   String title = '',
@@ -1277,6 +1461,7 @@ SubtitleProofreadCostEstimate estimateSubtitleProofreadCost({
   int assumedGlossaryEntries = 40,
   int batchSize = 30,
   VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+  bool frames = false,
 }) {
   final String glossaryText = glossary == null
       ? List<String>.filled(assumedGlossaryEntries, '人' * 40).join('\n')
@@ -1284,12 +1469,16 @@ SubtitleProofreadCostEstimate estimateSubtitleProofreadCost({
   int batches = 0;
   int promptChars = 0;
   int replyChars = 0;
+  int frameCount = 0;
   for (final List<SubtitleDraftCue> cues in episodes) {
     for (int lo = 0; lo < cues.length; lo += batchSize) {
       final int hi = lo + batchSize > cues.length
           ? cues.length
           : lo + batchSize;
       batches++;
+      if (frames) {
+        frameCount += planSubtitleReferenceFrames(cues, lo, hi).length;
+      }
       promptChars += buildProofreadBatchPrompt(
         cues: cues,
         lo: lo,
@@ -1306,7 +1495,10 @@ SubtitleProofreadCostEstimate estimateSubtitleProofreadCost({
   return SubtitleProofreadCostEstimate(
     batches: batches,
     promptChars: promptChars,
-    inputTokens: (promptChars * kSubtitleProofreadInputTokensPerChar).round(),
+    inputTokens:
+        (promptChars * kSubtitleProofreadInputTokensPerChar).round() +
+        frameCount * kSubtitleReferenceFrameTokens,
     outputTokens: (replyChars * kSubtitleProofreadOutputTokensPerChar).round(),
+    frames: frameCount,
   );
 }

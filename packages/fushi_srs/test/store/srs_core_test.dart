@@ -11,6 +11,9 @@ void main() {
   setUp(() => dir = Directory.systemTemp.createTempSync('srs_core_test'));
   tearDown(() => dir.deleteSync(recursive: true));
 
+  /// 新代库文件（native/fushi_fsrs/src/store/gen4/files.rs `GEN4_FILE`）。
+  String gen4File() => '${dir.path}${Platform.pathSeparator}srs4.db';
+
   test('row codec round-trips every value kind', () {
     final List<List<Object?>> rows = <List<Object?>>[
       <Object?>[
@@ -34,132 +37,139 @@ void main() {
     );
   });
 
+  // 计数是进程级的：同一个 `dart test` 进程里别的测试文件（srs_retained_copy_test.dart 等）在别的 isolate 里同时开关库，
+  // 只断言下界（与 native/fushi_fsrs/src/store/ffi.rs 的 `diag_counts_report_open_cores_and_respect_the_buffer_length`
+  // 同一口径）；关库释放结构体由 ffi.rs 的 `closed_handle_rejects_every_entry_point_and_frees_the_core` 精确断言。
   test(
     'diagCounts sees an open core and its SQLite heap (BUG-4075 memory probe)',
-    () {
-      final SrsCoreDiagCounts before = SrsCore.diagCounts()!;
-      final SrsCore core = SrsCore.open(
-        '${dir.path}${Platform.pathSeparator}srs.db',
-      );
+    () async {
+      final SrsCore core = SrsCore.open(dir.path);
       addTearDown(core.close);
       final SrsCoreDiagCounts open = SrsCore.diagCounts()!;
-      expect(open.openHandles, before.openHandles + 1);
-      expect(open.liveCores, before.liveCores + 1);
-      expect(open.pooledReaders, greaterThanOrEqualTo(1));
+      expect(open.openHandles, greaterThanOrEqualTo(1));
+      expect(open.liveCores, greaterThanOrEqualTo(open.openHandles));
       expect(open.sqliteBytes, greaterThan(0));
       expect(open.sqliteHighwaterBytes, greaterThanOrEqualTo(open.sqliteBytes));
-      expect(open.dbBytes, greaterThan(before.dbBytes));
       expect(open.walBytes, greaterThanOrEqualTo(0));
       expect(
         open.describe(),
         matches(
-          RegExp(
-            r'^srs=\d+/\d+ sess=\d+ rd=\d+ sqlite=\d+/\d+MB db=\d+MB wal=\d+MB$',
-          ),
+          RegExp(r'^srs=\d+/\d+ rd=\d+ sqlite=\d+/\d+MB db=\d+MB wal=\d+MB$'),
         ),
       );
-
-      core.close();
-      final SrsCoreDiagCounts closed = SrsCore.diagCounts()!;
-      expect(closed.openHandles, before.openHandles);
-      expect(closed.liveCores, before.liveCores);
     },
   );
 
-  test('open, legacy import, snapshot and debug query', () {
-    final String path = '${dir.path}${Platform.pathSeparator}srs.db';
-    final SrsCore core = SrsCore.open(path);
+  // S1 之后 `ffsrs_store_open` 已删：Primary 在空目录里建新代库 `srs4.db`，不建协议 3 的 `srs.db`。
+  test('a primary open of an empty directory creates the gen4 library', () {
+    final SrsCore core = SrsCore.open(dir.path);
     addTearDown(core.close);
-    expect(core.legacyImported, isFalse);
-
-    core.legacyBegin();
-    core.legacyPage(
-      'srs_unknown_events',
-      srsEncodeRows(3, <List<Object?>>[
-        <Object?>['e1', 'p', '{"k":"あ"}'],
-      ]),
-    );
-    core.legacyPage(
-      'srs_sent_batches',
-      srsEncodeRows(4, <List<Object?>>[
-        <Object?>[
-          'p',
-          'w',
-          1,
-          Uint8List.fromList(<int>[1, 2, 3]),
-        ],
-      ]),
-    );
+    expect(File(gen4File()).existsSync(), isTrue);
     expect(
-      () => core.legacyPage('srs_nope', srsEncodeRows(0, <List<Object?>>[])),
-      throwsA(isA<SrsCoreException>()),
+      File('${dir.path}${Platform.pathSeparator}srs.db').existsSync(),
+      isFalse,
     );
-    core.legacyCommit();
-    expect(core.legacyImported, isTrue);
-
+    expect(core.debugQuery('SELECT 1 AS one').single['one'], 1);
     expect(
-      core.debugQuery(
-        'SELECT id, json FROM srs_unknown_events WHERE id = ?',
-        <Object?>['e1'],
-      ),
-      <Map<String, Object?>>[
-        <String, Object?>{'id': 'e1', 'json': '{"k":"あ"}'},
-      ],
+      SrsGen4Migration.status(dir.path).state,
+      SrsGenState.ready,
+      reason: 'a fresh gen4 library needs no migration',
     );
-    expect(
-      () => core.debugQuery('DELETE FROM srs_unknown_events'),
-      throwsA(isA<SrsCoreException>()),
-    );
-
-    final String snap = '${dir.path}${Platform.pathSeparator}snap.db';
-    core.snapshotInto(snap, stripDeviceLocal: true);
-    final SrsCore s = SrsCore.open(snap);
-    addTearDown(s.close);
-    expect(
-      s.debugQuery('SELECT COUNT(*) AS n FROM srs_sent_batches'),
-      <Map<String, Object?>>[
-        <String, Object?>{'n': 0},
-      ],
-    );
-    expect(
-      s.debugQuery('SELECT COUNT(*) AS n FROM srs_unknown_events'),
-      <Map<String, Object?>>[
-        <String, Object?>{'n': 1},
-      ],
-    );
-    expect(s.legacyImported, isFalse);
   });
 
-  test('a borrowed handle does not close the owner', () {
-    final SrsCore core = SrsCore.open(
-      '${dir.path}${Platform.pathSeparator}srs.db',
-    );
+  // 查词弹窗等辅助进程：只读、不建库。主进程还没建库时按「ready」（等主进程）报 -4，不当成空库打开。
+  test(
+    'a secondary open never creates a library and reports the state',
+    () async {
+      expect(
+        () => SrsCore.open(dir.path, mode: SrsOpenMode.secondary),
+        throwsA(
+          isA<SrsStoreNotMigrated>().having(
+            (SrsStoreNotMigrated e) => e.state,
+            'state',
+            SrsGenState.ready,
+          ),
+        ),
+      );
+      expect(File(gen4File()).existsSync(), isFalse);
+
+      await SrsCore.open(dir.path).close();
+      final SrsCore secondary = SrsCore.open(
+        dir.path,
+        mode: SrsOpenMode.secondary,
+      );
+      addTearDown(secondary.close);
+      expect(secondary.debugQuery('SELECT 1 AS one').single['one'], 1);
+    },
+  );
+
+  // 备份快照已接新代（G11-4），但剥离本机状态的请求明确报错。协议 1 旧主库的搬迁入口（`ffsrs_store_legacy_*`）
+  // 已随 G7-6 删掉（主库残留的协议 1 表由 `SrsStorage.open` 明确拒绝，见 srs_legacy_main_database_test.dart）。
+  test(
+    'a snapshot that strips device-local state is a clear error on gen4',
+    () {
+      final SrsCore core = SrsCore.open(dir.path);
+      addTearDown(core.close);
+      expect(
+        () => core.snapshotInto(
+          '${dir.path}${Platform.pathSeparator}snap.db',
+          stripDeviceLocal: true,
+        ),
+        // G11-4 已把快照接到新代；只是不支持剥离本机状态（备份走按集合的导出流），报一般错误。
+        throwsA(
+          isA<SrsCoreException>().having(
+            (SrsCoreException e) => e.message,
+            'message',
+            contains('stripping device-local state is not supported'),
+          ),
+        ),
+      );
+    },
+  );
+
+  // 刷新键是内核的进程内计数（`refresh_keys`，gen4/refresh.rs）：一次取回五个键，没有写入就不变，只写本机状态行的
+  // 命令不推进；关库后为 null。
+  test('refresh keys come from the kernel counters', () async {
+    final SrsCore core = SrsCore.open(dir.path);
+    const String profile = 'p';
+    final SrsRefreshKeys a = core.refreshKeys(profile)!;
+    expect(a.content, matches(RegExp(r'^[0-9a-f]+:0$')));
+    expect(a.structure, matches(RegExp(r'^[0-9a-f]+:0:0$')));
+    core.sync2(<String, Object?>{
+      'op': 'local_state_ensure',
+      'profile': profile,
+    });
+    expect(core.refreshKeys(profile), a);
+    await core.close();
+    expect(core.refreshKeys(profile), isNull);
+  });
+
+  test('a borrowed handle does not close the owner', () async {
+    final SrsCore core = SrsCore.open(dir.path);
     final SrsCore borrowed = SrsCore.fromAddress(
       core.address,
       libraryPath: core.libraryPath,
     );
-    borrowed.close();
-    expect(core.legacyImported, isFalse);
-    core.close();
-    expect(() => core.legacyImported, throwsStateError);
+    await borrowed.close();
+    expect(core.debugQuery('SELECT 1 AS one').single['one'], 1);
+    await core.close();
+    expect(() => core.debugQuery('SELECT 1'), throwsStateError);
   });
 
-  // 3.1.0 安卓白屏：app 打开 srs.db（含整表重建的格式升级）必须在后台 isolate，句柄回到调用方并归它拥有。
+  // 3.1.0 安卓白屏：app 开库必须在后台 isolate，句柄回到调用方并归它拥有。
   test('openInBackground hands the caller an owned, usable handle', () async {
-    final String path = '${dir.path}${Platform.pathSeparator}srs.db';
-    final SrsCore core = await SrsCore.openInBackground(path);
+    final SrsCore core = await SrsCore.openInBackground(dir.path);
     expect(core.owned, isTrue);
-    expect(core.legacyImported, isFalse);
     expect(core.debugQuery('SELECT 1 AS one').single['one'], 1);
-    core.close();
-    expect(() => core.legacyImported, throwsStateError);
+    await core.close();
+    expect(() => core.debugQuery('SELECT 1'), throwsStateError);
     // 关闭返回时库文件已没有打开的句柄（后台 isolate 没留下第二个拥有者）。
-    File(path).deleteSync();
+    File(gen4File()).deleteSync();
   });
 
   // 进程级 SQLite 临时目录（Android 上开库前必须设）：只设一次，同一目录再设是空操作，换目录报错。用常驻的系统临时
   // 目录，不影响本进程里别的测试。
-  test('useTempDirectory is set once per process', () {
+  test('useTempDirectory is set once per process', () async {
     final String stable = Directory.systemTemp.path;
     SrsCore.useTempDirectory(stable);
     SrsCore.useTempDirectory(stable);
@@ -167,32 +177,27 @@ void main() {
       () => SrsCore.useTempDirectory(dir.path),
       throwsA(isA<SrsCoreException>()),
     );
-    final SrsCore core = SrsCore.open(
-      '${dir.path}${Platform.pathSeparator}srs.db',
-    );
+    final SrsCore core = SrsCore.open(dir.path);
     expect(core.debugQuery('SELECT 1 AS one').single['one'], 1);
-    core.close();
+    await core.close();
   });
 
-  test('openInBackground rethrows the open failure as SrsCoreException', () {
-    // 路径是个目录：SQLite 打不开。错误要以原类型回到调用方（打开页按类型区分「空间不够」等）。
+  test('openInBackground rethrows the typed open state', () {
+    // 打开页按类型选页面：代际状态要以原类型回到调用方。
     expect(
-      SrsCore.openInBackground(dir.path),
-      throwsA(isA<SrsCoreException>()),
+      SrsCore.openInBackground(dir.path, mode: SrsOpenMode.secondary),
+      throwsA(isA<SrsStoreNotMigrated>()),
     );
   });
 
   // 回归（2026-10-25 CI SIGABRT）：拥有者关库时，后台 isolate 经 fromAddress 拿着同一个句柄还在
-  // 跑命令。原来 ffsrs_store_close 直接释放结构体，那边 use-after-free（`free(): invalid
-  // pointer`）。现在关闭等在途命令跑完；之后经旧地址的命令报「已关闭」而不是崩。
+  // 跑命令。关闭等在途命令跑完；之后经旧地址的命令报「已关闭」而不是崩。
   test('closing while a worker isolate uses the handle neither crashes nor '
       'leaves the address dangling', () async {
-    final String path = '${dir.path}${Platform.pathSeparator}srs.db';
-    final SrsCore core = SrsCore.open(path);
+    final SrsCore core = SrsCore.open(dir.path);
     final int address = core.address;
     final String? libraryPath = core.libraryPath;
 
-    // 一条足够慢的只读查询，让关闭大概率落在它执行期间（落在之前 / 之后也必须同样不崩）。
     final Future<Object?> worker = Isolate.run(() {
       try {
         return SrsCore.fromAddress(address, libraryPath: libraryPath)
@@ -205,15 +210,15 @@ void main() {
         return e.message;
       }
     });
-    core.close();
+    final Future<void> closed = core.close();
     final Object? outcome = await worker;
     expect(
       outcome,
       anyOf(3000000, contains('srs store is closed')),
       reason: 'the worker either finished before the close or saw it',
     );
+    await closed;
 
-    // 关闭之后，别的 isolate 手上的旧地址仍是有效的（已关闭的）句柄。
     final Object? late = await Isolate.run(() {
       try {
         SrsCore.fromAddress(
@@ -226,93 +231,319 @@ void main() {
       }
     });
     expect(late, contains('srs store is closed'));
-    // 关闭返回时库文件已没有打开的句柄（覆盖恢复要删换 srs.db）。
-    File(path).deleteSync();
+    File(gen4File()).deleteSync();
   });
 
-  // ID 列存 16 字节 BLOB（schema v17）：Dart 原生 SQL 里拼 / 绑 ID 必须过 `srs_id()`，漏了查不到也写错形状。
-  // 审计只在 `--features id_audit` 构建的库里装（native/fushi_fsrs/src/store/ids.rs `audit`）；CI 的 Dart 单测
-  // 库就是这么编的，并设 FUSHI_FSRS_ID_AUDIT=1——这条金丝雀钉住「审计真的开着」，库被换成不带审计的构建就红，
-  // 否则整套 SRS 测试会在没有审计的情况下静默变绿。
-  test(
-    'the id audit is live in audited builds',
-    () {
-      final SrsCore core = SrsCore.open(
-        '${dir.path}${Platform.pathSeparator}srs.db',
+  // 反馈 3he3GEoqcU：主进程关库时 UI isolate 同步调 `ffsrs_store_close`，等在途的长命令跑完，Android 主线程 ANR。
+  // close 的同步部分只摘句柄：返回那一刻起经句柄号的调用全报「已关闭」，等在途命令与关连接在后台 isolate 里做，
+  // Future 完成时连接已关（Windows 上开着的库文件删不掉）。
+  test('close detaches at once and finishes off the calling isolate', () async {
+    final SrsCore core = SrsCore.open(dir.path);
+    final int address = core.address;
+    final String? libraryPath = core.libraryPath;
+    expect(core.debugQuery('SELECT 1 AS one').single['one'], 1);
+
+    final Future<void> closed = core.close();
+    expect(core.close(), same(closed), reason: 'idempotent while closing');
+    expect(
+      () => SrsCore.fromAddress(
+        address,
+        libraryPath: libraryPath,
+      ).debugQuery('SELECT 1'),
+      throwsA(
+        isA<SrsCoreException>().having(
+          (SrsCoreException e) => e.message,
+          'message',
+          contains('srs store is closed'),
+        ),
+      ),
+      reason: 'calls by handle number are refused before the close finishes',
+    );
+    await closed;
+    File(gen4File()).deleteSync();
+  });
+
+  test('close returns without waiting for a command in flight on another '
+      'isolate', () async {
+    final SrsCore core = SrsCore.open(dir.path);
+    final int address = core.address;
+    final String? libraryPath = core.libraryPath;
+    final ReceivePort started = ReceivePort();
+    final SendPort startedPort = started.sendPort;
+    final Future<Object?> worker = Isolate.run(() {
+      final SrsCore borrowed = SrsCore.fromAddress(
+        address,
+        libraryPath: libraryPath,
       );
-      addTearDown(core.close);
-      const String uuid = '0193a1b2-0005-7000-8000-00000000ffff';
+      startedPort.send(null);
+      try {
+        return borrowed
+            .debugQuery(
+              'WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n '
+              'WHERE x < 5000000) SELECT count(*) AS c FROM n',
+            )
+            .single['c'];
+      } on SrsCoreException catch (e) {
+        return e.message;
+      }
+    });
+    await started.first;
+    final Stopwatch sinceClose = Stopwatch()..start();
+    final Future<void> closed = core.close();
+    final int closeCallUs = sinceClose.elapsedMicroseconds;
+    final Object? outcome = await worker;
+    final int workerLeftUs = sinceClose.elapsedMicroseconds;
+    await closed;
+    expect(outcome, anyOf(5000000, contains('srs store is closed')));
+    if (outcome == 5000000) {
+      // 查询在途时关：调用方只花摘句柄的工夫，过去它要等查询跑完（closeCallUs >= workerLeftUs）。
       expect(
-        () => core.execQuery(
-          "SELECT COUNT(*) FROM srs_review_logs WHERE id = '$uuid'",
-          const <Object?>[],
-        ),
-        throwsA(
-          isA<SrsCoreException>().having(
-            (SrsCoreException e) => e.message,
-            'message',
-            contains('id audit'),
-          ),
-        ),
+        closeCallUs * 4,
+        lessThan(workerLeftUs),
+        reason: 'close() blocked the caller for the in-flight query',
       );
-      final (int _, List<List<Object?>> rows) = srsDecodeRows(
-        core.execQuery(
-          'SELECT COUNT(*) AS n FROM srs_review_logs WHERE id = srs_id(?)',
-          const <Object?>[uuid],
-        ),
+    }
+    File(gen4File()).deleteSync();
+  });
+
+  // 拍板台 review-merge-1124-leftovers 第 5 条：导入 / 覆盖恢复关库时，在途的长命令（开库时的整层重建）不再跑完才放手。
+  // close 取消在途命令（native/fushi_fsrs store/gen4/cancel.rs）：一条要跑好几分钟的查询在途时关库，查询报「已关闭」，
+  // close 的 Future 在它退出后就完成，库文件随即可删。
+  test(
+    'close cancels a long command in flight instead of waiting it out',
+    () async {
+      final SrsCore core = SrsCore.open(dir.path);
+      final int address = core.address;
+      final String? libraryPath = core.libraryPath;
+      final ReceivePort started = ReceivePort();
+      final SendPort startedPort = started.sendPort;
+      final Future<Object?> worker = Isolate.run(() {
+        final SrsCore borrowed = SrsCore.fromAddress(
+          address,
+          libraryPath: libraryPath,
+        );
+        startedPort.send(null);
+        try {
+          return borrowed
+              .debugQuery(
+                'WITH RECURSIVE n(x) AS (SELECT 1 UNION ALL SELECT x + 1 FROM n '
+                'WHERE x < 100000000000) SELECT count(*) AS c FROM n',
+              )
+              .single['c'];
+        } on SrsCoreException catch (e) {
+          return e.message;
+        }
+      });
+      await started.first;
+      final Stopwatch sinceClose = Stopwatch()..start();
+      await core.close();
+      final Object? outcome = await worker;
+      expect(outcome, kSrsCoreClosed);
+      expect(
+        sinceClose.elapsed,
+        lessThan(const Duration(seconds: 30)),
+        reason: 'close() waited for the in-flight query to run to the end',
       );
-      expect(rows[1], <Object?>[0]);
+      File(gen4File()).deleteSync();
     },
-    skip: Platform.environment['FUSHI_FSRS_ID_AUDIT'] == '1'
-        ? false
-        : 'needs a fushi_fsrs built with --features id_audit '
-              '(FUSHI_FSRS_ID_AUDIT=1)',
   );
 
-  test('an upgrade refused for disk space surfaces as a typed, readable error', () {
-    // 与 Rust 侧同一份契约：状态码 store/ffi.rs STORE_NO_SPACE、前缀 store/schema.rs UPGRADE_NO_SPACE。
-    final String ffi = File(
-      '../../native/fushi_fsrs/src/store/ffi.rs',
-    ).readAsStringSync();
-    final String schema = File(
-      '../../native/fushi_fsrs/src/store/schema.rs',
-    ).readAsStringSync();
-    expect(
-      ffi,
-      contains(
-        'pub const STORE_NO_SPACE: i32 = ${SrsUpgradeNoSpaceException.statusCode};',
-      ),
-    );
-    expect(
-      schema,
-      contains(
-        'pub const UPGRADE_NO_SPACE: &str = "${SrsUpgradeNoSpaceException.prefix}";',
-      ),
-    );
-    final SrsUpgradeNoSpaceException? e = SrsUpgradeNoSpaceException.tryParse(
-      -3,
-      '${SrsUpgradeNoSpaceException.prefix}'
-      '{"need":209715200,"free":1048576,"from":8,"to":18}',
-    );
-    expect(e, isNotNull);
-    expect(e!.neededBytes, 209715200);
-    expect(e.freeBytes, 1048576);
-    expect(e, isA<SrsCoreException>());
-    expect('$e', contains('209715200'));
-    // 别的状态码 / 形状不对：照一般错误报。
-    expect(
-      SrsUpgradeNoSpaceException.tryParse(
+  group('typed errors (contract with store/ffi.rs and gen4/kernel.rs)', () {
+    test('status codes and prefixes match the native constants', () {
+      final String ffi = File(
+        '../../native/fushi_fsrs/src/store/ffi.rs',
+      ).readAsStringSync();
+      final String kernel = File(
+        '../../native/fushi_fsrs/src/store/gen4/kernel.rs',
+      ).readAsStringSync();
+      expect(
+        ffi,
+        contains(
+          'pub const STORE_NOT_MIGRATED: i32 = ${SrsStoreNotMigrated.statusCode};',
+        ),
+      );
+      expect(
+        ffi,
+        contains(
+          'pub const STORE_MIGRATING: i32 = ${SrsStoreMigrating.statusCode};',
+        ),
+      );
+      expect(
+        ffi,
+        contains(
+          'pub const STORE_LEGACY_UNMIGRATED: i32 = '
+          '${SrsStoreLegacyUnmigrated.statusCode};',
+        ),
+      );
+      expect(
+        kernel,
+        contains(
+          'pub const UNWIRED: &str = "${SrsCoreUnwiredException.prefix}";',
+        ),
+      );
+      expect(
+        kernel,
+        contains(
+          'pub const REMOVED: &str = "${SrsCoreRemovedException.prefix}";',
+        ),
+      );
+    });
+
+    test('every generation state parses from the -4 text', () {
+      for (final SrsGenState s in SrsGenState.values) {
+        final SrsCoreException e = SrsCoreException.of(
+          -4,
+          'not migrated {"state":"${s.wire}"}',
+        );
+        expect(e, isA<SrsStoreNotMigrated>());
+        expect((e as SrsStoreNotMigrated).state, s);
+      }
+      // 状态读不出来：照一般错误报，不猜。
+      expect(
+        SrsCoreException.of(-4, 'not migrated {"state":"unknown: io"}'),
+        isNot(isA<SrsStoreOpenBlocked>()),
+      );
+      expect(SrsCoreException.of(-5, 'x'), isA<SrsStoreMigrating>());
+      expect(SrsCoreException.of(-6, 'x'), isA<SrsStoreLegacyUnmigrated>());
+      expect(SrsCoreException.of(-1, 'x').runtimeType, SrsCoreException);
+    });
+
+    test('unwired and removed commands are typed with their op and owner', () {
+      final SrsCoreException u = SrsCoreException.of(
         -1,
-        '${SrsUpgradeNoSpaceException.prefix}{"need":1,"free":0}',
-      ),
-      isNull,
-    );
-    expect(
-      SrsUpgradeNoSpaceException.tryParse(
-        -3,
-        '${SrsUpgradeNoSpaceException.prefix}oops',
-      ),
-      isNull,
-    );
+        'gen4: not wired yet: `identity` belongs to G9-4',
+      );
+      expect(u, isA<SrsCoreUnwiredException>());
+      expect((u as SrsCoreUnwiredException).op, 'identity');
+      expect(u.owner, 'G9-4');
+      final SrsCoreException r = SrsCoreException.of(
+        -1,
+        'gen4: removed: `channel_settle` (gen4 has no ingest channel)',
+      );
+      expect(r, isA<SrsCoreRemovedException>());
+      expect((r as SrsCoreRemovedException).op, 'channel_settle');
+    });
+
+    test('an op over the payload cap is typed on every write path', () {
+      // 标记与内核同源：op.rs 的常量与报错格式（`{ERR_OP_TOO_LARGE}: change …`）。
+      final String op = File(
+        '../../native/fushi_fsrs/src/gen4/op.rs',
+      ).readAsStringSync();
+      expect(
+        op,
+        contains(
+          'pub const ERR_OP_TOO_LARGE: &str = "'
+          '${SrsOpTooLargeException.marker.replaceFirst(': ', '')}";',
+        ),
+      );
+      expect(op, contains('"{ERR_OP_TOO_LARGE}: change '));
+      const String cap =
+          'op too large: change 0a:2 is 16777217 bytes (16.0 MiB), over the '
+          '16 MiB limit for a single change (usually a field holding an '
+          'embedded image or file; store it as a media file instead)';
+      for (final String m in <String>[
+        'gen4 store: $cap; nothing was saved',
+        'gen4 import: $cap; nothing was imported',
+      ]) {
+        final SrsCoreException e = SrsCoreException.of(-1, m);
+        expect(e, isA<SrsOpTooLargeException>(), reason: m);
+        expect(e.message, m);
+      }
+      // 只提到这几个词、不是内核那句报错的不算。
+      expect(
+        SrsCoreException.of(-1, 'gen4 store: no note n1').runtimeType,
+        SrsCoreException,
+      );
+      expect(
+        SrsCoreException.of(-1, 'note "op too large" missing').runtimeType,
+        SrsCoreException,
+      );
+    });
+
+    test('a removed sync2 command reaches Dart typed', () {
+      final SrsCore core = SrsCore.open(dir.path);
+      addTearDown(core.close);
+      expect(
+        () => core.sync2(<String, Object?>{
+          'op': 'channel_settle',
+          'profile': 'p',
+        }),
+        throwsA(isA<SrsCoreRemovedException>()),
+      );
+      expect(
+        // G9-5 把旧并入命令标成已删；W3 合流后已没有未接线命令。
+        () => core.sync2(<String, Object?>{
+          'op': 'profile_merge_mark',
+          'profile': 'p',
+        }),
+        throwsA(isA<SrsCoreRemovedException>()),
+      );
+    });
+  });
+
+  group('gen4 migration commands', () {
+    test('steps before commit are cancellable, commit and seal are not', () {
+      expect(
+        <SrsGen4MigrationStep>[
+          for (final SrsGen4MigrationStep s in SrsGen4MigrationStep.values)
+            if (s.cancellable) s,
+        ],
+        SrsGen4MigrationStep.values.sublist(
+          0,
+          SrsGen4MigrationStep.commit.index,
+        ),
+      );
+      // 线上名与 migrate.rs `Step::wire` 一致。
+      final String migrate = File(
+        '../../native/fushi_fsrs/src/store/gen4/migrate.rs',
+      ).readAsStringSync();
+      for (final SrsGen4MigrationStep s in SrsGen4MigrationStep.values) {
+        expect(migrate, contains('=> "${s.wire}"'));
+      }
+      for (final SrsGen4MigrationVerdict v in SrsGen4MigrationVerdict.values) {
+        expect(migrate, contains('=> "${v.wire}"'));
+      }
+      for (final SrsGenState s in SrsGenState.values) {
+        expect(migrate, contains('=> "${s.wire}"'));
+      }
+    });
+
+    test('outcome and status parse every documented field', () {
+      final SrsGen4MigrationOutcome o = SrsGen4MigrationOutcome.fromJson(
+        <String, Object?>{'verdict': 'noSpace', 'needed': 10, 'free': 3},
+      );
+      expect(o.verdict, SrsGen4MigrationVerdict.noSpace);
+      expect(o.neededBytes, 10);
+      expect(o.freeBytes, 3);
+      final SrsGen4MigrationStatus s = SrsGen4MigrationStatus.fromJson(
+        <String, Object?>{
+          'state': 'needsMigration',
+          'running': <String, Object?>{'step': 'parity', 'done': 2, 'total': 5},
+        },
+      );
+      expect(s.state, SrsGenState.needsMigration);
+      expect(s.running?.step, SrsGen4MigrationStep.parity);
+      expect(s.running?.done, 2);
+    });
+
+    test('status, cancel and an empty run go through ffsrs_call', () async {
+      expect(SrsGen4Migration.status(dir.path).state, SrsGenState.ready);
+      expect(SrsGen4Migration.status(dir.path).running, isNull);
+      expect(SrsGen4Migration.cancel(dir.path, runId: 'r1'), isFalse);
+      // 没有协议 3 库：迁移不开始也不建库（结论由内核定，这里只要求是认得的结论、目录里没出现新代库）。
+      final SrsGen4MigrationOutcome o =
+          await SrsGen4Migration.run(
+            dir.path,
+            caches: const <String, Map<String, Object?>>{},
+            nowMs: DateTime.now().millisecondsSinceEpoch,
+          ).catchError(
+            (Object e) => const SrsGen4MigrationOutcome(
+              verdict: SrsGen4MigrationVerdict.blocked,
+            ),
+            test: (Object e) => e is SrsCoreException,
+          );
+      expect(SrsGen4MigrationVerdict.values, contains(o.verdict));
+      expect(o.verdict, isNot(SrsGen4MigrationVerdict.committed));
+    });
   });
 }

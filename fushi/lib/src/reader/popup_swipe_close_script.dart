@@ -1,3 +1,5 @@
+import 'package:material_ui/material_ui.dart';
+
 // TODO-854 M1a-2：查词弹窗「下滑关闭」的注入 JS——单一真相，由桌面/移动两套查词
 // 表面共用：
 //   * 主 Dart 查词弹窗（DictionaryPopupWebView，桌面经 flutter_inappwebview_windows
@@ -16,18 +18,28 @@
 // 触控笔看 enableTouchSwipeToClose（未设置时所有平台默认开），鼠标仍看
 // enableSwipeToClose（Windows/Linux 默认关，BUG-299 框选防线）。判据见
 // [popupTopPullDismissAllowed]。
+//
+// BUG-4925：与横滑脚本同一条选区判据——这一拉改动了选区（长按选字后往下拖、拖选区柄）
+// 时不上报；拉之前就留着的旧选区不挡下拉关闭。
 const String kPopupTopPullReleaseJs = '''
 (function(){
   if(window.__fushiTopPullInstalled) return;
   window.__fushiTopPullInstalled = true;
   var startY = null;
   var pulled = false;
+  var startSel = '';
+  function selText(){
+    var sel = window.getSelection && window.getSelection();
+    return sel && !sel.isCollapsed ? String(sel) : '';
+  }
   function atTop(){
     var st = window.scrollY || document.documentElement.scrollTop || document.body.scrollTop || 0;
     return st <= 0;
   }
   function fire(kind){
-    if(pulled && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+    var endSel = selText();
+    var selecting = endSel !== '' && endSel !== startSel;
+    if(pulled && !selecting && window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
       window.flutter_inappwebview.callHandler('topPullReleased', kind);
     }
     startY = null;
@@ -38,6 +50,7 @@ const String kPopupTopPullReleaseJs = '''
     if(!e.touches || e.touches.length !== 1) return;
     startY = e.touches[0].clientY;
     pulled = false;
+    startSel = selText();
   }, {passive: true});
   window.addEventListener('touchmove', function(e){
     if(startY === null || !e.touches || e.touches.length !== 1) return;
@@ -57,6 +70,7 @@ const String kPopupTopPullReleaseJs = '''
     pointerActive = true;
     startY = e.clientY;
     pulled = false;
+    startSel = selText();
   }, {passive: true});
   window.addEventListener('pointermove', function(e){
     if(!pointerActive || e.pointerType === 'touch' || startY === null) return;
@@ -168,4 +182,44 @@ bool popupSideSwipeDismissAllowed({
   if (pointerKind != 'touch' && pointerKind != 'pen') return false;
   if (!touchSwipeEnabled && !mouseSwipeEnabled) return false;
   return dx is num && dx.isFinite && dx.abs() > threshold;
+}
+
+/// BUG-4925：应用内查词弹窗的「选区变了」上报脚本。
+///
+/// 应用内弹窗的正文横滑由 Flutter 侧 `_BodySwipeDismissDetector` 只看指针轨迹识别，
+/// 它看不到 WebView 里的选区：用户长按选字后拖选区柄调整范围，那一划横向位移过阈值，
+/// 抬手就被当成滑动关闭。覆盖窗的 [kPopupTouchSideSwipeReleaseJs] 早有「这一划改动了
+/// 选区就不上报」的防线，这里把同一条判据交给 Dart：文档选区每变成一段**新的非空**
+/// 选区就 `callHandler('popupSelectionChanged')`，WebView 宿主据此冒泡
+/// [PopupSelectionChangedNotification]，检测器把当前这一划作废。选区折叠（点空白清掉
+/// 选区）不上报——划之前就留着的旧选区不挡滑关，与覆盖窗口径一致。
+///
+/// 只监听 `selectionchange`，不挂 touch 事件：Android WebView 拖选区柄由 Chromium 原生
+/// 处理，页面里不一定收到 touchmove，但选区变化一定派发 selectionchange。
+const String kPopupSelectionChangeReportJs = '''
+(function(){
+  if(window.__fushiSelectionReportInstalled) return;
+  window.__fushiSelectionReportInstalled = true;
+  var last = '';
+  document.addEventListener('selectionchange', function(){
+    var sel = window.getSelection && window.getSelection();
+    var text = sel && !sel.isCollapsed ? String(sel) : '';
+    if(text === last) return;
+    last = text;
+    if(text === '') return;
+    if(window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      window.flutter_inappwebview.callHandler('popupSelectionChanged');
+    }
+  });
+})();
+''';
+
+/// BUG-4925：查词弹窗 WebView 的选区变成一段新的非空选区时向上冒泡的通知。
+///
+/// 由 `DictionaryPopupWebView` 收到 [kPopupSelectionChangeReportJs] 的
+/// `popupSelectionChanged` 后在自身 context 上派发；祖先 `_BodySwipeDismissDetector`
+/// 据此把正在进行的这一划作废（不滑关），与覆盖窗横滑脚本同一条选区判据。
+class PopupSelectionChangedNotification extends Notification {
+  /// 创建一条选区变化通知。
+  const PopupSelectionChangedNotification();
 }

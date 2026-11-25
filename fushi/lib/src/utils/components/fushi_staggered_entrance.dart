@@ -3,6 +3,29 @@ import 'package:flutter/scheduler.dart';
 
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 
+/// 冷启动首帧的进场开关。
+///
+/// 冷启动时用户已经对着启动窗口等了一段，首页再从透明淡入只是把「看到内容」又往后
+/// 推了一个动效时长。主入口在压住首帧期间置 [pending]：这段时间里打开的
+/// [FushiEntranceScope] 整个不开进场窗口（其下的项、以及没有 scope 的
+/// [FushiStaggeredEntrance]，都直接显示终态）；首帧上屏后 [finish]，之后的页面
+/// 切换 / 分组切换照常播进场。
+///
+/// 默认不是 pending：弹窗入口、离屏测试模式、widget 测试都不经过冷启动压首帧，
+/// 行为不变。
+abstract final class FushiColdStartEntrance {
+  static bool _pending = false;
+
+  /// 是否处于「冷启动首帧尚未上屏」的阶段。
+  static bool get pending => _pending;
+
+  /// 主入口压住首帧时调用。
+  static void begin() => _pending = true;
+
+  /// 首帧上屏（或放行失败走兜底）后调用；重复调用无害。
+  static void finish() => _pending = false;
+}
+
 /// 一屏内容的「进场窗口」：窗口内首次挂载的 [FushiStaggeredEntrance] 错峰淡入
 /// 上移，窗口关闭后挂载的项（滚动带出来的、懒加载补进来的）**瞬间出现**。
 ///
@@ -48,6 +71,9 @@ class FushiEntranceScope extends StatefulWidget {
 class _FushiEntranceScopeState extends State<FushiEntranceScope> {
   late Duration _openedAt = _now();
   int _generation = 0;
+  // 冷启动首帧上屏前打开的窗口不播进场（见 [FushiColdStartEntrance]）；
+  // replayKey 变化重开窗口时恢复。
+  bool _openedAtColdStart = FushiColdStartEntrance.pending;
 
   static Duration _now() =>
       SchedulerBinding.instance.currentSystemFrameTimeStamp;
@@ -59,6 +85,7 @@ class _FushiEntranceScopeState extends State<FushiEntranceScope> {
         oldWidget.enabled != widget.enabled) {
       _openedAt = _now();
       _generation++;
+      _openedAtColdStart = FushiColdStartEntrance.pending;
     }
   }
 
@@ -68,7 +95,7 @@ class _FushiEntranceScopeState extends State<FushiEntranceScope> {
       openedAt: _openedAt,
       window: widget.window,
       generation: _generation,
-      enabled: widget.enabled,
+      enabled: widget.enabled && !_openedAtColdStart,
       child: widget.child,
     );
   }
@@ -144,7 +171,7 @@ class _FushiStaggeredEntranceState extends State<FushiStaggeredEntrance>
     final int generation = scope?.generation ?? 0;
     if (_playedGeneration == generation) return;
     _playedGeneration = generation;
-    final bool open = scope?.isOpen ?? true;
+    final bool open = scope?.isOpen ?? !FushiColdStartEntrance.pending;
     if (!open || !fushiMotionEnabled(context)) {
       _controller.value = 1;
       return;

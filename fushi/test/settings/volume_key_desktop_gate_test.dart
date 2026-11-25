@@ -8,6 +8,7 @@ import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_listening.dart';
 import 'package:fushi/src/settings/settings_schema_manga.dart';
 import 'package:fushi/src/settings/settings_schema_reading.dart';
 
@@ -32,9 +33,8 @@ void main() {
     });
 
     test('listening：音量键句子导航项带 visible 门控（非总是显示）', () {
-      // 听书 2026-08-24 并入阅读；该项仍是 `listening.*` id，只是归属换成了
-      // 阅读 destination 里的「有声书」分区。
-      final SettingsDestination listening = buildReadingDestination();
+      // 该项住独立的「听书」分类（播放分区）。
+      final SettingsDestination listening = buildListeningDestination();
       expect(
         itemById(listening, 'listening.volume_key_sentence_nav').visible,
         isNotNull,
@@ -52,7 +52,7 @@ void main() {
     });
   });
 
-  group('源码守卫：门控恰为 Platform.isAndroid', () {
+  group('源码守卫：门控恰为 hostPlatform.isAndroid', () {
     File readSource(String rel) {
       final File f = File(rel);
       expect(f.existsSync(), isTrue, reason: 'missing source: $rel');
@@ -69,36 +69,45 @@ void main() {
         nextItem > 0 ? nextItem : src.length,
       );
       expect(
-        block.contains('visible: (_) => Platform.isAndroid'),
+        block.contains('visible: (_) => hostPlatform.isAndroid'),
         isTrue,
-        reason: '$id 的门控必须恰为 Platform.isAndroid（VolumeKeyChannel Android-only）',
+        reason:
+            '$id 的门控必须恰为 hostPlatform.isAndroid（VolumeKeyChannel Android-only）',
       );
     }
 
-    test('reading schema：翻页开关门控为 Platform.isAndroid + 有 dart:io import', () {
-      final String src = readSource(
-        'lib/src/settings/settings_schema_reading.dart',
-      ).readAsStringSync();
-      expect(
-        src.contains("import 'dart:io'"),
-        isTrue,
-        reason: 'reading schema 需 import dart:io 用 Platform',
-      );
-      expectAndroidGate(src, 'reading_controls.volume_page_turning');
-    });
+    test(
+      'reading schema：翻页开关门控为 hostPlatform.isAndroid + 有 host_platform import',
+      () {
+        final String src = readSource(
+          'lib/src/settings/settings_schema_reading.dart',
+        ).readAsStringSync();
+        expect(
+          src.contains(
+            "import 'package:fushi/src/platform/host_platform.dart'",
+          ),
+          isTrue,
+          reason: 'reading schema 需 import host_platform 用 hostPlatform',
+        );
+        expectAndroidGate(src, 'reading_controls.volume_page_turning');
+      },
+    );
 
-    test('listening schema：句子导航门控为 Platform.isAndroid', () {
+    test('listening schema：句子导航门控为 hostPlatform.isAndroid', () {
       final String src = readSource(
         'lib/src/settings/settings_schema_listening.dart',
       ).readAsStringSync();
       expectAndroidGate(src, 'listening.volume_key_sentence_nav');
     });
 
-    test('manga schema：翻页开关门控为 Platform.isAndroid', () {
+    test('manga schema：翻页开关门控为 hostPlatform.isAndroid', () {
       final String src = readSource(
         'lib/src/settings/settings_schema_manga.dart',
       ).readAsStringSync();
-      expect(src.contains("import 'dart:io'"), isTrue);
+      expect(
+        src.contains("import 'package:fushi/src/platform/host_platform.dart'"),
+        isTrue,
+      );
       expectAndroidGate(src, 'manga.volume_key_paging');
     });
   });

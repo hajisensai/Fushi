@@ -19,8 +19,10 @@ import 'package:fushi_engine/mining/immersion_mining_request.dart'
     show immersionMiningAudioExtension;
 import 'package:fushi_engine/tts/tts_audio_cache.dart';
 import 'package:fushi_engine/tts/tts_provider.dart';
+import 'package:fushi_engine/tts/tts_silence.dart';
 import 'package:fushi_engine/tts/tts_types.dart';
 import 'package:fushi_engine/tts/tts_voice_preset.dart';
+import 'package:fushi_engine/tts/tts_reject_split.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart'
     show buildFfmpegAtempoFilter, retempoAudioFileViaFfmpeg;
 import 'package:material_ui/material_ui.dart' show immutable;
@@ -29,15 +31,15 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_services.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_ui_text.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kMiningTtsFallbackVoicePref;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/playback_speed.dart';
 import 'package:fushi/src/utils/misc/system_tts.dart';
 
-/// String：制卡单词音频的 TTS 兜底声音（[MiningTtsFallbackVoice.wire]）。
-/// 值可能指向本机的声音预设（`tts_voice_presets` 是设备本地清单），所以与
-/// `tts_active_preset_id` 同族：设备本地，不进 Profile 快照 / 备份 / 同步。
-const String kMiningTtsFallbackVoicePref = 'mining_tts_fallback_voice';
+export 'package:fushi/src/models/preference_keys.dart'
+    show kMiningTtsFallbackVoicePref;
 
 /// double：TTS 兜底发音（查词 ♪ / 自动发音、制卡单词音频）的倍速，默认 1.0。
 /// 倍速是 TTS 声音本身的属性：制卡单词音频一律按它，不受有声书「句子音频跟随
@@ -270,6 +272,32 @@ class _ServicesVoiceSource implements MiningTtsVoiceSource {
 MiningTtsVoiceSource miningTtsVoiceSourceOf(TtsServices services) =>
     _ServicesVoiceSource(services);
 
+/// 单词音频 TTS 兜底**念什么字**：查词播放与制卡兜底共用这一处取词口径。
+///
+/// 默认念读音（空则词头）。词头 / 读音里带替换写法（斜杠：英语习惯表达词典的
+/// `quite a/the something`、`instead of somebody/something`）时，TTS 会把斜杠连同
+/// 两侧的备选一起念出来（「quite a slash the something」，反馈 WJFhjUGaTn）——这时
+/// 改念查词命中的**原文**（[matched]，即句子里实际出现的那个写法，如 `quite some`）。
+///
+/// 命中原文本身也带斜杠（词头就是 `AC/DC`、`24/7` 这类字面斜杠）、或没有命中原文
+/// （手动建卡、别的设备给的结果）时照旧念读音 / 词头。
+String wordAudioTtsText({
+  required String expression,
+  required String reading,
+  String matched = '',
+}) {
+  final String headword = reading.isNotEmpty ? reading : expression;
+  final String source = matched.trim();
+  if (source.isEmpty) return headword;
+  if (!_hasAlternateSlash(headword) || _hasAlternateSlash(source)) {
+    return headword;
+  }
+  return source;
+}
+
+bool _hasAlternateSlash(String text) =>
+    text.contains('/') || text.contains('／');
+
 /// 系统语音的固定输出文件名（沿用既有行为）。
 const String kSystemTtsTermAudioFileName = 'tts_term_audio.wav';
 
@@ -368,6 +396,11 @@ Future<File?> _synthesizeAtSourceSpeed({
   required MiningTtsVoiceSource Function() voices,
   String? languageTag,
 }) async {
+  // 纯标点 / 符号词条（[ttsTextIsSilent]）没有能念的内容：合成入口只会给它一段
+  // 静音，静音进卡片比没有音频更糟，按「没有单词音频」报出来。
+  if (choice.kind != MiningTtsFallbackKind.none && ttsTextIsSilent(text)) {
+    throw WordAudioUnavailable(t.models_tts_fallback_nothing_to_read);
+  }
   switch (choice.kind) {
     case MiningTtsFallbackKind.none:
       return null;
@@ -437,8 +470,12 @@ Future<File> _synthesizeWithPreset({
     );
     final TtsCachedAudio audio = await cache.obtain(
       key,
-      (String out) =>
-          active.synthesize(text, outputPath: out, cancel: TtsCancelToken()),
+      (String out) => ttsSynthesizeSplittingOnReject(
+        active,
+        text,
+        outputPath: out,
+        cancel: TtsCancelToken(),
+      ),
     );
     // 缓存文件是 `<key>.audio`（无可用扩展名，且会被淘汰），Anki 按扩展名推断 MIME：
     // 复制一份带真实扩展名的出来。文件名按缓存键取，不同词 / 音色互不覆盖。

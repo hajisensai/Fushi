@@ -6,6 +6,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/lookup/effective_lookup_size.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/popup_main.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -34,6 +35,13 @@ class _SourceLineAppModel extends AppModel {
   /// 只在有结果时才换词，汉字结果不触发自动朗读，测试路径最短。
   final Set<String> kanjiHits = <String>{};
 
+  /// Query -> headword of the one term entry it returns.
+  final Map<String, String> wordHits = <String, String>{};
+
+  /// A term entry triggers auto-read on lookup: no audio sources here.
+  @override
+  List<AudioSourceConfig> get audioSourceConfigs => const <AudioSourceConfig>[];
+
   @override
   bool get isInitialised => true;
 
@@ -60,6 +68,11 @@ class _SourceLineAppModel extends AppModel {
 
   @override
   double get popupMaxWidth => 400;
+
+  // 外部查词卡宽高读「app 外覆盖窗有效最大宽高」（K9YPrjtZE1），本桩没有 prefsRepo。
+  @override
+  LookupSize get overlayLookupEffectiveSize =>
+      LookupSize(popupMaxWidth, kLookupPopupDefaultHeight);
 
   @override
   double get dictionaryFontSize => 16;
@@ -88,6 +101,15 @@ class _SourceLineAppModel extends AppModel {
     bool allowRemoteLookup = true,
   }) async {
     searched.add(searchTerm);
+    final String? word = wordHits[searchTerm];
+    if (word != null) {
+      return DictionarySearchResult(
+        searchTerm: searchTerm,
+        entries: <DictionaryEntry>[
+          DictionaryEntry(word: word, reading: '', meaning: 'm'),
+        ],
+      );
+    }
     if (kanjiHits.contains(searchTerm)) {
       return DictionarySearchResult(
         searchTerm: searchTerm,
@@ -149,6 +171,9 @@ Widget _buildApp({
   required int charIndex,
   String? sourceBlock,
   int sourceBlockOffset = -1,
+  ValueChanged<String>? onHeadword,
+  bool sourceTextCollapsed = false,
+  bool embedded = false,
 }) {
   return ProviderScope(
     overrides: [
@@ -164,7 +189,10 @@ Widget _buildApp({
           sourceCharIndex: charIndex,
           sourceBlock: sourceBlock,
           sourceBlockOffset: sourceBlockOffset,
+          sourceTextCollapsed: sourceTextCollapsed,
+          embedded: embedded,
           closeInApp: () {},
+          onHeadword: onHeadword,
         ),
       ),
     ),
@@ -217,6 +245,14 @@ Future<void> _settle(WidgetTester tester) async {
   await tester.pump();
 }
 
+/// 原文条里的那个字。查不到结果时空态会把查询词拆成可点的词块
+/// （`LookupRefinePanel`，拍板台 Um72dWD9Cz），同一个字会在词块里再出现一次，
+/// 所以按字找必须限定在原文条 [SourceLookupTextPanel] 里。
+Finder _sourceGlyph(String glyph) => find.descendant(
+  of: find.byType(SourceLookupTextPanel),
+  matching: find.text(glyph),
+);
+
 DictionaryPopupLayer _baseLayer(WidgetTester tester) =>
     tester.widget(find.byType(DictionaryPopupLayer).first);
 
@@ -236,6 +272,218 @@ Future<String?> _mineSentence(
 
 void main() {
   setUp(() => LocaleSettings.setLocale(AppLocale.en));
+
+  testWidgets(
+    'embedded dictionary bounds the source like the external popup and keeps '
+    'definitions at a fixed size',
+    (tester) async {
+      final String text = List<String>.generate(
+        1600,
+        (int i) => String.fromCharCode(0x4e00 + i),
+      ).join();
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: _RecordingAnkiRepo(),
+          text: text,
+          charIndex: 0,
+          embedded: true,
+        ),
+      );
+      await _settle(tester);
+      final Finder viewport = find.byKey(
+        const ValueKey<String>('popup_source_scroll'),
+      );
+      expect(viewport, findsOneWidget);
+      final Finder scrollable = find
+          .descendant(of: viewport, matching: find.byType(Scrollable))
+          .first;
+      final ScrollableState state = tester.state<ScrollableState>(scrollable);
+      final double viewportHeight = tester.getSize(viewport).height;
+      expect(viewportHeight, greaterThan(0));
+      expect(
+        tester.getSize(find.byType(SourceLookupTextPanel)).height,
+        greaterThan(viewportHeight),
+      );
+      final Finder definitions = find.byType(DictionaryPopupLayer).first;
+      final Rect definitionsBefore = tester.getRect(definitions);
+      expect(definitionsBefore.height, greaterThan(0));
+      expect(
+        definitionsBefore.top,
+        greaterThanOrEqualTo(tester.getRect(viewport).bottom),
+      );
+      await tester.scrollUntilVisible(
+        find.text(text[1599]),
+        250,
+        scrollable: scrollable,
+      );
+      await tester.pumpAndSettle();
+      expect(state.position.pixels, greaterThan(0));
+      expect(tester.getRect(definitions), definitionsBefore);
+      await tester.tap(find.text(text[1599]));
+      await _settle(tester);
+      expect(appModel.searched.last, text.substring(1599));
+      expect(
+        tester
+            .widget<SourceLookupTextPanel>(find.byType(SourceLookupTextPanel))
+            .text,
+        text,
+      );
+      expect(tester.getRect(definitions), definitionsBefore);
+      final double scrolled = state.position.pixels;
+      await tester.drag(viewport, const Offset(0, 300));
+      await tester.pumpAndSettle();
+      expect(state.position.pixels, lessThan(scrolled));
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'source selection stays visible when the external window shrinks',
+    (tester) async {
+      tester.view.devicePixelRatio = 1;
+      tester.view.physicalSize = const Size(500, 700);
+      addTearDown(tester.view.reset);
+      final String text = List<String>.generate(
+        400,
+        (int i) => String.fromCharCode(0x4e00 + i),
+      ).join();
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: _SourceLineAppModel(),
+          repo: _RecordingAnkiRepo(),
+          text: text,
+          charIndex: 360,
+        ),
+      );
+      await _settle(tester);
+      tester.view.physicalSize = const Size(700, 300);
+      await tester.pumpAndSettle();
+      final Finder viewport = find.byKey(
+        const ValueKey<String>('popup_source_scroll'),
+      );
+      expect(
+        tester
+            .getRect(viewport)
+            .contains(tester.getCenter(_sourceGlyph(text[360]))),
+        isTrue,
+      );
+      expect(
+        tester.getSize(find.byType(DictionaryPopupLayer).first).height,
+        greaterThan(0),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
+
+  testWidgets(
+    'collapsed source keeps the complete mining sentence and can reopen',
+    (tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      final _RecordingAnkiRepo repo = _RecordingAnkiRepo();
+      const String text = '今日は良い天気ですね';
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: repo,
+          text: text,
+          charIndex: 5,
+          sourceTextCollapsed: true,
+        ),
+      );
+      await _settle(tester);
+      expect(find.byType(SourceLookupTextPanel), findsNothing);
+      expect(await _mineSentence(tester, repo), text);
+      await tester.tap(
+        find.byKey(const ValueKey<String>('popup_source_toggle')),
+      );
+      await tester.pumpAndSettle();
+      expect(
+        tester
+            .widget<SourceLookupTextPanel>(find.byType(SourceLookupTextPanel))
+            .text,
+        text,
+      );
+    },
+  );
+
+  testWidgets(
+    'changing only the collapse flag toggles the source without a new lookup',
+    (tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      final ValueNotifier<bool> collapsed = ValueNotifier<bool>(false);
+      addTearDown(collapsed.dispose);
+      const String text = '今日は良い天気ですね';
+      await tester.pumpWidget(
+        ProviderScope(
+          overrides: [
+            appProvider.overrideWith((ref) => appModel),
+            ankiRepositoryProvider.overrideWithValue(_RecordingAnkiRepo()),
+            ...popupMiningTargetTestOverrides(anki: false),
+          ],
+          child: TranslationProvider(
+            child: MaterialApp(
+              navigatorKey: appModel.navigatorKey,
+              home: ValueListenableBuilder<bool>(
+                valueListenable: collapsed,
+                builder: (BuildContext context, bool value, Widget? _) =>
+                    PopupDictionaryPage(
+                      searchTerm: text,
+                      sourceCharIndex: 5,
+                      sourceTextCollapsed: value,
+                      closeInApp: () {},
+                    ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await _settle(tester);
+      expect(find.byType(SourceLookupTextPanel), findsOneWidget);
+      final int lookups = appModel.searched.length;
+      collapsed.value = true;
+      await tester.pumpAndSettle();
+      expect(find.byType(SourceLookupTextPanel), findsNothing);
+      expect(
+        appModel.searched.length,
+        lookups,
+        reason: 'the collapse flag changes visibility only, not the query',
+      );
+    },
+  );
+
+  testWidgets(
+    'long external source is bounded and leaves a definition viewport',
+    (tester) async {
+      final String text = List<String>.generate(
+        400,
+        (int i) => String.fromCharCode(0x4e00 + i),
+      ).join();
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: _SourceLineAppModel(),
+          repo: _RecordingAnkiRepo(),
+          text: text,
+          charIndex: 360,
+        ),
+      );
+      await _settle(tester);
+      final Finder viewport = find.byKey(
+        const ValueKey<String>('popup_source_scroll'),
+      );
+      final double height = tester.getSize(viewport).height;
+      expect(height, greaterThan(0));
+      expect(height, lessThan(200));
+      final Rect selected = tester.getRect(_sourceGlyph(text[360]));
+      expect(tester.getRect(viewport).contains(selected.center), isTrue);
+      expect(
+        tester.getSize(find.byType(DictionaryPopupLayer).first).height,
+        greaterThan(height),
+      );
+      expect(tester.takeException(), isNull);
+    },
+  );
 
   testWidgets(
     'BUG-2899: tapped-glyph entry keeps the whole line on the source strip '
@@ -268,6 +516,33 @@ void main() {
       await tester.pump();
       await tester.pump();
       expect(appModel.searched.last, '今日は良い天気ですね');
+    },
+  );
+
+  testWidgets(
+    'the host lookup reports its matched headword once; a re-scan on the '
+    'strip does not',
+    (WidgetTester tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel()
+        ..wordHits['呼んでいた'] = '呼ぶ'
+        ..wordHits['私は'] = '私';
+      final List<String> headwords = <String>[];
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: _RecordingAnkiRepo(),
+          text: '先生と呼んでいた',
+          charIndex: 3,
+          onHeadword: headwords.add,
+        ),
+      );
+      await _settle(tester);
+      expect(appModel.searched.first, '呼んでいた');
+      expect(headwords, <String>['呼ぶ']);
+
+      await tester.tap(find.text('先'));
+      await _settle(tester);
+      expect(headwords, <String>['呼ぶ']);
     },
   );
 
@@ -509,7 +784,10 @@ void main() {
       final SourceLookupTextPanel panel = tester.widget(
         find.byType(SourceLookupTextPanel),
       );
-      expect(panel.text, line, reason: '源文本条仍是被点的那一行');
+      // 反馈 8Su1XoCjtl：源文本条也是跨行拼回的整句，被点的「良」在条上第 3 个字。
+      expect(panel.text, '今日は良い天気ですね。');
+      expect(panel.initialCharIndex, 3);
+      expect(appModel.searched.first, '良い天気ですね。散歩に行こう。');
       expect(
         await _mineSentence(tester, repo),
         '今日は良い天気ですね。',
@@ -539,10 +817,116 @@ void main() {
       expect(await _mineSentence(tester, repo), 'もう行く。');
 
       // 同一行上点「雨」：它在块里的下一句。
-      await tester.tap(find.text('雨'));
+      await tester.tap(_sourceGlyph('雨'));
       await _settle(tester);
       expect(appModel.searched.last, '雨');
       expect(await _mineSentence(tester, repo), '今日は雨');
+    },
+  );
+
+  testWidgets(
+    'feedback 8Su1XoCjtl: the source strip shows the whole sentence across '
+    'OCR line breaks, not only the tapped line',
+    (WidgetTester tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      final _RecordingAnkiRepo repo = _RecordingAnkiRepo();
+      // 「スタンプ」被折成「…スタン」/「プが…」两行，句首还在上一行。点的是「ス」。
+      const String block = 'さっき\n新しいコラボLINEスタン\nプが映りました。次は';
+      const String line = '新しいコラボLINEスタン';
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: repo,
+          text: line,
+          charIndex: line.indexOf('ス'),
+          sourceBlock: block,
+          sourceBlockOffset: block.indexOf(line),
+        ),
+      );
+      await _settle(tester);
+
+      final SourceLookupTextPanel panel = tester.widget(
+        find.byType(SourceLookupTextPanel),
+      );
+      expect(panel.text, 'さっき新しいコラボLINEスタンプが映りました。');
+      expect(
+        panel.initialCharIndex,
+        'さっき新しいコラボLINE'.length,
+        reason: '被点的「ス」换算到整句里的位置',
+      );
+      expect(appModel.searched.first, 'スタンプが映りました。次は');
+      expect(await _mineSentence(tester, repo), 'さっき新しいコラボLINEスタンプが映りました。');
+
+      // 下一行折过来的字也在条上，能直接点。
+      await tester.tap(_sourceGlyph('映'));
+      await _settle(tester);
+      expect(appModel.searched.last, '映りました。次は');
+      expect(await _mineSentence(tester, repo), 'さっき新しいコラボLINEスタンプが映りました。');
+    },
+  );
+
+  testWidgets(
+    'BUG-4707: a word wrapped onto the next OCR line is looked up across the '
+    'line break, from the host and from the strip',
+    (WidgetTester tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      final _RecordingAnkiRepo repo = _RecordingAnkiRepo();
+      // 「天気」被折成两行：第一行末尾「天」、第二行开头「気」。用户点的是「天」。
+      const String block = '今日は良い天\n気ですね。\n散歩に行こう。';
+      const String line = '今日は良い天';
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: repo,
+          text: line,
+          charIndex: 5,
+          sourceBlock: block,
+          sourceBlockOffset: block.indexOf(line),
+        ),
+      );
+      await _settle(tester);
+
+      expect(
+        appModel.searched.first,
+        '天気ですね。散歩に行こう。',
+        reason: '查词串从被点字起跨过折行接上块里的后续行，不在行尾截断',
+      );
+      final SourceLookupTextPanel panel = tester.widget(
+        find.byType(SourceLookupTextPanel),
+      );
+      // 反馈 8Su1XoCjtl：条上是跨行拼回的整句，被点的「天」在条上第 5 个字。
+      expect(panel.text, '今日は良い天気ですね。');
+      expect(panel.initialCharIndex, 5);
+      expect(await _mineSentence(tester, repo), '今日は良い天気ですね。');
+
+      // 条上再点「良」：后缀同样接上下一行。
+      await tester.tap(find.text('良'));
+      await _settle(tester);
+      expect(appModel.searched.last, '良い天気ですね。散歩に行こう。');
+      expect(await _mineSentence(tester, repo), '今日は良い天気ですね。');
+    },
+  );
+
+  testWidgets(
+    'BUG-4707: a Latin line with trailing whitespace still joins the next '
+    'line with one space',
+    (WidgetTester tester) async {
+      final _SourceLineAppModel appModel = _SourceLineAppModel();
+      // 行内后缀是 trim 后的行，续文的空格要按去掉行尾空白后的末字判断。
+      const String block = 'I like the \nweather today';
+      const String line = 'I like the ';
+      await tester.pumpWidget(
+        _buildApp(
+          appModel: appModel,
+          repo: _RecordingAnkiRepo(),
+          text: line,
+          charIndex: 7,
+          sourceBlock: block,
+          sourceBlockOffset: 0,
+        ),
+      );
+      await _settle(tester);
+      expect(appModel.searched.first, 'the weather today');
     },
   );
 
@@ -580,7 +964,13 @@ void main() {
           TestDefaultBinaryMessengerBinding.instance;
       binding.defaultBinaryMessenger.setMockMethodCallHandler(
         channel,
-        (MethodCall call) async => null,
+        (MethodCall call) async => call.method == 'getInitialProcessText'
+            ? <String, Object>{
+                'text': 'initial sentence',
+                'charIndex': 0,
+                'sourceTextCollapsed': true,
+              }
+            : null,
       );
       addTearDown(
         () => binding.defaultBinaryMessenger.setMockMethodCallHandler(
@@ -599,11 +989,25 @@ void main() {
       );
       await _settle(tester);
 
+      expect(
+        find.byType(SourceLookupTextPanel),
+        findsNothing,
+        reason: 'the cold request can initially collapse the source',
+      );
+      expect(
+        tester
+            .widget<PopupDictionaryPage>(find.byType(PopupDictionaryPage))
+            .sourceTextCollapsed,
+        isTrue,
+      );
+      appModel.searched.clear();
+
       Future<void> nativePush(
         String text,
         int charIndex, {
         String? block,
         int blockOffset = -1,
+        bool? sourceTextCollapsed,
       }) async {
         final ByteData message = const StandardMethodCodec().encodeMethodCall(
           MethodCall('onNewProcessText', <String, Object>{
@@ -611,6 +1015,8 @@ void main() {
             'charIndex': charIndex,
             if (block != null) 'sourceBlock': block,
             if (block != null) 'sourceBlockOffset': blockOffset,
+            if (sourceTextCollapsed != null)
+              'sourceTextCollapsed': sourceTextCollapsed,
           }),
         );
         unawaited(
@@ -637,6 +1043,16 @@ void main() {
       expect(appModel.searched.last, '雨が降る');
       panel = tester.widget(find.byType(SourceLookupTextPanel));
       expect(panel.text, '明日は雨が降る');
+
+      await nativePush('明日は雨が降る', 3, sourceTextCollapsed: true);
+      expect(find.byType(SourceLookupTextPanel), findsNothing);
+      await nativePush('明日は雨が降る', 3);
+      expect(
+        find.byType(SourceLookupTextPanel),
+        findsOneWidget,
+        reason:
+            'omitted visibility on an identical warm request restores the default',
+      );
 
       // BUG-3487：截屏识字带上所属块，页面拿到块全文与本行起点。
       const String block = '朝から\n明日は雨が降る\nらしい。';

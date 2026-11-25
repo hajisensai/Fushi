@@ -153,14 +153,29 @@ void main() {
           ),
           isTrue,
         );
-        // 每一处把 described.message 弹成 toast 的地方，都必须在成功分支里。
+        // 每一处把 described.message 弹成 toast 的地方，都必须在成功分支里；唯一例外
+        // 是发起制卡的浮窗已经收起（截屏识字框选页，`toastOutcome`）：结果只能由宿主
+        // 说，而且同一个分支的回包必须带 hostReportedKey，让弹窗不再说第二遍。
         final RegExp toast = RegExp(
           r'FushiToast\.show(?:Mine)?\(\s*msg:\s*described\.message',
         );
         for (final RegExpMatch m in toast.allMatches(src)) {
           final int from = m.start - 160 < 0 ? 0 : m.start - 160;
+          final String before = src.substring(from, m.start);
+          if (before.contains('if (toastOutcome) {')) {
+            final int branchEnd = src.indexOf('\n  }\n', m.end);
+            expect(branchEnd, greaterThan(m.end));
+            expect(
+              src.substring(m.end, branchEnd),
+              contains('MineFailureNotice.hostReportedKey: true'),
+              reason:
+                  '${surface.key} 的浮窗已收起分支弹了 toast，回包必须标记'
+                  '「宿主已说过」，否则弹窗还会再说一遍',
+            );
+            continue;
+          }
           expect(
-            src.substring(from, m.start).contains('if (described.success) {'),
+            before.contains('if (described.success) {'),
             isTrue,
             reason:
                 '${surface.key} 在成功分支之外弹了制卡结果 toast：'

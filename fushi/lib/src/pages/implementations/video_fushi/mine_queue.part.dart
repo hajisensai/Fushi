@@ -27,9 +27,7 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
     }
     try {
       final VideoMineQueue queue = await _videoMineQueue();
-      final int count =
-          (await queue.pending(_activeBookUid)).length +
-          (await queue.failed(_activeBookUid)).length;
+      final int count = await queue.openCount(_activeBookUid);
       if (mounted) _stagedMineCount.value = count;
     } catch (_) {}
   }
@@ -45,8 +43,9 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
   }
 
   /// 登记一个后台制卡任务：在途计数 +1，结束 -1；异常报 OSD 并记日志（不能静默——
-  /// 弹窗早就显示「已加入」了，失败只剩这里能告诉用户）。
-  void _trackBackgroundMine(Future<void> job) {
+  /// 弹窗早就关了，失败只剩这里能告诉用户）。[retry] 非空时结果卡带「重试」
+  /// （反馈 OeS0m8tLHc）。
+  void _trackBackgroundMine(Future<void> job, {VoidCallback? retry}) {
     _minesInFlight.value++;
     late final Future<void> tracked;
     tracked = job
@@ -58,10 +57,12 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
               stack,
             );
           } catch (_) {}
-          _showOsd(
-            t.card_export_failed_detail(reason: '$error'),
-            severity: ToastSeverity.error,
-          );
+          final String message = t.card_export_failed_detail(reason: '$error');
+          if (retry != null) {
+            _showMineOsd(message, MineToastStatus.failed, retry: retry);
+          } else {
+            _showOsd(message, severity: ToastSeverity.error);
+          }
         })
         .whenComplete(() {
           _backgroundMineJobs.remove(tracked);
@@ -82,6 +83,8 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
     final VideoMineCommitSummary summary = await queue.commitAll(
       bookUid: _activeBookUid,
       repo: repo,
+      // 待制卡列表的「全部写入」：用户明说要写，之前失败的一并重试。
+      retryFailed: true,
       onProgress: onProgress,
     );
     await _refreshStagedMineCount();
@@ -109,14 +112,9 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
 
   void _showCommitSummary(VideoMineCommitSummary summary) {
     _showOsd(
-      t.video_mine_queue_committed(
-        ok: summary.succeeded,
-        failed: summary.failed,
-      ),
+      videoMineCommitMessage(summary),
       prominent: true,
-      severity: summary.failed == 0
-          ? ToastSeverity.success
-          : ToastSeverity.warning,
+      severity: videoMineCommitSeverity(summary),
     );
   }
 
@@ -170,22 +168,23 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
             final bool mineBadgeShown =
                 _minesInFlight.value > 0 || _stagedMineCount.value > 0;
             final ColorScheme cs = _videoChromeColorScheme(context);
-            return Align(
-              alignment: Alignment.topRight,
-              child: Padding(
-                padding: EdgeInsets.only(
-                  right: 16,
-                  top:
-                      _videoButtonBarHeight +
-                      (mineBadgeShown ? 48 : 8) * _videoUiScale,
-                ),
-                child: VideoLoopCueBadge(
-                  active: controller.loopCurrentCue,
-                  label: t.video_loop_cue_badge_label,
-                  tooltip: t.video_loop_cue_badge_tooltip,
-                  onTap: () => controller.setLoopCurrentCue(false),
-                  surfaceColor: _osdSurfaceColor(cs),
-                  textColor: _osdTextColor(cs),
+            // 跟着顶栏显隐上下（[_followTopChrome]）；制卡队列角标在时让到它下面一格。
+            return _followTopChrome(
+              (BuildContext context, double top) => Align(
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: EdgeInsets.only(
+                    right: 16,
+                    top: top + (mineBadgeShown ? 40 * _videoUiScale : 0),
+                  ),
+                  child: VideoLoopCueBadge(
+                    active: controller.loopCurrentCue,
+                    label: t.video_loop_cue_badge_label,
+                    tooltip: t.video_loop_cue_badge_tooltip,
+                    onTap: () => controller.setLoopCurrentCue(false),
+                    surfaceColor: _osdSurfaceColor(cs),
+                    textColor: _osdTextColor(cs),
+                  ),
                 ),
               ),
             );
@@ -209,56 +208,61 @@ extension _VideoMineQueuePart on _VideoFushiPageState {
             if (inFlight == 0 && staged == 0) return const SizedBox.shrink();
             final ColorScheme cs = _videoChromeColorScheme(context);
             final Color textColor = _osdTextColor(cs);
-            final String label = staged > 0
+            // 网页档的角标是重放队列：点一下逐句重放落卡。「画质优先」档的帧截不到，重放要换到
+            // 可截图的「制卡优先」——就是这里的提示（拍板 cbKi3PN0G7-r2）。
+            final String label = staged == 0
+                ? t.video_mine_in_progress(count: inFlight)
+                : !_webMode
                 ? t.video_mine_queue_badge(count: staged)
-                : t.video_mine_in_progress(count: inFlight);
-            return Align(
-              alignment: Alignment.topRight,
-              child: Padding(
-                padding: EdgeInsets.only(
-                  right: 16,
-                  top: _videoButtonBarHeight + 8 * _videoUiScale,
-                ),
-                child: Material(
-                  key: const ValueKey<String>('video-mine-queue-badge'),
-                  color: _osdSurfaceColor(cs),
-                  shape: const StadiumBorder(),
-                  child: InkWell(
-                    customBorder: const StadiumBorder(),
-                    canRequestFocus: false,
-                    onTap: staged > 0
-                        ? () => unawaited(
-                            // 网页档：切到可捕获的内置档逐句重放落卡。
-                            _webMode
-                                ? _runWebMineQueue()
-                                : _openVideoMineQueue(),
-                          )
-                        : null,
-                    child: Padding(
-                      padding: const EdgeInsets.symmetric(
-                        horizontal: 12,
-                        vertical: 6,
-                      ),
-                      child: Row(
-                        mainAxisSize: MainAxisSize.min,
-                        children: <Widget>[
-                          if (inFlight > 0)
-                            SizedBox.square(
-                              dimension: 14,
-                              child: FushiCircularProgressIndicator(
-                                strokeWidth: 2,
+                : _webHosting == WebVideoHosting.windowed
+                ? t.web_video_mode_mine_queued_switch(count: staged)
+                : t.web_video_mode_mine_queued(count: staged);
+            return _followTopChrome(
+              (BuildContext context, double top) => Align(
+                alignment: Alignment.topRight,
+                child: Padding(
+                  padding: EdgeInsets.only(right: 16, top: top),
+                  child: Material(
+                    key: const ValueKey<String>('video-mine-queue-badge'),
+                    color: _osdSurfaceColor(cs),
+                    shape: const StadiumBorder(),
+                    child: InkWell(
+                      customBorder: const StadiumBorder(),
+                      canRequestFocus: false,
+                      onTap: staged > 0
+                          ? () => unawaited(
+                              // 网页档：切到可捕获的内置档逐句重放落卡。
+                              _webMode
+                                  ? _runWebMineQueue()
+                                  : _openVideoMineQueue(),
+                            )
+                          : null,
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 6,
+                        ),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: <Widget>[
+                            if (inFlight > 0)
+                              SizedBox.square(
+                                dimension: 14,
+                                child: FushiCircularProgressIndicator(
+                                  strokeWidth: 2,
+                                  color: textColor,
+                                ),
+                              )
+                            else
+                              FushiIcon(
+                                Icons.playlist_add_check,
+                                size: 16,
                                 color: textColor,
                               ),
-                            )
-                          else
-                            FushiIcon(
-                              Icons.playlist_add_check,
-                              size: 16,
-                              color: textColor,
-                            ),
-                          const SizedBox(width: 6),
-                          Text(label, style: TextStyle(color: textColor)),
-                        ],
+                            const SizedBox(width: 6),
+                            Text(label, style: TextStyle(color: textColor)),
+                          ],
+                        ),
                       ),
                     ),
                   ),

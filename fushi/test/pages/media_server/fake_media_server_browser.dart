@@ -106,6 +106,9 @@ class FakeMediaServerBrowser implements MediaServerBrowser {
   int listSeasonsCalls = 0;
   int itemDetailCalls = 0;
 
+  /// 其中带 `forLaunch: true` 的次数（只有重开入口该带）。
+  int launchItemDetailCalls = 0;
+
   final RemoteVideoClient _playback = _NoopRemoteVideoClient();
 
   @override
@@ -249,8 +252,12 @@ class FakeMediaServerBrowser implements MediaServerBrowser {
   }
 
   @override
-  Future<MediaServerItem> itemDetail(String itemId) async {
+  Future<MediaServerItem> itemDetail(
+    String itemId, {
+    bool forLaunch = false,
+  }) async {
     itemDetailCalls++;
+    if (forLaunch) launchItemDetailCalls++;
     final MediaServerItem? detail = details[itemId];
     if (detail == null) throw StateError('no detail for $itemId');
     return detail;

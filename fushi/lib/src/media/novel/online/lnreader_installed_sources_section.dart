@@ -6,6 +6,7 @@ import 'package:fushi/src/media/manga/extension_management_tile.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/media/novel/online/lnreader_manager.dart';
 import 'package:fushi/src/media/novel/online/lnreader_models.dart';
+import 'package:fushi/src/media/novel/online/lnreader_state_error_notice.dart';
 import 'package:fushi/src/media/novel/online/lnreader_web_login.dart';
 import 'package:fushi/src/media/online/installed_online_source_row.dart';
 import 'package:fushi/src/media/online/online_source_error_text.dart';
@@ -117,6 +118,32 @@ class _LnReaderInstalledSourcesSectionState
         );
       }
     }
+  }
+
+  /// 切换「合并段内换行」；提示只对之后取的章节生效（已取过的章节是落盘的正文）。
+  Future<void> _toggleMergeLineBreaks(LnReaderInstalledPlugin plugin) async {
+    final bool merge = !plugin.mergeLineBreaks;
+    try {
+      await widget.manager.setMergeLineBreaks(plugin, merge);
+    } on Object catch (error, stack) {
+      if (mounted) {
+        FushiToast.show(
+          msg: describeOnlineSourceError(
+            error,
+            logTag: 'LnReaderInstalledSources.mergeLineBreaks',
+            stackTrace: stack,
+          ),
+          severity: ToastSeverity.error,
+        );
+      }
+      return;
+    }
+    if (!mounted) return;
+    FushiToast.show(
+      msg: merge
+          ? t.novel_source_merge_line_breaks_on_hint
+          : t.novel_source_merge_line_breaks_off_hint,
+    );
   }
 
   /// 当前显示用的完整顺序（见 [_pendingOrder]）。
@@ -276,6 +303,11 @@ class _LnReaderInstalledSourcesSectionState
           ),
           if (all.isEmpty && !_ready)
             const SliverToBoxAdapter(child: InstalledSourcesSkeleton())
+          else if (widget.manager.stateError != null)
+            // 没读出来：列表是空占位，不是「还没有小说源」（见 [LnReaderStateErrorNotice]）。
+            SliverToBoxAdapter(
+              child: LnReaderStateErrorNotice(manager: widget.manager),
+            )
           else if (all.isEmpty)
             SliverToBoxAdapter(
               child: FushiPlaceholderMessage(
@@ -306,34 +338,28 @@ class _LnReaderInstalledSourcesSectionState
             )
           else ...<Widget>[
             if (pinned.isNotEmpty)
-              SliverToBoxAdapter(
-                child: InstalledSourcesGroup<LnReaderInstalledPlugin>(
-                  key: const ValueKey<String>('novel_sources_pinned_group'),
-                  header: t.online_sources_pinned_header,
-                  items: pinned,
-                  keyOf: (LnReaderInstalledPlugin plugin) => plugin.id,
-                  reorderable: reorderable,
-                  onReorder: (List<LnReaderInstalledPlugin> reordered) =>
-                      unawaited(_reorderGroup(reordered, pinned: true)),
-                  rowBuilder: _rowBuilder(pinned, reorderable: reorderable),
-                ),
+              InstalledSourcesGroup<LnReaderInstalledPlugin>(
+                key: const ValueKey<String>('novel_sources_pinned_group'),
+                header: t.online_sources_pinned_header,
+                items: pinned,
+                keyOf: (LnReaderInstalledPlugin plugin) => plugin.id,
+                reorderable: reorderable,
+                onReorder: (List<LnReaderInstalledPlugin> reordered) =>
+                    unawaited(_reorderGroup(reordered, pinned: true)),
+                rowBuilder: _rowBuilder(pinned, reorderable: reorderable),
               ),
             if (rest.isNotEmpty)
-              SliverToBoxAdapter(
-                child: InstalledSourcesGroup<LnReaderInstalledPlugin>(
-                  key: const ValueKey<String>('novel_sources_all_group'),
-                  // 无置顶时整段只有一组，不必再挂小标题。
-                  header: pinned.isNotEmpty
-                      ? t.online_sources_all_header
-                      : null,
-                  items: rest,
-                  keyOf: (LnReaderInstalledPlugin plugin) => plugin.id,
-                  reorderable: reorderable,
-                  entranceOffset: pinned.length,
-                  onReorder: (List<LnReaderInstalledPlugin> reordered) =>
-                      unawaited(_reorderGroup(reordered, pinned: false)),
-                  rowBuilder: _rowBuilder(rest, reorderable: reorderable),
-                ),
+              InstalledSourcesGroup<LnReaderInstalledPlugin>(
+                key: const ValueKey<String>('novel_sources_all_group'),
+                // 无置顶时整段只有一组，不必再挂小标题。
+                header: pinned.isNotEmpty ? t.online_sources_all_header : null,
+                items: rest,
+                keyOf: (LnReaderInstalledPlugin plugin) => plugin.id,
+                reorderable: reorderable,
+                entranceOffset: pinned.length,
+                onReorder: (List<LnReaderInstalledPlugin> reordered) =>
+                    unawaited(_reorderGroup(reordered, pinned: false)),
+                rowBuilder: _rowBuilder(rest, reorderable: reorderable),
               ),
           ],
         ],
@@ -407,6 +433,15 @@ class _LnReaderInstalledSourcesSectionState
             loginToLnReaderSource(context, manager: manager, plugin: plugin),
           ),
         ),
+      // 源级开关「合并段内换行」（拍板台 zCkIxtnwcV，默认关）。
+      OnlineSourceMenuAction(
+        key: ValueKey<String>('novel_source_merge_line_breaks_${plugin.id}'),
+        label: plugin.mergeLineBreaks
+            ? t.novel_source_merge_line_breaks_off
+            : t.novel_source_merge_line_breaks,
+        icon: plugin.mergeLineBreaks ? FushiIcons.check : FushiIcons.merge,
+        onTap: () => unawaited(_toggleMergeLineBreaks(plugin)),
+      ),
       OnlineSourceMenuAction(
         label: t.mihon_source_clear_data,
         icon: FushiIcons.deleteSweep,

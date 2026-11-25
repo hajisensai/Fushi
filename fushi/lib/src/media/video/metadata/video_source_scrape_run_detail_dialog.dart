@@ -18,6 +18,7 @@ import 'package:fushi/src/media/video/metadata/video_source_scrape_candidate_til
 import 'package:fushi/src/media/video/metadata/video_manual_identity_query.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_issue_text.dart';
+import 'package:fushi/src/media/video/metadata/video_scrape_error_text.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_loading_view.dart';
@@ -145,9 +146,10 @@ class _VideoSourceScrapeRunDetailDialogState
       ),
       for (int i = 0; i < issues.length; i++)
         _TimelineNode(
-          key: ValueKey<String>(
-            'video-source-run-issue-${issues[i].$1.workTitle}',
-          ),
+          // 按 issue 实例取 key（解码一次后实例稳定）：同一 run 里多条范围级问题
+          // 的 workTitle 相同（无来源范围都是空串），同一作品也可能既有警告又有
+          // 错误，按 workTitle 取 key 会撞出重复 key。
+          key: ObjectKey(issues[i].$1),
           dotColor: issues[i].$2 ? cs.error : cs.tertiary,
           isFirst: false,
           isLast: i == issues.length - 1,
@@ -322,7 +324,7 @@ class _VideoSourceScrapeRunDetailDialogState
                     const SizedBox(width: 6),
                     Expanded(
                       child: Text(
-                        issue.workTitle,
+                        videoScrapeIssueTitle(issue),
                         maxLines: 2,
                         overflow: TextOverflow.ellipsis,
                         style: type.titleSmallEmphasized.copyWith(
@@ -343,7 +345,9 @@ class _VideoSourceScrapeRunDetailDialogState
               ],
             ),
           ),
-          if (_canBindManually)
+          // 范围级问题（范围不可刮 / 整批不可用 / 整批异常）不对应任何作品，
+          // 没有可手动指定的对象；它的 workTitle 是来源 label，拿去搜只会找不到作品。
+          if (_canBindManually && !issue.isScopeLevel)
             Padding(
               padding: const EdgeInsetsDirectional.only(start: 4),
               child: busy
@@ -375,7 +379,8 @@ class _VideoSourceScrapeRunDetailDialogState
       if (!mounted) return;
       Navigator.of(context).pop(true);
     } on Object catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      // 清理期间被刮削门挡回的是类型化错误，出本地化文案而不是 `Bad state: …`。
+      if (mounted) setState(() => _error = videoScrapeErrorText(error));
     } finally {
       if (mounted) setState(() => _rescrapingSource = false);
     }
@@ -420,7 +425,8 @@ class _VideoSourceScrapeRunDetailDialogState
       setState(() => _error = t.video_source_scrape_work_missing);
     } on Object catch (error) {
       if (!mounted) return;
-      setState(() => _error = error.toString());
+      // 同上：手动绑定排进队列后碰上资料清理，整条队列以类型化错误结束。
+      setState(() => _error = videoScrapeErrorText(error));
     } finally {
       if (mounted) setState(() => _busyWorkTitles.remove(issue.workTitle));
     }

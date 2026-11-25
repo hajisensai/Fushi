@@ -16,7 +16,8 @@ import 'package:fushi/i18n/strings.g.dart';
 ///   add / set 时带 `--arg select=true`。
 ///
 /// 业务与页面同一份：[AppModel.upsertCustomTheme] / [AppModel.selectCustomTheme] /
-/// [AppModel.setAppThemeKey] / [AppModel.deleteCustomTheme]，删除后的主题键回落与
+/// [AppModel.pickAppThemeKey]（选中）/ [AppModel.setAppThemeKey]（删除后回落）/
+/// [AppModel.deleteCustomTheme]，删除后的主题键回落与
 /// 页面 `_resolveThemeKeyAfterDelete` 同一规则。
 const String kCtlCustomThemesIdPrefix = 'appearance.custom_themes.cli.';
 
@@ -32,6 +33,10 @@ final Map<String, _ColorRole> _colorRoles = <String, _ColorRole>{
   'bg': (help: '阅读器背景色', read: (CustomThemeEntry e) => e.bgColor),
   'font': (help: '阅读器文字色', read: (CustomThemeEntry e) => e.fontColor),
   'selection': (help: '选中高亮色', read: (CustomThemeEntry e) => e.selectionColor),
+  'selection_text': (
+    help: '查词高亮文字色（不给 = 跟随正文字色；配深色高亮可做反色）',
+    read: (CustomThemeEntry e) => e.selectionTextColor,
+  ),
   'link': (help: '链接色', read: (CustomThemeEntry e) => e.linkColor),
   'secondary': (help: '次要强调色', read: (CustomThemeEntry e) => e.secondaryColor),
   'tertiary': (help: '点缀色', read: (CustomThemeEntry e) => e.tertiaryColor),
@@ -194,6 +199,7 @@ CustomThemeEntry _merge(CustomThemeEntry base, Map<String, String> fields) {
     bgColor: role('bg', base.bgColor),
     fontColor: role('font', base.fontColor),
     selectionColor: role('selection', base.selectionColor),
+    selectionTextColor: role('selection_text', base.selectionTextColor),
     linkColor: role('link', base.linkColor),
     secondaryColor: role('secondary', base.secondaryColor),
     tertiaryColor: role('tertiary', base.tertiaryColor),
@@ -219,7 +225,8 @@ Future<void> _persist(
   await appModel.upsertCustomTheme(entry);
   if (!select) return;
   await appModel.selectCustomTheme(entry.id);
-  await appModel.setAppThemeKey('custom-theme:${entry.id}');
+  // 与编辑页「应用」同一入口：用户选这个主题，先关掉正在生效的取色覆盖。
+  await appModel.pickAppThemeKey('custom-theme:${entry.id}');
 }
 
 Future<Object?> _addTheme(SettingsContext c, Map<String, String> fields) async {

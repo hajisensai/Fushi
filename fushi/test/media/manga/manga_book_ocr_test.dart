@@ -104,38 +104,59 @@ void main() {
     expect(await pendingMangaOcrTargets(row), isEmpty);
   });
 
-  test('卡菜单与多选底栏接到同一条 OCR 路径，漫画卡不再出现有声书入口（源码守卫）', () {
+  test('漫画卡菜单的有声流程收进有声漫画工作台，工作台与多选底栏接到同一条 OCR 路径（源码守卫）', () {
     final String shelf = File(
       'lib/src/pages/implementations/reader_fushi_history_page.dart',
     ).readAsStringSync();
     final String books = File(
       'lib/src/pages/implementations/reader_history/books.part.dart',
     ).readAsStringSync();
-    expect(
-      shelf.contains(
-        'if (isManga && modules.isEnabled(ModuleId.manga))\n'
-        '        DialogQuickAction(\n'
-        '          label: t.manga_library_ocr_action,',
-      ),
-      isTrue,
-      reason: '漫画卡快捷格必须是 OCR',
-    );
+    final String workbench = File(
+      'lib/src/media/manga/audio/manga_audio_workbench_page.dart',
+    ).readAsStringSync();
+    // 2026-11-20 #4：菜单顶部 5 个无文字图标里的 OCR / 演出稿 / 导入成品 / 生成
+    // 4 个是同一条有声流程，收成一个「有声漫画工作台」入口。
+    // 拍板 Ew0AxAgycu：有声入口统一由 bookCardAudioWorkbenchActions 排（导入在上、
+    // 制作 / 工作台紧随同级），顺序与主次见 book_card_audio_actions_test.dart。
     expect(
       RegExp(
-        r'if \(!isManga && modules\.isEnabled\(ModuleId\.listening\)\)\s*'
-        r'DialogQuickAction\(\s*label: t\.audiobook_import,',
+        r'final bool canOpenMangaWorkbench =\s*isManga &&\s*'
+        r'modules\.isEnabled\(ModuleId\.manga\) &&\s*'
+        r'MangaAudioWorkbenchEntry\.isAvailable;',
       ).hasMatch(shelf),
       isTrue,
-      reason: '漫画阅读器不播有声书，「导入有声书」不得出现在漫画卡上',
+      reason: '漫画卡要有有声漫画工作台入口',
     );
     expect(
-      books.contains("ValueKey<String>('reader_shelf_batch_ocr')"),
+      RegExp(r'openMangaWorkbench: canOpenMangaWorkbench\s*\?').hasMatch(shelf),
       isTrue,
     );
+    // 工作台页在 import 大环里，菜单只经环外入口打开；入口由 main() 注册。
     expect(
-      'enqueuePendingMangaOcrForBooks('.allMatches(books).length,
-      greaterThanOrEqualTo(2),
-      reason: '卡菜单与多选底栏共用同一个入口函数',
+      shelf.contains('manga_audio_workbench_page.dart'),
+      isFalse,
+      reason: '菜单直接 import 工作台页会把它拉进 import 大环',
     );
+    expect(
+      File('lib/main.dart').readAsStringSync(),
+      contains('registerMangaAudioWorkbenchEntry();'),
+    );
+    expect(
+      RegExp(r'importAudiobook: canAttachAudiobook\s*\?').hasMatch(shelf),
+      isTrue,
+      reason:
+          '通用「导入有声书」（按 EPUB 正文匹配字幕）只按共享判据 '
+          'mediaItemSupportsAudiobook 出现（漫画卡不出现）',
+    );
+    // 工作台里 OCR 与多选底栏同一入口函数，导入漫画有声成品也在工作台里。
+    expect(workbench.contains('enqueuePendingMangaOcrForBooks('), isTrue);
+    expect(workbench.contains('pickAndImportMangaAudio('), isTrue);
+    // 书卡上的「导入漫画有声」直达入口调的也是这个函数（不另写一份导入逻辑）。
+    expect(
+      books.contains('pickAndImportMangaAudio(appModel.database, bookKey)'),
+      isTrue,
+    );
+    expect(books.contains("key: 'reader_shelf_batch_ocr'"), isTrue);
+    expect(books.contains('enqueuePendingMangaOcrForBooks('), isTrue);
   });
 }

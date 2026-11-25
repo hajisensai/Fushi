@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
@@ -7,6 +8,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show HardwareKeyboard, KeyEvent;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/anki/mined_card_undo.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -25,18 +28,25 @@ import 'package:fushi/src/lookup/overlay_stat_source.dart'
     show overlayMinedSentenceGameOrigin;
 import 'package:fushi/src/lookup/sentence_extraction.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
+import 'package:fushi/src/mining/gal_hook_mining_failure_text.dart';
 import 'package:fushi/src/mining/gal_hook_failure_text.dart';
 import 'package:fushi/src/mining/magpie_upscaling_service.dart';
 import 'package:fushi/src/mining/magpie_upscaling_text.dart';
 import 'package:fushi/src/mining/gal_audio_tracks_panel.dart';
 import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
+import 'package:fushi/src/mining/gal_ocr_line_source.dart';
+import 'package:fushi/src/mining/gal_ocr_recognizer.dart';
+import 'package:fushi/src/mining/gal_ocr_region_picker.dart';
+import 'package:fushi/src/media/manga/manga_ocr_provider.dart';
 import 'package:fushi/src/mining/galgame_audio_source.dart';
 import 'package:fushi/src/mining/galgame_helper_installer.dart';
 import 'package:fushi/src/mining/galgame_hook_code_profile.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale.dart';
 import 'package:fushi/src/mining/galgame_japanese_locale_text.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
+import 'package:fushi/src/pages/implementations/games/galgame_home_blocks.dart';
 import 'package:fushi/src/mining/galgame_text_process.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/models/module_id.dart';
@@ -53,7 +63,10 @@ import 'package:fushi/src/pages/implementations/game_shared.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show DictionaryPopupWebViewState, MinePopupResult;
+    show
+        DictionaryPopupRealmKeyWebView,
+        DictionaryPopupWebViewState,
+        MinePopupResult;
 import 'package:fushi/src/shortcuts/input_binding.dart' show InputBinding;
 import 'package:fushi/src/shortcuts/shortcut_action.dart' show ShortcutAction;
 import 'package:fushi/src/sync/texthooker_service.dart';
@@ -70,18 +83,19 @@ import 'package:fushi/src/utils/misc/smooth_wheel_scroll.dart'
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
-import 'package:fushi/src/utils/app_ui_scale.dart';
+import 'package:fushi/src/utils/adaptive/fushi_apple_surface.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_masthead_scaffold.dart'
+    show FushiMastheadScaffold;
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
-import 'package:fushi/src/utils/components/fushi_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
-import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive_controls.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
@@ -95,10 +109,22 @@ import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/pages/implementations/shared_lookup_popup_host.dart';
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi_core/fushi_core.dart'
     show ProfileMediaKind, kStatSourceGame;
+import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
+import 'package:fushi/src/utils/components/fushi_glass_surface.dart';
+import 'package:flutter/semantics.dart' show CustomSemanticsAction;
+
+// Cupertino（iOS 27 / macOS 27）捕获工作台：外观独立成 part，业务状态与动作
+// 仍只在 [_TexthookerPageState] 一处（两套外观摆放同一份数据与回调）。
+part 'games/apple/apple_workbench_layout.part.dart';
+part 'games/apple/apple_workbench_sidebar.part.dart';
+part 'games/apple/apple_workbench_lines.part.dart';
+part 'games/apple/apple_workbench_inspector.part.dart';
+part 'games/apple/apple_workbench_pages.part.dart';
 
 /// fallback 制卡（非外部窗口/非 Windows，走普通 in-app popup 制卡）也要带上当前活跃
 /// hook 台词作 sentence，否则挖出的卡 `{sentence}` 恒空（BUG-954）。仅在 [fields] 未自带
@@ -183,11 +209,16 @@ class TexthookerPage extends ConsumerStatefulWidget {
 }
 
 class _TexthookerPageState extends ConsumerState<TexthookerPage>
-    with DictionaryPageMixin, WidgetsBindingObserver {
-  final DictionaryPopupController _popup = DictionaryPopupController(
-    lowMemory: false,
-    onLookupStackDepthChanged: recordLookupStackDepth,
-  );
+    with DictionaryPageMixin, WidgetsBindingObserver
+    implements SharedLookupPopupOwner {
+  /// 查词弹窗栈与根 Overlay 浮层宿主。首页外壳里与查词 tab 共用同一个（只有一个常驻
+  /// 热槽 WebView，拍板台 design-shared-lookup-webview）；外壳外（串流副屏等）私有一个。
+  late final SharedLookupPopupHost _popupHost;
+
+  /// 外壳外私有的宿主（本页负责销毁）；共用时为 null。
+  SharedLookupPopupHost? _ownedPopupHost;
+
+  DictionaryPopupController get _popup => _popupHost.controller;
   final ScrollController _scroll = ScrollController();
 
   /// 本平台能不能跑 hook 注入 / 捕获 / 窗口绑定（只有 Windows）。非 Windows 桌面
@@ -198,18 +229,26 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   ).supportsHookCapture;
 
   final GalHookSessionController _session = GalHookSessionController.instance;
-  OverlayEntry? _popupOverlayEntry;
-  bool _overlayInert = false;
 
   /// BUG-1799：「已制卡」徽章向 Anki 复核的单次在途守卫。切回前台可能连发多次
   /// （resumed 事件 + 首帧），复核本身是一次网络往返，重入只会白打。
   bool _revalidatingMined = false;
-  bool _popupOverlayRebuildScheduled = false;
   String? _activeLineId;
   String? _activeSentence;
   bool _followLive = true;
   int _unreadLines = 0;
   String? _lastObservedLineId;
+
+  /// 「新句自动查词」开关（反馈 q9Jcu_Zr2_，偏好 `texthooker_auto_lookup_new_lines`，
+  /// 默认关）。本页是唯一读写方：进页从偏好取一次，chip 切换时写回。
+  bool _autoLookupNewLines = false;
+
+  /// 待自动查词的那句与起查字（整行 UTF-16 下标）。build 时据此把
+  /// [_autoLookupAnchorKey] 挂到该字的命中区上，帧后按它的真实矩形弹卡。
+  ({String lineId, int charIndex})? _autoLookupTarget;
+  final GlobalKey _autoLookupAnchorKey = GlobalKey(
+    debugLabel: 'texthooker-auto-lookup-anchor',
+  );
 
   /// galgame 引擎-hook 启动的**再入守卫**：一次启动含选文件、位数探测、helper 确认/下载对话框、
   /// 注入会话等多个 await，可持续数秒。没有守卫时重复点击会叠出多个下载确认对话框。
@@ -223,6 +262,10 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
 
   /// 实时台词列表的筛选维度（全部 / 有音频 / 已制卡 / 已收藏）。与线程下拉正交叠加。
   TexthookerLineFilter _lineFilter = TexthookerLineFilter.all;
+
+  /// Cupertino macOS 档：用户用工具栏按钮手动打开的 Inspector（无选中行时也展开，
+  /// 显示「未选择台词」占位）。选中一句时 Inspector 无论如何都展开。
+  bool _appleInspectorPinned = false;
 
   /// 正在行内试听的行 id；null = 未在试听（样式对齐诊断页逐轨试听）。
   String? _previewingLineId;
@@ -599,9 +642,17 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   @override
   void initState() {
     super.initState();
+    _popupHost =
+        SharedLookupPopupScope.maybeOf(context) ??
+        (_ownedPopupHost = SharedLookupPopupHost());
+    // 登记为宿主页；成为渲染方时经 [onSharedLookupPopupClaimed] 接线查词计数。
+    _popupHost.attach(this);
     final List<TexthookerLineEntry> initialLines =
         TexthookerService.instance.entries;
     _lastObservedLineId = initialLines.isEmpty ? null : initialLines.last.id;
+    _autoLookupNewLines =
+        _appModel.isPreferencesReady &&
+        _appModel.prefsRepo.texthookerAutoLookupNewLines;
     TexthookerService.instance.addListener(_onLines);
     _session.addListener(_onSessionChanged);
     GalHookTextOverlayController.instance.attachedText.addListener(
@@ -610,8 +661,6 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     // BUG-1799：监听前台/后台切换，用户去 Anki 删卡再切回来时复核「已制卡」徽章。
     WidgetsBinding.instance.addObserver(this);
     HardwareKeyboard.instance.addHandler(_handlePopupMineHardwareKey);
-    // TODO-1204：接线查词计数（每次查词 +1 → lookup_mining_counters）。
-    attachLookupCounter(_popup);
     // BUG-1028：开页 seed 常驻隐藏热槽，使查词弹窗 WebView 冷加载一次后全程复用，
     // 消除本页此前「每次点词 replaceStack 冷建 WebView」的高延迟（对齐 home_dictionary_page）。
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -696,80 +745,90 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     GalHookTextOverlayController.instance.attachedText.removeListener(
       _onAttachedTextChanged,
     );
-    final OverlayEntry? popupOverlay = _popupOverlayEntry;
-    if (popupOverlay != null) {
-      if (popupOverlay.mounted) popupOverlay.remove();
-      popupOverlay.dispose();
-      _popupOverlayEntry = null;
-    }
-    _popup.dispose();
+    // 共用宿主：注销即可（渲染方是本页时宿主把栈交给查词 tab 并收回热槽）；私有
+    // 宿主随本页销毁（摘浮层、释放 controller）。
+    _popupHost.detach(this);
+    _ownedPopupHost?.dispose();
     _scroll.dispose();
     super.dispose();
   }
 
   @override
   void deactivate() {
-    _overlayInert = true;
+    _popupHost.setOwnerVisible(this, false);
     super.deactivate();
   }
 
   @override
   void activate() {
     super.activate();
-    _overlayInert = false;
+    _popupHost.setOwnerVisible(this, true);
   }
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
     // BUG-953：games 是保活 tab，切走时用 Offstage 隐藏（**不触发 deactivate**），但 home_page
-    // 同步把 TickerMode 关掉。用 TickerMode 作可见性信号：tab 不可见时把插在 root Overlay 的
-    // 查词浮层置 inert 并重建（收起为 SizedBox），防止弹窗/barrier 跨 tab 残留遮挡新 tab；
-    // 重新可见时恢复，保留用户查词浮层状态。仅 Offstage 隐藏这一路 deactivate 覆盖不到。
-    final bool nextInert = !TickerMode.of(context);
-    if (nextInert != _overlayInert) {
-      _overlayInert = nextInert;
-      _schedulePopupOverlayRebuild();
-    }
-  }
-
-  /// A dependency change is delivered while this page itself is rebuilding.
-  /// The popup lives in the root Overlay, which is an ancestor rather than a
-  /// descendant of this element, so dirtying its entry synchronously from
-  /// [didChangeDependencies] violates Flutter's build ordering and can corrupt
-  /// the subsequent LayoutBuilder dirty queue. Coalesce visibility changes and
-  /// update the overlay only after the current frame has finished building.
-  void _schedulePopupOverlayRebuild() {
-    if (_popupOverlayRebuildScheduled) return;
-    _popupOverlayRebuildScheduled = true;
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _popupOverlayRebuildScheduled = false;
-      if (!mounted) return;
-      final OverlayEntry? entry = _popupOverlayEntry;
-      if (entry != null && entry.mounted) {
-        entry.markNeedsBuild();
-      }
-    });
+    // 同步把 TickerMode 关掉。用 TickerMode 作可见性信号上报宿主：本页是渲染方而不可见时，
+    // 插在 root Overlay 的查词浮层置 inert（整棵 Offstage，见 [SharedLookupPopupHost]），防止
+    // 弹窗/barrier 跨 tab 残留遮挡新 tab；重新可见时恢复，保留用户查词浮层状态。仅 Offstage
+    // 隐藏这一路 deactivate 覆盖不到。宿主在帧后刷新浮层（根 Overlay 是祖先，build 期间
+    // 不能反向标脏）。
+    _popupHost.setOwnerVisible(this, TickerMode.of(context));
   }
 
   /// 测试可见：查词浮层当前是否被置为 inert（隐藏 tab / 失活时收起）。BUG-953 守卫用。
   @visibleForTesting
-  bool get debugOverlayInert => _overlayInert;
+  bool get debugOverlayInert => _popupHost.overlayInert;
+
+  /// 测试可见：本页用的查词浮层宿主（共用 / 私有）。
+  @visibleForTesting
+  SharedLookupPopupHost get debugPopupHost => _popupHost;
 
   /// Installs the root-overlay host without starting a dictionary lookup.
   ///
   /// This is intentionally limited to tests: a real lookup also creates a
   /// platform WebView, while the overlay lifecycle regression can be exercised
   /// with an empty host.
+  ///
+  /// 真实运行时常驻热槽让 `entries` 永不空，宿主一挂就不再摘；测试里没有热槽，
+  /// 这里把宿主钉住，免得 [_syncPopupOverlay] 在下一帧按「栈空」把它摘掉。
   @visibleForTesting
   void debugMountPopupOverlayForTesting() {
-    if (_popupOverlayEntry != null) return;
-    final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
-    if (overlay == null) return;
-    final OverlayEntry entry = OverlayEntry(builder: _buildPopupOverlay);
-    _popupOverlayEntry = entry;
-    overlay.insert(entry);
+    _popupHost.debugPinForTesting(context);
   }
+
+  // ── SharedLookupPopupOwner ─────────────────────────────────────────
+
+  @override
+  List<Widget> buildSharedLookupPopupLayers(
+    BuildContext context,
+    Size screen,
+  ) => _buildPopups(context, screen);
+
+  @override
+  ThemeData? get sharedLookupPopupTheme => _appModel.overrideDictionaryTheme;
+
+  @override
+  bool get sharedLookupPopupOwnerAlive => mounted;
+
+  /// TODO-1204：成为弹窗栈渲染方时接线查词计数（每次查词 +1 → lookup_mining_counters，
+  /// 归游戏域）。
+  @override
+  void onSharedLookupPopupClaimed(DictionaryPopupController controller) =>
+      attachLookupCounter(controller);
+
+  /// 本页的查词会话此刻在屏上有可见弹窗：栈归本页、本页可见、且有可见层。共用宿主
+  /// 时栈可能是查词 tab 的会话——那时本页的快捷键不能去碰别人的弹窗。
+  bool get _ownsVisiblePopup =>
+      _popupHost.isRenderOwner(this) &&
+      !_popupHost.overlayInert &&
+      _popup.hasVisiblePopup;
+
+  /// 测试可见：制卡热键（[_handlePopupMineHardwareKey] / [_mineFromTopPopup]）此刻是否
+  /// 会作用到弹窗。
+  @visibleForTesting
+  bool get debugPopupMineHotkeyArmed => _ownsVisiblePopup;
 
   /// BUG-1137：texthooker 页制出的卡归「游戏」分类标签——外部窗口模式走
   /// [GalHookMiningCoordinator]（自带 game 来源），fallback 纯文本卡走 mixin 的
@@ -801,7 +860,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   }
 
   @override
-  ModuleId? get popupDockModule => ModuleId.games;
+  ModuleId? get lookupHostModule => ModuleId.games;
 
   /// 「高级制卡」对话框打开时为当前台词冻结的那一帧（对话框里预览 / 打码的就是它）。
   /// 确认制卡且打了码时作为出卡源图交给协调器——预览与出卡同源。下一次开对话框时
@@ -836,7 +895,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           }
           return png;
         });
-    final VideoMiningImageMode mode = mixinAppModel.galMiningImageMode;
+    // 与制卡同一个解析入口（全局 + 本游戏覆盖，反馈 3dRZdakRdJ）：本游戏覆盖成静态截图
+    // 时，这里若读全局值会误报「打码会强制改成静态图」。
+    final VideoMiningImageMode mode = mixinAppModel
+        .galMiningSettingsForGame(_session.activityGameKey)
+        .imageMode;
     // 与协调器 staleScene 同一判据：不是最新一行，截到的就不是那句台词当时的画面。
     final List<TexthookerLineEntry> live = TexthookerService.instance.entries;
     final bool historical = live.isEmpty || live.last.id != lineId;
@@ -910,6 +973,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       FushiToast.showMine(
         msg: t.game_hook_line_unavailable,
         status: MineToastStatus.failed,
+        term: fields['expression'],
+        reading: fields['reading'],
       );
       return const MinePopupResult();
     }
@@ -919,8 +984,14 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     FushiToast.showMine(
       msg: t.card_mining_pending,
       status: MineToastStatus.pending,
+      term: fields['expression'],
+      reading: fields['reading'],
     );
     final BaseAnkiRepository repo = ref.read(ankiRepositoryProvider);
+    // 全局 gal 制卡设置 + 当前游戏的覆盖层（反馈 3dRZdakRdJ），与浮窗同一个解析入口。
+    final GalMiningSettings mining = mixinAppModel.galMiningSettingsForGame(
+      _session.activityGameKey,
+    );
     final GalHookMiningResult result = await GalHookMiningCoordinator.instance
         .mineLine(
           lineId: entry.id,
@@ -933,26 +1004,25 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
             // gal 窗口动图当前不吃清晰度档（`captureWindowGifBytes` 用自己的
             // fps/maxWidth），所以这里传不传都一样——传是为了让两个 gal 入口与视频侧
             // 逐字同形，免得哪天 gal 接上档位时又漏一处。
-            format: mixinAppModel.galMiningAnimatedFormat,
+            format: mining.animatedFormat,
           ),
           repo: repo,
           updateNoteId: updateNoteId,
           addTitleTag: mixinAppModel.autoAddBookNameToTags,
-          imageMode: mixinAppModel.galMiningImageMode,
-          animatedFormat: mixinAppModel.galMiningAnimatedFormat,
-          stillFormat: mixinAppModel.galMiningStillFormat,
-          clipFormat: mixinAppModel.galMiningClipFormat,
+          imageMode: mining.imageMode,
+          animatedFormat: mining.animatedFormat,
+          stillFormat: mining.stillFormat,
+          clipFormat: mining.clipFormat,
+          audioLimit: mining.audioLimit,
           mosaic: mosaic,
           previewStill: previewStill,
         );
     if (result.aborted) {
       FushiToast.showMine(
-        msg: result.audioFallbackDisabled
-            ? t.game_audio_fallback_disabled_missing
-            : result.failureReason != null
-            ? '${t.external_window_capture_failed}：${result.failureReason}'
-            : t.external_window_capture_failed,
+        msg: galHookMiningAbortMessage(result),
         status: MineToastStatus.failed,
+        term: fields['expression'],
+        reading: fields['reading'],
       );
       return const MinePopupResult();
     }
@@ -970,8 +1040,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       FushiToast.showMine(
         msg: described.message,
         status: described.status,
-        // 反馈 JNyykxvuY9：成功提示带「撤销」，几秒内点一下删掉刚加的卡。
-        action: minedCardUndoToastAction(
+        detail: described.detail,
+        term: fields['expression'],
+        reading: fields['reading'],
+        // 反馈 JNyykxvuY9：成功带「撤销」；进待发队列带「查看队列」；复习库要升级带「打开复习」。
+        action: mineResultToastAction(
           repo,
           outcome,
           expression: fields['expression'],
@@ -1140,6 +1213,98 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         endWhen: (listenable: _session, ended: () => !_session.state.isActive),
       ),
     );
+  }
+
+  /// OCR 游戏模式（拍板台 v5GSgDau9u / BUG-5083）：Hook 进不去的游戏（联网游戏、模拟器、
+  /// 未适配引擎）改为定时截窗 + OCR 识别固定的台词区域。顺序：选窗口 → 解析识别器（不可用
+  /// 就在起会话前说清）→ 在一帧截图上框台词区域 → 起会话。会话、台词流、制卡都在
+  /// [GalHookSessionController.startOcrCapture]，页面只发起。
+  Future<void> _startOcrCapture() async {
+    final ExternalWindowInfo? picked = await _showExternalWindowPicker();
+    if (picked == null || !mounted) return;
+    final PreferencesRepository prefs = _appModel.prefsRepo;
+    final GalOcrRecognizerResolution resolution =
+        await resolveGalOcrRecognizerFromPrefs(
+          prefs,
+          localService: ref.read(mangaOcrServiceProvider),
+        );
+    final GalOcrRecognize? recognize = resolution.recognize;
+    if (recognize == null) {
+      FushiToast.show(
+        msg: galOcrModelMissing(resolution)
+            ? t.floating_ball_ocr_model_missing
+            : t.floating_ball_ocr_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (!mounted) return;
+    final GalOcrRegionChoice? choice = await _pickOcrRegion(picked);
+    if (choice == null || !mounted) return;
+    // 反馈 kEFPY4cuKZ：与「附着」同理，先取好配置视图模型——会话起来后页面可能已卸载。
+    final ProfileViewModel profileVm = ref.read(
+      profileViewModelProvider.notifier,
+    );
+    await _session.startOcrCapture(
+      picked,
+      region: choice.region,
+      binarize: choice.binarize,
+      recognize: recognize,
+    );
+    unawaited(
+      profileVm.enterWorkSession(
+        owner: _session,
+        mediaType: ProfileMediaKind.game,
+        endWhen: (listenable: _session, ended: () => !_session.state.isActive),
+      ),
+    );
+  }
+
+  /// 会话中「调整识别区域」：截一帧当前画面重新框。
+  Future<void> _adjustOcrRegion() async {
+    final GalHookSessionState state = _session.state;
+    final ExternalWindowInfo? window = state.boundWindow;
+    if (!state.isOcrMode || window == null) return;
+    final GalOcrRegionChoice? choice = await _pickOcrRegion(window);
+    if (choice == null) return;
+    _session.setOcrRegion(choice.region);
+    _session.setOcrBinarize(choice.binarize);
+  }
+
+  /// 截 [window] 一帧，在上面框台词区域。初始值 = 本局的设置 / 这个游戏上次的设置
+  /// （按游戏记，BUG-5141 ②）/ 全局上次的框（没开过 OCR 的新游戏多半也是画面下方的
+  /// 同类台词框）/ 默认的画面下方。确认后把框记进全局「上次的框」；按游戏的记忆由会话
+  /// 控制器在开始 / 改框时写。
+  Future<GalOcrRegionChoice?> _pickOcrRegion(ExternalWindowInfo window) async {
+    final WindowCaptureResult shot = await WindowCaptureChannel.captureWindow(
+      window.hwnd,
+    );
+    final Uint8List? png = shot.pngBytes;
+    if (png == null || png.isEmpty) {
+      FushiToast.show(
+        msg: t.game_ocr_frame_failed,
+        severity: ToastSeverity.error,
+      );
+      return null;
+    }
+    if (!context.mounted) return null;
+    final PreferencesRepository prefs = _appModel.prefsRepo;
+    final GalOcrRememberedSettings remembered = _session
+        .rememberedOcrSettingsFor(window);
+    final GalOcrRegion initial =
+        remembered.region ??
+        GalOcrRegion.fromJsonString(prefs.galOcrRegionJson) ??
+        GalOcrRegion.defaultDialogue;
+    final GalOcrRegionChoice? choice = await showGalOcrRegionPicker(
+      context,
+      framePng: png,
+      initial: initial,
+      initialBinarize: remembered.binarize,
+    );
+    if (choice != null) {
+      unawaited(prefs.setGalOcrRegionJson(jsonEncode(choice.region.toJson())));
+    }
+    return choice;
   }
 
   /// galgame 引擎-hook（launch 模式）：页面只发起会话；位数解析、注入器选择、窗口绑定、
@@ -1328,62 +1493,16 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       );
       return;
     }
-    final TextEditingController codeController = TextEditingController();
-    final TextEditingController labelController = TextEditingController(
-      text: executable.split(RegExp(r'[/\\]')).last,
-    );
-    final bool? confirmed = await showAppDialog<bool>(
-      context: context,
-      builder: (BuildContext ctx) => FushiDialogFrame(
-        maxWidth: 480,
-        child: FushiModalSheetFrame(
-          title: t.game_hook_code_paste_title,
-          scrollable: true,
-          body: Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                Text(t.game_hook_code_paste_body),
-                const SizedBox(height: 12),
-                FushiTextFieldControl(
-                  controller: codeController,
-                  autofocus: true,
-                  maxLines: 2,
-                  minLines: 1,
-                  decoration: InputDecoration(
-                    labelText: 'Hook Code',
-                    hintText: t.game_hook_code_paste_hint,
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-                const SizedBox(height: 12),
-                FushiTextFieldControl(
-                  controller: labelController,
-                  decoration: InputDecoration(
-                    labelText: t.game_hook_code_label,
-                    border: const OutlineInputBorder(),
-                  ),
-                ),
-              ],
-            ),
+    final ({String code, String label})? pasted =
+        await showAppDialog<({String code, String label})>(
+          context: context,
+          builder: (BuildContext _) => _HookCodePasteDialog(
+            initialLabel: executable.split(RegExp(r'[/\\]')).last,
           ),
-          footer: Align(
-            alignment: Alignment.centerRight,
-            child: FushiFilledButton(
-              onPressed: () => Navigator.pop(ctx, true),
-              child: Text(t.dialog_save),
-            ),
-          ),
-        ),
-      ),
-    );
-    final String code = normalizeGalHookCode(codeController.text);
-    final String label = labelController.text.trim();
-    codeController.dispose();
-    labelController.dispose();
-    if (confirmed != true || !mounted) return;
+        );
+    if (pasted == null || !mounted) return;
+    final String code = normalizeGalHookCode(pasted.code);
+    final String label = pasted.label.trim();
     if (code.isEmpty) {
       FushiToast.show(
         msg: t.game_hook_code_paste_invalid,
@@ -1513,6 +1632,9 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   Widget _buildExternalWindowBar(BuildContext context) {
     final ColorScheme colors = Theme.of(context).colorScheme;
     final ExternalWindowInfo? bound = _session.state.boundWindow;
+    if (isGlassDesign(context)) {
+      return _buildAppleExternalWindowBar(context, bound);
+    }
     return Material(
       // 走共享设计 token 的语义 overlay 面（顶层容器面调性），不在页面里直接引原始
       // ColorScheme 面 token（MD3 守卫要求 ordinary chrome 走共享组件）。
@@ -1527,7 +1649,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
           child: Row(
             children: <Widget>[
-              FushiIcon(Icons.crop_free, size: 18, color: colors.primary),
+              FushiIcon(FushiIcons.crop, size: 18, color: colors.primary),
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
@@ -1541,18 +1663,77 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               ),
               if (bound != null)
                 FushiIconButton(
-                  icon: Icons.link_off,
+                  icon: FushiIcons.linkOff,
                   size: 18,
                   tooltip: t.external_window_unbind,
                   onTap: () => unawaited(_session.bindWindow(null)),
                 ),
               FushiIconButton(
-                icon: Icons.refresh,
+                icon: FushiIcons.refresh,
                 size: 18,
                 tooltip: t.external_window_refresh,
                 onTap: _pickExternalWindow,
               ),
             ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Cupertino 外部窗口条：玻璃材质浮条（不铺整条灰底），点条重新选窗。
+  Widget _buildAppleExternalWindowBar(
+    BuildContext context,
+    ExternalWindowInfo? bound,
+  ) {
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    return Padding(
+      key: const ValueKey<String>('game-external-window-bar'),
+      padding: const EdgeInsets.fromLTRB(12, 8, 12, 0),
+      child: FushiGlassSurface(
+        borderRadius: metrics.groupBorderRadius,
+        child: FushiAppleRow(
+          onTap: _pickExternalWindow,
+          stateBackground: false,
+          child: Padding(
+            padding: EdgeInsets.symmetric(
+              horizontal: metrics.rowHorizontal,
+              vertical: 4,
+            ),
+            child: Row(
+              children: <Widget>[
+                FushiIcon(
+                  FushiIcons.crop,
+                  size: metrics.leadingIconSize,
+                  color: apple.accent,
+                ),
+                SizedBox(width: metrics.leadingGap),
+                Expanded(
+                  child: Text(
+                    bound == null
+                        ? t.external_window_none
+                        : (bound.title.isEmpty
+                              ? '#${bound.hwnd}'
+                              : bound.title),
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: metrics.titleStyle(context),
+                  ),
+                ),
+                if (bound != null)
+                  FushiIconButton(
+                    icon: FushiIcons.linkOff,
+                    tooltip: t.external_window_unbind,
+                    onTap: () => unawaited(_session.bindWindow(null)),
+                  ),
+                FushiIconButton(
+                  icon: FushiIcons.refresh,
+                  tooltip: t.external_window_refresh,
+                  onTap: _pickExternalWindow,
+                ),
+              ],
+            ),
           ),
         ),
       ),
@@ -1578,8 +1759,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     // 跟随开着但用户手动滚离底部时不硬拽回底部（否则打断上翻回看）；此时累积未读，
     // 露出「未读 N」胶囊供一键回到最新。
     final bool follow = _followLive && _isNearBottom();
+    final ({String lineId, int charIndex})? autoLookup =
+        receivedNewLine && follow ? _autoLookupTargetFor(lines.last) : null;
     setState(() {
       if (!follow && receivedNewLine) _unreadLines++;
+      // 新句一到，上一句还没弹出的自动查词就作废（只查最新那句）：新句不符合条件
+      // （没有可查字 / 回看历史中）时也不能让旧目标在帧后弹出来。
+      if (receivedNewLine) _autoLookupTarget = autoLookup;
     });
     _maybeScheduleCaptureSetupDialog();
     if (!receivedNewLine || !follow) return;
@@ -1587,7 +1773,67 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       if (_scroll.hasClients) {
         _scroll.jumpTo(_scroll.position.maxScrollExtent);
       }
+      if (autoLookup == null) return;
+      // 跳底改了视口偏移，新句的屏幕位置要到下一帧布局后才成立：在那一帧之后取矩形。
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _runAutoLookup(autoLookup),
+      );
+      WidgetsBinding.instance.ensureVisualUpdate();
     });
+  }
+
+  /// 新句到达时是否自动查词、从哪个字起查（反馈 q9Jcu_Zr2_）。
+  ///
+  /// 只在开关开着、本页在屏上（[TickerMode]）、没有对话框压着查词层、用户没在
+  /// 嵌套弹窗里往下钻（可见层数 ≤ 1）时触发；超长 / 批量文本不逐字渲染
+  /// （BUG-1597），没有可点的字，不查。起查字取可见文本里第一个可查字
+  /// （[firstLookupCharIndex]），换算回整行下标——与手点那个字同一坐标。
+  ({String lineId, int charIndex})? _autoLookupTargetFor(
+    TexthookerLineEntry line,
+  ) {
+    if (!_autoLookupNewLines ||
+        !TickerMode.of(context) ||
+        lookupPopupHiddenByDialog ||
+        _popup.entries.where((DictionaryPopupEntry e) => e.visible).length >
+            1) {
+      return null;
+    }
+    final ({String text, int sourceOffset}) visible = _visibleHookLineText(
+      line,
+    );
+    if (texthookerLinePresentation(visible.text) !=
+        TexthookerLinePresentation.interactive) {
+      return null;
+    }
+    final int? first = firstLookupCharIndex(visible.text);
+    if (first == null) return null;
+    return (lineId: line.id, charIndex: visible.sourceOffset + first);
+  }
+
+  /// 帧后按锚点字的真实矩形弹卡。锚点没建出来（被筛选隐藏、列表没跟到底）就放弃；
+  /// 期间又来了更新的句子则让给它（只查最新那句）。
+  void _runAutoLookup(({String lineId, int charIndex}) target) {
+    if (!mounted || _autoLookupTarget != target) return;
+    _autoLookupTarget = null;
+    if (!_autoLookupNewLines || lookupPopupHiddenByDialog) return;
+    final RenderObject? anchor = _autoLookupAnchorKey.currentContext
+        ?.findRenderObject();
+    if (anchor is! RenderBox || !anchor.attached || !anchor.hasSize) return;
+    final TexthookerLineEntry? line = _session.entryById(target.lineId);
+    if (line == null) return;
+    final Rect rect = anchor.localToGlobal(Offset.zero) & anchor.size;
+    // 不自动发音：新句到达时游戏自己正在放这句的语音，再念一遍首词只会盖住它。
+    _lookupFromChar(line, target.charIndex, rect, autoRead: false);
+  }
+
+  void _setAutoLookupNewLines(bool value) {
+    setState(() {
+      _autoLookupNewLines = value;
+      if (!value) _autoLookupTarget = null;
+    });
+    if (_appModel.isPreferencesReady) {
+      unawaited(_appModel.prefsRepo.setTexthookerAutoLookupNewLines(value));
+    }
   }
 
   void _maybeScheduleCaptureSetupDialog() {
@@ -1604,7 +1850,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final DateTime? sessionStartedAt = state.sessionStartedAt;
     if (!shouldPromptGalCaptureSetup(
       state: state,
-      hasEngineSource: _session.hasEngineSource,
+      requiresTextThread: _session.requiresTextThreadSelection,
       selectedTextThreadKey: _session.selectedTextThreadKey,
       textThreadCount: _session.textThreads.length,
       sessionAlreadyPrompted: _captureSetupShownForSession == sessionStartedAt,
@@ -1622,7 +1868,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       if (latest.sessionStartedAt != sessionStartedAt ||
           !shouldPromptGalCaptureSetup(
             state: latest,
-            hasEngineSource: _session.hasEngineSource,
+            requiresTextThread: _session.requiresTextThreadSelection,
             selectedTextThreadKey: _session.selectedTextThreadKey,
             textThreadCount: _session.textThreads.length,
             sessionAlreadyPrompted: false,
@@ -1669,10 +1915,22 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 切出来的那个词：引擎本来就按查询串做最长匹配并回报 `bestLength`（弹窗据此高亮
   /// 整词跨度），所以点「永」照样命中「永遠」，而点「遠」能单独查到「遠」——
   /// 老实现把整词当查询串，后者根本无从下手。
-  void _onCharTap(TexthookerLineEntry line, int charIndex, Rect rect) {
+  void _onCharTap(TexthookerLineEntry line, int charIndex, Rect rect) =>
+      _lookupFromChar(line, charIndex, rect, autoRead: true);
+
+  /// 手点（[_onCharTap]）与新句自动查词（[_runAutoLookup]）共用的查词入口：
+  /// 查询串从命中字起算，顶层复用热槽。
+  void _lookupFromChar(
+    TexthookerLineEntry line,
+    int charIndex,
+    Rect rect, {
+    required bool autoRead,
+  }) {
     final String word = lookupQueryFromIndex(line.text, charIndex);
     if (word.isEmpty) return;
     _selectLine(line);
+    // 共用宿主：栈里若是查词 tab 的会话，先收回热槽、渲染方换成本页。
+    _popupHost.claimForLookup(this);
     // BUG-1028：顶层查词复用常驻热槽（reuseWarmSlot:true）而非 replaceStack 冷建，
     // 复用已预热的弹窗 WebView，消除冷启动延迟（对齐 home_dictionary_page.dart:752）。
     // 无热槽（低内存 / seed 未就绪）时 beginTop 自动退回压新层，行为不变。
@@ -1682,7 +1940,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       selectionRect: rect,
       controller: _popup,
       reuseWarmSlot: true,
-      autoRead: true,
+      autoRead: autoRead,
     );
   }
 
@@ -1695,15 +1953,20 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     });
   }
 
+  // 「＋」按钮的快捷键提示跟随下面 [_handlePopupMineHardwareKey] 实际派发的动作。
+  @override
+  ShortcutAction? get dictionaryPopupMineShortcutAction =>
+      ShortcutAction.popupMineEntry;
+
   /// App 内查词 WebView 不在 JS 侧处理制卡快捷键，避免同一次按键同时被
   /// WebView 与 Flutter 消费后制出两张卡。因此 texthooker 必须像视频页一样，
   /// 在宿主侧把 [ShortcutAction.popupMineEntry]（默认 Ctrl+Enter）接回当前
   /// 顶层弹窗的既有制卡按钮；执行体仍走 WebView 的三态、查重与单飞门。
   void _mineFromTopPopup() {
-    if (!_popup.hasVisiblePopup) return;
+    if (!_ownsVisiblePopup) return;
     final int index = _topVisiblePopupIndex;
     final DictionaryPopupWebViewState? popup =
-        _popup.entries[index].webViewKey.currentState;
+        _popup.entries[index].webViewKey.webViewState;
     if (popup == null) return;
     unawaited(popup.mineFirstVisibleEntry());
   }
@@ -1714,7 +1977,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// handler 接收用户配置的制卡绑定。它先于 Focus/Shortcuts 路由处理命中的事件，
   /// 不依赖浮层焦点，也不会让同一次按键再落到 WebView 形成重复制卡。
   bool _handlePopupMineHardwareKey(KeyEvent event) {
-    if (!mounted || !_popup.hasVisiblePopup) return false;
+    if (!mounted || !_ownsVisiblePopup) return false;
     for (final InputBinding binding
         in mixinAppModel.shortcutRegistry
             .bindingsFor(ShortcutAction.popupMineEntry)
@@ -1778,12 +2041,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       _maybeScheduleCaptureSetupDialog();
     }
     if (widget.embedded) {
-      // 动作不再挤在页头右上角：主操作（带文字）与工具组进页顶会话状态条，页头只
-      // 留分段页签 / 返回。
-      final List<Widget> actions = _buildToolbarActions(
-        context,
-        embedded: true,
-      );
+      // 动作不再挤在页头右上角：起点 / 停止进会话状态块，工具组进状态块下方
+      // （宽屏侧栏是带名称的分段列表，窄屏是带字 chip 条），页头只留分段页签 / 返回。
       final Widget? sectionTabs = widget.navigation ?? _buildSectionTabs();
       return Column(
         children: <Widget>[
@@ -1806,16 +2065,31 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               lines,
               textThreads,
               selectedTextThreadKey,
-              sessionActions: actions,
+              embeddedSession: true,
             ),
           ),
         ],
       );
     }
+    // 重设计外壳（墨水屏除外）：独立页换成页头大字。工作台是定高版面（会话卡 +
+    // 自带滚动的台词面板），正文排在页头下沿以下、不铺到页头底下。
+    if (shellRedesignActive(context)) {
+      return FushiMastheadScaffold(
+        title: t.texthooker,
+        actions: _buildAppBarActions(),
+        extendBodyBehindHeader: false,
+        body: _buildMonitorBody(
+          context,
+          lines,
+          textThreads,
+          selectedTextThreadKey,
+        ),
+      );
+    }
     return Scaffold(
       appBar: FushiAppBar(
         title: Text(t.texthooker),
-        actions: _buildToolbarActions(context, embedded: false),
+        actions: _buildAppBarActions(),
       ),
       body: _buildMonitorBody(
         context,
@@ -1826,47 +2100,63 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     );
   }
 
-  /// 嵌入模式（[HomeGamePage]）与独立模式（[Scaffold]+[AppBar]）共用的工具栏动作。
-  /// 两模式按钮集合与行为调用完全一致，只是摆法不同：
+  /// 嵌入模式（[HomeGamePage]）与独立模式（[Scaffold]+[AppBar]）共用的会话工具。
+  /// 两模式工具集合与行为调用完全一致，只是摆法不同：
   ///
-  /// - 嵌入模式（2026-10 工作台重做）：动作不再挤在页头右上角一排无字图标里，而是
-  ///   放进页顶「会话状态条」——**主操作带文字**（启动并捕获 / 附着并捕获，会话进行
-  ///   中换成停止监听），次要操作收成一组带 tooltip 的图标工具（[FushiToolbar] 同一
-  ///   胶囊组，tooltip 带当前状态）。低频开关仍然**不收进「更多」菜单**：其中两项
-  ///   本身带状态（音频降级档位、外部窗口挖矿开关态），藏进菜单就看不见在哪一档。
-  /// - 独立模式：AppBar 动作区，纯图标 + tooltip。
+  /// - 嵌入模式（2026-11 拼贴改版）：「启动并捕获 / 附着并捕获」是会话状态块里的
+  ///   两张大动作卡，会话进行中换成「停止监听」（见 [_SessionOverviewCard]）；其余
+  ///   工具**带名称与当前值**摆在状态块下方——宽屏侧栏是分段列表，窄屏是带字 chip
+  ///   条——不再是一排无字图标，也不收进「更多」菜单（其中两项本身带状态：音频降级
+  ///   档位、外部窗口挖矿开关态，藏起来就看不见在哪一档）。清空台词是破坏性操作，
+  ///   单独成组、红字，与常用工具隔开。
+  /// - 独立模式：AppBar 动作区，纯图标 + tooltip（[_buildAppBarActions]）。
   ///
-  /// 「兼容性诊断」入口已删——它收进游戏「设置」，工具栏再放一份纯冗余。
-  List<Widget> _buildToolbarActions(
-    BuildContext context, {
-    required bool embedded,
-  }) {
+  /// 返回按语义分好的三组（捕获 / 会话工具 / 清空）。「兼容性诊断」入口已删——它
+  /// 收进游戏「设置」，工具栏再放一份纯冗余。
+  List<List<_SessionTool>> _buildToolbarActions({required bool embedded}) {
     final GalHookSessionState state = _session.state;
     // 启动 / 附着是会话未开始时的主操作；会话进行中它们退居工具组（仍可用：换一个
     // 游戏重新捕获），主位让给「停止监听」。
     final bool primaryStart = embedded && !state.isActive;
-    // M3E 工具栏按语义分三组（捕获 / 会话工具 / 清空），嵌入模式下由
-    // [FushiToolbar] 画成一条浮动胶囊、组间留缝；独立模式（AppBar）按序铺平。
-    final List<Widget> captureTools = <Widget>[
+    final List<_SessionTool> captureTools = <_SessionTool>[
       if (_hookCapture && !primaryStart)
-        FushiIconButton(
+        _SessionTool(
           icon: Icons.rocket_launch_outlined,
-          tooltip: t.game_launch_and_capture,
+          label: t.game_launch_and_capture,
+          start: true,
           onTap: _launchGalgameEngineHook,
         ),
       // 「游戏已经自己在跑」是和「让 Fushi 拉起游戏」同等常见的起点（Steam / 启动器 /
       // 转区工具拉起的进程都属此列），两条起点并列摆出来，用户不必为了捕获而重启游戏。
       if (_hookCapture && !primaryStart)
-        FushiIconButton(
+        _SessionTool(
           icon: Icons.cable_outlined,
-          tooltip: t.game_attach_and_capture,
+          label: t.game_attach_and_capture,
           focusId: const FushiFocusId('game-toolbar-attach'),
+          start: true,
           onTap: _attachToRunningGame,
         ),
+      // 第三个起点：Hook 进不去的游戏走 OCR（不注入）。
+      if (_hookCapture && !primaryStart)
+        _SessionTool(
+          icon: FushiIcons.ocr,
+          label: t.game_ocr_capture,
+          focusId: const FushiFocusId('game-toolbar-ocr'),
+          start: true,
+          onTap: _startOcrCapture,
+        ),
+      if (state.isActive && state.isOcrMode)
+        _SessionTool(
+          icon: FushiIcons.crop,
+          label: t.game_ocr_region_adjust,
+          focusId: const FushiFocusId('game-toolbar-ocr-region'),
+          onTap: _adjustOcrRegion,
+        ),
+      // 嵌入模式的「停止监听」是状态块里的带字主操作，不在工具组里重复。
       if (state.isActive && !embedded)
-        FushiIconButton(
+        _SessionTool(
           icon: Icons.stop_circle_outlined,
-          tooltip: t.game_stop_listening,
+          label: t.game_stop_listening,
           onTap: () => unawaited(_session.stopCapture()),
         ),
       // 会话音轨面板直达入口：排除 BGM 是会话级操作，此前只能从「某一句的
@@ -1874,106 +2164,78 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       if (_hookCapture &&
           state.isActive &&
           _session.selectedTextThreadKey != null)
-        FushiIconButton(
-          icon: Icons.multitrack_audio_outlined,
-          tooltip: t.game_audio_tracks,
+        _SessionTool(
           focusId: const FushiFocusId('game-toolbar-tracks'),
+          icon: Icons.multitrack_audio_outlined,
+          label: t.game_audio_tracks,
           onTap: () => unawaited(_showSessionTrackPanel()),
         ),
     ];
-    final List<Widget> sessionTools = <Widget>[
+    final List<_SessionTool> sessionTools = <_SessionTool>[
       // 音频降级档位与捕获健康都属于 hook 会话；外部 texthooker 没有会话，不摆。
       if (_hookCapture)
-        FushiIconButton(
-          key: const ValueKey<String>('game-toolbar-audio-fallback'),
+        _SessionTool(
+          id: 'game-toolbar-audio-fallback',
           icon: Icons.graphic_eq,
-          tooltip:
-              '${t.game_audio_fallback_policy} · '
-              '${_audioFallbackPolicyLabel(state.audioFallbackPolicy)}',
-          focusId: const FushiFocusId('game-toolbar-audio-fallback'),
+          label: t.game_audio_fallback_policy,
+          value: _audioFallbackPolicyLabel(state.audioFallbackPolicy),
           onTap: () => unawaited(_showAudioFallbackPolicyDialog()),
         ),
+      // 唯一的真开关。开关态走「图标形态 + 开关 / 选中态底」双通道（不靠颜色单
+      // 通道，色觉障碍用户也分得清）。
       if (_hookCapture)
-        FushiIconButton(
-          key: const ValueKey<String>('game-toolbar-health'),
-          icon: Icons.monitor_heart_outlined,
-          tooltip: t.game_health,
-          focusId: const FushiFocusId('game-toolbar-health'),
-          onTap: () => unawaited(_showHealthDialog()),
-        ),
-      if (_hookCapture)
-        FushiIconButton(
-          key: const ValueKey<String>('game-toolbar-hook-overlay'),
-          icon: Icons.picture_in_picture_alt_outlined,
-          tooltip: t.game_show_hook_text_window,
-          focusId: const FushiFocusId('game-toolbar-hook-overlay'),
-          onTap: () =>
-              unawaited(GalHookTextOverlayController.instance.showManually()),
-        ),
-      // 唯一的真开关。开关态走「图标形态 + 选中态底」双通道（不靠颜色单通道，
-      // 色觉障碍用户也分得清）。
-      if (_hookCapture)
-        FushiIconButton(
-          key: const ValueKey<String>('game-toolbar-external-window'),
+        _SessionTool(
+          id: 'game-toolbar-external-window',
           icon: state.externalWindowMode
               ? Icons.open_in_new
               : Icons.open_in_new_off,
-          tooltip: t.external_window_mining,
+          label: t.external_window_mining,
           selected: state.externalWindowMode,
-          focusId: const FushiFocusId('game-toolbar-external-window'),
           onTap: () => unawaited(_toggleExternalWindowMode()),
         ),
+      if (_hookCapture)
+        _SessionTool(
+          id: 'game-toolbar-hook-overlay',
+          icon: Icons.picture_in_picture_alt_outlined,
+          label: t.game_show_hook_text_window,
+          onTap: () =>
+              unawaited(GalHookTextOverlayController.instance.showManually()),
+        ),
+      if (_hookCapture)
+        _SessionTool(
+          id: 'game-toolbar-health',
+          icon: Icons.monitor_heart_outlined,
+          label: t.game_health,
+          onTap: () => unawaited(_showHealthDialog()),
+        ),
     ];
-    final List<Widget> clearTools = <Widget>[
-      FushiIconButton(
+    final List<_SessionTool> clearTools = <_SessionTool>[
+      _SessionTool(
         icon: Icons.delete_outline,
-        tooltip: t.clear,
+        label: t.game_workbench_clear_lines,
+        danger: true,
         onTap: TexthookerService.instance.clear,
       ),
     ];
-    if (!embedded) {
-      return <Widget>[...captureTools, ...sessionTools, ...clearTools];
-    }
-    return <Widget>[
-      // 两个起点是一组互斥的主操作：M3E 标准按钮组（按下的一颗变宽、邻居让位），
-      // 各按钮自带按压形变，不再外套 FushiPressScale。
-      if (_hookCapture && primaryStart)
-        FushiButtonGroup(
-          children: <Widget>[
-            FushiFilledButton.icon(
-              key: const ValueKey<String>('game-action-launch'),
-              onPressed: _launchGalgameEngineHook,
-              icon: const FushiIcon(Icons.rocket_launch_outlined, size: 18),
-              label: Text(t.game_launch_and_capture),
-            ),
-            FushiOutlinedButton.icon(
-              key: const ValueKey<String>('game-action-attach'),
-              onPressed: _attachToRunningGame,
-              icon: const FushiIcon(Icons.cable_outlined, size: 18),
-              label: Text(t.game_attach_and_capture),
-            ),
-          ],
-        ),
-      if (state.isActive)
-        FushiPressScale(
-          child: FushiFilledButton.tonalIcon(
-            key: const ValueKey<String>('game-action-stop'),
-            onPressed: () => unawaited(_session.stopCapture()),
-            icon: const FushiIcon(Icons.stop_circle_outlined, size: 18),
-            label: Text(t.game_stop_listening),
-          ),
-        ),
-      FushiToolbar(
-        dense: true,
-        floating: true,
-        groups: <List<Widget>>[captureTools, sessionTools, clearTools],
-      ),
-    ];
+    return <List<_SessionTool>>[
+      captureTools,
+      sessionTools,
+      clearTools,
+    ].where((List<_SessionTool> g) => g.isNotEmpty).toList(growable: false);
   }
+
+  /// 独立模式（AppBar）的动作：三组按序铺平成图标钮。
+  List<Widget> _buildAppBarActions() => <Widget>[
+    for (final List<_SessionTool> group in _buildToolbarActions(
+      embedded: false,
+    ))
+      for (final _SessionTool tool in group) tool.button(),
+  ];
 
   /// 三档选择对话框。每档都写清代价——这不是「高级选项」，是用户每局都要按游戏
   /// 有没有逐句语音来定的判断。
   Future<void> _showAudioFallbackPolicyDialog() async {
+    if (isGlassDesign(context)) return _showAppleAudioFallbackPolicy();
     await showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => FushiAlertDialog(
@@ -2034,6 +2296,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   /// 会话健康状态对话框（原右栏常驻卡的新家）。内容仍是 [_CaptureHealthCard]，
   /// 随会话状态实时刷新；Anki 配置态来自 app 级 AnkiViewModel（BUG-1007 的接线）。
   Future<void> _showHealthDialog() async {
+    if (isGlassDesign(context)) return _showAppleHealth();
     await showAppDialog<void>(
       context: context,
       builder: (BuildContext dialogContext) => FushiAlertDialog(
@@ -2083,19 +2346,55 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     List<TexthookerLineEntry> lines,
     List<TexthookerTextThread> textThreads,
     String? selectedTextThreadKey, {
-    List<Widget> sessionActions = const <Widget>[],
+    bool embeddedSession = false,
   }) {
     final GalHookSessionState state = _session.state;
     final GalWorkbenchReadiness readiness = galWorkbenchReadiness(
       state: state,
-      hasEngineSource: _session.hasEngineSource,
+      requiresTextThread: _session.requiresTextThreadSelection,
       selectedTextThreadKey: selectedTextThreadKey,
     );
     final TexthookerLineEntry? selectedLine = _selectedLine(lines);
-    // 工作台是固定版面（会话卡 + 自带滚动的台词面板）：滚轮停在状态卡、线程 /
+    // 嵌入模式（游戏 › 工作台）：起点 / 停止与带名称的会话工具都进会话状态区；
+    // 独立模式这些动作在 AppBar（[_buildAppBarActions]），状态区只展示状态。
+    final List<List<_SessionTool>> sessionTools = embeddedSession
+        ? _buildToolbarActions(embedded: true)
+        : const <List<_SessionTool>>[];
+    final bool canStart = embeddedSession && _hookCapture && !state.isActive;
+    final String? launchExe = state.launchExe;
+    final GalgameEntry? sessionGame =
+        launchExe == null ||
+            launchExe.trim().isEmpty ||
+            !_appModel.isInitialised
+        ? null
+        : findGalgameByExePath(_appModel.galgameRepo.games, launchExe);
+    // BUG-1007：Anki 是否已配置（牌组 + 笔记类型均已选），实时信号「Anki」格用。
+    final bool ankiConfigured = ref.watch(
+      ankiViewModelProvider.select(
+        (AnkiUiState uiState) => uiState.isConfigured,
+      ),
+    );
+    // Cupertino（iOS 27 / macOS 27）：三栏 / 根列表版面（games/apple/），数据与
+    // 动作与下面的 M3E 版面同一份。
+    if (isGlassDesign(context)) {
+      return _buildAppleMonitorBody(
+        context,
+        lines,
+        textThreads,
+        selectedTextThreadKey,
+        readiness: readiness,
+        selectedLine: selectedLine,
+        sessionTools: sessionTools,
+        canStart: canStart,
+        embeddedSession: embeddedSession,
+        sessionGame: sessionGame,
+        ankiConfigured: ankiConfigured,
+      );
+    }
+    // 工作台是固定版面（会话区 + 自带滚动的台词面板）：滚轮停在状态区、线程 /
     // 筛选行、卡片头、空白处时转给台词列表，任意位置都滚得动；指针下还能滚的
-    // 嵌套滚动区（列表本身、侧板内容）仍由它自己接。不改成整页滚动：「跟随
-    // 实时」每来一句就把列表推到底，整页滚动会让状态卡（停止监听 / 游戏内
+    // 嵌套滚动区（列表本身、侧栏、侧板内容）仍由它自己接。不改成整页滚动：「跟随
+    // 实时」每来一句就把列表推到底，整页滚动会让状态区（停止监听 / 游戏内
     // 查词）在捕获期间常驻滚出视口，宽屏的本句详情侧板也没法再贴着列表。
     return WheelScrollForwarder(
       controller: _scroll,
@@ -2108,21 +2407,31 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               child: LayoutBuilder(
                 builder: (BuildContext context, BoxConstraints box) {
                   final bool compact = box.maxWidth < 840;
-                  // 页顶会话状态条：游戏 / 捕获状态 / 音频源 / 游戏内查词合并成一处，
-                  // 主操作带文字标签，次要工具成组。
+                  final bool sideColumn =
+                      box.maxWidth >= kGalWorkbenchSideColumnBreakpoint;
+                  // 会话状态区：拼贴色块（开始块 / 当前游戏 + 实时信号）+ 游戏内
+                  // 查词能力小卡 + 带名称的会话工具（危险操作单独隔开）。
                   final Widget overview = _SessionOverviewCard(
                     state: state,
                     readiness: readiness,
                     compact: compact,
-                    actions: sessionActions,
-                    footer: <Widget>[
-                      // 色块嵌在 footer 的 surface 容器里：四周留白，别贴着容器边
-                      // 和下方的游戏内查词行。
+                    layout: sideColumn
+                        ? _SessionCardLayout.side
+                        : _SessionCardLayout.banner,
+                    game: sessionGame,
+                    ankiConfigured: ankiConfigured,
+                    onLaunch: canStart ? _launchGalgameEngineHook : null,
+                    onAttach: canStart ? _attachToRunningGame : null,
+                    onOcr: canStart ? _startOcrCapture : null,
+                    onStop: embeddedSession && state.isActive
+                        ? () => unawaited(_session.stopCapture())
+                        : null,
+                    tools: sessionTools,
+                    notices: <Widget>[
                       if (state.knifeTextServiceIniPath != null)
-                        Padding(
-                          padding: const EdgeInsets.fromLTRB(8, 8, 8, 0),
-                          child: _buildKnifeTextServiceNotice(state),
-                        ),
+                        _buildKnifeTextServiceNotice(state),
+                    ],
+                    footer: <Widget>[
                       if (_hookCapture)
                         GalAttachedLookupWorkbench(
                           controller: GalHookTextOverlayController
@@ -2159,10 +2468,73 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                           line: selectedLine,
                           onClose: _clearSelectedLine,
                         );
+                  // 横排（台词列表上方）时会话区与台词面板分同一列固定高度。2026-11
+                  // 拼贴改版后会话区（开始块两张大动作卡 + 带字工具条 + 游戏内查词）
+                  // 比旧状态条高得多，原样塞进 Column 会在矮窗（776×484 等）把台词
+                  // 面板挤成 0 高并 RenderFlex 溢出。会话区因此封顶、超出部分在自己
+                  // 的次级滚动区里滚，台词面板（主内容）始终保有
+                  // [_kLiveLinesMinHeight]（矮窗时至少六成高度）。
+                  final double overviewMaxHeight =
+                      box.maxHeight - 12 - _kLiveLinesMinHeight >
+                          box.maxHeight * 0.4
+                      ? box.maxHeight - 12 - _kLiveLinesMinHeight
+                      : box.maxHeight * 0.4;
+                  final Widget bannerOverview = ConstrainedBox(
+                    constraints: BoxConstraints(maxHeight: overviewMaxHeight),
+                    // 与侧栏同理：次级滚动区的滚动通知不冒泡到页头，也不认领
+                    // 页面的 PrimaryScrollController（台词列表才是主滚动）。
+                    child: NotificationListener<Notification>(
+                      onNotification: (Notification n) =>
+                          n is ScrollNotification ||
+                          n is ScrollMetricsNotification,
+                      child: SingleChildScrollView(
+                        key: const ValueKey<String>('game-session-banner'),
+                        primary: false,
+                        child: overview,
+                      ),
+                    ),
+                  );
+                  if (sideColumn) {
+                    // 宽屏两栏：左侧栏（状态 / 能力 / 工具，自带滚动）+ 主区台词，
+                    // 选中一句时右侧再展开详情侧板。
+                    return Row(
+                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                      children: <Widget>[
+                        SizedBox(
+                          width: kGalWorkbenchSideColumnWidth,
+                          // 侧栏是视口内的次级滚动区，不是页面主滚动：它的滚动
+                          // 通知若冒泡到页头，会让大标题收起 → 侧栏变高、内容
+                          // 放得下被夹回顶部 → 标题又展开，来回跳（用户录屏
+                          // 2026-11-16「往下拉有问题」）。页头只跟主内容走。
+                          child: NotificationListener<Notification>(
+                            onNotification: (Notification n) =>
+                                n is ScrollNotification ||
+                                n is ScrollMetricsNotification,
+                            child: SingleChildScrollView(
+                              key: const ValueKey<String>('game-session-side'),
+                              // 次级滚动区不认领页面的 PrimaryScrollController：
+                              // 右栏台词列表才是主滚动，两边共用一个控制器会让
+                              // Scrollbar 报「attached to more than one
+                              // ScrollPosition」。
+                              primary: false,
+                              padding: const EdgeInsetsDirectional.only(end: 4),
+                              child: overview,
+                            ),
+                          ),
+                        ),
+                        const SizedBox(width: 16),
+                        Expanded(child: live),
+                        GalWorkbenchDetailPane(
+                          open: selectedLine != null,
+                          child: lineTracks,
+                        ),
+                      ],
+                    );
+                  }
                   if (box.maxWidth >= kGalWorkbenchWideBreakpoint) {
                     return Column(
                       children: <Widget>[
-                        overview,
+                        bannerOverview,
                         const SizedBox(height: 12),
                         Expanded(
                           child: Row(
@@ -2182,7 +2554,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
                   return Column(
                     crossAxisAlignment: CrossAxisAlignment.stretch,
                     children: <Widget>[
-                      overview,
+                      bannerOverview,
                       const SizedBox(height: 12),
                       Expanded(child: live),
                       GalWorkbenchBottomReveal(
@@ -2218,6 +2590,20 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       if (line.id == activeId) return line;
     }
     return null;
+  }
+
+  /// Cupertino macOS 档工具栏的 Inspector 开关：展开着就收起（同时清掉选中行），
+  /// 收着就钉开（无选中行时显示「未选择台词」占位）。
+  void _toggleAppleInspector({required bool open}) {
+    if (open) {
+      setState(() {
+        _appleInspectorPinned = false;
+        _activeLineId = null;
+        _activeSentence = null;
+      });
+      return;
+    }
+    setState(() => _appleInspectorPinned = true);
   }
 
   void _clearSelectedLine() {
@@ -2279,7 +2665,8 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
   Future<GalCaptureSetupOutcome?> _presentCaptureSetupDialog(
     GalAttachedTextController attachedText,
   ) {
-    return showAppDialog<GalCaptureSetupOutcome>(
+    // M3E 对话框；Apple 下 macOS 档窗口 sheet、iOS 档整页（用户 2026-11-24）。
+    return showAdaptiveDialogSurface<GalCaptureSetupOutcome>(
       context: context,
       builder: (BuildContext dialogContext) => GalCaptureSetupDialog(
         session: _session,
@@ -2329,17 +2716,235 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     final List<TexthookerLineEntry> visibleLines = lines
         .where((TexthookerLineEntry e) => lineMatchesFilter(e, _lineFilter))
         .toList(growable: false);
+    final FushiTypography type = context.fushiType;
+    final bool glass = isGlassDesign(context);
+    final Widget threadSelector = _buildThreadSelector(
+      textThreads,
+      selectedTextThreadKey,
+    );
+    // 「文本处理」入口挂在选择器右侧：管线是按**所选线程**编排的，没选线程时必须
+    // 禁用——否则等于对着一条空样例调规则，存下来也不知道存给了谁。
+    final Widget threadRow = Row(
+      children: <Widget>[
+        Expanded(child: threadSelector),
+        const SizedBox(width: 4),
+        _buildTextProcessEntry(context, textThreads, selectedTextThreadKey),
+      ],
+    );
+    // 桌面端鼠标必须能拖动这个横滚区（默认 dragDevices 不含 mouse）——全仓横向
+    // 滚动区的统一包裹件，由 horizontal_drag_scroll_guard 钉死。
+    final Widget filterChips = HorizontalDragScrollable(
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: _buildFilterChips(context, lines),
+      ),
+    );
+    // M3E 分段列表：外框是 surface 底的描边卡，每句台词是一格分层填充色
+    // 分段（组首尾大圆角、内侧小圆角、悬停 / 选中形变，选中 secondaryContainer）。
+    // 外框若仍是填充卡，分段与外框同色，段与段之间的缝就看不见了。Apple 维持
+    // 原来的分组卡（inset grouped 由各行自己的卡片承担）。
+    return FushiCard(
+      padding: EdgeInsets.zero,
+      variant: glass ? FushiCardVariant.filled : FushiCardVariant.outlined,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          // 列表头（2026-11 改版）：一条工具条——左侧标题 + 计数签 + 未读，右侧
+          // 「跟随实时」「自动查词」开关 chip 与「特殊码」菜单 chip（宽时都带字；
+          // 窄时两个开关收成纯图标，见下方 compact）。
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 14, 12, 4),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints box) {
+                final Widget title = Row(
+                  children: <Widget>[
+                    Flexible(
+                      child: Text(
+                        t.game_live_lines,
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: type.titleLargeEmphasized,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    _LineCountBadge(count: lines.length),
+                    const SizedBox(width: 8),
+                    // 未读计数：M3E 超小号 tonal 按钮（secondaryContainer 全胶囊、
+                    // 按压形变；Apple = 玻璃胶囊）。点击 = 跳到最新一行并清零未读。
+                    // 出现 / 消失走 effects 弹簧的缩放淡入，不再瞬间闪现。
+                    AnimatedSwitcher(
+                      duration: context.fushiMotion.effectsDefault.duration,
+                      switchInCurve: context.fushiMotion.effectsDefault.curve,
+                      switchOutCurve: context.fushiMotion.effectsFast.curve,
+                      transitionBuilder:
+                          (Widget child, Animation<double> animation) =>
+                              ScaleTransition(
+                                scale: animation,
+                                child: FadeTransition(
+                                  opacity: animation,
+                                  child: child,
+                                ),
+                              ),
+                      child: _unreadLines > 0
+                          ? FushiFilledButton.tonal(
+                              key: const ValueKey<String>('game-unread-lines'),
+                              size: FushiButtonSize.xs,
+                              onPressed: _jumpToLatestAndClearUnread,
+                              // 不另给字阶：主题字阶自带 onSurface 色，会盖掉
+                              // 按钮的 onSecondaryContainer 前景。
+                              child: Text(
+                                '${t.game_unread_lines} $_unreadLines',
+                              ),
+                            )
+                          : const SizedBox.shrink(
+                              key: ValueKey<String>('game-unread-none'),
+                            ),
+                    ),
+                  ],
+                );
+                // 宽时三个 chip 都带字（约 420），标题 + 计数签 + 未读胶囊还要约 250；
+                // 窄于此两个开关 chip 收成纯图标（字进 tooltip，TODO-640 同款），
+                // 列表头仍是一行、高度不变，不把标题一侧挤溢出。阈值与第二行同为 760。
+                final bool compact = box.maxWidth < 760;
+                final List<Widget> actions = <Widget>[
+                  FushiSelectableChip(
+                    key: const ValueKey<String>('game-follow-live'),
+                    label: t.game_follow_live,
+                    iconOnly: compact,
+                    leadingIcon: Icons.vertical_align_bottom_rounded,
+                    selected: _followLive,
+                    focusId: const FushiFocusId('game-follow-live'),
+                    onSelected: _setFollowLive,
+                  ),
+                  FushiSelectableChip(
+                    key: const ValueKey<String>('game-auto-lookup'),
+                    label: t.game_auto_lookup_new_lines,
+                    tooltip: t.game_auto_lookup_new_lines_tooltip,
+                    iconOnly: compact,
+                    leadingIcon: FushiIcons.manageSearch,
+                    selected: _autoLookupNewLines,
+                    focusId: const FushiFocusId('game-auto-lookup'),
+                    onSelected: _setAutoLookupNewLines,
+                  ),
+                  _buildHookCodeMenuButton(),
+                ];
+                // 标题占满剩余宽度：Flexible 与 Spacer 并列会平分空余，把右侧开关
+                // 推到列表头中间。
+                return Row(
+                  children: <Widget>[
+                    Expanded(child: title),
+                    const SizedBox(width: 8),
+                    for (int i = 0; i < actions.length; i++) ...<Widget>[
+                      if (i > 0) const SizedBox(width: 6),
+                      actions[i],
+                    ],
+                  ],
+                );
+              },
+            ),
+          ),
+          // 第二行：线程选择 + 文本处理 + 筛选分段（单选，设计系统分段组件）。
+          // 宽时一行，窄时两行。
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 6, 12, 12),
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints box) {
+                if (box.maxWidth >= 760) {
+                  return Row(
+                    children: <Widget>[
+                      SizedBox(width: 360, child: threadRow),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Align(
+                          alignment: AlignmentDirectional.centerEnd,
+                          child: filterChips,
+                        ),
+                      ),
+                    ],
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    threadRow,
+                    const SizedBox(height: 8),
+                    filterChips,
+                  ],
+                );
+              },
+            ),
+          ),
+          const FushiDividerControl(height: 1),
+          Expanded(
+            child: lines.isEmpty
+                ? _buildLinesEmptyState(context, readiness, textThreads)
+                : FushiEntranceScope(
+                    // 换线程 / 换筛选时重开进场窗口；实时追加的新行在窗口外，
+                    // 瞬间出现（不拖影）。
+                    replayKey: (selectedTextThreadKey, _lineFilter),
+                    child: ListView.builder(
+                      controller: _scroll,
+                      padding: const EdgeInsets.all(8),
+                      itemCount: visibleLines.length,
+                      itemBuilder: fushiStaggeredItemBuilder((
+                        BuildContext context,
+                        int i,
+                      ) {
+                        final _LineRowModel row = _lineRowModel(
+                          visibleLines[i],
+                        );
+                        final TexthookerLineEntry line = row.line;
+                        return _TexthookerLine(
+                          line: line,
+                          index: i,
+                          count: visibleLines.length,
+                          displayText: row.displayText,
+                          sourceOffset: row.sourceOffset,
+                          presentation: row.presentation,
+                          words: row.words,
+                          selected: row.selected,
+                          previewingAudio: row.previewingAudio,
+                          canPickTrack: row.canPickTrack,
+                          canRecapture: row.canRecapture,
+                          recapturing: row.recapturing,
+                          onSelectLine: _selectLine,
+                          onCharTap: _onCharTap,
+                          autoLookupCharIndex: row.autoLookupCharIndex,
+                          autoLookupAnchorKey: _autoLookupAnchorKey,
+                          onToggleFavorite: _toggleLineFavorite,
+                          onPreviewAudio: (TexthookerLineEntry l) =>
+                              unawaited(_toggleLinePreview(l)),
+                          onPickTrack: (TexthookerLineEntry l) =>
+                              unawaited(_pickLineTrack(l)),
+                          onRecapture: (TexthookerLineEntry l) =>
+                              unawaited(_toggleLineRecapture(l)),
+                          onCopy: (TexthookerLineEntry _) =>
+                              _appModel.copyToClipboard(row.displayText),
+                        );
+                      }),
+                    ),
+                  ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  /// 台词线程选择器（M3E 列表头与 Cupertino 列表头共用；下拉本身已按设计系统分派，
+  /// Apple 下是 pop-up 按钮）。
+  Widget _buildThreadSelector(
+    List<TexthookerTextThread> textThreads,
+    String? selectedTextThreadKey,
+  ) {
     // 重名线程（同 hookName + 地址、不同调用上下文）补 `#N` 序号，供下拉区分。
     final Map<String, String> threadDisplayLabels = assignThreadDisplayLabels(
       textThreads,
     );
-    final FushiTypography type = context.fushiType;
-    final bool glass = isGlassDesign(context);
     // 共享手柄可进下拉（巡检 G3：全仓唯一裸 DropdownButton）。受控组件：
     // selected 每帧由真实会话状态推导——选中线程可能被行 buffer 上限
     // 淘汰/清空后不再在 items 里，不在则回退「全部」空串哨兵（BUG-952
     // 语义保持）。
-    final Widget threadSelector = GamepadMenuDropdown<String>(
+    return GamepadMenuDropdown<String>(
       key: const ValueKey<String>('game-text-thread-selector'),
       focusId: const FushiFocusId('game-text-thread-selector'),
       label: t.game_text_thread,
@@ -2393,236 +2998,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         }
         return null;
       },
-      onChanged: (String value) {
-        TexthookerTextThread? selectedThread;
-        if (value.isNotEmpty) {
-          for (final TexthookerTextThread thread in textThreads) {
-            if (thread.key == value) {
-              selectedThread = thread;
-              break;
-            }
-          }
-        }
-        setState(() {
-          _activeLineId = null;
-          _activeSentence = null;
-          _unreadLines = 0;
-        });
-        unawaited(
-          _session.selectTextThread(
-            selectedThread?.nativeThreadId,
-            threadKey: selectedThread?.key,
-            // 用户亲自选的线程记进本游戏记忆，下次开同一个游戏自动选回。
-            remember: true,
-          ),
-        );
-      },
-    );
-    // 「文本处理」入口挂在选择器右侧：管线是按**所选线程**编排的，没选线程时必须
-    // 禁用——否则等于对着一条空样例调规则，存下来也不知道存给了谁。
-    final Widget threadRow = Row(
-      children: <Widget>[
-        Expanded(child: threadSelector),
-        const SizedBox(width: 4),
-        _buildTextProcessEntry(context, textThreads, selectedTextThreadKey),
-      ],
-    );
-    // 桌面端鼠标必须能拖动这个横滚区（默认 dragDevices 不含 mouse）——全仓横向
-    // 滚动区的统一包裹件，由 horizontal_drag_scroll_guard 钉死。
-    final Widget filterChips = HorizontalDragScrollable(
-      child: SingleChildScrollView(
-        scrollDirection: Axis.horizontal,
-        child: _buildFilterChips(context, lines),
-      ),
-    );
-    // M3E 分段列表：外框是 surface 底的描边卡，每句台词是一格分层填充色
-    // 分段（组首尾大圆角、内侧小圆角、悬停 / 选中形变，选中 secondaryContainer）。
-    // 外框若仍是填充卡，分段与外框同色，段与段之间的缝就看不见了。Apple 维持
-    // 原来的分组卡（inset grouped 由各行自己的卡片承担）。
-    return FushiCard(
-      padding: EdgeInsets.zero,
-      variant: glass ? FushiCardVariant.filled : FushiCardVariant.outlined,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          // 列表头第一行：标题 + 计数、未读、跟随实时、特殊码。
-          Padding(
-            padding: const EdgeInsets.fromLTRB(12, 10, 8, 4),
-            child: Row(
-              children: <Widget>[
-                const FushiListLeadingIcon(
-                  Icons.forum_outlined,
-                  shape: FushiLeadingShape.square,
-                  size: 36,
-                  iconSize: 20,
-                ),
-                const SizedBox(width: 10),
-                // 标题 + 未读占满剩余宽度：Flexible 与 Spacer 并列会平分空余，
-                // 把「跟随实时」推到列表头中间。
-                Expanded(
-                  child: Row(
-                    children: <Widget>[
-                      Flexible(
-                        child: Text(
-                          '${t.game_live_lines} · ${lines.length}',
-                          maxLines: 1,
-                          overflow: TextOverflow.ellipsis,
-                          style: type.titleMediumEmphasized.tabular,
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      // 未读计数：M3E 超小号 tonal 按钮（secondaryContainer 全胶囊、
-                      // 按压形变；Apple = 玻璃胶囊）。点击 = 跳到最新一行并清零未读。
-                      // 出现 / 消失走 effects 弹簧的缩放淡入，不再瞬间闪现。
-                      AnimatedSwitcher(
-                        duration: context.fushiMotion.effectsDefault.duration,
-                        switchInCurve: context.fushiMotion.effectsDefault.curve,
-                        switchOutCurve: context.fushiMotion.effectsFast.curve,
-                        transitionBuilder:
-                            (Widget child, Animation<double> animation) =>
-                                ScaleTransition(
-                                  scale: animation,
-                                  child: FadeTransition(
-                                    opacity: animation,
-                                    child: child,
-                                  ),
-                                ),
-                        child: _unreadLines > 0
-                            ? FushiFilledButton.tonal(
-                                key: const ValueKey<String>(
-                                  'game-unread-lines',
-                                ),
-                                size: FushiButtonSize.xs,
-                                onPressed: _jumpToLatestAndClearUnread,
-                                // 不另给字阶：主题字阶自带 onSurface 色，会盖掉
-                                // 按钮的 onSecondaryContainer 前景。
-                                child: Text(
-                                  '${t.game_unread_lines} $_unreadLines',
-                                ),
-                              )
-                            : const SizedBox.shrink(
-                                key: ValueKey<String>('game-unread-none'),
-                              ),
-                      ),
-                    ],
-                  ),
-                ),
-                const SizedBox(width: 8),
-                Text(t.game_follow_live, style: type.labelLarge),
-                const SizedBox(width: 4),
-                FushiSwitch(
-                  value: _followLive,
-                  onChanged: (bool value) {
-                    setState(() {
-                      _followLive = value;
-                      if (value) _unreadLines = 0;
-                    });
-                    if (value) {
-                      WidgetsBinding.instance.addPostFrameCallback((_) {
-                        if (_scroll.hasClients) {
-                          _scroll.jumpTo(_scroll.position.maxScrollExtent);
-                        }
-                      });
-                    }
-                  },
-                ),
-                const SizedBox(width: 4),
-                _buildHookCodeMenuButton(),
-              ],
-            ),
-          ),
-          // 列表头第二行：线程选择 + 文本处理 + 筛选 chip。宽时一行，窄时两行。
-          Padding(
-            padding: const EdgeInsets.fromLTRB(16, 4, 12, 10),
-            child: LayoutBuilder(
-              builder: (BuildContext context, BoxConstraints box) {
-                if (box.maxWidth >= 720) {
-                  return Row(
-                    children: <Widget>[
-                      SizedBox(width: 380, child: threadRow),
-                      const SizedBox(width: 12),
-                      Expanded(child: filterChips),
-                    ],
-                  );
-                }
-                return Column(
-                  crossAxisAlignment: CrossAxisAlignment.stretch,
-                  children: <Widget>[
-                    threadRow,
-                    const SizedBox(height: 8),
-                    filterChips,
-                  ],
-                );
-              },
-            ),
-          ),
-          const FushiDividerControl(height: 1),
-          Expanded(
-            child: lines.isEmpty
-                ? _buildLinesEmptyState(context, readiness, textThreads)
-                : FushiEntranceScope(
-                    // 换线程 / 换筛选时重开进场窗口；实时追加的新行在窗口外，
-                    // 瞬间出现（不拖影）。
-                    replayKey: (selectedTextThreadKey, _lineFilter),
-                    child: ListView.builder(
-                      controller: _scroll,
-                      padding: const EdgeInsets.all(8),
-                      itemCount: visibleLines.length,
-                      itemBuilder: fushiStaggeredItemBuilder((
-                        BuildContext context,
-                        int i,
-                      ) {
-                        final TexthookerLineEntry line = visibleLines[i];
-                        final ({String text, int sourceOffset}) visible =
-                            _visibleHookLineText(line);
-                        final TexthookerLinePresentation presentation =
-                            texthookerLinePresentation(visible.text);
-                        return _TexthookerLine(
-                          line: line,
-                          index: i,
-                          count: visibleLines.length,
-                          displayText: visible.text,
-                          sourceOffset: visible.sourceOffset,
-                          presentation: presentation,
-                          // 分词结果按行 id 缓存，避免每次 rebuild 重复 textToWords。
-                          // 异常长/批量文本不进入分词与逐字 widget 路径，避免一次
-                          // 历史输出构造数千个可点击字节点（BUG-1597）。
-                          words:
-                              presentation ==
-                                  TexthookerLinePresentation.interactive
-                              ? _wordCache.wordsFor(line.id, visible.text)
-                              : const <String>[],
-                          selected: line.id == _activeLineId,
-                          previewingAudio: line.id == _previewingLineId,
-                          // 逐行改音轨要求：会话内有 engine helper、有可选音轨快照，
-                          // 且这行属于当前会话（历史会话的时间戳早已失效）。
-                          canPickTrack:
-                              _session.hasEngineSource &&
-                              _session.state.audioTracks.isNotEmpty &&
-                              _session.isLineInCurrentSession(line),
-                          canRecapture:
-                              _hookCapture &&
-                              _session.state.isActive &&
-                              _session.isLineInCurrentSession(line),
-                          recapturing: _session.recapturingLineId == line.id,
-                          onSelectLine: _selectLine,
-                          onCharTap: _onCharTap,
-                          onToggleFavorite: _toggleLineFavorite,
-                          onPreviewAudio: (TexthookerLineEntry l) =>
-                              unawaited(_toggleLinePreview(l)),
-                          onPickTrack: (TexthookerLineEntry l) =>
-                              unawaited(_pickLineTrack(l)),
-                          onRecapture: (TexthookerLineEntry l) =>
-                              unawaited(_toggleLineRecapture(l)),
-                          onCopy: (TexthookerLineEntry _) =>
-                              _appModel.copyToClipboard(visible.text),
-                        );
-                      }),
-                    ),
-                  ),
-          ),
-        ],
-      ),
+      onChanged: (String value) => _pickTextThread(value, textThreads),
     );
   }
 
@@ -2654,47 +3030,31 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         ],
       );
     }
-    final bool canStart = _hookCapture && !_session.state.isActive;
+    // 2026-11 改版：空态只给一句指引，不再重复「启动并捕获 / 附着并捕获」——
+    // 两个起点已经是会话状态块里的大动作卡，同屏出现两套同样的按钮只会让人困惑。
     return GalWorkbenchEmptyState(
       key: const ValueKey<String>('game-lines-empty'),
-      icon: Icons.sensors_off_outlined,
+      icon: Icons.subtitles_outlined,
       title: t.game_capture_empty_title,
       body: _hookCapture
           ? t.game_capture_empty_body
           : t.texthooker_empty_external_body,
-      actions: <Widget>[
-        if (canStart) ...<Widget>[
-          FushiPressScale(
-            child: FushiFilledButton.icon(
-              key: const ValueKey<String>('game-empty-launch'),
-              onPressed: _launchGalgameEngineHook,
-              icon: const FushiIcon(Icons.rocket_launch_outlined, size: 18),
-              label: Text(t.game_launch_and_capture),
-            ),
-          ),
-          FushiPressScale(
-            child: FushiTextButton.icon(
-              key: const ValueKey<String>('game-empty-attach'),
-              onPressed: _attachToRunningGame,
-              icon: const FushiIcon(Icons.cable_outlined, size: 18),
-              label: Text(t.game_attach_and_capture),
-            ),
-          ),
-        ],
-      ],
     );
   }
 
   /// 特殊码（Hook Code）四个低频动作收成一个带文字菜单项的入口：粘贴 / 保存当前
-  /// 线程 / 导入 / 导出。此前四个无字图标摊在列表头，和跟随开关、筛选挤一行。
+  /// 线程 / 导入 / 导出。入口本身是带字动作 chip（2026-11 改版前只有 `{}` 图标）。
   Widget _buildHookCodeMenuButton() {
     return Builder(
-      builder: (BuildContext buttonContext) => FushiIconButton(
-        key: const ValueKey<String>('game-hook-code-menu'),
-        icon: Icons.data_object,
-        tooltip: t.game_workbench_hook_code,
-        focusId: const FushiFocusId('game-hook-code-menu'),
-        onTap: () => unawaited(_showHookCodeMenu(buttonContext)),
+      builder: (BuildContext buttonContext) => FushiTooltip(
+        message: t.game_workbench_hook_code,
+        child: FushiActionChip(
+          key: const ValueKey<String>('game-hook-code-menu'),
+          label: t.game_workbench_hook_code,
+          icon: Icons.data_object,
+          focusId: const FushiFocusId('game-hook-code-menu'),
+          onPressed: () => unawaited(_showHookCodeMenu(buttonContext)),
+        ),
       ),
     );
   }
@@ -2753,6 +3113,11 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
       ],
     );
     if (!mounted || action == null) return;
+    await _runHookCodeAction(action);
+  }
+
+  /// 特殊码四个动作的唯一出口（M3E 弹出菜单与 Apple 下拉菜单共用）。
+  Future<void> _runHookCodeAction(_HookCodeAction action) async {
     switch (action) {
       case _HookCodeAction.paste:
         await _pasteLunaHookCode();
@@ -2815,6 +3180,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
           ),
           resolveAiProvider: _resolveTextProcessAiProvider,
           aiEnabled: isAiModuleEnabled(_appModel.moduleVisibility),
+          savedPromptStoreOf: () => _appModel.prefsRepo,
           onSave: (GalTextProcessPipeline pipeline) =>
               unawaited(_session.setTextProcessPipeline(pipeline)),
         ),
@@ -2837,6 +3203,123 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     );
   }
 
+  /// 线程选择（下拉 / Apple pop-up 共用）：空串 = 不选；换线程清掉选中行与未读。
+  void _pickTextThread(String value, List<TexthookerTextThread> textThreads) {
+    TexthookerTextThread? selectedThread;
+    if (value.isNotEmpty) {
+      for (final TexthookerTextThread thread in textThreads) {
+        if (thread.key == value) {
+          selectedThread = thread;
+          break;
+        }
+      }
+    }
+    setState(() {
+      _activeLineId = null;
+      _activeSentence = null;
+      _unreadLines = 0;
+    });
+    unawaited(
+      _session.selectTextThread(
+        selectedThread?.nativeThreadId,
+        threadKey: selectedThread?.key,
+        // 用户亲自选的线程记进本游戏记忆，下次开同一个游戏自动选回。
+        remember: true,
+      ),
+    );
+  }
+
+  /// 「跟随实时」开关（M3E chip / Apple 工具栏 toggle 共用）：打开即清零未读并跳到最新。
+  void _setFollowLive(bool value) {
+    setState(() {
+      _followLive = value;
+      if (value) _unreadLines = 0;
+    });
+    if (value) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_scroll.hasClients) {
+          _scroll.jumpTo(_scroll.position.maxScrollExtent);
+        }
+      });
+    }
+  }
+
+  void _setLineFilter(TexthookerLineFilter filter) {
+    if (_lineFilter == filter) return;
+    setState(() => _lineFilter = filter);
+  }
+
+  /// 四个筛选维度（值 / 名称 / 计数 / M3E 图标）。[lines] 是线程过滤后的完整集合。
+  List<(TexthookerLineFilter, String, int, IconData)> _lineFilterSpecs(
+    List<TexthookerLineEntry> lines,
+  ) {
+    int count(bool Function(TexthookerLineEntry) test) =>
+        lines.where(test).length;
+    return <(TexthookerLineFilter, String, int, IconData)>[
+      (
+        TexthookerLineFilter.all,
+        t.game_filter_all,
+        lines.length,
+        Icons.list_alt_outlined,
+      ),
+      (
+        TexthookerLineFilter.withAudio,
+        t.game_filter_with_audio,
+        count((TexthookerLineEntry e) => e.hasAudio),
+        Icons.graphic_eq_outlined,
+      ),
+      (
+        TexthookerLineFilter.mined,
+        t.game_filter_mined,
+        count((TexthookerLineEntry e) => e.mined),
+        Icons.style_outlined,
+      ),
+      (
+        TexthookerLineFilter.favorited,
+        t.game_filter_favorited,
+        count((TexthookerLineEntry e) => e.favorited),
+        Icons.star_outline,
+      ),
+    ];
+  }
+
+  /// 一行台词的展示数据（M3E 分段卡与 Apple 列表行共用同一份判据）。
+  _LineRowModel _lineRowModel(TexthookerLineEntry line) {
+    final ({String text, int sourceOffset}) visible = _visibleHookLineText(
+      line,
+    );
+    final TexthookerLinePresentation presentation = texthookerLinePresentation(
+      visible.text,
+    );
+    return _LineRowModel(
+      line: line,
+      displayText: visible.text,
+      sourceOffset: visible.sourceOffset,
+      presentation: presentation,
+      // 分词结果按行 id 缓存，避免每次 rebuild 重复 textToWords。异常长/批量文本
+      // 不进入分词与逐字 widget 路径（BUG-1597）。
+      words: presentation == TexthookerLinePresentation.interactive
+          ? _wordCache.wordsFor(line.id, visible.text)
+          : const <String>[],
+      selected: line.id == _activeLineId,
+      previewingAudio: line.id == _previewingLineId,
+      // 逐行改音轨要求：会话内有 engine helper、有可选音轨快照，且这行属于当前
+      // 会话（历史会话的时间戳早已失效）。
+      canPickTrack:
+          _session.hasEngineSource &&
+          _session.state.audioTracks.isNotEmpty &&
+          _session.isLineInCurrentSession(line),
+      canRecapture:
+          _hookCapture &&
+          _session.state.isActive &&
+          _session.isLineInCurrentSession(line),
+      recapturing: _session.recapturingLineId == line.id,
+      autoLookupCharIndex: _autoLookupTarget?.lineId == line.id
+          ? _autoLookupTarget!.charIndex
+          : null,
+    );
+  }
+
   /// 实时台词筛选 chips（全部 / 有音频 / 已制卡 / 已收藏），各带对应计数（如「已制卡 3」）。
   /// [lines] 是线程过滤后的完整集合——计数从它算，与线程下拉正交叠加；一个枚举 predicate
   /// 驱动，无「有音频/已制卡/已收藏」各写一条 if 的特殊情况。
@@ -2844,45 +3327,13 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     BuildContext context,
     List<TexthookerLineEntry> lines,
   ) {
-    final int total = lines.length;
-    final int withAudio = lines
-        .where((TexthookerLineEntry e) => e.hasAudio)
-        .length;
-    final int mined = lines.where((TexthookerLineEntry e) => e.mined).length;
-    final int favorited = lines
-        .where((TexthookerLineEntry e) => e.favorited)
-        .length;
     final List<(TexthookerLineFilter, String, int, IconData)> specs =
-        <(TexthookerLineFilter, String, int, IconData)>[
-          (
-            TexthookerLineFilter.all,
-            t.game_filter_all,
-            total,
-            Icons.list_alt_outlined,
-          ),
-          (
-            TexthookerLineFilter.withAudio,
-            t.game_filter_with_audio,
-            withAudio,
-            Icons.graphic_eq_outlined,
-          ),
-          (
-            TexthookerLineFilter.mined,
-            t.game_filter_mined,
-            mined,
-            Icons.style_outlined,
-          ),
-          (
-            TexthookerLineFilter.favorited,
-            t.game_filter_favorited,
-            favorited,
-            Icons.star_outline,
-          ),
-        ];
-    return Wrap(
-      spacing: 8,
-      runSpacing: 8,
-      children: <Widget>[
+        _lineFilterSpecs(lines);
+    // 单选筛选：设计系统分段（MD3 胶囊分段 / Apple 分段控件），与工作台其它
+    // 工具条同一语言；计数跟在名称后面。
+    return adaptiveSegmentedButton<TexthookerLineFilter>(
+      context: context,
+      segments: <ButtonSegment<TexthookerLineFilter>>[
         for (final (
               TexthookerLineFilter filter,
               String label,
@@ -2890,19 +3341,21 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
               IconData icon,
             )
             in specs)
-          FushiSelectableChip(
-            label: '$label $count',
-            leadingIcon: icon,
-            selected: _lineFilter == filter,
-            focusId: FushiFocusId('game-line-filter-${filter.name}'),
-            onSelected: (_) => setState(() => _lineFilter = filter),
+          ButtonSegment<TexthookerLineFilter>(
+            value: filter,
+            icon: FushiIcon(icon, size: 16),
+            label: Text('$label $count'),
           ),
       ],
+      selected: <TexthookerLineFilter>{_lineFilter},
+      onSelectionChanged: (Set<TexthookerLineFilter> picked) {
+        if (picked.isEmpty) return;
+        _setLineFilter(picked.first);
+      },
     );
   }
 
-  List<Widget> _buildPopups(BuildContext context) {
-    final Size screen = MediaQuery.sizeOf(context);
+  List<Widget> _buildPopups(BuildContext context, Size screen) {
     return <Widget>[
       // TODO-1052：查词浮层显示（或搜索中）时叠一层全屏 dismiss barrier——点真空白关一层
       // （逐层关，与其它表面同语义），桌面开滑动关闭时水平拖过阈亦关一层。texthooker 原
@@ -2958,81 +3411,237 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
     ];
   }
 
-  /// 查词浮层放到根 Overlay，并把整棵浮层子树中和到净缩放 1。
+  /// 查词浮层放到根 Overlay（[SharedLookupPopupHost] 持有 entry，并把整棵浮层子树
+  /// 中和到净缩放 1）。
   ///
   /// 这样平台 WebView 不会在缩放画布内低分辨率栅格化，且点词得到的
   /// `localToGlobal` 屏幕矩形与浮层处在同一坐标系。
   void _syncPopupOverlay() {
     if (!mounted) return;
-    if (_popup.entries.isEmpty && !_popup.isSearchingUi) {
-      final OverlayEntry? entry = _popupOverlayEntry;
-      if (entry != null) {
-        if (entry.mounted) entry.remove();
-        entry.dispose();
-        _popupOverlayEntry = null;
-      }
-      return;
-    }
-    if (_popupOverlayEntry != null) {
-      _popupOverlayEntry!.markNeedsBuild();
-      return;
-    }
-    final OverlayState? overlay = Overlay.maybeOf(context, rootOverlay: true);
-    if (overlay == null) return;
-    final OverlayEntry entry = OverlayEntry(builder: _buildPopupOverlay);
-    _popupOverlayEntry = entry;
-    overlay.insert(entry);
+    _popupHost.sync(context);
   }
+}
 
-  Widget _buildPopupOverlay(BuildContext overlayContext) {
-    if (!mounted || _overlayInert) return const SizedBox.shrink();
-    // 本浮层插在 root Overlay，不是 TexthookerPage 页面子树的后代；键盘接线由
-    // 页面生命周期内的 HardwareKeyboard handler 承担，不再依赖浮层 Focus 链。
-    // BUG-2953：浮层自带导航层，弹窗里唤出的菜单画在浮层之上（见 LookupOverlayNavigator）。
-    return LookupOverlayNavigator(
-      child: FushiAppUiScaleNeutralizer(
-        child: Theme(
-          data: _appModel.overrideDictionaryTheme ?? Theme.of(overlayContext),
-          child: Builder(
-            builder: (BuildContext context) {
-              if (!mounted || _overlayInert) return const SizedBox.shrink();
-              return Stack(
-                clipBehavior: Clip.none,
-                children: _buildPopups(context),
-              );
-            },
+/// 会话工具的一项（图标 + tooltip + 回调）。同一份描述既能画成独立模式 AppBar
+/// 里的图标钮（[button]），也能交给嵌入模式会话卡的自适应动作条（[action]），
+/// 两处的 key / 焦点 id / 选中态不会各写一份走样。
+@immutable
+class _SessionTool {
+  const _SessionTool({
+    required this.icon,
+    required this.label,
+    required this.onTap,
+    this.value,
+    this.id,
+    FushiFocusId? focusId,
+    this.selected,
+    this.danger = false,
+    this.start = false,
+  }) : _focusId = focusId;
+
+  /// 起点动作（启动 / 附着 / OCR）：Cupertino 捕获中收进「＋」下拉，不进工具列表。
+  final bool start;
+
+  final IconData icon;
+
+  /// 工具名：侧栏行 / 窄屏 chip 上直接写出来（2026-11 改版前五个工具只有图标，
+  /// 用户看不懂各是什么）。
+  final String label;
+
+  /// 当前值（音频降级档位等）；null = 纯动作。
+  final String? value;
+  final VoidCallback onTap;
+
+  /// 稳定 id：同时作 key 与焦点 id（键盘 / 手柄 / 测试按它定位）。
+  final String? id;
+  final FushiFocusId? _focusId;
+
+  /// null = 不是开关；true / false = 开关的当前态。
+  final bool? selected;
+
+  /// 破坏性操作（清空台词）：单独一组、红字，不与常用工具混排。
+  final bool danger;
+
+  /// 完整说明：名称 + 当前值（悬停 / 长按 / 读屏都拿这一句）。
+  String get tooltip => value == null ? label : '$label · $value';
+
+  FushiFocusId? get focusId =>
+      _focusId ?? (id == null ? null : FushiFocusId(id!));
+
+  Key? get _key => id == null ? null : ValueKey<String>(id!);
+
+  /// 换一个点击出口的同一个工具（Cupertino 健康状态改为就地弹 popover 时用）。
+  _SessionTool copyWith({required VoidCallback onTap}) => _SessionTool(
+    icon: icon,
+    label: label,
+    onTap: onTap,
+    value: value,
+    id: id,
+    focusId: _focusId,
+    selected: selected,
+    danger: danger,
+    start: start,
+  );
+
+  /// 独立模式 AppBar：纯图标 + tooltip。
+  Widget button() => FushiIconButton(
+    key: _key,
+    icon: icon,
+    tooltip: tooltip,
+    selected: selected,
+    focusId: focusId,
+    onTap: onTap,
+  );
+
+  /// 宽屏侧栏「会话工具」分段列表里的一行：图标 + 名称 + 当前值；开关行尾是
+  /// 开关，其余是去往箭头。整行可点、带焦点目标。
+  Widget tile({required int index, required int count}) => Builder(
+    builder: (BuildContext context) {
+      final Color? dangerColor = !danger
+          ? null
+          : isGlassDesign(context)
+          ? appleColorsOf(context).destructive
+          : Theme.of(context).colorScheme.error;
+      return FushiTooltip(
+        key: _key,
+        message: tooltip,
+        child: FushiGroupedListItem(
+          index: index,
+          count: count,
+          onTap: onTap,
+          focusId: focusId ?? FushiFocusId('game-toolbar-${icon.codePoint}'),
+          child: FushiListItem(
+            density: FushiListDensity.compact,
+            leading: FushiIcon(icon, size: 20, color: dangerColor),
+            title: Text(
+              label,
+              style: dangerColor == null ? null : TextStyle(color: dangerColor),
+            ),
+            subtitle: value == null ? null : Text(value!, maxLines: 1),
+            trailing: selected == null
+                ? FushiIcon(
+                    Icons.chevron_right,
+                    size: 18,
+                    color: Theme.of(context).colorScheme.outline,
+                  )
+                : FushiSwitch(value: selected!, onChanged: (_) => onTap()),
           ),
         ),
+      );
+    },
+  );
+
+  /// 窄屏工具条里的带字 chip：开关是可选中 chip，破坏性操作是红字文字按钮，
+  /// 其余是动作 chip（文字带上当前值）。
+  Widget chip() {
+    if (danger) {
+      return FushiTooltip(
+        key: _key,
+        message: tooltip,
+        child: FushiTextButton.icon(
+          onPressed: onTap,
+          destructive: true,
+          icon: FushiIcon(icon, size: 18),
+          label: Text(label),
+        ),
+      );
+    }
+    if (selected != null) {
+      return KeyedSubtree(
+        key: _key,
+        child: FushiSelectableChip(
+          label: label,
+          leadingIcon: icon,
+          selected: selected!,
+          tooltip: tooltip,
+          focusId: focusId,
+          onSelected: (_) => onTap(),
+        ),
+      );
+    }
+    return FushiTooltip(
+      key: _key,
+      message: tooltip,
+      child: FushiActionChip(
+        label: tooltip,
+        icon: icon,
+        focusId: focusId,
+        onPressed: onTap,
       ),
     );
   }
 }
 
-/// 页顶「会话状态条」：游戏 / 进程、捕获状态、音频源、转区与游戏内查词合并成
-/// 一处（2026-10 工作台重做）。
+/// 会话状态块的两种摆法：宽屏侧栏里竖排（[side]），窄屏 / 中宽在台词列表上方
+/// 横排（[banner]）。
+/// 横排工作台里台词面板的保底高度：列表头两行 + 至少两三句台词。会话区超出时在
+/// 自己的滚动区里滚，不挤占它。
+const double _kLiveLinesMinHeight = 360;
+
+enum _SessionCardLayout { side, banner }
+
+/// 捕获工作台的会话状态区（2026-11 拼贴改版，取代 2026-10 的「会话状态条」）。
 ///
-/// 信息只说一遍：标题说「现在处在哪一步」（未开始 / 等待选线程 / 正在监听），
-/// 语义 chip 说事实（会话阶段、音频源、转区），不再有「标题 + 阶段 + 等待徽标」
-/// 三处重复同一件事。主操作带文字放在右侧（窄屏落到下一行），游戏内查词作为
-/// 卡内最后一行（[footer]）。
+/// 一块按会话阶段换色的 tonal 色块（M3E 形状图标 / 当前游戏封面 + 阶段眉标 + 大
+/// 标题）：
+/// - 未开始：醒目的「开始」块——两张大动作卡（启动并捕获 = 主、附着并捕获 = 次），
+///   各带一句说明；
+/// - 捕获中：当前游戏（封面 / 名称 / 进程）+ 四格实时信号（文本 / 语音 / 画面 /
+///   Anki），右上「停止监听」；
+/// - 等待选线程 / 降级 tertiary 色、出错 error 色，处置说明与 native 证据在块内。
+///
+/// 色块之下是游戏内查词能力小卡与会话工具：[_SessionCardLayout.side] 时是侧栏里
+/// 的两个分区（工具是分段列表，带名称与当前值），[_SessionCardLayout.banner] 时
+/// 工具收成一条带字 chip 工具条。危险操作（清空台词）单独放在最后，与常用工具隔开。
 class _SessionOverviewCard extends StatelessWidget {
   const _SessionOverviewCard({
     required this.state,
     required this.readiness,
-    this.actions = const <Widget>[],
+    required this.layout,
+    this.game,
+    this.ankiConfigured = false,
+    this.onLaunch,
+    this.onAttach,
+    this.onOcr,
+    this.onStop,
+    this.tools = const <List<_SessionTool>>[],
+    this.notices = const <Widget>[],
     this.footer = const <Widget>[],
     this.compact = false,
   });
 
   final GalHookSessionState state;
   final GalWorkbenchReadiness readiness;
+  final _SessionCardLayout layout;
 
-  /// 会话动作（主操作带文字 + 工具组），见 [_TexthookerPageState._buildToolbarActions]。
-  final List<Widget> actions;
+  /// 会话 exe 在游戏库里对应的条目（封面 / 名称）；库里没有时 null。
+  final GalgameEntry? game;
 
-  /// 卡内最后一行（游戏内查词）。
+  /// Anki 输出是否已配置（牌组 + 笔记类型均已选，BUG-1007），实时信号用。
+  final bool ankiConfigured;
+
+  /// 未开始时的两个起点；null = 不显示（会话进行中 / 非 Hook 平台）。
+  final VoidCallback? onLaunch;
+  final VoidCallback? onAttach;
+
+  /// 「OCR 识别台词」起点（Hook 进不去的游戏）。
+  final VoidCallback? onOcr;
+
+  /// 会话进行中的「停止监听」；null = 不显示。
+  final VoidCallback? onStop;
+
+  /// 会话工具，按语义分组（捕获 / 会话设置 / 清空），见
+  /// [_TexthookerPageState._buildToolbarActions]。
+  final List<List<_SessionTool>> tools;
+
+  /// 色块下方的提示（knife 台词服务没开等）。
+  final List<Widget> notices;
+
+  /// 游戏内查词能力小卡。
   final List<Widget> footer;
   final bool compact;
+
+  bool get _side => layout == _SessionCardLayout.side;
 
   /// 会话对应的游戏：可执行文件名 + PID（都没有时 null）。
   static String? _gameIdentity(GalHookSessionState state) {
@@ -3050,9 +3659,434 @@ class _SessionOverviewCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final ThemeData theme = Theme.of(context);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool glass = isGlassDesign(context);
+    final bool hasStart = onLaunch != null || onAttach != null;
+    final _SessionSummary summary = _SessionSummary.of(
+      state: state,
+      readiness: readiness,
+      game: game,
+      compact: compact,
+      hasStart: hasStart,
+      ankiConfigured: ankiConfigured,
+    );
+    final bool waitingForThread = summary.waitingForThread;
+    final bool error = summary.error;
+    final bool started = summary.started;
+    // M3E 状态色块：按会话阶段换 tonal 底——出错 error、降级 / 等待选线程
+    // tertiary、监听中 secondary、未开始 primary（醒目的「开始」块）。块内文字统一
+    // 取该色块的 on 色（主题字阶自带 onSurface，必须显式覆盖）。
+    final FushiCardTone heroTone = error
+        ? FushiCardTone.error
+        : state.isDegraded || waitingForThread
+        ? FushiCardTone.tertiary
+        : state.isActive
+        ? FushiCardTone.secondary
+        : FushiCardTone.primary;
+    final Color? heroForeground = fushiCardToneColors(
+      context,
+      heroTone,
+    )?.onContainer;
+    final Color foreground =
+        heroForeground ?? (glass ? appleColorsOf(context).label : cs.onSurface);
+    final FushiTypography type = context.fushiType;
+    final TextStyle hintStyle = type.bodySmall.copyWith(
+      color: foreground.withValues(alpha: 0.8),
+    );
+    // 补充说明行（可执行处置 / 一手证据），按严重度从上往下排；文案与取舍在
+    // [_SessionSummary.hints]（两套设计系统同一份）。
+    final List<Widget> hints = <Widget>[
+      for (final _SessionHint hint in summary.hints)
+        Text(
+          hint.text,
+          maxLines: hint.maxLines,
+          overflow: TextOverflow.ellipsis,
+          style: hint.emphasized
+              ? type.bodySmallEmphasized.copyWith(color: foreground)
+              : hintStyle,
+        ),
+    ];
+    // 会话阶段签：语义色调（成功 / 警告 / 错误 / 中性）。空闲时不出——眉标
+    // 「尚未开始捕获」已经说了同一件事。
+    final Widget statusPill = _StatusPill(
+      label: summary.statusLabel,
+      tone: summary.statusTone,
+    );
+    final List<Widget> chips = <Widget>[
+      if (state.phase != GalHookSessionPhase.idle) statusPill,
+      if (state.japaneseLocaleApplied)
+        GalWorkbenchStatusChip(
+          icon: Icons.translate,
+          label: t.game_session_japanese_locale,
+          tone: FushiTagTone.accent,
+          tooltip: t.game_session_japanese_locale_hint,
+        )
+      else if (summary.localeSkippedHint != null)
+        GalWorkbenchStatusChip(
+          icon: Icons.translate,
+          label: t.game_session_japanese_locale_skipped,
+          tone: FushiTagTone.neutral,
+          tooltip: summary.localeSkippedHint,
+        ),
+      if (state.isOcrMode)
+        GalWorkbenchStatusChip(
+          icon: FushiIcons.ocr,
+          label: t.game_ocr_mode_chip,
+          tone: FushiTagTone.accent,
+          tooltip: t.game_workbench_ocr_hint,
+        ),
+    ];
+    final double leadingSize = _side ? 56 : (compact ? 48 : 56);
+    final GalgameEntry? coverGame = started ? game : null;
+    final Widget leading = coverGame != null
+        ? _SessionCoverThumb(game: coverGame, height: leadingSize + 12)
+        : _SessionHeroBadge(
+            icon: summary.icon,
+            tone: heroTone,
+            active: state.isActive && !waitingForThread,
+            size: leadingSize,
+          );
+    final Widget? stop = onStop == null
+        ? null
+        : FushiPressScale(
+            child: FushiFilledButton.tonalIcon(
+              key: const ValueKey<String>('game-action-stop'),
+              onPressed: onStop,
+              icon: const FushiIcon(Icons.stop_circle_outlined, size: 18),
+              label: Text(t.game_stop_listening),
+            ),
+          );
+    final Widget info = Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        Row(
+          children: <Widget>[
+            if (state.isActive && !waitingForThread) ...<Widget>[
+              FushiIcon(Icons.circle, size: 8, color: foreground),
+              const SizedBox(width: 6),
+            ],
+            Flexible(
+              child: Text(
+                summary.eyebrow,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: type.labelLargeEmphasized.copyWith(
+                  color: foreground.withValues(alpha: 0.8),
+                ),
+              ),
+            ),
+          ],
+        ),
+        const SizedBox(height: 2),
+        // 标题换场：阶段变化时旧标题淡出、新标题淡入（effects 弹簧）。
+        AnimatedSwitcher(
+          duration: context.fushiMotion.effectsDefault.duration,
+          switchInCurve: context.fushiMotion.effectsDefault.curve,
+          switchOutCurve: context.fushiMotion.effectsFast.curve,
+          layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
+            alignment: AlignmentDirectional.centerStart,
+            children: <Widget>[...previous, if (current != null) current],
+          ),
+          child: Text(
+            summary.title,
+            key: ValueKey<String>(summary.title),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+            style: (compact ? type.titleLargeEmphasized : type.headlineSmall)
+                .copyWith(color: foreground, fontWeight: FontWeight.w700),
+          ),
+        ),
+        const SizedBox(height: 2),
+        Text(
+          summary.subtitle,
+          maxLines: 2,
+          overflow: TextOverflow.ellipsis,
+          style: type.bodyMedium.copyWith(
+            color: foreground.withValues(alpha: 0.85),
+          ),
+        ),
+      ],
+    );
+    // 实时信号：会话开始后才有意义（未开始时四格全灰只是噪音）。
+    final List<Widget> signals = <Widget>[
+      for (final _SessionSignal signal in summary.signals)
+        GalWorkbenchSignal(
+          key: signal.key,
+          label: signal.label,
+          value: signal.value,
+          ready: signal.ready,
+          foreground: foreground,
+          tooltip: signal.tooltip,
+        ),
+    ];
+    final List<Widget> startTiles = <Widget>[
+      if (onLaunch != null)
+        GalWorkbenchStartTile(
+          key: const ValueKey<String>('game-action-launch'),
+          focusId: const FushiFocusId('game-action-launch'),
+          icon: Icons.rocket_launch_outlined,
+          title: t.game_launch_and_capture,
+          hint: t.game_workbench_launch_hint,
+          emphasized: true,
+          onTap: onLaunch!,
+        ),
+      if (onAttach != null)
+        GalWorkbenchStartTile(
+          key: const ValueKey<String>('game-action-attach'),
+          focusId: const FushiFocusId('game-action-attach'),
+          icon: Icons.cable_outlined,
+          title: t.game_attach_and_capture,
+          hint: t.game_workbench_attach_hint,
+          onTap: onAttach!,
+        ),
+      if (onOcr != null)
+        GalWorkbenchStartTile(
+          key: const ValueKey<String>('game-action-ocr'),
+          focusId: const FushiFocusId('game-action-ocr'),
+          icon: FushiIcons.ocr,
+          title: t.game_ocr_capture,
+          hint: t.game_workbench_ocr_hint,
+          onTap: onOcr!,
+        ),
+    ];
+    final Widget heroBody = FushiAnimatedSize(
+      duration: context.fushiMotion.effectsDefault.duration,
+      curve: context.fushiMotion.effectsDefault.curve,
+      alignment: AlignmentDirectional.topStart,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.center,
+            children: <Widget>[
+              leading,
+              const SizedBox(width: 16),
+              Expanded(child: info),
+              if (stop != null && !_side) ...<Widget>[
+                const SizedBox(width: 12),
+                stop,
+              ],
+            ],
+          ),
+          if (chips.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 12),
+            Wrap(spacing: 6, runSpacing: 6, children: chips),
+          ],
+          if (hints.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 8),
+            for (final Widget hint in hints)
+              Padding(padding: const EdgeInsets.only(top: 2), child: hint),
+          ],
+          if (signals.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 14),
+            GalWorkbenchTileGrid(
+              minTileWidth: _side ? 130 : 150,
+              maxColumns: 4,
+              children: signals,
+            ),
+          ],
+          if (stop != null && _side) ...<Widget>[
+            const SizedBox(height: 14),
+            Align(alignment: AlignmentDirectional.centerStart, child: stop),
+          ],
+          if (startTiles.isNotEmpty) ...<Widget>[
+            const SizedBox(height: 16),
+            LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints box) {
+                // 两张动作卡：放得下就并排（主动作在前），侧栏 / 窄屏竖排。
+                if (!_side && box.maxWidth >= 520 && startTiles.length > 1) {
+                  return Row(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: <Widget>[
+                      for (int i = 0; i < startTiles.length; i++) ...<Widget>[
+                        if (i > 0) const SizedBox(width: 10),
+                        Expanded(child: startTiles[i]),
+                      ],
+                    ],
+                  );
+                }
+                return Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: <Widget>[
+                    for (int i = 0; i < startTiles.length; i++) ...<Widget>[
+                      if (i > 0) const SizedBox(height: 10),
+                      startTiles[i],
+                    ],
+                  ],
+                );
+              },
+            ),
+          ],
+        ],
+      ),
+    );
+    final Widget hero = FushiCard(
+      key: const ValueKey<String>('game-session-overview'),
+      tone: heroTone,
+      padding: const EdgeInsets.fromLTRB(18, 18, 18, 18),
+      borderRadius: glass
+          ? fushiCardBorderRadius(context)
+          : const BorderRadius.all(Radius.circular(28)),
+      child: heroBody,
+    );
+    final List<_SessionTool> regular = <_SessionTool>[
+      for (final List<_SessionTool> group in tools)
+        for (final _SessionTool tool in group)
+          if (!tool.danger) tool,
+    ];
+    final List<_SessionTool> dangerous = <_SessionTool>[
+      for (final List<_SessionTool> group in tools)
+        for (final _SessionTool tool in group)
+          if (tool.danger) tool,
+    ];
+    final List<Widget> sections = <Widget>[
+      hero,
+      for (final Widget notice in notices)
+        Padding(padding: const EdgeInsets.only(top: 10), child: notice),
+    ];
+    if (_side) {
+      // 侧栏：色块 → 游戏内查词 → 会话工具（分段列表）→ 危险操作。错峰进场。
+      if (footer.isNotEmpty) {
+        sections.add(
+          Padding(
+            padding: const EdgeInsets.only(top: 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: footer,
+            ),
+          ),
+        );
+      }
+      if (regular.isNotEmpty || dangerous.isNotEmpty) {
+        sections.add(
+          Padding(
+            key: const ValueKey<String>('game-session-tools'),
+            padding: const EdgeInsets.only(top: 18),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: <Widget>[
+                GalWorkbenchSectionHeader(
+                  icon: Icons.handyman_outlined,
+                  title: t.game_workbench_tools_title,
+                ),
+                const SizedBox(height: 4),
+                for (int i = 0; i < regular.length; i++)
+                  regular[i].tile(index: i, count: regular.length),
+                if (dangerous.isNotEmpty) ...<Widget>[
+                  const SizedBox(height: 12),
+                  for (int i = 0; i < dangerous.length; i++)
+                    dangerous[i].tile(index: i, count: dangerous.length),
+                ],
+              ],
+            ),
+          ),
+        );
+      }
+      return FushiEntranceScope(
+        child: Column(
+          key: const ValueKey<String>('game-session-actions'),
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            for (int i = 0; i < sections.length; i++)
+              FushiStaggeredEntrance(index: i, child: sections[i]),
+          ],
+        ),
+      );
+    }
+    // 横排（台词列表上方）：色块下面一条带字工具条（常用在前、危险操作隔开排最后），
+    // 再下面是游戏内查词能力小卡。
+    if (regular.isNotEmpty || dangerous.isNotEmpty) {
+      sections.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Wrap(
+            key: const ValueKey<String>('game-session-tools'),
+            spacing: 8,
+            runSpacing: 8,
+            crossAxisAlignment: WrapCrossAlignment.center,
+            children: <Widget>[
+              for (final _SessionTool tool in regular) tool.chip(),
+              if (dangerous.isNotEmpty && regular.isNotEmpty)
+                const SizedBox(
+                  height: 24,
+                  child: FushiVerticalDivider(width: 9, thickness: 1),
+                ),
+              for (final _SessionTool tool in dangerous) tool.chip(),
+            ],
+          ),
+        ),
+      );
+    }
+    if (footer.isNotEmpty) {
+      sections.add(
+        Padding(
+          padding: const EdgeInsets.only(top: 10),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: footer,
+          ),
+        ),
+      );
+    }
+    return FushiEntranceScope(
+      child: Column(
+        key: const ValueKey<String>('game-session-actions'),
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          for (int i = 0; i < sections.length; i++)
+            FushiStaggeredEntrance(index: i, child: sections[i]),
+        ],
+      ),
+    );
+  }
+}
+
+/// 会话状态区的一条补充说明（可执行处置 / 一手证据）。
+typedef _SessionHint = ({String text, int maxLines, bool emphasized});
+
+/// 一格实时信号（文本 / 语音 / 画面 / Anki）。
+typedef _SessionSignal = ({
+  Key? key,
+  String label,
+  String value,
+  bool ready,
+  String? tooltip,
+});
+
+/// 会话状态区的展示数据：M3E 拼贴色块（[_SessionOverviewCard]）与 Cupertino 侧栏
+/// （`apple_workbench_sidebar.part.dart`）摆同一份文案与取舍，不各写一套判据。
+class _SessionSummary {
+  const _SessionSummary._({
+    required this.waitingForThread,
+    required this.error,
+    required this.started,
+    required this.phaseLabel,
+    required this.eyebrow,
+    required this.title,
+    required this.subtitle,
+    required this.localeSkippedHint,
+    required this.hints,
+    required this.statusLabel,
+    required this.statusTone,
+    required this.signals,
+    required this.icon,
+    required this.audioFormat,
+  });
+
+  factory _SessionSummary.of({
+    required GalHookSessionState state,
+    required GalWorkbenchReadiness readiness,
+    required GalgameEntry? game,
+    required bool compact,
+    required bool hasStart,
+    required bool ankiConfigured,
+  }) {
     final bool waitingForThread =
         readiness == GalWorkbenchReadiness.waitingForThread;
+    final bool error = state.phase == GalHookSessionPhase.error;
     final String audio = galHookAudioBackendLabel(state.audioBackend);
     final String phase = galHookSessionPhaseLabel(state.phase);
     // 转区标记**窄屏也留着**：它和降级原因同属「不显示就没有第二处能看到」的事实。
@@ -3092,269 +4126,211 @@ class _SessionOverviewCard extends StatelessWidget {
         : '${state.audioFormat!.sampleRate} Hz · '
               '${state.audioFormat!.channels} ch · '
               '${state.audioFormat!.bitsPerSample} bit';
-    final String? identity = _gameIdentity(state);
-    final String title = waitingForThread
+    final String? identity = _SessionOverviewCard._gameIdentity(state);
+    final String? exeStem = state.launchExe == null
+        ? null
+        : galgameNameFromExe(state.launchExe!);
+    final String? gameName = game?.displayName ?? exeStem;
+    final bool started = state.isActive || waitingForThread || error;
+    // 眉标说「现在处在哪一步」，大标题说「对着哪个游戏 / 下一步做什么」。
+    final String eyebrow = waitingForThread
         ? t.game_session_waiting_thread
+        : error
+        ? phase
         : state.isActive
         ? t.game_session_listening
-        : t.game_session_idle;
+        : hasStart
+        ? t.game_session_idle
+        : t.game_capture_workbench;
+    // 没有起点动作（独立页的起点在 AppBar、外部 texthooker 没有会话）时不喊
+    // 「开始捕获」，只陈述现状。
+    final String title = !started
+        ? (hasStart ? t.game_workbench_start_title : t.game_session_idle)
+        : gameName ??
+              (error ? t.game_capture_launch_failed : t.game_session_listening);
     final String subtitle = waitingForThread
         ? (identity == null
               ? t.game_text_thread_unset
               : '$identity · ${t.game_text_thread_unset}')
-        : state.isActive
+        : state.isActive || error
         ? (identity ?? phase)
         : t.game_capture_description;
-    // M3E 状态 hero：整张卡按会话阶段铺饱和 container 色块——出错 error、降级 /
-    // 等待选线程 tertiary、监听中 primary、未开始中性分层。卡内文字统一取该色块的
-    // on 色（主题字阶自带 onSurface，必须显式覆盖，否则色块上是一片深灰字）。
-    final FushiCardTone heroTone = state.phase == GalHookSessionPhase.error
-        ? FushiCardTone.error
-        : state.isDegraded || waitingForThread
-        ? FushiCardTone.tertiary
-        : state.isActive
-        ? FushiCardTone.primary
-        : FushiCardTone.neutral;
-    final Color? heroForeground = fushiCardToneColors(
-      context,
-      heroTone,
-    )?.onContainer;
-    final FushiTypography type = context.fushiType;
-    final TextStyle? hintStyle = theme.textTheme.bodySmall?.copyWith(
-      color: heroForeground ?? theme.colorScheme.outline,
-    );
-    // 补充说明行（可执行处置 / 一手证据），按严重度从上往下排。
-    final List<Widget> hints = <Widget>[
+    final String? ocrIssue = state.isOcrMode
+        ? _ocrIssueText(state.ocrIssue)
+        : null;
+    final List<_SessionHint> hints = <_SessionHint>[
       // 转区的**可执行处置**：误转区（多语言版 / 汉化版落进 `auto` 的「32 位 ⇒ 日文
       // 原版」判据）会把游戏自己的 GBK/UTF-8 字符串按 CP932 解坏。真正兜底的是用户
       // 手动选「永不转区」——够得着那个档位的前提就是这一行。compact 下省掉：窄屏留
-      // 短 chip 即可，长句会把整张卡挤爆。
+      // 短 chip 即可，长句会把整张卡挤爆。`auto` 判定转区时把判据列在处置后面：用户
+      // 看到「版本资源为日语」才知道 Fushi 凭什么转、判错了该怀疑哪条。
       if (state.japaneseLocaleApplied && !compact)
-        Text(
-          // `auto` 判定转区时把判据列在处置后面：用户看到「版本资源为日语」
-          // 才知道 Fushi 凭什么转、判错了该怀疑哪条。`on` 档没有判定，只有处置。
-          verdict == null || verdict.evidence.isEmpty
+        (
+          text: verdict == null || verdict.evidence.isEmpty
               ? t.game_session_japanese_locale_hint
               : '${t.game_session_japanese_locale_hint}\n'
                     '${t.game_session_japanese_locale_evidence(evidence: galJapaneseLocaleEvidenceListLabel(verdict.evidence))}',
           maxLines: 4,
-          overflow: TextOverflow.ellipsis,
-          style: hintStyle,
+          emphasized: false,
         ),
       // BUG-2047：`auto` 未转区的处置——说清是「判为不需要（列判据）」还是
       // 「证据不足」，并指向另一头的兜底档「始终开启」。
       if (localeSkippedHint != null && !compact)
-        Text(
-          localeSkippedHint,
-          maxLines: 3,
-          overflow: TextOverflow.ellipsis,
-          style: hintStyle,
-        ),
-      // 降级原因：优先显示结构化失败的可执行处置（「游戏以管理员身份运行，
-      // 请同样以管理员身份启动 Fushi」之类）。没有结构化原因时才退回代码。
-      //
-      // **窄屏也必须显示**：状态 chip 在 compact 下照常亮「已降级」，若同时把原因
-      // 藏掉，用户看到的就是「出事了 + 不告诉你出了什么事」。compact 要省的是次要
-      // 信息（采样率/声道/位深），不是唯一的诊断线索。只收窄行数，不整行丢弃。
+        (text: localeSkippedHint, maxLines: 3, emphasized: false),
+      // 降级原因：优先显示结构化失败的可执行处置。**窄屏也必须显示**：状态签在
+      // compact 下照常亮「已降级」，若同时把原因藏掉，用户看到的就是「出事了 + 不
+      // 告诉你出了什么事」。只收窄行数，不整行丢弃。BUG-1100：先看注入失败的可执行
+      // 处置，再看降级原因自己的人话文案；两张表都没有才回退内部代码。
       if (state.fallbackReason != null)
-        Text(
-          // BUG-1100：先看注入失败的可执行处置，再看降级原因自己的人话文案；
-          // 两张表都没有才回退内部代码。
-          galHookFallbackHeadline(
+        (
+          text: galHookFallbackHeadline(
             failure: state.injectorFailure,
             fallbackReason: state.fallbackReason!,
           ),
           maxLines: compact ? 2 : 3,
-          overflow: TextOverflow.ellipsis,
-          style: type.bodySmallEmphasized.copyWith(
-            color: heroForeground ?? theme.colorScheme.tertiary,
-          ),
+          emphasized: true,
         ),
       // native 一手证据**独立一行**（BUG-1446）：`protocol_mismatch` 时 native 侧
-      // 生成的双方版本对照（`shm=12/want 13` 之类）是这条失败唯一能一次确诊的
-      // 事实。它必须自己占一行：上面那句处置有八十多字，缀在尾部会被 ellipsis
-      // 整段吃掉（compact 只有 2 行），修了等于没修。
+      // 生成的双方版本对照是这条失败唯一能一次确诊的事实，缀在处置尾部会被
+      // ellipsis 整段吃掉。
       if (state.injectorDetail.trim().isNotEmpty)
-        Text(
-          state.injectorDetail.trim(),
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: hintStyle,
-        ),
+        (text: state.injectorDetail.trim(), maxLines: 1, emphasized: false),
+      // OCR 泵的健康状况（截不到窗口 / 识别器不可用）：窄屏也显示，这是 OCR 模式下
+      // 「为什么没有台词」唯一的线索。
+      if (ocrIssue != null)
+        (text: ocrIssue, maxLines: compact ? 2 : 3, emphasized: true),
     ];
-    // 音频源 chip：采样率 / 声道 / 位深只在宽屏标签里出现，窄屏收进 tooltip。
+    // 语音信号的值：采样率 / 声道 / 位深只在宽屏出现，窄屏收进 tooltip。
     final String audioChipLabel = compact || format == null
         ? audio
         : '$audio · $format';
-    final List<Widget> chips = <Widget>[
-      if (state.isActive || state.audioBackend != GalHookAudioBackend.none)
-        GalWorkbenchStatusChip(
-          key: const ValueKey<String>('game-session-audio-chip'),
-          icon: state.hasAudio ? Icons.graphic_eq : Icons.volume_off_outlined,
-          label: audioChipLabel,
-          tone: state.hasAudio ? FushiTagTone.success : FushiTagTone.neutral,
-          tooltip: format == null
-              ? t.game_health_audio
-              : '${t.game_health_audio} · $format',
-        ),
-      if (state.japaneseLocaleApplied)
-        GalWorkbenchStatusChip(
-          icon: Icons.translate,
-          label: t.game_session_japanese_locale,
-          tone: FushiTagTone.accent,
-          tooltip: t.game_session_japanese_locale_hint,
-        )
-      else if (localeSkippedHint != null)
-        GalWorkbenchStatusChip(
-          icon: Icons.translate,
-          label: t.game_session_japanese_locale_skipped,
-          tone: FushiTagTone.neutral,
-          tooltip: localeSkippedHint,
-        ),
-    ];
-    final IconData leadingIcon = waitingForThread
-        ? Icons.forum_outlined
-        : state.isActive
-        ? Icons.sensors
-        : Icons.sensors_off_outlined;
-    final Widget leading = _SessionHeroBadge(
-      icon: leadingIcon,
-      tone: heroTone,
-      active: state.isActive && !waitingForThread,
-      size: compact ? 44 : 52,
-    );
-    // 会话阶段 chip：语义色调（成功 / 警告 / 错误 / 中性）。空闲时不出——标题
-    // 「尚未开始捕获」已经说了同一件事。
-    final Widget statusPill = _StatusPill(
-      label: state.isDegraded ? t.game_line_audio_fallback : phase,
-      tone: state.phase == GalHookSessionPhase.error
+    final List<_SessionSignal> signals = !started
+        ? const <_SessionSignal>[]
+        : <_SessionSignal>[
+            (
+              key: null,
+              label: t.game_health_text,
+              value: state.hasText
+                  ? t.game_status_ready
+                  : t.game_status_waiting,
+              ready: state.hasText,
+              tooltip: null,
+            ),
+            (
+              key: const ValueKey<String>('game-session-audio-chip'),
+              label: t.game_health_audio,
+              value: audioChipLabel,
+              ready: state.hasAudio,
+              tooltip: format == null
+                  ? t.game_health_audio
+                  : '${t.game_health_audio} · $format',
+            ),
+            (
+              key: null,
+              label: t.game_health_window,
+              value: state.hasWindow
+                  ? t.game_window_bound
+                  : t.game_window_missing,
+              ready: state.hasWindow,
+              tooltip: null,
+            ),
+            (
+              key: null,
+              label: t.game_health_anki,
+              value: ankiConfigured
+                  ? t.game_status_ready
+                  : t.game_status_not_configured,
+              ready: ankiConfigured,
+              tooltip: null,
+            ),
+          ];
+    return _SessionSummary._(
+      waitingForThread: waitingForThread,
+      error: error,
+      started: started,
+      phaseLabel: phase,
+      eyebrow: eyebrow,
+      title: title,
+      subtitle: subtitle,
+      localeSkippedHint: localeSkippedHint,
+      hints: hints,
+      statusLabel: state.isDegraded ? t.game_line_audio_fallback : phase,
+      statusTone: error
           ? FushiTagTone.error
           : state.isDegraded
           ? FushiTagTone.warning
           : !waitingForThread && state.isActive
           ? FushiTagTone.success
           : FushiTagTone.neutral,
+      signals: signals,
+      icon: waitingForThread
+          ? Icons.forum_outlined
+          : error
+          ? Icons.error_outline
+          : state.isActive
+          ? Icons.sensors
+          : Icons.play_arrow_rounded,
+      audioFormat: format,
     );
-    final Widget info = Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: <Widget>[
-        // 标题换场：阶段变化时旧标题淡出、新标题淡入（effects 弹簧）。
-        AnimatedSwitcher(
-          duration: context.fushiMotion.effectsDefault.duration,
-          switchInCurve: context.fushiMotion.effectsDefault.curve,
-          switchOutCurve: context.fushiMotion.effectsFast.curve,
-          layoutBuilder: (Widget? current, List<Widget> previous) => Stack(
-            alignment: AlignmentDirectional.centerStart,
-            children: <Widget>[...previous, if (current != null) current],
-          ),
-          child: Text(
-            title,
-            key: ValueKey<String>(title),
-            style:
-                (compact
-                        ? type.titleMediumEmphasized
-                        : type.titleLargeEmphasized)
-                    .copyWith(color: heroForeground),
+  }
+
+  final bool waitingForThread;
+  final bool error;
+  final bool started;
+  final String phaseLabel;
+  final String eyebrow;
+  final String title;
+  final String subtitle;
+  final String? localeSkippedHint;
+  final List<_SessionHint> hints;
+  final String statusLabel;
+  final FushiTagTone statusTone;
+  final List<_SessionSignal> signals;
+  final IconData icon;
+  final String? audioFormat;
+}
+
+/// 捕获中的当前游戏封面：拼贴语言的斜放小盒封（库里有封面画封面，没有按标题
+/// 生成），圆角 + 投影。
+class _SessionCoverThumb extends StatelessWidget {
+  const _SessionCoverThumb({required this.game, required this.height});
+
+  final GalgameEntry game;
+  final double height;
+
+  @override
+  Widget build(BuildContext context) {
+    final double width = height * 0.75;
+    return Transform.rotate(
+      angle: -0.06,
+      child: DecoratedBox(
+        decoration: const BoxDecoration(
+          borderRadius: BorderRadius.all(Radius.circular(10)),
+          boxShadow: <BoxShadow>[
+            BoxShadow(
+              color: Color(0x33000000),
+              offset: Offset(0, 4),
+              blurRadius: 10,
+            ),
+          ],
+        ),
+        child: ClipRRect(
+          borderRadius: const BorderRadius.all(Radius.circular(10)),
+          child: SizedBox(
+            width: width,
+            height: height,
+            child: GalgameHomeCover(game: game, decodeWidth: 160),
           ),
         ),
-        const SizedBox(height: 2),
-        Text(
-          subtitle,
-          maxLines: 1,
-          overflow: TextOverflow.ellipsis,
-          style: type.bodyMedium.copyWith(
-            color: heroForeground ?? theme.colorScheme.onSurfaceVariant,
-          ),
-        ),
-        if (state.phase != GalHookSessionPhase.idle ||
-            chips.isNotEmpty) ...<Widget>[
-          const SizedBox(height: 10),
-          Wrap(
-            spacing: 6,
-            runSpacing: 6,
-            children: <Widget>[
-              if (state.phase != GalHookSessionPhase.idle) statusPill,
-              ...chips,
-            ],
-          ),
-        ],
-        if (hints.isNotEmpty) ...<Widget>[const SizedBox(height: 6), ...hints],
-      ],
-    );
-    final Widget actionWrap = Wrap(
-      alignment: WrapAlignment.end,
-      crossAxisAlignment: WrapCrossAlignment.center,
-      spacing: 8,
-      runSpacing: 8,
-      children: actions,
-    );
-    return FushiCard(
-      key: const ValueKey<String>('game-session-overview'),
-      tone: heroTone,
-      padding: const EdgeInsets.fromLTRB(16, 14, 14, 10),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: <Widget>[
-          if (compact) ...<Widget>[
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                leading,
-                const SizedBox(width: 14),
-                Expanded(child: info),
-              ],
-            ),
-            if (actions.isNotEmpty) ...<Widget>[
-              const SizedBox(height: 10),
-              Align(alignment: Alignment.centerLeft, child: actionWrap),
-            ],
-          ] else
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                leading,
-                const SizedBox(width: 16),
-                Expanded(flex: 3, child: info),
-                if (actions.isNotEmpty) ...<Widget>[
-                  const SizedBox(width: 16),
-                  Flexible(flex: 2, child: actionWrap),
-                ],
-              ],
-            ),
-          // 游戏内查词行：M3E 下是 hero 色块里嵌的一块 surface 小容器（色块上再
-          // 画一道分隔线会把饱和底切碎）；Apple / 中性卡沿用分隔线。
-          if (footer.isNotEmpty) ...<Widget>[
-            const SizedBox(height: 10),
-            if (heroForeground != null && !isGlassDesign(context))
-              DecoratedBox(
-                decoration: BoxDecoration(
-                  color: theme.colorScheme.surface,
-                  borderRadius: FushiM3eShape.smallRadius,
-                ),
-                child: DefaultTextStyle.merge(
-                  style: TextStyle(color: theme.colorScheme.onSurface),
-                  child: IconTheme.merge(
-                    data: IconThemeData(color: theme.colorScheme.onSurface),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
-                      children: footer,
-                    ),
-                  ),
-                ),
-              )
-            else ...<Widget>[const FushiDividerControl(height: 1), ...footer],
-          ] else
-            const SizedBox(height: 4),
-        ],
       ),
     );
   }
 }
 
-/// 会话状态 hero 的行首色块：M3E 下是实色强调块（出错 error / 降级 tertiary /
-/// 监听 primary / 空闲 secondaryContainer）+ on 色图标，监听中是四瓣 cookie 形、
-/// 其余正圆；换图标时 spatial 弹簧弹入（缩放可过冲，透明度走 effects 不过冲）。
-/// Apple 下是强调色淡染圆底（iOS 不铺大面积实色）。
+/// 会话状态块的行首色块：M3E 下是实色强调块 + on 色图标，形状随阶段换（未开始
+/// sunny、监听中九瓣 cookie、等待 / 降级四叶草、出错 soft burst）；换图标时
+/// spatial 弹簧弹入（缩放可过冲，透明度走 effects 不过冲）。Apple 下是强调色淡染
+/// 圆底（iOS 不铺大面积实色）。
 class _SessionHeroBadge extends StatelessWidget {
   const _SessionHeroBadge({
     required this.icon,
@@ -3398,13 +4374,15 @@ class _SessionHeroBadge extends StatelessWidget {
       final Color fill = switch (tone) {
         FushiCardTone.error => cs.error,
         FushiCardTone.tertiary => cs.tertiary,
-        FushiCardTone.primary || FushiCardTone.secondary => cs.primary,
+        FushiCardTone.primary => cs.primary,
+        FushiCardTone.secondary => cs.secondary,
         FushiCardTone.neutral => cs.secondaryContainer,
       };
       final Color onFill = switch (tone) {
         FushiCardTone.error => cs.onError,
         FushiCardTone.tertiary => cs.onTertiary,
-        FushiCardTone.primary || FushiCardTone.secondary => cs.onPrimary,
+        FushiCardTone.primary => cs.onPrimary,
+        FushiCardTone.secondary => cs.onSecondary,
         FushiCardTone.neutral => cs.onSecondaryContainer,
       };
       final BorderSide side = eink
@@ -3414,12 +4392,14 @@ class _SessionHeroBadge extends StatelessWidget {
         key: ValueKey<IconData>(icon),
         decoration: ShapeDecoration(
           color: eink ? Colors.transparent : fill,
-          shape: active
-              ? MaterialShapeBorder(
-                  shape: MaterialShapes.cookie4Sided,
-                  side: side,
-                )
-              : CircleBorder(side: side),
+          shape: MaterialShapeBorder(
+            shape: switch (tone) {
+              FushiCardTone.error => MaterialShapes.softBurst,
+              FushiCardTone.tertiary => MaterialShapes.clover4Leaf,
+              _ => active ? MaterialShapes.cookie9Sided : MaterialShapes.sunny,
+            },
+            side: side,
+          ),
         ),
         child: SizedBox.square(
           dimension: size,
@@ -3490,10 +4470,15 @@ class _LineTracksCard extends StatefulWidget {
     required this.session,
     required this.line,
     this.onClose,
+    this.actions,
   });
 
   final GalHookSessionController session;
   final TexthookerLineEntry? line;
+
+  /// Cupertino「本句」的动作条（试听 / 改轨 / 补录 / 复制 / 收藏），只在 Apple 外观
+  /// 摆出；M3E 侧板不用（行内已有）。
+  final Widget? actions;
 
   /// 收起详情（宽屏侧板 / 窄屏 sheet）；null 时不显示关闭钮。
   final VoidCallback? onClose;
@@ -3623,6 +4608,9 @@ class _LineTracksCardState extends State<_LineTracksCard> {
     // 换句后音轨快照还没取回来：显示骨架而不是「无音轨」，免得一闪而过的
     // 假空态让用户以为这句没抓到声音。
     final bool tracksLoading = line != null && _tracksLineId != line.id;
+    if (isGlassDesign(context)) {
+      return _buildApple(context, line, state, lineVoicePtr, tracksLoading);
+    }
     return FushiCard(
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -3644,7 +4632,7 @@ class _LineTracksCardState extends State<_LineTracksCard> {
                 ),
               ),
               FushiIconButton(
-                icon: Icons.refresh,
+                icon: FushiIcons.refresh,
                 tooltip: t.game_refresh_tracks,
                 size: 18,
                 focusId: const FushiFocusId('game-line-tracks-refresh'),
@@ -3653,7 +4641,7 @@ class _LineTracksCardState extends State<_LineTracksCard> {
               if (widget.onClose != null)
                 FushiIconButton(
                   key: const ValueKey<String>('game-line-tracks-close'),
-                  icon: Icons.close,
+                  icon: FushiIcons.close,
                   tooltip: t.game_workbench_detail_close,
                   size: 18,
                   focusId: const FushiFocusId('game-line-tracks-close'),
@@ -3749,6 +4737,190 @@ class _LineTracksCardState extends State<_LineTracksCard> {
           ),
         ],
       ),
+    );
+  }
+}
+
+extension on _LineTracksCardState {
+  /// Cupertino「本句」：标题行（刷新 / 关闭）→ 动作条 → 台词正文 → 元信息分组 →
+  /// 音轨分组（[GalTrackTile] 的 Apple 行）。数据与动作和 M3E 侧板同一份。
+  Widget _buildApple(
+    BuildContext context,
+    TexthookerLineEntry? line,
+    GalHookSessionState state,
+    int? lineVoicePtr,
+    bool tracksLoading,
+  ) {
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    final TextStyle secondary = metrics
+        .subtitleStyle(context)
+        .copyWith(color: apple.secondaryLabel);
+    Widget meta(String label, String value) => Padding(
+      padding: EdgeInsets.symmetric(
+        horizontal: metrics.rowHorizontal,
+        vertical: 6,
+      ),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: <Widget>[
+          Expanded(child: Text(label, style: metrics.titleStyle(context))),
+          const SizedBox(width: 8),
+          Flexible(
+            child: Text(value, textAlign: TextAlign.end, style: secondary),
+          ),
+        ],
+      ),
+    );
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        Padding(
+          padding: EdgeInsets.fromLTRB(metrics.rowHorizontal, 10, 6, 4),
+          child: Row(
+            children: <Widget>[
+              Expanded(
+                child: Text(
+                  t.game_stream_line,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: metrics
+                      .titleStyle(context)
+                      .copyWith(fontWeight: FontWeight.w600),
+                ),
+              ),
+              FushiIconButton(
+                icon: FushiIcons.refresh,
+                tooltip: t.game_refresh_tracks,
+                focusId: const FushiFocusId('game-line-tracks-refresh'),
+                onTap: () => unawaited(_syncTracks(force: true)),
+              ),
+              if (widget.onClose != null)
+                FushiIconButton(
+                  key: const ValueKey<String>('game-line-tracks-close'),
+                  icon: FushiIcons.close,
+                  tooltip: t.game_workbench_detail_close,
+                  focusId: const FushiFocusId('game-line-tracks-close'),
+                  onTap: widget.onClose,
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          child: SingleChildScrollView(
+            primary: false,
+            padding: const EdgeInsets.fromLTRB(8, 0, 8, 12),
+            child: line == null
+                ? Padding(
+                    padding: EdgeInsets.all(metrics.rowHorizontal),
+                    child: Text(t.game_no_active_line, style: secondary),
+                  )
+                : Column(
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: <Widget>[
+                      if (widget.actions != null)
+                        Padding(
+                          padding: const EdgeInsets.only(bottom: 6),
+                          child: widget.actions,
+                        ),
+                      Padding(
+                        padding: EdgeInsets.symmetric(
+                          horizontal: metrics.rowHorizontal,
+                          vertical: 6,
+                        ),
+                        child: Consumer(
+                          builder: (_, WidgetRef ref, _) => Text(
+                            line.text,
+                            style: ref
+                                .watch(appProvider)
+                                .applyGameTextFont(
+                                  context.fushiType.titleMedium.copyWith(
+                                    height: 1.5,
+                                    color: apple.label,
+                                  ),
+                                ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      FushiAppleGroupSurface(
+                        borderRadius: metrics.groupBorderRadius,
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.stretch,
+                          children: <Widget>[
+                            meta(
+                              t.game_health_audio,
+                              texthookerLineAudioSummary(line),
+                            ),
+                            if (line.audioDurationMs != null)
+                              meta(
+                                t.game_audio_duration,
+                                '${(line.audioDurationMs! / 1000).toStringAsFixed(2)}s',
+                              ),
+                            if (line.fallbackReason != null)
+                              meta(
+                                t.game_line_audio_fallback,
+                                line.fallbackReason!,
+                              ),
+                          ],
+                        ),
+                      ),
+                      _AppleSectionTitle(t.game_line_tracks),
+                      if (tracksLoading)
+                        const _TrackSkeleton()
+                      else if (_tracks.isEmpty)
+                        Padding(
+                          padding: EdgeInsets.all(metrics.rowHorizontal),
+                          child: Text(t.game_no_tracks, style: secondary),
+                        )
+                      else
+                        FushiAppleGroupSurface(
+                          borderRadius: metrics.groupBorderRadius,
+                          child: Column(
+                            children: <Widget>[
+                              for (final GalAudioTrack track in _tracks)
+                                GalTrackTile(
+                                  track: track,
+                                  selected: lineVoicePtr == track.sourcePtr,
+                                  excluded: state.excludedAudioSourcePtrs
+                                      .contains(track.sourcePtr),
+                                  previewing:
+                                      _previewingSourcePtr == track.sourcePtr,
+                                  selectable: widget.session.hasEngineSource,
+                                  selectTooltip: t.game_line_track_use,
+                                  onSelect: () => unawaited(
+                                    _useForLine(line.id, track.sourcePtr),
+                                  ),
+                                  onPreview: () =>
+                                      unawaited(_preview(line.id, track)),
+                                  onToggleExcluded: (bool excluded) =>
+                                      widget.session.setTrackExcluded(
+                                        track.sourcePtr,
+                                        excluded,
+                                      ),
+                                ),
+                            ],
+                          ),
+                        ),
+                      Padding(
+                        padding: EdgeInsets.fromLTRB(
+                          metrics.rowHorizontal,
+                          6,
+                          metrics.rowHorizontal,
+                          0,
+                        ),
+                        child: Text(
+                          t.game_line_tracks_hint,
+                          style: metrics
+                              .footnoteStyle(context)
+                              .copyWith(color: apple.secondaryLabel),
+                        ),
+                      ),
+                    ],
+                  ),
+          ),
+        ),
+      ],
     );
   }
 }
@@ -3862,7 +5034,7 @@ class _SelectedLineBar extends StatelessWidget {
               label: Text(t.game_workbench_detail_open),
             ),
             FushiIconButton(
-              icon: Icons.close,
+              icon: FushiIcons.close,
               tooltip: t.game_workbench_detail_close,
               size: 18,
               focusId: const FushiFocusId('game-selected-line-close'),
@@ -3893,6 +5065,64 @@ class _CaptureHealthCard extends StatelessWidget {
     final int connected = endpoints
         .where((e) => e.phase == TexthookerEndpointPhase.connected)
         .length;
+    final List<Widget> rows = <Widget>[
+      _HealthRow(
+        label: t.game_health_process,
+        value: state.gamePid == null ? '—' : 'PID ${state.gamePid}',
+        ready: state.gamePid != null,
+      ),
+      _HealthRow(
+        label: t.game_health_window,
+        value: state.hasWindow ? t.game_window_bound : t.game_window_missing,
+        ready: state.hasWindow,
+      ),
+      // 窗口超分：与上面的「窗口」相邻，因为说的是同一个游戏窗口。整行在用户
+      // 关掉超分 / 没在跑时自动消失，不给不关心的人制造噪音。
+      const _UpscalingHealthRows(),
+      _HealthRow(
+        label: t.game_health_text,
+        value: endpoints.isEmpty
+            ? t.game_status_not_configured
+            : '$connected/${endpoints.length}',
+        ready: state.hasText || connected > 0,
+      ),
+      _HealthRow(
+        label: t.game_health_audio,
+        value: galHookAudioBackendLabel(state.audioBackend),
+        ready: state.hasAudio,
+      ),
+      _HealthRow(
+        label: t.game_health_helper,
+        value: galHookSessionPhaseLabel(state.phase),
+        ready: state.isActive && state.phase != GalHookSessionPhase.error,
+      ),
+      // BUG-1007：接真实 Anki 配置状态，不再写死「未配置」。
+      _HealthRow(
+        label: t.game_health_anki,
+        value: ankiConfigured
+            ? t.game_status_ready
+            : t.game_status_not_configured,
+        ready: ankiConfigured,
+      ),
+    ];
+    if (isGlassDesign(context)) {
+      // Apple：标题由外层 sheet / popover / 整页给，这里只是一组分组行。
+      return FushiAppleGroupSurface(
+        key: const ValueKey<String>('game-health-apple'),
+        borderRadius: FushiAppleMetrics.of(context).groupBorderRadius,
+        child: Padding(
+          padding: EdgeInsets.symmetric(
+            horizontal: FushiAppleMetrics.of(context).rowHorizontal,
+            vertical: 4,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            children: rows,
+          ),
+        ),
+      );
+    }
     return FushiCard(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -3916,46 +5146,7 @@ class _CaptureHealthCard extends StatelessWidget {
             ],
           ),
           const SizedBox(height: 12),
-          _HealthRow(
-            label: t.game_health_process,
-            value: state.gamePid == null ? '—' : 'PID ${state.gamePid}',
-            ready: state.gamePid != null,
-          ),
-          _HealthRow(
-            label: t.game_health_window,
-            value: state.hasWindow
-                ? t.game_window_bound
-                : t.game_window_missing,
-            ready: state.hasWindow,
-          ),
-          // 窗口超分：与上面的「窗口」相邻，因为说的是同一个游戏窗口。整行在用户
-          // 关掉超分 / 没在跑时自动消失，不给不关心的人制造噪音。
-          const _UpscalingHealthRows(),
-          _HealthRow(
-            label: t.game_health_text,
-            value: endpoints.isEmpty
-                ? t.game_status_not_configured
-                : '$connected/${endpoints.length}',
-            ready: state.hasText || connected > 0,
-          ),
-          _HealthRow(
-            label: t.game_health_audio,
-            value: galHookAudioBackendLabel(state.audioBackend),
-            ready: state.hasAudio,
-          ),
-          _HealthRow(
-            label: t.game_health_helper,
-            value: galHookSessionPhaseLabel(state.phase),
-            ready: state.isActive && state.phase != GalHookSessionPhase.error,
-          ),
-          // BUG-1007：接真实 Anki 配置状态，不再写死「未配置」。
-          _HealthRow(
-            label: t.game_health_anki,
-            value: ankiConfigured
-                ? t.game_status_ready
-                : t.game_status_not_configured,
-            ready: ankiConfigured,
-          ),
+          ...rows,
         ],
       ),
     );
@@ -4006,7 +5197,9 @@ class _UpscalingHealthRows extends StatelessWidget {
                 child: Text(
                   hint,
                   style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: Theme.of(context).colorScheme.tertiary,
+                    color: isGlassDesign(context)
+                        ? appleColorsOf(context).warning
+                        : Theme.of(context).colorScheme.tertiary,
                   ),
                 ),
               ),
@@ -4037,7 +5230,11 @@ class _HealthRow extends StatelessWidget {
           FushiIcon(
             ready ? Icons.check_circle_outline : Icons.schedule_outlined,
             size: 17,
-            color: ready
+            color: isGlassDesign(context)
+                ? (ready
+                      ? appleColorsOf(context).success
+                      : appleColorsOf(context).tertiaryLabel)
+                : ready
                 ? Theme.of(context).colorScheme.primary
                 : Theme.of(context).colorScheme.outline,
           ),
@@ -4080,6 +5277,59 @@ class _MetadataRow extends StatelessWidget {
             child: Text(value, style: Theme.of(context).textTheme.bodySmall),
           ),
         ],
+      ),
+    );
+  }
+}
+
+/// 台词计数签：标题旁的 tonal 小胶囊（MD3 secondaryContainer / Apple 强调色淡底 /
+/// 墨水屏描边），等宽数字；数字变化时淡入换场。
+class _LineCountBadge extends StatelessWidget {
+  const _LineCountBadge({required this.count});
+
+  final int count;
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final bool eink = isEinkTheme(context);
+    final bool glass = isGlassDesign(context);
+    final Color? fill = eink
+        ? null
+        : glass
+        ? appleColorsOf(context).accent.withValues(alpha: 0.14)
+        : cs.secondaryContainer;
+    final Color foreground = eink
+        ? cs.onSurface
+        : glass
+        ? appleColorsOf(context).accent
+        : cs.onSecondaryContainer;
+    final FushiMotionScheme motion = context.fushiMotion;
+    return Semantics(
+      label: '${t.game_live_lines} $count',
+      excludeSemantics: true,
+      child: DecoratedBox(
+        key: const ValueKey<String>('game-live-lines-count'),
+        decoration: BoxDecoration(
+          color: fill,
+          border: eink ? Border.all(color: cs.outline) : null,
+          borderRadius: const BorderRadius.all(Radius.circular(999)),
+        ),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 2),
+          child: AnimatedSwitcher(
+            duration: motion.effectsFast.duration,
+            switchInCurve: motion.effectsFast.curve,
+            switchOutCurve: motion.effectsFast.curve,
+            child: Text(
+              '$count',
+              key: ValueKey<int>(count),
+              style: context.fushiType.labelLargeEmphasized.tabular.copyWith(
+                color: foreground,
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -4129,6 +5379,8 @@ class _TexthookerLine extends ConsumerWidget {
     required this.recapturing,
     required this.onSelectLine,
     required this.onCharTap,
+    required this.autoLookupCharIndex,
+    required this.autoLookupAnchorKey,
     required this.onToggleFavorite,
     required this.onPreviewAudio,
     required this.onPickTrack,
@@ -4177,6 +5429,12 @@ class _TexthookerLine extends ConsumerWidget {
   /// 命中正文里的某个字：回调带该字在整行文本里的 UTF-16 偏移（BUG-1478）。
   final void Function(TexthookerLineEntry line, int charIndex, Rect rect)
   onCharTap;
+
+  /// 本行若是「新句自动查词」的目标，起查字的整行 UTF-16 下标；否则 null。
+  final int? autoLookupCharIndex;
+
+  /// 挂到起查字命中区上的锚点，宿主帧后据此取该字的屏幕矩形。
+  final GlobalKey autoLookupAnchorKey;
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -4313,8 +5571,11 @@ class _TexthookerLine extends ConsumerWidget {
             presentation: presentation,
             words: words,
             style: wordStyle,
-            colors: colors,
+            warningColor: colors.tertiary,
+            hintColor: colors.onSurfaceVariant,
             onCharTap: onCharTap,
+            autoLookupCharIndex: autoLookupCharIndex,
+            autoLookupAnchorKey: autoLookupAnchorKey,
           ),
           // BUG-4206：backend 只在这行真有音频时才是事实；「匹配中 / 未匹配」的行
           // 不报来源（否则一句还没配上的台词会顶着 game_resource 字样）。
@@ -4350,8 +5611,11 @@ class _TexthookerLineText extends StatefulWidget {
     required this.presentation,
     required this.words,
     required this.style,
-    required this.colors,
+    required this.warningColor,
+    required this.hintColor,
     required this.onCharTap,
+    required this.autoLookupCharIndex,
+    required this.autoLookupAnchorKey,
   });
 
   final TexthookerLineEntry line;
@@ -4360,9 +5624,16 @@ class _TexthookerLineText extends StatefulWidget {
   final TexthookerLinePresentation presentation;
   final List<String> words;
   final TextStyle? style;
-  final ColorScheme colors;
+
+  /// 「整段文本已折叠」提示的警示图标色（M3E tertiary / Apple warning）。
+  final Color warningColor;
+
+  /// 折叠提示文字色（M3E onSurfaceVariant / Apple secondaryLabel）。
+  final Color hintColor;
   final void Function(TexthookerLineEntry line, int charIndex, Rect rect)
   onCharTap;
+  final int? autoLookupCharIndex;
+  final GlobalKey autoLookupAnchorKey;
 
   @override
   State<_TexthookerLineText> createState() => _TexthookerLineTextState();
@@ -4393,6 +5664,8 @@ class _TexthookerLineTextState extends State<_TexthookerLineText> {
               word: word,
               startIndex: start + widget.sourceOffset,
               style: widget.style,
+              anchorCharIndex: widget.autoLookupCharIndex,
+              anchorKey: widget.autoLookupAnchorKey,
               onTapChar: (int charIndex, Rect rect) =>
                   widget.onCharTap(widget.line, charIndex, rect),
             ),
@@ -4421,15 +5694,15 @@ class _TexthookerLineTextState extends State<_TexthookerLineText> {
               FushiIcon(
                 Icons.warning_amber_rounded,
                 size: 16,
-                color: widget.colors.tertiary,
+                color: widget.warningColor,
               ),
               const SizedBox(width: 6),
               Expanded(
                 child: Text(
                   t.game_line_bulk_text_hint,
-                  style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                    color: widget.colors.onSurfaceVariant,
-                  ),
+                  style: Theme.of(
+                    context,
+                  ).textTheme.bodySmall?.copyWith(color: widget.hintColor),
                 ),
               ),
             ],
@@ -4603,10 +5876,17 @@ class _WordSpan extends StatelessWidget {
     required this.word,
     required this.startIndex,
     required this.style,
+    required this.anchorCharIndex,
+    required this.anchorKey,
     required this.onTapChar,
   });
 
   final String word;
+
+  /// 「新句自动查词」起查字的整行下标（不在本词内或无目标时不命中）：该字的命中区
+  /// 挂 [anchorKey]，宿主据此取矩形定位浮层。
+  final int? anchorCharIndex;
+  final GlobalKey anchorKey;
 
   /// 台词文本样式，由行级的 [_TexthookerLine] 解析一次后传下来（含
   /// [FontTarget.gameLookup] 字体链）。不在这里自己 watch：一行几十个词，逐词订阅
@@ -4634,6 +5914,7 @@ class _WordSpan extends StatelessWidget {
         // InkWell 不抢焦点（canRequestFocus:false）——行内逐字键盘导航不在本轮
         // 范围，行级焦点站点仍由外层 FushiCard 提供。
         _CharSpan(
+          key: charIndex == anchorCharIndex ? anchorKey : null,
           grapheme: grapheme,
           style: style,
           hoverColor: hover,
@@ -4649,6 +5930,7 @@ class _WordSpan extends StatelessWidget {
 class _CharSpan extends StatelessWidget {
   const _CharSpan({
     required this.grapheme,
+    super.key,
     required this.style,
     required this.hoverColor,
     required this.onTap,
@@ -4714,3 +5996,89 @@ class GalResourceUnpairedLineTrackDialog extends StatelessWidget {
     );
   }
 }
+
+/// 粘贴 Hook Code 弹窗。返回 null = 取消；否则返回原文（规范化由调用方做）。
+///
+/// BUG-4221：两个输入框的控制器归本 State 持有、路由移除时才释放；调用方在
+/// `await showAppDialog` 返回后立刻释放会撞上关窗动画里输入框的重建。
+class _HookCodePasteDialog extends StatefulWidget {
+  const _HookCodePasteDialog({required this.initialLabel});
+
+  final String initialLabel;
+
+  @override
+  State<_HookCodePasteDialog> createState() => _HookCodePasteDialogState();
+}
+
+class _HookCodePasteDialogState extends State<_HookCodePasteDialog> {
+  final TextEditingController _codeController = TextEditingController();
+  late final TextEditingController _labelController = TextEditingController(
+    text: widget.initialLabel,
+  );
+
+  @override
+  void dispose() {
+    _codeController.dispose();
+    _labelController.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FushiDialogFrame(
+      maxWidth: 480,
+      child: FushiModalSheetFrame(
+        title: t.game_hook_code_paste_title,
+        scrollable: true,
+        body: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Text(t.game_hook_code_paste_body),
+              const SizedBox(height: 12),
+              FushiTextFieldControl(
+                controller: _codeController,
+                autofocus: true,
+                maxLines: 2,
+                minLines: 1,
+                decoration: InputDecoration(
+                  labelText: 'Hook Code',
+                  hintText: t.game_hook_code_paste_hint,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+              const SizedBox(height: 12),
+              FushiTextFieldControl(
+                controller: _labelController,
+                decoration: InputDecoration(
+                  labelText: t.game_hook_code_label,
+                  border: const OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+        ),
+        footer: Align(
+          alignment: Alignment.centerRight,
+          child: FushiFilledButton(
+            onPressed: () => Navigator.pop(context, (
+              code: _codeController.text,
+              label: _labelController.text,
+            )),
+            child: Text(t.dialog_save),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// OCR 泵健康状况 → 状态卡提示；正常为 null。
+String? _ocrIssueText(GalOcrSourceIssue issue) => switch (issue) {
+  GalOcrSourceIssue.none => null,
+  GalOcrSourceIssue.captureFailed => t.game_ocr_issue_capture_failed,
+  GalOcrSourceIssue.recognizeFailed => t.game_ocr_issue_recognize_failed,
+  GalOcrSourceIssue.recognizerUnavailable => t.game_ocr_issue_unavailable,
+};

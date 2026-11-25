@@ -17,7 +17,8 @@ const String kWebBrowserScrollHandler = 'fushiBrowserScroll';
 /// 滚动停顿超过它（毫秒）就重新允许上报（见 [kWebBrowserScrollScript]）。
 const int kWebBrowserScrollRunGapMs = 250;
 
-/// 全屏变化：`fushiBrowserFullscreen(bool)`。
+/// 全屏变化：`fushiBrowserFullscreen(on, fit, document, documentStart)`，参数含义见
+/// [webBrowserFullscreenScript] 与 `WebBrowserPageFullscreenReport.fromArgs`。
 const String kWebBrowserFullscreenHandler = 'fushiBrowserFullscreen';
 
 /// 桌面右键命中：`fushiBrowserContextMenu({link, linkText, image, x, y})`。
@@ -77,18 +78,233 @@ const String kWebBrowserScrollScript =
   window.addEventListener('touchstart', rearm, {capture: true, passive: true});
 })();
 ''';
-const String kWebBrowserFullscreenScript =
+
+/// 全屏脚本：上报全屏变化 `fushiBrowserFullscreen(on, fit, document, documentStart)`，
+/// fit 是全屏视频的方向（`WebBrowserFullscreenFit` 的值名）。
+///
+/// 文档代际：伪全屏状态活在页面 JS 里，整页导航后旧页面连同状态一起消失，没人会再报
+/// 「退出」。所以顶层文档每次初始化（含从往返缓存恢复）都生成一个新代际号 document，
+/// 立即报一次 `(false, '', document, true)`（桥还没就绪时等
+/// `flutterInAppWebViewPlatformReady` 再补报，同号重复无害）；之后每条上报都带这个号。
+/// Dart 侧见到新代际就收尾标签页全屏，并拒收旧代际的迟到上报
+/// （`WebBrowserFullscreenDocumentGate`）。子框架不参与代际（document 为 null）。
+/// 页面离开（pagehide）时先退掉自己的伪全屏。
+///
+/// [takeover] 为 true（「Fushi 接管网页全屏」，默认）时还会把网站的全屏请求截下来，
+/// 换成**页内伪全屏**：被请求的元素（`<video>` 自己请求时取包住它的播放器容器）
+/// 改成铺满视口的 fixed 层，Dart 侧收起浏览器 chrome、隐藏系统栏、按视频方向转屏。
+/// 为什么不用原生全屏：iPhone 的 WKWebView 不支持元素全屏，网站只能调
+/// `webkitEnterFullscreen()` 进系统播放器，Fushi 字幕 / 查词 / 字幕按钮全部留在页面
+/// 里看不到；其余平台的原生全屏也只是让 WebView 铺满，伪全屏效果相同、五端一致。
+///
+/// 网站和扩展脚本读到的全屏状态保持一致：`document.fullscreenElement` 等 getter
+/// 返回伪全屏元素，进退时在该元素上派发冒泡的 `fullscreenchange`，`exitFullscreen()`
+/// 退的是伪全屏——网站的按钮照样切成「退出全屏」，扩展的覆盖层照样挂进全屏元素。
+/// `window.fushiPageFullscreen.toggle(video)` 给扩展的「全屏」按钮用。
+String webBrowserFullscreenScript({required bool takeover}) =>
     '''
 (function(){
   if (window.__fushiBrowserFullscreen) return;
   window.__fushiBrowserFullscreen = true;
-  function report(){
-    var on = !!(document.fullscreenElement || document.webkitFullscreenElement);
-    var b = window.flutter_inappwebview;
-    if (b && b.callHandler) b.callHandler('$kWebBrowserFullscreenHandler', on);
+  var TAKEOVER = ${takeover ? 'true' : 'false'};
+  var ATTR = 'data-fushi-page-fullscreen';
+  var ANCESTOR = 'data-fushi-page-fullscreen-ancestor';
+  var ROOT = 'data-fushi-page-fullscreen-root';
+  var pseudo = null, fitSent = '';
+  var TOP = (function(){ try { return window.top === window; } catch (_) { return false; } })();
+  function newDoc(){
+    return Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
   }
-  document.addEventListener('fullscreenchange', report);
-  document.addEventListener('webkitfullscreenchange', report);
+  var DOC = TOP ? newDoc() : null;
+  var DP = Document.prototype;
+  function origGet(name){
+    var d = Object.getOwnPropertyDescriptor(DP, name);
+    return d && d.get ? d.get : null;
+  }
+  var nativeFs = origGet('fullscreenElement');
+  var nativeWebkitFs = origGet('webkitFullscreenElement');
+  function call(get){
+    try { return get ? get.call(document) : null; } catch (_) { return null; }
+  }
+  function send(on, fit, start){
+    var b = window.flutter_inappwebview;
+    if (b && b.callHandler) b.callHandler('$kWebBrowserFullscreenHandler', on, fit, DOC, !!start);
+  }
+  // 新文档（新代际）：外壳据此收尾上一页面留下的全屏（沉浸模式、方向锁）。
+  function announce(){ if (TOP) send(false, '', true); }
+  announce();
+  window.addEventListener('flutterInAppWebViewPlatformReady', announce);
+  window.addEventListener('pageshow', function(e){
+    if (e && e.persisted && TOP) { DOC = newDoc(); announce(); }
+  });
+  function videoOf(el){
+    if (!el) return null;
+    if (el.tagName === 'VIDEO') return el;
+    var vs = el.querySelectorAll ? el.querySelectorAll('video') : [];
+    var best = null, area = -1;
+    for (var i = 0; i < vs.length; i++) {
+      var r = vs[i].getBoundingClientRect();
+      var a = r.width * r.height;
+      if (a > area) { area = a; best = vs[i]; }
+    }
+    return best;
+  }
+  function fitOf(el){
+    var v = videoOf(el);
+    var w = 0, h = 0;
+    if (v && v.videoWidth && v.videoHeight) { w = v.videoWidth; h = v.videoHeight; }
+    else if (v) { var r = v.getBoundingClientRect(); w = r.width; h = r.height; }
+    if (!w || !h) return 'unknown';
+    return h > w ? 'portrait' : 'landscape';
+  }
+  function report(){
+    var el = pseudo || call(nativeFs) || call(nativeWebkitFs);
+    var fit = el ? fitOf(el) : '';
+    fitSent = fit;
+    send(!!el, fit);
+  }
+  document.addEventListener('fullscreenchange', function(e){
+    if (!e.__fushiPseudo) report();
+  });
+  document.addEventListener('webkitfullscreenchange', function(e){
+    if (!e.__fushiPseudo) report();
+  });
+  if (!TAKEOVER) return;
+
+  // 视频尺寸晚到（全屏后才 loadedmetadata / 换源）：方向变了补报一次。
+  function refit(e){
+    if (!pseudo || !e.target || e.target.tagName !== 'VIDEO') return;
+    var fit = fitOf(pseudo);
+    if (fit !== fitSent) { fitSent = fit; send(true, fit); }
+  }
+  document.addEventListener('loadedmetadata', refit, true);
+  document.addEventListener('resize', refit, true);
+
+  // 视频自己请求全屏：取包住它、与它差不多大的最外层容器（站点控件是 video 的兄弟，
+  // 只把 video 铺满会丢掉进度条 / 字幕层）。
+  function targetFor(el){
+    if (!el || el.tagName !== 'VIDEO') return el;
+    var r = el.getBoundingClientRect();
+    var area = Math.max(1, r.width * r.height);
+    var best = el;
+    for (var p = el.parentElement; p && p !== document.body && p !== document.documentElement; p = p.parentElement) {
+      var pr = p.getBoundingClientRect();
+      if (pr.width * pr.height > area * 1.6) break;
+      best = p;
+    }
+    return best;
+  }
+  var style = null;
+  function ensureStyle(){
+    if (style && style.isConnected) return;
+    style = document.createElement('style');
+    style.textContent =
+      '[' + ATTR + ']{position:fixed!important;inset:0!important;left:0!important;top:0!important;' +
+      'width:100vw!important;height:100vh!important;height:100dvh!important;max-width:none!important;' +
+      'max-height:none!important;min-width:0!important;min-height:0!important;margin:0!important;' +
+      'padding:0!important;transform:none!important;border:0!important;border-radius:0!important;' +
+      'z-index:2147483000!important;background:#000!important;box-sizing:border-box!important}' +
+      '[' + ATTR + '] video,video[' + ATTR + ']{object-fit:contain!important}' +
+      '[' + ANCESTOR + ']{transform:none!important;filter:none!important;perspective:none!important;' +
+      'contain:none!important;will-change:auto!important;backdrop-filter:none!important}' +
+      'html[' + ROOT + '],html[' + ROOT + '] body{overflow:hidden!important}';
+    (document.head || document.documentElement).appendChild(style);
+  }
+  function fire(el){
+    var names = ['fullscreenchange', 'webkitfullscreenchange'];
+    for (var i = 0; i < names.length; i++) {
+      var ev;
+      try { ev = new Event(names[i], {bubbles: true}); } catch (_) { continue; }
+      ev.__fushiPseudo = true;
+      (el && el.isConnected ? el : document).dispatchEvent(ev);
+    }
+  }
+  function enter(req){
+    var el = targetFor(req);
+    if (!el || el === pseudo) return;
+    if (pseudo) leave(false);
+    ensureStyle();
+    pseudo = el;
+    el.setAttribute(ATTR, '');
+    for (var p = el.parentElement; p; p = p.parentElement) p.setAttribute(ANCESTOR, '');
+    document.documentElement.setAttribute(ROOT, '');
+    var vs = el.tagName === 'VIDEO' ? [el] : el.querySelectorAll('video');
+    for (var i = 0; i < vs.length; i++) {
+      vs[i].setAttribute('playsinline', '');
+      vs[i].setAttribute('webkit-playsinline', '');
+    }
+    fire(el);
+    report();
+  }
+  function leave(notify){
+    var el = pseudo;
+    if (!el) return;
+    pseudo = null;
+    el.removeAttribute(ATTR);
+    var marked = document.querySelectorAll('[' + ANCESTOR + ']');
+    for (var i = 0; i < marked.length; i++) marked[i].removeAttribute(ANCESTOR);
+    document.documentElement.removeAttribute(ROOT);
+    if (notify) { fire(el); report(); }
+  }
+  // 页面离开（进往返缓存 / 卸载）：退掉伪全屏，从往返缓存恢复时不带着铺满的播放器回来。
+  window.addEventListener('pagehide', function(){ if (pseudo) leave(true); });
+  // 伪全屏元素被网站摘掉（SPA 换页）：当作退出。
+  new MutationObserver(function(){
+    if (pseudo && !pseudo.isConnected) leave(true);
+  }).observe(document.documentElement, {childList: true, subtree: true});
+
+  function requestPseudo(){ enter(this); return Promise.resolve(); }
+  function exitPseudo(orig){
+    return function(){
+      if (pseudo) { leave(true); return Promise.resolve(); }
+      return orig ? orig.apply(this, arguments) : Promise.resolve();
+    };
+  }
+  var EP = Element.prototype;
+  EP.requestFullscreen = requestPseudo;
+  EP.webkitRequestFullscreen = requestPseudo;
+  EP.webkitRequestFullScreen = requestPseudo;
+  if (window.HTMLVideoElement) {
+    var VP = HTMLVideoElement.prototype;
+    VP.webkitEnterFullscreen = requestPseudo;
+    VP.webkitEnterFullScreen = requestPseudo;
+    VP.webkitExitFullscreen = exitPseudo(null);
+    VP.webkitExitFullScreen = exitPseudo(null);
+    try {
+      Object.defineProperty(VP, 'webkitDisplayingFullscreen', {configurable: true,
+        get: function(){ return !!pseudo && (pseudo === this || pseudo.contains(this)); }});
+      Object.defineProperty(VP, 'webkitSupportsFullscreen', {configurable: true,
+        get: function(){ return true; }});
+    } catch (_) {}
+  }
+  DP.exitFullscreen = exitPseudo(DP.exitFullscreen);
+  DP.webkitExitFullscreen = exitPseudo(DP.webkitExitFullscreen);
+  DP.webkitCancelFullScreen = exitPseudo(DP.webkitCancelFullScreen);
+  function define(name, get){
+    try { Object.defineProperty(DP, name, {configurable: true, get: get}); } catch (_) {}
+  }
+  function pseudoOr(orig){
+    return function(){ return pseudo || call(orig); };
+  }
+  define('fullscreenElement', pseudoOr(nativeFs));
+  define('webkitFullscreenElement', pseudoOr(nativeWebkitFs));
+  define('webkitCurrentFullScreenElement', pseudoOr(origGet('webkitCurrentFullScreenElement')));
+  define('fullscreenEnabled', function(){ return true; });
+  define('webkitFullscreenEnabled', function(){ return true; });
+  define('fullscreen', function(){ return !!pseudo; });
+  define('webkitIsFullScreen', function(){ return !!pseudo; });
+  // 桌面键盘：Esc 退伪全屏（原生全屏的 Esc 由内核处理）。扩展查词弹窗开着时它自己
+  // 先吞掉这次 Esc，这里只在没人处理（defaultPrevented 为假）时退。
+  window.addEventListener('keydown', function(e){
+    if (pseudo && e.key === 'Escape' && !e.defaultPrevented) leave(true);
+  });
+  window.fushiPageFullscreen = {
+    toggle: function(video){
+      if (pseudo) { leave(true); return; }
+      var v = video || videoOf(document.body);
+      if (v) enter(v);
+    }
+  };
 })();
 ''';
 

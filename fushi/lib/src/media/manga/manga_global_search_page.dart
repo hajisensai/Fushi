@@ -163,6 +163,7 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
   @override
   Widget build(BuildContext context) {
     return FushiPageScaffold(
+      masthead: true,
       title: t.manga_global_search_title,
       headerBottom: Padding(
         padding: const EdgeInsets.only(top: 8),
@@ -324,22 +325,32 @@ class _MangaGlobalSearchPageState extends State<MangaGlobalSearchPage> {
   }
 
   Widget _buildHit(MangaSourceSearchRun run, int index) {
-    final Widget cover;
-    final String title;
-    final VoidCallback onTap;
+    // 每个 case 直接把参数交给 [_hitCard]，不在 switch 里给推迟赋值的 final 赋值
+    // 再让卡片闭包捕获：Dart 3.14.0 对这个形状 AOT 编译崩溃（dart-lang/sdk#64917，
+    // 只在 release 暴露；修复 dart-lang/sdk@7848cfe821d）。升到含该修复的
+    // Flutter 补丁版后可不再受此约束。
     switch (run.source) {
       case MihonGlobalSource():
         final MihonManga manga = run.mihonItems[index];
-        title = manga.title;
-        cover = MihonSourceImage(
-          runtime: widget.mihonManager!.runtime,
-          cache: widget.mihonManager!.coverCache,
-          context: run.mihonContext!,
-          url: manga.coverUrl,
-          loadQueue: _imageQueue,
+        return _hitCard(
+          title: manga.title,
+          cover: MihonSourceImage(
+            runtime: widget.mihonManager!.runtime,
+            cache: widget.mihonManager!.coverCache,
+            context: run.mihonContext!,
+            url: manga.coverUrl,
+            loadQueue: _imageQueue,
+          ),
+          onTap: () => _openMihon(run, manga),
         );
-        onTap = () => _openMihon(run, manga);
     }
+  }
+
+  Widget _hitCard({
+    required String title,
+    required Widget cover,
+    required VoidCallback onTap,
+  }) {
     return Padding(
       padding: const EdgeInsetsDirectional.only(end: 12),
       child: SizedBox(

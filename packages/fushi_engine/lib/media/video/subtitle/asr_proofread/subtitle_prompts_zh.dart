@@ -36,6 +36,12 @@ const String kSubtitleProofreadEvidenceRulesZh = '''补充规则(已有字幕):
 10. 「他语言字幕」是翻译。按规则 1、5，只作为判断人名、用语、意思的线索。
 11. 标为「主(由已有字幕补全)」的行，是 ASR 没识别到、从已有字幕补回来的台词。与前后文不矛盾就保持原样(要改也只写正文，不写这个标记)。''';
 
+/// 对应 `kSubtitleProofreadFrameRules`（画面参考的补充规则，条目不编号）。
+const String kSubtitleProofreadFrameRulesZh = '''补充规则(画面):
+- 附带的图片是「画面」里所列时刻的影像(按时间顺序)。画面上出现的文字(字幕条、招牌、信件、设备屏幕、名牌等)、正在说话的人物和场景，只作为判断人名、用语、同音字的线索。
+- 不要把画面上的文字当成台词补进去(规则 5)。图片里看不出来的事不要凭猜测写。
+- 画面上烧录了字幕时：是中文就在与听到的台词相符的前提下参考其用词和写法；是其它语言就当作翻译，按规则 1、5 处理。''';
+
 /// 校对批次正文里的标签（对应 `buildProofreadBatchBody` 的日语写法）。
 abstract final class SubtitleProofreadLabelsZh {
   static const String before = '\n参考(前面的行，无需修改):';
@@ -51,6 +57,8 @@ abstract final class SubtitleProofreadLabelsZh {
   static const String workTitle = '作品名';
   static const String glossary = '专名表:';
   static const String misrecognition = '误';
+  static const String frames = '\n画面(附图，按时间顺序):';
+  static const String frame = '图';
 }
 
 // ---------------------------------------------------------------------------

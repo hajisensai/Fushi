@@ -5,15 +5,16 @@ import 'package:test/test.dart';
 /// Pins two fixes found on a real dual-screen device (AYN Thor) that widget
 /// tests cannot reach: both only fail on Android with real WebViews.
 void main() {
-  test('companion process uses its own WebView data directory', () {
+  test('second-screen process uses its own WebView data directory', () {
     // Android forbids two processes sharing one WebView data directory; the
-    // main process already owns the default one, so the `:companion`
-    // dictionary stayed an empty box until it set its own suffix.
+    // main process already owns the default one, so the panel's
+    // (`:second_screen`) dictionary stayed an empty box until it set its own
+    // suffix.
     final String source = File(
       'android/app/src/main/java/app/fushi/reader/'
-      'GameStreamCompanionActivity.java',
+      'SecondScreenActivity.java',
     ).readAsStringSync();
-    expect(source, contains('WebView.setDataDirectorySuffix("companion")'));
+    expect(source, contains('WebView.setDataDirectorySuffix("second_screen")'));
     final int configure = source.indexOf('configureWebViewDataDir();');
     final int superCreate = source.indexOf('super.onCreate(');
     expect(configure, isNonNegative);

@@ -7,6 +7,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -16,10 +17,9 @@ import 'package:fushi_core/fushi_core.dart';
 import '../helpers/test_platform_services.dart';
 
 /// 「中缝折痕」(`reading_display.page_crease`) 只在开关真能生效时露出：翻页模式且本次
-/// 排版实际是一屏两页（每页列数 = 2，或「自动」在折叠屏书本姿态下被解析成横排两栏 /
-/// 竖排对开）。
-/// 列数 ≠ 2 时 CSS 根本不发折痕（`ReaderContentStyles.pageCreaseApplies`），此前该项
-/// 照样显示，用户打开了看不到任何变化。判据与 CSS 生成同源，这里咬住 schema 显隐。
+/// 排版实际是一屏两页（单双页 = 双页，或「自动」在折叠屏 / 宽屏横向窗口下被解析成
+/// 横排两栏 / 竖排对开）。单页时 CSS 根本不发折痕，判据与 CSS 生成同源
+/// （`resolveReaderSpreadLayout`），这里咬住 schema 显隐。
 void main() {
   SettingsSwitchItem creaseItem(SettingsContext settingsContext) {
     return buildSettingsSchema(settingsContext)
@@ -103,34 +103,33 @@ void main() {
     await readerSettings.setViewMode('paginated');
     await readerSettings.setWritingMode('horizontal-tb');
 
-    await readerSettings.setPageColumns(2);
-    expect(item.isVisible(flat), isTrue, reason: '翻页 + 两栏：折痕生效');
+    await readerSettings.setPageSpread(ReaderPageSpread.double);
+    expect(item.isVisible(flat), isTrue, reason: '翻页 + 双页：折痕生效');
 
-    for (final int columns in <int>[1, 3, 4]) {
-      await readerSettings.setPageColumns(columns);
-      expect(
-        item.isVisible(flat),
-        isFalse,
-        reason: '每页 $columns 栏没有「两页之间」，开关无效必须隐藏',
-      );
-      expect(item.isVisible(book), isFalse, reason: '用户显式列数优先于折叠姿态');
-    }
+    await readerSettings.setPageSpread(ReaderPageSpread.single);
+    expect(item.isVisible(flat), isFalse, reason: '单页没有「两页之间」，开关无效必须隐藏');
+    expect(item.isVisible(book), isFalse, reason: '用户显式单页优先于折叠姿态');
 
-    await readerSettings.setPageColumns(0);
-    expect(item.isVisible(flat), isFalse, reason: '自动列数在普通屏是单栏');
-    expect(item.isVisible(book), isTrue, reason: '自动列数在书本姿态 + 横排被解析成两栏，折痕生效');
+    await readerSettings.setPageSpread(ReaderPageSpread.auto);
+    expect(
+      item.isVisible(flat),
+      isFalse,
+      reason: '自动在 800×600 的普通窗口（不到宽屏门槛）是单页',
+    );
+    expect(item.isVisible(book), isTrue, reason: '自动在书本姿态 + 横排被解析成两栏，折痕生效');
 
     await readerSettings.setWritingMode('vertical-rl');
-    expect(item.isVisible(flat), isFalse, reason: '竖排自动列数在普通屏是单条');
+    expect(item.isVisible(flat), isFalse, reason: '竖排自动在普通屏是单页');
     expect(
       item.isVisible(book),
       isTrue,
-      reason: '竖排自动列数在书本姿态下排成对开（右页 + 左页），两页之间有折痕',
+      reason: '竖排自动在书本姿态下排成对开（右页 + 左页），两页之间有折痕',
     );
-    await readerSettings.setPageColumns(1);
-    expect(item.isVisible(book), isFalse, reason: '竖排用户显式列数优先于折叠姿态');
+    await readerSettings.setPageSpread(ReaderPageSpread.single);
+    expect(item.isVisible(book), isFalse, reason: '竖排用户显式单页优先于折叠姿态');
 
-    await readerSettings.setPageColumns(2);
+    await readerSettings.setPageSpread(ReaderPageSpread.double);
+    expect(item.isVisible(flat), isTrue, reason: '竖排双页 = 对开，有「两页之间」');
     for (final String mode in <String>['continuous', 'vn']) {
       await readerSettings.setViewMode(mode);
       expect(item.isVisible(flat), isFalse, reason: '$mode 模式不经多列');

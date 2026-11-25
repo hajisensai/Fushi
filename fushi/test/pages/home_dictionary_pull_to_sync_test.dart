@@ -149,7 +149,16 @@ void main() {
     // 从列表区域往下拖，RefreshIndicator 应当露出进度圈。用 fling 之外的持续拖拽，
     // 避免依赖 fling 速度阈值。
     final TestGesture gesture = await tester.startGesture(
-      tester.getCenter(find.byType(ListView)),
+      // 重设计外壳下历史是色块网格（CustomScrollView），不再是 ListView：
+      // 从 RefreshIndicator 下真正响应下拉的那个 Scrollable 起手。
+      tester.getCenter(
+        find
+            .descendant(
+              of: find.byType(RefreshIndicator),
+              matching: find.byType(Scrollable),
+            )
+            .first,
+      ),
     );
     await gesture.moveBy(const Offset(0, 250));
     await tester.pump();

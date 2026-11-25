@@ -325,20 +325,23 @@ class LyricsModeHtml {
     // 主轴方向的「45vh/45vw 居中余量 + 用户边距」。横排=上下(vh)，竖排=左右(vw)。
     // 注意竖排 vertical-rl 视觉「先读」在右，但 padding 仍按物理 left/right 写，
     // 由 writing-mode 决定读序，无需翻 padding 值。
-    final double padTop = vertical ? marginTop : 45 + marginTop;
-    final double padBottom = vertical ? marginBottom : 45 + marginBottom;
+    // 横排的上下余量交给主题锚点：上 anchorY·100vh、下 (1-anchorY)·100vh；无主题时
+    // var 回落 45vh（旧的居中余量）。
+    final String padTopCss = vertical
+        ? '${marginTop}vh'
+        : 'calc(var(--ly-pad-top, 45vh) + ${marginTop}vh)';
+    final String padBottomCss = vertical
+        ? '${marginBottom}vh'
+        : 'calc(var(--ly-pad-bottom, 45vh) + ${marginBottom}vh)';
     final double padLeft = vertical
         ? 45 + marginLeft
         : (marginLeft > 0 ? marginLeft : 2.5);
     final double padRight = vertical
         ? 45 + marginRight
         : (marginRight > 0 ? marginRight : 2.5);
-    final String containerPaddingCss = vertical
-        ? 'padding: ${padTop}vh ${padRight}vw ${padBottom}vh ${padLeft}vw;'
-        // 主题的锚点（当前行落在视口 anchorY 处）决定上下余量：上 anchorY·100vh、
-        // 下 (1-anchorY)·100vh；无主题时 var 回落 45vh（旧的居中余量）。
-        : 'padding: calc(var(--ly-pad-top, 45vh) + ${marginTop}vh) ${marginLeft > 0 ? marginLeft : 2.5}vw '
-              'calc(var(--ly-pad-bottom, 45vh) + ${marginBottom}vh) ${marginRight > 0 ? marginRight : 2.5}vw;';
+    // CSS 四值简写顺序是「上 右 下 左」：第 2 位右边距、第 4 位左边距，横竖排同一口径。
+    final String containerPaddingCss =
+        'padding: $padTopCss ${padRight}vw $padBottomCss ${padLeft}vw;';
     // 竖排专属的 .cue 几何，只在竖排时输出（横排文档逐字节不变）。选择器刻意不写成
     // 裸 `.cue`：__lyricsUpdateStyle 按 selectorText 逐条改写规则，裸 `.cue` 会被
     // 当成基础规则再写一遍。
@@ -636,11 +639,10 @@ body.ly-ctxblur .cue:not(.current) { filter: blur(var(--ly-ctx-blur, 0px)); }
 body.ly-sweep:not(.ly-paused) .cue.current.ly-sw-on:not(.ly-nosweep) > .ly-sw {
   display: block;
 }
+/* 振假名（来源自带的 rt）随底层一起画成未读色，由上层窗口与基字同步扫亮
+   （BUG-4504：以前 rt 在底层单独钉成当前色，起句即整排点亮、先于基字）。 */
 body.ly-sweep:not(.ly-paused) .cue.current.ly-sw-on:not(.ly-nosweep) .tx {
   color: var(--ly-upcoming);
-}
-body.ly-sweep:not(.ly-paused) .cue.current.ly-sw-on:not(.ly-nosweep) .tx rt {
-  color: var(--ly-current);
 }
 /* 上下边缘渐隐（Niratan listEdgeFadeFraction）。body 是真正的滚动元素（BUG-784），
    遮罩挂在它的盒上、不随内容滚动。 */
@@ -1493,12 +1495,16 @@ function _lySweepWanted(el) {
 // 纯函数：当前句局部坐标下的字形矩形 {l,r,t,b} → 按阅读顺序排好的视觉行。
 // u = 行内方向（横排 x / 竖排 y），v = 交叉方向；b0/b1 = 该行窗口在交叉方向的条带
 // （相邻两行取中线分界，首尾各外扩半行，盖住字形墨迹）。
-function __lyricsSweepLines(rects, vertical) {
+// rubyRects 是注音（rt）的字形矩形：不参与分行，并进它所注的那一行（行内方向重叠、
+// 交叉方向最近），让该行窗口的条带与行内范围盖住注音——注音随基字一起扫亮（BUG-4504）。
+function __lyricsSweepLines(rects, vertical, rubyRects) {
+  function axes(r) {
+    return vertical ? {u0: r.t, u1: r.b, v0: r.l, v1: r.r}
+                    : {u0: r.l, u1: r.r, v0: r.t, v1: r.b};
+  }
   var lines = [];
   for (var i = 0; i < rects.length; i++) {
-    var r = rects[i];
-    var c = vertical ? {u0: r.t, u1: r.b, v0: r.l, v1: r.r}
-                     : {u0: r.l, u1: r.r, v0: r.t, v1: r.b};
+    var c = axes(rects[i]);
     if (!(c.u1 > c.u0 && c.v1 > c.v0)) continue;
     var hit = null;
     for (var j = 0; j < lines.length; j++) {
@@ -1511,6 +1517,22 @@ function __lyricsSweepLines(rects, vertical) {
     } else {
       lines.push(c);
     }
+  }
+  var ruby = rubyRects || [];
+  for (var q = 0; q < ruby.length; q++) {
+    var rc = axes(ruby[q]);
+    if (!(rc.u1 > rc.u0 && rc.v1 > rc.v0)) continue;
+    var best = null, bestU = 0, bestV = 0;
+    for (var k = 0; k < lines.length; k++) {
+      var gu = Math.max(0, Math.max(lines[k].u0, rc.u0) - Math.min(lines[k].u1, rc.u1));
+      var gv = Math.max(0, Math.max(lines[k].v0, rc.v0) - Math.min(lines[k].v1, rc.v1));
+      if (!best || gu < bestU || (gu === bestU && gv < bestV)) {
+        best = lines[k]; bestU = gu; bestV = gv;
+      }
+    }
+    if (!best) continue;
+    best.u0 = Math.min(best.u0, rc.u0); best.u1 = Math.max(best.u1, rc.u1);
+    best.v0 = Math.min(best.v0, rc.v0); best.v1 = Math.max(best.v1, rc.v1);
   }
   // 横排自上而下；竖排 vertical-rl 右边的列先读。
   lines.sort(function(a, b) { return vertical ? b.v1 - a.v1 : a.v0 - b.v0; });
@@ -1568,21 +1590,24 @@ function _lySweepBuild(el, p, rate) {
   var k = _lyCueScale(el);
   if (!(box.width > 0 && box.height > 0)) return;
   var vertical = __lyricsVertical;
-  var rects = [];
+  var rects = [], rubyRects = [];
   var walker = document.createTreeWalker(tx, NodeFilter.SHOW_TEXT, null);
   var range = document.createRange();
   var node;
   while ((node = walker.nextNode())) {
-    // 注音（rt / rp）贴在基字侧边，两层都是当前色，不参与行划分。
-    if (node.parentElement && node.parentElement.closest('rt, rp')) continue;
+    // 注音（rt）贴在基字侧边：不参与分行，但并进所注那一行的窗口，底层是未读色、
+    // 随基字一起扫亮。rp（括号回退）不显示，跳过。
+    var anno = node.parentElement ? node.parentElement.closest('rt, rp') : null;
+    if (anno && String(anno.tagName).toUpperCase() !== 'RT') continue;
+    var into = anno ? rubyRects : rects;
     range.selectNodeContents(node);
     var rs = range.getClientRects();
     for (var i = 0; i < rs.length; i++) {
-      rects.push({l: (rs[i].left - box.left) / k, r: (rs[i].right - box.left) / k,
-                  t: (rs[i].top - box.top) / k, b: (rs[i].bottom - box.top) / k});
+      into.push({l: (rs[i].left - box.left) / k, r: (rs[i].right - box.left) / k,
+                 t: (rs[i].top - box.top) / k, b: (rs[i].bottom - box.top) / k});
     }
   }
-  var lines = __lyricsSweepLines(rects, vertical);
+  var lines = __lyricsSweepLines(rects, vertical, rubyRects);
   var total = 0;
   for (var n = 0; n < lines.length; n++) total += lines[n].u1 - lines[n].u0;
   if (!(total > 0)) return;
@@ -1830,14 +1855,16 @@ document.addEventListener('mousemove', function(e) {
   }
 }, {passive: true});
 
-// ── 中键点句 → seek 到该 cue 并播放（标准 click 不触发中键，单列 mousedown）──
+// ── 非左键（中键 / 侧键）→ 回 Dart 按鼠标绑定派发（标准 click 不触发中键，单列 mousedown）──
+// 「seek 到点击句」要知道点在哪行：带上行号，行外为 -1。其余动作（关词典……）
+// 与行无关，行外按下也要回传（HBK-AUDIT-221，与正文 onPointerSeek 同口径）。
+// preventDefault 压掉中键自动滚动。
 _lc.addEventListener('mousedown', function(e) {
   if (e.button === 0) return;
-  var el = e.target.closest('.cue');
-  if (!el) return;
   e.preventDefault();
-  var idx = parseInt(el.getAttribute('data-cue-index'), 10);
-  if (isNaN(idx)) return;
+  var el = e.target && e.target.closest ? e.target.closest('.cue') : null;
+  var idx = el ? parseInt(el.getAttribute('data-cue-index'), 10) : -1;
+  if (isNaN(idx)) idx = -1;
   window.flutter_inappwebview.callHandler('onLyricsPointerSeek', e.button, idx);
 });
 
@@ -1892,9 +1919,10 @@ function __lyricsApplyContainerPadding(r, mt, mb, ml, mr) {
     // 竖排 vertical-rl：居中余量在左右(45vw)，上下吃用户 vh 边距。
     r.style.padding = (mt||0) + 'vh calc(45vw + ' + (mr||0) + 'vw) ' + (mb||0) + 'vh calc(45vw + ' + (ml||0) + 'vw)';
   } else {
+    // 四值顺序「上 右 下 左」：第 2 位右边距 rv、第 4 位左边距 lv。
     var lv = (ml != null && ml > 0) ? ml : 2.5;
     var rv = (mr != null && mr > 0) ? mr : 2.5;
-    r.style.padding = 'calc(var(--ly-pad-top, 45vh) + ' + (mt||0) + 'vh) ' + lv + 'vw calc(var(--ly-pad-bottom, 45vh) + ' + (mb||0) + 'vh) ' + rv + 'vw';
+    r.style.padding = 'calc(var(--ly-pad-top, 45vh) + ' + (mt||0) + 'vh) ' + rv + 'vw calc(var(--ly-pad-bottom, 45vh) + ' + (mb||0) + 'vh) ' + lv + 'vw';
   }
 }
 window.__lyricsUpdateStyle = function(bgColor, textColor, accentColor, fontSize, mt, mb, ml, mr) {

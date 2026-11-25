@@ -145,9 +145,12 @@ class AppleMusicNativeBridge implements AppleMusicBridge {
   }
 
   @override
-  Future<AppleMusicUserCredentials?> userCredentials() async {
+  Future<AppleMusicUserCredentials?> userCredentials({
+    bool refresh = false,
+  }) async {
     final Map<Object?, Object?>? m = await _invoke<Map<Object?, Object?>>(
       'userCredentials',
+      <String, Object?>{'refresh': refresh},
     );
     final Object? dev = m?['developerToken'];
     final Object? user = m?['userToken'];

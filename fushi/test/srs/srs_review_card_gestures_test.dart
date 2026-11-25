@@ -9,6 +9,8 @@
 //
 // 走真实路径：内存库 + 确定性假排程内核 → SrsReviewPage。数据库读写放 tester.runAsync。
 
+import 'dart:io';
+
 import 'package:flutter/gestures.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -16,8 +18,10 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart'
+    show SrsHostPointerTrack;
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_gestures.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -80,12 +84,7 @@ Future<bool> _rated(
 }
 
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 Future<void> _pumpReview(
@@ -97,6 +96,7 @@ Future<void> _pumpReview(
   bool disableAnimations = false,
   Size size = const Size(1100, 900),
   List<SrsCardFace>? faces,
+  Widget Function(SrsCardFace face)? faceBuilder,
 }) async {
   tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
@@ -115,7 +115,7 @@ Future<void> _pumpReview(
           SrsCardFace face,
         ) {
           faces?.add(face);
-          return SrsPlainCardFace(face: face);
+          return faceBuilder?.call(face) ?? SrsPlainCardFace(face: face);
         }),
         srsReviewGesturesProvider.overrideWithValue(gestures),
         srsReviewHideHardEasyProvider.overrideWithValue(hideHardEasy),
@@ -189,10 +189,78 @@ Future<void> _touchSwipe(WidgetTester tester, Offset from, Offset by) async {
   await tester.pump();
 }
 
+/// 像 WebView 卡面那样量指针的假卡面：外层与 [SrsWebCardFace] 同样挂宿主侧
+/// [SrsHostPointerTrack]；内层「页面」按平台视图的口径量坐标——Flutter 递给平台视图的
+/// 指针每次都现场 `globalToLocal`（`AndroidViewController.pointTransformer`），所以卡面被
+/// 跟手平移后，页面量到的位移 = 手指位移 − 平移量。页面回报经 [SrsHostPointerTrack.rebase]
+/// 交给复习页，与 [SrsWebCardFace] 的 `_onPageGesture` 同一条路。
+class _PlatformViewLikeFace extends StatefulWidget {
+  const _PlatformViewLikeFace({required this.face});
+
+  final SrsCardFace face;
+
+  @override
+  State<_PlatformViewLikeFace> createState() => _PlatformViewLikeFaceState();
+}
+
+class _PlatformViewLikeFaceState extends State<_PlatformViewLikeFace> {
+  final SrsHostPointerTrack _track = SrsHostPointerTrack();
+  final GlobalKey _page = GlobalKey();
+  Offset _pageDown = Offset.zero;
+
+  Offset _pageLocal(Offset global) =>
+      (_page.currentContext!.findRenderObject()! as RenderBox).globalToLocal(
+        global,
+      );
+
+  void _report(SrsCardGestureKind kind, Offset global) =>
+      widget.face.onCardGesture?.call(
+        _track.rebase(
+          SrsCardGestureEvent(kind, delta: _pageLocal(global) - _pageDown),
+        ),
+      );
+
+  @override
+  Widget build(BuildContext context) => Listener(
+    onPointerDown: _track.down,
+    onPointerMove: _track.move,
+    onPointerUp: _track.up,
+    onPointerCancel: _track.cancel,
+    child: Listener(
+      key: _page,
+      behavior: HitTestBehavior.opaque,
+      onPointerDown: (PointerDownEvent e) => _pageDown = _pageLocal(e.position),
+      onPointerMove: (PointerMoveEvent e) =>
+          _report(SrsCardGestureKind.drag, e.position),
+      onPointerUp: (PointerUpEvent e) =>
+          _report(SrsCardGestureKind.release, e.position),
+      child: const SizedBox.expand(),
+    ),
+  );
+}
+
+/// 本文件各用例只开自己要测的那几条绑定：底子是「三区单击都切换顶栏、其余不绑」，不随
+/// 默认映射（[SrsReviewGestureMap.defaults]）变化。
+SrsReviewGestureMap _tapsToggleToolbarOnly() {
+  SrsReviewGestureMap m = SrsReviewGestureMap.defaults;
+  for (final SrsReviewSide side in SrsReviewSide.values) {
+    for (final SrsReviewGesture g in SrsReviewGesture.values) {
+      m = m.withBinding(
+        side,
+        g,
+        g.isTap
+            ? SrsReviewGestureAction.toggleToolbar
+            : SrsReviewGestureAction.none,
+      );
+    }
+  }
+  return m;
+}
+
 SrsReviewGestureMap _map(
   List<(SrsReviewSide, SrsReviewGesture, SrsReviewGestureAction)> bindings,
 ) {
-  SrsReviewGestureMap m = SrsReviewGestureMap.defaults;
+  SrsReviewGestureMap m = _tapsToggleToolbarOnly();
   for (final (SrsReviewSide side, SrsReviewGesture g, SrsReviewGestureAction a)
       in bindings) {
     m = m.withBinding(side, g, a);
@@ -411,6 +479,67 @@ void main() {
       });
     }
 
+    // Zy4jaKfS1N：页内坐标随卡面跟手平移而偏，跟手量又由它算出——手指停住时卡面在偏移与
+    // 弹回之间来回跳，松手位移被吃掉一截。滑动几何必须按宿主侧全局坐标量。
+    testWidgets('卡面跟手平移不反馈进滑动位移：手指停住卡面不抖，松手按手指位移判定', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      final String note = await _addLapis(tester, store);
+      await _pumpReview(
+        tester,
+        store: store,
+        faceBuilder: (SrsCardFace face) => _PlatformViewLikeFace(face: face),
+        gestures:
+            _map(<(SrsReviewSide, SrsReviewGesture, SrsReviewGestureAction)>[
+              (
+                SrsReviewSide.back,
+                SrsReviewGesture.swipeLeft,
+                SrsReviewGestureAction.rateAgain,
+              ),
+            ]),
+      );
+      await tester.tap(_showAnswer);
+      await _animate(tester);
+      final Finder follow = find.byKey(
+        const ValueKey<String>('srs-swipe-follow'),
+      );
+      double dx() =>
+          tester.widget<Transform>(follow).transform.getTranslation().x;
+      final Finder hint = find.byKey(
+        const ValueKey<String>('srs-swipe-hint-rate_again'),
+      );
+
+      final Offset from = tester.getCenter(_surface);
+      final TestGesture g = await tester.startGesture(from);
+      await g.moveTo(from + const Offset(-60, 0));
+      await tester.pump();
+      // 手指停在原处（触屏照样会持续报移动）：卡面每帧都该稳在手指位移的 kFollow 倍。
+      final List<double> offsets = <double>[];
+      for (int i = 0; i < 8; i++) {
+        await g.moveTo(from + const Offset(-60, 0));
+        await tester.pump(const Duration(milliseconds: 16));
+        offsets.add(dx());
+        expect(hint, findsOneWidget, reason: '第 $i 帧提示不该消失');
+      }
+      expect(
+        offsets,
+        everyElement(closeTo(-60 * SrsSwipeFollow.kFollow, 0.01)),
+        reason: '卡面在手指不动时来回跳：$offsets',
+      );
+
+      await g.moveTo(from + const Offset(-120, 0));
+      await tester.pump(const Duration(milliseconds: 16));
+      await g.up();
+      await _settle(tester);
+      expect(
+        await _rated(tester, store, note),
+        isTrue,
+        reason: '手指拖过 120（> 提交距离 96）：松手位移不能被卡面平移吃掉',
+      );
+      await _unmount(tester);
+    });
+
     testWidgets('减弱动态效果：滑动途中卡面不移动，提示照常', (WidgetTester tester) async {
       final SrsDbStore store = await _openStore(tester);
       await _addLapis(tester, store);
@@ -571,6 +700,75 @@ void main() {
       expect(scrollable.position.pixels, greaterThan(0), reason: '滚了');
       expect(await _rated(tester, store, note), isFalse, reason: '滚动不是滑动');
       await _unmount(tester);
+    });
+  });
+
+  group('SrsHostPointerTrack（宿主侧全局几何）', () {
+    // VelocityTracker 读测试绑定的采样时钟，须在 testWidgets 里跑。
+    testWidgets('生产时序：页内回报晚于宿主 up 到达，松手仍取宿主全局位移与速度', (
+      WidgetTester tester,
+    ) async {
+      final SrsHostPointerTrack track = SrsHostPointerTrack();
+      const int p = 7;
+      track.down(
+        const PointerDownEvent(
+          pointer: p,
+          kind: PointerDeviceKind.touch,
+          position: Offset(100, 300),
+        ),
+      );
+      for (int i = 1; i <= 10; i++) {
+        track.move(
+          PointerMoveEvent(
+            pointer: p,
+            kind: PointerDeviceKind.touch,
+            timeStamp: Duration(milliseconds: i * 10),
+            position: Offset(100 + i * 20.0, 300),
+          ),
+        );
+      }
+      track.up(
+        const PointerUpEvent(
+          pointer: p,
+          kind: PointerDeviceKind.touch,
+          timeStamp: Duration(milliseconds: 110),
+          position: Offset(320, 300),
+        ),
+      );
+      // 页内量到的位移被卡面跟手平移吃掉一截、速度为零；宿主已收过 up（_active=false）。
+      final SrsCardGestureEvent out = track.rebase(
+        const SrsCardGestureEvent(
+          SrsCardGestureKind.release,
+          delta: Offset(40, 0),
+        ),
+      );
+      expect(out.delta, const Offset(220, 0));
+      expect(out.position, const Offset(320, 300));
+      expect(out.velocity.dx, greaterThan(1000), reason: '取宿主 up 时记下的速度');
+    });
+
+    test('宿主从没见过指针时原样放行页内几何', () {
+      const SrsCardGestureEvent page = SrsCardGestureEvent(
+        SrsCardGestureKind.drag,
+        delta: Offset(12, 0),
+      );
+      expect(SrsHostPointerTrack().rebase(page), same(page));
+    });
+
+    test('守卫：WebView 卡面外层 Listener 接了 track，页内回报经 rebase', () {
+      // WebView 起不来，widget 测试只覆盖 track 本身；这里钉住生产接线。
+      final String src = File(
+        'lib/src/pages/implementations/srs/srs_card_face.dart',
+      ).readAsStringSync();
+      for (final String wire in <String>[
+        'onPointerDown: _pointerTrack.down',
+        'onPointerMove: _pointerTrack.move',
+        'onPointerUp: _pointerTrack.up',
+        'onPointerCancel: _pointerTrack.cancel',
+        'onGesture(_pointerTrack.rebase(event))',
+      ]) {
+        expect(src, contains(wire), reason: wire);
+      }
     });
   });
 }

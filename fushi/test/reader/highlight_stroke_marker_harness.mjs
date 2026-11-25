@@ -4,21 +4,28 @@
 // / VN) + the selection script (window.__fushiLanes) in real Chrome, and checks the SVG strokes
 // the lane layer paints instead of 1em lanes for each of the four highlight kinds. Only the
 // Flutter bridge is replaced by a recorder.
-import fs from 'node:fs';
 import { launchChromeDriver, resolveChrome } from '../../../tool/reader_pitch_headless/cdp_client.mjs';
+import { readPayload } from './reader_harness_support.js';
 
+const payload = readPayload();
 if (!resolveChrome()) {
   console.log('Chrome unavailable');
   process.exit(77);
 }
 // The only argument is the temp payload file the Dart test just wrote.
-const payload = JSON.parse(fs.readFileSync(process.argv[2], 'utf8'));  // NOSONAR: S8707 path comes from the Dart test harness
 
 const CHECK = String.raw`(async () => {
   const errors = []; let checks = 0;
   const ok = (cond, msg) => { checks++; if (!cond) errors.push(msg); };
   const frames = () => new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
-  await new Promise((r) => setTimeout(r, 700));
+  // Wait for the engine's content-ready signal (onRestoreComplete, recorded by the Dart page
+  // stub), not a fixed sleep: the shells lay out after document.fonts.ready, and under load
+  // that came later than a fixed 700 ms, so the checks ran on a page not yet laid out.
+  // The 30 s cap only turns a page that never reports ready into a clear failure.
+  const restored = await Promise.race([window.__fushiRestored.then(() => true),
+    new Promise((r) => setTimeout(() => r(false), 30000))]);
+  if (!restored) throw new Error('the reader engine never reported onRestoreComplete');
+  await frames();
   const root = () => document.querySelector('.fushi-vn-content') || document.body;
   const textNodes = (el) => {
     const out = []; const w = document.createTreeWalker(el, NodeFilter.SHOW_TEXT);

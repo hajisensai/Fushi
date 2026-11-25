@@ -15,6 +15,9 @@
 //   漫画（epub_books.source_id）与视频文件（video_books.source_id）一律当作被标——
 //   与作品级标记同一口径，下游（排行榜 / Bangumi）不用各自再判来源。移除来源时
 //   这些条目会被逐一补上作品级标记（`deleteMediaSource`），不会因此变回公开。
+// - 上锁（`media_locked_flags`，v171，`media_lock.dart`）：作品隐私分级里上锁高于
+//   私密、蕴含私密——上锁的书 / 视频 / 游戏 / 合集在这里一律当作被标私密，下游
+//   （排行榜 / Bangumi）不用另判上锁。
 
 import 'package:drift/drift.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -47,8 +50,8 @@ class MediaPrivacySnapshot {
 
   static Future<MediaPrivacySnapshot> load(FushiDatabase db) async {
     final Set<int> privateSources = await db.privateMediaSourceIds();
-    final Set<String> books = await db.privateEntryKeys(TagHostKind.epub);
-    final Set<String> videos = await db.privateEntryKeys(TagHostKind.video);
+    final Set<String> books = await _privateOrLocked(db, TagHostKind.epub);
+    final Set<String> videos = await _privateOrLocked(db, TagHostKind.video);
     if (privateSources.isNotEmpty) {
       books.addAll(
         await (db.selectOnly(db.epubBooks)
@@ -66,7 +69,7 @@ class MediaPrivacySnapshot {
       );
     }
     final Set<int> collections = <int>{
-      for (final String k in await db.privateEntryKeys(TagHostKind.collection))
+      for (final String k in await _privateOrLocked(db, TagHostKind.collection))
         ?collectionIdOfTagEntryKey(k),
     };
     final Map<String, Set<int>> collectionsOfEntry = <String, Set<int>>{};
@@ -98,11 +101,20 @@ class MediaPrivacySnapshot {
       books: books,
       videos: videos,
       collections: collections,
-      games: await db.privateEntryKeys(TagHostKind.game),
+      games: await _privateOrLocked(db, TagHostKind.game),
       collectionsOfEntry: collectionsOfEntry,
       videoMembersOf: videoMembersOf,
     );
   }
+
+  /// 私密或上锁的 entryKey（上锁蕴含私密）。
+  static Future<Set<String>> _privateOrLocked(
+    FushiDatabase db,
+    TagHostKind kind,
+  ) async => <String>{
+    ...await db.privateEntryKeys(kind),
+    ...await db.lockedEntryKeys(kind),
+  };
 
   final Set<String> _books;
   final Set<String> _videos;
@@ -171,12 +183,14 @@ Future<List<MediaCollectionRow>> privateCollectionsContaining(
     TagHostKind.srt => MediaKind.srt.dbValue,
     TagHostKind.video => MediaKind.video.dbValue,
     TagHostKind.game => MediaKind.game.dbValue,
-    TagHostKind.collection => null,
+    TagHostKind.collection || TagHostKind.musicAlbum => null,
   };
   if (mediaType == null) return const <MediaCollectionRow>[];
-  final Set<String> privateIds = await db.privateEntryKeys(
-    TagHostKind.collection,
-  );
+  // 上锁蕴含私密：上锁合集的成员同样「因合集而私密」。
+  final Set<String> privateIds = <String>{
+    ...await db.privateEntryKeys(TagHostKind.collection),
+    ...await db.lockedEntryKeys(TagHostKind.collection),
+  };
   if (privateIds.isEmpty) return const <MediaCollectionRow>[];
   final String? uid = kind == TagHostKind.epub
       ? await db.resolveEpubBookUid(entryKey)
@@ -228,7 +242,10 @@ Future<MediaSourceRow?> privateSourceLibraryContaining(
             ..limit(1))
           .map((TypedResult r) => r.read(db.videoBooks.sourceId))
           .getSingleOrNull(),
-    TagHostKind.srt || TagHostKind.game || TagHostKind.collection => null,
+    TagHostKind.srt ||
+    TagHostKind.game ||
+    TagHostKind.collection ||
+    TagHostKind.musicAlbum => null,
   };
   if (sourceId == null) return null;
   final MediaSourceRow? source = await db.getMediaSourceById(sourceId);

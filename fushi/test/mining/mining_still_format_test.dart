@@ -25,12 +25,23 @@ import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 class _FakeRepo implements BaseAnkiRepository {
   AnkiMiningContext? minedContext;
 
+  /// 落卡那一刻读到的封面字节，按路径记。引擎在落卡后就删掉本张卡的私有临时目录
+  /// （video-30），事后再按路径读会扑空——真仓库也是在 mineEntry 里把文件拷走 / 上传。
+  static final Map<String, Uint8List> _coverAtImport = <String, Uint8List>{};
+
+  static Uint8List importedCover(AnkiMiningContext ctx) =>
+      _coverAtImport[ctx.coverPath!]!;
+
   @override
   Future<MineOutcome> mineEntry({
     required String rawPayloadJson,
     required AnkiMiningContext context,
   }) async {
     minedContext = context;
+    final String? cover = context.coverPath;
+    if (cover != null && File(cover).existsSync()) {
+      _coverAtImport[cover] = File(cover).readAsBytesSync();
+    }
     return const MineOutcome.success(noteId: 1);
   }
 
@@ -90,6 +101,7 @@ Future<String?> _okAudio({
   String audioBitrate = '64k',
   String? tlsPinSha256,
   Map<String, String> httpHeaders = const {},
+  double? gainDb,
 }) async => outputPath;
 
 /// Netflix 那条链会把产物 `readAsBytes` 回来，故假件必须真落盘（引擎那条只传路径）。
@@ -105,6 +117,7 @@ Future<String?> _okAudioOnDisk({
   String audioBitrate = '64k',
   String? tlsPinSha256,
   Map<String, String> httpHeaders = const {},
+  double? gainDb,
 }) async {
   final File out = File(outputPath);
   out.parent.createSync(recursive: true);
@@ -283,7 +296,7 @@ void main() {
       final AnkiMiningContext ctx = await mineShot(MiningStillFormat.jpg);
       expect(ctx.coverPath, endsWith('immersion_shot.jpg'));
       expect(
-        img.findFormatForData(File(ctx.coverPath!).readAsBytesSync()),
+        img.findFormatForData(_FakeRepo.importedCover(ctx)),
         img.ImageFormat.jpg,
       );
     });
@@ -292,7 +305,7 @@ void main() {
       final AnkiMiningContext ctx = await mineShot(MiningStillFormat.png);
       expect(ctx.coverPath, endsWith('immersion_shot.png'));
       expect(
-        img.findFormatForData(File(ctx.coverPath!).readAsBytesSync()),
+        img.findFormatForData(_FakeRepo.importedCover(ctx)),
         img.ImageFormat.png,
         reason: 'Anki 按扩展名判 MIME：.png 里装 JPEG 字节会显示不出封面',
       );
@@ -521,7 +534,7 @@ void main() {
       );
       expect(ctx.coverPath, endsWith('external_window.jpg'));
       expect(
-        img.findFormatForData(File(ctx.coverPath!).readAsBytesSync()),
+        img.findFormatForData(_FakeRepo.importedCover(ctx)),
         img.ImageFormat.jpg,
       );
     });
@@ -538,7 +551,7 @@ void main() {
         reason: '名字前缀是「这张图哪来的」的线索，只换扩展名',
       );
       expect(
-        img.findFormatForData(File(ctx.coverPath!).readAsBytesSync()),
+        img.findFormatForData(_FakeRepo.importedCover(ctx)),
         img.ImageFormat.png,
       );
     });
@@ -553,11 +566,7 @@ void main() {
         stillFormat: MiningStillFormat.png,
       );
       expect(ctx.coverPath, endsWith('external_window.gif'));
-      expect(
-        File(ctx.coverPath!).readAsBytesSync(),
-        gif,
-        reason: '动图格式由另一根轴负责，静图轴不得插手',
-      );
+      expect(_FakeRepo.importedCover(ctx), gif, reason: '动图格式由另一根轴负责，静图轴不得插手');
     });
 
     test('默认档（不传 stillFormat）→ 字节与文件名逐字不变', () async {

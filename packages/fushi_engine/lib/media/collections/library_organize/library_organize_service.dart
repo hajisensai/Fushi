@@ -34,6 +34,7 @@ class LibraryOrganizeResult {
     required this.requests,
     this.error,
     this.touchedCollectionIds = const <int>{},
+    this.proposals = 0,
   });
 
   final LibraryOrganizeStatus status;
@@ -41,8 +42,13 @@ class LibraryOrganizeResult {
   /// 整理记录里的这一次；没落任何东西时也有（状态写成 skipped / failed）。
   final int runId;
 
-  /// 落了几处改动。
+  /// 落了几处改动（不含待确认建议）。
   final int changes;
+
+  /// 这次新产出的待用户确认的合集级建议数。AI 管库 v3（§2.2）起 AI 的合并 / 改名
+  /// 直接执行、不再产出建议；只剩收敛想把同键的用户合集并掉时记的合并建议（用户
+  /// 2026-11-24 拍板：动用户合集要用户显式同意）。
+  final int proposals;
   final int requests;
   final String? error;
   final Set<int> touchedCollectionIds;
@@ -101,8 +107,11 @@ class LibraryOrganizeService {
     Set<String>? onlyEntryKeys,
     void Function(int done, int total)? onProgress,
     bool Function()? isCancelled,
+    bool rulesOnly = false,
   }) async {
-    final AiProviderConfig? useProvider = provider;
+    // [rulesOnly]：只跑不花钱的规则那一步（AI 库管家碰到单趟请求上限时用），结论
+    // 与没指派提供商相同（[LibraryOrganizeStatus.noProvider]），错误短码 `rules_only`。
+    final AiProviderConfig? useProvider = rulesOnly ? null : provider;
     final int runId = await db
         .into(db.libraryOrganizeRuns)
         .insert(
@@ -116,6 +125,7 @@ class LibraryOrganizeService {
           ),
         );
     int changes = 0;
+    int proposals = 0;
     int requests = 0;
     int inputTokens = 0;
     int outputTokens = 0;
@@ -123,9 +133,14 @@ class LibraryOrganizeService {
     LibraryOrganizeStatus status = LibraryOrganizeStatus.done;
     String? error;
 
-    Future<int> countChanges() async => (await (db.select(
-      db.libraryOrganizeChanges,
-    )..where((t) => t.runId.equals(runId))).get()).length;
+    Future<int> countChanges() async =>
+        (await (db.select(db.libraryOrganizeChanges)..where(
+                  (t) =>
+                      t.runId.equals(runId) &
+                      t.kind.equals(kLibraryOrganizeProposalKind).not(),
+                ))
+                .get())
+            .length;
 
     try {
       // ① 规则：刮到同一个作品的散条目成组（不花钱，没提供商也做）。
@@ -141,7 +156,7 @@ class LibraryOrganizeService {
       // ② AI。
       if (useProvider == null) {
         status = LibraryOrganizeStatus.noProvider;
-        error = 'provider_not_configured';
+        error = rulesOnly ? 'rules_only' : 'provider_not_configured';
       } else {
         facts = await _facts(domain, onlyEntryKeys);
         final List<List<String>> plan = chunkOrganizeEntries(facts.entries);
@@ -181,17 +196,18 @@ class LibraryOrganizeService {
               );
               continue;
             }
+            final OrganizePlan verdict = planOrganizeReply(
+              facts: facts,
+              chunk: chunk,
+              reply: reply,
+              trigger: trigger,
+              tagPrefix: videoTagPrefix,
+            );
             touched.addAll(
               await applyOrganizeActions(
                 db,
                 runId: runId,
-                actions: planFromAiReply(
-                  facts: facts,
-                  chunk: chunk,
-                  reply: reply,
-                  trigger: trigger,
-                  tagPrefix: videoTagPrefix,
-                ),
+                actions: verdict.actions,
               ),
             );
           }
@@ -204,14 +220,21 @@ class LibraryOrganizeService {
       }
       // ③ 本机同系列整理器合集合成一个（与同步后同一套收敛规划），并记进这次的整理
       // 记录——撤销整次整理时这些合并也能还原。
+      // 同组里别的用户合集不并，记成待确认的合并建议（用户 2026-11-24 拍板）。
+      final ConvergencePlan convergence = planOrganizeConvergenceWithProposals(
+        await loadConvergenceCollections(db),
+      );
+      proposals = await recordOrganizeProposals(
+        db,
+        runId: runId,
+        proposals: convergenceOrganizeProposals(convergence.proposals),
+      );
       touched.addAll(
         await applyOrganizeActions(
           db,
           runId: runId,
           actions: <OrganizeAction>[
-            for (final ConvergenceMerge m in planOrganizeConvergence(
-              await loadConvergenceCollections(db),
-            ))
+            for (final ConvergenceMerge m in convergence.merges)
               OrganizeAction(
                 kind: OrganizeActionKind.merge,
                 source: 'rule',
@@ -254,6 +277,7 @@ class LibraryOrganizeService {
       status: status,
       runId: runId,
       changes: changes,
+      proposals: proposals,
       requests: requests,
       error: error,
       touchedCollectionIds: touched,
@@ -334,8 +358,7 @@ OrganizeChunk? buildOrganizeChunk(
     return OrganizeChunk(entries: entries, collections: facts.collections);
   }
   final Set<int> required = <int>{
-    for (final OrganizeEntry e in entries)
-      if (e.managedCollectionId != null) e.managedCollectionId!,
+    for (final OrganizeEntry e in entries) ...e.memberOf,
   };
   final Set<String> grams = <String>{
     for (final OrganizeEntry e in entries) ..._bigrams(e.item.title),
@@ -397,7 +420,8 @@ AiLibraryOrganizeRequest organizeRequestOf(
           name: chunk.collections[n].name,
           memberCount: chunk.collections[n].memberKeys.length,
           sampleTitles: chunk.collections[n].sampleTitles,
-          userOwned: !chunk.collections[n].origin.isOrganizerManaged,
+          userOwned: chunk.collections[n].origin == CollectionOrigin.user,
+          folder: chunk.collections[n].isFolder,
           organizeKey: chunk.collections[n].organizeKey,
         ),
     ],
@@ -410,9 +434,18 @@ AiLibraryOrganizeRequest organizeRequestOf(
           folder: e.item.folder,
           season: e.item.season,
           episode: e.item.episode,
-          inCollection: e.managedCollectionId == null
-              ? null
-              : cid[e.managedCollectionId],
+          inCollections: <String>[
+            for (final int id in e.memberOf)
+              if (cid[id] case final String c) c,
+          ],
+          pinnedIn: <String>[
+            for (final OrganizeCollectionFact c in chunk.collections)
+              if (c.pinnedMemberKeys.contains(e.memberKey)) cid[c.id]!,
+          ],
+          evictedFrom: <String>[
+            for (final OrganizeCollectionFact c in chunk.collections)
+              if (c.aiEvictedMemberKeys.contains(e.memberKey)) cid[c.id]!,
+          ],
         ),
     ],
   );

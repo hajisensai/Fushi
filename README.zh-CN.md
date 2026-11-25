@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.50.0-02569B?logo=flutter&logoColor=white)
 
 [English](README.md) | **简体中文** | [繁體中文](docs/readme/README.zh-Hant.md) | [日本語](docs/readme/README.ja.md) | [한국어](docs/readme/README.ko.md) | [Español](docs/readme/README.es.md) | [Français](docs/readme/README.fr.md) | [Deutsch](docs/readme/README.de.md) | [Português](docs/readme/README.pt-BR.md) | [Русский](docs/readme/README.ru.md) | [Tiếng Việt](docs/readme/README.vi.md) | [ภาษาไทย](docs/readme/README.th.md) | [Bahasa Indonesia](docs/readme/README.id.md) | [Italiano](docs/readme/README.it.md) | [Nederlands](docs/readme/README.nl.md) | [Türkçe](docs/readme/README.tr.md) | [العربية](docs/readme/README.ar.md)
 
@@ -24,7 +24,7 @@
 
 | 平台 | 状态 | 说明 |
 |---|---|---|
-| Android | ✅ | Android 7.0（API 24）及以上 |
+| Android | ✅ | Android 8.0（API 26）及以上 |
 | Windows | ✅ | Galgame 文本 / 语音 Hook 仅限 Windows |
 | macOS | ✅ | 仅 Apple Silicon，不支持 Intel Mac |
 | iOS | ✅（[TestFlight](https://testflight.apple.com/join/j88d69jx)） | 按 App Store 审核指南不含发现、在线源与下载中心 |
@@ -43,7 +43,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 从 [Fushi 官网](https://fushi.moe/) 下载最新版本，提供 Android APK、Windows 安装包与 macOS 构建（仅 Apple Silicon，不支持 Intel Mac）；iOS 通过 [TestFlight](https://testflight.apple.com/join/j88d69jx) 安装。Linux 暂无预编译的 App 安装包，需自行从源码构建。无头服务端 Fushi Server 单独在 [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases) 发布。
 
-> 最低 Android 7.0（API 24）。
+> 最低 Android 8.0（API 26）。
 
 ## 构建
 
@@ -67,14 +67,14 @@ flutter build ipa --release
 dart build cli
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` 把 `flutter pub get` 与 `ci/apply-patches.sh` 收敛成一条命令。本项目锁定 Flutter 3.47.6（Dart SDK `>=3.8.0 <4.0.0`）；Material 与 Cupertino 改走 `material_ui` / `cupertino_ui` 包，更早的 Flutter 版本编译不过。部分上游依赖经 vendored 到 `third_party/` 或由 `ci/apply-patches.sh` 修补——机制细节与 Linux 桌面构建依赖见 [docs/agent/build.md](docs/agent/build.md)。
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` 把 `flutter pub get` 与 `ci/apply-patches.sh` 收敛成一条命令。本项目锁定 Flutter 3.50.0（Dart SDK `>=3.8.0 <4.0.0`）；Material 与 Cupertino 改走 `material_ui` / `cupertino_ui` 包，更早的 Flutter 版本编译不过。部分上游依赖经 vendored 到 `third_party/` 或由 `ci/apply-patches.sh` 修补——机制细节与 Linux 桌面构建依赖见 [docs/agent/build.md](docs/agent/build.md)。
 
 <details>
 <summary><b>技术栈一览</b></summary>
 
 | 层 | 技术 |
 |---|---|
-| 框架 | Flutter 3.47.6（Dart SDK `>=3.8.0 <4.0.0`），Riverpod |
+| 框架 | Flutter 3.50.0（Dart SDK `>=3.8.0 <4.0.0`），Riverpod |
 | 平台 | Android / Windows / macOS / iOS / Linux，外加无头服务端 |
 | UI | `material_ui`（Material 3 Expressive）/ `cupertino_ui`（Cupertino） |
 | 阅读器 | WebView 分页引擎（衍生自 Hoshi Reader 系列） |
@@ -216,8 +216,12 @@ Fushi 基于以下项目与生态：
 | [comic-text-and-bubble-detector](https://huggingface.co/ogkalu/comic-text-and-bubble-detector) | 漫画文本与对话气泡检测模型 |
 | [manga-panel-detector-yolo26n](https://huggingface.co/leoxs22/manga-panel-detector-yolo26n) | 漫画分格检测模型，基于 [Manga109-s](http://www.manga109.org/en/download_s.html) 训练 |
 | [PP-OCRv6](https://github.com/PaddlePaddle/PaddleOCR) small det / rec · [PP-OCRv6_manga](https://huggingface.co/Kellenok/PP-OCRv6_manga) | 文本行检测与识别；漫画调优的 rec（以 [Manga109-s](http://www.manga109.org/en/download_s.html) 与 [AnimeText](https://huggingface.co/datasets/deepghs/AnimeText) 训练）驱动逐列 CTC 本地 OCR 模型 |
+| [manga-ocr-charspot](https://huggingface.co/muscgab/manga-ocr-charspot-small) small / nano（muscgab） | 可选的日文本机 OCR 模型，整块读出文字与逐字框；以 [AnimeText-OCR](https://huggingface.co/datasets/JustANormalTinkerer/animetext-ocr) 训练。权重 CC BY-NC-SA 4.0（非商用），代码 Apache-2.0；由用户从 Hugging Face 下载，本项目不转发 |
+| [manga-ocr-nar-small](https://huggingface.co/muscgab/manga-ocr-nar-small)（muscgab） | 可选的日文本机 OCR 模型，非自回归、整块一次读出文字（不给逐字框）；以 [AnimeText-OCR](https://huggingface.co/datasets/JustANormalTinkerer/animetext-ocr) 训练。权重 CC BY-NC-SA 4.0（非商用），代码 Apache-2.0；由用户从 Hugging Face 下载，本项目不转发 |
 
 > 漫画分格检测模型与 PP-OCRv6_manga 使用 Manga109-s 数据集（Matsui et al. 2017; Aizawa et al. 2020）训练，其条款要求明确标注对该数据集的使用。PP-OCRv6_manga（Apache-2.0）另以 AnimeText 数据集训练，该数据集采用 CC BY-NC-SA 4.0 许可；App 从模型的 Hugging Face 仓库下载，本项目不转发该模型。
+>
+> manga-ocr-charspot 与 manga-ocr-nar-small（muscgab）的权重采用 CC BY-NC-SA 4.0 许可：仅限非商业使用、须署名、衍生作品须以相同许可发布。App 只把它们作为可选下载项、从作者的 Hugging Face 仓库获取，从不随包分发。商业用途请不要下载这几个模型。
 
 ### 内容源与集成
 
@@ -243,7 +247,9 @@ Fushi 基于以下项目与生态：
 
 ## 许可证
 
-本项目基于 GNU General Public License v3.0 发布。详情见 [LICENSE](LICENSE)。
+本项目基于 GNU General Public License v3.0 发布，并依其第 7 条附加了条款。详情见 [LICENSE](LICENSE) 与 [ADDITIONAL_TERMS.md](ADDITIONAL_TERMS.md)。这些条款适用于本仓库中由 Fushi 作者编写的每一个源文件（见 ADDITIONAL_TERMS.md 的“适用范围”）。
+
+**Fushi 官方版本免费。** 如果你是付费买到的，你买的是一个免费软件，而且卖家依照 GPL 必须向你提供完整源代码。官方下载：[GitHub Releases](https://github.com/hajisensai/Fushi/releases) 与 [fushi.moe](https://fushi.moe)。
 
 ## 维护者
 

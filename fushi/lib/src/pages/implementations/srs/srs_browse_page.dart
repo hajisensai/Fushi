@@ -34,6 +34,7 @@ import 'package:fushi_engine/srs/srs_note_batch_edit.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/focus/focus_activation.dart';
 import 'package:fushi/src/focus/page_focus_ownership.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_card_tile.dart';
@@ -45,15 +46,15 @@ import 'package:fushi/src/pages/implementations/srs/srs_browse_query_bar.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_saved_views.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_browse_views.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart'
-    show srsLoadErrorDetail;
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -67,10 +68,10 @@ import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/srs/srs_navigation.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 「更改笔记类型」的入口（由别的模块提供）：传入要改的笔记 ID。
 typedef SrsChangeNoteTypeFlow =
@@ -136,7 +137,14 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
 
   /// 还没拆成积木的草稿（打字实时筛）。
   final TextEditingController _draft = TextEditingController();
+
+  /// 草稿的提交值：输入法组字（[TextEditingValue.composing]）结束后的文本。查询、补全、粘贴拆积木都只认它，
+  /// 组字中的中间态（拼音、候选未选定的假名）不算（反馈 D2hILRLlPT：Windows 中文输入法组字中的「ni hao」
+  /// 被当成粘贴拆成积木、清空草稿，组字被打断）。
   String _lastDraft = '';
+
+  /// 上一次提交值之后经历过组字：组字确认进来的一段字不是「粘贴」，不拆积木。
+  bool _composedSinceCommit = false;
   final FocusNode _queryFocus = FocusNode(debugLabel: 'srs-browse-search');
   final FocusNode _focusNode = FocusNode(debugLabel: 'srs-browse');
 
@@ -213,6 +221,9 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     _columns = decodeSrsBrowseColumns(
       ref.read(appProvider).srsBrowseTableColumns,
     );
+    // 组字结束时常常只有 composing 区间变、文本不变（日文输入法回车确认），TextField 的 onChanged 不报；
+    // 草稿的提交值只能跟着控制器的整份 value 走。
+    _draft.addListener(_onDraftValue);
     unawaited(_refresh());
   }
 
@@ -251,8 +262,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   String get _draftQuery {
     final String? field = _searchField;
     return field == null
-        ? _draft.text
-        : srsFieldContainsQuery(field, _draft.text);
+        ? _lastDraft
+        : srsFieldContainsQuery(field, _lastDraft);
   }
 
   String get _effectiveQuery => <String>[
@@ -572,11 +583,25 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     _requery();
   }
 
-  void _onDraftChanged(String text) {
+  /// 草稿控制器变了：组字还没结束就不动（中间态不是提交值）；组字结束或直接打字时按提交值处理。
+  void _onDraftValue() {
+    final TextEditingValue value = _draft.value;
+    if (value.composing.isValid && !value.composing.isCollapsed) {
+      _composedSinceCommit = true;
+      return;
+    }
+    final bool composed = _composedSinceCommit;
+    _composedSinceCommit = false;
+    if (value.text == _lastDraft) return;
+    _onDraftChanged(value.text, composed: composed);
+  }
+
+  void _onDraftChanged(String text, {required bool composed}) {
     final String before = _lastDraft;
     _lastDraft = text;
-    // 粘贴整段（一次进来多个字、含空白、能拆出两块以上）：直接拆成积木。打字只改草稿。
-    if (_searchField == null &&
+    // 粘贴整段（一次进来多个字、含空白、能拆出两块以上）：直接拆成积木。打字、输入法确认的一段字只改草稿。
+    if (!composed &&
+        _searchField == null &&
         text.length - before.length > 1 &&
         text.contains(RegExp(r'\s'))) {
       final List<SrsBrowseChip> parsed = srsParseBrowseChips(text);
@@ -584,8 +609,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           parsed.every(
             (SrsBrowseChip c) => c.kind != SrsBrowseChipKind.syntax,
           )) {
-        _draft.clear();
         _lastDraft = '';
+        _draft.clear();
         _setChips(<SrsBrowseChip>[..._chips, ...parsed]);
         return;
       }
@@ -607,8 +632,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     final List<SrsBrowseChip> next = _searchField == null
         ? srsBrowseCommitDraft(_chips, text)
         : <SrsBrowseChip>[..._chips, SrsBrowseChip.syntax(_draftQuery)];
-    _draft.clear();
     _lastDraft = '';
+    _draft.clear();
     setState(() => _searchField = null);
     _setChips(next);
   }
@@ -617,12 +642,16 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       _searchField != null || !_queryFocus.hasFocus
       ? const <SrsBrowseSuggestion>[]
       : srsBrowseSuggestions(
-          _draft.text,
+          _lastDraft,
           decks: _deckNames,
           tags: _tags,
           noteTypes: <String>[
             for (final SrsNoteTypeView n in _noteTypes) n.name,
           ],
+          cardTypes: srsBrowseCardTypeNames(<List<String>>[
+            for (final SrsNoteTypeView n in _noteTypes)
+              <String>[for (final SrsTemplateDef p in n.templates) p.name],
+          ]),
         );
 
   List<SrsBrowseChipOption> _optionsFor(SrsBrowseChipKind kind) =>
@@ -770,8 +799,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   /// 套用一条视图条件（快捷视图 / 保存的视图 / 健康条 / 「只看这一作」）：留下牌组积木，其余换成它；
   /// 已经套着时再点 = 撤掉。
   void _applyView(String query) {
-    _draft.clear();
     _lastDraft = '';
+    _draft.clear();
     _setChips(srsBrowseToggleQuickView(_chips, srsParseBrowseChips(query)));
   }
 
@@ -913,11 +942,13 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       .where((SrsNoteTypeView n) => n.name == row.noteTypeName)
       .firstOrNull;
 
-  /// 表格里一格对应的字段（正面 = 排序字段即第一个字段，字段摘要列 = 摘要来自的那个字段）；不是字段列 null。
+  /// 表格里一格对应的字段（正面 = 笔记类型的排序字段，字段摘要列 = 摘要来自的那个字段）；不是字段列 null。
   SrsFieldDef? _cellField(SrsBrowseRow row, SrsBrowseTableColumn column) {
     final SrsNoteTypeView? type = _typeOf(row);
     if (type == null || type.fields.isEmpty) return null;
-    if (column == SrsBrowseTableColumn.front) return type.fields.first;
+    if (column == SrsBrowseTableColumn.front) {
+      return type.fieldById(type.effectiveSortFieldId ?? '');
+    }
     final String? name = srsBrowsePreviewFieldName(row, column);
     if (name == null) return null;
     return type.fields.where((SrsFieldDef f) => f.name == name).firstOrNull;
@@ -931,10 +962,21 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     if (column == SrsBrowseTableColumn.tags) return row.tags.join(' ');
     final SrsFieldDef? field = _cellField(row, column);
     if (field == null) return null;
-    final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null) return null;
-    final SrsNoteView? note = await store.note(row.noteId);
-    return note?.field(field.id);
+    // 表格从 unawaited 的进入编辑 / 存完跳格读它：读失败提示并返回 null（这一格不进编辑态），不变成未处理异常、
+    // 不让格子停在编辑态。
+    try {
+      final SrsDbStore? store = await readSrsStore(ref);
+      if (store == null) return null;
+      final SrsNoteView? note = await store.note(row.noteId);
+      return note?.field(field.id);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsBrowse.loadCell', e, stack);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
+      return null;
+    }
   }
 
   /// 表格原地改一格：字段走 [_saveField]、标签走 [_saveTags]（都是条件写 + 进撤销栈）。
@@ -953,7 +995,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       await _saveField(row.noteId, field.name, value);
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.cellEdit', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     }
   }
 
@@ -1320,8 +1365,20 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     List<String>? ids,
   }) async {
     if ((ids == null && !_hasTargets) || _busy) return;
-    final SrsDbStore? store = await readSrsStore(ref);
-    if (store == null || !mounted) return;
+    // 批量动作多从快捷键 / 菜单 unawaited 起：库打开失败要落到失败提示，不变成未处理异常。
+    final SrsDbStore? opened;
+    try {
+      opened = await readSrsStore(ref);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsBrowse.batch.openStore', e, stack);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (opened == null || !mounted) return;
+    final SrsDbStore store = opened;
     final SrsBrowseTargets? targets = await _loadTargets(ids: ids);
     if (targets == null || targets.isEmpty || !mounted) return;
     final List<String> cardIds = targets.cardIds;
@@ -1540,7 +1597,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       await _refresh();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.batch.${action.name}', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -1558,7 +1618,10 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       return await plan();
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsBrowse.plan.${action.name}', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
       return null;
     } finally {
       if (mounted) setState(() => _busy = false);
@@ -1599,12 +1662,15 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       final _UndoEntry entry = _undo.removeLast();
       setState(() => _busy = true);
       try {
-        final int blocked = await entry.revert(store);
+        final SrsBatchRevertResult r = await entry.revert(store);
         FushiToast.show(
-          msg: blocked > 0
-              ? t.srs_browse_undo_partial(n: blocked)
+          msg: r.blockedLogs > 0
+              ? t.srs_browse_undo_partial(n: r.blockedLogs)
+              // 之后被别人（同步拉进来的别的设备 / AI / 别处）改过的字段保留了现值。
+              : !r.edits.complete
+              ? t.srs_undo_kept_changed(n: r.edits.kept.length)
               : t.srs_browse_undone,
-          severity: blocked > 0 ? ToastSeverity.warning : ToastSeverity.neutral,
+          severity: r.complete ? ToastSeverity.neutral : ToastSeverity.warning,
         );
         if (!mounted) return;
         await _afterWrite();
@@ -1623,6 +1689,11 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       return KeyEventResult.ignored;
     }
     final LogicalKeyboardKey key = event.logicalKey;
+    // 焦点在检查器页签 / 工具栏按钮这类可激活子控件上：确认键归它（应用级 Enter → 激活），
+    // 不当「翻面 / 打开详情」吞掉。
+    if (focusedDescendantClaimsActivation(node, key)) {
+      return KeyEventResult.ignored;
+    }
     final HardwareKeyboard kb = HardwareKeyboard.instance;
     final bool ctrl = kb.isControlPressed || kb.isMetaPressed;
     if (ctrl && key == LogicalKeyboardKey.keyF) {
@@ -1775,6 +1846,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     final bool wide =
         MediaQuery.sizeOf(context).width >= kSrsBrowseSplitMinWidth;
     final Widget controls = _buildControls(context, wide: wide);
@@ -1788,11 +1860,23 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
       child: FushiPageScaffold(
         title: title,
         subtitle: apple ? _countText : null,
+        // 页头大字形态（重设计外壳）：视图切换与其余动作一起平铺成裸图标，放不下
+        // 从尾部收进「⋯」；搜索积木栏等控件留在正文顶部（同 MD3 浮动顶栏形态）。
+        masthead: true,
+        leading: masthead && _selecting
+            ? FushiIconButton(
+                key: const ValueKey<String>('srs_browse_clear_selection'),
+                icon: FushiIcons.close,
+                tooltip: t.srs_browse_select_none,
+                onTap: _clearSelection,
+              )
+            : null,
         header: apple ? null : _buildTopBar(context, wide: wide),
-        actions: apple
+        actions: apple || masthead
             ? <Widget>[
                 for (final FushiToolbarItem item in <FushiToolbarItem>[
                   ..._toolbarItems(),
+                  if (masthead) ..._layoutItems(wide),
                   ..._overflowItems(),
                 ])
                   FushiIconButton(
@@ -1805,7 +1889,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
                   ),
               ]
             : const <Widget>[],
-        headerBottom: apple
+        headerBottom: apple && !masthead
             ? Column(
                 mainAxisSize: MainAxisSize.min,
                 crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -1820,7 +1904,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           builder: (BuildContext context) {
             final Widget main = _buildMain(
               context,
-              apple ? null : controls,
+              apple && !masthead ? null : controls,
               wide: wide,
             );
             if (!wide) return main;
@@ -1906,7 +1990,8 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           fieldScope: _searchField,
           suggestions: _suggestions,
           error: _searchError,
-          onDraftChanged: _onDraftChanged,
+          // 控制器监听（[_onDraftValue]）已处理；这里只是同一入口，提交值没变时是空操作。
+          onDraftChanged: (String _) => _onDraftValue(),
           onDraftSubmitted: _onDraftSubmitted,
           onChipTap: (int i) =>
               srsRunLogged('SrsBrowse.chip', () => _editChip(i)),
@@ -1915,6 +2000,7 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
           onRemoveLast: () =>
               _setChips(srsBrowseReplaceChip(_chips, _chips.length - 1, null)),
           onSuggestion: (SrsBrowseSuggestion s) {
+            _lastDraft = '';
             _draft.clear();
             _setChips(<SrsBrowseChip>[..._chips, s.chip]);
           },
@@ -2109,23 +2195,11 @@ class _SrsBrowsePageState extends ConsumerState<SrsBrowsePage> {
     }
     final Object? loadError = _loadError;
     if (loadError != null) {
-      return SafeArea(
-        bottom: false,
-        child: Center(
-          child: FushiPlaceholderMessage(
-            key: const ValueKey<String>('srs-browse-load-error'),
-            icon: FushiIcons.error,
-            tone: FushiPlaceholderTone.error,
-            message: t.error_load_failed,
-            detail: srsLoadErrorDetail(loadError),
-            action: FushiFilledButton.tonalIcon(
-              key: const ValueKey<String>('srs-browse-load-retry'),
-              onPressed: _retryLoad,
-              icon: const FushiIcon(FushiIcons.refresh),
-              label: Text(t.retry),
-            ),
-          ),
-        ),
+      return SrsLoadErrorView(
+        key: const ValueKey<String>('srs-browse-load-error'),
+        error: loadError,
+        retryKey: const ValueKey<String>('srs-browse-load-retry'),
+        onRetry: _retryLoad,
       );
     }
     final SrsBrowseResult? result = _result;

@@ -263,7 +263,7 @@ void main() {
   });
 
   testWidgets(
-    'sub-pixel move or rotation drops the bake; whole-pixel move keeps it',
+    'sub-pixel move drops the bake; whole-pixel move or rotation keeps it',
     (WidgetTester tester) async {
       final ValueNotifier<Matrix4> transform = ValueNotifier<Matrix4>(
         Matrix4.identity(),
@@ -297,16 +297,184 @@ void main() {
       await settleBake(tester);
       expect(surfaceOf(tester).debugIsBaked, isTrue, reason: '停稳后重新烘焙');
 
-      // 旋转（悬停 3D 倾斜同类）：不可能 1:1 贴图。
-      // 帧末才看得到新变换，所以变换出现的那一帧还贴纹理，下一帧起实时绘制。
-      transform.value = Matrix4.rotationZ(0.05);
-      await tester.pump();
+      // 旋转（扇形后层常驻旋转 / 悬停 3D 倾斜同类，BUG-4222）：不可能 1:1 贴图，
+      // 但内容没变、放大倍数没超过纹理分辨率，就一直贴纹理，不回实时栅格化。
+      final double dpr = tester.view.devicePixelRatio;
       for (int i = 0; i < 4; i++) {
+        transform.value = Matrix4.rotationZ(0.05 * (i + 1));
         await tester.pump();
-        expect(surfaceOf(tester).debugIsBaked, isFalse, reason: '旋转中第 $i 帧');
+        expect(surfaceOf(tester).debugIsBaked, isTrue, reason: '旋转中第 $i 帧');
       }
+
+      // 旋转 + 放大超过纹理分辨率：回实时绘制，停稳后按更高分辨率重烘（不把
+      // 小纹理放大糊掉）。
+      transform.value = Matrix4.rotationZ(0.05)..scaleByDouble(1.1, 1.1, 1, 1);
+      await tester.pump();
+      await tester.pump();
+      expect(surfaceOf(tester).debugIsBaked, isFalse, reason: '放大超过纹理分辨率');
+      await settleBake(tester);
+      expect(surfaceOf(tester).debugIsBaked, isTrue, reason: '放大后重烘');
+      expect(
+        surfaceOf(tester).debugBakedPixelRatio,
+        greaterThanOrEqualTo(dpr * 1.1),
+      );
+
+      // 回到轴对齐：重采样纹理不能 1:1，回实时绘制后重烘一张 1:1 的。
+      transform.value = Matrix4.identity();
+      await tester.pump();
+      await tester.pump();
+      expect(surfaceOf(tester).debugIsBaked, isFalse, reason: '回轴对齐先实时画');
+      await settleBake(tester);
+      expect(surfaceOf(tester).debugIsBaked, isTrue);
+      expect(surfaceOf(tester).debugBakedPixelRatio, dpr, reason: '1:1 纹理');
     },
   );
+
+  testWidgets('rotated surface bakes and looks like live rendering', (
+    WidgetTester tester,
+  ) async {
+    Widget rotated({required GlobalKey key, required Widget child}) => host(
+      captureKey: key,
+      child: Transform.rotate(angle: -0.11, child: child),
+    );
+    final GlobalKey live = GlobalKey();
+    await tester.pumpWidget(rotated(key: live, child: content(Colors.teal)));
+    final Uint8List expected = await capture(tester, live);
+
+    final GlobalKey baked = GlobalKey();
+    await tester.pumpWidget(
+      rotated(
+        key: baked,
+        child: BakedSurface(child: content(Colors.teal)),
+      ),
+    );
+    expect(surfaceOf(tester).debugIsBaked, isFalse, reason: '首帧实时绘制');
+    await settleBake(tester);
+    expect(surfaceOf(tester).debugIsBaked, isTrue, reason: '旋转中照样烘焙');
+    final Uint8List actual = await capture(tester, baked);
+    // 重采样纹理不是逐字节一致：斜边抗锯齿与双线性各差一点，但整体不能走样。
+    expect(actual.length, expected.length);
+    int total = 0;
+    int far = 0;
+    for (int i = 0; i < actual.length; i++) {
+      final int d = (actual[i] - expected[i]).abs();
+      total += d;
+      if (d > 48) far++;
+    }
+    final double mean = total / actual.length;
+    expect(mean, lessThan(1.5), reason: '平均通道差 $mean');
+    expect(
+      far / actual.length,
+      lessThan(0.01),
+      reason: '差异大的通道占比 ${far / actual.length}（只允许斜边几像素）',
+    );
+  });
+
+  testWidgets(
+    'sub-pixel transit back to a whole-pixel offset reuses the texture',
+    (WidgetTester tester) async {
+      // 滚轮一档的补间：中途是亚像素位置（必须实时画），落点是整数个物理像素
+      // （Windows 一档 = 100 物理 px）。落定后贴回原纹理即逐像素等于实时绘制，
+      // 不该再离屏渲染一张（BUG：每档滚轮把整屏所有面重烘一遍）。
+      final ValueNotifier<Offset> shift = ValueNotifier<Offset>(Offset.zero);
+      addTearDown(shift.dispose);
+      final GlobalKey key = GlobalKey();
+      // 截图框比卡片高出一截：移位后的卡片整张留在截图里（被截图边界切到的圆角
+      // 抗锯齿，实时绘制与贴图在软件光栅下差几个像素，与本用例无关）。
+      Widget moving(Widget child) => Center(
+        child: RepaintBoundary(
+          key: key,
+          child: SizedBox(
+            width: 60,
+            height: 90,
+            child: Align(
+              alignment: Alignment.topCenter,
+              child: SizedBox(
+                width: 60,
+                height: 80,
+                child: ValueListenableBuilder<Offset>(
+                  valueListenable: shift,
+                  builder: (BuildContext context, Offset o, Widget? child) =>
+                      Transform.translate(offset: o, child: child),
+                  child: child,
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      await tester.pumpWidget(
+        moving(BakedSurface(child: content(Colors.teal))),
+      );
+      await settleBake(tester);
+      expect(surfaceOf(tester).debugIsBaked, isTrue);
+      final int bakesBefore = RenderBakedSurface.debugBakeCount;
+
+      final double px = 1 / tester.view.devicePixelRatio;
+      // 补间每帧一个新位置（停两帧就会在亚像素处合法地重烘一张）。
+      for (final double f in <double>[0.3, 1.7, 2.4]) {
+        shift.value = Offset(0, f * px);
+        await tester.pump();
+      }
+      expect(surfaceOf(tester).debugIsBaked, isFalse, reason: '亚像素途中实时画');
+      shift.value = Offset(0, 3 * px);
+      await settleBake(tester);
+      expect(surfaceOf(tester).debugIsBaked, isTrue, reason: '整像素落点贴回纹理');
+      expect(
+        RenderBakedSurface.debugBakeCount,
+        bakesBefore,
+        reason: '内容没变、落点与烘焙位置像素等价：不重新离屏渲染',
+      );
+      final Uint8List reused = await capture(tester, key);
+
+      await tester.pumpWidget(moving(content(Colors.teal)));
+      expectSamePixels(reused, await capture(tester, key), '沿用的纹理');
+    },
+  );
+
+  testWidgets('content change during sub-pixel transit drops the old texture', (
+    WidgetTester tester,
+  ) async {
+    final ValueNotifier<Offset> shift = ValueNotifier<Offset>(Offset.zero);
+    final ValueNotifier<Color> color = ValueNotifier<Color>(Colors.teal);
+    addTearDown(shift.dispose);
+    addTearDown(color.dispose);
+    final GlobalKey key = GlobalKey();
+    Widget moving(Widget Function(Color) child) => host(
+      captureKey: key,
+      child: ValueListenableBuilder<Offset>(
+        valueListenable: shift,
+        builder: (BuildContext context, Offset o, Widget? _) =>
+            Transform.translate(
+              offset: o,
+              child: ValueListenableBuilder<Color>(
+                valueListenable: color,
+                builder: (BuildContext context, Color c, Widget? _) => child(c),
+              ),
+            ),
+      ),
+    );
+    await tester.pumpWidget(
+      moving((Color c) => BakedSurface(child: content(c))),
+    );
+    await settleBake(tester);
+    expect(surfaceOf(tester).debugIsBaked, isTrue);
+
+    final double px = 1 / tester.view.devicePixelRatio;
+    shift.value = Offset(0, 0.5 * px);
+    await tester.pump();
+    await tester.pump();
+    expect(surfaceOf(tester).debugIsBaked, isFalse);
+    color.value = Colors.orange;
+    await tester.pump();
+    shift.value = Offset(0, 2 * px);
+    await settleBake(tester);
+    expect(surfaceOf(tester).debugIsBaked, isTrue);
+    final Uint8List baked = await capture(tester, key);
+
+    await tester.pumpWidget(moving(content));
+    expectSamePixels(baked, await capture(tester, key), '途中换了内容，不能贴回旧纹理');
+  });
 
   testWidgets('nested repaint boundary is never baked', (
     WidgetTester tester,
@@ -324,5 +492,64 @@ void main() {
       isFalse,
       reason: '嵌套 boundary 重绘不会通知到本节点，烘焙了就会过时',
     );
+  });
+
+  // BUG-5197（视频合集滚动卡顿）：滚轮连拨时根部补间每档先 `jumpTo` 回当前补间
+  // 位置、下一拍才起新动画，于是每档都有一帧位置与上一帧完全相同。旧逻辑把它当成
+  // 停稳，整屏的面在亚像素位置上逐个离屏重烘（一次滚动上千次 toImageSync）。
+  // 滚动区还在滚就不烘焙；滚动结束、停稳一帧后再烘。
+  testWidgets('no bakes while an ancestor scrollable is scrolling', (
+    WidgetTester tester,
+  ) async {
+    final ScrollController controller = ScrollController();
+    addTearDown(controller.dispose);
+    await tester.pumpWidget(
+      Directionality(
+        textDirection: TextDirection.ltr,
+        child: ListView.builder(
+          controller: controller,
+          itemExtent: 100,
+          itemCount: 200,
+          itemBuilder: (BuildContext context, int i) =>
+              BakedSurface(child: content(Colors.primaries[i % 18])),
+        ),
+      ),
+    );
+    await settleBake(tester);
+    final int before = RenderBakedSurface.debugBakeCount;
+    expect(before, greaterThan(0), reason: '静止时照常烘焙');
+
+    // 模拟 SmoothWheelScrollScope 的连拨：每档 jumpTo 当前位置 + animateTo 新目标，
+    // 每档之间 pump 若干帧（含「位置与上一帧相同」的那一帧）。
+    double target = 0;
+    for (int notch = 0; notch < 6; notch++) {
+      target += 137.3;
+      controller.jumpTo(controller.offset);
+      controller.animateTo(
+        target,
+        duration: const Duration(milliseconds: 140),
+        curve: Curves.easeOutCubic,
+      );
+      for (int f = 0; f < 6; f++) {
+        await tester.pump(const Duration(milliseconds: 16));
+      }
+    }
+    expect(
+      RenderBakedSurface.debugBakeCount,
+      before,
+      reason: '滚动途中位置一直在变，不该离屏烘焙',
+    );
+
+    await tester.pumpAndSettle();
+    await settleBake(tester);
+    expect(
+      RenderBakedSurface.debugBakeCount,
+      greaterThan(before),
+      reason: '滚动停下后新露出的面照常烘焙',
+    );
+    final RenderBakedSurface visible = tester.renderObject<RenderBakedSurface>(
+      find.byType(BakedSurface).first,
+    );
+    expect(visible.debugIsBaked, isTrue);
   });
 }

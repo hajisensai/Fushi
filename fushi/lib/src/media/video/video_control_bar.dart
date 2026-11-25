@@ -103,11 +103,16 @@ int? videoControlItemBarPriority(VideoControlItem item) {
     case VideoControlItem.nextChapter:
     case VideoControlItem.chapterList:
       return 40;
+    // 聊天回放栏开关：只在有聊天回放的视频上出现，是那类视频的主要学习入口之一。
+    case VideoControlItem.liveChat:
+      return 50;
     // 弹幕开关：用户主动拖上来的才在栏上，设置面板另有同一开关，放不下时可以先收。
     case VideoControlItem.danmaku:
     case VideoControlItem.ocrFrame:
       return 35;
     case VideoControlItem.clipExport:
+    case VideoControlItem.statistics:
+    case VideoControlItem.studyTimer:
       return 30;
     case VideoControlItem.customAction1:
     case VideoControlItem.customAction2:
@@ -297,6 +302,7 @@ class VideoBarEntry {
     this.menuAction,
     this.onFolded,
     this.folded = false,
+    this.slotKey,
   }) : assert(
          (priority == null && !folded) || menuAction != null,
          'a collapsible entry must say what its overflow-menu row does',
@@ -326,6 +332,10 @@ class VideoBarEntry {
   /// 这一项刚从栏上收进「⋯」时（帧尾）调用。被收起的按钮不再绘制，挂在它身上的
   /// 东西（如以它为锚点的浮层）要在这里收场，否则会锚在一个看不见的按钮上。
   final VoidCallback? onFolded;
+
+  /// 条目槽位的身份。有条件出现的条目（跳转回退、网页托管）插到别的条目前面
+  /// 时，按它对齐元素，后面的按钮不会错位继承前一颗的状态（悬停 / 按压）。
+  final Key? slotKey;
 }
 
 /// 簇的外形：每个非空簇画成一枚悬浮胶囊（Material 3 Expressive floating
@@ -523,8 +533,11 @@ class _VideoControlBarState extends State<VideoControlBar> {
     }
   }
 
-  Widget _slot(_VideoBarChildRole role, int entry, Widget child) {
+  Widget _slot(_VideoBarChildRole role, int entry, Widget child, {Key? key}) {
     return _VideoBarSlot(
+      key: key == null
+          ? null
+          : ValueKey<(_VideoBarChildRole, Key)>((role, key)),
       role: role,
       entry: entry,
       child: ValueListenableBuilder<VideoBarPlan>(
@@ -622,9 +635,19 @@ class _VideoControlBarState extends State<VideoControlBar> {
       onPlan: _onLayoutPlan,
       children: <Widget>[
         for (int i = 0; i < widget.entries.length; i++) ...<Widget>[
-          _slot(_VideoBarChildRole.full, i, widget.entries[i].child),
+          _slot(
+            _VideoBarChildRole.full,
+            i,
+            widget.entries[i].child,
+            key: widget.entries[i].slotKey,
+          ),
           if (widget.entries[i].compactChild case final Widget compact)
-            _slot(_VideoBarChildRole.compact, i, compact),
+            _slot(
+              _VideoBarChildRole.compact,
+              i,
+              compact,
+              key: widget.entries[i].slotKey,
+            ),
         ],
         _slot(
           _VideoBarChildRole.more,
@@ -686,6 +709,7 @@ class _VideoBarParentData extends ContainerBoxParentData<RenderBox> {
 
 class _VideoBarSlot extends ParentDataWidget<_VideoBarParentData> {
   const _VideoBarSlot({
+    super.key,
     required this.role,
     required this.entry,
     required super.child,

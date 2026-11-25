@@ -1,7 +1,8 @@
-// 远程复习库的主机侧（docs/specs/2026-11-01-srs-remote-review-design.md）：
+// 远程复习库的主机侧（docs/specs/2026-11-01-srs-remote-review-design.md；线格式 V2，G10-2）：
 // - 线格式还原出的视图（笔记 / 笔记类型 / 牌组树 / 历史 / 预览 / 牌组行）与主机上直接读到的逐项相同；
 // - 写操作同一请求 id 重发只执行一次；作答带基准时卡变了回 stale；
-// - 主机切了配置回 profile_changed；路由的错误码。
+// - 主机切了配置回 profile_changed；路由的错误码；
+// - V2：信封带集合与规范内置 ID、归一问主机；V1 请求与代号不对一律 426；白名单拒绝越权命令。
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
@@ -9,9 +10,16 @@ import 'dart:typed_data';
 
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
+import 'package:fushi_engine/srs/srs_builtin.dart' show srsLapisFieldId;
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_fushi_card_native_media.dart'
+    show SrsCardNativeFallback, SrsCardNativeFallbackCode;
+import 'package:fushi_engine/srs/srs_entity_views.dart';
+import 'package:fushi_engine/srs/srs_remote_generation.dart';
 import 'package:fushi_engine/srs/srs_remote_store.dart';
 import 'package:fushi_engine/srs/srs_remote_store_routes.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart';
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:shelf/shelf.dart' as shelf;
 import 'package:test/test.dart';
@@ -23,7 +31,7 @@ import 'apkg/srs_apkg_import_test.dart' show kFullOptions;
 const String _uid = '01928c3e-0000-7000-8000-0000000a5e02';
 
 Future<(SrsDbStore, SrsRemoteStoreService, String)> _setUp({
-  void Function()? onWrite,
+  void Function(String profileUid)? onWrite,
 }) async {
   int clock = DateTime.utc(2026, 11, 1, 12).millisecondsSinceEpoch;
   final SrsDbStore store = await openTestStore(
@@ -52,20 +60,25 @@ Future<(SrsDbStore, SrsRemoteStoreService, String)> _setUp({
   return (store, service, deck);
 }
 
-/// 经路由走一遍 JSON（与真实网络同一份编码），返回整个回包。
+/// 经路由走一遍 JSON（与真实网络同一份编码），返回整个回包。V2 端点，请求体补上代号 `g: 4`（[body] 里已有 `g` 的
+/// 照它发，测代号不对的场景）。
 Future<(int, Map<String, Object?>)> _route(
   SrsRemoteStoreService service,
-  Map<String, Object?> body,
-) async {
+  Map<String, Object?> body, {
+  String path = '${kSrsRemoteStoreV2PathPrefix}call',
+}) async {
   final shelf.Response res = await handleSrsRemoteStoreRequest(
     service,
     shelf.Request(
       'POST',
-      Uri.parse('http://host/api/srs/remote/call'),
-      body: jsonEncode(body),
+      Uri.parse('http://host$path'),
+      body: jsonEncode(<String, Object?>{
+        kSrsRemoteGenerationKey: kSrsRemoteStoreV2Generation,
+        ...body,
+      }),
     ),
     'POST',
-    '/api/srs/remote/call',
+    path,
   );
   return (
     res.statusCode,
@@ -93,6 +106,72 @@ Future<Object?> _call(
 }
 
 void main() {
+  // 反馈 O5YDP27Xko：远程复习卡退回整面 WebView 时，客户端要拿到主机侧的原因（`nfb`）记诊断，
+  // 不再一律 remoteUnknown。
+  group('整面 WebView 原因 nfb 线格式', () {
+    SrsRenderedCard card(SrsCardNativeFallback? f) => SrsRenderedCard(
+      question: 'q',
+      answer: 'a',
+      css: '',
+      isEmpty: false,
+      nativeFallback: f,
+    );
+
+    test('往返保留类别与说明', () {
+      const SrsCardNativeFallback f = SrsCardNativeFallback(
+        SrsCardNativeFallbackCode.backTemplate,
+        '<div class="fc-x">',
+      );
+      final Map<String, Object?> json = SrsRemoteWire.rendered(card(f));
+      final SrsRenderedCard back = SrsRemoteWire.renderedFrom(
+        jsonDecode(jsonEncode(json)),
+      )!;
+      expect(back.nativeFallback, f);
+    });
+
+    test('能原生画时不发 nfb，解码为 null', () {
+      final Map<String, Object?> json = SrsRemoteWire.rendered(card(null));
+      expect(json.containsKey('nfb'), isFalse);
+      expect(SrsRemoteWire.renderedFrom(json)!.nativeFallback, isNull);
+    });
+
+    test('更新的主机发来不认识的类别：按 remoteUnknown，原类别并进说明', () {
+      final SrsRenderedCard back = SrsRemoteWire.renderedFrom(<String, Object?>{
+        'q': '',
+        'a': '',
+        'css': '',
+        'fields': <String, Object?>{},
+        'nfb': <String, Object?>{'code': 'futureCode', 'detail': 'x'},
+      })!;
+      expect(
+        back.nativeFallback,
+        const SrsCardNativeFallback(
+          SrsCardNativeFallbackCode.remoteUnknown,
+          'futureCode: x',
+        ),
+      );
+    });
+
+    test('nfb 不合契约抛带路径的 SrsRemoteWireError', () {
+      expect(
+        () => SrsRemoteWire.renderedFrom(<String, Object?>{
+          'q': '',
+          'a': '',
+          'css': '',
+          'fields': <String, Object?>{},
+          'nfb': <String, Object?>{'code': 3},
+        }),
+        throwsA(
+          isA<SrsRemoteWireError>().having(
+            (SrsRemoteWireError e) => e.path,
+            'path',
+            'result.nfb.code',
+          ),
+        ),
+      );
+    });
+  });
+
   test('牌组行线格式往返保留 RWKV 状态（rp / rs）', () async {
     final SrsDbStore store = await openTestStore(
       profileUid: _uid,
@@ -147,6 +226,16 @@ void main() {
     expect(body['sched'], isTrue);
     expect(body['tt'], isA<String>());
     expect(body['now'], isA<int>());
+    // V2：集合与根上内置实体的规范 ID 随信封给，客户端不派生。
+    expect(body['col'], store.sync2Collection);
+    expect(body['col'], isNotNull);
+    final SrsRemoteEnvelope env = SrsRemoteWire.envelopeFrom(body);
+    expect(env.collection, store.sync2Collection);
+    expect(env.roots, (
+      defaultDeck: store.defaultDeckId,
+      lapis: store.lapisNoteTypeId,
+      fushiCard: store.fushiCardNoteTypeId,
+    ));
   });
 
   test('线格式还原的视图与主机上读到的相同', () async {
@@ -156,10 +245,12 @@ void main() {
     final SrsCardDetail host = (await store.cardDetail(cardId))!;
 
     // 牌组树。
-    final SrsDeckTree tree = SrsRemoteWire.deckTreeFrom(<SrsEntitySource>[
-      for (final Object? s in (await _call(service, 'deckTree'))! as List)
-        SrsRemoteWire.sourceFrom(s),
-    ]);
+    final List<SrsEntityView> treeViews = SrsRemoteWire.viewsFrom(
+      await _call(service, 'deckTree'),
+    );
+    // 搬的就是主机内核的视图原文。
+    expect(treeViews, await store.entityViews(SrsEntityKind.deck));
+    final SrsDeckTree tree = SrsRemoteWire.deckTreeFrom(treeViews);
     final SrsDeckTree hostTree = await store.deckTree();
     expect(
       <String>[for (final SrsDeckView d in tree.decks) '${d.id}:${d.name}']
@@ -177,8 +268,8 @@ void main() {
             .cast<String, Object?>();
     final SrsCardCacheRow row = SrsRemoteWire.cardRowFrom(detail['card'])!;
     expect(row, host.card);
-    final SrsNoteView note = SrsRemoteWire.notesFrom(<SrsEntitySource>[
-      SrsRemoteWire.sourceFrom(detail['note']),
+    final SrsNoteView note = SrsRemoteWire.notesFrom(<SrsEntityView>[
+      SrsRemoteWire.viewFrom(detail['note']),
     ]).single;
     expect(note.fields, host.note.fields);
     expect(note.tags, host.note.tags);
@@ -188,19 +279,50 @@ void main() {
 
     final Map<String, Object?> ref = (detail['type']! as Map)
         .cast<String, Object?>();
-    final List<Object?> typeSources =
-        (await _call(service, 'noteTypeSources', <String, Object?>{
-              'ids': <String>[ref['id']! as String],
-            }))!
-            as List;
-    final SrsEntitySource typeSource = SrsRemoteWire.sourceFrom(
-      typeSources.single,
-    );
-    expect(SrsRemoteWire.tagOf(typeSource), ref['tag']);
-    final SrsNoteTypeView type = SrsRemoteWire.noteTypesFrom(
-      _uid,
-      <SrsEntitySource>[typeSource],
+    final SrsEntityView typeView = SrsRemoteWire.viewsFrom(
+      await _call(service, 'noteTypeViews', <String, Object?>{
+        'ids': <String>[ref['id']! as String],
+      }),
     ).single;
+    expect(typeView.tag, ref['tag']);
+    // 内置类型的代码默认值按主机信封里的规范 ID 派生（G10-4），不按 uid。
+    final SrsRemoteRootIds roots = (
+      defaultDeck: store.defaultDeckId,
+      lapis: store.lapisNoteTypeId,
+      fushiCard: store.fushiCardNoteTypeId,
+    );
+    final SrsNoteTypeView type = SrsRemoteWire.noteTypesFrom(
+      roots,
+      <SrsEntityView>[typeView],
+    ).single;
+    // 内置 Lapis：按信封根 ID 物化出的与主机本机的同一份；两种内置类型的根 ID 对调后对不上——默认值取的是给的那一份。
+    String shape(SrsNoteTypeView t) => <String>[
+      for (final SrsFieldDef f in t.fields) '${f.id}:${f.name}',
+      for (final SrsTemplateDef d in t.templates) '${d.id}${d.front}${d.back}',
+    ].join('|');
+    final SrsEntityView lapisView = SrsRemoteWire.viewsFrom(
+      await _call(service, 'noteTypeViews', <String, Object?>{
+        'ids': <String>[store.lapisNoteTypeId],
+      }),
+    ).single;
+    final SrsNoteTypeView hostLapis = (await store.noteTypes()).firstWhere(
+      (SrsNoteTypeView t) => t.id == store.lapisNoteTypeId,
+    );
+    expect(
+      shape(
+        SrsRemoteWire.noteTypesFrom(roots, <SrsEntityView>[lapisView]).single,
+      ),
+      shape(hostLapis),
+    );
+    final SrsNoteTypeView swapped = SrsRemoteWire.noteTypesFrom(
+      (
+        defaultDeck: roots.defaultDeck,
+        lapis: roots.fushiCard,
+        fushiCard: roots.lapis,
+      ),
+      <SrsEntityView>[lapisView],
+    ).single;
+    expect(shape(swapped), isNot(shape(hostLapis)));
     expect(type.name, host.noteType.name);
     expect(type.css, host.noteType.css);
     expect(type.builtinKey, host.noteType.builtinKey);
@@ -278,7 +400,7 @@ void main() {
   test('写操作同一请求 id 重发只执行一次，成功后通知主机', () async {
     int writes = 0;
     final (SrsDbStore store, SrsRemoteStoreService service, String deck) =
-        await _setUp(onWrite: () => writes++);
+        await _setUp(onWrite: (String _) => writes++);
     final String cardId = (await store.studyState(deck))!.next!;
     final int before = (await store.history(cardId)).all.length;
     final Map<String, Object?> args = <String, Object?>{
@@ -418,23 +540,21 @@ void main() {
       readStore: () async => null,
       readMedia: (String name) async => null,
     );
-    final shelf.Response res = await handleSrsRemoteStoreRequest(
+    final (int offStatus, Map<String, Object?> offBody) = await _route(
       off,
-      shelf.Request(
-        'POST',
-        Uri.parse('http://host/api/srs/remote/call'),
-        body: jsonEncode(<String, Object?>{'op': 'hello'}),
-      ),
-      'POST',
-      '/api/srs/remote/call',
+      <String, Object?>{'op': 'hello'},
     );
-    expect(res.statusCode, 503);
+    expect(offStatus, 503);
+    expect(offBody['error'], SrsRemoteStoreError.unavailable);
 
     final shelf.Response media = await handleSrsRemoteStoreRequest(
       service,
-      shelf.Request('GET', Uri.parse('http://host/api/srs/remote/media/a.png')),
+      shelf.Request(
+        'GET',
+        Uri.parse('http://host${kSrsRemoteStoreV2PathPrefix}media/a.png'),
+      ),
       'GET',
-      '/api/srs/remote/media/a.png',
+      '${kSrsRemoteStoreV2PathPrefix}media/a.png',
     );
     expect(media.statusCode, 200);
     expect(await media.read().expand((List<int> c) => c).toList(), <int>[
@@ -556,6 +676,802 @@ void main() {
     expect(stats, isNotNull);
     await _call(service, 'browseCommand', <String, Object?>{
       'request': <String, Object?>{'op': 'browse_close'},
+    });
+  });
+  // 回包 / 请求体不合契约：解码器抛带路径的 SrsRemoteWireError，不漏成 TypeError（客户端据此落成
+  // bad_response，主机落成 400）。
+  test('线格式解码不合契约一律抛带路径的 SrsRemoteWireError', () async {
+    final SrsDbStore store = await openTestStore(
+      profileUid: _uid,
+      deviceId: 'wire',
+      now: () => DateTime.utc(2026, 11, 1, 12).millisecondsSinceEpoch,
+    );
+    final SrsDeckTree tree = await store.deckTree();
+    final Map<String, Object?> row = SrsRemoteWire.summary(
+      (await store.deckSummaries()).first,
+    );
+    final List<(String, Object? Function())> cases =
+        <(String, Object? Function())>[
+          ('result', () => SrsRemoteWire.summariesFrom(5, tree)),
+          (
+            'result[0].n',
+            () => SrsRemoteWire.summariesFrom(<Object?>[
+              <String, Object?>{...row, 'n': 'x'},
+            ], tree),
+          ),
+          (
+            'result.b.why',
+            () => SrsRemoteWire.summaryFrom(<String, Object?>{
+              ...row,
+              'b': <String, Object?>{
+                ...(row['b']! as Map<String, Object?>),
+                'why': 'nope',
+              },
+            }, tree),
+          ),
+          (
+            'result.roll',
+            () => SrsRemoteWire.dayContextFrom(<String, Object?>{'off': 60}),
+          ),
+          (
+            'result.fields.x',
+            () => SrsRemoteWire.renderedFrom(<String, Object?>{
+              'q': '',
+              'a': '',
+              'css': '',
+              'fields': <String, Object?>{'x': 1},
+            }),
+          ),
+          (
+            'result[0]',
+            () => SrsRemoteWire.cardRowsFrom(<Object?>[
+              <String, Object?>{'id': 3},
+            ]),
+          ),
+          (
+            'result.files[0]',
+            () => SrsRemoteWire.sync2ResultFrom(<String, Object?>{
+              'files': <Object?>[
+                <Object?>['a', '!!'],
+              ],
+            }),
+          ),
+          (
+            'result.items[0]',
+            () => SrsRemoteWire.syncConflictsFrom(<String, Object?>{
+              'edits': <String, Object?>{},
+              'items': <Object?>[3],
+            }),
+          ),
+          (
+            'result.plans[0].dropped',
+            () => SrsRemoteWire.noteTypeChangeFrom(<String, Object?>{
+              'from': <String, Object?>{'id': 'a', 'tag': 't'},
+              'to': <String, Object?>{'id': 'b', 'tag': 't'},
+              'plans': <Object?>[
+                <String, Object?>{
+                  'note': 'n',
+                  'fields': <String, Object?>{},
+                  'links': <String, Object?>{},
+                  'dropped': 'x',
+                },
+              ],
+            }),
+          ),
+          (
+            'rev',
+            () => SrsRemoteWire.envelopeFrom(<String, Object?>{'rev': '1'}),
+          ),
+          (
+            'cache.tree',
+            () => SrsRemoteWire.deckCacheFrom(<String, Object?>{'tree': 3}),
+          ),
+          ('result[1]', () => SrsRemoteWire.stringsFrom(<Object?>['a', 1])),
+        ];
+    for (final (String path, Object? Function() decode) in cases) {
+      expect(
+        decode,
+        throwsA(
+          isA<SrsRemoteWireError>().having(
+            (SrsRemoteWireError e) => e.path,
+            'path',
+            path,
+          ),
+        ),
+        reason: path,
+      );
+    }
+  });
+
+  test('牌组缓存格式往返：同一棵树、同一批牌组行', () async {
+    final (SrsDbStore store, _, _) = await _setUp();
+    final List<SrsDeckSummary> decks = await store.deckSummaries();
+    final Map<String, Object?> cache = SrsRemoteWire.deckCache(
+      await store.entityViews(SrsEntityKind.deck),
+      decks,
+    );
+    final List<SrsDeckSummary> back = SrsRemoteWire.deckCacheFrom(
+      jsonDecode(jsonEncode(cache)),
+    );
+    expect(back.map((SrsDeckSummary d) => d.deck.id), <String>[
+      for (final SrsDeckSummary d in decks) d.deck.id,
+    ]);
+    expect(back.map((SrsDeckSummary d) => d.deck.name), <String>[
+      for (final SrsDeckSummary d in decks) d.deck.name,
+    ]);
+    expect(
+      jsonEncode(<Object?>[
+        for (final SrsDeckSummary d in back) SrsRemoteWire.summary(d),
+      ]),
+      jsonEncode(<Object?>[
+        for (final SrsDeckSummary d in decks) SrsRemoteWire.summary(d),
+      ]),
+    );
+  });
+
+  test('请求体里经线格式解码的结构不合契约：400 bad_request，不执行', () async {
+    int writes = 0;
+    final (_, SrsRemoteStoreService service, _) = await _setUp(
+      onWrite: (String _) => writes++,
+    );
+    for (final (String op, Map<String, Object?> args)
+        in <(String, Map<String, Object?>)>[
+          (
+            'writeEdits',
+            <String, Object?>{
+              'specs': <Object?>[],
+              'records': <Object?>[5],
+            },
+          ),
+          (
+            'editFieldsBatch',
+            <String, Object?>{
+              'changes': <Object?>[
+                <Object?>['nope', 'id', 'k', 1],
+              ],
+            },
+          ),
+          (
+            'studyState',
+            <String, Object?>{
+              'deck': 'd',
+              'custom': <String, Object?>{'mode': 'nope', 'since': 0},
+            },
+          ),
+        ]) {
+      final (int status, Map<String, Object?> body) = await _route(
+        service,
+        <String, Object?>{
+          'profile': _uid,
+          'op': op,
+          'args': args,
+          'request': 'r-$op',
+        },
+      );
+      expect(status, 400, reason: '$op → $body');
+      expect(body['error'], SrsRemoteStoreError.badRequest, reason: op);
+    }
+    expect(writes, 0);
+  });
+
+  group('「今天」的时区取客户端设备（请求体 tz）', () {
+    // 主机在 UTC+9、翻日 4 点；时钟可拨。
+    late int clock;
+    late SrsDbStore store;
+    late SrsRemoteStoreService service;
+    late String deck;
+    setUp(() async {
+      clock = DateTime.utc(2026, 11, 1, 18, 30).millisecondsSinceEpoch;
+      store = await openTestStore(
+        profileUid: _uid,
+        deviceId: 'host',
+        now: () => clock,
+        localOffsetMin: () => 540,
+      );
+      await importAnkiPackage(
+        store: store,
+        bytes: benchApkg(6),
+        storeMedia: (String name, Uint8List b) async => name,
+        options: kFullOptions,
+        zstdDecompress: (Uint8List b) => null,
+      );
+      service = SrsRemoteStoreService(
+        readStore: () async => store,
+        readMedia: (String name) async => null,
+      );
+      deck = (await store.deckSummaries())
+          .where((SrsDeckSummary d) => d.totalCards > 0)
+          .first
+          .deck
+          .id;
+    });
+
+    Future<(int, Map<String, Object?>)> callTz(
+      String op,
+      Object? tz, {
+      Map<String, Object?> args = const <String, Object?>{},
+      String? request,
+    }) => _route(service, <String, Object?>{
+      'profile': _uid,
+      'op': op,
+      'args': args,
+      'request': ?request,
+      kSrsRemoteDeviceOffsetKey: ?tz,
+    });
+
+    Future<SrsDayContext> dayOf(Object? tz) async {
+      final (int status, Map<String, Object?> body) = await callTz(
+        'dayContext',
+        tz,
+      );
+      expect(status, 200, reason: '$body');
+      return SrsRemoteWire.dayContextFrom(body['result']);
+    }
+
+    Future<int> todayCount(Object? tz) async {
+      final (int status, Map<String, Object?> body) = await callTz(
+        'todayReviewSummary',
+        tz,
+      );
+      expect(status, 200, reason: '$body');
+      return SrsRemoteWire.todayReviewsFrom(body['result']).count;
+    }
+
+    test('新客户端带偏移：这次调用按它算日界；翻日时刻与主机本机调用不变', () async {
+      final SrsDayContext day = await dayOf(-300);
+      expect(day.utcOffsetMin, -300);
+      expect(day.rolloverHour, 4);
+      expect((await store.dayContext()).utcOffsetMin, 540, reason: '只作用于那次调用');
+    });
+
+    test('旧客户端不带偏移：按主机偏移算（与旧协议一致）', () async {
+      expect((await dayOf(null)).utcOffsetMin, 540);
+    });
+
+    test('越界偏移当没带、按主机偏移算；不是整数回 400 不执行', () async {
+      expect((await dayOf(kSrsRemoteDeviceOffsetMinMax + 1)).utcOffsetMin, 540);
+      expect((await dayOf(kSrsRemoteDeviceOffsetMinMin - 1)).utcOffsetMin, 540);
+      expect((await dayOf(kSrsRemoteDeviceOffsetMinMax)).utcOffsetMin, 840);
+      expect((await dayOf(kSrsRemoteDeviceOffsetMinMin)).utcOffsetMin, -720);
+      for (final Object bad in <Object>['0', 60.5, true]) {
+        final (int status, Map<String, Object?> body) = await callTz(
+          'dayContext',
+          bad,
+        );
+        expect(status, 400, reason: '$bad');
+        expect(body['error'], SrsRemoteStoreError.badRequest);
+      }
+    });
+
+    test('不认识的顶层键一律忽略（旧主机收到 tz 即如此）', () async {
+      final (int status, Map<String, Object?> body) = await _route(
+        service,
+        <String, Object?>{'profile': _uid, 'op': 'dayContext', 'tzFuture': 'x'},
+      );
+      expect(status, 200);
+      expect(SrsRemoteWire.dayContextFrom(body['result']).utcOffsetMin, 540);
+    });
+
+    test('作答与今日计数按客户端的「今天」：跨过主机的翻日时刻、没跨过客户端的', () async {
+      final String card = (await store.studyState(deck))!.next!;
+      // 18:30 UTC：主机 UTC+9 是次日 03:30（还没到翻日 4 点），客户端 UTC+0 是当天 18:30。
+      final (int status, Map<String, Object?> body) = await callTz(
+        'answerAndStudy',
+        0,
+        args: <String, Object?>{
+          'card': card,
+          'rating': 3,
+          'durationMs': 1000,
+          'deck': deck,
+        },
+        request: 'tz-answer',
+      );
+      expect(status, 200, reason: '$body');
+      final SrsReviewLog log = SrsRemoteWire.logFrom(
+        (body['result']! as Map)['log'],
+      );
+      expect(log.utcOffsetMin, 0, reason: '日志记下的是作答设备的偏移');
+      expect(log.dayRolloverHour, 4);
+
+      // 一小时后（19:30 UTC）：主机已翻到下一天，客户端还在同一天。
+      clock += const Duration(hours: 1).inMilliseconds;
+      expect(await todayCount(null), 0, reason: '旧客户端：主机的今天');
+      expect(await todayCount(0), 1, reason: '新客户端：客户端的今天');
+    });
+  });
+
+  group('一台主机提供几份 profile（无头服务端：一门语言一份）', () {
+    const String other = '01928c3e-0000-7000-8000-0000000b0b02';
+
+    test('握手列出提供的 profile，点名的 uid 读那一份；不提供的 uid 回 profile_changed', () async {
+      final (SrsDbStore a, _, _) = await _setUp();
+      final SrsDbStore b = await openTestStore(
+        profileUid: other,
+        deviceId: 'host',
+        now: () => DateTime.utc(2026, 11, 1, 12).millisecondsSinceEpoch,
+      );
+      final Map<String, SrsDbStore> served = <String, SrsDbStore>{
+        _uid: a,
+        other: b,
+      };
+      final SrsRemoteStoreService service = SrsRemoteStoreService(
+        readStore: () async => a,
+        readProfile: (String uid) async => served[uid],
+        profiles: () async => const <SrsRemoteServedProfile>[
+          SrsRemoteServedProfile(uid: _uid, name: 'Japanese', notes: 6),
+          SrsRemoteServedProfile(uid: other, name: 'Chinese'),
+        ],
+        readMedia: (String name) async => null,
+      );
+
+      final (int s0, Map<String, Object?> hello) = await _route(
+        service,
+        <String, Object?>{'op': 'hello'},
+      );
+      expect(s0, 200);
+      expect(hello['profile'], _uid, reason: '不点名 = 默认 profile');
+      expect(
+        (hello['profiles']! as List<Object?>)
+            .map(
+              (Object? e) => SrsRemoteServedProfile.fromJson(
+                (e! as Map).cast<String, Object?>(),
+              ).uid,
+            )
+            .toList(),
+        <String>[_uid, other],
+      );
+
+      final (int s1, Map<String, Object?> helloB) = await _route(
+        service,
+        <String, Object?>{'op': 'hello', 'profile': other},
+      );
+      expect(s1, 200);
+      expect(helloB['profile'], other);
+
+      // 牌组树缓存按 profile 分开：A 的树不会被当成 B 的回出去。
+      final (_, Map<String, Object?> treeA) = await _route(
+        service,
+        <String, Object?>{'op': 'deckSummaries', 'profile': _uid},
+      );
+      final (_, Map<String, Object?> treeB) = await _route(
+        service,
+        <String, Object?>{'op': 'deckSummaries', 'profile': other},
+      );
+      expect(treeA['tt'], isNot(treeB['tt']));
+      expect(
+        (treeA['result']! as List<Object?>).length,
+        greaterThan((treeB['result']! as List<Object?>).length),
+      );
+
+      final (int s2, Map<String, Object?> gone) = await _route(
+        service,
+        <String, Object?>{
+          'op': 'hello',
+          'profile': '01928c3e-0000-7000-8000-00000000dead',
+        },
+      );
+      expect((s2, gone['error']), (409, SrsRemoteStoreError.profileChanged));
+    });
+
+    test('桌面 host（不给 profiles）握手不带 profiles 字段', () async {
+      final (_, SrsRemoteStoreService service, _) = await _setUp();
+      final (_, Map<String, Object?> hello) = await _route(
+        service,
+        <String, Object?>{'op': 'hello'},
+      );
+      expect(hello.containsKey('profiles'), isFalse);
+    });
+  });
+
+  group('V2 协商、规范 ID 与白名单（G10-2）', () {
+    test('V1 端点（旧客户端）一律 426 upgrade_required，不碰库', () async {
+      final (SrsDbStore store, SrsRemoteStoreService service, String deck) =
+          await _setUp();
+      final String cardId = (await store.studyState(deck))!.next!;
+      final int rev = store.revision;
+      final (int status, Map<String, Object?> body) = await _route(
+        service,
+        <String, Object?>{
+          'profile': _uid,
+          'op': 'setFlag',
+          'request': 'v1',
+          'args': <String, Object?>{'card': cardId, 'flag': 4},
+        },
+        path: '${kSrsRemoteStorePathPrefix}call',
+      );
+      expect(
+        (status, body['error']),
+        (426, SrsRemoteStoreError.upgradeRequired),
+      );
+      final shelf.Response media = await handleSrsRemoteStoreRequest(
+        service,
+        shelf.Request(
+          'GET',
+          Uri.parse('http://host${kSrsRemoteStorePathPrefix}media/a.png'),
+        ),
+        'GET',
+        '${kSrsRemoteStorePathPrefix}media/a.png',
+      );
+      expect(media.statusCode, 426);
+      expect(store.revision, rev);
+      expect((await store.cardRow(cardId))!.flag, isNot(4));
+    });
+
+    test('V2 请求的代号不对（缺、类型不对、别的代）：426，不执行', () async {
+      final (SrsDbStore store, SrsRemoteStoreService service, String deck) =
+          await _setUp();
+      final String cardId = (await store.studyState(deck))!.next!;
+      for (final Object? g in <Object?>[null, 3, 5, '4', 4.0]) {
+        final (int status, Map<String, Object?> body) = await _route(
+          service,
+          <String, Object?>{
+            kSrsRemoteGenerationKey: g,
+            'profile': _uid,
+            'op': 'setFlag',
+            'request': 'g-$g',
+            'args': <String, Object?>{'card': cardId, 'flag': 5},
+          },
+        );
+        expect(
+          (status, body['error']),
+          (426, SrsRemoteStoreError.upgradeRequired),
+          reason: 'g = $g',
+        );
+      }
+      expect((await store.cardRow(cardId))!.flag, isNot(5));
+    });
+
+    test('canonicalIds 问主机的内核：派生的内置 ID 归到信封里的规范 ID', () async {
+      final (SrsDbStore store, SrsRemoteStoreService service, _) =
+          await _setUp();
+      final SrsKernelIds derived = store.kernelIds;
+      final List<String> got = SrsRemoteWire.stringsFrom(
+        await _call(service, 'canonicalIds', <String, Object?>{
+          'ids': <String>[derived.defaultDeck, 'not-an-id'],
+        }),
+      );
+      expect(got, <String>[store.defaultDeckId, 'not-an-id']);
+      final (int status, Map<String, Object?> body) = await _route(
+        service,
+        <String, Object?>{
+          'profile': _uid,
+          'op': 'canonicalIds',
+          'args': <String, Object?>{
+            'ids': List<String>.filled(kSrsEntityViewsBatchMax + 1, 'x'),
+          },
+        },
+      );
+      expect((status, body['error']), (400, SrsRemoteStoreError.badRequest));
+    });
+
+    test('写操作带的集合与主机此刻的不同：409 profile_changed，不执行', () async {
+      final (SrsDbStore store, SrsRemoteStoreService service, String deck) =
+          await _setUp();
+      final String cardId = (await store.studyState(deck))!.next!;
+      final (int status, Map<String, Object?> body) = await _route(
+        service,
+        <String, Object?>{
+          'profile': _uid,
+          'col': 'another-collection',
+          'op': 'setFlag',
+          'request': 'col-1',
+          'args': <String, Object?>{'card': cardId, 'flag': 6},
+        },
+      );
+      expect(
+        (status, body['error']),
+        (409, SrsRemoteStoreError.profileChanged),
+      );
+      expect((await store.cardRow(cardId))!.flag, isNot(6));
+      // 带对的集合照常写。
+      final (int ok, _) = await _route(service, <String, Object?>{
+        'profile': _uid,
+        'col': store.sync2Collection,
+        'op': 'setFlag',
+        'request': 'col-2',
+        'args': <String, Object?>{'card': cardId, 'flag': 6},
+      });
+      expect(ok, 200);
+      expect((await store.cardRow(cardId))!.flag, 6);
+    });
+
+    test('读操作带的集合与主机此刻的不同：同样 409 profile_changed（不让读悄悄换集合）', () async {
+      final (SrsDbStore store, SrsRemoteStoreService service, String deck) =
+          await _setUp();
+      for (final String op in <String>['deckSummaries', 'deckTree']) {
+        final (
+          int status,
+          Map<String, Object?> body,
+        ) = await _route(service, <String, Object?>{
+          'profile': _uid,
+          'col': 'another-collection',
+          'op': op,
+          'args': const <String, Object?>{},
+        });
+        expect(
+          (status, body['error']),
+          (409, SrsRemoteStoreError.profileChanged),
+          reason: op,
+        );
+      }
+      // 带对的集合 / 握手（不带集合）照常读。
+      final (
+        int ok,
+        Map<String, Object?> body,
+      ) = await _route(service, <String, Object?>{
+        'profile': _uid,
+        'col': store.sync2Collection,
+        'op': 'deckSummaries',
+        'args': const <String, Object?>{},
+      });
+      expect(ok, 200);
+      expect(body['col'], store.sync2Collection);
+      expect(deck, isNotEmpty);
+      final (int hello, _) = await _route(service, <String, Object?>{
+        'op': 'hello',
+        'args': const <String, Object?>{},
+      });
+      expect(hello, 200);
+    });
+
+    test('主机替远程发内核命令的闸门：白名单外的命令 400、不进 store', () async {
+      final (SrsDbStore store, SrsRemoteStoreService _, String _) =
+          await _setUp();
+      for (final String op in <String>[
+        'identity',
+        'binding_set',
+        'collection_join',
+        'collection_adopt',
+        'import_drafts',
+        'export',
+        'purge',
+        'profile_purge',
+        'apply',
+        'seal_file',
+        'open_file',
+        'round',
+      ]) {
+        final int before = store.debugCoreCommands;
+        await expectLater(
+          srsRemoteKernelCommand(store, <String, Object?>{'op': op}),
+          throwsA(
+            isA<SrsRemoteStoreError>().having(
+              (SrsRemoteStoreError e) => e.code,
+              'code',
+              SrsRemoteStoreError.badRequest,
+            ),
+          ),
+          reason: op,
+        );
+        expect(store.debugCoreCommands, before, reason: '$op 不进 store');
+      }
+      // 白名单内的只读命令照常经它发出。
+      final SrsSync2Result r = await srsRemoteKernelCommand(
+        store,
+        <String, Object?>{
+          'op': 'canonical_ids',
+          'ids': <String>[store.defaultDeckId],
+        },
+      );
+      expect(r.map['ids'], <Object?>[store.defaultDeckId]);
+    });
+
+    test('syncConflicts 的修改记录按类批量取视图：内核命令数不随冲突实体数增长，内容与逐个取的相同', () async {
+      int t = DateTime.utc(2026, 11, 1, 12).millisecondsSinceEpoch;
+      final SrsMemoryLocationStore loc = SrsMemoryLocationStore();
+      final SrsDbStore a = await openTestStore(
+        profileUid: _uid,
+        deviceId: 'a',
+        now: () => t,
+      );
+      final SrsDbStore b = await openTestStore(
+        profileUid: _uid,
+        deviceId: 'b',
+        now: () => t,
+      );
+      Future<void> syncAll() async {
+        for (int round = 0; round < 3; round++) {
+          for (final SrsDbStore s in <SrsDbStore>[a, b]) {
+            await srsSync2Round(
+              host: s,
+              location: loc,
+              locationId: 'test',
+              nowMs: () => t,
+            );
+          }
+        }
+      }
+
+      final List<String> cards = <String>[];
+      for (int i = 0; i < 5; i++) {
+        final String note = await a.createNote(
+          noteTypeId: a.lapisNoteTypeId,
+          fieldsById: <String, String>{
+            srsLapisFieldId(_uid, 'Expression'): '猫$i',
+          },
+        );
+        cards.add((await a.cardsOfNote(note)).single.id);
+      }
+      await syncAll();
+      Future<void> conflict(Iterable<String> ids) async {
+        for (final String c in ids) {
+          await a.setSuspended(c, true);
+        }
+        t += 1000;
+        for (final String c in ids) {
+          await b.setSuspended(c, false);
+        }
+        await syncAll();
+      }
+
+      final SrsRemoteStoreService service = SrsRemoteStoreService(
+        readStore: () async => a,
+        readMedia: (String _) async => null,
+      );
+      Future<(int, Map<String, Object?>)> conflicts() async {
+        final int before = a.debugCoreCommands;
+        final Map<String, Object?> r =
+            (await _call(service, 'syncConflicts'))! as Map<String, Object?>;
+        return (a.debugCoreCommands - before, r);
+      }
+
+      await conflict(cards.take(2));
+      final (int two, Map<String, Object?> r2) = await conflicts();
+      expect(r2['items'], hasLength(2));
+      await conflict(cards.skip(2));
+      final (int five, Map<String, Object?> r5) = await conflicts();
+      expect(r5['items'], hasLength(5));
+      expect(five, two, reason: '每类一次 entity_views，不按冲突实体逐个取');
+      final Map<String, Object?> edits = r5['edits']! as Map<String, Object?>;
+      for (final String c in cards) {
+        expect(
+          edits['${SrsEntityKind.card.wire}/$c'],
+          await _call(service, 'entityEdits', <String, Object?>{
+            'kind': SrsEntityKind.card.wire,
+            'id': c,
+          }),
+          reason: c,
+        );
+      }
+    });
+
+    test('白名单：身份 / 绑定 / 导入导出 / 清除 / 同步类命令没有任何远程入口', () async {
+      final (SrsDbStore store, SrsRemoteStoreService service, String deck) =
+          await _setUp();
+      const List<String> forbidden = <String>[
+        'identity',
+        'binding_set',
+        'collection_join',
+        'collection_salts_add',
+        'collection_adopt',
+        'import',
+        'export',
+        'purge',
+        'profile_purge',
+        'profile_merge_commit',
+        'ingest',
+        'outbox',
+        'rotate',
+        'retire',
+        'apply',
+        // 移除位置在库文件里每一个集合上都忘（位置配置是设备级的，不按发命令的 profile 收窄）：只能由本机调度器的
+        // 待忘清单发，远程客户端不能借它清掉主机上别的 profile 的同步状态。
+        'location_forget',
+        'seal_file',
+        'open_file',
+        'sync2Command',
+      ];
+      for (final String op in forbidden) {
+        expect(SrsRemoteStoreService.operations, isNot(contains(op)));
+        expect(kSrsRemoteKernelOps, isNot(contains(op)));
+        final (int status, Map<String, Object?> body) = await _route(
+          service,
+          <String, Object?>{
+            'profile': _uid,
+            'op': op,
+            'request': 'w-$op',
+            'args': <String, Object?>{'profile': _uid},
+          },
+        );
+        expect(
+          (status, body['error']),
+          (404, SrsRemoteStoreError.unknownOp),
+          reason: op,
+        );
+        // 经浏览入口夹带也不行。
+        final (int bs, Map<String, Object?> bb) = await _route(
+          service,
+          <String, Object?>{
+            'profile': _uid,
+            'op': 'browseCommand',
+            'args': <String, Object?>{
+              'request': <String, Object?>{'op': op},
+            },
+          },
+        );
+        expect(
+          (bs, bb['error']),
+          (400, SrsRemoteStoreError.badRequest),
+          reason: 'browseCommand($op)',
+        );
+      }
+      final int rev = store.revision;
+      // profile 级设置实体（翻日时刻等）远程不开：编辑、修改历史、编辑规格都拒绝。
+      final String cardId = (await store.studyState(deck))!.next!;
+      for (final (String op, Map<String, Object?> args)
+          in <(String, Map<String, Object?>)>[
+            (
+              'editFields',
+              <String, Object?>{
+                'kind': SrsEntityKind.profile.wire,
+                'id': _uid,
+                'values': <String, Object?>{'dayRolloverHour': 9},
+              },
+            ),
+            (
+              'editFieldsBatch',
+              <String, Object?>{
+                'changes': <Object?>[
+                  <Object?>[
+                    SrsEntityKind.profile.wire,
+                    _uid,
+                    'dayRolloverHour',
+                    9,
+                  ],
+                ],
+              },
+            ),
+            (
+              'writeEdits',
+              <String, Object?>{
+                'specs': <Object?>[
+                  <Object?>[
+                    SrsEntityKind.profile.wire,
+                    _uid,
+                    'dayRolloverHour',
+                    9,
+                  ],
+                ],
+              },
+            ),
+            // 身份记录（任意种类的实体定义）远程不收。
+            (
+              'writeEdits',
+              <String, Object?>{
+                'specs': <Object?>[],
+                'records': <Object?>[
+                  <String, Object?>{'kind': 'deck', 'id': 'x', 'payload': {}},
+                ],
+              },
+            ),
+            (
+              'editHistory',
+              <String, Object?>{'kind': SrsEntityKind.profile.wire, 'id': _uid},
+            ),
+          ]) {
+        final (int status, Map<String, Object?> body) = await _route(
+          service,
+          <String, Object?>{
+            'profile': _uid,
+            'op': op,
+            'request': 'p-$op-${args.length}',
+            'args': args,
+          },
+        );
+        expect(
+          (status, body['error']),
+          (400, SrsRemoteStoreError.badRequest),
+          reason: '$op $args',
+        );
+      }
+      expect(store.revision, rev);
+      // 复习需要的读与作答照常可用。
+      await _call(service, 'answerAndStudy', <String, Object?>{
+        'card': cardId,
+        'rating': 3,
+        'durationMs': 1000,
+      }, 'ok-answer');
+      expect((await store.history(cardId)).all, isNotEmpty);
     });
   });
 }

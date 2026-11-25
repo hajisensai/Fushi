@@ -680,12 +680,17 @@ void main() {
                     ? const <String, String>{}
                     : Map<String, String>.from(note['fields']! as Map);
                 // 句子字段会把查到的词加粗（「そろそろ<b>着きます</b>けど…」），先去标签再比。
+                // 查词模型的句子保留源文本换行（Unity TMP「…だ！\n　どうも…」），
+                // 文本线历史把换行折掉；两边去掉全部空白（含全角空格）后再比。
+                final RegExp blank = RegExp(r'[\s　]+');
+                final String lineKey = lineText.replaceAll(blank, '');
                 final bool hasSentence =
-                    lineText.isNotEmpty &&
+                    lineKey.isNotEmpty &&
                     fields.values.any(
                       (String v) => v
                           .replaceAll(RegExp(r'<[^>]*>'), '')
-                          .contains(lineText),
+                          .replaceAll(blank, '')
+                          .contains(lineKey),
                     );
                 // 片段封面是默认模式（PR #1717）：WebM 内嵌片段时句子音频字段只放
                 // 重播按钮 + `<audio class="fushi-inline-audio" src=片段>`，不再有

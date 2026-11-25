@@ -90,32 +90,4 @@ void main() {
     );
     expect(parseWebVideoLookupPayload('nope'), isNull);
   });
-
-  test('锚点屏幕矩形 = 视口矩形 + 视口屏幕位置；零尺寸回 null（回落光标定位）', () {
-    const WebVideoLookupRequest r = WebVideoLookupRequest(
-      kind: 'click',
-      sentence: 's',
-      graphemeIndex: 0,
-      cueStartMs: 0,
-      cueEndMs: 1,
-      clientRect: Rect.fromLTWH(160, 700, 20, 36),
-      screenX: 50,
-      screenY: 60,
-    );
-    expect(
-      webVideoLookupAnchorScreenRect(r),
-      const Rect.fromLTWH(210, 760, 20, 36),
-    );
-    const WebVideoLookupRequest empty = WebVideoLookupRequest(
-      kind: 'click',
-      sentence: 's',
-      graphemeIndex: 0,
-      cueStartMs: 0,
-      cueEndMs: 1,
-      clientRect: Rect.zero,
-      screenX: 50,
-      screenY: 60,
-    );
-    expect(webVideoLookupAnchorScreenRect(empty), isNull);
-  });
 }

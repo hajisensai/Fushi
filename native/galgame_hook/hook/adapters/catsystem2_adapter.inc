@@ -1057,10 +1057,11 @@ bool TryHookCatSystem2EngineVoice() {
              reinterpret_cast<void**>(&g_cs2_read_entry_original));
   const uintptr_t base = reinterpret_cast<uintptr_t>(image.base);
   Cs2LookupLog(L"catsystem2-voice: sites bigread=+0x%lx readentry=+0x%lx "
-               L"plain=+0x%lx hooked=%d",
+               L"plain=+0x%lx flag=+0x%lx hooked=%d",
                static_cast<unsigned long>(sites.big_read - base),
                static_cast<unsigned long>(sites.read_entry - base),
                static_cast<unsigned long>(sites.plain_block - base),
+               static_cast<unsigned long>(sites.archive_flag_offset),
                g_cs2_engine_hooked ? 1 : 0);
   if (!g_cs2_engine_hooked) return false;
   MarkCatSystem2Flag(kCs2FlagEngineHooked);

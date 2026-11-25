@@ -22,7 +22,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';

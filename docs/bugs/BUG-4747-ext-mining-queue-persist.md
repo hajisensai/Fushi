@@ -1,0 +1,12 @@
+## BUG-4747 · 浏览器扩展制卡入队提示成功但队列没真正落盘，攒到十几条后丢卡
+- **报告**：2026-11-16（用户：应用内反馈 heMh1hn8n4——网页制卡一直提示加入成功，统一生成时少了很多，十几条以后全部丢失）
+- **真实性**：✅ 真 bug。入队「报成功」与「真正持久化」脱钩，`tools/browser-extension/content.js`（修复前）：
+  - `:758-760` `fushiQueueSave()` 对 `chrome.storage.local.set` fire-and-forget：不 await，`try/catch` 只接得住同步抛，配额满等异步拒绝成了未处理的 rejection；
+  - `:1281-1285` `fushiEnqueue` 先 push 内存镜像、再写**整份镜像**、按**镜像长度**同步回 `{ok:true}`——写没写进去都报「已加入 N」；
+  - `:1288-1293` `storage.onChanged` 用事件里的 newValue 覆盖镜像。连续入队时较早那次写入的事件迟到，把镜像拉回旧值，下一次入队把旧镜像整份写回，前一条丢失；图标 popup 删项 / background 记失败 / 别的标签入队写的 storage 现值也会被本标签旧镜像冲掉（或复活已删项）；
+  - 扩展自更新 / 重载后，旧 content script 的 `chrome.storage.*` 同步抛「Extension context invalidated」，被吞后照样报成功——这之后每一条都是假成功；
+  - `tools/browser-extension/manifest.json:7` 没有 `unlimitedStorage`，`storage.local` 只有 10 MB，而每个队列项带整份释义 HTML（`glossary` + `singleGlossaries`），重释义词条攒十几条就会超额被拒。
+  - `bridge-shim.js:159-164`、`subtitle-panel.js` 侧栏制卡入口都按同步返回值弹提示 / 回应答。
+- **[x] ① 已修复** — `content.js` 新增 `fushiQueueMutate`：本标签内串行的、对 storage 现值的读-改-写，只在 `set` 真正兑现后才回结果，失败一律 reject；`fushiEnqueue` 改为 async，判重与追加都基于 storage 现值，落盘成功才回 `{ok:true, count: 落盘后长度}`、才清一次性句子草稿，失败回 `{ok:false, reason:'persist-failed'|'context-invalidated'}`；`fushiRemoveQueued` / `fushiRecordQueuedFailure` 也走同一条串行链。删掉按镜像整份写回的 `fushiQueueSave`（镜像只供读）。`bridge-shim.js` 等入队结果再弹提示，扩展上下文失效时提示刷新页面（新扩展文案键 `mine_enqueue_context_invalidated`，17 种语言）；`subtitle-panel.js` 侧栏入口异步应答（`return true`），`side-panel.js` 写盘失败如实报「入队失败」。`manifest.json` 加 `unlimitedStorage`（Chrome 不弹权限提示）。同步到 `fushi/assets/browser_extension` 镜像。
+- **[x] ② 已加自动化测试** — `tools/browser-extension/mining-queue-persist.test.js`（vm 真加载 content.js，storage 替身可拒绝写入 / 模拟上下文失效 / 延迟投递 onChanged：写盘被拒与上下文失效如实报失败、迟到的 onChanged 不丢项、并发入队逐条落盘、不冲掉别处写入、两份 manifest 声明 unlimitedStorage）；`web-video-mine.test.js`（shim 按异步落盘结果弹提示）；`subtitle-panel.test.js`（侧栏入口等落盘再应答、透传失败）。修复前红：mining-queue-persist 5 条（4 条行为 + manifest）、web-video-mine 2 条、subtitle-panel 1 条。
+- **备注**：没在真浏览器里复现配额超额与扩展自更新后的失效路径（需真机 Chrome），以替身驱动的行为测试覆盖。跨标签同时入队仍可能在「读」与「写」之间交错（chrome.storage 无事务），本标签内已串行。

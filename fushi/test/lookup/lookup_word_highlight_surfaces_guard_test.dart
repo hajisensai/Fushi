@@ -124,7 +124,7 @@ void main() {
         // 折叠空白比对：`dart format` 会把 `?.highlightSelection(` 折到下一行。
         compactCode(
           textBody,
-        ).contains('item.webViewKey.currentState?.highlightSelection('),
+        ).contains('item.webViewKey.webViewState?.highlightSelection('),
         isTrue,
         reason: 'reader onTextSelected 未高亮点中的源词',
       );

@@ -45,6 +45,12 @@
 - 包着别的可聚焦控件的原生节点（整页 / 整区 key sink）不会成为落点；受管复合控件内部的原生节点由外层登记节点代表。
 - 控制器是唯一引擎：它说「该方向没有目标」就只剩边缘滚动接管，不再跑第二遍框架 `focusInDirection`。
 
+## 整页 key sink 别抢持焦控件的确认键（BUG-4628）
+
+页面外层 `Focus(onKeyEvent: …)` 处在 `WidgetsApp` 应用级 `Shortcuts`（Enter / 手柄 A → `ActivateIntent`）**之下**：按键先到主焦点，再沿祖先链冒泡，整页 handler 比应用级激活先看到键。页面若把 Enter 当自己的快捷键（翻面 / 打开详情）并返回 handled，焦点所在的按钮 / 分段按钮就收不到激活——键盘和手柄用户「按 Enter 没反应」。
+
+规矩：整页 handler 处理确认键前先问 `lib/src/focus/focus_activation.dart` 的 `focusedDescendantClaimsActivation(node, key)`，true 就返回 ignored。判据是「确认键 + 主焦点是本 sink 子树里另一个挂着启用 `ActivateIntent` 的控件」，不按控件类型 / key 写特例。确认键集合 `kFushiActivationKeys` 不含空格：本应用全局中和了裸空格（`global_navigation.dart` 的 `_neutralizeBareSpace`），空格从来不激活控件，页面照常把它当快捷键。已接：SRS 浏览页与其窄屏详情页。
+
 ## WebView 宿主还要一层：键盘桥
 
 焦点抢回来只解决「OS 焦点归 Flutter」的情况。焦点归 WebView2 期间按下的键**只存在于 DOM 里**，必须在内容层截获后交回 Dart——桌面 Windows 上 fork 的 `flutter_inappwebview_windows` 只转鼠标不转键盘。
@@ -59,13 +65,13 @@
 
 实现在 `lib/src/media/manga/reader/manga_fushi_page.dart`（`lib/src/pages/implementations/manga_fushi_page.dart` 只是 3 行兼容 export，别改那个）。三层都已接：`PageFocusOwnership` + `ShortcutScope.manga` + 共享键盘桥。
 
-**① 词典弹窗可见时，漫画不让位。** 阅读器的 `gesture` 判据在弹窗可见时早退（弹窗自持焦点，BUG-136）；漫画的 `_canOwnMangaFocus` 必须相反——本页规定弹窗可见时左右键仍要「关弹窗并翻页」、Escape 要关弹窗，而弹窗是纯原生 WebView、没有 Flutter 焦点节点，不主动收回这些键就全部落空。这与本页覆写 `capturesDictionaryPopupNavigationKeys` 是同一诉求的两半，改任一边都要同时想另一边。
+**① 词典弹窗可见时，漫画不让位。** 阅读器的 `gesture` 判据在弹窗可见时早退（弹窗自持焦点，BUG-136）；漫画的 `_canOwnMangaFocus` 必须相反——本页规定弹窗可见时左右键仍要「关弹窗并翻页」、Escape 要关弹窗，而弹窗是纯原生 WebView、没有 Flutter 焦点节点，不主动收回这些键就全部落空。这与本页覆写 `capturesDictionaryPopupNavigationKeys` 是同一诉求的两半，改任一边都要同时想另一边。小说阅读器 2026-11 起也是「弹窗开着时 ← → 关弹窗并翻页」（反馈 uz_2m0E_Eu ③），但它不改焦点判据：正文持焦时由 `_executeShortcutAction` 在 ← → 触发的翻页前关弹窗；弹窗持焦时由 `withPopupArrowPageTurnKeys` 只把裸 ← → 追加进弹窗回传表（翻页的其它键位留给弹窗滚动释义），回传后走同一个 `_resolveReaderArrowKey`。弹窗层的 Flutter 侧回传（`DictionaryPopupLayer._maybeWrapHostKeyInput`）在**顶栏按钮持焦**时把方向键 / Enter / 空格留给按钮（`dictionaryPopupTopBarOwnsKey`）：键盘光标从弹窗正文顶端上移进顶栏后，左右键是按钮间遍历，不是关弹窗翻页。
 
 **② 左右方向键不受 webtoon / 弹窗门控。** 它们是**跨页步进**语义（`inputActionForShortcut` 的 `horizontalArrow` 参数）：webtoon 的纵向滚动不影响它们，弹窗可见时也要生效。其余前进/后退键则要让位——弹窗可见时空格归词典，webtoon 下纵向键归 WebView 原生竖滚。
 
 翻页方向：注册表存**页序语义**（forward = 下一页），左右键的物理朝向由 `shortcuts/manga_arrow_override.dart` 的 `resolveMangaArrowPageTurn` 按跨页方向（日漫默认 rtl）校正，与 reader 的 `resolveReaderArrowPageTurn` 同构。方向不能进注册表——注册表全局、每本书排版不同，直接把 `ArrowLeft` 绑成 backward 会让 rtl 的书翻反。
 
-键盘桥用 `forwardRepeats: false`（本页有意设计：按住方向键不堆翻页风暴）+ `stopPropagation: true`。注意桥从旧手写版的 **capture 阶段**（`addEventListener(..., true)`）改成了共享生成器的**冒泡阶段**（仍带 `stopImmediatePropagation`）——漫画文档目前没有别的 `keydown` 监听，所以行为等价；若将来给漫画页图注入了自己的键盘处理，要重新核这条。桥每次换加载窗口都会重新注入，靠生成器自带的幂等守卫防 listener 叠加（否则一次按键翻两页）。
+键盘桥用 `forwardRepeats: true` + `reportRepeats: true`（回传 `e.repeat`）+ `stopPropagation: true`：长按 ← → 连发翻页，但每次等上一页翻页动画落定才放行下一次（`MangaHeldTurnGate`，反馈 uz_2m0E_Eu ②），Esc / F11 的长按在 Dart 侧按「不可连发」丢掉。Flutter 持焦路径（`_handleReaderKey` 的 `KeyRepeatEvent`）与键桥回传共用同一个 `_heldInputVerdict`，两条路手感必须一致；被节流的重复返回 handled（冒泡上去会被全局方向键焦点导航当成移焦）。注意桥从旧手写版的 **capture 阶段**（`addEventListener(..., true)`）改成了共享生成器的**冒泡阶段**（仍带 `stopImmediatePropagation`）——漫画文档目前没有别的 `keydown` 监听，所以行为等价；若将来给漫画页图注入了自己的键盘处理，要重新核这条。桥每次换加载窗口都会重新注入，靠生成器自带的幂等守卫防 listener 叠加（否则一次按键翻两页）。
 
 **③ 漫画只接了键盘通道，没接手柄/鼠标。** `ShortcutScope.manga.channels` 因此只开 `keyboard`，默认表里也**不许**有手柄绑定。曾经配过 RB/LB/dpad/B，但本页既没有 `resolveGamepad`、也没有 `GamepadButtonIntent` 的 Action（Android 的 `gameButton*` 键事件同样匹配不到纯键盘绑定），结果是用户在设置里能配、按下去毫无反应——**比压根没这个选项更糟**，用户会以为自己手柄坏了。要加回来必须先照 reader 的 `_handleGamepadButton`（`caret.part.dart`）接上解析入口 + 在 build 里挂 `Actions(GamepadButtonIntent: …)`，并真机验证过再开通道。滚轮同理：本页翻页走硬编码的 `wheelInputAction`，不查注册表。
 

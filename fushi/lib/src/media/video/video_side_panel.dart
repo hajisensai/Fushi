@@ -24,10 +24,11 @@ export 'package:fushi/src/media/video/video_m3e_panel_theme.dart';
 
 /// 视频页浮层面板（设置 / 倍速 / 章节 / 画质 / 字幕抽屉）的统一表面。
 ///
-/// - Apple：与播放器其它悬浮胶囊 / 迷你条 / 圆钮同一块原生 Cupertino 实色
-///   悬浮面（[fushiAppleSolidFloatingDecoration]：系统材质实色 + 发丝描边 +
-///   柔和投影），不开玻璃、不逐块 `useOwnLayer` 实时模糊（用户 2026-10-12
-///   实测掉帧、白边）。圆角桌面 18、触屏 28（超椭圆）；[glassRadius] 给定时
+/// - Apple：[FushiAppleFloatingSurface] 的**厚材质**档
+///   （[fushiThickMaterialSettings]：系统材质色 86% / 90% 不透明 + 强模糊，实色档
+///   不透明）——面板承载成片正文，压在任意画面上都要可读；播放器顶 / 底胶囊这类
+///   小控件才用清透玻璃（用户 2026-11-24「视频栏太透了看不清」）。
+///   圆角桌面 18、触屏 28（超椭圆）；[glassRadius] 给定时
 ///   （小药丸取半高）用普通圆角矩形，保证矮表面仍是胶囊。面板里的分组卡用
 ///   [videoPanelAppleColors] 的上一级实色，在实色面上浮起。
 /// - MD3（M3 Expressive）：以 app 主色为种子、与 app 同亮度的着色方案
@@ -66,7 +67,9 @@ class VideoFloatingPanelSurface extends StatelessWidget {
 
   /// 当前设计系统下的面板圆角。
   static double radiusOf(BuildContext context) {
-    if (isGlassDesign(context)) return fushiAppleCompact(context) ? 18 : 28;
+    if (isGlassDesign(context)) {
+      return fushiAppleCompact(context) ? 18 * fushiAppleMacScale(context) : 28;
+    }
     return 28;
   }
 
@@ -95,9 +98,10 @@ class VideoFloatingPanelSurface extends StatelessWidget {
         context,
         glassRadius: glassRadius,
       );
-      return DecoratedBox(
+      return FushiAppleFloatingSurface(
         key: surfaceKey,
-        decoration: fushiAppleSolidFloatingDecoration(context, shape: shape),
+        shape: shape,
+        thick: true,
         child: Material(
           type: MaterialType.transparency,
           shape: shape,
@@ -195,7 +199,9 @@ FushiAppleColors videoPanelAppleColors(BuildContext context) {
 TextStyle? videoPanelTitleStyle(BuildContext context) {
   if (isGlassDesign(context)) {
     return TextStyle(
-      fontSize: fushiAppleCompact(context) ? 15 : 17,
+      fontSize: fushiAppleCompact(context)
+          ? 15 * fushiAppleMacScale(context)
+          : 17,
       fontWeight: FontWeight.w600,
       height: 1.25,
       color: appleColorsOf(context).label,
@@ -516,9 +522,13 @@ class VideoTranslucentSidePanel extends StatelessWidget {
         child: Align(
           alignment: Alignment.topCenter,
           child: VideoM3ePanelTheme(
-            child: ReaderPanelSwitcherRail(
-              switcher: sw,
-              keyPrefix: 'video_panel',
+            // Apple：竖条贴着面板、与面板同一块厚材质（单独一条清透玻璃压在
+            // 画面上，图标在亮画面上读不出）。M3E 不读这层。
+            child: FushiThickMaterialScope(
+              child: ReaderPanelSwitcherRail(
+                switcher: sw,
+                keyPrefix: 'video_panel',
+              ),
             ),
           ),
         ),

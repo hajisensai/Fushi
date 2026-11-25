@@ -119,7 +119,9 @@ class AudiobookRepository {
   ///     钉在 EOF，按播放立刻结束 —— 用户看到的是「音频不响」；
   ///   * 落在时长内 → 起播点随机，followAudio 立刻把阅读器拽到那条 cue 所在的页
   ///     —— 用户看到的是「乱跳页」。
-  /// 判据是数据本身（新旧集合不等），所以重复导入同一组音频不会误伤「听到哪儿了」。
+  /// 判据是数据本身：重复导入同一组音频不会误伤「听到哪儿了」；集合变了但断点所在
+  /// 文件及其之前的文件都没变（追加章节、断点之后增删分段）也不归零——同一个毫秒数
+  /// 仍指向同一段声音（[audiobookPositionSurvivesAudioChange]）。
   /// 旧行不存在时也归零：bookKey 是 sanitize 后的书名，删书重导会拿到同一个 key，
   /// 而 preferences 不随书删除，上一世的进度会原样复活。
   Future<void> replaceAudio({
@@ -132,6 +134,21 @@ class AudiobookRepository {
         before == null ||
         before.audioRoot != null ||
         !AudiobookStorage.sameAudioPathList(_audioPathsOf(before), audioPaths);
+    // 只有断点所在文件及其之前的文件变了才归零（追加章节 / 断点之后的分段增删不丢
+    // 进度，判据见 [audiobookPositionSurvivesAudioChange]）。旧行不存在 / 目录模式
+    // 照旧归零：前者是上一世的残留进度，后者的文件列表没法逐个比。
+    final bool resetPosition =
+        audioChanged &&
+        (before == null ||
+            before.audioRoot != null ||
+            !audiobookPositionSurvivesAudioChange(
+              globalMs: await readPositionMs(bookKey),
+              durationsMs: audiobookFileDurationsFromCues(
+                await cuesForBook(bookKey),
+              ),
+              oldPaths: _audioPathsOf(before),
+              newPaths: audioPaths,
+            ));
 
     await _db.patchAudiobook(
       bookKey,
@@ -140,14 +157,61 @@ class AudiobookRepository {
         audioRoot: const Value<String?>(null),
       ),
     );
-    if (audioChanged) {
+    if (resetPosition) {
       await updatePositionMs(bookKey: bookKey, positionMs: 0);
     }
     fushiDebugPrint(
       '[fushi-audiobook] replaceAudio bookKey=$bookKey '
-      'files=${audioPaths.length} audioChanged=$audioChanged',
+      'files=${audioPaths.length} audioChanged=$audioChanged '
+      'resetPosition=$resetPosition',
     );
   }
+
+  /// 文件结构不变、按下标换掉其中几个文件（漫画有声换某几句的音频 / 撤销放回）：
+  /// [cues] 是换完后的整组 cue（条数与文件下标不变），[paths] 是下标 → 新文件的绝对
+  /// 路径。cue、音频列表与断点在一个事务里一起改；断点按
+  /// [audiobookPositionAfterFilesSwapped] 换算——仍在同一句，落在被换的那句里就从它的
+  /// 开头接着听。不走 [replaceAudio] 的「断点之前有文件变了就归零」（那针对换了一套
+  /// 音频；这里每个下标还是同一句）。与换算一样不盖位置时间戳（用户听到哪一句没变）。
+  /// 这本书不是文件列表模式、或下标越界时抛 [ArgumentError]（调用方先确认库与清单
+  /// 对得上）。
+  Future<void> swapAudioFiles({
+    required String bookKey,
+    required List<AudioCue> cues,
+    required Map<int, String> paths,
+  }) => _db.transaction(() async {
+    final AudiobookRow? row = await _db.getAudiobookByBookKey(bookKey);
+    if (row == null || row.audioRoot != null) {
+      throw ArgumentError.value(bookKey, 'bookKey', 'not a file-list book');
+    }
+    final List<String> next = List<String>.of(_audioPathsOf(row));
+    for (final MapEntry<int, String> e in paths.entries) {
+      if (e.key < 0 || e.key >= next.length) {
+        throw RangeError.index(e.key, next, 'paths');
+      }
+      next[e.key] = e.value;
+    }
+    final List<int> oldDurations = audiobookFileDurationsFromCues(
+      await cuesForBook(bookKey),
+    );
+    await _db.replaceCuesForBook(
+      bookKey,
+      cues.map(AudioCue.toCompanion).toList(),
+    );
+    await _db.patchAudiobook(
+      bookKey,
+      AudiobooksCompanion(audioPathsJson: Value(jsonEncode(next))),
+    );
+    final String posKey = '$_kPositionMsKeyPrefix$bookKey';
+    final int current = await _db.getPrefTyped<int>(posKey, 0);
+    final int moved = audiobookPositionAfterFilesSwapped(
+      current,
+      oldDurations,
+      audiobookFileDurationsFromCues(cues),
+      paths.keys.toSet(),
+    );
+    if (moved != current) await _db.setPrefTyped(posKey, moved);
+  });
 
   /// 换对齐字幕（唯一写 alignment 两列的入口）。
   Future<void> replaceAlignment({
@@ -263,19 +327,27 @@ class AudiobookRepository {
   /// 关书时先落阅读位置再 flush 音频——若每次 flush 都重盖时间戳，音频进度就永远比
   /// 阅读进度「更新」，开书 LWW 仲裁会被写入顺序而不是用户行为决定（暂停在第 3 章、
   /// 静读到第 10 章关书，重开跳回第 3 章）。
+  ///
+  /// 「比位置 → 写位置 → 写时间戳」在**同一个事务**里（BUG-4825）：同步侧的「比较后
+  /// 写入」（`FushiDatabase.runIfIntPrefUnchanged`）把这两个键当一对读写，这里若是
+  /// 两次独立提交，对端断点就能插进两次写之间——落下「对端的位置 + 本机的时间戳」，
+  /// 进程在两次写之间被杀则是「新位置 + 旧时间戳」，LWW 拿一个不属于这个位置的时刻
+  /// 去比。播放中每个整秒走一次这里，合成一次提交也少一次 fsync 与一次偏好版本号
+  /// 自增。
   Future<void> updatePositionMs({
     required String bookKey,
     required int positionMs,
-  }) async {
+  }) => _db.transaction(() async {
     final String posKey = '$_kPositionMsKeyPrefix$bookKey';
     final int current = await _db.getPrefTyped<int>(posKey, 0);
     if (current == positionMs) return;
-    await _db.setPrefTyped(posKey, positionMs);
-    await _db.setPrefTyped(
-      '$_kPositionAtMsKeyPrefix$bookKey',
-      DateTime.now().millisecondsSinceEpoch,
-    );
-  }
+    await _db.setPrefs(<String, String>{
+      posKey: PrefCodec.encode(positionMs),
+      '$_kPositionAtMsKeyPrefix$bookKey': PrefCodec.encode(
+        DateTime.now().millisecondsSinceEpoch,
+      ),
+    });
+  });
 
   /// BUG-3197：cue 整组换过之后，把 `audiobook_pos_<positionKey>` 存着的全书毫秒
   /// 从 [oldDurationsMs] 编码换算到 [newDurationsMs] 编码（真实时间位置不变，见

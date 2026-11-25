@@ -1,15 +1,12 @@
 // Fushi 卡片区块布局的 app 侧判据：自定义区块（字段 / HTML 区块）原生画不画得了、卡面计划
-// 按区块选项取媒体、Fushi 卡片类型新加模板从区块布局起步。
+// 按区块选项取媒体（新加模板的起点见 srs_template_presets_test.dart）。
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_note_type_editor_page.dart'
-    show srsNewTemplateBody;
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_card_face_route.dart';
 import 'package:fushi/src/srs/srs_fushi_card_items.dart';
 import 'package:fushi/src/srs/srs_fushi_card_plan.dart';
 import 'package:fushi_anki/fushi_anki_core.dart';
-import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsRenderedCard;
-import 'package:fushi_srs/fushi_srs.dart';
 
 Map<String, String> _fields([Map<String, String> extra = const {}]) =>
     <String, String>{
@@ -30,12 +27,12 @@ void main() {
         FushiCardHtmlItem(html),
       ];
       expect(
-        srsFushiCardItemsNative(
+        srsFushiCardItemsFallback(
           front: kFushiCardDefaultFrontItems,
           back: back('<p style="color:red">自定义</p>'),
           fields: _fields(),
         ),
-        isTrue,
+        isNull,
       );
       for (final String bad in <String>[
         '<script>alert(1)</script>',
@@ -43,12 +40,12 @@ void main() {
         '<div style="position:absolute">x</div>',
       ]) {
         expect(
-          srsFushiCardItemsNative(
+          srsFushiCardItemsFallback(
             front: kFushiCardDefaultFrontItems,
             back: back(bad),
             fields: _fields(),
           ),
-          isFalse,
+          isNotNull,
           reason: bad,
         );
         expect(srsHtmlFragmentProbe(bad).reason, isNotNull, reason: bad);
@@ -60,15 +57,15 @@ void main() {
         'MiscInfo': '<table><tr><td>x</td></tr></table>',
       });
       expect(
-        srsFushiCardItemsNative(
+        srsFushiCardItemsFallback(
           front: kFushiCardDefaultFrontItems,
           back: <FushiCardItem>[FushiCardFieldItem(field: 'MiscInfo')],
           fields: f,
         ),
-        isFalse,
+        isNotNull,
       );
       expect(
-        srsFushiCardItemsNative(
+        srsFushiCardItemsFallback(
           front: kFushiCardDefaultFrontItems,
           back: <FushiCardItem>[
             FushiCardFieldItem(
@@ -78,7 +75,7 @@ void main() {
           ],
           fields: f,
         ),
-        isTrue,
+        isNull,
       );
     });
 
@@ -90,7 +87,7 @@ void main() {
         isEmpty: false,
         fields: _fields(),
       );
-      expect(srsFushiCardRenderedNative(r), isFalse);
+      expect(srsCardFaceRoute(r, fushiCard: true), isA<SrsCardFaceWeb>());
       final SrsRenderedCard ok = SrsRenderedCard(
         question: '',
         answer: '',
@@ -101,7 +98,10 @@ void main() {
         fushiCardFront: kFushiCardDefaultFrontItems,
         fushiCardBack: kFushiCardDefaultBackItems,
       );
-      expect(srsFushiCardRenderedNative(ok), isTrue);
+      expect(
+        srsCardFaceRoute(ok, fushiCard: true),
+        isA<SrsCardFaceFushiNative>(),
+      );
     });
   });
 
@@ -149,6 +149,56 @@ void main() {
       );
     });
 
+    test('BUG-5297：字段区块 / HTML 区块里画出来的发音键进自动播放与重播（标签样式不画按钮、不算）', () {
+      // 听力预设的正面：只有单词音频的字段区块，不是听力卡型（题面区块不在）。
+      final SrsFushiCardPlan listening = srsFushiCardPlan(
+        _fields(),
+        a,
+        front: <FushiCardItem>[
+          FushiCardFieldItem(
+            field: 'TermAudio',
+            style: FushiCardFieldStyle.audio,
+          ),
+        ],
+      );
+      expect(listening.media.front, <String>['w.mp3']);
+      // 大号发音键是原生按钮，不经 HTML 渲染器（不会因 HTML 子集判据回退 WebView）。
+      expect(srsFushiItemHtml(listening.front.single, _fields()), isNull);
+
+      final SrsFushiCardPlan p = srsFushiCardPlan(
+        _fields(<String, String>{
+          'MiscInfo': '[sound:m.mp3]',
+          'Hint': '[sound:tag.mp3]',
+        }),
+        a,
+        front: <FushiCardItem>[
+          FushiCardBlockItem(FushiCardFrontBlock.prompt),
+          const FushiCardHtmlItem('<p>[sound:h.mp3]</p>'),
+        ],
+        back: <FushiCardItem>[
+          FushiCardBlockItem(FushiCardBlock.term),
+          FushiCardBlockItem(FushiCardBlock.reading),
+          FushiCardFieldItem(field: 'MiscInfo'),
+          FushiCardFieldItem(field: 'Hint', style: FushiCardFieldStyle.tag),
+          // 与读音行同一个文件：只算一段。
+          const FushiCardHtmlItem('[sound:w.mp3]'),
+        ],
+      );
+      expect(p.media.front, <String>['h.mp3']);
+      expect(p.media.back, <String>['w.mp3', 'm.mp3']);
+
+      // 听力卡型：题面那颗发音键在前，自定义区块的按布局排在后面。
+      final SrsFushiCardPlan audio = srsFushiCardPlan(
+        _fields(<String, String>{'IsAudioCard': 'x'}),
+        a,
+        front: <FushiCardItem>[
+          FushiCardBlockItem(FushiCardFrontBlock.prompt),
+          const FushiCardHtmlItem('[sound:h.mp3]'),
+        ],
+      );
+      expect(audio.media.front, <String>['s.mp3', 'h.mp3']);
+    });
+
     test('字段区块随字段有无显隐；HTML 区块随内容有无显隐', () {
       final SrsFushiCardPlan p = srsFushiCardPlan(
         _fields(<String, String>{'MiscInfo': 'x'}),
@@ -164,71 +214,6 @@ void main() {
         FushiCardFieldItem(field: 'MiscInfo'),
         const FushiCardHtmlItem('<p>y</p>'),
       ]);
-    });
-  });
-
-  group('Fushi 卡片类型新加模板', () {
-    SrsNoteTypeView type({required String front, required String back}) {
-      final List<SrsFieldDef> fields = <SrsFieldDef>[
-        for (int i = 0; i < FushiCardNoteType.fields.length; i++)
-          SrsFieldDef(id: 'f$i', name: FushiCardNoteType.fields[i], ord: i),
-      ];
-      final Map<String, String> ids = <String, String>{
-        for (final SrsFieldDef f in fields) f.name: f.id,
-      };
-      return SrsNoteTypeView(
-        id: 'nt',
-        ankiNum: 1,
-        kind: SrsNoteTypeKind.standard,
-        name: 'Fushi Card',
-        termFieldId: null,
-        deletedAt: null,
-        edits: SrsEntityEdits(<String, SrsRegister>{}),
-        builtinKey: kSrsBuiltinFushiCardKey,
-        fields: fields,
-        templates: <SrsTemplateDef>[
-          SrsTemplateDef(
-            id: 't1',
-            name: 'Card 1',
-            ord: 0,
-            front: templateNamesToIds(front, ids),
-            back: templateNamesToIds(back, ids),
-          ),
-        ],
-        css: kFushiCardStylingCss,
-      );
-    }
-
-    test('第一个模板认得出区块布局：照 Anki 复制它', () {
-      final String back = fushiCardBackTemplateFor(<FushiCardItem>[
-        FushiCardBlockItem(FushiCardBlock.term),
-      ]);
-      final SrsNoteTypeView t = type(
-        front: kFushiCardFrontTemplate,
-        back: back,
-      );
-      final ({String front, String back}) body = srsNewTemplateBody(t);
-      expect(body.front, t.templates.single.front);
-      expect(body.back, t.templates.single.back);
-    });
-
-    test('第一个模板改到认不出：新模板从默认区块布局起步', () {
-      final SrsNoteTypeView t = type(
-        front: '<p>x</p>$kFushiCardFrontTemplate',
-        back: kFushiCardBackTemplate,
-      );
-      final ({String front, String back}) body = srsNewTemplateBody(t);
-      final Map<String, String> names = <String, String>{
-        for (final SrsFieldDef f in t.fields) f.id: f.name,
-      };
-      expect(
-        fushiCardFrontLayoutOf(templateIdsToNames(body.front, names)),
-        kFushiCardDefaultFrontItems,
-      );
-      expect(
-        fushiCardBackLayoutOf(templateIdsToNames(body.back, names)),
-        kFushiCardDefaultBackItems,
-      );
     });
   });
 }

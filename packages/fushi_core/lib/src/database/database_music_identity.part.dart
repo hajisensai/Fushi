@@ -98,6 +98,14 @@ const List<MusicTrackUidReference> kMusicTrackUidReferences =
         conflictKey: <String>['book_uid', 'episode_index'],
         unique: true,
       ),
+      // 本地 MV 自动匹配的「已对齐过」记录（v173）：一对一行，两边都有时留较新的。
+      MusicTrackUidReference(
+        'music_video_match_checks',
+        'track_uid',
+        conflictKey: <String>['video_path'],
+        unique: true,
+        lwwColumn: 'checked_at',
+      ),
       MusicTrackUidReference('music_albums', 'cover_track_uid'),
       MusicTrackUidReference(
         'mined_sentences',
@@ -106,8 +114,8 @@ const List<MusicTrackUidReference> kMusicTrackUidReferences =
       ),
     ];
 
-/// 收藏句存在偏好里（JSON 列表，`FavoriteSentenceRepository`），音乐来源的出处身份是
-/// track uid（`bookKey`）。
+/// v166 之前收藏句存在偏好里的 JSON 列表的键（之后搬进 `favorite_sentences` 表，只剩
+/// 迁移阶梯与旧备份读它）。音乐来源的出处身份是 track uid（`bookKey` / `book_key`）。
 const String kFavoriteSentencesPrefKey = 'favorite_sentences';
 
 /// 一首曲目的「同一个文件」判据：路径键 + CUE 起点 + 音频指纹。
@@ -250,7 +258,9 @@ Future<MusicScanUidRemap> _remapScannedMusicTracks(
     usedTargets.add(target.trackUid);
     trackRemap[t.trackUid.value] = target.trackUid;
     final String? incomingAlbum = t.albumUid.present ? t.albumUid.value : null;
-    final String? targetAlbum = target.albumUid;
+    // 旧行的原始归属（归组前按标签算的 uid）：生效专辑可能是归组改挂的那张，拿它当
+    // 改写目标会把新解析的曲目连同原始归属一起钉死在别的专辑上（HBK-AUDIT-027）。
+    final String? targetAlbum = target.scanAlbumUid ?? target.albumUid;
     if (incomingAlbum != null &&
         targetAlbum != null &&
         incomingAlbum != targetAlbum &&
@@ -516,6 +526,23 @@ mixin _FushiDbMusicIdentity on _$FushiDatabase {
   );
 
   Future<void> _rewriteAliasedFavoriteSentences() async {
+    // v166 起收藏句在表里；迁移阶梯 v145–v164 之间调用时表还不存在，偏好里的旧 JSON
+    // 由下面那段改写（随后 v166 原样搬进表）。
+    final bool hasTable = await customSelect(
+      "SELECT 1 FROM sqlite_master WHERE type = 'table' "
+      "AND name = 'favorite_sentences'",
+    ).get().then((List<QueryRow> r) => r.isNotEmpty);
+    if (hasTable) {
+      await customUpdate(
+        'UPDATE favorite_sentences SET book_key = '
+        '(SELECT a.track_uid FROM music_track_uid_aliases a '
+        'WHERE a.alias_uid = favorite_sentences.book_key) '
+        "WHERE source = 'music' AND book_key IN "
+        '(SELECT alias_uid FROM music_track_uid_aliases)',
+        updates: <TableInfo<Table, Object?>>{favoriteSentences},
+        updateKind: UpdateKind.update,
+      );
+    }
     final List<QueryRow> prefRows = await customSelect(
       'SELECT value FROM preferences WHERE key = ?',
       variables: <Variable<Object>>[
@@ -559,6 +586,12 @@ mixin _FushiDbMusicIdentity on _$FushiDatabase {
   /// `source_id` 只记最后扫到它的那个，按 id 一律软删会把仍在另一个来源下的曲目删掉；
   /// 其余软删（与扫描器「文件已不在」同一语义）。[excludeSourceIds] 是同一次操作里也要
   /// 删掉的来源（不能改挂到它们）。返回（改挂数, 软删数）。
+  ///
+  /// 用户「从音乐库移除」的墓碑行（`hidden_at` 非 NULL，同时已软删）也要处理：被覆盖的
+  /// 改挂 `source_id`、保留墓碑（那个来源重扫时仍认得它、不复活）；没被覆盖的清墓碑、
+  /// 保持软删——来源都没了，它就不该再出现在「已移除的曲目」里，否则「恢复」会把一首
+  /// `source_id` 悬空的曲目放回曲库，之后任何重扫（按来源过滤）都清不掉它。
+  /// 这两类都不计入返回值（它们本来就不在曲库里）。
   Future<({int reassigned, int softDeleted})> releaseMusicTracksOfSource(
     int sourceId, {
     Set<int> excludeSourceIds = const <int>{},
@@ -580,17 +613,19 @@ mixin _FushiDbMusicIdentity on _$FushiDatabase {
           (MediaSourceRow a, MediaSourceRow b) =>
               b.rootPath.length.compareTo(a.rootPath.length),
         );
-    final List<MusicTrackRow> live =
+    final List<MusicTrackRow> owned =
         await (select(musicTracks)..where(
               ($MusicTracksTable t) =>
-                  t.sourceId.equals(sourceId) & t.deletedAt.isNull(),
+                  t.sourceId.equals(sourceId) &
+                  (t.deletedAt.isNull() | t.hiddenAt.isNotNull()),
             ))
             .get();
     int reassigned = 0;
     int softDeleted = 0;
     final int now = DateTime.now().millisecondsSinceEpoch;
     await transaction(() async {
-      for (final MusicTrackRow track in live) {
+      for (final MusicTrackRow track in owned) {
+        final bool hidden = track.hiddenAt != null;
         final String dir = ctx.dirname(track.path);
         MediaSourceRow? cover;
         for (final MediaSourceRow s in covers) {
@@ -605,7 +640,13 @@ mixin _FushiDbMusicIdentity on _$FushiDatabase {
                 ($MusicTracksTable t) => t.trackUid.equals(track.trackUid),
               ))
               .write(MusicTracksCompanion(sourceId: Value<int?>(cover.id)));
-          reassigned++;
+          if (!hidden) reassigned++;
+        } else if (hidden) {
+          // 已软删（隐藏即软删），只清墓碑：离开「已移除的曲目」，不能再被恢复。
+          await (update(musicTracks)..where(
+                ($MusicTracksTable t) => t.trackUid.equals(track.trackUid),
+              ))
+              .write(const MusicTracksCompanion(hiddenAt: Value<int?>(null)));
         } else {
           await (update(musicTracks)..where(
                 ($MusicTracksTable t) => t.trackUid.equals(track.trackUid),

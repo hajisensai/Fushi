@@ -1,0 +1,6 @@
+## BUG-4492 · manga-ctc-ocr-model-revision-404
+- **报告**：2026-11-11（应用内反馈 gldDrC95IL〔iOS，「Manga CTC (fast) 模型下载每次停在一半」〕、09kOIgsN_q〔Windows，「OCR 模型下载失败，HuggingFace 原始链接失效」〕）
+- **真实性**：✅ 真 bug。`packages/fushi_engine/lib/ocr/manga_ocr_local_model.dart:201` 把漫画 CTC 识别权重钉在 `Kellenok/PP-OCRv6_manga` 的 revision `ba1d479e…`，`:235` 拼出 `resolve/ba1d479e…/rec/manga_rec_v0.2.onnx`。上游 2026-11 改写了历史：ba1d479e 已不存在（2026-11-15 实测该 URL 直连 404，HF API 报 Invalid rev id），11-05 发 v0.3（词表扩到 19053 项，与这里沿用的 18710 项 PP-OCRv6 词表不兼容），11-06 又把文件改成去版本号的 `rec/manga_rec.onnx`。清单 4 个文件按顺序下载，前两个（11.1 MB + 9.9 MB）成功、第 4 个 404，所以进度总停在约一半。
+- **[x] ① 已修复** — 改钉 `main` 历史里的「Release v0.2」提交 `d090c421598eadd2e179ad62c29ff0767492072c`，路径不变（`rec/manga_rec_v0.2.onnx`）。2026-11-15 实测：huggingface.co 直连 302→下载 21167540 字节、sha256 `de12c84c63e62c80339e882e675983d886670dcb6f0147e1ed041afd6fa81888`，与原钉文件逐字节相同（所以已下载过的用户本地文件、缓存签名都不用动）；hf-mirror.com 同 URL 也可取。没换成 v0.3：词表不兼容，换模型属于另一个决策。
+- **[x] ② 已加自动化测试** — `fushi/test/ocr/manga_ocr_local_model_test.dart`「manifest: detector + PP det + dictionary + manga rec」断言 revision 是 40 位 commit SHA、不再是 ba1d479e，且 rec URL 精确等于新钉的地址。上游再改写历史这类外部失效无法用离线单测预防，联网核实步骤写在常量注释里。
+- **备注**：同仓库 `v0.2` 分支（a172b33d）的 `rec/manga_rec.onnx` 也是这份字节；若 d090c421 将来也因改写历史消失，可改钉 v0.2 分支当时的 commit。

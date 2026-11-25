@@ -28,6 +28,10 @@ import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 /// 主导航外壳那一页（HomePage 经 [setFushiPageRouteModuleShell] 登记）跟着当前
 /// 选中的 tab 走；其它页属于**打开它时**主导航所在的模块（从书架打开的页用书架的
 /// 背景），之后切 tab 不变。
+///
+/// 按页面取背景（拍板台 xxbbL0j15l）：页面经 [FushiBackdropPage] 把自己的路由登记成
+/// 某个 [PageBackdropPage]，就按「全局 → 所属模块 → 本页」解析（[pageBackdropSettingsFor]
+/// 的 `page`），与从哪个 tab 打开无关。
 class FushiPageBackdrop extends StatefulWidget {
   const FushiPageBackdrop({required this.child, super.key});
 
@@ -40,6 +44,17 @@ class FushiPageBackdrop extends StatefulWidget {
       context
           .dependOnInheritedWidgetOfExactType<_FushiPageBackdropScope>()
           ?.active ??
+      false;
+
+  /// [context] 所在页底下画的是用户选的**自定义图片**（不是形状 / 纯色）。
+  ///
+  /// 图片明暗、花纹不可控：直接压在图上的小字（侧栏导航、分组标题）对比度跟着
+  /// 图片忽高忽低，要自己垫一层底（2026-11-20 用户截图：设置侧栏的字糊在樱花
+  /// 壁纸上）。形状预设是低对比的大色块，不需要。
+  static bool imageOf(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<_FushiPageBackdropScope>()
+          ?.image ??
       false;
 
   @override
@@ -55,8 +70,10 @@ class _FushiPageBackdropState extends State<FushiPageBackdrop> {
   late final Listenable _inputs = Listenable.merge(<Listenable>[
     _transparentPageRoutes,
     _moduleShellRoutes,
+    _pageRoutes,
     pageBackdropSettings,
     pageBackdropModuleOverrides,
+    pageBackdropPageOverrides,
     homeShellTabNotifier,
   ]);
 
@@ -97,7 +114,10 @@ class _FushiPageBackdropState extends State<FushiPageBackdrop> {
     final Route<Object?>? route = _route;
     return (
       seeThrough: route != null && _transparentPageRoutes.value.contains(route),
-      settings: pageBackdropSettingsFor(_module()),
+      settings: pageBackdropSettingsFor(
+        _module(),
+        page: route == null ? null : _pageRoutes.value[route],
+      ),
     );
   }
 
@@ -134,6 +154,9 @@ class _FushiPageBackdropState extends State<FushiPageBackdrop> {
               : theme,
           child: _FushiPageBackdropScope(
             active: enabled || seeThrough,
+            image:
+                enabled &&
+                resolved.settings.effectivePreset == PageBackdropPreset.custom,
             child: widget.child,
           ),
         ),
@@ -143,22 +166,35 @@ class _FushiPageBackdropState extends State<FushiPageBackdrop> {
 }
 
 class _FushiPageBackdropScope extends InheritedWidget {
-  const _FushiPageBackdropScope({required this.active, required super.child});
+  const _FushiPageBackdropScope({
+    required this.active,
+    required this.image,
+    required super.child,
+  });
 
   final bool active;
+  final bool image;
 
   @override
   bool updateShouldNotify(_FushiPageBackdropScope oldWidget) =>
-      active != oldWidget.active;
+      active != oldWidget.active || image != oldWidget.image;
 }
 
 /// 整页底色：在画形状的 [FushiPageBackdrop] 里是透明（底色与形状由背景层画），
 /// 否则是设计 token 的页面底色。页面级 Scaffold / 整页 Material 的底色走这里，
 /// 不要直接写 `tokens.surfaces.page`。
 Color fushiPageBackgroundColor(BuildContext context) =>
-    FushiPageBackdrop.activeOf(context)
-    ? Colors.transparent
-    : FushiDesignTokens.of(context).surfaces.page;
+    fushiPageBackgroundColorOr(
+      context,
+      FushiDesignTokens.of(context).surfaces.page,
+    );
+
+/// [fushiPageBackgroundColor] 的自带底色版：整页底色不是 `surfaces.page` 的地方
+/// （Apple 设计的分组底 `groupedBackground`、玻璃外壳内容区的实色底）用它——
+/// 背景层在画（用户的背景图片）时一律透明，否则 [opaque]。直接画 [opaque] 会把
+/// 背景图片整片盖住（Apple 下选了图首页 / 设置页仍是白底）。
+Color fushiPageBackgroundColorOr(BuildContext context, Color opaque) =>
+    FushiPageBackdrop.activeOf(context) ? Colors.transparent : opaque;
 
 /// 整页必须透明的路由（不画底色、不画形状）。
 final ValueNotifier<Set<Route<Object?>>> _transparentPageRoutes =
@@ -167,7 +203,7 @@ final ValueNotifier<Set<Route<Object?>>> _transparentPageRoutes =
 /// 让 [route] 的 [FushiPageBackdrop] 整个让开（[transparent] = true）或恢复。
 ///
 /// 给底层合成用（`underlay_composition.dart`：窗口宿主档的 WebView2 子窗口垫在 Flutter
-/// 下面、从透明像素处透出来）：这一页的底色和角落形状一旦画出来，就把网页整个盖住——
+/// 下面、从透明像素处透出来）：这一页的底色和背景装饰一旦画出来，就把网页整个盖住——
 /// 2026-10-26 用户截图「加载不出来」，Netflix 登录页只剩一片底色和三块形状。只让开持有
 /// 底层合成的那一页，盖在它上面的其它页照旧不透明。
 ///
@@ -222,6 +258,85 @@ void _applyModuleShell(Route<Object?> route, bool shell) {
   };
 }
 
+/// 登记成某个 [PageBackdropPage] 的路由（按页面取背景，拍板台 xxbbL0j15l）。
+final ValueNotifier<Map<Route<Object?>, PageBackdropPage>> _pageRoutes =
+    ValueNotifier<Map<Route<Object?>, PageBackdropPage>>(
+      <Route<Object?>, PageBackdropPage>{},
+    );
+
+/// 把 [route] 登记成 [page]（null = 注销），其 [FushiPageBackdrop] 按这一页单独的
+/// 背景设置画。页面一般不直接调，包一层 [FushiBackdropPage]。
+///
+/// 页面在 didChangeDependencies / dispose 里调，树是锁着的，通知等这一帧画完
+/// （与 [setFushiPageRouteModuleShell] 同一做法）。
+void setFushiPageRoutePage(Route<Object?> route, PageBackdropPage? page) {
+  final SchedulerBinding binding = SchedulerBinding.instance;
+  if (binding.schedulerPhase == SchedulerPhase.persistentCallbacks) {
+    binding.addPostFrameCallback((Duration _) => _applyPageRoute(route, page));
+    return;
+  }
+  _applyPageRoute(route, page);
+}
+
+void _applyPageRoute(Route<Object?> route, PageBackdropPage? page) {
+  final Map<Route<Object?>, PageBackdropPage> current = _pageRoutes.value;
+  if (current[route] == page) return;
+  _pageRoutes.value = <Route<Object?>, PageBackdropPage>{
+    for (final MapEntry<Route<Object?>, PageBackdropPage> e in current.entries)
+      if (e.key != route) e.key: e.value,
+    if (page != null) route: page,
+  };
+}
+
+/// 声明 [child] 所在的这一页是 [page]：挂上时把所在路由登记给 [FushiPageBackdrop]，
+/// 卸载时注销。只改背景层的取值，不往子树里加任何东西。
+class FushiBackdropPage extends StatefulWidget {
+  const FushiBackdropPage({required this.page, required this.child, super.key});
+
+  final PageBackdropPage page;
+  final Widget child;
+
+  @override
+  State<FushiBackdropPage> createState() => _FushiBackdropPageState();
+}
+
+class _FushiBackdropPageState extends State<FushiBackdropPage> {
+  Route<Object?>? _route;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final Route<Object?>? route = ModalRoute.of(context);
+    if (route == _route) return;
+    if (_route case final Route<Object?> previous) {
+      setFushiPageRoutePage(previous, null);
+    }
+    _route = route;
+    if (route != null) setFushiPageRoutePage(route, widget.page);
+  }
+
+  @override
+  void didUpdateWidget(FushiBackdropPage oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.page != widget.page) {
+      if (_route case final Route<Object?> route) {
+        setFushiPageRoutePage(route, widget.page);
+      }
+    }
+  }
+
+  @override
+  void dispose() {
+    if (_route case final Route<Object?> route) {
+      setFushiPageRoutePage(route, null);
+    }
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) => widget.child;
+}
+
 /// 不透明的页面底色：[FushiPageBackdrop] 把脚手架底色换成了透明，需要「盖住」
 /// 内容的遮罩 / 渐隐改取这里（透明时退回 `colorScheme.surface`，与主题的脚手架
 /// 底色同值）。玻璃主题的半透明底色原样返回。
@@ -229,6 +344,36 @@ Color fushiOpaquePageColor(BuildContext context) {
   final ThemeData theme = Theme.of(context);
   final Color scaffold = theme.scaffoldBackgroundColor;
   return scaffold.a > 0 ? scaffold : theme.colorScheme.surface;
+}
+
+/// 去掉 [theme] 页面转场里垫的 [FushiPageBackdrop]：每个平台的
+/// [FushiBackdropPageTransitionsBuilder] 还原成它包着的内层 builder，转场动效 / 返回
+/// 手势不变，只是路由不再垫页面底色和背景装饰。
+///
+/// 给盖在别的 app 上的透明浮窗用（app 外查词 `popup_main`、悬浮词典
+/// `floating_dict_main`）：这类窗口没有「页」，卡片以外必须透出背后的 app。
+/// 用户主题的转场里带着背景层，`home` 路由一经它就把整窗铺成页面底色 + 形状
+/// （反馈 jDuyvS-Hly「app 外查词底下有多余的背景」）。主题本身（配色 / 组件 /
+/// 墨水屏）照旧跟用户设置走。没垫背景层的主题原样返回。
+ThemeData withoutFushiPageBackdrop(ThemeData theme) {
+  final Map<TargetPlatform, PageTransitionsBuilder> builders =
+      theme.pageTransitionsTheme.builders;
+  if (!builders.values.any(
+    (PageTransitionsBuilder b) => b is FushiBackdropPageTransitionsBuilder,
+  )) {
+    return theme;
+  }
+  return theme.copyWith(
+    pageTransitionsTheme: PageTransitionsTheme(
+      builders: <TargetPlatform, PageTransitionsBuilder>{
+        for (final MapEntry<TargetPlatform, PageTransitionsBuilder> e
+            in builders.entries)
+          e.key: e.value is FushiBackdropPageTransitionsBuilder
+              ? (e.value as FushiBackdropPageTransitionsBuilder).inner
+              : e.value,
+      },
+    ),
+  );
 }
 
 /// 给任意转场 builder 垫上 [FushiPageBackdrop]：转场作用在「底 + 页面」整体上。

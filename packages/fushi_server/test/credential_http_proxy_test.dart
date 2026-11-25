@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi_engine/sync/aggregate_wire_codec.dart';
 import 'package:fushi_server/src/commands/sync_commands.dart';
 import 'package:fushi_server/src/credential_http_proxy.dart';
 import 'package:fushi_server/src/ctl/admin_client.dart';
@@ -77,7 +78,10 @@ void main() {
         token: 'host-token',
       );
       try {
-        expect(await remote.fetch(), <String, Object?>{'ok': true});
+        expect(
+          decodeAggregateWireJson((await remote.fetch())!),
+          <String, Object?>{'ok': true},
+        );
       } finally {
         remote.close();
       }

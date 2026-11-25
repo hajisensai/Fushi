@@ -202,11 +202,9 @@ class _Exporter {
         : tree.subtree(deckId).toSet();
 
     // 范围内的笔记。
-    final List<SrsCardCacheRow> all =
-        await (store.db.select(store.db.srsCardsCache)..where(
-              ($SrsCardsCacheTable c) => c.profileUid.equals(store.profileUid),
-            ))
-            .get();
+    final List<SrsCardCacheRow> all = await store.cardRowsWhere(
+      const <String, Object?>{},
+    );
     final Set<String> noteIds = <String>{
       for (final SrsCardCacheRow c in all)
         if (!c.hidden && (scope == null || scope.contains(c.deckId))) c.noteId,
@@ -599,7 +597,12 @@ class _Exporter {
       'type': t.isCloze ? 1 : 0,
       'mod': nowSecs,
       'usn': -1,
-      'sortf': 0,
+      'sortf': switch (t.fields.indexWhere(
+        (SrsFieldDef f) => f.id == t.effectiveSortFieldId,
+      )) {
+        final int i when i > 0 => i,
+        _ => 0,
+      },
       'did': 1,
       'tmpls': tmpls,
       'flds': <Map<String, Object?>>[
@@ -711,7 +714,7 @@ class _Exporter {
         'ease4': 1.3,
         'ivlFct': 1.0,
         'maxIvl': o?.maxIntervalDays ?? 36500,
-        'perDay': o?.reviewsPerDay ?? 200,
+        'perDay': srsAnkiReviewsPerDayOf(o),
         'hardFactor': 1.2,
       },
       'lapse': <String, Object?>{
@@ -724,10 +727,16 @@ class _Exporter {
         'mult': 0.0,
       },
       'dyn': false,
-      'newMix': 0,
+      // 出卡顺序按 Fushi 实际生效的写（srs_apkg_common.dart 的映射）：own 祖先按 RWKV 排程时复习顺序固定按
+      // 可提取度。已知问题（这次不改）：newSortOrder / newGatherPriority 恒写 0，与 Fushi 的新卡顺序不对应。
+      'newMix': srsAnkiNewMixOf(o?.newCardMix ?? SrsNewCardMix.afterReviews),
       'newPerDayMinimum': 0,
       'interdayLearningMix': 0,
-      'reviewOrder': 0,
+      'reviewOrder': srsAnkiReviewOrderOf(
+        o == null || o.localAlgorithm.usesRwkv
+            ? SrsReviewCardOrder.retrievability
+            : o.reviewCardOrder,
+      ),
       'newSortOrder': 0,
       'newGatherPriority': 0,
       'buryInterdayLearning': false,

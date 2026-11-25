@@ -10,9 +10,10 @@ import 'package:fushi/src/pages/implementations/media_collection_detail_page.dar
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi_core/fushi_core.dart';
 
-/// TODO-2491 hayase 式集列表宽卡：
+/// TODO-2491 集列表：
 /// ① 集级刮削集名/简介上卡（无刮削回落文件名标题）；
-/// ② 宽屏（可用宽 ≥ 900）两列、窄屏一列；
+/// ② 重设计外壳（海报面板剧照格，[MediaPosterEpisodeTile]）：分集区正文宽
+///    ≥ [kMediaPosterEpisodeGridMinWidth] 走剧照网格（≥ 2 列），更窄一集一行；
 /// ③ 集卡右键菜单提供「移出合集」（管理能力收进菜单后不得丢失）。
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -73,7 +74,9 @@ void main() {
     ];
   }
 
-  Widget buildApp() => TranslationProvider(
+  Widget buildApp({
+    Future<void> Function(List<String> bookUids)? onOrganizeFilenames,
+  }) => TranslationProvider(
     child: MaterialApp(
       home: MediaCollectionDetailPage(
         database: db,
@@ -94,6 +97,7 @@ void main() {
         ],
         onOpenEpisode: (VideoBookRow _) {},
         onChanged: () {},
+        onOrganizeFilenames: onOrganizeFilenames,
       ),
     ),
   );
@@ -108,6 +112,15 @@ void main() {
   Finder cardOf(String uid) =>
       find.byKey(ValueKey<String>('collection-episode-row-$uid'));
 
+  /// 统一条目菜单（#4b）「整理」段至多 [MediaItemDialogFrame.organizeMaxRows]
+  /// 行（含「排序」簇）：本地集已有「打开文件位置 / 选择集数 / 移到分栏… /
+  /// 排序」四行，「移出合集」按骨架约定溢出进「更多 ›」，进度组（标记已看 /
+  /// 清除观看进度）本来就在「更多 ›」里。打开那个二级菜单。
+  Future<void> openMoreSubmenu(WidgetTester tester) async {
+    await tester.tap(find.byKey(const ValueKey<String>('item_menu_more')));
+    await tester.pumpAndSettle();
+  }
+
   testWidgets('集级刮削集名/简介上卡；未刮削的集回落文件名标题', (WidgetTester tester) async {
     useSurface(tester, const Size(1280, 1600));
     await seedEpisodeMeta();
@@ -115,7 +128,14 @@ void main() {
     await tester.pumpAndSettle();
 
     expect(find.textContaining('出会い'), findsWidgets, reason: 'e1 有集级刮削 → 集名上卡');
-    expect(find.textContaining('主角与伙伴初次相遇'), findsOneWidget, reason: '集简介上卡');
+    expect(
+      find.descendant(
+        of: cardOf('video/e1'),
+        matching: find.textContaining('主角与伙伴初次相遇'),
+      ),
+      findsOneWidget,
+      reason: '集简介上卡（重设计剧照格同样保留集级简介）',
+    );
     expect(
       find.descendant(
         of: find.byType(FushiReorderableGrid),
@@ -126,8 +146,9 @@ void main() {
     );
   });
 
-  testWidgets('BUG-1546：超长文件名标题两行换行显示，不再单行截断', (WidgetTester tester) async {
-    useSurface(tester, const Size(700, 1600));
+  /// BUG-1546：超长发布文件名在集卡里必须两行换行，不得单行省略。
+  Future<void> expectLongTitleWraps(WidgetTester tester, Size surface) async {
+    useSurface(tester, surface);
     const String longTitle =
         '[VCB-Studio] Gekijouban Hibike! Euphonium Todoketai Melody '
         '[IV][Ma10p_1080p][x265_flac] 特典映像';
@@ -142,7 +163,7 @@ void main() {
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
-    // 限定在集卡内找标题——页面 hero（继续看行等）也会渲染同一条目标题。
+    // 限定在集卡内找标题——页面 hero（接着看卡等）也会渲染同一条目标题。
     final RenderParagraph title = tester.renderObject<RenderParagraph>(
       find.descendant(
         of: cardOf('video/e1'),
@@ -155,36 +176,58 @@ void main() {
       title.size.height,
       greaterThan(lineHeight * 1.5),
       reason:
-          '窄单列下这条发布名必然超过一行；只有一行高说明集卡标题又被 '
+          '这条发布名在集卡宽下必然超过一行；只有一行高说明集卡标题又被 '
           'maxLines:1 单行截断（BUG-1546 回归），集号/规格被省略号吃掉',
     );
     expect(
       tester.takeException(),
       isNull,
-      reason: '两行标题 + 状态行必须仍在 128 卡高内，不得 RenderFlex 溢出',
+      reason: '两行标题 + 状态行必须仍在格高内，不得 RenderFlex 溢出',
     );
-  });
+  }
 
-  testWidgets('宽屏（≥900）两列：两张集卡同一行', (WidgetTester tester) async {
-    // ≥1080 走两栏（左 hero 400），右栏集网格要 ≥900 才两列。
+  // 700 宽 = 剧照网格（竖排格）；500 宽 = 一集一行。两种版式都不得单行截断。
+  for (final (String layout, Size surface) in const <(String, Size)>[
+    ('剧照网格', Size(700, 1600)),
+    ('一集一行', Size(500, 1600)),
+  ]) {
+    testWidgets('BUG-1546（$layout）：超长文件名标题两行换行显示，不再单行截断', (
+      WidgetTester tester,
+    ) async {
+      await expectLongTitleWraps(tester, surface);
+    });
+  }
+
+  testWidgets('宽屏两列：两张集卡同一行', (WidgetTester tester) async {
     useSurface(tester, const Size(1600, 1600));
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
     final Offset c1 = tester.getTopLeft(cardOf('video/e1'));
     final Offset c2 = tester.getTopLeft(cardOf('video/e2'));
-    expect(c1.dy, c2.dy, reason: '宽屏两列：第 1、2 集应并排同一行');
+    expect(c1.dy, c2.dy, reason: '宽屏剧照网格：第 1、2 集应并排同一行');
     expect(c2.dx, greaterThan(c1.dx));
   });
 
-  testWidgets('窄屏（<900）一列：集卡纵向堆叠', (WidgetTester tester) async {
+  testWidgets('正文 ≥ 560 即走剧照网格：700 宽两集并排', (WidgetTester tester) async {
     useSurface(tester, const Size(700, 1600));
     await tester.pumpWidget(buildApp());
     await tester.pumpAndSettle();
 
     final Offset c1 = tester.getTopLeft(cardOf('video/e1'));
     final Offset c2 = tester.getTopLeft(cardOf('video/e2'));
-    expect(c1.dx, c2.dx, reason: '窄屏一列：集卡左缘对齐');
+    expect(c1.dy, c2.dy, reason: '剧照网格至少两列：第 1、2 集同一行');
+    expect(c2.dx, greaterThan(c1.dx));
+  });
+
+  testWidgets('窄屏（正文 < 560）一集一行：集卡纵向堆叠', (WidgetTester tester) async {
+    useSurface(tester, const Size(500, 1600));
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+
+    final Offset c1 = tester.getTopLeft(cardOf('video/e1'));
+    final Offset c2 = tester.getTopLeft(cardOf('video/e2'));
+    expect(c1.dx, c2.dx, reason: '一集一行：集卡左缘对齐');
     expect(c2.dy, greaterThan(c1.dy));
   });
 
@@ -216,6 +259,12 @@ void main() {
       findsNothing,
       reason: '历史绑定只读兼容，不得重新构造外部网络入口',
     );
+    await openMoreSubmenu(tester);
+    expect(
+      find.byIcon(Icons.open_in_new),
+      findsNothing,
+      reason: '「更多 ›」二级菜单里同样不得有外链项',
+    );
     expect(find.text(t.collection_remove_member), findsOneWidget);
   });
 
@@ -233,6 +282,8 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
+    expect(find.byIcon(Icons.open_in_new), findsNothing);
+    await openMoreSubmenu(tester);
     expect(find.byIcon(Icons.open_in_new), findsNothing);
     expect(
       find.text(t.collection_remove_member),
@@ -254,6 +305,32 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
   }
+
+  testWidgets('单集菜单「整理文件名」：库页注入了才出现，点了交出这一集（ZDYNkAP3Ln）', (
+    WidgetTester tester,
+  ) async {
+    useSurface(tester, const Size(1280, 1600));
+    await tester.pumpWidget(buildApp());
+    await tester.pumpAndSettle();
+    await openEpisodeMenu(tester, 'video/e1');
+    expect(find.text(t.video_filename_organize_action), findsNothing);
+    await tester.tapAt(const Offset(20, 20));
+    await tester.pumpAndSettle();
+
+    final List<List<String>> calls = <List<String>>[];
+    await tester.pumpWidget(
+      buildApp(
+        onOrganizeFilenames: (List<String> uids) async => calls.add(uids),
+      ),
+    );
+    await tester.pumpAndSettle();
+    await openEpisodeMenu(tester, 'video/e2');
+    await tester.tap(find.text(t.video_filename_organize_action));
+    await tester.pumpAndSettle();
+    expect(calls, <List<String>>[
+      <String>['video/e2'],
+    ]);
+  });
 
   testWidgets('本机已有文件的集：菜单不出「下载本集」，改出「打开文件位置」', (WidgetTester tester) async {
     useSurface(tester, const Size(1280, 1600));
@@ -285,6 +362,7 @@ void main() {
     await tester.pumpAndSettle();
 
     await openEpisodeMenu(tester, 'video/e2');
+    await openMoreSubmenu(tester);
     expect(
       find.text(t.video_watch_progress_clear),
       findsOneWidget,
@@ -307,6 +385,7 @@ void main() {
 
     // 清完再右键同一集：没有痕迹了，按钮不再出现。
     await openEpisodeMenu(tester, 'video/e2');
+    await openMoreSubmenu(tester);
     expect(find.text(t.video_watch_progress_clear), findsNothing);
     expect(
       find.text(t.collection_remove_member),
@@ -329,6 +408,7 @@ void main() {
     await gesture.up();
     await tester.pumpAndSettle();
 
+    await openMoreSubmenu(tester);
     expect(
       find.text(t.collection_remove_member),
       findsOneWidget,

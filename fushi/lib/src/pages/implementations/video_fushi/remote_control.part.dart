@@ -19,11 +19,11 @@ extension _VideoRemoteControl on _VideoFushiPageState {
 
   /// 遥控会话身份：作品 / 集 / 视频路径 / 制卡来源任一变了就是新会话。网页档的视频
   /// 路径恒空、站内换片不一定换书（站点入口还没落书时 bookUid 不动），身份另加站点
-  /// 视频 key（[_webVideoKey]）。
+  /// 视频 key（[_webTrackSel.videoKey]）。
   String _videoRemoteIdentity(VideoPlayerController controller) =>
       '$_activeBookUid|$_currentEpisode|$_currentVideoPath|'
       '${controller.miningSource}|'
-      '${controller.isWebBackend ? _webVideoKey : ''}';
+      '${controller.isWebBackend ? _webTrackSel.videoKey : ''}';
 
   /// 本地 / 远端 / 网页档三种片源共用这一个绑定：按片源分流的只有字幕轨、在线字幕下载
   /// 与制卡（网页档没有本地媒体，字幕按「站点视频 → 轨」管，见 [_VideoWebSource]），其余
@@ -43,7 +43,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         'speed': controller.speed,
         'controlRevision': controller.remoteControlRevision,
         'primaryTrack': web
-            ? _webActiveTrackKey
+            ? _webTrackSel.activeKey
             : controller.activeSubtitleTrackId,
         'secondaryTrack': controller.secondaryCues.isNotEmpty
             ? 'secondary'
@@ -99,6 +99,9 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         _volumeDisplay.removeListener(listener);
       },
       favoritesChanged: _refreshFavoritedCueCache,
+      libraryAnchor: _libraryAnchorAt,
+      originSourceId: () => _favoriteOriginSourceId,
+      originLocator: _favoriteOriginLocatorFor,
       // 以下三组与桌面控制通道（[_playbackRemote]）/ 剧集列表同一批执行体。
       setVolume: (int volume) => _applyUserVideoVolume(volume.toDouble()),
       episodes: _remoteEpisodes,
@@ -349,7 +352,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
             kind: track.siteTrackId.isEmpty && !track.isLive
                 ? 'external'
                 : 'embedded',
-            selected: track.key == _webActiveTrackKey,
+            selected: track.key == _webTrackSel.activeKey,
             selectable: true,
           ),
         for (final WebVideoSiteTrack track in _unloadedWebSiteTracks())
@@ -387,7 +390,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     throw const VideoRemoteException(404, 'subtitle_track_missing');
   }
 
-  /// 网页档的在线字幕：落盘后解析成 cue，作为当前站点视频的一条轨登记进 [_webTracks]
+  /// 网页档的在线字幕：落盘后解析成 cue，作为当前站点视频的一条轨登记进 [_webTrackSel.tracks]
   /// 并选中。网页档的字幕都按「站点视频 → 轨」管（[_reselectWebTrack] 每次轨集变化按轨
   /// 重灌 controller），直接 setCues 会被下一次站点轨回报覆盖；登记成轨后设置面板网页档
   /// 轨列表同样列出它、可切回。
@@ -413,21 +416,12 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       if (cues.isEmpty) {
         throw const VideoRemoteException(409, 'subtitle_track_unavailable');
       }
-      final String name = p.basename(path);
-      final String key = '$_webVideoKey|download:$name';
-      // 网页轨的显示名取 lang（[_webTrackLabel]）：下载档用文件名。
-      _webTracks[key] = WebVideoTrack(
-        key: key,
-        videoKey: _webVideoKey,
-        lang: name,
-        cues: cues,
-      );
-      _selectWebTrack(key);
+      _selectWebLocalSubtitleTrack(path, cues);
     };
   }
 
-  /// 网页档的遥控制卡：与本页网页档制卡（[_onWebMineEntry]）同两条路——YouTube 按视频
-  /// id + 字幕时间窗从真实视频流裁音频与画面、当场出卡；其它站点没有可截的本地媒体，
+  /// 网页档的遥控制卡：与本页网页档制卡（[_onWebMineEntry]）同一条分流——YouTube 按视频
+  /// id + 字幕时间窗从真实视频流裁音频与画面、当场出卡，裁不出来退回队列；其它站点没有可截的本地媒体，
   /// 冻结字段与时间窗进网页制卡队列，之后切到可捕获档逐句重放落卡（手机收到「已收下」）。
   Future<Map<String, Object?>> _mineRemoteWebCue(
     VideoRemoteCue cue,
@@ -444,7 +438,29 @@ extension _VideoRemoteControl on _VideoFushiPageState {
     final String href = state != null && state.href.isNotEmpty
         ? state.href
         : row.videoPath;
-    final String? youtubeId = youtubeVideoIdOrNull(href);
+    final String bookUid = _activeBookUid;
+    final String videoKey = _webTrackSel.videoKey;
+    Future<void> enqueue() async {
+      await _webMineQueue.enqueue(
+        bookUid: bookUid,
+        videoKey: videoKey,
+        href: href,
+        cueStartMs: selection.startMs,
+        cueEndMs: selection.endMs,
+        sentence: sentence,
+        cueSentence: selection.cueSentence,
+        fields: parsed.fields,
+      );
+      await _refreshStagedMineCount();
+      if (mounted) {
+        _showOsd(
+          t.web_video_mine_queued(count: _stagedMineCount.value),
+          icon: FushiIcons.checklist,
+        );
+      }
+    }
+
+    final String? youtubeId = webVideoDirectMineVideoId(href);
     if (youtubeId != null) {
       // 与手机试听同一个窗（含首尾留白与调轴，BUG-3350）：服务端 YouTube 裁剪不再加留白。
       final VideoPlayerController? controller = _controller;
@@ -456,42 +472,35 @@ extension _VideoRemoteControl on _VideoFushiPageState {
             selection.startMs,
             selection.endMs,
           );
-      final RemoteMineResult res = await appModel
-          .createRemoteMiningService()
-          .mineImmersion(
-            ImmersionMinePayload(
-              fields: parsed.fields,
-              sentence: sentence,
-              cueSentence: selection.cueSentence,
-              documentTitle: row.title,
-              youtubeVideoId: youtubeId,
-              clipStartMs: window.clipStartMs,
-              clipEndMs: window.clipEndMs,
-            ),
-          );
-      return <String, Object?>{
-        'success': res.result == 'success',
-        if (res.result == 'duplicate') 'duplicate': true,
-        if (res.result != 'success' && res.result != 'duplicate')
-          'error': 'mining_failed',
-      };
-    }
-    await _webMineQueue.enqueue(
-      bookUid: _activeBookUid,
-      videoKey: _webVideoKey,
-      href: href,
-      cueStartMs: selection.startMs,
-      cueEndMs: selection.endMs,
-      sentence: sentence,
-      cueSentence: selection.cueSentence,
-      fields: parsed.fields,
-    );
-    await _refreshStagedMineCount();
-    if (mounted) {
-      _showOsd(
-        t.web_video_mine_queued(count: _stagedMineCount.value),
-        icon: FushiIcons.checklist,
+      // 裁不出来退回队列（[mineWebVideoCueDirectOrQueue]，与本页制卡同一条分流）。
+      final RemoteMineResult? res = await mineWebVideoCueDirectOrQueue(
+        mineDirect: () => appModel.createRemoteMiningService().mineImmersion(
+          ImmersionMinePayload(
+            fields: parsed.fields,
+            sentence: sentence,
+            cueSentence: selection.cueSentence,
+            documentTitle: row.title,
+            youtubeVideoId: youtubeId,
+            clipStartMs: window.clipStartMs,
+            clipEndMs: window.clipEndMs,
+          ),
+        ),
+        enqueue: enqueue,
+        onFallback: (String reason) => ErrorLogService.instance.log(
+          'VideoFushi.web',
+          'remote YouTube direct mine failed, queued for replay: $reason',
+        ),
       );
+      if (res != null) {
+        return <String, Object?>{
+          'success': res.result == 'success',
+          if (res.result == 'duplicate') 'duplicate': true,
+          if (res.result != 'success' && res.result != 'duplicate')
+            'error': 'mining_failed',
+        };
+      }
+    } else {
+      await enqueue();
     }
     return <String, Object?>{
       ...const MinePopupResult.queued().toJson(),
@@ -559,15 +568,19 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       cueSentence: null,
     ), overrides);
     final String sentence = videoRemoteMineSentence(selection, parsed.sentence);
+    // 回跳锚点按句子所属那一行的时间轴记（原盘「全部播放」= 那一集，BUG-5356）。
+    final ({String bookUid, int ms}) historyAnchor = _libraryAnchorAt(
+      cue.startMs,
+    );
     final VideoMiningHistorySnapshot history =
         VideoMiningHistorySnapshot.capture(
           fields: fields,
           sentence: sentence,
           documentTitle: _title ?? _activeBookUid,
-          bookKey: _activeBookUid,
+          bookKey: historyAnchor.bookUid,
           sectionIndex: _favoriteSectionIndex,
-          cueStartMs: cue.startMs,
-          cueEndMs: cue.endMs,
+          cueStartMs: historyAnchor.ms,
+          cueEndMs: historyAnchor.ms + (cue.endMs - cue.startMs),
           dateKey: statTodayKey(),
         );
     final FushiDatabase historyDb = appModel.database;
@@ -607,14 +620,19 @@ extension _VideoRemoteControl on _VideoFushiPageState {
   Future<void> _openRemoteVideoFavorite(FavoriteSentence favorite) async {
     final String? uid = favorite.bookKey;
     if (uid == null || uid.isEmpty) {
-      throw const VideoRemoteException(404, 'favorite_source_unavailable');
+      throw favoriteSourceUnavailableException(
+        FavoriteVideoOriginFailure.noLink,
+      );
     }
     if (uid == _activeBookUid &&
         _isRemote &&
         (favorite.sectionIndex ?? 0) != (_favoriteSectionIndex ?? 0)) {
       final int episode = favorite.sectionIndex ?? 0;
       if (episode < 0 || episode >= _episodes.length) {
-        throw const VideoRemoteException(404, 'favorite_source_unavailable');
+        // 收藏落在本视频已经没有的那一集上（剧集列表变短了）。
+        throw favoriteSourceUnavailableException(
+          FavoriteVideoOriginFailure.episodeMissing,
+        );
       }
       await _controller?.pause();
       if (!mounted) throw const VideoRemoteException(409, 'no_video');
@@ -624,13 +642,22 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         initialPositionMsOverride: favorite.normCharOffset,
       );
       if (_controller == null || _failed) {
-        throw const VideoRemoteException(404, 'favorite_source_unavailable');
+        throw favoriteSourceUnavailableException(
+          FavoriteVideoOriginFailure.playbackFailed,
+        );
       }
       await _openRemoteVideoFavorite(favorite);
       return;
     }
-    if (uid == _activeBookUid &&
-        (favorite.sectionIndex ?? 0) == (_favoriteSectionIndex ?? 0)) {
+    // 原盘「全部播放」：收藏落在这条播放列表的某一集上（锚点是那一集的时间轴），平移
+    // 回播放器时间轴后页内跳过去，不另开那一集（BUG-5356）。
+    final int? favoriteOffset = favorite.normCharOffset;
+    final int? discTitleMs = _discMenuEpisodes == null || favoriteOffset == null
+        ? null
+        : _playerMsOfAnchor(uid, favoriteOffset);
+    if (discTitleMs != null ||
+        (uid == _activeBookUid &&
+            (favorite.sectionIndex ?? 0) == (_favoriteSectionIndex ?? 0))) {
       final VideoPlayerController? controller = _controller;
       if (controller == null) {
         throw const VideoRemoteException(409, 'no_video');
@@ -638,6 +665,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       final VideoRemoteCue cue = matchVideoRemoteFavoriteCue(
         _videoRemoteRows(controller),
         favorite,
+        playerStartMs: discTitleMs,
       );
       final int favoriteMs = miningClipTimeMs(cue.startMs, cue.delayMs);
       _recordVideoJumpDeparture(favoriteMs, source: JumpSource.favorite);
@@ -646,15 +674,44 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       return;
     }
     final VideoBookRow? row = await widget.repo.getByBookUid(uid);
-    if (row == null) {
-      throw const VideoRemoteException(404, 'favorite_source_unavailable');
+    final Widget Function(bool initialFullscreen) buildPage;
+    // 换上的新页接管的现建客户端（媒体服务器 / 在线源条目有）：推页之前任一步放弃都要
+    // 关掉。
+    RemoteVideoClient? handedOverClient;
+    if (row != null) {
+      if (await isLocalVideoResourceMissing(row.videoPath)) {
+        throw favoriteSourceUnavailableException(
+          FavoriteVideoOriginFailure.localFileMissing,
+        );
+      }
+      final Map<String, int> collections = await appModel.database
+          .getPrimaryCollectionIdByEntry();
+      buildPage = (bool initialFullscreen) => VideoFushiPage.neutralized(
+        bookUid: uid,
+        repo: widget.repo,
+        playlistCollectionId: collections[MediaKind.video.compositeKey(uid)],
+        initialRemoteFavorite: favorite,
+        initialEpisodeIndex: favorite.sectionIndex,
+        initialSubtitleListVisible: false,
+        initialFullscreen: initialFullscreen,
+      );
+    } else {
+      // 没有本机库行：在远端条目上收藏的，按收藏时记下的来源回去。
+      final RemoteFavoriteVideoPage page = await resolveRemoteFavoriteVideoPage(
+        appModel: appModel,
+        ref: ref,
+        repo: widget.repo,
+        favorite: favorite,
+      );
+      handedOverClient = page.ownedClient;
+      buildPage = page.build;
     }
-    if (await isLocalVideoResourceMissing(row.videoPath)) {
-      throw const VideoRemoteException(404, 'favorite_source_unavailable');
+    if (!context.mounted) {
+      if (handedOverClient != null) {
+        closeOwnedRemoteVideoClient(handedOverClient);
+      }
+      throw const VideoRemoteException(409, 'no_video');
     }
-    final Map<String, int> collections = await appModel.database
-        .getPrimaryCollectionIdByEntry();
-    if (!context.mounted) throw const VideoRemoteException(409, 'no_video');
     final PageRoute<void>? oldFullscreenRoute = _videoFullscreenRoute;
     final NavigatorState navigator = Navigator.of(context);
     final NavigatorState rootNavigator = Navigator.of(
@@ -668,18 +725,15 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       hasCurrentRoute: currentRoute != null,
     );
     await _controller?.pause();
-    if (!context.mounted) throw const VideoRemoteException(409, 'no_video');
+    if (!context.mounted) {
+      if (handedOverClient != null) {
+        closeOwnedRemoteVideoClient(handedOverClient);
+      }
+      throw const VideoRemoteException(409, 'no_video');
+    }
     final Route<void> route = adaptivePageRoute<void>(
       context: context,
-      builder: (_) => VideoFushiPage.neutralized(
-        bookUid: uid,
-        repo: widget.repo,
-        playlistCollectionId: collections[MediaKind.video.compositeKey(uid)],
-        initialRemoteFavorite: favorite,
-        initialEpisodeIndex: favorite.sectionIndex,
-        initialSubtitleListVisible: false,
-        initialFullscreen: plan.handOverNativeFullscreen,
-      ),
+      builder: (_) => buildPage(plan.handOverNativeFullscreen),
     );
     _unregisterVideoRemote();
     if (plan.mode == EpisodeSwitchMode.replace) {
@@ -687,7 +741,7 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       return;
     }
     _ownsHandedOverNativeFullscreen = false;
-    _didInitialFullscreen = true;
+    _initialFullscreen.settle();
     unawaited(navigator.push<void>(route));
     if (oldFullscreenRoute != null && oldFullscreenRoute.isActive) {
       rootNavigator.removeRoute<void>(oldFullscreenRoute);
@@ -704,3 +758,57 @@ VideoRemoteException _remoteSubtitleException(VideoRemoteFailure failure) =>
       'not_found' => const VideoRemoteException(404, 'subtitle_track_missing'),
       _ => const VideoRemoteException(409, 'subtitle_track_unavailable'),
     };
+
+/// 手机跳收藏打不开来源：错误码不变（旧版手机只认它），[failure] 作 `reason` 细分。
+VideoRemoteException favoriteSourceUnavailableException(
+  FavoriteVideoOriginFailure failure,
+) => VideoRemoteException(
+  404,
+  videoRemoteFavoriteSourceUnavailable,
+  reason: failure.wireReason,
+);
+
+/// [resolveRemoteFavoriteVideoPage] 的产物：[build] 按「是否接管原生全屏」建远端播放页；
+/// [ownedClient] 非 null = 页面将接管的现建客户端，推页之前放弃要
+/// `closeOwnedRemoteVideoClient`。
+typedef RemoteFavoriteVideoPage = ({
+  Widget Function(bool initialFullscreen) build,
+  RemoteVideoClient? ownedClient,
+});
+
+/// 手机跳收藏、收藏的视频**没有本机库行**（在远端条目上收藏的：媒体服务器直接串流 /
+/// 互联对端 / 云盘 / 在线源，bookKey = 该来源内的条目 id）：按收藏时记下的来源回去
+/// （与收藏夹同一个解析口 [resolveFavoriteVideoOrigin]），建好起播后对到那一句的远端
+/// 播放页。原生播放页与网页播放页的遥控共用。
+///
+/// 回不去抛 [favoriteSourceUnavailableException]：原因随 `favorite_source_unavailable`
+/// 的 `reason` 报给手机，旧版手机只认错误码本身，照旧显示笼统文案。
+Future<RemoteFavoriteVideoPage> resolveRemoteFavoriteVideoPage({
+  required AppModel appModel,
+  required WidgetRef ref,
+  required VideoBookRepository repo,
+  required FavoriteSentence favorite,
+}) async {
+  final FavoriteVideoOriginResult result = await resolveFavoriteVideoOrigin(
+    itemId: favorite.bookKey ?? '',
+    originSourceId: favorite.originSourceId,
+    originLocator: favorite.originLocator,
+    expectedTitle: favorite.bookTitle,
+    sources: appModel.favoriteVideoOriginSources(
+      cache: ref.read(remoteLibraryCacheProvider),
+    ),
+  );
+  final FavoriteVideoOriginLaunch? launch = result.launch;
+  if (launch == null) throw favoriteSourceUnavailableException(result.failure!);
+  return (
+    build: (bool initialFullscreen) => VideoFushiPage.neutralizedRemote(
+      info: launch.info,
+      repo: repo,
+      client: launch.client,
+      ownsRemoteClient: launch.ownsClient,
+      initialRemoteFavorite: favorite,
+      initialFullscreen: initialFullscreen,
+    ),
+    ownedClient: launch.ownsClient ? launch.client : null,
+  );
+}

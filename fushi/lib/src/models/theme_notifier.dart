@@ -7,7 +7,7 @@ import 'dart:typed_data';
 import 'package:crypto/crypto.dart' show sha256;
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:cupertino_ui/cupertino_ui.dart'
-    show CupertinoPageTransitionsBuilder, CupertinoRouteTransitionMixin;
+    show CupertinoRouteTransitionMixin;
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/models/home_tab.dart';
@@ -18,8 +18,12 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_transitions.dart';
 import 'package:fushi/src/utils/adaptive/predictive_back_page_transitions.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart';
+import 'package:fushi/src/utils/adaptive/vetoed_back_swipe.dart';
 import 'package:fushi/src/utils/components/accent_logo_image.dart'
     show appLogoFollowsAccent;
+import 'package:fushi/src/utils/components/mascot_glow.dart'
+    show mascotGlowEnabled;
 import 'package:fushi/src/utils/misc/app_icon_preferences.dart'
     show AppIconSelection, currentAppIconSelection;
 import 'package:fushi/src/utils/misc/channel_constants.dart';
@@ -580,7 +584,8 @@ class EinkCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
       context,
       dragging ? animation : kAlwaysCompleteAnimation,
       dragging ? secondaryAnimation : kAlwaysDismissedAnimation,
-      child,
+      // 页面 `PopScope` 否决返回时侧滑转成 maybePop（墨水屏下不做阻尼位移）。
+      VetoedBackSwipe(route: route, child: child),
     );
   }
 }
@@ -592,6 +597,15 @@ class EinkCupertinoPageTransitionsBuilder extends PageTransitionsBuilder {
 /// app 与阅读器始终按当前明暗设置（亮 / 暗 / 跟随系统）从种子派生。旧预设带的
 /// 「纯黑」语义改为明暗旁的独立开关（[ThemeNotifier.pureBlackDark]）。
 typedef ThemePreset = ({Color seed, DynamicSchemeVariant variant});
+
+/// 覆盖所选主题配色的取色来源（见 [ThemeNotifier.activeAccentOverrideSource]）。
+enum ThemeAccentOverrideSource {
+  /// 「从图片取色」：自定义背景图的颜色。
+  pageBackdrop,
+
+  /// 「主题色跟随图标」：自定义 app 图标的颜色。
+  appIcon,
+}
 
 /// 2026-10 精简前的内置预设（已删）：只为存量 `app_theme_key` 的只读映射保留
 /// 种子与语义——[neutral] = 中性灰变体、[dark] = 当年选中时写入的明暗（仅在
@@ -623,6 +637,7 @@ class CustomThemeEntry {
     this.fontColor,
     this.bgColor,
     this.selectionColor,
+    this.selectionTextColor,
     this.primaryColor,
     this.secondaryColor,
     this.tertiaryColor,
@@ -640,6 +655,10 @@ class CustomThemeEntry {
   final int? fontColor;
   final int? bgColor;
   final int? selectionColor;
+
+  /// 查词高亮里被选中文字的字色（拍板台 -8azTfJh_v）。null = 跟随正文字色；设了就
+  /// 能做「白底黑字 → 选中黑底白字」这种反色高亮。
+  final int? selectionTextColor;
   final int? primaryColor;
   final int? secondaryColor;
   final int? tertiaryColor;
@@ -666,6 +685,7 @@ class CustomThemeEntry {
       fontColor: fontColor,
       bgColor: bgColor,
       selectionColor: selectionColor,
+      selectionTextColor: selectionTextColor,
       primaryColor: primaryColor,
       secondaryColor: secondaryColor,
       tertiaryColor: tertiaryColor,
@@ -685,6 +705,7 @@ class CustomThemeEntry {
     if (fontColor != null) 'fontColor': fontColor,
     if (bgColor != null) 'bgColor': bgColor,
     if (selectionColor != null) 'selectionColor': selectionColor,
+    if (selectionTextColor != null) 'selectionTextColor': selectionTextColor,
     if (primaryColor != null) 'primaryColor': primaryColor,
     if (secondaryColor != null) 'secondaryColor': secondaryColor,
     if (tertiaryColor != null) 'tertiaryColor': tertiaryColor,
@@ -708,6 +729,7 @@ class CustomThemeEntry {
       fontColor: asInt(json['fontColor']),
       bgColor: asInt(json['bgColor']),
       selectionColor: asInt(json['selectionColor']),
+      selectionTextColor: asInt(json['selectionTextColor']),
       primaryColor: asInt(json['primaryColor']),
       secondaryColor: asInt(json['secondaryColor']),
       tertiaryColor: asInt(json['tertiaryColor']),
@@ -851,9 +873,10 @@ class ThemeNotifier extends ChangeNotifier {
   /// 反馈 biLEesNqWb：某个**非激活配置**的只读主题视图（浏览器扩展所选配置的查词弹窗
   /// 配色用）。[prefs] 是该配置合成后的整份偏好（`ProfileSettingsView.prefsMap`）。
   ///
-  /// 设备侧的取色输入从 [live] 拷过来——系统调色板 / 系统强调色、自定义图标与页面背景图
-  /// 取出的种子都来自这台设备（图标选择与背景图路径本就是设备本地、不随配置走），而
-  /// 「用不用它们」的开关仍按 [prefs] 判。视图不订阅任何全局通知、不跑载入期迁移；任何
+  /// 设备侧的取色输入从 [live] 拷过来——系统调色板 / 系统强调色、自定义图标取出的种子都来自
+  /// 这台设备（图标选择设备本地、不随配置走），而「用不用它们」的开关仍按 [prefs] 判。页面
+  /// 背景图片按配置停放，[prefs] 里就是这份配置自己的图与取色缓存，按它算
+  /// （[_profileViewPageBackdropSeeds]）。视图不订阅任何全局通知、不跑载入期迁移；任何
   /// 写入（`_set` / 自定义主题迁移回写）都不落库：设置器抛 [UnsupportedError]，读路径上
   /// 的旧自定义主题迁移只改本视图的内存副本。
   ThemeNotifier.profileView(ThemeNotifier live, Map<String, String> prefs)
@@ -862,11 +885,57 @@ class ThemeNotifier extends ChangeNotifier {
       _customThemeIdGenerator = live._customThemeIdGenerator,
       _readOnlyView = true {
     _prefs.addAll(prefs);
+    // 库页布局出厂值是设备本地键、不在配置快照里：没选过布局的配置按这台设备的
+    // 出厂值读，与 live 一致。
+    final String? layoutInstallDefault =
+        live._prefs[ShellLayoutInstallDefault.prefKey];
+    if (layoutInstallDefault != null) {
+      _prefs.putIfAbsent(
+        ShellLayoutInstallDefault.prefKey,
+        () => layoutInstallDefault,
+      );
+    }
     _systemPalette = live._systemPalette;
     _systemPaletteIdentity = live._systemPaletteIdentity;
     _systemAccentColor = live._systemAccentColor;
     _appIconSeed = live._appIconSeed;
-    _pageBackdropSeeds = live._pageBackdropSeeds;
+    // 背景图片按配置停放（`kPageBackdropProfileParkedPrefKeyPrefixes`）：[prefs] 里是这份配置
+    // 自己的图片路径与取色缓存，样式也是它自己的。生效设置与种子按它算，不借激活配置发布到
+    // 全局 [pageBackdropSettings] 的那份——否则浏览器扩展按别的配置查词时，弹窗配色取的是
+    // 激活配置那张图的颜色。
+    _pageBackdropImagePresence.addAll(live._pageBackdropImagePresence);
+    _pageBackdropImageDirPath = live._pageBackdropImageDirPath;
+    final PageBackdropSettings backdrop = _readPageBackdropSettings();
+    _viewPageBackdropSettings = backdrop;
+    _pageBackdropSeeds = _profileViewPageBackdropSeeds(live, backdrop);
+  }
+
+  /// 只读视图自己的页面背景生效设置（[ThemeNotifier.profileView] 建时算定）；live 实例为
+  /// null，读全局 [pageBackdropSettings]。
+  PageBackdropSettings? _viewPageBackdropSettings;
+
+  /// 本实例的页面背景生效设置：只读视图用自己那份，live 用发布到全局的快照。
+  PageBackdropSettings get _effectivePageBackdropSettings =>
+      _viewPageBackdropSettings ?? pageBackdropSettings.value;
+
+  /// 只读视图的背景图候选种子色：横屏图与激活配置同一张时沿用 live 已取到的颜色；否则用这份
+  /// 配置停放的取色缓存（路径对得上才算）。视图不落库，也不在后台重新取色。
+  List<Color> _profileViewPageBackdropSeeds(
+    ThemeNotifier live,
+    PageBackdropSettings backdrop,
+  ) {
+    if (!backdrop.hasCustomImage) return const <Color>[];
+    final String path = backdrop.landscapeImagePath!;
+    final PageBackdropSettings liveBackdrop = pageBackdropSettings.value;
+    if (liveBackdrop.hasCustomImage &&
+        liveBackdrop.landscapeImagePath == path) {
+      return live._pageBackdropSeeds;
+    }
+    final ({String path, String stamp, List<int> seeds})? cache =
+        _readPageBackdropSeedCache();
+    return cache != null && _pageBackdropSeedCacheMatches(cache.path, path)
+        ? cache.seeds.map(Color.new).toList(growable: false)
+        : const <Color>[];
   }
 
   /// true = [ThemeNotifier.profileView] 建的只读视图。
@@ -879,9 +948,20 @@ class ThemeNotifier extends ChangeNotifier {
     'app_theme_key',
     'brightness_mode',
     'design_system',
+    // 旧材质键：冻结不读（2026-11 起由 glass_quality 取代），仍随配置留存原值。
     'glass_material',
+    'glass_quality',
     'pure_black_dark',
+    // 阅读器纸色（拍板台 vJSj4RsKFt）：以前纸色随 app_theme_key 走配置，拆成独立
+    // 偏好后照旧随配置 / 作品走，否则在书里改纸色会写穿到全局。
+    readerPaperLightPrefKey,
+    readerPaperDarkPrefKey,
+    'shell_rail_style',
+    'shell_content_layout',
+    'shell_block_arrangement',
+    'shell_smooth_corners',
     tintAppLogoPrefKey,
+    mascotGlowPrefKey,
     followAppIconPrefKey,
     audioHighlightColorPrefKey,
     customThemesPrefKey,
@@ -930,6 +1010,9 @@ class ThemeNotifier extends ChangeNotifier {
     SystemTransparency.reduceTransparency.removeListener(notifyListeners);
     currentAppIconSelection.removeListener(_onAppIconSelectionChanged);
     _appIconSeedGeneration++;
+    // 载入后的背景图改写 / 取色还在路上：释放后不再发布、不再通知。
+    _pageBackdropDisposed = true;
+    _pageBackdropSeedGeneration++;
     super.dispose();
   }
 
@@ -937,6 +1020,9 @@ class ThemeNotifier extends ChangeNotifier {
 
   /// 「图标跟随主题色」：内置吉祥物 logo 按当前强调色换色（关 = 始终原图）。
   static const String tintAppLogoPrefKey = 'theme_tint_app_logo';
+
+  /// 「吉祥物光晕」：悬浮球上的吉祥物带一圈呼吸光晕，后台同步时更亮更快（默认关）。
+  static const String mascotGlowPrefKey = 'theme_mascot_glow';
 
   /// 「主题色跟随图标」：用户设置了自定义图标图片时，从图标取种子色当强调色。
   /// 只是**覆盖**生效配色，不改写 `app_theme_key` / 自定义主题，关掉即回到原主题。
@@ -961,6 +1047,14 @@ class ThemeNotifier extends ChangeNotifier {
   Future<void> setTintAppLogo(bool value) async {
     await _set(tintAppLogoPrefKey, value);
     appLogoFollowsAccent.value = value;
+    notifyListeners();
+  }
+
+  bool get mascotGlow => _get(mascotGlowPrefKey, defaultValue: false) as bool;
+
+  Future<void> setMascotGlow(bool value) async {
+    await _set(mascotGlowPrefKey, value);
+    mascotGlowEnabled.value = value;
     notifyListeners();
   }
 
@@ -994,6 +1088,7 @@ class ThemeNotifier extends ChangeNotifier {
   /// 偏好加载 / 刷新后：发布 logo 换色开关、按需取图标色。
   void _onAppIconPreferencesLoaded() {
     appLogoFollowsAccent.value = tintAppLogo;
+    mascotGlowEnabled.value = mascotGlow;
     if (followAppIconAccent) unawaited(refreshAppIconSeed());
   }
 
@@ -1083,6 +1178,32 @@ class ThemeNotifier extends ChangeNotifier {
     return Directory('${root.path}${Platform.pathSeparator}page_backdrop');
   }
 
+  /// 解析本机背景图目录（[pageBackdropImageDirectory]，测试可替换），交给
+  /// [usePageBackdropImageDirectory] 用。
+  static Future<Directory> resolvePageBackdropImageDirectory() =>
+      pageBackdropImageDirectory();
+
+  /// 本机背景图目录的绝对路径（[pageBackdropImageDirectory] 解析过一次后记下）；偏好里
+  /// 存的是文件名，快照发布时同步拼成绝对路径（BUG-5370）。null = 还没解析：存文件名
+  /// 的图先当作没有，[_healStoredPageBackdropImagePaths] 解析后重发布。
+  String? _pageBackdropImageDirPath;
+
+  Future<Directory> _resolvePageBackdropImageDirectory() async {
+    final Directory dir = await pageBackdropImageDirectory();
+    _pageBackdropImageDirPath = dir.path;
+    return dir;
+  }
+
+  /// 在 [loadFromPrefsSnapshot] 之前交给本实例已解析好的背景图目录
+  /// （[pageBackdropImageDirectory] 的结果），冷启动第一帧就能把偏好里的文件名拼成
+  /// 路径，不先闪一下默认背景。不给也行：载入后异步解析、重发布。
+  void usePageBackdropImageDirectory(Directory dir) {
+    _pageBackdropImageDirPath = dir.path;
+  }
+
+  String? _resolvePageBackdropImage(Object? raw) =>
+      resolvePageBackdropImagePath(raw, directory: _pageBackdropImageDirPath);
+
   PageBackdropPreset get pageBackdropPreset =>
       PageBackdropPreset.fromWire(_get(kPageBackdropPresetPrefKey));
 
@@ -1118,7 +1239,7 @@ class ThemeNotifier extends ChangeNotifier {
   /// 「从图片取色」实际生效的种子：选了自定义图片、图片在、开关开着、且已取到色。
   /// 只读已发布的快照，不碰文件系统（主题每次构建都会走到这里）。
   Color? get pageBackdropAccentSeed {
-    if (!pageBackdropSettings.value.hasCustomImage) return null;
+    if (!_effectivePageBackdropSettings.hasCustomImage) return null;
     if (!followPageBackdropAccent) return null;
     if (_pageBackdropSeeds.isEmpty) return null;
     return _pageBackdropSeeds[math.min(
@@ -1131,11 +1252,51 @@ class ThemeNotifier extends ChangeNotifier {
   /// 不改写主题偏好。
   Color? get _overrideAccentSeed => pageBackdropAccentSeed ?? appIconAccentSeed;
 
+  /// 当前是谁在覆盖主题配色（没有覆盖时为 null）。主题选择行 / 自定义主题编辑页据此
+  /// 提示「配色来自背景图 / 图标」——否则点色卡毫无反应、用户不知道为什么。与
+  /// [_overrideAccentSeed] 同优先级。
+  ThemeAccentOverrideSource? get activeAccentOverrideSource {
+    if (pageBackdropAccentSeed != null) {
+      return ThemeAccentOverrideSource.pageBackdrop;
+    }
+    if (appIconAccentSeed != null) return ThemeAccentOverrideSource.appIcon;
+    return null;
+  }
+
+  /// 用户选主题的唯一入口（设置页色卡、自定义主题编辑页「应用」、`config set
+  /// appearance.theme`、控制通道 `select=true`，都经 [AppModel.pickAppThemeKey]）：
+  /// 用户明确要这个主题，就关掉所有**正在生效**的取色覆盖，让所选主题真正显示。
+  /// 背景图 / 自定义图标本身保留，只是不再取色；没生效的开关不动；两个都生效时都关，
+  /// 否则关掉背景图取色后又落到图标取色上。
+  ///
+  /// 开关与主题键同一批落库、只通知一次：分步写会先按「关了取色、还没换主题」的
+  /// 中间态重建一帧（闪一下旧主题色）。
+  ///
+  /// [setAppThemeKey] 是另一种写法：只换键、不碰取色开关，只给「不是用户在选主题」
+  /// 的写入用（删掉当前自定义主题后指回剩余主题）。同步 / 恢复整份写偏好，取色开关
+  /// 随同一份快照一起到位，不经这两个入口。
+  Future<void> pickAppThemeKey(String key) async {
+    final bool releaseBackdrop = pageBackdropAccentSeed != null;
+    final bool releaseIcon = appIconAccentSeed != null;
+    await _setAppThemeKeyKeepingEffective(
+      key,
+      extraWrites: <String, String>{
+        if (releaseBackdrop)
+          kPageBackdropFollowImageAccentPrefKey: PrefCodec.encode(false),
+        if (releaseIcon) followAppIconPrefKey: PrefCodec.encode(false),
+      },
+    );
+    // 作废还在跑的图标取色（开关已关，晚到的结果不该再套上）。
+    if (releaseIcon) ++_appIconSeedGeneration;
+    notifyListeners();
+    _persistSplashColor();
+  }
+
   /// 背景图文件是否存在的核对结果（路径 → 存在）。快照发布在 UI isolate 上、每次
   /// 改任何一项背景设置都会重读，所以这里**不碰文件系统**：没核对过的路径先按存在
   /// 发布（图片层自带 errorBuilder，读不到只是空白一帧），由
   /// [_verifyPageBackdropImages] 在 [refreshPageBackdropSeeds] 里异步核对，核出
-  /// 不存在（换了设备 / 文件被删）再重发布、回落到角落形状。导入时自己复制的文件
+  /// 不存在（换了设备 / 文件被删）再重发布、回落到默认样式。导入时自己复制的文件
   /// 直接记为存在。
   final Map<String, bool> _pageBackdropImagePresence = <String, bool>{};
 
@@ -1147,11 +1308,11 @@ class ThemeNotifier extends ChangeNotifier {
     strength: pageBackdropStrength,
     motion: pageBackdropMotion,
     landscapeImagePath: existingPageBackdropImagePath(
-      _get(kPageBackdropLandscapeImagePrefKey),
+      _resolvePageBackdropImage(_get(kPageBackdropLandscapeImagePrefKey)),
       exists: _pageBackdropImageKnownPresent,
     ),
     portraitImagePath: existingPageBackdropImagePath(
-      _get(kPageBackdropPortraitImagePrefKey),
+      _resolvePageBackdropImage(_get(kPageBackdropPortraitImagePrefKey)),
       exists: _pageBackdropImageKnownPresent,
     ),
     blur: pageBackdropBlur,
@@ -1160,24 +1321,38 @@ class ThemeNotifier extends ChangeNotifier {
 
   /// 各模块单独设的背景（[kPageBackdropModulePresetsPrefKey] +
   /// [kPageBackdropModuleImagesPrefKey]），图片路径按与全局同一份存在性核对过滤。
-  Map<HomeTab, PageBackdropModuleOverride> _readPageBackdropModuleOverrides() {
-    final Map<HomeTab, PageBackdropPreset> presets =
+  Map<HomeTab, PageBackdropModuleOverride> _readPageBackdropModuleOverrides() =>
+      _readPageBackdropOverrides<HomeTab>(
         decodePageBackdropModulePresets(
           _get(kPageBackdropModulePresetsPrefKey),
-        );
-    final Map<HomeTab, PageBackdropModuleImages> images =
-        decodePageBackdropModuleImages(_get(kPageBackdropModuleImagesPrefKey));
-    return Map<HomeTab, PageBackdropModuleOverride>.unmodifiable(
-      <HomeTab, PageBackdropModuleOverride>{
-        for (final MapEntry<HomeTab, PageBackdropPreset> e in presets.entries)
+        ),
+        decodePageBackdropModuleImages(_get(kPageBackdropModuleImagesPrefKey)),
+      );
+
+  /// 各页面单独设的背景（与模块同存在两个模块键里，键名是页面 wire）。
+  Map<PageBackdropPage, PageBackdropModuleOverride>
+  _readPageBackdropPageOverrides() =>
+      _readPageBackdropOverrides<PageBackdropPage>(
+        decodePageBackdropPagePresets(_get(kPageBackdropModulePresetsPrefKey)),
+        decodePageBackdropPageImages(_get(kPageBackdropModuleImagesPrefKey)),
+      );
+
+  /// 模块 / 页面两层共用：预设 + 图片拼成覆盖，图片按存在性核对过滤。
+  Map<K, PageBackdropModuleOverride> _readPageBackdropOverrides<K>(
+    Map<K, PageBackdropPreset> presets,
+    Map<K, PageBackdropModuleImages> images,
+  ) {
+    return Map<K, PageBackdropModuleOverride>.unmodifiable(
+      <K, PageBackdropModuleOverride>{
+        for (final MapEntry<K, PageBackdropPreset> e in presets.entries)
           e.key: PageBackdropModuleOverride(
             preset: e.value,
             landscapeImagePath: existingPageBackdropImagePath(
-              images[e.key]?.landscape,
+              _resolvePageBackdropImage(images[e.key]?.landscape),
               exists: _pageBackdropImageKnownPresent,
             ),
             portraitImagePath: existingPageBackdropImagePath(
-              images[e.key]?.portrait,
+              _resolvePageBackdropImage(images[e.key]?.portrait),
               exists: _pageBackdropImageKnownPresent,
             ),
           ),
@@ -1185,21 +1360,26 @@ class ThemeNotifier extends ChangeNotifier {
     );
   }
 
-  /// 偏好里所有背景图路径（全局两张 + 各模块的），供存在性核对。
+  /// 偏好里所有背景图（全局两张 + 各模块的）的本机绝对路径，供存在性核对。
   Iterable<String> _storedPageBackdropImagePaths() sync* {
     for (final String key in const <String>[
       kPageBackdropLandscapeImagePrefKey,
       kPageBackdropPortraitImagePrefKey,
     ]) {
-      final Object? raw = _get(key);
-      if (raw is String && raw.isNotEmpty) yield raw;
+      if (_resolvePageBackdropImage(_get(key)) case final String path) {
+        yield path;
+      }
     }
     for (final PageBackdropModuleImages images
-        in decodePageBackdropModuleImages(
+        in decodePageBackdropScopedImages(
           _get(kPageBackdropModuleImagesPrefKey),
         ).values) {
-      if (images.landscape case final String path) yield path;
-      if (images.portrait case final String path) yield path;
+      if (_resolvePageBackdropImage(images.landscape) case final String path) {
+        yield path;
+      }
+      if (_resolvePageBackdropImage(images.portrait) case final String path) {
+        yield path;
+      }
     }
   }
 
@@ -1222,12 +1402,136 @@ class ThemeNotifier extends ChangeNotifier {
     final Color? before = pageBackdropAccentSeed;
     pageBackdropSettings.value = _readPageBackdropSettings();
     pageBackdropModuleOverrides.value = _readPageBackdropModuleOverrides();
+    pageBackdropPageOverrides.value = _readPageBackdropPageOverrides();
     if (pageBackdropAccentSeed != before) _onAppIconSeedChanged();
   }
 
   void _onPageBackdropPreferencesLoaded() {
     _publishPageBackdrop();
-    unawaited(refreshPageBackdropSeeds());
+    // 冷启动首帧就套上取色缓存（不等下面的异步改写 / 核对），不先闪一下原主题。
+    final PageBackdropSettings settings = pageBackdropSettings.value;
+    if (settings.hasCustomImage) {
+      _applyPageBackdropSeedCache(settings.landscapeImagePath!);
+    }
+    final Future<void> settle = _settleStoredPageBackdropImages();
+    _pageBackdropImagesSettled = settle;
+    unawaited(settle);
+  }
+
+  Future<void> _pageBackdropImagesSettled = Future<void>.value();
+  bool _pageBackdropDisposed = false;
+
+  /// 最近一次载入后的「存量路径改写 + 取色核对」跑完（测试等它）。
+  @visibleForTesting
+  Future<void> get pageBackdropImagesSettled => _pageBackdropImagesSettled;
+
+  /// 载入后：先把存量绝对路径改写成文件名（顺带解析背景图目录），再取色 + 核对存在性。
+  Future<void> _settleStoredPageBackdropImages() async {
+    // 这份配置没设任何背景图：不用解析目录、不用改写（别的配置停放的旧值切过来变成
+    // live 时，那次载入再改写）。
+    if (!_hasStoredPageBackdropImage()) {
+      await refreshPageBackdropSeeds();
+      return;
+    }
+    try {
+      await _serializePageBackdropImageMutation(
+        _healStoredPageBackdropImagePaths,
+      );
+    } catch (error, stack) {
+      // 改写失败不影响能找到的图（读路径照常按文件名 / 原路径解析），下次载入再试；
+      // 记应用日志以便排查。
+      ErrorLogService.instance.log('page_backdrop.heal_paths', error, stack);
+    }
+    if (_pageBackdropDisposed) return;
+    await refreshPageBackdropSeeds();
+  }
+
+  /// live 偏好里有没有设任何背景图（全局两张 + 各模块），不看文件在不在。
+  bool _hasStoredPageBackdropImage() {
+    for (final String key in const <String>[
+      kPageBackdropLandscapeImagePrefKey,
+      kPageBackdropPortraitImagePrefKey,
+    ]) {
+      final Object? raw = _get(key);
+      if (raw is String && raw.isNotEmpty) return true;
+    }
+    return decodePageBackdropScopedImages(
+      _get(kPageBackdropModuleImagesPrefKey),
+    ).isNotEmpty;
+  }
+
+  /// BUG-5370：把偏好里早先写下的背景图绝对路径改写成文件名——live 的全局两张、
+  /// 模块 JSON，以及各配置停放的值（`kPageBackdropProfileParkedPrefKeyPrefixes`）。
+  /// 只在文件名确实在当前背景图目录里时改写（iOS 换了容器 UUID / 桌面换了数据根，文件
+  /// 跟着目录搬过来了，旧路径却悬空）；找不到的原样留着，按不存在回落默认样式。幂等：
+  /// 全是文件名时只列一次目录。只在 [_serializePageBackdropImageMutation] 里调用。
+  Future<void> _healStoredPageBackdropImagePaths() async {
+    final Directory dir = await _resolvePageBackdropImageDirectory();
+    final Set<String> names = <String>{};
+    try {
+      await for (final FileSystemEntity entity in dir.list(
+        followLinks: false,
+      )) {
+        if (entity is File) names.add(pageBackdropImageFileName(entity.path));
+      }
+    } on PathNotFoundException {
+      // 目录还没建过：没有可找回的文件，只需按解析出的目录重发布。
+    }
+    if (_pageBackdropDisposed) return;
+    if (names.isNotEmpty) {
+      for (final String key in const <String>[
+        kPageBackdropLandscapeImagePrefKey,
+        kPageBackdropPortraitImagePrefKey,
+      ]) {
+        final String? healed = healPageBackdropImageRef(
+          _get(key),
+          inDirectory: names.contains,
+        );
+        if (healed != null) await _set(key, healed);
+      }
+      final String? modules = healPageBackdropModuleImagesValue(
+        _get(kPageBackdropModuleImagesPrefKey),
+        inDirectory: names.contains,
+      );
+      if (modules != null) {
+        await _set(kPageBackdropModuleImagesPrefKey, modules);
+      }
+      final Map<String, String> all = await _db.getAllPrefs();
+      for (final MapEntry<String, String> pref in all.entries) {
+        final String? healed = _healParkedPageBackdropImagePref(
+          pref.key,
+          pref.value,
+          names,
+        );
+        if (healed != null) {
+          await _db.setPref(pref.key, PrefCodec.encode(healed));
+        }
+      }
+    }
+    if (_pageBackdropDisposed) return;
+    _publishPageBackdrop();
+  }
+
+  /// 停放键 [key]（原始编码值 [raw]）里存量绝对路径的改写结果；不是图片停放键或不用改
+  /// 返回 null。
+  static String? _healParkedPageBackdropImagePref(
+    String key,
+    String raw,
+    Set<String> names,
+  ) {
+    for (final MapEntry<String, String> e
+        in kPageBackdropProfileParkedPrefKeyPrefixes.entries) {
+      if (e.key == kPageBackdropSeedCachePrefKey) continue;
+      if (!key.startsWith(e.value) || raw.isEmpty) continue;
+      final Object? value = PrefCodec.decodeUntyped(raw);
+      return e.key == kPageBackdropModuleImagesPrefKey
+          ? healPageBackdropModuleImagesValue(
+              value,
+              inDirectory: names.contains,
+            )
+          : healPageBackdropImageRef(value, inDirectory: names.contains);
+    }
+    return null;
   }
 
   Future<void> setPageBackdropPreset(PageBackdropPreset preset) async {
@@ -1270,33 +1574,31 @@ class ThemeNotifier extends ChangeNotifier {
 
   /// 把用户选的图片复制进 app 数据目录当背景（[portrait] = 竖屏单独用的那张），
   /// 并切到「自定义图片」预设。每次换图都写新文件名（[FileImage] 按路径缓存解码
-  /// 结果，同名覆盖会继续显示旧图），旧文件随后删除。
-  Future<void> importPageBackdropImage(
-    File source, {
-    required bool portrait,
-  }) async {
-    final Directory dir = await pageBackdropImageDirectory();
-    final String target = await _copyPageBackdropImage(
-      source,
-      dir,
-      portrait ? 'portrait' : 'landscape',
-    );
-    final String key = portrait
-        ? kPageBackdropPortraitImagePrefKey
-        : kPageBackdropLandscapeImagePrefKey;
-    final Object? previous = _get(key);
-    await _set(key, target);
-    if (!portrait) await _set(kPageBackdropPresetPrefKey, 'custom');
-    await _deleteOwnedPageBackdropImage(previous, dir);
-    _publishPageBackdrop();
-    if (!portrait) {
-      await _set(kPageBackdropAccentIndexPrefKey, 0);
-      await refreshPageBackdropSeeds();
-    }
-  }
+  /// 结果，同名覆盖会继续显示旧图）；旧文件没有别的配置再用时随后删除
+  /// （[_sweepUnreferencedPageBackdropImages]）。
+  Future<void> importPageBackdropImage(File source, {required bool portrait}) =>
+      _serializePageBackdropImageMutation(() async {
+        final Directory dir = await _resolvePageBackdropImageDirectory();
+        final String name = await _copyPageBackdropImage(
+          source,
+          dir,
+          portrait ? 'portrait' : 'landscape',
+        );
+        final String key = portrait
+            ? kPageBackdropPortraitImagePrefKey
+            : kPageBackdropLandscapeImagePrefKey;
+        await _set(key, name);
+        if (!portrait) await _set(kPageBackdropPresetPrefKey, 'custom');
+        await _sweepUnreferencedPageBackdropImages();
+        _publishPageBackdrop();
+        if (!portrait) {
+          await _set(kPageBackdropAccentIndexPrefKey, 0);
+          await refreshPageBackdropSeeds();
+        }
+      });
 
   /// 把 [source] 复制进 [dir]（文件名 `<slot>-<毫秒>.<扩展名>`，每次换图都是新名字），
-  /// 记为存在，返回目标路径。
+  /// 记为存在，返回**文件名**（偏好只存文件名，BUG-5370）。
   Future<String> _copyPageBackdropImage(
     File source,
     Directory dir,
@@ -1306,59 +1608,40 @@ class ThemeNotifier extends ChangeNotifier {
     final String name = source.path.split(RegExp(r'[\\/]')).last;
     final int dot = name.lastIndexOf('.');
     final String ext = dot > 0 ? name.substring(dot).toLowerCase() : '.img';
-    final String target =
-        '${dir.path}${Platform.pathSeparator}$slot-'
-        '${DateTime.now().millisecondsSinceEpoch}$ext';
+    final String fileName =
+        '$slot-${DateTime.now().millisecondsSinceEpoch}$ext';
+    final String target = resolvePageBackdropImagePath(
+      fileName,
+      directory: dir.path,
+    )!;
     await source.copy(target);
     _pageBackdropImagePresence[target] = true;
-    return target;
+    return fileName;
   }
 
-  // ── 按模块单独设置背景（反馈 DYI1IOZxSM）──────────────────────────────
+  // ── 按模块 / 页面单独设置背景（反馈 DYI1IOZxSM、拍板台 xxbbL0j15l）──────────
 
   /// [tab] 单独设的背景；null = 跟随全局。
   PageBackdropModuleOverride? pageBackdropModuleOverride(HomeTab tab) =>
       pageBackdropModuleOverrides.value[tab];
+
+  /// [page] 单独设的背景；null = 继承所属模块。
+  PageBackdropModuleOverride? pageBackdropPageOverride(PageBackdropPage page) =>
+      pageBackdropPageOverrides.value[page];
 
   /// 给 [tab] 单独设预设；[preset] 为 null = 恢复跟随全局（连同本模块的图片一起删）。
   /// 选「自定义图片」但本模块还没有图时由调用方先走 [importPageBackdropModuleImage]。
   Future<void> setPageBackdropModulePreset(
     HomeTab tab,
     PageBackdropPreset? preset,
-  ) async {
-    final Map<HomeTab, PageBackdropPreset> presets =
-        decodePageBackdropModulePresets(
-          _get(kPageBackdropModulePresetsPrefKey),
-        );
-    if (preset == null) {
-      presets.remove(tab);
-      final Map<HomeTab, PageBackdropModuleImages> images =
-          decodePageBackdropModuleImages(
-            _get(kPageBackdropModuleImagesPrefKey),
-          );
-      final PageBackdropModuleImages? removed = images.remove(tab);
-      await _set(
-        kPageBackdropModulePresetsPrefKey,
-        encodePageBackdropModulePresets(presets),
-      );
-      if (removed != null) {
-        await _set(
-          kPageBackdropModuleImagesPrefKey,
-          encodePageBackdropModuleImages(images),
-        );
-        final Directory dir = await pageBackdropImageDirectory();
-        await _deleteOwnedPageBackdropImage(removed.landscape, dir);
-        await _deleteOwnedPageBackdropImage(removed.portrait, dir);
-      }
-    } else {
-      presets[tab] = preset;
-      await _set(
-        kPageBackdropModulePresetsPrefKey,
-        encodePageBackdropModulePresets(presets),
-      );
-    }
-    _publishPageBackdrop();
-  }
+  ) => _setScopedPageBackdropPreset(pageBackdropModuleWire(tab), preset);
+
+  /// 给 [page] 单独设预设；[preset] 为 null = 恢复继承所属模块（连同本页的图片一起删），
+  /// [PageBackdropPreset.plain] = 在这一页关掉背景装饰。
+  Future<void> setPageBackdropPagePreset(
+    PageBackdropPage page,
+    PageBackdropPreset? preset,
+  ) => _setScopedPageBackdropPreset(page.wire, preset);
 
   /// 把用户选的图片复制进 app 数据目录当 [tab] 的背景（[portrait] = 竖屏单独用的
   /// 那张）。换横屏图同时把这个模块切到「自定义图片」。模块图片不参与取色。
@@ -1366,91 +1649,222 @@ class ThemeNotifier extends ChangeNotifier {
     HomeTab tab,
     File source, {
     required bool portrait,
-  }) async {
-    final Directory dir = await pageBackdropImageDirectory();
-    final String wire = pageBackdropModuleWire(tab);
-    final String target = await _copyPageBackdropImage(
-      source,
-      dir,
-      'module-$wire-${portrait ? 'portrait' : 'landscape'}',
-    );
-    final Map<HomeTab, PageBackdropModuleImages> images =
-        decodePageBackdropModuleImages(_get(kPageBackdropModuleImagesPrefKey));
-    final PageBackdropModuleImages current =
-        images[tab] ?? (landscape: null, portrait: null);
-    final String? previous = portrait ? current.portrait : current.landscape;
-    images[tab] = portrait
-        ? (landscape: current.landscape, portrait: target)
-        : (landscape: target, portrait: current.portrait);
-    await _set(
-      kPageBackdropModuleImagesPrefKey,
-      encodePageBackdropModuleImages(images),
-    );
-    if (!portrait) {
-      final Map<HomeTab, PageBackdropPreset> presets =
-          decodePageBackdropModulePresets(
-            _get(kPageBackdropModulePresetsPrefKey),
-          );
-      presets[tab] = PageBackdropPreset.custom;
-      await _set(
-        kPageBackdropModulePresetsPrefKey,
-        encodePageBackdropModulePresets(presets),
-      );
-    }
-    await _deleteOwnedPageBackdropImage(previous, dir);
-    _publishPageBackdrop();
-  }
+  }) => _importScopedPageBackdropImage(
+    pageBackdropModuleWire(tab),
+    'module',
+    source,
+    portrait: portrait,
+  );
+
+  /// [importPageBackdropModuleImage] 的页面版：换横屏图同时把 [page] 切到「自定义图片」。
+  Future<void> importPageBackdropPageImage(
+    PageBackdropPage page,
+    File source, {
+    required bool portrait,
+  }) => _importScopedPageBackdropImage(
+    page.wire,
+    'page',
+    source,
+    portrait: portrait,
+  );
 
   /// 去掉 [tab] 竖屏单独的那张图（竖屏回到与本模块横屏图共用）。
-  Future<void> clearPageBackdropModulePortraitImage(HomeTab tab) async {
-    final Map<HomeTab, PageBackdropModuleImages> images =
-        decodePageBackdropModuleImages(_get(kPageBackdropModuleImagesPrefKey));
-    final PageBackdropModuleImages? current = images[tab];
-    if (current == null || current.portrait == null) return;
-    images[tab] = (landscape: current.landscape, portrait: null);
-    await _set(
-      kPageBackdropModuleImagesPrefKey,
-      encodePageBackdropModuleImages(images),
-    );
-    await _deleteOwnedPageBackdropImage(
-      current.portrait,
-      await pageBackdropImageDirectory(),
-    );
-    _publishPageBackdrop();
-  }
+  Future<void> clearPageBackdropModulePortraitImage(HomeTab tab) =>
+      _clearScopedPageBackdropPortraitImage(pageBackdropModuleWire(tab));
 
-  /// 去掉竖屏单独的那张图（竖屏回到与横屏共用）。
-  Future<void> clearPageBackdropPortraitImage() async {
-    final Object? previous = _get(kPageBackdropPortraitImagePrefKey);
-    await _set(kPageBackdropPortraitImagePrefKey, '');
-    await _deleteOwnedPageBackdropImage(
-      previous,
-      await pageBackdropImageDirectory(),
-    );
-    _publishPageBackdrop();
-  }
+  /// 去掉 [page] 竖屏单独的那张图（竖屏回到与本页横屏图共用）。
+  Future<void> clearPageBackdropPagePortraitImage(PageBackdropPage page) =>
+      _clearScopedPageBackdropPortraitImage(page.wire);
 
-  /// 只删本功能自己复制进来的文件（路径在 [dir] 下），绝不碰用户原图。
-  Future<void> _deleteOwnedPageBackdropImage(
-    Object? path,
-    Directory dir,
-  ) async {
-    if (path is! String || path.isEmpty) return;
-    if (!File(path).absolute.path.startsWith(dir.absolute.path)) return;
-    _pageBackdropImagePresence.remove(path);
-    try {
-      await File(path).delete();
-    } on PathNotFoundException {
-      // 已经不在了：要的结果就是「没有这个文件」。
-      return;
-    } on FileSystemException catch (error, stack) {
-      // 删不掉只是留下一个孤儿文件，不影响当前背景；记进应用日志以便排查。
-      ErrorLogService.instance.log(
-        'page_backdrop.cleanup_old_image',
-        error,
-        stack,
+  /// 模块 / 页面两层共用的写入：两层存在同一对 JSON 键里，按 wire 整体读改写，
+  /// 改一层不会丢掉另一层的设置。
+  Future<void> _setScopedPageBackdropPreset(
+    String wire,
+    PageBackdropPreset? preset,
+  ) => _serializePageBackdropImageMutation(() async {
+    final Map<String, PageBackdropPreset> presets =
+        decodePageBackdropScopedPresets(
+          _get(kPageBackdropModulePresetsPrefKey),
+        );
+    if (preset == null) {
+      presets.remove(wire);
+      final Map<String, PageBackdropModuleImages> images =
+          decodePageBackdropScopedImages(
+            _get(kPageBackdropModuleImagesPrefKey),
+          );
+      final PageBackdropModuleImages? removed = images.remove(wire);
+      await _set(
+        kPageBackdropModulePresetsPrefKey,
+        encodePageBackdropScopedPresets(presets),
+      );
+      if (removed != null) {
+        await _set(
+          kPageBackdropModuleImagesPrefKey,
+          encodePageBackdropScopedImages(images),
+        );
+        await _sweepUnreferencedPageBackdropImages();
+      }
+    } else {
+      presets[wire] = preset;
+      await _set(
+        kPageBackdropModulePresetsPrefKey,
+        encodePageBackdropScopedPresets(presets),
       );
     }
+    _publishPageBackdrop();
+  });
+
+  /// [slot] 只进复制件的文件名（`<slot>-<wire>-<朝向>-<毫秒>`），便于排查。
+  Future<void> _importScopedPageBackdropImage(
+    String wire,
+    String slot,
+    File source, {
+    required bool portrait,
+  }) => _serializePageBackdropImageMutation(() async {
+    final Directory dir = await _resolvePageBackdropImageDirectory();
+    final String name = await _copyPageBackdropImage(
+      source,
+      dir,
+      '$slot-$wire-${portrait ? 'portrait' : 'landscape'}',
+    );
+    final Map<String, PageBackdropModuleImages> images =
+        decodePageBackdropScopedImages(_get(kPageBackdropModuleImagesPrefKey));
+    final PageBackdropModuleImages current =
+        images[wire] ?? (landscape: null, portrait: null);
+    images[wire] = portrait
+        ? (landscape: current.landscape, portrait: name)
+        : (landscape: name, portrait: current.portrait);
+    await _set(
+      kPageBackdropModuleImagesPrefKey,
+      encodePageBackdropScopedImages(images),
+    );
+    if (!portrait) {
+      final Map<String, PageBackdropPreset> presets =
+          decodePageBackdropScopedPresets(
+            _get(kPageBackdropModulePresetsPrefKey),
+          );
+      presets[wire] = PageBackdropPreset.custom;
+      await _set(
+        kPageBackdropModulePresetsPrefKey,
+        encodePageBackdropScopedPresets(presets),
+      );
+    }
+    await _sweepUnreferencedPageBackdropImages();
+    _publishPageBackdrop();
+  });
+
+  Future<void> _clearScopedPageBackdropPortraitImage(String wire) =>
+      _serializePageBackdropImageMutation(() async {
+        final Map<String, PageBackdropModuleImages> images =
+            decodePageBackdropScopedImages(
+              _get(kPageBackdropModuleImagesPrefKey),
+            );
+        final PageBackdropModuleImages? current = images[wire];
+        if (current == null || current.portrait == null) return;
+        images[wire] = (landscape: current.landscape, portrait: null);
+        await _set(
+          kPageBackdropModuleImagesPrefKey,
+          encodePageBackdropScopedImages(images),
+        );
+        await _sweepUnreferencedPageBackdropImages();
+        _publishPageBackdrop();
+      });
+
+  /// 去掉竖屏单独的那张图（竖屏回到与横屏共用）。
+  Future<void> clearPageBackdropPortraitImage() =>
+      _serializePageBackdropImageMutation(() async {
+        await _set(kPageBackdropPortraitImagePrefKey, '');
+        await _sweepUnreferencedPageBackdropImages();
+        _publishPageBackdrop();
+      });
+
+  /// 删掉背景图目录里已经没人引用的复制件（只扫 [pageBackdropImageDirectory]，绝不碰用户原图）。
+  ///
+  /// 背景图按配置记（[kPageBackdropProfileParkedPrefKeyPrefixes]）：同一个文件可能同时是几份配置的
+  /// 背景——没停放过的配置沿用切换前的图，复制配置会共用同一路径——所以换图时不能直接删旧文件，
+  /// 要看偏好表里 live 键与各配置的停放值还有没有人指着它。激活配置自己的停放值是旧值，不算
+  /// （[pageBackdropReferencedImagePaths]）。删掉的配置留下的孤儿文件在下一次换图时一并收掉。
+  /// 只在 [_serializePageBackdropImageMutation] 里调用：并发换图时别的调用刚复制、还没写进偏好的
+  /// 新文件会被当成孤儿。
+  Future<void> _sweepUnreferencedPageBackdropImages() async {
+    final Directory dir = await _resolvePageBackdropImageDirectory();
+    final Map<String, String> prefs = await _db.getAllPrefs();
+    String? activeUid;
+    try {
+      activeUid = await _db.resolveActiveProfileUid();
+    } on StateError {
+      // 激活配置行不在（只在纯 DB 测试里出现）：所有停放值都算引用，宁可多留。
+      activeUid = null;
+    }
+    final Set<String> referenced = <String>{
+      for (final String path in pageBackdropReferencedImagePaths(
+        prefs,
+        skipParkedUid: activeUid == null || activeUid.isEmpty
+            ? null
+            : activeUid,
+      ))
+        _pageBackdropNameKey(path),
+    };
+    final List<File> orphans = <File>[];
+    try {
+      await for (final FileSystemEntity entity in dir.list(
+        followLinks: false,
+      )) {
+        if (entity is! File) continue;
+        if (referenced.contains(_pageBackdropNameKey(entity.path))) continue;
+        orphans.add(entity);
+      }
+    } on PathNotFoundException {
+      // 目录还没建过：没有可收的文件。
+      return;
+    }
+    for (final File file in orphans) {
+      _pageBackdropImagePresence.remove(file.path);
+      try {
+        await file.delete();
+      } on PathNotFoundException {
+        // 已经不在了：要的结果就是「没有这个文件」。
+        continue;
+      } on FileSystemException catch (error, stack) {
+        // 删不掉只是留下一个孤儿文件，不影响当前背景；记进应用日志以便排查。
+        ErrorLogService.instance.log(
+          'page_backdrop.cleanup_old_image',
+          error,
+          stack,
+        );
+      }
+    }
+  }
+
+  /// 清扫比对用的键：文件名（偏好里存文件名，存量值是绝对路径也只看文件名——旧容器
+  /// 路径悬空时按整条路径比，会把目录里正被引用的同名文件当孤儿删掉，BUG-5370）；
+  /// Windows / macOS 默认文件系统不分大小写时统一小写。
+  static String _pageBackdropNameKey(String path) {
+    final String name = pageBackdropImageFileName(path);
+    return Platform.isWindows || Platform.isMacOS ? name.toLowerCase() : name;
+  }
+
+  /// 取色缓存记的图与 [path] 是否同一张：按文件名比（缓存写文件名，存量缓存是绝对
+  /// 路径；背景图文件名带毫秒时间戳，同名即同图）。
+  static bool _pageBackdropSeedCacheMatches(String cached, String path) =>
+      pageBackdropImageFileName(cached) == pageBackdropImageFileName(path);
+
+  /// 背景图的写操作排队执行：一次换图的「复制 → 写偏好 → 收孤儿」不与另一次交错，
+  /// 否则后者刚复制、还没写进偏好的文件会被前者的清扫当孤儿删掉。
+  Future<void> _pageBackdropImageMutationTail = Future<void>.value();
+
+  Future<void> _serializePageBackdropImageMutation(
+    Future<void> Function() action,
+  ) {
+    final Future<void> run = _pageBackdropImageMutationTail.then(
+      (_) => action(),
+    );
+    // 队尾吞掉失败只为不卡住后面的操作；失败本身照常从 [run] 抛给调用方。
+    _pageBackdropImageMutationTail = run.then<void>(
+      (_) {},
+      onError: (Object _) {},
+    );
+    return run;
   }
 
   /// 按当前横屏图重取候选种子色（没选自定义图片时清空），并异步核对全局与各模块
@@ -1477,14 +1891,9 @@ class ThemeNotifier extends ChangeNotifier {
       return;
     }
     // 同步段：先套缓存（冷启动首帧就是缓存里的颜色，不先闪一下原主题）。
-    final Color? before = pageBackdropAccentSeed;
     final ({String path, String stamp, List<int> seeds})? cache =
-        _readPageBackdropSeedCache();
-    _pageBackdropSeeds = cache != null && cache.path == path
-        ? cache.seeds.map(Color.new).toList(growable: false)
-        : const <Color>[];
-    if (pageBackdropAccentSeed != before) _onAppIconSeedChanged();
-    // 异步核对图片还在不在；不在会重发布快照（回落角落形状），取色随之作废。
+        _applyPageBackdropSeedCache(path);
+    // 异步核对图片还在不在；不在会重发布快照（回落默认样式），取色随之作废。
     await _verifyPageBackdropImages();
     if (generation != _pageBackdropSeedGeneration) return;
     if (currentPath() != path) {
@@ -1498,7 +1907,11 @@ class ThemeNotifier extends ChangeNotifier {
       final FileStat stat = await File(path).stat();
       stamp = '${stat.modified.millisecondsSinceEpoch}:${stat.size}';
       if (generation != _pageBackdropSeedGeneration) return;
-      if (cache != null && cache.path == path && cache.stamp == stamp) return;
+      if (cache != null &&
+          _pageBackdropSeedCacheMatches(cache.path, path) &&
+          cache.stamp == stamp) {
+        return;
+      }
       seeds = await pageBackdropSeedExtractor(path);
     } catch (error, stack) {
       // 取色失败（图片解码不了等）不影响背景本身，只是不覆盖配色；记应用日志。
@@ -1514,9 +1927,24 @@ class ThemeNotifier extends ChangeNotifier {
     if (seeds.isNotEmpty) {
       await _set(
         kPageBackdropSeedCachePrefKey,
-        '$path|$stamp|${seeds.join(',')}',
+        '${pageBackdropImageFileName(path)}|$stamp|${seeds.join(',')}',
       );
     }
+  }
+
+  /// 按取色缓存套上 [path] 的候选色（缓存不是这张图就清空），返回读到的缓存。
+  ({String path, String stamp, List<int> seeds})? _applyPageBackdropSeedCache(
+    String path,
+  ) {
+    final Color? before = pageBackdropAccentSeed;
+    final ({String path, String stamp, List<int> seeds})? cache =
+        _readPageBackdropSeedCache();
+    _pageBackdropSeeds =
+        cache != null && _pageBackdropSeedCacheMatches(cache.path, path)
+        ? cache.seeds.map(Color.new).toList(growable: false)
+        : const <Color>[];
+    if (pageBackdropAccentSeed != before) _onAppIconSeedChanged();
+    return cache;
   }
 
   ({String path, String stamp, List<int> seeds})? _readPageBackdropSeedCache() {
@@ -1647,6 +2075,11 @@ class ThemeNotifier extends ChangeNotifier {
         _persistHiddenDesignSystemMigration(migration, notifyOnReload: true),
       );
     }
+    final String? layoutInstallDefault = _settleShellLayoutInstallDefault();
+    if (layoutInstallDefault != null) {
+      // 与 design_system 迁移同一边界：载入是同步的，落盘自带错误处理。
+      unawaited(_persistShellLayoutInstallDefault(layoutInstallDefault));
+    }
   }
 
   Future<void> refreshFromDb() async {
@@ -1666,7 +2099,52 @@ class ThemeNotifier extends ChangeNotifier {
         notifyOnReload: false,
       );
     }
+    final String? layoutInstallDefault = _settleShellLayoutInstallDefault();
+    if (layoutInstallDefault != null) {
+      await _persistShellLayoutInstallDefault(layoutInstallDefault);
+    }
     notifyListeners();
+  }
+
+  /// G1 新旧 UI 选择：本安装的库页布局出厂值还没判定过时，按偏好里的老用户信号
+  /// 判一次（[ShellLayoutInstallDefault.settle]），先写进内存缓存，返回要落盘的
+  /// 编码值；已判定过返回 null（幂等）。
+  ///
+  /// 老用户信号与 `PreferencesRepository.settleSrsMiningTargetInstallDefault` 同一
+  /// 判据：首页首帧写的 `first_time_setup` / 新手引导写的 `onboarding_completed`
+  /// 已落过盘。本方法在 `AppModel.initialise()` 载入主题偏好时跑，先于首页首帧，
+  /// 全新安装此时两者都不存在。
+  String? _settleShellLayoutInstallDefault() {
+    if (ShellLayoutInstallDefault.fromPref(_shellLayoutInstallDefaultRaw) !=
+        null) {
+      return null;
+    }
+    final bool existingInstall =
+        _prefs.containsKey('first_time_setup') ||
+        _prefs.containsKey('onboarding_completed');
+    final String layoutRaw =
+        _get('shell_content_layout', defaultValue: '') as String;
+    final ShellLayoutInstallDefault settled = ShellLayoutInstallDefault.settle(
+      existingInstall: existingInstall,
+      layoutChosen: layoutRaw.isNotEmpty,
+    );
+    final String encoded = PrefCodec.encode(settled.prefValue);
+    _prefs[ShellLayoutInstallDefault.prefKey] = encoded;
+    return encoded;
+  }
+
+  Future<void> _persistShellLayoutInstallDefault(String encoded) async {
+    try {
+      await _db.setPref(ShellLayoutInstallDefault.prefKey, encoded);
+    } catch (error, stackTrace) {
+      // 内存里的判定已生效，本次运行行为正确；没落盘的话下次启动按当时的偏好
+      // 重判（老用户信号到那时已在，新安装会被判成升级——所以记进错误日志）。
+      ErrorLogService.instance.log(
+        'ThemeNotifier.persistShellLayoutInstallDefault',
+        error,
+        stackTrace,
+      );
+    }
   }
 
   Future<void> _persistHiddenDesignSystemMigration(
@@ -1979,6 +2457,64 @@ class ThemeNotifier extends ChangeNotifier {
     _persistSplashColor();
   }
 
+  /// 阅读器浅色纸偏好键（拍板台 vJSj4RsKFt）：空 = 跟随 app 主题。
+  static const String readerPaperLightPrefKey = 'reader_paper_light';
+
+  /// 阅读器深色纸偏好键：空 = 跟随 app 主题。
+  static const String readerPaperDarkPrefKey = 'reader_paper_dark';
+
+  /// 浅色 app 下可直接选的阅读器纸色（渲染层手调预设 id，冻结名）。
+  static const List<String> readerLightPaperKeys = <String>[
+    'ecru-theme',
+    'water-theme',
+    'eyecare-theme',
+  ];
+
+  /// 深色 app 下可直接选的阅读器纸色。
+  static const List<String> readerDarkPaperKeys = <String>[
+    'gray-theme',
+    'dark-theme',
+    'black-theme',
+  ];
+
+  /// 某一明暗下可选的纸色 id。
+  static List<String> readerPaperKeysFor({required bool dark}) =>
+      dark ? readerDarkPaperKeys : readerLightPaperKeys;
+
+  /// 用户为 [dark] 这一明暗显式选的阅读器纸色；null = 跟随 app 主题。
+  ///
+  /// 纸色按明暗各存一份：手调纸色只在明暗与 app 一致时生效（`readerPresetFor`
+  /// 的不变式——浅纸不能铺在深色 app 上），所以「羊皮纸」只能是浅色时的选择、
+  /// 「深灰」只能是深色时的选择，切明暗时自动换到对应那份。值不在该明暗的可选
+  /// 集里（手改偏好 / 未来删掉的 id）一律当跟随。
+  String? readerPaperFor({required bool dark}) {
+    final Object? raw = _get(
+      dark ? readerPaperDarkPrefKey : readerPaperLightPrefKey,
+      defaultValue: '',
+    );
+    if (raw is! String) return null;
+    return readerPaperKeysFor(dark: dark).contains(raw) ? raw : null;
+  }
+
+  /// 设置 [dark] 这一明暗的阅读器纸色；[key] 为 null = 回到跟随 app 主题。
+  /// 不在该明暗可选集里的 id 抛 [ArgumentError]。
+  Future<void> setReaderPaper({required bool dark, String? key}) async {
+    if (key != null && !readerPaperKeysFor(dark: dark).contains(key)) {
+      throw ArgumentError.value(key, 'key', 'not a reader paper id');
+    }
+    await _set(
+      dark ? readerPaperDarkPrefKey : readerPaperLightPrefKey,
+      key ?? '',
+    );
+    notifyListeners();
+  }
+
+  /// 阅读器纸色用的主题键：当前明暗下用户显式选的纸色优先，否则跟随 app 主题
+  /// 偏好原值（可能是已删的旧预设 id，如 ecru-theme——存量用户的阅读器纸色照旧
+  /// 生效，2026-10 预设精简时阅读器纸色不动）。
+  String get readerThemeKey =>
+      readerPaperFor(dark: isDarkMode) ?? storedAppThemeKey;
+
   /// Resolve the [CustomThemeEntry] the current [appThemeKey] points at, applying
   /// the documented fallback chain when the key is custom:
   /// explicit `custom-theme:<id>` → that id if it exists → otherwise
@@ -2018,11 +2554,10 @@ class ThemeNotifier extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// 功能层表面材质（与颜色主题正交）。随 Profile 走，与主题键一致；墨水屏 /
-  /// 增强对比度下的回退在消费端 [glassMaterialOf] 判，这里只存用户的选择。
-  /// 生效的玻璃材质：只有设计系统选「玻璃」时才非 off；当前 Apple（Cupertino）
-  /// 组件悬浮面恒为实色（[glassMaterialTier] 钉成 off）。窗口级 Mica / vibrancy
-  /// 不读这里，见 [windowBackdropRequestedOf]。
+  /// 生效的玻璃画质档位（与颜色主题正交）：只有设计系统选「玻璃」（Apple /
+  /// Cupertino）时才非 off；系统「降低透明度」下回退 off。墨水屏 / 增强对比度
+  /// / 引擎能力的回退在消费端唯一判据 [glassMaterialOf] 里判。窗口级 Mica /
+  /// vibrancy 不读这里，见 [windowBackdropRequestedOf]。
   FushiGlassMaterial get glassMaterial {
     if (designSystem != 'glass') return FushiGlassMaterial.off;
     // 系统开了「降低透明度 / 关闭透明效果」：整套玻璃回退实心（主题层半透明
@@ -2033,19 +2568,134 @@ class ThemeNotifier extends ChangeNotifier {
     return glassMaterialTier;
   }
 
-  /// 玻璃设计系统下的材质档位（不看设计系统，供设置页显示选中项）。
+  /// 用户选的玻璃画质档位（不看设计系统，供设置页显示选中项）。偏好键
+  /// `glass_quality`（存枚举名），缺省 [FushiGlassMaterial.defaultTier]（精简）。
   ///
-  /// 2026-10-12 用户拍板：Apple 设计系统去掉玻璃特效，直接原生 Cupertino 实色
-  /// 材质（「白边那些也改掉吧，有点掉帧」「其实特效都去掉，直接原生
-  /// Cupertino」）——这里恒为 off，各组件走既有的「关闭 = 实色」分支（与系统
-  /// 「降低透明度」同一条路径）。此前 2026-10-06 是固定毛玻璃。**不读也不改写**
-  /// `glass_material` 偏好，存储值原样保留（入口在设置页同步隐藏，见
-  /// settings_schema_appearance.dart 的 `appearance.glass_material`）。恢复档位
-  /// 选择时还原为：偏好 == frosted ? frosted : liquid（缺省 liquid）。
-  FushiGlassMaterial get glassMaterialTier => FushiGlassMaterial.off;
+  /// 历史：2026-10-12 用户拍板 Apple 外观去掉玻璃、全部实色（每颗悬浮胶囊一层
+  /// 实时模糊掉帧）；2026-11 改为由用户在「玻璃画质」四档里自己权衡，「实色」档
+  /// 即原先的观感。旧键 `glass_material`（frosted / liquid）冻结，不读不改写。
+  FushiGlassMaterial get glassMaterialTier => FushiGlassMaterial.fromPrefValue(
+    _get('glass_quality', defaultValue: FushiGlassMaterial.defaultTier.name)
+        as String?,
+  );
 
   Future<void> setGlassMaterial(FushiGlassMaterial value) async {
-    await _set('glass_material', value.name);
+    await _set('glass_quality', value.name);
+    notifyListeners();
+  }
+
+  /// 外壳样式（侧栏样式 / 库页布局 / 平滑圆角），随 Profile 走，经
+  /// [FushiShellTheme] 扩展随主题下发。
+  FushiShellTheme get shellTheme => FushiShellTheme(
+    railStyle: shellRailStyle,
+    contentLayout: shellContentLayout,
+    blockArrangement: _shellBlockArrangementPref,
+    smoothCorners: shellSmoothCorners,
+  );
+
+  ShellRailStyle get shellRailStyle => ShellRailStyle.fromPref(
+    _get('shell_rail_style', defaultValue: '') as String,
+  );
+
+  Future<void> setShellRailStyle(ShellRailStyle value) async {
+    await _set('shell_rail_style', value.prefValue);
+    notifyListeners();
+  }
+
+  String? get _shellLayoutInstallDefaultRaw {
+    final String? raw = _prefs[ShellLayoutInstallDefault.prefKey];
+    if (raw == null) return null;
+    return PrefCodec.decode(raw, '');
+  }
+
+  /// 本安装的库页布局出厂判定；还没判定过（只读视图拿不到 live 的值时）按新安装算。
+  ShellLayoutInstallDefault get shellLayoutInstallDefault =>
+      ShellLayoutInstallDefault.fromPref(_shellLayoutInstallDefaultRaw) ??
+      ShellLayoutInstallDefault.fresh;
+
+  /// 没选过库页布局时生效的布局（新安装拼贴、升级上来的老用户封面网格），也是
+  /// 设置页「恢复默认」的目标。
+  ShellContentLayout get shellContentLayoutDefault =>
+      shellLayoutInstallDefault.layout;
+
+  ShellContentLayout get shellContentLayout => ShellContentLayout.fromPref(
+    _get('shell_content_layout', defaultValue: '') as String,
+    fallback: shellContentLayoutDefault,
+  );
+
+  /// 显式选库页布局（设置页 / 新手引导 / 选择框）。选过就等于回答了「选一种库页
+  /// 布局」，待弹的选择框一并记成已处理——否则墨水屏期间留着的待处理状态会在
+  /// 用户已经在设置里选过之后再弹一次。
+  Future<void> setShellContentLayout(ShellContentLayout value) async {
+    await _set('shell_content_layout', value.prefValue);
+    await _markShellLayoutChoiceHandled();
+    notifyListeners();
+  }
+
+  /// 首页是否还要弹「选一种库页布局」（升级上来、从没选过布局的老用户，弹一次）。
+  bool get shellLayoutChoicePending =>
+      !_readOnlyView && shellLayoutInstallDefault.choicePending;
+
+  /// 处理「选一种库页布局」：[chosen] 非 null = 点了「用这个」，写入所选布局；
+  /// null = 「稍后再说」，布局保持出厂值（封面网格）。两种都把弹窗记成已处理，
+  /// 之后不再弹。
+  Future<void> resolveShellLayoutChoice(ShellContentLayout? chosen) async {
+    _ensureWritable('resolveShellLayoutChoice');
+    if (chosen != null) {
+      await setShellContentLayout(chosen);
+      return;
+    }
+    await _markShellLayoutChoiceHandled();
+    notifyListeners();
+  }
+
+  /// 待弹的选择框记成已处理（出厂值仍是封面网格）；不在待处理状态时什么都不做。
+  Future<void> _markShellLayoutChoiceHandled() async {
+    if (!shellLayoutInstallDefault.choicePending) return;
+    final String encoded = PrefCodec.encode(
+      ShellLayoutInstallDefault.upgrade.prefValue,
+    );
+    _publishPreferenceWrite(
+      ShellLayoutInstallDefault.prefKey,
+      encoded,
+      ++_preferenceWriteRevision,
+    );
+    await _db.setPref(ShellLayoutInstallDefault.prefKey, encoded);
+  }
+
+  /// 落库的色块摆放；没选过为 null（跟着布局走）。
+  ShellBlockArrangement? get _shellBlockArrangementPref {
+    final String value =
+        _get('shell_block_arrangement', defaultValue: '') as String;
+    for (final ShellBlockArrangement arrangement
+        in ShellBlockArrangement.values) {
+      if (arrangement.prefValue == value) return arrangement;
+    }
+    return null;
+  }
+
+  /// 生效的色块摆放：没选过时一律规整（[ShellBlockArrangement.defaultFor]）。
+  ShellBlockArrangement get shellBlockArrangement =>
+      _shellBlockArrangementPref ??
+      ShellBlockArrangement.defaultFor(shellContentLayout);
+
+  Future<void> setShellBlockArrangement(ShellBlockArrangement value) async {
+    await _set('shell_block_arrangement', value.prefValue);
+    notifyListeners();
+  }
+
+  /// 恢复默认：清掉落库的摆放（写空串，[_shellBlockArrangementPref] 读回 null），
+  /// 回到「跟着布局走」，而不是把此刻布局下的默认值钉死。
+  Future<void> resetShellBlockArrangement() async {
+    await _set('shell_block_arrangement', '');
+    notifyListeners();
+  }
+
+  bool get shellSmoothCorners =>
+      _get('shell_smooth_corners', defaultValue: true) as bool;
+
+  Future<void> setShellSmoothCorners(bool value) async {
+    await _set('shell_smooth_corners', value);
     notifyListeners();
   }
 
@@ -2409,6 +3059,13 @@ class ThemeNotifier extends ChangeNotifier {
     () => customThemeSelectionColor,
   );
 
+  /// 当前生效自定义主题的查词高亮文字色（null = 跟随正文字色）。新角色，没有旧扁平
+  /// 偏好可兜底。
+  Color? get activeCustomThemeSelectionTextColor => _activeCustomRole(
+    (CustomThemeEntry e) => e.selectionTextColor,
+    () => null,
+  );
+
   /// 当前生效自定义主题的书内链接色（null = 跟随主题）。
   Color? get activeCustomThemeLinkColor => _activeCustomRole(
     (CustomThemeEntry e) => e.linkColor,
@@ -2447,6 +3104,7 @@ class ThemeNotifier extends ChangeNotifier {
     designSystem: designSystemTheme,
     glass: glassMaterial,
     glassDesign: designSystem == 'glass',
+    shell: shellTheme,
     // 默认主题（系统取色）在玻璃设计系统下是单色：白底黑字 / 黑底白字。
     monochromeAccent: appThemeKey == 'system-theme',
     platform: defaultTargetPlatform,
@@ -2460,6 +3118,7 @@ class ThemeNotifier extends ChangeNotifier {
         designSystem: inputs.designSystem,
         glass: inputs.glass,
         glassDesign: inputs.glassDesign,
+        shell: inputs.shell,
         monochromeAccent: inputs.monochromeAccent,
       );
 
@@ -2722,6 +3381,8 @@ class ThemeNotifier extends ChangeNotifier {
   /// 切主题只换配色：**不改写 `brightness_mode`、不强制亮 / 暗**（2026-10-06 用户
   /// 「切换主题的时候如果我是深色就要继续保持深色」）。此前选 `system-theme` 会把
   /// 明暗写成 system、选预设会写成该预设自带的 light / dark。
+  ///
+  /// 只换键、不碰取色覆盖：用户选主题走 [pickAppThemeKey]，这里只给非用户选择的写入。
   Future<void> setAppThemeKey(String key) async {
     await _setAppThemeKeyKeepingEffective(key);
     notifyListeners();
@@ -2733,8 +3394,12 @@ class ThemeNotifier extends ChangeNotifier {
   /// 对旧「纯黑」预设的回退）按换键前的有效值补写成独立偏好，与新主题键同一批落库。
   /// 换掉主题键后那些兜底就读不到了：旧 black-theme 用户改个种子色纯黑消失、旧自定义深色
   /// 用户换预设变成跟随系统。已显式存过的键不动。
-  Future<void> _setAppThemeKeyKeepingEffective(String key) async {
-    final Map<String, String> writes = <String, String>{};
+  /// [extraWrites]（已编码）与主题键同一批落库（[pickAppThemeKey] 关取色开关用）。
+  Future<void> _setAppThemeKeyKeepingEffective(
+    String key, {
+    Map<String, String> extraWrites = const <String, String>{},
+  }) async {
+    final Map<String, String> writes = <String, String>{...extraWrites};
     if (_get('brightness_mode', defaultValue: '').isEmpty) {
       writes['brightness_mode'] = PrefCodec.encode(brightnessMode);
     }
@@ -2922,10 +3587,24 @@ ThemeData buildFushiThemeData({
   FushiGlassMaterial glass = FushiGlassMaterial.off,
   bool glassDesign = false,
   bool monochromeAccent = false,
+  FushiShellTheme shell = const FushiShellTheme(),
 }) {
   // 玻璃设计系统 = Apple 26 设计语言：表面 / 文字 / 描边换成 Apple 系统色，
   // 强调色取主题色相按 iOS 系统色重建（见 fushi_apple_palette.dart）。MD3 不受影响。
   final bool appleDesign = glassDesign && !eink;
+  // 平滑圆角（外壳设置）：主题层这些 Material 表面（菜单、对话框、卡片、
+  // 底部弹层、列表行、FAB）一起换成连续曲率圆角，全应用一次生效。墨水屏的
+  // 描边表面保持普通圆角。
+  final bool smoothCorners = shell.smoothCorners && !eink;
+  OutlinedBorder roundedShape(
+    BorderRadius radius, {
+    BorderSide side = BorderSide.none,
+  }) => smoothCorners
+      ? RoundedSuperellipseBorder(
+          borderRadius: radius * kShellSmoothRadiusScale,
+          side: side,
+        )
+      : RoundedRectangleBorder(borderRadius: radius, side: side);
   final ColorScheme cs = appleDesign
       ? appleColorScheme(scheme, monochrome: monochromeAccent)
       : scheme;
@@ -2967,8 +3646,8 @@ ThemeData buildFushiThemeData({
       EdgeInsets.all(6),
     ),
     shape: WidgetStatePropertyAll<OutlinedBorder>(
-      RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.menu,
+      roundedShape(
+        FushiBorderRadius.menu,
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
     ),
@@ -3065,15 +3744,33 @@ ThemeData buildFushiThemeData({
         // 系统返回键 / 手势照常 pop，也就不存在那套手势计数失配的口子。
         // 系统「减弱动态效果」下 FushiCupertinoPageTransitionsBuilder 退化成原地
         // 线性淡入（无推入视差），边缘侧滑返回仍装着（见该类注释）。
+        //
+        // 同样套 [FushiBackdropPageTransitionsBuilder]：用户自选的背景图片在 Apple
+        // 下也要画（设置页提示「自定义图片所有设计都显示」）。此前这一支没套，
+        // Apple 下整个 app 一页都不垫背景层，选了图也是白底。形状类预设在 Apple
+        // 下由 [LibraryShapeBackdrop.enabledFor] 判为不画，那时背景层不改底色、
+        // 不画装饰，与不套等价。
         : appleDesign
         ? const PageTransitionsTheme(
             builders: <TargetPlatform, PageTransitionsBuilder>{
-              TargetPlatform.android: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.iOS: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.macOS: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.windows: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.linux: FushiCupertinoPageTransitionsBuilder(),
-              TargetPlatform.fuchsia: FushiCupertinoPageTransitionsBuilder(),
+              TargetPlatform.android: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.iOS: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.macOS: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.windows: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.linux: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
+              TargetPlatform.fuchsia: FushiBackdropPageTransitionsBuilder(
+                FushiCupertinoPageTransitionsBuilder(),
+              ),
             },
           )
         // Android 侧滑返回改走自带手势记账的转场：Flutter 自带实现把平台事件直接
@@ -3092,10 +3789,10 @@ ThemeData buildFushiThemeData({
                 FushiPredictiveBackPageTransitionsBuilder(),
               ),
               TargetPlatform.iOS: FushiBackdropPageTransitionsBuilder(
-                CupertinoPageTransitionsBuilder(),
+                FushiNativeCupertinoPageTransitionsBuilder(),
               ),
               TargetPlatform.macOS: FushiBackdropPageTransitionsBuilder(
-                CupertinoPageTransitionsBuilder(),
+                FushiNativeCupertinoPageTransitionsBuilder(),
               ),
               // 桌面：原地淡入、不位移（2026-10 动效重做）。Zoom 的整窗缩放位移
               // 随窗口尺寸线性增长，大屏上很重，见该 builder 类注释。
@@ -3129,6 +3826,7 @@ ThemeData buildFushiThemeData({
       FushiDesignSystemTheme(designSystem),
       FushiEinkTheme(eink),
       FushiGlassTheme(glass, glassDesign: glassDesign && !eink),
+      shell,
       if (appleColors != null) appleColors,
     ],
     // 玻璃下顶栏透明：透出外壳的系统窗口材质（Windows 11 Mica / macOS
@@ -3286,8 +3984,8 @@ ThemeData buildFushiThemeData({
     // MD3 弹出菜单：与 MenuAnchor 同一块面板（surfaceContainer、圆角 12、
     // elevation 3、无 tint、上下 6），14 号 onSurface 文字。
     popupMenuTheme: PopupMenuThemeData(
-      shape: RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.menu,
+      shape: roundedShape(
+        FushiBorderRadius.menu,
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
       color: glassMenuColor ?? cs.surfaceContainer,
@@ -3312,8 +4010,8 @@ ThemeData buildFushiThemeData({
     // showAppDialog 铺整屏模糊。Apple 设计系统的对话框不走 Material
     // 表面（fushi_glass_overlays.dart 自绘），文字样式留空交给它自己。
     dialogTheme: DialogThemeData(
-      shape: RoundedRectangleBorder(
-        borderRadius: FushiBorderRadius.dialog,
+      shape: roundedShape(
+        FushiBorderRadius.dialog,
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
       backgroundColor:
@@ -3355,9 +4053,7 @@ ThemeData buildFushiThemeData({
             contentPadding: const EdgeInsetsDirectional.symmetric(
               horizontal: 16,
             ),
-            shape: const RoundedRectangleBorder(
-              borderRadius: BorderRadius.all(Radius.circular(12)),
-            ),
+            shape: roundedShape(const BorderRadius.all(Radius.circular(12))),
             selectedColor: cs.onSecondaryContainer,
             selectedTileColor: cs.secondaryContainer,
           ),
@@ -3474,8 +4170,8 @@ ThemeData buildFushiThemeData({
       color:
           glassTint(cs.surfaceContainerLow, fushiGlassContainerOpacity) ??
           cs.surfaceContainerLow,
-      shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.all(Radius.circular(16)),
+      shape: roundedShape(
+        const BorderRadius.all(Radius.circular(16)),
         // E-ink: surfaceContainerLow == the page background, so cards need a
         // solid outline to keep their boundary readable in pure black/white.
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
@@ -3488,8 +4184,8 @@ ThemeData buildFushiThemeData({
     // 最宽 640（MD3 规范）。墨水屏补实描边、遮罩不透明度交回默认。
     bottomSheetTheme: BottomSheetThemeData(
       showDragHandle: true,
-      shape: RoundedRectangleBorder(
-        borderRadius: const BorderRadius.vertical(top: Radius.circular(28)),
+      shape: roundedShape(
+        const BorderRadius.vertical(top: Radius.circular(28)),
         side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
       ),
       dragHandleColor: cs.onSurfaceVariant.withValues(alpha: 0.4),
@@ -3520,8 +4216,8 @@ ThemeData buildFushiThemeData({
       foregroundColor: appleDesign ? cs.primary : cs.onPrimaryContainer,
       shape: appleDesign
           ? const StadiumBorder()
-          : RoundedRectangleBorder(
-              borderRadius: FushiBorderRadius.control,
+          : roundedShape(
+              FushiBorderRadius.control,
               // E-ink：primaryContainer == 页面底色、阴影又是透明的，FAB 只剩一枚
               // 悬空图标（首页后台刮削任务按钮）；描边把按钮体画回来。
               side: eink ? BorderSide(color: cs.outline) : BorderSide.none,
@@ -3651,9 +4347,15 @@ ThemeData buildFushiThemeData({
         iconSize: 18,
       ),
     ),
+    // MD3 设计系统的 ElevatedButton 走官方 M3 Expressive 实现（material_ui 1.11：
+    // 尺寸 / 形状变体、按压形变与选中态），与 iconButtonTheme 同口径；Apple 与
+    // 墨水屏保持 M3 原件。M3E 下不写 shape：静止态本就是全圆角，写死
+    // StadiumBorder 会盖掉官方的按压 / 选中形变。其余尺寸、字重沿用 2026-10-04
+    // 的按钮统一口径。
     elevatedButtonTheme: ElevatedButtonThemeData(
+      variant: appleDesign || eink ? null : StyleVariant.material3Expressive,
       style: ElevatedButton.styleFrom(
-        shape: const StadiumBorder(),
+        shape: appleDesign || eink ? const StadiumBorder() : null,
         minimumSize: const Size(64, 40),
         padding: const EdgeInsets.symmetric(horizontal: 20),
         textStyle: tt.labelLarge?.copyWith(
@@ -3693,8 +4395,14 @@ ThemeData buildFushiThemeData({
 
 /// 把已成型的 [base] 换成 [scheme] 重走一遍工厂：组件主题（菜单 / 对话框 / 弹层
 /// / 提示条 / 滑条……的底色与前景）全按新 scheme 重算，字阶、设计系统、玻璃材质、
-/// 墨水屏、平台沿用 [base]；[base] 上的其它主题扩展原样保留（新工厂产物同类型
-/// 的扩展优先）。
+/// 墨水屏、外壳样式、平台沿用 [base]；[base] 上的其它主题扩展原样保留（新工厂
+/// 产物同类型的扩展优先）。
+///
+/// 外壳样式（[FushiShellTheme]）必须显式传回工厂：工厂缺省是
+/// `const FushiShellTheme()`，它产出的同类扩展在合并时排在后面、会盖掉 [base]
+/// 上用户的那份——重新取色的子树（色块取色、歌词、视频面板、遥控页）里圆角
+/// 平滑、侧栏样式、库页布局、色块摆放全被打回默认；平滑圆角还烤进了组件形状。
+/// 单色强调色（`monochromeAccent`）不沿用：重新取色就是要换成新的强调色。
 ///
 /// 为什么不能 `base.copyWith(colorScheme: scheme)`：工厂把 scheme 颜色**烤进**了
 /// 各组件主题（popupMenuTheme.color = surfaceContainer 等），只换 colorScheme
@@ -3710,6 +4418,7 @@ ThemeData rethemeFushiWithScheme(ThemeData base, ColorScheme scheme) {
         FushiDesignSystem.auto,
     glass: glass?.material ?? FushiGlassMaterial.off,
     glassDesign: glass?.glassDesign ?? false,
+    shell: base.extension<FushiShellTheme>() ?? const FushiShellTheme(),
   );
   return rebuilt.copyWith(
     platform: base.platform,
@@ -3810,6 +4519,7 @@ class _ThemeDataInputs {
     required this.designSystem,
     required this.glass,
     required this.glassDesign,
+    required this.shell,
     required this.monochromeAccent,
     required this.platform,
   });
@@ -3820,6 +4530,7 @@ class _ThemeDataInputs {
   final FushiDesignSystem designSystem;
   final FushiGlassMaterial glass;
   final bool glassDesign;
+  final FushiShellTheme shell;
   final bool monochromeAccent;
   final TargetPlatform platform;
 
@@ -3832,6 +4543,7 @@ class _ThemeDataInputs {
       other.designSystem == designSystem &&
       other.glass == glass &&
       other.glassDesign == glassDesign &&
+      other.shell == shell &&
       other.monochromeAccent == monochromeAccent &&
       other.platform == platform;
 
@@ -3843,6 +4555,7 @@ class _ThemeDataInputs {
     designSystem,
     glass,
     glassDesign,
+    shell,
     monochromeAccent,
     platform,
   );

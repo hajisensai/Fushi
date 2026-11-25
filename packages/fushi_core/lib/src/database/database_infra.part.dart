@@ -100,6 +100,24 @@ mixin _FushiDbInfra on _$FushiDatabase {
     return rows.isNotEmpty;
   }
 
+  /// [tableName] 在 sqlite_master 里的建表 SQL 原文；表不存在返回空串。迁移步据此
+  /// 判断内联 CHECK 是不是已是新值域（v155）。
+  Future<String> _tableCreateSql(String tableName) async {
+    if (!_identifierRe.hasMatch(tableName)) {
+      throw ArgumentError.value(
+        tableName,
+        'tableName',
+        'not a valid identifier',
+      );
+    }
+    final rows = await customSelect(
+      "SELECT sql FROM sqlite_master WHERE type = 'table' AND name = ?",
+      variables: [Variable<String>(tableName)],
+    ).get();
+    if (rows.isEmpty) return '';
+    return rows.single.read<String?>('sql') ?? '';
+  }
+
   /// v118 迁移：把 [tableName] 里尚未记录的 `local_added_at` 回填成
   /// `imported_at`（理由见迁移步注释）。只碰 NULL 行，重跑幂等。没有
   /// `imported_at` 列的表（阶梯上的合成 / 残缺库，与其它加列步的 `_columnExists`
@@ -305,6 +323,80 @@ mixin _FushiDbInfra on _$FushiDatabase {
       if (await _tableExists(entry[0])) {
         await customStatement(entry[1]);
       }
+    }
+  }
+
+  /// 统计按 Profile 分区的两条读路径索引（video-36i）：统计页按
+  /// `(profile_id, date_key)` 取区间。v105 步给升级库建了它们，但 fresh 库的
+  /// onCreate 从来没建——v105 之后新装的库一直缺这两条。
+  ///
+  /// 不进 [_ensureIndexes]：那个清单会被 v105 之前的迁移步调用，彼时
+  /// `profile_id` 列还不存在、CREATE INDEX 当场失败。这里按列存在性守卫，onCreate
+  /// 与 onUpgrade 末尾各调一次：后者让「v105 后新装、缺索引」的存量库在下一次
+  /// 升 schema 时自动补齐（全幂等，已有索引时是 no-op）。
+  ///
+  /// v168 起再带单媒体统计读路径的四条等值索引（HBK-AUDIT-042，见函数体）。
+  Future<void> _ensureStatIndexes() async {
+    if (await _tableExists('study_segments') &&
+        await _columnExists('study_segments', 'profile_id')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_study_segments_profile_date '
+        'ON study_segments (profile_id, date_key)',
+      );
+    }
+    if (await _tableExists('galgame_sessions') &&
+        await _columnExists('galgame_sessions', 'profile_id')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_galgame_sessions_profile_date '
+        'ON galgame_sessions (profile_id, date_key)',
+      );
+    }
+    // v168（HBK-AUDIT-042 单媒体统计读放大）：统计侧栏只看一本书 / 一个视频时，
+    // 下面几条读路径的等值条件之前都没有可用索引——段表只能按 (profile_id) 扫本
+    // Profile 全部段，计数表 / 视频 legacy 行 / 书表的标题回退整表扫。列序按真实
+    // WHERE 的等值前缀排：
+    // - 段：`profile_id = ? AND media_kind = ? AND media_key = ?`，legacy 无身份段
+    //   再加 `media_key = '' AND title = ?`（getStudySegments 拆成两支各自全等值命中；
+    //   getStudySegmentsForMedia / 删段 / 每媒体最后一段也走这条前缀）；
+    // - 计数：`book_key = ?` 与 `book_key = '' AND title = ?`（MULTI-INDEX OR 两支）；
+    // - 视频 legacy 行：身份支走 (book_uid, date_key) 唯一索引，无身份支按 `title = ?`；
+    // - 书表：`book_key = ?` 走主键，同名判定 `title IN (…) / title = ?` 走 title。
+    if (await _tableExists('study_segments') &&
+        await _columnExists('study_segments', 'profile_id') &&
+        await _columnExists('study_segments', 'media_kind')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_study_segments_profile_media '
+        'ON study_segments (profile_id, media_kind, media_key, title)',
+      );
+    }
+    // v178：段内查词的读取面（[getStudySegmentLookupCounters]）只看 `lookups > 0`
+    // 的段——绝大多数段没有查词，部分索引让它不必扫本 Profile 的全部段。
+    if (await _tableExists('study_segments') &&
+        await _columnExists('study_segments', 'profile_id') &&
+        await _columnExists('study_segments', 'lookups')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_study_segments_profile_lookups '
+        'ON study_segments (profile_id, media_key) WHERE lookups > 0',
+      );
+    }
+    if (await _tableExists('lookup_mining_counters') &&
+        await _columnExists('lookup_mining_counters', 'book_key')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_lookup_mining_counters_book_title '
+        'ON lookup_mining_counters (book_key, title)',
+      );
+    }
+    if (await _tableExists('video_watch_statistics')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_video_watch_statistics_title '
+        'ON video_watch_statistics (title)',
+      );
+    }
+    if (await _tableExists('epub_books')) {
+      await customStatement(
+        'CREATE INDEX IF NOT EXISTS idx_epub_books_title '
+        'ON epub_books (title)',
+      );
     }
   }
 }

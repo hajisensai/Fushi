@@ -23,7 +23,7 @@ Future<void> _pump(
   final ThemeData theme = buildFushiThemeData(
     scheme: ColorScheme.fromSeed(seedColor: Colors.teal),
     textTheme: Typography.material2021().black,
-    glass: glass ? FushiGlassMaterial.liquid : FushiGlassMaterial.off,
+    glass: glass ? FushiGlassMaterial.premium : FushiGlassMaterial.off,
     glassDesign: glass,
   );
   await tester.pumpWidget(
@@ -100,54 +100,55 @@ void main() {
       );
     }
 
-    testWidgets('glass builds an iOS search capsule in one clear-glass bezel', (
-      WidgetTester tester,
-    ) async {
-      await _pump(
-        tester,
-        const FushiTextFieldControl(
-          decoration: InputDecoration(
-            labelText: 'Name',
-            hintText: 'Type here',
-            helperText: 'Helper line',
-            prefixIcon: Icon(Icons.search),
-            suffixIcon: Icon(Icons.clear),
+    testWidgets(
+      'glass builds an iOS search capsule as a solid tertiaryFill shell',
+      (WidgetTester tester) async {
+        await _pump(
+          tester,
+          const FushiTextFieldControl(
+            decoration: InputDecoration(
+              labelText: 'Name',
+              hintText: 'Type here',
+              helperText: 'Helper line',
+              prefixIcon: Icon(Icons.search),
+              suffixIcon: Icon(Icons.clear),
+            ),
           ),
-        ),
-        glass: true,
-      );
-      expect(find.byType(TextField), findsNothing);
-      expect(find.byType(InputDecorator), findsNothing);
-      // 搜索胶囊是控件层（用户 2026-10-04「往液态玻璃靠」）：恰好一枚无色透明
-      // 玻璃 bezel，不再在里面另套玻璃。
-      expect(find.byType(GlassContainer), findsOneWidget);
-      expect(find.byType(CupertinoTextField), findsOneWidget);
-      expect(find.text('Name'), findsOneWidget);
-      expect(find.text('Type here'), findsOneWidget);
-      expect(find.text('Helper line'), findsOneWidget);
-      // 放大镜前缀 = 搜索框：SF 放大镜、全胶囊（圆角 18）、高 36。浅色下胶囊
-      // 底交给玻璃（不叠灰），深色才在玻璃里自绘 tertiarySystemFill。
-      expect(find.byIcon(Icons.search), findsNothing);
-      expect(find.byIcon(CupertinoIcons.search), findsOneWidget);
-      expect(find.byIcon(Icons.clear), findsOneWidget);
-      final Finder shell = find.ancestor(
-        of: find.byType(CupertinoTextField),
-        matching: find.byWidgetPredicate(
-          (Widget w) =>
-              w is AnimatedContainer &&
-              w.decoration is BoxDecoration &&
-              (w.decoration! as BoxDecoration).borderRadius ==
-                  BorderRadius.circular(18),
-        ),
-      );
-      expect(shell, findsOneWidget);
-      expect(tester.getSize(shell).height, 36);
-      expect(
-        (tester.widget<AnimatedContainer>(shell).decoration! as BoxDecoration)
-            .color,
-        Colors.transparent,
-      );
-    });
+          glass: true,
+        );
+        expect(find.byType(TextField), findsNothing);
+        expect(find.byType(InputDecorator), findsNothing);
+        // iOS 27 / macOS 27 搜索框（UISearchTextField / NSSearchField）：
+        // tertiarySystemFill 实色胶囊，不画玻璃 bezel（d895134b830）。
+        expect(find.byType(GlassContainer), findsNothing);
+        expect(find.byType(CupertinoTextField), findsOneWidget);
+        expect(find.text('Name'), findsOneWidget);
+        expect(find.text('Type here'), findsOneWidget);
+        expect(find.text('Helper line'), findsOneWidget);
+        // 放大镜前缀 = 搜索框：SF 放大镜、全胶囊（圆角 18）、高 36，底 =
+        // tertiarySystemFill。
+        expect(find.byIcon(Icons.search), findsNothing);
+        expect(find.byIcon(CupertinoIcons.search), findsOneWidget);
+        expect(find.byIcon(Icons.clear), findsOneWidget);
+        final Finder shell = find.ancestor(
+          of: find.byType(CupertinoTextField),
+          matching: find.byWidgetPredicate(
+            (Widget w) =>
+                w is AnimatedContainer &&
+                w.decoration is BoxDecoration &&
+                (w.decoration! as BoxDecoration).borderRadius ==
+                    BorderRadius.circular(18),
+          ),
+        );
+        expect(shell, findsOneWidget);
+        expect(tester.getSize(shell).height, 36);
+        expect(
+          (tester.widget<AnimatedContainer>(shell).decoration! as BoxDecoration)
+              .color,
+          appleColorsOf(tester.element(shell)).tertiaryFill,
+        );
+      },
+    );
 
     testWidgets('glass plain field is a rounded-10 tertiaryFill box', (
       WidgetTester tester,

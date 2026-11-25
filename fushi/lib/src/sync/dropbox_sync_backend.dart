@@ -533,6 +533,24 @@ class DropboxSyncBackend extends SyncBackend
   }
 
   @override
+  Future<Uint8List?> getBytesAsset(String assetId) =>
+      downloadSyncAssetBytesCapped(
+        http.Request('POST', Uri.parse('$_contentBase/files/download'))
+          ..headers.addAll(_downloadHeaders(assetId)),
+        assetId: assetId,
+        onError: (http.Response resp) => throw SyncBackendError(
+          'Download failed: HTTP ${resp.statusCode} ${resp.body}',
+        ),
+      );
+
+  @override
+  Future<void> putBytesAsset(
+    String namespaceId,
+    String name,
+    Uint8List bytes,
+  ) => _uploadBytes('$namespaceId/$name', bytes, mode: 'overwrite');
+
+  @override
   Future<void> deleteAsset(String id, {bool isFolder = false}) async {
     // AssetEntry.id 对 Dropbox 是路径串；delete_v2 对文件夹递归删，
     // _deleteFile 已吞 not-found，天然幂等，isFolder 无需分支。其它错误
@@ -618,21 +636,26 @@ class DropboxSyncBackend extends SyncBackend
     return entries;
   }
 
-  Future<dynamic> _downloadFileJson(String fileId) async {
-    final apiArg = jsonEncode({'path': fileId});
+  Future<dynamic> _downloadFileJson(String fileId) async =>
+      decodeSyncJsonFileBody(await _downloadFile(fileId));
+
+  /// `/files/download` 的请求头（[_downloadFile] 与 [getBytesAsset] 共用）。
+  Map<String, String> _downloadHeaders(String fileId) => <String, String>{
+    'Authorization': 'Bearer $accessToken',
+    'Dropbox-API-Arg': jsonEncode({'path': fileId}),
+  };
+
+  Future<http.Response> _downloadFile(String fileId) async {
     final resp = await (await obtainSyncHttpClient()).post(
       Uri.parse('$_contentBase/files/download'),
-      headers: {
-        'Authorization': 'Bearer $accessToken',
-        'Dropbox-API-Arg': apiArg,
-      },
+      headers: _downloadHeaders(fileId),
     );
     if (resp.statusCode >= 400) {
       throw SyncBackendError(
         'Download failed: HTTP ${resp.statusCode} ${resp.body}',
       );
     }
-    return jsonDecode(resp.body);
+    return resp;
   }
 
   Future<void> _uploadJsonFile(

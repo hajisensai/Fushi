@@ -130,8 +130,19 @@ class GlobalLookupWindow {
   // size and makes it visible (arming the click-outside hooks). Called once per
   // lookup after the page has self-measured, so the user never sees the
   // measure->resize jitter. Pass <=0 to keep the current size.
+  //
+  // [layer_origin] 说明调用方把窗口放在了哪：
+  //   * kCursorSingleCard（默认）—— legacy 路径，窗口在光标处、单卡尺寸，host 图层
+  //     必须复位到 (0,0)（BUG-2123）。
+  //   * kCommittedBBox —— 直连游戏内卡（RevealOverProcessClient）：窗口落在**已提交
+  //     几何**的 union bbox 原点、union 尺寸，图层平移正是同一几何的
+  //     commitLayerShift(bbox) 写进去的，绝不能复位（BUG-4355：子卡向上翻出后复位会把
+  //     整叠卡画回 window-local 原点，两张卡下方各露出一截透明区）。
+  enum class RevealLayerOrigin { kCursorSingleCard, kCommittedBBox };
   void Reveal(int width, int height, bool clamp_to_work_area = true,
-              HWND consume_outside_owner = nullptr);
+              HWND consume_outside_owner = nullptr,
+              RevealLayerOrigin layer_origin =
+                  RevealLayerOrigin::kCursorSingleCard);
   // TODO-867 P3c E1 — reveals/resizes to the nested-stack union bounding box.
   // |dx|/|dy| offset the window from the pending cursor anchor (physical px; the
   // host bbox origin × dpr) so a left/up cascade shifts the window while the root
@@ -179,6 +190,25 @@ class GlobalLookupWindow {
   // 绝不把任意字符串拼进 ExecuteScript；WebView 未就绪时静默丢弃
   // （手柄动作是瞬时输入，不做 pending 缓存）。
   void DispatchGamepadAction(const std::string& action, double dy);
+
+  // BUG-5310 — app 外查词热键 / 手柄 / 鼠标侧键按下时，卡片在屏且卡片里有非空
+  // 选区（host 经 overlaySelection 上报的 selection_present_）就由卡片接手：让 host
+  // 把这段选区当作「点了释义正文」发一次 textSelected，走既有的嵌套查词链；返回
+  // |done| 收到 true 表示 host 已发出嵌套查词，Dart 不再收卡、不再去抓前台程序的
+  // 选区；false（没选区 / 卡片已收 / host 取不到可查的字）则照旧走前台抓取。
+  // |done| 恰好调用一次：结果取自 host 脚本的返回值，不在脚本入队时就臆断接手。
+  // 卡片窗口 WS_EX_NOACTIVATE、永不成为前台，前台抓取只会抓到底下程序里原来那个词。
+  void LookupOverlaySelection(std::function<void(bool)> done);
+
+  // review-gal-overlay-mine-fail: pushes the outcome of a BACKGROUND card write
+  // (the popup only got "queued" and painted "added") into every card frame via
+  // window.__globalLookupHost.settleQueuedMine -> popup.js
+  // fushiSettleQueuedMine, so the card drops its "queued" mark and says the
+  // failure reason in place -- the main-window toast is invisible over a
+  // fullscreen game (BUG-1908). |json_literal| is a JS string literal (Dart
+  // double-encodes it); anything else is dropped. No-op while the WebView is
+  // not ready (the page holding the mark is gone).
+  void SettleQueuedMine(const std::string& json_literal);
 
   // Resolves a deferred JS bridge promise. |json_value| is a JSON literal
   // (e.g. "\"file:///a.mp3\"", "true", "null") passed straight to

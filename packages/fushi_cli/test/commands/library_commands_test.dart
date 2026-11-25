@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:args/args.dart';
 import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi_cli/src/commands/library_commands.dart';
@@ -65,6 +67,185 @@ void main() {
         throwsA(isA<CtlUsageError>()),
       );
     });
+
+    test('organize-proposals / organize-accept / organize-reject 的路径', () {
+      final CtlRequestSpec l = _build('organize-proposals', <String>['--all']);
+      expect(l.method, 'GET');
+      expect(l.path, '/api/admin/library/organize/proposals');
+      expect(l.query, <String, String>{'all': 'true'});
+      final CtlRequestSpec a = _build('organize-accept', <String>['7']);
+      expect(a.method, 'POST');
+      expect(a.path, '/api/admin/library/organize/proposals/7/accept');
+      final CtlRequestSpec r = _build('organize-reject', <String>['7']);
+      expect(r.path, '/api/admin/library/organize/proposals/7/reject');
+      expect(
+        _build('organize-defer', <String>['7']).path,
+        '/api/admin/library/organize/proposals/7/defer',
+      );
+      expect(
+        _build('organize-unaccept', <String>['7']).path,
+        '/api/admin/library/organize/proposals/7/undo',
+      );
+      expect(
+        () => _build('organize-accept', <String>['0']),
+        throwsA(isA<CtlUsageError>()),
+      );
+    });
+  });
+
+  group('library map / apply-changes（AI 管库 v3）', () {
+    test('map：默认不带参数，各选项进 query', () {
+      final CtlRequestSpec bare = _build('map', <String>[]);
+      expect(bare.method, 'GET');
+      expect(bare.path, '/api/admin/library/agent/map');
+      expect(bare.query, isEmpty);
+      final CtlRequestSpec r = _build('map', <String>[
+        '--view',
+        'video',
+        '--q',
+        ' 進撃 ',
+        '--added-since',
+        '1700000000000',
+        '--offset',
+        '400',
+        '--limit',
+        '200',
+      ]);
+      expect(r.query, <String, String>{
+        'view': 'video',
+        'q': '進撃',
+        'addedSince': '1700000000000',
+        'offset': '400',
+        'limit': '200',
+      });
+    });
+
+    group('apply-changes', () {
+      late Directory tmp;
+      setUp(() => tmp = Directory.systemTemp.createTempSync('cli_lib_agent_'));
+      tearDown(() => tmp.deleteSync(recursive: true));
+
+      String write(String name, String text) {
+        final File f = File(p.join(tmp.path, name))..writeAsStringSync(text);
+        return f.path;
+      }
+
+      test('读文件原样提交，--dry-run 加 dryRun', () {
+        final String path = write(
+          'cs.json',
+          '{"changes": [{"op": "rename_collection", "id": 1, "name": "x"}]}',
+        );
+        final CtlRequestSpec r = _build('apply-changes', <String>[path]);
+        expect(r.method, 'POST');
+        expect(r.path, '/api/admin/library/agent/changes');
+        expect(r.body!['changes'], hasLength(1));
+        expect(r.body!.containsKey('dryRun'), isFalse);
+        final CtlRequestSpec dry = _build('apply-changes', <String>[
+          path,
+          '--dry-run',
+        ]);
+        expect(dry.body!['dryRun'], isTrue);
+      });
+
+      test('缺文件 / 坏 JSON / 形状不对都是用法错误', () {
+        expect(
+          () => _build('apply-changes', <String>[]),
+          throwsA(isA<CtlUsageError>()),
+        );
+        expect(
+          () => _build('apply-changes', <String>[p.join(tmp.path, 'nope')]),
+          throwsA(isA<CtlUsageError>()),
+        );
+        expect(
+          () => _build('apply-changes', <String>[write('bad.json', '{')]),
+          throwsA(isA<CtlUsageError>()),
+        );
+        expect(
+          () => _build('apply-changes', <String>[write('arr.json', '[]')]),
+          throwsA(isA<CtlUsageError>()),
+        );
+      });
+    });
+  });
+
+  group('library curate（AI 库管家）', () {
+    test('curate-links / curate-music 的路径与 body', () {
+      final CtlRequestSpec l = _build('curate-links', <String>[
+        'book:a',
+        'game:g',
+        '--auto',
+      ]);
+      expect(l.path, '/api/admin/library/curate/links/infer');
+      expect(l.body, <String, Object?>{
+        'items': <String>['book:a', 'game:g'],
+        'trigger': 'auto',
+      });
+      expect(
+        () => _build('curate-links', <String>[]),
+        throwsA(isA<CtlUsageError>()),
+      );
+      final CtlRequestSpec m = _build('curate-music', <String>['--no-ai']);
+      expect(m.path, '/api/admin/library/curate/links/music');
+      expect(m.body, <String, Object?>{'useAi': false});
+    });
+
+    test(
+      'curate：默认增量手动跑；--full / --no-wait / --yes 带进 body；--estimate 只估算',
+      () {
+        final CtlRequestSpec r = _build('curate', <String>[]);
+        expect(r.method, 'POST');
+        expect(r.path, '/api/admin/library/curate');
+        expect(r.body, <String, Object?>{});
+        expect(
+          _build('curate', <String>['--full', '--no-wait', '--yes']).body,
+          <String, Object?>{'full': true, 'wait': false, 'yes': true},
+        );
+        final CtlRequestSpec e = _build('curate', <String>[
+          '--estimate',
+          '--full',
+        ]);
+        expect(e.method, 'GET');
+        expect(e.path, '/api/admin/library/curate/estimate');
+        expect(e.query, <String, String>{'full': 'true'});
+      },
+    );
+
+    test('curate-status / curate-runs / curate-undo / curate-pending 的路径', () {
+      expect(
+        _build('curate-status', <String>[]).path,
+        '/api/admin/library/curate/status',
+      );
+      final CtlRequestSpec h = _build('curate-runs', <String>['--limit', '3']);
+      expect(h.path, '/api/admin/library/curate/runs');
+      expect(h.query, <String, String>{'limit': '3'});
+      final CtlRequestSpec u = _build('curate-undo', <String>['1700000000000']);
+      expect(u.method, 'POST');
+      expect(u.path, '/api/admin/library/curate/runs/1700000000000/undo');
+      expect(
+        () => _build('curate-undo', <String>['x']),
+        throwsA(isA<CtlUsageError>()),
+      );
+      expect(
+        _build('curate-pending', <String>[]).path,
+        '/api/admin/library/curate/pending',
+      );
+      final CtlRequestSpec r = _build('curate-retry', <String>[
+        'books',
+        'epub:abc',
+        '--yes',
+      ]);
+      expect(r.method, 'POST');
+      expect(r.path, '/api/admin/library/curate/scrape/retry');
+      expect(r.body, <String, Object?>{
+        'stage': 'books',
+        'ref': 'epub:abc',
+        'yes': true,
+      });
+      expect(
+        () => _build('curate-retry', <String>['video', 'x']),
+        throwsA(isA<CtlUsageError>()),
+      );
+    });
   });
 
   test('命令组与子命令齐全', () {
@@ -92,6 +273,21 @@ void main() {
         'organize',
         'organize-history',
         'organize-undo',
+        'organize-proposals',
+        'organize-accept',
+        'organize-reject',
+        'organize-defer',
+        'organize-unaccept',
+        'map',
+        'apply-changes',
+        'curate',
+        'curate-status',
+        'curate-runs',
+        'curate-undo',
+        'curate-links',
+        'curate-music',
+        'curate-pending',
+        'curate-retry',
         'source-add',
         'source-rename',
         'source-rm',
@@ -99,6 +295,7 @@ void main() {
         'cover',
         'complete',
         'reset',
+        'scrape-meta',
       ],
     );
   });

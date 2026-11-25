@@ -17,7 +17,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_card_video_clip.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_card_view.dart'
     show SrsPictureLimits, srsPictureLimits;
 import 'package:fushi/src/srs/srs_card_video_channel.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_review_layout.dart' show SrsReviewImageSize;
 import 'package:fushi/src/srs/srs_review_gestures.dart'
@@ -35,6 +35,8 @@ class _FakePlayer implements SrsCardVideoPlayer {
   final StreamController<Size> size = StreamController<Size>.broadcast(
     sync: true,
   );
+  final StreamController<String> loadFailed =
+      StreamController<String>.broadcast(sync: true);
   bool atEnd = false;
   bool disposed = false;
 
@@ -72,6 +74,9 @@ class _FakePlayer implements SrsCardVideoPlayer {
 
   @override
   Stream<Size> get videoSizeStream => size.stream;
+
+  @override
+  Stream<String> get loadFailedStream => loadFailed.stream;
 
   @override
   bool get isCompleted => atEnd;
@@ -516,6 +521,80 @@ void main() {
       expect(tester.getSize(placeholder).width, moreOrLessEquals(120 * 16 / 9));
       expect(players, isEmpty);
       expect(channel.playToEnd('missing.webm'), isNull);
+    });
+
+    // BUG-4812：加载不了的文件（0 字节 / 认不出格式）在 media_kit 里 open 不抛、completed
+    // 不发，播放器只是回到空闲。以前抽象上没有这个出口：序列一直等、卡面是黑框。
+    testWidgets('BUG-4812 播放器判加载失败：序列以 false 结束、落「视频未同步」占位、释放播放器', (
+      WidgetTester tester,
+    ) async {
+      await mount(tester);
+      final _FakePlayer p = players.single;
+      bool? result;
+      unawaited(channel.playToEnd('clip.webm')!.then((bool v) => result = v));
+      await settle(tester);
+      expect(p.calls, contains('play'));
+      expect(result, isNull, reason: '起播后还在等片段播完');
+
+      p.loadFailed.add('Failed to recognize file format.');
+      await settle(tester);
+
+      expect(result, isFalse, reason: '序列不再等这段放不了的片段');
+      expect(p.disposed, isTrue);
+      expect(channel.isAttached('clip.webm'), isFalse);
+      expect(channel.playToEnd('clip.webm'), isNull);
+      expect(
+        find.byKey(const ValueKey<String>('srs-card-video-toggle')),
+        findsNothing,
+      );
+      expect(
+        find.byKey(const ValueKey<String>('srs-card-video-missing')),
+        findsOne,
+      );
+      expect(find.text(t.srs_card_media_missing_video), findsOne);
+    });
+
+    testWidgets('BUG-4812 没起序列时判加载失败：同样落占位，之后的序列退回只播音频', (
+      WidgetTester tester,
+    ) async {
+      await mount(tester);
+      final _FakePlayer p = players.single;
+
+      p.loadFailed.add('Failed to recognize file format.');
+      await settle(tester);
+
+      expect(p.disposed, isTrue);
+      expect(
+        find.byKey(const ValueKey<String>('srs-card-video-missing')),
+        findsOne,
+      );
+      expect(channel.playToEnd('clip.webm'), isNull);
+    });
+
+    // 判据不看「有没有拿到画面尺寸」：容器声明了尺寸、但没有一条轨能播的文件同样是
+    // 加载失败（播放器回空闲），序列不能卡在它上面。
+    testWidgets('BUG-4812 已拿到画面尺寸后才判加载失败：同样结束序列并落占位', (
+      WidgetTester tester,
+    ) async {
+      await mount(tester);
+      final _FakePlayer p = players.single;
+      p.size.add(const Size(1280, 720));
+      await tester.pump();
+      bool? result;
+      unawaited(channel.playToEnd('clip.webm')!.then((bool v) => result = v));
+      await settle(tester);
+      expect(result, isNull);
+
+      p.loadFailed.add('no audio or video data played');
+      await settle(tester);
+
+      expect(result, isFalse);
+      expect(p.disposed, isTrue);
+      expect(channel.isAttached('clip.webm'), isFalse);
+      expect(
+        find.byKey(const ValueKey<String>('srs-card-video-missing')),
+        findsOne,
+      );
     });
 
     testWidgets('铺满模式：16:9 片段宽 = 父级宽度（300），高不超过铺满上限', (

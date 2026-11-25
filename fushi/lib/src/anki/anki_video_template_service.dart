@@ -8,6 +8,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/anki/delegating_anki_repository.dart';
 import 'package:fushi/src/anki/remote_mining_anki_repository.dart';
 import 'package:fushi/src/storage/app_paths.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// Explicit, backed-up video adaptation of the currently selected note type.
 class AnkiVideoTemplateService {
@@ -20,6 +21,14 @@ class AnkiVideoTemplateService {
   final BaseAnkiRepository _repository;
   final Future<Directory> Function()? _backupDirectoryResolver;
   static const String _videoMapping = '{card-video}';
+
+  /// 备份查找键里的后端标识。**冻结的持久化值**：它进 [_target]，[_target] 的哈希是
+  /// 备份文件名前缀、原文是备份里的 `target` 字段，改掉任何一个字符 = 现有用户的全部
+  /// 备份立刻匹配不上（「找不到原始映射备份」，已适配的模板既不能改设置也不能恢复）。
+  /// 取值是当初直接用 `runtimeType.toString()` 时两个可编辑后端的类名，写死之后类
+  /// 改名 / 抽子类 / 混淆都不再影响已有备份。
+  static const String _ankiConnectBackendKey = 'AnkiConnectRepository';
+  static const String _ankiDroidBackendKey = 'AnkiRepository';
 
   static BaseAnkiRepository _unwrap(BaseAnkiRepository repository) {
     while (repository is DelegatingAnkiRepository) {
@@ -40,7 +49,9 @@ class AnkiVideoTemplateService {
     final AnkiNoteTypeDefinition? definition = await _repository
         .readNoteTypeDefinition(modelName);
     if (target != _target(await _repository.loadSettings())) {
-      throw StateError('制卡目标已改变，请重新打开预览。');
+      throw const AnkiVideoTemplateException(
+        AnkiVideoTemplateErrorCode.targetChanged,
+      );
     }
     if (definition != null) _readTargets[definition] = target;
     return definition;
@@ -64,7 +75,9 @@ class AnkiVideoTemplateService {
         audioMappings.single.key == options.field ||
         !expected.fields.contains(audioMappings.single.key) ||
         '{sentence-audio}'.allMatches(audioMappings.single.value).length != 1) {
-      throw StateError('请仅在另一个字段映射一次句子音频，再启用视频适配。');
+      throw const AnkiVideoTemplateException(
+        AnkiVideoTemplateErrorCode.audioMappingRequired,
+      );
     }
     final String? mapping = settings.fieldMappings[options.field];
     if (mapping != null &&
@@ -73,7 +86,9 @@ class AnkiVideoTemplateService {
           ...AnkiHandlebarOptions.cardImageTokens,
           _videoMapping,
         }.contains(mapping.trim())) {
-      throw StateError('所选字段包含其他内容，请选择图片、视频或空字段。');
+      throw const AnkiVideoTemplateException(
+        AnkiVideoTemplateErrorCode.fieldHasOtherContent,
+      );
     }
     final AnkiVideoTemplateOptions? old = readAnkiVideoTemplateOptions(
       expected,
@@ -105,7 +120,9 @@ class AnkiVideoTemplateService {
         ? null
         : await _findBackup(target, old);
     if (old != null && previous == null) {
-      throw StateError('找不到此适配的原始映射备份，请先恢复模板后重试。');
+      throw const AnkiVideoTemplateException(
+        AnkiVideoTemplateErrorCode.applyBackupMissing,
+      );
     }
     final Map<String, String?> originals = previous == null
         ? <String, String?>{}
@@ -131,10 +148,18 @@ class AnkiVideoTemplateService {
     final AnkiSettings settings = await _validate(expected);
     final AnkiVideoTemplateOptions? options =
         readAnkiVideoTemplateRecoveryOptions(expected);
-    if (options == null) throw StateError('模板没有视频适配区块。');
+    if (options == null) {
+      throw const AnkiVideoTemplateException(
+        AnkiVideoTemplateErrorCode.noVideoBlock,
+      );
+    }
     final String target = _target(settings);
     final Map<String, dynamic>? backup = await _findBackup(target, options);
-    if (backup == null) throw StateError('找不到当前后端的原始映射备份。');
+    if (backup == null) {
+      throw const AnkiVideoTemplateException(
+        AnkiVideoTemplateErrorCode.restoreBackupMissing,
+      );
+    }
     final Map<String, String?> originals = Map<String, String?>.from(
       backup['originalMappings'] as Map,
     );
@@ -152,16 +177,24 @@ class AnkiVideoTemplateService {
     AnkiNoteTypeDefinition expected, {
     String? target,
   }) async {
-    if (!supportsEditing) throw UnsupportedError('请在制卡主机上修改视频模板。');
+    if (!supportsEditing) {
+      throw const AnkiVideoTemplateException(
+        AnkiVideoTemplateErrorCode.hostOnly,
+      );
+    }
     final AnkiSettings settings = await _repository.loadSettings();
     final String? readTarget = target ?? _readTargets[expected];
     if (readTarget == null) {
-      throw StateError('请重新读取当前后端的模板后再应用。');
+      throw const AnkiVideoTemplateException(
+        AnkiVideoTemplateErrorCode.rereadRequired,
+      );
     }
     _checkTarget(settings, expected, readTarget);
     final AnkiNoteTypeDefinition? current = await read(expected.name);
     if (current == null || _fingerprint(current) != _fingerprint(expected)) {
-      throw StateError('Anki 模板已改变，请重新打开预览。');
+      throw const AnkiVideoTemplateException(
+        AnkiVideoTemplateErrorCode.templateChanged,
+      );
     }
     return settings;
   }
@@ -173,12 +206,22 @@ class AnkiVideoTemplateService {
   ) {
     if (settings.selectedNoteType?.name != expected.name ||
         (target != null && _target(settings) != target)) {
-      throw StateError('制卡目标已改变，请重新打开预览。');
+      throw const AnkiVideoTemplateException(
+        AnkiVideoTemplateErrorCode.targetChanged,
+      );
     }
   }
 
+  /// 两个可编辑后端用冻结的常量；其余（目前只有测试替身——别的后端都不支持编辑笔记
+  /// 类型，走不到写备份）沿用类名。新增可编辑后端时在这里给它一个常量。
+  String get _backendKey => switch (_repository) {
+    AnkiConnectRepository() => _ankiConnectBackendKey,
+    AnkiRepository() => _ankiDroidBackendKey,
+    _ => _repository.runtimeType.toString(),
+  };
+
   String _target(AnkiSettings settings) => jsonEncode(<Object?>[
-    _repository.runtimeType.toString(),
+    _backendKey,
     settings.ankiConnectHost,
     settings.ankiConnectPort,
     settings.ankiConnectUseHttps,
@@ -200,11 +243,15 @@ class AnkiVideoTemplateService {
         after.name,
         after.templates,
       )) {
-        throw StateError('后端拒绝写入模板。');
+        throw const AnkiVideoTemplateException(
+          AnkiVideoTemplateErrorCode.writeRejected,
+        );
       }
       final AnkiNoteTypeDefinition? written = await read(after.name);
       if (written == null || _fingerprint(written) != _fingerprint(after)) {
-        throw StateError('模板写入后校验失败，已保留恢复备份。');
+        throw const AnkiVideoTemplateException(
+          AnkiVideoTemplateErrorCode.writeVerificationFailed,
+        );
       }
       await _repository.updateSettings((AnkiSettings current) {
         _checkTarget(current, before, target);
@@ -215,7 +262,9 @@ class AnkiVideoTemplateService {
         }) {
           if (settings.fieldMappings[key] == mappings[key]) continue;
           if (current.fieldMappings[key] != settings.fieldMappings[key]) {
-            throw StateError('字段映射已改变，请重新打开预览。');
+            throw const AnkiVideoTemplateException(
+              AnkiVideoTemplateErrorCode.mappingsChanged,
+            );
           }
           _setMapping(merged, key, mappings[key]);
         }
@@ -225,7 +274,9 @@ class AnkiVideoTemplateService {
       _checkTarget(saved, before, target);
       final AnkiNoteTypeDefinition? verified = await read(after.name);
       if (verified == null || _fingerprint(verified) != _fingerprint(after)) {
-        throw StateError('模板在应用过程中改变，已保留恢复备份。');
+        throw const AnkiVideoTemplateException(
+          AnkiVideoTemplateErrorCode.templateChangedDuringApply,
+        );
       }
       for (final String key in <String>{
         ...settings.fieldMappings.keys,
@@ -233,7 +284,9 @@ class AnkiVideoTemplateService {
       }) {
         if (settings.fieldMappings[key] != mappings[key] &&
             saved.fieldMappings[key] != mappings[key]) {
-          throw StateError('字段映射写入后校验失败，已保留恢复备份。');
+          throw const AnkiVideoTemplateException(
+            AnkiVideoTemplateErrorCode.mappingVerificationFailed,
+          );
         }
       }
     } catch (error) {
@@ -257,7 +310,13 @@ class AnkiVideoTemplateService {
             return current.copyWith(fieldMappings: restored);
           });
         } catch (rollbackError) {
-          throw StateError('$error；自动回滚未完成：$rollbackError。已保留磁盘备份。');
+          // 两个内层错误都原样带出去：原始失败决定用户该怎么办，回滚失败说明现场
+          // 停在哪。拼成一句字符串就丢了类型，上层没法分别本地化。
+          throw AnkiVideoTemplateException(
+            AnkiVideoTemplateErrorCode.rollbackIncomplete,
+            cause: error,
+            rollbackCause: rollbackError,
+          );
         }
       }
       rethrow;
@@ -271,7 +330,11 @@ class AnkiVideoTemplateService {
     AnkiNoteTypeDefinition after,
   ) async {
     final AnkiNoteTypeDefinition? current = await read(before.name);
-    if (current == null) throw StateError('无法读取模板以校验回滚。');
+    if (current == null) {
+      throw const AnkiVideoTemplateException(
+        AnkiVideoTemplateErrorCode.rollbackUnreadable,
+      );
+    }
     final Map<String, AnkiCardTemplate> originals = <String, AnkiCardTemplate>{
       for (final AnkiCardTemplate card in before.templates) card.name: card,
     };
@@ -291,7 +354,9 @@ class AnkiVideoTemplateService {
     }
     if (rollback.isEmpty) return;
     if (!await _repository.updateNoteTypeTemplates(before.name, rollback)) {
-      throw StateError('后端拒绝回滚部分模板。');
+      throw const AnkiVideoTemplateException(
+        AnkiVideoTemplateErrorCode.rollbackRejected,
+      );
     }
     final AnkiNoteTypeDefinition? verified = await read(before.name);
     if (verified == null ||
@@ -301,7 +366,9 @@ class AnkiVideoTemplateService {
                 card.name == expected.name && _sameCard(card, expected),
           ),
         )) {
-      throw StateError('部分模板回滚后的校验失败。');
+      throw const AnkiVideoTemplateException(
+        AnkiVideoTemplateErrorCode.rollbackVerificationFailed,
+      );
     }
   }
 
@@ -370,10 +437,12 @@ class AnkiVideoTemplateService {
     );
   }
 
-  Future<Map<String, dynamic>?> _findBackup(
-    String target,
-    AnkiVideoTemplateOptions options,
-  ) async {
+  /// [target] 的全部可读备份，新的在前。
+  ///
+  /// 逐文件读：一份读不出来 / 不是合法 JSON / 形状不对的备份（写到一半进程被杀、磁盘
+  /// 满）只跳过并记一条日志，不让它挡住更早的有效备份——以前这里没有 try，一个坏文件
+  /// 就让之后每次应用 / 恢复都抛 `FormatException`，只能手动去删（BUG-4826）。
+  Stream<Map<String, dynamic>> _backups(String target) async* {
     final Directory directory = await _directory();
     final String key = sha256.convert(utf8.encode(target)).toString();
     final List<File> files =
@@ -387,11 +456,46 @@ class AnkiVideoTemplateService {
             .toList()
           ..sort((File a, File b) => b.path.compareTo(a.path));
     for (final File file in files) {
-      final Map<String, dynamic> data =
-          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      if (data['target'] == target &&
-          data['restoring'] != true &&
-          jsonEncode(data['options']) == jsonEncode(_options(options))) {
+      final Map<String, dynamic>? data = await _readBackup(file);
+      if (data != null && data['target'] == target) yield data;
+    }
+  }
+
+  /// 读一份备份；坏的返回 null 并记一条诊断日志。形状也在这里验（`options` /
+  /// `originalMappings` 是调用方要直接取用的两块，连同映射的值类型），调用方之后的
+  /// 取用不会再因为形状抛错。
+  ///
+  /// `options` 必须过得了 [AnkiVideoTemplateOptions.fromJson]（`field` / `placement` /
+  /// `autoplay` 齐全、`placement` 是认得的枚举名）。写入端一直是 `toJson()` 全字段，
+  /// 存量备份都满足；**以后给 options 加字段必须在 `fromJson` 里给缺省值、枚举名不能
+  /// 改**，否则旧备份会在这里被当成坏文件跳过，用户看到的是「找不到原始映射备份」。
+  static Future<Map<String, dynamic>?> _readBackup(File file) async {
+    try {
+      final Object? data = jsonDecode(await file.readAsString());
+      if (data is! Map<String, dynamic> || data['originalMappings'] is! Map) {
+        throw const FormatException('not a video template backup');
+      }
+      Map<String, String?>.from(data['originalMappings'] as Map);
+      AnkiVideoTemplateOptions.fromJson(
+        data['options'] as Map<String, dynamic>,
+      );
+      return data;
+    } on Object catch (error) {
+      ErrorLogService.instance.logDiagnostic(
+        'AnkiVideoTemplateService.backup',
+        'skipped unreadable backup ${p.basename(file.path)}: $error',
+      );
+      return null;
+    }
+  }
+
+  Future<Map<String, dynamic>?> _findBackup(
+    String target,
+    AnkiVideoTemplateOptions options,
+  ) async {
+    final String wanted = jsonEncode(_options(options));
+    await for (final Map<String, dynamic> data in _backups(target)) {
+      if (data['restoring'] != true && jsonEncode(data['options']) == wanted) {
         return data;
       }
     }
@@ -401,22 +505,8 @@ class AnkiVideoTemplateService {
   Future<AnkiVideoTemplateOptions?> _latestRestoredOptions(
     String target,
   ) async {
-    final Directory directory = await _directory();
-    final String key = sha256.convert(utf8.encode(target)).toString();
-    final List<File> files =
-        (await directory.list().toList())
-            .whereType<File>()
-            .where(
-              (File file) =>
-                  p.basename(file.path).startsWith('$key-') &&
-                  file.path.endsWith('.json'),
-            )
-            .toList()
-          ..sort((File a, File b) => b.path.compareTo(a.path));
-    for (final File file in files) {
-      final Map<String, dynamic> data =
-          jsonDecode(await file.readAsString()) as Map<String, dynamic>;
-      if (data['target'] == target && data['restoring'] == true) {
+    await for (final Map<String, dynamic> data in _backups(target)) {
+      if (data['restoring'] == true) {
         return AnkiVideoTemplateOptions.fromJson(
           data['options'] as Map<String, dynamic>,
         );

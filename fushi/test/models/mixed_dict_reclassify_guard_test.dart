@@ -134,7 +134,8 @@ void main() {
     test('path-cache rebuild hands metadata to dictPathEntryOf', () {
       for (final m in <String>[
         'void _rebuildDictPathsCache(',
-        'Future<void> _rebuildDictPathsCacheAsync(',
+        // BUG-4510：异步重建的分桶落在前半段 _scheduleDictPathsAsync。
+        'Future<bool> _scheduleDictPathsAsync(',
       ]) {
         final String body = bodyOf(appModel, m);
         expect(

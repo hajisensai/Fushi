@@ -49,6 +49,12 @@ struct LookupOptions {
   // 长度的候选里读音与 ruby 吻合的排前、冲突的排后（截断前生效），见
   // scan/ruby_reading.hpp。空 = 比较器逐字不变。
   std::vector<RubyReading> ruby_readings;
+  // 本次查词排除的词典名（与词典注册名精确匹配）。名列其中的词典在查库层整本跳过
+  //（query_raw / enrich_freq / enrich_pitch）：释义、跨词典合并的 rules / score、频率、
+  // 音调都不进来，重定向也不跟随，所以不进 partial_sort + resize(max_results)、不占
+  // 结果名额、不影响排序——语义 = 「这次查词当作没装这本词典」。服务端常驻全部词典、
+  // 按请求切换启用集合用。空 = 行为逐字不变。
+  std::vector<std::string> excluded_dictionaries;
 };
 
 class Lookup {

@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -130,5 +131,50 @@ void main() {
         reason: 'a disabled button (canRequestFocus=false) is skipped',
       );
     });
+  });
+
+  testWidgets('under the focus root each icon button is ONE Tab stop', (
+    WidgetTester tester,
+  ) async {
+    int taps = 0;
+    await tester.pumpWidget(
+      buildTestApp(
+        FushiFocusRoot(
+          child: Row(
+            children: <Widget>[
+              FushiIconButton(
+                icon: Icons.add,
+                tooltip: 'Add',
+                onTap: () => taps += 1,
+              ),
+              FushiIconButton(
+                icon: Icons.remove,
+                tooltip: 'Remove',
+                onTap: () => taps += 10,
+              ),
+            ],
+          ),
+        ),
+      ),
+    );
+    await tester.pump();
+    final FocusScopeNode scope = FocusScope.of(
+      tester.element(find.byIcon(Icons.add)),
+    );
+    expect(
+      scope.traversalDescendants.length,
+      2,
+      reason: 'the inner IconButton must not add a second, ring-less stop',
+    );
+    // From the first button ONE Tab reaches the second; Enter activates it.
+    final List<FocusNode> stops = scope.traversalDescendants.toList();
+    stops.first.requestFocus();
+    await tester.pump();
+    await tester.sendKeyEvent(LogicalKeyboardKey.tab);
+    await tester.pump();
+    expect(FocusManager.instance.primaryFocus, same(stops.last));
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(taps, 10);
   });
 }

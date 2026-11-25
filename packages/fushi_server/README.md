@@ -11,6 +11,7 @@ Fushi 通过「互联」配对后，把这些活丢给它：
 | 截屏识字 | `POST /api/ocr/screen[?region=x,y,w,h]`（能力位 `screenOcrV1`） | body 是一帧截图（JPEG / PNG / WebP），返回逐行文字、行框与逐字框（截图像素坐标）；整帧当文字图走 PP 行检测 + 逐行识别，常驻会话空闲 5 分钟释放。给 Steam Deck 游戏内识字等用，模型同上（`ocr models pull`） |
 | 字幕识别（ASR） | `/api/jobs`（kind=`asr`） | 客户端上传音轨或指定 host 视频，服务端转录成 SRT + token 时间轴 |
 | 代下载 | `/api/downloads` | 内置 libtorrent 引擎或外接 qBittorrent，落 `<data>/documents/downloads` 后自动入库。能力位 `kinds` = `video` / `novel` / `manga` / `audiobook`：非视频整包走引擎发现导入执行器按域入库（小说 EPUB / 文本转 EPUB、漫画 cbz/zip 图包、有声书正文+字幕+音频对齐）。**不收游戏**（服务端没有游戏库，投了 400）；小说包里的 **PDF** 不能导入（要 app 的 pdfrx 栅格化），任务以 `unsupportedOnThisHost` 挡下；cbr / cb7 / rar 需要服务端有 7-Zip（`FUSHI_7ZA` 或 PATH 上的 `7z` / `7za`），否则 `archiveToolMissing` |
+| 借出 BT 引擎 | `/api/torrent-engine` | 已配对设备把本机引擎当自己的**下载后端**用（app「下载后端 = 互联设备」）：任务、整理、入库都在对端，这里只跑 BT。只认已配对设备自己的凭据（共享 token 403）；远程只看得见、改得了经本路由加进来的种子（租约存 `<support>/torrent/peer_leases.json`，并进内置引擎的 resume 保留集合，重启不丢）；保存目录 / 移动目标只能落在本机下载根或 `torrent.peer_roots` 之下 |
 | 内容订阅 | `/api/subscriptions` | 订阅在 host 上创建、由 host 周期检查（用户添加的 BT 站 / Torznab）并投进自己的下载管线；客户端发现页可选「运行在 host」 |
 | 配置文件（Profile）寄存 | `/api/interconnect/profile`（GET / PUT，仅 TLS） | 设备「互联 → 上传配置」把配置方案推到服务端寄存，另一台设备「下载配置」拉走；服务端只寄存不应用。默认关（`profile_transfer`） |
 | 跟随已配对设备登录 Fushi 账户 | `/api/interconnect/leaderboard-link`（POST，仅 TLS） | 标为「我的设备」的已配对设备在本机没有账户时，跟随服务端当前 Profile 的排行榜账户自动登录（服务端代绑对端公钥）。总闸 `leaderboard_link` 默认开，但配对从不自动标「我的设备」，要管理员手动标 |
@@ -38,7 +39,7 @@ fushi_server/
 
 解压到任意目录即可（例 `/opt/fushi_server`）。**目标机运行期依赖**：
 
-- Linux：glibc ≥ 2.35（Debian 12 / Ubuntu 22.04 及以后）。内置 torrent 引擎与 onnxruntime 都随包、静态，不用装 `libtorrent-rasterbar` / `libssl`。
+- Linux：glibc ≥ 2.35（Debian 12 / Ubuntu 22.04 及以后）。内置 torrent 引擎与 onnxruntime 都随包、静态，不用装 `libtorrent-rasterbar` / `libssl`。CI 产物（`build-multiplatform.yml`）与正式发布包（`release-server.yml`）都在 ubuntu-22.04 上编，出包前 `.github/scripts/check_glibc_baseline.sh` 对 bundle 里每个 ELF 跑 `objdump -T`，要求的 GLIBC_ 版本超过这里写的基线就判红（基线数字只在该脚本与本句两处，改一处必须改另一处）。
 - `ffmpeg` / `ffprobe`：视频封面抽帧、ASR 音轨解码、下载后转封装。不在 PATH 时在配置里写 `ffmpeg:` / `ffprobe:` 路径（直接生效，不需要环境变量；`FUSHI_FFMPEG` 仍认，配置优先）。
 - 局域网自动发现（可选）：`avahi-utils`（有 `avahi-publish` 就广播 `_fushi-sync._tcp`；没有也能手输地址配对）。
 
@@ -78,10 +79,113 @@ User=fushi
 WorkingDirectory=/opt/fushi_server
 ExecStart=/opt/fushi_server/bin/fushi_server serve --config /opt/fushi_server/fushi_server.yaml
 Restart=on-failure
+RestartPreventExitStatus=75
 
 [Install]
 WantedBy=multi-user.target
 ```
+
+两个退出码分工：
+
+- **10 = 远程更新装好了新版，请重启**（`Restart=on-failure` 据此拉起新版，见下文「远程更新」）。
+  别写成 `Restart=no`，也别把 10 列进 `SuccessExitStatus=`／`RestartPreventExitStatus=`，否则更新
+  装完服务就停在那里。
+- **75 = 冲突**：数据目录被另一个 fushi_server（serve 或离线命令）占着、端口被占。重启也解决不了，
+  `RestartPreventExitStatus=75` 让服务停下（`systemctl status` 里是 `status=75/TEMPFAIL`），而不是
+  反复重启直到撞上启动频率上限。解决占用后 `systemctl restart fushi_server`。
+
+`User=` 要对安装目录有写权限（换包是在 `bin/`、`lib/` 里改名）。
+
+### Windows 服务
+
+`fushi_server.exe` 不是原生 Windows 服务，要用服务包装器托管：退出码 **10**（远程更新装完）必须
+自动重启；**75**（冲突：数据目录 / 端口被另一个实例占着）最好不重启，重启也解决不了。安装目录放在服务账户能写的地方（如 `C:\fushi_server`，
+不要放 `Program Files`）。
+
+NSSM（默认 `AppExit` 就是 Restart；可按退出码单独设，75 设成 Exit 就停下）：
+
+```bat
+nssm install fushi_server C:\fushi_server\bin\fushi_server.exe serve --config C:\fushi_server\fushi_server.yaml
+nssm set fushi_server AppDirectory C:\fushi_server
+nssm set fushi_server AppExit Default Restart
+nssm set fushi_server AppExit 75 Exit
+nssm start fushi_server
+```
+
+WinSW（不写 `<onfailure>` 就不重启，必须显式配；它不分退出码，75 也会重启，所以把间隔设长些，
+冲突时看日志处理占用）：
+
+```xml
+<service>
+  <id>fushi_server</id>
+  <name>fushi_server</name>
+  <executable>C:\fushi_server\bin\fushi_server.exe</executable>
+  <arguments>serve --config C:\fushi_server\fushi_server.yaml</arguments>
+  <workingdirectory>C:\fushi_server</workingdirectory>
+  <onfailure action="restart" delay="30 sec"/>
+</service>
+```
+
+直接在终端 / 计划任务里跑的 `serve` 退出后没人拉起，远程更新装完需要手动再起一次。
+
+### Docker
+
+[`docker/`](docker/) 里是镜像与 Compose 配置（Debian trixie-slim，带 `ffmpeg` / `ffprobe` / `7z`）。
+逐步上手（首次启动、admin_token、配对、加库、更新、NAS、排错）见英文的 [docker/README.md](docker/README.md)。
+
+```bash
+cd packages/fushi_server/docker
+cp .env.example .env             # PUID / PGID、端口、配置与媒体目录、首次语言、可选 API key
+docker compose up -d --build     # 从本仓源码构建（首次 30 分钟以上，之后走 BuildKit 缓存）
+docker compose logs fushi-server # 首次启动打印 admin_token；配对时 PIN 也打在这里
+```
+
+- **构建方式**：默认 `docker-compose.yml` 用 `Dockerfile.source` 从本仓源码多阶段构建：`toolchain` 服务
+  （`scale: 0`，从不运行）构建 `tool/linux/Dockerfile` 工具链镜像，作为命名上下文给构建阶段；构建上下文是
+  仓库根，`Dockerfile.source.dockerignore` 挡掉构建产物与缓存。不用 Compose 时：
+  `bash packages/fushi_server/docker/build_source_image.sh`（只送 `git ls-files` 列出的源码）。
+  构建阶段跑的是 `tool/build_linux_bundle.sh all`，与 `release-server.yml` 出 Linux 发布包同一份
+  脚本，所以源码镜像与发布包的命令、布局一致，改构建只改这一处。
+  `docker-compose.bundle.yml` 改用 `Dockerfile` 打包已发布的 release（约 1 分钟，但只与最新 release 一样新）：
+  默认取 `FUSHI_SERVER_REPO` 最新一个带 linux-x64 包的 release，`FUSHI_SERVER_TAG` 钉版本，核对 GitHub
+  给的 SHA-256；`docker/dist/` 里放 `fushi_server-*-linux-x64.tar.gz` 则用本地包（`build-multiplatform.yml`
+  的 `linux-server` 工件可能要比 trixie 新的 glibc，`check_bundle_libs.sh` 在构建时就报错）。
+- **预构建镜像**：每次 fushi-server 发版，`release-server.yml` 的 docker job 都用同一份 Linux 包
+  打镜像、冒烟后推到 `ghcr.io/hajisensai/fushi-server`。通道与版本号与 app 一致：正式版
+  `latest` / `<x.y.z>` / `<x.y>` / `<x>`，测试版 `beta` / `<x.y.z>-beta.<seq>`，调试版 `debug` /
+  `debug-<seq>`。在 `.env` 设 `FUSHI_IMAGE=ghcr.io/hajisensai/fushi-server:latest`（或 `:beta` / `:debug`），
+  `docker compose up -d`（不加 `--build`）。
+- **架构**：只有 linux/amd64。发布包和全部原生库（libtorrent、Rust 内核、fushidicts、onnxruntime）
+  目前只出 x64，arm64（树莓派、部分 ARM NAS）暂不提供。
+- **语言**：`.env` 的 `FUSHI_LANGUAGE`（`en` / `zh`）只在首次启动时写进配置（`init --language`；打包的
+  release 早于语言设置时忽略）。之后以 WebUI「设置」为准：入口脚本与容器里的 `fushi_server` 包装都不把
+  这个变量交给服务端进程；临时用另一种语言跑一条命令用 `FUSHI_CLI_LANGUAGE`。
+- **数据**：全部在 `/config` 卷：`fushi_server.yaml` 与 `data/`（数据库、配对与 TLS 身份、封面、日志）。
+  首次启动由 `fushi_server init` 生成配置（`data_dir: /config/data`、随机 admin_token）。备份这一个目录即可。
+- **媒体库**：媒体目录挂到 `/media`（`FUSHI_MEDIA_DIR`），在 WebUI「库」里或 `libraries[]` 里按容器内
+  路径添加（如 `/media/anime`，kind `video`）。
+- **权限**：镜像不以 root 运行（默认 1000:1000，compose 用 `.env` 的 `PUID:PGID` 作 `user:`），也不改任何
+  文件属主：配置目录要对该用户可写，媒体目录可读（上传落盘的库根要可写）。首次启动前先以自己的用户
+  `mkdir -p config media`，否则 Docker 会以 root 建目录；目录不可写时日志会给出 `chown` 命令。
+  `docker compose exec fushi-server fushi_server ctl …` 同样以 `PUID:PGID` 运行。
+- **端口**：38765（互联，TLS）、38780（WebUI / admin API，`https://`）、6881 tcp+udp（内置 torrent）。
+  宿主侧端口可在 `.env` 改（`FUSHI_SYNC_PORT` / `FUSHI_WEBUI_PORT` / `FUSHI_TORRENT_PORT`），同机已有桌面 Fushi
+  占着 38765 时用得上；配对时输入改后的端口。健康检查打无鉴权的 `GET /api/ping`（互联端口）。
+- **配对**：容器不做局域网 mDNS 广播（镜像里没有 avahi，默认 bridge 网络也传不出组播），Fushi 的
+  局域网列表里看不到它：在 Fushi 里手动输入 `<宿主机地址>:38765`。`network_mode: host`（仅 Linux 宿主）
+  省掉端口映射，但同样不广播。
+- **配对链接 / 二维码**：bridge 网络里服务端只知道容器地址（`172.x.x.x`），手机连不上。先在 WebUI
+  「设置」→「远程访问」→ 公网地址里填手机能连的地址（如 `https://192.168.1.20:38765`，宿主机地址 +
+  `FUSHI_SYNC_PORT`），保存即生效，再到「配对」页生成链接。
+- **密钥**：`FUSHI_*` 环境变量（OpenSubtitles / SubDL / Jimaku / AniDB / Bangumi / Plex 等）写进 `.env`
+  （已 git-ignore），优先于服务端里存的值；不要写进镜像或 Dockerfile。
+- **更新**：`git pull` 后 `docker compose up -d --build`（或拉新的预构建镜像）。容器里的应用内远程更新被拒，
+  启动时也不做换包收尾（见「远程更新」）。新版升级过数据库后不能换回旧镜像（旧版拒开更高 schema 的库），
+  换版前备份 `/config`。
+- **NAS**：Unraid 模板 `docker/unraid/fushi-server.xml`（需要预构建镜像）；Synology / TrueNAS SCALE 的做法见
+  `docker/README.md`。
+- CI：`server-docker.yml` 在改到 `docker/` 的 PR 上构建发布包镜像、校验两个 Compose 文件并跑
+  `smoke_test.sh`（首启 init、属主、健康检查、admin API、工具），**不推送**任何镜像仓库。
 
 ## 配置文件 `fushi_server.yaml`
 
@@ -91,6 +195,7 @@ port: 38765                   # 互联协议端口（客户端连这个）
 bind: "0.0.0.0"
 tls: true                     # 自签证书 + 指纹 TOFU；关掉只在可信内网
 device_name: "nas"
+language: "en"                # 界面语言（WebUI 与命令行输出）：en / zh；init 写 en，旧配置没有这一行时按 zh；WebUI「设置」可改，保存即生效；环境变量 FUSHI_LANGUAGE 优先
 lan_requires_pin: true        # 无头进程没有审批弹窗，PIN 是唯一人因；别关
 admin_port: 38780             # WebUI / admin API；0 = 关闭
 admin_bind: "0.0.0.0"
@@ -101,18 +206,23 @@ scan_scrape: true             # 扫描后自动补刮「从未识别过」的视
 # tmdb_api_key: "..."         # TMDB API key。服务端没有 app 的内置 key，不填则 TMDB 不可用；改了重启生效
 scan_prune: true              # 扫描后回收「文件已消失」的视频条目（带护栏，见下文）
 profile_transfer: false       # 允许已配对设备推送 / 拉取配置文件（Profile，见下文「配置文件寄存」）；默认关，WebUI 可开，保存即生效
+remote_update: false          # 允许已配对设备远程更新本服务端（见下文「远程更新」）；默认关，WebUI 可开，保存即生效
 leaderboard_link: true        # 允许「我的设备」跟随本机排行榜账户自动登录（见下文「跟随已配对设备登录」）；保存即生效
+lookup_chinese_script_variants: false   # 中文查词简体 ↔ 繁體互查（见下文「词典与远程查词」）；默认关，与 app 一致；WebUI 可开，保存即生效
 # ffmpeg: "/usr/bin/ffmpeg"    # 可执行路径（优先于 FUSHI_FFMPEG 与 PATH）；空 = PATH
 # ffprobe: "/usr/bin/ffprobe"
 # onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"   # 换 GPU 版 ORT 时指过去
 upload_quota_bytes: 53687091200   # WebUI 上传累计配额（50 GB），防被当网盘
 public_urls: []               # 公网 / 反代 / DDNS 地址（如 - "https://nas.example.com"），经 /api/host/addresses 公布给已配对设备自动学习
+trusted_proxies: []           # 可信反代地址（IP / CIDR，如 - "127.0.0.1"）：只用于配对限速与展示真实来源 IP；带转发头或经本机回环进来的配对请求一律要 PIN，与此项无关
 p2p: false                    # 允许经 iroh P2P 隧道远程连接（无公网 IP 时用；会连 iroh 公共中继与发现服务）。需随包 libfushi_p2p（bin/../lib/ 或 FUSHI_P2P_LIB）
 p2p_relays: []                # 自建 iroh-relay 地址；空 = iroh 公共中继
 torrent:
   engine: "auto"              # auto | embedded | qbittorrent
   # library: "/opt/fushi_server/lib/libfushi_torrent_ffi.so"   # 缺省找 bundle/lib，再找系统路径
   listen: "0.0.0.0:6881,[::]:6881"
+  # peer_roots:                 # 借出引擎时除下载根外允许落盘的目录（绝对路径；典型是挂载进来的 app 媒体库共享）
+  #   - "/mnt/pc-video"
 qbittorrent:                  # engine=qbittorrent 或 auto 无内置库时用
   url: "http://127.0.0.1:8080"
   username: "admin"
@@ -125,6 +235,7 @@ ai:                           # 「AI 下视频」助手会话、补字幕前候
   # protocol: ""              # 空 = 跟随预设：openAiCompatible / anthropicMessages / geminiGenerateContent
   reasoning_effort: "none"    # none / low / medium / high
   allow_insecure_http: false  # 本地推理服务（Ollama / LM Studio）走 http://localhost 时才需要
+  images: false               # 模型能看图时打开：字幕校对（subgen / host 任务）会附上视频画面（subgen 可用 --no-frames 关）
   web_knowledge: true         # 联网资料（内置维基站）辅助识别作品 / 列系列
   # web_search:               # 通用联网搜索（可选；省略 = 不联网搜索）。写上即表示同意：
   #                           # 字幕歌词补齐会抓排名前 3 的结果网页正文交给上面的 AI（按 token 计费）。
@@ -132,6 +243,20 @@ ai:                           # 「AI 下视频」助手会话、补字幕前候
   #   kind: "searxng"         # searxng / brave
   #   endpoint: "https://searx.example.org"  # searxng 实例根地址，实例需在 settings.yml 打开 json 格式
   #   api_key: ""             # brave 的 X-Subscription-Token
+srs:                          # Fushi 复习（见下文「Fushi 复习」）；profiles 为空 = 关闭（默认）
+  profiles: []                # 提供哪几份配置文件（uid；每门语言一份）。WebUI「复习」页从同步目录里勾选
+  default_profile: ""         # 默认那份；空 = 列表第一份
+  rollover_hour: 4            # 换日时刻（配置文件自带设置时以它为准）
+  mining_target: "auto"       # 已配对设备转发的卡落到哪：auto（没配好 Anki 时进复习）| review | anki
+  mining_decks: {}            # uid → 制卡牌组全名；缺省 = 那份的默认牌组
+  profile_names: {}           # uid → 服务端发布的配置文件名；缺省 = 用设备报的名字
+ankiconnect:                  # AnkiConnect 兼容接口（Yomitan 等往复习库加卡），默认关
+  enabled: false
+  bind: "127.0.0.1"           # 非本机地址必须设 api_key 或 profile_keys，否则拒绝启动
+  port: 8765
+  api_key: ""                 # 共用 key：落到默认那份
+  profile_keys: {}            # uid → 那份专用的 key（Yomitan 里一门语言一个 key）
+  cors_origins: []            # 额外允许的浏览器来源；空 = 内置清单
 libraries:
   - id: "anime"
     path: "/srv/media/anime"
@@ -143,7 +268,7 @@ libraries:
     enabled: true
   - id: "audiobooks"
     path: "/srv/media/audiobooks"
-    kind: "audiobook"         # 每个含音频的目录一本（CD1 / Disc 2 分碟子目录并进上一层），可带 EPUB / 字幕；只有音频的不导入（不自动转录）；音频原地引用、不拷贝
+    kind: "audiobook"         # 每个含音频的目录一本（CD1 / Disc 2 分碟子目录并进上一层），可带 EPUB / 字幕；只有音频的不导入（不自动转录）；音频原地引用、不拷贝；已导入的目录重扫时按音频清单 / 字幕变化就地更新（补章节、换字幕）
     enabled: true
 ```
 
@@ -157,13 +282,16 @@ WebUI「设置」页改的就是这个文件；端口 / TLS / 绑定 / torrent /
 
 ## CLI
 
+命令行的帮助、提示与报错按配置里的 `language` 出（新装英文，旧配置没写按中文）；一次性改用 `FUSHI_LANGUAGE=zh fushi_server …`。
+
 ```
-fushi_server init                      生成配置
+fushi_server init [--language en|zh]  生成配置（--language 写进配置，缺省 en）
 fushi_server serve [--scan] [--[no-]prune]   起服务（Ctrl-C / SIGTERM 优雅停）；--no-prune 对本进程所有扫描生效
 fushi_server scan [--[no-]prune] [--[no-]scrape]   扫描 libraries[] 入库，随后同步补刮（不起服务）
 fushi_server status                    打印库/配对概况
 fushi_server pair ls | revoke <peerId> 已配对设备（ls 里标 `[我的设备]`；revoke 同时清掉标记）
 fushi_server admin reset-token         重生成 admin_token
+fushi_server admin reset-tls           重签 TLS 证书（须先停服；旧版证书 Chrome 报 ERR_CERT_INVALID 时用，已配对设备需重新配对）
 fushi_server models status | pull <lang|ocr>   模型状态 / 拉取
 fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试）
 fushi_server backup create -o <file> [--no-documents]   整机备份（服务停着时；在跑时用 ctl backup create）
@@ -175,7 +303,7 @@ fushi_server backup restore <file> --yes [--no-config]  从备份还原（须先
 ### 备份与还原
 
 备份的是这台服务端自己（换机 / 重装 / 回滚用），一个 zip：数据库的一致快照（`VACUUM INTO`，
-serve 在跑也安全）、配置文件、数据目录里其余文件（互联身份与 TLS 证书、配对、词典、任务、寄存的
+serve 在跑也安全）、复习库 `srs.db` 的一致快照（有才带）、配置文件、数据目录里其余文件（互联身份与 TLS 证书、配对、词典、任务、寄存的
 配置方案……）。不进包：`tmp/`、`logs/`、`backups/`、锁文件。`documents/`（书 / 封面 / 有声书 /
 下载）默认带上，`--no-documents` 只留设置与状态——还原后库里的条目会指向缺失文件，要重新扫描 /
 下载。**备份里有 `admin_token`、qBittorrent 密码、AI key 等凭据，要当密钥保管。**
@@ -197,6 +325,7 @@ serve 在跑也安全）、配置文件、数据目录里其余文件（互联�
 ```
 fushi_server ctl status | logs | p2p
 fushi_server ctl pairing [ls] | revoke <peerId> | owner <peerId> on|off   已配对设备 / 标记「我的设备」
+fushi_server ctl pairing link                                         出一次性配对链接（对端 `fushi_cli peer pair <链接> --yes`）
 fushi_server ctl lib [ls] | add <path> [--kind video|book|manga|audiobook] [--id x] | rm <id> [--purge]
 fushi_server ctl scan [--prune|--no-prune]
 fushi_server ctl dl [ls] | cancel|retry|rm <id> | subtitles <id>（该任务的字幕行：来源 / 语言 / 原文件名 / 落盘路径 / 错误）
@@ -208,6 +337,9 @@ fushi_server ctl dl add --torrent <路径|URL> --list-files  只列 .torrent 文
 fushi_server ctl sub [ls] | add '<json>' | check [id] | enable|disable|rm <id>
 fushi_server ctl models [ls] | pull <ja|…|ocr|ocr:key>
 fushi_server ctl anki [status] | sync | login --user u（密码读 stdin / FUSHI_ANKI_PASSWORD）| …
+fushi_server ctl srs [status] | profiles | add|remove|default <uid> | off | sync [<uid>]
+fushi_server ctl srs ankiconnect on|off                  AnkiConnect 监听开关（复习库，见下文「Fushi 复习」）
+fushi_server ctl srs config '<json>'                     其余复习库配置，同 PUT /api/admin/srs，如 '{"ankiConnect":{"bind":"0.0.0.0","apiKey":"…"}}'
 fushi_server ctl upload <文件…> --lib <id> [--path 目录]   分块断点续传（传完 scan）
 fushi_server ctl logs -f                                 跟随日志
 fushi_server ctl raw <METHOD> /api/admin/... ['<json>']   直调任意 admin 接口
@@ -312,11 +444,14 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 | `POST resource-indexers/bt-sites/<id>/reprobe` | 按已存地址重新检测（站点改版后用） |
 | `DELETE resource-indexers/bt-sites/<id>` | 删除 BT 站；订阅改由同类其它站点接手，没有可用站点时暂停，加了站点后自动唤醒 |
 | `GET models` / `POST models/pull {model}` | ASR 各语言 + OCR 模型状态 / 后台拉取 |
-| `GET|PUT settings` | 配置读写（下节「远程访问三项」） |
+| `GET|PUT settings` | 配置读写（下节「远程访问三项」）。GET 另带 WebUI 下拉用的只读选项：`aiPresetOptions [{id, name, model}]`、`subtitleLanguageOptions` / `metadataLocaleOptions [{code, name}]` |
 | `GET profiles` / `POST profiles/<id>/share` / `DELETE profiles/<id>` | 寄存的配置文件 + 开关状态 / 指定对端拉取时交出哪一份 / 删除（下节） |
 | `GET p2p` | P2P 隧道状态（同 `settings.p2pStatus`，WebUI 轮询用） |
 | `GET anki` / `POST anki/login|logout|sync|refresh|landing|run|retry` / `PUT anki/settings` | Anki 落地（下节） |
-| `GET|PUT upload?library=<id>&path=<相对路径>` | 分块上传（下节） |
+| `GET|PUT srs` / `GET srs/profiles` / `GET srs/decks?profile=<uid>` / `POST srs/sync {profile?}` | Fushi 复习：状态与配置 / 同步目录里能选的配置文件 / 那份已提供配置文件的牌组全名（`{decks}`，没提供 404 `profile_not_served`）/ 立即同步。PUT 只改带了的字段：`profiles`（整份）或 `addProfiles` / `removeProfiles`、`defaultProfile`、`rolloverHour`、`miningTarget`、`miningDecks`（整份替换）或 `miningDecksPatch`（只改给了的那几份，`""` 删掉那一项）、`profileNames`（整份替换，`""` = 不起名；最长 100 字符、不收控制字符）、`ankiConnect {enabled, bind, port, apiKey, profileKeys, corsOrigins}`。key 不回显（只报 `apiKeySet` / `profileKeysSet`），`apiKey: ""` 清掉；AnkiConnect 配置起不来（非本机地址没 key、key 重复）回 409 `ankiconnect_invalid`，不落地 |
+| `GET srs/retained` / `POST srs/retained/delete {confirm: true}` | 旧版本保留副本（换代迁移时原位封存的协议 3 `srs.db`）：`{copy: sealed|tombstone|absent|other, bytes, dueAtMs, due, error}` / 立即删除（不可撤销；先核对新代库，核对不过 409 `retained_copy_kept`、什么都不动；不带 `confirm: true` 400）。WebUI 复习页「删除保留副本」与 `ctl srs retained [status] | delete --yes` 走的就是它 |
+| `GET|PUT upload?library=<id>&path=<相对路径>` / `GET upload/folders?library=<id>` | 分块上传 / 库根下已有子目录（下节） |
+| `GET|PUT dictionaries` / `PUT dictionaries/order {names}` / `PATCH dictionaries/<名> {hidden}` / `DELETE dictionaries/<名>` / `GET dictionaries/lookup?q=` | 词典（WebUI「词典」页）：引擎状态（`engine.available` / `reason` / `transformsLoaded`）+ 清单 / 正文为 Yomitan zip 的导入（同名视为更新；引擎没加载回 409，导入失败 422）/ 整份新顺序（必须恰好列全）/ 日语隐藏标记 / 删除 / 试查。改动与互联推送共用库锁，即时进引擎 |
 
 ### 远程访问三项
 
@@ -358,13 +493,24 @@ client 首次连接的 TOFU，其它主机名 / 端口的坏证书照样拒绝�
 （`lib/src/server_subtitle_providers.dart`，`subs` 命令也用它）：OpenSubtitles / SubDL / Jimaku。
 
 - 凭据：环境变量 `FUSHI_OPENSUBTITLES_API_KEY`（+ `_USERNAME` / `_PASSWORD`）、`FUSHI_SUBDL_API_KEY`、
-  `FUSHI_JIMAKU_API_KEY`，其次是与 app 同名的偏好键（经互联「服务账号」同步过来的那份）。
+  `FUSHI_JIMAKU_API_KEY`，其次是与 app 同名的偏好键。**环境变量给了 key 就压过偏好里存的 key**（偏好里的开关仍作数）。
+- 偏好键在这几处存（同一个接口 `PUT /api/admin/settings` 的 `subtitleProviders`，保存即生效）：
+  - WebUI「设置 → 在线字幕来源」：每家一个开关 + key（OpenSubtitles 另有用户名 / 密码）；
+  - `fushi_server ctl settings subtitle-key opensubtitles|subdl|jimaku`：key 从 stdin 或同名 `FUSHI_*_API_KEY`
+    环境变量读，不进 argv；末尾加 `clear` 清掉；`ctl settings subtitle-source <来源> on|off` 开关；
+  - `ctl settings set '{"subtitleProviders":{"jimaku":{"apiKey":"…"}}}'`（会进 shell 历史，能用上面那条就别用这条）。
+
+  规则与 TMDB key 同：key / 密码永不回显，`GET /api/admin/settings` 只报 `apiKeySet` / `passwordSet`，
+  外加 `active`（下一轮字幕阶段会不会用这一家）与 `apiKeyFromEnv`（存的 key 此刻被环境变量盖住）；
+  提交时留空 = 不改，`clearApiKey: true` / `clearPassword: true` 才清空；整批先校验，有一项不对就 400、什么都不写。
+  AI 助手的设置操作（`server.settings.set`）只能改字幕语言等几项白名单，碰不到任何凭据。
 - 无人值守路径只用**偏好开关开着且有 key** 的来源：偏好里关掉的来源，设了环境变量也不自动用
   （环境变量只在 `subs` 命令里临时启用）。一家都没有时下载的字幕阶段跳过（`required` 的任务报 needsAttention），
   补字幕回 `unavailable`。
-- 下载管线的来源在管线（重）建时读一次（启动 / 资源索引器保存后）；补字幕每次请求现读。
+- 来源按当前偏好每次现读：下载管线每个任务进字幕阶段时读一次（运行中改了 key / 开关，下一个任务就用新的，
+  不用重启；正在跑的那一轮用到结束），补字幕每次请求读一次。
 - 语言：`subtitle_language` 是显式字幕语言（硬过滤）；每系列记忆（`jimaku_pref_langs`）与默认内容语言
-  （`default_content_language`）按 app 同一判据参与；写盘前按内嵌字幕轨对时间轴（`subtitle_reference_sync_enabled`，默认开）。
+  （`default_content_language`）按 app 同一判据参与（这两项与来源一样每轮字幕阶段现读，WebUI 改完下一个任务生效）；写盘前按内嵌字幕轨对时间轴（`subtitle_reference_sync_enabled`，默认开）。
 - Jimaku 与 app 用同一个 provider：按刮削身份里的 AniList id（真人剧按 TMDB id）直查条目，标题只是回退词，
   整季压缩包按集号解包。AJATT 只在 app 里有。
 - 自动获取字幕（偏好 `video_subtitle_backfill_after_scrape`，与 app 同名，默认开；关了下面两条都不跑，
@@ -424,6 +570,34 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
 - 默认关：没开关的入站写就是隐形写入通道（与 app「允许已配对设备读写本机配置」同一默认）。
   WebUI「配对」页的「配置文件寄存」卡片可一键开关、指定分发、删除。
 
+### 远程更新（`remote_update`）
+
+已配对的手机 / 桌面可以在「互联」里看到服务端版本并让它自己更新，端点与 app 当 host 时同一条
+（`/api/host/update`：只认已配对设备的专属 token、一次性 nonce、开关默认关；不按来源网络区分——
+局域网、组网、公网、P2P 隧道进来的已配对设备权限相同）。同一时刻只跑一轮更新，重复触发回 `busy`。
+
+- **只对发布包可用**：包根目录的 `release.json`（`release-server.yml` 打包时写入版本、发布序号、
+  通道）是版本身份；本机 `dart run` / 自己 `dart build cli` 出的 bundle 没有它，端点回
+  `platform_unsupported`。有发布包的平台：Linux x64、Windows x64。
+- **更新源**：独立发布仓 `hajisensai/fushi-server` 的 Releases，新旧只比发布序号。beta 包跟最近的
+  release（beta 与正式版都收），正式版只跟 Latest。
+- **安装**：本平台包下载到安装目录里的 `.fushi_update/`，核对 GitHub 给资产算的 SHA-256（没有
+  校验值或对不上一律不装），系统 `tar` 解包（Windows 用自带的 `System32\tar.exe`），然后逐个文件
+  换进安装目录：旧文件先改名为 `*.fushi-old`（Windows 允许给运行中的 exe / DLL 改名，不允许
+  覆盖），新文件再改名到位；中途失败整体还原。动文件前先写换包日志 `.fushi_update_journal.json`，
+换完才删：换到一半进程被杀 / 断电，下次启动（拿到数据目录锁之后、**打开数据库之前**）按日志逆序
+还原；若正在跑的已是没换完的新版可执行文件，还原后不开库、直接以退出码 10 退出，让服务管理器拉起
+旧版（先开库的话新版会把库迁到旧版打不开的 schema）。下载正文 60 秒没有新数据即判失败、清掉暂存，可以
+再触发。只动包里有的文件，安装目录里的配置与 `data/` 不碰；旧版有、新版包里没有的文件留在原处。
+- **只进不退**：新版第一次启动可能把数据库迁到新 schema，之后再手动换回旧版二进制会被拒绝开库
+  （`FushiDatabaseDowngradeException`）。要回退请连 `data/` 一起用更新前的备份。
+- **重启**：换完进程以**退出码 10**（专用，不是冲突的 75）退出，由 systemd（`Restart=on-failure`）/ NSSM / WinSW
+  （`<onfailure action="restart"/>`，见上文「Windows 服务」）拉起新版；
+  新版启动时删掉 `*.fushi-old` 与暂存目录。手动在终端里跑的 `serve` 需要自己再起一次。
+- 服务端进程要对安装目录有写权限（systemd 例子里 `User=fushi` 就要拥有 `/opt/fushi_server`）。
+- **容器里不可用**：镜像设 `FUSHI_CONTAINER=1`，端点一律回 `platform_unsupported`（`remote_update: true`
+  也一样）。程序文件属于镜像层，就地换包会在下次重建容器时丢掉；更新靠拉新镜像（见「Docker」）。
+
 ### 跟随已配对设备登录（`leaderboard_link`）
 
 互联端点 `/api/interconnect/leaderboard-link` 与 app 当 host 时同一条（引擎
@@ -452,6 +626,8 @@ host 开关三道门；开关关着回 403，能力位 `liveLibrary.profileTrans
 `Content-Range: bytes <start>-<end>/<total>`。服务端追加到 `<目标>.part`，`start` 必须等于
 已收字节数（否则 409），收齐 `total` 后原子改名。`GET` 同 URL 返回 `{"received": n}` 供断点续传。
 路径不得逃出库根（400）；累计超 `upload_quota_bytes` 拒收（413）。传完记得扫描库。
+`GET /api/admin/upload/folders?library=<id>` 返回库根下两层内已有的子目录 `{"folders": ["Show", "Show/Season1"]}`
+（跳过隐藏目录、不跟符号链接），WebUI 子目录框用它做建议。
 
 ## Anki 落地
 
@@ -468,9 +644,44 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 - 数据在 `<data>/support/anki_sync/`（本地牌组集合 + 未同步日志 + 账号凭据）与
   `<data>/support/pending_mine_queue/`。同步成功才出日志；服务器要求整库**上传**时 Fushi
   不做，停在「被拦」，等你在官方 Anki 里同步一次。
+- 登录后每 10 分钟自动同步一次（另外开机时、落完卡后各一次），所以在桌面 Anki / AnkiDroid
+  里加的卡，最迟 10 分钟后互联查词的查重就看得见；急的话 WebUI 或 `ctl anki sync` 手动同步。
+  被同步服务器限流时自动同步推迟到冷却结束。
 - 同一时刻只有一台设备负责落地（最后打开开关的那台）。关掉时立刻撤认领。
 - 协议、渲染、同步与 app 共用 fushi_engine 里的同一份代码（`anki_sync/`），设计见
   `docs/specs/2026-09-28-anki-pending-mining-and-sync.md`。
+
+## Fushi 复习（SRS）
+
+服务端可以当一台「复习设备」，替已配对设备保管 Fushi 复习的收藏，设计见
+`docs/specs/2026-11-05-server-srs-design.md`：
+
+- **选配置文件**：手机把复习数据经互联同步到服务端之后，WebUI →「复习」页列出同步目录里的配置文件，勾选要提供的
+  （每门语言一份，可以多选），再选一份默认。不勾选 = 关闭，什么都不开。服务端不会自己挑。
+- **同步**：服务端用与 app 同一套同步引擎，读写自己的互联同步目录：设备写入后几秒内合并，自己写入（远程复习、
+  制卡、AnkiConnect）后发出，另有每 30 分钟一次兜底；完成后叫醒客户端。
+- **远程复习**：手机「远程复习」直接用服务端的收藏，优先打开手机当前那份配置文件，服务端没有就让你选。
+- **制卡到已配对设备**：`mining_target` 决定转发来的卡进 Anki 落地还是复习库；手机可在「保存到」里另选
+  某份配置文件 / 牌组或 Anki 牌组（`POST /api/mine/targets` 列出可选项）。查重按卡要去的那份判。
+- **AnkiConnect**：默认关。打开后 Yomitan 等可以往复习库加卡；只听本机时可以不设 key，监听局域网地址必须设 key。
+  每份配置文件可以有自己的 key，带共用 key 的请求落到默认那份。没有界面类动作（`guiBrowse` 等回「不支持」）。
+- **原生库**：复习库与 FSRS 调度都在随包的 `libfushi_fsrs` 里（正式发布包已带；按 `FUSHI_FSRS_LIB` →
+  `bin/../lib/` 定位）。没找到时各份配置文件显示出错，其余功能照常。
+- **RWKV 调度**：算法是 RWKV 的牌组在服务端与在 app 上同一个出卡口径（按 RWKV 回忆率出卡），用随包的
+  `libfushi_rwkv`（`FUSHI_RWKV_LIB` → `bin/../lib/`）。第一次用到时下载权重（436 KB，走全局代理设置）到
+  `<data>/support/srs_rwkv/models/`；不能出网的机器把 `sm98_weights.int8.bin` 手动放进这个目录即可（校验通过
+  就用）。状态快照在 `<data>/support/srs_rwkv/state/`。**模型档位**在 WebUI「复习 → RWKV 模型」里选
+  （也可 `PUT /api/admin/srs {"rwkvModel":"tiny"}` 或 `fushi-server ctl srs config '{"rwkvModel":"tiny"}'`）：
+  Tiny 是省内存的 sm101（权重 `sm101_weights.int8.bin`，409 KB；每卡状态约小 30%，准确度略差；快照在
+  `state-tiny/`），默认是 Small（sm98）。选了当场生效，不用重启：首次会下载新权重，没有该档快照时全量重放一次。
+  档位存在整台设备的设置文件 `<data>/support/srs_rwkv/model_size`（与 app 同一个文件、同一套读法），手改这个文件
+  也会在下一次对齐配置（改任何复习配置，或兜底定时器）时生效。**RWKV 没准备好（权重没下到 / 正在回放历史 /
+  出错）时这些牌组不出复习卡**，远程复习页显示「准备中」或错误与「重试」，不会退回按 FSRS 的到期日出卡；WebUI
+  的配置文件状态与 admin API 各份配置文件的状态里有 `rwkv` 一项。`libfushi_rwkv` 是 AGPL-3.0-or-later：对外提供服务且改过这个库的运营者要向用户提供改动后的
+  源码（未改动的源码就在本仓库）。
+- 数据在 `<data>/support/srs.db` 与 `<data>/support/srs_media/<uid>/`，整机备份会带上 `srs.db` 的一致快照。
+- **限制（v1）：同步位置开了端到端加密的配置文件不支持。** 这份配置文件显示「同步位置已加密」，服务端不同步它、
+  也不提供远程复习 / 制卡 / AnkiConnect，其它配置文件不受影响。把口令存到服务端会削弱端到端加密，所以 v1 不做。
 
 ## 词典与远程查词
 
@@ -479,14 +690,17 @@ Anki 不可达 / 开了「批量制卡」的卡进待发队列，同步时经互
 DB 的 `dictionary_history` / `search_history_items`）。`/api/capabilities` 的 `lookup.dictionary` / `lookup.history`
 如实反映引擎是否加载成功；加载失败 serve 照常起，查词路由不注册（客户端按不可用处理）。
 
+- 简繁互查（中文查词时简体词也查繁體词头、反之亦然）：新版 app 每次查词带上**请求方自己的**开关（app「设置 › 查词 › 简繁互查」），以它为准；不带开关的请求方（浏览器扩展、旧客户端）用服务端配置 `lookup_chinese_script_variants`（默认关，WebUI「设置」页或 `fushi_server ctl settings set '{"lookupChineseScriptVariants":true}'` 改，保存即生效）。两种情况都只在请求声明的查词语言是中文时才互查，语言未知不互查。
 - 原生库定位：`FUSHI_DICTS_LIB` 环境变量 → `bin/../lib/libfushidicts_ffi.so`（Windows `.dll`、macOS `.dylib`）。
   Linux 自编：`CC=gcc-14 CXX=g++-14 bash native/fushidicts/build_linux_so.sh`，产物
   `native/fushidicts/prebuilt/linux-x64/libfushidicts_ffi.so`（静态链 libstdc++，只动态依赖 glibc；需要支持
   `std::ranges::to` 的编译器，即 GCC 14+，GCC 13 编不过）。CI 的 `build-multiplatform.yml` linux-server 产物与正式发布包
-  （`release-server.yml`，ubuntu-22.04，GCC 14 PPA 编译并断言 glibc ≤ 2.35）都已随包这份 .so 与变形表。
+  （`release-server.yml`）都在 ubuntu-22.04 上用 GCC 14 PPA 编译、出包前统一核 glibc 基线，都已随包这份 .so 与变形表；
+  Windows 发布包随包 MSVC 编的 `lib/fushidicts_ffi.dll` 与同一份变形表（自编：`cmake -S native/fushidicts -B <短路径>
+  -G "Visual Studio 17 2022" -A x64` 后 `cmake --build <短路径> --config Release --target fushidicts_ffi`）。
 - 去屈折变形表：`FUSHI_TRANSFORMS_DIR` → `bin/../share/fushi/transforms/` → `bin/transforms/`（目录里要有
   `manifest.json`，内容即 `fushi/assets/transforms/`）。缺表时仍能查原形，但「食べた」查不到「食べる」。
-- 词典来源：客户端「词典 · 传输」推送（即时生效），或离线命令：
+- 词典来源：客户端「词典 · 传输」推送或 WebUI「词典」页导入（都即时生效；WebUI 页还能排序 / 隐藏 / 删除 / 试查，并显示引擎与变形表是否加载），或离线命令：
 
 ```
 fushi_server dict ls [--json]
@@ -496,14 +710,15 @@ fushi_server dict rm <词典名> [--json]
 
   离线改动在 serve 重启后进引擎。退出码：用法错 64、词典包 / 配置不存在 66、原生库不可用 69、导入失败 1。
 
-制卡转发（`/api/mine`、`/api/mine/forward`、`/api/duplicate`）在服务端带 `fushi-anki-sync` helper 时接线，
-落到上面「Anki 落地」的同一个牌组集合；`/api/capabilities` 报 `mining`。
+制卡转发（`/api/mine`、`/api/mine/forward`、`/api/duplicate`、`/api/mine/targets`）在服务端带 `fushi-anki-sync`
+helper，或者提供了复习库时接线：落到上面「Anki 落地」的同一个牌组集合，或复习库（见「Fushi 复习」）。两样都没有时
+`/api/capabilities` 报 `mining: false`，路由 404；随配置即时变化。
 
 ## GPU（CUDA）
 
 随包的是 CPU 版 onnxruntime。要 NVIDIA 加速：
 
-1. 从 [onnxruntime releases](https://github.com/microsoft/onnxruntime/releases) 下 `onnxruntime-linux-x64-gpu-1.22.0.tgz`（版本必须 ≥ 1.22，asr_onnx_ffi 要 API 22），解压到例如 `/opt/ort-gpu`。
+1. 从 NuGet 下官方 GPU 包 [`Microsoft.ML.OnnxRuntime.Gpu.Linux` 1.22.0](https://www.nuget.org/packages/Microsoft.ML.OnnxRuntime.Gpu.Linux/1.22.0)（版本必须 ≥ 1.22，asr_onnx_ffi 要 API 22；`github.com/microsoft/onnxruntime` 的 release 自 2026-11-17 起 404），nupkg 就是 zip，把 `runtimes/linux-x64/native/` 下的 `.so` 全部解压到例如 `/opt/ort-gpu/lib`。
 2. 装匹配的 CUDA 12.x + cuDNN 9，确保 `libcudart`、`libcudnn` 在 `LD_LIBRARY_PATH`（GPU 包里的 `libonnxruntime_providers_cuda.so` 要能被 dlopen）。
 3. 配置 `onnxruntime_library: "/opt/ort-gpu/lib/libonnxruntime.so"`，重启。`fushi_server models status` 的 provider 列会显示 `cuda`；探测失败自动退回 CPU（日志里有原因）。
 

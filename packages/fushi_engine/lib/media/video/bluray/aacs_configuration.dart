@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:convert';
 import 'dart:io' as io;
+import 'dart:isolate' show Isolate;
 import 'dart:typed_data';
 
 import 'package:archive/archive.dart';
@@ -212,13 +213,24 @@ final RegExp _keyDbEntry = RegExp(
 /// 用 [io.RandomAccessFile] 分块读而不是 `openRead()`：实测 Windows 上被别的句柄
 /// 字节锁住的文件（errno 33），`openRead()` 的流既不报错也不结束、句柄一直占着，
 /// 播放就挂死在这里；`read()` 则如实抛 [io.FileSystemException]。
-Future<Uint8List?> _scanKeyDb(io.File file, String discId) async {
-  final io.RandomAccessFile handle = await file.open();
+///
+/// 整段扫描跑在后台 isolate（[Isolate.run]）：逐块 Latin-1 解码 + 小写副本 + 子串
+/// 搜索对上百 MB 的完整库是秒级 CPU，此前在 UI isolate 上分块跑，视频库封面回填
+/// 碰到蓝光原盘时每块堵 UI 十几到几十毫秒（2026-11-22 实测滚视频库 33 ms 一段）。
+/// 后台 isolate 里用同步读：没有事件循环可让，[io.FileSystemException] 照样经
+/// [Isolate.run] 原样抛回调用方。
+Future<Uint8List?> _scanKeyDb(io.File file, String discId) {
+  final String path = file.path;
+  return Isolate.run(() => _scanKeyDbSync(path, discId));
+}
+
+Uint8List? _scanKeyDbSync(String path, String discId) {
+  final io.RandomAccessFile handle = io.File(path).openSync();
   try {
     // Latin-1 一字节一字符：块边界切不坏字符，只需把末尾半行留到下一块。
     String carry = '';
     while (true) {
-      final Uint8List chunk = await handle.read(_keyDbScanChunkBytes);
+      final Uint8List chunk = handle.readSync(_keyDbScanChunkBytes);
       if (chunk.isEmpty) return _findKeyInText(carry, discId);
       final String text = carry + latin1.decode(chunk);
       final int lastBreak = text.lastIndexOf('\n');
@@ -232,7 +244,7 @@ Future<Uint8List?> _scanKeyDb(io.File file, String discId) async {
       if (carry.length > _keyDbScanChunkBytes) carry = '';
     }
   } finally {
-    await handle.close();
+    handle.closeSync();
   }
 }
 
@@ -244,8 +256,8 @@ Uint8List? _findKey(Uint8List bytes, String discId) =>
 // Latin-1 preserves ASCII syntax even when provider titles use legacy bytes.
 //
 // 先在小写副本里做原生子串搜索找盘 ID，只对命中的那一行跑正则：逐行正则在上百
-// MB 的完整库上要跑几十秒到几分钟（CI 上 65 MiB 实测超过 2 分钟），而本函数在制卡
-// 时跑在 UI isolate 上。Latin-1 字符的小写映射不改长度，副本下标可直接用于原文。
+// MB 的完整库上要跑几十秒到几分钟（CI 上 65 MiB 实测超过 2 分钟）。现在整段
+// 扫描在后台 isolate（见 [_scanKeyDb]），这里的子串预筛仍决定扫描总耗时。Latin-1 字符的小写映射不改长度，副本下标可直接用于原文。
 Uint8List? _findKeyInText(String text, String discId) {
   final String lower = text.toLowerCase();
   int from = 0;

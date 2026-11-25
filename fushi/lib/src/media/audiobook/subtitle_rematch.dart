@@ -5,7 +5,9 @@ import 'package:fushi/src/media/audiobook/audiobook_import_dialog.dart'
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi_engine/media/audiobook/audiobook_alignment_service.dart'
-    show loadEpubSectionsInBackground, throwIfAlignmentCancelled;
+    show throwIfAlignmentCancelled;
+import 'package:fushi_engine/media/audiobook/book_text_sections.dart'
+    show loadBookTextSections;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
@@ -54,7 +56,6 @@ class SubtitleRematch {
       previousReason: overlay?.reason,
       repo: repo,
       bookKey: ab.bookKey,
-      extractDir: extractDir,
     );
     if (picked == null) {
       return false;
@@ -64,7 +65,6 @@ class SubtitleRematch {
       await _run(
         ab: ab,
         repo: repo,
-        extractDir: extractDir,
         searchWindow: picked.window,
         similarityThreshold: picked.threshold,
       );
@@ -79,7 +79,6 @@ class SubtitleRematch {
     required String? previousReason,
     required AudiobookRepository repo,
     required String bookKey,
-    required String extractDir,
   }) async {
     int window = EpubSrtMatcher.defaultSearchWindow;
     double threshold = EpubSrtMatcher.defaultSimilarityThreshold;
@@ -110,7 +109,7 @@ class SubtitleRematch {
       Future<void> handleAuto() async {
         setSheet(() => autoBusy = true);
         try {
-          probedSections ??= await _loadSections(extractDir: extractDir);
+          probedSections ??= await _loadSections(repo: repo, bookKey: bookKey);
           probedCues ??= await repo.cuesForBook(bookKey);
           final int? best = await runAutoProbe(
             sections: probedSections ?? const <EpubSection>[],
@@ -241,10 +240,12 @@ class SubtitleRematch {
   }
 
   static Future<List<EpubSection>> _loadSections({
-    required String extractDir,
+    required AudiobookRepository repo,
+    required String bookKey,
   }) async {
     try {
-      return await loadEpubSectionsInBackground(extractDir);
+      // 按书的 format 取正文（EPUB 逐章 / PDF 逐页文本层）。
+      return await loadBookTextSections(repo.database, bookKey);
     } catch (e, stack) {
       ErrorLogService.instance.log('SubtitleRematch.loadSections', e, stack);
       debugPrint('[fushi-audiobook] loadSections failed: $e');
@@ -255,7 +256,6 @@ class SubtitleRematch {
   static Future<void> _run({
     required Audiobook ab,
     required AudiobookRepository repo,
-    required String extractDir,
     required int searchWindow,
     double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
   }) async {
@@ -263,7 +263,6 @@ class SubtitleRematch {
       final SubtitleRematchOutcome outcome = await rematchStoredAudiobookCues(
         repo: repo,
         bookKey: ab.bookKey,
-        extractDir: extractDir,
         searchWindow: searchWindow,
         similarityThreshold: similarityThreshold,
       );
@@ -340,7 +339,6 @@ class SubtitleRematchOutcome {
 Future<SubtitleRematchOutcome> rematchStoredAudiobookCues({
   required AudiobookRepository repo,
   required String bookKey,
-  required String extractDir,
   int? searchWindow,
   double similarityThreshold = EpubSrtMatcher.defaultSimilarityThreshold,
   void Function(String phase)? onPhase,
@@ -352,8 +350,10 @@ Future<SubtitleRematchOutcome> rematchStoredAudiobookCues({
   if (cues.isEmpty) {
     throw const SubtitleRematchException(SubtitleRematchFailure.noStoredCues);
   }
-  final List<EpubSection> sections = await loadEpubSectionsInBackground(
-    extractDir,
+  // 按书的 format 取正文（EPUB 逐章 / PDF 逐页文本层），与导入同一分派点。
+  final List<EpubSection> sections = await loadBookTextSections(
+    repo.database,
+    bookKey,
   );
   if (sections.isEmpty) {
     throw const SubtitleRematchException(SubtitleRematchFailure.noChapters);

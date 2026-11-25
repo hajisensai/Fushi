@@ -6,6 +6,7 @@ import 'package:crypto/crypto.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/window_capture_channel.dart';
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi_anki/fushi_anki.dart';
@@ -380,6 +381,7 @@ Future<void> _verifyWhileTextAdvances({required bool wrongPicture}) async {
           required String lineId,
           required String sentence,
           required String outputExtension,
+          required GalMiningAudioLimit limit,
         }) async => audio,
   );
   await evidence.capture(1);
@@ -390,6 +392,7 @@ Future<void> _verifyWhileTextAdvances({required bool wrongPicture}) async {
     lineId: lineA.lineId,
     sentence: lineA.text,
     outputExtension: 'wav',
+    limit: GalMiningAudioLimit.unlimited,
   );
   final Future<void> verifying = evidence.verifyMine(
     lineA,

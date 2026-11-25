@@ -44,6 +44,9 @@ void main() {
         ],
         url: 'https://192.168.1.30:38765',
         token: 'new',
+        // 签发方必须证明自己就是这一行的归属 host（不报 hostId 会撞地址归属闸，
+        // 见下方「V-A2」组）。
+        hostId: 'host-1',
       );
       expect(out.map((FushiClientUrl u) => u.token), <String?>[
         'new',
@@ -92,6 +95,100 @@ void main() {
       expect(
         applyIssuedInterconnectToken(list, url: 'https://x:1', token: 't'),
         same(list),
+      );
+    });
+  });
+
+  // V-A2：同一个 URL 上应答的已经换成另一台 host（B）时，经它配对拿到的 token
+  // 绝不能写进 A 的整组；只有用户确认「作为新设备配对」才让这一行脱离 A。
+  group('V-A2 地址归属闸', () {
+    const String plain = 'http://10.0.0.5:38765';
+    const String aHttps = 'https://a.example';
+    List<FushiClientUrl> rows() => const <FushiClientUrl>[
+      FushiClientUrl(url: plain, hostId: 'A', token: 'a'),
+      FushiClientUrl(
+        url: aHttps,
+        hostId: 'A',
+        fingerprintSha256: 'ff:ff',
+        token: 'a',
+      ),
+    ];
+
+    test('签发方 hostId 不同 → 抛归属冲突，列表一行都不改', () {
+      final List<FushiClientUrl> list = rows();
+      expect(
+        () => applyIssuedInterconnectToken(
+          list,
+          url: plain,
+          token: 'b',
+          hostId: 'B',
+        ),
+        throwsA(
+          isA<InterconnectAddressOwnerConflict>()
+              .having(
+                (InterconnectAddressOwnerConflict e) => e.ownerHostId,
+                'ownerHostId',
+                'A',
+              )
+              .having(
+                (InterconnectAddressOwnerConflict e) => e.incomingHostId,
+                'incomingHostId',
+                'B',
+              ),
+        ),
+      );
+      expect(list.map((FushiClientUrl u) => u.token), <String?>['a', 'a']);
+    });
+
+    test('v1 签发方没报 hostId → 同样冲突', () {
+      expect(
+        () => applyIssuedInterconnectToken(rows(), url: plain, token: 'b'),
+        throwsA(isA<InterconnectAddressOwnerConflict>()),
+      );
+    });
+
+    test('确认改归属：这一行改归 B 拿新 token，A 的其余地址不动', () {
+      final List<FushiClientUrl> out = applyIssuedInterconnectToken(
+        rows(),
+        url: plain,
+        token: 'b',
+        hostId: 'B',
+        reassignOwner: true,
+      );
+      expect(out, hasLength(2));
+      expect(out[0].url, plain);
+      expect(out[0].hostId, 'B');
+      expect(out[0].token, 'b');
+      expect(out[0].learned, isFalse);
+      expect(out[1].url, aHttps);
+      expect(out[1].hostId, 'A');
+      expect(out[1].token, 'a');
+      // 不变式：列表里每个 URL 恰好一行。
+      expect(
+        out.map((FushiClientUrl u) => u.url).toSet(),
+        hasLength(out.length),
+      );
+    });
+
+    test('冲突判定：同 hostId / 行无 hostId / 不在列表 → 不冲突', () {
+      expect(
+        interconnectAddressOwnerConflict(rows(), plain, incomingHostId: 'A'),
+        isNull,
+      );
+      expect(
+        interconnectAddressOwnerConflict(const <FushiClientUrl>[
+          FushiClientUrl(url: plain),
+        ], plain),
+        isNull,
+      );
+      expect(interconnectAddressOwnerConflict(rows(), 'https://x:1'), isNull);
+      expect(
+        interconnectAddressOwnerConflict(
+          rows(),
+          plain,
+          incomingHostId: 'B',
+        )?.hostId,
+        'A',
       );
     });
   });

@@ -7,6 +7,12 @@ abstract final class FushiChannels {
   static const String _prefix = 'app.fushi.reader';
 
   static const MethodChannel splash = MethodChannel('$_prefix/splash');
+
+  /// 冷启动原生段计时（进程创建到 Dart `main()` 之前），`get` 取一次。Windows runner
+  /// `startup_trace.cpp`、Android `StartupTrace.java`、iOS `FushiStartupTrace`。
+  static const MethodChannel startupTrace = MethodChannel(
+    '$_prefix/startup_trace',
+  );
   static const MethodChannel anki = MethodChannel('$_prefix/anki');
   static const MethodChannel popup = MethodChannel('$_prefix/popup');
   static const MethodChannel tts = MethodChannel('$_prefix/tts');
@@ -55,9 +61,26 @@ abstract final class FushiChannels {
   /// native side (`widgets/WidgetChannel.kt`). Dart facade
   /// `lib/src/platform/widget_snapshot.dart`.
   static const MethodChannel widgets = MethodChannel('$_prefix/widgets');
+
+  /// 反馈回复后台检查（反馈 yjn-3h8B-7）：主引擎上排 / 撤 Android 纯原生的
+  /// `FeedbackReplyWorker`（`feedback/FeedbackReplyWorkChannel.kt`）。Dart 门面
+  /// `lib/src/feedback/feedback_reply_background.dart`。
+  static const MethodChannel feedbackReplyWork = MethodChannel(
+    '$_prefix/feedback_reply_work',
+  );
+
+  /// Android 文件分享（BUG-4740）。share_plus 7.2.2 在 Android 主线程上整份拷贝
+  /// 待分享文件，大文件直接 ANR；`FushiShare.shareFiles` 在 Android 上先异步落
+  /// 快照再走这条。原生侧 `FushiShareChannel.kt`。
+  static const MethodChannel share = MethodChannel('$_prefix/share');
   static const MethodChannel clipboardImage = MethodChannel(
     '$_prefix/clipboard_image',
   );
+
+  /// 「用其他应用打开」/ 分享进来的书 / 漫画文件（拍板台 oeJzVRQ9p1）。原生侧
+  /// `OpenWithChannel.java` 把 content:// 复制进缓存，Dart 门面
+  /// `lib/src/media/import/android_open_with.dart`。
+  static const MethodChannel openWith = MethodChannel('$_prefix/open_with');
 
   /// Android 系统代理（Wi-Fi 手动 / PAC / 全局 HTTP 代理）。原生侧
   /// `SystemProxyChannel.java`，Dart 门面 `android_system_proxy.dart`。
@@ -70,6 +93,13 @@ abstract final class FushiChannels {
   /// `lib/src/diagnostics/previous_exit_log.dart`。
   static const MethodChannel processExit = MethodChannel(
     '$_prefix/process_exit',
+  );
+
+  /// 系统默认网络变了（EventChannel，Android / iOS）：互联 P2P 隧道据此通知 iroh
+  /// 重新探测路径。原生侧 `NetworkChangeChannel.java` / `FushiNetworkChange.swift`，
+  /// Dart 侧 `interconnect_p2p_app.dart`。
+  static const EventChannel networkChange = EventChannel(
+    '$_prefix/network_change',
   );
   static const MethodChannel screenBrightness = MethodChannel(
     '$_prefix/screen_brightness',
@@ -96,10 +126,33 @@ abstract final class FushiChannels {
     '$_prefix/picture_in_picture',
   );
 
-  /// 串流第二块屏（双屏掌机下屏 / 外接显示器）上的查词面板。原生侧
-  /// `GameStreamCompanionDisplay.java`（主进程）与 `GameStreamCompanionActivity.java`
-  /// （面板进程）用同一个名字，Dart 门面 `game_stream_companion_display_channel.dart`。
-  static const MethodChannel gameStreamCompanion = MethodChannel(
-    '$_prefix/game_stream_companion',
+  /// 墨水屏全刷的厂商 EPD 通道（Onyx / 瑞芯微 / NTX，反射探测）。只有 Android 有
+  /// 原生侧（`EinkRefreshChannel.java`），Dart 门面 `AndroidEinkRefresh` 在其余
+  /// 平台恒答 false 且不发调用。
+  static const MethodChannel einkRefresh = MethodChannel(
+    '$_prefix/eink_refresh',
+  );
+
+  /// 第二块屏宿主（双屏掌机下屏 / 外接显示器上的面板：副屏伴侣或串流查词面板）。
+  /// 原生侧 `SecondScreenDisplay.java`（主进程）与 `SecondScreenActivity.java`
+  /// （面板进程）用同一个名字；主进程 Dart 门面 `second_screen_host.dart`，
+  /// 面板进程入口 `second_screen_main.dart`。
+  static const MethodChannel secondScreen = MethodChannel(
+    '$_prefix/second_screen',
+  );
+
+  /// Linux GTK runner: raise the main window with a Wayland `xdg_activation_v1`
+  /// token (e.g. the one the GlobalShortcuts portal sends with `Activated`).
+  /// Runner side `linux/runner/my_application.cc`, Dart facade
+  /// `lib/src/platform/desktop/linux_window_activation_channel.dart`.
+  static const MethodChannel windowActivation = MethodChannel(
+    '$_prefix/window_activation',
+  );
+
+  /// 通知渠道显示名跟界面语言（拍板台 left3621）：主引擎启动时把「渠道 id → 名字」
+  /// 整表推给原生 `NotificationChannelNames.java`。Dart 门面
+  /// `lib/src/platform/android/android_notification_channels.dart`。
+  static const MethodChannel notificationChannels = MethodChannel(
+    '$_prefix/notification_channels',
   );
 }

@@ -4,7 +4,8 @@ import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_complete
 /// 按提示词作答的假 completer：记下每次提示词，[answer] 返回正文（或抛错）。
 ///
 /// [prompts] 记的是**拼回去的完整提示词**（`joinAiTextPrompt(前缀, 本批)`，与拆分
-/// 之前逐字相同），[prefixes] / [bodies] 分别记两段，供提示缓存相关的断言用。
+/// 之前逐字相同），[prefixes] / [bodies] 分别记两段，供提示缓存相关的断言用；
+/// [images] 记每次随提示词附上的图（画面参考）。
 class FakeAiCompleter implements AiTextCompleter {
   FakeAiCompleter(this.answer, {this.usage, this.stopReason = normalAiStop});
 
@@ -18,6 +19,7 @@ class FakeAiCompleter implements AiTextCompleter {
   final List<String> prompts = <String>[];
   final List<String> prefixes = <String>[];
   final List<String> bodies = <String>[];
+  final List<List<AiChatImage>> images = <List<AiChatImage>>[];
 
   int get calls => prompts.length;
 
@@ -25,11 +27,13 @@ class FakeAiCompleter implements AiTextCompleter {
   Future<AiChatCompletion> complete(
     String prompt, {
     String stablePrefix = '',
+    List<AiChatImage> images = const <AiChatImage>[],
   }) async {
     final String full = joinAiTextPrompt(stablePrefix, prompt);
     prompts.add(full);
     prefixes.add(stablePrefix);
     bodies.add(prompt);
+    this.images.add(images);
     final int call = prompts.length - 1;
     return AiChatCompletion(
       text: answer(full, call),
@@ -53,6 +57,7 @@ class ExplodingAiCompleter implements AiTextCompleter {
   Future<AiChatCompletion> complete(
     String prompt, {
     String stablePrefix = '',
+    List<AiChatImage> images = const <AiChatImage>[],
   }) async {
     calls++;
     throw SubtitleAiRequestFailure(reason);

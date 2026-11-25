@@ -4,7 +4,10 @@ import 'dart:math';
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
 import 'package:fushi_engine/media/collections/collection_merge.dart';
+import 'package:fushi_engine/media/collections/library_organize/library_organize_apply.dart';
+import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart';
 import 'package:fushi_engine/media/collections/library_organize/organize_convergence.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/collection_sync_engine.dart';
@@ -330,6 +333,118 @@ void main() {
         expect(byName['L']!.members, contains('video|v3'));
         expect(byName['W'], isNotNull, reason: '吸收者不该因为别名里有 L 的键被并进 L');
       }
+    });
+
+    for (final bool userIntent in <bool>[false, true]) {
+      test('用户合集被并掉（userIntent=$userIntent）后同步不按对端旧副本重建', () async {
+        // 真库实测：AI 复查把几个原盘分卷用户合集并进一个，几秒后同步把对端仍「活
+        // 着、归用户」的旧副本当成「用户接手」按原样重建，同一批文件挂在两个合集里。
+        final _Device a = device();
+        final _Device b = device();
+        final int target = await a.db.createMediaCollection('Vol 1');
+        final int source = await a.db.createMediaCollection('Vol 2');
+        await a.db.addToCollection(
+          target,
+          MediaKind.video,
+          'v1',
+          userIntent: false,
+        );
+        await a.db.addToCollection(
+          source,
+          MediaKind.video,
+          'v2',
+          userIntent: false,
+        );
+        await settle(Random(21));
+        expect(
+          (await b.db.getMediaCollectionByNaturalKey(
+            'Vol 2',
+            'collection',
+          ))?.origin,
+          'user',
+        );
+
+        await mergeMediaCollectionsInto(
+          a.db,
+          targetId: target,
+          sourceIds: <int>[source],
+          userIntent: userIntent,
+          skipTombstonedInTarget: !userIntent,
+        );
+        await settle(Random(22));
+        for (final _Device d in devices) {
+          final Map<String, _Snapshot> byName = <String, _Snapshot>{
+            for (final _Snapshot s in await _snapshot(d.db)) s.name: s,
+          };
+          expect(byName.keys, <String>['Vol 1'], reason: '被并掉的合集不该被重建');
+          expect(byName['Vol 1']!.members, <String>{'video|v1', 'video|v2'});
+          expect(await d.db.getRejectedOrganizeKeys(), isEmpty);
+        }
+      });
+    }
+
+    test('AI 把成员从用户合集挪走（库管家 §7）：各端一致、不被并回；用户加回 = 钉住，'
+        '跨端后 AI 再移被拒', () async {
+      final _Device a = device();
+      final _Device b = device();
+      final int u = await a.db.createMediaCollection('U');
+      for (final String m in <String>['v1', 'v2']) {
+        await a.db.addToCollection(u, MediaKind.video, m, userIntent: false);
+      }
+      final int w = await aiCollection(a, 'W', 'k-w', <String>['v9']);
+      await settle(Random(11));
+
+      await applyOrganizeActions(
+        a.db,
+        runId: 1,
+        actions: <OrganizeAction>[
+          OrganizeAction(
+            kind: OrganizeActionKind.move,
+            source: 'ai',
+            confidence: AiOrganizeConfidence.high,
+            fromCollectionId: u,
+            targetCollectionId: w,
+            entries: const <OrganizeEntry>[
+              OrganizeEntry(
+                mediaType: 'video',
+                entryKey: 'v2',
+                tombstoneKey: 'video\u0000v2',
+                item: AiOrganizeItem(title: 'v2'),
+              ),
+            ],
+          ),
+        ],
+      );
+      await settle(Random(12));
+      final List<_Snapshot> first = await _snapshot(a.db);
+      for (final _Device d in devices) {
+        final List<_Snapshot> alive = await _snapshot(d.db);
+        expect(alive, first);
+        final Map<String, _Snapshot> byName = <String, _Snapshot>{
+          for (final _Snapshot s in alive) s.name: s,
+        };
+        expect(byName['U']!.members, <String>{'video|v1'});
+        expect(byName['U']!.origin, 'user', reason: '自动移出不改所有权');
+        expect(byName['W']!.members, <String>{'video|v9', 'video|v2'});
+      }
+
+      // B：用户把 v2 加回 U（钉住），同步到 A 后 A 的 AI 不能再移它。
+      final MediaCollectionRow uOnB = (await b.db
+          .getMediaCollectionByNaturalKey('U', 'collection'))!;
+      await b.db.addToCollection(uOnB.id, MediaKind.video, 'v2');
+      await settle(Random(13));
+      for (final _Device d in devices) {
+        final MediaCollectionRow uRow = (await d.db
+            .getMediaCollectionByNaturalKey('U', 'collection'))!;
+        final MediaCollectionItemRow v2 = (await d.db.getCollectionItems(
+          uRow.id,
+        )).firstWhere((MediaCollectionItemRow m) => m.entryKey == 'v2');
+        expect(v2.pinnedByUser, isTrue);
+      }
+      expect(
+        await a.db.removeFromCollectionAutomatically(u, 'video', 'v2'),
+        CollectionAutoRemoveResult.pinned,
+      );
     });
 
     test('删除 AI 合集 = 拒绝，跨端可见；被合并掉的不算拒绝', () async {

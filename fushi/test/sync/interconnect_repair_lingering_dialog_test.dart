@@ -39,17 +39,26 @@ void main() {
       ),
     );
 
+    // 同一 client 两次配对：同源（同 sourceKey），各自会话带各自的 PIN。
     const FushiPairRequest wanReq = FushiPairRequest(
       deviceName: 'Phone A',
       remoteAddress: '203.0.113.7',
       pinRequired: true,
+      sessionId: 'S1',
+      pin: '482913',
+      sourceKey: 'ip:203.0.113.7',
+    );
+    const FushiPairRequest wanRetry = FushiPairRequest(
+      deviceName: 'Phone A',
+      remoteAddress: '203.0.113.7',
+      pinRequired: true,
+      sessionId: 'S2',
+      pin: '771122',
+      sourceKey: 'ip:203.0.113.7',
     );
 
     // 第一次配对：host 弹审批 + 显示 PIN 482913 → 允许 → 弹窗常驻等对方输入。
-    final Future<bool> first = controller.debugPromptPairApproval(
-      wanReq,
-      seedPin: '482913',
-    );
+    final Future<bool> first = controller.debugPromptPairApproval(wanReq);
     await tester.pump();
     expect(find.text('482913'), findsOneWidget, reason: '第一次审批弹窗应显示 PIN');
     expect(find.text(t.sync_pair_allow_interconnect_only), findsOneWidget);
@@ -62,10 +71,7 @@ void main() {
     expect(find.text(t.sync_pair_pin_waiting), findsOneWidget);
 
     // 第二次配对（重新配对）：客户端取消上一次、从未 confirm，host 常驻弹窗仍在。
-    final Future<bool> second = controller.debugPromptPairApproval(
-      wanReq,
-      seedPin: '771122',
-    );
+    final Future<bool> second = controller.debugPromptPairApproval(wanRetry);
     await tester.pumpAndSettle();
 
     expect(

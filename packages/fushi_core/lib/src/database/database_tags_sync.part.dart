@@ -766,6 +766,240 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
     return true;
   });
 
+  // ── media_nsfw_flags（v156 作品级 NSFW 标记）─────────────────────────
+
+  /// 把宿主标为 / 取消 NSFW：只推进对应那只时钟（[at] 缺省取当前时刻），另一只
+  /// 原样保留，互联合并才能按 LWW 裁决并发的设 / 取消。
+  Future<void> setMediaNsfw(
+    TagHostKind kind,
+    String entryKey,
+    bool nsfw, {
+    int? at,
+  }) => transaction(() async {
+    final int now = at ?? DateTime.now().millisecondsSinceEpoch;
+    final MediaNsfwClock current = await mediaNsfwClock(kind, entryKey);
+    await into(mediaNsfwFlags).insertOnConflictUpdate(
+      MediaNsfwFlagsCompanion.insert(
+        mediaKind: kind.dbValue,
+        entryKey: entryKey,
+        nsfwAt: Value(nsfw ? now : current.nsfwAt),
+        clearedAt: Value(nsfw ? current.clearedAt : now),
+      ),
+    );
+  });
+
+  /// 自动来源的「默认 NSFW」（如 R-18 作品的分级）：只在宿主的 NSFW 标记**从没被
+  /// 决定过**（无行，或两只时钟都空）时标上 [at]；用户 / 对端设过或取消过就一律不动。
+  /// 判断与写入是同一条 upsert（`ON CONFLICT … DO UPDATE … WHERE`），中间插不进别的
+  /// 写：先读后写会让「读完之后落库的取消」被这次更晚的 nsfwAt 按 LWW 盖回去
+  /// （HBK-AUDIT-216）。
+  Future<void> markMediaNsfwIfUndecided(
+    TagHostKind kind,
+    String entryKey, {
+    required int at,
+  }) => into(mediaNsfwFlags).insert(
+    MediaNsfwFlagsCompanion.insert(
+      mediaKind: kind.dbValue,
+      entryKey: entryKey,
+      nsfwAt: Value(at),
+    ),
+    onConflict: DoUpdate(
+      (old) => MediaNsfwFlagsCompanion(nsfwAt: Value(at)),
+      where: (old) => old.nsfwAt.isNull() & old.clearedAt.isNull(),
+    ),
+  );
+
+  /// 宿主当前的 NSFW 时钟（没有行 = 两只戳都为 null）。
+  Future<MediaNsfwClock> mediaNsfwClock(
+    TagHostKind kind,
+    String entryKey,
+  ) async {
+    final MediaNsfwFlagRow? row =
+        await (select(mediaNsfwFlags)..where(
+              (t) =>
+                  t.mediaKind.equals(kind.dbValue) &
+                  t.entryKey.equals(entryKey),
+            ))
+            .getSingleOrNull();
+    return (nsfwAt: row?.nsfwAt, clearedAt: row?.clearedAt);
+  }
+
+  Future<bool> isMediaNsfw(TagHostKind kind, String entryKey) async =>
+      isNsfwByClock(await mediaNsfwClock(kind, entryKey));
+
+  /// 某宿主种类当前是 NSFW 的全部 entryKey（一趟批查）。
+  Future<Set<String>> nsfwEntryKeys(TagHostKind kind) async => <String>{
+    for (final MapEntry<String, MediaNsfwClock> e
+        in (await allNsfwClocksForKind(kind)).entries)
+      if (isNsfwByClock(e.value)) e.key,
+  };
+
+  /// 某宿主种类全部 NSFW 时钟（含已取消的），供互联标签同步构建本机清单。
+  Future<Map<String, MediaNsfwClock>> allNsfwClocksForKind(
+    TagHostKind kind,
+  ) async {
+    final List<MediaNsfwFlagRow> rows = await (select(
+      mediaNsfwFlags,
+    )..where((t) => t.mediaKind.equals(kind.dbValue))).get();
+    return <String, MediaNsfwClock>{
+      for (final MediaNsfwFlagRow r in rows)
+        r.entryKey: (nsfwAt: r.nsfwAt, clearedAt: r.clearedAt),
+    };
+  }
+
+  /// 把对端 NSFW 时钟并入宿主（逐戳取大）。只在合并结果与本机不同时写库，返回
+  /// 是否改了（理由同 [mergeRemotePrivacyClock]）。
+  Future<bool> mergeRemoteNsfwClock(
+    TagHostKind kind,
+    String entryKey,
+    MediaNsfwClock remote,
+  ) => transaction(() async {
+    final MediaNsfwClock local = await mediaNsfwClock(kind, entryKey);
+    final MediaNsfwClock merged = mergeNsfwClocks(local, remote);
+    if (merged == local) return false;
+    await into(mediaNsfwFlags).insertOnConflictUpdate(
+      MediaNsfwFlagsCompanion.insert(
+        mediaKind: kind.dbValue,
+        entryKey: entryKey,
+        nsfwAt: Value(merged.nsfwAt),
+        clearedAt: Value(merged.clearedAt),
+      ),
+    );
+    return true;
+  });
+
+  // ── media_locked_flags（v171 作品级上锁标记）─────────────────────────
+
+  /// 把宿主上锁 / 解除上锁：只推进对应那只时钟（[at] 缺省取当前时刻），另一只
+  /// 原样保留，互联合并才能按 LWW 裁决并发的上锁 / 解除。
+  Future<void> setMediaLocked(
+    TagHostKind kind,
+    String entryKey,
+    bool locked, {
+    int? at,
+  }) => transaction(() async {
+    final int now = at ?? DateTime.now().millisecondsSinceEpoch;
+    final MediaLockClock current = await mediaLockClock(kind, entryKey);
+    await into(mediaLockedFlags).insertOnConflictUpdate(
+      MediaLockedFlagsCompanion.insert(
+        mediaKind: kind.dbValue,
+        entryKey: entryKey,
+        lockedAt: Value(locked ? now : current.lockedAt),
+        clearedAt: Value(locked ? current.clearedAt : now),
+      ),
+    );
+  });
+
+  /// 宿主当前的上锁时钟（没有行 = 两只戳都为 null）。
+  Future<MediaLockClock> mediaLockClock(
+    TagHostKind kind,
+    String entryKey,
+  ) async {
+    final MediaLockedFlagRow? row =
+        await (select(mediaLockedFlags)..where(
+              (t) =>
+                  t.mediaKind.equals(kind.dbValue) &
+                  t.entryKey.equals(entryKey),
+            ))
+            .getSingleOrNull();
+    return (lockedAt: row?.lockedAt, clearedAt: row?.clearedAt);
+  }
+
+  Future<bool> isMediaLocked(TagHostKind kind, String entryKey) async =>
+      isLockedByClock(await mediaLockClock(kind, entryKey));
+
+  /// 某宿主种类当前上锁的全部 entryKey（一趟批查）。
+  Future<Set<String>> lockedEntryKeys(TagHostKind kind) async => <String>{
+    for (final MapEntry<String, MediaLockClock> e
+        in (await allLockClocksForKind(kind)).entries)
+      if (isLockedByClock(e.value)) e.key,
+  };
+
+  /// 某宿主种类全部上锁时钟（含已解除的），供互联标签同步构建本机清单。
+  Future<Map<String, MediaLockClock>> allLockClocksForKind(
+    TagHostKind kind,
+  ) async {
+    final List<MediaLockedFlagRow> rows = await (select(
+      mediaLockedFlags,
+    )..where((t) => t.mediaKind.equals(kind.dbValue))).get();
+    return <String, MediaLockClock>{
+      for (final MediaLockedFlagRow r in rows)
+        r.entryKey: (lockedAt: r.lockedAt, clearedAt: r.clearedAt),
+    };
+  }
+
+  /// 把对端上锁时钟并入宿主（逐戳取大）。只在合并结果与本机不同时写库，返回
+  /// 是否改了（理由同 [mergeRemotePrivacyClock]）。
+  Future<bool> mergeRemoteLockClock(
+    TagHostKind kind,
+    String entryKey,
+    MediaLockClock remote,
+  ) => transaction(() async {
+    final MediaLockClock local = await mediaLockClock(kind, entryKey);
+    final MediaLockClock merged = mergeLockClocks(local, remote);
+    if (merged == local) return false;
+    await into(mediaLockedFlags).insertOnConflictUpdate(
+      MediaLockedFlagsCompanion.insert(
+        mediaKind: kind.dbValue,
+        entryKey: entryKey,
+        lockedAt: Value(merged.lockedAt),
+        clearedAt: Value(merged.clearedAt),
+      ),
+    );
+    return true;
+  });
+
+  // ── media_lock_credentials（v171 解锁口令摘要，随上锁标记同步）──────────
+
+  static const String _lockCredentialKey = 'passcode';
+
+  /// 本机的口令记录；从没设过 = null（删除过的是 verifier 为 null 的记录）。
+  Future<MediaLockCredential?> mediaLockCredential() async {
+    final MediaLockCredentialRow? row =
+        await (select(mediaLockCredentials)
+              ..where((t) => t.credentialKey.equals(_lockCredentialKey)))
+            .getSingleOrNull();
+    if (row == null) return null;
+    return (verifier: row.verifier, updatedAt: row.updatedAt);
+  }
+
+  /// 设置 / 修改（[verifier] 非空）或删除（null）口令。[at] 缺省取当前时刻；
+  /// 不早于本机已有记录（时钟回拨时也要让本次写入胜出）。
+  Future<void> setMediaLockCredential(String? verifier, {int? at}) =>
+      transaction(() async {
+        final MediaLockCredential? current = await mediaLockCredential();
+        int now = at ?? DateTime.now().millisecondsSinceEpoch;
+        if (current != null && now <= current.updatedAt) {
+          now = current.updatedAt + 1;
+        }
+        await into(mediaLockCredentials).insertOnConflictUpdate(
+          MediaLockCredentialsCompanion.insert(
+            credentialKey: _lockCredentialKey,
+            verifier: Value(verifier),
+            updatedAt: now,
+          ),
+        );
+      });
+
+  /// 并入对端的口令记录（LWW，见 [mergeLockCredentials]）。只在结果与本机不同时
+  /// 写库，返回是否改了。
+  Future<bool> mergeRemoteLockCredential(MediaLockCredential remote) =>
+      transaction(() async {
+        final MediaLockCredential? local = await mediaLockCredential();
+        final MediaLockCredential merged = local == null
+            ? remote
+            : mergeLockCredentials(local, remote);
+        if (merged == local) return false;
+        await into(mediaLockCredentials).insertOnConflictUpdate(
+          MediaLockCredentialsCompanion.insert(
+            credentialKey: _lockCredentialKey,
+            verifier: Value(merged.verifier),
+            updatedAt: merged.updatedAt,
+          ),
+        );
+        return true;
+      });
+
   Future<int?> _tagIdByName(String name) async {
     final BookTagRow? row =
         await (select(bookTags)
@@ -1007,6 +1241,34 @@ mixin _FushiDbTagsSync on _$FushiDatabase, _FushiDbInfra {
       cloudFolderState: TombstoneCloudFolderState.pending.dbValue,
     ),
   );
+
+  /// [writeSyncDeletionTombstone] 的批量形态（BUG-4748）：同一 [mediaType]、同一
+  /// [deletedAt] 的一批键走一个 batch（一个事务），视频库一次删上万条时不再是上万次
+  /// 独立提交。逐键语义与单条版一致（无云盘文件夹名）。
+  Future<void> writeSyncDeletionTombstones(
+    String mediaType,
+    Iterable<String> itemKeys,
+    int deletedAt,
+  ) {
+    final List<String> keys = itemKeys.toSet().toList(growable: false);
+    if (keys.isEmpty) return Future<void>.value();
+    return batch((Batch b) {
+      b.insertAllOnConflictUpdate(
+        syncDeletionTombstones,
+        <SyncDeletionTombstoneRow>[
+          for (final String key in keys)
+            SyncDeletionTombstoneRow(
+              mediaType: mediaType,
+              itemKey: key,
+              deletedAt: deletedAt,
+              remotePublishedAt: 0,
+              cloudFolderName: null,
+              cloudFolderState: TombstoneCloudFolderState.pending.dbValue,
+            ),
+        ],
+      );
+    });
+  }
 
   /// 清除某资产的删除墓碑（重新导入 / 新增同 (mediaType, itemKey) 时调，防误删复活）。
   Future<void> clearSyncDeletionTombstone(String mediaType, String itemKey) =>

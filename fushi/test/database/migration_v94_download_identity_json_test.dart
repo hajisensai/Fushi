@@ -118,7 +118,10 @@ void main() {
       mode: sqlite3.OpenMode.readOnly,
     );
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 146);
+      expect(
+        probe.select('PRAGMA user_version').first.values.first,
+        kFushiDbSchemaVersion,
+      );
       expect(hasColumn(probe, 'video_download_jobs', 'identity_json'), isTrue);
       expect(
         hasColumn(probe, 'video_download_subscriptions', 'identity_json'),

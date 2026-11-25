@@ -6,6 +6,9 @@ plugins {
     id "dev.flutter.flutter-gradle-plugin"
 }
 
+// Mihon / Aniyomi 扩展 ABI 守卫：minSdk 下限 + release dex 里扩展可见签名不得带 j$/（见文件头）。
+apply from: "extension_abi_guard.gradle"
+
 def mihonSourceApiCommit = "fdb223d657cc60b2d7145c81b7ff690b8010d7aa"
 def mihonSourceArchiveSha256 = "645e84b2a9abbe0196057d6ba9e752abd6876b7e93bd8bee8a6cbcfe8abb154c"
 def mihonSourceArchive = layout.buildDirectory.file("downloads/mihon-${mihonSourceApiCommit}.zip")
@@ -162,28 +165,9 @@ def requireReleaseKeystore = {
     }
 }
 
-// 网页内容核心（native/fushi_web_core：广告拦截 + 漫画章末广告页识别）是硬依赖：Dart 侧没有
-// 「缺库判不可用」的分支，Release 包缺 .so 在运行时就是 FushiWebCoreLibraryMissing。按 Flutter
-// 传进来的 target-platform 逐 ABI 核对 prebuilt 在不在（build_android_so.* 产出），缺就拒绝出包。
-def requireWebCoreSo = {
-    def abiOf = ['android-arm': 'armeabi-v7a', 'android-arm64': 'arm64-v8a', 'android-x64': 'x86_64']
-    def platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString().split(',')
-    platforms.each { platform ->
-        def abi = abiOf[platform.trim()]
-        if (abi == null) {
-            return
-        }
-        def so = file("../../../native/fushi_web_core/prebuilt/android/${abi}/libfushi_web_core.so")
-        if (!so.exists()) {
-            throw new GradleException("Missing required native library ${so}. Run native/fushi_web_core/build_android_so.{sh,ps1} for ${abi} before building a release APK.")
-        }
-    }
-}
-
 gradle.taskGraph.whenReady { taskGraph ->
     if (taskGraph.allTasks.any { it.name.toLowerCase().contains("release") }) {
         requireReleaseKeystore()
-        requireWebCoreSo()
     }
 }
 
@@ -197,13 +181,12 @@ android {
         targetCompatibility JavaVersion.VERSION_17
         // v101 统一更新提醒引入 flutter_local_notifications：它自 v10 起用 java.time
         // 做定时通知的向后兼容，**即使只发即时通知也必须开 desugaring**（插件 README
-        // 明写）。不开则 Android 构建在 dex 阶段直接失败。
+        // 明写）。不开则 Android 构建在 dex 阶段直接失败（插件 AAR 元数据声明了 desugaring，
+        // checkAarMetadata 强制宿主同开），所以 minSdk 26 下也不能去掉。
+        // minSdk 必须 ≥ 26：低于 26 时 java.time 会被改写成 j$.time，宿主 dex 里 kotlin-stdlib 的
+        // toJavaInstant 等签名跟着变，独立编译的 Mihon / Aniyomi 扩展 NoSuchMethodError
+        // （拍板台 design-mihon-desugar-abi；守卫见 extension_abi_guard.gradle）。
         coreLibraryDesugaringEnabled true
-    }
-
-    kotlinOptions {
-        jvmTarget = '17'
-        freeCompilerArgs += ['-Xcontext-parameters']
     }
 
     sourceSets {
@@ -226,7 +209,7 @@ android {
         main.jniLibs.srcDirs += '../../../native/fushi_fsrs/prebuilt/android'
         // 网页内容核心（fushi_web_core，硬依赖）：native/fushi_web_core/build_android_so.*
         // 产出 prebuilt/android/<abi>/libfushi_web_core.so；Release 构建缺它直接失败
-        // （见上面的 requireWebCoreSo），Debug 构建不挡、运行时用到时如实报错。
+        // （见下面的 checkFushiWebCoreNative），Debug 构建不挡、运行时用到时如实报错。
         main.jniLibs.srcDirs += '../../../native/fushi_web_core/prebuilt/android'
         // 计算内核（哈希 / 图像 / 文本，**硬依赖**）：native/fushi_compute/build_android_so.*
         // 产出 prebuilt/android/<abi>/libfushi_compute.so 随包；本次要出的任一 ABI 缺库时
@@ -245,7 +228,8 @@ android {
 
     defaultConfig {
         applicationId "app.fushi.reader"
-        minSdkVersion 24
+        // 26 = Android 8.0。别降：见 compileOptions 与 extension_abi_guard.gradle（扩展 ABI）。
+        minSdkVersion 26
         targetSdk 35
         versionCode flutterVersionCode.toInteger()
         versionName flutterVersionName
@@ -295,7 +279,7 @@ android {
                 storeFile file("${rootProject.projectDir}/${keystoreProperties['storeFile']}")
                 storePassword keystoreProperties['storePassword']
             }
-            // minSdk 24 时 AGP 默认只签 v2（3.0.0 的 APK 实测 v1=false）。华为 HarmonyOS 4.x
+            // minSdk ≥ 24 时 AGP 默认只签 v2（3.0.0 的 APK 实测 v1=false）。华为 HarmonyOS 4.x
             // 安装器 / 安全检测会因没有 JAR（v1）签名报「无证书」并拒装或标可疑（反馈 j3ChbSpKgJ），
             // 显式补上 v1，并同时签 v3 便于日后密钥轮换。
             // 注意：AGP 在 minSdk ≥ 24 时**无视** enableV1Signing（tools/base 84863c5
@@ -317,16 +301,20 @@ android {
         }
     }
 
-    packagingOptions {
-        pickFirst 'lib/**/libc++_shared.so'
-        pickFirst 'META-INF/versions/9/OSGI-INF/MANIFEST.MF'
+    packaging {
+        jniLibs {
+            pickFirsts += ['lib/**/libc++_shared.so']
+        }
+        resources {
+            pickFirsts += ['META-INF/versions/9/OSGI-INF/MANIFEST.MF']
+        }
     }
 
     applicationVariants.all { variant ->
         variant.outputs.all { output ->
             def appName = "fushi"
             def buildType = variant.buildType.name
-            def architecture = output.getFilter(com.android.build.OutputFile.ABI)
+            def architecture = output.getFilter('ABI')
             def newName
 
             if ("${architecture}" == "arm64-v8a") {
@@ -377,6 +365,15 @@ android {
     }
 }
 
+// KGP 2.4 removed the android { kotlinOptions { } } DSL; compilerOptions is the
+// replacement (AGP 9 with android.builtInKotlin=false still applies KGP itself).
+kotlin {
+    compilerOptions {
+        jvmTarget = org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17
+        freeCompilerArgs.add('-Xcontext-parameters')
+    }
+}
+
 flutter {
     source '../..'
 }
@@ -386,11 +383,11 @@ dependencies {
     // flutter_local_notifications 自身 android/build.gradle 里钉的那个。
     coreLibraryDesugaring 'com.android.tools:desugar_jdk_libs:2.1.4'
     implementation "androidx.webkit:webkit:1.12.0"
-    testImplementation "org.jetbrains.kotlin:kotlin-test-junit:2.2.20"
+    testImplementation "org.jetbrains.kotlin:kotlin-test-junit:2.4.20"
     // JVM 单测里 android.jar 的 org.json 只是抛 "not mocked" 的桩（HostProxyPolicyTest 等读 JSON 的
     // 用例因此必红）；测试类路径上放真实现，生产仍用平台自带的 org.json。
     testImplementation "org.json:json:20240303"
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.2.20"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:2.4.20"
     implementation 'androidx.multidex:multidex:2.0.1'
     implementation 'com.github.ankidroid:Anki-Android:2.17alpha14'
     implementation 'com.github.umair13adil:RxLogs:v1.0.18'
@@ -439,6 +436,15 @@ dependencies {
     // typed calls (a by-name reflective call does not survive R8). The plugin only has this as
     // `implementation`, so declare it here at the plugin's version (audio_service 0.18.18).
     implementation 'androidx.media:media:1.7.0'
+    // 反馈回复后台检查的纯原生 Worker（app.fushi.reader.feedback.FeedbackReplyWorker，反馈
+    // yjn-3h8B-7）。版本对齐 workmanager_android 0.10.9 android/build.gradle 的 work_version；
+    // 该插件只以 implementation 带它，app 模块编译期看不到。CoroutineWorker 继承的
+    // ListenableWorker.startWork() 返回 guava 的 ListenableFuture：运行时类路径上已有
+    // exoplayer 带进来的完整 guava 31.0.1-android，但 AGP 把编译期的 listenablefuture:1.0 对齐成
+    // 9999.0-empty-to-avoid-conflict-with-guava 空包（实测编译报 Unresolved reference），所以编译期
+    // 直接依赖同版本 guava——不给 APK 增加新代码。
+    implementation "androidx.work:work-runtime:2.11.2"
+    implementation "com.google.guava:guava:31.0.1-android"
 }
 
 // 计算内核 fushi_compute 是硬依赖：本次构建要出的每个 ABI 都必须已有
@@ -535,6 +541,65 @@ def checkFushiCorpusNative = tasks.register("checkFushiCorpusNative") {
     }
 }
 
+// 网页内容核心 fushi_web_core（广告拦截 + 漫画章末广告页识别）是硬依赖：Dart 侧没有「缺库判不可用」
+// 的分支，Release 包缺 .so 在运行时就是 FushiWebCoreLibraryMissing。判据同上，但只挂 Release 的
+// merge*JniLibFolders（Debug 不挡）。以前在 gradle.taskGraph.whenReady 里查：那时任何任务都还没跑，
+// ensureFushiAndroidNative 来不及备库，新 worktree 本机出 Release 包必然死在这里。
+def fushiWebCoreAndroidDir = file('../../../native/fushi_web_core/prebuilt/android')
+def checkFushiWebCoreNative = tasks.register("checkFushiWebCoreNative") {
+    doLast {
+        String platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
+        List<String> abis = platforms.split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+            .collect { fushiComputeAbiOfPlatform[it] ?: it }
+        List<String> missing = abis.findAll { abi ->
+            !new File(fushiWebCoreAndroidDir, "${abi}/libfushi_web_core.so").isFile()
+        }
+        if (!missing.isEmpty()) {
+            throw new GradleException(
+                "fushi_web_core is a required native dependency of release builds, but libfushi_web_core.so is missing for ABI(s) " +
+                "${missing.join(', ')} under ${fushiWebCoreAndroidDir}. Build it first: " +
+                "native/fushi_web_core/build_android_so.ps1 -Abis ${abis.join(',')} (Windows) or " +
+                "bash native/fushi_web_core/build_android_so.sh <ndk-root> ${abis.join(' ')} " +
+                "(needs Rust + cargo-ndk; see docs/agent/build.md).")
+        }
+    }
+}
+
+// 出包前先让 .so 与当前源码对上，再由上面五个 check 判定：Windows 开发机上每次都调
+// tool/native_libs.ps1 -Android，由它按源码树戳记决定（同源码 → 几秒跳过；源码变了 / 缺库 →
+// 本机缓存 → 兄弟 worktree → cargo-ndk 现编，同一份 native/<crate> 源码一台机器只编一次）。
+// 不能只在缺库时才调：.so 在但源码已变（合进了改 native/<crate> 的提交）时，check 只看文件在不在，
+// 旧库会被静默打进包（2026-11-21 合 #3951 时 fushi_compute 就是这样）。
+// 非 Windows 主机（CI 在出包前自己编好）不代劳，缺库仍由 check 报错说明怎么编。
+def fushiAndroidNativeCrates = ['fushi_compute', 'fushi_rwkv', 'fushi_music', 'fushi_corpus', 'fushi_web_core']
+def ensureFushiAndroidNative = tasks.register("ensureFushiAndroidNative") {
+    doLast {
+        if (!System.getProperty('os.name').toLowerCase().contains('windows')) {
+            return
+        }
+        String platforms = (project.findProperty('target-platform') ?: 'android-arm,android-arm64,android-x64').toString()
+        List<String> abis = platforms.split(',').collect { it.trim() }.findAll { !it.isEmpty() }
+            .collect { fushiComputeAbiOfPlatform[it] ?: it }
+        File script = file('../../../tool/native_libs.ps1')
+        logger.lifecycle("Matching the Android native libraries (${fushiAndroidNativeCrates.join(', ')}) to the source: ${script} -Android -Abis ${abis.join(',')}")
+        ProcessBuilder pb = new ProcessBuilder(
+            'powershell', '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', script.absolutePath,
+            '-Android', '-Abis', abis.join(','))
+        pb.redirectErrorStream(true)
+        Process p = pb.start()
+        p.inputStream.eachLine('UTF-8') { String line -> logger.lifecycle(line) }
+        if (p.waitFor() != 0) {
+            throw new GradleException(
+                "tool/native_libs.ps1 -Android failed (exit ${p.exitValue()}); the Android native libraries " +
+                "could not be prepared (needs Rust + cargo-ndk + the NDK; see docs/agent/build.md).")
+        }
+    }
+}
+[checkFushiComputeNative, checkFushiRwkvNative, checkFushiMusicNative, checkFushiCorpusNative,
+ checkFushiWebCoreNative].each { check ->
+    check.configure { dependsOn(ensureFushiAndroidNative) }
+}
+
 // AGP 对 minSdk ≥ 24 的包不签 v1（见 signingConfigs.release 注释），而 HarmonyOS 4.x 安装器
 // 要 JAR 签名。packageRelease 产出已签 v2+v3 的 APK 后，用 build-tools 的 apksigner 显式
 // `--v1-signing-enabled true` 原地重签（apksigner 显式开关不按 minSdk 推断），Flutter 随后才把
@@ -583,10 +648,19 @@ tasks.configureEach { task ->
         task.dependsOn(prepareMihonSourceApi)
         task.dependsOn(prepareAniyomiSourceApi)
     }
-    if (task.name == "preBuild") {
+    // 硬依赖检查挂在「把 .so 收进包」的任务上（merge<Variant>JniLibFolders：每个出
+    // APK / AAB 的变体都必经），不挂 preBuild：preBuild 连 JVM 单测
+    // （:app:testDebugUnitTest）和纯编译任务也拦，而这些任务根本不打包 .so。
+    // 2026-11-15～11-20 本机 24 次 testDebugUnitTest 有 22 次失败，找回输出的里面
+    // 8 次死在这四个检查上（开发机 worktree 没有 Android 预编译库）。缺库仍然出
+    // 不了任何包：实测 :app:mergeDebugJniLibFolders 缺库即失败。
+    if (task.name.startsWith("merge") && task.name.endsWith("JniLibFolders")) {
         task.dependsOn(checkFushiComputeNative)
         task.dependsOn(checkFushiRwkvNative)
         task.dependsOn(checkFushiMusicNative)
         task.dependsOn(checkFushiCorpusNative)
+        if (task.name.contains("Release")) {
+            task.dependsOn(checkFushiWebCoreNative)
+        }
     }
 }

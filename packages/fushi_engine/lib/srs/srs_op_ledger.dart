@@ -1,4 +1,4 @@
-/// SRS 重活账本（BUG-4075 取证）：内核命令、srs.db 上的 Drift 查询、Dart 侧整库装载各记一笔
+/// SRS 重活账本（BUG-4075 取证）：内核命令（含 srs.db 的读命令）、Dart 侧整库装载各记一笔
 /// 次数 / 用时 / 交回字节，内存采样（`PreviousExitLog.startMemorySampling`）每 30 s 取走一个窗口的
 /// 汇总，并列出正在跑、已超过 [kSrsOpBusyAfter] 的操作。
 ///
@@ -6,11 +6,13 @@
 /// SQLite 堆）全程不变——经 mmap 读的页不进 SQLite 页缓存，那个读数看不出库是不是一直在被大块地读。
 /// 这里按操作名把「谁在跑、跑了几遍、读回多少」直接记下来，下一份崩溃报告就能点名。
 ///
-/// 只在当前 isolate 记（store、Drift 连接、页面 provider 都在 UI isolate）；开销是每次操作两次
-/// 时钟读 + 一次 Map 更新，查询的字节数按结果行逐值累加（与解码同量级，取证期间接受）。
+/// 只在当前 isolate 记（store、页面 provider 都在 UI isolate）；开销是每次操作两次
+/// 时钟读 + 一次 Map 更新，读命令的字节数按交回的列式表计。
 library;
 
 import 'dart:math' as math;
+
+import 'package:meta/meta.dart' show visibleForTesting;
 
 /// 单次操作超过这个时长或交回超过 [kSrsOpHeavyBytes]：另记一条诊断日志（[SrsOpLedger.onHeavy]）。
 const Duration kSrsOpHeavyAfter = Duration(seconds: 3);
@@ -79,6 +81,9 @@ abstract final class SrsOpLedger {
 
   /// 撤销 [begin] 开的操作、不记账（这次操作改由别的入口记，免得重复）。
   static void cancel(int token) => _inflight.remove(token);
+
+  /// 此刻在途（begin 了还没 end / cancel）的操作数。测试据此判断内核往返是否都落地了。
+  static int get inflightCount => _inflight.length;
 
   /// 包一段异步操作：[measure] 从结果算 (字节, 行数)。抛异常也记（用时照算，数据量 0）。
   static Future<T> track<T>(
@@ -165,6 +170,20 @@ abstract final class SrsOpLedger {
     return b.toString();
   }
 
+  /// 基准 / 测试：当前窗口里每项操作的次数、总用时、单次最长用时（微秒）与交回字节，不清零、不截断
+  /// （[takeSummary] 只列前 [kSrsOpSummaryTop] 项）。
+  @visibleForTesting
+  static Map<String, ({int count, int totalUs, int maxUs, int bytes})>
+  debugWindow() => <String, ({int count, int totalUs, int maxUs, int bytes})>{
+    for (final MapEntry<String, _OpStat> e in _window.entries)
+      e.key: (
+        count: e.value.count,
+        totalUs: e.value.totalUs,
+        maxUs: e.value.maxUs,
+        bytes: e.value.bytes,
+      ),
+  };
+
   /// 测试收尾：清空全部状态。
   static void reset() {
     _window = <String, _OpStat>{};
@@ -178,19 +197,4 @@ abstract final class SrsOpLedger {
   static String _mb(int bytes) => bytes >= 1 << 20
       ? '${(bytes / (1 << 20)).toStringAsFixed(1)}MB'
       : '${(bytes / 1024).ceil()}KB';
-}
-
-/// 一条 SQL 的账本名：`sql:<动词> <首个表>`（如 `sql:SELECT <表>`、`sql:PRAGMA`），不带参数与字面量。
-///
-/// 表名只从经过 srs.db 连接的语句文本里取，本文件不写任何 SRS 表名（表名与 SQL 归 SrsDatabase /
-/// SrsDbStore，见 `fushi/test/build/srs_store_ownership_guard_test.dart`）。
-String srsSqlLedgerName(String statement) {
-  final String s = statement.trimLeft();
-  final RegExpMatch? verb = RegExp(r'^(\w+)').firstMatch(s);
-  final RegExpMatch? table = RegExp(
-    r'\b(?:FROM|INTO|UPDATE)\s+"?(\w+)',
-    caseSensitive: false,
-  ).firstMatch(s);
-  return 'sql:${(verb?.group(1) ?? '?').toUpperCase()}'
-      '${table == null ? '' : ' ${table.group(1)}'}';
 }

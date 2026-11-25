@@ -1,3 +1,4 @@
+import 'dart:math' as math;
 import 'dart:ui' as ui;
 
 import 'package:cupertino_ui/cupertino_ui.dart';
@@ -7,10 +8,16 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/services.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
+    show FushiM3eShape;
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show FushiAppleMetrics;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 // 输入框族的「设计系统分派」包装：构造参数与 Material 原控件逐个同名同型，
 // 调用点只改类名。MD3 设计系统下原样构造 [TextField] / [TextFormField]（像素、
@@ -54,6 +61,148 @@ Widget _cupertinoContextMenuBuilder(
   return CupertinoAdaptiveTextSelectionToolbar.editableText(
     editableTextState: editableTextState,
   );
+}
+
+/// 输入框正文 / 占位符的样式收口：行距**上下均分**（[TextLeadingDistribution.even]）。
+///
+/// 字阶给的行高（M3E bodyLarge 24/16 = 1.5、Apple 单行 1.25）比字体自身的
+/// ascent + descent 高，多出来的行距 Flutter 默认按字体 ascent : descent 的比例
+/// 分（proportional）。界面字体的 ascent 远大于 descent（Segoe UI 1.08 : 0.25、
+/// 微软雅黑 1.06 : 0.26、测试字体 0.75 : 0.25），多出的行距几乎全加在字形上方：
+/// 行盒在框里是居中的，字形却落在行盒中线下方（16 号、1.5 倍行高低约 2px），
+/// 正文与占位符看上去都偏下（用户 2026-11-24「输入框、搜索框的文字都没有上下
+/// 居中」）。均分后行盒中线就是字体 ascent / descent 盒的中线。只改行距在行盒内
+/// 的分配，行盒高度（即框高、内边距）不变，M3E 与 Apple 的外观规格不受影响。
+///
+/// 同时把对齐基线钉成 [TextBaseline.alphabetic]：中日韩 locale 的主题字阶是
+/// `Typography.dense`，自带 `textBaseline: ideographic`。输入框把占位符按基线
+/// 对齐到编辑区（CupertinoTextField 的 `_RenderBaselineAlignedStack`、Material
+/// InputDecorator 同理），而 [RenderEditable] 按样式要的 ideographic 基线报，
+/// [RenderParagraph]（占位符）不论要哪种都只报 alphabetic（框架 TODO，见
+/// `RenderParagraph.computeDistanceToActualBaseline`）——两者差一个 descent
+/// （约 0.19em，17 号低约 3px），中文界面下占位符整体下沉、看着不居中（用户
+/// 2026-11-24「这个字还是没有上下居中」）。两边都按 alphabetic 对齐就重合了；
+/// 基线种类只影响对齐、不影响字形绘制。
+///
+/// 调用方给的样式（常是 inherit: false 的主题样式）原样保留，只覆盖行距分配与
+/// 对齐基线；[WidgetStateTextStyle] 原样返回（copyWith 会丢掉它的状态解析）。
+TextStyle fushiFieldTextStyle(TextStyle? style) {
+  if (style is WidgetStateTextStyle) return style;
+  return (style ?? const TextStyle()).copyWith(
+    leadingDistribution: TextLeadingDistribution.even,
+    textBaseline: TextBaseline.alphabetic,
+  );
+}
+
+/// [fushiFieldTextStyle] 的占位符版：InputDecorator 的占位符样式是
+/// `bodyLarge.merge(正文样式).merge(hintStyle)`，调用方的 hintStyle 若是
+/// inherit: false 的完整样式会整个顶掉正文样式里的均分行距，这里补回。
+InputDecoration? _fushiFieldEvenHint(InputDecoration? decoration) {
+  final TextStyle? hint = decoration?.hintStyle;
+  if (decoration == null || hint == null) return decoration;
+  return decoration.copyWith(hintStyle: fushiFieldTextStyle(hint));
+}
+
+/// iOS 档页面顶部独立搜索栏（[FushiAppleLargeSearchScope]）的度量。参照 iOS 26
+/// 真机大标题页（3x 截图按逻辑宽 393pt 换算）：胶囊高 ≈ 43.7 → 44、放大镜字形
+/// ≈ 16pt → 图标 20、图标离左缘 ≈ 13.5 → 内边距 12（图标自带 2 的留白）、占位字
+/// 左缘离胶囊左缘 ≈ 39.7 → 12 + 20 + 间距 8、占位字 17 号（与正文同字号）。
+/// 行内 / 工具条搜索胶囊仍是 36 高（UISearchTextField 的紧凑形态）。
+const double kFushiAppleSearchBarHeight = 44;
+const double kFushiAppleSearchBarIconSize = 20;
+const double kFushiAppleSearchBarHorizontalPadding = 12;
+const double kFushiAppleSearchBarIconGap = 8;
+
+/// 子树里的 Apple 搜索框按 iOS 档「页面顶部独立搜索栏」排（高 44，见
+/// [kFushiAppleSearchBarHeight]）。由 `FushiSearchField(size: large)` 的 Apple
+/// 分支挂上；macOS 档（[FushiAppleMetrics.desktop]）不受影响，仍是 28 高的
+/// NSSearchField。纯度量作用域，本身不画任何东西。
+class FushiAppleLargeSearchScope extends InheritedWidget {
+  const FushiAppleLargeSearchScope({required super.child, super.key});
+
+  static bool of(BuildContext context) =>
+      context
+          .dependOnInheritedWidgetOfExactType<FushiAppleLargeSearchScope>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(FushiAppleLargeSearchScope oldWidget) => false;
+}
+
+/// 子树是 inset grouped 分组（`AdaptiveSettingsSection`）里的一行。设置行据此判断
+/// 自己是不是分组的一整行（trailing 是输入框的设置行在分组里改排表单行，分组
+/// 外——对话框正文直接放一行——维持原样）。纯语义作用域，本身不画任何东西。
+class FushiAppleGroupedRowScope extends InheritedWidget {
+  const FushiAppleGroupedRowScope({required super.child, super.key});
+
+  static bool of(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FushiAppleGroupedRowScope>() !=
+      null;
+
+  @override
+  bool updateShouldNotify(FushiAppleGroupedRowScope oldWidget) => false;
+}
+
+/// 标记接口：Apple 设计系统下，作为 inset grouped 分组里**一整行**时渲染成
+/// iOS / macOS 表单行的文本输入组件（[FushiTextFieldControl]、
+/// [FushiTextFormFieldControl]、`FushiTextField`、`SettingsFormField`）。
+///
+/// 分组容器（`AdaptiveSettingsSection` 等）只给**直接**是这类组件的行挂
+/// [FushiAppleFormRowScope]（见 [FushiAppleFormRowScope.wrapRow]），嵌在自绘
+/// 复合行里的输入框（行尾小输入、标题 + 字段的组合行）不受影响。
+abstract interface class FushiAppleFormRowField {}
+
+/// 子树里的 Apple 文本输入框是 inset grouped 分组的一整行，按表单行排：
+///
+/// - iOS 档：行高 = [FushiAppleMetrics.rowMinHeight]、无填充框无描边，行间分隔线
+///   由分组画。只有标题（`labelText`）时标题当占位文字（写法①，Contacts /
+///   「新建提醒事项」）；标题 + 占位都有时左标题、右侧右对齐输入（写法②，
+///   SwiftUI `LabeledContent` / Settings）。多行是行内多行，不加外框。
+/// - macOS 档（[FushiAppleMetrics.desktop]）：macOS 27 grouped Form 行——左标题、
+///   右侧 NSTextField 式小圆角输入框（白 / 深灰底 + 0.5px 描边 + 聚焦环）。
+///
+/// 纯语义作用域，本身不画任何东西；MD3 下不读它。
+///
+/// 设置行（`AdaptiveSettingsRow` 的 trailing 是输入框）把行标题 / 说明 / 行首
+/// 图标经 [label] / [helper] / [leading] 交给字段：标题取代字段自己的
+/// `labelText`（两者常常同文，避免画两遍），说明排在行内下方。
+class FushiAppleFormRowScope extends InheritedWidget {
+  const FushiAppleFormRowScope({
+    required super.child,
+    super.key,
+    this.label,
+    this.helper,
+    this.leading,
+  });
+
+  /// 行标题；null = 用字段自己的 `labelText` / `label`。
+  final String? label;
+
+  /// 行说明（字段没有 helper 时排在行内下方）。
+  final String? helper;
+
+  /// 行首件（设置行的彩色图标块），自带与标题之间的间距（与同组其它设置行的
+  /// 文字起点、分隔线缩进对齐）。
+  final Widget? leading;
+
+  static FushiAppleFormRowScope? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FushiAppleFormRowScope>();
+
+  static bool of(BuildContext context) => maybeOf(context) != null;
+
+  /// 分组的一行：一律挂 [FushiAppleGroupedRowScope]；直接是
+  /// [FushiAppleFormRowField] 时再挂表单行作用域。
+  static Widget wrapRow(Widget row) => FushiAppleGroupedRowScope(
+    child: row is FushiAppleFormRowField
+        ? FushiAppleFormRowScope(child: row)
+        : row,
+  );
+
+  @override
+  bool updateShouldNotify(FushiAppleFormRowScope oldWidget) =>
+      oldWidget.label != label ||
+      oldWidget.helper != helper ||
+      oldWidget.leading != leading;
 }
 
 /// 装饰是不是「搜索框」：前缀图标是放大镜。iOS 上搜索框是全胶囊
@@ -151,7 +300,21 @@ InputDecoration? fushiMd3FieldDecoration(
   }
   final ColorScheme cs = Theme.of(context).colorScheme;
   final bool search = _isSearchDecoration(decoration);
-  final BorderRadius radius = BorderRadius.circular(search ? 999 : 12);
+  // M3 filled text field：只有上两角圆（extra-small 4），下沿是活动指示线
+  // （静止 1dp onSurfaceVariant、聚焦 2dp primary、错误 error）。搜索框是 M3
+  // search bar（另一种组件），保持全圆胶囊、无指示线。
+  final BorderRadius radius = search
+      ? const BorderRadius.all(Radius.circular(999))
+      : FushiM3eShape.textFieldRadius;
+  // 彩色色块里的字段（[FushiFieldFillScope]）：静止指示线 / 标题 / 尾部图标取
+  // 块的前景色，聚焦仍是主题 primary。
+  final Color? scopedFg = FushiFieldFillScope.foregroundOf(context);
+  // 活动指示线由 [FushiFieldIndicatorHost] 按焦点 / 悬停 / 错误状态以
+  // FushiMotion 时长补间并直接画；没有宿主时按下面各状态的静态描边画。
+  final FushiFieldIndicator? indicator = FushiFieldIndicatorHost.maybeOf(
+    context,
+  );
+  final Color quiet = scopedFg?.withValues(alpha: 0.72) ?? cs.onSurfaceVariant;
   // 带标题（labelText / label）的字段用「填充式」边框：OutlineInputBorder 会把
   // 浮起的标题放在边框线**上**（为描边留缺口），没有可见描边的填充框里，标题就
   // 骑在填充块的上沿、一半露在框外（禁用 / 已有内容的「服务器」「API Key」）。
@@ -163,9 +326,18 @@ InputDecoration? fushiMd3FieldDecoration(
     final BorderSide side = color == null
         ? BorderSide.none
         : BorderSide(color: color, width: width);
-    return labelled && !search
-        ? _FushiFilledFieldBorder(borderRadius: radius, borderSide: side)
-        : OutlineInputBorder(borderRadius: radius, borderSide: side);
+    if (search) {
+      return OutlineInputBorder(borderRadius: radius, borderSide: side);
+    }
+    // 带标题的走非 outline 布局（标题浮在填充块内顶端）；不带标题的保留
+    // outline 布局（尺寸档的单行高 / 竖直居中不变），两者画法一样。
+    return _FushiFilledFieldBorder(
+      borderRadius: radius,
+      borderSide: side,
+      outlineLayout: !labelled,
+      indicator: indicator,
+      error: color == cs.error,
+    );
   }
 
   final EdgeInsetsGeometry? padding = search
@@ -175,23 +347,74 @@ InputDecoration? fushiMd3FieldDecoration(
             : decoration.contentPadding);
   return decoration.copyWith(
     filled: true,
-    fillColor: decoration.fillColor ?? cs.surfaceContainerHigh,
+    fillColor: decoration.fillColor ?? fushiMd3FieldFill(context),
     // M3E 状态层：悬停 8% onSurface 叠在填充上（InputDecorator 把 hoverColor
     // 混进 fillColor），鼠标指上去看得见可输入。
     hoverColor:
         decoration.hoverColor ??
         cs.onSurface.withValues(alpha: kFushiFieldHoverStateOpacity),
-    border: outline(),
-    enabledBorder: outline(),
-    disabledBorder: outline(),
+    border: search ? outline() : outline(quiet, 1),
+    enabledBorder: search ? outline() : outline(quiet, 1),
+    disabledBorder: search
+        ? outline()
+        : outline(cs.onSurface.withValues(alpha: 0.38), 1),
     focusedBorder: outline(cs.primary, 2),
-    errorBorder: outline(cs.error, 1.5),
+    errorBorder: outline(cs.error, search ? 1.5 : 1),
     focusedErrorBorder: outline(cs.error, 2),
-    hintStyle: decoration.hintStyle ?? TextStyle(color: cs.onSurfaceVariant),
-    prefixIconColor: decoration.prefixIconColor ?? cs.onSurfaceVariant,
-    suffixIconColor: decoration.suffixIconColor ?? cs.onSurfaceVariant,
+    labelStyle:
+        decoration.labelStyle ??
+        (scopedFg == null ? null : TextStyle(color: quiet)),
+    hintStyle: decoration.hintStyle ?? TextStyle(color: quiet),
+    prefixIconColor: decoration.prefixIconColor ?? quiet,
+    suffixIconColor: decoration.suffixIconColor ?? quiet,
     contentPadding: padding,
   );
+}
+
+/// MD3 填充式字段的容器色：比所在表面高一级色调，框才看得出来。
+///
+/// 页面 / 卡片上是 surfaceContainerHigh；对话框面板（[FushiDialogScope]，
+/// 面板本身就是 surfaceContainerHigh）里升到 surfaceContainerHighest（M3 filled
+/// text field 规范色）——此前对话框里填充色与面板同色，输入框看上去「无框无底」
+/// 只剩一行浮动标题（导入对话框反馈）。
+///
+/// 祖先有 [FushiFieldFillScope]（彩色色块里的字段）时用它给的底色。
+Color fushiMd3FieldFill(BuildContext context) {
+  final Color? scoped = FushiFieldFillScope.maybeOf(context);
+  if (scoped != null) return scoped;
+  final ColorScheme cs = Theme.of(context).colorScheme;
+  return FushiDialogScope.of(context)
+      ? cs.surfaceContainerHighest
+      : cs.surfaceContainerHigh;
+}
+
+/// 子树里 MD3 填充式字段 / 下拉触发器的底色覆盖（[fushiMd3FieldFill]）：灰底
+/// 压在彩色色块上发脏，色块（导入对话框的 `ImportSectionBlock`）给一档向块色
+/// 偏的底色。只影响字段填充，不改主题。
+class FushiFieldFillScope extends InheritedWidget {
+  const FushiFieldFillScope({
+    required this.color,
+    required super.child,
+    this.foreground,
+    super.key,
+  });
+
+  final Color color;
+
+  /// 块的前景色：静止指示线、标题、尾部图标按它取（压暗 72%）；null = 主题
+  /// onSurfaceVariant。
+  final Color? foreground;
+
+  static Color? maybeOf(BuildContext context) =>
+      context.dependOnInheritedWidgetOfExactType<FushiFieldFillScope>()?.color;
+
+  static Color? foregroundOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<FushiFieldFillScope>()
+      ?.foreground;
+
+  @override
+  bool updateShouldNotify(FushiFieldFillScope oldWidget) =>
+      oldWidget.color != color || oldWidget.foreground != foreground;
 }
 
 /// 带标题的填充式字段（M3 filled text field）的内边距：浮起标题的顶部留白
@@ -249,34 +472,59 @@ InputDecoration _fushiMd3OutlinedDecoration(
   );
 }
 
-/// MD3 填充式字段的边框：形状是全圆角矩形（填充按它裁），描边画一整圈，
-/// 但 [isOutline] 为 false——InputDecorator 据此把浮起的标题放在填充块内部
-/// 顶端（M3 filled text field），而不是骑在边框线上。见 [fushiMd3FieldDecoration]。
+/// MD3 填充式字段的边框（M3 filled text field）：填充按 [borderRadius] 裁
+/// （上两角圆、下两角方），[borderSide] 只画在下沿当活动指示线。
+///
+/// [outlineLayout] 为 false（带标题的字段）时 [isOutline] 为 false——
+/// InputDecorator 据此把浮起的标题放在填充块内部顶端，而不是骑在边框线上；
+/// 不带标题的字段保持 outline 布局（尺寸档的高度与竖直居中不变）。状态切换
+/// （静止 ↔ 聚焦 ↔ 错误）由 InputDecorator 按 [lerpFrom] / [lerpTo] 补间。
+/// 见 [fushiMd3FieldDecoration]。
 class _FushiFilledFieldBorder extends InputBorder {
   const _FushiFilledFieldBorder({
     required this.borderRadius,
     super.borderSide = BorderSide.none,
+    this.outlineLayout = false,
+    this.indicator,
+    this.error = false,
   });
 
   final BorderRadius borderRadius;
+  final bool outlineLayout;
+
+  /// 宿主的活动指示线（见 [FushiFieldIndicatorHost]）；非 null 时线的颜色 /
+  /// 粗细取它此刻的动画值，不取 [borderSide]（InputDecorator 自带的 167ms
+  /// 边框补间因此不再决定观感）。
+  final FushiFieldIndicator? indicator;
+
+  /// 这是错误态边框（InputDecorator 按校验结果选中）。宿主不知道错误时
+  /// （TextFormField 的 validator）据此直接画错误色。
+  final bool error;
 
   @override
-  bool get isOutline => false;
+  bool get isOutline => outlineLayout;
 
   @override
-  EdgeInsetsGeometry get dimensions => EdgeInsets.all(borderSide.width);
+  EdgeInsetsGeometry get dimensions =>
+      EdgeInsets.only(bottom: borderSide.width);
 
   @override
   _FushiFilledFieldBorder copyWith({BorderSide? borderSide}) =>
       _FushiFilledFieldBorder(
         borderRadius: borderRadius,
         borderSide: borderSide ?? this.borderSide,
+        outlineLayout: outlineLayout,
+        indicator: indicator,
+        error: error,
       );
 
   @override
   ShapeBorder scale(double t) => _FushiFilledFieldBorder(
     borderRadius: borderRadius * t,
     borderSide: borderSide.scale(t),
+    outlineLayout: outlineLayout,
+    indicator: indicator,
+    error: error,
   );
 
   @override
@@ -285,6 +533,9 @@ class _FushiFilledFieldBorder extends InputBorder {
       return _FushiFilledFieldBorder(
         borderRadius: BorderRadius.lerp(a.borderRadius, borderRadius, t)!,
         borderSide: BorderSide.lerp(a.borderSide, borderSide, t),
+        outlineLayout: outlineLayout,
+        indicator: indicator,
+        error: error,
       );
     }
     return super.lerpFrom(a, t);
@@ -296,19 +547,24 @@ class _FushiFilledFieldBorder extends InputBorder {
       return _FushiFilledFieldBorder(
         borderRadius: BorderRadius.lerp(borderRadius, b.borderRadius, t)!,
         borderSide: BorderSide.lerp(borderSide, b.borderSide, t),
+        outlineLayout: outlineLayout,
+        indicator: indicator,
+        error: error,
       );
     }
     return super.lerpTo(b, t);
   }
 
   @override
-  Path getInnerPath(Rect rect, {TextDirection? textDirection}) => Path()
-    ..addRRect(
-      borderRadius
-          .resolve(textDirection)
-          .toRRect(rect)
-          .deflate(borderSide.width),
-    );
+  Path getInnerPath(Rect rect, {TextDirection? textDirection}) =>
+      Path()..addRect(
+        Rect.fromLTRB(
+          rect.left,
+          rect.top,
+          rect.right,
+          math.max(rect.top, rect.bottom - borderSide.width),
+        ),
+      );
 
   @override
   Path getOuterPath(Rect rect, {TextDirection? textDirection}) =>
@@ -323,23 +579,261 @@ class _FushiFilledFieldBorder extends InputBorder {
     double gapPercentage = 0.0,
     TextDirection? textDirection,
   }) {
-    if (borderSide.style == BorderStyle.none || borderSide.width == 0) return;
-    final RRect outer = borderRadius.resolve(textDirection).toRRect(rect);
-    canvas.drawRRect(outer.deflate(borderSide.width / 2), borderSide.toPaint());
+    final FushiFieldIndicator? live = indicator;
+    final BorderSide line = live == null ? borderSide : live.side(error: error);
+    if (line.style == BorderStyle.none || line.width == 0) return;
+    final double y = rect.bottom - line.width / 2;
+    canvas.drawLine(
+      Offset(rect.left, y),
+      Offset(rect.right, y),
+      line.toPaint(),
+    );
   }
 
   @override
   bool operator ==(Object other) =>
       other is _FushiFilledFieldBorder &&
       other.borderSide == borderSide &&
-      other.borderRadius == borderRadius;
+      other.borderRadius == borderRadius &&
+      other.outlineLayout == outlineLayout &&
+      other.indicator == indicator &&
+      other.error == error;
 
   @override
-  int get hashCode => Object.hash(borderSide, borderRadius);
+  int get hashCode =>
+      Object.hash(borderSide, borderRadius, outlineLayout, indicator, error);
+}
+
+/// MD3 填充式字段 / 下拉触发器的活动指示线（M3 filled text field 的下沿线）
+/// 此刻的样子：由 [FushiFieldIndicatorHost] 的动画驱动，填充式边框在 paint 时
+/// 读它。静止 1dp（块里是压暗的块前景色，否则 onSurfaceVariant）、悬停换
+/// onSurface、聚焦 / 展开 2dp primary、错误 error、禁用 onSurface 38%。
+class FushiFieldIndicator {
+  FushiFieldIndicator._(this._focus, this._hover, this._error);
+
+  final Animation<double> _focus;
+  final Animation<double> _hover;
+  final Animation<double> _error;
+
+  Color _rest = const Color(0x00000000);
+  Color _hovered = const Color(0x00000000);
+  Color _active = const Color(0x00000000);
+  Color _errorColor = const Color(0x00000000);
+  Color _disabled = const Color(0x00000000);
+  bool _enabled = true;
+
+  /// 指示线此刻的描边；[error] = 边框自己是错误态（宿主不知道的校验错误）。
+  BorderSide side({bool error = false}) {
+    if (!_enabled) return BorderSide(color: _disabled);
+    final double e = error ? 1 : _error.value;
+    final double f = _focus.value;
+    final Color base = Color.lerp(
+      Color.lerp(_rest, _hovered, _hover.value),
+      _errorColor,
+      e,
+    )!;
+    final Color active = Color.lerp(_active, _errorColor, e)!;
+    return BorderSide(color: Color.lerp(base, active, f)!, width: 1 + f);
+  }
+}
+
+/// 给子树里的 MD3 填充式字段装一条按状态补间的活动指示线（见
+/// [FushiFieldIndicator]）：被动 [Focus] 听子孙焦点、[MouseRegion] 听悬停，
+/// 时长取 [fushiMotionDuration]（减弱动效时直接跳到终态）。[builder] 拿到的
+/// context 在宿主之下，[fushiMd3FieldDecoration] 据此把指示线交给边框。
+///
+/// 只换线的画法，不动布局：浮动标题、命中区、帮助 / 错误文字照旧。[active] =
+/// 外部的「展开」态（下拉菜单打开时与聚焦同一档）。
+class FushiFieldIndicatorHost extends StatefulWidget {
+  const FushiFieldIndicatorHost({
+    required this.builder,
+    this.enabled = true,
+    this.error = false,
+    this.active = false,
+    super.key,
+  });
+
+  final WidgetBuilder builder;
+  final bool enabled;
+  final bool error;
+  final bool active;
+
+  static FushiFieldIndicator? maybeOf(BuildContext context) => context
+      .dependOnInheritedWidgetOfExactType<_FushiFieldIndicatorScope>()
+      ?.indicator;
+
+  @override
+  State<FushiFieldIndicatorHost> createState() =>
+      _FushiFieldIndicatorHostState();
+}
+
+class _FushiFieldIndicatorHostState extends State<FushiFieldIndicatorHost>
+    with TickerProviderStateMixin {
+  late final AnimationController _focus = AnimationController(vsync: this);
+  late final AnimationController _hover = AnimationController(vsync: this);
+  late final AnimationController _error = AnimationController(
+    vsync: this,
+    value: widget.error ? 1 : 0,
+  );
+  late final FushiFieldIndicator _indicator = FushiFieldIndicator._(
+    _focus,
+    _hover,
+    _error,
+  );
+  late final Listenable _repaint = Listenable.merge(<Listenable>[
+    _focus,
+    _hover,
+    _error,
+  ]);
+  bool _hasFocus = false;
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.active) _focus.value = 1;
+  }
+
+  void _drive(AnimationController controller, bool on) {
+    final double target = on ? 1 : 0;
+    if (controller.value == target && !controller.isAnimating) return;
+    final Duration duration = fushiMotionDuration(context, FushiMotion.short);
+    if (duration == Duration.zero) {
+      controller.value = target;
+      return;
+    }
+    controller.animateTo(
+      target,
+      duration: duration,
+      curve: FushiMotion.standard,
+    );
+  }
+
+  @override
+  void didUpdateWidget(FushiFieldIndicatorHost oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.error != widget.error) _drive(_error, widget.error);
+    if (oldWidget.active != widget.active) {
+      _drive(_focus, _hasFocus || widget.active);
+    }
+  }
+
+  @override
+  void dispose() {
+    _focus.dispose();
+    _hover.dispose();
+    _error.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final Color? scopedFg = FushiFieldFillScope.foregroundOf(context);
+    _indicator
+      .._rest = scopedFg?.withValues(alpha: 0.72) ?? cs.onSurfaceVariant
+      .._hovered = scopedFg ?? cs.onSurface
+      .._active = cs.primary
+      .._errorColor = cs.error
+      .._disabled = cs.onSurface.withValues(alpha: 0.38)
+      .._enabled = widget.enabled;
+    return Focus(
+      canRequestFocus: false,
+      skipTraversal: true,
+      includeSemantics: false,
+      onFocusChange: (bool focused) {
+        _hasFocus = focused;
+        _drive(_focus, focused || widget.active);
+      },
+      child: MouseRegion(
+        opaque: false,
+        hitTestBehavior: HitTestBehavior.translucent,
+        onEnter: (_) => _drive(_hover, true),
+        onExit: (_) => _drive(_hover, false),
+        // 指示线动画每一帧让本子树重画：填充式边框在 InputDecorator 的
+        // paint 里读 [FushiFieldIndicator] 的当前值（两者之间没有重画边界，
+        // TextField 只把 EditableText 隔在 RepaintBoundary 里）。
+        child: CustomPaint(
+          foregroundPainter: _FushiFieldIndicatorRepaint(_repaint),
+          child: _FushiFieldIndicatorScope(
+            indicator: _indicator,
+            child: Builder(builder: widget.builder),
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+/// 不经 InputDecorator 的字段式控件（下拉触发器）自己画活动指示线：在
+/// [child] 下沿画 [FushiFieldIndicatorHost] 此刻的线。没有宿主时原样返回。
+class FushiFieldIndicatorLine extends StatelessWidget {
+  const FushiFieldIndicatorLine({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiFieldIndicator? indicator = FushiFieldIndicatorHost.maybeOf(
+      context,
+    );
+    if (indicator == null) return child;
+    return CustomPaint(
+      foregroundPainter: _FushiFieldIndicatorLinePainter(indicator),
+      child: child,
+    );
+  }
+}
+
+class _FushiFieldIndicatorLinePainter extends CustomPainter {
+  _FushiFieldIndicatorLinePainter(this.indicator);
+
+  final FushiFieldIndicator indicator;
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final BorderSide line = indicator.side();
+    if (line.width == 0) return;
+    final double y = size.height - line.width / 2;
+    canvas.drawLine(Offset(0, y), Offset(size.width, y), line.toPaint());
+  }
+
+  // 宿主动画每帧让子树重画（见 [FushiFieldIndicatorHost]），值随之更新。
+  @override
+  bool shouldRepaint(_FushiFieldIndicatorLinePainter oldDelegate) =>
+      oldDelegate.indicator != indicator;
+}
+
+class _FushiFieldIndicatorRepaint extends CustomPainter {
+  _FushiFieldIndicatorRepaint(Listenable repaint) : super(repaint: repaint);
+
+  @override
+  void paint(Canvas canvas, Size size) {}
+
+  @override
+  bool shouldRepaint(_FushiFieldIndicatorRepaint oldDelegate) => false;
+}
+
+class _FushiFieldIndicatorScope extends InheritedWidget {
+  const _FushiFieldIndicatorScope({
+    required this.indicator,
+    required super.child,
+  });
+
+  final FushiFieldIndicator indicator;
+
+  @override
+  bool updateShouldNotify(_FushiFieldIndicatorScope oldWidget) =>
+      oldWidget.indicator != indicator;
 }
 
 /// [TextField] 的设计系统分派版。
-class FushiTextFieldControl extends StatelessWidget {
+///
+/// @design dual —— MD3 走 [TextField] + M3E 字段装饰；Apple 走无边框
+/// [CupertinoTextField] + 自绘壳：iOS 27 `tertiarySystemFill` 圆角 10 无描边
+/// （搜索装饰 = 高 36 全胶囊），macOS 27 宽窗白底 / 深色 tertiaryFill + 0.5px
+/// 描边圆角 6（搜索装饰 = 高 28 灰填充胶囊），正文 17 / 13。
+class FushiTextFieldControl extends StatelessWidget
+    implements FushiAppleFormRowField {
   const FushiTextFieldControl({
     super.key,
     this.groupId = EditableText,
@@ -493,84 +987,91 @@ class FushiTextFieldControl extends StatelessWidget {
     if (isGlassDesign(context)) {
       return _GlassTextFieldView(config: this);
     }
-    return TextField(
-      groupId: groupId,
-      controller: controller,
-      focusNode: focusNode,
-      undoController: undoController,
-      decoration: fushiMd3FieldDecoration(context, decoration),
-      keyboardType: keyboardType,
-      textInputAction: textInputAction,
-      textCapitalization: textCapitalization,
-      style: style,
-      strutStyle: strutStyle,
-      textAlign: textAlign,
-      textAlignVertical:
-          textAlignVertical ??
-          (maxLines == 1 &&
-                  decoration != null &&
-                  _isSearchDecoration(decoration!)
-              ? TextAlignVertical.center
-              : null),
-      textDirection: textDirection,
-      readOnly: readOnly,
-      toolbarOptions: toolbarOptions,
-      showCursor: showCursor,
-      autofocus: autofocus,
-      statesController: statesController,
-      obscuringCharacter: obscuringCharacter,
-      obscureText: obscureText,
-      autocorrect: autocorrect,
-      smartDashesType: smartDashesType,
-      smartQuotesType: smartQuotesType,
-      enableSuggestions: enableSuggestions,
-      maxLines: maxLines,
-      minLines: minLines,
-      expands: expands,
-      maxLength: maxLength,
-      maxLengthEnforcement: maxLengthEnforcement,
-      onChanged: onChanged,
-      onEditingComplete: onEditingComplete,
-      onSubmitted: onSubmitted,
-      onAppPrivateCommand: onAppPrivateCommand,
-      inputFormatters: inputFormatters,
-      enabled: enabled,
-      ignorePointers: ignorePointers,
-      cursorWidth: cursorWidth,
-      cursorHeight: cursorHeight,
-      cursorRadius: cursorRadius,
-      cursorOpacityAnimates: cursorOpacityAnimates,
-      cursorColor: cursorColor,
-      cursorErrorColor: cursorErrorColor,
-      selectionHeightStyle: selectionHeightStyle,
-      selectionWidthStyle: selectionWidthStyle,
-      keyboardAppearance: keyboardAppearance,
-      scrollPadding: scrollPadding,
-      dragStartBehavior: dragStartBehavior,
-      enableInteractiveSelection: enableInteractiveSelection,
-      selectAllOnFocus: selectAllOnFocus,
-      selectionControls: selectionControls,
-      onTap: onTap,
-      onTapAlwaysCalled: onTapAlwaysCalled,
-      onTapOutside: onTapOutside,
-      onTapUpOutside: onTapUpOutside,
-      mouseCursor: mouseCursor,
-      buildCounter: buildCounter,
-      scrollController: scrollController,
-      scrollPhysics: scrollPhysics,
-      autofillHints: autofillHints,
-      contentInsertionConfiguration: contentInsertionConfiguration,
-      clipBehavior: clipBehavior,
-      restorationId: restorationId,
-      scribbleEnabled: scribbleEnabled,
-      stylusHandwritingEnabled: stylusHandwritingEnabled,
-      enableIMEPersonalizedLearning: enableIMEPersonalizedLearning,
-      enableInlinePrediction: enableInlinePrediction,
-      contextMenuBuilder: contextMenuBuilder,
-      canRequestFocus: canRequestFocus,
-      spellCheckConfiguration: spellCheckConfiguration,
-      magnifierConfiguration: magnifierConfiguration,
-      hintLocales: hintLocales,
+    // MD3：活动指示线按状态以 FushiMotion 补间（FushiFieldIndicatorHost）。
+    return FushiFieldIndicatorHost(
+      enabled: (enabled ?? decoration?.enabled ?? true),
+      error: (decoration?.errorText != null || decoration?.error != null),
+      builder: (BuildContext context) => TextField(
+        groupId: groupId,
+        controller: controller,
+        focusNode: focusNode,
+        undoController: undoController,
+        decoration: _fushiFieldEvenHint(
+          fushiMd3FieldDecoration(context, decoration),
+        ),
+        keyboardType: keyboardType,
+        textInputAction: textInputAction,
+        textCapitalization: textCapitalization,
+        style: fushiFieldTextStyle(style),
+        strutStyle: strutStyle,
+        textAlign: textAlign,
+        textAlignVertical:
+            textAlignVertical ??
+            (maxLines == 1 &&
+                    decoration != null &&
+                    _isSearchDecoration(decoration!)
+                ? TextAlignVertical.center
+                : null),
+        textDirection: textDirection,
+        readOnly: readOnly,
+        toolbarOptions: toolbarOptions,
+        showCursor: showCursor,
+        autofocus: autofocus,
+        statesController: statesController,
+        obscuringCharacter: obscuringCharacter,
+        obscureText: obscureText,
+        autocorrect: autocorrect,
+        smartDashesType: smartDashesType,
+        smartQuotesType: smartQuotesType,
+        enableSuggestions: enableSuggestions,
+        maxLines: maxLines,
+        minLines: minLines,
+        expands: expands,
+        maxLength: maxLength,
+        maxLengthEnforcement: maxLengthEnforcement,
+        onChanged: onChanged,
+        onEditingComplete: onEditingComplete,
+        onSubmitted: onSubmitted,
+        onAppPrivateCommand: onAppPrivateCommand,
+        inputFormatters: inputFormatters,
+        enabled: enabled,
+        ignorePointers: ignorePointers,
+        cursorWidth: cursorWidth,
+        cursorHeight: cursorHeight,
+        cursorRadius: cursorRadius,
+        cursorOpacityAnimates: cursorOpacityAnimates,
+        cursorColor: cursorColor,
+        cursorErrorColor: cursorErrorColor,
+        selectionHeightStyle: selectionHeightStyle,
+        selectionWidthStyle: selectionWidthStyle,
+        keyboardAppearance: keyboardAppearance,
+        scrollPadding: scrollPadding,
+        dragStartBehavior: dragStartBehavior,
+        enableInteractiveSelection: enableInteractiveSelection,
+        selectAllOnFocus: selectAllOnFocus,
+        selectionControls: selectionControls,
+        onTap: onTap,
+        onTapAlwaysCalled: onTapAlwaysCalled,
+        onTapOutside: onTapOutside,
+        onTapUpOutside: onTapUpOutside,
+        mouseCursor: mouseCursor,
+        buildCounter: buildCounter,
+        scrollController: scrollController,
+        scrollPhysics: scrollPhysics,
+        autofillHints: autofillHints,
+        contentInsertionConfiguration: contentInsertionConfiguration,
+        clipBehavior: clipBehavior,
+        restorationId: restorationId,
+        scribbleEnabled: scribbleEnabled,
+        stylusHandwritingEnabled: stylusHandwritingEnabled,
+        enableIMEPersonalizedLearning: enableIMEPersonalizedLearning,
+        enableInlinePrediction: enableInlinePrediction,
+        contextMenuBuilder: contextMenuBuilder,
+        canRequestFocus: canRequestFocus,
+        spellCheckConfiguration: spellCheckConfiguration,
+        magnifierConfiguration: magnifierConfiguration,
+        hintLocales: hintLocales,
+      ),
     );
   }
 }
@@ -666,13 +1167,19 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     states.update(WidgetState.error, _hasError);
   }
 
-  Widget _buildEditable(BuildContext context, TextStyle style, bool hasError) {
+  Widget _buildEditable(
+    BuildContext context,
+    TextStyle style,
+    bool hasError, {
+    String? placeholder,
+    TextAlign? textAlign,
+  }) {
     final FushiAppleColors apple = appleColorsOf(context);
     final InputDecoration? decoration = _c.decoration;
     // 占位符与正文同字号、secondaryLabel 色（iOS placeholder）。
-    final TextStyle hintStyle = style
-        .copyWith(color: apple.secondaryLabel)
-        .merge(decoration?.hintStyle);
+    final TextStyle hintStyle = fushiFieldTextStyle(
+      style.copyWith(color: apple.secondaryLabel).merge(decoration?.hintStyle),
+    );
     final Color cursorColor = hasError
         ? (_c.cursorErrorColor ?? apple.destructive)
         : (_c.cursorColor ?? apple.accent);
@@ -772,14 +1279,14 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       focusNode: _focusNode,
       undoController: _c.undoController,
       padding: EdgeInsets.zero,
-      placeholder: decoration?.hintText,
+      placeholder: placeholder ?? decoration?.hintText,
       placeholderStyle: hintStyle,
       keyboardType: _c.keyboardType,
       textInputAction: _c.textInputAction,
       textCapitalization: _c.textCapitalization,
       style: style,
       strutStyle: _c.strutStyle,
-      textAlign: _c.textAlign,
+      textAlign: textAlign ?? _c.textAlign,
       // 多行框必须显式顶对齐（BUG-2973）：CupertinoTextField 在有占位符时把
       // 缺省的竖直对齐当成 center，而它的占位符栈高度取「占位符全部行」与
       // 「编辑区一行」的并集——空框里一行高的编辑区被居中进两行高的栈，占位符
@@ -889,24 +1396,62 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     final bool enabled = _enabled;
     final bool focused = _focusNode.hasFocus;
     final bool hasError = _hasError;
+    // 尺寸档：桌面宽窗按 macOS 27（正文 13、搜索框高 28、输入框圆角 6 + 描边），
+    // 触屏 / 桌面窄窗按 iOS 27（正文 17、搜索胶囊高 36、输入框圆角 10 无描边）。
+    final bool desktop = FushiAppleMetrics.of(context).desktop;
+    final double macScale = fushiAppleMacScale(context);
 
-    // 桌面（macOS 尺度）正文 15，移动端 iOS 17。
-    final TextStyle style =
-        ((fushiAppleCompact(context) ? tt.bodyMedium : tt.bodyLarge) ??
-                const TextStyle())
-            .copyWith(
-              color: enabled ? apple.label : apple.tertiaryLabel,
-              // 单行框：正文主题行高 1.5 的行距按字体 ascent/descent 比例分配，
-              // CJK 字体多分在下方，文字明显低于放大镜 / 胶囊中线。收紧行高并
-              // 上下均分，文字与占位符落在框的光学中线上。
-              height: _c.maxLines == 1 ? 1.25 : null,
-              leadingDistribution: _c.maxLines == 1
-                  ? TextLeadingDistribution.even
-                  : null,
-            )
-            .merge(_c.style);
+    // 单行框收紧行高（1.25）；行距一律上下均分（[fushiFieldTextStyle]），
+    // 均分放在合并调用方样式**之后**：调用方常传 inherit: false 的主题样式，
+    // merge 会整个顶掉这里的设置，文字又落回行盒中线下方。
+    final TextStyle style = fushiFieldTextStyle(
+      (tt.bodyLarge ?? const TextStyle())
+          .copyWith(
+            fontSize: desktop ? 13 * macScale : 17,
+            color: enabled ? apple.label : apple.tertiaryLabel,
+            height: _c.maxLines == 1 ? 1.25 : null,
+          )
+          .merge(_c.style),
+    );
 
-    final Widget editable = _buildEditable(context, style, hasError);
+    // inset grouped 分组的一整行（[FushiAppleFormRowScope]）：表单行。iOS 档只有
+    // 标题时标题当占位（写法①），标题 + 占位都有时左标题、右侧右对齐输入
+    // （写法②）；macOS 档有标题就是「左标题 + 右输入框」。
+    final FushiAppleFormRowScope? rowScope = FushiAppleFormRowScope.maybeOf(
+      context,
+    );
+    final bool formRow =
+        rowScope != null &&
+        decoration != null &&
+        !_isSearchDecoration(decoration) &&
+        !_c.expands;
+    final String? formLabelText = formRow
+        ? (rowScope.label ?? decoration.labelText)
+        : null;
+    final Widget? formLabel = !formRow
+        ? null
+        : (rowScope.label == null ? decoration.label : null) ??
+              (formLabelText == null ? null : Text(formLabelText));
+    final bool formLabeled =
+        formLabel != null &&
+        (desktop ||
+            decoration!.hintText != null ||
+            (rowScope!.label == null && decoration.label != null));
+    final Widget editable = _buildEditable(
+      context,
+      style,
+      hasError,
+      placeholder: formRow && !formLabeled
+          ? (decoration.hintText ?? formLabelText)
+          : null,
+      textAlign:
+          formLabeled &&
+              !desktop &&
+              _c.maxLines == 1 &&
+              _c.textAlign == TextAlign.start
+          ? TextAlign.end
+          : null,
+    );
 
     // decoration: null 在 Material 下是「只有文字、没有任何装饰」；玻璃形态
     // 同样不加壳，保持调用方的布局意图（常见于自绘容器里的内嵌输入）。
@@ -914,6 +1459,9 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
 
     final bool dense = decoration.isDense ?? false;
     final bool search = _isSearchDecoration(decoration);
+    // iOS 档页面顶部的独立搜索栏（44 高，见 [kFushiAppleSearchBarHeight]）。
+    final bool largeSearch =
+        search && !desktop && FushiAppleLargeSearchScope.of(context);
     final Color iconColor = enabled
         ? apple.secondaryLabel
         : apple.tertiaryLabel;
@@ -935,7 +1483,11 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       return IconTheme.merge(
         data: IconThemeData(
           color: iconColor,
-          size: search ? 17 : (dense ? 18 : 20),
+          size: desktop
+              ? (search ? 14 : 15) * macScale
+              : (largeSearch
+                    ? kFushiAppleSearchBarIconSize
+                    : (search ? 17 : (dense ? 18 : 20))),
         ),
         child: icon,
       );
@@ -948,13 +1500,20 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
           ? const FushiIcon(CupertinoIcons.search)
           : decoration.prefixIcon,
     );
-    // 搜索胶囊定高 36：调用方常把标准图标按钮（40–48 高）塞进 suffixIcon 当
-    // 清除钮，它会把输入行撑高、在定高父级里溢出，文字随之偏离竖直中线（用户
-    // 2026-10-04「搜索框文字没有垂直居中」）。布局上只给尾部图标 28 高，按钮
-    // 本体照原尺寸居中绘制在上面（OverflowBox），点按区不变小。
+    // 搜索胶囊定高（iOS 36 / macOS 28）：调用方常把标准图标按钮（40–48 高）
+    // 塞进 suffixIcon 当清除钮，它会把输入行撑高、在定高父级里溢出，文字随之
+    // 偏离竖直中线（用户 2026-10-04「搜索框文字没有垂直居中」）。布局上只给
+    // 尾部图标比胶囊矮 8 的高度，按钮本体照原尺寸居中绘制在上面
+    // （OverflowBox），点按区不变小。
+    final double searchHeight = desktop
+        ? 28 * macScale
+        : (largeSearch ? kFushiAppleSearchBarHeight : 36);
     Widget? suffixIcon = iconSlot(decoration.suffixIcon);
     if (search && suffixIcon != null && _c.maxLines == 1) {
-      suffixIcon = _CappedHeightBox(height: 28, child: suffixIcon);
+      suffixIcon = _CappedHeightBox(
+        height: searchHeight - 8,
+        child: suffixIcon,
+      );
     }
     final Widget? prefix = affix(
       decoration.prefix,
@@ -975,13 +1534,17 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       children: <Widget>[
         if (prefixIcon != null) ...<Widget>[
           prefixIcon,
-          SizedBox(width: search ? 6 : (dense ? 8 : 10)),
+          SizedBox(
+            width: largeSearch
+                ? kFushiAppleSearchBarIconGap
+                : (search ? 6 : (dense ? 8 : 10)) * (desktop ? macScale : 1),
+          ),
         ],
         if (prefix != null) prefix,
         Expanded(child: editable),
         if (suffix != null) suffix,
         if (suffixIcon != null) ...<Widget>[
-          SizedBox(width: dense ? 6 : 8),
+          SizedBox(width: (dense ? 6 : 8) * (desktop ? macScale : 1)),
           suffixIcon,
         ],
       ],
@@ -990,57 +1553,67 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       row = Align(alignment: AlignmentDirectional.topStart, child: row);
     }
 
-    // iOS 输入框是内容层控件：实色 tertiarySystemFill 底、圆角 10、无下划线
-    // 无描边（iOS 26 的 roundedRect 文本框）；搜索框是高 36 的全胶囊（控件层，
-    // 无色透明玻璃，见下）。调用方显式 filled + fillColor 时尊重它。
+    // iOS 27：输入框是内容层控件——实色 tertiarySystemFill 底、圆角 10、无下划线
+    // 无描边（roundedRect 文本框）；搜索框是同色的全胶囊（UISearchTextField，
+    // 高 36）。macOS 27 宽窗：输入框是圆角 6 的白底（深色 tertiaryFill）+
+    // 0.5px 分隔线描边（NSTextField bezel），搜索框是高 28 的灰填充胶囊
+    // （NSSearchField）。都不是玻璃——玻璃只给浮在内容上的导航 / 控件层，所以
+    // 不随玻璃画质档变化。调用方显式 filled + fillColor 时尊重它。
     final EdgeInsetsGeometry padding =
         decoration.contentPadding ??
         (search
-            ? const EdgeInsets.symmetric(horizontal: 10)
-            : EdgeInsets.symmetric(
-                horizontal: dense ? 10 : 12,
-                vertical: dense ? 7 : 11,
-              ));
+            ? EdgeInsets.symmetric(
+                horizontal: desktop
+                    ? 8 * macScale
+                    : (largeSearch
+                          ? kFushiAppleSearchBarHorizontalPadding
+                          : 10),
+              )
+            : (desktop
+                  ? EdgeInsets.symmetric(
+                      horizontal: 8 * macScale,
+                      vertical: (dense ? 3 : 5) * macScale,
+                    )
+                  : EdgeInsets.symmetric(
+                      horizontal: dense ? 10 : 12,
+                      vertical: dense ? 7 : 11,
+                    )));
     final Color? customFill = (decoration.filled ?? false)
         ? decoration.fillColor
         : null;
     final bool capsule = search && !multiline;
-    // 搜索胶囊是控件层（macOS 26 工具栏 / 侧栏顶的搜索框、iOS 26 的搜索
-    // 胶囊）：无色透明液态玻璃，不铺 systemFill 灰底；普通输入框仍是内容层
-    // 实色字段。调用方显式给了填充色时照旧实色。
-    final bool glassSearch =
-        capsule && !(customFill != null && customFill.a > 0);
     final bool dark = theme.colorScheme.brightness == Brightness.dark;
-    // 深色下的玻璃搜索胶囊：无色透明玻璃（深色配方是黑 14%）压在纯黑分组底上
-    // 等于隐形——只剩一枚放大镜飘着。静止态在玻璃里自绘一层 tertiarySystemFill
-    // （iOS 深色 UISearchTextField 的底）+ 0.5px 低 alpha 细描边给出轮廓，文字
-    // 始终在这层之上；浅色玻璃本身是白 62% 雾面 + 投影，轮廓清楚，不再叠灰。
+    final bool macField = desktop && !search;
     final Color fill = customFill != null && customFill.a > 0
         ? customFill
-        : (glassSearch
-              ? (dark ? apple.tertiaryFill : Colors.transparent)
+        : (macField
+              ? (dark ? apple.tertiaryFill : Colors.white)
               : apple.tertiaryFill);
-    final BorderRadius shellRadius = BorderRadius.circular(capsule ? 18 : 10);
-    // 聚焦本身在 iOS 上没有描边；这里只给一圈细的强调色内环（1.5px、画在框内），
-    // 作为键盘 / 手柄导航落到输入框时的焦点指示。以前是 3px 外扩的 BoxShadow：
-    // 单色强调色在深色下是白色，外扩一圈就是一道厚白边；搜索胶囊外面还包着
-    // 玻璃，外扩部分被玻璃形状裁掉，而 BoxShadow 又会透过近乎透明的填充把整个
-    // 胶囊染成一块灰 / 白（浅色聚焦时整枚胶囊变成灰块）。错误态 1px destructive。
+    final BorderRadius shellRadius = capsule
+        ? BorderRadius.circular(searchHeight / 2)
+        : FushiAppleRadii.of(context).fieldRadius;
+    // 聚焦本身在 iOS 上没有描边（UISearchTextField / UITextField 触屏聚焦只亮光标）：
+    // iOS 档只在键盘 / 手柄导航（traditional 高亮模式）落到输入框时给一圈细的强调色
+    // 内环（1.5px、50% 透明、画在框内）；macOS 档是 NSSearchField / NSTextField 的
+    // focus ring，成为第一响应者就亮，与指针 / 键盘无关。
+    // 错误态 1px destructive；macOS 输入框静止态 0.5px 分隔线描边。
+    final bool focusRing =
+        enabled &&
+        focused &&
+        !hasError &&
+        (desktop ||
+            FocusManager.instance.highlightMode ==
+                FocusHighlightMode.traditional);
     final Border? restingBorder = enabled && hasError
         ? Border.all(color: apple.destructive)
-        : (glassSearch && dark
-              ? Border.all(
-                  color: Colors.white.withValues(alpha: 0.12),
-                  width: 0.5,
-                )
-              : null);
+        : (macField ? Border.all(color: apple.separator, width: 0.5) : null);
     Widget shell = AnimatedContainer(
-      duration: const Duration(milliseconds: 150),
-      curve: Curves.easeOut,
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
       padding: padding,
-      // 搜索胶囊定高 36（文字更高时随文字长高），内容竖直居中。
+      // 搜索胶囊定高（文字更高时随文字长高），内容竖直居中。
       constraints: capsule
-          ? const BoxConstraints(minHeight: 36)
+          ? BoxConstraints(minHeight: searchHeight)
           : const BoxConstraints(),
       decoration: BoxDecoration(
         color: fill,
@@ -1049,7 +1622,7 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       ),
       foregroundDecoration: BoxDecoration(
         borderRadius: shellRadius,
-        border: enabled && focused && !hasError
+        border: focusRing
             ? Border.all(
                 color: apple.accent.withValues(alpha: dark ? 0.6 : 0.5),
                 width: 1.5,
@@ -1064,9 +1637,6 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
             )
           : row,
     );
-    if (glassSearch) {
-      shell = fushiClearGlassBezel(context, radius: 18, child: shell);
-    }
     if (decoration.constraints != null) {
       shell = ConstrainedBox(
         constraints: decoration.constraints!,
@@ -1104,6 +1674,23 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
                       style: captionStyle.merge(decoration.helperStyle),
                     )));
     final Widget? counter = _buildCounter(context, captionStyle);
+
+    if (formRow) {
+      final String? rowHelper = rowScope.helper;
+      return _buildFormRow(
+        context,
+        field: desktop ? shell : row,
+        leading: rowScope.leading,
+        label: formLabeled ? formLabel : null,
+        labelColor: enabled && hasError ? apple.destructive : apple.label,
+        helperOrError:
+            helperOrError ??
+            (rowHelper == null ? null : Text(rowHelper, style: captionStyle)),
+        counter: counter,
+        multiline: multiline,
+        focused: enabled && focused,
+      );
+    }
 
     Widget content = Column(
       mainAxisSize: _c.expands ? MainAxisSize.max : MainAxisSize.min,
@@ -1165,10 +1752,115 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     // Opacity 层恒在：按 enabled 增删会让内层输入框重挂。
     return Opacity(opacity: enabled ? 1 : 0.6, child: content);
   }
+
+  /// inset grouped 分组里的一整行（[FushiAppleFormRowScope]）。
+  ///
+  /// iOS 档：行高 [FushiAppleMetrics.rowMinHeight]、左右 [FushiAppleMetrics.rowHorizontal]，
+  /// [field] 是无壳的输入行（无填充、无描边），分隔线由分组画；键盘 / 手柄导航
+  /// 落到行上时画一圈强调色描边（与 [FushiAppleRow] 的焦点描边同口径），触屏点
+  /// 进来只有光标。macOS 档：[field] 是 NSTextField 式小框（自带聚焦环），左边
+  /// 是行标题。说明 / 错误 / 计数排在行内下方，与行文字左对齐。
+  Widget _buildFormRow(
+    BuildContext context, {
+    required Widget field,
+    required Widget? leading,
+    required Widget? label,
+    required Color labelColor,
+    required Widget? helperOrError,
+    required Widget? counter,
+    required bool multiline,
+    required bool focused,
+  }) {
+    final FushiAppleMetrics metrics = FushiAppleMetrics.of(context);
+    final FushiAppleColors apple = appleColorsOf(context);
+    final bool desktop = metrics.desktop;
+    final double scale = metrics.scale;
+    Widget line = field;
+    if (label != null) {
+      line = Row(
+        crossAxisAlignment: multiline
+            ? CrossAxisAlignment.start
+            : CrossAxisAlignment.center,
+        children: <Widget>[
+          // 标题按内容宽，最多占一段定宽（长标题换行），其余给输入。
+          ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: desktop ? 180 * scale : 150),
+            child: Padding(
+              // 多行时标题与输入首行对齐：macOS 输入框有 5 的上内边距。
+              padding: EdgeInsets.only(
+                top: multiline && desktop ? 5 * scale : 0,
+              ),
+              child: DefaultTextStyle.merge(
+                style: metrics.titleStyle(context).copyWith(color: labelColor),
+                child: label,
+              ),
+            ),
+          ),
+          SizedBox(width: (desktop ? 12 : 16) * scale),
+          Expanded(child: field),
+        ],
+      );
+    }
+    if (leading != null) {
+      line = Row(
+        crossAxisAlignment: multiline
+            ? CrossAxisAlignment.start
+            : CrossAxisAlignment.center,
+        children: <Widget>[
+          leading,
+          Expanded(child: line),
+        ],
+      );
+    }
+    final bool keyboardFocus =
+        focused &&
+        !desktop &&
+        FocusManager.instance.highlightMode == FocusHighlightMode.traditional;
+    final Widget body = Container(
+      constraints: BoxConstraints(minHeight: metrics.rowMinHeight),
+      padding: EdgeInsets.symmetric(
+        horizontal: metrics.rowHorizontal,
+        vertical: multiline
+            ? (desktop ? 8 * scale : 11)
+            : (desktop ? 4 * scale : 6),
+      ),
+      alignment: AlignmentDirectional.centerStart,
+      foregroundDecoration: keyboardFocus
+          ? BoxDecoration(
+              borderRadius: FushiAppleRadii.of(context).selectionRadius,
+              border: Border.all(color: apple.accent, width: 2),
+            )
+          : null,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        children: <Widget>[
+          line,
+          if (helperOrError != null || counter != null)
+            Padding(
+              padding: EdgeInsets.only(top: 4 * scale),
+              child: Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: <Widget>[
+                  Expanded(child: helperOrError ?? const SizedBox.shrink()),
+                  if (counter != null) ...<Widget>[
+                    const SizedBox(width: 8),
+                    counter,
+                  ],
+                ],
+              ),
+            ),
+        ],
+      ),
+    );
+    // Opacity 层恒在：按 enabled 增删会让内层输入框重挂。
+    return Opacity(opacity: _enabled ? 1 : 0.6, child: body);
+  }
 }
 
 /// [TextFormField] 的设计系统分派版。
-class FushiTextFormFieldControl extends StatelessWidget {
+class FushiTextFormFieldControl extends StatelessWidget
+    implements FushiAppleFormRowField {
   const FushiTextFormFieldControl({
     super.key,
     this.groupId = EditableText,
@@ -1332,89 +2024,99 @@ class FushiTextFormFieldControl extends StatelessWidget {
     if (isGlassDesign(context)) {
       return _GlassTextFormField(config: this);
     }
-    return TextFormField(
-      groupId: groupId,
-      controller: controller,
-      initialValue: initialValue,
-      focusNode: focusNode,
-      forceErrorText: forceErrorText,
-      decoration: fushiMd3FieldDecoration(context, decoration),
-      keyboardType: keyboardType,
-      textCapitalization: textCapitalization,
-      textInputAction: textInputAction,
-      style: style,
-      strutStyle: strutStyle,
-      textDirection: textDirection,
-      textAlign: textAlign,
-      textAlignVertical:
-          textAlignVertical ??
-          (maxLines == 1 &&
-                  decoration != null &&
-                  _isSearchDecoration(decoration!)
-              ? TextAlignVertical.center
-              : null),
-      autofocus: autofocus,
-      readOnly: readOnly,
-      toolbarOptions: toolbarOptions,
-      showCursor: showCursor,
-      obscuringCharacter: obscuringCharacter,
-      obscureText: obscureText,
-      autocorrect: autocorrect,
-      smartDashesType: smartDashesType,
-      smartQuotesType: smartQuotesType,
-      enableSuggestions: enableSuggestions,
-      maxLengthEnforcement: maxLengthEnforcement,
-      maxLines: maxLines,
-      minLines: minLines,
-      expands: expands,
-      maxLength: maxLength,
-      onChanged: onChanged,
-      onTap: onTap,
-      onTapAlwaysCalled: onTapAlwaysCalled,
-      onTapOutside: onTapOutside,
-      onTapUpOutside: onTapUpOutside,
-      onEditingComplete: onEditingComplete,
-      onFieldSubmitted: onFieldSubmitted,
-      onSaved: onSaved,
-      validator: validator,
-      errorBuilder: errorBuilder,
-      inputFormatters: inputFormatters,
-      enabled: enabled,
-      ignorePointers: ignorePointers,
-      cursorWidth: cursorWidth,
-      cursorHeight: cursorHeight,
-      cursorRadius: cursorRadius,
-      cursorColor: cursorColor,
-      cursorErrorColor: cursorErrorColor,
-      keyboardAppearance: keyboardAppearance,
-      scrollPadding: scrollPadding,
-      enableInteractiveSelection: enableInteractiveSelection,
-      selectAllOnFocus: selectAllOnFocus,
-      selectionControls: selectionControls,
-      buildCounter: buildCounter,
-      scrollPhysics: scrollPhysics,
-      autofillHints: autofillHints,
-      autovalidateMode: autovalidateMode,
-      scrollController: scrollController,
-      restorationId: restorationId,
-      enableIMEPersonalizedLearning: enableIMEPersonalizedLearning,
-      mouseCursor: mouseCursor,
-      contextMenuBuilder: contextMenuBuilder,
-      spellCheckConfiguration: spellCheckConfiguration,
-      magnifierConfiguration: magnifierConfiguration,
-      undoController: undoController,
-      onAppPrivateCommand: onAppPrivateCommand,
-      cursorOpacityAnimates: cursorOpacityAnimates,
-      selectionHeightStyle: selectionHeightStyle,
-      selectionWidthStyle: selectionWidthStyle,
-      dragStartBehavior: dragStartBehavior,
-      contentInsertionConfiguration: contentInsertionConfiguration,
-      statesController: statesController,
-      clipBehavior: clipBehavior,
-      scribbleEnabled: scribbleEnabled,
-      stylusHandwritingEnabled: stylusHandwritingEnabled,
-      canRequestFocus: canRequestFocus,
-      hintLocales: hintLocales,
+    // MD3：活动指示线按状态以 FushiMotion 补间（FushiFieldIndicatorHost）。
+    return FushiFieldIndicatorHost(
+      enabled: (enabled ?? decoration?.enabled ?? true),
+      error:
+          (forceErrorText != null ||
+          decoration?.errorText != null ||
+          decoration?.error != null),
+      builder: (BuildContext context) => TextFormField(
+        groupId: groupId,
+        controller: controller,
+        initialValue: initialValue,
+        focusNode: focusNode,
+        forceErrorText: forceErrorText,
+        decoration: _fushiFieldEvenHint(
+          fushiMd3FieldDecoration(context, decoration),
+        ),
+        keyboardType: keyboardType,
+        textCapitalization: textCapitalization,
+        textInputAction: textInputAction,
+        style: fushiFieldTextStyle(style),
+        strutStyle: strutStyle,
+        textDirection: textDirection,
+        textAlign: textAlign,
+        textAlignVertical:
+            textAlignVertical ??
+            (maxLines == 1 &&
+                    decoration != null &&
+                    _isSearchDecoration(decoration!)
+                ? TextAlignVertical.center
+                : null),
+        autofocus: autofocus,
+        readOnly: readOnly,
+        toolbarOptions: toolbarOptions,
+        showCursor: showCursor,
+        obscuringCharacter: obscuringCharacter,
+        obscureText: obscureText,
+        autocorrect: autocorrect,
+        smartDashesType: smartDashesType,
+        smartQuotesType: smartQuotesType,
+        enableSuggestions: enableSuggestions,
+        maxLengthEnforcement: maxLengthEnforcement,
+        maxLines: maxLines,
+        minLines: minLines,
+        expands: expands,
+        maxLength: maxLength,
+        onChanged: onChanged,
+        onTap: onTap,
+        onTapAlwaysCalled: onTapAlwaysCalled,
+        onTapOutside: onTapOutside,
+        onTapUpOutside: onTapUpOutside,
+        onEditingComplete: onEditingComplete,
+        onFieldSubmitted: onFieldSubmitted,
+        onSaved: onSaved,
+        validator: validator,
+        errorBuilder: errorBuilder,
+        inputFormatters: inputFormatters,
+        enabled: enabled,
+        ignorePointers: ignorePointers,
+        cursorWidth: cursorWidth,
+        cursorHeight: cursorHeight,
+        cursorRadius: cursorRadius,
+        cursorColor: cursorColor,
+        cursorErrorColor: cursorErrorColor,
+        keyboardAppearance: keyboardAppearance,
+        scrollPadding: scrollPadding,
+        enableInteractiveSelection: enableInteractiveSelection,
+        selectAllOnFocus: selectAllOnFocus,
+        selectionControls: selectionControls,
+        buildCounter: buildCounter,
+        scrollPhysics: scrollPhysics,
+        autofillHints: autofillHints,
+        autovalidateMode: autovalidateMode,
+        scrollController: scrollController,
+        restorationId: restorationId,
+        enableIMEPersonalizedLearning: enableIMEPersonalizedLearning,
+        mouseCursor: mouseCursor,
+        contextMenuBuilder: contextMenuBuilder,
+        spellCheckConfiguration: spellCheckConfiguration,
+        magnifierConfiguration: magnifierConfiguration,
+        undoController: undoController,
+        onAppPrivateCommand: onAppPrivateCommand,
+        cursorOpacityAnimates: cursorOpacityAnimates,
+        selectionHeightStyle: selectionHeightStyle,
+        selectionWidthStyle: selectionWidthStyle,
+        dragStartBehavior: dragStartBehavior,
+        contentInsertionConfiguration: contentInsertionConfiguration,
+        statesController: statesController,
+        clipBehavior: clipBehavior,
+        scribbleEnabled: scribbleEnabled,
+        stylusHandwritingEnabled: stylusHandwritingEnabled,
+        canRequestFocus: canRequestFocus,
+        hintLocales: hintLocales,
+      ),
     );
   }
 }

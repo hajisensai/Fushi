@@ -32,6 +32,7 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_builtin_template_restore.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_note_type_store.dart';
+import 'package:fushi_engine/srs/srs_template_duplicates.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/ai/ai_failure_text.dart';
@@ -43,6 +44,9 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_builtin_template_restore_action.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_block_layout_panel.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
+import 'package:fushi/src/srs/srs_card_face_route.dart'
+    show srsNativeUnsupportedNotice;
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart'
     show
         SrsPreviewNativeFushiCard,
@@ -51,9 +55,19 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart'
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_visual_template_panel.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart';
+import 'package:fushi/src/srs/srs_native_template.dart'
+    show srsForcedNativeHtmlCard, srsTemplateIsNative, srsWithTemplateNative;
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_visual_template.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
+import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
+    show FushiMastheadRole, FushiMastheadScope;
+import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -68,8 +82,11 @@ import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 /// 模板编辑器的标签页。
 enum SrsTemplateEditorTab { visual, front, back, styling }
@@ -151,6 +168,13 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
   bool _previewAnswer = false;
   bool _loading = true;
   bool _saving = false;
+
+  /// 在途保存的结束信号（[_saving] 期间非空）：返回时等它写完再判有没有未保存的修改，而不是把正在写入的
+  /// 修改当成「未保存」问放弃（大库一次保存要好几秒，放弃也撤不回已发出的写入）。
+  Completer<void>? _saveDone;
+
+  /// 一次返回正在等在途保存：再按返回不重复排队（否则写完后连 pop 两次）。
+  bool _popPending = false;
   Object? _error;
 
   SrsDbStore? _store;
@@ -212,6 +236,14 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       f.name: f.id,
   };
 
+  void _retryLoad() {
+    setState(() {
+      _loading = true;
+      _error = null;
+    });
+    unawaited(_load());
+  }
+
   Future<void> _load() async {
     try {
       final SrsDbStore? store = await readSrsStore(ref);
@@ -255,6 +287,19 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
     }
   }
 
+  /// 正面（编辑框里的当前内容）与这个笔记类型的哪些别的模板完全相同：相同 = 同一道题，每条笔记出两张
+  /// 一样的卡、各自排期。
+  List<SrsTemplateDef> get _sameFront {
+    final SrsNoteTypeView? type = _type;
+    final SrsTemplateDef? tpl = _template;
+    if (type == null || tpl == null) return const <SrsTemplateDef>[];
+    return srsTemplatesWithSameFront(
+      type,
+      tpl.id,
+      front: templateNamesToIds(_front.text, _nameToId),
+    );
+  }
+
   bool get _dirty =>
       _front.text != _savedFront ||
       _back.text != _savedBack ||
@@ -273,7 +318,21 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
   }) {
     final SrsVisualCompileContext? ctx = _visualCtx;
     if (ctx == null) return;
-    (back ? _back : _front).text = srsCompileVisualSide(blocks, ctx);
+    final String compiled = srsCompileVisualSide(blocks, ctx);
+    // 重编正面保住模板级原生渲染标记（[srsWithTemplateNative]）。
+    if (back) {
+      _back.text = compiled;
+    } else {
+      _front.text = srsWithTemplateNative(
+        compiled,
+        srsTemplateIsNative(_front.text),
+      );
+    }
+  }
+
+  /// 模板级「原生渲染」开关：标记写进正面源码草稿（保存时随模板落库）。
+  void _setNative(bool native) {
+    _front.text = srsWithTemplateNative(_front.text, native);
   }
 
   /// 按字段自动生成两面布局；当前模板有内容时先确认（会替换源码，保存前仍可放弃）。
@@ -427,6 +486,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
                     f.id: _sampleFields[f.name] ?? '',
                 },
                 tags: _sample?.tags ?? const <String>[],
+                languageCode: ref.read(appProvider).defaultContentLanguage,
               )
             : null;
       }
@@ -446,29 +506,53 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       );
       return;
     }
+    // 写入的是点保存这一刻的内容：保存在途时编辑框还能继续改，写完只把这份快照记成「已保存」，
+    // 途中再改的仍算未保存。
+    final String front = _front.text;
+    final String back = _back.text;
+    final String css = _css.text;
+    final Map<String, String> descriptions = _pendingDescriptions;
+    final bool templateChanged = front != _savedFront || back != _savedBack;
+    // 存下去会是重复模板：先说清楚后果，默认不存。
+    final SrsTemplateDef? twin = templateChanged
+        ? _sameFront.firstOrNull
+        : null;
+    if (twin != null) {
+      final bool ok = await showFushiConfirmDialog(
+        context: context,
+        title: t.srs_template_duplicate_save_title,
+        message: t.srs_template_duplicate_save_body(name: twin.name),
+        confirmLabel: t.srs_template_duplicate_save_anyway,
+        cancelLabel: t.cancel,
+        icon: FushiIcons.warning,
+        destructive: true,
+      );
+      if (!ok || !mounted) return;
+    }
+    final Completer<void> done = Completer<void>();
+    _saveDone = done;
     setState(() => _saving = true);
     try {
       final Map<String, String> nameToId = _nameToId;
-      final bool templateChanged =
-          _front.text != _savedFront || _back.text != _savedBack;
       // 模板 / CSS / 字段说明一次写入（一个事务、一次缓存刷新），见 saveTemplateEdits。
       final bool wrote = await store.saveTemplateEdits(
         type.id,
         tpl.id,
-        front: templateChanged
-            ? templateNamesToIds(_front.text, nameToId)
-            : null,
-        back: templateChanged ? templateNamesToIds(_back.text, nameToId) : null,
-        css: _css.text != _savedCss ? _css.text : null,
-        fieldDescriptions: _pendingDescriptions,
+        front: templateChanged ? templateNamesToIds(front, nameToId) : null,
+        back: templateChanged ? templateNamesToIds(back, nameToId) : null,
+        css: css != _savedCss ? css : null,
+        fieldDescriptions: descriptions,
       );
       if (!mounted) return;
       if (wrote) bumpSrsRevision(ref);
       setState(() {
-        _savedFront = _front.text;
-        _savedBack = _back.text;
-        _savedCss = _css.text;
-        _pendingDescriptions = const <String, String>{};
+        _savedFront = front;
+        _savedBack = back;
+        _savedCss = css;
+        // 途中 AI 又给了新说明（整份替换）就留着，等下次保存。
+        if (identical(_pendingDescriptions, descriptions)) {
+          _pendingDescriptions = const <String, String>{};
+        }
       });
       _refreshPreview();
       FushiToast.show(
@@ -477,9 +561,31 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
       );
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsTemplateEditor.save', e, stack);
-      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      FushiToast.show(
+        msg: srsActionFailedText(e),
+        severity: ToastSeverity.error,
+      );
     } finally {
+      _saveDone = null;
       if (mounted) setState(() => _saving = false);
+      done.complete();
+    }
+  }
+
+  /// 返回被 [PopScope] 拦下时：保存在途就先等它写完；之后没有未保存的修改直接退出，有（保存失败 / 途中又改）
+  /// 才问放弃。
+  Future<void> _onPopBlocked() async {
+    if (_popPending) return;
+    _popPending = true;
+    try {
+      final NavigatorState navigator = Navigator.of(context);
+      final Completer<void>? saving = _saveDone;
+      if (saving != null) await saving.future;
+      if (!mounted) return;
+      // 放弃修改：Navigator.pop 不经 PopScope 拦截，直接退出。
+      if (await _confirmDiscard() && mounted) navigator.pop();
+    } finally {
+      _popPending = false;
     }
   }
 
@@ -610,6 +716,8 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
             scene: AiPromptScene.srsTemplate,
             controller: controller,
             showLabel: true,
+            storeOf: () =>
+                ProviderScope.containerOf(context).read(appProvider).prefsRepo,
           ),
     );
     if (request == null || request.trim().isEmpty || !mounted) return;
@@ -634,19 +742,18 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     final String title = _template?.name ?? t.srs_note_types_template_edit;
     return PopScope<Object?>(
-      canPop: !_dirty,
-      onPopInvokedWithResult: (bool didPop, Object? result) async {
-        if (didPop) return;
-        final NavigatorState navigator = Navigator.of(context);
-        // 放弃修改：Navigator.pop 不经 PopScope 拦截，直接退出。
-        if (await _confirmDiscard() && mounted) navigator.pop();
+      canPop: !_dirty && !_saving,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (!didPop) unawaited(_onPopBlocked());
       },
       child: FushiPageScaffold(
         title: title,
+        masthead: true,
         header: apple ? null : _buildTopBar(context, title),
-        actions: apple
+        actions: apple || masthead
             ? <Widget>[
                 for (final FushiToolbarItem item in <FushiToolbarItem>[
                   ?_aiItem,
@@ -695,51 +802,77 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
     );
   }
 
+  String _tabLabel(SrsTemplateEditorTab tab) => switch (tab) {
+    SrsTemplateEditorTab.visual => t.srs_visual_tab,
+    SrsTemplateEditorTab.front => t.srs_note_types_front,
+    SrsTemplateEditorTab.back => t.srs_note_types_back,
+    SrsTemplateEditorTab.styling => t.srs_note_types_styling,
+  };
+
   Widget _buildBody(BuildContext context) {
     if (_loading) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
     }
     final SrsNoteTypeView? type = _type;
     if (_error != null || type == null) {
-      return SafeArea(
-        bottom: false,
-        child: Center(
-          child: FushiPlaceholderMessage(
-            icon: FushiIcons.error,
-            tone: FushiPlaceholderTone.error,
-            message: t.error_load_failed,
-            detail: _error == null ? null : '$_error',
-          ),
-        ),
+      return SrsLoadErrorView(
+        error: _error,
+        retryKey: const ValueKey<String>('srs-template-editor-load-retry'),
+        onRetry: _retryLoad,
       );
     }
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String? error = _preview.error;
-    final Widget tabs = FushiSegmentedButton<SrsTemplateEditorTab>(
-      key: const ValueKey<String>('srs-template-tabs'),
-      showSelectedIcon: false,
-      segments: <ButtonSegment<SrsTemplateEditorTab>>[
-        ButtonSegment<SrsTemplateEditorTab>(
-          value: SrsTemplateEditorTab.visual,
-          label: Text(t.srs_visual_tab),
-        ),
-        ButtonSegment<SrsTemplateEditorTab>(
-          value: SrsTemplateEditorTab.front,
-          label: Text(t.srs_note_types_front),
-        ),
-        ButtonSegment<SrsTemplateEditorTab>(
-          value: SrsTemplateEditorTab.back,
-          label: Text(t.srs_note_types_back),
-        ),
-        ButtonSegment<SrsTemplateEditorTab>(
-          value: SrsTemplateEditorTab.styling,
-          label: Text(t.srs_note_types_styling),
-        ),
-      ],
-      selected: <SrsTemplateEditorTab>{_tab},
-      onSelectionChanged: (Set<SrsTemplateEditorTab> s) =>
-          setState(() => _tab = s.first),
-    );
+    // 重设计外壳（页头大字）：与库页二级页签同一组件——[LibrarySectionTabs] 在
+    // secondary 页头作用域里画成连体按钮组（焦点 / 方向键 / Semantics 同库页）。
+    // 仍留在正文原位（窄窗列表顶 / 宽窗左栏），只随左栏编辑区切换。墨水屏照旧。
+    final Widget tabs = shellRedesignActive(context)
+        ? FushiMastheadScope(
+            role: FushiMastheadRole.secondary,
+            child: Align(
+              alignment: AlignmentDirectional.centerStart,
+              child: LibrarySectionTabs<SrsTemplateEditorTab>(
+                key: const ValueKey<String>('srs-template-tabs'),
+                tabs: <LibrarySectionTab<SrsTemplateEditorTab>>[
+                  for (final SrsTemplateEditorTab tab
+                      in SrsTemplateEditorTab.values)
+                    LibrarySectionTab<SrsTemplateEditorTab>(
+                      value: tab,
+                      label: _tabLabel(tab),
+                    ),
+                ],
+                selected: _tab,
+                onChanged: (SrsTemplateEditorTab tab) =>
+                    setState(() => _tab = tab),
+                focusIdPrefix: 'srs-template-tab',
+              ),
+            ),
+          )
+        : FushiSegmentedButton<SrsTemplateEditorTab>(
+            key: const ValueKey<String>('srs-template-tabs'),
+            showSelectedIcon: false,
+            segments: <ButtonSegment<SrsTemplateEditorTab>>[
+              ButtonSegment<SrsTemplateEditorTab>(
+                value: SrsTemplateEditorTab.visual,
+                label: Text(t.srs_visual_tab),
+              ),
+              ButtonSegment<SrsTemplateEditorTab>(
+                value: SrsTemplateEditorTab.front,
+                label: Text(t.srs_note_types_front),
+              ),
+              ButtonSegment<SrsTemplateEditorTab>(
+                value: SrsTemplateEditorTab.back,
+                label: Text(t.srs_note_types_back),
+              ),
+              ButtonSegment<SrsTemplateEditorTab>(
+                value: SrsTemplateEditorTab.styling,
+                label: Text(t.srs_note_types_styling),
+              ),
+            ],
+            selected: <SrsTemplateEditorTab>{_tab},
+            onSelectionChanged: (Set<SrsTemplateEditorTab> s) =>
+                setState(() => _tab = s.first),
+          );
     Widget editor({required bool wide}) => AnimatedSwitcher(
       duration: fushiMotionDuration(context, FushiMotion.short),
       switchInCurve: FushiMotion.enter,
@@ -765,6 +898,29 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
                   : t.srs_note_types_template_error(error: error),
             ),
     );
+    final SrsTemplateDef? twin = _sameFront.firstOrNull;
+    final Widget? duplicate = twin == null
+        ? null
+        : Padding(
+            padding: EdgeInsets.only(bottom: tokens.spacing.gap * 1.5),
+            child: FushiCard(
+              key: const ValueKey<String>('srs-template-duplicate-warning'),
+              tone: FushiCardTone.error,
+              child: Row(
+                spacing: tokens.spacing.gap,
+                children: <Widget>[
+                  const FushiIcon(FushiIcons.warning),
+                  Expanded(
+                    child: Text(
+                      t.srs_template_duplicate_warning(name: twin.name),
+                      style: context.fushiType.bodyMedium,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          );
+    final Widget? nativeToggle = _buildNativeToggle(context, type);
     final double top = tokens.spacing.gap + MediaQuery.paddingOf(context).top;
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -780,8 +936,10 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
               ),
             ),
             children: <Widget>[
+              ?duplicate,
               tabs,
               SizedBox(height: tokens.spacing.gap * 1.5),
+              ?nativeToggle,
               editor(wide: false),
               SizedBox(height: tokens.spacing.section),
               _buildPreview(context, type),
@@ -811,10 +969,13 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
                         bottom.bottom,
                       ),
                       children: <Widget>[
+                        ?duplicate,
                         FushiStaggeredEntrance(index: 0, child: tabs),
                         SizedBox(height: tokens.spacing.gap * 1.5),
+                        if (nativeToggle != null)
+                          FushiStaggeredEntrance(index: 1, child: nativeToggle),
                         FushiStaggeredEntrance(
-                          index: 1,
+                          index: 2,
                           child: editor(wide: true),
                         ),
                       ],
@@ -832,7 +993,7 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
                         bottom.bottom,
                       ),
                       child: FushiStaggeredEntrance(
-                        index: 2,
+                        index: 3,
                         child: _buildPreview(context, type, fill: true),
                       ),
                     ),
@@ -843,6 +1004,60 @@ class _SrsTemplateEditorPageState extends ConsumerState<SrsTemplateEditorPage> {
           ),
         );
       },
+    );
+  }
+
+  /// 模板级「原生渲染」开关（srs_native_template.dart）：打开后这个模板一律走原生卡面，原生
+  /// 画不了的部分在卡面上就地提示；开着时按预览的示例笔记当场判一次，列出会被提示的写法。
+  /// 内置 Fushi 卡片有自己的原生卡面（区块布局），不出这个开关。
+  Widget? _buildNativeToggle(BuildContext context, SrsNoteTypeView type) {
+    if (type.builtinKey == kSrsBuiltinFushiCardKey) return null;
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final bool native = srsTemplateIsNative(_front.text);
+    final AnkiRenderedCard? shown = _shown;
+    final String language = ref.read(appProvider).defaultContentLanguage;
+    final List<String>? reasons = !native || shown == null
+        ? null
+        : srsForcedNativeHtmlCard(
+            question: shown.question,
+            answer: shown.answer,
+            css: _css.text,
+            languageCode: language.isEmpty ? null : language,
+            notice: srsNativeUnsupportedNotice,
+          ).reasons;
+    return Padding(
+      padding: EdgeInsets.only(bottom: tokens.spacing.gap * 1.5),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        spacing: tokens.spacing.gap,
+        children: <Widget>[
+          FushiSwitchListTile(
+            key: const ValueKey<String>('srs-template-native'),
+            title: Text(t.srs_template_native_title),
+            subtitle: Text(t.srs_template_native_subtitle),
+            value: native,
+            onChanged: _setNative,
+          ),
+          FushiAnimatedSize(
+            duration: fushiMotionDuration(context, FushiMotion.short),
+            curve: FushiMotion.enter,
+            alignment: Alignment.topCenter,
+            child: reasons == null
+                ? const SizedBox(width: double.infinity)
+                : FushiInlineNotice(
+                    key: const ValueKey<String>('srs-template-native-check'),
+                    severity: reasons.isEmpty
+                        ? FushiNoticeSeverity.success
+                        : FushiNoticeSeverity.warning,
+                    message: reasons.isEmpty
+                        ? t.srs_template_native_all_ok
+                        : t.srs_template_native_issues(
+                            reasons: reasons.join('; '),
+                          ),
+                  ),
+          ),
+        ],
+      ),
     );
   }
 

@@ -189,4 +189,66 @@ void main() {
       );
     });
   });
+
+  // 反馈 9BZA2runry 拍板：读数胶囊的「本次字数」「字/时」做成开关、默认关。
+  group('session chars / chars-per-hour readouts default off (9BZA2runry)', () {
+    setUp(() {
+      ReaderFushiSource.readerSettings = null;
+    });
+    tearDown(() {
+      ReaderFushiSource.readerSettings = null;
+    });
+
+    test('global source pref defaults to false and toggles on', () async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final ReaderFushiSource source = ReaderFushiSource.instance;
+      await source.refreshPreferencesFromDb();
+
+      expect(source.showSessionChars, isFalse);
+      expect(source.showCharsPerHour, isFalse);
+      // 计时器段不在本次拍板范围内，维持默认显示。
+      expect(source.showReadingTimer, isTrue);
+
+      source.toggleShowSessionChars();
+      source.toggleShowCharsPerHour();
+      await Future<void>.delayed(Duration.zero);
+      expect(source.showSessionChars, isTrue);
+      expect(source.showCharsPerHour, isTrue);
+      expect(await db.getPref('src:reader_fushi:show_session_chars'), 'b:true');
+      expect(
+        await db.getPref('src:reader_fushi:show_chars_per_hour'),
+        'b:true',
+      );
+    });
+
+    test('per-reader ReaderSettings defaults to false', () async {
+      final FushiDatabase db = FushiDatabase.forTesting(
+        NativeDatabase.memory(),
+      );
+      addTearDown(db.close);
+      MediaSource.setDatabase(db);
+
+      final ReaderFushiSource source = ReaderFushiSource.instance;
+      await source.refreshPreferencesFromDb();
+
+      final ReaderSettings perBook = ReaderSettings(db);
+      await perBook.refreshFromDb();
+      ReaderFushiSource.readerSettings = perBook;
+
+      expect(perBook.showSessionChars, isFalse);
+      expect(perBook.showCharsPerHour, isFalse);
+      expect(source.showSessionChars, isFalse);
+      expect(source.showCharsPerHour, isFalse);
+
+      source.toggleShowCharsPerHour();
+      await Future<void>.delayed(Duration.zero);
+      expect(perBook.showCharsPerHour, isTrue);
+      expect(await db.getPref('src:reader_fushi:show_chars_per_hour'), 'true');
+    });
+  });
 }

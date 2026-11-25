@@ -5,7 +5,13 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/preference_keys.dart'
-    show kSrsLapisMigrationReminderPrefKey;
+    show
+        kMiningTtsFallbackVoicePref,
+        kMiningTtsFallbackVoiceProfilePrefKeyPrefix,
+        kSrsLapisMigrationReminderPrefKey;
+import 'package:fushi/src/profile/profile_keys.dart';
+import 'package:fushi/src/sync/pref_redaction_policy.dart';
+import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -327,7 +333,7 @@ void main() {
     });
 
     test(
-      'resolveProfileId precedence: book > language > mediaType > active',
+      'resolveProfileId precedence: book > mediaType > language > active',
       () async {
         final db = await _openDb();
         final repo = _repo(db);
@@ -355,8 +361,16 @@ void main() {
             languageTag: 'ja',
             mediaType: ProfileMediaKind.epub,
           ),
+          b,
+        ); // 组合模型：媒体类型高于语言（拍板台 design-combo-node-split）
+        expect(
+          await repo.resolveProfileId(
+            bookUid: 'book/none',
+            languageTag: 'ja',
+            mediaType: ProfileMediaKind.video,
+          ),
           l,
-        ); // language wins over mediaType
+        ); // 媒体类型没绑定时落到语言
         expect(
           await repo.resolveProfileId(
             bookUid: 'book/none',
@@ -1034,5 +1048,247 @@ void main() {
         );
       },
     );
+  });
+
+  // 页面背景图片按配置记、只留在本机：样式随快照走，图片路径按配置停放（与 TTS 兜底声音同一机制）。
+  group('页面背景图片按配置记、只留在本机', () {
+    final String landscape = PrefCodec.encode('/data/page_backdrop/a.png');
+    final String other = PrefCodec.encode('/data/page_backdrop/b.png');
+    final String modules = PrefCodec.encode(
+      '{"video":{"landscape":"/data/page_backdrop/v.png"}}',
+    );
+
+    Future<void> switchTo(ProfileRepository repo, int from, int to) async {
+      await repo.snapshotCurrentSettings(from);
+      await repo.setActiveProfileId(to);
+      await repo.applyProfile(to);
+    }
+
+    test('切配置换图（全局 / 竖屏 / 各模块 / 取色缓存），没设过图的配置沿用切换前的图', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      final b = await repo.createProfile('B');
+      await repo.setActiveProfileId(a);
+      await db.setPref(kPageBackdropPresetPrefKey, PrefCodec.encode('custom'));
+      await db.setPref(kPageBackdropLandscapeImagePrefKey, landscape);
+      await db.setPref(kPageBackdropModuleImagesPrefKey, modules);
+      await db.setPref(kPageBackdropSeedCachePrefKey, PrefCodec.encode('c'));
+
+      // B 从没停放过：沿用 A 的图（升级前的全局图 = 每份配置的初始图，不需要迁移）。
+      await switchTo(repo, a, b);
+      expect(await db.getPref(kPageBackdropLandscapeImagePrefKey), landscape);
+      expect(await db.getPref(kPageBackdropModuleImagesPrefKey), modules);
+
+      // B 换一张、去掉模块图、加竖屏图。
+      await db.setPref(kPageBackdropLandscapeImagePrefKey, other);
+      await db.deletePref(kPageBackdropModuleImagesPrefKey);
+      await db.setPref(kPageBackdropPortraitImagePrefKey, other);
+      await switchTo(repo, b, a);
+      expect(await db.getPref(kPageBackdropLandscapeImagePrefKey), landscape);
+      expect(await db.getPref(kPageBackdropModuleImagesPrefKey), modules);
+      expect(await db.getPref(kPageBackdropPortraitImagePrefKey), isNull);
+      expect(
+        await db.getPref(kPageBackdropSeedCachePrefKey),
+        PrefCodec.encode('c'),
+      );
+      // 样式照旧随快照走：A 的预设回来了。
+      expect(
+        await db.getPref(kPageBackdropPresetPrefKey),
+        PrefCodec.encode('custom'),
+      );
+
+      await switchTo(repo, a, b);
+      expect(await db.getPref(kPageBackdropLandscapeImagePrefKey), other);
+      expect(await db.getPref(kPageBackdropPortraitImagePrefKey), other);
+      expect(await db.getPref(kPageBackdropModuleImagesPrefKey), isNull);
+    });
+
+    test('停放键归为设备本地：不进配置快照、导出与备份', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      await db.setPref(kPageBackdropLandscapeImagePrefKey, landscape);
+      await repo.snapshotCurrentSettings(a);
+
+      final String uid = await db.profileUidOf(a);
+      final Set<String> keys = await _prefKeys(db, a);
+      for (final MapEntry<String, String> e
+          in kPageBackdropProfileParkedPrefKeyPrefixes.entries) {
+        final String parked = '${e.value}$uid';
+        expect(keys, isNot(contains(e.key)));
+        expect(keys, isNot(contains(parked)));
+        expect(ProfileKeys.isExcludedPref(parked), isTrue, reason: parked);
+        expect(
+          PrefRedactionPolicy.isDeviceLocalOrCredential(parked),
+          isTrue,
+          reason: parked,
+        );
+      }
+      expect(
+        await db.getPref('$kPageBackdropLandscapeImagePrefKey::$uid'),
+        landscape,
+      );
+      final String json = await repo.exportProfileToJson(a);
+      expect(json, isNot(contains('/data/page_backdrop/')));
+    });
+
+    test('复制配置：副本一开始用源配置的图；非激活配置的视图取它自己的图', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      final b = await repo.createProfile('B');
+      await repo.setActiveProfileId(a);
+      await db.setPref(kPageBackdropLandscapeImagePrefKey, landscape);
+      await switchTo(repo, a, b);
+      await db.setPref(kPageBackdropLandscapeImagePrefKey, other);
+
+      final viewA = (await repo.loadSettingsView(a))!;
+      expect(viewA.prefsMap[kPageBackdropLandscapeImagePrefKey], landscape);
+
+      final int copy = await repo.copyProfile(a, 'A2');
+      await switchTo(repo, b, copy);
+      expect(await db.getPref(kPageBackdropLandscapeImagePrefKey), landscape);
+    });
+  });
+
+  // 拍板台 olNAZUnEy6（方案 A）：TTS 兜底声音按配置记、只留在本机。
+  group('TTS 兜底声音按配置记、只留在本机', () {
+    Future<String> parkedKey(FushiDatabase db, int profileId) async =>
+        '$kMiningTtsFallbackVoiceProfilePrefKeyPrefix'
+        '${await db.profileUidOf(profileId)}';
+
+    /// 与 ProfileViewModel._switchLocked 同一顺序：快照旧配置 → 记激活 id → 应用新配置。
+    Future<void> switchTo(ProfileRepository repo, int from, int to) async {
+      await repo.snapshotCurrentSettings(from);
+      await repo.setActiveProfileId(to);
+      await repo.applyProfile(to);
+    }
+
+    test('切配置时声音跟着换，切回来换回原来的', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final ja = await repo.createProfile('日语');
+      final en = await repo.createProfile('英语');
+      await repo.setActiveProfileId(ja);
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:sovits-ja');
+
+      // 英语配置从没停放过：沿用切换前的选择（现有全局值 = 初始值）。
+      await switchTo(repo, ja, en);
+      expect(await db.getPref(kMiningTtsFallbackVoicePref), 'preset:sovits-ja');
+
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:edge-en');
+      await switchTo(repo, en, ja);
+      expect(await db.getPref(kMiningTtsFallbackVoicePref), 'preset:sovits-ja');
+
+      await switchTo(repo, ja, en);
+      expect(await db.getPref(kMiningTtsFallbackVoicePref), 'preset:edge-en');
+    });
+
+    test('没选过的配置切回来仍是没选过（查词不兜底），不继承别的配置的声音', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      final b = await repo.createProfile('B');
+      await repo.setActiveProfileId(a);
+
+      await switchTo(repo, a, b);
+      await db.setPref(kMiningTtsFallbackVoicePref, 'system');
+      await switchTo(repo, b, a);
+
+      expect(await db.getPref(kMiningTtsFallbackVoicePref), isNull);
+      expect(await db.getPref(await parkedKey(db, a)), '');
+      expect(await db.getPref(await parkedKey(db, b)), 'system');
+    });
+
+    test('停放键与 live 键都不进配置快照，归为设备本地', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:x');
+      await repo.snapshotCurrentSettings(a);
+
+      final String parked = await parkedKey(db, a);
+      expect(await db.getPref(parked), 'preset:x');
+      final Set<String> keys = await _prefKeys(db, a);
+      expect(keys, isNot(contains(kMiningTtsFallbackVoicePref)));
+      expect(keys, isNot(contains(parked)));
+      expect(ProfileKeys.isExcludedPref(parked), isTrue);
+      expect(PrefRedactionPolicy.isDeviceLocalOrCredential(parked), isTrue);
+    });
+
+    test('非激活配置的只读视图取它自己停放的声音', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      final b = await repo.createProfile('B');
+      final c = await repo.createProfile('C');
+      await repo.setActiveProfileId(a);
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:a');
+      await switchTo(repo, a, b);
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:b');
+      await switchTo(repo, b, a);
+
+      final viewB = (await repo.loadSettingsView(b))!;
+      expect(viewB.prefsMap[kMiningTtsFallbackVoicePref], 'preset:b');
+      // C 从没停放过：与切过去的效果一致，沿用 live 值。
+      final viewC = (await repo.loadSettingsView(c))!;
+      expect(viewC.prefsMap[kMiningTtsFallbackVoicePref], 'preset:a');
+    });
+
+    test('没选过的非激活配置，视图里也没有兜底声音', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      final b = await repo.createProfile('B');
+      await repo.setActiveProfileId(a);
+      await switchTo(repo, a, b);
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:b');
+
+      final viewA = (await repo.loadSettingsView(a))!;
+      expect(viewA.prefsMap.containsKey(kMiningTtsFallbackVoicePref), isFalse);
+    });
+
+    test('覆盖导入激活配置后 applyProfile 不把声音换回切走时的旧值', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final a = await repo.createProfile('A');
+      final b = await repo.createProfile('B');
+      await repo.setActiveProfileId(a);
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:old');
+      await switchTo(repo, a, b);
+      await switchTo(repo, b, a);
+      // 回到 A 后改了声音，还没再切走过：A 的停放值仍是旧的。
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:new');
+
+      final String json = await repo.exportProfileToJson(b);
+      await repo.importProfileFromJson(
+        json,
+        mode: ProfileImportMode.overwrite,
+        targetProfileId: a,
+      );
+      await repo.applyProfile(a);
+
+      expect(await db.getPref(kMiningTtsFallbackVoicePref), 'preset:new');
+    });
+
+    test('复制配置带上声音，删除配置清掉它的停放键', () async {
+      final db = await _openDb();
+      final repo = _repo(db);
+      final src = await repo.createProfile('Src');
+      final keep = await repo.createProfile('Keep');
+      await repo.setActiveProfileId(src);
+      await db.setPref(kMiningTtsFallbackVoicePref, 'preset:src');
+      await repo.snapshotCurrentSettings(src);
+
+      final dst = await repo.copyProfile(src, 'Dst');
+      final String dstKey = await parkedKey(db, dst);
+      expect(await db.getPref(dstKey), 'preset:src');
+
+      await repo.setActiveProfileId(keep);
+      await repo.deleteProfile(dst);
+      expect(await db.getPref(dstKey), isNull);
+      expect(await db.getPref(await parkedKey(db, src)), 'preset:src');
+    });
   });
 }

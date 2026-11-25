@@ -30,7 +30,7 @@ import io.flutter.plugin.common.MethodChannel;
  *       {@code ja}；</li>
  *   <li>{@code startSystemBall.labels} 额外认 {@code notification}（常驻通知标题）与
  *       {@code ocr_hint / ocr_no_text / ocr_model_unavailable / ocr_failed /
- *       ocr_notification}（截屏 OCR 的提示文案），都缺省回退英文；</li>
+ *       ocr_notification / ocr_close}（截屏 OCR 的提示文案），都缺省回退英文；</li>
  *   <li>{@code startScreenOcr.labels}：同上的 OCR 文案，缺省时沿用系统球已存的 labels。</li>
  *   <li>{@code startSystemBall.tapAction}：收起态点球直接执行的动作（{@code clipboard} /
  *       {@code screen_ocr}），此时长按才展开按钮；缺省 / 空 = 点球展开。</li>
@@ -63,6 +63,12 @@ final class FloatingBallChannel {
     static final String METHOD_OPEN_SYSTEM_OCR_SETUP = "openSystemOcrSetup";
     /** 原生 → Dart：用户在系统球 / 常驻通知上点了关闭，请关掉「应用外」开关。 */
     static final String METHOD_SYSTEM_BALL_CLOSED_BY_USER = "systemBallClosedByUser";
+    /** 原生 → Dart：截屏 OCR 截到帧，这次用哪个引擎（决定 4BBSaB12zj）。 */
+    static final String METHOD_SCREEN_OCR_ENGINE = "screenOcrEngine";
+    /** 原生 → Dart：把定格帧交给 Dart 侧识别器（本机模型 / Lens）。 */
+    static final String METHOD_RECOGNIZE_SCREEN_OCR_FRAME = "recognizeScreenOcrFrame";
+    /** 原生 → Dart：用户在识别中的通知上点了取消，放弃那次识别（BUG-4790）。 */
+    static final String METHOD_CANCEL_SCREEN_OCR_RECOGNITION = "cancelScreenOcrRecognition";
 
     /** 主引擎上的通道；MainActivity 销毁时 {@link #detach} 置空，之后回调安全跳过。 */
     @Nullable
@@ -70,6 +76,26 @@ final class FloatingBallChannel {
     /** channel 绑定的引擎；detach 只拆自己这台，防止重建顺序颠倒时拆掉新引擎的通道。 */
     @Nullable
     private static FlutterEngine channelEngine;
+
+    /**
+     * 截屏 OCR 问引擎 / 交帧识别用的出站通道（决定 4BBSaB12zj）。与 {@link #channel}
+     * 不同，它不随 MainActivity 销毁而拆：主引擎是 audio_service 的缓存引擎，Activity
+     * 没了 Dart isolate 与悬浮球宿主照样活着（见 {@link #notifyScreenOcrFinished}），
+     * Fushi 退到后台、甚至从最近任务划掉界面后，本机模型 / Lens 仍能识别。只在引擎
+     * 真正销毁（{@code onEngineWillDestroy}）时置空，之后退回设备自带 OCR。只出站、
+     * 不装 handler，所以不碰 {@link #channel} 的入站 handler。主线程读写。
+     */
+    @Nullable
+    private static MethodChannel ocrChannel;
+    @Nullable
+    private static FlutterEngine ocrEngine;
+    /**
+     * 经 {@link #ocrChannel} 发出、还在等 Dart 回话的请求（随 {@link #ocrEngine} 换新）。
+     * 引擎销毁时 Flutter 不回调挂起的 reply，由它替这些请求按错误收尾，截屏 OCR 走
+     * 「Dart 不在」那条路，不会一直锁着流程、藏着悬浮球。主线程读写。
+     */
+    @Nullable
+    private static PendingDartReplies ocrReplies;
 
     /**
      * 系统球「查词」发生时主引擎不在（MainActivity 已销毁）：先记下，等新引擎上的 Dart
@@ -105,6 +131,98 @@ final class FloatingBallChannel {
         });
         channel = ch;
         channelEngine = engine;
+        bindOcrChannel(engine);
+    }
+
+    private static void bindOcrChannel(@NonNull FlutterEngine engine) {
+        if (engine == ocrEngine) return;
+        final PendingDartReplies replies = new PendingDartReplies();
+        ocrEngine = engine;
+        ocrReplies = replies;
+        ocrChannel = new MethodChannel(engine.getDartExecutor().getBinaryMessenger(),
+                ChannelNames.FLOATING_BALL);
+        engine.addEngineLifecycleListener(new FlutterEngine.EngineLifecycleListener() {
+            @Override
+            public void onPreEngineRestart() {
+                // 热重启丢掉了 Dart isolate：发给旧 isolate 的请求不会再有回话。
+                replies.abandonAll();
+            }
+
+            @Override
+            public void onEngineWillDestroy() {
+                if (ocrEngine == engine) {
+                    ocrEngine = null;
+                    ocrChannel = null;
+                    ocrReplies = null;
+                }
+                // 不管它此刻还是不是当前引擎：发给它的请求都等不到回话了。
+                replies.abandonAll();
+            }
+        });
+    }
+
+    /**
+     * 问 Dart 这次截屏 OCR 用哪个引擎。主引擎不在（进程是悬浮球服务冷启动的、从没
+     * 起过界面）返回 false，调用方直接用设备自带 OCR。回调在主线程；引擎在回话前被
+     * 销毁时回调以 {@link PendingDartReplies#ENGINE_DESTROYED} 错误到达。
+     */
+    static boolean queryScreenOcrEngine(@NonNull MethodChannel.Result callback) {
+        MethodChannel ch = ocrChannel;
+        PendingDartReplies replies = ocrReplies;
+        if (ch == null || replies == null) return false;
+        MethodChannel.Result tracked = replies.track(callback);
+        try {
+            ch.invokeMethod(METHOD_SCREEN_OCR_ENGINE, null, tracked);
+            return true;
+        } catch (RuntimeException e) {
+            replies.forget(tracked);
+            Log.w(TAG, "screenOcrEngine could not be delivered", e);
+            return false;
+        }
+    }
+
+    /**
+     * 把定格帧（PNG）交给 Dart 侧的 [engine] 识别；[fallback] = 设备自带 OCR 报模型
+     * 不可用后退到本机模型再试；[flow] = 截屏流程编号，取消时用它点名
+     * （{@link #cancelScreenOcrRecognition}）。主引擎不在返回 false。主线程调用，
+     * 回调在主线程。
+     */
+    static boolean recognizeScreenOcrFrame(@NonNull byte[] png, @NonNull String engine,
+            boolean fallback, long flow, @NonNull MethodChannel.Result callback) {
+        MethodChannel ch = ocrChannel;
+        PendingDartReplies replies = ocrReplies;
+        if (ch == null || replies == null) return false;
+        Map<String, Object> args = new HashMap<>();
+        args.put("png", png);
+        args.put("engine", engine);
+        args.put("fallback", fallback);
+        args.put("flow", flow);
+        MethodChannel.Result tracked = replies.track(callback);
+        try {
+            ch.invokeMethod(METHOD_RECOGNIZE_SCREEN_OCR_FRAME, args, tracked);
+            return true;
+        } catch (RuntimeException e) {
+            replies.forget(tracked);
+            Log.w(TAG, "recognizeScreenOcrFrame could not be delivered", e);
+            return false;
+        }
+    }
+
+    /**
+     * 用户在识别中的通知上取消了流程 [flow]（BUG-4790）：让 Dart 放弃那次识别（Lens
+     * 断开请求，本机模型的结果到了也不用）并尽快回 {@code {cancelled: true}}。不等回话：
+     * 原生已经收尾，那次识别的回话按过期流程丢掉。主引擎不在就没什么可取消的。主线程。
+     */
+    static void cancelScreenOcrRecognition(long flow) {
+        MethodChannel ch = ocrChannel;
+        if (ch == null) return;
+        Map<String, Object> args = new HashMap<>();
+        args.put("flow", flow);
+        try {
+            ch.invokeMethod(METHOD_CANCEL_SCREEN_OCR_RECOGNITION, args);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "cancelScreenOcrRecognition could not be delivered", e);
+        }
     }
 
     /** MainActivity.onDestroy：通道绑在即将死掉的引擎上，解绑并置空。 */

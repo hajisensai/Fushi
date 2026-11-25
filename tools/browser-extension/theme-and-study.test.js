@@ -244,7 +244,7 @@ test('悬停预览 / 小窗 / 短片不追踪；直播（duration=Infinity）追
   assert.strictEqual(h.samples()[0].durationMs, null);
 });
 
-test('暂停发 playing=false 且停心跳；ended / 页面卸载发 ended=true；关掉设置即停', () => {
+test('暂停发 playing=false 且心跳降频；ended / 页面卸载发 ended=true；关掉设置即停', () => {
   const h = loadStudy();
   const v = h.makeVideo();
   h.dispatch('play', v);
@@ -252,7 +252,7 @@ test('暂停发 playing=false 且停心跳；ended / 页面卸载发 ended=true�
   v.fire('pause');
   assert.strictEqual(h.samples().at(-1).playing, false);
   h.tick();
-  assert.strictEqual(h.samples().length, 2, '暂停态不刷心跳');
+  assert.strictEqual(h.samples().length, 2, '暂停态不再每秒发');
   v.paused = false;
   v.fire('seeked');
   assert.strictEqual(h.samples().length, 3, 'seek 后立刻补一个样本');
@@ -267,6 +267,42 @@ test('暂停发 playing=false 且停心跳；ended / 页面卸载发 ended=true�
   assert.strictEqual(h2.samples().at(-1).ended, true, '关掉设置 = 立刻停表');
   h2.dispatch('play', h2.makeVideo());
   assert.strictEqual(h2.samples().length, 2, '关掉后不再追踪');
+});
+
+test('暂停期间每 5 拍一跳心跳；切走 / 切回立刻补发，attending 报人在不在页面前', () => {
+  const h = loadStudy();
+  const v = h.makeVideo();
+  h.dispatch('play', v);
+  assert.strictEqual(h.samples()[0].attending, true, '拿不到可见性 / 焦点 API 时当在场');
+  v.paused = true;
+  v.fire('pause');
+  const afterPause = h.samples().length;
+  for (let i = 0; i < 4; i++) h.tick();
+  assert.strictEqual(h.samples().length, afterPause, '前 4 拍不发');
+  h.tick();
+  assert.strictEqual(h.samples().length, afterPause + 1, '第 5 拍发一次心跳，app 据此知道会话还活着');
+  assert.strictEqual(h.samples().at(-1).playing, false);
+  assert.strictEqual(h.samples().at(-1).attending, true);
+  // 标签页被切走：立刻补一条 attending=false（app 暂停且人不在即停表）。
+  h.sandbox.document.visibilityState = 'hidden';
+  h.dispatch('visibilitychange');
+  assert.strictEqual(h.samples().length, afterPause + 2);
+  assert.strictEqual(h.samples().at(-1).attending, false);
+  // 切回但窗口没焦点（焦点在别的 app）：仍不在场。
+  h.sandbox.document.visibilityState = 'visible';
+  h.sandbox.document.hasFocus = () => false;
+  h.dispatch('visibilitychange');
+  assert.strictEqual(h.samples().at(-1).attending, false);
+  // 本页（含页内查词 iframe）拿回焦点：在场。
+  h.sandbox.document.hasFocus = () => true;
+  h.dispatch('visibilitychange');
+  assert.strictEqual(h.samples().at(-1).attending, true);
+  // 播放中照常每秒一条，降频计数清零。
+  v.paused = false;
+  const beforePlay = h.samples().length;
+  h.tick();
+  assert.strictEqual(h.samples().length, beforePlay + 1);
+  assert.strictEqual(h.samples().at(-1).playing, true);
 });
 
 test('样本带上此刻 Fushi 正在出的那一句；没有字幕出口 / 字幕被藏 / ended 时为 null（jk4rTLHPZ_）', () => {
@@ -459,4 +495,170 @@ test('同一页换成另一个 <video> 播：追踪跟过去，不锁死在旧�
   second.currentTime = 41;
   h.tick();
   assert.strictEqual(h.samples().at(-1).positionMs, 41000, '心跳认的是新那个');
+});
+
+// ───────── 反馈 PtsjrnVmH9：网页视频的查词 / 制卡进统计 ─────────
+
+test('study-tracker：identity() 给出正在统计的视频（标题在开表时冻结），停表后为 null', () => {
+  const h = loadStudy();
+  assert.strictEqual(h.sandbox.window.fushiStudyTracker.identity(), null, '没在统计时不给身份');
+  const v = h.makeVideo();
+  h.dispatch('play', v);
+  h.sandbox.document.title = '(1) 無職転生 第1話 - YouTube';
+  assert.deepStrictEqual(
+    JSON.parse(JSON.stringify(h.sandbox.window.fushiStudyTracker.identity())),
+    { mediaKey: 'web:yt-abc', title: '無職転生 第1話 - YouTube' },
+  );
+  h.dispatch('pagehide');
+  assert.strictEqual(h.sandbox.window.fushiStudyTracker.identity(), null);
+});
+
+function loadBackgroundForStudy(opts) {
+  opts = opts || {};
+  const fetches = [];
+  const tabRemoved = [];
+  // 浏览器侧的事实：侧边栏上下文（runtime.getContexts）与各窗口的活动标签页（tabs.query）。
+  const browser = { contexts: [], activeByWindow: new Map() };
+  const sandbox = {
+    console, URL, btoa: (s) => Buffer.from(s).toString('base64'),
+    setTimeout, clearTimeout, setInterval: () => 0, clearInterval,
+    performance: { now: () => 1, timeOrigin: 0 },
+    AbortSignal: { timeout: () => null },
+    fetch: (url, init) => {
+      fetches.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+      return Promise.resolve({
+        ok: true, status: 200, headers: { get: () => null },
+        text: () => Promise.resolve('{"popupJson":"[]"}'),
+        json: () => Promise.resolve({ result: 'success' }),
+      });
+    },
+    importScripts() {},
+    chrome: {
+      storage: storageMock({}),
+      runtime: {
+        onMessage: { addListener: (fn) => { sandbox._onMessage = fn; } }, onStartup: { addListener() {} }, onInstalled: { addListener() {} },
+        getURL: (r) => 'chrome-extension://x/' + r, id: 'x',
+        ...(opts.noGetContexts ? {} : {
+          getContexts: (filter) => Promise.resolve(browser.contexts.filter((c) =>
+            (!filter.contextTypes || filter.contextTypes.includes(c.contextType)) &&
+            (!filter.documentIds || filter.documentIds.includes(c.documentId)))),
+        }),
+      },
+      alarms: { create() {}, onAlarm: { addListener() {} } },
+      action: { setBadgeText() {}, setBadgeBackgroundColor() {}, setTitle() {}, onClicked: { addListener() {} } },
+      tabs: { onUpdated: { addListener() {} }, onRemoved: { addListener: (fn) => { tabRemoved.push(fn); } }, query: (q) => Promise.resolve(
+        q && q.active === true && browser.activeByWindow.has(q.windowId) ? [{ id: browser.activeByWindow.get(q.windowId) }] : []) },
+      webNavigation: { onCompleted: { addListener() {} } },
+      sidePanel: { setPanelBehavior: () => Promise.resolve(), setOptions() {} },
+      offscreen: { hasDocument: () => Promise.resolve(false) },
+      cookies: { getAll: () => Promise.resolve([]) },
+    },
+  };
+  sandbox.self = sandbox;
+  sandbox.globalThis = sandbox;
+  vm.createContext(sandbox);
+  vm.runInContext(BG_SRC, sandbox, { filename: 'background.js' });
+  const ask = (msg, tabId) => new Promise((resolve) => {
+    sandbox._onMessage(msg, tabId == null ? {} : { tab: { id: tabId } }, resolve);
+  });
+  // 按 sender 原样发（侧边栏这类扩展页没有 sender.tab，带 id / url / documentId）。
+  const askFrom = (msg, sender) => new Promise((resolve) => { sandbox._onMessage(msg, sender, resolve); });
+  const last = (re) => fetches.filter((f) => re.test(f.url)).at(-1);
+  const sample = (over) => Object.assign({ mediaKind: 'video', mediaKey: 'web:yt-a', title: 'A 第1話', positionMs: 1000, playing: true, speed: 1 }, over);
+  return { ask, askFrom, last, sample, browser, removeTab: (id) => { for (const fn of tabRemoved) fn(id); } };
+}
+
+test('background：查词 / 制卡带上本标签页正在统计的视频；别的标签页、停表后、关页后都不带', async () => {
+  const b = loadBackgroundForStudy();
+  const LOOKUP = /\/api\/lookup\/dictionary$/;
+  const MINE = /\/api\/mine$/;
+  await b.ask({ type: 'lookup', term: '世界' }, 1);
+  assert.ok(!('study' in b.last(LOOKUP).body), '没有在统计的视频时不带 study（旧 app 契约不变）');
+
+  await b.ask({ type: 'studySample', sample: b.sample() }, 1);
+  // 标题中途变了（通知数前缀）：身份仍是第一条样本的标题，计数不分叉。
+  await b.ask({ type: 'studySample', sample: b.sample({ title: '(1) A 第1話' }) }, 1);
+  await b.ask({ type: 'lookup', term: '世界' }, 1);
+  assert.deepStrictEqual(b.last(LOOKUP).body.study, { mediaKey: 'web:yt-a', title: 'A 第1話' });
+  await b.ask({ type: 'mine', fields: { expression: '世界' }, sentence: '世界' }, 1);
+  assert.deepStrictEqual(b.last(MINE).body.study, { mediaKey: 'web:yt-a', title: 'A 第1話' });
+
+  await b.ask({ type: 'lookup', term: '世界' }, 2);
+  assert.ok(!('study' in b.last(LOOKUP).body), '在别的标签页查的不记到这条视频');
+  await b.ask({ type: 'lookup', term: '世界' });
+  assert.ok(!('study' in b.last(LOOKUP).body), '无 sender.tab 又无侧边栏背书的消息不归属');
+
+  // 消息显式带的身份（批量队列项入队时冻结）优先。
+  await b.ask({ type: 'mineClip', fields: {}, sentence: 's', clipBase64: 'AA==', clipDurationMs: 1000, study: { mediaKey: 'web:nf-9', title: 'N' } }, 1);
+  assert.deepStrictEqual(b.last(MINE).body.study, { mediaKey: 'web:nf-9', title: 'N' });
+
+  await b.ask({ type: 'studySample', sample: b.sample({ ended: true }) }, 1);
+  await b.ask({ type: 'lookup', term: '世界' }, 1);
+  assert.ok(!('study' in b.last(LOOKUP).body), '停表（ended）后不再归属');
+
+  await b.ask({ type: 'studySample', sample: b.sample({ mediaKey: 'web:yt-b', title: 'B' }) }, 3);
+  b.removeTab(3);
+  await b.ask({ type: 'lookup', term: '世界' }, 3);
+  assert.ok(!('study' in b.last(LOOKUP).body), '标签页关了即清');
+});
+
+test('YouTube 批量制卡：队列项入队时冻结的 study 随 /api/mine 发出；content 入队与 Netflix 回放都带它', () => {
+  assert.match(BG_SRC, /youtubeVideoId: q\.youtubeId,[\s\S]{0,400}study: \{ mediaKey: q\.study\.mediaKey/);
+  const CONTENT_SRC = fs.readFileSync(path.join(__dirname, 'content.js'), 'utf8');
+  assert.match(CONTENT_SRC, /tracker\.identity\(\)/, 'fushiEnqueue 要在点击那一刻冻结统计身份');
+  assert.match(CONTENT_SRC, /\.\.\.\(study \? \{ study: study \} : \{\}\)/);
+  assert.match(CONTENT_SRC, /\.\.\.\(q\.study \? \{ study: q\.study \} : \{\}\)/, 'Netflix 回放生成要透传队列项的 study');
+});
+
+test('独立侧边栏查词：按浏览器背书的侧栏窗口 → 该窗口活动标签页归属（拍板 PtsjrnVmH9-sidepanel）', async () => {
+  const b = loadBackgroundForStudy();
+  const LOOKUP = /\/api\/lookup\/dictionary$/;
+  const panel = { id: 'x', url: 'chrome-extension://x/side-panel.html', documentId: 'doc-panel' };
+  const lookupFrom = async (sender, extra) => {
+    await b.askFrom(Object.assign({ type: 'lookup', term: '世界' }, extra), sender);
+    return b.last(LOOKUP).body;
+  };
+  await b.ask({ type: 'studySample', sample: b.sample() }, 1);
+  await b.ask({ type: 'studySample', sample: b.sample({ mediaKey: 'web:yt-b', title: 'B' }) }, 2);
+  b.browser.contexts.push({ contextType: 'SIDE_PANEL', documentId: 'doc-panel', windowId: 7, tabId: -1 });
+  b.browser.activeByWindow.set(7, 1);
+
+  assert.deepStrictEqual((await lookupFrom(panel)).study, { mediaKey: 'web:yt-a', title: 'A 第1話' },
+    '全窗口侧栏：记到所在窗口的活动标签页正在统计的视频');
+  b.browser.activeByWindow.set(7, 2);
+  assert.deepStrictEqual((await lookupFrom(panel)).study, { mediaKey: 'web:yt-b', title: 'B' },
+    '切标签页后以浏览器此刻的活动标签页为准');
+  b.browser.activeByWindow.set(7, 5);
+  assert.ok(!('study' in await lookupFrom(panel)), '活动标签页没在统计视频就不归属');
+
+  // 侧边栏不许自报：消息里塞 tabId 不起作用。
+  assert.ok(!('study' in await lookupFrom(panel, { tabId: 1 })), '自报的 tabId 一律不认');
+
+  // 按标签页打开的侧栏：浏览器给的上下文自带 tabId，直接用它。
+  b.browser.contexts.push({ contextType: 'SIDE_PANEL', documentId: 'doc-tab', windowId: 7, tabId: 1 });
+  assert.deepStrictEqual((await lookupFrom(Object.assign({}, panel, { documentId: 'doc-tab' }))).study,
+    { mediaKey: 'web:yt-a', title: 'A 第1話' });
+
+  b.browser.activeByWindow.set(7, 1);
+  assert.ok(!('study' in await lookupFrom(Object.assign({}, panel, { documentId: 'doc-gone' }))),
+    '找不到这份侧栏上下文（已关 / 伪造 documentId）不归属');
+  assert.ok(!('study' in await lookupFrom(Object.assign({}, panel, { url: 'chrome-extension://x/options.html' }))),
+    '只认 side-panel.html 文档');
+  assert.ok(!('study' in await lookupFrom(Object.assign({}, panel, { id: 'other-ext' }))),
+    '别的扩展发来的不认');
+  b.browser.contexts.push({ contextType: 'TAB', documentId: 'doc-tabctx', windowId: 7, tabId: 1 });
+  assert.ok(!('study' in await lookupFrom(Object.assign({}, panel, { documentId: 'doc-tabctx' }))),
+    '上下文类型不是 SIDE_PANEL 不认');
+  // 嵌进网页的侧边栏有 sender.tab：只认那一页，不走窗口活动页。
+  await b.askFrom({ type: 'lookup', term: '世界' }, Object.assign({}, panel, { tab: { id: 2 } }));
+  assert.deepStrictEqual(b.last(LOOKUP).body.study, { mediaKey: 'web:yt-b', title: 'B' });
+});
+
+test('独立侧边栏查词：浏览器没有 runtime.getContexts 时不归属（不猜）', async () => {
+  const b = loadBackgroundForStudy({ noGetContexts: true });
+  await b.ask({ type: 'studySample', sample: b.sample() }, 1);
+  b.browser.activeByWindow.set(7, 1);
+  await b.askFrom({ type: 'lookup', term: '世界' },
+    { id: 'x', url: 'chrome-extension://x/side-panel.html', documentId: 'doc-panel' });
+  assert.ok(!('study' in b.last(/\/api\/lookup\/dictionary$/).body));
 });

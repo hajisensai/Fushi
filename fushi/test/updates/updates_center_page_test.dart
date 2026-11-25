@@ -6,6 +6,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/pages/implementations/updates_center_page.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/src/updates/update_notifier.dart';
@@ -147,39 +148,41 @@ void main() {
     expect(find.text('孤独摇滚'), findsNothing);
   });
 
-  testWidgets('页头只有返回 + 四个域筛选：没有「全部」，页面动作都在 ⋯ 里', (WidgetTester tester) async {
+  // 重设计外壳（非墨水屏默认，PR #3397）：页头大字——返回 + 页名 + 平铺的三项
+  // 动作（工具栏默认平铺，放不下才收「⋯」），四个域筛选是页名下一行的连体页签。
+  testWidgets('页头：返回 + 平铺三项动作，四个域筛选在页名下一行，没有「全部」', (WidgetTester tester) async {
     await makeService();
     await publish(UpdateFeedKind.videoEpisode, '1|ep1', '孤独摇滚');
 
     await tester.pumpWidget(host());
     await tester.pumpAndSettle();
 
-    expect(find.byKey(const ValueKey<String>('updates_back')), findsOneWidget);
+    expect(find.byIcon(FushiIcons.back), findsOneWidget, reason: '压在可返回路由上');
     for (final UpdateFeedKind kind in UpdateFeedKind.values) {
-      expect(filter(kind), findsOneWidget, reason: '宽窗下 ${kind.name} 平铺');
+      expect(filter(kind), findsOneWidget, reason: '宽窗下 ${kind.name} 可见');
     }
+    expect(
+      find.byKey(const ValueKey<String>('updates_filter_segments')),
+      findsOneWidget,
+    );
     expect(find.byType(ChoiceChip), findsNothing, reason: '旧的第二行筛选条已删');
-    // 页面动作不平铺在页头里。
-    expect(find.byTooltip(t.updates_history_clear), findsNothing);
-    expect(find.byTooltip(t.updates_mark_all_seen), findsNothing);
-    expect(find.byTooltip(t.refresh), findsNothing);
-
-    await tester.tap(more);
-    await tester.pumpAndSettle();
-    expect(find.text(t.refresh), findsOneWidget);
-    expect(find.text(t.updates_mark_all_seen), findsOneWidget);
-    expect(find.text(t.updates_history_clear), findsOneWidget);
+    expect(find.byTooltip(t.refresh), findsOneWidget);
+    expect(find.byTooltip(t.updates_mark_all_seen), findsOneWidget);
+    expect(find.byTooltip(t.updates_history_clear), findsOneWidget);
+    expect(more, findsNothing, reason: '宽窗放得下，动作不收进 ⋯');
 
     // 全部标为已读：收掉本次停留的「新」高亮。
     expect(isFresh(tester, '孤独摇滚'), isTrue);
-    await tester.tap(find.text(t.updates_mark_all_seen));
+    await tester.tap(
+      find.byKey(const ValueKey<String>('updates_mark_all_seen')),
+    );
     await tester.pumpAndSettle();
     expect(isFresh(tester, '孤独摇滚'), isFalse);
   });
 
-  testWidgets('手机窄屏：放不下的筛选按优先级收进 ⋯，不溢出，从 ⋯ 里仍能切过去', (
-    WidgetTester tester,
-  ) async {
+  // 页头大字下域筛选是连体页签：放不下时横向滚动（不换行、不溢出），不再按
+  // 优先级收进 ⋯；最右侧的应用新版滚进来仍能切过去。
+  testWidgets('手机窄屏：域筛选横向滚动、不溢出，滚到最右仍能切到应用新版', (WidgetTester tester) async {
     tester.view.devicePixelRatio = 3;
     tester.view.physicalSize = const Size(360 * 3, 780 * 3);
     addTearDown(tester.view.reset);
@@ -191,22 +194,17 @@ void main() {
     await tester.pumpAndSettle();
     expect(tester.takeException(), isNull);
 
-    // 最高优先级的番剧新集恒平铺；最低优先级的应用新版先收。
     expect(filter(UpdateFeedKind.videoEpisode), findsOneWidget);
-    expect(filter(UpdateFeedKind.appRelease), findsNothing);
-
-    await tester.tap(more);
+    await tester.ensureVisible(filter(UpdateFeedKind.appRelease));
     await tester.pumpAndSettle();
-    await tester.tap(
-      find.text(updateFeedKindLabel(UpdateFeedKind.appRelease)).last,
-    );
+    await tester.tap(filter(UpdateFeedKind.appRelease));
     await tester.pumpAndSettle();
     expect(find.text('Fushi 2.6.1'), findsOneWidget);
     expect(find.text('孤独摇滚'), findsNothing);
     expect(tester.takeException(), isNull);
   });
 
-  testWidgets('清空：⋯ 里的「清空记录」确认后只清当前域，其它域不动', (WidgetTester tester) async {
+  testWidgets('清空：页头「清空记录」确认后只清当前域，其它域不动', (WidgetTester tester) async {
     await makeService();
     for (final String v in <String>['2.8.0-debug.15150', '2.8.0-debug.15535']) {
       await publish(UpdateFeedKind.appRelease, v, v);
@@ -221,9 +219,7 @@ void main() {
     expect(find.text('孤独摇滚'), findsNothing);
 
     Future<void> openClear() async {
-      await tester.tap(more);
-      await tester.pumpAndSettle();
-      await tester.tap(find.text(t.updates_history_clear));
+      await tester.tap(find.byKey(const ValueKey<String>('updates_clear')));
       await tester.pumpAndSettle();
     }
 
@@ -242,5 +238,37 @@ void main() {
     expect(find.text(t.updates_history_cleared(count: 2)), findsOneWidget);
     final List<UpdateFeedEntryRow> left = await service.entries();
     expect(left.map((UpdateFeedEntryRow e) => e.title), <String>['孤独摇滚']);
+  });
+
+  testWidgets('应用新版域顶部挂附加内容：没有条目也不出空态；切到别的域就没了', (WidgetTester tester) async {
+    await makeService();
+    await publish(UpdateFeedKind.videoEpisode, '1|ep1', '孤独摇滚');
+    await service.markAllSeen();
+    const Key headerKey = ValueKey<String>('pulse_header');
+
+    await tester.pumpWidget(
+      MaterialApp(
+        initialRoute: '/updates',
+        routes: <String, WidgetBuilder>{
+          '/': (_) => const SizedBox(),
+          '/updates': (_) => UpdatesCenterPage(
+            service: service,
+            appReleaseHeader: const SizedBox(key: headerKey, height: 40),
+          ),
+        },
+      ),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text('孤独摇滚'), findsOneWidget, reason: '前置：落在番剧域');
+    expect(find.byKey(headerKey), findsNothing);
+
+    await tester.tap(filter(UpdateFeedKind.appRelease));
+    await tester.pumpAndSettle();
+    expect(find.byKey(headerKey), findsOneWidget);
+    expect(
+      find.text(t.updates_center_empty),
+      findsNothing,
+      reason: '有附加内容时应用新版域没有条目也不该显示「暂无更新」',
+    );
   });
 }

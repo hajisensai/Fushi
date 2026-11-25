@@ -18,6 +18,7 @@ import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart' show FakeFsrsEngine;
+import 'support/srs_lapis_preview_fills.dart';
 import 'support/srs_query_counter.dart';
 import 'support/srs_test_storage.dart';
 
@@ -28,11 +29,11 @@ class ScaleFixture {
   ScaleFixture._(this.store, this.counter, this.basicTypeId);
 
   final SrsDbStore store;
-  final CountingInterceptor counter;
+  final SrsReadCounter counter;
   final String basicTypeId;
 
   static Future<ScaleFixture> open({required int notes}) async {
-    final CountingInterceptor counter = CountingInterceptor();
+    final SrsReadCounter counter = SrsReadCounter();
     final Directory tmp = Directory.systemTemp.createTempSync('srs_scale_');
     addTearDown(() {
       try {
@@ -41,12 +42,8 @@ class ScaleFixture {
         // 句柄晚释放。
       }
     });
-    final TestSrs srs = await openTestSrsAt(
-      '${tmp.path}/srs.db',
-      interceptor: counter,
-    );
+    final TestSrs srs = openTestSrsIn(tmp.path);
     final SrsDbStore s = await SrsDbStore.open(
-      db: srs.db,
       core: srs.core,
       profileUid: kUid,
       deviceId: 'dev',
@@ -54,7 +51,6 @@ class ScaleFixture {
       trustedClock: SrsTrustedClock(
         wallClockMs: () => 1780272000000,
         bootClockMs: () => 1780272000000,
-        bootId: 'scale',
       ),
       fallbackRolloverHour: () => 4,
     );
@@ -89,15 +85,10 @@ Future<Map<String, Map<String, String>>> referenceBackfill(
   if (to == null || to.deletedAt != null) {
     return <String, Map<String, String>>{};
   }
-  final List<String> typeIds =
-      (await (s.db.select(s.db.srsEntities)..where(
-                (t) =>
-                    t.profileUid.equals(s.profileUid) &
-                    t.kind.equals(SrsEntityKind.noteType.wire),
-              ))
-              .get())
-          .map((r) => r.id)
-          .toList();
+  final List<String> typeIds = (await s.readTable('entities', <String, Object?>{
+    'kind': SrsEntityKind.noteType.wire,
+    'bare': true,
+  })).strings('id').toList();
   final Map<String, SrsLapisFieldCandidate> owners =
       <String, SrsLapisFieldCandidate>{};
   for (final SrsNoteTypeView? t in (await s.noteTypesById(typeIds)).values) {
@@ -277,11 +268,11 @@ void main() {
     expect(b.statements, a.statements);
     expect(b.rows, a.rows);
     expect(
-      (await small.store.previewLapisBackfill()).fills,
+      await previewFills(small.store),
       await referenceBackfill(small.store),
     );
     expect(
-      (await large.store.previewLapisBackfill()).fills,
+      await previewFills(large.store),
       await referenceBackfill(large.store),
     );
   });
@@ -437,7 +428,7 @@ void main() {
           s,
         );
         expect(want, isNotEmpty, reason: 'seed $seed 应造出待补迁的笔记');
-        expect((await s.previewLapisBackfill()).fills, want);
+        expect(await previewFills(s), want);
         final ({int migratable, int backfill}) counts = await s
             .legacyLapisPendingCounts();
         expect(counts.backfill, want.length);
@@ -453,13 +444,13 @@ void main() {
           'missing-note-id',
         ];
         expect(
-          (await s.previewLapisBackfill(noteIds: subset)).fills,
+          await previewFills(s, noteIds: subset),
           await referenceBackfill(s, noteIds: subset),
         );
         // 补迁后两边都归零（幂等）。
         expect(await s.applyLapisBackfill(), want.length);
         expect(await referenceBackfill(s), isEmpty);
-        expect((await s.previewLapisBackfill()).fills, isEmpty);
+        expect(await previewFills(s), isEmpty);
       });
     }
   });

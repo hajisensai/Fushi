@@ -1,3 +1,5 @@
+import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
+    show kBangumiAccessTokenPref;
 import 'package:drift/drift.dart' hide isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
@@ -7,6 +9,7 @@ import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/stats/study_goal_record.dart';
 import 'package:fushi/src/lookup/effective_lookup_size.dart'
     show kLookupPopupDefaultHeight, kLookupPopupDefaultWidth;
 
@@ -36,10 +39,6 @@ void main() {
       expect(repo.autoSearchEnabled, true);
     });
 
-    test('remoteLookupEnabled defaults to false', () {
-      expect(repo.remoteLookupEnabled, false);
-    });
-
     test('isFirstTimeSetup defaults to true', () {
       expect(repo.isFirstTimeSetup, true);
     });
@@ -67,10 +66,11 @@ void main() {
       for (final ModuleId module in ModuleId.values) {
         expect(
           repo.moduleEnabled(module),
-          module != ModuleId.srs,
+          module != ModuleId.srs && module != ModuleId.tracking,
           reason: '${module.name} 的出厂默认不对',
         );
-        expect(module.defaultEnabled, isTrue);
+        // Media tracking is the one module that is off by default.
+        expect(module.defaultEnabled, module != ModuleId.tracking);
       }
       for (final ModuleId module in ModuleId.values) {
         await repo.setModuleEnabled(module, false);
@@ -94,6 +94,51 @@ void main() {
         );
       }
     });
+
+    test('Media tracking module: off by default, no sign-in keeps it off '
+        'and the decision is stored', () async {
+      expect(repo.moduleEnabled(ModuleId.tracking), isFalse);
+      await repo.settleTrackingModuleInstallDefault(hasPluginSignIn: false);
+      expect(repo.moduleEnabled(ModuleId.tracking), isFalse);
+      expect(repo.getPref(ModuleId.tracking.prefKey), isFalse);
+      // A later sign-in does not flip a decision already taken.
+      await repo.setPref(kBangumiAccessTokenPref, 'token');
+      await repo.settleTrackingModuleInstallDefault(hasPluginSignIn: true);
+      expect(repo.moduleEnabled(ModuleId.tracking), isFalse);
+    });
+
+    for (final ({String label, String? pref, bool plugin}) signIn
+        in <({String label, String? pref, bool plugin})>[
+          (
+            label: 'Bangumi token',
+            pref: kBangumiAccessTokenPref,
+            plugin: false,
+          ),
+          (label: 'plugin sign-in', pref: null, plugin: true),
+        ]) {
+      test('Media tracking module starts on once with an existing '
+          '${signIn.label}; a later sign-out keeps it on', () async {
+        if (signIn.pref case final String key) {
+          await repo.setPref(key, ' stored ');
+        }
+        await repo.settleTrackingModuleInstallDefault(
+          hasPluginSignIn: signIn.plugin,
+        );
+        expect(repo.moduleEnabled(ModuleId.tracking), isTrue);
+        if (signIn.pref case final String key) await repo.setPref(key, '');
+        await repo.settleTrackingModuleInstallDefault(hasPluginSignIn: false);
+        expect(repo.moduleEnabled(ModuleId.tracking), isTrue);
+      });
+    }
+
+    test(
+      'Media tracking module: a blank stored token is not a sign-in',
+      () async {
+        await repo.setPref(kBangumiAccessTokenPref, '   ');
+        await repo.settleTrackingModuleInstallDefault(hasPluginSignIn: false);
+        expect(repo.moduleEnabled(ModuleId.tracking), isFalse);
+      },
+    );
 
     test('AI module off: every AiFeature resolves to no provider, '
         'stored assignments survive and come back when turned on', () async {
@@ -363,15 +408,6 @@ void main() {
       final repo2 = PreferencesRepository(db);
       await repo2.loadFromDb();
       expect(repo2.autoSearchEnabled, false);
-      repo2.dispose();
-    });
-
-    test('setRemoteLookupEnabled round-trips through DB', () async {
-      await repo.setRemoteLookupEnabled(true);
-
-      final repo2 = PreferencesRepository(db);
-      await repo2.loadFromDb();
-      expect(repo2.remoteLookupEnabled, true);
       repo2.dispose();
     });
 
@@ -1113,6 +1149,108 @@ void main() {
       expect(repo.readingGoalDailyChars, 0);
       await repo.setReadingGoalDailyChars(9999999);
       expect(repo.readingGoalDailyChars, 1000000);
+    });
+
+    // 反馈 CjIr9RGSCe：日目标 / 周目标二选一。
+    test('period defaults to daily; active goal follows the period', () async {
+      expect(repo.readingGoalPeriod, StudyGoalPeriod.daily);
+      expect(repo.readingGoalWeeklyChars, 0);
+      await repo.setReadingGoalDailyChars(3000);
+      await repo.setReadingGoalWeeklyChars(20000);
+      expect(repo.readingGoalActiveChars, 3000);
+
+      await repo.setReadingGoalPeriod(StudyGoalPeriod.weekly);
+      expect(repo.readingGoalActiveChars, 20000);
+      // 切周期不清另一份数值。
+      expect(repo.readingGoalDailyChars, 3000);
+
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      expect(repo2.readingGoalPeriod, StudyGoalPeriod.weekly);
+      expect(repo2.readingGoalWeeklyChars, 20000);
+    });
+
+    test(
+      'study goals: legacy prefs migrate until the list is written',
+      () async {
+        // 新装：没有任何目标，与改版前一样。
+        expect(repo.studyGoals, isEmpty);
+        await repo.setStudyGoalDailyMinutes(45);
+        await repo.setReadingGoalWeeklyChars(20000);
+        await repo.setReadingGoalPeriod(StudyGoalPeriod.weekly);
+        await repo.setPref('reading_goal_language', 'ja');
+        final List<StudyGoal> migrated = repo.studyGoals;
+        expect(migrated.map((StudyGoal g) => g.id), <String>[
+          'legacy-total',
+          'legacy-chars',
+        ]);
+        expect(migrated[0].target, 45);
+        expect(migrated[0].language, 'ja');
+        expect(migrated[1].period, StudyGoalPeriod.weekly);
+        expect(migrated[1].target, 20000);
+
+        // 写过一次之后只认记录表，旧偏好再变也不影响；空表 = 用户删光了，不回迁移。
+        await repo.setStudyGoals(<StudyGoal>[
+          StudyGoal(
+            id: 'g1',
+            metric: StudyGoalId.chars,
+            period: StudyGoalPeriod.monthly,
+            target: 300000,
+            language: 'ko',
+          ),
+        ]);
+        await repo.setStudyGoalDailyMinutes(90);
+        final PreferencesRepository repo2 = PreferencesRepository(db);
+        await repo2.loadFromDb();
+        addTearDown(repo2.dispose);
+        expect(repo2.studyGoals.single.id, 'g1');
+        expect(repo2.studyGoals.single.period, StudyGoalPeriod.monthly);
+        expect(repo2.studyGoals.single.language, 'ko');
+        await repo2.setStudyGoals(const <StudyGoal>[]);
+        expect(repo2.studyGoals, isEmpty);
+        // 删光后重开也不复活缺省目标。
+        final PreferencesRepository repo3 = PreferencesRepository(db);
+        await repo3.loadFromDb();
+        addTearDown(repo3.dispose);
+        expect(repo3.studyGoals, isEmpty);
+      },
+    );
+
+    test('home today main goal / swipe scope persist', () async {
+      expect(repo.homeTodayMainGoal, '');
+      expect(repo.homeTodaySwipeGoals, StudyGoalSwipeScope.daily);
+      await repo.setHomeTodayMainGoal('g1');
+      await repo.setHomeTodaySwipeGoals(StudyGoalSwipeScope.all);
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      expect(repo2.homeTodayMainGoal, 'g1');
+      expect(repo2.homeTodaySwipeGoals, StudyGoalSwipeScope.all);
+    });
+
+    test('home today page goal persists apart from the main goal; '
+        'setting the main goal resets it', () async {
+      expect(repo.homeTodayPageGoal, '');
+      await repo.setHomeTodayMainGoal('w');
+      await repo.setHomeTodayPageGoal('d');
+      final PreferencesRepository repo2 = PreferencesRepository(db);
+      await repo2.loadFromDb();
+      addTearDown(repo2.dispose);
+      expect(repo2.homeTodayMainGoal, 'w');
+      expect(repo2.homeTodayPageGoal, 'd');
+      await repo2.setHomeTodayMainGoal('m');
+      expect(repo2.homeTodayMainGoal, 'm');
+      expect(repo2.homeTodayPageGoal, '');
+    });
+    test('weekly goal clamps into 0..7000000', () async {
+      await repo.setReadingGoalWeeklyChars(-1);
+      expect(repo.readingGoalWeeklyChars, 0);
+      await repo.setReadingGoalWeeklyChars(99999999);
+      expect(
+        repo.readingGoalWeeklyChars,
+        PreferencesRepository.readingGoalWeeklyCharsMax,
+      );
     });
   });
 

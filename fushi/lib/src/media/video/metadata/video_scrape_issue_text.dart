@@ -8,8 +8,21 @@ library;
 
 import 'package:fushi_engine/media/video/metadata/video_scrape_ai_identity.dart';
 import 'package:fushi_engine/media/video/metadata/video_scrape_pending_note.dart';
+import 'package:fushi_engine/media/video/metadata/video_scrape_scope.dart'
+    show kSourcelessLocalVideoScrapeScopeId;
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_task.dart'
+    show SourceScrapeIssue;
 import 'package:fushi/src/ai/ai_failure_text.dart';
+import 'package:fushi/src/media/identity/pending_identity_text.dart';
 import 'package:fushi/i18n/strings.g.dart';
+
+/// 刮削问题在界面上的标题：作品级问题是作品名；范围级问题
+/// （[SourceScrapeIssue.isScopeLevel]）按结构化的范围 id 映射，无来源范围显示
+/// 本地化文案，已登记来源显示它的 label。
+String videoScrapeIssueTitle(SourceScrapeIssue issue) =>
+    issue.scopeSourceId == kSourcelessLocalVideoScrapeScopeId
+    ? t.video_scrape_scope_sourceless
+    : issue.workTitle;
 
 String describeVideoScrapeIssueMessage(String message) {
   final VideoScrapePendingNote? pending = parseVideoScrapePendingNote(message);
@@ -41,33 +54,11 @@ String describeVideoScrapeIssueMessage(String message) {
   return reason.isEmpty ? headline : '$headline\n$reason';
 }
 
-/// 挂起原因的一行摘要：「原因 · AI 结果」，AI 没被问到时只有原因。
-String describeVideoScrapePendingNote(VideoScrapePendingNote note) {
-  final String? ai = _aiOutcomeText(note.aiOutcome);
-  final String cause = _causeText(note);
-  return ai == null ? cause : '$cause · $ai';
-}
-
-String _causeText(VideoScrapePendingNote note) => switch (note.cause) {
-  VideoScrapePendingCause.hashConflict =>
-    t.video_scrape_pending_cause_hash_conflict,
-  VideoScrapePendingCause.noUsableCandidate =>
-    t.video_scrape_pending_cause_no_usable_candidate,
-  VideoScrapePendingCause.awaitingConfirmation =>
-    t.video_scrape_pending_cause_awaiting_confirmation(
-      count: note.candidateCount,
-    ),
-  VideoScrapePendingCause.dismissed => t.video_scrape_pending_cause_dismissed,
-  VideoScrapePendingCause.notFound => t.video_scrape_pending_cause_not_found,
-  VideoScrapePendingCause.providerUnavailable =>
-    t.video_scrape_pending_cause_provider_unavailable,
-  VideoScrapePendingCause.error => t.video_scrape_pending_cause_error,
-};
-
-String? _aiOutcomeText(VideoScrapeAiOutcome outcome) => switch (outcome) {
-  VideoScrapeAiOutcome.notAsked || VideoScrapeAiOutcome.accepted => null,
-  VideoScrapeAiOutcome.unavailable => t.video_scrape_pending_ai_unavailable,
-  VideoScrapeAiOutcome.unassigned => t.video_scrape_pending_ai_unassigned,
-  VideoScrapeAiOutcome.failed => t.video_scrape_pending_ai_failed,
-  VideoScrapeAiOutcome.declined => t.video_scrape_pending_ai_declined,
-};
+/// 挂起原因的一行摘要：「原因 · AI 结果」，AI 没被问到时只有原因。与书 / 游戏的
+/// 待确认条目同一套文案（`pending_identity_text.dart`）。
+String describeVideoScrapePendingNote(VideoScrapePendingNote note) =>
+    describePendingIdentityCause(
+      note.cause,
+      note.aiOutcome,
+      note.candidateCount,
+    );

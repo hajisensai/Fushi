@@ -1,4 +1,5 @@
 import 'package:fushi_audio/fushi_audio_core.dart' show FavoriteSentence;
+import 'package:fushi_core/fushi_core.dart' show unwrapLatin1Mojibake;
 
 /// A materialised, backend-agnostic snapshot of one device's aggregate state.
 /// It carries the exact families AggregateMergeService folds (statistics +
@@ -189,9 +190,8 @@ class AggregateSnapshot {
       return const AggregateSnapshot();
     }
     return AggregateSnapshot(
-      readingStats: _decodeList(
-        json['readingStats'],
-        ReadingStatRecord.fromJson,
+      readingStats: _foldReadingStats(
+        _decodeList(json['readingStats'], ReadingStatRecord.fromJson),
       ),
       videoStats: _decodeList(json['videoStats'], VideoStatRecord.fromJson),
       readingHourly: _decodeList(json['readingHourly'], HourlyRecord.fromJson),
@@ -201,9 +201,8 @@ class AggregateSnapshot {
       ),
       videoHourly: _decodeList(json['videoHourly'], HourlyRecord.fromJson),
       miningStats: _decodeList(json['miningStats'], MiningRecord.fromJson),
-      lookupMiningCounters: _decodeList(
-        json['lookupMiningCounters'],
-        LookupMiningRecord.fromJson,
+      lookupMiningCounters: _foldLookupMining(
+        _decodeList(json['lookupMiningCounters'], LookupMiningRecord.fromJson),
       ),
       favoriteWords: _decodeList(
         json['favoriteWords'],
@@ -305,6 +304,57 @@ class AggregateSnapshot {
     );
   }
 
+  /// BUG-4243 遗留：旧端 / 未升级的 peer 上传的聚合里带 Latin-1 乱码书名行，
+  /// [ReadingStatRecord.fromJson] 解码时已剥层，剥完可能与同一快照里的原桶撞键。
+  /// 按合并同款 MAX-union 逐字段折叠（乱码行是原桶的拷贝，不能相加），否则下游
+  /// 按键建 map 时后者覆盖前者、丢掉较大值。
+  static List<ReadingStatRecord> _foldReadingStats(
+    List<ReadingStatRecord> rows,
+  ) {
+    final Map<String, ReadingStatRecord> byKey = <String, ReadingStatRecord>{};
+    for (final ReadingStatRecord r in rows) {
+      final ReadingStatRecord? prev = byKey[r.key];
+      byKey[r.key] = prev == null
+          ? r
+          : ReadingStatRecord(
+              title: r.title,
+              dateKey: r.dateKey,
+              charactersRead: _max(prev.charactersRead, r.charactersRead),
+              readingTimeMs: _max(prev.readingTimeMs, r.readingTimeMs),
+              lastStatisticModified: _max(
+                prev.lastStatisticModified,
+                r.lastStatisticModified,
+              ),
+            );
+    }
+    return byKey.length == rows.length ? rows : byKey.values.toList();
+  }
+
+  /// 同 [_foldReadingStats]；撞键行的 bookKey 不一致时按跨端合并同款规则置 null
+  /// （「无法唯一归因」，见 AggregateSyncService._mergeLookupMining）。
+  static List<LookupMiningRecord> _foldLookupMining(
+    List<LookupMiningRecord> rows,
+  ) {
+    final Map<String, LookupMiningRecord> byKey =
+        <String, LookupMiningRecord>{};
+    for (final LookupMiningRecord r in rows) {
+      final LookupMiningRecord? prev = byKey[r.key];
+      byKey[r.key] = prev == null
+          ? r
+          : LookupMiningRecord(
+              bookKey: prev.bookKey == r.bookKey ? r.bookKey : null,
+              title: r.title,
+              sourceType: r.sourceType,
+              dateKey: r.dateKey,
+              lookupCount: _max(prev.lookupCount, r.lookupCount),
+              mineCount: _max(prev.mineCount, r.mineCount),
+            );
+    }
+    return byKey.length == rows.length ? rows : byKey.values.toList();
+  }
+
+  static int _max(int a, int b) => a > b ? a : b;
+
   static List<T> _decodeList<T>(
     Object? raw,
     T? Function(Map<String, Object?> row) decode,
@@ -369,7 +419,9 @@ class ReadingStatRecord {
     final Object? dateKey = json['dateKey'];
     if (title is! String || dateKey is! String) return null;
     return ReadingStatRecord(
-      title: title,
+      // BUG-4243：剥掉旧传输 bug 留下的 Latin-1 乱码层（撞键由
+      // AggregateSnapshot._foldReadingStats 折叠）。
+      title: unwrapLatin1Mojibake(title),
       dateKey: dateKey,
       charactersRead: _asInt(json['charactersRead']),
       readingTimeMs: _asInt(json['readingTimeMs']),
@@ -567,9 +619,11 @@ class LookupMiningRecord {
     if (title is! String || sourceType is! String || dateKey is! String) {
       return null;
     }
+    final String? bookKey = json['bookKey'] as String?;
     return LookupMiningRecord(
-      bookKey: json['bookKey'] as String?,
-      title: title,
+      // BUG-4243：同 ReadingStatRecord.fromJson。
+      bookKey: bookKey == null ? null : unwrapLatin1Mojibake(bookKey),
+      title: unwrapLatin1Mojibake(title),
       sourceType: sourceType,
       dateKey: dateKey,
       lookupCount: _asInt(json['lookupCount']),
@@ -755,6 +809,7 @@ class StudySegmentRecord {
     required this.pages,
     required this.updatedAt,
     this.profileName = '',
+    this.lookups = 0,
   });
 
   final String uid;
@@ -778,6 +833,11 @@ class StudySegmentRecord {
   /// 找本机同名 Profile；找不到 / 为空落进当前激活 Profile。
   final String profileName;
 
+  /// v178：段内查词次数（`study_segments.lookups`，拍板台 4KOWK3c2mn）。additive
+  /// 字段：旧端不发 = 0，0 也不发（无查词的段 JSON 逐字节不变）。随段 uid LWW 走，
+  /// 所以会话编辑把段挪到别的日期时，查词跟着传到对端。
+  final int lookups;
+
   /// 墓碑键（与 [StudyTombstoneRecord.key] 同公式）：v105 起带 Profile 名，A
   /// Profile 的碑只压 A 的段。
   String get mediaIdentity => '$profileName|$mediaKind|$mediaKey';
@@ -798,6 +858,7 @@ class StudySegmentRecord {
     'pages': pages,
     'updatedAt': updatedAt,
     if (profileName.isNotEmpty) 'profileName': profileName,
+    if (lookups != 0) 'lookups': lookups,
   };
 
   static StudySegmentRecord? fromJson(Map<String, Object?> json) {
@@ -830,6 +891,7 @@ class StudySegmentRecord {
       profileName: json['profileName'] is String
           ? json['profileName']! as String
           : '',
+      lookups: _asInt(json['lookups']),
     );
   }
 }

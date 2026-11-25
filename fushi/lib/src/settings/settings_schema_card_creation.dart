@@ -1,5 +1,3 @@
-import 'dart:io';
-
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/anki/sync_client/anki_sync_host.dart';
@@ -11,11 +9,16 @@ import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
+import 'package:fushi/src/settings/settings_schema_models.dart'
+    show buildMiningTtsFallbackSection;
+import 'package:fushi/src/sync/sync_settings_schema.dart'
+    show buildMineToServerItems;
 import 'package:fushi/src/models/module_id.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/srs/srs_providers.dart'
     show srsMiningToReviewProvider;
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 SettingsDestination buildCardCreationDestination() {
   return SettingsDestination(
@@ -25,15 +28,22 @@ SettingsDestination buildCardCreationDestination() {
       c.appModel.moduleVisibility,
     ),
     title: t.settings_destination_card_creation,
-    summary: t.anki_settings_label,
+    summary: t.settings_card_creation_summary,
     icon: FushiIcons.ankiCard,
     body: (_) => const AnkiSettingsBody(),
     bodyBeforeSections: true,
-    // 层级（2026-10-31 重排）：正文只有目标切换条（+ Fushi 复习分组），紧接着是当前
-    // 目标的配置——「Anki」分组（连接 / 牌组 / 笔记类型等）与「发送与待发卡片」；之后
-    // 才是两种目标都生效的「卡片内容」「制卡提示」「默认标签」「媒体」。此前 Anki 配置
-    // 排在这些通用分组之后，切到 Anki 的用户要翻过三组才看到自己的牌组。
+    // 层级：正文是「卡片去向」的目标切换条（+ Fushi 复习分组），紧接着的无标题分组
+    // 补上「交给互联服务端」——同是「卡片落到哪里」的选择，所以挨着目标切换条、
+    // 共用正文那个「卡片去向」标题；然后是
+    // 当前目标的配置（「Anki」分组与「发送与待发卡片」），再是两种目标都生效的
+    // 「卡片内容」「制卡提示」「默认标签」「卡片媒体」，最后是只在找不到单词音频时
+    // 才用上的「发音兜底」。
     sections: <SettingsSection>[
+      // 「交给互联服务端」与目标切换条同属卡片去向；项自己的 visible 管配对状态。
+      SettingsSection(
+        id: 'card_creation.section.destination',
+        items: buildMineToServerItems(),
+      ),
       // 「Anki」分组：全部 Anki 专属设置，只在目标为 Anki 时出现（目标切换在正文顶部
       // 的分段条里；发往 Fushi 复习时非空的待发队列在「Fushi 复习」分组末尾）。
       _ankiSection(),
@@ -72,6 +82,7 @@ SettingsDestination buildCardCreationDestination() {
       // 两种目标都生效：截图 / 动图 / 音频片段参数（SRS 制卡走同一条采集链路）。
       SettingsSection(
         id: 'card_creation.configuration',
+        title: t.settings_card_creation_section_media,
         items: <SettingsItem>[
           SettingsNavigationItem(
             id: 'card_creation.media.open',
@@ -82,6 +93,8 @@ SettingsDestination buildCardCreationDestination() {
           ),
         ],
       ),
+      // 制卡找不到单词音频时的 TTS 兜底：用途只有制卡，所以放在制卡页而不是语音合成页。
+      buildMiningTtsFallbackSection(),
     ],
     bodySearchEntries: <SettingsBodySearchEntry>[
       // 挖词目标（Anki / Fushi 复习，二选一）：只在复习模块开着时存在。目标为
@@ -121,13 +134,6 @@ SettingsDestination buildCardCreationDestination() {
         visible: _toReview,
         title: t.srs_mining_background_title,
         subtitle: t.srs_mining_background_hint,
-        hasRevealTarget: true,
-      ),
-      SettingsBodySearchEntry(
-        id: 'card_creation.anki.mine_to_server',
-        visible: _ankiOnly(_mineToServerVisible),
-        title: t.anki_mine_to_server,
-        subtitle: t.anki_mine_to_server_hint,
         hasRevealTarget: true,
       ),
       SettingsBodySearchEntry(
@@ -223,7 +229,7 @@ SettingsDestination buildCardCreationDestination() {
       SettingsBodySearchEntry(
         id: 'card_creation.anki.backup_import',
         visible: (SettingsContext c) =>
-            Platform.isIOS &&
+            hostPlatform.isIOS &&
             !_toReview(c) &&
             c.ref.watch(ankiViewModelProvider).isConfigured &&
             ankiMobileLedgerIsDuplicateSource(
@@ -386,13 +392,15 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           title: t.anki_connect_port_auto_fix,
           hasRevealTarget: true,
           visible: (_) =>
-              Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+              hostPlatform.isWindows ||
+              hostPlatform.isMacOS ||
+              hostPlatform.isLinux,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.connect_addon_install',
           title: t.anki_connect_addon_install,
           hasRevealTarget: true,
-          visible: (_) => Platform.isWindows,
+          visible: (_) => hostPlatform.isWindows,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.desktop_auto_launch',
@@ -400,21 +408,27 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           subtitle: t.anki_desktop_auto_launch_hint,
           hasRevealTarget: true,
           visible: (_) =>
-              Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+              hostPlatform.isWindows ||
+              hostPlatform.isMacOS ||
+              hostPlatform.isLinux,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.desktop_executable',
           title: t.anki_desktop_executable,
           hasRevealTarget: true,
           visible: (_) =>
-              Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+              hostPlatform.isWindows ||
+              hostPlatform.isMacOS ||
+              hostPlatform.isLinux,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.desktop_launch',
           title: t.anki_desktop_launch,
           hasRevealTarget: true,
           visible: (_) =>
-              Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+              hostPlatform.isWindows ||
+              hostPlatform.isMacOS ||
+              hostPlatform.isLinux,
         ),
       ],
       if (panel == AnkiSettingsPanel.media) ...[
@@ -433,26 +447,40 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           id: 'card_creation.anki.gal_mining_image_mode',
           title: t.gal_mining_image_mode,
           hasRevealTarget: true,
-          visible: (_) => Platform.isWindows,
+          visible: (_) => hostPlatform.isWindows,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.gal_mining_clip_format',
           title: t.gal_mining_clip_format,
           subtitle: t.mining_clip_format_hint,
           hasRevealTarget: true,
-          visible: (_) => Platform.isWindows,
+          visible: (_) => hostPlatform.isWindows,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.gal_mining_animated_format',
           title: t.gal_mining_animated_format,
           hasRevealTarget: true,
-          visible: (_) => Platform.isWindows,
+          visible: (_) => hostPlatform.isWindows,
         ),
         SettingsBodySearchEntry(
           id: 'card_creation.anki.gal_mining_still_format',
           title: t.gal_mining_still_format,
           hasRevealTarget: true,
-          visible: (_) => Platform.isWindows,
+          visible: (_) => hostPlatform.isWindows,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.gal_mining_audio_mode',
+          title: t.gal_mining_audio_mode,
+          subtitle: t.gal_mining_audio_mode_hint,
+          hasRevealTarget: true,
+          visible: (_) => hostPlatform.isWindows,
+        ),
+        SettingsBodySearchEntry(
+          id: 'card_creation.anki.gal_mining_audio_seconds',
+          title: t.gal_mining_audio_seconds,
+          subtitle: t.gal_mining_audio_seconds_hint,
+          hasRevealTarget: true,
+          visible: (_) => hostPlatform.isWindows,
         ),
       ],
       if (panel == AnkiSettingsPanel.connection) ...[
@@ -514,6 +542,12 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
           subtitle: t.mining_audio_follow_playback_speed_hint,
         ),
         SettingsBodySearchEntry(
+          id: 'card_creation.anki.mining_audio_follow_playback_volume',
+          hasRevealTarget: true,
+          title: t.mining_audio_follow_playback_volume,
+          subtitle: t.mining_audio_follow_playback_volume_hint,
+        ),
+        SettingsBodySearchEntry(
           id: 'card_creation.anki.video_mining_audio_source',
           hasRevealTarget: true,
           title: t.video_mining_audio_source,
@@ -543,7 +577,7 @@ SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
         ),
       ],
       if (panel == AnkiSettingsPanel.connection &&
-          (Platform.isAndroid || Platform.isIOS))
+          (hostPlatform.isAndroid || hostPlatform.isIOS))
         SettingsBodySearchEntry(
           id: 'card_creation.anki.connect_mobile',
           title: t.anki_connect_use_on_mobile,
@@ -581,16 +615,6 @@ bool _ankiDecksLoaded(SettingsContext c) {
   return s.isConfigured || s.settings.availableDecks.isNotEmpty;
 }
 
-/// 「制卡到 Fushi 互联服务端」镜像行：开着时露出——这时卡片落在服务端的 Anki，用户
-/// 在 Anki 配置里必须看得到这一点并能就地关掉（此前它只在互联设置里，制卡页上的牌组 /
-/// 笔记类型看起来生效、其实不用）。打开它仍在互联设置里（要先配对）。
-bool _mineToServerVisible(SettingsContext c) => c.appModel.mineToServerEnabled;
-
-/// 「Anki」分组首段：制卡去向（互联服务端 / 本机）。
-List<AnkiSectionRow> _ankiRouteRows(SettingsContext c) => <AnkiSectionRow>[
-  if (!_toReview(c) && _mineToServerVisible(c)) AnkiSectionRow.mineToServer,
-];
-
 /// 「Anki」分组中段：档案、刷新、牌组与笔记类型。
 List<AnkiSectionRow> _ankiDeckRows(SettingsContext c) {
   if (_toReview(c)) return const <AnkiSectionRow>[];
@@ -617,7 +641,7 @@ List<AnkiSectionRow> _ankiConfiguredRows(SettingsContext c) {
     AnkiSectionRow.reposition,
     AnkiSectionRow.autoReposition,
     AnkiSectionRow.duplicateScope,
-    if (Platform.isIOS &&
+    if (hostPlatform.isIOS &&
         ankiMobileLedgerIsDuplicateSource(
           useAnkiConnectOnMobile: s.settings.useAnkiConnectOnMobile,
           mineToServer: c.appModel.mineToServerEnabled,
@@ -629,7 +653,6 @@ List<AnkiSectionRow> _ankiConfiguredRows(SettingsContext c) {
 /// 「Anki」分组里此刻出现的自绘行（顺序即显示顺序；子页入口行穿插其间）。
 @visibleForTesting
 List<AnkiSectionRow> ankiSectionRowsFor(SettingsContext c) => <AnkiSectionRow>[
-  ..._ankiRouteRows(c),
   ..._ankiDeckRows(c),
   ..._ankiConfiguredRows(c),
 ];
@@ -686,7 +709,6 @@ SettingsSection _ankiSection() => SettingsSection(
   visible: (SettingsContext c) => !_toReview(c),
   presentation: SettingsSectionPresentation.alwaysExpanded,
   items: <SettingsItem>[
-    _rowsItem('card_creation.anki.route_rows', _ankiRouteRows),
     SettingsNavigationItem(
       id: 'card_creation.connection.open',
       title: 'AnkiConnect',

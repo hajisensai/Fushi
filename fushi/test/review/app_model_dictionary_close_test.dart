@@ -46,13 +46,14 @@ class _CloseRecordingDatabase extends FushiDatabase {
   }
 
   @override
-  Future<void> replaceAllDictionaryHistory(
-    List<DictionaryHistoryCompanion> items,
-  ) {
+  Future<DictionaryHistorySyncResult> syncDictionaryHistory({
+    required List<DictionaryHistoryRetainedRow> retained,
+    required List<DictionaryHistoryCompanion> inserted,
+  }) {
     if (failHistoryWrite) {
       throw StateError('injected history flush failure');
     }
-    return super.replaceAllDictionaryHistory(items);
+    return super.syncDictionaryHistory(retained: retained, inserted: inserted);
   }
 }
 

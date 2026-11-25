@@ -289,6 +289,28 @@ class KaraokeLineLayout {
     return null;
   }
 
+  /// Glyph box of the character at UTF-16 [charIndex] (a surrogate pair as
+  /// one) in line-layout coordinates, for a controller cursor; null outside
+  /// the text or for a glyph with no box (whitespace at a wrap).
+  Rect? charRect(int charIndex) {
+    final String text = line.text;
+    if (charIndex < 0 || charIndex >= text.length) return null;
+    final int next =
+        charIndex + 1 < text.length &&
+            _isHighSurrogate(text.codeUnitAt(charIndex))
+        ? charIndex + 2
+        : charIndex + 1;
+    Rect? out;
+    for (final TextBox b in _base.getBoxesForSelection(
+      TextSelection(baseOffset: charIndex, extentOffset: next),
+    )) {
+      if (b.right <= b.left) continue;
+      final Rect r = b.toRect().shift(Offset(0, textTop));
+      out = out == null ? r : out.expandToInclude(r);
+    }
+    return out;
+  }
+
   static bool _isHighSurrogate(int u) => u >= 0xD800 && u <= 0xDBFF;
 
   /// 已唱完 [count] 个音节时的裁剪路径缓存（已唱区 / 未唱区）。

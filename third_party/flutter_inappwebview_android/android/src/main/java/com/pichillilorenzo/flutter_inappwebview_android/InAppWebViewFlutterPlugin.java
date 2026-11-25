@@ -57,6 +57,9 @@ public class InAppWebViewFlutterPlugin implements FlutterPlugin, ActivityAware {
   // Hibiki patch: named WebView profiles (incognito isolation), see WebViewProfileManager.
   @Nullable
   public WebViewProfileManager webViewProfileManager;
+  // Fushi patch: background-thread cookie flush when the UI is hidden, see BackgroundCookieFlusher.
+  @Nullable
+  public BackgroundCookieFlusher backgroundCookieFlusher;
   @Nullable
   public ProxyManager proxyManager;
   @Nullable
@@ -106,6 +109,7 @@ public class InAppWebViewFlutterPlugin implements FlutterPlugin, ActivityAware {
     platformUtil = new PlatformUtil(this);
     inAppWebViewManager = new InAppWebViewManager(this);
     myCookieManager = new MyCookieManager(this);
+    backgroundCookieFlusher = new BackgroundCookieFlusher(applicationContext);
     myWebStorage = new MyWebStorage(this);
     if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
       serviceWorkerManager = new ServiceWorkerManager(this);
@@ -148,6 +152,10 @@ public class InAppWebViewFlutterPlugin implements FlutterPlugin, ActivityAware {
     if (myCookieManager != null) {
       myCookieManager.dispose();
       myCookieManager = null;
+    }
+    if (backgroundCookieFlusher != null) {
+      backgroundCookieFlusher.dispose();
+      backgroundCookieFlusher = null;
     }
     if (myWebStorage != null) {
       myWebStorage.dispose();

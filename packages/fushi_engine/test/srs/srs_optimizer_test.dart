@@ -8,6 +8,7 @@ import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_optimizer.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
+import 'support/srs_legacy_fixtures.dart';
 import 'support/srs_test_storage.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 
@@ -33,7 +34,7 @@ void main() {
 
   group('触发判定', () {
     SrsDeckView deck({int? baseAt, int? baseN, bool auto = true}) {
-      final SrsEditWriter w = SrsEditWriter(writerId: 'w');
+      final LegacyEditWriter w = LegacyEditWriter('w');
       SrsFieldEdit e(String k, Object? v) => w.create(
         profileUid: kProfile,
         entityKind: SrsEntityKind.deck,
@@ -141,7 +142,6 @@ void main() {
         int t = DateTime.utc(2026, 1, 1, 12).millisecondsSinceEpoch;
         final SrsStorage srsStorage = await openTestSrsStorage();
         final SrsDbStore store = await SrsDbStore.open(
-          db: srsStorage.db,
           core: srsStorage.core,
           profileUid: kProfile,
           deviceId: 'dev',
@@ -149,7 +149,6 @@ void main() {
           trustedClock: SrsTrustedClock(
             wallClockMs: () => t,
             bootClockMs: () => t,
-            bootId: 'b',
           ),
         );
         final Random r = Random(7);

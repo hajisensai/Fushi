@@ -218,8 +218,10 @@ void main() {
       expect(touchAt, greaterThan(wheelAt));
       final String switchBody = src.substring(switchAt, wheelAt);
       final String wheelBody = src.substring(wheelAt, touchAt);
+      // 三项同在查词弹窗子页的「滚动」分区，触屏步长是分区末项，下一个分区
+      // （「关闭」）的 id 就是它的终点。
       final int afterAt = src.indexOf(
-        "id: 'lookup.popup_bottom_docked',",
+        "id: 'lookup.section.popup_close',",
         touchAt,
       );
       expect(afterAt, greaterThan(touchAt));

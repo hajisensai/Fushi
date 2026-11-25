@@ -1,0 +1,12 @@
+## BUG-4350 · 游戏库缺少「添加来源」扫描目录（SourceLibraryKind 没有 game）
+- **报告**：2026-11-09（开发者自提，应用内反馈 9Rm_8JEkGM，Windows：「游戏缺少添加来源的地方」）
+- **真实性**：✅ 真缺口，已沿代码路径确认。来源库种类值域 `packages/fushi_core/lib/src/database/source_library_kind.dart:11-20` 只有 `book / video / manga / music`；游戏「导入」视图 `fushi/lib/src/pages/implementations/home_game_page.dart` `_buildImport` 只有快速导入区（「添加游戏」选单个 exe / 拖 exe，`galgame_add_flow.dart`），书 / 漫画 / 视频 / 音乐「导入」视图都有的「常驻来源」区（区头「添加来源」+ `MediaSourcesView`）在游戏模块缺席，游戏库没法登记扫描目录。
+- **[x] ① 已修复** — 提交见 PR。
+  - 值域：`SourceLibraryKind.game('game')` 追加在尾部（旧值不动）；所有穷尽 switch 补上 game（扫描器分派、ctl 加来源 / 列来源如实拒绝、书对账 `enumerateBookSourceRelPaths`、服务端 admin purge 与 music 同处理——服务端库根不支持 game）。
+  - 扫描：`fushi/lib/src/media/source_library/game_source_scanner.dart`。游戏目录 = 来源根下自上而下第一层**直接**含 exe 的目录（判据 `isGameExePath` 与「添加游戏」共用，抽到 `galgame_library.dart`），找到即停、不进游戏资源树；多 exe 时 `pickGameDirectoryExe` 选主程序（与目录同名 > 非安装 / 卸载 / 设置 / 崩溃上报 > 体积大 > 字典序），名称取目录名。`SourceLibraryScanner._scanUnlocked` 把 game 来源分流到 `_scanGameSource`（只收本地来源，网络来源如实报错）。
+  - 增量 / 归属：来源 ↔ 游戏记在来源扫描索引（复用书 / 漫画的 `BookSourceIndex`，`media_source_scan_index_<sourceId>`，不升 schema）。重扫只建新目录；已认领目录不再重选（用户改过的 exe / 名称保留）；库里已有 exe 落在该目录的游戏（手动加过）被认领、不重复添加；被用户删掉的游戏下次重扫再登记（与书来源同语义）。目录被删 / 来源被移除：游戏留在库里（与 app 内书 / 视频来源同口径），移除来源只清索引（`source_library_removal.dart`）。
+  - 装配：扫描器只拿得到 DB，经 `onGameSourceScanned` 钩子（与 `onMusicSourceScanned` 同形态）由 AppModel 调 `adoptSourceScannedGames`：重载游戏库仓储缓存 + 新游戏后台补封面（与拖放添加同一条有界并行路径）。
+  - UI：游戏「导入」视图在快速导入区下追加「常驻来源」区：区头「添加来源」（`FushiIconButton`，与书 / 漫画「导入」视图同组件同文案）+ 说明 + `MediaSourcesView(mediaKind: 'game')`，错峰进场（`FushiStaggeredEntrance`），来源列表访问过导入页才构建（不在打开游戏 tab 时查库）。`MediaSourcesView` 对 game：`addSource` 直达本地文件夹、计数走 `countGamesOfSource`、不给隐私开关（游戏行不挂来源外键，来源级私密管不到）。
+  - i18n：`media_source_count_game`、`game_source_scan_hint`（`i18n_sync.dart --add`）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/source_library/game_source_scanner_test.dart`（临时目录里放假游戏目录：目录识别 / 不进子树 / 根即游戏 / 非递归 / 主 exe 选择 / 增量不重复 / 不改回用户编辑 / 认领手动游戏 / 删除后重登记 / id 撞号顺延 / 目录删除保留游戏 / `SourceLibraryScanner` game 分派与钩子 / 网络来源拒收 / 根不存在记错 / 移除来源保留游戏清索引）；`fushi/test/database/source_library_kind_test.dart` 冻结守卫加 game；`fushi/test/pages/home_game_page_test.dart` 导入页出现「添加来源」入口与来源列表、未访问不构建。
+- **备注**：测试未在本分支运行，统一在合并后验证。Windows 真机未复测（本批次不做真机验证）：待补「游戏 › 导入 › 添加来源 → 选含多个游戏子目录的文件夹 → 游戏库出现各目录一条、封面后台补齐；再扫不重复」。

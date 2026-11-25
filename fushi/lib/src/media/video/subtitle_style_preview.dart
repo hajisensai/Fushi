@@ -181,9 +181,10 @@ class _SubtitleStylePreviewState extends State<SubtitleStylePreview> {
   }) {
     final Size window = MediaQuery.sizeOf(context);
     final Size area = _videoAreaIn(window);
-    final double fontSize =
-        style.fontSize *
-        subtitleScreenScaleFactor(window.isEmpty ? area : window);
+    final double fontSize = videoSubtitleEffectiveFontSize(
+      style.fontSize,
+      window.isEmpty ? area : window,
+    );
     final ColorScheme cs = Theme.of(context).colorScheme;
     // 颜色 null（TODO-051 之前的旧数据）的回退与播放页一致：正文固定白（#2312）、
     // 投影 shadow、背景固定半透明黑。

@@ -63,7 +63,7 @@ enum LyricsControlItem implements ControlItemSpec<LyricsControlSlot> {
   /// 阅读统计侧栏。
   statistics('statistics'),
 
-  /// 回到书籍模式（正文）。窄屏左上角已有返回键，出厂只在宽屏摆出。
+  /// 回到书籍模式（正文）。窄屏顶栏 × 前固定摆着它，布局里只在宽屏渲染。
   bookMode('bookMode'),
 
   /// 宽屏左右互换（窄屏单栏时不渲染）。
@@ -74,7 +74,16 @@ enum LyricsControlItem implements ControlItemSpec<LyricsControlSlot> {
   positionJump('positionJump'),
 
   /// 「跳转记录」面板（返回 / 前进的完整列表；还没有跳转时置灰）。出厂在「更多」。
-  jumpHistory('jumpHistory');
+  jumpHistory('jumpHistory'),
+
+  /// 音画同步面板：整本偏移 ±50ms / ±1s 步进（反馈 G5xYgLcp4p：在歌词模式里就能
+  /// 调，不必去设置）。出厂宽屏在播放卡工具条、窄屏在「更多」。
+  avSync('avSync'),
+
+  /// 导出当前字幕：把播放器正在用的整本 cue 写成单时间轴 SRT（反馈 iUtGmIlZiD：
+  /// 转录完直接去听，播放页上找不到导出字幕的入口）。出厂窄屏在播放卡工具条末尾
+  /// （补上手机播放卡右下角的空位）、宽屏在「更多」。
+  exportSubtitle('exportSubtitle');
 
   const LyricsControlItem(this.storageValue);
 
@@ -121,14 +130,16 @@ class LyricsControlLayout {
   ) => LyricsControlLayout._(core);
 
   /// 宽屏出厂布局 = 布局化之前 MD3 宽屏的摆法（睡眠定时换成统计计时键）：播放卡
-  /// 工具条 倍速 / 计时 / 重播 / 遮罩 / Aa / 统计，右上角 书籍模式 / 左右互换，
-  /// 「更多」里 进度跳转 / 跳转记录（存量布局 JSON 缺这两颗时按此回填）。
+  /// 工具条 倍速 / 同步 / 计时 / 重播 / 遮罩 / Aa / 统计，右上角 书籍模式 / 左右互换，
+  /// 「更多」里 进度跳转 / 跳转记录 / 导出当前字幕（存量布局 JSON 缺这几颗时按此
+  /// 回填）。
   static final LyricsControlLayout defaults = LyricsControlLayout._(
     ControlLayout<LyricsControlSlot, LyricsControlItem>.fromSlots(
       kLyricsControlScheme,
       <LyricsControlSlot, List<LyricsControlItem>>{
         LyricsControlSlot.toolbar: <LyricsControlItem>[
           LyricsControlItem.speed,
+          LyricsControlItem.avSync,
           LyricsControlItem.studyTimer,
           LyricsControlItem.replayCue,
           LyricsControlItem.mask,
@@ -142,14 +153,15 @@ class LyricsControlLayout {
         LyricsControlSlot.overflow: <LyricsControlItem>[
           LyricsControlItem.positionJump,
           LyricsControlItem.jumpHistory,
+          LyricsControlItem.exportSubtitle,
         ],
       },
     ),
   );
 
   /// 窄屏出厂布局 = 布局化之前 MD3 窄屏的摆法：顶栏胶囊 遮罩 / Aa / 统计，播放卡
-  /// 头行 倍速 / 计时 / 重播。书籍模式（左上角已有返回键）与左右互换（单栏无意义）
-  /// 出厂移出。
+  /// 头行 倍速 / 计时 / 重播，再加导出当前字幕（反馈 iUtGmIlZiD：手机播放卡右下角
+  /// 正好空一格）。书籍模式（顶栏固定件）与左右互换（单栏无意义）出厂移出。
   static final LyricsControlLayout compactDefaults = LyricsControlLayout._(
     ControlLayout<LyricsControlSlot, LyricsControlItem>.fromSlots(
       kLyricsControlScheme,
@@ -163,10 +175,13 @@ class LyricsControlLayout {
           LyricsControlItem.speed,
           LyricsControlItem.studyTimer,
           LyricsControlItem.replayCue,
+          LyricsControlItem.exportSubtitle,
         ],
         LyricsControlSlot.overflow: <LyricsControlItem>[
           LyricsControlItem.positionJump,
           LyricsControlItem.jumpHistory,
+          // 音画同步：窄屏顶栏胶囊与播放卡头行都没有空位，出厂收在「更多」。
+          LyricsControlItem.avSync,
         ],
       },
       removedItems: <LyricsControlItem>{

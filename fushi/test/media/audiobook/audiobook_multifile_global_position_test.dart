@@ -160,6 +160,216 @@ void main() {
     expect(c.globalPosition.inMilliseconds, 13000);
     expect(c.fileDurationsMs, isEmpty);
   });
+
+  // BUG-5006（反馈 sGoT-tNpkx）：cue 只估到末句结束，片尾静音 / 音乐不在 cue 里。
+  // 进度条用 [totalDuration]（末文件取真实时长），拖动走 [seekGlobalMs]；两者必须同一
+  // 口径，否则拖到片尾会被夹回末句结束，显示「3:43 / -0:31」却怎么也拖不进去。
+  group('drag into the tail beyond the last cue (BUG-5006)', () {
+    test('splitGlobalMs extends only the last file by its real duration', () {
+      const List<int> durations = <int>[10000, 8000];
+      expect(AudiobookPlayerController.splitGlobalMs(70000, durations), (
+        fileIndex: 1,
+        offsetMs: 8000,
+      ), reason: 'without a known real duration the cue estimate still caps');
+      expect(
+        AudiobookPlayerController.splitGlobalMs(
+          70000,
+          durations,
+          lastFileDurationMs: 100000,
+        ),
+        (fileIndex: 1, offsetMs: 60000),
+      );
+      expect(
+        AudiobookPlayerController.splitGlobalMs(
+          200000,
+          durations,
+          lastFileDurationMs: 100000,
+        ),
+        (fileIndex: 1, offsetMs: 100000),
+      );
+      // 真实时长比估算短时不缩短时间轴（估算口径是持久化编码，不能被它改小）。
+      expect(
+        AudiobookPlayerController.splitGlobalMs(9000, const <int>[
+          10000,
+        ], lastFileDurationMs: 5000),
+        (fileIndex: 0, offsetMs: 9000),
+      );
+      // 非末文件不受影响。
+      expect(
+        AudiobookPlayerController.splitGlobalMs(
+          9500,
+          durations,
+          lastFileDurationMs: 100000,
+        ),
+        (fileIndex: 0, offsetMs: 9500),
+      );
+    });
+
+    test('single-file book: seeking to the slider end reaches the real '
+        'file end', () async {
+      installPlatform();
+      final AudiobookPlayerController c = AudiobookPlayerController();
+
+      // cue 只到 10s，真实文件 100s（假平台 LoadResponse）。
+      final List<AudioCue> cues = <AudioCue>[cue(0, 0), cue(0, 9000)];
+      c.setAllBookCues(cues);
+      await c.load(
+        audiobook: ab(),
+        audioFiles: <File>[makeFile('fushi-tail-single.mp3')],
+      );
+      c.setChapterCues(cues);
+      await c.play();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await c.pause();
+
+      expect(c.totalDuration.inMilliseconds, 100000);
+      await c.seekGlobalMs(95000);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(
+        c.globalPosition.inMilliseconds,
+        95000,
+        reason: 'must not be clamped back to the last cue end (10000)',
+      );
+      await c.disposeAndRelease();
+    });
+
+    test('multi-file book playing the last file: seek reaches its tail and '
+        'totalDuration uses its real length', () async {
+      installPlatform();
+      final AudiobookPlayerController c = AudiobookPlayerController();
+
+      c.setAllBookCues(twoFileCues());
+      await c.load(
+        audiobook: ab(),
+        audioFiles: <File>[
+          makeFile('fushi-tail-mf-0.mp3'),
+          makeFile('fushi-tail-mf-1.mp3'),
+        ],
+        initialPositionMs: 13000,
+      );
+      c.setChapterCues(twoFileCues());
+      await c.play();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await c.pause();
+
+      // 文件 0 按 cue 估算 10000 + 文件 1 真实 100000。
+      expect(c.totalDuration.inMilliseconds, 110000);
+      await c.seekGlobalMs(70000);
+      await Future<void>.delayed(const Duration(milliseconds: 20));
+      expect(c.currentFilePosition.fileIndex, 1);
+      expect(c.globalPosition.inMilliseconds, 70000);
+      await c.disposeAndRelease();
+    });
+  });
+
+  // HBK-AUDIT-036：冷启动时平台还没载入任何文件，末文件真实时长不可知。旧实现在
+  // load() 里按 cue 估算（末句结束）夹存档，片尾静音 / 音乐里的存档被拽回末句。
+  group('cold start resumes into the last file tail (HBK-AUDIT-036)', () {
+    test('splitGlobalMs keeps the last-file offset when clampLastFile is '
+        'false', () {
+      const List<int> durations = <int>[10000, 8000];
+      expect(
+        AudiobookPlayerController.splitGlobalMs(
+          70000,
+          durations,
+          clampLastFile: false,
+        ),
+        (fileIndex: 1, offsetMs: 60000),
+      );
+      // 非末文件仍按估算拆分，不受影响。
+      expect(
+        AudiobookPlayerController.splitGlobalMs(
+          9500,
+          durations,
+          clampLastFile: false,
+        ),
+        (fileIndex: 0, offsetMs: 9500),
+      );
+    });
+
+    test('a saved position in the last file tail survives load() and the '
+        'first platform activation', () async {
+      final _FakePlatform plat = installPlatform();
+      final AudiobookPlayerController c = AudiobookPlayerController();
+
+      // 文件 0 估算 10000、文件 1 估算 8000（末句结束），文件 1 真实 100000。
+      // 存档 70000 = 文件 1 的 60000，落在末句之后的片尾里。
+      c.setAllBookCues(twoFileCues());
+      await c.load(
+        audiobook: ab(),
+        audioFiles: <File>[
+          makeFile('fushi-cold-tail-0.mp3'),
+          makeFile('fushi-cold-tail-1.mp3'),
+        ],
+        initialPositionMs: 70000,
+      );
+      c.setChapterCues(twoFileCues());
+
+      expect(c.currentFilePosition.fileIndex, 1);
+      expect(
+        c.currentFilePosition.positionMs,
+        60000,
+        reason:
+            'must not be clamped to the last cue end (8000) before the '
+            'real duration of the last file is known',
+      );
+      expect(c.globalPosition.inMilliseconds, 70000);
+      // 首次激活前末文件真实时长仍未知：时间轴末端至少要盖住当前位置，否则进度条
+      // 显示「1:10 / 0:18」，按 totalDuration 夹目标的相对跳转（远程 ctl）会把
+      // 片尾位置拽回末句结束。
+      expect(
+        c.totalDuration.inMilliseconds,
+        70000,
+        reason: 'the timeline end must cover the restored position',
+      );
+
+      await c.play();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      expect(plat.player!.loadedIndex, 1);
+      expect(
+        plat.player!.loadedPositionMs,
+        60000,
+        reason: 'the platform must be activated at the saved in-file offset',
+      );
+      await c.pause();
+      expect(c.currentFilePosition.fileIndex, 1);
+      // 播放期间 just_audio 按墙钟外推几十毫秒。
+      expect(c.globalPosition.inMilliseconds, inInclusiveRange(70000, 70999));
+      expect(c.totalDuration.inMilliseconds, 110000);
+      await c.disposeAndRelease();
+    });
+
+    test('a saved position beyond the real last-file duration is capped at '
+        'the real end once the platform reports it', () async {
+      final _FakePlatform plat = installPlatform();
+      final AudiobookPlayerController c = AudiobookPlayerController();
+
+      c.setAllBookCues(twoFileCues());
+      await c.load(
+        audiobook: ab(),
+        audioFiles: <File>[
+          makeFile('fushi-cold-over-0.mp3'),
+          makeFile('fushi-cold-over-1.mp3'),
+        ],
+        // 文件 1 的 150000，超出真实时长 100000（音频被换短 / 存档越界）。
+        initialPositionMs: 160000,
+      );
+      c.setChapterCues(twoFileCues());
+
+      await c.play();
+      await Future<void>.delayed(const Duration(milliseconds: 50));
+      await c.pause();
+      expect(plat.player!.loadedPositionMs, 150000);
+      expect(c.activationRestorePendingForTesting, isFalse);
+      expect(c.currentFilePosition.fileIndex, 1);
+      expect(
+        c.currentFilePosition.positionMs,
+        100000,
+        reason: 'the upper bound is the real duration reported by the platform',
+      );
+      await c.disposeAndRelease();
+    });
+  });
 }
 
 class _FakePlatform extends JustAudioPlatform {
@@ -195,6 +405,7 @@ class _FakePlayer extends AudioPlayerPlatform {
   final StreamController<PlaybackEventMessage> _events =
       StreamController<PlaybackEventMessage>.broadcast();
   int? loadedIndex;
+  int? loadedPositionMs;
   int _currentIndex = 0;
   bool _disposed = false;
 
@@ -219,6 +430,7 @@ class _FakePlayer extends AudioPlayerPlatform {
   @override
   Future<LoadResponse> load(LoadRequest request) async {
     loadedIndex = request.initialIndex;
+    loadedPositionMs = request.initialPosition?.inMilliseconds;
     _currentIndex = request.initialIndex ?? 0;
     emit(
       request.initialPosition?.inMilliseconds ?? 0,

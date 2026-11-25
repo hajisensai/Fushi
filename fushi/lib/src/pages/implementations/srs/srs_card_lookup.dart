@@ -27,18 +27,23 @@ import 'package:fushi_dictionary/fushi_dictionary.dart'
     show DictionarySearchResult, FushiRubySpan, shiftRubySpans;
 
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/favorites/favorite_lookup_context.dart'
+    show FavoriteLookupContext;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/lookup/sentence_extraction.dart';
 import 'package:fushi/src/lookup/source_lookup_sentence.dart'
     show withFallbackMiningSentence;
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart'
     show subtitleTranscriptLookupSpan;
+import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart'
+    show AdvancedMiningSentenceSection;
 import 'package:fushi/src/pages/implementations/dictionary_page_mixin.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_controller.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_layer.dart';
 import 'package:fushi/src/pages/implementations/popup_body_static_layer.dart';
+import 'package:fushi/src/pages/implementations/dictionary_popup_realm.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show MinePopupResult;
+    show MinePopupResult, OpenAdvancedMiningCallback;
 import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 import 'package:fushi/src/reader/reader_selection_scripts.dart'
     show ReaderSelectionScripts;
@@ -113,6 +118,10 @@ abstract interface class SrsCardLookupSurface {
 /// 查词结果的数据源（测试注入；生产走 [AppModel.searchDictionary]）。
 typedef SrsCardLookupSearch =
     Future<DictionarySearchResult> Function(String term, int maximumTerms);
+
+/// 卡面查词宿主的「高级制卡」语境：查词所在那句（空串 = 没有语境）。
+FavoriteLookupContext? srsLookupMiningContext(String sentence) =>
+    sentence.isEmpty ? null : FavoriteLookupContext(sentence: sentence);
 
 /// 卡面查词的数据源覆写点：null（生产）= 本机词典。widget 测试覆写成假词典。
 final Provider<SrsCardLookupSearch?> srsCardLookupSearchProvider =
@@ -377,6 +386,21 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
     withFallbackMiningSentence(fields, _sentence),
   );
 
+  /// 「高级制卡」字段预填的例句兜底：与 [onMineEntry] 同一句（[_sentence]）。不给时
+  /// mixin 退回宿主级 [favoriteLookupContext]（本宿主为 null），预填里 Sentence 恒空，
+  /// 而真正落卡时 [onMineEntry] 又补上了这句——预填与落卡不一致（BUG-4942）。
+  /// 按表面传、不覆写宿主级 getter：收藏行为不变。
+  @override
+  OpenAdvancedMiningCallback? advancedMiningOpenerFor(
+    GlobalKey<DictionaryPopupRealmState> webViewKey, {
+    FavoriteLookupContext? Function()? lookupContext,
+    AdvancedMiningSentenceSection? Function()? sentenceSection,
+  }) => super.advancedMiningOpenerFor(
+    webViewKey,
+    lookupContext: lookupContext ?? () => srsLookupMiningContext(_sentence),
+    sentenceSection: sentenceSection,
+  );
+
   int get _visibleDepth =>
       _popup.entries.where((DictionaryPopupEntry e) => e.visible).length;
 
@@ -407,12 +431,17 @@ class _SrsCardLookupHostState extends ConsumerState<SrsCardLookupHost>
     super.didChangeDependencies();
     // 本页之上压了别的路由（编辑页 / 浏览 / 来源跳转 / 对话框）：弹窗栈挂在根 Overlay，
     // 不收起会盖在新路由上面。
+    //
+    // 例外：查词会话自己弹的对话框（高级制卡 / 制卡动作 / 笔记查看……都经
+    // [runWithLookupPopupHidden]）也是压在本页之上的路由，但它属于这次查词——弹窗只停靠、
+    // 不关栈。关栈会触发 [SrsCardLookupHost.onClosed]（浏览器里 = 扩展续播视频），且
+    // 对话框确认时要回点的那层弹窗已被关掉（BUG-4942：点「高级制卡」视频自己播起来）。
     final bool current = ModalRoute.of(context)?.isCurrent ?? true;
     if (current != _routeCurrent) {
       _routeCurrent = current;
-      if (!current && _stackOpen) {
+      if (!current && _stackOpen && !lookupPopupHiddenByDialog) {
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          if (mounted) _closeAll();
+          if (mounted && !lookupPopupHiddenByDialog) _closeAll();
         });
       }
       _scheduleOverlayRebuild();
@@ -1126,9 +1155,19 @@ List<Rect> srsNativeLookupHighlightRects(
   return rects;
 }
 
+/// [srsNoLookup] 圈出的子树的标记。
+const Object _kSrsNoLookup = Object();
+
+/// 圈出一块「点按归控件、不取词」的交互子树（`<details>` 的折叠标题等）：命中路径上经过它的点按
+/// [srsNativeLookupHitAt] 一律不取词。与 WebView 卡面 `blocked()` 把 SUMMARY / 按钮等交互元素排除在取词
+/// 之外同一口径（BUG-4500：原生卡面点「语法详情」既展开折叠又弹查词）。
+Widget srsNoLookup({required Widget child}) =>
+    MetaData(metaData: _kSrsNoLookup, child: child);
+
 /// 在 [root] 子树里按全局坐标找被点的字（纯几何，可单测）：命中路径上最深的
 /// [RenderParagraph] + 最近的 [SrsLookupTextData] 标记 → 整段纯文本里的偏移 →
-/// 查询串（命中字起到段尾；拉丁词回退到词首）。没有标记 / 点在字形盒外返回 null。
+/// 查询串（命中字起到段尾；拉丁词回退到词首）。没有标记 / 点在字形盒外 / 命中路径经过
+/// [srsNoLookup] 圈出的交互子树返回 null。
 SrsNativeLookupHit? srsNativeLookupHitAt(RenderBox root, Offset global) {
   if (!root.attached || !root.hasSize) return null;
   final Offset local = root.globalToLocal(global);
@@ -1141,6 +1180,11 @@ SrsNativeLookupHit? srsNativeLookupHitAt(RenderBox root, Offset global) {
   SrsLookupTextData? data;
   for (final HitTestEntry entry in result.path) {
     final HitTestTarget target = entry.target;
+    // 交互控件里的字（折叠标题等）不取词：标记可能在取词标记外面，整条路径都要看。
+    if (target is RenderMetaData && identical(target.metaData, _kSrsNoLookup)) {
+      return null;
+    }
+    if (data != null) continue;
     if (paragraph == null) {
       if (target is RenderParagraph) paragraph = outerParagraph = target;
       continue;
@@ -1153,7 +1197,6 @@ SrsNativeLookupHit? srsNativeLookupHitAt(RenderBox root, Offset global) {
         segment = meta;
       } else if (meta is SrsLookupTextData) {
         data = meta;
-        break;
       }
     }
   }
@@ -1792,4 +1835,77 @@ class _SrsCardGestureRegionState extends State<SrsCardGestureRegion> {
           child: widget.child,
         ),
       );
+}
+
+/// WebView 卡面上方旁观到的那根指针，在**全局坐标**里量滑动的位移与速度。
+///
+/// 页内脚本 [kSrsCardLookupScript] 只负责判定「这一下是不是卡面滑动」（接管、作废、
+/// 嵌套滚动），它量到的 `clientX/Y` 却是平台视图自己的坐标：Flutter 把指针递给平台视图前
+/// 先 `globalToLocal`，滑动途中卡面又被复习页的 `SrsSwipeFollow` 跟手平移，于是页内位移 =
+/// 手指位移 − 卡面已平移的量。跟手量又由这个位移算出，闭环一拖就来回振荡（卡面在偏移和
+/// 弹回之间跳、提示角标闪；松手时位移被吃掉一截，够远也不算滑动）。所以拖动 / 松手事件的
+/// 几何量一律换成这里量的全局值（[rebase]），与卡面怎么平移无关。
+///
+/// 只跟第一根按下的指针（第二根手指页内脚本自会作废这次手势）；抬起 / 取消后保留这次的
+/// 读数，直到下一次按下——页内脚本的回报经平台通道，晚于宿主收到的指针事件。
+class SrsHostPointerTrack {
+  int? _pointer;
+  bool _active = false;
+  Offset _down = Offset.zero;
+  Offset _last = Offset.zero;
+  VelocityTracker? _tracker;
+  Offset _velocity = Offset.zero;
+
+  void down(PointerDownEvent e) {
+    if (_active) return;
+    _pointer = e.pointer;
+    _active = true;
+    _down = e.position;
+    _last = e.position;
+    _velocity = Offset.zero;
+    _tracker = VelocityTracker.withKind(e.kind)
+      ..addPosition(e.timeStamp, e.position);
+  }
+
+  void move(PointerMoveEvent e) {
+    if (!_active || e.pointer != _pointer) return;
+    _last = e.position;
+    _tracker?.addPosition(e.timeStamp, e.position);
+  }
+
+  void up(PointerUpEvent e) {
+    if (!_active || e.pointer != _pointer) return;
+    _last = e.position;
+    final VelocityTracker? tracker = _tracker
+      ?..addPosition(e.timeStamp, e.position);
+    _velocity = tracker?.getVelocity().pixelsPerSecond ?? Offset.zero;
+    _active = false;
+  }
+
+  void cancel(PointerCancelEvent e) {
+    if (e.pointer == _pointer) _active = false;
+  }
+
+  /// 页内回报的 [page] 换成全局几何：拖动 / 松手的位移取「按下 → 当前（松手）」，松手速度取
+  /// 宿主侧速度；其余事件原样（点按落点已由调用方按平台视图变换换算）。宿主一次指针都没
+  /// 见过时（没有平台视图的测试环境）原样返回。
+  SrsCardGestureEvent rebase(SrsCardGestureEvent page) {
+    if (_pointer == null) return page;
+    return switch (page.kind) {
+      SrsCardGestureKind.drag => SrsCardGestureEvent(
+        page.kind,
+        position: page.position,
+        delta: _last - _down,
+      ),
+      SrsCardGestureKind.release => SrsCardGestureEvent(
+        page.kind,
+        position: _last,
+        delta: _last - _down,
+        velocity: _active
+            ? _tracker?.getVelocity().pixelsPerSecond ?? Offset.zero
+            : _velocity,
+      ),
+      _ => page,
+    };
+  }
 }

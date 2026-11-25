@@ -1,20 +1,22 @@
 part of '../video_fushi_page.dart';
 
-/// 字级选词光标（videoEnterCaret）：视频页的手柄/键盘查词入口。
+/// 字级选词光标：视频页的键盘查词入口（videoEnterCaret，默认 Enter），也是统一手柄
+/// 查词模式（`controller_lookup.part.dart`）驱动的可见光标。
 ///
-/// 此前视频页唯一非鼠标查词入口是「Shift + 最后指针位置」（BUG-880），纯手柄下
-/// 完全无法查词。本域把阅读器的字级光标架构落到字幕 overlay 上：
+/// 此前视频页唯一非鼠标查词入口是「Shift + 最后指针位置」（BUG-880）。本域把阅读器的
+/// 字级光标架构落到字幕 overlay 上：
 ///
 /// * 状态机复用 [DictionaryCaretController]（TODO-387 预留的跨页面复用点）：
 ///   `CaretSurface.video` = 光标在字幕主面（一个 overlay 登记表下标，
-///   [_VideoFushiPageState._subtitleCaretEntry]）；查词后光标 transfer 进顶层
-///   弹窗（`CaretSurface.popup`），A 深查 / 移到 ＋ 按钮上 A 制卡 / B 逐层退回，
-///   与阅读器共用 [DictionaryPopupWebViewState] 的整套 caret API。
-/// * 输入路由复用 [ReaderCaretRouter]（D-pad/方向键=移动、A/Enter=查词或激活、
-///   B/Esc=退出、LT/RT=跳词典段、,/.=切词条），手柄在
-///   [_VideoFushiPageState._handleVideoGamepadButton] 顶部**先于注册表**截获
-///   （阅读器 caret.part 同款 contextual 路由）；键盘经
-///   页面最外层 press-time 键盘通道接管。
+///   [_VideoFushiPageState._subtitleCaretEntry]）；`CaretSurface.popup` = 光标在顶层
+///   弹窗上，A 深查 / 移到 ＋ 按钮上 A 制卡 / B 逐层退回，与阅读器共用
+///   [DictionaryPopupWebViewState] 的整套 caret API。键盘光标查词后自动 transfer 进
+///   弹窗；手柄查词模式查词后光标留在字幕上，按「进入结果」才 transfer。
+/// * 输入路由复用 [ReaderCaretRouter]：键盘（方向键=移动、Enter=查词或激活、Esc=退出、
+///   Tab=跳词典段、,/.=切词条）经页面最外层 press-time 键盘通道接管；手柄只在光标
+///   位于**弹窗面**时由 [_VideoFushiPageState._handleVideoGamepadButton] 顶部先于注册
+///   表截获（D-pad/A/B/LT/RT）。字幕主面上的手柄输入归手柄查词模式（2026-11-22 手柄
+///   查词统一删掉了手柄进光标的入口，videoEnterCaret 只剩键盘通道）。
 /// * 主面几何真相源在 [VideoSubtitleOverlay] 的字符登记表（点击查词同源），经
 ///   [VideoSubtitleHitTester.bindCaretView] 读取；移动是纯函数
 ///   [moveSubtitleCaretEntry]。确认查词直接走 [_handleSubtitleLookupTap] →
@@ -31,7 +33,7 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
 
   bool get _caretOnSubtitleSurface => _videoCaret.surface == CaretSurface.video;
 
-  /// videoEnterCaret 动作执行体（Enter / 手柄 Select，经注册表可改键）：未激活 =
+  /// videoEnterCaret 动作执行体（默认 Enter，仅键盘通道，经注册表可改键）：未激活 =
   /// 进入选词光标；已激活 = 对光标字符查词（与阅读器 readerLookupAtCursor 的双语义
   /// 一致，按第二下 Enter 直接查词）。
   void _handleEnterCaretAction(VideoPlayerController controller) {
@@ -51,11 +53,8 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
       _showOsd(t.no_sentence_selected, severity: ToastSeverity.error);
       return;
     }
-    // 与 _lookupAt 同款暂停语义：仅在播时置位标记，fire-and-forget 暂停。
-    if (controller.isPlaying) {
-      _pausedForLookup = true;
-      unawaited(controller.pause());
-    }
+    // 与 _lookupAt 同一暂停入口：仅在播时置位标记，fire-and-forget 暂停。
+    _pauseForLookup();
     // 迁移追踪的初值来自**进入时的播放态**（见 [SubtitleCaretPauseTracker]）：
     // 本来就暂停时进光标不会调 pause、播放态不翻转、播放器也不再通知，恒 false 的
     // 初值会让「外部恢复播放自动退光标」永久失效。
@@ -91,9 +90,11 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
       _videoCaret.popupState = null;
       _subtitleCaretEntry = null;
     });
+    // 副屏查词页上的查词还开着：暂停归它（关闭时 [_companionLookupClosed] 恢复）。
     if (resume &&
         _pausedForLookup &&
         !_hasVisiblePopup &&
+        !_companionHook.lookupOpen &&
         _controller != null) {
       _pausedForLookup = false;
       unawaited(_controller!.resumePlayback());
@@ -147,51 +148,22 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
   // ── 输入接管 ────────────────────────────────────────────────────────
 
   /// 手柄按键的光标态接管（在 [_handleVideoGamepadButton] 顶部、注册表解析之前调）。
-  /// 光标未激活返回 false（进入走注册表 videoEnterCaret 动作，不在这里）。
+  /// 只接管**弹窗面**上的光标（键盘光标查词后自动 transfer、或手柄查词模式「进入结果」
+  /// 之后），其余返回 false 走正常解析：字幕主面上的手柄输入归手柄查词模式
+  /// （它在页面派发之前消费自己的键），手柄已没有进光标的入口。
   ///
-  /// 激活期路由：[ReaderCaretRouter.decideGamepad] 的光标键（dpad/A/B/LT/RT）走光标
-  /// 动作；主面上「上一句/下一句」按用户注册表绑定放行（跳句后 [_onCaretControllerTick]
-  /// 自动重锚）；**其余按键一律吞掉**——选词是模态操作，快进/音量/全屏在光标态触发
-  /// 只会把用户正在选的字幕换掉（阅读器 caret 同款收敛）。
+  /// 弹窗面路由：[ReaderCaretRouter.decideGamepad] 的光标键（dpad/A/B/LT/RT）走弹窗
+  /// 光标动作（B 逐层关弹窗，全关后光标回落字幕主面）；其余键先给弹窗的
+  /// dictionaryPopup 手柄绑定（X 制卡 / Y 发音，与手柄查词模式同键），再一律吞掉——
+  /// 弹窗内选词是模态操作，快进 / 音量 / 全屏在这时触发只会把正在看的结果换掉。
   bool _handleCaretGamepadButton(GamepadButton button) {
-    if (!_videoCaretActive) return false;
-    // 主面没有「词典段」语义：[ReaderCaretRouter.decideGamepad] 把 LT/RT 映射成
-    // jumpDictPrev/Next，而主面对这两个动作是空 return —— 用户在光标态按 RT(全屏)
-    // / LT(重听当前句) 静默无反应。主面把两个扳机整体交回注册表解析（弹窗面仍是
-    // 跳词典段，那里才有词典段）。
-    final bool shoulderOnSubtitleSurface =
-        _caretOnSubtitleSurface &&
-        (button == GamepadButton.lt || button == GamepadButton.rt);
-    final CaretAction? caretAction = shoulderOnSubtitleSurface
-        ? null
-        : ReaderCaretRouter.decideGamepad(button);
+    if (!_videoCaret.onPopup) return false;
+    final CaretAction? caretAction = ReaderCaretRouter.decideGamepad(button);
     if (caretAction != null) {
       unawaited(_runVideoCaretAction(caretAction));
       return true;
     }
-    final ShortcutAction? action = appModel.shortcutRegistry.resolveGamepad(
-      button,
-      scope: ShortcutScope.video,
-    );
-    // 与键盘 Enter 双语义对称：激活期再按 videoEnterCaret 绑定键（默认 Select）
-    // = 对光标字符查词 / 激活。
-    if (action == ShortcutAction.videoEnterCaret) {
-      unawaited(_runVideoCaretAction(CaretAction.activate));
-      return true;
-    }
-    if (_caretOnSubtitleSurface &&
-        (shoulderOnSubtitleSurface ||
-            action == ShortcutAction.videoPreviousSubtitle ||
-            action == ShortcutAction.videoNextSubtitle ||
-            action == ShortcutAction.videoReplayCurrentSubtitle)) {
-      final VideoPlayerController? controller = _controller;
-      if (controller != null) {
-        videoActionCallbacks(
-          _buildVideoShortcutActions(controller),
-        )[action]?.call();
-      }
-      return true;
-    }
+    tryDictionaryPopupGamepadButton(appModel.shortcutRegistry, button);
     return true;
   }
 
@@ -316,12 +288,15 @@ extension _VideoSubtitleCaret on _VideoFushiPageState {
         final SubtitleCharHit? hit = _subtitleHitTester.caretHitAt(current);
         if (hit == null) return;
         // 与点击查词完全同链路（含沉浸门控）：弹窗渲染完成后
-        // [onNestedPopupRendered] 会把光标 transfer 进弹窗。
-        _handleSubtitleLookupTap(
-          hit.sentence,
-          hit.graphemeIndex,
-          hit.charRect,
-          hit.cue,
+        // [onNestedPopupRendered] 会把键盘光标 transfer 进弹窗（手柄查词模式持有
+        // 光标时不 transfer，它也不走这里，见 controller_lookup.part.dart）。
+        unawaited(
+          _handleSubtitleLookupTap(
+            hit.sentence,
+            hit.graphemeIndex,
+            hit.charRect,
+            hit.cue,
+          ),
         );
         return;
       case CaretAction.longPress:

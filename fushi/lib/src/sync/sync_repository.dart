@@ -1,10 +1,20 @@
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show ValueNotifier;
+import 'package:fushi/src/models/library_grid_columns.dart'
+    show kLibraryGridColumnsPrefKey;
 import 'package:fushi/src/models/preference_keys.dart'
-    show kAnkiSettingsPrefKey, kWorkProfileSessionPrefKey;
+    show
+        kAnkiSettingsPrefKey,
+        kOnlineLibraryLedgerPrefKey,
+        kWhatsNewCardDismissedVersionPrefKey,
+        kWhatsNewSeenSeqPrefKey,
+        kWhatsNewSeenVersionPrefKey,
+        kWorkProfileSessionPrefKey;
 import 'package:fushi/src/utils/adaptive/page_backdrop_style.dart'
     show kPageBackdropDeviceLocalPrefKeys;
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellLayoutInstallDefault;
 import 'package:fushi/src/web_browser/web_browser_prefs.dart';
 import 'package:fushi/src/models/preferences_repository.dart'
     show
@@ -17,6 +27,8 @@ import 'package:fushi/src/models/preferences_repository.dart'
         PreferencesRepository;
 import 'package:fushi_engine/media/torrent/bt_site_legacy_migration.dart'
     show kBtSitesLegacyMigrationPref;
+import 'package:fushi_engine/media/identity/pending_identity.dart'
+    show kBookScrapeIgnoredPrefKey, kGameScrapeIgnoredPrefKey;
 import 'package:fushi_engine/media/video/metadata/video_scrape_ignored_works.dart'
     show kVideoScrapeIgnoredWorksPrefKey;
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -24,9 +36,11 @@ import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_registry.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig, JellyfinVideoClient;
+import 'package:fushi/src/sync/remote_audiobook_revision.dart'
+    show kInterconnectAudiobookRevisionsPrefKey;
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/interconnect_peer_addresses.dart'
-    show applyIssuedInterconnectToken;
+    show applyIssuedInterconnectToken, InterconnectAddressOwnerConflict;
 import 'package:fushi_engine/sync/tls/fushi_pinning_http.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/interconnect_host_addresses.dart'
@@ -69,6 +83,7 @@ class FushiClientUrl {
     this.hostId,
     this.learned = false,
     this.addressKind,
+    this.lookupEnabled = true,
   });
 
   final String url;
@@ -90,8 +105,8 @@ class FushiClientUrl {
   /// 携带出设备（与全局 token 键同待遇）。
   final String? token;
 
-  /// 这条地址属于哪台 host（host 的稳定设备 id，来自 `/api/capabilities` 的
-  /// `hostId`）。同 hostId 的多条地址是**同一台机器**的不同路径（LAN / IPv6 /
+  /// 这条地址属于哪台 host（host 的稳定设备 id，来自 `/api/ping` 与
+  /// `/api/host/addresses` 回报的 `hostId`）。同 hostId 的多条地址是**同一台机器**的不同路径（LAN / IPv6 /
   /// 组网 / 公网 / P2P），选路时组内并发、列设备时合并为一台。null = 老条目或
   /// 老 host，单独成组，行为与升级前逐字一致
   /// （docs/specs/2026-09-28-interconnect-remote-reach.md §1）。
@@ -106,6 +121,15 @@ class FushiClientUrl {
   /// 排序要用 host 的原始判断。手输条目为 null（按 URL 推断）。
   final String? addressKind;
 
+  /// 「用这台服务器查词典」（按配对 / host 的设备本地开关，默认 true = 与升级前一致）。
+  /// false 时远端查词与服务器词典目录刷新都跳过这条地址（[isDictionaryLookupCandidate]），
+  /// 同步 / 制卡 / 音频等其它互联用途不受影响。随 `sync_hibiki_client_urls` 落库，与
+  /// [token] 同为设备本地。同一台 host 的多条地址由设置页一起改。
+  final bool lookupEnabled;
+
+  /// 这条地址此刻能否承担远端**词典**查词：已启用且没关掉 [lookupEnabled]。
+  bool get isDictionaryLookupCandidate => enabled && lookupEnabled;
+
   Map<String, dynamic> toJson() => <String, dynamic>{
     'url': url,
     'enabled': enabled,
@@ -115,6 +139,8 @@ class FushiClientUrl {
     if (hostId != null) 'hostId': hostId,
     if (learned) 'learned': true,
     if (addressKind != null) 'kind': addressKind,
+    // 只记非默认值：默认开着的老条目写回后逐字节不变。
+    if (!lookupEnabled) 'lookupEnabled': false,
   };
 
   factory FushiClientUrl.fromJson(Map<String, dynamic> json) => FushiClientUrl(
@@ -126,6 +152,7 @@ class FushiClientUrl {
     hostId: json['hostId'] as String?,
     learned: json['learned'] as bool? ?? false,
     addressKind: json['kind'] as String?,
+    lookupEnabled: json['lookupEnabled'] as bool? ?? true,
   );
 
   /// 复制并覆盖部分字段（不可变更新）。`null` 入参保留原值；要显式清空请直接构造。
@@ -138,6 +165,7 @@ class FushiClientUrl {
     String? hostId,
     bool? learned,
     String? addressKind,
+    bool? lookupEnabled,
   }) => FushiClientUrl(
     url: url ?? this.url,
     enabled: enabled ?? this.enabled,
@@ -147,8 +175,68 @@ class FushiClientUrl {
     hostId: hostId ?? this.hostId,
     learned: learned ?? this.learned,
     addressKind: addressKind ?? this.addressKind,
+    lookupEnabled: lookupEnabled ?? this.lookupEnabled,
   );
 }
+
+/// 服务器托管词典（`remote_dictionary_metadata`）按哪个 host 身份归档：配对记下的
+/// [FushiClientUrl.hostId]；老条目没有 hostId 时用地址本身（去掉首尾空白与结尾 `/`）
+/// 充当伪 id——与 `InterconnectSyncBackend.connectedHostIdentity` 对老条目的口径一致，
+/// 同步编排的词典阶段拿到的身份与这里算出的能对上。
+String remoteDictionaryHostIdOf(FushiClientUrl candidate) {
+  final String? hostId = candidate.hostId;
+  if (hostId != null && hostId.isNotEmpty) return hostId;
+  final String url = candidate.url.trim();
+  return url.endsWith('/') ? url.substring(0, url.length - 1) : url;
+}
+
+/// [remoteDictionaryHostIdOf] 给出的是不是**地址充当的伪 id**（老条目没有 hostId，
+/// 拿 URL 顶上）。伪 id 是服务器地址，配置导出时必须剔掉（不把用户的服务器地址带出
+/// 本机）；真 hostId 是不透明的设备 id，照常导出。
+bool isRemoteDictionaryPseudoHostId(String hostId) => hostId.contains('://');
+
+/// 「用这台服务器查词典」是按 host 的设置：一台 host 原有的地址全都关掉了它时，
+/// 这次写入里**新加入**这台 host 的地址（新 URL，或原有 URL 新归到这台 host）也跟着
+/// 关掉——否则配对学到一条新地址 / 手动加一条地址后，用户关掉的 host 会悄悄重新
+/// 参与查词。原有地址的值（含用户刚在设置页整组打开）一律不动。没有任何变化时原样
+/// 返回 [after]（调用方靠 `identical` 判断要不要落库）。
+List<FushiClientUrl> inheritInterconnectLookupDisabled(
+  List<FushiClientUrl> before,
+  List<FushiClientUrl> after,
+) {
+  final Map<String, bool> allOffByHost = <String, bool>{};
+  final Set<String> knownMembership = <String>{};
+  for (final FushiClientUrl u in before) {
+    final String host = remoteDictionaryHostIdOf(u);
+    allOffByHost[host] = (allOffByHost[host] ?? true) && !u.lookupEnabled;
+    knownMembership.add('$host\u0000${u.url}');
+  }
+  if (!allOffByHost.containsValue(true)) return after;
+  bool changed = false;
+  final List<FushiClientUrl> out = <FushiClientUrl>[
+    for (final FushiClientUrl u in after)
+      if (u.lookupEnabled &&
+          allOffByHost[remoteDictionaryHostIdOf(u)] == true &&
+          !knownMembership.contains(
+            '${remoteDictionaryHostIdOf(u)}\u0000${u.url}',
+          ))
+        () {
+          changed = true;
+          return u.copyWith(lookupEnabled: false);
+        }()
+      else
+        u,
+  ];
+  return changed ? out : after;
+}
+
+/// [urls] 里此刻承担远端词典查词的 host 身份集合（[FushiClientUrl.isDictionaryLookupCandidate]
+/// 的地址按 [remoteDictionaryHostIdOf] 归组）。词典仓库只把这些 host 的目录行混进查词过滤。
+Set<String> remoteDictionaryLookupHostIdsOf(Iterable<FushiClientUrl> urls) =>
+    <String>{
+      for (final FushiClientUrl u in urls)
+        if (u.isDictionaryLookupCandidate) remoteDictionaryHostIdOf(u),
+    };
 
 /// BUG-1550：解析某个候选地址该用哪份凭据——地址行自带的 [FushiClientUrl.token]
 /// 优先，为空时回落全局 token（老配置 / 同 host 的备用地址）。两者都空返回 null，
@@ -202,6 +290,11 @@ class SyncRepository {
 
   static const _keyRootFolderId = 'sync_root_folder_id';
   static const _keyFolderCache = 'sync_folder_cache';
+  // 云盘旧名 `<title>.epub` 内容资产的内容判型缓存（JSON：资产 id → {folder,
+  // revision, size, kind}，见 `CloudLegacyMangaSniffer`）。按通道分槽；设备本地
+  // （[_perChannelDeviceLocalBases]）：它是本机对远端字节的观测缓存，不是用户设置，
+  // 不进导出。条目按后端内容版本标记校验，带到别处也不会给出错的结论。
+  static const _keyContentSniffCache = 'sync_content_sniff_cache';
   static const _keySyncStats = 'sync_stats_enabled';
   static const _keySyncAudioBook = 'sync_audiobook_enabled';
   // 废弃：词典与本地音频源数据库不再有「同步开关」，改成设置页的显式上传 / 下载
@@ -233,6 +326,10 @@ class SyncRepository {
   // 7c 视频刮削元数据增量拉取基线：本设备从该通道见过的最大 host updatedAt。
   // 设备本地：随备份到新设备会让它以为已见过、永远不全量拉。
   static const _keyVideoMetadataSyncSinceMs = 'sync_video_metadata_since_ms';
+  // 流媒体书拉取基线（拍板台 Z2OhxAjKVv）：本设备从该通道见过的最大 host 拥有时刻。
+  // 晚于它的 host 流媒体书才落到本机——早于它、本机却没有的，是本机删掉的，不再建回。
+  // 设备本地：随备份到新设备会让它以为已见过、永远拉不到。
+  static const _keyStreamVideoPullSinceMs = 'sync_stream_video_pull_since_ms';
   // 删除墓碑**推送**的因果基线（互联通道专用，与上面的消费基线镜像对称）：描述
   // 「本设备已把删除推给对端 host 到什么时刻」。deletedAt 晚于它的墓碑才需要推。
   //
@@ -314,6 +411,23 @@ class SyncRepository {
   // 开关落设备本地（要不要接收 host 凭据是每台设备自己的信任决策，不跨设备跟随）。
   static const _keyInterconnectServiceConfigSync =
       'interconnect_sync_service_config';
+  // 互联「来源共享」（拍板台 wOMR4_Er7s，interconnect_source_share_sync.dart）：
+  // client 侧「接收 host 共享的服务器来源与插件」、host 侧「把来源共享给我的设备」。
+  // 都默认开（维护者要的是自动共享；凭据只发给 host 主人标过「我的设备」的 peer，
+  // 端点另有 HTTPS + per-peer token 两道门）。都落设备本地：要不要收 / 发凭据是每台
+  // 设备自己的信任决策。
+  static const _keyInterconnectSourceShareSync =
+      'interconnect_sync_source_share';
+  static const _keyInterconnectSourceShareHost =
+      'interconnect_source_share_host';
+  // host 主人逐项勾选共享的来源（`kind/id` 的 JSON 数组）。拍板台原文「凭据由用户逐项
+  // 勾选，不能默认全量下发」：默认空 = 一条都不共享。
+  static const _keyInterconnectSourceShareHostItems =
+      'interconnect_source_share_host_items';
+  // client 侧「也接收插件」：插件是第三方可执行代码，host 是谁标的「我的设备」是 host 单方面
+  // 的判断，往本机装代码必须这台设备的主人自己点头。默认关。
+  static const _keyInterconnectSourceSharePlugins =
+      'interconnect_sync_source_share_plugins';
   static const _keyWebDavUrl = 'sync_webdav_url';
   static const _keyWebDavUsername = 'sync_webdav_username';
   static const _keyWebDavPassword = 'sync_webdav_password';
@@ -371,6 +485,41 @@ class SyncRepository {
           PreferencesCompanion.insert(
             key: scope.key(_keyFolderCache),
             value: jsonEncode(cache),
+          ),
+        );
+  }
+
+  /// [scope] 通道的云盘内容判型缓存（`CloudLegacyMangaSniffer`）；没有或损坏返回空表。
+  Future<Map<String, Object?>> getContentSniffCache(
+    SyncChannelScope scope,
+  ) async {
+    final row =
+        await (_db.select(_db.preferences)
+              ..where((t) => t.key.equals(scope.key(_keyContentSniffCache))))
+            .getSingleOrNull();
+    if (row == null) return <String, Object?>{};
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(row.value);
+    } on FormatException {
+      // 缓存行坏了就当没有缓存：最坏是重新嗅探一遍，不影响任何用户数据。
+      return <String, Object?>{};
+    }
+    return decoded is Map<String, dynamic>
+        ? Map<String, Object?>.of(decoded)
+        : <String, Object?>{};
+  }
+
+  Future<void> setContentSniffCache(
+    SyncChannelScope scope,
+    Map<String, Object?> entries,
+  ) async {
+    await _db
+        .into(_db.preferences)
+        .insertOnConflictUpdate(
+          PreferencesCompanion.insert(
+            key: scope.key(_keyContentSniffCache),
+            value: jsonEncode(entries),
           ),
         );
   }
@@ -560,6 +709,28 @@ class SyncRepository {
 
   Future<void> setVideoMetadataSyncSinceMs(SyncChannelScope scope, int ms) =>
       _setString(scope.key(_keyVideoMetadataSyncSinceMs), ms.toString());
+
+  /// 流媒体书拉取基线：上次从该通道见过的最大 host 拥有时刻（毫秒，host 时钟）。
+  /// 0 = 从未拉过（全量）。设备本地、按通道分槽。
+  Future<int> getStreamVideoPullSinceMs(SyncChannelScope scope) async =>
+      _parseStreamVideoPullSinceMs(
+        await _getStringOrNull(scope.key(_keyStreamVideoPullSinceMs)),
+      );
+
+  /// [getStreamVideoPullSinceMs] 的快照版：从一份已读好的整表偏好（`getAllPrefs`）里
+  /// 取，不再查库。视频进度 sweep 开头本来就读整表偏好，拉取基线顺手从里面拿。
+  static int streamVideoPullSinceMsFromPrefs(
+    SyncChannelScope scope,
+    Map<String, String> prefs,
+  ) => _parseStreamVideoPullSinceMs(
+    prefs[scope.key(_keyStreamVideoPullSinceMs)],
+  );
+
+  static int _parseStreamVideoPullSinceMs(String? s) =>
+      s == null ? 0 : int.tryParse(s) ?? 0;
+
+  Future<void> setStreamVideoPullSinceMs(SyncChannelScope scope, int ms) =>
+      _setString(scope.key(_keyStreamVideoPullSinceMs), ms.toString());
 
   /// 删除墓碑消费的因果基线（毫秒）。远端删除标记 deletedAt 晚于它才弹逐条确认；
   /// 早于它视为本设备已处理过、不再反复弹。0 = 从未消费过。设备本地
@@ -876,7 +1047,7 @@ class SyncRepository {
 
   /// host 侧：是否允许已配对设备远程更新本机 app（`/api/host/update`）。
   ///
-  /// 端点另有已配对 peer token + 局域网信任区 + 一次性 nonce 几道门；本开关是
+  /// 端点另有已配对 peer token + 一次性 nonce 几道门（不按来源网络区分）；本开关是
   /// **用户意图**那一道，默认关。
   Future<bool> isInterconnectRemoteUpdateEnabled() =>
       _db.getPrefTyped<bool>(_keyInterconnectRemoteUpdate, false);
@@ -946,6 +1117,56 @@ class SyncRepository {
   /// 互联 service-config 同步（host 的外部服务 API key / 服务配置随互联下发）。
   /// 默认 true = 既有行为不变；关掉后本设备不再向 host 请求 service-config，
   /// 已导入的值保持原样（不回滚——那是用户此刻正在用的配置）。
+  /// client 侧：是否接收 host 共享的服务器来源与插件（默认开）。
+  Future<bool> isInterconnectSourceShareEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectSourceShareSync, true);
+  Future<void> setInterconnectSourceShareEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSourceShareSync, v);
+
+  /// host 侧：是否把本机的服务器来源与插件共享给「我的设备」（默认开）。
+  Future<bool> isInterconnectSourceShareHostEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectSourceShareHost, true);
+  Future<void> setInterconnectSourceShareHostEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSourceShareHost, v);
+
+  /// client 侧：是否也接收 host 共享的插件包（默认关，见 [_keyInterconnectSourceSharePlugins]）。
+  Future<bool> isInterconnectSourceSharePluginsEnabled() =>
+      _db.getPrefTyped<bool>(_keyInterconnectSourceSharePlugins, false);
+  Future<void> setInterconnectSourceSharePluginsEnabled(bool v) =>
+      _db.setPrefTyped<bool>(_keyInterconnectSourceSharePlugins, v);
+
+  /// host 侧：主人勾选共享的来源（`kind/id`）。坏值当空（= 不共享），不会因解析失败多发。
+  Future<Set<String>> getInterconnectSourceShareHostItems() async {
+    final String raw = await _db.getPrefTyped<String>(
+      _keyInterconnectSourceShareHostItems,
+      '',
+    );
+    if (raw.isEmpty) return <String>{};
+    try {
+      final Object? decoded = jsonDecode(raw);
+      return <String>{
+        if (decoded is List)
+          for (final Object? k in decoded)
+            if (k is String && k.isNotEmpty) k,
+      };
+    } on FormatException {
+      return <String>{};
+    }
+  }
+
+  /// 勾选 / 取消勾选一条（[key] = `kind/id`）。
+  Future<void> setInterconnectSourceShareHostItem(
+    String key, {
+    required bool shared,
+  }) async {
+    final Set<String> items = await getInterconnectSourceShareHostItems();
+    if (shared ? !items.add(key) : !items.remove(key)) return;
+    await _db.setPrefTyped<String>(
+      _keyInterconnectSourceShareHostItems,
+      jsonEncode(<String>[...items]..sort()),
+    );
+  }
+
   Future<bool> isInterconnectServiceConfigSyncEnabled() =>
       _db.getPrefTyped<bool>(_keyInterconnectServiceConfigSync, true);
   Future<void> setInterconnectServiceConfigSyncEnabled(bool v) =>
@@ -1564,7 +1785,10 @@ class SyncRepository {
   ) {
     final Future<List<FushiClientUrl>> result = _urlsWriteChain.then((_) async {
       final List<FushiClientUrl> before = await getFushiClientUrls();
-      final List<FushiClientUrl> after = transform(before);
+      final List<FushiClientUrl> after = inheritInterconnectLookupDisabled(
+        before,
+        transform(before),
+      );
       if (!identical(after, before)) await setFushiClientUrls(after);
       return after;
     });
@@ -1677,10 +1901,15 @@ class SyncRepository {
   /// 53NT7G_tSO：host 按设备只认一份 token（重新配对即作废旧的），所以新 token 同时
   /// 写到**同一台 host 的全部地址**；[hostId]（配对时 ping 回报的身份）让还没归组的
   /// 新地址先按指纹判据归组，见 [applyIssuedInterconnectToken]。
+  ///
+  /// 地址归属闸：[url] 已归另一台 host 而 [reassignOwner] 为 false 时，变换里抛
+  /// [InterconnectAddressOwnerConflict]（与 [addFushiClientUrl] 抛
+  /// [FushiFingerprintMismatchException] 同一模式），列表与全局 token 键都不写。
   Future<void> setFushiClientTokenForUrl(
     String url,
     String token, {
     String? hostId,
+    bool reassignOwner = false,
   }) async {
     await updateFushiClientUrls(
       (List<FushiClientUrl> urls) => applyIssuedInterconnectToken(
@@ -1688,6 +1917,7 @@ class SyncRepository {
         url: url,
         token: token,
         hostId: hostId,
+        reassignOwner: reassignOwner,
       ),
     );
     await setFushiClientToken(token);
@@ -1708,6 +1938,7 @@ class SyncRepository {
             hostId: u.hostId,
             learned: u.learned,
             addressKind: u.addressKind,
+            lookupEnabled: u.lookupEnabled,
           ),
       ];
     });
@@ -1752,6 +1983,7 @@ class SyncRepository {
           hostId: existing.hostId,
           learned: existing.learned,
           addressKind: existing.addressKind,
+          lookupEnabled: existing.lookupEnabled,
         );
     });
     return cleared;
@@ -1792,8 +2024,12 @@ class SyncRepository {
   /// - `srs_mining_target_install_default`：挖词目标出厂默认（'anki' / 'srs'），兼
   ///   一次性判定标记。维护者用装了新版的机器打推荐包，包里会是 'anki'；新用户一导入
   ///   就会被当成老 Anki 用户（复习模块关、挖词发 Anki）。
+  /// - `remote_lookup_host_switches_migrated`：全局「远程查词」并入每台 host 开关的
+  ///   一次性迁移已跑标记。配对列表是设备本地的，别的机器的标记随过来会让本机跳过
+  ///   迁移，原先关着远程查词的已配对 host 更新后直接开始查服务器。
   static const List<String> installScopedPrefKeys = <String>[
     PreferencesRepository.srsMiningTargetInstallDefaultKey,
+    PreferencesRepository.remoteLookupHostSwitchesMigratedKey,
   ];
 
   /// 按通道分槽、且属设备本地的键基名（展开进 [deviceLocalPrefKeys]）。
@@ -1805,9 +2041,21 @@ class SyncRepository {
     _keyCollectionsBaselineMs,
     _keyDeletionTombstonesBaselineMs,
     _keyVideoMetadataSyncSinceMs,
+    _keyStreamVideoPullSinceMs,
+    _keyContentSniffCache,
+    // 云后端最近一次取到的账号（BUG-4434）：文件箱进度基线按它挑槽；随备份带到
+    // 登着别的账号的设备，邮箱缺失时会挑错槽，且把账号邮箱带进备份。
+    syncRemoteAccountPrefBase,
   ];
 
+  /// 按通道分槽的「云后端最近一次取到的账号」键基名（BUG-4434）；完整键见
+  /// `syncRemoteAccountPrefKey`（`sync_baseline_scope.dart`）。设备本地。
+  static const String syncRemoteAccountPrefBase = 'sync_remote_account';
+
   static const List<String> _deviceLocalFixedKeys = <String>[
+    // 楽天ブックス书籍检索凭据：用户自己注册的应用凭据，只留在这台设备。
+    'book_scrape_rakuten_access_key',
+    'book_scrape_rakuten_application_id',
     // 「同步浏览历史」是这台设备的隐私许可：从另一台设备恢复备份不得替这台设备
     // 打开浏览轨迹外流。
     kSyncWebHistoryPrefKey,
@@ -1818,28 +2066,59 @@ class SyncRepository {
     ...kWebBrowserDeviceLocalPrefKeys,
     // 页面背景的自定义图片文件路径与取色缓存：文件只在这台设备的数据目录里。
     ...kPageBackdropDeviceLocalPrefKeys,
+    // 第二块屏启动策略、已同意的副屏与查词显示屏（SecondScreenController 的键）：
+    // 描述的是本机硬件，不跟去别的设备。
+    'second_screen_mode',
+    'second_screen_approved_displays',
+    'second_screen_lookup_screen',
+    // 手柄查词模式的开启方式（ControllerLookupStyle）：跟这台设备的手柄走。
+    'controller_lookup_style',
     // v105 统计按 Profile 隔离：legacy 统计归属 Profile 的值是本库自增 id，
     // 换一台设备就指向别的 Profile，绝不随备份 / Profile 分享出境。
     kStatLegacyProfileIdPrefKey,
     // 主进程此刻打开的作品会话（值是本库自增配置 id，只给本机弹窗进程镜像用）。
     kWorkProfileSessionPrefKey,
+    // 「本版新内容」看到哪个版本：描述这台设备装过的包，跟去别的设备会误判。
+    kWhatsNewSeenVersionPrefKey,
+    kWhatsNewSeenSeqPrefKey,
+    kWhatsNewCardDismissedVersionPrefKey,
+    // 库页「每行数量」：合适的列数取决于这台设备的屏幕（BUG-4219）。
+    kLibraryGridColumnsPrefKey,
+    // 库页布局出厂判定（G1：新安装 = 拼贴 / 升级上来 = 封面网格 + 待弹选择框）：
+    // 本设备一次性的判定结论。不进 Profile 快照 / 备份 / 设置同步，导入时保留本机
+    // 值——随推荐包或老 Profile 换进来会把新用户重判成老用户（切网格并弹框）。
+    // 有意不放进 [installScopedPrefKeys]：那一类导入时会被清掉、下次启动重判，
+    // 而重判在已有书库的数据上必然得出「升级上来」。
+    ShellLayoutInstallDefault.prefKey,
+    // 书架文件夹导入「缺字幕就转录」：几个小时的设备端推理，跑不跑得动是这台设备
+    // 的事（手机上开着、恢复到没有 ASR 算力的机器上不该跟着开）。同组的总开关
+    // `audiobook_auto_transcribe` 是同步的，这一个有意设成设备本地。
+    PreferencesRepository.audiobookFolderImportTranscribeKey,
     // Android 桌面小组件的默认隐私：描述这台设备的桌面。
     PreferencesRepository.widgetPrivacyHideTitlesKey,
     PreferencesRepository.widgetPrivacyHideDefinitionsKey,
     PreferencesRepository.widgetPrivacyHideProfileKey,
     // 复习同步 v2 的文件夹存储位置：路径是这台设备的磁盘 / 挂载点，换设备恢复带过去没有意义。
     PreferencesRepository.srsFolderLocationsKey,
+    // 移除了、本机复习内核还没忘掉的位置：描述的是这台设备的内核状态，与上一项同一个事务写。
+    PreferencesRepository.srsForgetPendingKey,
     // 复习同步 v2 里关掉的通道位置：是这台设备「在不在那里同步」的选择，别的设备恢复备份不能替它关 / 开。
     PreferencesRepository.srsDisabledLocationsKey,
     // 首次 v2 同步的确认是这台设备做的：别的设备恢复备份带过来不能替它确认。
     PreferencesRepository.srsSync2MergeConfirmedKey,
     // 复习同步 v2 存储位置的加密密钥：凭据，绝不随备份 / Profile 出境（换设备时重新输入口令）。
     PreferencesRepository.srsLocationKeysKey,
+    // 复习首页「已配对设备」的牌组摘要缓存（kSrsHomePairedCachePrefKey）：描述的是这台设备配对的主机与
+    // 上次看到的数字，别的设备恢复备份带过来只会画出它没配对的主机。
+    'srs_home_paired_cache',
     // BUG-3644 统计同步的 Profile 名字别名：键是本库自增 id，同上。
     kStudyProfileNameAliasesPrefKey,
     // 待确认队列里「忽略」的作品：元素是本机合集自增 id / 书 uid 拼的作品键，
     // 换一台设备就指向别的作品（反馈 Fbchzxuq6f）。
     kVideoScrapeIgnoredWorksPrefKey,
+    // 书 / 漫画与游戏的同一种忽略（BUG-5283）：键里是本机合集 / 游戏自增 id。
+    kBookScrapeIgnoredPrefKey,
+    kGameScrapeIgnoredPrefKey,
     _keyBackendType,
     // 云备份通道开关与上一行的后端选择是同一件事的两半——「这台设备走不走云盘、
     // 走哪个」——而凭据本就设备本地。随备份 / 设置同步漂走会出错：只想在电脑上
@@ -1912,6 +2191,16 @@ class SyncRepository {
     // 「要不要接收 host 的 service-config（外部服务 API key）」是每台设备自己的
     // 信任决策，跨设备携带会把 A 机的选择强加给 B 机。
     _keyInterconnectServiceConfigSync,
+    // 来源共享的收 / 发开关与账本（记的是「这台设备从哪台 host 收下了哪条来源」）：
+    // 都只对这台设备成立。
+    _keyInterconnectSourceShareSync,
+    _keyInterconnectSourceShareHost,
+    _keyInterconnectSourceShareHostItems,
+    _keyInterconnectSourceSharePlugins,
+    'interconnect_source_share_ledger',
+    // 在线源条目同步账本（拍板台 mY5VWg1nD-）：记的是这台设备的库见过哪些在线条目，
+    // 随 Profile 快照 / 备份走会让本机删过的条目被建回、或对端新加的建不出来。
+    kOnlineLibraryLedgerPrefKey,
     // 「当 host 时愿不愿意为对端转码视频」是本机算力的意愿：一台台式机说「可以」，
     // 不代表那台跑着同一份备份的旧笔记本也愿意被烤。
     kInterconnectTranscodeEnabledPref,
@@ -1953,6 +2242,8 @@ class SyncRepository {
     'ai_web_search',
     // 「抓搜索结果网页交给 AI」的同意：同意的是这台设备上配的那个后端，跟着它设备本地。
     'ai_web_search_page_fetch',
+    // 「AI 助手自主联网搜索」的首次确认：同理跟着这台设备配的后端设备本地。
+    'ai_agent_web_search',
     // 「允许已配对设备远程使用 AI 助手」：授权的是这台机器的 AI 指派与操作目录，
     // 只对点它的那台设备成立；漂过去会让另一台设备静默对配对设备开放。
     'ai_agent_for_peers',
@@ -1962,6 +2253,9 @@ class SyncRepository {
     // 漂过去会让另一台设备静默对外开放、或让旧令牌在新设备上生效。
     'ai_mcp_enabled',
     'ai_mcp_token_sha256',
+    // AI 助手接入的外部 MCP server：请求头里可能有 token，本地程序的命令与路径只对
+    // 这台机器成立；漂到别的设备既泄凭据又会去拉起一个不存在的程序。
+    'ai_mcp_client_servers',
     // 音乐输出设备与独占模式描述的是这台机器的声卡 / DAC：别的设备上同名设备不存在，
     // 独占在另一台机器上会让别的程序静默无声。
     'music_audio_device',
@@ -1976,14 +2270,27 @@ class SyncRepository {
     // 那台设备成立。分段方式 / MOSS 后端取决于这台机器的显卡，换设备没有意义。
     'video_subtitle_ai_proofread',
     'video_subtitle_ai_consented',
+    // 画面参考（AI 校对时附上视频画面）与它的同意：发图的同意同样只对点它的那台设备成立。
+    'video_subtitle_ai_frames',
+    'video_subtitle_ai_frames_consented',
     // AI 整理库：自动整理开关、开关时刻与「会发送什么」的同意——与上两条同理只对
     // 点它的那台设备成立（只在一台设备上开就够，结果靠合集同步传播）。
     'library_organize_allowed_keys',
     'library_organize_auto',
     'library_organize_auto_since',
     'library_organize_consented',
+    // AI 库管家：自动开关与本机运行记录 / 水位——同理只对这台设备成立。
+    'library_curate_auto',
+    'library_curate_state',
+    // AI 管库自动复查：开关与本机复查水位——同理只对这台设备成立（水位漂过去会让
+    // 另一台设备以为已经全库复查过）。
+    'library_agent_review_auto',
+    'library_agent_review_state',
     'video_subtitle_segmenter',
     'video_subtitle_moss_backend',
+    // 按系列记住的字幕文件夹（0PZAhFd1RO）：值是这台机器上的外部绝对路径，系列键里
+    // 是本库自增的合集 id——换台设备路径不存在、id 指向别的合集。
+    'video_subtitle_series_dirs',
     // 已删除的「查词自动按句意挑词条」开关（2026-10-09 移除）：存量值仍是
     // 设备本地的计费同意，留在清单里免得旧备份把它漂到别的设备。
     'lookup_ai_context_auto',
@@ -2005,6 +2312,9 @@ class SyncRepository {
     // 混排开关按这些服务器的 id 记，跟着一起设备本地。
     'music_subsonic_servers',
     'music_server_library_mix',
+    // 音乐库生成字幕按条目记住的「先分离人声」：键是本机曲库的曲目 / 专辑身份与本库
+    // 自增的来源 id，换台设备指向别的条目。
+    'music_subtitle_vocal_separation',
     'video_download_backend_path_mappings',
     'video_download_target_source_id',
     'video_download_embedded_installation_id',
@@ -2014,6 +2324,10 @@ class SyncRepository {
     'usage_stats_install_id',
     'usage_stats_install_pow',
     'usage_stats_last_ping_at',
+    // 服务端通知（updates/notice_feed.dart）：缓存的是发给这台设备这份构建的通知，
+    // 已弹过的记录也只对本机有意义。
+    'notices_cache',
+    'notices_seen',
     // 书架「仅从本机移除」的远端书：语义就是只对这台设备成立，随备份漂到另一台
     // 设备会让那边的同一份远端书也莫名消失。
     'hidden_remote_books',
@@ -2022,7 +2336,11 @@ class SyncRepository {
     // 当前预设 id 指向的就是这份清单里的条目，一起留在本机。
     'tts_voice_presets',
     'tts_active_preset_id',
+    // 朗读声音按作品记（本书 / 系列 + 语言 → 预设 id）：同样指向上面清单里的条目。
+    'tts_media_voices',
     // 制卡单词音频的 TTS 兜底声音：可能是上面清单里某份预设的 id，一起留在本机。
+    // 各配置自己那份按 uid 停放（`mining_tts_fallback_voice::<uid>`，
+    // PrefRedactionPolicy.deviceLocalKeyPrefixes），同样不离开本机。
     'mining_tts_fallback_voice',
     // galgame 台词浮窗 TTS 设置：里面的声音也是上面清单里的预设 id。
     'gal_line_tts_settings',
@@ -2030,6 +2348,15 @@ class SyncRepository {
     'tts_gpt_sovits_local',
     // 本机 Irodori-TTS-Server 的专属目录与端口：同上。
     'tts_irodori_local',
+    // 「制卡到已配对设备」每台主机的「保存到」：按 hostId 记、指向这台设备配对过的主机，
+    // 带到另一台设备上没有意义。
+    PreferencesRepository.mineToServerTargetsKey,
+    // 从互联对端下载的有声书当时的内容版本：记的是「这台设备手上是哪一份」，带到别的
+    // 设备上会让它误报 / 漏报「对端有更新」。
+    kInterconnectAudiobookRevisionsPrefKey,
+    // 电脑端「缓存其他应用的声音」：开着就常驻录这台机器的系统混音，是这台设备的
+    // 录音许可，不能随备份 / 同步在别的设备上被替用户打开。
+    PreferencesRepository.crossAppAudioCaptureDesktopKey,
   ];
 
   // ── Helpers ───────────────────────────────────────────────────────

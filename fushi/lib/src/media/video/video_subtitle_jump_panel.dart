@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart' show ValueListenable;
 
@@ -31,6 +32,8 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 import 'package:fushi_audio/fushi_audio.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
+import 'package:fushi/src/media/video/video_clip_subtitle_image.dart'
+    show buildClipSubtitleStyledSpan;
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/lookup/hover_lookup_modifier.dart';
 
@@ -69,16 +72,22 @@ String formatCueTimestamp(int startMs) =>
 /// - `byRep`：代表行 raw（该组在原列表中的**首个下标**）→ 合成 [AudioCue]（`startMs` 取
 ///   组内最小、`endMs` 取最大，其余字段沿用代表行）；
 /// - `repByRaw`：组内**每个**成员 raw → 该组代表行 raw，供列表把「当前播放句落在某个单字
-///   事件上」映射回唯一渲染的整句行（复用既有代表行机制，高亮/自动滚动零改动）。
+///   事件上」映射回唯一渲染的整句行（复用既有代表行机制，高亮/自动滚动零改动）；
+/// - `membersByRep`：代表行 raw → 组内成员**按拼接顺序**（x 升序），合成句的第 k 个字
+///   就是第 k 个成员。「显示特效字幕」开着时列表逐字取各成员自己的样式（left3545）。
 ///
 /// 合成 cue 是**真 [AudioCue] 对象**而非显示层字符串，故列表的查词、收藏、制卡、搜索
 /// 全部自动作用于整句——收藏判据是 `(text, startMs)` 值语义，不依赖对象身份。
-({Map<int, AudioCue> byRep, Map<int, int> repByRaw}) mergePerCharacterCueGroups(
-  List<AudioCue> cues,
-) {
+({
+  Map<int, AudioCue> byRep,
+  Map<int, int> repByRaw,
+  Map<int, List<AudioCue>> membersByRep,
+})
+mergePerCharacterCueGroups(List<AudioCue> cues) {
   const double kSameRowEps = 0.001;
   final Map<int, AudioCue> merged = <int, AudioCue>{};
   final Map<int, int> repByRaw = <int, int>{};
+  final Map<int, List<AudioCue>> membersByRep = <int, List<AudioCue>>{};
 
   bool isPerCharCue(AudioCue c) =>
       c.markup?.posFraction != null && c.text.characters.length == 1;
@@ -128,6 +137,7 @@ String formatCueTimestamp(int startMs) =>
       for (int k = i; k < j; k++) {
         repByRaw[k] = i;
       }
+      membersByRep[i] = ordered;
       merged[i] = AudioCue()
         ..bookKey = head.bookKey
         ..chapterHref = head.chapterHref
@@ -143,7 +153,7 @@ String formatCueTimestamp(int startMs) =>
     }
     i = j > i ? j : i + 1;
   }
-  return (byRep: merged, repByRaw: repByRaw);
+  return (byRep: merged, repByRaw: repByRaw, membersByRep: membersByRep);
 }
 
 /// 邻接链折叠的最大空隙（BUG-1776）：链尾 endMs 与下一段 startMs 之间 ≤ 本值才视为
@@ -161,6 +171,7 @@ const int _kChainFoldGapMs = 40;
   List<int> indexes,
   Map<int, int> representativeByRaw,
   Map<int, AudioCue> mergedByRep,
+  Map<int, List<AudioCue>> mergedMembersByRep,
   Map<int, int> chainEndMsByRep,
 })
 subtitleTranscriptRows(List<AudioCue> cues) {
@@ -171,8 +182,12 @@ subtitleTranscriptRows(List<AudioCue> cues) {
   // [mergePerCharacterCueGroups]）。组内非组首成员直接映射到组首、不进 reps——它与
   // 下面按 `(startMs, 文本)` 的重复折叠是**同一个代表行机制**的两种成因，故共用一张
   // repByRaw 表：当前播放句落在任一单字事件上，都能定位回那唯一渲染的整句行。
-  final ({Map<int, AudioCue> byRep, Map<int, int> repByRaw}) mergedGroups =
-      mergePerCharacterCueGroups(cues);
+  final ({
+    Map<int, AudioCue> byRep,
+    Map<int, int> repByRaw,
+    Map<int, List<AudioCue>> membersByRep,
+  })
+  mergedGroups = mergePerCharacterCueGroups(cues);
   for (int i = 0; i < cues.length; i++) {
     final int? mergedRep = mergedGroups.repByRaw[i];
     if (mergedRep != null) {
@@ -225,9 +240,61 @@ subtitleTranscriptRows(List<AudioCue> cues) {
     indexes: chained,
     representativeByRaw: repByRaw,
     mergedByRep: mergedGroups.byRep,
+    mergedMembersByRep: mergedGroups.membersByRep,
     chainEndMsByRep: chainEndMsByRep,
   );
 }
+
+/// 「显示特效字幕」开着时，特效行在列表里的富文本（拍板台 left3545：开关是「在字幕
+/// 列表里显示特效字幕的样式」，不是筛选）。
+///
+/// - 判据只读解析层的 [AudioCue.isEffect]（Rust 写一次，Dart 不猜）：普通台词返回
+///   null，照旧按主题色渲染；
+/// - 样式与视频导出 / 画面 overlay「尊重字幕自带样式」同源（[buildClipSubtitleStyledSpan]：
+///   样式表主色、粗斜体 / 下划线 / 删除线、行内 `\c` 覆盖、描边色做柔和描边），字号 /
+///   字体 / 位置 / 动画不跟随，列表行几何照旧由用户字号决定；
+/// - 逐字 `\pos` 拼成的整句（[members] 非 null，见 [mergePerCharacterCueGroups]）逐字取
+///   各成员自己的 markup，组内有一个成员是特效就整句着色；
+/// - 拍平文本必须与 [rowText] 逐字一致才返回：列表的逐字查词按 [rowText] 的 UTF-16
+///   偏移命中，手改过的字幕（`subtitle_text_override`）等对不上的行退回纯文本。
+///
+/// 返回的 span 不带基础样式，由调用方挂在行样式之下继承字号 / 字体。
+InlineSpan? subtitleListEffectSpan({
+  required String rowText,
+  required AudioCue cue,
+  List<AudioCue>? members,
+}) {
+  TextSpan styled(AudioCue c) {
+    final SubtitleMarkup? markup = c.markup;
+    if (markup == null || markup.plainText != c.text) {
+      return TextSpan(text: c.text);
+    }
+    return buildClipSubtitleStyledSpan(
+      markup: markup,
+      base: const TextStyle(),
+      shadowThickness: kSubtitleListEffectOutlineThickness,
+      hardBreaks: false,
+    );
+  }
+
+  final TextSpan span;
+  if (members != null) {
+    if (!members.any((AudioCue m) => m.isEffect)) return null;
+    span = TextSpan(
+      children: <InlineSpan>[for (final AudioCue m in members) styled(m)],
+    );
+  } else {
+    if (!cue.isEffect || cue.markup == null) return null;
+    span = styled(cue);
+  }
+  return span.toPlainText(includeSemanticsLabels: false) == rowText
+      ? span
+      : null;
+}
+
+/// 列表里特效行描边（柔和投影）的半径：列表字号远小于画面字幕，取画面默认的小一档，
+/// 白字 + 黑描边在浅色 / 深色面板上都看得清。
+const double kSubtitleListEffectOutlineThickness = 2;
 
 /// 每个代表行实际呈现的文本与完整时间跨度：逐字卡拉OK 组取合成整句，邻接链折叠行
 /// 的 `endMs` 取整条链的结束（[subtitleTranscriptRows] 的 `chainEndMsByRep`），而不是
@@ -395,6 +462,12 @@ const double _kM3eStarGap = 6;
 /// 大圆角的分段卡。
 const double _kM3eRowRadius = 12;
 
+/// M3E 页头「全部 / 收藏」分段行：分段与右侧收藏计数之间的缝。
+const double _kFilterRowGap = 8;
+
+/// M3E 页头分段行右端导出按钮的固定边长（不可压缩，分段取宽时要先留给它）。
+const double _kFilterRowExportExtent = 36;
+
 /// 字幕列表行高的排版环境签名：这几项任一变化，同一句的行高就可能变。
 ///
 /// [timestampColumnWidth] 必须在内：正文可用宽 = 行宽 − 时间戳列宽 − …，而时间戳列宽
@@ -479,9 +552,21 @@ final VideoSubtitleRowExtentCache videoSubtitleRowExtentCache =
 /// 40 与改版前 compact IconButton 的占位一致。玻璃设计系统不读这几项尺寸。
 const ButtonStyle _kHeaderIconButtonStyle = ButtonStyle(
   tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-  minimumSize: WidgetStatePropertyAll<Size>(Size.square(40)),
-  maximumSize: WidgetStatePropertyAll<Size>(Size.square(40)),
+  minimumSize: WidgetStatePropertyAll<Size>(
+    Size.square(_kHeaderIconButtonMaxExtent),
+  ),
+  maximumSize: WidgetStatePropertyAll<Size>(
+    Size.square(_kHeaderIconButtonMaxExtent),
+  ),
 );
+
+/// 带 [_kHeaderIconButtonStyle] 的头部图标钮的宽度上界：MD3 下 maximumSize 钉死 40；
+/// 玻璃设计系统不读 style，compact 密度下边长 28 / 36，也不超过 40。经典版式筛选行按它给
+/// 固定宽的开关 / 导出钮预留宽度（拍板台 left3646）。
+const double _kHeaderIconButtonMaxExtent = 40;
+
+/// 经典版式筛选行：筛选区与右侧「显示特效字幕」开关之间的缝。
+const double _kClassicFilterRowGap = 4;
 
 /// 命中字幕列表某行某字符：整条 [cue] + grapheme 下标 + 该字符的全局屏幕矩形 +
 /// 浮层锚点矩形。比 [SubtitleListCharHit] 多带所属 [cue]，供查词浮层 dismiss barrier
@@ -547,7 +632,7 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     required this.onCopyCue,
     required this.onFavoriteCue,
     required this.isCueFavorited,
-    required this.onClose,
+    this.onClose,
     this.onEditCue,
     this.onRestoreCue,
     this.onLookupCue,
@@ -560,6 +645,8 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
     this.onAutoScrollChanged,
     this.initialTapLookup = true,
     this.onTapLookupChanged,
+    this.initialShowEffects = false,
+    this.onShowEffectsChanged,
     this.initialFilter = VideoSubtitleListFilter.all,
     this.onFilterChanged,
     this.initialFontScaleIndex = _kDefaultFontScaleIndex,
@@ -608,7 +695,10 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
   final bool Function(AudioCue cue) onCopyCue;
   final Future<void> Function(AudioCue cue) onFavoriteCue;
   final bool Function(AudioCue cue) isCueFavorited;
-  final VoidCallback onClose;
+
+  /// 头部 × 关闭。null = 不出关闭按钮（视频页竖屏学习版式里列表常驻在下半屏，
+  /// 没有「关掉列表」这回事，拍板台 P9AS-fvjJh）。
+  final VoidCallback? onClose;
 
   /// 行菜单「编辑字幕」（反馈 gleDreKAvo / dpAsMkUjKT）：改这一句的文本。null = 不提供
   /// 编辑（菜单不出这一项）。触屏长按行、桌面右键行弹出行菜单。
@@ -649,6 +739,16 @@ class VideoSubtitleJumpPanel extends StatefulWidget {
 
   /// 用户切换「点字幕查词」时回调，页面层落 Drift preferences（null 时纯本地切换）。
   final ValueChanged<bool>? onTapLookupChanged;
+
+  /// 「显示特效字幕」初值（拍板台 H7r4mf_z2n / left3545）：true = 特效字幕行（歌词特效 /
+  /// 屏幕字，判据是解析层标出的 [AudioCue.isEffect]）在列表里按字幕自带样式着色
+  /// （见 [subtitleListEffectSpan]）；false = 与普通台词一样按主题色显示。**不筛选**：
+  /// 开关两态列出的行完全相同（维护者 left3545：「是在字幕列表里面显示特效字幕的样式，
+  /// 不是用来筛选」）。只影响列表，画面上的字幕照常渲染。默认 false。
+  final bool initialShowEffects;
+
+  /// 用户切换「显示特效字幕」时回调，页面层落 Drift preferences（null 时纯本地切换）。
+  final ValueChanged<bool>? onShowEffectsChanged;
 
   /// 打开列表时停在哪个页签（xlzGuK5YmD：记住上次打开的页签，下次打开恢复；不按
   /// 「有收藏就开收藏」硬判）。
@@ -774,6 +874,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 「点字幕查词」当前开关（见 [VideoSubtitleJumpPanel.initialTapLookup]）。
   late bool _tapLookup = widget.initialTapLookup;
 
+  /// 「显示特效字幕」当前开关（见 [VideoSubtitleJumpPanel.initialShowEffects]）。
+  late bool _showEffects = widget.initialShowEffects;
+
   /// 本面板此刻生效的查词回调：关掉「点字幕查词」后视同调用方没接查词——行文本不登记
   /// 命中、点按与悬停都不查词，整行点按回到纯跳转（与无查词能力的历史行为同一条路）。
   void Function(AudioCue cue, int graphemeIndex, Rect charRect)?
@@ -830,6 +933,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   List<AudioCue>? _cachedCues;
   int _cachedCuesLength = -1;
   VideoSubtitleListFilter? _cachedFilter;
+
+  /// [_cachedVisibleIndexes] 算出时的「显示特效字幕」开关（缓存键的一部分）。
+  /// 「显示特效字幕」开着时各代表行的特效富文本（[subtitleListEffectSpan]，null = 本行
+  /// 不着色）。与 dedup 表同生命周期（[_clearCueCaches] 一起清）；span 不含基础样式，
+  /// 字号 / 当前行配色变化不用作废。
+  final Map<int, InlineSpan?> _cachedEffectSpanByRaw = <int, InlineSpan?>{};
   List<int> _cachedVisibleIndexes = const <int>[];
   Map<int, int> _cachedVisibleIndexByRawIndex = const <int, int>{};
 
@@ -849,6 +958,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// [mergePerCharacterCueGroups]）。与 [_cachedDedupCues] 同生命周期、同一次遍历刷新。
   /// 非逐字行不在表内，[_rowCue] 回落原 cue（既有行为逐像素不变）。
   Map<int, AudioCue> _cachedMergedByRep = const <int, AudioCue>{};
+
+  /// 代表行 raw → 逐字组成员（拼接顺序），与 [_cachedMergedByRep] 同一次遍历刷新。
+  Map<int, List<AudioCue>> _cachedMergedMembersByRep =
+      const <int, List<AudioCue>>{};
 
   /// 行高测量缓存（BUG-1034）：库级共享的 [videoSubtitleRowExtentCache]，见
   /// [_rowExtentForCue]。
@@ -960,7 +1073,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   /// 高度纳入取最大值，因为 `Row` 的高度是子项高度的最大值。结果按「文本 + 是否加粗」缓存，
   /// 宽度、字号或 textScaler 变化时整体作废——`SliverVariedExtentList` 每次布局都要遍历
   /// 全部条目累加 maxScrollExtent，没有缓存会把 TextPainter 跑进每一帧。
-  double _rowExtentForCue(AudioCue cue, double rowWidth, {required bool bold}) {
+  double _rowExtentForCue(
+    AudioCue cue,
+    double rowWidth, {
+    required bool bold,
+    InlineSpan? effectSpan,
+  }) {
     // 排版环境签名：宽度 / 字号 / textScaler / 字体 / 书写方向 / 时间戳列宽任一
     // 变化，旧行高全部作废（M3E / 经典两种行几何靠 key 前缀区分，可以并存）。
     _rowExtentCache.bind((
@@ -973,8 +1091,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     ));
     // M3E：收藏行在时间戳胶囊下多一颗星，行高可能变高——收藏态进缓存键。
     final bool favorited = _m3e && widget.isCueFavorited(cue);
+    // 特效着色（粗体 / 斜体会改字宽）进键：同文本的纯文本行与着色行各量各的。
+    final String effectKey = effectSpan == null
+        ? ''
+        : 'e${effectSpan.hashCode}';
     final String key =
-        '${_m3e ? 'm' : 'c'}${bold ? 1 : 0}${favorited ? 1 : 0}\u0000${cue.text}';
+        '${_m3e ? 'm' : 'c'}${bold ? 1 : 0}${favorited ? 1 : 0}$effectKey\u0000${cue.text}';
     final double? cached = _rowExtentCache[key];
     if (cached != null) return cached;
     final double extent = _measureRowExtent(
@@ -982,8 +1104,68 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       rowWidth,
       bold,
       favorited: favorited,
+      effectSpan: effectSpan,
     );
     _rowExtentCache.store(key, extent);
+    return extent;
+  }
+
+  /// 本次构建的列表行高备忘（video-23），按**可见行下标**存。
+  ///
+  /// `itemExtentBuilder` 每次布局都要遍历全部行（算总滚动长度、首个子项偏移），
+  /// 跟随播放的自动滚动动画里每帧都布局；而 [_rowExtentForCue] 每调一次都要拼
+  /// 一条带整句正文的缓存键、M3E 下还要跑一遍收藏谓词。实测 1 万行时一帧要调
+  /// 十几万次收藏谓词，帧耗时随行数线性涨。这里把一次构建内算过的行高按下标
+  /// 记下：布局 / 滚动帧只读数组。
+  ///
+  /// 生命期 = 一次构建：两个列表构建点（经典 / M3E）进来先 [_resetRowExtentMemo]，
+  /// 字号 / 字体 / 宽度档位这些会改行高的输入都经 setState 重建，自然换一份新备忘；
+  /// 同一次构建里行高与已构建的行严格一致。不重建也可能变的输入另作备忘键：行宽
+  /// （父级只改约束）、当前句（加粗改断行，决定 [_isRowBold]）——任一变了整份作废，
+  /// 不依赖「换句一定 setState」这条隐式契约。
+  ///
+  /// 收藏态（M3E 收藏行多一颗星）是唯一靠重建作废的行高输入：[isCueFavorited] 是
+  /// 谓词、没有版本号可做键，逐行调它正是本备忘要省掉的开销。契约：收藏变化必须
+  /// 让面板重建（页面层 toggle 收藏后 setState，面板的 `isCueFavorited` 参数随之
+  /// 重新下发）；以后若改成不重建面板的 Listenable 驱动，必须同时在那条通知里调
+  /// [_resetRowExtentMemo]。
+  List<double?> _rowExtentMemo = const <double?>[];
+  List<int>? _rowExtentMemoIndexes;
+  double? _rowExtentMemoWidth;
+  int? _rowExtentMemoCurrentCue;
+
+  void _resetRowExtentMemo() {
+    _rowExtentMemoIndexes = null;
+  }
+
+  /// 可见行 [visibleIndex] 的行高：本次构建内同一份 [visibleIndexes]、同一行宽下
+  /// 只量一次（见 [_rowExtentMemo]）。
+  double _visibleRowExtent(
+    List<AudioCue> cues,
+    List<int> visibleIndexes,
+    int visibleIndex,
+    double rowWidth,
+  ) {
+    final int currentCue = widget.controller.currentCueIndex;
+    if (!identical(visibleIndexes, _rowExtentMemoIndexes) ||
+        rowWidth != _rowExtentMemoWidth ||
+        currentCue != _rowExtentMemoCurrentCue ||
+        _rowExtentMemo.length != visibleIndexes.length) {
+      _rowExtentMemoIndexes = visibleIndexes;
+      _rowExtentMemoWidth = rowWidth;
+      _rowExtentMemoCurrentCue = currentCue;
+      _rowExtentMemo = List<double?>.filled(visibleIndexes.length, null);
+    }
+    final double? memo = _rowExtentMemo[visibleIndex];
+    if (memo != null) return memo;
+    final int rawIndex = visibleIndexes[visibleIndex];
+    final double extent = _rowExtentForCue(
+      _rowCue(cues, rawIndex),
+      rowWidth,
+      bold: _isRowBold(rawIndex),
+      effectSpan: _effectSpanForRow(cues, rawIndex),
+    );
+    _rowExtentMemo[visibleIndex] = extent;
     return extent;
   }
 
@@ -992,10 +1174,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     double rowWidth,
     bool bold, {
     bool favorited = false,
+    InlineSpan? effectSpan,
   }) {
     final double textHeight = _measureTextHeight(
       text: text,
       style: _rowTextStyle(bold: bold),
+      effectSpan: effectSpan,
       maxWidth: _rowTextWidth(rowWidth, favorited: favorited),
     );
     // Row 高度 = 子项高度最大值：文本、时间戳单行、动作图标。
@@ -1039,9 +1223,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     required TextStyle style,
     required double maxWidth,
     TextHeightBehavior? heightBehavior,
+    InlineSpan? effectSpan,
   }) {
     final TextPainter painter = TextPainter(
-      text: TextSpan(text: text, style: style),
+      // 与 [SubtitleTranscriptText] 渲染特效行同构：特效 span 挂在行样式之下。
+      text: effectSpan == null
+          ? TextSpan(text: text, style: style)
+          : TextSpan(style: style, children: <InlineSpan>[effectSpan]),
       textAlign: TextAlign.start,
       textDirection: _textDirection,
       textScaler: _textScaler,
@@ -1069,9 +1257,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   ) {
     double offset = 0;
     for (int i = 0; i < visibleIndex; i++) {
-      final int rawIndex = visibleIndexes[i];
-      final AudioCue cue = _rowCue(cues, rawIndex);
-      offset += _rowExtentForCue(cue, rowWidth, bold: _isRowBold(rawIndex));
+      offset += _visibleRowExtent(cues, visibleIndexes, i, rowWidth);
     }
     return offset;
   }
@@ -1359,6 +1545,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final double rowExtent = _rowExtentForCue(
       targetCue,
       rowWidth,
+      effectSpan: _effectSpanForRow(cues, currentIndex),
       // 与 [_estimatedScrollOffsetForVisibleIndex] / 真实渲染同源判加粗：目标行正在播放
       // 时加粗，落在静默 gap 里回落到的最近行则不加粗（BUG-1484），否则估算行高偏大。
       bold: _isRowBold(currentIndex),
@@ -1395,6 +1582,16 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     if (_autoScroll) {
       _scheduleScrollToCurrentCue();
     }
+  }
+
+  void _toggleShowEffects() {
+    setState(() {
+      _showEffects = !_showEffects;
+      // 可见集不变（不筛选），只有特效行的样式 / 行高变：让自动滚动按新行高重新居中。
+      _lastScrolledIndex = -1;
+    });
+    widget.onShowEffectsChanged?.call(_showEffects);
+    _scheduleScrollToCurrentCue();
   }
 
   void _toggleTapLookup() {
@@ -1465,10 +1662,12 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   /// BUG-1907：导出用的收藏句集合。
   ///
-  /// 口径**刻意**是「收藏档在去重后实际渲染的那批行」（与「收藏 N 句」计数同源），
-  /// 而不是当前可见行——搜索着导出只导搜索结果会是个陷阱。
+  /// 口径**刻意**是「收藏档不带搜索时实际渲染的那批行」（与「收藏 N 句」计数同源，
+  /// 都取 [_listBaseRawIndexes]：去重 + 「显示特效字幕」过滤），而不是当前可见行——
+  /// 搜索着导出只导搜索结果会是个陷阱。特效字幕被隐藏时，导出与计数一起不含特效收藏，
+  /// 保证「收藏 N 句」= 导出 N 句。
   List<AudioCue> _favoriteCuesForExport(List<AudioCue> cues) => <AudioCue>[
-    for (final int i in _dedupedRawIndexes(cues))
+    for (final int i in _listBaseRawIndexes(cues))
       if (widget.isCueFavorited(_rowCue(cues, i))) _rowCue(cues, i),
   ];
 
@@ -1530,12 +1729,34 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
   }
 
   int _favoriteCueCount(List<AudioCue> cues) {
-    // BUG-841：只数去重后的代表行，与 favorites 档实际渲染的行一一对应。
+    // BUG-841：只数列表基集合里的代表行（去重 + 「显示特效字幕」过滤，见
+    // [_listBaseRawIndexes]），与 favorites 档实际渲染的行一一对应。
     int count = 0;
-    for (final int i in _dedupedRawIndexes(cues)) {
+    for (final int i in _listBaseRawIndexes(cues)) {
       if (widget.isCueFavorited(_rowCue(cues, i))) count++;
     }
     return count;
+  }
+
+  /// 全部 / 收藏两档共用的列表基集合：去重后的代表行（BUG-841）。[_visibleCueIndexes]
+  /// 与 [_favoriteCueCount] / 收藏导出都只从这里取，保证收藏计数 / 导出与列表条目一致。
+  /// 「显示特效字幕」不参与（left3545：它只管样式，不筛选）。
+  List<int> _listBaseRawIndexes(List<AudioCue> cues) =>
+      _dedupedRawIndexes(cues);
+
+  /// 代表行 [rawIndex] 的特效富文本（[subtitleListEffectSpan]）；开关关着或本行不是
+  /// 特效时 null。行渲染与行高测量都经这里取，二者同源（BUG-1034）。
+  InlineSpan? _effectSpanForRow(List<AudioCue> cues, int rawIndex) {
+    if (!_showEffects || rawIndex < 0 || rawIndex >= cues.length) return null;
+    final AudioCue rowCue = _rowCue(cues, rawIndex);
+    return _cachedEffectSpanByRaw.putIfAbsent(
+      rawIndex,
+      () => subtitleListEffectSpan(
+        rowText: rowCue.text,
+        cue: cues[rawIndex],
+        members: _cachedMergedMembersByRep[rawIndex],
+      ),
+    );
   }
 
   /// BUG-841：按 `(startMs, 文本)` 折叠重复 cue，返回代表行 raw 下标（升序）并同步
@@ -1554,6 +1775,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     _cachedDedupIndexes = rows.indexes;
     _cachedRepresentativeByRaw = rows.representativeByRaw;
     _cachedMergedByRep = rows.mergedByRep;
+    _cachedMergedMembersByRep = rows.mergedMembersByRep;
+    _cachedEffectSpanByRaw.clear();
     return rows.indexes;
   }
 
@@ -1596,9 +1819,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       return _cachedVisibleIndexes;
     }
     // BUG-841：两档都以**去重后**的代表行为基（特效叠加同句拷贝只出一行）；收藏
-    // 再在代表行上过滤，计数 chip 走同一去重集合（[_favoriteCueCount]）
-    // 故数量与列表一致。
-    final List<int> base = _dedupedRawIndexes(cues);
+    // 再在代表行上过滤，计数 chip 走同一基集合（[_listBaseRawIndexes]，
+    // [_favoriteCueCount] 同源）故数量与列表一致。
+    final List<int> base = _listBaseRawIndexes(cues);
     late List<int> indexes;
     switch (_filter) {
       case VideoSubtitleListFilter.all:
@@ -1675,6 +1898,8 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     // 与 dedup 表同生命周期（同一次遍历产出）：漏清会让换轨/换片后的列表拿到上一份
     // 字幕的合成整句（TODO-1384）。
     _cachedMergedByRep = const <int, AudioCue>{};
+    _cachedMergedMembersByRep = const <int, List<AudioCue>>{};
+    _cachedEffectSpanByRaw.clear();
   }
 
   void _retainRowKeyFor(int? rawIndex) {
@@ -1715,6 +1940,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final ColorScheme cs = widget.colorScheme;
     final List<AudioCue> cues = widget.controller.cues;
     final List<int> visibleIndexes = _visibleCueIndexes(cues);
+    _resetRowExtentMemo();
     // BUG-841：当前句可能是被折叠的重复项——映射到其代表行 raw（列表渲染的唯一行）供高亮
     // 与 rowKey 保留，否则当前句落在重复拷贝时整行都不高亮。
     final int currentIndex = _representativeRaw(
@@ -1786,12 +2012,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                               if (i < 0 || i >= visibleIndexes.length) {
                                 return null;
                               }
-                              final int rawIndex = visibleIndexes[i];
-                              final AudioCue cue = _rowCue(cues, rawIndex);
-                              return _rowExtentForCue(
-                                cue,
+                              return _visibleRowExtent(
+                                cues,
+                                visibleIndexes,
+                                i,
                                 dimensions.crossAxisExtent,
-                                bold: _isRowBold(rawIndex),
                               );
                             },
                         itemCount: visibleIndexes.length,
@@ -1828,6 +2053,9 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
 
   Widget _buildHeader(ColorScheme cs, List<AudioCue> cues) {
     final double iconSize = widget.fontSize + 4;
+    final bool showExport =
+        _filter == VideoSubtitleListFilter.favorites &&
+        widget.onExportFavorites != null;
     return Padding(
       padding: const EdgeInsets.only(left: 16, right: 4, top: 4, bottom: 6),
       child: Column(
@@ -1920,90 +2148,136 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                       ),
                   ],
                   <Widget>[
-                    // TODO-637：字幕列表是「带 × 的非阻塞侧栏」——头部带回右上角 × 关闭
-                    // 按钮（BUG-254 当初移除 ×、改点画面 barrier 关闭，但该 barrier 罩在画面
-                    // 字幕查词手势上致画面查不了词，TODO-636）。× 调 onClose（页面层清挖词
-                    // 选择 + 隐藏列表），与 Esc / 控制条字幕按钮三路关闭等价。锁定按钮（原
-                    // TODO-611，唯一作用是门控已删的 barrier）随 barrier 一并移除（TODO-634）。
-                    FushiIconButtonControl(
-                      tooltip: MaterialLocalizations.of(
-                        context,
-                      ).closeButtonTooltip,
-                      icon: FushiIcon(FushiIcons.close, size: iconSize),
-                      color: cs.onSurfaceVariant,
-                      onPressed: widget.onClose,
-                      visualDensity: VisualDensity.compact,
-                      style: _kHeaderIconButtonStyle,
-                    ),
+                    if (widget.onClose != null)
+                      // TODO-637：字幕列表是「带 × 的非阻塞侧栏」——头部带回右上角 × 关闭
+                      // 按钮（BUG-254 当初移除 ×、改点画面 barrier 关闭，但该 barrier 罩在画面
+                      // 字幕查词手势上致画面查不了词，TODO-636）。× 调 onClose（页面层清挖词
+                      // 选择 + 隐藏列表），与 Esc / 控制条字幕按钮三路关闭等价。锁定按钮（原
+                      // TODO-611，唯一作用是门控已删的 barrier）随 barrier 一并移除（TODO-634）。
+                      FushiIconButtonControl(
+                        tooltip: MaterialLocalizations.of(
+                          context,
+                        ).closeButtonTooltip,
+                        icon: FushiIcon(FushiIcons.close, size: iconSize),
+                        color: cs.onSurfaceVariant,
+                        onPressed: widget.onClose,
+                        visualDensity: VisualDensity.compact,
+                        style: _kHeaderIconButtonStyle,
+                      ),
                   ],
                 ],
               ),
             ],
           ),
-          Row(
-            children: <Widget>[
-              Expanded(
-                child: HorizontalDragScrollable(
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: FushiSegmentedButton<VideoSubtitleListFilter>(
-                      showSelectedIcon: false,
-                      segments: VideoSubtitleListFilter.values
-                          .map(
-                            (VideoSubtitleListFilter filter) =>
-                                ButtonSegment<VideoSubtitleListFilter>(
-                                  value: filter,
-                                  label: Text(_filterLabel(filter)),
-                                ),
-                          )
-                          .toList(growable: false),
-                      selected: <VideoSubtitleListFilter>{_filter},
-                      onSelectionChanged: _setFilter,
-                      style: SegmentedButton.styleFrom(
-                        visualDensity: VisualDensity.compact,
-                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                        padding: const EdgeInsets.symmetric(horizontal: 10),
-                        textStyle: TextStyle(fontSize: widget.fontSize - 1),
+          // 拍板台 left3646（选 A：筛选区优先、计数让位）：筛选区先按自身宽度排，上限是整行
+          // 减去缝与固定宽的特效开关 / 导出钮（按 [_kHeaderIconButtonMaxExtent] 上界预留，
+          // 两钮始终完整可见）；收藏计数只拿剩下的，放不下时省略号截断。旧写法让筛选区与计数
+          // 同为 Flexible（flex 1），各以剩余宽度的一半为上限、计数用不满的那半也不回补，
+          // 宽面板里筛选区照样只露半截、要横拖。真窄到连筛选区都放不下时它仍可横向拖动，整行不右溢。
+          LayoutBuilder(
+            builder: (BuildContext context, BoxConstraints box) => Row(
+              children: <Widget>[
+                ConstrainedBox(
+                  constraints: BoxConstraints(
+                    maxWidth: math.max(
+                      0,
+                      box.maxWidth -
+                          _kClassicFilterRowGap -
+                          _kHeaderIconButtonMaxExtent -
+                          (showExport ? _kHeaderIconButtonMaxExtent : 0),
+                    ),
+                  ),
+                  child: HorizontalDragScrollable(
+                    child: SingleChildScrollView(
+                      scrollDirection: Axis.horizontal,
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: <Widget>[
+                          FushiSegmentedButton<VideoSubtitleListFilter>(
+                            showSelectedIcon: false,
+                            segments: VideoSubtitleListFilter.values
+                                .map(
+                                  (VideoSubtitleListFilter filter) =>
+                                      ButtonSegment<VideoSubtitleListFilter>(
+                                        value: filter,
+                                        label: Text(_filterLabel(filter)),
+                                      ),
+                                )
+                                .toList(growable: false),
+                            selected: <VideoSubtitleListFilter>{_filter},
+                            onSelectionChanged: _setFilter,
+                            style: SegmentedButton.styleFrom(
+                              visualDensity: VisualDensity.compact,
+                              tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
+                              textStyle: TextStyle(
+                                fontSize: widget.fontSize - 1,
+                              ),
+                            ),
+                          ),
+                        ],
                       ),
                     ),
                   ),
                 ),
-              ),
-              // BUG-1907：导出收藏语句。只在收藏档出现——它导的就是这一档的内容，
-              // 放在计数旁边语义自洽；也避免把第一行挤爆（面板最窄 240px）。
-              if (_filter == VideoSubtitleListFilter.favorites &&
-                  widget.onExportFavorites != null)
+                // H7r4mf_z2n / left3545：「显示特效字幕」开关（列表里给特效行套字幕自带样式，
+                // 不筛选）。经典版式第一行工具组在最窄面板里已满，只能落在第二行；不放进上面
+                // 可横向拖动的筛选区：收藏档右侧多出导出钮与计数后可滚区被压窄，开关会被裁到
+                // 视口外。放在可滚区外与导出 / 计数同排，任何面板宽度下都直接可见。
+                const SizedBox(width: _kClassicFilterRowGap),
                 FushiIconButtonControl(
-                  tooltip: t.video_subtitle_list_export_favorites,
-                  // 全平台统一 Material 分享图标（ios_share 是 iOS 专属视觉，巡检 PR-3；
-                  // 收藏夹页的导出按钮同此约定）。
-                  icon: FushiIcon(FushiIcons.share, size: iconSize),
-                  color: cs.onSurfaceVariant,
+                  key: const ValueKey<String>(
+                    'video-subtitle-list-show-effects',
+                  ),
+                  tooltip: t.video_subtitle_list_show_effects,
+                  icon: FushiIcon(FushiIcons.animation, size: iconSize),
+                  color: _showEffects ? cs.primary : cs.onSurfaceVariant,
+                  // 开 / 关不只靠颜色：选中态同时进 Semantics（toggled）。
+                  isSelected: _showEffects,
+                  onPressed: _toggleShowEffects,
                   visualDensity: VisualDensity.compact,
-                  onPressed: _favoriteCueCount(cues) == 0
-                      ? null
-                      : () => widget.onExportFavorites!(
-                          _favoriteCuesForExport(widget.controller.cues),
-                        ),
+                  style: _kHeaderIconButtonStyle,
                 ),
-              // TODO-631：收藏档收藏数。删了独立「本集收藏」面板后，其顶部「收藏 N」计数
-              // 并入字幕列表收藏档——只在 favorites 档显示，让用户切到收藏档时一眼看到本
-              // 视频已收藏多少句（与列表条目数一致，复用同一 isCueFavorited 谓词）。
-              if (_filter == VideoSubtitleListFilter.favorites)
-                Padding(
-                  padding: const EdgeInsets.only(left: 8, right: 4),
-                  child: Text(
-                    t.video_favorite_count(count: _favoriteCueCount(cues)),
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    style: TextStyle(
-                      color: cs.primary,
-                      fontSize: widget.fontSize - 1,
-                      fontWeight: FontWeight.w600,
+                // BUG-1907：导出收藏语句。只在收藏档出现——它导的就是这一档的内容，
+                // 放在计数旁边语义自洽；也避免把第一行挤爆（面板最窄 240px）。
+                if (showExport)
+                  FushiIconButtonControl(
+                    tooltip: t.video_subtitle_list_export_favorites,
+                    // 全平台统一 Material 分享图标（ios_share 是 iOS 专属视觉，巡检 PR-3；
+                    // 收藏夹页的导出按钮同此约定）。
+                    icon: FushiIcon(FushiIcons.share, size: iconSize),
+                    color: cs.onSurfaceVariant,
+                    visualDensity: VisualDensity.compact,
+                    style: _kHeaderIconButtonStyle,
+                    onPressed: _favoriteCueCount(cues) == 0
+                        ? null
+                        : () => widget.onExportFavorites!(
+                            _favoriteCuesForExport(widget.controller.cues),
+                          ),
+                  ),
+                // TODO-631：收藏档收藏数。删了独立「本集收藏」面板后，其顶部「收藏 N」计数
+                // 并入字幕列表收藏档——只在 favorites 档显示，让用户切到收藏档时一眼看到本
+                // 视频已收藏多少句（与列表条目数一致，复用同一 isCueFavorited 谓词）。
+                if (_filter == VideoSubtitleListFilter.favorites)
+                  Flexible(
+                    child: Padding(
+                      padding: const EdgeInsets.only(left: 8, right: 4),
+                      child: Text(
+                        t.video_favorite_count(count: _favoriteCueCount(cues)),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: cs.primary,
+                          fontSize: widget.fontSize - 1,
+                          fontWeight: FontWeight.w600,
+                        ),
+                      ),
                     ),
                   ),
-                ),
-            ],
+              ],
+            ),
           ),
           // BUG-1907：搜索输入框。收起时完全不占高度——面板最窄 240px，常驻一行
           // 输入框会实打实吃掉列表可视区。
@@ -2182,7 +2456,13 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                 ),
               ),
             ),
-            text: _buildRowText(cue, textColor, selected, textKey),
+            text: _buildRowText(
+              cue,
+              textColor,
+              selected,
+              textKey,
+              effectSpan: _effectSpanForRow(widget.controller.cues, rawIndex),
+            ),
             trailing: _buildRowActions(cs, cue, rawIndex, selected, favorited),
           ),
         ),
@@ -2216,18 +2496,26 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     AudioCue cue,
     Color textColor,
     bool selected,
-    GlobalKey? textKey,
-  ) {
+    GlobalKey? textKey, {
+    InlineSpan? effectSpan,
+  }) {
     // BUG-1034：与行高测量（[_measureRowExtent]）共用同一样式，断行结果一致，末行不被裁。
     final TextStyle textStyle = _rowTextStyle(bold: selected, color: textColor);
     final void Function(AudioCue, int, Rect)? onLookup = _lookupCue;
     if (onLookup == null) {
       // 无查词能力：整段文本（换行），不叠 tap 层，外层 InkWell 行点击仍 seek。
+      if (effectSpan != null) {
+        return Text.rich(
+          TextSpan(children: <InlineSpan>[effectSpan]),
+          style: textStyle,
+        );
+      }
       return Text(cue.text, style: textStyle);
     }
     return SubtitleTranscriptText(
       text: cue.text,
       style: textStyle,
+      richSpan: effectSpan,
       textKey: textKey,
       onLookup: (int index, Rect rect) => onLookup(cue, index, rect),
       onBackgroundTap: () => widget.onTapCue(cue),
@@ -2290,6 +2578,7 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final List<AudioCue> cues = widget.controller.cues;
     final List<int> visibleIndexes = _visibleCueIndexes(cues);
+    _resetRowExtentMemo();
     final int currentIndex = _representativeRaw(
       widget.controller.currentCueIndex,
     );
@@ -2318,11 +2607,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
             : null,
         itemExtentBuilder: (int i, SliverLayoutDimensions dimensions) {
           if (i < 0 || i >= count) return null;
-          final int rawIndex = visibleIndexes[i];
-          return _rowExtentForCue(
-            _rowCue(cues, rawIndex),
+          return _visibleRowExtent(
+            cues,
+            visibleIndexes,
+            i,
             dimensions.crossAxisExtent,
-            bold: _isRowBold(rawIndex),
           );
         },
         itemCount: count,
@@ -2490,6 +2779,11 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
       ),
     );
 
+    // 收藏档且宿主接了导出时，分段行右端有一枚固定宽的导出按钮。
+    final bool showExport =
+        _filter == VideoSubtitleListFilter.favorites &&
+        widget.onExportFavorites != null;
+
     // 「全部 / 收藏」贴合内容宽的分段控件，标签不换行。
     final Widget filter = FushiSegmentedButton<VideoSubtitleListFilter>(
       showSelectedIcon: false,
@@ -2574,6 +2868,26 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                             onPressed: _toggleAutoScroll,
                           ),
                         ),
+                        // H7r4mf_z2n / left3545：「显示特效字幕」开关（列表里给特效行套字幕
+                        // 自带样式），与自动滚动 / 点字幕查词同一种切换钮，按工具栏规范平铺、
+                        // 放不下时随其余动作收进「⋯」。
+                        FushiAdaptiveAction(
+                          icon: FushiIcons.animation,
+                          label: t.video_subtitle_list_show_effects,
+                          onPressed: _toggleShowEffects,
+                          selected: _showEffects,
+                          inlineBuilder: (BuildContext _) => KeyedSubtree(
+                            key: const ValueKey<String>(
+                              'video-subtitle-list-show-effects',
+                            ),
+                            child: toolButton(
+                              icon: FushiIcons.animation,
+                              tooltip: t.video_subtitle_list_show_effects,
+                              selected: _showEffects,
+                              onPressed: _toggleShowEffects,
+                            ),
+                          ),
+                        ),
                         if (widget.onLookupCue != null)
                           FushiAdaptiveAction(
                             icon: _tapLookup
@@ -2624,84 +2938,108 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                   ),
                 ),
               ),
-              const SizedBox(width: 4),
-              FushiTooltip(
-                message: MaterialLocalizations.of(context).closeButtonTooltip,
-                child: FushiIconButtonControl(
-                  onPressed: widget.onClose,
-                  // 与同一行工具按钮同尺寸（36）。
-                  style: IconButton.styleFrom(
-                    fixedSize: const Size.square(36),
-                    minimumSize: const Size.square(36),
-                    padding: EdgeInsets.zero,
-                    tapTargetSize: MaterialTapTargetSize.padded,
-                    backgroundColor: FushiDesignTokens.of(
-                      context,
-                    ).surfaces.search,
+              if (widget.onClose != null) ...<Widget>[
+                const SizedBox(width: 4),
+                FushiTooltip(
+                  message: MaterialLocalizations.of(context).closeButtonTooltip,
+                  child: FushiIconButtonControl(
+                    onPressed: widget.onClose,
+                    // 与同一行工具按钮同尺寸（36）。
+                    style: IconButton.styleFrom(
+                      fixedSize: const Size.square(36),
+                      minimumSize: const Size.square(36),
+                      padding: EdgeInsets.zero,
+                      tapTargetSize: MaterialTapTargetSize.padded,
+                      backgroundColor: FushiDesignTokens.of(
+                        context,
+                      ).surfaces.search,
+                    ),
+                    color: cs.onSurface,
+                    icon: const FushiIcon(FushiIcons.close, size: 20),
                   ),
-                  color: cs.onSurface,
-                  icon: const FushiIcon(FushiIcons.close, size: 20),
                 ),
-              ),
+              ],
             ],
           ),
           const SizedBox(height: 8),
           SizedBox(
             height: 40,
-            child: Row(
-              children: <Widget>[
-                // 窄面板里分段可压缩（标签省略号），按钮高度 / 命中区不变，不右溢。
-                Flexible(child: filter),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: _filter == VideoSubtitleListFilter.favorites
-                      ? Row(
-                          mainAxisAlignment: MainAxisAlignment.end,
-                          children: <Widget>[
-                            Flexible(
-                              child: Text(
-                                t.video_favorite_count(
-                                  count: _favoriteCueCount(cues),
+            // BUG-4249（反馈 RMq4uXplRf）：分段先按自身内容取宽，右侧收藏计数只拿剩下的。
+            // 旧写法 `Flexible(filter)` + `Expanded(计数)` 同为 flex 1，Row 把剩余宽度
+            // 对半分——分段最多只能拿半行，右侧空着（「全部」档）也让不出来。最窄 240
+            // 面板里每段只剩 ~51px，扣掉 24px 内边距放不下「全部」两个字，标签被省略成空胶囊。
+            // 分段的上限是整行减去缝与导出按钮（导出按钮固定宽、不可压，必须留给它），
+            // 真放不下时仍由分段自己按 [fushiSegmentWidths] 收窄，不右溢。
+            child: LayoutBuilder(
+              builder: (BuildContext context, BoxConstraints box) => Row(
+                children: <Widget>[
+                  ConstrainedBox(
+                    constraints: BoxConstraints(
+                      maxWidth: math.max(
+                        0,
+                        box.maxWidth -
+                            _kFilterRowGap -
+                            (showExport ? _kFilterRowExportExtent : 0),
+                      ),
+                    ),
+                    child: filter,
+                  ),
+                  const SizedBox(width: _kFilterRowGap),
+                  Expanded(
+                    child: _filter == VideoSubtitleListFilter.favorites
+                        ? Row(
+                            mainAxisAlignment: MainAxisAlignment.end,
+                            children: <Widget>[
+                              Flexible(
+                                child: Text(
+                                  t.video_favorite_count(
+                                    count: _favoriteCueCount(cues),
+                                  ),
+                                  maxLines: 1,
+                                  overflow: TextOverflow.ellipsis,
+                                  style: Theme.of(context).textTheme.labelLarge
+                                      ?.copyWith(
+                                        color: cs.primary,
+                                        fontWeight: FontWeight.w600,
+                                      ),
                                 ),
-                                maxLines: 1,
-                                overflow: TextOverflow.ellipsis,
-                                style: Theme.of(context).textTheme.labelLarge
-                                    ?.copyWith(
-                                      color: cs.primary,
-                                      fontWeight: FontWeight.w600,
-                                    ),
                               ),
-                            ),
-                            if (widget.onExportFavorites != null)
-                              FushiTooltip(
-                                message: t.video_subtitle_list_export_favorites,
-                                child: FushiIconButtonControl(
-                                  onPressed: _favoriteCueCount(cues) == 0
-                                      ? null
-                                      : () => widget.onExportFavorites!(
-                                          _favoriteCuesForExport(
-                                            widget.controller.cues,
+                              if (showExport)
+                                FushiTooltip(
+                                  message:
+                                      t.video_subtitle_list_export_favorites,
+                                  child: FushiIconButtonControl(
+                                    onPressed: _favoriteCueCount(cues) == 0
+                                        ? null
+                                        : () => widget.onExportFavorites!(
+                                            _favoriteCuesForExport(
+                                              widget.controller.cues,
+                                            ),
                                           ),
-                                        ),
-                                  style: IconButton.styleFrom(
-                                    fixedSize: const Size.square(36),
-                                    minimumSize: const Size.square(36),
-                                    padding: EdgeInsets.zero,
-                                    tapTargetSize:
-                                        MaterialTapTargetSize.shrinkWrap,
-                                  ),
-                                  color: cs.onSurfaceVariant,
-                                  icon: const FushiIcon(
-                                    FushiIcons.share,
-                                    size: 20,
+                                    style: IconButton.styleFrom(
+                                      fixedSize: const Size.square(
+                                        _kFilterRowExportExtent,
+                                      ),
+                                      minimumSize: const Size.square(
+                                        _kFilterRowExportExtent,
+                                      ),
+                                      padding: EdgeInsets.zero,
+                                      tapTargetSize:
+                                          MaterialTapTargetSize.shrinkWrap,
+                                    ),
+                                    color: cs.onSurfaceVariant,
+                                    icon: const FushiIcon(
+                                      FushiIcons.share,
+                                      size: 20,
+                                    ),
                                   ),
                                 ),
-                              ),
-                          ],
-                        )
-                      : const SizedBox.shrink(),
-                ),
-              ],
+                            ],
+                          )
+                        : const SizedBox.shrink(),
+                  ),
+                ],
+              ),
             ),
           ),
           // 搜索：展开成 M3E 搜索栏（收起时不占高度）。
@@ -2923,6 +3261,10 @@ class _VideoSubtitleJumpPanelState extends State<VideoSubtitleJumpPanel> {
                                 textColor,
                                 selected,
                                 textKey,
+                                effectSpan: _effectSpanForRow(
+                                  widget.controller.cues,
+                                  rawIndex,
+                                ),
                               ),
                             ),
                             // 已收藏：行尾常驻实心星（正文为它让位，测量同源）。

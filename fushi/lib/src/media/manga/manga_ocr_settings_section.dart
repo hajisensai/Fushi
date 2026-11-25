@@ -15,7 +15,13 @@ import 'package:fushi/src/media/manga/ocr/manga_ocr_job_registry.dart'
     show hostMangaOcrMaxParallelTasks;
 import 'package:fushi/src/media/manga/ocr/manga_ocr_local_model_labels.dart';
 import 'package:fushi/src/media/manga/ocr/manga_ocr_model_downloads.dart';
+import 'package:fushi/src/media/manga/manga_ocr_engine_probe.dart'
+    show kSystemOcrProbeTimeout;
 import 'package:fushi/src/media/manga/ocr/system_ocr_manga_service.dart';
+import 'package:fushi/src/ocr/system_ocr_channel.dart'
+    show MethodChannelSystemOcr, SystemOcrModelSetup, SystemOcrModelStatus;
+import 'package:fushi/src/ocr/system_ocr_setup_dialog.dart'
+    show showSystemOcrSetupDialog;
 import 'package:fushi/src/media/manga/reader/manga_reader_settings_panel_kit.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/sync/interconnect_manga_ocr_client.dart';
@@ -24,6 +30,7 @@ import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
+import 'package:fushi_engine/ocr/manga_ocr_custom_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_model_manifest.dart';
 import 'package:fushi_engine/ocr/manga_ocr_local_model.dart';
 import 'package:fushi_engine/ocr/manga_ocr_service.dart';
@@ -79,7 +86,10 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
     this.modelsDirProvider,
     this.modelImporter,
     this.pickImportPaths,
+    this.customModelSlot,
+    this.pickCustomModelFile,
     this.systemOcrRunner,
+    this.systemOcrSetup,
     this.pairedHostModelGetter,
     this.pairedHostModelSetter,
     this.remoteRunner,
@@ -136,8 +146,20 @@ class MangaOcrSettingsSection extends ConsumerStatefulWidget {
   /// null = 走真实系统选择器。返回 null / 空表示用户取消。
   final Future<List<String>?> Function(bool folderMode)? pickImportPaths;
 
+  /// The user-imported model slot; null = the real one
+  /// ([MangaOcrCustomModelStore]).
+  final MangaOcrCustomModelSlot? customModelSlot;
+
+  /// Picks one file for the custom model import (test hook): `dictionary` is
+  /// false for the `.onnx`, true for its dictionary. Returns null on cancel.
+  /// null = the system file picker.
+  final Future<String?> Function(bool dictionary)? pickCustomModelFile;
+
   /// 系统 OCR 可用性探测；null = 走真实平台通道。
   final SystemOcrMangaRunner? systemOcrRunner;
+
+  /// 系统 OCR 引导弹窗用的平台口；null = 走真实平台通道。
+  final SystemOcrModelSetup? systemOcrSetup;
 
   /// 「Fushi 互联服务端」点名的服务端模型（空串 = 服务端默认）。省略时服务端只有
   /// 一项、跟着服务端自己的选择走。
@@ -210,6 +232,13 @@ class _MangaOcrSettingsSectionState
 
   /// 手动导入态（导入期间禁用下载/删除，避免两条路径同时动同一批文件）。
   bool _importing = false;
+
+  /// What is imported in the custom slot (read with the status; null = empty or
+  /// another model is selected).
+  MangaOcrCustomModelInfo? _customInfo;
+
+  late final MangaOcrCustomModelSlot _customSlot =
+      widget.customModelSlot ?? MangaOcrCustomModelStore();
 
   /// 本机有没有系统自带 OCR。默认 false：未探测出结果之前不假装可用。
   bool _systemOcrAvailable = false;
@@ -366,14 +395,23 @@ class _MangaOcrSettingsSectionState
     final int request = ++_statusRequest;
     setState(() => _loadingStatus = true);
     MangaOcrModelStatus? status;
+    MangaOcrCustomModelInfo? customInfo;
     try {
       status = await widget.service.modelStatus();
     } catch (_) {
       status = null;
     }
+    if (_localModel.isUserImported) {
+      try {
+        customInfo = await _customSlot.readInfo();
+      } catch (_) {
+        customInfo = null;
+      }
+    }
     if (!mounted || request != _statusRequest) return;
     setState(() {
       _status = status;
+      _customInfo = customInfo;
       _loadingStatus = false;
     });
   }
@@ -394,9 +432,13 @@ class _MangaOcrSettingsSectionState
     final bool ok = await showFushiConfirmDialog(
       context: context,
       title: t.manga_ocr_delete_confirm_title,
-      message: t.manga_ocr_delete_confirm_message,
+      message: _localModel.isUserImported
+          ? t.manga_ocr_custom_model_delete_confirm_message
+          : t.manga_ocr_delete_confirm_message,
       icon: FushiIcons.delete,
-      confirmLabel: t.manga_ocr_delete,
+      confirmLabel: _localModel.isUserImported
+          ? t.manga_ocr_custom_model_delete_button
+          : t.manga_ocr_delete,
       destructive: true,
     );
     if (!ok || !mounted) return;
@@ -903,6 +945,29 @@ class _MangaOcrSettingsSectionState
     if (!mounted) return;
     setState(() => _enginePreference = choice.preference);
     await _writeEnginePreference(choice.preference);
+    if (choice.preference == MangaOcrEnginePreference.systemOcr) {
+      await _guideSystemOcrIfPlayServicesAbsent();
+    }
+  }
+
+  /// 选中系统 OCR 时设备根本没有 Play 服务（BUG-4705）：选项保留、偏好照写，但
+  /// 立刻弹引导说明它在这台设备上跑不了、并指向本机模型——否则用户要等到开书
+  /// 识别失败才知道。查不出来按「不确定」处理，不弹。
+  Future<void> _guideSystemOcrIfPlayServicesAbsent() async {
+    SystemOcrModelStatus status = SystemOcrModelStatus.ready;
+    try {
+      status = await (widget.systemOcrRunner ?? SystemOcrMangaService())
+          .modelStatus(language: _lensLanguage)
+          .timeout(kSystemOcrProbeTimeout);
+    } on Object {
+      status = SystemOcrModelStatus.ready;
+    }
+    if (!mounted || !status.playServicesAbsent) return;
+    await showSystemOcrSetupDialog(
+      context,
+      language: _lensLanguage,
+      setup: widget.systemOcrSetup ?? const MethodChannelSystemOcr(),
+    );
   }
 
   /// 默认引擎选择行：当前引擎的图标 + 名称与一句取舍作 supporting text，点按
@@ -1242,14 +1307,22 @@ class _MangaOcrSettingsSectionState
 
   /// 「OCR 忽略振假名」开关（反馈 ZBJTgLuPIb）：只裁来源自带的注音，不生成读音。
   Widget _buildIgnoreFurigana() {
+    // 振假名本来就由模型去掉的识别器（charspot / nar）不受这个开关影响（服务端
+    // 同一个判据：`MangaOcrRecognizerSpec.honoursIgnoreFurigana`）。这时开关拨了也
+    // 没有任何效果，所以不留一个能拨的死开关：显示为开（注音确实不会读进正文）、
+    // 不可操作，并写明原因；用户存的偏好不动，换回逐列模型时照旧生效。
+    final bool applies =
+        _localModel.generation.recognizer.honoursIgnoreFurigana;
     return AdaptiveSettingsSwitchRow(
       key: const ValueKey<String>('manga_ocr_ignore_furigana'),
       title: t.manga_ocr_ignore_furigana,
-      subtitle: t.manga_ocr_ignore_furigana_desc,
+      subtitle: applies
+          ? t.manga_ocr_ignore_furigana_desc
+          : t.manga_ocr_ignore_furigana_model_skips_desc,
       icon: FushiIcons.ocr,
       showIcon: true,
-      value: _ignoreFurigana,
-      onChanged: widget.ignoreFuriganaSetter == null
+      value: applies ? _ignoreFurigana : true,
+      onChanged: widget.ignoreFuriganaSetter == null || !applies
           ? null
           : (bool value) async {
               setState(() => _ignoreFurigana = value);
@@ -1441,6 +1514,9 @@ class _MangaOcrSettingsSectionState
         child: FushiLinearProgressIndicator(),
       );
     }
+    // The custom slot has no "download the model" step: its card adds, replaces
+    // and deletes the imported model whichever engine is selected.
+    if (_localModel.isUserImported) return _customModelCard(theme);
     if (_localModelsUsedByEngine) return _panelActiveModelCard(theme);
     final MangaOcrModelStatus? status = _status;
     if (status == null || !status.hasAnyFiles) {
@@ -1554,6 +1630,186 @@ class _MangaOcrSettingsSectionState
         if (status?.hasAnyFiles ?? false) _deleteButton(),
       ],
     );
+  }
+
+  // ── Custom model slot ─────────────────────────────────────────────────
+
+  /// Card of the user-imported slot: empty → "Add model…"; imported → its name
+  /// with "Replace" and "Delete" (plus "Download detectors" while the shared
+  /// detector files are still missing).
+  Widget _customModelCard(ThemeData theme) {
+    final MangaOcrModelStatus? status = _status;
+    final MangaOcrCustomModelInfo? info = _customInfo;
+    final bool busy = _importing || _deleting || _downloading;
+    final Widget importButton = _customImportButton(
+      replace: info != null,
+      emphasised: info == null,
+      busy: busy,
+    );
+    if (info == null) {
+      return _panelModelCard(
+        theme,
+        tone: FushiCardTone.secondary,
+        icon: FushiIcons.importFile,
+        title: t.manga_ocr_custom_model_empty_title,
+        subtitle: t.manga_ocr_custom_model_desc,
+        actions: <Widget>[
+          importButton,
+          // Leftover detector files of a deleted model stay deletable.
+          if (status?.hasAnyFiles ?? false) _customDeleteButton(busy),
+        ],
+      );
+    }
+    final String subtitle = t.manga_ocr_custom_model_installed_subtitle(
+      name: info.displayName,
+      entries: '${info.dictEntries}',
+    );
+    if (status?.allReady ?? false) {
+      return _panelModelCard(
+        theme,
+        tone: FushiCardTone.neutral,
+        icon: FushiIcons.downloadDone,
+        title: t.manga_ocr_model_status_ready,
+        subtitle: <String?>[
+          subtitle,
+          _modelSizeSubtitle(status),
+        ].whereType<String>().join('\n'),
+        actions: <Widget>[importButton, _customDeleteButton(busy)],
+      );
+    }
+    final int missingBytes = status == null
+        ? 0
+        : (status.totalBytes - status.obtainedBytes).clamp(
+            0,
+            status.totalBytes,
+          );
+    return _panelModelCard(
+      theme,
+      tone: FushiCardTone.secondary,
+      icon: FushiIcons.download,
+      title: t.manga_ocr_model_status_missing,
+      subtitle: subtitle,
+      notes: <String>[
+        t.manga_ocr_custom_model_detectors_missing(
+          size: _formatBytes(missingBytes),
+        ),
+      ],
+      actions: <Widget>[
+        FushiFilledButton.icon(
+          key: const ValueKey<String>('manga_ocr_custom_model_download'),
+          onPressed: busy ? null : _startDownload,
+          icon: const FushiIcon(FushiIcons.download, size: 18),
+          label: Text(t.manga_ocr_custom_model_detectors_download_button),
+        ),
+        importButton,
+        _customDeleteButton(busy),
+      ],
+    );
+  }
+
+  Widget _customImportButton({
+    required bool replace,
+    required bool emphasised,
+    required bool busy,
+  }) {
+    final VoidCallback? onPressed = busy
+        ? null
+        : () => unawaited(_runCustomImport());
+    final Widget icon = _importing
+        ? const SizedBox.square(
+            dimension: 16,
+            child: FushiCircularProgressIndicator(strokeWidth: 2),
+          )
+        : const FushiIcon(FushiIcons.importFile, size: 18);
+    final Widget label = Text(
+      _importing
+          ? t.manga_ocr_custom_model_import_running
+          : replace
+          ? t.manga_ocr_custom_model_replace_button
+          : t.manga_ocr_custom_model_add_button,
+    );
+    const ValueKey<String> key = ValueKey<String>(
+      'manga_ocr_custom_model_import',
+    );
+    return emphasised
+        ? FushiFilledButton.icon(
+            key: key,
+            onPressed: onPressed,
+            icon: icon,
+            label: label,
+          )
+        : FushiOutlinedButton.icon(
+            key: key,
+            onPressed: onPressed,
+            icon: icon,
+            label: label,
+          );
+  }
+
+  Widget _customDeleteButton(bool busy) => FushiOutlinedButton.icon(
+    key: const ValueKey<String>('manga_ocr_custom_model_delete'),
+    onPressed: busy ? null : _confirmDelete,
+    icon: _deleting
+        ? const SizedBox.square(
+            dimension: 16,
+            child: FushiCircularProgressIndicator(strokeWidth: 2),
+          )
+        : const FushiIcon(FushiIcons.delete, size: 18),
+    label: Text(t.manga_ocr_custom_model_delete_button),
+  );
+
+  /// Picks the `.onnx`, then its dictionary, and imports both. Validation runs
+  /// in the store (off the UI thread); the previous model stays in place until
+  /// the new one has passed.
+  Future<void> _runCustomImport() async {
+    if (_importing || _deleting || _downloading) return;
+    final String? modelPath = await _pickCustomFile(dictionary: false);
+    if (modelPath == null || !mounted) return;
+    final String? dictPath = await _pickCustomFile(dictionary: true);
+    if (dictPath == null || !mounted) return;
+    setState(() => _importing = true);
+    MangaOcrCustomModelInfo? info;
+    Object? failure;
+    try {
+      info = await _customSlot.importModel(
+        modelPath: modelPath,
+        dictPath: dictPath,
+      );
+    } on Object catch (error) {
+      failure = error;
+    } finally {
+      if (mounted) setState(() => _importing = false);
+    }
+    if (!mounted) return;
+    if (info == null) {
+      FushiToast.show(
+        msg:
+            '${t.manga_ocr_custom_model_import_failed}\n'
+            '${customMangaOcrImportErrorText(failure)}',
+        severity: ToastSeverity.error,
+      );
+    } else {
+      FushiToast.show(
+        msg: t.manga_ocr_custom_model_import_done(name: info.displayName),
+        severity: ToastSeverity.success,
+      );
+    }
+    await _loadStatus();
+  }
+
+  Future<String?> _pickCustomFile({required bool dictionary}) async {
+    final Future<String?> Function(bool)? injected = widget.pickCustomModelFile;
+    if (injected != null) return injected(dictionary);
+    // Any type: Android's picker cannot filter by `.onnx` / `.yml`; the store
+    // checks the extension and says which kind of file it wanted.
+    final FilePickerResult? picked = await FilePicker.platform.pickFiles(
+      dialogTitle: dictionary
+          ? t.manga_ocr_custom_model_pick_dict_title
+          : t.manga_ocr_custom_model_pick_model_title,
+      type: FileType.any,
+    );
+    final List<PlatformFile>? files = picked?.files;
+    return files == null || files.isEmpty ? null : files.first.path;
   }
 
   /// 模型卡骨架：形状底图标 + 标题 / 副标题（+ 尾部大数字）+ 波浪进度 + 说明 +

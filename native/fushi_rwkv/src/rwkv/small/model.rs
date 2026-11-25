@@ -1,9 +1,9 @@
 // Copyright: Fushi contributors
 // License: GNU AGPL, version 3 or later; http://www.gnu.org/licenses/agpl.html
 //
-//! Fushi: the small RWKV network ("w64", JSchoreels/anki-rwkv release
-//! `small-model-sm56-2026-10-24`, package sm56; same architecture as
-//! sm40v2) and its batched replay / query engine.
+//! Fushi: the small RWKV network ("w64" and its one-card-layer "w64-c1";
+//! default weights the Instant-Only sm98, same architecture as sm40v2, sm56
+//! and sm72e25) and its batched replay / query engine.
 //!
 //! The executable spec is the package's NumPy reference
 //! (`reference/small_model_recurrent.py`, `RecurrentModel.step`) and
@@ -37,6 +37,12 @@ const FC: usize = 128;
 pub(super) const STREAMS: usize = 5;
 /// `zero_features`: the card-state input (scaled revlog type) is ignored.
 const ZERO_FEATURE: usize = 22;
+/// Leak-free input rule of the SM72 and later releases (sm98, sm101): the
+/// missing note / deck / preset flags are always 0. In the
+/// training export they marked cards deleted before the export, i.e. future
+/// information live Anki never has, and SM72 was trained and scored with them
+/// zeroed. A live input without an identity keeps its placeholder entity.
+const LEAK_FREE_ZERO_FEATURES: [usize; 3] = [13, 14, 15];
 const LAYER_NORM_EPS: f32 = 1e-5;
 const GROUP_NORM_EPS: f32 = 6.4e-4;
 const NORMALIZE_EPS: f32 = 1e-12;
@@ -572,8 +578,10 @@ struct Layer {
 }
 
 /// The heads of one row. `p_logits` always; the curve head only on request
-/// (replay / R queries read the instant head; scheduling reads the curve of a
-/// what-if answer, INTEGRATION.md §9.2).
+/// (replay / R queries read the instant head). Fushi's small weights are
+/// Instant-Only: their curve head was never trained, so `curve` is computed
+/// only for the reference parity tests (`run_prepared_rows`) and never
+/// schedules anything.
 #[derive(Clone, Copy, Debug, Default)]
 pub struct SmallHeads {
     pub p_logits: [f32; 4],
@@ -746,6 +754,9 @@ impl SmallNet {
         f[..n * CARD_FEATURES].copy_from_slice(features);
         for row in 0..n {
             f[row * CARD_FEATURES + ZERO_FEATURE] = 0.0;
+            for feature in LEAK_FREE_ZERO_FEATURES {
+                f[row * CARD_FEATURES + feature] = 0.0;
+            }
         }
         self.features_0
             .apply_rows(&f[..n * CARD_FEATURES], &mut hidden[..n * FC]);

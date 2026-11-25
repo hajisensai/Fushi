@@ -1,13 +1,17 @@
 import 'package:material_ui/material_ui.dart';
 
 import 'package:fushi/src/mining/gal_hook_session_controller.dart';
+import 'package:fushi/src/models/home_tab.dart'
+    show HomeTab, homeShellTabNotifier;
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/pages/implementations/media_library_shell.dart'
     show LibrarySectionGroup;
 import 'package:fushi/src/sync/texthooker_service.dart';
 import 'package:fushi/src/sync/texthooker_ws_client.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/pages/implementations/library_layout/library_chrome_spec.dart';
 import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/components/library_section_tab.dart';
 
 /// 游戏模块各页（首页 / 库 / 捕获工作台 / 设置 / 诊断）共享的枚举翻译映射、时间格式与
@@ -40,17 +44,47 @@ enum GameSection {
 final ValueNotifier<GameSection> gameSectionNotifier =
     ValueNotifier<GameSection>(GameSection.dashboard);
 
+/// 打开捕获工作台：切到顶层「游戏」页签的「捕获工作台」子区，并退回首页这一层
+/// 路由（从详情页等 pushed 页进来时不停在原页面上）。库页会话带、详情页 Hook 卡
+/// 与原生浮窗（`GalHookTextOverlayController.openWorkbench`）走同一对通知器。
+void openGameCaptureWorkbench(BuildContext context) {
+  homeShellTabNotifier.value = HomeTab.games;
+  gameSectionNotifier.value = GameSection.monitor;
+  Navigator.of(context).popUntil((Route<Object?> route) => route.isFirst);
+}
+
+/// 本机 Hook 会话此刻是否在跑 [exePath] / [gameId] 这个游戏：会话活动中，且活动
+/// 记账的游戏身份（库页启动时握着的 `galgames.id`）相同，或会话捕获的 exe（启动
+/// 会话的启动 exe / 附加会话的被附加 exe，
+/// [GalHookSessionController.currentCaptureExecutable]）与条目 exe 同路径（大小写
+/// / 分隔符不敏感）。
+bool galHookSessionRunsGame(
+  GalHookSessionController controller, {
+  required String gameId,
+  required String exePath,
+}) {
+  final GalHookSessionState state = controller.state;
+  if (!state.isActive) return false;
+  if (controller.activityGameKey == gameId) return true;
+  final String? exe = controller.currentCaptureExecutable;
+  if (exe == null || exe.isEmpty) return false;
+  String norm(String path) => path.replaceAll(r'\', '/').toLowerCase();
+  return norm(exe) == norm(exePath);
+}
+
 /// 捕获工作台对用户可宣称的阶段。helper/音频源已启动不等于已经能消费台词：
-/// 引擎会话必须先选定文本线程，之后才可能产生与该线程台词绑定的句级音频。
+/// 正文走引擎文本道的会话必须先选定文本线程，之后才可能产生与该线程台词绑定的
+/// 句级音频。[requiresTextThread] 取 [GalHookSessionController.requiresTextThreadSelection]
+/// （正文来自 TyranoScript DOM 源时为 false，不需要选线程）。
 enum GalWorkbenchReadiness { idle, waitingForThread, listening }
 
 GalWorkbenchReadiness galWorkbenchReadiness({
   required GalHookSessionState state,
-  required bool hasEngineSource,
+  required bool requiresTextThread,
   required String? selectedTextThreadKey,
 }) {
   if (!state.isActive) return GalWorkbenchReadiness.idle;
-  if (hasEngineSource && selectedTextThreadKey == null) {
+  if (requiresTextThread && selectedTextThreadKey == null) {
     return GalWorkbenchReadiness.waitingForThread;
   }
   return GalWorkbenchReadiness.listening;
@@ -60,7 +94,7 @@ GalWorkbenchReadiness galWorkbenchReadiness({
 /// 将判定收敛为纯函数，避免 session/listener 的多次通知重复弹窗。
 bool shouldPromptGalCaptureSetup({
   required GalHookSessionState state,
-  required bool hasEngineSource,
+  required bool requiresTextThread,
   required String? selectedTextThreadKey,
   required int textThreadCount,
   required bool sessionAlreadyPrompted,
@@ -73,7 +107,7 @@ bool shouldPromptGalCaptureSetup({
       GalHookSessionPhase.degraded => true,
       _ => false,
     } &&
-    hasEngineSource &&
+    requiresTextThread &&
     selectedTextThreadKey == null &&
     textThreadCount > 0 &&
     !lookupRiskAcceptancePending &&
@@ -116,6 +150,7 @@ String texthookerLineSourceLabel(TexthookerLineSource source) =>
     switch (source) {
       TexthookerLineSource.engineHook => t.game_text_source_engine,
       TexthookerLineSource.websocket => t.game_text_source_websocket,
+      TexthookerLineSource.screenOcr => t.game_text_source_screen_ocr,
       TexthookerLineSource.unknown => t.game_text_source_unknown,
     };
 
@@ -184,6 +219,92 @@ LibrarySectionGroup? gameSectionGroupOf(GameSection section) =>
       GameSection.importGames => null,
     };
 
+/// 游戏分区页签的用户可读标签（顺序真相在 [kGameSectionTabOrder]）。
+String gameSectionTabLabel(GameSection section) => switch (section) {
+  GameSection.dashboard => t.game_dashboard,
+  GameSection.library => t.game_library_all,
+  // 页签用短标签「工作台」（中文顶栏标签 ≤4 字，TODO-2937 拍板）；
+  // 页标题 / 设置导航项仍用全称 [game_capture_workbench]「捕获工作台」。
+  GameSection.monitor => t.game_capture_workbench_tab,
+  // 「导入」段与书 / 漫画 / 视频库页的「导入」视图同名同位（2026-08-13
+  // 入库入口统一定案）：游戏的单件入口（选 exe）收敛在这里，不再用 FAB。
+  GameSection.importGames => t.library_view_import,
+  GameSection.discover => t.library_view_discover,
+  GameSection.stream => t.game_stream_tab,
+  // 不设页签；防御性给全称，正常不会上屏。
+  GameSection.diagnostics => t.game_diagnostics,
+};
+
+/// 游戏库页外壳的一级分组（[LibraryChromeSpec.groups]，与书 / 漫画 / 视频 / 音乐库
+/// 同一分法）：「我的游戏」组（首页 / 库 / 工作台 / 串流）+「发现」。
+///
+/// [shown] 是高亮的分区（停在诊断时传工作台）；不在某组时点组页签回到该组内
+/// [lastLibrarySection]（只对「我的游戏」组有意义），否则组内第一个。外壳顶栏
+/// （[LibraryLayout]）与独立挂载的 [GameSectionTabs] 共用这一份真相。
+List<LibraryChromeGroup<GameSection>> gameLibraryChromeGroups({
+  required GameSection shown,
+  GameSection lastLibrarySection = GameSection.dashboard,
+}) {
+  final LibrarySectionGroup? current = gameSectionGroupOf(shown);
+  return <LibraryChromeGroup<GameSection>>[
+    for (final LibrarySectionGroup candidate in LibrarySectionGroup.values)
+      ?_gameChromeGroup(
+        candidate,
+        shown: shown,
+        current: current,
+        lastLibrarySection: lastLibrarySection,
+      ),
+  ];
+}
+
+LibraryChromeGroup<GameSection>? _gameChromeGroup(
+  LibrarySectionGroup candidate, {
+  required GameSection shown,
+  required LibrarySectionGroup? current,
+  required GameSection lastLibrarySection,
+}) {
+  final List<GameSection> members = <GameSection>[
+    for (final GameSection section in kGameSectionTabOrder)
+      if (gameSectionGroupOf(section) == candidate) section,
+  ];
+  if (members.isEmpty) return null;
+  return LibraryChromeGroup<GameSection>(
+    group: candidate,
+    label: switch (candidate) {
+      LibrarySectionGroup.library => t.game_library,
+      LibrarySectionGroup.online =>
+        members.length == 1
+            ? gameSectionTabLabel(members.single)
+            : t.library_view_online,
+    },
+    value: current == candidate
+        ? shown
+        : members.contains(lastLibrarySection)
+        ? lastLibrarySection
+        : members.first,
+    members: <LibrarySectionTab<GameSection>>[
+      for (final GameSection section in members)
+        LibrarySectionTab<GameSection>(
+          value: section,
+          label: gameSectionTabLabel(section),
+        ),
+    ],
+    subFocusIdPrefix: 'game-subsection-tab',
+    // 反馈 ndQ5eXLcqp：自定义页签顺序落在二级胶囊上（一级恒为两组）。
+    orderKey: 'games-${candidate.name}',
+  );
+}
+
+/// 游戏分区在 Apple 侧栏子项里的图标。
+IconData gameSectionIcon(GameSection section) => switch (section) {
+  GameSection.dashboard => FushiIcons.home,
+  GameSection.library => FushiIcons.games,
+  GameSection.monitor || GameSection.diagnostics => FushiIcons.subtitles,
+  GameSection.stream => FushiIcons.cast,
+  GameSection.discover => FushiIcons.globe,
+  GameSection.importGames => FushiIcons.libraryAdd,
+};
+
 /// 标记「游戏模块的分区页签已由外壳画在浮动工具栏里」（[HomeGamePage] 挂）。
 ///
 /// 游戏的七个子区各自在自己的页头主位放一份 [GameSectionTabs]；外壳改成与视频库
@@ -245,22 +366,6 @@ class GameSectionTabs extends StatelessWidget {
   final VoidCallback onSelectLibrary;
   final VoidCallback onSelectMonitor;
 
-  /// 页签的用户可读标签（顺序真相在 [kGameSectionTabOrder]）。
-  static String _labelFor(GameSection section) => switch (section) {
-    GameSection.dashboard => t.game_dashboard,
-    GameSection.library => t.game_library_all,
-    // 页签用短标签「工作台」（中文顶栏标签 ≤4 字，TODO-2937 拍板）；
-    // 页标题 / 设置导航项仍用全称 [game_capture_workbench]「捕获工作台」。
-    GameSection.monitor => t.game_capture_workbench_tab,
-    // 「导入」段与书 / 漫画 / 视频库页的「导入」视图同名同位（2026-08-13
-    // 入库入口统一定案）：游戏的单件入口（选 exe）收敛在这里，不再用 FAB。
-    GameSection.importGames => t.library_view_import,
-    GameSection.discover => t.library_view_discover,
-    GameSection.stream => t.game_stream_tab,
-    // 不设页签；防御性给全称，正常不会上屏。
-    GameSection.diagnostics => t.game_diagnostics,
-  };
-
   @override
   Widget build(BuildContext context) {
     // 外壳已在浮动工具栏里画了页签（[GameSectionTabsHostScope]）：子区页头里
@@ -300,23 +405,27 @@ class GameSectionTabs extends StatelessWidget {
         ? GameSection.monitor
         : selected;
     final LibrarySectionGroup? group = gameSectionGroupOf(shown);
+    // 停在诊断时「工作台」的高亮只是视觉锚点（诊断不是页签），点它必须照常回到
+    // 捕获工作台（BUG-4706）。
+    final bool shownIsCurrent = shown == selected;
+    final List<LibraryChromeGroup<GameSection>> groups =
+        gameLibraryChromeGroups(
+          shown: shown,
+          lastLibrarySection: lastLibrarySection,
+        );
     if (secondary) {
-      final List<GameSection> members = <GameSection>[
-        for (final GameSection section in kGameSectionTabOrder)
-          if (group != null && gameSectionGroupOf(section) == group) section,
-      ];
+      final List<LibrarySectionTab<GameSection>> members =
+          <LibrarySectionTab<GameSection>>[
+            for (final LibraryChromeGroup<GameSection> g in groups)
+              if (g.group == group) ...g.members,
+          ];
       if (members.length < 2) return const SizedBox.shrink();
       return LibrarySectionTabs<GameSection>(
         // 换组即换一份页签（段数与段值都变），不复用旧 controller。
         key: ValueKey<LibrarySectionGroup?>(group),
-        tabs: <LibrarySectionTab<GameSection>>[
-          for (final GameSection section in members)
-            LibrarySectionTab<GameSection>(
-              value: section,
-              label: _labelFor(section),
-            ),
-        ],
+        tabs: members,
         selected: shown,
+        selectedIsCurrent: shownIsCurrent,
         onChanged: select,
         focusIdPrefix: focusIdPrefix,
         secondary: true,
@@ -326,41 +435,25 @@ class GameSectionTabs extends StatelessWidget {
         orderKey: 'games-${group?.name}',
       );
     }
-    // 一级只放分组（2026-10-30 用户拍板方案 D，与书 / 漫画 / 视频库同一分法）。
+    // 一级只放分组（2026-10-30 用户拍板方案 D，与书 / 漫画 / 视频库同一分法）；
+    // 组页签的值随组内停留的子区变，顺序身份认组。
     final List<LibrarySectionTab<GameSection>> tabs =
-        <LibrarySectionTab<GameSection>>[];
-    for (final LibrarySectionGroup candidate in LibrarySectionGroup.values) {
-      final List<GameSection> members = <GameSection>[
-        for (final GameSection section in kGameSectionTabOrder)
-          if (gameSectionGroupOf(section) == candidate) section,
-      ];
-      if (members.isEmpty) continue;
-      final GameSection value = group == candidate
-          ? shown
-          : members.contains(lastLibrarySection)
-          ? lastLibrarySection
-          : members.first;
-      tabs.add(
-        LibrarySectionTab<GameSection>(
-          value: value,
-          label: switch (candidate) {
-            LibrarySectionGroup.library => t.game_library,
-            LibrarySectionGroup.online =>
-              members.length == 1
-                  ? _labelFor(members.single)
-                  : t.library_view_online,
-          },
-          // 组页签的值随组内停留的子区变，顺序身份认组。
-          orderId: candidate.name,
-        ),
-      );
-    }
+        <LibrarySectionTab<GameSection>>[
+          for (final LibraryChromeGroup<GameSection> g in groups)
+            LibrarySectionTab<GameSection>(
+              value: g.value,
+              label: g.label,
+              orderId: g.group.name,
+            ),
+        ];
     // 一级只剩一组（iOS 合规门下没有发现）时不画胶囊。
     if (tabs.length < 2) return const SizedBox.shrink();
     return LibrarySectionTabs<GameSection>(
       tabs: tabs,
-      // 停在导入页时高亮「我的游戏」组：导入管理的就是本地库。
+      // 停在导入页时高亮「我的游戏」组：导入管理的就是本地库。此时与停在诊断时
+      // 一样，高亮只是视觉锚点、不是当前视图，点它照常切回（BUG-4706）。
       selected: group == null ? tabs.first.value : shown,
+      selectedIsCurrent: group != null && shownIsCurrent,
       onChanged: select,
       focusIdPrefix: focusIdPrefix,
       floating: floating,

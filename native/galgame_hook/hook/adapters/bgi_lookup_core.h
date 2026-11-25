@@ -274,6 +274,26 @@ inline uint32_t RvaToVa(const exact::LoadedPeImage& image, uintptr_t rva) {
   return static_cast<uint32_t>(AbsoluteBase(image) + rva);
 }
 
+// A vtable candidate reaching `slot_disp`.  In a read-only data section the
+// constructor store is the proof.  Some builds (Ethornell 1.566.3) link their
+// read-only data into the executable code section; there the table must also
+// look like one: every slot up to and including `slot_disp` is a pointer into
+// executable code, which instruction bytes practically never are.
+inline bool IsVtableRva(const exact::LoadedPeImage& image, uintptr_t table,
+                        uint32_t slot_disp) {
+  if ((slot_disp % 4u) != 0u) return false;
+  if (IsDataRva(image, table, slot_disp + 4u)) return true;
+  if (!IsExecutableRva(image, table, slot_disp + 4u)) return false;
+  for (uint32_t disp = 0u; disp <= slot_disp; disp += 4u) {
+    uintptr_t function = 0u;
+    if (!VaToRva(image, ReadU32(image.base + table + disp), &function) ||
+        !IsExecutableRva(image, function, 1u)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Visits every executable byte span once: fn(rva_of_span, bytes, size).
 template <typename Fn>
 void ForEachExecutableSection(const exact::LoadedPeImage& image, Fn&& fn) {
@@ -296,6 +316,43 @@ inline void FindShapeRvas(const exact::LoadedPeImage& image, const Shape& shape,
         for (size_t offset = 0u; offset + shape.size <= size; ++offset) {
           if (out->size() > limit) return;
           if (ShapeAt(bytes + offset, end, shape)) out->push_back(rva + offset);
+        }
+      });
+}
+
+// The layout anchor at `at`.  Besides the contiguous kAnchor shape, `cmp al,
+// 0x20` and the `jge` that consumes its flags may be separated by one
+// `mov r32,imm32` (b9..bf, not eax / esp): mov writes no flags and leaves al
+// alone, so the switch is the same (Ethornell 1.566.3 schedules `mov ecx,1`
+// there).
+inline constexpr size_t kAnchorHeadBytes = 2u;  // `cmp al,0x20`
+inline constexpr size_t kAnchorMovImmBytes = 5u;
+inline bool AnchorAt(const uint8_t* at, const uint8_t* end) {
+  if (ShapeAt(at, end, kAnchor)) return true;
+  if (at == nullptr || end == nullptr || at > end ||
+      static_cast<size_t>(end - at) < kAnchor.size + kAnchorMovImmBytes) {
+    return false;
+  }
+  const uint8_t op = at[kAnchorHeadBytes];
+  if (at[0] != kAnchorBytes[0] || at[1] != kAnchorBytes[1] ||
+      (op & 0xf8u) != 0xb8u || op == 0xb8u || op == 0xbcu) {
+    return false;
+  }
+  const Shape tail = {kAnchorBytes + kAnchorHeadBytes,
+                      kAnchorMask + kAnchorHeadBytes,
+                      kAnchor.size - kAnchorHeadBytes};
+  return ShapeAt(at + kAnchorHeadBytes + kAnchorMovImmBytes, end, tail);
+}
+
+// Every layout anchor in executable sections (RVA of `cmp al,0x20`).
+inline void FindAnchorRvas(const exact::LoadedPeImage& image,
+                           std::vector<uintptr_t>* out, size_t limit = 16u) {
+  ForEachExecutableSection(
+      image, [&](uintptr_t rva, const uint8_t* bytes, size_t size) {
+        const uint8_t* end = bytes + size;
+        for (size_t offset = 0u; offset + kAnchor.size <= size; ++offset) {
+          if (out->size() > limit) return;
+          if (AnchorAt(bytes + offset, end)) out->push_back(rva + offset);
         }
       });
 }
@@ -413,13 +470,98 @@ enum class SiteResult : uint32_t {
   kVtableAmbiguous = 9,
   kScreenMissing = 10,
   kScreenAmbiguous = 11,
+  kAnchorAmbiguous = 12,
+  kImageUnavailable = 13,  // the loaded image's headers could not be read
+};
+
+// ── scan lifecycle ─────────────────────────────────────────────────────────
+//
+// A protected build (e.g. a Settec-wrapped BGI.exe) maps its code sections
+// encrypted or unreadable and only hydrates them once the stub has run, which
+// can be well after injection.  A scan of such an image finds none of the
+// shapes it looks for.  So a result whose stage found *zero* occurrences of
+// its primary shape says "not here yet", and is re-scanned on the worker for a
+// bounded window (the same interval / window as the Luca adapter).  Every
+// other result is a property of code that is present — a shape occurring more
+// than once, a site whose surrounding bytes or cross-checks do not hold, an
+// image of another machine — and is final at once.
+inline constexpr uint64_t kSiteRetryIntervalMs = 500u;
+inline constexpr uint64_t kSiteRetryWindowMs = 120000u;
+
+inline bool IsHydrationPendingResult(SiteResult result) {
+  switch (result) {
+    case SiteResult::kImageUnavailable:
+    case SiteResult::kVcallMissing:
+    case SiteResult::kAnchorMissing:
+    case SiteResult::kVtableMissing:
+    case SiteResult::kScreenMissing:
+      return true;
+    default:
+      return false;
+  }
+}
+
+enum class SiteScanVerdict : uint8_t {
+  kResolved,  // sites resolved: install
+  kRetry,     // nothing there yet: scan again once Due()
+  kRejected,  // final: this image stays rejected
+};
+
+// Worker-owned schedule of the site scans of one process.  Pure: the caller
+// supplies the monotonic clock, so it is replayed offline.
+class SiteScanSchedule {
+ public:
+  // Whether a scan should run now: the first one immediately, then one per
+  // interval until a verdict other than kRetry has been recorded.
+  bool Due(uint64_t now_ms) const {
+    if (settled_) return false;
+    return !scanned_ || now_ms - last_ms_ >= kSiteRetryIntervalMs;
+  }
+  // Records the result of a scan made at `now_ms`.
+  SiteScanVerdict Record(SiteResult result, uint64_t now_ms) {
+    if (settled_) return verdict_;
+    if (!scanned_) first_ms_ = now_ms;
+    scanned_ = true;
+    last_ms_ = now_ms;
+    ++scans_;
+    if (result == SiteResult::kResolved) {
+      verdict_ = SiteScanVerdict::kResolved;
+    } else if (IsHydrationPendingResult(result) &&
+               now_ms - first_ms_ < kSiteRetryWindowMs) {
+      return SiteScanVerdict::kRetry;
+    } else {
+      verdict_ = SiteScanVerdict::kRejected;
+    }
+    settled_ = true;
+    return verdict_;
+  }
+  bool scanned() const { return scanned_; }
+  // A verdict is final (resolved or rejected); no further scan will run.
+  bool settled() const { return settled_; }
+  // Scanned at least once, and every scan so far said "not here yet".
+  bool pending() const { return scanned_ && !settled_; }
+  bool rejected() const {
+    return settled_ && verdict_ == SiteScanVerdict::kRejected;
+  }
+  uint32_t scans() const { return scans_; }
+  uint64_t elapsed_ms() const { return last_ms_ - first_ms_; }
+
+ private:
+  bool scanned_ = false;
+  bool settled_ = false;
+  SiteScanVerdict verdict_ = SiteScanVerdict::kRetry;
+  uint64_t first_ms_ = 0u;
+  uint64_t last_ms_ = 0u;
+  uint32_t scans_ = 0u;
 };
 
 // The Impl: exactly one vcall shape of either generation in the image, its
 // enclosing function carries that generation's prologue, owner load and
-// return.
+// return.  The call-target table (`targets`, reused by the later stages) is
+// only collected once a vcall exists, so a scan of a not yet hydrated image
+// stops after the two shape sweeps.
 inline SiteResult ResolveImpl(const exact::LoadedPeImage& image,
-                              const std::vector<uintptr_t>& targets,
+                              std::vector<uintptr_t>* targets,
                               Sites* sites) {
   std::vector<uintptr_t> this_sites;
   std::vector<uintptr_t> std_sites;
@@ -435,8 +577,9 @@ inline SiteResult ResolveImpl(const exact::LoadedPeImage& image,
   const uintptr_t vcall = thiscall ? this_sites[0] : std_sites[0];
   const uint8_t* vcall_bytes = BytesAt(image, vcall, kVcallThis.size);
   if (vcall_bytes == nullptr) return SiteResult::kVcallMissing;
+  *targets = CollectCallTargets(image);
   uintptr_t entry = 0u;
-  if (!EnclosingFunction(image, targets, vcall, kImplMaxSpan,
+  if (!EnclosingFunction(image, *targets, vcall, kImplMaxSpan,
                          thiscall ? &kImplThis : &kImplStd, &entry)) {
     return SiteResult::kImplMissing;
   }
@@ -493,8 +636,9 @@ inline SiteResult ResolveExVtable(const exact::LoadedPeImage& image,
                                   const std::vector<uintptr_t>& targets,
                                   Sites* sites) {
   std::vector<uintptr_t> anchors;
-  FindShapeRvas(image, kAnchor, &anchors);
-  if (anchors.size() != 1u) return SiteResult::kAnchorMissing;
+  FindAnchorRvas(image, &anchors);
+  if (anchors.empty()) return SiteResult::kAnchorMissing;
+  if (anchors.size() != 1u) return SiteResult::kAnchorAmbiguous;
   uintptr_t layout = 0u;
   if (!EnclosingFunction(image, targets, anchors[0], kLayoutMaxSpan, nullptr,
                          &layout)) {
@@ -513,7 +657,7 @@ inline SiteResult ResolveExVtable(const exact::LoadedPeImage& image,
           }
           uintptr_t table = 0u;
           if (!VaToRva(image, ReadU32(bytes + offset + 2u), &table) ||
-              !IsDataRva(image, table, sites->layout_slot_disp + 4u)) {
+              !IsVtableRva(image, table, sites->layout_slot_disp)) {
             continue;
           }
           vtables.push_back(table);
@@ -557,6 +701,21 @@ inline SiteResult ResolveExVtable(const exact::LoadedPeImage& image,
   return SiteResult::kResolved;
 }
 
+// Read-only data linked into the code section (Ethornell 1.566.3): a screen
+// table found there must also hold eight plausible widths and eight plausible
+// heights, which instruction bytes practically never do.
+inline bool PlausibleScreenTables(const exact::LoadedPeImage& image,
+                                  uintptr_t widths) {
+  for (uint32_t index = 0u; index < 16u; ++index) {
+    const uint32_t side = ReadU32(image.base + widths + 4u * index);
+    if (side < static_cast<uint32_t>(kMinDesignSide) ||
+        side > static_cast<uint32_t>(kMaxDesignSide)) {
+      return false;
+    }
+  }
+  return true;
+}
+
 // Screen mode tables: `mov eax,[reg*4+W]` and `mov eax,[reg*4+W+0x20]` both
 // exist, and the index word at W-4 is read by `mov eax,[W-4]`.
 inline SiteResult ResolveScreenTables(const exact::LoadedPeImage& image,
@@ -571,7 +730,8 @@ inline SiteResult ResolveScreenTables(const exact::LoadedPeImage& image,
           }
           uintptr_t table = 0u;
           if (VaToRva(image, ReadU32(bytes + offset + 3u), &table) &&
-              IsDataRva(image, table, 0x40u)) {
+              (IsDataRva(image, table, 0x40u) ||
+               IsExecutableRva(image, table, 0x40u))) {
             tables.push_back(table);
           }
         }
@@ -599,6 +759,12 @@ inline SiteResult ResolveScreenTables(const exact::LoadedPeImage& image,
                             widths - 4u)) {
       continue;
     }
+    // Both tables (W .. W+0x40) lie in one section; one in code must look
+    // like data.
+    if (!IsDataRva(image, widths, 0x40u) &&
+        !PlausibleScreenTables(image, widths)) {
+      continue;
+    }
     found = widths;
     ++matches;
   }
@@ -616,8 +782,8 @@ inline SiteResult ResolveSites(const exact::LoadedPeImage& image,
     return SiteResult::kNotX86;
   }
   Sites sites;
-  const std::vector<uintptr_t> targets = CollectCallTargets(image);
-  SiteResult result = ResolveImpl(image, targets, &sites);
+  std::vector<uintptr_t> targets;
+  SiteResult result = ResolveImpl(image, &targets, &sites);
   if (result != SiteResult::kResolved) return result;
   result = ResolveExVtable(image, targets, &sites);
   if (result != SiteResult::kResolved) return result;

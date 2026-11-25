@@ -10,6 +10,7 @@ import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/sync/sync_utils.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
+import '../helpers/interconnect_legacy_host_scope.dart';
 
 /// BUG-3528：互联推送「写入已落地、确认丢失」被误判成冲突。
 ///
@@ -27,7 +28,8 @@ RemoteBookProgress _page(int page, int at) => RemoteBookProgress(
 );
 
 /// host 端照常提交，然后让客户端等到超时（确认包丢失）。
-class _LostAckBackend extends InterconnectSyncBackend {
+class _LostAckBackend extends InterconnectSyncBackend
+    with LegacyInterconnectHostScope {
   _LostAckBackend() : super.withProbe((String url, String token) async => true);
 
   final Map<String, RemoteBookProgress> books = <String, RemoteBookProgress>{};

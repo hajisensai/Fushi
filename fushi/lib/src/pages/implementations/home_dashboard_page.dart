@@ -1,5 +1,7 @@
 import 'dart:io';
 import 'dart:math' as math;
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiShellHeaderActions;
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -10,63 +12,93 @@ import 'package:fushi_engine/sync/remote_collection_adoption_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:fushi_engine/media/collections/collection_cover.dart'
     show collectionOwnCoverCandidates;
-import 'package:flutter/foundation.dart' show kIsWeb;
+import 'package:flutter/foundation.dart' show ValueListenable, kIsWeb;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/apple/apple_text_style.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:transparent_image/transparent_image.dart';
-import 'package:url_launcher/url_launcher.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/media_source.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
+import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/video/media_server/media_server_library.dart'
+    show localMediaServerItemKeyOfVideo;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
-import 'package:fushi/src/utils/components/fushi_loading_view.dart';
-import 'package:fushi/src/utils/components/fushi_material_components.dart';
-import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
-import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
-import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/models/shelf_collection_open_request.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/collections/collection_continue.dart';
+import 'package:fushi/src/media/collections/book_continue.dart';
+import 'package:fushi/src/media/collections/book_read_progress.dart';
+import 'package:fushi_engine/media/collections/shelf_sort.dart'
+    show shelfReadFraction;
 import 'package:fushi/src/media/kavita/kavita_api_registry.dart';
 import 'package:fushi/src/media/kavita/kavita_progress_refresher.dart';
 import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
-import 'package:fushi_engine/media/tracking/bangumi_api_client.dart';
-import 'package:fushi/src/media/tracking/media_tracking_labels.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
+import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
+import 'package:fushi/src/media/video/video_home_layout.dart'
+    show VideoCardOrientation;
 import 'package:fushi_engine/media/video/m3u8_playlist.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/pages/base_module_tab_page.dart';
 import 'package:fushi/src/pages/implementations/dashboard_continue_logic.dart';
 export 'package:fushi/src/pages/implementations/dashboard_continue_logic.dart';
+import 'package:fushi/src/pages/implementations/home_continue_compose.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_widgets.dart';
+import 'package:fushi/src/pages/implementations/home_dashboard_derived.dart';
 import 'package:fushi/src/pages/implementations/home_ai_agent_panel.dart';
 import 'package:fushi/src/pages/implementations/home_panorama_panel.dart';
 import 'package:fushi/src/media/panorama/panorama_library.dart'
     show PanoramaWork, PanoramaWorkKind;
 import 'package:fushi/src/pages/implementations/home_srs_panel.dart';
+import 'package:fushi/src/pages/implementations/home_favorites_panel.dart';
+import 'package:fushi/src/media/display_title.dart'
+    show displayTitleForBook, displayTitleForVideo;
+import 'package:fushi/src/pages/implementations/stat_activity.dart'
+    show statTodayKey;
+import 'package:fushi/src/media/favorites/favorite_batch_mining.dart'
+    show favoriteBatchMiningAvailable, showFavoriteBatchMining;
+import 'package:fushi/src/media/favorites/favorite_mining_item.dart';
+import 'package:fushi_audio/fushi_audio.dart'
+    show
+        FavoriteSentence,
+        kFavoriteSentenceSourceVideo,
+        kFavoriteSentenceSourceWeb;
+import 'package:fushi/src/pages/implementations/home_tracking_panel.dart';
+import 'package:fushi/src/pages/implementations/home_profile_chip.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
+import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart'
+    show FushiPageTitleMetrics;
+import 'package:fushi/src/pages/implementations/home_collage_widgets.dart';
+import 'package:fushi/src/media/tracking/page/tracking_page.dart';
+import 'package:fushi/src/media/tracking/tracking_series_card_open.dart';
+import 'package:fushi/src/media/tracking/page/tracking_page_data.dart'
+    show TrackingPageTab;
 import 'package:fushi/src/pages/implementations/onboarding_wizard_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
-import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart' show SrsDeckSummary;
 import 'package:fushi/src/pages/implementations/home_floating_toolbar.dart';
@@ -74,10 +106,16 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/pages/implementations/updates_center_open.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/updates_dashboard_banner.dart';
+import 'package:fushi/src/pages/implementations/whats_new_home_card.dart';
+import 'package:fushi/src/pages/implementations/whats_new_page.dart';
+import 'package:fushi/src/updates/whats_new.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart'
     show openLocalVideoBook;
 import 'package:fushi/src/pages/implementations/collections_page.dart';
 import 'package:fushi/src/pages/implementations/stat_shared.dart';
+import 'package:fushi/src/pages/implementations/stat_charts.dart'
+    show formatStatCharsAxis;
+import 'package:fushi/src/utils/components/fushi_poster_block.dart';
 import 'package:fushi/src/pages/implementations/statistics_center_page.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_tab.dart';
 import 'package:fushi/src/pages/implementations/leaderboard/leaderboard_common.dart'
@@ -87,15 +125,69 @@ import 'package:fushi_engine/leaderboard/leaderboard_models.dart'
     show LeaderboardSelf;
 import 'package:fushi/src/media/video/video_library_overview.dart'
     show formatVideoPosition;
-import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellContentLayout, shellContentLayoutOf, shellRedesignActive;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart';
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart';
+import 'package:fushi/src/utils/components/fushi_series_cover_block.dart';
+import 'package:fushi/src/media/video/cover_ui/video_series_meta.dart';
+import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
+    show
+        FushiFloatingChromeBar,
+        FushiFloatingChromeController,
+        FushiFloatingChromeInset,
+        FushiFloatingChromeOverlay,
+        FushiFloatingChromeScope;
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+import 'package:fushi/src/utils/components/fushi_page_masthead.dart'
+    show
+        FushiMastheadPalette,
+        FushiMastheadPrimaryButton,
+        FushiMastheadRole,
+        fushiMastheadRoleOf;
+import 'package:fushi/src/utils/components/glass/fushi_apple_scroll_chrome.dart'
+    show fushiNotificationDrivesPageChrome;
+import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
+    show FushiShellActionsSlot, FushiShellTitleScope;
+import 'package:fushi/src/utils/components/section_deferred_build.dart';
+import 'package:fushi/src/utils/components/shelf_card_widgets.dart'
+    show ShelfCoverFrame, shelfCoverCard;
+import 'package:fushi/src/utils/components/section_swipe_navigator.dart'
+    show SectionSwipeCascade;
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show HorizontalDragScrollable, desktopAwareScrollPhysics;
+import 'package:fushi/src/models/home_widget_layout.dart';
+import 'package:fushi/src/pages/implementations/home_widget_add_sheet.dart';
+import 'package:fushi/src/pages/implementations/home_widget_frame.dart';
+import 'package:fushi/src/pages/implementations/home_widget_grid.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
+import 'package:fushi/src/settings/settings_schema_study_goals.dart'
+    show buildStudyGoalsDestination;
 import 'package:fushi/src/settings/settings_schema_tracking.dart';
+import 'package:fushi/src/pages/implementations/study_goal_edit_sheet.dart';
+import 'package:fushi/src/pages/implementations/study_goal_visuals.dart';
+import 'package:fushi/src/platform/widget_snapshot.dart'
+    show
+        StudyGoalCompactText,
+        StudyGoalDay,
+        StudyGoalProgress,
+        StudyGoalState,
+        WidgetGoalsInput,
+        computeStudyGoals,
+        studyGoalDailySeries,
+        studyGoalDailyShare;
+import 'package:fushi/src/srs/srs_home_stats.dart'
+    show SrsHomeStats, srsHomeStatsProvider;
+import 'package:fushi/src/stats/study_goal_record.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
-import 'package:fushi_engine/media/collections/shelf_sort.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/stats/study_goal_language_scope.dart';
+import 'package:fushi/src/stats/study_goals.dart';
+import 'package:fushi_engine/stats/study_goal_language.dart'
+    show StudyGoalUnit, loadStudyGoalMediaLanguages;
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/ttu_filename.dart';
@@ -115,10 +207,6 @@ import 'package:fushi/src/media/video/media_server/media_server_browser.dart'
     show MediaServerBrowser, MediaServerItem;
 import 'package:fushi/src/media/video/media_server/media_server_config.dart'
     show MediaServerConfig;
-import 'package:fushi/src/media/video/media_server/media_server_library.dart'
-    show MediaServerBookSpec;
-import 'package:fushi_engine/media/video/media_server_video_path.dart'
-    show isMediaServerVideoPath;
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_item_page.dart'
     show AudiobookshelfItemDetailPage;
 import 'package:fushi/src/pages/implementations/audiobookshelf/audiobookshelf_ui_helpers.dart'
@@ -142,25 +230,9 @@ import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
-/// 书合集在首页「继续」区的续读目标下标（[sorted] 已按组内 sortIndex 排好）。
-///
-/// 用户实报：20 卷的合集读完第 1 卷，「继续」区里这套书直接消失、第 2 卷不出现
-/// ——旧实现逐本按 [isDashboardContinueBook] 过滤，卷 1 判 finished 出局、卷 2
-/// 没进度判 unread 也进不来。与视频合集 Next-Up 同一判据 [continueMemberIndex]
-/// （锚点 = 最近读过的那卷，它读完就推进下一卷）。
-///
-/// 整组一卷都没开始读（不劝人从头开始）或目标仍是读完的卷（整套读完）→ null，
-/// 合集不出卡。
-@visibleForTesting
-int? dashboardBookCollectionContinueIndex(
-  List<CollectionMemberProgress> sorted,
-) {
-  if (!sorted.any((CollectionMemberProgress m) => m.hasStarted)) return null;
-  final int idx = continueMemberIndex(sorted);
-  if (sorted[idx].completed) return null;
-  return idx;
-}
+part 'home_dashboard_widget_cells.part.dart';
 
 /// 首页是否用双栏版式：横屏（宽 > 高，且至少 600 宽）或宽屏（≥ 840，平板竖屏
 /// 以上的桌面窗口）。竖屏手机 / 平板竖屏走单栏。
@@ -171,15 +243,55 @@ int? dashboardBookCollectionContinueIndex(
 bool dashboardUsesTwoColumns(Size size) =>
     size.width >= 840 || (size.width >= 600 && size.width > size.height);
 
-/// 双栏版式下「继续」主角卡的封面高度：随主列宽放大（× 0.3），夹在 150…240。
-@visibleForTesting
-double dashboardHeroCoverHeight(double mainColumnWidth) =>
-    (mainColumnWidth * 0.3).clamp(150.0, 240.0);
+/// 「最近添加」一组新加的书点开去哪（设计稿 H8 系列合并卡）。
+sealed class RecentBookGroupTarget {
+  const RecentBookGroupTarget();
+}
 
-/// 双栏版式下「继续」横滑行的封面高度：随主列宽放大（× 0.2），夹在 132…200。
-@visibleForTesting
-double dashboardRowCoverHeight(double mainColumnWidth) =>
-    (mainColumnWidth * 0.2).clamp(132.0, 200.0);
+/// 这批卷同属一个主合集：进合集详情页（与书架上点合集卡同一出口）。
+final class RecentBookGroupCollection extends RecentBookGroupTarget {
+  const RecentBookGroupCollection(this.collectionId);
+
+  final int collectionId;
+}
+
+/// 不在合集里（仅按书名系列键归的组）或只有一卷：直接打开 [item]。
+final class RecentBookGroupVolume extends RecentBookGroupTarget {
+  const RecentBookGroupVolume(this.item);
+
+  final MediaItem item;
+}
+
+/// 一组新加的书（[group] 按加入时间新→旧，`title` 是显示名）点开的目标。
+///
+/// - 两卷以上且同属主合集 [collectionId] → [RecentBookGroupCollection]：合并卡
+///   代表的是「这套书」，点开看整套（含以前加的卷），由用户挑从哪卷读；
+/// - 否则 → [RecentBookGroupVolume]：单卷打开它；仅按系列键归的组打开这批里卷号
+///   最小的一卷（书名解析不出卷号的沉底，卷号相同取较新加入的），从新加的第一卷
+///   读起。
+RecentBookGroupTarget recentBookGroupTarget({
+  required List<({MediaItem item, String title})> group,
+  required int? collectionId,
+}) {
+  assert(group.isNotEmpty, 'recentBookGroupTarget 需要至少一卷');
+  if (group.length > 1 && collectionId != null) {
+    return RecentBookGroupCollection(collectionId);
+  }
+  return RecentBookGroupVolume(recentBookGroupFirstVolume(group).item);
+}
+
+/// [group]（新→旧）里卷号最小的一卷：书名解析不出卷号的沉底，卷号相同取较新
+/// 加入的。合并卡的封面 / 标题与「仅按系列键」组的打开目标都取它。
+({MediaItem item, String title}) recentBookGroupFirstVolume(
+  List<({MediaItem item, String title})> group,
+) {
+  num volumeOf(String title) =>
+      parseBookSeriesKey(title)?.volume ?? double.infinity;
+  return group.reduce(
+    (({MediaItem item, String title}) a, ({MediaItem item, String title}) b) =>
+        volumeOf(b.title) < volumeOf(a.title) ? b : a,
+  );
+}
 
 /// 首页浮动工具栏起始侧的头像胶囊（2026-10 精简：左上角原「首页」标题胶囊换成
 /// 头像）。头像来源只有现成的一处——排行榜账户头像（[LeaderboardAvatar]，本
@@ -195,6 +307,11 @@ double dashboardRowCoverHeight(double mainColumnWidth) =>
 /// （切换激活 Profile 写 `active_profile_id`）一有写入就重读一次，名字真变了才
 /// 重建——不能只在 initState 读一次（2026-10-10 审查：改名 / 切换后首页头像仍是
 /// 旧首字，BUG-3249）。
+///
+/// 头像**只管账户**（拍板台 design-avatar-combo-placement，2026-11-23）：点击恒为
+/// 打开排行榜，不再随后台任务状态改成打开任务明细，也不再在外圈画同步进度——
+/// 同步 / 补刮的进度与失败回到外壳右下的「后台任务」按钮。有两份以上配置时，
+/// 头像右边跟一颗默认配置胶囊（[HomeProfileChip]）。
 class _HomeAvatarPill extends ConsumerStatefulWidget {
   const _HomeAvatarPill({required this.onPressed});
 
@@ -277,16 +394,29 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
   Widget build(BuildContext context) {
     final LeaderboardService service = ref.watch(leaderboardServiceProvider);
     _maybeRefreshSelf(service);
+    return _buildPill(context, service);
+  }
+
+  Widget _buildPill(BuildContext context, LeaderboardService service) {
     final LeaderboardSelf? self = service.self;
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final String name = self?.account.nickname ?? _profileName ?? '';
     // Apple（iOS 26 HIG / App Store 账户钮）：导航栏里一颗纯圆头像按钮，不套
     // 胶囊；兜底圆用系统 fill / label 色，按下整体变淡（[FushiPlainButton]）。
     final bool apple = isGlassDesign(context);
+    // 重设计外壳的页头大字里，头像坐在主按钮位（[FushiMastheadPrimaryButton]，
+    // 与库页「导入」同一位置、同一形状），两套设计系统都一样。
+    final bool masthead =
+        fushiMastheadRoleOf(context) == FushiMastheadRole.primary;
     final FushiAppleColors? appleColors = apple ? appleColorsOf(context) : null;
-    final Color onContainer =
-        appleColors?.label ?? Theme.of(context).colorScheme.onPrimaryContainer;
-    final double size = apple ? fushiAppleFloatingExtent(context) : 40;
+    final Color onContainer = appleColors != null
+        ? appleDarkColorsOf(context).label
+        : Theme.of(context).colorScheme.onPrimaryContainer;
+    final double size = masthead
+        ? (apple ? FushiPageTitleMetrics.of(context).primaryExtent : 40)
+        : apple
+        ? fushiAppleFloatingExtent(context)
+        : 40;
     final Widget avatar = self != null
         ? LeaderboardAvatar(account: self.account, size: size)
         : SizedBox.square(
@@ -295,6 +425,18 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
               decoration: BoxDecoration(
                 shape: BoxShape.circle,
                 color: appleColors?.fill ?? tokens.surfaces.primaryContainer,
+                // Apple：通讯录 / Apple 账户式字母头像——secondaryLabel →
+                // tertiaryLabel 的竖向灰渐变（叠在 systemFill 上），字母白色。
+                gradient: appleColors == null
+                    ? null
+                    : LinearGradient(
+                        begin: Alignment.topCenter,
+                        end: Alignment.bottomCenter,
+                        colors: <Color>[
+                          appleColors.tertiaryLabel,
+                          appleColors.secondaryLabel,
+                        ],
+                      ),
               ),
               child: Center(
                 child: name.isEmpty
@@ -305,18 +447,78 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
                       )
                     : Text(
                         String.fromCharCodes(name.runes.take(1)),
-                        style: Theme.of(context).textTheme.titleMedium
-                            ?.copyWith(
-                              color: onContainer,
-                              fontWeight: FontWeight.w700,
-                            ),
+                        // Apple：首字随头像直径缩放（0.45 × 直径），行高沿用
+                        // titleMedium。
+                        style: apple
+                            ? appleTextStyle(
+                                context,
+                                size: size * 0.45,
+                                weight: FontWeight.w700,
+                                color: onContainer,
+                                height:
+                                    Theme.of(
+                                      context,
+                                    ).textTheme.titleMedium?.height ??
+                                    1.25,
+                              )
+                            : Theme.of(context).textTheme.titleMedium?.copyWith(
+                                color: onContainer,
+                                fontWeight: FontWeight.w700,
+                              ),
                       ),
               ),
             ),
           );
+    final VoidCallback onTap = widget.onPressed;
     final String label = name.isEmpty ? t.leaderboard_title : name;
-    if (apple) {
-      return Semantics(
+    final Widget button;
+    final double chipExtent;
+    if (masthead) {
+      chipExtent = FushiPageTitleMetrics.of(context).primaryExtent;
+      button = Semantics(
+        key: const ValueKey<String>('home-toolbar-avatar'),
+        button: true,
+        label: label,
+        excludeSemantics: true,
+        child: FushiTooltip(
+          message: label,
+          excludeFromSemantics: true,
+          child: FushiMastheadPrimaryButton(
+            selected: false,
+            builder:
+                (
+                  BuildContext context,
+                  OutlinedBorder shape,
+                  FushiMastheadPalette palette,
+                  double extent,
+                ) => apple
+                ? FushiPlainButton(
+                    onPressed: onTap,
+                    borderRadius: BorderRadius.circular(extent / 2),
+                    child: SizedBox.square(
+                      dimension: extent,
+                      child: Center(child: avatar),
+                    ),
+                  )
+                : Material(
+                    shape: shape,
+                    color: palette.indicator,
+                    clipBehavior: Clip.antiAlias,
+                    child: InkWell(
+                      customBorder: shape,
+                      onTap: onTap,
+                      child: SizedBox.square(
+                        dimension: extent,
+                        child: Center(child: avatar),
+                      ),
+                    ),
+                  ),
+          ),
+        ),
+      );
+    } else if (apple) {
+      chipExtent = size;
+      button = Semantics(
         key: const ValueKey<String>('home-toolbar-avatar'),
         button: true,
         label: label,
@@ -325,34 +527,52 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
           message: label,
           excludeFromSemantics: true,
           child: FushiPlainButton(
-            onPressed: widget.onPressed,
+            onPressed: onTap,
             borderRadius: BorderRadius.circular(size / 2),
             child: avatar,
           ),
         ),
       );
-    }
-    final Color container = fushiFloatingToolbarPalette(context).container;
-    return Semantics(
-      key: const ValueKey<String>('home-toolbar-avatar'),
-      button: true,
-      label: name.isEmpty ? t.leaderboard_title : name,
-      excludeSemantics: true,
-      child: FushiTooltip(
-        message: name.isEmpty ? t.leaderboard_title : name,
-        excludeFromSemantics: true,
-        child: FushiPressScale(
-          child: FushiFloatingPill(
-            color: container,
-            padding: const EdgeInsets.all(4),
-            child: InkWell(
-              customBorder: const CircleBorder(),
-              onTap: widget.onPressed,
-              child: avatar,
+    } else {
+      chipExtent = size;
+      final Color container = fushiFloatingToolbarPalette(context).container;
+      button = Semantics(
+        key: const ValueKey<String>('home-toolbar-avatar'),
+        button: true,
+        label: label,
+        excludeSemantics: true,
+        child: FushiTooltip(
+          message: label,
+          excludeFromSemantics: true,
+          child: FushiPressScale(
+            child: FushiFloatingPill(
+              color: container,
+              padding: const EdgeInsets.all(4),
+              child: InkWell(
+                customBorder: const CircleBorder(),
+                onTap: onTap,
+                child: avatar,
+              ),
             ),
           ),
         ),
-      ),
+      );
+    }
+    // 头像右边的默认配置胶囊（只有一份配置时不出现，也不留间距）。
+    return Row(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        button,
+        HomeProfileChip(
+          extent: chipExtent,
+          floating: !masthead && !apple,
+          database: ref.read(appProvider).database,
+          onManageProfiles: () => ref.read(appProvider).showProfilesMenu(),
+          onSwitchProfile: (int profileId) => ref
+              .read(profileViewModelProvider.notifier)
+              .switchProfile(profileId),
+        ),
+      ],
     );
   }
 }
@@ -370,13 +590,23 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
 /// 书与阅读位置走 Riverpod provider（响应式）；视频 / 统计等本地聚合在
 /// [initState] 一次并发载入，结果按数据库实例做快照（BUG-3034），重建时首帧直接
 /// 用快照渲染。
-class HomeDashboardPage extends BaseModuleTabPage {
+///
+/// 藏在别的 tab 后面时不重建（[SectionDeferredBuild]）：书列表 / 阅读位置这些
+/// 共享 provider 被别的页面失效时，等切回首页再按新值构建一次。
+class HomeDashboardPage extends BaseModuleTabPage with SectionDeferredBuild {
   const HomeDashboardPage({
     super.key,
     required this.videoRepo,
     this.openVideoOverride,
+    this.openBookCollectionOverride,
     this.serverContinueLoader,
   });
+
+  /// 测试缝：打开书 / 漫画合集详情页的实现覆盖（默认切到书架 / 漫画库 tab 并发
+  /// [requestShelfCollectionOpen]）。widget 测试不挂整个 HomePage 外壳，注入替身
+  /// 断言「最近添加里同合集的合并卡 = 进合集」的接线；生产恒 null。
+  final void Function(int collectionId, {required bool manga})?
+  openBookCollectionOverride;
 
   /// 测试缝：服务器「继续」候选的取数覆盖（默认由页面状态按已配置的
   /// Jellyfin / Emby / Plex 与 Audiobookshelf 真取）；生产恒 null。
@@ -424,7 +654,16 @@ class _ContinueEntry {
     this.game,
     this.remote,
     this.server,
+    this.seriesBooks = const <MediaItem>[],
+    this.seriesCount = 0,
   });
+
+  /// 「最近添加」里同一合集的书合成一项时：除 [book]（最新加入的那本）外再画进
+  /// 扇形的几本（按加入时间倒序，最多两本）。其余场景为空。
+  final List<MediaItem> seriesBooks;
+
+  /// 「最近添加」合集项的成员数（书 = 卷数、视频 = 集数）；0 = 散项。
+  final int seriesCount;
 
   /// 所属主合集 id（v68 横版选图链按它取合集附加图组）；null = 散卡。
   final int? collectionId;
@@ -505,6 +744,22 @@ class _ContinueEntry {
 /// 重跑整批聚合——几百毫秒里各区只能挂骨架。快照让重建的首帧直接用上一轮的结果
 /// 渲染（旧数据先上屏），后台照常重拉一轮再替换，体感从「每次都等」变成「瞬开」。
 /// 只存本地聚合，远端补位（互联）仍由 [_loadRemoteDashboardData] 增量到达。
+/// 近 7 天柱条的一份数据（[_HomeDashboardPageState._weekBarsData]）。
+/// 「继续」视频卡的封面候选与签名（[_HomeDashboardPageState._videoCoverCandidates]）。
+typedef _VideoCoverCandidates = ({
+  List<String> collection,
+  List<String?> members,
+  String? own,
+  String key,
+});
+
+typedef _WeekBarsData = ({
+  List<int> values,
+  List<String> labels,
+  double? reference,
+  String semantic,
+});
+
 class _HomeDashboardSnapshot {
   const _HomeDashboardSnapshot({
     required this.profileId,
@@ -523,6 +778,8 @@ class _HomeDashboardSnapshot {
     required this.memberSortIndex,
     required this.videoWatchAtByUid,
     required this.videoDurationMsByPath,
+    required this.goalMediaLanguages,
+    required this.minedByDay,
   });
 
   /// 这轮聚合所属的激活 Profile（统计按 Profile 隔离）。快照只在同一 Profile 下
@@ -531,7 +788,7 @@ class _HomeDashboardSnapshot {
   final StatWindow statWindow;
   final List<VideoBookRow> videos;
   final List<GalgameEntry> games;
-  final MediaTrackingStatus tracking;
+  final MediaTrackingHomeSnapshot tracking;
   final List<StatFact> readingRows;
   final List<StatFact> watchRows;
   final List<StatFact> gameRows;
@@ -543,137 +800,24 @@ class _HomeDashboardSnapshot {
   final Map<String, int> memberSortIndex;
   final Map<String, int> videoWatchAtByUid;
   final Map<String, int> videoDurationMsByPath;
+
+  /// 媒体身份 → 内容语言（限定了语言的目标按它过滤分子）。
+  final Map<String, String> goalMediaLanguages;
+
+  /// 统计日 → 制卡数（制卡目标的分子，与小组件同口径）。
+  final Map<String, int> minedByDay;
 }
 
-class _BangumiWatchedDialog extends StatefulWidget {
-  const _BangumiWatchedDialog({
-    required this.service,
-    required this.onOpenSubject,
-  });
-
-  final MediaTrackingService service;
-  final Future<void> Function(int subjectId) onOpenSubject;
-
+class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
+    with MediaVisibilityDependent<HomeDashboardPage> {
+  /// 上锁口径变了：远端「继续」按新口径重算（本地卡片在 build 里现算）。
   @override
-  State<_BangumiWatchedDialog> createState() => _BangumiWatchedDialogState();
-}
-
-class _BangumiWatchedDialogState extends State<_BangumiWatchedDialog> {
-  late final Future<List<BangumiWatchedItem>> _watched = widget.service
-      .loadWatchedAnime();
-
-  @override
-  Widget build(BuildContext context) {
-    return FushiAlertDialog(
-      title: Row(
-        children: <Widget>[
-          const FushiIcon(FushiIcons.visibility),
-          const SizedBox(width: 12),
-          Expanded(child: Text(t.media_tracking_watched_title)),
-        ],
-      ),
-      content: SizedBox(
-        width: 640,
-        height: MediaQuery.sizeOf(context).height * 0.6,
-        child: FutureBuilder<List<BangumiWatchedItem>>(
-          future: _watched,
-          builder:
-              (
-                BuildContext context,
-                AsyncSnapshot<List<BangumiWatchedItem>> snapshot,
-              ) {
-                // 加载 / 失败 / 空走统一占位件（MD3 中性块 / Apple 大图标灰字），
-                // 不再是裸菊花与裸文字。
-                if (snapshot.connectionState != ConnectionState.done) {
-                  return const FushiLoadingView();
-                }
-                if (snapshot.hasError) {
-                  return Center(
-                    child: FushiPlaceholderMessage(
-                      icon: FushiIcons.error,
-                      message: t.media_tracking_watched_load_failed(
-                        error: snapshot.error!,
-                      ),
-                    ),
-                  );
-                }
-                final List<BangumiWatchedItem> watched =
-                    snapshot.data ?? const <BangumiWatchedItem>[];
-                if (watched.isEmpty) {
-                  return Center(
-                    child: FushiPlaceholderMessage(
-                      icon: FushiIcons.visibility,
-                      message: t.media_tracking_watched_empty,
-                    ),
-                  );
-                }
-                return ListView.separated(
-                  itemCount: watched.length,
-                  separatorBuilder: (_, __) =>
-                      const FushiDividerControl(height: 1),
-                  itemBuilder: (BuildContext context, int index) {
-                    final BangumiWatchedItem item = watched[index];
-                    final String? coverUrl = item.subject.coverUrl;
-                    return FushiListItem(
-                      padding: EdgeInsets.zero,
-                      titleMaxLines: 2,
-                      leading: SizedBox(
-                        width: 42,
-                        height: 56,
-                        child: coverUrl == null
-                            ? const FushiIcon(FushiIcons.video)
-                            : ClipRRect(
-                                borderRadius: FushiBorderRadius.chip,
-                                child: Image(
-                                  image: AppHttpImage(coverUrl),
-                                  fit: BoxFit.cover,
-                                  errorBuilder: (_, __, ___) =>
-                                      const FushiIcon(FushiIcons.brokenImage),
-                                ),
-                              ),
-                      ),
-                      title: Text(
-                        item.subject.displayName,
-                        maxLines: 2,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      subtitle: Text(
-                        t.media_tracking_watched_progress(
-                          n: item.episodeProgress,
-                        ),
-                      ),
-                      trailing: FushiTooltip(
-                        message: t.media_tracking_open_subject,
-                        child: const FushiIcon(FushiIcons.openInNew, size: 18),
-                      ),
-                      onTap: () =>
-                          unawaited(widget.onOpenSubject(item.subject.id)),
-                    );
-                  },
-                );
-              },
-        ),
-      ),
-      actions: <Widget>[
-        FushiTextButton(
-          onPressed: () => Navigator.of(context).pop(),
-          child: Text(t.dialog_close),
-        ),
-      ],
-    );
+  void onMediaVisibilityChanged() {
+    _appliedRemoteBooks = null;
+    _appliedRemoteVideos = null;
+    if (_remoteGateAtLastLoad) unawaited(_loadRemoteDashboardData());
   }
-}
 
-/// Bangumi 同步卡最多列出的已关联条目数（超出的去设置页看全量；首页卡片是状态
-/// 概览，不是映射管理器）。有失败的条目由
-/// [MediaTrackingStatus.mappingsProblemFirst] 排到最前，不会被这个上限挤掉。
-const int _kTrackingMappingLimit = 5;
-
-/// 首页卡最多直接摊开的待手动关联条目数；完整清单在「管理关联」页。
-const int _kTrackingUnlinkedLimit = 5;
-
-class _HomeDashboardPageState
-    extends BaseModuleTabPageState<HomeDashboardPage> {
   /// 首页主纵向滚动区自己的控制器。滚轮平滑由根部 `SmoothWheelScrollScope`
   /// 统一处理（BUG-2834），这里不再需要特制控制器。
   final ScrollController _dashboardScrollController = ScrollController();
@@ -681,28 +825,56 @@ class _HomeDashboardPageState
   /// 浮动工具栏 / 「继续」FAB 的滚动驱动状态（见 [HomeToolbarScrollState]）。
   final HomeToolbarScrollState _toolbarScroll = HomeToolbarScrollState();
 
+  /// 重设计外壳的页头大字（[FushiFloatingChromeOverlay.masthead]）的显隐 / 收缩
+  /// 状态，与库页同一套。`late`：热重载时已存在的 State 也能按需建出来。
+  late final FushiFloatingChromeController _mastheadChrome =
+      FushiFloatingChromeController();
+
+  /// 页头大字右侧动作组的槽（本页自己的，不登记进外壳）。
+  late final FushiShellActionsSlot _mastheadActions = FushiShellActionsSlot();
+
   /// 工具栏「更新中心」按钮的未读角标（[initState] 建，[dispose] 释放）。
   HomeUpdateCount? _updateCount;
 
-  /// 本帧「继续」区的主角条目（[_buildContinueSection] 写入，FAB 续开它）；
+  /// 本帧「继续」区的主角条目（[_collectContinueEntries] 写入，FAB 续开它）；
   /// null = 没有可继续的条目，FAB 不出现。
   _ContinueEntry? _resumeEntry;
 
   /// 「继续」横滑行（主角卡之外的其余条目）：书 / 视频 / 游戏统一 2:3 竖卡、等高
   /// 等宽（视频优先用作品海报，只有横版截帧时裁进竖卡），封面下方挂两行标题。
-  /// 单栏封面高 [_kContinueCoverHeight]，双栏按主列宽放大
-  /// （[dashboardRowCoverHeight]）。
+  /// 首载骨架的封面高 [_kContinueCoverHeight]。
   static const double _kContinueCoverHeight = 132;
 
-  /// 侧栏「最近添加」最多几条：侧栏只给一眼「新进了什么」，完整列表在各库页。
-  static const int _kRecentLimit = 4;
+  /// 「最近添加」组件最多取几条：格子按实际大小放得下几条列几条（6×4 约放满），
+  /// 完整列表在各库页。
+  static const int _kRecentLimit = 24;
+
+  /// 首页小组件编辑态（spec 2026-11-15）。
+  bool _editingWidgets = false;
+
+  /// 本次编辑会话（按网格各一份，含撤销栈）；只有改过的网格在「完成」时落盘。
+  final Map<HomeGridKind, HomeWidgetEditSession> _widgetSessions =
+      <HomeGridKind, HomeWidgetEditSession>{};
+
+  /// 本帧的网格种类、该网格的全部组件（含暂不可用的）与此刻可用的组件
+  /// （build 写入，编辑操作 / 添加面板读）。
+  HomeGridKind _widgetGrid = HomeGridKind.compact;
+  List<HomeWidgetItem> _widgetItemsShown = const <HomeWidgetItem>[];
+  Set<HomeWidgetKind> _widgetAvailableKinds = const <HomeWidgetKind>{};
+
+  /// 刚添加 / 刚改配置的组件（[HomeWidgetItem.slot]）：网格下一帧把它滚进视野并聚焦。
+  String? _revealWidget;
 
   /// 视频文件路径 → 容器时长（毫秒，[VideoFileSpecs] 探测缓存，只查在看的
   /// 视频）。`VideoBooks` 不存总时长，单视频 / 合集里的某一集要画「看到哪」的
   /// 进度条只能借这份缓存；查不到（流媒体 / 还没探测过）时角标退回看到的时间点。
   Map<String, int> _videoDurationMsByPath = const <String, int>{};
 
-  /// [initState] 异步载入的视频库（继续观看 + 视频计数）。
+  /// [initState] 异步载入的视频库（继续观看 + 视频计数），未过上锁过滤。
+  List<VideoBookRow> _allVideos = const <VideoBookRow>[];
+
+  /// [_allVideos] 去掉上锁（未解锁）的视频——本页一切「继续 / 最近添加 / 计数」只读
+  /// 这一份（[build] 开头按 [MediaVisibility] 重算）。
   List<VideoBookRow> _videos = const <VideoBookRow>[];
 
   /// 合集主封面的自有层候选（`MediaCollections.coverPath` 刮削落地的作品海报 /
@@ -717,8 +889,41 @@ class _HomeDashboardPageState
   final Map<String, String?> _videoCoverByCandidates = <String, String?>{};
   final Set<String> _videoCoverResolving = <String>{};
 
+  /// 视频行的合集索引（[_videoIndex]，每轮 [_videos] / 归属 / 组内序只建一次）。
+  HomeDashboardVideoIndex? _videoIndexCache;
+
+  /// 合集 id → 续播目标（[_collectionResumeTarget] 的结果，null = 不出卡）。跟着
+  /// [_videoIndexCache] 失效：成员行 / 组内序换了一轮才重算。
+  final Map<int, ({VideoBookRow row, int index, int count})?>
+  _resumeTargetByCollection =
+      <int, ({VideoBookRow row, int index, int count})?>{};
+
+  /// 「继续」视频卡封面候选（[_videoCoverCandidates]）：'<cid>|<bookUid>' → 候选
+  /// 与签名。随 [_videoIndexCache] / [_collectionCoverById] 换代清空。
+  final Map<String, _VideoCoverCandidates> _videoCoverCandidatesByEntry =
+      <String, _VideoCoverCandidates>{};
+  Map<int, List<String>>? _videoCoverCandidatesCoverMap;
+
+  /// 书 mediaIdentifier → 合集归属键（[_bookCollectionKey]）；随
+  /// [_epubUidByBookKey] / [_primaryCollectionByEntry] 换代清空。
+  final Map<String, String> _bookCollectionKeyCache = <String, String>{};
+  Map<String, String>? _bookCollectionKeyUidMap;
+  Map<String, int>? _bookCollectionKeyPrimaryMap;
+
+  /// 「继续」「最近添加」「近 7 天柱条（学习字数）」按输入身份记忆：build 频繁
+  /// （AppModel 任一通知、封面 / 元数据到达的 setState），输入没换就直接复用。
+  final HomeDashboardMemo<List<_ContinueEntry>> _continueMemo =
+      HomeDashboardMemo<List<_ContinueEntry>>();
+  final HomeDashboardMemo<List<_ContinueEntry>> _recentMemo =
+      HomeDashboardMemo<List<_ContinueEntry>>();
+  final HomeDashboardMemo<_WeekBarsData> _weekBarsMemo =
+      HomeDashboardMemo<_WeekBarsData>();
+
   /// [_loadDashboardDataUnsafe] 载入的游戏库整表缓存（P4：日明细「游戏」节 +
   /// 活动时间轴游戏行的显示名反查用；空表 = 库为空或尚未载入）。
+  List<GalgameEntry> _allGames = const <GalgameEntry>[];
+
+  /// [_allGames] 去掉上锁（未解锁）的游戏（同 [_videos]）。
   List<GalgameEntry> _games = const <GalgameEntry>[];
 
   /// 互联 host 上的「继续」远端补位候选（本地无同 key/uid 的在读书/在看视频）。
@@ -763,6 +968,13 @@ class _HomeDashboardPageState
   Iterable<StatFact> get _dailyRows =>
       _readingRows.followedBy(_watchRows).followedBy(_gameRows);
 
+  /// 目标分子用的媒体语言表与制卡日表（随快照加载，改目标后 [_reloadGoalData] 重载）。
+  Map<String, String> _goalMediaLanguages = const <String, String>{};
+  Map<String, int> _minedByDay = const <String, int>{};
+
+  /// 一行高「语言目标」格（挑了几条目标）滑到第几页：slot 键 → 页号。只在本页内记。
+  final Map<String, int> _languageGoalsPage = <String, int>{};
+
   /// 合集归属映射（统计页/书架同源，显示名规则「非合集上下文拼合集名」用）：
   /// - [_collectionNamesById]：collectionId → 合集名。
   /// - [_primaryCollectionByEntry]：'<mediaType>|<entryKey>' → 折叠归属主 collectionId。
@@ -771,6 +983,17 @@ class _HomeDashboardPageState
   Map<int, String> _collectionNamesById = const <int, String>{};
   Map<String, int> _primaryCollectionByEntry = const <String, int>{};
   Map<String, String> _epubUidByBookKey = const <String, String>{};
+
+  /// 「继续」「最近添加」色块的刮削元数据（[fushiSeriesCoverBlock]：背景图 /
+  /// logo / 概览 / chip），键见 [_seriesMetaKey]。只为真正画出来的条目单查
+  /// （[_seriesMetaFor] 惰性触发），不随首页快照全库预取。值为 null = 查过、
+  /// 没有刮削数据。
+  final Map<String, ({int generation, FushiSeriesMeta? meta})>
+  _seriesMetaByKey = <String, ({int generation, FushiSeriesMeta? meta})>{};
+  final Set<String> _seriesMetaLoading = <String>{};
+
+  /// 本地聚合轮次：[_applySnapshot] 递增，旧轮次取到的元数据画到时重取。
+  int _seriesMetaGeneration = 0;
 
   /// epub bookKey → 本机开始拥有的时刻（epoch 毫秒，`EpubBooks.localAddedAt`，
   /// v118）：宽屏「最近添加」封面行的书侧排序时间源（视频用
@@ -789,11 +1012,14 @@ class _HomeDashboardPageState
   /// 每个视频 bookUid 的最近观看时刻（epoch 毫秒），继续观看排序用。
   Map<String, int> _videoWatchAtByUid = const <String, int>{};
 
-  /// Bangumi 追踪链路的可见状态（[MediaTrackingService.loadStatus]）。
-  MediaTrackingStatus _tracking = MediaTrackingStatus.empty;
+  /// Tracking as the home page shows it: every site's state, the links and
+  /// the local items no site is linked to
+  /// ([MediaTrackingService.loadHomeSnapshot]).
+  MediaTrackingHomeSnapshot _tracking = MediaTrackingHomeSnapshot.empty;
 
-  /// 「立即同步」按钮的进行中态。
-  bool _trackingSyncBusy = false;
+  /// 读到的追踪快照（未按上锁过滤）；[_tracking] 是 build 里按 [MediaVisibility]
+  /// 去掉上锁作品后的那份（待链接拼贴块不露上锁作品的封面 / 标题）。
+  MediaTrackingHomeSnapshot _allTracking = MediaTrackingHomeSnapshot.empty;
 
   /// 订阅「数据变了」信号（阅读/观看/导入落库）以自动刷新，及其防抖定时器。
   /// 首页不保活、且阅读器是 pushed 路由（读完回来首页不重建 initState），故必须靠
@@ -840,12 +1066,29 @@ class _HomeDashboardPageState
 
   /// 首页此刻是否真被看着（所在 tab 可见、没被别的页面盖住）：两种情况 Flutter 都会关掉这里的 TickerMode。
   /// 复习条据此只在看得见时订阅牌组计数（[homeSrsLiveProvider]）。
+  ///
+  /// 订阅 TickerMode 的 notifier 而不是 `TickerMode.valuesOf(context)`：后者让本页
+  /// 的 Element 依赖 TickerMode，每次切走 / 切回都被标脏整页重建一遍，而这里要的
+  /// 只是这一个开关。
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    final bool live = TickerMode.valuesOf(context).enabled;
+    final ValueListenable<TickerModeData> values = TickerMode.getValuesNotifier(
+      context,
+    );
+    if (!identical(values, _tickerValues)) {
+      _tickerValues?.removeListener(_syncSrsLive);
+      _tickerValues = values..addListener(_syncSrsLive);
+    }
+    _syncSrsLive();
+  }
+
+  ValueListenable<TickerModeData>? _tickerValues;
+
+  void _syncSrsLive() {
+    final bool live = _tickerValues?.value.enabled ?? true;
     if (ref.read(homeSrsLiveProvider) == live) return;
-    // 依赖变化回调在构建期内，不能当场改 provider。
+    // TickerMode 的通知与依赖变化回调都在构建期内，不能当场改 provider。
     scheduleMicrotask(() {
       if (mounted) ref.read(homeSrsLiveProvider.notifier).state = live;
     });
@@ -854,6 +1097,11 @@ class _HomeDashboardPageState
   @override
   void initState() {
     super.initState();
+    homeWidgetEditRequested.addListener(_onWidgetEditRequested);
+    // 设置页「编辑首页」在本页建出来之前就发了请求（首页 tab 首次进入）。
+    WidgetsBinding.instance.addPostFrameCallback(
+      (Duration _) => _onWidgetEditRequested(),
+    );
     // 有上一轮快照：首帧直接用它渲染（骨架只在「本进程第一次进首页」出现），
     // 下面的整批重拉照常跑、到达后整体替换。
     final _HomeDashboardSnapshot? snapshot =
@@ -865,6 +1113,8 @@ class _HomeDashboardPageState
     _serverContinue = ServerContinueFeed.of(
       ref.read(appProvider).database,
     ).current;
+    // 「本版新内容」：没有基线（新装 / 降级）先定基线，升级上来的才出卡片。
+    unawaited(ref.read(appProvider).whatsNew?.ensureBaseline());
     unawaited(_loadDashboardData());
     // Kavita 绑定书：服务器端改了进度（网页端翻页 / 标已读未读）时静默对账，
     // 采用后写本地阅读位置，表级信号会带动本页重载。进入 / 切回首页 / 回前台触发。
@@ -942,20 +1192,42 @@ class _HomeDashboardPageState
     // 服务器侧的进度在别处（播放页 / 其它设备）会变，切回首页时重拉——经
     // [ServerContinueFeed] 节流，短时间内来回切 tab 不重发请求。
     unawaited(_loadServerContinue());
-    if (_reloadDeferredWhileHidden) {
-      _reloadDeferredWhileHidden = false;
-      _reloadNow();
-      return;
-    }
+    // 有推迟的重载：现在就做，或（Offstage 还没重建时）留给紧随其后的
+    // [onShownToUserAgain]。重载自己会补位远端，不必再单独拉一次。
+    if (_flushDeferredReload() || _reloadDeferredWhileHidden) return;
     unawaited(_loadRemoteDashboardData(skipIfUnchanged: true));
   }
 
-  /// 首页被 Offstage 藏着时到达的数据变更：只记一笔，不在后台重跑整批聚合。
+  /// 首页回到用户眼前（盖在上面的播放页 / 阅读器 / 详情页弹走，或切回首页 tab）：
+  /// 补做不在眼前期间推迟的重载。
+  @override
+  void onShownToUserAgain() {
+    _flushDeferredReload();
+  }
+
+  /// 首页不在用户眼前（[isShownToUser] 为假）时到达的数据变更：只记一笔，不在
+  /// 后台重跑整批聚合。
   ///
-  /// 保活之前首页一切走就 dispose，根本不会在别的 tab 上重查；保活之后若照旧
-  /// 每次写库都重载，用户在书架 / 阅读器里翻页（readerPositions 写入）就会让
-  /// 看不见的首页隔几秒在 UI isolate 上跑一遍全量统计聚合。
+  /// 两种「不在眼前」都要挡：
+  /// - 切到了别的 tab（被 Offstage 藏着）：保活之前首页一切走就 dispose，根本不会
+  ///   在别的 tab 上重查；保活之后若照旧每次写库都重载，用户在书架 / 阅读器里
+  ///   翻页（readerPositions 写入）就会让看不见的首页隔几秒在 UI isolate 上跑
+  ///   一遍全量统计聚合。
+  /// - 被别的页面盖住（BUG-4895）：从首页「继续」点开视频后首页仍是当前 tab。
+  ///   播放断点每秒往 video_books 落一次库（学习时钟每分钟再写一笔
+  ///   study_segments），于是首页每秒整批重查 + 整页 setState 一次，每次占 UI
+  ///   线程几十毫秒；视频纹理的新帧要等 UI 线程排到才上屏，画面就一顿一顿地
+  ///   掉帧（libmpv 自己的丢帧计数是 0）。
   bool _reloadDeferredWhileHidden = false;
+
+  /// 首页回到用户眼前时补做被推迟的重载；没有推迟的、或仍不在眼前就什么都不做。
+  /// 返回是否发起了重载。
+  bool _flushDeferredReload() {
+    if (!_reloadDeferredWhileHidden || !isShownToUser) return false;
+    _reloadDeferredWhileHidden = false;
+    _reloadNow();
+    return true;
+  }
 
   bool get _isVisibleTab => homeShellTabNotifier.value == HomeTab.home;
 
@@ -1003,7 +1275,7 @@ class _HomeDashboardPageState
     _reloadDebounce?.cancel();
     _reloadDebounce = Timer(const Duration(milliseconds: 400), () {
       if (!mounted) return;
-      if (!_isVisibleTab) {
+      if (!isShownToUser) {
         _reloadDeferredWhileHidden = true;
         return;
       }
@@ -1050,6 +1322,7 @@ class _HomeDashboardPageState
   void dispose() {
     _reloadDebounce?.cancel();
     _kavitaLifecycle?.dispose();
+    _tickerValues?.removeListener(_syncSrsLive);
     homeShellTabNotifier.removeListener(_onTabForKavita);
     _midnightReload?.cancel();
     unawaited(_dataChangeSub?.cancel());
@@ -1058,8 +1331,11 @@ class _HomeDashboardPageState
     _galgameRepo?.removeListener(_scheduleReload);
     _trackingRevision?.removeListener(_scheduleReload);
     _prefsRepoForRemoteGate?.removeListener(_onPrefsChangedForRemoteGate);
+    homeWidgetEditRequested.removeListener(_onWidgetEditRequested);
     _dashboardScrollController.dispose();
     _toolbarScroll.dispose();
+    _mastheadChrome.dispose();
+    _mastheadActions.dispose();
     _updateCount?.dispose();
     super.dispose();
   }
@@ -1113,6 +1389,15 @@ class _HomeDashboardPageState
     // 游戏时长来自 galgame_sessions、游戏 hook 字数来自 legacy game 行 + 段），
     // 首页不再自己读六张表各自累加——与阅读/视频/游戏统计页同一份事实。
     final Future<StatFacts> factsF = loadStatFacts(db, profileId: profileId);
+    // 目标记录可能在别处（设置页）改出限定语言的目标：媒体语言表总是加载（三条
+    // 只取两列的查询），不随此刻的目标列表决定。
+    final Future<Map<String, String>> goalMediaF = loadStudyGoalMediaLanguages(
+      db,
+    );
+    final Future<Map<String, int>> minedByDayF = loadStudyMinedByDay(
+      db,
+      statWindow,
+    );
     final Future<List<MediaCollectionRow>> collectionsF = db
         .getAllMediaCollections();
     // 折叠归属主合集 + 组内 sortIndex 一次查回，且只查本机库里还在的条目
@@ -1127,11 +1412,14 @@ class _HomeDashboardPageState
     final Future<List<GalgameEntry>> gamesF = galgameRepo.isLoaded
         ? Future<List<GalgameEntry>>.value(galgameRepo.games)
         : galgameRepo.load();
-    // Bangumi 追踪状态（映射 + 待办 + 上次同步结果）。读的是本地库与偏好，不发
-    // 网络请求，可以和其它聚合一起进首屏。临时下线期间卡不挂载，状态也不必查。
-    final Future<MediaTrackingStatus> trackingF = kMediaTrackingEnabled
-        ? appModel.mediaTrackingService.loadStatus()
-        : Future<MediaTrackingStatus>.value(MediaTrackingStatus.empty);
+    // 追踪状态（映射 + 待办 + 上次同步结果）。读的是本地库与偏好，不发网络请求，
+    // 可以和其它聚合一起进首屏。Media tracking 模块关着时条带不挂载，状态也不必查。
+    final Future<MediaTrackingHomeSnapshot> trackingF =
+        isMediaTrackingEnabled(appModel.moduleVisibility)
+        ? appModel.mediaTrackingService.loadHomeSnapshot()
+        : Future<MediaTrackingHomeSnapshot>.value(
+            MediaTrackingHomeSnapshot.empty,
+          );
     final Future<List<MediaImageRow>> discCoversF = db.getMediaImagesOfKind(
       MediaImageKind.discCover,
     );
@@ -1143,6 +1431,8 @@ class _HomeDashboardPageState
       gamesF,
       trackingF,
       discCoversF,
+      goalMediaF,
+      minedByDayF,
     ]);
     final List<VideoBookRow> videos = await videosF;
     final StatFacts facts = await factsF;
@@ -1170,18 +1460,12 @@ class _HomeDashboardPageState
     };
     final Map<String, ({int collectionId, int sortIndex})> membership =
         await membershipF;
-    final Map<String, int> primaryByEntry = <String, int>{
-      for (final MapEntry<String, ({int collectionId, int sortIndex})> e
-          in membership.entries)
-        e.key: e.value.collectionId,
-    };
     // 组内序：条目在其主折叠合集里的 sortIndex（视频页/书架 _loadShelfMaps 同
     // 口径——只记归属主合集的行；SQL 侧已按主键回查好）。
-    final Map<String, int> memberSortIndex = <String, int>{
-      for (final MapEntry<String, ({int collectionId, int sortIndex})> e
-          in membership.entries)
-        e.key: e.value.sortIndex,
-    };
+    final ({Map<String, int> primaryByEntry, Map<String, int> sortIndex})
+    split = splitPrimaryCollectionMembership(membership);
+    final Map<String, int> primaryByEntry = split.primaryByEntry;
+    final Map<String, int> memberSortIndex = split.sortIndex;
     final List<EpubBookMeta> epubRows = facts.epubRows;
     // v83：成员表 epub entryKey = uid，同批行顺带建 bookKey→uid 换算表（空 uid
     // 异常行不进表，查归属时按 bookKey 原样回退）。
@@ -1196,18 +1480,10 @@ class _HomeDashboardPageState
         if (r.localAddedAt != null) r.bookKey: r.localAddedAt!,
     };
 
-    // 每个视频的最近观看时刻（按 bookUid 取 lastActiveMs 最大值；legacy 无身份行
-    // mediaKey '' 跳过）。
-    final Map<String, int> watchAt = <String, int>{};
-    for (final StatFact w in watch) {
-      final String uid = w.mediaKey;
-      if (uid.isEmpty) continue;
-      if (w.lastActiveMs > (watchAt[uid] ?? 0)) {
-        watchAt[uid] = w.lastActiveMs;
-      }
-    }
+    // 每个视频的最近观看时刻（首页速览用同一份派生）。
+    final Map<String, int> watchAt = homeContinueVideoWatchAtByUid(watch);
 
-    final MediaTrackingStatus tracking = await trackingF;
+    final MediaTrackingHomeSnapshot tracking = await trackingF;
 
     // 在看视频的总时长（「继续」卡进度条 / 百分比角标）：只查有断点的本地文件，
     // 一条 IN 查询拿全；探测缓存里没有的（流媒体 / 没探测过）不进表。
@@ -1240,6 +1516,8 @@ class _HomeDashboardPageState
       memberSortIndex: memberSortIndex,
       videoWatchAtByUid: watchAt,
       videoDurationMsByPath: durationByPath,
+      goalMediaLanguages: await goalMediaF,
+      minedByDay: await minedByDayF,
     );
     _snapshots[db] = snapshot;
     if (!mounted) return;
@@ -1253,9 +1531,9 @@ class _HomeDashboardPageState
   void _applySnapshot(_HomeDashboardSnapshot s) {
     _shownProfileId = s.profileId;
     _statWindow = s.statWindow;
-    _videos = s.videos;
-    _games = s.games;
-    _tracking = s.tracking;
+    _allVideos = s.videos;
+    _allGames = s.games;
+    _allTracking = s.tracking;
     _readingRows = s.readingRows;
     _watchRows = s.watchRows;
     _gameRows = s.gameRows;
@@ -1267,6 +1545,11 @@ class _HomeDashboardPageState
     _memberSortIndex = s.memberSortIndex;
     _videoWatchAtByUid = s.videoWatchAtByUid;
     _videoDurationMsByPath = s.videoDurationMsByPath;
+    _goalMediaLanguages = s.goalMediaLanguages;
+    _minedByDay = s.minedByDay;
+    // 本地聚合换了一轮（可能刚刮削过）：已取的系列元数据标旧，画到时后台重取，
+    // 重取完成前仍画旧值，不闪回无图版式。
+    _seriesMetaGeneration++;
   }
 
   /// 「继续也走 fushi 互联」：互联启用且已配对时，从 host 拉取书清单（内联
@@ -1368,18 +1651,27 @@ class _HomeDashboardPageState
       final Set<String> localVideoUids = <String>{
         for (final VideoBookRow v in _videos) v.bookUid,
       };
+      // 对端标了上锁 / 本机快照里上锁的条目不进远端「继续」（[MediaVisibility]
+      // 唯一入口）；口径变了由 [onMediaVisibilityChanged] 重算。
+      final MediaVisibility lockVisibility = mediaVisibility;
       final List<RemoteContinueCandidate> continueCandidates =
           remoteContinueCandidates(
             localBookKeys: localBookKeys,
             localVideoUids: localVideoUids,
             remoteBooks: filterOutLocallyDeletedRemoteBooks(
-              remote: remoteBooks,
+              remote: <RemoteBookInfo>[
+                for (final RemoteBookInfo b in remoteBooks)
+                  if (!lockVisibility.hidesRemoteBook(b)) b,
+              ],
               deletedKeys: deletedBookKeys,
               keyOf: sanitizeTtuFilename,
             ),
             remoteVideos: filterOutLocallyDeletedRemoteVideos(
               // 继续观看只给对端真能经 host 播放的条目（BUG-3875）。
-              remote: peerPlayableRemoteVideos(remoteVideos),
+              remote: peerPlayableRemoteVideos(<RemoteVideoInfo>[
+                for (final RemoteVideoInfo v in remoteVideos)
+                  if (!lockVisibility.hidesRemoteVideo(v)) v,
+              ]),
               deletedKeys: deletedVideoKeys,
             ),
           );
@@ -1608,9 +1900,33 @@ class _HomeDashboardPageState
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final AppModel appModel = ref.watch(appProvider);
-    final List<MediaItem> books =
+    // 上锁（未解锁）的书 / 视频 / 游戏不进首页任何卡片（[MediaVisibility]，唯一的
+    // 上锁过滤入口）；「继续」的 FAB 续读也只从可见条目里挑。
+    final MediaVisibility lockVisibility = MediaVisibility.of(context);
+    final List<MediaItem> allBooks =
         ref.watch(fushiBooksProvider(JapaneseLanguage.instance)).valueOrNull ??
         const <MediaItem>[];
+    final List<MediaItem> books = lockVisibility.hidesAnything
+        ? <MediaItem>[
+            for (final MediaItem item in allBooks)
+              if (!_hiddenByLock(lockVisibility, item)) item,
+          ]
+        : allBooks;
+    _videos = lockVisibility.hidesAnything
+        ? <VideoBookRow>[
+            for (final VideoBookRow v in _allVideos)
+              if (!lockVisibility.hidesVideo(v.bookUid)) v,
+          ]
+        : _allVideos;
+    _games = lockVisibility.hidesAnything
+        ? <GalgameEntry>[
+            for (final GalgameEntry g in _allGames)
+              if (!lockVisibility.hidesGame(g.id)) g,
+          ]
+        : _allGames;
+    _tracking = lockVisibility.hidesAnything
+        ? _allTracking.withoutMedia(lockVisibility.hidesTrackedMedia)
+        : _allTracking;
     final Map<String, int> lastReadByKey =
         ref.watch(bookLastReadAtProvider).valueOrNull ?? const <String, int>{};
     // v82：lastReadByKey 的键是书 uid；MediaItem 身份是 bookKey，查前经此表换算。
@@ -1620,47 +1936,37 @@ class _HomeDashboardPageState
     final Set<String> completedBookKeys =
         ref.watch(completedEpubBookKeysProvider).valueOrNull ??
         const <String>{};
-    // Bangumi 同步临时下线（kMediaTrackingEnabled，见 media_tracking_service.dart）。
-    // 上线状态下此卡恒显示（未连接时也要显示——「没连上」本身就是用户最需要看到的
-    // 那条状态，隐藏它就回到了「看完了没反应」的黑盒）。
-    // 媒体追踪属 [ModuleId.services]（追踪靠在线服务的凭据跑，同一个开关）：模块
-    // 关掉时整卡不挂载——卡内的「去设置」直落 mediaTracking 分类，而那个分类此刻
-    // 已被同一个开关从设置页藏掉，留着就是一条通往不存在页面的死路。
-    final Widget? trackingCard =
-        kMediaTrackingEnabled &&
-            appModel.moduleVisibility.isEnabled(ModuleId.services)
-        ? _buildTrackingCard(tokens, appModel, DateTime.now())
-        : null;
-    // 可选面板（[HomeDashboardPanel] 注册表，按注册顺序）：各自判定是否出现，
-    // 紧跟「今日」之后。
-    final List<Widget> optionalPanels = <Widget>[
-      for (final HomeDashboardPanel panel in HomeDashboardPanel.values)
-        if (_buildOptionalPanel(panel) case final Widget w) w,
-    ];
+    // 组件可用性（spec「显隐语义」）：复习 / AI 的判据经 ref.watch 订阅。
+    final ModuleVisibility visibility = appModel.moduleVisibility;
+    final bool srsAvailable = ref.watch(srsModuleEnabledProvider);
+    final bool aiAvailable = ref.watch(homeAiAgentWidgetAvailableProvider);
+    final Set<HomeWidgetKind> availableKinds = <HomeWidgetKind>{
+      for (final HomeWidgetKind kind in HomeWidgetKind.values)
+        if (homeWidgetAvailable(
+          kind,
+          reading:
+              visibility.isEnabled(ModuleId.books) ||
+              visibility.isEnabled(ModuleId.manga),
+          watching: visibility.isEnabled(ModuleId.video),
+          playing: visibility.isEnabled(ModuleId.games),
+          srs: srsAvailable,
+          tracking: isMediaTrackingEnabled(visibility),
+          ai: aiAvailable,
+        ))
+          kind,
+    };
+    _widgetAvailableKinds = availableKinds;
 
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
-        // 2026-10-10 重设计（用户：「首页每一项都要有标题，加回继续阅读和 M3E 波浪
-        // 条，横屏竖屏都要好用但别信息过多」）。每个分区都是带标题的卡：
-        // - 「今日」：学习头部行（目标环 + 今日字数 + 今日时长）；
-        // - 「继续」：最近一条放大成主角卡（[FushiContinueSpotlight] 主卡：波浪进度条 +
-        //   「继续阅读 / 继续观看」主按钮），其余条目是带标题的封面横滑行；
-        // - 「最近添加」：只在双栏版式的侧栏出现（紧凑列表，最多 4 条）；
-        // - Bangumi 同步卡（模块开着时）。
-        //
-        // 版式（[dashboardUsesTwoColumns]）：
-        // - 竖屏单栏：今日 → 继续 → 同步卡。手机竖屏一屏就是「今天读了多少 +
-        //   接着读什么」，不再塞别的。
-        // - 横屏 / 宽屏（2026-10-31 用户选定方案 A「书影主卡」，取代 3/5 + 2/5
-        //   双栏）：「继续」满宽在上——主卡在起始侧、其余在读 / 在看 / 在玩的
-        //   混排封面行在它旁边（[_buildContinueSection]）；下面是今日、可选面板、
-        //   最近添加、同步卡，按剩余宽度自适应分列（[HomePanelFlow]：面板少就
-        //   每列更宽，不在右侧留空）。封面按内容宽放大（[dashboardHeroCoverHeight]
-        //   / [dashboardRowCoverHeight]）。
-        final bool twoColumn = dashboardUsesTwoColumns(constraints.biggest);
-        final double contentWidth =
-            constraints.maxWidth - tokens.spacing.card * 2;
-        final double mainWidth = contentWidth;
+        // 2026-11-15 首页小组件网格（docs/specs/2026-11-15-home-widgets-design.md，
+        // 取代 2026-10-10 起的固定分区）：用户可增删、拖动排序、调尺寸的小组件。
+        // 窄版式（[dashboardUsesTwoColumns] 为 false：竖屏手机 / 平板竖屏）是 2 列
+        // 网格、宽版式是 6 列，两份布局各存各的（[HomeWidgetLayout]）。
+        final HomeGridKind grid = dashboardUsesTwoColumns(constraints.biggest)
+            ? HomeGridKind.wide
+            : HomeGridKind.compact;
+        _widgetGrid = grid;
         final List<_ContinueEntry> continueEntries = _collectContinueEntries(
           appModel,
           books,
@@ -1668,36 +1974,31 @@ class _HomeDashboardPageState
           epubUidByKey,
           completedBookKeys,
         );
-        final Widget continueCard = _buildContinueSection(
-          tokens,
-          appModel,
-          continueEntries,
-          // 横屏手机高度紧：主卡封面再按视口高封顶（40%），「今日」等面板仍能
-          // 露在首屏。
-          heroCoverHeight: twoColumn
-              ? math.min(
-                  dashboardHeroCoverHeight(mainWidth),
-                  math.max(150.0, constraints.maxHeight * 0.4),
-                )
-              : 150,
-          rowCoverHeight: twoColumn
-              ? dashboardRowCoverHeight(mainWidth)
-              : _kContinueCoverHeight,
-        );
-        final Widget studyCard = _buildStudySection(
-          tokens,
-          showWeek: twoColumn,
-        );
-        final Widget? recentCard = twoColumn && _initialLoadDone
-            ? _buildRecentlyAddedCard(tokens, appModel, books)
-            : null;
-        int entrance = 0;
-        Widget entering(Widget child) =>
-            FushiStaggeredEntrance(index: entrance++, child: child);
+        List<HomeWidgetItem> items = _widgetItemsFor(appModel, grid);
+        List<HomeWidgetItem> visible = <HomeWidgetItem>[
+          for (final HomeWidgetItem item in items)
+            if (availableKinds.contains(item.kind)) item,
+        ];
+        // 默认布局（这份网格没编辑过、也没在编辑）按此刻可见的组件补洞填满；
+        // 自定义过的完全按存档尺寸（用户 2026-11-17）。补出来的尺寸回写进完整列表，
+        // 首次编辑以填满后的样子为起点，进编辑态不会缩回去露出空洞。
+        if (_widgetSessions[grid] == null &&
+            appModel.homeWidgetLayout.itemsFor(grid) == null) {
+          visible = fillHomeWidgetGaps(visible, grid);
+          final Map<String, HomeWidgetSize> filled = <String, HomeWidgetSize>{
+            for (final HomeWidgetItem e in visible) e.slot: e.size,
+          };
+          items = <HomeWidgetItem>[
+            for (final HomeWidgetItem e in items)
+              e.withSize(filled[e.slot] ?? e.size),
+          ];
+        }
+        _widgetItemsShown = items;
         // 新手引导卡（用户 2026-10-21：跳过了引导 / 还没导入任何东西时，首页常驻
-        // 一个回到引导的入口）。排在最上面、最先进场。
+        // 一个回到引导的入口）。排在网格上面、最先进场。
         final Widget? onboardingCard =
             _initialLoadDone &&
+                !_editingWidgets &&
                 homeOnboardingCardVisible(
                   dismissed: appModel.onboardingHomeCardDismissed,
                   onboardingFinished: appModel.onboardingFinished,
@@ -1707,120 +2008,942 @@ class _HomeDashboardPageState
                       _games.isEmpty &&
                       continueEntries.isEmpty,
                 )
-            ? entering(_buildOnboardingCard(tokens, appModel))
+            ? FushiStaggeredEntrance(
+                index: 0,
+                child: _buildOnboardingCard(tokens, appModel),
+              )
             : null;
-        final Widget body;
-        if (twoColumn) {
-          final List<Widget> panels = <Widget>[
-            entering(studyCard),
-            for (final Widget panel in optionalPanels) entering(panel),
-            if (recentCard != null) entering(recentCard),
-            if (trackingCard != null) entering(trackingCard),
-          ];
-          body = Column(
-            key: const ValueKey<String>('home-two-column'),
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              entering(continueCard),
-              SizedBox(height: tokens.spacing.card),
-              HomePanelFlow(
-                key: const ValueKey<String>('home-panel-flow'),
-                gap: tokens.spacing.card,
-                children: panels,
-              ),
-            ],
-          );
-        } else {
-          body = Column(
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            mainAxisSize: MainAxisSize.min,
-            children: <Widget>[
-              entering(studyCard),
-              for (final Widget panel in optionalPanels) ...<Widget>[
-                SizedBox(height: tokens.spacing.card),
-                entering(panel),
-              ],
-              SizedBox(height: tokens.spacing.card),
-              entering(continueCard),
-              if (trackingCard != null) ...<Widget>[
-                SizedBox(height: tokens.spacing.card),
-                entering(trackingCard),
-              ],
-            ],
-          );
-        }
-        // 2026-10 动效重做：仪表盘首屏错峰进场。
+        int fullIndexOf(List<HomeWidgetItem> full, int visibleIndex) =>
+            full.indexWhere(
+              (HomeWidgetItem e) => e.slot == visible[visibleIndex].slot,
+            );
+        final Widget body = visible.isEmpty
+            ? _buildWidgetEmptyState()
+            : HomeWidgetGrid(
+                key: const ValueKey<String>('home-widget-grid'),
+                items: visible,
+                grid: grid,
+                editing: _editingWidgets,
+                cellBuilder: (BuildContext context, HomeWidgetItem item) =>
+                    _buildWidgetCell(
+                      tokens: tokens,
+                      appModel: appModel,
+                      entries: continueEntries,
+                      books: books,
+                      item: item,
+                    ),
+                labelOf: homeWidgetItemLabel,
+                onEnterEdit: _enterWidgetEdit,
+                onExitEdit: () => unawaited(_finishWidgetEdit()),
+                onMove: (int from, int to) => _editWidgets(
+                  (List<HomeWidgetItem> full) => moveHomeWidget(
+                    full,
+                    fullIndexOf(full, from),
+                    fullIndexOf(full, to),
+                  ),
+                ),
+                onRemove: (int index) => _editWidgets(
+                  (List<HomeWidgetItem> full) =>
+                      removeHomeWidgetAt(full, fullIndexOf(full, index)),
+                ),
+                onResize: (int index, HomeWidgetSize size) => _editWidgets(
+                  (List<HomeWidgetItem> full) => setHomeWidgetSize(
+                    full,
+                    fullIndexOf(full, index),
+                    grid,
+                    size,
+                  ),
+                ),
+                onConfigure: (int index) =>
+                    unawaited(_configureWidgetLanguage(visible[index])),
+                revealSlot: _revealWidget,
+                onRevealed: () => _revealWidget = null,
+              );
         // 2026-10 首页统一浮动工具栏：顶部不再是贴边实体条，栏与「继续」FAB
         // 悬浮在列表之上（Stack），列表顶部让出栏高、底部让出 FAB 与外壳
         // 底栏（Apple 悬浮标签栏经 extendBody 并进 MediaQuery 底部内边距）。
         final double bottomInset = MediaQuery.paddingOf(context).bottom;
-        // Apple 没有 FAB：「继续」只走主角卡封面行，底部不为 FAB 让位。
-        final bool resumeFab = homeResumeFabEnabled(context);
-        final Widget list = ListView(
-          controller: _dashboardScrollController,
-          padding: EdgeInsets.fromLTRB(
-            tokens.spacing.card,
-            homeToolbarExtent(context) + tokens.spacing.card,
-            tokens.spacing.card,
-            tokens.spacing.card + bottomInset + homeFabClearance(context),
-          ),
-          children: <Widget>[
-            // v101 更新提醒：有未读时才占位（横幅自己在 total==0 时收成
-            // SizedBox.shrink），没有更新的日子首页不多一块空卡。
-            UpdatesDashboardBanner(service: appModel.updateFeedService),
-            // 已迁移只读态（Fushi 迁移 P1-4，仅老包生效）：首屏常驻引导。
-            if (appModel.isMigrationReadonly) ...<Widget>[
-              _MigrationReadonlyBanner(appModel: appModel),
-              SizedBox(height: tokens.spacing.card),
-            ],
-            // Fushi 侧（P2-2/P2-3）：检测到迁移数据 → 导入引导；导入完成且旧包
-            // 仍在 → 卸载引导（ACTION_DELETE + 复查）。仅 Android。
-            if (!kIsWeb &&
-                Platform.isAndroid &&
-                appModel.packageInfo.packageName !=
-                    kHibikiPackageName) ...<Widget>[
-              _FushiMigrationBanner(appModel: appModel),
-            ],
-            if (onboardingCard != null) ...<Widget>[
-              onboardingCard,
-              SizedBox(height: tokens.spacing.card),
-            ],
-            body,
-          ],
-        );
-        return FushiEntranceScope(
-          // 一个遍历组：Tab 先走顶部浮动栏（几何上在最上方），再进列表，
-          // 最后是 FAB。
-          child: FocusTraversalGroup(
-            child: Stack(
-              children: <Widget>[
-                NotificationListener<ScrollMetricsNotification>(
-                  onNotification: _toolbarScroll.handleMetrics,
-                  child: NotificationListener<ScrollNotification>(
-                    onNotification: _toolbarScroll.handle,
-                    child: list,
-                  ),
-                ),
-                Positioned(
-                  top: 0,
-                  left: tokens.spacing.card,
-                  right: tokens.spacing.card,
-                  child: _buildFloatingToolbar(),
-                ),
-                if (resumeFab)
-                  PositionedDirectional(
-                    end: kHomeFabMargin,
-                    bottom: kHomeFabMargin + bottomInset,
-                    child: _buildResumeFab(appModel),
-                  ),
-              ],
+        // Apple 没有 FAB；编辑态底部换成编辑工具栏，FAB 让位。
+        final bool resumeFab =
+            homeResumeFabEnabled(context) && !_editingWidgets;
+        final Widget page;
+        if (shellRedesignActive(context)) {
+          page = _buildRedesignedDashboard(
+            tokens: tokens,
+            appModel: appModel,
+            onboardingCard: onboardingCard,
+            body: body,
+            resumeFab: resumeFab,
+            bottomInset: bottomInset,
+          );
+        } else {
+          final Widget list = ListView(
+            controller: _dashboardScrollController,
+            padding: EdgeInsets.fromLTRB(
+              tokens.spacing.card,
+              homeToolbarExtent(context) + tokens.spacing.card,
+              tokens.spacing.card,
+              tokens.spacing.card + bottomInset + homeFabClearance(context),
             ),
+            children: <Widget>[
+              // v101 更新提醒：有未读时才占位（横幅自己在 total==0 时收成
+              // SizedBox.shrink），没有更新的日子首页不多一块空卡。
+              if (appModel.whatsNew case final WhatsNewController whatsNew)
+                WhatsNewHomeCard(
+                  controller: whatsNew,
+                  onOpen: () => unawaited(_openWhatsNew(whatsNew, appModel)),
+                ),
+              UpdatesDashboardBanner(service: appModel.updateFeedService),
+              // 已迁移只读态（Fushi 迁移 P1-4，仅老包生效）：首屏常驻引导。
+              if (appModel.isMigrationReadonly) ...<Widget>[
+                _MigrationReadonlyBanner(appModel: appModel),
+                SizedBox(height: tokens.spacing.card),
+              ],
+              // Fushi 侧（P2-2/P2-3）：检测到迁移数据 → 导入引导；导入完成且旧包
+              // 仍在 → 卸载引导（ACTION_DELETE + 复查）。仅 Android。
+              if (!kIsWeb &&
+                  Platform.isAndroid &&
+                  appModel.packageInfo.packageName !=
+                      kHibikiPackageName) ...<Widget>[
+                _FushiMigrationBanner(appModel: appModel),
+              ],
+              if (onboardingCard != null) ...<Widget>[
+                onboardingCard,
+                SizedBox(height: tokens.spacing.card),
+              ],
+              body,
+            ],
+          );
+          page = FushiEntranceScope(
+            // 一个遍历组：Tab 先走顶部浮动栏（几何上在最上方），再进列表，
+            // 最后是 FAB。
+            child: FocusTraversalGroup(
+              child: Stack(
+                children: <Widget>[
+                  NotificationListener<ScrollMetricsNotification>(
+                    onNotification: _toolbarScroll.handleMetrics,
+                    child: NotificationListener<ScrollNotification>(
+                      onNotification: _toolbarScroll.handle,
+                      child: list,
+                    ),
+                  ),
+                  Positioned(
+                    top: 0,
+                    left: tokens.spacing.card,
+                    right: tokens.spacing.card,
+                    child: _buildFloatingToolbar(),
+                  ),
+                  if (resumeFab)
+                    PositionedDirectional(
+                      end: kHomeFabMargin,
+                      bottom: kHomeFabMargin + bottomInset,
+                      child: _buildResumeFab(appModel),
+                    ),
+                ],
+              ),
+            ),
+          );
+        }
+        // 编辑态：系统返回 = 完成（保存）；底部浮动编辑工具栏（添加 / 撤销 / 恢复默认 / 完成）。
+        return PopScope(
+          canPop: !_editingWidgets,
+          onPopInvokedWithResult: (bool didPop, Object? _) {
+            if (!didPop && _editingWidgets) unawaited(_finishWidgetEdit());
+          },
+          child: Stack(
+            children: <Widget>[
+              Positioned.fill(child: page),
+              if (_editingWidgets)
+                Positioned(
+                  left: 0,
+                  right: 0,
+                  bottom: kHomeFabMargin + bottomInset,
+                  child: Center(child: _buildWidgetEditToolbar()),
+                ),
+            ],
           ),
         );
       },
     );
   }
+
+  // ── 小组件编辑态（spec 2026-11-15） ─────────────────────────────────────
+
+  /// [grid] 那份布局此刻的组件（含暂不可用的）：编辑中 = 本次编辑会话；存过 = 偏好里
+  /// 的；从没编辑过 = 由旧「首页面板」显示档现算的迁移结果（首次编辑前不落盘）。
+  /// 只在 build 里调用：迁移判据经 ref.watch 订阅。
+  List<HomeWidgetItem> _widgetItemsFor(AppModel appModel, HomeGridKind grid) {
+    final HomeWidgetEditSession? session = _widgetSessions[grid];
+    if (session != null) return session.items;
+    final List<HomeWidgetItem>? stored = appModel.homeWidgetLayout.itemsFor(
+      grid,
+    );
+    if (stored != null) return stored;
+    return migrateHomeWidgetLayout(
+      grid: grid,
+      modes: appModel.homeDashboardPanelModes,
+      auto: _widgetAutoFacts(watch: true),
+    );
+  }
+
+  /// 迁移 / 「恢复默认」用的旧自动档判据。[watch] = 在 build 里订阅。
+  HomeWidgetAutoFacts _widgetAutoFacts({required bool watch}) =>
+      HomeWidgetAutoFacts(
+        srsReview: watch
+            ? ref.watch(homeSrsAutoDefaultProvider)
+            : ref.read(homeSrsAutoDefaultProvider),
+        tracking: HomeTrackingSummary.of(_tracking).needsAttention,
+        aiAgent: watch
+            ? ref.watch(homeAiAgentAutoDefaultProvider)
+            : ref.read(homeAiAgentAutoDefaultProvider),
+      );
+
+  /// 进入编辑态（页头「编辑首页」、长按组件、设置页「编辑首页」）。
+  void _enterWidgetEdit() {
+    if (_editingWidgets || !mounted) return;
+    setState(() {
+      _editingWidgets = true;
+      _widgetSessions.clear();
+    });
+  }
+
+  /// 设置页「编辑首页」：切到首页 tab 后由这里接住请求。
+  void _onWidgetEditRequested() {
+    if (!homeWidgetEditRequested.value) return;
+    homeWidgetEditRequested.value = false;
+    _enterWidgetEdit();
+  }
+
+  /// 对当前网格那份布局做一次编辑（进本次会话的撤销栈）。
+  void _editWidgets(
+    List<HomeWidgetItem> Function(List<HomeWidgetItem> items) change,
+  ) {
+    final HomeGridKind grid = _widgetGrid;
+    final HomeWidgetEditSession session =
+        _widgetSessions[grid] ?? HomeWidgetEditSession(_widgetItemsShown);
+    setState(
+      () => _widgetSessions[grid] = session.apply(change(session.items)),
+    );
+  }
+
+  void _undoWidgetEdit() {
+    final HomeWidgetEditSession? session = _widgetSessions[_widgetGrid];
+    if (session == null || !session.canUndo) return;
+    setState(() => _widgetSessions[_widgetGrid] = session.undo());
+  }
+
+  /// 「恢复默认」：当前网格换回默认模板（与首次迁移同一结果），可撤销。
+  void _restoreWidgetDefaults() {
+    final AppModel appModel = ref.read(appProvider);
+    final List<HomeWidgetItem> defaults = migrateHomeWidgetLayout(
+      grid: _widgetGrid,
+      modes: appModel.homeDashboardPanelModes,
+      auto: _widgetAutoFacts(watch: false),
+    );
+    _editWidgets((List<HomeWidgetItem> _) => defaults);
+  }
+
+  /// 「完成」：本次会话里改过的网格写回偏好（没改过的那份不落盘，继续跟着迁移
+  /// 判据走），退出编辑态。
+  Future<void> _finishWidgetEdit() async {
+    if (!_editingWidgets) return;
+    final AppModel appModel = ref.read(appProvider);
+    HomeWidgetLayout layout = appModel.homeWidgetLayout;
+    bool changed = false;
+    for (final MapEntry<HomeGridKind, HomeWidgetEditSession> e
+        in _widgetSessions.entries) {
+      if (!e.value.canUndo) continue;
+      layout = layout.withItems(e.key, e.value.items);
+      changed = true;
+    }
+    if (changed) await appModel.setHomeWidgetLayout(layout);
+    if (!mounted) return;
+    setState(() {
+      _editingWidgets = false;
+      _widgetSessions.clear();
+      _revealWidget = null;
+    });
+  }
+
+  /// 「添加小组件」：弹添加面板，选中的组件追加到末尾并滚动到它。
+  Future<void> _addWidget() async {
+    _enterWidgetEdit();
+    final HomeGridKind grid = _widgetGrid;
+    final List<HomeWidgetItem> items =
+        _widgetSessions[grid]?.items ?? _widgetItemsShown;
+    final HomeWidgetItem? picked = await showHomeWidgetAddSheet(
+      context,
+      grid: grid,
+      available: <HomeWidgetKind>[
+        for (final HomeWidgetKind kind in HomeWidgetKind.values)
+          if (_widgetAvailableKinds.contains(kind)) kind,
+      ],
+      // 可重复的组件（「语言目标」）永远能再加一块（加的时候挑一种还没有格子的语言）。
+      present: <HomeWidgetKind>{
+        for (final HomeWidgetItem e in items)
+          if (!e.kind.repeatable) e.kind,
+      },
+      labelOf: homeWidgetLabel,
+      descriptionOf: homeWidgetDescription,
+    );
+    if (picked == null || !mounted || !_editingWidgets) return;
+    // 添加用默认尺寸；面板开着时窗口可能跨过断点，所以取此刻网格的默认尺寸。
+    HomeWidgetItem item = picked.withSize(picked.kind.defaultFor(_widgetGrid));
+    if (item.kind.repeatable) {
+      // 「语言目标」：加的时候就问是哪种语言（预选第一种还没有格子的候选语言），
+      // 加完格子标题就写着这种语言；之后编辑态右上角的语言角标可以再改。
+      final List<HomeWidgetItem> current =
+          _widgetSessions[_widgetGrid]?.items ?? _widgetItemsShown;
+      final Set<String> taken = <String>{
+        for (final HomeWidgetItem e in current) e.slot,
+      };
+      final AppModel model = ref.read(appProvider);
+      final List<String> candidates = await loadStudyGoalCandidateLanguages(
+        model.database,
+        model.prefsRepo,
+      );
+      if (!mounted || !_editingWidgets) return;
+      final ({String? language})? chosen = await _pickWidgetLanguage(
+        homeLanguageGoalsDefaultLanguage(candidates: candidates, taken: taken),
+        current,
+      );
+      if (chosen == null || !mounted || !_editingWidgets) return;
+      item = item.withLanguage(chosen.language);
+      if (current.any((HomeWidgetItem e) => e.slot == item.slot)) return;
+    }
+    _revealWidget = item.slot;
+    _editWidgets((List<HomeWidgetItem> full) => addHomeWidget(full, item));
+  }
+
+  /// 编辑态改「语言目标」格的语言（角标 / 手柄 Y / 菜单键）。换成的语言已有格子时不变
+  /// （选择器里那些语言标着「首页已有」、不可选）。
+  Future<void> _configureWidgetLanguage(HomeWidgetItem item) async {
+    final ({String? language})? chosen = await _pickWidgetLanguage(
+      item.language,
+      _widgetSessions[_widgetGrid]?.items ?? _widgetItemsShown,
+      onChooseGoals: () => unawaited(_configureWidgetGoals(item)),
+    );
+    if (chosen == null || !mounted || !_editingWidgets) return;
+    final HomeWidgetItem next = item.withLanguage(chosen.language);
+    _revealWidget = next.slot;
+    _editWidgets(
+      (List<HomeWidgetItem> full) => setHomeWidgetLanguage(
+        full,
+        full.indexWhere((HomeWidgetItem e) => e.slot == item.slot),
+        chosen.language,
+      ),
+    );
+  }
+
+  /// 编辑态给「语言目标」格挑显示哪些目标（语言选择框里的「挑选目标…」）：
+  /// [showHomeTileGoalsPicker]；空表 = 回到自动。
+  Future<void> _configureWidgetGoals(HomeWidgetItem item) async {
+    final List<String>? ids = await showHomeTileGoalsPicker(
+      context: context,
+      appModel: ref.read(appProvider),
+      language: item.language,
+      current: item.goals,
+    );
+    if (ids == null || !mounted || !_editingWidgets) return;
+    _revealWidget = item.slot;
+    _editWidgets(
+      (List<HomeWidgetItem> full) => <HomeWidgetItem>[
+        for (final HomeWidgetItem e in full)
+          e.slot == item.slot ? e.withGoals(ids) : e,
+      ],
+    );
+  }
+
+  /// 「语言目标」格的语言选择（全部语言 + 目标候选语言 +「其他…」，
+  /// [showStudyGoalLanguagePicker]）；[items] 里已有格子的语言不可选。关掉返回 null。
+  Future<({String? language})?> _pickWidgetLanguage(
+    String? current,
+    List<HomeWidgetItem> items, {
+    VoidCallback? onChooseGoals,
+  }) => showStudyGoalLanguagePicker(
+    context: context,
+    appModel: ref.read(appProvider),
+    current: current,
+    onChooseGoals: onChooseGoals,
+    taken: <String?>{
+      for (final HomeWidgetItem e in items)
+        if (e.kind == HomeWidgetKind.languageGoals) e.language,
+    },
+  );
+
+  /// 一个组件都没有时：空态说明 + 「添加小组件」。
+  Widget _buildWidgetEmptyState() => HomeEmptyState(
+    stateKey: 'home-widget-empty',
+    icon: FushiIcons.dashboardCustomize,
+    message: t.home_widget_empty,
+    actions: <Widget>[
+      FushiFilledButton.tonalIcon(
+        key: const ValueKey<String>('home-widget-empty-add'),
+        onPressed: () => unawaited(_addWidget()),
+        icon: const FushiIcon(FushiIcons.add),
+        label: Text(t.home_widget_add),
+      ),
+    ],
+  );
+
+  /// 编辑态底部浮动工具栏：纯图标（文字进 tooltip / 读屏），添加 · 撤销 · 恢复默认 · 完成。
+  Widget _buildWidgetEditToolbar() {
+    final HomeWidgetEditSession? session = _widgetSessions[_widgetGrid];
+    return FushiFloatingToolbar(
+      key: const ValueKey<String>('home-widget-edit-toolbar'),
+      groups: <List<FushiToolbarItem>>[
+        <FushiToolbarItem>[
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-widget-edit-add'),
+            icon: FushiIcons.add,
+            label: t.home_widget_add,
+            onPressed: () => unawaited(_addWidget()),
+          ),
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-widget-edit-undo'),
+            icon: FushiIcons.undo,
+            label: t.undo,
+            onPressed: (session?.canUndo ?? false) ? _undoWidgetEdit : null,
+          ),
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-widget-edit-restore'),
+            icon: FushiIcons.restart,
+            label: t.home_widget_restore_default,
+            onPressed: _restoreWidgetDefaults,
+          ),
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-widget-edit-done'),
+            icon: FushiIcons.check,
+            label: t.home_widget_done,
+            emphasized: true,
+            onPressed: () => unawaited(_finishWidgetEdit()),
+          ),
+        ],
+      ],
+    );
+  }
+
+  // ── 重设计外壳（页头大字 + 封面色块） ─────────────────────────────────────
+
+  /// 重设计外壳（墨水屏除外）下的首页：顶部是与库页同一套的页头大字（页名「首页」
+  /// + 模块徽标 + 动作组 + 头像主按钮，随滚动收缩、滚动后铺页头底板），正文（小组件
+  /// 网格 [body]）从它下方开始、滚到它底下。
+  Widget _buildRedesignedDashboard({
+    required FushiDesignTokens tokens,
+    required AppModel appModel,
+    required Widget? onboardingCard,
+    required Widget body,
+    required bool resumeFab,
+    required double bottomInset,
+  }) {
+    final double page = tokens.spacing.page;
+    Widget slivers(BuildContext context) {
+      // 页头大字叠在正文上：正文顶部让出它的版面高度（[FushiFloatingChromeInset]；
+      // 手机钉在收起态时就是收起态高度）。
+      final double inset = FushiFloatingChromeInset.of(context);
+      return CustomScrollView(
+        controller: _dashboardScrollController,
+        slivers: <Widget>[
+          SliverPadding(
+            padding: EdgeInsets.fromLTRB(page, inset, page, 0),
+            sliver: SliverList.list(
+              children: <Widget>[
+                // 与原版式同一组横幅（各自在没有内容时收成零高）。
+                if (appModel.whatsNew case final WhatsNewController whatsNew)
+                  WhatsNewHomeCard(
+                    controller: whatsNew,
+                    onOpen: () => unawaited(_openWhatsNew(whatsNew, appModel)),
+                  ),
+                UpdatesDashboardBanner(service: appModel.updateFeedService),
+                if (appModel.isMigrationReadonly) ...<Widget>[
+                  _MigrationReadonlyBanner(appModel: appModel),
+                  SizedBox(height: tokens.spacing.card),
+                ],
+                if (!kIsWeb &&
+                    Platform.isAndroid &&
+                    appModel.packageInfo.packageName != kHibikiPackageName)
+                  _FushiMigrationBanner(appModel: appModel),
+                if (onboardingCard != null) ...<Widget>[
+                  onboardingCard,
+                  SizedBox(height: tokens.spacing.card),
+                ],
+              ],
+            ),
+          ),
+          SliverPadding(
+            padding: EdgeInsets.symmetric(horizontal: page),
+            sliver: SliverToBoxAdapter(child: body),
+          ),
+          SliverToBoxAdapter(
+            child: SizedBox(
+              height:
+                  tokens.spacing.card + bottomInset + homeFabClearance(context),
+            ),
+          ),
+        ],
+      );
+    }
+
+    return FushiEntranceScope(
+      child: FocusTraversalGroup(
+        child: Stack(
+          children: <Widget>[
+            FushiFloatingChromeScope(
+              controller: _mastheadChrome,
+              child: FushiFloatingChromeOverlay(
+                // 页名与其它模块页同一规格（`FushiPageTitleMetrics`，设计稿
+                // 11-20 #18：以书架为准）：从展开态大字起、随滚动收，不再钉在
+                // 收起态——切 tab 时字号 / 主按钮 / 基线不跳。
+                masthead: true,
+                chrome: _buildMastheadBar(appModel),
+                child: NotificationListener<ScrollMetricsNotification>(
+                  onNotification: _toolbarScroll.handleMetrics,
+                  child: NotificationListener<ScrollNotification>(
+                    onNotification: (ScrollNotification notification) {
+                      _toolbarScroll.handle(notification);
+                      if (fushiNotificationDrivesPageChrome(notification)) {
+                        _mastheadChrome.handleScrollNotification(notification);
+                      }
+                      return false;
+                    },
+                    child: _homeBottomFade(
+                      context,
+                      bottomInset,
+                      Builder(builder: slivers),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+            if (resumeFab)
+              PositionedDirectional(
+                end: kHomeFabMargin,
+                bottom: kHomeFabMargin + bottomInset,
+                child: _buildResumeFab(appModel),
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  /// 页头大字这一行：页名「首页」（外壳不给首页页名，本页自己给）、动作组
+  /// （与旧浮动工具栏同一份 [_toolbarItems]，放不下按优先级收进「⋯」）、主按钮
+  /// 位是头像（点开排行榜）。
+  Widget _buildMastheadBar(AppModel appModel) {
+    final HomeUpdateCount? updateCount = _updateCount;
+    return FushiShellTitleScope(
+      title: _editingWidgets ? t.home_widget_edit : t.nav_home,
+      actionsSlot: _mastheadActions,
+      child: ListenableBuilder(
+        listenable: Listenable.merge(<Listenable?>[
+          updateCount,
+          appModel.whatsNew,
+        ]),
+        builder: (BuildContext context, Widget? _) {
+          final List<FushiToolbarItem> items = _toolbarItems(
+            appModel,
+            updateCount?.value ?? 0,
+            watchFeedbackUnseen(ref),
+          );
+          _mastheadActions.claim(
+            this,
+            visible: true,
+            actions: FushiShellHeaderActions(
+              actions: <Widget>[
+                for (final FushiToolbarItem item in items)
+                  FushiIconButton(
+                    key: item.key,
+                    icon: item.icon,
+                    tooltip: item.label,
+                    onTap: item.onPressed,
+                  ),
+              ],
+            ),
+          );
+          return FushiFloatingChromeBar(
+            tabs: const SizedBox.shrink(),
+            slot: _mastheadActions,
+            trailing: _HomeAvatarPill(onPressed: _openLeaderboard),
+          );
+        },
+      ),
+    );
+  }
+
+  /// 「继续」条目的封面色块：书 / 漫画 = 倾斜书封、视频 = 斜放海报、游戏 = 盒封、
+  /// 有声书 = 方封面。信息与原主角卡 / 封面行同一份（标题、类型 · 来源、进度
+  /// 文案、进度条），拼贴首块再加上次活动时间的状态 chip 与「继续」主按钮外观
+  /// （点卡就是续开，[FushiCoverBlockAction] 只是视觉）。
+  Widget _continueBlock(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    _ContinueEntry entry,
+    int index,
+    FushiCoverBlockSize size, {
+    bool portraitOnly = false,
+  }) {
+    final bool hero = size == FushiCoverBlockSize.hero;
+    final ImageProvider? image = _videoCoverImage(entry);
+    final Widget cover = _continueCover(
+      tokens,
+      appModel,
+      entry,
+      videoImage: image,
+    );
+    final double? progress = entry.progress;
+    final String byline = _continueMetaLine(entry);
+    final int recent = entry.recentMs;
+    final FushiSeriesMeta? series = _seriesMetaFor(entry);
+    Widget blockOf(FushiCoverBlockArt art, Widget cover) =>
+        fushiSeriesCoverBlock(
+          size: size,
+          art: art,
+          title: entry.collectionName ?? entry.title,
+          meta: series,
+          backdrop: art == FushiCoverBlockArt.portrait
+              ? fushiSeriesBackdrop(series?.backdrop)
+              : null,
+          covers: <Widget>[cover],
+          tintImage:
+              _continueTintImage(appModel, entry) ?? fushiCoverImageOf(cover),
+          eyebrow: hero
+              ? (recent > 0
+                    ? formatActivityRelativeTime(recent, DateTime.now())
+                    : _resumeActionLabel(entry))
+              : null,
+          // 首页拼贴（H4）：视频一律竖版海报摆法，没有海报时剧照裁成竖版（与书 /
+          // 游戏同高同摆法，不再整张铺成横版背景、看起来像没封面）。
+          byline: byline.isEmpty ? null : byline,
+          subtitle: entry.badgeLabel,
+          leadingIcon: entry.badgeIcon,
+          progress: progress,
+          action: hero
+              ? FushiCoverBlockAction(
+                  icon: _resumeActionIcon(entry),
+                  label: _resumeActionLabel(entry),
+                )
+              : null,
+        );
+    final Widget block =
+        _seriesBlock(tokens, appModel, entry, series, blockOf) ??
+        (portraitOnly
+            ? blockOf(_continueBlockArt(entry), cover)
+            : _orientedBlock(
+                tokens,
+                appModel,
+                entry,
+                image: image,
+                cover: cover,
+                blockOf: blockOf,
+              ));
+    return FushiHoverLift(
+      builder: (BuildContext _, bool _) => shelfCoverCard(
+        key: ValueKey<String>('home-continue-block/$index'),
+        shape: fushiCoverBlockShape(context, size),
+        onTap: () => unawaited(_openContinueEntry(appModel, entry)),
+        // 色块上已印着标题（或刮削艺术字），悬停不再弹同名 tooltip；读屏的
+        // 标题由 [FushiCoverBlock] 自己的文字 / logo 语义给出。
+        child: block,
+      ),
+    );
+  }
+
+  /// 条目的系列元数据键：本地视频按主合集（散片按 bookUid）、本地书 / 字幕书按
+  /// `item_scrape_meta` 键、合集项（最近添加里合成一项的同合集书）按合集、本地
+  /// 游戏按游戏 id。远端 / 服务器条目没有本机刮削数据，为 null。
+  String? _seriesMetaKey(_ContinueEntry entry) {
+    if (entry.remote != null || entry.server != null) return null;
+    if (entry.video case final VideoBookRow video) {
+      final int? cid = entry.collectionId;
+      return MediaKind.video.compositeKey(
+        cid != null ? 'c$cid' : 'b${video.bookUid}',
+      );
+    }
+    if (entry.game case final GalgameEntry game) {
+      return MediaKind.game.compositeKey(game.id);
+    }
+    final MediaItem? book = entry.book;
+    final MediaKind? kind = entry.kind;
+    if (book == null || kind == null) return null;
+    final String? bookKey = ReaderFushiSource.parseBookKey(
+      book.mediaIdentifier,
+    );
+    final String? uid = bookKey == null ? null : _epubUidByBookKey[bookKey];
+    if (uid == null) return null;
+    final int? cid = entry.seriesCount > 0 ? entry.collectionId : null;
+    return kind.compositeKey('$uid${cid == null ? '' : '|c$cid'}');
+  }
+
+  /// 条目的系列元数据（没有 / 还没取到为 null）。没取过或取的是旧一轮时在后台
+  /// 单查一次，取到后重建；旧值照画到新值到达。
+  FushiSeriesMeta? _seriesMetaFor(_ContinueEntry entry) {
+    final String? key = _seriesMetaKey(entry);
+    if (key == null) return null;
+    final ({int generation, FushiSeriesMeta? meta})? cached =
+        _seriesMetaByKey[key];
+    if ((cached == null || cached.generation != _seriesMetaGeneration) &&
+        _seriesMetaLoading.add(key)) {
+      unawaited(_loadSeriesMeta(key, entry, _seriesMetaGeneration));
+    }
+    return cached?.meta;
+  }
+
+  Future<void> _loadSeriesMeta(
+    String key,
+    _ContinueEntry entry,
+    int generation,
+  ) async {
+    FushiSeriesMeta? meta;
+    try {
+      meta = await _querySeriesMeta(entry);
+    } catch (e, stack) {
+      // 失败也记进本轮缓存（meta 为 null），同一轮快照不再重查；下一轮快照
+      // （_seriesMetaGeneration 自增）按正常机制重取。
+      ErrorLogService.instance.log('HomeDashboardPage.seriesMeta', e, stack);
+    } finally {
+      _seriesMetaLoading.remove(key);
+    }
+    if (!mounted) return;
+    setState(() {
+      _seriesMetaByKey[key] = (generation: generation, meta: meta);
+    });
+  }
+
+  /// 单条目的系列元数据查询（存在性在这里异步探好，build 零 IO）。视频走与视频
+  /// 库同一份 [videoSeriesMeta]；书 / 游戏走 [itemSeriesMeta]，合集项先认合集
+  /// 自己的 [collectionSeriesMeta]。
+  Future<FushiSeriesMeta?> _querySeriesMeta(_ContinueEntry entry) async {
+    final FushiDatabase db = ref.read(appProvider).database;
+    Future<Set<String>> existing(Iterable<String?> paths) async => <String>{
+      for (final String? path in paths)
+        if (path != null && path.isNotEmpty && await File(path).exists()) path,
+    };
+    ImageProvider? Function(String? path) fileOf(Set<String> present) =>
+        (String? path) => path != null && present.contains(path)
+        ? resizedFileImage(File(path))
+        : null;
+
+    if (entry.video case final VideoBookRow video) {
+      final int? cid = entry.collectionId;
+      final VideoMetadataWorkRow? work = cid != null
+          ? await db.getVideoMetadataWorkByCollection(cid)
+          : await db.getVideoMetadataWorkByBook(video.bookUid);
+      final List<MediaImageRow> images = cid != null
+          ? await db.getMediaImagesForCollection(cid)
+          : await db.getMediaImagesForBook(video.bookUid);
+      final List<VideoMetadataImageRow> workImages = work == null
+          ? const <VideoMetadataImageRow>[]
+          : await db.getVideoMetadataImages(workId: work.id);
+      final CollectionScrapeMetaRow? scrape = cid == null
+          ? null
+          : await db.getCollectionScrapeMeta(cid);
+      final List<String> ownCovers = cid == null
+          ? const <String>[]
+          : _collectionCoverById[cid] ?? const <String>[];
+      final Set<String> present = await existing(<String?>[
+        for (final MediaImageRow row in images) row.path,
+        for (final VideoMetadataImageRow row in workImages) row.localPath,
+        ...ownCovers,
+      ]);
+      final ImageProvider? Function(String? path) local = fileOf(present);
+      ImageProvider? ownPoster;
+      for (final String path in ownCovers) {
+        ownPoster = local(path);
+        if (ownPoster != null) break;
+      }
+      if (work == null && images.isEmpty && scrape == null) return null;
+      return videoSeriesMeta(
+        work: work,
+        mediaImages: images,
+        workImages: workImages,
+        scrape: scrape,
+        localImage: local,
+        ownPoster: ownPoster,
+      );
+    }
+
+    final GalgameEntry? game = entry.game;
+    final MediaItem? book = entry.book;
+    final MediaKind? kind = game != null ? MediaKind.game : entry.kind;
+    final String? bookKey = book == null
+        ? null
+        : ReaderFushiSource.parseBookKey(book.mediaIdentifier);
+    final String? entryKey =
+        game?.id ?? (bookKey == null ? null : _epubUidByBookKey[bookKey]);
+    if (kind == null || entryKey == null) return null;
+
+    Future<({ImageProvider? backdrop, ImageProvider? logo})> firstImages(
+      List<({String kind, int position, String path})> rows,
+    ) async {
+      rows.sort(
+        (
+          ({String kind, int position, String path}) a,
+          ({String kind, int position, String path}) b,
+        ) => a.position.compareTo(b.position),
+      );
+      final Set<String> present = await existing(<String>[
+        for (final ({String kind, int position, String path}) r in rows) r.path,
+      ]);
+      ImageProvider? of(MediaImageKind k) {
+        for (final ({String kind, int position, String path}) r in rows) {
+          if (r.kind == k.dbValue && present.contains(r.path)) {
+            return resizedFileImage(File(r.path));
+          }
+        }
+        return null;
+      }
+
+      return (
+        backdrop: of(MediaImageKind.backdrop),
+        logo: of(MediaImageKind.logo),
+      );
+    }
+
+    // 最近添加里合成一项的同合集书：先认合集自己的刮削资料。
+    final int? cid = entry.seriesCount > 0 ? entry.collectionId : null;
+    if (cid != null) {
+      final CollectionScrapeMetaRow? scrape = await db.getCollectionScrapeMeta(
+        cid,
+      );
+      final ({ImageProvider? backdrop, ImageProvider? logo}) art =
+          await firstImages(<({String kind, int position, String path})>[
+            for (final MediaImageRow r in await db.getMediaImagesForCollection(
+              cid,
+            ))
+              (kind: r.kind, position: r.position, path: r.path),
+          ]);
+      final FushiSeriesMeta? own = collectionSeriesMeta(
+        scrape: scrape,
+        backdrop: art.backdrop,
+        logo: art.logo,
+      );
+      if (own != null) return own;
+    }
+    final ItemScrapeMetaRow? scrape = await db.getItemScrapeMeta(
+      kind,
+      entryKey,
+    );
+    final ({ImageProvider? backdrop, ImageProvider? logo}) art =
+        await firstImages(<({String kind, int position, String path})>[
+          for (final ItemImageRow r in await db.getItemImages(kind, entryKey))
+            (kind: r.kind, position: r.position, path: r.path),
+        ]);
+    return itemSeriesMeta(
+      scrape: scrape,
+      backdrop: art.backdrop,
+      logo: art.logo,
+    );
+  }
+
+  /// 封面色块取色的图源：直接按条目取封面图（书 = 书架缩略图、视频 = 海报、
+  /// 游戏 = 本地封面）。不能靠 [fushiCoverImageOf] 从封面 widget 里扒——
+  /// [_continueCover] 外面包了 [MediaNsfwCover]，扒不到图就只剩中性灰。NSFW
+  /// 模糊中的条目不取色（色块颜色也会透出封面内容），回落中性色。
+  ImageProvider? _continueTintImage(AppModel appModel, _ContinueEntry entry) {
+    if (mediaNsfwBlurOf(context, _continueNsfwTarget(entry))) return null;
+    if (entry.isVideo) return _videoCoverImage(entry);
+    if (entry.game case final GalgameEntry game) {
+      return resolveMediaCoverImage(
+        kind: MediaKind.game,
+        localPath: game.coverPath,
+        decodeWidth: kLocalCoverDecodePixelWidth,
+      );
+    }
+    if (entry.remote != null || entry.server != null) return null;
+    final MediaItem? book = entry.book;
+    if (book == null) return null;
+    final ImageProvider image = ReaderFushiSource.instance
+        .getDisplayThumbnailFromMediaItem(appModel: appModel, item: book);
+    if (image is MemoryImage && identical(image.bytes, kTransparentImage)) {
+      return null;
+    }
+    return image;
+  }
+
+  /// 有刮削背景图的条目走系列色块摆法（与视频库系列卡 / 书架合集卡同一个
+  /// [fushiSeriesCoverBlock]：2:3 封面斜放在起始侧、背景图铺尾侧、logo / 概览 /
+  /// chip）。视频的斜放封面取作品海报（没有海报时剧照不裁成竖条，保持原摆法）；
+  /// 书 / 游戏取本身封面。不满足时为 null，调用方走原摆法（logo 照画）。
+  Widget? _seriesBlock(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    _ContinueEntry entry,
+    FushiSeriesMeta? series,
+    Widget Function(FushiCoverBlockArt art, Widget cover) blockOf,
+  ) {
+    if (series == null || series.backdrop == null) return null;
+    if (entry.isAudiobook) return null;
+    if (!entry.isVideo) {
+      return blockOf(
+        FushiCoverBlockArt.portrait,
+        _continueCover(tokens, appModel, entry),
+      );
+    }
+    final ImageProvider? poster = series.poster;
+    if (poster == null) return null;
+    return blockOf(
+      FushiCoverBlockArt.portrait,
+      _continueCover(tokens, appModel, entry, videoImage: poster),
+    );
+  }
+
+  /// 按封面固有朝向给视频条目选摆法（「继续」与「最近添加」色块共用）：竖版
+  /// 海报斜放；横图（截帧 / 剧照 / 横版缩略图）走横版摆法——整张图铺在色块
+  /// 结束侧渐入，不裁成竖条塞进海报位（哈吉千歳 2026-11-12：「竖版的应该是海报
+  /// 而不是横版剧照」）。朝向探针与视频库同一个（[CoverOrientationBuilder]），
+  /// 未解码前按竖版画。非视频条目摆法固定（[_continueBlockArt]）。
+  Widget _orientedBlock(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    _ContinueEntry entry, {
+    required ImageProvider? image,
+    required Widget cover,
+    required Widget Function(FushiCoverBlockArt art, Widget cover) blockOf,
+  }) {
+    final FushiCoverBlockArt art = _continueBlockArt(entry);
+    if (!entry.isVideo || image == null) return blockOf(art, cover);
+    return CoverOrientationBuilder(
+      image: image,
+      builder: (BuildContext context, VideoCardOrientation orientation) =>
+          orientation == VideoCardOrientation.landscape
+          ? blockOf(
+              FushiCoverBlockArt.landscape,
+              _continueCover(
+                tokens,
+                appModel,
+                entry,
+                videoImage: image,
+                landscape: true,
+              ),
+            )
+          : blockOf(art, cover),
+    );
+  }
+
+  /// 条目在封面色块里的封面摆法：视频 = 斜放海报、游戏 = 盒封、有声书 = 方封面、
+  /// 书 / 漫画 = 倾斜书封（「继续」与「最近添加」色块共用）。
+  FushiCoverBlockArt _continueBlockArt(_ContinueEntry entry) => entry.isVideo
+      ? FushiCoverBlockArt.portrait
+      : entry.isGame
+      ? FushiCoverBlockArt.box
+      : entry.isAudiobook
+      ? FushiCoverBlockArt.square
+      : FushiCoverBlockArt.book;
+
+  /// 「类型 ·（合集里的这一集）·（远端设备 / 服务器）」：主角卡副标题与色块署名
+  /// 共用。有声书没有现成的「收听」类型词，由服务器名承担来源。
+  String _continueMetaLine(_ContinueEntry entry) {
+    final ServerContinueCandidate? server = entry.server;
+    final String? collectionName = entry.collectionName;
+    return <String>[
+      if (entry.kind case final MediaKind kind) _kindLabel(kind),
+      if (collectionName != null && collectionName != entry.title) entry.title,
+      if (entry.remote != null) _remoteDeviceName ?? t.home_remote_source,
+      if (server != null) server.serverName,
+    ].join(' · ');
+  }
+
   // ── 浮动工具栏 + 「继续」FAB（2026-10 首页统一浮动工具栏） ───────────────────
 
   /// 顶部浮动工具栏：标题胶囊（页面名）+ 动作按钮组（更新中心 · 统计中心 ·
@@ -1831,7 +2954,11 @@ class _HomeDashboardPageState
     final AppModel appModel = ref.read(appProvider);
     final HomeUpdateCount? updateCount = _updateCount;
     return ListenableBuilder(
-      listenable: Listenable.merge(<Listenable?>[_toolbarScroll, updateCount]),
+      listenable: Listenable.merge(<Listenable?>[
+        _toolbarScroll,
+        updateCount,
+        appModel.whatsNew,
+      ]),
       builder: (BuildContext context, Widget? _) {
         final int unseen = updateCount?.value ?? 0;
         final int feedbackUnseen = watchFeedbackUnseen(ref);
@@ -1840,56 +2967,94 @@ class _HomeDashboardPageState
           // 没开账户时退回 Profile 名首字），点开排行榜（账户页在那里）。
           leading: _HomeAvatarPill(onPressed: _openLeaderboard),
           visible: _toolbarScroll.visible,
-          actions: <FushiToolbarItem>[
-            // 有未读时换成「响铃」字形并把未读数写进 tooltip / 语义标签（共享
-            // 工具栏按钮没有角标槽；逐域未读明细仍在下方更新横幅里）。
-            FushiToolbarItem(
-              key: const ValueKey<String>('home-toolbar-updates'),
-              icon: unseen > 0
-                  ? FushiIcons.notificationsActive
-                  : FushiIcons.notifications,
-              label: unseen > 0
-                  ? '${t.updates_center_title} ($unseen)'
-                  : t.updates_center_title,
-              onPressed: () => unawaited(_openUpdates(appModel)),
-            ),
-            FushiToolbarItem(
-              key: const ValueKey<String>('home-toolbar-stats'),
-              icon: FushiIcons.barChart,
-              label: t.stat_center_title,
-              onPressed: _openStatisticsCenter,
-            ),
-            // 收藏夹：唯一入口（用户定案 2026-10-14，同统计中心 2026-09-01 的收敛）。
-            // 收藏夹不按模块隔离，书架 / 视频库页头各挂一个打开的都是同一页，反而
-            // 误导成「本模块的收藏夹」，所以撤掉库页入口、统一从首页进。
-            FushiToolbarItem(
-              key: const ValueKey<String>('home-toolbar-collections'),
-              icon: FushiIcons.collection,
-              label: t.collections,
-              onPressed: _openCollections,
-            ),
-            // 排行榜：统计中心隔壁单独一颗按钮（2026-10-01 从统计中心 tab 抽出）。
-            FushiToolbarItem(
-              key: const ValueKey<String>('home-toolbar-leaderboard'),
-              icon: FushiIcons.trophy,
-              label: t.leaderboard_title,
-              onPressed: _openLeaderboard,
-            ),
-            // 反馈：提交问题 / 建议并看处理进度（悬浮球上也有同一个入口）。
-            // 开发者有新回复时把条数写进 tooltip / 语义标签（同更新中心的做法）。
-            FushiToolbarItem(
-              key: const ValueKey<String>('home-toolbar-feedback'),
-              icon: FushiIcons.forum,
-              label: feedbackUnseen > 0
-                  ? '${t.feedback_title} ($feedbackUnseen)'
-                  : t.feedback_title,
-              onPressed: () => unawaited(openFeedbackCenter(context)),
-            ),
-          ],
+          actions: _toolbarItems(appModel, unseen, feedbackUnseen),
         );
       },
     );
   }
+
+  /// 首页的页头动作（更新中心 · 统计中心 · 收藏夹 · 排行榜 · 反馈 · 编辑首页）：旧
+  /// 浮动工具栏与重设计外壳的页头大字共用同一份。小组件编辑态只剩「退出编辑」（×，
+  /// 与系统返回同一出口：保存并退出）；添加 / 撤销 / 恢复默认 / 完成在底部编辑工具栏。
+  ///
+  /// 为什么页头不放「恢复默认」：「编辑首页」是动作组最后一颗，进编辑态后同一位置
+  /// 换成的按钮正好接住连点的第二下（反馈 0i8iO2LwXj）。那里只能放无害的「退出」，
+  /// 换掉整份布局的动作挪到底栏、远离进入编辑的那颗按钮。
+  List<FushiToolbarItem> _toolbarItems(
+    AppModel appModel,
+    int unseen,
+    int feedbackUnseen,
+  ) => _editingWidgets
+      ? <FushiToolbarItem>[
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-toolbar-exit-widget-edit'),
+            icon: FushiIcons.close,
+            label: t.home_widget_exit_edit,
+            onPressed: () => unawaited(_finishWidgetEdit()),
+          ),
+        ]
+      : <FushiToolbarItem>[
+          // 「本版新内容」卡片被关掉、还没打开看过时留的入口；看过即消失。
+          if (appModel.whatsNew case final WhatsNewController whatsNew
+              when whatsNew.status.stage == WhatsNewStage.entry)
+            FushiToolbarItem(
+              key: const ValueKey<String>('home-toolbar-whats-new'),
+              icon: FushiIcons.celebration,
+              label: t.whats_new_title,
+              onPressed: () => unawaited(_openWhatsNew(whatsNew, appModel)),
+            ),
+          // 有未读时换成「响铃」字形并把未读数写进 tooltip / 语义标签（共享
+          // 工具栏按钮没有角标槽；逐域未读明细仍在下方更新横幅里）。
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-toolbar-updates'),
+            icon: unseen > 0
+                ? FushiIcons.notificationsActive
+                : FushiIcons.notifications,
+            label: unseen > 0
+                ? '${t.updates_center_title} ($unseen)'
+                : t.updates_center_title,
+            onPressed: () => unawaited(_openUpdates(appModel)),
+          ),
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-toolbar-stats'),
+            icon: FushiIcons.barChart,
+            label: t.stat_center_title,
+            onPressed: _openStatisticsCenter,
+          ),
+          // 收藏夹：唯一入口（用户定案 2026-10-14，同统计中心 2026-09-01 的收敛）。
+          // 收藏夹不按模块隔离，书架 / 视频库页头各挂一个打开的都是同一页，反而
+          // 误导成「本模块的收藏夹」，所以撤掉库页入口、统一从首页进。
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-toolbar-collections'),
+            icon: FushiIcons.collection,
+            label: t.collections,
+            onPressed: _openCollections,
+          ),
+          // 排行榜：统计中心隔壁单独一颗按钮（2026-10-01 从统计中心 tab 抽出）。
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-toolbar-leaderboard'),
+            icon: FushiIcons.trophy,
+            label: t.leaderboard_title,
+            onPressed: _openLeaderboard,
+          ),
+          // 反馈：提交问题 / 建议并看处理进度（悬浮球上也有同一个入口）。
+          // 开发者有新回复时把条数写进 tooltip / 语义标签（同更新中心的做法）。
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-toolbar-feedback'),
+            icon: FushiIcons.forum,
+            label: feedbackUnseen > 0
+                ? '${t.feedback_title} ($feedbackUnseen)'
+                : t.feedback_title,
+            onPressed: () => unawaited(openFeedbackCenter(context)),
+          ),
+          // 小组件网格（spec 2026-11-15）：进入编辑态（长按任一组件也能进）。
+          FushiToolbarItem(
+            key: const ValueKey<String>('home-toolbar-edit-home'),
+            icon: FushiIcons.dashboardCustomize,
+            label: t.home_widget_edit,
+            onPressed: _enterWidgetEdit,
+          ),
+        ];
 
   /// 「继续」FAB：「继续」封面行滚出视野后出现，续开最近一条（与点第一张封面
   /// 同一出口 [_openContinueEntry]）。为什么要 FAB：首页的首要动作就是「接着读 /
@@ -1915,6 +3080,29 @@ class _HomeDashboardPageState
   }
 
   /// 工具栏「更新中心」：打开后回来刷新角标（看过的条目不再算未读）。
+  /// 打开「本版新内容」页；打开即算看过（卡片与顶栏入口一起消失）。
+  Future<void> _openWhatsNew(
+    WhatsNewController whatsNew,
+    AppModel appModel,
+  ) async {
+    final WhatsNewStatus status = whatsNew.status;
+    if (!status.pending) return;
+    await whatsNew.markSeen();
+    if (!mounted) return;
+    await Navigator.of(context).push<void>(
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => WhatsNewPage(
+          fromVersion: status.fromVersion,
+          fromSeq: status.fromSeq,
+          toVersion: status.toVersion,
+          toSeq: status.toSeq,
+          customProxy: appModel.updateCustomProxy,
+        ),
+      ),
+    );
+  }
+
   Future<void> _openUpdates(AppModel appModel) async {
     await openUpdatesCenter(context, appModel.updateFeedService);
     await _updateCount?.reload();
@@ -1927,6 +3115,9 @@ class _HomeDashboardPageState
   /// 关掉的模块先出局，取前 10 条。不做分类筛选（用户反馈「主界面没必要分四类，
   /// 查看分类留给统计中心」）。顺带写入 [_resumeEntry]（FAB）与
   /// [_continueVisible]（「最近添加」去重）。
+  ///
+  /// 按输入身份记忆（[_continueMemo]）：书 / 视频 / 游戏 / 归属表 / 远端补位 /
+  /// 门控 / 模块开关 / 语言都没换就复用上一次的结果，不在每次 build 全库重算。
   List<_ContinueEntry> _collectContinueEntries(
     AppModel appModel,
     List<MediaItem> books,
@@ -1934,314 +3125,194 @@ class _HomeDashboardPageState
     Map<String, String> epubUidByKey,
     Set<String> completedBookKeys,
   ) {
-    final List<_ContinueEntry> entries = <_ContinueEntry>[];
-    // v82：位置表键 = uid，bookKey 经换算表转一跳；换算不上（standalone SRT /
-    // 书行已删）保持原键查询——与旧行为同样查不到、recent=0。
-    String bookKeyOf(MediaItem item) =>
-        ReaderFushiSource.parseBookKey(item.mediaIdentifier) ??
-        item.mediaIdentifier;
-    int bookRecentMs(MediaItem item) {
-      final String bookKey = bookKeyOf(item);
-      return lastReadByKey[epubUidByKey[bookKey] ?? bookKey] ?? 0;
-    }
-
-    _ContinueEntry bookEntry(
-      MediaItem item, {
-      required int recentMs,
-      required String? collectionName,
-      int? memberOrdinal,
-      List<MediaItem> collectionMembers = const <MediaItem>[],
-    }) {
-      final int percent = item.duration > 0
-          ? ((item.position / item.duration) * 100).clamp(0, 100).round()
-          : 0;
-      // BUG-1018 (A1)：书名走与书架卡同一 override 通道（编辑对话框改名后
-      // 首页「继续」区同步显示新名），不直接读 DB 原名。
-      final String title = ReaderFushiSource.instance
-          .getDisplayTitleFromMediaItem(item);
-      // 「第 N 卷」的 N 是卷号（与书架合集卡「读到第 N 卷」同一判据），不是合集
-      // 存储位置：合集顺序错乱时位置会把第 3 卷说成第 13 卷。
-      final num? volume = memberOrdinal == null
-          ? null
-          : collectionMemberVolumeNumber(
-              title: title,
-              memberTitles: <String>[
-                for (final MediaItem m in collectionMembers)
-                  ReaderFushiSource.instance.getDisplayTitleFromMediaItem(m),
-              ],
-              memberOrdinal: memberOrdinal,
-            );
-      return _ContinueEntry(
-        kind: _bookMediaKind(item),
-        title: title,
-        recentMs: recentMs,
-        progress: percent / 100,
-        // 合集里的第几卷优先（下一卷还没开读时 0% 没有信息量），进度条照画。
-        badgeLabel: volume != null
-            ? t.home_continue_volume(n: volume)
-            : '$percent%',
-        collectionName: collectionName,
-        book: item,
-      );
-    }
-
-    // 书合集感知续读（与下方视频 Next-Up 同口径）：成员按主折叠合集归组，每个
-    // 合集在继续区最多一张卡，续读目标由 [dashboardBookCollectionContinueIndex]
-    // 定；散书保持「在读」逐本过滤的现行为。
-    final Map<int, List<MediaItem>> booksByCollection =
-        <int, List<MediaItem>>{};
-    for (final MediaItem item in books) {
-      final int? cid = _primaryCollectionByEntry[_bookCollectionKey(item)];
-      if (cid != null) {
-        (booksByCollection[cid] ??= <MediaItem>[]).add(item);
-        continue;
-      }
-      if (isDashboardContinueBook(item, completedBookKeys)) {
-        entries.add(
-          bookEntry(item, recentMs: bookRecentMs(item), collectionName: null),
-        );
-      }
-    }
-    for (final MapEntry<int, List<MediaItem>> ce in booksByCollection.entries) {
-      final List<MediaItem> sorted = List<MediaItem>.of(ce.value)
-        ..sort((MediaItem a, MediaItem b) {
-          final int ai = _memberSortIndex[_bookCollectionKey(a)] ?? 1 << 30;
-          final int bi = _memberSortIndex[_bookCollectionKey(b)] ?? 1 << 30;
-          if (ai != bi) return ai.compareTo(bi);
-          return a.mediaIdentifier.compareTo(b.mediaIdentifier);
-        });
-      final List<int> readAt = <int>[
-        for (final MediaItem m in sorted) bookRecentMs(m),
-      ];
-      final int? idx = dashboardBookCollectionContinueIndex(
-        <CollectionMemberProgress>[
-          for (int i = 0; i < sorted.length; i++)
-            CollectionMemberProgress(
-              positionMs: sorted[i].position,
-              completed:
-                  classifyShelfReadStatus(
-                    completed: completedBookKeys.contains(bookKeyOf(sorted[i])),
-                    position: sorted[i].position,
-                    duration: sorted[i].duration,
-                  ) ==
-                  ShelfReadStatus.finished,
-              lastPlayedAt: readAt[i],
-            ),
-        ],
-      );
-      if (idx == null) continue;
-      // 单元活跃时刻 = 组内各卷最近阅读时刻最大值（含读完的卷——下一卷卡按
-      // 「刚读完上一卷」的时间参与混排）。
-      final int recent = readAt.fold<int>(0, (int a, int b) => a > b ? a : b);
-      entries.add(
-        bookEntry(
-          sorted[idx],
-          recentMs: recent,
-          collectionName: _collectionNamesById[ce.key],
-          memberOrdinal: sorted.length >= 2 ? idx + 1 : null,
-          collectionMembers: sorted,
-        ),
-      );
-    }
-    // 视频侧合集感知 Next-Up（用户实报：合集里看完一集，合集不该从「继续」消
-    // 失，应推进为下一集）：成员按主折叠合集归组，每个合集在继续区**最多一张
-    // 卡**——组内复用视频页 hero 同口径（BUG-848 computeVideoLibraryOverview
-    // 的单元逻辑：sortIndex 排序 + [continueMemberIndex] 的 Jellyfin Next-Up
-    // 语义）；整组看完/整组没看过不出卡。散卡保持「有断点且未看完」现行为。
-    // 单行多集形态（playlistJson/currentEpisode 行内集数）completedAt 按整行，
-    // 天然沿用现行为。
-    final Map<int, List<VideoBookRow>> videosByCollection =
-        <int, List<VideoBookRow>>{};
-    final List<VideoBookRow> standaloneVideos = <VideoBookRow>[];
-    for (final VideoBookRow v in _videos) {
-      final int? cid =
-          _primaryCollectionByEntry[MediaKind.video.compositeKey(v.bookUid)];
-      if (cid == null) {
-        standaloneVideos.add(v);
-      } else {
-        (videosByCollection[cid] ??= <VideoBookRow>[]).add(v);
-      }
-    }
-    for (final VideoBookRow v in standaloneVideos) {
-      if (v.lastPositionMs > 0 && v.completedAt == null) {
-        final int recent = _videoWatchAtByUid[v.bookUid] ?? v.importedAt ?? 0;
-        entries.add(
-          _videoContinueEntry(v, collectionName: null, recentMs: recent),
-        );
-      }
-    }
-    for (final MapEntry<int, List<VideoBookRow>> ce
-        in videosByCollection.entries) {
-      final ({VideoBookRow row, int index, int count})? target =
-          _collectionResumeTarget(ce.value);
-      if (target == null) continue;
-      final VideoBookRow resume = target.row;
-      // 单元活跃时刻 = 成员观看时刻最大值（含已完成集——Next-Up 卡按「刚看完
-      // 上一集」的时间参与混排），无统计行回退续播目标导入时间。
-      int recent = 0;
-      for (final VideoBookRow m in ce.value) {
-        final int at = _videoWatchAtByUid[m.bookUid] ?? 0;
-        if (at > recent) recent = at;
-      }
-      if (recent == 0) {
-        recent = resume.importedAt ?? 0;
-      }
-      entries.add(
-        _videoContinueEntry(
-          resume,
-          collectionName: _collectionNamesById[ce.key],
-          collectionId: ce.key,
-          recentMs: recent,
-          // 合集里的第几集（组内 sortIndex 序，1 起）；只有一集的合集不标集数。
-          collectionEpisode: target.count >= 2 ? target.index + 1 : null,
-          collectionEpisodeCount: target.count,
-        ),
-      );
-    }
-    // BUG-1111：在玩的游戏。判据是「玩过」（lastPlayedMs>0）——游戏没有「读完/
-    // 看完」这种完成度概念（`galgames` 无 completedAt，时长/次数由
-    // `galgame_sessions` 现算），所以不做「未完成」过滤；排序与取前 N 由下面统一
-    // 的 recentMs 倒序 + take(10) 兜住，不会淹没书与视频。
-    // 合集单元收敛与视频侧 [_collectionResumeTarget] 同口径：**一个合集在继续区
-    // 最多一张卡**。卡标题恒取合集名，不收敛的话同合集 N 个游戏会排出 N 张同名
-    // 卡，直接把继续区刷屏。游戏无完成度可推进「下一部」（视频那套 Next-Up 依赖
-    // completedAt），续玩目标取组内 lastPlayedMs 最大的一部——与该单元的 recentMs
-    // 同源，混排位置也就是「这个系列最近一次玩」的时刻。
-    final Map<int, GalgameEntry> gameResumeByCollection = <int, GalgameEntry>{};
-    for (final GalgameEntry g in _games) {
-      if (g.lastPlayedMs <= 0) continue;
-      final int? cid =
-          _primaryCollectionByEntry[MediaKind.game.compositeKey(g.id)];
-      if (cid == null) {
-        entries.add(_gameContinueEntry(g, collectionName: null));
-        continue;
-      }
-      final GalgameEntry? best = gameResumeByCollection[cid];
-      if (best == null || g.lastPlayedMs > best.lastPlayedMs) {
-        gameResumeByCollection[cid] = g;
-      }
-    }
-    for (final MapEntry<int, GalgameEntry> ge
-        in gameResumeByCollection.entries) {
-      entries.add(
-        _gameContinueEntry(
-          ge.value,
-          // 合集名缺失（名字表没这行）→ null，与散卡同渲染，安全降级。
-          collectionName: _collectionNamesById[ge.key],
-        ),
-      );
-    }
-    // 互联 host 的远端补位（本地无同 key/uid 的在读书/在看视频），与本地条目
-    // 按最近活动时刻统一混排（「继续也走互联」）。远端合集已在候选层收敛成一
-    // 合集一卡；本地已出同名合集卡的再去掉（反馈 GonyeE75Kd：同名卡刷屏）。
-    final List<RemoteContinueCandidate> remoteUnits =
-        withoutLocallyCoveredCollections(
-          _remoteContinue,
-          localVideoCollectionNames: <String>{
-            for (final _ContinueEntry e in entries)
-              if (e.isVideo && e.collectionName != null) e.collectionName!,
-          },
-          localBookCollectionNames: <String>{
-            for (final _ContinueEntry e in entries)
-              if (e.isBook && e.collectionName != null) e.collectionName!,
-          },
-        );
-    for (final RemoteContinueCandidate c in remoteUnits) {
-      entries.add(
-        _ContinueEntry(
-          // BUG-1119：此前是 `c.isVideo ? video : epub` 二元降维——远端 SRT 书会被
-          // 抹成 epub、第三种媒体装不下（BUG-1111 的漏网消费点）。直读候选种类。
-          kind: c.kind,
-          title: c.title,
-          recentMs: c.recentMs,
-          // 远端书带 host 阅读百分比可画进度条；远端视频无集数/完成信息不画。
-          progress: c.isVideo ? null : c.percent / 100,
-          badgeLabel: c.isVideo ? null : '${c.percent}%',
-          collectionName: c.collectionName,
-          remote: c,
-        ),
-      );
-    }
-    // 用户自配服务器（Jellyfin / Emby / Plex、Audiobookshelf）上进行中的条目，同样
-    // 按最近播放时刻混排。已下载 / 入库到本机的媒体服务器条目让位给本地那张卡。
-    // 渲染时再按当前门控过滤一遍：开关刚关掉、重取还没回来时也不混排。
-    final ({bool mediaServers, bool audiobookshelf, String signature}) gates =
-        _serverContinueGates(ref.read(appProvider));
-    final List<ServerContinueCandidate> serverContinue =
-        <ServerContinueCandidate>[
-          for (final ServerContinueCandidate c in _serverContinue)
-            if (c.isVideo ? gates.mediaServers : gates.audiobookshelf) c,
-        ];
-    if (serverContinue.isNotEmpty) {
-      final Set<String> localServerItemKeys = <String>{};
-      if (serverContinue.any((ServerContinueCandidate c) => c.isVideo)) {
-        for (final VideoBookRow v in _videos) {
-          if (!isMediaServerVideoPath(v.videoPath)) continue;
-          final MediaServerBookSpec? spec = MediaServerBookSpec.tryParse(
-            v.streamSpecJson,
-          );
-          if (spec != null) {
-            localServerItemKeys.add(
-              mediaServerItemKey(spec.serverId, spec.itemId),
-            );
-          }
-        }
-      }
-      for (final ServerContinueCandidate c in mergeServerContinue(
-        <List<ServerContinueCandidate>>[serverContinue],
-        localMediaServerItemKeys: localServerItemKeys,
-      )) {
-        entries.add(
-          _ContinueEntry(
-            kind: c.isVideo ? MediaKind.video : null,
-            title: c.title,
-            recentMs: c.recentMs,
-            progress: c.progress,
-            badgeLabel: c.badgeLabel,
-            collectionName: c.collectionName,
-            server: c,
-          ),
-        );
-      }
-    }
-    entries.sort(
-      (_ContinueEntry a, _ContinueEntry b) => b.recentMs.compareTo(a.recentMs),
+    final List<_ContinueEntry> visible = _continueMemo.get(
+      <Object?>[
+        books,
+        lastReadByKey,
+        epubUidByKey,
+        completedBookKeys,
+        _videoIndex,
+        _games,
+        _epubUidByBookKey,
+        _collectionNamesById,
+        _videoWatchAtByUid,
+        _videoDurationMsByPath,
+        _remoteContinue,
+        _serverContinue,
+        _serverContinueGates(appModel).signature,
+        _moduleVisibilityMask(appModel.moduleVisibility),
+        t,
+      ],
+      () => _computeContinueEntries(
+        appModel,
+        books,
+        lastReadByKey,
+        epubUidByKey,
+        completedBookKeys,
+      ),
     );
-    // 模块门控：关掉的模块的条目**先出局再 take(10)**——顺序反过来会出现「过滤后
-    // 不足 10 条」（前 10 条恰好全是被关模块的条目时甚至整行空掉）。
-    final ModuleVisibility visibility = appModel.moduleVisibility;
-    final List<_ContinueEntry> visible = entries
-        .where((_ContinueEntry e) => visibility.isEnabled(e.module))
-        .take(10)
-        .toList();
     _resumeEntry = visible.isEmpty ? null : visible.first;
     _continueVisible = visible;
     return visible;
   }
 
-  /// [HomeDashboardPanel] 注册表里一个面板此刻的 widget；不该出现时为 null。
-  /// 在 build 里（LayoutBuilder 之外）调用：各面板的显隐判据经 ref.watch 订阅。
-  Widget? _buildOptionalPanel(HomeDashboardPanel panel) => switch (panel) {
-    HomeDashboardPanel.srsReview =>
-      ref.watch(homeSrsPanelVisibleProvider)
-          ? HomeSrsPanel(
-              key: const ValueKey<String>('home-srs-card'),
-              onOpenDecks: () => _goToTab(HomeTab.srs),
-              onStartReview: _startSrsReview,
-            )
-          : null,
-    HomeDashboardPanel.aiAgent =>
-      ref.watch(homeAiAgentPanelVisibleProvider)
-          ? const HomeAiAgentPanel(key: ValueKey<String>('home-ai-agent-card'))
-          : null,
-    HomeDashboardPanel.panorama =>
-      ref.watch(homePanoramaPanelVisibleProvider)
-          ? HomePanoramaPanel(
-              key: const ValueKey<String>('home-panorama-card'),
-              onOpen: _openPanoramaWork,
-            )
-          : null,
+  /// 模块开关的位掩码（[ModuleVisibility] 每次读都是新对象，记忆依赖比它的值）。
+  static int _moduleVisibilityMask(ModuleVisibility visibility) {
+    int mask = 0;
+    for (final ModuleId id in ModuleId.values) {
+      if (visibility.isEnabled(id)) mask |= 1 << id.index;
+    }
+    return mask;
+  }
+
+  /// 视频行的合集索引：[_videos] / [_primaryCollectionByEntry] / [_memberSortIndex]
+  /// 任一换代才重建（同时清掉挂在它上面的续播目标 / 封面候选缓存）。
+  HomeDashboardVideoIndex get _videoIndex {
+    final HomeDashboardVideoIndex? cached = _videoIndexCache;
+    if (cached != null &&
+        cached.isFor(_videos, _primaryCollectionByEntry, _memberSortIndex)) {
+      return cached;
+    }
+    _resumeTargetByCollection.clear();
+    _videoCoverCandidatesByEntry.clear();
+    return _videoIndexCache = HomeDashboardVideoIndex.build(
+      videos: _videos,
+      primaryCollectionByEntry: _primaryCollectionByEntry,
+      memberSortIndex: _memberSortIndex,
+    );
+  }
+
+  List<_ContinueEntry> _computeContinueEntries(
+    AppModel appModel,
+    List<MediaItem> books,
+    Map<String, int> lastReadByKey,
+    Map<String, String> epubUidByKey,
+    Set<String> completedBookKeys,
+  ) {
+    // 编排（来源 / 门控 / 去重 / 折叠 / 排序）只在 [composeHomeContinue] 写一次，
+    // 侧栏首页速览用同一个函数（BUG-5331）；这里只把单元映射成卡片条目。
+    final ({bool mediaServers, bool audiobookshelf, String signature}) gates =
+        _serverContinueGates(appModel);
+    final PreferencesRepository prefs = appModel.prefsRepo;
+    final List<HomeContinueUnit> units = composeHomeContinue(
+      HomeContinueInputs(
+        books: books,
+        lastReadByUid: lastReadByKey,
+        epubUidByKey: epubUidByKey,
+        completedBookKeys: completedBookKeys,
+        bookTitleOf: bookContinueDisplayTitle,
+        primaryCollectionByEntry: _primaryCollectionByEntry,
+        memberSortIndex: _memberSortIndex,
+        collectionNamesById: _collectionNamesById,
+        videoIndex: _videoIndex,
+        videoWatchAtByUid: _videoWatchAtByUid,
+        videoDurationMsOf: (String bookUid) => videoDurationMsFromPref(
+          prefs.getPref(videoDurationPrefKey(bookUid)),
+        ),
+        videoResumeTargetOf: _collectionResumeTarget,
+        localMediaServerItemKeyOf: localMediaServerItemKeyOfVideo,
+        games: _games,
+        remote: _remoteContinue,
+        server: _serverContinue,
+        mediaServerGate: gates.mediaServers,
+        audiobookshelfGate: gates.audiobookshelf,
+        isModuleEnabled: appModel.moduleVisibility.isEnabled,
+      ),
+    );
+    return <_ContinueEntry>[
+      for (final HomeContinueUnit unit in units) _continueEntryOf(unit),
+    ];
+  }
+
+  /// [composeHomeContinue] 的一个单元 → 「继续」卡条目。
+  _ContinueEntry _continueEntryOf(HomeContinueUnit unit) => switch (unit) {
+    HomeContinueBookUnit() => _bookContinueEntry(unit),
+    HomeContinueVideoUnit() => _videoContinueEntry(
+      unit.row,
+      collectionName: unit.collectionName,
+      collectionId: unit.collectionId,
+      recentMs: unit.recentMs,
+      collectionEpisode: unit.collectionEpisode,
+      collectionEpisodeCount: unit.collectionEpisodeCount,
+    ),
+    HomeContinueGameUnit() => _gameContinueEntry(
+      unit.game,
+      collectionName: unit.collectionName,
+    ),
+    HomeContinueRemoteUnit(:final RemoteContinueCandidate candidate) =>
+      _ContinueEntry(
+        // BUG-1119：直读候选种类（远端 SRT 书不被抹成 epub）。
+        kind: candidate.kind,
+        title: candidate.title,
+        recentMs: candidate.recentMs,
+        // 远端书带 host 阅读百分比可画进度条；远端视频无集数/完成信息不画。
+        progress: candidate.isVideo ? null : candidate.percent / 100,
+        badgeLabel: candidate.isVideo ? null : '${candidate.percent}%',
+        collectionName: candidate.collectionName,
+        remote: candidate,
+      ),
+    HomeContinueServerUnit(:final ServerContinueCandidate candidate) =>
+      _ContinueEntry(
+        kind: candidate.isVideo ? MediaKind.video : null,
+        title: candidate.title,
+        recentMs: candidate.recentMs,
+        progress: candidate.progress,
+        badgeLabel: candidate.badgeLabel,
+        collectionName: candidate.collectionName,
+        server: candidate,
+      ),
   };
+
+  /// 书单元 → 「继续」卡条目：进度角标「42%」，合集里的书优先标「第 N 卷」（下一卷
+  /// 还没开读时 0% 没有信息量），进度条照画。
+  _ContinueEntry _bookContinueEntry(HomeContinueBookUnit unit) {
+    final MediaItem item = unit.item;
+    // 进度与书架卡同一口径（[shelfReadFraction] / [bookReadProgressLabel]），
+    // 同一本书在首页和书架上的百分比一致（都向下取整）。
+    final double fraction = shelfReadFraction(
+      completed: false,
+      position: item.position,
+      duration: item.duration,
+    );
+    // BUG-1018 (A1)：书名走与书架卡同一 override 通道（编辑对话框改名后首页
+    // 「继续」区同步显示新名），不直接读 DB 原名。
+    final String title = unit.title;
+    // 「第 N 卷」的 N 是卷号（与书架合集卡「读到第 N 卷」同一判据），不是合集存储
+    // 位置：合集顺序错乱时位置会把第 3 卷说成第 13 卷。
+    final int? memberOrdinal = unit.memberOrdinal;
+    final num? volume = memberOrdinal == null
+        ? null
+        : collectionMemberVolumeNumber(
+            title: title,
+            memberTitles: <String>[
+              for (final MediaItem m in unit.collectionMembers)
+                ReaderFushiSource.instance.getDisplayTitleFromMediaItem(m),
+            ],
+            memberOrdinal: memberOrdinal,
+          );
+    return _ContinueEntry(
+      kind: unit.kind,
+      title: title,
+      recentMs: unit.recentMs,
+      progress: fraction,
+      badgeLabel: volume != null
+          ? t.home_continue_volume(n: volume)
+          : bookReadProgressLabel(fraction),
+      collectionName: unit.collectionName,
+      book: item,
+    );
+  }
+
+  /// 色块下面的面板是否画成海报色块（重设计外壳、且库页布局不是封面网格；墨水屏
+  /// 下 [shellRedesignActive] 为 false）。只在 build 期间读（依赖 inherited 外壳
+  /// 设置）。
+  ///
+  /// Cupertino（[isGlassDesign]）下恒 false：海报拼贴是 M3E 的版式，Apple 首页一律
+  /// 走分区卡（用户 2026-11-24「不要混搭」）。
+  bool get _posterPanels =>
+      !isGlassDesign(context) &&
+      shellRedesignActive(context) &&
+      shellContentLayoutOf(context) != ShellContentLayout.grid;
 
   /// 全景里选中的作品：书 / 漫画走与「继续」同一条 openMedia（等阅读器关闭才返回，分享
   /// 动画页据此在读完后再收起），视频直接续播（播放列表从合集续播），游戏 / 音乐切到对应
@@ -2352,35 +3423,55 @@ class _HomeDashboardPageState
     if (mounted) setState(() {});
   }
 
-  /// 「今日」分区：学习头部行（[HomeStudyHeader]），首载未结束时挂同轮廓骨架。
-  ///
-  /// [showWeek]（宽屏面板，2026-10-31 方案 A 补齐「今日」）：头部行下再挂近 7 天
-  /// 柱条（[HomeWeekBars]，与目标同口径的学习字数）。手机竖屏不挂，保持一屏
-  /// 只有「今天读了多少 + 接着读什么」。
-  Widget _buildStudySection(FushiDesignTokens tokens, {bool showWeek = false}) {
-    return _sectionCard(
-      tokens,
-      title: t.stat_today,
-      icon: FushiIcons.barChart,
-      key: const ValueKey<String>('home-study-card'),
-      child: !_initialLoadDone
-          ? const HomeGoalSkeleton()
-          : !showWeek
-          ? _buildStudyHeader(tokens)
-          : Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                _buildStudyHeader(tokens),
-                SizedBox(height: tokens.spacing.gap),
-                _buildWeekBars(),
-              ],
-            ),
+  /// 近 7 天柱条的数据（今天在最后）。[goal] 为 null = 学习字数（全部语言，经典
+  /// 「今日」与「近 7 天」格）；否则 = 这条目标每天的量（同一个度量、同一种语言、
+  /// 同一套分子，[studyGoalDailySeries]），参考线是它摊到一天的目标量（周 / 月目标
+  /// 按 7 天 / 当月天数摊）。
+  _WeekBarsData _weekBarsData({
+    StudyGoalProgress? goal,
+    WidgetGoalsInput? input,
+  }) {
+    if (goal == null || input == null) {
+      // 学习字数版只依赖日面三份行集与统计窗口（及界面语言）：按身份记忆，日面
+      // 重载前的每次 build 直接复用，不再每帧对整张日面扫 7 遍。
+      return _weekBarsMemo.get(<Object?>[
+        _readingRows,
+        _watchRows,
+        _gameRows,
+        _statWindow,
+        t,
+      ], _computeStudyCharsWeekBars);
+    }
+    final List<String> keys = _statWindow.lastDayKeys(7);
+    final List<int> values = studyGoalDailySeries(
+      goal: goal.goal,
+      goals: input,
+      immersion: buildStudyImmersionInput(_dailyRows, _statWindow),
+      dayKeys: keys,
+      reviewsByDay: _studyGoalReviews(input),
+    );
+    String format(int v) {
+      if (goal.id.isTime) return formatStatTime(v);
+      final String? unit = studyGoalUnitLabel(goal.id, input.unitOf(goal.goal));
+      final String n = formatStatCharsAxis(v);
+      return unit == null ? n : '$n $unit';
+    }
+
+    final List<String> labels = <String>[
+      for (int i = 0; i < keys.length; i++) '${keys[i]} · ${format(values[i])}',
+    ];
+    return (
+      values: values,
+      labels: labels,
+      reference: studyGoalDailyShare(goal.goal, _statWindow.todayKey),
+      semantic:
+          '${t.stat_week_past} · ${studyGoalProgressLabel(goal, input)} · '
+          '${labels.join(', ')}',
     );
   }
 
-  /// 近 7 天学习字数柱条（今天在最后）。
-  Widget _buildWeekBars() {
+  /// [_weekBarsData] 的学习字数版（全部语言），由 [_weekBarsMemo] 记忆。
+  _WeekBarsData _computeStudyCharsWeekBars() {
     final List<String> keys = _statWindow.lastDayKeys(7);
     final List<int> values = <int>[
       for (final String k in keys) studyGoalCharsForDay(_dailyRows, k),
@@ -2389,88 +3480,125 @@ class _HomeDashboardPageState
       for (int i = 0; i < keys.length; i++)
         '${keys[i]} · ${formatStatChars(values[i])}',
     ];
-    return HomeWeekBars(
+    return (
       values: values,
       labels: labels,
-      semanticLabel: '${t.stat_week_past} · ${labels.join(', ')}',
+      reference: null,
+      semantic: '${t.stat_week_past} · ${labels.join(', ')}',
     );
   }
 
-  /// 「继续」分区：第一条放大成主角卡（[FushiContinueSpotlight]），其余条目是带标题
-  /// 的封面横滑行（`home-continue-row`）。
-  ///
-  /// 首载未结束时挂同轮廓骨架，而不是先闪空态再跳成真数据；新用户空库给空态
-  /// 说明 + 去书架 / 去媒体库的引导按钮（首页不会是一片空白）。
-  Widget _buildContinueSection(
-    FushiDesignTokens tokens,
-    AppModel appModel,
-    List<_ContinueEntry> visible, {
-    required double heroCoverHeight,
-    required double rowCoverHeight,
+  /// 近 7 天柱条（今天在最后），柱高 [height]；数据见 [_weekBarsData]。
+  Widget _buildWeekBars({
+    required double height,
+    StudyGoalProgress? goal,
+    WidgetGoalsInput? input,
   }) {
-    final ModuleVisibility visibility = appModel.moduleVisibility;
-    final Widget continueContent;
-    if (visible.isNotEmpty) {
-      // 与各库页 / 视频首页同一个「继续」组件（2026-10-31 合一）：宽屏主卡在
-      // 起始侧、其余条目的封面行在旁边等高；窄屏主卡在上、封面行在下。
-      continueContent = FushiContinueSpotlight(
-        main: _continueMainEntry(tokens, appModel, visible.first),
-        side: <FushiContinueEntry>[
-          for (int i = 1; i < visible.length; i++)
-            _continueSideEntry(tokens, appModel, visible[i], i),
-        ],
-        heroCoverHeight: heroCoverHeight,
-        soloCoverHeight: heroCoverHeight,
-        showSideWhenNarrow: true,
-        narrowSideCoverHeight: rowCoverHeight,
-        sideRowKey: const ValueKey<String>('home-continue-row'),
-        // 整个「继续」分区已由 build 里的 entering(continueCard) 错峰进场。
-        staggerEntrance: false,
-      );
-    } else if (!_initialLoadDone) {
-      continueContent = HomeContinueRowSkeleton(coverHeight: rowCoverHeight);
-    } else {
-      continueContent = HomeEmptyState(
-        icon: FushiIcons.playCircle,
-        message: t.home_continue_empty,
-        actions: <Widget>[
-          for (final HomeTab tab in const <HomeTab>[
-            HomeTab.books,
-            HomeTab.video,
-          ])
-            if (isHomeTabVisible(tab, visibility))
-              FushiFilledButton.tonalIcon(
-                key: ValueKey<String>('home-empty-go-${tab.name}'),
-                onPressed: () => _goToTab(tab),
-                icon: FushiIcon(homeNavItemFor(tab).icon),
-                label: Text(homeNavItemFor(tab).label),
-              ),
-        ],
-      );
-    }
-    return _sectionCard(
-      tokens,
-      title: t.home_continue,
-      icon: FushiIcons.playCircle,
-      key: const ValueKey<String>('home-continue-card'),
-      // 数据到达 / 空库 ↔ 有内容切换时交叉淡入 + 尺寸弹簧过渡，不硬跳。
-      child: FushiAnimatedSize(
-        duration: fushiMotionDuration(context, FushiMotion.medium),
-        curve: FushiMotion.standard,
-        alignment: AlignmentDirectional.topStart,
-        child: AnimatedSwitcher(
-          duration: fushiMotionDuration(context, FushiMotion.medium),
-          switchInCurve: FushiMotion.enter,
-          switchOutCurve: FushiMotion.exit,
-          child: KeyedSubtree(
-            key: ValueKey<String>(
-              visible.isNotEmpty
-                  ? 'continue'
-                  : (_initialLoadDone ? 'empty' : 'loading'),
-            ),
-            child: continueContent,
-          ),
-        ),
+    final _WeekBarsData data = _weekBarsData(goal: goal, input: input);
+    // Apple（Swift Charts 口径）柱下挂星期首字母；M3E 不画。
+    final List<String>? axis = isGlassDesign(context)
+        ? <String>[
+            for (final String key in _statWindow.lastDayKeys(7))
+              MaterialLocalizations.of(
+                context,
+              ).narrowWeekdays[FushiDatabase.statDateKeyToDay(key).weekday % 7],
+          ]
+        : null;
+    return HomeWeekBars(
+      values: data.values,
+      labels: data.labels,
+      height: height,
+      reference: data.reference,
+      semanticLabel: data.semantic,
+      axisLabels: axis,
+      color: goal == null
+          ? null
+          : studyGoalColorsOf(
+              context,
+              language: goal.goal.language,
+              metric: goal.goal.metric,
+            ).ring,
+    );
+  }
+
+  /// 周 / 月目标的「本周」柱条（设计 B，[StudyGoalDayStrip]）：生效日一根柱 + 那天
+  /// 份额的短横，不生效日一个点，今天实色。数据是 [StudyGoalProgress.days]（与环、
+  /// 小组件同一次计算）。色块外观用色块色，分区卡用目标语言色（墨水屏黑白）。
+  Widget _buildGoalDayStrip(
+    StudyGoalProgress goal,
+    WidgetGoalsInput input, {
+    required double height,
+  }) {
+    return Builder(
+      builder: (BuildContext context) {
+        final FushiCoverBlockColors? colors = HomeWidgetStyle.maybeOf(
+          context,
+        )?.colors;
+        final StudyGoalColors goalColors = studyGoalColorsOf(
+          context,
+          language: goal.goal.language,
+          metric: goal.goal.metric,
+        );
+        final Color color = colors?.accent ?? goalColors.ring;
+        final Color fg =
+            colors?.onContainer ??
+            FushiDesignTokens.of(context).surfaces.onSurface;
+        final bool eink = isEinkTheme(context);
+        final List<String> labels = <String>[
+          for (final StudyGoalDay d in goal.days) _goalDayLabel(goal, d),
+        ];
+        return StudyGoalDayStrip(
+          key: const ValueKey<String>('home-today-day-strip'),
+          days: goal.days,
+          labels: labels,
+          semanticLabel:
+              '${studyGoalProgressLabel(goal, input)} · ${labels.join(', ')}',
+          height: height,
+          color: color,
+          past: eink ? goalColors.track : color.withValues(alpha: 0.45),
+          tick: fg.withValues(alpha: eink ? 1 : 0.75),
+          dot: fg.withValues(alpha: eink ? 0.6 : 0.35),
+        );
+      },
+    );
+  }
+
+  /// 「本周」柱条一天的提示 / 读屏：「11-18 · 12 / 20」，不生效日「11-21 · 休息日」。
+  String _goalDayLabel(StudyGoalProgress goal, StudyGoalDay d) {
+    final String day = d.dayKey.substring(5);
+    if (!d.inPeriod) return day;
+    if (!d.active) return '$day · ${t.study_goal_status_rest_day}';
+    final ({String value, String target}) pair = studyGoalCompactPair(
+      d.value,
+      d.share,
+      isTime: goal.id.isTime,
+    );
+    return d.future
+        ? '$day · ${pair.target}'
+        : '$day · ${pair.value} / ${pair.target}';
+  }
+
+  /// 「今日」色块里的近 7 天柱条（与 [_buildWeekBars] 同一份数据与读屏文案，今天
+  /// 在最后、实色）。
+  Widget _buildPosterWeekBars(
+    FushiCoverBlockColors colors, {
+    required double height,
+    Key key = const ValueKey<String>('home-week-bars'),
+    StudyGoalProgress? goal,
+    WidgetGoalsInput? input,
+  }) {
+    final _WeekBarsData data = _weekBarsData(goal: goal, input: input);
+    return Semantics(
+      key: key,
+      container: true,
+      label: data.semantic,
+      child: FushiPosterBars(
+        values: data.values,
+        colors: colors,
+        highlightIndex: data.values.length - 1,
+        labels: data.labels,
+        height: height,
+        reference: data.reference,
       ),
     );
   }
@@ -2500,6 +3628,7 @@ class _HomeDashboardPageState
     final int recent = entry.recentMs;
     final ImageProvider? image = _videoCoverImage(entry);
     final ShelfCoverMaterial material = _continueMaterial(entry);
+    final FushiContinueMark? mark = _trackingMarkOf(entry);
     return FushiContinueEntry(
       key: const ValueKey<String>('home-continue-hero'),
       progressKey: const ValueKey<String>('home-continue-hero-progress'),
@@ -2518,7 +3647,13 @@ class _HomeDashboardPageState
           ? formatActivityRelativeTime(recent, DateTime.now())
           : _resumeActionLabel(entry),
       title: collectionName ?? entry.title,
-      metaLines: <String>[if (subtitle.isNotEmpty) subtitle],
+      // The main card says the tracking state in words (one more meta line);
+      // the cover row has no room for that and draws the mark on the cover.
+      metaLines: <String>[
+        if (subtitle.isNotEmpty) subtitle,
+        if (mark != null) mark.label,
+      ],
+      mark: mark,
       progress: entry.progress,
       progressLabel: entry.badgeLabel,
       onOpen: () => unawaited(_openContinueEntry(appModel, entry)),
@@ -2554,6 +3689,7 @@ class _HomeDashboardPageState
       subtitle: entry.badgeLabel,
       subtitleIcon: entry.badgeIcon,
       progress: entry.progress,
+      mark: _trackingMarkOf(entry),
       onOpen: () => unawaited(_openContinueEntry(appModel, entry)),
     );
   }
@@ -2584,20 +3720,179 @@ class _HomeDashboardPageState
     MediaKind.game => FushiIcons.games,
   };
 
-  /// 「最近添加」卡（用户 2026-10-09：桌面 / 平板横屏空白太多；10-10 起带标题、
-  /// 放进双栏版式的侧栏）。
-  ///
-  /// 只在双栏版式挂（竖屏单栏不出，免得手机首页信息过多），形态是紧凑列表
-  /// （[HomeRecentTile]：小封面 + 标题 + 「类型 · 相对时间」），最多
-  /// [_kRecentLimit] 条。数据源是本页快照里已有的书 / 视频 / 游戏行（不新增查询）：
-  /// 书按 `EpubBooks.localAddedAt`、视频按 `VideoBooks.localAddedAt`（合集按成员
-  /// 最大值收成一张，封面取合集海报）、游戏按 `addedAt` 倒序混排；已在「继续」
-  /// 出现的作品去重；关掉的模块先出局。没有可显示的条目 → null（不出空卡）。
-  ///
-  /// 书 / 视频取本机开始拥有的时刻（v118），不取原始入库时刻 importedAt：刚从互联
-  /// 对端下载的旧条目 importedAt 是对端的入库时刻，按它排就进不了这一行。
-  Widget? _buildRecentlyAddedCard(
+  /// 「最近添加」条目副行：「类型 · 相对时间」（列表行与色块同一份）。
+  String _recentSubtitle(_ContinueEntry e, DateTime now) => <String>[
+    if (e.kind case final MediaKind kind) _kindLabel(kind),
+    if (e.seriesCount > 1)
+      e.isVideo
+          ? t.home_widget_recent_episode_count(n: e.seriesCount)
+          : t.home_widget_recent_volume_count(n: e.seriesCount),
+    formatActivityRelativeTime(e.recentMs, now),
+  ].join(' · ');
+
+  /// 「最近添加」里一本书归哪一组（[_recentlyAddedEntries]）：在合集里的按主合集
+  /// 归，否则按书名解析出的系列键（[parseBookSeriesKey]，显示名已去掉书店系列
+  /// 注记）；都认不出就自成一组。
+  String _recentBookGroupKey(MediaItem item, String displayTitle) {
+    final int? collectionId =
+        _primaryCollectionByEntry[_bookCollectionKey(item)];
+    if (collectionId != null) return 'collection|$collectionId';
+    final BookSeriesKey? series = parseBookSeriesKey(displayTitle);
+    if (series != null) return 'series|${series.key}';
+    return 'item|${item.mediaIdentifier}';
+  }
+
+  /// 一组新加的书 → 「最近添加」的一张卡：单卷是散卡；多卷合成扇形叠放卡
+  /// （[_ContinueEntry.seriesBooks] 带两本画进扇形，副行写卷数），标题是合集名 / 系列名，点开
+  /// 打开这批里卷号最小的那一卷（从新加的第一卷读起）。
+  _ContinueEntry _recentBookEntry(
+    List<({MediaItem item, int addedAt, String title})> group,
+  ) {
+    final List<({MediaItem item, int addedAt, String title})> byAdded =
+        List<({MediaItem item, int addedAt, String title})>.of(group)..sort(
+          (
+            ({MediaItem item, int addedAt, String title}) a,
+            ({MediaItem item, int addedAt, String title}) b,
+          ) => b.addedAt.compareTo(a.addedAt),
+        );
+    final ({MediaItem item, int addedAt, String title}) newest = byAdded.first;
+    if (byAdded.length == 1) {
+      return _ContinueEntry(
+        kind: _bookMediaKind(newest.item),
+        title: newest.title,
+        recentMs: newest.addedAt,
+        book: newest.item,
+      );
+    }
+    final int? collectionId =
+        _primaryCollectionByEntry[_bookCollectionKey(newest.item)];
+    final List<({MediaItem item, String title})> ordered =
+        <({MediaItem item, String title})>[
+          for (final ({MediaItem item, int addedAt, String title}) b in byAdded)
+            (item: b.item, title: b.title),
+        ];
+    final RecentBookGroupTarget target = recentBookGroupTarget(
+      group: ordered,
+      collectionId: collectionId,
+    );
+    // 封面 / 标题取卷号最小的一卷（合集卡也一样，扇形里再画最新加入的两本）。
+    final ({MediaItem item, String title}) first = recentBookGroupFirstVolume(
+      ordered,
+    );
+    final String seriesName =
+        (collectionId == null ? null : _collectionNamesById[collectionId]) ??
+        readableSeriesTitle(
+          parseBookSeriesKey(newest.title)?.seriesTitle ?? newest.title,
+        );
+    return _ContinueEntry(
+      kind: _bookMediaKind(first.item),
+      title: first.title,
+      recentMs: newest.addedAt,
+      collectionName: seriesName,
+      // 非 null = 点开进合集详情页（[_openContinueEntry]），而不是打开 [book]。
+      collectionId: switch (target) {
+        RecentBookGroupCollection(:final int collectionId) => collectionId,
+        RecentBookGroupVolume() => null,
+      },
+      book: first.item,
+      seriesBooks: <MediaItem>[
+        for (final ({MediaItem item, int addedAt, String title}) b in byAdded)
+          if (!identical(b.item, first.item)) b.item,
+      ].take(2).toList(),
+      seriesCount: byAdded.length,
+    );
+  }
+
+  /// 「最近添加」一项的封面色块（用户 2026-11-17：与「继续」卡同一套色块）：底色取
+  /// 封面主色、背景压标题大字；合集项把同合集的另外几本画进扇形，副行带卷数 / 集数。
+  /// 不画进度（刚加进来的东西没有进度可言），点按打开。
+  Widget _recentBlock(
     FushiDesignTokens tokens,
+    AppModel appModel,
+    _ContinueEntry entry,
+    int index,
+    FushiCoverBlockSize size,
+    DateTime now,
+  ) {
+    final ImageProvider? image = _videoCoverImage(entry);
+    final Widget cover = _continueCover(
+      tokens,
+      appModel,
+      entry,
+      videoImage: image,
+    );
+    final List<Widget> series = <Widget>[
+      for (final MediaItem book in entry.seriesBooks)
+        _continueCover(
+          tokens,
+          appModel,
+          _ContinueEntry(
+            kind: _bookMediaKind(book),
+            title: ReaderFushiSource.instance.getDisplayTitleFromMediaItem(
+              book,
+            ),
+            recentMs: 0,
+            book: book,
+          ),
+        ),
+    ];
+    final FushiSeriesMeta? seriesMeta = _seriesMetaFor(entry);
+    Widget blockOf(FushiCoverBlockArt art, Widget cover) =>
+        fushiSeriesCoverBlock(
+          size: size,
+          art: art,
+          title: entry.collectionName ?? entry.title,
+          meta: seriesMeta,
+          backdrop: art == FushiCoverBlockArt.portrait
+              ? fushiSeriesBackdrop(seriesMeta?.backdrop)
+              : null,
+          covers: <Widget>[cover, ...series],
+          tintImage:
+              _continueTintImage(appModel, entry) ?? fushiCoverImageOf(cover),
+          subtitle: _recentSubtitle(entry, now),
+        );
+    final Widget block =
+        _seriesBlock(tokens, appModel, entry, seriesMeta, blockOf) ??
+        _orientedBlock(
+          tokens,
+          appModel,
+          entry,
+          image: image,
+          cover: cover,
+          blockOf: blockOf,
+        );
+    return FushiHoverLift(
+      builder: (BuildContext _, bool _) => shelfCoverCard(
+        key: ValueKey<String>('home-recent-block/$index'),
+        shape: fushiCoverBlockShape(context, size),
+        onTap: () => unawaited(_openContinueEntry(appModel, entry)),
+        // 色块上已印着标题（或刮削艺术字），悬停不再弹同名 tooltip；读屏的
+        // 标题由 [FushiCoverBlock] 自己的文字 / logo 语义给出。
+        child: block,
+      ),
+    );
+  }
+
+  /// 「最近添加」要列的条目（按加入时间倒序、去掉「继续」里已有的、只留模块
+  /// 开着的，最多 [_kRecentLimit] 条）。列表卡与色块共用。
+  ///
+  /// 按输入身份记忆（[_recentMemo]）：「继续」结果（去重用）、书 / 视频 / 游戏与
+  /// 归属表、模块开关都没换就复用。
+  List<_ContinueEntry> _recentlyAddedEntries(
+    AppModel appModel,
+    List<MediaItem> books,
+  ) => _recentMemo.get(<Object?>[
+    books,
+    _continueVisible,
+    _videoIndex,
+    _games,
+    _epubUidByBookKey,
+    _epubLocalAddedAtByKey,
+    _collectionNamesById,
+    _moduleVisibilityMask(appModel.moduleVisibility),
+  ], () => _computeRecentlyAddedEntries(appModel, books));
+
+  List<_ContinueEntry> _computeRecentlyAddedEntries(
     AppModel appModel,
     List<MediaItem> books,
   ) {
@@ -2619,34 +3914,35 @@ class _HomeDashboardPageState
     }
 
     final List<_ContinueEntry> entries = <_ContinueEntry>[];
-    for (final MediaItem item in books) {
-      if (shownBooks.contains(item.mediaIdentifier)) continue;
+    int bookAddedAt(MediaItem item) {
       final String? bookKey = ReaderFushiSource.parseBookKey(
         item.mediaIdentifier,
       );
-      final int addedAt = bookKey == null
-          ? 0
-          : (_epubLocalAddedAtByKey[bookKey] ?? 0);
-      if (addedAt <= 0) continue;
-      entries.add(
-        _ContinueEntry(
-          kind: _bookMediaKind(item),
-          title: ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item),
-          recentMs: addedAt,
-          book: item,
-        ),
-      );
+      return bookKey == null ? 0 : (_epubLocalAddedAtByKey[bookKey] ?? 0);
     }
 
-    final Map<int, List<VideoBookRow>> videosByCollection =
-        <int, List<VideoBookRow>>{};
-    for (final VideoBookRow v in _videos) {
-      final int? cid =
-          _primaryCollectionByEntry[MediaKind.video.compositeKey(v.bookUid)];
-      if (cid != null) {
-        (videosByCollection[cid] ??= <VideoBookRow>[]).add(v);
-        continue;
-      }
+    // 同一合集 / 同一系列新加的几卷合成一项（用户 2026-11-17：一排相同系列名的条目
+    // 没法看；设计稿 H8）：在合集里的按主合集归，否则按书名系列键归；单卷照旧是散项。
+    final Map<String, List<({MediaItem item, int addedAt, String title})>>
+    bookGroups =
+        <String, List<({MediaItem item, int addedAt, String title})>>{};
+    for (final MediaItem item in books) {
+      if (shownBooks.contains(item.mediaIdentifier)) continue;
+      final int addedAt = bookAddedAt(item);
+      if (addedAt <= 0) continue;
+      final String title = ReaderFushiSource.instance
+          .getDisplayTitleFromMediaItem(item);
+      (bookGroups[_recentBookGroupKey(item, title)] ??=
+              <({MediaItem item, int addedAt, String title})>[])
+          .add((item: item, addedAt: addedAt, title: title));
+    }
+    for (final List<({MediaItem item, int addedAt, String title})> group
+        in bookGroups.values) {
+      entries.add(_recentBookEntry(group));
+    }
+
+    final HomeDashboardVideoIndex videoIndex = _videoIndex;
+    for (final VideoBookRow v in videoIndex.standalone) {
       final int addedAt = v.localAddedAt ?? 0;
       if (addedAt <= 0 || shownVideos.contains(v.bookUid)) continue;
       entries.add(
@@ -2658,27 +3954,23 @@ class _HomeDashboardPageState
         ),
       );
     }
-    for (final MapEntry<int, List<VideoBookRow>> ce
-        in videosByCollection.entries) {
-      if (shownVideoCollections.contains(ce.key)) continue;
+    for (final int collectionId in videoIndex.collectionIds) {
+      if (shownVideoCollections.contains(collectionId)) continue;
+      final List<VideoBookRow> members = videoIndex.membersOf(collectionId);
       int addedAt = 0;
-      for (final VideoBookRow m in ce.value) {
+      for (final VideoBookRow m in members) {
         final int at = m.localAddedAt ?? 0;
         if (at > addedAt) addedAt = at;
       }
       if (addedAt <= 0) continue;
       // 点开落到组内第一集（sortIndex 序，缺失沉底）——新加的合集还没看过，从头
       // 开始；播放器按主合集建剧集面板，上下集照常可切。
-      final VideoBookRow first = ce.value.reduce((
+      final VideoBookRow first = members.reduce((
         VideoBookRow a,
         VideoBookRow b,
       ) {
-        final int ai =
-            _memberSortIndex[MediaKind.video.compositeKey(a.bookUid)] ??
-            1 << 30;
-        final int bi =
-            _memberSortIndex[MediaKind.video.compositeKey(b.bookUid)] ??
-            1 << 30;
+        final int ai = videoIndex.sortIndexOf(a.bookUid);
+        final int bi = videoIndex.sortIndexOf(b.bookUid);
         if (ai != bi) return ai < bi ? a : b;
         return a.bookUid.compareTo(b.bookUid) <= 0 ? a : b;
       });
@@ -2687,9 +3979,10 @@ class _HomeDashboardPageState
           kind: MediaKind.video,
           title: first.title,
           recentMs: addedAt,
-          collectionName: _collectionNamesById[ce.key],
-          collectionId: ce.key,
+          collectionName: _collectionNamesById[collectionId],
+          collectionId: collectionId,
           video: first,
+          seriesCount: members.length,
         ),
       );
     }
@@ -2710,36 +4003,10 @@ class _HomeDashboardPageState
     entries.sort(
       (_ContinueEntry a, _ContinueEntry b) => b.recentMs.compareTo(a.recentMs),
     );
-    final List<_ContinueEntry> visible = entries
+    return entries
         .where((_ContinueEntry e) => visibility.isEnabled(e.module))
         .take(_kRecentLimit)
         .toList();
-    if (visible.isEmpty) return null;
-    final DateTime now = DateTime.now();
-    return _sectionCard(
-      tokens,
-      title: t.home_recently_added,
-      icon: FushiIcons.schedule,
-      key: const ValueKey<String>('home-recent-card'),
-      child: Column(
-        key: const ValueKey<String>('home-recent-list'),
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          for (final _ContinueEntry e in visible)
-            HomeRecentTile(
-              material: _continueMaterial(e),
-              cover: _continueCover(tokens, appModel, e),
-              title: _continueDisplayTitle(e),
-              subtitle: <String>[
-                if (e.kind case final MediaKind kind) _kindLabel(kind),
-                formatActivityRelativeTime(e.recentMs, now),
-              ].join(' · '),
-              onTap: () => unawaited(_openContinueEntry(appModel, e)),
-            ),
-        ],
-      ),
-    );
   }
 
   /// 「继续」卡的条目材质（与库页同一套，首页一行混排所以逐卡选）：书 / 漫画 /
@@ -2766,10 +4033,7 @@ class _HomeDashboardPageState
   /// 书 [MediaItem] 的真实媒体种类：standalone SRT 书身份是
   /// `hoshi://srtbook/<uid>`（BUG-1018 A3），其余按 EPUB。两者在「继续/最近添加」
   /// 区块行为一致（[_ContinueEntry.isBook]），但身份不该被抹平成同一个值。
-  MediaKind _bookMediaKind(MediaItem item) =>
-      ReaderFushiSource.parseSrtBookUid(item.mediaIdentifier) != null
-      ? MediaKind.srt
-      : MediaKind.epub;
+  MediaKind _bookMediaKind(MediaItem item) => homeContinueBookKind(item);
 
   /// 书 [MediaItem] → 合集归属键：epub 用 uid（v83 成员表键；bookKey 经
   /// [_epubUidByBookKey] 换算，换算不上按 bookKey 回退——与透传成员行同键），
@@ -2780,28 +4044,25 @@ class _HomeDashboardPageState
   /// [FushiDatabase.getLocalPrimaryCollectionMembership] 两种键都收，这里 uid 键
   /// 查不中归属时退到 bookKey 键，否则旧合集在「继续」区按散书逐本判、续读推进
   /// 不到下一卷。
+  ///
+  /// 结果按 mediaIdentifier 缓存（[_bookCollectionKeyCache]），两张换算 / 归属表
+  /// 换代时清空。
   String _bookCollectionKey(MediaItem item) {
-    final String? bookKey = ReaderFushiSource.parseBookKey(
-      item.mediaIdentifier,
-    );
-    if (bookKey != null) {
-      final String uidKey = MediaKind.epub.compositeKey(
-        _epubUidByBookKey[bookKey] ?? bookKey,
-      );
-      if (_primaryCollectionByEntry.containsKey(uidKey)) return uidKey;
-      final String legacyKey = MediaKind.epub.compositeKey(bookKey);
-      return _primaryCollectionByEntry.containsKey(legacyKey)
-          ? legacyKey
-          : uidKey;
+    if (!identical(_bookCollectionKeyUidMap, _epubUidByBookKey) ||
+        !identical(_bookCollectionKeyPrimaryMap, _primaryCollectionByEntry)) {
+      _bookCollectionKeyCache.clear();
+      _bookCollectionKeyUidMap = _epubUidByBookKey;
+      _bookCollectionKeyPrimaryMap = _primaryCollectionByEntry;
     }
-    final String? srtUid = ReaderFushiSource.parseSrtBookUid(
-      item.mediaIdentifier,
-    );
-    if (srtUid != null) return MediaKind.srt.compositeKey(srtUid);
-    // 有意的 miss-key 兜底：entryKey 是完整 hoshi:// 标识而非 bookKey，
-    // 查不中合集，安全降级为散卡。
-    return MediaKind.epub.compositeKey(item.mediaIdentifier);
+    return _bookCollectionKeyCache[item.mediaIdentifier] ??=
+        _computeBookCollectionKey(item);
   }
+
+  String _computeBookCollectionKey(MediaItem item) => bookCollectionEntryKey(
+    item,
+    epubUidByKey: _epubUidByBookKey,
+    primaryCollectionIdByEntry: _primaryCollectionByEntry,
+  );
 
   /// 视频行 → 继续卡条目（散卡与合集续播目标共用），进度见
   /// [dashboardVideoContinueProgress]（反馈「小说有进度显示，视频缺了进度显示」）。
@@ -2867,41 +4128,31 @@ class _HomeDashboardPageState
   /// 它已完成则推进下一集）。整组无痕迹（没看过，不劝人从头开始）或目标仍是
   /// 已完成集（整季看完）→ null 不出卡（自然滚出继续区）。返回续播目标与它在
   /// 组内的序号 / 组大小（「继续」卡的集数角标）。
+  ///
+  /// 结果按合集缓存在 [_resumeTargetByCollection]，随视频索引换代（[_videos]
+  /// 重载）失效。片长偏好（BUG-3491）由播放器写入，它同时写观看进度触发首页
+  /// 重载，故不会读到过期片长。
   ({VideoBookRow row, int index, int count})? _collectionResumeTarget(
-    List<VideoBookRow> members,
+    int collectionId,
   ) {
-    final List<VideoBookRow> sorted = List<VideoBookRow>.of(members)
-      ..sort((VideoBookRow a, VideoBookRow b) {
-        final int ai =
-            _memberSortIndex[MediaKind.video.compositeKey(a.bookUid)] ??
-            1 << 30;
-        final int bi =
-            _memberSortIndex[MediaKind.video.compositeKey(b.bookUid)] ??
-            1 << 30;
-        if (ai != bi) return ai.compareTo(bi);
-        return a.bookUid.compareTo(b.bookUid);
-      });
-    final bool anyTrace = sorted.any(
-      (VideoBookRow m) => m.completedAt != null || m.lastPositionMs > 0,
+    final HomeDashboardVideoIndex videoIndex = _videoIndex;
+    if (_resumeTargetByCollection.containsKey(collectionId)) {
+      return _resumeTargetByCollection[collectionId];
+    }
+    return _resumeTargetByCollection[collectionId] = _computeResumeTarget(
+      videoIndex.sortedMembersOf(collectionId),
     );
-    if (!anyTrace) return null;
+  }
+
+  ({VideoBookRow row, int index, int count})? _computeResumeTarget(
+    List<VideoBookRow> sorted,
+  ) {
     final PreferencesRepository prefs = ref.read(appProvider).prefsRepo;
-    final List<CollectionMemberProgress> progress = <CollectionMemberProgress>[
-      for (final VideoBookRow m in sorted)
-        CollectionMemberProgress(
-          positionMs: m.lastPositionMs,
-          completed: m.completedAt != null,
-          lastPlayedAt: m.lastPlayedAt,
-          // BUG-3491：片长用来分辨「已打勾的集正在重看」。
-          durationMs: videoDurationMsFromPref(
-            prefs.getPref(videoDurationPrefKey(m.bookUid)),
-          ),
-        ),
-    ];
-    final int idx = continueMemberIndex(progress);
-    final VideoBookRow resume = sorted[idx];
-    if (progress[idx].isFinished) return null;
-    return (row: resume, index: idx, count: sorted.length);
+    return homeContinueVideoResumeTarget(
+      sorted,
+      durationMsOf: (String bookUid) =>
+          videoDurationMsFromPref(prefs.getPref(videoDurationPrefKey(bookUid))),
+    );
   }
 
   /// 「继续」卡封面本体（远端 / 视频 / 游戏 / 书四路）。封面行不再挂标题文字，
@@ -2910,7 +4161,51 @@ class _HomeDashboardPageState
   /// 视频走 [_videoCoverImage] 选中的那一张；[videoImage] 是调用方为横竖探测已经
   /// 取好的同一个 provider（传进来才能共用一条解码流），[landscape] = 卡片已按
   /// 横图定成 16:9 横槽。
+  /// 书卡（EPUB / 字幕书）是不是上锁（未解锁）的作品。
+  static bool _hiddenByLock(MediaVisibility visibility, MediaItem item) =>
+      homeContinueHidesBook(visibility, item);
+
+  /// 「继续」条目的 NSFW 宿主（远端补位 / 自配服务器条目不可标，恒 null）。
+  MediaNsfwTarget? _continueNsfwTarget(_ContinueEntry entry) {
+    if (entry.remote != null || entry.server != null) return null;
+    if (entry.video case final VideoBookRow video) {
+      return MediaNsfwTarget.video(video.bookUid);
+    }
+    if (entry.game case final GalgameEntry game) {
+      return MediaNsfwTarget.game(game.id, adult: game.isNsfw);
+    }
+    if (entry.book case final MediaItem book) {
+      final String? srtUid = ReaderFushiSource.parseSrtBookUid(
+        book.mediaIdentifier,
+      );
+      if (srtUid != null) return MediaNsfwTarget.srtBook(srtUid);
+      final String? bookKey = ReaderFushiSource.parseBookKey(
+        book.mediaIdentifier,
+      );
+      if (bookKey != null) return MediaNsfwTarget.book(bookKey);
+    }
+    return null;
+  }
+
+  /// 「继续」封面：NSFW 作品按「模糊 NSFW 封面」打模糊（主卡与封面行同一出口）。
   Widget _continueCover(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    _ContinueEntry entry, {
+    ImageProvider? videoImage,
+    bool landscape = false,
+  }) => MediaNsfwCover(
+    target: _continueNsfwTarget(entry),
+    child: _continueCoverInner(
+      tokens,
+      appModel,
+      entry,
+      videoImage: videoImage,
+      landscape: landscape,
+    ),
+  );
+
+  Widget _continueCoverInner(
     FushiDesignTokens tokens,
     AppModel appModel,
     _ContinueEntry entry, {
@@ -2941,17 +4236,26 @@ class _HomeDashboardPageState
             );
     }
     if (entry.isGame) return _gameCover(tokens, entry.game!, title: title);
+    return _bookCover(tokens, appModel, entry.book!, title: title);
+  }
+
+  /// 本地书封面（「继续」/「最近添加」/ 追踪块共用）。没有封面的书，取图链回的
+  /// 是一张透明占位图（[kTransparentImage]），整卡会是一块空白——直接画
+  /// 「图标 + 书名」兜底。
+  Widget _bookCover(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    MediaItem item, {
+    String? title,
+  }) {
+    final String name =
+        title ?? ReaderFushiSource.instance.getDisplayTitleFromMediaItem(item);
     final ImageProvider image = ReaderFushiSource.instance
-        .getDisplayThumbnailFromMediaItem(
-          appModel: appModel,
-          item: entry.book!,
-        );
-    // 没有封面的书，取图链回的是一张透明占位图（[kTransparentImage]），整卡会是
-    // 一块空白——直接画「图标 + 书名」兜底。
+        .getDisplayThumbnailFromMediaItem(appModel: appModel, item: item);
     if (image is MemoryImage && identical(image.bytes, kTransparentImage)) {
-      return _coverPlaceholder(tokens, FushiIcons.books, title: title);
+      return _coverPlaceholder(tokens, FushiIcons.books, title: name);
     }
-    return _bookCoverImage(tokens, image, title: title);
+    return _bookCoverImage(tokens, image, title: name);
   }
 
   /// 书封面：正常主题 700ms 淡入；eink 下直接出图——淡入是一串灰阶中间帧，
@@ -3027,24 +4331,17 @@ class _HomeDashboardPageState
     }
     final VideoBookRow? video = entry.video;
     if (video == null) return null;
-    final int? cid = entry.collectionId;
-    final List<String> collectionCovers = cid == null
-        ? const <String>[]
-        : _collectionCoverById[cid] ?? const <String>[];
-    final List<String?> memberCovers = cid == null
-        ? const <String?>[]
-        : _collectionMemberCovers(cid, except: video.bookUid).toList();
-    final String key = _videoCoverCandidateKey(
-      collectionCovers,
-      video.coverPath,
-      memberCovers,
+    final _VideoCoverCandidates candidates = _videoCoverCandidates(
+      entry.collectionId,
+      video,
     );
+    final String key = candidates.key;
     if (!_videoCoverByCandidates.containsKey(key)) {
       _resolveVideoCover(
         key,
-        collectionCovers: collectionCovers,
-        ownCover: video.coverPath,
-        memberCovers: memberCovers,
+        collectionCovers: candidates.collection,
+        ownCover: candidates.own,
+        memberCovers: candidates.members,
       );
       return null; // 解析完成前画占位，解析完 setState 重建。
     }
@@ -3096,20 +4393,36 @@ class _HomeDashboardPageState
     }());
   }
 
-  /// 同一主合集里其它集的封面路径（懒序列，[dashboardVideoCoverPath] 找到第一张
-  /// 存在的就停，不会把整部作品的文件都探一遍）。
-  Iterable<String?> _collectionMemberCovers(
-    int collectionId, {
-    required String except,
-  }) sync* {
-    for (final VideoBookRow v in _videos) {
-      if (v.bookUid == except) continue;
-      if (_primaryCollectionByEntry[MediaKind.video.compositeKey(v.bookUid)] !=
-          collectionId) {
-        continue;
-      }
-      yield v.coverPath;
+  /// 视频卡的封面候选（作品海报层 → 本集封面 → 同主合集其它集封面，
+  /// [dashboardVideoCoverPath] 按序探、找到第一张存在的就停）与其签名。同合集
+  /// 其它集取自视频索引（不再逐卡扫整库），结果按「合集 | bookUid」缓存（本集
+  /// 封面变了就重建），视频索引或 [_collectionCoverById] 换代时清空。
+  _VideoCoverCandidates _videoCoverCandidates(int? cid, VideoBookRow video) {
+    final HomeDashboardVideoIndex videoIndex = _videoIndex;
+    if (!identical(_videoCoverCandidatesCoverMap, _collectionCoverById)) {
+      _videoCoverCandidatesByEntry.clear();
+      _videoCoverCandidatesCoverMap = _collectionCoverById;
     }
+    final String cacheKey = '${cid ?? ''}|${video.bookUid}';
+    final _VideoCoverCandidates? cached =
+        _videoCoverCandidatesByEntry[cacheKey];
+    if (cached != null && cached.own == video.coverPath) return cached;
+    final List<String> collectionCovers = cid == null
+        ? const <String>[]
+        : _collectionCoverById[cid] ?? const <String>[];
+    final List<String?> memberCovers = cid == null
+        ? const <String?>[]
+        : videoIndex.memberCoversOf(cid, except: video.bookUid);
+    return _videoCoverCandidatesByEntry[cacheKey] = (
+      collection: collectionCovers,
+      members: memberCovers,
+      own: video.coverPath,
+      key: _videoCoverCandidateKey(
+        collectionCovers,
+        video.coverPath,
+        memberCovers,
+      ),
+    );
   }
 
   /// 游戏封面（BUG-1111 / BUG-1112）：目录扫描 / exe 图标 / 刮削最终都落到
@@ -3262,23 +4575,50 @@ class _HomeDashboardPageState
       _goToTab(HomeTab.games);
       return;
     }
+    // 「最近添加」里同属一个合集的系列合并卡（H8）：进合集详情页。
+    if (entry.book != null &&
+        entry.seriesCount > 1 &&
+        entry.collectionId != null) {
+      _openBookCollection(
+        entry.collectionId!,
+        manga: entry.module == ModuleId.manga,
+      );
+      return;
+    }
     final MediaItem item = entry.book!;
     final MediaSource source = item.getMediaSource(appModel: appModel);
     await appModel.openMedia(ref: ref, mediaSource: source, item: item);
   }
 
+  /// 打开书 / 漫画合集详情页：切到书架（漫画库）tab，请它用自己的合集详情出口
+  /// 打开（[requestShelfCollectionOpen]）——与在书架上点合集卡是同一个页面、同一套
+  /// 成员卡与菜单。目标 tab 被模块开关关掉时只给提示、不留悬空请求。测试经
+  /// [HomeDashboardPage.openBookCollectionOverride] 注入替身。
+  void _openBookCollection(int collectionId, {required bool manga}) {
+    final void Function(int collectionId, {required bool manga})? override =
+        widget.openBookCollectionOverride;
+    if (override != null) {
+      override(collectionId, manga: manga);
+      return;
+    }
+    final HomeTab tab = manga ? HomeTab.manga : HomeTab.books;
+    if (!_goToTab(tab)) return;
+    requestShelfCollectionOpen(collectionId: collectionId, manga: manga);
+  }
+
   /// 切到顶层 tab 的**唯一**出口（本页 6 处跨页跳转全走它）：目标 tab 所属模块
-  /// 被用户关掉时不切，改给一句可见提示。
+  /// 被用户关掉时不切，改给一句可见提示。返回是否真的切过去了。
   ///
   /// 为什么需要提示而不是「不渲染入口」：首页的活动时间轴与热力图日明细是**历史
   /// 事实流**，行不按模块删（删了等于让用户以为记录丢了），于是「点一条已关模块
   /// 的记录」是真实可达路径。静默不动正是本次要消灭的反模式。
-  void _goToTab(HomeTab tab) {
+  bool _goToTab(HomeTab tab) {
     if (!isHomeTabVisible(tab, ref.read(appProvider).moduleVisibility)) {
       _showModuleHiddenHint();
-      return;
+      return false;
     }
     homeShellTabNotifier.value = tab;
+    return true;
   }
 
   /// 「目标页已被功能模块开关关掉」的可见反馈。
@@ -3320,49 +4660,178 @@ class _HomeDashboardPageState
 
   // ── 学习头部行 / 目标 ────────────────────────────────────────────────────
 
-  /// 学习头部行（[HomeStudyHeader]）：学习域（书 + 视频字幕 + 游戏 hook 文本）
-  /// 今日字数 vs 每日字数目标（与阅读统计页目标卡同一持久化
-  /// [AppModel.readingGoalDailyChars]、同一分子函数 [studyGoalCharsForDay]，
-  /// BUG-1993），右侧今日学习时长（同一份日面行的 ms 合计）。目标为 0 → 旗子环 +
-  /// 今日字数 + 「设定目标」按钮；否则进度环 +「X / Y 字」，点整行弹编辑对话框。
+  /// 经典「今日」外观对应的目标：没有目标记录 → null；**恰好一条**全部语言的每日字数
+  /// 目标 → 它。其余情况（别的目标 / 多条 / 限定语言 / 周月目标）走目标翻页
+  /// （[_todayClassic] 为 false）。
+  StudyGoal? get _classicCharsGoal {
+    final List<StudyGoal> goals = ref.read(appProvider).studyGoals;
+    if (goals.length != 1) return null;
+    final StudyGoal g = goals.single;
+    return g.metric == StudyGoalId.chars &&
+            g.period == StudyGoalPeriod.daily &&
+            g.language == null
+        ? g
+        : null;
+  }
+
+  /// 「今日」格是不是经典外观（今日字数大字 + 时长 + 字数目标环）。
+  bool get _todayClassic =>
+      ref.read(appProvider).studyGoals.isEmpty || _classicCharsGoal != null;
+
+  /// 学习头部行（[HomeStudyHeader]）：学习域（书 + 视频字幕 + 游戏 hook 文本）今日
+  /// 字数 vs 经典字数目标（[_classicCharsGoal]，与小组件同一条记录、同一分子函数，
+  /// BUG-1993），右侧今日学习时长（同一份日面行的 ms 合计）。没有目标 → 旗子环 +
+  /// 今日字数 + 「设定目标」按钮；否则进度环 +「X / Y 字」，点整行弹目标面板。
   Widget _buildStudyHeader(FushiDesignTokens tokens) {
-    final int goal = ref.read(appProvider).readingGoalDailyChars;
+    final AppModel appModel = ref.read(appProvider);
+    final StudyGoal? goal = _classicCharsGoal;
     // BUG-2219：与本轮加载的聚合同一个窗口（跨午夜由 [_midnightReload] 重拉）。
-    final String todayKey = _statWindow.todayKey;
+    final StatWindow w = _statWindow;
+    final String todayKey = w.todayKey;
     final int todayChars = studyGoalCharsForDay(_dailyRows, todayKey);
     int todayMs = 0;
     for (final StatFact f in _dailyRows) {
       if (f.dateKey == todayKey) todayMs += f.ms;
     }
-    final bool hasGoal = goal > 0;
     final String todayTime = formatStatTime(todayMs);
     return HomeStudyHeader(
-      fraction: hasGoal ? (todayChars / goal).clamp(0.0, 1.0) : null,
-      value: hasGoal
-          ? t.stat_goal_progress(read: todayChars, goal: goal)
-          : formatStatChars(todayChars),
+      fraction: goal == null
+          ? null
+          : (todayChars / goal.target).clamp(0.0, 1.0),
+      value: goal == null
+          ? formatStatChars(todayChars)
+          : statGoalProgressLabel(
+              unit: studyGoalUnitOf(goal, appModel.readingGoalTextUnit),
+              read: todayChars,
+              goal: goal.target,
+            ),
       todayTime: todayTime,
       todayTimeSemanticLabel: '${t.stat_today} · $todayTime',
-      onEditGoal: () => unawaited(_editDailyGoal()),
-      setGoalLabel: hasGoal ? null : t.stat_goal_set,
+      onEditGoal: () => unawaited(_editGoal()),
+      setGoalLabel: goal == null ? t.stat_goal_set : null,
     );
   }
 
-  /// 弹目标编辑对话框（2026-10 体验优化：与统计页合并为同一份
-  /// [showStatGoalEditDialog]——每日 + 每周 + 预设 + 近 7 日参考）。写回偏好后
-  /// setState 刷新目标行（与统计页读同一偏好，多处天然同步）。取消不写。
-  Future<void> _editDailyGoal() async {
-    // 近 7 日日均吃本页窗口（跨午夜重拉，BUG-2219）。
-    final StatWindow w = _statWindow;
-    final bool saved = await showStatGoalEditDialog(
+  /// 经典「今日」外观的点按：编辑那条字数目标；还没有目标时新建（预填字数、每日、
+  /// 全部语言）。保存后重载目标数据（语言可能变了，要重查媒体语言表）。
+  Future<void> _editGoal() async {
+    final AppModel appModel = ref.read(appProvider);
+    final StudyGoalSheetResult? result = await showStudyGoalEditSheet(
+      context,
+      appModel,
+      goal: _classicCharsGoal,
+    );
+    if (result != null) await _reloadGoalData();
+  }
+
+  /// 「语言目标」格空态：新建预填该语言的目标。
+  Future<void> _addLanguageGoal(String? language) async {
+    final StudyGoalSheetResult? result = await showStudyGoalEditSheet(
       context,
       ref.read(appProvider),
-      recentDailyAverage: statRecentDailyAverageChars(
-        _dailyRows,
-        w.lastDayKeys(7),
+      language: language,
+    );
+    if (result != null) await _reloadGoalData();
+  }
+
+  /// 「目标」设置子页（「今日」格目标翻页的点按去处）。回来后重载目标数据。
+  Future<void> _openStudyGoalsSettings() async {
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (_) =>
+            const SettingsDetailPage.subPage(buildStudyGoalsDestination),
       ),
     );
-    if (saved && mounted) setState(() {});
+    await _reloadGoalData();
+  }
+
+  /// 目标记录变了之后重查分子要的库数据（媒体语言表、制卡日表），其余是偏好、重建
+  /// 即读到新值。
+  Future<void> _reloadGoalData() async {
+    if (!mounted) return;
+    final AppModel appModel = ref.read(appProvider);
+    final Map<String, String> media = await loadStudyGoalMediaLanguages(
+      appModel.database,
+    );
+    final Map<String, int> mined = await loadStudyMinedByDay(
+      appModel.database,
+      _statWindow,
+    );
+    if (!mounted) return;
+    setState(() {
+      _goalMediaLanguages = media;
+      _minedByDay = mined;
+    });
+  }
+
+  /// 目标输入（与 Android「目标」小组件同一装配）。
+  WidgetGoalsInput _studyGoalsInput() {
+    final AppModel appModel = ref.read(appProvider);
+    return buildStudyGoalsInput(
+      prefs: appModel.prefsRepo,
+      goals: appModel.studyGoals,
+      mediaLanguages: _goalMediaLanguages,
+      daily: _dailyRows,
+      window: _statWindow,
+      minedByDay: _minedByDay,
+    );
+  }
+
+  /// 复习日表（统计日 → 复习数）：只在有复习目标且走内置 SRS 时读（与复习首页共用
+  /// 一份统计）；null = 复习数不可得（复习目标不出现）。
+  Map<String, int>? _studyGoalReviews(WidgetGoalsInput input) {
+    final AppModel appModel = ref.read(appProvider);
+    final bool wantsReviews =
+        input.goals.any((StudyGoal g) => g.metric == StudyGoalId.reviews) &&
+        studyGoalsUseBuiltInSrs(
+          appModel.prefsRepo,
+          miningToReview: ref.watch(srsMiningToReviewProvider),
+        );
+    if (!wantsReviews) return null;
+    final SrsHomeStats? stats = ref.watch(srsHomeStatsProvider).value;
+    return stats == null
+        ? <String, int>{}
+        : studyReviewsByDateKey(
+            countsByDay: stats.countsByDay,
+            today: stats.today,
+            doneToday: stats.doneToday,
+            window: _statWindow,
+          );
+  }
+
+  /// 全部目标记录的进度（记录顺序）。
+  List<StudyGoalProgress> _studyGoalProgress(WidgetGoalsInput input) {
+    return computeStudyGoals(
+      goals: input,
+      immersion: buildStudyImmersionInput(_dailyRows, _statWindow),
+      day: _statWindow.todayKey,
+      reviewsByDay: _studyGoalReviews(input),
+    );
+  }
+
+  /// 「今日」目标翻页当前显示的那页：滑动停下的那页（[AppModel.homeTodayPageGoal]），
+  /// 不在页里就回主目标（[AppModel.homeTodayMainGoal]），都指不到是第一页。翻页与旁边
+  /// 的近 7 天柱条都按它。
+  int _todayGoalIndex(List<StudyGoalProgress> goals) {
+    final AppModel appModel = ref.read(appProvider);
+    return studyGoalTodayPageIndex<StudyGoalProgress>(
+      goals,
+      goalOf: (StudyGoalProgress g) => g.goal,
+      mainGoalId: appModel.homeTodayMainGoal,
+      pageGoalId: appModel.homeTodayPageGoal,
+    );
+  }
+
+  /// 「今日」格的目标页：「左右滑动」范围内的目标再并上主目标，规则只在
+  /// [studyGoalTodayPages] 写一次（选了周 / 月主目标时与每日目标共存）。
+  List<StudyGoalProgress> _todayGoals(WidgetGoalsInput input) {
+    final AppModel appModel = ref.read(appProvider);
+    return studyGoalTodayPages<StudyGoalProgress>(
+      _studyGoalProgress(input),
+      goalOf: (StudyGoalProgress g) => g.goal,
+      mainGoalId: appModel.homeTodayMainGoal,
+      scope: appModel.homeTodaySwipeGoals,
+    );
   }
 
   /// 统计中心入口（唯一入口：各媒体页头的「xx统计」已撤，统一从首页进总览）。
@@ -3387,6 +4856,19 @@ class _HomeDashboardPageState
     );
   }
 
+  /// 首页「收藏句子」小组件点标题：进收藏夹，预选「句子」页签。
+  void _openFavoriteSentences() {
+    Navigator.push(
+      context,
+      adaptivePageRoute<void>(
+        context: context,
+        builder: (_) => const CollectionsPage(
+          initialFilter: CollectionsInitialFilter.sentence,
+        ),
+      ),
+    );
+  }
+
   /// 排行榜入口（统计中心入口旁的独立按钮）。
   void _openLeaderboard() {
     Navigator.push(
@@ -3400,326 +4882,118 @@ class _HomeDashboardPageState
 
   // ── 区块 4：Activity 时间轴 ──────────────────────────────────────────────
 
-  // ── 区块 5：Bangumi 同步 ─────────────────────────────────────────────────
+  // ── Media tracking (strip + marks, see home_tracking_panel.dart) ─────────
 
-  /// Bangumi 同步卡：把原本全静默的追踪链路摊成用户可见状态。
-  ///
-  /// 这条链路每一步失败都不出声——没令牌不建映射、标题匹配不唯一不建映射且 10 分钟
-  /// 内不再重试、上报失败只进错误日志并退避最长 6 小时、成功则删 outbox 行不留痕迹。
-  /// 于是「看完一部作品」之后没有任何反馈可看。这张卡按链路的三段（连接 → 关联 →
-  /// 发送）依次给出当前事实与下一步动作：哪一段断了，卡上就只可能显示那一段的文案。
-  Widget _buildTrackingCard(
-    FushiDesignTokens tokens,
+  /// 追踪色块右侧叠放的封面（H6）：待关联条目里最近活动的三条，在本地库里找得到
+  /// 封面来源的才画（书 / 视频 / 视频合集 / 游戏）。
+  List<Widget> _trackingUnlinkedCovers(
     AppModel appModel,
-    DateTime now,
+    List<MediaItem> books,
   ) {
-    final MediaTrackingStatus status = _tracking;
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-
-    // 第一段：没连令牌 → 后面两段都无从谈起，只给连接入口。
-    if (!status.configured) {
-      return _sectionCard(
-        tokens,
-        title: t.media_tracking_card_title,
-        icon: FushiIcons.sync,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            Text(t.media_tracking_not_connected, style: tokens.type.metadata),
-            SizedBox(height: tokens.spacing.gap),
-            Align(
-              alignment: AlignmentDirectional.centerStart,
-              child: FushiFilledButton.tonalIcon(
-                onPressed: _openTrackingSettings,
-                icon: const FushiIcon(FushiIcons.link),
-                label: Text(t.media_tracking_connect),
-              ),
-            ),
-          ],
-        ),
-      );
+    if (HomeTrackingSummary.of(_tracking).unlinked == 0) {
+      return const <Widget>[];
     }
-
-    final List<String> summary = <String>[
-      '${t.media_tracking_last_sync}: '
-          '${trackingLastSyncLabel(status, now)}',
-      t.media_tracking_linked_count(n: status.mappings.length),
-      status.pending > 0
-          ? t.media_tracking_pending_count(n: status.pending)
-          : t.media_tracking_all_synced,
-    ];
-
-    return _sectionCard(
-      tokens,
-      title: t.media_tracking_card_title,
-      icon: FushiIcons.sync,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
-        mainAxisSize: MainAxisSize.min,
-        children: <Widget>[
-          FushiTooltip(
-            message: t.media_tracking_watched_show,
-            child: InkWell(
-              onTap: () => unawaited(_showBangumiWatched()),
-              borderRadius: FushiBorderRadius.card,
-              child: Padding(
-                padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-                child: Row(
-                  children: <Widget>[
-                    FushiIcon(
-                      FushiIcons.person,
-                      size: 18,
-                      color: scheme.primary,
-                    ),
-                    SizedBox(width: tokens.spacing.gap / 2),
-                    Expanded(
-                      child: Text(
-                        status.accountName.isEmpty
-                            ? t.media_tracking_account
-                            : status.accountName,
-                        style: tokens.type.listTitle,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                    ),
-                    Text(
-                      t.media_tracking_watched_show,
-                      style: tokens.type.metadata.copyWith(
-                        color: scheme.primary,
-                      ),
-                    ),
-                    SizedBox(width: tokens.spacing.gap / 4),
-                    FushiIcon(
-                      FushiIcons.chevronRight,
-                      size: 18,
-                      color: scheme.primary,
-                    ),
-                  ],
-                ),
-              ),
-            ),
-          ),
-          SizedBox(height: tokens.spacing.gap / 2),
-          Text(summary.join(' · '), style: tokens.type.metadata),
-
-          // 令牌被拒是「已连接」下最容易误判成「没反应」的情形：令牌还在偏好里，
-          // isConfigured 仍为 true，但每次同步都在 getMe 就 401 中止。
-          if (status.unauthorized) ...<Widget>[
-            SizedBox(height: tokens.spacing.gap),
-            Row(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: <Widget>[
-                FushiIcon(FushiIcons.error, size: 18, color: scheme.error),
-                SizedBox(width: tokens.spacing.gap / 2),
-                Expanded(
-                  child: Text(
-                    t.media_tracking_unauthorized,
-                    style: tokens.type.metadata.copyWith(color: scheme.error),
-                  ),
-                ),
-              ],
-            ),
-          ],
-
-          SizedBox(height: tokens.spacing.gap),
-
-          // 本地历史与映射是两个独立口径：先明确列出已有进度但仍没关联的条目。
-          // 旧文案只在映射表为空时泛泛说“其余需手动关联”，既没写出“哪些”，
-          // 又把“零映射”误当成“零历史”。
-          if (status.unlinked.isNotEmpty) ...<Widget>[
-            Text(
-              t.media_tracking_manual_required_count(n: status.unlinked.length),
-              style: tokens.type.listTitle.copyWith(color: scheme.error),
-            ),
-            SizedBox(height: tokens.spacing.gap / 4),
-            Text(
-              t.media_tracking_manual_required_hint,
-              style: tokens.type.metadata,
-            ),
-            for (final MediaTrackingUnlinkedItem item in status.unlinked.take(
-              _kTrackingUnlinkedLimit,
-            ))
-              _buildTrackingUnlinkedRow(tokens, item),
-            if (status.unlinked.length > _kTrackingUnlinkedLimit)
-              FushiTextButton(
-                onPressed: _openTrackingSettings,
-                child: Text(
-                  t.media_tracking_more_manual_required(
-                    n: status.unlinked.length - _kTrackingUnlinkedLimit,
-                  ),
-                ),
-              ),
-          ] else if (status.mappings.isEmpty)
-            Text(
-              t.media_tracking_no_local_history,
-              style: tokens.type.metadata,
-            ),
-
-          // 已关联条目仍保留作同步诊断；失败原因挂在对应行上并排到最前。
-          for (final MediaTrackingMappingRow mapping
-              in status.mappingsProblemFirst.take(_kTrackingMappingLimit))
-            _buildTrackingMappingRow(
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final List<MediaTrackingUnlinkedItem> items =
+        List<MediaTrackingUnlinkedItem>.of(_tracking.unlinked)..sort(
+          (MediaTrackingUnlinkedItem a, MediaTrackingUnlinkedItem b) =>
+              b.lastActivityAt.compareTo(a.lastActivityAt),
+        );
+    final List<Widget> covers = <Widget>[];
+    for (final MediaTrackingUnlinkedItem item in items) {
+      if (covers.length == 3) break;
+      final Widget? cover = switch (item.mediaType) {
+        TrackingMediaType.book => () {
+          for (final MediaItem b in books) {
+            if ((ReaderFushiSource.parseBookKey(b.mediaIdentifier) ??
+                    b.mediaIdentifier) ==
+                item.mediaKey) {
+              return _bookCover(tokens, appModel, b);
+            }
+          }
+          return null;
+        }(),
+        TrackingMediaType.video => () {
+          for (final VideoBookRow v in _videos) {
+            if (v.bookUid == item.mediaKey) {
+              return _localCover(
+                tokens,
+                kind: MediaKind.video,
+                path: v.coverPath,
+                title: item.mediaTitle,
+              );
+            }
+          }
+          return null;
+        }(),
+        TrackingMediaType.videoCollection =>
+          switch (_collectionCoverById[int.tryParse(item.mediaKey)]) {
+            final List<String> paths when paths.isNotEmpty => _localCover(
               tokens,
-              mapping,
-              status.failureByMappingId[mapping.id],
+              kind: MediaKind.video,
+              path: paths.first,
+              title: item.mediaTitle,
             ),
-          for (final String error in status.automaticMappingErrors)
-            Text(
-              '${t.media_tracking_last_error}: $error',
-              style: tokens.type.metadata.copyWith(color: scheme.error),
-              maxLines: 3,
-              overflow: TextOverflow.ellipsis,
-            ),
-
-          SizedBox(height: tokens.spacing.gap),
-          Wrap(
-            spacing: tokens.spacing.gap,
-            runSpacing: tokens.spacing.gap / 2,
-            children: <Widget>[
-              FushiFilledButton.tonalIcon(
-                onPressed: _trackingSyncBusy ? null : _syncTrackingNow,
-                icon: _trackingSyncBusy
-                    ? const SizedBox.square(
-                        dimension: 16,
-                        child: FushiCircularProgressIndicator(strokeWidth: 2),
-                      )
-                    : const FushiIcon(FushiIcons.sync),
-                label: Text(t.media_tracking_sync_now),
-              ),
-              if (status.automaticMappingMissCount > 0)
-                FushiFilledButton.tonalIcon(
-                  onPressed: _trackingSyncBusy ? null : _retryTrackingMappings,
-                  icon: const FushiIcon(FushiIcons.refresh),
-                  label: Text(t.media_tracking_retry_mapping),
-                ),
-              FushiTextButton.icon(
-                onPressed: _openTrackingSettings,
-                icon: const FushiIcon(FushiIcons.settings),
-                label: Text(t.media_tracking_manage_links),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
+            _ => null,
+          },
+        TrackingMediaType.game => () {
+          for (final GalgameEntry g in _games) {
+            if (g.id == item.mediaKey) {
+              return _gameCover(tokens, g, title: item.mediaTitle);
+            }
+          }
+          return null;
+        }(),
+        _ => null,
+      };
+      if (cover != null) covers.add(cover);
+    }
+    return covers;
   }
 
-  Widget _buildTrackingUnlinkedRow(
-    FushiDesignTokens tokens,
-    MediaTrackingUnlinkedItem item,
-  ) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: _openTrackingSettings,
-      borderRadius: FushiBorderRadius.card,
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            FushiIcon(FushiIcons.linkOff, size: 18, color: scheme.error),
-            SizedBox(width: tokens.spacing.gap / 2),
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    item.mediaTitle,
-                    style: tokens.type.listTitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    '${trackingKindLabel(item.kind.value)} · '
-                    '${t.media_tracking_manual_required}',
-                    style: tokens.type.metadata.copyWith(color: scheme.error),
-                  ),
-                ],
-              ),
-            ),
-            SizedBox(width: tokens.spacing.gap / 2),
-            const FushiIcon(FushiIcons.chevronRight, size: 18),
-          ],
+  /// The tracking state of a Continue entry ([homeTrackingMark]); null for
+  /// entries tracking has no key for (audiobooks, items on another device).
+  FushiContinueMark? _trackingMarkOf(_ContinueEntry entry) {
+    if (!isMediaTrackingEnabled(ref.read(appProvider).moduleVisibility)) {
+      return null;
+    }
+    final int? collectionId = entry.collectionId;
+    final List<HomeTrackingKey> keys = <HomeTrackingKey>[
+      if (entry.video case final VideoBookRow video) ...<HomeTrackingKey>[
+        (type: TrackingMediaType.video, key: video.bookUid),
+        if (collectionId != null)
+          (type: TrackingMediaType.videoCollection, key: '$collectionId'),
+      ],
+      if (entry.book case final MediaItem book) ...<HomeTrackingKey>[
+        (
+          type: TrackingMediaType.book,
+          key:
+              ReaderFushiSource.parseBookKey(book.mediaIdentifier) ??
+              book.mediaIdentifier,
         ),
-      ),
-    );
+        // A volume counted by its series card's series link.
+        if (collectionId != null)
+          (type: TrackingMediaType.bookCollection, key: '$collectionId'),
+      ],
+      if (entry.game case final GalgameEntry game)
+        (type: TrackingMediaType.game, key: game.id),
+    ];
+    if (keys.isEmpty) return null;
+    return homeTrackingMark(snapshot: _tracking, keys: keys);
   }
 
-  /// 一条已关联条目：本地标题 + 「类别 · Bangumi 条目名 · 进度单位」+（有则）失败
-  /// 原因，整行点击在浏览器打开该 Bangumi 条目页。
-  ///
-  /// 打开 bgm.tv 是「怎么查看这个 bangumi 数据」的落点：远端收藏与进度的真相在
-  /// Bangumi，app 内不镜像一份（镜像就得再养一套失效逻辑，且永远可能与远端不符）。
-  Widget _buildTrackingMappingRow(
-    FushiDesignTokens tokens,
-    MediaTrackingMappingRow mapping,
-    MediaTrackingFailure? failure,
-  ) {
-    final ColorScheme scheme = Theme.of(context).colorScheme;
-    return InkWell(
-      onTap: () => unawaited(_openBangumiSubject(mapping.subjectId)),
-      borderRadius: FushiBorderRadius.card,
-      child: Padding(
-        padding: EdgeInsets.symmetric(vertical: tokens.spacing.gap / 2),
-        child: Row(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: <Widget>[
-            if (failure != null) ...<Widget>[
-              FushiIcon(FushiIcons.syncProblem, size: 18, color: scheme.error),
-              SizedBox(width: tokens.spacing.gap / 2),
-            ],
-            Expanded(
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: <Widget>[
-                  Text(
-                    mapping.mediaTitle,
-                    style: tokens.type.listTitle,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  Text(
-                    trackingMappingSubtitle(mapping),
-                    style: tokens.type.metadata,
-                    maxLines: 2,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                  // 退避窗口内也照显：markFailed 最长把重试推到 6 小时后，那段时间
-                  // 里发送侧看不到这一行，展示侧不说就等于「零错误」。
-                  if (failure != null)
-                    Text(
-                      '${t.media_tracking_last_error}: ${failure.error}',
-                      style: tokens.type.metadata.copyWith(color: scheme.error),
-                      maxLines: 3,
-                      overflow: TextOverflow.ellipsis,
-                    ),
-                ],
-              ),
-            ),
-            SizedBox(width: tokens.spacing.gap / 2),
-            FushiTooltip(
-              message: t.media_tracking_open_subject,
-              child: const FushiIcon(FushiIcons.openInNew, size: 16),
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-
-  Future<void> _openBangumiSubject(int subjectId) async {
-    await launchUrl(
-      Uri.parse(BangumiApiClient.subjectUrl(subjectId)),
-      mode: LaunchMode.externalApplication,
-    );
-  }
-
-  Future<void> _showBangumiWatched() async {
-    await showAppDialog<void>(
-      context: context,
-      builder: (BuildContext dialogContext) => _BangumiWatchedDialog(
-        service: ref.read(appProvider).mediaTrackingService,
-        onOpenSubject: _openBangumiSubject,
+  /// The Tracking page, on "Needs attention" when the strip says something
+  /// needs the user. Its "Settings" button leads to Media tracking settings.
+  void _openTrackingPage(HomeTrackingSummary summary) {
+    final AppModel appModel = ref.read(appProvider);
+    unawaited(
+      openTrackingPage(
+        context,
+        service: appModel.mediaTrackingService,
+        database: appModel.database,
+        onOpenSettings: _openTrackingSettings,
+        openSeriesCard: trackingSeriesCardOpener(appModel),
+        initialTab: summary.needsAttention ? TrackingPageTab.attention : null,
       ),
     );
   }
@@ -3733,76 +5007,82 @@ class _HomeDashboardPageState
     );
   }
 
-  /// 手动同步：结果用 SnackBar 明确回执（成功/失败），再刷新卡片状态。
-  /// 服务层的 `statusRevision` 也会触发重载，这里的 await 只为按钮 busy 态收敛。
-  Future<void> _syncTrackingNow() async {
-    setState(() => _trackingSyncBusy = true);
-    try {
-      final MediaTrackingSyncResult result = await ref
-          .read(appProvider)
-          .mediaTrackingService
-          .syncNow(force: true);
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          FushiSnackBar(
-            content: Text(
-              result.isSuccess
-                  ? t.media_tracking_sync_success
-                  : t.media_tracking_sync_failed,
-            ),
-          ),
-        );
-    } catch (e, stack) {
-      ErrorLogService.instance.log('HomeDashboardPage.syncTracking', e, stack);
-    } finally {
-      if (mounted) setState(() => _trackingSyncBusy = false);
-    }
-  }
+  // ── 首页拼贴版式（设计稿 collage_review_design H1–H8） ────────────────────────
 
-  /// 自动匹配重试：由服务层清掉对应 miss 退避并重新调用原匹配解析器；结果必须明确
-  /// 回显，不能把「按钮被 10 分钟退避挡住」伪装成成功。
-  Future<void> _retryTrackingMappings() async {
-    setState(() => _trackingSyncBusy = true);
-    try {
-      final MediaTrackingMappingRetryResult result = await ref
-          .read(appProvider)
-          .mediaTrackingService
-          .retryAutomaticMappings();
-      if (!mounted) return;
-      ScaffoldMessenger.of(context)
-        ..hideCurrentSnackBar()
-        ..showSnackBar(
-          FushiSnackBar(
-            content: Text(
-              !result.matchedAny
-                  ? t.media_tracking_retry_no_match
-                  : (result.syncResult?.isSuccess ?? false)
-                  ? t.media_tracking_retry_matched
-                  : t.media_tracking_sync_failed,
-            ),
-          ),
-        );
-    } catch (e, stack) {
-      ErrorLogService.instance.log(
-        'HomeDashboardPage.retryTrackingMappings',
-        e,
-        stack,
-      );
-      if (mounted) {
-        ScaffoldMessenger.of(context)
-          ..hideCurrentSnackBar()
-          ..showSnackBar(
-            FushiSnackBar(content: Text(t.media_tracking_sync_failed)),
-          );
-      }
-    } finally {
-      if (mounted) setState(() => _trackingSyncBusy = false);
-    }
+  /// 手机内容底部渐隐（H3）：MD3 悬浮底栏下面的内容不再被拦腰硬切。Apple 有
+  /// 系统同款的 scroll edge 渐隐（外壳 [_appleChrome]），桌面没有底栏，都不加。
+  Widget _homeBottomFade(BuildContext context, double inset, Widget child) {
+    if (inset <= 0 || isGlassDesign(context)) return child;
+    return ShaderMask(
+      blendMode: BlendMode.dstIn,
+      shaderCallback: (Rect bounds) => homeBottomFadeGradient(
+        height: bounds.height,
+        inset: inset,
+      ).createShader(bounds),
+      child: child,
+    );
   }
 
   // ── 共享外壳 ────────────────────────────────────────────────────────────
+
+  /// [_sectionCard] 的海报色块形态（色块面板版式）：标题收成左上的 chip（前导
+  /// 图标 + 标题）、右侧控件照排，不画大字水印（G2）；底色按标题
+  /// 折叠色相（[fushiPosterHue]），同一分区每次同色。卡内是成组的独立按钮 /
+  /// 可点行，整块不是点按目标，所以不随悬停抬升（与复习页热力图色块同口径）。
+  Widget _posterSection(
+    FushiDesignTokens tokens, {
+    required Widget child,
+    Key? key,
+    String? title,
+    IconData? icon,
+    Widget? header,
+    List<Widget> trailing = const <Widget>[],
+  }) {
+    final String label = title ?? '';
+    final FushiCoverBlockColors colors = fushiPosterColors(
+      context,
+      fushiPosterHue('home-section/$label'),
+    );
+    return FushiPosterBlock(
+      key: key,
+      // 统计 / 面板块不画大字水印（设计稿 G2 / H2 / H5：水印只给带封面的媒体块）。
+      watermark: '',
+      colors: colors,
+      hoverEnabled: false,
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.stretch,
+        mainAxisSize: MainAxisSize.min,
+        children: <Widget>[
+          if (title != null) ...<Widget>[
+            Row(
+              children: <Widget>[
+                Expanded(
+                  child: Align(
+                    alignment: AlignmentDirectional.centerStart,
+                    child: FushiPosterChip(
+                      colors: colors,
+                      icon: icon,
+                      label: label,
+                    ),
+                  ),
+                ),
+                for (final Widget w in trailing) ...<Widget>[
+                  SizedBox(width: tokens.spacing.gap),
+                  w,
+                ],
+              ],
+            ),
+            if (header != null) ...<Widget>[
+              SizedBox(height: tokens.spacing.gap),
+              Align(alignment: AlignmentDirectional.centerStart, child: header),
+            ],
+            SizedBox(height: tokens.spacing.gap),
+          ],
+          child,
+        ],
+      ),
+    );
+  }
 
   /// [_sectionCard] 的内边距。
   double _sectionCardInset(FushiDesignTokens tokens) => tokens.spacing.gap + 4;
@@ -3818,6 +5098,18 @@ class _HomeDashboardPageState
     Widget? header,
     List<Widget> trailing = const <Widget>[],
   }) {
+    // 色块面板版式：同一套参数画成海报色块（同步卡 / 引导卡走这里）。
+    if (_posterPanels) {
+      return _posterSection(
+        tokens,
+        key: key,
+        title: title,
+        icon: icon,
+        header: header,
+        trailing: trailing,
+        child: child,
+      );
+    }
     // eink：group 面层塌缩成页面底色，分区卡的边界全没了，整页读成一根连续的列；
     // 补 1px 描边（FushiCard 同款）。
     final bool eink = isEinkTheme(context);

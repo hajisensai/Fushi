@@ -12,6 +12,52 @@ mixin _FushiDbPrefsMedia
     return row?.value;
   }
 
+  /// [key] 这一条偏好的**值**变了就发一次（任何写入者：仓库、同步合并、备份恢复、
+  /// 控制通道……只要经本库写 `preferences` 表）。
+  ///
+  /// 同 [watchCollectionTablesChanged] 用手动 [StreamController] + [tableUpdates]，
+  /// 不用 drift keyed `.watch()`（BUG-834）。`preferences` 表任何一行写入都会唤醒，
+  /// 这里重读 [key] 那一行、与上次读到的值比较，没变就不发（别的偏好写入不惊动订阅方）。
+  /// 订阅时先读一次当基线；基线还没读完时到来的写入照发（宁可多刷一次）。读失败
+  /// （库已关闭等）作为错误事件交给订阅方。
+  Stream<void> watchPrefChanged(String key) {
+    late final StreamController<void> controller;
+    StreamSubscription<String?>? updatesSub;
+    String? last;
+    bool primed = false;
+    controller = StreamController<void>(
+      onListen: () {
+        getPref(key).then<void>(
+          (String? value) {
+            if (primed) return;
+            last = value;
+            primed = true;
+          },
+          onError: (Object error, StackTrace stack) {
+            if (!controller.isClosed) controller.addError(error, stack);
+          },
+        );
+        updatesSub = tableUpdates(TableUpdateQuery.onTable(preferences))
+            .asyncMap((_) => getPref(key))
+            .listen(
+              (String? value) {
+                if (primed && value == last) return;
+                last = value;
+                primed = true;
+                if (!controller.isClosed) controller.add(null);
+              },
+              onError: (Object error, StackTrace stack) {
+                if (!controller.isClosed) controller.addError(error, stack);
+              },
+            );
+      },
+      onCancel: () async {
+        await updatesSub?.cancel();
+      },
+    );
+    return controller.stream;
+  }
+
   /// 一次取回全部以 [prefix] 开头的偏好（key → value）。
   ///
   /// 「每本一个键」的偏好族（有声书健康度覆盖等）在列表页要为每本各查一次
@@ -540,7 +586,17 @@ mixin _FushiDbPrefsMedia
   /// （同 bookUid 重复登记、互联重下覆盖同一副本）时**永不改写**——那不是重新
   /// 拥有。互联下载登记把 `importedAt` 镜像成 host 值（BUG-2463），本列仍记本机
   /// 落地时刻（语义见 [FushiDatabase.insertEpubBook]）。
-  Future<void> upsertVideoBook(VideoBooksCompanion vb) async {
+  ///
+  /// 标题过 [cleanImportedTitle]（末尾 CRC 标签 / 扩展名不是标题）：视频的身份是
+  /// `bookUid`、标题只是显示名（用户改名直写本列），所以在写入单点清洗，导入 / 来源
+  /// 扫描 / 下载管线 / 互联登记的每条路径都一样；存量行由 v172 迁移清过一次。用户
+  /// 改名走 [updateVideoBookTitle]，原样写、不清洗。
+  Future<void> upsertVideoBook(VideoBooksCompanion input) async {
+    final VideoBooksCompanion vb = input.title.present
+        ? input.copyWith(
+            title: Value<String>(cleanImportedTitle(input.title.value)),
+          )
+        : input;
     await into(videoBooks).insert(
       vb.localAddedAt.present
           ? vb
@@ -558,11 +614,76 @@ mixin _FushiDbPrefsMedia
     }
   }
 
+  /// 把存量 `video_books.title` 过一遍 [cleanImportedTitle]（v172 迁移步）：只写
+  /// 清洗后确有变化的行，返回改写行数；幂等。
+  ///
+  /// 只读写 `book_uid` / `title` 两列（裸 SQL：迁移阶梯中途表的其它列可能还没齐）。
+  /// 不碰统计 / 活动行里的标题快照——它们按 book_uid 归属，与用户改名
+  /// （[updateVideoBookTitle]）同一口径。
+  Future<int> cleanStoredVideoBookTitles() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT book_uid, title FROM video_books',
+    ).get();
+    int changed = 0;
+    for (final QueryRow row in rows) {
+      final String title = row.read<String>('title');
+      final String cleaned = cleanImportedTitle(title);
+      if (cleaned == title) continue;
+      await customStatement(
+        'UPDATE video_books SET title = ? WHERE book_uid = ?',
+        <Object>[cleaned, row.read<String>('book_uid')],
+      );
+      changed++;
+    }
+    return changed;
+  }
+
   Future<VideoBookRow?> getVideoBookByBookUid(String bookUid) => (select(
     videoBooks,
   )..where((t) => t.bookUid.equals(bookUid))).getSingleOrNull();
 
   Future<List<VideoBookRow>> allVideoBooks() => select(videoBooks).get();
+
+  /// 全部视频行的瘦投影：只取 `book_uid` / `title` / `video_path`，顺序同
+  /// [allVideoBooks]（rowid）。
+  ///
+  /// 设置 › 存储页开页时要整库视频清单，但只用这三列。整行读会把 `playlistJson`
+  /// 等几十列一起经 drift 后台 isolate 拷回 UI isolate 解码，库大时开页卡顿
+  /// （BUG：settings-storage-page-open-jank）。
+  Future<List<({String bookUid, String title, String videoPath})>>
+  allVideoBookPaths() async {
+    final JoinedSelectStatement<HasResultSet, dynamic> query =
+        selectOnly(videoBooks)..addColumns(<Expression<Object>>[
+          videoBooks.bookUid,
+          videoBooks.title,
+          videoBooks.videoPath,
+        ]);
+    return <({String bookUid, String title, String videoPath})>[
+      for (final TypedResult r in await query.get())
+        (
+          bookUid: r.read(videoBooks.bookUid)!,
+          title: r.read(videoBooks.title)!,
+          videoPath: r.read(videoBooks.videoPath)!,
+        ),
+    ];
+  }
+
+  /// 按一批 bookUid 取行（`IN` 分块；不存在的 uid 不在结果里，顺序不保证）。
+  /// 批量操作取删前快照用，代替逐条 [getVideoBookByBookUid]（BUG-4748）。
+  Future<List<VideoBookRow>> getVideoBooksByBookUids(
+    Iterable<String> bookUids,
+  ) async {
+    final List<VideoBookRow> rows = <VideoBookRow>[];
+    for (final List<String> chunk in _chunkForSqlVariables<String>(
+      bookUids.toSet().toList(growable: false),
+      _kVideoDeleteChunkSize,
+    )) {
+      rows.addAll(
+        await (select(videoBooks)..where((t) => t.bookUid.isIn(chunk))).get(),
+      );
+    }
+    return rows;
+  }
 
   /// 仅在视频尚未归属来源时回填 [sourceId]。
   ///

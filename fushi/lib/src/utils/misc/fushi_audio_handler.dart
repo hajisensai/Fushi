@@ -1,4 +1,5 @@
 import 'package:audio_service/audio_service.dart' as ag;
+import 'package:flutter/foundation.dart' show mapEquals;
 
 /// 系统媒体控制（通知栏 / 锁屏 / 蓝牙 AVRCP / 车机 / 耳机线控）发来的播放意图。
 ///
@@ -105,12 +106,16 @@ class FushiAudioHandler extends ag.BaseAudioHandler {
   /// 不推播放态则后台必被冻结），但通知只剩一个播放 / 暂停键——不给上下句、悬浮
   /// 字幕键，也不声明 seek（Android 13+ 没有 seek 动作就不画进度条，iOS 控制中心
   /// 的进度条不可拖）。
+  ///
+  /// [floatingLyricControl] = false 时完整形态也不放「悬浮字幕」键（后台视频没有
+  /// 悬浮字幕可开）。
   void updatePlaybackState({
     required bool playing,
     required Duration position,
     required double speed,
     required Duration duration,
     bool minimal = false,
+    bool floatingLyricControl = true,
   }) {
     if (minimal) {
       playbackState.add(
@@ -127,7 +132,8 @@ class FushiAudioHandler extends ag.BaseAudioHandler {
       );
       return;
     }
-    final bool withFloatingLyric = onToggleFloatingLyric != null;
+    final bool withFloatingLyric =
+        floatingLyricControl && onToggleFloatingLyric != null;
     playbackState.add(
       ag.PlaybackState(
         controls: [
@@ -150,19 +156,28 @@ class FushiAudioHandler extends ag.BaseAudioHandler {
     );
   }
 
+  /// 推一张完整媒体卡片。[subtitle] 非空（清洗后）时与 [updateNotificationSubtitle]
+  /// 同样把当前句放进 `artist` / `displaySubtitle` / `displayDescription`，否则用
+  /// [artist]。每次刷新既要基础信息又要当前句的调用方（音乐会话）必须一次传齐、
+  /// 只推一张最终卡片：分两次调用会让「无副标题卡」与「有副标题卡」交替推送，
+  /// [_pushMediaItem] 的去重永远命中不了（BUG-4507）。
   void setMediaItemInfo({
     required String title,
     String? artist,
     Duration? duration,
     Uri? artUri,
+    String? subtitle,
   }) {
-    mediaItem.add(
+    final String? cleanedSubtitle = _cleanNotificationSubtitle(subtitle);
+    _pushMediaItem(
       ag.MediaItem(
         id: 'fushi_audiobook',
         title: title,
-        artist: artist,
+        artist: cleanedSubtitle ?? artist,
         duration: duration,
         artUri: artUri,
+        displaySubtitle: cleanedSubtitle,
+        displayDescription: cleanedSubtitle,
       ),
     );
   }
@@ -170,7 +185,7 @@ class FushiAudioHandler extends ag.BaseAudioHandler {
   /// 最简媒体卡片：只有标题，没有作者 / 封面 / 时长（缺时长 + 无 seek 动作 =
   /// 不画进度条），配合 [updatePlaybackState] 的 `minimal` 形态使用。
   void setMinimalMediaItem({required String title}) {
-    mediaItem.add(ag.MediaItem(id: 'fushi_audiobook', title: title));
+    _pushMediaItem(ag.MediaItem(id: 'fushi_audiobook', title: title));
   }
 
   void updateNotificationSubtitle({
@@ -181,7 +196,7 @@ class FushiAudioHandler extends ag.BaseAudioHandler {
     final ag.MediaItem? current = mediaItem.value;
     if (current == null) return;
     final String? cleanedSubtitle = _cleanNotificationSubtitle(subtitle);
-    mediaItem.add(
+    _pushMediaItem(
       current.copyWith(
         title: title,
         artist: cleanedSubtitle ?? fallbackArtist,
@@ -189,6 +204,20 @@ class FushiAudioHandler extends ag.BaseAudioHandler {
         displayDescription: cleanedSubtitle,
       ),
     );
+  }
+
+  /// 媒体卡片内容真变了才推给 audio_service（BUG-4507）。
+  ///
+  /// 会话在控制器每次 notify（播放进度 tick、cue 推进、播放态翻转）时都会重推
+  /// 副标题，绝大多数时候内容一字未变。audio_service 0.18 的 Android 端每收到一次
+  /// `setMediaItem` 就 `Executors.newSingleThreadExecutor()` 新开一条线程去跑
+  /// `synchronized AudioService.setMetadata`，从不关闭；几千次重复推送 = 几千条线程
+  /// 抢同一把锁，主线程 `buildNotification` 拿不到锁就 ANR。[ag.MediaItem] 的 `==`
+  /// 只比 `id`，所以这里按卡片上真正显示的字段逐一比较。
+  void _pushMediaItem(ag.MediaItem next) {
+    final ag.MediaItem? current = mediaItem.value;
+    if (current != null && mediaItemContentEquals(current, next)) return;
+    mediaItem.add(next);
   }
 
   String? _cleanNotificationSubtitle(String? subtitle) {
@@ -202,3 +231,21 @@ class FushiAudioHandler extends ag.BaseAudioHandler {
     mediaItem.add(null);
   }
 }
+
+/// 两张媒体卡片推给平台的内容是否相同（[ag.MediaItem] 自带的 `==` 只比 `id`）。
+bool mediaItemContentEquals(ag.MediaItem a, ag.MediaItem b) =>
+    a.id == b.id &&
+    a.title == b.title &&
+    a.album == b.album &&
+    a.artist == b.artist &&
+    a.genre == b.genre &&
+    a.duration == b.duration &&
+    a.artUri == b.artUri &&
+    mapEquals(a.artHeaders, b.artHeaders) &&
+    a.playable == b.playable &&
+    a.displayTitle == b.displayTitle &&
+    a.displaySubtitle == b.displaySubtitle &&
+    a.displayDescription == b.displayDescription &&
+    a.rating == b.rating &&
+    a.isLive == b.isLive &&
+    mapEquals(a.extras, b.extras);

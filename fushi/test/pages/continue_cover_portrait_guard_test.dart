@@ -78,8 +78,16 @@ void main() {
       );
     }
     // 视频分支：封面走 `_coverImage`，横竖由同一 provider 的真实宽高比探测决定。
-    final String cover = _stripLineComments(
+    // ec348e9444（NSFW 封面模糊）起 `_continueCover` 只是 `MediaNsfwCover` 外壳，
+    // 封面分流本体在 `_continueCoverInner`：外壳必须委托本体、且不得自己构造
+    // Image，本体再接受下面的同一组断言。
+    final String coverShell = _stripLineComments(
       _functionSource(source, 'Widget _continueCover('),
+    );
+    expect(coverShell, contains('child: _continueCoverInner('));
+    expect(containsIdentifierCall(coverShell, 'Image'), isFalse);
+    final String cover = _stripLineComments(
+      _functionSource(source, 'Widget _continueCoverInner('),
     );
     expect(cover, contains('_coverImage('));
     expect(containsIdentifierCall(cover, 'Image'), isFalse);
@@ -92,8 +100,20 @@ void main() {
     // LandscapeCoverImage（竖版海报回落时模糊垫底、不硬裁）。两者都不得回退到
     // 硬编码 fit 的裸 Image（旧 148×84 横槽让竖版海报两侧露灰带的祖病）。
     final String source = File(videoHomePath).readAsStringSync();
-    final String rowCard = _stripLineComments(
+    // ec348e9444（NSFW 封面模糊）起 `_buildRowMediaCard` 只是
+    // `MediaNsfwCoverScope` 外壳，卡片本体在 `_buildRowMediaCardInner`：外壳必须
+    // 委托本体、不得自己构造 Image，本体再接受下面的同一组断言。
+    final String rowShell = _stripLineComments(
       _functionSource(source, 'Widget _buildRowMediaCard('),
+    );
+    expect(
+      rowShell,
+      contains('child: _buildRowMediaCardInner(spec, cardWidth)'),
+      reason: '_buildRowMediaCard 只能是 NSFW 外壳，卡片本体必须委托给 Inner',
+    );
+    expect(containsIdentifierCall(rowShell, 'Image'), isFalse);
+    final String rowCard = _stripLineComments(
+      _functionSource(source, 'Widget _buildRowMediaCardInner('),
     );
     expect(
       rowCard,
@@ -143,8 +163,10 @@ void main() {
       File(collectionDetailPath).readAsStringSync(),
     );
     expect(
-      page,
-      contains('collectionEpisodeThumb(context, _episodeCover('),
+      RegExp(
+        r'collectionEpisodeThumb\(\s*context,\s*_episodeCover\(',
+      ).hasMatch(page),
+      isTrue,
       reason: '本地详情页集缩略图必须消费共享 collectionEpisodeThumb，不得自己再画',
     );
     final String layout = File(

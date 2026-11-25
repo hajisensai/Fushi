@@ -9,7 +9,11 @@ import 'package:fushi/src/asr_host/gpu_acceleration.dart'
     show gpuRuntimeToDownloadForUi, withGpuRuntimeDownload;
 import 'package:fushi/src/asr_host/gpu_runtime_pack.dart' show GpuRuntimeStore;
 import 'package:fushi/src/asr_host/shared_model_downloads.dart'
-    show SharedModelDownloads, asrPackDownloadKey, sharedModelDownloads;
+    show
+        SharedModelDownloads,
+        asrPackDownloadKey,
+        asrPackSongDownloadKey,
+        sharedModelDownloads;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 /// 一个语音转录模型包当前的下载进度快照。
@@ -252,7 +256,9 @@ class AsrModelDownloads extends ChangeNotifier {
     _notify();
     try {
       await slot.cancel();
-      // 模型文件那条归单飞登记表持有，摘掉本槽的监听不会停它。
+      // 模型文件那条归单飞登记表持有，摘掉本槽的监听不会停它。同包的歌曲素材那条
+      // （音乐库歌词：识别文件 + 人声分离模型，同一个包目录）一并停掉。
+      await shared.cancel(asrPackSongDownloadKey(packId));
       await shared.cancel(asrPackDownloadKey(packId));
     } finally {
       if (identical(_slots[packId], slot)) {

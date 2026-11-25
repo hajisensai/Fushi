@@ -6,7 +6,8 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_miner.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -86,8 +87,12 @@ void main() {
     inner: inner,
     miner: () async => SrsMiner(store: store, media: media),
     backgroundMining: () => background,
-    onBackgroundOutcome: (String expression, MineOutcome outcome) =>
-        reported.add((expression, outcome)),
+    onBackgroundOutcome:
+        (
+          String expression,
+          MineOutcome outcome, {
+          Future<void> Function()? addAnyway,
+        }) => reported.add((expression, outcome)),
   );
 
   Future<Map<String, SrsTermStatus>> statusOf(String expression) =>
@@ -184,6 +189,58 @@ void main() {
     expect(await statusOf('下手'), contains('下手'));
   });
 
+  test('判重复的那张带「仍要添加」：用同一份冻结载荷允许重复再写一次；成功不带', () async {
+    final List<Future<void> Function()?> offered = <Future<void> Function()?>[];
+    final SrsMiningAnkiRepository r = SrsMiningAnkiRepository(
+      inner: inner,
+      miner: () async => SrsMiner(store: store, media: media),
+      backgroundMining: () => background,
+      onBackgroundOutcome:
+          (
+            String expression,
+            MineOutcome outcome, {
+            Future<void> Function()? addAnyway,
+          }) {
+            reported.add((expression, outcome));
+            offered.add(addAnyway);
+          },
+    );
+    for (int i = 0; i < 2; i++) {
+      await r.mineEntry(
+        rawPayloadJson: _payload('上手', 'じょうず'),
+        context: const AnkiMiningContext(sentence: ''),
+      );
+    }
+    await SrsMiningAnkiRepository.debugBackgroundIdle();
+    expect(reported.map(((String, MineOutcome) e) => e.$2.result), <MineResult>[
+      MineResult.success,
+      MineResult.duplicate,
+    ]);
+    expect(offered[0], isNull, reason: '成功不给「仍要添加」');
+    expect(offered[1], isNotNull);
+
+    await offered[1]!();
+    await SrsMiningAnkiRepository.debugBackgroundIdle();
+    expect(reported.last.$2.result, MineResult.success, reason: '允许重复后写成');
+    expect((await statusOf('上手'))['上手']!.cardCount, 2);
+  });
+
+  test('withAllowDuplicateJson：拍上允许重复的键，坏载荷原样返回', () {
+    final Map<String, Object?> out =
+        jsonDecode(
+              SrsMiningAnkiRepository.withAllowDuplicateJson(
+                _payload('雪', 'ゆき'),
+              ),
+            )
+            as Map<String, Object?>;
+    expect(out[AnkiMiningPayload.allowDuplicateKey], isTrue);
+    expect(out['expression'], '雪');
+    expect(
+      SrsMiningAnkiRepository.withAllowDuplicateJson('not json'),
+      'not json',
+    );
+  });
+
   test('后台写入失败可见：失败结果经出口交出，队列不被毒化，下一张照常写', () async {
     final SrsMiningAnkiRepository r = repo();
     // 第一字段为空：复习拒建（与同步制卡同一条规则），只能在后台那一步发现。
@@ -236,7 +293,9 @@ void main() {
       inner: inner,
       miner: () async => null,
       backgroundMining: () => true,
-      onBackgroundOutcome: (String e, MineOutcome o) => reported.add((e, o)),
+      onBackgroundOutcome:
+          (String e, MineOutcome o, {Future<void> Function()? addAnyway}) =>
+              reported.add((e, o)),
     );
     final MineOutcome out = await r.mineEntry(
       rawPayloadJson: _payload('雪', 'ゆき'),

@@ -7,6 +7,8 @@ import 'package:fushi_engine/media/manga/manga_archive_importer.dart'
     show kMangaArchiveFileExtensions;
 import 'package:fushi_engine/media/manga/mokuro_legacy_html.dart'
     show isLegacyMokuroHtmlVolume;
+import 'package:fushi_engine/tts/manga_audio/manga_audio_package.dart'
+    show kMangaAudioPackageExtension;
 
 /// 一个待导入路径的**载体身份**：它到底是哪种东西，因而该交给哪个 importer。
 ///
@@ -42,6 +44,12 @@ enum ImportCarrier {
   /// 走 `MangaModule.importArchive`。
   mangaArchive,
 
+  /// 有声漫画导出包（`.fushi-manga-audio`：页图 + OCR + 演出稿 + 成品音频 + 系列
+  /// 选角）。不是「一卷漫画」，而是若干卷连同有声成品：交给有声漫画包的导入页
+  /// （`manga_audio_package_page.dart`，按页数 + OCR 认本机同一卷、确认替换）。
+  /// 不进 [kMangaCarrierFileExtensions]——目录批量导入不把它当成一卷捡起来。
+  mangaAudioPackage,
+
   /// PDF。走 `PdfImporter`（真渲染，不经 TextToEpub 文本转换）。
   pdf,
 
@@ -57,7 +65,8 @@ enum ImportCarrier {
       this == ImportCarrier.mangaFolder ||
       this == ImportCarrier.mangaBatchFolder ||
       this == ImportCarrier.mangaMokuro ||
-      this == ImportCarrier.mangaArchive;
+      this == ImportCarrier.mangaArchive ||
+      this == ImportCarrier.mangaAudioPackage;
 
   /// 能不能在漫画库里成为一本漫画。= [isManga] + [ImportCarrier.pdf]。
   ///
@@ -105,8 +114,11 @@ const Set<String> kMangaCarrierFileExtensions = <String>{
 /// - [isImageArchive]：真读包判定，只在扩展名二义（`.zip` / `.epub`）时才被调用。
 ///   `.zip` 同时是 Yomitan 词典包扩展名，`.epub` 也可能是扫描版漫画——光看扩展名
 ///   分不出，必须开包看里面装的是不是页图。
-/// - [directoryHasPageImages]：目录里有没有页图，判据必须与真正执行导入的枚举
-///   同源（`enumerateMangaPages`），否则会出现「判定说是页图目录、导入却扫不到页」。
+/// - [directoryHasPageImages]：目录里有没有**成卷的**页图，判据必须与真正执行导入的
+///   枚举同源（`enumerateMangaPages`），否则会出现「判定说是页图目录、导入却扫不到页」；
+///   页图全是直接子层整卷文件的附属图（封面）时答 false，让位判据与来源库扫描同一个
+///   引擎函数（`mangaImageDirsClaimedByCarriers`），两条导入路径对同一个文件夹给出
+///   同一种解释。
 /// - [directoryCarrierFileCount]：目录**直接子层**里有几个 [kMangaCarrierFileExtensions]
 ///   文件。只看扩展名（便宜），真定性推迟到逐卷导入时——那时反正要开包。
 /// - [directoryMokuroFileCount]：目录**直接子层**里有几个 mokuro manifest（`.mokuro`
@@ -133,8 +145,10 @@ ImportCarrier classifyImportCarrier(
     final int mokuroCount = directoryMokuroFileCount(path);
     if (mokuroCount == 1) return ImportCarrier.mangaMokuro;
     if (mokuroCount > 1) return ImportCarrier.mangaBatchFolder;
-    // 页图优先：有页图就是一卷页图目录，与改动前的行为逐字节一致。目录里
-    // 同时躺着页图和整卷文件时，页图这条解释更贴近用户点「选文件夹」的意图。
+    // 有**成卷的**页图就是一卷页图目录。只是整卷文件附属图（封面 / 目录图）的散图
+    // 不算——那由 [directoryHasPageImages] 按与来源库扫描同一个让位判据回答
+    // （iycDWb7ys6：`卷01.epub` + `cover.jpg` 的文件夹此前被判成一卷只有封面的页图
+    // 目录，导入框里一卷都认不出来，「导入文件夹」却能逐卷导入）。
     if (directoryHasPageImages(path)) return ImportCarrier.mangaFolder;
     if (directoryCarrierFileCount(path) > 0) {
       return ImportCarrier.mangaBatchFolder;
@@ -151,6 +165,10 @@ ImportCarrier classifyImportCarrier(
 
   // .mokuro 同理：它的 JSON 内容会被文本分支当纯文本吞掉。
   if (ext == '.mokuro') return ImportCarrier.mangaMokuro;
+  // 有声漫画包是 zip，但不是页图压缩包：按扩展名认，交给有声漫画包导入。
+  if (ext == kMangaAudioPackageExtension) {
+    return ImportCarrier.mangaAudioPackage;
+  }
   if (ext == '.html' && isLegacyMokuroHtml(path)) {
     return ImportCarrier.mangaMokuro;
   }
@@ -200,20 +218,35 @@ const Set<String> _ambiguousArchiveExtensions = <String>{'.zip', '.epub'};
 class ImportCarrierResolver {
   ImportCarrierResolver({
     required this.isDirectory,
-    required this.isImageArchive,
+    this.isImageArchive,
+    this.probeImageArchive,
     required this.directoryHasPageImages,
     required this.directoryCarrierFileCount,
     required this.directoryMokuroFileCount,
-  });
+  }) : assert(
+         isImageArchive != null || probeImageArchive != null,
+         'ImportCarrierResolver needs a sync or an async image-archive probe',
+       );
 
   final bool Function(String path) isDirectory;
-  final bool Function(String path) isImageArchive;
+
+  /// 同步开包判据，供 [resolve]。只给了 [probeImageArchive] 的 resolver 不能调
+  /// [resolve]（那正是要避免的「在 UI isolate 上同步开包」）。
+  final bool Function(String path)? isImageArchive;
+
+  /// 异步开包判据（生产上跑在后台 isolate，见 `looksLikeImageArchiveInBackground`），
+  /// 供 [resolveAsync]。没给时 [resolveAsync] 退回同步判据。
+  final Future<bool> Function(String path)? probeImageArchive;
   final bool Function(String path) directoryHasPageImages;
   final int Function(String path) directoryCarrierFileCount;
   final int Function(String path) directoryMokuroFileCount;
 
   String? _cachedKey;
   ImportCarrier? _cachedCarrier;
+
+  /// [resolveAsync] 正在进行的那次判定（同一个键的并发提问共用它，不重复开包）。
+  String? _pendingKey;
+  Future<ImportCarrier>? _pending;
 
   /// 记忆键：路径 + 内容指纹（mtime + 字节数）。
   ///
@@ -242,23 +275,79 @@ class ImportCarrierResolver {
     final String key = _memoKey(path);
     final ImportCarrier? cached = _cachedCarrier;
     if (cached != null && _cachedKey == key) return cached;
-    final ImportCarrier carrier = classifyImportCarrier(
-      path,
-      isDirectory: isDirectory,
-      isImageArchive: isImageArchive,
-      directoryHasPageImages: directoryHasPageImages,
-      directoryCarrierFileCount: directoryCarrierFileCount,
-      directoryMokuroFileCount: directoryMokuroFileCount,
-    );
+    final bool Function(String path)? probe = isImageArchive;
+    if (probe == null) {
+      throw StateError(
+        'ImportCarrierResolver.resolve needs a sync isImageArchive; '
+        'use resolveAsync',
+      );
+    }
+    final ImportCarrier carrier = _classify(path, probe);
     _cachedKey = key;
     _cachedCarrier = carrier;
     return carrier;
   }
+
+  /// [resolve] 的异步版：`.zip` / `.epub` 的开包判定交给 [probeImageArchive]
+  /// （后台 isolate），UI isolate 只做 stat 与按扩展名的分派（manga-3：选中一本
+  /// 几百 MB 的文字 EPUB，界面不再停住）。
+  ///
+  /// 与 [resolve] 共用同一份记忆（键 = 路径 + 内容指纹）；同一个键的判定还在跑时
+  /// 再问，拿到的是同一个 Future，不另开一次包。
+  Future<ImportCarrier> resolveAsync(String path) async {
+    final String key = _memoKey(path);
+    final ImportCarrier? cached = _cachedCarrier;
+    if (cached != null && _cachedKey == key) return cached;
+    final Future<ImportCarrier>? inFlight = _pending;
+    if (inFlight != null && _pendingKey == key) return inFlight;
+    final Future<ImportCarrier> run = _classifyAsync(path);
+    _pendingKey = key;
+    _pending = run;
+    try {
+      final ImportCarrier carrier = await run;
+      _cachedKey = key;
+      _cachedCarrier = carrier;
+      return carrier;
+    } finally {
+      if (identical(_pending, run)) {
+        _pending = null;
+        _pendingKey = null;
+      }
+    }
+  }
+
+  Future<ImportCarrier> _classifyAsync(String path) async {
+    final bool needsProbe =
+        _ambiguousArchiveExtensions.contains(p.extension(path).toLowerCase()) &&
+        !isDirectory(path);
+    final Future<bool> Function(String path)? asyncProbe = probeImageArchive;
+    final bool Function(String path)? syncProbe = isImageArchive;
+    final bool imageArchive =
+        needsProbe &&
+        (asyncProbe != null ? await asyncProbe(path) : syncProbe!(path));
+    // 判据本身仍是 [classifyImportCarrier]：开包的答案先在后台算好，再当常量谓词
+    // 喂回去（它只会对二义扩展名问）。
+    return _classify(path, (String _) => imageArchive);
+  }
+
+  ImportCarrier _classify(
+    String path,
+    bool Function(String path) imageArchive,
+  ) => classifyImportCarrier(
+    path,
+    isDirectory: isDirectory,
+    isImageArchive: imageArchive,
+    directoryHasPageImages: directoryHasPageImages,
+    directoryCarrierFileCount: directoryCarrierFileCount,
+    directoryMokuroFileCount: directoryMokuroFileCount,
+  );
 
   /// 丢弃记忆。键已经带内容指纹，正常不需要调它；留给「内容没变但判据本身变了」
   /// 这种场景（例如用户在对话框里改了受理规则）。
   void invalidate() {
     _cachedKey = null;
     _cachedCarrier = null;
+    _pendingKey = null;
+    _pending = null;
   }
 }

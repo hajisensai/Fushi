@@ -27,8 +27,6 @@ void main() {
 
   /// 不需要关的 WebView 及理由（保持默认）。
   const Map<String, String> exempt = <String, String>{
-    'lib/src/pages/implementations/web_video_fushi_page.dart':
-        '浏览器类页面：历史就是用户的网页导航，后退手势合理',
     'lib/src/media/video/web_video_session.dart':
         '原生播放器页网页档的站点 WebView（Windows WebView2）：历史是用户在站点里的导航',
     'lib/src/media/video/web_video_browser_settings.dart':
@@ -43,6 +41,8 @@ void main() {
         '网页小说取页用 HeadlessInAppWebView，不可见、无手势',
     'lib/src/media/manga/cookie/cloudflare_challenge_page.dart':
         '浏览器类页面（站点验证），历史对应真实网页跳转',
+    'lib/src/media/discovery/download_gateway_challenge_page.dart':
+        '浏览器类页面（下载网关人机验证），历史对应真实网页跳转',
     'lib/src/media/manga/mihon/mihon_web_login_page.dart':
         '浏览器类页面（站点登录），历史对应真实网页跳转',
     'lib/src/pages/implementations/music/music_plugin_login.dart':

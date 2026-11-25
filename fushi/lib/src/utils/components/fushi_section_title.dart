@@ -1,4 +1,5 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_backdrop_frost.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
@@ -40,6 +41,7 @@ class FushiSectionTitle extends StatelessWidget {
     this.trailing,
     this.padding,
     this.level = FushiSectionTitleLevel.content,
+    this.shrinkTrailing = false,
   });
 
   /// 分组标题（[FushiSectionTitleLevel.group]）。
@@ -48,6 +50,7 @@ class FushiSectionTitle extends StatelessWidget {
     super.key,
     this.trailing,
     this.padding,
+    this.shrinkTrailing = false,
   }) : level = FushiSectionTitleLevel.group;
 
   final String text;
@@ -59,6 +62,11 @@ class FushiSectionTitle extends StatelessWidget {
   final EdgeInsetsGeometry? padding;
 
   final FushiSectionTitleLevel level;
+
+  /// [trailing] 是可截断的说明文字（计数 / 来源摘要，需自带单行省略）时置真：
+  /// 尾随最多占行宽三分之一、超出省略，不把标题行顶出右缘。默认假——按钮 /
+  /// 菜单等动作控件按固有宽度排，压缩会把它们自己挤溢出。
+  final bool shrinkTrailing;
 
   /// 当前设计系统下该层级的标题样式（供需要自绘标题的地方复用同一口径）。
   static TextStyle styleOf(BuildContext context, FushiSectionTitleLevel level) {
@@ -92,11 +100,20 @@ class FushiSectionTitle extends StatelessWidget {
         (group
             ? const EdgeInsets.only(top: 16, bottom: 6)
             : const EdgeInsets.only(top: 24, bottom: 8));
-    final Widget title = Text(
-      text,
-      maxLines: 1,
-      overflow: TextOverflow.ellipsis,
-      style: styleOf(context, level),
+    // 自定义背景图上垫毛玻璃底（[FushiBackdropFrost]，只画不占位）：标题收成
+    // 自身宽度的胶囊，行尾控件另垫一枚，不连成一整条横幅。
+    final Widget title = Align(
+      alignment: AlignmentDirectional.centerStart,
+      widthFactor: 1,
+      heightFactor: 1,
+      child: FushiBackdropFrost(
+        child: Text(
+          text,
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: styleOf(context, level),
+        ),
+      ),
     );
     return Padding(
       padding: resolvedPadding,
@@ -106,9 +123,12 @@ class FushiSectionTitle extends StatelessWidget {
             ? title
             : Row(
                 children: <Widget>[
-                  Expanded(child: title),
+                  Expanded(flex: shrinkTrailing ? 2 : 1, child: title),
                   const SizedBox(width: 8),
-                  trailing!,
+                  if (shrinkTrailing)
+                    Flexible(child: FushiBackdropFrost(child: trailing!))
+                  else
+                    FushiBackdropFrost(child: trailing!),
                 ],
               ),
       ),

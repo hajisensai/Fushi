@@ -135,6 +135,12 @@ adb shell "cmd package install -d -r /data/local/tmp/downgrade.apk"
 
 注意：`pm uninstall -k`（保留数据卸载）后再装低版本同样会被 Android 16 拒绝，必须用 `cmd package install -d` 或完全卸载。
 
+## SRS 换代：真实旧版本二进制实测
+
+G7 / G8 / G11 的合并条件（用已发布的旧发行包打开封存文件 / 同步换代后的位置 / 还原新备份，必须拒绝且一个字节不变）用
+`tool/srs_old_binary/`：下载并校验旧版本 Windows 包、在隔离数据根里经桌面控制通道驱动、输出逐字节对比报告。
+版本集、隔离方式、各动作的驱动与判据、调用示例与已知发现见 [srs-old-binary-harness.md](srs-old-binary-harness.md)。
+
 ## DB 状态验证查询
 
 ```sql

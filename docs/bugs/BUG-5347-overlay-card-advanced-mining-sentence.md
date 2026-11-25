@@ -1,0 +1,13 @@
+## BUG-5347 · 应用外查词覆盖窗没有高级制卡入口，抓取上下文的前后句接不上
+- **报告**：2026-11-23（拍板台 rf--UcsGta 实施时发现；来源 GitHub issue #4244）
+- **真实性**：✅ 真缺口（读代码确认）。拍板台 rf--UcsGta 的前提是「应用外查词走 `dictionary_page_mixin.dart` 默认的 `buildAdvancedMiningSections`、只差句子分区」，与代码不符：
+  - Windows / macOS / X11 的应用外查词卡是原生覆盖窗里的 WebView（`global_lookup_controller.dart` `_lookupExternal` → `global_lookup_host.html` + popup.js），**不是** `DictionaryPageMixin` 宿主；宿主从不注入 `window.advancedMiningEnabled`，也不处理 `openAdvancedMining` 桥（`overlay_bridge_handlers.dart` 的分派表里没有），popup.js（`assets/popup/popup.js:6862`）因此根本不渲染「高级制卡」按钮。
+  - `overlay_bridge_handlers.dart` 文件头已写明「app 外没有 Flutter 层可以呈现对话框」：覆盖窗失焦即自关（前台钩子），把主窗拉到前台弹 Flutter 对话框会让卡片消失，确认时也就没有可回点的「+」。
+- **根因** `fushi/lib/src/lookup/global_lookup_controller.dart`（覆盖窗宿主没有高级制卡宿主能力）；对话框只能画在主窗（`showAdvancedMiningDialog`）。
+- **[x] ① 已修复**（拍板台 rf--UcsGta-overlay 拍「做」，方案 B 转交主窗）：
+  - 覆盖窗卡片渲染「高级制卡」按钮：`global_lookup_render.dart` 的每帧 renderJs 在 `renderPopup` 前写 `window.advancedMiningEnabled`，只对默认制卡路径的卡为真（`GlobalLookupController._advancedMiningHandoffAvailable`：非 `galCard`、没有制卡委托——台词浮窗 / 截屏识字 / 网页视频会往卡里加画面或片段，主窗重现不了，不给）；提示文案 `popup_advanced_mining_open_in_app` 写明会切到主窗。
+  - 点击走既有 `openAdvancedMining` 桥（非 deferred，原生层即时回 null 后转发 Dart），`GlobalLookupController._handOffAdvancedMining` 按 `__frameId` 取那一层的查询串（根卡带抓取上下文切好的前后句 / 表面给的整句，嵌套卡不带），收卡后经 `AppModel.queueExternalLookup(..., advancedMining:)` 交给 #4284 的主窗出口。
+  - 主窗查词页（`home_dictionary_page.dart` `_onResultRendered`）等结果区画完**这次请求**的结果（`hasRenderedResult` + 查词代），用 popup.js `fushiPopupEntryDomIndexFor` 按词条身份（表记 / 读音 / 命中）找回 DOM 序——不沿用覆盖窗下标，尾批未画完回 -2 等下一次 `popupRendered`——再调结果区同一个 `advancedMiningOpenerFor`（带 `_capturedSentenceSection`），对话框里能加减前后句。
+- **[x] ② 已加自动化测试**：`fushi/test/lookup/advanced_mining_handoff_test.dart`（桥参数解析、根 / 嵌套 / 已关卡层的转交内容、覆盖窗通道 → `DesktopLookupService` 请求往返、接线守卫）；`fushi/test/utils/misc/popup_asset_behavior_test.js` `testEntryDomIndexForHandoff`（三档匹配、无 DOM 词条跳过、渲染中 -2、找不到 -1）。
+- **未验证**：Windows / macOS / X11 真机上「点按钮 → 主窗到前台 → 对话框弹出」的端到端路径没有真机复测（本轮无桌面交互环境）；跨应用语音缓存的句子音频不随转交带到主窗（主窗默认制卡路径没有那份快照），需要时另开事项。
+- **备注**：已在拍板台 rf--UcsGta 留言说明。浏览器扩展的高级制卡另见 pU0bWNdaCO。

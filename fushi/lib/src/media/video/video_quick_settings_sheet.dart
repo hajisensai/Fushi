@@ -4,6 +4,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:fushi/src/media/video/subtitle_style_preview.dart';
 import 'package:fushi/src/media/video/video_quick_settings_host.dart';
+import 'package:fushi/src/media/video/video_web_playback_mode_panel.dart';
 import 'package:fushi/src/media/video/video_settings_actions.dart'
     show videoQuickSettingsHostOf;
 import 'package:fushi/src/models/app_model.dart';
@@ -79,6 +80,7 @@ class VideoQuickSettingsSheet extends StatefulWidget {
     required this.host,
     this.initialCategory,
     this.groups = VideoQuickSettingsSheet.settingsGroups,
+    this.webPlaybackMode,
     super.key,
   });
 
@@ -108,6 +110,11 @@ class VideoQuickSettingsSheet extends StatefulWidget {
   /// 用默认 `playback`。由「音频轨」「字幕轨」按钮驱动，把
   /// 原来「外面浮的轨切换器」收进本面板对应 tab。
   final String? initialCategory;
+
+  /// 非 null = 网页站点后端：「画质增强」页不画 mpv 着色器管理视图（作用在 libmpv 上，对站点
+  /// 画面不生效），改画网页档的档位二选一 + 本档的超分（[VideoWebPlaybackModePanel]，拍板
+  /// cbKi3PN0G7-r2；页签不能整页消失，拍板 kp-No6loQi）。
+  final VideoWebPlaybackModeHost? webPlaybackMode;
 
   @override
   State<VideoQuickSettingsSheet> createState() =>
@@ -534,6 +541,12 @@ class _VideoQuickSettingsSheetState extends State<VideoQuickSettingsSheet>
             else
               s,
         ];
+      case VideoGroup.shaders when widget.webPlaybackMode != null:
+        // 网页档：mpv 着色器行都作用在 libmpv 上，对站点画面不生效；整页换成档位 + 本档超分。
+        final VideoWebPlaybackModeHost web = widget.webPlaybackMode!;
+        sections = const <SettingsSection>[];
+        shaderBody = (SettingsContext _) =>
+            VideoWebPlaybackModePanel(host: web);
       case VideoGroup.shaders:
         // 着色器管理视图自带三个分组（画质档位 / 进阶 / 已安装着色器），各是一个
         // 标题在卡片外的 [AdaptiveSettingsSection]。若当成 schema 行渲染，整个视图

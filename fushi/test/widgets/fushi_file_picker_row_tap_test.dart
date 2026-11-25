@@ -88,42 +88,41 @@ void main() {
     });
   });
 
-  group('import dialog rows pass onTap (source guard)', () {
-    test('book_import_dialog rows are all tappable', () {
+  // 2026-11 导入对话框第二版：每个文件选择是共享拼贴色块（ImportPickBlock /
+  // ImportPickTile），整块可点——方法体里必须给色块 onTap。
+  group('import dialog pick blocks pass onTap (source guard)', () {
+    String methodBody(String source, String methodName) {
+      final int start = source.indexOf('Widget $methodName()');
+      expect(start, greaterThanOrEqualTo(0), reason: 'missing $methodName');
+      final int end = source.indexOf('\n  }\n', start);
+      return source.substring(start, end);
+    }
+
+    void expectTappableBlock(String body) {
+      expect(body, matches(RegExp(r'ImportPick(Block|Tile)\(')));
+      expect(body, contains('onTap:'));
+    }
+
+    test('book_import_dialog picks are all tappable', () {
       final String source = File(
         'lib/src/media/audiobook/book_import_dialog.dart',
       ).readAsStringSync();
-
-      String rowBody(String methodName) {
-        final int start = source.indexOf('Widget $methodName()');
-        expect(
-          start,
-          greaterThanOrEqualTo(0),
-          reason: 'missing $methodName in book_import_dialog.dart',
-        );
-        // Each *Row method returns a single FushiFilePickerRow; slice up to the
-        // closing `);` of that return statement followed by the method `}`.
-        final int rowStart = source.indexOf('FushiFilePickerRow(', start);
-        final int rowEnd = source.indexOf('actions:', rowStart);
-        return source.substring(rowStart, rowEnd);
+      for (final String row in <String>[
+        '_epubRow',
+        '_subtitleRow',
+        '_audioRow',
+        '_coverRow',
+      ]) {
+        expectTappableBlock(methodBody(source, row));
       }
-
-      expect(rowBody('_epubRow'), contains('onTap:'));
-      expect(rowBody('_subtitleRow'), contains('onTap:'));
-      expect(rowBody('_audioRow'), contains('onTap:'));
-      expect(rowBody('_coverRow'), contains('onTap:'));
     });
 
-    test('audiobook_import_dialog alignment row is tappable', () {
+    test('audiobook_import_dialog picks are tappable', () {
       final String source = File(
         'lib/src/media/audiobook/audiobook_import_dialog.dart',
       ).readAsStringSync();
-
-      final int start = source.indexOf('Widget _alignmentRow()');
-      expect(start, greaterThanOrEqualTo(0));
-      final int rowStart = source.indexOf('FushiFilePickerRow(', start);
-      final int rowEnd = source.indexOf('actions:', rowStart);
-      expect(source.substring(rowStart, rowEnd), contains('onTap:'));
+      expectTappableBlock(methodBody(source, '_audioSourceRow'));
+      expectTappableBlock(methodBody(source, '_alignmentRow'));
     });
   });
 }

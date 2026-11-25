@@ -34,6 +34,11 @@ import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dar
 import 'package:fushi/src/pages/implementations/video_discovery_acquisition_dialogs.dart'
     show VideoDownloadBackendSetupPrompt;
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/acquisition/remote_video_acquisition_session.dart'
+    show
+        kRemoteVideoAcquisitionAuthRejected,
+        kRemoteVideoAcquisitionCertificateMismatch,
+        kRemoteVideoAcquisitionNotPaired;
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -203,6 +208,14 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
   String _sayText(VideoAcquisitionSay say) {
     final Map<String, Object?> a = say.args;
     String arg(String key) => '${a[key] ?? ''}';
+    // BUG-4270：已有任务管着同一颗种子的条目不算失败，单独补一句「已在队列」。
+    String withAlreadyQueued(String text) {
+      final Object? n = a['alreadyQueued'];
+      return n is int && n > 0
+          ? '$text ${t.download_batch_already_queued(n: n)}'
+          : text;
+    }
+
     return switch (say.kind) {
       VideoAcquisitionSayKind.greeting => t.ai_video_acquire_greeting,
       VideoAcquisitionSayKind.workNotFound => t.ai_video_acquire_work_not_found(
@@ -249,7 +262,9 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
       VideoAcquisitionSayKind.submitted =>
         a['mode'] == VideoAcquisitionMode.subscribe.name
             ? t.ai_video_acquire_submitted_subscribe
-            : t.ai_video_acquire_submitted_download(count: arg('count')),
+            : withAlreadyQueued(
+                t.ai_video_acquire_submitted_download(count: arg('count')),
+              ),
       VideoAcquisitionSayKind.failed => t.ai_video_acquire_failed(
         message: _failureText(arg('message')),
       ),
@@ -278,12 +293,13 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
           ready: arg('ready'),
           total: arg('total'),
         ),
-      VideoAcquisitionSayKind.franchiseSubmitted =>
+      VideoAcquisitionSayKind.franchiseSubmitted => withAlreadyQueued(
         t.ai_video_acquire_franchise_submitted(
           downloads: arg('downloads'),
           subscriptions: arg('subscriptions'),
           failed: arg('failed'),
         ),
+      ),
       VideoAcquisitionSayKind.cancelled => t.ai_video_acquire_cancelled,
       VideoAcquisitionSayKind.aiUnavailable =>
         t.ai_video_acquire_ai_unavailable(reason: aiFailureText(arg('code'))),
@@ -303,6 +319,11 @@ class _AiVideoAcquisitionPageState extends State<AiVideoAcquisitionPage> {
       t.ai_video_acquire_failure_nothing_selected,
     kVideoAcquisitionFailureRemoteUnavailable =>
       t.ai_video_acquire_failure_remote_unavailable,
+    kRemoteVideoAcquisitionAuthRejected =>
+      t.interconnect_host_failure_auth_rejected,
+    kRemoteVideoAcquisitionCertificateMismatch =>
+      t.interconnect_host_failure_certificate_mismatch,
+    kRemoteVideoAcquisitionNotPaired => t.interconnect_host_failure_not_paired,
     _ => message,
   };
 

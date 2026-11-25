@@ -69,12 +69,16 @@ function loadContentAndFireShift(options) {
   }
   FakeDate.now = () => nowRef.value;
   FakeDate.prototype = RealDate.prototype;
+  // 计时器只记录不自动触发（反馈 L4Vhk0hOjM 的扫描延迟要逐个检查 / 手动触发）；
+  // 句柄从 1 起，clearTimeout 标记作废。
+  const timers = [];
+  const docElListeners = Object.create(null);
 
   const sandbox = {
     Date: FakeDate,
     console: { log() {}, warn() {}, error() {} },
-    setTimeout: () => 0,
-    clearTimeout() {},
+    setTimeout: (fn, ms) => { timers.push({ fn, ms, cleared: false }); return timers.length; },
+    clearTimeout: (id) => { if (timers[id - 1]) timers[id - 1].cleared = true; },
     URL,
     Node: { TEXT_NODE: 3, ELEMENT_NODE: 1 },
     // content.js 的查词耗时埋点用 performance.now() / performance.timeOrigin；真实内容脚本
@@ -88,7 +92,11 @@ function loadContentAndFireShift(options) {
     },
   };
   sandbox.document = {
-    documentElement: { dataset, setAttribute() {} },
+    documentElement: {
+      dataset,
+      setAttribute() {},
+      addEventListener: (t, fn) => { (docElListeners[t] = docElListeners[t] || []).push(fn); },
+    },
     body: { appendChild() {} },
     fullscreenElement: null,
     addEventListener: (t, fn) => {
@@ -173,6 +181,8 @@ function loadContentAndFireShift(options) {
     video,
     windowObj: sandbox.window,
     storageListeners,
+    timers,
+    docElListeners,
   };
 }
 
@@ -696,4 +706,116 @@ test('side-panel.js 的触发键判定副本与 content.js 逐例同义', () => 
   assert.strictEqual(a.fushiScanModifierKeydown({ key: 'Control', ctrlKey: true }, 'ctrl'), true);
   assert.strictEqual(a.fushiScanModifierKeydown({ key: 'Control', ctrlKey: true, shiftKey: true }, 'ctrl'), false);
   assert.strictEqual(a.fushiScanModifierHeld({}, 'none'), true);
+});
+
+// ── 反馈 L4Vhk0hOjM：悬停扫描延迟（storage.scanDelay，对齐 Yomitan Scan delay，只在 none 模式生效）──
+const pendingTimers = (h, ms) => h.timers.filter((t) => !t.cleared && t.ms === ms);
+function hoverNoKey(h, x, y) {
+  for (const fn of h.docListeners.mousemove) fn({ clientX: x, clientY: y, buttons: 0 });
+}
+
+test('scanDelay：none 模式下指针停稳到点才查词，期间再动重新计时', () => {
+  const h = loadContentAndFireShift({ stored: { scanModifier: 'none', scanDelay: 300 } });
+  hoverNoKey(h, 300, 400);
+  assert.strictEqual(shiftLookups(h).length, 0, '设了延迟不得一划过就查');
+  assert.strictEqual(pendingTimers(h, 300).length, 1);
+  hoverNoKey(h, 340, 400);
+  const pending = pendingTimers(h, 300);
+  assert.strictEqual(pending.length, 1, '再动一下必须作废旧计时、只留一个新的');
+  assert.strictEqual(shiftLookups(h).length, 0);
+  pending[0].fn();
+  assert.strictEqual(shiftLookups(h).length, 1, '停稳到点必须查词');
+});
+
+test('scanDelay=0 / 缺省：none 模式立即查（旧行为不变）', () => {
+  for (const stored of [{ scanModifier: 'none' }, { scanModifier: 'none', scanDelay: 0 }]) {
+    const h = loadContentAndFireShift({ stored });
+    hoverNoKey(h, 300, 400);
+    assert.strictEqual(shiftLookups(h).length, 1, JSON.stringify(stored));
+  }
+});
+
+test('scanDelay 只管 none 模式：按住触发键悬停仍立即查', () => {
+  const h = loadContentAndFireShift({ stored: { scanModifier: 'shift', scanDelay: 500 } });
+  for (const fn of h.docListeners.mousemove) fn({ shiftKey: true, clientX: 300, clientY: 400, buttons: 0 });
+  assert.strictEqual(shiftLookups(h).length, 1);
+  assert.strictEqual(pendingTimers(h, 500).length, 0);
+});
+
+test('scanDelay：指针移出窗口作废待查；storage.onChanged 热更新延迟', () => {
+  const h = loadContentAndFireShift({ stored: { scanModifier: 'none', scanDelay: 200 } });
+  hoverNoKey(h, 300, 400);
+  assert.strictEqual(pendingTimers(h, 200).length, 1);
+  for (const fn of h.docElListeners.mouseleave || []) fn({});
+  assert.strictEqual(pendingTimers(h, 200).length, 0, '移出窗口必须撤掉待查');
+  assert.strictEqual(shiftLookups(h).length, 0);
+
+  for (const listener of h.storageListeners) listener({ scanDelay: { newValue: 0 } }, 'local');
+  hoverNoKey(h, 360, 420);
+  assert.strictEqual(shiftLookups(h).length, 1, '延迟改成 0 后立即查');
+  for (const listener of h.storageListeners) listener({ scanDelay: { newValue: 700 } }, 'local');
+  hoverNoKey(h, 500, 420);
+  assert.strictEqual(pendingTimers(h, 700).length, 1, '改成 700 后按新延迟排队');
+  for (const listener of h.storageListeners) listener({ scanModifier: { newValue: 'shift' } }, 'local');
+  assert.strictEqual(pendingTimers(h, 700).length, 0, '换触发键作废按旧设置排的待查');
+});
+
+test('content.js 给弹窗注入 __fushiScanDelayMs（反馈 r4tpeIzVuD）：与网页侧同一判据，随 storage 热更新', () => {
+  const h = loadContentAndFireShift({ stored: { scanModifier: 'none', scanDelay: 300 } });
+  assert.strictEqual(typeof h.windowObj.__fushiScanDelayMs, 'function');
+  assert.strictEqual(h.windowObj.__fushiScanDelayMs(), 300);
+  for (const listener of h.storageListeners) listener({ scanModifier: { newValue: 'ctrl' } }, 'local');
+  assert.strictEqual(h.windowObj.__fushiScanDelayMs(), 0, '按键模式不加延迟');
+});
+
+test('scanDelay 归一：非数 / 负数 → 0，超上限夹到 2000；side-panel.js / nested-popup.js 副本逐例同义', () => {
+  function extract(src, name) {
+    const start = src.indexOf('function ' + name + '(');
+    assert.ok(start >= 0, name + ' 不见了');
+    let depth = 0;
+    for (let i = src.indexOf('{', start); i < src.length; i++) {
+      if (src[i] === '{') depth++;
+      else if (src[i] === '}' && --depth === 0) return src.slice(start, i + 1);
+    }
+    throw new Error('unbalanced ' + name);
+  }
+  const names = ['fushiNormalizeScanModifier', 'fushiNormalizeScanDelay', 'fushiEffectiveScanDelay'];
+  const table = "var FUSHI_SCAN_MODIFIER_KEYS = { shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta' };\n" +
+    'var FUSHI_SCAN_DELAY_MAX_MS = 2000;\n';
+  const contentSrc = fs.readFileSync(CONTENT, 'utf8');
+  const panelSrc = fs.readFileSync(path.join(__dirname, 'side-panel.js'), 'utf8');
+  assert.match(contentSrc, /const FUSHI_SCAN_DELAY_MAX_MS = 2000;/);
+  assert.match(panelSrc, /var FUSHI_SCAN_DELAY_MAX_MS = 2000;/);
+  const nestedSrc = fs.readFileSync(path.join(__dirname, 'nested-popup.js'), 'utf8');
+  assert.match(nestedSrc, /var FUSHI_SCAN_DELAY_MAX_MS = 2000;/);
+  assert.match(nestedSrc, /var FUSHI_SCAN_MODIFIER_KEYS = \{ shift: 'Shift', ctrl: 'Control', alt: 'Alt', meta: 'Meta' \};/);
+  const a = vm.createContext({});
+  const b = vm.createContext({});
+  const c = vm.createContext({});
+  const nestedNames = names.concat(['fushiScanModifierHeld']);
+  vm.runInContext(table + nestedNames.map((n) => extract(contentSrc, n)).join('\n'), a);
+  vm.runInContext(table + names.map((n) => extract(panelSrc, n)).join('\n'), b);
+  vm.runInContext(table + nestedNames.map((n) => extract(nestedSrc, n)).join('\n'), c);
+  const values = [undefined, null, '300', NaN, Infinity, -5, 0, 0.4, 1, 299.6, 2000, 2001, 99999];
+  for (const v of values) {
+    assert.strictEqual(a.fushiNormalizeScanDelay(v), b.fushiNormalizeScanDelay(v), String(v));
+    assert.strictEqual(a.fushiNormalizeScanDelay(v), c.fushiNormalizeScanDelay(v), 'nested ' + String(v));
+    for (const mod of ['shift', 'none', 'bogus']) {
+      assert.strictEqual(a.fushiEffectiveScanDelay(mod, v), b.fushiEffectiveScanDelay(mod, v), mod + ' ' + v);
+      assert.strictEqual(a.fushiEffectiveScanDelay(mod, v), c.fushiEffectiveScanDelay(mod, v), 'nested ' + mod + ' ' + v);
+    }
+  }
+  // 嵌套弹窗（nested-popup.js，独立 realm）的触发键判定副本（反馈 r4tpeIzVuD）。
+  for (const mod of ['shift', 'ctrl', 'alt', 'meta', 'none', 'bogus']) {
+    for (const ev of [{}, { shiftKey: true }, { ctrlKey: true }, { altKey: true }, { metaKey: true }]) {
+      assert.strictEqual(a.fushiScanModifierHeld(ev, mod), c.fushiScanModifierHeld(ev, mod), 'nested held ' + mod);
+    }
+  }
+  assert.strictEqual(a.fushiNormalizeScanDelay('300'), 0);
+  assert.strictEqual(a.fushiNormalizeScanDelay(-5), 0);
+  assert.strictEqual(a.fushiNormalizeScanDelay(299.6), 300);
+  assert.strictEqual(a.fushiNormalizeScanDelay(99999), 2000);
+  assert.strictEqual(a.fushiEffectiveScanDelay('shift', 500), 0);
+  assert.strictEqual(a.fushiEffectiveScanDelay('none', 500), 500);
+  assert.match(panelSrc, /storage\.local\.get\(\['shiftHoverLookup', 'scanModifier', 'scanDelay'\]/);
 });

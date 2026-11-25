@@ -256,6 +256,20 @@ class OverlayWindowChannel {
     <String, Object?>{'id': id, 'value': jsonEncode(jsonEncode(value))},
   );
 
+  /// 把一次**后台写卡**的结局推进覆盖窗（`window.__globalLookupHost.settleQueuedMine`
+  /// → 每个卡片帧的 `window.fushiSettleQueuedMine`）：弹窗当初只拿到 `queued`、按钮画成
+  /// 「已加入」，卡后来落地 / 失败时由宿主这一推，弹窗撤掉「已加入」、就地说原因
+  /// （review-gal-overlay-mine-fail，回补 BUG-1908：全屏游戏里看不到主窗 toast）。
+  ///
+  /// [settlement] 形如 `{expression, reading, outcome: landed|failed|duplicate,
+  /// noteId?, message?}`。与 [resolveBridge] 同样双重编码、同样**不受 route 作废影响**：
+  /// 它只兑现页面自己记着的那个「已加入」标记（popup.js 只动本弹窗排过队的那颗按钮），
+  /// 不碰卡面；查词卡上叠了嵌套子卡、根卡仍在屏上时也得送到。
+  Future<void> settleQueuedMine(Map<String, Object?> settlement) => _send<void>(
+    'settleQueuedMine',
+    <String, Object?>{'json': jsonEncode(jsonEncode(settlement))},
+  );
+
   /// Moves the off-screen-rendered overlay to its pending anchor at the final
   /// size and makes it visible.
   Future<void> reveal({required int width, required int height}) =>
@@ -298,6 +312,21 @@ class OverlayWindowChannel {
       _invoke<void>('hide', <String, Object?>{'notify': notify});
 
   Future<bool> isShowing() async => (await _invoke<bool>('isShowing')) ?? false;
+
+  /// BUG-5310 — app 外查词触发（热键 / 手柄 / 鼠标侧键）时问卡片要不要接手：卡片
+  /// 在屏且里面有非空选区，native 让 host 把选区当作单击正文发 `textSelected`
+  /// （走既有嵌套查词链），回 true；否则回 false，调用方照旧收卡、抓前台选区。
+  ///
+  /// 只有 Windows 覆盖窗上报卡片选区（BUG-2651 的 overlaySelection）；macOS / Linux
+  /// 的 native 显式回 false（卡片不接手）。没有这条方法的旧 native 回
+  /// [MissingPluginException]，同样当作不接手。
+  Future<bool> lookupOverlaySelection() async {
+    try {
+      return (await _invoke<bool>('lookupOverlaySelection')) ?? false;
+    } on MissingPluginException {
+      return false;
+    }
+  }
 
   /// Temporarily removes the routed card (and its native shadow) from DWM while
   /// a galgame frame is captured.  This is deliberately distinct from [hide]:

@@ -3,7 +3,7 @@
 import 'dart:async';
 
 import 'package:flutter_test/flutter_test.dart';
-import 'package:fushi/src/srs/srs_optimization_scheduler.dart';
+import 'package:fushi_engine/srs/srs_optimization_scheduler.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
@@ -47,6 +47,21 @@ class _BlockingJob implements SrsOptimizationJob {
       _done.completeError(const SrsFsrsException('cancelled'));
     }
   }
+}
+
+/// 指定 fsrs-rs 源码版本（及它取代了的旧版本）的假内核。
+class _RevEngine extends SrsTestEngine {
+  const _RevEngine(this.rev, {this.superseded = const <String>{}});
+
+  final String rev;
+  final Set<String> superseded;
+
+  @override
+  String get fsrsRev => rev;
+
+  @override
+  bool isKnownFsrsRev(String other) =>
+      other == rev || superseded.contains(other);
 }
 
 void main() {
@@ -173,6 +188,39 @@ void main() {
     expect(r.applied, isEmpty);
     expect(await paramSet(), isNull);
     expect(s.isRunning, isFalse);
+  });
+
+  test('升级 fsrs-rs 后：旧 rev 的参数组照常优化，写回新 rev', () async {
+    final _InlineJob job = _InlineJob();
+    final SrsOptimizationRound? r1 = await make(
+      job: () => job,
+      engine: const _RevEngine('old'),
+    ).runNow(onlyDeckId: store.defaultDeckId, force: true);
+    expect(r1!.applied, hasLength(1));
+    expect((await paramSet())!.algorithmRev, 'old');
+
+    final SrsOptimizationRound? r2 = await make(
+      job: () => job,
+      engine: const _RevEngine('new', superseded: <String>{'old'}),
+    ).runNow(onlyDeckId: store.defaultDeckId, force: true);
+    expect(r2!.applied, hasLength(1), reason: '新库取代了 old，认识它');
+    expect(job.runs, 2);
+    expect((await paramSet())!.algorithmRev, 'new');
+  });
+
+  test('更新版本产出的参数组（本机不认识的 rev）：不优化、不改写', () async {
+    final _InlineJob job = _InlineJob();
+    await make(
+      job: () => job,
+      engine: const _RevEngine('new', superseded: <String>{'old'}),
+    ).runNow(onlyDeckId: store.defaultDeckId, force: true);
+    final SrsOptimizationRound? r = await make(
+      job: () => job,
+      engine: const _RevEngine('old'),
+    ).runNow(onlyDeckId: store.defaultDeckId, force: true);
+    expect(r!.applied, isEmpty);
+    expect(job.runs, 1);
+    expect((await paramSet())!.algorithmRev, 'new');
   });
 
   test('排程内核不可用：什么都不做', () async {

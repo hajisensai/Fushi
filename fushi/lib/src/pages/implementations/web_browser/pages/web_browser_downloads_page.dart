@@ -134,6 +134,7 @@ class _WebBrowserDownloadsPageState extends State<WebBrowserDownloadsPage> {
   Widget build(BuildContext context) {
     return FushiPageScaffold(
       title: t.web_browser_downloads_title,
+      masthead: true,
       body: _loading
           ? const Center(child: FushiCircularProgressIndicator())
           : webBrowserPageListView(

@@ -138,7 +138,10 @@ void main() {
       mode: sqlite3.OpenMode.readOnly,
     );
     try {
-      expect(probe.select('PRAGMA user_version').first.values.first, 146);
+      expect(
+        probe.select('PRAGMA user_version').first.values.first,
+        kFushiDbSchemaVersion,
+      );
       expect(
         hasColumn(probe, 'video_source_scrape_settings', 'metadata_locale'),
         isTrue,
@@ -155,7 +158,7 @@ void main() {
       path,
       isMainProcess: false,
     );
-    expect(fresh.schemaVersion, 146);
+    expect(fresh.schemaVersion, kFushiDbSchemaVersion);
     final int sourceId = await fresh
         .into(fresh.mediaSources)
         .insert(

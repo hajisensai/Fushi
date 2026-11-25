@@ -2,6 +2,8 @@ import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
 import 'package:test/test.dart';
 import 'package:fushi_engine/media/source_library/source_library_row.dart';
+import 'package:fushi_engine/media/video/metadata/video_source_scrape_coordinator.dart'
+    show discOrdinalEpisodeOverrides;
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_core/fushi_core.dart';
 
@@ -124,6 +126,157 @@ void main() {
     );
   });
 
+  test('成员分属不同作品的清单合集按文件各自识别（BUG-4696）', () async {
+    // 用户库实测：「哆啦A梦剧场版合集 播放列表」装着两部被旧整理器命名成
+    // `<片名> - S00E01.mkv` 的剧场版，整个合集当一部作品去认只能待确认。
+    final int sourceId = await addSource('D:/video');
+    await addVideo(
+      'sky',
+      'D:/video/哆啦A梦：大雄与天空的理想乡/Season 00/哆啦A梦：大雄与天空的理想乡 - S00E01.mkv',
+      sourceId,
+    );
+    await addVideo(
+      'earth',
+      'D:/video/哆啦A梦：大雄的地球交响乐/Season 00/哆啦A梦：大雄的地球交响乐 - S00E01.mkv',
+      sourceId,
+    );
+    final int mixed = await db.createMediaCollection(
+      '哆啦A梦剧场版合集 播放列表',
+      collectionType: 'playlist',
+    );
+    await db.addToCollection(mixed, MediaKind.video, 'sky');
+    await db.addToCollection(mixed, MediaKind.video, 'earth');
+    // 对照：同一部作品的两集仍是一个剧集单元。
+    await addVideo('s-01', 'D:/video/Show/Show - S01E01.mkv', sourceId);
+    await addVideo('s-02', 'D:/video/Show/Show - S01E02.mkv', sourceId);
+    final int show = await db.createMediaCollection(
+      'Show',
+      collectionType: 'playlist',
+    );
+    await db.addToCollection(show, MediaKind.video, 's-01');
+    await db.addToCollection(show, MediaKind.video, 's-02');
+
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+      db,
+    ).plan(source);
+
+    expect(
+      works.map((VideoSourceScrapeWork work) => work.stableKey).toSet(),
+      <String>{'book:sky', 'book:earth', 'collection:$show'},
+    );
+  });
+
+  group('作品名只在目录上的剧集合集仍是一个剧集单元（不按集拆）', () {
+    // 回归守卫：曾拿「文件名解出的作品名两两不同」判混装清单，`01.mkv` 解出
+    // 「01」、`第01話 旅立ち` 解出「旅立ち」，整部剧被拆成逐集的单文件作品。
+    Future<void> expectSingleCollection(List<String> paths) async {
+      final int sourceId = await addSource('D:/video');
+      final int collectionId = await db.createMediaCollection(
+        'Show',
+        collectionType: 'playlist',
+      );
+      for (int i = 0; i < paths.length; i++) {
+        await addVideo('ep-$i', paths[i], sourceId);
+        await db.addToCollection(collectionId, MediaKind.video, 'ep-$i');
+      }
+      final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+      final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+        db,
+      ).plan(source);
+      expect(
+        works.map((VideoSourceScrapeWork work) => work.stableKey).toList(),
+        <String>['collection:$collectionId'],
+      );
+      expect(works.single.members, hasLength(paths.length));
+    }
+
+    test('自动分组的 Show/01.mkv、02.mkv', () async {
+      await expectSingleCollection(<String>[
+        'D:/video/Show/01.mkv',
+        'D:/video/Show/02.mkv',
+        'D:/video/Show/03.mkv',
+      ]);
+    });
+
+    test('第01集.mp4', () async {
+      await expectSingleCollection(<String>[
+        'D:/video/Show/第01集.mp4',
+        'D:/video/Show/第02集.mp4',
+      ]);
+    });
+
+    test('Show/S01E01.mkv', () async {
+      await expectSingleCollection(<String>[
+        'D:/video/Show/S01E01.mkv',
+        'D:/video/Show/S01E02.mkv',
+      ]);
+    });
+
+    test('Show/Season 01/S01E01 - Pilot.mkv', () async {
+      await expectSingleCollection(<String>[
+        'D:/video/Show/Season 01/S01E01 - Pilot.mkv',
+        'D:/video/Show/Season 01/S01E02 - Second.mkv',
+      ]);
+    });
+
+    test('手建清单装「第01話 旅立ち」「第02話 帰還」', () async {
+      await expectSingleCollection(<String>[
+        'D:/video/Show/第01話 旅立ち.mkv',
+        'D:/video/Show/第02話 帰還.mkv',
+      ]);
+    });
+
+    test('分季目录 Season 01/01.mkv 与 Season 02/01.mkv 不算集位冲突', () async {
+      await expectSingleCollection(<String>[
+        'D:/video/Show/Season 01/01.mkv',
+        'D:/video/Show/Season 02/01.mkv',
+      ]);
+    });
+  });
+
+  test('混装清单合集上已记着作品身份时按合集认，不拆开绕过身份', () async {
+    final int sourceId = await addSource('D:/video');
+    await addVideo('sky', 'D:/video/A/Season 00/A - S00E01.mkv', sourceId);
+    await addVideo('earth', 'D:/video/B/Season 00/B - S00E01.mkv', sourceId);
+    final int mixed = await db.createMediaCollection(
+      '剧场版合集',
+      collectionType: 'playlist',
+    );
+    await db.addToCollection(mixed, MediaKind.video, 'sky');
+    await db.addToCollection(mixed, MediaKind.video, 'earth');
+    final int workId = await db.upsertVideoMetadataWork(
+      VideoMetadataWorksCompanion.insert(
+        mediaType: 'tv',
+        title: '用户确认的作品',
+        collectionId: Value<int?>(mixed),
+        updatedAt: 0,
+      ),
+    );
+    await db.replaceVideoMetadataProviderIdentities(
+      workId: workId,
+      identities: <VideoMetadataProviderIdentitiesCompanion>[
+        VideoMetadataProviderIdentitiesCompanion.insert(
+          identityKey: 'work:$workId:tmdb',
+          provider: 'tmdb',
+          externalId: '1234',
+          isPrimary: const Value<bool>(true),
+          updatedAt: 0,
+        ),
+      ],
+    );
+
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+      db,
+    ).plan(source);
+
+    expect(
+      works.map((VideoSourceScrapeWork work) => work.stableKey).toList(),
+      <String>['collection:$mixed'],
+    );
+  });
+
   test('re0 方括号 PV、菜单与迷你动画不产生独立刮削作品', () async {
     final int sourceId = await addSource('D:/smb/re0');
     const String root =
@@ -212,5 +365,89 @@ void main() {
       works.map((VideoSourceScrapeWork work) => work.members.single.bookUid),
       <String>['anime-01'],
     );
+  });
+
+  test('逐个入库的原盘流文件（BDMV/STREAM/*.m2ts）不当作品计划（BUG-5280）', () async {
+    final int sourceId = await addSource('D:/dl');
+    const String disc = 'D:/dl/[BDMV] Hibike! Euphonium/Vol1';
+    for (final String clip in <String>['00000', '00002', '00003']) {
+      await addVideo('m2ts-$clip', '$disc/BDMV/STREAM/$clip.m2ts', sourceId);
+    }
+    await addVideo('vob-1', 'D:/dl/Some DVD/VIDEO_TS/VTS_01_1.VOB', sourceId);
+    // 非盘内的 m2ts（录播等）照常进计划。
+    await addVideo('rec', 'D:/dl/rec/Frieren - 01.m2ts', sourceId);
+    final int collectionId = await db.createMediaCollection(
+      'Hibike! Euphonium',
+      collectionType: 'playlist',
+    );
+    for (final String clip in <String>['00000', '00002', '00003']) {
+      await db.addToCollection(collectionId, MediaKind.video, 'm2ts-$clip');
+    }
+
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final List<VideoSourceScrapeWork> works = await VideoSourceWorkPlanner(
+      db,
+    ).plan(source);
+
+    expect(
+      works.map((VideoSourceScrapeWork work) => work.members.single.bookUid),
+      <String>['rec'],
+    );
+  });
+
+  test('按集展开、跨两张盘的原盘合集是一部剧集作品，集号按合集顺序连续', () async {
+    // 只有「全部播放」的剧集盘入库后：同一发布的两张盘并在一个合集里，成员是虚拟的
+    // 分集路径，按盘序 × 盘内集序排（docs/specs/2026-11-15-bluray-playitem-episodes.md）。
+    final int sourceId = await addSource('D:/bd');
+    final int collectionId = await db.createMediaCollection(
+      '魔女の旅々',
+      collectionType: 'playlist',
+    );
+    final List<String> paths = <String>[
+      for (final String disc in <String>['Disc 1', 'Disc 2'])
+        for (int item = 1; item <= 6; item++)
+          'D:/bd/Majo [BDMV]/$disc/BDMV/PLAYLIST/00001.p0$item.mpls',
+    ];
+    // 入库顺序故意与路径字典序、uid 字典序都不同：集号只认合集内顺序。
+    for (final (int index, String path) in paths.indexed) {
+      final String uid =
+          'ep-${(97 + (index * 7) % 12).toRadixString(36)}$index';
+      await addVideo(uid, path, sourceId);
+      await db.addToCollection(collectionId, MediaKind.video, uid);
+    }
+
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final VideoSourceScrapeWork work = (await VideoSourceWorkPlanner(
+      db,
+    ).plan(source)).single;
+    expect(work.isEpisodic, isTrue);
+    expect(work.title, '魔女の旅々');
+    expect(work.members.map((VideoBookRow row) => row.videoPath), paths);
+    final Map<String, (int, int)> overrides = discOrdinalEpisodeOverrides(work);
+    expect(
+      <(int, int)>[
+        for (final VideoBookRow member in work.members)
+          overrides[member.bookUid]!,
+      ],
+      <(int, int)>[for (int i = 1; i <= 12; i++) (1, i)],
+    );
+  });
+
+  test('单张逐集播放列表的盘不套顺序集号（维持按文件名的旧行为）', () async {
+    final int sourceId = await addSource('D:/bd');
+    final int collectionId = await db.createMediaCollection(
+      'Show',
+      collectionType: 'playlist',
+    );
+    for (final String id in <String>['00003', '00004']) {
+      await addVideo(id, 'D:/bd/Show/BDMV/PLAYLIST/$id.mpls', sourceId);
+      await db.addToCollection(collectionId, MediaKind.video, id);
+    }
+    final SourceLibraryRow source = (await db.getMediaSourceById(sourceId))!;
+    final VideoSourceScrapeWork work = (await VideoSourceWorkPlanner(
+      db,
+    ).plan(source)).single;
+    expect(work.isEpisodic, isTrue);
+    expect(discOrdinalEpisodeOverrides(work), isEmpty);
   });
 }

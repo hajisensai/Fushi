@@ -6,17 +6,22 @@
 // `srsRwkvAddNowRow`（回放行字节、此刻行字节）、`srsStatsFromHistory` + `SrsCardHistory.state.memory`
 // （统计投影；现由 Rust `history::stats_from_json` 经 `ffsrs_store_stat_projection` 产出）。
 //
-// 这里把向量日志（落库原文 + 服务器时刻）写进真实的 srs.db，经 `ffsrs_store_*` 直读命令取回，解包后
-// 与旧实现逐条比较——走的就是生产路径（SQL → 选取 → 投影 → 字节布局 → Dart 解包）。要真实原生库。
+// 向量日志（落库原文 + 服务器时刻）在冻结的协议 3 库 test/srs/fixtures/p6_vectors.db.gz 里：换代之前（集成分支
+// pr/srs-gen4-switch 合入 S1 前最后一个协议 3 提交 5ad47c2edb）的本测试在 setUpAll 灌完 1200 份历史后，逐个
+// profile 发 `identity` 与 `migrate`（把投影里的日志收进操作日志），再 `snapshotInto(stripDeviceLocal: false)` 并
+// gzip（与 srs_stats_vectors.db.gz 同一种造法；那一版的 4 条用例在生成时同样全绿）。这里把它走一遍换代迁移再经
+// 新代的 `ffsrs_store_*` 直读命令取回，解包后与旧实现逐条比较——走的就是生产路径（迁移 → 新代读 → 选取 → 投影 →
+// 字节布局 → Dart 解包）。要真实原生库。
 import 'dart:convert';
 import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:fushi_engine/srs/srs_projections.dart';
-import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_rwkv/fushi_rwkv.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:test/test.dart';
+
+import 'support/srs_test_storage.dart';
 
 List<Map<String, Object?>> _load(String path) {
   final Map<String, Object?> root =
@@ -35,19 +40,43 @@ SrsDayContext _day(Map<String, Object?> v) {
 
 List<int> _ids(int i) => <int>[1000 + i, 2000 + i, 7, 9];
 
-/// `SrsCore.statProjection` 的一行（9 列，见其文档）→ [SrsStatProjection]，归属卡 [owner]。
-SrsStatProjection _projectionOf(List<Object?> r, String owner) =>
-    SrsStatProjection(
-      logId: r[1]! as String,
-      cardId: owner,
-      occurredAt: r[2]! as int,
-      utcOffsetMin: r[3]! as int,
-      rating: r[4] as int?,
-      kind: SrsStatReviewKind.values[r[5]! as int],
-      durationMs: r[6]! as int,
-      prevDueDay: r[7] as int?,
-      maturityDelta: r[8]! as int,
-    );
+/// `SrsCore.statProjection` 的行（9 列，见其文档）按 [day] 的日界读成统计复习 `[at, day, hour, rating, kind, ms, early]`
+/// 与成熟变化 `[day, delta]`（读方口径；生产里由内核 store/stats.rs 的 `View::build` 做同一件事）。
+({List<List<Object?>> reviews, List<List<Object?>> maturity}) _readProjection(
+  List<List<Object?>> rows,
+  SrsDayContext day,
+) {
+  const List<String> kinds = <String>[
+    'newCard',
+    'learn',
+    'young',
+    'mature',
+    'relearn',
+    'filtered',
+  ];
+  final List<List<Object?>> reviews = <List<Object?>>[];
+  final List<List<Object?>> maturity = <List<Object?>>[];
+  for (final List<Object?> r in rows) {
+    final int at = r[2]! as int;
+    final int dayIndex = day.dayIndexOf(at);
+    final int? rating = r[4] as int?;
+    final int? prevDue = r[7] as int?;
+    if (rating != null) {
+      reviews.add(<Object?>[
+        at,
+        dayIndex,
+        ((at + (r[3]! as int) * 60000) % 86400000) ~/ 3600000,
+        rating,
+        kinds[r[5]! as int],
+        r[6]! as int,
+        prevDue != null && prevDue > dayIndex,
+      ]);
+    }
+    final int delta = r[8]! as int;
+    if (delta != 0) maturity.add(<Object?>[dayIndex, delta]);
+  }
+  return (reviews: reviews, maturity: maturity);
+}
 
 void main() {
   final List<Map<String, Object?>> vectors = _load(
@@ -58,61 +87,18 @@ void main() {
     '../fushi_srs/test/memory/fixtures/memory_input_vectors.json.gz',
   );
   late SrsCore core;
-  late Directory dir;
 
-  setUpAll(() {
+  setUpAll(() async {
     expect(FushiFsrs.instance, isNotNull, reason: 'fushi_fsrs 原生库缺失');
-    dir = Directory.systemTemp.createTempSync('srs_p6_vectors_');
-    core = SrsCore.open('${dir.path}/srs.db')..legacyMarkNone();
-    // 第 i 份历史 = profile `p$i` 的卡 `v$i`（每份一个 profile：全量回放 / 统计按 profile 扫）。
-    final List<(int, List<Object?>)> apps = <(int, List<Object?>)>[];
-    for (int i = 0; i < vectors.length; i++) {
-      final Map<String, Object?> server = (vectors[i]['server']! as Map)
-          .cast<String, Object?>();
-      for (final Object? j in vectors[i]['logs']! as List<Object?>) {
-        final Map<String, Object?> l = (jsonDecode(j! as String) as Map)
-            .cast<String, Object?>();
-        apps.add((0, <Object?>[l['id'], 'p$i', 'v$i', l['kind'], l['at'], j]));
-        if (server[l['id']] case final int st) {
-          apps.add((1, <Object?>[l['id'], 'p$i', st]));
-        }
-      }
-    }
-    core.execBatch(<String>[
-      'INSERT INTO srs_review_logs (id, profile_uid, card_id, kind, rating, occurred_at, '
-          "review_type, origin, duration_ms, jslim) VALUES (srs_id(?), srs_id(?), srs_id(?), ?, NULL, ?, 'r', 'fushi', 0, ?)",
-      'INSERT INTO srs_event_local (event_id, profile_uid, server_time) VALUES (srs_id(?), srs_id(?), ?)',
-    ], apps);
+    // 协议 3 冻结库：第 i 份历史 = profile `p$i` 的卡 `v$i`（每份一个 profile），日志与服务器时刻灌进
+    // srs_review_logs / srs_event_local、经 `migrate` 收进操作日志后整库快照（生成方法见文件头）。放进库目录当
+    // 封存旧库、走换代迁移（每个 profile 一份 srsCacheConfigFor）再开新代库——用户升级的同一条路。
+    final TestSrs srs = await openMigratedTestSrs(
+      gzip.decode(File('test/srs/fixtures/p6_vectors.db.gz').readAsBytesSync()),
+      prefix: 'srs_p6_vectors_',
+    );
+    core = srs.core;
   });
-
-  tearDownAll(() {
-    core.close();
-    try {
-      dir.deleteSync(recursive: true);
-    } on FileSystemException {
-      // 句柄晚释放。
-    }
-  });
-
-  /// 按日界分组（一个命令一个日界）。
-  Map<SrsDayContext, List<int>> byDay() {
-    final Map<SrsDayContext, List<int>> out = <SrsDayContext, List<int>>{};
-    for (int i = 0; i < vectors.length; i++) {
-      final SrsDayContext d = _day(vectors[i]);
-      out
-          .putIfAbsent(
-            out.keys.firstWhere(
-              (SrsDayContext k) =>
-                  k.utcOffsetMin == d.utcOffsetMin &&
-                  k.rolloverHour == d.rolloverHour,
-              orElse: () => d,
-            ),
-            () => <int>[],
-          )
-          .add(i);
-    }
-    return out;
-  }
 
   test('向量规模哨兵', () {
     expect(vectors, hasLength(1200));
@@ -139,8 +125,10 @@ void main() {
 
   test('优化器训练集（ffsrs_store_optimizer_items）与旧 Dart 实现逐条一致', () {
     int checked = 0;
-    for (final MapEntry<SrsDayContext, List<int>> e in byDay().entries) {
-      final List<int> group = e.value;
+    for (int i = 0; i < vectors.length; i++) {
+      final SrsDayContext day = _day(vectors[i]);
+      // 新代按 profile 取数：一份历史一个 profile，一条命令只问一个 profile。
+      final List<int> group = <int>[i];
       for (final SrsAlgorithm alg in <SrsAlgorithm>[
         SrsAlgorithm.fsrs6,
         SrsAlgorithm.fsrs7,
@@ -152,8 +140,9 @@ void main() {
             ],
             group,
             algorithm: srsProjectionAlgorithmCode(alg),
-            utcOffsetMin: e.key.utcOffsetMin,
-            rolloverHour: e.key.rolloverHour,
+            utcOffsetMin: day.utcOffsetMin,
+            rolloverHour: day.rolloverHour,
+            profile: 'p$i',
           ),
         );
         // 旧实现：逐卡 (时刻, 前缀长度)，全部按时刻稳定排序。
@@ -208,16 +197,18 @@ void main() {
 
   test('RWKV 逐卡 / 全量回放 / 此刻行与旧 Dart 实现逐字节一致', () {
     int rows = 0;
-    for (final MapEntry<SrsDayContext, List<int>> e in byDay().entries) {
-      final List<int> group = e.value;
+    for (int i0 = 0; i0 < vectors.length; i0++) {
+      final SrsDayContext day = _day(vectors[i0]);
+      final List<int> group = <int>[i0];
       final List<SrsRwkvCardRows> cards = srsDecodeRwkvCards(
         core.rwkvCards(
           <List<String>>[
             for (final int i in group) <String>['v$i'],
           ],
           <int>[for (final int i in group) ..._ids(i)],
-          utcOffsetMin: e.key.utcOffsetMin,
-          rolloverHour: e.key.rolloverHour,
+          utcOffsetMin: day.utcOffsetMin,
+          rolloverHour: day.rolloverHour,
+          profile: 'p$i0',
         ),
       );
       for (int k = 0; k < group.length; k++) {
@@ -243,8 +234,8 @@ void main() {
                   <String>['v$i'],
                 ],
                 _ids(i),
-                utcOffsetMin: e.key.utcOffsetMin,
-                rolloverHour: e.key.rolloverHour,
+                utcOffsetMin: day.utcOffsetMin,
+                rolloverHour: day.rolloverHour,
                 since: 0,
               )
               .materialize()
@@ -271,7 +262,7 @@ void main() {
               ),
             ],
             nowMs: want['nowMs']! as int,
-            day: e.key,
+            day: day,
           );
           expect(_hex(r.bytes), now[q.wire], reason: 'vector $i now ${q.wire}');
         }
@@ -288,49 +279,25 @@ void main() {
       final (int _, List<List<Object?>> rows) = srsDecodeRows(
         core.statProjection(<List<String>>[
           <String>['v$i'],
-        ]),
+        ], profile: 'p$i'),
       );
       expect(rows.every((List<Object?> r) => r[0] == 0), isTrue);
-      final ({List<SrsStatReview> reviews, List<SrsStatMaturityEvent> maturity})
-      got = srsStatsFromProjection(<SrsStatProjection>[
-        for (final List<Object?> r in rows) _projectionOf(r, 'v$i'),
-      ], _day(vectors[i]));
+      final ({List<List<Object?>> reviews, List<List<Object?>> maturity}) got =
+          _readProjection(rows, _day(vectors[i]));
       // 期望的 cardId 是向量日志 JSON 里的 card 字段；库里按 card_id 列分组（生产里两者相同）。
-      expect(
-        <List<Object?>>[
-          for (final SrsStatReview r in got.reviews)
-            <Object?>[
-              r.at,
-              r.day,
-              r.hour,
-              r.rating,
-              r.kind.name,
-              r.durationMs,
-              r.early,
-            ],
-        ],
-        <List<Object?>>[
-          for (final Object? r in want['reviews']! as List<Object?>)
-            (r! as List<Object?>).sublist(1),
-        ],
-        reason: 'vector $i reviews',
-      );
-      expect(
-        <List<Object?>>[
-          for (final SrsStatMaturityEvent m in got.maturity)
-            <Object?>[m.day, m.delta],
-        ],
-        <List<Object?>>[
-          for (final Object? m in want['maturity']! as List<Object?>)
-            (m! as List<Object?>).sublist(1),
-        ],
-        reason: 'vector $i maturity',
-      );
+      expect(got.reviews, <List<Object?>>[
+        for (final Object? r in want['reviews']! as List<Object?>)
+          (r! as List<Object?>).sublist(1),
+      ], reason: 'vector $i reviews');
+      expect(got.maturity, <List<Object?>>[
+        for (final Object? m in want['maturity']! as List<Object?>)
+          (m! as List<Object?>).sublist(1),
+      ], reason: 'vector $i maturity');
       // 记忆状态 = 同一份历史经 ffsrs_store_history_states 选取后最后一条有效结果的记忆。
       final SrsMemory? mem = srsDecodeHistoryStates(
         core.historyStates(<List<String>>[
           <String>['v$i'],
-        ]),
+        ], profile: 'p$i'),
         1,
       ).single.result.memory;
       expect(

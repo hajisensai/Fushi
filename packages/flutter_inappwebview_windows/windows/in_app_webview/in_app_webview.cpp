@@ -1,3 +1,4 @@
+#include <algorithm>
 #include <cmath>
 #include <cstring>
 #include <filesystem>
@@ -1879,6 +1880,15 @@ namespace flutter_inappwebview_plugin
       }
     }
 
+    if (isHeadless && webView &&
+        fl_map_contains_not_null(newSettingsMap, "allowBackgroundAudioPlaying") &&
+        settings->allowBackgroundAudioPlaying != newSettings->allowBackgroundAudioPlaying) {
+      wil::com_ptr<ICoreWebView2_8> webView8;
+      if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView8))) && webView8) {
+        webView8->put_IsMuted(newSettings->allowBackgroundAudioPlaying ? FALSE : TRUE);
+      }
+    }
+
     settings = newSettings;
   }
 
@@ -1974,8 +1984,12 @@ namespace flutter_inappwebview_plugin
   }
 
 
-  void InAppWebView::pause() const
+  void InAppWebView::pause()
   {
+    isPaused_ = true;
+    if (!webView || !webViewController) {
+      return;
+    }
     wil::com_ptr<ICoreWebView2_3> webView3;
     if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView3))) && succeededOrLog(webViewController->put_IsVisible(false))) {
       failedLog(webView3->TrySuspend(Callback<ICoreWebView2TrySuspendCompletedHandler>(
@@ -1988,10 +2002,21 @@ namespace flutter_inappwebview_plugin
     }
   }
 
-  void InAppWebView::resume() const
+  void InAppWebView::resume()
   {
+    isPaused_ = false;
+    if (!webView || !webViewController) {
+      return;
+    }
     wil::com_ptr<ICoreWebView2_3> webView3;
-    if (SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView3))) && succeededOrLog(webViewController->put_IsVisible(true))) {
+    if (!SUCCEEDED(webView->QueryInterface(IID_PPV_ARGS(&webView3)))) {
+      return;
+    }
+    if (surface_ && !hostWindowVisible_) {
+      failedLog(webView3->Resume());
+      return;
+    }
+    if (succeededOrLog(webViewController->put_IsVisible(true))) {
       failedLog(webView3->Resume());
     }
   }
@@ -2172,7 +2197,7 @@ namespace flutter_inappwebview_plugin
   }
 
 
-  void InAppWebView::setPosition(size_t x, size_t y, float scale_factor)
+  void InAppWebView::setPosition(double x, double y, float scale_factor)
   {
     if (!webViewController || !plugin || !plugin->registrar) {
       return;
@@ -2182,36 +2207,83 @@ namespace flutter_inappwebview_plugin
       // 窗口宿主模式：位置相对 Flutter 视图客户区（WS_CHILD），不是屏幕坐标。
       captureScaleFactor_ = scale_factor;
       deviceScaleFactor_ = scale_factor;
-      windowedX_ = static_cast<int>(x * scale_factor);
-      windowedY_ = static_cast<int>(y * scale_factor);
+      windowedX_ = static_cast<int>(std::lround(x * scale_factor));
+      windowedY_ = static_cast<int>(std::lround(y * scale_factor));
       applyWindowedBounds();
       return;
     }
 
-    if (x >= 0 && y >= 0) {
-      // Composition source scale belongs to setSurfaceSize. Position reports
-      // the device DPR for visual placement and wheel-delta restoration only.
-      deviceScaleFactor_ = scale_factor;
-      auto scaled_x = static_cast<int>(x * scale_factor);
-      auto scaled_y = static_cast<int>(y * scale_factor);
+    // Composition source scale belongs to setSurfaceSize. Position reports
+    // the device DPR for host alignment and wheel-delta restoration only.
+    deviceScaleFactor_ = scale_factor;
+    compositionLogicalX_ = x;
+    compositionLogicalY_ = y;
+    hasCompositionPosition_ = true;
+    syncCompositionHostPosition();
+  }
 
-      auto titleBarHeight = ((GetSystemMetrics(SM_CYCAPTION) + GetSystemMetrics(SM_CYFRAME)) * scale_factor) + GetSystemMetrics(SM_CXPADDEDBORDER);
-      auto borderWidth = (GetSystemMetrics(SM_CXBORDER) + GetSystemMetrics(SM_CXPADDEDBORDER)) * scale_factor;
+  void InAppWebView::syncCompositionHostPosition()
+  {
+    if (!surface_ || !hasCompositionPosition_ || !webViewController) {
+      return;
+    }
 
-      RECT flutterWindowRect;
-      HWND flutterWindowHWnd = plugin->registrar->GetView()->GetNativeWindow();
-      GetWindowRect(flutterWindowHWnd, &flutterWindowRect);
+    // The composition host HWND is a hidden WS_CHILD of the Flutter view
+    // (BUG-3871), so its position is in Flutter-view client pixels:
+    // global logical offset * window DPR (deviceScaleFactor_, never the texture
+    // raster scale). No clamping: a WS_CHILD is clipped by its parent and can
+    // not leak onto the desktop, and WebView2 anchors popups (select, context
+    // menu, IME candidates, drag/drop) to this HWND, so a WebView scrolled
+    // partly out of view must keep its real (possibly negative) origin.
+    const int targetX = static_cast<int>(std::lround(compositionLogicalX_ * deviceScaleFactor_));
+    const int targetY = static_cast<int>(std::lround(compositionLogicalY_ * deviceScaleFactor_));
 
-      HWND webViewHWnd;
-      if (succeededOrLog(webViewController->get_ParentWindow(&webViewHWnd))) {
-        ::SetWindowPos(webViewHWnd,
-          nullptr,
-          static_cast<int>(flutterWindowRect.left + scaled_x - borderWidth),
-          static_cast<int>(flutterWindowRect.top + scaled_y - titleBarHeight),
-          0, 0,
-          SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
+    HWND webViewHWnd = nullptr;
+    if (succeededOrLog(webViewController->get_ParentWindow(&webViewHWnd)) && webViewHWnd) {
+      ::SetWindowPos(webViewHWnd,
+        nullptr,
+        targetX,
+        targetY,
+        0, 0,
+        SWP_NOZORDER | SWP_NOSIZE | SWP_NOACTIVATE);
+    }
+    webViewController->NotifyParentWindowPositionChanged();
+  }
+
+  void InAppWebView::setHostWindowVisible(bool visible)
+  {
+    if (hostWindowVisible_ == visible) {
+      return;
+    }
+    hostWindowVisible_ = visible;
+    if (!surface_ || !webViewController) {
+      return;
+    }
+
+    // Visibility = host window visible AND not explicitly paused from Dart.
+    // Hiding flips document.visibilityState to hidden (same as a minimized
+    // Chrome window) and drops the proxy Chrome_WidgetWin_1 out of desktop
+    // hit testing.
+    if (visible) {
+      if (!isPaused_) {
+        webViewController->put_IsVisible(TRUE);
+        webViewController->NotifyParentWindowPositionChanged();
       }
     }
+    else {
+      webViewController->put_IsVisible(FALSE);
+    }
+  }
+
+  void InAppWebView::onHostWindowBoundsChanged()
+  {
+    // The host HWND is a WS_CHILD, so moving the top-level window moves it
+    // too; client-relative position is unchanged. WebView2 only needs to be
+    // told its screen position changed (popup / IME placement).
+    if (!surface_ || !webViewController || !hostWindowVisible_ || isPaused_) {
+      return;
+    }
+    webViewController->NotifyParentWindowPositionChanged();
   }
 
 
@@ -2496,7 +2568,12 @@ namespace flutter_inappwebview_plugin
     children->InsertAtTop(webview_visual.get());
     webViewCompositionController->put_RootVisualTarget(webview_visual2.get());
 
-    webViewController->put_IsVisible(true);
+    if (HWND topWindow = ::GetAncestor(parentWindow, GA_ROOT)) {
+      hostWindowVisible_ = hostWindowVisible_ &&
+        (::IsWindowVisible(topWindow) != FALSE) &&
+        (::IsIconic(topWindow) == FALSE);
+    }
+    webViewController->put_IsVisible(hostWindowVisible_ && !isPaused_ ? TRUE : FALSE);
 
     return true;
   }

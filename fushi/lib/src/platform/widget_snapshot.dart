@@ -9,6 +9,13 @@ import 'package:fushi/src/pages/implementations/stat_summary.dart'
     show computeWeekOverWeekPercent;
 import 'package:fushi/src/platform/widget_links.dart';
 import 'package:fushi/src/platform/widget_progress.dart';
+import 'package:fushi/src/stats/stat_window.dart';
+import 'package:fushi/src/stats/study_goal_record.dart';
+import 'package:fushi_engine/stats/study_goal_language.dart'
+    show StudyGoalUnit, StudyGoalUnitChoice, studyGoalUnitFor;
+
+export 'package:fushi/src/stats/study_goal_record.dart'
+    show StudyGoal, StudyGoalId, StudyGoalPeriod;
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 
 /// 快照契约版本（见 docs/agent/android-widgets.md）。
@@ -93,6 +100,8 @@ const List<String> kWidgetLabelKeys = <String>[
   'lookUp',
   'noVocab',
   'goalsTitle',
+  'goalsTitleMixed',
+  'goalsMore',
   'noGoals',
   'vocab',
   'stats',
@@ -350,29 +359,52 @@ int widgetHeatLevel(int ms, {bool active = false}) {
   return 4;
 }
 
-/// 每日目标（<= 0 = 没设）与「今日制卡数」。
+/// 学习目标记录 + 算分子要的预聚合数据（纯数据；装配在 `study_goals.dart`）。
 class WidgetGoalsInput {
   const WidgetGoalsInput({
-    this.totalMinutes = 0,
-    this.readingMinutes = 0,
-    this.listeningMinutes = 0,
-    this.videoMinutes = 0,
-    this.reviews = 0,
-    this.minedCards = 0,
-    this.chars = 0,
-    this.minedToday = 0,
+    this.goals = const <StudyGoal>[],
+    this.languageImmersion = const <String, WidgetImmersionInput>{},
+    this.minedByDay = const <String, int>{},
+    this.unitChoice = StudyGoalUnitChoice.auto,
+    this.labelOf,
+    this.formatWords,
+    this.compactOf,
   });
 
-  final int totalMinutes;
-  final int readingMinutes;
-  final int listeningMinutes;
-  final int videoMinutes;
-  final int reviews;
-  final int minedCards;
-  final int chars;
+  /// 目标记录，按用户列表顺序。
+  final List<StudyGoal> goals;
 
-  /// 今天制了多少张卡（统计口径，见 `StatFacts.minedEvents`）。
-  final int minedToday;
+  /// 按语言过滤后的沉浸量，键 = [StudyGoal.language]（原样）。全部语言的目标用
+  /// 快照那份沉浸量；某语言缺这一项 = 该语言没有任何计入的内容（分子 0）。
+  final Map<String, WidgetImmersionInput> languageImmersion;
+
+  /// 统计日 key → 当天制卡数（`mining_statistics`，覆盖到月窗口）。
+  final Map<String, int> minedByDay;
+
+  /// 文字目标单位（全局）：auto = 按目标语言。
+  final StudyGoalUnitChoice unitChoice;
+
+  /// 一条目标的外显标签（走 i18n，调用方注入）；null = 空串。
+  final String Function(StudyGoal goal, {required bool restDay})? labelOf;
+
+  /// 「词」单位的文字目标的值外显；null = 用快照的 `formatChars`。
+  final String Function(int words)? formatWords;
+
+  /// 一条进度的紧凑文案（语言 / 度量 / 周期分开、「14.8K / 10K」、状态与剩余量；
+  /// 走 i18n，调用方注入，装配见 `study_goals.dart` 的 `studyGoalCompactText`）。
+  /// null = 快照里这些字段退回空串（数值对仍由本库的格式化回调拼出）。
+  final StudyGoalCompactText Function(StudyGoalProgress g)? compactOf;
+
+  /// [goal] 的文字单位（只对 [StudyGoalId.chars] 有意义）。
+  StudyGoalUnit unitOf(StudyGoal goal) =>
+      unitChoice.fixed ?? studyGoalUnitFor(goal.language);
+
+  /// [goal] 分子用的沉浸量。
+  WidgetImmersionInput immersionFor(StudyGoal goal, WidgetImmersionInput all) {
+    final String? language = goal.language;
+    if (language == null) return all;
+    return languageImmersion[language] ?? const WidgetImmersionInput();
+  }
 }
 
 /// 复习卡片去向（`SrsMiningTarget` + 模块开关的合成结果）。
@@ -677,7 +709,6 @@ Map<String, Object?> buildWidgetSnapshot({
   WidgetOnDeckInput onDeck = const WidgetOnDeckInput(),
   Map<WidgetImmersionCategory, String> categoryLabels =
       const <WidgetImmersionCategory, String>{},
-  Map<String, String> goalLabels = const <String, String>{},
   WidgetNowPlayingInput? nowPlaying,
   String profileName = '',
   bool multiProfile = false,
@@ -730,7 +761,6 @@ Map<String, Object?> buildWidgetSnapshot({
     srsStreakCurrent: srsStreakCurrent,
     srsStreakLongest: _nonNegative(srs.streakLongest),
     categoryLabels: categoryLabels,
-    goalLabels: goalLabels,
     formatTime: formatTime,
     formatChars: formatChars,
     formatCount: formatCount,
@@ -790,19 +820,12 @@ Map<String, Object?> buildWidgetSnapshot({
             'at': rolloverAt,
             'day': nextDay,
             // 新的一天：今日 / 本周 / 本月 / 热力图按下一个统计日重算（今天的数据自然
-            // 落到「昨天」那格）；制卡 / 复习的「今日」计数清零，复习连续天数今天没复习
-            // 就中断（复习有自己的日界，这里只是零点前后的近似，app 一开就会重算）。
+            // 落到「昨天」那格）；制卡 / 复习按日表自然落到「昨天」（每日目标清零，
+            // 周 / 月目标照算），复习连续天数今天没复习就中断（复习有自己的日界，
+            // 这里只是零点前后的近似，app 一开就会重算）。
             ...dayBlocks(
               key: nextDay,
-              dayGoals: WidgetGoalsInput(
-                totalMinutes: goals.totalMinutes,
-                readingMinutes: goals.readingMinutes,
-                listeningMinutes: goals.listeningMinutes,
-                videoMinutes: goals.videoMinutes,
-                reviews: goals.reviews,
-                minedCards: goals.minedCards,
-                chars: goals.chars,
-              ),
+              dayGoals: goals,
               dayReviews: <int>[...reviewsMonth.skip(1), 0],
               dayReviewed: 0,
               srsStreakCurrent: reviewedToday > 0
@@ -848,7 +871,6 @@ Map<String, Object?> _dayBlocks({
   required int srsStreakCurrent,
   required int srsStreakLongest,
   required Map<WidgetImmersionCategory, String> categoryLabels,
-  required Map<String, String> goalLabels,
   required String Function(int ms) formatTime,
   required String Function(int chars) formatChars,
   required String Function(int count) formatCount,
@@ -877,11 +899,42 @@ Map<String, Object?> _dayBlocks({
     0,
     (int a, String k) => a + _nonNegative(immersion.charsByDay[k] ?? 0),
   );
+  // 复习日表（最旧 → [day]）：复习目标的分子（周 / 月目标要往前加）。
+  final Map<String, int> reviewsByDay = <String, int>{
+    for (int i = 0; i < reviewsMonth.length; i++)
+      FushiDatabase.statDateKeyPlusDays(day, i - reviewsMonth.length + 1):
+          reviewsMonth[i],
+    // 当天以「今日已复习」为准（与复习首页同一个数）。
+    day: reviewedToday,
+  };
+  final List<StudyGoalProgress> goalProgress = computeStudyGoals(
+    goals: goals,
+    immersion: immersion,
+    day: day,
+    reviewsByDay: fushi ? reviewsByDay : null,
+  );
+  // 「今日」卡的两个环（原生侧 `today.goal` / `today.goalMs`）：时长环 = 全部语言的
+  // 每日学习时长目标；字数环 = 全部语言的每日字数目标，没有就取第一个每日字数目标。
+  final StudyGoalProgress? timeRing = _firstWhereOrNull(
+    goalProgress,
+    (StudyGoalProgress g) =>
+        g.id == StudyGoalId.total &&
+        g.goal.period == StudyGoalPeriod.daily &&
+        g.goal.language == null,
+  );
+  bool dailyChars(StudyGoalProgress g) =>
+      g.id == StudyGoalId.chars && g.goal.period == StudyGoalPeriod.daily;
+  final StudyGoalProgress? charsRing =
+      _firstWhereOrNull(
+        goalProgress,
+        (StudyGoalProgress g) => dailyChars(g) && g.goal.language == null,
+      ) ??
+      _firstWhereOrNull(goalProgress, dailyChars);
   final int currentStreak = computeCurrentStreak(immersion.activeDays, day);
   bool activeOn(String key) =>
       immersion.activeDays.contains(key) || immersion.msOf(key) > 0;
 
-  final int goalMs = _nonNegative(goals.totalMinutes) * 60000;
+  final int goalMs = timeRing?.target ?? 0;
   final double? deltaPct = prevWeekMs == 0
       ? null
       : computeWeekOverWeekPercent(weekMs, prevWeekMs);
@@ -890,9 +943,7 @@ Map<String, Object?> _dayBlocks({
     'today': <String, Object?>{
       'time': formatTime(todayMs),
       'chars': formatChars(todayChars),
-      'goal': goals.chars > 0
-          ? clampWidgetFraction(todayChars / goals.chars)
-          : 0,
+      'goal': charsRing?.fraction ?? 0,
       'streak': currentStreak,
       'totalMs': todayMs,
       'categories': <Map<String, Object?>>[
@@ -910,12 +961,8 @@ Map<String, Object?> _dayBlocks({
       'goalFrac': goalMs > 0 ? clampWidgetFraction(todayMs / goalMs) : 0,
     },
     'goals': _goalsJson(
+      progress: goalProgress,
       goals: goals,
-      immersion: immersion,
-      day: day,
-      reviewedToday: fushi ? reviewedToday : null,
-      todayChars: todayChars,
-      labels: goalLabels,
       formatTime: formatTime,
       formatChars: formatChars,
       formatCount: formatCount,
@@ -946,6 +993,7 @@ Map<String, Object?> _dayBlocks({
       'time': formatTime(monthMs),
       'activeDays': monthKeys.where(activeOn).length,
       'firstWeekday': _isoWeekday(monthKeys.first),
+      'weekStart': StatWindow.weekStartDay,
     },
     'streak': <String, Object?>{
       'current': currentStreak,
@@ -960,78 +1008,546 @@ Map<String, Object?> _dayBlocks({
           widgetHeatLevel(immersion.msOf(k), active: activeOn(k)),
       ],
       'firstWeekday': _isoWeekday(heatKeys.first),
+      'weekStart': StatWindow.weekStartDay,
       'time': formatTime(sumMs(heatKeys)),
       'activeDays': heatKeys.where(activeOn).length,
     },
   };
 }
 
-List<Map<String, Object?>> _goalsJson({
+/// 一条目标记录在某一天的进度。时长类的 [value] / [target] 是毫秒，其余是条数 / 字数。
+class StudyGoalProgress {
+  const StudyGoalProgress({
+    required this.goal,
+    required this.value,
+    required this.target,
+    this.restDay = false,
+    int? todayValue,
+    int? todayShare,
+    this.todayRest = false,
+    this.pace = 0,
+    this.periodDaysLeft = 0,
+    this.days = const <StudyGoalDay>[],
+  }) : todayValue = todayValue ?? value,
+       todayShare = todayShare ?? target;
+
+  final StudyGoal goal;
+  final int value;
+  final int target;
+
+  /// 每日目标限定了生效日、这天不在其中：照常显示进度，但不算欠着（标签带「休息日」）。
+  /// 周 / 月目标恒 false（周期本身不休息；今天休息看 [todayRest]）。
+  final bool restDay;
+
+  /// 今天做了多少（与 [value] 同单位、同语言过滤）。每日目标 = [value]。
+  final int todayValue;
+
+  /// 今天该做多少（与 [value] 同单位）。每日目标 = [target]；周 / 月目标 =
+  /// `ceil(max(0, 目标 − 今天之前已做) / 今天起剩下的生效日)`，今天不是生效日或周期
+  /// 目标已达成时为 0。时长向上取整到整分钟。漏掉的日子会抬高后面的份额，多做会压低。
+  final int todayShare;
+
+  /// 今天不是这条目标的生效日（任何周期；周 / 月目标今日份额因此为 0）。
+  final bool todayRest;
+
+  /// 周 / 月目标的进度差：周期已做 − 按生效日线性摊到今天结束时应做的量（与 [value]
+  /// 同单位）。正 = 超前，负 = 落后。每日目标恒 0。
+  final int pace;
+
+  /// 周 / 月目标从今天（含）到周期末还剩几个生效日（今天不生效则不算今天）。每日为 0。
+  final int periodDaysLeft;
+
+  /// 周 / 月目标「本周」的逐日数据（本周起始日起 7 格，见 [StatWindow.weekStartOf]）：
+  /// 首页「今日」格的柱条。每日目标为空。
+  final List<StudyGoalDay> days;
+
+  /// 周 / 月目标：要按天摊「今日份额」。
+  bool get splitsPeriod => goal.period != StudyGoalPeriod.daily;
+
+  /// 周期目标已达成（周 / 月目标今天不用再做）。
+  bool get periodReached => target > 0 && value >= target;
+
+  /// 今天这一环的完成比例（封顶 1）。份额为 0（休息日 / 周期已达成）时：周期达成 = 满，
+  /// 否则 0。
+  double get todayFraction {
+    if (todayShare <= 0) return periodReached ? 1 : 0;
+    return clampWidgetFraction(todayValue / todayShare);
+  }
+
+  /// 今天这一环的状态：周期已达成 = 完成；休息日 = 休息；否则按今日量对份额。
+  StudyGoalState get todayState {
+    if (!splitsPeriod) return state;
+    if (periodReached) return StudyGoalState.completed;
+    if (todayRest) return StudyGoalState.restDay;
+    if (todayShare > 0 && todayValue > todayShare) {
+      return StudyGoalState.exceeded;
+    }
+    if (todayValue >= todayShare) return StudyGoalState.completed;
+    if (todayValue <= 0) return StudyGoalState.notStarted;
+    return StudyGoalState.inProgress;
+  }
+
+  /// 进度差的三档：差距不超过目标的 5% 算「按计划」。每日目标恒按计划。
+  StudyGoalPace get paceStatus {
+    if (!splitsPeriod || pace.abs() * 20 <= target) {
+      return StudyGoalPace.onTrack;
+    }
+    return pace > 0 ? StudyGoalPace.ahead : StudyGoalPace.behind;
+  }
+
+  StudyGoalId get id => goal.metric;
+  double get fraction => target <= 0 ? 0 : clampWidgetFraction(value / target);
+  bool get done => value >= target;
+
+  /// 完成百分比，**向下取整**并封顶 100：没完成时永远 ≤ 99（99.8% 不显示成 100%）。
+  int get percent {
+    if (target <= 0) return 0;
+    if (value >= target) return 100;
+    return (value * 100 ~/ target).clamp(0, 99);
+  }
+
+  /// 还差多少（与 [value] 同单位）；完成了为 0。
+  int get remaining => value >= target ? 0 : target - value;
+
+  /// 超出多少（与 [value] 同单位）；没超为 0。
+  int get excess => value > target ? value - target : 0;
+
+  /// 这一天的状态。休息日只在**没完成**时生效（休息日照样完成了就算完成）。
+  StudyGoalState get state {
+    if (target > 0 && value > target) return StudyGoalState.exceeded;
+    if (value >= target) return StudyGoalState.completed;
+    if (restDay) return StudyGoalState.restDay;
+    if (value <= 0) return StudyGoalState.notStarted;
+    return StudyGoalState.inProgress;
+  }
+}
+
+/// 周 / 月目标的进度差三档（[StudyGoalProgress.paceStatus]；wire = 枚举名，进快照）。
+enum StudyGoalPace {
+  onTrack,
+  behind,
+  ahead;
+
+  String get wire => name;
+}
+
+/// 周 / 月目标「本周」里的一天（[StudyGoalProgress.days]）。
+class StudyGoalDay {
+  const StudyGoalDay({
+    required this.dayKey,
+    required this.value,
+    required this.share,
+    required this.active,
+    required this.inPeriod,
+    required this.isToday,
+    required this.future,
+  });
+
+  /// 统计日 key。
+  final String dayKey;
+
+  /// 这一天做了多少（与目标同单位；今天之后为 0）。
+  final int value;
+
+  /// 这一天的份额：过去的日子 = **当天**算出的份额（由那天之前已做多少决定），今天 =
+  /// 今日份额，之后的日子 = 按今天结束时的进度把剩余量摊给剩下生效日的预估。不生效 /
+  /// 不在周期里 = 0。
+  final int share;
+
+  /// 生效日（且在周期里）。
+  final bool active;
+
+  /// 在目标周期里（月目标的「本周」可能跨月：跨出去的日子为 false）。
+  final bool inPeriod;
+  final bool isToday;
+  final bool future;
+}
+
+/// 一条目标在某一天的状态（小组件 / 设置 / 首页共用；wire = 枚举名，进快照）。
+enum StudyGoalState {
+  notStarted,
+  inProgress,
+  completed,
+  exceeded,
+  restDay;
+
+  String get wire => name;
+
+  /// 完成或超额（环画勾）。
+  bool get reached =>
+      this == StudyGoalState.completed || this == StudyGoalState.exceeded;
+}
+
+/// 一条目标进度的紧凑文案（纯数据；i18n 装配在 `study_goals.dart`）。系统小组件与
+/// 设置行共用，同一条目标几处写法一致。
+class StudyGoalCompactText {
+  const StudyGoalCompactText({
+    required this.language,
+    required this.metric,
+    required this.period,
+    required this.caption,
+    required this.value,
+    required this.target,
+    required this.status,
+    required this.remaining,
+    this.todayValue = '',
+    this.todayShare = '',
+    this.todayLine = '',
+    this.todayShort = '',
+    this.periodLine = '',
+    this.pace = '',
+    this.daysLeft = '',
+  });
+
+  /// 语言名；全部语言的目标是「全部语言」；不分语言的度量（制卡 / 复习）为空串。
+  final String language;
+
+  /// 度量名（「字数」「词数」「阅读」「制卡」…，文字目标的单位体现在这里）。
+  final String metric;
+
+  /// 周期短名（「周」「月」）；每日为空串。
+  final String period;
+
+  /// 「度量 · 周期」（每日只有度量）：「字数 · 周」。
+  final String caption;
+
+  /// 已完成量的紧凑写法，不带单位（「14.8K」「1h 36m」）。
+  final String value;
+
+  /// 目标量的紧凑写法，不带单位（「10K」「30m」）。
+  final String target;
+
+  /// 状态短句：「已完成」/「还差 400」/「+4.8K」/「休息日」。
+  final String status;
+
+  /// 剩余量的紧凑写法（「400」「24m」）；完成了为空串。
+  final String remaining;
+
+  /// 周 / 月目标今天做了多少的紧凑写法（「12」）；每日目标为空串。
+  final String todayValue;
+
+  /// 周 / 月目标的今日份额（「20」）；每日目标为空串。
+  final String todayShare;
+
+  /// 周 / 月目标「今天」一行，最短能读懂的写法：「12 / 20 today · On track」、
+  /// 「Rest day · 40 behind」、「Week done」。每日目标为空串。首页小格、总览行、
+  /// 语言目标格、设置行与系统小组件共用。
+  final String todayLine;
+
+  /// [todayLine] 去掉进度差的短写法：「12 / 20 today」/「Rest day」/「Week done」
+  /// （窄处放不下整行时用）。每日目标为空串。
+  final String todayShort;
+
+  /// 周 / 月目标的周期一行：「Week 99 / 100 · 3 days left」（周期已达成不写剩余天数）。
+  /// 每日目标为空串。
+  final String periodLine;
+
+  /// 进度差短句：「On track」/「40 behind」/「Ahead by 15」。每日目标为空串。
+  final String pace;
+
+  /// 剩余生效日：「3 days left」。每日目标为空串。
+  final String daysLeft;
+
+  /// 「14.8K / 10K」。
+  String get valueTarget => '$value / $target';
+
+  /// 「12 / 20」（周 / 月目标的今日量 / 今日份额）。
+  String get todayPair => '$todayValue / $todayShare';
+}
+
+T? _firstWhereOrNull<T>(Iterable<T> items, bool Function(T item) test) {
+  for (final T item in items) {
+    if (test(item)) return item;
+  }
+  return null;
+}
+
+/// [byDay] 在 [period] 包含 [day] 的窗口里的合计（负数按 0）。
+int _sumWindow(Map<String, int> byDay, StudyGoalPeriod period, String day) {
+  int total = 0;
+  byDay.forEach((String k, int v) {
+    if (studyGoalWindowContains(period, day, k)) total += _nonNegative(v);
+  });
+  return total;
+}
+
+/// [goal] 在 [day]（统计日 key）的分子：时长 = 毫秒、字数、复习数、制卡数。窗口按
+/// 目标周期（[studyGoalWindowStart]），字数与时长按目标语言过滤
+/// （[WidgetGoalsInput.immersionFor]）。[reviewsByDay] 为 null = 复习数不可得。
+int studyGoalNumerator({
+  required StudyGoal goal,
   required WidgetGoalsInput goals,
   required WidgetImmersionInput immersion,
   required String day,
-  required int? reviewedToday,
-  required int todayChars,
-  required Map<String, String> labels,
+  required Map<String, int>? reviewsByDay,
+}) {
+  final WidgetImmersionInput source = goals.immersionFor(goal, immersion);
+  int sumMs([WidgetImmersionCategory? category]) {
+    int total = 0;
+    for (final String k in source.msByDay.keys) {
+      if (studyGoalWindowContains(goal.period, day, k)) {
+        total += source.msOf(k, category);
+      }
+    }
+    return total;
+  }
+
+  return switch (goal.metric) {
+    StudyGoalId.total => sumMs(),
+    StudyGoalId.reading => sumMs(WidgetImmersionCategory.reading),
+    StudyGoalId.listening => sumMs(WidgetImmersionCategory.listening),
+    StudyGoalId.watching => sumMs(WidgetImmersionCategory.watching),
+    StudyGoalId.chars => _sumWindow(source.charsByDay, goal.period, day),
+    StudyGoalId.mined => _sumWindow(goals.minedByDay, goal.period, day),
+    StudyGoalId.reviews => _sumWindow(
+      reviewsByDay ?? const <String, int>{},
+      goal.period,
+      day,
+    ),
+  };
+}
+
+/// 每条目标记录在 [day] 的进度，顺序 = 记录顺序。**小组件「目标」卡与首页「今日」格
+/// 共用这一份**：两处各算一遍迟早对不上。[reviewsByDay] 为 null = 复习不是内置 SRS
+/// （Anki 的 API 没有复习数），复习目标不出现。
+List<StudyGoalProgress> computeStudyGoals({
+  required WidgetGoalsInput goals,
+  required WidgetImmersionInput immersion,
+  required String day,
+  required Map<String, int>? reviewsByDay,
+}) {
+  const int minute = 60000;
+  final List<StudyGoalProgress> out = <StudyGoalProgress>[];
+  for (final StudyGoal g in goals.goals) {
+    if (g.metric == StudyGoalId.reviews && reviewsByDay == null) continue;
+    final int value = studyGoalNumerator(
+      goal: g,
+      goals: goals,
+      immersion: immersion,
+      day: day,
+      reviewsByDay: reviewsByDay,
+    );
+    final int target = g.metric.isTime ? g.target * minute : g.target;
+    if (g.period == StudyGoalPeriod.daily) {
+      out.add(
+        StudyGoalProgress(
+          goal: g,
+          value: value,
+          target: target,
+          restDay: g.isRestDay(day),
+          todayRest: g.isRestDay(day),
+        ),
+      );
+      continue;
+    }
+    final StudyGoal daily = g.copyWith(period: StudyGoalPeriod.daily);
+    out.add(
+      _splitPeriodGoal(
+        goal: g,
+        value: value,
+        target: target,
+        day: day,
+        dayValue: (String key) => studyGoalNumerator(
+          goal: daily,
+          goals: goals,
+          immersion: immersion,
+          day: key,
+          reviewsByDay: reviewsByDay,
+        ),
+      ),
+    );
+  }
+  return out;
+}
+
+/// 周 / 月目标按生效日摊开：今日量 / 今日份额 / 进度差 / 剩余生效日 / 本周逐日。
+/// [dayValue] = 某一天的单日量（与 [value] 同一套分子）。
+StudyGoalProgress _splitPeriodGoal({
+  required StudyGoal goal,
+  required int value,
+  required int target,
+  required String day,
+  required int Function(String key) dayValue,
+}) {
+  final int unit = goal.metric.isTime ? 60000 : 1;
+  final List<String> window = studyGoalWindowDays(goal.period, day);
+  final List<bool> active = <bool>[
+    for (final String k in window) goal.isActiveOn(k),
+  ];
+  final List<int> amounts = <int>[
+    for (final String k in window) k.compareTo(day) > 0 ? 0 : dayValue(k),
+  ];
+  final int todayIndex = window.indexOf(day);
+
+  /// 份额：剩余量摊给 [from] 起（含）的生效日，向上取整（时长到整分钟）。
+  int shareFrom(int from, int doneBefore) {
+    final int rest = target - doneBefore;
+    if (rest <= 0) return 0;
+    int left = 0;
+    for (int i = from; i < window.length; i++) {
+      if (active[i]) left++;
+    }
+    if (left == 0) return 0;
+    final int per = left * unit;
+    return (rest + per - 1) ~/ per * unit;
+  }
+
+  final Map<String, int> shares = <String, int>{};
+  int doneBefore = 0;
+  for (int i = 0; i <= todayIndex; i++) {
+    shares[window[i]] = active[i] ? shareFrom(i, doneBefore) : 0;
+    doneBefore += amounts[i];
+  }
+  // 今天之后：按今天结束时的进度预估（今天多做 / 少做都会反映出来）。
+  final int projected = shareFrom(todayIndex + 1, doneBefore);
+  for (int i = todayIndex + 1; i < window.length; i++) {
+    shares[window[i]] = active[i] ? projected : 0;
+  }
+
+  final int activeTotal = active.where((bool a) => a).length;
+  int activeElapsed = 0;
+  int daysLeft = 0;
+  for (int i = 0; i < window.length; i++) {
+    if (!active[i]) continue;
+    if (i <= todayIndex) activeElapsed++;
+    if (i >= todayIndex) daysLeft++;
+  }
+  final int expected = activeTotal == 0
+      ? target
+      : target * activeElapsed ~/ activeTotal;
+
+  final Map<String, int> amountOf = <String, int>{
+    for (int i = 0; i < window.length; i++) window[i]: amounts[i],
+  };
+  final String weekStart = StatWindow.weekStartOf(day);
+  final List<StudyGoalDay> days = <StudyGoalDay>[];
+  for (int i = 0; i < 7; i++) {
+    final String k = FushiDatabase.statDateKeyPlusDays(weekStart, i);
+    final bool inPeriod = shares.containsKey(k);
+    days.add(
+      StudyGoalDay(
+        dayKey: k,
+        value: amountOf[k] ?? 0,
+        share: shares[k] ?? 0,
+        active: inPeriod && goal.isActiveOn(k),
+        inPeriod: inPeriod,
+        isToday: k == day,
+        future: k.compareTo(day) > 0,
+      ),
+    );
+  }
+
+  return StudyGoalProgress(
+    goal: goal,
+    value: value,
+    target: target,
+    todayValue: todayIndex < 0 ? 0 : amounts[todayIndex],
+    todayShare: shares[day] ?? 0,
+    todayRest: !goal.isActiveOn(day),
+    pace: value - expected,
+    periodDaysLeft: daysLeft,
+    days: days,
+  );
+}
+
+/// [goal] 在 [dayKeys] 每一天的**单日**量（与目标同一个度量、同一种语言、同一套
+/// 分子：时长 = 毫秒、字数、复习数、制卡数）。周 / 月目标也按天给（首页「今日」格的
+/// 近 7 天柱条跟着当前目标走）。[reviewsByDay] 为 null = 复习数不可得（全 0）。
+List<int> studyGoalDailySeries({
+  required StudyGoal goal,
+  required WidgetGoalsInput goals,
+  required WidgetImmersionInput immersion,
+  required List<String> dayKeys,
+  required Map<String, int>? reviewsByDay,
+}) {
+  final StudyGoal daily = goal.period == StudyGoalPeriod.daily
+      ? goal
+      : goal.copyWith(period: StudyGoalPeriod.daily);
+  return <int>[
+    for (final String day in dayKeys)
+      studyGoalNumerator(
+        goal: daily,
+        goals: goals,
+        immersion: immersion,
+        day: day,
+        reviewsByDay: reviewsByDay,
+      ),
+  ];
+}
+
+/// [goal] 摊到一天的目标量（与 [studyGoalDailySeries] 同单位：时长 = 毫秒）：每日 =
+/// 目标本身，每周 = 目标 / 7，每月 = 目标 / 包含 [day] 的那个月的天数。柱条的参考线。
+double studyGoalDailyShare(StudyGoal goal, String day) {
+  final int target = goal.metric.isTime ? goal.target * 60000 : goal.target;
+  return switch (goal.period) {
+    StudyGoalPeriod.daily => target.toDouble(),
+    StudyGoalPeriod.weekly => target / 7,
+    StudyGoalPeriod.monthly => target / _daysInMonthOf(day),
+  };
+}
+
+int _daysInMonthOf(String dateKey) {
+  final DateTime d = FushiDatabase.statDateKeyToDay(dateKey);
+  return DateTime(d.year, d.month + 1, 0).day;
+}
+
+List<Map<String, Object?>> _goalsJson({
+  required List<StudyGoalProgress> progress,
+  required WidgetGoalsInput goals,
   required String Function(int ms) formatTime,
   required String Function(int chars) formatChars,
   required String Function(int count) formatCount,
 }) {
-  final List<Map<String, Object?>> out = <Map<String, Object?>>[];
-  void add(
-    String id,
-    int value,
-    int target,
-    String Function(int) format, {
-    int unit = 1,
-  }) {
-    if (target <= 0) return;
-    final int scaled = target * unit;
-    out.add(<String, Object?>{
-      'id': id,
-      'label': labels[id] ?? '',
-      'value': format(value),
-      'target': format(scaled),
-      'frac': clampWidgetFraction(value / scaled),
-      'done': value >= scaled,
-    });
-  }
-
-  add(
-    'total',
-    immersion.msOf(day),
-    goals.totalMinutes,
-    formatTime,
-    unit: 60000,
-  );
-  add(
-    'reading',
-    immersion.msOf(day, WidgetImmersionCategory.reading),
-    goals.readingMinutes,
-    formatTime,
-    unit: 60000,
-  );
-  add(
-    'listening',
-    immersion.msOf(day, WidgetImmersionCategory.listening),
-    goals.listeningMinutes,
-    formatTime,
-    unit: 60000,
-  );
-  add(
-    'watching',
-    immersion.msOf(day, WidgetImmersionCategory.watching),
-    goals.videoMinutes,
-    formatTime,
-    unit: 60000,
-  );
-  // 复习目标只在内置 SRS 时有今日已复习数；Anki 的 API 没有这个数，宁可不画。
-  if (reviewedToday != null) {
-    add('reviews', reviewedToday, goals.reviews, formatCount);
-  }
-  add('mined', _nonNegative(goals.minedToday), goals.minedCards, formatCount);
-  add('chars', todayChars, goals.chars, formatChars);
-  return out;
+  return <Map<String, Object?>>[
+    for (final StudyGoalProgress g in progress)
+      () {
+        final String Function(int) format = switch (g.id) {
+          _ when g.id.isTime => formatTime,
+          StudyGoalId.chars when goals.unitOf(g.goal) == StudyGoalUnit.words =>
+            goals.formatWords ?? formatChars,
+          StudyGoalId.chars => formatChars,
+          _ => formatCount,
+        };
+        final StudyGoalCompactText? text = goals.compactOf?.call(g);
+        return <String, Object?>{
+          'id': g.id.wire,
+          'label': goals.labelOf?.call(g.goal, restDay: g.restDay) ?? '',
+          'value': format(g.value),
+          'target': format(g.target),
+          'frac': g.fraction,
+          'done': g.done,
+          // v2 紧凑字段（旧字段保留给已装的旧原生侧）：语言 / 度量 / 周期分开，
+          // 数值对不重复单位，状态与剩余量由这里定，原生侧不重算。
+          'period': g.goal.period.wire,
+          'language': text?.language ?? '',
+          'metric': text?.metric ?? '',
+          'periodLabel': text?.period ?? '',
+          'caption': text?.caption ?? '',
+          'compact':
+              text?.valueTarget ?? '${format(g.value)} / ${format(g.target)}',
+          'valueShort': text?.value ?? format(g.value),
+          'targetShort': text?.target ?? format(g.target),
+          'state': g.state.wire,
+          'status': text?.status ?? '',
+          'remaining': text?.remaining ?? '',
+          'pct': g.percent,
+          // v3「今日份额」字段（周 / 月目标按生效日摊开；每日目标 splits = false，
+          // 文案为空串）。原生侧只显示，不重算。
+          'splits': g.splitsPeriod,
+          'todayFrac': g.todayFraction,
+          'todayState': g.todayState.wire,
+          'todayValue': text?.todayValue ?? format(g.todayValue),
+          'todayShare': text?.todayShare ?? format(g.todayShare),
+          'todayLine': text?.todayLine ?? '',
+          'todayShort': text?.todayShort ?? '',
+          'periodLine': text?.periodLine ?? '',
+          'pace': g.paceStatus.wire,
+          'paceText': text?.pace ?? '',
+          'daysLeft': g.periodDaysLeft,
+          'daysLeftText': text?.daysLeft ?? '',
+        };
+      }(),
+  ];
 }
 
 List<Map<String, Object?>> _vocabJson(List<WidgetVocabInput> vocab) {

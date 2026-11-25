@@ -12,9 +12,12 @@ import 'package:fushi/src/pages/implementations/alist_site_settings_section.dart
 import 'package:fushi/src/pages/implementations/bt_site_settings_section.dart';
 import 'package:fushi/src/pages/implementations/audiobookshelf_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/kavita/kavita_server_settings_section.dart';
+import 'package:fushi/src/pages/implementations/music/music_server_settings.dart';
 import 'package:fushi/src/pages/implementations/opds_server_settings_section.dart';
 import 'package:fushi/src/pages/implementations/video_external_provider_settings_section.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/media/music/server/music_servers.dart'
+    show kMusicServerBitrateChoices;
 import 'package:fushi/src/models/store_compliance.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -60,7 +63,7 @@ SettingsDestination buildServicesDestination() {
       c.appModel.moduleVisibility,
     ),
     title: t.settings_destination_services,
-    summary: t.settings_destination_services_summary,
+    summary: t.settings_services_summary_accounts,
     icon: FushiIcons.cloud,
     sections: <SettingsSection>[
       SettingsSection(
@@ -154,41 +157,17 @@ SettingsDestination buildServicesDestination() {
               ),
             ],
           ),
-          // AJATT 与默认字幕语言：此前是一张自绘卡（开关 + 下拉内嵌、字号层级
-          // 自成一套），现在拆成两条标准分段行，与上面的来源行同一视觉语言。
-          // 读写走与旧卡完全相同的 AppModel 入口，持久化键不变。
+          // 读写走 AppModel 入口，持久化键不变。「搜索字幕的语言」不在本分区：它属于
+          // 视频字幕的使用偏好，见 [buildSubtitleSearchLanguageItem]。
           SettingsSwitchItem(
             id: 'services.subtitle_preferences',
-            // 品牌名，不进 i18n（同 Jimaku / SubDL）。
-            title: 'AJATT',
+            title: t.settings_services_ajatt_title,
             subtitle: t.video_ajatt_enabled_hint,
             icon: FushiIcons.subtitles,
             value: (SettingsContext c) => c.appModel.videoSubtitleAjattEnabled,
             onChanged: (SettingsContext c, bool value) =>
                 c.appModel.setVideoSubtitleAjattEnabled(value),
             defaultValue: true,
-          ),
-          SettingsSegmentedItem<String>(
-            id: 'services.subtitle_default_language',
-            title: t.video_setting_jimaku_default_language,
-            subtitle: t.video_setting_jimaku_default_language_hint,
-            icon: FushiIcons.language,
-            dropdown: true,
-            options: <SettingsSegmentOption<String>>[
-              SettingsSegmentOption<String>(
-                value: '',
-                label: t.video_jimaku_language_follow_video,
-              ),
-              for (final String language in kJimakuLanguageCodes)
-                SettingsSegmentOption<String>(
-                  value: language,
-                  label: jimakuLanguageLabel(language),
-                ),
-            ],
-            selected: (SettingsContext c) => c.appModel.jimakuDefaultLanguage,
-            onChanged: (SettingsContext c, String value) =>
-                c.appModel.setJimakuDefaultLanguage(value),
-            defaultValue: '',
           ),
         ],
       ),
@@ -268,7 +247,7 @@ SettingsDestination buildServicesDestination() {
             },
             child: () => SettingsDestination(
               id: SettingsDestinationId.services,
-              title: t.section_services_metadata,
+              title: 'AniDB',
               icon: FushiIcons.fingerprint,
               sections: <SettingsSection>[
                 SettingsSection(
@@ -282,7 +261,7 @@ SettingsDestination buildServicesDestination() {
                       value: (SettingsContext settingsContext) =>
                           settingsContext.appModel.prefsRepo.getPref(
                                 kVideoAniDbHashEnabledPref,
-                                defaultValue: false,
+                                defaultValue: kVideoAniDbHashEnabledDefault,
                               )
                               as bool,
                       onChanged:
@@ -329,6 +308,27 @@ SettingsDestination buildServicesDestination() {
                               commitVideoMetadataRuntimePreference(
                                 settingsContext,
                                 kVideoAniDbPasswordPref,
+                                value,
+                                trimValue: false,
+                              ),
+                    ),
+                    SettingsTextItem(
+                      id: 'services.metadata.anidb_udp_api_key',
+                      title: t.video_anidb_udp_api_key,
+                      subtitle: t.video_anidb_udp_api_key_hint,
+                      icon: FushiIcons.lock,
+                      secret: true,
+                      value: (SettingsContext settingsContext) =>
+                          settingsContext.appModel.prefsRepo.getPref(
+                                kVideoAniDbUdpApiKeyPref,
+                                defaultValue: '',
+                              )
+                              as String,
+                      onChanged:
+                          (SettingsContext settingsContext, String value) =>
+                              commitVideoMetadataRuntimePreference(
+                                settingsContext,
+                                kVideoAniDbUdpApiKeyPref,
                                 value,
                                 trimValue: false,
                               ),
@@ -403,8 +403,8 @@ SettingsDestination buildServicesDestination() {
                             },
                       ),
                     ),
-                    // HTTP 资料接口与 UDP 是 AniDB 上两条登记（BUG-2623）：随包
-                    // 身份只登记了 UDP，让用户看得到 anime XML 资料链此时不会请求。
+                    // HTTP 资料接口与 UDP 是 AniDB 上两条登记（BUG-2623），
+                    // 状态行只按解析出的 HTTP 身份展示，不借用 UDP 身份。
                     SettingsStatusItem(
                       id: 'services.metadata.anidb_http_api',
                       title: t.video_anidb_http_api,
@@ -476,89 +476,63 @@ SettingsDestination buildServicesDestination() {
               ],
             ),
           ),
+          // 楽天ブックス书籍检索凭据（书籍「在线匹配封面」的可选源）。两项都填了楽天
+          // 才出现在源下拉里。凭据设备本地：不进备份 / 同步 / Profile（键登记见
+          // preference_keys.dart）。
+          SettingsNavigationItem(
+            id: 'services.metadata.rakuten_books',
+            title: '楽天ブックス',
+            subtitleBuilder: (SettingsContext c) =>
+                c.appModel.bookScrapeRakutenCredentials.isComplete
+                ? t.settings_service_configured
+                : t.settings_service_not_configured,
+            child: () => SettingsDestination(
+              id: SettingsDestinationId.services,
+              title: '楽天ブックス',
+              icon: FushiIcons.key,
+              sections: <SettingsSection>[
+                SettingsSection(
+                  id: 'services.rakuten_books.credentials',
+                  items: <SettingsItem>[
+                    SettingsTextItem(
+                      id: 'services.metadata.rakuten_application_id',
+                      title: t.book_scrape_rakuten_application_id,
+                      subtitle: t.book_scrape_rakuten_settings_hint,
+                      icon: FushiIcons.key,
+                      secret: true,
+                      value: (SettingsContext c) =>
+                          c.appModel.prefsRepo.bookScrapeRakutenApplicationId,
+                      onChanged: (SettingsContext c, String value) => c
+                          .appModel
+                          .prefsRepo
+                          .setBookScrapeRakutenApplicationId(value),
+                    ),
+                    SettingsTextItem(
+                      id: 'services.metadata.rakuten_access_key',
+                      title: t.book_scrape_rakuten_access_key,
+                      subtitle: t.book_scrape_rakuten_settings_hint,
+                      icon: FushiIcons.lock,
+                      secret: true,
+                      value: (SettingsContext c) =>
+                          c.appModel.prefsRepo.bookScrapeRakutenAccessKey,
+                      onChanged: (SettingsContext c, String value) => c
+                          .appModel
+                          .prefsRepo
+                          .setBookScrapeRakutenAccessKey(value),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
         ],
       ),
-      // 媒体服务器保持常显不折叠：Jellyfin / Plex 两行的「已配置」要异步读数据库
-      // （_JellyfinSettingsLink / _PlexSettingsLink），同步的分组摘要数不到它们，
-      // 收起后摘要只会少报；三行本身已各带状态，常显即可。
+      buildMediaServersSection(),
+      // 弹幕服务器与媒体服务器的账号不是一类东西，单独成区更好找。
       SettingsSection(
-        id: 'services.media',
-        title: t.video_library_media_servers,
+        id: 'services.danmaku',
+        title: t.section_video_danmaku,
         items: <SettingsItem>[
-          SettingsCustomItem(
-            id: 'services.media_server.jellyfin',
-            searchTitle: 'Jellyfin · Emby · ${t.jellyfin_settings_title}',
-            cliList: buildJellyfinCliList(),
-            builder: (SettingsContext c) =>
-                _JellyfinSettingsLink(settingsContext: c),
-          ),
-          SettingsCustomItem(
-            id: 'services.media_server.plex',
-            searchTitle: 'Plex · ${t.video_library_media_servers}',
-            cliList: buildPlexCliList(),
-            builder: (SettingsContext c) =>
-                _PlexSettingsLink(settingsContext: c),
-          ),
-          // 以下四项都是用户自己填地址的服务器（同 Jellyfin / Plex）：浏览、阅读 /
-          // 串流与下载到本机都不属于 App Store 受限能力，iOS 也保留（2026-10-27 用户
-          // 拍板，判据 `userConfiguredServersAvailable`，见 store_compliance.dart）。
-          // 所以放在常显的这一节，而不是 iOS 上整节隐藏的「资源」里。
-          _servicePage(
-            id: 'services.opds_servers',
-            title: t.discovery_opds_settings_title,
-            status: (SettingsContext c) =>
-                c.appModel.prefsRepo.discoveryOpdsServers.isEmpty
-                ? t.settings_service_not_configured
-                : t.settings_service_configured,
-            body: (SettingsContext c) => const OpdsServerSettingsSection(),
-          ),
-          _servicePage(
-            id: 'services.alist_sites',
-            title: t.discovery_alist_settings_title,
-            status: (SettingsContext c) =>
-                c.appModel.prefsRepo.discoveryAListSites.isEmpty
-                ? t.settings_service_not_configured
-                : t.settings_service_configured,
-            body: (SettingsContext c) => const AListSiteSettingsSection(),
-          ),
-          _servicePage(
-            id: 'services.kavita_servers',
-            title: t.kavita_settings_title,
-            status: (SettingsContext c) =>
-                c.appModel.prefsRepo.kavitaServers.isEmpty
-                ? t.settings_service_not_configured
-                : t.settings_service_configured,
-            body: (SettingsContext c) => const KavitaServerSettingsSection(),
-          ),
-          _servicePage(
-            id: 'services.audiobookshelf_servers',
-            title: t.discovery_audiobookshelf_settings_title,
-            status: (SettingsContext c) =>
-                c.appModel.prefsRepo.discoveryAudiobookshelfServers.isEmpty
-                ? t.settings_service_not_configured
-                : t.settings_service_configured,
-            body: (SettingsContext c) =>
-                const AudiobookshelfServerSettingsSection(),
-            // 首页「继续」混排是显式 opt-in（默认关，与 Jellyfin 的「在视频库中混排
-            // 显示」同原则）。schema 原生开关：设置搜索 / 控制通道 / 覆盖测试都认得。
-            sections: <SettingsSection>[
-              SettingsSection(
-                id: 'services.audiobookshelf.home',
-                items: <SettingsItem>[
-                  SettingsSwitchItem(
-                    id: 'services.audiobookshelf.show_in_home',
-                    title: t.discovery_audiobookshelf_home_continue_title,
-                    subtitle: t.discovery_audiobookshelf_home_continue_hint,
-                    value: (SettingsContext c) =>
-                        c.appModel.prefsRepo.audiobookshelfShowInHome,
-                    onChanged: (SettingsContext c, bool value) =>
-                        c.appModel.prefsRepo.setAudiobookshelfShowInHome(value),
-                    defaultValue: false,
-                  ),
-                ],
-              ),
-            ],
-          ),
           SettingsNavigationItem(
             id: 'services.danmaku.configure',
             title: 'Dandanplay',
@@ -603,6 +577,40 @@ SettingsDestination buildServicesDestination() {
         ],
       ),
     ],
+  );
+}
+
+/// 「搜索字幕的语言」：在线字幕检索（Jimaku 等）用的默认语言。
+///
+/// 它决定的是视频字幕的行为而不是哪个账号，所以由「视频 › 字幕」放置；定义留在
+/// 本文件以沿用 Jimaku 语言表。因为离开了在线服务分类，分类级的模块门控要在
+/// 这里补上，保证「在线服务」模块关掉时它仍不出现。
+SettingsItem buildSubtitleSearchLanguageItem() {
+  return SettingsSegmentedItem<String>(
+    id: 'services.subtitle_default_language',
+    title: t.settings_services_subtitle_search_language_title,
+    subtitle: t.video_setting_jimaku_default_language_hint,
+    icon: FushiIcons.language,
+    dropdown: true,
+    visible: (SettingsContext c) => isSettingsDestinationVisible(
+      SettingsDestinationId.services,
+      c.appModel.moduleVisibility,
+    ),
+    options: <SettingsSegmentOption<String>>[
+      SettingsSegmentOption<String>(
+        value: '',
+        label: t.video_jimaku_language_follow_video,
+      ),
+      for (final String language in kJimakuLanguageCodes)
+        SettingsSegmentOption<String>(
+          value: language,
+          label: jimakuLanguageLabel(language),
+        ),
+    ],
+    selected: (SettingsContext c) => c.appModel.jimakuDefaultLanguage,
+    onChanged: (SettingsContext c, String value) =>
+        c.appModel.setJimakuDefaultLanguage(value),
+    defaultValue: '',
   );
 }
 
@@ -700,6 +708,69 @@ SettingsNavigationItem buildOpenServicesItem(String id) {
     },
   );
 }
+
+/// 「在线服务 › 媒体服务器 › 服务器曲库」行的状态：只读本地偏好（与 OPDS / Kavita /
+/// Audiobookshelf 行同一种同步判据）。加过 OpenSubsonic、打开了 Apple Music，或已把
+/// 任一台服务器（含 Jellyfin 家族）混排进曲库，都算已配置。
+String musicServersSettingsStatus(SettingsContext c) {
+  final bool configured =
+      c.appModel.prefsRepo.musicSubsonicServers.isNotEmpty ||
+      c.appModel.prefsRepo.musicAppleMusicEnabled ||
+      c.appModel.prefsRepo.musicServerLibraryMix.isNotEmpty;
+  return configured
+      ? t.settings_service_configured
+      : t.settings_service_not_configured;
+}
+
+/// 服务器曲库子页：设置 › 在线服务 › 媒体服务器的那一行，与曲库页「来源 › 添加 ›
+/// 服务器」共用这一棵树（同壳、同正文、同串流音质行），不在模块页另拼一份。
+///
+/// 串流音质 `services.music_servers.bitrate` 是声明式行（设置搜索、控制通道、页级
+/// 「恢复默认」都认得）；偏好键 `musicServerMaxBitrate` 不变，只是编辑面搬家。
+SettingsDestination buildMusicServersDestination() => SettingsDestination(
+  id: SettingsDestinationId.services,
+  title: t.music_servers_title,
+  icon: FushiIcons.cloud,
+  body: (SettingsContext c) => MusicServerSettingsBody(appModel: c.appModel),
+  bodySearchEntries: <SettingsBodySearchEntry>[
+    SettingsBodySearchEntry(
+      id: 'services.music_servers.add_subsonic',
+      title: t.music_server_add_subsonic,
+      subtitle: 'OpenSubsonic · Subsonic · Navidrome',
+    ),
+    SettingsBodySearchEntry(
+      id: 'services.music_servers.apple_music',
+      title: t.music_apple_music_enable,
+      subtitle: t.music_apple_music_enable_hint,
+    ),
+  ],
+  sections: <SettingsSection>[
+    SettingsSection(
+      id: 'services.music_servers.playback',
+      items: <SettingsItem>[
+        SettingsSegmentedItem<int>(
+          id: 'services.music_servers.bitrate',
+          title: t.music_server_bitrate_title,
+          subtitle: t.music_server_bitrate_hint,
+          icon: FushiIcons.highQuality,
+          defaultValue: 0,
+          options: <SettingsSegmentOption<int>>[
+            SettingsSegmentOption<int>(
+              value: 0,
+              label: t.music_server_bitrate_original,
+            ),
+            for (final int kbps in kMusicServerBitrateChoices)
+              SettingsSegmentOption<int>(value: kbps, label: '$kbps kbps'),
+          ],
+          selected: (SettingsContext c) =>
+              c.appModel.prefsRepo.musicServerMaxBitrate,
+          onChanged: (SettingsContext c, int v) =>
+              c.appModel.prefsRepo.setMusicServerMaxBitrate(v),
+        ),
+      ],
+    ),
+  ],
+);
 
 /// Reads saved authentication locally; a saved token is configuration, not proof
 /// of a currently reachable server. Network validation remains in its real page.
@@ -834,3 +905,116 @@ String anidbHttpApiStatusLabel(VideoSourceScrapeGlobalConfig config) =>
         version: '${config.anidbHttpClientVersion}',
       )
     : t.video_anidb_http_api_unregistered;
+
+/// 「媒体服务器」一节（Jellyfin / Emby / Plex / OPDS / AList / Kavita / ABS / 音乐服务器）：
+/// 设置 › 在线服务 里嵌这一节，[buildMediaServersDestination] 独立页也用这同一节，
+/// 两处不各写一份。
+SettingsSection buildMediaServersSection() {
+  // 媒体服务器保持常显不折叠：Jellyfin / Plex 两行的「已配置」要异步读数据库
+  // （_JellyfinSettingsLink / _PlexSettingsLink），同步的分组摘要数不到它们，
+  // 收起后摘要只会少报；三行本身已各带状态，常显即可。
+  return SettingsSection(
+    id: 'services.media',
+    title: t.video_library_media_servers,
+    items: <SettingsItem>[
+      SettingsCustomItem(
+        id: 'services.media_server.jellyfin',
+        searchTitle: 'Jellyfin · Emby · ${t.jellyfin_settings_title}',
+        cliList: buildJellyfinCliList(),
+        builder: (SettingsContext c) =>
+            _JellyfinSettingsLink(settingsContext: c),
+      ),
+      SettingsCustomItem(
+        id: 'services.media_server.plex',
+        searchTitle: 'Plex · ${t.video_library_media_servers}',
+        cliList: buildPlexCliList(),
+        builder: (SettingsContext c) => _PlexSettingsLink(settingsContext: c),
+      ),
+      // 以下四项都是用户自己填地址的服务器（同 Jellyfin / Plex）：浏览、阅读 /
+      // 串流与下载到本机都不属于 App Store 受限能力，iOS 也保留（2026-10-27 用户
+      // 拍板，判据 `userConfiguredServersAvailable`，见 store_compliance.dart）。
+      // 所以放在常显的这一节，而不是 iOS 上整节隐藏的「资源」里。
+      _servicePage(
+        id: 'services.opds_servers',
+        title: t.discovery_opds_settings_title,
+        status: (SettingsContext c) =>
+            c.appModel.prefsRepo.discoveryOpdsServers.isEmpty
+            ? t.settings_service_not_configured
+            : t.settings_service_configured,
+        body: (SettingsContext c) => const OpdsServerSettingsSection(),
+      ),
+      _servicePage(
+        id: 'services.alist_sites',
+        title: t.discovery_alist_settings_title,
+        status: (SettingsContext c) =>
+            c.appModel.prefsRepo.discoveryAListSites.isEmpty
+            ? t.settings_service_not_configured
+            : t.settings_service_configured,
+        body: (SettingsContext c) => const AListSiteSettingsSection(),
+      ),
+      _servicePage(
+        id: 'services.kavita_servers',
+        title: t.kavita_settings_title,
+        status: (SettingsContext c) =>
+            c.appModel.prefsRepo.kavitaServers.isEmpty
+            ? t.settings_service_not_configured
+            : t.settings_service_configured,
+        body: (SettingsContext c) => const KavitaServerSettingsSection(),
+      ),
+      _servicePage(
+        id: 'services.audiobookshelf_servers',
+        title: t.discovery_audiobookshelf_settings_title,
+        status: (SettingsContext c) =>
+            c.appModel.prefsRepo.discoveryAudiobookshelfServers.isEmpty
+            ? t.settings_service_not_configured
+            : t.settings_service_configured,
+        body: (SettingsContext c) =>
+            const AudiobookshelfServerSettingsSection(),
+        // 首页「继续」混排是显式 opt-in（默认关，与 Jellyfin 的「在视频库中混排
+        // 显示」同原则）。schema 原生开关：设置搜索 / 控制通道 / 覆盖测试都认得。
+        sections: <SettingsSection>[
+          SettingsSection(
+            id: 'services.audiobookshelf.home',
+            items: <SettingsItem>[
+              SettingsSwitchItem(
+                id: 'services.audiobookshelf.show_in_home',
+                title: t.discovery_audiobookshelf_home_continue_title,
+                subtitle: t.discovery_audiobookshelf_home_continue_hint,
+                value: (SettingsContext c) =>
+                    c.appModel.prefsRepo.audiobookshelfShowInHome,
+                onChanged: (SettingsContext c, bool value) =>
+                    c.appModel.prefsRepo.setAudiobookshelfShowInHome(value),
+                defaultValue: false,
+              ),
+            ],
+          ),
+        ],
+      ),
+      // 音乐的服务器曲库（OpenSubsonic 增删、Jellyfin 家族与 OpenSubsonic 的混排开关、
+      // Apple Music、串流音质）：和上面几项一样是用户自填地址的服务器凭据，与它们同
+      // 一节、同一种行（PR #3039 遗留，反馈 983broef-P）。曲库页「来源 › 添加 ›
+      // 服务器」推的也是同一个 [buildMusicServersDestination]，两处不各写一份。
+      SettingsNavigationItem(
+        id: 'services.music_servers',
+        title: t.music_servers_title,
+        subtitleBuilder: musicServersSettingsStatus,
+        child: buildMusicServersDestination,
+      ),
+    ],
+  );
+}
+
+/// 媒体服务器管理独立页：「去设置添加服务器」类入口推它（[SettingsDetailPage.subPage]）。
+///
+/// 用户 2026-11-24 拍板（BUG-5445）：只要媒体服务器页签 / 入口在，就一定进得去服务器
+/// 设置，不管「在线服务」模块开没开——已登录的服务器在模块关着时照样能浏览 / 播放，
+/// 增删改服务器是它的一部分。所以本页**不挂** [buildServicesDestination] 的模块门
+/// （`visible` 留空）；在线服务分类里其余条目（字幕源 / 索引器 / 刮削凭据 / 弹幕等）
+/// 仍随分类一起受模块门控。id 沿用 services（子页同父分类 id，见
+/// [SettingsDetailPage.subPage]）。
+SettingsDestination buildMediaServersDestination() => SettingsDestination(
+  id: SettingsDestinationId.services,
+  title: t.video_library_media_servers,
+  icon: FushiIcons.server,
+  sections: <SettingsSection>[buildMediaServersSection()],
+);

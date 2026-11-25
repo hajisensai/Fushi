@@ -1,4 +1,7 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
 
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/media/video/subtitle_delay_input_debounce.dart';
@@ -18,6 +21,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_inputs.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/components/apple/apple_radii.dart';
 
 /// TODO-413：「自动对轴」按钮的功能开关。音频能量互相关自动对轴（TODO-701 阶段1）算法
 /// 管线已完整落地（抽包络 + 互相关 + 置信门控 + 写穿 delayMs），TODO-742 曾因「真机未验、
@@ -306,8 +310,7 @@ class _VideoSubtitleSyncRowState extends State<VideoSubtitleSyncRow> {
               initialDelayMs: _delayMs,
               cues: host.subtitleWaveformCues,
               durationMs: host.videoDurationMs,
-              probeLimitMs: host.subtitleProbeLimitMs,
-              loadWaveform: host.loadSubtitleWaveform!,
+              loadWaveformSegment: host.loadSubtitleWaveform!,
               onCommitDelay: _commitDelay,
               // TODO-1316：放大波形对轴视图内的「自动对轴」按钮复用与顶部同一 onAutoAlign
               // 逻辑，成功后经上面的 onCommitDelay 同步权威延迟。
@@ -732,12 +735,22 @@ class _DelayReadoutFieldState extends State<_DelayReadoutField> {
     final ColorScheme cs = Theme.of(context).colorScheme;
     final FushiSpringSpec spring = context.fushiMotion.effectsFast;
     final TextStyle digits = context.fushiType.titleMediumEmphasized.tabular;
-    final Color fill = _editing || widget.active
-        ? cs.secondaryContainer
-        : cs.surfaceContainer;
-    final Color foreground = _editing || widget.active
-        ? cs.onSecondaryContainer
-        : cs.onSurfaceVariant;
+    final bool lit = _editing || widget.active;
+    // Apple：读数是 tertiaryFill 中性圆角框，非零 / 编辑中换强调色淡底 + 强调色
+    // 数字、编辑描边强调色；不用 M3E 的 secondaryContainer / surfaceContainer。
+    final FushiAppleColors? apple = isGlassDesign(context)
+        ? appleColorsOf(context)
+        : null;
+    final Color fill = apple != null
+        ? (lit ? apple.accent.withValues(alpha: 0.16) : apple.tertiaryFill)
+        : (lit ? cs.secondaryContainer : cs.surfaceContainer);
+    final Color foreground = apple != null
+        ? (lit ? apple.accent : apple.label)
+        : (lit ? cs.onSecondaryContainer : cs.onSurfaceVariant);
+    final BorderRadius radius = apple != null
+        ? FushiAppleRadii.of(context).fieldRadius
+        : FushiM3eShape.cardRadius;
+    final Color ring = apple?.accent ?? cs.primary;
     final Widget content = _editing
         ? FushiTextFieldControl(
             key: widget.fieldKey,
@@ -778,8 +791,8 @@ class _DelayReadoutFieldState extends State<_DelayReadoutField> {
       padding: const EdgeInsets.symmetric(horizontal: 12),
       decoration: BoxDecoration(
         color: fill,
-        borderRadius: FushiM3eShape.cardRadius,
-        border: _editing ? Border.all(color: cs.primary, width: 2) : null,
+        borderRadius: radius,
+        border: _editing ? Border.all(color: ring, width: 2) : null,
       ),
       child: content,
     );
@@ -796,7 +809,7 @@ class _DelayReadoutFieldState extends State<_DelayReadoutField> {
                 // 否则被底色盖住、只在圆角处漏出残角（BUG-3440）。
                 child: FushiFocusable(
                   onTap: _startEditing,
-                  borderRadius: FushiM3eShape.cardRadius,
+                  borderRadius: radius,
                   ringPosition: DecorationPosition.foreground,
                   child: pill,
                 ),

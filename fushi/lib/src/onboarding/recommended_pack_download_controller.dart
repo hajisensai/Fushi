@@ -11,7 +11,7 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 
 /// 推荐包（9.5 GB 的词典 + 发音库整包）下载任务所处的阶段。
 ///
-/// 「下完」与「已导入」是两件事：导入要用户在确认框里选覆盖/合并、并且**重启
+/// 「下完」与「已导入」是两件事：导入（恒合并）会**重启
 /// 进程**，controller 不能替用户做这一步 —— 所以下完之后停在
 /// [downloaded] 等一个显式的导入动作，而不是直接回 [idle]。
 enum RecommendedPackDownloadStage {
@@ -64,7 +64,7 @@ typedef RecommendedPackDeletionRunner =
 /// 可导入。
 ///
 /// 本 controller **不自己发起导入**：导入走
-/// `runBackupImportFlowForFile`（要用户确认覆盖/合并，随后重启进程），由发起
+/// `importDownloadedRecommendedPack`（弹确认框、预选合并，导入后重启进程），由发起
 /// 下载的向导（若还活着）或设置里那一行显式触发。
 class RecommendedPackDownloadController {
   RecommendedPackDownloadController({

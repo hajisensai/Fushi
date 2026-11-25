@@ -3,12 +3,24 @@ import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/sync/video_remote_client.dart';
+import 'package:fushi/src/sync/interconnect_peer_addresses.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  // V-B4：明文地址拿凭据前要当场 ping 核对 hostId；这些用例的对端是 MockClient，
+  // 把身份核对视为通过。
+  setUp(() {
+    resetInterconnectRaceCache();
+    debugInterconnectAddressProbeOverride =
+        (FushiClientUrl candidate, String? hostId) async => true;
+  });
+  tearDown(() {
+    debugInterconnectAddressProbeOverride = null;
+    resetInterconnectRaceCache();
+  });
   late FushiDatabase database;
   late SyncRepository repository;
   const FushiClientUrl selected = FushiClientUrl(
@@ -60,6 +72,46 @@ void main() {
       client.cancelPending();
     },
   );
+  test('host error reason is read next to its code (absent = null)', () async {
+    final List<Map<String, dynamic>> bodies = <Map<String, dynamic>>[
+      <String, dynamic>{
+        'error': 'favorite_source_unavailable',
+        'reason': 'peer_offline',
+      },
+      <String, dynamic>{'error': 'favorite_source_unavailable'},
+    ];
+    final VideoRemoteClient client = VideoRemoteClient(
+      repository: repository,
+      peer: selected,
+      httpClient: MockClient(
+        (http.Request request) async =>
+            http.Response(jsonEncode(bodies.removeAt(0)), 404),
+      ),
+    );
+    await expectLater(
+      client.call('openFavorite', <String, dynamic>{'id': 'f1'}),
+      throwsA(
+        isA<VideoRemoteError>()
+            .having(
+              (VideoRemoteError e) => e.message,
+              'message',
+              'favorite_source_unavailable',
+            )
+            .having((VideoRemoteError e) => e.reason, 'reason', 'peer_offline'),
+      ),
+    );
+    await expectLater(
+      client.call('openFavorite', <String, dynamic>{'id': 'f1'}),
+      throwsA(
+        isA<VideoRemoteError>().having(
+          (VideoRemoteError e) => e.reason,
+          'reason',
+          isNull,
+        ),
+      ),
+    );
+    client.cancelPending();
+  });
   test(
     'poll sends revision and bounded wait with paired credentials',
     () async {

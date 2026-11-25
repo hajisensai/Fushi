@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_core/fushi_core.dart' show musicServerIdOfPlaySource;
 import 'package:fushi/src/media/music/mpv_music_output_backend.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/media/music/music_player_engine.dart';
@@ -167,6 +168,35 @@ void main() {
     expect(engine.listenedBeforeStart, isNull, reason: '只在回调里有效');
   });
 
+  test('来源 id 拆回（BUG-5291）：服务器身份含 `/`（Jellyfin）也拆对，插件条目 id 含 `/` 照旧', () {
+    const String jf = 'jellyfin:http://nas:8096/jf|user-1';
+    expect(MusicPlaySource.serverAlbum(jf, 'abc123').hostRef, (
+      hostId: jf,
+      itemId: 'abc123',
+    ));
+    expect(MusicPlaySource.serverPlaylist(jf, 'pl9').hostRef, (
+      hostId: jf,
+      itemId: 'pl9',
+    ));
+    expect(MusicPlaySource.serverAlbum('subsonic-navi', 'al-1').hostRef, (
+      hostId: 'subsonic-navi',
+      itemId: 'al-1',
+    ));
+    expect(MusicPlaySource.pluginAlbum('demo', 'path/to/album').hostRef, (
+      hostId: 'demo',
+      itemId: 'path/to/album',
+    ));
+    // 已落库的行（编码没变）：从库里读回的 kind + id 照样拆对；与清洗用的服务器身份一致。
+    final MusicPlaySource stored = MusicPlaySource(
+      kind: MusicPlaySourceKind.fromWire('server_album'),
+      id: '$jf/abc123',
+    );
+    expect(stored.hostRef?.hostId, jf);
+    expect(musicServerIdOfPlaySource('server_album', stored.id), jf);
+    expect(const MusicPlaySource.album('a/b').hostRef, isNull);
+    expect(MusicPlaySource.serverAlbum(jf, '').hostRef, isNull);
+  });
+
   test('队列来源：playQueue 记住、onTrackStarted 时可读、换队列替换、stop 清掉', () async {
     MusicPlaySource? seen;
     engine.onTrackStarted = (MusicPlayItem i) => seen = engine.source;
@@ -310,6 +340,26 @@ void main() {
     expect(engine.current?.trackUid, 'a');
   });
 
+  test('试听片段：时长等媒体实际长度，不用整首的元数据时长（反馈 okvRZINcQU）', () async {
+    await engine.playQueue(<MusicPlayItem>[
+      const MusicPlayItem(
+        trackUid: 'p',
+        path: 'https://audio.example/p.m4a',
+        title: 'p',
+        durationMs: 200000,
+        isPreview: true,
+      ),
+    ]);
+    expect(engine.duration, isNull, reason: '整首 200 秒不是这条约 30 秒的流的长度');
+    backend.controller.add(
+      const MusicBackendPosition(Duration(seconds: 1), Duration(seconds: 30)),
+    );
+    await Future<void>.delayed(Duration.zero);
+    expect(engine.duration, const Duration(seconds: 30));
+    await engine.seek(const Duration(seconds: 90));
+    expect(backend.log.last, 'seek:30000', reason: '拖不出片段末尾');
+  });
+
   test('seek 夹在 [0, 时长]；stop 释放后端', () async {
     await engine.playQueue(<MusicPlayItem>[_item('a', durationMs: 1000)]);
     await engine.seekRelative(const Duration(seconds: -5));
@@ -405,6 +455,8 @@ void main() {
     expect(off['prefetch-playlist'], 'no');
     // ReplayGain 恒由后端按曲目用 volume-gain 施加，mpv 自己的 replaygain 关掉。
     expect(off['replaygain'], 'no');
+    // mpv 默认只准 +12 dB 的 volume-gain，轻录音要的 +14 dB 会被整个拒掉：上限放开。
+    expect(off['volume-gain-max'], '150');
   });
 
   test('输出偏好（预放大 / 独占 / 设备 / DSD / 速度 / 音量）经引擎下发给后端', () async {

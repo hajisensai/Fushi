@@ -12,6 +12,8 @@ class MangaOcrBackgroundJob {
     required this.events,
     this.focus,
     this.follower,
+    this.title,
+    this.resume,
   });
 
   final String bookKey;
@@ -26,6 +28,16 @@ class MangaOcrBackgroundJob {
   /// 任务之外的收尾步骤（目前只有大模型识别）；null = 没有。由注册表驱动，见
   /// [MangaOcrJobFollower]。
   final MangaOcrJobFollower? follower;
+
+  /// 任务显示名（卷名 / 「作品 章名」），OCR 任务管理页用；null = 调用方没给，
+  /// 管理页回落到书名 + 目录名。
+  final String? title;
+
+  /// 「暂停后继续」的重建口：返回一个**尚未订阅**的同目录新任务（只补缺页，
+  /// 逐页缓存里已识别的页直接复用）。底层事件流只能订阅一次，暂停（真停）之后
+  /// 原任务不能再跑，继续时必须重建。null = 这个任务不支持暂停，管理页只给取消。
+  /// 生产路径一律经 `mangaOcrBackgroundJob`（manga_ocr_job_stream.dart）构造。
+  final MangaOcrBackgroundJob Function()? resume;
 }
 
 /// 跟随步骤改好的一页：[pageIndex] 是该页在整卷结果里的序号。
@@ -58,6 +70,11 @@ abstract interface class MangaOcrJobFollower {
 
 /// 后台 OCR 的统一事件。支持增量引擎时 [pageIndex]/[page] 随进度事件返回，
 /// 阅读器可立即替换该页的透明文字层；不支持增量的执行器在最终事件一次性刷新。
+///
+/// [pageIndex] 是**执行器页表**里的页号（执行器按 `enumerateMangaPages` 枚举目录），
+/// 与书的 manga.json 页表不一定一一对应：目录里多一张不在页表里的图，两边页号就
+/// 错开。消费方要把结果挂到书的哪一页，按 [page] 的 url 算页身份
+/// （`mangaPageId`）去对，不得拿 [pageIndex] 当书的页号（反馈 -5BJ11GqOk）。
 class MangaOcrBackgroundEvent {
   const MangaOcrBackgroundEvent.progress({
     required this.pagesDone,

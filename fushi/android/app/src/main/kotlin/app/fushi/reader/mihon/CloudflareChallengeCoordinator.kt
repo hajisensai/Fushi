@@ -92,7 +92,7 @@ object CloudflareChallengeCoordinator {
                     staleClearance = primaryCookies.split(';').firstOrNull { it.trim().startsWith("cf_clearance=") }?.trim()
                     activity.startActivity(Intent(context, CloudflareChallengeActivity::class.java)
                         .putExtra("target", url.toString()).putExtra("userAgent", userAgent)
-                        .putExtra("proxy", proxy.toString()).putExtra("receiver", receiver)
+                        .putExtra("proxy", proxy.toString()).putExtra("receiver", receiver.forIpc())
                         .putExtra("staleClearance", staleClearance))
                 } catch (_: Exception) {
                     activeSession.set(false)

@@ -3,6 +3,8 @@ import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';
+import 'package:flutter/gestures.dart'
+    show PointerDeviceKind, kSecondaryMouseButton;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -11,6 +13,8 @@ import 'package:fushi/src/media/music/music_resume.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
+import 'package:fushi/src/pages/implementations/media_library_shell.dart'
+    show LibrarySectionGroup;
 import 'package:fushi/src/pages/implementations/music/music_library_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_now_playing_bar.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_list.dart';
@@ -18,6 +22,9 @@ import 'package:fushi/src/pages/implementations/music/music_subtitle_actions.dar
 import 'package:fushi/src/pages/implementations/music/music_unified_search.dart'
     show kMusicSearchDebounce;
 import 'package:fushi/src/models/audio_controller.dart';
+import 'package:fushi/src/second_screen/companion/companion_context.dart';
+import 'package:fushi/src/second_screen/companion/companion_protocol.dart';
+import 'package:fushi/src/second_screen/companion/modules/library_companion_schema.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart'
     show FushiIconButton;
 import 'package:fushi_core/fushi_core.dart';
@@ -25,12 +32,10 @@ import 'package:fushi_music/fushi_music.dart' show MusicPluginManager;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/components/fushi_search.dart'
     show FushiSearchBar;
-
-import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
-    show FushiFloatingTopBar;
 import 'package:fushi/src/pages/implementations/music/music_cover.dart'
     show MusicCover;
 
+import '../helpers/cover_block_title_finder.dart';
 import '../helpers/test_platform_services.dart';
 
 MusicTracksCompanion _track(
@@ -127,6 +132,59 @@ MusicPluginManager _noPlugins() => MusicPluginManager(
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
+  test('装了推荐插件也不把默认分区抢成推荐；推荐来源没了才回曲库', () {
+    expect(
+      musicLibrarySectionAfterSourcesChanged(
+        current: MusicLibrarySection.albums,
+        lastLibrary: MusicLibrarySection.albums,
+        hasRecommend: true,
+      ),
+      MusicLibrarySection.albums,
+    );
+    expect(
+      musicLibrarySectionAfterSourcesChanged(
+        current: MusicLibrarySection.recommend,
+        lastLibrary: MusicLibrarySection.songs,
+        hasRecommend: true,
+      ),
+      MusicLibrarySection.recommend,
+    );
+    expect(
+      musicLibrarySectionAfterSourcesChanged(
+        current: MusicLibrarySection.recommend,
+        lastLibrary: MusicLibrarySection.songs,
+        hasRecommend: false,
+      ),
+      MusicLibrarySection.songs,
+    );
+  });
+
+  test('「在线」组：推荐按需、来源恒在、插件看本机能否跑插件；三者都归在线组', () {
+    expect(
+      musicOnlineSections(hasRecommend: false, pluginsAvailable: false),
+      <MusicLibrarySection>[MusicLibrarySection.sources],
+    );
+    expect(
+      musicOnlineSections(hasRecommend: true, pluginsAvailable: true),
+      <MusicLibrarySection>[
+        MusicLibrarySection.recommend,
+        MusicLibrarySection.sources,
+        MusicLibrarySection.plugins,
+      ],
+    );
+    for (final MusicLibrarySection s in <MusicLibrarySection>[
+      MusicLibrarySection.recommend,
+      MusicLibrarySection.sources,
+      MusicLibrarySection.plugins,
+    ]) {
+      expect(musicLibrarySectionGroupOf(s), LibrarySectionGroup.online);
+    }
+    expect(
+      musicLibrarySectionGroupOf(MusicLibrarySection.albums),
+      LibrarySectionGroup.library,
+    );
+  });
+
   testWidgets('五个分区；专辑网格 → 歌曲 → 作品空态', (WidgetTester tester) async {
     // 顶栏与其它库页同一套浮动 chrome：动作组至少占半行，窄窗时页签在胶囊里
     // 横滑。给一个桌面宽度，五个页签都在可视区内直接点。
@@ -135,18 +193,23 @@ void main() {
     addTearDown(tester.view.reset);
     final FushiDatabase db = await _seed();
     addTearDown(db.close);
+    // 「在线 › 来源」读音源顺序与开关的偏好：与真机一样，音乐页出现时偏好已就绪。
+    final PreferencesRepository prefs = PreferencesRepository(db);
+    await tester.runAsync(prefs.loadFromDb);
     final AppModel app = AppModel(testPlatformServices())
       ..wireDatabaseForTesting(db)
+      ..wirePreferencesForTesting(prefs)
       ..wireMusicPluginManagerForTesting(_noPlugins());
     await _pump(tester, app, const MusicLibraryPage());
 
-    // 推荐页签只在装了带 `home` 能力的插件时出现，这里没有插件。
+    // 曲库组的五个分区都在二级页签里（在线组的推荐 / 来源 / 插件不在这一行）。
     for (final MusicLibrarySection s in MusicLibrarySection.values.where(
-      (MusicLibrarySection s) => s != MusicLibrarySection.recommend,
+      (MusicLibrarySection s) =>
+          musicLibrarySectionGroupOf(s) == LibrarySectionGroup.library,
     )) {
       expect(find.text(musicLibrarySectionLabel(s)), findsWidgets);
     }
-    expect(find.text('Night Album'), findsOneWidget);
+    expect(findCoverBlockTitle('Night Album'), findsOneWidget);
     expect(find.textContaining('FLAC 24/96'), findsOneWidget);
 
     await tester.tap(find.text(t.music_section_songs));
@@ -163,10 +226,15 @@ void main() {
     await tester.pumpAndSettle();
     expect(find.text('Singer'), findsOneWidget);
 
-    // 没有推荐时一级只剩「曲库」一组：不画一级页签（分区全在二级胶囊里）。
-    expect(find.text(t.music_library_tab), findsNothing);
-    // 加文件夹 / 管理文件夹 / 加光盘不再占顶栏动作位，收在工具栏右端导入钮的
-    // 菜单里（2026-10-30 库页两级页签）。
+    // 一级恒为「曲库 / 在线」两组（与书 / 漫画 / 视频库壳同一分法）：没有推荐时在线组
+    // 仍有「来源」（拍板台 4GBgF6TrNr：来源 / 插件并进在线，不再藏在「⋯」里）。
+    expect(find.text(t.music_library_tab), findsWidgets);
+    expect(
+      find.byKey(const ValueKey<String>('music-library-online-tab')),
+      findsOneWidget,
+    );
+    // 加文件夹 / 管理文件夹 / 加光盘不占顶栏动作位：入库动作都在工具栏右端导入钮
+    // 切出的「导入」视图里（IM12，2026-11 导入稿 v2）。
     for (final String key in <String>[
       'music_add_folder',
       'music_manage_sources',
@@ -174,11 +242,168 @@ void main() {
     ]) {
       expect(find.byKey(ValueKey<String>(key)), findsNothing);
     }
-    final FushiIconButton importButton = tester.widget(
-      find.byKey(const ValueKey<String>('music-library-view-import')),
+    final Finder importFinder = find.byKey(
+      const ValueKey<String>('music-library-view-import'),
     );
+    FushiIconButton importButton = tester.widget(importFinder);
     expect(importButton.tooltip, t.library_view_import);
-    expect(importButton.selected, isFalse, reason: '音乐没有导入页，导入钮恒不选中、点开是菜单');
+    expect(importButton.selected, isFalse);
+    await importButton.onTap!();
+    await tester.pumpAndSettle();
+    importButton = tester.widget(importFinder);
+    expect(importButton.selected, isTrue, reason: '导入钮切视图，选中态跟着视图');
+    expect(
+      find.byKey(const ValueKey<String>('music-import-view')),
+      findsOneWidget,
+    );
+    // 原菜单里的动作全部成了方式块（音频 CD 只在桌面三端，宿主测试机是桌面），
+    // 外加新入口「网络共享」；常驻来源区（互联块 + 添加来源）搬进本页。
+    for (final String id in <String>[
+      'music-add-folder',
+      'music-add-audio-files',
+      'music-add-disc',
+      'music-read-cd',
+      'music-network',
+    ]) {
+      expect(
+        find.byKey(ValueKey<String>('import-method-$id')),
+        findsOneWidget,
+        reason: id,
+      );
+    }
+    expect(find.text(t.media_source_section_title), findsOneWidget);
+    // 再点一次回到曲库分区。
+    await importButton.onTap!();
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(const ValueKey<String>('music-import-view')),
+      findsNothing,
+    );
+    expect(find.text('Singer'), findsOneWidget);
+
+    // 本地曲库维护（重扫 / 已移除的曲目）是页面「⋯」的项：页头统一收纳判据下宽窗
+    // 放得下就平铺成独立图标钮（同一个 key、文案进 tooltip），一项都没收时「⋯」
+    // 不出现；「来源」不在其中（拍板台 4GBgF6TrNr）。
+    expect(find.byKey(const ValueKey<String>('music_sources')), findsNothing);
+    final FushiIconButton rescan = tester.widget(
+      find.byKey(const ValueKey<String>('music_rescan')),
+    );
+    expect(rescan.tooltip, t.music_library_rescan);
+    final FushiIconButton hidden = tester.widget(
+      find.byKey(const ValueKey<String>('music_hidden_tracks')),
+    );
+    expect(hidden.tooltip, t.music_hidden_tracks_title);
+    expect(
+      find.byKey(const ValueKey<String>('music-library-more')),
+      findsNothing,
+    );
+
+    // 点「在线」组：没有推荐时落在「来源」（音源排序与开关 + 歌词来源），就地嵌在
+    // 音乐页里，不另推页面。
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music-library-online-tab')),
+    );
+    // 来源表读插件目录 / 偏好是真 IO：在真时钟里落地，再把帧推平。
+    for (int i = 0; i < 3; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pumpAndSettle();
+    }
+    expect(
+      find.byKey(const ValueKey<String>('music-online-sources-view')),
+      findsOneWidget,
+    );
+    expect(find.text(t.music_sources_add), findsOneWidget);
+    expect(find.text('Singer'), findsNothing);
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('「继续收听」只在曲库 / 推荐：切到「在线 › 来源」不在管理页上方钉播放卡', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 900);
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = await _seed();
+    addTearDown(db.close);
+    await tester.runAsync(
+      () => db.startMusicPlayEvent(trackUid: 't1', startedAt: 1),
+    );
+    final PreferencesRepository prefs = PreferencesRepository(db);
+    await tester.runAsync(prefs.loadFromDb);
+    final AppModel app = AppModel(testPlatformServices())
+      ..wireDatabaseForTesting(db)
+      ..wirePreferencesForTesting(prefs)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
+    await _pump(tester, app, const MusicLibraryPage());
+    expect(
+      find.byKey(const ValueKey<String>('music-continue-hero')),
+      findsOneWidget,
+      reason: '听过的曲目在曲库页上方给「继续收听」',
+    );
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music-library-online-tab')),
+    );
+    for (int i = 0; i < 3; i++) {
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 20)),
+      );
+      await tester.pumpAndSettle();
+    }
+    expect(
+      find.byKey(const ValueKey<String>('music-online-sources-view')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('music-continue-hero')),
+      findsNothing,
+    );
+
+    await tester.pumpWidget(const SizedBox.shrink());
+    await tester.pumpAndSettle();
+  });
+
+  testWidgets('专辑卡右键「从音乐库移除」：整张专辑写墓碑、从专辑墙消失，撤销放回（拍板台 mmXVwo0Ibv）', (
+    WidgetTester tester,
+  ) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 900);
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = await _seed();
+    addTearDown(db.close);
+    final AppModel app = AppModel(testPlatformServices())
+      ..wireDatabaseForTesting(db)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
+    await _pump(tester, app, const MusicLibraryPage());
+    expect(findCoverBlockTitle('Night Album'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('music-album-meta-al')),
+      buttons: kSecondaryMouseButton,
+      kind: PointerDeviceKind.mouse,
+    );
+    await tester.pumpAndSettle();
+    final Finder remove = find.text(t.music_action_remove_from_library);
+    expect(remove, findsOneWidget, reason: '普通专辑也有右键菜单');
+    await tester.tap(remove);
+    await tester.pumpAndSettle();
+    expect(await db.listMusicTracks(albumUid: 'al'), isEmpty);
+    expect((await db.getMusicTrack('t1'))!.hiddenAt, isNotNull);
+    expect((await db.getMusicTrack('t2'))!.hiddenAt, isNotNull);
+    expect(findCoverBlockTitle('Night Album'), findsNothing);
+    expect(
+      find.text(t.music_album_removed_from_library(title: 'Night Album')),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byKey(const ValueKey<String>('music-undo-action')));
+    await tester.pumpAndSettle();
+    expect((await db.listMusicTracks(albumUid: 'al')).length, 2);
+    expect(findCoverBlockTitle('Night Album'), findsOneWidget);
 
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
@@ -272,7 +497,7 @@ void main() {
       await tester.pumpAndSettle();
       expect(field, findsNothing);
       expect(open, findsOneWidget);
-      expect(find.text('Night Album'), findsOneWidget);
+      expect(findCoverBlockTitle('Night Album'), findsOneWidget);
       expect(find.byType(FushiSearchBar), findsNothing);
 
       await tester.pumpWidget(const SizedBox.shrink());
@@ -280,7 +505,7 @@ void main() {
     });
   }
 
-  testWidgets('空曲库显示添加文件夹入口', (WidgetTester tester) async {
+  testWidgets('空曲库显示「去导入」入口', (WidgetTester tester) async {
     final FushiDatabase db = FushiDatabase.forTesting(NativeDatabase.memory());
     addTearDown(db.close);
     final AppModel app = AppModel(testPlatformServices())
@@ -288,10 +513,12 @@ void main() {
       ..wireMusicPluginManagerForTesting(_noPlugins());
     await _pump(tester, app, const MusicLibraryPage());
     expect(find.text(t.music_library_empty), findsOneWidget);
+    // IM20：空曲库与书 / 视频 / 游戏同一个「去导入」。
     expect(
-      find.byKey(const ValueKey<String>('music_empty_add_folder')),
+      find.byKey(const ValueKey<String>('music_empty_go_import')),
       findsOneWidget,
     );
+    expect(find.text(t.library_empty_go_import), findsOneWidget);
     await tester.pumpWidget(const SizedBox.shrink());
     await tester.pumpAndSettle();
   });
@@ -377,6 +604,11 @@ void main() {
   });
 
   testWidgets('专辑页：碟片分组 + 格式徽章 + Hi-Res', (WidgetTester tester) async {
+    // 逐碟曲目是色块（W 原型双格比例），默认 800×600 视口里第二碟标题在懒加载
+    // 列表视口外、不会被建出来；给一个能放下两碟的桌面视口。
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 1600);
+    addTearDown(tester.view.reset);
     final FushiDatabase db = await _seed();
     addTearDown(db.close);
     final AppModel app = AppModel(testPlatformServices())
@@ -400,6 +632,10 @@ void main() {
   testWidgets('专辑页逐碟曲目：有会被续播的断点的轨显示剩余时间 + 进度条，跟着断点改动与设置切档', (
     WidgetTester tester,
   ) async {
+    // 专辑页 hero（海报块）比旧头部高：800×600 下第二碟落在首屏以下（懒构建）。
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1200, 1600);
+    addTearDown(tester.view.reset);
     final FushiDatabase db = await _seed();
     addTearDown(db.close);
     await db.upsertMusicResumePoint('t2', positionMs: 60000, updatedAt: 1);
@@ -493,7 +729,11 @@ void main() {
       app,
       MusicAlbumPage(album: album, tracks: snap.tracksOfAlbum(album.albumUid)),
     );
-    final Rect bar = tester.getRect(find.byType(FushiFloatingTopBar));
+    // 页头大字外壳（PR #3397）：页头动作（曲目视图切换）浮在页面顶部一行，
+    // hero 封面必须排在这行之下、不被它盖住。
+    final Rect bar = tester.getRect(
+      find.byKey(const ValueKey<String>('music-view-style-toggle-tracks')),
+    );
     final Rect cover = tester.getRect(find.byType(MusicCover).first);
     expect(bar.height, greaterThan(0));
     expect(
@@ -538,5 +778,44 @@ void main() {
       ),
       isFalse,
     );
+  });
+
+  testWidgets('companion Main mode: claims the music library and publishes '
+      'the focused album', (WidgetTester tester) async {
+    tester.view.devicePixelRatio = 1;
+    tester.view.physicalSize = const Size(1400, 900);
+    addTearDown(tester.view.reset);
+    final FushiDatabase db = await _seed();
+    addTearDown(db.close);
+    final AppModel app = AppModel(testPlatformServices())
+      ..wireDatabaseForTesting(db)
+      ..wireMusicPluginManagerForTesting(_noPlugins());
+    await _pump(tester, app, const MusicLibraryPage());
+    expect(companionContexts.current.library, CompanionLibraryKind.music);
+    expect(companionContexts.currentOwner, isNotNull);
+
+    companionContexts.setActive(true);
+    addTearDown(() => companionContexts.setActive(false));
+    await tester.pump();
+    CompanionLibraryMainSnapshot snap = CompanionLibraryMainSnapshot.fromJson(
+      companionContexts.currentSnapshot!,
+    );
+    expect(snap.highlighted, isNull);
+    expect(snap.searchable, isFalse);
+    expect(snap.sorts, isEmpty);
+
+    Focus.of(tester.element(findCoverBlockTitle('Night Album'))).requestFocus();
+    await tester.pump();
+    snap = CompanionLibraryMainSnapshot.fromJson(
+      companionContexts.currentSnapshot!,
+    );
+    expect(snap.highlighted?.ref, CompanionLibraryRef.musicAlbum('al'));
+    expect(snap.highlighted?.title, 'Night Album');
+    expect(snap.highlighted?.subtitle, 'Singer');
+    expect(snap.highlighted?.count, 2);
+
+    companionContexts.setActive(false);
+    await tester.pumpWidget(const SizedBox());
+    expect(companionContexts.currentOwner, isNull);
   });
 }

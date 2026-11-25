@@ -43,12 +43,21 @@ List<CtlRoute> buildLibraryOrganizeCtlRoutesFor({
         throw const CtlFailure.rejected('数据已迁移到新版，旧版处于只读状态');
       }
       final PreferencesRepository p = prefs();
-      if (resolveLibraryOrganizeAiProvider(p) == null) {
+      // AI 库管家（spec 2026-11-18 §3）经这条路由跑 ①②：`rulesOnly` = 只跑不花钱
+      // 的规则那一步（没指派提供商 / 碰到单趟请求上限），不发 AI 请求，也就不需要
+      // 「会发送什么」的同意；`trigger=auto` = 自动路径门槛（只落高置信）；
+      // `entryKeys` = 只看这些条目（增量水位之后的新条目）。
+      final bool rulesOnly = call.optBool('rulesOnly') == true;
+      final OrganizeTrigger trigger = call.optString('trigger') == 'auto'
+          ? OrganizeTrigger.auto
+          : OrganizeTrigger.manual;
+      final List<String> entryKeys = call.stringList('entryKeys');
+      if (!rulesOnly && resolveLibraryOrganizeAiProvider(p) == null) {
         throw const CtlFailure.rejected(
           '没有给「AI 整理库」指派提供商（或 AI 模块已关闭）：先在 设置 › 模型 › LLM 里指派',
         );
       }
-      if (!p.libraryOrganizeConsented) {
+      if (!rulesOnly && !p.libraryOrganizeConsented) {
         if (call.optBool('yes') != true) {
           throw const CtlFailure.rejected(
             '会把标题、作者或品牌、年份和视频文件夹名发给 AI 提供商（可能计费）；'
@@ -64,15 +73,21 @@ List<CtlRoute> buildLibraryOrganizeCtlRoutesFor({
             settings: p,
             nameLanguage: nameLanguage(),
             videoTagPrefix: t.library_organize_series_tag_prefix,
+            allowedRejectedKeys: () => p.libraryOrganizeAllowedKeys,
           );
       final LibraryOrganizeResult r = await service.run(
         domain,
-        trigger: OrganizeTrigger.manual,
+        trigger: trigger,
+        onlyEntryKeys: call.body.containsKey('entryKeys')
+            ? entryKeys.toSet()
+            : null,
+        rulesOnly: rulesOnly,
       );
       return <String, Object?>{
         'status': r.status.name,
         'runId': r.runId,
         'changes': r.changes,
+        'proposals': r.proposals,
         'requests': r.requests,
         if (r.error != null) 'error': r.error,
       };
@@ -124,7 +139,92 @@ List<CtlRoute> buildLibraryOrganizeCtlRoutesFor({
         'undone': await undoLibraryOrganizeRun(database(), id),
       };
     }),
+    // 待确认的合集级建议（AI 库管家设计稿 §8：用户合集的合并 / 改名 / 移出成员；
+    // 用户 2026-11-24 拍板：动用户合集一律等用户同意 / 这次不 / 永远不）。
+    CtlRoute.get('$kLibraryOrganizeCtlRoot/proposals', (CtlCall call) async {
+      return <String, Object?>{
+        'proposals': <Object?>[
+          for (final LibraryOrganizeProposalView p
+              in await loadLibraryOrganizeProposals(
+                database(),
+                pendingOnly: call.optBool('all') != true,
+              ))
+            p.toJson(),
+        ],
+      };
+    }),
+    CtlRoute.post(
+      '$kLibraryOrganizeCtlRoot/proposals/:id/accept',
+      (CtlCall call) => _resolveProposal(
+        call,
+        database,
+        isReadonly,
+        OrganizeProposalDecision.accept,
+      ),
+    ),
+    // 「这次不」：设备本地暂缓 [kOrganizeProposalDeferDuration]。
+    CtlRoute.post(
+      '$kLibraryOrganizeCtlRoot/proposals/:id/defer',
+      (CtlCall call) => _resolveProposal(
+        call,
+        database,
+        isReadonly,
+        OrganizeProposalDecision.defer,
+      ),
+    ),
+    // 「永远不」（路径沿用 reject）：记为拒绝并钉住相关成员。
+    CtlRoute.post(
+      '$kLibraryOrganizeCtlRoot/proposals/:id/reject',
+      (CtlCall call) => _resolveProposal(
+        call,
+        database,
+        isReadonly,
+        OrganizeProposalDecision.rejectForever,
+      ),
+    ),
+    // 撤销一条已接受的建议，建议回到等确认。
+    CtlRoute.post('$kLibraryOrganizeCtlRoot/proposals/:id/undo', (
+      CtlCall call,
+    ) async {
+      final int id = _proposalId(call, isReadonly);
+      if (!await undoLibraryOrganizeProposal(database(), id)) {
+        throw const CtlFailure.notFound('没有这条已接受、还能撤销的建议');
+      }
+      return <String, Object?>{
+        'id': id,
+        'state': OrganizeProposalState.pending.name,
+      };
+    }),
   ];
+}
+
+int _proposalId(CtlCall call, bool Function()? isReadonly) {
+  final int? id = int.tryParse(call.params['id'] ?? '');
+  if (id == null || id <= 0) {
+    throw const CtlFailure.badRequest('建议 id 必须是正整数');
+  }
+  if (isReadonly?.call() ?? false) {
+    throw const CtlFailure.rejected('数据已迁移到新版，旧版处于只读状态');
+  }
+  return id;
+}
+
+Future<Map<String, Object?>> _resolveProposal(
+  CtlCall call,
+  FushiDatabase Function() database,
+  bool Function()? isReadonly,
+  OrganizeProposalDecision decision,
+) async {
+  final int id = _proposalId(call, isReadonly);
+  final OrganizeProposalState? state = await resolveLibraryOrganizeProposal(
+    database(),
+    id,
+    decision: decision,
+  );
+  if (state == null) {
+    throw const CtlFailure.notFound('没有这条待确认建议（或已处理过）');
+  }
+  return <String, Object?>{'id': id, 'state': state.name};
 }
 
 CollectionShelfDomain _domain(String raw) {

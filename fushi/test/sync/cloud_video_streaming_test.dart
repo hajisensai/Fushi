@@ -722,11 +722,11 @@ void main() {
       );
     });
 
-    test('WebDAV 等整文件后端不给流播视图', () {
+    test('FTP 等整文件后端（不实现区间读）不给流播视图', () {
       expect(
         CloudRemoteVideoClient(
           backend: FakeAssetStore(),
-          backendType: SyncBackendType.webDav,
+          backendType: SyncBackendType.ftp,
         ).streamingClient(),
         isNull,
       );

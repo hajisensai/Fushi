@@ -11,6 +11,17 @@
 // 纯 WRL/ABI（runner 以 _HAS_EXCEPTIONS=0 编译，不能用 C++/WinRT 投影），全程 HRESULT。
 namespace fushi {
 
+// 行里的一个 OcrWord：在行文本里的位置（UTF-16 码元，与 Dart String 下标同口径）+
+// 词框。点字时按它定位被点的字（BUG-4367），不再按字数等分整行。
+struct SystemOcrWord {
+  int start = 0;
+  int length = 0;
+  double left = 0;
+  double top = 0;
+  double right = 0;
+  double bottom = 0;
+};
+
 struct SystemOcrLine {
   std::string text;  // UTF-8
   // 送检图的像素坐标（左上原点）。
@@ -18,6 +29,8 @@ struct SystemOcrLine {
   double top = 0;
   double right = 0;
   double bottom = 0;
+  // 有框的词（同一坐标系），按行内顺序。
+  std::vector<SystemOcrWord> words;
 };
 
 struct SystemOcrResult {
@@ -29,15 +42,30 @@ struct SystemOcrResult {
   // 解码后原图的像素尺寸（坐标的分母）。
   int width = 0;
   int height = 0;
+  // 实际送进 OcrEngine 的位图尺寸（超过 MaxImageDimension 时被等比缩小）与当时的上限：
+  // 只进诊断日志，用来分清「识别不出」是不是缩图把字缩没了（BUG-4367）。
+  int recognized_width = 0;
+  int recognized_height = 0;
+  int max_image_dimension = 0;
   std::vector<SystemOcrLine> lines;
 };
 
 // 本机是否有任何可用的识别语言。便宜（只枚举，不识别），可在平台线程调用。
 bool SystemOcrIsAvailable();
 
-// 识别一张 PNG / JPEG。阻塞，**只在工作线程调用**（自己 RoInitialize MTA）。
+// 送检图：编码字节（PNG / JPEG…，WIC 解码），或一整块不透明 RGBA 像素（视频暂停 OCR
+// 的播放器截帧，Dart 侧 `recognizePixels`；不经编码 / 解码）。二者取其一：|rgba| 非空
+// 时用像素，|width| × |height| × 4 必须等于它的长度。
+struct SystemOcrImage {
+  std::vector<uint8_t> bytes;
+  std::vector<uint8_t> rgba;
+  uint32_t width = 0;
+  uint32_t height = 0;
+};
+
+// 识别一张图。阻塞，**只在工作线程调用**（自己 RoInitialize MTA）。
 // |language| 是 BCP-47 主标签（`ja` / `en` / `zh`…）。
-SystemOcrResult RecognizeImageText(const std::vector<uint8_t>& image_bytes,
+SystemOcrResult RecognizeImageText(const SystemOcrImage& image,
                                    const std::string& language);
 
 }  // namespace fushi

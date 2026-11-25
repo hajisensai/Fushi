@@ -14,6 +14,7 @@ import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi/src/webview/webview_death_guard.dart';
 
+import 'package:fushi/src/anki/anki_video_template_error_text.dart';
 import 'package:fushi/src/anki/anki_video_template_service.dart';
 
 /// Explicitly opt in to modifying the selected note type, with reversible backup.
@@ -109,7 +110,9 @@ class _AnkiVideoTemplatePageState extends State<AnkiVideoTemplatePage> {
         _autoplay = saved?.autoplay ?? true;
       });
     } catch (error) {
-      if (mounted) setState(() => _error = error.toString());
+      if (mounted) {
+        setState(() => _error = describeAnkiVideoTemplateError(error));
+      }
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -147,7 +150,7 @@ class _AnkiVideoTemplatePageState extends State<AnkiVideoTemplatePage> {
     } catch (error) {
       if (mounted) {
         setState(() {
-          _error = error.toString();
+          _error = describeAnkiVideoTemplateError(error);
           _busy = false;
         });
       }
@@ -165,7 +168,7 @@ class _AnkiVideoTemplatePageState extends State<AnkiVideoTemplatePage> {
         _error = null;
       });
     } catch (error) {
-      setState(() => _error = error.toString());
+      setState(() => _error = describeAnkiVideoTemplateError(error));
     }
   }
 

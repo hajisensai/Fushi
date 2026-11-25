@@ -113,6 +113,7 @@ void main() {
           <String>['status']: ('GET', '/api/admin/status'),
           <String>['logs']: ('GET', '/api/admin/logs'),
           <String>['pairing']: ('GET', '/api/admin/pairing'),
+          <String>['pairing', 'link']: ('POST', '/api/admin/pairing/link'),
           <String>['pairing', 'revoke', 'peer 1']: (
             'DELETE',
             '/api/admin/pairing/peers/peer%201',
@@ -326,6 +327,126 @@ void main() {
       expect(await ctl(<String>['anki', 'landing', 'maybe']), 64);
     });
 
+    test('srs：状态 / 选 profile / 同步 / AnkiConnect', () async {
+      const String uid = '01928c3e-0000-7000-8000-00000000a0a0';
+      await ctl(<String>['srs']);
+      await ctl(<String>['srs', 'profiles']);
+      await ctl(<String>['srs', 'add', uid]);
+      await ctl(<String>['srs', 'remove', uid]);
+      await ctl(<String>['srs', 'default', uid]);
+      await ctl(<String>['srs', 'off']);
+      await ctl(<String>['srs', 'sync']);
+      await ctl(<String>['srs', 'sync', uid]);
+      await ctl(<String>['srs', 'ankiconnect', 'on']);
+      await ctl(<String>['srs', 'config', '{"rolloverHour":5}']);
+      expect(
+        admin.seen.map((_Seen s) => '${s.method} ${s.path}').toList(),
+        <String>[
+          'GET /api/admin/srs',
+          'GET /api/admin/srs/profiles',
+          'PUT /api/admin/srs',
+          'PUT /api/admin/srs',
+          'PUT /api/admin/srs',
+          'PUT /api/admin/srs',
+          'POST /api/admin/srs/sync',
+          'POST /api/admin/srs/sync',
+          'PUT /api/admin/srs',
+          'PUT /api/admin/srs',
+        ],
+      );
+      expect(admin.seen.skip(2).map((_Seen s) => s.body).toList(), <Object?>[
+        <String, Object?>{
+          'addProfiles': <Object?>[uid],
+        },
+        <String, Object?>{
+          'removeProfiles': <Object?>[uid],
+        },
+        <String, Object?>{'defaultProfile': uid},
+        <String, Object?>{'profiles': <Object?>[]},
+        <String, Object?>{},
+        <String, Object?>{'profile': uid},
+        <String, Object?>{
+          'ankiConnect': <String, Object?>{'enabled': true},
+        },
+        <String, Object?>{'rolloverHour': 5},
+      ]);
+      expect(await ctl(<String>['srs', 'add']), 64);
+      expect(await ctl(<String>['srs', 'ankiconnect', 'maybe']), 64);
+    });
+
+    test('srs：列出 / 信任 / 拒绝待确认的复习同步设备', () async {
+      const String uid = '01928c3e-0000-7000-8000-00000000a0a0';
+      const String dev = '01928c3e-0000-7000-8000-00000000d0d0';
+      await ctl(<String>['srs', 'devices']);
+      await ctl(<String>['srs', 'devices', uid]);
+      await ctl(<String>['srs', 'trust', dev]);
+      await ctl(<String>['srs', 'reject', dev, uid]);
+      expect(
+        admin.seen.map((_Seen s) => '${s.method} ${s.path}').toList(),
+        <String>[
+          'GET /api/admin/srs/devices',
+          'GET /api/admin/srs/devices',
+          'POST /api/admin/srs/devices/trust',
+          'POST /api/admin/srs/devices/trust',
+        ],
+      );
+      expect(admin.seen[0].query, isEmpty);
+      expect(admin.seen[1].query, <String, String>{'profile': uid});
+      expect(admin.seen.skip(2).map((_Seen s) => s.body).toList(), <Object?>[
+        <String, Object?>{'device': dev, 'trust': true},
+        <String, Object?>{'device': dev, 'trust': false, 'profile': uid},
+      ]);
+      expect(await ctl(<String>['srs', 'trust']), 64);
+      expect(await ctl(<String>['srs', 'reject']), 64);
+    });
+
+    test('srs migration：状态 / 开始 / 叫停（G10-3）', () async {
+      await ctl(<String>['srs', 'migration']);
+      await ctl(<String>['srs', 'migration', 'status']);
+      await ctl(<String>['srs', 'migration', 'start']);
+      await ctl(<String>['srs', 'migration', 'cancel']);
+      expect(
+        admin.seen.map((_Seen s) => '${s.method} ${s.path}').toList(),
+        <String>[
+          'GET /api/admin/srs/migration',
+          'GET /api/admin/srs/migration',
+          'POST /api/admin/srs/migration/start',
+          'POST /api/admin/srs/migration/cancel',
+        ],
+      );
+      expect(await ctl(<String>['srs', 'migration', 'nope']), 64);
+    });
+
+    test('srs retained：状态 / 删除要 --yes 才发、带 confirm（第六波服务端收尾）', () async {
+      admin.nextBody = const <String, Object?>{
+        'copy': 'sealed',
+        'bytes': 4096,
+        'dueAtMs': null,
+        'error': null,
+      };
+      expect(await ctl(<String>['srs', 'retained']), 0);
+      expect(await ctl(<String>['srs', 'retained', 'status']), 0);
+      expect('$out', contains('4096'));
+      // 没有 --yes：用法错误，不发请求。
+      expect(await ctl(<String>['srs', 'retained', 'delete']), 64);
+      expect(await ctl(<String>['srs', 'retained', 'nope']), 64);
+      admin.nextBody = const <String, Object?>{
+        'deleted': true,
+        'freedBytes': 4096,
+        'reason': null,
+      };
+      expect(await ctl(<String>['srs', 'retained', 'delete', '--yes']), 0);
+      expect(
+        admin.seen.map((_Seen s) => '${s.method} ${s.path}').toList(),
+        <String>[
+          'GET /api/admin/srs/retained',
+          'GET /api/admin/srs/retained',
+          'POST /api/admin/srs/retained/delete',
+        ],
+      );
+      expect(admin.seen.last.body, <String, Object?>{'confirm': true});
+    });
+
     test('未知动作 / 空动作 = 用法错误，不发请求', () async {
       expect(await ctl(<String>[]), 64);
       expect(await ctl(<String>['nope']), 64);
@@ -396,7 +517,7 @@ void main() {
     test('连不上 → 69', () async {
       await admin.close();
       expect(await ctl(<String>['status']), 69);
-      expect(err.toString(), contains('连不上'));
+      expect(err.toString(), contains('Cannot connect to'));
     });
   });
 
@@ -452,7 +573,7 @@ void main() {
           isA<AdminApiException>().having(
             (AdminApiException e) => e.message,
             'message',
-            contains('TLS 证书'),
+            contains('TLS certificate'),
           ),
         ),
       );
@@ -726,8 +847,129 @@ void main() {
         64,
       );
       expect(await ctl(<String>['jobs', 'submit', 'video_subtitle']), 64);
+      // --episode 只跟 --video-id 一起、必须是非负整数：本地就拒。
+      expect(
+        await ctl(<String>[
+          'jobs',
+          'submit',
+          'video_subtitle',
+          '--collection-id',
+          '3',
+          '--episode',
+          '1',
+        ]),
+        64,
+      );
+      expect(
+        await ctl(<String>[
+          'jobs',
+          'submit',
+          'video_subtitle',
+          '--video-id',
+          'v1',
+          '--episode=-1',
+        ]),
+        64,
+      );
       expect(admin.seen, isEmpty);
     });
+
+    test('video_subtitle：--episode 映射成任务参数 episode（播放列表第 N 集）', () async {
+      admin.nextBody = <String, Object?>{'jobId': 'j9', 'state': 'pending'};
+      expect(
+        await ctl(<String>[
+          'jobs',
+          'submit',
+          'video_subtitle',
+          '--video-id',
+          'v1',
+          '--episode',
+          '2',
+        ]),
+        0,
+        reason: '$err',
+      );
+      final Map<String, Object?> params =
+          (admin.seen.first.body! as Map<String, Object?>)['params']!
+              as Map<String, Object?>;
+      expect(params['videoId'], 'v1');
+      expect(params['episode'], '2');
+    });
+
+    test(
+      'video_subtitle：--disc-title / --audio-track 映射成任务参数 discTitle / audioTrack',
+      () async {
+        admin.nextBody = <String, Object?>{'jobId': 'j10', 'state': 'pending'};
+        expect(
+          await ctl(<String>[
+            'jobs',
+            'submit',
+            'video_subtitle',
+            '--video-id',
+            'disc-main',
+            '--disc-title',
+            'BDMV/PLAYLIST/00001.a2.mpls',
+            '--audio-track',
+            '1',
+          ]),
+          0,
+          reason: '$err',
+        );
+        final Map<String, Object?> params =
+            (admin.seen.first.body! as Map<String, Object?>)['params']!
+                as Map<String, Object?>;
+        expect(params['videoId'], 'disc-main');
+        expect(params['discTitle'], 'BDMV/PLAYLIST/00001.a2.mpls');
+        expect(params['audioTrack'], '1');
+        expect(params.containsKey('episode'), isFalse);
+        admin.seen.clear();
+        // 音轨与集可组合。
+        admin.nextBody = <String, Object?>{'jobId': 'j11', 'state': 'pending'};
+        expect(
+          await ctl(<String>[
+            'jobs',
+            'submit',
+            'video_subtitle',
+            '--video-id',
+            'v1',
+            '--episode',
+            '2',
+            '--audio-track',
+            '0',
+          ]),
+          0,
+          reason: '$err',
+        );
+        final Map<String, Object?> combined =
+            (admin.seen.first.body! as Map<String, Object?>)['params']!
+                as Map<String, Object?>;
+        expect((combined['episode'], combined['audioTrack']), ('2', '0'));
+        admin.seen.clear();
+        // 不合法的组合本地就 64、不发请求：--disc-title / --audio-track 只跟 --video-id，
+        // --disc-title 不与 --episode 同给，--audio-track 是非负整数。
+        for (final List<String> bad in <List<String>>[
+          <String>['--disc-title', 'BDMV/PLAYLIST/00005.mpls'],
+          <String>['--collection-id', '3', '--audio-track', '1'],
+          <String>[
+            '--video-id',
+            'v1',
+            '--episode',
+            '1',
+            '--disc-title',
+            'BDMV/PLAYLIST/00005.mpls',
+          ],
+          <String>['--video-id', 'v1', '--audio-track=-1'],
+          <String>['--video-id', 'v1', '--audio-track', 'x'],
+        ]) {
+          expect(
+            await ctl(<String>['jobs', 'submit', 'video_subtitle', ...bad]),
+            64,
+            reason: '$bad',
+          );
+        }
+        expect(admin.seen, isEmpty);
+      },
+    );
 
     test('音频不存在 = 66', () async {
       expect(

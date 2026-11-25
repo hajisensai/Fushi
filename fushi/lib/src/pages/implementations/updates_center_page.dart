@@ -2,12 +2,16 @@ import 'dart:async' show unawaited;
 import 'dart:io' show File;
 
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_core/fushi_core.dart' show UpdateFeedEntryRow;
 
 import 'package:fushi/src/pages/fushi_page_placeholders.dart';
+import 'package:fushi/src/pages/shared/library_section_tabs.dart';
+import 'package:fushi/src/utils/components/library_section_tab.dart';
 import 'package:fushi_engine/updates/update_feed_kind.dart';
 import 'package:fushi/src/updates/update_feed_service.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -40,12 +44,22 @@ import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
 /// 而「打开合集 / 打开漫画作品页 / 打开扩展页 / 打开发布页」四条链路各自拖着一
 /// 整棵依赖树。
 class UpdatesCenterPage extends StatefulWidget {
-  const UpdatesCenterPage({super.key, required this.service, this.onOpenEntry});
+  const UpdatesCenterPage({
+    super.key,
+    required this.service,
+    this.onOpenEntry,
+    this.appReleaseHeader,
+  });
 
   final UpdateFeedService service;
 
   /// 打开一条更新。null = 只标已读不跳转。
   final Future<void> Function(UpdateFeedEntryRow entry)? onOpenEntry;
+
+  /// 「应用新版」域列表顶部的附加内容（debug 通道的调试版流水线面板）。与
+  /// [onOpenEntry] 同理由由外部注入：页面不认识流水线数据从哪来。有它时这个域
+  /// 没有条目也不显示空态。
+  final Widget? appReleaseHeader;
 
   @override
   State<UpdatesCenterPage> createState() => _UpdatesCenterPageState();
@@ -173,12 +187,21 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
   Widget build(BuildContext context) {
     // Apple：iOS / macOS 导航栏（返回 + 标题 + 右侧动作），域筛选是标题下方
     // 的分段控件——不再用 M3E 悬浮工具栏顶替导航栏。
+    // 重设计外壳（墨水屏除外）：页头大字——页名 + 平铺的三项动作，域筛选是页名
+    // 下一行（与库页二级页签同一组件，[_buildMastheadFilter]）。
+    final bool masthead = shellRedesignActive(context);
     final bool apple = isGlassDesign(context);
+    final bool split = masthead || apple;
     return FushiPageScaffold(
+      masthead: true,
       title: t.updates_center_title,
-      header: apple ? null : _buildTopBar(context),
-      actions: apple ? _buildAppleActions() : const <Widget>[],
-      headerBottom: apple ? _buildAppleFilter() : null,
+      header: split ? null : _buildTopBar(context),
+      actions: split ? _buildAppleActions() : const <Widget>[],
+      headerBottom: masthead
+          ? _buildMastheadFilter()
+          : apple
+          ? _buildAppleFilter()
+          : null,
       // Builder：正文要在页头脚手架之内取 MediaQuery 顶部让位（状态栏 + 浮动
       // 页头）。
       body: Builder(builder: _buildList),
@@ -211,6 +234,28 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
         onTap: () => unawaited(_clear()),
       ),
     ];
+  }
+
+  /// 页头大字的域筛选：页名下一行，与库页二级页签同一组件（[LibrarySectionTabs]
+  /// 在页头下方一行里画成连体按钮组，焦点 / 方向键切换 / Semantics 同库页）。
+  /// 默认域还没定（首轮加载前 [_filter] 为 null）时不画——页签必须有一个选中项。
+  Widget? _buildMastheadFilter() {
+    final UpdateFeedKind? filter = _filter;
+    if (filter == null) return null;
+    return LibrarySectionTabs<UpdateFeedKind>(
+      key: const ValueKey<String>('updates_filter_segments'),
+      tabs: <LibrarySectionTab<UpdateFeedKind>>[
+        for (final UpdateFeedKind kind in UpdateFeedKind.values)
+          LibrarySectionTab<UpdateFeedKind>(
+            value: kind,
+            label: updateFeedKindLabel(kind),
+            labelKey: ValueKey<String>('updates_filter_${kind.dbValue}'),
+          ),
+      ],
+      selected: filter,
+      onChanged: _select,
+      focusIdPrefix: 'updates-filter-tab',
+    );
   }
 
   /// Apple 域筛选：导航栏下方一条 iOS 分段控件（四个域，单选）。
@@ -306,10 +351,17 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
     );
   }
 
+  /// 当前域列表顶部的附加内容。
+  Widget? get _header =>
+      _filter == UpdateFeedKind.appRelease ? widget.appReleaseHeader : null;
+
   Widget _buildList(BuildContext context) {
     // 切域时「加载 → 列表 / 空态」交叉淡入，列表本身再按首屏错峰进场；时长走
-    // fushiMotionDuration（减弱动态效果 / 墨水屏下归零）。
-    final String phase = _loading
+    // fushiMotionDuration（减弱动态效果 / 墨水屏下归零）。有顶部附加内容时
+    // 恒为同一相位：刷新条目不该把面板整个重挂（重挂 = 重拉、重播进场）。
+    final String phase = _header != null
+        ? 'header'
+        : _loading
         ? 'loading'
         : _entries.isEmpty
         ? 'empty'
@@ -327,8 +379,14 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
 
   Widget _buildListBody(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
-    if (_loading) return SafeArea(bottom: false, child: buildLoading());
-    if (_entries.isEmpty) {
+    final Widget? header = _header;
+    final List<UpdateFeedEntryRow> entries = header != null && _loading
+        ? const <UpdateFeedEntryRow>[]
+        : _entries;
+    if (header == null && _loading) {
+      return SafeArea(bottom: false, child: buildLoading());
+    }
+    if (header == null && _entries.isEmpty) {
       return SafeArea(bottom: false, child: _UpdatesEmptyState(tokens: tokens));
     }
     // M3E 分段卡片列表（首尾大圆角、行间 2px），首屏错峰进场；切筛选重开窗口。
@@ -345,25 +403,30 @@ class _UpdatesCenterPageState extends State<UpdatesCenterPage>
             tokens.spacing.section,
           ),
         ),
-        itemCount: _entries.length,
-        itemBuilder: fushiStaggeredItemBuilder((
-          BuildContext context,
-          int index,
-        ) {
-          final UpdateFeedEntryRow entry = _entries[index];
-          return FushiGroupedListItem(
-            index: index,
-            count: _entries.length,
-            onTap: () => _open(entry),
-            child: _UpdateEntryTile(
-              entry: entry,
-              fresh: _fresh.contains(entry.entryId),
-            ),
-          );
-        }),
+        itemCount: entries.length + (header == null ? 0 : 1),
+        itemBuilder: (BuildContext context, int index) {
+          // 附加内容自带错峰进场，不再套一层。
+          if (header != null && index == 0) return header;
+          return _entryItem(context, header == null ? index : index - 1);
+        },
       ),
     );
   }
+
+  late final NullableIndexedWidgetBuilder _entryItem =
+      fushiStaggeredItemBuilder((BuildContext context, int index) {
+        final List<UpdateFeedEntryRow> entries = _entries;
+        final UpdateFeedEntryRow entry = entries[index];
+        return FushiGroupedListItem(
+          index: index,
+          count: entries.length,
+          onTap: () => _open(entry),
+          child: _UpdateEntryTile(
+            entry: entry,
+            fresh: _fresh.contains(entry.entryId),
+          ),
+        );
+      });
 }
 
 /// 进更新中心默认落在哪个域。

@@ -15,7 +15,8 @@ import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/media/manga/mokuro_payload.dart';
 import 'package:fushi_engine/ocr/manga_ai_ocr_refiner.dart';
-import 'package:fushi_engine/ocr/ocr_types.dart' show OcrRecognition, OcrRect;
+import 'package:fushi_engine/ocr/ocr_types.dart'
+    show OcrRecognition, OcrRect, OcrRgbaImage;
 import 'package:fushi_engine/media/video/ffmpeg_backend.dart';
 import 'package:fushi_engine/media/video/ffmpeg_watched_run.dart';
 import 'package:image/image.dart' as img;
@@ -269,6 +270,16 @@ MokuroImage _page(List<List<String>> blocks) => MokuroImage(
 );
 
 class _FakeRecognizer implements MangaStreamPageRecognizer {
+  /// Lens / 系统 OCR 的位图走页级像素入口（不编 PNG、不落盘）。
+  @override
+  Future<MokuroImage> recognizePixels(
+    OcrRgbaImage image, {
+    required String url,
+  }) async {
+    expect(image.rgba.length, image.width * image.height * 4);
+    return pages[calls++];
+  }
+
   _FakeRecognizer(this.pages);
 
   final List<MokuroImage> pages;
@@ -276,10 +287,8 @@ class _FakeRecognizer implements MangaStreamPageRecognizer {
   bool closed = false;
 
   @override
-  Future<MokuroImage> recognize(File pageFile) async {
-    expect(pageFile.existsSync(), isTrue);
-    return pages[calls++];
-  }
+  Future<MokuroImage> recognize(File pageFile) =>
+      throw StateError('bitmaps must not be written to files');
 
   @override
   Future<void> close() async => closed = true;
@@ -530,6 +539,15 @@ void main() {
       );
     });
 
+    test('负起点按 0 写出（与其余 SRT 写出同一份时间戳格式化）', () {
+      expect(
+        buildGraphicSubtitleSrt(const <GraphicSubtitleTextCue>[
+          GraphicSubtitleTextCue(startMs: -50, endMs: 900, text: 'あ'),
+        ]),
+        '1\n00:00:00,000 --> 00:00:00,900\nあ\n\n',
+      );
+    });
+
     test('全空返回空串', () {
       expect(
         buildGraphicSubtitleSrt(const <GraphicSubtitleTextCue>[
@@ -718,6 +736,104 @@ void main() {
       expect(aiProgress.last, (2, 2));
     });
   });
+
+  group('整轨识别：单条失败不作废整轨（BUG gap-disc-1）', () {
+    Future<List<GraphicSubtitleTextCue>?> runFailing(
+      _TextImageRecognizer recognizer,
+      List<int> starts, {
+      required List<Object> errors,
+      int maxConsecutiveFailures = kGraphicSubtitleOcrMaxConsecutiveFailures,
+    }) async {
+      final GraphicSubtitleOcrSession session = GraphicSubtitleOcrSession(
+        prepare: (String _) async =>
+            MangaStreamOcrReady(MangaOcrEngineId.localOnnx, recognizer),
+      );
+      try {
+        return await recognizeGraphicSubtitleCuesLive(
+          snapshot: () async => PgsSubtitleParser.parse(_multiSup(starts)),
+          sourceComplete: () => true,
+          sourceDone: Future<void>.value(),
+          session: session,
+          positionMs: () => 0,
+          isCancelled: () => false,
+          onCueError: (Object error, StackTrace _) => errors.add(error),
+          maxConsecutiveFailures: maxConsecutiveFailures,
+        );
+      } finally {
+        await session.close();
+      }
+    }
+
+    test('中间一条识别出错：跳过它、其余照常出字，不自动重试', () async {
+      // 位图宽 4+i 像素 + 32px 边距：第 2 条（3000ms）是 w37。
+      final _TextImageRecognizer recognizer = _TextImageRecognizer(
+        parallelism: 2,
+        failWidths: <int>{37},
+      );
+      final List<Object> errors = <Object>[];
+      final List<GraphicSubtitleTextCue>? out = await runFailing(
+        recognizer,
+        <int>[1000, 3000, 5000, 7000],
+        errors: errors,
+      );
+      expect(out, isNotNull);
+      expect(
+        out!.map((GraphicSubtitleTextCue c) => (c.startMs, c.text)),
+        <(int, String)>[(1000, 'w36'), (5000, 'w38'), (7000, 'w39')],
+      );
+      expect(errors, hasLength(1));
+      expect(recognizer.textCalls, 4, reason: '失败的那条不重试');
+    });
+
+    test('连续失败达到阈值：整个任务失败（引擎 / 网络整体坏掉）', () async {
+      final _TextImageRecognizer recognizer = _TextImageRecognizer(
+        parallelism: 1,
+        failWidths: <int>{37, 38, 39},
+      );
+      final List<Object> errors = <Object>[];
+      await expectLater(
+        runFailing(
+          recognizer,
+          <int>[1000, 3000, 5000, 7000, 9000, 11000],
+          errors: errors,
+          maxConsecutiveFailures: 3,
+        ),
+        throwsA(isA<StateError>()),
+      );
+      expect(errors, hasLength(3));
+      expect(recognizer.textCalls, 4, reason: '判失败后不再排新的 cue');
+    });
+
+    test('中间有成功就重新计数：失败总数超过阈值但不连续时不作废', () async {
+      final _TextImageRecognizer recognizer = _TextImageRecognizer(
+        parallelism: 1,
+        failWidths: <int>{36, 37, 39, 40},
+      );
+      final List<Object> errors = <Object>[];
+      final List<GraphicSubtitleTextCue>? out = await runFailing(
+        recognizer,
+        <int>[1000, 3000, 5000, 7000, 9000, 11000],
+        errors: errors,
+        maxConsecutiveFailures: 3,
+      );
+      expect(out!.map((GraphicSubtitleTextCue c) => c.text), <String>[
+        'w38',
+        'w41',
+      ]);
+      expect(errors, hasLength(4));
+    });
+
+    test('一条都没识别出来：抛错，而不是当成「这条轨没有文字」', () async {
+      final _TextImageRecognizer recognizer = _TextImageRecognizer(
+        parallelism: 2,
+        failWidths: <int>{36, 37},
+      );
+      await expectLater(
+        runFailing(recognizer, <int>[1000, 3000], errors: <Object>[]),
+        throwsA(isA<StateError>()),
+      );
+    });
+  });
   group('边看边识别', () {
     test('pickNextGraphicSubtitleCue：播放头之后的未识别 cue 优先，再回头补', () {
       final List<PgsCue> cues = PgsSubtitleParser.parse(
@@ -862,11 +978,27 @@ final AiProviderConfig _aiProvider = AiProviderConfig(
 /// 文字图引擎替身：文字 = `w{图宽}`，记调用数与最大并发。
 class _TextImageRecognizer
     implements MangaStreamPageRecognizer, MangaStreamTextImageRecognizer {
-  _TextImageRecognizer({required this.parallelism, this.confidence = 0.99});
+  @override
+  Future<MokuroImage> recognizePixels(
+    OcrRgbaImage image, {
+    required String url,
+  }) async {
+    pageCalls++;
+    throw StateError('page path must not be used');
+  }
+
+  _TextImageRecognizer({
+    required this.parallelism,
+    this.confidence = 0.99,
+    this.failWidths = const <int>{},
+  });
 
   @override
   final int parallelism;
   final double confidence;
+
+  /// 这些图宽的位图识别时抛 [StateError]（模拟单条识别失败）。
+  final Set<int> failWidths;
   int textCalls = 0;
   int pageCalls = 0;
   int _inFlight = 0;
@@ -884,6 +1016,7 @@ class _TextImageRecognizer
     if (_inFlight > maxConcurrent) maxConcurrent = _inFlight;
     await Future<void>.delayed(const Duration(milliseconds: 20));
     _inFlight--;
+    if (failWidths.contains(width)) throw StateError('ocr failed w$width');
     final String text = 'w$width';
     return OcrRecognition(
       text: text,

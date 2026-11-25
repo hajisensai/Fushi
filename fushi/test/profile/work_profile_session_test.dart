@@ -262,6 +262,7 @@ void main() {
       term: term,
       maxTerms: maxTerms,
       maxResults: maxTerms,
+      scanLength: FushiDicts.defaultScanLength,
     );
     DictionarySearchResult resultOf(String meaning) => DictionarySearchResult(
       searchTerm: term,
@@ -331,8 +332,10 @@ void main() {
       'profileView: WorkProfileScope.instance.lookupView'
           .allMatches(appModel)
           .length,
-      2,
-      reason: 'searchDictionary / searchDictionaryWithRuby 都要按作品会话的词典查',
+      3,
+      reason:
+          'searchDictionary / searchDictionaryWithRuby / searchDictionaryForUser'
+          '（控制通道替本机用户查词）都要按作品会话的词典查',
     );
     final int remoteStart = appModel.indexOf(
       'class _AppModelRemoteLookupService',

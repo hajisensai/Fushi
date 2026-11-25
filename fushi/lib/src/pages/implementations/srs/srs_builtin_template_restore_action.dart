@@ -54,7 +54,14 @@ Future<bool> confirmAndRestoreBuiltinTemplates(
         label: t.undo,
         onPressed: () =>
             srsRunLogged('SrsBuiltinTemplateRestore.undo', () async {
-              await store.undoBuiltinTemplateRestore(restore);
+              final SrsEditUndoResult r = await store
+                  .undoBuiltinTemplateRestore(restore);
+              if (!r.complete) {
+                FushiToast.show(
+                  msg: t.srs_undo_kept_changed(n: r.kept.length),
+                  severity: ToastSeverity.warning,
+                );
+              }
               bump();
               onChanged();
             }),

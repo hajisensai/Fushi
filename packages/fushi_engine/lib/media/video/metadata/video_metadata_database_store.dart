@@ -3,17 +3,27 @@ library;
 
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart'
+    show
+        BooleanExpressionOperators,
+        Table,
+        TableInfo,
+        UpdateKind,
+        Value,
+        Variable;
 import 'package:fushi_engine/media/video/metadata/mal_video_metadata_provider.dart'
     show hasIncompleteMalCredits;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart';
 import 'package:fushi_engine/media/video/metadata/video_metadata_provider.dart';
+import 'package:fushi_engine/media/video/metadata/video_collection_relation_sync.dart';
+import 'package:fushi_engine/media/video/metadata/video_related_works.dart';
 import 'package:fushi_engine/media/video/metadata/video_source_work_planner.dart';
 import 'package:fushi_engine/media/video/scraper/title_normalizer.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/media/video/metadata/video_metadata_locked_fields.dart';
+import 'package:fushi_engine/media/video/metadata/video_metadata_manual_edit.dart';
 
 /// 成员视频的本地 (季, 集) 键：优先协调器给出的覆盖（多季合集 / 绝对集号重定向），
 /// 否则按文件名解析（季缺省 1）；解不出集号返回 null。入库、sidecar、旧投影
@@ -185,9 +195,17 @@ class VideoMetadataDatabaseStore {
   /// [additionalEpisodeBindings]：一文件多集的额外绑定（见
   /// [AnidbAdditionalEpisodeBindings]）；同一文件因此出现在多条分集行上，
   /// v110 起 `book_uid` 不再唯一。
+  ///
+  /// [preserveExistingLegacyProjection]：只补写还不存在的旧投影行
+  /// （`collection_scrape_meta` / `video_scrape_meta`），已有的一行不动。本地索引给
+  /// 没有 NFO 的作品建占位作品时传 true：占位只有文件名推出的标题、没有任何外部
+  /// 身份，而库里已有的旧刮削行带着在线来源的身份（`source` / `subjectId`，Bangumi
+  /// 追番映射靠它）、简介与分集资料——占位覆盖上去就是把用户的刮削资料换成空壳
+  /// （BUG-5418 审查）。
   Future<PersistedVideoMetadata> apply(
     VideoSourceScrapeWork localWork,
     VideoMetadataWork metadata, {
+    bool preserveExistingLegacyProjection = false,
     bool seasonEpisodesAuthoritative = true,
     Map<String, (int, int)> episodeOverrides = const <String, (int, int)>{},
     Map<String, AnidbEpisodeXref> anidbEpisodeXrefs =
@@ -207,13 +225,22 @@ class VideoMetadataDatabaseStore {
       // v99 字段锁：先读旧行，被锁字段一律保留旧值。必须在
       // `_removeBookOwnedWorksForCollection` 之前读——那一步只删「成员自己拥有的
       // 作品行」，但把读放在最前面才不用去推理它到底删了谁。
-      final VideoMetadataWorkRow? existingWork = localWork.collection == null
+      VideoMetadataWorkRow? existingWork = localWork.collection == null
           ? await database.getVideoMetadataWorkByBook(
               localWork.members.single.bookUid,
             )
           : await database.getVideoMetadataWorkByCollection(
               localWork.collection!.id,
             );
+      // BUG-5110：单集作品长成合集（下到第二集）后第一次按合集刮——合集还没有
+      // 自己的行、成员上恰好挂着一条作品行时，把那一行升格成合集行（改归属，
+      // 不删），用户手填的值、字段锁、锁住的图 / 词条随行保留；下面的整组替换
+      // 按「同一作品重刮」的语义作用在这条行上。
+      if (existingWork == null) {
+        if (localWork.collection case final MediaCollectionRow collection) {
+          existingWork = await _promoteSoleMemberWork(collection.id);
+        }
+      }
       final Set<VideoMetadataLockableField> locked = parseLockedFields(
         existingWork?.lockedFields,
       );
@@ -252,7 +279,11 @@ class VideoMetadataDatabaseStore {
           ),
           premiereDate: Value<String?>(metadata.premiered),
           endDate: Value<String?>(metadata.endDate),
-          year: Value<int?>(metadata.year),
+          year: Value<int?>(
+            isLocked(VideoMetadataLockableField.year)
+                ? existingWork!.year
+                : metadata.year,
+          ),
           rating: Value<double?>(
             isLocked(VideoMetadataLockableField.rating)
                 ? existingWork!.rating
@@ -280,6 +311,39 @@ class VideoMetadataDatabaseStore {
         now: now,
       );
       await _replaceRawSnapshot(workId, metadata, now);
+      // 系列关系（续作 / 前传 / 外传…）：起点是作品的归属——合集，或挂在单个
+      // 视频上的作品（散装电影，v162）。只用本次响应里本来就有的关系（TMDB 电影
+      // 的合集成员由 provider 在刮削时随详情附上）；载荷没带关系信息（AniDB 只有
+      // 目录、TMDB 剧集、合集请求失败）时不动已有行。
+      final MediaCollectionRow? ownerCollection = localWork.collection;
+      final VideoRelationOwner relationOwner = ownerCollection != null
+          ? VideoRelationOwner.collection(ownerCollection.id)
+          : VideoRelationOwner.video(localWork.members.single.bookUid);
+      final List<VideoRelatedWork>? related = relatedWorksFromRawPayload(
+        metadata.provider.name,
+        metadata.rawPayload,
+      );
+      if (related != null) {
+        await syncScrapedCollectionRelations(
+          database,
+          owner: relationOwner,
+          source: metadata.provider.name,
+          related: related,
+        );
+      }
+      // 别处指向本作品外部 id 的纯刮削行升级成已绑定。
+      await bindCollectionRelationsToWork(
+        database,
+        owner: relationOwner,
+        identities: <(String, String)>[
+          for (final VideoMetadataId id in _uniqueIds(metadata.ids))
+            if (canBindRelationIdentity(
+              provider: id.type.trim().toLowerCase(),
+              mediaType: metadata.kind.name,
+            ))
+              (id.type.trim().toLowerCase(), id.value),
+        ],
+      );
       // 锁住的整组词（genres / studios）保留旧集合；其余种类照常整体替换。
       final Map<String, List<String>> lockedTerms =
           isLocked(VideoMetadataLockableField.genres) ||
@@ -288,7 +352,8 @@ class VideoMetadataDatabaseStore {
           : const <String, List<String>>{};
       await _replaceTerms(
         workId,
-        metadata,
+        countries: metadata.countries,
+        keywords: metadata.keywords,
         genres: isLocked(VideoMetadataLockableField.genres)
             ? (lockedTerms['genre'] ?? const <String>[])
             : metadata.genres,
@@ -580,7 +645,12 @@ class VideoMetadataDatabaseStore {
           }
         }
       }
-      await _writeLegacyProjection(localWork, metadata, episodesByBookUid);
+      await _writeLegacyProjection(
+        localWork,
+        metadata,
+        episodesByBookUid,
+        preserveExisting: preserveExistingLegacyProjection,
+      );
     });
 
     return PersistedVideoMetadata(
@@ -596,10 +666,58 @@ class VideoMetadataDatabaseStore {
   /// 删掉合集自己拥有的作品行（成员按 AniDB 作品拆成各自的电影作品后，合集级
   /// 的那一行是残留——否则合集详情页会继续展示旧身份）。与
   /// [_removeBookOwnedWorksForCollection] 对称；季 / 集 / 身份 / 图随 FK 级联。
+  /// 那部作品刮来的系列关系（合集起点、非 `local` 的行）一并删掉——它们描述的是
+  /// 已经不存在的身份；按季拆分建的 `local` 行是用户结构，不动。
   Future<void> removeCollectionOwnedWork(int collectionId) async {
     await (database.delete(
       database.videoMetadataWorks,
     )..where((table) => table.collectionId.equals(collectionId))).go();
+    await (database.delete(database.collectionRelations)..where(
+          (table) =>
+              table.collectionId.equals(collectionId) &
+              table.source.equals('local').not(),
+        ))
+        .go();
+  }
+
+  /// [collectionId] 没有合集行、视频成员里恰好一个自己挂着作品行时，把那一行
+  /// 改归属到合集（`book_uid` → `collection_id`），返回升格后的行；不满足（0 个
+  /// 或多个成员各有作品——那是各自独立的作品，没有哪一条能代表合集）返回 null。
+  /// 那部作品起点的系列关系一并改挂到合集（合集已有同 `(source, subject_id)` 的
+  /// 行时保留合集的，成员那条随后由 [_removeBookOwnedWorksForCollection] 清掉）。
+  /// 调用方须在事务里。
+  Future<VideoMetadataWorkRow?> _promoteSoleMemberWork(int collectionId) async {
+    final Set<String> memberBookUids =
+        (await database.getCollectionItems(collectionId))
+            .where((MediaCollectionItemRow row) => row.mediaType == 'video')
+            .map((MediaCollectionItemRow row) => row.entryKey)
+            .toSet();
+    if (memberBookUids.isEmpty) return null;
+    final List<VideoMetadataWorkRow> owned = await (database.select(
+      database.videoMetadataWorks,
+    )..where((table) => table.bookUid.isIn(memberBookUids))).get();
+    if (owned.length != 1) return null;
+    final VideoMetadataWorkRow work = owned.single;
+    final String memberUid = work.bookUid!;
+    await (database.update(
+      database.videoMetadataWorks,
+    )..where((table) => table.id.equals(work.id))).write(
+      VideoMetadataWorksCompanion(
+        collectionId: Value<int?>(collectionId),
+        bookUid: const Value<String?>(null),
+      ),
+    );
+    await database.customUpdate(
+      'UPDATE OR IGNORE collection_relations '
+      'SET collection_id = ?, book_uid = NULL WHERE book_uid = ?',
+      variables: <Variable<Object>>[
+        Variable<int>(collectionId),
+        Variable<String>(memberUid),
+      ],
+      updates: <TableInfo<Table, dynamic>>{database.collectionRelations},
+      updateKind: UpdateKind.update,
+    );
+    return database.getVideoMetadataWorkByCollection(collectionId);
   }
 
   Future<void> _removeBookOwnedWorksForCollection(int collectionId) async {
@@ -611,6 +729,10 @@ class VideoMetadataDatabaseStore {
     if (memberBookUids.isEmpty) return;
     await (database.delete(
       database.videoMetadataWorks,
+    )..where((table) => table.bookUid.isIn(memberBookUids))).go();
+    // 成员自己那部作品（散装电影）刮来的系列关系随作品一起作废（v162 单视频起点）。
+    await (database.delete(
+      database.collectionRelations,
     )..where((table) => table.bookUid.isIn(memberBookUids))).go();
   }
 
@@ -745,7 +867,242 @@ class VideoMetadataDatabaseStore {
     );
   }
 
-  /// 读回本作品当前的词条，按 kind 分组（字段锁保留整组词时用）。
+  /// 编辑对话框的初值：目标作品行的当前值；还没有作品行时只有标题（取
+  /// [fallbackTitle]，即合集名 / 视频名），其余为空。
+  Future<VideoWorkManualEdit> currentManualEdit(
+    VideoWorkManualTarget target, {
+    required String fallbackTitle,
+  }) async {
+    if (target case VideoWorkManualTargetExisting(
+      :final VideoMetadataWorkRow work,
+    )) {
+      final VideoMetadataWorkRow row =
+          await database.getVideoMetadataWorkById(work.id) ?? work;
+      final Map<String, List<String>> terms = await _termsByKind(row.id);
+      return VideoWorkManualEdit(
+        title: row.title,
+        originalTitle: row.originalTitle,
+        overview: row.overview,
+        tagline: row.tagline,
+        year: row.year,
+        genres: terms['genre'] ?? const <String>[],
+        studios: terms['studio'] ?? const <String>[],
+      );
+    }
+    return VideoWorkManualEdit(title: fallbackTitle);
+  }
+
+  /// 落库用户手填的作品资料（BUG-5082），返回作品行 id。
+  ///
+  /// 逐字段判断「用户改没改」：**改过**的字段写新值并进字段锁（之后刮削保留手填值，
+  /// 与封面锁同一语义）；**改成空**的字段清值并解锁（撤回手填，下次刮削回填）；
+  /// 没改的字段值与锁状态都不动（保留库里此刻的值）。标题列非空：清空标题 = 回到
+  /// [fallbackTitle] 并解锁。目标还没有作品行（刮削全失败）时按 [target] 的归属
+  /// 新建一行，不写 provider 身份——作品仍算未识别，自动补刮照常会去找它。
+  ///
+  /// 「改没改」以 [baseline] 为准——对话框打开时展示给用户的那份值
+  /// （[currentManualEdit]）。对话框开着时自动补刮可能已经落库：拿库里的新值当
+  /// 基准，用户没碰过的旧初值会被当成「改过」，把刚刮到的简介 / 类型清空或锁成
+  /// 旧值（丢失更新）。不传 [baseline] 时以库里当前值为基准（程序化调用）。
+  Future<int> applyManualEdit(
+    VideoWorkManualTarget target,
+    VideoWorkManualEdit edit, {
+    required String fallbackTitle,
+    VideoWorkManualEdit? baseline,
+  }) async {
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    return database.transaction<int>(() async {
+      final VideoMetadataWorkRow? existing = switch (target) {
+        VideoWorkManualTargetExisting(:final VideoMetadataWorkRow work) =>
+          await database.getVideoMetadataWorkById(work.id),
+        VideoWorkManualTargetCollection(:final int collectionId) =>
+          await database.getVideoMetadataWorkByCollection(collectionId),
+        VideoWorkManualTargetBook(:final String bookUid) =>
+          await database.getVideoMetadataWorkByBook(bookUid),
+      };
+      if (existing == null && target is VideoWorkManualTargetExisting) {
+        throw StateError(
+          'video metadata work ${target.work.id} no longer exists',
+        );
+      }
+      final Set<VideoMetadataLockableField> locked = parseLockedFields(
+        existing?.lockedFields,
+      );
+      final Map<String, List<String>> currentTerms = existing == null
+          ? const <String, List<String>>{}
+          : await _termsByKind(existing.id);
+      final String fallback =
+          normalizeManualText(fallbackTitle) ?? fallbackTitle;
+
+      // 基准：对话框初值；没给时取库里当前值。
+      final VideoWorkManualEdit base =
+          baseline ??
+          VideoWorkManualEdit(
+            title: existing?.title ?? fallback,
+            originalTitle: existing?.originalTitle,
+            overview: existing?.overview,
+            tagline: existing?.tagline,
+            year: existing?.year,
+            genres: currentTerms['genre'] ?? const <String>[],
+            studios: currentTerms['studio'] ?? const <String>[],
+          );
+
+      // 改过（与基准不同）→ 写 [after] 并按空 / 非空解锁 / 上锁；没改 → 原值原锁。
+      T? resolve<T>(
+        VideoMetadataLockableField field,
+        T? before,
+        T? after,
+        T? current,
+      ) {
+        if (before == after) return current;
+        if (after == null) {
+          locked.remove(field);
+        } else {
+          locked.add(field);
+        }
+        return after;
+      }
+
+      final String? typedTitle = normalizeManualText(edit.title);
+      final String baseTitle = normalizeManualText(base.title) ?? fallback;
+      final String currentTitle = existing?.title ?? fallback;
+      final String title;
+      if (typedTitle == null) {
+        locked.remove(VideoMetadataLockableField.title);
+        title = fallback;
+      } else if (typedTitle != baseTitle) {
+        locked.add(VideoMetadataLockableField.title);
+        title = typedTitle;
+      } else {
+        title = currentTitle;
+      }
+      final String? originalTitle = resolve<String>(
+        VideoMetadataLockableField.originalTitle,
+        normalizeManualText(base.originalTitle),
+        normalizeManualText(edit.originalTitle),
+        existing?.originalTitle,
+      );
+      final String? overview = resolve<String>(
+        VideoMetadataLockableField.overview,
+        normalizeManualText(base.overview),
+        normalizeManualText(edit.overview),
+        existing?.overview,
+      );
+      final String? tagline = resolve<String>(
+        VideoMetadataLockableField.tagline,
+        normalizeManualText(base.tagline),
+        normalizeManualText(edit.tagline),
+        existing?.tagline,
+      );
+      final int? year = resolve<int>(
+        VideoMetadataLockableField.year,
+        base.year,
+        edit.year,
+        existing?.year,
+      );
+
+      // 列表按「逐项相同且同序」比较；空列表与 null 同义（没有手填值）。
+      String? termsKey(List<String> values) =>
+          values.isEmpty ? null : values.join('\u0000');
+      List<String> resolveTerms(
+        VideoMetadataLockableField field,
+        List<String> before,
+        List<String> after,
+        List<String> current,
+      ) {
+        final List<String> normalizedAfter = normalizeManualTerms(after);
+        final String? beforeKey = termsKey(normalizeManualTerms(before));
+        final String? afterKey = termsKey(normalizedAfter);
+        if (beforeKey == afterKey) return current;
+        resolve<String>(field, beforeKey, afterKey, null);
+        return normalizedAfter;
+      }
+
+      final List<String> currentGenres =
+          currentTerms['genre'] ?? const <String>[];
+      final List<String> currentStudios =
+          currentTerms['studio'] ?? const <String>[];
+      final List<String> genres = resolveTerms(
+        VideoMetadataLockableField.genres,
+        base.genres,
+        edit.genres,
+        currentGenres,
+      );
+      final List<String> studios = resolveTerms(
+        VideoMetadataLockableField.studios,
+        base.studios,
+        edit.studios,
+        currentStudios,
+      );
+      final bool termsChanged =
+          !identical(genres, currentGenres) ||
+          !identical(studios, currentStudios);
+
+      final int workId;
+      if (existing != null) {
+        workId = existing.id;
+        await (database.update(
+          database.videoMetadataWorks,
+        )..where((table) => table.id.equals(workId))).write(
+          VideoMetadataWorksCompanion(
+            title: Value<String>(title),
+            originalTitle: Value<String?>(originalTitle),
+            overview: Value<String?>(overview),
+            tagline: Value<String?>(tagline),
+            year: Value<int?>(year),
+            lockedFields: Value<String?>(encodeLockedFields(locked)),
+            updatedAt: Value<int>(now),
+          ),
+        );
+      } else {
+        final (
+          int? collectionId,
+          String? bookUid,
+          String mediaType,
+        ) = switch (target) {
+          VideoWorkManualTargetCollection(:final int collectionId) => (
+            collectionId,
+            null,
+            VideoMetadataMediaKind.tv.name,
+          ),
+          VideoWorkManualTargetBook(:final String bookUid) => (
+            null,
+            bookUid,
+            VideoMetadataMediaKind.movie.name,
+          ),
+          VideoWorkManualTargetExisting() => throw StateError(
+            'existing target without a row',
+          ),
+        };
+        workId = await database.upsertVideoMetadataWork(
+          VideoMetadataWorksCompanion.insert(
+            collectionId: Value<int?>(collectionId),
+            bookUid: Value<String?>(bookUid),
+            mediaType: mediaType,
+            title: title,
+            originalTitle: Value<String?>(originalTitle),
+            overview: Value<String?>(overview),
+            tagline: Value<String?>(tagline),
+            year: Value<int?>(year),
+            lockedFields: Value<String?>(encodeLockedFields(locked)),
+            updatedAt: now,
+          ),
+        );
+      }
+      if (termsChanged) {
+        await _replaceTerms(
+          workId,
+          genres: genres,
+          studios: studios,
+          countries: currentTerms['country'] ?? const <String>[],
+          keywords: currentTerms['keyword'] ?? const <String>[],
+        );
+      }
+      return workId;
+    });
+  }
+
+  /// 读回本作品当前的词条，按 kind 分组（字段锁保留整组词 / 手填时用）。
   Future<Map<String, List<String>>> _termsByKind(int workId) async {
     final Map<String, List<String>> out = <String, List<String>>{};
     for (final VideoMetadataTermRow row
@@ -755,19 +1112,21 @@ class VideoMetadataDatabaseStore {
     return out;
   }
 
-  /// [genres] / [studios] 由调用方给出：字段锁生效时传旧集合，否则传
-  /// `metadata` 自己的。其余种类（country / keyword）没有锁，直接取 metadata。
+  /// 四种词整体替换。[genres] / [studios] 由调用方给出：字段锁生效时传旧集合，
+  /// 否则传 `metadata` 自己的；手填（[applyManualEdit]）传用户填的、country /
+  /// keyword 原样传回旧集合。
   Future<void> _replaceTerms(
-    int workId,
-    VideoMetadataWork metadata, {
-    List<String>? genres,
-    List<String>? studios,
+    int workId, {
+    required List<String> genres,
+    required List<String> studios,
+    required List<String> countries,
+    required List<String> keywords,
   }) async {
     final List<(String, String)> values = <(String, String)>[
-      for (final String value in genres ?? metadata.genres) ('genre', value),
-      for (final String value in studios ?? metadata.studios) ('studio', value),
-      for (final String value in metadata.countries) ('country', value),
-      for (final String value in metadata.keywords) ('keyword', value),
+      for (final String value in genres) ('genre', value),
+      for (final String value in studios) ('studio', value),
+      for (final String value in countries) ('country', value),
+      for (final String value in keywords) ('keyword', value),
     ];
     final List<VideoMetadataTermsCompanion> terms =
         <VideoMetadataTermsCompanion>[];
@@ -816,14 +1175,21 @@ class VideoMetadataDatabaseStore {
     final List<VideoMetadataCreditsCompanion> rows =
         <VideoMetadataCreditsCompanion>[];
     final Set<String> seenCredits = <String>{};
+    // 真正写进库的 credit。下面补外部 id 时只认它们：去重丢掉的那条 credit 的人物 /
+    // 角色行没写，给它写 provider identity 会撞外键、让整部作品刮削失败（BUG-5281：
+    // AniDB 同一部作品里两个同名角色由同一位声优配音，第二条 credit 被去重，它的
+    // 角色 id 却照样去写 identity）。
+    final List<VideoMetadataCredit> written = <VideoMetadataCredit>[];
     for (final VideoMetadataCredit credit in credits) {
       final String personKey = _personKey(credit.person);
+      // 与表上 UNIQUE(owner, person_key, credit_kind, role_name) 同一判据。
       final String creditKey = <String>[
         personKey,
         credit.kind.name,
         credit.roleName ?? credit.character?.name ?? '',
       ].join('\u0000');
       if (!seenCredits.add(creditKey)) continue;
+      written.add(credit);
       people.add(
         VideoMetadataPeopleCompanion.insert(
           personKey: personKey,
@@ -880,7 +1246,7 @@ class VideoMetadataDatabaseStore {
       credits: rows,
       keepExisting: keepExisting,
     );
-    for (final VideoMetadataCredit credit in credits) {
+    for (final VideoMetadataCredit credit in written) {
       await _mergeEntityIdentities(
         personKey: _personKey(credit.person),
         ids: credit.person.ids,
@@ -1028,11 +1394,14 @@ class VideoMetadataDatabaseStore {
     );
   }
 
+  /// [preserveExisting] 为 true 时只补写不存在的行（见
+  /// [apply] 的 `preserveExistingLegacyProjection`）。
   Future<void> _writeLegacyProjection(
     VideoSourceScrapeWork localWork,
     VideoMetadataWork metadata,
-    Map<String, VideoMetadataEpisode> episodeByBook,
-  ) async {
+    Map<String, VideoMetadataEpisode> episodeByBook, {
+    required bool preserveExisting,
+  }) async {
     final String subjectId = _primaryId(metadata)?.value ?? metadata.title;
     final String source = metadata.provider.name;
     final String? tags = metadata.genres.isEmpty && metadata.keywords.isEmpty
@@ -1047,31 +1416,37 @@ class VideoMetadataDatabaseStore {
     final String? infobox = _legacyInfobox(metadata);
     final DateTime scrapedAt = DateTime.now();
     if (localWork.collection case final MediaCollectionRow collection) {
-      await database.upsertCollectionScrapeMeta(
-        CollectionScrapeMetaCompanion.insert(
-          collectionId: Value<int>(collection.id),
-          source: source,
-          subjectId: subjectId,
-          title: metadata.title,
-          originalTitle: Value<String?>(metadata.originalTitle),
-          summary: Value<String?>(metadata.plot),
-          airDate: Value<String?>(metadata.premiered),
-          rating: Value<double?>(metadata.rating),
-          ratingCount: Value<int?>(metadata.ratingVotes),
-          episodeCount: Value<int?>(metadata.episodeCount),
-          tagsJson: Value<String?>(tags),
-          infoboxJson: Value<String?>(infobox),
-          backdropPath: const Value<String?>(null),
-          detailUrl: Value<String?>(_detailUrl(metadata)),
-          scrapedAt: scrapedAt,
-        ),
-      );
+      final bool keepCollectionRow =
+          preserveExisting &&
+          await database.getCollectionScrapeMeta(collection.id) != null;
+      if (!keepCollectionRow) {
+        await database.upsertCollectionScrapeMeta(
+          CollectionScrapeMetaCompanion.insert(
+            collectionId: Value<int>(collection.id),
+            source: source,
+            subjectId: subjectId,
+            title: metadata.title,
+            originalTitle: Value<String?>(metadata.originalTitle),
+            summary: Value<String?>(metadata.plot),
+            airDate: Value<String?>(metadata.premiered),
+            rating: Value<double?>(metadata.rating),
+            ratingCount: Value<int?>(metadata.ratingVotes),
+            episodeCount: Value<int?>(metadata.episodeCount),
+            tagsJson: Value<String?>(tags),
+            infoboxJson: Value<String?>(infobox),
+            backdropPath: const Value<String?>(null),
+            detailUrl: Value<String?>(_detailUrl(metadata)),
+            scrapedAt: scrapedAt,
+          ),
+        );
+      }
       for (final VideoBookRow book in localWork.members) {
         final VideoMetadataEpisode? episode = episodeByBook[book.bookUid];
         if (episode == null) continue;
         final VideoScrapeMetaRow? previous = await database.getVideoScrapeMeta(
           book.bookUid,
         );
+        if (preserveExisting && previous != null) continue;
         await database.upsertVideoScrapeMeta(
           VideoScrapeMetaCompanion.insert(
             bookUid: book.bookUid,
@@ -1104,9 +1479,14 @@ class VideoMetadataDatabaseStore {
         }
       }
     } else {
+      final String bookUid = localWork.members.single.bookUid;
+      if (preserveExisting &&
+          await database.getVideoScrapeMeta(bookUid) != null) {
+        return;
+      }
       await database.upsertVideoScrapeMeta(
         VideoScrapeMetaCompanion.insert(
-          bookUid: localWork.members.single.bookUid,
+          bookUid: bookUid,
           source: source,
           subjectId: subjectId,
           title: metadata.title,

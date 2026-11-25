@@ -151,6 +151,25 @@ constexpr uint8_t kSankaimePlainBlock[] = {
     0x8d, 0x46, 0x14,                          // lea eax,[esi+0x14]  name
     0x50, 0x68};
 
+// cs2 2.6.1.90 (2020, newer MSVC): the forwarder compiles like the 2016
+// build's (kSankaimeForwarder); the archive object is 260 bytes larger in
+// front of its encrypted flag, which moves from +0x11c to +0x220.
+constexpr uint8_t kCs2_2_6_1_90PlainBlock[] = {
+    0x8b, 0x56, 0x10,                          // mov edx,[esi+0x10]  size
+    0x8b, 0xc2,
+    0x8b, 0x4e, 0x0c,                          // mov ecx,[esi+0xc]   offset
+    0x2b, 0xc1, 0x3b, 0xd8, 0x0f, 0x47, 0xd8,  // clamp (cmova)
+    0x83, 0xbd, 0x20, 0x02, 0x00, 0x00, 0x00,  // cmp [ebp+0x220],0
+    0x89, 0x5c, 0x24, 0x3c, 0x75, 0x62,
+    0x6a, 0x00, 0x6a, 0x00, 0xff, 0x76, 0x08,
+    0xff, 0x75, 0x10,                          // push [ebp+0x10]  handle
+    0xff, 0x15, 0x00, 0x00, 0x00, 0x00,        // call [SetFilePointer]
+    0x6a, 0x00, 0x8d, 0x44, 0x24, 0x1c, 0x50, 0x53, 0x57, 0xff, 0x75, 0x10,
+    0xff, 0x15, 0x00, 0x00, 0x00, 0x00,        // call [ReadFile]
+    0x85, 0xc0, 0x75, 0x1b, 0xff, 0x76, 0x10,
+    0x8d, 0x46, 0x14,                          // lea eax,[esi+0x14]  name
+    0x50, 0x68};
+
 struct Codegen {
   const char* name;
   const uint8_t* forwarder;
@@ -167,17 +186,25 @@ struct Codegen {
   size_t read_file;
   size_t name_disp;         // disp8 of the name lea
   size_t name_modrm;
+  size_t handle_modrm;      // ModR/M of the archive handle load / push
+  uint32_t flag_offset;     // [archive+] encrypted flag
 };
 
 constexpr Codegen kGrisaia = {
     "grisaia", kGrisaiaForwarder, sizeof(kGrisaiaForwarder), {14u, 40u}, 65u,
     kGrisaiaPlainBlock, sizeof(kGrisaiaPlainBlock), 0x74u, 4u, 2u, 16u, 41u,
-    60u, 76u, 75u};
+    60u, 76u, 75u, 33u, 0x11cu};
 constexpr Codegen kSankaime = {
     "sankaime", kSankaimeForwarder, sizeof(kSankaimeForwarder), {12u, 38u},
     63u, kSankaimePlainBlock, sizeof(kSankaimePlainBlock), 0x75u, 2u, 2u, 15u,
-    38u, 56u, 71u, 70u};
-constexpr const Codegen* kCodegens[] = {&kGrisaia, &kSankaime};
+    38u, 56u, 71u, 70u, 36u, 0x11cu};
+constexpr Codegen kCs2_2_6_1_90 = {
+    "cs2-2.6.1.90", kSankaimeForwarder, sizeof(kSankaimeForwarder),
+    {12u, 38u}, 63u, kCs2_2_6_1_90PlainBlock,
+    sizeof(kCs2_2_6_1_90PlainBlock), 0x52u, 2u, 2u, 15u, 38u, 56u, 71u, 70u,
+    36u, 0x220u};
+constexpr const Codegen* kCodegens[] = {&kGrisaia, &kSankaime,
+                                        &kCs2_2_6_1_90};
 
 void PutForwarder(SyntheticImage* img, const Codegen& cg, size_t at,
                   size_t target) {
@@ -212,6 +239,7 @@ void TestResolvesBothCodegens() {
     assert(sites.big_read == img.At(kBigRead + cg->read_entry_call));
     assert(sites.read_entry == img.At(kReadEntry));
     assert(sites.plain_block == img.At(BlockByte(*cg, cg->cmp)));
+    assert(sites.archive_flag_offset == cg->flag_offset);
   }
 }
 
@@ -290,10 +318,31 @@ void TestFailsClosed(const Codegen& cg) {
     PutForwarder(&img, cg, kBigRead, SyntheticImage::kSize - 0x100u);
     assert(Resolve(img, &sites) == R::kReadEntryInvalid);
   }
-  {  // the flag is not the archive's encrypted flag (+0x120)
+  {  // the flag is not a dword member (+0x..1d / +0x..21)
     SyntheticImage img;
     BuildEngine(&img, cg);
-    img.base[BlockByte(cg, cg.cmp + 2u)] = 0x20u;
+    img.base[BlockByte(cg, cg.cmp + 2u)] =
+        static_cast<uint8_t>(img.base[BlockByte(cg, cg.cmp + 2u)] + 1u);
+    assert(Resolve(img, &sites) == R::kPlainBlockMissing);
+  }
+  {  // the flag lies past any plausible archive object (+0x1000 and up)
+    SyntheticImage img;
+    BuildEngine(&img, cg);
+    img.base[BlockByte(cg, cg.cmp + 3u)] = 0x10u;
+    assert(Resolve(img, &sites) == R::kPlainBlockMissing);
+  }
+  {  // the flag lies inside the archive's leading fields (+0x1c)
+    SyntheticImage img;
+    BuildEngine(&img, cg);
+    img.base[BlockByte(cg, cg.cmp + 2u)] = 0x1cu;
+    img.base[BlockByte(cg, cg.cmp + 3u)] = 0x00u;
+    assert(Resolve(img, &sites) == R::kPlainBlockMissing);
+  }
+  {  // the seeked handle is not a field of the flagged object
+    SyntheticImage img;
+    BuildEngine(&img, cg);
+    img.base[BlockByte(cg, cg.handle_modrm)] = static_cast<uint8_t>(
+        (img.base[BlockByte(cg, cg.handle_modrm)] & 0xf8u) | 0x06u);  // esi
     assert(Resolve(img, &sites) == R::kPlainBlockMissing);
   }
   {  // no clamp by the entry's size before the flag test

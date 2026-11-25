@@ -162,8 +162,8 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
             ),
           ],
         ),
-        // 语言绑定的优先级高于上面的媒体类型绑定、低于书架上的单条目绑定
-        // （book > language > mediaType > 当前激活）。
+        // 语言绑定的优先级低于上面的媒体类型绑定与书架上的单条目绑定（组合模型逐叶子解析：
+        // 作品 > 媒体类型 > 语言 > 默认，拍板台 design-combo-node-split）。
         AdaptiveSettingsSection(
           title: t.profile_language_bindings,
           children: [
@@ -403,14 +403,31 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     int id,
     String name,
   ) async {
-    // 确认框写明会连带删掉的复习数据（srs.db 不在主库外键级联里，删 Profile 时由 Rust 一并清掉）。
-    final ProfileDeletionImpact impact = await vm.deletionImpact(id);
+    // 确认框写明会连带删掉的复习数据（srs.db 不在主库外键级联里，删 Profile 时由 Rust 一并清掉）。统计失败也
+    // 不能让异常逃出按钮回调（那样确认框不弹、什么提示都没有，BUG-5275）：复习库打不开时确认框照弹、写明原因、
+    // 删除按钮不可点；其余失败给提示。
+    ProfileDeletionImpact impact = const ProfileDeletionImpact.none();
+    bool srsUnavailable = false;
+    try {
+      impact = await vm.deletionImpact(id);
+    } on ProfileDeletionSrsUnavailableException catch (e, stack) {
+      ErrorLogService.instance.log('ProfileManagement.deleteImpact', e, stack);
+      srsUnavailable = true;
+    } catch (e, stack) {
+      ErrorLogService.instance.log('ProfileManagement.deleteImpact', e, stack);
+      FushiToast.show(
+        msg: t.profile_delete_failed,
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
     if (!mounted) return;
     final confirmed = await showAppDialog<bool>(
       context: context,
       builder: (ctx) => ProfileDeleteDialog(
         profileName: name,
         impact: impact,
+        blockedReason: srsUnavailable ? t.profile_delete_srs_unavailable : null,
         onConfirm: () => Navigator.pop(ctx, true),
       ),
     );
@@ -418,6 +435,15 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     final ProfileDeletionOutcome? outcome;
     try {
       outcome = await vm.deleteProfile(id);
+    } on ProfileDeletionSrsUnavailableException catch (e, stack) {
+      // 确认之后复习库才变得打不开（例如别的窗口开始升级）：删除已中止，Profile 原样保留。
+      ErrorLogService.instance.log('ProfileManagement.delete', e, stack);
+      FushiToast.show(
+        msg: t.profile_delete_srs_unavailable,
+        toastLength: Toast.LENGTH_LONG,
+        severity: ToastSeverity.error,
+      );
+      return;
     } on ProfileDeletionBackupException catch (e, stack) {
       ErrorLogService.instance.log('ProfileManagement.deleteBackup', e, stack);
       FushiToast.show(
@@ -580,6 +606,7 @@ class ProfileDeleteDialog extends StatelessWidget {
     required this.profileName,
     required this.onConfirm,
     this.impact = const ProfileDeletionImpact.none(),
+    this.blockedReason,
     super.key,
   });
 
@@ -588,6 +615,9 @@ class ProfileDeleteDialog extends StatelessWidget {
 
   /// 会连带删掉的复习数据；有数据时正文多一段写明卡数、复习记录数与自动备份。
   final ProfileDeletionImpact impact;
+
+  /// 此刻删不了的原因（复习库打不开、没法先备份，BUG-5275）：非 null 时正文写明原因，删除按钮不可点。
+  final String? blockedReason;
 
   @override
   Widget build(BuildContext context) {
@@ -625,7 +655,14 @@ class ProfileDeleteDialog extends StatelessWidget {
               t.profile_confirm_delete(name: profileName),
               style: tokens.type.listSubtitle,
             ),
-            if (impact.hasSrsData) ...[
+            if (blockedReason case final String reason) ...[
+              SizedBox(height: tokens.spacing.gap),
+              Text(
+                reason,
+                key: const ValueKey<String>('profile_delete_blocked_reason'),
+                style: tokens.type.listSubtitle,
+              ),
+            ] else if (impact.hasSrsData) ...[
               SizedBox(height: tokens.spacing.gap),
               Text(
                 t.profile_delete_srs_impact(
@@ -651,7 +688,7 @@ class ProfileDeleteDialog extends StatelessWidget {
             adaptiveDialogAction(
               context: context,
               isDestructiveAction: true,
-              onPressed: onConfirm,
+              onPressed: blockedReason == null ? onConfirm : null,
               child: Text(t.profile_delete),
             ),
           ],

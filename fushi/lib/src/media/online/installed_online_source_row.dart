@@ -1,5 +1,11 @@
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/media/manga/extension_management_tile.dart'
+    show ExtensionMonogram;
+import 'package:fushi/src/pages/implementations/library_filter_dropdown.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_hover_lift.dart';
+
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -8,15 +14,13 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
-import 'package:fushi/src/utils/components/fushi_reorderable_column.dart';
+import 'package:fushi/src/utils/components/fushi_sliver_reorderable_list.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/fushi_tag.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
-import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_toggles.dart';
-import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 // 已装在线源列表（「浏览 › 来源」与各库页「来源」子标签）三域共用的 M3E 积木。
 //
@@ -24,8 +28,9 @@ import 'package:fushi/src/utils/misc/platform_utils.dart';
 // （LNReader，`LnReaderInstalledSourcesSection`）与内置 mokuro.moe 行
 // （`MokuroMoeSourceRow`）同一种行形态：
 //
-// - 分段列表行（[FushiGroupedListItem]）：行首 M3E 开关、名称、副标题 = 语言
-//   tag + 扩展名 / 站点；窄行（手机）标题独占一行、动作挪到第二层，名字不被截断；
+// - 独立圆角卡片（拼贴改版 2026-11-16）：行首按源名取色的首字色块、名称、副标题 =
+//   语言 tag + 扩展名 / 站点，行尾 M3E 开关；窄行（手机）标题独占一行、动作挪到
+//   第二层，名字不被截断；
 // - 行尾只留一个主要动作（来源偏好）+ 「⋯」菜单（登录 / 置顶 / 上移下移 / 清数据），
 //   宽窄同形——此前宽行把六个图标按钮铺成一排，标题被挤到只剩几个字；
 // - 置顶组与其余组各自一组（[InstalledSourcesGroup]），组内可拖拽重排；搜索 /
@@ -100,9 +105,16 @@ bool matchesOnlineSourceFilter({
   return language.trim().toLowerCase() == languageFilter.trim().toLowerCase();
 }
 
-/// 搜索框下的一行筛选 chip（横向可滚）：全部 / 已启用 / 已停用 + 各语言。
+/// 搜索框下的一行筛选：状态分段（全部 / 已启用 / 已停用）+ 语言下拉胶囊。
 ///
-/// 「全部」= 两个维度都清空；状态 chip 与语言 chip 各自再点一次即取消。
+/// 拼贴改版（2026-11-16）：此前状态与每一种语言都是并排的 choice chip，语言一多
+/// 整行横滚、被页面右缘切掉；现在状态是设计系统分段（[adaptiveSegmentedButton]，
+/// MD3 胶囊 / Apple 分段），语言收进下拉（[LibraryFilterDropdown]，少于两种语言时
+/// 不出）。两个维度各自独立：切状态不清语言，语言下拉自带「全部语言」。
+///
+/// key：分段文字 `online_sources_filter_all|enabled|disabled`；语言胶囊
+/// `online_sources_filter_language`，菜单项 `online_sources_filter_lang_<小写语言>`
+/// （「全部语言」= `_all`）。
 class OnlineSourcesFilterBar extends StatelessWidget {
   const OnlineSourcesFilterBar({
     required this.status,
@@ -115,71 +127,80 @@ class OnlineSourcesFilterBar extends StatelessWidget {
   final OnlineSourceStatusFilter status;
   final String? language;
 
-  /// 可选语言（[onlineSourceLanguages] 的结果）；少于两种时不出语言 chip。
+  /// 可选语言（[onlineSourceLanguages] 的结果）；少于两种时不出语言下拉。
   final List<String> languages;
   final void Function(OnlineSourceStatusFilter status, String? language)
   onChanged;
 
-  bool _isLanguage(String value) =>
-      language != null && language!.toLowerCase() == value.toLowerCase();
-
   @override
   Widget build(BuildContext context) {
     final double gap = FushiDesignTokens.of(context).spacing.gap;
-    final List<Widget> chips = <Widget>[
-      FushiChoiceChip(
-        key: const ValueKey<String>('online_sources_filter_all'),
-        label: Text(t.online_sources_filter_all),
-        selected: status == OnlineSourceStatusFilter.all && language == null,
-        onSelected: (bool _) => onChanged(OnlineSourceStatusFilter.all, null),
+    // 当前语言按不分大小写对回 [languages] 里的那一项（下拉的选中值要同一实例）。
+    String? selectedLanguage;
+    for (final String value in languages) {
+      if (language != null && value.toLowerCase() == language!.toLowerCase()) {
+        selectedLanguage = value;
+      }
+    }
+    ButtonSegment<OnlineSourceStatusFilter> segment(
+      OnlineSourceStatusFilter value,
+      String label,
+    ) => ButtonSegment<OnlineSourceStatusFilter>(
+      value: value,
+      label: Text(
+        label,
+        key: ValueKey<String>('online_sources_filter_${value.name}'),
       ),
-      FushiChoiceChip(
-        key: const ValueKey<String>('online_sources_filter_enabled'),
-        label: Text(t.online_sources_filter_enabled),
-        selected: status == OnlineSourceStatusFilter.enabled,
-        onSelected: (bool _) => onChanged(
-          status == OnlineSourceStatusFilter.enabled
-              ? OnlineSourceStatusFilter.all
-              : OnlineSourceStatusFilter.enabled,
-          language,
-        ),
-      ),
-      FushiChoiceChip(
-        key: const ValueKey<String>('online_sources_filter_disabled'),
-        label: Text(t.online_sources_filter_disabled),
-        selected: status == OnlineSourceStatusFilter.disabled,
-        onSelected: (bool _) => onChanged(
-          status == OnlineSourceStatusFilter.disabled
-              ? OnlineSourceStatusFilter.all
-              : OnlineSourceStatusFilter.disabled,
-          language,
-        ),
-      ),
-      if (languages.length > 1)
-        for (final String value in languages)
-          FushiChoiceChip(
-            key: ValueKey<String>(
-              'online_sources_filter_lang_${value.toLowerCase()}',
-            ),
-            label: Text(onlineSourceLanguageLabel(value)),
-            selected: _isLanguage(value),
-            onSelected: (bool _) =>
-                onChanged(status, _isLanguage(value) ? null : value),
-          ),
-    ];
+    );
     return FocusTraversalGroup(
-      child: HorizontalDragScrollable(
-        child: SingleChildScrollView(
-          scrollDirection: Axis.horizontal,
-          child: Row(
-            children: <Widget>[
-              for (int i = 0; i < chips.length; i++) ...<Widget>[
-                if (i > 0) SizedBox(width: gap),
-                chips[i],
+      child: Wrap(
+        spacing: gap,
+        runSpacing: gap,
+        crossAxisAlignment: WrapCrossAlignment.center,
+        children: <Widget>[
+          // 分段在有界宽下会撑满（Apple 形态），收成内容宽，与语言胶囊同一行。
+          IntrinsicWidth(
+            child: adaptiveSegmentedButton<OnlineSourceStatusFilter>(
+              context: context,
+              segments: <ButtonSegment<OnlineSourceStatusFilter>>[
+                segment(
+                  OnlineSourceStatusFilter.all,
+                  t.online_sources_filter_all,
+                ),
+                segment(
+                  OnlineSourceStatusFilter.enabled,
+                  t.online_sources_filter_enabled,
+                ),
+                segment(
+                  OnlineSourceStatusFilter.disabled,
+                  t.online_sources_filter_disabled,
+                ),
               ],
-            ],
+              selected: <OnlineSourceStatusFilter>{status},
+              onSelectionChanged: (Set<OnlineSourceStatusFilter> next) {
+                if (next.isEmpty) return;
+                onChanged(next.first, language);
+              },
+            ),
           ),
-        ),
+          // 下拉在 Wrap 的宽松约束下会撑满整行、独占一行（用户 2026-11-16「来源
+          // 这个语言也很占位置」）；收成内容宽，与状态分段同一行。
+          if (languages.length > 1)
+            IntrinsicWidth(
+              child: LibraryFilterDropdown<String>(
+                key: const ValueKey<String>('online_sources_filter_language'),
+                value: selectedLanguage,
+                options: languages,
+                labelOf: onlineSourceLanguageLabel,
+                title: t.mihon_extension_language_filter,
+                allLabel: t.mihon_extension_language_all,
+                itemKeyOf: (String? value) => ValueKey<String>(
+                  'online_sources_filter_lang_${value?.toLowerCase() ?? 'all'}',
+                ),
+                onSelected: (String? value) => onChanged(status, value),
+              ),
+            ),
+        ],
       ),
     );
   }
@@ -210,10 +231,10 @@ class OnlineSourcesReorderDisabledHint extends StatelessWidget {
   }
 }
 
-/// 一个已装在线源的一行（分段列表行）。
+/// 一个已装在线源的一行（独立圆角卡片）。
 ///
-/// [index] / [count] 是组内位置（决定分段圆角）；行间缝由外层
-/// [InstalledSourcesGroup] 统一插（拖拽浮层只包行本身）。
+/// [index] / [count] 是组内位置（「上移 / 下移」的边界由调用方据此判断）；卡与
+/// 卡之间的缝由外层 [InstalledSourcesGroup] 统一插（拖拽浮层只包卡片本身）。
 class InstalledOnlineSourceRow extends StatelessWidget {
   const InstalledOnlineSourceRow({
     required this.index,
@@ -257,7 +278,7 @@ class InstalledOnlineSourceRow extends StatelessWidget {
   final Key? menuKey;
   final List<OnlineSourceMenuAction> menuActions;
 
-  /// 行尾显示拖拽把手（组内可拖时）。手势由外层 [FushiReorderableColumn] 负责：
+  /// 行尾显示拖拽把手（组内可拖时）。手势由外层 [FushiSliverReorderableList] 负责：
   /// 鼠标按下即拖、触摸长按再拖。
   final bool dragEnabled;
 
@@ -378,54 +399,83 @@ class InstalledOnlineSourceRow extends StatelessWidget {
                     ),
                 ],
           ),
-        // 把手自带 32dp 圆形命中框，不再额外垫 4dp。
-        if (dragEnabled) const FushiDragHandle(),
       ],
     );
 
-    return FushiGroupedListItem(
-      index: index,
-      count: count,
-      includeGap: false,
-      onTap: enabled ? onOpen : null,
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          final bool narrow = constraints.maxWidth < narrowLayoutBreakpoint;
-          final Widget switchWidget = FushiSwitch.adaptive(
-            value: enabled,
-            onChanged: onEnabledChanged,
-          );
-          if (!narrow) {
+    final bool openable = enabled && onOpen != null;
+    // 拼贴改版（2026-11-16）：每个源一张独立圆角卡片，行首是按源名取色的首字
+    // 色块（停用时淡出），开关挪到行尾——行首的色块才是「这是哪个源」的视觉锚点，
+    // 开关是状态，不该占在最前面。可点（已启用）的卡悬停轻抬、按压下沉。
+    return FushiHoverLift(
+      enabled: openable,
+      scale: 1.01,
+      builder: (BuildContext context, bool _) => FushiCard(
+        padding: EdgeInsets.zero,
+        onTap: openable ? onOpen : null,
+        pressScale: openable,
+        child: LayoutBuilder(
+          builder: (BuildContext context, BoxConstraints constraints) {
+            final bool narrow = constraints.maxWidth < narrowLayoutBreakpoint;
+            final Widget switchWidget = FushiSwitch.adaptive(
+              value: enabled,
+              onChanged: onEnabledChanged,
+            );
+            final Widget leading = ExtensionMonogram(
+              name: title,
+              dimmed: !enabled,
+            );
+            // 把手自带 32dp 圆形命中框，不再额外垫 4dp。
+            final Widget trailingEnd = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: <Widget>[
+                const SizedBox(width: 4),
+                switchWidget,
+                if (dragEnabled) const FushiDragHandle(),
+              ],
+            );
+            if (!narrow) {
+              return FushiListItem(
+                key: rowKey,
+                titleMaxLines: 2,
+                subtitleMaxLines: 2,
+                leading: leading,
+                title: titleWidget,
+                subtitle: metaWidget,
+                trailing: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: <Widget>[actions, trailingEnd],
+                ),
+              );
+            }
+            // 两层：第一层 = 标题 + 开关 / 把手（仍在行尾）；第二层 = 语言 / 扩展名
+            // + 来源偏好 / ⋯。开关不放进 FushiListItem.trailing：那样它会占掉
+            // 两层文字列共同的宽度，360dp 上扩展名被挤到逐字折行、截成「Anime B…」，
+            // 而用户正是靠扩展名认出源。
             return FushiListItem(
               key: rowKey,
               titleMaxLines: 2,
               subtitleMaxLines: 2,
-              leading: switchWidget,
-              title: titleWidget,
-              subtitle: metaWidget,
-              trailing: actions,
+              leading: leading,
+              title: Row(
+                children: <Widget>[
+                  Expanded(child: titleWidget),
+                  trailingEnd,
+                ],
+              ),
+              subtitle: Row(
+                children: <Widget>[
+                  Expanded(child: metaWidget ?? const SizedBox.shrink()),
+                  // 动作图标的字号 / 颜色与单层行尾一致（FushiListItem 只给
+                  // trailing 套 metadata 样式，这里在 subtitle 里自己套 IconTheme）。
+                  IconTheme.merge(
+                    data: IconThemeData(color: cs.onSurfaceVariant),
+                    child: actions,
+                  ),
+                ],
+              ),
             );
-          }
-          // 两层：标题独占文字列整宽；第二层 = 语言 / 扩展名 + 行尾动作。
-          return FushiListItem(
-            key: rowKey,
-            titleMaxLines: 2,
-            subtitleMaxLines: 2,
-            leading: switchWidget,
-            title: titleWidget,
-            subtitle: Row(
-              children: <Widget>[
-                Expanded(child: metaWidget ?? const SizedBox.shrink()),
-                // 动作图标的字号 / 颜色与单层行尾一致（FushiListItem 只给
-                // trailing 套 metadata 样式，这里在 subtitle 里自己套 IconTheme）。
-                IconTheme.merge(
-                  data: IconThemeData(color: cs.onSurfaceVariant),
-                  child: actions,
-                ),
-              ],
-            ),
-          );
-        },
+          },
+        ),
       ),
     );
   }
@@ -441,15 +491,20 @@ typedef InstalledSourceRowBuilder<T> =
       bool dragEnabled,
     );
 
-/// 一组已装源（置顶组 / 其余组）：可选小标题 + 分段列表，组内拖拽重排。
+/// 一组已装源（置顶组 / 其余组）：可选小标题 + 分段列表，组内拖拽重排。**是 sliver**，
+/// 直接挂进外层 `CustomScrollView` / `SliverMainAxisGroup`。
 ///
-/// [reorderable] 为 true 且多于一行时用 [FushiReorderableColumn]（自实现的重排列，
-/// 在 `FushiAppUiScale` 祖先缩放下不漂移，鼠标按下即拖、触摸长按再拖），只在本组
-/// 内拖；落点后 [onReorder] 收到整组的新顺序，由调用方批量回写。
+/// 🔴 必须懒建（#E5IZOyVcbm）：批量装完一个完整仓库就有一千多行已装源，此前整组是
+/// `SliverToBoxAdapter` 里的一列，视口裁不掉屏外行——每行都布局、绘制、留在合成树里，
+/// 浏览页空闲时合成树堆到 PictureLayer×6593 / OpacityLayer×4395 / ClipPathLayer×1098。
+/// 现在行走 [SliverList.builder] / [FushiSliverReorderableList]，只建可见的那十几行。
+///
+/// [reorderable] 为 true 且多于一行时用 [FushiSliverReorderableList]（自实现的懒建
+/// 重排 sliver，在 `FushiAppUiScale` 祖先缩放下不漂移，鼠标按下即拖、触摸长按再拖），
+/// 只在本组内拖；落点后 [onReorder] 收到整组的新顺序，由调用方批量回写。
 ///
 /// 每行包一层 [FushiStaggeredEntrance]（序号从 [entranceOffset] 起），调用方在外层
-/// 挂 [FushiEntranceScope]；行数变化（置顶 / 取消置顶把行挪到另一组）用 spatial
-/// 弹簧 [AnimatedSize] 过渡。
+/// 挂 [FushiEntranceScope]。
 class InstalledSourcesGroup<T> extends StatelessWidget {
   const InstalledSourcesGroup({
     required this.items,
@@ -464,7 +519,7 @@ class InstalledSourcesGroup<T> extends StatelessWidget {
 
   final List<T> items;
 
-  /// 行身份（拖拽时的稳定 key）。
+  /// 行身份（懒建列表找回元素、拖拽时的稳定 key）。
   final String Function(T item) keyOf;
   final InstalledSourceRowBuilder<T> rowBuilder;
   final bool reorderable;
@@ -476,62 +531,61 @@ class InstalledSourcesGroup<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final FushiMotionScheme motion = context.fushiMotion;
-    final double gap = fushiGroupedListGap(context);
+    final double gap = FushiDesignTokens.of(context).spacing.gap;
     final int count = items.length;
     final bool drag = reorderable && count > 1;
     Widget row(BuildContext context, int index) => FushiStaggeredEntrance(
       index: entranceOffset + index,
       child: rowBuilder(context, items[index], index, count, drag),
     );
-    final Widget body = drag
-        ? FushiReorderableColumn(
-            itemCount: count,
-            spacing: gap,
-            keyForIndex: (int index) =>
-                ValueKey<String>('online_source_drag_${keyOf(items[index])}'),
-            onReorder: (int from, int to) {
-              final List<T> reordered = List<T>.of(items);
-              final T moved = reordered.removeAt(from);
-              reordered.insert(to, moved);
-              onReorder(reordered);
-            },
-            itemBuilder: row,
-          )
-        : Column(
-            mainAxisSize: MainAxisSize.min,
-            crossAxisAlignment: CrossAxisAlignment.stretch,
-            children: <Widget>[
-              for (int i = 0; i < count; i++) ...<Widget>[
-                if (i > 0) SizedBox(height: gap),
-                KeyedSubtree(
-                  key: ValueKey<String>('online_source_${keyOf(items[i])}'),
-                  child: row(context, i),
-                ),
-              ],
-            ],
-          );
+    final Widget body;
+    if (drag) {
+      body = FushiSliverReorderableList(
+        itemCount: count,
+        spacing: gap,
+        keyForIndex: (int index) =>
+            ValueKey<String>('online_source_drag_${keyOf(items[index])}'),
+        onReorder: (int from, int to) {
+          final List<T> reordered = List<T>.of(items);
+          final T moved = reordered.removeAt(from);
+          reordered.insert(to, moved);
+          onReorder(reordered);
+        },
+        itemBuilder: row,
+      );
+    } else {
+      final Map<String, int> indexOfKey = <String, int>{
+        for (int i = 0; i < count; i++) 'online_source_${keyOf(items[i])}': i,
+      };
+      body = SliverList.builder(
+        itemCount: count,
+        findChildIndexCallback: (Key key) =>
+            key is ValueKey<String> ? indexOfKey[key.value] : null,
+        itemBuilder: (BuildContext context, int i) => KeyedSubtree(
+          key: ValueKey<String>('online_source_${keyOf(items[i])}'),
+          child: Padding(
+            padding: EdgeInsets.only(top: i > 0 ? gap : 0),
+            child: row(context, i),
+          ),
+        ),
+      );
+    }
     final String? title = header;
-    return Column(
-      mainAxisSize: MainAxisSize.min,
-      crossAxisAlignment: CrossAxisAlignment.stretch,
-      children: <Widget>[
+    return SliverMainAxisGroup(
+      slivers: <Widget>[
         if (title != null)
-          FushiSectionTitle.group(
-            title,
-            trailing: Text(
-              '$count',
-              style: context.fushiType.labelMedium.copyWith(
-                color: Theme.of(context).colorScheme.onSurfaceVariant,
+          SliverToBoxAdapter(
+            child: FushiSectionTitle.group(
+              title,
+              trailing: Text(
+                '$count',
+                style: context.fushiType.labelMedium.copyWith(
+                  color: Theme.of(context).colorScheme.onSurfaceVariant,
+                ),
               ),
             ),
           ),
-        AnimatedSize(
-          duration: motion.spatialDefault.duration,
-          curve: motion.spatialDefault.curve,
-          alignment: Alignment.topCenter,
-          child: body,
-        ),
+        body,
       ],
     );
   }
@@ -545,7 +599,7 @@ class InstalledSourcesSkeleton extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double gap = fushiGroupedListGap(context);
+    final double gap = FushiDesignTokens.of(context).spacing.gap;
     return FushiSkeletonShimmer(
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -553,10 +607,7 @@ class InstalledSourcesSkeleton extends StatelessWidget {
         children: <Widget>[
           for (int i = 0; i < rows; i++) ...<Widget>[
             if (i > 0) SizedBox(height: gap),
-            FushiSkeleton(
-              height: 72,
-              borderRadius: fushiGroupedItemRadius(context, i, rows),
-            ),
+            FushiSkeleton(height: 72, borderRadius: FushiM3eShape.cardRadius),
           ],
         ],
       ),

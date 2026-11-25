@@ -20,6 +20,7 @@ import 'dart:convert';
 import 'dart:io';
 
 import 'package:path/path.dart' as p;
+import 'package:fushi_server/src/server_language.dart';
 
 const String kServerLockFileName = 'fushi_server.lock';
 
@@ -82,20 +83,32 @@ class ServerDataLockedException implements Exception {
       final String detail = <String>[
         pid,
         if (h.admin != null) 'WebUI ${h.admin}',
-      ].where((String s) => s.isNotEmpty).join('，');
-      return 'serve 正在运行（${detail.isEmpty ? '数据目录 $dataDir' : detail}），'
-          '请改用 `fushi_server ctl …` 或先停止 serve';
+      ].where((String s) => s.isNotEmpty).join(tr('，', ', '));
+      return tr(
+        'serve 正在运行（${detail.isEmpty ? '数据目录 $dataDir' : detail}），'
+            '请改用 `fushi_server ctl …` 或先停止 serve',
+        'serve is running (${detail.isEmpty ? 'data directory $dataDir' : detail}), '
+            'use `fushi_server ctl …` instead or stop serve first',
+      );
     }
     if (h != null && h.mode == 'offline') {
       final String detail = <String>[
         pid,
         ?h.command,
-      ].where((String s) => s.isNotEmpty).join('：');
-      return '另一条 fushi_server 离线命令正在使用数据目录 $dataDir'
-          '${detail.isEmpty ? '' : '（$detail）'}，等它结束后再试';
+      ].where((String s) => s.isNotEmpty).join(tr('：', ': '));
+      return tr(
+        '另一条 fushi_server 离线命令正在使用数据目录 $dataDir'
+            '${detail.isEmpty ? '' : '（$detail）'}，等它结束后再试',
+        'Another fushi_server offline command is using the data directory $dataDir'
+            '${detail.isEmpty ? '' : ' ($detail)'}; try again when it finishes',
+      );
     }
-    return '数据目录 $dataDir 正被另一个 fushi_server 进程占用（锁文件 $lockPath），'
-        '若是 serve 请改用 `fushi_server ctl …` 或先停止 serve';
+    return tr(
+      '数据目录 $dataDir 正被另一个 fushi_server 进程占用（锁文件 $lockPath），'
+          '若是 serve 请改用 `fushi_server ctl …` 或先停止 serve',
+      'The data directory $dataDir is in use by another fushi_server process (lock file $lockPath); '
+          'if it is serve, use `fushi_server ctl …` instead or stop serve first',
+    );
   }
 
   @override

@@ -72,10 +72,14 @@ bool _isSyncDomain(String path) =>
 ///  - `sync/**`（app 的 `lib/src/sync/` 与引擎的 `packages/fushi_engine/lib/sync/`，
 ///    见 [_isSyncDomain]）：legacy wire 物化 / 备份 / 比对；
 ///  - `home_video_page.dart`：只取 `video_watch_statistics.lastModified` 做「最近观看」
-///    排序（不是统计展示），v92 起与 `getLatestStudyEndAtByMedia` 并集。
+///    排序（不是统计展示），v92 起与 `getLatestStudyEndAtByMedia` 并集；
+///  - `video_continue_watching.dart`：同一份「最近观看」映射（`buildVideoWatchRecency`）
+///    的页外现读入口，侧栏视频速览没开过视频页时按它现算继续观看（BUG-5330），
+///    同样只取排序时刻、不做统计展示。
 const List<String> kLegacyReaderExemptFiles = <String>[
   '../packages/fushi_engine/lib/stats/stat_facts.dart',
   'lib/src/pages/implementations/home_video_page.dart',
+  'lib/src/media/video/video_continue_watching.dart',
 ];
 
 /// ⑤ 会话累计器的旧形状。
@@ -99,6 +103,8 @@ const List<String> kStatPages = <String>[
   'lib/src/pages/implementations/game_statistics_page.dart',
   'lib/src/ops/ctl_settings_routes.dart',
   'lib/src/pages/implementations/home_dashboard_page.dart',
+  // 首页小组件网格（2026-11-15）的「今日」格子在 part 文件里读同一个窗口。
+  'lib/src/pages/implementations/home_dashboard_widget_cells.part.dart',
   'lib/src/pages/implementations/statistics_center_page.dart',
   'lib/src/pages/implementations/stat_period_detail_sheet.dart',
   'lib/src/pages/implementations/video_stat_aggregates.dart',
@@ -113,6 +119,27 @@ const List<String> kStatPages = <String>[
   // 桌面 / 安卓小组件快照（#2819）：今日 / 近 7 / 35 天按 StatWindow 切 loadStatFacts，
   // 与首页「今日」卡同口径；属窗口统计消费方，受 ④ 管辖。
   'lib/src/platform/widget_snapshot_source.dart',
+  // 小组件快照纯函数：周目标分子按 StatWindow.weekStartOf 取本自然周起点
+  // （反馈 CjIr9RGSCe），不得自算周窗口。
+  'lib/src/platform/widget_snapshot.dart',
+  // 副屏伴侣「今日」摘要：今日阅读 / 观看 / 收听按 StatWindow 切 loadStatFacts，与
+  // 首页「今日」卡同口径。
+  'lib/src/second_screen/companion/companion_main_services.dart',
+  // 目标编辑面板：「近 7 天日均」提示按 StatWindow.lastDayKeys 取窗口，与目标分子同口径。
+  'lib/src/pages/implementations/study_goal_edit_sheet.dart',
+  // 「周从哪天开始」偏好写进 StatWindow.weekStartDay（与 statDayResetHour 同一个
+  // apply 入口），不自己切窗口。
+  'lib/src/models/app_model.dart',
+  // 统计范围条的周桶按 StatWindow.weekStartOf 取周起点（跟「周从哪天开始」）。
+  'lib/src/pages/implementations/stat_range_bar.dart',
+  // 设置「你的目标」行首进度环：缓存键带 StatWindow.weekStartDay，分子同目标口径。
+  'lib/src/settings/settings_schema_study_goals.dart',
+  // 热力图（统计页贡献图 / 复习日历）的列从「周从哪天开始」起：StatWindow.dayOfWeek /
+  // weekStartOfDay，不自己假设周一。
+  'lib/src/utils/components/stat_contribution_heatmap.dart',
+  'lib/src/pages/implementations/srs_stat_charts.dart',
+  // 趋势图的周桶 = StatWindow.weekStartOf（与「本周」同一个周起始日，不再是 ISO 周）。
+  'lib/src/pages/implementations/stat_trends.dart',
 ];
 
 void main() {
@@ -284,7 +311,10 @@ void main() {
     expect(containsCodeLine(window, '_keyDaysAgo(now, 29)'), isTrue);
     // 本周 = 自然周（周一起，2026-10-09，与范围条「周」同口径）；上周 = 上周同期
     // （上周一 .. 今日-7），与本周已过天数同长、不重叠。
-    expect(containsCodeLine(window, 'weekFromKey = _mondayOf(today),'), isTrue);
+    expect(
+      containsCodeLine(window, 'weekFromKey = weekStartOf(today),'),
+      isTrue,
+    );
     expect(
       containsCodeLine(
         window,
@@ -336,7 +366,7 @@ void main() {
     );
   });
 
-  test('⑥ 阅读面切屏暂停（paused/inactive stop、resumed start）；视频面 inactive 不停', () {
+  test('⑥ 阅读面切屏暂停（paused/inactive stop、resumed start）；视频面 inactive 在播不停', () {
     for (final String path in <String>[
       'lib/src/pages/implementations/reader_fushi_page.dart',
       'lib/src/pages/implementations/reader_pdf_page.dart',
@@ -380,17 +410,36 @@ void main() {
     );
     final int inactive = video.indexOf('case AppLifecycleState.inactive:');
     final int paused = video.indexOf('case AppLifecycleState.paused:');
+    final int resumed = video.indexOf('case AppLifecycleState.resumed:');
     expect(inactive, greaterThanOrEqualTo(0));
     expect(paused, greaterThan(inactive));
+    expect(resumed, greaterThan(paused));
+    final String videoInactive = video.substring(inactive, paused);
     expect(
-      video.substring(inactive, paused).contains('_watchTracker?.stop()'),
+      videoInactive.contains('_watchTracker?.stop()'),
       isFalse,
-      reason: '视频切走仍在播就照常计时（用户拍板）：inactive 不得停表',
+      reason: '视频切走仍在播就照常计时（用户拍板）：inactive 不得停采样 / 停表',
     );
+    // 2026-11-07 起视频面也走 StudyClockRunGate：失焦只喂「失焦」，由门按「仍在播放
+    // 才计」裁决（studyClockGateMayRun 的 unfocused + playing）。
     expect(
-      video.substring(paused).contains('_watchTracker?.stop()'),
+      videoInactive.contains('_studyClockGate.setUnfocused(true);'),
+      isTrue,
+      reason: '视频失焦必须喂计时门（停着就停表、在播照计）',
+    );
+    final String videoBg = video.substring(paused, resumed);
+    expect(
+      videoBg.contains('_watchTracker?.stop()') &&
+          videoBg.contains('_studyClockGate.setLifecycleStopped(true);'),
       isTrue,
       reason: '真后台 / 熄屏才停',
+    );
+    final String videoFg = video.substring(resumed);
+    expect(
+      videoFg.contains('_studyClockGate.setUnfocused(false);') &&
+          videoFg.contains('_studyClockGate.setLifecycleStopped(false);'),
+      isTrue,
+      reason: '回前台经计时门续表（仍被盖住 / 手动暂停就不续）',
     );
   });
 
@@ -440,24 +489,36 @@ void main() {
     // 照样能让守卫全绿。而 reading_statistics_page 本来就有两处调用（阅读域
     // _bookFacts 供 CPH、学习域 _dailyFacts 供目标），文件级 contains 分辨不出
     // 目标分子用的是哪一处——必须把**目标分子那一处的实参**一起钉死。
-    expect(
-      containsCodeLine(
-        read('lib/src/pages/implementations/home_dashboard_page.dart'),
-        'studyGoalCharsForDay(_dailyRows,',
-      ),
-      isTrue,
-      reason:
-          '首页目标分子的实参必须是完整日面 _dailyRows（书 ∪ 视频 ∪ 游戏），'
-          '换成任何单域切片都会让 BUG-1993 原地复发',
-    );
-    expect(
-      containsCodeLine(
-        read('lib/src/pages/implementations/reading_statistics_page.dart'),
-        'studyGoalCharsForDay(_dailyFacts,',
-      ),
-      isTrue,
-      reason: '统计页目标分子的实参必须是完整日面 _dailyFacts，与首页同口径',
-    );
+    // 目标记录化（每条目标自带周期 / 语言）之后，目标分子统一走
+    // computeStudyGoals：全部语言的分子来自 buildStudyImmersionInput(日面)，按
+    // 语言的分子来自 buildStudyGoalsInput(daily: 日面) 内部的语言过滤——两处
+    // 实参都钉死完整日面，换成任何单域切片都会让 BUG-1993 原地复发。
+    // 实参按「去空白后的代码」比对：dart format 会把带命名参数的调用折成多行，
+    // 逐行子串匹配会因排版而误红。
+    String code(String path) => read(path).replaceAll(RegExp(r'\s+'), '');
+    const String home =
+        'lib/src/pages/implementations/home_dashboard_page.dart';
+    const String stats =
+        'lib/src/pages/implementations/reading_statistics_page.dart';
+    final Map<String, String> pins = <String, String>{
+      // 首页「今日」格的今日字数：完整日面 _dailyRows（书 ∪ 视频 ∪ 游戏）。
+      home: 'studyGoalCharsForDay(_dailyRows,todayKey)',
+      '$home#immersion':
+          'immersion:buildStudyImmersionInput(_dailyRows,_statWindow)',
+      '$home#languages': 'daily:_dailyRows,',
+      // 统计页目标分子同样是完整日面 _dailyFacts，与首页同口径。
+      stats: '_todayStudyChars=studyGoalCharsForDay(_dailyFacts,w.todayKey)',
+      '$stats#immersion': 'immersion:buildStudyImmersionInput(_dailyFacts,w)',
+      '$stats#languages': 'daily:_dailyFacts,',
+    };
+    pins.forEach((String key, String needle) {
+      final String path = key.split('#').first;
+      expect(
+        code(path).contains(needle),
+        isTrue,
+        reason: '$path：目标分子必须是 `$needle`（完整日面）',
+      );
+    });
   });
 
   test('⑨ 三个统计页的异步加载 setState 都过 mounted 门（embedded tab 离屏即卸载）', () {

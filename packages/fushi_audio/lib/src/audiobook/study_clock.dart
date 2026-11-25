@@ -85,14 +85,13 @@ typedef DeferredStudyWrite = void Function(Future<void> Function() write);
 /// [StudyClock] 的时长来源。
 enum StudyAccrual {
   /// 墙钟窗口：每个 tick 把 `[上次 tick, now]` 整窗计入（经断档 / 活跃态 / 空闲三道
-  /// 守卫）。阅读 / 漫画 / PDF 面用——「页面开着、没空闲」就是在读。
+  /// 守卫）。阅读 / 漫画 / PDF / 视频面用——「页面开着、没被盖住、没空闲」就是在学
+  /// （视频面 2026-11-07 起：暂停查词、回放重听都算，播放中由采集器喂空闲门）。
   wallClock,
 
   /// 显式记账：时长只由消费方经 [StudyClock.addActiveMs] 推入，tick 不再按墙钟计。
-  /// 视频面用（BUG-2108）：观看时长 = 位置推进到**首次覆盖**的片内区间所花的墙钟
-  /// 时间，由 `VideoWatchTracker` 按 1s 采样位置算出；回放 / 拖回 / 重看不推、不计。
-  /// 此前视频面按 tick 末刻 `isPlaying` 整窗计——一个 20s 回放可能记 60s 也可能记
-  /// 0s，且重听照计。
+  /// 现只有 galgame hook 的字数时钟用（只 `addChars`、时长恒 0，游玩时长另记）。
+  /// 视频面 BUG-2108 曾用它「只计首次覆盖片长」，2026-11-07 所有者改为按实际时间计。
   explicit,
 }
 
@@ -113,6 +112,9 @@ class _OpenSegment {
   int durationMs = 0;
   int chars = 0;
   int pages = 0;
+
+  /// 本段里在这个媒体上的查词次数（v178，见 [StudyClock.addLookup]）。
+  int lookups = 0;
 
   /// 有未落库的改动。写失败保持 true，下个 tick 用绝对值重写——重试不会翻倍。
   bool dirty = false;
@@ -150,9 +152,9 @@ typedef StudySessionTotals = ({int durationMs, int chars, bool active});
 ///
 /// 三道守卫（任一拒绝即整窗丢弃 + 封段）：
 ///  * 断档：[isContinuousReadingGap]（BUG-892，睡眠 / 挂起后的补发 tick）；
-///  * 活跃态：[isActive]（视频 = 正在播放；阅读 / 游戏不传 = 恒活跃，前台门由
-///    生命周期的 stop/start 承担——桌面窗口失焦、移动端进后台都会 stop）；
-///  * 空闲：[idleTimeout]（阅读面 10 分钟无 [touch] 即不入账；视频不设）。
+///  * 活跃态：[isActive]（视频面传跨面入账仲裁的结论；不传 = 恒活跃，前台门由宿主的计时门承担——
+///    切后台、被盖住、手动暂停都会 stop）；
+///  * 空闲：[idleTimeout]（阅读 / 漫画 / 视频面 10 分钟无 [touch] 即不入账；视频播放中由采集器每秒 touch）。
 ///
 /// 字数 / 页数经 [addChars] / [addPages] 记到当前打开段（没有就以 0 时长开一段），
 /// 与时长同一行、同一 uid、同一次写；回翻经 [retractChars] / [retractPages] 从最新
@@ -180,6 +182,41 @@ void retireStudySegmentUids(Iterable<String> uids) {
 /// 测试用：清空退役登记（进程级全局，用例之间必须互不串味）。
 void debugClearRetiredStudySegmentUids() {
   _retiredStudySegmentUids.clear();
+}
+
+/// 本进程里**正在计时**的时钟（[StudyClock.start] 登记、[StudyClock.stop] /
+/// [StudyClock.detach] 摘除）。只给 [creditLookupToRunningStudyClock] 按媒体身份找
+/// 「这次查词发生在哪一段里」用；停着的时钟不在这里（停表 = 不在学习）。
+final Set<StudyClock> _runningStudyClocks = <StudyClock>{};
+
+/// 把一次查词记进 [mediaKind] / [mediaKey] 这个媒体**正在计时**的时钟的当前段
+/// （拍板台 4KOWK3c2mn 方案 b：查词与字数 / 时长同一小时粒度、同一行，编辑会话改
+/// 日期时随段平移，删会话时随段写零，同步走段的 uid LWW）。
+///
+/// 返回 false = 本进程里这个媒体没有在跑的时钟（手动暂停 / 切后台 / 浮窗进程 /
+/// 无书查词），调用方照旧记按天的 `lookup_mining_counters`。两处互斥，不双计。
+/// [mediaKind] 与 `lookup_mining_counters.source_type` 同值域（book / video / game /
+/// music），[mediaKey] 与计数表的 `book_key` 同一身份。
+bool creditLookupToRunningStudyClock({
+  required String mediaKind,
+  required String mediaKey,
+}) {
+  if (mediaKey.isEmpty) return false;
+  for (final StudyClock clock in _runningStudyClocks) {
+    if (clock._mediaKind == mediaKind &&
+        clock._mediaKey == mediaKey &&
+        clock.isRunning) {
+      clock.addLookup();
+      return true;
+    }
+  }
+  return false;
+}
+
+/// 测试用：清空在跑时钟登记（进程级全局，用例之间必须互不串味）。
+@visibleForTesting
+void debugClearRunningStudyClocks() {
+  _runningStudyClocks.clear();
 }
 
 class StudyClock {
@@ -236,7 +273,7 @@ class StudyClock {
   /// 活跃态判据（每个 tick 问一次，仅墙钟模式）。null = 恒活跃。
   bool Function()? isActive;
 
-  /// 空闲门：距上次 [touch] 超过它的 tick 不入账。null = 不设（视频 / 游戏）。
+  /// 空闲门：时长只计到「上次 [touch] + 它」为止，之后不入账。null = 不设。
   Duration? idleTimeout;
 
   /// 每个 tick（无论是否入账）后回调，给消费方挂周期性检查（视频完成判定）。
@@ -264,12 +301,17 @@ class StudyClock {
   /// [retractChars]（回翻）扣回，但不低于 0。
   int _sessionDurationMs = 0;
   int _sessionChars = 0;
+  int _sessionPages = 0;
 
   Timer? _timer;
   DateTime? _tickStart;
   DateTime? _lastTouch;
   _OpenSegment? _open;
   String? _cachedDeviceId;
+
+  /// 最近一次被封的段（[addLookup] 在空闲封段后把查词记回它）。只在本会话内有效，
+  /// [stop] / [detach] 清掉——下次起表是新的学习，不往旧段上记。
+  _OpenSegment? _lastSealed;
 
   /// 本会话开过的全部段（含已封的），按打开顺序。封段只丢 [_open] 引用，对象留在
   /// 这里给 [retractChars] / [retractPages] 从尾往前扣；封段时没有内容账的段摘掉
@@ -287,6 +329,10 @@ class StudyClock {
 
   /// 计时中（已 [start] 且未 [stop]）。停表期间恒 false，后台时长永不入账。
   bool get isRunning => _timer != null;
+
+  /// 本次会话已入账的页数（漫画 / PDF 统计侧栏的只读读数，口径同
+  /// [StudySessionTotals.chars]：封段不清、回翻撤回扣减、不低于 0）。
+  int get sessionPages => _sessionPages;
 
   /// 本次会话的实时累计（不改任何状态、不写库）。
   ///
@@ -311,12 +357,20 @@ class StudyClock {
       );
     }
     final DateTime now = _now();
-    final bool accepted = _windowAccepted(start, now);
-    final int pending = accepted ? now.difference(start).inMilliseconds : 0;
+    // 零长度窗口（刚 tick / 刚结算）不是断档：此刻是否在计时只看活跃态与空闲门。
+    if (!now.isAfter(start)) {
+      return (
+        durationMs: _sessionDurationMs,
+        chars: _sessionChars,
+        active: (isActive?.call() ?? true) && !_isIdle(now),
+      );
+    }
+    final DateTime? end = _creditableEnd(start, now);
+    final int pending = end == null ? 0 : end.difference(start).inMilliseconds;
     return (
       durationMs: _sessionDurationMs + (pending > 0 ? pending : 0),
       chars: _sessionChars,
-      active: accepted,
+      active: end != null && !end.isBefore(now),
     );
   }
 
@@ -341,6 +395,7 @@ class StudyClock {
     _tickStart = now;
     _lastTouch = now;
     _timer = Timer.periodic(_tick, (_) => unawaited(_onTimer()));
+    _runningStudyClocks.add(this);
     _trace('start accrual=${accrual.name} idle=${idleTimeout?.inSeconds}s');
   }
 
@@ -353,8 +408,10 @@ class StudyClock {
     final Timer? timer = _timer;
     _timer = null;
     timer?.cancel();
+    _runningStudyClocks.remove(this);
     _accrue(_now());
     _tickStart = null;
+    _lastSealed = null;
     final _OpenSegment? seg = _open;
     _open = null;
     if (seg != null && _needsWrite(seg)) _enqueueWrite(seg);
@@ -383,8 +440,10 @@ class StudyClock {
     final Timer? timer = _timer;
     _timer = null;
     timer?.cancel();
+    _runningStudyClocks.remove(this);
     _accrue(_now());
     _tickStart = null;
+    _lastSealed = null;
     final _OpenSegment? seg = _open;
     _open = null;
     if (seg != null && _needsWrite(seg)) _enqueueWrite(seg);
@@ -401,8 +460,16 @@ class StudyClock {
   }
 
   /// 用户输入（翻页 / 滚动 / 听书播放态的 cue 推进）：喂空闲门。查词不经这里。
+  ///
+  /// 已过空闲门时，先把待定窗口按**旧**空闲基准结算（入账到期点、封段），再重锚
+  /// 基准（BUG-4498）：否则重锚后 [_creditableEnd] 用新基准裁决同一个跨越空闲期的
+  /// 窗口，暂停 / 挂机超出阈值的那段在恢复的一刻整段回到时长里。
   void touch() {
-    _lastTouch = _now();
+    final DateTime now = _now();
+    if (_timer != null && accrual == StudyAccrual.wallClock && _isIdle(now)) {
+      _accrue(now);
+    }
+    _lastTouch = now;
   }
 
   /// 记字数到当前打开段（没有就开一段）。字数本身就是一次输入，顺带 [touch]。
@@ -429,7 +496,47 @@ class StudyClock {
     _settleBeforeContentAccount();
     _ensureOpen(_now()).pages += pages;
     _open!.dirty = true;
+    _sessionPages += pages;
     _trace('+${pages}p → ${_describe(_open!)}');
+  }
+
+  /// 记一次查词到当前打开段（没有就以 0 时长开一段；v178）。只经
+  /// [creditLookupToRunningStudyClock] 调用：查词面不持有时钟，按媒体身份找过来。
+  ///
+  /// **查词不喂空闲门**（不 [touch]，统计口径见 docs/agent/statistics.md），也不算
+  /// 显式记账模式的「本窗记过账」——它不改变时长裁决，只是给段添一项计数。墙钟模式
+  /// 先结算待定窗口（同 [addChars] 的 BUG-2217 理由：跨小时瞬间先把旧小时时长落旧段）。
+  /// 停表期间返回 false、什么也不记，由调用方退回按天计数表。
+  ///
+  /// 空闲门刚把段封掉（停在一页上查了很久的词）时，查词记回**同一统计日**里最近封
+  /// 的那一段并重新排队落库（绝对值重写，同 [retractChars] 改已封段），而不是另开
+  /// 一条 0 时长段：0 时长段不进会话流，编辑会话时就挪不走这次查词。那一段若已随
+  /// 会话删除 / 编辑退役（[retireStudySegmentUids]），不往它上记（写会被丢弃，查词
+  /// 就丢了），照常开新段。
+  ///
+  /// **写穿**：查词当场排队落库（与 v178 前 `addLookupCount` 每次查词即写同一口径），
+  /// 不等下一 tick——统计侧栏 / 统计页随查随见，进程被杀也不丢这一分钟内的查词。
+  bool addLookup() {
+    if (!isRunning) return false;
+    final DateTime now = _now();
+    if (accrual == StudyAccrual.wallClock) _accrue(now);
+    final _OpenSegment? sealed = _lastSealed;
+    if (_open == null &&
+        sealed != null &&
+        !_retiredStudySegmentUids.contains(sealed.uid) &&
+        sealed.dateKey == FushiDatabase.statDateKeyOf(now)) {
+      sealed.lookups += 1;
+      sealed.dirty = true;
+      if (_needsWrite(sealed)) _enqueueWrite(sealed);
+      _trace('+1 lookup → sealed ${_describe(sealed)}');
+      return true;
+    }
+    final _OpenSegment seg = _ensureOpen(now);
+    seg.lookups += 1;
+    seg.dirty = true;
+    if (_needsWrite(seg)) _enqueueWrite(seg);
+    _trace('+1 lookup → ${_describe(seg)}');
+    return true;
   }
 
   /// 撤回本会话已记的字数（回翻）。阅读账本的入账额是「会话覆盖并集 ∩ [0, 当前
@@ -459,8 +566,7 @@ class StudyClock {
     return taken;
   }
 
-  /// 撤回本会话已记的页数（漫画 / PDF 回翻），同 [retractChars]。页数没有会话
-  /// 累计器，只改段。
+  /// 撤回本会话已记的页数（漫画 / PDF 回翻），同 [retractChars]。
   int retractPages(int pages) {
     if (pages <= 0 || !isRunning) return 0;
     final int taken = _retract(
@@ -468,6 +574,7 @@ class StudyClock {
       (_OpenSegment seg) => seg.pages,
       (_OpenSegment seg, int value) => seg.pages = value,
     );
+    _sessionPages -= taken;
     _trace('-${pages}p taken=$taken');
     return taken;
   }
@@ -560,8 +667,8 @@ class StudyClock {
       _creditedSinceTick = false;
       return;
     }
-    final bool accepted = _windowAccepted(start, now);
-    if (!accepted) {
+    final DateTime? end = _creditableEnd(start, now);
+    if (end == null) {
       // 整窗丢弃 + 封段：下一个被接受的窗口开新段（活动流按 30 分钟 gap 归并，
       // 封段不会把一次阅读拆成多条）。
       _trace(
@@ -571,10 +678,24 @@ class StudyClock {
       _seal();
       return;
     }
+    _credit(start, end);
+    if (end.isBefore(now)) {
+      // 空闲门在窗内到期：到期点之前照计，之后不计，封段（同整窗拒绝）。
+      _trace(
+        'idle-cut window ${now.difference(start).inMilliseconds}ms → '
+        '${end.difference(start).inMilliseconds}ms '
+        '(${_rejectReason(start, now)})',
+      );
+      _seal();
+    }
+  }
+
+  /// 把 `[start, end]` 按小时拆桶记进打开段（跨小时封旧开新）。
+  void _credit(DateTime start, DateTime end) {
     DateTime bucketStart = start;
     for (final (String dateKey, int hour, int ms) in splitReadingTime(
       start,
-      now,
+      end,
     )) {
       _OpenSegment? seg = _open;
       if (seg == null || seg.dateKey != dateKey || seg.hour != hour) {
@@ -589,18 +710,32 @@ class StudyClock {
     }
   }
 
-  /// 三道守卫（断档 / 活跃态 / 空闲）对窗口 `[start, now]` 的裁决；[_accrue] 与
-  /// [sessionTotals] 共用，保证「实时读数」与「最终入账」判据同源。
-  bool _windowAccepted(DateTime start, DateTime now) =>
-      isContinuousReadingGap(start, now) &&
-      (isActive?.call() ?? true) &&
-      !_isIdle(now);
+  /// 三道守卫（断档 / 活跃态 / 空闲）对窗口 `[start, now]` 的裁决，返回可入账段的
+  /// 终点；null = 整窗拒绝。[_accrue] 与 [sessionTotals] 共用，保证「实时读数」与
+  /// 「最终入账」判据同源。
+  ///
+  /// 断档与活跃态按整窗判；空闲门按时刻裁剪（BUG-4498）：可入账到
+  /// `上次 touch + idleTimeout` 为止——阈值以内的停顿照计（视频暂停查词、阅读停顿，
+  /// 所有者 2026-11-07 口径），超出阈值的部分一毫秒都不计，与 tick 落在哪不相干。
+  DateTime? _creditableEnd(DateTime start, DateTime now) {
+    if (!isContinuousReadingGap(start, now)) return null;
+    if (!(isActive?.call() ?? true)) return null;
+    final DateTime? deadline = _idleDeadline();
+    if (deadline == null || !deadline.isBefore(now)) return now;
+    return deadline.isAfter(start) ? deadline : null;
+  }
 
-  bool _isIdle(DateTime now) {
+  /// 空闲门到期时刻（上次 touch + idleTimeout）；没设门 / 没有基准 = null。
+  DateTime? _idleDeadline() {
     final Duration? timeout = idleTimeout;
     final DateTime? last = _lastTouch;
-    if (timeout == null || last == null) return false;
-    return now.difference(last) > timeout;
+    if (timeout == null || last == null) return null;
+    return last.add(timeout);
+  }
+
+  bool _isIdle(DateTime now) {
+    final DateTime? deadline = _idleDeadline();
+    return deadline != null && now.isAfter(deadline);
   }
 
   /// 诊断用：窗口被哪道守卫拒掉（断档 / 非活跃 / 空闲）。
@@ -618,7 +753,8 @@ class StudyClock {
   /// 诊断用：段的一行摘要。
   static String _describe(_OpenSegment seg) =>
       'seg ${seg.uid.substring(0, seg.uid.length < 8 ? seg.uid.length : 8)} '
-      '${seg.dateKey}@${seg.hour} ${seg.durationMs}ms/${seg.chars}c/${seg.pages}p';
+      '${seg.dateKey}@${seg.hour} ${seg.durationMs}ms/${seg.chars}c/${seg.pages}p'
+      '${seg.lookups > 0 ? '/${seg.lookups}q' : ''}';
 
   /// 当前打开段；没有或已跨小时 / 跨天（段不跨小时边界）就封旧开新。
   _OpenSegment _ensureOpen(DateTime now) {
@@ -650,6 +786,7 @@ class StudyClock {
     final _OpenSegment? seg = _open;
     if (seg == null) return;
     _open = null;
+    _lastSealed = seg;
     _trace('seal ${_describe(seg)}');
     if (_needsWrite(seg)) _enqueueWrite(seg);
     if (seg.chars == 0 && seg.pages == 0) _sessionSegments.remove(seg);
@@ -663,7 +800,10 @@ class StudyClock {
   /// 过门，而页面 dispose 里的账本 `leave()` 正是在记页数。零 IO 由 [detach] 结构性
   /// 保证，不靠这道阈值——早先靠它的说法是错的。
   static bool _worthWriting(_OpenSegment seg) =>
-      seg.durationMs >= 1000 || seg.chars > 0 || seg.pages > 0;
+      seg.durationMs >= 1000 ||
+      seg.chars > 0 ||
+      seg.pages > 0 ||
+      seg.lookups > 0;
 
   /// 本次是否要写：有脏改动，且（已在库里 或 过 [_worthWriting] 门槛）。前者覆盖
   /// 「写过 300 字 0 时长 → 被撤回成 0 字」：不写穿，库里就留着 300。
@@ -733,6 +873,7 @@ class StudyClock {
         durationMs: Value(seg.durationMs),
         chars: Value(seg.chars),
         pages: Value(seg.pages),
+        lookups: Value(seg.lookups),
         updatedAt: Value(now.millisecondsSinceEpoch),
       ),
     );

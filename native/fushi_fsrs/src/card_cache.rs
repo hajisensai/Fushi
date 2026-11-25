@@ -255,7 +255,7 @@ fn decode_entities(text: &str) -> String {
         .into_owned()
 }
 
-/// 笔记缓存的 `sort_field`：首字段 `ankiStripHtml(..).trim()`，最多 200 个 UTF-16 码元。
+/// 笔记缓存的 `sort_field`：笔记类型的排序字段（registers.rs `note_type_view` 的 `se`，缺省第一个字段）`ankiStripHtml(..).trim()`，最多 200 个 UTF-16 码元。
 pub fn sort_field(first_field: &str) -> String {
     let stripped = decode_entities(&strip_tags(first_field));
     truncate_utf16(dart_trim(&stripped), 200)
@@ -598,7 +598,7 @@ fn classify<'t>(inner: &'t str, start_tag: &'static str, end_tag: &'static str) 
 }
 
 /// `templateIdsToNames`：`{{…fld:<id>}}` / `{{#fld:<id>}}` 换成字段名；表里没有的 id 原样保留。
-fn ids_to_names(template: &str, id_to_name: &dyn Fn(&str) -> Option<String>) -> String {
+pub(crate) fn ids_to_names(template: &str, id_to_name: &dyn Fn(&str) -> Option<String>) -> String {
     const PREFIX: &str = "fld:";
     let mut out = String::with_capacity(template.len());
     for tok in tokenize(template) {
@@ -760,8 +760,28 @@ pub fn card_front_is_empty(
     fields: &[(String, String)],
     ord: i64,
 ) -> Result<bool, String> {
-    let question = ids_to_names(front, id_to_name);
-    let nodes = parse_strict(&tokenize(&question))?;
+    CardFront::parse(front, id_to_name).is_empty(fields, ord)
+}
+
+/// 解析好的卡片正面（[card_front_is_empty] 的前一半）：模板只取决于笔记类型，同一类型的每条笔记共用一份，
+/// 不逐条笔记重新换名、分词、解析（缓存层整份物化时这是大头）。语法错误留到判空时报（同 [card_front_is_empty]）。
+pub(crate) struct CardFront(Result<Vec<Node>, String>);
+
+impl CardFront {
+    /// 字段 ID 换成名字（[ids_to_names]）后严格解析。
+    pub(crate) fn parse(front: &str, id_to_name: &dyn Fn(&str) -> Option<String>) -> CardFront {
+        let question = ids_to_names(front, id_to_name);
+        CardFront(parse_strict(&tokenize(&question)))
+    }
+
+    /// 这条笔记（[fields]：按名字的字段表）的第 [ord] 张卡正面是否为空；语法错误 = `Err`。
+    pub(crate) fn is_empty(&self, fields: &[(String, String)], ord: i64) -> Result<bool, String> {
+        let nodes = self.0.as_ref().map_err(Clone::clone)?;
+        Ok(front_nodes_empty(nodes, fields, ord))
+    }
+}
+
+fn front_nodes_empty(nodes: &[Node], fields: &[(String, String)], ord: i64) -> bool {
     let cn = format!("c{}", ord + 1);
     let value_of = |name: &str| -> Option<&str> {
         fields
@@ -786,7 +806,7 @@ pub fn card_front_is_empty(
             None => false,
         }
     };
-    Ok(template_is_empty(&non_empty, &nodes))
+    template_is_empty(&non_empty, nodes)
 }
 
 // ---------------------------------------------------------------- 媒体引用
@@ -946,6 +966,29 @@ fn media_refs_in(html: &str, out: &mut Vec<String>) {
             }
             None => break,
         }
+    }
+}
+
+/// `srsMediaRefsIn(html, includeStatic: true)`（模板 / CSS 用）：[media_refs_in] 的全部，再加引号 / 左括号后面下划线
+/// 开头的静态文件名——Dart `_staticRef` = `["'(]\s*(_[^"')\s]+)`（url("_x.woff")、src="_x.js" 等）。不去重。
+pub(crate) fn media_refs_with_static(text: &str, out: &mut Vec<String>) {
+    media_refs_in(text, out);
+    let stop = |c: char| matches!(c, '"' | '\'' | ')') || is_js_space(c);
+    let mut rest = text;
+    // 逐个找开头的引号 / 左括号；匹配上的名字不含这三种字符，所以从名字之后接着找与正则的不重叠匹配相同。
+    while let Some(open) = rest.find(['"', '\'', '(']) {
+        let after = &rest[open + 1..];
+        let name = after.trim_start_matches(is_js_space);
+        let len = match name.strip_prefix('_') {
+            Some(tail) => tail.find(stop).unwrap_or(tail.len()),
+            None => 0,
+        };
+        if len == 0 {
+            rest = after;
+            continue;
+        }
+        out.push(unescape(&name[..1 + len]));
+        rest = &name[1 + len..];
     }
 }
 

@@ -102,6 +102,109 @@ void main() {
       expect(restored.degradation, GameStreamDegradation.maintainResolution);
     });
 
+    test('stream volume is receiver-only and persisted locally', () {
+      const GameStreamVideoSettings defaults = GameStreamVideoSettings();
+      expect(defaults.volumePercent, 100);
+      expect(defaults.volumeGain, 1.0);
+      // A payload from an older receiver / save has no volume field.
+      expect(
+        GameStreamVideoSettings.fromJson(<String, Object?>{
+          'maxHeight': 720,
+          'audio': false,
+        }).volumePercent,
+        100,
+      );
+      final GameStreamVideoSettings boosted = defaults.copyWith(
+        volumePercent: 250,
+      );
+      expect(boosted.volumeGain, 2.5);
+      // Never on the wire: hosts get exactly what they got before.
+      expect(boosted.toJson().containsKey('volumePercent'), isFalse);
+      expect(boosted.toJson(), defaults.toJson());
+      // Local persistence round-trips it.
+      expect(boosted.toOverridesJson(), <String, Object?>{
+        'volumePercent': 250,
+      });
+      expect(
+        GameStreamVideoSettings.fromJson(boosted.toOverridesJson()),
+        boosted,
+      );
+      // Clamped into 100–500 %.
+      expect(GameStreamVideoSettings.minVolumePercent, 100);
+      expect(GameStreamVideoSettings.maxVolumePercent, 500);
+      expect(
+        GameStreamVideoSettings.fromJson(<String, Object?>{
+          'volumePercent': 9000,
+        }).volumePercent,
+        GameStreamVideoSettings.maxVolumePercent,
+      );
+      expect(
+        defaults.copyWith(volumePercent: 10).volumePercent,
+        GameStreamVideoSettings.minVolumePercent,
+      );
+      expect(
+        GameStreamVideoSettings.fromJson(<String, Object?>{
+          'volumePercent': 'loud',
+        }).volumePercent,
+        100,
+      );
+    });
+
+    test('the boost applies only where the app allows it', () {
+      const GameStreamVideoSettings loudest = GameStreamVideoSettings(
+        volumePercent: 500,
+      );
+      expect(loudest.volumeGain, 5.0);
+      expect(loudest.effectiveVolumeGain(boostAllowed: true), 5.0);
+      // Single-screen device: a stored / synced value never boosts.
+      expect(loudest.effectiveVolumeGain(boostAllowed: false), 1.0);
+      expect(
+        const GameStreamVideoSettings().effectiveVolumeGain(boostAllowed: true),
+        1.0,
+      );
+    });
+
+    test('only host-side fields need a new join', () {
+      const GameStreamVideoSettings base = GameStreamVideoSettings();
+      expect(
+        base
+            .copyWith(volumePercent: 300, audio: false)
+            .sameHostParameters(base),
+        isTrue,
+      );
+      expect(base.copyWith(maxFps: 30).sameHostParameters(base), isFalse);
+      expect(
+        base
+            .copyWith(volumePercent: 300, bitrateKbps: 5000)
+            .sameHostParameters(base),
+        isFalse,
+      );
+    });
+
+    test('mute host is a host parameter carried on the wire', () {
+      const GameStreamVideoSettings base = GameStreamVideoSettings();
+      expect(base.muteHost, isFalse);
+      final GameStreamVideoSettings muted = base.copyWith(muteHost: true);
+      // The host applies it, so toggling it mid-stream must reach the host.
+      expect(muted.sameHostParameters(base), isFalse);
+      expect(muted.toJson()['muteHost'], isTrue);
+      expect(GameStreamVideoSettings.fromJson(muted.toJson()), muted);
+      expect(muted.toOverridesJson(), <String, Object?>{'muteHost': true});
+      // A body from a client that predates the field keeps the host audible.
+      expect(
+        GameStreamVideoSettings.fromJson(
+          base.toJson()..remove('muteHost'),
+        ).muteHost,
+        isFalse,
+      );
+      expect(
+        GameStreamVideoSettings.fromJson(<String, Object?>{
+          'muteHost': 'yes',
+        }).muteHost,
+        isFalse,
+      );
+    });
+
     test('unknown values fall back to defaults instead of failing', () {
       final GameStreamVideoSettings settings =
           GameStreamVideoSettings.fromJson(<String, Object?>{

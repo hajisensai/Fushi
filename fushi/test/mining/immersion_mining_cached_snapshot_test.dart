@@ -94,6 +94,7 @@ void main() {
             String audioBitrate = '64k',
             String? tlsPinSha256,
             Map<String, String> httpHeaders = const <String, String>{},
+            double? gainDb,
           }) async {
             audio.add(_Call(inputPath, startMs, endMs, httpHeaders));
             if (inputPath == failOn) return null;

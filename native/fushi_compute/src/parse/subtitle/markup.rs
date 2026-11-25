@@ -204,6 +204,36 @@ pub struct Markup {
     pub drawing: Option<Drawing>,
     /// 绘图样式快照（序列化时不带 k 字段，同原实现）。
     pub drawing_style: Option<Style>,
+    /// 特效字幕（H7r4mf_z2n）：本事件带「排版 / 动画」类覆盖标签——卡拉 OK `\k` 族、
+    /// `\move` 移动、`\t` 动画（含 `\t(\fscx)` 缩放动画）、`\clip` 裁剪、`\p` 绘图、
+    /// 非零 `\frz` 与 `\frx` / `\fry` 3D 旋转、`\fax` / `\fay` 切变。字幕组的歌词特效与
+    /// 屏幕字（招牌）都靠这些标签排版，普通台词不用。`\fad`（台词常见的淡入淡出）、
+    /// `\an` 锚点、静态 `\fscx`、颜色 / 字体类标签**不算**；单独的 `\pos` 也**不算**——
+    /// 不少字幕组每句对白都带 `\pos`（重叠对白、顶部对白、整集逐行定位），本机 609 份
+    /// ASS 抽样里对白样式约 24% 的行只带 `\pos`，6 部番 100%。`\pos` 只在「逐字拆开的
+    /// 歌词」（同一行多个单字事件同时在屏）里才是特效信号，由 `formats::parse_ass` 的
+    /// 事件间判定补上；ASS 事件的 `Effect` 列与样式级旋转也在那里并入。字幕列表的
+    /// 「显示特效字幕」开关只读这一位，判据只在解析层写。
+    pub effect: bool,
+}
+
+impl Markup {
+    /// 只看本条覆盖标签的特效判据（见 [Markup::effect]）。
+    pub fn has_effect_tags(&self) -> bool {
+        self.mv.is_some()
+            || !self.transitions.is_empty()
+            || self
+                .scale
+                .is_some_and(|s| s.from_x != s.to_x || s.from_y != s.to_y)
+            || self.clip.is_some()
+            || self.drawing.is_some()
+            || self.rotation_deg.is_some_and(|d| d != 0.0)
+            || self.rotation_x_deg.is_some_and(|d| d != 0.0)
+            || self.rotation_y_deg.is_some_and(|d| d != 0.0)
+            || self.shear_x.is_some_and(|v| v != 0.0)
+            || self.shear_y.is_some_and(|v| v != 0.0)
+            || self.spans.iter().any(|s| s.style.k_mode.is_some())
+    }
 }
 
 #[derive(Default)]
@@ -412,7 +442,7 @@ pub fn parse_markup(
         line_breaks = Some(breaks);
     }
 
-    Ok(Markup {
+    let mut markup = Markup {
         plain_text: plain,
         spans,
         anchor,
@@ -431,7 +461,10 @@ pub fn parse_markup(
         shear_y: xf.fay_shear,
         drawing: drawing_shape,
         drawing_style,
-    })
+        effect: false,
+    };
+    markup.effect = markup.has_effect_tags();
+    Ok(markup)
 }
 
 // ── 小型匹配工具 ─────────────────────────────────────────────────────────────

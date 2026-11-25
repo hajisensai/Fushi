@@ -5,6 +5,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_core/fushi_core.dart' show DatabaseSnapshotDeletionResult;
+import 'package:fushi_engine/sync/interconnect_file_box_prune.dart'
+    show pruneDeadInterconnectFileBox;
 import 'package:material_color_utilities/material_color_utilities.dart'
     show Hct;
 
@@ -59,6 +61,9 @@ class StorageUsageView extends ConsumerStatefulWidget {
     this.deleteVideo,
     this.anime4kBytesProvider = anime4kInstalledBytes,
     this.anime4kDelete = deleteAnime4kShaderFiles,
+    this.pruneInterconnectFileBox = pruneDeadInterconnectFileBox,
+    this.interconnectHostStatus,
+    this.isInterconnectHostRunning,
     super.key,
   });
 
@@ -83,10 +88,24 @@ class StorageUsageView extends ConsumerStatefulWidget {
          deleteVideo: actions.deleteVideo,
          anime4kBytesProvider: actions.anime4kBytesProvider,
          anime4kDelete: actions.anime4kDelete,
+         pruneInterconnectFileBox: actions.pruneInterconnectFileBox,
+         interconnectHostStatus: actions.interconnectHostStatus,
+         isInterconnectHostRunning: actions.isInterconnectHostRunning,
          key: key,
        );
 
   final StorageUsageService service;
+
+  /// 清理互联同步数据里的「旧版残留」（见
+  /// [StorageUsageActions.pruneInterconnectFileBox]；参数是 `<sync-data>` 目录）。
+  final Future<List<String>> Function(String syncDataDir)
+  pruneInterconnectFileBox;
+
+  /// 见 [StorageUsageActions.interconnectHostStatus]：起停时重建「旧版残留」那一行。
+  final Listenable? interconnectHostStatus;
+
+  /// 见 [StorageUsageActions.isInterconnectHostRunning]：运行中「立即清理」禁用。
+  final bool Function()? isInterconnectHostRunning;
 
   /// 书籍清单取数（真实现读 `epub_books` 表）。
   final Future<List<StorageBookRef>> Function() booksProvider;
@@ -162,6 +181,13 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
   /// 词典删除原语在 UI isolate 同步删 GB 级目录，期间再点别的删除只会排队
   /// 添乱（审查 M2）。
   String? _busyEntryId;
+
+  /// 一键清缓存进行中（反馈 jg3XoDVISk）。与 [_busyEntryId] 互斥：清缓存期间单条
+  /// 删除入口全部禁用，反之亦然——两条删除路径可能落到同一批临时文件上。
+  bool _clearingCache = false;
+
+  /// 任何删除正在进行（单条删除或一键清缓存）。
+  bool get _deleteBusy => _busyEntryId != null || _clearingCache;
 
   List<BundledComponentUsage> _bundled = const <BundledComponentUsage>[];
 
@@ -250,13 +276,17 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
 
   // ── 删除动作 ────────────────────────────────────────────────────────
 
-  Future<bool> _confirmDelete(String name, String body) async {
+  Future<bool> _confirmDelete(
+    String name,
+    String body, {
+    String? confirmLabel,
+  }) async {
     final bool ok = await showFushiConfirmDialog(
       context: context,
       title: t.storage_entry_delete_confirm_title(name: name),
       message: body,
       icon: FushiIcons.delete,
-      confirmLabel: t.dialog_delete,
+      confirmLabel: confirmLabel ?? t.dialog_delete,
       destructive: true,
     );
     return ok && mounted;
@@ -266,7 +296,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
   String _entryTitle(StorageEntryUsage entry) => storageEntryTitle(entry);
 
   Future<void> _deleteEntry(StorageEntryUsage entry) async {
-    if (_busyEntryId != null) return;
+    if (_deleteBusy) return;
     final String body = switch (entry.kind) {
       StorageEntryKind.book ||
       StorageEntryKind.srtBook => t.storage_entry_delete_book_confirm_body,
@@ -278,9 +308,19 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       StorageEntryKind.backupArchives =>
         t.storage_entry_delete_backups_confirm_body,
       StorageEntryKind.derivedFile => t.storage_entry_delete_files_confirm_body,
+      StorageEntryKind.interconnectLegacyFileBox =>
+        t.storage_entry_interconnect_legacy_confirm_body,
       StorageEntryKind.readOnly => throw StateError('read-only entry'),
     };
-    if (!await _confirmDelete(_entryTitle(entry), body)) return;
+    if (!await _confirmDelete(
+      _entryTitle(entry),
+      body,
+      confirmLabel: entry.kind == StorageEntryKind.interconnectLegacyFileBox
+          ? t.storage_entry_interconnect_legacy_clean_action
+          : null,
+    )) {
+      return;
+    }
     setState(() => _busyEntryId = entry.id);
     String? failure;
     // 磁盘是否真的变了。快照删除是逐文件容错的：**部分**成功也必须重扫，否则
@@ -323,7 +363,80 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     deleteVideo: widget.deleteVideo,
     anime4kBytesProvider: widget.anime4kBytesProvider,
     anime4kDelete: widget.anime4kDelete,
+    pruneInterconnectFileBox: widget.pruneInterconnectFileBox,
+    interconnectHostStatus: widget.interconnectHostStatus,
+    isInterconnectHostRunning: widget.isInterconnectHostRunning,
   );
+
+  // ── 一键清除全部缓存（反馈 jg3XoDVISk）─────────────────────────────────
+
+  /// 当前扫描结果里一键清缓存要删的明细（类目口径见 [kClearAllCacheCategories]）。
+  StorageCacheClearPlan get _cacheClearPlan =>
+      buildStorageCacheClearPlan(_usage.values);
+
+  /// 扫描完成前不给清：计划要基于完整的缓存类目明细，扫一半就清会让确认框里
+  /// 列出的大小与实际删除的东西对不上。
+  bool get _canClearCache =>
+      !_scanning && !_deleteBusy && !_cacheClearPlan.isEmpty;
+
+  Future<void> _clearAllCache() async {
+    if (!_canClearCache) return;
+    final StorageCacheClearPlan plan = _cacheClearPlan;
+    final bool ok = await showFushiConfirmDialog(
+      context: context,
+      title: t.storage_clear_cache_confirm_title,
+      content: _CacheClearPlanList(plan: plan),
+      icon: FushiIcons.deleteSweep,
+      confirmLabel: t.storage_clear_cache_confirm,
+      destructive: true,
+    );
+    if (!ok || !mounted) return;
+    setState(() => _clearingCache = true);
+    StorageCacheClearOutcome outcome;
+    try {
+      outcome = await clearStorageCache(_actions, plan);
+    } finally {
+      if (mounted) setState(() => _clearingCache = false);
+    }
+    if (!mounted) return;
+    final String freed = formatStorageBytes(outcome.freedBytes);
+    final String? failure = storageCacheClearFailureReason(outcome);
+    FushiToast.show(
+      msg: failure == null
+          ? t.storage_clear_cache_done(size: freed)
+          : t.storage_clear_cache_partial(size: freed, reason: failure),
+      severity: failure == null ? ToastSeverity.success : ToastSeverity.error,
+    );
+    if (outcome.changed) await _rescan();
+  }
+
+  Widget _buildClearCacheRow() {
+    final StorageCacheClearPlan plan = _cacheClearPlan;
+    final String subtitle = _scanning
+        ? t.storage_overview_scanning
+        : plan.isEmpty
+        ? t.storage_clear_cache_empty
+        : t.storage_clear_cache_subtitle(size: formatStorageBytes(plan.bytes));
+    return AdaptiveSettingsRow(
+      key: const ValueKey<String>('storage_clear_cache'),
+      title: t.storage_clear_cache_action,
+      subtitle: subtitle,
+      icon: FushiIcons.deleteSweep,
+      showIcon: true,
+      trailing: AnimatedSwitcher(
+        duration: context.fushiMotion.effectsFast.duration,
+        child: _clearingCache
+            ? const SizedBox(
+                key: ValueKey<String>('busy'),
+                width: 16,
+                height: 16,
+                child: FushiCircularProgressIndicator(strokeWidth: 2),
+              )
+            : const SizedBox.shrink(key: ValueKey<String>('idle')),
+      ),
+      onTap: _canClearCache ? _clearAllCache : null,
+    );
+  }
 
   // ── Anime4K 预设删除 ────────────────────────────────────────────────
 
@@ -368,6 +481,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
         StorageCategoryId.videoDownloads: FushiIcons.video,
         StorageCategoryId.covers: FushiIcons.image,
         StorageCategoryId.subtitles: FushiIcons.subtitles,
+        StorageCategoryId.subtitleJobs: FushiIcons.ai,
         StorageCategoryId.shaders: FushiIcons.ai,
         StorageCategoryId.customFonts: FushiIcons.font,
         StorageCategoryId.web: FushiIcons.globe,
@@ -640,6 +754,7 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
     return AdaptiveSettingsSection(
       title: t.storage_overview_section,
       children: <Widget>[
+        _buildClearCacheRow(),
         for (final StorageCategoryId id in StorageCategoryId.values)
           ..._buildCategoryRows(id, colors[id], total),
       ],
@@ -783,6 +898,23 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
   }
 
   Widget _buildEntryRow(StorageEntryUsage entry) {
+    final Listenable? hostStatus = widget.interconnectHostStatus;
+    if (entry.kind == StorageEntryKind.interconnectLegacyFileBox &&
+        hostStatus != null) {
+      // host 起停时只重建这一行（按钮可用性与说明跟着变）。
+      return ListenableBuilder(
+        listenable: hostStatus,
+        builder: (BuildContext _, Widget? _) => _buildEntryRowNow(entry),
+      );
+    }
+    return _buildEntryRowNow(entry);
+  }
+
+  Widget _buildEntryRowNow(StorageEntryUsage entry) {
+    // 互联 host 运行中不清「旧版残留」（在跑的旧客户端可能正往里写），副标题写明原因。
+    final bool hostBlocks =
+        entry.kind == StorageEntryKind.interconnectLegacyFileBox &&
+        (widget.isInterconnectHostRunning?.call() ?? false);
     final bool deletable = isStorageEntryDeletable(
       entry,
       canDeleteVideos: widget.deleteVideo != null,
@@ -794,7 +926,10 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
       // 外，既不占应用空间也删不掉。不加这句说明的话，条目只显示 EPUB 正文那几百
       // KB，用户会以为音频丢了——体积统计的口径必须自己说清楚。
       subtitle: Text(
-        entry.externalPaths.isEmpty
+        hostBlocks
+            ? '${formatStorageBytes(entry.bytes)} · '
+                  '${t.storage_entry_interconnect_legacy_host_running}'
+            : entry.externalPaths.isEmpty
             ? formatStorageBytes(entry.bytes)
             : '${formatStorageBytes(entry.bytes)} · '
                   '${t.storage_entry_external_audio_hint}',
@@ -812,12 +947,22 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
                     height: 16,
                     child: FushiCircularProgressIndicator(strokeWidth: 2),
                   )
+                : entry.kind == StorageEntryKind.interconnectLegacyFileBox
+                // 「旧版残留」是一次性整批清理，不是删某个对象：给明确的文字
+                // 动作（MD3 / Apple 由 FushiTextButton 分派，自带按压反馈）。
+                ? FushiTextButton(
+                    destructive: true,
+                    onPressed: _deleteBusy || hostBlocks
+                        ? null
+                        : () => _deleteEntry(entry),
+                    child: Text(
+                      t.storage_entry_interconnect_legacy_clean_action,
+                    ),
+                  )
                 : FushiIconButtonControl(
                     tooltip: t.dialog_delete,
                     icon: const FushiIcon(FushiIcons.delete, size: 18),
-                    onPressed: _busyEntryId != null
-                        ? null
-                        : () => _deleteEntry(entry),
+                    onPressed: _deleteBusy ? null : () => _deleteEntry(entry),
                   )),
     );
   }
@@ -844,6 +989,114 @@ class _StorageUsageViewState extends ConsumerState<StorageUsageView> {
           ),
         ),
       ],
+    );
+  }
+}
+
+/// 一键清缓存确认框正文：说明 + 逐类目列出名称与大小，类目下逐条列出明细
+/// （超过 [_kMaxEntriesPerCategory] 条折成「另 N 项」）。内容可能很长（iOS 的
+/// `Library/Caches` 下几十个子目录），限高滚动，不把对话框撑出屏幕。
+class _CacheClearPlanList extends StatelessWidget {
+  const _CacheClearPlanList({required this.plan});
+
+  static const int _kMaxEntriesPerCategory = 8;
+
+  final StorageCacheClearPlan plan;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiTypography type = context.fushiType;
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    return ConstrainedBox(
+      constraints: const BoxConstraints(maxHeight: 320),
+      child: SingleChildScrollView(
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Text(
+              t.storage_clear_cache_confirm_body(
+                size: formatStorageBytes(plan.bytes),
+              ),
+            ),
+            for (final StorageCategoryUsage category
+                in plan.categories) ...<Widget>[
+              const SizedBox(height: 12),
+              _PlanLine(
+                label: storageCategoryTitle(category.id),
+                bytes: category.entries.fold<int>(
+                  0,
+                  (int sum, StorageEntryUsage e) => sum + e.bytes,
+                ),
+                style: type.titleSmall,
+              ),
+              for (final StorageEntryUsage entry in category.entries.take(
+                _kMaxEntriesPerCategory,
+              ))
+                _PlanLine(
+                  label: storageEntryTitle(entry),
+                  bytes: entry.bytes,
+                  style: type.bodySmall.copyWith(color: cs.onSurfaceVariant),
+                  indent: 12,
+                ),
+              if (category.entries.length > _kMaxEntriesPerCategory)
+                Padding(
+                  padding: const EdgeInsetsDirectional.only(start: 12, top: 2),
+                  child: Text(
+                    t.storage_entry_more_rest(
+                      n: category.entries.length - _kMaxEntriesPerCategory,
+                      size: formatStorageBytes(
+                        category.entries
+                            .skip(_kMaxEntriesPerCategory)
+                            .fold<int>(
+                              0,
+                              (int sum, StorageEntryUsage e) => sum + e.bytes,
+                            ),
+                      ),
+                    ),
+                    style: type.bodySmall.copyWith(color: cs.onSurfaceVariant),
+                  ),
+                ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// 确认框里的一行「名称 …… 大小」。
+class _PlanLine extends StatelessWidget {
+  const _PlanLine({
+    required this.label,
+    required this.bytes,
+    required this.style,
+    this.indent = 0,
+  });
+
+  final String label;
+  final int bytes;
+  final TextStyle style;
+  final double indent;
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: EdgeInsetsDirectional.only(start: indent, top: 2),
+      child: Row(
+        children: <Widget>[
+          Expanded(
+            child: Text(
+              label,
+              style: style,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+          const SizedBox(width: 12),
+          Text(formatStorageBytes(bytes), style: style.tabular),
+        ],
+      ),
     );
   }
 }

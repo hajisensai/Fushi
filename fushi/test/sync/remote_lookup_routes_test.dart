@@ -99,7 +99,7 @@ void main() {
       expect(url.path, '/api/lookup/audio/file');
       expect(url.queryParameters['id'], isNotEmpty);
 
-      final shelf.Response file = routes.handleAudioFile(
+      final shelf.Response file = await routes.handleAudioFile(
         shelf.Request('GET', url),
         headOnly: false,
       );
@@ -108,7 +108,7 @@ void main() {
       expect(file.headers['content-length'], '3');
       expect(await file.readAsString(), 'MP3');
 
-      final shelf.Response head = routes.handleAudioFile(
+      final shelf.Response head = await routes.handleAudioFile(
         shelf.Request('HEAD', url),
         headOnly: true,
       );
@@ -154,7 +154,7 @@ void main() {
         );
         expect(
           routes404(
-            hit.handleAudioFile(
+            await hit.handleAudioFile(
               shelf.Request('GET', Uri.parse('http://h/api/lookup/audio/file')),
               headOnly: false,
             ),
@@ -355,8 +355,10 @@ void main() {
       'handleAudioLookup(',
       'handleAudioFile(',
     ];
+    // `dart format` 会把带具名参数的长调用折成 `_routesFor(\n services,\n).handleMine(`，
+    // 接收者按空白不敏感匹配。
     final RegExp routesReceiver = RegExp(
-      r'(_lookupRoutes|_routesFor\(services\))\.',
+      r'(_lookupRoutes|_routesFor\(\s*services,?\s*\))\s*\.',
     );
 
     banned.forEach((String path, List<String> needles) {

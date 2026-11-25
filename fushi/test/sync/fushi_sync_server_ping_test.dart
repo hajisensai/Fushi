@@ -49,10 +49,17 @@ void main() {
     expect(resp.body.contains('tok'), isFalse);
   });
 
-  test('POST /api/ping 返回 405', () async {
+  test('POST /api/ping 不在豁免内：无鉴权 401，带 Basic 由 handler 回 405', () async {
     await startServer();
     final http.Response resp = await http.post(pingUri());
-    expect(resp.statusCode, 405);
+    expect(resp.statusCode, 401);
+    final http.Response authed = await http.post(
+      pingUri(),
+      headers: <String, String>{
+        'authorization': 'Basic ${base64Encode(utf8.encode('hibiki:tok'))}',
+      },
+    );
+    expect(authed.statusCode, 405);
   });
 
   test('未配 deviceName 时 ping 不含该字段', () async {

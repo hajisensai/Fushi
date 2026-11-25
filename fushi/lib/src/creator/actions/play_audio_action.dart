@@ -8,6 +8,8 @@ import 'package:just_audio/just_audio.dart';
 import 'package:fushi/src/creator/enhancements/local_audio_enhancement.dart';
 import 'package:fushi/src/creator/fields/audio_field.dart';
 import 'package:fushi/src/creator/quick_action.dart';
+import 'package:fushi/src/lookup/lookup_audio_playback.dart'
+    show lookupEntryMatchedText;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/creator/creator_model.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
@@ -64,6 +66,8 @@ class PlayAudioAction extends QuickAction {
       term: entry.word,
       reading: entry.reading,
       dictionaryName: dictionaryName ?? entry.dictionaryName,
+      // 词头带替换写法（`quite a/the something`）时 TTS 兜底念命中原文（反馈 WJFhjUGaTn）。
+      matched: lookupEntryMatchedText(entry),
     );
 
     if (file != null) {

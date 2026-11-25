@@ -609,31 +609,27 @@ class _MihonInstalledSourcesSectionState
             )
           else ...<Widget>[
             if (pinned.isNotEmpty)
-              SliverToBoxAdapter(
-                child: InstalledSourcesGroup<MihonSourceGroup>(
-                  key: const ValueKey<String>('mihon_sources_pinned_group'),
-                  header: t.online_sources_pinned_header,
-                  items: pinned,
-                  keyOf: _groupKeyOf,
-                  reorderable: reorderable,
-                  onReorder: (List<MihonSourceGroup> reordered) =>
-                      unawaited(_reorderGroup(reordered, pinned: true)),
-                  rowBuilder: _rowBuilder(pinned, reorderable: reorderable),
-                ),
+              InstalledSourcesGroup<MihonSourceGroup>(
+                key: const ValueKey<String>('mihon_sources_pinned_group'),
+                header: t.online_sources_pinned_header,
+                items: pinned,
+                keyOf: _groupKeyOf,
+                reorderable: reorderable,
+                onReorder: (List<MihonSourceGroup> reordered) =>
+                    unawaited(_reorderGroup(reordered, pinned: true)),
+                rowBuilder: _rowBuilder(pinned, reorderable: reorderable),
               ),
             if (rest.isNotEmpty)
-              SliverToBoxAdapter(
-                child: InstalledSourcesGroup<MihonSourceGroup>(
-                  key: const ValueKey<String>('mihon_sources_all_group'),
-                  header: showAllHeader ? t.online_sources_all_header : null,
-                  items: rest,
-                  keyOf: _groupKeyOf,
-                  reorderable: reorderable,
-                  entranceOffset: pinned.length,
-                  onReorder: (List<MihonSourceGroup> reordered) =>
-                      unawaited(_reorderGroup(reordered, pinned: false)),
-                  rowBuilder: _rowBuilder(rest, reorderable: reorderable),
-                ),
+              InstalledSourcesGroup<MihonSourceGroup>(
+                key: const ValueKey<String>('mihon_sources_all_group'),
+                header: showAllHeader ? t.online_sources_all_header : null,
+                items: rest,
+                keyOf: _groupKeyOf,
+                reorderable: reorderable,
+                entranceOffset: pinned.length,
+                onReorder: (List<MihonSourceGroup> reordered) =>
+                    unawaited(_reorderGroup(reordered, pinned: false)),
+                rowBuilder: _rowBuilder(rest, reorderable: reorderable),
               ),
           ],
         ],

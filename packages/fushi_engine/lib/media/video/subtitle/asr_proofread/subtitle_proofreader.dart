@@ -17,9 +17,11 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:fushi_engine/ai/ai_chat_client.dart' show AiChatImage;
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/ai_text_completer.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_draft.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_evidence.dart';
+import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_frame_reference.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_glossary.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_language.dart';
 import 'package:fushi_engine/media/video/subtitle/asr_proofread/subtitle_prompts_zh.dart';
@@ -52,6 +54,30 @@ const String kSubtitleProofreadEvidenceRules = '''補足規則(既存字幕):
 9. 「同言語字幕」は同じ映像に付いていた日本語字幕(人手の字幕、または画像字幕の OCR)。聞こえる台詞と合う限り、語・表記はそちらを優先して採用する。ただし OCR は形の似た字を誤読することがあり、人手の字幕は口癖・言い淀みを省くことがある(規則 3 に従い残す)。台詞と明らかに違う箇所は ASR を優先する。
 10. 「他言語字幕」は翻訳。規則 1・5 のとおり、人名・用語・意味を判断する手掛かりにだけ使う。
 11. 「主(既存字幕から補完)」の行は ASR が拾えなかった台詞を既存字幕から補ったもの。前後の文脈と矛盾しなければそのまま残す(直す場合も本文だけを書き、この印は書かない)。''';
+
+/// 这一集带画面参考（spec `2026-11-11-video-subtitle-ai-reference`）时接在规则之后的
+/// 补充规则。没开画面参考的集不加，提示词与改版前逐字相同。条目不编号：它可能接在
+/// 第 8 条后面，也可能接在已有字幕的第 11 条后面。
+const String kSubtitleProofreadFrameRules = '''補足規則(画面):
+- 添付画像は「画面」に挙げた時刻の映像(時刻順)。画面に映る文字(テロップ・看板・手紙・端末の表示・名札など)、話している人物、場面を、人名・用語・同音異義語を判断する手掛かりにだけ使う。
+- 画面の文字を台詞として足さない(規則 5)。画像から読み取れないことを推測で書かない。
+- 画面に字幕が焼き込まれている場合、日本語なら聞こえる台詞と合う限り語・表記の参考にし、他言語なら翻訳として規則 1・5 のとおり扱う。''';
+
+/// 一批的画面清单在提示词里的写法：`画像<n> [<時刻>]`，与随消息附上的图片同序。
+/// 普通话用 [SubtitleProofreadLabelsZh.frames] / [SubtitleProofreadLabelsZh.frame]。
+List<String> formatProofreadFrameLines(
+  List<int> frameTimesMs, {
+  VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
+}) {
+  if (frameTimesMs.isEmpty) return const <String>[];
+  final bool zh = language == VideoSubtitleLanguage.mandarin;
+  final String item = zh ? SubtitleProofreadLabelsZh.frame : '画像';
+  return <String>[
+    zh ? SubtitleProofreadLabelsZh.frames : '\n画面(添付画像、時刻順):',
+    for (int k = 0; k < frameTimesMs.length; k++)
+      '  $item${k + 1} [${formatProofreadTime(frameTimesMs[k])}]',
+  ];
+}
 
 /// 一行的证据在提示词里的写法：同语言 `同言語字幕[<来源>]`，他言語 `他言語字幕(<语言>)`。
 /// 普通话用 `同语言字幕[…]` / `他语言字幕(…)`（[SubtitleProofreadLabelsZh]）。
@@ -146,12 +172,16 @@ class SubtitleProofreader {
   ///
   /// 任何一批失败：等在途的批各自结束（成功的照常落缓存），再抛第一个错误——
   /// 重跑时只剩失败的那些批要发。
+  ///
+  /// [frames] 非 null = 每批附上对应时刻的画面（[planSubtitleReferenceFrames]）；
+  /// 调用方须先确认 [completer] 背后的提供商能收图。
   Future<SubtitleProofreadResult> proofread({
     required List<SubtitleDraftCue> cues,
     required String title,
     required SubtitleGlossary glossary,
     required Directory cacheDir,
     SubtitleEvidenceIndex? evidence,
+    SubtitleProofreadFrames? frames,
     SubtitleCancelToken cancel = const SubtitleNeverCancel(),
     void Function(int doneBatches, int totalBatches)? onProgress,
   }) async {
@@ -187,6 +217,7 @@ class SubtitleProofreader {
             glossaryText,
             cacheDir,
             usable,
+            frames,
             cancel,
           );
           fixes[index] = r.$1;
@@ -240,6 +271,7 @@ class SubtitleProofreader {
     String glossaryText,
     Directory cacheDir,
     SubtitleEvidenceIndex? evidence,
+    SubtitleProofreadFrames? frames,
     SubtitleCancelToken cancel,
   ) async {
     final File cache = File(
@@ -250,6 +282,23 @@ class SubtitleProofreader {
     if (cached != null) return (cached, usage);
 
     final (int lo, int hi) = range;
+    // 画面每批只取一次：补问剩下的 id 时沿用同一组（那几行仍然要看画面）。
+    final List<SubtitleReferenceFrame> shots = frames == null
+        ? const <SubtitleReferenceFrame>[]
+        : await loadSubtitleReferenceFrames(
+            frames,
+            planSubtitleReferenceFrames(
+              cues,
+              lo,
+              hi,
+              maxFrames: frames.maxFramesPerBatch,
+              minGapMs: frames.minGapMs,
+            ),
+            cancel: cancel,
+          );
+    final List<int> frameTimesMs = <int>[
+      for (final SubtitleReferenceFrame s in shots) s.atMs,
+    ];
     // 修正跨轮累积。回复按 id 升序只写改动的行：没写完时，最后一条之前没写的行就是
     // 不用改，下一轮只问它之后的 id（之前的行留在原位当只读参考）。只收本轮在问的
     // id（模型顺手改的上下文行不收，否则会盖掉相邻批对同一行的修正）。
@@ -261,8 +310,13 @@ class SubtitleProofreader {
         title: title,
         glossaryText: glossaryText,
         withEvidence: evidence != null,
+        withFrames: frames != null,
         language: language,
       ),
+      images: <AiChatImage>[
+        for (final SubtitleReferenceFrame s in shots)
+          AiChatImage(bytes: s.bytes, mimeType: 'image/jpeg'),
+      ],
       body: () => buildProofreadBatchBody(
         cues: cues,
         lo: lo,
@@ -270,6 +324,7 @@ class SubtitleProofreader {
         contextLines: contextLines,
         only: next == lo ? null : <int>{for (int i = next; i < hi; i++) i},
         evidence: evidence,
+        frameTimesMs: frameTimesMs,
         language: language,
       ),
       absorb: (List<String> lines) {
@@ -358,10 +413,12 @@ String buildProofreadBatchPrompt({
 );
 
 /// 同一作品各批逐字相同的前缀：规则 + 作品名 + 专名表（提示缓存的命中段）。
+/// [withFrames] 只看这一集开没开画面参考（不看某一批实际取到几张），各批才逐字相同。
 String buildProofreadStablePrefix({
   required String title,
   required String glossaryText,
   bool withEvidence = false,
+  bool withFrames = false,
   VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
 }) {
   final bool zh = language == VideoSubtitleLanguage.mandarin;
@@ -369,6 +426,8 @@ String buildProofreadStablePrefix({
     zh ? kSubtitleProofreadRulesZh : kSubtitleProofreadRules,
     if (withEvidence)
       zh ? kSubtitleProofreadEvidenceRulesZh : kSubtitleProofreadEvidenceRules,
+    if (withFrames)
+      zh ? kSubtitleProofreadFrameRulesZh : kSubtitleProofreadFrameRules,
     '',
     '${zh ? SubtitleProofreadLabelsZh.workTitle : '作品名'}: $title',
   ];
@@ -381,7 +440,8 @@ String buildProofreadStablePrefix({
 }
 
 /// 一批自己的内容：前后只读上下文 + 待校对的行。[only] 非 null 时只把其中的 id 列为
-/// 校对对象（补问上一次没答到的行），批内其余行原位写成只读参考。
+/// 校对对象（补问上一次没答到的行），批内其余行原位写成只读参考。[frameTimesMs]
+/// 非空时末尾列出随消息附上的画面各自的时刻（[formatProofreadFrameLines]）。
 String buildProofreadBatchBody({
   required List<SubtitleDraftCue> cues,
   required int lo,
@@ -389,6 +449,7 @@ String buildProofreadBatchBody({
   int contextLines = 3,
   Set<int>? only,
   SubtitleEvidenceIndex? evidence,
+  List<int> frameTimesMs = const <int>[],
   VideoSubtitleLanguage language = VideoSubtitleLanguage.japanese,
 }) {
   final bool zh = language == VideoSubtitleLanguage.mandarin;
@@ -435,5 +496,6 @@ String buildProofreadBatchBody({
   for (int i = hi; i < end; i++) {
     lines.add('  [${formatProofreadTime(cues[i].startMs)}] ${cues[i].text}');
   }
+  lines.addAll(formatProofreadFrameLines(frameTimesMs, language: language));
   return lines.join('\n');
 }

@@ -8,9 +8,18 @@ import 'package:fushi/src/media/collections/collection_member_view.dart'
 import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
     show collectionDetailSortPrefKey, kCollectionDetailManualSortValue;
 import 'package:fushi/src/pages/implementations/media_collection_grid_detail_page.dart';
+import 'package:fushi/src/media/detail/media_poster_detail.dart'
+    show MediaPosterDetailChrome;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show ShellContentLayout;
+import 'package:fushi/src/utils/components/fushi_cover_block.dart'
+    show FushiCoverBlockScope;
+import 'package:fushi/src/utils/components/fushi_cover_block_layout.dart'
+    show SliverFushiCoverBlocks;
 import 'package:fushi/src/utils/components/library_reorder.dart';
 import 'package:fushi_core/fushi_core.dart';
+import '../helpers/shell_layout.dart';
 
 /// 书籍合集详情页（[MediaCollectionGridDetailPage]）网格拖排 + 长按/右键上下文菜单
 /// 真穿库验证：
@@ -61,6 +70,7 @@ void main() {
     void Function(String mediaType, String entryKey)? onOpenMember,
   }) => TranslationProvider(
     child: MaterialApp(
+      theme: gridShellTheme(),
       home: MediaCollectionGridDetailPage(
         database: db,
         collection: col,
@@ -172,11 +182,13 @@ void main() {
     useDesktopView(tester);
     final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
     final Map<String, double> progress = <String, double>{'k1': 0.3};
+    final Set<String> done = <String>{};
     final ChangeNotifier refresh = ChangeNotifier();
     addTearDown(refresh.dispose);
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
+          theme: gridShellTheme(),
           home: MediaCollectionGridDetailPage(
             database: s.db,
             collection: s.col,
@@ -187,6 +199,7 @@ void main() {
                 CollectionMemberInfo(
                   title: 'T-$entryKey',
                   progress: progress[entryKey],
+                  completed: done.contains(entryKey),
                 ),
             memberInfoRefresh: refresh,
           ),
@@ -194,20 +207,24 @@ void main() {
       ),
     );
     await tester.pumpAndSettle();
-    final Finder percent = find.byKey(
-      const ValueKey<String>('collection_detail_hero_percent'),
+    // 重设计外壳的合集 hero（海报 hero，2026-11-16 起；2026-11-12 起）不再画
+    // 百分比大字，整体进度收成统计行「已读完 x/y」；重算链路由它钉住。
+    final Finder finishedNone = find.textContaining(
+      t.collection_detail_finished_count(done: 0, total: 3),
     );
-    expect(tester.widget<Text>(percent).data, '10%');
+    expect(finishedNone, findsOneWidget);
 
-    // 在阅读器里读了 k2（详情页压在阅读器之下，没有任何重建）；回来后调用方通知。
-    progress['k2'] = 0.6;
+    // 在阅读器里读完了 k2（详情页压在阅读器之下，没有任何重建）；回来后调用方通知。
+    done.add('k2');
     // ignore: invalid_use_of_protected_member, invalid_use_of_visible_for_testing_member
     refresh.notifyListeners();
     await tester.pumpAndSettle();
 
     expect(
-      tester.widget<Text>(percent).data,
-      '30%',
+      find.textContaining(
+        t.collection_detail_finished_count(done: 1, total: 3),
+      ),
+      findsOneWidget,
       reason: '整体进度应随 memberInfoRefresh 重算',
     );
   });
@@ -274,6 +291,7 @@ void main() {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
+          theme: gridShellTheme(),
           home: MediaCollectionGridDetailPage(
             database: db,
             collection: col,
@@ -348,6 +366,7 @@ void main() {
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
+          theme: gridShellTheme(),
           home: MediaCollectionGridDetailPage(
             database: s.db,
             collection: s.col,
@@ -386,6 +405,7 @@ void main() {
     onDeleteMembersMedia,
   }) => TranslationProvider(
     child: MaterialApp(
+      theme: gridShellTheme(),
       home: MediaCollectionGridDetailPage(
         database: db,
         collection: col,
@@ -573,6 +593,7 @@ void main() {
       await tester.pumpWidget(
         TranslationProvider(
           child: MaterialApp(
+            theme: gridShellTheme(),
             home: MediaCollectionGridDetailPage(
               database: s.db,
               collection: s.col,
@@ -642,6 +663,7 @@ void main() {
       List<String>? menus,
     }) => TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: MediaCollectionGridDetailPage(
           database: s.db,
           collection: s.col,
@@ -660,30 +682,40 @@ void main() {
       ),
     );
 
-    testWidgets('整体进度分母是全部成员：2 / 4 读完显示 50%（不是 100%）', (
-      WidgetTester tester,
-    ) async {
+    testWidgets('整体进度分母是全部成员：2 / 4 读完（不是 2 / 2）', (WidgetTester tester) async {
       useDesktopView(tester);
       await tester.pumpWidget(seriesPage(await seedSeries()));
       await tester.pumpAndSettle();
 
-      final Text percent = tester.widget<Text>(
-        find.byKey(const ValueKey<String>('collection_detail_hero_percent')),
+      // 合集信息块的统计行：分母是全部 4 个成员（不是有进度信息的 2 个）。
+      expect(
+        find.textContaining(
+          t.collection_detail_finished_count(done: 2, total: 4),
+        ),
+        findsOneWidget,
       );
-      expect(percent.data, '50%');
     });
 
-    testWidgets('hero 不再有「继续」按钮（2026-10-28 砍掉，点成员卡读）', (
-      WidgetTester tester,
-    ) async {
+    // 重设计外壳的合集 hero（海报 hero；用户 2026-11-12 三轮
+    // 「重新设计」后的版式）只有封面 / 合集名 / 统计 / 标签，没有「继续」主
+    // 按钮——续读走点成员卡。是否要把「继续」加回信息块待所有者拍板（PR #3397）。
+    testWidgets('合集信息块没有「继续」按钮；点成员卡打开那一本', (WidgetTester tester) async {
       useDesktopView(tester);
-      await tester.pumpWidget(seriesPage(await seedSeries()));
+      final List<String> opened = <String>[];
+      await tester.pumpWidget(seriesPage(await seedSeries(), opened: opened));
       await tester.pumpAndSettle();
 
+      expect(
+        find.byKey(const ValueKey<String>('collection_detail_poster_hero')),
+        findsOneWidget,
+      );
       expect(
         find.byKey(const ValueKey<String>('collection_detail_continue')),
         findsNothing,
       );
+      await tester.tap(find.byKey(const ValueKey<String>('member-k2')));
+      await tester.pumpAndSettle();
+      expect(opened, <String>['k2']);
     });
 
     testWidgets('非拖排网格触屏长按弹库页同一份卡片菜单，不进多选', (WidgetTester tester) async {
@@ -760,6 +792,7 @@ void main() {
       await tester.pumpWidget(
         TranslationProvider(
           child: MaterialApp(
+            theme: gridShellTheme(),
             home: MediaCollectionGridDetailPage(
               database: s.db,
               collection: s.col,
@@ -805,11 +838,68 @@ void main() {
       await tester.pumpWidget(seriesPage(await seedSeries()));
       await tester.pumpAndSettle();
 
-      expect(find.byTooltip(t.collection_detail_edit_tags), findsNothing);
+      // 「编辑标签」只有一个：hero 动作行里的图标钮（tooltip 即它），顶栏没有。
+      expect(find.byTooltip(t.collection_detail_edit_tags), findsOneWidget);
       expect(
-        find.byKey(const ValueKey<String>('collection_detail_edit_tags')),
+        find.descendant(
+          of: find.byKey(
+            const ValueKey<String>('collection_detail_poster_hero'),
+          ),
+          matching: find.byKey(
+            const ValueKey<String>('collection_detail_edit_tags'),
+          ),
+        ),
         findsOneWidget,
       );
     });
+  });
+
+  testWidgets('重设计外壳：裸图标页头 + 合集头部，拼贴布局下成员排库墙同款色块', (WidgetTester tester) async {
+    useDesktopView(tester);
+    final ({FushiDatabase db, MediaCollectionRow col}) s = await seed();
+    final List<String> opened = <String>[];
+    await tester.pumpWidget(
+      TranslationProvider(
+        child: MaterialApp(
+          // 默认库页布局 2026-11-15 起是封面网格：本例守拼贴，显式钉住。
+          theme: shellLayoutTheme(ShellContentLayout.collage),
+          home: MediaCollectionGridDetailPage(
+            database: s.db,
+            collection: s.col,
+            memberCardBuilder: cardBuilder,
+            onOpenMember: (String mediaType, String entryKey) =>
+                opened.add(entryKey),
+            onChanged: () {},
+          ),
+        ),
+      ),
+    );
+    await tester.pumpAndSettle();
+
+    // 页头：不挂 AppBar，合集管理动作是裸图标（tooltip 不变）。
+    expect(find.byType(AppBar), findsNothing);
+    expect(find.byType(MediaPosterDetailChrome), findsOneWidget);
+    expect(find.byTooltip(t.rename_collection), findsOneWidget);
+    expect(find.byTooltip(t.delete_collection), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('collection_detail_poster_hero')),
+      findsOneWidget,
+    );
+    expect(
+      find.byKey(const ValueKey<String>('collection_detail_edit_tags')),
+      findsOneWidget,
+    );
+    // 拼贴布局：成员格在色块布局里，卡片收到色块尺寸档。
+    expect(find.byType(SliverFushiCoverBlocks), findsOneWidget);
+    expect(
+      find.ancestor(
+        of: find.byKey(const ValueKey<String>('member-k1')),
+        matching: find.byType(FushiCoverBlockScope),
+      ),
+      findsOneWidget,
+    );
+    await tester.tap(find.byKey(const ValueKey<String>('member-k2')));
+    await tester.pumpAndSettle();
+    expect(opened, <String>['k2']);
   });
 }

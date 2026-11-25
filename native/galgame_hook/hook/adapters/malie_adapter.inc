@@ -462,7 +462,7 @@ class MalieLibpAdapter final : public fushi_voice_hook::EngineAdapter {
     static const wchar_t* const kNames[] = {L"unmeasured", L"matched",
                                             L"image-not-ready", L"rejected"};
     const uint32_t index = static_cast<uint32_t>(state);
-    MalieLog(L"identity: %ls (scheme result=%lu)",
+    MalieLog(L"identity: %ls (scheme | draw<<8 = 0x%lx)",
              index < 4u ? kNames[index] : L"?",
              static_cast<unsigned long>(
                  fushi_voice_hook::MalieProfile().last_result.load()));

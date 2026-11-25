@@ -16,33 +16,58 @@ import 'package:args/args.dart';
 import 'package:fushi_engine/media/torrent/torrent_metainfo.dart';
 import 'package:fushi_engine/utils/net/app_http.dart' show createAppHttpClient;
 import 'package:fushi_server/src/ctl/admin_client.dart';
+import 'package:fushi_server/src/server_language.dart';
 
 /// 往 `ctl` 参数表里补 `downloads add` 用到的选项。
 void addCtlDownloadOptions(ArgParser parser) {
   parser
-    ..addOption('magnet', help: 'downloads add：磁链（也可作位置参数）')
+    ..addOption(
+      'magnet',
+      help: tr(
+        'downloads add：磁链（也可作位置参数）',
+        'downloads add: magnet link (can also be a positional argument)',
+      ),
+    )
     ..addOption(
       'torrent',
-      help: 'downloads add：.torrent 本地路径或 http(s) 地址（下载走 HTTPS_PROXY）',
+      help: tr(
+        'downloads add：.torrent 本地路径或 http(s) 地址（下载走 HTTPS_PROXY）',
+        'downloads add: local .torrent path or http(s) URL (downloads honor HTTPS_PROXY)',
+      ),
     )
     ..addMultiOption(
       'select',
       splitCommas: false,
-      help: 'downloads add：只下文件路径匹配该正则的文件（不区分大小写，可重复）',
+      help: tr(
+        'downloads add：只下文件路径匹配该正则的文件（不区分大小写，可重复）',
+        'downloads add: only download files whose path matches this regex (case-insensitive, repeatable)',
+      ),
     )
     ..addMultiOption(
       'index',
-      help: 'downloads add：只下这个文件下标（可重复，见 --list-files）',
+      help: tr(
+        'downloads add：只下这个文件下标（可重复，见 --list-files）',
+        'downloads add: only download this file index (repeatable, see --list-files)',
+      ),
     )
     ..addFlag(
       'list-files',
       negatable: false,
-      help: 'downloads add：只列出 .torrent 的文件清单（下标 / 大小 / 路径）',
+      help: tr(
+        'downloads add：只列出 .torrent 的文件清单（下标 / 大小 / 路径）',
+        'downloads add: only list the files in the .torrent (index / size / path)',
+      ),
     )
-    ..addOption('year', help: 'downloads add：作品年份')
+    ..addOption(
+      'year',
+      help: tr('downloads add：作品年份', 'downloads add: release year'),
+    )
     ..addOption(
       'subtitle-policy',
-      help: 'downloads add：none | bestEffort | required',
+      help: tr(
+        'downloads add：none | bestEffort | required',
+        'downloads add: none | bestEffort | required',
+      ),
     );
 }
 
@@ -59,11 +84,16 @@ Future<int> runCtlDownloadAdd(
   required int Function(AdminApiException ex) exitCodeFor,
   CtlTorrentFetcher? fetch,
 }) async {
-  const String usage =
-      '用法: fushi_server ctl downloads add --title <标题> (<magnet> | --magnet <m> | --torrent <路径|URL>)\n'
-      '        [--select <正则>]... [--index <n>]... [--year <y>] [--provider anidb|mal|tmdb --external-id <id>]\n'
-      '        [--media-kind movie|tv] [--subtitle-policy none|bestEffort|required]\n'
-      '      fushi_server ctl downloads add --torrent <路径|URL> --list-files';
+  final String usage = tr(
+    '用法: fushi_server ctl downloads add --title <标题> (<magnet> | --magnet <m> | --torrent <路径|URL>)\n'
+        '        [--select <正则>]... [--index <n>]... [--year <y>] [--provider anidb|mal|tmdb --external-id <id>]\n'
+        '        [--media-kind movie|tv] [--subtitle-policy none|bestEffort|required]\n'
+        '      fushi_server ctl downloads add --torrent <路径|URL> --list-files',
+    'Usage: fushi_server ctl downloads add --title <title> (<magnet> | --magnet <m> | --torrent <path|URL>)\n'
+        '        [--select <regex>]... [--index <n>]... [--year <y>] [--provider anidb|mal|tmdb --external-id <id>]\n'
+        '        [--media-kind movie|tv] [--subtitle-policy none|bestEffort|required]\n'
+        '      fushi_server ctl downloads add --torrent <path|URL> --list-files',
+  );
   final List<String> rest = command.rest;
   final List<String> args = rest.length > 2
       ? rest.sublist(2)
@@ -81,7 +111,12 @@ Future<int> runCtlDownloadAdd(
   }
   if (torrent == null &&
       (listFiles || patterns.isNotEmpty || indexTexts.isNotEmpty)) {
-    err.writeln('磁链没有文件清单：--list-files / --select / --index 需要 --torrent');
+    err.writeln(
+      tr(
+        '磁链没有文件清单：--list-files / --select / --index 需要 --torrent',
+        'A magnet link has no file list: --list-files / --select / --index require --torrent',
+      ),
+    );
     return 64;
   }
 
@@ -91,22 +126,47 @@ Future<int> runCtlDownloadAdd(
     try {
       bytes = await loadCtlTorrent(torrent, fetch: fetch);
     } on FileSystemException catch (e) {
-      err.writeln('读不到 .torrent: ${e.path ?? torrent} ${e.message}');
+      err.writeln(
+        tr(
+          '读不到 .torrent: ${e.path ?? torrent} ${e.message}',
+          'Cannot read .torrent: ${e.path ?? torrent} ${e.message}',
+        ),
+      );
       return 66;
     } on HttpException catch (e) {
-      err.writeln('下载 .torrent 失败: ${e.message}');
+      err.writeln(
+        tr(
+          '下载 .torrent 失败: ${e.message}',
+          'Failed to download .torrent: ${e.message}',
+        ),
+      );
       return 69;
     } on SocketException catch (e) {
-      err.writeln('下载 .torrent 失败（网络 / 代理？）: ${e.message}');
+      err.writeln(
+        tr(
+          '下载 .torrent 失败（网络 / 代理？）: ${e.message}',
+          'Failed to download .torrent (network / proxy?): ${e.message}',
+        ),
+      );
       return 69;
     } on TimeoutException {
-      err.writeln('下载 .torrent 超时: $torrent');
+      err.writeln(
+        tr(
+          '下载 .torrent 超时: $torrent',
+          'Timed out downloading .torrent: $torrent',
+        ),
+      );
       return 69;
     }
     try {
       meta = inspectTorrentMetainfo(bytes);
     } on TorrentMetainfoException catch (e) {
-      err.writeln('不是有效的 .torrent: ${e.message}');
+      err.writeln(
+        tr(
+          '不是有效的 .torrent: ${e.message}',
+          'Not a valid .torrent: ${e.message}',
+        ),
+      );
       return 65;
     }
   }
@@ -136,13 +196,20 @@ Future<int> runCtlDownloadAdd(
   final String? yearText = _nonEmpty(command['year'] as String?);
   final int? year = yearText == null ? null : int.tryParse(yearText);
   if (yearText != null && year == null) {
-    err.writeln('--year 要是整数: $yearText');
+    err.writeln(
+      tr('--year 要是整数: $yearText', '--year must be an integer: $yearText'),
+    );
     return 64;
   }
   final String? provider = _nonEmpty(command['provider'] as String?);
   final String? externalId = _nonEmpty(command['external-id'] as String?);
   if ((provider == null) != (externalId == null)) {
-    err.writeln('--provider 与 --external-id 要一起给');
+    err.writeln(
+      tr(
+        '--provider 与 --external-id 要一起给',
+        '--provider and --external-id must be given together',
+      ),
+    );
     return 64;
   }
   final String mediaKind = command['media-kind'] as String;
@@ -163,7 +230,7 @@ Future<int> runCtlDownloadAdd(
   try {
     response = await client.post('/api/admin/downloads', body: body);
   } on AdminApiException catch (ex) {
-    err.writeln('POST downloads 失败: $ex');
+    err.writeln(tr('POST downloads 失败: $ex', 'POST downloads failed: $ex'));
     if (command['json'] as bool && ex.body != null) {
       out.writeln(_pretty(ex.body));
     }
@@ -255,13 +322,23 @@ Set<int> selectTorrentFiles(
   List<String> indexes = const <String>[],
 }) {
   if (files.isEmpty) {
-    throw const FormatException('这个 .torrent 没有稳定的文件下标（纯 v2），只能整颗下载');
+    throw FormatException(
+      tr(
+        '这个 .torrent 没有稳定的文件下标（纯 v2），只能整颗下载',
+        'This .torrent has no stable file indexes (pure v2); it can only be downloaded whole',
+      ),
+    );
   }
   final Set<int> selected = <int>{};
   for (final String text in indexes) {
     final int? index = int.tryParse(text.trim());
     if (index == null || index < 0 || index >= files.length) {
-      throw FormatException('--index $text 越界（0..${files.length - 1}）');
+      throw FormatException(
+        tr(
+          '--index $text 越界（0..${files.length - 1}）',
+          '--index $text is out of range (0..${files.length - 1})',
+        ),
+      );
     }
     selected.add(index);
   }
@@ -270,17 +347,29 @@ Set<int> selectTorrentFiles(
     try {
       re = RegExp(pattern, caseSensitive: false);
     } on FormatException catch (e) {
-      throw FormatException('--select 正则无效: $pattern（${e.message}）');
+      throw FormatException(
+        tr(
+          '--select 正则无效: $pattern（${e.message}）',
+          'Invalid --select regex: $pattern (${e.message})',
+        ),
+      );
     }
     final Iterable<InspectedTorrentFile> hits = files.where(
       (InspectedTorrentFile f) => re.hasMatch(f.path),
     );
     if (hits.isEmpty) {
-      throw FormatException('--select $pattern 没有匹配任何文件（--list-files 看清单）');
+      throw FormatException(
+        tr(
+          '--select $pattern 没有匹配任何文件（--list-files 看清单）',
+          '--select $pattern matched no files (see --list-files)',
+        ),
+      );
     }
     selected.addAll(hits.map((InspectedTorrentFile f) => f.index));
   }
-  if (selected.isEmpty) throw const FormatException('没有选中任何文件');
+  if (selected.isEmpty) {
+    throw FormatException(tr('没有选中任何文件', 'No files selected'));
+  }
   return selected;
 }
 
@@ -308,7 +397,12 @@ void _renderFileList(
   }
   out.writeln('${meta.suggestedName ?? '-'}  (${meta.torrentId})');
   if (meta.files.isEmpty) {
-    out.writeln('  （纯 v2 torrent：没有稳定的文件下标，只能整颗下载）');
+    out.writeln(
+      tr(
+        '  （纯 v2 torrent：没有稳定的文件下标，只能整颗下载）',
+        '  (pure v2 torrent: no stable file indexes, can only be downloaded whole)',
+      ),
+    );
     return;
   }
   final int width = '${meta.files.length - 1}'.length;

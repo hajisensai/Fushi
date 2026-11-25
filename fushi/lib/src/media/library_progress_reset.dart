@@ -31,6 +31,7 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/stats/stat_facts.dart';
 import 'package:fushi_engine/stats/study_sessions.dart';
 
+import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 
 /// 重置时对学习记录做什么。
@@ -130,7 +131,7 @@ Future<void> resetBookReadingState({
       );
     }
   }
-  await db.setEpubBookCompleted(bookKey, null);
+  await clearBooksFinished(db: db, bookKeys: <String>[bookKey]);
   // 带有声书时首次按播放正文会跟到音频位置（BUG-3430），只回写阅读位置会被音频位置
   // 原样拉回去、再被阅读器落库成「在读」；音频位置一并归零（带时间戳，互联 LWW 随之推送）。
   final AudiobookRepository audiobooks = AudiobookRepository(db);

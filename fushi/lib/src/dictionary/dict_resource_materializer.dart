@@ -9,7 +9,8 @@
 // `AppModel._rebuildDictPathsCacheAsync` → `FushiDicts.scheduleTyped` →
 // `FushiDicts.loadPendingAsync`（逐本 `addTermDict` 是**主 isolate 上的同步 FFI**）→
 // C++ `add_dict` 用 `std::ifstream` 整读 `index.json` / `styles.css` / `dict.zstd`，
-// `mmap` `hash.table` / `bloom.filter` / `blobs.bin` / `media.bin` / `media.idx` 并立即
+// `mmap` 索引（`key.index`，旧式 `hash.table` / `bloom.filter`）、`blobs.bin` /
+// `blobs3.bin` / `media.bin` / `media.idx` 并立即
 // 触页。读到 dataless 文件会在内核里同步等云端把整个文件拉回来，没有任何超时；而
 // AppModel 的 12s 看门狗与 main.dart 的 20s 逃生 UI 都是 Timer，在同步 FFI 阻塞期间
 // 根本不会触发——用户看到的就是冷启动永远转圈。
@@ -197,7 +198,8 @@ class _DirReport {
 ///
 /// 只看目录下的**常规文件**（`listSync(followLinks: false)` 里的 [File]），不硬编码
 /// 文件名清单——引擎文件集合以磁盘为准；典型的是 `index.json` / `styles.css` /
-/// `dict.zstd` / `hash.table` / `bloom.filter` / `blobs.bin` / `media.bin` / `media.idx`。
+/// `dict.zstd` / `key.index`（旧式 `hash.table` / `bloom.filter`）/ `blobs.bin` /
+/// `blobs3.bin` / `media.bin` / `media.idx`。
 /// 子目录与符号链接跳过：引擎不会 mmap 它们。
 void _materializeWorker(_MaterializeRequest request) {
   final SendPort port = request.sendPort;
@@ -232,5 +234,130 @@ String? _materializeDirectory(String dir) {
     return null;
   } catch (e) {
     return '$e';
+  }
+}
+
+/// [materializeDictResources] 的函数形状，供 [DictResourceAvailability] 注入（测试用
+/// 假探测器确定性地制造「预算后回报」）。
+typedef DictResourceProbe =
+    Future<DictResourceMaterializeResult> Function(
+      List<String> dictDirs, {
+      void Function(String dir, String? error)? onLateReport,
+    });
+
+Future<DictResourceMaterializeResult> _defaultDictResourceProbe(
+  List<String> dictDirs, {
+  void Function(String dir, String? error)? onLateReport,
+}) => materializeDictResources(dictDirs, onLateReport: onLateReport);
+
+/// [DictResourceAvailability.resolve] 的结果。
+class DictResourceResolution {
+  const DictResourceResolution({
+    required this.ready,
+    required this.pending,
+    required this.failed,
+    required this.probedNow,
+  });
+
+  /// 输入里已证明物化（本轮或之前任何一轮）的目录，保持输入顺序。
+  final List<String> ready;
+
+  /// 输入里仍有探测 worker 在跑、尚未回报的目录（本轮新起的或之前起的）。
+  final List<String> pending;
+
+  /// 本轮探测出错的目录 → 错误串。
+  final Map<String, String> failed;
+
+  /// 本轮真正交给探测器的目录（已物化 / 在探的都不再探）。
+  final List<String> probedNow;
+}
+
+/// 进程内「哪些词典目录的字节已在本地」的唯一状态持有者（BUG-4510）。
+///
+/// 旧实现把这份状态拆在 `AppModel` 的两个集合里，每次异步重装都对**全部**目录重起
+/// 一个探测 worker，并用本轮结果**覆盖**可读集。于是：预算后 worker 每回报一本 →
+/// 2s 后重装 → 重装又对全部目录（包括上一轮 worker 还没读到的）起新 worker、预算内
+/// 没读完的再次 pending → 新 worker 的回报再触发重装……worker 无界叠加、彼此抢 IO，
+/// 每轮还整套重装引擎（主 isolate 同步 FFI），Windows 上窗口消息泵被持续饿死
+/// （Application Hang 1002）；可读集被覆盖又让已证明可读的词典反复掉出引擎。
+///
+/// 这里的不变式：
+/// - 已证明物化的目录**单调**累积，不被后续轮次覆盖；
+/// - 正在被某个 worker 探的目录不重复探——每个目录同一时刻至多一个在途探测；
+/// - 在途集合清空（所有预算后回报到齐）且期间有新目录变可读时，[onLateReady] 只
+///   触发一次，由调用方重装一次引擎。
+class DictResourceAvailability {
+  DictResourceAvailability({
+    DictResourceProbe probe = _defaultDictResourceProbe,
+    this.onLateReport,
+    this.onLateReady,
+  }) : _probe = probe;
+
+  final DictResourceProbe _probe;
+
+  /// 每条预算后回报（成功或失败），供调用方记诊断日志。
+  final void Function(String dir, String? error)? onLateReport;
+
+  /// 在途探测全部回报完、且其间至少一本变成可读时调用一次：调用方据此重装引擎。
+  final void Function()? onLateReady;
+
+  final Set<String> _ready = <String>{};
+  final Set<String> _inFlight = <String>{};
+  final Set<String> _probed = <String>{};
+  bool _lateReadySinceDrain = false;
+
+  /// 已证明字节在本地。
+  bool isReady(String dir) => _ready.contains(dir);
+
+  /// 同步装载路径的判据：没探过的目录（本进程刚导入 / 互联落盘的，本就在本地）放行，
+  /// 探过的只放行已证明物化的。
+  bool isLoadable(String dir) => !_probed.contains(dir) || _ready.contains(dir);
+
+  /// 仍有探测 worker 在跑的目录数。
+  int get inFlightCount => _inFlight.length;
+
+  /// 对 [existingDirs] 中「既没证明可读、也没在探」的目录起一次探测并等预算，返回
+  /// [existingDirs] 当前的可读 / 在途划分。
+  Future<DictResourceResolution> resolve(List<String> existingDirs) async {
+    final List<String> toProbe = <String>[
+      for (final String dir in existingDirs.toSet())
+        if (!_ready.contains(dir) && !_inFlight.contains(dir)) dir,
+    ];
+    Map<String, String> failed = const <String, String>{};
+    if (toProbe.isNotEmpty) {
+      _probed.addAll(toProbe);
+      _inFlight.addAll(toProbe);
+      final DictResourceMaterializeResult result = await _probe(
+        toProbe,
+        onLateReport: _onLate,
+      );
+      _ready.addAll(result.ready);
+      _inFlight
+        ..removeAll(result.ready)
+        ..removeAll(result.failed.keys);
+      failed = result.failed;
+    }
+    return DictResourceResolution(
+      ready: <String>[
+        for (final String dir in existingDirs)
+          if (_ready.contains(dir)) dir,
+      ],
+      pending: <String>[
+        for (final String dir in existingDirs)
+          if (_inFlight.contains(dir)) dir,
+      ],
+      failed: failed,
+      probedNow: toProbe,
+    );
+  }
+
+  void _onLate(String dir, String? error) {
+    _inFlight.remove(dir);
+    if (error == null && _ready.add(dir)) _lateReadySinceDrain = true;
+    onLateReport?.call(dir, error);
+    if (_inFlight.isEmpty && _lateReadySinceDrain) {
+      _lateReadySinceDrain = false;
+      onLateReady?.call();
+    }
   }
 }

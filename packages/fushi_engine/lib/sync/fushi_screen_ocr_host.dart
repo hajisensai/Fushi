@@ -331,7 +331,7 @@ class ScreenOcrHost {
     final MangaOcrService service = _service;
     if (service is! MangaOcrPageService) return false;
     if (!service.isSupportedPlatform) return false;
-    return (await service.modelStatus()).allReady;
+    return (await service.modelStatus()).canRun;
   }
 
   Future<MangaOcrTextImageSession> _textSession() async {

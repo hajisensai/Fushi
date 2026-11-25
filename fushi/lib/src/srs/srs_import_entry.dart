@@ -5,6 +5,9 @@
 ///   （srs_import_task.dart；牌组列表顶上的任务条显示进度）→ 任务条「查看报告」看
 ///   导入报告（[srsImportReportLines] 把 `SrsImportReport` 的各项翻成人话）。媒体经
 ///   [SrsMediaStore] 按内容哈希落盘。新格式包而排程内核不可用时报「需要排程内核」。
+///   选的是 .csv / .tsv / .txt 时走文本导入（对齐 Anki「导入 → 文本文件」）：原生内核解析出预览 →
+///   srs_text_import_dialog.dart 选分隔符 / 笔记类型 / 牌组 / 列映射 / 已存在笔记的处理 → 同一个后台队列
+///   （[runSrsTextImportFile]）。
 /// - 导出：选项（学习进度 / 牌组预设 / 兼容 Anki，见 srs_export_options_dialog.dart；
 ///   记住上次的选择；范围里有 FSRS-7 牌组时对话框内提示「Anki 里会改用 FSRS-6」）→
 ///   `exportAnkiPackageFile`（流式写暂存文件）→ 桌面「另存为」/ 移动端系统分享。
@@ -26,9 +29,16 @@ import 'package:fushi_engine/srs/apkg/srs_export_options.dart';
 import 'package:fushi_engine/foundation/pref_store.dart';
 import 'package:fushi_engine/srs/apkg/srs_apkg_import.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/text/srs_text_import.dart';
+import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi_engine/srs/sync2/srs_location_crypto.dart';
+import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
+    show kSrsSync2Folder, kSrsSync2Namespace;
+import 'package:fushi_engine/srs/sync2/srs_sync2_round.dart'
+    show kSrsLocationNewRootMissing, kSrsLocationProtocol1Root;
 import 'package:fushi_srs/fushi_srs.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:path/path.dart' as p;
 import 'package:path_provider/path_provider.dart';
 import 'package:share_plus/share_plus.dart';
 
@@ -38,7 +48,8 @@ import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_export_options_dialog.dart';
 import 'package:fushi/src/srs/srs_import_options_dialog.dart';
 import 'package:fushi/src/srs/srs_import_task.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi/src/srs/srs_text_import_dialog.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_mined_history_import.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
@@ -53,6 +64,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart';
 
 // ---------------------------------------------------------------- 导入（逻辑）
 
@@ -108,6 +120,8 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
   if (r.cardsAdded > 0) t.srs_import_report_cards(n: r.cardsAdded),
   if (r.cardsResetToNew > 0)
     t.srs_import_report_reset_new(n: r.cardsResetToNew),
+  if (r.cardsKeptInDeck > 0)
+    t.srs_import_report_cards_kept_deck(n: r.cardsKeptInDeck),
   if (r.reviewLogsSkipped > 0)
     t.srs_import_report_reviews_skipped(n: r.reviewLogsSkipped),
   if (r.deckPresetsSkipped > 0)
@@ -154,6 +168,8 @@ List<String> srsImportReportLines(SrsImportReport r) => <String>[
         t.srs_import_report_conflicts_type_changed(n: e.value, name: e.key.$2),
       SrsImportIssueReason.noteTypeKindMismatch =>
         t.srs_import_report_conflicts_kind_mismatch(n: e.value, name: e.key.$2),
+      SrsImportIssueReason.otherProfileNoteType =>
+        t.srs_import_report_conflicts_other_profile(n: e.value, name: e.key.$2),
       _ => t.srs_import_report_conflicts_missing_type(n: e.value),
     },
   if (r.removedInSource.isNotEmpty)
@@ -235,9 +251,17 @@ Future<void> openSrsImport(BuildContext context, WidgetRef ref) async {
   if (!context.mounted) return;
   final String? path = await pickSystemFilePath(
     context: context,
-    allowedExtensions: const <String>{'apkg', 'colpkg'},
+    allowedExtensions: const <String>{
+      'apkg',
+      'colpkg',
+      ...kSrsTextImportExtensions,
+    },
   );
   if (path == null || !context.mounted) return;
+  if (srsIsTextImportPath(path)) {
+    await _openSrsTextImport(context, ref, store, path);
+    return;
+  }
   final PrefStore prefs = ref.read(appProvider).prefsRepo;
   final SrsAnkiImportOptions? options = await showSrsImportOptionsDialog(
     context: context,
@@ -263,14 +287,81 @@ Future<void> openSrsImport(BuildContext context, WidgetRef ref) async {
   FushiToast.show(msg: t.srs_import_background_started);
 }
 
-/// 导入失败原因 → 给人看的一句话。
-String srsImportFailureMessage(Object failure) =>
-    failure is SrsImportException &&
-        failure.code == SrsImportException.needsKernel
-    ? t.srs_import_needs_kernel
-    : t.srs_import_failed(
-        error: failure is SrsImportException ? failure.message : '$failure',
+/// 文本导入（CSV / TSV / TXT）：原生内核解析出预览 → 选项对话框（列映射等）→ 排进后台导入队列。
+Future<void> _openSrsTextImport(
+  BuildContext context,
+  WidgetRef ref,
+  SrsDbStore store,
+  String path,
+) async {
+  final SrsTextFile preview;
+  final List<SrsNoteTypeView> noteTypes;
+  final SrsDeckTree decks;
+  try {
+    preview = await parseSrsTextFile(path, limit: kSrsTextImportPreviewRows);
+    noteTypes = await store.noteTypes();
+    decks = await store.deckTree();
+  } catch (e, stack) {
+    ErrorLogService.instance.log('srsTextImport.parse', e, stack);
+    FushiToast.show(
+      msg: srsImportFailureMessage(e),
+      severity: ToastSeverity.error,
+    );
+    return;
+  }
+  if (!context.mounted) return;
+  final SrsTextImportChoice? choice = await showSrsTextImportDialog(
+    context: context,
+    fileName: File(path).uri.pathSegments.last,
+    preview: preview,
+    noteTypes: noteTypes,
+    decks: decks,
+    defaultDeckId: store.defaultDeckId,
+    reparse: (String delimiter, bool html) => parseSrsTextFile(
+      path,
+      delimiter: delimiter,
+      html: html,
+      limit: kSrsTextImportPreviewRows,
+    ),
+  );
+  if (choice == null || !context.mounted) return;
+  ref
+      .read(srsImportControllerProvider)
+      .enqueueJob(
+        displayName: File(path).uri.pathSegments.last,
+        job: (void Function(double) onProgress, bool Function() shouldStop) =>
+            runSrsTextImportFile(
+              store: store,
+              path: path,
+              choice: choice,
+              onProgress: onProgress,
+              shouldStop: shouldStop,
+            ),
       );
+  FushiToast.show(msg: t.srs_import_background_started);
+}
+
+/// 后台任务体：按选定的分隔符 / HTML 读全文（原生内核，后台 isolate），再按选项写库。
+Future<SrsImportReport> runSrsTextImportFile({
+  required SrsDbStore store,
+  required String path,
+  required SrsTextImportChoice choice,
+  void Function(double progress)? onProgress,
+  bool Function()? shouldStop,
+}) async {
+  final SrsTextFile file = await parseSrsTextFile(
+    path,
+    delimiter: choice.delimiter,
+    html: choice.html,
+  );
+  return runSrsTextImport(
+    store: store,
+    file: file,
+    options: choice.options,
+    onProgress: onProgress,
+    shouldStop: shouldStop,
+  );
+}
 
 /// 用户不要 RWKV：把导入时由 FSRS 预设改用 RWKV 的牌组（[SrsImportReport.fsrsDecks]）切回各自
 /// 原来的 FSRS 算法，返回切了几个。导入时参数已经按原算法存下，切回即用。
@@ -350,7 +441,15 @@ Future<void> srsKeepImportedDecksOnFsrsFromReport(
     FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
     return;
   }
-  final int n = await srsKeepImportedDecksOnFsrs(store, report.fsrsDecks);
+  final int n;
+  try {
+    n = await srsKeepImportedDecksOnFsrs(store, report.fsrsDecks);
+  } catch (e, stack) {
+    // 切算法是写复习库：失败照写入失败提示（以前没接，异常直接冒出报告对话框的按钮回调）。
+    ErrorLogService.instance.log('srsKeepImportedDecksOnFsrs', e, stack);
+    FushiToast.show(msg: srsActionFailedText(e), severity: ToastSeverity.error);
+    return;
+  }
   bumpSrsRevision(ref);
   FushiToast.show(msg: t.srs_import_kept_fsrs(n: n));
 }
@@ -366,26 +465,56 @@ Future<void> showSrsImportFailureDialog(BuildContext context, Object failure) =>
       cancelLabel: t.cancel,
     );
 
-/// 牌组列表 ⋯「导出（.apkg）」：导出全部牌组（Anki 与 Fushi 自己的「导入」都能吃）。
-Future<void> openSrsExport(BuildContext context, WidgetRef ref) async {
+/// 导出包的默认文件名：整库 `fushi-review.apkg`；单个牌组用牌组全名（`父::子` 写成 `父-子`），
+/// 文件名里不能出现的字符换成 `_`（字符集取唯一真相源 [safeWindowsFileName]），清理后为空时
+/// 退回整库的名字；牌组名撞上 Windows 保留设备名（`CON`、`NUL`、`COM1`…）时前缀 `_`，否则
+/// Windows 上存不下或写进设备。
+String srsExportFileName(String? deckFullName) {
+  const String whole = 'fushi-review.apkg';
+  if (deckFullName == null) return whole;
+  final String base = safeWindowsFileName(
+    deckFullName.replaceAll('::', '-'),
+  ).trim().replaceAll(RegExp(r'^[.\s]+|[.\s]+$'), '');
+  if (base.isEmpty) return whole;
+  return isWindowsReservedFileName(base) ? '_$base.apkg' : '$base.apkg';
+}
+
+/// 导出 .apkg（Anki 与 Fushi 自己的「导入」都能吃）。[deckId] 为 null 时导出全部牌组（牌组列表
+/// ⋯「导出（.apkg）」）；给了就只导出该牌组的子树（牌组菜单「导出此牌组」）——祖先牌组随包写出
+/// 以保留全名，继承来的参数组即使归子树外的父牌组也照样写进包（见 `exportAnkiPackageFile`）。
+Future<void> openSrsExport(
+  BuildContext context,
+  WidgetRef ref, {
+  String? deckId,
+}) async {
   final SrsDbStore? store = await readSrsStore(ref);
   if (store == null) {
     FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
     return;
   }
+  String? deckName;
+  if (deckId != null) {
+    final SrsDeckTree tree = await store.deckTree();
+    if (tree[deckId] == null) {
+      FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+      return;
+    }
+    deckName = tree.fullName(deckId);
+  }
   final SrsMediaStore? media = await _readMedia(ref);
-  final bool usesFsrs7 = await srsExportScopeUsesFsrs7(store);
+  final bool usesFsrs7 = await srsExportScopeUsesFsrs7(store, deckId: deckId);
   if (!context.mounted) return;
   final PrefStore prefs = ref.read(appProvider).prefsRepo;
   final SrsAnkiExportOptions? options = await showSrsExportOptionsDialog(
     context: context,
     initial: readSrsExportOptions(prefs),
     usesFsrs7: usesFsrs7,
+    deckName: deckName,
   );
   if (options == null || !context.mounted) return;
   await writeSrsExportOptions(prefs, options);
   try {
-    const String fileName = 'fushi-review.apkg';
+    final String fileName = srsExportFileName(deckName);
     final Directory staging = await (await getTemporaryDirectory()).createTemp(
       'fushi_srs_export_',
     );
@@ -393,6 +522,7 @@ Future<void> openSrsExport(BuildContext context, WidgetRef ref) async {
       store: store,
       media: media,
       file: File('${staging.path}${Platform.pathSeparator}$fileName'),
+      deckId: deckId,
       options: options,
     );
     if (!context.mounted) return;
@@ -482,7 +612,7 @@ Future<void> openSrsMinedHistoryImport(
     );
   } catch (e, stack) {
     ErrorLogService.instance.log('openSrsMinedHistoryImport', e, stack);
-    FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+    FushiToast.show(msg: srsActionFailedText(e), severity: ToastSeverity.error);
   }
 }
 
@@ -499,6 +629,10 @@ Future<void> openSrsMinedHistoryImport(
   }
   if (result.unconfigured) {
     return (msg: t.srs_sync_no_backend, severity: ToastSeverity.info);
+  }
+  // BUG-4320：本机的改动发出去了，但已配对设备还没开启复习同步——它没并入、也没发它的数据，不能报「已同步」。
+  if (result.peersNotJoined > 0) {
+    return (msg: t.srs_sync_peer_not_joined, severity: ToastSeverity.warning);
   }
   return (msg: t.srs_sync_done, severity: ToastSeverity.success);
 }
@@ -523,8 +657,37 @@ String srsSyncErrorReason(Object error) => switch (error) {
     t.srs_timeline_location_bad_kdf,
   SrsSyncReportError(message: kSrsSync2MetaUnavailable) =>
     t.srs_sync_location_meta_unavailable,
+  SrsSyncReportError(message: kSrsLocationProtocol1Root) =>
+    t.srs_sync_location_protocol1_root,
+  SrsSyncReportError(
+    message: kSrsLocationNewRootMissing,
+    :final String? locationDir,
+  ) =>
+    srsNewRootMissingText(locationDir),
   _ => friendlySyncErrorDetail(error),
 };
+
+/// 「新根不见了」（[kSrsLocationNewRootMissing]）的恢复提示，写出这个位置上要删的那个围栏文件的真实路径：
+/// [folderPath] 给了（文件夹位置）= 磁盘上的完整路径，用文件夹位置自己的文案（路径已经是绝对的，不再说「这个位置
+/// 上的」）；否则（云盘 / 互联）= 位置里的相对路径 `fushi-srs/<集合目录名>/v3/meta.json`。[locationDir] 是出错那一轮的集合目录名（[SrsSyncReportError.locationDir]，
+/// 一轮一开头就从内核取到，这个错误总带着它）；万一没有，目录那一段写成 `…`，不编一个名字出来。
+String srsNewRootMissingText(String? locationDir, {String? folderPath}) {
+  final String dir = locationDir ?? '…';
+  if (folderPath == null) {
+    return t.srs_sync_location_new_root_missing(
+      path: '$kSrsSync2Namespace/$dir/$kSrsSync2Folder/meta.json',
+    );
+  }
+  return t.srs_sync_folder_new_root_missing(
+    path: p.join(
+      folderPath,
+      kSrsSync2Namespace,
+      dir,
+      kSrsSync2Folder,
+      'meta.json',
+    ),
+  );
+}
 
 /// 牌组列表 ⋯「立即同步」。
 ///
@@ -562,7 +725,7 @@ Future<void> openSrsSyncNow(
     FushiToast.show(msg: toast.msg, severity: toast.severity);
   } catch (e, stack) {
     ErrorLogService.instance.log('openSrsSyncNow', e, stack);
-    FushiToast.show(msg: t.srs_action_failed, severity: ToastSeverity.error);
+    FushiToast.show(msg: srsActionFailedText(e), severity: ToastSeverity.error);
   } finally {
     _srsSyncNowInFlight = false;
   }

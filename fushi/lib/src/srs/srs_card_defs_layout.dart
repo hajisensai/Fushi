@@ -24,6 +24,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/popup_settings_injection.dart'
     show popupCollapsedDictionaryNames, popupExpandedDictionaryNames;
 import 'package:fushi/src/srs/srs_card_appearance.dart';
+import 'package:fushi/src/srs/srs_review_layout.dart';
 
 /// 释义页的排版参数（来自查词设置）。
 @immutable
@@ -189,27 +190,29 @@ String srsDefsLayoutCss(SrsDefsLayoutConfig c) {
       '.fushi-srs-main-badge::before{content:var(--fushi-srs-label-main);}',
     )
     // 主词典收起 / 展开：标题行本身不可点（模板 pointer-events:none），按钮单独接收点按；
-    // 带底色，比「其他词典」的纯箭头更显眼。箭头朝下 = 展开中、朝右 = 已收起。
+    // 与「其他词典」行尾同一套纯箭头（无底色、不用负外边距——带底色时圆底顶出词典卡的
+    // 圆角，3bYq5GDy80），40px 命中区不变。箭头朝下 = 展开中、朝右 = 已收起。
     ..write(
       '.fushi-srs-main-toggle{pointer-events:auto;flex:0 0 auto;'
       'display:inline-flex;align-items:center;justify-content:center;'
-      'width:40px;height:40px;margin:-3px -6px -3px 0;padding:0;border:0;'
-      'border-radius:999px;background:var(--fc-surface-2);color:var(--fc-fg);'
+      'width:40px;height:40px;padding:0;border:0;border-radius:999px;'
+      'background:none;color:var(--fc-fg-muted);'
       'cursor:pointer;-webkit-tap-highlight-color:transparent;}',
     )
     ..write(
       '.fushi-srs-main-toggle::after{content:"";width:8px;height:8px;'
       'margin-left:-4px;border-right:2px solid currentColor;'
       'border-bottom:2px solid currentColor;transform:rotate(-45deg);'
-      'transition:transform 200ms cubic-bezier(0.2,0,0,1);}',
+      'transition:transform 200ms cubic-bezier(0.2,0,0,1);opacity:0.8;}',
     )
     ..write(
       '.fushi-srs-main-toggle--open::after{margin-left:0;margin-top:-4px;'
       'transform:rotate(45deg);}',
     )
+    // 主词典卡自己是 surface-1 底，悬停高亮取高一级。
     ..write(
       '@media (hover:hover){.fushi-srs-main-toggle:hover'
-      '{background:var(--fc-surface-3, var(--fc-surface-2));}}',
+      '{background:var(--fc-surface-2);color:var(--fc-fg);}}',
     )
     ..write(
       '@media (prefers-reduced-motion:reduce){.fushi-srs-main-toggle::after,'
@@ -473,6 +476,9 @@ const String kSrsDefsLayoutScript = r'''
     var collapse = num('--fushi-srs-dict-collapse', 1) > 0 &&
       String(fc.__fcLayoutKey || '').charAt(0) !== 'e';
     fc.classList.add('fushi-srs-defs-grid');
+    // 词典插图分级与量栏宽（[kSrsDefsIllustrationScript]），在分列之前：插图放大后分组变高再排。
+    if (window.__fushiSrsMarkIllustrations) window.__fushiSrsMarkIllustrations(fc);
+    if (window.__fushiSrsSizeIllustrations) window.__fushiSrsSizeIllustrations(fc);
     var main = fc.querySelector('.fc-gloss--main');
     if (main) {
       var label = main.querySelector('.fc-dict-label');
@@ -530,6 +536,8 @@ const String kSrsDefsLayoutScript = r'''
       }
     }
     pack(list, groups, cols, lead);
+    // 分列改了各本词典的栏宽：插图上限按新栏宽重量（变高后由高度监听再排一次）。
+    if (window.__fushiSrsSizeIllustrations) window.__fushiSrsSizeIllustrations(list);
     syncToggle(more);
     if (obs) {
       for (var o = 0; o < groups.length; o++) obs.observe(groups[o]);
@@ -542,6 +550,200 @@ const String kSrsDefsLayoutScript = r'''
     window.addEventListener('resize', function(){
       if (window.__fushiSrsHostLayout) window.__fushiSrsHostLayout();
     });
+  }
+})();
+''';
+
+/// 查词弹窗给非单色词典插图的最小显示宽度（CSS px），与 popup.css
+/// `.gloss-image-link:not([data-appearance="monochrome"])>.gloss-image-container`
+/// 的 `min-width:min(100%, 200px)` 同值。
+const int kSrsDefsIllustrationMinWidth = 200;
+
+/// 释义页里词典插图的显示宽度（拍板台 w4RAto8R0x）。
+///
+/// 只作用于 [kSrsDefsIllustrationScript] 认出的插图（`a[data-fushi-srs-illus]`）；外字
+/// （`data-sc-class="gaiji"`）与图标尺寸的小图（宽高都不超过 3 个正文字号，与查词弹窗
+/// 判 SVG 小图标同一口径）不标记，排版不动。
+///
+/// - 每一档都先对齐查词弹窗：彩色插图至少 [kSrsDefsIllustrationMinWidth] px（单色不放大），
+///   不超过栏宽。以前卡面只有制卡时内联的声明宽度，弹窗里 120px 的插图在卡面上就是 120px。
+/// - [SrsReviewImageSize.fitWidth] 再去掉导出内联的 `max-height:100vh`（与卡面
+///   `.card img` 规则的「去掉尺寸上限」一致）。
+/// - [SrsReviewImageSize.large] 插图铺满栏宽，高度最多 [maxHeight]（宽 = 高上限 × 宽高比，
+///   更高的整张等比缩小、不裁切）。窄版式释义 WebView 跟内容等高、页内 vh 不是屏高，
+///   调用方传像素值。
+///
+/// 「栏宽」是脚本量出来的像素值 `--fushi-srs-illus-avail`，不是 `100%`（BUG-5181）：词典常把
+/// 插图和竖排图注放进一张两格的表，表格单元格按内容定宽，插图宽度里的百分比在里面是循环引用——
+/// `max-width:100%` 拦不住超宽的插图，`width:min(100%, …)` 直接被算成 0 宽。变量还没量到时
+/// 退回 `100%`。
+///
+/// 导出的图片盒是 `<a>`（插图链接）+ 第一个子 `<span>`（盒子，几何全是内联样式），
+/// 盒里的 sizer 用 `padding-top` 百分比撑高，所以只改宽度、高度按比例跟着变；盒子的
+/// `100%` 相对的是链接，链接宽度已是定值，不再循环。
+String srsDefsIllustrationCss(
+  SrsReviewImageSize size, {
+  required String maxHeight,
+}) {
+  const String link = '.fc-defs-only a[data-fushi-srs-illus]';
+  const String box = '$link>span:first-child';
+  final StringBuffer out = StringBuffer()
+    ..write('$link{max-width:var(--fushi-srs-illus-avail, 100%)!important;}')
+    ..write(
+      '$box{width:100%!important;min-width:0!important;'
+      'max-width:100%!important;}',
+    )
+    // 没量到真实尺寸的导出（盒子 width:auto、img 按自然尺寸排）：img 跟着盒子走。
+    ..write(
+      '$link[data-fushi-srs-natural]>span:first-child img'
+      '{width:100%!important;height:auto!important;}',
+    );
+  switch (size) {
+    case SrsReviewImageSize.original:
+    case SrsReviewImageSize.fitWidth:
+      out
+        ..write('$link{width:var(--fushi-srs-illus-w)!important;}')
+        ..write(
+          '.fc-defs-only a[data-fushi-srs-illus="color"]'
+          '{width:max(var(--fushi-srs-illus-w), '
+          '${kSrsDefsIllustrationMinWidth}px)!important;}',
+        );
+      if (size == SrsReviewImageSize.fitWidth) {
+        out.write('$box{max-height:none!important;}');
+      }
+    case SrsReviewImageSize.large:
+      out
+        ..write(
+          '$link{width:calc($maxHeight * '
+          'var(--fushi-srs-illus-ar))!important;}',
+        )
+        ..write('$box{max-height:none!important;}');
+  }
+  return out.toString();
+}
+
+/// 释义页的词典插图脚本：
+///
+/// - `window.__fushiSrsMarkIllustrations(root)`（[kSrsDefsLayoutScript] 每次排版先调它）分级：
+///   按制卡导出内联的几何算出插图的声明尺寸（盒子 `width` 的 em / px；高 = 宽 × sizer 的
+///   `padding-top` 百分比），没量到真实尺寸的导出（盒子 `width:auto`）等图片载入后按自然尺寸
+///   （词典声明了一维就按那一维）算。宽高都不超过 3 个正文字号的是图标、外字祖先下的是外字，
+///   不标记；其余标 `data-fushi-srs-illus="color|mono"`，并把声明宽度 / 宽高比写进 CSS 变量供
+///   [srsDefsIllustrationCss] 用。每个链接只判一次（换卡是新节点）。
+/// - `window.__fushiSrsSizeIllustrations(root)`（排版前后各调一次，`<details>` 开合、插图载入
+///   后也调）量每张插图能占的栏宽，写进 `--fushi-srs-illus-avail`。
+///
+/// 声明宽度不能用「em 数 × `getComputedStyle` 的字号」算（BUG-5181）：导出的图片盒是
+/// `font-size:1px; width:<N>em`，Android WebView 的最小字号（默认 8px）让计算字号报成 8px，
+/// 排版里的 em 却仍按 1px 解析，声明宽度被放大 8 倍——239px 的插图被当成 1912px，撑破栏宽、
+/// 只露出左上角。这里在盒子里放一个不可见的绝对定位探针，按同一个长度排一次再量，取的就是
+/// 排版本身的宽度。
+const String kSrsDefsIllustrationScript = r'''
+(function(){
+  var ICON_EM = 3;
+  var LEN = /^[0-9.]+(em|px)$/;
+  // 导出内联长度在盒子里的实际排版宽度（CSS px），见上方说明。
+  function len(v, box){
+    v = String(v || '').trim();
+    if (!LEN.test(v)) return NaN;
+    var probe = document.createElement('span');
+    probe.style.cssText = 'position:absolute;visibility:hidden;display:block;left:0;top:0;' +
+      'margin:0;padding:0;border:0;height:0;min-width:0;max-width:none;width:' + v;
+    box.appendChild(probe);
+    var w = probe.offsetWidth;
+    box.removeChild(probe);
+    return w;
+  }
+  function mark(a, box, w, ratio, natural){
+    if (!(w > 0 && ratio > 0)) return;
+    var parent = a.parentElement || a;
+    var fs = parseFloat(getComputedStyle(parent).fontSize) || 16;
+    if (w <= ICON_EM * fs && w * ratio <= ICON_EM * fs) return;
+    var mono = a.getAttribute('data-appearance') === 'monochrome' ||
+      !!box.querySelector('span[style*="mask-image"]');
+    a.style.setProperty('--fushi-srs-illus-w', w + 'px');
+    a.style.setProperty('--fushi-srs-illus-ar', String(1 / ratio));
+    if (natural) a.setAttribute('data-fushi-srs-natural', '');
+    a.setAttribute('data-fushi-srs-illus', mono ? 'mono' : 'color');
+  }
+  function classify(a, box, img){
+    var w = len(box.style.width, box);
+    var sizer = box.firstElementChild;
+    var pt = sizer && sizer !== img ? String(sizer.style.paddingTop || '') : '';
+    if (w > 0 && /%$/.test(pt)) {
+      mark(a, box, w, parseFloat(pt) / 100, false);
+      return;
+    }
+    function natural(){
+      var nw = img.naturalWidth, nh = img.naturalHeight;
+      if (!(nw > 0 && nh > 0)) return;
+      var r = nh / nw;
+      var dw = len(img.style.width, box), dh = len(img.style.height, box);
+      mark(a, box, dw > 0 ? dw : dh > 0 ? dh / r : nw, r, true);
+      if (window.__fushiSrsSizeIllustration) window.__fushiSrsSizeIllustration(a);
+    }
+    if (img.complete && img.naturalWidth > 0) natural();
+    else img.addEventListener('load', natural, {once: true});
+  }
+  window.__fushiSrsMarkIllustrations = function(root){
+    var links = root.querySelectorAll('.fc-gloss a[href], .fc-gloss .gloss-image-link');
+    for (var i = 0; i < links.length; i++) {
+      var a = links[i];
+      if (a.__fushiSrsIllusSeen) continue;
+      var box = a.firstElementChild;
+      var img = box && box.tagName === 'SPAN' ? box.querySelector('img') : null;
+      if (!img) continue;
+      a.__fushiSrsIllusSeen = true;
+      if (a.closest('[data-sc-class="gaiji"]')) continue;
+      classify(a, box, img);
+    }
+  };
+  // 宽度随内容伸缩的祖先（行内 / 行内块 / 表格结构）：插图的上限要穿过它们，量到外面第一个
+  // 宽度由外部决定的块级容器为止。
+  var SHRINK = /^(inline|inline-block|inline-flex|inline-grid|inline-table|contents|table|table-row|table-row-group|table-header-group|table-footer-group|ruby|ruby-base|ruby-text)$/;
+  function px(v){ return parseFloat(v) || 0; }
+  // 插图能占的宽度（CSS px）：外面第一个块级容器的内容宽，途经表格单元格时扣掉同一行其余
+  // 单元格与本格自己的内边距 / 边框（插图旁边的竖排图注还要留在栏里）。容器没渲染（收起的
+  // <details>）时返回 0，由调用方跳过。
+  function avail(a){
+    var less = 0;
+    for (var el = a.parentElement; el; el = el.parentElement) {
+      var cs = getComputedStyle(el);
+      var d = cs.display;
+      if (d === 'none') return 0;
+      if (d === 'table-cell') {
+        var row = el.parentElement;
+        if (row) less += Math.max(0, row.offsetWidth - el.offsetWidth);
+        less += el.offsetWidth - el.clientWidth + px(cs.paddingLeft) + px(cs.paddingRight);
+        continue;
+      }
+      if (SHRINK.test(d)) continue;
+      var w = el.clientWidth - px(cs.paddingLeft) - px(cs.paddingRight);
+      return w > 0 ? Math.max(0, Math.floor(w - less)) : 0;
+    }
+    return 0;
+  }
+  function size(list){
+    // 先量完再统一写，整批只重排一次。
+    var widths = [];
+    for (var i = 0; i < list.length; i++) widths.push(avail(list[i]));
+    for (var j = 0; j < list.length; j++) {
+      if (widths[j] > 0) list[j].style.setProperty('--fushi-srs-illus-avail', widths[j] + 'px');
+    }
+  }
+  window.__fushiSrsSizeIllustration = function(a){ size([a]); };
+  window.__fushiSrsSizeIllustrations = function(root){
+    size(root.querySelectorAll('a[data-fushi-srs-illus]'));
+  };
+  if (!window.__fushiSrsIllusToggleListen) {
+    window.__fushiSrsIllusToggleListen = true;
+    // 收起的词典（<details>）里量不到宽度；展开时补量（toggle 不冒泡，捕获阶段收）。
+    document.addEventListener('toggle', function(e){
+      var t = e.target;
+      if (t && t.querySelectorAll && window.__fushiSrsSizeIllustrations) {
+        window.__fushiSrsSizeIllustrations(t);
+      }
+    }, true);
   }
 })();
 ''';

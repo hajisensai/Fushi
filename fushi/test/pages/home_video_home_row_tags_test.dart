@@ -7,6 +7,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/components/fushi_continue_hero.dart';
+import 'package:fushi/src/utils/components/shelf_cover_material.dart'
+    show ShelfMetaTag, ShelfMetaTags;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/anki/anki_view_model.dart';
@@ -26,6 +28,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
+import '../helpers/shell_layout.dart';
 
 /// BUG-1808：视频首页（[VideoLibrarySection.home]）横滚行卡必须画用户标签。
 ///
@@ -103,6 +106,7 @@ void main() {
     ],
     child: TranslationProvider(
       child: MaterialApp(
+        theme: gridShellTheme(),
         home: Scaffold(
           body: HomeVideoPage(
             repo: VideoBookRepository(db),
@@ -373,34 +377,41 @@ void main() {
       ],
     );
 
-    // 标签色点按标签顺序排（Known、Unknown），全名在 tooltip 里。
-    final Finder dots = find.descendant(
-      of: find.byTooltip('Known · Unknown'),
-      matching: find.byWidgetPredicate(
-        (Widget w) =>
-            w is DecoratedBox &&
-            w.decoration is BoxDecoration &&
-            (w.decoration as BoxDecoration).shape == BoxShape.circle,
-      ),
+    // 标签 chip 按标签顺序排（Known、Unknown），全名在 tooltip 里。#3515 起标签
+    // 画成小圆角 chip（[ShelfMetaTags]）：有颜色的带一枚同色方点、chip 底按该色
+    // 染；没颜色的走所在面的前景色——不再是圆点。这里钉数据契约：借到的颜色原样
+    // 交给 chip，借不到的是 null（chip 默认色），不凭空造色。
+    final Finder tagRow = find.byWidgetPredicate(
+      (Widget w) =>
+          w is ShelfMetaTags &&
+          w.tags.map((ShelfMetaTag tag) => tag.label).join(' · ') ==
+              'Known · Unknown',
     );
-    expect(dots, findsNWidgets(2));
-    Color? dotColor(int i) =>
-        ((tester.widget<DecoratedBox>(dots.at(i)).decoration) as BoxDecoration)
-            .color;
-    final ColorScheme cs = Theme.of(
-      tester.element(find.byTooltip('Known · Unknown')),
-    ).colorScheme;
+    expect(tagRow, findsOneWidget);
+    expect(find.byTooltip('Known · Unknown'), findsOneWidget);
+    final List<ShelfMetaTag> tags = tester.widget<ShelfMetaTags>(tagRow).tags;
 
     expect(
-      dotColor(0),
+      tags[0].color,
       const Color(knownColor),
       reason: '本机有同名标签就借它的颜色，两端看同一条标签颜色才一致',
     );
     expect(
-      dotColor(1),
-      cs.onSurfaceVariant,
-      reason: 'host 只下发名字，本机没这条标签时不得凭空造颜色（走中性默认色）',
+      tags[1].color,
+      isNull,
+      reason: 'host 只下发名字，本机没这条标签时不得凭空造颜色（走 chip 默认色）',
     );
+    // 渲染层：只有借到颜色的那条画同色方点。
+    final Finder swatches = find.descendant(
+      of: tagRow,
+      matching: find.byWidgetPredicate(
+        (Widget w) =>
+            w is DecoratedBox &&
+            w.decoration is BoxDecoration &&
+            (w.decoration as BoxDecoration).color == const Color(knownColor),
+      ),
+    );
+    expect(swatches, findsOneWidget);
   });
 
   testWidgets('「全部视频」墙格里的远端占位卡也显示标签（封面无字幕角标）', (WidgetTester tester) async {

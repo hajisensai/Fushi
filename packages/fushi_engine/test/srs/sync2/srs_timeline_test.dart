@@ -24,16 +24,11 @@ void main() {
   Future<SrsDbStore> device(String id) async {
     final SrsStorage st = await openTestSrsStorage();
     return SrsDbStore.open(
-      db: st.db,
       core: st.core,
       profileUid: kProfile,
       deviceId: id,
       engine: const SrsFakeEngine(),
-      trustedClock: SrsTrustedClock(
-        wallClockMs: () => t,
-        bootClockMs: () => t,
-        bootId: 'boot-$id',
-      ),
+      trustedClock: SrsTrustedClock(wallClockMs: () => t, bootClockMs: () => t),
     );
   }
 

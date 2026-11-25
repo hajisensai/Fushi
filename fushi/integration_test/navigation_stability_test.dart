@@ -20,6 +20,8 @@ import 'package:fushi/src/settings/settings_destination_id.dart'
     show SettingsDestinationId;
 import 'package:fushi/src/settings/settings_detail_page.dart'
     show SettingsDetailPage;
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show FushiListItem;
 import 'package:fushi/i18n/strings.g.dart';
 
 import 'helpers/focus_driver.dart';
@@ -96,10 +98,14 @@ void main() {
 
         // 每条 destination 必须带 id：断言只认「详情面板的身份」，不认「这一行
         // 被高亮」——后者在宽屏第一帧就为真（settings_home_page 无条件把
-        // _selectedDestinationId 落到 destinations.first = appearance），和有没有
+        // _selectedDestinationId 落到 destinations.first = general），和有没有
         // 发生过导航完全无关。
         final List<_SettingsDestinationCase> destinations =
             <_SettingsDestinationCase>[
+              (
+                id: SettingsDestinationId.general,
+                label: t.settings_section_general,
+              ),
               (
                 id: SettingsDestinationId.appearance,
                 label: t.settings_destination_appearance,
@@ -152,7 +158,7 @@ void main() {
           reason: 'Destination labels must be unique in the active locale',
         );
 
-        // 把选中项挪到列表最后一项，这样第一条（appearance）的「打开前它不该已
+        // 把选中项挪到列表最后一项，这样第一条（general）的「打开前它不该已
         // 经在显示」前置条件才是真检查，而不是被默认选中蒙混过关。
         await _openSettingsDestination(
           tester,
@@ -206,17 +212,17 @@ void main() {
           tester,
           driver,
           destination: (
-            id: SettingsDestinationId.system,
-            label: t.settings_destination_system,
+            id: SettingsDestinationId.general,
+            label: t.settings_section_general,
           ),
-          item: t.shortcut_settings_title,
+          item: t.settings_general_shortcuts_title,
         );
         await _openDeepRoute<OnboardingWizardPage>(
           tester,
           driver,
           destination: (
-            id: SettingsDestinationId.system,
-            label: t.settings_destination_system,
+            id: SettingsDestinationId.general,
+            label: t.settings_section_general,
           ),
           item: t.onboarding_reopen,
         );
@@ -317,7 +323,7 @@ Future<bool> _openSettingsDestination(
   await _selectHomeTab(tester, HomeTab.settings);
   if (requireTransition) {
     // 前置条件：目标详情面板**还没在显示**。没有这一条，宽屏下第一条
-    // （appearance）的等待条件在进入设置的第一帧就已满足，整个用例退化成
+    // （general）的等待条件在进入设置的第一帧就已满足，整个用例退化成
     // 「这一行存在且能聚焦」——activate() 完全不做事也照样绿。
     expect(
       _settingsDestinationShown(destination.id),
@@ -327,7 +333,15 @@ Future<bool> _openSettingsDestination(
           'activated, otherwise this case asserts nothing',
     );
   }
-  final Finder target = find.text(label).first;
+  // 分类标题可能与它所在分组的标题同名（「通用」组里的「通用」分类）：优先取
+  // 落在导航行里的那一个，不取排在它前面的分组标题。
+  final Finder rowTitle = find.descendant(
+    of: find.byType(FushiListItem),
+    matching: find.text(label),
+  );
+  final Finder target = rowTitle.evaluate().isNotEmpty
+      ? rowTitle.first
+      : find.text(label).first;
   expect(
     await driver.focusWidget(target, maxSteps: 320),
     isTrue,
@@ -374,7 +388,7 @@ Future<void> _openDeepRoute<T extends Widget>(
   required _SettingsDestinationCase destination,
   required String item,
 }) async {
-  // 深路由用例连着开同一个分类两次（system → 快捷键 / system → 新手引导），
+  // 深路由用例连着开同一个分类两次（general → 快捷键 / general → 新手引导），
   // 宽屏下第二次目标本来就在显示，所以这里不要求「必须发生切换」——真正的断言
   // 是 find.byType(T)，它不会恒真。
   final bool pushedDetail = await _openSettingsDestination(

@@ -3,10 +3,11 @@ package mextensionserver.controller
 import com.android.apksig.ApkVerifier
 import com.fasterxml.jackson.module.kotlin.jacksonObjectMapper
 import fi.iki.elonen.NanoHTTPD
+import mextensionserver.impl.ApkNotRegisteredException
+import mextensionserver.impl.ExtensionApkStore
 import mextensionserver.util.PackageTools
 import java.io.File
 import java.security.MessageDigest
-import java.util.Base64
 
 /**
  * Reads an APK's identity **without ever running a byte of its code.**
@@ -43,15 +44,11 @@ class InspectHandler {
     private val mapper = jacksonObjectMapper()
 
     fun serve(session: NanoHTTPD.IHTTPSession): NanoHTTPD.Response {
-        var apk: File? = null
         return try {
-            val files = mutableMapOf<String, String>()
-            session.parseBody(files)
-            val request = mapper.readValue(files["postData"], InspectRequest::class.java)
-            val bytes = Base64.getDecoder().decode(request.data)
-            val apkFile = kotlin.io.path.createTempFile("fushi-inspect-", ".apk").toFile()
-            apk = apkFile
-            apkFile.writeBytes(bytes)
+            val request = mapper.readValue(BridgeRequests.readJson(session), InspectRequest::class.java)
+            // The uploaded file itself: storing an APK runs nothing, and reading
+            // it here stays declarative (see the class comment).
+            val apkFile = ExtensionApkStore.shared.file(request.apkSha256)
             val verification = ApkVerifier.Builder(apkFile).build().verify()
             if (!verification.isVerified || verification.signerCertificates.isEmpty()) {
                 throw IllegalArgumentException("APK signature verification failed")
@@ -65,14 +62,16 @@ class InspectHandler {
                 "application/json",
                 mapper.writeValueAsString(result),
             )
+        } catch (error: RequestBodyException) {
+            with(BridgeRequests) { error.toResponse() }
+        } catch (error: ApkNotRegisteredException) {
+            with(BridgeRequests) { error.toResponse() }
         } catch (error: Throwable) {
             NanoHTTPD.newFixedLengthResponse(
                 NanoHTTPD.Response.Status.BAD_REQUEST,
                 "application/json",
                 mapper.writeValueAsString(mapOf("error" to (error.message ?: "Invalid APK"))),
             )
-        } finally {
-            apk?.delete()
         }
     }
 
@@ -122,7 +121,7 @@ class InspectHandler {
         )
     }
 
-    private data class InspectRequest(val data: String)
+    private data class InspectRequest(val apkSha256: String)
 
     companion object {
         const val MANGA_CLASS_METADATA = "tachiyomi.extension.class"

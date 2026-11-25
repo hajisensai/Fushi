@@ -24,7 +24,7 @@ import 'package:fushi/src/srs/srs_card_video_channel.dart'
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
     show FushiCard;
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart'
@@ -83,6 +83,8 @@ void main() {
     List<FushiCardItem>? front,
     bool defsScroll = false,
     bool thenFront = false,
+    void Function(String src)? onImageTap,
+    void Function(double deltaY)? onZoomWheel,
   }) async {
     tester.view.physicalSize = size;
     tester.view.devicePixelRatio = 1;
@@ -128,6 +130,8 @@ void main() {
                 css: FushiCardNoteType.template.css,
                 languageCode: 'ja',
                 onBridgeKey: (_) {},
+                onImageTap: onImageTap,
+                onZoomWheel: onZoomWheel,
               ),
               fields: fields ?? _fields(),
               definitionsHtml: '<div class="fc-defs-only">defs</div>',
@@ -583,6 +587,34 @@ void main() {
         ),
         findsNothing,
       );
+    });
+  }
+
+  // BUG-4734（反馈 w4RAto8R0x）：释义 WebView 是 Fushi 卡片另建的一面，以前逐字段手抄整面卡的
+  // 宿主回调，漏了点图放大（页内不装点图脚本，词典插图点了不能放大）和 Ctrl+滚轮缩放。
+  // 页内点图判据本身见 srs_card_image_size_test.dart。
+  for (final bool wide in <bool>[false, true]) {
+    testWidgets('${wide ? '宽' : '窄'}版式释义面沿用复习页的点图放大与 Ctrl+滚轮缩放回调', (
+      WidgetTester tester,
+    ) async {
+      final List<String> tapped = <String>[];
+      final List<double> zoomed = <double>[];
+      final List<SrsCardFace> faces = await pump(
+        tester,
+        answer: true,
+        size: wide ? const Size(1280, 800) : const Size(390, 844),
+        onImageTap: tapped.add,
+        onZoomWheel: zoomed.add,
+      );
+      final SrsCardFace defs = faces.last;
+      expect(defs.layout, wide ? SrsCardLayout.wide : SrsCardLayout.narrow);
+      expect(defs.onImageTap, isNotNull);
+      defs.onImageTap!('dict.png');
+      expect(tapped, <String>['dict.png']);
+      expect(defs.onZoomWheel, isNotNull);
+      defs.onZoomWheel!(-120);
+      expect(zoomed, <double>[-120]);
+      expect(defs.onVisibleSounds, isNull, reason: '释义区不进发音清单');
     });
   }
 

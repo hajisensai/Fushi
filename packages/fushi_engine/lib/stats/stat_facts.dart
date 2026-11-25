@@ -1,9 +1,20 @@
+import 'dart:isolate';
+import 'dart:typed_data';
+
 import 'package:drift/drift.dart';
+import 'package:drift/isolate.dart' show DriftIsolate;
+import 'package:fushi_engine/srs/srs_reads.dart';
+import 'package:fushi_engine/stats/stat_derive.dart';
+import 'package:fushi_engine/stats/study_goal_language.dart'
+    show StudyGoalLanguageScope;
 import 'package:fushi_engine/stats/study_sessions.dart';
+import 'package:fushi_srs/fushi_srs.dart'
+    show SrsColumns, SrsCore, SrsIntColumn;
 import 'package:fushi_core/fushi_core.dart';
 // 引擎只准 import 纯 Dart 子 barrel（全 barrel 会导出 just_audio 等插件，
 // 把 Flutter 拖进无头服务端的 AOT 编译）。
 import 'package:fushi_audio/fushi_audio_core.dart';
+import 'package:meta/meta.dart';
 
 /// 一条学习统计事实的统一形状（v92 统计域重构）。
 ///
@@ -88,7 +99,7 @@ class StatCounterFacts {
     this.mining = const <MiningStatisticRow>[],
     this.lookupCounters = const <LookupMiningCounterRow>[],
     this.favoriteWords = const <FavoriteWordRow>[],
-    this.favoriteSentences = const <FavoriteSentence>[],
+    this.favoriteSentences = const <FavoriteSentenceStatRow>[],
   });
 
   static const StatCounterFacts empty = StatCounterFacts();
@@ -96,15 +107,17 @@ class StatCounterFacts {
   /// 制卡的按日全局计数（`mining_statistics`，已按 (sourceType, dateKey) 聚合）。
   final List<MiningStatisticRow> mining;
 
-  /// 查词 / 制卡的 per-book 计数（`lookup_mining_counters`）。查词数只有这一个
-  /// 来源（查词不落逐次记录，只有按日计数）。
+  /// 查词 / 制卡的 per-book 计数：`lookup_mining_counters` 的按天行，加上 v178 起
+  /// 段内查词（`study_segments.lookups`）聚合出的同形行（`id` = 0、`mineCount` = 0；
+  /// 见 [FushiDatabase.getStudySegmentLookupCounters]）。两处互斥写入，直接相加。
   final List<LookupMiningCounterRow> lookupCounters;
 
   /// 收藏词（`favorite_words`，每行一条 = 计 1）。
   final List<FavoriteWordRow> favoriteWords;
 
-  /// 收藏句（`FavoriteSentenceRepository`，偏好里的 JSON 列表）。
-  final List<FavoriteSentence> favoriteSentences;
+  /// 收藏句（`favorite_sentences` 表，每条一行 = 计 1；只取来源 / 收藏日 / 收藏时刻
+  /// 三列，不读正文）。
+  final List<FavoriteSentenceStatRow> favoriteSentences;
 
   /// 按统计来源过滤 per-book 计数行（[source] 为 null = 跨域全取）。
   List<LookupMiningCounterRow> lookupCountersFor(StatSourceKind? source) =>
@@ -157,7 +170,7 @@ class StatCounterFacts {
   Iterable<(String, int)> favoriteSentenceEvents({StatSourceKind? source}) =>
       favoriteSentences
           .where(
-            (FavoriteSentence s) => switch (source) {
+            (FavoriteSentenceStatRow s) => switch (source) {
               null => true,
               // 浏览器扩展网页视频的收藏句（KGC1ifR1a3）计入视频域。
               StatSourceKind.video =>
@@ -174,7 +187,7 @@ class StatCounterFacts {
             },
           )
           .map(
-            (FavoriteSentence s) =>
+            (FavoriteSentenceStatRow s) =>
                 (s.dateKey ?? FushiDatabase.statDateKeyOf(s.createdAt), 1),
           );
 }
@@ -234,10 +247,15 @@ class StatFacts {
     required this.segments,
     required this.legacyActivity,
     required this.epubRows,
+    this.sessions = const <StudySession>[],
+    this.activityRows = const <ActivityEventRow>[],
+    this.dayTotals = const <StatDayTotal>[],
+    this.bookDayTotals = const <StatDayTotal>[],
     this.recentGameSessions = const <GalgameSessionRow>[],
     this.gameNamesById = const <String, String>{},
     this.counters = StatCounterFacts.empty,
     this.activityLimit = 200,
+    this.derivedOnIsolate,
   });
 
   static const StatFacts empty = StatFacts(
@@ -261,28 +279,27 @@ class StatFacts {
   /// [activityRows] 的条数上限（与 legacy 行的取数上限同值）。
   final int activityLimit;
 
-  /// **活动流的唯一数据源**：legacy 活动行 ∪ 段合成行 ∪ 游玩会话合成行，按精确
-  /// 时刻倒序、截到 [activityLimit]。首页时间轴与游戏首页时间线都只吃它。
-  List<ActivityEventRow> get activityRows {
-    final List<ActivityEventRow> all =
-        <ActivityEventRow>[
-          ...legacyActivity,
-          ...segmentsAsActivityRows(segments),
-          ...galgameSessionsAsActivityRows(recentGameSessions, gameNamesById),
-        ]..sort(
-          (ActivityEventRow a, ActivityEventRow b) =>
-              b.timestampMs.compareTo(a.timestampMs),
-        );
-    return all.length <= activityLimit ? all : all.sublist(0, activityLimit);
-  }
+  /// **活动流的唯一数据源**：legacy 活动行 ∪ 段合成行（写零的段不进）∪ 游玩会话
+  /// 合成行，按精确时刻倒序、截到 [activityLimit]。游戏首页时间线与互联 host 的远端
+  /// 活动端点都只吃它。加载时由 Rust 在后台 isolate 里一并排好、截好（`stats.rs`
+  /// `derive_activity`，BUG-5203），读方不再现算。
+  final List<ActivityEventRow> activityRows;
 
   /// **会话流的唯一数据源**（统计中心总览 + 三个域 tab + 按媒体的会话列表都吃它）：
   /// 段按 [kStudySessionGap] 归并 + 最近游玩会话骨架，按结束时刻倒序；写零的段不进。
-  List<StudySession> get sessions => deriveStudySessions(
-    segments: segments,
-    gameSessions: recentGameSessions,
-    gameNamesById: gameNamesById,
-  );
+  /// 加载时由 Rust 一次派生（`stats.rs`），不在读方现算。
+  final List<StudySession> sessions;
+
+  /// [daily] 按 dateKey 的合计（dateKey 首次出现的顺序）：统计中心总览的范围图 / 所选
+  /// 范围卡 / 学习日历都吃它，页面不再逐条遍历日面求和。
+  final List<StatDayTotal> dayTotals;
+
+  /// 只算阅读域（[dailyBooks]）的按日合计：总览所选范围卡的阅读速度（`statBookCphOf`）。
+  final List<StatDayTotal> bookDayTotals;
+
+  /// 派生在哪个 isolate 里跑的（[Isolate.debugName]）：生产恒为
+  /// [kStatFactsIsolateDebugName]，测试据此钉住「不在调用方 isolate 派生」。
+  final String? derivedOnIsolate;
 
   final List<StatFact> daily;
   final List<StatFact> hourly;
@@ -291,7 +308,7 @@ class StatFacts {
   final List<StudySegmentRow> segments;
 
   /// legacy `activity_events` 行（v92 前的 read / watch / game 行 + 至今仍在写的
-  /// `added` 导入事件）。活动流把它与 [segmentsAsActivityRows] 并集。
+  /// `added` 导入事件）。活动流（[activityRows]）把它与段 / 游玩会话合成行并集。
   final List<ActivityEventRow> legacyActivity;
 
   /// 加载 legacy 阅读行身份时顺带取的书表瘦投影（页面复用：title→bookKey /
@@ -327,74 +344,268 @@ const Set<String> kLegacyStudyActivityTypes = <String>{
   kActivityGame,
 };
 
+/// [loadStatFacts] 的读取范围：全域（默认）/ 一个域 / 一个媒体。
+///
+/// 读口仍只有 [loadStatFacts] 一个，范围只把**读哪些行**下推进 SQL，事实的构造与
+/// 判据不变；读方照旧按 [StatFacts.dailyBooks] / [StatFacts.dailyVideos] 与
+/// [statFactBelongsToBook] 切片，结果与全量读再切逐条相同（m5 实测：合成一年大库上
+/// 统计侧栏从全量读的约 235 ms / 主 isolate 55 ms 降到个位数毫秒）。
+class StatFactsScope {
+  const StatFactsScope._(
+    this.mediaKind,
+    this.mediaKey,
+    this.title, {
+    this.fromDateKey,
+  });
+
+  /// 全域全量（首页、统计中心总览、导出 / 诊断等）。
+  static const StatFactsScope all = StatFactsScope._(null, null, null);
+
+  /// 全域、只读统计日 ≥ [fromDateKey] 的事实（阅读页签的学习目标环：本周的跨域
+  /// 日面）。日面 / 小时面 / 段 / legacy 行都按 dateKey 下推进 SQL；最近游玩会话
+  /// 骨架不受影响。计数面照常（调用方一般不要计数面）。
+  const StatFactsScope.since(String fromDateKey)
+    : this._(null, null, null, fromDateKey: fromDateKey);
+
+  /// 只读一个域（[kActivityMediaBook] / [kActivityMediaVideo] / [kActivityMediaGame]）：
+  /// 段按 `media_kind` 过滤，其余域的 legacy 表与游玩会话不读。计数面不收窄——域
+  /// 页签按来源切计数，且要保证「总览 = 各域之和」。
+  const StatFactsScope.domain(String mediaKind) : this._(mediaKind, null, null);
+
+  /// 只读一本书 / 一个视频（阅读器 / 漫画 / 视频的统计侧栏）：身份行按 [mediaKey]
+  /// 命中，legacy 无身份行按 [title] 回退（与 [statFactBelongsToBook] 同口径）。
+  ///
+  /// 此范围下：[StatFacts.hourly] 只含本媒体的段（legacy 小时行没有身份，不属于
+  /// 任何一本）；[StatFacts.epubRows] 只含同名判定要用的那几本；计数面只有本媒体的
+  /// [StatCounterFacts.lookupCounters]（制卡日计数 / 收藏不分书，不装载）。
+  const StatFactsScope.media({
+    required String this.mediaKind,
+    required String this.mediaKey,
+    this.title,
+  }) : fromDateKey = null,
+       assert(
+         mediaKind == kActivityMediaBook || mediaKind == kActivityMediaVideo,
+         'StatFactsScope.media 只支持书 / 视频',
+       );
+
+  /// null = 全域。
+  final String? mediaKind;
+
+  /// 非 null = 单媒体范围。
+  final String? mediaKey;
+
+  /// 单媒体范围下 legacy 无身份行的标题回退。
+  final String? title;
+
+  /// 非 null = 只读统计日 ≥ 它的事实（[StatFactsScope.since]）。
+  final String? fromDateKey;
+
+  bool get isMedia => mediaKey != null;
+
+  /// 这个范围要不要读 [kind] 域。
+  bool covers(String kind) => mediaKind == null || mediaKind == kind;
+
+  String? get _fallbackTitle {
+    final String? t = title;
+    return t == null || t.isEmpty ? null : t;
+  }
+}
+
+/// 仅供测试：为 true 时 [loadStatFacts] 不起后台 isolate，读库与派生都在调用方 isolate
+/// 里用调用方的库连接执行。
+///
+/// 只给 `testWidgets` 这类跑在 FakeAsync 里的界面测试用：那里真实的跨 isolate 消息推不动，
+/// 被测的是界面行为而不是执行位置（`fushi/test/flutter_test_config.dart` 对整个 app 测试
+/// 套件打开）。执行位置由 `packages/fushi_engine/test/stats/stat_facts_parity_test.dart`
+/// 用真后台 isolate 钉住。生产代码从不设置。
+@visibleForTesting
+bool debugStatFactsInline = false;
+
+/// [loadStatFacts] 后台 isolate 的调试名（[StatFacts.derivedOnIsolate] 据此可验证派生
+/// 不在调用方执行）。
+const String kStatFactsIsolateDebugName = 'stat-facts';
+
 /// v105（统计按 Profile 隔离）：只装载 [profileId]（null = 当前激活 Profile）的
 /// 事实。v92 段与游玩会话按 `profile_id` 列过滤；legacy 四表 + legacy 活动行没有
 /// Profile 维度，只在 [profileId] 是 legacy 归属 Profile
 /// （[FushiDatabase.getStatLegacyProfileId]，无归属 = 所有人）时装载，否则整批为空。
 ///
 /// [reviewsFrom]（srs.db）：把该 Profile 的 SRS 复习时长按 (统计日, 小时) 并进 [StatFacts.daily] /
-/// [StatFacts.hourly]（[kStatMediaReview]，见 [loadStatReviewFacts]）。只给统计中心总览用，
+/// [StatFacts.hourly]（[kStatMediaReview]，见 [_loadStatReviewGrid]）。只给统计中心总览用，
 /// 且调用方只在复习模块开着时传；三个域 tab / 首页 / 活动流都不要它。
+///
+/// [scope]：只读一个域 / 一个媒体（见 [StatFactsScope]）。默认全域。
+///
+/// **执行位置（BUG-4960）**：全部库读取、行映射与派生都在一个一次性后台 isolate 里
+/// （经 [FushiDatabase.backgroundConnection] 接同一个库），派生本身在 Rust
+/// （`ffc_stats_derive`，见 `stat_derive.dart`）；调用方 isolate 只发请求、收结果
+/// （[Isolate.run] 以 `Isolate.exit` 交回，不逐对象拷贝）。复习格子要用调用方持有的
+/// srs.db 句柄，在调用方读（只有几百行四列整数）。
 Future<StatFacts> loadStatFacts(
   FushiDatabase db, {
   int activityLimit = 200,
   bool includeCounters = false,
   int? profileId,
-  SrsDatabase? reviewsFrom,
+  SrsCore? reviewsFrom,
+  StatFactsScope scope = StatFactsScope.all,
 }) async {
-  final int scope = profileId ?? await db.resolveActiveProfileId();
-  final bool legacyVisible = await db.legacyStatsVisibleTo(scope);
-  // 十个全表读互不依赖（[includeCounters] 时再挂计数面的四个）：一次全部发出去让
-  // Drift 后台执行器流水线化，而不是每个都等上一个往返回来（首页与三个统计页每次
-  // 打开都走这里）。先 Future.wait 挂上监听，某个失败时其余错误不会成为无人接的
-  // 未处理异常。
-  final Future<List<EpubBookMeta>> epubRowsF = db.getEpubBookMetas();
-  final Future<List<ReadingStatisticRow>> readingF = legacyVisible
-      ? db.getAllReadingStatistics()
-      : Future<List<ReadingStatisticRow>>.value(<ReadingStatisticRow>[]);
-  final Future<List<VideoWatchStatisticRow>> watchF = legacyVisible
-      ? db.getAllVideoWatchStatistics()
-      : Future<List<VideoWatchStatisticRow>>.value(<VideoWatchStatisticRow>[]);
-  final Future<List<ReadingHourlyLogRow>> readingHourlyF = legacyVisible
-      ? db.getAllReadingHourlyLogs()
+  final int profile = profileId ?? await db.resolveActiveProfileId();
+  final SrsCore? srs = reviewsFrom;
+  final _StatLoad request = _StatLoad(
+    profile: profile,
+    activityLimit: activityLimit,
+    includeCounters: includeCounters,
+    scope: scope,
+    reviews: srs == null
+        ? null
+        : await _loadStatReviewGrid(db, srs, profileId: profile),
+  );
+  if (debugStatFactsInline) return _loadStatFactsHere(db, request);
+  return _loadStatFactsInBackground(await db.backgroundConnection(), request);
+}
+
+/// [loadStatFacts] 的一次请求（全是可跨 isolate 发送的值）。
+final class _StatLoad {
+  const _StatLoad({
+    required this.profile,
+    required this.activityLimit,
+    required this.includeCounters,
+    required this.scope,
+    required this.reviews,
+  });
+
+  final int profile;
+  final int activityLimit;
+  final bool includeCounters;
+  final StatFactsScope scope;
+  final StatReviewGrid? reviews;
+}
+
+/// 起一次性后台 isolate 跑 [_loadStatFactsHere]。闭包只捕获本函数的两个参数（都可发送），
+/// 不碰调用方的库对象。
+Future<StatFacts> _loadStatFactsInBackground(
+  DriftIsolate connection,
+  _StatLoad request,
+) => Isolate.run<StatFacts>(
+  () => _loadStatFactsOnConnection(connection, request),
+  debugName: kStatFactsIsolateDebugName,
+);
+
+Future<StatFacts> _loadStatFactsOnConnection(
+  DriftIsolate connection,
+  _StatLoad request,
+) async {
+  final FushiDatabase db = FushiDatabase.shared(await connection.connect());
+  try {
+    return await _loadStatFactsHere(db, request);
+  } finally {
+    await db.close();
+  }
+}
+
+/// 读库 + 派生（在 [loadStatFacts] 的后台 isolate 里；测试 inline 模式下在调用方）。
+Future<StatFacts> _loadStatFactsHere(
+  FushiDatabase db,
+  _StatLoad request,
+) async {
+  final int profile = request.profile;
+  final int activityLimit = request.activityLimit;
+  final StatFactsScope scope = request.scope;
+  final bool legacyVisible = await db.legacyStatsVisibleTo(profile);
+  final bool books = scope.covers(kActivityMediaBook);
+  final bool videos = scope.covers(kActivityMediaVideo);
+  final bool games = scope.covers(kActivityMediaGame);
+  final String? mediaKey = scope.mediaKey;
+  final String? fallbackTitle = scope._fallbackTitle;
+  final String? fromDateKey = scope.fromDateKey;
+  // 十个全表读互不依赖（includeCounters 时再挂计数面的四个）：一次全部发出去让
+  // Drift 后台执行器流水线化，而不是每个都等上一个往返回来。先 Future.wait 挂上
+  // 监听，某个失败时其余错误不会成为无人接的未处理异常。[scope] 不覆盖的域直接不读。
+  final Future<List<EpubBookMeta>> epubRowsF = !books
+      ? Future<List<EpubBookMeta>>.value(<EpubBookMeta>[])
+      : db.getEpubBookMetas(matchingBookKey: mediaKey, orTitle: fallbackTitle);
+  final Future<List<ReadingStatisticRow>> readingF = !(legacyVisible && books)
+      ? Future<List<ReadingStatisticRow>>.value(<ReadingStatisticRow>[])
+      : mediaKey == null
+      ? db.getAllReadingStatistics(fromDateKey: fromDateKey)
+      : _readingStatisticsForBook(db, epubRowsF, mediaKey, fallbackTitle);
+  final Future<List<VideoWatchStatisticRow>> watchF = !(legacyVisible && videos)
+      ? Future<List<VideoWatchStatisticRow>>.value(<VideoWatchStatisticRow>[])
+      : mediaKey == null
+      ? db.getAllVideoWatchStatistics(fromDateKey: fromDateKey)
+      : db.getVideoWatchStatisticsForMedia(
+          bookUid: mediaKey,
+          orTitle: fallbackTitle,
+        );
+  // legacy 小时行没有身份，单媒体范围下不读（它们不属于任何一本）。
+  final Future<List<ReadingHourlyLogRow>> readingHourlyF =
+      legacyVisible && books && mediaKey == null
+      ? db.getAllReadingHourlyLogs(fromDateKey: fromDateKey)
       : Future<List<ReadingHourlyLogRow>>.value(<ReadingHourlyLogRow>[]);
-  final Future<List<VideoHourlyLogRow>> videoHourlyF = legacyVisible
-      ? db.getAllVideoHourlyLogs()
+  final Future<List<VideoHourlyLogRow>> videoHourlyF =
+      legacyVisible && videos && mediaKey == null
+      ? db.getAllVideoHourlyLogs(fromDateKey: fromDateKey)
       : Future<List<VideoHourlyLogRow>>.value(<VideoHourlyLogRow>[]);
-  final Future<List<(String, String, int)>> gameDailyF = db
-      .getGalgameDailySecondsByGame(profileId: scope);
+  final Future<List<(String, String, int)>> gameDailyF = games
+      ? db.getGalgameDailySecondsByGame(
+          profileId: profile,
+          fromDateKey: fromDateKey,
+        )
+      : Future<List<(String, String, int)>>.value(<(String, String, int)>[]);
   // v113：已从库移除的游戏，其会话留着、名字在会话行的快照上。
-  final Future<Map<String, String>> gameSessionTitlesF = db
-      .getGalgameSessionTitles();
+  final Future<Map<String, String>> gameSessionTitlesF = games
+      ? db.getGalgameSessionTitles()
+      : Future<Map<String, String>>.value(<String, String>{});
   final Future<List<ActivityEventRow>> activityF = db.getRecentActivityEvents(
     limit: activityLimit,
   );
-  final Future<List<ActivityEventRow>> gameActivityF = legacyVisible
+  // legacy 活动行：v92 前的游戏 hook 字数只存在这里（chars-only game 行），派生只取
+  // 它们的字数进日面（时长真相源是 galgame_sessions，取了就双计）。
+  final Future<List<ActivityEventRow>> gameActivityF = legacyVisible && games
       ? db.getRecentActivityEvents(
           limit: 1 << 31,
           eventTypes: const <String>[kActivityGame],
+          fromDateKey: fromDateKey,
         )
       : Future<List<ActivityEventRow>>.value(<ActivityEventRow>[]);
   final Future<List<StudySegmentRow>> segmentsF = db.getStudySegments(
-    profileId: scope,
+    fromDateKey: fromDateKey,
+    profileId: profile,
+    mediaKind: scope.mediaKind,
+    mediaKey: mediaKey,
+    orTitle: fallbackTitle,
   );
-  // 最近游玩会话不随 [activityLimit] 门控：会话流（[StatFacts.sessions]）在统计页
+  // 最近游玩会话不随 activityLimit 门控：会话流（[StatFacts.sessions]）在统计页
   // 也要它——统计页传 0 只是不要 legacy 活动行。
-  final Future<List<GalgameSessionRow>> recentGameSessionsF = db
-      .getRecentGalgameSessions(
-        limit: activityLimit <= 0 ? kRecentGameSessionsLimit : activityLimit,
-        profileId: scope,
-      );
-  // 计数面：四个来源一起挂进同一批并发读（统计页要，首页时间轴不要）。
-  final Future<StatCounterFacts> countersF = includeCounters
-      ? _loadCounterFacts(db)
-      : Future<StatCounterFacts>.value(StatCounterFacts.empty);
-  final SrsDatabase? srs = reviewsFrom;
-  final Future<List<StatFact>> reviewsF = srs != null
-      ? loadStatReviewFacts(db, srs, profileId: scope)
-      : Future<List<StatFact>>.value(const <StatFact>[]);
+  final Future<List<GalgameSessionRow>> recentGameSessionsF = games
+      ? db.getRecentGalgameSessions(
+          limit: activityLimit <= 0 ? kRecentGameSessionsLimit : activityLimit,
+          profileId: profile,
+        )
+      : Future<List<GalgameSessionRow>>.value(<GalgameSessionRow>[]);
+  // 计数面：四个来源一起挂进同一批并发读（统计页要，首页时间轴不要）。单媒体
+  // 范围只要本媒体的查词 / 制卡计数（制卡日计数 / 收藏不分书）。
+  final Future<StatCounterFacts> countersF = !request.includeCounters
+      ? Future<StatCounterFacts>.value(StatCounterFacts.empty)
+      : mediaKey == null
+      ? _loadCounterFacts(db, profile)
+      : Future.wait<List<LookupMiningCounterRow>>(
+          <Future<List<LookupMiningCounterRow>>>[
+            db.getLookupMiningCountersForBook(
+              bookKey: mediaKey,
+              orTitle: fallbackTitle,
+            ),
+            db.getStudySegmentLookupCounters(
+              profileId: profile,
+              mediaKey: mediaKey,
+            ),
+          ],
+        ).then(
+          (List<List<LookupMiningCounterRow>> parts) => StatCounterFacts(
+            lookupCounters: <LookupMiningCounterRow>[...parts[0], ...parts[1]],
+          ),
+        );
   await Future.wait<Object?>(<Future<Object?>>[
-    reviewsF,
     epubRowsF,
     readingF,
     watchF,
@@ -410,107 +621,7 @@ Future<StatFacts> loadStatFacts(
   ]);
 
   final List<EpubBookMeta> epubRows = await epubRowsF;
-  // BUG-2216：同名 ≥2 本时不反查（后者覆盖前者 = 把一本书的历史错贴给另一本）。
-  final Map<String, EpubBookMeta> bookByTitle = <String, EpubBookMeta>{
-    for (final MapEntry<String, List<EpubBookMeta>> e in _booksByTitle(
-      epubRows,
-    ).entries)
-      if (e.value.length == 1) e.key: e.value.single,
-  };
-  final List<StatFact> daily = <StatFact>[];
-  final List<StatFact> hourly = <StatFact>[];
-
-  // legacy 日行：阅读按 title 反查库表补身份与 format（查不到 = 书已删或同名歧义，
-  // 身份 ''、format ''，读取端按 unique-title 吸收 / 无身份分组）；视频 v39 起自带
-  // bookUid。
-  for (final ReadingStatisticRow r in await readingF) {
-    final EpubBookMeta? book = bookByTitle[r.title];
-    daily.add(
-      StatFact(
-        mediaKind: kActivityMediaBook,
-        mediaKey: book?.bookKey ?? '',
-        title: r.title,
-        format: book?.format ?? '',
-        dateKey: r.dateKey,
-        hour: -1,
-        ms: r.readingTimeMs,
-        chars: r.charactersRead,
-        pages: r.pagesRead,
-        lastActiveMs: r.lastStatisticModified,
-      ),
-    );
-  }
-  for (final VideoWatchStatisticRow w in await watchF) {
-    daily.add(
-      StatFact(
-        mediaKind: kActivityMediaVideo,
-        mediaKey: w.bookUid ?? '',
-        title: w.title,
-        format: '',
-        dateKey: w.dateKey,
-        hour: -1,
-        ms: w.watchTimeMs,
-        chars: w.subtitleChars,
-        pages: 0,
-        lastActiveMs: w.lastModified,
-      ),
-    );
-  }
-  // legacy 小时行（无身份、无 title）。
-  for (final ReadingHourlyLogRow h in await readingHourlyF) {
-    hourly.add(
-      StatFact(
-        mediaKind: kActivityMediaBook,
-        mediaKey: '',
-        title: '',
-        format: h.format,
-        dateKey: h.dateKey,
-        hour: h.hour,
-        ms: h.readingTimeMs,
-        chars: 0,
-        pages: 0,
-        lastActiveMs: 0,
-      ),
-    );
-  }
-  for (final VideoHourlyLogRow h in await videoHourlyF) {
-    hourly.add(
-      StatFact(
-        mediaKind: kActivityMediaVideo,
-        mediaKey: '',
-        title: '',
-        format: '',
-        dateKey: h.dateKey,
-        hour: h.hour,
-        ms: h.watchTimeMs,
-        chars: 0,
-        pages: 0,
-        lastActiveMs: 0,
-      ),
-    );
-  }
-  // 游戏时长真相源 galgame_sessions（v55 起就是事实表）：按 (game, day) 进日面。
-  // title 只带已移除游戏的快照名（库内游戏恒空串，展示层按 id 反查库内显示名）。
   final Map<String, String> gameSessionTitles = await gameSessionTitlesF;
-  for (final (String gameId, String dateKey, int seconds) in await gameDailyF) {
-    daily.add(
-      StatFact(
-        mediaKind: kActivityMediaGame,
-        mediaKey: gameId,
-        title: gameSessionTitles[gameId] ?? '',
-        format: '',
-        dateKey: dateKey,
-        hour: -1,
-        ms: seconds * 1000,
-        chars: 0,
-        pages: 0,
-        lastActiveMs: 0,
-      ),
-    );
-  }
-  // legacy 活动行：v92 前的游戏 hook 字数只存在这里（chars-only game 行）；
-  // read / watch 行的时长 / 字数已在日投影里，**只**取 game 的字数进日面，
-  // 时长一律不取（时长真相源是 galgame_sessions，取了就双计）。
   // v105：legacy 学习行只给归属 Profile；`added` 等库事件不分 Profile。
   final List<ActivityEventRow> activity = legacyVisible
       ? await activityF
@@ -518,60 +629,7 @@ Future<StatFacts> loadStatFacts(
           for (final ActivityEventRow e in await activityF)
             if (!kLegacyStudyActivityTypes.contains(e.eventType)) e,
         ];
-  for (final ActivityEventRow e in await gameActivityF) {
-    final int chars = e.charsDelta ?? 0;
-    if (chars <= 0) continue;
-    daily.add(
-      StatFact(
-        mediaKind: kActivityMediaGame,
-        mediaKey: e.mediaKey ?? '',
-        title: e.title,
-        format: '',
-        dateKey: e.dateKey,
-        hour: -1,
-        ms: 0,
-        chars: chars,
-        pages: 0,
-        lastActiveMs: e.timestampMs,
-      ),
-    );
-  }
-  // v92 段：两面各一份。
   final List<StudySegmentRow> segments = await segmentsF;
-  for (final StudySegmentRow s in segments) {
-    // **写零的段不进事实面**。`zeroStudySegmentsOnDays`（时段明细里长按删除走的那条）
-    // 只把行写成零而不删行——必须删的是同步语义：真删行会被对端的旧数据按 LWW 复活，
-    // 写零才能跨端传播「这段不算了」。
-    //
-    // 于是过滤责任落在读侧。不过滤的话，被删掉的那条会以「0 字」原地复活：sheet 聚合
-    // 侧对任何命中该 dateKey 的 fact 都建 entry，渲染侧 ms==0 就走 formatStatChars(0)。
-    // 用户看到的就是「删了、刷新、它又回来了」。零行同样会污染排行、热力图等所有吃
-    // StatFacts.daily 的消费方。
-    //
-    // 判据与 [segmentsAsActivityRows] 逐字一致——**同一件事只能有一条判据**，
-    // 两处分别写就是给「活动流干净、统计页脏」这种半修好状态留门。
-    if (s.durationMs <= 0 && s.chars <= 0 && s.pages <= 0) continue;
-    final StatFact fact = StatFact(
-      mediaKind: s.mediaKind,
-      mediaKey: s.mediaKey,
-      title: s.title,
-      format: s.format,
-      dateKey: s.dateKey,
-      hour: s.hour,
-      ms: s.durationMs,
-      chars: s.chars,
-      pages: s.pages,
-      lastActiveMs: s.endAt,
-    );
-    daily.add(fact);
-    hourly.add(fact);
-  }
-  // SRS 复习时长：一条 (统计日, 小时) 一行，两面各一份（与段同形，见 [loadStatReviewFacts]）。
-  for (final StatFact fact in await reviewsF) {
-    daily.add(fact);
-    hourly.add(fact);
-  }
-  // 游玩会话（活动流合成「游玩」事件用；activityLimit 为 0 时不取）。
   final List<GalgameSessionRow> recentGameSessions = await recentGameSessionsF;
   // 库内显示名优先；已移除游戏的孤儿会话回落会话行上的快照名（v113）。
   final Map<String, String> gameNamesById = recentGameSessions.isEmpty
@@ -580,9 +638,30 @@ Future<StatFacts> loadStatFacts(
           ...gameSessionTitles,
           for (final GalgameRow g in await db.getAllGalgames()) g.id: g.name,
         };
+  // 日面 / 小时面 / 会话流 / 按日合计：Rust 一次派生（顺序、判据见 stats.rs）。
+  final StatDerived derived = deriveStatFacts(
+    epubs: epubRows,
+    reading: await readingF,
+    watch: await watchF,
+    readingHourly: await readingHourlyF,
+    videoHourly: await videoHourlyF,
+    gameTitles: gameSessionTitles,
+    gameDaily: await gameDailyF,
+    gameActivity: await gameActivityF,
+    segments: segments,
+    reviews: request.reviews,
+    gameSessions: recentGameSessions,
+    gameNames: gameNamesById,
+    legacyActivity: activity,
+    activityLimit: activityLimit,
+  );
   return StatFacts(
-    daily: daily,
-    hourly: hourly,
+    daily: derived.daily,
+    hourly: derived.hourly,
+    sessions: derived.sessions,
+    activityRows: derived.activityRows,
+    dayTotals: derived.dayTotals,
+    bookDayTotals: derived.bookDayTotals,
     segments: segments,
     legacyActivity: activity,
     epubRows: epubRows,
@@ -590,14 +669,42 @@ Future<StatFacts> loadStatFacts(
     gameNamesById: gameNamesById,
     counters: await countersF,
     activityLimit: activityLimit,
+    derivedOnIsolate: Isolate.current.debugName,
   );
 }
 
-/// [profileId] 这个 Profile 的 SRS 复习时长，按 (统计日, 本地小时) 聚合成 [StatFact]
-/// （mediaKind [kStatMediaReview]、mediaKey [kStatReviewMediaKey]，字数 / 页数为 0）。
+/// 单书范围下的 legacy 逐日阅读行。legacy 行只有 title，身份靠「库内唯一同名书」
+/// 反查，所以能归到 [bookKey] 名下的行只可能是：title = 这本书的库内标题（唯一时
+/// 反查到它），或 title = [fallbackTitle]（同名歧义 / 查不到时按标题回退）。两种
+/// 标题各走一次 (title, dateKey) 唯一键前缀；最终归属仍由 [statFactBelongsToBook] 判。
+Future<List<ReadingStatisticRow>> _readingStatisticsForBook(
+  FushiDatabase db,
+  Future<List<EpubBookMeta>> epubRowsF,
+  String bookKey,
+  String? fallbackTitle,
+) async {
+  final Set<String> titles = <String>{
+    if (fallbackTitle != null) fallbackTitle,
+    for (final EpubBookMeta m in await epubRowsF)
+      if (m.bookKey == bookKey && m.title.isNotEmpty) m.title,
+  };
+  final List<List<ReadingStatisticRow>> perTitle =
+      await Future.wait<List<ReadingStatisticRow>>(
+        <Future<List<ReadingStatisticRow>>>[
+          for (final String t in titles) db.getReadingStatisticsForTitle(t),
+        ],
+      );
+  return <ReadingStatisticRow>[
+    for (final List<ReadingStatisticRow> rows in perTitle) ...rows,
+  ];
+}
+
+/// [profileId] 这个 Profile 的 SRS 复习时长格子：(自 1970-01-01 的天数, 本地小时) → 时长 /
+/// 最后时刻。派生（转统计日 key、零时长格子不出、两面各一份）在 Rust（`stats.rs`），
+/// 事实形状是 mediaKind [kStatMediaReview]、mediaKey [kStatReviewMediaKey]、字数 / 页数 0。
 ///
 /// 口径：
-/// - **只算有效复习**：读 srs.db 的有效复习投影（`SrsStatReviews`：被 undo 撤销的、与原生复习等价
+/// - **只算有效复习**：读 srs.db 的有效复习投影（`srs_stat_reviews`：被 undo 撤销的、与原生复习等价
 ///   的导入日志都不在），评分复习（rating 非空）的 `durationMs` 求和；导入的 Anki revlog
 ///   保留了 Anki 的 `time`，照样计入。时长为 0 的格子不出（与写零的段同律）。
 /// - **身份**：统计域按主库 `profiles.id` 分区，SRS 按全局 `profiles.uid`；先在主库 [db] 把 id
@@ -608,12 +715,13 @@ Future<StatFacts> loadStatFacts(
 ///   「今天」。本地时刻按**日志自己记下的 UTC 偏移**算（与段的 dateKey / hour 在写入时按
 ///   写入端本地时间定同一语义；旅行不改历史复习落在几点）。差别：段的 dateKey 写入时
 ///   定死，复习是读时算，改「今日」重置整点会重分桶历史复习、不重分桶历史段。
+///   `statDayResetHour` 是本 isolate 的静态镜像，所以这一步在调用方 isolate 读，不进后台。
 /// - **刷新 / 删除**：读时现算，不落 `study_segments`、不进同步 wire；复习日志被 undo /
 ///   同步覆盖 / 删除牌组物理清理后投影随卡片缓存重算，下次加载即反映。总览的「清空统计」
 ///   不碰复习（复习数据归 SRS 管）。
-Future<List<StatFact>> loadStatReviewFacts(
+Future<StatReviewGrid> _loadStatReviewGrid(
   FushiDatabase db,
-  SrsDatabase srs, {
+  SrsCore srs, {
   required int profileId,
 }) async {
   final QueryRow? profile = await db
@@ -623,57 +731,54 @@ Future<List<StatFact>> loadStatReviewFacts(
       )
       .getSingleOrNull();
   final String? uid = profile?.read<String?>('uid');
-  if (uid == null || uid.isEmpty) return const <StatFact>[];
-  const int dayMs = 86400000;
+  if (uid == null || uid.isEmpty) return StatReviewGrid.empty;
   const int hourMs = 3600000;
-  final int resetMs = FushiDatabase.statDayResetHour * hourMs;
-  final $SrsStatReviewsTable t = srs.srsStatReviews;
-  // 本地毫秒（日志自己的 UTC 偏移）；SQLite 整数除法向零取整，时刻都在纪元之后。
-  final Expression<int> local =
-      t.occurredAt + t.utcOffsetMin * const Constant<int>(60000);
-  final Expression<int> day =
-      (local - Constant<int>(resetMs)) / const Constant<int>(dayMs);
-  final Expression<int> hour =
-      local / const Constant<int>(hourMs) -
-      local / const Constant<int>(dayMs) * const Constant<int>(24);
-  final Expression<int> ms = t.durationMs.sum();
-  final Expression<int> last = t.occurredAt.max();
-  final List<TypedResult> rows =
-      await (srs.selectOnly(t)
-            ..addColumns(<Expression<Object>>[day, hour, ms, last])
-            ..where(t.profileUid.equals(uid) & t.rating.isNotNull())
-            ..groupBy(<Expression<Object>>[day, hour]))
-          .get();
-  final DateTime epoch = DateTime.utc(1970);
-  return <StatFact>[
-    for (final TypedResult r in rows)
-      if ((r.read(ms) ?? 0) > 0)
-        StatFact(
-          mediaKind: kStatMediaReview,
-          mediaKey: kStatReviewMediaKey,
-          title: '',
-          format: '',
-          dateKey: FushiDatabase.statCalendarDayKeyOf(
-            epoch.add(Duration(days: r.read(day)!)),
-          ),
-          hour: r.read(hour)!,
-          ms: r.read(ms)!,
-          chars: 0,
-          pages: 0,
-          lastActiveMs: r.read(last)!,
-        ),
-  ];
+  // 按（统计日, 小时）聚合在内核里（`review_grid`，native/fushi_fsrs/src/store/reads.rs）。
+  final SrsColumns c = (await srsRead(
+    srs,
+    uid,
+    'review_grid',
+    <String, Object?>{'resetMs': FushiDatabase.statDayResetHour * hourMs},
+  )).table;
+  Int64List column(String name) {
+    final SrsIntColumn col = c.ints(name);
+    return Int64List(c.rows)
+      ..setAll(0, <int>[for (int i = 0; i < c.rows; i++) col[i]]);
+  }
+
+  return StatReviewGrid(
+    day: column('day'),
+    hour: column('hour'),
+    ms: column('ms'),
+    last: column('last'),
+  );
 }
 
-/// 计数面的四个全表读（与主事实面同一批并发）。收藏句在偏好里（一条 JSON），
-/// 其余三张是按日聚合的小表。
-Future<StatCounterFacts> _loadCounterFacts(FushiDatabase db) async {
+/// 计数面的四个全表读（与主事实面同一批并发）。收藏句只取三列（v166 起是表；
+/// 之前是偏好里的整段 JSON，每次在主 isolate 解码，大库 27.6 ms）。
+///
+/// 查词两处来源相加（v178，拍板台 4KOWK3c2mn）：按天计数表 + [profile] 的段内查词
+/// （[FushiDatabase.getStudySegmentLookupCounters]，同形行）。两处互斥写入，不双计。
+Future<StatCounterFacts> _loadCounterFacts(
+  FushiDatabase db,
+  int profile,
+) async {
   final Future<List<MiningStatisticRow>> miningF = db.getAllMiningStatistics();
-  final Future<List<LookupMiningCounterRow>> countersF = db
-      .getAllLookupMiningCounters();
+  final Future<List<LookupMiningCounterRow>> countersF =
+      Future.wait<List<LookupMiningCounterRow>>(
+        <Future<List<LookupMiningCounterRow>>>[
+          db.getAllLookupMiningCounters(),
+          db.getStudySegmentLookupCounters(profileId: profile),
+        ],
+      ).then(
+        (List<List<LookupMiningCounterRow>> parts) => <LookupMiningCounterRow>[
+          ...parts[0],
+          ...parts[1],
+        ],
+      );
   final Future<List<FavoriteWordRow>> favoriteWordsF = db.getAllFavoriteWords();
-  final Future<List<FavoriteSentence>> favoriteSentencesF =
-      FavoriteSentenceRepository(db).getAll();
+  final Future<List<FavoriteSentenceStatRow>> favoriteSentencesF = db
+      .getFavoriteSentenceStatRows();
   await Future.wait<Object?>(<Future<Object?>>[
     miningF,
     countersF,
@@ -688,56 +793,6 @@ Future<StatCounterFacts> _loadCounterFacts(FushiDatabase db) async {
   );
 }
 
-/// 把游玩会话映射成活动流行（id=0 哨兵）：v92 前 `GalgamePlayTracker` 会在
-/// galgame_sessions 之外再写一条带 durationMs 的 game 活动行（第二本账），现在
-/// 只在读取时合成。title 取当前库内显示名；游戏已从库移除时是会话行上的快照名
-/// （v113，经 [loadStatFacts] 并进 [gameNamesById]），都没有才空串（展示层回退
-/// mediaKey）。
-List<ActivityEventRow> galgameSessionsAsActivityRows(
-  List<GalgameSessionRow> sessions,
-  Map<String, String> gameNamesById,
-) {
-  return <ActivityEventRow>[
-    for (final GalgameSessionRow s in sessions)
-      ActivityEventRow(
-        id: 0,
-        eventType: kActivityGame,
-        mediaType: kActivityMediaGame,
-        title: gameNamesById[s.gameId] ?? '',
-        mediaKey: s.gameId,
-        dateKey: s.dateKey,
-        timestampMs: s.endMs,
-        durationMs: s.durationSeconds * 1000,
-        charsDelta: null,
-      ),
-  ];
-}
-
-/// 把 v92 段映射成活动流行（id=0 哨兵，display-only 不落库——与互联远端行同一
-/// 手法），喂既有 [aggregateActivityEvents]：同日同媒体多段按 30 分钟 gap 归并成
-/// session 数，时长 / 字数求和。eventType 按 kind：book→read、video→watch、game→game。
-List<ActivityEventRow> segmentsAsActivityRows(List<StudySegmentRow> segments) {
-  return <ActivityEventRow>[
-    for (final StudySegmentRow s in segments)
-      if (s.durationMs > 0 || s.chars > 0 || s.pages > 0)
-        ActivityEventRow(
-          id: 0,
-          eventType: switch (s.mediaKind) {
-            kActivityMediaVideo => kActivityWatch,
-            kActivityMediaGame => kActivityGame,
-            _ => kActivityRead,
-          },
-          mediaType: s.mediaKind,
-          title: s.title,
-          mediaKey: s.mediaKey,
-          dateKey: s.dateKey,
-          timestampMs: s.endAt,
-          durationMs: s.durationMs,
-          charsDelta: s.chars,
-        ),
-  ];
-}
-
 /// 首页「今日目标」与阅读统计页目标卡共用的**同一条**口径：给定日面行的当日字数
 /// 合计。目标概念是「每日学习目标」——传整张日面（[StatFacts.daily]）时覆盖阅读 +
 /// 视频字幕 + 游戏 hook 三个来源，与热力图「全部」档同覆盖面；只算某一域时传对应
@@ -745,10 +800,17 @@ List<ActivityEventRow> segmentsAsActivityRows(List<StudySegmentRow> segments) {
 /// 游戏日目标恒 0、与上方热力图对不上（BUG-1993）——现在函数只按 dateKey 求和，
 /// 域由调用方传的行集决定，没有特殊情况。目标偏好键沿用 `readingGoalDailyChars`
 /// （存量持久化名冻结，语义已是学习目标）。
-int studyGoalCharsForDay(Iterable<StatFact> daily, String dateKey) {
+///
+/// [scope] 是目标的语言范围（`study_goal_language.dart`）：开了「只算目标语言」时
+/// 跳过内容语言已知且不同的媒体；缺省不过滤。
+int studyGoalCharsForDay(
+  Iterable<StatFact> daily,
+  String dateKey, {
+  StudyGoalLanguageScope scope = StudyGoalLanguageScope.all,
+}) {
   int total = 0;
   for (final StatFact f in daily) {
-    if (f.dateKey == dateKey) total += f.chars;
+    if (f.dateKey == dateKey && scope.includes(f)) total += f.chars;
   }
   return total;
 }

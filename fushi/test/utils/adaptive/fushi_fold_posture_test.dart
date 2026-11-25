@@ -48,6 +48,37 @@ void main() {
       );
       expect(s.posture, FushiFoldPosture.flat);
       expect(s.hinge, isNull);
+      // 姿态仍是 flat（不分隔内容），但竖向折痕记作「装订线」：阅读器双页把中缝对到它上面。
+      expect(s.spine, const Rect.fromLTWH(400, 0, 0, 600));
+      expect(s.hasSpine, isTrue);
+      expect(s, isNot(FushiFoldState.flat), reason: '展开 / 收起内屏要通知依赖方重排');
+    });
+
+    test('展开的横向折痕不是装订线；只碰到窗口一角的竖向折痕也不是', () {
+      expect(
+        resolveFushiFoldState(
+          displayFeatures: <DisplayFeature>[
+            _fold(
+              const Rect.fromLTWH(0, 300, 800, 0),
+              DisplayFeatureState.postureFlat,
+            ),
+          ],
+          windowSize: _window,
+        ).hasSpine,
+        isFalse,
+      );
+      expect(
+        resolveFushiFoldState(
+          displayFeatures: <DisplayFeature>[
+            _fold(
+              const Rect.fromLTWH(400, 0, 0, 300),
+              DisplayFeatureState.postureFlat,
+            ),
+          ],
+          windowSize: _window,
+        ).hasSpine,
+        isFalse,
+      );
     });
 
     test('竖向折痕半开 → book，带折痕矩形', () {
@@ -145,6 +176,15 @@ void main() {
         ),
         0,
       );
+    });
+
+    test('完全展开的折痕：中线对齐时 0，页边距不等时按偏差加宽', () {
+      const FushiFoldState unfolded = FushiFoldState(
+        posture: FushiFoldPosture.flat,
+        spine: Rect.fromLTWH(400, 0, 0, 600),
+      );
+      expect(fushiHingeGutterPx(fold: unfolded, contentCenterX: 400), 0);
+      expect(fushiHingeGutterPx(fold: unfolded, contentCenterX: 390), 20);
     });
 
     test('物理铰链：缝 = 铰链宽 + 2×中线偏差，整条铰链都落在缝里', () {

@@ -66,7 +66,8 @@ class FushiCardNoteType {
     'TermFurigana': '{furigana-plain}',
     'TermReading': '{reading}',
     'TermAudio': '{audio}',
-    'LookupSelection': '{popup-selection-text}',
+    // 保留样式的选中内容（拍板 RdmYdegMPJ 选 a）。
+    'LookupSelection': '{popup-selection-html}',
     'MainDefinition': '{glossary-first}',
     'Sentence': '{sentence}',
     'SentenceAudio': '{sentence-audio}',
@@ -76,7 +77,7 @@ class FushiCardNoteType {
     'PitchCategories': '{pitch-accent-categories}',
     'Frequency': '{frequencies}',
     'FrequencyRank': '{frequency-harmonic-rank}',
-    'Source': '{source-link} {clip-timestamp}',
+    'Source': FushiCardFields.sourceDefaultMapping,
     'IsWordAndSentenceCard': 'x',
   };
 

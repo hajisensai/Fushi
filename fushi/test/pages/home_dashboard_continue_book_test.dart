@@ -1,6 +1,8 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/media_item.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/media/collections/book_continue.dart'
+    show bookCollectionContinueIndex;
 import 'package:fushi/src/media/collections/collection_continue.dart';
 import 'package:fushi/src/pages/implementations/home_dashboard_page.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
@@ -66,7 +68,7 @@ void main() {
     expect(isDashboardContinueBook(item, <String>{'book2', 'boo'}), isTrue);
   });
 
-  group('dashboardBookCollectionContinueIndex（书合集续读目标）', () {
+  group('bookCollectionContinueIndex（书合集续读目标）', () {
     CollectionMemberProgress vol({
       int position = 0,
       bool completed = false,
@@ -79,7 +81,7 @@ void main() {
 
     test('用户实报：读完第 1 卷 → 推进到第 2 卷', () {
       expect(
-        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
+        bookCollectionContinueIndex(<CollectionMemberProgress>[
           vol(position: 100, completed: true, readAt: 10),
           vol(),
           vol(),
@@ -90,7 +92,7 @@ void main() {
 
     test('锚点按最近阅读时刻，不按卷序最靠后', () {
       expect(
-        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
+        bookCollectionContinueIndex(<CollectionMemberProgress>[
           vol(position: 30, readAt: 50),
           vol(),
           vol(position: 60, readAt: 10),
@@ -101,23 +103,18 @@ void main() {
 
     test('整套读完 / 一卷都没开读 / 空合集 → null', () {
       expect(
-        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
+        bookCollectionContinueIndex(<CollectionMemberProgress>[
           vol(position: 100, completed: true, readAt: 1),
           vol(position: 100, completed: true, readAt: 2),
         ]),
         isNull,
       );
       expect(
-        dashboardBookCollectionContinueIndex(<CollectionMemberProgress>[
-          vol(),
-          vol(),
-        ]),
+        bookCollectionContinueIndex(<CollectionMemberProgress>[vol(), vol()]),
         isNull,
       );
       expect(
-        dashboardBookCollectionContinueIndex(
-          const <CollectionMemberProgress>[],
-        ),
+        bookCollectionContinueIndex(const <CollectionMemberProgress>[]),
         isNull,
       );
     });
@@ -149,6 +146,22 @@ void main() {
         ),
         17,
       );
+    });
+
+    // BUG-5400：无卷号的上 / 中 / 下按同系列分册名次算「第 N 卷」。
+    test('分册：上下两册的「下」是第 2 卷，上中下三册的「下」是第 3 卷', () {
+      num vol(String title, List<String> members) =>
+          collectionMemberVolumeNumber(
+            title: title,
+            memberTitles: members,
+            memberOrdinal: 9,
+          );
+      const List<String> two = <String>['化物語 上', '化物語 下'];
+      expect(vol('化物語 上', two), 1);
+      expect(vol('化物語 下', two), 2);
+      const List<String> three = <String>['化物語 上巻', '化物語 中巻', '化物語 下巻'];
+      expect(vol('化物語 中巻', three), 2);
+      expect(vol('化物語 下巻', three), 3);
     });
 
     test('主题合集（成员不同系列）里书名尾数不当卷号：Fahrenheit 451 不是 Vol. 451', () {

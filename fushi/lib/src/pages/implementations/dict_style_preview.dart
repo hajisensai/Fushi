@@ -276,14 +276,14 @@ class _DictStylePreviewState extends State<DictStylePreview> {
 /// 守卫测试：`fushi/test/pages/dict_style_preview_handler_coverage_test.dart`。
 const List<String> kDictStylePreviewNoopHandlers = <String>[
   'clearSentenceDraft',
+  // 跨应用语音缓存「调整句子音频」：预览从不注入 __fushiCrossAppAudioHost，不会真发。
+  'crossAppAudioAvailable',
+  'crossAppAudioPreview',
   'duplicateCheck',
   'favoriteCheck',
   'favoriteEntry',
   'findMinedMatches',
   'getDictAsset',
-  // 「我库里的例句」：预览不查用户库（回 null = 区块不出现）、不跳转。
-  'librarySentenceOpen',
-  'librarySentences',
   'listWordAudioSources',
   'mineEntry',
   // BUG-3652 续：制卡失败回包到达时发起按钮已被换掉 → 交回宿主 toast；预览不制卡。
@@ -307,6 +307,8 @@ const List<String> kDictStylePreviewNoopHandlers = <String>[
   'queueOverwrite',
   'reportJsError',
   'resolveWordAudio',
+  // review-gal-overlay-mine-fail：app 外查词卡上后台写卡失败后的重写；预览不制卡。
+  'retryQueuedMine',
   'setSentenceContext',
   // 复习词状态标记：预览不显示复习状态（回 null = 不渲染标记）、不打开卡片。
   'srsOpenCard',

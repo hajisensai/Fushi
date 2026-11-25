@@ -6,7 +6,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
 import 'package:fushi/src/media/music/lyrics/lyrics_candidate_scoring.dart';
 import 'package:fushi/src/media/music/lyrics/music_lyrics_service.dart';
-import 'package:fushi/src/media/music/lyrics/music_lyrics_sources.dart';
+import 'package:fushi_engine/media/music/lyrics/music_lyrics_sources.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_music/fushi_music.dart';
 
@@ -133,7 +133,7 @@ void main() {
 
   MusicLyricsService service({
     bool withPlugin = false,
-    List<String> providers = const <String>['p'],
+    List<String> providers = const <String>[MusicLyricsSource.lrclib, 'p'],
   }) => MusicLyricsService(
     database: () => db,
     lrclib: LrclibClient(transport: lrclib.call),
@@ -411,7 +411,7 @@ void main() {
     };
     final MusicLyricsResolution r = (await service(
       withPlugin: true,
-      providers: <String>['romaji', 'zh', 'ja'],
+      providers: <String>[MusicLyricsSource.lrclib, 'romaji', 'zh', 'ja'],
     ).resolve(track))!;
     expect(r.source, MusicLyricsSource.lyricsPlugin('ja'));
     expect(text(r), 'もしもしかめよ かめさんよ');
@@ -420,7 +420,7 @@ void main() {
     plugin.fetched.clear();
     final MusicLyricsResolution again = (await service(
       withPlugin: true,
-      providers: <String>['romaji', 'zh', 'ja'],
+      providers: <String>[MusicLyricsSource.lrclib, 'romaji', 'zh', 'ja'],
     ).resolve(track))!;
     expect(again.source, MusicLyricsSource.lyricsPlugin('ja'));
     expect(plugin.fetched, isEmpty);
@@ -435,6 +435,18 @@ void main() {
     ).resolve(track))!;
     expect(r.source, MusicLyricsSource.lrclib);
     expect(text(r), _romaji);
+  });
+
+  test('插件排在 LRCLIB 前且两边都只有对不上的版本：兜底也按来源顺序（插件在前）', () async {
+    lrclib.search = <Map<String, Object?>>[_record(8, _romaji)];
+    plugin.candidates = <MusicPluginLyricsCandidate>[_pluginHit];
+    plugin.lyrics = _pluginLyrics(_chineseLine);
+    final MusicLyricsResolution r = (await service(
+      withPlugin: true,
+      providers: const <String>['p', MusicLyricsSource.lrclib],
+    ).resolve(track))!;
+    expect(r.source, MusicLyricsSource.lyricsPlugin('p'));
+    expect(text(r), _chineseLine);
   });
 
   test('LRCLIB 没有、插件只有对不上的版本：仍用插件那份（不丢歌词）', () async {

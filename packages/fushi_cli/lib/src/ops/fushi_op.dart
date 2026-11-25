@@ -225,6 +225,9 @@ enum OpUndoStatus {
   /// 执行之后又被手动改过：不覆盖用户的修改，跳过（spec §5.3）。
   superseded,
 
+  /// 部分撤销：没被动过的部分回到执行前，之后又被改过的部分保留现值（[OpUndoOutcome.message] 列出是哪些）。
+  partial,
+
   /// 撤销失败（对象已不存在等）。
   failed,
 }
@@ -234,6 +237,7 @@ class OpUndoOutcome {
   const OpUndoOutcome.superseded([this.message])
     : status = OpUndoStatus.superseded;
   const OpUndoOutcome.failed([this.message]) : status = OpUndoStatus.failed;
+  const OpUndoOutcome.partial([this.message]) : status = OpUndoStatus.partial;
 
   final OpUndoStatus status;
   final String? message;
@@ -415,6 +419,7 @@ class FushiOp {
     this.sensitiveResult = false,
     this.taskStatus,
     this.taskIdOf,
+    this.consentGranted,
   });
 
   final String id;
@@ -440,6 +445,16 @@ class FushiOp {
   /// 从执行结果里取任务 id；null = 默认取顶层的 `taskId` / `jobId`
   /// （[defaultOpTaskIdOf]）。
   final String? Function(Object? result)? taskIdOf;
+
+  /// 首次确认（长期同意）：返回 true 表示用户已对这条需确认的操作给过一次同意并
+  /// 记在本机，AI 助手不再逐次出确认卡（spec §5.2 补「首次确认」）。返回 false /
+  /// null 时照 [risk] / [confirm] 确认；用户点了确认后由路由经表态参数记下同意。
+  /// 只放宽 AI 助手进程内的确认卡：[FushiOpSpec.needsConfirmation] 仍按静态描述算，
+  /// MCP / 远端宿主照旧逐次确认。
+  final bool Function()? consentGranted;
+
+  /// 此刻是否已有长期同意（见 [consentGranted]）。
+  bool get consentAlreadyGranted => consentGranted?.call() ?? false;
 
   /// 这次执行结果对应的任务 id（没有返回 null）。
   String? taskIdFrom(Object? result) => (taskIdOf ?? defaultOpTaskIdOf)(result);
@@ -481,6 +496,7 @@ class OpDescription {
     this.sensitiveResult = false,
     this.taskStatus,
     this.taskIdOf,
+    this.consentGranted,
   });
 
   final String id;
@@ -504,6 +520,9 @@ class OpDescription {
   /// 见 [FushiOp.taskIdOf]。
   final String? Function(Object? result)? taskIdOf;
 
+  /// 见 [FushiOp.consentGranted]。
+  final bool Function()? consentGranted;
+
   String get routeKey => '$method $pattern';
 
   FushiOp bind(CtlRoute route) => FushiOp(
@@ -520,6 +539,7 @@ class OpDescription {
     sensitiveResult: sensitiveResult,
     taskStatus: taskStatus,
     taskIdOf: taskIdOf,
+    consentGranted: consentGranted,
   );
 }
 

@@ -1,8 +1,13 @@
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:typed_data';
 
+import 'package:characters/characters.dart';
+import 'package:fushi_engine/epub/epub_book.dart' show EpubBook;
 import 'package:fushi_engine/epub/epub_importer.dart' show EpubImporter;
 import 'package:fushi_audio/fushi_audio_core.dart';
+import 'package:html/dom.dart' as dom;
+import 'package:xml/xml.dart' as xml;
 
 /// Converts plain text files (TXT, HTML, MD, etc.) into valid EPUB 3 bytes
 /// suitable for import via [EpubImporter].
@@ -35,6 +40,11 @@ class TextToEpub {
   }
 
   /// Reads [file], detects encoding, converts content to EPUB bytes.
+  ///
+  /// 解码留在调用方 isolate（平台字符集检测器只装配在主 isolate；超过 8 KB 的
+  /// 本地编码解码自己会进后台 isolate），切章 + XHTML 拼装 + ZIP 压缩这段与输入
+  /// 大小成正比的同步重活交给 [convertTextInBackground]，几 MB 的 TXT 导入时
+  /// UI isolate 不再整段卡住。
   static Future<Uint8List> convert({
     required File file,
     required String title,
@@ -42,7 +52,44 @@ class TextToEpub {
   }) async {
     final String content = await readTextWithEncoding(file);
     final String ext = file.path.split('.').last.toLowerCase();
-    final List<String> chapters = _splitIntoChapters(content, ext);
+    return convertTextInBackground(
+      content: content,
+      title: title,
+      author: author,
+      extension: ext,
+    );
+  }
+
+  /// [convertText] 放到一次性后台 isolate 里跑。输出与 [convertText] 逐字节
+  /// 相同（同一个函数），产物经 `Isolate.exit` 交回、不再复制一遍。
+  static Future<Uint8List> convertTextInBackground({
+    required String content,
+    required String title,
+    String? author,
+    String extension = 'txt',
+  }) => Isolate.run<Uint8List>(
+    () => convertText(
+      content: content,
+      title: title,
+      author: author,
+      extension: extension,
+    ),
+    debugName: 'TextToEpub.convert',
+  );
+
+  /// Converts in-memory [content] (already decoded, e.g. pasted from the
+  /// clipboard) to EPUB bytes. [extension] picks the parser exactly like the
+  /// file path's extension does in [convert] (`txt` = plain text paragraphs).
+  static Uint8List convertText({
+    required String content,
+    required String title,
+    String? author,
+    String extension = 'txt',
+  }) {
+    final List<String> chapters = _splitIntoChapters(
+      content,
+      extension.toLowerCase(),
+    );
 
     final List<String> chapterXhtmls = <String>[
       for (int i = 0; i < chapters.length; i++)
@@ -63,81 +110,90 @@ class TextToEpub {
   }
 
   // ── Content splitting ─────────────────────────────────────────────────────
+  //
+  // 三种输入（纯文本 / Markdown / HTML）先各自解析成同一棵小块树（[_BodyNode]），
+  // 再由同一个打包器 [_packInner] 按 [kMaxCharsPerChapter] 切章。切点优先级：
+  // 块之间 > 块内的换行（`<br/>`，切点处的换行并入块边界、不留在块首）> 行内
+  // 子节点之间 > 文本内的字素簇之间。超长块按原标签重新包成若干块，标签始终成对，
+  // 每章都是良构 XHTML。旧实现只在 `<p` 前切，单换行 / 无换行的 TXT、Markdown
+  // 以及只有一个巨大块的 HTML 都会整本落进一章（BUG-5069）。
 
   static List<String> _splitIntoChapters(String content, String ext) {
-    String html;
+    final List<_BodyNode> blocks;
     switch (ext) {
       case 'html':
       case 'htm':
       case 'xhtml':
-        html = _extractBody(content);
+        blocks = _htmlBlocks(content);
         break;
       case 'md':
       case 'markdown':
-        html = _markdownToHtml(content);
+        blocks = _markdownBlocks(content);
         break;
       default:
-        html = _plainTextToHtml(content);
+        blocks = _plainTextBlocks(content);
         break;
     }
-
-    if (html.length <= kMaxCharsPerChapter) return [html];
-
-    // Split at paragraph boundaries
-    final parts = html.split(RegExp('(?=<p[ >])'));
-    final List<String> chapters = [];
-    final buf = StringBuffer();
-    for (final part in parts) {
-      if (buf.length + part.length > kMaxCharsPerChapter && buf.isNotEmpty) {
-        chapters.add(buf.toString());
-        buf.clear();
-      }
-      buf.write(part);
-    }
-    if (buf.isNotEmpty) chapters.add(buf.toString());
-    if (chapters.isEmpty) chapters.add(html);
-    return chapters;
+    final List<String> chapters = _packInner(blocks, kMaxCharsPerChapter);
+    return chapters.isEmpty ? <String>['<p></p>'] : chapters;
   }
 
-  static String _plainTextToHtml(String text) {
-    text = text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-    // Remove BOM
-    if (text.startsWith('﻿')) text = text.substring(1);
+  static String _stripBom(String text) =>
+      text.startsWith('﻿') ? text.substring(1) : text;
 
-    final paragraphs = text.split(RegExp(r'\n{2,}'));
-    final buf = StringBuffer();
-    for (final para in paragraphs) {
-      final trimmed = para.trim();
+  static String _normalizeNewlines(String text) =>
+      text.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
+
+  /// 一段文字的若干行包成一个块：行与行之间是 `<br/>`。
+  static _BodyElement _lineBlock(
+    String open,
+    String close,
+    List<String> lines,
+  ) {
+    final List<_BodyNode> children = <_BodyNode>[];
+    for (int i = 0; i < lines.length; i++) {
+      if (i > 0) children.add(const _BodyAtom('<br/>', isLineBreak: true));
+      children.add(_BodyText(lines[i]));
+    }
+    return _BodyElement(open, close, children);
+  }
+
+  static List<_BodyNode> _plainTextBlocks(String text) {
+    text = _stripBom(_normalizeNewlines(text));
+    final List<_BodyNode> blocks = <_BodyNode>[];
+    for (final String para in text.split(RegExp(r'\n{2,}'))) {
+      final String trimmed = para.trim();
       if (trimmed.isEmpty) continue;
       // Preserve single newlines as <br/>
-      final escaped = _esc(trimmed).replaceAll('\n', '<br/>');
-      buf.write('<p>$escaped</p>\n');
+      blocks.add(_lineBlock('<p>', '</p>\n', trimmed.split('\n')));
     }
-    return buf.isEmpty ? '<p></p>' : buf.toString();
+    return blocks;
   }
 
-  static String _markdownToHtml(String md) {
-    md = md.replaceAll('\r\n', '\n').replaceAll('\r', '\n');
-    if (md.startsWith('﻿')) md = md.substring(1);
-
-    final lines = md.split('\n');
-    final buf = StringBuffer();
-    final paraBuf = StringBuffer();
+  static List<_BodyNode> _markdownBlocks(String md) {
+    md = _stripBom(_normalizeNewlines(md));
+    final List<_BodyNode> blocks = <_BodyNode>[];
+    final List<String> paraLines = <String>[];
 
     void flushPara() {
-      if (paraBuf.isNotEmpty) {
-        buf.write('<p>${paraBuf.toString().trim()}</p>\n');
-        paraBuf.clear();
-      }
+      if (paraLines.isEmpty) return;
+      paraLines[0] = paraLines[0].trimLeft();
+      paraLines[paraLines.length - 1] = paraLines.last.trimRight();
+      blocks.add(_lineBlock('<p>', '</p>\n', List<String>.of(paraLines)));
+      paraLines.clear();
     }
 
-    for (final line in lines) {
-      // Headings
-      final hMatch = RegExp(r'^(#{1,6})\s+(.+)$').firstMatch(line);
+    final RegExp heading = RegExp(r'^(#{1,6})\s+(.+)$');
+    for (final String line in md.split('\n')) {
+      final RegExpMatch? hMatch = heading.firstMatch(line);
       if (hMatch != null) {
         flushPara();
-        final level = hMatch.group(1)!.length;
-        buf.write('<h$level>${_esc(hMatch.group(2)!)}</h$level>\n');
+        final int level = hMatch.group(1)!.length;
+        blocks.add(
+          _BodyElement('<h$level>', '</h$level>\n', <_BodyNode>[
+            _BodyText(hMatch.group(2)!),
+          ]),
+        );
         continue;
       }
       // Blank line = paragraph break
@@ -145,30 +201,249 @@ class TextToEpub {
         flushPara();
         continue;
       }
-      // Normal text
-      if (paraBuf.isNotEmpty) paraBuf.write('<br/>');
-      paraBuf.write(_esc(line));
+      paraLines.add(line);
     }
     flushPara();
-    return buf.isEmpty ? '<p></p>' : buf.toString();
+    return blocks;
   }
 
-  static String _extractBody(String html) {
-    // Try to extract <body> content
-    final bodyMatch = RegExp(
-      r'<body[^>]*>([\s\S]*?)</body>',
-      caseSensitive: false,
-    ).firstMatch(html);
-    if (bodyMatch != null) return bodyMatch.group(1)!.trim();
-    // If no body tags, use as-is but strip doctype/html/head
-    return html
-        .replaceAll(RegExp('<!DOCTYPE[^>]*>', caseSensitive: false), '')
-        .replaceAll(RegExp('</?html[^>]*>', caseSensitive: false), '')
-        .replaceAll(
-          RegExp(r'<head[^>]*>[\s\S]*?</head>', caseSensitive: false),
-          '',
-        )
-        .trim();
+  /// HTML / XHTML 只取正文（body）内容。良构的（X）HTML 按 XML 解析，保住
+  /// `<a id="x"/>` 这类非空元素自闭合的写法；不良构的再交给 HTML5 解析器
+  /// （与浏览器同一套容错），两条路都重新序列化成良构 XHTML 再切章。两条路的
+  /// 正文范围都按 HTML 的 body 规则定：`<body>`/`<head>` 标签可省略，XML 路径
+  /// 由 [_xmlBodyNodes] 复刻 HTML5 树构建的隐含 body 判定（HBK-AUDIT-003）。
+  static List<_BodyNode> _htmlBlocks(String content) {
+    content = _stripBom(content);
+    final xml.XmlDocument? document = _tryParseXml(content);
+    if (document != null) {
+      return _trimEdgeWhitespace(<_BodyNode>[
+        for (final xml.XmlNode n in _xmlBodyNodes(document)) ?_fromXml(n),
+      ]);
+    }
+    // 不良构输入同样可能带 kobo 式自闭合 <script/>：走章节解析入口先归一化，否则
+    // HTML5 tokenizer 会把整个 <body> 吞成脚本文本（BUG-2017）。
+    final dom.Element? body = EpubBook.parseChapterHtml(content).body;
+    if (body == null) return const <_BodyNode>[];
+    return _trimEdgeWhitespace(<_BodyNode>[
+      for (final dom.Node n in body.nodes) ?_fromDom(n),
+    ]);
+  }
+
+  /// HTML 里只能出现在 head、且正文开始前遇到时归 head 的元素（HTML5 树构建
+  /// 「in head」插入模式处理的元素）。正文开始后再出现的同名元素留在 body。
+  static const Set<String> _headOnlyElements = <String>{
+    'base', 'basefont', 'bgsound', 'link', 'meta', 'noframes', 'noscript', //
+    'script', 'style', 'template', 'title',
+  };
+
+  /// HTML 的空白只有 ASCII 这 5 个（不是 Dart `trim` 认的全部 Unicode 空白）。
+  static final RegExp _htmlSpaceOnly = RegExp(r'^[\t\n\f\r ]*$');
+
+  /// 良构 XML 文档按 HTML5 树构建定 body 的规则取正文节点，与不良构输入走的
+  /// HTML5 解析器结论一致：`<html>` / `<head>` / `<body>` 三个标签本身都不进
+  /// 正文（可省略、可出现在「不该在」的位置），只看它们里面的节点按文档顺序
+  /// 逐个判定——正文开始前，空白文本与 [_headOnlyElements] 归 head；首个非空白
+  /// 文本、其他元素或 `<body>` 标签开始正文，此后的节点（含 `</body>` 之后、
+  /// 中途 `<head>` 里的）全归正文。注释 / 处理指令 / doctype 从不进正文。
+  static List<xml.XmlNode> _xmlBodyNodes(xml.XmlDocument document) {
+    final List<xml.XmlNode> out = <xml.XmlNode>[];
+    bool started = false;
+    void visit(xml.XmlNode node) {
+      if (node is xml.XmlElement) {
+        final String name = node.name.local.toLowerCase();
+        if (name == 'html' || name == 'head' || name == 'body') {
+          if (name == 'body') started = true;
+          node.children.forEach(visit);
+          return;
+        }
+        if (!started && _headOnlyElements.contains(name)) return;
+      } else if (node is xml.XmlText || node is xml.XmlCDATA) {
+        if (!started && _htmlSpaceOnly.hasMatch(node.value!)) return;
+      } else {
+        return;
+      }
+      started = true;
+      out.add(node);
+    }
+
+    document.children.forEach(visit);
+    return out;
+  }
+
+  /// 输入是否良构 XML：是就返回文档，不是返回 null（由调用方改走 HTML5 解析）。
+  /// [xml.XmlException] 在这里就是「不是良构 XML」这个判定结果本身。
+  static xml.XmlDocument? _tryParseXml(String content) {
+    try {
+      return xml.XmlDocument.parse(
+        content,
+        entityMapping: const xml.XmlDefaultEntityMapping.html5(),
+      );
+    } on xml.XmlException {
+      return null;
+    }
+  }
+
+  /// 去掉 body 首尾纯空白文本节点（等价旧实现对 body 内容的 trim）。
+  static List<_BodyNode> _trimEdgeWhitespace(List<_BodyNode> nodes) {
+    bool blank(_BodyNode n) => n is _BodyText && n.text.trim().isEmpty;
+    int start = 0;
+    int end = nodes.length;
+    while (start < end && blank(nodes[start])) {
+      start++;
+    }
+    while (end > start && blank(nodes[end - 1])) {
+      end--;
+    }
+    return nodes.sublist(start, end);
+  }
+
+  static const Set<String> _voidElements = <String>{
+    'area', 'base', 'br', 'col', 'embed', 'hr', 'img', 'input', //
+    'link', 'meta', 'param', 'source', 'track', 'wbr',
+  };
+
+  static String _attrs(Iterable<MapEntry<String, String>> attributes) {
+    final StringBuffer buf = StringBuffer();
+    for (final MapEntry<String, String> a in attributes) {
+      buf.write(' ${a.key}="${_esc(a.value)}"');
+    }
+    return buf.toString();
+  }
+
+  static _BodyNode _element(
+    String name,
+    String attrs,
+    List<_BodyNode> children,
+  ) {
+    if (_voidElements.contains(name.toLowerCase())) {
+      return _BodyAtom(
+        '<$name$attrs/>',
+        isLineBreak: name.toLowerCase() == 'br',
+      );
+    }
+    return _BodyElement('<$name$attrs>', '</$name>', children);
+  }
+
+  static _BodyNode? _fromXml(xml.XmlNode node) {
+    if (node is xml.XmlText) return _BodyText(node.value);
+    if (node is xml.XmlCDATA) return _BodyText(node.value);
+    if (node is! xml.XmlElement) return null; // 注释 / 处理指令不进正文
+    return _element(
+      node.name.qualified,
+      _attrs(<MapEntry<String, String>>[
+        for (final xml.XmlAttribute a in node.attributes)
+          MapEntry<String, String>(a.name.qualified, a.value),
+      ]),
+      <_BodyNode>[for (final xml.XmlNode c in node.children) ?_fromXml(c)],
+    );
+  }
+
+  static _BodyNode? _fromDom(dom.Node node) {
+    if (node is dom.Text) return _BodyText(node.data);
+    if (node is! dom.Element) return null; // 注释等不进正文
+    return _element(
+      node.localName!,
+      _attrs(<MapEntry<String, String>>[
+        for (final MapEntry<Object, String> a in node.attributes.entries)
+          MapEntry<String, String>(a.key.toString(), a.value),
+      ]),
+      <_BodyNode>[for (final dom.Node c in node.nodes) ?_fromDom(c)],
+    );
+  }
+
+  /// 把 [children] 打包成若干段内层 HTML，每段不超过 [budget] 个 UTF-16 码元
+  /// （单个空元素本身超长时除外，它无法再切）。先按 `<br/>` 把子节点分成行，
+  /// 整行装箱；落在切点上的 `<br/>` 丢弃（行尾由块 / 章边界承担，下一段不以
+  /// `<br/>` 开头）。单行本身装不下时才在行内子节点之间切，子节点仍装不下就
+  /// 递归切开它（元素按原标签重新包裹，文本按字素簇切）。
+  static List<String> _packInner(List<_BodyNode> children, int budget) {
+    final List<List<_BodyNode>> lines = <List<_BodyNode>>[<_BodyNode>[]];
+    for (final _BodyNode child in children) {
+      if (child is _BodyAtom && child.isLineBreak) {
+        lines.add(<_BodyNode>[]);
+      } else {
+        lines.last.add(child);
+      }
+    }
+
+    final List<String> pieces = <String>[];
+    final StringBuffer cur = StringBuffer();
+    // 当前段里是否已经开始过一行：决定下一行前面要不要补回 `<br/>`。
+    bool lineOpen = false;
+
+    void flush() {
+      if (cur.isNotEmpty) pieces.add(cur.toString());
+      cur.clear();
+      lineOpen = false;
+    }
+
+    void append(String html) {
+      if (cur.isNotEmpty && cur.length + html.length > budget) {
+        pieces.add(cur.toString());
+        cur.clear();
+      }
+      cur.write(html);
+    }
+
+    for (final List<_BodyNode> line in lines) {
+      final int lineLength = line.fold<int>(
+        0,
+        (int sum, _BodyNode n) => sum + n.html.length,
+      );
+      final String sep = lineOpen ? '<br/>' : '';
+      if (cur.length + sep.length + lineLength > budget) {
+        flush();
+      } else {
+        cur.write(sep);
+      }
+      // 切点之后紧跟的空行（连续 `<br/>`）也并入边界，段首不留空行。
+      if (lineLength == 0 && cur.isEmpty && pieces.isNotEmpty) continue;
+      lineOpen = true;
+      if (cur.length + lineLength <= budget) {
+        for (final _BodyNode n in line) {
+          cur.write(n.html);
+        }
+        continue;
+      }
+      // 单行超过整段预算：在行内子节点之间切，必要时递归切开子节点。
+      for (final _BodyNode n in line) {
+        if (n.html.length <= budget) {
+          append(n.html);
+        } else {
+          _splitNode(n, budget).forEach(append);
+        }
+      }
+    }
+    flush();
+    return pieces;
+  }
+
+  /// 把单个超长节点切成若干段，每段不超过 [budget]（空元素无法切，原样返回）。
+  static List<String> _splitNode(_BodyNode node, int budget) {
+    switch (node) {
+      case final _BodyAtom atom:
+        return <String>[atom.html];
+      case final _BodyText text:
+        final List<String> pieces = <String>[];
+        final StringBuffer cur = StringBuffer();
+        for (final String cluster in text.text.characters) {
+          final String escaped = _esc(cluster);
+          if (cur.isNotEmpty && cur.length + escaped.length > budget) {
+            pieces.add(cur.toString());
+            cur.clear();
+          }
+          cur.write(escaped);
+        }
+        if (cur.isNotEmpty) pieces.add(cur.toString());
+        return pieces;
+      case final _BodyElement element:
+        final int inner = budget - element.open.length - element.close.length;
+        if (inner <= 0) return <String>[element.html];
+        return <String>[
+          for (final String piece in _packInner(element.children, inner))
+            '${element.open}$piece${element.close}',
+        ];
+    }
   }
 
   // ── Chapter XHTML (pre-rendered body; unique to this converter) ───────────
@@ -195,4 +470,46 @@ class TextToEpub {
   }
 
   static String _esc(String s) => EpubBuilder.escXml(s);
+}
+
+// ── Body tree (input-independent; what the chapter packer splits) ───────────
+
+/// 章节正文的一个节点。[html] 是它序列化后的良构 XHTML，打包器按其长度装箱。
+sealed class _BodyNode {
+  const _BodyNode();
+
+  String get html;
+}
+
+/// 原样输出、不可再切的节点（空元素）。[isLineBreak] 标出 `<br/>`：打包器优先在
+/// 它所在处切，并且切点上的这一个换行并入块边界。
+final class _BodyAtom extends _BodyNode {
+  const _BodyAtom(this.html, {this.isLineBreak = false});
+
+  @override
+  final String html;
+  final bool isLineBreak;
+}
+
+/// 未转义的文本；超长时按字素簇切，实体与代理对都不会被拆开。
+final class _BodyText extends _BodyNode {
+  _BodyText(this.text);
+
+  final String text;
+
+  @override
+  late final String html = EpubBuilder.escXml(text);
+}
+
+/// 成对标签包着的子节点；被切开时每段都用同一对 [open] / [close] 重新包裹。
+final class _BodyElement extends _BodyNode {
+  _BodyElement(this.open, this.close, this.children);
+
+  final String open;
+  final String close;
+  final List<_BodyNode> children;
+
+  @override
+  late final String html =
+      '$open${children.map((_BodyNode c) => c.html).join()}$close';
 }

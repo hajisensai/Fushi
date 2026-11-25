@@ -19,9 +19,8 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
   Future<RemoteMangaManifest> mangaManifest(String bookKey) async {
     _assertSafeName(bookKey);
     final EpubBookRow row = await _requireMangaRow(bookKey);
-    if (hasExportableMangaContent(row.extractDir)) {
-      return _volumeManifest(row, _readMangaPayload(row));
-    }
+    final MokuroPayload? volume = _readExportableVolume(row);
+    if (volume != null) return _volumeManifest(row, volume);
     final List<RemoteMangaChapterInfo> chapters = await _downloadedChapters(
       row,
     );
@@ -38,15 +37,49 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
   }
 
   @override
-  Future<File> mangaPageFile(String bookKey, int index) async {
+  Future<File> mangaPageFile(
+    String bookKey,
+    int index, {
+    String? expectedKeyDigest,
+  }) async {
     _assertSafeName(bookKey);
     final EpubBookRow row = await _requireMangaRow(bookKey);
-    if (!hasExportableMangaContent(row.extractDir)) {
+    final String imagesRoot = MangaStorage.imagesDirectory(row.extractDir).path;
+    // 对端每翻一页打一次这里。这份 manga.json 没变过（缓存命中）就不再重做「整份
+    // 读 + 解析 + 逐页核对」：它上次已按 [hasExportableMangaContent] 过关，这次
+    // 只核对被请求的那一页（[_pageFile]）。判据文件就是根 `manga.json`，行里记的
+    // 是别的文件名时不走这条近路。
+    final File json = _mangaJsonFile(row);
+    if (p.basename(json.path) == kMangaPackageMarker) {
+      final MokuroPayload? cached = _mangaPayloads.lookup(json);
+      if (cached != null) {
+        _checkExpectedPage(
+          expectedKeyDigest,
+          _downloadedPageKey(cached, index),
+          bookKey,
+          index,
+        );
+        return _pageFile(
+          payload: cached,
+          imagesRoot: imagesRoot,
+          index: index,
+          label: bookKey,
+        );
+      }
+    }
+    final MokuroPayload? volume = _readExportableVolume(row);
+    if (volume == null) {
       throw StateError('manga book has no volume pages: $bookKey');
     }
+    _checkExpectedPage(
+      expectedKeyDigest,
+      _downloadedPageKey(volume, index),
+      bookKey,
+      index,
+    );
     return _pageFile(
-      payload: _readMangaPayload(row),
-      imagesRoot: MangaStorage.imagesDirectory(row.extractDir).path,
+      payload: volume,
+      imagesRoot: imagesRoot,
       index: index,
       label: bookKey,
     );
@@ -64,20 +97,25 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
       row.extractDir,
       chapterDigest,
     );
-    final MokuroPayload? payload = await readDownloadedChapterPayload(
-      chapterDir,
-    );
-    if (payload != null) return _volumeManifest(row, payload);
+    final MokuroPayload? payload = await _readDownloadedChapter(chapterDir);
+    if (payload != null) {
+      return _volumeManifest(
+        row,
+        payload,
+        sourcePages: await _chapterSourcePages(chapterDir),
+      );
+    }
     // 没下载的章：本机运行时能取就现取页表（页尺寸未知报 0，对端按图片实测）。
     final _OnlineChapterSource source = _requireOnlineChapter(
       row,
       chapterDigest,
     );
-    final int count = await source.reader.chapterPageCount(
+    final List<String?> keys = await source.reader.chapterPageKeys(
       bookKey: row.bookKey,
       sourceMetadata: source.sourceMetadata,
       chapter: source.chapter,
     );
+    final int count = keys.length;
     if (count <= 0) {
       throw StateError(
         'online manga chapter has no pages: $bookKey/$chapterDigest',
@@ -89,7 +127,13 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
       readingMode: row.mangaReadingMode,
       pages: <RemoteMangaPageInfo>[
         for (int i = 0; i < count; i++)
-          RemoteMangaPageInfo(index: i, name: '$i', width: 0, height: 0),
+          RemoteMangaPageInfo(
+            index: i,
+            name: '$i',
+            width: 0,
+            height: 0,
+            key: _sourcePageIdentity(keys[i]),
+          ),
       ],
     );
   }
@@ -98,8 +142,9 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
   Future<File> mangaChapterPageFile(
     String bookKey,
     String chapterDigest,
-    int index,
-  ) async {
+    int index, {
+    String? expectedKeyDigest,
+  }) async {
     _assertSafeName(bookKey);
     _assertChapterDigest(chapterDigest);
     final EpubBookRow row = await _requireMangaRow(bookKey);
@@ -107,36 +152,188 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
       row.extractDir,
       chapterDigest,
     );
-    final MokuroPayload? payload = await readDownloadedChapterPayload(
-      chapterDir,
+    final String imagesRoot = mangaChapterImagesDirectory(chapterDir).path;
+    // 这一章的 manga.json 没变过（缓存命中）：它上次已按「完整下载」过关，这次
+    // 只核对被请求的那一页，不再对整章每一页 stat（一章 N 页读完是 N² 次）。那一页
+    // 不在（越界 / 文件被删）就回到下面的完整判定，结论与没有缓存时一致。
+    final MokuroPayload? cached = _mangaPayloads.lookup(
+      mangaChapterJsonFile(chapterDir),
     );
-    if (payload == null) {
-      return _onlineChapterPageFile(row, chapterDigest, index);
+    if (cached != null && index >= 0 && index < cached.images.length) {
+      final String? path = MangaStorage.resolvePageFilePath(
+        imagesRoot,
+        MangaStorage.pageRelativePath(cached.images[index].url),
+      );
+      if (path != null) {
+        await _checkExpectedChapterPage(
+          expectedKeyDigest,
+          chapterDir,
+          cached,
+          '$bookKey/$chapterDigest',
+          index,
+        );
+        return File(path);
+      }
     }
+    final MokuroPayload? payload = await _readDownloadedChapter(chapterDir);
+    if (payload == null) {
+      return _onlineChapterPageFile(
+        row,
+        chapterDigest,
+        index,
+        expectedKeyDigest,
+      );
+    }
+    await _checkExpectedChapterPage(
+      expectedKeyDigest,
+      chapterDir,
+      payload,
+      '$bookKey/$chapterDigest',
+      index,
+    );
     return _pageFile(
       payload: payload,
-      imagesRoot: mangaChapterImagesDirectory(chapterDir).path,
+      imagesRoot: imagesRoot,
       index: index,
       label: '$bookKey/$chapterDigest',
     );
   }
 
+  /// [readDownloadedChapterPayload] 的完整判定；过关的 payload 记进 [_mangaPayloads]
+  /// （没过关的清掉旧记录）。stat 取在读之前：读的途中文件被重写，记下的是「旧
+  /// stat + 新内容」，下次 stat 对不上自然重读，不会把旧内容配上新 stat。
+  Future<MokuroPayload?> _readDownloadedChapter(Directory chapterDir) async {
+    final File json = mangaChapterJsonFile(chapterDir);
+    final FileStat stat = json.statSync();
+    final MokuroPayload? payload = await readDownloadedChapterPayload(
+      chapterDir,
+    );
+    _mangaPayloads.store(json, stat, payload);
+    return payload;
+  }
+
   /// 单卷 / 单章的页表：payload 的 `pages` 顺序，带 OCR 生产者报告的尺寸。
-  RemoteMangaManifest _volumeManifest(EpubBookRow row, MokuroPayload payload) =>
-      RemoteMangaManifest(
-        bookKey: row.bookKey,
-        title: row.title,
-        readingMode: row.mangaReadingMode,
-        pages: <RemoteMangaPageInfo>[
-          for (int i = 0; i < payload.images.length; i++)
-            RemoteMangaPageInfo(
-              index: i,
-              name: MangaStorage.pageRelativePath(payload.images[i].url),
-              width: payload.images[i].size.width.round(),
-              height: payload.images[i].size.height.round(),
-            ),
-        ],
-      );
+  ///
+  /// 已下载的章带上 [sourcePages]（章目录的源端页身份旁注）：旁注认得的页报源端
+  /// 身份——与这章没下载时 [mangaChapterManifest] 现取报的是同一个值，所以 host
+  /// 中途把章下完，对端手上的页表、下载续跑账本照旧对得上，不必重开、整章重下。
+  /// 旁注认不得的页（旧下载没有旁注、源端没给身份、`manga.json` 已换过内容）报
+  /// 按文件认页的身份。
+  RemoteMangaManifest _volumeManifest(
+    EpubBookRow row,
+    MokuroPayload payload, {
+    List<MangaChapterSourcePage?> sourcePages =
+        const <MangaChapterSourcePage?>[],
+  }) => RemoteMangaManifest(
+    bookKey: row.bookKey,
+    title: row.title,
+    readingMode: row.mangaReadingMode,
+    pages: <RemoteMangaPageInfo>[
+      for (int i = 0; i < payload.images.length; i++)
+        RemoteMangaPageInfo(
+          index: i,
+          name: MangaStorage.pageRelativePath(payload.images[i].url),
+          width: payload.images[i].size.width.round(),
+          height: payload.images[i].size.height.round(),
+          key:
+              _sourcePageIdentity(
+                mangaChapterSourcePageKey(sourcePages, payload, i),
+              ) ??
+              _downloadedPageKey(payload, i),
+        ),
+    ],
+  );
+
+  /// 源端页身份 [sourceKey] 对外的形状：与没下载的章（[mangaChapterManifest] /
+  /// [_onlineChapterPageFile]）同一口径。null 进 null 出。
+  static String? _sourcePageIdentity(String? sourceKey) =>
+      sourceKey == null ? null : 'source\u0000$sourceKey';
+
+  /// 章目录 [chapterDir] 的源端页身份旁注（按文件修改时间与大小缓存，见
+  /// [_sourcePagesCache]）。
+  Future<List<MangaChapterSourcePage?>> _chapterSourcePages(
+    Directory chapterDir,
+  ) async {
+    final File file = mangaChapterSourcePagesFile(chapterDir);
+    final FileStat stat = file.statSync();
+    if (stat.type != FileSystemEntityType.file) {
+      _sourcePagesCache.remove(file.path);
+      return const <MangaChapterSourcePage?>[];
+    }
+    final _CachedSourcePages? hit = _sourcePagesCache.remove(file.path);
+    if (hit != null && hit.size == stat.size && hit.modified == stat.modified) {
+      _sourcePagesCache[file.path] = hit;
+      return hit.pages;
+    }
+    final List<MangaChapterSourcePage?> pages =
+        await readMangaChapterSourcePages(chapterDir);
+    _sourcePagesCache[file.path] = (
+      modified: stat.modified,
+      size: stat.size,
+      pages: pages,
+    );
+    while (_sourcePagesCache.length > _kSourcePagesCacheCapacity) {
+      _sourcePagesCache.remove(_sourcePagesCache.keys.first);
+    }
+    return pages;
+  }
+
+  /// 已下载的章第 [index] 页的取页核对（HBK-AUDIT-205）：页表里报过的两种身份都认
+  /// ——按文件认页的（旁注出现前 / 旧 host 报的页表），与旁注记的源端身份（这章
+  /// 下载前对端拿到的页表，或下载后本 host 报的页表）。两种都对不上才 409。
+  Future<void> _checkExpectedChapterPage(
+    String? expectedKeyDigest,
+    Directory chapterDir,
+    MokuroPayload payload,
+    String label,
+    int index,
+  ) async {
+    if (expectedKeyDigest == null) return;
+    final String? fileKey = _downloadedPageKey(payload, index);
+    if (fileKey != null &&
+        remoteMangaPageKeyDigest(fileKey) == expectedKeyDigest) {
+      return;
+    }
+    _checkExpectedPage(
+      expectedKeyDigest,
+      _sourcePageIdentity(
+        mangaChapterSourcePageKey(
+          await _chapterSourcePages(chapterDir),
+          payload,
+          index,
+        ),
+      ),
+      label,
+      index,
+    );
+  }
+
+  /// 已落盘的第 [index] 页的身份：文件名 + 尺寸认页（同一份下载里不会变；整章
+  /// 重下换了内容的，尺寸几乎总会跟着变）。越界为 null。
+  static String? _downloadedPageKey(MokuroPayload payload, int index) {
+    if (index < 0 || index >= payload.images.length) return null;
+    final MokuroImage image = payload.images[index];
+    return 'file\u0000${MangaStorage.pageRelativePath(image.url)}'
+        '\u0000${image.size.width.round()}'
+        'x${image.size.height.round()}';
+  }
+
+  /// 取页请求带了 [expectedKeyDigest]（HBK-AUDIT-205）：这一页此刻的身份
+  /// [actualKey] 必须与它相同；认不出（null，含页序已越界）或不同都抛
+  /// [MangaPageChanged] → 409——客户端带着身份来取，说明它手上的页表已过期。
+  static void _checkExpectedPage(
+    String? expectedKeyDigest,
+    String? actualKey,
+    String label,
+    int index,
+  ) {
+    if (expectedKeyDigest == null) return;
+    if (actualKey != null &&
+        remoteMangaPageKeyDigest(actualKey) == expectedKeyDigest) {
+      return;
+    }
+    throw MangaPageChanged('manga page changed at the host: $label#$index');
+  }
 
   /// 第 [index] 页的页图文件。路径解析 + 穿越守卫恒在 host 侧（client 只送 index，
   /// 从不送路径）。用的是本仓阅读器读本地漫画时的**同一个**
@@ -204,7 +401,9 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
   /// 没下载的章第 [index] 页：经本机运行时现取，落成临时文件交给
   /// `serveFileWithRange`（与已下载页同一条响应路径，Range / Content-Type 不分叉）。
   ///
-  /// 临时文件按 (bookKey, 章, 页) 定名、同页复用：对端翻回来不重复打源站。文件在
+  /// 临时文件按 (bookKey, 章, 页序 + 源端页身份) 定名、同页复用：对端翻回来不重复
+  /// 打源站；源端换了页（页身份变了，audit-035）就是另一个文件，不会把旧版的页图
+  /// 当新页表的这一页端出去。运行时给不出身份的页只按页序定名（旧口径）。文件在
   /// [onlineMangaPageCacheRoot] 下、按章有界保留（[pruneOnlineMangaPageCache]），
   /// 不进书目录（那是「已下载」的判据，混进去会让半章冒充下载完成）。
   ///
@@ -214,6 +413,7 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     EpubBookRow row,
     String chapterDigest,
     int index,
+    String? expectedKeyDigest,
   ) async {
     final _OnlineChapterSource source = _requireOnlineChapter(
       row,
@@ -229,13 +429,40 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
         chapterDigest,
       ),
     );
-    final File? cached = _cachedOnlinePage(dir, index);
+    // 页表在运行时那边有缓存，这里取身份不打源站。
+    final List<String?> pageKeys = await source.reader.chapterPageKeys(
+      bookKey: row.bookKey,
+      sourceMetadata: source.sourceMetadata,
+      chapter: source.chapter,
+    );
+    if (index >= pageKeys.length) {
+      throw StateError('manga page out of range: ${row.bookKey}#$index');
+    }
+    final String? pageKey = pageKeys[index];
+    // 与页表端点报的 `RemoteMangaPageInfo.key` 同一口径（[mangaChapterManifest]）。
+    _checkExpectedPage(
+      expectedKeyDigest,
+      _sourcePageIdentity(pageKey),
+      '${row.bookKey}/$chapterDigest',
+      index,
+    );
+    final String stem = pageKey == null
+        ? '$index'
+        : '$index-${mangaChapterDigest(pageKey)}';
+    final File? cached = _cachedOnlinePage(dir, stem);
     if (cached != null) return cached;
     // 判缓存与登记在途之间没有 await：同一 isolate 内这两步是原子的。
-    final String key = p.join(dir.path, '$index');
+    final String key = p.join(dir.path, stem);
     final Future<File>? running = _onlinePageFetches[key];
     if (running != null) return running;
-    final Future<File> fetch = _fetchOnlinePage(source, row, dir, index);
+    final Future<File> fetch = _fetchOnlinePage(
+      source,
+      row,
+      dir,
+      index,
+      stem,
+      pageKey,
+    );
     _onlinePageFetches[key] = fetch;
     try {
       return await fetch;
@@ -251,14 +478,20 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     EpubBookRow row,
     Directory dir,
     int index,
+    String stem,
+    String? pageKey,
   ) async {
     final Uint8List bytes;
     try {
+      // 带上定文件名用的那个身份：运行时在取图所用的同一份页表上核对。页表若在
+      // 两步之间被淘汰、重解析成换了页的一份，就抛 [MangaPageChanged]，不会把
+      // 另一页落到这个身份的缓存文件名下。
       bytes = await source.reader.chapterPage(
         bookKey: row.bookKey,
         sourceMetadata: source.sourceMetadata,
         chapter: source.chapter,
         index: index,
+        expectedPageKey: pageKey,
       );
     } on RangeError {
       throw StateError('manga page out of range: ${row.bookKey}#$index');
@@ -272,7 +505,7 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
       pruneOnlineMangaPageCache(onlineMangaPageCacheRoot(), keep: dir);
     }
     final File file = File(
-      p.join(dir.path, '$index${onlineMangaPageExtension(bytes)}'),
+      p.join(dir.path, '$stem${onlineMangaPageExtension(bytes)}'),
     );
     // 暂存名带进程内唯一后缀：同进程的并发已在上面合并，这里防的是另一个进程
     // （同机另开的 host）同时写同一页。扩展名仍是 `.part`，[_cachedOnlinePage] 不认。
@@ -294,13 +527,14 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     }
   }
 
-  /// [dir] 里第 [index] 页已落好的缓存文件（暂存 `.part` 与空文件不算）。
-  File? _cachedOnlinePage(Directory dir, int index) {
+  /// [dir] 里名为 [stem]（页序 + 页身份摘要）的已落好的缓存文件（暂存 `.part` 与
+  /// 空文件不算）。
+  File? _cachedOnlinePage(Directory dir, String stem) {
     if (!dir.existsSync()) return null;
     for (final FileSystemEntity entity in dir.listSync()) {
       if (entity is File &&
           p.extension(entity.path) != '.part' &&
-          p.basenameWithoutExtension(entity.path) == '$index' &&
+          p.basenameWithoutExtension(entity.path) == stem &&
           entity.lengthSync() > 0) {
         return entity;
       }
@@ -342,16 +576,59 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     }
   }
 
+  /// 章级阅读进度（[MangaChapterProgressHost]，拍板 design-ic-manga-chapter-progress）：漫画
+  /// [bookKey] 的全部 `manga_chapter_states`。书不在库 / 不是漫画 → null。
+  @override
+  Future<Map<String, RemoteMangaChapterState>?> readMangaChapterProgress(
+    String bookKey,
+  ) async {
+    final EpubBookRow? row = await _mangaRowOrNull(bookKey);
+    if (row == null) return null;
+    return readMangaChapterStates(_db, row.uid);
+  }
+
+  /// 按章 LWW 合并对端上报的章状态（[landMangaChapterStates]，一个事务内读-比较-写），返回合并后的
+  /// 全部章状态。书不在库 / 不是漫画 → null，不写孤儿行（同书进度 `putBookProgressChecked`）。
+  @override
+  Future<Map<String, RemoteMangaChapterState>?> mergeMangaChapterProgress(
+    String bookKey,
+    Map<String, RemoteMangaChapterState> incoming,
+  ) async {
+    final EpubBookRow? row = await _mangaRowOrNull(bookKey);
+    if (row == null) return null;
+    await landMangaChapterStates(
+      _db,
+      bookUid: row.uid,
+      incoming: incoming,
+      nowMs: DateTime.now().millisecondsSinceEpoch,
+    );
+    return readMangaChapterStates(_db, row.uid);
+  }
+
+  /// [_requireMangaRow] 的「没有就 null」版（uid 为空的行也当没有：章状态按 uid 记）。
+  Future<EpubBookRow?> _mangaRowOrNull(String bookKey) async {
+    if (bookKey.isEmpty) return null;
+    try {
+      final EpubBookRow row = await _requireMangaRow(bookKey);
+      return row.uid.isEmpty ? null : row;
+    } on StateError {
+      return null;
+    }
+  }
+
   /// [bookKey] 对应的漫画行；不存在 / 不是漫画 一律 [StateError] → 404。
   ///
   /// 「有内容」不在这里判：单卷（根 `manga.json`）与章节式（`chapters/`）的判据不同，
   /// 各端点按自己那一种把关，与 `/api/library/books` 的 `hasMangaContent` /
   /// `hasMangaChapters` 分别同源——否则会出现「清单说有、翻页说没有」的分裂（BUG-2400）。
+  ///
+  /// 先按主键取一行；wire 上传来的也可能是书名（`_findBookByTitleOrKey` 的旧契约），
+  /// 主键没命中才回落到全表按书名找——对端每翻一页都走这里，不能回回把整库
+  /// （含每本书的 `chaptersJson`）读出来线性找。
   Future<EpubBookRow> _requireMangaRow(String bookKey) async {
-    final EpubBookRow? row = _findBookByTitleOrKey(
-      await _db.getAllEpubBooks(),
-      bookKey,
-    );
+    final EpubBookRow? row =
+        await _db.getEpubBook(bookKey) ??
+        _findBookByTitleOrKey(await _db.getAllEpubBooks(), bookKey);
     if (row == null) {
       throw StateError('manga book not found: $bookKey');
     }
@@ -361,17 +638,107 @@ mixin _LocalLibraryHostManga on _LocalLibraryHostBase, _LocalLibraryHostShared {
     return row;
   }
 
-  /// 读该书的 `manga.json`。行里的 `epubPath` 才是权威文件名（与阅读器一致），
+  /// 该书的 `manga.json`。行里的 `epubPath` 才是权威文件名（与阅读器一致），
   /// 缺列时回落到布局常量。
-  MokuroPayload _readMangaPayload(EpubBookRow row) {
-    final String fileName = row.epubPath.isEmpty
-        ? kMangaPackageMarker
-        : row.epubPath;
-    return parseMangaJson(
-      File(p.join(row.extractDir, fileName)).readAsStringSync(),
-    );
+  File _mangaJsonFile(EpubBookRow row) => File(
+    p.join(
+      row.extractDir,
+      row.epubPath.isEmpty ? kMangaPackageMarker : row.epubPath,
+    ),
+  );
+
+  /// 单卷判据（[hasExportableMangaContent]）与页表一次读完：过关返回 payload 并记进
+  /// [_mangaPayloads]（缓存里的 payload 都是过了关的），不过关 null。
+  ///
+  /// 判据文件是根 [kMangaPackageMarker]；行里记的 `manga.json` 就是它时（常态）只读
+  /// 一遍。行里记的是别的文件名时判据与页表不是同一份文件，照旧判完再读页表文件。
+  /// stat 取在读之前，理由同 [_readDownloadedChapter]。
+  MokuroPayload? _readExportableVolume(EpubBookRow row) {
+    final File json = _mangaJsonFile(row);
+    final FileStat stat = json.statSync();
+    if (p.equals(json.path, p.join(row.extractDir, kMangaPackageMarker))) {
+      final MokuroPayload? payload = readExportableMangaPayload(row.extractDir);
+      if (payload != null) _mangaPayloads.store(json, stat, payload);
+      return payload;
+    }
+    if (!hasExportableMangaContent(row.extractDir)) return null;
+    final MokuroPayload payload = parseMangaJson(json.readAsStringSync());
+    _mangaPayloads.store(json, stat, payload);
+    return payload;
   }
 }
+
+/// 最近读过的几份 `manga.json`（单卷的根文件与章节式的各章文件）解析结果。
+///
+/// 键是文件路径，命中条件是文件的修改时间与大小都没变：OCR / 大模型识别 / 重新
+/// 下载重写 `manga.json` 会改掉其中至少一项，自然失效，不需要谁来通知。只收
+/// **已过关**的 payload（单卷 = `hasExportableMangaContent`，一章 =
+/// `readDownloadedChapterPayload` 非 null），所以命中即可跳过整份重读与逐页核对。
+///
+/// 有界（[capacity] 份，最近最少使用先淘汰）：一份带 OCR 的 200 页卷解析后是 MB
+/// 级对象，对端同时在读的卷 / 章通常只有一两份。实测 200 页 × 15 块的卷每次
+/// 「读 + 解析」约 16 ms，原先每页请求一次，app 当 host 时压在主 isolate 上。
+class _MangaPayloadCache {
+  _MangaPayloadCache({required this.capacity}) : assert(capacity > 0);
+
+  final int capacity;
+
+  /// 插入序 = 最近使用序（命中时摘下重插到队尾）。
+  final Map<String, _CachedMangaPayload> _entries =
+      <String, _CachedMangaPayload>{};
+
+  /// [json] 现在的修改时间与大小都和记下时一样才给；否则 null（并丢掉旧记录）。
+  MokuroPayload? lookup(File json) {
+    final _CachedMangaPayload? entry = _entries.remove(json.path);
+    if (entry == null) return null;
+    final FileStat stat = json.statSync();
+    if (stat.type != FileSystemEntityType.file ||
+        stat.size != entry.size ||
+        stat.modified != entry.modified) {
+      return null;
+    }
+    _entries[json.path] = entry;
+    return entry.payload;
+  }
+
+  /// 记下 [json] 在 [stat] 时刻的解析结果；[payload] 为 null（没过关）只清旧记录。
+  void store(File json, FileStat stat, MokuroPayload? payload) {
+    _entries.remove(json.path);
+    if (payload == null || stat.type != FileSystemEntityType.file) return;
+    _entries[json.path] = (
+      modified: stat.modified,
+      size: stat.size,
+      payload: payload,
+    );
+    while (_entries.length > capacity) {
+      _entries.remove(_entries.keys.first);
+    }
+  }
+}
+
+typedef _CachedMangaPayload = ({
+  DateTime modified,
+  int size,
+  MokuroPayload payload,
+});
+
+/// 进程级共享（与 [_onlinePageFetches] 同理：键是磁盘路径，与哪个 host 服务实例
+/// 无关）。
+final _MangaPayloadCache _mangaPayloads = _MangaPayloadCache(capacity: 4);
+
+/// 最近读过的几份章目录源端页身份旁注（键 = 旁注路径）。命中条件同
+/// [_MangaPayloadCache]：文件的修改时间与大小都没变——下载服务每次重下都整份重写
+/// 旁注，自然失效。对端按源端身份逐页取图时每页都要核对一次，不缓存就是每页一次
+/// 读 + 解析。进程级共享，理由同 [_mangaPayloads]。
+final Map<String, _CachedSourcePages> _sourcePagesCache =
+    <String, _CachedSourcePages>{};
+const int _kSourcePagesCacheCapacity = 8;
+
+typedef _CachedSourcePages = ({
+  DateTime modified,
+  int size,
+  List<MangaChapterSourcePage?> pages,
+});
 
 /// 在途的现取页（键 = 缓存目录 + 页号）：同页并发请求共用一次现取。缓存目录是
 /// 进程级共享的，所以这张表也是进程级的，而不是挂在某个 host 服务实例上。

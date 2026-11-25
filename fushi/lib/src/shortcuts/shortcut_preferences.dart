@@ -1,8 +1,10 @@
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi_engine/media/media_pref_keys.dart'
+    show kShortcutBindingsPrefShortKey;
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
 
-const String _prefKey = 'shortcut_bindings_json';
+const String _prefKey = kShortcutBindingsPrefShortKey;
 
 Future<void> loadShortcutRegistry(
   FushiShortcutRegistry registry,

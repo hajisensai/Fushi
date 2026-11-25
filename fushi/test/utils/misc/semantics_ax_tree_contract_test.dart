@@ -7,6 +7,7 @@
 //   ax_tree.cc:1781                  「Nodes left pending by the update」
 import 'dart:io';
 
+import 'package:flutter/rendering.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/semantics_ax_tree_contract.dart';
@@ -175,6 +176,137 @@ void main() {
       AxTreeDesyncSentinel.debugReset();
       AxTreeDesyncSentinel.debugCommitFrame(<int, AxSentNode>{0: _n(<int>[])});
       expect(ErrorLogService.instance.entries, hasLength(1));
+    });
+
+    // 3.3.0 现场三份日志的同一形态（6w4NCIxzoR / T--XrKRrZ8 / lGXdQ_RHiN）：只下发
+    // 父节点等两三个节点，父节点 child_ids 却多出连续几个从未下发过的新 id。
+    test('field shape: parent lists consecutive never-sent children', () {
+      AxTreeDesyncSentinel.debugCommitFrame(<int, AxSentNode>{
+        0: _n(<int>[7]),
+        7: _n(<int>[8]),
+        8: _n(<int>[], 'deck'),
+      });
+      AxTreeDesyncSentinel.debugCommitFrame(<int, AxSentNode>{
+        7: _n(<int>[8, 5932, 5933, 5934]),
+        8: _n(<int>[], 'deck'),
+      });
+      final String message = ErrorLogService.instance.entries.single.error;
+      for (final int id in <int>[5932, 5933, 5934]) {
+        expect(
+          message,
+          contains('Nodes left pending by the update: $id "?" (child of 7)'),
+        );
+      }
+      expect(message, contains('本帧下发 2 个节点'));
+    });
+
+    test('records the framework state of the violating nodes', () {
+      // 复现怀疑的机制：父节点 P 不是合并根，却带着过期的 isMergedIntoParent=true
+      // 挂在不合并的根下；它的子节点 C 因此被 sendSemanticsUpdate 当成合并节点压掉，
+      // P 却照样把 C 列进 childrenInTraversalOrder。
+      final SemanticsNode root = SemanticsNode();
+      final SemanticsNode parent = SemanticsNode();
+      final SemanticsNode child = SemanticsNode()
+        ..rect = const Rect.fromLTWH(0, 0, 40, 20);
+      parent
+        ..rect = const Rect.fromLTWH(0, 0, 100, 50)
+        ..updateWith(
+          config: SemanticsConfiguration()
+            ..label = 'card'
+            ..textDirection = TextDirection.ltr,
+          childrenInInversePaintOrder: <SemanticsNode>[child],
+        );
+      root
+        ..rect = const Rect.fromLTWH(0, 0, 800, 600)
+        ..updateWith(
+          config: SemanticsConfiguration(),
+          childrenInInversePaintOrder: <SemanticsNode>[parent],
+        );
+      parent.isMergedIntoParent = true;
+      child.isMergedIntoParent = true;
+      final Map<int, SemanticsNode> live = <int, SemanticsNode>{
+        10: parent,
+        11: child,
+      };
+
+      AxTreeDesyncSentinel.debugCommitFrame(<int, AxSentNode>{
+        0: _n(<int>[10]),
+        10: _n(<int>[], 'card'),
+      });
+      AxTreeDesyncSentinel.debugCommitFrame(
+        <int, AxSentNode>{
+          10: _n(<int>[11, 12], 'card'),
+        },
+        lookup: (int id) => live[id],
+        ownerOf: (SemanticsNode node) =>
+            identical(node, parent) ? 'RenderCard <- Card <- DeckTile' : null,
+      );
+
+      final String message = ErrorLogService.instance.entries.single.error;
+      expect(message, contains('框架现场'));
+      // 父节点：合并标记与它的父节点对不上，且带上拥有者摘要。
+      expect(message, contains('#10 parent=#${root.id}'));
+      expect(message, contains('label="card"'));
+      expect(
+        message,
+        contains(
+          'merge flag disagrees with the parent: isMergedIntoParent=true, '
+          'parent.isPartOfNodeMerging=false',
+        ),
+      );
+      expect(message, contains('owner: RenderCard <- Card <- DeckTile'));
+      // 子节点：被当成合并节点压掉、父节点却单列它。
+      expect(message, contains('#11 parent=#${parent.id}'));
+      expect(
+        message,
+        contains(
+          'sendSemanticsUpdate skips this node as merged, but its parent '
+          '#${parent.id} is not a merge root and lists it as a child',
+        ),
+      );
+      expect(message, contains('ancestors: #${parent.id} "card"[M]'));
+      // 框架里已经没有的节点照实说。
+      expect(
+        message,
+        contains('#12: not in the SemanticsOwner (detached or never attached)'),
+      );
+    });
+
+    test('lastInvolvedIds lists the parent before its pending children', () {
+      final AxTreeContractModel m = AxTreeContractModel();
+      expect(
+        m.commit(<int, AxSentNode>{
+          0: _n(<int>[1]),
+          1: _n(<int>[]),
+        }),
+        isEmpty,
+      );
+      expect(m.lastInvolvedIds, isEmpty);
+      m.commit(<int, AxSentNode>{
+        1: _n(<int>[5, 6]),
+      });
+      expect(m.lastInvolvedIds, <int>[1, 5, 6]);
+      m.commit(<int, AxSentNode>{
+        0: _n(<int>[1]),
+      });
+      expect(m.lastInvolvedIds, isEmpty);
+    });
+
+    test('logs at most maxLogsPerProcess sessions per process', () {
+      for (
+        int session = 0;
+        session < AxTreeDesyncSentinel.maxLogsPerProcess + 3;
+        session++
+      ) {
+        AxTreeDesyncSentinel.debugReset(resetProcessCap: false);
+        AxTreeDesyncSentinel.debugCommitFrame(<int, AxSentNode>{
+          0: _n(<int>[1]),
+        });
+      }
+      expect(
+        ErrorLogService.instance.entries,
+        hasLength(AxTreeDesyncSentinel.maxLogsPerProcess),
+      );
     });
   });
 }

@@ -16,7 +16,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/gestures.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' hide ModifierKey;
+import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/pages/base_page.dart';
+import 'package:fushi/src/pages/implementations/shortcut_settings/global_hotkey_portal_panel.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/media/media_search_text.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -47,6 +49,8 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_detail_page.dart';
 import 'package:fushi/src/shortcuts/focus_navigation_shortcuts.dart';
+import 'package:fushi/src/shortcuts/global_hotkey_backend.dart'
+    show GlobalHotKeyBackendKind;
 import 'package:fushi/src/shortcuts/input_binding.dart';
 import 'package:fushi/src/shortcuts/gamepad_service.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
@@ -100,13 +104,41 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// nothing.
   bool _gameInputUnavailable = false;
 
+  /// Which mechanism carries the app-outside keys right now. Starts as the
+  /// platform's choice and follows the controller: on a Wayland desktop
+  /// without GlobalShortcuts but with GTK on XWayland the portal hands over to
+  /// the X11 grab, and then the regular in-app recorder applies again.
+  GlobalHotKeyBackendKind? _hotKeyBackendKind;
+
+  void _onHotKeyStatusChanged() {
+    final GlobalHotKeyBackendKind? kind =
+        GlobalLookupController.instance.hotKeyStatus.value?.kind ??
+        GlobalLookupController.platformHotKeyBackendKind;
+    if (kind == _hotKeyBackendKind || !mounted) return;
+    setState(() => _hotKeyBackendKind = kind);
+  }
+
   @override
   void initState() {
     super.initState();
+    _hotKeyBackendKind =
+        GlobalLookupController.instance.hotKeyStatus.value?.kind ??
+        GlobalLookupController.platformHotKeyBackendKind;
+    GlobalLookupController.instance.hotKeyStatus.addListener(
+      _onHotKeyStatusChanged,
+    );
     _gamepadBrand = ReaderFushiSource.instance.gamepadGlyphBrand;
     // Surface the hint only on a gamepad-related surface (this settings page),
     // never as a startup popup — a mouse/keyboard-only user is not nagged.
     unawaited(_checkGameInputAvailability());
+  }
+
+  @override
+  void dispose() {
+    GlobalLookupController.instance.hotKeyStatus.removeListener(
+      _onHotKeyStatusChanged,
+    );
+    super.dispose();
   }
 
   /// TODO-1223: asks the platform whether the controller backend is available
@@ -358,9 +390,8 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   }
 
   /// 被关掉的功能模块不出现自己的快捷键分区（见 `module_registry.dart`）。
-  /// 这不只是文案泄露：`globalExternal` 分区一旦可编辑，用户改一次绑定就会
-  /// 让 `GlobalLookupController._onRegistryChanged` **当场**装上 OS 热键与
-  /// native RawInput 鼠标钩子——查词模块关着时装系统级钩子是实打实的越权。
+  /// `globalExternal` 分区不属于任何模块：OS 热键与查词页开关无关（BUG-4846），
+  /// 由分区顶部自己的「启用应用外快捷键」总开关管（拍板台 pr3605），所以这里恒可编辑。
   List<ShortcutScope> _visibleScopes() => <ShortcutScope>[
     for (final ShortcutScope scope in ShortcutScope.values)
       if (isShortcutScopeVisible(scope, appModel.moduleVisibility)) scope,
@@ -527,6 +558,13 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
           showIcon: true,
         ),
       // 纯弹窗内滚轮触发，用户看不到「在哪儿按」时会以为没生效，故给一行说明。
+      // 手柄查词模式：键只在模式开启时生效，进入方式在通用设置里选，讲清楚在哪儿按。
+      if (scope == ShortcutScope.controllerLookup)
+        AdaptiveSettingsRow(
+          title: t.shortcut_scope_controller_lookup_note,
+          icon: FushiIcons.info,
+          showIcon: true,
+        ),
       if (scope == ShortcutScope.dictionaryPopup)
         AdaptiveSettingsRow(
           title: t.shortcut_scope_dictionary_popup_note,
@@ -556,6 +594,24 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
       // 这条触发不拦截原事件（native 走 RawInput，见 global_mouse_trigger.h），
       // 右键/中键有全系统级默认语义（上下文菜单 / 自动滚动），绑上去等于两件事
       // 同时发生。
+      // 维护者拍板 pr3605：app 外热键单独一个总开关，不挂在查词页模块上。关掉后
+      // OS 热键 / 鼠标侧键 / 手柄触发全部撤掉、不留系统钩子；下面的绑定照样可改，
+      // 重新打开即按当前绑定装回。
+      if (scope == ShortcutScope.globalExternal && !_isMobilePlatform)
+        AdaptiveSettingsSwitchRow(
+          key: const ValueKey<String>('shortcut-global-external-enabled'),
+          title: t.shortcut_global_external_enabled,
+          subtitle: t.shortcut_global_external_enabled_hint,
+          icon: FushiIcons.keyboard,
+          showIcon: true,
+          value: appModel.appExternalHotkeysEnabled,
+          onChanged: (bool value) async {
+            await appModel.setAppExternalHotkeysEnabled(value);
+            await GlobalLookupController.instance
+                .applyAppExternalTriggersEnabled();
+            if (mounted) setState(() {});
+          },
+        ),
       if (scope == ShortcutScope.globalExternal && !_isMobilePlatform)
         AdaptiveSettingsRow(
           title: t.shortcut_scope_global_external_desktop_note,
@@ -610,6 +666,22 @@ class _ShortcutSettingsPageState extends BasePageState<ShortcutSettingsPage> {
   /// 这类 scope 与鼠标设备一律回落到列表行（off-figure 键也在列表里可改）。
   Widget? _buildFigure(ShortcutScope scope, ShortcutInputDevice device) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    // Linux Wayland: the desktop owns the app-outside keys (GlobalShortcuts
+    // portal), so the keyboard view of this scope shows what the desktop bound
+    // instead of an in-app recorder nobody would listen to. Gamepad / mouse
+    // stay the regular rows: those triggers are Fushi's own.
+    if (scope == ShortcutScope.globalExternal &&
+        device == ShortcutInputDevice.keyboard &&
+        _hotKeyBackendKind == GlobalHotKeyBackendKind.portal) {
+      final GlobalLookupController controller = GlobalLookupController.instance;
+      return GlobalHotKeyPortalPanel(
+        status: controller.hotKeyStatus,
+        actions: ShortcutAction.actionsForScope(scope),
+        availableHere: GlobalLookupController.osHotKeyActionWorksHere,
+        onRebind: controller.rebindHotKeys,
+        onConfigure: controller.configureHotKeysInSystem,
+      );
+    }
     if (_visualMode) {
       final EdgeInsets padding = EdgeInsets.symmetric(
         horizontal: tokens.spacing.rowHorizontal,

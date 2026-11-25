@@ -19,7 +19,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_rating_guide.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart'
     show SrsRatingTone;
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -32,12 +32,7 @@ import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
 
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 final Finder _guide = find.byKey(const ValueKey<String>('srs-rating-guide'));

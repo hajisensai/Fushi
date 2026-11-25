@@ -5,15 +5,16 @@
 /// 没有登记场景的页面，「应用外」是原生系统球。各场景的按钮目录见 [FloatingBallScope]。
 library;
 
-import 'dart:io';
-
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/floating_ball/floating_ball_channel.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart';
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
+import 'package:fushi/src/media/manga/ocr/manga_ocr_engine.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/ocr/screen_ocr_engine.dart';
 import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_control_layout_editor.dart';
 import 'package:fushi/src/settings/settings_context.dart';
@@ -21,6 +22,8 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 SettingsDestination buildFloatingBallDestination() {
   return SettingsDestination(
@@ -31,6 +34,7 @@ SettingsDestination buildFloatingBallDestination() {
     sections: <SettingsSection>[
       SettingsSection(
         id: 'floating_ball.section.display',
+        title: t.settings_floating_ball_section_display,
         items: <SettingsItem>[
           SettingsSwitchItem(
             id: 'floating_ball.in_app',
@@ -48,7 +52,7 @@ SettingsDestination buildFloatingBallDestination() {
             id: 'floating_ball.system',
             title: t.floating_ball_system,
             // 只有 Android 要「显示在其他应用上层」权限。
-            subtitle: Platform.isAndroid
+            subtitle: hostPlatform.isAndroid
                 ? t.floating_ball_system_hint
                 : t.floating_ball_system_hint_desktop,
             icon: FushiIcons.openInNew,
@@ -61,7 +65,7 @@ SettingsDestination buildFloatingBallDestination() {
               // 要「显示在其他应用上层」权限：没有就说明原因并跳授权页，回到前台时
               // 悬浮球宿主会再试一次起服务。
               if (value &&
-                  Platform.isAndroid &&
+                  hostPlatform.isAndroid &&
                   !await FloatingBallChannel.canDrawOverlays()) {
                 final BuildContext ctx = c.context;
                 if (ctx.mounted) {
@@ -83,7 +87,7 @@ SettingsDestination buildFloatingBallDestination() {
             icon: FushiIcons.touch,
             // 只有 Android 原生系统球实现了「点球直接执行、长按展开」。
             visible: (SettingsContext c) =>
-                Platform.isAndroid && _prefs(c).floatingBallSystem,
+                hostPlatform.isAndroid && _prefs(c).floatingBallSystem,
             options: <SettingsSegmentOption<FloatingBallTapAction>>[
               SettingsSegmentOption<FloatingBallTapAction>(
                 value: FloatingBallTapAction.expand,
@@ -108,33 +112,6 @@ SettingsDestination buildFloatingBallDestination() {
               c.refresh();
             },
             defaultValue: FloatingBallTapAction.fallback,
-          ),
-          // 反馈 Gz7z6Y6Mbr：截屏识字 / 拍照查词制卡带所点文本块的截图（默认开）。
-          SettingsSwitchItem(
-            id: 'floating_ball.screen_ocr_card_image',
-            title: t.screen_ocr_card_image,
-            subtitle: t.screen_ocr_card_image_hint,
-            icon: FushiIcons.image,
-            value: (SettingsContext c) => _prefs(c).screenOcrCardImage,
-            onChanged: (SettingsContext c, bool value) async {
-              await _prefs(c).setScreenOcrCardImage(value);
-              c.refresh();
-            },
-            defaultValue: true,
-          ),
-          // 反馈 9bdhVTgq3A / LHyeNKyYjH：Android 截屏识字只确认一次（默认关）。
-          SettingsSwitchItem(
-            id: 'floating_ball.screen_ocr_keep_session',
-            title: t.screen_ocr_keep_session,
-            subtitle: t.screen_ocr_keep_session_hint,
-            icon: FushiIcons.cast,
-            visible: (SettingsContext c) => Platform.isAndroid,
-            value: (SettingsContext c) => _prefs(c).screenOcrKeepCaptureSession,
-            onChanged: (SettingsContext c, bool value) async {
-              await _prefs(c).setScreenOcrKeepCaptureSession(value);
-              c.refresh();
-            },
-            defaultValue: false,
           ),
           SettingsSwitchItem(
             id: 'floating_ball.show_labels',
@@ -182,6 +159,76 @@ SettingsDestination buildFloatingBallDestination() {
           ),
         ],
       ),
+      // 「截屏识字」：这两项管的是截屏识字制卡的行为，与球显不显示无关；单列一组，
+      // 免得夹在显示开关中间。
+      SettingsSection(
+        id: 'floating_ball.section.screen_ocr',
+        title: t.floating_ball_action_screen_ocr,
+        items: <SettingsItem>[
+          // 反馈 Gz7z6Y6Mbr：截屏识字 / 拍照查词制卡带所点文本块的截图（默认开）。
+          SettingsSwitchItem(
+            id: 'floating_ball.screen_ocr_card_image',
+            title: t.screen_ocr_card_image,
+            subtitle: t.screen_ocr_card_image_hint,
+            icon: FushiIcons.image,
+            value: (SettingsContext c) => _prefs(c).screenOcrCardImage,
+            onChanged: (SettingsContext c, bool value) async {
+              await _prefs(c).setScreenOcrCardImage(value);
+              c.refresh();
+            },
+            defaultValue: true,
+          ),
+          // 拍板 EuOLprw_dV（选 b）：制卡时自己框截图范围（带上发帖人、时间等上下文）。
+          SettingsSwitchItem(
+            id: 'floating_ball.screen_ocr_card_frame_on_mine',
+            title: t.screen_ocr_card_frame_on_mine,
+            subtitle: t.screen_ocr_card_frame_on_mine_hint,
+            icon: FushiIcons.crop,
+            visible: (SettingsContext c) => _prefs(c).screenOcrCardImage,
+            value: (SettingsContext c) => _prefs(c).screenOcrCardFrameOnMine,
+            onChanged: (SettingsContext c, bool value) async {
+              await _prefs(c).setScreenOcrCardFrameOnMine(value);
+              c.refresh();
+            },
+            defaultValue: false,
+          ),
+          // 反馈 Eemf0HOZhj：桌面截屏识字的 OCR 引擎，和 AI 的「功能 → 提供商」一样默认
+          // 跟随全局（设置 → 本机模型 → OCR 的引擎偏好），想单独改的在这里选。
+          SettingsSegmentedItem<ScreenOcrEngineSetting>(
+            id: 'floating_ball.screen_ocr_engine',
+            title: t.screen_ocr_engine,
+            subtitle: t.screen_ocr_engine_hint,
+            icon: FushiIcons.ocr,
+            dropdown: true,
+            // 决定 4BBSaB12zj：Android 悬浮球截屏识字同样跟随（以前固定 ML Kit）。
+            visible: (SettingsContext c) =>
+                isDesktopSystemBallPlatform || hostPlatform.isAndroid,
+            options: _screenOcrEngineOptions(null),
+            optionsBuilder: _screenOcrEngineOptions,
+            selected: (SettingsContext c) => _prefs(c).screenOcrEngine,
+            onChanged: (SettingsContext c, ScreenOcrEngineSetting value) async {
+              await _prefs(c).setScreenOcrEngine(value);
+              c.refresh();
+            },
+            defaultValue: ScreenOcrEngineSetting.followGlobal,
+          ),
+          // 反馈 9bdhVTgq3A / LHyeNKyYjH：Android 截屏识字只确认一次（默认关）。
+          SettingsSwitchItem(
+            id: 'floating_ball.screen_ocr_keep_session',
+            title: t.screen_ocr_keep_session,
+            subtitle: t.screen_ocr_keep_session_hint,
+            icon: FushiIcons.cast,
+            visible: (SettingsContext c) => hostPlatform.isAndroid,
+            value: (SettingsContext c) => _prefs(c).screenOcrKeepCaptureSession,
+            onChanged: (SettingsContext c, bool value) async {
+              await _prefs(c).setScreenOcrKeepCaptureSession(value);
+              c.refresh();
+            },
+            defaultValue: false,
+          ),
+        ],
+      ),
+      _crossAppAudioSection(),
       for (final FloatingBallScope scope in FloatingBallScope.values)
         _buttonsSection(scope),
     ],
@@ -190,8 +237,139 @@ SettingsDestination buildFloatingBallDestination() {
 
 PreferencesRepository _prefs(SettingsContext c) => c.appModel.prefsRepo;
 
+/// 跨应用语音挖掘（拍板 oqk37s3QFL）：Android 上缓存其他 app 的声音，应用外查词制卡时
+/// 带上查词前最后一句语音。开关的值是原生采集服务此刻在不在录（不持久化：每次开都要
+/// 用户重新同意屏幕共享，系统不允许复用授权）；服务在别处被停（通知栏「停止」、系统
+/// 收回共享）时经 [SettingsSection.liveListenable] 刷新。只能用户自己拨：打开会弹
+/// 系统授权框，AI 不该代按。
+///
+/// 电脑端（Windows，拍板 design-cross-app-audio-desktop）：录的是系统混音（不用授权），
+/// 开关持久化（[PreferencesRepository.crossAppAudioCaptureDesktop]），启动时按它恢复常驻
+/// 录环（`restoreDesktopCrossAppAudio`）。同样只让用户自己拨：常驻录音是隐私许可。
+SettingsSection _crossAppAudioSection() {
+  final CrossAppAudioCapture capture = CrossAppAudioCapture.instance;
+  return SettingsSection(
+    id: 'floating_ball.section.app_audio',
+    title: t.mining_app_audio_section,
+    visible: (SettingsContext c) => capture.platformAvailable,
+    liveListenable: (SettingsContext c) => capture.running,
+    items: <SettingsItem>[
+      SettingsSwitchItem(
+        id: 'floating_ball.app_audio_capture',
+        title: t.mining_app_audio_capture,
+        subtitle: capture.isDesktop
+            ? t.mining_app_audio_capture_hint_desktop
+            : t.mining_app_audio_capture_hint,
+        icon: FushiIcons.voice,
+        userOnly: true,
+        value: (SettingsContext c) => capture.running.value,
+        onChanged: (SettingsContext c, bool value) async {
+          if (capture.isDesktop) {
+            await _setDesktopCrossAppAudio(c, value);
+            return;
+          }
+          if (!value) {
+            await capture.stop();
+            c.refresh();
+            return;
+          }
+          final CrossAppAudioStartResult result = await capture.start(
+            labels: <String, String>{
+              'notification': t.mining_app_audio_notification,
+              'stop': t.mining_app_audio_stop,
+            },
+          );
+          if (!result.running) {
+            FushiToast.show(
+              msg: crossAppAudioStartErrorText(result.error),
+              severity: ToastSeverity.warning,
+            );
+          }
+          c.refresh();
+        },
+      ),
+    ],
+  );
+}
+
+/// 电脑端开关：起停常驻录环并持久化。起不来时偏好不开（开关如实显示「没在录」）。
+Future<void> _setDesktopCrossAppAudio(SettingsContext c, bool value) async {
+  final CrossAppAudioCapture capture = CrossAppAudioCapture.instance;
+  if (!value) {
+    await _prefs(c).setCrossAppAudioCaptureDesktop(false);
+    await capture.stop();
+    c.refresh();
+    return;
+  }
+  final CrossAppAudioStartResult result = await capture.start();
+  if (result.running) {
+    await _prefs(c).setCrossAppAudioCaptureDesktop(true);
+  } else {
+    FushiToast.show(
+      msg: crossAppAudioStartErrorText(result.error),
+      severity: ToastSeverity.warning,
+    );
+  }
+  c.refresh();
+}
+
+/// [CrossAppAudioCapture.start] 失败原因码 → 提示文案。
+String crossAppAudioStartErrorText(String? error) => switch (error) {
+  'unsupported' => t.mining_app_audio_unsupported,
+  'denied' => t.mining_app_audio_denied,
+  _ => t.mining_app_audio_failed,
+};
+
+/// 截屏识字引擎的选项：「跟随全局（当前全局引擎）」+ 本机模型 / 设备自带（只在有系统
+/// OCR 的平台）/ Google Lens。[c] 为 null（静态值域，恢复默认的标签查找用）时跟随项
+/// 按出厂全局引擎标注。
+List<SettingsSegmentOption<ScreenOcrEngineSetting>> _screenOcrEngineOptions(
+  SettingsContext? c,
+) {
+  final bool systemOcr = screenOcrHasSystemEngine;
+  final MangaOcrEnginePreference global = c == null
+      ? kDefaultMangaOcrEnginePreference
+      : MangaOcrEnginePreferenceKey.fromKey(_prefs(c).mangaOcrEnginePreference);
+  return <SettingsSegmentOption<ScreenOcrEngineSetting>>[
+    SettingsSegmentOption<ScreenOcrEngineSetting>(
+      value: ScreenOcrEngineSetting.followGlobal,
+      label: t.screen_ocr_engine_follow_global(
+        name: _screenOcrGlobalLabel(global, systemOcrSupported: systemOcr),
+      ),
+    ),
+    SettingsSegmentOption<ScreenOcrEngineSetting>(
+      value: ScreenOcrEngineSetting.localModel,
+      label: t.manga_ocr_engine_local_onnx,
+    ),
+    if (systemOcr)
+      SettingsSegmentOption<ScreenOcrEngineSetting>(
+        value: ScreenOcrEngineSetting.systemOcr,
+        label: t.manga_ocr_engine_system,
+      ),
+    SettingsSegmentOption<ScreenOcrEngineSetting>(
+      value: ScreenOcrEngineSetting.googleLens,
+      label: t.manga_ocr_engine_google_lens,
+    ),
+  ];
+}
+
+/// 「跟随全局（…）」括号里的名字：全局引擎在截屏识字里落到哪个引擎；外部 mokuro /
+/// 互联服务端 / 自动对截屏识字都按「自动」解析（[screenOcrEngineOfGlobal]）。
+String _screenOcrGlobalLabel(
+  MangaOcrEnginePreference global, {
+  required bool systemOcrSupported,
+}) => switch (screenOcrEngineOfGlobal(
+  global,
+  systemOcrSupported: systemOcrSupported,
+)) {
+  ScreenOcrEngine.localModel => t.manga_ocr_engine_local_onnx,
+  ScreenOcrEngine.systemOcr => t.manga_ocr_engine_system,
+  ScreenOcrEngine.googleLens => t.manga_ocr_engine_google_lens,
+  null => t.manga_ocr_engine_auto,
+};
+
 bool get _systemBallSupported => FloatingBallScope.systemBallSupported(
-  isAndroid: Platform.isAndroid,
+  isAndroid: hostPlatform.isAndroid,
   isDesktop: isDesktopSystemBallPlatform,
 );
 
@@ -272,7 +450,7 @@ bool _scopeVisible(SettingsContext c, FloatingBallScope scope) {
 }
 
 /// 全局按钮按平台与场景能力出现（截屏识字 / 拍照查词只有 Android / iOS；桌面
-/// 应用外球另有一套、并受查词模块开关约束，见
+/// 应用外球另有一套，「打开查词页」受查词模块开关约束，见
 /// [FloatingBallGlobalAction.availableIn]）；专属按钮恒可配。
 bool _buttonAvailable(SettingsContext c, FloatingBallScope scope, String id) {
   final FloatingBallGlobalAction? global = FloatingBallGlobalAction.fromStorage(
@@ -281,8 +459,8 @@ bool _buttonAvailable(SettingsContext c, FloatingBallScope scope, String id) {
   return global == null ||
       global.availableIn(
         scope,
-        isAndroid: Platform.isAndroid,
-        isIOS: Platform.isIOS,
+        isAndroid: hostPlatform.isAndroid,
+        isIOS: hostPlatform.isIOS,
         isDesktop: isDesktopSystemBallPlatform,
         lookupModuleEnabled: c.appModel.moduleVisibility.isEnabled(
           ModuleId.lookup,

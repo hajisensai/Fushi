@@ -1,5 +1,6 @@
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/metadata/video_scrape_cleanup_service.dart';
+import 'package:fushi/src/media/video/metadata/video_local_index_rebuild.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/components/fushi_destructive_confirm_dialog.dart';
@@ -10,6 +11,11 @@ import 'package:fushi_core/fushi_core.dart';
 
 bool _videoScrapeCleanupRunning = false;
 
+/// 确认框里「同时删除 Fushi 生成的 NFO 与图片」勾选行的 key（测试 / 焦点驱动定位）。
+const Key videoScrapeClearAllDeleteFilesCheckboxKey = ValueKey<String>(
+  'video_scrape_clear_all_delete_files',
+);
+
 /// 清理事务成功提交后的进程内广播。
 ///
 /// 视频来源页是保活页；只刷新触发按钮所在的 widget 会让隐藏的来源页继续显示
@@ -18,12 +24,41 @@ final ValueNotifier<int> videoScrapeCleanupRevision = ValueNotifier<int>(0);
 
 Future<VideoScrapeCleanupResult> _clearAllCommitted(
   FushiDatabase database,
+  VideoScrapeCleanupMode mode,
 ) async {
   final VideoScrapeCleanupResult result = await VideoScrapeCleanupService(
     database: database,
-  ).clearAll();
+  ).clearAll(mode: mode);
+  // 清理删掉的是全部规范作品——连同本地索引建的本地作品与特典绑定（外键级联）。
+  // 这些是由文件结构推出来的派生状态，立刻按启动回填同一条路径重建：否则 NCOP /
+  // NCED / PV / `SPs` 目录特典在系列墙上各自成卡，要等下次启动或重扫才归回系列
+  // （反馈 fUW6_kx9Rw）。广播放在重建之后，来源页 / 视频库读到的是重建后的库。
+  await reindexLocalVideoSources(database, logSource: 'video.scrape.clearAll');
   videoScrapeCleanupRevision.value += 1;
+  // 取证：用户反馈「清理后 NFO 还在」（Feedback 7NBVwW-6Qc）时，日志里要能分清是
+  // 选了只清记录、文件被保护（改过 / 路径不安全），还是 ledger 记的路径已不存在。
+  ErrorLogService.instance.logDiagnostic(
+    'video.scrape.clearAll',
+    result.diagnosticSummary,
+  );
   return result;
+}
+
+/// 确认框勾选态 → 清理方式。勾上「同时删除 Fushi 生成的 NFO 与图片」才删文件。
+VideoScrapeCleanupMode videoScrapeCleanupModeFor({
+  required bool deleteGeneratedFiles,
+}) => deleteGeneratedFiles
+    ? VideoScrapeCleanupMode.recordsAndGeneratedFiles
+    : VideoScrapeCleanupMode.recordsOnly;
+
+/// 完成提示：只清记录时明说文件已保留；删文件时有被保护的文件再单独说明。
+String videoScrapeCleanupCompletedMessage(VideoScrapeCleanupResult result) {
+  if (result.mode == VideoScrapeCleanupMode.recordsOnly) {
+    return t.video_source_scrape_clear_all_completed_files_kept;
+  }
+  return result.preservedFiles
+      ? t.video_source_scrape_clear_all_completed_protected
+      : t.video_source_scrape_clear_all_completed;
 }
 
 /// 无界面版本（控制通道 `fushi_cli config run video.library.scrape_records_clear_all
@@ -31,20 +66,24 @@ Future<VideoScrapeCleanupResult> _clearAllCommitted(
 /// single-flight 与完成广播。已有清理在跑时抛 [StateError]；清理事务本身忙时
 /// 原样抛 [VideoScrapeCleanupBusyException]。
 Future<VideoScrapeCleanupResult> clearAllVideoScrapeRecords(
-  FushiDatabase database,
-) async {
+  FushiDatabase database, {
+  required VideoScrapeCleanupMode mode,
+}) async {
   if (_videoScrapeCleanupRunning) {
     throw StateError(t.video_source_scrape_clear_all_in_progress);
   }
   _videoScrapeCleanupRunning = true;
   try {
-    return await _clearAllCommitted(database);
+    return await _clearAllCommitted(database, mode);
   } finally {
     _videoScrapeCleanupRunning = false;
   }
 }
 
 /// 展示统一确认框并清理全部视频刮削记录。
+///
+/// 确认框带一个勾选行「同时删除 Fushi 生成的 NFO 与图片」，默认勾上（保持此前
+/// 的清理范围）；取消勾选即「只清记录」，磁盘上的文件一个不动。
 ///
 /// 设置页与视频「导入」页共用这一入口，避免两个按钮各自维护确认、single-flight、
 /// 错误提示和完成刷新语义。返回 true 表示清理事务已经成功提交。
@@ -71,22 +110,27 @@ Future<bool> showClearAllVideoScrapeRecordsAction({
           builder: (BuildContext dialogContext) =>
               FushiDestructiveConfirmDialog(
                 title: t.video_source_scrape_clear_all_confirm_title,
-                message: t.video_source_scrape_clear_all_confirm_body,
+                message: t.video_source_scrape_clear_all_records_body,
                 confirmLabel: t.video_source_scrape_clear_all_confirm_action,
                 leadingIcon: FushiIcons.deleteSweep,
+                checkboxLabel: t.video_source_scrape_clear_all_delete_files,
+                checkboxInitialValue: true,
+                checkedNote: t.video_source_scrape_clear_all_delete_files_note,
+                checkboxKey: videoScrapeClearAllDeleteFilesCheckboxKey,
               ),
         );
     if (confirmed == null || !context.mounted) return false;
 
-    final VideoScrapeCleanupResult result = await _clearAllCommitted(database);
+    final VideoScrapeCleanupResult result = await _clearAllCommitted(
+      database,
+      videoScrapeCleanupModeFor(deleteGeneratedFiles: confirmed.checked),
+    );
     if (!context.mounted) return true;
 
     onCompleted?.call();
     _showVideoScrapeCleanupSnackBar(
       context,
-      result.preservedFiles
-          ? t.video_source_scrape_clear_all_completed_protected
-          : t.video_source_scrape_clear_all_completed,
+      videoScrapeCleanupCompletedMessage(result),
     );
     return true;
   } on VideoScrapeCleanupBusyException {

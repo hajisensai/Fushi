@@ -50,6 +50,14 @@ class ReaderSelectionScripts {
 
   static String clearInvocation() => 'window.fushiSelection.clearSelection()';
 
+  /// ssJjbvbAbs：把选区换成从被点字起扫的那份（ruby 组首查到的词覆盖不到被点的字）。
+  /// [expectedText] 是宿主收到的吸附后 payload.text，JS 选区已换成别的词时拒绝；结果是
+  /// JSON 串 `'true'` / `'false'`（与 [highlightInvocation] 同样经 JSON.stringify，
+  /// 各平台 evaluateJavascript 都回 String）。
+  static String adoptRubySnapTapInvocation(String expectedText) =>
+      'JSON.stringify(window.fushiSelection.adoptRubySnapTap('
+      '${jsonEncode(expectedText)}) === true)';
+
   /// 悬停查词背压的宿主侧显式释放（见 webview.part.dart 的 `_fushiHoverLookup*`）：
   /// onTextSelected 回调处理完一次**悬停**查词（成功、失败、异常都算）后对正文 WebView
   /// eval 这一句，按 payload 里的 `selectedSeq` 释放 JS 侧在等的那一次。不依赖
@@ -1774,7 +1782,10 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     // 片段盒的部分一律丢掉：着重号（傍点）只剩一角，墨迹宽的字体（圆体 / Meiryo 等）在 ruby 基字与行首字上
     // 被切平（::highlight 规则为空也一样，Chromium 实测；WebKit 不受影响）。底色本来就由窄条层画，所以注册表
     // 入口按元素核对这层 ::highlight 的计算样式：对这段字什么都不改（字色相同、无底色 / 装饰 / 阴影 / 描边）
-    // 的文字不交给引擎绘制；带着重号的文字也不交（宁可不换字色，也不能把傍点裁掉）。窄条层仍读调用方给的
+    // 的文字不交给引擎绘制；带着重号的文字也不交（宁可不换字色，也不能把傍点裁掉）——除非这层高亮换了字色：
+    // 窄条底色照画，字色不换就可能和底色撞在一起（查词高亮文字色做的反色高亮，深色条上留着深色正文 = 字
+    // 看不见，拍板台 -8azTfJh_v），能读比傍点完整要紧。有声书当前句换字色时在 Blink 上不走 Range（包裹），
+    // 不经过这里。窄条层仍读调用方给的
     // 完整范围（painted 记着名字 → 原件，get 读回原件）。调用方都是建好整份 Highlight 再 set、之后不再改，剔一次即可。
     var painted = new Map();
     var clipsInk = (function() {
@@ -1784,7 +1795,7 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
     var clearColor = function(c) {
       return c === 'transparent' || /^rgba\(.*,\s*0(\.0+)?\)$/.test(c);
     };
-    // 这一元素里的字不交给引擎绘制：带着重号，或这层高亮对它是空操作。读不到 ::highlight 计算样式的旧内核
+    // 这一元素里的字不交给引擎绘制：带着重号（且这层高亮不换字色），或这层高亮对它是空操作。读不到 ::highlight 计算样式的旧内核
     // 返回空串，按「会改」处理（照旧交给引擎）。
     var unpainted = function(el, name, memo) {
       if (!el) return false;
@@ -1795,7 +1806,8 @@ if (typeof window.__fushiLanes !== 'object' || !window.__fushiLanes) {
       var noop = !!hs.color && hs.color === cs.color && clearColor(hs.backgroundColor) &&
           hs.textDecorationLine === 'none' && hs.textShadow === 'none' &&
           !(parseFloat(hs.webkitTextStrokeWidth) > 0);
-      var hit = emphasis || noop;
+      var recolors = !!hs.color && hs.color !== cs.color;
+      var hit = noop || (emphasis && !recolors);
       memo.set(el, hit);
       return hit;
     };
@@ -2023,6 +2035,34 @@ window.fushiSelection = {
     return this.intraWordApostrophePattern.test(text[index] || '') &&
       this.isSpaceDelimitedLetter(text[index - 1]) &&
       this.isSpaceDelimitedLetter(text[index + 1]);
+  },
+  // BUG-4622：OCR 每个字格是独立文本节点，词内撇号的两侧字母可能在相邻字格。
+  // 只在同一 OCR 块内补齐上下文，再复用小说的字符判据；空白缝、块界仍然阻断。
+  // 不改变词首回退：小说点击 l'homme 的 h 也从 homme 开始，漫画保持同一语义。
+  isIntraWordApostropheAt: function(node, index) {
+    var content = node.textContent;
+    if (!this.intraWordApostrophePattern.test(content[index] || '')) return false;
+    if (this.isIntraWordApostrophe(content, index)) return true;
+    var container = this.findParagraph(node);
+    if (!container || !container.classList || !container.classList.contains('ocr-box')) return false;
+    var before = content[index - 1];
+    var after = content[index + 1];
+    var walker = this.createWalker(container);
+    if (before === undefined) {
+      walker.currentNode = node;
+      var prev = walker.previousNode();
+      if (!prev || this.findParagraph(prev) !== container ||
+          this.hasSkippedWhitespaceBetween(prev, node)) return false;
+      before = prev.textContent.slice(-1);
+    }
+    if (after === undefined) {
+      walker.currentNode = node;
+      var next = walker.nextNode();
+      if (!next || this.findParagraph(next) !== container ||
+          this.hasSkippedWhitespaceBetween(node, next)) return false;
+      after = next.textContent[0];
+    }
+    return this.isIntraWordApostrophe(before + content[index] + after, 1);
   },
   isFurigana: function(node) {
     var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
@@ -3327,10 +3367,10 @@ window.fushiSelection = {
       // (Latin token start / ruby base start) so hovering a different letter of
       // the same word does not enqueue the same lookup.
       var hoverStart = this.selectionStartFor(hit.node, hit.offset);
-      if (hoverStart.node === this.selection.startNode && hoverStart.offset === this.selection.startOffset) return null;
+      if (this.designatesCurrentSelection(hit, hoverStart)) return null;
     }
     var tapStart = this.selectionStartFor(hit.node, hit.offset);
-    if (this.selection && tapStart.node === this.selection.startNode && tapStart.offset === this.selection.startOffset) {
+    if (this.designatesCurrentSelection(hit, tapStart)) {
       // 悬停连续查词（fromHover）命中的还是同一个词：什么都不做，保留当前选区
       // 高亮与弹窗——这是「按住 Shift 一路滑，弹窗跟着光标走」的去重基石。滑过一
       // 个词只查一次，同词内继续移动不重复 fire onTextSelected，不闪、不刷 FFI /
@@ -3358,6 +3398,10 @@ window.fushiSelection = {
   //   起扫——点「衛」只查「衛」，高亮却按整个 <ruby> 元素画（BUG-110 的整元素加类），
   //   查的和亮的不是同一段。吸附后查词从整组开始，与来源振假名排序（rubyReadingSpans
   //   只认完整基字）对齐。多对基字的 ruby（漢<rt>かん</rt>字<rt>じ</rt>）按段吸附。
+  //   吸附结果带 ruby: true。吸附只是「先从组首试」：义训会把两个词标进同一个 ruby
+  //   （じょうろ鼬 / ポットウィーゼル，ssJjbvbAbs），组首查到的词覆盖不到被点的字时，宿主改用
+  //   从被点字起扫的候选（selectFromPosition 记 rubyTapIndex，buildSelectionPayload 带
+  //   rubySnap，宿主判定后调 adoptRubySnapTap）。
   selectionStartFor: function(node, offset) {
     var startNode = node;
     var startOffset = offset;
@@ -3366,15 +3410,101 @@ window.fushiSelection = {
       while (startOffset > 0 && !this.isTokenStartBoundary(hitContent[startOffset - 1])) {
         startOffset--;
       }
+      if (startOffset === 0) {
+        var crossed = this.tokenStartBeforeNode(startNode);
+        if (crossed) return crossed;
+      }
       return { node: startNode, offset: startOffset };
     }
     if (startNode && startNode.nodeType === Node.TEXT_NODE) {
       var segment = this.rubySegmentOf(startNode, new Map());
       if (segment && segment.nodes.length) {
-        return { node: segment.nodes[0], offset: 0 };
+        return { node: segment.nodes[0], offset: 0, ruby: true };
       }
     }
     return { node: startNode, offset: startOffset };
+  },
+  // 点 / 悬停命中 hit（selectionStartFor 归一后的起点 start）是否指向当前选区——同词：点按
+  // toggle 取消、悬停不重复查。非 ruby 命中照旧比归一起点。ruby 命中（ssJjbvbAbs）：起点吸附
+  // 只说明「同一个 ruby 段」，同段里可能有两个词，所以还要求被点的字落在已查到的词里
+  // （matchedRanges）；高亮还没回来（查词在途）时按同段算，避免重复查。
+  designatesCurrentSelection: function(hit, start) {
+    var sel = this.selection;
+    if (!sel) return false;
+    if (!start.ruby) return start.node === sel.startNode && start.offset === sel.startOffset;
+    var origin = sel.rubySnapStart;
+    if (!origin || start.node !== origin.node || start.offset !== origin.offset) return false;
+    if (!sel.matchedRanges) return true;
+    return sel.matchedRanges.some(function(r) {
+      return hit.node === r.node && hit.offset >= r.start && hit.offset < r.end;
+    });
+  },
+  // 吸附到 ruby 组首的选区里被点字的位置不是起点时，返回从被点字起扫的同一份选区
+  // （ranges 去掉被点字之前的部分、text 截掉同样长度）；否则 null。rubyTapIndex 是 text 里
+  // 的 UTF-16 下标，ranges 各段长度之和 = text 长度（selectFromPosition 的扫描口径）。
+  rubyTapSelection: function() {
+    var sel = this.selection;
+    if (!sel || typeof sel.rubyTapIndex !== 'number' || sel.rubyTapIndex <= 0) return null;
+    var skip = sel.rubyTapIndex;
+    var ranges = [];
+    for (var i = 0; i < sel.ranges.length; i++) {
+      var r = sel.ranges[i];
+      var len = r.end - r.start;
+      if (skip >= len) { skip -= len; continue; }
+      ranges.push({ node: r.node, start: r.start + skip, end: r.end });
+      skip = 0;
+    }
+    if (!ranges.length) return null;
+    var tap = {
+      startNode: ranges[0].node,
+      startOffset: ranges[0].start,
+      ranges: ranges,
+      text: sel.text.slice(sel.rubyTapIndex),
+      rubySnapStart: sel.rubySnapStart
+    };
+    if (sel.point) tap.point = sel.point;
+    return tap;
+  },
+  // 宿主判定组首查到的词覆盖不到被点的字（ssJjbvbAbs）后调这里：选区换成从被点字起扫的那份，
+  // 之后的 highlightSelection / 制卡句子都跟随它。expectedText 是宿主收到的 payload.text，
+  // 选区已被新的点击换掉时拒绝（返回 false），不把迟到的判定套到别的词上。
+  adoptRubySnapTap: function(expectedText) {
+    if (!this.selection || this.selection.text !== expectedText) return false;
+    var tap = this.rubyTapSelection();
+    if (!tap) return false;
+    this.selection = tap;
+    return true;
+  },
+  // BUG-4361（反馈 vXYKPudf7U，承 BUG-4179）：词首回退跨相邻文本节点。词首回退原先只在
+  // 命中的文本节点内做，退到偏移 0 就停——漫画 OCR 叠加层每个字格是独立的
+  // <span class="ocr-char">（manga_overlay_html.dart），点 WELL 的 E 起点停在 E，查的是
+  // ELL。前向扫描本来就跨节点（walker.nextNode），回退与它对称：在同一个
+  // [findParagraph] 容器（漫画 = 一个 <p class="ocr-box">；阅读器 = 段落）内按文档序取
+  // 前一个可扫文本节点，遇到词首界（[isTokenStartBoundary]）、被跳过的空白缝（BUG-4179
+  // 补的词间空白节点 / BUG-3453 cue 缝，[hasSkippedWhitespaceBetween]）或容器边界即停。
+  // 只在命中节点已退到偏移 0 时调用；返回跨节点起点 {node, offset}，跨不过去返回 null。
+  tokenStartBeforeNode: function(node) {
+    if (!node || node.nodeType !== Node.TEXT_NODE) return null;
+    var container = this.findParagraph(node);
+    if (!container) return null;
+    var walker = this.createWalker(container);
+    walker.currentNode = node;
+    var current = node;
+    var result = null;
+    for (var guard = 0; guard < 256; guard++) {
+      var prev = walker.previousNode();
+      if (!prev || this.hasSkippedWhitespaceBetween(prev, current)) break;
+      var content = prev.textContent;
+      var offset = content.length;
+      while (offset > 0 && !this.isTokenStartBoundary(content[offset - 1])) {
+        offset--;
+      }
+      if (offset === content.length) break;
+      result = { node: prev, offset: offset };
+      if (offset > 0) break;
+      current = prev;
+    }
+    return result;
   },
   selectFromPosition: function(node, offset, maxLength, x, y, fromHover) {
     var normalizedStart = this.selectionStartFor(node, offset);
@@ -3393,7 +3523,7 @@ window.fushiSelection = {
       while (scanOffset < content.length && text.length < maxLength) {
         var char = content[scanOffset];
         // BUG-2056：词内撇号先于终点判定跨过去（don’t 不被截成 don）。
-        if (this.isIntraWordApostrophe(content, scanOffset)) {
+        if (this.isIntraWordApostropheAt(scanNode, scanOffset)) {
           text += char;
           scanOffset++;
           continue;
@@ -3420,12 +3550,58 @@ window.fushiSelection = {
       scanNode = walker.nextNode();
       scanOffset = 0;
       // BUG-3453：两个节点之间夹着被 createWalker 跳过的空白节点（有声书 cue wrapper 之间
-      // 的空格）= 新节点开头的空白，按 BUG-1773 同一规则终止，不把下一条 cue 的词粘上来。
+      // 的空格）按 BUG-1773 终止，避免粘连下一条 cue；漫画块内的单空格在下面单独桥接。
       if (scanNode && this.hasSkippedWhitespaceBetween(scannedNode, scanNode) &&
-          this.isWordGapBetweenChars(text)) break;
+          this.isWordGapBetweenChars(text)) {
+        // Manga glyphs have separate text nodes. Bridge only a real single space
+        // inside the same OCR block, retaining its range for phrase highlighting.
+        // Other reader nodes retain the cue/paragraph boundary rule above.
+        if (!(container.classList && container.classList.contains('ocr-box')) ||
+            this.findParagraph(scanNode) !== container) break;
+        var gapWalker = document.createTreeWalker(container, NodeFilter.SHOW_TEXT, {
+          acceptNode: function(n) { return NodeFilter.FILTER_ACCEPT; }
+        });
+        gapWalker.currentNode = scannedNode;
+        var gapNodes = [];
+        var gapText = '';
+        for (var gapNode = gapWalker.nextNode(); gapNode && gapNode !== scanNode;
+             gapNode = gapWalker.nextNode()) {
+          gapNodes.push(gapNode);
+          gapText += gapNode.textContent;
+        }
+        if (gapText !== ' ' || text.length + 1 >= maxLength ||
+            !this.isWordGapBetweenChars(text, scanNode.textContent) ||
+            this.isScanStop(scanNode.textContent[0])) break;
+        text += ' ';
+        for (var gapIndex = 0; gapIndex < gapNodes.length; gapIndex++) {
+          var gap = gapNodes[gapIndex];
+          ranges.push({ node: gap, start: 0, end: gap.textContent.length });
+        }
+      }
     }
     if (!text) return null;
-    this.selection = { startNode: startNode, startOffset: startOffset, ranges: ranges, text: text };
+    // ssJjbvbAbs：起点被吸附到 ruby 组首时记下被点字在 text 里的位置（扫描没扫到被点字时不记），
+    // buildSelectionPayload 据此带上从被点字起扫的候选。
+    var rubyTapIndex = null;
+    if (normalizedStart.ruby && (startNode !== node || startOffset !== offset)) {
+      var scanned = 0;
+      for (var ri = 0; ri < ranges.length; ri++) {
+        var rr = ranges[ri];
+        if (rr.node === node && offset >= rr.start && offset < rr.end) {
+          rubyTapIndex = scanned + offset - rr.start;
+          break;
+        }
+        scanned += rr.end - rr.start;
+      }
+    }
+    this.selection = {
+      startNode: startNode,
+      startOffset: startOffset,
+      ranges: ranges,
+      text: text,
+      rubySnapStart: normalizedStart.ruby ? { node: startNode, offset: startOffset } : null,
+      rubyTapIndex: rubyTapIndex
+    };
     // BUG-3665：记下点击点，[highlightSelection] 用它挑出用户点中的那一段字形当锚点。
     if (typeof x === 'number' && typeof y === 'number' && isFinite(x) && isFinite(y)) {
       this.selection.point = { x: x, y: y };
@@ -3465,8 +3641,10 @@ window.fushiSelection = {
     var mangaGroupRect = null;
     var mangaGroup = mangaSentenceElement
       ? mangaSentenceElement.getAttribute('data-manga-sentence-group') : null;
+    // `.manga-zoom-page` = 漫画气泡放大浮层里的整页克隆（同样带 data-page 与 OCR
+    // 块）：在浮层里查词时句子框量的是放大后的块，弹窗锚到放大的气泡旁。
     var mangaPage = mangaSentenceElement && mangaSentenceElement.closest
-      ? mangaSentenceElement.closest('.manga-page') : null;
+      ? mangaSentenceElement.closest('.manga-page, .manga-zoom-page') : null;
     var mangaPageIndex = mangaPage
       ? Number(mangaPage.getAttribute('data-page')) : null;
     if (!Number.isInteger(mangaPageIndex) || mangaPageIndex < 0) {
@@ -3526,7 +3704,7 @@ window.fushiSelection = {
     var matchSentence = this.matchableRange(
       sentenceContext.sStartNode, sentenceContext.sStartOffset,
       sentenceContext.sEndNode, sentenceContext.sEndOffset);
-    return {
+    var payload = {
       matchableOffset: match.offset,
       matchableLength: match.length,
       sentenceMatchableOffset: matchSentence.offset,
@@ -3555,6 +3733,29 @@ window.fushiSelection = {
       // (card-image cropping); the viewport rect above cannot provide that.
       mangaSentenceGroup: mangaGroupNumber
     };
+    // ssJjbvbAbs：起点吸附到 ruby 组首、被点的字在后面时，同时带上从被点字起扫的整份 payload
+    // （同一套字段，偏移 / 振假名 / 句子都按那个起点算）与被点字在 text 里的 UTF-16 下标——与宿主
+    // 查词命中长度（DictionarySearchResult.bestLength = matched 的 UTF-16 长度）同单位，扩展区汉字
+    // （𩸽）在前也不会把覆盖判错。宿主先查 text，命中长度覆盖不到 tapIndex 就改用 selection 并调
+    // adoptRubySnapTap。
+    var tapSelection = this.rubyTapSelection();
+    if (tapSelection) {
+      var snapped = this.selection;
+      var tapPayload;
+      this.selection = tapSelection;
+      try {
+        tapPayload = this.buildSelectionPayload(x, y);
+      } finally {
+        this.selection = snapped;
+      }
+      if (tapPayload) {
+        payload.rubySnap = {
+          tapIndex: snapped.rubyTapIndex,
+          selection: tapPayload
+        };
+      }
+    }
+    return payload;
   },
   // Fire onTextSelected for the current this.selection (tap/word lookup path and
   // the caret/keyboard path). Goes straight to the dictionary/mining popup.
@@ -3580,6 +3781,14 @@ window.fushiSelection = {
     var seq = (this.textSelectedSeq || 0) + 1;
     this.textSelectedSeq = seq;
     payload.selectedSeq = seq;
+    // ssJjbvbAbs：宿主采用 ruby 候选（rubySnap.selection）后整份换成它，上面这几个只在外层追加的
+    // 字段也要同步进去，否则采用后悬停被当成明确点击、歌词覆盖层还得再 eval 一次 cue 上下文。
+    var snapSelection = payload.rubySnap && payload.rubySnap.selection;
+    if (snapSelection) {
+      snapSelection.fromHover = payload.fromHover;
+      if ('lyricsCueContext' in payload) snapSelection.lyricsCueContext = payload.lyricsCueContext;
+      snapSelection.selectedSeq = seq;
+    }
     var ack = window.flutter_inappwebview.callHandler('onTextSelected', JSON.stringify(payload));
     this.lastTextSelectedAck = ack;
     return payload.text;
@@ -4386,6 +4595,7 @@ window.fushiSelection = {
       sel.startNode = s.node; sel.startOffset = s.offset;
       if (sel.ranges) sel.ranges = segments(sel.ranges);
       if (sel.matchedRanges) sel.matchedRanges = segments(sel.matchedRanges);
+      if (sel.rubySnapStart) sel.rubySnapStart = point(sel.rubySnapStart.node, sel.rubySnapStart.offset);
     }
     var anchor = this.dragAnchor;
     if (anchor) {
@@ -4418,6 +4628,10 @@ window.fushiSelection = {
       track(sel.startNode, sel.startOffset, function(n, o) { sel.startNode = n; sel.startOffset = o; });
       trackSegments(sel.ranges);
       if (sel.matchedRanges !== sel.ranges) trackSegments(sel.matchedRanges);
+      var snapStart = sel.rubySnapStart;
+      if (snapStart) {
+        track(snapStart.node, snapStart.offset, function(n, o) { snapStart.node = n; snapStart.offset = o; });
+      }
     }
     var anchor = this.dragAnchor;
     if (anchor) {

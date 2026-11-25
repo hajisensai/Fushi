@@ -111,10 +111,8 @@ void main() {
     });
 
     test('_miningCharPosition 走 absoluteCharOffsetOf 换算，不另算一套口径', () {
-      final String body = methodBody(
-        readReaderPageSource(),
-        'int? _miningCharPosition()',
-      );
+      final String src = readReaderPageSource();
+      final String body = methodBody(src, 'int? _miningCharPosition()');
 
       // countStudyChars 口径的「章首累计 + 章内偏移」只有这一个实现（见
       // reader_fushi_page.dart 的 absoluteCharOffsetOf，与阅读进度条分子、
@@ -127,14 +125,26 @@ void main() {
         reason: '制卡位置必须与阅读账本共用 absoluteCharOffsetOf 换算',
       );
 
-      // 两级锚都在：句锚（与制卡历史同源）+ 视口锚兜底。
+      // 两级锚都在：句锚（与制卡历史同源）+ 视口锚兜底。句锚可以在方法体里直接读，
+      // 也可以经 `_miningStudySpan()` 一跳取到（BUG-4914：卡片来源链接、制卡历史与
+      // 制卡位置共用这一个学习单位口径，句级 / 选区的先后由
+      // `reader_source_study_span_test.dart` 的行为测试钉住）。跟进这一跳再查锚字段，
+      // 两处都不读句锚 → 本条照样红。
+      final String sentenceAnchors =
+          containsIdentifierCall(body, '_miningStudySpan')
+          ? body +
+                methodBody(
+                  src,
+                  '({int offset, int length})? _miningStudySpan()',
+                )
+          : body;
       expect(
-        containsIdentifier(body, '_cachedSentenceRange'),
+        containsIdentifier(sentenceAnchors, '_cachedSentenceRange'),
         isTrue,
         reason: '一级锚是制卡那句话在本章的偏移',
       );
       expect(
-        containsIdentifier(body, '_cachedSelectionRange'),
+        containsIdentifier(sentenceAnchors, '_cachedSelectionRange'),
         isTrue,
         reason: '无句级 span 时退到选区偏移',
       );

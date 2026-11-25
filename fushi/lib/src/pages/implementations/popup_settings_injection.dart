@@ -14,16 +14,17 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
-import 'package:fushi/src/corpus/library_corpus_settings.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
 import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
+import 'package:fushi/src/mining/cross_app_audio/cross_app_audio_capture.dart'
+    show CrossAppAudioCapture;
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart';
 import 'package:fushi/src/profile/profile_settings_view.dart';
 import 'package:fushi/src/shortcuts/input_binding.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/shortcuts/shortcut_action.dart';
 import 'package:fushi/src/shortcuts/shortcut_defaults.dart';
 import 'package:fushi/src/shortcuts/shortcut_registry.dart';
@@ -48,6 +49,7 @@ class PopupSettingsOptions {
     this.globalLookup = false,
     this.mobileExternal = false,
     this.sentenceDraftEnabled = false,
+    this.mineShortcutAction,
   });
 
   /// App-outside (Windows bare-WebView2 global lookup) frame. Adds the
@@ -74,6 +76,15 @@ class PopupSettingsOptions {
   /// off in both paths (kSentenceContextPickerEnabled), but the in-app path
   /// computes it from its host callbacks, so it stays a parameter.
   final bool sentenceDraftEnabled;
+
+  /// 本表面上「点＋制卡」真正响应的键盘动作，只用来给「＋」按钮写快捷键提示
+  /// （`window.i18nMineShortcutHint`）。阅读器派发的是
+  /// [ShortcutAction.readerCreateCardFromPopup]，视频页 / texthooker 是
+  /// [ShortcutAction.popupMineEntry]。null = 本表面没有键盘制卡派发（漫画、首页查词、
+  /// 独立查词页……）→ 不写提示，绝不提示一个按了没反应的键。app 外的裸 WebView2 表面
+  /// （[globalLookup]）也不传：瞬态查词覆盖窗 `WS_EX_NOACTIVATE` 收不到键盘，而它与
+  /// 剪贴板面板共用同一份设置产物，分不开。
+  final ShortcutAction? mineShortcutAction;
 }
 
 /// app 内弹窗口径的主题注入段（设计系统 class + `data-theme` + 全部 CSS 变量）。
@@ -804,6 +815,8 @@ String buildPopupFetchedEntriesJs({
   required bool idle,
   required String afterEntriesJs,
 }) {
+  final String scheme = Uri.parse(url).scheme.toLowerCase();
+  final bool httpTransport = scheme == 'http' || scheme == 'https';
   return '''
     (function(){
       var token = $renderToken;
@@ -815,8 +828,18 @@ ${_popupEntriesMetaJs(result, pending: pending, idle: idle)}
       }
       fetch(${jsonEncode(url)}, { cache: 'no-store', credentials: 'omit' })
         .then(function(r){
-          if (!r.ok) throw new Error('HTTP ' + r.status);
-          return r.text();
+          // BUG-4956：iOS / macOS 的词条 URL 是自定义 scheme，WKURLSchemeHandler
+          // 交回的是非 HTTP 的 URLResponse，fetch 拿到的 status 恒为 0、ok 恒为
+          // false（正文照常送达）。非 HTTP 传输没有状态码，只能以「有没有正文」
+          // 判成败；http(s) 仍按状态码判。
+          var httpTransport = $httpTransport;
+          if (httpTransport ? !r.ok : r.status !== 0 && !r.ok) {
+            throw new Error('HTTP ' + r.status);
+          }
+          return r.text().then(function(text){
+            if (!httpTransport && !text) throw new Error('empty response');
+            return text;
+          });
         })
         .then(function(text){
           var entries;
@@ -939,6 +962,28 @@ String popupKeyBindingsJson(
   });
 }
 
+/// 「＋」按钮的制卡快捷键提示整句（如 `Create card (Ctrl+Enter)`）。[action] 为 null
+/// 或该动作没有键盘绑定（用户清空 / 移动端）时返回空串，popup.js 据此不提示。取第一条
+/// 键盘绑定；注册表未装载时回落平台默认，与 [popupKeyBindingsJson] 同口径。
+String popupMineShortcutHint(
+  FushiShortcutRegistry registry,
+  TargetPlatform platform,
+  ShortcutAction? action,
+) {
+  if (action == null) return '';
+  final List<InputBinding> keys = registry.isLoaded
+      ? registry.bindingsFor(action).keyboardBindings
+      : (ShortcutDefaults.forPlatform(platform)[action]?.keyboardBindings ??
+            const <InputBinding>[]);
+  if (keys.isEmpty) return '';
+  return t.popup_mine_shortcut_hint(
+    shortcut: joinShortcutDisplayParts(
+      keys.first.displayPartsOn(platform),
+      platform: platform,
+    ),
+  );
+}
+
 /// BUG-717 ③：[buildPopupStaticSettingsJs] 的产物 memo（按 options 组合分槽，
 /// in-app / mobile-external / global-lookup 三类调用方互不冲刷）。命中判据是
 /// 产物的**全部输入**的廉价投影：小串直接 ==（Dart == 先走 identical 短路）、
@@ -964,13 +1009,13 @@ class _PopupStaticSettingsMemo {
     required this.popupInstantScrollTouchStep,
     required this.wheelBindingsJson,
     required this.popupKeyBindings,
+    required this.mineShortcutHint,
     required this.audioSourcesJson,
     required this.lookupAudioVolume,
     required this.localeTag,
     required this.miningEnabled,
     required this.srsEnabled,
     required this.srsMiningToReview,
-    required this.librarySentencesEnabled,
     required this.deduplicatePitchAccents,
     required this.harmonicFrequency,
     required this.showExpressionTags,
@@ -980,6 +1025,8 @@ class _PopupStaticSettingsMemo {
     required this.autoExpandRows,
     required this.collapsedNames,
     required this.expandedNames,
+    required this.kanjiCollapsedNames,
+    required this.kanjiExpandedNames,
     required this.hiddenNames,
     required this.dictionaryDisplayNames,
     required this.stylesJson,
@@ -999,13 +1046,13 @@ class _PopupStaticSettingsMemo {
   final double popupInstantScrollTouchStep;
   final String wheelBindingsJson;
   final String popupKeyBindings;
+  final String mineShortcutHint;
   final String audioSourcesJson;
   final String lookupAudioVolume;
   final String localeTag;
   final bool miningEnabled;
   final bool srsEnabled;
   final bool srsMiningToReview;
-  final bool librarySentencesEnabled;
   final bool deduplicatePitchAccents;
   final bool harmonicFrequency;
   final bool showExpressionTags;
@@ -1015,6 +1062,8 @@ class _PopupStaticSettingsMemo {
   final int autoExpandRows;
   final String collapsedNames;
   final String expandedNames;
+  final String kanjiCollapsedNames;
+  final String kanjiExpandedNames;
   final String hiddenNames;
   final String dictionaryDisplayNames;
   final String stylesJson;
@@ -1092,6 +1141,11 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   final String popupKeyBindings = options.globalLookup
       ? popupKeyBindingsJson(appModel.shortcutRegistry, theme.platform)
       : 'null';
+  final String mineShortcutHint = popupMineShortcutHint(
+    appModel.shortcutRegistry,
+    theme.platform,
+    options.mineShortcutAction,
+  );
   final String audioSourcesJson = jsonEncode(appModel.enabledAudioSources);
   final String lookupAudioVolume = ReaderFushiSource
       .instance
@@ -1108,6 +1162,20 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   // 「显式折叠」和「没表态」之间二选一，用户点的「展开」无处可去。
   final String expandedNames = jsonEncode(
     popupExpandedDictionaryNames(appModel),
+  );
+  // 拍板台 6uasoIUvSR：汉字卡（默认折叠成一行）的逐本三态。混合词典的汉字部分有自己
+  // 的一份（BUG-3573），不能复用上面两个按术语部分算的名单。
+  final String kanjiCollapsedNames = jsonEncode(
+    popupKanjiCardNamesIn(
+      appModel.lookupViewDictionaries,
+      DictionaryCollapseState.collapsed,
+    ),
+  );
+  final String kanjiExpandedNames = jsonEncode(
+    popupKanjiCardNamesIn(
+      appModel.lookupViewDictionaries,
+      DictionaryCollapseState.expanded,
+    ),
   );
   // 与 popupJson 生成期共用同一个真相源，别再抄第二份表达式。
   final String hiddenNames = jsonEncode(
@@ -1147,13 +1215,11 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   // 据此只留状态标记一颗。
   final bool srsMiningToReview =
       srsEnabled && appModel.srsMiningTarget == SrsMiningTarget.srs;
-  // 「我库里的例句」（作品图谱 L4，D-L2 默认开）。false ⇒ popup.js 不渲染区块、不发
-  // librarySentences 桥。
-  final bool librarySentencesEnabled = librarySentencesEnabledOf(appModel);
 
   final String slotKey =
       '${options.globalLookup}|${options.mobileExternal}'
-      '|${options.sentenceDraftEnabled}';
+      '|${options.sentenceDraftEnabled}'
+      '|${options.mineShortcutAction?.name}';
   final _PopupStaticSettingsMemo? cached = _staticSettingsMemo[slotKey];
   if (cached != null &&
       cached.themeVarsJs == themeVarsJs &&
@@ -1169,13 +1235,13 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
           appModel.popupInstantScrollTouchStep &&
       cached.wheelBindingsJson == wheelBindingsJson &&
       cached.popupKeyBindings == popupKeyBindings &&
+      cached.mineShortcutHint == mineShortcutHint &&
       cached.audioSourcesJson == audioSourcesJson &&
       cached.lookupAudioVolume == lookupAudioVolume &&
       cached.localeTag == localeTag &&
       cached.miningEnabled == miningEnabled &&
       cached.srsEnabled == srsEnabled &&
       cached.srsMiningToReview == srsMiningToReview &&
-      cached.librarySentencesEnabled == librarySentencesEnabled &&
       cached.deduplicatePitchAccents == appModel.deduplicatePitchAccents &&
       cached.harmonicFrequency == appModel.harmonicFrequency &&
       cached.showExpressionTags == appModel.showExpressionTags &&
@@ -1190,6 +1256,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       // persistDictionary 顺带让 stylesJson 换了新实例（每次点击整个重载 native
       // 词典引擎），一旦那条被优化掉就静默失效。
       cached.expandedNames == expandedNames &&
+      cached.kanjiCollapsedNames == kanjiCollapsedNames &&
+      cached.kanjiExpandedNames == kanjiExpandedNames &&
       cached.hiddenNames == hiddenNames &&
       cached.dictionaryDisplayNames == dictionaryDisplayNames &&
       identical(cached.stylesJson, stylesJson) &&
@@ -1207,6 +1275,20 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   );
 
   final String iconFontJs = options.globalLookup ? _globalLookupIconFontJs : '';
+  // 跨应用语音缓存「调整句子音频」入口门控：app 外覆盖窗按本平台有没有这项能力注入
+  // （Windows loopback）。Android 查词窗走 dictionary_popup_webview 的 in-app 固定块；
+  // 其余 in-app 宿主不注入（undefined ⇒ popup.js 不建入口、不发探测）。
+  final String crossAppAudioHostJs = options.globalLookup
+      ? 'window.__fushiCrossAppAudioHost = '
+            '${CrossAppAudioCapture.instance.isDesktop};'
+      : '';
+  // 拍板台 rf--UcsGta-overlay：app 外覆盖窗的「高级制卡」是转交主窗（点了会切到 Fushi
+  // 主窗口打开对话框），提示文案照实说。按钮门控 `window.advancedMiningEnabled` 按表面
+  // 走每帧 renderJs（global_lookup_render.dart），这里只给文案；app 内表面由
+  // dictionary_popup_webview 的固定块写自己的 i18nCtx。
+  final String advancedMiningTipJs = options.globalLookup
+      ? 'window.i18nCtx = ${jsonEncode(<String, String>{'advancedMining': t.popup_advanced_mining_open_in_app})};'
+      : '';
   // BUG-1139：Ctrl+滚轮内容缩放只装给 app 外裸 WebView2 表面。in-app 三个表面由
   // dictionary_popup_webview 的 _zoomWheelJs 在 onLoadStop 装同名 guard 的另一套
   // （就地 zoom + 即时反馈），两边永不同装。
@@ -1270,6 +1352,12 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.i18nMineFailed = ${jsonEncode(t.card_export_failed)};
     // BUG-3492：后台制卡（在线视频）还没落地时再点 ✓ 的就地提示。
     window.i18nMineStillQueued = ${jsonEncode(t.popup_mine_still_queued)};
+    // review-gal-overlay-mine-fail：app 外查词卡上后台写卡失败、宿主还能原样重写时，
+    // 原因后面接的「点 + 重试」；入口已失效时的就地说明。
+    window.i18nMineRetryHint = ${jsonEncode(t.popup_mine_retry_hint)};
+    window.i18nMineRetryUnavailable = ${jsonEncode(t.popup_mine_retry_unavailable)};
+    // 「＋」按钮的制卡快捷键提示；空串 = 本表面没有键盘制卡派发，不提示。
+    window.i18nMineShortcutHint = ${jsonEncode(mineShortcutHint)};
     // BUG-1064：点已制卡 ✓ 的「卡片已在 Anki 中」操作面板归属。
     // true  = 宿主自己接了 `minedCardAction` JS handler，会弹 Flutter 居中对话框
     //         （dictionary_popup_webview 的三个 in-app 表面：app 内弹窗 / Android
@@ -1295,7 +1383,15 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.i18nMinedActionCancel = ${jsonEncode(t.dialog_cancel)};
     window.i18nMinedOpenFailed = ${jsonEncode(t.anki_note_open_failed)};
     window.i18nMinedOpenNoCard = ${jsonEncode(t.anki_open_no_card)};
+    // 释义来自已配对服务器时词典名旁小图标的说明（popup.js __fushiRemoteDictGlyph）。
+    window.i18nRemoteDictionarySource = ${jsonEncode(t.dictionary_popup_remote_source)};
     window.i18nMinedActionFailed = ${jsonEncode(t.anki_card_action_failed)};
+    // 跨应用语音缓存「调整句子音频」面板（拍板 design-cross-app-audio-trim-ui）的文案。
+    // 入口门控 window.__fushiCrossAppAudioHost：app 外覆盖窗在下面按平台能力注入，
+    // Android 查词窗由 dictionary_popup_webview 的 in-app 固定块注入，其余宿主不注入。
+    window.i18nCrossAppAudio = ${jsonEncode(<String, String>{'button': t.popup_cross_app_audio_button, 'title': t.popup_advanced_mining_audio_section, 'hint': t.popup_cross_app_audio_hint, 'loading': t.popup_cross_app_audio_loading, 'unavailable': t.popup_cross_app_audio_unavailable, 'play': t.popup_ctx_preview_audio, 'stop': t.popup_ctx_preview_stop, 'reset': t.popup_advanced_mining_reset, 'start': t.popup_advanced_mining_audio_start, 'end': t.popup_advanced_mining_audio_end, 'cancel': t.dialog_cancel, 'mine': t.popup_cross_app_audio_mine, 'skip': t.popup_cross_app_audio_skip})};
+    $crossAppAudioHostJs
+    $advancedMiningTipJs
     // 制卡模块开关（见上方 miningEnabled 的注释）。false ⇒ popup.js 的
     // createEntryHeader 不 append「+」制卡按钮 / ↗ 在 Anki 中打开按钮，也不发查重探测。
     // 浏览器扩展没有本注入通道 → undefined ⇒ popup.js 按 `!== false` 照旧渲染。
@@ -1305,9 +1401,6 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.__fushiSrsEnabled = $srsEnabled;
     // 制卡目标 = Fushi 复习：↗ 与复习状态标记打开同一张笔记，popup.js 不再渲染 ↗。
     window.__fushiSrsMiningTarget = $srsMiningToReview;
-    // 「我库里的例句」开关：false ⇒ popup.js 不渲染该区块、不发 librarySentences 桥。
-    // 浏览器扩展没有本注入通道 → undefined ⇒ 照问桥，扩展 shim 对未知桥回 null（不显示）。
-    window.__fushiLibrarySentencesEnabled = $librarySentencesEnabled;
     window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};
     window._noResultsHint = ${jsonEncode(t.settings_search_empty_hint)};
@@ -1335,6 +1428,9 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.autoExpandRows = ${appModel.popupAutoExpandDictionaries};
     window.collapsedDictionaryNames = $collapsedNames;
     window.expandedDictionaryNames = $expandedNames;
+    window.kanjiCollapsedDictionaryNames = $kanjiCollapsedNames;
+    window.kanjiExpandedDictionaryNames = $kanjiExpandedNames;
+    window.i18nKanjiSection = ${jsonEncode(t.dict_category_kanji)};
     window.hiddenDictionaryNames = $hiddenNames;
     window.dictionaryDisplayNames = $dictionaryDisplayNames;
 ''';
@@ -1361,13 +1457,13 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     popupInstantScrollTouchStep: appModel.popupInstantScrollTouchStep,
     wheelBindingsJson: wheelBindingsJson,
     popupKeyBindings: popupKeyBindings,
+    mineShortcutHint: mineShortcutHint,
     audioSourcesJson: audioSourcesJson,
     lookupAudioVolume: lookupAudioVolume,
     localeTag: localeTag,
     miningEnabled: miningEnabled,
     srsEnabled: srsEnabled,
     srsMiningToReview: srsMiningToReview,
-    librarySentencesEnabled: librarySentencesEnabled,
     deduplicatePitchAccents: appModel.deduplicatePitchAccents,
     harmonicFrequency: appModel.harmonicFrequency,
     showExpressionTags: appModel.showExpressionTags,
@@ -1377,6 +1473,8 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     autoExpandRows: appModel.popupAutoExpandDictionaries,
     collapsedNames: collapsedNames,
     expandedNames: expandedNames,
+    kanjiCollapsedNames: kanjiCollapsedNames,
+    kanjiExpandedNames: kanjiExpandedNames,
     hiddenNames: hiddenNames,
     dictionaryDisplayNames: dictionaryDisplayNames,
     stylesJson: stylesJson,
@@ -1388,17 +1486,31 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
 }
 
 /// 词典管理里逐本设成「折叠」的词典名：查词弹窗（`collapsedDictionaryNames`）与复习卡面
-/// 释义页共用这一个真相源。
+/// 释义页共用这一个真相源。作品会话里按作品配置的视图（[AppModel.lookupViewDictionaries]），
+/// 与弹窗按会话视图出结果同一口径。
 List<String> popupCollapsedDictionaryNames(AppModel appModel) => appModel
-    .dictionaries
+    .lookupViewDictionaries
     .where((d) => d.isCollapsed(JapaneseLanguage.instance))
     .map((d) => d.name)
     .toList();
 
+/// 汉字卡折叠态为 [state] 的词典名（拍板台 6uasoIUvSR）：查词弹窗
+/// （`kanjiCollapsedDictionaryNames` / `kanjiExpandedDictionaryNames`）与浏览器扩展
+/// theme 通道共用这一个判据（[Dictionary.kanjiCardCollapseStateFor]）。
+List<String> popupKanjiCardNamesIn(
+  Iterable<Dictionary> dictionaries,
+  DictionaryCollapseState state,
+) => <String>[
+  for (final Dictionary d in dictionaries)
+    if (d.isInKanjiSection &&
+        d.kanjiCardCollapseStateFor(JapaneseLanguage.instance) == state)
+      d.name,
+];
+
 /// 词典管理里逐本设成「展开」的词典名（BUG-2158 三态里优先级最高的一档）：查词弹窗
 /// （`expandedDictionaryNames`）与复习卡面释义页共用这一个真相源。
 List<String> popupExpandedDictionaryNames(AppModel appModel) => appModel
-    .dictionaries
+    .lookupViewDictionaries
     .where((d) => d.isExplicitlyExpanded(JapaneseLanguage.instance))
     .map((d) => d.name)
     .toList();

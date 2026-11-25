@@ -6,7 +6,7 @@
 
 ![Platform](https://img.shields.io/badge/platform-Android%20%7C%20Windows%20%7C%20macOS%20%7C%20iOS%20%7C%20Linux-lightgrey)
 ![License](https://img.shields.io/badge/license-GPLv3-blue)
-![Flutter](https://img.shields.io/badge/Flutter-3.47.6-02569B?logo=flutter&logoColor=white)
+![Flutter](https://img.shields.io/badge/Flutter-3.50.0-02569B?logo=flutter&logoColor=white)
 
 [简体中文](../../README.zh-CN.md) | [English](../../README.md) | [繁體中文](README.zh-Hant.md) | [日本語](README.ja.md) | [한국어](README.ko.md) | [Español](README.es.md) | [Français](README.fr.md) | [Deutsch](README.de.md) | [Português](README.pt-BR.md) | [Русский](README.ru.md) | **Tiếng Việt** | [ภาษาไทย](README.th.md) | [Bahasa Indonesia](README.id.md) | [Italiano](README.it.md) | [Nederlands](README.nl.md) | [Türkçe](README.tr.md) | [العربية](README.ar.md)
 
@@ -24,7 +24,7 @@
 
 | Nền tảng | Trạng thái | Ghi chú |
 |---|---|---|
-| Android | ✅ | Android 7.0 (API 24) trở lên |
+| Android | ✅ | Android 8.0 (API 26) trở lên |
 | Windows | ✅ | Hook văn bản và giọng nói của galgame chỉ có trên Windows |
 | macOS | ✅ | Chỉ Apple Silicon; không hỗ trợ Mac Intel |
 | iOS | ✅ ([TestFlight](https://testflight.apple.com/join/j88d69jx)) | Không có khám phá, nguồn trực tuyến và trung tâm tải xuống (nguyên tắc của App Store) |
@@ -43,7 +43,7 @@ English · 简体中文 · 繁體中文 · 日本語 · 한국어 · Español ·
 
 Tải bản mới nhất từ [trang web Fushi](https://fushi.moe/) — có APK Android, trình cài đặt Windows và bản dựng macOS (chỉ Apple Silicon; không hỗ trợ Mac Intel); iOS được cài đặt qua [TestFlight](https://testflight.apple.com/join/j88d69jx). Linux chưa có bản phát hành ứng dụng dựng sẵn; hãy biên dịch từ mã nguồn. Fushi Server (headless) được phát hành riêng tại [hajisensai/fushi-server](https://github.com/hajisensai/fushi-server/releases).
 
-> Yêu cầu Android 7.0 (API 24) trở lên.
+> Yêu cầu Android 8.0 (API 26) trở lên.
 
 ## Biên dịch
 
@@ -67,14 +67,14 @@ flutter build ipa --release
 dart build cli
 ```
 
-`tool/bootstrap.sh` / `tool/bootstrap.ps1` gộp `flutter pub get` và `ci/apply-patches.sh` thành một lệnh duy nhất. Dự án này được khóa ở Flutter 3.47.6 (Dart SDK `>=3.8.0 <4.0.0`); các phiên bản Flutter cũ hơn không thể biên dịch vì Material và Cupertino được dùng dưới dạng các gói `material_ui` / `cupertino_ui`. Một số phụ thuộc thượng nguồn được vendored trong `third_party/` hoặc được vá bởi `ci/apply-patches.sh` — xem [docs/agent/build.md](../agent/build.md) để biết chi tiết, bao gồm các phụ thuộc để biên dịch bản Linux desktop.
+`tool/bootstrap.sh` / `tool/bootstrap.ps1` gộp `flutter pub get` và `ci/apply-patches.sh` thành một lệnh duy nhất. Dự án này được khóa ở Flutter 3.50.0 (Dart SDK `>=3.8.0 <4.0.0`); các phiên bản Flutter cũ hơn không thể biên dịch vì Material và Cupertino được dùng dưới dạng các gói `material_ui` / `cupertino_ui`. Một số phụ thuộc thượng nguồn được vendored trong `third_party/` hoặc được vá bởi `ci/apply-patches.sh` — xem [docs/agent/build.md](../agent/build.md) để biết chi tiết, bao gồm các phụ thuộc để biên dịch bản Linux desktop.
 
 <details>
 <summary><b>Công nghệ sử dụng</b></summary>
 
 | Tầng | Công nghệ |
 |---|---|
-| Framework | Flutter 3.47.6 (Dart SDK `>=3.8.0 <4.0.0`), Riverpod |
+| Framework | Flutter 3.50.0 (Dart SDK `>=3.8.0 <4.0.0`), Riverpod |
 | Nền tảng | Android / Windows / macOS / iOS / Linux, cùng máy chủ headless |
 | UI | `material_ui` (Material 3 Expressive) / `cupertino_ui` (Cupertino) |
 | Trình đọc | Engine phân trang WebView (phát triển từ dòng Hoshi Reader) |

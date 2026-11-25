@@ -6,7 +6,7 @@ import 'package:flutter/foundation.dart'
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart'
     show MissingPluginException, PlatformException;
-import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/media/import/external_storage_access.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/utils/misc/channel_constants.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -22,6 +22,14 @@ String? debugRealDirectoryPathOverride;
 /// （如 iOS 来源书签选择器，BUG-3697）、改走 [pickRealDirectoryPath] 吃注入值的调用方用。
 bool get isRealDirectoryPathOverridden =>
     kDebugMode && debugRealDirectoryPathOverride != null;
+
+/// [pickRealDirectoryPath] 交回的目录能不能被 `dart:io` **原地、反复**列出：桌面 /
+/// 安卓（全文件访问 + 真实路径）能；iOS 交回的是没激活的安全作用域路径，列目录直接
+/// 被拒（BUG-2786），只能走 [pickImportDirectory] 当场整卷拷贝。给「记住一个外部目录、
+/// 之后反复去里面找文件」的入口判断该不该露出来（视频字幕文件夹，反馈 0PZAhFd1RO）。
+bool get canRelistPickedDirectoryInPlace =>
+    defaultTargetPlatform != TargetPlatform.iOS ||
+    isRealDirectoryPathOverridden;
 
 /// 「选一个文件夹并返回它的**真实文件系统绝对路径**」的统一入口。
 ///
@@ -52,7 +60,7 @@ bool get isRealDirectoryPathOverridden =>
 /// 那里空无一物、也没有「使用此文件夹」按钮，用户一个目录都选不了（BUG-2646）。
 Future<String?> pickRealDirectoryPath({
   required BuildContext context,
-  required AppModel appModel,
+  required ExternalStorageAccess appModel,
   String? dialogTitle,
   String? initialDirectory,
 }) async {
@@ -70,8 +78,7 @@ Future<String?> pickRealDirectoryPath({
 
   // 安卓：先确保 MANAGE_EXTERNAL_STORAGE（全文件访问）已授权——下游 dart:io 读盘需要。
   await appModel.requestExternalStoragePermissions();
-  final bool granted = await appModel.platformServices.permission
-      .hasExternalStoragePermission();
+  final bool granted = await appModel.hasExternalStoragePermission();
   if (!granted) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -151,7 +158,7 @@ const String kImportStagingDirName = 'import_staging';
 /// 选择时由原生先删后建，不会越积越多。
 Future<PickedImportDirectory?> pickImportDirectory({
   required BuildContext context,
-  required AppModel appModel,
+  required ExternalStorageAccess appModel,
   required String stagingName,
   String? dialogTitle,
   String? initialDirectory,
@@ -212,7 +219,7 @@ Future<PickedImportDirectory?> pickImportDirectory({
 /// （任意文件，用于视频）。原生 SAF 选到的文件若带过滤集，则按扩展名在 Dart 端校验。
 Future<String?> pickRealFilePath({
   required BuildContext context,
-  required AppModel appModel,
+  required ExternalStorageAccess appModel,
   Set<String>? allowedExtensions,
 }) async {
   try {
@@ -274,7 +281,7 @@ class PickedFilePath {
 /// 出处的薄封装），差别只在返回类型。
 Future<PickedFilePath?> pickRealFilePathDetailed({
   required BuildContext context,
-  required AppModel appModel,
+  required ExternalStorageAccess appModel,
   Set<String>? allowedExtensions,
 }) async {
   // 桌面（Windows/macOS/Linux）：`pickFiles()` 返回真实路径、不复制。
@@ -290,8 +297,7 @@ Future<PickedFilePath?> pickRealFilePathDetailed({
 
   // 安卓：先尝试确保 MANAGE_EXTERNAL_STORAGE（全文件访问）已授权。
   await appModel.requestExternalStoragePermissions();
-  final bool granted = await appModel.platformServices.permission
-      .hasExternalStoragePermission();
+  final bool granted = await appModel.hasExternalStoragePermission();
   if (!granted) {
     // 降级逃生口：无全文件访问权限时回退 file_picker（仍复制到 cache 但可用）。
     // 这条路径是 cache 临时副本，出处必须如实标 false——调用方据此禁掉引用。
@@ -399,6 +405,30 @@ Future<String?> pickSystemFilePath({
   Set<String>? allowedExtensions,
 }) => _fallbackPickFile(context: context, allowedExtensions: allowedExtensions);
 
+/// [pickSystemFilePath] 的带出处版本：选择器与交互完全相同（board 1360 的系统选择器），
+/// 只是把「这条路径是不是用户原始位置」随路径一起交回（判据同
+/// [pickRealFilePathDetailed] 的 file_picker 分支：桌面交回原路径；安卓 file_picker 交回
+/// app cache 副本，iOS 交回 import 模式的临时副本，同级兄弟都不在）。
+///
+/// 给「当场消费，但还想顺带记住它所在目录」的调用方用（视频字幕文件夹记忆，反馈
+/// 0PZAhFd1RO）：副本所在的缓存目录不是用户的文件夹，不能记。
+Future<PickedFilePath?> pickSystemFilePathDetailed({
+  required BuildContext context,
+  Set<String>? allowedExtensions,
+}) async {
+  final String? path = await _fallbackPickFile(
+    context: context,
+    allowedExtensions: allowedExtensions,
+  );
+  if (path == null) return null;
+  return PickedFilePath(
+    path: path,
+    isRealPath:
+        defaultTargetPlatform != TargetPlatform.android &&
+        defaultTargetPlatform != TargetPlatform.iOS,
+  );
+}
+
 /// [pickSystemFilePath] 的多选版：同为「当场消费」语义（选中即读进 app 存储 / 经
 /// FFI 导入，与原路径脱钩），因此不申请全文件访问、不走 SAF 真实路径解析——与
 /// [pickRealFilePaths] 的分工同 [pickSystemFilePath] vs [pickRealFilePath]。
@@ -494,7 +524,7 @@ String _extensionOf(String nameOrPath) =>
 /// 这里省下的那一次空列表分配，换来的是四个调用点各自加一圈判空补丁——别改回去。
 Future<List<String>> pickRealFilePaths({
   required BuildContext context,
-  required AppModel appModel,
+  required ExternalStorageAccess appModel,
   Set<String>? allowedExtensions,
 }) async {
   if (defaultTargetPlatform == TargetPlatform.android) {

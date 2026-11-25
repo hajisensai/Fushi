@@ -16,7 +16,7 @@ import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_card_face.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -27,6 +27,7 @@ import 'package:material_ui/material_ui.dart';
 
 import '../helpers/test_platform_services.dart';
 import 'srs_test_support.dart';
+import 'support/srs_write_settle.dart';
 
 /// 卡面 build 记录：（卡 id, 是否答案面）。
 final List<(String, bool)> _faceBuilds = <(String, bool)>[];
@@ -44,12 +45,7 @@ class _CountingFace extends StatelessWidget {
 }
 
 Future<void> _settle(WidgetTester tester, {int rounds = 12}) async {
-  for (int i = 0; i < rounds; i++) {
-    await tester.runAsync(
-      () => Future<void>.delayed(const Duration(milliseconds: 5)),
-    );
-    await tester.pump(const Duration(milliseconds: 60));
-  }
+  await srsSettle(tester, minRounds: rounds);
 }
 
 void main() {
@@ -128,8 +124,13 @@ void main() {
     final int revisionBefore = container.read(srsRevisionProvider);
     final int localBefore = container.read(srsLocalWriteProvider);
     _faceBuilds.clear();
-    await tester.sendKeyEvent(LogicalKeyboardKey.digit3);
-    await _settle(tester, rounds: 20);
+    await srsUntilStoreWritten(
+      tester,
+      store,
+      () => tester.sendKeyEvent(LogicalKeyboardKey.digit3),
+      until: () => _faceBuilds.isNotEmpty,
+      settleRounds: 20,
+    );
 
     expect(_faceBuilds, isNotEmpty, reason: '评分后应换到下一张');
     final String next = _faceBuilds.last.$1;

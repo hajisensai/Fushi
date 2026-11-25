@@ -138,7 +138,7 @@ void main() {
             throw StateError('torrent rejected');
           }
           calls.add('download:${effect.item.reference.mediaId}');
-          return effect.plan.picks.length;
+          return (queued: effect.plan.picks.length, alreadyQueued: 0);
         },
         submitSubscription:
             (VideoAcquisitionSubmitSubscriptionEffect effect) async =>
@@ -187,6 +187,7 @@ void main() {
       'downloads': 1,
       'subscriptions': 1,
       'failed': 1,
+      'alreadyQueued': 0,
     });
   });
 
@@ -239,7 +240,7 @@ void main() {
         decideIdentity: (_) async => null,
         persistPreference: (_, _) async {},
         setSeriesSubtitleLanguage: (_, _) async {},
-        submitDownload: (_) async => 0,
+        submitDownload: (_) async => (queued: 0, alreadyQueued: 0),
         submitSubscription: (_) async {},
       ),
     );
@@ -327,7 +328,7 @@ void main() {
           decideIdentity: (_) async => null,
           persistPreference: (_, _) async {},
           setSeriesSubtitleLanguage: (_, _) async {},
-          submitDownload: (_) async => 0,
+          submitDownload: (_) async => (queued: 0, alreadyQueued: 0),
           submitSubscription: (_) async {},
         ),
       );

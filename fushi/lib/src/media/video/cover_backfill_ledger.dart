@@ -20,6 +20,15 @@ import 'dart:io';
 
 import 'package:meta/meta.dart';
 
+/// 视频库页「缺封面的本地视频行」后台抽帧回填（`_HomeVideoPageState._maybeBackfillCovers`）
+/// 是否起。生产恒为 true。
+///
+/// 回填登记成库上的后台工作，关库要等它退出（BUG-5387）；它逐行做真实文件 I/O 与
+/// ffmpeg，组件测试的 FakeAsync 推不动这些回调——用例体一结束回填就停在半路，tearDown
+/// 的 `db.close()` 永远等不到。`test/flutter_test_config.dart` 在整个测试套件里把它
+/// 默认关掉；测回填本身的用例显式打开，并在用例体内卸页、推进到关库完成。只有测试写它。
+bool debugVideoCoverBackfillEnabled = true;
+
 /// 一次抽帧失败的记录：失败原因 + 失败时刻的文件身份（mtime 毫秒 / 字节数；
 /// 文件当时不存在则两者为 null）。
 @immutable

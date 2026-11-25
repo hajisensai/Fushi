@@ -216,4 +216,23 @@ void main() {
       expect(GalgameMetadataSource.fromKey('mixed'), isNull);
     });
   });
+
+  group('stripVndbMarkup（VNDB 简介格式码）', () {
+    test('[url] 只留文字、粗斜体去标记、剧透整段去掉', () {
+      expect(
+        stripVndbMarkup(
+          '[url=/c153631]Okinami Yukitaka[/url] was [b]skilled[/b].\n\n\n\n'
+          '[spoiler]secret ending[/spoiler]End.\n'
+          '[Translated from [url=https://x.example/a#b]official website[/url]]',
+        ),
+        'Okinami Yukitaka was skilled.\n\nEnd.\n'
+        '[Translated from official website]',
+      );
+    });
+
+    test('没有格式码的简介原样通过；全剧透 → vndbDescription 为 null', () {
+      expect(stripVndbMarkup('普通简介 [不是标记]'), '普通简介 [不是标记]');
+      expect(vndbDescription('[spoiler]all[/spoiler]'), isNull);
+    });
+  });
 }

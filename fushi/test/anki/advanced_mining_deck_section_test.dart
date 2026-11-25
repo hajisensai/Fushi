@@ -1,7 +1,7 @@
+import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/anki/advanced_mining_deck_section.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
-import 'package:fushi/src/srs/srs_mining.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 

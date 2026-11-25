@@ -5,6 +5,8 @@ import 'package:fushi/src/media/manga/library/online_manga_library_service.dart'
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_runtime_factory.dart';
 import 'package:fushi/src/models/store_compliance.dart';
+import 'package:fushi_engine/sync/fushi_library_host_service.dart'
+    show MangaPageChanged;
 import 'package:fushi_engine/sync/online_manga_host_reader.dart';
 
 /// 互联 host 侧：用本机在线漫画运行时给对端现取**没下载的章**。
@@ -24,8 +26,12 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
 
   /// 最近几章的页表：对端逐页取图，每页都重新解析整章页表会把源站打爆。失败的
   /// 解析不留（下次重试），容量够覆盖「当前章 + 预取下一章」再加几章余量。
-  final Map<String, Future<List<OnlineMangaPageRef>>> _pageTables =
-      <String, Future<List<OnlineMangaPageRef>>>{};
+  ///
+  /// 页表经 [OnlineMangaChapterPageRefs] 持有：桌面 sidecar 一重启（装 / 更新 /
+  /// 卸扩展），缓存里的取页引用整份作废，由它重解析换新（BUG-4917）；源端页表变了
+  /// （页数或某页身份，audit-035）就把这份页表丢掉，对端下次按新页表重开。
+  final Map<String, Future<OnlineMangaChapterPageRefs>> _pageTables =
+      <String, Future<OnlineMangaChapterPageRefs>>{};
   static const int _pageTableCapacity = 8;
 
   @override
@@ -38,11 +44,20 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
   }
 
   @override
-  Future<int> chapterPageCount({
+  Future<List<String?>> chapterPageKeys({
     required String bookKey,
     required String sourceMetadata,
     required Map<String, Object?> chapter,
-  }) async => (await _pages(bookKey, sourceMetadata, chapter)).length;
+  }) async {
+    final OnlineMangaChapterPageRefs pages = await _pages(
+      bookKey,
+      sourceMetadata,
+      chapter,
+    );
+    return <String?>[
+      for (int index = 0; index < pages.length; index++) pages[index].pageKey,
+    ];
+  }
 
   @override
   Future<Uint8List> chapterPage({
@@ -50,18 +65,37 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
     required String sourceMetadata,
     required Map<String, Object?> chapter,
     required int index,
+    required String? expectedPageKey,
   }) async {
-    final List<OnlineMangaPageRef> pages = await _pages(
+    final Future<OnlineMangaChapterPageRefs> table = _pages(
       bookKey,
       sourceMetadata,
       chapter,
     );
-    RangeError.checkValidIndex(index, pages, 'index');
-    final OnlineMangaLibraryEntry entry = _parse(sourceMetadata);
-    return _serviceFor(entry.runtime).adapter.fetchChapterPage(pages[index]);
+    final OnlineMangaChapterPageRefs pages = await table;
+    RangeError.checkValidIndex(index, null, 'index', pages.length);
+    // 调用方按 [chapterPageKeys] 那份页表定的这一页（HBK-AUDIT-205）；那份页表可能
+    // 已被淘汰、这里拿到的是重解析出的另一份。在取图所用的这份上核对身份，换了页
+    // 就不取：按页序取会把另一页端出去。
+    if (expectedPageKey != null && pages[index].pageKey != expectedPageKey) {
+      throw MangaPageChanged(
+        'online manga page $index changed at the source: $bookKey',
+      );
+    }
+    try {
+      return await pages.fetch(index);
+    } catch (_) {
+      if (pages.pageTableChanged) {
+        _pageTables.removeWhere(
+          (String _, Future<OnlineMangaChapterPageRefs> cached) =>
+              identical(cached, table),
+        );
+      }
+      rethrow;
+    }
   }
 
-  Future<List<OnlineMangaPageRef>> _pages(
+  Future<OnlineMangaChapterPageRefs> _pages(
     String bookKey,
     String sourceMetadata,
     Map<String, Object?> chapterJson,
@@ -77,7 +111,7 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
       throw StateError('malformed online manga chapter: $bookKey');
     }
     final String cacheKey = '$bookKey\u0000${chapter.key}';
-    final Future<List<OnlineMangaPageRef>>? cached = _pageTables.remove(
+    final Future<OnlineMangaChapterPageRefs>? cached = _pageTables.remove(
       cacheKey,
     );
     if (cached != null) {
@@ -85,19 +119,31 @@ class InterconnectOnlineMangaHostReader implements OnlineMangaHostReader {
       _pageTables[cacheKey] = cached;
       return cached;
     }
-    final Future<List<OnlineMangaPageRef>> resolving = _serviceFor(
+    final OnlineMangaRuntimeAdapter adapter = _serviceFor(
       entry.runtime,
-    ).adapter.resolveChapterPages(entry: entry, chapter: chapter);
+    ).adapter;
+    final Future<OnlineMangaChapterPageRefs> resolving = adapter
+        .resolveChapterPages(entry: entry, chapter: chapter)
+        .then(
+          (List<OnlineMangaPageRef> pages) => OnlineMangaChapterPageRefs(
+            adapter: adapter,
+            entry: entry,
+            chapter: chapter,
+            pages: pages,
+          ),
+        );
     _pageTables[cacheKey] = resolving;
     while (_pageTables.length > _pageTableCapacity) {
       _pageTables.remove(_pageTables.keys.first);
     }
-    resolving.catchError((Object _) {
-      if (identical(_pageTables[cacheKey], resolving)) {
-        _pageTables.remove(cacheKey);
-      }
-      return const <OnlineMangaPageRef>[];
-    });
+    resolving.then<void>(
+      (OnlineMangaChapterPageRefs _) {},
+      onError: (Object _) {
+        if (identical(_pageTables[cacheKey], resolving)) {
+          _pageTables.remove(cacheKey);
+        }
+      },
+    );
     return resolving;
   }
 

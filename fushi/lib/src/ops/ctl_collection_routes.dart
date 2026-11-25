@@ -9,6 +9,7 @@ import 'package:fushi/src/media/collections/collection_one_key_sort.dart'
         kCollectionDetailManualSortValue,
         loadCollectionMemberMeta,
         sortedCollectionRows;
+import 'package:fushi/src/media/privacy/media_visibility.dart';
 import 'package:fushi/src/ops/ctl_library_entries.dart';
 import 'package:fushi/src/ops/ctl_library_shelf.dart';
 import 'package:fushi/src/ops/op_context.dart';
@@ -32,6 +33,7 @@ List<CtlRoute> buildCollectionCtlRoutes(OpContext context) {
     shelf: () => LibraryCtlShelf(
       db: context.appModel.database,
       galgameRepo: context.appModel.galgameRepo,
+      finishTracking: context.appModel.libraryFinishTracking,
     ),
     aiSettings: () => context.appModel.prefsRepo,
     isReadonly: () => context.appModel.isMigrationReadonly,
@@ -133,7 +135,10 @@ Future<MediaCollectionRow> _collection(FushiDatabase db, CtlCall call) async {
     throw CtlFailure.badRequest('合集 id 必须是正整数：${call.params['id']}');
   }
   final MediaCollectionRow? row = await db.getMediaCollectionById(id);
-  if (row == null) throw CtlFailure.notFound('没有 id=$id 的合集');
+  // 上锁（未解锁）的合集控制通道 / AI 排不了（[MediaVisibility] 唯一入口）。
+  if (row == null || (await MediaVisibility.load(db)).hidesCollection(id)) {
+    throw CtlFailure.notFound('没有 id=$id 的合集');
+  }
   return row;
 }
 

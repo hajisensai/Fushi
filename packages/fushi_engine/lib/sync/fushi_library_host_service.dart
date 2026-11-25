@@ -1,8 +1,16 @@
+import 'dart:convert';
 import 'dart:io';
+import 'dart:typed_data';
 
+import 'package:fushi_engine/media/manga/manga_chapter_storage.dart'
+    show mangaChapterDigest;
+import 'package:fushi_engine/media/collections/collection_season_groups.dart'
+    show collectionGroupKeyForFilename, isValidCollectionSectionKey;
 import 'package:fushi_engine/media/video/bluray/bluray_remote_title.dart';
 import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
     show DandanplayFileKey;
+import 'package:fushi_engine/models/local_audio_content_id.dart';
+import 'package:fushi_engine/media/video/stream_video_sync.dart';
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
@@ -65,6 +73,37 @@ const String kSubtitleSuffixHeader = 'X-Fushi-Subtitle-Suffix';
 
 /// `PUT /api/library/videos/<id>/subtitle` 带 `1` = 设为这一集的默认字幕（BUG-2728）。
 const String kSubtitleDefaultHeader = 'X-Fushi-Subtitle-Default';
+
+/// `GET /api/library/videos/<id>/subtitle?sidecar=<文件名>`：按文件名下载这一集的
+/// 某一条外挂字幕（[RemoteVideoSidecarSubtitle.fileName]，反馈 -CaVsioFhG）。host 只
+/// 在它自己枚举出的 sidecar 里按 basename **精确**匹配，绝不把参数拼成路径。老 host
+/// 不认这个参数、会回默认字幕——所以 client 只对 `/streamurl` 下发了
+/// `sidecarSubtitles` 的 host 发它。
+const String kVideoSidecarSubtitleQueryParam = 'sidecar';
+
+/// `/api/host/info` 的能力位：host 会在 `/streamurl` 列出这一集的全部外挂字幕、
+/// 并接受 [kVideoSidecarSubtitleQueryParam]（[VideoSidecarSubtitleListHost]）。
+const String kVideoSidecarSubtitlesCapability = 'videoSidecarSubtitles';
+
+/// `/api/library/videos/<id>/fingerprint`：host 有这个端点、却担保不了这份字节时的
+/// 状态码（BUG-4782）。404 只留给「老 host 没有这个端点」，两者必须可区分。响应体
+/// `{"reason": <下面两个之一>}`。
+const int kVideoFingerprintUnavailableStatus = 409;
+
+/// [kVideoFingerprintUnavailableStatus] 的 reason：条目或这一集的文件在 host 上找不到。
+const String kVideoFingerprintReasonNotFound = 'not_found';
+
+/// [kVideoFingerprintUnavailableStatus] 的 reason：文件读不了 / 算的期间被改写。
+const String kVideoFingerprintReasonUnreadable = 'unreadable';
+
+/// `/fingerprint` 的「不等」查询参数（拍板台 left3657）：带 `wait=0` 时 host 不当场
+/// 整文件哈希——已算过（内存 / 落盘缓存，含后台预热的）回 200 + 指纹；还没算过回
+/// [kVideoFingerprintPendingStatus] 并在后台开算。卡片回跳用它，不让用户干等几十秒。
+/// 老 host 不认这个参数，照旧当场算完再答（与改动前一致）。
+const String kVideoFingerprintWaitQueryParam = 'wait';
+
+/// `/fingerprint?wait=0` 时「还没算好、已在后台开算」的状态码（拍板台 left3657）。
+const int kVideoFingerprintPendingStatus = 202;
 
 // ── 改名前的旧 header 名（Hibiki → Fushi，2026-10）─────────────────────────────
 //
@@ -137,21 +176,90 @@ SyncKeyDiff computeKeyUnionDiff({
 
 // ── 本地音频 ──────────────────────────────────────────────────────────────────
 
-/// host 实时本地音频来源的清单条目（键 = displayName）。
+/// host 实时本地音频来源的清单条目。
 ///
-/// [displayName] 是用户设置的显示名，用作跨设备 union-key（与 orchestrator
-/// `kSyncLocalAudioNamespace` 的资产名语义一致）。
+/// 跨设备身份是 [contentId]（库的内容指纹，拍板 pr3481）：同一份库在两端名字
+/// 不同也认作同一份，名字相同而内容不同则是两份。[displayName] 只用于展示，以及
+/// 对端是旧版本（清单里没有 `contentId`）时退回按名匹配。
+///
+/// 单项端点 `/api/library/localaudio/<key>` 的 key：新版本 host 先按 contentId
+/// 认、再按 displayName 认，旧版本 host 只认 displayName。
 class RemoteLocalAudioInfo {
-  const RemoteLocalAudioInfo({required this.displayName});
+  const RemoteLocalAudioInfo({required this.displayName, this.contentId});
 
   final String displayName;
+  final String? contentId;
+
+  /// 向这台 host 请求这份库时用的 key：清单里给了合格的 contentId 就用它（不受
+  /// 撞名影响），否则（旧 host）只能用 displayName。
+  String get key => isLocalAudioContentId(contentId) ? contentId! : displayName;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'displayName': displayName,
+    'contentId': ?contentId,
   };
 
-  static RemoteLocalAudioInfo fromJson(Map<String, Object?> json) =>
-      RemoteLocalAudioInfo(displayName: json['displayName']?.toString() ?? '');
+  static RemoteLocalAudioInfo fromJson(Map<String, Object?> json) {
+    final Object? id = json['contentId'];
+    return RemoteLocalAudioInfo(
+      displayName: json['displayName']?.toString() ?? '',
+      contentId: id is String && isLocalAudioContentId(id) ? id : null,
+    );
+  }
+}
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「本地音频清单带内容身份、单项端点
+/// 认 contentId」的能力位（拍板 pr3481）。老 host 无此位 → client 只能按显示名
+/// 匹配，并在同步报告里提示升级对端。
+///
+/// 位名带版本：身份算法从 `la1-`（不读音频 BLOB，HBK-AUDIT-001）换成 `la2-` 后，
+/// 只发 `la1-` 的 host 仍声明旧位 `localAudioContentId`，但它的身份本端不认——
+/// 必须按「对端版本过旧」报出来，而不是当成已支持、静默退回按名匹配。
+const String kLiveLibraryLocalAudioContentIdCapability =
+    'localAudioContentIdV2';
+
+/// [capabilities]（`GET /api/capabilities` 的解码结果，老 host 为 null）是否声明
+/// [kLiveLibraryLocalAudioContentIdCapability]。
+bool interconnectHostReportsLocalAudioContentId(Object? capabilities) {
+  if (capabilities is! Map) return false;
+  final Object? live = capabilities['liveLibrary'];
+  if (live is! Map) return false;
+  return live[kLiveLibraryLocalAudioContentIdCapability] == true;
+}
+
+/// `liveLibrary` 里声明「host 列得出删除墓碑」（`GET /api/tombstones`，
+/// [DeletionTombstoneHost]）的能力位。没有这一位的 host 若对该端点回 404，就是
+/// 版本过旧（拍板 other-sync-peer-version-errors）。
+const String kLiveLibraryDeletionTombstonesCapability = 'deletionTombstones';
+
+/// `liveLibrary` 里声明「host 能删视频」（`DELETE /api/library/videos/<id>`，
+/// [VideoDeletionHost]）的能力位。语义同 [kLiveLibraryDeletionTombstonesCapability]。
+const String kLiveLibraryVideoDeletionCapability = 'videoDeletion';
+
+/// host 对 `liveLibrary` 里某一能力位的声明状态。
+///
+/// 同步维度在 host 上走不通（端点 404 / 能力位不是 true）时，靠它区分两种情形：
+/// - [undeclared]：host 根本不认识这一位（或连 `/api/capabilities` 都没有）——它的
+///   Fushi 比这个能力旧，升级对端就能同步；
+/// - [declaredOff]：host 认识这一位但说不支持（例如无头服务端没有 PDF 引擎）——升级
+///   解决不了，是那台设备的能力边界。
+enum LiveLibraryCapabilityState { supported, declaredOff, undeclared }
+
+/// 读 [capabilities]（`GET /api/capabilities` 的解码结果，老 host 为 null）里
+/// `liveLibrary.<key>` 的声明状态：`true` → supported；键在但不是 `true` →
+/// declaredOff；键 / `liveLibrary` 段 / 整个能力表缺失 → undeclared。
+LiveLibraryCapabilityState liveLibraryCapabilityState(
+  Object? capabilities,
+  String key,
+) {
+  if (capabilities is! Map) return LiveLibraryCapabilityState.undeclared;
+  final Object? live = capabilities['liveLibrary'];
+  if (live is! Map || !live.containsKey(key)) {
+    return LiveLibraryCapabilityState.undeclared;
+  }
+  return live[key] == true
+      ? LiveLibraryCapabilityState.supported
+      : LiveLibraryCapabilityState.declaredOff;
 }
 
 /// 旧名兼容：本地音频 diff 已并入 [SyncKeyDiff]。
@@ -191,7 +299,15 @@ class RemoteAudiobookInfo {
     this.delayUpdatedAtMs = 0,
     this.importedAt,
     this.hasAudio,
+    this.contentRevision,
+    this.locked = false,
   });
+
+  /// host 上这部作品被用户「上锁」（拍板台 qiqSbvdxrk，v171）。上锁标记本身经
+  /// 标签清单同步，但只落到本机已有的宿主上；对端还没下载的条目只能靠这一位知道
+  /// ——client 本次会话没解锁时不给它出远端占位卡 / 「继续」/ 活动行。additive：
+  /// 只在 true 时写键，旧 host 不带 = 未上锁，旧 client 忽略。
+  final bool locked;
 
   final String bookKey;
 
@@ -227,6 +343,13 @@ class RemoteAudiobookInfo {
   /// null = 旧 host 不下发此字段，**未知**（消费方必须按旧行为放行，不能当 false）。
   final bool? hasAudio;
 
+  /// host 上这本有声书的**内容版本**（`audiobookContentState`）：音频或字幕一换就变，
+  /// 断点 / 调轴 / 标题变了不变。不透明字符串，只比相等。
+  ///
+  /// client 在下载时记下它，之后清单里的值不同 = host 上内容换过，提示可以重新下载。
+  /// null = 旧 host 不下发（未知，消费方不得据此提示更新）。
+  final String? contentRevision;
+
   /// 传输/URL 身份键：srt-backed=bookKey；纯 SRT（bookKey 空）=uid。
   String get identity => bookKey.isNotEmpty ? bookKey : (uid ?? '');
 
@@ -243,6 +366,8 @@ class RemoteAudiobookInfo {
     if (delayUpdatedAtMs > 0) 'delayUpdatedAtMs': delayUpdatedAtMs,
     if (importedAt != null) 'importedAt': importedAt,
     if (hasAudio != null) 'hasAudio': hasAudio,
+    if (contentRevision != null) 'contentRevision': contentRevision,
+    if (locked) 'locked': true,
   };
 
   static RemoteAudiobookInfo fromJson(Map<String, Object?> json) =>
@@ -260,6 +385,12 @@ class RemoteAudiobookInfo {
         importedAt: (json['importedAt'] as num?)?.toInt(),
         // 缺键 / 非 bool → null（未知），**不是** false：旧 host 的清单一律放行。
         hasAudio: json['hasAudio'] is bool ? json['hasAudio']! as bool : null,
+        contentRevision:
+            (json['contentRevision'] is String &&
+                (json['contentRevision']! as String).isNotEmpty)
+            ? json['contentRevision']! as String
+            : null,
+        locked: json['locked'] == true,
       );
 }
 
@@ -288,6 +419,15 @@ abstract interface class AudiobookSubtitleHost {
   Future<File> exportAudiobookSubtitles(String identity);
 }
 
+/// host 端「有声书内容版本」的**可选**能力（与 [AudiobookDelayHost] 同范式，不并进
+/// 主接口）。包端点拿它给导出缓存定版本：缓存的包只在版本相同时命中，内容换过的书
+/// 下一次普通下载就重新打包。host 不实现 → 缓存只按 TTL 换代（旧行为）。
+abstract interface class AudiobookContentRevisionHost {
+  /// 身份键为 [identity] 的有声书此刻的内容版本（与清单的
+  /// [RemoteAudiobookInfo.contentRevision] 同值）；查无此书返回 null。
+  Future<String?> audiobookContentRevision(String identity);
+}
+
 /// host 端「client 导入的字幕设为该视频默认字幕」的**可选**能力（远端视频导入 /
 /// 重定时字幕自动上传）。与 [AudiobookDelayHost] 同范式：不并进主接口，免得十余个
 /// 测试 fake 全量补桩；server 用 `is` 探测，实现了才在 `/api/capabilities` 声明
@@ -304,10 +444,36 @@ abstract interface class VideoSubtitleDefaultHost {
   /// 把 [subtitleFile]（格式 [format]：srt / ass / ssa / vtt）落成视频 [id] 的默认
   /// sidecar 并重解析 cue，返回实际落盘的后缀。未知视频 / 视频无本地文件抛
   /// [StateError]；[format] 不是字幕格式抛 [ArgumentError]。
+  ///
+  /// [episodeIndex]（播放列表下标，与 `?episode=` 同口径）> 0 时落到那一集文件旁
+  /// （capabilities 的 `liveLibrary.videoSubtitleDefaultEpisode`）；那一集不存在 /
+  /// 没有本地文件同样抛 [StateError]。
   Future<String> importDefaultVideoSubtitle(
     File subtitleFile, {
     required String id,
     required String format,
+    int episodeIndex = 0,
+  });
+}
+
+/// host 端「列出某一集**全部**外挂字幕」的**可选**能力（反馈 -CaVsioFhG；与
+/// [VideoSubtitleDefaultHost] 同范式，不扩大主接口）。
+///
+/// 此前协议只有单值 `subtitleFileName` / `subtitleUrl`：host 在视频旁放了日 / 中 /
+/// 英多条字幕，client 只看得到 [FushiLibraryHostService.resolveVideoSubtitle] 挑中的
+/// 那一条。实现了本接口的 host 在 `/streamurl` 额外下发 `sidecarSubtitles`，并接受
+/// `GET .../subtitle?sidecar=<文件名>` 按名下载其中任意一条。不实现 → 不下发列表、
+/// `?sidecar=` 落 404，client 退回只有默认那条的旧行为。
+abstract interface class VideoSidecarSubtitleListHost {
+  /// 视频 [id] 第 [episodeIndex] 集**同目录**的全部 sidecar 字幕文件（判据同
+  /// `listSidecarSubtitles`：`<视频 stem>[.lang].srt|ass|ssa|vtt`），只含真实存在的
+  /// 普通文件，按文件名排序。未知视频 / 网络流 / 目录读不了时返回空表。
+  ///
+  /// 不必包含 host 用户另行选定、住在别处的默认字幕——服务端会把
+  /// [FushiLibraryHostService.resolveVideoSubtitle] 的结果并进列表并标默认。
+  Future<List<File>> listVideoSidecarSubtitles(
+    String id, {
+    int episodeIndex = 0,
   });
 }
 
@@ -452,21 +618,123 @@ SyncKeyDiff computeAudiobookSyncDiff({
 
 /// host 实时词典的清单条目（不含 contentHash：Phase 1 按名 union，与现有暂存
 /// 路径同语义，避免引入跨设备哈希一致性的新风险；overwrite-by-hash 列为 follow-up）。
+///
+/// [name] 是真名（`dictionary_metadata` 主键，冻结标识）。其余目录字段给客户端的
+/// 「服务端词典」目录用，全部可空：老 host 不发、值缺省时 [toJson] 不写该键，
+/// [fromJson] 对缺键 / 非字符串 / 空串一律当 null（旧客户端只读 name / type，不受影响）。
 class RemoteDictionaryInfo {
-  const RemoteDictionaryInfo({required this.name, required this.type});
+  const RemoteDictionaryInfo({
+    required this.name,
+    required this.type,
+    this.formatKey,
+    this.revision,
+    this.displayName,
+    this.sourceLanguage,
+    this.defaultEnabled,
+  });
   final String name;
   final String type;
+
+  /// 导入格式（`dictionary_metadata.formatKey`，如 `yomichan`）。
+  final String? formatKey;
+
+  /// 词典包版本（Yomitan `index.json` 的 `revision`，落在 metadataJson 里）。
+  final String? revision;
+
+  /// host 上用户起的显示名（`dictionary_metadata.displayName`）；没改过为 null。
+  final String? displayName;
+
+  /// 词头语言：host 上的 `languageOverride` 优先，其次 index.json 的 `sourceLanguage`
+  /// （与 `Dictionary.effectiveSourceLanguage` 同判据）；都没有为 null。
+  final String? sourceLanguage;
+
+  /// host 自己的默认开关（[isDictionaryHiddenByDefault] 取反）：客户端第一次见到这本
+  /// 词典时据此初始化配置的 `hidden`。老 host 不发 = null（客户端按启用处理）。
+  final bool? defaultEnabled;
 
   Map<String, Object?> toJson() => <String, Object?>{
     'name': name,
     'type': type,
+    if (formatKey != null) 'formatKey': formatKey,
+    if (revision != null) 'revision': revision,
+    if (displayName != null) 'displayName': displayName,
+    if (sourceLanguage != null) 'sourceLanguage': sourceLanguage,
+    if (defaultEnabled != null) 'defaultEnabled': defaultEnabled,
   };
 
   static RemoteDictionaryInfo fromJson(Map<String, Object?> json) =>
       RemoteDictionaryInfo(
         name: json['name']?.toString() ?? '',
         type: json['type']?.toString() ?? '',
+        formatKey: _optionalString(json['formatKey']),
+        revision: _optionalString(json['revision']),
+        displayName: _optionalString(json['displayName']),
+        sourceLanguage: _optionalString(json['sourceLanguage']),
+        defaultEnabled: json['defaultEnabled'] is bool
+            ? json['defaultEnabled']! as bool
+            : null,
       );
+
+  /// 由一条 `dictionary_metadata` 行生成清单条目（app 当 host 与无头服务端同一份）：
+  /// `revision` / `sourceLanguage` 取 metadataJson（导入时由 index.json 落进去），
+  /// 词头语言 `languageOverride` 优先（`Dictionary.effectiveSourceLanguage` 同判据），
+  /// 显示名取 `displayName` 列；空串 / 纯空白当没有。metadataJson 畸形时这两项为 null。
+  /// `defaultEnabled` 按 [isDictionaryHiddenByDefault] 取反（host 一定发）。
+  factory RemoteDictionaryInfo.fromMetadataRow(DictionaryMetaRow row) {
+    Map<Object?, Object?> metadata = const <Object?, Object?>{};
+    try {
+      final Object? decoded = jsonDecode(row.metadataJson);
+      if (decoded is Map) metadata = decoded;
+    } on FormatException {
+      // 畸形 metadataJson：目录字段缺省，name / type 照发。
+    }
+    return RemoteDictionaryInfo(
+      name: row.name,
+      type: row.type,
+      formatKey: _optionalString(row.formatKey),
+      revision: _optionalString(metadata['revision']),
+      displayName: _optionalString(row.displayName),
+      sourceLanguage:
+          _optionalString(row.languageOverride) ??
+          _optionalString(metadata['sourceLanguage']),
+      defaultEnabled: !isDictionaryHiddenByDefault(row),
+    );
+  }
+
+  /// host 的「默认关掉」判据（app 当 host 与无头服务端同一份）：`hiddenLanguagesJson`
+  /// 含 `ja`（app 推送时写入的形状、服务端 admin API 的 `defaultEnabled` 写入同一口径）。
+  /// JSON 畸形 / 不是数组当没关。
+  static bool isDictionaryHiddenByDefault(DictionaryMetaRow row) {
+    try {
+      final Object? decoded = jsonDecode(row.hiddenLanguagesJson);
+      return decoded is List && decoded.any((Object? e) => '$e' == 'ja');
+    } on FormatException {
+      return false;
+    }
+  }
+
+  /// 把 [hiddenLanguagesJson] 改成「默认关 = [hidden]」：只增删 `ja` 这一项，其余语言
+  /// 原样保留（原顺序）。JSON 畸形 / 不是数组时按空表起算。
+  static String withHiddenByDefault(String hiddenLanguagesJson, bool hidden) {
+    List<String> languages = <String>[];
+    try {
+      final Object? decoded = jsonDecode(hiddenLanguagesJson);
+      if (decoded is List) {
+        languages = <String>[for (final Object? e in decoded) '$e'];
+      }
+    } on FormatException {
+      // 畸形：按空表起算。
+    }
+    languages.removeWhere((String e) => e == 'ja');
+    if (hidden) languages.add('ja');
+    return jsonEncode(languages);
+  }
+
+  static String? _optionalString(Object? raw) {
+    if (raw is! String) return null;
+    final String trimmed = raw.trim();
+    return trimmed.isEmpty ? null : trimmed;
+  }
 }
 
 /// 旧名兼容：词典 diff 已并入 [SyncKeyDiff]。
@@ -562,11 +830,19 @@ class RemoteBookInfo {
     this.format = 'epub',
     this.hasMangaContent = false,
     this.hasMangaChapters = false,
+    this.hasPdfContent = false,
     this.mangaReadingMode,
     this.mangaReaderOverrides = const <String, Object?>{},
     this.mangaReaderOverrideUpdatedAt = 0,
     this.mangaReaderOverrideDeleted = false,
+    this.locked = false,
   });
+
+  /// host 上这部作品被用户「上锁」（拍板台 qiqSbvdxrk，v171）。上锁标记本身经
+  /// 标签清单同步，但只落到本机已有的宿主上；对端还没下载的条目只能靠这一位知道
+  /// ——client 本次会话没解锁时不给它出远端占位卡 / 「继续」/ 活动行。additive：
+  /// 只在 true 时写键，旧 host 不带 = 未上锁，旧 client 忽略。
+  final bool locked;
 
   /// 书身份格式（`EpubBooks.format` 值域：'epub'/'pdf'/'manga'，见 [BookFormat]）。
   /// additive wire 字段 `'format'`：epub 缺省不写键（旧清单 wire 字节不变），缺失
@@ -587,6 +863,18 @@ class RemoteBookInfo {
   /// 识就当 false（行为与从前一致），新 client 据此把它当多章在线作品加进本机书架，
   /// 章节表走 `/api/library/manga/<bookKey>/manifest` 的 `chapters`。
   final bool hasMangaChapters;
+
+  /// PDF 原件可下载（format=='pdf' 且 host 书目录里的 PDF 文件在盘上，判据
+  /// `hasExportablePdfContent`，见 pdf_sync_package.dart；反馈 Jq1_ujHa4t）。与 [hasContent] **分键**的理由同
+  /// [hasMangaContent]：旧 client 只认 hasContent、会拿 EpubImporter 吃下载到的
+  /// 字节，所以 PDF 对它保持 false（看不到即不出错）；新 client 据此在书架渲染远端
+  /// 占位卡，走同一 books 端点下载 PDF 原件、按内容嗅探交 PDF 导入器落库。
+  /// additive 键 `hasPdfContent`：旧 host 不发 → false（行为与从前一致）。
+  final bool hasPdfContent;
+
+  /// 书架（非漫画架）上能以占位卡出现并下载落地的书：EPUB 内容树或 PDF 原件。
+  /// 书架远端列表、首页「继续」、同步对比弹窗共用这一条判据（一处漏判 = 死路卡）。
+  bool get hasBookShelfContent => hasContent || hasPdfContent;
 
   /// host 端该漫画的按本阅读模式（`EpubBooks.mangaReadingMode`；null = 跟随自动
   /// 判定）。additive；下载落地时作为初始值带过来（无持续 LWW——列无时间戳，
@@ -712,12 +1000,14 @@ class RemoteBookInfo {
     if (format != 'epub') 'format': format,
     if (hasMangaContent) 'hasMangaContent': true,
     if (hasMangaChapters) 'hasMangaChapters': true,
+    if (hasPdfContent) 'hasPdfContent': true,
     if (_isNonEmpty(mangaReadingMode)) 'mangaReadingMode': mangaReadingMode,
     if (mangaReaderOverrides.isNotEmpty || mangaReaderOverrideDeleted)
       'mangaReaderOverrides': mangaReaderOverrides,
     if (mangaReaderOverrideUpdatedAt > 0)
       'mangaReaderOverrideUpdatedAt': mangaReaderOverrideUpdatedAt,
     if (mangaReaderOverrideDeleted) 'mangaReaderOverrideDeleted': true,
+    if (locked) 'locked': true,
   };
 
   RemoteBookInfo copyWith({
@@ -740,10 +1030,12 @@ class RemoteBookInfo {
     String? format,
     bool? hasMangaContent,
     bool? hasMangaChapters,
+    bool? hasPdfContent,
     String? mangaReadingMode,
     Map<String, Object?>? mangaReaderOverrides,
     int? mangaReaderOverrideUpdatedAt,
     bool? mangaReaderOverrideDeleted,
+    bool? locked,
   }) => RemoteBookInfo(
     title: title,
     hasContent: hasContent,
@@ -766,12 +1058,14 @@ class RemoteBookInfo {
     format: format ?? this.format,
     hasMangaContent: hasMangaContent ?? this.hasMangaContent,
     hasMangaChapters: hasMangaChapters ?? this.hasMangaChapters,
+    hasPdfContent: hasPdfContent ?? this.hasPdfContent,
     mangaReadingMode: mangaReadingMode ?? this.mangaReadingMode,
     mangaReaderOverrides: mangaReaderOverrides ?? this.mangaReaderOverrides,
     mangaReaderOverrideUpdatedAt:
         mangaReaderOverrideUpdatedAt ?? this.mangaReaderOverrideUpdatedAt,
     mangaReaderOverrideDeleted:
         mangaReaderOverrideDeleted ?? this.mangaReaderOverrideDeleted,
+    locked: locked ?? this.locked,
   );
 
   static RemoteBookInfo fromJson(Map<String, Object?> json) {
@@ -811,12 +1105,14 @@ class RemoteBookInfo {
       format: _jsonString(json['format']) ?? 'epub',
       hasMangaContent: json['hasMangaContent'] == true,
       hasMangaChapters: json['hasMangaChapters'] == true,
+      hasPdfContent: json['hasPdfContent'] == true,
       mangaReadingMode: _jsonString(json['mangaReadingMode']),
       mangaReaderOverrides: _jsonObjectMap(json['mangaReaderOverrides']),
       mangaReaderOverrideUpdatedAt: _jsonNonNegativeInt(
         json['mangaReaderOverrideUpdatedAt'],
       ),
       mangaReaderOverrideDeleted: json['mangaReaderOverrideDeleted'] == true,
+      locked: json['locked'] == true,
     );
   }
 }
@@ -834,7 +1130,14 @@ class RemoteActivityEvent {
     this.mediaKey,
     this.durationMs,
     this.charsDelta,
+    this.locked = false,
   });
+
+  /// host 上这部作品被用户「上锁」（拍板台 qiqSbvdxrk，v171）。上锁标记本身经
+  /// 标签清单同步，但只落到本机已有的宿主上；对端还没下载的条目只能靠这一位知道
+  /// ——client 本次会话没解锁时不给它出远端占位卡 / 「继续」/ 活动行。additive：
+  /// 只在 true 时写键，旧 host 不带 = 未上锁，旧 client 忽略。
+  final bool locked;
 
   /// 'read' / 'watch' / 'added' / 'game'（同 ActivityEvents.eventType 值域）。
   final String eventType;
@@ -863,6 +1166,7 @@ class RemoteActivityEvent {
     if (mediaKey != null) 'mediaKey': mediaKey,
     if (durationMs != null) 'durationMs': durationMs,
     if (charsDelta != null) 'charsDelta': charsDelta,
+    if (locked) 'locked': true,
   };
 
   /// 宽容解码：字段缺失/类型错给安全默认（坏一条不拖垮整个列表由调用方 skip）。
@@ -876,6 +1180,7 @@ class RemoteActivityEvent {
       mediaKey: _jsonString(json['mediaKey']),
       durationMs: json['durationMs'] is int ? json['durationMs'] as int : null,
       charsDelta: json['charsDelta'] is int ? json['charsDelta'] as int : null,
+      locked: json['locked'] == true,
     );
   }
 }
@@ -1164,6 +1469,7 @@ class RemoteMangaPageInfo {
     required this.name,
     this.width = 0,
     this.height = 0,
+    this.key,
   });
 
   /// 0 基页序，同时是页图端点的路径段。
@@ -1176,11 +1482,19 @@ class RemoteMangaPageInfo {
   final int width;
   final int height;
 
+  /// 这一页的稳定身份（audit-035）：同一个值 = 同一张页图。对端下载这一章、暂停后
+  /// 续跑时按它认已落地的页还算不算数——[index] 只是页序，host 那边源端换了页、
+  /// 重排了页，页序照旧。host 现取的在线章报源端页身份（扩展原始图片地址等），已下载
+  /// 的章 / 本地卷报页图文件身份；认不出就不报（null），对端续跑不复用这页。旧 host
+  /// 不写这个键，旧 client 不读它，wire 双向兼容。
+  final String? key;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'index': index,
     'name': name,
     if (width > 0) 'width': width,
     if (height > 0) 'height': height,
+    if (key != null) 'key': key,
   };
 
   static RemoteMangaPageInfo fromJson(Map<String, Object?> json) =>
@@ -1189,7 +1503,36 @@ class RemoteMangaPageInfo {
         name: json['name']?.toString() ?? '',
         width: _jsonInt(json['width']) ?? 0,
         height: _jsonInt(json['height']) ?? 0,
+        key: switch (json['key']) {
+          final String key when key.isNotEmpty => key,
+          _ => null,
+        },
       );
+}
+
+/// 取页请求里「客户端以为这一页是谁」的查询参数名（HBK-AUDIT-205）：值是
+/// [remoteMangaPageKeyDigest]（页表里 [RemoteMangaPageInfo.key] 的摘要）。
+///
+/// host 在**同一份**页表上核对第 index 页的身份与它相同才回页图，否则回 409
+/// （[MangaPageChanged]）。只按页序取图时，host 重启 / 页表缓存被淘汰后重新解析出
+/// 一份换了页的表，同一个页序会端出另一页，客户端还按旧身份记账。旧 host 不认这个
+/// 参数（照旧按页序回图），旧 client 不带它（host 不核对），wire 双向兼容。
+const String kMangaPageKeyQuery = 'pageKey';
+
+/// 页身份 [key] 在取页请求里的形态：sha256 十六进制前 24 位（与章目录摘要同一算法）。
+/// 源端页身份多是长 URL、还带 `\u0000` 分隔符，不直接进查询串。
+String remoteMangaPageKeyDigest(String key) => mangaChapterDigest(key);
+
+/// 取页请求带的页身份与 host 此刻页表里这一页的身份对不上（HBK-AUDIT-205）：
+/// host 那边源端换了页 / 重排了页，客户端手上的页表已过期。端点回 409；客户端
+/// 应重取页表再判（换了页就按新页表重开，不能拿这一页当旧表的那一页）。
+class MangaPageChanged implements Exception {
+  const MangaPageChanged(this.message);
+
+  final String message;
+
+  @override
+  String toString() => 'MangaPageChanged: $message';
 }
 
 /// 对端不提供互联漫画源（老版本 Fushi，或库服务关着）。
@@ -1203,6 +1546,28 @@ class MangaInterconnectUnsupported implements Exception {
   @override
   String toString() =>
       'MangaInterconnectUnsupported: the paired peer does not serve manga pages';
+}
+
+/// 整库书籍进度一次取齐的端点路径（反馈 kM-Gb_Xnu-）。
+///
+/// 刻意不挂在 `/api/library/books/` 下：老 host 会把 `books/<x>` 当书名去导出 EPUB，
+/// 恰好有一本叫这个名字的书时会回一整本书。挂在新路径上，老 host 落进 WebDAV 文件
+/// 分支、回 404，client 据此回落逐本 `GET /books/<bookKey>/progress`。
+const String kBookProgressBatchPath = '/api/library/book-progress';
+
+/// 「一次交出 host 上全部书的阅读进度」的 host 能力（**可选**，[MangaLibraryHost]
+/// 同一范式：server 用 `is` 协商，不实现的 host 让 [kBookProgressBatchPath] 落 404）。
+///
+/// 反馈 kM-Gb_Xnu-：互联 sweep 的书进度阶段原本每本书一次 `GET /progress`，100 本书
+/// 就是 100 次往返，绝大多数书两端早已一致、只是来问一句。这里把读一侧压成一次；
+/// 写一侧照旧逐本 `PUT`，只发给真的需要推送的书。
+abstract interface class BookProgressBatchHost {
+  /// host 书库里**每一本有阅读进度**的书：wire `bookKey` → 进度。
+  ///
+  /// 与逐本 [FushiLibraryHostService.getBookProgress] 逐字同口径：书不在库、或没有
+  /// `reader_positions` 行的书不出现在结果里（逐本端点对它们回
+  /// [RemoteBookProgress.empty]），所以 client 把「不在表里」读成 empty 不改变任何判定。
+  Future<Map<String, RemoteBookProgress>> getAllBookProgress();
 }
 
 /// 互联漫画源的 host 能力（**可选**，与 [FushiLibraryHostService] 分开声明）。
@@ -1223,7 +1588,15 @@ abstract interface class MangaLibraryHost {
   ///
   /// 越界、缺文件、或解析出的路径逃出该书 `images/` 目录时抛 [StateError] → 端点 404
   /// （穿越只在 host 侧这一道守卫上判，client 永远不参与路径解析）。
-  Future<File> mangaPageFile(String bookKey, int index);
+  ///
+  /// [expectedKeyDigest] 非 null 时（[kMangaPageKeyQuery]）：第 [index] 页此刻的
+  /// 身份（[RemoteMangaPageInfo.key]）的 [remoteMangaPageKeyDigest] 必须等于它，
+  /// 认不出身份或不相等都抛 [MangaPageChanged] → 端点 409。
+  Future<File> mangaPageFile(
+    String bookKey,
+    int index, {
+    String? expectedKeyDigest,
+  });
 
   /// 章节式在线漫画 [bookKey] 中目录摘要为 [chapterDigest] 的那一章的页表
   /// （BUG-2474）。该章不存在 / 未完整下载 / 该书不是章节式漫画时抛 [StateError] →
@@ -1234,12 +1607,14 @@ abstract interface class MangaLibraryHost {
     String chapterDigest,
   );
 
-  /// [mangaChapterManifest] 页表里第 [index] 页的页图文件；判据同 [mangaPageFile]。
+  /// [mangaChapterManifest] 页表里第 [index] 页的页图文件；判据（含
+  /// [expectedKeyDigest]）同 [mangaPageFile]。
   Future<File> mangaChapterPageFile(
     String bookKey,
     String chapterDigest,
-    int index,
-  );
+    int index, {
+    String? expectedKeyDigest,
+  });
 }
 
 /// 书籍阅读进度跨设备冲突解决（TODO-767）——「取较新时间戳」last-write-wins，
@@ -1966,6 +2341,333 @@ int capFutureSyncStamp(int atMs, {required int nowMs}) {
 int trustedStoredSyncStamp(int storedAtMs, {required int nowMs}) =>
     storedAtMs > nowMs + kSyncFutureStampToleranceMs ? 0 : storedAtMs;
 
+/// 书进度的「可信戳」视图：只把 [RemoteBookProgress.updatedAtMs] 换成
+/// [trustedStoredSyncStamp]（超限毒戳按 0），其余字段原样。戳本来可信时原样返回
+/// 同一个对象。比较前用它，书籍通道才与视频 / 有声书同样能自愈毒戳（BUG-3367 的
+/// 书籍版）。纯函数。
+RemoteBookProgress withTrustedStoredStamp(
+  RemoteBookProgress p, {
+  required int nowMs,
+}) {
+  final int trusted = trustedStoredSyncStamp(p.updatedAtMs, nowMs: nowMs);
+  if (trusted == p.updatedAtMs) return p;
+  return RemoteBookProgress(
+    sectionIndex: p.sectionIndex,
+    normCharOffset: p.normCharOffset,
+    charOffset: p.charOffset,
+    updatedAtMs: trusted,
+  );
+}
+
+/// 书进度的上报戳截到 `nowMs + kSyncFutureStampToleranceMs`（[capFutureSyncStamp]），
+/// 其余字段原样；未超限时原样返回同一个对象。纯函数。
+RemoteBookProgress withCappedStamp(RemoteBookProgress p, {required int nowMs}) {
+  final int capped = capFutureSyncStamp(p.updatedAtMs, nowMs: nowMs);
+  if (capped == p.updatedAtMs) return p;
+  return RemoteBookProgress(
+    sectionIndex: p.sectionIndex,
+    normCharOffset: p.normCharOffset,
+    charOffset: p.charOffset,
+    updatedAtMs: capped,
+  );
+}
+
+/// 互联 live 写入（书进度 / 视频位置 / 有声书位置 `PUT`）的结果（BUG-4431）。
+/// wire 值即枚举名。
+enum LiveWriteResult {
+  /// host 已按上报值落库。
+  applied,
+
+  /// 上报值与 host 已存值相同，没有可写的（host 值即为两端一致的值）。
+  unchanged,
+
+  /// 无前置条件的旧口径 LWW 下，上报值被 host 已存的较新值胜过，未写。
+  stale,
+
+  /// host 没有该条目（书 / 有声书不在库），未写。
+  missing,
+
+  /// 上报带的前置条件与 host 此刻的值不符（判定后对端又改过），未写；端点回 409。
+  preconditionFailed,
+}
+
+/// 新 host 在 live 位置端点（三个位置 `GET` / `PUT` 与批量书进度 `GET`）的响应上
+/// 宣告新写入契约的头（BUG-4431）。值恒为 `1`；旧 host 不发此头，client 据此走兼容层。
+const String kLiveWriteHeader = 'X-Fushi-Live-Write';
+
+/// 视频 / 有声书位置 `PUT` 请求体里的可选前置条件键：host 当前位置必须是其中之一。
+const String kLiveExpectedPositionsKey = 'expectedPositionsMs';
+
+/// 书进度 `PUT` 请求体里的可选前置条件键：`[{sectionIndex, normCharOffset}, ...]`。
+const String kLiveExpectedBookProgressKey = 'expected';
+
+LiveWriteResult? _liveWriteResultOf(Object? raw) {
+  if (raw is! String) return null;
+  for (final LiveWriteResult r in LiveWriteResult.values) {
+    if (r.name == raw) return r;
+  }
+  return null;
+}
+
+/// 视频 / 有声书位置 live 写入的回执：结果 + host 写后的当前值（BUG-4431）。
+class LivePositionWriteOutcome {
+  const LivePositionWriteOutcome({
+    required this.result,
+    required this.positionMs,
+    required this.updatedAtMs,
+  });
+
+  final LiveWriteResult result;
+  final int positionMs;
+  final int updatedAtMs;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'result': result.name,
+    'positionMs': positionMs,
+    'positionUpdatedAtMs': updatedAtMs,
+  };
+
+  /// 解析失败（非 Map、缺字段、`result` 未知）返回 null，不抛；调用方按「未确认」处理。
+  static LivePositionWriteOutcome? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final LiveWriteResult? result = _liveWriteResultOf(json['result']);
+    final Object? pos = json['positionMs'];
+    final Object? at = json['positionUpdatedAtMs'];
+    if (result == null || pos is! num || at is! num) return null;
+    return LivePositionWriteOutcome(
+      result: result,
+      positionMs: pos.toInt(),
+      updatedAtMs: at.toInt(),
+    );
+  }
+}
+
+/// 书进度 live 写入的回执：结果 + host 写后的当前进度（BUG-4431）。
+class LiveBookProgressWriteOutcome {
+  const LiveBookProgressWriteOutcome({
+    required this.result,
+    required this.current,
+  });
+
+  final LiveWriteResult result;
+  final RemoteBookProgress current;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'result': result.name,
+    'progress': current.toJson(),
+  };
+
+  /// 解析失败（非 Map、缺 `progress`、`result` 未知）返回 null，不抛。
+  static LiveBookProgressWriteOutcome? tryParse(Object? json) {
+    if (json is! Map) return null;
+    final LiveWriteResult? result = _liveWriteResultOf(json['result']);
+    final Object? progress = json['progress'];
+    if (result == null || progress is! Map) return null;
+    return LiveBookProgressWriteOutcome(
+      result: result,
+      current: RemoteBookProgress.fromJson(progress.cast<String, Object?>()),
+    );
+  }
+}
+
+/// 可选 host 能力：带结果回执与前置条件的 live 写入（BUG-4431）。与
+/// [MangaLibraryHost] 同范式，server 用 `is` 协商；没实现的 host 端点照旧回 200 空体、
+/// 不发 [kLiveWriteHeader]。
+abstract interface class LivePositionWriteHost {
+  /// [expectedPositionsMs] 非 null 时是前置条件：host 当前位置不在其中 →
+  /// [LiveWriteResult.preconditionFailed]，不写。判定口径见 [resolveLivePositionWrite]。
+  Future<LivePositionWriteOutcome> putVideoPositionChecked(
+    String id,
+    int positionMs,
+    int updatedAtMs, {
+    int episodeIndex = 0,
+    List<int>? expectedPositionsMs,
+  });
+
+  /// 有声书版；host 无该有声书 → [LiveWriteResult.missing]。
+  Future<LivePositionWriteOutcome> putAudiobookPositionChecked(
+    String identity,
+    int positionMs,
+    int updatedAtMs, {
+    List<int>? expectedPositionsMs,
+  });
+
+  /// 书进度版；host 无该书 → [LiveWriteResult.missing]。判定口径见
+  /// [resolveLiveBookProgressWrite]。
+  Future<LiveBookProgressWriteOutcome> putBookProgressChecked(
+    String bookKey,
+    RemoteBookProgress progress, {
+    List<BookProgressBaseline>? expected,
+  });
+}
+
+/// 解析位置 `PUT` 请求体的 [kLiveExpectedPositionsKey]：缺省 / null → null（不设
+/// 前置条件）；不是全为整数的数组 → 抛 [FormatException]（端点回 400）。
+List<int>? parseLiveExpectedPositionsMs(Object? raw) {
+  if (raw == null) return null;
+  if (raw is! List) {
+    throw const FormatException('expectedPositionsMs must be an int array');
+  }
+  return <int>[
+    for (final Object? e in raw)
+      if (e is int)
+        e
+      else
+        throw const FormatException('expectedPositionsMs must be an int array'),
+  ];
+}
+
+/// 解析书进度 `PUT` 请求体的 [kLiveExpectedBookProgressKey]：缺省 / null → null；
+/// 元素不是带整数 `sectionIndex` 与 `normCharOffset` 的对象 → 抛 [FormatException]。
+List<BookProgressBaseline>? parseLiveExpectedBookProgress(Object? raw) {
+  if (raw == null) return null;
+  const FormatException bad = FormatException(
+    'expected must be an array of {sectionIndex, normCharOffset}',
+  );
+  if (raw is! List) throw bad;
+  return <BookProgressBaseline>[
+    for (final Object? e in raw)
+      if (e is Map && e['sectionIndex'] is int && e['normCharOffset'] is int)
+        BookProgressBaseline(
+          sectionIndex: e['sectionIndex'] as int,
+          normCharOffset: e['normCharOffset'] as int,
+        )
+      else
+        throw bad,
+  ];
+}
+
+/// host 位置写入（视频 / 有声书 `PUT`）的唯一判定口径（BUG-4431）。纯函数。
+///
+/// - 上报位置 clamp 0，上报戳截到 `now + 余量`；已存超限毒戳按 0 比较。
+/// - [expectedPositionsMs] 非 null（新 client 带前置条件）：host 当前位置不在其中 →
+///   [LiveWriteResult.preconditionFailed]；命中时**不按戳拒收**（写入方已核对过 host
+///   此刻的值，时钟偏慢的设备也不该被拒），落库戳取 `max(上报戳, 已存可信戳 + 1)`，
+///   保证 host 戳单调前进；同位置且已存戳可信、上报戳不新 → [LiveWriteResult.unchanged]。
+///   已存毒戳一定被改写成可信戳。
+/// - null（旧 client）：沿用 [resolvePositionLww]；胜者是 host 已存值时按上报位置是否
+///   相同回 [LiveWriteResult.unchanged] / [LiveWriteResult.stale]，否则
+///   [LiveWriteResult.applied]。
+///
+/// 返回的 `next` 是 host 写后应处的值（未写时即 [current]）。
+({LiveWriteResult result, ({int positionMs, int updatedAtMs}) next})
+resolveLivePositionWrite({
+  required ({int positionMs, int updatedAtMs}) current,
+  required int positionMs,
+  required int updatedAtMs,
+  required List<int>? expectedPositionsMs,
+  required int nowMs,
+}) {
+  final int inPos = positionMs < 0 ? 0 : positionMs;
+  final int inTs = capFutureSyncStamp(updatedAtMs, nowMs: nowMs);
+  final int curTs = trustedStoredSyncStamp(current.updatedAtMs, nowMs: nowMs);
+  final bool stampTrusted = curTs == current.updatedAtMs;
+  if (expectedPositionsMs != null) {
+    if (!expectedPositionsMs.contains(current.positionMs)) {
+      return (result: LiveWriteResult.preconditionFailed, next: current);
+    }
+    if (inPos == current.positionMs &&
+        stampTrusted &&
+        inTs <= current.updatedAtMs) {
+      return (result: LiveWriteResult.unchanged, next: current);
+    }
+    return (
+      result: LiveWriteResult.applied,
+      next: (
+        positionMs: inPos,
+        updatedAtMs: capFutureSyncStamp(
+          inTs > curTs ? inTs : curTs + 1,
+          nowMs: nowMs,
+        ),
+      ),
+    );
+  }
+  final ({int positionMs, int updatedAtMs}) winner = resolvePositionLww(
+    localPositionMs: current.positionMs,
+    localUpdatedAtMs: curTs,
+    remotePositionMs: inPos,
+    remoteUpdatedAtMs: inTs,
+  );
+  if (winner.positionMs == current.positionMs && winner.updatedAtMs == curTs) {
+    return (
+      result: inPos == current.positionMs
+          ? LiveWriteResult.unchanged
+          : LiveWriteResult.stale,
+      next: current,
+    );
+  }
+  return (result: LiveWriteResult.applied, next: winner);
+}
+
+/// host 书进度写入（`PUT /api/library/books/<bookKey>/progress`）的唯一判定口径
+/// （BUG-4431）。纯函数；书不在库的 [LiveWriteResult.missing] 由调用方判。
+///
+/// 与 [resolveLivePositionWrite] 同构：前置条件用 [BookProgressBaseline.matches]；
+/// 命中时 [LiveWriteResult.unchanged] 要求 section / normCharOffset / **charOffset**
+/// 三者都相同且已存戳可信、上报戳不新——同位置只差 charOffset 时照样写，host 才拿得到
+/// 精确锚点。无前置条件时沿用 [resolveBookProgressSync]（可信戳视图 vs 截戳上报）。
+({LiveWriteResult result, RemoteBookProgress next})
+resolveLiveBookProgressWrite({
+  required RemoteBookProgress current,
+  required RemoteBookProgress incoming,
+  required List<BookProgressBaseline>? expected,
+  required int nowMs,
+}) {
+  final RemoteBookProgress inP = RemoteBookProgress(
+    sectionIndex: incoming.sectionIndex < 0 ? 0 : incoming.sectionIndex,
+    normCharOffset: incoming.normCharOffset < 0 ? 0 : incoming.normCharOffset,
+    charOffset: incoming.charOffset,
+    updatedAtMs: capFutureSyncStamp(incoming.updatedAtMs, nowMs: nowMs),
+  );
+  final int curTs = trustedStoredSyncStamp(current.updatedAtMs, nowMs: nowMs);
+  final bool stampTrusted = curTs == current.updatedAtMs;
+  if (expected != null) {
+    if (!expected.any((BookProgressBaseline b) => b.matches(current))) {
+      return (result: LiveWriteResult.preconditionFailed, next: current);
+    }
+    if (sameBookPosition(inP, current) &&
+        inP.charOffset == current.charOffset &&
+        stampTrusted &&
+        inP.updatedAtMs <= current.updatedAtMs) {
+      return (result: LiveWriteResult.unchanged, next: current);
+    }
+    return (
+      result: LiveWriteResult.applied,
+      next: RemoteBookProgress(
+        sectionIndex: inP.sectionIndex,
+        normCharOffset: inP.normCharOffset,
+        charOffset: inP.charOffset,
+        updatedAtMs: capFutureSyncStamp(
+          inP.updatedAtMs > curTs ? inP.updatedAtMs : curTs + 1,
+          nowMs: nowMs,
+        ),
+      ),
+    );
+  }
+  final RemoteBookProgress trustedCurrent = withTrustedStoredStamp(
+    current,
+    nowMs: nowMs,
+  );
+  final RemoteBookProgress winner = resolveBookProgressSync(
+    local: trustedCurrent,
+    remote: inP,
+  );
+  // 胜者是 host 已存那份（可信戳视图）就不写：不能把毒戳视图的 0 戳写回库。胜者是
+  // 上报那份时仍与**原始** current 逐字段比较（含原始戳）。
+  if (identical(winner, trustedCurrent) ||
+      (sameBookPosition(winner, current) &&
+          winner.charOffset == current.charOffset &&
+          winner.updatedAtMs == current.updatedAtMs)) {
+    return (
+      result: sameBookPosition(inP, current)
+          ? LiveWriteResult.unchanged
+          : LiveWriteResult.stale,
+      next: current,
+    );
+  }
+  return (result: LiveWriteResult.applied, next: winner);
+}
+
 /// 互联播放位置（视频 / 有声书）的三方判定（BUG-3367）。纯函数。
 ///
 /// 与书籍进度 [resolveBookProgressThreeWay]（BUG-2506）同口径，只是位置是单维
@@ -1974,10 +2676,11 @@ int trustedStoredSyncStamp(int storedAtMs, {required int nowMs}) =>
 /// 是**位置基线**（上次两端达成一致的位置，`sync_baselines` 一行），不看时间戳：
 /// - 一端「无记录」（updatedAtMs<=0，含没带时间戳的旧数据）→ 另一端直接胜出；
 /// - 两端位置相同 → [BookProgressSyncAction.synced]（调用方只对齐时间戳）；
-/// - 没有基线且两端位置不同 → 退回旧口径 LWW（较新时间戳胜，平局取较远位置）一次，
-///   胜出端落地时调用方顺带记下基线，此后才走三方判定。升级前从没记过基线，若这里
-///   直接判冲突，升级后首轮会把每条「只有一端动过」的条目全弹出来；
-
+/// - 没有基线且两端位置不同 → [BookProgressSyncAction.conflict] 交用户（BUG-4435，
+///   与书籍同口径）。不比较两台设备各自的墙钟：时钟偏快的一端会静默盖掉另一端的
+///   真实进度。升级首轮不会因此批量弹冲突——存量基线由按 host 分槽的领养
+///   （`ensureBaselinesAdopted`，BUG-4434）搬到新作用域；只有从未记过基线的条目
+///   （多 host、从备份恢复的新设备、新配对的 host）首次两端不等时问一次；
 /// - 有基线：只一端偏离 → 那端胜；两端都偏离 → [BookProgressSyncAction.conflict]，
 ///   谁都不覆盖。
 ///
@@ -2003,17 +2706,7 @@ BookProgressSyncAction resolvePlaybackPositionThreeWay({
   if (local.positionMs == remote.positionMs) {
     return BookProgressSyncAction.synced;
   }
-  if (basePositionMs == null) {
-    if (local.updatedAtMs > remote.updatedAtMs) {
-      return BookProgressSyncAction.pushLocal;
-    }
-    if (remote.updatedAtMs > local.updatedAtMs) {
-      return BookProgressSyncAction.applyRemote;
-    }
-    return local.positionMs > remote.positionMs
-        ? BookProgressSyncAction.pushLocal
-        : BookProgressSyncAction.applyRemote;
-  }
+  if (basePositionMs == null) return BookProgressSyncAction.conflict;
   final bool localMoved = local.positionMs != basePositionMs;
   final bool remoteMoved = remote.positionMs != basePositionMs;
   if (localMoved && remoteMoved) return BookProgressSyncAction.conflict;
@@ -2084,6 +2777,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
     this.fileName,
     this.containerTrackOrdinal,
     this.isExternalFile = false,
+    this.isDefault = false,
   });
 
   /// 服务端定位该轨用的流号：Fushi host 是 ffmpeg `-map 0:s:N` 的字幕相对序号，
@@ -2109,6 +2803,11 @@ class RemoteVideoEmbeddedSubtitleTrack {
   /// 按 [streamIndex] 去选只会选中另一条不相干的内嵌轨。
   final bool isExternalFile;
 
+  /// 服务端把这条轨标成**默认**（Jellyfin / Emby `MediaStreams[].IsDefault`，即容器
+  /// disposition default 或服务器上设的默认）。起播时 app 的字幕语言偏好没命中任何轨
+  /// 才按它自动挂（反馈 wCQIR4Pvz9，见 `pickRemoteStartupSubtitleTrack`）。
+  final bool isDefault;
+
   Map<String, Object?> toJson() => <String, Object?>{
     'streamIndex': streamIndex,
     'codec': codec,
@@ -2120,6 +2819,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
     if (containerTrackOrdinal != null)
       'containerTrackOrdinal': containerTrackOrdinal,
     if (isExternalFile) 'isExternalFile': true,
+    if (isDefault) 'isDefault': true,
   };
 
   RemoteVideoEmbeddedSubtitleTrack copyWith({String? url, String? fileName}) =>
@@ -2133,6 +2833,7 @@ class RemoteVideoEmbeddedSubtitleTrack {
         fileName: fileName ?? this.fileName,
         containerTrackOrdinal: containerTrackOrdinal,
         isExternalFile: isExternalFile,
+        isDefault: isDefault,
       );
 
   static RemoteVideoEmbeddedSubtitleTrack fromJson(Map<String, Object?> json) =>
@@ -2146,8 +2847,75 @@ class RemoteVideoEmbeddedSubtitleTrack {
         fileName: _jsonString(json['fileName']),
         containerTrackOrdinal: _jsonInt(json['containerTrackOrdinal']),
         isExternalFile: json['isExternalFile'] == true,
+        isDefault: json['isDefault'] == true,
       );
 }
+
+/// host 上某一集的一条**外挂字幕文件**（`/streamurl` 的 `sidecarSubtitles[]`，
+/// 反馈 -CaVsioFhG）。
+///
+/// [fileName] 只是 basename（目录结构留在 host），同时是下载选择子：client 用
+/// `GET .../subtitle?sidecar=<fileName>` 取这一条（[kVideoSidecarSubtitleQueryParam]）。
+/// [format] 是小写扩展名（`srt` / `ass` / `ssa` / `vtt`），决定解析器。
+/// [language] 是文件名里视频 stem 与扩展名之间的标记（`ep01.ja.srt` → `ja`），没有
+/// 标记时为 null。[isDefault] = 这一条就是旧单值字段 `subtitleFileName` /
+/// `subtitleUrl` 指的那条（host 的默认字幕）。[url] 与 [RemoteVideoStreamUrls.subtitleUrl]
+/// 同口径：只说明 host 怎么定位它，client 实际按自己的 api base 拼请求。
+class RemoteVideoSidecarSubtitle {
+  const RemoteVideoSidecarSubtitle({
+    required this.fileName,
+    required this.format,
+    this.language,
+    this.sizeBytes,
+    this.isDefault = false,
+    this.url,
+  });
+
+  final String fileName;
+  final String format;
+  final String? language;
+  final int? sizeBytes;
+  final bool isDefault;
+  final String? url;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'fileName': fileName,
+    'format': format,
+    if (_isNonEmpty(language)) 'language': language,
+    if (sizeBytes != null) 'sizeBytes': sizeBytes,
+    if (isDefault) 'isDefault': true,
+    if (_isNonEmpty(url)) 'url': url,
+  };
+
+  /// 坏条目（没有文件名 / 文件名带路径分隔符 / 格式缺失）返回 null，调用方丢弃。
+  static RemoteVideoSidecarSubtitle? fromJson(Object? value) {
+    if (value is! Map) return null;
+    final String fileName = value['fileName']?.toString().trim() ?? '';
+    if (fileName.isEmpty || fileName.contains('/') || fileName.contains(r'\')) {
+      return null;
+    }
+    final String format = (value['format']?.toString() ?? '')
+        .trim()
+        .toLowerCase();
+    if (format.isEmpty) return null;
+    return RemoteVideoSidecarSubtitle(
+      fileName: fileName,
+      format: format,
+      language: _jsonString(value['language']),
+      sizeBytes: _jsonInt(value['sizeBytes']),
+      isDefault: value['isDefault'] == true,
+      url: _jsonString(value['url']),
+    );
+  }
+}
+
+/// 解析 `sidecarSubtitles` 数组（缺失 / 非数组 → 空表，坏条目丢弃）。
+List<RemoteVideoSidecarSubtitle> _jsonSidecarSubtitles(Object? value) =>
+    <RemoteVideoSidecarSubtitle>[
+      if (value case final List<Object?> items)
+        for (final Object? item in items)
+          ?RemoteVideoSidecarSubtitle.fromJson(item),
+    ];
 
 /// 远端播放列表中的一集（TODO-885）。
 ///
@@ -2224,11 +2992,32 @@ class RemoteVideoInfo {
     this.collection,
     this.importedAt,
     this.fileName,
+    this.sectionKey,
     this.peerPlayable = true,
+    this.locked = false,
+    this.stream,
   });
 
   final String id;
   final String title;
+
+  /// 这个文件在 host 上的**生效分栏**（`s<N>` / `extras`；BUG-5084）。
+  ///
+  /// host 的合集分栏 = 手动分栏 → 手动季集指定 → 文件名派生（引擎
+  /// `loadCollectionSections`，拍板台 iR6ccUys9H），前两张覆盖表只在 host 本机。
+  /// client 只拿得到 [fileName]（basename）去派生，认不出 host 上钉到 PV·特典的
+  /// 短篇，也看不到只写在 host 父目录上的季号——所以由 host 按同一入口算好下发，
+  /// client 的合集详情页 / 剧集面板直接用它（[collectionGroupKey]）。
+  ///
+  /// wire：`sectionKey`，只在非空时写；解析时形状不合法（[isValidCollectionSectionKey]）
+  /// 按缺省处理。null = 旧 host / 非互联来源，client 照旧按 [parseName] 派生；旧
+  /// client 不认识该键、按旧行为派生。
+  final String? sectionKey;
+
+  /// client 侧这一集的分栏键：host 下发了生效分栏就用它，否则按 [parseName]
+  /// 派生（与本机文件名派生同一判据）。
+  String get collectionGroupKey =>
+      sectionKey ?? collectionGroupKeyForFilename(parseName);
 
   /// 对端能否经 host 播放 / 下载这一条（host 有没有媒体字节可给）。
   ///
@@ -2242,6 +3031,19 @@ class RemoteVideoInfo {
   /// wire：只在 false 时写 `peerPlayable: false`；缺省 = true，旧 host（不带该键）
   /// 与改动前逐字节同行为；旧 client 不认识该键，按旧行为照常列出。
   final bool peerPlayable;
+
+  /// host 上这部作品被用户「上锁」（拍板台 qiqSbvdxrk，v171）。上锁标记本身经
+  /// 标签清单同步，但只落到本机已有的宿主上；对端还没下载的条目只能靠这一位知道
+  /// ——client 本次会话没解锁时不给它出远端占位卡 / 「继续」/ 活动行。additive：
+  /// 只在 true 时写键，旧 host 不带 = 未上锁，旧 client 忽略。
+  final bool locked;
+
+  /// 流媒体书（「粘贴 URL 导入」/ 网页视频站，[isSyncableStreamVideo]）的重开信息：
+  /// URL + 重开规格 + host 拥有时刻。client 据此在本机落一本同 uid 的流媒体书，行两端
+  /// 都有之后进度 / 播放偏好 sweep 照常接管（拍板台 Z2OhxAjKVv）。其余条目恒 null。
+  ///
+  /// wire：`stream: {url, spec?, addedAt?}`，只在非 null 时写；旧 client 不认识该键。
+  final RemoteStreamVideoEntry? stream;
 
   /// host 视频文件的**文件名**（只取 basename，绝不带目录——目录结构仍留在 host）。
   ///
@@ -2371,6 +3173,51 @@ class RemoteVideoInfo {
   bool get hasDisplayCover =>
       hasCover || _isNonEmpty(coverUrl) || _isNonEmpty(coverPath);
 
+  /// 只换断点（[positionMs] / [positionUpdatedAtMs]）的副本，其余字段原样。
+  ///
+  /// 客户端展示远端条目时把清单快照里的 host 断点与本机库断点取较新者
+  /// （BUG-4303，见 app 侧 `withLocalRemoteVideoPositions`）用。
+  RemoteVideoInfo withPosition({
+    required int positionMs,
+    required int positionUpdatedAtMs,
+  }) => RemoteVideoInfo(
+    id: id,
+    title: title,
+    sizeBytes: sizeBytes,
+    hasSubtitle: hasSubtitle,
+    subtitleFileName: subtitleFileName,
+    embeddedSubtitleTracks: embeddedSubtitleTracks,
+    durationMs: durationMs,
+    hasCover: hasCover,
+    coverUrl: coverUrl,
+    coverPath: coverPath,
+    seriesCoverUrl: seriesCoverUrl,
+    positionMs: positionMs,
+    positionUpdatedAtMs: positionUpdatedAtMs,
+    delayMs: delayMs,
+    delayUpdatedAtMs: delayUpdatedAtMs,
+    audioTrackId: audioTrackId,
+    audioTrackUpdatedAtMs: audioTrackUpdatedAtMs,
+    secondarySubtitleSource: secondarySubtitleSource,
+    secondarySubtitleUpdatedAtMs: secondarySubtitleUpdatedAtMs,
+    secondaryDelayMs: secondaryDelayMs,
+    secondaryDelayUpdatedAtMs: secondaryDelayUpdatedAtMs,
+    completedAt: completedAt,
+    completedMarkedAtMs: completedMarkedAtMs,
+    episodes: episodes,
+    currentEpisode: currentEpisode,
+    tags: tags,
+    tagsAddedAt: tagsAddedAt,
+    tagTombstones: tagTombstones,
+    collection: collection,
+    importedAt: importedAt,
+    fileName: fileName,
+    sectionKey: sectionKey,
+    peerPlayable: peerPlayable,
+    locked: locked,
+    stream: stream,
+  );
+
   Map<String, Object?> toJson() => <String, Object?>{
     'id': id,
     'title': title,
@@ -2415,7 +3262,10 @@ class RemoteVideoInfo {
     if (tagTombstones.isNotEmpty) 'tagTombstones': tagTombstones,
     if (collection != null) 'collection': collection!.toJson(),
     if (_isNonEmpty(fileName)) 'fileName': fileName,
+    if (_isNonEmpty(sectionKey)) 'sectionKey': sectionKey,
     if (!peerPlayable) 'peerPlayable': false,
+    if (locked) 'locked': true,
+    if (stream != null) kRemoteStreamVideoWireKey: stream!.toJson(),
   };
 
   RemoteVideoInfo copyWith({
@@ -2437,6 +3287,7 @@ class RemoteVideoInfo {
     int? completedAt,
     int? completedMarkedAtMs,
     RemoteCollectionMembership? collection,
+    bool? locked,
   }) => RemoteVideoInfo(
     id: id,
     title: title,
@@ -2473,7 +3324,10 @@ class RemoteVideoInfo {
     collection: collection ?? this.collection,
     importedAt: importedAt,
     fileName: fileName,
+    sectionKey: sectionKey,
     peerPlayable: peerPlayable,
+    locked: locked ?? this.locked,
+    stream: stream,
   );
 
   static RemoteVideoInfo fromJson(Map<String, Object?> json) {
@@ -2521,9 +3375,19 @@ class RemoteVideoInfo {
       // 对齐 RemoteBookInfo.fromJson。旧 host 无该字段 → fromJson 返 null（向后兼容）。
       collection: RemoteCollectionMembership.fromJson(json['collection']),
       fileName: _jsonString(json['fileName']),
+      sectionKey: _jsonSectionKey(json['sectionKey']),
       peerPlayable: json['peerPlayable'] != false,
+      locked: json['locked'] == true,
+      stream: RemoteStreamVideoEntry.tryParse(json[kRemoteStreamVideoWireKey]),
     );
   }
+}
+
+/// 解析 host 下发的生效分栏键：只认 [isValidCollectionSectionKey] 的形状，其余
+/// （缺键 / 空串 / 将来的新键形状）一律 null，client 回落文件名派生。
+String? _jsonSectionKey(Object? value) {
+  final String? key = _jsonString(value);
+  return key != null && isValidCollectionSectionKey(key) ? key : null;
 }
 
 /// 解析 `{name: ms}` 映射（值容忍 int/num/数字串；空名/非数值跳过）。非 Map → 空。
@@ -2633,6 +3497,7 @@ class RemoteVideoStreamUrls {
     this.miningVideoUrl,
     this.miningVideoHasAudio = false,
     this.embeddedSubtitleTracks = const <RemoteVideoEmbeddedSubtitleTrack>[],
+    this.sidecarSubtitles = const <RemoteVideoSidecarSubtitle>[],
     this.streamIsOriginalContainer = true,
     this.sourceRequiresDolbyVisionReshape = false,
     this.discTitle,
@@ -2677,6 +3542,12 @@ class RemoteVideoStreamUrls {
   final bool miningVideoHasAudio;
   final List<RemoteVideoEmbeddedSubtitleTrack> embeddedSubtitleTracks;
 
+  /// 这一集 host 上的**全部**外挂字幕文件（反馈 -CaVsioFhG），默认那条
+  /// （[subtitleFileName]）标 [RemoteVideoSidecarSubtitle.isDefault]。只有实现了
+  /// [VideoSidecarSubtitleListHost] 的互联 host 会发；老 host / 其它来源恒空，client
+  /// 退回只用 [subtitleUrl] / [subtitleFileName] 这一条的旧行为。
+  final List<RemoteVideoSidecarSubtitle> sidecarSubtitles;
+
   static RemoteVideoStreamUrls fromJson(Map<String, Object?> json) {
     final String streamUrl = json['url']?.toString() ?? '';
     final String? subtitleUrl = json['subtitleUrl']?.toString();
@@ -2703,6 +3574,7 @@ class RemoteVideoStreamUrls {
       miningVideoUrl: miningVideoUrl,
       miningVideoHasAudio: miningVideoHasAudio,
       embeddedSubtitleTracks: embeddedSubtitleTracks,
+      sidecarSubtitles: _jsonSidecarSubtitles(json['sidecarSubtitles']),
       streamIsOriginalContainer: streamIsOriginalContainer,
       discTitle: BlurayRemoteTitle.fromJson(json['discTitle']),
     );
@@ -2787,23 +3659,26 @@ abstract class FushiLibraryHostService {
 
   // ── 本地音频 ───────────────────────────────────────────────────────────────
 
-  /// host 当前本地音频来源清单（从已注入的 localAudioEntries 取 displayName）。
+  /// host 当前本地音频来源清单（displayName + 内容身份 contentId）。
   Future<List<RemoteLocalAudioInfo>> listLocalAudio();
 
-  /// 即时把 displayName 为 [displayName] 的本地音频库打包成临时文件，返回该文件。
+  /// 即时把 [key] 指向的本地音频库打包成临时文件，返回该文件。[key] 先按内容
+  /// 身份 contentId 认、再按 displayName 认（旧版本客户端只会传 displayName）。
   /// 调用方负责删除返回的临时文件（及其父临时目录）。
-  /// [displayName] 含路径穿越字符时抛 [ArgumentError]；
+  /// [key] 含路径穿越字符时抛 [ArgumentError]；
   /// 找不到该来源或其 DB 文件不存在时抛 [StateError]。
-  Future<File> exportLocalAudio(String displayName);
+  Future<File> exportLocalAudio(String key);
 
   /// 把本地音频包文件导入 host（解包 + 注册回调）。
   /// 实现应调用 [onLocalAudioImported] 回调完成 native 注册；
   /// 回调为 null 时抛 [UnsupportedError]。
   Future<void> importLocalAudio(File packageFile);
 
-  /// 从 host 删除 displayName 为 [displayName] 的本地音频来源。
-  /// [displayName] 含路径穿越字符时抛 [ArgumentError]。
-  Future<void> deleteLocalAudio(String displayName);
+  /// 从 host 删除内容身份为 [key] 的本地音频来源（HBK-AUDIT-022）。**只认
+  /// contentId**：显示名在各端可以不同，同名的可能是另一份库，按名删会删错——
+  /// [key] 不是合格内容身份时不删任何东西（幂等返回）。[key] 含路径穿越字符时抛
+  /// [ArgumentError]。
+  Future<void> deleteLocalAudio(String key);
 
   // ── 有声书包 ──────────────────────────────────────────────────────────────
 
@@ -2975,18 +3850,22 @@ abstract class FushiLibraryHostService {
 
   // ── 聚合（统计 + 收藏，TODO-1056 phase C）────────────────────────────────────
 
-  /// 读 host 端当前聚合快照（四张统计表 + 挖掘计数 + 收藏词 + 收藏句），供 client
-  /// 拉取 host 真相源做并集合并（TODO-1056 phase C 互联 live 通道）。纯读，无副作用。
+  /// 读 host 端当前聚合快照（四张统计表 + 挖掘计数 + 收藏词 + 收藏句），编码成互联
+  /// 报文体（UTF-8 JSON，`aggregate_wire_codec.dart`），供 client 拉取 host 真相源做
+  /// 并集合并（TODO-1056 phase C 互联 live 通道）。纯读，无副作用。
   ///
   /// 与云后端 phase B 用同一 [AggregateSnapshot] 形状（materialize 自 host DB），
-  /// 但通道是互联 live 端点而非云上 per-device 快照文件。
-  Future<AggregateSnapshot> getAggregateSnapshot();
+  /// 但通道是互联 live 端点而非云上 per-device 快照文件。HBK-AUDIT-028：交出的是
+  /// 编码好的字节，组装与编码由实现方放在后台做，不经 host 所在 isolate。
+  Future<Uint8List> getAggregateBody();
 
-  /// 把 client 上报的（已在 client 端与 host 并集合并的）聚合快照折叠进 host 自己的
-  /// DB（TODO-1056 phase C）。写入语义只用 MAX / 并集 upsert（统计逐桶取大、挖掘计数
-  /// MAX 非 SUM、收藏词/句并集去重），故重复 apply 同一快照是幂等 no-op，删除绝不跨端
-  /// 传播——与云后端 phase B 的 applySnapshotToLocal 完全同语义（复用同一实现）。
-  Future<void> applyAggregateSnapshot(AggregateSnapshot snapshot);
+  /// 把 client 上报的（已在 client 端与 host 并集合并的）聚合快照报文体折叠进 host
+  /// 自己的 DB（TODO-1056 phase C）。写入语义只用 MAX / 并集 upsert（统计逐桶取大、
+  /// 挖掘计数 MAX 非 SUM、收藏词/句并集去重），故重复 apply 同一快照是幂等 no-op，
+  /// 删除绝不跨端传播——与云后端 phase B 的 applySnapshotToLocal 完全同语义（复用
+  /// 同一实现）。返回 false = 报文体不是合法的 JSON object（非法 UTF-8 / JSON、顶层
+  /// 不是 object），什么都不写，端点据此回 400。
+  Future<bool> applyAggregateBody(Uint8List body);
 
   // ── 合集清单（多端库联合视图 §2.3 任务5.2）──────────────────────────────────
 
@@ -3077,6 +3956,18 @@ abstract interface class TagSyncHost {
   Future<TagManifest> mergeTagManifest(TagManifest incoming);
 }
 
+/// host 端「能否收下对端推来的 PDF 书」的**可选**能力（反馈 Jq1_ujHa4t）。
+///
+/// 与 [TagSyncHost] 同范式（server 用 `is` 探测、不扩大主接口），但多一层运行时
+/// 判断：同一个 `LocalLibraryHostService` 在 app 里接了 PDF 导入器（pdfrx 量页数 /
+/// 渲染封面），在无头服务端则没有——能力位 `liveLibrary.pdfBooks` 取
+/// [acceptsPdfBooks]。client 只在它为 true 时才推 PDF，否则 PDF 留在本机，不往收不
+/// 下的 host 白传一遍再收 500。
+abstract interface class PdfBookImportHost {
+  /// 这台 host 能否把推来的 PDF 原件导入书库。
+  bool get acceptsPdfBooks;
+}
+
 /// host 端「作品图谱清单」的**可选**能力（互联作品图谱同步，`media_link_sync.dart`）。
 ///
 /// 与 [TagSyncHost] 同范式：server 用 `is` 探测，不实现 → `/api/library/media-links`
@@ -3087,6 +3978,22 @@ abstract interface class MediaLinkSyncHost {
 
   /// 把 client 上报的清单按 LWW 并入 host DB，返回并入后的 host 清单。
   Future<MediaLinkManifest> mergeMediaLinkManifest(MediaLinkManifest incoming);
+}
+
+/// host 端「收下对端注册的流媒体书」的**可选**能力（拍板台 Z2OhxAjKVv，
+/// `stream_video_sync.dart`）。
+///
+/// 与 [MediaLinkSyncHost] 同范式：server 用 `is` 探测，不实现 →
+/// `PUT /api/library/videos/<id>/streamentry` 404，能力位
+/// `liveLibrary.streamVideos=false`。client **先看能力位再推**：老 host 没有这条
+/// 路由，带后缀的 PUT 会落进「裸 id 上传视频」分支，把请求体当视频文件入库。
+abstract interface class StreamVideoSyncHost {
+  /// 在 host 视频库落一本 uid 为 [id] 的流媒体书（不传任何视频字节）。
+  ///
+  /// host 已有同 uid 的行时不改它（host 自己的标题 / 封面 / 进度是真相），返回
+  /// false；新建返回 true。[id] / URL 不满足 [isSyncableStreamVideo] 抛
+  /// [ArgumentError]（端点回 400）。
+  Future<bool> registerStreamVideo(String id, StreamVideoRegistration entry);
 }
 
 /// host 端「视频刮削元数据」的**可选**能力（`docs/specs/2026-09-12-interconnect-scrape-metadata.md`）。
@@ -3181,6 +4088,53 @@ abstract interface class VideoDiscShareHost {
 
 /// `/api/capabilities` 的 `liveLibrary` 里声明 [VideoClipExportHost] 的能力位。
 const String kVideoClipExportCapability = 'videoClipExport';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明 [VideoDiscTitleAudioHost] 的能力位：
+/// `clipaudio` 认 `?discTitle=`。老 host 无此字段 → client 不带 `discTitle` 请求（老 host
+/// 不认它，会照 `<id>` 那一行裁，拿回的是另一条 title 的音频）。
+const String kVideoClipAudioDiscTitleCapability = 'videoClipAudioDiscTitle';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「`clipaudio?discTitle=` 认多角度 title 的
+/// 角度成员路径（`BDMV/PLAYLIST/00001.a2.mpls`，见 `bluray_angle.dart`）、按该角度裁」的
+/// 能力位。老 host 无此字段 → client 不发角度路径（老 host 认不出这个虚拟路径，只会 404）。
+const String kVideoClipAudioDiscTitleAngleCapability =
+    'videoClipAudioDiscTitleAngle';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「`clipaudio?discTitle=` 认 DVD title
+/// （`VIDEO_TS/TITLE_nn.dvdtitle`，`<id>` 是同一张 DVD 上的行）、经 `dvdvideo` demuxer
+/// 按 title 裁」的能力位。老 host 无此字段 → client 不发 DVD title（老 host 判它读不到）。
+const String kVideoClipAudioDiscTitleDvdCapability =
+    'videoClipAudioDiscTitleDvd';
+
+/// `/api/capabilities` 的 `liveLibrary` 里声明「`clipaudio?discTitle=` 认 DVD 多角度 title
+/// 的角度成员路径（`VIDEO_TS/TITLE_nn.aK.dvdtitle`，见 `dvd_angle.dart`）、按该角度裁」的
+/// 能力位。只声明了 [kVideoClipAudioDiscTitleDvdCapability] 与
+/// [kVideoClipAudioDiscTitleAngleCapability] 的 host 认不出这种形态（只会 404）→ client
+/// 不发。
+const String kVideoClipAudioDiscTitleDvdAngleCapability =
+    'videoClipAudioDiscTitleDvdAngle';
+
+/// host 端「按（盘, title）裁音频」的**可选**能力（远端原盘会话：盘在 host 上，会话里
+/// 正在看的 title 可能是库里没有行的特典 / 菜单 title）。与 [VideoClipExportHost] 同范式：
+/// server 用 `is` 探测，不实现 → `clipaudio?discTitle=` 404、能力位
+/// [kVideoClipAudioDiscTitleCapability] 为 false。
+abstract interface class VideoDiscTitleAudioHost {
+  /// 在 host 本地裁出视频 [id] 那一行所在蓝光盘上 [discTitle]（相对盘根，
+  /// `BDMV/PLAYLIST/<名>.mpls`）那条 title 的 `[startMs, endMs)` 音频，返回落在**独立
+  /// 临时目录**里的 aac 文件（调用方读完负责删该目录）。视频未知 / 不是蓝光行 / title
+  /// 不合法或本机读不到 / 区间非法 / ffmpeg 失败 → null。其余参数同
+  /// [FushiLibraryHostService.clipVideoAudio]。
+  Future<File?> clipVideoDiscTitleAudio(
+    String id, {
+    required String discTitle,
+    required int startMs,
+    required int endMs,
+    int? audioStreamIndex,
+    int? audioStreamCount,
+    int audioChannels = 1,
+    String audioBitrate = '64k',
+  });
+}
 
 /// host 端「替 client 裁出视频片段原料」的**可选**能力（反馈 6nBmSBj_2W：互联远端
 /// 视频的片段导出）。

@@ -12,6 +12,7 @@ import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart'
     show DiscoveryImportBlocker;
 import 'package:path/path.dart' as p;
 
+import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/library_progress_reset.dart';
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
@@ -391,6 +392,7 @@ void main() {
       Future<String?> Function(String path)? ingestVideoFile,
     }) => LibraryCtlImporter(
       db: db,
+      folderTranscribeAudiobook: null,
       galgameRepo: games,
       isKindEnabled: (LibraryCtlKind kind) => !disabled.contains(kind),
       keepDuplicates: keepDuplicates,
@@ -581,6 +583,7 @@ void main() {
       final List<Map<String, Object?>> enqueued = <Map<String, Object?>>[];
       final LibraryCtlImporter withQueue = LibraryCtlImporter(
         db: db,
+        folderTranscribeAudiobook: null,
         galgameRepo: games,
         isKindEnabled: (LibraryCtlKind kind) => true,
         keepDuplicates: false,
@@ -934,7 +937,11 @@ void main() {
     setUp(() {
       db = FushiDatabase.forTesting(NativeDatabase.memory());
       games = GalgameRepository(db);
-      shelf = LibraryCtlShelf(db: db, galgameRepo: games);
+      shelf = LibraryCtlShelf(
+        db: db,
+        galgameRepo: games,
+        finishTracking: LibraryFinishTracking.none,
+      );
       tmp = Directory.systemTemp.createTempSync('fushi_ctl_shelf_');
     });
 

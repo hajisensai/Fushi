@@ -161,3 +161,54 @@ verified at runtime on this machine.
   The Linux fork carries the same helper (`linux/utils/content_type.h`).
 - Keep `content_type.h` pure ASCII: MSVC reads sources in the system code page
   and the plugin builds with `/WX`, so a non-ASCII comment fails with C4819.
+
+## Sync composition host visibility & `WS_CHILD` position (BUG-5186, 2026-11-21)
+
+- `windows/in_app_webview/in_app_webview_manager.{h,cpp}`: register a
+  top-level `WindowProc` delegate (observe only, always `std::nullopt`) on
+  `WM_WINDOWPOSCHANGED` (`SWP_HIDEWINDOW` / `IsIconic` / `IsWindowVisible`),
+  plus `WM_SIZE` / `WM_SHOWWINDOW` as redundant visibility signals, forwarding
+  host visibility to all active and `keepAlive` WebViews. Without this,
+  minimizing or hiding the Fushi window left composition-mode WebView2
+  `Chrome_WidgetWin_1` proxy windows hit-testable on the desktop, swallowing
+  clicks (`window_manager` also eats `WM_SIZE` `SIZE_MINIMIZED`).
+  New / reused WebViews read the live top-level state (`isHostWindowVisible()`);
+  nothing is cached at plugin registration, when the main window is not shown
+  yet. No `WM_MOVE` handling: top-level moves only need
+  `NotifyParentWindowPositionChanged()`, done from `WM_WINDOWPOSCHANGED`.
+- `windows/custom_platform_view/custom_platform_view.cc` and
+  `windows/in_app_webview/in_app_webview.{h,cpp}`:
+  - `isPaused_` (Dart `pause()`) and `hostWindowVisible_` are independent;
+    `put_IsVisible` = host visible AND not paused. Hiding flips the page's
+    `document.visibilityState` to `hidden`, same as a minimized Chrome window.
+  - `setPosition` takes signed `double` coordinates (validated with
+    `std::isfinite`) instead of truncating via `static_cast<size_t>`.
+  - Composition mode: the host is a `WS_CHILD` of the Flutter view (BUG-3871),
+    so its position is `lround(logical * deviceScaleFactor_)` in Flutter-view
+    client pixels. Not clamped (a child is clipped by its parent anyway, and
+    WebView2 anchors select / context menu / IME / drag-drop to this HWND, so a
+    WebView scrolled partly out must keep its real, possibly negative, origin),
+    and never scaled by `captureScaleFactor_` (texture raster scale).
+- Guard: `fushi/test/widgets/inappwebview_windows_native_guards_test.dart`
+  (the package's own tests are skipped by CI).
+
+## Headless WebView mute opt-out via `allowBackgroundAudioPlaying` (2026-11-22)
+
+- `windows/headless_in_app_webview/headless_in_app_webview.cpp` (`prepare`)
+  formerly muted every `HeadlessInAppWebView` unconditionally via
+  `ICoreWebView2_8::put_IsMuted(TRUE)` so background manga/novel scrapers
+  sharing `--autoplay-policy=no-user-gesture-required` could not play ad audio.
+  That also silenced the Windows Apple Music MusicKit JS `HeadlessInAppWebView`
+  bridge (`fushi/lib/src/media/music/apple_music/apple_music_web_bridge.dart`).
+- `windows/in_app_webview/in_app_webview_settings.{h,cpp}` now parse and
+  round-trip `allowBackgroundAudioPlaying` (default `false`).
+- `windows/headless_in_app_webview/headless_in_app_webview.cpp`: sets
+  `webView->isHeadless = true` and skips `put_IsMuted(TRUE)` when
+  `allowBackgroundAudioPlaying` is `true` (background scrapers remain muted by
+  default).
+- `windows/in_app_webview/in_app_webview.{h,cpp}`: adds `isHeadless` and, in
+  `InAppWebView::setSettings`, updates `ICoreWebView2_8::put_IsMuted` only when
+  `isHeadless` is `true` so visible WebViews (whose `allowBackgroundAudioPlaying`
+  defaults to `false`) are never muted.
+- Guards: `fushi/test/widgets/inappwebview_windows_native_guards_test.dart` and
+  `fushi/test/media/video/web_video_shared_cookie_jar_test.dart`.

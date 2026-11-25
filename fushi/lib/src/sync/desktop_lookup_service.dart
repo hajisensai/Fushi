@@ -1,21 +1,38 @@
-import 'dart:io';
+import 'dart:async';
 
 import 'package:flutter/foundation.dart';
 import 'package:characters/characters.dart';
 import 'package:flutter/services.dart';
 import 'package:window_manager/window_manager.dart';
 
+import 'package:fushi/src/lookup/advanced_mining_handoff.dart';
+import 'package:fushi/src/lookup/captured_context_sentences.dart';
+import 'package:fushi/src/platform/desktop/linux_window_activation_channel.dart';
 import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:fushi/src/utils/misc/ruby_markup.dart';
 import 'package:fushi/src/utils/window_caption_channel.dart';
 import 'package:fushi/src/sync/desktop_foreground_guard.dart';
+import 'package:fushi/src/platform/host_platform.dart';
 
 class DesktopLookupRequest {
-  const DesktopLookupRequest({required this.text});
+  const DesktopLookupRequest({
+    required this.text,
+    this.capturedContext,
+    this.advancedMining,
+  });
 
   /// 纯基准文本：注音标记已在 [DesktopLookupService.triggerLookup] 剥掉
   /// （主窗词典页只显示 / 查询基准文本，不渲染注音）。
   final String text;
+
+  /// 应用外热键查词「抓取上下文」切出的当前句与前后句（拍板台 rf--UcsGta）：
+  /// 查词页结果区的例句与高级制卡句子分区读它。其它来源（深链 / 扩展 / 悬浮字幕）
+  /// 为 null。
+  final CapturedSentenceContext? capturedContext;
+
+  /// 应用外查词覆盖窗点「高级制卡」转交过来的词条（拍板台 rf--UcsGta-overlay）：
+  /// 查词页渲染完这次结果后为它打开高级制卡对话框。其它来源为 null。
+  final AdvancedMiningHandoff? advancedMining;
 }
 
 /// 桌面显式查词排队器。单例 ChangeNotifier。
@@ -30,8 +47,8 @@ class DesktopLookupService extends ChangeNotifier {
   DesktopLookupService._();
   static final DesktopLookupService instance = DesktopLookupService._();
 
-  static bool get isDesktop =>
-      Platform.isWindows || Platform.isLinux || Platform.isMacOS;
+  /// 读 [hostPlatform]：设置项目录导出器要按出包平台各走一遍设置索引。
+  static bool get isDesktop => hostPlatform.isDesktop;
 
   DesktopLookupRequest? _pendingRequest;
   DesktopLookupRequest? get pendingRequest => _pendingRequest;
@@ -43,7 +60,11 @@ class DesktopLookupService extends ChangeNotifier {
   /// 注意：本方法只负责**排队**待查词（设 [pendingText] + 通知）；唤前台、切到查词
   /// tab、实际搜索都由消费侧（[bringPendingLookupToFront] + HomeDictionaryPage
   /// 挂载消费）负责。返回是否真的排进了一次查词（剥注音 / 截断后为空则不排）。
-  bool triggerLookup(String text) {
+  bool triggerLookup(
+    String text, {
+    CapturedSentenceContext? capturedContext,
+    AdvancedMiningHandoff? advancedMining,
+  }) {
     // 注音标记在这里剥（悬浮字幕行可能带 `<rふる>震</r>` 标记），且必须**先于**
     // 下面的截断：先截断会把标记拦腰切断，解析器认不出就只能把半截标记当正文留下。
     final String base = parseRubyMarkup(text).text;
@@ -51,7 +72,11 @@ class DesktopLookupService extends ChangeNotifier {
     // 字素簇），避免超长串一路流到逐字渲染的 SourceLookupTextPanel 把主 isolate 撑爆。
     final String trimmed = _capLookupInput(base).trim();
     if (trimmed.isEmpty) return false;
-    _pendingRequest = DesktopLookupRequest(text: trimmed);
+    _pendingRequest = DesktopLookupRequest(
+      text: trimmed,
+      capturedContext: capturedContext,
+      advancedMining: advancedMining,
+    );
     notifyListeners();
     return true;
   }
@@ -93,6 +118,30 @@ class DesktopLookupService extends ChangeNotifier {
   /// false，照常唤起。
   Future<void> bringPendingLookupToFront() => bringMainWindowToFront();
 
+  static final Object _activationTokenKey = Object();
+
+  /// Runs [body] with a Wayland activation [token] in scope: a
+  /// [bringMainWindowToFront] anywhere inside it (across awaits) raises the
+  /// window with that token. The app-outside hotkey path uses it for the token
+  /// the GlobalShortcuts portal sends with `Activated`; scoped to the one
+  /// activation instead of a field, so a stale token can never leak into a
+  /// later, unrelated raise. A null token just runs [body].
+  static Future<T> runWithActivationToken<T>(
+    String? token,
+    Future<T> Function() body,
+  ) {
+    if (token == null || token.isEmpty) return body();
+    return runZoned(
+      body,
+      zoneValues: <Object?, Object?>{_activationTokenKey: token},
+    );
+  }
+
+  /// The activation token [runWithActivationToken] put in scope, if any.
+  @visibleForTesting
+  static String? get activationTokenInScope =>
+      Zone.current[_activationTokenKey] as String?;
+
   /// 统一的桌面主窗口显式唤起出口。Hook 台词浮窗的“打开捕获工作台”等非查词
   /// 场景也必须经过这里，复用 Windows 前台归属判断和任务栏闪烁清理。
   Future<void> bringMainWindowToFront() async {
@@ -115,7 +164,14 @@ class DesktopLookupService extends ChangeNotifier {
         await windowManager.restore();
       }
       await windowManager.show();
-      await windowManager.focus();
+      // Wayland: a plain focus request is refused (the window at most demands
+      // attention); a token from the user's action lets the compositor raise it.
+      final String? token = activationTokenInScope;
+      final bool presented =
+          hostPlatform.isLinux &&
+          token != null &&
+          await LinuxWindowActivationChannel.present(token);
+      if (!presented) await windowManager.focus();
     } on MissingPluginException {
       return;
     } on PlatformException {

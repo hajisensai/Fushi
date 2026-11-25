@@ -7,6 +7,8 @@ import 'package:fushi_engine/epub/epub_series_backfill.dart';
 import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show naturalCompare;
+import 'package:fushi_engine/models/content_language.dart';
+import 'package:fushi_engine/sync/override_title_lookup.dart';
 
 /// 在线漫画描述符类型标记（写进 `sourceMetadata`，永不变；同
 /// `leaderboard/local_shelf.dart`）。在线漫画一行就是一整部作品，不按卷归组。
@@ -46,6 +48,10 @@ class BookSeriesGrouper {
     final List<int> updated = <int>[];
     // 存量书补读 OPF 系列声明（每本只读一次）；之后导入的书由导入器直接写。
     await backfillEpubSeries(_database);
+    // 存量已脱离的配对有声书补齐继承原书所属合集（一条集合查询，稳态空集），确保
+    // 下面加载成员与卷序自愈能一次看到完整成员。
+    final List<int> pairedSrtBackfilled = await _database
+        .inheritPairedSrtCollections();
     final List<_Volume> volumes = await _loadVolumes();
     final Map<String, _Volume> byMember = <String, _Volume>{
       for (final _Volume v in volumes)
@@ -106,12 +112,33 @@ class BookSeriesGrouper {
         if (id != null && !created.contains(id)) updated.add(id);
       }
     }
+    // 已有的规则合集名里的 slug 也规整（vECncM6f8Y 合入前按旧口径建的合集）；
+    // 名字以库里当前值为准，归组这一轮可能刚改过别的合集。
+    final Set<String> playlistNames = <String>{
+      for (final MediaCollectionRow c
+          in await _database.getAllMediaCollections())
+        if (c.collectionType == 'playlist') c.name,
+    };
+    for (final MediaCollectionRow c in collections) {
+      if (created.contains(c.id)) continue;
+      final List<MediaCollectionItemRow>? members = itemsByCollection[c.id];
+      if (members == null) continue;
+      if (await _healSlugName(c, members, byMember, playlistNames) &&
+          !updated.contains(c.id)) {
+        updated.add(c.id);
+      }
+    }
     final BookSeriesOrder order = BookSeriesOrder._(byMember);
     for (final MediaCollectionRow c in collections) {
       if (created.contains(c.id) || updated.contains(c.id)) continue;
       final List<MediaCollectionItemRow>? members = itemsByCollection[c.id];
       if (members == null) continue; // 无分卷成员：不可能被定序。
       if (await _healSeriesOrder(c, members, order)) updated.add(c.id);
+    }
+    for (final int id in pairedSrtBackfilled) {
+      if (!created.contains(id) && !updated.contains(id)) {
+        updated.add(id);
+      }
     }
     return (
       createdCollectionIds: List<int>.unmodifiable(created),
@@ -188,8 +215,17 @@ class BookSeriesGrouper {
   Future<List<_Volume>> _loadVolumes() async {
     final List<_Volume> out = <_Volume>[];
     final Map<String, _Volume> byBookKey = <String, _Volume>{};
-    for (final EpubBookRow book in await _database.getAllEpubBooks()) {
+    // 书架卡上显示的是「改名覆盖 ?? 原书名」，归组也按它：用户把
+    // `… Karakai-Jouzu-Takagi-san-02` 改成 `… 2` 就是为了让它归组（vECncM6f8Y），
+    // 以前这里只读 `epub_books.title` 原名，改名对归组毫无作用、重启也不变。
+    final Map<String, OverrideTitleEntry> overrides =
+        await readOverrideTitlesByBookKey(_database);
+    // novel-9：归组只要身份 / 书名 / 格式 / sourceMetadata，走瘦投影，不把每本
+    // 几十到几百 KB 的章节与目录 JSON 整表拉出来。
+    for (final EpubBookSeriesFacts book
+        in await _database.getEpubBookSeriesFacts()) {
       if (isOnlineMangaSourceMetadata(book.sourceMetadata)) continue;
+      final String title = overrides[book.bookKey]?.title ?? book.title;
       // 包里声明的系列优先（n4KC1azJvw：每卷副标题不同、书名里没有系列线索的作品
       // 只能靠它），没有声明才按书名启发式。
       final EpubSeries? declared = decodeEpubSeriesMetadata(
@@ -199,12 +235,12 @@ class BookSeriesGrouper {
           ? declaredBookSeriesKey(
               name: declared.name,
               index: declared.index,
-              title: book.title,
+              title: title,
             )
-          : parseBookSeriesKey(book.title);
+          : parseBookSeriesKey(title);
       if (key == null) continue;
       final _Volume v = _Volume(
-        title: book.title,
+        title: title,
         key: key,
         shelf: BookFormat.parseOrEpub(book.format) == BookFormat.manga
             ? 'manga'
@@ -219,6 +255,7 @@ class BookSeriesGrouper {
             ),
           ),
         ],
+        language: contentLanguageKey(book.language),
       );
       out.add(v);
       byBookKey[book.bookKey] = v;
@@ -240,9 +277,11 @@ class BookSeriesGrouper {
           key: key,
           shelf: 'book',
           members: <_Member>[member],
+          language: contentLanguageKey(srt.language),
         ),
       );
     }
+    _markLanguageSplits(out);
     return out;
   }
 
@@ -261,12 +300,22 @@ class BookSeriesGrouper {
       seriesItems,
       byMember,
     );
-    final String name = volumes.first.key.seriesTitle;
-    collection ??= playlistByName[name];
+    // 合集名用规整过 slug 的可读系列名；同名 playlist / 删除墓碑新旧两种名字都认
+    // （规整前建的同名合集、用户删过的旧名合集不因改口径而重复 / 复活）。
+    final _Volume first = volumes.first;
+    // 按语言分开的系列：语言未知的卷不知道该归哪个版本，留在书架上不猜。
+    if (first.splitByLanguage && first.language.isEmpty) return null;
+    // 合集名带语言（「化物語 (zh)」），两个版本不会因同名被并进同一个 playlist。
+    final String suffix = first.splitByLanguage ? ' (${first.language})' : '';
+    final String rawName = '${first.key.seriesTitle}$suffix';
+    final String name = '${readableSeriesTitle(first.key.seriesTitle)}$suffix';
+    collection ??= playlistByName[name] ?? playlistByName[rawName];
     if (collection == null) {
       if (volumes.length < 2) return null;
-      if (await _database.hasCollectionDeletionTombstone(name, 'playlist')) {
-        return null;
+      for (final String n in <String>{name, rawName}) {
+        if (await _database.hasCollectionDeletionTombstone(n, 'playlist')) {
+          return null;
+        }
       }
       final int id = await _database.createMediaCollection(
         name,
@@ -304,6 +353,47 @@ class BookSeriesGrouper {
       await _sortMembers(collection.id, groupKey);
     }
     return collection.id;
+  }
+
+  /// 规则归组器建的合集名若是带 slug 的系列名（[readableSeriesTitle] 能规整），
+  /// 改成可读名；返回是否改了。
+  ///
+  /// 只动「仍归规则管」（`origin == rule`，用户改过名 / 加减过成员就转成 `user`，
+  /// 永不再动）、名字正是其中 ≥2 卷的系列名（确是本归组器起的名）的 playlist；
+  /// 可读名已被别的 playlist 占用或被用户删过（合集级墓碑）时不改。改名走
+  /// [FushiDatabase.renameMediaCollection]（`userIntent: false`，不把来源转成
+  /// `user`），与手动改名同样维护跨端合集同步墓碑。
+  Future<bool> _healSlugName(
+    MediaCollectionRow collection,
+    List<MediaCollectionItemRow> items,
+    Map<String, _Volume> byMember,
+    Set<String> playlistNames,
+  ) async {
+    if (collection.collectionType != 'playlist' ||
+        CollectionOrigin.parse(collection.origin) != CollectionOrigin.rule) {
+      return false;
+    }
+    final String pretty = readableSeriesTitle(collection.name);
+    if (pretty.isEmpty || pretty == collection.name) return false;
+    final Set<_Volume> named = <_Volume>{
+      for (final MediaCollectionItemRow i in items)
+        if (byMember['${i.mediaType}|${i.entryKey}'] case final _Volume v
+            when v.key.seriesTitle == collection.name)
+          v,
+    };
+    if (named.length < 2 || playlistNames.contains(pretty)) return false;
+    if (await _database.hasCollectionDeletionTombstone(pretty, 'playlist')) {
+      return false;
+    }
+    await _database.renameMediaCollection(
+      collection.id,
+      pretty,
+      userIntent: false,
+    );
+    playlistNames
+      ..remove(collection.name)
+      ..add(pretty);
+    return true;
   }
 
   /// 已有 ≥2 个同系列（同书架）成员的合集，取成员最多者；没有则 null。
@@ -424,8 +514,8 @@ class BookSeriesOrder {
   /// （可能与输入相同）；否则 null（不定序，调用方保持原序）。
   ///
   /// 能定序 = 每个成员都是本机书架上同一书架的分卷、成员键无重复，且能认出唯一的
-  /// **主系列**：卷数最多的系列键（并列 = 认不出），至少 2 卷、卷号互不重复、至多
-  /// 一卷无卷号（当第 1 卷）；其余成员都是它的**番外**——系列键以主系列键开头
+  /// **主系列**：卷数最多的系列键（并列 = 认不出），至少 2 卷、位置（卷号 + 话号）互不
+  /// 重复、至多一卷两者皆无（当第 1 卷）；其余成员都是它的**番外**——系列键以主系列键开头
   /// （「安達としまむらSS」「志乃と恋 外伝」「X 三巻」）。混了别的系列 / 本机没有的书
   /// （透传成员）的合集不碰：本机认不全，交给持有全套书的一端或 AI 排序。
   ///
@@ -473,11 +563,22 @@ class BookSeriesOrder {
     for (final String key in bySeries.keys) {
       if (key != mainKey && !key.startsWith(mainKey)) return null;
     }
-    final List<num?> numbers = <num?>[
-      for (final _Volume v in bySeries[mainKey]!) v.key.volume,
+    // 位置 = 卷号 + 话号 + 同话分段（按话发布的漫画只有话号，见
+    // [BookSeriesKey.episode]）。
+    final List<BookSeriesPosition?> positions = <BookSeriesPosition?>[
+      for (final _Volume v in bySeries[mainKey]!) bookSeriesPosition(v.key),
     ];
-    if (numbers.where((num? n) => n == null).length > 1) return null;
-    if (numbers.toSet().length != numbers.length) return null;
+    if (positions.where((Object? p) => p == null).length > 1) return null;
+    if (positions.toSet().length != positions.length) return null;
+    // 无卷号的分册（`XYZ (上)`）与带卷号的卷混在一起：分册排在哪一卷前后说不准，不
+    // 自愈（只有上 / 中 / 下自己时次序是确定的，BUG-5400）。
+    final List<_Volume> mainVolumes = bySeries[mainKey]!;
+    if (mainVolumes.any((_Volume v) => v.key.volume != null) &&
+        mainVolumes.any(
+          (_Volume v) => v.key.volume == null && v.key.split > 0,
+        )) {
+      return null;
+    }
     return _orderSeriesInPlace(
       members,
       _byMember,
@@ -524,8 +625,8 @@ bool _sameMemberOrder(
   return true;
 }
 
-/// 按卷号（无卷号当第 0 卷）→ natural 书名 → 种类 → 成员键排；同卷的 EPUB 与 SRT
-/// 相邻。末位成员键让同卷同种类（同卷只有一个 EPUB，并列只出在配了多条 SRT 时）
+/// 按卷号（无卷号当第 0 卷）→ 话号 → 同话分段（[compareBookSeriesPosition]）→
+/// natural 书名 → 种类 → 成员键排；同卷的 EPUB 与 SRT 相邻。末位成员键让同卷同种类（同卷只有一个 EPUB，并列只出在配了多条 SRT 时）
 /// 也有确定先后：SRT uid 即 wire 键、跨端稳定，各端排出同一个序；不用行 id（各端不同）。
 int _compareMembers(
   CollectionMemberKey a,
@@ -534,7 +635,7 @@ int _compareMembers(
 ) {
   final _Volume va = byMember['${a.mediaType}|${a.entryKey}']!;
   final _Volume vb = byMember['${b.mediaType}|${b.entryKey}']!;
-  final int c = (va.key.volume ?? 0).compareTo(vb.key.volume ?? 0);
+  final int c = compareBookSeriesPosition(va.key, vb.key);
   if (c != 0) return c;
   final int t = naturalCompare(va.title, vb.title);
   if (t != 0) return t;
@@ -560,6 +661,7 @@ class _Volume {
     required this.key,
     required this.shelf,
     required this.members,
+    this.language = '',
   });
 
   final String title;
@@ -569,7 +671,30 @@ class _Volume {
   final String shelf;
   final List<_Member> members;
 
-  String get groupKey => '$shelf|${key.key}';
+  /// 本卷内容语言的主语言子标签（[contentLanguageKey]），未知为空串。
+  final String language;
+
+  /// 同系列（同书架、同系列名）的卷带着两种以上已知语言（BUG-5286：日文版与台版
+  /// 《化物語》同名）：按语言分成各自的系列。只有一种已知语言的系列不分（语言为空
+  /// 的卷照旧并进去），与修复前逐字节一致。由 [_markLanguageSplits] 设置。
+  bool splitByLanguage = false;
+
+  String get seriesKey => '$shelf|${key.key}';
+
+  String get groupKey =>
+      splitByLanguage ? '$seriesKey|lang:$language' : seriesKey;
+}
+
+/// 给带两种以上已知语言的系列打上 [_Volume.splitByLanguage]。
+void _markLanguageSplits(List<_Volume> volumes) {
+  final Map<String, Set<String>> languages = <String, Set<String>>{};
+  for (final _Volume v in volumes) {
+    if (v.language.isEmpty) continue;
+    languages.putIfAbsent(v.seriesKey, () => <String>{}).add(v.language);
+  }
+  for (final _Volume v in volumes) {
+    v.splitByLanguage = (languages[v.seriesKey]?.length ?? 0) > 1;
+  }
 }
 
 /// 在线漫画（Mihon / mokuro 在线源的书架条目）：不归组、不交 AI 整理——它们的

@@ -58,14 +58,28 @@ class ReaderVisualNovelScripts {
   static String vnShellScript() => _shell();
 
   /// 恢复锚三选一的运行时分派（旧实现在 Dart 侧三元式挑一条语句）。
+  ///
+  /// BUG-4975 续：VN 的恢复入口是 async 函数（先等 readyPromise 再切屏），渲染时抛的
+  /// 异常只让它返回的 promise 变成 rejected；boot 的 try/catch 只接得住同步异常。
+  /// 这里给那个 promise 接上 catch：记 console.error（不再是无人处理的 rejection），
+  /// 再走 notifyRestoreFailed。注意生产时序：`initialize()` 的 readyPromise 成功分支
+  /// （失败分支 fail-open 同样）先发了 onRestoreComplete，入口的 `await ensureReady()`
+  /// 之后才继续，所以入口在那之后抛出时回执早已发过，notifyRestoreFailed 按「一个文档
+  /// 一个结局」不补发——VN 这里从来没有「干等 8 秒兜底」，遮罩已按初始屏摘掉；
+  /// 这条 catch 的作用是不丢异常诊断，失败回执只在回执尚未发出时才生效。
   static const String _initialRestoreJs = '''
+    var initialRestore;
     if (C.initialFragment !== null && C.initialFragment !== undefined) {
-      window.fushiReader.jumpToFragment(C.initialFragment);
+      initialRestore = window.fushiReader.jumpToFragment(C.initialFragment);
     } else if (C.initialCharOffset >= 0) {
-      window.fushiReader.restoreToCharOffset(C.initialCharOffset);
+      initialRestore = window.fushiReader.restoreToCharOffset(C.initialCharOffset);
     } else {
-      window.fushiReader.restoreProgress(C.initialProgress);
-    }''';
+      initialRestore = window.fushiReader.restoreProgress(C.initialProgress);
+    }
+    Promise.resolve(initialRestore).catch(function(restoreError) {
+      try { if (window.console && console.error) console.error('[FushiVN] initial restore failed', restoreError); } catch (_ignored) {}
+      window.fushiReader.notifyRestoreFailed(restoreError);
+    });''';
 
   static String _shell() {
     const String initialRestoreScript = _initialRestoreJs;
@@ -261,42 +275,84 @@ $imageRevealSemantics
     return candidate || node;
   }
 
-  function computedDisplay(node) {
-    if (!global.getComputedStyle) return '';
-    try {
-      return String(global.getComputedStyle(node).display || '').toLowerCase();
-    } catch (_error) {
-      return '';
-    }
+  function declaredImageDimension(node, name) {
+    var value = node && node.getAttribute ? node.getAttribute(name) : null;
+    // 只认纯数字（像素）写法；`width="100%"` 这类相对值说明不了图有多大。
+    var text = String(value === null ? '' : value).trim();
+    var pixels = Number(text);
+    return text && Number.isFinite(pixels) && pixels > 0 ? pixels : 0;
   }
 
-  function isBlockDisplay(display) {
-    return [
-      'block',
-      'flex',
-      'grid',
-      'list-item',
-      'table',
-      'table-caption',
-      'flow-root'
-    ].indexOf(display) >= 0;
-  }
-
+  // 还没加载完的图（complete === false）拿不到 naturalWidth：先按 width / height 属性
+  // 归类，首屏不必等它；加载完后由 VN 的 watchLateImages 复核，归类变了就整章重切。
+  // 已经加载完（含加载失败）的图只认真实尺寸，与原判据逐字一致。
   function isLargeImage(node) {
-    return Number(node && node.naturalWidth || 0) > 256 || Number(node && node.naturalHeight || 0) > 256;
+    if (Number(node && node.naturalWidth || 0) > 256 || Number(node && node.naturalHeight || 0) > 256) return true;
+    if (!node || node.complete !== false) return false;
+    return declaredImageDimension(node, 'width') > 256 || declaredImageDimension(node, 'height') > 256;
   }
 
   function isInlineGlyphImage(node) {
     return hasClass(node, 'gaiji') || hasClass(node, 'gaiji-line');
   }
 
+  // 书本样式把它排成块级的图（[markBookBlockImages] 在源树还挂在文档上时记下）。
+  var BOOK_BLOCK_IMAGE_ATTR = 'data-fushi-vn-book-block';
+
+  // 阅读器自己注入的样式表（与无缝章节脚本 isReaderOwnedStyle 同一判据）：阅读器样式、
+  // 首帧遮罩、有声书高亮样式。量「书本样式说它是不是块级」时要先把它们关掉——阅读器的
+  // `p > img:only-child { display:block }` 是为纯图段居中写的，不代表书本的意图。
+  function isReaderOwnedStyleElement(el) {
+    var id = (el && el.id) || '';
+    return id === 'fushi-cloak' || id === 'fushi-reader-style' || id.indexOf('__fushi') === 0;
+  }
+
+  function isBlockLevelDisplay(display) {
+    return display === 'block' || display === 'flex' || display === 'grid' ||
+      display === 'table' || display === 'list-item' || display === 'flow-root';
+  }
+
+  // 拍板台 design-nmv-fyi-tail ①：书本 CSS 把文字中间的小图排成 `display:block`（行内
+  // style 或书本样式表），VN 就把它当独立插图、单独一屏。只能在 detachChapterSource 之前
+  // 量：源树一摘下文档，Blink / WebKit 对它 getComputedStyle 一律给空值（BUG-5003）。量的
+  // 结果写成节点属性，随节点搬进源树、随 cloneNode 带进屏，之后的归类（切屏、内容流、
+  // 迟到图片复核）只读属性、不读样式，挂着与摘下归类一致。
+  function markBookBlockImages(doc) {
+    var body = doc && doc.body;
+    if (!body || typeof getComputedStyle !== 'function') return;
+    var images = body.querySelectorAll('img');
+    if (!images.length) return;
+    var disabled = [];
+    var styles = doc.querySelectorAll('style, link[rel~="stylesheet"]');
+    for (var i = 0; i < styles.length; i++) {
+      var sheet = styles[i].sheet;
+      if (!sheet || sheet.disabled || !isReaderOwnedStyleElement(styles[i])) continue;
+      sheet.disabled = true;
+      disabled.push(sheet);
+    }
+    try {
+      for (var j = 0; j < images.length; j++) {
+        var image = images[j];
+        if (isInlineGlyphImage(image)) continue;
+        if (isBlockLevelDisplay(getComputedStyle(image).display)) {
+          image.setAttribute(BOOK_BLOCK_IMAGE_ATTR, '');
+        }
+      }
+    } finally {
+      for (var k = 0; k < disabled.length; k++) disabled[k].disabled = false;
+    }
+  }
+
+  // 只看节点自身携带的信号（文字上下文、真实 / 声明尺寸、block-img 类、挂载时记下的书本
+  // 块级标记），不读样式。BUG-5003：VN 归类的对象是 detachChapterSource 搬出来、不挂在
+  // 文档上的源树，对它 getComputedStyle 恒为空；归类不能随挂载状态变。
   function isStandaloneImageNode(node, contextRoot) {
     if (isInlineGlyphImage(node)) return false;
     var textContext = mediaTextContextRoot(node, contextRoot);
     if (!hasMeaningfulText(textContext)) return true;
     if (isLargeImage(node)) return true;
     if (hasClass(node, 'block-img')) return true;
-    return isBlockDisplay(computedDisplay(node));
+    return !!(node && node.hasAttribute && node.hasAttribute(BOOK_BLOCK_IMAGE_ATTR));
   }
 
   function isStandaloneMediaNode(node, contextRoot) {
@@ -717,7 +773,10 @@ $imageRevealSemantics
   global.fushiReaderVnContentStream = {
     create: function(root, options) {
       return new ReaderVnContentStream(root, options);
-    }
+    },
+    isLargeImage: isLargeImage,
+    isStandaloneImage: isStandaloneImageNode,
+    markBookBlockImages: markBookBlockImages
   };
 })(window);
 (function(global) {
@@ -866,6 +925,8 @@ window.fushiReader = {
   activeCueId: null,
   sentenceAudioCues: [],
   sentenceAudioCueMap: new Map(),
+  // cue id → 在源章节里按原文重定位后的 {start, len}（见 resolveSentenceAudioCueSpans）。
+  sentenceAudioCueSpans: new Map(),
   sentenceAudioCuesSignature: null,
   cueWrappers: new Map(),
   // BUG-3518 / BUG-3741：支持 CSS Highlight 的引擎上当前屏的句子不包裹，登记成 live Range
@@ -952,7 +1013,11 @@ $kSentenceAudioRubyGapJs
     var rect = target.getClientRects()[0];
     return rect || target.getBoundingClientRect();
   },
+  // gap-readerjs1-2：与分页 / 连续 shell 同一份契约——每个文档的初次恢复只有一个结局，
+  // 已发过回执就不再补发失败回执。
+  _restoreReceiptSent: false,
   notifyRestoreComplete: function() {
+    this._restoreReceiptSent = true;
     // Fushi adaptation: hoshi a posts to a native @JavascriptInterface
     // (FushiReaderRestore). Fushi is InAppWebView, so forward to the same
     // 'onRestoreComplete' handler the paginated/continuous shells use.
@@ -960,6 +1025,20 @@ $kSentenceAudioRubyGapJs
       window.flutter_inappwebview.callHandler(
         'onRestoreComplete',
         null,
+        C.navigationGeneration
+      );
+    }
+  },
+  // gap-readerjs1-2：boot 里 initialize / 初次恢复同步抛出时的失败出口（与分页 /
+  // 连续 shell 的 notifyRestoreFailed 同一协议），Dart 收到后立刻走导航中止收尾，
+  // 不再等 8 秒内容就绪兜底。
+  notifyRestoreFailed: function(error) {
+    if (this._restoreReceiptSent === true) return;
+    this._restoreReceiptSent = true;
+    if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
+      window.flutter_inappwebview.callHandler(
+        'onRestoreFailed',
+        String(error && error.message ? error.message : error),
         C.navigationGeneration
       );
     }
@@ -1009,30 +1088,84 @@ $kSentenceAudioRubyGapJs
     return this.contentStream.sourcePositionForRawOffset(
       rawStart + this.countRawChars(prefix));
   },
-  waitForImages: function() {
+  // 首屏不等图片（与分页 / 连续 shell 的 TODO-1074 同一取舍）。此前 initialize 要等源章节
+  // 每一张 <img> 的 load / error 才切屏，没有任何时限：一张迟迟不结束的图就让首屏一直
+  // 不出，body 已被搬空，宿主 8 秒兜底揭开遮罩后看到的是空白。
+  //
+  // 图片尺寸在 VN 里有两处用途，都改成「先按已知信息切，图到了再复核」：
+  // - 归类（独立图片屏 vs 行内）：内容流的 isLargeImage 对没加载完的图先认 width / height
+  //   属性；图 load / error 后复核，归类变了就整章重建屏表（局部重算不可行：屏表按整章
+  //   顺序切，一张图从行内变成独立屏会改变其后所有屏的下标）。
+  // - 拆屏量尺：行内图的真实尺寸会改变所在文字屏装得下多少，归类没变也要按新尺寸重切。
+  // 两种都经 refitScreensToCurrentViewport：当前屏的内容没变就原地不动（不清选区、不打断
+  // 逐字显现），变了才按当前屏首字符偏移落回。同一批迟到的图合并成一次重切。
+  //
+  // 两种都不沾的图不重切：归类没变、且在所属块里本来就是独立媒体的图（纯图片段的插图、
+  // 属性已写明大尺寸的图）所在的屏不可拆、不参与量屏，它的尺寸改变不了任何一屏。多插图章
+  // 的图解码时间错开，每张都整章重量一遍会在首屏逐字显现时连续占住主线程。
+  //
+  // 归类按切屏实际用到的两个上下文各记一份：所属块（buildBlockScreens /
+  // buildSentenceAtomicRoots 的 containsStandaloneMedia(块)）与整章根（内容流 mediaUnits）。
+  watchLateImages: function() {
+    var api = window.fushiReaderVnContentStream;
+    if (!api || typeof api.isStandaloneImage !== 'function') return;
     var images = this.sourceRoot && this.sourceRoot.querySelectorAll
       ? Array.from(this.sourceRoot.querySelectorAll('img'))
       : [];
-    var promises = images.map(function(img) {
-      return new Promise(function(resolve) {
-        if (img.complete) {
-          resolve();
-          return;
-        }
-        img.onload = function() { resolve(); };
-        img.onerror = function() { resolve(); };
-      });
+    var pending = images.filter(function(img) { return !img.complete; });
+    if (!pending.length) return;
+    var sources = this.collectBlockScreenSources(this.sourceRoot);
+    var chapterRoot = this.sourceRoot;
+    var self = this;
+    pending.forEach(function(img) {
+      var block = self.blockScreenSourceOf(sources, img);
+      var classify = function() {
+        return {
+          // 没找到所属块（不会进任何屏）时按行内处理：宁可多切一次。
+          inBlock: !!block && api.isStandaloneImage(img, block),
+          inChapter: api.isStandaloneImage(img, chapterRoot)
+        };
+      };
+      var before = classify();
+      var settle = function() {
+        img.removeEventListener('load', settle);
+        img.removeEventListener('error', settle);
+        var after = classify();
+        var reclassified = after.inBlock !== before.inBlock ||
+          after.inChapter !== before.inChapter;
+        if (!reclassified && after.inBlock) return;
+        self.scheduleLateImageRelayout(reclassified);
+      };
+      img.addEventListener('load', settle);
+      img.addEventListener('error', settle);
     });
-    return Promise.all(promises);
+  },
+  blockScreenSourceOf: function(sources, node) {
+    for (var i = 0; i < sources.length; i++) {
+      var source = sources[i].node;
+      if (source === node || (source.contains && source.contains(node))) return source;
+    }
+    return null;
+  },
+  scheduleLateImageRelayout: function(reclassified) {
+    if (reclassified) this.lateImageReclassified = true;
+    if (this.lateImageRelayoutScheduled) return;
+    this.lateImageRelayoutScheduled = true;
+    // 合并同一批 load 事件（零延时任务只为排到已入队的 load 事件之后，不是等待）。
+    setTimeout(() => {
+      this.lateImageRelayoutScheduled = false;
+      var rebuild = this.lateImageReclassified === true;
+      this.lateImageReclassified = false;
+      if (typeof this.refitScreensToCurrentViewport === 'function') {
+        this.refitScreensToCurrentViewport(undefined, rebuild);
+      }
+    }, 0);
   },
   initialize: function() {
     if (this.readyPromise) return this.readyPromise;
     this.readyPromise = Promise.resolve(document.fonts && document.fonts.ready)
       .then(() => {
         this.detachChapterSource();
-        return this.waitForImages();
-      })
-      .then(() => {
         // BUG-1688：视口 meta 必须最先落地。缺了它 WKWebView 按 980 CSS px 布局再
         // 缩放，文档的 CSS 像素空间与 Dart 逻辑像素空间差 ~2.6 倍（iOS 实测
         // innerWidth=980 vs dartPageWidth=375），下面写进去的 px 全是错单位。
@@ -1044,6 +1177,8 @@ $kSentenceAudioRubyGapJs
         this.applyImageMaxVars();
         this.buildSourceIndexes();
         this.setSentenceAudioCueData(this.initialSentenceAudioCues);
+        // 与 buildScreens 同一个同步块：登记时记下的归类就是这次切屏用的归类。
+        this.watchLateImages();
         this.buildScreens();
         this.renderInitialScreen();
         this.notifyRestoreComplete();
@@ -1073,6 +1208,11 @@ $kSentenceAudioRubyGapJs
   },
   detachChapterSource: function() {
     if (this.sourceRoot) return;
+    // 摘下之前记下书本样式排成块级的图：摘下后再也量不到（拍板台 design-nmv-fyi-tail ①）。
+    var contentStreamApi = window.fushiReaderVnContentStream;
+    if (contentStreamApi && typeof contentStreamApi.markBookBlockImages === 'function') {
+      contentStreamApi.markBookBlockImages(document);
+    }
     this.sourceRoot = document.createElement('div');
     var children = Array.from(document.body.childNodes);
     for (var i = 0; i < children.length; i++) {
@@ -2617,11 +2757,34 @@ $sharedInitViewport
       var img = imgs[i];
       if (img.classList.contains('gaiji') || img.classList.contains('gaiji-line')) continue;
       if (img.classList.contains('block-img') || img.closest('.block-img-wrapper')) continue;
-      if ((img.naturalWidth || 0) > 256 || (img.naturalHeight || 0) > 256) {
+      if (this.isLargeScreenImage(img)) {
         img.classList.add('block-img');
         this.wrapBlockImage(img);
+      } else if (img.complete === false) {
+        this.promoteBlockImageWhenLoaded(img);
       }
     }
+  },
+  // 与切屏归类同一把尺子（内容流的 isLargeImage：真实尺寸，没加载完时认 width / height 属性）。
+  isLargeScreenImage: function(img) {
+    var isLargeImage = window.fushiReaderVnContentStream &&
+      window.fushiReaderVnContentStream.isLargeImage;
+    if (typeof isLargeImage === 'function') return isLargeImage(img);
+    return (img.naturalWidth || 0) > 256 || (img.naturalHeight || 0) > 256;
+  },
+  // 首屏不再等图片：屏上的克隆可能还没加载完，那时拿不到真实尺寸、升不了 block-img。
+  // 等它自己 load 后补升（与分页 shell 的 _fushiClassifyBlockImg 同一做法）；这期间已经
+  // 换屏的克隆不在 this.screen 里，直接丢弃。
+  promoteBlockImageWhenLoaded: function(img) {
+    var self = this;
+    img.addEventListener('load', function() {
+      if (!self.screen || !self.screen.contains(img)) return;
+      if (img.classList.contains('block-img') || img.closest('.block-img-wrapper')) return;
+      if (!self.isLargeScreenImage(img)) return;
+      img.classList.add('block-img');
+      self.wrapBlockImage(img);
+      window.fushiReaderMediaSemantics.setupReaderImage(img);
+    }, { once: true });
   },
   wrapBlockImage: function(element) {
     var parent = element.parentNode;
@@ -2681,6 +2844,8 @@ $sharedInitViewport
     if (window.__fushiLanes) window.__fushiLanes.repaint();
     if (this.revealComplete) this.applyCurrentScreenHighlights();
     if (this.revealComplete) this.refreshSentenceAudioCuePresentation();
+    // 文字领读：新屏的句子首尾报给宿主（宿主侧没开文字领读时直接丢弃）。
+    if (typeof this.reportTextLeadsScreenCues === 'function') this.reportTextLeadsScreenCues(false);
   },
   // BUG-2711：拆屏判据（measureScreenFits → renderedTextFitsBounds）认的是**字形墨迹**
   // 落在内容盒内，而 flex 居中认的是段落的 margin 盒。长段落被拆开后，屏上那一截的
@@ -3060,12 +3225,15 @@ $sharedInitViewport
     this.notifyRestoreComplete();
     return true;
   },
+  // 变更判据只看下发的原始数据（id / 提示坐标 / 原文），不看重定位结果：重定位结果由这三者
+  // 加源章节唯一决定，而这里比较的是「新数据」与「旧数据」，新数据还没重定位。
   sentenceAudioCueSignature: function(cues) {
     var items = Array.isArray(cues) ? cues : [];
     return JSON.stringify(items.map((cue) => ({
       id: cue && cue.id ? String(cue.id) : '',
-      start: this.sentenceAudioCueStart(cue),
-      length: Math.max(0, Number(cue && cue.length) || 0)
+      start: Math.max(0, Number(cue && cue.start) || 0),
+      length: Math.max(0, Number(cue && cue.length) || 0),
+      text: cue && cue.text ? String(cue.text) : ''
     })));
   },
   sentenceAudioCueDataChanged: function(cues) {
@@ -3078,7 +3246,58 @@ $sharedInitViewport
       var cue = this.sentenceAudioCues[i];
       if (cue && cue.id) this.sentenceAudioCueMap.set(cue.id, cue);
     }
+    this.sentenceAudioCueSpans = this.resolveSentenceAudioCueSpans(this.sentenceAudioCues);
     this.sentenceAudioCuesSignature = this.sentenceAudioCueSignature(this.sentenceAudioCues);
+  },
+  // 与 Dart AudioTextNormalizer / 分页 shell 同口径：剥成可匹配字后值折叠（片假名→平假名等）。
+  foldNormalize: function(text) {
+    return window.fushiSentenceAudioRelocation.foldText(this.normalizeText(text));
+  },
+  // 源章节的归一化（已折叠）全文，与 contentStream 的 startMatchable 同一坐标：同一批文本
+  // 条目、同一个 isMatchableChar、UTF-16 码元计数（折叠 1:1 码元，长度不变）。
+  buildSentenceAudioNormText: function() {
+    var entries = this.contentStream ? this.contentStream.textEntries : [];
+    var relocation = window.fushiSentenceAudioRelocation;
+    var parts = [];
+    for (var e = 0; e < entries.length; e++) {
+      var text = entries[e].text || '';
+      var chunk = '';
+      var i = 0;
+      while (i < text.length) {
+        var cp = text.codePointAt(i);
+        var ch = String.fromCodePoint(cp);
+        if (this.isMatchableChar(ch)) chunk += String.fromCodePoint(relocation.foldCodePoint(cp));
+        i += ch.length;
+      }
+      parts.push(chunk);
+    }
+    return parts.join('');
+  },
+  // 下发的 start / length 只是 Dart 匹配器坐标系里的提示（BUG-060）。与分页 / 连续模式同一套
+  // 重定位（window.fushiSentenceAudioRelocation.resolveSpans）：用 cue 原文在**整章**源文本里
+  // 就近、单调地找真实位置。VN 的切屏归属、跨屏合并、当前句高亮、中键反查都经
+  // sentenceAudioCueStart / sentenceAudioCueEnd 读这里的结果——此前 VN 直接认提示坐标，提示
+  // 偏 3 个字整章每句高亮就全错，另两种模式仍对（测量组 m1 gap-readerjs2-8）。
+  // 内容流就是整章，文本不随切屏 / 迟到图片重切而变，所以每份 cue 数据只解析一次。
+  resolveSentenceAudioCueSpans: function(cues) {
+    var spans = new Map();
+    if (!Array.isArray(cues) || !cues.length || !this.contentStream) return spans;
+    var hints = [];
+    for (var i = 0; i < cues.length; i++) {
+      var cue = cues[i];
+      if (!cue || !cue.id) continue;
+      hints.push({
+        id: cue.id,
+        needle: this.foldNormalize(cue.text || ''),
+        hint: Number.isFinite(Number(cue.start)) ? Math.max(0, Number(cue.start)) : null,
+        length: Math.max(0, Number(cue.length) || 0)
+      });
+    }
+    var resolved = window.fushiSentenceAudioRelocation.resolveSpans(this.buildSentenceAudioNormText(), hints);
+    for (var r = 0; r < resolved.length; r++) {
+      spans.set(resolved[r].id, { start: resolved[r].start, len: Math.max(0, resolved[r].len) });
+    }
+    return spans;
   },
   sentenceAudioCueForInput: function(cue) {
     if (!cue) return null;
@@ -3088,12 +3307,21 @@ $sharedInitViewport
     }
     return cue;
   },
+  // 章内归一化坐标：优先取重定位结果，数据里没有这条 cue 时才退回下发的提示坐标。
+  sentenceAudioCueSpan: function(cue) {
+    var span = cue && cue.id ? this.sentenceAudioCueSpans.get(cue.id) : null;
+    if (span) return span;
+    return {
+      start: Math.max(0, Number(cue && cue.start) || 0),
+      len: Math.max(0, Number(cue && cue.length) || 0)
+    };
+  },
   sentenceAudioCueStart: function(cue) {
-    return Math.max(0, Number(cue && cue.start) || 0);
+    return this.sentenceAudioCueSpan(cue).start;
   },
   sentenceAudioCueEnd: function(cue) {
-    var start = this.sentenceAudioCueStart(cue);
-    return start + Math.max(0, Number(cue && cue.length) || 0);
+    var span = this.sentenceAudioCueSpan(cue);
+    return span.start + span.len;
   },
   screenMatchableOffset: function(screen, end) {
     if (!this.contentStream) return null;
@@ -3293,6 +3521,8 @@ $sharedInitViewport
     this.buildNodeOffsets();
     this.prewrapScreenSentenceAudioCues();
     if (this.activeCueId) this.refreshSentenceAudioCuePresentation();
+    // 句子数据晚于首屏渲染到达：补报一次当前屏范围（文字领读）。
+    if (typeof this.reportTextLeadsScreenCues === 'function') this.reportTextLeadsScreenCues(false);
   },
   highlightSentenceAudioCue: function(cue, reveal, pauseEnabled, fromChapterStart) {
     var cueObject = this.sentenceAudioCueForInput(cue);
@@ -3370,17 +3600,79 @@ $sharedInitViewport
   // updatePageSize / setChromeInsets 只在「写哪几个 CSS 变量」上不同，重切动作同一份。
   // 可选 anchorCharOffset（BUG-2261 样式重锚用）：给了就落到覆盖该字符偏移的屏，
   // 查无 / 没给才退回按重切前的进度比例选屏。
+  //
+  // 没给 anchorCharOffset 的重切（可用盒变了 / 迟到的图片）不改 CSS、不改正文：重切后
+  // 当前屏如果还是同一片内容（screenSliceKey 相同），屏上的 DOM 就是对的，原地保留——
+  // renderScreen 会清选区、清逐字显现并把整屏直接补完，工具栏一开一关就打断正在显现的
+  // 首屏、关掉查词选区。只有当前屏的内容真的变了才重渲。样式重锚（给了偏移）照旧重渲。
+  // rebuildBaseScreens = true（迟到的图片改了归类）：连 baseScreens 一起按现状重建，
+  // 查不到同一片内容时按重切前当前屏的首字符偏移落回。
+  if (typeof vn.screenSliceKey !== 'function') {
+    vn.screenSliceKey = function(screen) {
+      if (!screen) return '';
+      return [
+        this.screenStartRawCount(screen),
+        this.screenEndRawCount(screen),
+        this.screenStartCharCount(screen),
+        this.screenEndCharCount(screen),
+        screen.standalone ? 1 : 0,
+        screen.splittable ? 1 : 0,
+        screen.mediaStop ? 1 : 0,
+        screen.order === undefined ? '' : screen.order,
+        screen.preorder === undefined ? '' : screen.preorder
+      ].join('|');
+    };
+  }
+  // 新屏表里与 before 同一片内容的屏；查无或有歧义（多屏同 key，例如没有顺序号的零宽屏）
+  // 返回 -1，调用方照旧重渲。
+  if (typeof vn.screenIndexOfSameSlice !== 'function') {
+    vn.screenIndexOfSameSlice = function(before) {
+      if (!before || !this.screens) return -1;
+      var key = this.screenSliceKey(before);
+      var found = -1;
+      for (var i = 0; i < this.screens.length; i++) {
+        if (this.screenSliceKey(this.screens[i]) !== key) continue;
+        if (found >= 0) return -1;
+        found = i;
+      }
+      return found;
+    };
+  }
+  // 屏上内容不动，只认领新下标并补做随可用盒变化的几何（墨迹居中、窄条层）。
+  if (typeof vn.keepCurrentScreenAt !== 'function') {
+    vn.keepCurrentScreenAt = function(index) {
+      this.currentScreenIndex = index;
+      this.centerScreenInk(this.screen ? this.screen.firstElementChild : null);
+      if (window.__fushiLanes) window.__fushiLanes.repaint();
+      if (typeof this.reportTextLeadsScreenCues === 'function') this.reportTextLeadsScreenCues(false);
+    };
+  }
   if (typeof vn.refitScreensToCurrentViewport !== 'function') {
-    vn.refitScreensToCurrentViewport = function(anchorCharOffset) {
+    vn.refitScreensToCurrentViewport = function(anchorCharOffset, rebuildBaseScreens) {
       if (!this.screens || !this.screens.length) return;
+      var before = this.screens[this.currentScreenIndex];
       var progress = this.calculateProgress();
       this.applyImageMaxVars();
-      this.screens = this.fitScreensToViewport(this.baseScreens
-        ? this.mergeSentenceAudioCrossScreenScreens(this.baseScreens)
-        : this.screens);
-      this.assignScreenProgressAnchors();
-      var index = this.screenIndexForCharOffset(
-        anchorCharOffset === undefined ? -1 : anchorCharOffset);
+      if (rebuildBaseScreens) {
+        // 拆屏用的逐字表按「哪些块是原子块」过滤，归类变了要一起重建。
+        this.viewportFitTextItems = null;
+        this.buildScreens();
+      } else {
+        this.screens = this.fitScreensToViewport(this.baseScreens
+          ? this.mergeSentenceAudioCrossScreenScreens(this.baseScreens)
+          : this.screens);
+        this.assignScreenProgressAnchors();
+      }
+      var anchor = anchorCharOffset;
+      if (anchor === undefined) {
+        var same = this.screenIndexOfSameSlice(before);
+        if (same >= 0) {
+          this.keepCurrentScreenAt(same);
+          return;
+        }
+        if (rebuildBaseScreens) anchor = this.screenStartCharCount(before);
+      }
+      var index = this.screenIndexForCharOffset(anchor === undefined ? -1 : anchor);
       if (index < 0) index = this.screenIndexForProgress(progress);
       this.renderScreen(index, true);
     };
@@ -3451,8 +3743,17 @@ $sharedInitViewport
       // 丢掉，`.fushi-vn-stage` 的 `var(--chrome-*-inset, 0px)` 恒取兜底 0px。
       // 与分页/连续 shell 的 setChromeInsets 写同一组变量，再按新的可用盒重切屏
       // （预留带变化会改变每屏能装多少行，只改 padding 不重切会留下溢出的旧屏）。
+      //
+      // 下发值与已生效的内联值逐值相同时可用盒没变，直接返回（与分页 / 连续 shell 的
+      // _chromeInsetsUnchanged 同一判据）：悬浮底栏下预留恒为 0，开关工具栏前后数值相同，
+      // 此前每次都把整章每个可拆屏重量一遍。applyViewportVars 在初始化时写的是同一组内联
+      // 变量，所以首次内容就绪的补发也在这里短路。
       var root = document.documentElement;
       if (root && root.style) {
+        if (root.style.getPropertyValue('--chrome-top-inset') === (Number(topPx) || 0) + 'px' &&
+            root.style.getPropertyValue('--chrome-bottom-inset') === (Number(bottomPx) || 0) + 'px') {
+          return null;
+        }
         root.style.setProperty('--chrome-top-inset', (Number(topPx) || 0) + 'px');
         root.style.setProperty('--chrome-bottom-inset', (Number(bottomPx) || 0) + 'px');
       }
@@ -3469,15 +3770,103 @@ $sharedInitViewport
       return this.sourceRoot || document.body;
     };
   }
+  // 文字领读（Dart text_leads_page_stop.dart）：每次换屏把当前屏的有声书句子首尾报给
+  // 宿主，宿主据此在本屏末句句末停播、翻屏后从新屏首句续播。句子按「句首落在本屏」
+  // 归属（跨屏长句归它开头那一屏）；本屏一个句首都没有（整屏都在一句长句中间）时
+  // 退回「与本屏相交」。载荷与 cueIdAtPoint 同一身份约定：Sasayaki cue 报
+  // `{type:'frag'}`（id = textFragmentId），SRT/VTT/LRC 合成书的 `[data-cue-id]` 报
+  // `{type:'sid'}`（id = sentenceIndex）；插图屏 / 无句子报 `{type:'none'}`。
+  // 同一屏同一范围不重复报（force 除外：宿主刚打开文字领读 / 恢复落定时要一份当前
+  // 值）。adopt = 宿主只登记范围、不当成用户翻屏（文字领读刚生效的那次补报）。
+  if (typeof vn.textLeadsScreenCues !== 'function') {
+    vn.textLeadsScreenCues = function() {
+      var index = this.currentScreenIndex;
+      var screen = this.screens && this.screens[index];
+      if (!screen) return { type: 'none' };
+      var cues = this.sentenceAudioCues;
+      if (cues && cues.length) {
+        var screenStart = this.screenMatchableOffset(screen, false);
+        var screenEnd = this.screenMatchableOffset(screen, true);
+        var first = null, last = null, anyFirst = null, anyLast = null;
+        for (var i = 0; i < cues.length; i++) {
+          var cue = this.sentenceAudioCueForInput(cues[i]);
+          if (!cue || !cue.id) continue;
+          if (!this.sentenceAudioCueIntersectsScreen(cue, screen)) continue;
+          var start = this.sentenceAudioCueStart(cue);
+          if (!anyFirst || start < this.sentenceAudioCueStart(anyFirst)) anyFirst = cue;
+          if (!anyLast || start > this.sentenceAudioCueStart(anyLast)) anyLast = cue;
+          if (screenStart === null || screenEnd === null) continue;
+          if (start < screenStart || start >= screenEnd) continue;
+          if (!first || start < this.sentenceAudioCueStart(first)) first = cue;
+          if (!last || start > this.sentenceAudioCueStart(last)) last = cue;
+        }
+        if (!first) { first = anyFirst; last = anyLast; }
+        if (!first || !last) return { type: 'none' };
+        return { type: 'frag', first: first.id, last: last.id };
+      }
+      var scope = this.screen;
+      var root = this.contentRoot();
+      var stream = this.contentStream;
+      if (!scope || !scope.querySelectorAll) return { type: 'none' };
+      var seen = {};
+      var ids = [];
+      Array.prototype.forEach.call(scope.querySelectorAll('[data-cue-id]'), function(el) {
+        var id = el.getAttribute('data-cue-id');
+        if (id === null || seen[id]) return;
+        seen[id] = true;
+        ids.push(id);
+      });
+      if (!ids.length) return { type: 'none' };
+      var starting = [];
+      if (root && root.querySelector && stream && typeof stream.sourcePositionForNode === 'function') {
+        for (var j = 0; j < ids.length; j++) {
+          var node = null;
+          try {
+            var escaped = (window.CSS && CSS.escape) ? CSS.escape(String(ids[j])) : String(ids[j]);
+            node = root.querySelector('[data-cue-id="' + escaped + '"]');
+          } catch (_ignored) {}
+          var position = node ? stream.sourcePositionForNode(node) : null;
+          if (position && this.screenIndexForCharOffset(position.startChar) === index) {
+            starting.push(ids[j]);
+          }
+        }
+      }
+      var picked = starting.length ? starting : ids;
+      return { type: 'sid', first: picked[0], last: picked[picked.length - 1] };
+    };
+  }
+  if (typeof vn.reportTextLeadsScreenCues !== 'function') {
+    vn.reportTextLeadsScreenCues = function(force, adopt) {
+      if (!window.flutter_inappwebview || !window.flutter_inappwebview.callHandler) return;
+      var payload;
+      try {
+        payload = JSON.stringify(this.textLeadsScreenCues());
+      } catch (_ignored) {
+        payload = JSON.stringify({ type: 'none' });
+      }
+      var key = this.currentScreenIndex + '|' + payload;
+      if (!force && key === this.lastTextLeadsReportKey) return;
+      this.lastTextLeadsReportKey = key;
+      window.flutter_inappwebview.callHandler('onTextLeadsScreenCues', payload, adopt ? 'adopt' : 'change');
+    };
+  }
   // 中键「跳到点击句」反查（Dart `_seekToClickedSentence` 调 cueIdAtPoint，查词载荷的
   // audioCuePayload 调 cueIdAtDomPoint）。分页 / 连续 shell 按 cue↔DOM 映射表反查，VN 屏上
   // 是克隆、映射表只在播放到某句时才对那一句建——此前 VN 整个缺这对方法，中键恒拿到 null、
-  // 静默无反应。VN 的 cue 本来就是章内音频坐标区间（start/length，与跟随同一口径），这里把
+  // 静默无反应。VN 的 cue 是章内音频坐标区间（重定位后的 start/len，与跟随同一口径），这里把
   // 点击处换算到同一坐标（getMatchableOffset，克隆 / 源节点都认）再按区间找所属句，
   // 回 `{type:'frag', id}`（id 即 textFragmentId，见 AudiobookBridge）。点在注音上按所属
   // ruby 的基字起点算。
   if (typeof vn.cueIdAtPoint !== 'function') {
     vn.cueIdAtPoint = function(x, y) {
+      // 合成书（SRT / VTT / LRC）的句子不进 sentenceAudioCues，身份在屏上克隆保留的
+      // [data-cue-id] 上（与共享段 cueIdAtPoint 同一顺序：先认它，再按章内坐标找）。
+      var hit = document.elementFromPoint(x, y);
+      var sidEl = hit && hit.closest ? hit.closest('[data-cue-id]') : null;
+      if (sidEl) {
+        var sid = sidEl.getAttribute('data-cue-id');
+        if (sid !== null) return JSON.stringify({ type: 'sid', id: sid });
+      }
       if (!window.fushiSelection || !window.fushiSelection.getCaretRange) return null;
       var caret = window.fushiSelection.getCaretRange(x, y);
       if (!caret) return null;
@@ -3486,9 +3875,12 @@ $sharedInitViewport
   }
   if (typeof vn.cueIdAtDomPoint !== 'function') {
     vn.cueIdAtDomPoint = function(node, off) {
-      var cues = this.sentenceAudioCues;
-      if (!node || !cues || !cues.length) return null;
+      if (!node) return null;
       var el = node.nodeType === Node.TEXT_NODE ? node.parentElement : node;
+      var sidEl = el && el.closest ? el.closest('[data-cue-id]') : null;
+      if (sidEl) return JSON.stringify({ type: 'sid', id: sidEl.getAttribute('data-cue-id') });
+      var cues = this.sentenceAudioCues;
+      if (!cues || !cues.length) return null;
       var annotation = el && el.closest ? el.closest('rt, rp') : null;
       if (annotation) {
         var ruby = annotation.closest('ruby');
@@ -3754,6 +4146,7 @@ window.addEventListener('load', function() {
     $initialRestoreScript
   } catch (e) {
     try { if (window.console && console.error) console.error('[FushiVN] boot restore failed', e); } catch (_ignored) {}
+    try { window.fushiReader.notifyRestoreFailed(e); } catch (_ignored) {}
   }
 });
 if (document.readyState === 'complete') {
@@ -3762,6 +4155,7 @@ if (document.readyState === 'complete') {
     $initialRestoreScript
   } catch (e) {
     try { if (window.console && console.error) console.error('[FushiVN] boot restore failed', e); } catch (_ignored) {}
+    try { window.fushiReader.notifyRestoreFailed(e); } catch (_ignored) {}
   }
 }
 };

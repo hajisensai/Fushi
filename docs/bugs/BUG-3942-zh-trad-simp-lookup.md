@@ -4,3 +4,4 @@
 - **[x] ① 已修复** — 4d5ce4817a（语言未知时看启用中的 term 词典是否声明中文）、7962eb3059（OpenCC TSCharacters 繁→简，同一 flag 双向展开）
 - **[x] ② 已加自动化测试** — `native/fushidicts/tests/chinese_simp_trad_lookup_test.cpp`（之間 ↔ 之间 端到端）、`fushi/test/models/app_model_search_pure_logic_test.dart`、`fushi/test/models/dictionary_lookup_filters_test.dart`
 - **备注**：词典包没声明 sourceLanguage 时仍需用户在词典管理里指定语言或设默认内容语言；远端查词服务端判据未跟进；app 内 DLL 待 CI 重编后才生效，未真机复测。
+- **后续（2026-11-06）**：按开发者要求，简繁互查改为用户开关 `lookup_chinese_script_variants`（设置 › 查词 › 词典，**默认关**）。关着时本 bug 的双词典场景只出原形词条，要互查须手动打开；远端查词随请求带请求方开关 `zhScriptVariants`。

@@ -15,7 +15,7 @@ import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_schema_card_creation.dart';
-import 'package:fushi/src/srs/srs_mining_target.dart';
+import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi/src/models/module_id.dart';
 
 import '../helpers/test_platform_services.dart';

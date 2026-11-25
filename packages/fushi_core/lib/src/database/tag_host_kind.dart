@@ -7,7 +7,12 @@ enum TagHostKind {
   srt('srt'),
   video('video'),
   collection('collection'),
-  game('game');
+  game('game'),
+
+  /// 本地音乐专辑（`music_albums.album_uid`）。目前只当 NSFW 标记宿主（拍板台
+  /// NCzkl6oLnf-adult-cover：DLsite 资料补的 R-18 主图要能被「模糊 NSFW 封面」管到），
+  /// 不挂标签、不挂私密。
+  musicAlbum('music_album');
 
   const TagHostKind(this.dbValue);
 
@@ -38,11 +43,67 @@ bool isPrivateByClock(MediaPrivacyClock clock) {
   return cleared == null || set > cleared;
 }
 
+/// 一个宿主的「NSFW」标记时钟（[MediaNsfwFlags] 一行；互联标签同步清单条目上的
+/// `nsfw` 载荷）。两只戳都为 null = 从没标过。语义与 [MediaPrivacyClock] 相同。
+typedef MediaNsfwClock = ({int? nsfwAt, int? clearedAt});
+
+/// NSFW ⇔ 标 NSFW 的戳比取消的戳新（相等取消胜）。
+bool isNsfwByClock(MediaNsfwClock clock) {
+  final int? set = clock.nsfwAt;
+  if (set == null) return false;
+  final int? cleared = clock.clearedAt;
+  return cleared == null || set > cleared;
+}
+
+/// 两只 NSFW 时钟逐戳取大（LWW 合并；重放幂等、与顺序无关）。
+MediaNsfwClock mergeNsfwClocks(MediaNsfwClock a, MediaNsfwClock b) {
+  int? maxOf(int? x, int? y) => x == null ? y : (y == null || x >= y ? x : y);
+  return (
+    nsfwAt: maxOf(a.nsfwAt, b.nsfwAt),
+    clearedAt: maxOf(a.clearedAt, b.clearedAt),
+  );
+}
+
 /// 两只私密时钟逐戳取大（LWW 合并；重放幂等、与顺序无关）。
 MediaPrivacyClock mergePrivacyClocks(MediaPrivacyClock a, MediaPrivacyClock b) {
   int? maxOf(int? x, int? y) => x == null ? y : (y == null || x >= y ? x : y);
   return (
     privateAt: maxOf(a.privateAt, b.privateAt),
+    clearedAt: maxOf(a.clearedAt, b.clearedAt),
+  );
+}
+
+/// 一个宿主的「上锁」标记时钟（[MediaLockedFlags] 一行；互联标签同步清单条目上的
+/// `locked` 载荷）。两只戳都为 null = 从没上过锁。语义与 [MediaPrivacyClock] 相同。
+typedef MediaLockClock = ({int? lockedAt, int? clearedAt});
+
+/// 上锁 ⇔ 上锁的戳比解除的戳新（相等解除胜）。
+bool isLockedByClock(MediaLockClock clock) {
+  final int? set = clock.lockedAt;
+  if (set == null) return false;
+  final int? cleared = clock.clearedAt;
+  return cleared == null || set > cleared;
+}
+
+/// 解锁口令摘要的一份记录（[MediaLockCredentials] 那一行；互联标签清单顶层的
+/// `lockCredential`）。[verifier] 为 null = 口令已删除。
+typedef MediaLockCredential = ({String? verifier, int updatedAt});
+
+/// 两份口令记录的 LWW 合并：[MediaLockCredential.updatedAt] 大的胜，相等时按
+/// verifier 文本取大（null 视为空串），与顺序无关、重放幂等。
+MediaLockCredential mergeLockCredentials(
+  MediaLockCredential a,
+  MediaLockCredential b,
+) {
+  if (a.updatedAt != b.updatedAt) return a.updatedAt > b.updatedAt ? a : b;
+  return (a.verifier ?? '').compareTo(b.verifier ?? '') >= 0 ? a : b;
+}
+
+/// 两只上锁时钟逐戳取大（LWW 合并；重放幂等、与顺序无关）。
+MediaLockClock mergeLockClocks(MediaLockClock a, MediaLockClock b) {
+  int? maxOf(int? x, int? y) => x == null ? y : (y == null || x >= y ? x : y);
+  return (
+    lockedAt: maxOf(a.lockedAt, b.lockedAt),
     clearedAt: maxOf(a.clearedAt, b.clearedAt),
   );
 }

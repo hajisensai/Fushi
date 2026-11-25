@@ -11,6 +11,7 @@ import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi_engine/media/torrent/bt_site_config.dart';
+import 'package:fushi_engine/media/torrent/bt_site_parser_rule.dart';
 import 'package:fushi_engine/media/torrent/bt_site_probe.dart';
 import 'package:fushi_engine/media/torrent/torznab_client.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
@@ -328,7 +329,21 @@ Map<String, Object?> _btSiteRecord(BtSiteConfig site) => <String, Object?>{
       if (site.effectiveDomains.contains(d)) d.name,
   ],
   'allowInsecureHttp': site.allowInsecureHttp,
+  // 只报有没有，不回显规则正文以外的凭据（Cookie 永不回显）。
+  'parserRule': site.parser != null,
+  'cookieSet': site.cookie.isNotEmpty,
 };
+
+/// `parser` 字段：空串 = 不用规则（自动识别）；畸形报错说明哪里不对。
+BtSiteParserRule? _parseBtSiteParserField(String raw) {
+  final String text = raw.trim();
+  if (text.isEmpty) return null;
+  try {
+    return BtSiteParserRule.fromJson(text);
+  } on FormatException catch (error) {
+    throw ArgumentError(t.bt_site_parser_invalid_error(reason: error.message));
+  }
+}
 
 BtSiteConfig _requireBtSite(SettingsContext c, String id) {
   for (final BtSiteConfig site in c.appModel.btSites) {
@@ -356,16 +371,20 @@ Set<BtSiteDomain> _parseBtSiteDomains(String raw) {
   return domains;
 }
 
-/// 自动识别；失败只报中性提示（不列格式、不举站名）。
+/// 自动识别（或按 [parser] 验证）；失败只报中性提示（不列格式、不举站名）。
 Future<BtSiteProbeResult> _detectBtSite(
   SettingsContext c,
   String url, {
   required bool allowInsecureHttp,
+  BtSiteParserRule? parser,
+  String cookie = '',
 }) async {
   try {
     return await c.appModel.detectBtSite(
       url,
       allowInsecureHttp: allowInsecureHttp,
+      parser: parser,
+      cookie: cookie,
     );
   } on Object catch (error) {
     throw ArgumentError(btSiteProbeErrorMessage(error));
@@ -390,6 +409,19 @@ const List<SettingsCliParam> _btSiteFields = <SettingsCliParam>[
     'insecure_http',
     help: 'true/false，允许明文 http（局域网），默认 false；改动会重新识别',
     required: false,
+  ),
+  SettingsCliParam(
+    'parser',
+    help:
+        '解析规则 JSON（自动识别不了的站点用；空串 = 去掉规则改回自动识别）；'
+        '改动会按规则重新验证',
+    required: false,
+  ),
+  SettingsCliParam(
+    'cookie',
+    help: '登录 Cookie（只用于带解析规则的站点；凭据，只收 stdin / 环境变量）',
+    required: false,
+    secret: true,
   ),
 ];
 
@@ -418,10 +450,16 @@ CtlBodyPage _btSitesPage() => CtlBodyPage(
             'insecure_http',
             false,
           );
+          final BtSiteParserRule? parser = _parseBtSiteParserField(
+            fields['parser'] ?? '',
+          );
+          final String cookie = (fields['cookie'] ?? '').trim();
           final BtSiteProbeResult probe = await _detectBtSite(
             c,
             url,
             allowInsecureHttp: allowInsecureHttp,
+            parser: parser,
+            cookie: cookie,
           );
           final BtSiteConfig site = probe.applyTo(
             id: newBtSiteId(),
@@ -429,6 +467,7 @@ CtlBodyPage _btSitesPage() => CtlBodyPage(
             domains: domains,
             enabled: _boolField(fields, 'enabled', true),
             allowInsecureHttp: allowInsecureHttp,
+            cookie: cookie,
           );
           await c.appModel.setBtSites(<BtSiteConfig>[
             ...c.appModel.btSites,
@@ -450,15 +489,25 @@ CtlBodyPage _btSitesPage() => CtlBodyPage(
                 old.allowInsecureHttp,
               );
               final String? url = fields['url']?.trim();
+              final bool parserChanged = fields.containsKey('parser');
+              final BtSiteParserRule? parser = parserChanged
+                  ? _parseBtSiteParserField(fields['parser']!)
+                  : old.parser;
+              final String cookie = fields['cookie']?.trim() ?? old.cookie;
               final bool reprobe =
                   (url != null && url != old.baseUrl.toString()) ||
-                  allowInsecureHttp != old.allowInsecureHttp;
+                  allowInsecureHttp != old.allowInsecureHttp ||
+                  parserChanged ||
+                  cookie != old.cookie;
               final BtSiteConfig next;
               if (reprobe) {
+                // 已有规则的站点重新验证时带上规则与 Cookie，不退回自动识别。
                 final BtSiteProbeResult probe = await _detectBtSite(
                   c,
                   url ?? old.baseUrl.toString(),
                   allowInsecureHttp: allowInsecureHttp,
+                  parser: parser,
+                  cookie: cookie,
                 );
                 next = probe.applyTo(
                   id: old.id,
@@ -466,6 +515,7 @@ CtlBodyPage _btSitesPage() => CtlBodyPage(
                   domains: domains,
                   enabled: enabled,
                   allowInsecureHttp: allowInsecureHttp,
+                  cookie: cookie,
                 );
               } else {
                 next = old.copyWith(
@@ -772,7 +822,7 @@ CtlBodyPage _downloadRoutingPage() => CtlBodyPage(
         fields: const <SettingsCliParam>[
           SettingsCliParam(
             'profile',
-            help: '下载后端 profile id；add 时省略 = 用当前 qB 配置推导出的 id',
+            help: '下载后端 profile id；add 时省略 = 用当前后端（互联设备 / 外接 qB）推导出的 id',
             required: false,
           ),
           SettingsCliParam('remote_root', help: '后端看到的远端根路径', required: false),

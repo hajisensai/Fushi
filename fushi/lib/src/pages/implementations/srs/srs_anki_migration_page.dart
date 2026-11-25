@@ -23,12 +23,17 @@ import 'package:path_provider/path_provider.dart';
 import 'package:fushi/src/media/import/real_path_directory_picker.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_anki_migration_setup_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
+import 'package:fushi/src/srs/srs_action_error_text.dart'
+    show srsImportFailureMessage;
 import 'package:fushi/src/srs/srs_anki_migration.dart';
 import 'package:fushi/src/srs/srs_import_entry.dart' show srsImportReportLines;
 import 'package:fushi/src/srs/srs_import_task.dart';
-import 'package:fushi/src/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
+import 'package:fushi/src/utils/adaptive/shell_style.dart'
+    show shellRedesignActive;
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -311,7 +316,22 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
     required SrsAnkiMigrationSettings settings,
     Future<void> Function()? cleanup,
   }) async {
-    final SrsDbStore? store = await readSrsStore(ref);
+    // 库打开失败：两个入口都从 srsRunLogged / 按钮回调起，抛出去只进日志、用户点了没有任何反应。这里记日志、
+    // 清掉已交给本函数的快照临时目录，并把真实原因（[srsLoadErrorDetail]）提示出来。
+    final SrsDbStore? store;
+    try {
+      store = await readSrsStore(ref);
+    } catch (e, stack) {
+      ErrorLogService.instance.log('SrsAnkiMigration.openStore', e, stack);
+      await cleanup?.call();
+      if (mounted) {
+        FushiToast.show(
+          msg: srsLoadErrorDetail(e),
+          severity: ToastSeverity.error,
+        );
+      }
+      return;
+    }
     SrsMediaStore? media;
     try {
       media = await ref.read(srsMediaStoreProvider.future);
@@ -329,6 +349,7 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
       return;
     }
     final SrsMediaStore lockedMedia = media;
+    final SrsDbStore lockedStore = store;
     final AppModel app = ref.read(appProvider);
     // 迁移完成后切卡片去向：任务可能在本页关掉之后才结束，偏好写入口在入队时就绑好。
     final SrsCardTargetSwitch cardTargetSwitch = SrsCardTargetSwitch(
@@ -344,7 +365,7 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
                 void Function(double progress) onProgress,
                 bool Function() shouldStop,
               ) => runSrsAnkiMigration(
-                store: store,
+                store: lockedStore,
                 media: lockedMedia,
                 source: source,
                 settings: settings,
@@ -369,15 +390,8 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
       await showFushiConfirmDialog(
         context: context,
         title: t.srs_anki_migrate,
-        message:
-            failure is SrsImportException &&
-                failure.code == SrsImportException.needsKernel
-            ? t.srs_import_needs_kernel
-            : t.srs_import_failed(
-                error: failure is SrsImportException
-                    ? failure.message
-                    : '$failure',
-              ),
+        // 与导入任务条的失败对话框同一张错误 → 提示表（一条超过 16 MiB 时说清楚，而不是内核英文原话）。
+        message: srsImportFailureMessage(failure),
         icon: FushiIcons.error,
         confirmLabel: t.dialog_ok,
         cancelLabel: t.cancel,
@@ -432,10 +446,12 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
   @override
   Widget build(BuildContext context) {
     final bool apple = isGlassDesign(context);
+    final bool masthead = shellRedesignActive(context);
     return FushiPageScaffold(
       title: t.srs_anki_migrate,
+      masthead: true,
       header: apple ? null : _buildTopBar(context),
-      actions: apple
+      actions: apple || masthead
           ? <Widget>[
               for (final FushiToolbarItem a in _actions)
                 FushiIconButton(

@@ -28,6 +28,8 @@ import 'package:fushi/src/media/audiobook/audiobook_session.dart';
 import 'package:fushi/src/media/discovery/media_discovery_service.dart';
 import 'package:fushi/src/media/discovery/media_discovery_source.dart';
 import 'package:fushi/src/media/downloads/download_start_result.dart';
+import 'package:fushi/src/media/manga/download/manga_download_service.dart'
+    show isMangaDownloadJobInFlight, isMangaDownloadJobUnfinished;
 import 'package:fushi/src/media/manga/library/online_manga_library_entry.dart';
 import 'package:fushi/src/media/manga/library/online_manga_runtime_adapter.dart';
 import 'package:fushi/src/media/manga/mihon/mihon_enabled_sources.dart';
@@ -111,6 +113,14 @@ List<CtlRoute> buildOnlineCtlRoutes(OpContext context) {
     CtlRoute.post(
       '/api/admin/online/manga-downloads/:id/retry',
       ctl.retryMangaDownload,
+    ),
+    CtlRoute.post(
+      '/api/admin/online/manga-downloads/:id/pause',
+      ctl.pauseMangaDownload,
+    ),
+    CtlRoute.post(
+      '/api/admin/online/manga-downloads/:id/resume',
+      ctl.resumeMangaDownload,
     ),
     CtlRoute.delete(
       '/api/admin/online/manga-downloads/:id',
@@ -1252,16 +1262,40 @@ class _OnlineCtl {
     };
   }
 
-  /// 下载页漫画任务行「取消」：排队的直接改状态，正在下的中止并删半成品目录。
+  /// 下载页漫画任务行「取消」：排队 / 暂停的直接改状态，正在下的中止；半成品
+  /// 目录都删。
   Future<Object?> cancelMangaDownload(CtlCall call) async {
     _requireMangaDownloads();
     final String id = call.params['id']!;
     final MangaDownloadJobRow row = await _requireMangaJob(id);
-    if (row.status != MangaDownloadJobStatus.queued &&
-        row.status != MangaDownloadJobStatus.running) {
+    if (!isMangaDownloadJobUnfinished(row.status)) {
       throw CtlFailure.conflict('任务已结束，不能取消（当前：${row.status}）');
     }
     await appModel.mangaDownloadService.cancel(id);
+    return ctlMangaDownloadJobJson(await _requireMangaJob(id));
+  }
+
+  /// 下载页漫画任务行「暂停」：只对排队 / 下载中成立；已落地的页留着续跑。
+  Future<Object?> pauseMangaDownload(CtlCall call) async {
+    _requireMangaDownloads();
+    final String id = call.params['id']!;
+    final MangaDownloadJobRow row = await _requireMangaJob(id);
+    if (!isMangaDownloadJobInFlight(row.status)) {
+      throw CtlFailure.conflict('只有排队 / 下载中的任务能暂停（当前：${row.status}）');
+    }
+    await appModel.mangaDownloadService.pause(id);
+    return ctlMangaDownloadJobJson(await _requireMangaJob(id));
+  }
+
+  /// 下载页漫画任务行「恢复」：只对暂停的任务成立，排回原位置续跑。
+  Future<Object?> resumeMangaDownload(CtlCall call) async {
+    _requireMangaDownloads();
+    final String id = call.params['id']!;
+    final MangaDownloadJobRow row = await _requireMangaJob(id);
+    if (row.status != MangaDownloadJobStatus.paused) {
+      throw CtlFailure.conflict('只有暂停的任务能恢复（当前：${row.status}）');
+    }
+    await appModel.mangaDownloadService.resume(id);
     return ctlMangaDownloadJobJson(await _requireMangaJob(id));
   }
 
