@@ -106,6 +106,34 @@ void main() {
     },
   );
 
+  test('addFileNativeDeflate：大文件的压缩结果流式落临时文件（内存有界），产物逐字一致、临时目录删净', () {
+    final Uint8List big = payload(
+      kNativeZipInMemoryDeflateBytes + 3 * 1024 * 1024,
+      randomBytes: 6 * 1024 * 1024,
+    );
+    final File bigFile = File(p.join(tmp.path, 'fushi.db'))
+      ..writeAsBytesSync(big);
+    final Directory scratch = Directory(p.join(tmp.path, 'scratch'))
+      ..createSync();
+    final String zipPath = p.join(tmp.path, 'big.zip');
+    final ZipFileEncoder encoder = ZipFileEncoder()..create(zipPath);
+    addFileNativeDeflate(
+      encoder,
+      bigFile,
+      'fushi.db',
+      tempDirectory: scratch.path,
+    );
+    encoder.closeSync();
+
+    expect(scratch.listSync(), isEmpty);
+    expect(
+      methodOf(File(zipPath).readAsBytesSync(), 'fushi.db'),
+      ArchiveFile.DEFLATE,
+    );
+    final Archive archive = decodeVerified(zipPath);
+    expect(entryNamed(archive, 'fushi.db').content as List<int>, big);
+  });
+
   test('addDirectoryNativeDeflate：条目集合与命名对齐 archive 的 addDirectory', () {
     final Directory src = Directory(p.join(tmp.path, 'book'))..createSync();
     File(

@@ -414,8 +414,9 @@ class BackupContentSummary {
 /// `hibiki.db`）经 [_findDbEntry] 做 legacy 回退（Never break userspace）。
 const String _dbName = fushiDatabaseFileName;
 
-/// [BackupService.createBackup] 开压缩时单个条目 deflate 的上限：原生 deflate 把压缩结果整份
-/// 留在内存里再写进 zip，超过这个大小的条目（大库 / 大文件）照旧 STORE，内存峰值有界。
+/// [BackupService.createBackup] 开压缩时单个条目 deflate 的上限：超过这个大小的条目（大库 /
+/// 大文件）照旧 STORE。内存早已有界（`addFileNativeDeflate` 把大条目的压缩结果流式写进临时
+/// 文件），这条上限只限住空闲时段一次备份的 CPU 时间与临时空间。
 const int kBackupDeflateMaxEntryBytes = 512 * 1024 * 1024;
 const String _metaName = 'backup_meta.json';
 const String _dictionaryResourcesPrefix = 'dictionaryResources';
