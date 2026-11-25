@@ -427,6 +427,7 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
       // 署名（作品图谱 L5）：点演唱者 / 艺人进人物聚合页；没有署名数据时不渲染。
       MusicTrackPeopleSection(database: _db, trackUid: track.trackUid),
       MediaLinksSection(
+        remoteVideoSource: mediaLinkRemoteVideoSource(ref: ref),
         database: _db,
         self: (kind: MediaLinkKind.musicTrack, key: track.trackUid),
         onOpen: (MediaLinkEntry e) =>

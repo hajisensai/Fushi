@@ -87,6 +87,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5455](bugs/BUG-5455-media-server-library-metadata-missing.md) | ✅ | ✅ | 从媒体服务器加入媒体库的剧没有资料：库里合集详情页只有封面与「资料待补」，看过的集也显示未看 |
+> 共 4731 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5463](bugs/BUG-5463-same-work-remote-collection-empty.md) | ✅ | ✅ | 「同一作品」打开只在 Jellyfin 上有集的动画合集显示「合集为空」 |
 | [BUG-5450](bugs/BUG-5450-android-library-layout-anchor-lost.md) | ✅ | ✅ | Android 书库对账只探当前配置的内部根，布局 / 容器锚点被冲掉后永不自愈 |
 | [BUG-5449](bugs/BUG-5449-background-writers-seal-and-interrupt.md) | ✅ | ✅ | background-writers-seal-and-interrupt |
 | [BUG-5448](bugs/BUG-5448-lumiere-font-switch-jank.md) | ✅ | ✅ | 绘光切字体卡顿、自定义字体加载完不重画 |

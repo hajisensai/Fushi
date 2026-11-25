@@ -5,7 +5,7 @@ import 'package:fushi/src/media/links/media_link_entries.dart'
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
-    show mediaLinkSearchAction, openMediaLinkEntry;
+    show mediaLinkRemoteVideoSource, mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show showMediaLinksDialog;
 import 'package:fushi/src/media/links/work_kinds_badge.dart';
@@ -59,6 +59,8 @@ import 'package:fushi/src/media/drag_drop/drop_classification.dart';
 import 'package:fushi/src/media/drag_drop/drop_decision.dart';
 import 'package:fushi/src/media/drag_drop/fushi_file_drop_target.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/video_collection_open_request.dart';
+import 'package:fushi/src/media/video/remote_video_source_resolver.dart';
 import 'package:fushi/src/pages/implementations/manual_download_task_dialog.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
 import 'package:fushi/src/media/video/cover_ui/portrait_cover_image.dart';
@@ -198,7 +200,6 @@ import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart'
     show RemoteDiscHostTitle;
 import 'package:fushi/src/media/video/disc/remote_disc_download.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
-import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/jellyfin_library_scope.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinVideoClient;
@@ -442,12 +443,12 @@ class HomeVideoPage extends BaseModuleTabPage {
 
   /// 测试钩子（多端库联合视图 §2.2/§2.6）：注入云视频目录 client（[CloudRemoteVideoClient]），
   /// 让「云后端 → 云视频占位卡混排 + 按 uid 下载入库」在 widget 测试可落地。缺省时
-  /// 生产路径经 [_resolveCloudRemoteVideoClient]（resolveSyncBackend 产物包进 client）。
+  /// 生产路径经 [resolveCloudRemoteVideoClient]（resolveSyncBackend 产物包进 client）。
   final Future<CloudRemoteVideoClient?> Function()?
   cloudRemoteVideoClientLoader;
 
   /// 测试钩子：注入 Jellyfin/Emby client。混排闸门（`jellyfin_show_in_library`）
-  /// 在 [_resolveJellyfinVideoClient] 里先于本钩子判定，关着时注入的 client 也不会
+  /// 在 [resolveRemoteVideoSource] 里先于本钩子判定，关着时注入的 client 也不会
   /// 被问到——这正是闸门测试要断言的东西。缺省时生产路径从 SyncRepository 读配置。
   final Future<JellyfinVideoClient?> Function()? jellyfinVideoClientLoader;
   final Future<File> Function(RemoteVideoInfo video)?
@@ -1109,10 +1110,43 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       onResume: _onVideoRemoteConfigChanged,
     );
     unawaited(_refreshVideoRemoteTargets());
+    // 别处（「同一作品」等）要打开某个视频合集 = 请本页用唯一出口打开
+    // （[requestVideoCollectionOpen]）。tab 懒构建时请求先于本页存在，补查一次。
+    videoCollectionOpenRequest.addListener(_onVideoCollectionOpenRequested);
+    if (videoCollectionOpenRequest.value != null) {
+      WidgetsBinding.instance.addPostFrameCallback(
+        (_) => _onVideoCollectionOpenRequested(),
+      );
+    }
     assert(() {
       HomeVideoPage.debugRefreshVideos = _refresh;
       return true;
     }());
+  }
+
+  /// 接「打开视频合集」请求（[requestVideoCollectionOpen]），用与视频库合集卡同一个
+  /// 出口 [_openCollectionDetail] 打开，详情页因此带着本页的远端上下文
+  /// （Jellyfin / 互联上「本机没有」的集照常出现、可流播）。
+  void _onVideoCollectionOpenRequested() {
+    if (!mounted) return;
+    final int? collectionId = takeVideoCollectionOpenRequest();
+    if (collectionId == null) return;
+    unawaited(_openRequestedVideoCollection(collectionId));
+  }
+
+  Future<void> _openRequestedVideoCollection(int collectionId) async {
+    // 远端来源平时由首轮远端取数（[_loadRemoteVideos]）产出，请求可能先于它到达
+    // （tab 刚懒构建、清单还在取）。不等整份清单——Jellyfin 大库全量枚举要几十秒，
+    // 切过来干等就像没反应——只按同一条判据解析来源（不发清单请求）就打开；详情页
+    // 自己的成员加载经共享 [RemoteLibraryCache] 拿清单，正在取的那一次会被复用。
+    // 没有来源时详情页拿不到远端上下文、远端集全被丢弃（「合集为空」）。
+    if (_remoteVideoSource == null && _shouldLoadRemoteVideos) {
+      _remoteVideoSource = await _resolveRemoteVideoSource();
+    }
+    final MediaCollectionRow? collection = await appModelNoUpdate.database
+        .getMediaCollectionById(collectionId);
+    if (collection == null || !mounted) return;
+    _openCollectionDetail(collection);
   }
 
   // BUG-994：顶层 tab 保活后，切回视频 tab 不再隐式重拉远端 → 远端视频要手动
@@ -1266,6 +1300,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
 
   @override
   void dispose() {
+    videoCollectionOpenRequest.removeListener(_onVideoCollectionOpenRequested);
     _continueShare.clearOwner(this);
     _companion.dispose();
     _collectionDisplayCounts.dispose();
@@ -2251,65 +2286,18 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// [_maybeBackfillCovers] 里书架重列的最小间隔。
   static const Duration _coverBackfillRefreshInterval = Duration(seconds: 1);
 
-  Future<RemoteVideoClient?> _resolveRemoteVideoClient() async {
-    final Future<RemoteVideoClient?> Function()? injected =
-        widget.remoteVideoClientLoader;
-    if (injected != null) return injected();
-
-    final AppModel appModel = ref.read(appProvider);
-    final SyncRepository syncRepo = SyncRepository(appModel.database);
-    // 互联已从 backendType 解耦成独立开关，可与云备份并存：互联启用且已配对时用它的
-    // live 库；未启用则本方法返 null，`_loadRemoteVideos` 回退云视频占位卡。
-    if (!await syncRepo.isInterconnectEnabled()) return null;
-    final InterconnectSyncBackend backend = InterconnectSyncBackend.instance;
-    if (!await backend.restoreAuth(syncRepo)) return null;
-    return backend;
-  }
-
-  /// 多端库联合视图 §2.2/§2.6 云后端分支：把 `resolveSyncBackend` 的产物（含解混淆
-  /// 装饰层）包进 [CloudRemoteVideoClient]，读 `__videos__/videos.json` 目录清单渲染
-  /// 云视频占位卡 + 按 uid 下载入库。与书侧 `_resolveRemoteBookClient` 云分支同范式；
-  /// 互联后端（fushiServer）走 [_resolveRemoteVideoClient]，此处只对云盘后端出 client，
-  /// 鉴权失败/无后端返 null（不显示云视频占位）。
-  Future<CloudRemoteVideoClient?> _resolveCloudRemoteVideoClient() async {
-    final Future<CloudRemoteVideoClient?> Function()? injected =
-        widget.cloudRemoteVideoClientLoader;
-    if (injected != null) return injected();
-
-    final AppModel appModel = ref.read(appProvider);
-    final SyncRepository syncRepo = SyncRepository(appModel.database);
-    // 云备份通道被用户关掉：不读云盘视频目录（与同步通道枚举同一判据）。
-    if (!await syncRepo.isCloudSyncEnabled()) return null;
-    final SyncBackendType type = await syncRepo.getBackendType();
-    // 互联后端不在此处理（已由 _resolveRemoteVideoClient 覆盖）。
-    if (type == SyncBackendType.fushiServer) return null;
-    final SyncBackend backend = resolveSyncBackend(type);
-    if (!await backend.restoreAuth(syncRepo)) return null;
-    return CloudRemoteVideoClient(backend: backend, backendType: type);
-  }
-
-  /// Jellyfin/Emby 媒体服务器分支：设置里登录过服务器（配置在 SyncRepository
-  /// `sync_jellyfin_server`）即可出 client——它具备完整 [RemoteVideoClient] 能力
-  /// （直连流播/字幕/服务器端断点），与互联 live 库同级；每次取数新建实例，
-  /// 缓存身份按服务器细分（`jellyfin:<serverUrl>`，BUG-1202 口径）。
-  ///
-  /// B4：混排是显式 opt-in（`jellyfin_show_in_library`，默认关）。关着时这里直接
-  /// 返 null，`??` 链落到云盘分支，服务器条目只在视频页「媒体服务器」分区按服务器
-  /// 自己的树浏览——一进视频页就整库拍平枚举（BUG-1891 的根源）从此不再是默认行为。
-  /// 闸门放在注入点之前：测试注入的 client 同样过闸，测的才是真判据。
-  Future<JellyfinVideoClient?> _resolveJellyfinVideoClient() async {
-    if (!appModelNoUpdate.prefsRepo.jellyfinShowInLibrary) return null;
-    final Future<JellyfinVideoClient?> Function()? injected =
-        widget.jellyfinVideoClientLoader;
-    if (injected != null) return injected();
-
-    final AppModel appModel = ref.read(appProvider);
-    // 判据与首页同一份；手动「加入媒体库」的条目是本地行，不靠这条混排。
-    return resolveJellyfinLibraryClient(
-      prefs: appModelNoUpdate.prefsRepo,
-      syncRepo: SyncRepository(appModel.database),
-    );
-  }
+  /// 当前远端视频来源（TODO-2119：互联优先、次选 Jellyfin 媒体服务器、否则回退
+  /// 云盘）。只解析来源、不取清单；库页取数与「打开视频合集」请求共用这一条判据。
+  /// 链本身在 [resolveRemoteVideoSource]（与「同一作品」卡片的远端海报共用），这里
+  /// 只把本页的 widget 测试钩子转进去。
+  Future<RemoteVideoSource?> _resolveRemoteVideoSource() =>
+      resolveRemoteVideoSource(
+        prefs: appModelNoUpdate.prefsRepo,
+        database: appModelNoUpdate.database,
+        interconnect: widget.remoteVideoClientLoader,
+        jellyfin: widget.jellyfinVideoClientLoader,
+        cloud: widget.cloudRemoteVideoClientLoader,
+      );
 
   /// 是否应该去问远端要视频清单。
   ///
@@ -2362,10 +2350,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // TODO-2119：互联优先、次选 Jellyfin 媒体服务器、否则回退云盘；三者都是
     // [RemoteVideoSource]，所以下面「列清单 → 去重 → 出占位卡」这条主干只写
     // 一遍，不再按后端类型分叉。
-    final RemoteVideoSource? source =
-        await _resolveRemoteVideoClient() ??
-        await _resolveJellyfinVideoClient() ??
-        await _resolveCloudRemoteVideoClient();
+    final RemoteVideoSource? source = await _resolveRemoteVideoSource();
     if (source == null) return null;
     try {
       // BUG-1180：经共享缓存取清单——切回视频 tab（[onTabActivated]）不再必然打一轮
@@ -6131,7 +6116,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
                 // 多端库联合视图（spec 2026-07-12 §2.1/§2.4/§2.5，撤独立远端分区）：把
                 // 互联「远端有、本地无」的视频混排成主网格占位卡（云角标 + 远端封面，
                 // 点击走现有远端流播 [_openRemote] / 下载 [_downloadRemote]）。云端视频本批
-                // 不接（其目录 client 由并行批产出）——[_resolveRemoteVideoClient] 只对互联
+                // 不接（其目录 client 由并行批产出）——[resolveInterconnectVideoClient] 只对互联
                 // 后端返回 client，故 remoteSnap 天然只含互联视频，不为云视频造假入口。
                 // 离线/未配对/拉取失败（state==null 或 failed）→ 占位卡不出现（只剩本地）；
                 // 「显示远端条目」开关关闭 / 标签筛选激活时同样不混排（远端视频无本地标签）。
@@ -8814,6 +8799,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   void _showWorkLinks(MediaLinkEndpoint self) {
     unawaited(
       showMediaLinksDialog(
+        remoteVideoSource: mediaLinkRemoteVideoSource(ref: ref),
         context: context,
         database: ref.read(appProvider).database,
         self: self,
