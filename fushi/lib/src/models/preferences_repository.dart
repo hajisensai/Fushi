@@ -8,6 +8,7 @@ import 'package:fushi_audio/fushi_audio.dart'
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart' show FushiDicts;
 import 'package:fushi/src/mining/gal_mining_settings.dart';
+import 'package:fushi/src/mining/untimed_sentence_audio.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
 import 'package:fushi_engine/ai/ai_settings.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart'
@@ -5210,6 +5211,31 @@ class PreferencesRepository extends ChangeNotifier
 
   void setMiningAudioTailPadMs(int ms) async {
     await setPref('mining_audio_tail_pad_ms', ms.clamp(0, kMiningPadMaxMs));
+    notifyListeners();
+  }
+
+  /// 没有字幕时间时的句子音频（拍板台 lmJyeqpCaO）：无字幕轨视频做画面 OCR 查词制卡
+  /// 时怎么截句子音频。默认 [UntimedSentenceAudioMode.off]（= 只附静图，与以前一样）。
+  UntimedSentenceAudioMode get miningUntimedAudioMode =>
+      UntimedSentenceAudioMode.fromWireName(
+        getPref('mining_untimed_audio_mode', defaultValue: null) as String?,
+      );
+
+  Future<void> setMiningUntimedAudioMode(UntimedSentenceAudioMode mode) async {
+    await setPref('mining_untimed_audio_mode', mode.wireName);
+    notifyListeners();
+  }
+
+  /// 上一项的固定窗口长度 / 人声检测最长上限（毫秒，2–15 秒，默认 6 秒）。
+  int get miningUntimedAudioWindowMs => normalizeUntimedSentenceAudioWindowMs(
+    getPref('mining_untimed_audio_window_ms', defaultValue: null) as int?,
+  );
+
+  Future<void> setMiningUntimedAudioWindowMs(int ms) async {
+    await setPref(
+      'mining_untimed_audio_window_ms',
+      normalizeUntimedSentenceAudioWindowMs(ms),
+    );
     notifyListeners();
   }
 

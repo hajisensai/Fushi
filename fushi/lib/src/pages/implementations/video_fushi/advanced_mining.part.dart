@@ -187,6 +187,15 @@ extension _VideoAdvancedMining on _VideoFushiPageState {
       return AdvancedMiningSections(sentence: sentence, onClosed: onClosed);
     }
 
+    // 拍板台 lmJyeqpCaO：「无字幕时间」的人声检测还在跑就先等它，对话框一打开就是
+    // 检测出的区间（不是占位的固定窗口）。
+    if (_untimedSentenceAudioPending) {
+      await _settleUntimedSentenceAudio();
+      if (!mounted || session.closed || !identical(_controller, controller)) {
+        session.release();
+        return AdvancedMiningSections.none;
+      }
+    }
     final VideoMiningRange range = _resolveVideoMiningRange(controller);
     final bool hasClipWindow = range.clipEndMs > range.clipStartMs;
     final String? source = controller.miningSource;
@@ -285,6 +294,7 @@ extension _VideoAdvancedMining on _VideoFushiPageState {
         nudgeStepMs: appModel.advancedMiningAudioNudgeStepMs,
         onNudgeStepChanged: appModel.setAdvancedMiningAudioNudgeStepMs,
         sources: _advancedMiningAudioSources(controller),
+        originNote: _untimedAudioOriginNote(),
       ),
       videoImage: AdvancedMiningVideoImageSection(
         modes: modes,

@@ -1222,6 +1222,16 @@ class _AudioDetails extends StatelessWidget {
             fontFeatures: const <FontFeature>[FontFeature.tabularFigures()],
           ),
         ),
+        // 区间是猜的（无字幕时间，拍板台 lmJyeqpCaO）：如实标出来源，截错了就在上面调。
+        if (c.audioSection?.originNote case final String note) ...<Widget>[
+          const SizedBox(height: 4),
+          Text(
+            note,
+            style: context.fushiType.labelMedium.copyWith(
+              color: Theme.of(context).colorScheme.tertiary,
+            ),
+          ),
+        ],
       ],
     );
   }

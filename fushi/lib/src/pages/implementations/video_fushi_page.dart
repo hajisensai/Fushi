@@ -64,6 +64,8 @@ import 'package:fushi/src/anki/mined_state_signal.dart';
 import 'package:fushi/src/mining/advanced_mining/advanced_mining_capabilities.dart';
 import 'package:fushi/src/mining/advanced_mining/video_advanced_mining.dart';
 import 'package:fushi/src/mining/pending_mine_overwrites.dart';
+import 'package:fushi/src/mining/untimed_sentence_audio.dart';
+import 'package:fushi/src/mining/untimed_voice_detector.dart';
 import 'package:fushi/src/mining/mining_playback_volume_gain.dart'
     show videoMiningClipGainDb;
 import 'package:fushi/src/mining/mining_image_mode_target.dart'
@@ -663,6 +665,7 @@ part 'video_fushi/controller_lookup.part.dart';
 part 'video_fushi/study_stats.part.dart';
 part 'video_fushi/portrait.part.dart';
 part 'video_fushi/live_chat.part.dart';
+part 'video_fushi/untimed_audio.part.dart';
 
 /// 一次「当前主字幕是不是对齐产物」检查：起跑时的代次 + 结果（见
 /// `_startPrimarySubtitleAlignmentCheck`）。
@@ -3552,6 +3555,10 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 最近一次字幕查词所在 cue。制卡可能发生在弹窗打开后数秒，此时视频播放位置可能已
   /// 变化；GIF / sasayaki 音频必须仍然导出点词那句，而不是制卡瞬间的 currentCue。
   AudioCue? _lastLookupCue;
+
+  /// 拍板台 lmJyeqpCaO：最近一次「无字幕时间」画面 OCR 查词猜出的句子音频锚点（它的
+  /// cue 就是当时的 [_lastLookupCue]），见 `untimed_audio.part.dart`。
+  _UntimedAudioAnchor? _untimedAudioAnchor;
 
   /// 最近一次字幕查词那一刻的播放位置（播放器轴毫秒）。「高级制卡」的「查词时画面」
   /// 指的就是这一刻；对话框里的试听会挪动播放头，关闭时据此放回（[_lookupAt] 写入）。
@@ -9179,7 +9186,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 制卡区间 `0..0`（无句子音频、无同步片段、封面抽片头黑帧）。先从 mpv
   /// `sub-start` / `sub-end` 取在屏那句的真实时间窗建锚点（文本 = 被点的 OCR 句），
   /// 再走与文本字幕完全相同的 [_handleSubtitleLookupTap] → `_lastLookupCue` → 制卡区间。
-  /// 画面上没有字幕（mpv 无 `sub-start`）时锚点为 null，制卡走当前帧静图。
+  /// 画面上没有字幕（mpv 无 `sub-start`）时锚点为 null：视频若根本没有字幕时间
+  /// （galgame 实况、硬字幕），按「无字幕时间时的句子音频」设置猜一段区间当锚点
+  /// （拍板台 lmJyeqpCaO，默认不截 → 仍走当前帧静图）。
   Future<void> _handleGraphicSubtitleOcrLookupTap(
     VideoPlayerController controller,
     String sentence,
@@ -9192,8 +9201,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     );
     // 读 mpv 属性期间页面关闭 / 换集（controller 被替换）：不再查词。
     if (!mounted || !identical(_controller, controller)) return;
+    final AudioCue? effectiveAnchor =
+        anchor ?? _beginUntimedSentenceAudio(controller, sentence);
     unawaited(
-      _handleSubtitleLookupTap(sentence, graphemeIndex, globalRect, anchor),
+      _handleSubtitleLookupTap(
+        sentence,
+        graphemeIndex,
+        globalRect,
+        effectiveAnchor,
+      ),
     );
   }
 

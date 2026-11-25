@@ -9,7 +9,9 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
+import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_overlays.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
@@ -58,6 +60,7 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/gal_mining_settings_text.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi/src/mining/untimed_sentence_audio.dart';
 import 'package:fushi/src/mining/sentence_audio_source_text.dart';
 import 'package:fushi_engine/mining/sentence_audio_source.dart'
     show SentenceAudioSourcePick;
@@ -1176,6 +1179,15 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
             onChanged: appModel.setMiningAudioTailPadMs,
           ),
         ),
+        // 拍板台 lmJyeqpCaO：无字幕轨视频画面 OCR 制卡时的句子音频，紧挨首尾余量。
+        SettingsSearchTarget(
+          id: 'card_creation.anki.mining_untimed_audio',
+          child: _buildUntimedSentenceAudioModeRow(),
+        ),
+        SettingsSearchTarget(
+          id: 'card_creation.anki.mining_untimed_audio_window',
+          child: _buildUntimedSentenceAudioWindowRow(),
+        ),
         // 有声书倍速制卡：句子音频跟随播放倍速（变速不变调）。只有小说有声书链读它，
         // 但与其余句子音频设置同区——用户找「卡片音频长什么样」只会来这里找。
         SettingsSearchTarget(
@@ -1360,6 +1372,80 @@ class _AnkiSettingsBodyState extends ConsumerState<AnkiSettingsBody> {
         onChanged((v / step).round() * step);
         setState(() {});
       },
+    );
+  }
+
+  /// 无字幕时间时的句子音频（拍板台 lmJyeqpCaO）：不截取（默认）/ 固定窗口 / 人声检测。
+  /// 透传 [AppModel.miningUntimedAudioMode]，只有无字幕轨视频的画面 OCR 制卡读它。
+  Widget _buildUntimedSentenceAudioModeRow() {
+    return AdaptiveSettingsSegmentedRow<UntimedSentenceAudioMode>(
+      title: t.mining_untimed_audio,
+      subtitle: t.mining_untimed_audio_hint,
+      icon: FushiIcons.subtitlesOff,
+      selected: appModel.miningUntimedAudioMode,
+      segments: <ButtonSegment<UntimedSentenceAudioMode>>[
+        ButtonSegment<UntimedSentenceAudioMode>(
+          value: UntimedSentenceAudioMode.off,
+          label: Text(t.mining_untimed_audio_off),
+        ),
+        ButtonSegment<UntimedSentenceAudioMode>(
+          value: UntimedSentenceAudioMode.fixedWindow,
+          label: Text(t.mining_untimed_audio_fixed),
+        ),
+        ButtonSegment<UntimedSentenceAudioMode>(
+          value: UntimedSentenceAudioMode.voiceDetection,
+          label: Text(t.mining_untimed_audio_voice),
+        ),
+      ],
+      onChanged: (UntimedSentenceAudioMode mode) async {
+        await appModel.setMiningUntimedAudioMode(mode);
+        if (mounted) setState(() {});
+      },
+    );
+  }
+
+  /// 上一项的滑条：固定窗口时是「窗口长度」，人声检测时是「最长」上限（2–15 秒）；
+  /// 不截取时收起（带尺寸动效，不跳）。
+  Widget _buildUntimedSentenceAudioWindowRow() {
+    final UntimedSentenceAudioMode mode = appModel.miningUntimedAudioMode;
+    final Widget child;
+    if (mode == UntimedSentenceAudioMode.off) {
+      child = const SizedBox(width: double.infinity);
+    } else {
+      final int ms = appModel.miningUntimedAudioWindowMs;
+      final String readout = t.mining_untimed_audio_seconds(
+        seconds: ms ~/ 1000,
+      );
+      final bool voice = mode == UntimedSentenceAudioMode.voiceDetection;
+      child = AdaptiveSettingsSliderRow(
+        title: voice
+            ? t.mining_untimed_audio_max
+            : t.mining_untimed_audio_window,
+        subtitle: voice
+            ? t.mining_untimed_audio_voice_hint
+            : t.mining_untimed_audio_window_hint,
+        icon: FushiIcons.timer,
+        value: ms.toDouble(),
+        min: kUntimedSentenceAudioWindowMinMs.toDouble(),
+        max: kUntimedSentenceAudioWindowMaxMs.toDouble(),
+        divisions:
+            (kUntimedSentenceAudioWindowMaxMs -
+                kUntimedSentenceAudioWindowMinMs) ~/
+            kUntimedSentenceAudioWindowStepMs,
+        step: kUntimedSentenceAudioWindowStepMs.toDouble(),
+        label: readout,
+        readout: readout,
+        onChanged: (double v) {
+          unawaited(appModel.setMiningUntimedAudioWindowMs(v.round()));
+          setState(() {});
+        },
+      );
+    }
+    return FushiAnimatedSize(
+      duration: context.fushiMotion.spatialDefault.duration,
+      curve: context.fushiMotion.spatialDefault.curve,
+      alignment: Alignment.topCenter,
+      child: child,
     );
   }
 

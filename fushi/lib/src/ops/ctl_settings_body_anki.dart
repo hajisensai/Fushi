@@ -17,6 +17,7 @@ import 'package:fushi/src/anki/mining_media_quality_labels.dart';
 import 'package:fushi/src/mining/gal_mining_settings.dart';
 import 'package:fushi/src/mining/gal_mining_settings_text.dart';
 import 'package:fushi/src/mining/video_online_mining_mode.dart';
+import 'package:fushi/src/mining/untimed_sentence_audio.dart';
 import 'package:fushi/src/mining/sentence_audio_source_text.dart';
 import 'package:fushi_engine/mining/sentence_audio_source.dart'
     show SentenceAudioSourcePick;
@@ -640,6 +641,49 @@ CtlBodyPage _mediaPage() {
         read: (SettingsContext c) => c.appModel.miningAudioTailPadMs,
         write: (SettingsContext c, int ms) =>
             c.appModel.setMiningAudioTailPadMs(ms),
+      ),
+      // 拍板台 lmJyeqpCaO：无字幕轨视频画面 OCR 制卡时的句子音频。
+      _choice<UntimedSentenceAudioMode>(
+        id: 'mining_untimed_audio',
+        title: t.mining_untimed_audio,
+        subtitle: t.mining_untimed_audio_hint,
+        options: <SettingsSegmentOption<UntimedSentenceAudioMode>>[
+          SettingsSegmentOption<UntimedSentenceAudioMode>(
+            value: UntimedSentenceAudioMode.off,
+            label: t.mining_untimed_audio_off,
+          ),
+          SettingsSegmentOption<UntimedSentenceAudioMode>(
+            value: UntimedSentenceAudioMode.fixedWindow,
+            label: t.mining_untimed_audio_fixed,
+          ),
+          SettingsSegmentOption<UntimedSentenceAudioMode>(
+            value: UntimedSentenceAudioMode.voiceDetection,
+            label: t.mining_untimed_audio_voice,
+          ),
+        ],
+        selected: (SettingsContext c) => c.appModel.miningUntimedAudioMode,
+        onChanged: (SettingsContext c, UntimedSentenceAudioMode v) =>
+            c.appModel.setMiningUntimedAudioMode(v),
+      ),
+      SettingsSliderItem(
+        id: _id('mining_untimed_audio_window'),
+        title: t.mining_untimed_audio_window,
+        subtitle: t.mining_untimed_audio_window_hint,
+        min: kUntimedSentenceAudioWindowMinMs.toDouble(),
+        max: kUntimedSentenceAudioWindowMaxMs.toDouble(),
+        divisions:
+            (kUntimedSentenceAudioWindowMaxMs -
+                kUntimedSentenceAudioWindowMinMs) ~/
+            kUntimedSentenceAudioWindowStepMs,
+        step: kUntimedSentenceAudioWindowStepMs.toDouble(),
+        label: (double v) =>
+            t.mining_untimed_audio_seconds(seconds: v.round() ~/ 1000),
+        value: (SettingsContext c) =>
+            c.appModel.miningUntimedAudioWindowMs.toDouble(),
+        onChanged: (SettingsContext c, double v) =>
+            c.appModel.setMiningUntimedAudioWindowMs(v.round()),
+        visible: (SettingsContext c) =>
+            c.appModel.miningUntimedAudioMode != UntimedSentenceAudioMode.off,
       ),
       SettingsSwitchItem(
         id: _id('mining_audio_follow_playback_speed'),
