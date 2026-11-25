@@ -64,7 +64,9 @@ List<OpDescription> describeLibraryAgentOps(
     summary:
         'Apply a batch of library reorganization changes in one call, as '
         'the AI (user-owned collections may be changed; members the user '
-        'pinned, folder collections and user-confirmed links are kept). '
+        'pinned, folder collections and user-confirmed links are kept; '
+        'episodes a media server or online source files under one show '
+        'are not split up or put into the collection of another show). '
         'Each change is checked on its own; rejected ones come back in '
         'skipped with a reason, the rest are applied. Ops: '
         'move {items, to: C<id> | "new:<name>" | "standalone", from?}, '

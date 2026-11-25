@@ -7,6 +7,8 @@ import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
 import 'package:fushi_engine/media/collections/book_series_grouper.dart'
     show isOnlineMangaSourceMetadata;
 import 'package:fushi_engine/media/collections/library_organize/library_organize_plan.dart';
+import 'package:fushi_engine/media/video/anime_source_video_path.dart';
+import 'package:fushi_engine/media/video/media_server_video_path.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 import 'package:path/path.dart' as p;
@@ -94,6 +96,14 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
               if (i.pinnedByUser) '${i.mediaType}\u0000${i.entryKey}',
           },
           aiEvictedMemberKeys: aiEvicted[row.id] ?? const <String>{},
+          memberIdentities: <String, OrganizeWorkIdentity>{
+            for (final MediaCollectionItemRow i
+                in itemsByCollection[row.id] ??
+                    const <MediaCollectionItemRow>[])
+              if (candidateByMember['${i.mediaType}\u0000${i.entryKey}']
+                  case final _Candidate c when !c.identity.isEmpty)
+                '${i.mediaType}\u0000${i.entryKey}': c.identity,
+          },
           sampleTitles: <String>[
             for (final MediaCollectionItemRow i
                 in (itemsByCollection[row.id] ??
@@ -144,6 +154,7 @@ Future<LibraryOrganizeFacts> loadLibraryOrganizeFacts(
           episode: c.item.episode,
         ),
         groupTitle: c.groupTitle,
+        identity: c.identity,
       ),
     );
   }
@@ -228,6 +239,7 @@ class _Candidate {
     required this.item,
     this.externalWorkKey,
     this.groupTitle,
+    this.identity = OrganizeWorkIdentity.none,
     List<OrganizeMemberRow>? companions,
   }) : companions = companions ?? <OrganizeMemberRow>[];
 
@@ -237,6 +249,7 @@ class _Candidate {
   final AiOrganizeItem item;
   final String? externalWorkKey;
   final String? groupTitle;
+  final OrganizeWorkIdentity identity;
   final List<OrganizeMemberRow> companions;
 
   String get memberKey => '$mediaType\u0000$entryKey';
@@ -344,6 +357,12 @@ Future<List<_Candidate>> _videoCandidates(
   final List<_Candidate> out = <_Candidate>[];
   for (final VideoBookRow v in await db.allVideoBooks()) {
     final String memberKey = '${MediaKind.video.dbValue}\u0000${v.bookUid}';
+    // 权威作品身份（BUG-5460）：刮削作品只认挂在这一条本身上的（下面按合集补的那份
+    // 是「它在这个合集里」推出来的，不能拿来判它该不该留在这个合集）。
+    final OrganizeWorkIdentity identity = OrganizeWorkIdentity(
+      externalWorkKey: workByBook[v.bookUid]?.key,
+      seriesKey: remoteSeriesKeyOfStreamSpec(v.streamSpecJson),
+    );
     ({String title, int? year, String? key})? work = workByBook[v.bookUid];
     if (work == null) {
       for (final int cid in collectionsOfMember[memberKey] ?? const <int>[]) {
@@ -351,8 +370,13 @@ Future<List<_Candidate>> _videoCandidates(
         if (work != null) break;
       }
     }
+    // 媒体服务器 / 在线源条目的路径是自定义标识（`media-server://<条目 id>/…`），
+    // 目录段是条目 id 而不是文件夹，不能当 `folder` 发给 AI。
     final bool remote =
-        v.videoPath.startsWith('http://') || v.videoPath.startsWith('https://');
+        v.videoPath.startsWith('http://') ||
+        v.videoPath.startsWith('https://') ||
+        isMediaServerVideoPath(v.videoPath) ||
+        isAnimeSourceVideoPath(v.videoPath);
     final String fileName = remote
         ? v.title
         : p.basenameWithoutExtension(v.videoPath);
@@ -365,6 +389,7 @@ Future<List<_Candidate>> _videoCandidates(
         tombstoneKey: memberKey,
         externalWorkKey: work?.key,
         groupTitle: work?.title,
+        identity: identity,
         item: AiOrganizeItem(
           title: work != null && work.title.isNotEmpty
               ? '${work.title} — ${v.title}'

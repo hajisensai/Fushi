@@ -1,0 +1,10 @@
+## BUG-5460 · AI 整理把媒体服务器同一部剧的集从自己的合集移空、又塞进另一部剧的合集
+- **报告**：2026-11-25（用户真实数据，视频库从 Jellyfin 入库）
+- **真实性**：✅ 真 bug。整理记录里两步：① 一次 `agent` 复查（AI 管库变更集）记了 `evict`，从一个用户合集（剧 A，按服务器剧名收养）移出全部 13 集（全是这部剧的集，合集是对的），理由「同一合集里有多集同一部剧可能造成混淆」，合集被移空删除；② 之后一次 `auto` 整理（库管家流水线）记了 `add`，把同样 13 集放进另一部剧（剧 B）的合集。两步置信度都是 high。
+  - 根因：本地裁决完全不知道条目自带的**权威作品身份**。媒体服务器的集在入库时就按服务器剧名收进同一个 playlist 合集（`mediaServerCollectionOf` → `adoptRemoteCollectionMember`），`video_books.stream_spec_json` 里存着这份归属；可整理事实 `_videoCandidates`（`packages/fushi_engine/lib/media/collections/library_organize/library_organize_facts.dart:295`）从不读 spec，`externalWorkKey` 只来自刮削（`:366`），媒体服务器的集身份为空。于是：
+    - AI 整理：移出只看目录 / 钉住 / 移出过一次（`library_organize_plan.dart:125` `canRelease`，`:442`），放入只看来处能不能移（`:522` `groupable`、`:549`），不看目标合集是不是另一部剧；自动路径 high 一律落盘（`:322`）。
+    - AI 管库变更集：`move` 只查钉住 / 墓碑 / 跨域（`library_changeset.dart:667`、`:754`），`dissolve` 只留钉住的（`:1115`），所有动作都以 high 落盘（`:654`）。
+  - 顺带：媒体服务器条目的路径是 `media-server://<条目 id>/<标签>`，事实把目录段（条目 id）当「文件夹」发给 AI（`library_organize_facts.dart:354`）。
+- **[x] ① 已修复** — 新增 `organize_work_identity.dart`：条目的权威作品身份 = 来源的剧（媒体服务器：服务器 + 入库快照的剧归属；在线视频源：扩展 + 源 + 作品 URL）+ 挂在这一条本身上的刮削作品 id（不认按合集继承的那份）。两条本地否决规则，AI 整理（`planOrganizeReply`，经 `OrganizeCollectionFact.canRelease` 与剧身份闸门）与 AI 管库变更集（`move` / `merge` / `dissolve`，新原因码 `work_identity`）共用：① 合集里另有同一部作品的成员时，AI 不能把它移出；② 目标合集里已有同一来源的另一部剧、没有这部剧时，AI 不能把它放进去 / 合并进去，新组混了两部来源剧降为系列标签。媒体服务器 / 在线源路径不再当文件夹发给 AI。提交见 PR。
+- **[x] ② 已加自动化测试** — `packages/fushi_engine/test/media/collections/organize_work_identity_test.dart`：真实入库 + 收养路径建库，假 AI 回复 / 假变更集原样复现两步（AI 整理与变更集各一遍）都被拒、库不变；放错的那一集照常能挪走；一部剧的散集照常能成组；两部剧不合并；spec 解析与规则纯函数。
+- **备注**：只拦 AI 写入；规则成组、收敛、用户操作不受影响。刮削 id 只用于规则 ①（AniList / AniDB 按季分，续季进同一部剧的合集是正当的，不用于规则 ②）。被这次移出 / 删掉的合集需要用户撤销那次整理记录找回（撤销 / 删除后悬挂连接另有修复：fix/organize-undo-collection-identity）。

@@ -1,5 +1,8 @@
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
+import 'package:fushi_engine/media/collections/library_organize/organize_work_identity.dart';
+
+export 'package:fushi_engine/media/collections/library_organize/organize_work_identity.dart';
 
 /// AI 整理库：事实模型 + 「AI 回复 → 要执行的改动」裁决（spec §7.7 / §7.8）。
 ///
@@ -9,6 +12,8 @@ import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
 /// 只移出一次，移出用户合集必须带理由。用户合集的合并 / 改名也直接执行（AI 管库 v3
 /// §2.2，取代库管家 §8 的确认卡；自动路径只收 high），可撤销。用户拒绝过的分组不复活；
 /// 用户移出过的成员不放回；跨域、越界、重复一律丢弃（只丢那一条，不整批作废）。
+/// 与条目权威作品身份（媒体服务器 / 在线源的剧、刮削作品 id）矛盾的移出 / 放入一律
+/// 丢弃（`organize_work_identity.dart`，BUG-5460）。
 
 /// 整理怎么触发的（决定置信度门槛）。
 enum OrganizeTrigger { manual, auto }
@@ -25,6 +30,7 @@ class OrganizeEntry {
     this.collectionIds = const <int>[],
     this.companions = const <OrganizeMemberRow>[],
     this.groupTitle,
+    this.identity = OrganizeWorkIdentity.none,
   });
 
   /// 成员行的种类与键（本地键域：epub = uid）。
@@ -53,6 +59,10 @@ class OrganizeEntry {
 
   /// 规则成组时用的组名（视频 = 刮削作品标题）；null = 没有。
   final String? groupTitle;
+
+  /// 权威作品身份（来源的剧、挂在这一条本身上的刮削作品）：AI 的移出 / 放入不得与它
+  /// 矛盾（BUG-5460）。只用于本地否决，不发给 AI。
+  final OrganizeWorkIdentity identity;
 
   /// 跟它算一卷的其它成员行（EPUB 配对的 SRT 有声书）：加入 / 移出时一起动，与
   /// `BookSeriesGrouper` 的「一卷 = 书架上一张卡」同口径。
@@ -97,6 +107,7 @@ class OrganizeCollectionFact {
     required this.sampleTitles,
     this.pinnedMemberKeys = const <String>{},
     this.aiEvictedMemberKeys = const <String>{},
+    this.memberIdentities = const <String, OrganizeWorkIdentity>{},
   });
 
   final int id;
@@ -119,13 +130,23 @@ class OrganizeCollectionFact {
   /// 不再移出，也不再放回。
   final Set<String> aiEvictedMemberKeys;
 
+  /// 成员行键 → 权威作品身份（只含带身份的成员；与 [memberKeys] 同口径，覆盖全部成员，
+  /// 不只是这次发给 AI 的那些）。
+  final Map<String, OrganizeWorkIdentity> memberIdentities;
+
   bool get isFolder => origin == CollectionOrigin.folder;
 
-  /// AI 能不能把 [memberKey] 从这个合集里移出（AI 库管家设计稿 §7）。
+  /// AI 能不能把 [memberKey] 从这个合集里移出（AI 库管家设计稿 §7）：目录合集、用户
+  /// 钉住的、AI 移出过一次的不移；合集里另有同一部作品的成员时也不移（BUG-5460）。
   bool canRelease(String memberKey) =>
       !isFolder &&
       !pinnedMemberKeys.contains(memberKey) &&
-      !aiEvictedMemberKeys.contains(memberKey);
+      !aiEvictedMemberKeys.contains(memberKey) &&
+      !organizeIdentityForbidsRelease(memberIdentities, memberKey);
+
+  /// 往这个合集里放条目的剧身份闸门（以现有成员起头，见 [OrganizeSeriesGate]）。
+  OrganizeSeriesGate seriesGate() =>
+      OrganizeSeriesGate(memberIdentities.values);
 
   Set<String> get identityKeys => <String>{
     if (organizeKey != null) organizeKey!,
@@ -376,6 +397,11 @@ OrganizePlan planOrganizeReply({
   }
   bool single(int i) => uses[i] == 1;
 
+  // 往已有合集里放条目的剧身份闸门（BUG-5460）：同一份回复里先放进去的也算。
+  final Map<int, OrganizeSeriesGate> gates = <int, OrganizeSeriesGate>{};
+  OrganizeSeriesGate gateOf(OrganizeCollectionFact c) =>
+      gates[c.id] ??= c.seriesGate();
+
   // ── 合并已有合集 ────────────────────────────────────────────────────────
   // 败方 → 胜方：同一份回复里「并入败方」的分组 / 挪走改并进胜方（执行时合并先于
   // 加入，败方已不在了）。
@@ -396,11 +422,17 @@ OrganizePlan planOrganizeReply({
     final OrganizeCollectionFact target = (List<OrganizeCollectionFact>.of(
       cs,
     )..sort(_mergeWinnerOrder)).first;
+    if (mergedInto.containsKey(target.id)) continue;
+    // 败方的成员与胜方里已有的来源剧不是同一部：这个败方不并（BUG-5460）。
+    final OrganizeSeriesGate gate = gateOf(target);
     final List<int> sources = <int>[
       for (final OrganizeCollectionFact c in cs)
-        if (c.id != target.id && !mergedInto.containsKey(c.id)) c.id,
+        if (c.id != target.id &&
+            !mergedInto.containsKey(c.id) &&
+            gate.admitAll(c.memberIdentities.values))
+          c.id,
     ];
-    if (sources.isEmpty || mergedInto.containsKey(target.id)) continue;
+    if (sources.isEmpty) continue;
     for (final int id in sources) {
       mergedInto[id] = target.id;
     }
@@ -441,7 +473,11 @@ OrganizePlan planOrganizeReply({
             from.memberKeys.contains(chunk.entries[i].memberKey) &&
             from.canRelease(chunk.entries[i].memberKey) &&
             !(to?.aiEvictedMemberKeys.contains(chunk.entries[i].memberKey) ??
-                false))
+                false) &&
+            // 去处里是另一部来源剧：不挪过去（BUG-5460）。
+            (to == null ||
+                to.memberKeys.contains(chunk.entries[i].memberKey) ||
+                gateOf(to).admit(chunk.entries[i].identity)))
           chunk.entries[i],
     ];
     if (members.isEmpty) continue;
@@ -544,9 +580,12 @@ OrganizePlan planOrganizeReply({
     if (g.into != null) {
       final OrganizeCollectionFact? target = resolveTarget(g.into!);
       if (target == null) continue;
+      // 目标里是另一部来源剧：不放进去（BUG-5460）。
       final List<OrganizeEntry> adds = <OrganizeEntry>[
         for (final OrganizeEntry e in members)
-          if (!target.memberKeys.contains(e.memberKey) && groupable(e, target))
+          if (!target.memberKeys.contains(e.memberKey) &&
+              groupable(e, target) &&
+              gateOf(target).admit(e.identity))
             e,
       ];
       if (adds.isEmpty) continue;
@@ -560,10 +599,15 @@ OrganizePlan planOrganizeReply({
       for (final OrganizeEntry e in members)
         if (e.externalWorkKey != null) e.externalWorkKey!,
     };
-    // 视频「同一部作品」里成员刮到了不同作品：那是系列，不是作品（spec §9）。
+    // 视频「同一部作品」里成员刮到了不同作品、或是来源给的两部剧：那是系列，不是作品
+    // （spec §9；BUG-5460）。
+    final OrganizeSeriesGate memberSeries = OrganizeSeriesGate();
     if (facts.domain == CollectionShelfDomain.video &&
         level == AiOrganizeLevel.work &&
-        externals.length > 1) {
+        (externals.length > 1 ||
+            !members.every(
+              (OrganizeEntry e) => memberSeries.admit(e.identity),
+            ))) {
       level = AiOrganizeLevel.franchise;
     }
     final String key = _keyFor(
@@ -596,7 +640,9 @@ OrganizePlan planOrganizeReply({
     if (holder != null) {
       final List<OrganizeEntry> adds = <OrganizeEntry>[
         for (final OrganizeEntry e in members)
-          if (!holder.memberKeys.contains(e.memberKey) && groupable(e, holder))
+          if (!holder.memberKeys.contains(e.memberKey) &&
+              groupable(e, holder) &&
+              gateOf(holder).admit(e.identity))
             e,
       ];
       if (adds.isEmpty) continue;

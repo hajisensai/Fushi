@@ -9,8 +9,8 @@
 ///   标成「被取代」而不是否决），`unlink` 走 [FushiDatabase.removeMediaLink]（AI 判定
 ///   这一对不相关 = 否决墓碑），各自收回执；
 /// - 每条独立校验，不过的进 `skipped`（原因码见 [LibraryChangeSkip]），其余照常执行；
-/// - 条目级问题（某个条目钉住 / 跨域 / 被用户移出过）只丢那一个条目，记在这一条的
-///   `itemsSkipped` 里；整条都没有可做的才进 `skipped`。
+/// - 条目级问题（某个条目钉住 / 跨域 / 被用户移出过 / 与权威作品身份矛盾）只丢那一个
+///   条目，记在这一条的 `itemsSkipped` 里；整条都没有可做的才进 `skipped`。
 ///
 /// 顺序语义：变更集按下标顺序执行，后一条看到的是前一条执行后的库（真执行时每条落库后
 /// 重读受影响的合集；`dryRun` 时在内存模型里推演合集部分）。`dryRun` 不写库；关系部分的
@@ -59,6 +59,10 @@ abstract final class LibraryChangeSkip {
 
   /// 格式 / 取值不对。
   static const String invalid = 'invalid';
+
+  /// 与条目的权威作品身份矛盾（BUG-5460，`organize_work_identity.dart`）：把它从
+  /// 同一部作品的合集里拆出来，或放进来源（媒体服务器 / 在线源）给的另一部剧的合集。
+  static const String workIdentity = 'work_identity';
 }
 
 // ── 契约：解析 ──────────────────────────────────────────────────────────────
@@ -596,6 +600,18 @@ class _Executor {
     return _resolveRow(ref.substring(0, colon), ref.substring(colon + 1));
   }
 
+  /// 合集成员 → 权威作品身份（只含带身份的成员；认不出的成员不算），BUG-5460。
+  Future<Map<String, OrganizeWorkIdentity>> _identitiesOf(_Coll c) async =>
+      <String, OrganizeWorkIdentity>{
+        for (final String k in c.members.keys)
+          if (await _resolveRow(
+                k.substring(0, k.indexOf('\u0000')),
+                k.substring(k.indexOf('\u0000') + 1),
+              )
+              case final _Resolved r when !r.entry.identity.isEmpty)
+            k: r.entry.identity,
+      };
+
   /// 合集里成员所属的库页域（认不出的成员不算）；空合集为空集（哪个域都能放）。
   Future<Set<CollectionShelfDomain>> _domainsOf(_Coll c) async =>
       <CollectionShelfDomain>{
@@ -705,6 +721,15 @@ class _Executor {
     final Set<String> targetVetoes = target == null || target.id < 0
         ? const <String>{}
         : await db.collectionMemberTombstoneKeysFor(target.name, target.type);
+    // 权威作品身份（BUG-5460）：去处的剧身份闸门（新建的从空开始，同一批里先放进去的
+    // 也算），来处的成员身份按需读一次。
+    final OrganizeSeriesGate? gate = target != null
+        ? OrganizeSeriesGate((await _identitiesOf(target)).values)
+        : newName != null
+        ? OrganizeSeriesGate()
+        : null;
+    final Map<int, Map<String, OrganizeWorkIdentity>> sourceIdentities =
+        <int, Map<String, OrganizeWorkIdentity>>{};
 
     CollectionShelfDomain? newDomain;
     final List<Map<String, Object?>> itemSkips = <Map<String, Object?>>[];
@@ -764,6 +789,22 @@ class _Executor {
       }
       if (sources.isEmpty && (standalone || inTarget)) {
         skipItem(ref, LibraryChangeSkip.exists);
+        continue;
+      }
+      // 来处里另有同一部作品的成员：不拆散；去处是另一部来源剧：不放进去。
+      bool splitsWork = false;
+      for (final _Coll s in sources) {
+        if (organizeIdentityForbidsRelease(
+          sourceIdentities[s.id] ??= await _identitiesOf(s),
+          key,
+        )) {
+          splitsWork = true;
+          break;
+        }
+      }
+      if (splitsWork ||
+          (gate != null && !inTarget && !gate.admit(r.entry.identity))) {
+        skipItem(ref, LibraryChangeSkip.workIdentity);
         continue;
       }
       ok.add((ref: ref, entry: r.entry, sources: sources));
@@ -960,6 +1001,10 @@ class _Executor {
       return _Result.skipped(LibraryChangeSkip.folderCollection, into.ref);
     }
     final Set<CollectionShelfDomain> intoDomains = await _domainsOf(into);
+    // 败方成员与胜方里已有的来源剧不是同一部：那个败方不并（BUG-5460）。
+    final OrganizeSeriesGate gate = OrganizeSeriesGate(
+      (await _identitiesOf(into)).values,
+    );
     final List<Map<String, Object?>> sourceSkips = <Map<String, Object?>>[];
     final List<_Coll> sources = <_Coll>[];
     for (final String ref in c.from) {
@@ -977,6 +1022,8 @@ class _Executor {
             d.isNotEmpty &&
             d.intersection(intoDomains).isEmpty) {
           reason = LibraryChangeSkip.crossDomain;
+        } else if (!gate.admitAll((await _identitiesOf(s)).values)) {
+          reason = LibraryChangeSkip.workIdentity;
         }
       }
       if (reason != null) {
@@ -1123,12 +1170,21 @@ class _Executor {
     if (col.members.isEmpty) {
       return const _Result.skipped(LibraryChangeSkip.exists, 'empty');
     }
-    // 每一行成员各自移出（配对的 SRT 有声书行也在合集里，各是一行）；钉住的留下。
+    // 每一行成员各自移出（配对的 SRT 有声书行也在合集里，各是一行）；钉住的留下，
+    // 合集里另有同一部作品的成员的也留下（BUG-5460：拆散来源给的一部剧不行）。
+    final Map<String, OrganizeWorkIdentity> identities = await _identitiesOf(
+      col,
+    );
     final List<OrganizeEntry> evict = <OrganizeEntry>[];
     int pinned = 0;
+    int sameWork = 0;
     for (final MapEntry<String, bool> e in col.members.entries) {
       if (e.value) {
         pinned++;
+        continue;
+      }
+      if (organizeIdentityForbidsRelease(identities, e.key)) {
+        sameWork++;
         continue;
       }
       final int sep = e.key.indexOf('\u0000');
@@ -1144,7 +1200,12 @@ class _Executor {
       );
     }
     if (evict.isEmpty) {
-      return _Result.skipped(LibraryChangeSkip.pinnedByUser, col.ref);
+      return _Result.skipped(
+        sameWork > 0
+            ? LibraryChangeSkip.workIdentity
+            : LibraryChangeSkip.pinnedByUser,
+        col.ref,
+      );
     }
     if (dry) {
       for (final OrganizeEntry e in evict) {
@@ -1173,6 +1234,7 @@ class _Executor {
       'collection': col.ref,
       'evicted': evict.length,
       if (pinned > 0) 'keptPinned': pinned,
+      if (sameWork > 0) 'keptSameWork': sameWork,
     });
   }
 
