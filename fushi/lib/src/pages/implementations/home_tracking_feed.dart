@@ -473,9 +473,11 @@ class _FeedBody extends StatelessWidget {
                   ),
                   if (showWhen)
                     Text(
+                      // The header already names the state: when it went
+                      // out, or for a failed / waiting send where to.
                       feed.state == HomeTrackingFeedState.synced
                           ? formatActivityRelativeTime(feed.hero.at, now)
-                          : homeTrackingFeedTitle(feed.state),
+                          : feed.sitesOf(feed.hero),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                       style: whenStyle,
