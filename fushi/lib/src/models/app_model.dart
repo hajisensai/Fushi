@@ -500,6 +500,7 @@ import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
     show MusicAssRenderPreference;
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
+import 'package:fushi/src/media/music/download_release_audio_intake.dart';
 import 'package:fushi/src/media/music/music_view_style.dart'
     show MusicViewStyleStore;
 import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
@@ -9555,8 +9556,19 @@ class AppModel
             collectionId,
             discRootPath,
           ),
+      // 发布里随附的 CD / OST 交给音乐库（下载入库不走来源扫描，否则视频来源没开
+      // 自动扫描时这些音频永远进不了音乐库）。
+      onReleaseAudioImported: (MediaSourceRow source, List<String> audio) =>
+          adoptDownloadedReleaseAudio(
+            db: database,
+            intake: MusicAudioIntake(database),
+            source: source,
+            audioPaths: audio,
+          ),
     )..start();
     _videoDownloadPipelineService = pipeline;
+    // 钩子之前入库的任务里的 CD 从没交过：启动补交一遍（幂等，已覆盖的目录不再登记）。
+    unawaited(_replayReleaseAudioHandOff(pipeline));
     // 上次没跑完的「转录后入库」任务从断点续跑（转录进度落在 ASR 服务自己的
     // 任务目录里）。没有 ASR 的平台不建队列。
     if (isAsrSupported) unawaited(audiobookTranscribeImportQueue.load());
@@ -9580,6 +9592,20 @@ class AppModel
     // still starting. Publish the new service identity so its cached resource
     // dependencies are rebuilt instead of remaining permanently unavailable.
     notifyListeners();
+  }
+
+  Future<void> _replayReleaseAudioHandOff(
+    VideoDownloadPipelineService pipeline,
+  ) async {
+    try {
+      await pipeline.replayReleaseAudioHandOff();
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'AppModel.replayReleaseAudioHandOff',
+        e,
+        stack,
+      );
+    }
   }
 
   /// 每系列字幕语言记忆（`jimaku_pref_langs`）按键查；空串 / 没记过 → null。

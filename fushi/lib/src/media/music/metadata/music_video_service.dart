@@ -15,6 +15,7 @@ import 'package:flutter/foundation.dart' show immutable;
 import 'package:fushi/src/media/links/theme_song/theme_song_detector.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/metadata/music_release_videos.dart';
 import 'package:fushi_engine/media/music/metadata/music_video_match.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/music/host/engine_music_library_host.dart'
@@ -89,6 +90,7 @@ class MusicVideoNearbyFiles {
   const MusicVideoNearbyFiles({
     this.videos = const <MusicVideoFileStamp>[],
     this.discStreams = const <MusicVideoFileStamp>[],
+    this.releaseVideos = const <MusicVideoFileStamp>[],
   });
 
   /// 同目录、同目录下的 MV 目录、上一级的 MV 目录里的视频（按文件名给每首歌打分再筛）。
@@ -97,7 +99,12 @@ class MusicVideoNearbyFiles {
   /// 附近蓝光盘里的流（文件名不带歌名，不按名字筛，见 [listDiscMusicVideoStreams]）。
   final List<MusicVideoFileStamp> discStreams;
 
-  bool get isEmpty => videos.isEmpty && discStreams.isEmpty;
+  /// 同一个下载发布里的特典视频 / 原盘流（[musicReleaseVideosForDir]）：整理后与 CD
+  /// 分在两棵目录树里，「附近」看不到。文件名不带歌名，不按名字筛，交给声纹判。
+  final List<MusicVideoFileStamp> releaseVideos;
+
+  bool get isEmpty =>
+      videos.isEmpty && discStreams.isEmpty && releaseVideos.isEmpty;
 }
 
 MusicVideoFileStamp? _stampOf(File f) {
@@ -114,12 +121,15 @@ MusicVideoFileStamp? _stampOf(File f) {
   }
 }
 
-/// 收集曲目目录 [homeDir] 附近的 MV 候选文件（带版本）。纯同步 IO、不解码，可在后台
-/// isolate 里跑（后台匹配按目录一次收齐，同目录的歌共用一份）。
+/// 收集曲目目录 [homeDir] 附近的 MV 候选文件（带版本），以及同一个下载发布里的候选
+/// [release]（每项取第一个存在的路径）。纯同步 IO、不解码，可在后台 isolate 里跑
+/// （后台匹配按目录一次收齐，同目录的歌共用一份）。
 MusicVideoNearbyFiles collectMusicVideoFilesNear(
   String homeDir, {
   int minDiscBytes = kMusicDiscVideoStreamMinBytes,
   int maxDiscBytes = kMusicDiscVideoStreamMaxBytes,
+  List<MusicReleaseVideoCandidate> release =
+      const <MusicReleaseVideoCandidate>[],
 }) {
   final Directory home = Directory(homeDir);
   if (!home.existsSync()) return const MusicVideoNearbyFiles();
@@ -161,15 +171,51 @@ MusicVideoNearbyFiles collectMusicVideoFilesNear(
       if (s != null) videos.add(s);
     }
   }
+  final List<MusicVideoFileStamp> discStreams = _discStreamStamps(
+    home,
+    seen: seen,
+    minBytes: minDiscBytes,
+    maxBytes: maxDiscBytes,
+  );
   return MusicVideoNearbyFiles(
     videos: videos,
-    discStreams: _discStreamStamps(
-      home,
-      seen: seen,
-      minBytes: minDiscBytes,
-      maxBytes: maxDiscBytes,
-    ),
+    discStreams: discStreams,
+    releaseVideos: _releaseVideoStamps(release, seen: seen),
   );
+}
+
+/// [release] 里每个候选取第一个存在的文件（来源整体搬过家时任务记下的路径已过时，
+/// 见 [musicReleaseVideosForDir]）；[seen] 里已有的跳过并登记。
+List<MusicVideoFileStamp> _releaseVideoStamps(
+  List<MusicReleaseVideoCandidate> release, {
+  required Set<String> seen,
+}) {
+  final List<MusicVideoFileStamp> out = <MusicVideoFileStamp>[];
+  for (final MusicReleaseVideoCandidate c in release) {
+    for (final String path in c.alternatives) {
+      final MusicVideoFileStamp? s = _stampOf(File(path));
+      if (s == null) continue;
+      if (seen.add(p.normalize(path))) out.add(s);
+      break;
+    }
+  }
+  return out;
+}
+
+/// 曲库曲目对应的下载发布（[musicReleaseOfDownloadJob]），给 MV 候选按发布配特典用。
+/// 原盘流的大小门槛与「附近原盘」同一套（[kMusicDiscVideoStreamMinBytes] 等）。
+Future<List<MusicRelease>> loadMusicReleases(FushiDatabase db) async {
+  final List<MusicRelease> out = <MusicRelease>[];
+  for (final VideoDownloadJobRow job in await db.getVideoDownloadJobs()) {
+    final MusicRelease? release = musicReleaseOfDownloadJob(
+      await db.getVideoDownloadJobFiles(job.jobId),
+      minDiscBytes: kMusicDiscVideoStreamMinBytes,
+      maxDiscBytes: kMusicDiscVideoStreamMaxBytes,
+      discStreamLimit: kMusicDiscVideoStreamLimit,
+    );
+    if (release != null) out.add(release);
+  }
+  return out;
 }
 
 /// 一首歌在 [near] 里的候选：文件名打分 > 0 的视频按分数降序取前 [limit] 个，后面接
@@ -203,6 +249,7 @@ List<({MusicVideoFileStamp file, double score})> musicVideoCandidatesFor(
   return <({MusicVideoFileStamp file, double score})>[
     ...named.take(limit),
     for (final MusicVideoFileStamp s in near.discStreams) (file: s, score: 0),
+    for (final MusicVideoFileStamp s in near.releaseVideos) (file: s, score: 0),
   ];
 }
 
@@ -337,6 +384,19 @@ Future<String?> resolveMusicVideoLocalFile(
   return null;
 }
 
+/// 收集一个曲目目录的 MV 候选（附近 + 同发布 [release]）。
+typedef MusicVideoNearbyCollectorFor =
+    MusicVideoNearbyFiles Function(
+      String dir, {
+      List<MusicReleaseVideoCandidate> release,
+    });
+
+MusicVideoNearbyFiles _collectNear(
+  String dir, {
+  List<MusicReleaseVideoCandidate> release =
+      const <MusicReleaseVideoCandidate>[],
+}) => collectMusicVideoFilesNear(dir, release: release);
+
 class MusicVideoService {
   MusicVideoService({
     required this.database,
@@ -344,9 +404,9 @@ class MusicVideoService {
     Future<List<YoutubeSearchHit>> Function(String query)? youtubeSearch,
     Future<String?> Function(String url)? youtubeAudioUrl,
     int Function()? clock,
-    MusicVideoNearbyFiles Function(String dir)? nearby,
+    MusicVideoNearbyCollectorFor? nearby,
   }) : _detector = detector,
-       _nearby = nearby ?? collectMusicVideoFilesNear,
+       _nearby = nearby ?? _collectNear,
        _youtubeSearch = youtubeSearch ?? searchYoutubeVideos,
        _youtubeAudioUrl = youtubeAudioUrl ?? _defaultYoutubeAudioUrl,
        _clock = clock ?? (() => DateTime.now().millisecondsSinceEpoch);
@@ -358,7 +418,7 @@ class MusicVideoService {
   final int Function() _clock;
 
   /// 收集一个曲目目录附近的候选（真 app = [collectMusicVideoFilesNear]；测试注入替身）。
-  final MusicVideoNearbyFiles Function(String dir) _nearby;
+  final MusicVideoNearbyCollectorFor _nearby;
 
   ThemeSongDetector get _det => _detector ?? themeSongDetectorFor(database);
 
@@ -377,9 +437,14 @@ class MusicVideoService {
     final MusicTrackRow? track = await database.getMusicTrack(trackUid);
     if (track == null) return const <MusicLocalVideoMatch>[];
     final List<MusicLocalVideoMatch> out = <MusicLocalVideoMatch>[];
+    final String dir = File(track.path).parent.path;
+    final List<MusicReleaseVideoCandidate> release = musicReleaseVideosForDir(
+      dir,
+      await loadMusicReleases(database),
+    );
     for (final ({MusicVideoFileStamp file, double score}) c
         in musicVideoCandidatesFor(
-          _nearby(File(track.path).parent.path),
+          _nearby(dir, release: release),
           title: track.title,
           artist: track.artistCredit,
         )) {

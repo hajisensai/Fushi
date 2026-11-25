@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4730 条。点号进各自文件。
+> 共 4732 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5452](bugs/BUG-5452-music-mv-release-extras-unreachable.md) | ✅ | ✅ | 本地 MV 自动匹配找不到同一发布里被整理走的 NCOP/NCED/PV |
+| [BUG-5451](bugs/BUG-5451-download-release-audio-not-in-music.md) | ✅ | ✅ | 下载入库的发布里随附的 CD/OST 进不了音乐库 |
 | [BUG-5450](bugs/BUG-5450-android-library-layout-anchor-lost.md) | ✅ | ✅ | Android 书库对账只探当前配置的内部根，布局 / 容器锚点被冲掉后永不自愈 |
 | [BUG-5449](bugs/BUG-5449-background-writers-seal-and-interrupt.md) | ✅ | ✅ | background-writers-seal-and-interrupt |
 | [BUG-5448](bugs/BUG-5448-lumiere-font-switch-jank.md) | ✅ | ✅ | 绘光切字体卡顿、自定义字体加载完不重画 |

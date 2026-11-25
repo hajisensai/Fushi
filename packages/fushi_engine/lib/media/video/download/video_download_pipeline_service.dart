@@ -16,6 +16,8 @@ import 'package:fushi_engine/media/discovery/discovery_models.dart'
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart'
     show DiscoveryImportBlockedException;
 import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/media_extensions.dart'
+    show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/metadata/credential_redaction.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/download_save_root.dart'
@@ -447,6 +449,28 @@ String? resolveManagedPathWithinRoot({
   if (!p.isWithin(normalizedRoot, resolved)) return null;
   return resolved;
 }
+
+/// 一条已整理任务里随发布的纯音频（BD 附带的 CD / OST / 特典 CD）在本机的绝对路径。
+///
+/// 整理只搬视频和原盘（种子 moveStorage 到受管来源根 [sourceRoot]），其余文件的
+/// `currentRelativePath` 是来源根下的相对路径。取选中、没被跳过、扩展名是纯音频
+/// （[isAudioOnlyMediaPath]）的文件行；视频 / 盘内文件不算。路径越出来源根的丢弃。
+/// 纯函数，不碰文件系统（存在性由调用方查）。
+List<String> videoDownloadJobReleaseAudioPaths({
+  required String sourceRoot,
+  required Iterable<VideoDownloadJobFileRow> files,
+}) => <String>[
+  for (final VideoDownloadJobFileRow row in files)
+    if (row.selected &&
+        row.kind == 'other' &&
+        row.status != VideoDownloadJobFileStatus.skipped &&
+        row.status != VideoDownloadJobFileStatus.failed &&
+        isAudioOnlyMediaPath(row.currentRelativePath))
+      ?resolveManagedPathWithinRoot(
+        root: sourceRoot,
+        relativePath: row.currentRelativePath,
+      ),
+];
 
 /// Thrown when a delete request removed the durable job but could not remove
 /// every managed file: on Windows an open player or the download engine still
@@ -1056,6 +1080,7 @@ class VideoDownloadPipelineService {
     this.skipDownloadExtras,
     this.defaultTargetSourceId,
     this.onDiscCollectionImported,
+    this.onReleaseAudioImported,
     DateTime Function()? now,
   }) : assert(
          subtitleRegistry == null || subtitleRegistrySource == null,
@@ -1139,6 +1164,16 @@ class VideoDownloadPipelineService {
   /// 写入走 app 层服务，与扫描器同一份）。null（服务端 / 测试）= 不补，合集照常
   /// 回落刮削图。
   final DiscCollectionReadyHook? onDiscCollectionImported;
+
+  /// 任务入库后，种子里随发布的纯音频（BD 附带的 CD / OST / 特典 CD）交给音乐库：参数是
+  /// 任务的受管视频来源和这些音频在本机的绝对路径（[videoDownloadJobReleaseAudioPaths]）。
+  ///
+  /// 视频来源扫描会把纯音频交给音乐库，但下载入库不走来源扫描——视频来源没开自动扫描
+  /// 时，新下载的发布里的 CD 永远进不了音乐库。null（服务端 / 测试）= 不交接。
+  /// 端口抛的异常只记日志，不回滚入库（视频已经进库，下次 [replayReleaseAudioHandOff]
+  /// 还会再交一次）。
+  final Future<void> Function(MediaSourceRow source, List<String> audioPaths)?
+  onReleaseAudioImported;
 
   /// 订阅新集提醒的配图抽取（默认 [extractVideoCover]，ffmpeg 抽帧）；测试注入。
   final VideoCoverExtractor _coverExtractor;
@@ -4815,6 +4850,7 @@ class VideoDownloadPipelineService {
       );
     }
     database.notifyVideoLibraryChanged();
+    if (source != null) await _handOffReleaseAudio(source, allRows, job.jobId);
     // 已确认的 MAL/TMDB 身份直接刮削；无身份作品留给媒体库自动识别或人工确认。
     // 什么都没进库（只有 BD 镜像 / 读不出标题的半张盘：文件原样落位、不入库，
     // BUG-4245）时也没有可刮的作品，任务按「已落位、未入库」完成。
@@ -4922,6 +4958,72 @@ class VideoDownloadPipelineService {
   /// 读取兼容。与库内补刮同一判据 [videoDownloadJobConfirmedLookup]。
   VideoMetadataLookup? _confirmedMetadataLookup(VideoDownloadJobRow job) =>
       videoDownloadJobConfirmedLookup(job);
+
+  /// 把一条任务随发布的纯音频交给音乐库（[onReleaseAudioImported]）。没有钩子 / 没有
+  /// 纯音频时什么也不做；钩子抛错只记日志。
+  Future<void> _handOffReleaseAudio(
+    MediaSourceRow source,
+    List<VideoDownloadJobFileRow> rows,
+    String jobId,
+  ) async {
+    final Future<void> Function(MediaSourceRow, List<String>)? hook =
+        onReleaseAudioImported;
+    if (hook == null) return;
+    final List<String> audio = videoDownloadJobReleaseAudioPaths(
+      sourceRoot: source.rootPath,
+      files: rows,
+    );
+    if (audio.isEmpty) return;
+    try {
+      await hook(source, audio);
+    } catch (error, stack) {
+      engineLog.log(
+        'VideoDownloadPipelineService.onReleaseAudioImported($jobId)',
+        error,
+        stack,
+      );
+    }
+  }
+
+  /// 已入库任务的发布音频补交一遍（启动时调一次）：钩子是后加的，之前入库的任务里的
+  /// CD 从没交过；交接本身幂等（已被音乐来源覆盖的目录不再登记），重复调用无副作用。
+  /// 只看非 legacy、受管来源还在、至少有一个文件已入库的任务。返回交出音频的任务数。
+  Future<int> replayReleaseAudioHandOff() async {
+    if (onReleaseAudioImported == null) return 0;
+    int handed = 0;
+    for (final VideoDownloadJobRow job
+        in await database.getVideoDownloadJobs()) {
+      if (job.organizationPolicy == 'legacy') continue;
+      if (discoveryKindOfOrganizationPolicy(job.organizationPolicy) != null ||
+          downloadOnlyKindOfOrganizationPolicy(job.organizationPolicy) !=
+              null) {
+        continue;
+      }
+      final int? sourceId = job.targetSourceId;
+      if (sourceId == null) continue;
+      final MediaSourceRow? source = await database.getMediaSourceById(
+        sourceId,
+      );
+      if (source == null || source.mediaKind != 'video') continue;
+      final List<VideoDownloadJobFileRow> rows = await database
+          .getVideoDownloadJobFiles(job.jobId);
+      if (!rows.any(
+        (VideoDownloadJobFileRow r) =>
+            r.status == VideoDownloadJobFileStatus.imported,
+      )) {
+        continue;
+      }
+      if (videoDownloadJobReleaseAudioPaths(
+        sourceRoot: source.rootPath,
+        files: rows,
+      ).isEmpty) {
+        continue;
+      }
+      await _handOffReleaseAudio(source, rows, job.jobId);
+      handed++;
+    }
+    return handed;
+  }
 
   Future<void> _notifyDownloadOnlyCompleted(VideoDownloadJobRow job) async {
     final Future<void> Function(DiscoveryMediaKind, List<String>)? hook =
