@@ -19,6 +19,7 @@ import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// Android receiver entry point. The page intentionally accepts a repository
@@ -181,10 +182,11 @@ class _GameStreamJoinPageState extends State<GameStreamJoinPage> {
       appBar: FushiAppBar(
         title: Text(t.game_stream_join),
         actions: <Widget>[
-          FushiIconButtonControl(
+          FushiIconButton(
             tooltip: t.refresh,
-            onPressed: _loading || _joining ? null : _loadHosts,
-            icon: const FushiIcon(FushiIcons.refresh),
+            enabled: !(_loading || _joining),
+            onTap: _loading || _joining ? null : _loadHosts,
+            icon: FushiIcons.refresh,
           ),
         ],
       ),

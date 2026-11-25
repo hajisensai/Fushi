@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/theme_notifier.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_bar_cluster.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
@@ -887,13 +888,15 @@ void main() {
             appBar: FushiAppBar(
               title: const Text('Bar'),
               actions: <Widget>[
-                FushiIconButtonControl(
-                  icon: const Icon(Icons.search),
-                  onPressed: () => a++,
+                FushiIconButton(
+                  icon: Icons.search,
+                  tooltip: 'Search',
+                  onTap: () => a++,
                 ),
-                FushiIconButtonControl(
-                  icon: const Icon(Icons.more_horiz),
-                  onPressed: () => b++,
+                FushiIconButton(
+                  icon: Icons.more_horiz,
+                  tooltip: 'More',
+                  onTap: () => b++,
                 ),
               ],
             ),
@@ -906,12 +909,15 @@ void main() {
       expect(
         find.descendant(
           of: find.byType(FushiAppleNavBar),
-          matching: find.byType(FushiIconButtonControl),
+          matching: find.byType(FushiIconButton),
         ),
         findsNWidgets(2),
       );
-      await tester.tap(find.byIcon(Icons.search));
-      await tester.tap(find.byIcon(Icons.more_horiz));
+      Finder action(String tooltip) => find.byWidgetPredicate(
+        (Widget w) => w is FushiIconButton && w.tooltip == tooltip,
+      );
+      await tester.tap(action('Search'));
+      await tester.tap(action('More'));
       await settle(tester);
       expect(a, 1);
       expect(b, 1);
@@ -924,9 +930,10 @@ void main() {
           home: Scaffold(
             appBar: FushiAppBar(
               actions: <Widget>[
-                FushiIconButtonControl(
-                  icon: const Icon(Icons.search),
-                  onPressed: () {},
+                FushiIconButton(
+                  icon: Icons.search,
+                  tooltip: 'Search',
+                  onTap: () {},
                 ),
               ],
             ),
