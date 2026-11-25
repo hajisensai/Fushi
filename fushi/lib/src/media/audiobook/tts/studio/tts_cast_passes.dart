@@ -75,8 +75,7 @@ Future<void> runTtsCastPasses({
   // 示例语言跟着正文走（BUG-5366）；惰性取文本，检测只读前两万字。
   final TtsCastScript script = detectTtsCastScript(
     todo.expand(
-      (int section) =>
-          bySection[section]!.map((TtsPlanSentence s) => s.text),
+      (int section) => bySection[section]!.map((TtsPlanSentence s) => s.text),
     ),
   );
   final String rosterSystem = ttsRosterSystemPrompt(script);
