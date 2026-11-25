@@ -32,9 +32,15 @@ import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 export 'package:fushi/src/media/audiobook/tts/studio/tts_cast_passes.dart'
-    show TtsCastAnnotateFailure, kTtsCastPhaseLines, kTtsCastPhaseRoster;
+    show
+        TtsCastAnnotateFailure,
+        kTtsCastFailureOutputLimit,
+        kTtsCastPhaseLines,
+        kTtsCastPhaseRoster;
 
 /// 单块回复的输出上限：100 句全是台词时约 4k token，给推理模型的思考留余量。
+/// 不再调大（gpt-4o-mini 等拒收 >16384）：思考把它用光时由主循环拆块重问
+/// （BUG-5369）。
 const int _kAnnotateMaxTokens = 8192;
 
 /// 两遍请 LLM 标注 [sections]（空 = 计划里的全部章）里每句的说话人，并入 [bookKey]
@@ -86,9 +92,9 @@ Future<TtsCast> annotateTtsCast({
         ..sort();
 
   final AiChatClient client = AiChatClient();
-  Future<String> ask(String system, String user) async {
+  Future<TtsCastReply> ask(String system, String user) async {
     try {
-      return await client.complete(
+      final AiChatCompletion done = await client.completeWithUsage(
         provider: provider,
         messages: <AiChatMessage>[
           AiChatMessage.system(system),
@@ -96,7 +102,10 @@ Future<TtsCast> annotateTtsCast({
         ],
         maxTokens: _kAnnotateMaxTokens,
       );
+      return (text: done.text, truncated: done.truncated);
     } on AiChatFailure catch (e) {
+      // 正文为空的截断（推理模型的思考把额度用光，BUG-5369）交给主循环拆块重问。
+      if (e.message == kAiOutputLimitCode) return (text: '', truncated: true);
       throw TtsCastAnnotateFailure('ai_failed', e.message);
     }
   }

@@ -173,6 +173,61 @@ List<TtsCastChunk> chunkTtsRosterSection(List<TtsPlanSentence> sentences) =>
       contextSentences: 0,
     );
 
+/// 回复被截断时拆半重问的下限：不超过这么多句的块不再拆，截断就报
+/// `output_limit`（BUG-5369）。100 句一块最多拆四层（100 → 50 → 25 → 13 → 7）。
+const int kTtsCastSplitMinSentences = 8;
+
+/// 把一块按字数从中间拆成前后两半（BUG-5369：推理模型的思考把这块的输出额度用光，
+/// 要缩小这次要的输出）。两半的参考上下文从原块的前后文与另一半里取，各
+/// [contextSentences] 句（第一遍的块没有上下文，传 0）；台词标记沿用原块的。
+/// 不足 2 句返回 null。
+(TtsCastChunk, TtsCastChunk)? splitTtsCastChunk(
+  TtsCastChunk chunk, {
+  int contextSentences = kTtsCastContextSentences,
+}) {
+  final List<TtsPlanSentence> sentences = chunk.sentences;
+  final int n = sentences.length;
+  if (n < 2) return null;
+  int total = 0;
+  for (final TtsPlanSentence s in sentences) {
+    total += s.text.length;
+  }
+  int mid = 0;
+  int chars = 0;
+  while (mid < n - 1 && chars * 2 < total) {
+    chars += sentences[mid].text.length;
+    mid++;
+  }
+  if (mid == 0) mid = n ~/ 2;
+  final List<TtsPlanSentence> head = sentences.sublist(0, mid);
+  final List<TtsPlanSentence> tail = sentences.sublist(mid);
+  final List<TtsPlanSentence> headAfter = <TtsPlanSentence>[
+    ...tail,
+    ...chunk.after,
+  ].take(contextSentences).toList();
+  final List<TtsPlanSentence> tailBeforeAll = <TtsPlanSentence>[
+    ...chunk.before,
+    ...head,
+  ];
+  final List<TtsPlanSentence> tailBefore = tailBeforeAll.sublist(
+    (tailBeforeAll.length - contextSentences).clamp(0, tailBeforeAll.length),
+  );
+  return (
+    TtsCastChunk(
+      sentences: head,
+      before: contextSentences == 0 ? const <TtsPlanSentence>[] : chunk.before,
+      after: headAfter,
+      dialogue: chunk.dialogue.sublist(0, mid),
+    ),
+    TtsCastChunk(
+      sentences: tail,
+      before: tailBefore,
+      after: contextSentences == 0 ? const <TtsPlanSentence>[] : chunk.after,
+      dialogue: chunk.dialogue.sublist(mid),
+    ),
+  );
+}
+
 // ---------------------------------------------------------------------------
 // 说话人名解析
 // ---------------------------------------------------------------------------

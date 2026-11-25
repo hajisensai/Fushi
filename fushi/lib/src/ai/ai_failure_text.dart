@@ -18,6 +18,8 @@ String aiFailureText(String code) {
     'network_error' => t.ai_error_network,
     'bad_response' => t.ai_error_bad_response,
     'empty_response' => t.ai_error_empty_response,
+    // `kAiOutputLimitCode`：推理模型把输出额度全花在思考上（BUG-5369）。
+    'output_limit' => t.ai_error_output_limit,
     // `kAiEndpointErrorCode`：服务端 2xx 回了一份错误体（多半是接口地址不对）。
     'endpoint_error' => t.ai_error_endpoint,
     'provider_not_configured' => t.ai_error_not_configured,
