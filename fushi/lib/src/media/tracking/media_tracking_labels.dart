@@ -125,6 +125,22 @@ int trackingSeriesNotCounted(TrackingSeriesCoverage coverage) =>
     coverage.countOf(TrackingSeriesMemberState.counted) -
     coverage.countOf(TrackingSeriesMemberState.ownLink);
 
+/// The breakdown on the folded volume list of a series card: "14 counted ·
+/// 2 on their own link · 1 not counted", leaving out the parts that are 0.
+String trackingSeriesFoldSummary(TrackingSeriesCoverage coverage) {
+  final int counted = coverage.countOf(TrackingSeriesMemberState.counted);
+  final int ownLink = coverage.countOf(TrackingSeriesMemberState.ownLink);
+  final int notCounted = trackingSeriesNotCounted(coverage);
+  return <String>[
+    if (counted > 0) t.tracking_series_fold_counted(n: '$counted'),
+    if (ownLink > 0)
+      ownLink == 1
+          ? t.tracking_series_fold_own_link_one(n: '$ownLink')
+          : t.tracking_series_fold_own_link(n: '$ownLink'),
+    if (notCounted > 0) t.tracking_series_fold_not_counted(n: '$notCounted'),
+  ].join(' · ');
+}
+
 /// The unit of a series link: "Series · 10 volumes", or "Series · 10
 /// volumes, 1 not counted"; "Series" when its volumes are not known.
 String trackingSeriesUnitLabel(TrackingSeriesCoverage? coverage) {

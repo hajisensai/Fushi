@@ -34,6 +34,16 @@ import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+/// Above this many volumes, a series link's volume rows fold behind a summary.
+const int kSeriesCardVolumeFoldThreshold = 5;
+
+/// A volume the series link cannot count until the user acts (no number, or
+/// looks like another series): it stays visible when the volume list folds.
+/// Same split as the Tracking page's "Needs attention".
+bool seriesMemberNeedsAttention(TrackingSeriesMember member) =>
+    member.state == TrackingSeriesMemberState.noNumber ||
+    member.state == TrackingSeriesMemberState.otherSeries;
+
 /// The "Tracking" section of series card [collectionId]'s page. Shows
 /// nothing for a card that is not the series card of its books, or when no
 /// site is signed in and the card has no series link.
@@ -264,15 +274,7 @@ class _SeriesCardTrackingSectionState extends State<SeriesCardTrackingSection> {
             ),
           ],
           const SizedBox(height: 8),
-          for (int i = 0; i < site.coverage.members.length; i++)
-            _buildVolume(
-              data,
-              site,
-              site.coverage.members[i],
-              index: i,
-              count: site.coverage.members.length,
-              busy: busy || !usable,
-            ),
+          ..._buildVolumes(data, site, busy: busy || !usable),
         ] else if (usable)
           Align(
             alignment: AlignmentDirectional.centerStart,
@@ -367,6 +369,57 @@ class _SeriesCardTrackingSectionState extends State<SeriesCardTrackingSection> {
         ),
       ),
     );
+  }
+
+  /// The volume rows of [site]'s series link. A card with more than
+  /// [kSeriesCardVolumeFoldThreshold] volumes folds the rows that need
+  /// nothing from the user behind one summary row; volumes waiting for the
+  /// user ([seriesMemberNeedsAttention]) stay visible above it.
+  List<Widget> _buildVolumes(
+    SeriesCardTracking data,
+    SeriesCardTrackingSite site, {
+    required bool busy,
+  }) {
+    final List<TrackingSeriesMember> members = site.coverage.members;
+    List<Widget> rows(List<TrackingSeriesMember> group) => <Widget>[
+      for (int i = 0; i < group.length; i++)
+        _buildVolume(
+          data,
+          site,
+          group[i],
+          index: i,
+          count: group.length,
+          busy: busy,
+        ),
+    ];
+    if (members.length <= kSeriesCardVolumeFoldThreshold) return rows(members);
+    final List<TrackingSeriesMember> attention = <TrackingSeriesMember>[
+      for (final TrackingSeriesMember member in members)
+        if (seriesMemberNeedsAttention(member)) member,
+    ];
+    final List<TrackingSeriesMember> rest = <TrackingSeriesMember>[
+      for (final TrackingSeriesMember member in members)
+        if (!seriesMemberNeedsAttention(member)) member,
+    ];
+    return <Widget>[
+      ...rows(attention),
+      if (attention.isNotEmpty && rest.isNotEmpty) const SizedBox(height: 8),
+      if (rest.isNotEmpty)
+        // Keyed per site: the tile keeps its open state across reloads (a
+        // renumbered or excluded volume does not snap it shut). Not persisted.
+        FushiExpansionTile(
+          key: ValueKey<String>('series-card-tracking-fold-${site.providerId}'),
+          leading: const FushiListLeadingIcon(
+            FushiIcons.check,
+            shape: FushiLeadingShape.square,
+            tone: FushiCardTone.secondary,
+          ),
+          title: Text(trackingVolumesCount(members.length)),
+          subtitle: Text(trackingSeriesFoldSummary(site.coverage)),
+          childrenPadding: const EdgeInsets.only(top: 4),
+          children: rows(rest),
+        ),
+    ];
   }
 
   /// One volume: its number and whether the series link counts it, with
