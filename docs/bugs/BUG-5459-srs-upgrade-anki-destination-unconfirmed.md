@@ -1,7 +1,7 @@
-## BUG-5459 · 更新后复习方式疑似切回 Anki，待确认具体入口
+## BUG-5459 · 更新后网页制卡写到 Anki，制卡去向疑似改变
 
-- **报告**：2026-11-25（用户转述反馈 5-8sfIbHd1：「更新完复习卡组自动改回 Anki 复习了」）。
-- **真实性**：未复现。反馈截图显示 Fushi 的复习页里只有一个 0 张的默认牌组；日志只给出了另一个问题的明确原因（[同步问题修复 PR #4442](https://github.com/hajisensai/Fushi/pull/4442)）。现场缺少显示 Anki 的界面，以及更新前后的激活配置、卡片去向或卡片排程归属。
-- **[ ] ① 未修复** — `fushi/lib/src/models/preferences_repository.dart:4675` 的安装默认判定只在标记缺失时落默认，不覆盖显式制卡去向。复习库迁移入口不写制卡偏好。设置里的「保存到」与卡片排程归属不同；仅凭当前截图无法判定是哪项变了。
+- **报告**：应用内反馈 5-8sfIbHd1（Windows 3.4.0+32563）。补充说明称，更新完 Fushi 后先在网页制卡，查询时看到新卡落在 Anki，随后发现复习设置变了。认为当时旧卡已消失是反馈人的推测，截图只证实当前配置的默认牌组为 0 张。
+- **真实性**：网页写入 Anki 是反馈人的观察，自动改写设置仍未复现。原日志证实目标复习库已经绑定给本机另一份配置，详见 [同步修复 PR #4442](https://github.com/hajisensai/Fushi/pull/4442)。没有网页制卡请求使用的配置、更新前后的「保存到」值，也没有原始数据库。
+- **[ ] ① 未修复** — `fushi/lib/src/profile/extension_profile_adapter.dart` 的 `resolveScope` 按扩展选择、浏览器绑定、App 激活配置的顺序决定制卡使用的设置。`fushi/lib/src/models/app_model.dart` 的 `hostMiningRepositoryForView` 按该设置选后端。选定 Fushi 复习的请求若遇到迁移阻塞，`fushi/lib/src/srs/srs_mining.dart` 的 `_minerForWrite` 返回代际错误，不改投 Anki；迁移入口也不写制卡去向。
 - **[ ] ② 未加自动化测试** — 既有 `fushi/test/srs/srs_install_default_test.dart` 22 项实跑通过。覆盖显式 Fushi 目标重启后保留，以及切入缺少该项的旧配置时可能回落到 Anki。
-- **复现所需**：显示 Anki 的页面或卡片截图，以及发生时本机激活的配置。若是「设置 → 制卡 → 保存到」，核对更新前后是不是同一配置。
+- **复现所需**：网页制卡前后扩展所选配置、App 激活配置及「设置 → 制卡 → 保存到」的值。若用其他网页制卡工具，补工具名称和实际写入端点类型。

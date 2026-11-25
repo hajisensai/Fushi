@@ -37,7 +37,7 @@
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-5459](bugs/BUG-5459-srs-upgrade-anki-destination-unconfirmed.md) | 🚧 | 🚧 | 更新后复习方式疑似切回 Anki，待确认具体入口 |
+| [BUG-5459](bugs/BUG-5459-srs-upgrade-anki-destination-unconfirmed.md) | 🚧 | 🚧 | 更新后网页制卡写到 Anki，制卡去向疑似改变 |
 | [BUG-5450](bugs/BUG-5450-android-library-layout-anchor-lost.md) | ✅ | ✅ | Android 书库对账只探当前配置的内部根，布局 / 容器锚点被冲掉后永不自愈 |
 | [BUG-5449](bugs/BUG-5449-background-writers-seal-and-interrupt.md) | ✅ | ✅ | background-writers-seal-and-interrupt |
 | [BUG-5448](bugs/BUG-5448-lumiere-font-switch-jank.md) | ✅ | ✅ | 绘光切字体卡顿、自定义字体加载完不重画 |
