@@ -5,6 +5,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:intl/date_symbol_data_local.dart';
 import 'package:intl/intl.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_generation_view.dart';
 import 'package:fushi/src/pages/implementations/srs_stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_dashboard.dart';
@@ -27,6 +28,8 @@ import 'package:fushi_engine/srs/srs_calibration.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_stats.dart';
 import 'package:fushi_engine/srs/srs_stats_loader.dart';
+import 'package:fushi_engine/srs/srs_storage.dart'
+    show SrsLegacyMainDatabasePending;
 import 'package:fushi_srs/fushi_srs.dart';
 
 /// 统计中心的「复习」分区（内置复习模块 SRS 的统计，对齐 Anki 2.1.50+ 统计页）。
@@ -98,6 +101,11 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
   bool _loading = true;
   bool _unavailable = false;
   bool _failed = false;
+
+  /// 复习库打不开时的代际状态（[SrsStoreOpenBlocked] / [SrsLegacyMainDatabasePending]）：给迁移页 / 恢复页
+  /// （[SrsGenerationView]），不当「加载出错」，也不写错误日志（BUG-5454）。迁移提交后 [srsStoreProvider] 出值，
+  /// build 里的监听重新装载、清掉它。
+  Object? _openBlocked;
   bool _dateSymbolsReady = false;
 
   /// 正在装载（装载期间又来的刷新信号只记一笔，装完再跑一次，不并发重跑整份统计）。
@@ -223,10 +231,21 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
         _loading = false;
         _unavailable = false;
         _failed = false;
+        _openBlocked = null;
       });
       // 报告 = f(原料, 牌组的卡集)：重读后牌组可能被删（回落到全部）或卡换了牌组，按新的卡集重出。
       unawaited(_refreshCalibrationReport());
-    } catch (error, stack) {
+    } on Object catch (error, stack) {
+      if (error is SrsStoreOpenBlocked ||
+          error is SrsLegacyMainDatabasePending) {
+        if (mounted) {
+          setState(() {
+            _loading = false;
+            _openBlocked = error;
+          });
+        }
+        return;
+      }
       ErrorLogService.instance.log('SrsStatisticsTab.load', error, stack);
       if (mounted) {
         setState(() {
@@ -392,6 +411,18 @@ class _SrsStatisticsTabState extends ConsumerState<SrsStatisticsTab> {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     if (_loading) {
       return const SafeArea(bottom: false, child: FushiLoadingView());
+    }
+    if (_openBlocked case final Object blocked) {
+      return SrsGenerationView(
+        error: blocked,
+        onRetry: () {
+          setState(() {
+            _loading = true;
+            _openBlocked = null;
+          });
+          unawaited(_load());
+        },
+      );
     }
     if (_unavailable || _failed) {
       return SafeArea(
