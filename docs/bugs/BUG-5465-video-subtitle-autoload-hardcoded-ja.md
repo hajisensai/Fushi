@@ -12,6 +12,7 @@
   - 内封轨：用户语言偏好 > 目标语言最匹配的文本轨（繁 / 简按轨标题区分）> 目标未知时按视频音轨语言 > 第一条文本轨；ffmpeg 探测顺带解析音轨语言（`parseAudioStreamLanguagesFromFfmpegLog`）。
   - 远端起播挑轨（`pickRemoteStartupSubtitleTrack`）、YouTube 字幕排序、字幕文件夹匹配（拒绝相反书写体系的标记）、互联 host（app 与 fushi_server）全部换成同一判据。
 - **[x] ② 已加自动化测试** — `fushi/test/media/video/subtitle_language_target_test.dart`（解析 / 标签 / 匹配四档 / 解析链与下载语言链一致 / sidecar 排序：韩语目标、标记归一、繁简、目标未知 / 需嗅探清单 / 菜单顺序 / 默认后缀与顶替 / IO：正文嗅繁简、音轨兜底只在需要时调用 / 内封、远端、YouTube 挑轨 / 字幕文件夹 / 库内证据：系列字幕语言、作品原语言、打开所在合集优先）；改动的 host / sidecar / 源码守卫测试同步更新（`server_lifecycle_appmodel_guard_test.dart` 钉 app 不再把 `JapaneseLanguage` 传给 host）。
+  - 真 app 复测（Windows 离屏 runner，真 media_kit + 真 ffmpeg 抽内封轨 + 真 sidecar 探测）：`fushi/integration_test/video_subtitle_target_language_itest.dart`，2026-11-25 `dart tool/heavy.dart --max-minutes=30 -- powershell -ExecutionPolicy Bypass -File tool/run_windows_itest.ps1 integration_test/video_subtitle_target_language_itest.dart` → exit 0，`+1: All tests passed!`。内封 [jpn「Japanese」, chi「简体中文」, chi「繁體中文」]：行语言 `zh-Hant` 起播加载繁體轨、`zh-Hans` 加载简体轨、`ja` 加载日语轨；同名 `.ja` / `.zh-CN` / `.zh-TW.srt`：`zh-Hant` → `.zh-TW`、`zh-Hans` → `.zh-CN`；无标记 `.srt`（繁体正文）+ `.zh.srt`（简体正文）+ `.zh-CN.srt`，`zh-Hant` → 无标记那份（不读正文时 `.zh.srt` 会排在它前面）。各行均无持久化 `subtitleSource`、字幕工作台默认语言为空，自动加载后也没有写回行。
 - **备注**：
   - fushi_server 配置项 `subtitleLanguage` 默认仍是 `ja`：那是服务端用户可改的显式配置，本轮不动。
   - `fushi/lib/src/ops/ctl_url_import_routes.dart` 的 URL 导入探测仍以日语排字幕，只用于 CLI 探测结果的排序，且可用 `lang` 参数覆盖。
