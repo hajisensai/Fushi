@@ -8,6 +8,8 @@ import 'package:fushi/src/sync/background_tasks_indicator.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart'
     show syncActivityLine, syncProgressLine;
 import 'package:fushi/src/sync/sync_activity.dart';
+import 'package:fushi/src/sync/sync_peer_gap.dart';
+import 'package:fushi/src/sync/sync_peer_gap_ui.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_task_board.dart';
 import 'package:fushi_engine/sync/sync_backend_type.dart';
@@ -158,11 +160,49 @@ void main() {
       expect(kept.finished, isTrue);
       expect(
         kept.line,
-        syncActivityLine(const SyncActivity(SyncActivityKind.fullSweep)),
+        t.sync_task_kind_full_sweep,
         reason: '修复前：失败项标题仍是「正在读取远端文件清单」',
       );
       expect(kept.line, isNot(syncProgressLine(listing)));
+      expect(
+        kept.line,
+        isNot(syncActivityLine(const SyncActivity(SyncActivityKind.fullSweep))),
+        reason: '结束的一轮不能写进行时的「正在准备同步」',
+      );
       expect(kept.fraction, isNull, reason: '结束了不再带进度');
+    });
+
+    test('没有阶段 tick 就结束的失败轮次也不写「正在准备同步」', () {
+      final SyncTaskHandle sweep = beginSyncTask(SyncActivityKind.fullSweep);
+      sweep.error('boom');
+      sweep.finish();
+      expect(syncBackgroundTasks().single.line, t.sync_task_kind_full_sweep);
+
+      final SyncTaskHandle book = beginSyncTask(
+        SyncActivityKind.singleBook,
+        title: 'Book A',
+      );
+      book.error('boom');
+      book.finish();
+      expect(
+        syncBackgroundTasks().last.line,
+        t.sync_task_finished_titled(title: 'Book A'),
+      );
+    });
+
+    test('对端缺能力的原句在面板里换成本地化说明，其余错误原样', () {
+      const SyncPeerGap gap = SyncPeerGap(
+        dimension: SyncPeerGapDimension.onlineLibrary,
+        outdated: true,
+      );
+      final SyncTaskHandle sweep = beginSyncTask(SyncActivityKind.fullSweep);
+      sweep.error(gap.message);
+      sweep.error('online library live sync: boom');
+      sweep.finish();
+      expect(syncBackgroundTasks().single.errors, <String>[
+        syncPeerGapLine(gap),
+        'online library live sync: boom',
+      ]);
     });
 
     test('失败轮次结束后算「未看过的失败」，确认后移出任务表；在跑的不动', () {
