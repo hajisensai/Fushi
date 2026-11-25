@@ -66,6 +66,11 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5456](bugs/BUG-5456-ai-history-under-masthead.md) | ✅ | ✅ | AI 操作记录页首个会话头与前几行被页头大字盖住 |
+> 共 4731 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5453](bugs/BUG-5453-mangabaka-scrape-drops-description.md) | ✅ | ✅ | MangaBaka book scrape drops the description, year, rating and genres |
 | [BUG-5450](bugs/BUG-5450-android-library-layout-anchor-lost.md) | ✅ | ✅ | Android 书库对账只探当前配置的内部根，布局 / 容器锚点被冲掉后永不自愈 |
 | [BUG-5449](bugs/BUG-5449-background-writers-seal-and-interrupt.md) | ✅ | ✅ | background-writers-seal-and-interrupt |
 | [BUG-5448](bugs/BUG-5448-lumiere-font-switch-jank.md) | ✅ | ✅ | 绘光切字体卡顿、自定义字体加载完不重画 |

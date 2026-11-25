@@ -712,6 +712,13 @@ BookScrapeCandidate? mapMangaBakaSeries(MangaBakaSeries series) {
     source: BookScrapeSource.mangabaka,
     originalTitle: series.title != series.displayTitle ? series.title : null,
     author: creators.isEmpty ? null : creators.join(', '),
+    year: series.year,
+    date: series.startDate,
+    summary: series.description,
+    rating: series.rating,
+    tags: <String>[
+      for (final String g in series.genres) mangaBakaGenreLabel(g),
+    ],
     isAdult: series.isAdult,
     pageUrl: series.canonicalUrl,
   );

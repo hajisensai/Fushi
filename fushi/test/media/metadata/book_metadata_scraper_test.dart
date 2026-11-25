@@ -2,10 +2,50 @@ import 'dart:convert';
 
 import 'package:test/test.dart';
 import 'package:fushi/src/media/metadata/book_metadata_scraper.dart';
+import 'package:fushi_engine/media/metadata/mangabaka/mangabaka_models.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 
 void main() {
+  group('mapMangaBakaSeries（BUG：MangaBaka 刮削丢简介）', () {
+    MangaBakaSeries series({String? description, double? rating}) =>
+        MangaBakaSeries(
+          id: 6029,
+          state: 'active',
+          type: 'manga',
+          contentRating: 'safe',
+          title: 'Horimiya',
+          nativeTitle: 'ホリミヤ',
+          authors: const <String>['HERO'],
+          artists: const <String>['Daisuke Hagiwara'],
+          cover: const MangaBakaRawImage(url: 'https://img/c.jpg'),
+          description: description,
+          year: 2011,
+          startDate: '2011-10-18',
+          rating: rating,
+          genres: const <String>['romance', 'slice_of_life'],
+        );
+
+    test('简介 / 日期 / 年份 / 评分 / 类型都带进候选', () {
+      final BookScrapeCandidate c = mapMangaBakaSeries(
+        series(description: 'A sweet tale.', rating: 8.35),
+      )!;
+      expect(c.source, BookScrapeSource.mangabaka);
+      expect(c.summary, 'A sweet tale.');
+      expect(c.year, 2011);
+      expect(c.date, '2011-10-18');
+      expect(c.rating, 8.35);
+      expect(c.tags, <String>['Romance', 'Slice of life']);
+      expect(c.author, 'HERO, Daisuke Hagiwara');
+    });
+
+    test('源站没给简介 / 评分时为空', () {
+      final BookScrapeCandidate c = mapMangaBakaSeries(series())!;
+      expect(c.summary, isNull);
+      expect(c.rating, isNull);
+    });
+  });
+
   group('parseBookSearchResponse 映射', () {
     test('name_cn 优先、封面取 large、year/summary/detailUrl 正确', () {
       const String body = '''
