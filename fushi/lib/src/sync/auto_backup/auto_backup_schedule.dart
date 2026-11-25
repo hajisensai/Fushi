@@ -9,6 +9,10 @@
 /// - **没有偏好时刻**：按本地日历日算，等同偏好时刻 = 0:00。每日 = 当天第一次启动 / 回前台
 ///   就跑，不要求距上次满 24 小时（否则每天打开时间稍早一点就会隔天才备份一次）。
 /// - 从没满足过：立刻到期。
+/// - 时钟被往回调过、上次满足的时刻在「现在」之后：到期一次（跑完就落回正常时刻）。否则
+///   永不到期、也永不告警。
+/// - 上次运行写到一半进程就没了（[lastInterrupted]）：这一时段不再重跑，等下一个时段
+///   （偏好时刻 / 本地零点）过去再试——免得每次启动都在同一处被系统杀掉。
 library;
 
 import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
@@ -26,17 +30,25 @@ DateTime latestAutoBackupSlot(DateTime now, int minuteOfDay) {
   return DateTime(local.year, local.month, local.day - 1, h, m);
 }
 
-/// [settings] 下现在该不该跑。[lastSatisfied] = 上次成功或「没变化、跳过」的时刻（null = 从没有）。
+/// [settings] 下现在该不该跑。[lastSatisfied] = 上次成功或「没变化、跳过」的时刻（null = 从没有）；
+/// [lastInterrupted] = 上次被打断的那次运行的开始时刻（null = 没有）。
 bool isAutoBackupDue({
   required AutoBackupSettings settings,
   required DateTime now,
   required DateTime? lastSatisfied,
+  DateTime? lastInterrupted,
 }) {
   if (!settings.enabled) return false;
-  if (lastSatisfied == null) return true;
-  final int n = settings.interval.days;
   final int minute = settings.preferredMinuteOfDay ?? 0;
   final DateTime slot = latestAutoBackupSlot(now, minute);
+  if (lastInterrupted != null &&
+      !lastInterrupted.isAfter(now) &&
+      !lastInterrupted.isBefore(slot)) {
+    return false;
+  }
+  if (lastSatisfied == null) return true;
+  if (lastSatisfied.isAfter(now)) return true;
+  final int n = settings.interval.days;
   final DateTime threshold = DateTime(
     slot.year,
     slot.month,

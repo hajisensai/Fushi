@@ -65,6 +65,8 @@ import 'package:fushi/src/storage/storage_usage_service.dart'
     show formatStorageBytes;
 import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart'
     show AutoBackupOutcome;
+import 'package:fushi/src/sync/auto_backup/auto_backup_messages.dart'
+    show autoBackupErrorText;
 import 'package:fushi/src/sync/auto_backup/auto_backup_schedule.dart'
     show isAutoBackupOverdue;
 import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';

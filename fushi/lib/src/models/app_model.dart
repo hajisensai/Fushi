@@ -456,6 +456,7 @@ import 'package:fushi/src/ai/agent/ai_agent_assistant_host.dart'
     show createAppAssistantHost;
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart';
+import 'package:fushi/src/sync/auto_backup/auto_backup_messages.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart' show SrsMediaStore;
 import 'package:fushi/src/sync/deletion_prompt.dart';
@@ -3705,8 +3706,11 @@ class AppModel
   /// `if (!mounted) return` 就把已经打完的 zip 连同分享/另存/成功提示一起丢掉，用户
   /// 看到的是「点一下折叠箭头，备份被取消了」。所有权挪到这里之后，折叠只是不再显示
   /// 进度，任务本身与 UI 生命周期无关。
-  bool _backupExportActive = false;
-  bool get backupExportActive => _backupExportActive;
+  ///
+  /// 锁按持有者凭据记：[beginBackupExport] 返回凭据，[endBackupExport] 只放自己的那把——以前是
+  /// 一个布尔，先跑完的一方会把另一方正持有的锁放掉。
+  Object? _backupExportOwner;
+  bool get backupExportActive => _backupExportOwner != null;
 
   /// 打包阶段的确定进度（0..1）；null = 尚未进入打包。准备阶段（VACUUM INTO、按
   /// 分类裁剪行、枚举待打包文件）没有可分的量，UI 此时走不确定动画。与导入侧同理用
@@ -3715,11 +3719,14 @@ class AppModel
     null,
   );
 
-  void beginBackupExport() {
-    if (_backupExportActive) return;
-    _backupExportActive = true;
+  /// 拿导出锁：成功返回这次持有的凭据，已被别人持有返回 null（调用方按「已有备份在跑」处理）。
+  Object? beginBackupExport() {
+    if (_backupExportOwner != null) return null;
+    final Object token = Object();
+    _backupExportOwner = token;
     backupExportProgress.value = null;
     notifyListeners();
+    return token;
   }
 
   /// 由 [BackupService.createBackup] 的 onProgress 回调驱动（本 isolate 上被打包
@@ -3728,12 +3735,38 @@ class AppModel
     backupExportProgress.value = fraction.clamp(0.0, 1.0);
   }
 
-  void endBackupExport() {
-    if (!_backupExportActive) return;
-    _backupExportActive = false;
+  /// 放导出锁：只有 [token] 是当前持有者才放。
+  void endBackupExport(Object token) {
+    if (!identical(_backupExportOwner, token)) return;
+    _backupExportOwner = null;
     backupExportProgress.value = null;
     notifyListeners();
   }
+
+  /// 正在进行的「会关库 / 换库」流程数：备份导入（从校验到重启）、还原点替换 / 补回（含拍操作前
+  /// 还原点）。持有期间自动备份不开跑（[autoBackupDatabaseAvailable]）。
+  int _restoreFlows = 0;
+
+  /// 开始一个会关库 / 换库的流程；返回的回调结束它（可重复调，只生效一次）。调用方必须先
+  /// 在同一段同步代码里查过 [backupExportActive]：两者之间没有 await，就与自动备份的
+  /// 「查库可用 + 拿锁」互斥。
+  void Function() beginRestoreFlow() {
+    _restoreFlows++;
+    bool ended = false;
+    return () {
+      if (ended) return;
+      ended = true;
+      _restoreFlows--;
+    };
+  }
+
+  /// 主库现在能不能拿来做定时备份：已初始化、没有导入 / 替换 / 补回 / 数据目录迁移在进行
+  /// （遮罩没上、库没关）。
+  bool get autoBackupDatabaseAvailable =>
+      _isInitialised &&
+      _backupImportPhase == null &&
+      _restoreFlows == 0 &&
+      !_dataRootMigrationActive;
 
   /// TODO-1151：备份「读取/校验」阶段的作废 token。选完文件后 validate + previewMerge
   /// 会跑数十秒（后台 isolate，UI 不冻结但只有 24px 小圈）。进入 [beginBackupValidating]
@@ -17228,13 +17261,16 @@ class _AppAutoBackupHost implements AutoBackupHost {
       SrsMediaStore.mediaRootFor(_app.databaseDirectory).path;
 
   @override
+  bool get databaseAvailable => _app.autoBackupDatabaseAvailable;
+
+  @override
   bool get backupExportActive => _app.backupExportActive;
 
   @override
-  void beginBackupExport() => _app.beginBackupExport();
+  Object? beginBackupExport() => _app.beginBackupExport();
 
   @override
-  void endBackupExport() => _app.endBackupExport();
+  void endBackupExport(Object token) => _app.endBackupExport(token);
 
   @override
   void reportBackupExportProgress(double fraction) =>
@@ -17250,7 +17286,7 @@ class _AppAutoBackupHost implements AutoBackupHost {
 
   @override
   void notifyFailure(String reason) => FushiToast.show(
-    msg: t.auto_backup_failed_notice(reason: reason),
+    msg: t.auto_backup_failed_notice(reason: autoBackupErrorText(reason)),
     severity: ToastSeverity.error,
   );
 

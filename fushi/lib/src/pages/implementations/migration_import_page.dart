@@ -210,6 +210,17 @@ class _MigrationImportPageState extends State<MigrationImportPage>
     });
     final AppModel appModel = widget.appModel;
     final Directory transferDir = await migrationTransferDir();
+    // 有备份正在导出（自动备份 / 手动导出）：这时关库会让它对着关掉的库失败。与下面的
+    // beginBackupImport 之间没有 await，查完就上遮罩，自动备份不会再插进来。
+    if (appModel.backupExportActive) {
+      if (mounted) {
+        setState(() {
+          _running = false;
+          _error = t.backup_import_export_running;
+        });
+      }
+      return;
+    }
     try {
       // 与备份导入同一遮罩协议：上遮罩 → 等首帧 → 关库 → 逐批合并 → 重启。
       appModel.beginBackupImport();

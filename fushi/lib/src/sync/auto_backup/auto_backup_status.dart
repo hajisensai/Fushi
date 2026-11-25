@@ -26,6 +26,13 @@ enum AutoBackupResult {
   failed,
 }
 
+/// [AutoBackupStatus.lastError] 的错误码：上次运行写到一半进程就没了（被系统杀掉 / 崩溃 /
+/// 用户退出），下次启动从「开始」标记认出来。界面按码给本地化文案，其余错误是原文。
+const String kAutoBackupErrorInterrupted = 'interrupted';
+
+/// [AutoBackupStatus.lastError] 的错误码：自定义文件夹不在（外接盘没插、网络盘没挂上…）。
+const String kAutoBackupErrorFolderUnavailable = 'folder_unavailable';
+
 /// 状态文件的内容（不可变）。
 class AutoBackupStatus {
   const AutoBackupStatus({
@@ -37,6 +44,8 @@ class AutoBackupStatus {
     this.lastSatisfiedMs,
     this.lastError,
     this.fingerprint,
+    this.runningSinceMs,
+    this.lastInterruptedMs,
   });
 
   final int? lastAttemptMs;
@@ -52,6 +61,14 @@ class AutoBackupStatus {
   /// 上次成功时的数据指纹（[computeAutoBackupFingerprint]）。
   final String? fingerprint;
 
+  /// 「开始」标记：开始写定时还原点时落下，成功 / 失败时清掉。启动时还在 = 上次写到一半进程
+  /// 就没了（[interrupted]）。
+  final int? runningSinceMs;
+
+  /// 上次被打断的那次运行的开始时刻：到期判定据此等到下一个时段再试，不在每次启动都重跑、
+  /// 每次都在同一处被杀。
+  final int? lastInterruptedMs;
+
   DateTime? get lastSatisfied => lastSatisfiedMs == null
       ? null
       : DateTime.fromMillisecondsSinceEpoch(lastSatisfiedMs!);
@@ -59,6 +76,10 @@ class AutoBackupStatus {
   DateTime? get lastSuccess => lastSuccessMs == null
       ? null
       : DateTime.fromMillisecondsSinceEpoch(lastSuccessMs!);
+
+  DateTime? get lastInterrupted => lastInterruptedMs == null
+      ? null
+      : DateTime.fromMillisecondsSinceEpoch(lastInterruptedMs!);
 
   bool get lastRunFailed => lastResult == AutoBackupResult.failed;
 
@@ -72,6 +93,8 @@ class AutoBackupStatus {
     'lastSatisfiedMs': lastSatisfiedMs,
     'lastError': lastError,
     'fingerprint': fingerprint,
+    if (runningSinceMs != null) 'runningSinceMs': runningSinceMs,
+    if (lastInterruptedMs != null) 'lastInterruptedMs': lastInterruptedMs,
   };
 
   static AutoBackupStatus fromJson(Object? raw) {
@@ -91,8 +114,24 @@ class AutoBackupStatus {
       lastSatisfiedMs: i('lastSatisfiedMs'),
       lastError: s('lastError'),
       fingerprint: s('fingerprint'),
+      runningSinceMs: i('runningSinceMs'),
+      lastInterruptedMs: i('lastInterruptedMs'),
     );
   }
+
+  /// 开始写定时还原点：落「开始」标记，其余不动。
+  AutoBackupStatus started({required int atMs}) => AutoBackupStatus(
+    lastAttemptMs: lastAttemptMs,
+    lastResult: lastResult,
+    lastSuccessMs: lastSuccessMs,
+    lastSuccessPointId: lastSuccessPointId,
+    lastSuccessBytes: lastSuccessBytes,
+    lastSatisfiedMs: lastSatisfiedMs,
+    lastError: lastError,
+    fingerprint: fingerprint,
+    runningSinceMs: atMs,
+    lastInterruptedMs: lastInterruptedMs,
+  );
 
   /// 成功：记下指纹、点 id、大小，这一期满足。
   AutoBackupStatus succeeded({
@@ -132,7 +171,22 @@ class AutoBackupStatus {
         lastSatisfiedMs: lastSatisfiedMs,
         lastError: error,
         fingerprint: fingerprint,
+        lastInterruptedMs: lastInterruptedMs,
       );
+
+  /// 启动时发现「开始」标记还在：记成失败（[kAutoBackupErrorInterrupted]），清标记，记下被
+  /// 打断的时刻（到期判定等到下一个时段）。
+  AutoBackupStatus interrupted() => AutoBackupStatus(
+    lastAttemptMs: runningSinceMs ?? lastAttemptMs,
+    lastResult: AutoBackupResult.failed,
+    lastSuccessMs: lastSuccessMs,
+    lastSuccessPointId: lastSuccessPointId,
+    lastSuccessBytes: lastSuccessBytes,
+    lastSatisfiedMs: lastSatisfiedMs,
+    lastError: kAutoBackupErrorInterrupted,
+    fingerprint: fingerprint,
+    lastInterruptedMs: runningSinceMs,
+  );
 }
 
 /// 状态文件路径（默认还原点目录）。

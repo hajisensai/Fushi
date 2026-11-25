@@ -81,7 +81,7 @@ SettingsSection _autoBackupSection() => SettingsSection(
     ),
     SettingsCustomItem.rows(
       id: 'sync.auto_backup.contents',
-      searchTitle: t.auto_backup_contents,
+      searchTitle: t.auto_backup_contents_files,
       icon: FushiIcons.backup,
       visible: _autoBackupOn,
       rowsBuilder: _autoBackupContentRows,
@@ -92,11 +92,8 @@ SettingsSection _autoBackupSection() => SettingsSection(
       subtitle: t.auto_backup_srs_media_hint,
       icon: FushiIcons.image,
       defaultValue: false,
-      // 复习媒体只随复习类别走：没勾复习时这一项没有意义。
-      visible: (SettingsContext ctx) {
-        final AutoBackupSettings s = ctx.appModel.autoBackupSettings;
-        return s.enabled && s.categories.contains(BackupCategory.srs);
-      },
+      // 复习笔记与记录恒在整库里；媒体（卡片图片 / 音频）是文件，单独一个开关（D2）。
+      visible: _autoBackupOn,
       value: (SettingsContext ctx) =>
           ctx.appModel.autoBackupSettings.includeSrsMedia,
       onChanged: (SettingsContext ctx, bool value) => _updateAutoBackupSettings(
@@ -133,37 +130,38 @@ SettingsSection _autoBackupSection() => SettingsSection(
   ],
 );
 
-/// 内容勾选：与手动导出同一套类别（标签 / 说明 / 图标），不带计数。最后一个勾着的类别不能取消。
+/// 内容：每个定时还原点都是整库（一行说明），勾选只挑大块文件树（[kBackupFileCategories]，与手动
+/// 导出同一套标签 / 说明 / 图标，不带计数）。一个都不勾也行——数据照样每次都在。
 List<Widget> _autoBackupContentRows(SettingsContext ctx) {
   final AutoBackupSettings settings = ctx.appModel.autoBackupSettings;
   return <Widget>[
     AdaptiveSettingsRow(
       key: const ValueKey<String>('auto-backup-contents-caption'),
-      title: t.auto_backup_contents,
+      title: t.auto_backup_contents_files,
+      subtitle: t.auto_backup_contents_always,
+      subtitleMaxLines: 3,
       icon: FushiIcons.backup,
       showIcon: true,
     ),
     for (final BackupCategory c in BackupCategory.values)
-      AdaptiveSettingsSwitchRow(
-        key: ValueKey<String>('auto-backup-category-${c.name}'),
-        title: backupCategoryLabel(c),
-        subtitle: backupCategoryDescription(c),
-        icon: backupCategoryIcon(c),
-        showIcon: true,
-        value: settings.categories.contains(c),
-        onChanged:
-            settings.categories.contains(c) && settings.categories.length == 1
-            ? null
-            : (bool on) => unawaited(
-                _updateAutoBackupSettings(ctx, (AutoBackupSettings s) {
-                  final Set<BackupCategory> next = <BackupCategory>{
-                    ...s.categories,
-                  };
-                  on ? next.add(c) : next.remove(c);
-                  return s.copyWith(categories: next);
-                }),
-              ),
-      ),
+      if (kBackupFileCategories.contains(c))
+        AdaptiveSettingsSwitchRow(
+          key: ValueKey<String>('auto-backup-category-${c.name}'),
+          title: backupCategoryLabel(c),
+          subtitle: backupCategoryDescription(c),
+          icon: backupCategoryIcon(c),
+          showIcon: true,
+          value: settings.categories.contains(c),
+          onChanged: (bool on) => unawaited(
+            _updateAutoBackupSettings(ctx, (AutoBackupSettings s) {
+              final Set<BackupCategory> next = <BackupCategory>{
+                ...s.categories,
+              };
+              on ? next.add(c) : next.remove(c);
+              return s.copyWith(categories: next);
+            }),
+          ),
+        ),
   ];
 }
 
@@ -420,7 +418,7 @@ class _AutoBackupStatusRow extends StatelessWidget {
                   severity: FushiNoticeSeverity.warning,
                   message: failed
                       ? t.auto_backup_failed_notice(
-                          reason: status.lastError ?? '',
+                          reason: autoBackupErrorText(status.lastError),
                         )
                       : t.auto_backup_overdue_warning,
                 ),

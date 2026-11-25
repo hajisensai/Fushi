@@ -818,8 +818,8 @@ Future<void> runBackupExportFlow({
   Set<String>? bookKeys,
   Set<String>? videoKeys,
 }) async {
-  if (appModel.backupExportActive) return;
-  appModel.beginBackupExport();
+  final Object? exportLock = appModel.beginBackupExport();
+  if (exportLock == null) return;
   String? failure;
   bool cancelled = false;
   // BUG-2193：打包时被跳过的词典（元数据在、磁盘资源缺失）。以前这种情况让**全部**
@@ -866,7 +866,7 @@ Future<void> runBackupExportFlow({
   } catch (e) {
     failure = friendlySyncErrorDetail(e);
   } finally {
-    appModel.endBackupExport();
+    appModel.endBackupExport(exportLock);
   }
   if (cancelled) return;
   // 结果提示走全局 navigator：发起导出的那一行此刻可能已经被折叠掉了。
@@ -914,20 +914,27 @@ class BackupImportPreset {
   final bool importSettings;
 }
 
-/// 本模式下确认框里可勾选的分类集。
-Set<BackupCategory> backupImportSelectableCategories(BackupImportMode mode) =>
-    mode == BackupImportMode.overwrite
-    ? importSelectableCategories
+/// 本模式下确认框里可勾选的分类集。[fullDatabase]（整库备份 = 定时还原点导出的包，
+/// [BackupMeta.fullDatabase]）覆盖导入时只有文件类别可挑：整库换入，数据类别恒恢复。
+Set<BackupCategory> backupImportSelectableCategories(
+  BackupImportMode mode, {
+  bool fullDatabase = false,
+}) => mode == BackupImportMode.overwrite
+    ? (fullDatabase
+          ? importSelectableCategories.intersection(kBackupFileCategories)
+          : importSelectableCategories)
     : importMergeSelectableCategories;
 
 /// 确认框收口时的分类计算（单一实现，确认框与 [BackupImportPreset] 共用）：本模式
 /// 不可勾选的分类恒恢复，可勾选的只留 [selected] 里的。
 Set<BackupCategory> backupImportCategoriesFor(
   BackupImportMode mode,
-  Set<BackupCategory> selected,
-) {
+  Set<BackupCategory> selected, {
+  bool fullDatabase = false,
+}) {
   final Set<BackupCategory> modeSelectable = backupImportSelectableCategories(
     mode,
+    fullDatabase: fullDatabase,
   );
   return BackupCategory.values
       .where(
@@ -941,14 +948,19 @@ Set<BackupCategory> backupImportCategoriesFor(
 /// 可勾选分类出开关，所以勾选集同样先与 [summary] 求交；null 预设 = 默认全勾。
 Set<BackupCategory> backupImportPresetCategories(
   BackupImportPreset preset,
-  BackupContentSummary summary,
-) {
+  BackupContentSummary summary, {
+  bool fullDatabase = false,
+}) {
   final Set<BackupCategory> selected = <BackupCategory>{
     for (final BackupCategory c
         in preset.categories ?? BackupCategory.values.toSet())
       if (summary.has(c)) c,
   };
-  return backupImportCategoriesFor(preset.mode, selected);
+  return backupImportCategoriesFor(
+    preset.mode,
+    selected,
+    fullDatabase: fullDatabase,
+  );
 }
 
 /// The user's choices from the import confirm dialog: which [mode] to apply and
@@ -1041,12 +1053,43 @@ class _BackupImportWidgetState extends State<_BackupImportWidget> {
 /// [confirmInitialMode] 是确认框打开时预选的导入方式（[preset] 非 null 时不弹框，
 /// 它不起作用）：缺省「覆盖」保持设置页「导入备份」的既有行为；推荐包传「合并」——
 /// 推荐包只带词典 / 音频资源，照默认点「覆盖」会整库被包里的库替换（BUG-4698）。
+///
+/// 有备份正在导出（手动 / 控制通道 / 自动备份）时直接提示并返回，什么都不动；开始之后整个流程
+/// 占住 [AppModel.beginRestoreFlow]，自动备份这期间不开跑（它会在关库之后对着关掉的库失败）。
 Future<void> runBackupImportFlowForFile({
   required AppModel appModel,
   required String filePath,
   Future<void> Function()? onImportSucceeded,
   BackupImportPreset? preset,
   BackupImportMode confirmInitialMode = BackupImportMode.overwrite,
+}) async {
+  if (appModel.backupExportActive) {
+    FushiToast.show(
+      msg: t.backup_import_export_running,
+      severity: ToastSeverity.warning,
+    );
+    return;
+  }
+  final void Function() endFlow = appModel.beginRestoreFlow();
+  try {
+    await _runBackupImportFlowForFile(
+      appModel: appModel,
+      filePath: filePath,
+      onImportSucceeded: onImportSucceeded,
+      preset: preset,
+      confirmInitialMode: confirmInitialMode,
+    );
+  } finally {
+    endFlow();
+  }
+}
+
+Future<void> _runBackupImportFlowForFile({
+  required AppModel appModel,
+  required String filePath,
+  required Future<void> Function()? onImportSucceeded,
+  required BackupImportPreset? preset,
+  required BackupImportMode confirmInitialMode,
 }) async {
   // appModel 驱动全程遮罩，此后不依赖任何页面 `mounted`/context；确认对话框由全局
   // [AppModel.navigatorKey] 宿主弹出。
@@ -1166,7 +1209,11 @@ Future<void> runBackupImportFlowForFile({
           importSettings:
               preset.mode == BackupImportMode.overwrite &&
               preset.importSettings,
-          categories: backupImportPresetCategories(preset, summary),
+          categories: backupImportPresetCategories(
+            preset,
+            summary,
+            fullDatabase: meta.fullDatabase,
+          ),
         )
       : await _showBackupImportConfirmDialog(
           rootCtx,
@@ -1443,7 +1490,10 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
           .where((BackupCategory c) => selectable.contains(c) && summary.has(c))
           .toList();
   final List<BackupCategory> overwriteSelectablePresent = presentFor(
-    importSelectableCategories,
+    backupImportSelectableCategories(
+      BackupImportMode.overwrite,
+      fullDatabase: meta.fullDatabase,
+    ),
   );
   final List<BackupCategory> mergeSelectablePresent = presentFor(
     importMergeSelectableCategories,
@@ -1620,6 +1670,7 @@ Future<_BackupImportChoice?> _showBackupImportConfirmDialog(
   final Set<BackupCategory> categories = backupImportCategoriesFor(
     mode,
     selectedRestore,
+    fullDatabase: meta.fullDatabase,
   );
   return _BackupImportChoice(
     mode: mode,

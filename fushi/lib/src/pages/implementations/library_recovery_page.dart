@@ -3,7 +3,7 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show FushiDatabase, RestorePointDatabase, RestorePointKind;
+    show FushiDatabase, RestorePoint, RestorePointDatabase, RestorePointKind;
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
@@ -226,9 +226,27 @@ BackupCategory? _categoryNamed(String name) {
   return null;
 }
 
-/// 一行还原点的内容说明（纯函数，测试用）：定时备份列类别与复习媒体；整库副本说明带了哪些库。
+/// 一行还原点的内容说明（纯函数，测试用）：整库定时备份写「整库 · 文件：…· 复习媒体」；老的按类别
+/// 定时备份列类别与复习媒体；整库副本说明带了哪些库。
 String restorePointContentsLabel(RestorePointEntry entry) {
   final List<String>? categories = entry.point?.categories;
+  if (entry.point?.kind == RestorePointKind.scheduled &&
+      entry.point!.fullDatabase == true) {
+    final List<String> files = <String>[
+      for (final BackupCategory c in BackupCategory.values)
+        if (kBackupFileCategories.contains(c) &&
+            (categories?.contains(c.name) ?? false))
+          backupCategoryLabel(c),
+    ];
+    return <String>[
+      t.restore_points_contents_full_db,
+      if (files.isNotEmpty)
+        t.restore_points_contents_files(categories: files.join('、')),
+      entry.point!.includesSrsMedia == true
+          ? t.restore_points_contents_with_media
+          : t.restore_points_contents_without_media,
+    ].join(' · ');
+  }
   if (entry.point?.kind == RestorePointKind.scheduled && categories != null) {
     final List<String> labels = <String>[
       for (final String name in categories)
@@ -253,10 +271,13 @@ String restorePointContentsLabel(RestorePointEntry entry) {
   ].join(' · ');
 }
 
-/// 定时备份里没带、「替换」后会从当前数据里移除的类别。其它种类为空。
+/// 老的按类别定时备份里没带、「替换」后会从当前数据里移除的类别。整库定时备份（不移除任何
+/// 数据，见 [restorePointFilesLeftAlone]）与其它种类为空。
 List<BackupCategory> restorePointMissingCategories(RestorePointEntry entry) {
   final List<String>? categories = entry.point?.categories;
-  if (entry.point?.kind != RestorePointKind.scheduled || categories == null) {
+  if (entry.point?.kind != RestorePointKind.scheduled ||
+      entry.point!.fullDatabase == true ||
+      categories == null) {
     return const <BackupCategory>[];
   }
   final List<String>? excluded = entry.point!.excludedCategories;
@@ -266,6 +287,22 @@ List<BackupCategory> restorePointMissingCategories(RestorePointEntry entry) {
           ? excluded.contains(c.name)
           : !categories.contains(c.name))
         c,
+  ];
+}
+
+/// 整库定时备份没带文件的文件类别：「替换」时这些文件在本机原样不动、对应的书库行照样留着。
+/// 其它种类为空。
+List<BackupCategory> restorePointFilesLeftAlone(RestorePointEntry entry) {
+  final RestorePoint? point = entry.point;
+  if (point == null ||
+      point.kind != RestorePointKind.scheduled ||
+      point.fullDatabase != true) {
+    return const <BackupCategory>[];
+  }
+  final List<String> carried = point.categories ?? const <String>[];
+  return <BackupCategory>[
+    for (final BackupCategory c in BackupCategory.values)
+      if (kBackupFileCategories.contains(c) && !carried.contains(c.name)) c,
   ];
 }
 
@@ -428,8 +465,17 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
       case _PanelKind.fill:
         setState(() => _busy = true);
         try {
-          // 遮罩、关库、成败提示与重启都在里面。
+          // 遮罩、关库、关库后的成败提示与重启都在里面；关库之前的失败（有备份在导出、从
+          // zip 解主库失败）抛到这里，app 照常可用。
           await _host.fillIn(entry);
+        } catch (e, st) {
+          ErrorLogService.instance.log('RestorePointsPage.fillIn', e, st);
+          FushiToast.show(
+            msg: t.restore_points_fill_failed(
+              reason: friendlySyncErrorDetail(e),
+            ),
+            severity: ToastSeverity.error,
+          );
         } finally {
           if (mounted) setState(() => _busy = false);
         }
@@ -645,6 +691,10 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
         final List<BackupCategory> missing = restorePointMissingCategories(
           entry,
         );
+        final bool fullDatabase = entry.point?.fullDatabase == true;
+        final List<BackupCategory> leftAlone = restorePointFilesLeftAlone(
+          entry,
+        );
         return FushiInlineNotice(
           key: ValueKey<String>('restore-point-panel-${entry.id}'),
           severity: FushiNoticeSeverity.warning,
@@ -653,6 +703,11 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
             t.restore_points_replace_body(
               date: FushiTimeFormat.dateHourMinute(entry.createdAt),
             ),
+            if (fullDatabase) t.restore_points_replace_full_db,
+            if (leftAlone.isNotEmpty)
+              t.restore_points_replace_files_kept(
+                categories: leftAlone.map(backupCategoryLabel).join('、'),
+              ),
             if (missing.isNotEmpty)
               t.restore_points_replace_removed(
                 categories: missing.map(backupCategoryLabel).join('、'),

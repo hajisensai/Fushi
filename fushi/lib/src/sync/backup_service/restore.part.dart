@@ -998,6 +998,29 @@ class BackupRestoreService {
       // Parse the source-device content roots so book/audio paths can be
       // rebased onto this device after the trees are restored.
       final BackupMeta? meta = _readBackupMeta(archive);
+      // 整库备份（定时还原点，[BackupMeta.fullDatabase]）：整库换入，不跑任何按类别的剥行与
+      // 「没勾就保留本机那一层」的回灌——库里每一类数据都在。导入勾选只管文件树：包里带着、又勾着
+      // 的文件树才换，其余本机文件原样不动（数据类别恒恢复，见下面的 [wants]）。
+      final bool fullDatabase = meta?.fullDatabase ?? false;
+      bool archiveCarries(String prefix) => archive.files.any(
+        (ArchiveFile f) =>
+            f.isFile && f.name.replaceAll(r'\', '/').startsWith('$prefix/'),
+      );
+      // TODO-1358: honour a per-category IMPORT selection (overwrite path only;
+      // merge always combines everything). A null [categories] restores every
+      // category the backup carries (legacy). Unticking a category on import:
+      //  - dictionary -> treat as if the backup carries no dictionaries so the
+      //    BUG-454 path preserves THIS device dictionaries (re-seated from bak).
+      //  - audiobooks / fonts / videos / localAudio -> skip restoring those files
+      //    (and skip rebasing their paths); the DB library index still restores.
+      // Books / progress / statistics always restore (the core library index in
+      // the overwrite DB blob); settings / profiles stay governed by
+      // [importSettings]. A full-database backup restores every data category
+      // regardless of the selection.
+      bool wants(BackupCategory c) =>
+          (fullDatabase && !kBackupFileCategories.contains(c)) ||
+          categories == null ||
+          categories.contains(c);
       // TODO-1193: a backup that unticked `settings` / `profiles` carries an
       // EMPTY settings / profiles layer BY CHOICE. On an overwrite import the DB
       // is replaced wholesale, so without a guard those empty layers would WIPE
@@ -1006,21 +1029,31 @@ class BackupRestoreService {
       // preserve-on-absent). importSettings=false already keeps the whole
       // settings layer from bak, so it is inherently safe.
       final bool backupSettingsExcluded =
-          meta?.excludedCategories.contains(BackupCategory.settings.name) ??
-          false;
+          !fullDatabase &&
+          (meta?.excludedCategories.contains(BackupCategory.settings.name) ??
+              false);
       final bool backupProfilesExcluded =
-          meta?.excludedCategories.contains(BackupCategory.profiles.name) ??
-          false;
+          !fullDatabase &&
+          (meta?.excludedCategories.contains(BackupCategory.profiles.name) ??
+              false);
       // BUG-816: content-registry prefs (favorites / fonts / local-audio) travel
       // EMPTY when their owning category was unticked, so an overwrite import
       // must preserve THIS device's rows from bak instead of wiping them.
+      // 整库备份：收藏随书库行一起在库里（不回灌）；字体 / 本地音频的登记偏好描述的是盘上的
+      // 文件，这次恢复不换那些文件（包里没带或没勾）时就从本机回灌，与原样不动的文件一致。
       final bool backupBooksExcluded =
-          meta?.excludedCategories.contains(BackupCategory.books.name) ?? false;
-      final bool backupFontsExcluded =
-          meta?.excludedCategories.contains(BackupCategory.fonts.name) ?? false;
-      final bool backupLocalAudioExcluded =
-          meta?.excludedCategories.contains(BackupCategory.localAudio.name) ??
-          false;
+          !fullDatabase &&
+          (meta?.excludedCategories.contains(BackupCategory.books.name) ??
+              false);
+      final bool backupFontsExcluded = fullDatabase
+          ? !(wants(BackupCategory.fonts) && archiveCarries(_fontsPrefix))
+          : meta?.excludedCategories.contains(BackupCategory.fonts.name) ??
+                false;
+      final bool backupLocalAudioExcluded = fullDatabase
+          ? !(wants(BackupCategory.localAudio) &&
+                archiveCarries(_localAudioPrefix))
+          : meta?.excludedCategories.contains(BackupCategory.localAudio.name) ??
+                false;
 
       final String? dictionaryReapplyDirectory = dictionaryResourceDirectory;
       List<MapEntry<ArchiveFile, String>>? dictionaryReapplyPlan;
@@ -1045,18 +1078,6 @@ class BackupRestoreService {
                 .startsWith('$_dictionaryResourcesPrefix/'),
       );
 
-      // TODO-1358: honour a per-category IMPORT selection (overwrite path only;
-      // merge always combines everything). A null [categories] restores every
-      // category the backup carries (legacy). Unticking a category on import:
-      //  - dictionary -> treat as if the backup carries no dictionaries so the
-      //    BUG-454 path preserves THIS device dictionaries (re-seated from bak).
-      //  - audiobooks / fonts / videos / localAudio -> skip restoring those files
-      //    (and skip rebasing their paths); the DB library index still restores.
-      // Books / progress / statistics always restore (the core library index in
-      // the overwrite DB blob); settings / profiles stay governed by
-      // [importSettings].
-      bool wants(BackupCategory c) =>
-          categories == null || categories.contains(c);
       final bool effectiveHasDictionaries =
           backupHasDictionaries && wants(BackupCategory.dictionary);
       final String? effAudiobooksRoot = wants(BackupCategory.audiobooks)
@@ -1413,12 +1434,14 @@ class BackupRestoreService {
       //     category's data does not end up on this device (the DB was replaced
       //     wholesale, so there is no local layer to preserve — mirrors how the
       //     statistics/progress strip already works on the export side).
-      if (!wants(BackupCategory.books)) {
+      //     整库备份不剥：库是整的，没带文件的类别保留行、本机文件原样不动（用户 2026-11-25
+      //     拍板），由 meta 标记驱动，不靠猜。
+      if (!fullDatabase && !wants(BackupCategory.books)) {
         // Strip every book row (+ its cascade) so no book from the backup
         // travels; the hoshi_books tree restore was skipped above too.
         await _retainBooks(dbDirectory, const <String>{});
       }
-      if (!wants(BackupCategory.videos)) {
+      if (!fullDatabase && !wants(BackupCategory.videos)) {
         // Videos live in the overwrite DB blob (video_books + cascade), so
         // unticking the video category must strip those rows too — skipping the
         // FILE restore (effVideosRoot=null) alone left every video_books row in
@@ -1427,7 +1450,7 @@ class BackupRestoreService {
         // and the export-side [_retainVideos].
         await _retainVideos(dbDirectory, const <String>{});
       }
-      if (!wants(BackupCategory.audiobooks)) {
+      if (!fullDatabase && !wants(BackupCategory.audiobooks)) {
         // Same class as videos (BUG-781): audiobook rows (audiobooks + audio_cues
         // + srt shelf entry) ride the overwrite DB blob, so unticking the
         // audiobooks category must strip them — the skipped FILE restore
@@ -1435,7 +1458,7 @@ class BackupRestoreService {
         // rows pointing at audio that never travelled).
         await _retainAudiobooks(dbDirectory, const <String>{});
       }
-      if (!wants(BackupCategory.games)) {
+      if (!fullDatabase && !wants(BackupCategory.games)) {
         // Games ride the overwrite DB blob like videos/audiobooks (galgames +
         // FK cascade + logical game-kind rows); the cover tree restore was
         // skipped above (effGameCoversRoot=null), so strip the rows too or the

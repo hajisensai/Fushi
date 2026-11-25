@@ -116,14 +116,14 @@ const String kAiAgentWebSearchPref = 'ai_agent_web_search';
 const String kAiAgentWebSearchAllow = 'allow';
 const String kAiAgentWebSearchOff = 'off';
 
-/// 已知的静态偏好键全集（守卫强制）。按字母序。
 /// String：自动备份间隔（`off` / `daily` / `every3Days` / `weekly`，缺省 `daily`，D1）。
 const String kAutoBackupIntervalPrefKey = 'auto_backup_interval';
 
 /// int：自动备份的偏好时刻（当天第几分钟，0..1439）；缺键 / -1 = 不指定，按间隔从上次算。
 const String kAutoBackupTimePrefKey = 'auto_backup_time';
 
-/// String（JSON 字符串数组，`BackupCategory.name`）：自动备份带哪些类别；缺键 = 默认小集合。
+/// String（JSON 字符串数组，`BackupCategory.name`）：自动备份带哪些**文件树**（只认
+/// `kBackupFileCategories`；老版本存下的数据类别读时丢掉，数据恒在整库里）；缺键 = 默认（字体）。
 const String kAutoBackupCategoriesPrefKey = 'auto_backup_categories';
 
 /// bool（缺省 false，D2）：自动备份带不带复习媒体（卡片图片 / 音频）。
@@ -132,6 +132,7 @@ const String kAutoBackupSrsMediaPrefKey = 'auto_backup_srs_media';
 /// String（缺省空 = 默认还原点目录）：桌面端自定义的自动备份文件夹（绝对路径）。
 const String kAutoBackupFolderPrefKey = 'auto_backup_folder';
 
+/// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
   // int（ms，默认 250）：高级制卡句子音频起止微调步长（反馈 3_VB7kAeHj），

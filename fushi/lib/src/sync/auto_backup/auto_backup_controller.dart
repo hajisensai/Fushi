@@ -2,14 +2,17 @@
 /// （docs/specs/2026-11-25-auto-backup-restore-points.md 第二层）。
 ///
 /// - **定时备份**：到期（[isAutoBackupDue]）且数据有变化（[computeAutoBackupFingerprint]）时，用
-///   手动导出同一个 [BackupService.createBackup] 打一份压缩的整包备份，写进还原点存储的新
-///   `scheduled` 点（`<root>/<id>/backup.zip` + `restore_point.json`），再按
-///   [kRestorePointScheduledRetention] 修剪（刚写好的那份不删）。一次只跑一份，与手动导出共用
-///   [AutoBackupHost.backupExportActive] 这把锁；失败记进状态文件并提示一次，不重试循环。
-/// - **操作前还原点**：[createPreOperationPoint]（主库 `VACUUM INTO` + 复习库内核快照），在覆盖本机
-///   数据的操作之前由调用方显式调用。
-/// - **调度**：[start] 在首页就绪后挂一个空闲任务查一次、桌面端每
-///   [kAutoBackupDesktopCheckInterval] 查一次；[onResumed] 回前台查一次。
+///   手动导出同一个 [BackupService.createBackup] 打一份压缩的**整库**备份（`fullDatabase`：库里
+///   每一类数据都在，设置里只挑带哪些文件树），写进还原点存储的新 `scheduled` 点
+///   （`<root>/<id>/backup.zip` + `restore_point.json`），再按 [kRestorePointScheduledRetention]
+///   修剪（刚写好的那份不删）。一次只跑一份：一进 [AutoBackupController._run] 就拿
+///   [AutoBackupHost.beginBackupExport] 这把导出锁（与手动导出、替换 / 补回 / 导入互斥）；库不可用
+///   （导入 / 替换中、已关库）时不跑。失败记进状态文件并提示一次，不重试循环；写到一半进程没了，
+///   下次启动认出来记成「被打断」。
+/// - **操作前还原点**：[AutoBackupController.createPreOperationPoint]（主库 `VACUUM INTO` + 复习库
+///   内核快照），在覆盖本机数据的操作之前由调用方显式调用。
+/// - **调度**：[AutoBackupController.start] 在首页就绪后挂一个空闲任务查一次、桌面端每
+///   [kAutoBackupDesktopCheckInterval] 查一次；[AutoBackupController.onResumed] 回前台查一次。
 library;
 
 import 'dart:async';
@@ -48,6 +51,10 @@ abstract interface class AutoBackupHost {
   /// 与手动导出同一份构造的备份服务。
   BackupService createBackupService();
 
+  /// 主库现在能不能用来备份：导入 / 替换 / 补回进行中（已经或即将关库）、库已关时为 false，
+  /// 这时定时备份不跑（[AutoBackupOutcome.busy]）。
+  bool get databaseAvailable;
+
   /// 各内容类别在盘上的文件树根（指纹用）；不在里面的类别不进指纹。
   Map<BackupCategory, String> get contentTreeRoots;
 
@@ -56,15 +63,21 @@ abstract interface class AutoBackupHost {
 
   /// 备份导出的所有权（手动导出 / 控制通道导出 / 自动备份共用一把锁）。
   bool get backupExportActive;
-  void beginBackupExport();
-  void endBackupExport();
+
+  /// 拿锁：成功返回这次持有的凭据，已被别人持有返回 null。
+  Object? beginBackupExport();
+
+  /// 放锁：只有 [token] 是当前持有者才放（别人的锁不会被误放）。
+  void endBackupExport(Object token);
+
   void reportBackupExportProgress(double fraction);
 
   /// 复习库开着时把它一致地快照到 [destPath]（内核的 `VACUUM INTO`）；复习库没开（模块关 /
   /// 从没用过）返回 null，操作前还原点就只带主库。
   Future<Future<void> Function(String destPath)?> srsSnapshotWriter();
 
-  /// 定时备份失败：提示用户一次（状态页的告警行另外常驻）。
+  /// 定时备份失败：提示用户一次（状态页的告警行另外常驻）。[reason] 是状态里的错误
+  /// （认识的错误码见 `auto_backup_status.dart`，文案用 `autoBackupErrorText`）。
   void notifyFailure(String reason);
 
   /// 操作前还原点没拍成、操作照常继续（[takePreOperationRestorePoint]）：提示用户一次。
@@ -107,11 +120,22 @@ enum AutoBackupOutcome {
   /// 自动备份关着。
   disabled,
 
-  /// 已有备份在跑（自动或手动导出），这次不跑，下次到期检查再看。
+  /// 已有备份在跑（自动或手动导出），或库正在导入 / 替换（不可用），这次不跑，下次到期检查再看。
   busy,
 
   /// 失败（已记状态、已提示）。
   failed,
+}
+
+/// 自定义文件夹不在（外接盘没插、网络盘没挂上）：不在本机盘上替它建一个同名目录，按失败记
+/// （[kAutoBackupErrorFolderUnavailable]）。
+class AutoBackupFolderUnavailableException implements Exception {
+  const AutoBackupFolderUnavailableException(this.folder);
+
+  final String folder;
+
+  @override
+  String toString() => 'backup folder unavailable: $folder';
 }
 
 /// 自动备份控制器：AppModel 持有一个，设置页 / 还原点页 / 控制通道都经它。
@@ -156,11 +180,12 @@ class AutoBackupController {
           if (point.kind == RestorePointKind.scheduled) point,
       ];
 
-  /// 首页就绪后调用：等这一帧画完、挂一个空闲优先级的任务查一次；桌面端起周期检查。
-  /// 幂等。
+  /// 首页就绪后调用：先认出上次写到一半就被打断的运行，再等这一帧画完、挂一个空闲优先级的
+  /// 任务查一次；桌面端起周期检查。幂等。
   void start() {
     if (_started) return;
     _started = true;
+    recoverInterruptedRun();
     unawaited(_checkWhenIdle());
     if (Platform.isWindows || Platform.isMacOS || Platform.isLinux) {
       _timer = Timer.periodic(
@@ -168,6 +193,23 @@ class AutoBackupController {
         (_) => unawaited(checkNow()),
       );
     }
+  }
+
+  /// 状态里的「开始」标记还在、本进程又没在跑 = 上次写到一半进程就没了（被系统杀掉 / 崩溃 /
+  /// 退出）：记成失败「被打断」、提示一次、清掉半截目录。到期判定据
+  /// [AutoBackupStatus.lastInterrupted] 等到下一个时段再试，不在每次启动都重跑、每次都在同一处
+  /// 被杀。[start] 里调；返回有没有认出一次被打断的运行。
+  bool recoverInterruptedRun() {
+    final AutoBackupStatus current = _status.value;
+    if (current.runningSinceMs == null || _running) return false;
+    _writeStatus(current.interrupted());
+    try {
+      scheduledStore().cleanIncompleteScheduled();
+    } on Object catch (e) {
+      debugPrint('AutoBackup: cleaning the interrupted point failed: $e');
+    }
+    host.notifyFailure(kAutoBackupErrorInterrupted);
+    return true;
   }
 
   /// 停掉周期检查（换库 / 关库前）。在跑的那一次不打断。
@@ -199,6 +241,7 @@ class AutoBackupController {
       settings: settings,
       now: _clock(),
       lastSatisfied: _status.value.lastSatisfied,
+      lastInterrupted: _status.value.lastInterrupted,
     )) {
       return AutoBackupOutcome.notDue;
     }
@@ -217,50 +260,82 @@ class AutoBackupController {
     AutoBackupSettings settings, {
     required bool force,
   }) async {
-    if (_running || host.backupExportActive) return AutoBackupOutcome.busy;
+    // 一进来就拿锁（任何 await 之前）：指纹要遍历文件树、耗时，拿晚了别的导出 / 替换会在这段
+    // 空档里插进来。
+    if (_running || !host.databaseAvailable) return AutoBackupOutcome.busy;
+    final Object? lock = host.beginBackupExport();
+    if (lock == null) return AutoBackupOutcome.busy;
     _running = true;
     try {
-      final String fingerprint = await _fingerprint(settings);
+      final RestorePointStore store = scheduledStore(settings);
+      final String? folder = settings.effectiveFolder(
+        supportsCustomFolder: host.supportsCustomFolder,
+      );
+      if (folder != null && !Directory(folder).existsSync()) {
+        throw AutoBackupFolderUnavailableException(folder);
+      }
+      final String fingerprint = await _fingerprint(settings, store);
       final int startedMs = _clock().millisecondsSinceEpoch;
-      if (!force && fingerprint == _status.value.fingerprint) {
+      // 指纹相同还得上次成功的那份还在当前存储里：被删了（还原点页删除、控制通道撤销）或换了
+      // 文件夹，就不能拿「没变化」跳过——否则永远跳过、也永远不告警。
+      if (!force &&
+          fingerprint == _status.value.fingerprint &&
+          _lastSuccessPointExists(store)) {
         _writeStatus(_status.value.skipped(atMs: startedMs));
         return AutoBackupOutcome.skippedNoChanges;
       }
       return await _createScheduledPoint(
         settings,
+        store,
         fingerprint: fingerprint,
         startedMs: startedMs,
       );
     } catch (e, st) {
-      // 指纹本身失败（极少见）：同样按失败记、提示一次。
+      // 文件夹不在 / 指纹本身失败（极少见）：同样按失败记、提示一次。
       debugPrint('AutoBackup: run failed: $e\n$st');
+      final String error = e is AutoBackupFolderUnavailableException
+          ? kAutoBackupErrorFolderUnavailable
+          : '$e';
       _writeStatus(
         _status.value.failed(
           atMs: _clock().millisecondsSinceEpoch,
-          error: '$e',
+          error: error,
         ),
       );
-      host.notifyFailure('$e');
+      host.notifyFailure(error);
       return AutoBackupOutcome.failed;
     } finally {
       _running = false;
+      host.endBackupExport(lock);
     }
   }
 
+  bool _lastSuccessPointExists(RestorePointStore store) {
+    final String? id = _status.value.lastSuccessPointId;
+    if (id == null) return false;
+    return RestorePoint.tryRead(p.join(store.root, id)) != null;
+  }
+
   Future<AutoBackupOutcome> _createScheduledPoint(
-    AutoBackupSettings settings, {
+    AutoBackupSettings settings,
+    RestorePointStore store, {
     required String fingerprint,
     required int startedMs,
   }) async {
-    final RestorePointStore store = scheduledStore(settings);
+    final Set<BackupCategory> files = <BackupCategory>{
+      for (final BackupCategory c in settings.categories)
+        if (kBackupFileCategories.contains(c)) c,
+    };
     RestorePointDraft? draft;
-    host.beginBackupExport();
     autoBackupProgress.value = const AutoBackupProgress();
+    // 「开始」标记：写到一半进程没了，下次启动据此认出来（[recoverInterruptedRun]）。
+    _writeStatus(_status.value.started(atMs: startedMs));
     try {
       draft = store.begin(kind: RestorePointKind.scheduled, nowMs: startedMs);
       final BackupMeta meta = await host.createBackupService().createBackup(
         p.join(draft.directory, kRestorePointArchiveFileName),
-        categories: settings.categories,
+        categories: files,
+        fullDatabase: true,
         compress: true,
         includeSrsMedia: settings.includeSrsMedia,
         onProgress: (double fraction) {
@@ -272,17 +347,17 @@ class AutoBackupController {
         draft,
         fromSchema: meta.schemaVersion,
         toSchema: meta.schemaVersion,
+        // 整库：数据类别都在，文件类别只有勾着的。
         categories: <String>[
           for (final BackupCategory c in BackupCategory.values)
-            if (settings.categories.contains(c)) c.name,
+            if (!kBackupFileCategories.contains(c) || files.contains(c)) c.name,
         ],
         excludedCategories: <String>[
           for (final BackupCategory c in BackupCategory.values)
-            if (!settings.categories.contains(c)) c.name,
+            if (kBackupFileCategories.contains(c) && !files.contains(c)) c.name,
         ],
-        includesSrsMedia:
-            settings.categories.contains(BackupCategory.srs) &&
-            settings.includeSrsMedia,
+        includesSrsMedia: settings.includeSrsMedia,
+        fullDatabase: true,
       );
       draft = null;
       store.pruneScheduled(protectId: point.id, now: _clock());
@@ -308,11 +383,13 @@ class AutoBackupController {
       return AutoBackupOutcome.failed;
     } finally {
       autoBackupProgress.value = null;
-      host.endBackupExport();
     }
   }
 
-  Future<String> _fingerprint(AutoBackupSettings settings) {
+  Future<String> _fingerprint(
+    AutoBackupSettings settings,
+    RestorePointStore store,
+  ) {
     final String dbDir = host.databaseDirectory;
     final List<String> files = <String>[
       for (final RestorePointDatabase db
@@ -325,14 +402,14 @@ class AutoBackupController {
     final List<String> directories = <String>[
       for (final BackupCategory c in BackupCategory.values)
         if (settings.categories.contains(c) && roots[c] != null) roots[c]!,
-      if (settings.categories.contains(BackupCategory.srs) &&
-          settings.includeSrsMedia)
-        host.srsMediaRoot,
+      if (settings.includeSrsMedia) host.srsMediaRoot,
     ];
     return computeAutoBackupFingerprint(
       files: files,
       directories: directories,
-      contentSignature: settings.contentSignature,
+      // 存储根也进签名：换了文件夹，新文件夹里还没有这份数据。
+      contentSignature:
+          '${settings.contentSignature}|root=${p.normalize(store.root)}',
     );
   }
 
@@ -346,12 +423,14 @@ class AutoBackupController {
   }
 
   /// 操作前还原点（[reason]：`sync_download` / `srs_migration` / `replace` …）：主库
-  /// `VACUUM INTO` + 复习库开着时的内核快照，写进默认还原点存储，留最新
-  /// [kRestorePointKeepPreOperation] 份。失败抛出，由调用方决定要不要继续。
+  /// `VACUUM INTO` + 复习库开着时的内核快照，写进默认还原点存储，每个 reason 留最新
+  /// [kRestorePointKeepPreOperation] 份；[protectIds]（例如「替换」的目标点）这次修剪不删。
+  /// 失败抛出，由调用方决定要不要继续。
   Future<RestorePoint> createPreOperationPoint(
     String reason, {
     bool includeMainDatabase = true,
     bool includeSrs = true,
+    Set<String> protectIds = const <String>{},
   }) async {
     final Future<void> Function(String destPath)? srs = includeSrs
         ? await host.srsSnapshotWriter()
@@ -362,6 +441,7 @@ class AutoBackupController {
           ? p.join(host.databaseDirectory, RestorePointDatabase.fushi.fileName)
           : null,
       snapshotSrs: srs,
+      protectIds: protectIds,
     );
   }
 

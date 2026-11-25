@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:archive/archive_io.dart';
@@ -21,8 +22,11 @@ class _FakeHost implements AutoBackupHost {
   final String dbDir;
   FushiDatabase db;
   AutoBackupSettings settings = const AutoBackupSettings();
-  bool exportActive = false;
+  Object? exportOwner;
+  @override
+  bool databaseAvailable = true;
   bool failService = false;
+  int serviceCalls = 0;
   final List<String> failures = <String>[];
   Future<void> Function(String destPath)? srsWriter;
 
@@ -35,8 +39,12 @@ class _FakeHost implements AutoBackupHost {
   @override
   bool get supportsCustomFolder => true;
 
+  void Function()? onCreateService;
+
   @override
   BackupService createBackupService() {
+    serviceCalls++;
+    onCreateService?.call();
     if (failService) throw StateError('service unavailable');
     return BackupService(db: db, dbDirectory: dbDir, appVersion: '9.9.9');
   }
@@ -48,14 +56,21 @@ class _FakeHost implements AutoBackupHost {
   @override
   String get srsMediaRoot => p.join(dbDir, 'srs_media');
 
+  bool get exportActive => exportOwner != null;
+
   @override
   bool get backupExportActive => exportActive;
 
   @override
-  void beginBackupExport() => exportActive = true;
+  Object? beginBackupExport() {
+    if (exportOwner != null) return null;
+    return exportOwner = Object();
+  }
 
   @override
-  void endBackupExport() => exportActive = false;
+  void endBackupExport(Object token) {
+    if (identical(exportOwner, token)) exportOwner = null;
+  }
 
   @override
   void reportBackupExportProgress(double fraction) {}
@@ -161,9 +176,11 @@ void main() {
   });
 
   test('已有导出在跑：不跑（busy）；关着：disabled', () async {
-    host.exportActive = true;
+    final Object other = host.beginBackupExport()!;
     expect(await controller.checkNow(), AutoBackupOutcome.busy);
-    host.exportActive = false;
+    // 自动备份没拿到锁，也就不会把别人的锁放掉。
+    expect(host.exportActive, isTrue);
+    host.endBackupExport(other);
     host.settings = const AutoBackupSettings(interval: AutoBackupInterval.off);
     expect(await controller.checkNow(), AutoBackupOutcome.disabled);
     expect(controller.scheduledPoints(), isEmpty);
@@ -184,6 +201,7 @@ void main() {
 
   test('自定义文件夹：定时还原点写进去，目录清单一并列出', () async {
     final String folder = p.join(root.path, 'custom');
+    Directory(folder).createSync();
     host.settings = host.settings.copyWith(customFolder: () => folder);
     expect(await controller.backUpNow(), AutoBackupOutcome.created);
     final RestorePoint point = controller.scheduledPoints().single;
@@ -315,16 +333,173 @@ void main() {
     expect(listRestorePointEntries(dbDirectory: dbDir), isEmpty);
   });
 
-  test('默认设置（D1 / D2）', () {
+  test('默认设置（D1 / D2，整库 + 挑文件）', () {
     const AutoBackupSettings s = AutoBackupSettings();
     expect(s.interval, AutoBackupInterval.daily);
     expect(s.includeSrsMedia, isFalse);
-    expect(s.categories, kAutoBackupDefaultCategories);
+    expect(s.categories, <BackupCategory>{BackupCategory.fonts});
+    expect(s.categories.every(kBackupFileCategories.contains), isTrue);
+  });
+
+  test('老偏好里的数据类别安全丢掉，只留文件类别；坏值 / 缺键回到缺省', () {
     expect(
-      s.categories.contains(BackupCategory.books) ||
-          s.categories.contains(BackupCategory.videos),
-      isFalse,
+      decodeAutoBackupCategories(
+        '["settings","profiles","progress","statistics","music","srs",'
+        '"fonts","books","nonsense"]',
+      ),
+      <BackupCategory>{BackupCategory.fonts, BackupCategory.books},
     );
+    expect(decodeAutoBackupCategories('["settings","srs"]'), isEmpty);
+    expect(decodeAutoBackupCategories('{bad'), kAutoBackupDefaultCategories);
+    expect(decodeAutoBackupCategories(null), kAutoBackupDefaultCategories);
+    expect(decodeAutoBackupCategories(42), kAutoBackupDefaultCategories);
+  });
+
+  test('默认定时点是整库：元数据带 fullDatabase，数据类别都在、没带的只是文件', () async {
+    expect(await controller.backUpNow(), AutoBackupOutcome.created);
+    final RestorePoint point = controller.scheduledPoints().single;
+    expect(point.fullDatabase, isTrue);
+    expect(
+      point.categories,
+      containsAll(<String>[
+        'progress',
+        'statistics',
+        'settings',
+        'profiles',
+        'music',
+        'srs',
+        'fonts',
+      ]),
+    );
+    expect(point.categories, isNot(contains('books')));
+    expect(
+      point.excludedCategories,
+      unorderedEquals(<String>[
+        'dictionary',
+        'books',
+        'audiobooks',
+        'videos',
+        'localAudio',
+        'games',
+      ]),
+    );
+    final InputFileStream input = InputFileStream(point.archivePath!);
+    try {
+      final ArchiveFile metaEntry = ZipDecoder()
+          .decodeBuffer(input)
+          .findFile('backup_meta.json')!;
+      final BackupMeta meta = BackupMeta.tryParse(
+        utf8.decode(metaEntry.content as List<int>),
+      )!;
+      expect(meta.fullDatabase, isTrue);
+    } finally {
+      await input.close();
+    }
+  });
+
+  test('上次成功的那份被删了：指纹没变也不跳过，照样新建', () async {
+    expect(await controller.checkNow(), AutoBackupOutcome.created);
+    final RestorePoint first = controller.scheduledPoints().single;
+    Directory(first.directory).deleteSync(recursive: true);
+    now = now.add(const Duration(days: 2));
+    expect(await controller.checkNow(), AutoBackupOutcome.created);
+    expect(controller.scheduledPoints(), hasLength(1));
+  });
+
+  test('换了文件夹：存储根进签名，新文件夹里照样建', () async {
+    expect(await controller.checkNow(), AutoBackupOutcome.created);
+    final String folder = p.join(root.path, 'moved');
+    Directory(folder).createSync();
+    host.settings = host.settings.copyWith(customFolder: () => folder);
+    now = now.add(const Duration(days: 2));
+    expect(await controller.checkNow(), AutoBackupOutcome.created);
+    expect(
+      p.isWithin(folder, controller.scheduledPoints().single.directory),
+      isTrue,
+    );
+  });
+
+  test('一进 _run 就拿锁：指纹还在算时别的导出拿不到锁；跑完放的是自己的锁', () async {
+    final Future<AutoBackupOutcome> run = controller.checkNow();
+    // checkNow → _run 在第一个 await 之前就拿了锁。
+    expect(host.beginBackupExport(), isNull);
+    expect(host.exportActive, isTrue);
+    expect(await run, AutoBackupOutcome.created);
+    expect(host.exportActive, isFalse);
+  });
+
+  test('库不可用（导入 / 替换中、已关库）：不跑、不建服务', () async {
+    host.databaseAvailable = false;
+    expect(await controller.checkNow(), AutoBackupOutcome.busy);
+    expect(await controller.backUpNow(), AutoBackupOutcome.busy);
+    expect(host.serviceCalls, 0);
+    expect(host.exportActive, isFalse);
+    expect(controller.status.value.lastResult, isNull);
+  });
+
+  test('写到一半进程没了：下次启动记成「被打断」、提示一次、清半截目录，这一时段不再重跑', () async {
+    final RestorePointStore store = controller.scheduledStore();
+    final RestorePointDraft half = store.begin(
+      kind: RestorePointKind.scheduled,
+      nowMs: now.millisecondsSinceEpoch,
+    );
+    // 模拟「进程没了」：草稿登记只在进程内，换进程就不在了。
+    store.discard(half);
+    Directory(half.directory).createSync(recursive: true);
+    File(
+      p.join(half.directory, kRestorePointArchiveFileName),
+    ).writeAsStringSync('half');
+    writeAutoBackupStatus(
+      dbDir,
+      AutoBackupStatus(runningSinceMs: now.millisecondsSinceEpoch),
+    );
+    final AutoBackupController next = AutoBackupController(
+      host: host,
+      clock: () => now,
+    );
+    try {
+      expect(next.recoverInterruptedRun(), isTrue);
+      final AutoBackupStatus status = next.status.value;
+      expect(status.lastResult, AutoBackupResult.failed);
+      expect(status.lastError, kAutoBackupErrorInterrupted);
+      expect(status.runningSinceMs, isNull);
+      expect(status.lastInterruptedMs, now.millisecondsSinceEpoch);
+      expect(host.failures, <String>[kAutoBackupErrorInterrupted]);
+      expect(Directory(half.directory).existsSync(), isFalse);
+      // 再认一次不会重复提示。
+      expect(next.recoverInterruptedRun(), isFalse);
+      expect(host.failures, hasLength(1));
+      // 同一时段（今天）不重跑；第二天照常。
+      now = now.add(const Duration(hours: 3));
+      expect(await next.checkNow(), AutoBackupOutcome.notDue);
+      now = now.add(const Duration(days: 1));
+      expect(await next.checkNow(), AutoBackupOutcome.created);
+      expect(next.status.value.lastInterruptedMs, isNull);
+    } finally {
+      next.dispose();
+    }
+  });
+
+  test('写备份期间落「开始」标记，成功后清掉', () async {
+    AutoBackupStatus? during;
+    host.onCreateService = () => during = readAutoBackupStatus(dbDir);
+    expect(await controller.backUpNow(), AutoBackupOutcome.created);
+    expect(during?.runningSinceMs, isNotNull);
+    expect(controller.status.value.runningSinceMs, isNull);
+    expect(readAutoBackupStatus(dbDir).runningSinceMs, isNull);
+  });
+
+  test('自定义文件夹不在：按「文件夹不可用」失败，不在本机盘上建它', () async {
+    final String folder = p.join(root.path, 'unplugged', 'backups');
+    host.settings = host.settings.copyWith(customFolder: () => folder);
+    expect(await controller.checkNow(), AutoBackupOutcome.failed);
+    expect(Directory(folder).existsSync(), isFalse);
+    expect(
+      controller.status.value.lastError,
+      kAutoBackupErrorFolderUnavailable,
+    );
+    expect(host.failures, <String>[kAutoBackupErrorFolderUnavailable]);
+    expect(host.exportActive, isFalse);
   });
 
   test('statTitles 辅助函数自检', () async {

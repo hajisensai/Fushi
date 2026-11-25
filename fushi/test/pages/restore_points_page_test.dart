@@ -13,7 +13,9 @@ import 'package:fushi/src/pages/implementations/library_recovery_page.dart';
 import 'package:fushi/src/storage/orphan_book_recovery.dart';
 import 'package:fushi/src/sync/auto_backup/restore_point_catalog.dart';
 import 'package:fushi/src/sync/backup_service.dart'
-    show OverwriteSnapshotPreview;
+    show BackupCategory, OverwriteSnapshotBook, OverwriteSnapshotPreview;
+import 'package:fushi/src/sync/sync_settings_schema.dart'
+    show backupCategoryLabel;
 
 import '../../integration_test/helpers/focus_driver.dart';
 
@@ -22,6 +24,9 @@ class _DirHost implements RestorePointsHost {
   _DirHost(this.dir);
 
   final String dir;
+  final List<String> replaced = <String>[];
+  Exception? fillError;
+  int fillCalls = 0;
 
   @override
   List<RestorePointEntry> listEntries() =>
@@ -30,16 +35,22 @@ class _DirHost implements RestorePointsHost {
   @override
   void deleteEntry(RestorePointEntry entry) => deleteRestorePointEntry(entry);
 
+  OverwriteSnapshotPreview? preview;
+
   @override
   Future<OverwriteSnapshotPreview?> previewFillIn(
     RestorePointEntry entry,
-  ) async => null;
+  ) async => preview;
 
   @override
-  Future<void> fillIn(RestorePointEntry entry) async {}
+  Future<void> fillIn(RestorePointEntry entry) async {
+    fillCalls++;
+    final Exception? error = fillError;
+    if (error != null) throw error;
+  }
 
   @override
-  Future<void> replace(RestorePointEntry entry) async {}
+  Future<void> replace(RestorePointEntry entry) async => replaced.add(entry.id);
 
   @override
   Future<bool> export(RestorePointEntry entry) async => false;
@@ -82,9 +93,26 @@ void main() {
       backup,
       fromSchema: kFushiDbSchemaVersion,
       toSchema: kFushiDbSchemaVersion,
-      categories: <String>['settings', 'srs'],
-      excludedCategories: <String>['books'],
+      // 整库定时点（生产里的形态）：数据类别都在，文件只带了字体。
+      categories: <String>[
+        'fonts',
+        'music',
+        'progress',
+        'statistics',
+        'settings',
+        'profiles',
+        'srs',
+      ],
+      excludedCategories: <String>[
+        'dictionary',
+        'books',
+        'audiobooks',
+        'videos',
+        'localAudio',
+        'games',
+      ],
       includesSrsMedia: false,
+      fullDatabase: true,
     );
   });
 
@@ -92,16 +120,18 @@ void main() {
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
-  Future<void> pumpPage(WidgetTester tester) async {
+  Future<_DirHost> pumpPage(WidgetTester tester) async {
+    final _DirHost host = _DirHost(tmp.path);
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
           theme: buildFushiFallbackTheme(Brightness.light),
-          home: RestorePointsPage.withHost(host: _DirHost(tmp.path)),
+          home: RestorePointsPage.withHost(host: host),
         ),
       ),
     );
     await tester.pumpAndSettle();
+    return host;
   }
 
   testWidgets('列出更新前与定时还原点：种类与内容', (WidgetTester tester) async {
@@ -112,8 +142,17 @@ void main() {
       find.textContaining(t.restore_points_contents_without_media),
       findsOneWidget,
     );
+    // 更新前快照与整库定时点都写「整库」；定时点另列带了哪些文件。
     expect(
       find.textContaining(t.restore_points_contents_full_db),
+      findsNWidgets(2),
+    );
+    expect(
+      find.textContaining(
+        t.restore_points_contents_files(
+          categories: backupCategoryLabel(BackupCategory.fonts),
+        ),
+      ),
       findsOneWidget,
     );
     // 两份都能补回、替换（schema 在本版本可用区间内）。
@@ -154,6 +193,95 @@ void main() {
     expect(Directory(preUpdate.directory).existsSync(), isTrue);
     expect(find.text(t.restore_points_kind_scheduled), findsNothing);
     expect(find.text(t.restore_points_kind_pre_update), findsOneWidget);
+  });
+
+  testWidgets('替换整库定时点：面板说清数据全回来、没带的文件原样不动（不再说会被移除），Enter 确认', (
+    WidgetTester tester,
+  ) async {
+    final _DirHost host = await pumpPage(tester);
+    final FocusDriver driver = FocusDriver(tester);
+    expect(
+      await driver.focusWidget(
+        find.byKey(ValueKey<String>('restore-point-replace-${scheduled.id}')),
+      ),
+      isTrue,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(
+      find.textContaining(t.restore_points_replace_full_db),
+      findsOneWidget,
+    );
+    expect(
+      find.textContaining(backupCategoryLabel(BackupCategory.books)),
+      findsWidgets,
+    );
+    expect(
+      find.textContaining(
+        t.restore_points_replace_removed(categories: '').trim(),
+      ),
+      findsNothing,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(host.replaced, <String>[scheduled.id]);
+  });
+
+  test('整库定时点：没有「会被移除」的类别，没带文件的类别单独列出', () {
+    final RestorePointEntry entry = listRestorePointEntries(
+      dbDirectory: tmp.path,
+    ).firstWhere((RestorePointEntry e) => e.id == scheduled.id);
+    expect(restorePointMissingCategories(entry), isEmpty);
+    expect(
+      restorePointFilesLeftAlone(entry),
+      containsAll(<BackupCategory>[
+        BackupCategory.books,
+        BackupCategory.videos,
+      ]),
+    );
+    expect(
+      restorePointFilesLeftAlone(entry),
+      isNot(contains(BackupCategory.fonts)),
+    );
+  });
+
+  testWidgets('补回失败（关库之前，例如从 zip 解主库失败）：不抛未处理异常，页面恢复可用', (
+    WidgetTester tester,
+  ) async {
+    final _DirHost host = await pumpPage(tester);
+    host.fillError = const FileSystemException('zip is corrupt');
+    host.preview = OverwriteSnapshotPreview(
+      path: preUpdate.directory,
+      sizeBytes: 1,
+      createdAt: DateTime(2026, 11, 25),
+      missingBooks: const <OverwriteSnapshotBook>[],
+      missingVideoCount: 1,
+    );
+    final FocusDriver driver = FocusDriver(tester);
+    expect(
+      await driver.focusWidget(
+        find.byKey(ValueKey<String>('restore-point-fill-${preUpdate.id}')),
+      ),
+      isTrue,
+    );
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(
+      find.byKey(ValueKey<String>('restore-point-confirm-${preUpdate.id}')),
+      findsOneWidget,
+    );
+    // 确认键随面板出现就拿到焦点：Enter 即确认。
+    await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+    await tester.pumpAndSettle();
+    expect(host.fillCalls, 1);
+    expect(tester.takeException(), isNull);
+    // 页面没卡在忙碌态：还能再走到按钮上。
+    expect(
+      await driver.focusWidget(
+        find.byKey(ValueKey<String>('restore-point-fill-${preUpdate.id}')),
+      ),
+      isTrue,
+    );
   });
 
   testWidgets('没有还原点：显示空状态', (WidgetTester tester) async {

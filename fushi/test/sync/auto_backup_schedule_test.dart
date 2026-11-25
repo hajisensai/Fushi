@@ -43,15 +43,50 @@ void main() {
       expect(due(weekly, DateTime(2026, 11, 27, 0, 1)), isTrue);
     });
 
-    test('时钟往回拨（上次满足在将来）不到期', () {
+    test('时钟往回拨（上次满足在将来）：到期一次，跑完落回正常', () {
       expect(
         isAutoBackupDue(
           settings: daily,
           now: DateTime(2026, 11, 20, 9),
           lastSatisfied: DateTime(2026, 11, 21, 9),
         ),
+        isTrue,
+      );
+      // 跑完之后上次满足 = 现在，当天不再到期。
+      expect(
+        isAutoBackupDue(
+          settings: daily,
+          now: DateTime(2026, 11, 20, 10),
+          lastSatisfied: DateTime(2026, 11, 20, 9),
+        ),
         isFalse,
       );
+    });
+
+    test('上次被打断：这一时段不重跑，下一时段照常；被打断在将来（时钟回拨）不挡', () {
+      final DateTime interrupted = DateTime(2026, 11, 25, 9);
+      bool due(DateTime now, {DateTime? at}) => isAutoBackupDue(
+        settings: daily,
+        now: now,
+        lastSatisfied: DateTime(2026, 11, 20, 9),
+        lastInterrupted: at ?? interrupted,
+      );
+      expect(due(DateTime(2026, 11, 25, 9, 5)), isFalse);
+      expect(due(DateTime(2026, 11, 25, 23, 59)), isFalse);
+      expect(due(DateTime(2026, 11, 26, 0, 1)), isTrue);
+      expect(due(DateTime(2026, 11, 24, 9), at: interrupted), isTrue);
+      // 有偏好时刻：等到下一个 T。
+      const AutoBackupSettings nightly = AutoBackupSettings(
+        preferredMinuteOfDay: 22 * 60,
+      );
+      bool dueNightly(DateTime now) => isAutoBackupDue(
+        settings: nightly,
+        now: now,
+        lastSatisfied: null,
+        lastInterrupted: DateTime(2026, 11, 25, 22, 5),
+      );
+      expect(dueNightly(DateTime(2026, 11, 26, 8)), isFalse);
+      expect(dueNightly(DateTime(2026, 11, 26, 22, 1)), isTrue);
     });
   });
 

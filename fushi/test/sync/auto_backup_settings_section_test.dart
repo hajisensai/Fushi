@@ -3,6 +3,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart'
     show formatStorageBytes;
+import 'package:fushi/src/sync/auto_backup/auto_backup_messages.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_status.dart';
 import 'package:fushi/src/sync/backup_service.dart' show BackupCategory;
@@ -17,15 +18,8 @@ void main() {
     expect(s.interval, AutoBackupInterval.daily);
     expect(s.enabled, isTrue);
     expect(s.preferredMinuteOfDay, isNull);
-    expect(s.categories, <BackupCategory>{
-      BackupCategory.settings,
-      BackupCategory.profiles,
-      BackupCategory.progress,
-      BackupCategory.statistics,
-      BackupCategory.music,
-      BackupCategory.srs,
-      BackupCategory.fonts,
-    });
+    // 整库 + 挑文件（用户 2026-11-25）：数据恒在，文件默认只带字体。
+    expect(s.categories, <BackupCategory>{BackupCategory.fonts});
     expect(s.includeSrsMedia, isFalse);
     expect(s.customFolder, isNull);
     expect(s.effectiveFolder(supportsCustomFolder: true), isNull);
@@ -36,7 +30,10 @@ void main() {
     const AutoBackupSettings written = AutoBackupSettings(
       interval: AutoBackupInterval.every3Days,
       preferredMinuteOfDay: 3 * 60 + 30,
-      categories: <BackupCategory>{BackupCategory.books, BackupCategory.srs},
+      categories: <BackupCategory>{
+        BackupCategory.books,
+        BackupCategory.dictionary,
+      },
       includeSrsMedia: true,
       customFolder: '/backups/fushi',
     );
@@ -68,6 +65,36 @@ void main() {
     expect(cleared.enabled, isFalse);
     expect(cleared.preferredMinuteOfDay, isNull);
     expect(cleared.customFolder, isNull);
+  });
+
+  test('写入只落文件类别：数据类别不进偏好', () async {
+    final Map<String, Object?> prefs = <String, Object?>{};
+    await writeAutoBackupSettings(
+      (Map<String, dynamic> values) async => prefs.addAll(values),
+      const AutoBackupSettings(
+        categories: <BackupCategory>{
+          BackupCategory.fonts,
+          BackupCategory.statistics,
+        },
+      ),
+    );
+    expect(
+      readAutoBackupSettings((String key) => prefs[key]).categories,
+      <BackupCategory>{BackupCategory.fonts},
+    );
+  });
+
+  test('错误码换成本地化文案，其余原样', () {
+    expect(
+      autoBackupErrorText(kAutoBackupErrorInterrupted),
+      t.auto_backup_error_interrupted,
+    );
+    expect(
+      autoBackupErrorText(kAutoBackupErrorFolderUnavailable),
+      t.auto_backup_error_folder_unavailable,
+    );
+    expect(autoBackupErrorText('disk full'), 'disk full');
+    expect(autoBackupErrorText(null), '');
   });
 
   test('每个间隔都有自己的文案', () {
