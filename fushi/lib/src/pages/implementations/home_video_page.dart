@@ -2352,6 +2352,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     // 一遍，不再按后端类型分叉。
     final RemoteVideoSource? source = await _resolveRemoteVideoSource();
     if (source == null) return null;
+    // 来源先于清单落定：首轮整库枚举（媒体服务器大库要几十秒）期间点开合集，详情页
+    // 也拿得到远端上下文、按 id 查成员（[_collectionRemoteContext]），不必等清单。
+    // 只在此前没有来源时补上（那时也没有远端卡片）；换来源时旧卡片仍配着产出它们的
+    // 旧 client，直到新清单落定（build 里按 snapshot 同步）。
+    _remoteVideoSource ??= source;
     try {
       // BUG-1180：经共享缓存取清单——切回视频 tab（[onTabActivated]）不再必然打一轮
       // 网络，TTL 内直接复用。缓存只包住「问对端要清单」这一步，下面的本地库查询与
@@ -2375,17 +2380,17 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       // 请求都不发，也不渲染远端卡（与「显示远端条目」关闭同款空态，不是失败态）。
       if (videos == null) return null;
       // 2026-10 切 tab 卡顿：[RemoteLibraryCache] 在 TTL 内回的是**同一个**清单
-      // 对象，而这份清单的合集收养已经落过库——再逐条收养一遍（每条一个事务）、
-      // 再整套重载十几张映射表，全是切回视频 tab 时压在 UI isolate 上的白功。
-      // 清单对象换了（TTL 过期重取 / 下拉强刷 / 换来源）才需要重新收养。
+      // 对象，而这份清单的合集收养已经落过库——再收养一遍、再整套重载十几张映射
+      // 表，全是切回视频 tab 时压在 UI isolate 上的白功。清单对象换了（TTL 过期
+      // 重取 / 下拉强刷 / 换来源）才需要重新收养；收养本身是差分批量的（清单没变
+      // 时一次只读查询、零写入，有变化的条目同一个事务落库），没有任何归属变化
+      // 时映射表也不重载。
       if (!identical(videos, _adoptedRemoteVideos)) {
-        final RemoteCollectionAdoptionService adoption =
-            RemoteCollectionAdoptionService(appModelNoUpdate.database);
-        for (final RemoteVideoInfo video in videos) {
-          await adoption.adoptVideo(video);
-        }
+        final int adopted = await RemoteCollectionAdoptionService(
+          appModelNoUpdate.database,
+        ).adoptVideos(videos);
         _adoptedRemoteVideos = videos;
-        if (mounted) await _loadLibraryMaps();
+        if (adopted > 0 && mounted) await _loadLibraryMaps();
       }
       // #6: 远端与本地是同一视频时（同 bookUid）不在混排网格重复展示。
       final List<VideoBookRow> localVideos = await widget.repo.listAll();
@@ -2467,6 +2472,42 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       forceRefresh: forceRefresh,
       fetch: source.listRemoteVideos,
     );
+  }
+
+  /// 只取远端视频里 id 在 [ids] 中的那几条（合集详情页的远端成员）。
+  ///
+  /// 打开合集不等整库清单：Jellyfin / Emby 大库的首轮全量枚举要几十秒，合集详情
+  /// 此前经 [_readRemoteVideoList] 复用那次在途请求，整页骨架屏陪它转到底。来源支持
+  /// 按 id 查（[RemoteVideoLookup]）时经 [RemoteLibraryCache.readByIds] 只问这几个
+  /// id：整份清单已新鲜就从清单里挑，否则发一次按 id 查询、与在途的整库请求并行，
+  /// 查到的条目记进同一份缓存（受同一套失效约束，但不冒充整份清单）。
+  ///
+  /// 按 id 查不是全库枚举，所以不受「自动列出条目」闸门（BUG-1891）约束——那道闸
+  /// 挡的是对整台服务器的递归枚举；与「同一作品」卡片的远端海报同口径。不支持按 id
+  /// 查的来源（互联 host / 云盘目录）退回整份清单，仍走 [_readRemoteVideoList] 那
+  /// 一道闸门。
+  Future<List<RemoteVideoInfo>> _readRemoteVideosByIds({
+    required RemoteVideoSource source,
+    required List<String> ids,
+  }) async {
+    if (ids.isEmpty) return const <RemoteVideoInfo>[];
+    if (source is RemoteVideoLookup) {
+      final RemoteVideoLookup lookup = source as RemoteVideoLookup;
+      return _remoteCache.readByIds<RemoteVideoInfo>(
+        sourceId: source.remoteLibrarySourceId,
+        key: RemoteLibraryCacheKeys.videos,
+        ids: ids,
+        idOf: (RemoteVideoInfo video) => video.id,
+        fetch: lookup.remoteVideosByIds,
+      );
+    }
+    final Set<String> wanted = ids.toSet();
+    return <RemoteVideoInfo>[
+      for (final RemoteVideoInfo video
+          in await _readRemoteVideoList(source: source, forceRefresh: false) ??
+              const <RemoteVideoInfo>[])
+        if (wanted.contains(video.id)) video,
+    ];
   }
 
   /// 本端视频删除墓碑里对 [source] 仍有效的键（远端占位卡据此剔除）。
@@ -4402,7 +4443,7 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final List<CollectionEpisodeSlot> slots = await loadCollectionEpisodeSlots(
       repository: widget.repo,
       collectionId: collection.id,
-      loadRemoteVideos: remote.loadRemoteVideos,
+      loadRemoteMembers: remote.loadRemoteMembers,
     );
     await _downloadRemoteMembers(collection, <RemoteVideoInfo>[
       for (final CollectionEpisodeSlot slot in slots)
@@ -11704,27 +11745,26 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// （共享 [RemoteLibraryCache]，TTL 内不打网络）、同一条鉴权封面链、同一个流播入口
   /// ——否则用户在库页看得见合集、点进去却是「合集为空」。
   ///
-  /// 清单必须经 [_readRemoteVideoList]——它是 BUG-1891 止血闸门的唯一入口。此前这里
-  /// 直接 `_remoteCache.read(fetch:)`，Jellyfin/Emby 关掉「自动列出」的大库用户点进
-  /// 任意含远端成员的合集，TTL 一过照样触发整台服务器的全库递归枚举。闸门关且手里
-  /// 没有缓存时给空清单：详情页退化成「只有本地成员」，与库页空态同一语义。
+  /// 成员经 [_readRemoteVideosByIds] 取：只问合集缺的那几个 id，打开合集不等整库
+  /// 清单。整份清单仍只能经 [_readRemoteVideoList]（BUG-1891 止血闸门的唯一入口）：
+  /// 此前这里直接 `_remoteCache.read(fetch:)`，Jellyfin/Emby 关掉「自动列出」的大库
+  /// 用户点进任意含远端成员的合集，TTL 一过照样触发整台服务器的全库递归枚举。
   ///
   /// 没有远端源（未启用互联 / 未配对 / 关掉「显示远端条目」）→ null = 纯本地视图。
   CollectionRemoteContext? _collectionRemoteContext() {
     final RemoteVideoSource? source = _remoteVideoSource;
     if (source == null || !_shouldLoadRemoteVideos) return null;
     return CollectionRemoteContext(
-      // 与库页同一道删除墓碑过滤：先读墓碑、再取清单（顺序见
+      // 与库页同一道删除墓碑过滤：先读墓碑、再取成员（顺序见
       // loadPendingRemoteDeletionKeys），详情页不出已「从所有设备删除」的集。
-      loadRemoteVideos: () async {
+      loadRemoteMembers: (List<String> ids) async {
         final Set<String> deleted = await _pendingRemoteVideoDeletions(source);
         // BUG-4303 / BUG-4436：与库页同一口径（[withLocalRemoteVideoPositions]）。
         return withLocalRemoteVideoPositions(
           appModelNoUpdate.database,
           filterOutLocallyDeletedRemoteVideos(
             remote: peerPlayableRemoteVideos(
-              await _readRemoteVideoList(source: source, forceRefresh: false) ??
-                  const <RemoteVideoInfo>[],
+              await _readRemoteVideosByIds(source: source, ids: ids),
             ),
             deletedKeys: deleted,
           ),

@@ -469,9 +469,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Set<String> _peerCopyKeys = const <String>{};
 
   /// 重算 [_peerCopyKeys]。在 [_reload] 画完之后后台跑、不挡首帧：
-  /// [loadCollectionEpisodeSlots] 在全员本地时刻意不问远端清单，这里只在库页
-  /// 注入了「删除本机副本」时才问一次（共享远端库缓存，TTL 内不打网络）；拉不到
-  /// 清单就当没有副本——宁可不给入口，也不把本机原件当副本删。
+  /// [loadCollectionEpisodeSlots] 在全员本地时刻意不问远端，这里只在库页注入了
+  /// 「删除本机副本」时才问一次、且只问这些成员的 id（共享远端库缓存，TTL 内不打
+  /// 网络）；问不到就当没有副本——宁可不给入口，也不把本机原件当副本删。
   Future<void> _refreshPeerCopyKeys(List<VideoBookRow> members) async {
     final CollectionRemoteContext? remote = widget.remote;
     Set<String> keys = const <String>{};
@@ -479,9 +479,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         remote.deleteLocalCopy != null &&
         members.isNotEmpty) {
       try {
+        final List<RemoteVideoInfo> onPeer = await remote.loadRemoteMembers(
+          <String>[for (final VideoBookRow member in members) member.bookUid],
+        );
         final Set<String> remoteIds = <String>{
-          for (final RemoteVideoInfo info in await remote.loadRemoteVideos())
-            info.id,
+          for (final RemoteVideoInfo info in onPeer) info.id,
         };
         keys = <String>{
           for (final VideoBookRow member in members)
@@ -1765,7 +1767,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           loadEpisodes: () => loadCollectionEpisodeSlots(
             repository: repo,
             collectionId: target.id,
-            loadRemoteVideos: widget.remote?.loadRemoteVideos,
+            loadRemoteMembers: widget.remote?.loadRemoteMembers,
           ),
           // 远端上下文原样传下去：相关作品也可能是「只在对端」的那一部。
           remote: widget.remote,

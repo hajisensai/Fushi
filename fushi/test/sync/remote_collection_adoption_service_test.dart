@@ -64,6 +64,29 @@ void main() {
       expect((await db.getAllCollectionItems()).single.entryKey, video.id);
     },
   );
+  test('整份视频清单批量收养：与逐条同一结果，无归属的跳过，第二轮零写入', () async {
+    const List<RemoteVideoInfo> videos = <RemoteVideoInfo>[
+      RemoteVideoInfo(id: 'ep-2', title: 'Ep 2', collection: collection),
+      RemoteVideoInfo(id: 'loose', title: 'Loose'),
+      RemoteVideoInfo(
+        id: 'ep-1',
+        title: 'Ep 1',
+        collection: RemoteCollectionMembership(
+          collectionName: 'Series',
+          collectionType: 'playlist',
+          sortIndex: 1,
+        ),
+      ),
+    ];
+    expect(await service.adoptVideos(videos), 2);
+    final List<MediaCollectionItemRow> rows = await db.getAllCollectionItems();
+    expect(rows.map((MediaCollectionItemRow r) => r.entryKey).toSet(), <String>{
+      'ep-1',
+      'ep-2',
+    });
+    expect(await service.adoptVideos(videos), 0);
+    expect(await db.getAllCollectionItems(), hasLength(2));
+  });
   test('BUG-3443 同类：无合集归属的下载书也记下落地键与对端键的对应，'
       '删除墓碑据此写对端键 / 把对端墓碑换算回本机', () async {
     const RemoteBookInfo book = RemoteBookInfo(
