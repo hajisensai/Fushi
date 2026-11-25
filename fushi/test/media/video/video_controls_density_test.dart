@@ -5,6 +5,115 @@ import 'package:fushi/src/media/video/video_controls_density.dart';
 /// 「小窗模式 / 按窗口大小缩控件」的判据真相源。页面只读本文件的结论，
 /// 所以阈值与取舍在这里钉死一次即可，不必去 widget 树里翻。
 void main() {
+  group('videoPortraitToolbarInlineCount：竖屏工具栏平铺几颗（拍板台 jJt0PSb1LO）', () {
+    // MD3：48 + 4 缝、两端 8，再乘胶囊缩放 48/56。
+    const double scale = 48 / 56;
+    const VideoPortraitToolbarMetrics md3 = VideoPortraitToolbarMetrics(
+      slotWidth: 52 * scale,
+      chromeWidth: 12 * scale,
+    );
+    // Apple：44 无缝、两端 4。
+    const VideoPortraitToolbarMetrics apple = VideoPortraitToolbarMetrics(
+      slotWidth: 44,
+      chromeWidth: 8,
+    );
+
+    test('360dp 手机（两侧各留 16）：6 颗常驻 +「⋯」，四颗可收项全进「⋯」', () {
+      for (final VideoPortraitToolbarMetrics m in <VideoPortraitToolbarMetrics>[
+        md3,
+        apple,
+      ]) {
+        expect(
+          videoPortraitToolbarInlineCount(
+            availableWidth: 360 - 32,
+            pinned: 6,
+            foldable: 4,
+            metrics: m,
+          ),
+          0,
+        );
+        // 6 + ⋯ 必须真放得下（设计图的前提）。
+        expect(m.widthFor(7), lessThanOrEqualTo(360 - 32));
+      }
+    });
+
+    test('宽一些的手机多平铺几颗，按优先级从前往后', () {
+      // 412dp：MD3 8 颗（6 + 收藏 + ⋯）= 12·s + 8·52·s ≈ 366.9 ≤ 380。
+      expect(
+        videoPortraitToolbarInlineCount(
+          availableWidth: 412 - 32,
+          pinned: 6,
+          foldable: 4,
+          metrics: md3,
+        ),
+        1,
+      );
+      // Apple 每格 44：412 宽 = 380 → 6 + 2 + ⋯ = 9 格 404 > 380，6 + 1 + ⋯ = 360 ≤ 380。
+      expect(
+        videoPortraitToolbarInlineCount(
+          availableWidth: 412 - 32,
+          pinned: 6,
+          foldable: 4,
+          metrics: apple,
+        ),
+        1,
+      );
+    });
+
+    test('全部平铺放得下就不留「⋯」那一格', () {
+      // 10 颗全平铺 = 8 + 440 = 448；带「⋯」时只能 9 + 1 格。宽 448 应全部平铺。
+      expect(
+        videoPortraitToolbarInlineCount(
+          availableWidth: apple.widthFor(10),
+          pinned: 6,
+          foldable: 4,
+          metrics: apple,
+        ),
+        4,
+      );
+      // 少 1 像素就放不下全部，得留「⋯」：6 + 2 + ⋯ = 9 格。
+      expect(
+        videoPortraitToolbarInlineCount(
+          availableWidth: apple.widthFor(10) - 1,
+          pinned: 6,
+          foldable: 4,
+          metrics: apple,
+        ),
+        2,
+      );
+    });
+
+    test('宽度未量出 / 没有可收项', () {
+      expect(
+        videoPortraitToolbarInlineCount(
+          availableWidth: double.infinity,
+          pinned: 6,
+          foldable: 4,
+          metrics: md3,
+        ),
+        0,
+      );
+      expect(
+        videoPortraitToolbarInlineCount(
+          availableWidth: 0,
+          pinned: 6,
+          foldable: 4,
+          metrics: md3,
+        ),
+        0,
+      );
+      expect(
+        videoPortraitToolbarInlineCount(
+          availableWidth: 1000,
+          pinned: 6,
+          foldable: 0,
+          metrics: md3,
+        ),
+        0,
+      );
+    });
+  });
+
   group('videoInitialMiniSurface：新挂载的视频页以哪个表面起步', () {
     test('BUG-4804：已在系统画中画里 → 新页直接以 pictureInPicture 起步', () {
       // 本地换集是 pushReplacement 的新页；PiP 里自动连播到下一集时系统窗口没动，

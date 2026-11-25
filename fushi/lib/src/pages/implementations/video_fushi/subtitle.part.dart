@@ -420,6 +420,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
         // 保持零：展开项本身是带默认 contentPadding 的 ListTile，各自缩进已对齐。
         leading: const FushiIcon(Icons.subtitles_outlined),
         title: Text(t.video_secondary_subtitle_sources),
+        // 竖屏工具栏「⋯ → 副字幕」开面板时直接展开（拍板台 jJt0PSb1LO）。
+        initiallyExpanded: _expandSecondarySubtitlesOnOpen,
         childrenPadding: EdgeInsets.zero,
         shape: const Border(),
         collapsedShape: const Border(),

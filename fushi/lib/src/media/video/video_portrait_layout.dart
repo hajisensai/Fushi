@@ -1,7 +1,13 @@
+import 'dart:ui' as ui show ImageFilter;
+
 import 'package:flutter/foundation.dart' show ValueListenable;
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/video/subtitle_transcript_text.dart';
+import 'package:fushi/src/media/video/video_controls_density.dart';
 import 'package:fushi/src/media/video/video_orientation_policy.dart';
+import 'package:fushi/src/media/video/video_subtitle_obscure_mode.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart'
+    show isGlassDesign;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart';
@@ -168,6 +174,10 @@ class VideoPortraitLayout extends StatelessWidget {
 
 /// 当前句大字（设计图 A）：跟着播放走，点字从该字起查词（与字幕列表行同一套逐字命中
 /// [SubtitleTranscriptText]），点空白跳回本句开头。没有当前句时显示 [emptyHint]。
+///
+/// 大字下面是副字幕小字（拍板台 jJt0PSb1LO）：小一号、次要文字色、不可点查词（与横屏
+/// 副字幕层的定位一致——查词对象是主字幕）。副字幕没加载 / 此刻没有活动句时这一行不占位；
+/// 副字幕遮蔽设成「隐藏」时不画、「模糊」时打码，允许互动显形时点一下揭开（换句复位）。
 class VideoPortraitCurrentCue extends StatelessWidget {
   const VideoPortraitCurrentCue({
     required this.listenable,
@@ -175,10 +185,22 @@ class VideoPortraitCurrentCue extends StatelessWidget {
     required this.onLookup,
     required this.onTapCue,
     required this.emptyHint,
+    this.secondaryText,
+    this.secondaryObscureMode = VideoSubtitleObscureMode.none,
+    this.secondaryRevealOnInteraction = true,
     this.fontFamily,
     this.fontSize = 22,
     super.key,
   });
+
+  /// 副字幕此刻的文字（多条活动句用换行拼好）；null / 空串 = 不画副字幕行。
+  final String Function()? secondaryText;
+
+  /// 副字幕遮蔽三态（与横屏副字幕层同一个偏好）。
+  final VideoSubtitleObscureMode secondaryObscureMode;
+
+  /// 遮蔽态下点一下能不能临时揭开（与横屏副字幕层同一个偏好）。
+  final bool secondaryRevealOnInteraction;
 
   /// 当前句变化时通知（页面层传播放器）。
   final Listenable listenable;
@@ -221,6 +243,33 @@ class VideoPortraitCurrentCue extends StatelessWidget {
                     onLookup(shown, index, anchor),
                 onBackgroundTap: () => onTapCue(shown),
               );
+        final String secondary =
+            secondaryObscureMode == VideoSubtitleObscureMode.hide
+            ? ''
+            : (secondaryText?.call().trim() ?? '');
+        final Widget body = secondary.isEmpty
+            ? content
+            : Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  content,
+                  const SizedBox(height: 4),
+                  _PortraitSecondaryLine(
+                    key: const ValueKey<String>('video-portrait-cue-secondary'),
+                    text: secondary,
+                    blurred:
+                        secondaryObscureMode == VideoSubtitleObscureMode.blur,
+                    revealOnTap: secondaryRevealOnInteraction,
+                    style: TextStyle(
+                      fontSize: fontSize * _secondaryFontRatio,
+                      height: 1.4,
+                      fontFamily: fontFamily,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
+                  ),
+                ],
+              );
         return Padding(
           key: const ValueKey<String>('video-portrait-current-cue'),
           padding: const EdgeInsets.fromLTRB(20, 16, 20, 12),
@@ -239,12 +288,67 @@ class VideoPortraitCurrentCue extends StatelessWidget {
               child: Align(
                 key: contentKey,
                 alignment: Alignment.topLeft,
-                child: content,
+                child: body,
               ),
             ),
           ),
         );
       },
+    );
+  }
+}
+
+/// 副字幕小字与主字幕大字的字号比（设计图：22 → 15）。
+const double _secondaryFontRatio = 15 / 22;
+
+/// 当前句区的副字幕行：纯展示，遮蔽「模糊」时打码，[revealOnTap] 时点一下揭开 / 遮回；
+/// 文字变了（换句）就复位成遮着。
+class _PortraitSecondaryLine extends StatefulWidget {
+  const _PortraitSecondaryLine({
+    required this.text,
+    required this.blurred,
+    required this.revealOnTap,
+    required this.style,
+    super.key,
+  });
+
+  final String text;
+  final bool blurred;
+  final bool revealOnTap;
+  final TextStyle style;
+
+  @override
+  State<_PortraitSecondaryLine> createState() => _PortraitSecondaryLineState();
+}
+
+class _PortraitSecondaryLineState extends State<_PortraitSecondaryLine> {
+  bool _revealed = false;
+
+  @override
+  void didUpdateWidget(_PortraitSecondaryLine oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text ||
+        !widget.blurred ||
+        !widget.revealOnTap) {
+      _revealed = false;
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final Widget text = Text(widget.text, style: widget.style);
+    if (!widget.blurred) return text;
+    final Widget obscured = ImageFiltered(
+      key: const ValueKey<String>('video-portrait-cue-secondary-blur'),
+      enabled: !_revealed,
+      imageFilter: ui.ImageFilter.blur(sigmaX: 6, sigmaY: 6),
+      child: text,
+    );
+    if (!widget.revealOnTap) return obscured;
+    return GestureDetector(
+      behavior: HitTestBehavior.opaque,
+      onTap: () => setState(() => _revealed = !_revealed),
+      child: obscured,
     );
   }
 }
@@ -341,11 +445,59 @@ class VideoPortraitPane extends StatelessWidget {
   }
 }
 
-/// 竖屏学习版式底部的纯图标浮动工具栏（设计图 A）：文字只进 tooltip 与 Semantics，
-/// 命中区由 [FushiFloatingToolbar] 保证 ≥ 48dp。
-Widget videoPortraitToolbar({required List<FushiToolbarItem> items}) {
-  return FushiFloatingToolbar(
+/// 竖屏学习版式底部的纯图标浮动工具栏（拍板台 P9AS-fvjJh 设计图 A、jJt0PSb1LO 设计图 A）：
+/// 文字只进 tooltip 与 Semantics，命中区由 [FushiFloatingToolbar] 保证 ≥ 48dp。
+///
+/// [items] 是常驻按钮，永远平铺；[foldable] 按优先级排（最前最常用），宽度够就跟着
+/// 平铺，放不下的从末尾起收进「⋯」（判据 [videoPortraitToolbarInlineCount]，按本条
+/// 工具栏实际可用宽度算：手机竖屏 = 屏宽，平板分栏 = 左栏宽）。
+Widget videoPortraitToolbar({
+  required List<FushiToolbarItem> items,
+  List<FushiToolbarItem> foldable = const <FushiToolbarItem>[],
+}) {
+  return LayoutBuilder(
     key: const ValueKey<String>('video-portrait-toolbar'),
-    groups: <List<FushiToolbarItem>>[items],
+    builder: (BuildContext context, BoxConstraints box) {
+      final int inline = videoPortraitToolbarInlineCount(
+        availableWidth: box.maxWidth - 2 * kFushiFloatingToolbarEdgeMargin,
+        pinned: items.length,
+        foldable: foldable.length,
+        metrics: videoPortraitToolbarMetricsOf(context),
+      );
+      return FushiFloatingToolbar(
+        groups: <List<FushiToolbarItem>>[
+          <FushiToolbarItem>[...items, ...foldable.take(inline)],
+        ],
+        overflow: foldable.skip(inline).toList(growable: false),
+        overflowKey: kVideoPortraitToolbarMoreKey,
+      );
+    },
+  );
+}
+
+/// 竖屏工具栏「⋯」的键（焦点驱动集成测试 / 组件测试按它找）。
+const ValueKey<String> kVideoPortraitToolbarMoreKey = ValueKey<String>(
+  'video-portrait-toolbar-more',
+);
+
+/// [FushiFloatingToolbar] 在当前设计系统下的按钮度量：MD3 = 48dp 按钮 + 4 缝、胶囊两端
+/// 各 8，再整体乘胶囊缩放 [kFushiFloatingCapsuleScale]；Apple = bar button 边长
+/// （移动 44）无缝、两端各 4。
+VideoPortraitToolbarMetrics videoPortraitToolbarMetricsOf(
+  BuildContext context,
+) {
+  if (isGlassDesign(context)) {
+    return VideoPortraitToolbarMetrics(
+      slotWidth: fushiAppleFloatingExtent(context),
+      chromeWidth: 8,
+    );
+  }
+  return const VideoPortraitToolbarMetrics(
+    slotWidth:
+        (kMinInteractiveDimension + kFushiFloatingToolbarItemGap) *
+        kFushiFloatingCapsuleScale,
+    chromeWidth:
+        (2 * kFushiFloatingToolbarPadding - kFushiFloatingToolbarItemGap) *
+        kFushiFloatingCapsuleScale,
   );
 }

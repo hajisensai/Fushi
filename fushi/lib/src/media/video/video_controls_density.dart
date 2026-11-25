@@ -293,3 +293,49 @@ class _VideoControlsDensityBuilderState
     );
   }
 }
+
+/// 竖屏学习版式底部浮动工具栏的按钮度量（拍板台 jJt0PSb1LO 设计图 A）。
+///
+/// [slotWidth] 是一颗按钮连同它后面那道缝占的宽度，[chromeWidth] 是胶囊两端内边距
+/// 扣掉最后一道缝之后的宽度：n 颗按钮的胶囊宽 = `chromeWidth + n × slotWidth`。
+/// 两套设计系统的数值由页面层按 [FushiFloatingToolbar] 的实际几何给（MD3 48 + 4 缝
+/// 再乘胶囊缩放、Apple 44 无缝），这里只做纯算术，页面与测试同源。
+@immutable
+class VideoPortraitToolbarMetrics {
+  const VideoPortraitToolbarMetrics({
+    required this.slotWidth,
+    required this.chromeWidth,
+  });
+
+  final double slotWidth;
+  final double chromeWidth;
+
+  /// [buttons] 颗按钮的胶囊宽。
+  double widthFor(int buttons) => chromeWidth + buttons * slotWidth;
+}
+
+/// 竖屏学习版式底部浮动工具栏里，[foldable]（按优先级排好、最前面的最常用）有几颗
+/// 能平铺出来，其余收进「⋯」。纯函数，页面与测试同源。
+///
+/// 规则（CLAUDE.md「工具栏默认平铺，放不下才收进⋯」）：
+///  * [pinned] 颗常驻按钮（上一句 / 播放 / 下一句 / 循环 / 切字幕轨 / 转横屏）永远平铺；
+///  * 全部平铺（不画「⋯」）放得下就全部平铺；
+///  * 否则留出「⋯」一格，从最低优先级起往「⋯」里收，直到放得下；
+///  * 宽度没量出来（非有限或 <= 0）时按全部收进「⋯」处理，不在测量未就绪时先撑爆一帧。
+///
+/// 360dp 宽的手机上恰好是 6 颗常驻 +「⋯」，宽一些的手机会多平铺几颗。
+int videoPortraitToolbarInlineCount({
+  required double availableWidth,
+  required int pinned,
+  required int foldable,
+  required VideoPortraitToolbarMetrics metrics,
+}) {
+  if (foldable <= 0) return 0;
+  if (!availableWidth.isFinite || availableWidth <= 0) return 0;
+  if (metrics.widthFor(pinned + foldable) <= availableWidth) return foldable;
+  int shown = foldable - 1;
+  while (shown > 0 && metrics.widthFor(pinned + shown + 1) > availableWidth) {
+    shown--;
+  }
+  return shown;
+}
