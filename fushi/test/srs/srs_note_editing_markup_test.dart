@@ -243,12 +243,12 @@ void main() {
 
     test('内置 AI 说明写明加粗 = 目标词、新例句用笔记的语言', () {
       final String flat = kAiSrsFieldGuidance.replaceAll('\n', ' ');
-      expect(flat, contains('<b>…</b> in them marks the target word'));
+      expect(flat, contains('In the note, <b>…</b> marks the target word.'));
       expect(
         flat,
         contains(
-          'New example sentences, and any text that belongs to the language '
-          "being learned, are written in the language of the note's sentence",
+          'A new example sentence, or any other text in the language being '
+          "learned, is written in the language of the note's sentence",
         ),
       );
     });

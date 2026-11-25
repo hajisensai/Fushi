@@ -2236,6 +2236,10 @@ class SyncRepository {
     // 单独漂过去只会变成一堆悬空 id，故一并设备本地。
     'ai_providers',
     'ai_feature_providers',
+    // 卡片字段 AI 的提示词改动 / 变体与「AI 输出语言」：AI 配置一律设备本地（fushi/CLAUDE.md
+    // 「AI 配置设备本地，不进备份 / 同步 / Profile」，用户 2026-11-25 拍板），与提供商、功能映射同一口径。
+    'ai_field_actions',
+    'ai_output_language',
     // 多 key 轮换的冷却记录：按本机 key 的指纹索引，换台设备全是悬空记录。
     'ai_key_health',
     // 联网搜索后端：JSON 内含 Brave API key，SearXNG 地址也可能是本机实例。

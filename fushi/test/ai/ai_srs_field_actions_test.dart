@@ -5,6 +5,8 @@ import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/ai/ai_srs_field_actions.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/ai/ai_srs_field_reply.dart';
+import 'package:fushi/src/srs/srs_field_catalog.dart'
+    show SrsFieldInfo, kSrsKnownFields;
 import 'package:fushi_srs/fushi_srs.dart' show SrsFieldDef;
 
 /// 「写的就是发的」：用户消息 = 模板代入占位符，除此之外什么都不加；系统消息 = AI 说明 +
@@ -256,6 +258,76 @@ void main() {
       ]);
     });
 
+    test('{{note}} / {{target_meaning}} 的说明写给模型：内置字段用短语，用户写的说明优先，都没有不写', () {
+      const List<SrsFieldDef> fields = <SrsFieldDef>[
+        SrsFieldDef(id: 'term', name: 'Term', ord: 0),
+        SrsFieldDef(id: 'sent', name: 'Sentence', ord: 1),
+        SrsFieldDef(id: 'tr', name: 'SentenceTranslation', ord: 2),
+        SrsFieldDef(id: 'flag', name: 'IsWordAndSentenceCard', ord: 3),
+        SrsFieldDef(id: 'src', name: 'MiscInfo', ord: 4),
+        SrsFieldDef(
+          id: 'mine',
+          name: 'MainDefinition',
+          ord: 5,
+          description: 'My own words',
+        ),
+        SrsFieldDef(id: 'x', name: 'Extra', ord: 6),
+      ];
+      AiSrsFieldNoteContext note(String target) => AiSrsFieldNoteContext(
+        noteTypeName: 'Fushi Card',
+        fields: fields,
+        valuesById: const <String, String>{
+          'term': '通う',
+          'sent': '毎日<b>通う</b>',
+          'flag': 'x',
+          'src': 'Show 00:01:02',
+          'mine': 'to commute',
+          'x': 'extra',
+        },
+        targetFieldId: target,
+        outputLanguage: 'English',
+      );
+      final Map<String, Object?> json =
+          jsonDecode(_req('{{note}}', note: note('tr')).prompt.user)
+              as Map<String, Object?>;
+      final Map<String, Object?> meanings = <String, Object?>{
+        for (final Map<String, Object?> row
+            in (json['fields']! as List<Object?>).cast<Map<String, Object?>>())
+          row['name']! as String: row['meaning'],
+      };
+      expect(meanings, <String, Object?>{
+        'Term': 'headword',
+        'Sentence': 'example sentence; <b> marks the headword',
+        'SentenceTranslation': 'translation of the sentence',
+        'IsWordAndSentenceCard': 'card-type flag (non-empty = on)',
+        'MiscInfo': 'where the sentence came from',
+        'MainDefinition': 'My own words',
+        'Extra': null,
+      });
+      // 界面帮助文字（「填任意字符开启」「点了跳回」）不再进请求。
+      expect(json.toString(), isNot(contains('Type any character')));
+      expect(json.toString(), isNot(contains('tap to jump back')));
+
+      expect(
+        _req('{{target_meaning}}', note: note('tr')).prompt.user,
+        'translation of the sentence',
+      );
+      expect(
+        _req('{{target_meaning}}', note: note('mine')).prompt.user,
+        'My own words',
+      );
+      expect(_req('{{target_meaning}}', note: note('x')).prompt.user, '(none)');
+    });
+
+    test('目录里每个已知字段都有写给模型的说明（短语，不是界面帮助）', () {
+      for (final MapEntry<String, SrsFieldInfo> e in kSrsKnownFields.entries) {
+        final String d = e.value.aiDescription;
+        expect(d.trim(), isNotEmpty, reason: e.key);
+        expect(d.length, lessThan(60), reason: e.key);
+        expect(d, isNot(contains('tap')), reason: e.key);
+      }
+    });
+
     test('{{note}} 出现两次：同一份内容、截断只报一次', () {
       final AiSrsFieldRequest r = _req(
         '{{note}}\n{{note}}',
@@ -340,7 +412,7 @@ void main() {
   });
 
   group('内置默认', () {
-    test('四个动作：版本 3、回复格式、共用的 AI 说明（含「以笔记为准」）', () {
+    test('四个动作：版本 4、回复格式、共用的 AI 说明（只留角色 / <b> / 语言 / 以笔记为准）', () {
       expect(kAiSrsFieldTemplates.map((AiSrsFieldTemplate t) => t.id), <String>[
         'task.define',
         'task.translate',
@@ -348,7 +420,7 @@ void main() {
         'task.custom',
       ]);
       for (final AiSrsFieldTemplate t in kAiSrsFieldTemplates) {
-        expect(t.version, 3, reason: t.id);
+        expect(t.version, 4, reason: t.id);
         expect(t.prompt.guidance, kAiSrsFieldGuidance);
         expect(
           t.prompt.mode,
@@ -357,16 +429,52 @@ void main() {
               : AiSrsFieldResponseMode.structured,
         );
       }
-      expect(
-        kAiSrsFieldGuidance,
-        contains("The note's data (note type, fields with their meaning"),
-      );
-      expect(
-        kAiSrsFieldGuidance.replaceAll('\n', ' '),
-        contains(
-          'Ground your answer in the note: prefer what its dictionary fields',
-        ),
-      );
+      for (final String part in <String>[
+        'You edit ONE field',
+        "Write only that field's new content.",
+        'In the note, <b>…</b> marks the target word.',
+        'written in {{output_language}}',
+        "in the language of the note's sentence",
+        'Ground your answer in the note',
+      ]) {
+        expect(kAiSrsFieldGuidance, contains(part), reason: part);
+      }
+      // 模板已经说了的不在说明里重复（回复格式、要写的字段名都由模板 / 应用规则给）。
+      expect(kAiSrsFieldGuidance, isNot(contains('"explanation"')));
+      expect(kAiSrsFieldGuidance, isNot(contains('note type')));
+      expect(kAiSrsFieldGuidance.length, lessThan(700));
+    });
+
+    test('四个模板同一形状：任务行 → Note: {{note}} → 规则 → 补充要求；自定义的要求在最前', () {
+      for (final AiSrsFieldTemplate t in kAiSrsFieldTemplates) {
+        final String tpl = t.prompt.template;
+        expect(tpl, contains('Note:\n{{note}}'), reason: t.id);
+        expect(tpl, contains('{{instruction}}'), reason: t.id);
+        expect(tpl, contains('{{target_field}}'), reason: t.id);
+        if (t.task == AiSrsFieldTask.custom) {
+          expect(tpl, startsWith('{{instruction}}\n'));
+          expect(tpl, isNot(contains('Rules:')));
+        } else {
+          expect(
+            tpl.split('\n').first,
+            isNot(contains('{{note}}')),
+            reason: t.id,
+          );
+          expect(tpl, contains('\n\nRules:\n- '), reason: t.id);
+          expect(
+            tpl,
+            endsWith(
+              '\n\nExtra instruction (may be "(none)"):\n{{instruction}}',
+            ),
+            reason: t.id,
+          );
+          expect(
+            tpl.indexOf('{{note}}'),
+            lessThan(tpl.indexOf('Rules:')),
+            reason: t.id,
+          );
+        }
+      }
     });
 
     test('每个默认模板在示例笔记上都没有认不出的占位符、没有残留 {{', () {
@@ -390,58 +498,55 @@ void main() {
       expect(
         custom,
         startsWith(
-          'Write a mnemonic.\n\nField to write: SentenceTranslation\nNote:\n{',
+          'Write a mnemonic.\n\nField to write: SentenceTranslation\n\nNote:\n{',
         ),
       );
     });
 
-    test('翻译模板：P2 的规则 + 目标词标记规则，都在看得见的模板里', () {
-      final String tpl = _builtin(AiSrsFieldTask.translate).template;
-      expect(
-        tpl,
-        startsWith(
-          'Translate the example sentence of this flashcard note into '
-          '{{output_language}}.\n\nNote:\n{{note}}\n\n'
-          'Field to write: {{target_field}}\n',
-        ),
-      );
-      expect(tpl, endsWith('may be "(none)"):\n{{instruction}}'));
-      for (final String rule in <String>[
-        'Translate only the sentence.',
-        'Be faithful first, natural second',
-        'Keep fragments, interjections and lines that trail off as they are',
-        'Add a missing subject or object only when the sentence needs one.',
-        'name the guess in "explanation"',
-        'Translate sentence-final particles and drawn-out endings',
-        'Target word: if the sentence marks it with <b>…</b>, bold the words '
-            'that translate that part.',
-        'if it appears more than once, use the occurrence the note is about',
-        'bold the smallest natural phrase that translates it',
-        'bold nothing and say so in "explanation". Never bold the whole sentence.',
-        '"value" holds only the translation',
-      ]) {
-        expect(tpl, contains(rule), reason: rule);
-      }
+    test('翻译模板：就是拍板的那段文字（规则 + 目标词标记规则都在看得见的模板里）', () {
+      expect(_builtin(AiSrsFieldTask.translate).template, '''
+Translate the example sentence of this note into {{output_language}}.
+
+Note:
+{{note}}
+
+Field to write: {{target_field}}
+
+Rules:
+- Translate only the sentence; use the other fields only to understand it.
+- Faithful first, natural second. Keep tone and register; don't add, drop, soften or explain.
+- Keep fragments and trailing lines as fragments ("うっかりかあ" → "Careless of me, huh…", not "I accidentally did it.").
+- Add a missing subject/object only if the sentence needs one; if the note doesn't settle it, use a neutral one and name the guess in "explanation".
+- Translate sentence-final particles ("huh", "right", "…") instead of dropping them.
+- Bold the words that translate the <b> part. No <b> in the sentence: find the headword (or an inflected form); if unsure, bold nothing and say so in "explanation". Never bold the whole sentence.
+- "value": the translation only, one line.
+- "explanation": one short sentence naming any guess or ambiguity, or saying the translation is direct.
+
+Extra instruction (may be "(none)"):
+{{instruction}}''');
     });
 
     test('释义以词典字段为准、句中义项加粗；改写保留语气、不加不删；自定义先放要求', () {
       final String define = _builtin(AiSrsFieldTask.define).template;
       expect(define, contains('in {{output_language}}.'));
-      expect(define, contains('do not invent senses'));
-      expect(define, contains("the sense used in the note's sentence first"));
+      expect(define, contains("from the note's dictionary fields"));
+      expect(
+        define,
+        contains('Put the sense used in the sentence first, in <b>…</b>.'),
+      );
       final String rewrite = _builtin(AiSrsFieldTask.rewrite).template;
       expect(rewrite, contains('Never change the meaning'));
       expect(
         rewrite,
         contains(
-          'Keep the tone and register unless the instruction says otherwise.',
+          'Keep tone and register unless the instruction says otherwise.',
         ),
       );
       expect(
         rewrite,
         contains(
-          'Do not add information the note does not support, and do not drop '
-          'important details.',
+          "Don't add anything the note doesn't support; don't drop important "
+          'details.',
         ),
       );
       expect(
@@ -466,7 +571,10 @@ void main() {
           contains('"content":"$sentence"}'),
           reason: sentence,
         );
-        expect(r.prompt.user, contains('Keep fragments, interjections'));
+        expect(
+          r.prompt.user,
+          contains('Keep fragments and trailing lines as fragments'),
+        );
         expect(r.prompt.system, contains('marks the target word'));
         expect(r.mode, AiSrsFieldResponseMode.structured);
       }
@@ -606,7 +714,7 @@ void main() {
             _builtin(AiSrsFieldTask.define).copyWith(template: 'mine'),
           );
       expect(fresh.isOutdated('task.define'), isFalse);
-      expect(fresh.overrides['task.define']!.baseVersion, 3);
+      expect(fresh.overrides['task.define']!.baseVersion, 4);
       expect(AiSrsFieldActions.empty.isOutdated('task.define'), isFalse);
       expect(
         old
@@ -797,14 +905,23 @@ void main() {
         if (aiSrsFieldBuiltinPresetVisible(p, task)) p.id.split(':').last,
     ];
     expect(visible(AiSrsFieldTask.define), <String>[
-      'concise',
-      'list',
-      'sense',
-      'monolingual',
+      'shorter',
+      'simpler',
+      'one_sense',
+      'add_example',
     ]);
-    expect(visible(AiSrsFieldTask.translate), <String>['literal', 'nuance']);
-    expect(visible(AiSrsFieldTask.rewrite), <String>['concise', 'example']);
-    expect(visible(AiSrsFieldTask.custom), <String>['example']);
+    expect(visible(AiSrsFieldTask.translate), <String>[
+      'simpler',
+      'casual',
+      'formal',
+      'target_nuance',
+    ], reason: '译文求忠实：没有「更短」');
+    expect(visible(AiSrsFieldTask.rewrite), <String>[
+      'shorter',
+      'simpler',
+      'format_only',
+    ]);
+    expect(visible(AiSrsFieldTask.custom), <String>['shorter', 'simpler']);
     const AiSavedPrompt mine = AiSavedPrompt(id: 'p1', name: 'n', text: 't');
     for (final AiSrsFieldTask task in AiSrsFieldTask.values) {
       expect(aiSrsFieldBuiltinPresetVisible(mine, task), isTrue);
@@ -815,13 +932,14 @@ void main() {
 /// 内置预设的 id（正文走 i18n，这里只关心 id），顺序同 `aiBuiltinPrompts`。
 List<AiSavedPrompt> aiBuiltinPromptsForTest() => <AiSavedPrompt>[
   for (final String slug in <String>[
-    'concise',
-    'example',
-    'list',
-    'sense',
-    'monolingual',
-    'literal',
-    'nuance',
+    'shorter',
+    'simpler',
+    'casual',
+    'formal',
+    'target_nuance',
+    'one_sense',
+    'add_example',
+    'format_only',
   ])
     AiSavedPrompt(
       id: '${kAiBuiltinPromptIdPrefix}srs_field:$slug',

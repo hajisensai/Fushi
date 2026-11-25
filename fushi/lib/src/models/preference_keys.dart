@@ -142,8 +142,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // providers 不跨设备，映射跨过去只会指向一个不存在的 id。
   'ai_feature_providers',
   // String（JSON 对象）：卡片字段 AI 的提示词改动（`ai/ai_srs_field_actions.dart`），
-  // `{overrides: {模板 id: {text, baseVersion}}, variants: [{id, task, name, text}]}`。
-  // 缺条目 = 用内置，默认值不落盘。纯用户文本、非凭据，与 ai_saved_prompts 一样跨设备。
+  // `{v: 2, overrides: {模板 id: {template, guidance, mode, baseVersion}},
+  // variants: [{id, task, name, template, guidance, mode}]}`。缺条目 = 用内置，默认值不落盘。
+  // 非凭据，但 AI 配置一律设备本地（deviceLocalPrefKeys）：不进设置同步、备份、Profile 快照 / 分享。
   'ai_field_actions',
   // String（JSON map）：AI 多 key 轮换的冷却记录 `{指纹: {until, failures,
   // reason}}`。指纹是 sha256(providerId + key) 的前 16 位，不含 key 本身，非凭据；
@@ -162,7 +163,7 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 设备本地：令牌是发给这台机器上某个 MCP 客户端的。
   'ai_mcp_token_sha256',
   // String：「AI 输出语言」的语言标签（卡片字段 AI 的释义 / 翻译 / 说明用的语言）。
-  // `''` = 跟随界面语言。非凭据、跨设备。
+  // `''` = 跟随界面语言。非凭据，AI 配置设备本地（deviceLocalPrefKeys）。
   'ai_output_language',
   // 用户自配的 AI 提供商清单，每条里带 base64 的 apiKeyB64 →
   // 同时登记在 kCredentialPreferenceKeys、PrefRedactionPolicy.sensitiveKeys

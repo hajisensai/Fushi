@@ -162,6 +162,23 @@ void main() {
       for (final AiPromptScene scene in AiPromptScene.values) {
         final List<AiSavedPrompt> builtins = aiBuiltinPrompts(scene);
         if (scene == AiPromptScene.srsField) {
+          // 整段任务式的旧预设已换成短修饰语（整段的做成了样例提示词）。
+          expect(
+            builtins.map((AiSavedPrompt p) => p.id.split(':').last),
+            isNot(
+              anyElement(
+                isIn(<String>[
+                  'concise',
+                  'example',
+                  'list',
+                  'sense',
+                  'monolingual',
+                  'literal',
+                  'nuance',
+                ]),
+              ),
+            ),
+          );
           // 字段场景的预设按任务筛（`aiSrsFieldBuiltinPresetVisible`），抽屉里一次只
           // 显示当前任务的那几条。
           for (final AiSrsFieldTask task in AiSrsFieldTask.values) {

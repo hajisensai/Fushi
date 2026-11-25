@@ -22,7 +22,7 @@ import 'package:fushi_srs/fushi_srs.dart' show SrsFieldDef;
 
 import 'package:fushi/src/ai/ai_srs_field_reply.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart'
-    show srsFieldDisplayDescription;
+    show srsFieldModelDescription;
 
 /// 预设任务（各自的内置动作见 `ai_srs_field_actions.dart`）。
 enum AiSrsFieldTask {
@@ -357,8 +357,9 @@ bool aiSrsFieldPromptUsesInstruction(AiSrsFieldActionPrompt prompt) =>
     aiSrsFieldUsesInstruction(prompt.template) ||
     aiSrsFieldUsesInstruction(prompt.guidance);
 
-/// `{{note}}` 的 JSON：非空字段 + 永远带上要写的字段（空 = `""`）；只装媒体的字段不交内容
-/// （`content: null`、`media`、`provided_to_model: false`）；其余空字段按名字列进
+/// `{{note}}` 的 JSON：非空字段 + 永远带上要写的字段（空 = `""`）；`meaning` 用写给模型的说明
+/// （[srsFieldModelDescription]：用户写的优先，其次目录里的短语，不是界面帮助文字）；
+/// 只装媒体的字段不交内容（`content: null`、`media`、`provided_to_model: false`）；其余空字段按名字列进
 /// `empty_fields`；字段说明为空不写 `meaning`；超过 [kAiSrsFieldNoteFieldMax] 截断并标
 /// `truncated: true`。一行一个字段，便于用户在预览里读。
 String _noteJson(
@@ -374,7 +375,7 @@ String _noteJson(
       empty.add(f.name);
       continue;
     }
-    final String meaning = srsFieldDisplayDescription(f);
+    final String meaning = srsFieldModelDescription(f);
     final Map<String, Object?> row = <String, Object?>{
       'name': f.name,
       if (meaning.isNotEmpty) 'meaning': meaning,
@@ -551,7 +552,7 @@ AiSrsFieldRequest buildAiSrsFieldRequest({
     kAiSrsFieldTargetMeaningPlaceholder => () {
       final String meaning = target == null
           ? ''
-          : srsFieldDisplayDescription(target);
+          : srsFieldModelDescription(target);
       return meaning.isEmpty ? kAiSrsFieldNoneValue : meaning;
     }(),
     kAiSrsFieldTargetContentPlaceholder =>

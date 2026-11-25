@@ -33,24 +33,26 @@ const int kAiSrsFieldPromptMax = 4000;
 /// 变体名称长度上限（字符）。
 const int kAiSrsFieldVariantNameMax = 60;
 
-/// 内置的 AI 说明（四个内置动作共用的默认值；每个动作各存各的）。
+/// 内置的 AI 说明（四个内置动作共用的默认值；每个动作各存各的）。只放各模板都要的四件事：
+/// 角色（只写一个字段）、`<b>` 的含义、语言规则、以笔记为准；具体任务的规则在模板里。
 const String kAiSrsFieldGuidance = '''
-You help a language learner edit ONE field of a flashcard note (Anki-compatible). The note's data (note type, fields with their meaning and current content) and the field to write are given in the request. Write only that field's new content.
+You edit ONE field of a language learner's flashcard note. Write only that field's new content.
 
-Field contents are plain text with line breaks. <b>…</b> in them marks the target word of the note.
+In the note, <b>…</b> marks the target word.
 
-Languages: definitions, translations and explanations are written in {{output_language}}. New example sentences, and any text that belongs to the language being learned, are written in the language of the note's sentence and headword, unless the user's instruction says otherwise.
+Definitions, translations and explanations are written in {{output_language}}. A new example sentence, or any other text in the language being learned, is written in the language of the note's sentence, unless the instruction says otherwise.
 
-Ground your answer in the note: prefer what its dictionary fields (definition, glossary) say over your own knowledge, and never invent senses, readings or facts that the note does not support.''';
+Ground your answer in the note: prefer its dictionary fields over your own knowledge, and never invent senses, readings or facts it doesn't support.''';
 
 /// 内置模板末尾「用户补充要求」一段（自定义除外）。
 const String _kInstructionTail = '''
-Extra instruction from the user (may be "(none)"):
+Extra instruction (may be "(none)"):
 {{instruction}}''';
 
-/// 内置「写释义」模板。
+/// 内置「写释义」模板。四个内置模板同一形状：一行任务 → 笔记 → 要写的字段 → 规则 → 补充要求
+/// （自定义的要求就是任务，放最前）。
 const String kAiSrsFieldDefineTemplate = '''
-Write the definition of the headword of this flashcard note, in {{output_language}}.
+Write the definition of this note's headword in {{output_language}}.
 
 Note:
 {{note}}
@@ -58,16 +60,17 @@ Note:
 Field to write: {{target_field}}
 
 Rules:
-- Base it on the note's dictionary fields (definition, glossary) when they are present; do not invent senses.
-- Put the sense used in the note's sentence first and wrap it in <b>…</b>. Number the senses if there are several.
-- "value" holds only the definition. "explanation": one short sentence on which sense the sentence uses.
+- Take the senses from the note's dictionary fields when it has them.
+- Put the sense used in the sentence first, in <b>…</b>. Number the senses if there are several.
+- "value": the definition only.
+- "explanation": one short sentence on which sense the sentence uses.
 
 $_kInstructionTail''';
 
 /// 内置「翻译例句」模板。规则按两类真实难句定：省略主语 / 宾语的整句
 /// （`それに気づいた時 完全に嫌いになった`）与带句末语气词的残句（`うっかりかあ`）。
 const String kAiSrsFieldTranslateTemplate = '''
-Translate the example sentence of this flashcard note into {{output_language}}.
+Translate the example sentence of this note into {{output_language}}.
 
 Note:
 {{note}}
@@ -75,40 +78,39 @@ Note:
 Field to write: {{target_field}}
 
 Rules:
-- Translate only the sentence. Use the other fields (target word, its definition, source) only to work out what it means.
-- Be faithful first, natural second: keep the meaning, tone and register (casual, polite, rough). Do not add or drop information, do not soften or intensify, do not explain.
-- Keep fragments, interjections and lines that trail off as they are: do not turn them into full sentences or add a subject or verb the original does not imply.
-- Add a missing subject or object only when the sentence needs one. Pick the most likely reading from the other fields; if they do not settle it, use a neutral choice ("I", "it", "them") and name the guess in "explanation".
-- Translate sentence-final particles and drawn-out endings with a natural equivalent ("huh", "right", "…") instead of dropping them.
-- Target word: if the sentence marks it with <b>…</b>, bold the words that translate that part. If there is no marker, find the headword (or an inflected form of it) in the sentence using the note's headword and dictionary fields; if it appears more than once, use the occurrence the note is about; if the target is a multi-word expression, bold the smallest natural phrase that translates it. If you cannot identify it confidently, bold nothing and say so in "explanation". Never bold the whole sentence.
-- "value" holds only the translation: one line, no quotes, no romanization, no alternatives, no notes.
-- "explanation": one short sentence naming any guess or ambiguity; if there was none, say the translation is direct.
+- Translate only the sentence; use the other fields only to understand it.
+- Faithful first, natural second. Keep tone and register; don't add, drop, soften or explain.
+- Keep fragments and trailing lines as fragments ("うっかりかあ" → "Careless of me, huh…", not "I accidentally did it.").
+- Add a missing subject/object only if the sentence needs one; if the note doesn't settle it, use a neutral one and name the guess in "explanation".
+- Translate sentence-final particles ("huh", "right", "…") instead of dropping them.
+- Bold the words that translate the <b> part. No <b> in the sentence: find the headword (or an inflected form); if unsure, bold nothing and say so in "explanation". Never bold the whole sentence.
+- "value": the translation only, one line.
+- "explanation": one short sentence naming any guess or ambiguity, or saying the translation is direct.
 
 $_kInstructionTail''';
 
-/// 内置「改写」模板。
+/// 内置「改写」模板（任务行已点名字段，不再单列「要写的字段」）。
 const String kAiSrsFieldRewriteTemplate = '''
-Improve the field "{{target_field}}" of this flashcard note, using the note's other fields.
+Improve the field "{{target_field}}" of this note: clearer and shorter, same meaning.
 
 Note:
 {{note}}
 
-Field to write: {{target_field}}
-
 Rules:
-- Keep the meaning; make it clearer and shorter. Never change the meaning.
-- Keep the tone and register unless the instruction says otherwise.
-- Do not add information the note does not support, and do not drop important details.
-- If the field quotes the note's sentence or headword, keep those quotes word for word.
+- Never change the meaning. Keep tone and register unless the instruction says otherwise.
+- Don't add anything the note doesn't support; don't drop important details.
+- Keep quotes of the note's sentence or headword word for word.
 - "explanation": one short sentence on what you changed.
 
 $_kInstructionTail''';
 
-/// 内置「自定义」模板（纯文本回复）：用户的一句话在最前，后面附上笔记（不要可以删）。
+/// 内置「自定义」模板（纯文本回复）：用户的一句话就是任务，放最前；后面附上要写的字段与笔记
+/// （不要可以删）。
 const String kAiSrsFieldCustomTemplate = '''
 {{instruction}}
 
 Field to write: {{target_field}}
+
 Note:
 {{note}}''';
 
@@ -132,10 +134,11 @@ class AiSrsFieldTemplate {
 ///
 /// v3（「写的就是发的」）：模板写成完整可见的用户消息（笔记经 `{{note}}` 代入），AI 说明按动作
 /// 存，自定义改成纯文本回复。P1 的覆盖（版本 ≤ 2）迁移后都会看到更新提示。
+/// v4：四个模板统一形状、规则收紧，AI 说明只留角色 / `<b>` / 语言 / 以笔记为准。
 const List<AiSrsFieldTemplate> kAiSrsFieldTemplates = <AiSrsFieldTemplate>[
   AiSrsFieldTemplate(
     id: 'task.define',
-    version: 3,
+    version: 4,
     task: AiSrsFieldTask.define,
     prompt: AiSrsFieldActionPrompt(
       template: kAiSrsFieldDefineTemplate,
@@ -145,7 +148,7 @@ const List<AiSrsFieldTemplate> kAiSrsFieldTemplates = <AiSrsFieldTemplate>[
   ),
   AiSrsFieldTemplate(
     id: 'task.translate',
-    version: 3,
+    version: 4,
     task: AiSrsFieldTask.translate,
     prompt: AiSrsFieldActionPrompt(
       template: kAiSrsFieldTranslateTemplate,
@@ -155,7 +158,7 @@ const List<AiSrsFieldTemplate> kAiSrsFieldTemplates = <AiSrsFieldTemplate>[
   ),
   AiSrsFieldTemplate(
     id: 'task.rewrite',
-    version: 3,
+    version: 4,
     task: AiSrsFieldTask.rewrite,
     prompt: AiSrsFieldActionPrompt(
       template: kAiSrsFieldRewriteTemplate,
@@ -165,7 +168,7 @@ const List<AiSrsFieldTemplate> kAiSrsFieldTemplates = <AiSrsFieldTemplate>[
   ),
   AiSrsFieldTemplate(
     id: 'task.custom',
-    version: 3,
+    version: 4,
     task: AiSrsFieldTask.custom,
     prompt: AiSrsFieldActionPrompt(
       template: kAiSrsFieldCustomTemplate,
@@ -708,21 +711,21 @@ AiSrsFieldRequest buildAiSrsFieldActionRequest({
 );
 
 /// 字段 AI 抽屉里内置的「已保存的提示词」预设按任务筛选（只管
-/// [AiPromptScene.srsField] 的内置；用户保存的不筛）：`concise` → 释义 / 改写，
-/// `list` / `sense` / `monolingual` → 释义，`example` → 自定义 / 改写，
-/// `literal` / `nuance` → 翻译。
+/// [AiPromptScene.srsField] 的内置；用户保存的不筛）。预设都是填进 `{{instruction}}` 的短修饰语：
+/// `simpler` → 全部任务；`shorter` → 除翻译外（译文求忠实，不该为了短而删内容）；
+/// `casual` / `formal` / `target_nuance` → 翻译；`one_sense` / `add_example` → 释义；
+/// `format_only` → 改写。认不出的 slug 照常显示。
 bool aiSrsFieldBuiltinPresetVisible(AiSavedPrompt prompt, AiSrsFieldTask task) {
   final String prefix =
       '$kAiBuiltinPromptIdPrefix${AiPromptScene.srsField.wire}:';
   if (!prompt.isBuiltin || !prompt.id.startsWith(prefix)) return true;
   final String slug = prompt.id.substring(prefix.length);
   return switch (slug) {
-    'concise' =>
-      task == AiSrsFieldTask.define || task == AiSrsFieldTask.rewrite,
-    'list' || 'sense' || 'monolingual' => task == AiSrsFieldTask.define,
-    'literal' || 'nuance' => task == AiSrsFieldTask.translate,
-    'example' =>
-      task == AiSrsFieldTask.custom || task == AiSrsFieldTask.rewrite,
+    'simpler' => true,
+    'shorter' => task != AiSrsFieldTask.translate,
+    'casual' || 'formal' || 'target_nuance' => task == AiSrsFieldTask.translate,
+    'one_sense' || 'add_example' => task == AiSrsFieldTask.define,
+    'format_only' => task == AiSrsFieldTask.rewrite,
     _ => true,
   };
 }

@@ -266,49 +266,55 @@ AiSavedPrompt _builtin(
 /// [scene] 的内置预设（当前语言）。不含任何自动注音类预设（功能黑名单）。
 List<AiSavedPrompt> aiBuiltinPrompts(AiPromptScene scene) => switch (scene) {
   AiPromptScene.srsField => <AiSavedPrompt>[
+    // 都是填进模板 `{{instruction}}` 的短修饰语（整段任务该做成提示词变体 / 样例）；按任务筛选见
+    // `aiSrsFieldBuiltinPresetVisible`。
     _builtin(
       scene,
-      'concise',
-      t.ai_prompt_preset_srs_field_concise_name,
-      t.ai_prompt_preset_srs_field_concise_text,
+      'shorter',
+      t.ai_prompt_preset_srs_field_shorter_name,
+      t.ai_prompt_preset_srs_field_shorter_text,
     ),
     _builtin(
       scene,
-      'example',
-      t.ai_prompt_preset_srs_field_example_name,
-      t.ai_prompt_preset_srs_field_example_text,
+      'simpler',
+      t.ai_prompt_preset_srs_field_simpler_name,
+      t.ai_prompt_preset_srs_field_simpler_text,
     ),
     _builtin(
       scene,
-      'list',
-      t.ai_prompt_preset_srs_field_list_name,
-      t.ai_prompt_preset_srs_field_list_text,
-    ),
-    // 按任务筛选（`aiSrsFieldBuiltinPresetVisible`）：sense / monolingual 只在写释义，
-    // literal / nuance 只在翻译时出现。
-    _builtin(
-      scene,
-      'sense',
-      t.ai_prompt_preset_srs_field_sense_name,
-      t.ai_prompt_preset_srs_field_sense_text,
+      'casual',
+      t.ai_prompt_preset_srs_field_casual_name,
+      t.ai_prompt_preset_srs_field_casual_text,
     ),
     _builtin(
       scene,
-      'monolingual',
-      t.ai_prompt_preset_srs_field_monolingual_name,
-      t.ai_prompt_preset_srs_field_monolingual_text,
+      'formal',
+      t.ai_prompt_preset_srs_field_formal_name,
+      t.ai_prompt_preset_srs_field_formal_text,
     ),
     _builtin(
       scene,
-      'literal',
-      t.ai_prompt_preset_srs_field_literal_name,
-      t.ai_prompt_preset_srs_field_literal_text,
+      'target_nuance',
+      t.ai_prompt_preset_srs_field_target_nuance_name,
+      t.ai_prompt_preset_srs_field_target_nuance_text,
     ),
     _builtin(
       scene,
-      'nuance',
-      t.ai_prompt_preset_srs_field_nuance_name,
-      t.ai_prompt_preset_srs_field_nuance_text,
+      'one_sense',
+      t.ai_prompt_preset_srs_field_one_sense_name,
+      t.ai_prompt_preset_srs_field_one_sense_text,
+    ),
+    _builtin(
+      scene,
+      'add_example',
+      t.ai_prompt_preset_srs_field_add_example_name,
+      t.ai_prompt_preset_srs_field_add_example_text,
+    ),
+    _builtin(
+      scene,
+      'format_only',
+      t.ai_prompt_preset_srs_field_format_only_name,
+      t.ai_prompt_preset_srs_field_format_only_text,
     ),
   ],
   AiPromptScene.srsTemplate => <AiSavedPrompt>[

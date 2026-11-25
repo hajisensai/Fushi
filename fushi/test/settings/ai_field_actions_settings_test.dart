@@ -8,14 +8,20 @@ import 'package:fushi/src/ai/ai_srs_field_actions.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/models/preference_keys.dart'
+    show kKnownPreferenceKeys;
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/ops/settings_index.dart' show isModelWritableSetting;
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_action.dart';
+import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_kit.dart'
     show SettingsResetSpec, settingsResetSpecFor;
 import 'package:fushi/src/settings/settings_schema_ai.dart';
+import 'package:fushi/src/sync/pref_redaction_policy.dart';
+import 'package:fushi/src/sync/settings_sync.dart' show PortableSettingsPolicy;
+import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -189,5 +195,24 @@ void main() {
     expect(prefs.aiFieldActions, AiSrsFieldActions.empty);
     await prefs.setAiFieldActions(AiSrsFieldActions.empty);
     expect(prefs.getPref(kAiFieldActionsPrefKey, defaultValue: ''), '');
+  });
+
+  test('提示词改动与 AI 输出语言设备本地：不进设置同步、备份、Profile 快照 / 分享', () {
+    // 与 ai_providers / ai_feature_providers 同一条判据（fushi/CLAUDE.md「AI 配置设备本地」）。
+    for (final String key in <String>[
+      kAiFieldActionsPrefKey,
+      'ai_output_language',
+    ]) {
+      expect(SyncRepository.deviceLocalPrefKeys, contains(key));
+      expect(PrefRedactionPolicy.isDeviceLocalOrCredential(key), isTrue);
+      expect(ProfileKeys.isExcludedPref(key), isTrue);
+      expect(PortableSettingsPolicy.isPortable(key), isFalse);
+      expect(kKnownPreferenceKeys, contains(key));
+    }
+    // 已保存的提示词不在这次改动里：照旧跨设备。
+    expect(
+      SyncRepository.deviceLocalPrefKeys,
+      isNot(contains('ai_saved_prompts')),
+    );
   });
 }

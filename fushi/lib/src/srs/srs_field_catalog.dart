@@ -39,12 +39,17 @@ enum SrsFieldKind {
 /// 一个已知字段的说明。
 class SrsFieldInfo {
   const SrsFieldInfo({
+    required this.aiDescription,
     required this.kind,
     required this.example,
     this.suggestedSize = SrsVisualSize.body,
     this.suggestedFilter = SrsVisualFilter.plain,
     this.backOrder,
   });
+
+  /// 交给 AI 的一句英文短语（`{{note}}` 的 `meaning`、`{{target_meaning}}`）：写给模型看的
+  /// 「这个字段装什么」，不是界面帮助（不讲怎么开、点了跳哪）。不走 i18n——它是发给模型的。
+  final String aiDescription;
 
   final SrsFieldKind kind;
 
@@ -61,11 +66,13 @@ class SrsFieldInfo {
 /// 已知字段（按字段名精确匹配）。
 const Map<String, SrsFieldInfo> kSrsKnownFields = <String, SrsFieldInfo>{
   'Expression': SrsFieldInfo(
+    aiDescription: 'headword',
     kind: SrsFieldKind.text,
     example: '食べる',
     suggestedSize: SrsVisualSize.display,
   ),
   'ExpressionFurigana': SrsFieldInfo(
+    aiDescription: 'headword with readings in 漢字[かな] form',
     kind: SrsFieldKind.text,
     example: '食[た]べる',
     suggestedSize: SrsVisualSize.display,
@@ -73,82 +80,124 @@ const Map<String, SrsFieldInfo> kSrsKnownFields = <String, SrsFieldInfo>{
     backOrder: 0,
   ),
   'ExpressionReading': SrsFieldInfo(
+    aiDescription: 'headword reading (kana)',
     kind: SrsFieldKind.text,
     example: 'たべる',
     suggestedSize: SrsVisualSize.small,
     backOrder: 1,
   ),
   'ExpressionAudio': SrsFieldInfo(
+    aiDescription: 'headword audio',
     kind: SrsFieldKind.audio,
     example: '[sound:taberu.mp3]',
     backOrder: 2,
   ),
   'SelectionText': SrsFieldInfo(
+    aiDescription: 'part of the dictionary entry the user selected',
     kind: SrsFieldKind.rich,
     example: 'to eat',
     backOrder: 6,
   ),
   'MainDefinition': SrsFieldInfo(
+    aiDescription: 'dictionary definition',
     kind: SrsFieldKind.rich,
     example: '食物を口に入れ、かんで飲みこむ。',
     backOrder: 7,
   ),
   'DefinitionPicture': SrsFieldInfo(
+    aiDescription: 'picture for the definition',
     kind: SrsFieldKind.image,
     example: '<img>',
     backOrder: 8,
   ),
   'Sentence': SrsFieldInfo(
+    aiDescription: 'example sentence; <b> marks the headword',
     kind: SrsFieldKind.rich,
     example: '毎朝パンを<b>食べる</b>。',
     suggestedSize: SrsVisualSize.title,
   ),
   'SentenceFurigana': SrsFieldInfo(
+    aiDescription: 'example sentence with readings in 漢字[かな] form',
     kind: SrsFieldKind.rich,
     example: '毎朝[まいあさ]パンを 食[た]べる。',
     suggestedFilter: SrsVisualFilter.furigana,
   ),
   'SentenceTranslation': SrsFieldInfo(
+    aiDescription: 'translation of the sentence',
     kind: SrsFieldKind.text,
     example: 'I eat bread every morning.',
     suggestedSize: SrsVisualSize.small,
     backOrder: 4,
   ),
   'SentenceAudio': SrsFieldInfo(
+    aiDescription: 'sentence audio',
     kind: SrsFieldKind.audio,
     example: '[sound:sentence.mp3]',
     backOrder: 5,
   ),
   'Picture': SrsFieldInfo(
+    aiDescription: 'screenshot or clip from the source',
     kind: SrsFieldKind.image,
     example: '<img>',
     backOrder: 9,
   ),
   'Glossary': SrsFieldInfo(
+    aiDescription: 'all dictionary entries',
     kind: SrsFieldKind.rich,
     example: '1. to eat  2. to live on',
     suggestedSize: SrsVisualSize.small,
     backOrder: 10,
   ),
   'Hint': SrsFieldInfo(
+    aiDescription: 'hint shown on the front',
     kind: SrsFieldKind.text,
     example: '動詞',
     suggestedFilter: SrsVisualFilter.hint,
   ),
-  'IsWordAndSentenceCard': SrsFieldInfo(kind: SrsFieldKind.flag, example: 'x'),
-  'IsClickCard': SrsFieldInfo(kind: SrsFieldKind.flag, example: 'x'),
-  'IsSentenceCard': SrsFieldInfo(kind: SrsFieldKind.flag, example: 'x'),
-  'IsAudioCard': SrsFieldInfo(kind: SrsFieldKind.flag, example: 'x'),
-  'PitchPosition': SrsFieldInfo(kind: SrsFieldKind.data, example: '2'),
-  'PitchCategories': SrsFieldInfo(kind: SrsFieldKind.data, example: 'nakadaka'),
+  'IsWordAndSentenceCard': SrsFieldInfo(
+    aiDescription: 'card-type flag (non-empty = on)',
+    kind: SrsFieldKind.flag,
+    example: 'x',
+  ),
+  'IsClickCard': SrsFieldInfo(
+    aiDescription: 'card-type flag (non-empty = on)',
+    kind: SrsFieldKind.flag,
+    example: 'x',
+  ),
+  'IsSentenceCard': SrsFieldInfo(
+    aiDescription: 'card-type flag (non-empty = on)',
+    kind: SrsFieldKind.flag,
+    example: 'x',
+  ),
+  'IsAudioCard': SrsFieldInfo(
+    aiDescription: 'card-type flag (non-empty = on)',
+    kind: SrsFieldKind.flag,
+    example: 'x',
+  ),
+  'PitchPosition': SrsFieldInfo(
+    aiDescription: 'pitch accent position (number)',
+    kind: SrsFieldKind.data,
+    example: '2',
+  ),
+  'PitchCategories': SrsFieldInfo(
+    aiDescription: 'pitch accent pattern names',
+    kind: SrsFieldKind.data,
+    example: 'nakadaka',
+  ),
   'Frequency': SrsFieldInfo(
+    aiDescription: 'frequency ranks by corpus',
     kind: SrsFieldKind.rich,
     example: 'JPDB: 1234',
     suggestedSize: SrsVisualSize.small,
     backOrder: 11,
   ),
-  'FreqSort': SrsFieldInfo(kind: SrsFieldKind.data, example: '1234'),
+  'FreqSort': SrsFieldInfo(
+    aiDescription: 'single frequency rank for sorting',
+    kind: SrsFieldKind.data,
+    example: '1234',
+  ),
   'MiscInfo': SrsFieldInfo(
+    aiDescription: 'where the sentence came from',
     kind: SrsFieldKind.rich,
     example: '『作品名』 00:12:34',
     suggestedSize: SrsVisualSize.small,
@@ -231,6 +280,13 @@ String srsFieldDisplayDescription(SrsFieldDef field) =>
     field.description.isNotEmpty
     ? field.description
     : (srsKnownFieldDescription(field.name) ?? '');
+
+/// 字段交给 AI 的说明：用户自己写的（[SrsFieldDef.description]）优先，其次已知字段的
+/// [SrsFieldInfo.aiDescription]；都没有返回空串（调用方据此不写 `meaning`）。
+String srsFieldModelDescription(SrsFieldDef field) =>
+    field.description.isNotEmpty
+    ? field.description
+    : (srsKnownField(field.name)?.aiDescription ?? '');
 
 /// 字段大类：已知字段按目录；未知字段按名字猜（含 audio / image 字样），猜不到算文字。
 SrsFieldKind srsFieldKind(SrsFieldDef field) {

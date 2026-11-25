@@ -6,11 +6,12 @@
 /// - 高级（折叠）：**AI 说明**（系统消息里用户可改的部分，可空）。
 /// - 预览：先用户消息（用户改的就是它），再系统消息 = AI 说明（你的）+ 应用规则（固定，只读、
 ///   锁图标）；警告：认不出的占位符、截断、超限。从设置打开用示例笔记。
-/// - 恢复默认（内置动作，三部分一起，先确认）、复制为变体（三部分照抄）、删除（变体，先确认）、
+/// - 恢复默认（内置动作，三部分一起，先确认）、新建变体（[showSrsFieldAiNewVariantSheet]：复制当前
+///   三部分，或照样例库里的一条；照样例新建时有未保存的修改先问要不要放弃）、删除（变体，先确认）、
 ///   内置版本更新提示（对比 / 恢复）。
 ///
 /// 保存才写存储；有未保存的修改时返回先问要不要放弃。返回值是关页时该选中的动作
-/// （复制出变体后 = 新变体；删掉变体后 = 该任务的默认）。
+/// （新建变体后 = 新变体；删掉变体后 = 该任务的默认）。
 library;
 
 import 'dart:async';
@@ -21,8 +22,13 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/ai/ai_srs_field_actions.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/ai/ai_srs_field_reply.dart';
+import 'package:fushi/src/ai/ai_srs_field_samples.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart'
-    show srsFieldAiRequestNotices, srsFieldAiTaskLabel;
+    show
+        SrsFieldAiNewVariantChoice,
+        showSrsFieldAiNewVariantSheet,
+        srsFieldAiRequestNotices,
+        srsFieldAiTaskLabel;
 import 'package:fushi/src/srs/srs_card_sample.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart'
     show srsFieldDisplayDescription;
@@ -484,6 +490,36 @@ class _SrsFieldAiPromptEditorPageState
     });
   }
 
+  /// 「新建变体」：复制当前三部分（[_duplicate]），或照样例新建并切过去编辑。
+  Future<void> _newVariant() async {
+    final AiSrsFieldTask? task = _task;
+    if (task == null) return;
+    final SrsFieldAiNewVariantChoice? choice =
+        await showSrsFieldAiNewVariantSheet(
+          context,
+          task: task,
+          canCopy: !_invalid,
+        );
+    if (choice == null || !mounted) return;
+    final AiSrsFieldSample? sample = choice.sample;
+    if (sample == null) return _duplicate();
+    // 照样例新建会换掉本页正在编辑的内容：没保存的修改先问。
+    if (_dirty && !await _confirmDiscard()) return;
+    if (!mounted) return;
+    final (AiSrsFieldActions next, AiSrsFieldVariant created) = _actions
+        .addVariant(
+          task: sample.task,
+          name: sample.name,
+          prompt: sample.prompt,
+        );
+    await _write(next);
+    if (!mounted) return;
+    setState(() {
+      _ref = SrsFieldAiPromptRef.variant(created.id);
+      _load();
+    });
+  }
+
   Future<void> _delete() async {
     final AiSrsFieldVariant? v = _variant;
     if (v == null) return;
@@ -570,15 +606,17 @@ class _SrsFieldAiPromptEditorPageState
     );
   }
 
+  Future<bool> _confirmDiscard() => showFushiConfirmDialog(
+    context: context,
+    title: t.srs_field_ai_prompt_discard_confirm,
+    confirmLabel: t.srs_field_ai_prompt_discard,
+    cancelLabel: t.cancel,
+    destructive: true,
+  );
+
   Future<void> _maybePop() async {
     if (_dirty) {
-      final bool discard = await showFushiConfirmDialog(
-        context: context,
-        title: t.srs_field_ai_prompt_discard_confirm,
-        confirmLabel: t.srs_field_ai_prompt_discard,
-        cancelLabel: t.cancel,
-        destructive: true,
-      );
+      final bool discard = await _confirmDiscard();
       if (!discard || !mounted) return;
     }
     Navigator.of(context).pop(_result);
@@ -836,11 +874,11 @@ class _SrsFieldAiPromptEditorPageState
         ),
       if (_task != null)
         FushiIconButton(
-          key: const ValueKey<String>('srs-field-ai-prompt-duplicate'),
-          icon: FushiIcons.copy,
-          tooltip: t.srs_field_ai_prompt_duplicate,
-          enabled: !_busy && !_invalid,
-          onTap: _duplicate,
+          key: const ValueKey<String>('srs-field-ai-prompt-new-variant'),
+          icon: FushiIcons.add,
+          tooltip: t.srs_field_ai_prompt_new_variant,
+          enabled: !_busy,
+          onTap: _newVariant,
         ),
       if (variant != null)
         FushiIconButton(

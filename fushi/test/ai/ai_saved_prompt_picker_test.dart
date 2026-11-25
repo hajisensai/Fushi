@@ -88,10 +88,10 @@ void main() {
     expect(_key('ai-saved-prompt-sheet'), findsOneWidget);
     expect(_key('ai-saved-prompt-g'), findsOneWidget);
     expect(_key('ai-saved-prompt-th'), findsNothing);
-    // 内置预设按任务筛：释义字段默认「写释义」→ 有 concise / list，没有 example。
-    expect(_key('ai-saved-prompt-builtin:srs_field:concise'), findsOneWidget);
-    expect(_key('ai-saved-prompt-builtin:srs_field:list'), findsOneWidget);
-    expect(_key('ai-saved-prompt-builtin:srs_field:example'), findsNothing);
+    // 内置预设按任务筛：释义字段默认「写释义」→ 有 shorter / one_sense，没有翻译的 casual。
+    expect(_key('ai-saved-prompt-builtin:srs_field:shorter'), findsOneWidget);
+    expect(_key('ai-saved-prompt-builtin:srs_field:one_sense'), findsOneWidget);
+    expect(_key('ai-saved-prompt-builtin:srs_field:casual'), findsNothing);
     // 输入框为空时「保存当前」不可用。
     final FushiFilledButton saveButton = tester.widget<FushiFilledButton>(
       _key('ai-saved-prompt-save-current'),
@@ -99,10 +99,10 @@ void main() {
     expect(saveButton.onPressed, isNull);
 
     // 2. 选内置预设 → 填回输入框 → 生成时作为指令发出。
-    await tester.tap(_key('ai-saved-prompt-builtin:srs_field:concise'));
+    await tester.tap(_key('ai-saved-prompt-builtin:srs_field:shorter'));
     await tester.pumpAndSettle();
     expect(_key('ai-saved-prompt-sheet'), findsNothing);
-    final String presetText = t.ai_prompt_preset_srs_field_concise_text;
+    final String presetText = t.ai_prompt_preset_srs_field_shorter_text;
     expect(find.text(presetText), findsOneWidget);
     await tester.tap(_key('srs-field-ai-run'));
     await tester.pumpAndSettle();

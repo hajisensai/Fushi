@@ -5,6 +5,8 @@
 /// 请求在抽屉里按 [buildAiSrsFieldActionRequest] 拼（与提示词编辑页预览同一份），发送由调用方注入
 /// （[SrsFieldAiSender]，生产走 `sendAiSrsFieldPrompt`，测试给假的），回复按动作的回复格式解析。
 ///
+/// - 「新建变体」（[showSrsFieldAiNewVariantSheet]，抽屉与编辑页共用）：复制当前提示词，或从样例库
+///   （`ai_srs_field_samples.dart`）挑一条；新建的变体存进去后直接打开编辑页。
 /// - 动作的提示词里没有 `{{instruction}}`：要求框禁用并提示，预设按钮隐藏。
 /// - 自定义任务要求为空、拼出的请求超限 / 为空：生成键禁用；认不出的占位符 / 截断 / 超限提示在
 ///   生成键上方。
@@ -23,7 +25,10 @@ import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/ai/ai_srs_field_actions.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/ai/ai_srs_field_reply.dart';
+import 'package:fushi/src/ai/ai_srs_field_samples.dart';
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
@@ -117,6 +122,100 @@ List<Widget> srsFieldAiRequestNotices(
         style: context.fushiType.bodySmall.copyWith(color: scheme.error),
       ),
   ];
+}
+
+/// 「新建变体」里选了什么：[sample] 为 null = 复制当前提示词，否则照这条样例新建。
+typedef SrsFieldAiNewVariantChoice = ({AiSrsFieldSample? sample});
+
+/// 打开「新建变体」：第一项复制当前提示词（[canCopy] 为 false 时不可点，如编辑页里模板为空 /
+/// 超长），下面是样例库，按任务分组、当前任务 [task] 的一组在最前（选别的任务的样例 = 在那个
+/// 任务下新建）。返回 null = 没选。
+Future<SrsFieldAiNewVariantChoice?> showSrsFieldAiNewVariantSheet(
+  BuildContext context, {
+  required AiSrsFieldTask task,
+  bool canCopy = true,
+}) => adaptiveModalSheet<SrsFieldAiNewVariantChoice>(
+  context: context,
+  builder: (BuildContext context) =>
+      _SrsFieldAiNewVariantSheet(task: task, canCopy: canCopy),
+);
+
+class _SrsFieldAiNewVariantSheet extends StatelessWidget {
+  const _SrsFieldAiNewVariantSheet({required this.task, required this.canCopy});
+
+  final AiSrsFieldTask task;
+  final bool canCopy;
+
+  @override
+  Widget build(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final TextStyle muted = context.fushiType.bodySmall.copyWith(
+      color: Theme.of(context).colorScheme.onSurfaceVariant,
+    );
+    final List<AiSrsFieldTask> order = <AiSrsFieldTask>[
+      task,
+      for (final AiSrsFieldTask other in AiSrsFieldTask.values)
+        if (other != task) other,
+    ];
+    final List<Widget> children = <Widget>[
+      FushiListItem(
+        key: const ValueKey<String>('srs-field-ai-new-variant-copy'),
+        leading: const FushiIcon(FushiIcons.copy),
+        title: Text(t.srs_field_ai_prompt_new_variant_copy),
+        subtitle: Text(t.srs_field_ai_prompt_new_variant_copy_hint),
+        onTap: canCopy
+            ? () => Navigator.of(
+                context,
+              ).pop<SrsFieldAiNewVariantChoice>((sample: null))
+            : null,
+      ),
+      FushiSectionTitle(
+        t.srs_field_ai_prompt_new_variant_samples,
+        level: FushiSectionTitleLevel.group,
+      ),
+      Text(t.srs_field_ai_prompt_new_variant_samples_hint, style: muted),
+      for (final AiSrsFieldTask group in order)
+        if (aiSrsFieldSamplesFor(group) case final List<AiSrsFieldSample> list
+            when list.isNotEmpty) ...<Widget>[
+          Padding(
+            padding: EdgeInsets.only(top: tokens.spacing.gap / 2),
+            child: Text(
+              srsFieldAiTaskLabel(group),
+              key: ValueKey<String>(
+                'srs-field-ai-new-variant-group-${group.name}',
+              ),
+              style: context.fushiType.labelLarge,
+            ),
+          ),
+          for (final AiSrsFieldSample sample in list)
+            FushiListItem(
+              key: ValueKey<String>('srs-field-ai-new-variant-${sample.id}'),
+              title: Text(sample.name),
+              subtitle: Text(sample.firstLine),
+              onTap: () => Navigator.of(
+                context,
+              ).pop<SrsFieldAiNewVariantChoice>((sample: sample)),
+            ),
+        ],
+    ];
+    return FushiModalSheetFrame(
+      key: const ValueKey<String>('srs-field-ai-new-variant-sheet'),
+      title: t.srs_field_ai_prompt_new_variant,
+      leadingIcon: FushiIcons.add,
+      scrollable: true,
+      body: FushiEntranceScope(
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: tokens.spacing.gap / 2,
+          children: <Widget>[
+            for (final (int i, Widget w) in children.indexed)
+              FushiStaggeredEntrance(index: i, child: w),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 /// 打开抽屉；返回字段的新值（null = 没采用）。
@@ -250,6 +349,41 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
     });
   }
 
+  /// 「新建变体」：复制当前动作的提示词或照样例新建，存进去、选中它，再打开编辑页。
+  Future<void> _newVariant(
+    SrsFieldAiPromptEditorOpener open,
+    AiSrsFieldActionStore store,
+  ) async {
+    final SrsFieldAiNewVariantChoice? choice =
+        await showSrsFieldAiNewVariantSheet(context, task: _task);
+    if (choice == null || !mounted) return;
+    final AiSrsFieldActions actions = store.aiFieldActions;
+    final AiSrsFieldSample? sample = choice.sample;
+    final String? currentId = _variantId;
+    final String base =
+        (currentId == null ? null : actions.variant(currentId)?.name) ??
+        srsFieldAiTaskLabel(_task);
+    final (AiSrsFieldActions next, AiSrsFieldVariant created) = sample == null
+        ? actions.addVariant(
+            task: _task,
+            name: t.srs_field_ai_prompt_copy_name(name: base),
+            prompt: actions.promptFor(_action),
+          )
+        : actions.addVariant(
+            task: sample.task,
+            name: sample.name,
+            prompt: sample.prompt,
+          );
+    await store.setAiFieldActions(next);
+    if (!mounted) return;
+    setState(() {
+      _actions = store.aiFieldActions;
+      _task = created.task ?? _task;
+      _variantId = _actions.variant(created.id) == null ? null : created.id;
+    });
+    await _editPrompt(open);
+  }
+
   Future<void> _generate() async {
     if (_busy) return;
     _note = widget.note();
@@ -362,6 +496,17 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
                 icon: const FushiIcon(FushiIcons.edit),
                 label: Text(t.srs_note_field_ai_prompt_edit),
                 onPressed: _busy ? null : () => unawaited(_editPrompt(open)),
+              ),
+            if ((widget.editPrompt, widget.actionStore) case (
+              final SrsFieldAiPromptEditorOpener open,
+              final AiSrsFieldActionStore store,
+            ))
+              FushiIconButton(
+                key: const ValueKey<String>('srs-field-ai-new-variant'),
+                icon: FushiIcons.add,
+                tooltip: t.srs_field_ai_prompt_new_variant,
+                enabled: !_busy,
+                onTap: () => unawaited(_newVariant(open, store)),
               ),
           ],
         ),

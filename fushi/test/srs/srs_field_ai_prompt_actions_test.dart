@@ -5,6 +5,7 @@ import 'package:fushi/src/ai/ai_saved_prompts.dart';
 import 'package:fushi/src/ai/ai_srs_field_actions.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/ai/ai_srs_field_reply.dart';
+import 'package:fushi/src/ai/ai_srs_field_samples.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_prompt_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -417,14 +418,15 @@ void main() {
     );
   });
 
-  testWidgets('复制为变体（三部分照抄）→ 抽屉选中变体、生成用变体；删掉变体 → 退回默认', (
+  testWidgets('新建变体 › 复制当前（三部分照抄）→ 抽屉选中变体、生成用变体；删掉变体 → 退回默认', (
     WidgetTester tester,
   ) async {
     final _Store store = _Store();
     final _Harness h = await _pump(tester, store);
     await _tap(tester, 'srs-field-ai-edit-prompt');
     await _tap(tester, 'srs-field-ai-prompt-mode-plain');
-    await _tap(tester, 'srs-field-ai-prompt-duplicate');
+    await _tap(tester, 'srs-field-ai-prompt-new-variant');
+    await _tap(tester, 'srs-field-ai-new-variant-copy');
     final AiSrsFieldVariant v = store.aiFieldActions.variants.single;
     expect(v.task, AiSrsFieldTask.translate);
     expect(
@@ -477,7 +479,8 @@ void main() {
     );
     // 删除路径：编辑默认 → 复制出第二个变体 → 删掉它 → 抽屉退回默认。
     await _tap(tester, 'srs-field-ai-edit-prompt');
-    await _tap(tester, 'srs-field-ai-prompt-duplicate');
+    await _tap(tester, 'srs-field-ai-prompt-new-variant');
+    await _tap(tester, 'srs-field-ai-new-variant-copy');
     expect(store.aiFieldActions.variants, hasLength(2));
     await _tap(tester, 'srs-field-ai-prompt-delete');
     await tester.tap(find.text(t.dialog_delete));
@@ -530,7 +533,9 @@ void main() {
     await _tap(tester, 'srs-field-ai-run');
     expect(
       h.client.sent.single[1].content,
-      startsWith('A mnemonic\n\nField to write: SentenceTranslation\nNote:\n{'),
+      startsWith(
+        'A mnemonic\n\nField to write: SentenceTranslation\n\nNote:\n{',
+      ),
     );
     expect(find.text('Think of a commuter.'), findsOneWidget);
   });
@@ -633,14 +638,134 @@ void main() {
     );
   });
 
-  testWidgets('内置预设按任务筛（改写 = concise + example）', (WidgetTester tester) async {
+  testWidgets('内置预设按任务筛（改写 = shorter + simpler + format_only）', (
+    WidgetTester tester,
+  ) async {
     final _Store store = _Store();
     await _pump(tester, store);
     await tester.tap(find.text(t.srs_note_field_ai_rewrite));
     await tester.pumpAndSettle();
     await _tap(tester, 'ai-saved-prompts-srs_field');
-    expect(_key('ai-saved-prompt-builtin:srs_field:concise'), findsOneWidget);
-    expect(_key('ai-saved-prompt-builtin:srs_field:example'), findsOneWidget);
-    expect(_key('ai-saved-prompt-builtin:srs_field:list'), findsNothing);
+    for (final String slug in <String>['shorter', 'simpler', 'format_only']) {
+      expect(
+        _key('ai-saved-prompt-builtin:srs_field:$slug'),
+        findsOneWidget,
+        reason: slug,
+      );
+    }
+    expect(_key('ai-saved-prompt-builtin:srs_field:casual'), findsNothing);
+    expect(_key('ai-saved-prompt-builtin:srs_field:one_sense'), findsNothing);
+  });
+
+  testWidgets('编辑页 › 新建变体 › 从样例：有未保存修改先问；照样例建变体（任务 / 模板 / 回复格式）并切过去编辑', (
+    WidgetTester tester,
+  ) async {
+    final _Store store = _Store();
+    final _Harness h = await _pump(tester, store);
+    await _tap(tester, 'srs-field-ai-edit-prompt');
+    await tester.enterText(_key('srs-field-ai-prompt-text'), 'unsaved edit');
+    await tester.pumpAndSettle();
+    await _tap(tester, 'srs-field-ai-prompt-new-variant');
+    expect(_key('srs-field-ai-new-variant-sheet'), findsOneWidget);
+    await _tap(tester, 'srs-field-ai-new-variant-sample.translate.literal');
+    // 照样例会换掉正在编辑的内容：先问。
+    expect(find.text(t.srs_field_ai_prompt_discard_confirm), findsOneWidget);
+    await tester.tap(find.text(t.srs_field_ai_prompt_discard));
+    await tester.pumpAndSettle();
+
+    final AiSrsFieldSample sample = kAiSrsFieldSamples.singleWhere(
+      (AiSrsFieldSample x) => x.id == 'sample.translate.literal',
+    );
+    final AiSrsFieldVariant v = store.aiFieldActions.variants.single;
+    expect(v.task, AiSrsFieldTask.translate);
+    expect(v.name, sample.name);
+    expect(v.prompt.template, sample.template);
+    expect(v.prompt.mode, AiSrsFieldResponseMode.structured);
+    expect(v.prompt.guidance, kAiSrsFieldGuidance);
+    expect(store.aiFieldActions.isOverridden('task.translate'), isFalse);
+    // 编辑页现在编辑的是新变体。
+    expect(
+      tester
+          .widget<FushiTextField>(_key('srs-field-ai-prompt-name'))
+          .controller!
+          .text,
+      sample.name,
+    );
+    expect(
+      _selectable(tester, 'srs-field-ai-prompt-preview-user'),
+      startsWith(
+        'Give a close, literal translation of this sentence into English, '
+        'for a learner who wants to see its structure:\n毎日<b>通う</b>\n',
+      ),
+    );
+    await _leaveEditor(tester);
+
+    // 抽屉选中新变体，生成用样例的模板。
+    expect(_key('srs-field-ai-variant'), findsOneWidget);
+    await _tap(tester, 'srs-field-ai-run');
+    expect(
+      h.client.sent.last[1].content,
+      startsWith('Give a close, literal translation of this sentence'),
+    );
+  });
+
+  testWidgets('抽屉 › 新建变体：复制当前直接进编辑页；从别的任务的样例 = 在那个任务下新建并切过去', (
+    WidgetTester tester,
+  ) async {
+    final _Store store = _Store();
+    final _Harness h = await _pump(tester, store);
+    await _tap(tester, 'srs-field-ai-new-variant');
+    // 当前任务（翻译）的样例在最前。
+    expect(
+      tester.getTopLeft(_key('srs-field-ai-new-variant-group-translate')).dy,
+      lessThan(
+        tester.getTopLeft(_key('srs-field-ai-new-variant-group-define')).dy,
+      ),
+    );
+    expect(
+      _key('srs-field-ai-new-variant-sample.custom.grammar_note'),
+      findsOneWidget,
+    );
+    await _tap(tester, 'srs-field-ai-new-variant-copy');
+    expect(_key('srs-field-ai-prompt-editor'), findsOneWidget);
+    final AiSrsFieldVariant copy = store.aiFieldActions.variants.single;
+    expect(copy.task, AiSrsFieldTask.translate);
+    expect(copy.prompt, _builtin(AiSrsFieldTask.translate));
+    expect(
+      copy.name,
+      t.srs_field_ai_prompt_copy_name(name: t.srs_note_field_ai_translate),
+    );
+    await _leaveEditor(tester);
+
+    await _tap(tester, 'srs-field-ai-new-variant');
+    await _tap(tester, 'srs-field-ai-new-variant-sample.custom.grammar_note');
+    expect(_key('srs-field-ai-prompt-editor'), findsOneWidget);
+    final AiSrsFieldSample sample = kAiSrsFieldSamples.singleWhere(
+      (AiSrsFieldSample x) => x.id == 'sample.custom.grammar_note',
+    );
+    final AiSrsFieldVariant created = store.aiFieldActions.variants.last;
+    expect(store.aiFieldActions.variants, hasLength(2));
+    expect(created.task, AiSrsFieldTask.custom);
+    expect(created.name, sample.name);
+    expect(created.prompt, sample.prompt);
+    expect(
+      find.text(
+        t.srs_field_ai_prompt_variant_of(task: t.srs_note_field_ai_custom),
+      ),
+      findsOneWidget,
+    );
+    await _leaveEditor(tester);
+
+    // 抽屉切到自定义、选中新变体；样例不用一句话要求 → 要求框禁用，照样能生成。
+    expect(_key('srs-field-ai-instruction-unused'), findsOneWidget);
+    h.client.reply = '<ul><li>に: direction</li></ul>';
+    await _tap(tester, 'srs-field-ai-run');
+    expect(
+      h.client.sent.last[1].content,
+      startsWith(
+        'Explain the grammar of this sentence for a learner, in English:\n'
+        '毎日<b>通う</b>\n',
+      ),
+    );
   });
 }
