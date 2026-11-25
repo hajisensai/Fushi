@@ -328,10 +328,17 @@ class _SrsAnkiMigrationSetupPageState extends State<SrsAnkiMigrationSetupPage> {
               FushiIcons.schedule,
               t.srs_anki_migrate_setup_notice_background,
             ),
+            // D6：迁移前强制拍一个操作前还原点，撤回走「还原点」页的「替换」。
             (
               'backup',
-              FushiIcons.backup,
-              t.srs_anki_migrate_setup_notice_backup,
+              FushiIcons.restoreBackup,
+              t.srs_anki_migrate_setup_notice_restore_point(
+                path: <String>[
+                  t.settings,
+                  t.settings_destination_sync_backup,
+                  t.restore_points_title,
+                ].join(' › '),
+              ),
             ),
           ]) ...<Widget>[
         FushiInlineNotice(

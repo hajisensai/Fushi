@@ -117,6 +117,21 @@ const String kAiAgentWebSearchAllow = 'allow';
 const String kAiAgentWebSearchOff = 'off';
 
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
+/// String：自动备份间隔（`off` / `daily` / `every3Days` / `weekly`，缺省 `daily`，D1）。
+const String kAutoBackupIntervalPrefKey = 'auto_backup_interval';
+
+/// int：自动备份的偏好时刻（当天第几分钟，0..1439）；缺键 / -1 = 不指定，按间隔从上次算。
+const String kAutoBackupTimePrefKey = 'auto_backup_time';
+
+/// String（JSON 字符串数组，`BackupCategory.name`）：自动备份带哪些类别；缺键 = 默认小集合。
+const String kAutoBackupCategoriesPrefKey = 'auto_backup_categories';
+
+/// bool（缺省 false，D2）：自动备份带不带复习媒体（卡片图片 / 音频）。
+const String kAutoBackupSrsMediaPrefKey = 'auto_backup_srs_media';
+
+/// String（缺省空 = 默认还原点目录）：桌面端自定义的自动备份文件夹（绝对路径）。
+const String kAutoBackupFolderPrefKey = 'auto_backup_folder';
+
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
   // int（ms，默认 250）：高级制卡句子音频起止微调步长（反馈 3_VB7kAeHj），
@@ -241,6 +256,13 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // bool：小说阅读器制卡时把制卡位置（countStudyChars 口径的全书绝对位置）写进
   // MiscInfo（等价）字段。冻结键名：原语义是 `chars_12345` 标签（反馈 MhQHXQI-sB 改）。
   'auto_add_char_position_to_tags',
+  // 自动备份（定时还原点，docs/specs/2026-11-25-auto-backup-restore-points.md 第二层），
+  // 全部设备本地（deviceLocalPrefKeys）：描述的是这台设备的备份节奏与落点。
+  kAutoBackupCategoriesPrefKey,
+  kAutoBackupFolderPrefKey,
+  kAutoBackupIntervalPrefKey,
+  kAutoBackupSrsMediaPrefKey,
+  kAutoBackupTimePrefKey,
   'auto_search',
   'auto_search_debounce_delay',
   'auto_update_dictionaries',

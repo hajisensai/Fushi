@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/sync/background_task.dart';
+import 'package:fushi/src/sync/auto_backup/auto_backup_progress.dart';
 import 'package:fushi/src/srs/srs_sync_progress.dart';
 import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
@@ -127,6 +128,13 @@ List<BackgroundTask> syncBackgroundTasks() {
         icon: FushiIcons.cloudSync,
         line: srsSyncProgressLine(srs),
         fraction: srsSyncProgressFraction(srs),
+      ),
+    if (autoBackupProgress.value case final AutoBackupProgress backup)
+      BackgroundTask(
+        id: 'auto-backup',
+        icon: FushiIcons.backup,
+        line: t.auto_backup_task_running,
+        fraction: backup.fraction,
       ),
     for (final SyncTask task in all)
       if (!task.isActive) syncTaskToBackgroundTask(task),

@@ -413,6 +413,10 @@ class BackupContentSummary {
 /// bak/临时提取路径）一律用它；读老归档（Hibiki 时代备份 / 迁移压缩包，条目名
 /// `hibiki.db`）经 [_findDbEntry] 做 legacy 回退（Never break userspace）。
 const String _dbName = fushiDatabaseFileName;
+
+/// [BackupService.createBackup] 开压缩时单个条目 deflate 的上限：原生 deflate 把压缩结果整份
+/// 留在内存里再写进 zip，超过这个大小的条目（大库 / 大文件）照旧 STORE，内存峰值有界。
+const int kBackupDeflateMaxEntryBytes = 512 * 1024 * 1024;
 const String _metaName = 'backup_meta.json';
 const String _dictionaryResourcesPrefix = 'dictionaryResources';
 
@@ -1348,6 +1352,14 @@ class BackupService {
   /// [onProgress] 报打包阶段的确定进度（0..1，已写入字节 / 待打包总字节）。它只在
   /// 真正写 zip 时才开始走 —— 之前的 VACUUM INTO、按分类裁剪行、枚举待打包文件
   /// 都没有可分的量，调用方在收到第一次回调前应显示不确定动画。
+  ///
+  /// [compress]：条目用原生 zlib deflate（已是压缩格式的扩展名、压不小的、以及超过
+  /// [kBackupDeflateMaxEntryBytes] 的条目仍 STORE）。定时还原点开它（库文件压缩比高）；手动导出
+  /// 保持 STORE（导出后通常立刻被分享 / 另存，打包快比体积小更要紧）。
+  ///
+  /// [includeSrsMedia]：复习类别勾着时要不要带 `srs_media/` 文件树（D2：定时备份默认不带，
+  /// 笔记与复习记录照带）。不带媒体的包覆盖恢复时本机媒体目录原样保留（恢复侧只在包里有
+  /// `srs_media/` 条目时才换那棵树）。
   Future<BackupMeta> createBackup(
     String outputPath, {
     Set<BackupCategory>? categories,
@@ -1355,6 +1367,8 @@ class BackupService {
     Set<String>? videoKeys,
     void Function(double progress)? onProgress,
     void Function(List<String> names)? onDictionariesSkipped,
+    bool compress = false,
+    bool includeSrsMedia = true,
   }) async {
     bool wants(BackupCategory c) =>
         categories == null || categories.contains(c);
@@ -1748,7 +1762,7 @@ class BackupService {
           files,
         );
       }
-      if (includeSrs) {
+      if (includeSrs && includeSrsMedia) {
         await _collectSrsMediaFiles(files);
       }
 
@@ -1763,6 +1777,7 @@ class BackupService {
         metaName: _metaName,
         metaJson: metaJson,
         archivePathToSource: files,
+        deflate: compress,
         onBytes: onProgress == null
             ? null
             : (int deltaBytes) {
@@ -2544,6 +2559,7 @@ class BackupService {
     required String metaName,
     required String metaJson,
     required Map<String, String> archivePathToSource,
+    bool deflate = false,
     void Function(int deltaBytes)? onBytes,
   }) async {
     // 进度回传口：闭包捕获 SendPort（SendPort 可跨 isolate 传递），Isolate.run 的
@@ -2564,6 +2580,7 @@ class BackupService {
         metaName: metaName,
         metaJson: metaJson,
         archivePathToSource: archivePathToSource,
+        deflate: deflate,
         sendPort: sendPort,
       );
     } finally {
@@ -2579,13 +2596,14 @@ class BackupService {
   /// `FushiDatabase` → `DynamicLibrary`）—— 两者都不可发送，spawn 当场抛
   /// `Illegal argument in isolate message`，导出备份 100% 失效（BUG-1929）。
   ///
-  /// 本函数的 Context 只有下面五个形参，全部可跨 isolate 传递（String / Map /
+  /// 本函数的 Context 只有下面六个形参，全部可跨 isolate 传递（String / Map / bool /
   /// SendPort）。**别把它内联回去**，也别在这里引用任何外层变量。
   static Future<void> _runBackupZipWorker({
     required String outputPath,
     required String metaName,
     required String metaJson,
     required Map<String, String> archivePathToSource,
+    required bool deflate,
     required SendPort? sendPort,
   }) {
     return Isolate.run(() async {
@@ -2599,7 +2617,11 @@ class BackupService {
           final File file = File(entry.value);
           if (!file.existsSync()) continue;
           final int size = file.lengthSync();
-          addFileStored(encoder, file, entry.key);
+          if (deflate && size <= kBackupDeflateMaxEntryBytes) {
+            addFileNativeDeflate(encoder, file, entry.key);
+          } else {
+            addFileStored(encoder, file, entry.key);
+          }
           sendPort?.send(size);
         }
         encoder.closeSync();

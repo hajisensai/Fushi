@@ -1,0 +1,166 @@
+/// 自动备份（定时还原点）的设置：间隔、偏好时刻、内容、落点
+/// （docs/specs/2026-11-25-auto-backup-restore-points.md 第二层，D1 / D2 / D7）。
+///
+/// 全部存在设备本地偏好里（`preference_keys.dart` 的 `kAutoBackup*PrefKey`，登记在
+/// `SyncRepository.deviceLocalPrefKeys`）。读写只经 [readAutoBackupSettings] /
+/// [writeAutoBackupSettings]，设置页与控制通道共用。
+library;
+
+import 'dart:convert';
+
+import 'package:fushi/src/models/preference_keys.dart';
+import 'package:fushi/src/sync/backup_service.dart' show BackupCategory;
+
+/// 自动备份间隔。
+enum AutoBackupInterval {
+  off(0),
+  daily(1),
+  every3Days(3),
+  weekly(7);
+
+  const AutoBackupInterval(this.days);
+
+  /// 间隔天数；[off] 为 0。
+  final int days;
+
+  static AutoBackupInterval fromName(Object? raw) {
+    for (final AutoBackupInterval v in values) {
+      if (v.name == raw) return v;
+    }
+    return kAutoBackupDefaultInterval;
+  }
+}
+
+/// 缺省间隔（D1：默认开、每日）。
+const AutoBackupInterval kAutoBackupDefaultInterval = AutoBackupInterval.daily;
+
+/// 缺省内容（D1「小集合」）：设置、配置档案、阅读进度、统计、音乐、复习（笔记与记录）、字体。
+/// 书 / 有声书 / 视频 / 本地音频 / 词典 / 游戏这些大块文件默认不带；复习媒体另有开关（D2）。
+const Set<BackupCategory> kAutoBackupDefaultCategories = <BackupCategory>{
+  BackupCategory.settings,
+  BackupCategory.profiles,
+  BackupCategory.progress,
+  BackupCategory.statistics,
+  BackupCategory.music,
+  BackupCategory.srs,
+  BackupCategory.fonts,
+};
+
+/// 自动备份的一份设置快照（不可变）。
+class AutoBackupSettings {
+  const AutoBackupSettings({
+    this.interval = kAutoBackupDefaultInterval,
+    this.preferredMinuteOfDay,
+    this.categories = kAutoBackupDefaultCategories,
+    this.includeSrsMedia = false,
+    this.customFolder,
+  });
+
+  final AutoBackupInterval interval;
+
+  /// 偏好时刻（当天第几分钟，本地时间）；null = 不指定。
+  final int? preferredMinuteOfDay;
+
+  /// 带哪些类别。
+  final Set<BackupCategory> categories;
+
+  /// 复习类别勾着时带不带复习媒体（D2，缺省不带）。
+  final bool includeSrsMedia;
+
+  /// 桌面端自定义文件夹（绝对路径）；null = 默认还原点目录。移动端第三期才接（SAF / Files），
+  /// 读到也不用（见 [effectiveFolder]）。
+  final String? customFolder;
+
+  bool get enabled => interval != AutoBackupInterval.off;
+
+  /// 实际生效的自定义文件夹：只有支持自定义文件夹的平台（[supportsCustomFolder]）才用。
+  String? effectiveFolder({required bool supportsCustomFolder}) =>
+      supportsCustomFolder ? customFolder : null;
+
+  /// 内容签名：内容设置变了，指纹就不同，不会因「数据没变」跳过。
+  String get contentSignature {
+    final List<String> names = <String>[
+      for (final BackupCategory c in categories) c.name,
+    ]..sort();
+    return '${names.join(',')}|media=$includeSrsMedia';
+  }
+
+  AutoBackupSettings copyWith({
+    AutoBackupInterval? interval,
+    int? Function()? preferredMinuteOfDay,
+    Set<BackupCategory>? categories,
+    bool? includeSrsMedia,
+    String? Function()? customFolder,
+  }) => AutoBackupSettings(
+    interval: interval ?? this.interval,
+    preferredMinuteOfDay: preferredMinuteOfDay != null
+        ? preferredMinuteOfDay()
+        : this.preferredMinuteOfDay,
+    categories: categories ?? this.categories,
+    includeSrsMedia: includeSrsMedia ?? this.includeSrsMedia,
+    customFolder: customFolder != null ? customFolder() : this.customFolder,
+  );
+
+  @override
+  bool operator ==(Object other) =>
+      other is AutoBackupSettings &&
+      other.interval == interval &&
+      other.preferredMinuteOfDay == preferredMinuteOfDay &&
+      other.contentSignature == contentSignature &&
+      other.customFolder == customFolder;
+
+  @override
+  int get hashCode => Object.hash(
+    interval,
+    preferredMinuteOfDay,
+    contentSignature,
+    customFolder,
+  );
+}
+
+/// 从偏好读设置；缺键 / 坏值一律回到缺省。[readPref] 是 `PreferencesRepository.getPref`。
+AutoBackupSettings readAutoBackupSettings(
+  Object? Function(String key) readPref,
+) {
+  final Object? time = readPref(kAutoBackupTimePrefKey);
+  final Object? folder = readPref(kAutoBackupFolderPrefKey);
+  return AutoBackupSettings(
+    interval: AutoBackupInterval.fromName(readPref(kAutoBackupIntervalPrefKey)),
+    preferredMinuteOfDay: time is int && time >= 0 && time < 24 * 60
+        ? time
+        : null,
+    categories: _decodeCategories(readPref(kAutoBackupCategoriesPrefKey)),
+    includeSrsMedia: readPref(kAutoBackupSrsMediaPrefKey) == true,
+    customFolder: folder is String && folder.trim().isNotEmpty ? folder : null,
+  );
+}
+
+/// 写回设置（一个逻辑设置多个键，一次 [writePrefs] 落盘）。[writePrefs] 是
+/// `PreferencesRepository.setPrefs`。
+Future<void> writeAutoBackupSettings(
+  Future<void> Function(Map<String, dynamic> values) writePrefs,
+  AutoBackupSettings settings,
+) => writePrefs(<String, dynamic>{
+  kAutoBackupIntervalPrefKey: settings.interval.name,
+  kAutoBackupTimePrefKey: settings.preferredMinuteOfDay ?? -1,
+  kAutoBackupCategoriesPrefKey: jsonEncode(<String>[
+    for (final BackupCategory c in settings.categories) c.name,
+  ]),
+  kAutoBackupSrsMediaPrefKey: settings.includeSrsMedia,
+  kAutoBackupFolderPrefKey: settings.customFolder ?? '',
+});
+
+Set<BackupCategory> _decodeCategories(Object? raw) {
+  if (raw is! String || raw.isEmpty) return kAutoBackupDefaultCategories;
+  try {
+    final Object? list = jsonDecode(raw);
+    if (list is! List<Object?>) return kAutoBackupDefaultCategories;
+    return <BackupCategory>{
+      for (final Object? name in list)
+        for (final BackupCategory c in BackupCategory.values)
+          if (c.name == name) c,
+    };
+  } on FormatException {
+    return kAutoBackupDefaultCategories;
+  }
+}

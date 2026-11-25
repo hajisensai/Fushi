@@ -1643,6 +1643,8 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       _flushPendingMines();
       if (ref.read(appProvider).isInitialised) {
         unawaited(_checkFeedbackReplies());
+        // 自动备份：回前台查一次到期（移动端 app 不在后台跑，错过的这里补）。
+        ref.read(appProvider).autoBackup.onResumed();
       }
       if (Platform.isIOS) {
         unawaited(

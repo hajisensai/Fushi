@@ -1680,16 +1680,25 @@ class BackupRestoreService {
   ///
   /// 快照先复制到预览临时文件并迁到当前 schema（与 [previewMergeRestore] 同一口径），
   /// 快照本身一个字节不动。[liveDb] 是 app 正在用的连接（只读查询）。
+  ///
+  /// [snapshotPath] 缺省 = 覆盖前快照；还原点页对任意一份原始主库副本（更新前 / 操作前还原点、
+  /// 检查数据库的备份、从定时备份 zip 里解出的 `fushi.db`）走同一条「只补缺」预览，那时
+  /// [createdAt] 由调用方给（缺省取文件修改时刻）。
   static Future<OverwriteSnapshotPreview?> previewOverwriteSnapshot({
     required String dbDirectory,
     required FushiDatabase liveDb,
+    String? snapshotPath,
+    DateTime? createdAt,
   }) async {
-    final File snapshot = File(overwriteSnapshotPath(dbDirectory));
+    final File snapshot = File(
+      snapshotPath ?? overwriteSnapshotPath(dbDirectory),
+    );
     if (!snapshot.existsSync()) return null;
     final FileStat stat = snapshot.statSync();
     // 没有起点记录时按「现在」显示，与 [pruneExpiredOverwriteSnapshot] 补记同口径。
-    final DateTime createdAt =
-        await _readOverwriteSnapshotCreatedAt(dbDirectory) ?? DateTime.now();
+    final DateTime snapshotCreatedAt = snapshotPath == null
+        ? await _readOverwriteSnapshotCreatedAt(dbDirectory) ?? DateTime.now()
+        : createdAt ?? stat.modified;
     final String srcPath = p.join(dbDirectory, _mergePreviewSrcName);
     await _safeDelete(srcPath);
     await _safeDelete('$srcPath-wal');
@@ -1725,7 +1734,7 @@ class BackupRestoreService {
       return OverwriteSnapshotPreview(
         path: snapshot.path,
         sizeBytes: stat.size,
-        createdAt: createdAt,
+        createdAt: snapshotCreatedAt,
         missingBooks: <OverwriteSnapshotBook>[
           for (int i = 0; i < missing.length; i++)
             OverwriteSnapshotBook(
@@ -1792,12 +1801,18 @@ class BackupRestoreService {
   ///
   /// 调用方须先关掉 app 的数据库连接（与 [mergeRestoreBackup] 同一遮罩协议），
   /// 完成后重启。快照文件保留不删（存储页可删），重复执行幂等。
+  ///
+  /// [snapshotPath] 缺省 = 覆盖前快照；还原点页的「补回缺少的内容」传任意一份原始主库副本
+  /// （见 [previewOverwriteSnapshot]）。
   static Future<void> mergeFromOverwriteSnapshot({
     required String dbDirectory,
+    String? snapshotPath,
   }) async {
-    final File snapshot = File(overwriteSnapshotPath(dbDirectory));
+    final File snapshot = File(
+      snapshotPath ?? overwriteSnapshotPath(dbDirectory),
+    );
     if (!snapshot.existsSync()) {
-      throw StateError('No pre-overwrite snapshot in $dbDirectory');
+      throw StateError('No database snapshot at ${snapshot.path}');
     }
     final String dbPath = p.join(dbDirectory, _dbName);
     final String mergeSrcPath = p.join(dbDirectory, _mergeSrcName);
@@ -1874,6 +1889,30 @@ class BackupRestoreService {
     await _safeDelete('$mergeSrcPath-shm');
     await _safeDelete(bakPath);
     await _safeDelete(sidecar.path);
+  }
+
+  /// 把备份 zip [zipPath] 里的主库条目流式解到 [destPath]（还原点页对定时备份做「补回缺少的
+  /// 内容」时先解出主库，再交给 [previewOverwriteSnapshot] / [mergeFromOverwriteSnapshot]）。
+  /// 包里没有主库条目抛 [StateError]。
+  static Future<void> extractBackupDatabase({
+    required String zipPath,
+    required String destPath,
+  }) async {
+    final InputFileStream input = InputFileStream(zipPath);
+    String? entryName;
+    try {
+      entryName = _findDbEntry(ZipDecoder().decodeBuffer(input))?.name;
+    } finally {
+      await input.close();
+    }
+    if (entryName == null) throw StateError('No $_dbName in backup archive');
+    await _safeDelete(destPath);
+    await _extractEntriesStreaming(
+      zipPath: zipPath,
+      entries: <MapEntry<String, String>>[
+        MapEntry<String, String>(entryName, destPath),
+      ],
+    );
   }
 
   /// Sidecar file marking a pending MERGE import (TODO-888). The merge runs in

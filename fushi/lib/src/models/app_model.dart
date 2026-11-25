@@ -455,6 +455,9 @@ import 'package:fushi_engine/sync/torrent_engine/host_torrent_engine.dart';
 import 'package:fushi/src/ai/agent/ai_agent_assistant_host.dart'
     show createAppAssistantHost;
 import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart';
+import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart' show SrsMediaStore;
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile;
@@ -2110,6 +2113,9 @@ class AppModel
     );
     _updateCheckScheduler = scheduler;
     scheduler.start();
+    // 自动备份与更新检查同一个时机起：首页已就绪，第一次到期检查挂在空闲任务上。
+    autoBackup.start();
+    registerAutoBackupController(autoBackup);
     // 安装统计心跳（iOS / 关了开关时它自己不发）：与更新检查同生命周期。
     final UsageHeartbeat heartbeat = UsageHeartbeat.forFushi(
       prefs: prefsRepo,
@@ -2137,6 +2143,7 @@ class AppModel
     final UsageHeartbeat? heartbeat = _usageHeartbeat;
     _updateCheckScheduler = null;
     _usageHeartbeat = null;
+    autoBackup.stop();
     await scheduler?.stop();
     await heartbeat?.stop();
   }
@@ -3405,12 +3412,35 @@ class AppModel
   RestorePoint? companionSrsRestorePoint(RestorePoint point) =>
       RestorePointStore(_databaseDirectory.path).companionSrsPoint(point);
 
-  /// 把主库（与同一次更新的复习库）换回 [point]。只在开库被拒 / 失败的专屏上调用：
+  /// 把 [point] 里的库换回来：主库副本在就换主库（更新前还原点再带上同一次更新的复习库），
+  /// 复习库副本在（操作前还原点）就换复习库。开库被拒 / 失败的专屏与还原点页「替换」都走这里：
   /// 先关复习库与主库连接（降级时 drift 的后台连接已经开着），再离线换文件；当前的库
   /// 另存为回滚前还原点。之后由调用方重启 app。换不了时抛出、文件不动（或由下次启动补完）。
   Future<void> rollbackToRestorePoint(RestorePoint point) async {
     final RestorePointStore store = RestorePointStore(_databaseDirectory.path);
-    final RestorePoint? srs = store.companionSrsPoint(point);
+    final bool hasMain =
+        point.rawDatabasePath(RestorePointDatabase.fushi) != null;
+    final bool hasSrs = point.rawDatabasePath(RestorePointDatabase.srs) != null;
+    final RestorePoint? companion = hasMain && !hasSrs
+        ? store.companionSrsPoint(point)
+        : null;
+    final List<RestorePointRollbackPlan> plans = <RestorePointRollbackPlan>[
+      if (hasMain)
+        RestorePointRollbackPlan(
+          target: point,
+          database: RestorePointDatabase.fushi,
+        ),
+      if (hasSrs)
+        RestorePointRollbackPlan(
+          target: point,
+          database: RestorePointDatabase.srs,
+        )
+      else if (companion != null)
+        RestorePointRollbackPlan(target: companion),
+    ];
+    if (plans.isEmpty) {
+      throw StateError('restore point ${point.id} holds no database copy');
+    }
     await _closeSrsStorage();
     if (_databaseOpened) {
       try {
@@ -3420,10 +3450,38 @@ class AppModel
       }
       _databaseOpened = false;
     }
-    await store.rollback(<RestorePointRollbackPlan>[
-      RestorePointRollbackPlan(target: point),
-      if (srs != null) RestorePointRollbackPlan(target: srs),
-    ]);
+    await store.rollback(plans);
+  }
+
+  /// 与设置页导出、控制通道导出同一份构造的备份服务：数据根下的书 / 有声书 / 字体 / 游戏封面树
+  /// 一起打包，复习库经 [srsStorageForBackup]。
+  BackupService createBackupService() => BackupService(
+    db: database,
+    dbDirectory: databaseDirectory.path,
+    dictionaryResourceDirectory: dictionaryResourceDirectory.path,
+    appVersion: packageInfo.version,
+    booksRootDirectory: path.join(appDirectory.path, 'fushi_books'),
+    audiobooksRootDirectory: path.join(appDirectory.path, 'audiobooks'),
+    fontsRootDirectory: path.join(appDirectory.path, 'custom_fonts'),
+    gameCoversRootDirectory: path.join(appDirectory.path, 'game_covers'),
+    srsStorage: srsStorageForBackup,
+  );
+
+  /// 自动备份（定时还原点 + 操作前还原点）。首页就绪后 [startUpdateChecks] 里启动调度，
+  /// [stopUpdateChecks] 里停。
+  late final AutoBackupController autoBackup = AutoBackupController(
+    host: _AppAutoBackupHost(this),
+  );
+
+  /// 当前自动备份设置（设备本地偏好）。
+  AutoBackupSettings get autoBackupSettings =>
+      readAutoBackupSettings((String key) => prefsRepo.getPref(key));
+
+  /// 写自动备份设置；改了之后立刻按新设置查一次到期（例如从「关」改成「每日」）。
+  Future<void> setAutoBackupSettings(AutoBackupSettings settings) async {
+    await writeAutoBackupSettings(prefsRepo.setPrefs, settings);
+    notifyListeners();
+    unawaited(autoBackup.checkNow());
   }
 
   Future<void> retryInitialise() async {
@@ -17136,3 +17194,69 @@ typedef _PopupAppearanceInputs = ({
   PopupDisplayPrefs displayPrefs,
   bool einkMode,
 });
+
+/// [AppModel] 给自动备份的宿主实现（备份服务、导出锁、复习库快照、失败提示）。
+class _AppAutoBackupHost implements AutoBackupHost {
+  _AppAutoBackupHost(this._app);
+
+  final AppModel _app;
+
+  @override
+  String get databaseDirectory => _app.databaseDirectory.path;
+
+  @override
+  AutoBackupSettings readSettings() => _app.autoBackupSettings;
+
+  @override
+  bool get supportsCustomFolder =>
+      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
+  @override
+  BackupService createBackupService() => _app.createBackupService();
+
+  @override
+  Map<BackupCategory, String> get contentTreeRoots => <BackupCategory, String>{
+    BackupCategory.books: path.join(_app.appDirectory.path, 'fushi_books'),
+    BackupCategory.audiobooks: path.join(_app.appDirectory.path, 'audiobooks'),
+    BackupCategory.fonts: path.join(_app.appDirectory.path, 'custom_fonts'),
+    BackupCategory.games: path.join(_app.appDirectory.path, 'game_covers'),
+    BackupCategory.dictionary: _app.dictionaryResourceDirectory.path,
+  };
+
+  @override
+  String get srsMediaRoot =>
+      SrsMediaStore.mediaRootFor(_app.databaseDirectory).path;
+
+  @override
+  bool get backupExportActive => _app.backupExportActive;
+
+  @override
+  void beginBackupExport() => _app.beginBackupExport();
+
+  @override
+  void endBackupExport() => _app.endBackupExport();
+
+  @override
+  void reportBackupExportProgress(double fraction) =>
+      _app.reportBackupExportProgress(fraction);
+
+  @override
+  Future<Future<void> Function(String destPath)?> srsSnapshotWriter() async {
+    final SrsStorage? storage = await _app.srsStorageForBackup();
+    if (storage == null) return null;
+    return (String destPath) async =>
+        storage.core.snapshotInto(destPath, stripDeviceLocal: false);
+  }
+
+  @override
+  void notifyFailure(String reason) => FushiToast.show(
+    msg: t.auto_backup_failed_notice(reason: reason),
+    severity: ToastSeverity.error,
+  );
+
+  @override
+  void notifyPreOperationFailure(String reason) => FushiToast.show(
+    msg: t.restore_points_pre_operation_failed(reason: reason),
+    severity: ToastSeverity.warning,
+  );
+}
