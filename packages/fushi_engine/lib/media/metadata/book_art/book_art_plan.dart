@@ -5,7 +5,8 @@
 /// - 与本地内嵌封面比：刮来的图面积大于本地 [kBookArtSharperFactor] 倍才写；本地没有
 ///   封面时直接写；本地有封面但量不出尺寸、或刮来的图尺寸未知时不写（证明不了更清晰）；
 /// - 与刮削层里已有的同系列那张比：不更大就保留已有的（[BookArtVolumeOutcome.kept]）。
-/// - 横幅只有 MangaBaka 有：宽高比 ≥ [kBookArtBannerMinAspect] 的里取面积最大。
+/// - 横幅优先 MangaBaka：宽高比 ≥ [kBookArtBannerMinAspect] 的里取面积最大；MangaBaka
+///   没有时回落 AniList 的 `bannerImage`（见 anilist_banner.dart）。
 library;
 
 import 'dart:typed_data';
@@ -30,21 +31,35 @@ const int kBookArtMaxImageBytes = 20 * 1024 * 1024;
 /// MangaBaka 那张短边低于它时，才额外量 Bangumi 那张的尺寸（控制请求数）。
 const int kBookArtProbeShortSide = 1000;
 
-/// 封面来源。
+/// 封面 / 横幅来源。系列匹配与钉死只用 [mangabaka] / [bangumi]（[seriesSources]）；
+/// [anilist] 只出横幅。
 enum BookArtSource {
   mangabaka('mangabaka'),
-  bangumi('bangumi');
+  bangumi('bangumi'),
+  anilist('anilist');
 
   const BookArtSource(this.wire);
 
   /// 落盘元数据 / ops 线上形状里的名字。
   final String wire;
 
+  /// 能匹配 / 钉死系列的源。
+  static const List<BookArtSource> seriesSources = <BookArtSource>[
+    mangabaka,
+    bangumi,
+  ];
+
   static BookArtSource? tryParse(String? raw) {
     for (final BookArtSource s in values) {
       if (s.wire == raw) return s;
     }
     return null;
+  }
+
+  /// 只认能匹配系列的源（钉死请求 / 刮削层记的系列源）。
+  static BookArtSource? tryParseSeries(String? raw) {
+    final BookArtSource? s = tryParse(raw);
+    return s != null && seriesSources.contains(s) ? s : null;
   }
 }
 

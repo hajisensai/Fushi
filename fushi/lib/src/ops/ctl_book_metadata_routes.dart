@@ -416,7 +416,7 @@ Map<String, BookArtSeriesPin> _pins(CtlCall call) {
   if (seriesKey == null && source == null && id == null) {
     return const <String, BookArtSeriesPin>{};
   }
-  final BookArtSource? parsed = BookArtSource.tryParse(source);
+  final BookArtSource? parsed = BookArtSource.tryParseSeries(source);
   if (seriesKey == null || parsed == null || id == null) {
     throw const CtlFailure.badRequest(
       '钉死系列要同时给 seriesKey、source（mangabaka / bangumi）与 seriesId',

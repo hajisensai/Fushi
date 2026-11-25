@@ -80,6 +80,7 @@ class MangaBakaSeries {
     this.artists = const <String>[],
     this.finalVolume,
     this.cover,
+    this.aniListId,
   });
 
   final int id;
@@ -119,6 +120,10 @@ class MangaBakaSeries {
 
   /// 系列主封面。
   final MangaBakaRawImage? cover;
+
+  /// MangaBaka 给这个系列记的 AniList media id（`source.anilist.id`）；没有为 null。
+  /// 「获取各卷封面与横幅」在 MangaBaka 没有横幅时按它去 AniList 取横幅，不按标题猜。
+  final int? aniListId;
 
   bool get isMerged => state == 'merged' && mergedWith != null;
 
@@ -171,6 +176,8 @@ class MangaBakaSeries {
       }
     }
     final Object? cover = json['cover'];
+    final Object? source = json['source'];
+    final Object? aniList = source is Map ? source['anilist'] : null;
     return MangaBakaSeries(
       id: id,
       state: _string(json['state']) ?? 'active',
@@ -187,6 +194,7 @@ class MangaBakaSeries {
       contentRating: _string(json['content_rating'])?.toLowerCase() ?? 'safe',
       finalVolume: _num(json['final_volume']),
       cover: cover is Map ? MangaBakaRawImage.fromJson(cover['raw']) : null,
+      aniListId: aniList is Map ? _positiveInt(aniList['id']) : null,
     );
   }
 }
@@ -316,6 +324,11 @@ int? _int(Object? value) => switch (value) {
   final int v => v,
   final num v => v.toInt(),
   final String v => int.tryParse(v.trim()),
+  _ => null,
+};
+
+int? _positiveInt(Object? value) => switch (_int(value)) {
+  final int v when v > 0 => v,
   _ => null,
 };
 
