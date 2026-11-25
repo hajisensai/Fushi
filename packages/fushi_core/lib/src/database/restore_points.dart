@@ -620,6 +620,11 @@ class RestorePointStore {
       final String snapshot = plan.target.snapshotPath;
       await Isolate.run(() => _quickCheckSync(snapshot));
     }
+    // 活库还被别的句柄占着（Windows 上改不了名）时在写日志之前就失败：否则日志落了盘，
+    // 下次启动会把一次用户以为失败了的回滚补完。
+    for (final RestorePointRollbackPlan plan in plans) {
+      _probeMovable(p.join(dbDirectory, plan.target.database.fileName));
+    }
     final int now = DateTime.now().millisecondsSinceEpoch;
     Directory(root).createSync(recursive: true);
     final List<_RollbackEntry> entries = <_RollbackEntry>[];
@@ -923,6 +928,15 @@ void _writeAtomicSync(String path, String body) {
   final File tmp = File('$path$_kTmpSuffix');
   tmp.writeAsStringSync(body, flush: true);
   tmp.renameSync(path);
+}
+
+/// [path] 能不能改名（存在时原地改名再改回来）；被占用时抛 [FileSystemException]。
+void _probeMovable(String path) {
+  final File f = File(path);
+  if (!f.existsSync()) return;
+  final String probe = '$path.rollback-probe';
+  f.renameSync(probe);
+  File(probe).renameSync(path);
 }
 
 void _moveIfExists(String from, String to) {
