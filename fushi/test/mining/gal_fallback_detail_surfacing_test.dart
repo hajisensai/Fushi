@@ -63,8 +63,9 @@ void main() {
       );
       expect(file.existsSync(), isTrue, reason: '会话卡源文件不在了？守卫失去锚点，先修路径再谈断言');
       final String src = file.readAsStringSync();
-      final int start = maskCommentsAndStrings(src)
-          .indexOf('class _SessionSummary ');
+      final int start = maskCommentsAndStrings(
+        src,
+      ).indexOf('class _SessionSummary ');
       expect(
         start,
         greaterThanOrEqualTo(0),

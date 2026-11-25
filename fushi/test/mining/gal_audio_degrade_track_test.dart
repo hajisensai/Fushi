@@ -44,19 +44,21 @@ void main() {
     isWindows: true,
     targetWow64Probe: (_) async => false,
     injectorResolver: ({required bool is32Bit}) async => 'injector.exe',
-    engineSourceFactory: ({
-      required int targetPid,
-      required String? launchExe,
-      required String injectorPath,
-      required bool lunaPcHooks,
-      int? lunaCodepage,
-      // PR#427 给工厂加了 launch 专用可选参数；本 fake 不关心其取值，
-      // 但签名必须跟上 typedef，否则赋值类型不兼容。
-      List<String> launchArguments = const <String>[],
-      String launchWorkdir = '',
-      GalJapaneseLocaleMode japaneseLocaleMode = kGalDefaultJapaneseLocaleMode,
-      String? contentLanguage,
-    }) => engine,
+    engineSourceFactory:
+        ({
+          required int targetPid,
+          required String? launchExe,
+          required String injectorPath,
+          required bool lunaPcHooks,
+          int? lunaCodepage,
+          // PR#427 给工厂加了 launch 专用可选参数；本 fake 不关心其取值，
+          // 但签名必须跟上 typedef，否则赋值类型不兼容。
+          List<String> launchArguments = const <String>[],
+          String launchWorkdir = '',
+          GalJapaneseLocaleMode japaneseLocaleMode =
+              kGalDefaultJapaneseLocaleMode,
+          String? contentLanguage,
+        }) => engine,
     loopbackSourceFactory: () => loopback,
     textPollInterval: const Duration(milliseconds: 5),
     loopbackFreezeDelay: loopbackFreezeDelay,
@@ -430,8 +432,9 @@ void main() {
 
     // 轨列表内容体已抽到共享面板（诊断页与捕获工作台音轨对话框同一份），
     // BUG-1102 的判据守卫跟着真相走：扫共享面板文件，另确认诊断页在消费它。
-    final String panel = File('lib/src/mining/gal_audio_tracks_panel.dart')
-        .readAsStringSync();
+    final String panel = File(
+      'lib/src/mining/gal_audio_tracks_panel.dart',
+    ).readAsStringSync();
     // 「可选性」这个量本身必须由**后端**算出来。比的是折叠空白、去掉 dart format
     // 补的尾逗号后的表达式：钉语义，不钉换行。
     final String? selectionExpr = initializerExpression(
@@ -682,8 +685,9 @@ void main() {
     //   内容——等于把断言字面量存在被守文件的注释里，而注释里那个 `:21` 行号今天
     //   已经指错（真实位置是 `audio_loopback_capture.cpp:22`）。**注释是会漂的，
     //   它不是真相源**。真相源是 native 那个常量本身，所以下面直接读它对账。
-    final String src = File('lib/src/mining/gal_hook_session_controller.dart')
-        .readAsStringSync();
+    final String src = File(
+      'lib/src/mining/gal_hook_session_controller.dart',
+    ).readAsStringSync();
     final String code = maskComments(src);
 
     // ① 那个「一个 8000 绑死两个语义」的旧标识符不许回来。
@@ -709,8 +713,9 @@ void main() {
       isTrue,
       reason: 'native loopback 采集源不在了：跨语言契约的真相源必须先修',
     );
-    final RegExpMatch? ring = RegExp(r'kRingSeconds\s*=\s*(\d+)')
-        .firstMatch(maskComments(nativeFile.readAsStringSync()));
+    final RegExpMatch? ring = RegExp(
+      r'kRingSeconds\s*=\s*(\d+)',
+    ).firstMatch(maskComments(nativeFile.readAsStringSync()));
     expect(ring, isNotNull, reason: 'native kRingSeconds 改名了：Dart 侧上限失去依据');
     expect(
       int.parse(capacity!),
@@ -888,8 +893,9 @@ String _sessionOverviewCardSource() {
   final File file = File('lib/src/pages/implementations/texthooker_page.dart');
   expect(file.existsSync(), isTrue, reason: '会话卡源文件不在了？守卫失去锚点，先修路径再谈断言');
   final String src = file.readAsStringSync();
-  final int start = maskCommentsAndStrings(src)
-      .indexOf('class _SessionSummary ');
+  final int start = maskCommentsAndStrings(
+    src,
+  ).indexOf('class _SessionSummary ');
   expect(
     start,
     greaterThanOrEqualTo(0),
