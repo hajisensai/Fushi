@@ -611,6 +611,60 @@ void main() {
     });
   });
 
+  group('还原点 / 自动备份', () {
+    test('points / auto / auto-run 指向对应路由', () {
+      final CtlRequestSpec ls = build('backup', 'points', <String>[]);
+      expect((ls.method, ls.path), ('GET', '/api/admin/restore-points'));
+      final CtlRequestSpec st = build('backup', 'auto', <String>[]);
+      expect((st.method, st.path), ('GET', '/api/admin/auto-backup/status'));
+      final CtlRequestSpec run = build('backup', 'auto-run', <String>[]);
+      expect((run.method, run.path), ('POST', '/api/admin/auto-backup/run'));
+    });
+
+    test('point-restore：--fill / --replace 二选一，要 --yes', () {
+      expect(
+        () => build('backup', 'point-restore', <String>['p1', '--yes']),
+        usageError(),
+      );
+      expect(
+        () => build('backup', 'point-restore', <String>[
+          'p1',
+          '--fill',
+          '--replace',
+          '--yes',
+        ]),
+        usageError(),
+      );
+      expect(
+        () => build('backup', 'point-restore', <String>['p1', '--replace']),
+        usageError(),
+      );
+      expect(
+        () => build('backup', 'point-restore', <String>['--fill', '--yes']),
+        usageError(),
+      );
+      final CtlRequestSpec r = build('backup', 'point-restore', <String>[
+        'p1',
+        '--replace',
+        '--yes',
+      ]);
+      expect((r.method, r.path), ('POST', '/api/admin/restore-points/restore'));
+      expect(r.body, <String, Object?>{
+        'id': 'p1',
+        'mode': 'replace',
+        'confirm': true,
+      });
+      expect(
+        build('backup', 'point-restore', <String>[
+          'p1',
+          '--fill',
+          '-y',
+        ]).body?['mode'],
+        'fill',
+      );
+    });
+  });
+
   group('sub', () {
     test('ls / get / items / check（单条与全部）', () {
       expect(build('sub', 'ls', <String>[]).path, '/api/admin/subscriptions');

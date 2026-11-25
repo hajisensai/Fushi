@@ -146,7 +146,7 @@ List<OpDescription> describeDataOps(OpDescribeKit kit) => <OpDescription>[
 
   // ── 还原点 / 自动备份 ─────────────────────────────────────────────────
   const OpDescription(
-    id: 'restorePoints.list',
+    id: 'backup.restore-point.list',
     method: 'GET',
     pattern: '/api/admin/restore-points',
     summary:
@@ -155,7 +155,7 @@ List<OpDescription> describeDataOps(OpDescribeKit kit) => <OpDescription>[
         'database-check copies, with kind, time, size and what each can do.',
   ),
   const OpDescription(
-    id: 'autoBackup.status',
+    id: 'backup.auto.status',
     method: 'GET',
     pattern: '/api/admin/auto-backup/status',
     summary:
@@ -164,7 +164,7 @@ List<OpDescription> describeDataOps(OpDescribeKit kit) => <OpDescription>[
         'overdue.',
   ),
   OpDescription(
-    id: 'autoBackup.run',
+    id: 'backup.auto.run',
     method: 'POST',
     pattern: '/api/admin/auto-backup/run',
     summary:
@@ -174,7 +174,7 @@ List<OpDescription> describeDataOps(OpDescribeKit kit) => <OpDescription>[
     undo: _createdRestorePointUndo(),
   ),
   const OpDescription(
-    id: 'restorePoints.restore',
+    id: 'backup.restore-point.restore',
     method: 'POST',
     pattern: '/api/admin/restore-points/restore',
     summary:
@@ -187,7 +187,7 @@ List<OpDescription> describeDataOps(OpDescribeKit kit) => <OpDescription>[
     params: <OpParam>[
       OpParam.string(
         'id',
-        description: 'Restore point id (from restorePoints.list).',
+        description: 'Restore point id (from backup.restore-point.list).',
         required: true,
       ),
       OpParam.string(

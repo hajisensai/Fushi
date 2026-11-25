@@ -329,7 +329,11 @@ List<CtlRoute> _backupRoutes(
     );
     final Set<BackupCategory>? finalCategories = resolved.categories;
     final bool wait = call.optBool('wait') ?? true;
-    appModel.beginBackupExport();
+    // 上面的检查与这里之间有 await：拿锁失败（这期间别的导出 / 自动备份拿走了）照样 409。
+    final Object? exportLock = appModel.beginBackupExport();
+    if (exportLock == null) {
+      throw const CtlFailure.conflict('已有一个备份导出在进行中');
+    }
     Future<Map<String, Object?>> export() async {
       List<String> skippedDictionaries = const <String>[];
       final BackupMeta meta;
@@ -350,7 +354,7 @@ List<CtlRoute> _backupRoutes(
         } catch (_) {}
         rethrow;
       } finally {
-        appModel.endBackupExport();
+        appModel.endBackupExport(exportLock);
       }
       return <String, Object?>{
         'path': outputPath,
@@ -463,6 +467,9 @@ List<CtlRoute> _backupRoutes(
       throw const CtlFailure.conflict('已有一个备份在进行中');
     }
     final AutoBackupOutcome outcome = await appModel.autoBackup.backUpNow();
+    if (outcome == AutoBackupOutcome.busy) {
+      throw const CtlFailure.conflict('已有一个备份在进行中，或正在恢复数据');
+    }
     final AutoBackupStatus status = appModel.autoBackup.status.value;
     if (outcome == AutoBackupOutcome.failed) {
       throw CtlFailure.rejected(
@@ -503,7 +510,7 @@ List<CtlRoute> _backupRoutes(
         }
         await _uiContext(context);
         _runDetached(
-          'restorePoints.fill',
+          'backup.restore-point.fill',
           () => fillInFromRestorePoint(appModel, entry),
         );
       case 'replace':
@@ -511,17 +518,17 @@ List<CtlRoute> _backupRoutes(
           throw const CtlFailure.rejected('这个还原点不能用来替换（版本不兼容或不是还原点）');
         }
         await _uiContext(context);
-        // 操作前还原点拍不成时在动任何东西之前抛出：同步等到这一步，失败直接回终端。
-        await appModel.autoBackup.createPreOperationPoint(
-          kRestorePointReasonReplace,
-        );
+        // 查锁、钉住目标点、拍操作前还原点：任何一步不成都在动任何东西之前抛出，同步等到这一步，
+        // 失败直接回终端。
+        final RestorePointReplaceTicket ticket;
+        try {
+          ticket = await prepareRestorePointReplace(appModel, entry);
+        } on RestorePointBusyException {
+          throw const CtlFailure.conflict('备份导出进行中，先等它结束');
+        }
         _runDetached(
-          'restorePoints.replace',
-          () => replaceFromRestorePoint(
-            appModel,
-            entry,
-            preOperationPointTaken: true,
-          ),
+          'backup.restore-point.replace',
+          () => runRestorePointReplace(appModel, ticket),
         );
       default:
         throw const CtlFailure.badRequest('mode 只能是 fill 或 replace');

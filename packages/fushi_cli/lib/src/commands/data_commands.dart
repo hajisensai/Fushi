@@ -47,6 +47,34 @@ const List<CtlCommandGroup> dataCommandGroups = <CtlCommandGroup>[
         build: _backupRestore,
         render: _renderMessage,
       ),
+      CtlCommandSpec(
+        name: 'points',
+        summary: '列出还原点（更新前 / 回滚前 / 自动备份 / 操作前，加覆盖前快照与检查数据库的备份）',
+        build: _backupPoints,
+        render: _renderBackupPoints,
+      ),
+      CtlCommandSpec(
+        name: 'point-restore',
+        summary:
+            '从还原点恢复（--fill 只补回缺的、其余不动；--replace 先拍一份操作前还原点再整体换回；'
+            '完成后 app 重启）',
+        usage: '<id>',
+        configure: _configurePointRestore,
+        build: _backupPointRestore,
+        render: _renderMessage,
+      ),
+      CtlCommandSpec(
+        name: 'auto',
+        summary: '自动备份的设置与最近一次结果（间隔、时间、带哪些文件、文件夹、是否超期）',
+        build: _backupAutoStatus,
+        render: _renderBackupAutoStatus,
+      ),
+      CtlCommandSpec(
+        name: 'auto-run',
+        summary: '立即做一份自动备份还原点（同设置页「立即备份」）',
+        build: _backupAutoRun,
+        render: _renderBackupAutoRun,
+      ),
     ],
   ),
   CtlCommandGroup(
@@ -521,6 +549,110 @@ CtlRequestSpec _backupRestore(CtlCommandContext c) {
       if (importSettings) 'importSettings': true,
     },
   );
+}
+
+// ── 还原点 / 自动备份 ─────────────────────────────────────────────────
+
+CtlRequestSpec _backupPoints(CtlCommandContext c) =>
+    const CtlRequestSpec.get('/api/admin/restore-points');
+
+String _renderBackupPoints(Object? data) => renderCtlTable(
+  data is Map
+      ? <Map<String, Object?>>[
+          for (final Object? row in (data['points'] as List<Object?>? ?? []))
+            if (row is Map)
+              <String, Object?>{
+                ...row.cast<String, Object?>(),
+                'time': row['createdAt'] is int
+                    ? DateTime.fromMillisecondsSinceEpoch(
+                        row['createdAt'] as int,
+                      ).toLocal().toString().substring(0, 16)
+                    : '',
+                'size': _bytes(row['bytes']),
+                'can': <String>[
+                  if (row['canFillIn'] == true) 'fill',
+                  if (row['canReplace'] == true) 'replace',
+                ].join(','),
+              },
+        ]
+      : null,
+  const <(String, String)>[
+    ('id', 'id'),
+    ('类型', 'kind'),
+    ('时间', 'time'),
+    ('大小', 'size'),
+    ('可做', 'can'),
+  ],
+  empty: '（没有还原点）',
+);
+
+void _configurePointRestore(ArgParser parser) {
+  _configureYes(parser);
+  parser
+    ..addFlag('fill', negatable: false, help: '只补回当前数据缺的，已有的不动')
+    ..addFlag(
+      'replace',
+      negatable: false,
+      help: '让数据回到这个还原点（先自动拍一份当前数据的操作前还原点）',
+    );
+}
+
+CtlRequestSpec _backupPointRestore(CtlCommandContext c) {
+  final String id = c.positional(0, 'id');
+  final bool fill = c.flag('fill');
+  final bool replace = c.flag('replace');
+  if (fill == replace) {
+    throw const CtlUsageError('--fill 与 --replace 必须且只能给一个');
+  }
+  _requireYes(c, '从还原点恢复');
+  return CtlRequestSpec.post(
+    '/api/admin/restore-points/restore',
+    body: <String, Object?>{
+      'id': id,
+      'mode': fill ? 'fill' : 'replace',
+      'confirm': true,
+    },
+  );
+}
+
+CtlRequestSpec _backupAutoStatus(CtlCommandContext c) =>
+    const CtlRequestSpec.get('/api/admin/auto-backup/status');
+
+String _renderBackupAutoStatus(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final Object? minute = data['preferredMinuteOfDay'];
+  final Object? lastAt = data['lastSuccessAt'];
+  final List<Object?> files =
+      data['categories'] as List<Object?>? ?? const <Object?>[];
+  return <String>[
+    '间隔：${data['interval']}'
+        '${minute is int ? '（${(minute ~/ 60).toString().padLeft(2, '0')}:'
+                  '${(minute % 60).toString().padLeft(2, '0')}）' : ''}',
+    '内容：整库 + 文件 ${files.isEmpty ? '（无）' : files.join(',')}'
+        '${data['srsMedia'] == true ? ' + 复习媒体' : ''}',
+    '文件夹：${data['folder']}',
+    if (data['running'] == true) '正在备份',
+    if (lastAt is int)
+      '上次成功：${DateTime.fromMillisecondsSinceEpoch(lastAt).toLocal().toString().substring(0, 16)}'
+          '（${_bytes(data['lastSuccessBytes'])}）',
+    if (data['lastResult'] != null) '上次结果：${data['lastResult']}',
+    if (data['lastError'] != null) '上次错误：${data['lastError']}',
+    '保留：${data['kept']} 份（${_bytes(data['keptBytes'])}）',
+    if (data['overdue'] == true) '已超期，下一次检查时会补做',
+  ].join('\n');
+}
+
+CtlRequestSpec _backupAutoRun(CtlCommandContext c) =>
+    const CtlRequestSpec.post('/api/admin/auto-backup/run');
+
+String _renderBackupAutoRun(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  return switch (data['outcome']) {
+    'created' =>
+      '已建还原点 ${data['id']}：${data['path']}（${_bytes(data['bytes'])}）',
+    'skippedNoChanges' => '数据没有变化，没新建还原点',
+    final Object? other => '结果：$other',
+  };
 }
 
 // ── sync ─────────────────────────────────────────────────────────────
