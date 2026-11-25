@@ -1082,11 +1082,12 @@ pub fn encode_states(states: &[State]) -> Vec<u8> {
 /// 2 其它）、`1<<5` 评分类 reviewType、`1<<6` 有结果、`1<<7` 有 revokes。
 pub const COLUMN_WORDS: usize = 7;
 
-/// 列模式每条日志带几个串（[select_columns]：id、writerId、revokes、cardId）。
-pub const COLUMN_STRINGS: usize = 4;
+/// 列模式每条日志带几个串（[select_columns]：id、writerId、revokes、cardId、排序 ID）。
+pub const COLUMN_STRINGS: usize = 5;
 
-/// 列模式批量：第 i 条日志的四个串 = `text[offs[4i]..offs[4i+1]]`（id）、`[4i+1..4i+2]`（writerId）、
-/// `[4i+2..4i+3]`（revokes，无则空串且 bits 不带 `1<<7`）、`[4i+3..4i+4]`（cardId）。
+/// 列模式批量：第 i 条日志的五个串 = `text[offs[5i]..offs[5i+1]]`（id）、`[5i+1..5i+2]`（writerId）、
+/// `[5i+2..5i+3]`（revokes，无则空串且 bits 不带 `1<<7`）、`[5i+3..5i+4]`（cardId）、`[5i+4..5i+5]`（别名归一前的
+/// 排序 ID [Log::order_id]，与 id 相同时为空串；BUG-5455：新代 `read logs` 的 `oid` 列，Dart 侧选取与内核同序）。
 ///
 /// 输出布局（小端）：`[u32 组边界 × (n_groups + 1)][u32 输入下标 × 去重后总数][i32 lastEffective × n_groups]
 /// [i32 schedulerFrom × n_groups][u8 STATUS_* × 去重后总数]`；下标都是全局输入下标，-1 = 无。
@@ -1118,8 +1119,9 @@ pub fn select_columns(
     for i in 0..n_logs {
         let c = &ints[i * COLUMN_WORDS..(i + 1) * COLUMN_WORDS];
         let bits = c[6];
+        let order_id = slice(COLUMN_STRINGS * i + 4)?;
         logs.push(Log {
-            order_id: None,
+            order_id: (!order_id.is_empty()).then_some(Cow::Borrowed(order_id)),
             id: Cow::Borrowed(slice(COLUMN_STRINGS * i)?),
             card: Cow::Borrowed(slice(COLUMN_STRINGS * i + 3)?),
             writer: Cow::Borrowed(slice(COLUMN_STRINGS * i + 1)?),
@@ -1495,25 +1497,30 @@ mod tests {
         assert_eq!(s.last_log_id.as_deref(), Some("l38"));
     }
 
-    #[test]
-    fn column_mode_reads_card_and_groups_copies() {
-        // 列模式（Dart SrsCardHistory）：每条日志四个串 id / writerId / revokes / cardId。
-        let rows: [(&str, &str, i64, &str); 3] = [
-            ("b-orig", "c", 10, ""),
-            ("a-copy", "c", 10, ""),
-            ("p1", "pred", 10, ""),
-        ];
+    /// 列模式输入：(id, cardId, physical, revokes, 排序 ID)。每条日志五个串 id / writerId / revokes / cardId / 排序 ID。
+    fn column_input(rows: &[(&str, &str, i64, &str, &str)]) -> (Vec<i64>, String, Vec<u32>) {
         let mut ints: Vec<i64> = Vec::new();
         let mut text = String::new();
         let mut offs: Vec<u32> = vec![0];
-        for (id, card, phys, revokes) in rows {
+        for &(id, card, phys, revokes, order_id) in rows {
             // kind review(0) | 评分类 1<<5 | 有结果 1<<6。
             ints.extend_from_slice(&[phys, 0, NONE_I64, phys, NONE_I64, 3, (1 << 5) | (1 << 6)]);
-            for part in [id, "A", revokes, card] {
+            for part in [id, "A", revokes, card, order_id] {
                 text.push_str(part);
                 offs.push(text.len() as u32);
             }
         }
+        (ints, text, offs)
+    }
+
+    #[test]
+    fn column_mode_reads_card_and_groups_copies() {
+        // 列模式（Dart SrsCardHistory）。
+        let (ints, text, offs) = column_input(&[
+            ("b-orig", "c", 10, "", ""),
+            ("a-copy", "c", 10, "", ""),
+            ("p1", "pred", 10, "", ""),
+        ]);
         let out = select_columns(&ints, text.as_bytes(), &offs, &[0, 3]).unwrap();
         let u32_at = |k: usize| u32::from_le_bytes(out[k * 4..k * 4 + 4].try_into().unwrap());
         // [bounds × 2][order × 3][last][sched][status × 3]：排序 a-copy < b-orig < p1（同 HLC 按 ID）；
@@ -1526,7 +1533,34 @@ mod tests {
             &out[out.len() - 3..],
             [STATUS_EFFECTIVE, STATUS_DUPLICATE, STATUS_EFFECTIVE]
         );
-        // 旧布局（三个串）判坏。
-        assert!(select_columns(&ints, text.as_bytes(), &offs[..10], &[0, 3]).is_err());
+        // 旧布局（四个串）判坏。
+        assert!(select_columns(&ints, text.as_bytes(), &offs[..13], &[0, 3]).is_err());
+    }
+
+    /// BUG-5455：新代 `read logs` 交回的是规范 ID，排序 ID 是别名归一前的原值。列模式按排序 ID 排序、选副本，
+    /// 与内核重放（[Log::order_id]）同一结果；规范 ID 的先后与原值相反时也不换代表。
+    #[test]
+    fn column_mode_orders_and_picks_copies_by_the_original_id() {
+        // 规范 ID a-canon < b-canon，原值 z-raw > m-raw：代表应是 b-canon（原值 m-raw 最小）。
+        let (ints, text, offs) = column_input(&[
+            ("a-canon", "c", 10, "", "z-raw"),
+            ("b-canon", "c", 10, "", "m-raw"),
+        ]);
+        let out = select_columns(&ints, text.as_bytes(), &offs, &[0, 2]).unwrap();
+        let u32_at = |k: usize| u32::from_le_bytes(out[k * 4..k * 4 + 4].try_into().unwrap());
+        assert_eq!([u32_at(2), u32_at(3)], [1, 0], "sorted by the original ID");
+        assert_eq!(u32_at(4), 1, "last effective = b-canon");
+        assert_eq!(&out[out.len() - 2..], [STATUS_EFFECTIVE, STATUS_DUPLICATE]);
+        // 同一份历史按 JSON 解析并带上排序 ID（重放走的路径）选出同一个代表。
+        let jsons = [
+            review("a-canon", "10:0:A", 10, 3),
+            review("b-canon", "10:0:A", 10, 3),
+        ];
+        let stored: Vec<StoredLog<'_>> = vec![
+            (jsons[0].as_str(), None, None, Some("z-raw")),
+            (jsons[1].as_str(), None, None, Some("m-raw")),
+        ];
+        let s = state_from_stored(&stored).unwrap();
+        assert_eq!(s.last_log_id.as_deref(), Some("b-canon"));
     }
 }
