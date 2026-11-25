@@ -114,8 +114,9 @@ void main() {
     expect(end, greaterThan(start), reason: '_buildPageHeader 方法体定位失败');
     final String header = src.substring(start, end);
 
-    // 设计稿 #video V2：空闲时刷新住在页头「⋯」里（入口仍看得见、点得到），
-    // 刷新进行中页头另露一颗转圈的刷新按钮。
+    // 设计稿 #video V2：刷新是页头「⋯」的项（宽窗放得下时平铺成独立图标钮），
+    // 进行中由这一项自己置灰表达（[FushiHeaderMoreEntry.busy]），不另挂一颗
+    // 「进行中」刷新钮——平铺后那会是并排两颗刷新（BUG-5458）。
     expect(
       header.contains("ValueKey<String>('video-library-refresh-menu')") &&
           header.contains('onSelected: _refreshFromHeader'),
@@ -123,24 +124,14 @@ void main() {
       reason: '页头「⋯」必须有刷新——桌面端没有别的手动刷新入口',
     );
     expect(
-      header.contains('enabled: !_headerRefreshBusy'),
+      header.contains('busy: _headerRefreshBusy'),
       isTrue,
-      reason: '刷新进行中「⋯」里的刷新置灰，不可重入',
+      reason: '全库枚举动辄几十秒，进行中刷新项必须置灰不可重入',
     );
     expect(
       header.contains("ValueKey<String>('video-library-refresh')"),
-      isTrue,
-      reason: '刷新进行中页头要露出转圈的刷新按钮',
-    );
-    expect(
-      header.contains('onTap: _headerRefreshBusy ? null : _refreshFromHeader'),
-      isTrue,
-      reason: '刷新按钮必须接 _refreshFromHeader，且 busy 期间不可重入',
-    );
-    expect(
-      header.contains('busy: _headerRefreshBusy'),
-      isTrue,
-      reason: '全库枚举动辄几十秒，不标 busy 就是「按了没反应、于是连按五次」',
+      isFalse,
+      reason: '不再另挂「进行中」刷新钮（BUG-5458：平铺后并排两颗刷新）',
     );
   });
 

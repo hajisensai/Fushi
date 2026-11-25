@@ -9623,8 +9623,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// * 多选不再占页头按钮：卡片长按 / 右键菜单第一项「选择」进入（键盘 / 手柄
   ///   用户在「⋯」里也有同一入口）。
   /// * 「⋯」：布局切换（全部视频）、遥控、管理标签、管理合集、管理来源（独立
-  ///   使用时）、刷新（桌面，BUG-2567）、选择。刷新进行中页头另露一颗转圈的刷新
-  ///   按钮，免得「按了没反应、于是连按五次」。
+  ///   使用时）、刷新（桌面，BUG-2567）、选择。刷新进行中这一项置灰（平铺时就是
+  ///   那颗按钮本身，恒外露），免得「按了没反应、于是连按五次」。
   Widget _buildPageHeader(List<BookTagRow> tags) {
     final bool libraryGrid =
         widget.section != VideoLibrarySection.home &&
@@ -9658,17 +9658,6 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           key: const ValueKey<String>('video-background-tasks'),
           controller: scrapeTasks,
           onTap: openScrapeTasks,
-        ),
-      // 刷新进行中：转圈按钮临时露出（idle 时刷新在「⋯」里）。
-      if (videoLibraryNeedsHeaderRefresh(defaultTargetPlatform) &&
-          _headerRefreshBusy)
-        FushiIconButton(
-          key: const ValueKey<String>('video-library-refresh'),
-          overflowPriority: 5,
-          tooltip: t.refresh,
-          icon: Icons.refresh_outlined,
-          busy: _headerRefreshBusy,
-          onTap: _headerRefreshBusy ? null : _refreshFromHeader,
         ),
       if (_headerMoreEntries(libraryGrid: libraryGrid)
           case final List<FushiHeaderMoreEntry> entries when entries.isNotEmpty)
@@ -9765,7 +9754,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           key: const ValueKey<String>('video-library-refresh-menu'),
           icon: Icons.refresh_outlined,
           label: t.refresh,
-          enabled: !_headerRefreshBusy,
+          // 进行中：平铺时就是这一颗置灰（且恒外露），留在「⋯」里也置灰——
+          // 不再另挂一颗「进行中」刷新钮，否则宽窗平铺后并排两颗。
+          busy: _headerRefreshBusy,
           onSelected: _refreshFromHeader,
         ),
     ];
