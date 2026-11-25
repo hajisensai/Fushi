@@ -1016,6 +1016,7 @@ class _PopupStaticSettingsMemo {
     required this.miningEnabled,
     required this.srsEnabled,
     required this.srsMiningToReview,
+    required this.headerButtonsJson,
     required this.deduplicatePitchAccents,
     required this.harmonicFrequency,
     required this.showExpressionTags,
@@ -1053,6 +1054,7 @@ class _PopupStaticSettingsMemo {
   final bool miningEnabled;
   final bool srsEnabled;
   final bool srsMiningToReview;
+  final String headerButtonsJson;
   final bool deduplicatePitchAccents;
   final bool harmonicFrequency;
   final bool showExpressionTags;
@@ -1216,6 +1218,12 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
   final bool srsMiningToReview =
       srsEnabled && appModel.srsMiningTarget == SrsMiningTarget.srs;
 
+  // 词条头按钮的顺序 / 隐藏 / 额外制卡按钮（拍板台 b1JDe8McbS）。偏好层按原始串
+  // memo 了解析结果，这里的 jsonEncode 只有十来个槽位。
+  final String headerButtonsJson = jsonEncode(
+    appModel.popupHeaderButtons.toPopupJson(),
+  );
+
   final String slotKey =
       '${options.globalLookup}|${options.mobileExternal}'
       '|${options.sentenceDraftEnabled}'
@@ -1242,6 +1250,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
       cached.miningEnabled == miningEnabled &&
       cached.srsEnabled == srsEnabled &&
       cached.srsMiningToReview == srsMiningToReview &&
+      cached.headerButtonsJson == headerButtonsJson &&
       cached.deduplicatePitchAccents == appModel.deduplicatePitchAccents &&
       cached.harmonicFrequency == appModel.harmonicFrequency &&
       cached.showExpressionTags == appModel.showExpressionTags &&
@@ -1396,6 +1405,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     // createEntryHeader 不 append「+」制卡按钮 / ↗ 在 Anki 中打开按钮，也不发查重探测。
     // 浏览器扩展没有本注入通道 → undefined ⇒ popup.js 按 `!== false` 照旧渲染。
     window.__fushiMiningEnabled = $miningEnabled;
+    window.__fushiHeaderButtons = $headerButtonsJson;
     // 复习模块开关：false ⇒ popup.js 不渲染复习词状态标记、不发 srsTermStatus 桥。
     // 浏览器扩展没有本注入通道 → undefined ⇒ 照问桥，由扩展 shim 按服务端 404 退避。
     window.__fushiSrsEnabled = $srsEnabled;
@@ -1464,6 +1474,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     miningEnabled: miningEnabled,
     srsEnabled: srsEnabled,
     srsMiningToReview: srsMiningToReview,
+    headerButtonsJson: headerButtonsJson,
     deduplicatePitchAccents: appModel.deduplicatePitchAccents,
     harmonicFrequency: appModel.harmonicFrequency,
     showExpressionTags: appModel.showExpressionTags,

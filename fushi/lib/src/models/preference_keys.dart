@@ -900,6 +900,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   'popup_dictionary_columns',
   // bool：词典样式统一（导入词典颜色按语义映射到当前 ColorScheme）。默认 true。
   'popup_dictionary_unified_style',
+  // String(JSON)：查词弹窗词条头按钮的顺序 / 隐藏 / 额外制卡按钮（制卡方案），
+  // 见 PopupHeaderButtonsConfig（拍板台 b1JDe8McbS）。空 = 出厂排布。
+  'popup_header_buttons',
   'popup_instant_scroll',
   // double：瞬时滚动步长（占被滚表面视口高度的比例，0.1–1.0）。触摸 = 手指滑满
   // 这么多才跳一步，默认 0.25；滚轮 = 一格跳这么多（再乘滚轮速度），默认 0.5。

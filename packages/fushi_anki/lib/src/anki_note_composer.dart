@@ -642,11 +642,19 @@ mixin AnkiNoteComposer {
     // 照常换成本次真正落进 Anki 的媒体引用——不然改了一个字的释义就丢了外字图片。
     final Map<String, String> edited =
         payload.overrides?.fieldValues ?? const <String, String>{};
+    // 制卡方案（查词弹窗多颗制卡按钮，拍板台 b1JDe8McbS）换掉的字段模板：只替换映射里
+    // 已有字段的模板，其余字段继承映射；手写值（上面）仍优先于它。
+    final Map<String, String> templates =
+        payload.overrides?.fieldTemplates ?? const <String, String>{};
     for (final entry in fieldMappings.entries) {
       final String? manual = edited[entry.key];
       var value = manual != null && manual.trim().isNotEmpty
           ? manual
-          : AnkiHandlebarRenderer.render(entry.value, payload, context);
+          : AnkiHandlebarRenderer.render(
+              templates[entry.key] ?? entry.value,
+              payload,
+              context,
+            );
       for (final mediaEntry in dictionaryMediaTags.entries) {
         value = value.replaceAll(mediaEntry.key, mediaEntry.value);
       }

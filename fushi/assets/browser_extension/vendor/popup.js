@@ -6238,6 +6238,80 @@ function favoriteGlossaryText(entryIndex) {
 // 都获得此按钮；落库/计入统计的来源由 Dart 侧 dictionarySourceType 决定。
 // 带上释义快照：此前只传 {expression, reading}，收藏夹里的词只剩词形。原句与
 // 定位锚点由宿主（阅读器 / 视频页）在 Dart 侧补，JS 不知道当前句。
+// 拍板台 b1JDe8McbS：把词条头按钮按用户排布挂进按钮组。
+// [slots]：createEntryHeader 按出厂顺序登记的 {slot, nodes}；[config]：宿主注入的
+// window.__fushiHeaderButtons（{order, hidden}）。order 里有的槽位按 order 排，没提到的
+// （宿主没注入 / 新加的按钮）按登记顺序跟在后面——什么都不配就是改动前的排布。
+// 隐藏的槽位照样进 DOM、只挂 .fushi-user-hidden：快捷键与「高级制卡」确认回点找的是
+// .mine-button，隐藏「+」不能让它们失效。
+function fushiArrangeHeaderButtons(container, slots, config) {
+    const order = config && Array.isArray(config.order) ? config.order : [];
+    const hidden = new Set(config && Array.isArray(config.hidden) ? config.hidden : []);
+    const bySlot = new Map();
+    for (const entry of slots) {
+        if (!bySlot.has(entry.slot)) bySlot.set(entry.slot, entry);
+    }
+    const placed = new Set();
+    const place = (entry) => {
+        placed.add(entry.slot);
+        for (const node of entry.nodes) {
+            if (!node) continue;
+            if (hidden.has(entry.slot)) node.classList.add('fushi-user-hidden');
+            container.appendChild(node);
+        }
+    };
+    for (const slot of order) {
+        const entry = bySlot.get(slot);
+        if (entry && !placed.has(slot)) place(entry);
+    }
+    for (const entry of slots) {
+        if (!placed.has(entry.slot)) place(entry);
+    }
+}
+
+// 拍板台 b1JDe8McbS：一颗额外的制卡按钮（「+假名」）。[scheme]：{label, overrides}，
+// overrides 与 Dart MiningRequestOverrides.toJson 同形，原样作为这一次的 miningOverrides。
+// 不自己组包、不自己查重：带着覆盖项点一次本词条的「+」，单飞 / 查重 / 排队 / 失败提示
+// 全走那一条路（__fushiSchemeClickOnce 让它不去原地覆写上一张卡）。
+function createMiningSchemeButton(mineButton, scheme) {
+    const label = scheme && typeof scheme.label === 'string' ? scheme.label : '';
+    const overrides = scheme && scheme.overrides && typeof scheme.overrides === 'object'
+        ? scheme.overrides
+        : null;
+    const button = el('button', {
+        className: 'inline-action-button mine-scheme-button',
+        // 与「+」同一纪律：按下时先快照选区（document click 清选区之前）。
+        onpointerdown: () => {
+            snapshotSelection();
+        },
+        ontouchstart: () => {
+            snapshotSelection();
+        },
+        onclick: async () => {
+            if (button.dataset.mining === '1' || mineButton.dataset.mining === '1') return;
+            if (typeof mineButton.onclick !== 'function') return;
+            button.dataset.mining = '1';
+            button.disabled = true;
+            mineButton.__fushiMiningOverridesOnce = overrides;
+            mineButton.__fushiSchemeClickOnce = true;
+            try {
+                await mineButton.onclick();
+            } finally {
+                // 处理器提前返回时也不把覆盖项留给下一次普通点击。
+                mineButton.__fushiMiningOverridesOnce = null;
+                mineButton.__fushiSchemeClickOnce = false;
+                button.dataset.mining = '';
+                button.disabled = false;
+            }
+        },
+    });
+    button.textContent = '+' + label;
+    uiText(button);
+    button.setAttribute('aria-label', label);
+    if (__fushiPopupReducedMotion()) button.classList.add('no-motion');
+    return button;
+}
+
 function createFavoriteButton(expression, reading, entryIndex) {
     const button = el('button', {
         className: 'inline-action-button favorite-button',
@@ -6415,6 +6489,10 @@ function createEntryHeader(entry, idx) {
     header.appendChild(headerMain);
     
     const buttonsContainer = el('div', { className: 'header-buttons' });
+    // 拍板台 b1JDe8McbS：按钮先按槽位登记，末尾由 fushiArrangeHeaderButtons 按用户排布
+    // （设置 → 制卡 → 查词弹窗按钮）挂进按钮组。槽位名与 Dart PopupHeaderButton.wire 一致。
+    const headerSlots = [];
+    const addHeaderSlot = (slot, ...nodes) => { headerSlots.push({ slot, nodes }); };
 
     // 「制卡」功能模块（Dart 侧 ModuleId.cardCreation）关掉时，词条头上的「+」制卡
     // 按钮与跟它同源的「在 Anki 中打开」↗ 按钮**整颗不渲染**：模块关掉的语义是「该
@@ -6428,15 +6506,15 @@ function createEntryHeader(entry, idx) {
     const miningEnabled = window.__fushiMiningEnabled !== false;
     
     if (window.audioSources?.length) {
-        buttonsContainer.appendChild(createAudioButton(expression, reading, idx, matched));
+        addHeaderSlot('audio', createAudioButton(expression, reading, idx, matched));
     }
 
-    buttonsContainer.appendChild(createFavoriteButton(expression, reading, idx));
+    addHeaderSlot('favorite', createFavoriteButton(expression, reading, idx));
 
     // Fushi 复习词状态（复习模块关着时为 null，既不渲染也不发桥调用）。
     const srsBadge = createSrsStatusBadge(expression, reading);
     if (srsBadge) {
-        buttonsContainer.appendChild(srsBadge);
+        addHeaderSlot('srs', srsBadge);
     }
 
     // BUG-185 (TODO-084/087): the mine button's "已制卡 ✓ / 可制卡 +" state is
@@ -6556,6 +6634,11 @@ function createEntryHeader(entry, idx) {
             // 之后只沿下面每一条组包路径显式传下去，不再经任何页面全局（HBK-AUDIT-211）。
             const miningOverrides = mineButton.__fushiMiningOverridesOnce || null;
             mineButton.__fushiMiningOverridesOnce = null;
+            // 拍板台 b1JDe8McbS：这次是额外制卡按钮（制卡方案）点进来的——要的是**另一种卡**，
+            // 所以不走「最新可改」原地覆写、不重写上一张排队失败的卡；已制卡时交给操作单
+            // （新增 / 覆写 / 查看由用户选）。同样第一个 await 之前先读后清。
+            const schemeClick = mineButton.__fushiSchemeClickOnce === true;
+            mineButton.__fushiSchemeClickOnce = false;
             // openChooser：false = 单击；true = 「管理」手势（右键 / 长按 / 菜单键，只对已制卡的
             // ✓ 生效，见 bindMinedCardManageTriggers，它置一次性的 __fushiOpenChooserOnce 再调
             // 本处理器）——永远弹覆写 / 新增 / 查看的选择单，不走「最新可改」原地覆写，也不因
@@ -6590,7 +6673,7 @@ function createEntryHeader(entry, idx) {
                 // review-gal-overlay-mine-fail：后台写卡失败、宿主说还能重写 → 这一下就是
                 // 重试（与主窗 toast 的「重试」共用宿主同一个一次性入口）。先画回「已加入」，
                 // 结局照常推来；宿主说入口已失效（toast 上已点过 / 被挤出）就撤回并就地说明。
-                if (retryToken !== null && !openChooser) {
+                if (retryToken !== null && !openChooser && !schemeClick) {
                     const token = retryToken;
                     retryToken = null;
                     queuedLocally = true;
@@ -6610,6 +6693,11 @@ function createEntryHeader(entry, idx) {
                     return;
                 }
                 if (queuedLocally && !hostOwnsQueue()) {
+                    if (schemeClick) {
+                        // 上一张还在后台写入：方案卡不能排成「覆盖那一张」，就地说明。
+                        showInlineHint(mineButton, window.i18nMineStillQueued || '还在写入 Anki，稍后再试');
+                        return;
+                    }
                     const landed = await window.flutter_inappwebview.callHandler(
                         'duplicateCheck', { expression, reading });
                     if (landed !== true) {
@@ -6643,7 +6731,7 @@ function createEntryHeader(entry, idx) {
                 if (openChooser && mineButton.dataset.mined !== '1') return;
                 // 单击「允许重复」直接新增时，这次 mineEntry 要带上重复标记（同 BUG-2605）。
                 let allowDuplicateThisClick = false;
-                if (!openChooser && mineButton.dataset.latest === '1' && isLatestEditable(expression, reading)) {
+                if (!openChooser && !schemeClick && mineButton.dataset.latest === '1' && isLatestEditable(expression, reading)) {
                     // TODO-270 D green ✓⤺: this is the latest mined card and it
                     // carries a real note id → OVERWRITE that note in place with
                     // the freshly-built fields (does NOT create a second card).
@@ -6842,7 +6930,15 @@ function createEntryHeader(entry, idx) {
     mineButton.__fushiBuildMinePayload = () => buildMinePayload(
         expression, reading, frequencies, pitches, rules, matched, idx, lastSelection);
     if (miningEnabled) {
-        buttonsContainer.appendChild(mineButton);
+        addHeaderSlot('mine', mineButton);
+        // 拍板台 b1JDe8McbS：额外的制卡按钮，每颗绑一套制卡方案（只记和字段映射不一样
+        // 的项）。点它 = 带着方案的覆盖项点一次「+」，查重 / 排队 / 失败提示全复用。
+        const schemes = window.__fushiHeaderButtons && window.__fushiHeaderButtons.schemes;
+        if (schemes && typeof schemes === 'object') {
+            for (const [slot, scheme] of Object.entries(schemes)) {
+                addHeaderSlot(slot, createMiningSchemeButton(mineButton, scheme));
+            }
+        }
     }
 
     // TODO-1360：「在 Anki 中打开卡片」按钮——仅当该词已制卡（data-mined）时显示。点击
@@ -6881,7 +6977,7 @@ function createEntryHeader(entry, idx) {
         if (srsBadge !== null && srsBadgeOwnsOpenWord()) {
             openAnkiButton.classList.add('open-anki-srs-owned');
         }
-        buttonsContainer.appendChild(openAnkiButton);
+        addHeaderSlot('openAnki', openAnkiButton);
     }
     // Lookup-time detection: query Anki's real card existence for THIS word as
     // the popup renders it, and set the accurate 已制卡 ✓ / 可制卡 + state.
@@ -7010,7 +7106,7 @@ function createEntryHeader(entry, idx) {
     if (window.sentenceDraftEnabled) {
         const picker = buildSentenceContextPicker();
         refreshSentenceContextPicker(picker);
-        buttonsContainer.appendChild(picker);
+        const contextNodes = [picker];
 
         // TODO-382/393 可撤销：「清空已加句子」按钮（仅已选上下文时显示）。点一次把上下文
         // 句数归零（回到只制当前句），所有选择器同步——明确、可见的撤销入口。
@@ -7033,7 +7129,8 @@ function createEntryHeader(entry, idx) {
         });
         setButtonIcon(clearButton, 'close');
         refreshClearDraftButton(clearButton);
-        buttonsContainer.appendChild(clearButton);
+        contextNodes.push(clearButton);
+        addHeaderSlot('context', ...contextNodes);
     }
 
     // 「高级制卡」入口（原「调整上下文」按钮）：点开宿主的**原生**对话框，为这一张卡选
@@ -7052,7 +7149,7 @@ function createEntryHeader(entry, idx) {
     // __fushiCrossAppAudioHost（app 内表面 / 浏览器扩展）时不建、不发探测；建了也要等探测
     // 确认这次查词录到了声音才露出。确认制卡回点的是同一颗「+」，所以「+」不渲染时它也不渲染。
     if (miningEnabled && window.__fushiCrossAppAudioHost === true) {
-        buttonsContainer.appendChild(buildCrossAppAudioButton());
+        addHeaderSlot('crossAppAudio', buildCrossAppAudioButton());
     }
 
     const advancedMining = window.advancedMiningEnabled === true;
@@ -7100,9 +7197,10 @@ function createEntryHeader(entry, idx) {
         const ctxI18n = window.i18nCtx || {};
         setInlineButtonTip(adjustBtn,
             (advancedMining ? ctxI18n.advancedMining : ctxI18n.adjust) || '');
-        buttonsContainer.appendChild(adjustBtn);
+        addHeaderSlot('advanced', adjustBtn);
     }
 
+    fushiArrangeHeaderButtons(buttonsContainer, headerSlots, window.__fushiHeaderButtons);
     header.appendChild(buttonsContainer);
     
     return header;

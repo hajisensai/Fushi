@@ -5803,3 +5803,151 @@ testCrossAppAudioPanelGeometryAndProbe()
     process.exitCode = 1;
   },
 );
+
+// ── 拍板台 b1JDe8McbS：词条头按钮按用户排布 + 额外制卡按钮（制卡方案） ──────────────
+
+function headerButtonsOf(header) {
+  const container = findByClassDeep(header, 'header-buttons');
+  assert.ok(container, 'header-buttons container exists');
+  return container.children;
+}
+
+function slotClassesOf(header) {
+  const known = ['favorite-button', 'srs-status-badge', 'mine-button', 'open-anki-button',
+    'mine-scheme-button', 'ctx-adjust-button'];
+  return Array.from(headerButtonsOf(header)).map((node) =>
+    known.find((name) => (node.className || '').split(/\s+/).includes(name) ||
+      (node.classList && node.classList.contains(name))) || '?');
+}
+
+async function testHeaderButtonsDefaultOrderUnchangedWithoutConfig() {
+  const context = loadPopup();
+  context.window.flutter_inappwebview.callHandler = (name) =>
+    Promise.resolve(name === 'duplicateCheck' ? false : null);
+  const header = context.createEntryHeader(srsEntry(), 0);
+  await flush();
+  assert.deepStrictEqual(slotClassesOf(header),
+    ['favorite-button', 'srs-status-badge', 'mine-button', 'open-anki-button'],
+    'no injected config -> the pre-customisation order');
+}
+
+async function testHeaderButtonsFollowUserOrderAndHidden() {
+  const context = loadPopup();
+  context.window.advancedMiningEnabled = true;
+  context.window.__fushiHeaderButtons = {
+    order: ['advanced', 'openAnki', 'mine', 'favorite', 'unknown-slot'],
+    hidden: ['favorite'],
+    schemes: {},
+  };
+  context.window.flutter_inappwebview.callHandler = (name) =>
+    Promise.resolve(name === 'duplicateCheck' ? false : null);
+  const header = context.createEntryHeader(srsEntry(), 0);
+  await flush();
+  assert.deepStrictEqual(slotClassesOf(header),
+    ['ctx-adjust-button', 'open-anki-button', 'mine-button', 'favorite-button', 'srs-status-badge'],
+    'slots follow the configured order; unknown slots are ignored');
+  const favorite = findByClassDeep(header, 'favorite-button');
+  assert.ok(favorite.classList.contains('fushi-user-hidden'),
+    'a hidden slot stays in the DOM, only marked hidden');
+  assert.ok(!findByClassDeep(header, 'mine-button').classList.contains('fushi-user-hidden'));
+}
+
+async function testMiningSchemeButtonMinesWithItsOverridesOnce() {
+  const context = loadPopup();
+  const mined = [];
+  const updated = [];
+  const actions = [];
+  let cardExists = false;
+  context.window.__fushiMinedCardActionNative = true;
+  context.window.__fushiHeaderButtons = {
+    order: ['favorite', 'mine', 'scheme:kana', 'openAnki'],
+    hidden: [],
+    schemes: {
+      'scheme:kana': {
+        label: '假名',
+        overrides: {fieldTemplates: {Expression: '{reading}'}, deck: 'Kana'},
+      },
+    },
+  };
+  context.window.flutter_inappwebview.callHandler = (name, payload) => {
+    if (name === 'duplicateCheck') return Promise.resolve(cardExists);
+    if (name === 'overwriteTargetNoteId') return Promise.resolve(null);
+    if (name === 'mineEntry') {
+      mined.push(payload);
+      cardExists = true;
+      return Promise.resolve({ankiConnect: true, noteId: 700 + mined.length});
+    }
+    if (name === 'updateEntry') {
+      updated.push(payload);
+      return Promise.resolve({ankiConnect: true, noteId: payload.noteId});
+    }
+    if (name === 'minedCardAction') {
+      actions.push(payload);
+      return Promise.resolve({ankiConnect: true, noteId: 799});
+    }
+    return Promise.resolve(null);
+  };
+  const header = context.createEntryHeader(
+    {expression: '猫', reading: '猫', matched: '猫', frequencies: [], pitches: [], rules: []}, 0);
+  await flush();
+  assert.deepStrictEqual(slotClassesOf(header),
+    ['favorite-button', 'mine-button', 'mine-scheme-button', 'open-anki-button',
+      'srs-status-badge']);
+  const scheme = findByClassDeep(header, 'mine-scheme-button');
+  const mine = findByClassDeep(header, 'mine-button');
+  assert.equal(scheme.textContent, '+假名', 'the scheme button shows its label');
+
+  // ① 点方案按钮：这一次 mineEntry 带方案的覆盖项。
+  await scheme.onclick();
+  await flush();
+  assert.equal(mined.length, 1);
+  assert.deepStrictEqual(JSON.parse(mined[0].miningOverrides),
+    {fieldTemplates: {Expression: '{reading}'}, deck: 'Kana'},
+    'the scheme overrides ride along this one request');
+  assert.equal(scheme.disabled, false, 'scheme button never sticks disabled');
+  assert.equal(mine.__fushiMiningOverridesOnce, null, 'overrides are consumed');
+
+  // ② 刚制的是「最新可改」：方案按钮要的是另一种卡，不能原地覆写它，交给操作单。
+  assert.equal(mine.dataset.latest, '1');
+  await scheme.onclick();
+  await flush();
+  assert.equal(updated.length, 0, 'a scheme click never overwrites the latest card in place');
+  assert.equal(actions.length, 1, 'mined word -> the host action sheet decides');
+  assert.deepStrictEqual(JSON.parse(actions[0].miningOverrides),
+    {fieldTemplates: {Expression: '{reading}'}, deck: 'Kana'},
+    'the action sheet gets the scheme overrides too');
+
+  // ③ 之后的普通「+」不受方案影响（照旧原地覆写最新那张，且不带覆盖项）。
+  await mine.onclick();
+  await flush();
+  assert.equal(updated.length, 1, 'a plain + still overwrites the latest card');
+  assert.equal(updated[0].fields.miningOverrides, undefined,
+    'a later plain + carries no scheme overrides');
+}
+
+async function testMiningSchemeButtonsAbsentWhenMiningModuleOff() {
+  const context = loadPopup();
+  context.window.__fushiMiningEnabled = false;
+  context.window.__fushiHeaderButtons = {
+    order: [], hidden: [],
+    schemes: {'scheme:kana': {label: '假名', overrides: {}}},
+  };
+  context.window.flutter_inappwebview.callHandler = () => Promise.resolve(null);
+  const header = context.createEntryHeader(srsEntry(), 0);
+  await flush();
+  assert.equal(findByClassDeep(header, 'mine-scheme-button'), null,
+    'mining module off -> no scheme buttons either');
+}
+
+testHeaderButtonsDefaultOrderUnchangedWithoutConfig()
+  .then(testHeaderButtonsFollowUserOrderAndHidden)
+  .then(testMiningSchemeButtonMinesWithItsOverridesOnce)
+  .then(testMiningSchemeButtonsAbsentWhenMiningModuleOff)
+  .then(
+  () => console.log('header button arrangement tests passed'),
+  (error) => {
+    process.stderr.write(`${error && error.stack || error}
+`);
+    process.exitCode = 1;
+  },
+);

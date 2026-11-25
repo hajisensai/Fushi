@@ -6,6 +6,7 @@ import 'package:fushi/src/anki/ankimobile_mined_ledger.dart'
     show ankiMobileLedgerIsDuplicateSource;
 import 'package:fushi/src/pages/implementations/anki_settings_page.dart';
 import 'package:fushi/src/models/module_registry.dart';
+import 'package:fushi/src/settings/popup_header_buttons_list.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
@@ -57,6 +58,21 @@ SettingsDestination buildCardCreationDestination() {
           AnkiSectionRow.compactGlossaries,
           // 制卡位置写进 MiscInfo（反馈 MhQHXQI-sB），是卡片内容，不再属于「默认标签」。
           AnkiSectionRow.tagCharPosition,
+        ],
+      ),
+      // 拍板台 b1JDe8McbS：查词弹窗词条头按钮的顺序 / 显隐，与额外的制卡按钮（各绑一套
+      // 制卡方案）。两种制卡目标都生效（方案随单次请求走），所以不放在「Anki」分组里。
+      SettingsSection(
+        id: 'card_creation.popup_buttons',
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'card_creation.popup_buttons.open',
+            title: t.popup_header_buttons_title,
+            subtitle: t.popup_header_buttons_hint,
+            icon: FushiIcons.ankiCard,
+            showIcon: true,
+            child: _buildPopupHeaderButtonsPage,
+          ),
         ],
       ),
       _rowsSection(
@@ -315,6 +331,27 @@ SettingsDestination buildCardCreationDestination() {
     ],
   );
 }
+
+/// 「查词弹窗按钮」子页：一整块可拖动排序的按钮列表（含额外制卡按钮的增删改）。
+SettingsDestination _buildPopupHeaderButtonsPage() => SettingsDestination(
+  id: SettingsDestinationId.cardCreation,
+  title: t.popup_header_buttons_title,
+  icon: FushiIcons.ankiCard,
+  sections: <SettingsSection>[
+    SettingsSection(
+      id: 'card_creation.popup_buttons.section',
+      items: <SettingsItem>[
+        SettingsCustomItem(
+          id: 'card_creation.popup_buttons.list',
+          searchTitle: t.popup_header_buttons_title,
+          subtitle: t.popup_header_buttons_hint,
+          builder: (SettingsContext c) =>
+              PopupHeaderButtonsList(settingsContext: c),
+        ),
+      ],
+    ),
+  ],
+);
 
 SettingsDestination _buildAnkiPanel(AnkiSettingsPanel panel, String title) {
   return SettingsDestination(

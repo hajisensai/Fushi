@@ -37,7 +37,7 @@ void main() {
     );
     expect(
       js,
-      contains('buttonsContainer.appendChild(createFavoriteButton('),
+      contains("addHeaderSlot('favorite', createFavoriteButton("),
       reason: '收藏按钮要挂进词条头',
     );
   });
