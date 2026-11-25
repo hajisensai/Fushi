@@ -17,8 +17,7 @@ import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
-import 'package:fushi/src/sync/remote_video_client.dart'
-    show RemoteVideoSource;
+import 'package:fushi/src/sync/remote_video_client.dart' show RemoteVideoSource;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
     show FushiSnackBar;
