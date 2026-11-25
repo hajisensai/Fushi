@@ -3,7 +3,8 @@ import 'dart:io';
 import 'package:fushi_audio/fushi_audio_core.dart' show readTextWithEncoding;
 import 'package:path/path.dart' as p;
 
-import 'package:fushi_engine/media/media_extensions.dart' show kVideoExtensions;
+import 'package:fushi_engine/media/media_extensions.dart'
+    show kAudioExtensions, kVideoExtensions;
 import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_target.dart';
 
@@ -445,4 +446,131 @@ Future<ChineseScript?> _sniffChineseScript(File file) async {
   } on FileSystemException {
     return null;
   }
+}
+
+/// 外挂音轨的扩展名（小写、带点）：纯音频扩展名（[kAudioExtensions]，`.mka` / `.flac`
+/// / `.ac3` …）加发布组常用的裸音轨扩展名。播放器发现本地外挂音轨
+/// （[listSidecarAudioTracks]）与下载整理带走外挂件共用这一份。
+const Set<String> kSidecarAudioExtraExtensions = <String>{
+  '.dts',
+  '.dtshd',
+  '.thd',
+  '.truehd',
+};
+
+/// 纯函数：扩展名 [extension]（带点，大小写不敏感）是不是外挂音轨扩展名。
+bool isSidecarAudioExtension(String extension) {
+  final String ext = extension.toLowerCase();
+  return kAudioExtensions.contains(ext) ||
+      kSidecarAudioExtraExtensions.contains(ext);
+}
+
+/// 视频旁的一条外挂音轨（[listSidecarAudioTracks] 的产物）。
+typedef SidecarAudioTrack = ({
+  /// 相对视频所在目录的路径（同目录就是文件名；子目录里是 `子目录/文件名`，`/` 分隔）。
+  String relativePath,
+
+  /// 文件名里主干之后、扩展名之前的标记（`ep01.jpn.mka` → `jpn`，
+  /// `Movie_Eng_Audio_5.1.mka` → `Eng_Audio_5.1`）；没有为 null。
+  String? tag,
+});
+
+/// 主干之后的外挂音轨后缀：`<分隔符><标记>.<ext>` 或 `.<ext>`，分隔符取 `.` / `_` / `-`
+/// （与下载整理器配外挂件同一口径；`Movie_Eng_Audio_5.1.mka` 用的是 `_`）。标记里不许
+/// 出现路径分隔符。返回标记（可能为 null）；不是外挂音轨后缀返回 `false` 记号。
+({bool ok, String? tag}) _sidecarAudioSuffix(String rest) {
+  // 前面垫一个字符：裸的 `.flac`（无标记）在 path 包眼里是点文件、扩展名为空。
+  final String ext = p.extension('x$rest');
+  if (ext.isEmpty || !isSidecarAudioExtension(ext)) {
+    return (ok: false, tag: null);
+  }
+  final String middle = rest.substring(0, rest.length - ext.length);
+  if (middle.isEmpty) return (ok: true, tag: null);
+  if (!'._-'.contains(middle[0])) return (ok: false, tag: null);
+  final String tag = middle.substring(1).trim();
+  if (tag.isEmpty || tag.length > 64 || tag.contains(RegExp(r'[\/]'))) {
+    return (ok: false, tag: null);
+  }
+  return (ok: true, tag: tag);
+}
+
+/// 纯函数：视频 `<videoBaseNameNoExt>` 旁的全部外挂音轨。
+///
+/// - 位置：与视频同目录（[dirFiles]），或视频目录的**直接子目录**（[childDirFiles]：
+///   子目录名 → 其中文件名；`Audio 5.1/<主干>_Eng_Audio_5.1.mka`）。
+/// - 文件名：不分大小写以视频主干开头，后面是 `.<ext>` 或 `<.|_|->标记.<ext>`，ext 是
+///   外挂音轨扩展名（[isSidecarAudioExtension]）。
+/// - 归属：同目录 stem 更长、且同样配得上这个文件的视频认领走（最长主干认领，与外挂
+///   字幕 [listSidecarSubtitles] 同一条规则）。
+/// - 纯数字主干（`01.mkv`）不认子目录里的文件：`CDs/01.flac` 这类专辑曲目与剧集同号
+///   很常见，不是外挂音轨（同目录照常认，`01.mkv` 旁的 `01.flac` 就是它的音轨）。
+///
+/// 同目录的在前、子目录的在后，各自保持输入顺序。不碰文件系统。
+List<SidecarAudioTrack> listSidecarAudioTracks(
+  String videoBaseNameNoExt,
+  List<String> dirFiles, {
+  Map<String, List<String>> childDirFiles = const <String, List<String>>{},
+}) {
+  final String stemLower = videoBaseNameNoExt.toLowerCase();
+  if (stemLower.isEmpty) return const <SidecarAudioTrack>[];
+  // 同目录里 stem 更长、以本 stem 开头的视频：可能把候选认领走。
+  final List<String> longerStems = <String>[
+    for (final String name in dirFiles)
+      if (kVideoExtensions.contains(p.extension(name).toLowerCase()))
+        if (p.basenameWithoutExtension(name).toLowerCase() case final String s
+            when s.length > stemLower.length && s.startsWith(stemLower))
+          s,
+  ];
+  ({bool ok, String? tag}) match(String name) {
+    final String lower = name.toLowerCase();
+    if (lower.length <= stemLower.length || !lower.startsWith(stemLower)) {
+      return (ok: false, tag: null);
+    }
+    final ({bool ok, String? tag}) mine = _sidecarAudioSuffix(
+      name.substring(videoBaseNameNoExt.length),
+    );
+    if (!mine.ok) return mine;
+    for (final String longer in longerStems) {
+      if (lower.startsWith(longer) &&
+          lower.length > longer.length &&
+          _sidecarAudioSuffix(name.substring(longer.length)).ok) {
+        return (ok: false, tag: null);
+      }
+    }
+    return mine;
+  }
+
+  final List<SidecarAudioTrack> out = <SidecarAudioTrack>[
+    for (final String name in dirFiles)
+      if (match(name) case (ok: true, tag: final String? tag))
+        (relativePath: name, tag: tag),
+  ];
+  if (RegExp(r'^\d+$').hasMatch(videoBaseNameNoExt)) return out;
+  for (final MapEntry<String, List<String>> child in childDirFiles.entries) {
+    for (final String name in child.value) {
+      if (match(name) case (ok: true, tag: final String? tag)) {
+        out.add((relativePath: '${child.key}/$name', tag: tag));
+      }
+    }
+  }
+  return out;
+}
+
+/// 纯函数：外挂音轨标记 [tag] 给人看的名字与语言码。名字 = 标记里的 `_` 换成空格；
+/// 标记的第一段（按 `.` / `_` / `-` / 空格切）是 2–3 个字母时当语言码（小写，
+/// `jpn` / `eng` / `ja`），否则没有语言。没有标记时名字用文件名（[fileName]）。
+({String label, String? language}) sidecarAudioLabel(
+  String? tag,
+  String fileName,
+) {
+  if (tag == null || tag.trim().isEmpty) {
+    return (label: fileName, language: null);
+  }
+  final String first = tag.split(RegExp(r'[._\- ]')).first;
+  return (
+    label: tag.replaceAll('_', ' ').trim(),
+    language: RegExp(r'^[A-Za-z]{2,3}$').hasMatch(first)
+        ? first.toLowerCase()
+        : null,
+  );
 }
