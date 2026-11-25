@@ -3701,7 +3701,10 @@ class VideoDownloadPipelineService {
   ///
   /// 视频行取 `video` / `extra`（特典视频的外挂字幕同样跟走）且已落位（当前路径 =
   /// 目标路径）；配对按它们**整理前**的位置（`originalRelativePath`）。候选是选中的、
-  /// 没有整理目标、当前路径仍是原路径的行。
+  /// 当前路径仍是原路径的行，且二者之一：没有整理目标（整理器早先不排外挂件的存量
+  /// 任务），或是已落过外挂件意图（[videoDownloadCompanionFileKind]、目标 ≠ 当前）却
+  /// 没改成名的行——整理在「视频已改名、外挂件还没改」之间崩溃后，重算的计划配不上
+  /// 外挂件，旧意图留在行上，不认它就永远滞留。这类行自己的旧目标不算占用。
   static List<VideoCompanionMove> _strandedCompanionMoves(
     VideoDownloadJobRow job,
     List<VideoDownloadJobFileRow> rows,
@@ -3722,21 +3725,34 @@ class VideoDownloadPipelineService {
           ),
     ];
     if (videos.isEmpty) return const <VideoCompanionMove>[];
+    bool unmovedIntent(VideoDownloadJobFileRow row) =>
+        row.kind == videoDownloadCompanionFileKind &&
+        row.targetRelativePath != null &&
+        norm(row.targetRelativePath!) != norm(row.currentRelativePath);
+    final List<VideoDownloadJobFileRow> candidateRows =
+        <VideoDownloadJobFileRow>[
+          for (final VideoDownloadJobFileRow row in rows)
+            if (row.kind != 'video' &&
+                row.kind != 'extra' &&
+                row.selected &&
+                row.backendFileIndex != null &&
+                (row.targetRelativePath == null || unmovedIntent(row)) &&
+                norm(row.currentRelativePath) ==
+                    norm(row.originalRelativePath) &&
+                videoReleaseCompanionKindOf(row.originalRelativePath) != null)
+              row,
+        ];
+    if (candidateRows.isEmpty) return const <VideoCompanionMove>[];
+    final Set<int> candidateIds = <int>{
+      for (final VideoDownloadJobFileRow row in candidateRows) row.id,
+    };
     final List<VideoCompanionCandidate> candidates = <VideoCompanionCandidate>[
-      for (final VideoDownloadJobFileRow row in rows)
-        if (row.kind != 'video' &&
-            row.kind != 'extra' &&
-            row.selected &&
-            row.backendFileIndex != null &&
-            row.targetRelativePath == null &&
-            norm(row.currentRelativePath) == norm(row.originalRelativePath) &&
-            videoReleaseCompanionKindOf(row.originalRelativePath) != null)
-          VideoCompanionCandidate(
-            backendFileIndex: row.backendFileIndex!,
-            relativePath: row.originalRelativePath,
-          ),
+      for (final VideoDownloadJobFileRow row in candidateRows)
+        VideoCompanionCandidate(
+          backendFileIndex: row.backendFileIndex!,
+          relativePath: row.originalRelativePath,
+        ),
     ];
-    if (candidates.isEmpty) return const <VideoCompanionMove>[];
     final List<String?> persistedTargets = <String?>[
       for (final VideoDownloadJobFileRow row in rows) row.targetRelativePath,
     ];
@@ -3746,7 +3762,9 @@ class VideoDownloadPipelineService {
       reservedTargets: <String>[
         for (final VideoDownloadJobFileRow row in rows) ...<String>[
           norm(row.currentRelativePath),
-          if (row.targetRelativePath case final String target) norm(target),
+          if (row.targetRelativePath case final String target
+              when !candidateIds.contains(row.id))
+            norm(target),
         ],
       ],
       // 非法字符替身沿用这条任务落过的意图（与视频同一套，见

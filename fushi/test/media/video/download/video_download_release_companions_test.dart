@@ -462,6 +462,52 @@ void main() {
       );
     });
 
+    test('整理在视频改名后、外挂件改名前崩溃：行上留着旧意图，照样补搬', () async {
+      final _Env env = await _Env.create();
+      addTearDown(env.close);
+      const String videoTarget =
+          'Show (2026)/Season 01/Show (2026) - S01E01.mkv';
+      const String companionOriginal = 'R/ep01.chs.ass';
+      const String companionTarget =
+          'Show (2026)/Season 01/Show (2026) - S01E01.chs.ass';
+      await env.write(videoTarget);
+      await env.write(companionOriginal);
+      env.backend.names.addAll(<int, String>{
+        0: videoTarget,
+        1: companionOriginal,
+      });
+      await env.insertJob('crashed');
+      await env.insertFile(
+        'crashed',
+        index: 0,
+        original: 'R/ep01.mkv',
+        current: videoTarget,
+        target: videoTarget,
+        kind: 'video',
+      );
+      // `_persistOrganizationIntent` 已写下外挂件的目标与 kind，改名没来得及做。
+      await env.insertFile(
+        'crashed',
+        index: 1,
+        original: companionOriginal,
+        current: companionOriginal,
+        target: companionTarget,
+        kind: videoDownloadCompanionFileKind,
+      );
+
+      expect(await env.service.relocateStrandedReleaseCompanions(), 1);
+      expect(env.backend.renameCalls, 1);
+      final VideoDownloadJobFileRow row = (await env.rows('crashed'))[1]!;
+      expect(row.currentRelativePath, companionTarget);
+      expect(
+        File(
+          p.joinAll(<String>[env.root.path, ...companionTarget.split('/')]),
+        ).existsSync(),
+        isTrue,
+      );
+      expect(await env.service.relocateStrandedReleaseCompanions(), 0);
+    });
+
     test('视频已从磁盘删除 / 任务已无后端会话：跳过，不硬搬', () async {
       final _Env env = await _Env.create();
       addTearDown(env.close);
