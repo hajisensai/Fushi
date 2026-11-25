@@ -85,7 +85,7 @@
 - `move`：`from` 省略 = 从条目当前所在的全部非目录合集移出；`to=standalone` = 只移出；`new:<名字>` = 新建 AI 合集（同名已存在则并入它）。
 - `relink`：把一对端点之间 AI 生效 / 建议态的连接换成新的关系或方向（用户确认过的不动）。
 - 有方向的关系 `from → to`：`adaptation` 原作 → 改编，`sequel` 前作 → 续作，`side_story` 本篇 → 外传，`theme_song` / `soundtrack` 作品 → 音乐，`cast` 作品 → 人。
-- 每条独立校验，不过的进 `skipped`（下标 + 原因码：`unknown_ref` / `cross_domain` / `folder_collection` / `pinned_by_user` / `name_taken` / `vetoed` / `user_confirmed` / `exists` / `invalid`），其余照常执行。不整批作废。
+- 每条独立校验，不过的进 `skipped`（下标 + 原因码：`unknown_ref` / `cross_domain` / `folder_collection` / `pinned_by_user` / `name_taken` / `vetoed` / `user_confirmed` / `exists` / `invalid` / `work_identity`），其余照常执行。不整批作废。`work_identity`（BUG-5460）：与条目的权威作品身份矛盾——把它从同一部作品的合集里拆出来，或放进来源（媒体服务器 / 在线源）给的另一部剧的合集，规则见 [AI 整理库](2026-10-20-ai-library-organize-design.md) §7.8 第 10 条。
 - 合集部分复用 `applyOrganizeActions`（新增 `rename` 动作种类），记一条 `library_organize_runs`（trigger = `agent`）；关系部分用 `applyAiMediaLink` / 新增的 AI 改类型写入，收集回执。
 - 结果：`{runId, applied: [{i, op, …}], skipped: [{i, op, reason}], undo: {…}}`；`undo` 是撤销载荷（runId + 关系回执），由路由交给操作记录。
 - 撤销：`undoLibraryOrganizeRun(runId)` + 倒序退回关系回执。后续被用户改过的那一处跳过（「已被后续修改覆盖」）。
