@@ -151,7 +151,7 @@
 | [BUG-5302](bugs/BUG-5302-imusic-mv-remote-client.md) | ✅ | ✅ | 互联音乐库：客户端歌词页 / 卡拉 OK 页放 host 的 MV（依赖 #4249） |
 | [BUG-5301](bugs/BUG-5301-imusic-server-scan-packaging.md) | 🚧 | 🚧 | 互联音乐库第 3 期：服务端扫描音乐与随包 fushi_music |
 | [BUG-5300](bugs/BUG-5300-imusic-engine-read-layer.md) | ✅ | ✅ | 互联音乐库第 1 期余项：歌词本地层与封面选取搬进引擎 |
-| [BUG-5299](bugs/BUG-5299-game-ocr-mode-phase3.md) | 🚧 | 🚧 | OCR 游戏模式第三期：持续截窗直出框内像素、OCR 行的游戏内嵌查词 |
+| [BUG-5299](bugs/BUG-5299-game-ocr-mode-phase3.md) | 🚧 | ✅ | OCR 游戏模式第三期：持续截窗直出框内像素、OCR 行的游戏内嵌查词（内嵌查词已做） |
 | [BUG-5298](bugs/BUG-5298-imusic-legacy-library-modules.md) | 🚧 | 🚧 | 互联老库类迁入统一模块层（design-imusic-q0） |
 | [BUG-5297](bugs/BUG-5297-listening-preset-unrecognized-layout.md) | ✅ | ✅ | 新加的「听力」模板一打开就报「区块以外的代码被改过」，复习走 WebView 卡面 |
 | [BUG-5296](bugs/BUG-5296-gen4-duplicate-log-representative.md) | ✅ | ✅ | gen4 迁移对拍：重复日志在协议 3 停在先到的副本上、新代取最小操作号，两份副本任何一处不同都整份撤回 |
