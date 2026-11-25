@@ -17,14 +17,25 @@ class RemoteCollectionAdoptionService {
   /// [userIntent]：用户亲手加入 / 下载这部作品时传 true，撤销此前对该合集的
   /// 删除、以及本机 AI 整理对这一集的自动移出（见
   /// [FushiDatabase.adoptRemoteCollectionMember]）；被动刷新保持 false。
-  Future<void> adoptVideo(RemoteVideoInfo video, {bool userIntent = false}) =>
-      adoptVideos(<RemoteVideoInfo>[video], userIntent: userIntent);
+  ///
+  /// [pinMember]：剧归属由来源断言（媒体服务器 / 在线视频源「加入媒体库」的整部
+  /// 剧，含后台探针补进来的新集）——钉住成员，AI 整理不再移出（BUG-5468）。
+  Future<void> adoptVideo(
+    RemoteVideoInfo video, {
+    bool userIntent = false,
+    bool pinMember = false,
+  }) => adoptVideos(
+    <RemoteVideoInfo>[video],
+    userIntent: userIntent,
+    pinMember: pinMember,
+  );
 
   /// 一次「加入媒体库」的全部集一起收养：[userIntent] 时整理记录只读一次
   /// （[OrganizerRemovals.load]），不按集重复读（BUG-5466）。
   Future<void> adoptVideos(
     Iterable<RemoteVideoInfo> videos, {
     bool userIntent = false,
+    bool pinMember = false,
   }) async {
     final List<RemoteVideoInfo> members = <RemoteVideoInfo>[
       for (final RemoteVideoInfo v in videos)
@@ -48,6 +59,7 @@ class RemoteCollectionAdoptionService {
         localEntryKey: video.id,
         userIntent: userIntent,
         organizerRemovals: removals,
+        pinMember: pinMember,
       );
     }
   }
@@ -138,6 +150,7 @@ class RemoteCollectionAdoptionService {
     String? localEntryKey,
     bool userIntent = false,
     OrganizerRemovals? organizerRemovals,
+    bool pinMember = false,
   }) async {
     if (membership == null) return;
     final OrganizerRemovals removals = !userIntent
@@ -160,6 +173,7 @@ class RemoteCollectionAdoptionService {
         collectionType: membership.collectionType,
         mediaType: mediaType.dbValue,
       ),
+      pinMember: pinMember,
     );
   }
 }

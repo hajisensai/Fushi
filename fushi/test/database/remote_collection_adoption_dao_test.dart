@@ -386,4 +386,30 @@ void main() {
       );
     });
   });
+
+  group('BUG-5468 pinMember', () {
+    Future<int?> adoptSeries(String key, {bool pinMember = false}) =>
+        db.adoptRemoteCollectionMember(
+          name: 'Series',
+          collectionType: 'playlist',
+          mediaType: MediaKind.video,
+          remoteEntryKey: key,
+          sortIndex: 1,
+          localEntryKey: key,
+          pinMember: pinMember,
+        );
+
+    test('钉住新成员，也补钉已在的成员', () async {
+      final int cid = (await adoptSeries('ep1'))!;
+      expect((await db.getCollectionItems(cid)).single.pinnedByUser, isFalse);
+      await adoptSeries('ep1', pinMember: true);
+      await adoptSeries('ep2', pinMember: true);
+      expect(
+        (await db.getCollectionItems(
+          cid,
+        )).map((MediaCollectionItemRow r) => r.pinnedByUser),
+        <bool>[true, true],
+      );
+    });
+  });
 }

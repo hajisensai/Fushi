@@ -53,7 +53,10 @@ void main() {
   );
 
   /// 同 `MediaServerVideoLibrary.addMissing`：逐集写行，整部作品一起收养。
-  Future<void> addSeries({bool userIntent = true}) async {
+  Future<void> addSeries({
+    bool userIntent = true,
+    bool pinMember = false,
+  }) async {
     for (final String id in episodes) {
       await db.upsertVideoBook(
         VideoBooksCompanion.insert(
@@ -63,7 +66,11 @@ void main() {
         ),
       );
     }
-    await adoption.adoptVideos(episodes.map(episode), userIntent: userIntent);
+    await adoption.adoptVideos(
+      episodes.map(episode),
+      userIntent: userIntent,
+      pinMember: pinMember,
+    );
   }
 
   Future<MediaCollectionRow?> series() =>
@@ -173,5 +180,40 @@ void main() {
 
     await addSeries();
     expect(await members(), <String>{'ep1', 'ep2'});
+  });
+
+  // BUG-5468：来源断言的剧归属（pinMember）收养时钉住，AI 的 dissolve 让路。
+  test('来源断言的剧归属收养时钉住：AI dissolve 跳过，集留在合集里', () async {
+    await addSeries(pinMember: true);
+    final MediaCollectionRow c = (await series())!;
+    expect(
+      (await db.getCollectionItems(
+        c.id,
+      )).every((MediaCollectionItemRow i) => i.pinnedByUser),
+      isTrue,
+    );
+
+    final LibraryChangesetOutcome o = await dissolve();
+    expect(o.applied, isEmpty);
+    expect(o.skipped.single['reason'], LibraryChangeSkip.pinnedByUser);
+    expect(await members(), episodes.toSet());
+  });
+
+  test('被动收养（后台探针补集）带 pinMember 也钉住：存量没钉过的集补钉', () async {
+    await addSeries();
+    final MediaCollectionRow c = (await series())!;
+    expect(
+      (await db.getCollectionItems(
+        c.id,
+      )).any((MediaCollectionItemRow i) => i.pinnedByUser),
+      isFalse,
+    );
+    await addSeries(userIntent: false, pinMember: true);
+    expect(
+      (await db.getCollectionItems(
+        c.id,
+      )).every((MediaCollectionItemRow i) => i.pinnedByUser),
+      isTrue,
+    );
   });
 }

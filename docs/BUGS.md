@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4736 条。点号进各自文件。
+> 共 4737 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5468](bugs/BUG-5468-ai-review-dissolves-source-series.md) | ✅ | ✅ | 媒体服务器 / 在线源整部剧入库后被 AI 管库拆散，集在视频库 / 首页「最近添加」里一集一张卡 |
 | [BUG-5466](bugs/BUG-5466-ai-review-removal-blocks-readd.md) | ✅ | ✅ | AI 管库拆散 / 挪走的集，用户再「加入媒体库」也归不回合集 |
 | [BUG-5460](bugs/BUG-5460-sync-missing-book-content.md) | ✅ | ✅ | 书目还在而正文丢失时同步无法补回原书 |
 | [BUG-5456](bugs/BUG-5456-android-migrate-target-content-conflict.md) | ✅ | ✅ | Android 移动书库：目标里同路径不同内容的文件被当成中断残留整树删掉 |

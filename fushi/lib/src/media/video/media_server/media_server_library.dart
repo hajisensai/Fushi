@@ -245,8 +245,10 @@ class MediaServerVideoLibrary {
       infos.add(info);
     }
     // 已在库的集也重新收养一次：合集被用户删掉后重新加入能回到合集里；整部作品
-    // 一起收养，整理记录只读一次（BUG-5466）。
-    await adoption.adoptVideos(infos, userIntent: userIntent);
+    // 一起收养，整理记录只读一次（BUG-5466）。剧归属是服务器的剧元数据断言的：
+    // 钉住，AI 整理不再把集拆出去；存量没钉过的集在下一次探针 / 重新加入时补钉
+    // （BUG-5468）。
+    await adoption.adoptVideos(infos, userIntent: userIntent, pinMember: true);
     if (added.isNotEmpty) {
       await repository.recordVideoImportActivity(
         bookUid: added.first,

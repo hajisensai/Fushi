@@ -1377,6 +1377,10 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 墓碑是 **AI 整理自动移出**留下的（调用方按本机整理记录认出，DAO 不解析整理记录
   /// 的载荷）。AI 的移出不是用户否决，用户亲手再加入这部作品就清掉它们、让集回到
   /// 合集里；用户自己移出的成员墓碑不在其中，照常拦（BUG-5466）。
+  ///
+  /// [pinMember]：成员归属由来源断言（媒体服务器 / 在线视频源的剧元数据，用户选了
+  /// 「加入媒体库」的整部剧）——收养时把成员钉住（`pinned_by_user`，新插入与已在的
+  /// 行都钉），AI 整理的自动移出 / 拆散 / 挪走一律让路（BUG-5468）。
   Future<int?> adoptRemoteCollectionMember({
     required String name,
     required String collectionType,
@@ -1386,6 +1390,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     String? localEntryKey,
     bool userIntent = false,
     Set<String> organizerRemovedKeys = const <String>{},
+    bool pinMember = false,
   }) => transaction(() async {
     if (userIntent) {
       await _clearCollectionDeletionTombstone(name, collectionType);
@@ -1483,10 +1488,26 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
           entryKey: targetKey,
           sortIndex: Value(index),
           // 远端占位行换成本机键：「用户亲手放进来」跟着搬（v159）。
-          pinnedByUser: Value<bool>(placeholder?.pinnedByUser ?? false),
+          pinnedByUser: Value<bool>(
+            pinMember || (placeholder?.pinnedByUser ?? false),
+          ),
         ),
         mode: InsertMode.insertOrIgnore,
       );
+    } else if (pinMember) {
+      // 已在合集里（存量收养没钉过）：补钉，下次探针 / 重新加入即自愈。
+      await (update(mediaCollectionItems)..where(
+            (t) =>
+                t.collectionId.equals(collectionId) &
+                t.mediaType.equals(mediaType.dbValue) &
+                t.entryKey.equals(targetKey) &
+                t.pinnedByUser.equals(false),
+          ))
+          .write(
+            const MediaCollectionItemsCompanion(
+              pinnedByUser: Value<bool>(true),
+            ),
+          );
     }
     if (targetKey != remoteEntryKey && placeholder != null) {
       await deleteCollectionItemRaw(
