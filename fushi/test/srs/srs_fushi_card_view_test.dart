@@ -756,7 +756,7 @@ void main() {
     expect(find.byKey(const ValueKey<String>('srs-fushi-term')), findsOne);
   });
 
-  testWidgets('注音颜色：默认跟随弱化文字色，自定义后词条与例句的注音都换色', (WidgetTester tester) async {
+  testWidgets('注音颜色：默认跟随弱化文字色', (WidgetTester tester) async {
     TextStyle rubyOf(String key) =>
         tester.widget<SrsRubyText>(find.byKey(ValueKey<String>(key))).rubyStyle;
     await pump(tester, answer: true);
@@ -765,7 +765,11 @@ void main() {
     ).colorScheme;
     expect(rubyOf('srs-fushi-term').color, scheme.onSurfaceVariant);
     expect(rubyOf('srs-fushi-sentence').color, scheme.onSurfaceVariant);
+  });
 
+  testWidgets('注音颜色：自定义后词条与例句的注音都换色，基字不变', (WidgetTester tester) async {
+    TextStyle rubyOf(String key) =>
+        tester.widget<SrsRubyText>(find.byKey(ValueKey<String>(key))).rubyStyle;
     await pump(
       tester,
       answer: true,

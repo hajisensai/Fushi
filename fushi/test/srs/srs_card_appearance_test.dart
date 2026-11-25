@@ -389,10 +389,9 @@ void main() {
         colorSource: SrsCardColorSource.custom,
         customAccent: 0xFFB25E02,
       );
-      expect(
-        srsCardRubyColor(custom, app),
-        srsCardColorScheme(custom, app).onSurfaceVariant,
-      );
+      final ColorScheme seeded = srsCardColorScheme(custom, app);
+      expect(srsCardRubyColor(custom, seeded), seeded.onSurfaceVariant);
+      expect(seeded.onSurfaceVariant, isNot(app.onSurfaceVariant));
       expect(srsCardRubyColor(red, app), const Color(0xFFB3261E));
 
       // 旧数据缺字段 / 半透明 / 非整数：回到跟随，不抛。
