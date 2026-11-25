@@ -214,9 +214,9 @@ sync backend gets list / delete for stored archives.
   (`AutoBackupSettings.mirrorFolder`, device-local prefs `auto_backup_mirror_folder` = handle and
   `auto_backup_mirror_label`), the finished point is copied to `<folder>/<id>/backup.zip` +
   `restore_point.json` (same layout as the store; meta written last = complete marker; an existing meta is
-  deleted before files are overwritten, so a re-copy never looks complete half way). Copying runs under the
-  export lock and the local point is `hold`-pinned meanwhile. Desktop is unchanged: the phase 2 custom
-  folder is the store root.
+  deleted before files are overwritten, so a re-copy never looks complete half way). Copying does **not** hold
+  the export lock (see "Review fixes" below); the local point is `hold`-pinned meanwhile. Desktop is
+  unchanged: the phase 2 custom folder is the store root.
 - **Shared folders.** A user folder is often a synced folder used by several devices. The folder copy's meta
   carries `deviceId` (sync device id, device-local) and `deviceName` (`resolveInterconnectDeviceName`).
   Folder retention (`planMirrorRetention`) applies the scheduled policy (48 h, 7 daily, 4 weekly, 3 monthly,
@@ -266,10 +266,100 @@ sync backend gets list / delete for stored archives.
   handler to the background engine). A native worker cannot build the archive, and a second engine opening
   `fushi.db` / `srs4.db` while the foreground app owns them would need cross-process locking the kernel does
   not have. Mobile keeps "catch up on next launch / resume".
-- **Cloud copies:** research only, proposal in `.worktrees/coordination/briefs/auto-backup-p3-cloud-proposal.md`
-  and summarised below.
+- **Cloud copies:** built after the user's decisions D8–D11, see "Cloud copies as implemented" below. The
+  research that led to it is kept as "Cloud copies: proposal".
 
-### Cloud copies: proposal (not implemented)
+### Review fixes (2026-11-25, after the phase 3 review)
+
+- **Device scoping everywhere.** Every scheduled point records the writing device (`deviceId` = 16-hex sha1
+  of the sync device id, `deviceName`) in its meta and writes an owner marker `.restore_point_owner` into the
+  draft dir first (not counted as a point file). `RestorePointStore.pruneScheduled(deviceId:, sharedRoot:)`
+  only plans retention over this device's own points: other devices' points and copied-back points take no
+  day / week / month bucket, do not count against the 5 GB cap and are never auto-deleted. Copied-back points
+  carry `copiedBackAtMs` and are never auto-pruned (the user deletes them on the page). Points without a
+  device: own in the private default store, foreign in a desktop custom folder (`sharedRoot`), so two desktops
+  sharing a synced folder never prune each other. `cleanIncompleteScheduled` in a shared root only removes
+  meta-less dirs whose owner marker is this device (a dir whose meta has not synced yet must not be deleted:
+  the deletion would sync back and destroy the other device's point). Phase 2 custom-folder points written
+  before this change have no device and are therefore never auto-pruned (phase 2 has not shipped).
+- **Copies run outside the export lock.** A committed point is immutable and `hold`-pinned, so the copy
+  (including silent catch-up on launch / resume) runs after the lock is released, with its own in-flight
+  flag per target. A hung provider no longer leaves restore / replace / manual export "busy" until restart.
+  Copy-back and delete on the page use the same per-target flag (busy only when that target already has an
+  operation running). Java `runIo` catches `Throwable` and always replies exactly once.
+- **Precise half-copy cleanup.** The mirror status keeps `pendingId` (copy in flight / interrupted) and
+  `leftovers` (half copies whose cleanup failed). On the next copy to the **same target** these ids are deleted
+  only if the listing has no meta for them (a copy killed during prune, after its meta was written, is
+  complete and kept). A failed upload deletes its own `<id>/` best effort; if that fails too, the id goes into
+  `leftovers`, so meta-less dirs can always be cleaned. An explicit failure still waits for the next slot
+  (catch-up skips it), an interruption does not.
+- **Pruning is per item.** One undeletable old copy no longer fails the whole copy: the new copy is recorded
+  as done, the ids that could not be removed go into `pruneError` (shown as an info line, no toast) and are
+  retried next time.
+- **Untrusted names.** Copy ids from a folder / provider / cloud must match `isScheduledRestorePointId`
+  (`<UTC timestamp>-<db>-scheduled[-n]`, plain name: no `.`, `..`, separators or NUL) when listing, before
+  copy-back and before delete; file names in meta use the same plain-name rule.
+- **Listing robustness.** iOS / desktop `IoBackupFolderMirror.list` and Android `list` skip an unreadable entry
+  instead of failing the whole folder. Android cloud providers that report `EXTRA_LOADING` are re-queried
+  (up to about 3 s) and otherwise fail with `copy_loading` instead of returning a partial list (which would
+  have created duplicate dirs).
+- **Error codes instead of raw text.** Native codes `UNAVAILABLE` / `NOT_FOUND` / `LOCAL_IO` / `UNSUPPORTED` /
+  `RENAMED` / `LOADING` / `INVALID_ARG` / `IO_FAILED` / `INTERNAL` map to status codes (`folder_unavailable`,
+  `copy_not_found`, `copy_local_io`, `copy_unsupported`, `copy_renamed`, `copy_loading`, `copy_failed`) with
+  localized text; raw platform messages (URIs, paths, server bodies) only go to the debug log. Directory
+  creation checks the provider's display name like files do (`RENAMED`), and a failed delete of the old meta
+  fails the copy. A rebuilt iOS bookmark is saved from every folder session (copy, list, copy-back, delete).
+
+### Cloud copies as implemented (D8–D11)
+
+- **One more mirror target.** `SyncAssetStoreBackupMirror` (`sync/auto_backup/cloud_backup_mirror.dart`)
+  implements the same `BackupFolderMirror` on top of `SyncAssetStore` only; the controller treats the user
+  folder and the cloud as two `AutoBackupMirrorTarget`s with separate status (`mirror` / `cloud` in
+  `auto_backup_status.json`), so meta-last completion, pending / leftover cleanup, device-scoped retention,
+  catch-up and "Copy to this device" are shared. Each target copies independently; neither holds the export lock.
+- **Backend.** The first enabled sync channel (cloud before Interconnect) whose type is Google Drive,
+  Interconnect (`fushiServer`), Dropbox, WebDAV, FTP or SFTP; OneDrive is not offered (D9). It must be signed in
+  (`restoreAuth`). Every backend call runs under the sync channel's resource lock (`syncResourceLocks`, same as
+  sync: the backends are process-wide singletons) and idempotent calls (list, read, mkdir, delete) go through
+  `retryTransientSync`; uploads are not retried in place: a failed upload deletes its half copy and the next
+  slot retries (WebDAV / FTP / SFTP / Interconnect cannot resume). Dropbox uploads over 128 MiB now use upload
+  sessions (8 MiB chunks, `incorrect_offset` resync, transient retry with `Retry-After`, one token refresh).
+  Drive keeps its resumable 8 MiB chunks.
+- **Where files land.** Under the backend's existing sync root and scope (no new OAuth scope):
+  `fushi-data/fushi-backups/<device key>/<point id>/backup.zip` + `restore_point.json`.
+  Google Drive: the hidden `appDataFolder` (counts against the user's quota, not visible in Drive).
+  Dropbox: the app folder, `/Apps/<app>/fushi-data/fushi-backups/...`. WebDAV / FTP / SFTP: `fushi-data/` under
+  the configured base path / login directory. Interconnect: on the host, `<host data dir>/fushi-data/fushi-backups/...`
+  (the app host's database directory, or `paths.syncData` for the headless server); the host's own Restore
+  points page does not list them. The zip goes through `putAsset`, so on cloud backends it is stored with the
+  sync layer's content obfuscation (only Fushi can turn it back into a zip); the meta goes through
+  `putBytesAsset` (plain JSON).
+- **Listing.** All device folders are listed (another device can copy back), each copy's meta is read and
+  validated; FTP's missing sizes / mtimes do not matter (retention reads the meta). FTP's delete-missing throws:
+  deletes only target dirs found in a fresh listing. Auth / unreachable errors fail the whole listing, other
+  per-copy errors skip that copy.
+- **Errors.** Backend exceptions become codes (`cloud_auth`, `cloud_unreachable`, `cloud_quota`, `cloud_failed`);
+  messages (which can carry server URLs or response bodies) never reach status, toast or logs (the log gets
+  the exception type only). Credentials are never in meta or status; the status target key is
+  `cloud-<backend type>`.
+- **Network (D10).** Default Wi-Fi only (`auto_backup_cloud_metered` off). Android asks
+  `ConnectivityManager.isActiveNetworkMetered()` (new channel method `networkUnmetered`; a metered Wi-Fi
+  hotspot counts as metered); iOS treats a routable IPv4 address on `en0` as Wi-Fi (no Swift change); desktop
+  is always unmetered. The app had no connectivity helper (no `connectivity_plus`), hence
+  `currentNetworkUnmetered`. On a metered network the copy is skipped without an error and caught up on the next
+  check (resume / launch / desktop timer).
+- **Retention (D11).** `kCloudBackupRetention`: newest always, 7 daily + 4 weekly, plus the 5 GB cap as a quota
+  guard; this device's copies only.
+- **Settings.** Under Automatic backup: "Copy to cloud" switch naming the service (disabled with a setup hint
+  when no listed backend is configured), a fewer-copies hint, "Also upload on mobile data" (Android / iOS only),
+  and a status line (uploaded / pending / waiting for Wi-Fi / failed reason), plus the prune info line. Prefs
+  `auto_backup_cloud` / `auto_backup_cloud_metered` are device-local.
+- **Restore points page.** An "In the cloud" section like the folder one (cloud-only copies, Copy to this
+  device, Delete, "From <device>"); local rows say "Also in the cloud".
+- **Tests.** Fake `SyncAssetStore` (`FakeAssetStore`, no sizes like FTP) for the mirror and the controller;
+  there is no test backend configured for automated tests, so no real-backend smoke test.
+
+### Cloud copies: proposal (research before D8–D11)
 
 Findings: the spec's premise is stale. Every sync backend already implements `SyncAssetStore`
 (`packages/fushi_engine/lib/sync/sync_asset_store.dart`) with `putAsset` (streaming), `listChildren`,
@@ -292,11 +382,8 @@ space; a smaller cloud retention (e.g. 7 daily) to save quota.
 
 ### Phase 3 open questions
 
-1. A copied-back old point is an ordinary scheduled point, so the next scheduled run's retention may delete it
-   if a newer local point already claims its bucket. It is pinned only while it is being restored. A
-   "keep until restored" pin would change retention semantics (left as is).
-2. Phase 2's desktop custom folder is a store root without device scoping: two desktops sharing a synced
-   folder prune each other's points.
+1. ~~Copied-back points pruned by the next run~~: fixed, copied-back points are never auto-pruned.
+2. ~~Desktop custom folder without device scoping~~: fixed, see "Review fixes".
 3. iCloud-evicted copies only get a notice; `FileManager.startDownloadingUbiquitousItem` could fetch them
    (new Swift, not buildable or testable on the Windows dev box).
 4. ctl / CLI do not list or copy folder copies (`GET /api/admin/restore-points` is local only).
@@ -316,6 +403,10 @@ space; a smaller cloud retention (e.g. 7 daily) to save quota.
 | D5 | Downgrade-screen rollback | replace with newest compatible snapshot / reverse-migrate ("Downgrade & Quit") | **Replace**, keep the newer DB as a `pre_rollback` point, state what is lost. |
 | D6 | Misleading Anki-migration text | fix now separately / re-point with phase 2 | **Re-point at the Restore points page in phase 2** (forced backup before the migration makes it true again). |
 | D7 | What to back up / when | fixed / user choice | **User choice:** file-tree checklist (books, audiobooks, videos, dictionaries, fonts, local audio, game covers) + review-media switch + interval + optional preferred time; library, progress, statistics, settings and review notes are always included. *Revised by the user 2026-11-25 after review (was: the full category checklist).* |
+| D8 | Cloud copies: when | later / now, same batch | **Now, same batch** (same branch, separate commits). Replaces D4's "later". |
+| D9 | Which backends | resumable only (Drive, OneDrive) + Interconnect / all with list+delete / pick a set | **Google Drive, Interconnect, Dropbox, WebDAV, FTP, SFTP; not OneDrive.** Dropbox gets upload sessions; backends that cannot resume clean up a failed upload and retry next slot. |
+| D10 | Mobile data | Wi-Fi only by default / any network / ask | **Wi-Fi only by default**, a setting allows mobile data; desktop / ethernet counts as unmetered. |
+| D11 | Cloud retention | same as local / fewer | **Fewer: 7 daily + 4 weekly**, this device's copies only (implementation adds the 5 GB cap as a quota guard). |
 
 ## 决策摘要（中文）
 
@@ -326,6 +417,10 @@ D2 复习笔记与记录进备份，卡片媒体默认不进、可开；D3 分�
 `pre_rollback` 还原点；D6 Anki 迁移提示随第二期改指向还原点页；D7 频率与偏好时间由用户选，内容只挑带哪些大文件
 （书、有声书、视频、词典、字体、本地音频、游戏封面）与复习媒体开关，书库、进度、统计、设置与复习笔记每次都在（同日审查后
 用户改定，原为完整类别勾选）。从整库定时点「替换」：整库换回，包里带着的文件换回，没带的文件在本机原样不动、书库条目照样保留。
+D8–D11（用户 2026-11-25 拍板）：云端副本这一批就做（同分支、分开提交）；后端为 Google Drive、互联、Dropbox、WebDAV、FTP、SFTP，
+不含 OneDrive，Dropbox 补上传会话，不能续传的后端失败就清掉半截、下个时段重来；默认只在 Wi-Fi 上传，可开「也用移动数据」，桌面 / 有线
+算不计流量；云端保留更少：7 日 + 4 周（只动本机写的副本，另有 5 GB 上限防配额被占满）。同批按审查修好：定时点都记写入设备，本机 /
+自定义文件夹 / 云端都只修剪本机写的，取回本机的点不自动删；复制不再拿导出锁；半截副本按目标与元数据精确清理；修剪逐份尽力。
 
 ## Naming
 
