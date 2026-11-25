@@ -1,4 +1,6 @@
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_repository.dart'
+    show TrackingProgressMode;
 import 'package:fushi_engine/media/tracking/book_series_link.dart';
 import 'package:fushi/src/pages/implementations/activity_feed.dart'
     show formatActivityRelativeTime;
@@ -37,6 +39,29 @@ String trackingProgressModeLabel(String value) {
     default:
       return t.media_tracking_chapter;
   }
+}
+
+/// What one update sends, in words ([trackingActivitySentLabel] for an
+/// Activity row; the home Tracking widget for its merged sends).
+String trackingSendLabel({
+  required String progressMode,
+  required int progress,
+  required bool completed,
+}) {
+  final String what = switch (TrackingProgressMode.tryParse(progressMode)) {
+    TrackingProgressMode.status => switch (progress) {
+      1 => t.game_status_want_to_play,
+      2 => t.game_status_played,
+      3 => t.game_status_playing,
+      4 => t.game_status_on_hold,
+      5 => t.game_status_dropped,
+      _ => '${t.media_tracking_status} $progress',
+    },
+    _ => '${trackingProgressModeLabel(progressMode)} $progress',
+  };
+  return completed && progressMode != TrackingProgressMode.status.value
+      ? '$what · ${t.media_tracking_activity_finished}'
+      : what;
 }
 
 /// One signed-in site's sync state for Settings > Sync and the control

@@ -8,6 +8,7 @@ import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/tracking/bangumi_tracking_provider.dart';
 import 'package:fushi_engine/media/tracking/book_series_link.dart';
 import 'package:fushi_engine/media/tracking/book_tracking_link.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_recent_sends.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/remote_anime_link.dart';
 import 'package:fushi_engine/media/tracking/title_match.dart';
@@ -274,6 +275,8 @@ class MediaTrackingHomeSnapshot {
     this.inertMappingIds = const <int>{},
     this.mediaServerInertMappingIds = const <int>{},
     this.mediaServerCoverage = MediaServerLibraryCoverage.empty,
+    this.activity = const <MediaTrackingActivityRow>[],
+    this.queued = const <PendingTrackingUpdate>[],
   });
 
   static const MediaTrackingHomeSnapshot empty = MediaTrackingHomeSnapshot(
@@ -307,6 +310,26 @@ class MediaTrackingHomeSnapshot {
   /// server ([MediaTrackingRepository.loadMediaServerLibraryCoverage]).
   final MediaServerLibraryCoverage mediaServerCoverage;
 
+  /// The Activity log, newest first ([MediaTrackingRepository.listActivity]):
+  /// what the home widget's "Last synced" view reads.
+  final List<MediaTrackingActivityRow> activity;
+
+  /// Updates waiting in the outbox of the sites that are on and signed in,
+  /// without those of ignored items.
+  final List<PendingTrackingUpdate> queued;
+
+  /// The newest sends, one per title ([mediaTrackingRecentSends]).
+  List<MediaTrackingRecentSend> recentSends({int limit = 8}) =>
+      mediaTrackingRecentSends(activity, limit: limit);
+
+  /// The outbox, one entry per title ([mediaTrackingQueuedSends]).
+  List<MediaTrackingRecentSend> get queuedSends =>
+      mediaTrackingQueuedSends(queued);
+
+  /// Counts over the sends since [sinceMs] ([mediaTrackingSendTotals]).
+  MediaTrackingSendTotals sendTotalsSince(int sinceMs) =>
+      mediaTrackingSendTotals(activity, sinceMs: sinceMs);
+
   /// 去掉 [hidden] 判为藏起来的本地作品（上锁且本次会话未解锁，判据由 app 端
   /// `MediaVisibility.hidesTrackedMedia` 给）的链接与未链接条目。没有要藏的原样返回。
   MediaTrackingHomeSnapshot withoutMedia(
@@ -322,8 +345,19 @@ class MediaTrackingHomeSnapshot {
           for (final MediaTrackingUnlinkedItem u in unlinked)
             if (!hidden(u.mediaType.value, u.mediaKey)) u,
         ];
+    final List<MediaTrackingActivityRow> keptActivity =
+        <MediaTrackingActivityRow>[
+          for (final MediaTrackingActivityRow a in activity)
+            if (!hidden(a.mediaType, a.mediaKey)) a,
+        ];
+    final List<PendingTrackingUpdate> keptQueued = <PendingTrackingUpdate>[
+      for (final PendingTrackingUpdate q in queued)
+        if (!hidden(q.mapping.mediaType, q.mapping.mediaKey)) q,
+    ];
     if (keptMappings.length == mappings.length &&
-        keptUnlinked.length == unlinked.length) {
+        keptUnlinked.length == unlinked.length &&
+        keptActivity.length == activity.length &&
+        keptQueued.length == queued.length) {
       return this;
     }
     return MediaTrackingHomeSnapshot(
@@ -334,6 +368,8 @@ class MediaTrackingHomeSnapshot {
       inertMappingIds: inertMappingIds,
       mediaServerInertMappingIds: mediaServerInertMappingIds,
       mediaServerCoverage: mediaServerCoverage,
+      activity: keptActivity,
+      queued: keptQueued,
     );
   }
 }
@@ -1238,19 +1274,33 @@ class MediaTrackingService {
   }
 
   /// One snapshot per registered provider, in registry order.
-  Future<List<MediaTrackingProviderStatus>> loadProviderStatuses() async {
+  Future<List<MediaTrackingProviderStatus>> loadProviderStatuses() async =>
+      (await _loadProviderStatusesWithQueue()).statuses;
+
+  /// [loadProviderStatuses] plus the active outbox rows of the sites that are
+  /// on and signed in (read once for both).
+  Future<
+    ({
+      List<MediaTrackingProviderStatus> statuses,
+      List<PendingTrackingUpdate> queued,
+    })
+  >
+  _loadProviderStatusesWithQueue() async {
     final List<MediaTrackingProviderStatus> result =
         <MediaTrackingProviderStatus>[];
+    final List<PendingTrackingUpdate> queued = <PendingTrackingUpdate>[];
     for (final TrackingProvider provider in _registry.all) {
       final TrackingProviderPrefKeys keys =
           TrackingProviderPrefKeys.forProvider(provider.id);
       final List<PendingTrackingUpdate> pending = await _activePending(
         provider.id,
       );
+      final bool enabled = isProviderEnabled(provider.id);
+      if (enabled && provider.isConfigured) queued.addAll(pending);
       result.add(
         MediaTrackingProviderStatus(
           providerId: provider.id,
-          enabled: isProviderEnabled(provider.id),
+          enabled: enabled,
           configured: provider.isConfigured,
           accountName: _accountNameOf(provider),
           lastSyncAt: _intPref(keys.lastSyncAt),
@@ -1265,15 +1315,22 @@ class MediaTrackingService {
         ),
       );
     }
-    return result;
+    return (statuses: result, queued: queued);
   }
 
   /// The home page's view of tracking; see [MediaTrackingHomeSnapshot].
   Future<MediaTrackingHomeSnapshot> loadHomeSnapshot() async {
     final List<MediaTrackingMappingRow> mappings = await _repository
         .listMappings();
+    final ({
+      List<MediaTrackingProviderStatus> statuses,
+      List<PendingTrackingUpdate> queued,
+    })
+    sites = await _loadProviderStatusesWithQueue();
     return MediaTrackingHomeSnapshot(
-      sites: await loadProviderStatuses(),
+      sites: sites.statuses,
+      queued: sites.queued,
+      activity: await _repository.listActivity(),
       siteNames: <String, String>{
         for (final TrackingProvider provider in _registry.all)
           provider.id: provider.displayName,

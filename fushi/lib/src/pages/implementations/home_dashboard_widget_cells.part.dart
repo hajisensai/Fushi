@@ -2300,12 +2300,41 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
     );
   }
 
-  /// 媒体追踪同步状态（模块门控在可用性判据里）。色块外观且格子够宽够高（宽格、
+  /// 媒体追踪同步状态（模块门控在可用性判据里）。没有挡路的问题且发过 / 正在发
+  /// 更新时画「最近同步」（[HomeTrackingFeedCard]，1×1～6×2 按格子实际大小排版）；
+  /// 否则（要重新登录 / 待关联 / 从未发过）走下面的老路径。色块外观且格子够宽够高（宽格、
   /// 高 ≥ [_trackingPosterMinHeight]）时画拼贴追踪块（[HomeTrackingPoster]，设计
   /// 稿 H6：按状态取色、待关联数大字兼水印、待关联条目封面扇形叠放、「处理 ›」）；
   /// 其余（半栏 / 矮格 / 分区卡外观）按格子实际大小排版在 [HomeTrackingPanel] 里。
   Widget _trackingCell(AppModel appModel, List<MediaItem> books, bool poster) {
     final HomeTrackingSummary summary = HomeTrackingSummary.of(_tracking);
+    // 没有挡路的问题（要重新登录 / 待关联）时显示「最近同步」：最新一条发送打头，
+    // 格子越大带出越多（home_tracking_feed.dart）。
+    final HomeTrackingFeed? feed = HomeTrackingFeed.of(
+      _tracking,
+      summary,
+      DateTime.now(),
+    );
+    if (feed != null) {
+      return HomeTrackingFeedCard(
+        key: const ValueKey<String>('home-tracking-card'),
+        feed: feed,
+        poster: poster,
+        coverOf: (MediaTrackingRecentSend send) => _trackingCoverOf(
+          appModel,
+          books,
+          mediaType: send.mediaType,
+          mediaKey: send.mediaKey,
+          title: send.mediaTitle,
+        ),
+        onOpen: () => _openTrackingPage(
+          summary,
+          tab: feed.state == HomeTrackingFeedState.failed
+              ? TrackingPageTab.attention
+              : TrackingPageTab.activity,
+        ),
+      );
+    }
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints c) {
         if (poster &&

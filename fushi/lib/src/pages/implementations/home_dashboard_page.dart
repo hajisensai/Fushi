@@ -55,6 +55,8 @@ import 'package:fushi/src/media/video/video_duration_pref.dart';
 import 'package:fushi/src/media/media_cover_source.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_recent_sends.dart'
+    show MediaTrackingRecentSend;
 import 'package:fushi/src/mining/galgame_library.dart';
 import 'package:fushi/src/mining/galgame_repository.dart';
 import 'package:fushi/src/media/video/cover_ui/cover_orientation_builder.dart';
@@ -88,6 +90,7 @@ import 'package:fushi_audio/fushi_audio.dart'
         kFavoriteSentenceSourceVideo,
         kFavoriteSentenceSourceWeb;
 import 'package:fushi/src/pages/implementations/home_tracking_panel.dart';
+import 'package:fushi/src/pages/implementations/home_tracking_feed.dart';
 import 'package:fushi/src/pages/implementations/home_profile_chip.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart'
@@ -4885,7 +4888,7 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
   // ── Media tracking (strip + marks, see home_tracking_panel.dart) ─────────
 
   /// 追踪色块右侧叠放的封面（H6）：待关联条目里最近活动的三条，在本地库里找得到
-  /// 封面来源的才画（书 / 视频 / 视频合集 / 游戏）。
+  /// 封面来源的才画（[_trackingCoverOf]）。
   List<Widget> _trackingUnlinkedCovers(
     AppModel appModel,
     List<MediaItem> books,
@@ -4893,7 +4896,6 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     if (HomeTrackingSummary.of(_tracking).unlinked == 0) {
       return const <Widget>[];
     }
-    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final List<MediaTrackingUnlinkedItem> items =
         List<MediaTrackingUnlinkedItem>.of(_tracking.unlinked)..sort(
           (MediaTrackingUnlinkedItem a, MediaTrackingUnlinkedItem b) =>
@@ -4902,53 +4904,81 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
     final List<Widget> covers = <Widget>[];
     for (final MediaTrackingUnlinkedItem item in items) {
       if (covers.length == 3) break;
-      final Widget? cover = switch (item.mediaType) {
-        TrackingMediaType.book => () {
-          for (final MediaItem b in books) {
-            if ((ReaderFushiSource.parseBookKey(b.mediaIdentifier) ??
-                    b.mediaIdentifier) ==
-                item.mediaKey) {
-              return _bookCover(tokens, appModel, b);
-            }
-          }
-          return null;
-        }(),
-        TrackingMediaType.video => () {
-          for (final VideoBookRow v in _videos) {
-            if (v.bookUid == item.mediaKey) {
-              return _localCover(
-                tokens,
-                kind: MediaKind.video,
-                path: v.coverPath,
-                title: item.mediaTitle,
-              );
-            }
-          }
-          return null;
-        }(),
-        TrackingMediaType.videoCollection =>
-          switch (_collectionCoverById[int.tryParse(item.mediaKey)]) {
-            final List<String> paths when paths.isNotEmpty => _localCover(
-              tokens,
-              kind: MediaKind.video,
-              path: paths.first,
-              title: item.mediaTitle,
-            ),
-            _ => null,
-          },
-        TrackingMediaType.game => () {
-          for (final GalgameEntry g in _games) {
-            if (g.id == item.mediaKey) {
-              return _gameCover(tokens, g, title: item.mediaTitle);
-            }
-          }
-          return null;
-        }(),
-        _ => null,
-      };
+      final Widget? cover = _trackingCoverOf(
+        appModel,
+        books,
+        mediaType: item.mediaType.value,
+        mediaKey: item.mediaKey,
+        title: item.mediaTitle,
+      );
       if (cover != null) covers.add(cover);
     }
     return covers;
+  }
+
+  /// The local cover of a tracked item ([TrackingMediaType] `value` + key),
+  /// or null when the library has none to draw: a book, a video, a video or
+  /// book collection (its own cover, else for a book series the cover of a
+  /// volume in it), a game. Media server rows have no local cover.
+  Widget? _trackingCoverOf(
+    AppModel appModel,
+    List<MediaItem> books, {
+    required String mediaType,
+    required String mediaKey,
+    required String title,
+  }) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    if (mediaType == TrackingMediaType.book.value) {
+      for (final MediaItem b in books) {
+        if ((ReaderFushiSource.parseBookKey(b.mediaIdentifier) ??
+                b.mediaIdentifier) ==
+            mediaKey) {
+          return _bookCover(tokens, appModel, b);
+        }
+      }
+      return null;
+    }
+    if (mediaType == TrackingMediaType.video.value) {
+      for (final VideoBookRow v in _videos) {
+        if (v.bookUid == mediaKey) {
+          return _localCover(
+            tokens,
+            kind: MediaKind.video,
+            path: v.coverPath,
+            title: title,
+          );
+        }
+      }
+      return null;
+    }
+    if (mediaType == TrackingMediaType.videoCollection.value ||
+        mediaType == TrackingMediaType.bookCollection.value) {
+      final int? id = int.tryParse(mediaKey);
+      if (id == null) return null;
+      final bool video = mediaType == TrackingMediaType.videoCollection.value;
+      if (_collectionCoverById[id] case final List<String> paths
+          when paths.isNotEmpty) {
+        return _localCover(
+          tokens,
+          kind: video ? MediaKind.video : MediaKind.epub,
+          path: paths.first,
+          title: title,
+        );
+      }
+      if (video) return null;
+      for (final MediaItem b in books) {
+        if (_primaryCollectionByEntry[_bookCollectionKey(b)] == id) {
+          return _bookCover(tokens, appModel, b, title: title);
+        }
+      }
+      return null;
+    }
+    if (mediaType == TrackingMediaType.game.value) {
+      for (final GalgameEntry g in _games) {
+        if (g.id == mediaKey) return _gameCover(tokens, g, title: title);
+      }
+    }
+    return null;
   }
 
   /// The tracking state of a Continue entry ([homeTrackingMark]); null for
@@ -4984,7 +5014,10 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
 
   /// The Tracking page, on "Needs attention" when the strip says something
   /// needs the user. Its "Settings" button leads to Media tracking settings.
-  void _openTrackingPage(HomeTrackingSummary summary) {
+  ///
+  /// [tab] overrides the choice: the "Last synced" view opens the Activity
+  /// log, where its sends are listed.
+  void _openTrackingPage(HomeTrackingSummary summary, {TrackingPageTab? tab}) {
     final AppModel appModel = ref.read(appProvider);
     unawaited(
       openTrackingPage(
@@ -4993,7 +5026,8 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         database: appModel.database,
         onOpenSettings: _openTrackingSettings,
         openSeriesCard: trackingSeriesCardOpener(appModel),
-        initialTab: summary.needsAttention ? TrackingPageTab.attention : null,
+        initialTab:
+            tab ?? (summary.needsAttention ? TrackingPageTab.attention : null),
       ),
     );
   }
