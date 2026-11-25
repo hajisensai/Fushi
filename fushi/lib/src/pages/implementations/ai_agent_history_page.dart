@@ -143,10 +143,13 @@ class _AiAgentHistoryPageState extends State<AiAgentHistoryPage> {
           ? const Center(child: FushiCircularProgressIndicator())
           : _sessions.isEmpty
           ? Center(child: Text(t.ai_agent_history_empty))
-          : _buildList(context),
+          // Builder：列表顶部留白要读脚手架注入正文子树的 MediaQuery（含页头大字
+          // 高度）；State 自己的 context 在脚手架之上，量不到页头（BUG-5171 同一机制）。
+          : Builder(builder: _buildList),
     );
   }
 
+  /// [context] 必须在 [FushiPageScaffold] 正文子树之内（见 build 里的 Builder）。
   Widget _buildList(BuildContext context) {
     const EdgeInsets groupPadding = EdgeInsets.symmetric(horizontal: 16);
     int order = 0;
