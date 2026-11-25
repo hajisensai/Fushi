@@ -1128,6 +1128,13 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/settings/mining_audio_padding_guard_test.dart',
   'cardCreation/Audio padding after sentence':
       'test/settings/mining_audio_padding_guard_test.dart',
+  // 拍板台 lmJyeqpCaO：无字幕时间时的句子音频（三档 + 窗口长度 / 最长滑条，滑条标题随档位
+  // 换）。生效点在视频页画面 OCR 查词的合成锚点（harness 里没有无字幕视频可查词）；
+  // 区间纯函数、ffmpeg 参数与页面接线契约在专项测试里咬死。
+  'cardCreation/Sentence audio without subtitle timing':
+      'test/mining/untimed_sentence_audio_test.dart',
+  'cardCreation/Window length': 'test/mining/untimed_sentence_audio_test.dart',
+  'cardCreation/Maximum length': 'test/mining/untimed_sentence_audio_test.dart',
   // 有声书倍速制卡：效果在 ffmpeg `-af atempo`（纯函数 buildFfmpegAtempoFilter /
   // buildFfmpegClipArgs tempo 参数）+ 偏好写穿 + 阅读器制卡调用点源码守卫，都在专项测试里。
   'cardCreation/Match sentence audio to playback speed':

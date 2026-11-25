@@ -21,6 +21,8 @@ import 'package:fushi/src/media/range_playback.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_input.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_bar.dart';
 import 'package:fushi/src/media/video/bluray_disc_menu_focus_host.dart';
+import 'package:fushi/src/media/video/player_decoded_subtitle_cues.dart'
+    show buildPlayerDecodedCue;
 import 'package:fushi/src/media/video/disc/disc_session_controls.dart';
 import 'package:fushi/src/media/video/disc/disc_session_remote.dart';
 import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart';
