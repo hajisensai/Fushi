@@ -12,6 +12,7 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 档位显示名：[WebVideoHosting.builtin] =「制卡优先」，[WebVideoHosting.windowed] =「画质优先」。
 String webVideoModeTitle(WebVideoHosting hosting) => switch (hosting) {
@@ -27,8 +28,8 @@ String webVideoModeSubtitle(WebVideoHosting hosting) => switch (hosting) {
 
 /// 档位图标：制卡优先 = 卡片，画质优先 = HD。
 IconData webVideoModeIcon(WebVideoHosting hosting) => switch (hosting) {
-  WebVideoHosting.builtin => Icons.style_outlined,
-  WebVideoHosting.windowed => Icons.hd_outlined,
+  WebVideoHosting.builtin => FushiIcons.ankiCard,
+  WebVideoHosting.windowed => FushiIcons.highQuality,
 };
 
 /// 另一档（一键切换的目标）。
