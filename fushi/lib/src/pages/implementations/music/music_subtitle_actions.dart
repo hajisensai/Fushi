@@ -39,6 +39,8 @@ import 'package:fushi/src/media/music/server/music_server_play_item.dart'
 import 'package:fushi/src/media/music/plugin/music_plugins.dart'
     show isMusicPluginPath, musicPluginPlaybackHost;
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service_entry.dart'
+    show appVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_actions.dart'

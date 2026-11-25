@@ -81,9 +81,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/i18n/strings.g.dart' show t;
 import 'package:fushi/src/asr_host/asr_host.dart'
     show appMusicAsrAudioProfile, resolveAppVideoSubtitleRecognizer;
-import 'package:fushi/src/media/video/subtitle/burned_in_subtitle_ocr.dart';
 import 'package:fushi/src/media/video/subtitle/video_subtitle_model_ports.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_types.dart';
 import 'package:fushi/src/media/video/subtitle/video_stream_subtitle_sink.dart';
@@ -167,16 +165,6 @@ class PrefsVideoSubtitleSettings implements AppVideoSubtitleSettings {
   Future<void> setMusicVocalSeparation(String scope, bool on) =>
       prefs.setMusicSubtitleVocalSeparation(scope, on);
 }
-
-/// UI 与 ctl 取服务的唯一入口（同一个库共用一个实例，任务表跨页面存活）。
-AppVideoSubtitleService appVideoSubtitleService(AppModel appModel) =>
-    AppVideoSubtitleService.shared(
-      database: appModel.database,
-      settings: PrefsVideoSubtitleSettings(appModel.prefsRepo),
-      burnedInOcr: AppBurnedInSubtitleOcr(
-        modelKey: () => appModel.prefsRepo.mangaOcrLocalModel,
-      ),
-    );
 
 /// 视频库落点：产物按管线默认落点写（视频旁；原盘成员写进任务根下的 `disc_out`，见
 /// [videoSubtitleDiscExportDir]），登记进 `video_books.subtitleSource`。
@@ -728,7 +716,7 @@ class AppVideoSubtitleService {
   /// 画面参考的取帧（生产 [ffmpegSubtitleFrameSource]；测试注入假件）。
   final SubtitleFrameSource _frameSource;
 
-  /// 读画面硬字幕的 OCR（生产 [AppBurnedInSubtitleOcr]；null = 不读）。
+  /// 读画面硬字幕的 OCR（生产 `AppBurnedInSubtitleOcr`，经 `appVideoSubtitleService` 装配；null = 不读）。
   final SubtitleFrameTextReader? _burnedInOcr;
 
   /// 读硬字幕的取帧（生产 [ffmpegSubtitleFullFrameSource]：原分辨率，小字不缩）。

@@ -151,8 +151,9 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
     show
         AppVideoSubtitleService,
         AppVideoSubtitleTarget,
-        AppVideoSubtitleTargetNotFound,
-        appVideoSubtitleService;
+        AppVideoSubtitleTargetNotFound;
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service_entry.dart'
+    show appVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart'
     show PrefsRepoVideoSubtitleGeneratePrefs, showVideoSubtitleGenerateSheet;
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
