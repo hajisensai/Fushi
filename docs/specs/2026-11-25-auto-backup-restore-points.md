@@ -1,6 +1,7 @@
 # Auto backup and update rollback (restore points)
 
-Status: phase 1 implemented (branch `feat/auto-backup-p1-update-snapshot`). Owner: auto-backup session. Proposal with the comparison of other apps:
+Status: phase 1 implemented (branch `feat/auto-backup-p1-update-snapshot`), phase 2 implemented (branch
+`feat/auto-backup-p2-scheduled`, stacked on phase 1). Owner: auto-backup session. Proposal with the comparison of other apps:
 https://claude.ai/artifact/GzX9ynemY4FxoXn85dbvCp (private; summary below so this file stands alone).
 
 ## Problem
@@ -11,7 +12,7 @@ https://claude.ai/artifact/GzX9ynemY4FxoXn85dbvCp (private; summary below so thi
 - The only backup is the manual export. Cloud / Interconnect sync hold the latest state only, so a bad
   change syncs everywhere.
 - The SRS auto backup (Anki-style retention, "restore to this point") was removed with SRS sync v2, but
-  `srs_anki_migrate_setup_notice_backup` still points users at it.
+  the Anki-migration notice still pointed users at it (fixed in phase 2, see D6).
 
 ## Phase 1 as implemented (2026-11-25)
 
@@ -49,6 +50,50 @@ Differences from the design text below, and details the design left open:
   `showFushiConfirmDialog` (destructive), runs `AppModel.rollbackToRestorePoint` (closes SRS + drift
   first) and restarts via `backupImportRestart`. Storage page shows `restore_points/` as one labelled
   read-only entry under "Database and internal data".
+
+## Phase 2 as implemented (2026-11-25)
+
+- **Store.** Same `restore_points/` store. `RestorePointKind.forced` became `preOperation`
+  (`pre_operation`, meta `reason`: `replace` / `sync_download` / `srs_migration`). Scheduled points are
+  `<id>-fushi-scheduled/backup.zip` (same zip format as a manual export, entries native-deflated up to
+  512 MB each, larger ones stored) plus meta `categories`, `excludedCategories`, `srsMedia`. A pre-operation
+  point holds `fushi.db` (`VACUUM INTO` on a separate read-only connection while the app is running) and,
+  when the review DB is open, `srs4.db` (kernel `snapshotInto`); `RestorePointRollbackPlan.database`
+  picks which file of a point to swap. Points being written are registered in-process so a concurrent
+  `prune` never deletes them. A desktop custom folder is just another store root (scheduled points only).
+- **Retention** is one pure function, `planBackupRetention` (`fushi_core/lib/src/utils/backup_retention.dart`),
+  shared with the Lapis template backups (`keepMinimum: 10, keepAllWithin: 90 days`, unchanged behaviour).
+  Scheduled: newest always kept, 48 h all, then newest per age-bucket day (7), week (4), month (30-day
+  buckets, 3), then a 5 GB cap trimming oldest first; the point just written is protected. Every kept
+  point claims its buckets. Pre-operation: newest 5. Pre-update / pre-rollback: unchanged (3 each).
+- **Schedule** (`fushi/lib/src/sync/auto_backup/`): due rule in `auto_backup_schedule.dart`. With a
+  preferred time T and interval N: due when the last *satisfied* run (success, or skipped because nothing
+  changed) is before `latestSlot(T) - (N-1) days`; without T: `now - lastSatisfied >= N days`. The
+  overdue warning also uses "last satisfied" (a skipped run means the newest point is still current).
+  Checks: first idle task after the home page is up (`AppModel.startUpdateChecks`), app resume, and every
+  15 min on desktop. Status (`restore_points/auto_backup_status.json`, a file so it survives a DB replace)
+  keeps the last result, error and a size+mtime fingerprint of the DB files and the ticked content trees.
+  One run at a time; it shares `AppModel.backupExportActive` with manual exports and shows in the
+  background-tasks indicator. Failures: toast once + warning row, next attempt at the next due check.
+- **Review media (D2)** is split by `createBackup(includeSrsMedia:)`, not by a new category: a backup
+  without `srs_media/` entries leaves the local media tree untouched on replace.
+- **Forced points**: before Replace on the Restore points page / ctl (abort if the point fails), before
+  applying a sync-compare plan that contains "use remote" (the only flow that overwrites local data from
+  cloud / Interconnect; plain sync is merge-only), and before the Anki migration
+  (`runSrsAnkiMigration(beforeImport:)`). For the last two a failed point is reported and the operation
+  continues. Overwrite-import snapshot and DB-check backups stay as they were and are listed.
+- **Restore points page** replaces "Recover library" (same route, orphan-folder recovery kept below the
+  list). Fill in missing works for any raw main-DB copy and for the DB extracted from a scheduled zip.
+  Replace: raw-DB points use the phase-1 swap (current DBs become `pre_rollback` points), scheduled zips
+  use the overwrite import (`importSettings: true`). Legacy copies (pre-overwrite, DB check) offer Fill in
+  / Export / Delete but not Replace (the rollback journal addresses store ids).
+- **Known gap:** replacing from a scheduled point whose categories exclude content (books, videos,
+  dictionaries…) uses the overwrite-import semantics, which drop those library rows (files stay on disk
+  and show up as orphan folders). The page says so before confirming; a "keep what the backup does not
+  carry" replace mode needs a change in `restoreBackup`.
+- **ctl**: `GET /api/admin/restore-points`, `GET /api/admin/auto-backup/status`,
+  `POST /api/admin/auto-backup/run` (undo deletes the point), `POST /api/admin/restore-points/restore`
+  (`mode` fill / replace, needs `confirm: true`).
 
 ## Design: three layers
 
@@ -106,7 +151,7 @@ Differences from the design text below, and details the design left open:
 - Actions: **Fill in missing** (existing preview + `fillMissingOnly` merge engine), **Replace**
   (`restoreBackup` path; takes a forced backup first, pauses sync until restart, re-applies the
   device-local layer such as credentials), export to file, delete.
-- `srs_anki_migrate_setup_notice_backup` is re-pointed at this page.
+- The Anki-migration notice is re-pointed at this page (key `srs_anki_migrate_setup_notice_restore_point`).
 
 ### Phase 3: off-device copies
 
