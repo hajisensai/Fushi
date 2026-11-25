@@ -5,6 +5,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/manga/library/manga_series_page.dart';
 import 'package:fushi/src/media/media_item.dart';
+import 'package:fushi/src/media/video/remote_video_source_resolver.dart';
 import 'package:fushi/src/media/sources/manga_fushi_source.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
@@ -16,6 +17,8 @@ import 'package:fushi/src/media/music/music_library_data.dart';
 import 'package:fushi/src/pages/implementations/music/music_album_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_track_detail_page.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
+import 'package:fushi/src/sync/remote_video_client.dart'
+    show RemoteVideoSource;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart'
     show FushiSnackBar;
@@ -32,6 +35,19 @@ import 'package:fushi/src/pages/implementations/browse_online_sources_view.dart'
     show OnlineSourcesDomain;
 import 'package:fushi/src/pages/implementations/discovery_ai_acquire_action.dart';
 import 'package:fushi/src/media/media_source.dart';
+
+/// 「同一作品」区块的远端视频来源（[MediaLinksSection.remoteVideoSource]）：与视频库
+/// 页同一条判据（[resolveVisibleRemoteVideoSource]，「显示远端条目」关着时 null），
+/// 远端合集卡据此取服务器海报。
+Future<RemoteVideoSource?> Function() mediaLinkRemoteVideoSource({
+  required WidgetRef ref,
+}) => () {
+  final AppModel appModel = ref.read(appProvider);
+  return resolveVisibleRemoteVideoSource(
+    prefs: appModel.prefsRepo,
+    database: appModel.database,
+  );
+};
 
 /// 「未入库」灰卡的「去搜」：交给各模块**已有**的获取入口，标题预填。返回 null =
 /// 本平台 / 本配置没有可用入口（灰卡就只是灰卡，不渲染一个点了没去处的按钮）。

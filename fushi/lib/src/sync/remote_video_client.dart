@@ -51,6 +51,20 @@ abstract class RemoteVideoSource implements RemoteLibrarySource {
   });
 }
 
+/// 「按 id 直接查远端视频」的可选能力：不枚举整库，只问这几条。
+///
+/// 合集成员行的 `entryKey` 就是远端视频 id（`CollectionEpisodeSlot.entryKey`），
+/// 所以只知道合集、手上没有整份远端清单的地方（「同一作品」卡片的海报）可以只问
+/// 那几个成员；媒体服务器大库的整库枚举要几十秒，不能为一张卡去拉。
+///
+/// 只有能按 id 批量查询的来源实现（Jellyfin / Emby 的 `Ids` 查询）；互联 host
+/// 与云盘目录没有这种端点，不实现，调用方按「没有」处理。
+abstract interface class RemoteVideoLookup {
+  /// 查 [ids] 对应的远端视频，按 [ids] 的顺序返回；服务器上已不存在、或不是可播
+  /// 视频的 id 直接略去（不抛错）。网络 / 鉴权失败照常抛出。
+  Future<List<RemoteVideoInfo>> remoteVideosByIds(List<String> ids);
+}
+
 /// [RemoteVideoSource.downloadRemoteVideo] 被 `cancelSignal` 取消。
 ///
 /// 与失败区分开：调用方据此不报错、不清断点（互联源的 `.part` 仍在，下次同一

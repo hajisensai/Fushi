@@ -1317,12 +1317,17 @@ class JellyfinApi {
   /// - [includeItemType] **单值**（BUG-2254：飞牛对逗号多值静默返 0 条）；
   /// - [fields] 缺省 `ProductionYear`，**不带 MediaSources**（BUG-1891）；
   /// - [sortBy] 单值（同 BUG-2254 的谨慎：`IsFolder,SortName` 这种多值在飞牛上
-  ///   没验过，浏览排序不值得赌）。
+  ///   没验过，浏览排序不值得赌）；
+  /// - [ids] 是标准的逗号列表（`Ids`，按 id 直接取，见
+  ///   [JellyfinVideoClient.remoteVideosByIds]）。BUG-2254 的单值纪律管的是
+  ///   `IncludeItemTypes`，不涉及它；但不许传空列表——空 `Ids` 等于不过滤，会退化成
+  ///   整库查询。
   Future<JellyfinItemsPage> items({
     required String userId,
     String? parentId,
     bool recursive = false,
     String? includeItemType,
+    List<String>? ids,
     String? searchTerm,
     int startIndex = 0,
     int limit = 200,
@@ -1334,12 +1339,14 @@ class JellyfinApi {
       !(includeItemType?.contains(',') ?? false),
       'IncludeItemTypes 必须单值（BUG-2254）',
     );
+    assert(ids == null || ids.isNotEmpty, '空 Ids 会退化成整库查询');
     final Map<String, Object?> json = await _getJson(
       '/Users/$userId/Items',
       <String, String>{
         if (parentId != null) 'ParentId': parentId,
         if (recursive) 'Recursive': 'true',
         if (includeItemType != null) 'IncludeItemTypes': includeItemType,
+        if (ids != null) 'Ids': ids.join(','),
         if (searchTerm != null) 'SearchTerm': searchTerm,
         'StartIndex': '$startIndex',
         'Limit': '$limit',
@@ -2577,6 +2584,7 @@ class JellyfinVideoClient
     implements
         RemoteVideoClient,
         RemoteCoverFetcher,
+        RemoteVideoLookup,
         RemoteVideoDetailFetch,
         RemoteVideoPlaybackStop,
         RemoteVideoPlaybackDetach,
@@ -3572,6 +3580,47 @@ class JellyfinVideoClient
       );
     }
     return out;
+  }
+
+  /// [remoteVideosByIds] 每发请求最多带多少个 id（Jellyfin 条目 id 32 位十六进制，
+  /// 100 个约 3.3 KB 查询串，远低于常见反代的 URL 上限）。
+  static const int kLookupIdsPerRequest = 100;
+
+  /// [RemoteVideoLookup]：按 id 直接取条目（`/Users/{uid}/Items?Ids=...`），不枚举
+  /// 整库。重复 / 空 id 先去掉，每 [kLookupIdsPerRequest] 个一发；`Recursive` 让
+  /// 查询落在用户可见的全部库上（Jellyfin / Emby 按 id 过滤，不会因此多返条目）。
+  /// 只留可播叶子（电影 / 单集），与 [listRemoteVideos] 同一判据、同一映射
+  /// [infoFromItem]，所以拿到的 [RemoteVideoInfo] 与整库清单里的那条一致。
+  @override
+  Future<List<RemoteVideoInfo>> remoteVideosByIds(List<String> ids) async {
+    final List<String> unique = <String>[
+      ...<String>{
+        for (final String id in ids)
+          if (id.isNotEmpty) id,
+      },
+    ];
+    final Map<String, RemoteVideoInfo> byId = <String, RemoteVideoInfo>{};
+    for (int start = 0; start < unique.length; start += kLookupIdsPerRequest) {
+      final int end = start + kLookupIdsPerRequest < unique.length
+          ? start + kLookupIdsPerRequest
+          : unique.length;
+      final List<String> chunk = unique.sublist(start, end);
+      final JellyfinItemsPage page = await api.items(
+        userId: userId,
+        recursive: true,
+        ids: chunk,
+        limit: chunk.length,
+        sortBy: null,
+        sortOrder: null,
+      );
+      for (final JellyfinItem item in page.items) {
+        if (item.isPlayableVideo) byId[item.id] = infoFromItem(item);
+      }
+    }
+    return <RemoteVideoInfo>[
+      for (final String id in unique)
+        if (byId[id] case final RemoteVideoInfo info) info,
+    ];
   }
 
   /// 写成功后经 [MediaServerUserDataChanges] 通知：所有「标记已看 / 未看」入口

@@ -18,7 +18,7 @@ class MediaLinkEntry {
     required this.title,
     required this.inLibrary,
     this.coverPath,
-    this.hasRemoteMembers = false,
+    this.remoteMemberKeys = const <String>[],
   });
 
   final MediaLinkEndpoint endpoint;
@@ -32,11 +32,20 @@ class MediaLinkEntry {
   /// 本地封面绝对路径（可空）。
   final String? coverPath;
 
-  /// 视频合集里有「本机没有对应视频行」的成员——合集清单是跨端 union，这些是
-  /// Jellyfin / Emby 混排或互联 host 上的集（`CollectionEpisodeSlot` 文件头）。卡片
-  /// 据此画云图标，与视频库合集卡同一提示；其余种类恒为 false。
-  final bool hasRemoteMembers;
+  /// 视频合集里「本机没有对应视频行」的成员的 entryKey（= 远端视频 id）——合集
+  /// 清单是跨端 union，这些是 Jellyfin / Emby 混排或互联 host 上的集
+  /// （`CollectionEpisodeSlot` 文件头）。按成员序，最多
+  /// [kMediaLinkRemoteMemberKeysMax] 个：卡片只拿它们问远端要一张海报，不需要全部。
+  /// 其余种类恒为空。
+  final List<String> remoteMemberKeys;
+
+  /// 有远端成员：卡片据此画云图标，与视频库合集卡同一提示。
+  bool get hasRemoteMembers => remoteMemberKeys.isNotEmpty;
 }
+
+/// [MediaLinkEntry.remoteMemberKeys] 最多留几个。海报只要一张，多留几个是为了
+/// 第一个成员在服务器上已删掉 / 换了 id 时仍能从同一次查询里拿到下一个的海报。
+const int kMediaLinkRemoteMemberKeysMax = 5;
 
 /// 某个详情页视角下的一条连接：[other] 是另一端，[otherIsFrom] 表示另一端是不是
 /// 连接的 `from`（adaptation 的原作、theme_song 的音乐那一端）。
@@ -153,7 +162,7 @@ Future<MediaLinkEntry> resolveMediaLinkEntry(
         coverPath: await firstExistingCoverPath(
           await loadCollectionOwnCoverCandidates(db, collection),
         ),
-        hasRemoteMembers: await _collectionHasRemoteMembers(db, collection.id),
+        remoteMemberKeys: await _collectionRemoteMemberKeys(db, collection.id),
       );
     case MediaLinkKind.game:
       final GalgameRow? game = await db.getGalgame(endpoint.key);
@@ -351,17 +360,20 @@ Future<List<MediaLinkEntry>> loadMediaLinkCandidates(
   return out;
 }
 
-/// 视频合集 [collectionId] 是否有本机没有视频行的成员（远端集，见
-/// [MediaLinkEntry.hasRemoteMembers]）。
-Future<bool> _collectionHasRemoteMembers(
+/// 视频合集 [collectionId] 里本机没有视频行的成员（远端集）的 entryKey，按成员序、
+/// 最多 [kMediaLinkRemoteMemberKeysMax] 个（见 [MediaLinkEntry.remoteMemberKeys]）。
+Future<List<String>> _collectionRemoteMemberKeys(
   FushiDatabase db,
   int collectionId,
 ) async {
+  final List<String> keys = <String>[];
   for (final MediaCollectionItemRow item in await db.getCollectionItems(
     collectionId,
   )) {
     if (item.mediaType != MediaKind.video.dbValue) continue;
-    if (await db.getVideoBookByBookUid(item.entryKey) == null) return true;
+    if (await db.getVideoBookByBookUid(item.entryKey) != null) continue;
+    keys.add(item.entryKey);
+    if (keys.length >= kMediaLinkRemoteMemberKeysMax) break;
   }
-  return false;
+  return keys;
 }

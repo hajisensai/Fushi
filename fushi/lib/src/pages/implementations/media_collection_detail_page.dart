@@ -169,7 +169,7 @@ import 'package:fushi/src/media/links/media_link_entries.dart'
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
-    show mediaLinkSearchAction, openMediaLinkEntry;
+    show mediaLinkRemoteVideoSource, mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show MediaLinksSection;
 
@@ -4083,6 +4083,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             key: collectionTagEntryKey(widget.collection.id),
           );
           return MediaLinksSection(
+            remoteVideoSource: mediaLinkRemoteVideoSource(ref: ref),
             database: widget.database,
             self: self,
             onOpen: (MediaLinkEntry e) =>
