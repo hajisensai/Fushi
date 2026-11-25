@@ -10,6 +10,8 @@ import 'package:fushi/src/utils/adaptive/nav_overflow/nav_dial_bar.dart';
 import 'package:fushi/src/utils/adaptive/nav_overflow/nav_mode_strip_bar.dart';
 import 'package:fushi/src/utils/adaptive/nav_shape.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:liquid_glass_widgets/liquid_glass_widgets.dart'
+    show GlassTab, GlassTabBar;
 import 'package:material_ui/material_ui.dart';
 
 // 2026-10-30 用户拍板：Apple（Cupertino）设计系统下「底栏样式」也要真正画出
@@ -157,12 +159,26 @@ void main() {
     expect(find.byType(NavDialBar), findsOneWidget);
   });
 
-  testWidgets('Apple 平铺保持原样：9 个目的地一排平铺，不画原型', (WidgetTester tester) async {
+  // 2026-11-24 用户拍板（e03c069c28）：Apple 平铺底栏照 iOS `UITabBarController`，
+  // 超过 5 格时只平铺前 4 个，第 5 格是「更多」，其余目的地进「更多」菜单；
+  // 整条栏是一个 GamepadNavCluster 焦点站（不再逐格挂 nav-bar-<序号>）。
+  testWidgets('Apple 平铺：9 个目的地前 4 个平铺 + 「更多」，不画原型', (
+    WidgetTester tester,
+  ) async {
     await pumpBar(tester, style: AdaptiveNavBarStyle.flat);
     expect(find.byType(NavModeStripBar), findsNothing);
     expect(find.byType(NavDialBar), findsNothing);
-    for (int i = 0; i < 9; i++) {
-      expect(target('nav-bar-$i').hitTestable(), findsOneWidget);
+    final Finder bar = find.byType(GlassTabBar);
+    expect(bar.hitTestable(), findsOneWidget);
+    final List<GlassTab> tabs = tester.widget<GlassTabBar>(bar).tabs;
+    expect(tabs, hasLength(5));
+    for (int i = 0; i < 4; i++) {
+      expect(tabs[i].semanticLabel, 'Tab$i');
+    }
+    // 「更多」的读屏语义带上收进去的目的地名。
+    final String more = tabs[4].semanticLabel ?? '';
+    for (int i = 4; i < 9; i++) {
+      expect(more, contains('Tab$i'), reason: '收进「更多」的 Tab$i');
     }
   });
 
