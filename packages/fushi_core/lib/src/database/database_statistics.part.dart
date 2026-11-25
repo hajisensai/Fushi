@@ -75,7 +75,8 @@ mixin _FushiDbStatistics
         _$FushiDatabase,
         _FushiDbPrefsMedia,
         _FushiDbContentMisc,
-        _FushiDbTagsSync {
+        _FushiDbTagsSync,
+        _FushiDbMediaLinks {
   /// 读 [kStudyProfileNameAliasesPrefKey]：本机 Profile id → 落进它的对端名字。
   /// 坏值当空（只影响碑的别名副本，不影响数据本身）。
   Future<Map<int, Set<String>>> getStudyProfileNameAliases() async {
@@ -967,6 +968,8 @@ mixin _FushiDbStatistics
         await (delete(gameVoiceCasts)..where((t) => t.gameId.equals(id))).go();
         // v155：单个游戏的刮削资料 / 横版背景图（逻辑外键）同事务清。
         await _purgeItemScrapeRows(this, MediaKind.game, <String>[id]);
+        // 游戏 id 删了不再出现：作品图谱里连着它的行同事务清（BUG-5457）。
+        await purgeMediaLinksForEndpoint((kind: MediaLinkKind.game, key: id));
         return (delete(galgames)..where((t) => t.id.equals(id))).go();
       });
 

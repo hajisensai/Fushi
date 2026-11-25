@@ -128,6 +128,19 @@ ShelfCoverMaterial mediaLinkCoverMaterial(MediaLinkKind kind) => switch (kind) {
   MediaLinkKind.musicTrack => ShelfCoverMaterial.glossyAlbum,
 };
 
+/// 「未入库」灰卡的去饱和滤镜：RGB 按 Rec.709 亮度换成灰度，alpha 原样不动。
+///
+/// 不用 `ColorFilter.mode(Colors.grey, BlendMode.saturation)`：混合模式滤镜对完全
+/// 透明的像素也生效（结果 = 滤镜色本身），封面材质烘焙纹理四周给投影留的透明外扩区
+/// （`kShelfMaterialShadowExtent`）会被整块涂成灰板，压在组名与副行上（BUG-5457）。
+/// 颜色矩阵的 alpha 行只取原 alpha、无平移项，透明像素仍是透明。
+const ColorFilter mediaLinkMissingCoverFilter = ColorFilter.matrix(<double>[
+  0.2126, 0.7152, 0.0722, 0, 0, //
+  0.2126, 0.7152, 0.0722, 0, 0, //
+  0.2126, 0.7152, 0.0722, 0, 0, //
+  0, 0, 0, 1, 0, //
+]);
+
 /// 区块一次加载的结果。
 class _SectionData {
   const _SectionData({
@@ -457,10 +470,7 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
                 ? Opacity(
                     opacity: 0.45,
                     child: ColorFiltered(
-                      colorFilter: const ColorFilter.mode(
-                        Colors.grey,
-                        BlendMode.saturation,
-                      ),
+                      colorFilter: mediaLinkMissingCoverFilter,
                       child: cover,
                     ),
                   )

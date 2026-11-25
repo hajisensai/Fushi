@@ -43,10 +43,12 @@ void main() {
       isMainProcess: false,
     );
     expect(migrated.schemaVersion, kFushiDbSchemaVersion);
+    // 合集端点必须真实存在：v181 起重跑迁移会清掉指向不存在合集的连接（BUG-5457）。
+    final int collection = await migrated.createMediaCollection('A');
     await migrated.upsertManualMediaLink(
       relation: MediaLinkRelation.adaptation,
       from: book,
-      to: anime,
+      to: (kind: MediaLinkKind.videoCollection, key: '$collection'),
       at: 10,
     );
     await migrated.close();

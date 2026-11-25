@@ -15,7 +15,7 @@ enum CollectionAutoRemoveResult {
   notMember,
 }
 
-mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
+mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   // ── media_sources ───────────────────────────────────────────────
   // TODO-817：网络/本地来源库 CRUD。configJson 绝不裸存明文密码（本地恒 NULL，
   // 网络只存凭据引用键，密码本体 M3 才落）。
@@ -1125,6 +1125,9 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// [deletedAt]（缺省 now）：合集级墓碑时刻。整理收敛在同步基线推进后删败方时传
   /// 「严格晚于基线」的值——同毫秒的墓碑会被下一轮判成旧闻（v124）。
   ///
+  /// [linksMovedTo]：本合集被并进 / 整体搬进的另一个合集 id，作品图谱连接改挂到
+  /// 那里；缺省（或目标不存在）= 连接随合集一起删。
+  ///
   /// [organizeMerged]：整理器把它并进别的合集时传 true（删除哨兵记下「并掉」，不算
   /// 用户拒绝这个分组）。
   ///
@@ -1136,8 +1139,29 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     int? deletedAt,
     bool organizeMerged = false,
     bool userIntent = true,
+    int? linksMovedTo,
   }) => transaction(() async {
     final MediaCollectionRow? col = await getMediaCollectionById(id);
+    // 作品图谱：给了 [linksMovedTo]（本合集被并进 / 整体搬进的合集）就把连着本合集
+    // 的连接改挂过去，否则同事务删掉——合集 id 不复用，留着只会成「同一作品」里
+    // 标题是一串 id 的死卡（BUG-5457）。
+    final MediaLinkEndpoint self = (
+      kind: MediaLinkKind.videoCollection,
+      key: collectionTagEntryKey(id),
+    );
+    if (linksMovedTo != null &&
+        linksMovedTo != id &&
+        await getMediaCollectionById(linksMovedTo) != null) {
+      await retargetMediaLinks(
+        from: self,
+        to: (
+          kind: MediaLinkKind.videoCollection,
+          key: collectionTagEntryKey(linksMovedTo),
+        ),
+      );
+    } else {
+      await purgeMediaLinksForEndpoint(self);
+    }
     await _carryCollectionPrivacyToMembers(
       id,
       <({String mediaType, String entryKey})>[
@@ -2047,6 +2071,11 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
         TagHostKind.collection,
         collectionTagEntryKey(cid),
       );
+      // 移空自删的合集：作品图谱连接同删（BUG-5457，id 不复用）。
+      await purgeMediaLinksForEndpoint((
+        kind: MediaLinkKind.videoCollection,
+        key: collectionTagEntryKey(cid),
+      ));
       await (delete(mediaCollections)..where((t) => t.id.equals(cid))).go();
     }
   });
@@ -2241,6 +2270,12 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
       TagHostKind.collection,
       collectionTagEntryKey(id),
     );
+    // 作品图谱连接是本机 id 键（不在合集清单里）：随合集删（BUG-5457）。对端那份
+    // 连接按合集自然键换算，本机没有该合集就跳过，不会被拉回来。
+    await purgeMediaLinksForEndpoint((
+      kind: MediaLinkKind.videoCollection,
+      key: collectionTagEntryKey(id),
+    ));
     await (delete(mediaCollections)..where((t) => t.id.equals(id))).go();
   });
 
