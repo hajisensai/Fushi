@@ -4083,6 +4083,7 @@
   "game_hook_fallback_window_not_found": "Die Audioaufnahme läuft, aber das Spielfenster ist noch nicht erschienen, daher sind Screenshots nicht verfügbar. Es wird automatisch verknüpft, sobald das Fenster erscheint.",
   "game_hook_line_unavailable": "Diese aufgenommene Zeile ist nicht mehr verfügbar.",
   "game_hook_mining_no_session_lines": "Noch keine erfassten Zeilen, daher kann diese Karte nirgends zugeordnet werden. Wählen Sie einen anderen Text-Thread im Arbeitsbereich.",
+  "game_hook_overlay_mine_failed": "“${term}” wasn't added to Anki: ${reason}",
   "game_hook_reason_access_denied": "Das Spiel läuft mit höheren Berechtigungen; starten Sie Fushi als Administrator und versuchen Sie es erneut.",
   "game_hook_reason_bitness_mismatch": "Die Helper-Architektur stimmt nicht mit dem Spiel überein (32-Bit vs. 64-Bit); installieren Sie den Helper neu.",
   "game_hook_reason_capability_probe_failed": "Die Erfassungskomponente hat die Fähigkeitsprüfung nicht beantwortet. Sie wurde auf dem Datenträger gefunden, konnte aber nicht ausgeführt werden oder hat nicht rechtzeitig geantwortet – möglicherweise blockiert ein Antivirenprogramm sie, Fushi fehlt die Berechtigung zum Starten, oder ein verbleibender Helper-Prozess hängt. Schließen Sie alle Spiele, prüfen Sie die Quarantäne Ihres Antivirenprogramms und versuchen Sie es erneut.",

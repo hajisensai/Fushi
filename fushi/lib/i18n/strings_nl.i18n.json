@@ -4083,6 +4083,7 @@
   "game_hook_fallback_window_not_found": "Audio-opname draait, maar het spelvenster is nog niet verschenen, dus schermafbeeldingen zijn niet beschikbaar. Het wordt automatisch gekoppeld zodra het venster verschijnt.",
   "game_hook_line_unavailable": "Deze opgenomen regel is niet meer beschikbaar.",
   "game_hook_mining_no_session_lines": "Nog geen opgenomen regels, dus er is niets om deze kaart aan te koppelen. Kies een andere tekstthread in de werkruimte.",
+  "game_hook_overlay_mine_failed": "“${term}” wasn't added to Anki: ${reason}",
   "game_hook_reason_access_denied": "Het spel draait met hogere rechten; start Fushi als administrator en probeer opnieuw.",
   "game_hook_reason_bitness_mismatch": "Helperarchitectuur komt niet overeen met het spel (32-bit vs 64-bit); herinstalleer de helper.",
   "game_hook_reason_capability_probe_failed": "De opnamecomponent heeft de mogelijkheidscontrole niet beantwoord. Het is gevonden op de schijf maar kon niet worden uitgevoerd of reageerde niet op tijd — antivirus kan het blokkeren, Fushi heeft mogelijk geen toestemming om het te starten, of een achtergebleven helperproces zit vast. Sluit elk spel, controleer je antivirusquarantaine en probeer dan opnieuw.",

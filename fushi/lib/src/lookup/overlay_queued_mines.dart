@@ -9,17 +9,22 @@
 // * 同一弹窗再点 ✓ 走 `queueOverwrite` 桥，native 不认它、即时回 null，popup.js 读成
 //   「还在写入」；写卡早就失败了也照样这么说，永远撤不掉。
 //
-// 这里补上两半：
+// 这里补上三处：
 // * [OverlayQueuedMines.settle] 在落地时把结局推进**发起那次制卡的覆盖窗**
 //   （[GlobalLookupChannel.settleQueuedMine] → native → host.js → popup.js
 //   `fushiSettleQueuedMine`），弹窗撤掉「已加入」并就地说原因；
 // * [OverlayQueuedMines.queueOverwriteReply] 给 deferred 的 `queueOverwrite` 桥一个
 //   真回答：还在写 / 已落地 / 已失败（带原因）。
+// * [OverlayQueuedMines.unseenFailure]（拍板台 pr4413-mine-fail-closed-card 选 b）：
+//   用户挖完就关卡、继续推进剧情时，发起那次制卡的查词卡已经不在，上面那一推落空；
+//   这时把失败交给调用方改报到还在屏上的表面（gal 台词浮窗上闪一条）。
 
 import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
+import 'package:fushi/src/anki/mine_failure_notice.dart'
+    show MineOriginOnScreen;
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
 import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
@@ -139,12 +144,17 @@ class QueuedMineTicket {
     required this.route,
     required this.expression,
     required this.reading,
+    required this.originOnScreen,
   });
 
   final int token;
   final GlobalLookupRoute route;
   final String expression;
   final String reading;
+
+  /// 发起这次制卡的那张查词卡此刻还在不在屏上（宿主生命周期真值，见
+  /// [MineOriginOnScreen]）。null = 调用方没给判据，按「还在」处理（不另报）。
+  final MineOriginOnScreen? originOnScreen;
 
   /// 给弹窗的 queued 回包带上本次凭据（[OverlayQueuedMines.queuedTokenKey]）。结局推送
   /// 与这份回包是两条各自异步的出口，写卡失败得够快时结局可能先到；popup.js 凭 token
@@ -220,11 +230,13 @@ abstract final class OverlayQueuedMines {
       '${expression.trim()}\u0000${reading.trim()}';
 
   /// 弹窗刚拿到 `queued`、写卡转后台时调。[route] 是发起这次制卡的查词路由（结局
-  /// 要推回那个覆盖窗）。
+  /// 要推回那个覆盖窗）；[originOnScreen] 回答落地那一刻那张卡还在不在屏上
+  /// （[unseenFailure] 据此决定要不要改报到别处）。
   static QueuedMineTicket begin({
     required String expression,
     required String reading,
     required GlobalLookupRoute route,
+    MineOriginOnScreen? originOnScreen,
   }) {
     final String key = _key(expression, reading);
     final int token = ++_nextToken;
@@ -238,7 +250,35 @@ abstract final class OverlayQueuedMines {
       route: route,
       expression: expression,
       reading: reading,
+      originOnScreen: originOnScreen,
     );
+  }
+
+  /// 拍板台 pr4413-mine-fail-closed-card（选 b）：[reply] 这个结局有没有落空。
+  ///
+  /// 是一次要让用户知道的**失败**（不是成功 / 重复 / 进离线待发队列），用户没关「制卡
+  /// 失败」提示，而发起它的那张查词卡已经不在屏上（关了卡 / 换了词，[settle] 那一推
+  /// 没人看得见）——返回这条失败，调用方改报到还在屏上的表面；其余情况返回 null。
+  /// 主窗 toast 照旧（它不依赖这张卡，副屏上看得见）。
+  static QueuedMineSettlement? unseenFailure(
+    QueuedMineTicket ticket,
+    Map<String, Object?> reply,
+  ) {
+    final MineOriginOnScreen? originOnScreen = ticket.originOnScreen;
+    if (originOnScreen == null) return null;
+    final QueuedMineSettlement? settlement =
+        QueuedMineSettlement.fromPopupReply(
+          reply,
+          expression: ticket.expression,
+          reading: ticket.reading,
+          token: ticket.token,
+        );
+    if (settlement == null || settlement.outcome != QueuedMineOutcome.failed) {
+      return null;
+    }
+    if (!MineNotices.shown(MineToastStatus.failed)) return null;
+    if (originOnScreen()) return null;
+    return settlement;
   }
 
   /// 后台写卡有了结局（[reply] 是宿主给弹窗的那种回包）：记进台账，并推进发起它的

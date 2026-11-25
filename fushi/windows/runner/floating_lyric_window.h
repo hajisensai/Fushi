@@ -194,6 +194,13 @@ class FloatingLyricWindow {
   // window, so this is the only place the user can see either state.
   void SetVoiceState(bool replaying, bool recapturing, bool speaking,
                      bool auto_speak);
+  // 在正文窗底部闪一枚提示胶囊（拍板台 pr4413-mine-fail-closed-card：查词卡已关时
+  // 后台写卡失败）。|enter_ms| 淡入上移、停 |hold_ms|、|exit_ms| 淡出；0 = 瞬间到位
+  // （Dart 已按动效 token 与「减弱动态」算好）。点胶囊即提前淡出。窗口没显示时直接
+  // 丢弃——这一刻看不见的提示，过后再冒出来只会误导。新的一条顶掉旧的一条。
+  void FlashNotice(const std::wstring& text, uint32_t bg_color,
+                   uint32_t text_color, int enter_ms, int hold_ms,
+                   int exit_ms);
   void SetClickLookupEnabled(bool enabled);
   // 查词触发方式（Dart 偏好 `gal_hook_lookup_trigger`）：
   // 0 = 左键单击（默认，历史行为）/ 1 = 鼠标中键 / 2 = 鼠标侧键（XButton1/2）。
@@ -351,6 +358,18 @@ class FloatingLyricWindow {
   // 台词浮窗可见期间挂着。
   void StartToolbarRevealPolling();
   void StopToolbarRevealPolling();
+
+  // ── 提示胶囊（见 FlashNotice）──────────────────────────────────────────
+  // 当前时刻胶囊的显隐进度（0 = 不可见，1 = 完全显示）。动画走完返回 -1。
+  float NoticeProgress(ULONGLONG now) const;
+  // 按当前阶段挂下一次重绘定时器：动画段逐帧、停留段一次跳到淡出开始。
+  void ScheduleNoticeTick(ULONGLONG now);
+  // 清掉提示并停表（Hide / 动画走完）。
+  void ClearNotice();
+  // 用户点了胶囊：从当前不透明度接着淡出。
+  void DismissNotice();
+  // 把胶囊画进当前 BeginDraw 区间，并记下命中矩形。
+  void DrawNotice(float width, float height);
   void UpdateToolbarReveal();
   bool CursorInToolbarRevealZone() const;
   // 自动隐藏此刻是否生效。穿透态恒 false——工具条是那时屏幕上唯一还能点的东西
@@ -510,6 +529,18 @@ class FloatingLyricWindow {
   bool toolbar_reveal_poll_active_ = false;
   // 置顶守卫定时器是否已挂（BUG-2365）。
   bool topmost_guard_active_ = false;
+  // 提示胶囊（见 FlashNotice）。notice_text_ 为空 = 没有提示。时间点取
+  // GetTickCount64（ms）：notice_start_ms_ 起淡入，notice_exit_at_ms_ 起淡出。
+  std::wstring notice_text_;
+  uint32_t notice_bg_color_ = 0;
+  uint32_t notice_text_color_ = 0;
+  ULONGLONG notice_start_ms_ = 0;
+  ULONGLONG notice_exit_at_ms_ = 0;
+  int notice_enter_ms_ = 0;
+  int notice_exit_ms_ = 0;
+  // 上一帧画出的胶囊矩形（客户区物理 px），WM_LBUTTONDOWN 据此判「点了胶囊」。
+  bool notice_rect_valid_ = false;
+  D2D1_RECT_F notice_rect_ = {0, 0, 0, 0};
   // 置顶守卫的 Z 序天花板取值口（见 SetTopmostCeilingProvider）。
   std::function<HWND()> topmost_ceiling_;
   // 穿透态下文字行盒是否仍接鼠标（见 SetPassThroughBlocksMouse）。

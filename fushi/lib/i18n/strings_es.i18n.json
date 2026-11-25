@@ -4083,6 +4083,7 @@
   "game_hook_fallback_window_not_found": "La captura de audio está en ejecución, pero la ventana del juego aún no ha aparecido, por lo que las capturas de pantalla no están disponibles. Se vinculará automáticamente cuando la ventana aparezca.",
   "game_hook_line_unavailable": "Esta línea capturada ya no está disponible.",
   "game_hook_mining_no_session_lines": "Aún no hay líneas capturadas, por lo que no hay nada a lo que adjuntar esta tarjeta. Elija un hilo de texto diferente en el espacio de trabajo.",
+  "game_hook_overlay_mine_failed": "“${term}” wasn't added to Anki: ${reason}",
   "game_hook_reason_access_denied": "El juego se ejecuta con mayores privilegios; inicie Fushi como administrador e inténtelo de nuevo.",
   "game_hook_reason_bitness_mismatch": "La arquitectura del helper no coincide con el juego (32-bit vs 64-bit); reinstale el helper.",
   "game_hook_reason_capability_probe_failed": "El componente de captura no respondió a la verificación de capacidades. Se encontró en disco pero no pudo ejecutarse o no respondió a tiempo — el antivirus puede estar bloqueándolo, Fushi puede no tener permisos para lanzarlo, o un proceso helper residual puede estar atascado. Cierre todos los juegos, revise la cuarentena del antivirus, luego inténtelo de nuevo.",

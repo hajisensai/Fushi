@@ -56,6 +56,8 @@ import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
+import 'package:fushi/src/utils/components/fushi_motion_tokens.dart'
+    show FushiMotion, fushiMotionEnabled;
 import 'package:fushi_engine/utils/misc/desktop_audio_clipper.dart';
 import 'package:path/path.dart' as p;
 
@@ -262,6 +264,31 @@ GalHookCaptionColors galHookResolveCaptionColors(
         )
         ? themed.outline
         : outline,
+  );
+}
+
+/// 台词浮窗上闪的失败提示胶囊的底色 / 字色（ARGB，native D2D 绘制）。
+typedef GalHookNoticeColors = ({int background, int text});
+
+/// 失败提示胶囊的配色（拍板台 pr4413-mine-fail-closed-card）：MD3 = `errorContainer`
+/// 底 + `onErrorContainer` 字；Apple = 系统 destructive 红底 + 白字；墨水屏 = 黑底白字；
+/// 拿不到主题时回落 M3 基线 error 红。胶囊叠在游戏画面上，底色一律不透明。
+GalHookNoticeColors galHookNoticeColors(ThemeData? theme) {
+  if (theme == null) return (background: 0xFFB3261E, text: 0xFFFFFFFF);
+  if (theme.extension<FushiEinkTheme>()?.einkMode ?? false) {
+    return (background: 0xFF000000, text: 0xFFFFFFFF);
+  }
+  final FushiAppleColors? apple = theme.extension<FushiAppleColors>();
+  if (apple != null) {
+    return (
+      background: _argbWithAlpha(apple.destructive, 0xFF),
+      text: 0xFFFFFFFF,
+    );
+  }
+  final ColorScheme scheme = theme.colorScheme;
+  return (
+    background: _argbWithAlpha(scheme.errorContainer, 0xFF),
+    text: _argbWithAlpha(scheme.onErrorContainer, 0xFF),
   );
 }
 
@@ -2986,10 +3013,15 @@ class GalHookTextOverlayController extends ChangeNotifier {
       // review-gal-overlay-mine-fail：记下这张卡由哪条查词路由（哪个覆盖窗）发起，结局
       // 落地时推回那里——弹窗撤掉「已加入」、就地说原因（全屏游戏里看不到主窗 toast，
       // BUG-1908）；同一弹窗再点 ✓ 的 queueOverwrite 也照这本台账如实回答。
+      final GlobalLookupRoute origin = GlobalLookupChannel.currentRoute;
       final QueuedMineTicket queued = OverlayQueuedMines.begin(
         expression: fields['expression'] ?? '',
         reading: fields['reading'] ?? '',
-        route: GlobalLookupChannel.currentRoute,
+        route: origin,
+        // 落地那一刻这张卡还在不在（关卡 / 换词都会作废这条 route）：不在就改在台词
+        // 浮窗上报失败（拍板台 pr4413-mine-fail-closed-card）。
+        originOnScreen: () =>
+            GlobalLookupController.instance.mineOriginOnScreen(origin),
       );
       unawaited(
         _landLookupMineInBackground(
@@ -3073,12 +3105,52 @@ class GalHookTextOverlayController extends ChangeNotifier {
     // 主窗 toast 在游戏全屏时看不见：同一个结局（含失败原因）推回发起它的查词卡；
     // 失败且还能重写时，卡上的 + 就是「重试」（全屏游戏里唯一看得见的重试入口）。
     unawaited(OverlayQueuedMines.settle(queued, reply, rewrite: rewrite));
+    // 拍板台 pr4413-mine-fail-closed-card（选 b）：用户挖完就关卡、继续推剧情时上面
+    // 那一推落空，失败改在台词浮窗上闪一条（游戏里唯一还在屏上的 Fushi 表面）。
+    final QueuedMineSettlement? unseen = OverlayQueuedMines.unseenFailure(
+      queued,
+      reply,
+    );
+    if (unseen != null) unawaited(_flashMineFailureOnCaption(unseen));
     if (!result.success) return;
     unawaited(
       recordOverlayMinedStats(model, fields, result.outcome?.noteId, sentence),
     );
     // 弹窗手里是「已加入」：卡真正进 Anki 是现在，让还开着的应用内弹窗重问一次。
     MinedStateSignal.instance.notifyWord(fields['expression'] ?? '');
+  }
+
+  /// 在台词浮窗上闪一条后台写卡失败（[failure] 来自 [OverlayQueuedMines.unseenFailure]：
+  /// 发起它的查词卡已不在屏上）。浮窗没开着就不闪——主窗 toast 照旧说过了。
+  Future<void> _flashMineFailureOnCaption(QueuedMineSettlement failure) async {
+    if (!_started || !_visible) return;
+    final ThemeData? theme = _currentTheme();
+    final GalHookNoticeColors colors = galHookNoticeColors(theme);
+    final BuildContext? context = _appModel?.navigatorKey.currentContext;
+    // 动效降级与主窗同一判据（墨水屏 / 系统减弱动态 → 0，瞬间出现与消失）。
+    final bool motion = context != null && context.mounted
+        ? fushiMotionEnabled(context)
+        : !(theme?.extension<FushiEinkTheme>()?.einkMode ?? false);
+    final String message = failure.message ?? t.card_export_failed;
+    try {
+      await GalHookTextOverlayChannel.flashNotice(
+        text: t.game_hook_overlay_mine_failed(
+          term: failure.expression.trim(),
+          reason: message,
+        ),
+        backgroundColor: colors.background,
+        textColor: colors.text,
+        enterMs: motion ? FushiMotion.medium.inMilliseconds : 0,
+        holdMs: FushiNoticeDwell.mineFailed.inMilliseconds,
+        exitMs: motion ? FushiMotion.short.inMilliseconds : 0,
+      );
+    } catch (error, stack) {
+      ErrorLogService.instance.log(
+        'GalHookTextOverlayController.flashMineFailure',
+        error,
+        stack,
+      );
+    }
   }
 
   /// 把一次 gal 查词制卡的结局告诉用户（toast），并返回给弹窗的回包。陪等与后台两条

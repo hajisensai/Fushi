@@ -4083,6 +4083,7 @@
   "game_hook_fallback_window_not_found": "Thu thập âm thanh đang chạy nhưng cửa sổ trò chơi chưa xuất hiện nên không thể chụp màn hình. Sẽ tự động gắn khi cửa sổ xuất hiện.",
   "game_hook_line_unavailable": "Dòng thu thập này không còn khả dụng.",
   "game_hook_mining_no_session_lines": "Chưa có dòng nào được chụp, nên không có gì để gắn thẻ này vào. Chọn luồng văn bản khác trong không gian làm việc.",
+  "game_hook_overlay_mine_failed": "“${term}” wasn't added to Anki: ${reason}",
   "game_hook_reason_access_denied": "Trò chơi chạy với quyền cao hơn; hãy khởi chạy Fushi với quyền quản trị viên và thử lại.",
   "game_hook_reason_bitness_mismatch": "Kiến trúc helper không khớp với trò chơi (32-bit và 64-bit); cài lại helper.",
   "game_hook_reason_capability_probe_failed": "Thành phần chụp không phản hồi kiểm tra khả năng. Nó được tìm thấy trên đĩa nhưng không thể chạy hoặc không phản hồi kịp thời - phần mềm diệt virus có thể đang chặn, Fushi có thể thiếu quyền để khởi chạy, hoặc tiến trình trợ giúp cũ có thể bị treo. Đóng tất cả trò chơi, kiểm tra vùng cách ly của phần mềm diệt virus, sau đó thử lại.",
