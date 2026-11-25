@@ -310,6 +310,51 @@ sync backend gets list / delete for stored archives.
   creation checks the provider's display name like files do (`RENAMED`), and a failed delete of the old meta
   fails the copy. A rebuilt iOS bookmark is saved from every folder session (copy, list, copy-back, delete).
 
+### Second review fixes (2026-11-25)
+
+- **Cloud namespace is reserved.** The cloud folder is `__backups__` (was `fushi-backups`), so
+  `isReservedSyncNamespaceName` covers it: the sync compare dialog and the cloud bookshelf no longer list it
+  as a remote book, "Delete remote" cannot wipe every device's cloud copies (BUG-5007 shape), and the
+  Interconnect host's file-box prune skips it. Nothing had shipped, so no migration. The guard
+  `interconnect_file_box_prune_reserved_guard_test.dart` names it explicitly.
+- **Shared root, unknown device.** `cleanIncompleteScheduled(sharedRoot: true)` with no device id (identity
+  lookup threw) deletes nothing: "no owner marker" and "my id is null" are no longer treated as the same owner.
+- **Private store ignores device marks.** In the private default store only `copiedBackAtMs` excludes a point
+  from pruning (another device's point can only get there through copy-back, which sets it). Points written
+  under an old sync device id (data cleared, database swapped) are pruned again. The shared-root rule is
+  unchanged (own marked points only, none when the id is unknown).
+- **Unreadable is not half-written.** `MirrorFolderListing.unreadable` lists ids whose dir exists but whose
+  meta could not be read this time (dart:io read error, iCloud placeholder, malformed meta, cloud per-copy
+  error, Android `IOException` / unreadable stream, reported by the channel as `{name, unreadable: true}`).
+  Pending / leftover cleanup skips them and keeps them in `leftovers` for the next copy; only ids with
+  definitely no meta are deleted. If this device's own cloud folder cannot be listed, the whole listing fails
+  instead of hiding all own copies.
+- **Target claimed before the first await.** `_mirrorEverywhere` claims a target (`_mirroring`) right after
+  the status checks and before awaiting `networkUnmetered()`, and releases it in `finally`, so two catch-ups
+  (resume + desktop timer) cannot copy to the same target at once. Closing a target (iOS
+  `stopAccessingBookmark`) is best effort everywhere (copy, list, copy-back, delete): a close error is logged,
+  never replaces the action's result or error and never leaves the target "busy".
+- **Cloud sign-in failures are visible.** `cloudTarget()` returns null only when no supported backend is
+  configured (the settings row already shows a setup hint). Configured but `restoreAuth` false / throwing now
+  throws a coded `BackupMirrorException` (`cloud_auth`, `cloud_unreachable`, ...); the controller records it
+  in `status.cloud` (keeping the last target and leftovers) and toasts once on the scheduled run; catch-ups
+  stay quiet and do not rewrite the same error. Errors the host did not classify become `cloud_failed`;
+  `listCloudCopies` and page actions go through the same mapping, so raw messages never reach the error log.
+- **Status key per account.** The cloud target key is `cloud-<type>-<12-hex sha1 of type|identity>`
+  (`cloudBackupTargetKey`): Drive / Dropbox account email, WebDAV URL + user, FTP / SFTP host + port + user,
+  Interconnect host certificate fingerprint (URL if none). Switching accounts no longer skips the new account
+  or lets the old account's failure block catch-up. The raw identity is never written or logged; when it is
+  unknown (email fetch failed) the key falls back to `cloud-<type>`, which costs one extra listing later.
+- **Error classes.** Rate limits (Drive "Quota exceeded for quota metric" / `rateLimitExceeded`, HTTP 429,
+  Dropbox `too_many_*`) map to `cloud_unreachable` (retry later); only storage full (`storageQuotaExceeded`,
+  `insufficient_space`, 507, FTP 552, other "quota") maps to `cloud_quota` (`classifyCloudBackupErrorText`).
+- **Dropbox sessions.** The `incorrect_offset` resync cap (8) counts per chunk and resets when a chunk is
+  accepted; `finish` has its own cap. `too_many_write_operations` is transient both at the top level and
+  nested under `path` in finish errors.
+- **Nits.** Android `networkUnmetered` answers inline on the main thread instead of queueing behind a long SAF
+  copy on the serial I/O executor. `isPlainRestorePointFileName` also rejects `:` (NTFS alternate data
+  streams).
+
 ### Cloud copies as implemented (D8–D11)
 
 - **One more mirror target.** `SyncAssetStoreBackupMirror` (`sync/auto_backup/cloud_backup_mirror.dart`)
@@ -319,29 +364,32 @@ sync backend gets list / delete for stored archives.
   catch-up and "Copy to this device" are shared. Each target copies independently; neither holds the export lock.
 - **Backend.** The first enabled sync channel (cloud before Interconnect) whose type is Google Drive,
   Interconnect (`fushiServer`), Dropbox, WebDAV, FTP or SFTP; OneDrive is not offered (D9). It must be signed in
-  (`restoreAuth`). Every backend call runs under the sync channel's resource lock (`syncResourceLocks`, same as
+  (`restoreAuth`); if it is configured but cannot sign in, the failure is recorded and shown (see "Second
+  review fixes"). Every backend call runs under the sync channel's resource lock (`syncResourceLocks`, same as
   sync: the backends are process-wide singletons) and idempotent calls (list, read, mkdir, delete) go through
   `retryTransientSync`; uploads are not retried in place: a failed upload deletes its half copy and the next
   slot retries (WebDAV / FTP / SFTP / Interconnect cannot resume). Dropbox uploads over 128 MiB now use upload
-  sessions (8 MiB chunks, `incorrect_offset` resync, transient retry with `Retry-After`, one token refresh).
+  sessions (8 MiB chunks, `incorrect_offset` resync capped per chunk, transient retry with `Retry-After`
+  including `too_many_write_operations`, one token refresh).
   Drive keeps its resumable 8 MiB chunks.
 - **Where files land.** Under the backend's existing sync root and scope (no new OAuth scope):
-  `fushi-data/fushi-backups/<device key>/<point id>/backup.zip` + `restore_point.json`.
+  `fushi-data/__backups__/<device key>/<point id>/backup.zip` + `restore_point.json` (`__backups__` is a
+  reserved sync namespace, never listed as a remote book).
   Google Drive: the hidden `appDataFolder` (counts against the user's quota, not visible in Drive).
-  Dropbox: the app folder, `/Apps/<app>/fushi-data/fushi-backups/...`. WebDAV / FTP / SFTP: `fushi-data/` under
-  the configured base path / login directory. Interconnect: on the host, `<host data dir>/fushi-data/fushi-backups/...`
+  Dropbox: the app folder, `/Apps/<app>/fushi-data/__backups__/...`. WebDAV / FTP / SFTP: `fushi-data/` under
+  the configured base path / login directory. Interconnect: on the host, `<host data dir>/fushi-data/__backups__/...`
   (the app host's database directory, or `paths.syncData` for the headless server); the host's own Restore
   points page does not list them. The zip goes through `putAsset`, so on cloud backends it is stored with the
   sync layer's content obfuscation (only Fushi can turn it back into a zip); the meta goes through
   `putBytesAsset` (plain JSON).
 - **Listing.** All device folders are listed (another device can copy back), each copy's meta is read and
   validated; FTP's missing sizes / mtimes do not matter (retention reads the meta). FTP's delete-missing throws:
-  deletes only target dirs found in a fresh listing. Auth / unreachable errors fail the whole listing, other
-  per-copy errors skip that copy.
+  deletes only target dirs found in a fresh listing. Auth / unreachable errors and an unlistable own device
+  folder fail the whole listing; other per-copy errors skip that copy and report it as unreadable.
 - **Errors.** Backend exceptions become codes (`cloud_auth`, `cloud_unreachable`, `cloud_quota`, `cloud_failed`);
   messages (which can carry server URLs or response bodies) never reach status, toast or logs (the log gets
-  the exception type only). Credentials are never in meta or status; the status target key is
-  `cloud-<backend type>`.
+  the exception type only). Rate limits count as unreachable, only a full store as quota. Credentials are never
+  in meta or status; the status target key is `cloud-<backend type>-<hash of the account / server identity>`.
 - **Network (D10).** Default Wi-Fi only (`auto_backup_cloud_metered` off). Android asks
   `ConnectivityManager.isActiveNetworkMetered()` (new channel method `networkUnmetered`; a metered Wi-Fi
   hotspot counts as metered); iOS treats a routable IPv4 address on `en0` as Wi-Fi (no Swift change); desktop
@@ -371,7 +419,7 @@ quota, invisible outside the app).
 
 | Option | What | Cost | Risk |
 |---|---|---|---|
-| A. Sync backend as a second mirror target | `SyncAssetStoreBackupMirror implements BackupFolderMirror` under `fushi-backups/<deviceId>/<id>/`; the controller's copy-after-local, device-scoped retention, catch-up and page "Copy to this device" are reused unchanged. Retention reads the meta json, never backend mtimes. | ~2 days + Dropbox upload sessions (~1 day) + settings UI | Quota on daily full-DB zips; mobile data; large single-PUT uploads restart from zero on WebDAV/FTP/SFTP/Interconnect; iOS suspends long uploads in the background. |
+| A. Sync backend as a second mirror target | `SyncAssetStoreBackupMirror implements BackupFolderMirror` under `fushi-backups/<deviceId>/<id>/` (built as the reserved `__backups__`); the controller's copy-after-local, device-scoped retention, catch-up and page "Copy to this device" are reused unchanged. Retention reads the meta json, never backend mtimes. | ~2 days + Dropbox upload sessions (~1 day) + settings UI | Quota on daily full-DB zips; mobile data; large single-PUT uploads restart from zero on WebDAV/FTP/SFTP/Interconnect; iOS suspends long uploads in the background. |
 | B. User folder inside a cloud provider (done) | Pick an iCloud Drive / Nextcloud / Syncthing folder | 0 | Android Google Drive app does not offer folder trees; iCloud eviction needs a manual download. |
 | C. Interconnect push to the paired desktop | Same as A, restricted to the Interconnect backend, host stores under its sync data dir | ~1 day on top of A | Only when the desktop is reachable. |
 
@@ -391,6 +439,12 @@ space; a smaller cloud retention (e.g. 7 daily) to save quota.
    launch (`pendingId`). `beginBackgroundTask` would add about 30 s.
 6. Real-device checks of the SAF / iCloud flows were not done (the debug build has no separate
    applicationId, so installing it would overwrite the user's app).
+7. iOS "unmetered" is a heuristic (routable IPv4 on `en0`); a personal-hotspot or "Low Data Mode" Wi-Fi counts
+   as unmetered. `NWPathMonitor` (`isExpensive` / `isConstrained`) needs Swift that cannot be built here.
+8. Dropbox: a `finish` response lost after the server committed can make a successful upload count as failed
+   (the copy is deleted and redone in the next slot; it is never half-visible).
+9. Cloud upload happens before pruning, so a nearly full store can fail the upload that pruning would have
+   made room for; the failure shows `cloud_quota` and the user can delete old cloud copies on the page.
 
 ## Decisions (taken by the user 2026-11-25 on the proposal's recommendations; maintainer may change)
 
