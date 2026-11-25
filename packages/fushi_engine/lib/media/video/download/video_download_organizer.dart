@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:fushi_engine/media/media_extensions.dart' show kAudioExtensions;
 import 'package:fushi_engine/media/torrent/torrent_backend.dart';
 import 'package:fushi_engine/media/video/download/video_download_disc_payload.dart';
 import 'package:fushi_engine/media/video/download/video_download_path_mapping.dart';
@@ -9,6 +10,8 @@ import 'package:fushi_engine/media/video/scraper/filename_parser.dart';
 import 'package:fushi_engine/media/video/scraper/scraper_types.dart'
     show ParsedMediaName;
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
+import 'package:fushi_engine/media/video/video_sidecar.dart'
+    show isSidecarSubtitleSuffix;
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:path/path.dart' as p;
 
@@ -107,6 +110,8 @@ class VideoOrganizationFilePlan {
     this.episodeNumber,
     this.siblingWork = false,
     this.disc,
+    this.companion,
+    this.companionOfBackendFileIndex,
   });
 
   final int backendFileIndex;
@@ -126,6 +131,15 @@ class VideoOrganizationFilePlan {
   /// （[VideoOrganizationDiscPlan]），不解集号、不抬正片、不进 `Extras/`，下游不把它
   /// 当散装视频（文件行 `kind: 'other'`，入库按盘走）。
   final VideoOrganizationDiscPlan? disc;
+
+  /// 随某个视频发布的外挂件（外挂字幕 / 外挂音轨）；不是外挂件为 null。外挂件跟
+  /// [companionOfBackendFileIndex] 那个视频落到同一目标目录、按视频目标主干改名
+  /// （配对与落位名见 [planVideoReleaseCompanions]），文件行写
+  /// [videoDownloadCompanionFileKind]，不当视频入库。
+  final VideoReleaseCompanionKind? companion;
+
+  /// [companion] 配对到的视频的后端文件序号。
+  final int? companionOfBackendFileIndex;
 }
 
 /// 一张原盘的整盘落位（BUG-4245）：盘根整体平移到 `<作品目录>/<盘根相对路径>`，盘内
@@ -402,6 +416,51 @@ class VideoDownloadOrganizer {
       ...pass.files,
     ];
     if (discPlan.files.isNotEmpty) _rejectTargetCollisions(planned);
+    // 随视频发布的外挂字幕 / 外挂音轨跟着视频走（不跟走的话整理后的视频丢了发布组
+    // 自带的字幕与音轨，留在原发布目录的整片 `.mka` 还会被当纯音频交给音乐库）。
+    // 外挂件排在全部视频之后：它的目标由视频目标推出，视频先落位；撞名的外挂件
+    // 原地不动，不让一个附属文件把整条任务打成失败。
+    final Set<int> discIndexes = discOf.keys.toSet();
+    final List<VideoCompanionMove> companions = planVideoReleaseCompanions(
+      videos: <VideoCompanionAnchor>[
+        for (final VideoOrganizationFilePlan file in pass.files)
+          VideoCompanionAnchor(
+            backendFileIndex: file.backendFileIndex,
+            sourceRelativePath: file.originalRelativePath,
+            targetRelativePath: file.targetRelativePath,
+          ),
+      ],
+      candidates: <VideoCompanionCandidate>[
+        for (final TorrentFileEntry file in files)
+          if (!discIndexes.contains(file.index) && !_isVideo(file.name))
+            VideoCompanionCandidate(
+              backendFileIndex: file.index,
+              relativePath: file.name,
+            ),
+      ],
+      reservedTargets: <String>[
+        for (final VideoOrganizationFilePlan file in planned)
+          file.targetRelativePath,
+      ],
+      legacyUnderscoreNames: request.legacyUnderscoreNames,
+    );
+    for (final VideoCompanionMove move in companions) {
+      planned.add(
+        VideoOrganizationFilePlan(
+          backendFileIndex: move.backendFileIndex,
+          originalRelativePath: move.originalRelativePath,
+          targetRelativePath: move.targetRelativePath,
+          finalLocalPath: p.normalize(
+            p.joinAll(<String>[
+              request.sourceRoot,
+              ...move.targetRelativePath.split('/'),
+            ]),
+          ),
+          companion: move.kind,
+          companionOfBackendFileIndex: move.ownerBackendFileIndex,
+        ),
+      );
+    }
     return VideoOrganizationPlan(
       remoteSourceRoot: remoteRoot,
       kind: kind,
@@ -1418,3 +1477,274 @@ typedef VideoPackEpisodeEvidence = ({
   int movieHinted,
   bool hasDisc,
 });
+
+/// 随视频发布的外挂件种类。
+enum VideoReleaseCompanionKind {
+  /// 外挂字幕（`.ass` / `.ssa` / `.srt` / `.vtt` / `.sup` / `.idx` / `.sub` / `.mks`）。
+  subtitle,
+
+  /// 外挂音轨（`.mka`、`.flac`、`.ac3` …，[kAudioExtensions] 加几种裸音轨扩展名）。
+  audio,
+}
+
+/// 外挂件的任务文件行 `kind`。
+///
+/// 表上 `kind` 的 CHECK 只允许 `video` / `subtitle` / `extra` / `other`，其中
+/// `subtitle` 建表时预留、此前从没写过；这里把它定义为「随视频发布、跟视频一起落位
+/// 的外挂件」（外挂字幕与外挂音轨都算），不改表结构。选它而不是另外三个：`video`
+/// 会被 `_importMedia` / 字幕 / 刮削当视频处理；`extra` 是「特典视频」，整任务删除时
+/// 按它找库条目；`other` 是原盘文件（`videoDownloadJobDiscs` 按「已落位的 other 行」
+/// 认盘，外挂件落在盘根目录里时会被算成盘内文件）。
+const String videoDownloadCompanionFileKind = 'subtitle';
+
+/// 外挂字幕扩展名（小写，带点）。
+const Set<String> _companionSubtitleExtensions = <String>{
+  '.ass',
+  '.ssa',
+  '.srt',
+  '.vtt',
+  '.sup',
+  '.idx',
+  '.sub',
+  '.mks',
+};
+
+/// 播放器能按文件名认出的文字字幕扩展名（与 [isSidecarSubtitleSuffix] 同一组）。
+const Set<String> _textSubtitleExtensions = <String>{
+  '.ass',
+  '.ssa',
+  '.srt',
+  '.vtt',
+};
+
+/// 不在 [kAudioExtensions] 里、但发布组常用的裸音轨扩展名。
+const Set<String> _extraCompanionAudioExtensions = <String>{
+  '.dts',
+  '.dtshd',
+  '.thd',
+  '.truehd',
+};
+
+/// [relativePath] 若是外挂件候选，返回种类；否则 null（扫图、日志、字体等）。
+VideoReleaseCompanionKind? videoReleaseCompanionKindOf(String relativePath) {
+  final String ext = p.extension(relativePath).toLowerCase();
+  if (_companionSubtitleExtensions.contains(ext)) {
+    return VideoReleaseCompanionKind.subtitle;
+  }
+  if (kAudioExtensions.contains(ext) ||
+      _extraCompanionAudioExtensions.contains(ext)) {
+    return VideoReleaseCompanionKind.audio;
+  }
+  return null;
+}
+
+/// 一个已排布的视频：配对看它在种子里的位置，落位看它的目标。
+class VideoCompanionAnchor {
+  const VideoCompanionAnchor({
+    required this.backendFileIndex,
+    required this.sourceRelativePath,
+    required this.targetRelativePath,
+  });
+
+  final int backendFileIndex;
+
+  /// 配对用的种子内相对路径（整理前的位置）。
+  final String sourceRelativePath;
+
+  /// 整理目标相对路径（`/` 分隔）。
+  final String targetRelativePath;
+}
+
+/// 一个还在种子内原位置的非视频文件。
+class VideoCompanionCandidate {
+  const VideoCompanionCandidate({
+    required this.backendFileIndex,
+    required this.relativePath,
+  });
+
+  final int backendFileIndex;
+  final String relativePath;
+}
+
+/// 一个外挂件的搬动计划。
+class VideoCompanionMove {
+  const VideoCompanionMove({
+    required this.backendFileIndex,
+    required this.ownerBackendFileIndex,
+    required this.originalRelativePath,
+    required this.targetRelativePath,
+    required this.kind,
+  });
+
+  final int backendFileIndex;
+  final int ownerBackendFileIndex;
+  final String originalRelativePath;
+
+  /// 目标相对路径（`/` 分隔）。
+  final String targetRelativePath;
+  final VideoReleaseCompanionKind kind;
+}
+
+/// 纯函数：从 [candidates] 里挑出随 [videos] 发布的外挂字幕 / 外挂音轨，算出跟视频
+/// 落到一起的目标路径。整理计划（[VideoDownloadOrganizer.plan]）和存量补搬共用。
+///
+/// **配对**（与音乐库 `music_audio_roots.dart` 规则 2 / 2b 同一口径，放宽了分隔符）：
+/// * 外挂件与视频同目录，或在视频所在目录的**直接子目录**里（`Audio 5.1/`、
+///   `Audio Guide/`、`Subs/`）；
+/// * 外挂件文件名（不分大小写）以视频主干开头，紧跟 `.` / `_` / `-`（`ep01.chs.ass`、
+///   `ep01.mka`、`ep01_Eng_Audio_5.1.mka`）。规则 2b 只认 `.`；真实发布（Beatrice-Raws
+///   的 `<主干>_Jpn_Audio_5.1.mka`）用 `_`，不放宽就留在原地被当成「歌」；
+/// * 子目录里的外挂件，纯数字主干（`01.mkv`）不参与：`CDs/01.flac` 与剧集同号很常见。
+///   同目录的数字主干照常配对（`01.mkv` ↔ `01.ass`，播放器同样认）；
+/// * 同目录配上的优先于子目录；同一层配上多个视频时取**最长主干**（与
+///   `sidecarSubtitleOwnerStem` 的「最长主干认领」一致：`ep01.5.ass` 归 `ep01.5.mkv`）。
+///
+/// **落位**：视频目标目录下，`<视频目标主干><后缀>`；后缀 = 原文件名去掉视频主干的
+/// 剩余部分，开头的 `_` / `-` 换成 `.`、扩展名转小写：
+/// * `.chs.ass` → `<目标主干>.chs.ass`（播放器 `listSidecarSubtitles` 按
+///   `<主干>[.标记].srt|ass|ssa|vtt` 认，标记只许一段 `[A-Za-z0-9_-]{1,32}`）；
+/// * 文字字幕的后缀不合这条（`.sc.forced.ass`、`.chs&jpn.ass`）时，把标记里的点和
+///   非法字符折成 `_`（`.sc_forced.ass`），否则搬过去播放器也认不出；
+/// * `_Eng_Audio_5.1.mka` → `<目标主干>.Eng_Audio_5.1.mka`、`.Audio Guide.mka` 原样：
+///   本机播放器目前不自动挂本地外挂音轨，可依赖的发现规则是音乐库规则 2（与视频
+///   同目录的音频不收）和 2b（`<主干>.` 开头），落在视频同目录、以「主干.」开头两条
+///   都满足，也合 mpv `audio-file-auto` 的前缀约定。
+///
+/// [reservedTargets] 是计划里已占用的目标（视频、盘内文件）；与它或与先排的外挂件
+/// 撞名（不分大小写）的外挂件不搬，原地不动。[legacyUnderscoreNames] 与视频同一套
+/// 非法字符替身。
+List<VideoCompanionMove> planVideoReleaseCompanions({
+  required List<VideoCompanionAnchor> videos,
+  required List<VideoCompanionCandidate> candidates,
+  Iterable<String> reservedTargets = const <String>[],
+  bool legacyUnderscoreNames = false,
+}) {
+  if (videos.isEmpty || candidates.isEmpty) return const <VideoCompanionMove>[];
+  String dirKey(List<String> segments) =>
+      segments.sublist(0, segments.length - 1).join('/').toLowerCase();
+  // 视频所在目录 → 视频（带小写主干）。
+  final Map<String, List<(VideoCompanionAnchor, String)>> videosByDir =
+      <String, List<(VideoCompanionAnchor, String)>>{};
+  for (final VideoCompanionAnchor video in videos) {
+    final List<String> segments = VideoDownloadOrganizer._segments(
+      video.sourceRelativePath,
+    );
+    if (segments.isEmpty) continue;
+    final String stem = p.basenameWithoutExtension(segments.last).toLowerCase();
+    if (stem.isEmpty) continue;
+    videosByDir
+        .putIfAbsent(dirKey(segments), () => <(VideoCompanionAnchor, String)>[])
+        .add((video, stem));
+  }
+  final Set<String> claimed = <String>{
+    for (final String target in reservedTargets)
+      target.replaceAll('\\', '/').toLowerCase(),
+  };
+  final RegExp numericStem = RegExp(r'^\d+$');
+  const Set<String> separators = <String>{'.', '_', '-'};
+  final List<VideoCompanionMove> moves = <VideoCompanionMove>[];
+  final List<VideoCompanionCandidate> ordered =
+      List<VideoCompanionCandidate>.of(candidates)..sort(
+        (VideoCompanionCandidate a, VideoCompanionCandidate b) =>
+            a.relativePath.compareTo(b.relativePath),
+      );
+  for (final VideoCompanionCandidate candidate in ordered) {
+    final VideoReleaseCompanionKind? kind = videoReleaseCompanionKindOf(
+      candidate.relativePath,
+    );
+    if (kind == null) continue;
+    final List<String> segments = VideoDownloadOrganizer._segments(
+      candidate.relativePath,
+    );
+    if (segments.isEmpty) continue;
+    final String name = segments.last;
+    final String nameLower = name.toLowerCase();
+
+    (VideoCompanionAnchor, String)? best(
+      List<(VideoCompanionAnchor, String)>? pool, {
+      required bool allowNumeric,
+    }) {
+      (VideoCompanionAnchor, String)? owner;
+      for (final (VideoCompanionAnchor, String) entry
+          in pool ?? const <(VideoCompanionAnchor, String)>[]) {
+        final String stem = entry.$2;
+        if (!allowNumeric && numericStem.hasMatch(stem)) continue;
+        if (owner != null && stem.length <= owner.$2.length) continue;
+        if (nameLower.length <= stem.length || !nameLower.startsWith(stem)) {
+          continue;
+        }
+        if (!separators.contains(nameLower[stem.length])) continue;
+        owner = entry;
+      }
+      return owner;
+    }
+
+    final (VideoCompanionAnchor, String)? owner =
+        best(videosByDir[dirKey(segments)], allowNumeric: true) ??
+        (segments.length >= 2
+            ? best(
+                videosByDir[dirKey(segments.sublist(0, segments.length - 1))],
+                allowNumeric: false,
+              )
+            : null);
+    if (owner == null) continue;
+    final String ownerTarget = owner.$1.targetRelativePath.replaceAll(
+      '\\',
+      '/',
+    );
+    final String? targetName = _companionTargetName(
+      name: name,
+      ownerStemLength: owner.$2.length,
+      targetStem: p.posix.basenameWithoutExtension(ownerTarget),
+      legacy: legacyUnderscoreNames,
+    );
+    if (targetName == null) continue;
+    final String targetDir = p.posix.dirname(ownerTarget);
+    final String target = targetDir == '.'
+        ? targetName
+        : '$targetDir/$targetName';
+    if (!claimed.add(target.toLowerCase())) continue;
+    moves.add(
+      VideoCompanionMove(
+        backendFileIndex: candidate.backendFileIndex,
+        ownerBackendFileIndex: owner.$1.backendFileIndex,
+        originalRelativePath: candidate.relativePath,
+        targetRelativePath: target,
+        kind: kind,
+      ),
+    );
+  }
+  return moves;
+}
+
+/// 外挂件落位名（见 [planVideoReleaseCompanions]）；安全化后为空返回 null。
+String? _companionTargetName({
+  required String name,
+  required int ownerStemLength,
+  required String targetStem,
+  required bool legacy,
+}) {
+  String rest = name.substring(ownerStemLength);
+  if (!rest.startsWith('.')) rest = '.${rest.substring(1)}';
+  final String rawExt = p.extension(name);
+  final String ext = rawExt.toLowerCase();
+  String middle = rest.substring(0, rest.length - rawExt.length);
+  if (_textSubtitleExtensions.contains(ext) &&
+      !isSidecarSubtitleSuffix('$middle$ext')) {
+    String tag = middle
+        .replaceAll(RegExp(r'[^A-Za-z0-9_-]+'), '_')
+        .replaceAll(RegExp(r'_+'), '_')
+        .replaceAll(RegExp(r'^_+|_+$'), '');
+    if (tag.length > 32) tag = tag.substring(0, 32);
+    middle = tag.isEmpty ? '' : '.$tag';
+  }
+  try {
+    final String stem = VideoDownloadOrganizer._safeSegment(
+      '$targetStem$middle',
+      legacy: legacy,
+    );
+    return '$stem$ext';
+  } on FormatException {
+    return null;
+  }
+}
