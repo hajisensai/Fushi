@@ -33,12 +33,14 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4734 条。点号进各自文件。
+> 共 4736 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5461](bugs/BUG-5461-subdeck-steps-not-inherited.md) | ✅ | ✅ | Anki 导入的子牌组带着旧步长，父牌组改 RWKV 后按 Again 仍进重学 |
 | [BUG-5460](bugs/BUG-5460-sync-missing-book-content.md) | ✅ | ✅ | 书目还在而正文丢失时同步无法补回原书 |
 | [BUG-5456](bugs/BUG-5456-android-migrate-target-content-conflict.md) | ✅ | ✅ | Android 移动书库：目标里同路径不同内容的文件被当成中断残留整树删掉 |
+| [BUG-5455](bugs/BUG-5455-srs-gen4-migration-event-order.md) | ✅ | ✅ | 复习库升级后 Anki 复习副本选取改变到期日、间隔与统计，导致核对撤回 |
 | [BUG-5455](bugs/BUG-5455-opensubtitles-moviehash-negative-http400.md) | ✅ | ✅ | 字幕面板「字幕搜索失败（HTTP 400）」：OpenSubtitles movie hash 拼出负号，日志里没有任何线索 |
 | [BUG-5454](bugs/BUG-5454-stats-overview-srs-not-migrated.md) | ✅ | ✅ | stats-overview-srs-not-migrated |
 > 共 4731 条。点号进各自文件。
