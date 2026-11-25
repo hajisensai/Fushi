@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -12,6 +13,7 @@ import 'package:fushi/src/anki/anki_view_model.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi/src/media/video/video_library_section.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
+import 'package:fushi/src/models/video_collection_open_request.dart';
 import 'package:fushi/src/pages/implementations/home_video_page.dart';
 import 'package:fushi/src/pages/implementations/media_collection_detail_page.dart';
 import 'package:fushi/src/platform/platform_providers.dart';
@@ -165,6 +167,19 @@ void main() {
     );
   }
 
+  /// 详情页对远端只按 id 查本合集的成员：成员解析问本机缺的那一集，「删除本机
+  /// 副本」入口另问本机成员是不是对端副本——都不碰整份清单。
+  void expectOnlyMemberLookups(_CountingJellyfinClient client) {
+    expect(client.byIdsCalls.first, <String>[
+      'video/ep2',
+    ], reason: '成员解析只问本机缺的那一集');
+    expect(
+      client.byIdsCalls.expand((List<String> ids) => ids).toSet(),
+      everyElement(isIn(<String>{'video/ep1', 'video/ep2'})),
+      reason: '只问本合集的成员 id',
+    );
+  }
+
   testWidgets('Jellyfin 关掉自动列出 → 进含远端成员的合集详情不发一次清单请求', (
     WidgetTester tester,
   ) async {
@@ -179,6 +194,75 @@ void main() {
       client.listCalls,
       0,
       reason: '闸门关时合集详情必须与库页同一判据：只读缓存、绝不取数（BUG-1891）',
+    );
+  });
+
+  testWidgets('Jellyfin 关掉自动列出 → 从别处打开合集只按 id 查缺的那一集，照样列出它', (
+    WidgetTester tester,
+  ) async {
+    await prefs.setJellyfinAutoListVideos(false);
+    final int cid = await seedCollectionWithRemoteOnlyMember();
+    final _CountingJellyfinClient client = _CountingJellyfinClient();
+    tester.view.physicalSize = const Size(1280, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+
+    await tester.pumpWidget(buildApp(client));
+    await tester.pumpAndSettle();
+    // 「同一作品」卡片等库页以外的入口（[requestVideoCollectionOpen]）：库页闸门关、
+    // 没有清单，来源照常解析，详情页的远端成员只按 id 查。
+    requestVideoCollectionOpen(cid);
+    await tester.pumpAndSettle();
+    expect(find.byType(MediaCollectionDetailPage), findsOneWidget);
+
+    expect(client.listCalls, 0, reason: '按 id 查不是全库枚举，闸门照旧挡住整库请求');
+    expectOnlyMemberLookups(client);
+    expect(
+      find.byKey(const ValueKey<String>('collection-episode-row-video/ep2')),
+      findsOneWidget,
+      reason: '远端成员照常列出（可流播 / 下载），不退化成只有本地成员',
+    );
+  });
+
+  testWidgets('首轮整库清单还在取 → 打开合集不等它，远端成员按 id 查到就显示', (
+    WidgetTester tester,
+  ) async {
+    await prefs.setJellyfinAutoListVideos(true);
+    final int cid = await seedCollectionWithRemoteOnlyMember();
+    final Completer<List<RemoteVideoInfo>> fullList =
+        Completer<List<RemoteVideoInfo>>();
+    final _CountingJellyfinClient client = _CountingJellyfinClient(
+      list: () => fullList.future,
+    );
+    addTearDown(() {
+      if (!fullList.isCompleted) fullList.complete(const <RemoteVideoInfo>[]);
+    });
+
+    tester.view.physicalSize = const Size(1280, 2400);
+    tester.view.devicePixelRatio = 1.0;
+    addTearDown(tester.view.resetPhysicalSize);
+    addTearDown(tester.view.resetDevicePixelRatio);
+    await tester.pumpWidget(buildApp(client));
+    // 整库请求挂着：只推有限帧（可能有常驻的加载动画，不能 pumpAndSettle）。
+    for (int i = 0; i < 10; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+    expect(client.listCalls, 1, reason: '前提：库页的整库请求已发出且仍在途');
+    await tester.tap(
+      find.byKey(ValueKey<String>('home_video_collection_card_$cid')),
+    );
+    for (int i = 0; i < 20; i++) {
+      await tester.pump(const Duration(milliseconds: 100));
+    }
+
+    expect(find.byType(MediaCollectionDetailPage), findsOneWidget);
+    expect(fullList.isCompleted, isFalse, reason: '整库请求仍在途');
+    expectOnlyMemberLookups(client);
+    expect(
+      find.byKey(const ValueKey<String>('collection-episode-row-video/ep2')),
+      findsOneWidget,
+      reason: '详情页的远端成员不等整库清单',
     );
   });
 
@@ -201,7 +285,33 @@ void main() {
 /// 计数版 Jellyfin client：`is JellyfinVideoClient` 命中 BUG-1891 闸门；只实现
 /// 页面与详情页这条路径真正会碰到的成员，其余经 [noSuchMethod] 兜底。
 class _CountingJellyfinClient implements JellyfinVideoClient {
+  _CountingJellyfinClient({Future<List<RemoteVideoInfo>> Function()? list})
+    : _list = list;
+
+  final Future<List<RemoteVideoInfo>> Function()? _list;
   int listCalls = 0;
+  final List<List<String>> byIdsCalls = <List<String>>[];
+
+  static const List<RemoteVideoInfo> _library = <RemoteVideoInfo>[
+    RemoteVideoInfo(
+      id: 'video/ep2',
+      title: '第2集',
+      collection: RemoteCollectionMembership(
+        collectionName: '某番剧',
+        collectionType: 'playlist',
+        sortIndex: 2,
+      ),
+    ),
+  ];
+
+  @override
+  Future<List<RemoteVideoInfo>> remoteVideosByIds(List<String> ids) async {
+    byIdsCalls.add(List<String>.of(ids));
+    return <RemoteVideoInfo>[
+      for (final RemoteVideoInfo video in _library)
+        if (ids.contains(video.id)) video,
+    ];
+  }
 
   @override
   String get remoteLibrarySourceId => 'jellyfin:http://nas:8096|u1';
@@ -210,19 +320,9 @@ class _CountingJellyfinClient implements JellyfinVideoClient {
   String get coverCacheNamespace => 'jellyfin-test';
 
   @override
-  Future<List<RemoteVideoInfo>> listRemoteVideos() async {
+  Future<List<RemoteVideoInfo>> listRemoteVideos() {
     listCalls++;
-    return const <RemoteVideoInfo>[
-      RemoteVideoInfo(
-        id: 'video/ep2',
-        title: '第2集',
-        collection: RemoteCollectionMembership(
-          collectionName: '某番剧',
-          collectionType: 'playlist',
-          sortIndex: 2,
-        ),
-      ),
-    ];
+    return _list?.call() ?? Future<List<RemoteVideoInfo>>.value(_library);
   }
 
   @override

@@ -83,7 +83,7 @@ void main() {
     final List<CollectionEpisodeSlot> slots = await loadCollectionEpisodeSlots(
       repository: repo,
       collectionId: collectionId,
-      loadRemoteVideos: () async => <RemoteVideoInfo>[
+      loadRemoteMembers: (List<String> ids) async => <RemoteVideoInfo>[
         RemoteVideoInfo(id: 'e1', title: 'e1'),
       ],
     );

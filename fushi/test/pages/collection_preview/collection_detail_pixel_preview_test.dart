@@ -343,7 +343,7 @@ Future<_Fixture> _legacyFull(FushiDatabase db, Directory images) async {
         CollectionEpisodeSlot.local(rows[i]),
     ],
     remote: CollectionRemoteContext(
-      loadRemoteVideos: () async => <RemoteVideoInfo>[remote],
+      loadRemoteMembers: (List<String> ids) async => <RemoteVideoInfo>[remote],
       openEpisode: (RemoteVideoInfo _, List<RemoteVideoInfo> __, int ___) {},
     ),
   );
