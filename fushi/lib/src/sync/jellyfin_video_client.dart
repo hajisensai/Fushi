@@ -638,6 +638,7 @@ class JellyfinItem {
     type: type,
     isFolder: isFolder,
     originalTitle: originalTitle,
+    providerIds: providerIds,
     seriesName: seriesName,
     seasonNumber: seasonNumber,
     episodeNumber: episodeNumber,
@@ -1406,8 +1407,9 @@ class JellyfinApi {
         'StartIndex': '$startIndex',
         'Limit': '$limit',
         // MediaSourceCount：集卡上提示多版本（mxYhpVcwOX）。只是一个计数，
-        // 不是 MediaSources 重字段（BUG-1891）。
-        'Fields': 'ProductionYear,MediaSourceCount',
+        // 不是 MediaSources 重字段（BUG-1891）。Overview：入库时落分集简介、
+        // 详情页集卡显示简介（BUG-5455；Jellyfin 清单不点名就不给）。
+        'Fields': 'ProductionYear,MediaSourceCount,Overview',
       },
     );
     return parseItemsPage(json);
@@ -2949,6 +2951,7 @@ class JellyfinVideoClient
     overview: item.overview,
     communityRating: item.communityRating,
     genres: item.genres,
+    providerIds: item.providerIds,
     hasSubtitle: item.hasTextSubtitle,
     versions: <MediaServerVersion>[
       for (final JellyfinMediaSource source in item.mediaSources)
