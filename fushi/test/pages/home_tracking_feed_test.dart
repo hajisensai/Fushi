@@ -271,6 +271,77 @@ void main() {
     expect(homeTrackingCoverSourceOf('unknown'), HomeTrackingCoverSource.none);
   });
 
+  group('homeTrackingBookCoverSteps', () {
+    test('a volume or chapter link: its book, then its series card, then '
+        'another volume', () {
+      for (final TrackingMediaType type in <TrackingMediaType>[
+        TrackingMediaType.book,
+        TrackingMediaType.bookChapter,
+      ]) {
+        expect(
+          homeTrackingBookCoverSteps(
+            mediaType: type.value,
+            mediaKey: 'vol-3',
+            seriesOfBook: 42,
+          ),
+          <HomeTrackingCoverStep>[
+            const HomeTrackingBookCover('vol-3'),
+            const HomeTrackingCardCover(42),
+            const HomeTrackingAnyVolumeCover(42),
+          ],
+          reason: type.value,
+        );
+      }
+    });
+
+    test('a book in no series only has its own cover', () {
+      expect(
+        homeTrackingBookCoverSteps(
+          mediaType: TrackingMediaType.book.value,
+          mediaKey: 'single',
+        ),
+        <HomeTrackingCoverStep>[const HomeTrackingBookCover('single')],
+      );
+    });
+
+    test('a series link: the volume it counted, then the card, then another '
+        'volume', () {
+      expect(
+        homeTrackingBookCoverSteps(
+          mediaType: TrackingMediaType.bookCollection.value,
+          mediaKey: '42',
+          volumeBookKey: 'vol-3',
+        ),
+        <HomeTrackingCoverStep>[
+          const HomeTrackingBookCover('vol-3'),
+          const HomeTrackingCardCover(42),
+          const HomeTrackingAnyVolumeCover(42),
+        ],
+      );
+      expect(
+        homeTrackingBookCoverSteps(
+          mediaType: TrackingMediaType.bookCollection.value,
+          mediaKey: '42',
+        ),
+        <HomeTrackingCoverStep>[
+          const HomeTrackingCardCover(42),
+          const HomeTrackingAnyVolumeCover(42),
+        ],
+        reason: 'volume unknown',
+      );
+    });
+
+    test('other media types have no book steps', () {
+      expect(
+        homeTrackingBookCoverSteps(
+          mediaType: TrackingMediaType.videoCollection.value,
+          mediaKey: '42',
+        ),
+        isEmpty,
+      );
+    });
+  });
+
   group('HomeTrackingFeedCard', () {
     // The default 800×600 test surface would squeeze a 6-column cell (900).
     setUp(() {

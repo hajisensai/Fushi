@@ -10,6 +10,8 @@ import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/tracking/book_series_link.dart';
 import 'package:fushi_engine/media/tracking/book_tracking_link.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_recent_sends.dart'
+    show MediaTrackingRecentSend;
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_service.dart';
 import 'package:fushi_engine/media/tracking/tracking_provider.dart';
@@ -428,6 +430,46 @@ void main() {
         ),
         isEmpty,
         reason: 'covered volumes are not unlinked',
+      );
+    });
+
+    test('the home snapshot names the book of the volume a series link '
+        'sent, by its number and not its place on the card', () async {
+      primary.catalogue.add(_ajin);
+      for (final String t in <String>['Ajin 01', 'Ajin 02', 'Ajin 03']) {
+        await insertBook(t);
+      }
+      // Volume 3 sits first on the card: a position-based pick would be
+      // wrong.
+      final int card = await seriesCard('Ajin', <String>[
+        'Ajin 03',
+        'Ajin 01',
+        'Ajin 02',
+      ]);
+      await service.linkSeriesToSubject(
+        collectionId: card,
+        providerId: _defaultId,
+        subject: _ajin,
+      );
+      await finish('Ajin 01');
+      await finish('Ajin 02');
+      expect(primary.pushed.last.outbox.progress, 2);
+
+      final MediaTrackingHomeSnapshot snapshot = await service
+          .loadHomeSnapshot();
+      final MediaTrackingRecentSend send = snapshot.recentSends().first;
+      expect(send.mediaType, TrackingMediaType.bookCollection.value);
+      expect(send.progress, 2);
+      expect(snapshot.seriesVolumeBookOf(send), 'Ajin 02');
+      // A locked volume is not offered for its cover.
+      expect(
+        snapshot
+            .withoutMedia(
+              (String type, String key) =>
+                  type == TrackingMediaType.book.value && key == 'Ajin 02',
+            )
+            .seriesVolumeBookOf(send),
+        isNull,
       );
     });
 

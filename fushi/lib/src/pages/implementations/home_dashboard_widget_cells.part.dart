@@ -2326,6 +2326,7 @@ extension _HomeWidgetCells on _HomeDashboardPageState {
           mediaType: send.mediaType,
           mediaKey: send.mediaKey,
           title: send.mediaTitle,
+          volumeBookKey: _tracking.seriesVolumeBookOf(send),
         ),
         onOpen: () => _openTrackingPage(
           summary,

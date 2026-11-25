@@ -293,6 +293,98 @@ HomeTrackingCoverSource homeTrackingCoverSourceOf(String mediaType) {
   return HomeTrackingCoverSource.none;
 }
 
+/// One place to look for the cover of a book or book series send.
+sealed class HomeTrackingCoverStep {
+  const HomeTrackingCoverStep();
+}
+
+/// The cover of one book (a volume).
+final class HomeTrackingBookCover extends HomeTrackingCoverStep {
+  const HomeTrackingBookCover(this.bookKey);
+
+  final String bookKey;
+
+  @override
+  bool operator ==(Object other) =>
+      other is HomeTrackingBookCover && other.bookKey == bookKey;
+
+  @override
+  int get hashCode => bookKey.hashCode;
+
+  @override
+  String toString() => 'book($bookKey)';
+}
+
+/// A series card's own cover.
+final class HomeTrackingCardCover extends HomeTrackingCoverStep {
+  const HomeTrackingCardCover(this.collectionId);
+
+  final int collectionId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is HomeTrackingCardCover && other.collectionId == collectionId;
+
+  @override
+  int get hashCode => collectionId.hashCode;
+
+  @override
+  String toString() => 'card($collectionId)';
+}
+
+/// The first volume of a series card that has a cover.
+final class HomeTrackingAnyVolumeCover extends HomeTrackingCoverStep {
+  const HomeTrackingAnyVolumeCover(this.collectionId);
+
+  final int collectionId;
+
+  @override
+  bool operator ==(Object other) =>
+      other is HomeTrackingAnyVolumeCover && other.collectionId == collectionId;
+
+  @override
+  int get hashCode => collectionId.hashCode;
+
+  @override
+  String toString() => 'anyVolume($collectionId)';
+}
+
+/// Where to look, in order, for the cover of a book-like send; empty for
+/// other media types. A volume or chapter link ([mediaType] `book` /
+/// `book_chapter`, keyed by the book) tries its book, then the series card
+/// the book is in ([seriesOfBook]) and another volume of it. A series link
+/// (`book_collection`) tries the volume it counted ([volumeBookKey]), then
+/// the card's cover and another volume. What finds nothing falls back to the
+/// kind icon.
+List<HomeTrackingCoverStep> homeTrackingBookCoverSteps({
+  required String mediaType,
+  required String mediaKey,
+  int? seriesOfBook,
+  String? volumeBookKey,
+}) {
+  if (mediaType == TrackingMediaType.book.value ||
+      mediaType == TrackingMediaType.bookChapter.value) {
+    return <HomeTrackingCoverStep>[
+      HomeTrackingBookCover(mediaKey),
+      if (seriesOfBook != null) ...<HomeTrackingCoverStep>[
+        HomeTrackingCardCover(seriesOfBook),
+        HomeTrackingAnyVolumeCover(seriesOfBook),
+      ],
+    ];
+  }
+  if (mediaType == TrackingMediaType.bookCollection.value) {
+    final int? id = int.tryParse(mediaKey);
+    return <HomeTrackingCoverStep>[
+      if (volumeBookKey != null) HomeTrackingBookCover(volumeBookKey),
+      if (id != null) ...<HomeTrackingCoverStep>[
+        HomeTrackingCardCover(id),
+        HomeTrackingAnyVolumeCover(id),
+      ],
+    ];
+  }
+  return const <HomeTrackingCoverStep>[];
+}
+
 /// A cover for a send, from the local library; null when none is known.
 typedef HomeTrackingCoverOf = Widget? Function(MediaTrackingRecentSend send);
 

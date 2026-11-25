@@ -4918,25 +4918,31 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
 
   /// The local cover of a tracked item ([TrackingMediaType] `value` + key),
   /// or null when the library has none to draw; which library holds it is
-  /// [homeTrackingCoverSourceOf].
+  /// [homeTrackingCoverSourceOf]. Books and book series try
+  /// [homeTrackingBookCoverSteps] in order ([volumeBookKey]: the volume a
+  /// series link counted).
   Widget? _trackingCoverOf(
     AppModel appModel,
     List<MediaItem> books, {
     required String mediaType,
     required String mediaKey,
     required String title,
+    String? volumeBookKey,
   }) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     switch (homeTrackingCoverSourceOf(mediaType)) {
       case HomeTrackingCoverSource.book:
-        for (final MediaItem b in books) {
-          if ((ReaderFushiSource.parseBookKey(b.mediaIdentifier) ??
-                  b.mediaIdentifier) ==
-              mediaKey) {
-            return _bookCover(tokens, appModel, b);
-          }
-        }
-        return null;
+      case HomeTrackingCoverSource.collection
+          when mediaType == TrackingMediaType.bookCollection.value:
+        return _trackingBookCover(
+          tokens,
+          appModel,
+          books,
+          mediaType: mediaType,
+          mediaKey: mediaKey,
+          title: title,
+          volumeBookKey: volumeBookKey,
+        );
       case HomeTrackingCoverSource.video:
         for (final VideoBookRow v in _videos) {
           if (v.bookUid == mediaKey) {
@@ -4952,21 +4958,14 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
       case HomeTrackingCoverSource.collection:
         final int? id = int.tryParse(mediaKey);
         if (id == null) return null;
-        final bool video = mediaType == TrackingMediaType.videoCollection.value;
         if (_collectionCoverById[id] case final List<String> paths
             when paths.isNotEmpty) {
           return _localCover(
             tokens,
-            kind: video ? MediaKind.video : MediaKind.epub,
+            kind: MediaKind.video,
             path: paths.first,
             title: title,
           );
-        }
-        if (video) return null;
-        for (final MediaItem b in books) {
-          if (_primaryCollectionByEntry[_bookCollectionKey(b)] == id) {
-            return _bookCover(tokens, appModel, b, title: title);
-          }
         }
         return null;
       case HomeTrackingCoverSource.game:
@@ -4977,6 +4976,89 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
       case HomeTrackingCoverSource.none:
         return null;
     }
+  }
+
+  /// A book or book series cover: the first of [homeTrackingBookCoverSteps]
+  /// that has an image; null (the kind icon) when none has.
+  Widget? _trackingBookCover(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    List<MediaItem> books, {
+    required String mediaType,
+    required String mediaKey,
+    required String title,
+    String? volumeBookKey,
+  }) {
+    MediaItem? bookOf(String key) {
+      for (final MediaItem b in books) {
+        if ((ReaderFushiSource.parseBookKey(b.mediaIdentifier) ??
+                b.mediaIdentifier) ==
+            key) {
+          return b;
+        }
+      }
+      return null;
+    }
+
+    final MediaItem? own = mediaType == TrackingMediaType.bookCollection.value
+        ? null
+        : bookOf(mediaKey);
+    final List<HomeTrackingCoverStep> steps = homeTrackingBookCoverSteps(
+      mediaType: mediaType,
+      mediaKey: mediaKey,
+      seriesOfBook: own == null
+          ? null
+          : _primaryCollectionByEntry[_bookCollectionKey(own)],
+      volumeBookKey: volumeBookKey,
+    );
+    for (final HomeTrackingCoverStep step in steps) {
+      final Widget? cover = switch (step) {
+        HomeTrackingBookCover(:final String bookKey) => switch (bookOf(
+          bookKey,
+        )) {
+          final MediaItem b => _bookCoverIfAny(tokens, appModel, b, title),
+          null => null,
+        },
+        HomeTrackingCardCover(:final int collectionId) =>
+          switch (_collectionCoverById[collectionId]) {
+            final List<String> paths when paths.isNotEmpty => _localCover(
+              tokens,
+              kind: MediaKind.epub,
+              path: paths.first,
+              title: title,
+            ),
+            _ => null,
+          },
+        HomeTrackingAnyVolumeCover(:final int collectionId) => () {
+          for (final MediaItem b in books) {
+            if (_primaryCollectionByEntry[_bookCollectionKey(b)] !=
+                collectionId) {
+              continue;
+            }
+            final Widget? cover = _bookCoverIfAny(tokens, appModel, b, title);
+            if (cover != null) return cover;
+          }
+          return null;
+        }(),
+      };
+      if (cover != null) return cover;
+    }
+    return null;
+  }
+
+  /// [item]'s cover image, or null when it has none (no placeholder).
+  Widget? _bookCoverIfAny(
+    FushiDesignTokens tokens,
+    AppModel appModel,
+    MediaItem item,
+    String title,
+  ) {
+    final ImageProvider image = ReaderFushiSource.instance
+        .getDisplayThumbnailFromMediaItem(appModel: appModel, item: item);
+    if (image is MemoryImage && identical(image.bytes, kTransparentImage)) {
+      return null;
+    }
+    return _bookCoverImage(tokens, image, title: title);
   }
 
   /// The tracking state of a Continue entry ([homeTrackingMark]); null for
