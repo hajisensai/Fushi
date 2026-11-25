@@ -616,6 +616,8 @@ import 'package:fushi/src/utils/net/app_native_proxy.dart'
     show nativeOpenFailureDiagnosis;
 import 'package:fushi/src/utils/net/ffmpeg_relay_route.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_language_preference.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_target.dart';
+import 'package:fushi_engine/media/video/subtitle/video_subtitle_language_resolver.dart';
 import 'package:fushi_engine/media/video/anime_source_video_path.dart';
 import 'package:fushi/src/media/video/online/anime_source_video_client.dart';
 import 'package:fushi/src/media/video/remote_subtitle_catalog.dart';
@@ -4415,8 +4417,25 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     return (_activeBookUid, index);
   }
 
-  /// app 当前目标学习语言代码（如 `'ja'`/`'ko'`），用于 sidecar 字幕语言优先检测。
-  String get _targetLangCode => JapaneseLanguage.instance.locale.languageCode;
+  /// [_loadSingle] 读库解析出的本视频字幕目标语言标签（见 [_subtitleLanguageTag]）；
+  /// null = 这次打开不经 [_loadSingle]（远端 / 串流）。
+  String? _resolvedSubtitleLanguageTag;
+
+  /// 本视频打开时自动挑字幕的目标语言标签（`ja` / `zh-Hant` …；空串 = 未知，不猜）。
+  ///
+  /// 本机单视频 / 合集里的一集由 [_loadSingle] 读库解析（合集系列字幕语言 > 字幕
+  /// 工作台默认语言 > 本视频语言 > 刮削原语言 > 默认内容语言，
+  /// [resolveVideoSubtitleLanguageTarget]）；其余入口只有偏好与本视频语言，按同一条
+  /// 链现算。此前这里恒为日语（`JapaneseLanguage` 硬编码），韩剧旁的 `.ko.srt` 永远
+  /// 不会自动加载。
+  String get _subtitleLanguageTag =>
+      _resolvedSubtitleLanguageTag ??
+      resolveSubtitleLanguageTarget(
+        explicitSubtitlePreference: appModel.jimakuDefaultLanguage,
+        videoContentLanguage: _bookRow?.language,
+        globalDefaultContentLanguage: appModel.defaultContentLanguage,
+      )?.tag ??
+      '';
 
   void _onSensorHousingEdgeChanged() {
     if (mounted) setState(() {});
@@ -5727,6 +5746,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               preferences: parseSubtitleLanguagePreferences(
                 appModel.videoSubtitlePreferredLanguages,
               ),
+              languageTag: _subtitleLanguageTag,
             )
           : null;
       final String? startupSub =
@@ -6109,7 +6129,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     final String nativeLang = LocaleSettings.currentLocale.languageCode;
     final List<YoutubeCaptionTrack> tracks = await resolveYoutubeCaptionTracks(
       captionsUrl,
-      preferLang: _targetLangCode,
+      preferLang: _subtitleLanguageTag,
       autoTranslateTo: nativeLang,
     );
     if (!mounted || seq != _episodeLoadSeq) return;
@@ -6126,7 +6146,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // 默认自动应用最佳轨（等价「字幕默认可见」）：懒下载其 cue → overlay。
     final YoutubeCaptionTrack? best = pickBestYoutubeCaptionTrack(
       tracks,
-      preferLang: _targetLangCode,
+      preferLang: _subtitleLanguageTag,
     );
     if (best == null) return;
     await _applyYoutubeCaptionTrack(controller, best, loadSeq: seq);
@@ -6623,6 +6643,17 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // （BUG-3697；控制器 load 里还有一道，覆盖不经这里的打开路径）。
     await SourceFolderAccess.instance.ensureForPath(row.videoPath);
     _loadAlignmentHint = null;
+    // 这一集自动挑字幕（同目录外挂 / 字幕文件夹 / 内封轨）的目标语言：读库解析一次，
+    // 下面三条兜底与字幕菜单排序共用。
+    _resolvedSubtitleLanguageTag =
+        (await resolveVideoSubtitleLanguageTarget(
+          appModel.database,
+          row,
+          explicitSubtitlePreference: appModel.jimakuDefaultLanguage,
+          globalDefaultContentLanguage: appModel.defaultContentLanguage,
+          preferredCollectionId: widget.playlistCollectionId,
+        ))?.tag ??
+        '';
     final bool subtitleExplicitlyOff = SubtitleSource.isOff(row.subtitleSource);
     final ({String videoPath, String? subtitleSource}) paths =
         await _relocateSingleMediaPaths(row);
@@ -6853,7 +6884,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
     final List<SubtitleSource> sources = await listAllSubtitleSources(
       videoPath,
-      langCode: _targetLangCode,
+      langCode: _subtitleLanguageTag,
     );
     if (sources.isEmpty) return null;
 
@@ -6929,8 +6960,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         : null;
     final List<SubtitleSource> sources =
         controller?.isBlurayNavigationSession == true
-        ? await controller!.discSubtitleSources(langCode: _targetLangCode)
-        : await listAllSubtitleSources(videoPath, langCode: _targetLangCode);
+        ? await controller!.discSubtitleSources(langCode: _subtitleLanguageTag)
+        : await listAllSubtitleSources(
+            videoPath,
+            langCode: _subtitleLanguageTag,
+          );
     final List<SubtitleSource> activeSources =
         await includeCurrentPersistedSubtitleForMenu(
           sources,
@@ -6983,15 +7017,22 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 探测视频同目录 sidecar 字幕并解析为 cue（无则 null）。
   ///
-  /// 按 app 学习语言优先（学日语 → `.ja.srt > .ja.ass > … > .srt > .ass …`，
-  /// 见 [findSidecarSubtitle]）；按扩展名路由统一字幕 parser。IO + 解析失败静默返回 null。
+  /// 按本视频的目标语言 [_subtitleLanguageTag] 挑（规则见 `rankSidecarSubtitles`：
+  /// 语言对上的标记版 > 无标记；中文按繁 / 简）；语言链全空、而带标记的字幕混着几种
+  /// 语言时，退用音轨语言再挑一次。按扩展名路由统一字幕 parser。IO + 解析失败静默返回
+  /// null。
   Future<({String path, List<AudioCue> cues})?> _detectSidecar(
     String videoPath,
     String bookUid,
   ) async {
     final String? sidecarPath = await findSidecarSubtitle(
       videoPath,
-      langCode: _targetLangCode,
+      langCode: _subtitleLanguageTag,
+      fallbackLanguage: () async =>
+          audioSubtitleLanguageTarget(
+            (await probeEmbeddedSubtitleTracks(videoPath)).audioLanguages,
+          )?.tag ??
+          '',
     );
     if (sidecarPath == null) return null;
     try {
@@ -7268,6 +7309,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         preferredSubtitleLanguages: parseSubtitleLanguagePreferences(
           appModel.videoSubtitlePreferredLanguages,
         ),
+        subtitleLanguageTag: _subtitleLanguageTag,
       );
     } catch (e, stack) {
       debugPrint('[VideoFushiPage] video load failed: $e\n$stack');
@@ -7546,7 +7588,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _currentSecondarySubtitleSource == null;
     final List<SubtitleSource> all =
         sources ??
-        await listAllSubtitleSources(videoPath, langCode: _targetLangCode);
+        await listAllSubtitleSources(videoPath, langCode: _subtitleLanguageTag);
     if (!current()) return;
     final SubtitleSource? pick = pickSubtitleSourceByPreference(
       all,

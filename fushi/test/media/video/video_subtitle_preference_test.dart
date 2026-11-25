@@ -39,14 +39,15 @@ void main() {
         '$base.srt',
         '$base.ja.srt',
       ];
+      // 菜单顺序与自动挑选同一判据：目标语言 > 无标记（可能就是目标语言）> 其它语言。
       expect(pickSameNameSubs(base, dirFiles, langCode: 'ja'), <String>[
         '$base.ja.srt',
-        '$base.en.srt',
         '$base.srt',
+        '$base.en.srt',
       ]);
     });
 
-    test('学韩语 → .ko.srt 排前，无 ko 则按原序', () {
+    test('学韩语 → .ko.srt 排前，其次无标记，其它语言按原序垫后', () {
       final List<String> dirFiles = <String>[
         '$base.mkv',
         '$base.ja.srt',
@@ -55,8 +56,8 @@ void main() {
       ];
       expect(pickSameNameSubs(base, dirFiles, langCode: 'ko'), <String>[
         '$base.ko.srt',
-        '$base.ja.srt',
         '$base.srt',
+        '$base.ja.srt',
       ]);
     });
 

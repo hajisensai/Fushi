@@ -50,7 +50,7 @@ LocalLibraryHostService _hostService({
   refreshDictionaryCache: () async {},
   runExclusive: (Future<void> Function() body) => body(),
   uploadedVideoRoot: uploads,
-  videoSubtitleLangCode: 'ja',
+  videoSubtitleExplicitLanguage: () => 'ja',
 );
 
 Future<InterconnectSyncBackend> _clientBackend({

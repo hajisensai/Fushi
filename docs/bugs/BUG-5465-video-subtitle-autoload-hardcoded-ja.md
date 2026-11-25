@@ -1,0 +1,18 @@
+## BUG-5465 · 视频打开时自动挑字幕写死日语：sidecar 只认日语后缀，内封轨不看语言取第一条文本轨，繁 / 简中文不分
+- **报告**：2026-11-25（用户：字幕要按目标语言自动加载——同名 .srt / .ass 与内封轨都一样；中文同时有繁体和简体时，内容语言设成繁体就该挑繁体）
+- **真实性**：✅ 真 bug。基线 4299e148e6：
+  - 本机播放页 `fushi/lib/src/pages/implementations/video_fushi_page.dart` L4419 `_targetLangCode => JapaneseLanguage.instance.locale.languageCode`，sidecar 探测、字幕文件夹匹配、YouTube 字幕排序、光盘字幕、外挂默认后缀全读它——不管视频 / 合集 / 全局内容语言设的是什么，目标永远是 `ja`；合集上「为整个合集配字幕」写的 `MediaCollections.subtitleLanguage`（列注释写明「覆盖合集内每一集的字幕语言选择」）播放器从来没读过。
+  - 互联 host 同病：`fushi/lib/src/models/app_model.dart` L1512 `videoSubtitleLangCode: JapaneseLanguage.instance.languageCode`。
+  - `packages/fushi_engine/lib/media/video/video_sidecar.dart` L25 `_sidecarSuffixPriority` 只按 `<主名>.<lang>.<ext>` 精确后缀比，`.zh-TW.srt` / `.cht.ass` / `.繁體.srt` 这类标记认不出，繁 / 简无从区分。
+  - 内封轨：`packages/fushi_engine/lib/media/video/video_subtitle_source.dart` L611 / L634 / L1243 `langCode = 'ja'` 默认值，且 L1315 没有用户偏好时直接 `firstTextEmbeddedSubtitleSource`（第一条文本轨），完全不看轨的语言，也不看视频音轨语言。
+- **[x] ① 已修复** —
+  - 新增 `packages/fushi_engine/lib/media/video/subtitle/subtitle_language_target.dart`：唯一的「字幕目标语言」判据。`SubtitleLanguageTarget`（语言 + 中文书写体系 `ChineseScript`）；`chineseScriptOfLanguageTag`（`Hant` / `Hans`、TW / HK / MO vs CN / SG / MY、`yue` 视作繁体，裸 `zh` = 不知道）；`chineseScriptOfLabel`（cht / tc / big5 / 繁體 vs chs / sc / gb / 简体，两边都有 = 不知道）；`matchSubtitleTarget` 分 exact / scriptUnknown / otherScript / none 四档；`resolveSubtitleLanguageTarget` 与下载语言同一条链（显式 > 本视频语言 > 刮削原语言 > 全局默认内容语言），显式只写了 `zh` 而内容语言带书写体系时补上；链上全空返回 null（不猜）。
+  - 新增 `packages/fushi_engine/lib/media/video/subtitle/video_subtitle_language_resolver.dart`：从库里取证据——系列字幕语言（打开时所在合集优先）> 字幕工作台默认语言 > 本视频语言 > 本视频 / 所在合集作品行的原语言 > 全局默认内容语言；列表端点一次批量读，开单集时收窄到这一行（`media_collection_items` 没有按条目的索引）。
+  - sidecar：`rankSidecarSubtitles` 取代精确后缀表——同语言（含繁 / 简一致，或无标记但正文嗅出一致）> 中文但标记看不出繁简 > 无语言标记 > 中文另一种书写体系；其它语言与非语言标记不选。目标未知时只挑无标记，或目录里只有一种语言时才挑那种；同名 sidecar 都带不同语言标记、目标又未知时，退一步拿视频音轨语言再挑一次。无标记的中文 sidecar 按正文（`detectSubtitleContentLanguage`）嗅繁简。默认外挂后缀 / 被顶替的同名外挂（host 导入）同一判据。
+  - 内封轨：用户语言偏好 > 目标语言最匹配的文本轨（繁 / 简按轨标题区分）> 目标未知时按视频音轨语言 > 第一条文本轨；ffmpeg 探测顺带解析音轨语言（`parseAudioStreamLanguagesFromFfmpegLog`）。
+  - 远端起播挑轨（`pickRemoteStartupSubtitleTrack`）、YouTube 字幕排序、字幕文件夹匹配（拒绝相反书写体系的标记）、互联 host（app 与 fushi_server）全部换成同一判据。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/subtitle_language_target_test.dart`（解析 / 标签 / 匹配四档 / 解析链与下载语言链一致 / sidecar 排序：韩语目标、标记归一、繁简、目标未知 / 需嗅探清单 / 菜单顺序 / 默认后缀与顶替 / IO：正文嗅繁简、音轨兜底只在需要时调用 / 内封、远端、YouTube 挑轨 / 字幕文件夹 / 库内证据：系列字幕语言、作品原语言、打开所在合集优先）；改动的 host / sidecar / 源码守卫测试同步更新（`server_lifecycle_appmodel_guard_test.dart` 钉 app 不再把 `JapaneseLanguage` 传给 host）。
+- **备注**：
+  - fushi_server 配置项 `subtitleLanguage` 默认仍是 `ja`：那是服务端用户可改的显式配置，本轮不动。
+  - `fushi/lib/src/ops/ctl_url_import_routes.dart` 的 URL 导入探测仍以日语排字幕，只用于 CLI 探测结果的排序，且可用 `lang` 参数覆盖。
+  - 互联列表端点（`listVideos`）不做音轨兜底（逐个视频跑 ffmpeg 太重）；目标未知时列表里的默认外挂与本机播放页可能不同，打开时以播放页为准。

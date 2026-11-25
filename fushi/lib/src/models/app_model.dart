@@ -1509,7 +1509,10 @@ class AppModel
           throw FormatException(e.toString());
         }
       },
-      videoSubtitleLangCode: JapaneseLanguage.instance.languageCode,
+      // 每个视频挑 sidecar 的目标语言由 host 按视频逐个解析（合集系列字幕语言 >
+      // 字幕工作台默认语言 > 视频语言 > 刮削原语言 > 默认内容语言），不再全库固定日语。
+      videoSubtitleExplicitLanguage: () => jimakuDefaultLanguage,
+      videoDefaultContentLanguage: () => defaultContentLanguage,
       // client→host 视频上传（syncVideoFiles 开关驱动）：落 <documents>/remote_videos
       // （与 client 下载远端视频落点一致，AppPaths.remoteVideosDirectory 同目录）。
       uploadedVideoRoot: Directory('${appDirectory.path}/remote_videos'),

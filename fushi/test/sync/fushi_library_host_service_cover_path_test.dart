@@ -24,7 +24,7 @@ LocalLibraryHostService _makeService({
     packages: SyncAssetPackageService(db: db),
     refreshDictionaryCache: () async {},
     runExclusive: (Future<void> Function() body) => body(),
-    videoSubtitleLangCode: 'ja',
+    videoSubtitleExplicitLanguage: () => 'ja',
   );
 }
 

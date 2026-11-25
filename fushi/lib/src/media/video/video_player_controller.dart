@@ -3583,8 +3583,12 @@ class VideoPlayerController extends ChangeNotifier
     void Function(DefaultEmbeddedSubtitleLoadResult result)?
     onEmbeddedSubtitleAutoLoad,
     // 主字幕默认语言偏好（反馈 Fz9HXThdSW，见 parseSubtitleLanguagePreferences）：
-    // 自动抽内封文本轨时按它挑轨，空 = 第一条文本轨（旧行为）。
+    // 自动抽内封文本轨时先按它挑轨。
     List<String> preferredSubtitleLanguages = const <String>[],
+    // 本视频的目标语言标签（`ja` / `zh-Hant` …，见 subtitle_language_target.dart）：
+    // 偏好都没命中时按它挑最匹配的文本轨（中文先挑繁 / 简对上的）；空串 = 语言未知，
+    // 退用音轨语言，再不行才取第一条文本轨（旧行为）。
+    String subtitleLanguageTag = '',
   }) async {
     assert(
       (videoFile == null) != (mediaUri == null),
@@ -4285,6 +4289,7 @@ class VideoPlayerController extends ChangeNotifier
       externalSubtitlePath: externalSubtitlePath,
       onEmbeddedSubtitleAutoLoad: onEmbeddedSubtitleAutoLoad,
       preferredSubtitleLanguages: preferredSubtitleLanguages,
+      subtitleLanguageTag: subtitleLanguageTag,
     );
   }
 
@@ -4365,6 +4370,7 @@ class VideoPlayerController extends ChangeNotifier
     required void Function(DefaultEmbeddedSubtitleLoadResult result)?
     onEmbeddedSubtitleAutoLoad,
     required List<String> preferredSubtitleLanguages,
+    required String subtitleLanguageTag,
   }) async {
     // 恢复「图形内封字幕」选择（BUG-122）：上次选的是 PGS 等位图轨，没有文本 cue，
     // 交给 libmpv 当画面字幕渲染。不阻塞首帧（轨列表 open 后才就绪，方法内等待）。
@@ -4386,6 +4392,7 @@ class VideoPlayerController extends ChangeNotifier
           bookUid: bookUid,
           onResult: onEmbeddedSubtitleAutoLoad,
           preferredLanguages: preferredSubtitleLanguages,
+          languageTag: subtitleLanguageTag,
         ),
       );
     }
@@ -4670,8 +4677,8 @@ class VideoPlayerController extends ChangeNotifier
   /// [loadCuesForSource]），不再硬编码 `.ass` / [AssParser] / streamIndex 0——
   /// 否则同一个 mp4（`mov_text`）菜单能出字幕、自动加载却静默失败（BUG-071 同源
   /// 不一致）。优先选能转文本 cue 的内嵌轨（跳过 pgs 等图形轨），都不行则不自动
-  /// 加载。[listAllSubtitleSources] 的 langCode 只影响外挂字幕排序，这里只取内嵌
-  /// 轨故传固定值。
+  /// 加载。挑哪一条：[preferredLanguages] > 本视频目标语言 [languageTag] > 音轨语言 >
+  /// 第一条文本轨（见 `loadDefaultTextEmbeddedSubtitleCues`）。
   ///
   /// 抽字幕较慢（ffmpeg 跑几秒），故 [load] 用 `unawaited` 后台触发不阻塞播放；
   /// 抽完才 [setCues]，overlay 此时才出现。期间若发生重新 [load]（player /
@@ -4694,6 +4701,7 @@ class VideoPlayerController extends ChangeNotifier
     required String bookUid,
     void Function(DefaultEmbeddedSubtitleLoadResult result)? onResult,
     List<String> preferredLanguages = const <String>[],
+    String languageTag = '',
   }) async {
     // 桌面走系统 ffmpeg、移动端走捆绑 ffmpeg-kit（见 resolveFfmpegBackend），两端都能
     // 抽内封字幕，故不再按平台门控（早先「移动端无 ffmpeg」的限制已随捆绑解除）。
@@ -4719,6 +4727,7 @@ class VideoPlayerController extends ChangeNotifier
             bookUid: bookUid,
             waitForReady: () => _waitUntilSubtitleTracksReady(player),
             isStillCurrent: () => _isCurrentLoad(player, loadToken),
+            langCode: languageTag,
             preferredLanguages: preferredLanguages,
             cancel: _embeddedTextExtractCancel?.future,
             onExtractionStarted: (SubtitleSource chosen) {

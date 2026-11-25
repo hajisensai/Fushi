@@ -1397,7 +1397,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
       // codec，[loadCuesForSource] 按 codec 选解析器，codec 为空恒判「格式不支持」
       // 返回空 cue → 重开视频副字幕静默丢失（菜单仍高亮该轨，用户得重选一遍）。
       final SubtitleSource? listed = _firstMatching(
-        await listAllSubtitleSources(videoPath, langCode: _targetLangCode),
+        await listAllSubtitleSources(videoPath, langCode: _subtitleLanguageTag),
         persisted,
       );
       // 轨不在了 / 图形位图轨（无文本 cue，副字幕层画不了）：保持无副字幕。
@@ -1813,7 +1813,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     return matchEpisodeSubtitleInDirectory(
       videoPath: videoPath,
       fileNames: names,
-      langCode: _targetLangCode,
+      langCode: _subtitleLanguageTag,
       templateFileName: folder.templateFileName,
     );
   }
@@ -1857,7 +1857,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final SubtitleDirectoryMatch match = matchEpisodeSubtitleInDirectory(
       videoPath: videoPath,
       fileNames: names,
-      langCode: _targetLangCode,
+      langCode: _subtitleLanguageTag,
       templateFileName: fileName,
     );
     if (match.fileName != fileName) return;
@@ -2098,7 +2098,7 @@ extension _VideoSubtitle on _VideoFushiPageState {
     final (InterconnectSyncBackend backend, String id, int episode) = target;
     final String? suffix = defaultSidecarSubtitleSuffix(
       p.extension(path),
-      langCode: _targetLangCode,
+      langCode: _subtitleLanguageTag,
     );
     if (suffix == null) return;
     // BUG-2728：老 host 不认「设为默认」，会按 [suffix] 覆盖它同名的旧字幕且不留
