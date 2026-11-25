@@ -205,4 +205,136 @@ void main() {
       RestorePointDatabase.values.toSet(),
     );
   });
+  test('操作前还原点按 reason 各自留份：同步对比跑多次挤不掉 Anki 迁移前那份', () async {
+    final String live = p.join(tmp.path, 'fushi.db');
+    writeDb(live, 'main', userVersion: kFushiDbSchemaVersion);
+    final RestorePointStore store = RestorePointStore(tmp.path);
+    final RestorePoint migration = await store.createPreOperationPoint(
+      reason: 'srs_migration',
+      fushiDbPath: live,
+    );
+    for (int i = 0; i < kRestorePointKeepPreOperation + 2; i++) {
+      await store.createPreOperationPoint(
+        reason: 'sync_download',
+        fushiDbPath: live,
+      );
+    }
+    final List<RestorePoint> points = store.list();
+    expect(points.any((RestorePoint e) => e.id == migration.id), isTrue);
+    expect(
+      points.where((RestorePoint e) => e.reason == 'sync_download').length,
+      kRestorePointKeepPreOperation,
+    );
+  });
+
+  test('替换的目标点受保护：从最旧那份替换时，拍操作前还原点不会先把它删掉', () async {
+    final String live = p.join(tmp.path, 'fushi.db');
+    writeDb(live, 'main', userVersion: kFushiDbSchemaVersion);
+    final RestorePointStore store = RestorePointStore(tmp.path);
+    final List<RestorePoint> made = <RestorePoint>[
+      for (int i = 0; i < kRestorePointKeepPreOperation; i++)
+        await store.createPreOperationPoint(
+          reason: 'replace',
+          fushiDbPath: live,
+        ),
+    ];
+    final RestorePoint target = made.first;
+    await store.createPreOperationPoint(
+      reason: 'replace',
+      fushiDbPath: live,
+      protectIds: <String>{target.id},
+    );
+    expect(Directory(target.directory).existsSync(), isTrue);
+    expect(store.list().length, kRestorePointKeepPreOperation + 1);
+  });
+
+  test('正被还原的点（hold）不被任何修剪删掉，放开后照常修剪', () async {
+    final String live = p.join(tmp.path, 'fushi.db');
+    writeDb(live, 'main', userVersion: kFushiDbSchemaVersion);
+    final RestorePointStore store = RestorePointStore(tmp.path);
+    final RestorePoint oldest = await store.createPreOperationPoint(
+      reason: 'replace',
+      fushiDbPath: live,
+    );
+    final void Function() release = RestorePointStore.hold(oldest.directory);
+    for (int i = 0; i < kRestorePointKeepPreOperation; i++) {
+      await store.createPreOperationPoint(reason: 'replace', fushiDbPath: live);
+    }
+    expect(Directory(oldest.directory).existsSync(), isTrue);
+    release();
+    release(); // 重复放开无害
+    expect(RestorePointStore.isHeld(oldest.directory), isFalse);
+    store.prune(RestorePointDatabase.fushi);
+    expect(Directory(oldest.directory).existsSync(), isFalse);
+
+    // 定时还原点同理：被钉住的旧点不进删除名单。
+    final DateTime now = DateTime.utc(2026, 6, 1, 12);
+    final RestorePoint ancient = scheduledAt(
+      store,
+      now.subtract(const Duration(days: 300)),
+      1,
+    );
+    scheduledAt(store, now, 1);
+    final void Function() releaseScheduled = RestorePointStore.hold(
+      ancient.directory,
+    );
+    expect(store.pruneScheduled(now: now), isEmpty);
+    releaseScheduled();
+    expect(
+      store.pruneScheduled(now: now).map((RestorePoint e) => e.id),
+      <String>[ancient.id],
+    );
+  });
+
+  test('自定义文件夹里写到一半的定时点在修剪时清掉，正在写的不碰', () {
+    final String custom = p.join(tmp.path, 'elsewhere');
+    final RestorePointStore store = RestorePointStore(
+      tmp.path,
+      rootDirectory: custom,
+    );
+    final Directory stale = Directory(
+      p.join(custom, '20260101-000000-000-fushi-scheduled'),
+    )..createSync(recursive: true);
+    File(
+      p.join(stale.path, kRestorePointArchiveFileName),
+    ).writeAsStringSync('half');
+    final Directory foreign = Directory(p.join(custom, 'my-own-folder'))
+      ..createSync();
+    final RestorePointDraft writing = store.begin(
+      kind: RestorePointKind.scheduled,
+    );
+    store.pruneScheduled(now: DateTime.utc(2026, 6));
+    expect(stale.existsSync(), isFalse);
+    expect(foreign.existsSync(), isTrue);
+    expect(Directory(writing.directory).existsSync(), isTrue);
+    store.discard(writing);
+  });
+
+  test('整库定时点：fullDatabase 写进元数据、重读一致；老点为 null', () {
+    final RestorePointStore store = RestorePointStore(tmp.path);
+    final RestorePointDraft draft = store.begin(
+      kind: RestorePointKind.scheduled,
+    );
+    File(
+      p.join(draft.directory, kRestorePointArchiveFileName),
+    ).writeAsStringSync('zip');
+    store.commit(
+      draft,
+      fromSchema: kFushiDbSchemaVersion,
+      toSchema: kFushiDbSchemaVersion,
+      categories: const <String>['fonts'],
+      excludedCategories: const <String>['books'],
+      includesSrsMedia: false,
+      fullDatabase: true,
+    );
+    expect(store.list().single.fullDatabase, isTrue);
+    scheduledAt(store, DateTime.utc(2025), 1);
+    expect(
+      store
+          .list()
+          .firstWhere((RestorePoint e) => e.id != draft.id)
+          .fullDatabase,
+      isNull,
+    );
+  });
 }

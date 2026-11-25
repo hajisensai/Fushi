@@ -44,8 +44,12 @@ const int kRestorePointKeepPreUpdate = 3;
 /// 每个库保留的回滚前还原点数。
 const int kRestorePointKeepPreRollback = 3;
 
-/// 操作前还原点（覆盖下载、复习迁移、从还原点页「替换」之前）保留的最新份数。
+/// 操作前还原点（覆盖下载、复习迁移、从还原点页「替换」之前）**每个 `reason`** 保留的最新份数。
+/// 按 reason 分开算：同步对比跑上几次不会把「Anki 迁移之前」那份挤掉（D6 的承诺）。
 const int kRestorePointKeepPreOperation = 5;
+
+/// 个别 reason 的保留份数（不在表里的用 [kRestorePointKeepPreOperation]）。
+const Map<String, int> kRestorePointKeepPreOperationByReason = <String, int>{};
 
 /// 定时还原点的保留（D3）：48 小时内全留，之后 7 天每天、4 周每周、3 个月每月各留最新一份，
 /// 总大小不超过 5 GB（从最旧的定时还原点删起）。最新一份永远留。
@@ -151,6 +155,7 @@ class RestorePoint {
     this.categories,
     this.excludedCategories,
     this.includesSrsMedia,
+    this.fullDatabase,
   });
 
   /// 目录名。
@@ -183,6 +188,11 @@ class RestorePoint {
 
   /// 定时还原点：复习媒体（卡片图片 / 音频）有没有随包（D2，默认不带）。
   final bool? includesSrsMedia;
+
+  /// 定时还原点：zip 里的主库是不是整库（不按类别剥行；用户 2026-11-25 拍板）。整库点的
+  /// [categories] / [excludedCategories] 只说明哪些**文件树**随包，库里的数据一律都在。
+  /// 老的定时点为 null（按类别剥过行）。
+  final bool? fullDatabase;
 
   DateTime get createdAt =>
       DateTime.fromMillisecondsSinceEpoch(createdAtMs, isUtc: true);
@@ -221,6 +231,7 @@ class RestorePoint {
     if (categories != null) 'categories': categories,
     if (excludedCategories != null) 'excludedCategories': excludedCategories,
     if (includesSrsMedia != null) 'srsMedia': includesSrsMedia,
+    if (fullDatabase != null) 'fullDatabase': fullDatabase,
   };
 
   /// 解析 [directory] 里的元数据；缺字段 / 不认识的种类 / 读不了返回 null（当作不完整）。
@@ -249,6 +260,7 @@ class RestorePoint {
       final Object? app = raw['appVersion'];
       final Object? reason = raw['reason'];
       final Object? srsMedia = raw['srsMedia'];
+      final Object? fullDb = raw['fullDatabase'];
       List<String>? strings(Object? v) => v is List<Object?>
           ? <String>[
               for (final Object? e in v)
@@ -278,6 +290,7 @@ class RestorePoint {
         categories: strings(raw['categories']),
         excludedCategories: strings(raw['excludedCategories']),
         includesSrsMedia: srsMedia is bool ? srsMedia : null,
+        fullDatabase: fullDb is bool ? fullDb : null,
       );
     } on Object {
       return null;
@@ -413,6 +426,31 @@ class RestorePointStore {
 
   /// 进程内正在写的还原点目录（绝对路径）。
   static final Set<String> _activeDrafts = <String>{};
+
+  /// 进程内正在被还原（替换 / 补回）的还原点目录（规范化路径 → 持有计数）。任何修剪都不删它们。
+  static final Map<String, int> _heldPoints = <String, int>{};
+
+  /// 在还原 [directory] 那个点的整个过程中把它钉住：[prune] / [pruneScheduled] 都不删它。
+  /// 返回的回调解除这一次持有（可重复调，只生效一次）。
+  static void Function() hold(String directory) {
+    final String key = p.normalize(directory);
+    _heldPoints[key] = (_heldPoints[key] ?? 0) + 1;
+    bool released = false;
+    return () {
+      if (released) return;
+      released = true;
+      final int left = (_heldPoints[key] ?? 1) - 1;
+      if (left <= 0) {
+        _heldPoints.remove(key);
+      } else {
+        _heldPoints[key] = left;
+      }
+    };
+  }
+
+  /// [directory] 是不是正被钉住（[hold]）。
+  static bool isHeld(String directory) =>
+      _heldPoints.containsKey(p.normalize(directory));
 
   /// 宿主注入的 app 版本，写进新建还原点的元数据。fushi_core 自己不知道版本号，由 app /
   /// 服务端在开库前设置；没设置时元数据里为 null。
@@ -677,9 +715,15 @@ class RestorePointStore {
   }
 
   /// 保留策略：[database] 的更新前还原点留最新 [kRestorePointKeepPreUpdate] 份、回滚前还原点
-  /// 留最新 [kRestorePointKeepPreRollback] 份；属于 [database]、没有元数据的残留目录删掉
-  /// （有没做完的回滚时不删：它的回滚前还原点要到最后才写元数据）。别的库、不认识的目录不碰。
-  void prune(RestorePointDatabase database) {
+  /// 留最新 [kRestorePointKeepPreRollback] 份、操作前还原点**按 reason 各留**最新
+  /// [kRestorePointKeepPreOperation] 份（[kRestorePointKeepPreOperationByReason] 可单独定）；
+  /// 属于 [database]、没有元数据的残留目录删掉（有没做完的回滚时不删：它的回滚前还原点要到最后
+  /// 才写元数据）。别的库、不认识的目录不碰。[protectIds] 里的点与正被还原的点（[hold]）永不删，
+  /// 也不占份额。
+  void prune(
+    RestorePointDatabase database, {
+    Set<String> protectIds = const <String>{},
+  }) {
     final Directory dir = Directory(root);
     if (!dir.existsSync()) return;
     final bool rollbackPending = hasPendingRollback;
@@ -694,17 +738,35 @@ class RestorePointStore {
         _deleteDirQuietly(e.path);
       }
     }
-    final List<RestorePoint> points = list(database: database);
-    for (final (RestorePointKind kind, int keep) in <(RestorePointKind, int)>[
-      (RestorePointKind.preUpdate, kRestorePointKeepPreUpdate),
-      (RestorePointKind.preRollback, kRestorePointKeepPreRollback),
-      (RestorePointKind.preOperation, kRestorePointKeepPreOperation),
-    ]) {
-      final List<RestorePoint> ofKind = <RestorePoint>[
-        for (final RestorePoint point in points)
-          if (point.kind == kind) point,
-      ];
-      for (final RestorePoint stale in ofKind.skip(keep)) {
+    final Map<String, List<RestorePoint>> groups =
+        <String, List<RestorePoint>>{};
+    final Map<String, int> keepOf = <String, int>{};
+    for (final RestorePoint point in list(database: database)) {
+      if (protectIds.contains(point.id) || isHeld(point.directory)) continue;
+      final (String group, int keep)? quota = switch (point.kind) {
+        RestorePointKind.preUpdate => (
+          'pre_update',
+          kRestorePointKeepPreUpdate,
+        ),
+        RestorePointKind.preRollback => (
+          'pre_rollback',
+          kRestorePointKeepPreRollback,
+        ),
+        RestorePointKind.preOperation => (
+          'pre_operation:${point.reason ?? ''}',
+          kRestorePointKeepPreOperationByReason[point.reason] ??
+              kRestorePointKeepPreOperation,
+        ),
+        // 定时还原点走 [pruneScheduled]。
+        RestorePointKind.scheduled => null,
+      };
+      if (quota == null) continue;
+      (groups[quota.$1] ??= <RestorePoint>[]).add(point);
+      keepOf[quota.$1] = quota.$2;
+    }
+    for (final MapEntry<String, List<RestorePoint>> g in groups.entries) {
+      // [list] 已经新的在前。
+      for (final RestorePoint stale in g.value.skip(keepOf[g.key]!)) {
         _deleteDirQuietly(stale.directory);
       }
     }
@@ -751,6 +813,7 @@ class RestorePointStore {
     List<String>? categories,
     List<String>? excludedCategories,
     bool? includesSrsMedia,
+    bool? fullDatabase,
   }) {
     try {
       final List<RestorePointFile> files =
@@ -781,6 +844,7 @@ class RestorePointStore {
         categories: categories,
         excludedCategories: excludedCategories,
         includesSrsMedia: includesSrsMedia,
+        fullDatabase: fullDatabase,
       );
       _writeAtomicSync(
         p.join(draft.directory, kRestorePointMetaFileName),
@@ -801,12 +865,14 @@ class RestorePointStore {
   /// 操作前还原点：[fushiDbPath] 非空时 `VACUUM INTO` 主库（活库开着也行：另开一条只读连接，
   /// WAL 下读到一致的已提交状态），[snapshotSrs] 非空时由调用方把复习库快照写到给定路径
   /// （复习库归 Rust 内核独占，走内核自己的快照命令）。主库副本再 `quick_check`，最后写元数据，
-  /// 然后按 [kRestorePointKeepPreOperation] 修剪。失败删掉半截目录并抛出，由调用方决定要不要
-  /// 继续那个操作。两个都没给时抛 [ArgumentError]。
+  /// 然后按 [kRestorePointKeepPreOperation]（按 reason 分开算）修剪；[protectIds] 里的点（例如
+  /// 「替换」的目标点）这次修剪不删。失败删掉半截目录并抛出，由调用方决定要不要继续那个操作。
+  /// 两个都没给时抛 [ArgumentError]。
   Future<RestorePoint> createPreOperationPoint({
     required String reason,
     String? fushiDbPath,
     Future<void> Function(String destPath)? snapshotSrs,
+    Set<String> protectIds = const <String>{},
   }) async {
     if (fushiDbPath == null && snapshotSrs == null) {
       throw ArgumentError('nothing to snapshot');
@@ -842,7 +908,7 @@ class RestorePointStore {
         toSchema: schema,
         reason: reason,
       );
-      prune(draft.database);
+      prune(draft.database, protectIds: protectIds);
       fushiDebugPrint('[restore-points] pre-operation ($reason): ${point.id}');
       return point;
     } on Object {
@@ -852,12 +918,15 @@ class RestorePointStore {
   }
 
   /// 定时还原点的保留（[policy] 缺省 [kRestorePointScheduledRetention]）。[protectId] 那一份
-  /// （刚写好的）永不删；返回删掉的点。只动 [root] 下的定时还原点。
+  /// （刚写好的）与正被还原的点（[hold]）永不删；返回删掉的点。只动 [root] 下的定时还原点，
+  /// 顺带清掉 [root] 下写到一半的定时点目录（[cleanIncompleteScheduled]）——自定义文件夹不归
+  /// [prune] 管，没有这一步那里的半截 zip 永远不会被清。
   List<RestorePoint> pruneScheduled({
     String? protectId,
     DateTime? now,
     BackupRetentionPolicy policy = kRestorePointScheduledRetention,
   }) {
+    cleanIncompleteScheduled();
     final List<RestorePoint> scheduled = <RestorePoint>[
       for (final RestorePoint point in list())
         if (point.kind == RestorePointKind.scheduled) point,
@@ -868,12 +937,33 @@ class RestorePointStore {
       now: (now ?? DateTime.now()).toUtc(),
       policy: policy,
       sizeOf: (RestorePoint point) => point.totalBytes,
-      protect: (RestorePoint point) => point.id == protectId,
+      protect: (RestorePoint point) =>
+          point.id == protectId || isHeld(point.directory),
     );
     for (final RestorePoint point in doomed) {
       _deleteDirQuietly(point.directory);
     }
     return doomed;
+  }
+
+  /// 删掉 [root] 下写到一半的定时还原点目录（id 带 `-scheduled`、没有元数据、本进程没在写）。
+  /// 返回删掉的目录数。
+  int cleanIncompleteScheduled() {
+    final Directory dir = Directory(root);
+    if (!dir.existsSync()) return 0;
+    final String marker = '-${RestorePointKind.scheduled.wire}';
+    int removed = 0;
+    for (final FileSystemEntity e in dir.listSync(followLinks: false)) {
+      if (e is! Directory) continue;
+      if (!p.basename(e.path).contains(marker) ||
+          _activeDrafts.contains(e.path) ||
+          File(p.join(e.path, kRestorePointMetaFileName)).existsSync()) {
+        continue;
+      }
+      _deleteDirQuietly(e.path);
+      removed++;
+    }
+    return removed;
   }
 
   /// 删掉一个还原点（还原点页「删除」）。
