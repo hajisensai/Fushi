@@ -1314,6 +1314,11 @@ class AnotherPopupPart {
           'settings side sheet background is the MD3 Expressive side-panel '
           'tone (surfaceContainerLow, one step under the setting group cards; '
           'Apple uses groupedBackground) — same class as video_side_panel.',
+      'lib/src/reader/reader_status_bar.dart':
+          'Persistent header / footer slot text uses '
+          'kReaderStatusFooterFontSize so it matches the readout capsule it '
+          'shares a row with — same reviewed exception class as '
+          'reader_status_footer.dart.',
       'lib/src/reader/reader_status_footer.dart':
           'Status strip font size is kReaderStatusFooterFontSize == '
           'kTopProgressFontSize: the footer must match the top progress '
@@ -1779,6 +1784,7 @@ class AnotherPopupPart {
       },
       'lib/src/reader/illustration_zoom_viewer.dart': <String>{'fontSize:'},
       'lib/src/reader/reader_desktop_chrome.dart': <String>{'fontSize:'},
+      'lib/src/reader/reader_status_bar.dart': <String>{'fontSize:'},
       'lib/src/reader/reader_status_footer.dart': <String>{'fontSize:'},
       'lib/src/reader/reader_panel_kit.dart': <String>{
         'BorderRadius.circular(',

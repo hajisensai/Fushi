@@ -216,6 +216,8 @@ import 'package:fushi/src/reader/reader_host_hover_lookup.dart';
 import 'package:fushi/src/reader/reader_open_trace.dart';
 import 'package:fushi/src/reader/reader_progress_state.dart';
 import 'package:fushi/src/reader/reader_statistics_sheet.dart';
+import 'package:fushi/src/reader/reader_status_bar.dart';
+import 'package:fushi/src/reader/reader_status_bar_layout.dart';
 import 'package:fushi/src/reader/reader_status_footer.dart';
 import 'package:fushi/src/stats/lyrics_read_unit.dart';
 import 'package:fushi/src/stats/read_unit_ledger.dart';
@@ -2461,6 +2463,11 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   /// 字数进度状态（[ReaderProgressState]）；下面四个同名 getter/setter 只是转发，
   /// 保持既有调用点与源码守卫不变。
   final ReaderProgressState _progress = ReaderProgressState();
+
+  /// 常驻页眉 / 页脚「本章页码」读数的最近一次分页引擎回报（`pageInfo()`，1 起）。
+  /// 只在布局放了页码且非连续模式时由 [_refreshProgress] 采样；带章号，换章后旧值
+  /// 不再画（等下一次采样）。
+  ({int section, int page, int total})? _statusBarPageInfo;
   int? get _progressCurrentChars => _progress.currentChars;
   set _progressCurrentChars(int? v) => _progress.currentChars = v;
   int? get _progressTotalChars => _progress.totalChars;
@@ -3114,11 +3121,25 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
     showProgress: ReaderFushiSource.instance.showTopProgressBar,
     showChars: ReaderFushiSource.instance.showSessionChars,
     showSpeed: ReaderFushiSource.instance.showCharsPerHour,
+    hasSlotItems: _statusBarLayout.hasFooter,
   );
 
-  /// 悬浮控制栏收起后读数胶囊是否常驻（「收起控制栏时保留读数」）。
+  /// 常驻页眉 / 页脚布局（反馈 JONk4qmF8V）。默认两条都空：页眉不画不占位、页脚
+  /// 只有原来的读数胶囊。
+  ReaderStatusBarLayout get _statusBarLayout =>
+      ReaderFushiSource.instance.statusBarLayout;
+
+  /// 页眉的顶部预留：放了内容就占 [kReaderStatusHeaderHeight]（挤压式、常驻，不随
+  /// 控制栏显隐变——它就是要常驻），否则 0。并进 [_readerTopOffset] 喂 WebView，
+  /// 分页 / 连续 / vn 三种模式按扣掉后的高度排版。
+  double get _statusHeaderReserve =>
+      _statusBarLayout.hasHeader ? kReaderStatusHeaderHeight : 0;
+
+  /// 悬浮控制栏收起后读数胶囊是否常驻（「收起控制栏时保留读数」）。页脚槽位放了
+  /// 内容时页脚就是常驻状态栏，一律常驻（否则时间 / 页码会随控制栏一起消失）。
   bool get _statusFooterPersistent =>
-      ReaderFushiSource.instance.statusFooterPersistent;
+      ReaderFushiSource.instance.statusFooterPersistent ||
+      _statusBarLayout.hasFooter;
 
   /// 状态行的底部预留高（挤压式：视觉高度 == 预留高度，正文永不压到它下面）。
   /// 预留从初始 HTML 起就含它；只有**绘制**才等首次冷加载完成（[_buildStatusFooter]）。
@@ -3262,7 +3283,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   bool get _playbackStatusInline => readerPlaybackStatusInline(
     // 悬浮工具栏样式下读数不并进迷你播放条（胶囊里只放播放面），状态行照常
     // 贴屏底，悬浮条坐在它上方。
-    enabled: _statusFooterEnabled && !_floatingToolbars,
+    // 页脚放了槽位内容时读数留在页脚（与槽位同一行），不并进播放条——否则
+    // 页脚三格被底栏吸收掉，常驻状态栏就不常驻了。
+    enabled:
+        _statusFooterEnabled &&
+        !_floatingToolbars &&
+        !_statusBarLayout.hasFooter,
     landscape: _readerIsLandscape,
     width: _readerControlsWidth,
   );
@@ -3334,7 +3360,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
   // `main()` 里被隐藏，[FushiDesktopTitleBar] 在整个 Navigator 之上提供稳定抓手，
   // 阅读器不再需要自己让位或自绘拖拽带——留着就是顶栏下面又压一条 28pt 空白。
   double get _readerTopOffset =>
-      _contentTopInset + _topProgressReserve + _desktopHeaderReserve;
+      _contentTopInset +
+      _topProgressReserve +
+      _desktopHeaderReserve +
+      _statusHeaderReserve;
 
   /// 正文自己要让出的顶部系统 inset：桌面自绘顶栏在沉浸页只是悬停浮出、不占
   /// 正文位置（[FushiDesktopTitleBar.immersiveCaptionInset]），正文铺到窗口顶端
@@ -5046,6 +5075,10 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                           _coveredByLyricsOverlay(
                             'status_footer',
                             _buildStatusFooter(),
+                          ),
+                          _coveredByLyricsOverlay(
+                            'status_header',
+                            _buildStatusHeader(),
                           ),
                           // 悬浮球的阅读器场景按钮（零尺寸登记器，球画在根上）。
                           _coveredByLyricsOverlay(

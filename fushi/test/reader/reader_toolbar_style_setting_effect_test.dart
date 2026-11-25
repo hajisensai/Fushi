@@ -191,7 +191,7 @@ void main() {
     );
     // 结论真的被用在状态行、顶栏与底栏三处形态分叉上。
     expect(
-      compactCode(methodBody(page, 'Widget _buildStatusFooterRow(')),
+      compactCode(methodBody(page, 'Widget _buildStatusFooterWidget(')),
       contains('floating:_floatingToolbars,'),
     );
     expect(

@@ -14,6 +14,8 @@ import 'package:fushi/src/reader/reader_control_layout.dart';
 import 'package:fushi/src/reader/reader_page_spread.dart';
 import 'package:fushi/src/reader/reader_control_layout_editor.dart';
 import 'package:fushi/src/reader/reader_settings.dart';
+import 'package:fushi/src/reader/reader_status_bar_layout.dart';
+import 'package:fushi/src/reader/reader_status_bar_layout_editor.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
@@ -1231,50 +1233,15 @@ SettingsDestination buildReadingDestination() {
               notifyReaderChromeChanged(c);
             },
           ),
-          // 阅读器顶栏 / 底栏按钮拖拽编辑器（与视频页 video.player.controls_editor
-          // 同一套泛型编辑器，用户 2026-09-13 要求「和视频一样支持可视化调整」）。
-          // 写 appModel.setReaderControlLayout → prefsRepo 通知 → 阅读器页重建，
-          // 开着的书立即换布局。底栏「空 ↔ 非空」会翻转挤压态的底栏预留高
-          // （_bottomChromeReserve），所以走重锚通道重下 chrome insets。
-          SettingsCustomItem(
-            id: 'reading_controls.controls_editor',
-            searchTitle: t.reader_control_editor_title,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 14,
-            ),
-            cliValue: readerControlLayoutCli,
-            builder: buildReaderControlLayoutEditor,
-          ),
-          SettingsActionItem(
-            id: 'reading_controls.reset_control_layout',
-            title: t.reader_control_reset_layout,
-            icon: FushiIcons.restart,
-            reader: const ReaderPlacement(
-              group: ReaderGroup.behavior,
-              order: 15,
-            ),
-            // 2026-10 体验优化：重置会丢掉用户自定义的控件排列，先确认
-            // （destructive），完成后给一条提示，否则点了看不出有没有生效。
-            // CLI：确认改由 --yes 给出。
-            cli: SettingsCliAction(
-              confirm: true,
-              run: (SettingsContext c, Map<String, String> args) async {
-                await resetReaderControlLayouts(c);
-                return null;
-              },
-            ),
-            onTap: (SettingsContext c) async {
-              final bool confirmed = await showSettingsConfirmationDialog(
-                c,
-                title: t.reader_control_reset_layout,
-                body: t.reader_control_layout_reset_confirm,
-                destructive: true,
-              );
-              if (!confirmed) return;
-              await resetReaderControlLayouts(c);
-              FushiToast.show(msg: t.reader_control_layout_reset_done);
-            },
+          // 工具栏按钮布局编辑器已收进独立子页（反馈 JONk4qmF8V：自定义布局集中管理，
+          // 「设置 › 外观 › 自定义布局」链到同一子页）。编辑器 item 本身保留
+          // ReaderPlacement，阅读器快捷面板照旧直接出现编辑器。
+          SettingsNavigationItem(
+            id: 'reading_controls.open_toolbar_layout',
+            title: t.reader_control_editor_title,
+            subtitle: t.settings_custom_layouts_reader_toolbar_hint,
+            icon: FushiIcons.dashboardCustomize,
+            child: buildReaderToolbarLayoutDestination,
           ),
         ],
       ),
@@ -1300,6 +1267,14 @@ SettingsDestination buildReadingDestination() {
               // 18px），走重锚通道保住连续模式滚动位置。
               notifyReaderChromeReanchored(settingsContext);
             },
+          ),
+          // 常驻页眉 / 页脚（反馈 JONk4qmF8V）：左中右槽位拖放，内容默认全空。
+          SettingsNavigationItem(
+            id: 'reading_controls.open_status_bar',
+            title: t.reader_status_bar_title,
+            subtitle: t.reader_status_bar_subtitle,
+            icon: FushiIcons.viewAgenda,
+            child: buildReaderStatusBarDestination,
           ),
           // 读数胶囊（底部右下角）的各段开关 + 常驻开关。开关段数会改变读数是否整条
           // 不画（四段都关时回收预留），常驻会改变悬浮态预留 → 都走重锚通道。
@@ -1523,6 +1498,158 @@ List<SettingsItem> buildStudyClockItems() {
 /// 立刻写穿偏好；桌面按鼠标手感、其余按触屏。
 /// 阅读器顶栏 / 底栏布局恢复出厂（宽窗 + 窄窗两份），并重锚 chrome。设置页
 /// 重置按钮与控制通道共用。
+/// 「阅读器按钮布局」子页：顶栏 / 底栏 / ⋯ 菜单拖放编辑器 + 重置。从「阅读」页与
+/// 「外观 › 自定义布局」两处链入（反馈 JONk4qmF8V 拍板集中管理）。子页共用父分类 id。
+SettingsDestination buildReaderToolbarLayoutDestination() {
+  return SettingsDestination(
+    id: SettingsDestinationId.reading,
+    title: t.reader_control_editor_title,
+    summary: t.settings_custom_layouts_reader_toolbar_hint,
+    icon: FushiIcons.dashboardCustomize,
+    sections: <SettingsSection>[
+      SettingsSection(
+        id: 'reading.section.toolbar_layout',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        items: <SettingsItem>[
+          // 阅读器顶栏 / 底栏按钮拖拽编辑器（与视频页 video.player.controls_editor
+          // 同一套泛型编辑器，用户 2026-09-13 要求「和视频一样支持可视化调整」）。
+          // 写 appModel.setReaderControlLayout → prefsRepo 通知 → 阅读器页重建，
+          // 开着的书立即换布局。底栏「空 ↔ 非空」会翻转挤压态的底栏预留高
+          // （_bottomChromeReserve），所以走重锚通道重下 chrome insets。
+          SettingsCustomItem(
+            id: 'reading_controls.controls_editor',
+            searchTitle: t.reader_control_editor_title,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 14,
+            ),
+            cliValue: readerControlLayoutCli,
+            builder: buildReaderControlLayoutEditor,
+          ),
+          SettingsActionItem(
+            id: 'reading_controls.reset_control_layout',
+            title: t.reader_control_reset_layout,
+            icon: FushiIcons.restart,
+            reader: const ReaderPlacement(
+              group: ReaderGroup.behavior,
+              order: 15,
+            ),
+            // 2026-10 体验优化：重置会丢掉用户自定义的控件排列，先确认
+            // （destructive），完成后给一条提示，否则点了看不出有没有生效。
+            // CLI：确认改由 --yes 给出。
+            cli: SettingsCliAction(
+              confirm: true,
+              run: (SettingsContext c, Map<String, String> args) async {
+                await resetReaderControlLayouts(c);
+                return null;
+              },
+            ),
+            onTap: (SettingsContext c) async {
+              final bool confirmed = await showSettingsConfirmationDialog(
+                c,
+                title: t.reader_control_reset_layout,
+                body: t.reader_control_layout_reset_confirm,
+                destructive: true,
+              );
+              if (!confirmed) return;
+              await resetReaderControlLayouts(c);
+              FushiToast.show(msg: t.reader_control_layout_reset_done);
+            },
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+/// 「页眉与页脚」子页（反馈 JONk4qmF8V）：常驻状态栏的左 / 中 / 右槽位拖放编辑器
+/// + 清空。默认两条都空；改动立即生效（走重锚通道重下 chrome insets——页眉空 ↔
+/// 非空会改变顶部预留，页脚同理）。
+SettingsDestination buildReaderStatusBarDestination() {
+  return SettingsDestination(
+    id: SettingsDestinationId.reading,
+    title: t.reader_status_bar_title,
+    summary: t.reader_status_bar_subtitle,
+    icon: FushiIcons.viewAgenda,
+    sections: <SettingsSection>[
+      SettingsSection(
+        id: 'reading.section.status_bar',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'reading_controls.status_bar_editor',
+            searchTitle: t.reader_status_bar_title,
+            cliValue: readerStatusBarLayoutCli,
+            builder: buildReaderStatusBarLayoutEditor,
+          ),
+          SettingsActionItem(
+            id: 'reading_controls.reset_status_bar',
+            title: t.reader_status_bar_reset,
+            icon: FushiIcons.restart,
+            cli: SettingsCliAction(
+              confirm: true,
+              run: (SettingsContext c, Map<String, String> args) async {
+                await resetReaderStatusBarLayout(c);
+                return null;
+              },
+            ),
+            onTap: (SettingsContext c) async {
+              final bool confirmed = await showSettingsConfirmationDialog(
+                c,
+                title: t.reader_status_bar_reset,
+                body: t.reader_status_bar_reset_confirm,
+                destructive: true,
+              );
+              if (!confirmed) return;
+              await resetReaderStatusBarLayout(c);
+              FushiToast.show(msg: t.reader_status_bar_reset_done);
+            },
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+Future<void> resetReaderStatusBarLayout(SettingsContext c) async {
+  await c.readerSource.setStatusBarLayout(ReaderStatusBarLayout.defaults);
+  notifyReaderChromeReanchored(c);
+  c.refresh();
+}
+
+/// 页眉页脚布局在控制通道上的读写：值就是 [ReaderStatusBarLayout.encode] 的 JSON。
+final SettingsCliValue readerStatusBarLayoutCli = SettingsCliValue(
+  read: (SettingsContext c) => c.readerSource.statusBarLayout.encode(),
+  write: (SettingsContext c, String raw) async {
+    // 先校验是 JSON（坏载荷 → FormatException → 400），再按宽松解码落盘。
+    jsonDecode(raw);
+    await c.readerSource.setStatusBarLayout(ReaderStatusBarLayout.decode(raw));
+    notifyReaderChromeReanchored(c);
+  },
+);
+
+Widget buildReaderStatusBarLayoutEditor(SettingsContext context) {
+  return Column(
+    crossAxisAlignment: CrossAxisAlignment.stretch,
+    children: <Widget>[
+      Padding(
+        padding: const EdgeInsets.only(bottom: 8),
+        child: Text(
+          t.reader_status_bar_editor_hint,
+          style: controlLayoutEditorHintStyle(context.context),
+        ),
+      ),
+      ReaderStatusBarLayoutEditor(
+        layout: context.readerSource.statusBarLayout,
+        onLayoutChanged: (ReaderStatusBarLayout layout) async {
+          await context.readerSource.setStatusBarLayout(layout);
+          notifyReaderChromeReanchored(context);
+        },
+      ),
+    ],
+  );
+}
+
 Future<void> resetReaderControlLayouts(SettingsContext c) async {
   await c.appModel.setReaderControlLayout(ReaderControlLayout.defaults);
   await c.appModel.setReaderCompactControlLayout(

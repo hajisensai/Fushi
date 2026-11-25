@@ -244,6 +244,7 @@ dependencies:
   # Pointer.asTypedList 的唯一入口（绕开 Dart JIT 去优化物化视图的崩溃，见包内注释）。
   fushi_ffi_view:
     path: ../packages/fushi_ffi_view
+  battery_plus: ^7.1.2
 
 dev_dependencies:
   # BUG-3003: native hot-restart regression waits for worker IsolateExit events.
