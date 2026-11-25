@@ -131,6 +131,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/media/video/media_server/media_server_browser.dart'
+    show MediaServerBrowser;
 import 'package:fushi/src/media/video/media_server/media_server_library.dart'
     show MediaServerLibraryWork, MediaServerVideoLibrary, mediaServerWorkOfRow;
 import 'package:fushi/src/pages/implementations/media_server/media_server_library_remove_confirm.dart';
@@ -298,7 +300,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
 
   /// 本合集**有序**成员槽（本地行 + 只在对端的远端占位）——本页唯一的成员真相源。
   List<CollectionEpisodeSlot> _slots = const <CollectionEpisodeSlot>[];
-  bool _libraryRemoveBusy = false;
+  bool _libraryBusy = false;
   List<CollectionEpisodeSlot>? _mediaServerWorksSlots;
   Set<MediaServerLibraryWork> _mediaServerWorksCache =
       const <MediaServerLibraryWork>{};
@@ -2430,6 +2432,17 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           label: t.collection_episode_fill_missing,
           onPressed: _slots.isEmpty ? null : _fillMissingEpisodes,
         ),
+      // 只在媒体服务器上、还没入库的集：「+」加入媒体库（BUG-5459；与服务器详情页
+      // 的加入同一动作、同一组件与位置）。剧部分在库（服务器上出了新集）时与「移出」
+      // 并列，再点只补新集。
+      if (_canAddMediaServerWorks)
+        MediaDetailSecondaryButton(
+          buttonKey: const ValueKey<String>('collection-hero-library-add'),
+          icon: FushiIcons.libraryAdd,
+          label: t.video_online_library_add,
+          busy: _libraryBusy,
+          onPressed: () => unawaited(_addMediaServerWorks()),
+        ),
       // 从媒体服务器加入的作品：「−」移出媒体库（与服务器详情页的移出同一动作）。
       if (_mediaServerWorks.isNotEmpty)
         MediaDetailSecondaryButton(
@@ -2437,7 +2450,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           icon: FushiIcons.remove,
           label: t.video_online_library_remove,
           selected: true,
-          busy: _libraryRemoveBusy,
+          busy: _libraryBusy,
           onPressed: () => unawaited(_removeMediaServerWorks()),
         ),
     ];
@@ -2455,10 +2468,48 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
     return _mediaServerWorksCache;
   }
 
+  /// 当前远端来源是媒体服务器，且本合集有只在服务器上的集（[_remoteMembers]：
+  /// 本机没有行，也没有本地同集把它并成 [CollectionEpisodeSlot.remoteMirror]）。
+  bool get _canAddMediaServerWorks =>
+      widget.remote?.mediaServer != null && _remoteMembers.isNotEmpty;
+
+  /// 把只在服务器上的集所属的作品加入媒体库（BUG-5459）：远端成员只带叶子 id，
+  /// [MediaServerVideoLibrary.addWorksOfItems] 回溯到剧 / 电影后走服务器详情页同一条
+  /// 入库路径（整部剧、剧名合集、剧海报）。加完重读：这些集变成本地入库行，页面随之
+  /// 换成「移出媒体库」。失败也重读：可能已加进一部分。
+  Future<void> _addMediaServerWorks() async {
+    final MediaServerBrowser? browser = widget.remote?.mediaServer;
+    if (browser == null || _libraryBusy) return;
+    final List<String> itemIds = <String>[
+      for (final RemoteVideoInfo info in _remoteMembers) info.id,
+    ];
+    setState(() => _libraryBusy = true);
+    try {
+      final int added = await MediaServerVideoLibrary(
+        database: widget.database,
+      ).addWorksOfItems(browser, itemIds);
+      FushiToast.show(
+        msg: t.video_online_library_added(n: added),
+        severity: ToastSeverity.success,
+      );
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MediaCollectionDetail.addMediaServerWorks',
+        error,
+        stack,
+      );
+      FushiToast.show(msg: '$error', severity: ToastSeverity.error);
+    }
+    if (!mounted) return;
+    setState(() => _libraryBusy = false);
+    widget.onChanged();
+    await _reload();
+  }
+
   /// 移出这些作品的入库行；已下载到本机的集不动。合集被删空就退出详情页。
   /// 失败也重读：批删可能删掉了一部分。
   Future<void> _removeMediaServerWorks() async {
-    if (_libraryRemoveBusy) return;
+    if (_libraryBusy) return;
     // 删行不可撤销（观看进度 / 字幕 / 标签随行消失），先确认。
     if (!await confirmMediaServerLibraryRemoval(
           context,
@@ -2467,7 +2518,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         !mounted) {
       return;
     }
-    setState(() => _libraryRemoveBusy = true);
+    setState(() => _libraryBusy = true);
     int removed = 0;
     Object? failure;
     try {
@@ -2483,7 +2534,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       failure = error;
     }
     if (!mounted) return;
-    setState(() => _libraryRemoveBusy = false);
+    setState(() => _libraryBusy = false);
     widget.onChanged();
     if (failure != null) {
       FushiToast.show(msg: '$failure', severity: ToastSeverity.error);

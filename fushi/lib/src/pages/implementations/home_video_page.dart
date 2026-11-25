@@ -100,6 +100,8 @@ import 'package:fushi_engine/media/video/video_book_repository.dart';
 import 'package:fushi_engine/media/video/disc/disc_share_manifest.dart'
     show DiscShareFile;
 import 'package:fushi/src/media/video/video_library_delete.dart';
+import 'package:fushi/src/media/video/media_server/media_server_browser.dart'
+    show MediaServerBrowser;
 import 'package:fushi/src/media/video/media_server/media_server_library.dart'
     show MediaServerLibraryWork, MediaServerVideoLibrary, mediaServerWorkOfRow;
 import 'package:fushi/src/pages/implementations/media_server/media_server_library_remove_confirm.dart';
@@ -11785,6 +11787,9 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
           : null,
       onPlayedMarked: () =>
           _remoteCache.invalidateSource(source.remoteLibrarySourceId),
+      mediaServer: source is MediaServerBrowser
+          ? source as MediaServerBrowser
+          : null,
     );
   }
 
