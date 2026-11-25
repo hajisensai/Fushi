@@ -14,7 +14,7 @@ use rusqlite::Connection;
 use super::SrsCore;
 #[cfg(test)]
 use super::slim;
-use crate::history::{Kind, Log, LogCols, NONE_I64, Origin, Outcome, RType, parse_stored};
+use crate::history::{Kind, Log, NONE_I64, Origin, Outcome, RType, StoredLog, parse_stored};
 use crate::projection::{self, Alg, Day, EffLog, MemAlg, RWKV_ROW, RwkvIds};
 
 /// [SrsCore::rwkv_replay] 取哪些行（见那里）。
@@ -75,6 +75,7 @@ fn rwkv_divergence(
 struct ScanLog {
     rowid: i64,
     id: ScanId,
+    order_id: Option<ScanId>,
     revokes: Option<ScanId>,
     physical: i64,
     counter: i64,
@@ -170,6 +171,7 @@ impl ScanLog {
     fn log<'a>(&'a self, card: &'a str, writers: &'a [Box<str>]) -> Log<'a> {
         Log {
             id: self.id.text(),
+            order_id: self.order_id.as_ref().map(ScanId::text),
             card: Cow::Borrowed(card),
             writer: Cow::Borrowed(&writers[self.writer as usize]),
             physical: self.physical,
@@ -220,11 +222,9 @@ impl LogsByCard {
         &mut self,
         card: String,
         rowid: i64,
-        stored: &str,
-        server_time: Option<i64>,
-        cols: Option<&LogCols>,
+        stored: StoredLog<'_>,
     ) -> Result<(), String> {
-        let (log, res, extra) = parse_stored(stored, server_time, cols)?;
+        let (log, res, extra) = parse_stored(stored)?;
         let writer = match self.writer_ix.get(&*log.writer) {
             Some(&w) => w,
             None => {
@@ -238,6 +238,7 @@ impl LogsByCard {
         let scan = ScanLog {
             rowid,
             id: ScanId::of(&log.id),
+            order_id: log.order_id.as_deref().map(ScanId::of),
             revokes: log.revokes.as_deref().map(ScanId::of),
             writer,
             physical: log.physical,
@@ -300,7 +301,7 @@ fn fetch_logs(conn: &Connection, cards: &[&str]) -> Result<LogsByCard, String> {
             let card: String = row.get(1).map_err(|e| e.to_string())?;
             let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
             let (stored, cols) = slim::log_row(row, 3).map_err(|e| e.to_string())?;
-            logs.push(card, rowid, &stored, st, cols.as_ref())?;
+            logs.push(card, rowid, (&stored, st, cols.as_ref(), None))?;
         }
     }
     Ok(logs)
@@ -573,7 +574,8 @@ pub(crate) fn rwkv_scan_on(
         }
         let st: Option<i64> = row.get(2).map_err(|e| e.to_string())?;
         let (stored, cols) = slim::log_row(row, 3).map_err(|e| e.to_string())?;
-        scan.logs.push(card, rowid, &stored, st, cols.as_ref())?;
+        scan.logs
+            .push(card, rowid, (&stored, st, cols.as_ref(), None))?;
     }
     Ok(scan)
 }

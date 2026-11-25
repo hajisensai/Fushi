@@ -22,11 +22,14 @@ import 'review_log.dart';
 /// （native/fushi_fsrs/src/history.rs，见 history_kernel.dart）；这里只是选取结果的视图。
 /// 一次构造一次 FFI 调用，成批构造用 [SrsCardHistory.many]（一批一次）。
 class SrsCardHistory {
-  /// 一份历史（一次 FFI 调用；空历史不进原生侧）。
+  /// 一份历史（一次 FFI 调用；空历史不进原生侧）。[orderIdOf] 见 [srsSelectHistories]。
   factory SrsCardHistory(
     Iterable<SrsReviewLog> logs, {
     int? Function(String eventId)? serverTimeOf,
-  }) => many(<SrsHistoryInput>[(logs.toList(), serverTimeOf)]).single;
+    String? Function(String eventId)? orderIdOf,
+  }) => many(<SrsHistoryInput>[
+    (logs.toList(), serverTimeOf),
+  ], orderIdOf: orderIdOf).single;
 
   SrsCardHistory._(List<SrsReviewLog> logs, SrsHistorySelection sel)
     : all = <SrsReviewLog>[for (final int i in sel.order) logs[i]],
@@ -110,9 +113,15 @@ class SrsCardHistory {
     'eq': equivalentImports.toList(),
   };
 
-  /// 一批历史，与输入同序；整批一次 FFI 调用。
-  static List<SrsCardHistory> many(List<SrsHistoryInput> inputs) {
-    final List<SrsHistorySelection> sel = srsSelectHistories(inputs);
+  /// 一批历史，与输入同序；整批一次 FFI 调用。[orderIdOf] 见 [srsSelectHistories]。
+  static List<SrsCardHistory> many(
+    List<SrsHistoryInput> inputs, {
+    String? Function(String eventId)? orderIdOf,
+  }) {
+    final List<SrsHistorySelection> sel = srsSelectHistories(
+      inputs,
+      orderIdOf: orderIdOf,
+    );
     return <SrsCardHistory>[
       for (int i = 0; i < inputs.length; i++)
         SrsCardHistory._(inputs[i].$1, sel[i]),

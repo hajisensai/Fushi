@@ -948,8 +948,8 @@ fn card_materials(
     for ((card, _), (lineage, flags)) in want.iter().zip(lineages) {
         let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
         for id in &lineage {
-            for (j, s, cols) in logs.get(id).unwrap_or(&empty) {
-                stored.push((j, *s, cols.as_ref()));
+            for (j, s, cols, order_id) in logs.get(id).unwrap_or(&empty) {
+                stored.push((j, *s, cols.as_ref(), order_id.as_deref()));
             }
         }
         out.insert(card.clone(), Material::of(flags, &stored)?);
@@ -1541,8 +1541,8 @@ fn refresh_stats(
         for (k, (o, g)) in owners.iter().zip(&batch).enumerate() {
             let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
             for id in g {
-                for (j, s, cols) in logs.get(id).unwrap_or(&empty) {
-                    stored.push((j, *s, cols.as_ref()));
+                for (j, s, cols, order_id) in logs.get(id).unwrap_or(&empty) {
+                    stored.push((j, *s, cols.as_ref(), order_id.as_deref()));
                 }
             }
             for r in history::stats_from_stored(&stored)? {
@@ -1564,6 +1564,7 @@ fn refresh_stats(
                         event,
                         owner: base + k,
                         log_id: r.log_id,
+                        order_id: r.order_id,
                     });
                 }
             }
@@ -1652,6 +1653,7 @@ pub(crate) struct AnkiStatKey {
     pub(crate) event: history::AnkiEvent,
     pub(crate) owner: usize,
     pub(crate) log_id: String,
+    pub(crate) order_id: Option<String>,
 }
 
 /// [cards] 上 Anki 导入日志的时刻（导入日志的发生时刻 = revlog id）在本 profile 里出现过的全部卡（含 [cards] 自己）。
@@ -1700,7 +1702,7 @@ fn anki_partners(
 ///
 /// 按笔记收紧：组里认得出笔记的行（归属卡有缓存行）若分属不止一条笔记，只在同一笔记内合并，认不出笔记的行原样
 /// 保留（不同集合撞同一毫秒、同评分同用时的复习不误并）；只有一条或没有可认的笔记时整组是一次复习。留哪一份：
-/// 归属卡可见的优先，再取日志 ID（UTF-16 序）最小的——只由参与的日志与可见性决定，与刷新顺序无关。
+/// 归属卡可见的优先，再取原始日志 ID（UTF-16 序）最小的——只由参与的日志与可见性决定，与刷新顺序无关。
 ///
 /// 返回落选副本的日志 ID（由调用方从投影里删掉）。
 pub(crate) fn anki_duplicate_log_ids(
@@ -1719,7 +1721,8 @@ pub(crate) fn anki_duplicate_log_ids(
         if va != vb {
             return va;
         }
-        cmp_utf16(&keys[a].log_id, &keys[b].log_id) == std::cmp::Ordering::Less
+        let order_id = |i: usize| keys[i].order_id.as_deref().unwrap_or(&keys[i].log_id);
+        cmp_utf16(order_id(a), order_id(b)) == std::cmp::Ordering::Less
     };
     let mut drop: Vec<String> = Vec::new();
     for members in by_event.values() {

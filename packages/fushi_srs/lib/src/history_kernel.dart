@@ -38,8 +38,9 @@ const int _stateWords = 14;
 /// history.rs `COLUMN_WORDS`。
 const int _columnWords = 7;
 
-/// history.rs `COLUMN_STRINGS`：列模式每条日志的串（id、writerId、revokes、cardId；同一事件的副本只在同卡上成组）。
-const int _columnStrings = 4;
+/// history.rs `COLUMN_STRINGS`：列模式每条日志的串（id、writerId、revokes、cardId、排序 ID；同一事件的副本只在同卡上
+/// 成组）。排序 ID 是别名归一前的原值日志 ID（新代 `read logs` 的 `oid` 列），与 id 相同时传空串（BUG-5455）。
+const int _columnStrings = 5;
 
 /// history.rs 的 `STATUS_*` 位。
 const int srsHistoryEffective = 1;
@@ -296,9 +297,13 @@ typedef SrsHistoryInput = (
 );
 
 /// 一批内存历史的选取，与输入同序；空历史不进原生侧。
+///
+/// [orderIdOf]：日志 ID → 别名归一前的原值日志 ID（新代 `read logs` 的 `oid` 列；null = 与 ID 相同）。同一事件的几份
+/// 副本按它排序、选代表，与内核的排程和统计选同一份（BUG-5455）；不给就按日志 ID。
 List<SrsHistorySelection> srsSelectHistories(
   List<SrsHistoryInput> histories, {
   FushiFsrs? library,
+  String? Function(String eventId)? orderIdOf,
 }) {
   int nLogs = 0;
   for (final SrsHistoryInput h in histories) {
@@ -337,7 +342,8 @@ List<SrsHistorySelection> srsSelectHistories(
           ..add(l.id)
           ..add(l.hlc.writerId)
           ..add(l.revokesId ?? '')
-          ..add(l.cardId);
+          ..add(l.cardId)
+          ..add(orderIdOf?.call(l.id) ?? '');
         i++;
       }
       g[k + 1] = i;

@@ -527,12 +527,13 @@ fn lapis_backfill(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>,
 
 // ------------------------------------------------------------------ 复习日志与服务器时刻
 
-/// `logs {cards}`：一组卡的全部复习日志原文 + 服务器时刻（`id`, `card_id`, `json`, `st`）。
+/// `logs {cards}`：一组卡的全部复习日志原文 + 服务器时刻（`id`, `card_id`, `json`, `st`, `oid`）。协议 3 存的是原值
+/// ID、没有别名归一，`oid`（新代的别名归一前排序 ID，BUG-5455）恒为空，列与新代同形。
 #[cfg(test)]
 fn logs(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let mut q = Sel::of(profile);
     q.push(
-        "SELECT l.id, l.card_id, l.json, e.server_time FROM srs_review_logs l \
+        "SELECT l.id, l.card_id, l.json, e.server_time, NULL FROM srs_review_logs l \
          LEFT JOIN srs_event_local e ON e.event_id = l.id \
          WHERE +l.profile_uid = srs_id(?1)",
     );
@@ -544,6 +545,7 @@ fn logs(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
             ("card_id", KIND_STR),
             ("json", KIND_STR),
             ("st", KIND_OPT_I64),
+            ("oid", KIND_OPT_STR),
         ],
     )
 }

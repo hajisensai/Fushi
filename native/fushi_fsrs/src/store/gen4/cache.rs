@@ -370,7 +370,8 @@ pub const RULES_KEY: &str = "cacheRules";
 /// - 5（BUG-5190 / HBK-AUDIT-203）：卡片标志按血统继承时，同一层几张前身都有记录的取生效写入最新的那张
 ///   （`registers::cards_group` 的 `registers::later`）。之前取卡 ID 序在前的：按 4 物化过的库里这类后继卡的
 ///   `flag` / `new_position` / 牌组……是按 ID 序继承的，原地重开与重建不同，要重建一次才换成新口径。
-pub const CACHE_RULES: i64 = 5;
+/// - 6（BUG-5455）：日志重放、卡片状态和统计以原始日志 ID 排序和选副本。规范 ID 只用于身份和引用。
+pub const CACHE_RULES: i64 = 6;
 
 /// [Index::log_class_rep] 每个成员一次的点查（走 `log_id (col, id, k)`；查询计划测试用同一份）。
 pub(crate) const LOG_REP_SQL: &str =
@@ -447,11 +448,25 @@ pub(super) struct LogIn {
     pub(super) note: Option<Ref>,
     /// 日志上记的卡（原值，未归一）：重放的 fuzz 种子（`sync2/replay.rs` [Row::seed_card]）。[json] 里的 `card` 已归一成
     /// 规范卡；种子跟着换的话，带盐的存量日志迁移后到期日会变。
-    pub(super) seed_card: String,
+    seed_card: String,
+    pub(super) order_id: Option<String>,
 }
 
-/// 归属组的一行重放输入（[Index::group_rows]）：(投影行 JSON, server_time, 意图, fuzz 种子用的原值卡)。
-pub(super) type GroupRow = (String, Option<i64>, Intent, String);
+impl LogIn {
+    pub(super) fn replay_row(&self) -> Row<'_> {
+        Row {
+            json: &self.json,
+            server_time: self.server_time,
+            intent: self.intent.clone(),
+            seed_card: Some(&self.seed_card),
+            order_id: self.order_id.as_deref(),
+        }
+    }
+
+    pub(super) fn stored(&self) -> StoredLog<'_> {
+        (&self.json, self.server_time, None, self.order_id.as_deref())
+    }
+}
 
 /// 统计去重要跨批看的东西（全量重建时一批一个或几个连通分量）。
 #[derive(Default)]
@@ -1040,14 +1055,20 @@ impl<'t, 'c> Index<'t, 'c> {
             format!("{wall}:{logical}:{}", device.text())
         });
         // 日志 ID、卡、笔记、`revokes` 归一（文件头「别名」第 3 条）：重放与统计读的是规范 ID。
-        let row = self.canonical_json(&row)?;
+        let canonical_row = self.canonical_json(&row)?;
+        let original_id = &row["id"];
+        let order_id = original_id
+            .as_str()
+            .filter(|_| original_id != &canonical_row["id"])
+            .map(str::to_owned);
         Ok(LogIn {
-            json: canonical(&row),
+            json: canonical(&canonical_row),
             server_time,
             intent,
             k,
             note,
             seed_card,
+            order_id,
         })
     }
 
@@ -1732,16 +1753,16 @@ impl<'t, 'c> Index<'t, 'c> {
     }
 
     /// 卡 [tail] 当链尾的归属组（链尾 + 广度优先的全部前身，`group_lineage`）的日志，按组里卡的顺序、各卡按
-    /// (发生时刻, 操作主键)：(投影行 JSON, server_time, 意图, fuzz 种子用的原值卡)，未经重放写回（重放的输入）。写命令 `sched`（G7-3b，
+    /// (发生时刻, 操作主键)，未经重放写回。写命令 `sched`（G7-3b，
     /// `cmd/writes_intent.rs`）据它算这张卡此刻的头状态——协议 3 `store/sync2/mod.rs` `group_of` 的新代版。
-    pub(super) fn group_rows(&mut self, tail: &Ref) -> Result<Vec<GroupRow>, String> {
+    pub(super) fn group_rows(&mut self, tail: &Ref) -> Result<Vec<LogIn>, String> {
         Ok(self.group(tail)?.0)
     }
 
     /// [group_rows] 连同归属组的笔记（规范 ID）：取链尾自己日志上记的（链尾的日志里最后一条记了笔记的），链尾没有就取
     /// 前身里第一条记了笔记的——协议 3 `group_of` 的同一条规则（换笔记类型不换笔记）。评分预览（`cmd/preview.rs`）用。
     #[allow(clippy::type_complexity)]
-    pub(super) fn group(&mut self, tail: &Ref) -> Result<(Vec<GroupRow>, Option<String>), String> {
+    pub(super) fn group(&mut self, tail: &Ref) -> Result<(Vec<LogIn>, Option<String>), String> {
         let tail = self.canon(tail)?;
         let lineage = {
             let mut preds = |c: &str| -> Result<Vec<String>, String> {
@@ -1758,7 +1779,7 @@ impl<'t, 'c> Index<'t, 'c> {
                 if l.note.is_some() && (note.is_none() || *c == tail_text) {
                     note = l.note.clone();
                 }
-                out.push((l.json, l.server_time, l.intent, l.seed_card));
+                out.push(l);
             }
         }
         let note = note.map(|n| self.canon(&n).map(|c| c.text())).transpose()?;
@@ -1808,12 +1829,7 @@ impl<'t, 'c> Index<'t, 'c> {
             for c in &lineage {
                 for (i, l) in logs.get(c).into_iter().flatten().enumerate() {
                     at.push((c.clone(), i));
-                    rows.push(Row {
-                        json: &l.json,
-                        server_time: l.server_time,
-                        intent: l.intent.clone(),
-                        seed_card: Some(&l.seed_card),
-                    });
+                    rows.push(l.replay_row());
                 }
             }
             if rows.is_empty() {
@@ -1860,7 +1876,7 @@ impl<'t, 'c> Index<'t, 'c> {
             let mut s: Vec<StoredLog<'_>> = Vec::new();
             for c in lineage {
                 for l in logs.get(c).into_iter().flatten() {
-                    s.push((l.json.as_str(), l.server_time, None));
+                    s.push(l.stored());
                 }
             }
             s
@@ -2082,6 +2098,7 @@ impl<'t, 'c> Index<'t, 'c> {
                         event,
                         owner: base + k,
                         log_id: log,
+                        order_id: r.order_id,
                     });
                 }
             }
@@ -3350,7 +3367,7 @@ mod tests {
             );
         }
         // 不在日志排序键上的修订（各自由对应模块的测试钉口径）：(说明, 修订号)。
-        const ELSEWHERE: [(&str, i64); 2] = [
+        const ELSEWHERE: [(&str, i64); 3] = [
             (
                 "改名写入者的旧上下文只换到归回上界（class.rs 的 bounded_writer_rename_* 测试）",
                 4,
@@ -3358,6 +3375,10 @@ mod tests {
             (
                 "卡片标志同一层前身取最新写入（registers.rs 的 card_lineage_vectors_* 测试、sync_tests 的 a_cache_with_card_flags_inherited_by_the_old_layer_rule_is_rebuilt_on_open）",
                 5,
+            ),
+            (
+                "带盐日志按原始 ID 选副本（anki_copies_with_different_schedules_migrate_cleanly）",
+                6,
             ),
         ];
         let latest = table

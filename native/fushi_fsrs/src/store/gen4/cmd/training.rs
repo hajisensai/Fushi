@@ -200,7 +200,7 @@ pub fn rwkv_replay(
             // 去重、按排序键排序，分歧判断只看序号过滤），保留它只为让两代往同一份计算里灌的输入同序。
             ranked.sort_by_key(|(n, _)| *n);
             for (n, l) in ranked {
-                logs.push(card.to_owned(), n, &l.json, l.server_time, None)?;
+                logs.push(card.to_owned(), n, l.stored())?;
             }
             Ok(())
         })?;
@@ -375,7 +375,7 @@ fn logs_by_card(ix: &mut Index<'_, '_>, cards: &[&str]) -> Result<LogsByCard, St
     let mut logs = LogsByCard::default();
     each_replayed(ix, &cards, &mut |card, ls| {
         for l in ls {
-            logs.push(card.to_owned(), l.k, &l.json, l.server_time, None)?;
+            logs.push(card.to_owned(), l.k, l.stored())?;
         }
         Ok(())
     })?;
@@ -396,7 +396,7 @@ fn log_rows(
         out.insert(
             card.to_owned(),
             ls.into_iter()
-                .map(|l| (l.json, l.server_time, None))
+                .map(|l| (l.json, l.server_time, None, l.order_id))
                 .collect(),
         );
         Ok(())

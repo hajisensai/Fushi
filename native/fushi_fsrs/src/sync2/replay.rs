@@ -36,6 +36,8 @@ pub struct Row<'a> {
     /// 新代的投影行已归一成规范卡（`store/gen4/cache.rs` `log_at`），带盐的存量日志在那里看到的是规范卡 ID；种子要是
     /// 跟着换，迁移就会改掉卡的到期日（文件头「迁移也因此不改任何一张卡的到期日」），所以新代把原值卡放在这里。
     pub seed_card: Option<&'a str>,
+    /// 日志原始 ID，仅在投影把 ID 换成规范 ID 时提供。
+    pub order_id: Option<&'a str>,
 }
 
 /// 重放结果：每行一个新 JSON（`None` = 与输入相同，不用写回）、重放后的卡片状态（`None` = 新卡）。
@@ -325,7 +327,12 @@ fn fold(rows: &[Row<'_>]) -> Result<Folded, String> {
             return Err("bad review log: not an object".into());
         };
         values.push(m);
-        parsed.push(crate::history::parse_full(r.json, r.server_time)?);
+        parsed.push(crate::history::parse_stored((
+            r.json,
+            r.server_time,
+            None,
+            r.order_id,
+        ))?);
     }
     let logs: Vec<_> = parsed.iter().map(|p| p.0.clone()).collect();
     let sel = select(&logs);
@@ -510,6 +517,7 @@ pub(crate) mod tests {
             .zip(rows)
             .map(|(t, v)| Row {
                 seed_card: None,
+                order_id: None,
                 json: t,
                 server_time: None,
                 intent: infer_intent(v),
@@ -558,6 +566,7 @@ pub(crate) mod tests {
             .iter()
             .map(|t| Row {
                 seed_card: None,
+                order_id: None,
                 json: t,
                 server_time: None,
                 intent: Intent::Answer,
@@ -610,6 +619,7 @@ pub(crate) mod tests {
                     server_time: None,
                     intent: infer_intent(v),
                     seed_card: seed,
+                    order_id: None,
                 })
                 .collect();
             let r = replay(&input).unwrap();
@@ -698,6 +708,7 @@ pub(crate) mod tests {
             .zip(rows)
             .map(|(t, v)| Row {
                 seed_card: None,
+                order_id: None,
                 json: t,
                 server_time: None,
                 intent: infer_intent(v),

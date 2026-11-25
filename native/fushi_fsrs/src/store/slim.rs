@@ -779,7 +779,7 @@ mod tests {
         let full: Vec<&str> = logs.iter().map(|l| l.0.as_str()).collect();
         let stored: Vec<crate::history::StoredLog<'_>> = logs
             .iter()
-            .map(|l| (l.1.as_str(), None, Some(&l.2)))
+            .map(|l| (l.1.as_str(), None, Some(&l.2), None))
             .collect();
         assert_eq!(
             state_from_json(&full, &[None, None]).unwrap(),
@@ -789,7 +789,7 @@ mod tests {
             stats_from_json(&full, &[None, None]).unwrap(),
             stats_from_stored(&stored).unwrap()
         );
-        assert!(state_from_stored(&[(logs[0].1.as_str(), None, None)]).is_err());
+        assert!(state_from_stored(&[(logs[0].1.as_str(), None, None, None)]).is_err());
     }
 
     #[test]
