@@ -18,6 +18,7 @@ import 'dart:io';
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/sync/local_library_host_service.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
@@ -322,6 +323,76 @@ void main() {
     });
 
     tearDown(() async => server.stop());
+
+    test(
+      'recovers missing content into the same existing row over HTTP',
+      () async {
+        final FushiDatabase localDb = _memDb();
+        addTearDown(localDb.close);
+        EpubStorage.debugBaseDirectoryOverride = work.path;
+        addTearDown(() => EpubStorage.debugBaseDirectoryOverride = null);
+
+        const String title = 'Restore this manga';
+        final Directory source = Directory(p.join(work.path, 'host_manga'))
+          ..createSync();
+        File(p.join(source.path, 'manga.json')).writeAsStringSync(
+          '{"pages":[{"url":"pages/1.jpg","width":800,"height":1200,"blocks":[]}]}',
+        );
+        const List<int> page = <int>[0xff, 0xd8, 0xff, 0x01];
+        File(p.join(source.path, 'pages', '1.jpg'))
+          ..createSync(recursive: true)
+          ..writeAsBytesSync(page);
+        File(p.join(source.path, 'cover.jpg')).writeAsStringSync('host cover');
+
+        Future<void> insert(FushiDatabase db, String path) => db
+            .insertEpubBook(
+              EpubBooksCompanion.insert(
+                bookKey: title,
+                title: title,
+                epubPath: 'manga.json',
+                extractDir: path,
+                chapterCount: 1,
+                chaptersJson: '[]',
+                importedAt: 1,
+                format: Value(BookFormat.manga.dbValue),
+              ),
+            )
+            .then<void>((_) {});
+        await insert(hostDb, source.path);
+
+        final Directory target = Directory(
+          p.join(work.path, 'fushi_books', title),
+        )..createSync(recursive: true);
+        final File cover = File(p.join(target.path, 'cover.jpg'))
+          ..writeAsStringSync('local custom cover');
+        await insert(localDb, target.path);
+        final EpubBookRow before = (await localDb.getEpubBook(title))!;
+
+        final InterconnectSyncBackend backend = await _buildClientBackend(
+          base: serverBase,
+          token: token,
+        );
+        final SyncOrchestrator orch = _bookOrchestrator(
+          db: localDb,
+          backend: backend,
+          tmp: Directory(p.join(work.path, 'recovery_temp')),
+          syncContent: false,
+        );
+        final SyncRunReport first = await orch.run();
+        expect(first.booksRecovered, 1, reason: '${first.errors}');
+        expect(first.booksImported, 0);
+        expect(await localDb.getEpubBook(title), before);
+        expect(
+          File(p.join(target.path, 'pages', '1.jpg')).readAsBytesSync(),
+          page,
+        );
+        expect(cover.readAsStringSync(), 'local custom cover');
+        expect(await localDb.getEpubBook('BookY'), isNull);
+
+        final SyncRunReport second = await orch.run();
+        expect(second.booksRecovered, 0, reason: '${second.errors}');
+      },
+    );
 
     test('空在线漫画合集正常跳过，不上传空包或记录同步失败', () async {
       final FushiDatabase localDb = _memDb();

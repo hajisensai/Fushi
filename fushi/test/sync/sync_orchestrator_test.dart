@@ -1,10 +1,12 @@
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:archive/archive.dart';
 import 'package:drift/drift.dart' hide isNotNull, isNull;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/models/local_audio_manager.dart';
+import 'package:fushi_engine/epub/epub_storage.dart';
 import 'package:fushi_engine/models/local_audio_source_pref.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
@@ -12,6 +14,7 @@ import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
+import 'package:fushi/src/sync/sync_remote_listing.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi_engine/sync/ttu_models.dart';
@@ -1108,6 +1111,97 @@ void main() {
     });
   });
 
+  for (final bool useSnapshot in <bool>[false, true]) {
+    test('cloud book recovery restores only a missing, unambiguous local book '
+        '(snapshot: $useSnapshot)', () async {
+      final FakeAssetStore store = FakeAssetStore();
+      final _CloudRecoveryBackend backend = _CloudRecoveryBackend(
+        store,
+        useSnapshot: useSnapshot,
+      );
+      final Directory temp = Directory('${work.path}/tmp')..createSync();
+      EpubStorage.debugBaseDirectoryOverride = work.path;
+      addTearDown(() => EpubStorage.debugBaseDirectoryOverride = null);
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+
+      const List<int> page = <int>[0xFF, 0xD8, 0xFF, 0x01];
+      final List<int> manifest = utf8.encode(
+        '{"pages":[{"url":"pages/1.jpg","width":800,"height":1200,'
+        '"blocks":[]}]}',
+      );
+      final Archive archive = Archive()
+        ..addFile(ArchiveFile('manga.json', manifest.length, manifest))
+        ..addFile(ArchiveFile('pages/1.jpg', page.length, page));
+      final File package = File('${work.path}/book.zip')
+        ..writeAsBytesSync(ZipEncoder().encode(archive)!);
+
+      const String missingTitle = 'Missing book';
+      const String ambiguousTitle = 'Ambiguous book';
+      const String remoteOnlyTitle = 'Remote-only book';
+      for (final String title in <String>[missingTitle, ambiguousTitle]) {
+        await db.insertEpubBook(
+          EpubBooksCompanion.insert(
+            bookKey: title,
+            title: title,
+            epubPath: 'manga.json',
+            extractDir: '${work.path}/fushi_books/$title',
+            chapterCount: 1,
+            chaptersJson: '[]',
+            importedAt: 1,
+            format: Value(BookFormat.manga.dbValue),
+          ),
+        );
+      }
+      for (final String title in <String>[
+        missingTitle,
+        ambiguousTitle,
+        remoteOnlyTitle,
+      ]) {
+        final String folder = await store.ensureFolder('root', title);
+        await store.putAsset(folder, '$title.manga.zip', package);
+        if (title == ambiguousTitle) {
+          await store.putAsset(folder, '$title.epub', package);
+        }
+      }
+
+      final EpubBookRow before = (await db.getEpubBook(missingTitle))!;
+      await db.upsertReaderPosition(
+        ReaderPositionsCompanion(
+          bookUid: Value(before.uid),
+          sectionIndex: const Value(0),
+          normCharOffset: const Value(9),
+          updatedAt: const Value(100),
+        ),
+      );
+
+      final SyncRunReport report = await _orchestrator(
+        db,
+        backend,
+        temp,
+        temp,
+        temp,
+      ).run();
+
+      expect(report.booksRecovered, 1, reason: '${report.errors}');
+      expect(report.booksImported, 0);
+      expect(backend.downloadedAssets, <String>[
+        'root/$missingTitle/$missingTitle.manga.zip',
+      ]);
+      expect(
+        await File('${before.extractDir}/pages/1.jpg').readAsBytes(),
+        page,
+      );
+      final EpubBookRow after = (await db.getEpubBook(missingTitle))!;
+      expect(after.uid, before.uid);
+      expect(after.extractDir, before.extractDir);
+      expect((await db.getReaderPosition(before.uid))?.normCharOffset, 9);
+      expect(await db.getEpubBook(remoteOnlyTitle), isNull);
+      final EpubBookRow ambiguous = (await db.getEpubBook(ambiguousTitle))!;
+      expect(await Directory(ambiguous.extractDir).exists(), isFalse);
+    });
+  }
+
   group('sync cooldown timestamp lifecycle (TODO-1332)', () {
     test(
       'run() records the cooldown timestamp only after a full sweep completes',
@@ -1159,6 +1253,50 @@ void main() {
       );
     });
   });
+}
+
+class _CloudRecoveryBackend extends FakeSyncBackend
+    implements RemoteListingCapable {
+  _CloudRecoveryBackend(super.store, {required this.useSnapshot});
+  final bool useSnapshot;
+  final List<String> downloadedAssets = <String>[];
+
+  @override
+  Future<List<SyncFileRef>> listBooks(String rootFolderId) async =>
+      <SyncFileRef>[
+        for (final AssetEntry entry in await listChildren(rootFolderId))
+          if (entry.isFolder) SyncFileRef(id: entry.id, name: entry.name),
+      ];
+
+  @override
+  Future<RemoteListingSnapshot?> snapshotListing(String rootFolderId) async {
+    if (!useSnapshot) return null;
+    return RemoteListingSnapshot(<String, List<AssetEntry>>{
+      for (final SyncFileRef folder in await listBooks(rootFolderId))
+        folder.name: await listChildren(folder.id),
+    });
+  }
+
+  @override
+  Future<SyncFileTrio> listSyncFiles(String folderId) async =>
+      const SyncFileTrio();
+
+  @override
+  Future<void> updateProgressFile({
+    required String folderId,
+    required String? fileId,
+    required TtuProgress progress,
+  }) async {}
+
+  @override
+  Future<void> getAsset(
+    String assetId,
+    File destination, {
+    void Function(double progress)? onProgress,
+  }) {
+    downloadedAssets.add(assetId);
+    return super.getAsset(assetId, destination, onProgress: onProgress);
+  }
 }
 
 /// [FakeSyncBackend] 变体（TODO-1332 测试）：在词典阶段 [ensureNamespace] 抛出，

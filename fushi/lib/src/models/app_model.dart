@@ -1784,6 +1784,7 @@ class AppModel
     }
 
     if (report.booksImported > 0 ||
+        report.booksRecovered > 0 ||
         report.audiobooksImported > 0 ||
         report.localBookProgressPulled > 0 ||
         report.collectionsUpdated > 0) {
