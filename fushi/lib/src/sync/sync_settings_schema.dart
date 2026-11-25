@@ -70,6 +70,8 @@ import 'package:fushi/src/sync/auto_backup/auto_backup_messages.dart'
 import 'package:fushi/src/sync/auto_backup/auto_backup_schedule.dart'
     show isAutoBackupOverdue;
 import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
+import 'package:fushi/src/sync/auto_backup/restore_point_actions.dart'
+    show RestorePointUiFlows;
 import 'package:fushi/src/sync/auto_backup/auto_backup_status.dart'
     show AutoBackupStatus;
 import 'package:fushi/src/utils/components/fushi_date_time_picker.dart'

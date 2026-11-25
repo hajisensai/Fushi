@@ -28,7 +28,7 @@ import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart'
     show friendlySyncErrorDetail;
 import 'package:fushi/src/sync/sync_settings_schema.dart'
-    show backupCategoryLabel;
+    show backupCategoryLabel, restorePointUiFlowsFor;
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
@@ -139,11 +139,11 @@ class AppRestorePointsHost implements RestorePointsHost {
 
   @override
   Future<void> fillIn(RestorePointEntry entry) =>
-      fillInFromRestorePoint(app, entry);
+      fillInFromRestorePoint(app, entry, restorePointUiFlowsFor(app));
 
   @override
   Future<void> replace(RestorePointEntry entry) =>
-      replaceFromRestorePoint(app, entry);
+      replaceFromRestorePoint(app, entry, restorePointUiFlowsFor(app));
 
   @override
   Future<bool> export(RestorePointEntry entry) async {

@@ -458,6 +458,8 @@ import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_messages.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
+import 'package:fushi/src/sync/auto_backup/restore_point_actions.dart'
+    show RestorePointActionsHost;
 import 'package:fushi_engine/srs/srs_media_store.dart' show SrsMediaStore;
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
@@ -1081,7 +1083,8 @@ class AppModel
         ExternalStorageAccess,
         LookupMatchSearchHost,
         StudyGoalHost,
-        TrackingSeriesCardHost {
+        TrackingSeriesCardHost,
+        RestorePointActionsHost {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
 
@@ -3417,6 +3420,7 @@ class AppModel
   /// 复习库副本在（操作前还原点）就换复习库。开库被拒 / 失败的专屏与还原点页「替换」都走这里：
   /// 先关复习库与主库连接（降级时 drift 的后台连接已经开着），再离线换文件；当前的库
   /// 另存为回滚前还原点。之后由调用方重启 app。换不了时抛出、文件不动（或由下次启动补完）。
+  @override
   Future<void> rollbackToRestorePoint(RestorePoint point) async {
     final RestorePointStore store = RestorePointStore(_databaseDirectory.path);
     final bool hasMain =
@@ -3470,6 +3474,7 @@ class AppModel
 
   /// 自动备份（定时还原点 + 操作前还原点）。首页就绪后 [startUpdateChecks] 里启动调度，
   /// [stopUpdateChecks] 里停。
+  @override
   late final AutoBackupController autoBackup = AutoBackupController(
     host: _AppAutoBackupHost(this),
   );
@@ -3710,6 +3715,7 @@ class AppModel
   /// 锁按持有者凭据记：[beginBackupExport] 返回凭据，[endBackupExport] 只放自己的那把——以前是
   /// 一个布尔，先跑完的一方会把另一方正持有的锁放掉。
   Object? _backupExportOwner;
+  @override
   bool get backupExportActive => _backupExportOwner != null;
 
   /// 打包阶段的确定进度（0..1）；null = 尚未进入打包。准备阶段（VACUUM INTO、按
@@ -3750,6 +3756,7 @@ class AppModel
   /// 开始一个会关库 / 换库的流程；返回的回调结束它（可重复调，只生效一次）。调用方必须先
   /// 在同一段同步代码里查过 [backupExportActive]：两者之间没有 await，就与自动备份的
   /// 「查库可用 + 拿锁」互斥。
+  @override
   void Function() beginRestoreFlow() {
     _restoreFlows++;
     bool ended = false;
@@ -3809,6 +3816,7 @@ class AppModel
 
   /// 进入导入态：先于 [closeDatabase] 调用，确保「遮罩已上屏 → 关库 → 解压落盘」的
   /// 顺序，根 widget 在关库引发的 rebuild 里看到的是导入遮罩而非裸 loading。
+  @override
   void beginBackupImport() {
     _backupImportPhase = BackupImportPhase.running;
     _backupImportMessage = null;
@@ -3818,6 +3826,7 @@ class AppModel
 
   /// 导入**成功**结束：切到确认视图（导入完成 → 立即重启），展示成功 [message]。
   /// DB 已关闭，必须重启才能重载数据。
+  @override
   void completeBackupImport(String message) {
     _backupImportPhase = BackupImportPhase.done;
     _backupImportMessage = message;
@@ -3828,6 +3837,7 @@ class AppModel
   /// 导入**失败**结束（如 OOM/损坏/异常）：切到确认视图并置 [BackupImportPhase.failed]，
   /// 让遮罩画红色错误图标 + 失败原因 [message]（根治「失败却显绿✓」，TODO-1183）。DB 已
   /// 关闭，仍必须重启回到可用状态，故失败也走同一「立即重启」出口。
+  @override
   void failBackupImport(String message) {
     _backupImportPhase = BackupImportPhase.failed;
     _backupImportMessage = message;
@@ -13060,6 +13070,7 @@ class AppModel
     _databaseCloseQuiescers.remove(quiesce);
   }
 
+  @override
   Future<void> closeDatabase({Duration? pipelineDrainTimeout}) async {
     _isInitialised = false;
     // BUG-5387：换库的生命周期边界。先让本库名下的后台写库工作（来源扫描、视频刮削 /

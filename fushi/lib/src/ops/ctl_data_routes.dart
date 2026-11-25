@@ -82,6 +82,7 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
         DataRootMigrationRunOutcome,
         interconnectPairFailureMessage,
         planDataRootMigration,
+        restorePointUiFlowsFor,
         runBackupImportFlowForFile,
         runDataRootMigration,
         runInterconnectLinkPairingFlow;
@@ -511,7 +512,11 @@ List<CtlRoute> _backupRoutes(
         await _uiContext(context);
         _runDetached(
           'backup.restore-point.fill',
-          () => fillInFromRestorePoint(appModel, entry),
+          () => fillInFromRestorePoint(
+            appModel,
+            entry,
+            restorePointUiFlowsFor(appModel),
+          ),
         );
       case 'replace':
         if (!entry.canReplace) {
@@ -528,7 +533,11 @@ List<CtlRoute> _backupRoutes(
         }
         _runDetached(
           'backup.restore-point.replace',
-          () => runRestorePointReplace(appModel, ticket),
+          () => runRestorePointReplace(
+            appModel,
+            ticket,
+            restorePointUiFlowsFor(appModel),
+          ),
         );
       default:
         throw const CtlFailure.badRequest('mode 只能是 fill 或 replace');

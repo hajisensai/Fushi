@@ -184,6 +184,20 @@ bool backupCategoryShownInExport(
 const Set<BackupCategory> importMergeSelectableCategories =
     importSelectableCategories;
 
+/// 还原点动作（补回 / 替换）要走的两段 UI 流程：重启与定时备份 zip 的覆盖导入（导入设置）。
+RestorePointUiFlows restorePointUiFlowsFor(AppModel appModel) =>
+    RestorePointUiFlows(
+      restart: () => backupImportRestart(appModel),
+      overwriteImportArchive: (String zipPath) => runBackupImportFlowForFile(
+        appModel: appModel,
+        filePath: zipPath,
+        preset: const BackupImportPreset(
+          mode: BackupImportMode.overwrite,
+          importSettings: true,
+        ),
+      ),
+    );
+
 /// TODO-1151：备份导入完成后的重启。DB 已在导入期 `closeDatabase()`，必须重启才能重载
 /// 新数据。既作为 [BackupImportOverlayView]「立即重启」按钮的手动出口，也在导入**成功**后由
 /// [_BackupImportWidgetState._import] 延时自动调用（用户诉求「导入完自动重启，不再手动重开」）。
