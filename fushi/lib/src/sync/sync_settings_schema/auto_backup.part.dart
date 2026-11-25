@@ -110,6 +110,21 @@ SettingsSection _autoBackupSection() => SettingsSection(
           _AutoBackupFolderRow(settingsContext: ctx),
     ),
     SettingsCustomItem(
+      id: 'sync.auto_backup.cloud',
+      searchTitle: t.auto_backup_cloud,
+      icon: FushiIcons.cloudUpload,
+      visible: _autoBackupOn,
+      builder: (SettingsContext ctx) => AutoBackupCloudRow(
+        settings: ctx.appModel.autoBackupSettings,
+        statusChanges: ctx.appModel.autoBackup.status,
+        readStatus: () => ctx.appModel.autoBackup.status.value,
+        meteredNetworks: _autoBackupMayBeMetered,
+        backendLabel: ctx.appModel.autoBackup.host.cloudBackendLabel,
+        onUpdate: (AutoBackupSettings Function(AutoBackupSettings) update) =>
+            _updateAutoBackupSettings(ctx, update),
+      ),
+    ),
+    SettingsCustomItem(
       id: 'sync.auto_backup.status',
       searchTitle: t.auto_backup_now,
       icon: FushiIcons.backup,
@@ -380,8 +395,9 @@ class _AutoBackupMirrorRow extends StatelessWidget {
       picked = await platform.pick();
     } catch (e, st) {
       debugPrint('AutoBackup: picking the folder failed: $e\n$st');
+      // 平台原文（PlatformException 之类）不上界面：归成错误码再给文案。
       FushiToast.show(
-        msg: t.auto_backup_mirror_failed(reason: '$e'),
+        msg: t.auto_backup_mirror_failed(reason: autoBackupErrorText(e)),
         severity: ToastSeverity.error,
       );
       return;
@@ -463,20 +479,241 @@ class _AutoBackupMirrorRow extends StatelessWidget {
                         folder: current,
                         now: DateTime.now(),
                       );
-                  if (line == null) return const SizedBox.shrink();
-                  return Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
-                    child: FushiInlineNotice(
-                      key: const ValueKey<String>('auto-backup-mirror-status'),
-                      severity: line.failed
-                          ? FushiNoticeSeverity.warning
-                          : FushiNoticeSeverity.info,
-                      message: line.text,
-                    ),
+                  final AutoBackupMirrorStatus mirror = status.mirror;
+                  return _AutoBackupCopyStatusLines(
+                    keyPrefix: 'auto-backup-mirror',
+                    line: line,
+                    pruneFailed:
+                        mirror.target == current.key &&
+                        mirror.pruneError != null,
                   );
                 },
           ),
       ],
+    );
+  }
+}
+
+/// 云端副本可能走计费网络的平台（移动端）：只有这里才给「使用移动数据时也上传」；桌面端一律当不计流量
+/// （与宿主 `networkUnmetered` 的判据一致）。
+bool get _autoBackupMayBeMetered =>
+    !kIsWeb && (Platform.isAndroid || Platform.isIOS);
+
+/// 云端副本的状态行（纯函数，测试用）：失败 → 告警原因；最新那份已上传 → 「最新备份已上传（3 小时前）」；
+/// 还没上传 → 「下次检查时补上」（[wifiOnly] 时说明要等 Wi-Fi）；还没有任何备份 → null（不显示）。
+@visibleForTesting
+({String text, bool failed})? autoBackupCloudStatusLine({
+  required AutoBackupStatus status,
+  required DateTime now,
+  required bool wifiOnly,
+}) {
+  final AutoBackupMirrorStatus cloud = status.cloud;
+  if (cloud.error != null) {
+    return (
+      text: t.auto_backup_cloud_failed(
+        reason: autoBackupErrorText(cloud.error),
+      ),
+      failed: true,
+    );
+  }
+  final String? latest = status.lastSuccessPointId;
+  if (latest == null) return null;
+  final int? atMs = cloud.atMs;
+  if (cloud.target != null && cloud.pointId == latest && atMs != null) {
+    return (
+      text: t.auto_backup_cloud_status_done(
+        time: formatActivityRelativeTime(atMs, now),
+      ),
+      failed: false,
+    );
+  }
+  return (
+    text: wifiOnly
+        ? t.auto_backup_cloud_status_pending_wifi
+        : t.auto_backup_cloud_status_pending,
+    failed: false,
+  );
+}
+
+/// 副本目标（文件夹 / 云端）下方的状态行 + 「旧副本没删掉」提示行。
+class _AutoBackupCopyStatusLines extends StatelessWidget {
+  const _AutoBackupCopyStatusLines({
+    required this.keyPrefix,
+    required this.line,
+    required this.pruneFailed,
+  });
+
+  /// 键前缀：`<前缀>-status` / `<前缀>-prune`。
+  final String keyPrefix;
+  final ({String text, bool failed})? line;
+  final bool pruneFailed;
+
+  @override
+  Widget build(BuildContext context) {
+    final ({String text, bool failed})? status = line;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        if (status != null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: FushiInlineNotice(
+              key: ValueKey<String>('$keyPrefix-status'),
+              severity: status.failed
+                  ? FushiNoticeSeverity.warning
+                  : FushiNoticeSeverity.info,
+              message: status.text,
+            ),
+          ),
+        if (pruneFailed)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: FushiInlineNotice(
+              key: ValueKey<String>('$keyPrefix-prune'),
+              message: t.auto_backup_copies_prune_failed,
+            ),
+          ),
+      ],
+    );
+  }
+}
+
+/// 「复制到云端」（D8–D11）：开关 + 用哪个同步服务、没有支持的后端时的说明；开着时另有保留规则说明、
+/// 移动端的「使用移动数据时也上传」与上传状态行。依赖全部经构造参数注入（设置页从 AppModel 接，测试注入假的）。
+class AutoBackupCloudRow extends StatefulWidget {
+  const AutoBackupCloudRow({
+    required this.settings,
+    required this.statusChanges,
+    required this.readStatus,
+    required this.backendLabel,
+    required this.onUpdate,
+    required this.meteredNetworks,
+    super.key,
+  });
+
+  final AutoBackupSettings settings;
+
+  /// 状态文件变了（`AutoBackupController.status`）。
+  final Listenable statusChanges;
+
+  /// 状态文件的最新内容。
+  final AutoBackupStatus Function() readStatus;
+
+  /// 这台设备可能走计费网络（移动端）：给「使用移动数据时也上传」，不开时状态行说明要等 Wi-Fi。
+  final bool meteredNetworks;
+
+  /// 云端副本会用的同步服务名（`AutoBackupHost.cloudBackendLabel`，不联网）；null = 没有支持的后端。
+  final Future<String?> Function() backendLabel;
+
+  /// 改设置（设置页的 `_updateAutoBackupSettings`）。
+  final Future<void> Function(
+    AutoBackupSettings Function(AutoBackupSettings current) update,
+  )
+  onUpdate;
+
+  @override
+  State<AutoBackupCloudRow> createState() => _AutoBackupCloudRowState();
+}
+
+class _AutoBackupCloudRowState extends State<AutoBackupCloudRow> {
+  late Future<String?> _label = widget.backendLabel();
+
+  @override
+  void didUpdateWidget(AutoBackupCloudRow oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // 设置页刷新（同一页上刚配好 / 关掉同步后端之后也会刷新）：重查一次服务名。只读本机配置，不联网；
+    // FutureBuilder 换 future 时保留上一次的结果，不会闪。
+    _label = widget.backendLabel();
+  }
+
+  void _update(AutoBackupSettings Function(AutoBackupSettings s) update) =>
+      unawaited(widget.onUpdate(update));
+
+  @override
+  Widget build(BuildContext context) {
+    final AutoBackupSettings settings = widget.settings;
+    return FutureBuilder<String?>(
+      future: _label,
+      builder: (BuildContext context, AsyncSnapshot<String?> snapshot) {
+        final bool known =
+            snapshot.connectionState == ConnectionState.done ||
+            snapshot.hasData;
+        final String? label = snapshot.data;
+        final bool on = settings.cloudCopies;
+        // 没有支持的后端时开关不可用；已经开着的仍可关掉（后端后来被移除了）。
+        final bool canToggle = label != null || on;
+        final bool metered = widget.meteredNetworks;
+        final bool wifiOnly = metered && !settings.cloudAllowMetered;
+        return Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: <Widget>[
+            AdaptiveSettingsSwitchRow(
+              key: const ValueKey<String>('auto-backup-cloud'),
+              title: t.auto_backup_cloud,
+              subtitle: label == null
+                  ? t.auto_backup_cloud_subtitle
+                  : t.auto_backup_cloud_service(service: label),
+              subtitleMaxLines: 3,
+              icon: FushiIcons.cloudUpload,
+              showIcon: true,
+              value: on,
+              onChanged: canToggle
+                  ? (bool value) => _update(
+                      (AutoBackupSettings s) => s.copyWith(cloudCopies: value),
+                    )
+                  : null,
+            ),
+            if (known && label == null)
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: FushiInlineNotice(
+                  key: const ValueKey<String>('auto-backup-cloud-no-backend'),
+                  message: t.auto_backup_cloud_no_backend,
+                ),
+              ),
+            if (on) ...<Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: FushiInlineNotice(
+                  key: const ValueKey<String>('auto-backup-cloud-retention'),
+                  message: t.auto_backup_cloud_retention_hint,
+                ),
+              ),
+              if (metered)
+                AdaptiveSettingsSwitchRow(
+                  key: const ValueKey<String>('auto-backup-cloud-metered'),
+                  title: t.auto_backup_cloud_metered,
+                  subtitle: t.auto_backup_cloud_metered_hint,
+                  subtitleMaxLines: 2,
+                  icon: FushiIcons.dataUsage,
+                  showIcon: true,
+                  value: settings.cloudAllowMetered,
+                  onChanged: (bool value) => _update(
+                    (AutoBackupSettings s) =>
+                        s.copyWith(cloudAllowMetered: value),
+                  ),
+                ),
+              ListenableBuilder(
+                listenable: widget.statusChanges,
+                builder: (BuildContext context, Widget? _) {
+                  final AutoBackupStatus status = widget.readStatus();
+                  return _AutoBackupCopyStatusLines(
+                    keyPrefix: 'auto-backup-cloud',
+                    line: autoBackupCloudStatusLine(
+                      status: status,
+                      now: DateTime.now(),
+                      wifiOnly: wifiOnly,
+                    ),
+                    pruneFailed: status.cloud.pruneError != null,
+                  );
+                },
+              ),
+            ],
+          ],
+        );
+      },
     );
   }
 }
