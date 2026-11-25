@@ -16,48 +16,31 @@
 library;
 
 import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
+import 'package:fushi_core/fushi_core.dart'
+    show isBackupSlotDue, latestBackupSlot;
 
 /// 桌面端运行中的到期检查周期。
 const Duration kAutoBackupDesktopCheckInterval = Duration(minutes: 15);
 
 /// 最近一个已经过去（`<= now`）的偏好时刻（本地时间）。
-DateTime latestAutoBackupSlot(DateTime now, int minuteOfDay) {
-  final DateTime local = now.toLocal();
-  final int h = minuteOfDay ~/ 60;
-  final int m = minuteOfDay % 60;
-  final DateTime today = DateTime(local.year, local.month, local.day, h, m);
-  if (!today.isAfter(local)) return today;
-  return DateTime(local.year, local.month, local.day - 1, h, m);
-}
+DateTime latestAutoBackupSlot(DateTime now, int minuteOfDay) =>
+    latestBackupSlot(now, minuteOfDay);
 
 /// [settings] 下现在该不该跑。[lastSatisfied] = 上次成功或「没变化、跳过」的时刻（null = 从没有）；
-/// [lastInterrupted] = 上次被打断的那次运行的开始时刻（null = 没有）。
+/// [lastInterrupted] = 上次被打断的那次运行的开始时刻（null = 没有）。规则本身在 fushi_core
+/// `backup_schedule.dart`，与服务端的自动整机备份共用。
 bool isAutoBackupDue({
   required AutoBackupSettings settings,
   required DateTime now,
   required DateTime? lastSatisfied,
   DateTime? lastInterrupted,
-}) {
-  if (!settings.enabled) return false;
-  final int minute = settings.preferredMinuteOfDay ?? 0;
-  final DateTime slot = latestAutoBackupSlot(now, minute);
-  if (lastInterrupted != null &&
-      !lastInterrupted.isAfter(now) &&
-      !lastInterrupted.isBefore(slot)) {
-    return false;
-  }
-  if (lastSatisfied == null) return true;
-  if (lastSatisfied.isAfter(now)) return true;
-  final int n = settings.interval.days;
-  final DateTime threshold = DateTime(
-    slot.year,
-    slot.month,
-    slot.day - (n - 1),
-    slot.hour,
-    slot.minute,
-  );
-  return lastSatisfied.toLocal().isBefore(threshold);
-}
+}) => isBackupSlotDue(
+  intervalDays: settings.interval.days,
+  preferredMinuteOfDay: settings.preferredMinuteOfDay,
+  now: now,
+  lastSatisfied: lastSatisfied,
+  lastInterrupted: lastInterrupted,
+);
 
 /// 「上次成功太久了」的告警：上次满足早于两个间隔之前。关着时不告警。
 bool isAutoBackupOverdue({
