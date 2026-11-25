@@ -1,8 +1,10 @@
 import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
 
 import 'package:drift/native.dart';
+import 'package:flutter/rendering.dart' show RenderRepaintBoundary;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
@@ -121,6 +123,18 @@ void main() {
       reason: '未入库是去饱和灰卡',
     );
     expect(
+      tester
+          .widget<ColorFiltered>(
+            find.descendant(
+              of: missingCard,
+              matching: find.byType(ColorFiltered),
+            ),
+          )
+          .colorFilter,
+      mediaLinkMissingCoverFilter,
+      reason: '灰卡走保 alpha 的亮度矩阵（BUG-5457）',
+    );
+    expect(
       find.descendant(of: animeCard, matching: find.byType(ColorFiltered)),
       findsNothing,
       reason: '已入库卡不灰化',
@@ -136,6 +150,69 @@ void main() {
     await tester.pumpAndSettle();
     expect(opened?.endpoint.kind, MediaLinkKind.videoCollection);
     expect(opened?.endpoint.key, collectionTagEntryKey(animeId));
+  });
+
+  // BUG-5457：封面材质的烘焙纹理四周有给投影留的透明外扩区。混合模式去饱和
+  // （BlendMode.saturation）把透明像素涂成滤镜色，灰卡背后多出一整块灰板；亮度
+  // 矩阵只改 RGB，透明处仍透明。这里直接读像素：同一棵树，换旧滤镜做对照。
+  testWidgets('灰卡滤镜不把透明像素涂成灰板', (WidgetTester tester) async {
+    Future<({int cornerAlpha, List<int> centre})> render(
+      ColorFilter filter,
+    ) async {
+      final GlobalKey boundary = GlobalKey();
+      await tester.pumpWidget(
+        Directionality(
+          textDirection: TextDirection.ltr,
+          child: Center(
+            child: RepaintBoundary(
+              key: boundary,
+              child: ColorFiltered(
+                colorFilter: filter,
+                child: const SizedBox(
+                  width: 40,
+                  height: 40,
+                  child: Center(
+                    child: SizedBox(
+                      width: 10,
+                      height: 10,
+                      child: ColoredBox(color: Color(0xFFFF0000)),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      );
+      final ByteData bytes = (await tester.runAsync<ByteData?>(() async {
+        final RenderRepaintBoundary box =
+            boundary.currentContext!.findRenderObject()!
+                as RenderRepaintBoundary;
+        final ui.Image image = await box.toImage();
+        final ByteData? data = await image.toByteData();
+        image.dispose();
+        return data;
+      }))!;
+      int at(int x, int y, int channel) =>
+          bytes.getUint8((y * 40 + x) * 4 + channel);
+      return (
+        cornerAlpha: at(1, 1, 3),
+        centre: <int>[for (int c = 0; c < 4; c++) at(20, 20, c)],
+      );
+    }
+
+    final ({int cornerAlpha, List<int> centre}) fixed = await render(
+      mediaLinkMissingCoverFilter,
+    );
+    expect(fixed.cornerAlpha, 0, reason: '透明外扩区仍透明');
+    expect(fixed.centre[3], 255);
+    expect(fixed.centre[0], fixed.centre[1], reason: '封面本体去饱和成灰');
+    expect(fixed.centre[1], fixed.centre[2]);
+
+    final ({int cornerAlpha, List<int> centre}) old = await render(
+      const ColorFilter.mode(Colors.grey, BlendMode.saturation),
+    );
+    expect(old.cornerAlpha, greaterThan(0), reason: '对照：旧滤镜把透明处涂成灰');
   });
 
   testWidgets('建议卡：确认写成已确认，不相关写墓碑', (WidgetTester tester) async {

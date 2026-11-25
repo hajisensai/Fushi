@@ -40,7 +40,7 @@ final class RemoteCollectionMemberAdoption {
   String get targetEntryKey => localEntryKey ?? remoteEntryKey;
 }
 
-mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
+mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   // ── media_sources ───────────────────────────────────────────────
   // TODO-817：网络/本地来源库 CRUD。configJson 绝不裸存明文密码（本地恒 NULL，
   // 网络只存凭据引用键，密码本体 M3 才落）。
@@ -1150,6 +1150,9 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// [deletedAt]（缺省 now）：合集级墓碑时刻。整理收敛在同步基线推进后删败方时传
   /// 「严格晚于基线」的值——同毫秒的墓碑会被下一轮判成旧闻（v124）。
   ///
+  /// [linksMovedTo]：本合集被并进 / 整体搬进的另一个合集 id，作品图谱连接改挂到
+  /// 那里；缺省（或目标不存在）= 连接随合集一起删。
+  ///
   /// [organizeMerged]：整理器把它并进别的合集时传 true（删除哨兵记下「并掉」，不算
   /// 用户拒绝这个分组）。
   ///
@@ -1161,8 +1164,26 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     int? deletedAt,
     bool organizeMerged = false,
     bool userIntent = true,
+    int? linksMovedTo,
   }) => transaction(() async {
     final MediaCollectionRow? col = await getMediaCollectionById(id);
+    // 作品图谱：给了 [linksMovedTo]（本合集被并进 / 整体搬进的合集）就先把连着本合集
+    // 的连接改挂过去；必须在 [_dropMediaCollectionRow] 之前——它会物理删掉以本合集
+    // 为端点的全部连接（没改挂的那些随合集删，BUG-5457 / BUG-5462）。
+    if (linksMovedTo != null &&
+        linksMovedTo != id &&
+        await getMediaCollectionById(linksMovedTo) != null) {
+      await retargetMediaLinks(
+        from: (
+          kind: MediaLinkKind.videoCollection,
+          key: collectionTagEntryKey(id),
+        ),
+        to: (
+          kind: MediaLinkKind.videoCollection,
+          key: collectionTagEntryKey(linksMovedTo),
+        ),
+      );
+    }
     await _carryCollectionPrivacyToMembers(
       id,
       <({String mediaType, String entryKey})>[

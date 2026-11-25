@@ -1247,6 +1247,8 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbInfra,
         _FushiDbSrs,
         _FushiDbTagsSync,
+        // 删合集 / 游戏要同事务清作品图谱连接（BUG-5457）：排在两者之前。
+        _FushiDbMediaLinks,
         _FushiDbLibrary,
         _FushiDbCollectionIdentity,
         _FushiDbPrefsMedia,
@@ -1257,7 +1259,6 @@ class FushiDatabase extends _$FushiDatabase
         _FushiDbUpdateFeed,
         _FushiDbMangaDownload,
         _FushiDbWebBrowser,
-        _FushiDbMediaLinks,
         _FushiDbMusic,
         _FushiDbMusicIdentity,
         _FushiDbMusicScrape,
@@ -3864,6 +3865,17 @@ class FushiDatabase extends _$FushiDatabase
         if (await _tableExists('favorite_sentences') &&
             !await _columnExists('favorite_sentences', 'origin_locator')) {
           await m.addColumn(favoriteSentences, favoriteSentences.originLocator);
+        }
+      }
+      if (from < 181) {
+        // v181：表结构不变，清掉端点已不存在的合集 / 游戏连接（BUG-5457：删合集 /
+        // 游戏之前不清 media_links，「同一作品」里留下标题是一串 id 的「未入库」
+        // 死卡）。删除路径起已同事务清理，这里清存量；幂等。清理语句要读两张宿主表：
+        // 真实库（≥ v75）三张表都在，只有迁移测试的局部建表夹具会缺。
+        if (await _tableExists('media_links') &&
+            await _tableExists('media_collections') &&
+            await _tableExists('galgames')) {
+          await purgeDanglingMediaLinks();
         }
       }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建

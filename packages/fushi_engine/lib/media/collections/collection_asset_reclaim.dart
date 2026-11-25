@@ -74,6 +74,7 @@ Future<int> deleteMediaCollectionWithAssets(
   int? deletedAt,
   bool organizeMerged = false,
   bool userIntent = true,
+  int? linksMovedTo,
 }) async {
   // 快照必须在删行**之前**取：行一删，coverPath / 附加图行就再也推导不出来。
   final MediaCollectionRow? snapshot = await db.getMediaCollectionById(
@@ -88,6 +89,7 @@ Future<int> deleteMediaCollectionWithAssets(
     deletedAt: deletedAt,
     organizeMerged: organizeMerged,
     userIntent: userIntent,
+    linksMovedTo: linksMovedTo,
   );
   await reclaimDeletedCollectionAssets(
     db,
