@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-25T15:40:05Z",
+ "generatedAt": "2026-11-25T15:51:57Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "c5db09bd8d3c518a5fcf32cb4a23db72e9b31631",
-  "seq": 32574
+  "sha": "e2fdc7eb22564ba2f9215e99898484991108b77a",
+  "seq": 32579
  },
  "builds": [
   {
@@ -60,15 +60,15 @@
      "state": "ok"
     },
     "windows": {
-     "state": "building",
+     "state": "failed",
      "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682370"
     },
     "macos": {
-     "state": "built",
+     "state": "failed",
      "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682370"
     },
     "ios": {
-     "state": "building",
+     "state": "failed",
      "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682370"
     }
    }
@@ -325,10 +325,14 @@
   }
  ],
  "pending": {
-  "headSha": "c5db09bd8d3c518a5fcf32cb4a23db72e9b31631",
-  "headSeq": 32574,
+  "headSha": "e2fdc7eb22564ba2f9215e99898484991108b77a",
+  "headSeq": 32579,
   "prs": [],
   "direct": [
+   {
+    "sha": "e2fdc7eb22564ba2f9215e99898484991108b77a",
+    "subject": "Merge PR #4431 (含 #4440)"
+   },
    {
     "sha": "c5db09bd8d3c518a5fcf32cb4a23db72e9b31631",
     "subject": "chore(bugs): settle BUG number collisions on a46839d71"
