@@ -17,12 +17,22 @@ const Map<String, String> kMusicCoverRequestHeaders = <String, String>{
   'User-Agent': 'Mozilla/5.0',
 };
 
-/// 封面地址 → ImageProvider：`http(s)://` 走全应用代理装配的 [AppHttpImage]（带
-/// [kMusicCoverRequestHeaders]），本地文件存在才用 [FileImage]，其余 null。
+/// 在线封面（插件 / 服务器曲库的 `http(s)://` 地址）的唯一 provider：走全应用代理、
+/// 带 [kMusicCoverRequestHeaders]，**落磁盘缓存**（[AppCachedHttpImage]）。
+///
+/// 同一张封面会被播放条 / 列表（按显示尺寸 `ResizeImage`）、歌词背景（160px）、取色各要
+/// 一份，`ResizeImage` 宽度不同 = 内存 ImageCache 的 key 不同；无字节缓存的 provider
+/// 会让每个尺寸各下载一遍原图，切回听过的歌也重新下。磁盘缓存按 URL 存原图字节，
+/// 各尺寸共用一次下载，之后切歌直接读盘。
+ImageProvider musicRemoteCoverProvider(String url) =>
+    AppCachedHttpImage(url, headers: kMusicCoverRequestHeaders);
+
+/// 封面地址 → ImageProvider：`http(s)://` 走 [musicRemoteCoverProvider]，本地文件
+/// 存在才用 [FileImage]，其余 null。
 ImageProvider? lyricVisualizerCoverProvider(String? coverPath) {
   if (coverPath == null || coverPath.isEmpty) return null;
   if (coverPath.startsWith('http://') || coverPath.startsWith('https://')) {
-    return AppHttpImage(coverPath, headers: kMusicCoverRequestHeaders);
+    return musicRemoteCoverProvider(coverPath);
   }
   // 互联 host 的封面占位：经钉扎通道取字节。
   final ImageProvider? host = fushiHostMusicCoverProvider(coverPath);

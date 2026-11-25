@@ -5,6 +5,7 @@ library;
 import 'dart:io';
 
 import 'package:flutter/foundation.dart' show ValueListenable;
+import 'package:flutter/services.dart' show MethodCall, MethodChannel;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -14,6 +15,7 @@ import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.d
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_frame.dart';
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_registry.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyric_visualizer_view.dart';
+import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart'
     show FushiPlaybackClock;
 
@@ -649,12 +651,33 @@ void main() {
   });
 
   group('封面加载', () {
+    late Directory coverCache;
+    setUpAll(() async {
+      // 在线封面走 AppCachedHttpImage：构造即起磁盘缓存管理器，要 path_provider 应答。
+      coverCache = await Directory.systemTemp.createTemp('music-cover-cache-');
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(
+            const MethodChannel('plugins.flutter.io/path_provider'),
+            (MethodCall call) async => coverCache.path,
+          );
+    });
+    tearDownAll(() => coverCache.delete(recursive: true));
+
     test('没有封面：provider 为 null，加载器不抛', () {
       expect(lyricVisualizerCoverProvider(null), isNull);
       expect(lyricVisualizerCoverProvider('Z:/no/such/file.png'), isNull);
       expect(
         lyricVisualizerCoverProvider('https://example.com/a.jpg'),
         isNotNull,
+      );
+      // 在线封面落磁盘缓存：各尺寸 / 取色共用一次下载，切回听过的歌不重下。
+      expect(
+        lyricVisualizerCoverProvider('https://example.com/a.jpg'),
+        isA<AppCachedHttpImage>().having(
+          (AppCachedHttpImage p) => p.headers,
+          'headers',
+          kMusicCoverRequestHeaders,
+        ),
       );
       final LyricVisualizerImageLoader l = LyricVisualizerImageLoader()
         ..load(null);
