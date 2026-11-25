@@ -3,7 +3,7 @@
 // outbox grouped the same way, the counts over a time window, and that
 // hidden (locked) titles drop out of both lists.
 
-import 'package:flutter_test/flutter_test.dart';
+import 'package:test/test.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
         MediaTrackingActivityRow,
