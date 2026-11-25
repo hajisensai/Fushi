@@ -697,7 +697,7 @@ void main() {
         );
       });
 
-      group('迁移前清理固定目标（#4366 指出）', () {
+      group('迁移前清理固定目标（#4366 指出；反馈 hjOW5xpIJ0）', () {
         late Directory source;
         late Directory target;
         setUp(() {
@@ -705,14 +705,25 @@ void main() {
           target = Directory(p.join(tmp.path, 'dst'));
         });
 
-        test('目标不存在 → 可清', () async {
-          expect(
-            await AppPaths.firstAndroidMigrationTargetOnlyFile(
+        void writeBytes(Directory root, String rel, List<int> bytes) {
+          File(p.join(root.path, rel))
+            ..createSync(recursive: true)
+            ..writeAsBytesSync(bytes);
+        }
+
+        Future<AndroidMigrationTargetBlocker?> check() =>
+            AppPaths.androidMigrationTargetBlocker(
               target: target,
               source: source,
-            ),
-            isNull,
-          );
+            );
+
+        List<int> bigBytes() =>
+            List<int>.generate((1 << 20) + 4096, (int i) => (i % 251) + 1);
+
+        final String mangaJson = p.join('fushi_books', 'book', 'manga.json');
+
+        test('目标不存在 → 可清', () async {
+          expect(await check(), isNull);
         });
 
         test('上次中断留下的半成品（源的子集）→ 可清', () async {
@@ -730,13 +741,7 @@ void main() {
           File(
             p.join(target.path, 'fushiExport', '.nomedia'),
           ).createSync(recursive: true);
-          expect(
-            await AppPaths.firstAndroidMigrationTargetOnlyFile(
-              target: target,
-              source: source,
-            ),
-            isNull,
-          );
+          expect(await check(), isNull);
         });
 
         test('目标里有源没有的文件（锚点错指空根时目标就是真书库）→ 拒绝', () async {
@@ -747,11 +752,128 @@ void main() {
             ..createSync(recursive: true)
             ..writeAsStringSync('x');
           expect(
-            await AppPaths.firstAndroidMigrationTargetOnlyFile(
-              target: target,
-              source: source,
+            await check(),
+            AndroidMigrationTargetBlocker(
+              AndroidMigrationTargetBlockKind.targetOnly,
+              p.join('fushi_books', 'norway', 'cover.jpg'),
             ),
-            p.join('fushi_books', 'norway', 'cover.jpg'),
+          );
+        });
+
+        test('同相对路径、同大小、不同字节 → 内容冲突，拒绝', () async {
+          writeBytes(source, mangaJson, '{"title":"A"}'.codeUnits);
+          writeBytes(target, mangaJson, '{"title":"B"}'.codeUnits);
+          expect(
+            File(p.join(target.path, mangaJson)).lengthSync(),
+            File(p.join(source.path, mangaJson)).lengthSync(),
+          );
+          expect(
+            await check(),
+            AndroidMigrationTargetBlocker(
+              AndroidMigrationTargetBlockKind.contentConflict,
+              mangaJson,
+            ),
+          );
+        });
+
+        test('目标比源长（完整正文 / 较新版本）→ 内容冲突，拒绝', () async {
+          writeBytes(source, mangaJson, 'chapter 1'.codeUnits);
+          writeBytes(target, mangaJson, 'chapter 1 + chapter 2'.codeUnits);
+          expect(
+            await check(),
+            AndroidMigrationTargetBlocker(
+              AndroidMigrationTargetBlockKind.contentConflict,
+              mangaJson,
+            ),
+          );
+        });
+
+        test('目标更短但不是源的前缀 → 内容冲突，拒绝', () async {
+          writeBytes(source, mangaJson, 'abcdefgh'.codeUnits);
+          writeBytes(target, mangaJson, 'abcX'.codeUnits);
+          expect(
+            (await check())?.kind,
+            AndroidMigrationTargetBlockKind.contentConflict,
+          );
+        });
+
+        test('同大小、差异落在第二块（>1 MiB 处）也能发现', () async {
+          final List<int> big = bigBytes();
+          writeBytes(source, mangaJson, big);
+          final List<int> changed = List<int>.of(big);
+          changed[(1 << 20) + 100] ^= 0x55;
+          writeBytes(target, mangaJson, changed);
+          expect(
+            (await check())?.kind,
+            AndroidMigrationTargetBlockKind.contentConflict,
+          );
+        });
+
+        test('同名的一边是文件、另一边是目录 → 拒绝', () async {
+          Directory(p.join(source.path, mangaJson)).createSync(recursive: true);
+          writeBytes(target, mangaJson, 'x'.codeUnits);
+          expect(
+            (await check())?.kind,
+            AndroidMigrationTargetBlockKind.contentConflict,
+          );
+        });
+
+        test('中断复制残留：复制完的文件 + 截断的最后一个文件 + 半截临时文件 → 可清', () async {
+          final List<int> big = bigBytes();
+          final String done1 = p.join('fushi_books', 'book', 'cover.jpg');
+          final String done2 = p.join('audiobooks', 'a', 'track01.mp3');
+          final String cut = p.join('fushi_books', 'book', 'book.epub');
+          writeBytes(source, done1, <int>[1, 2, 3]);
+          writeBytes(source, done2, big);
+          writeBytes(source, cut, big);
+          writeBytes(source, mangaJson, 'not copied yet'.codeUnits);
+          writeBytes(target, done1, <int>[1, 2, 3]);
+          writeBytes(target, done2, big);
+          // 被打断的最后一个文件：跨过 1 MiB 读块边界截断。
+          writeBytes(target, cut, big.sublist(0, (1 << 20) + 17));
+          writeBytes(target, '$mangaJson.fushi-part', <int>[9]);
+          expect(await check(), isNull);
+        });
+
+        test('截断成 0 字节的文件 → 可清', () async {
+          writeBytes(source, mangaJson, 'abc'.codeUnits);
+          writeBytes(target, mangaJson, <int>[]);
+          expect(await check(), isNull);
+        });
+
+        test('已写前缀之后全是 0（预分配 / 掉电的空洞）→ 可清；空洞里有非 0 → 拒绝', () async {
+          writeBytes(source, mangaJson, <int>[5, 6, 7, 8, 9, 10]);
+          writeBytes(target, mangaJson, <int>[5, 6, 7, 0, 0, 0]);
+          expect(await check(), isNull);
+          writeBytes(target, mangaJson, <int>[5, 6, 7, 0, 1, 0]);
+          expect(
+            (await check())?.kind,
+            AndroidMigrationTargetBlockKind.contentConflict,
+          );
+        });
+
+        test('目标多出的文件先于逐字节比较报出', () async {
+          writeBytes(source, mangaJson, 'abcdefgh'.codeUnits);
+          writeBytes(target, mangaJson, 'abcX'.codeUnits);
+          writeBytes(target, p.join('fushi_books', 'other', 'x.txt'), <int>[1]);
+          expect(
+            (await check())?.kind,
+            AndroidMigrationTargetBlockKind.targetOnly,
+          );
+        });
+
+        test('后台 isolate 版本与直接调用结论一致', () async {
+          writeBytes(source, mangaJson, '{"title":"A"}'.codeUnits);
+          writeBytes(target, mangaJson, '{"title":"B"}'.codeUnits);
+          expect(
+            await AppPaths.androidMigrationTargetBlockerInBackground(
+              target: target.path,
+              source: source.path,
+            ),
+            AndroidMigrationTargetBlocker(
+              AndroidMigrationTargetBlockKind.contentConflict,
+              mangaJson,
+            ),
           );
         });
       });

@@ -2500,6 +2500,7 @@
   "data_storage_migrate_overlay_title": "Verileriniz taşınıyor",
   "data_storage_migrate_overlay_warning": "Lütfen uygulamayı açık tutun. İşlem bitene kadar kapatmayın veya bilgisayarınızı kapatmayın.",
   "data_storage_migrate_success": "Veri taşındı. Yeniden başlatılıyor…",
+  "data_storage_migrate_target_conflict": "The destination ${path} has a version of ${file} that differs from the one in your current library. To keep both copies, the destination was not cleared and nothing was moved.",
   "data_storage_migrate_target_has_library": "The destination ${path} already holds files your current library doesn't have (e.g. ${file}). It may be your real library, so it was not cleared and nothing was moved.",
   "data_storage_migrating": "Veri taşınıyor…",
   "data_storage_reject_install_dir": "Bu klasör uygulamanın kurulum konumudur ve verilerinizi depolayamaz. Lütfen farklı, boş bir klasör seçin.",

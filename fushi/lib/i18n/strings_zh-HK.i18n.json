@@ -2500,6 +2500,7 @@
   "data_storage_migrate_overlay_title": "正在遷移數據",
   "data_storage_migrate_overlay_warning": "正在遷移數據，請勿關閉應用或電腦，遷移完成後會自動重啟。",
   "data_storage_migrate_success": "數據已遷移，正在重啟…",
+  "data_storage_migrate_target_conflict": "The destination ${path} has a version of ${file} that differs from the one in your current library. To keep both copies, the destination was not cleared and nothing was moved.",
   "data_storage_migrate_target_has_library": "The destination ${path} already holds files your current library doesn't have (e.g. ${file}). It may be your real library, so it was not cleared and nothing was moved.",
   "data_storage_migrating": "正在遷移數據…",
   "data_storage_reject_install_dir": "所選目錄是應用的安裝位置，不能用來存放數據。請另選一個空目錄。",

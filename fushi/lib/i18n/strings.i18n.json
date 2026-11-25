@@ -2500,6 +2500,7 @@
   "data_storage_migrate_overlay_title": "Moving your data",
   "data_storage_migrate_overlay_warning": "Please keep the app open. Do not close or shut down your computer until it finishes.",
   "data_storage_migrate_success": "Data moved. Restarting…",
+  "data_storage_migrate_target_conflict": "The destination ${path} has a version of ${file} that differs from the one in your current library. To keep both copies, the destination was not cleared and nothing was moved.",
   "data_storage_migrate_target_has_library": "The destination ${path} already holds files your current library doesn't have (e.g. ${file}). It may be your real library, so it was not cleared and nothing was moved.",
   "data_storage_migrating": "Moving data…",
   "data_storage_reject_install_dir": "That folder is the app's install location and can't store your data. Please choose a different, empty folder.",
