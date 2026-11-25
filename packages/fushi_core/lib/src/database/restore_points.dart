@@ -84,13 +84,15 @@ final RegExp _kScheduledIdPattern = RegExp(
 bool isScheduledRestorePointId(String id) =>
     isPlainRestorePointFileName(id) && _kScheduledIdPattern.hasMatch(id);
 
-/// [name] 是不是目录里的一个普通名字（不空、不是 `.` / `..`、不带路径分隔符或 NUL）。
+/// [name] 是不是目录里的一个普通名字（不空、不是 `.` / `..`、不带路径分隔符、NUL 或 `:`——Windows 上
+/// `名字:流` 是 NTFS 备用数据流，写进去的内容不出现在目录列表里）。
 bool isPlainRestorePointFileName(String name) =>
     name.isNotEmpty &&
     name != '.' &&
     name != '..' &&
     !name.contains('/') &&
     !name.contains(r'\') &&
+    !name.contains(':') &&
     !name.contains('\x00');
 
 const String _kTmpSuffix = '.tmp';
@@ -1011,9 +1013,9 @@ class RestorePointStore {
   /// 顺带清掉 [root] 下写到一半的定时点目录（[cleanIncompleteScheduled]）——自定义文件夹不归
   /// [prune] 管，没有这一步那里的半截 zip 永远不会被清。
   ///
-  /// **只修剪本机写的点**（[isOwnScheduledPoint]）：别的设备写的（共用的同步文件夹、取回本机的副本）
-  /// 不占日 / 周 / 月桶、不算进大小上限、从不自动删；取回本机的点（[RestorePoint.copiedBackAtMs]）也从不
-  /// 自动删。[sharedRoot]：存储根可能被几台设备共用（桌面自定义文件夹），没有设备标记的点当作别人的。
+  /// **只修剪本机写的点**（[isOwnScheduledPoint]）：取回本机的点（[RestorePoint.copiedBackAtMs]）在哪里都
+  /// 从不自动删；[sharedRoot]（存储根可能被几台设备共用：桌面自定义文件夹）里别的设备写的、没有设备
+  /// 标记的点不占日 / 周 / 月桶、不算进大小上限、从不自动删。私有存储不看设备标记。
   List<RestorePoint> pruneScheduled({
     required String? deviceId,
     bool sharedRoot = false,
@@ -1047,23 +1049,27 @@ class RestorePointStore {
     return doomed;
   }
 
-  /// [point] 算不算本机写的、可以自动修剪的定时还原点：取回本机的副本从不算；有设备标记的看是不是
-  /// [deviceId]；没有标记的（这一期之前写的）在私有存储里算本机的，在共用存储（[sharedRoot]）里不算。
+  /// [point] 算不算本机写的、可以自动修剪的定时还原点：取回本机的副本（[RestorePoint.copiedBackAtMs]）
+  /// 从不算。私有存储（不是 [sharedRoot]）只有本机在写——别的设备的点只能经「取回本机」进来，而那会记下
+  /// copiedBackAtMs——所以其余的都算、不看设备标记：同步设备 id 重新生成过（清数据、换库）时，旧 id
+  /// 写的点照样修剪，不会永远占着空间。共用存储里只算设备标记是 [deviceId] 的（[deviceId] 为 null 时
+  /// 一份都不算；没有标记的可能是别的设备写的，不算）。
   static bool isOwnScheduledPoint(
     RestorePoint point, {
     required String? deviceId,
     required bool sharedRoot,
   }) {
     if (point.copiedBackAtMs != null) return false;
+    if (!sharedRoot) return true;
     final String? owner = point.deviceId;
-    if (owner == null) return !sharedRoot;
-    return owner == deviceId;
+    return owner != null && owner == deviceId;
   }
 
   /// 删掉 [root] 下写到一半的定时还原点目录（id 带 `-scheduled`、没有元数据、本进程没在写）。
   /// [sharedRoot]（共用的自定义文件夹）时只删「谁在写」标记（[kRestorePointOwnerFileName]）是
   /// [deviceId] 的：没有标记 / 标记是别人的目录可能是别的设备正在写、或同步盘还没传完元数据的点，删了
-  /// 会经同步把那台设备的点也删掉。返回删掉的目录数。
+  /// 会经同步把那台设备的点也删掉。[deviceId] 为 null（查不出本机 id）时共用存储里一个都不删：不然
+  /// 「没有标记」和「本机 id 为 null」会被当成同一个人，别的设备没写完的点就被删了。返回删掉的目录数。
   int cleanIncompleteScheduled({String? deviceId, bool sharedRoot = false}) {
     final Directory dir = Directory(root);
     if (!dir.existsSync()) return 0;
@@ -1076,7 +1082,9 @@ class RestorePointStore {
           File(p.join(e.path, kRestorePointMetaFileName)).existsSync()) {
         continue;
       }
-      if (sharedRoot && _ownerOf(e.path) != deviceId) continue;
+      if (sharedRoot && (deviceId == null || _ownerOf(e.path) != deviceId)) {
+        continue;
+      }
       _deleteDirQuietly(e.path);
       removed++;
     }
