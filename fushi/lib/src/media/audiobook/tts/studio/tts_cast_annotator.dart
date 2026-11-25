@@ -43,6 +43,11 @@ export 'package:fushi/src/media/audiobook/tts/studio/tts_cast_passes.dart'
 /// （BUG-5369）。
 const int _kAnnotateMaxTokens = 8192;
 
+/// 单块请求的整体时限：上限 [_kAnnotateMaxTokens] 按消费级显卡上本地模型约
+/// 15 token/s 算要九分钟出头；默认的 90 秒在本地 14B 上几乎每块都超时，又被当成
+/// 网络抖动整块重生成（BUG-5367）。云端模型几十秒就回，不受影响。
+const Duration _kAnnotateRequestTimeout = Duration(minutes: 10);
+
 /// 两遍请 LLM 标注 [sections]（空 = 计划里的全部章）里每句的说话人，并入 [bookKey]
 /// 的选角表并落盘；用户手改过的行保留。返回更新后的选角表。
 ///
@@ -91,7 +96,9 @@ Future<TtsCast> annotateTtsCast({
           .toList()
         ..sort();
 
-  final AiChatClient client = AiChatClient();
+  final AiChatClient client = AiChatClient(
+    requestTimeout: _kAnnotateRequestTimeout,
+  );
   Future<TtsCastReply> ask(String system, String user) async {
     try {
       final AiChatCompletion done = await client.completeWithUsage(
