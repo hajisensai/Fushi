@@ -20,6 +20,7 @@ import 'package:fushi/src/utils/components/fushi_material_components.dart';
 import 'package:fushi/src/utils/components/fushi_neutral_decor.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 
 bool _sameSourceViewport(WindowCaptureMetadata? a, WindowCaptureMetadata? b) {
@@ -910,15 +911,18 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
     final FushiAppleSurfaceForm? appleForm = FushiAppleSurfaceScope.maybeFormOf(
       context,
     );
-    final Widget captureButton = FushiIconButtonControl(
-      onPressed: _busy ? null : _capture,
-      icon: const FushiIcon(Icons.add_photo_alternate_outlined),
+    // 页头动作用 [FushiIconButton]：放不下时才收得进「⋯」（BUG-5451）。
+    final Widget captureButton = FushiIconButton(
+      enabled: !_busy,
+      onTap: _busy ? null : _capture,
+      icon: Icons.add_photo_alternate_outlined,
       tooltip: _captureTooltip,
     );
-    final Widget removeButton = FushiIconButtonControl(
+    final Widget removeButton = FushiIconButton(
       key: const ValueKey<String>('calibration-remove-sample'),
-      onPressed: _busy || _sample == null ? null : _removeSample,
-      icon: const FushiIcon(Icons.delete_outline),
+      enabled: !(_busy || _sample == null),
+      onTap: _busy || _sample == null ? null : _removeSample,
+      icon: Icons.delete_outline,
       tooltip: t.game_lookup_samples_remove,
     );
     final Widget applyButton = FushiFilledButton.icon(

@@ -234,13 +234,17 @@ Widget musicBrowseScaffold(
         titleInBody: titleInBody,
         bottom: mastheadBottom,
         actions: <Widget>[
+          // 页头动作用 [FushiIconButton]：放不下时才收得进「⋯」（Cupertino 窄屏
+          // 不再横滑藏按钮）。音乐页的顶栏动作没有长按次要动作。
           for (final FushiToolbarItem item in actions)
-            FushiIconButtonControl(
+            FushiIconButton(
               key: item.key,
-              icon: FushiIcon(item.icon),
+              icon: item.icon,
               tooltip: item.tooltip ?? item.label,
-              onPressed: item.onPressed,
-              onLongPress: item.onLongPress,
+              enabled: item.onPressed != null,
+              busy: item.busy,
+              selected: item.selected ? true : null,
+              onTap: item.onPressed,
             ),
         ],
         body: Builder(builder: body),

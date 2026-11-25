@@ -116,6 +116,7 @@ import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost, revealFirstOf;
@@ -3871,15 +3872,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             context,
             MediaQuery.sizeOf(context).width,
           ))
-        FushiIconButtonControl(
+        FushiIconButton(
           key: const ValueKey<String>('collection-detail-layout-toggle'),
           tooltip: _posterLayout
               ? t.video_detail_layout_two_pane
               : t.video_detail_layout_poster,
-          icon: FushiIcon(
-            _posterLayout ? FushiIcons.viewColumn : FushiIcons.viewAgenda,
-          ),
-          onPressed: () => unawaited(_togglePosterLayout()),
+          icon: _posterLayout ? FushiIcons.viewColumn : FushiIcons.viewAgenda,
+          onTap: () => unawaited(_togglePosterLayout()),
         ),
       _buildSortMenu(),
       // 管理动作默认全部平铺，页头放不下才从最低优先级起收进「⋯」

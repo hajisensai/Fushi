@@ -1,6 +1,7 @@
 import 'package:flutter/rendering.dart' show RenderParagraph;
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_floating_page_chrome.dart'
     show
         FushiPageChromeCapsule,
@@ -16,8 +17,6 @@ import 'package:fushi/src/utils/components/fushi_page_title_metrics.dart'
     show FushiPageTitleTier;
 import 'package:fushi/src/utils/components/glass/fushi_glass_bars.dart'
     show FushiAppBar;
-import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
-import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:material_ui/material_ui.dart';
 
@@ -42,10 +41,10 @@ void main() {
       FushiMastheadScaffold(
         title: 'Statistics',
         actions: <Widget>[
-          FushiIconButtonControl(
+          FushiIconButton(
             tooltip: 'Refresh',
-            onPressed: () {},
-            icon: const FushiIcon(FushiIcons.refresh),
+            onTap: () {},
+            icon: FushiIcons.refresh,
           ),
         ],
         body: Builder(
@@ -366,10 +365,10 @@ void main() {
         home: FushiMastheadScaffold(
           title: title,
           actions: <Widget>[
-            FushiIconButtonControl(
+            FushiIconButton(
               tooltip: 'Search',
-              onPressed: () {},
-              icon: const FushiIcon(FushiIcons.search),
+              onTap: () {},
+              icon: FushiIcons.search,
             ),
           ],
           body: const SizedBox.expand(),
@@ -426,10 +425,10 @@ void main() {
               titleInBody: true,
               onBack: () {},
               actions: <Widget>[
-                FushiIconButtonControl(
+                FushiIconButton(
                   tooltip: 'More',
-                  onPressed: () {},
-                  icon: const FushiIcon(FushiIcons.search),
+                  onTap: () {},
+                  icon: FushiIcons.search,
                 ),
               ],
             ),
@@ -639,10 +638,10 @@ void main() {
         FushiToolScaffold(
           title: 'CSS editor',
           actions: <Widget>[
-            FushiIconButtonControl(
+            FushiIconButton(
               tooltip: 'Save',
-              onPressed: () {},
-              icon: const FushiIcon(FushiIcons.refresh),
+              onTap: () {},
+              icon: FushiIcons.refresh,
             ),
           ],
           body: SizedBox.expand(key: bodyKey),
@@ -668,10 +667,10 @@ void main() {
           appBar: FushiAppBar(
             title: const Text('Search resources'),
             actions: <Widget>[
-              FushiIconButtonControl(
+              FushiIconButton(
                 tooltip: 'Refresh',
-                onPressed: () {},
-                icon: const FushiIcon(FushiIcons.refresh),
+                onTap: () {},
+                icon: FushiIcons.refresh,
               ),
             ],
           ),

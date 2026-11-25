@@ -728,7 +728,7 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
         );
       },
     );
-    final Widget bar = FushiAppleNavBar(
+    final FushiAppleNavBar bar = FushiAppleNavBar(
       // 下面自己让位状态栏 / 窗口标题栏（桌面工具栏排在标题栏行下面）。
       primary: false,
       automaticallyImplyLeading: false,
@@ -800,13 +800,20 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
   }
 
   /// 大标题形态：栏一行 + 大标题 + 吸顶的 [subtitle] / [bottom]。
+  ///
+  /// 正文、scroll edge 底、大标题都从**窗口顶**（含状态栏 / 桌面窗口按钮行）起排，
+  /// 栏行叠在最上面：iOS 27 导航栏的 scroll edge 是从窗口顶到吸顶行下沿的一整块
+  /// 模糊 + 压暗底（[FushiAppleScrollEdgeBackdrop]）。曾经把栏行排在 Column 里、
+  /// 正文与底只排在栏下面，状态栏 + 栏行那一段是没有内容、没有底的纯页面底色，
+  /// 下面一段才是模糊的内容——两种底在栏下沿接成一条分界线。
   Widget _buildAppleLargeTitle(
     BuildContext context,
     MediaQueryData media,
-    Widget bar,
+    FushiAppleNavBar bar,
     Widget body,
     double band,
   ) {
+    final double statusTop = media.padding.top;
     final bool extend = widget.extendBodyBehindHeader;
     final double side = fushiAppleCompact(context)
         ? 20 * fushiAppleMacScale(context)
@@ -862,6 +869,7 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
           );
     final Widget content = CustomMultiChildLayout(
       delegate: _AppleMastheadDelegate(
+        top: statusTop + bar.preferredSize.height,
         band: band,
         extendBody: extend,
         offset: _offset,
@@ -911,18 +919,14 @@ class _FushiMastheadFrameState extends State<FushiMastheadFrame> {
           LayoutId(id: _AppleMastheadSlot.bottom, child: below),
       ],
     );
-    return Padding(
-      padding: EdgeInsets.only(top: media.padding.top),
-      child: MediaQuery.removePadding(
-        context: context,
-        removeTop: true,
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          children: <Widget>[
-            bar,
-            Expanded(child: content),
-          ],
-        ),
+    return MediaQuery.removePadding(
+      context: context,
+      removeTop: true,
+      child: Stack(
+        children: <Widget>[
+          Positioned.fill(child: content),
+          Positioned(top: statusTop, left: 0, right: 0, child: bar),
+        ],
       ),
     );
   }
@@ -1061,11 +1065,14 @@ enum _AppleMastheadSlot { body, edge, largeTitle, bottom }
 /// 渐隐 [kFushiAppleScrollEdgeTail]。
 class _AppleMastheadDelegate extends MultiChildLayoutDelegate {
   _AppleMastheadDelegate({
+    required this.top,
     required this.band,
     required this.extendBody,
     required this.offset,
   }) : super(relayout: offset);
 
+  /// 栏行下沿（状态栏 / 窗口按钮行 + 栏行）：大标题与吸顶行从这里往下排。
+  final double top;
   final double band;
   final bool extendBody;
   final ValueListenable<double> offset;
@@ -1079,7 +1086,7 @@ class _AppleMastheadDelegate extends MultiChildLayoutDelegate {
           ).height
         : 0;
     final double slide = extendBody ? offset.value.clamp(0.0, band) : 0;
-    final double inset = band + below;
+    final double inset = top + band + below;
     if (extendBody) {
       layoutChild(
         _AppleMastheadSlot.body,
@@ -1096,9 +1103,9 @@ class _AppleMastheadDelegate extends MultiChildLayoutDelegate {
       );
       positionChild(_AppleMastheadSlot.body, Offset(0, inset));
     }
-    // 正文铺到页头底下：实底 = 栏下沿到吸顶行下沿；正文排在下面：实底 0，
-    // 渐隐从正文顶边往下画。
-    final double solid = extendBody ? band - slide + below : 0;
+    // 正文铺到页头底下：实底 = 窗口顶到吸顶行下沿（一整块，含状态栏与栏行）；
+    // 正文排在下面：实底 0，渐隐从正文顶边往下画。
+    final double solid = extendBody ? top + band - slide + below : 0;
     layoutChild(
       _AppleMastheadSlot.edge,
       BoxConstraints.tight(Size(size.width, solid + kFushiAppleScrollEdgeTail)),
@@ -1108,14 +1115,15 @@ class _AppleMastheadDelegate extends MultiChildLayoutDelegate {
       _AppleMastheadSlot.largeTitle,
       BoxConstraints.tight(Size(size.width, band)),
     );
-    positionChild(_AppleMastheadSlot.largeTitle, Offset(0, -slide));
+    positionChild(_AppleMastheadSlot.largeTitle, Offset(0, top - slide));
     if (hasChild(_AppleMastheadSlot.bottom)) {
-      positionChild(_AppleMastheadSlot.bottom, Offset(0, band - slide));
+      positionChild(_AppleMastheadSlot.bottom, Offset(0, top + band - slide));
     }
   }
 
   @override
   bool shouldRelayout(_AppleMastheadDelegate oldDelegate) =>
+      top != oldDelegate.top ||
       band != oldDelegate.band ||
       extendBody != oldDelegate.extendBody ||
       offset != oldDelegate.offset;
