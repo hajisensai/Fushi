@@ -77,7 +77,7 @@ void main() {
         'manga.tap_zone_paging',
         'manga.tap_zone_layout',
         'manga.chrome_floating',
-        'manga.controls_editor',
+        'manga.open_toolbar_layout',
         'manga.resume_target',
         'manga.reverse_arrow_page_turn',
         'manga.volume_key_paging',

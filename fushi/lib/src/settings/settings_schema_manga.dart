@@ -433,11 +433,38 @@ SettingsSection _mangaDisplaySection() {
       // 漫画阅读器工具栏按钮布局（与小说阅读器的「阅读器按钮布局」同一套编辑器
       // 手感）：顶栏 / 底部工具栏 / 更多 / 移出。写偏好后开着的漫画下次重建即换布局；
       // 阅读器内「阅读设置 → 工具栏布局」入口改动立即生效。
-      SettingsCustomItem(
-        id: 'manga.controls_editor',
-        searchTitle: t.manga_reader_control_layout,
-        cliValue: mangaControlLayoutCli,
-        builder: buildMangaControlLayoutEditor,
+      // 编辑器收进独立子页（反馈 JONk4qmF8V：自定义布局集中管理，「设置 › 外观 ›
+      // 自定义布局」链到同一子页）。
+      SettingsNavigationItem(
+        id: 'manga.open_toolbar_layout',
+        title: t.manga_reader_control_layout,
+        subtitle: t.settings_custom_layouts_manga_toolbar_hint,
+        icon: FushiIcons.dashboardCustomize,
+        child: buildMangaToolbarLayoutDestination,
+      ),
+    ],
+  );
+}
+
+/// 「漫画 › 工具栏布局」子页：拖放编辑器本体。子页共用父分类 id。
+SettingsDestination buildMangaToolbarLayoutDestination() {
+  return SettingsDestination(
+    id: SettingsDestinationId.manga,
+    title: t.manga_reader_control_layout,
+    summary: t.settings_custom_layouts_manga_toolbar_hint,
+    icon: FushiIcons.dashboardCustomize,
+    sections: <SettingsSection>[
+      SettingsSection(
+        id: 'manga.section.toolbar_layout',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'manga.controls_editor',
+            searchTitle: t.manga_reader_control_layout,
+            cliValue: mangaControlLayoutCli,
+            builder: buildMangaControlLayoutEditor,
+          ),
+        ],
       ),
     ],
   );

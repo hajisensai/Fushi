@@ -25,6 +25,7 @@ import 'package:fushi/src/second_screen/second_screen_controller.dart';
 import 'package:fushi/src/settings/settings_actions.dart';
 import 'package:fushi/src/settings/settings_context.dart';
 import 'package:fushi/src/settings/settings_destination.dart';
+import 'package:fushi/src/settings/settings_schema_custom_layouts.dart';
 import 'package:fushi/src/settings/settings_destination_id.dart';
 import 'package:fushi/src/settings/settings_schema_page_backdrop.dart';
 import 'package:fushi/src/settings/shell_style_preview.dart';
@@ -792,6 +793,22 @@ SettingsDestination buildAppearanceDestination() {
               settingsContext.refresh();
             },
             defaultValue: false,
+          ),
+        ],
+      ),
+      // 自定义布局集中入口（反馈 JONk4qmF8V）：小说工具栏 / 页眉页脚 / 漫画工具栏 /
+      // 视频控制条的拖放编辑器都从这里进，各模块设置页里的入口链到同一子页。
+      SettingsSection(
+        id: 'appearance.section.custom_layouts',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        title: t.settings_custom_layouts_title,
+        items: <SettingsItem>[
+          SettingsNavigationItem(
+            id: 'appearance.custom_layouts.open',
+            title: t.settings_custom_layouts_title,
+            subtitle: t.settings_custom_layouts_hint,
+            icon: FushiIcons.dashboardCustomize,
+            child: buildCustomLayoutsDestination,
           ),
         ],
       ),

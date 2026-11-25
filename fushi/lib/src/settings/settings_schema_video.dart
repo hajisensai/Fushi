@@ -699,6 +699,17 @@ SettingsDestination buildVideoDestination() {
           ),
           // 「重置控件布局」原独占一个「控件」section（仅此一项）；单项撑一个分区
           // 是欠填充结构，并入「控制与手势」尾部。面板里归「控制」分类、排在拖拽编辑器后。
+          // 不在播放器里时（设置页）也能改控制条布局：host-less 编辑器收在子页，
+          // 「设置 › 外观 › 自定义布局」链到同一子页（反馈 JONk4qmF8V）。播放中面板
+          // 里仍是就地编辑器（video.player.controls_editor，改动当场生效）。
+          SettingsNavigationItem(
+            id: 'video.controls.open_control_layout',
+            title: t.settings_custom_layouts_video_controls,
+            subtitle: t.settings_custom_layouts_video_controls_hint,
+            icon: FushiIcons.dashboardCustomize,
+            visible: (SettingsContext c) => !videoHostVisible(c),
+            child: buildVideoControlLayoutSettingsDestination,
+          ),
           SettingsActionItem(
             id: 'video.controls.reset_layout',
             title: t.video_control_reset_layout,
@@ -1609,6 +1620,31 @@ SettingsDestination buildVideoDestination() {
             video: VideoPlacement(group: VideoGroup.controls, order: 10),
             cliValue: videoControlLayoutCli,
             builder: buildVideoControlLayoutEditor,
+          ),
+        ],
+      ),
+    ],
+  );
+}
+
+/// 「视频 › 控制条布局」子页（不在播放器里时用）：编辑器直接读写偏好，下次打开
+/// 视频生效。子页共用父分类 id。
+SettingsDestination buildVideoControlLayoutSettingsDestination() {
+  return SettingsDestination(
+    id: SettingsDestinationId.video,
+    title: t.settings_custom_layouts_video_controls,
+    summary: t.settings_custom_layouts_video_controls_hint,
+    icon: FushiIcons.dashboardCustomize,
+    sections: <SettingsSection>[
+      SettingsSection(
+        id: 'video.section.control_layout',
+        presentation: SettingsSectionPresentation.alwaysExpanded,
+        items: <SettingsItem>[
+          SettingsCustomItem(
+            id: 'video.controls.layout_editor',
+            searchTitle: t.settings_custom_layouts_video_controls,
+            cliValue: videoControlLayoutCli,
+            builder: buildVideoControlLayoutSettingsEditor,
           ),
         ],
       ),
