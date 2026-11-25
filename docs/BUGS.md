@@ -38,6 +38,7 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5465](bugs/BUG-5465-video-subtitle-autoload-hardcoded-ja.md) | ✅ | ✅ | 视频打开时自动挑字幕写死日语：sidecar 只认日语后缀，内封轨不看语言取第一条文本轨，繁 / 简中文不分 |
+| [BUG-5464](bugs/BUG-5464-video-subtitle-episode-inherit.md) | ✅ | ✅ | 合集里上一集选的字幕（内封轨 / sidecar / 关闭）下一集不继承，每集都得重选 |
 | [BUG-5450](bugs/BUG-5450-android-library-layout-anchor-lost.md) | ✅ | ✅ | Android 书库对账只探当前配置的内部根，布局 / 容器锚点被冲掉后永不自愈 |
 | [BUG-5449](bugs/BUG-5449-background-writers-seal-and-interrupt.md) | ✅ | ✅ | background-writers-seal-and-interrupt |
 | [BUG-5448](bugs/BUG-5448-lumiere-font-switch-jank.md) | ✅ | ✅ | 绘光切字体卡顿、自定义字体加载完不重画 |

@@ -13,6 +13,7 @@ part of '../video_fushi_page.dart';
 /// / `_subtitleImportsInFlight` / `_subtitleListVisible` / `_currentSubtitleSource`
 /// / `_subtitleStyle` / `_remoteSubtitlePath` / `_remoteEmbeddedSubtitleTracks`),
 /// the load-path subtitle restore helpers (`_restorePersistedSubtitle` /
+/// `_restoreInheritedSubtitle` / `_loadChosenSubtitleForLoad` /
 /// `_subtitleSourcesForMenu` / `_firstMatching` / `_detectSidecar` /
 /// `_loadExternalSubtitleCues`), the episode-path helpers
 /// (`_handleEmbeddedSubtitleAutoLoad` / `_prewarmNextEpisodeSubtitleCache` /
@@ -5378,9 +5379,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
     }
     // BUG-081: 单视频把解析出的 cue 落库，重进时 `_loadSingle` 的 `loadCues`
     // 直接命中，无需用户再手动加载。cue 与字幕源指针**原子**写入（事务），避免
-    // 半落库导致下次恢复内容与源标签不一致。播放列表各集有意不存 cue（每集外部
-    // 文件按磁盘动态解析，避免跨集 bookUid 错配，见 `_loadEpisode` 注释），故只
-    // 写源指针。
+    // 半落库导致下次恢复内容与源标签不一致。合集里的一集（`_episodes` 非空）只写
+    // 源指针、不存 cue：重进时 `_loadSingle` 兜底链 ① 的 `_restorePersistedSubtitle`
+    // 按源指针从磁盘重新解析；同合集里还没选过字幕的集按这次选择沿用（BUG-5464）。
     final bool singleVideo = _episodes.isEmpty;
     // 卡片片段回看中暂存、继续观看时补存（BUG-3490）。
     await _saveReviewableChoice(_ReviewChoiceKind.primarySubtitle, () async {
@@ -5404,8 +5405,9 @@ extension _VideoSubtitle on _VideoFushiPageState {
   ///
   /// TODO-818：持久化 [SubtitleSource.offSentinel] 而非 `null`。`null` 与「从未选过/
   /// 无偏好」撞，重启会被恢复路径当「无偏好→自动选默认」处理，导致用户明明关了字幕
-  /// 重启又自动选上。哨兵让恢复路径（[_loadSingle]/[_loadEpisode]）识别为「显式关闭」
-  /// 并短路掉 sidecar 探测与内嵌轨自动抽取两个自动重选向量。
+  /// 重启又自动选上。哨兵让恢复路径（[_loadSingle]，单视频与合集里的一集同一条）识别为
+  /// 「显式关闭」并短路掉 sidecar 探测与内嵌轨自动抽取两个自动重选向量；同合集里还没
+  /// 选过字幕的集沿用这次关闭（BUG-5464）。
   Future<void> _selectSubtitleOff(VideoPlayerController controller) async {
     if (_discLearningBlocked) return;
     // 在途的内封读取作废（结束时不再把字幕挂回来）。
