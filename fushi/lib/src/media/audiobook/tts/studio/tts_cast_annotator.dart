@@ -29,6 +29,7 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_prompt.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 export 'package:fushi/src/media/audiobook/tts/studio/tts_cast_passes.dart'
     show TtsCastAnnotateFailure, kTtsCastPhaseLines, kTtsCastPhaseRoster;
@@ -112,6 +113,12 @@ Future<TtsCast> annotateTtsCast({
       isCancelled: isCancelled,
       onPhase: onPhase,
     );
+  } on TtsCastAnnotateFailure catch (e, stack) {
+    // 界面只显示一句话；原因、章与模型原始回复记进错误日志（BUG-5366）。
+    if (e.code != 'cancelled') {
+      ErrorLogService.instance.log('TtsCast.annotate($bookKey)', e, stack);
+    }
+    rethrow;
   } finally {
     client.close();
     // 取消 / 失败时已抽到的角色也学回系列（角色表只增不减，并入幂等）。

@@ -19,15 +19,32 @@ const String kTtsCastPhaseRoster = 'roster';
 const String kTtsCastPhaseLines = 'lines';
 
 /// 标注失败（[code]：`no_ai_provider` / `ai_failed` / `bad_output` / `cancelled`）。
+///
+/// `bad_output` 带上模型的原始回复 [reply]：错误日志里要能看到模型到底回了什么，
+/// 否则「回复无法理解」无从查起（BUG-5366）。
 class TtsCastAnnotateFailure implements Exception {
-  const TtsCastAnnotateFailure(this.code, [this.detail]);
+  const TtsCastAnnotateFailure(this.code, [this.detail, this.reply]);
   final String code;
   final String? detail;
+  final String? reply;
 
   @override
-  String toString() =>
-      'TtsCastAnnotateFailure($code${detail == null ? '' : ': $detail'})';
+  String toString() {
+    final StringBuffer b = StringBuffer('TtsCastAnnotateFailure($code');
+    if (detail != null) b.write(': $detail');
+    b.write(')');
+    if (reply case final String r) {
+      final String shown = r.length > _kFailureReplyMaxChars
+          ? '${r.substring(0, _kFailureReplyMaxChars)}…'
+          : r;
+      b.write('\nreply (${r.length} chars):\n$shown');
+    }
+    return b.toString();
+  }
 }
+
+/// 错误日志里原始回复最多留多少字符（台词遍一块的回复约 4k token）。
+const int _kFailureReplyMaxChars = 20000;
 
 /// 问一次模型：[system] 系统提示词、[user] 用户提示词，返回原始回复文本。
 /// 调用失败由实现方抛 [TtsCastAnnotateFailure]（`ai_failed`）。
@@ -55,6 +72,14 @@ Future<void> runTtsCastPasses({
   void Function(String phase, int done, int total)? onPhase,
 }) async {
   onProgress(0, todo.length);
+  // 示例语言跟着正文走（BUG-5366）；惰性取文本，检测只读前两万字。
+  final TtsCastScript script = detectTtsCastScript(
+    todo.expand(
+      (int section) => bySection[section]!.map((TtsPlanSentence s) => s.text),
+    ),
+  );
+  final String rosterSystem = ttsRosterSystemPrompt(script);
+  final String linesSystem = ttsCastLinesSystemPrompt(script);
 
   onPhase?.call(kTtsCastPhaseRoster, 0, todo.length);
   for (int done = 0; done < todo.length; done++) {
@@ -69,7 +94,7 @@ Future<void> runTtsCastPasses({
         substitutions: substitutions,
       );
       final String reply = await ask(
-        kTtsRosterSystemPrompt,
+        rosterSystem,
         buildTtsRosterUserPrompt(
           chunk,
           roster: roster,
@@ -86,6 +111,7 @@ Future<void> runTtsCastPasses({
         throw TtsCastAnnotateFailure(
           'bad_output',
           'roster, section $section: $failure',
+          reply,
         );
       }
       applyTtsRosterOps(cast, parsed.ops);
@@ -108,7 +134,7 @@ Future<void> runTtsCastPasses({
     for (final TtsCastChunk chunk in chunkTtsCastSection(bySection[section]!)) {
       if (isCancelled()) throw const TtsCastAnnotateFailure('cancelled');
       final String reply = await ask(
-        kTtsCastLinesSystemPrompt,
+        linesSystem,
         buildTtsCastLinesUserPrompt(
           chunk,
           roster: roster,
@@ -128,6 +154,7 @@ Future<void> runTtsCastPasses({
         throw TtsCastAnnotateFailure(
           'bad_output',
           'lines, section $section: $failure',
+          reply,
         );
       }
       final Map<String, TtsCastLine> lines = ttsCastLinesForChunk(

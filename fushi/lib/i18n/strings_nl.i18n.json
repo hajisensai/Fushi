@@ -1165,7 +1165,7 @@
   "audiobook_studio_cast_evidence_explicit": "Named in the text",
   "audiobook_studio_cast_evidence_implicit": "Inferred from turn-taking",
   "audiobook_studio_cast_failed": "Annotation failed: ${reason}",
-  "audiobook_studio_cast_failure_bad_output": "The AI reply could not be understood",
+  "audiobook_studio_cast_failure_bad_output_reason": "The AI reply could not be understood (${reason}). The full reply is in the error log.",
   "audiobook_studio_cast_gender_female": "Female",
   "audiobook_studio_cast_gender_male": "Male",
   "audiobook_studio_cast_hint": "Use AI to mark who speaks each line, then give each character a voice",

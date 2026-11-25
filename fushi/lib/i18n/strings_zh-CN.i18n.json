@@ -1165,7 +1165,7 @@
   "audiobook_studio_cast_evidence_explicit": "原文点名",
   "audiobook_studio_cast_evidence_implicit": "由对话轮次推断",
   "audiobook_studio_cast_failed": "标注失败：${reason}",
-  "audiobook_studio_cast_failure_bad_output": "无法解析 AI 的回复",
+  "audiobook_studio_cast_failure_bad_output_reason": "无法理解 AI 的回复（${reason}）。完整回复已记入错误日志。",
   "audiobook_studio_cast_gender_female": "女",
   "audiobook_studio_cast_gender_male": "男",
   "audiobook_studio_cast_hint": "用 AI 标注每句台词的说话人，再给每个角色配声音",
