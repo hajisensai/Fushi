@@ -1,5 +1,7 @@
 import 'package:fushi_core/fushi_core.dart';
 
+import 'package:fushi_engine/media/collections/library_organize/library_organize_apply.dart'
+    show OrganizerRemovals;
 import 'package:fushi_engine/sync/fushi_library_host_service.dart';
 import 'package:fushi_engine/sync/collection_book_identity_index.dart';
 
@@ -13,15 +15,42 @@ class RemoteCollectionAdoptionService {
   final FushiDatabase database;
 
   /// [userIntent]：用户亲手加入 / 下载这部作品时传 true，撤销此前对该合集的
-  /// 删除（见 [FushiDatabase.adoptRemoteCollectionMember]）；被动刷新保持 false。
+  /// 删除、以及本机 AI 整理对这一集的自动移出（见
+  /// [FushiDatabase.adoptRemoteCollectionMember]）；被动刷新保持 false。
   Future<void> adoptVideo(RemoteVideoInfo video, {bool userIntent = false}) =>
-      adoptMembership(
+      adoptVideos(<RemoteVideoInfo>[video], userIntent: userIntent);
+
+  /// 一次「加入媒体库」的全部集一起收养：[userIntent] 时整理记录只读一次
+  /// （[OrganizerRemovals.load]），不按集重复读（BUG-5466）。
+  Future<void> adoptVideos(
+    Iterable<RemoteVideoInfo> videos, {
+    bool userIntent = false,
+  }) async {
+    final List<RemoteVideoInfo> members = <RemoteVideoInfo>[
+      for (final RemoteVideoInfo v in videos)
+        if (v.collection != null) v,
+    ];
+    if (members.isEmpty) return;
+    final OrganizerRemovals removals = userIntent
+        ? await OrganizerRemovals.load(
+            database,
+            collectionNames: <String>{
+              for (final RemoteVideoInfo v in members)
+                v.collection!.collectionName,
+            },
+          )
+        : OrganizerRemovals.none;
+    for (final RemoteVideoInfo video in members) {
+      await adoptMembership(
         membership: video.collection,
         mediaType: MediaKind.video,
         remoteEntryKey: video.id,
         localEntryKey: video.id,
         userIntent: userIntent,
+        organizerRemovals: removals,
       );
+    }
+  }
 
   /// 目录刷新：整份远端清单一次收养。身份索引只装载一次（全表读
   /// `epub_books` + alias），不按本数重复物化——dashboard 启动路径也走这里。
@@ -99,14 +128,25 @@ class RemoteCollectionAdoptionService {
   }
 
   /// 适配器已经持有入库行和 DTO 归属时使用；无归属是纯 no-op。
+  ///
+  /// [organizerRemovals]：[userIntent] 时用来认出本机 AI 整理的移出；批量收养由
+  /// 调用方预先读一次传进来，不给就在这里现读（只读这一个合集）。
   Future<void> adoptMembership({
     required RemoteCollectionMembership? membership,
     required MediaKind mediaType,
     required String remoteEntryKey,
     String? localEntryKey,
     bool userIntent = false,
+    OrganizerRemovals? organizerRemovals,
   }) async {
     if (membership == null) return;
+    final OrganizerRemovals removals = !userIntent
+        ? OrganizerRemovals.none
+        : organizerRemovals ??
+              await OrganizerRemovals.load(
+                database,
+                collectionNames: <String>{membership.collectionName},
+              );
     await database.adoptRemoteCollectionMember(
       name: membership.collectionName,
       collectionType: membership.collectionType,
@@ -115,6 +155,11 @@ class RemoteCollectionAdoptionService {
       sortIndex: membership.sortIndex,
       localEntryKey: localEntryKey,
       userIntent: userIntent,
+      organizerRemovedKeys: removals.keysFor(
+        collectionName: membership.collectionName,
+        collectionType: membership.collectionType,
+        mediaType: mediaType.dbValue,
+      ),
     );
   }
 }

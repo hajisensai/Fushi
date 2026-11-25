@@ -327,4 +327,63 @@ void main() {
     expect(id, isNull);
     expect(await db.getAllMediaCollections(), isEmpty);
   });
+
+  group('BUG-5466 organizerRemovedKeys', () {
+    Future<int?> adoptSeries(
+      String key, {
+      bool userIntent = false,
+      Set<String> organizerRemovedKeys = const <String>{},
+    }) => db.adoptRemoteCollectionMember(
+      name: 'Series',
+      collectionType: 'playlist',
+      mediaType: MediaKind.video,
+      remoteEntryKey: key,
+      sortIndex: 1,
+      localEntryKey: key,
+      userIntent: userIntent,
+      organizerRemovedKeys: organizerRemovedKeys,
+    );
+
+    test('只在 userIntent 时清，且只清列出的键', () async {
+      final int cid = (await adoptSeries('ep1'))!;
+      await adoptSeries('ep2');
+      await adoptSeries('ep3');
+      for (final String k in <String>['ep1', 'ep2']) {
+        await db.removeFromCollectionAutomatically(
+          cid,
+          MediaKind.video.dbValue,
+          k,
+        );
+      }
+      await db.removeFromCollection(cid, MediaKind.video, 'ep3');
+
+      // 被动收养：不清。
+      expect(
+        await adoptSeries('ep1', organizerRemovedKeys: <String>{'ep1'}),
+        isNull,
+      );
+      // 用户意图：清列出的 AI 移出墓碑，用户自己移出的 ep3 仍拦。
+      for (final String k in <String>['ep1', 'ep2', 'ep3']) {
+        await adoptSeries(
+          k,
+          userIntent: true,
+          organizerRemovedKeys: <String>{'ep1', 'ep2'},
+        );
+      }
+      final MediaCollectionRow c = (await db.getMediaCollectionByNaturalKey(
+        'Series',
+        'playlist',
+      ))!;
+      expect(
+        (await db.getCollectionItems(
+          c.id,
+        )).map((MediaCollectionItemRow r) => r.entryKey).toSet(),
+        <String>{'ep1', 'ep2'},
+      );
+      expect(
+        await db.collectionMemberTombstoneKeysFor('Series', 'playlist'),
+        contains(isA<String>().having((String k) => k, 'key', endsWith('ep3'))),
+      );
+    });
+  });
 }

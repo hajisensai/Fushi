@@ -638,6 +638,75 @@ Future<void> _restorePinned(
 CollectionOrigin _originOr(Object? raw, CollectionOrigin fallback) =>
     raw is String ? CollectionOrigin.parse(raw) : fallback;
 
+/// 本机整理记录里 AI 自动从合集移出、且还没撤销的条目键，按合集自然键 + 媒体类型
+/// 索引：`evict`（移出 / 拆散，记在来处合集名下）与 `move`（挪走，来处记在
+/// `payload.from`）。用户同意的待确认建议（`proposal`）是用户意图，不算。
+///
+/// 收养入口据此分辨「AI 移出留下的成员墓碑」与「用户自己移出的」：前者在用户亲手
+/// 再加入这部作品时清掉（BUG-5466）。一次「加入媒体库」只读一次整理记录
+/// （[load]），逐集查 [keysFor]。整理记录设备本地、不同步，所以只认得本机 AI 做的
+/// 移出；别的设备上 AI 移出、同步过来的墓碑仍照常拦。
+class OrganizerRemovals {
+  const OrganizerRemovals._(this._keys);
+
+  /// 什么都没移出过（被动收养不查整理记录时用）。
+  static const OrganizerRemovals none = OrganizerRemovals._(
+    <(String, String, String), Set<String>>{},
+  );
+
+  final Map<(String, String, String), Set<String>> _keys;
+
+  /// 读一次整理记录，只收 [collectionNames] 这些合集的移出（`evict` 在 SQL 里按
+  /// 合集名筛；`move` 的来处在载荷里，解码后筛）。
+  static Future<OrganizerRemovals> load(
+    FushiDatabase db, {
+    required Set<String> collectionNames,
+  }) async {
+    if (collectionNames.isEmpty) return none;
+    final String evict = OrganizeActionKind.evict.name;
+    final String move = OrganizeActionKind.move.name;
+    final List<LibraryOrganizeChangeRow> rows =
+        await (db.select(db.libraryOrganizeChanges)..where(
+              (t) =>
+                  t.undoneAt.isNull() &
+                  (t.kind.equals(move) |
+                      (t.kind.equals(evict) &
+                          t.collectionName.isIn(collectionNames))),
+            ))
+            .get();
+    final Map<(String, String, String), Set<String>> keys =
+        <(String, String, String), Set<String>>{};
+    for (final LibraryOrganizeChangeRow r in rows) {
+      final Map<String, Object?>? payload = _decode(r.payloadJson);
+      if (payload == null) continue;
+      final String name;
+      final String type;
+      if (r.kind == evict) {
+        (name, type) = (r.collectionName, r.collectionType);
+      } else if (payload['from'] case {
+        'name': final String n,
+        'type': final String t,
+      }) {
+        (name, type) = (n, t);
+      } else {
+        continue;
+      }
+      if (!collectionNames.contains(name)) continue;
+      for (final ({String t, String k}) m in _members(payload['members'])) {
+        (keys[(name, type, m.t)] ??= <String>{}).add(m.k);
+      }
+    }
+    return OrganizerRemovals._(keys);
+  }
+
+  /// [mediaType] 是 `MediaKind.dbValue`。
+  Set<String> keysFor({
+    required String collectionName,
+    required String collectionType,
+    required String mediaType,
+  }) => _keys[(collectionName, collectionType, mediaType)] ?? const <String>{};
+}
+
 /// 撤销一次整理里还没撤销的全部改动（待确认建议不算改动，不动）。
 Future<int> undoLibraryOrganizeRun(FushiDatabase db, int runId) async {
   final List<LibraryOrganizeChangeRow> rows = await (db.select(

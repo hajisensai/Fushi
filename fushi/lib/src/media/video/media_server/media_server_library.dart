@@ -218,6 +218,7 @@ class MediaServerVideoLibrary {
         RemoteCollectionAdoptionService(database);
     final List<String> added = <String>[];
     final List<RemoteVideoInfo> addedInfos = <RemoteVideoInfo>[];
+    final List<RemoteVideoInfo> infos = <RemoteVideoInfo>[];
     for (final MediaServerItem leaf in leaves) {
       final RemoteVideoInfo info = browser.toRemoteVideoInfo(leaf);
       if (await repository.getByBookUid(info.id) == null) {
@@ -241,9 +242,11 @@ class MediaServerVideoLibrary {
         added.add(info.id);
         addedInfos.add(info);
       }
-      // 已在库的集也重新收养一次：合集被用户删掉后重新加入能回到合集里。
-      await adoption.adoptVideo(info, userIntent: userIntent);
+      infos.add(info);
     }
+    // 已在库的集也重新收养一次：合集被用户删掉后重新加入能回到合集里；整部作品
+    // 一起收养，整理记录只读一次（BUG-5466）。
+    await adoption.adoptVideos(infos, userIntent: userIntent);
     if (added.isNotEmpty) {
       await repository.recordVideoImportActivity(
         bookUid: added.first,

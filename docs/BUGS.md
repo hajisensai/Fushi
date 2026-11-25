@@ -33,19 +33,16 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4734 条。点号进各自文件。
+> 共 4736 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5466](bugs/BUG-5466-ai-review-removal-blocks-readd.md) | ✅ | ✅ | AI 管库拆散 / 挪走的集，用户再「加入媒体库」也归不回合集 |
 | [BUG-5460](bugs/BUG-5460-sync-missing-book-content.md) | ✅ | ✅ | 书目还在而正文丢失时同步无法补回原书 |
 | [BUG-5456](bugs/BUG-5456-android-migrate-target-content-conflict.md) | ✅ | ✅ | Android 移动书库：目标里同路径不同内容的文件被当成中断残留整树删掉 |
+| [BUG-5455](bugs/BUG-5455-srs-gen4-migration-event-order.md) | ✅ | ✅ | 复习库升级后 Anki 复习副本选取改变到期日、间隔与统计，导致核对撤回 |
 | [BUG-5455](bugs/BUG-5455-opensubtitles-moviehash-negative-http400.md) | ✅ | ✅ | 字幕面板「字幕搜索失败（HTTP 400）」：OpenSubtitles movie hash 拼出负号，日志里没有任何线索 |
 | [BUG-5454](bugs/BUG-5454-stats-overview-srs-not-migrated.md) | ✅ | ✅ | stats-overview-srs-not-migrated |
-> 共 4731 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5455](bugs/BUG-5455-srs-gen4-migration-event-order.md) | ✅ | ✅ | 复习库升级后 Anki 复习副本选取改变到期日、间隔与统计，导致核对撤回 |
 | [BUG-5450](bugs/BUG-5450-android-library-layout-anchor-lost.md) | ✅ | ✅ | Android 书库对账只探当前配置的内部根，布局 / 容器锚点被冲掉后永不自愈 |
 | [BUG-5449](bugs/BUG-5449-background-writers-seal-and-interrupt.md) | ✅ | ✅ | background-writers-seal-and-interrupt |
 | [BUG-5448](bugs/BUG-5448-lumiere-font-switch-jank.md) | ✅ | ✅ | 绘光切字体卡顿、自定义字体加载完不重画 |

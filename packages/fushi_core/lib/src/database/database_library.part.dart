@@ -1372,6 +1372,11 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
   /// 用户再怎么显式加入，集都只会散落在库里、永不归组（BUG-5016）。成员级墓碑
   /// （用户把某一集单独移出合集）仍照常拦，只有 [addToCollection] 逐键撤销。
   /// 同步 / 目录刷新 / 后台库更新探针等被动路径保持默认 false，墓碑让路。
+  ///
+  /// [organizerRemovedKeys]：只在 [userIntent] 时生效——这些条目键在本合集里的成员
+  /// 墓碑是 **AI 整理自动移出**留下的（调用方按本机整理记录认出，DAO 不解析整理记录
+  /// 的载荷）。AI 的移出不是用户否决，用户亲手再加入这部作品就清掉它们、让集回到
+  /// 合集里；用户自己移出的成员墓碑不在其中，照常拦（BUG-5466）。
   Future<int?> adoptRemoteCollectionMember({
     required String name,
     required String collectionType,
@@ -1380,6 +1385,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
     required int sortIndex,
     String? localEntryKey,
     bool userIntent = false,
+    Set<String> organizerRemovedKeys = const <String>{},
   }) => transaction(() async {
     if (userIntent) {
       await _clearCollectionDeletionTombstone(name, collectionType);
@@ -1397,6 +1403,29 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync {
           epubBooks,
         )..where((t) => t.uid.equals(localEntryKey))).getSingleOrNull();
         if (book != null) keys.add(book.bookKey);
+      }
+    }
+    if (userIntent && organizerRemovedKeys.isNotEmpty) {
+      // 只看本条目自己的键（远端键 / 本机键）是否被 AI 移出过：整理记录记的是成员
+      // 行的条目键，墓碑记的是它的墓碑键域，两个都清。
+      final Set<String> clearable = <String>{
+        for (final String k in <String>{
+          remoteEntryKey,
+          ?localEntryKey,
+        }.intersection(organizerRemovedKeys)) ...<String>{
+          k,
+          await _tombstoneEntryKeyOf(mediaType.dbValue, k),
+        },
+      };
+      if (clearable.isNotEmpty) {
+        await (delete(collectionMemberTombstones)..where(
+              (t) =>
+                  t.collectionName.equals(name) &
+                  t.collectionType.equals(collectionType) &
+                  t.mediaType.equals(mediaType.dbValue) &
+                  t.entryKey.isIn(clearable),
+            ))
+            .go();
       }
     }
     final CollectionMemberTombstoneRow? removed =
