@@ -57,12 +57,7 @@ pub fn preview(
         };
         let input: Vec<Row<'_>> = rows
             .iter()
-            .map(|(j, s, i, c)| Row {
-                json: j,
-                server_time: *s,
-                intent: i.clone(),
-                seed_card: Some(c),
-            })
+            .map(crate::store::gen4::cache::LogIn::replay_row)
             .collect();
         let day = Day {
             utc_offset_min: utc_off,

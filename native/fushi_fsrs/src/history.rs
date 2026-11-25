@@ -14,7 +14,7 @@
 //! - 同一份历史里同 ID 的日志只留最后一条（Dart `Map` 去重语义）；
 //! - 同一事件的多份副本只算一份（[EventKey]，BUG-4218）：同卡、同 kind、同 HLC（physical, counter, writerId）、
 //!   同发生时刻 / 来源 / 评分 / Anki revlog 时刻的日志是同一次真实事件换了 ID 的副本（profile 合并在 BUG-4217
-//!   修好前会把一次复习写成两个 ID，事件只追加、永远删不掉）。组里 ID 最小（UTF-16 序）的一条是代表，其余标
+//!   修好前会把一次复习写成两个 ID，事件只追加、永远删不掉）。组里原始 ID 最小（UTF-16 序）的一条是代表，其余标
 //!   [STATUS_DUPLICATE]、不算有效；组里任何一份被撤销，整组（每一份）算撤销。undo 与不认识的 kind 不成组。依据：HLC 每次写日志都由写入者时钟
 //!   tick 出来，同写入者内唯一；Anki 导入的 HLC 由 revlog id / 锚点时刻派生；合并 / 跨 profile 导入原样保留 HLC；
 //!   恢复备份的重放副本取新 HLC，不与原日志成组；
@@ -93,6 +93,9 @@ pub enum Origin {
 #[derive(Debug, Clone)]
 pub struct Log<'a> {
     pub id: Cow<'a, str>,
+    /// Immutable ID recorded on the event before alias resolution. The canonical
+    /// ID is used for references and undo, while ordering keeps this original key.
+    pub(crate) order_id: Option<Cow<'a, str>>,
     /// 日志所属的卡（一份历史可以是血统里几张卡的日志之和；同一事件只在同一张卡上成组）。
     pub card: Cow<'a, str>,
     pub writer: Cow<'a, str>,
@@ -139,12 +142,16 @@ impl Log<'_> {
         })
     }
 
+    fn ordering_id(&self) -> &str {
+        self.order_id.as_deref().unwrap_or(&self.id)
+    }
+
     fn sort_key(&self) -> SortKey<'_> {
         SortKey::new(
             self.physical,
             self.counter,
             &self.writer,
-            &self.id,
+            self.ordering_id(),
             self.server_time,
         )
     }
@@ -262,7 +269,8 @@ pub fn select(logs: &[Log<'_>]) -> Selection {
         if is_revoked(l) {
             group_revoked[r] = true;
         }
-        if r != k && cmp_utf16(&l.id, &logs[kept[best[r]]].id) == Ordering::Less {
+        if r != k && cmp_utf16(l.ordering_id(), logs[kept[best[r]]].ordering_id()) == Ordering::Less
+        {
             best[r] = k;
         }
     }
@@ -530,17 +538,13 @@ pub type Parsed<'a> = (Log<'a>, Option<Outcome>, Extra<'a>);
 
 /// 一条落库日志解成 [Parsed]（与 [state_from_json] 同一套坏数据判据）。
 pub fn parse_full(json: &str, server_time: Option<i64>) -> Result<Parsed<'_>, String> {
-    parse_stored(json, server_time, None)
+    parse_stored((json, server_time, None, None))
 }
 
 /// [parse_full]，日志可以是瘦存 + 列（[StoredLog]，store/slim.rs `log_row`）：读 `jslim` 与列的读者不经生成列
 /// `json`（逐行拼回原文）。
-pub fn parse_stored<'a>(
-    stored: &'a str,
-    server_time: Option<i64>,
-    cols: Option<&'a LogCols>,
-) -> Result<Parsed<'a>, String> {
-    let (log, res, extra) = parse_wire(stored, server_time, cols)?;
+pub fn parse_stored(stored: StoredLog<'_>) -> Result<Parsed<'_>, String> {
+    let (log, res, extra) = parse_wire(stored)?;
     Ok((log, res.as_ref().map(Outcome::of), extra))
 }
 
@@ -569,14 +573,12 @@ pub struct LogCols {
     pub dur: i64,
 }
 
-/// (落库 JSON 或瘦存 `jslim`, 服务器时刻, 瘦存时同一行的列)。
-pub type StoredLog<'a> = (&'a str, Option<i64>, Option<&'a LogCols>);
+/// (落库 JSON 或瘦存 `jslim`, 服务器时刻, 瘦存时同一行的列, 别名归一前的排序 ID)。
+pub type StoredLog<'a> = (&'a str, Option<i64>, Option<&'a LogCols>, Option<&'a str>);
 
 /// 一条落库日志解成 [Log]，连同解好的结果（与 Dart 一样每条都解：哪条的结果是坏数据都判错）。
 fn parse_wire<'a>(
-    stored: &'a str,
-    server_time: Option<i64>,
-    cols: Option<&'a LogCols>,
+    (stored, server_time, cols, order_id): StoredLog<'a>,
 ) -> Result<(Log<'a>, Option<WireResult<'a>>, Extra<'a>), String> {
     // 瘦存 `~<原文没有的键>{…}`：去掉的键从列补，记为原文没有的不补（与 slim::expand 拼回的原文同义）。
     let (json, absent, cols) = match (stored.strip_prefix('~'), cols) {
@@ -657,6 +659,7 @@ fn parse_wire<'a>(
     Ok((
         Log {
             id,
+            order_id: order_id.map(Cow::Borrowed),
             card,
             writer,
             physical,
@@ -750,7 +753,7 @@ pub fn state_from_json(jsons: &[&str], server_times: &[Option<i64>]) -> Result<S
     let stored: Vec<StoredLog<'_>> = jsons
         .iter()
         .zip(server_times)
-        .map(|(j, s)| (*j, *s, None))
+        .map(|(j, s)| (*j, *s, None, None))
         .collect();
     state_from_stored(&stored)
 }
@@ -770,6 +773,7 @@ pub const MATURE_INTERVAL_DAYS: i64 = 21;
 #[derive(Debug, Clone, PartialEq)]
 pub struct StatRow {
     pub log_id: String,
+    pub(crate) order_id: Option<String>,
     pub occurred_at: i64,
     pub utc_off: i64,
     /// 1..4；None = 不是统计复习，只是成熟状态变化（[maturity_delta] ≠ 0）。
@@ -810,7 +814,7 @@ pub fn stats_from_json(
     let stored: Vec<StoredLog<'_>> = jsons
         .iter()
         .zip(server_times)
-        .map(|(j, s)| (*j, *s, None))
+        .map(|(j, s)| (*j, *s, None, None))
         .collect();
     stats_from_stored(&stored)
 }
@@ -828,8 +832,8 @@ fn parse_all<'a>(stored: &[StoredLog<'a>]) -> Result<ParsedAll<'a>, String> {
     let mut logs = Vec::with_capacity(stored.len());
     let mut results = Vec::with_capacity(stored.len());
     let mut extras = Vec::with_capacity(stored.len());
-    for (j, s, c) in stored {
-        let (log, res, extra) = parse_wire(j, *s, *c)?;
+    for &row in stored {
+        let (log, res, extra) = parse_wire(row)?;
         logs.push(log);
         results.push(res);
         extras.push(extra);
@@ -879,6 +883,7 @@ fn stat_rows(
         if kind.is_some() || delta != 0 {
             out.push(StatRow {
                 log_id: log.id.clone().into_owned(),
+                order_id: log.order_id.as_deref().map(str::to_owned),
                 occurred_at: log.occurred_at,
                 utc_off: extra.utc_off,
                 rating: kind.and(log.rating),
@@ -1114,6 +1119,7 @@ pub fn select_columns(
         let c = &ints[i * COLUMN_WORDS..(i + 1) * COLUMN_WORDS];
         let bits = c[6];
         logs.push(Log {
+            order_id: None,
             id: Cow::Borrowed(slice(COLUMN_STRINGS * i)?),
             card: Cow::Borrowed(slice(COLUMN_STRINGS * i + 3)?),
             writer: Cow::Borrowed(slice(COLUMN_STRINGS * i + 1)?),
@@ -1187,7 +1193,7 @@ pub fn import_equivalent_any(text: &[u8], offs: &[u32], groups: &[u32]) -> Resul
         if a > b || b > text.len() || !text.is_char_boundary(a) || !text.is_char_boundary(b) {
             return Err("bad import batch offsets".to_owned());
         }
-        logs.push(parse_wire(&text[a..b], None, None)?.0);
+        logs.push(parse_wire((&text[a..b], None, None, None))?.0);
     }
     let mut out = Vec::with_capacity(groups.len() - 1);
     for g in groups.windows(2) {
