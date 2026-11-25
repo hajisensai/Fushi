@@ -1,0 +1,12 @@
+## BUG-5455 · 从媒体服务器加入媒体库的剧没有资料：库里合集详情页只有封面与「资料待补」，看过的集也显示未看
+- **报告**：2026-11-24（用户：Jellyfin 上的《大梦归离 / Fangs of Fortune》，服务器详情页有背景图 / 原名 / 年份 / 8.7 分 / 简介 / 已看 2/34；加入媒体库后库里同一部剧只有海报、每集缩略图都是同一张海报、集名是「剧名 S01E01 Episode 1」、「详细资料尚未刮削」、已看 0/34）
+- **真实性**：✅ 真 bug。根因：
+  - `fushi/lib/src/media/video/media_server/media_server_library.dart:209-225`（`addMissing`）入库只写 `VideoBooks` 行（标题 / `media-server://` 路径 / 重开规格）与海报，服务器条目上现成的简介、原名、年份、评分、类型、背景、logo、分集名、分集简介、分集剧照一概不落；
+  - 库里合集详情页只读规范资料表（`media_collection_detail_page.dart:577-620` 的 `resolveVideoMetadataWorkForCollection` / 季 / 集 / 图），而这些表只有刮削会写——媒体服务器行不在任何刮削计划里（`packages/fushi_engine/lib/media/video/metadata/video_scrape_scope.dart:73-78` 的 `videoBookInScrapeScope` 只收本机文件），所以永远是空的；
+  - 观看状态只有「本机 → 服务器」回写（`video_watched_marks.dart`），服务器上已看 / 断点从不回灌入库行，`CollectionEpisodeSlot.completed` 读的 `VideoBooks.completedAt` 一直为空。
+- **[x] ① 已修复** — 新增 `fushi/lib/src/media/video/media_server/media_server_metadata.dart`：每次入库 / 后台补新集（`addMissing`）把服务器资料拼成中立 `VideoMetadataWork`，经刮削同一个写入口 `VideoMetadataDatabaseStore.apply` 落库（季集按服务器季集号经 `episodeOverrides` 绑到入库行，字段锁照常生效）；主身份记新的 `VideoMetadataProviderKind.mediaserver`（不是刮削 provider：不进白名单、`confirmedLookup` / `lookupOfWork` / `_lookupsForWork` / 历史身份保留都排除它），服务器 `ProviderIds` 的 TMDB / AniDB / IMDb / TVDB 只作非主交叉引用；作品行已有别的主身份（刮削 / 互联 / 手动识别）或没有主身份（用户手填）时一律不覆盖。服务器图片 URL 带令牌：图下载到 `VideoStorage.mediaServerImagesDir()`，图行只存去令牌地址，移出媒体库时按作品回收文件。服务器已看 / 较新断点按服务器时刻补进入库行（只补不撤）。顺带：Jellyfin 集清单点名 `Overview`、`MediaServerItem` 带 `providerIds`、`JellyfinItem.withMediaSource` 不再丢 `providerIds`。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/media_server/media_server_metadata_test.dart`（作品事实 / 交叉引用 / 分集绑定与剧照 / 本地图且不落令牌 / 旧投影；观看状态回灌与本机较新时不回灌；刷新跟随服务器、换成别的主身份后不覆盖；电影作品与移出回收图文件）。
+- **备注**：
+  - 已入库的剧在下一次后台库更新探针跑过后自愈；已入库的电影不在探针里，要移出再加入一次才有资料。
+  - 媒体服务器作品目前**没有手动重刮入口**（刮削管线要写 sidecar，只收本机文件）；用户想改资料走「编辑资料」并锁字段。要不要给媒体服务器作品开「按 TMDB / AniDB 手动识别」是另一项功能，待拍板。
+  - 设备复测：待在真实 Jellyfin 上加入一部剧后看库里合集详情页（背景 / 简介 / 评分 / 分集名与剧照 / 已看数）。

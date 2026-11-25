@@ -98,7 +98,8 @@ Future<VideoMetadataWork?> loadVideoMetadataWork(
 
 /// 按 workId 取主身份对应的 lookup。语义与
 /// `VideoMetadataDatabaseStore.confirmedLookup` 一致：没有主身份、provider 非法
-/// 或为 `fanart`、mediaType 非法都返回 null。
+/// 或为 `fanart` / `mediaserver`（服务器自带资料，不是可续刮的身份）、mediaType
+/// 非法都返回 null。
 Future<VideoMetadataLookup?> lookupOfWork(FushiDatabase db, int workId) async {
   final VideoMetadataWorkRow? row = await db.getVideoMetadataWorkById(workId);
   if (row == null) return null;
@@ -114,6 +115,7 @@ Future<VideoMetadataLookup?> lookupOfWork(FushiDatabase db, int workId) async {
       .asNameMap()[row.mediaType];
   if (provider == null ||
       provider == VideoMetadataProviderKind.fanart ||
+      provider == VideoMetadataProviderKind.mediaserver ||
       kind == null) {
     return null;
   }
