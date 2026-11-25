@@ -1,0 +1,17 @@
+## BUG-5467 · Android 书库移到外部：只差大小写的文件在目标上互相覆盖，校验照过、删源后永久丢失
+- **报告**：2026-11-25（用户转述：Android 3.4.0 移动书库后「词典只剩空壳、书也没了，3.2 GB 一秒掉到 400 MB」；查这条反馈时沿代码路径发现的缺口，不是该反馈的已证实根因）
+- **真实性**：✅ 真 bug（模拟器实测文件系统行为 + 沿代码路径确认）。
+  - 模拟器（API 37）：`/storage/emulated/0/Android/data/<包名>/files` 下 `echo one > Img.png; echo twotwo > img.png` 后只剩一个 `Img.png`、内容 `twotwo`；内部 `app_flutter` 下同样两条命令留下两个文件。Android 内部存储区分大小写，外部（`/data/media`，casefold）不区分，还按 Unicode 归一比对文件名。
+  - `fushi/lib/src/storage/data_root_migrator.dart:679-707`（修复前 `_copyTreeVerified`）逐项 `create` / `copy`，目标上已有同名项也照写：目录静默合并，`File.copy` 直接覆盖。
+  - `fushi/lib/src/storage/data_root_migrator.dart:711-726`（修复前 `_copyFileVerified`）只在复制**之后**比字节数，比的是后写的那份，前一份被冲掉发现不了；提交后 `_deleteSourceAfterVerifiedCopy` 删源，先写的文件永久丢失。
+- **[x] ① 已修复** —
+  - 复制前预检（`_preflightCopySource`）：一次异步遍历同时数文件（进度分母）；探测目标是否不区分大小写（`_directoryFoldsCase`，探针文件），不区分时两个相对路径只差大小写就抛 `DataRootNameCollisionException`，一个字节都不复制。
+  - 复制循环兜底：目标子树是新建的空目录，任何目录 / 文件写之前就已在目标上 → 只能是目标把它和前面某个源项当成同一个名字（覆盖预检按小写比对漏掉的 Unicode 归一情形）→ 抛 `DataRootNameCollisionException`，绝不覆盖 / 合并。
+  - 撞名拒绝在 `migrate()` 里原样上抛（不再包成泛化的「搬动失败」），旧根原样、目标子树清掉、不提交；设置页 / 首页提示的失败遮罩讲清是哪两个文件（`dataRootMigrationFailureMessage`，新 i18n `data_storage_migrate_name_collision`）。失败遮罩原来对任何失败都附一句「换个空文件夹 / 检查权限」，撞名和 Android 固定目标下这句是错的指引，改成只在用户自选文件夹、且原因没讲清怎么办时才附（`dataRootMigrationFailureHint`）。
+  - 顺带补取证缺口（这次反馈因为它们无法定案）：迁移成功后的摘要（每个根是 rename 还是复制、复制文件数 / 字节、耗时）连同完成时间写进设备本地 SharedPreferences，之后每次启动都记一条诊断 `DataRootMigration.last`（`lib/src/diagnostics/data_root_move_log.dart`）——诊断日志只在内存、迁移完马上重启，只在迁移进程里记会随进程丢掉（模拟器上实测丢了）；Android 存储分项另量外部 app 专属目录（`android-external`），书库在外部时诊断里看得到它还在不在。迁移改写库内路径时同步把沙箱重定位台账记成新根（`kSandboxLedgerDocumentsRootPrefKey`），下次启动不再按旧台账多重基一遍、留下一条看起来像根无故跳变的 `rebased ledger`。
+- **[x] ② 已加自动化测试** — `fushi/test/storage/data_root_migrator_name_collision_test.dart`：只差大小写的文件 / 目录 + 目标不区分大小写 → 拒绝、旧根两份原样、目标清掉、不提交（临时目录区分大小写的机器上跑，Windows / macOS 跳过）；目标区分大小写时照常搬；比对键；复制循环兜底（目标上预先占名的文件 / 目录 → 拒绝、不覆盖）；成功迁移回报摘要且台账记成新根；失败提示带文件名；失败建议只给自选文件夹的泛化失败。`test/diagnostics/data_root_move_log_test.dart`：摘要带时间落盘、模拟重启后再记、没迁移过不记。
+- **模拟器复测**（API 37，从 11-20 的构建升级、内部书库里同时有 `Img.png` 与 `img.png`）：迁移提示停在撞名提示上，两个文件都留在内部、锚点仍是 internal、外部没有建 `files/data`，「重启」可用；删掉一个后迁移成功，文件全部到外部、内部 `data` 清空、锚点 external，重启后诊断里有 `android-external` 存储分项、没有 `rebased ledger`，库里台账 `sandbox_last_documents_root` 已是外部路径。
+- **备注**：
+  - 这条只修「只差大小写 / 归一后同名」这一种丢文件路径，不解释反馈里的整库消失。那份反馈的日志对得上一次已提交的内部 → 外部迁移（重启时台账从 `app_flutter/Fushi/data` 重基到 `Android/data/<包名>/files/data`，内部 `app_flutter` 已不足 50 MB），报告人当时用的 32559 早于 BUG-5456 的修复（dad8138bbd）；外部目录里到底还剩什么需要报告人给 `Android/data/app.fushi.reader/files/data` 的目录列表，本修复加的诊断让下一次同类反馈不用再要。
+  - 撞名时迁移被拒绝，用户要先自己改名 / 删掉其中一个再迁。没有做「自动改名 + 改写库内路径」：撞名的往往是 EPUB 解包目录或词典资源里的内部文件，库里只记目录，改名后正文 / 词典里引用它的地方会断。
+  - 链接维持原状（TODO-1226：不追、不复制）。删源只删链接本身、不删它指向的数据，所以不是丢数据；但迁移后新根里少了这个链接，经它引用的书会找不到。要不要改成「有链接就拒绝迁移」会改变桌面端行为（用户在数据根里放 junction 的常见用法会被挡住），不在本修复范围，交维护者定。

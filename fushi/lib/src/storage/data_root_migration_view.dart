@@ -25,6 +25,7 @@ class DataRootMigrationView extends StatelessWidget {
     this.progress,
     this.background,
     this.failure,
+    this.failureHint,
     this.onRestart,
   });
 
@@ -39,6 +40,10 @@ class DataRootMigrationView extends StatelessWidget {
   /// （选空目录 / 别选安装目录 / 别选有文件占用的位置）+ 重启按钮，取代进度条。这样即便
   /// 迁移过程中根 widget 树被换掉（设置页 State 已 unmount），用户仍能醒目看到失败原因。
   final String? failure;
+
+  /// 失败态原因下面的灰字建议；null 不显示（建议只对用户自己挑了目标文件夹的失败有用，
+  /// 见 `dataRootMigrationFailureHint`）。
+  final String? failureHint;
 
   /// 用户在失败态点「重启」时触发；由 `main.dart` 注入真正的重启逻辑，测试注入 no-op。
   final VoidCallback? onRestart;
@@ -193,16 +198,18 @@ class DataRootMigrationView extends StatelessWidget {
                       ),
                     ),
                   ),
-                  const SizedBox(height: 16),
-                  FushiStaggeredEntrance(
-                    index: 3,
-                    child: Text(
-                      t.data_storage_migrate_failed_suggestions,
-                      style: type.bodyMedium.copyWith(
-                        color: cs.onSurfaceVariant,
+                  if (failureHint case final String hint) ...<Widget>[
+                    const SizedBox(height: 16),
+                    FushiStaggeredEntrance(
+                      index: 3,
+                      child: Text(
+                        hint,
+                        style: type.bodyMedium.copyWith(
+                          color: cs.onSurfaceVariant,
+                        ),
                       ),
                     ),
-                  ),
+                  ],
                   const SizedBox(height: 24),
                   FushiStaggeredEntrance(
                     index: 4,

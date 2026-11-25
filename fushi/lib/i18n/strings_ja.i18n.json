@@ -2496,6 +2496,7 @@
   "data_storage_migrate_failed_restart": "再起動",
   "data_storage_migrate_failed_suggestions": "別の空のフォルダで再試行してください。アプリのインストールフォルダを選択しないでください。また、その場所にあるファイルが使用中でないことを確認してください。",
   "data_storage_migrate_failed_title": "データ移行に失敗しました",
+  "data_storage_migrate_name_collision": "The destination folder does not tell upper and lower case apart, so ${file} and ${other} would become the same file and one would be lost. Rename or remove one of them, then try again. Nothing was moved.",
   "data_storage_migrate_overlay_progress": "ファイルをコピー中: $copied / $total",
   "data_storage_migrate_overlay_title": "データを移動中",
   "data_storage_migrate_overlay_warning": "アプリを開いたままにしてください。完了するまでアプリを閉じたりコンピュータをシャットダウンしないでください。",

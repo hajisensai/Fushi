@@ -2496,6 +2496,7 @@
   "data_storage_migrate_failed_restart": "Yeniden başlat",
   "data_storage_migrate_failed_suggestions": "Lütfen farklı, boş bir klasörle tekrar deneyin. Uygulamanın kurulum klasörünü seçmeyin ve o konumdaki hiçbir dosyanın kullanımda olmadığından emin olun.",
   "data_storage_migrate_failed_title": "Veri taşıma başarısız",
+  "data_storage_migrate_name_collision": "The destination folder does not tell upper and lower case apart, so ${file} and ${other} would become the same file and one would be lost. Rename or remove one of them, then try again. Nothing was moved.",
   "data_storage_migrate_overlay_progress": "Dosyalar kopyalanıyor: $copied / $total",
   "data_storage_migrate_overlay_title": "Verileriniz taşınıyor",
   "data_storage_migrate_overlay_warning": "Lütfen uygulamayı açık tutun. İşlem bitene kadar kapatmayın veya bilgisayarınızı kapatmayın.",

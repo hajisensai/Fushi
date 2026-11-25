@@ -3538,12 +3538,18 @@ class AppModel
   String? _dataRootMigrationFailure;
   String? get dataRootMigrationFailure => _dataRootMigrationFailure;
 
+  /// 失败态原因下面的建议（null = 不显示）。只有对这次失败真有用时才给：迁移已成功只是
+  /// 重启失败、Android 固定目标、撞名这几种，通用的「换个空文件夹」建议是错的。
+  String? _dataRootMigrationFailureHint;
+  String? get dataRootMigrationFailureHint => _dataRootMigrationFailureHint;
+
   /// 进入迁移态：先于 [closeDatabase] 调用，确保「遮罩已上屏 → 关库 → 搬文件」的顺序，
   /// 这样根 widget 在 DB 关闭引发的 rebuild 里看到的是迁移遮罩而非裸 loading。
   void beginDataRootMigration() {
     _dataRootMigrationActive = true;
     _dataRootMigrationProgress = null;
     _dataRootMigrationFailure = null;
+    _dataRootMigrationFailureHint = null;
     notifyListeners();
   }
 
@@ -3555,10 +3561,11 @@ class AppModel
 
   /// TODO-1182：迁移失败 → 切到失败态。**保持**遮罩激活（DB 已关，撤遮罩会落到裸 loading），
   /// 让根 widget 在同一遮罩上渲染「失败原因 + 建议 + 重启按钮」，确保用户醒目看到失败。
-  void failDataRootMigration(String message) {
+  void failDataRootMigration(String message, {String? hint}) {
     _dataRootMigrationActive = true;
     _dataRootMigrationProgress = null;
     _dataRootMigrationFailure = message;
+    _dataRootMigrationFailureHint = hint;
     notifyListeners();
   }
 
@@ -3568,6 +3575,7 @@ class AppModel
     _dataRootMigrationActive = false;
     _dataRootMigrationProgress = null;
     _dataRootMigrationFailure = null;
+    _dataRootMigrationFailureHint = null;
     notifyListeners();
   }
 

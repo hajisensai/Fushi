@@ -2496,6 +2496,7 @@
   "data_storage_migrate_failed_restart": "Перезапустить",
   "data_storage_migrate_failed_suggestions": "Попробуйте другую пустую папку. Не выбирайте папку установки приложения и убедитесь, что файлы в этом расположении не используются.",
   "data_storage_migrate_failed_title": "Перенос данных не удался",
+  "data_storage_migrate_name_collision": "The destination folder does not tell upper and lower case apart, so ${file} and ${other} would become the same file and one would be lost. Rename or remove one of them, then try again. Nothing was moved.",
   "data_storage_migrate_overlay_progress": "Копирование файлов: $copied / $total",
   "data_storage_migrate_overlay_title": "Перенос данных",
   "data_storage_migrate_overlay_warning": "Пожалуйста, не закрывайте приложение. Не выключайте компьютер до завершения.",

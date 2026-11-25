@@ -177,7 +177,14 @@ class DataRootMigrationRequest {
     required this.documentsTopLevelIncludeNames,
     this.onProgress,
     this.resolvedExecutablePath,
+    this.onDiagnostic,
   });
+
+  /// 迁移**成功提交并删完旧根之后**回报一行取证摘要（每个根怎么搬的、复制了多少文件 /
+  /// 字节、耗时）。调用方写进诊断日志：用户报「迁移后书库空了」时，没有这一行就分不清
+  /// 「迁移根本没复制到」和「复制完了、之后被别的东西删掉」（反馈：3.2 GB → 400 MB）。
+  /// 引擎 await 它再返回：迁移后紧接着重启，调用方要来得及把摘要落盘。
+  final Future<void> Function(String summary)? onDiagnostic;
 
   /// 旧「内容/书库」根（含 EPUB / 有声书 / 视频封面/字幕/shader / 词典资源 / 缩略图）。
   final Directory oldDocumentsRoot;
@@ -223,6 +230,12 @@ class DataRootMigrationRequest {
   final Set<String>? documentsTopLevelIncludeNames;
 }
 
+/// 沙箱重定位台账（`SandboxRelocation`）：上次启动时的 documents / support 根，存在
+/// DB 的 `preferences` 表里。定义在这里而不是 `sandbox_relocation.dart`：迁移引擎改写库内
+/// 路径时要一并改写台账，而 `sandbox_relocation.dart` 已经 import 本文件。
+const String kSandboxLedgerDocumentsRootPrefKey = 'sandbox_last_documents_root';
+const String kSandboxLedgerSupportRootPrefKey = 'sandbox_last_support_root';
+
 /// 迁移过程中可恢复的失败：旧根保持完整、未切换、新根半成品已清理。
 class DataRootMigrationException implements Exception {
   const DataRootMigrationException(this.message, {this.cause});
@@ -233,6 +246,27 @@ class DataRootMigrationException implements Exception {
       'DataRootMigrationException: $message${cause == null ? '' : ' ($cause)'}';
 }
 
+/// 跨盘复制时两个源路径在**目标文件系统**上是同一个名字：源（Android 内部存储 ext4 /
+/// f2fs）区分大小写，目标（`/storage/emulated` 背后的 `/data/media`，casefold）不区分、
+/// 还会做 Unicode 归一。照常复制的话后一个文件悄悄覆盖前一个，逐文件字节数校验照样通过，
+/// 提交后删源 —— 前一个文件永久丢失。复制前就拒绝，旧根一个字节不动。
+class DataRootNameCollisionException extends DataRootMigrationException {
+  DataRootNameCollisionException({
+    required this.relativePath,
+    required this.collidesWith,
+  }) : super(
+         '目标位置不区分大小写，$relativePath 与 $collidesWith 会落到同一个文件，'
+         '已中止迁移，旧根原样保留',
+       );
+
+  /// 源根下的相对路径（后到的那一个）。
+  final String relativePath;
+
+  /// 与它在目标上撞名的源相对路径；目标上已存在、但无法确定是源里哪一项时是目标里那份
+  /// 的相对路径。
+  final String collidesWith;
+}
+
 class DataRootMigrator {
   const DataRootMigrator();
 
@@ -241,6 +275,12 @@ class DataRootMigrator {
   /// 生产恒 false。测试须在 try/finally 里复位，避免污染其它用例。
   @visibleForTesting
   static bool debugForceCopyFallback = false;
+
+  /// 仅供单测：覆盖「目标文件系统是否不区分大小写」的探测结果（null = 真探测）。单卷临时
+  /// 目录造不出「源区分、目标不区分」（Android 内部 ext4 → `/data/media` casefold），
+  /// 测试在区分大小写的临时目录里放好只差大小写的两个源文件，再把目标声明为不区分。
+  @visibleForTesting
+  static bool? debugTargetFoldsCaseOverride;
 
   /// 仅供单测（BUG-1174 ④）：在 DB 路径改写事务里、改完 video_books 之后抛错，用来
   /// 确定性验证「整段改写在单事务里，中途失败整体回滚、不留半改状态」。生产恒 false。
@@ -273,6 +313,7 @@ class DataRootMigrator {
   Future<(Directory documents, Directory support)> migrate(
     DataRootMigrationRequest req,
   ) async {
+    final Stopwatch elapsed = Stopwatch()..start();
     final Directory newRoot = Directory(req.target.pickedPath);
     final Directory newDocs = req.target.documentsRoot;
     final Directory newSupport = req.target.supportRoot;
@@ -357,6 +398,9 @@ class DataRootMigrator {
           cause: e,
         );
       }
+      // 撞名拒绝原样上抛：调用方要给用户讲清是哪两个文件，包成泛化的「搬动失败」就只剩
+      // 一句看不出原因的话。
+      if (e is DataRootNameCollisionException) rethrow;
       throw DataRootMigrationException('搬动数据目录失败，已回滚到旧根', cause: e);
     }
 
@@ -475,7 +519,44 @@ class DataRootMigrator {
       );
     }
 
+    await req.onDiagnostic?.call(
+      describeMigrationForDiagnostics(
+        moves: <(String, String, bool)>[
+          for (final _MovePlan m in moves)
+            (m.src.path, m.dst.path, m.deferredCopy),
+        ],
+        supportUnchanged: supportUnchanged,
+        copiedFiles: progress.copiedFiles,
+        copiedBytes: progress.copiedBytes,
+        elapsed: elapsed.elapsed,
+      ),
+    );
     return (newDocs, newSupport);
+  }
+
+  /// 迁移成功后的取证摘要（[DataRootMigrationRequest.onDiagnostic]）。[moves] 每项是
+  /// （源根, 目标根, 是否走了跨盘复制）；同盘 rename 不产生复制计数。
+  @visibleForTesting
+  static String describeMigrationForDiagnostics({
+    required List<(String, String, bool)> moves,
+    required bool supportUnchanged,
+    required int copiedFiles,
+    required int copiedBytes,
+    required Duration elapsed,
+  }) {
+    final StringBuffer out = StringBuffer();
+    for (final (String src, String dst, bool copied) in moves) {
+      out.writeln(
+        '$src -> $dst: ${copied ? 'copy + verify, source deleted' : 'rename'}',
+      );
+    }
+    if (supportUnchanged) out.writeln('support root unchanged');
+    final double mb = copiedBytes / (1024 * 1024);
+    out.write(
+      'copied $copiedFiles files, ${mb.toStringAsFixed(1)} MB, '
+      '${(elapsed.inMilliseconds / 1000).toStringAsFixed(1)} s',
+    );
+    return out.toString();
   }
 
   Future<void> _validateTarget(
@@ -593,7 +674,7 @@ class DataRootMigrator {
     final Directory dst = plan.dst;
     await dst.create(recursive: true);
     // 顶层项列举（非递归）：仅一层、成本低，保持同步无碍主 isolate。递归大树的开销在
-    // _copyTreeVerified 的 _countFilesAsync（已异步化）里，不在此。
+    // _copyTreeVerified 的 _preflightCopySource（已异步化）里，不在此。
     for (final FileSystemEntity entity in src.listSync(
       recursive: false,
       followLinks: false,
@@ -621,8 +702,9 @@ class DataRootMigrator {
         // BUG-1869：顶层单文件也是一个进度单元——先计入分母再复制，否则分子会越过分母
         //（support 根顶层的 fushi.db / -wal / -shm 各多算一次 → 「623 / 620」）。
         progress.addToTotal(1);
-        await _copyFileVerified(entity, File(target), name);
-        progress.fileCopied();
+        progress.fileCopied(
+          await _copyFileVerified(entity, File(target), name),
+        );
         plan.deferredCopy = true;
         deferredSourceDeletions.add(entity);
       }
@@ -682,14 +764,19 @@ class DataRootMigrator {
     _CopyProgress? progress,
   ]) async {
     await dst.create(recursive: true);
-    // 进度模式：先一次性数清本子树的文件总数并并入全局分母，再逐文件复制时累加分子。
-    // null（回滚路径）时不报告进度——回滚是异常清理，没有 UI 等它。
-    // TODO-1324：用**异步** list 数文件——搬大库时同步 listSync(recursive) 会把主 isolate
-    // 卡到 OS 层遍历完（黑屏/转圈冻结、进度条不动、被误判死机）；异步遍历让事件循环得以
-    // 继续绘制遮罩与进度。
-    if (progress != null) {
-      progress.addToTotal(await _countFilesAsync(src));
-    }
+    // 复制前先把源过一遍（一次异步遍历）：数文件给进度分母，同时在一个字节都没复制之前
+    // 拒掉「搬过去会丢」的源——目标不区分大小写时只差大小写的两项。
+    // TODO-1324：用**异步** list——搬大库时同步 listSync(recursive) 会把主 isolate 卡到
+    // OS 层遍历完（黑屏/转圈冻结、进度条不动、被误判死机）。
+    final bool targetFoldsCase =
+        debugTargetFoldsCaseOverride ?? await _directoryFoldsCase(dst);
+    final int fileCount = await _preflightCopySource(
+      src,
+      targetFoldsCase: targetFoldsCase,
+    );
+    // 进度模式：数清的总数并入全局分母，逐文件复制时累加分子。null（回滚路径）时不报告
+    // 进度——回滚是异常清理，没有 UI 等它。
+    progress?.addToTotal(fileCount);
     await for (final FileSystemEntity entity in src.list(
       recursive: true,
       followLinks: false,
@@ -697,22 +784,118 @@ class DataRootMigrator {
       final String rel = p.relative(entity.path, from: src.path);
       final String target = p.join(dst.path, rel);
       if (entity is Directory) {
+        // 目标子树是本次新建的空目录，目录项在建之前就「已经在」，只能是目标文件系统把它
+        // 和前面某个源项当成了同一个名字（大小写之外还有 Unicode 归一，预检按小写比对覆盖
+        // 不全）。照建就是把两个目录静默并成一个，所以兜底拒绝；文件的同一检查在
+        // [_copyFileVerified] 里。递归列举先给出目录、后给出其中内容，父目录一定由本循环
+        // 先建好。
+        if (await FileSystemEntity.type(target, followLinks: false) !=
+            FileSystemEntityType.notFound) {
+          throw DataRootNameCollisionException(
+            relativePath: rel,
+            collidesWith: _existingNameAt(target, dst.path) ?? rel,
+          );
+        }
         await Directory(target).create(recursive: true);
       } else if (entity is File) {
-        await _copyFileVerified(entity, File(target), rel);
-        progress?.fileCopied();
+        final int bytes = await _copyFileVerified(entity, File(target), rel);
+        progress?.fileCopied(bytes);
       }
     }
   }
 
-  /// 跨盘复制的最小单元：单文件 copy + 字节数校验。[label] 只进错误信息（相对路径
-  /// 或顶层名）。整树路径与选择性搬移的顶层单文件共用，两边校验口径不可能漂移。
-  static Future<void> _copyFileVerified(
-    File src,
-    File dst,
-    String label,
-  ) async {
+  /// [dir]（已存在、可写）所在文件系统是否不区分大小写：建一个带大写字母的探针文件，
+  /// 看小写名能不能找到它。Android `/storage/emulated`（`/data/media` casefold）、Windows
+  /// NTFS、macOS APFS 默认都不区分；Android 内部存储与 Linux ext4 区分。探测失败按「不
+  /// 区分」处理——宁可预检多拦，复制循环里的逐项兜底仍然保证不覆盖。
+  static Future<bool> _directoryFoldsCase(Directory dir) async {
+    final String stamp = DateTime.now().microsecondsSinceEpoch.toString();
+    final File probe = File(p.join(dir.path, '.Fushi-Case-Probe-$stamp'));
+    try {
+      await probe.writeAsBytes(const <int>[], flush: true);
+      return await File(p.join(dir.path, '.fushi-case-probe-$stamp')).exists();
+    } on FileSystemException {
+      return true;
+    } finally {
+      try {
+        if (await probe.exists()) await probe.delete();
+      } on FileSystemException {
+        // 探针删不掉不影响迁移；它在新建的目标子树里，失败回滚会整树清掉。
+      }
+    }
+  }
+
+  /// 复制前遍历 [src]：返回普通文件数；[targetFoldsCase] 时两个相对路径只差大小写就抛
+  /// [DataRootNameCollisionException]。链接不追、不计、不复制（TODO-1226），也不参与撞名
+  /// 比对。
+  static Future<int> _preflightCopySource(
+    Directory src, {
+    required bool targetFoldsCase,
+  }) async {
+    int files = 0;
+    final Map<String, String> byFoldedPath = <String, String>{};
+    // followLinks: false —— 绝不追 symlink/junction：用户 Documents 里的 shell junction
+    // （My Music 等）ACL 全拒，追进去 list 直接 errno 5 硬炸（TODO-1226）。
+    await for (final FileSystemEntity e in src.list(
+      recursive: true,
+      followLinks: false,
+    )) {
+      final String rel = p.relative(e.path, from: src.path);
+      if (e is Link) continue;
+      if (e is File) files++;
+      if (!targetFoldsCase) continue;
+      final String first = byFoldedPath.putIfAbsent(
+        foldedRelativePathForCollision(rel),
+        () => rel,
+      );
+      if (first != rel) {
+        throw DataRootNameCollisionException(
+          relativePath: rel,
+          collidesWith: first,
+        );
+      }
+    }
+    return files;
+  }
+
+  /// 不区分大小写的文件系统上两个相对路径是否算同一个名字的比对键：分隔符归一 + 小写。
+  /// 只是预检的近似（不做 Unicode 归一 / 全量 casefold），漏掉的由复制循环逐项兜底。
+  @visibleForTesting
+  static String foldedRelativePathForCollision(String relativePath) =>
+      relativePath.replaceAll('\\', '/').toLowerCase();
+
+  /// [target] 在目标上实际占着的那一项的相对路径（目录里按不区分大小写找回真实名字），
+  /// 找不到返回 null。只用于报错信息。
+  static String? _existingNameAt(String target, String dstRoot) {
+    try {
+      final Directory parent = File(target).parent;
+      final String wanted = p.basename(target).toLowerCase();
+      for (final FileSystemEntity e in parent.listSync(followLinks: false)) {
+        if (p.basename(e.path).toLowerCase() == wanted) {
+          return p.relative(e.path, from: dstRoot);
+        }
+      }
+    } on FileSystemException {
+      return null;
+    }
+    return null;
+  }
+
+  /// 跨盘复制的最小单元：单文件 copy + 字节数校验，返回字节数。[label] 只进错误信息
+  /// （相对路径或顶层名）。整树路径与选择性搬移的顶层单文件共用，两边校验口径不可能漂移。
+  ///
+  /// [dst] 必须还不存在：目标都是本次迁移新建的子树，写之前就在的同名项只能来自目标文件
+  /// 系统把两个源名字当成同一个（见 [DataRootNameCollisionException]）。`File.copy` 会
+  /// 直接覆盖，事后的字节数校验比的是**后写的那份**，发现不了前一份被冲掉。
+  static Future<int> _copyFileVerified(File src, File dst, String label) async {
     await dst.parent.create(recursive: true);
+    if (await FileSystemEntity.type(dst.path, followLinks: false) !=
+        FileSystemEntityType.notFound) {
+      throw DataRootNameCollisionException(
+        relativePath: label,
+        collidesWith: _existingNameAt(dst.path, dst.parent.path) ?? label,
+      );
+    }
     await src.copy(dst.path);
     final int srcLen = await src.length();
     final int dstLen = await dst.length();
@@ -721,21 +904,7 @@ class DataRootMigrator {
         '跨盘复制校验失败：$label 字节数不一致（$srcLen != $dstLen）',
       );
     }
-  }
-
-  /// 异步数清目录树下的文件数（不含目录项）。用于跨盘复制前确定进度分母。
-  /// TODO-1324：**异步** list（非 listSync）——绝不在主 isolate 上同步递归列大目录（冻结 UI）。
-  static Future<int> _countFilesAsync(Directory dir) async {
-    int count = 0;
-    // followLinks: false —— 绝不追 symlink/junction：用户 Documents 里的 shell
-    // junction（My Music 等）ACL 全拒，追进去 list 直接 errno 5 硬炸（TODO-1226）。
-    await for (final FileSystemEntity e in dir.list(
-      recursive: true,
-      followLinks: false,
-    )) {
-      if (e is File) count++;
-    }
-    return count;
+    return srcLen;
   }
 
   Future<void> _rollbackMoves(List<_MovePlan> done) async {
@@ -992,7 +1161,7 @@ class DataRootMigrator {
     Directory dir, {
     Set<String> ignoreTopLevelNames = const <String>{},
   }) async {
-    // followLinks: false —— 同 [_countFilesAsync]：不追 junction/symlink（TODO-1226）。
+    // followLinks: false —— 同 [_preflightCopySource]：不追 junction/symlink（TODO-1226）。
     await for (final FileSystemEntity e in dir.list(
       recursive: false,
       followLinks: false,
@@ -1054,6 +1223,12 @@ class DataRootMigrator {
         ),
         newSupportRoot: newSupportRoot,
       );
+      // 库里的路径此刻已指向新根：沙箱重定位台账（上次启动的根）同步记成新根，与路径
+      // 「同生共死」。不记的话下次启动台账 ≠ 解析出的根，会把刚改写好的全库再按台账
+      // 重基一遍、留下一条「rebased ledger」——改写本身是空操作，但取证时看起来就像根
+      // 无故跳了一次。回滚路径同样经这里（新旧对调），台账跟着回到旧根。
+      await db.setPref(kSandboxLedgerDocumentsRootPrefKey, newDocumentsRoot);
+      await db.setPref(kSandboxLedgerSupportRootPrefKey, newSupportRoot);
     } finally {
       await db.close();
     }
@@ -1798,6 +1973,7 @@ class _CopyProgress {
   final void Function(int copied, int total)? _onProgress;
   int _copied = 0;
   int _total = 0;
+  int _bytes = 0;
 
   void addToTotal(int count) {
     _total += count;
@@ -1805,10 +1981,15 @@ class _CopyProgress {
     _onProgress?.call(_copied, _total);
   }
 
-  void fileCopied() {
+  void fileCopied(int bytes) {
     _copied++;
+    _bytes += bytes;
     _onProgress?.call(_copied, _total);
   }
+
+  /// 已复制的文件数 / 字节数（迁移结束时写进取证摘要）。
+  int get copiedFiles => _copied;
+  int get copiedBytes => _bytes;
 }
 
 /// BUG-1174 ③：数据根迁移期的 documents 根路径改写器。**本质幂等**。

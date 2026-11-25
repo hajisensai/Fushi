@@ -5,7 +5,11 @@ import 'package:path/path.dart' as p;
 
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/data_root_migrator.dart'
-    show DataRootMigrator, DocumentsPathRebaser;
+    show
+        DataRootMigrator,
+        DocumentsPathRebaser,
+        kSandboxLedgerDocumentsRootPrefKey,
+        kSandboxLedgerSupportRootPrefKey;
 
 /// 数据根**被平台挪走**之后的启动期自愈。
 ///
@@ -50,10 +54,11 @@ class SandboxRelocation {
   /// SharedPreferences：台账描述的就是这个库里的路径，两者必须同生共死。分家的
   /// 后果是「库被恢复到另一台机器、台账却还留在本机」——那正是最需要重基的场合，
   /// 却会被判成「根没变」。
-  static const String lastDocumentsRootPrefKey = 'sandbox_last_documents_root';
+  static const String lastDocumentsRootPrefKey =
+      kSandboxLedgerDocumentsRootPrefKey;
 
   /// 上次启动时的 support（数据库）根。
-  static const String lastSupportRootPrefKey = 'sandbox_last_support_root';
+  static const String lastSupportRootPrefKey = kSandboxLedgerSupportRootPrefKey;
 
   /// 反推旧根时最多取样多少条存量路径。取样只为找**一条**能被磁盘证实的映射，
   /// 拿到就停；上限只是为了让「一条都证实不了」的坏情况不至于扫全表。
