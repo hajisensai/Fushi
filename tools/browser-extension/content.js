@@ -18,7 +18,12 @@ window.__fushiCssHighlightsSupported = false;
 // 设计，注入宿主页后宿主页自身 hover/click 会误触 selectText→clearSelection，拆掉刚画的划词高亮；
 // popup.js 读此 flag 后只处理落在 #entries-container 内的事件（content.js 与 popup.js 同隔离世界共享 window）。
 window.__fushiExtension = true;
-const FUSHI_MAX_LEN = 12;
+// BUG-5461：交给引擎的取词文本上限，不是扫描窗口。窗口长度由 app 的「扫描长度」设置
+// （FushiDicts.scanLength，出厂 16、上限 32）在引擎侧切；这里只要给足文本，与 app 阅读器 /
+// 内置浏览器调 selectText 传的 400 同值。旧值 12 在发出前就把超过 12 个字母的英文词拦腰
+// 截断（procrastination → procrastinat，引擎查无此词、弹窗不出），也让用户调大的扫描长度
+// 在扩展里不生效。
+const FUSHI_MAX_LEN = 400;
 let fushiContainer = null;
 // BUG-688：弹窗渲染进 Shadow DOM，宿主网页 CSS 无法穿透 shadow 边界（ruby/行距/定位等
 // 与 in-app WebView 弹窗一致）。fushiHost 是挂在宿主页的 shadow 宿主元素（负责 fixed 定位），
@@ -3126,7 +3131,7 @@ function fushiSendLookup(term, anchorRect, cueWindow, fromSidePanel, lookupAncho
       });
       // TODO-1150（yomitan 式）：弹窗钉在被查词旁 + 高亮词。匹配长度取服务端 result.bestLength（日语=
       // 去屈折后命中的词长，与 app 阅读器 lookupHighlightCharCount → result.bestLength 同源），只高亮真正
-      // 匹配的词而非整个 12 字扫描窗；缺失/为 0 时回落扫描窗长度 term.length。
+      // 匹配的词而非整段取词文本；缺失/为 0 时回落取词文本长度 term.length。
       const best = resp.data.result && typeof resp.data.result.bestLength === 'number'
         ? resp.data.result.bestLength
         : 0;
