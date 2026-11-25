@@ -4,6 +4,8 @@ Status: phase 1 implemented (branch `feat/auto-backup-p1-update-snapshot`), phas
 `feat/auto-backup-p2-scheduled`, stacked on phase 1), phase 3 user folder on mobile implemented (branch
 `feat/auto-backup-p3-offdevice`, stacked on phase 2); cloud copies are a proposal only. Owner: auto-backup session. Proposal with the comparison of other apps:
 https://claude.ai/artifact/GzX9ynemY4FxoXn85dbvCp (private; summary below so this file stands alone).
+Phase 4B (the server backs itself up) implemented on branch `feat/auto-backup-p4b-server-self`, stacked on
+phase 3; see "Phase 4B as implemented".
 
 ## Problem
 
@@ -529,6 +531,99 @@ space; a smaller cloud retention (e.g. 7 daily) to save quota.
 5. WebUI "Device backups" page was not looked at in a real browser (markup and script are tested, and the page
    script parses with `node --check`).
 
+## Phase 4B as implemented (2026-11-25): the server backs itself up
+
+Built next to 4A and merged into the same branch (`feat/auto-backup-p4-server`). Phase 4 was chosen by the user
+on 2026-11-25 as "both devices → server (4A) and server self-backup (4B)"; D14–D16 below are the recommended
+defaults, maintainer may change. Everything lives in `packages/fushi_server/lib/src/backup/`.
+
+- **One job lock for all server backups.** `ServerBackupService` (`server_backup_service.dart`) owns the
+  manual (WebUI / ctl / admin API), automatic and pre-update backups; one runs at a time (`busy` = 409). It is
+  held by `AdminContext.backups`, so the admin API, the serve scheduler and the self-update hook share it.
+  The review-library hold (`ServerSrs.holdForBackup`) is taken for every kind, as before. The service does
+  not touch the data-dir lock: serve holds it for its whole life and offline commands get it from
+  `withServerRuntime`, so an automatic run can never overlap an offline restore or another process.
+- **Files.** All in `<data>/backups/`, kind by name prefix (`server_backup_store.dart`):
+  `fushi_server-backup-<local yyyyMMdd-HHmmss>[-n].zip` (manual), `fushi_server-auto-…` (automatic),
+  `fushi_server-pre_update-…` (before a self-update). The timestamp is read from the name, not from mtime
+  (copy tools change mtime) and not from the zip. Download / delete accept only these three shapes, so `..`,
+  separators and NTFS streams cannot reach outside the folder. Same zip format as before
+  (`createServerBackup`); owner-only modes unchanged (`restrictServerBackupPath`).
+- **Schedule (D14).** `backup:` section in `fushi_server.yaml` (`server_backup_config.dart`): `interval`
+  `off | daily | every3Days | weekly` (app names), `time` `HH:MM` in server local time (default `04:00`),
+  `documents` (default false), `max_total_gb` (default 5, 0 = no cap). No section = these defaults, so it is on
+  for every existing server. The due rule moved to fushi_core (`utils/backup_schedule.dart`,
+  `isBackupSlotDue`); the app's `isAutoBackupDue` now calls it, so app and server share one rule (preferred
+  slot, catch-up after downtime, calendar-day intervals, clock moved back = due once, an interrupted slot is not
+  retried). `ServerBackupScheduler` (`server_backup_scheduler.dart`) runs in `serve` only: interrupted-run check
+  at start, first check 30 s after start, then every 15 min; `stop()` cancels the timers and waits for a running
+  backup of any kind before `serve` closes the database (a second Ctrl+C still kills; the next start records it
+  as interrupted).
+- **Skip when unchanged.** Fingerprint = sha1 over relative path + size + mtime of every source file of the
+  backup (`serverBackupSourceFiles`: `fushi.db` / `srs4.db` and their `-wal`, the data-dir files the zip takes,
+  `documents/` only when included), the config file and the documents switch; computed in an isolate. Skip only
+  if it equals the last success's fingerprint **and** that file still exists; a skip counts as satisfied. On a
+  busy server the DB `-wal` changes often, so skips mostly happen on idle servers (correct, just less saving).
+- **Status** (`server_backup_status.dart`): `<data>/backups/auto_backup_status.json` (inside the backup folder,
+  so restoring an old zip never brings back an old status; not a backup name, so it is never listed or
+  served). Fields: running (since / name / kind), last success (time / name / bytes), last failure + one-line
+  reason, last skip + reason (`unchanged`, `srs_migration_running`), last satisfied, last interrupted,
+  fingerprint hash, pruned count, last pre-update (time / name / error). No config content or credentials.
+  Status writes are serialized in-process and atomic (tmp + rename).
+- **Review library migrating** → the automatic run is recorded as skipped (`srs_migration_running`), not
+  failed and not satisfied; the next 15-minute check retries.
+- **Interrupted runs.** `runningSinceMs` is written when an automatic / pre-update run starts and cleared when it
+  ends. Still there at the next start (serve or `backup run`) → recorded as failed `interrupted`, all
+  `fushi_server-*.zip.partial` files are deleted (only names the store recognises), and the due rule waits for
+  the next slot. Manual backups do not write the marker, but their `.partial` is cleaned the same way.
+- **Retention (D15).** `planServerBackupPrune` reuses fushi_core's `planBackupRetention` with the scheduled
+  restore-point policy (`kRestorePointScheduledRetention`: newest always, 48 h all, 7 daily, 4 weekly, 3 monthly)
+  and the server's own cap. Only automatic backups are subject to it; pre-update backups keep the newest
+  `kRestorePointKeepPreUpdate` (3); manual backups are never pruned. Runs after every successful automatic or
+  pre-update backup; the file just written is protected and counts as the newest.
+- **Pre-update backup (D16).** `ServerSelfUpdater` gained `beforeInstall`, called after the package is
+  downloaded, verified and extracted and right before `swapServerBundle`. `serve` wires it to
+  `ServerBackupService.runPreUpdate` via `HeadlessHost.beforeSelfUpdateInstall` (read at call time). It waits for
+  a running backup, writes settings + data without `documents/`, prunes to 3, and never throws: a failure (or a
+  review-library migration) is logged and stored as `preUpdateError`, and the update proceeds. Why it matters: the
+  swapped bundle exits with `kExitSelfUpdated`, and the new version migrates `fushi.db` on its first start (layer
+  1 also leaves a `fushi.db`-only pre-update restore point in `support/restore_points/`, but the server has no
+  downgrade screen). **Rollback:** stop the service, reinstall the older release bundle, run the **older** binary
+  `fushi_server backup restore <data>/backups/fushi_server-pre_update-<time>.zip --yes`, start the service.
+- **Restore keeps `backups/` in place.** `restoreServerBackup` used to move every top-level entry of the data
+  dir aside, including `backups/` (which is never in a zip), so after a restore all backups were hidden in
+  `<data_dir>.pre-restore-*`. It now leaves `backups/` and the lock file where they are.
+- **Surfaces.** Admin API (`admin_backups.dart`): `GET /api/admin/backups` adds `kind` / `createdAt` per item,
+  `schedule`, `status`, `runningKind`, `backupsDir`, `configFile`; `GET|PUT /api/admin/backups/schedule`
+  (partial update, invalid values 400, saved through `AdminContext.updateConfig`); `POST /api/admin/backups/run`
+  (automatic backup now: ignores due / unchanged, then prunes). Still not in the AI op catalog (backups hold the
+  config). WebUI page "Backups" (`web_ui_backups.dart`, spliced into `web_ui.dart` / `web_ui_en.dart` at three
+  points): back up now (manual, documents switch), schedule controls, status lines, list with kind / date / size /
+  download / delete, and the offline restore command. CLI: `backup status [--json]` (reads files, no lock),
+  `backup run [--if-due]` (offline, takes the lock; `--if-due` makes it usable from cron), `backup settings
+  [--interval] [--time] [--[no-]auto-documents] [--max-gb]` (refuses while serve runs). ctl: `backup run`,
+  `backup schedule ['<json>']`; `backup ls` shows the kind.
+- **Tests.** `test/server_auto_backup_test.dart` (names / path escapes, retention auto vs manual vs pre-update,
+  yaml section, due / skip / srs-migration / failure / interrupted, job lock and pre-update wait, pre-update
+  retention and failure, scheduler start / stop, admin API schedule / run / delete validation, CLI), additions
+  in `server_self_update_test.dart` (hook runs before the swap; a throwing hook does not block) and
+  `server_backup_test.dart` (restore keeps `backups/`), `fushi_core/test/backup_schedule_test.dart`.
+
+### Phase 4B open questions
+
+1. Skip-unchanged is coarse on an active server: any DB write changes `fushi.db-wal`, so a server with
+   background jobs rarely skips. A content-level check (DB `data_version` / change counters) would skip more, at
+   the cost of opening the DB from the fingerprint code.
+2. The pre-update backup happens inside the self-update job; the client only sees the update status, not the
+   backup result (it is in the server's backup status / WebUI / log). Surfacing it in `HostUpdateStatus` would
+   need a protocol field.
+3. A backup larger than the free disk space fails with the I/O error; there is no free-space check before
+   starting (the app phase 2 has none either).
+4. Offline `backup run` / `backup status` show the schedule from the config file; a `serve` started later picks
+   it up, but `backup settings` while serve runs is refused rather than forwarded to the admin API.
+5. Real check was on Windows with `dart run` (no native dictionary / torrent libraries); not checked in a
+   release bundle, on Linux, under systemd stop timeouts, or with a real self-update swap.
+
 ## Decisions (taken by the user 2026-11-25 on the proposal's recommendations; maintainer may change)
 
 | # | Question | Options | Chosen |
@@ -546,6 +641,9 @@ space; a smaller cloud retention (e.g. 7 daily) to save quota.
 | D11 | Cloud retention | same as local / fewer | **Fewer: 7 daily + 4 weekly**, this device's copies only (implementation adds the 5 GB cap as a quota guard). |
 | D12 | Phase 4: copies to the paired server | part of the cloud target / own target | **Own target "Copy to server"** (user 2026-11-25: phase 4 = devices → server + server self-backup; defaults below recommended, maintainer may change): independent of the cloud, uses the Interconnect channel sync uses, off by default, own status / key / notify-once; the cloud target stops picking Interconnect; one "Also upload on mobile data" switch covers cloud and server. |
 | D13 | Retention of copies on the server | like the cloud / like local / server decides | **Like local** (48 h all, 7 daily, 4 weekly, 3 monthly, 5 GB), the device prunes only its own copies; other devices' and copied-back copies are never auto-deleted; the server never auto-deletes device copies, its admin can (WebUI / admin API / ctl). |
+| D14 | Server self-backup: when / what | off / scheduled | **On by default: daily at 04:00 server local time** (interval off / daily / every 3 days / weekly, time configurable), catch-up after downtime, skipped when nothing changed, `documents/` excluded by default (setting to include). One job at a time with manual backups; skipped (not failed) while the review library migrates; interrupted runs detected and cleaned. *Recommended default, maintainer may change.* |
+| D15 | Server automatic-backup retention | flat keep-N / tiered | **Same tiers as D3 (48 h all, 7 daily, 4 weekly, 3 monthly), newest always kept, 5 GB cap (configurable, 0 = none).** Manual and pre-update backups are never pruned by it. *Recommended default, maintainer may change.* |
+| D16 | Backup before a server self-update | none / block on failure / proceed on failure | **Settings + data (no documents) before the bundle swap, newest 3 kept; a failure is logged and shown, the update still proceeds** (same as phase 1). Rollback = reinstall the older bundle and restore that zip with it. *Recommended default, maintainer may change.* |
 
 ## 决策摘要（中文）
 
@@ -560,6 +658,11 @@ D8–D11（用户 2026-11-25 拍板）：云端副本这一批就做（同分支
 不含 OneDrive，Dropbox 补上传会话，不能续传的后端失败就清掉半截、下个时段重来；默认只在 Wi-Fi 上传，可开「也用移动数据」，桌面 / 有线
 算不计流量；云端保留更少：7 日 + 4 周（只动本机写的副本，另有 5 GB 上限防配额被占满）。同批按审查修好：定时点都记写入设备，本机 /
 自定义文件夹 / 云端都只修剪本机写的，取回本机的点不自动删；复制不再拿导出锁；半截副本按目标与元数据精确清理；修剪逐份尽力。
+D14–D16（用户 2026-11-25 定第 4 期两块都做，这三条按建议默认实现，维护者可改）：服务端自动整机备份默认开，每天服务端本地 04:00
+（可关 / 每天 / 每 3 天 / 每周，时刻可改），停机错过了下次启动补跑，没变化就跳过，默认不带 documents/（可开）；与手动备份共用一把作业锁，
+复习库换代迁移中记「跳过」不算失败，写到一半被杀下次启动记「中断」并清掉半截。自动备份按 D3 同一套分层保留、5 GB 上限（可改，0 = 不限），
+手动备份与更新前备份从不被它删。远程更新换包之前先备份设置与数据（不带 documents/，留最新 3 份），失败只记录、更新照样进行；回滚 = 装回旧版
+程序再用旧版程序还原那份更新前备份。还原时 `backups/` 留在原处。
 
 D12–D13（用户 2026-11-25 定第四期 = 设备备份到服务器 + 服务器自己定时备份；以下为推荐默认，维护者可改）：「复制到服务器」是单独的副本目标，
 与云端互不相干（两个都开就各传一份），用同步在用的那条互联通道，默认关，状态 / 键 / 失败提示各自一份；云端副本不再选互联；「也用移动数据

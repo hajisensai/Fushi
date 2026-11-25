@@ -243,6 +243,11 @@ ai:                           # 「AI 下视频」助手会话、补字幕前候
   #   kind: "searxng"         # searxng / brave
   #   endpoint: "https://searx.example.org"  # searxng 实例根地址，实例需在 settings.yml 打开 json 格式
   #   api_key: ""             # brave 的 X-Subscription-Token
+backup:                       # 自动整机备份（见下文「备份与还原」）；不写这一段 = 下面的默认值
+  interval: "daily"           # off | daily | every3Days | weekly
+  time: "04:00"               # 服务端本地时间；停机错过了，下次启动补跑
+  documents: false            # 自动备份带不带 documents/（书 / 封面 / 有声书 / 下载）
+  max_total_gb: 5             # 自动备份总大小上限（0 = 不限）；最新一份总是留着
 srs:                          # Fushi 复习（见下文「Fushi 复习」）；profiles 为空 = 关闭（默认）
   profiles: []                # 提供哪几份配置文件（uid；每门语言一份）。WebUI「复习」页从同步目录里勾选
   default_profile: ""         # 默认那份；空 = 列表第一份
@@ -296,6 +301,9 @@ fushi_server models status | pull <lang|ocr>   模型状态 / 拉取
 fushi_server transcribe <media> --lang ja [--cpu]   本地跑一次 ASR（调试）
 fushi_server backup create -o <file> [--no-documents]   整机备份（服务停着时；在跑时用 ctl backup create）
 fushi_server backup restore <file> --yes [--no-config]  从备份还原（须先停服）
+fushi_server backup status                              自动备份计划、上次结果、<data>/backups/ 里的备份
+fushi_server backup run [--if-due]                      立即写一份自动备份并修剪（--if-due：没到期 / 没变化就不写，给 cron 用）
+fushi_server backup settings [--interval …] [--time HH:MM] [--[no-]auto-documents] [--max-gb N]   看 / 改自动备份计划（须先停服）
 ```
 
 所有子命令接受 `--config <path>`（默认当前目录 `fushi_server.yaml`）和 `--verbose`。
@@ -311,11 +319,27 @@ serve 在跑也安全）、复习库 `srs.db` 的一致快照（有才带）、�
 - 服务停着：`fushi_server backup create -o /backup/fushi.zip`。
 - 服务在跑：`fushi_server ctl backup create [--no-documents]` 在后台生成到 `<data>/backups/`，
   `ctl backup ls` 看进度，下载走 `GET /api/admin/backups/<name>`（admin_token 鉴权），
-  `ctl backup rm <name>` 删除。
+  `ctl backup rm <name>` 删除。`ctl backup run` 立即跑一次自动备份，`ctl backup schedule` 看计划与状态，
+  `ctl backup schedule '{"interval":"weekly","time":"03:30"}'` 改计划（也可在 WebUI「备份」页改）。
 - 还原（先停服）：`fushi_server backup restore fushi.zip --yes`。当前数据目录的内容整体挪到
   `<data_dir>.pre-restore-<时间>/`、配置存成 `<配置>.pre-restore-<时间>`，都不删除；包里配置的
   `data_dir` 换成本机这份。`--no-config` 只还原数据。比本版本新的数据库 schema 拒绝还原（先升级）。
-  中途失败会把原数据挪回去。
+  中途失败会把原数据挪回去。`<data>/backups/` 留在原处（不在包里），还原之后所有备份照样都在。
+
+**自动备份**（默认开）：`serve` 在跑时按 `backup:` 段的计划（默认每天 04:00，服务端本地时间）在
+`<data>/backups/` 写 `fushi_server-auto-<时间>.zip`（设置 + 数据，默认不带 `documents/`）。停机错过了时刻，
+下次启动约 30 秒后补跑；与上次成功那份相比库文件与数据目录清单都没变（大小 + 修改时间）就跳过；复习库正在
+换代迁移时跳过、15 分钟后再查。保留与 app 的定时还原点相同：48 小时内全留，之后 7 天每天、4 周每周、3 个月
+每月各留一份，超过 `max_total_gb` 从最旧的删起，最新一份始终留。**手动备份（`fushi_server-backup-*`）与
+更新前备份从不被它删除。** 状态（上次成功 / 失败 / 跳过原因 / 在跑）在 `<data>/backups/auto_backup_status.json`，
+WebUI「备份」页、`ctl backup schedule`、`fushi_server backup status` 都能看。写到一半进程被杀，下次启动记成
+「中断」、删掉半截文件，这一时段不再重跑。同一时刻只跑一份备份（手动 / 自动 / 更新前共用）。
+
+**远程更新前备份**：互联远程更新把新版换进安装目录之前，先写一份 `fushi_server-pre_update-<时间>.zip`
+（设置 + 数据，不带 `documents/`，留最新 3 份）。写失败只记进状态与日志，更新照样进行。新版首次启动会把数据库
+迁移到新 schema；想回到旧版：停服 → 装回旧版发布包 → 用**旧版**程序
+`fushi_server backup restore <data>/backups/fushi_server-pre_update-<时间>.zip --yes` → 启动。
+（数据库另有更新前还原点 `support/restore_points/`，只含 `fushi.db`；整机回滚用这份 zip。）
 
 ### `ctl`：操作正在运行的 serve
 
