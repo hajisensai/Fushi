@@ -240,20 +240,26 @@ class SafBackupFolderMirror implements BackupFolderMirror {
   Future<MirrorFolderListing> list() async {
     final Object? raw = await _invoke('list', const <String, Object?>{});
     final List<MirroredRestorePoint> points = <MirroredRestorePoint>[];
+    final Set<String> unreadable = <String>{};
     if (raw is List<Object?>) {
       for (final Object? e in raw) {
         if (e is! Map<Object?, Object?>) continue;
         final Object? name = e['name'];
-        final Object? meta = e['meta'];
         // 名字来自提供者（显示名），按它拼路径前先认形状：`..`、带分隔符的一律不要。
-        if (name is! String || meta is! String) continue;
-        if (!isScheduledRestorePointId(name)) continue;
+        if (name is! String || !isScheduledRestorePointId(name)) continue;
+        final Object? meta = e['meta'];
+        // 原生读这份元数据失败（`unreadable`）：目录在、这次没读到，不当成半截。
+        if (meta is! String) {
+          if (e['unreadable'] == true) unreadable.add(name);
+          continue;
+        }
         final RestorePoint? point = RestorePoint.tryParse(
           meta,
           id: name,
           directory: '$tree/$name',
         );
         if (point == null || point.kind != RestorePointKind.scheduled) {
+          unreadable.add(name);
           continue;
         }
         points.add(MirroredRestorePoint(point: point, metaText: meta));
@@ -263,7 +269,7 @@ class SafBackupFolderMirror implements BackupFolderMirror {
       (MirroredRestorePoint a, MirroredRestorePoint b) =>
           b.point.createdAtMs.compareTo(a.point.createdAtMs),
     );
-    return MirrorFolderListing(points: points);
+    return MirrorFolderListing(points: points, unreadable: unreadable);
   }
 
   @override

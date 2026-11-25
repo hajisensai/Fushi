@@ -55,10 +55,11 @@ import io.flutter.plugin.common.MethodChannel;
  *
  * <p>方法：{@code pick} → {@code {tree, label}} / null（取消）；{@code release({tree})}；
  * {@code check({tree})} → bool（授权还在、树根还查得到）；{@code list({tree})} →
- * {@code [{name, meta}]}（只列有元数据的子目录，meta 是元数据原文；单个读不了的子目录跳过）；
+ * {@code [{name, meta} | {name, unreadable: true}]}（只列有元数据的子目录，meta 是元数据原文；元数据在但
+ * 这次读不出来的报 {@code unreadable}，Dart 据此不把它当成半截副本删）；
  * {@code upload({tree, dir, files:[{name, path}], metaName, metaText})}；
  * {@code download({tree, dir, files:[name], destDir})}；{@code delete({tree, dir})}；
- * {@code networkUnmetered} → bool（有活动网络且不计流量）。
+ * {@code networkUnmetered} → bool（有活动网络且不计流量；在主线程当场回，不排队等 I/O 线程）。
  *
  * <p>错误码（Dart 按原字符串映射，别改）：
  * <ul>
@@ -162,9 +163,18 @@ final class BackupFolderChannel {
                     return null;
                 });
                 return;
-            case "networkUnmetered":
-                runIo(result, this::networkUnmetered);
+            case "networkUnmetered": {
+                // 一次 ConnectivityManager 查询，很快：当场回，不排到串行 I/O 线程上（那里可能正在跑
+                // 几分钟的 SAF 复制）。
+                final AtomicBoolean replied = new AtomicBoolean(false);
+                try {
+                    reply(result, replied, networkUnmetered(), null, null);
+                } catch (Throwable t) {
+                    Log.e(TAG, "networkUnmetered failed", t);
+                    reply(result, replied, null, INTERNAL, t.toString());
+                }
                 return;
+            }
             default:
                 result.notImplemented();
         }
@@ -276,7 +286,11 @@ final class BackupFolderChannel {
                 final Child meta = find(children(tree, dir.uri(tree), IO_FAILED), "restore_point.json");
                 if (meta == null || meta.isDirectory()) continue;
                 final String text = readText(meta.uri(tree));
-                if (text == null) continue;
+                if (text == null) {
+                    // 元数据在、读不出来（打不开 / 超长）：报成读不了，Dart 不把它当半截副本删。
+                    out.add(unreadableEntry(dir.name));
+                    continue;
+                }
                 final Map<String, Object> entry = new HashMap<>();
                 entry.put("name", dir.name);
                 entry.put("meta", text);
@@ -284,13 +298,23 @@ final class BackupFolderChannel {
             } catch (ChannelException e) {
                 // 子目录还在加载：漏列一个副本比报错更糟（会被当成没有），整体稍后重试。
                 if (LOADING.equals(e.code)) throw e;
-                Log.w(TAG, "skip unreadable copy " + dir.name, e);
+                Log.w(TAG, "unreadable copy " + dir.name, e);
+                out.add(unreadableEntry(dir.name));
             } catch (IOException | RuntimeException e) {
-                // 单个副本读不了不拖垮整份列表。
-                Log.w(TAG, "skip unreadable copy " + dir.name, e);
+                // 单个副本读不了不拖垮整份列表；报成读不了（可能是完整的，只是这次没读到）。
+                Log.w(TAG, "unreadable copy " + dir.name, e);
+                out.add(unreadableEntry(dir.name));
             }
         }
         return out;
+    }
+
+    /** 目录在、元数据这次读不出来的副本：{@code {name, unreadable: true}}（没有 meta）。 */
+    private static Map<String, Object> unreadableEntry(String name) {
+        final Map<String, Object> entry = new HashMap<>();
+        entry.put("name", name);
+        entry.put("unreadable", true);
+        return entry;
     }
 
     private void upload(Uri tree, String dirName, List<?> files, String metaName, String metaText)

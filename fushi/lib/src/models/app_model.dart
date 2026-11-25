@@ -462,10 +462,9 @@ import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
 import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart'
     show
         AutoBackupMirrorFolder,
+        BackupMirrorException,
         backupDeviceKey,
         kBackupMirrorErrorCloudAuth,
-        kBackupMirrorErrorCloudFailed,
-        kBackupMirrorErrorCloudQuota,
         kBackupMirrorErrorCloudUnreachable;
 import 'package:fushi/src/sync/auto_backup/backup_folder_platform.dart';
 import 'package:fushi/src/sync/auto_backup/cloud_backup_mirror.dart';
@@ -17389,8 +17388,9 @@ class _AppAutoBackupHost implements AutoBackupHost {
     SyncBackendType.sftp => t.sync_backend_sftp,
   };
 
-  /// 后端异常 → 云端副本错误码。只看类型与消息里的配额字样，消息本身不往外传（可能带服务器地址 /
-  /// 响应正文）。
+  /// 后端异常 → 云端副本错误码。先按类型认鉴权 / 连不上，其余看消息里的限流 / 空间字样
+  /// （[classifyCloudBackupErrorText]：限流算连不上、只有空间满了才算配额），消息本身不往外传（可能带服务器
+  /// 地址 / 响应正文）。
   static String _classifyCloudError(Object error) {
     if (error is SyncAuthError) return kBackupMirrorErrorCloudAuth;
     if (error is SyncPeerUnreachableError ||
@@ -17399,14 +17399,56 @@ class _AppAutoBackupHost implements AutoBackupHost {
         error is HttpException) {
       return kBackupMirrorErrorCloudUnreachable;
     }
-    final String text = '$error'.toLowerCase();
-    if (text.contains('quota') ||
-        text.contains('insufficient_space') ||
-        text.contains('insufficient storage') ||
-        text.contains('http 507')) {
-      return kBackupMirrorErrorCloudQuota;
+    return classifyCloudBackupErrorText('$error');
+  }
+
+  /// 云端副本目标键里的账号 / 服务器身份（[cloudBackupTargetKey] 只存它的哈希）：Google Drive / Dropbox 是
+  /// 登录账号的邮箱，WebDAV 是地址 + 用户名，FTP / SFTP 是主机 + 端口 + 用户名，互联是主机的证书指纹（没有
+  /// 就用地址）。查不出来返回 null（键只用后端类型）。
+  static Future<String?> _cloudAccountIdentity(
+    SyncChannel channel,
+    SyncRepository repo,
+  ) async {
+    String? join(List<String?> parts) {
+      final String? head = parts.first?.trim();
+      if (head == null || head.isEmpty) return null;
+      return parts.map((String? e) => e?.trim() ?? '').join('|');
     }
-    return kBackupMirrorErrorCloudFailed;
+
+    try {
+      switch (channel.type) {
+        case SyncBackendType.webDav:
+          return join(<String?>[
+            await repo.getWebDavUrl(),
+            await repo.getWebDavUsername(),
+          ]);
+        case SyncBackendType.ftp:
+          return join(<String?>[
+            await repo.getFtpHost(),
+            '${await repo.getFtpPort()}',
+            await repo.getFtpUsername(),
+          ]);
+        case SyncBackendType.sftp:
+          return join(<String?>[
+            await repo.getSftpHost(),
+            '${await repo.getSftpPort()}',
+            await repo.getSftpUsername(),
+          ]);
+        case SyncBackendType.fushiServer:
+          final String? url = await repo.getFushiClientUrl();
+          if (url == null || url.isEmpty) return null;
+          return await repo.getFushiClientFingerprint(url) ?? url;
+        case SyncBackendType.googleDrive:
+        case SyncBackendType.dropbox:
+        case SyncBackendType.oneDrive:
+          return await channel.backend.currentEmail;
+      }
+    } on Object catch (e) {
+      debugPrint(
+        'AutoBackup: cloud account identity unavailable: ${e.runtimeType}',
+      );
+      return null;
+    }
   }
 
   /// 云端副本用的通道：已开的同步通道里（云在前、互联在后）第一条支持的。
@@ -17425,6 +17467,8 @@ class _AppAutoBackupHost implements AutoBackupHost {
     return channel == null ? null : _cloudBackendLabel(channel.type);
   }
 
+  /// 没有支持的后端返回 null；配置了但登录不上 / 连不上抛 [BackupMirrorException]（错误码按
+  /// [_classifyCloudError]，原文只把类型名写进调试日志）。
   @override
   Future<AutoBackupMirrorTarget?> cloudTarget() async {
     final SyncRepository repo = SyncRepository(_app.database);
@@ -17435,11 +17479,24 @@ class _AppAutoBackupHost implements AutoBackupHost {
     final Set<String> resources = <String>{
       syncChannelResource(syncChannelScopeOf(backend)),
     };
-    final bool signedIn = await syncResourceLocks.withResources<bool>(
-      resources,
-      () => backend.restoreAuth(repo),
+    final bool signedIn;
+    try {
+      signedIn = await syncResourceLocks.withResources<bool>(
+        resources,
+        () => backend.restoreAuth(repo),
+      );
+    } on Object catch (e) {
+      final String code = _classifyCloudError(e);
+      debugPrint('AutoBackup: cloud sign-in failed: ${e.runtimeType} -> $code');
+      throw BackupMirrorException(code);
+    }
+    if (!signedIn) {
+      throw const BackupMirrorException(kBackupMirrorErrorCloudAuth);
+    }
+    final String key = cloudBackupTargetKey(
+      channel.type.name,
+      await _cloudAccountIdentity(channel, repo),
     );
-    if (!signedIn) return null;
     final ({String id, String name}) device = await deviceIdentity();
     Future<T> guard<T>(Future<T> Function() body, {required bool idempotent}) =>
         syncResourceLocks.withResources<T>(
@@ -17448,7 +17505,7 @@ class _AppAutoBackupHost implements AutoBackupHost {
         );
     return AutoBackupMirrorTarget(
       kind: AutoBackupMirrorKind.cloud,
-      key: 'cloud-${channel.type.name}',
+      key: key,
       label: _cloudBackendLabel(channel.type),
       policy: kCloudBackupRetention,
       open: () async => BackupFolderSession(

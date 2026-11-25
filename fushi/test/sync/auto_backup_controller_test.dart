@@ -120,16 +120,30 @@ class _FakeHost implements AutoBackupHost {
 
   /// 云端副本目标（null = 没有可用的同步后端）。
   AutoBackupMirrorTarget? cloud;
+
+  /// 非空时 [cloudTarget] 抛它（后端配置了但登录不上 / 宿主漏掉没归类的错误）。
+  Object? cloudError;
   bool unmetered = true;
 
+  /// 非空时 [networkUnmetered] 先等它（模拟查网络的那一下 await）。
+  Future<void>? unmeteredGate;
+
   @override
-  Future<AutoBackupMirrorTarget?> cloudTarget() async => cloud;
+  Future<AutoBackupMirrorTarget?> cloudTarget() async {
+    final Object? error = cloudError;
+    if (error != null) Error.throwWithStackTrace(error, StackTrace.current);
+    return cloud;
+  }
 
   @override
   Future<String?> cloudBackendLabel() async => cloud?.label;
 
   @override
-  Future<bool> networkUnmetered() async => unmetered;
+  Future<bool> networkUnmetered() async {
+    final Future<void>? gate = unmeteredGate;
+    if (gate != null) await gate;
+    return unmetered;
+  }
 }
 
 /// 假的用户文件夹平台：「文件夹」是临时目录，经真的 [IoBackupFolderMirror] 读写。
@@ -153,6 +167,9 @@ class _FakeFolderPlatform implements BackupFolderPlatform {
 
   /// 所有删除都失败。
   bool failAllDeletes = false;
+
+  /// 关目标时抛错（iOS 停止访问书签失败）。
+  bool failClose = false;
   int opens = 0;
   int closes = 0;
 
@@ -177,7 +194,10 @@ class _FakeFolderPlatform implements BackupFolderPlatform {
     final IoBackupFolderMirror io = IoBackupFolderMirror(root);
     return BackupFolderSession(
       mirror: _ScriptedMirror(io, this),
-      close: () async => closes++,
+      close: () async {
+        closes++;
+        if (failClose) throw StateError('stopAccessingBookmark failed');
+      },
     );
   }
 }
@@ -949,6 +969,62 @@ void main() {
       expect(Directory(p.join(folderDir, elsewhere)).existsSync(), isTrue);
     });
 
+    test('被打断的那份这次读不出元数据（iCloud 占位 / 元数据坏了）：不删，留着下次再判', () async {
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      const String placeholder = '20261124-000000-000-fushi-scheduled';
+      const String broken = '20261124-010000-000-fushi-scheduled';
+      final Directory a = Directory(p.join(folderDir, placeholder))
+        ..createSync();
+      File(p.join(a.path, kRestorePointArchiveFileName)).writeAsStringSync('z');
+      File(
+        p.join(a.path, '.$kRestorePointMetaFileName.icloud'),
+      ).writeAsStringSync('');
+      final Directory b = Directory(p.join(folderDir, broken))..createSync();
+      File(p.join(b.path, kRestorePointArchiveFileName)).writeAsStringSync('z');
+      File(p.join(b.path, kRestorePointMetaFileName)).writeAsStringSync('{');
+      final AutoBackupMirrorStatus before = controller.status.value.mirror;
+      writeAutoBackupStatus(
+        dbDir,
+        controller.status.value.withMirror(
+          AutoBackupMirrorStatus(
+            target: folder.key,
+            pointId: before.pointId,
+            atMs: before.atMs,
+            leftovers: const <String>[broken],
+          ).started(folderKey: folder.key, id: placeholder),
+        ),
+      );
+      controller.reloadStatus();
+      now = now.add(const Duration(days: 1));
+      expect(await controller.backUpNow(), AutoBackupOutcome.created);
+      expect(a.existsSync(), isTrue);
+      expect(b.existsSync(), isTrue);
+      final AutoBackupMirrorStatus after = controller.status.value.mirror;
+      expect(after.error, isNull);
+      expect(after.leftovers, <String>[placeholder, broken]);
+      expect(
+        after.holds(folder.key, controller.status.value.lastSuccessPointId),
+        isTrue,
+      );
+    });
+
+    test('关目标失败（iOS 停止访问书签）不盖掉操作的结果 / 错误，目标也不会一直「正在用」', () async {
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      platform.failClose = true;
+      final MirroredRestorePoint copy =
+          (await controller.listMirrorCopies())!.points.single;
+      platform.undeletable.add(copy.id);
+      await expectLater(
+        controller.deleteMirrorCopy(copy),
+        throwsA(isA<FileSystemException>()),
+      );
+      expect(controller.mirroring, isFalse);
+      platform.undeletable.clear();
+      await controller.deleteMirrorCopy(copy);
+      expect(controller.mirroring, isFalse);
+      expect((await controller.listMirrorCopies())!.points, isEmpty);
+    });
+
     test('失败后删不掉的半截副本记进 leftovers，下一次复制时清掉', () async {
       platform.failUpload = true;
       expect(await controller.checkNow(), AutoBackupOutcome.created);
@@ -1037,27 +1113,109 @@ void main() {
 
   group('云端副本（D8–D11）', () {
     late FakeAssetStore store;
+    late int cloudOpens;
 
     setUp(() {
       store = FakeAssetStore(reportNullSizes: true);
+      cloudOpens = 0;
       host.cloud = AutoBackupMirrorTarget(
         kind: AutoBackupMirrorKind.cloud,
         key: 'cloud-test',
         label: 'Test cloud',
         policy: kCloudBackupRetention,
-        open: () async => BackupFolderSession(
-          mirror: SyncAssetStoreBackupMirror(
-            store: store,
-            namespace: () => store.ensureNamespace(kCloudBackupNamespace),
-            deviceFolder: 'device-1',
-          ),
-        ),
+        open: () async {
+          cloudOpens++;
+          return BackupFolderSession(
+            mirror: SyncAssetStoreBackupMirror(
+              store: store,
+              namespace: () => store.ensureNamespace(kCloudBackupNamespace),
+              deviceFolder: 'device-1',
+            ),
+          );
+        },
       );
       host.settings = host.settings.copyWith(cloudCopies: true);
     });
 
     Future<List<MirroredRestorePoint>> cloudCopies() async =>
         (await controller.listCloudCopies())!.points;
+
+    test('云端配置了却登录不上：记 cloud_auth、定时那次提示一次，补复制不再提示；登录好了照常补传', () async {
+      host.cloudError = const BackupMirrorException(
+        kBackupMirrorErrorCloudAuth,
+      );
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      expect(controller.status.value.cloud.error, kBackupMirrorErrorCloudAuth);
+      expect(host.mirrorFailures, <String>[
+        'cloud:$kBackupMirrorErrorCloudAuth',
+      ]);
+      await expectLater(
+        controller.listCloudCopies(),
+        throwsA(
+          isA<BackupMirrorException>().having(
+            (BackupMirrorException e) => e.code,
+            'code',
+            kBackupMirrorErrorCloudAuth,
+          ),
+        ),
+      );
+      // 没到期的补复制：同一个错误，不再提示。
+      now = now.add(const Duration(hours: 1));
+      expect(await controller.checkNow(), AutoBackupOutcome.notDue);
+      expect(host.mirrorFailures, hasLength(1));
+      // 重新登录好了：没到期也补传，错误清掉，不提示。
+      host.cloudError = null;
+      now = now.add(const Duration(hours: 1));
+      expect(await controller.checkNow(), AutoBackupOutcome.notDue);
+      final String id = controller.status.value.lastSuccessPointId!;
+      expect(controller.status.value.cloud.holds('cloud-test', id), isTrue);
+      expect(controller.status.value.cloud.error, isNull);
+      expect(host.mirrorFailures, hasLength(1));
+    });
+
+    test('宿主漏掉没归类的错误：归成 cloud_failed，原文（可能带服务器地址）不外传', () async {
+      host.cloudError = StateError('https://user:secret@dav.example/');
+      await expectLater(
+        controller.listCloudCopies(),
+        throwsA(
+          isA<BackupMirrorException>()
+              .having(
+                (BackupMirrorException e) => e.code,
+                'code',
+                kBackupMirrorErrorCloudFailed,
+              )
+              .having(
+                (BackupMirrorException e) => '$e',
+                'text',
+                isNot(contains('secret')),
+              ),
+        ),
+      );
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      expect(
+        controller.status.value.cloud.error,
+        kBackupMirrorErrorCloudFailed,
+      );
+    });
+
+    test('两次补复制同时跑：同一个目标只复制一次（查网络之前就占住）', () async {
+      host.unmetered = false;
+      expect(await controller.checkNow(), AutoBackupOutcome.created);
+      expect(cloudOpens, 0);
+      host.unmetered = true;
+      final Completer<void> gate = Completer<void>();
+      host.unmeteredGate = gate.future;
+      now = now.add(const Duration(hours: 1));
+      final Future<AutoBackupOutcome> first = controller.checkNow();
+      final Future<AutoBackupOutcome> second = controller.checkNow();
+      await pumpEventQueue();
+      gate.complete();
+      expect(await first, AutoBackupOutcome.notDue);
+      expect(await second, AutoBackupOutcome.notDue);
+      expect(cloudOpens, 1);
+      expect(controller.mirroring, isFalse);
+      expect(await cloudCopies(), hasLength(1));
+    });
 
     test('写好的定时还原点传到云端（设备子目录），状态单独记', () async {
       expect(await controller.checkNow(), AutoBackupOutcome.created);

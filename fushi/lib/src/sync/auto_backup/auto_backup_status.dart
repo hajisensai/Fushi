@@ -154,6 +154,22 @@ class AutoBackupMirrorStatus {
     pruneErrorAtMs: pruneError == null ? null : atMs,
   );
 
+  /// 云端目标连解析都没成功（配置了同步后端，但登录失效 / 连不上）：记下 [error]，其余（上次复制到哪个
+  /// 目标、半截副本）原样保留——还不知道是哪个账号，换不换目标等登录好了再说。
+  AutoBackupMirrorStatus unavailable({
+    required String error,
+    required int atMs,
+  }) => AutoBackupMirrorStatus(
+    target: target,
+    pointId: pointId,
+    atMs: this.atMs,
+    error: error,
+    errorAtMs: atMs,
+    leftovers: leftovers,
+    pruneError: pruneError,
+    pruneErrorAtMs: pruneErrorAtMs,
+  );
+
   /// 复制失败。[leftovers]：目标里还可能留着的半截副本（失败后删不掉的那份也在里面）。
   AutoBackupMirrorStatus failed({
     required String folderKey,

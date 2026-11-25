@@ -9,6 +9,7 @@ import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart';
 import 'package:fushi/src/sync/auto_backup/backup_folder_platform.dart';
 import 'package:fushi/src/sync/auto_backup/cloud_backup_mirror.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/sync/sync_asset_store.dart' show AssetEntry;
 import 'package:path/path.dart' as p;
 
 import 'fake_asset_store.dart';
@@ -55,6 +56,28 @@ MirroredRestorePoint _copy(String id, DateTime at, String? device) {
     deviceId: device,
   );
   return MirroredRestorePoint(point: point, metaText: '{}');
+}
+
+/// 指定的目录 / 资产读的时候抛错（模拟云端这一步出错：限流、某个目录读失败）。
+class _FlakyStore extends FakeAssetStore {
+  _FlakyStore() : super(reportNullSizes: true);
+
+  final Set<String> failList = <String>{};
+  final Set<String> failGet = <String>{};
+
+  @override
+  Future<List<AssetEntry>> listChildren(String namespaceId) {
+    if (failList.contains(namespaceId)) {
+      throw StateError('list failed: $namespaceId');
+    }
+    return super.listChildren(namespaceId);
+  }
+
+  @override
+  Future<Uint8List?> getBytesAsset(String assetId) {
+    if (failGet.contains(assetId)) throw StateError('get failed: $assetId');
+    return super.getBytesAsset(assetId);
+  }
 }
 
 void main() {
@@ -558,6 +581,206 @@ void main() {
       await mine.upload(local, metaText: meta);
       expect((await mine.list()).points.single.id, local.id);
     });
+  });
+
+  test(
+    'IoBackupFolderMirror.list：目录在、元数据读不出来的记进 unreadable，没有元数据的不记',
+    () async {
+      final String folder = p.join(tmp.path, 'folder');
+      _localPoint(
+        folder,
+        '20261125-010000-000-fushi-scheduled',
+        DateTime.utc(2026, 11, 25, 1),
+      );
+      Directory bare(String id) =>
+          Directory(p.join(folder, id))..createSync(recursive: true);
+      // 元数据坏了（解析不出还原点）。
+      final Directory broken = bare('20261125-020000-000-fushi-scheduled');
+      File(
+        p.join(broken.path, kRestorePointMetaFileName),
+      ).writeAsStringSync('{');
+      // 元数据还在 iCloud 上（占位）。
+      final Directory cloudOnly = bare('20261125-030000-000-fushi-scheduled');
+      File(
+        p.join(cloudOnly.path, '.$kRestorePointMetaFileName.icloud'),
+      ).writeAsStringSync('');
+      // 元数据不是 UTF-8。
+      final Directory garbled = bare('20261125-040000-000-fushi-scheduled');
+      File(
+        p.join(garbled.path, kRestorePointMetaFileName),
+      ).writeAsBytesSync(<int>[0xff, 0xfe, 0xfd]);
+      // 真的半截（只有 zip，没有元数据）。
+      final Directory half = bare('20261125-050000-000-fushi-scheduled');
+      File(
+        p.join(half.path, kRestorePointArchiveFileName),
+      ).writeAsStringSync('z');
+      final MirrorFolderListing listing = await IoBackupFolderMirror(
+        folder,
+      ).list();
+      expect(listing.points, hasLength(1));
+      expect(listing.notDownloaded, 1);
+      expect(listing.unreadable, <String>{
+        p.basename(broken.path),
+        p.basename(cloudOnly.path),
+        p.basename(garbled.path),
+      });
+    },
+  );
+
+  group('云端副本：读不了的副本与目录', () {
+    late _FlakyStore store;
+
+    SyncAssetStoreBackupMirror mirrorFor(String device) =>
+        SyncAssetStoreBackupMirror(
+          store: store,
+          namespace: () => store.ensureNamespace(kCloudBackupNamespace),
+          deviceFolder: device,
+        );
+
+    setUp(() => store = _FlakyStore());
+
+    Future<String> upload(String device, String id, int hour) async {
+      final RestorePoint local = _localPoint(
+        p.join(tmp.path, 'store_$device'),
+        id,
+        DateTime.utc(2026, 11, 25, hour),
+      );
+      await mirrorFor(device).upload(
+        local,
+        metaText: mirrorMetaText(local, deviceId: device, deviceName: device),
+      );
+      return '$kCloudBackupNamespace/$device/$id';
+    }
+
+    test('元数据这一步出错 / 坏了：记进 unreadable；没有元数据的半截不记', () async {
+      const String readFails = '20261125-010000-000-fushi-scheduled';
+      const String good = '20261125-020000-000-fushi-scheduled';
+      final String failingDir = await upload('dev-a', readFails, 1);
+      await upload('dev-a', good, 2);
+      store.failGet.add('$failingDir/$kRestorePointMetaFileName');
+      final String ns = await store.ensureNamespace(kCloudBackupNamespace);
+      final String dev = await store.ensureFolder(ns, 'dev-a');
+      final String broken = await store.ensureFolder(
+        dev,
+        '20261125-030000-000-fushi-scheduled',
+      );
+      await store.putBytesAsset(
+        broken,
+        kRestorePointMetaFileName,
+        Uint8List.fromList(<int>[0xff, 0xfe]),
+      );
+      await store.ensureFolder(dev, '20261125-040000-000-fushi-scheduled');
+      final MirrorFolderListing listing = await mirrorFor('dev-a').list();
+      expect(listing.points.map((MirroredRestorePoint c) => c.id), <String>[
+        good,
+      ]);
+      expect(listing.unreadable, <String>{
+        readFails,
+        '20261125-030000-000-fushi-scheduled',
+      });
+    });
+
+    test('别的设备的目录列不出来只跳过它；本机的目录列不出来整份列表失败', () async {
+      await upload('dev-a', '20261125-010000-000-fushi-scheduled', 1);
+      await upload('dev-b', '20261125-020000-000-fushi-scheduled', 2);
+      store.failList.add('$kCloudBackupNamespace/dev-b');
+      expect(
+        (await mirrorFor(
+          'dev-a',
+        ).list()).points.map((MirroredRestorePoint c) => c.id),
+        <String>['20261125-010000-000-fushi-scheduled'],
+      );
+      await expectLater(
+        mirrorFor('dev-b').list(),
+        throwsA(isA<BackupMirrorException>()),
+      );
+    });
+  });
+
+  test('SAF：原生报读不了的副本记进 unreadable，元数据坏了的也算', () async {
+    const MethodChannel channel = MethodChannel(
+      'test/backup_folder_unreadable',
+    );
+    TestWidgetsFlutterBinding.ensureInitialized();
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(channel, (MethodCall call) async {
+          return <Object?>[
+            <String, Object?>{
+              'name': '20261125-010000-000-fushi-scheduled',
+              'unreadable': true,
+            },
+            <String, Object?>{
+              'name': '20261125-020000-000-fushi-scheduled',
+              'meta': '{',
+            },
+            <String, Object?>{'name': '../x', 'unreadable': true},
+          ];
+        });
+    addTearDown(
+      () => TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(channel, null),
+    );
+    final MirrorFolderListing listing = await SafBackupFolderMirror(
+      'content://tree/x',
+      channel: channel,
+    ).list();
+    expect(listing.points, isEmpty);
+    expect(listing.unreadable, <String>{
+      '20261125-010000-000-fushi-scheduled',
+      '20261125-020000-000-fushi-scheduled',
+    });
+  });
+
+  test('云端目标键：换账号 / 服务器就换键，原始身份不出现在键里；查不出身份只用类型', () {
+    final String a = cloudBackupTargetKey('webDav', 'https://dav.a|alice');
+    final String b = cloudBackupTargetKey('webDav', 'https://dav.a|bob');
+    expect(a, isNot(b));
+    expect(a, cloudBackupTargetKey('webDav', 'https://dav.a|alice'));
+    expect(a, startsWith('cloud-webDav-'));
+    expect(a, isNot(contains('alice')));
+    expect(a, isNot(contains('dav.a')));
+    expect(
+      cloudBackupTargetKey('dropbox', 'a@example.com'),
+      isNot(cloudBackupTargetKey('googleDrive', 'a@example.com')),
+    );
+    expect(cloudBackupTargetKey('dropbox', null), 'cloud-dropbox');
+    expect(cloudBackupTargetKey('dropbox', '  '), 'cloud-dropbox');
+  });
+
+  test('云端错误文字归类：限流是连不上（稍后再试），只有空间满了才是配额', () {
+    for (final String rateLimited in <String>[
+      'DetailedApiRequestError(status: 403, message: Quota exceeded for quota '
+          "metric 'Queries' and limit 'Queries per minute')",
+      'DetailedApiRequestError(status: 403, message: User Rate Limit Exceeded)',
+      '403 {"reason": "rateLimitExceeded"}',
+      'HTTP 429 Too Many Requests',
+      'Dropbox upload session finish failed: 409 too_many_write_operations',
+    ]) {
+      expect(
+        classifyCloudBackupErrorText(rateLimited),
+        kBackupMirrorErrorCloudUnreachable,
+        reason: rateLimited,
+      );
+    }
+    for (final String full in <String>[
+      "DetailedApiRequestError(status: 403, message: The user's Drive storage "
+          'quota has been exceeded.)',
+      '403 {"reason": "storageQuotaExceeded"}',
+      'Dropbox upload failed: 409 {"error": {".tag": "path", "path": '
+          '{".tag": "insufficient_space"}}}',
+      'WebDAV PUT failed: HTTP 507 Insufficient Storage',
+      '552 Exceeded storage allocation',
+    ]) {
+      expect(
+        classifyCloudBackupErrorText(full),
+        kBackupMirrorErrorCloudQuota,
+        reason: full,
+      );
+    }
+    expect(
+      classifyCloudBackupErrorText('500 Internal Server Error'),
+      kBackupMirrorErrorCloudFailed,
+    );
   });
 
   test('SAF：原生错误码 → 已知原因，不带原文；提供者给的怪名字不列', () async {

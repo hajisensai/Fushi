@@ -68,10 +68,19 @@ class MirroredRestorePoint {
 /// 列文件夹的结果。
 @immutable
 class MirrorFolderListing {
-  const MirrorFolderListing({required this.points, this.notDownloaded = 0});
+  const MirrorFolderListing({
+    required this.points,
+    this.notDownloaded = 0,
+    this.unreadable = const <String>{},
+  });
 
   /// 完整的定时还原点副本，新的在前。
   final List<MirroredRestorePoint> points;
+
+  /// 目录在、但这一次读不出元数据的副本 id（读失败、云端这一步出错、iCloud 没下载的占位、元数据坏了）：
+  /// 可能是完整的，只是这次没读到。清理半截副本时**不删**它们——只有确定没有元数据的（不在 [points]
+  /// 也不在这里）才算半截。
+  final Set<String> unreadable;
 
   /// 元数据还在云端、没下载到本机的副本数（iCloud Drive 的 `.<名>.icloud` 占位）：列不出内容，
   /// 页面提示去「文件」App 里下载。
@@ -275,6 +284,7 @@ class IoBackupFolderMirror implements BackupFolderMirror {
   Future<MirrorFolderListing> list() async {
     _requireRoot();
     final List<MirroredRestorePoint> points = <MirroredRestorePoint>[];
+    final Set<String> unreadable = <String>{};
     int notDownloaded = 0;
     for (final FileSystemEntity e in _dir.listSync(followLinks: false)) {
       if (e is! Directory) continue;
@@ -292,7 +302,10 @@ class IoBackupFolderMirror implements BackupFolderMirror {
                   kRestorePointMetaFileName,
                 ),
               );
-          if (placeholder) notDownloaded++;
+          if (placeholder) {
+            notDownloaded++;
+            unreadable.add(id);
+          }
           continue;
         }
         final String text = meta.readAsStringSync();
@@ -302,20 +315,27 @@ class IoBackupFolderMirror implements BackupFolderMirror {
           directory: e.path,
         );
         if (point == null || point.kind != RestorePointKind.scheduled) {
+          unreadable.add(id);
           continue;
         }
         points.add(MirroredRestorePoint(point: point, metaText: text));
       } on FileSystemException catch (err) {
         debugPrint('AutoBackup: skipping unreadable copy $id: $err');
+        unreadable.add(id);
       } on FormatException catch (err) {
         debugPrint('AutoBackup: skipping unreadable copy $id: $err');
+        unreadable.add(id);
       }
     }
     points.sort(
       (MirroredRestorePoint a, MirroredRestorePoint b) =>
           b.point.createdAtMs.compareTo(a.point.createdAtMs),
     );
-    return MirrorFolderListing(points: points, notDownloaded: notDownloaded);
+    return MirrorFolderListing(
+      points: points,
+      notDownloaded: notDownloaded,
+      unreadable: unreadable,
+    );
   }
 
   @override
