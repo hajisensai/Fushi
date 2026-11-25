@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter/foundation.dart' show ValueNotifier;
@@ -36,6 +37,8 @@ import 'package:fushi/src/media/video/media_server/media_server_config.dart';
 import 'package:fushi/src/media/video/media_server/media_server_registry.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinServerConfig, JellyfinVideoClient;
+import 'package:fushi/src/sync/remote_video_list_store.dart'
+    show RemoteVideoListStore;
 import 'package:fushi/src/sync/remote_audiobook_revision.dart'
     show kInterconnectAudiobookRevisionsPrefKey;
 import 'package:fushi/src/sync/sync_backend.dart';
@@ -1596,15 +1599,25 @@ class SyncRepository {
   }
 
   /// 整表覆盖；空列表 = 删键（全部登出）。
+  ///
+  /// 登录 / 登出 / 改配置全都经过这里，所以「已不在列表里的服务器，它的远端视频
+  /// 清单磁盘缓存一并删掉」也只在这里做一次（[RemoteVideoListStore.retainSources]）。
   Future<void> setMediaServers(List<MediaServerConfig> servers) async {
     if (servers.isEmpty) {
       await _deleteKey(_keyJellyfinServers);
-      return;
+    } else {
+      await _setString(
+        _keyJellyfinServers,
+        jsonEncode(<Map<String, Object?>>[
+          for (final MediaServerConfig s in servers) s.toJson(),
+        ]),
+      );
     }
-    await _setString(
-      _keyJellyfinServers,
-      jsonEncode(<Map<String, Object?>>[
-        for (final MediaServerConfig s in servers) s.toJson(),
+    // 不等删文件：在册名单在调用时同步生效（之后到的写入照名单丢弃），删文件
+    // 本身是缓存清理，不该拖住登录 / 登出。
+    unawaited(
+      RemoteVideoListStore.retainSources(<String>[
+        for (final MediaServerConfig s in servers) s.sourceId,
       ]),
     );
   }

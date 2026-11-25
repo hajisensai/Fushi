@@ -142,6 +142,61 @@ class RemoteLibraryCache {
     );
   }
 
+  /// stale-while-revalidate 版的 [read]：槽里有**过期**的值时把它作为
+  /// [RemoteLibraryRead.stale] 立即交出，同时照 [read] 的规则取新值
+  /// （[RemoteLibraryRead.fresh]：复用在途请求 / 发起取数）。槽里的值新鲜、或
+  /// 根本没有值、或 [forceRefresh]（用户手动刷新要的就是新清单）时 `stale` 为
+  /// null，调用方等 `fresh`。
+  ///
+  /// 给「清单大、取一次要几十秒」的来源用（媒体服务器整库枚举）：库页先用上一份
+  /// 清单（含冷启动时从磁盘灌进来的，见 [seed]）把卡片画出来，新清单到手再换上。
+  /// `fresh` 失败不会变成无人处理的异步错误（见 [RemoteLibraryRead]）。
+  RemoteLibraryRead<T> readOrRevalidate<T extends Object>({
+    required String sourceId,
+    required String key,
+    required Future<T> Function() fetch,
+    Duration? ttl,
+    bool forceRefresh = false,
+  }) {
+    final _CacheSlot? slot = _slots[_slotKey(sourceId, key)];
+    final T? stale =
+        !forceRefresh &&
+            slot != null &&
+            slot.hasValue &&
+            !_hasFreshValue(slot, ttl)
+        ? slot.value as T
+        : null;
+    final Future<T> fresh = read<T>(
+      sourceId: sourceId,
+      key: key,
+      fetch: fetch,
+      ttl: ttl,
+      forceRefresh: forceRefresh,
+    );
+    return RemoteLibraryRead<T>(stale: stale, fresh: fresh);
+  }
+
+  /// 往**空**槽里放一份已知是旧的值（磁盘上持久化的上一份清单），不发任何请求。
+  ///
+  /// 放进来的值**一律算过期**（取得时刻记为 0）：它只是「上一次已知」的清单，
+  /// 下一次 [readOrRevalidate] / [read] 照样去取新值，[peek] 不带 `maxAge` 时能
+  /// 读到它（BUG-1891 关掉自动列出时仍显示上一份）。槽里已有值（哪怕过期）时
+  /// 不覆盖——内存里的那份不会比磁盘上的旧。
+  void seed<T extends Object>({
+    required String sourceId,
+    required String key,
+    required T value,
+  }) {
+    final _CacheSlot slot = _slots.putIfAbsent(
+      _slotKey(sourceId, key),
+      () => _CacheSlot(),
+    );
+    if (slot.hasValue) return;
+    slot.value = value;
+    slot.hasValue = true;
+    slot.fetchedAtMs = 0;
+  }
+
   /// 只读 [sourceId] 的 [key] 域清单里 id 在 [ids] 中的**这几条**，不枚举整库。
   ///
   /// 合集详情页只需要它自己的成员；媒体服务器大库的整库枚举要几十秒，打开一个合集
@@ -355,6 +410,29 @@ class RemoteLibraryCache {
     if (slot == null || !slot.hasValue) return false;
     return _nowMs() - slot.fetchedAtMs < (ttl ?? defaultTtl).inMilliseconds;
   }
+}
+
+/// [RemoteLibraryCache.readOrRevalidate] 的结果：可以先画的旧值 + 新值。
+///
+/// 构造时就给 [fresh] 挂上一个吞错监听：交出 [stale] 时调用方可能根本不等
+/// [fresh]，等的调用方也要隔一个异步间隙才挂上 `await`——没有这个监听，取数失败
+/// 会先被当成「无人处理的异步错误」抛进 Zone。真正等它的调用方照常收到错误。
+@immutable
+class RemoteLibraryRead<T extends Object> {
+  RemoteLibraryRead({required this.stale, required this.fresh}) {
+    unawaited(fresh.then<void>((_) {}, onError: (Object _) {}));
+  }
+
+  /// 已经到手的值（不再有新值要等）。
+  RemoteLibraryRead.settled(T value)
+    : stale = null,
+      fresh = Future<T>.value(value);
+
+  /// 过期但可以先显示的值；null = 没有可先显示的，等 [fresh]。
+  final T? stale;
+
+  /// 新值（复用在途请求或新发起的取数）；[stale] 非空时它在后台完成。
+  final Future<T> fresh;
 }
 
 class _CacheSlot {

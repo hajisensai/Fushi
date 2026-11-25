@@ -200,6 +200,7 @@ import 'package:fushi/src/media/video/disc/remote_disc_menu_source.dart'
     show RemoteDiscHostTitle;
 import 'package:fushi/src/media/video/disc/remote_disc_download.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi/src/sync/persisted_remote_video_list.dart';
 import 'package:fushi/src/sync/jellyfin_library_scope.dart';
 import 'package:fushi/src/sync/jellyfin_video_client.dart'
     show JellyfinVideoClient;
@@ -2334,9 +2335,53 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     });
   }
 
+  /// 每轮 [_loadRemoteVideos] 自增。后台重验（[_swapInRevalidatedList]）落定时
+  /// 比对它：期间已经开了新的一轮（下拉刷新、切来源、开关翻转），旧重验的结果就
+  /// 不再回头改 [_remoteFuture]。
+  int _remoteLoadGeneration = 0;
+
+  /// 先用旧清单画出卡片之后，等后台重验（[RemoteLibraryRead.fresh]）落定：
+  ///  * 拿到的还是同一个清单对象（服务器报「没变」）→ 什么都不做；
+  ///  * 换了清单 → 重跑一轮 [_loadRemoteVideos]（这时缓存已新鲜，直接拿到新清单，
+  ///    收养只写差异）；
+  ///  * 失败 → 与首轮取数失败同一语义（spec §2.4：占位卡不出现），不再重试——
+  ///    重试会在离线时反复「显示旧清单 → 失败」打转。
+  void _swapInRevalidatedList({
+    required Future<List<RemoteVideoInfo>> fresh,
+    required List<RemoteVideoInfo> stale,
+    required RemoteVideoSource source,
+  }) {
+    final int generation = _remoteLoadGeneration;
+    bool superseded() => !mounted || generation != _remoteLoadGeneration;
+    unawaited(
+      fresh.then(
+        (List<RemoteVideoInfo> videos) {
+          if (superseded() || identical(videos, stale)) return;
+          setState(() {
+            _remoteFuture = _loadRemoteVideos();
+          });
+        },
+        onError: (Object e) {
+          if (superseded()) return;
+          debugPrint('[home-video] remote video list revalidation failed: $e');
+          setState(() {
+            _remoteFuture = Future<_RemoteVideoState?>.value(
+              _RemoteVideoState(
+                videos: const <RemoteVideoInfo>[],
+                failed: true,
+                source: source,
+              ),
+            );
+          });
+        },
+      ),
+    );
+  }
+
   Future<_RemoteVideoState?> _loadRemoteVideos({
     bool forceRefresh = false,
   }) async {
+    final int generation = ++_remoteLoadGeneration;
     _remoteGateAtLastLoad = _shouldLoadRemoteVideos;
     _jellyfinGateAtLastLoad = _jellyfinGate;
     // 每轮都按此刻的本机断点重算（[withLocalRemoteVideoPositions]），之前记下的
@@ -2372,13 +2417,21 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       final Set<String> deletedVideoKeys = await _pendingRemoteVideoDeletions(
         source,
       );
-      final List<RemoteVideoInfo>? videos = await _readRemoteVideoList(
-        source: source,
-        forceRefresh: forceRefresh,
-      );
+      final RemoteLibraryRead<List<RemoteVideoInfo>>? read =
+          await _readRemoteVideoList(
+            source: source,
+            forceRefresh: forceRefresh,
+          );
       // BUG-1891：Jellyfin/Emby 关掉「自动列出条目」且手里还没有清单 → 本轮一个
       // 请求都不发，也不渲染远端卡（与「显示远端条目」关闭同款空态，不是失败态）。
-      if (videos == null) return null;
+      if (read == null) return null;
+      // 媒体服务器清单过期（含冷启动时从磁盘灌进来的上一份）：先用它把卡片画
+      // 出来，后台重验落定再换（[_swapInRevalidatedList]）。
+      final List<RemoteVideoInfo>? stale = read.stale;
+      if (stale != null && generation == _remoteLoadGeneration) {
+        _swapInRevalidatedList(fresh: read.fresh, stale: stale, source: source);
+      }
+      final List<RemoteVideoInfo> videos = stale ?? await read.fresh;
       // 2026-10 切 tab 卡顿：[RemoteLibraryCache] 在 TTL 内回的是**同一个**清单
       // 对象，而这份清单的合集收养已经落过库——再收养一遍、再整套重载十几张映射
       // 表，全是切回视频 tab 时压在 UI isolate 上的白功。清单对象换了（TTL 过期
@@ -2452,7 +2505,11 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
   /// ——否则切一次 tab 回来卡片全没了，用户只能反复手动刷新，比自动枚举还糟。
   /// `null` = 本轮无清单可显示（且没有发出任何请求）。
   /// 手动刷新（下拉 = `forceRefresh: true`）永远照拉，开关不挡用户自己按的那一次。
-  Future<List<RemoteVideoInfo>?> _readRemoteVideoList({
+  ///
+  /// 媒体服务器（[PersistableRemoteVideoSource]）的清单另经 [PersistedRemoteVideoList]：
+  /// 上一份清单落盘、冷启动先显示（[RemoteLibraryRead.stale]）、重验先问服务器
+  /// 「变了没」，没变不整库枚举。关掉自动列出时的「上一份」也从磁盘来，跨重启仍在。
+  Future<RemoteLibraryRead<List<RemoteVideoInfo>>?> _readRemoteVideoList({
     required RemoteVideoSource source,
     required bool forceRefresh,
   }) async {
@@ -2461,17 +2518,47 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
       forceRefresh: forceRefresh,
       jellyfinAutoList: appModelNoUpdate.prefsRepo.jellyfinAutoListVideos,
     )) {
-      return _remoteCache.peek<List<RemoteVideoInfo>>(
-        sourceId: source.remoteLibrarySourceId,
-        key: RemoteLibraryCacheKeys.videos,
+      final List<RemoteVideoInfo>? cached =
+          source is PersistableRemoteVideoSource
+          ? await PersistedRemoteVideoList.peek(
+              cache: _remoteCache,
+              source: source,
+            )
+          : _remoteCache.peek<List<RemoteVideoInfo>>(
+              sourceId: source.remoteLibrarySourceId,
+              key: RemoteLibraryCacheKeys.videos,
+            );
+      return cached == null
+          ? null
+          : RemoteLibraryRead<List<RemoteVideoInfo>>.settled(cached);
+    }
+    if (source is PersistableRemoteVideoSource) {
+      return PersistedRemoteVideoList.read(
+        cache: _remoteCache,
+        source: source,
+        forceRefresh: forceRefresh,
       );
     }
-    return _remoteCache.read<List<RemoteVideoInfo>>(
-      sourceId: source.remoteLibrarySourceId,
-      key: RemoteLibraryCacheKeys.videos,
-      forceRefresh: forceRefresh,
-      fetch: source.listRemoteVideos,
+    return RemoteLibraryRead<List<RemoteVideoInfo>>(
+      stale: null,
+      fresh: _remoteCache.read<List<RemoteVideoInfo>>(
+        sourceId: source.remoteLibrarySourceId,
+        key: RemoteLibraryCacheKeys.videos,
+        forceRefresh: forceRefresh,
+        fetch: source.listRemoteVideos,
+      ),
     );
+  }
+
+  /// 不需要「先画旧的」的消费方取整份远端清单：有可先用的旧值就用它，否则等新的；
+  /// 闸门关且无缓存 → 空清单。
+  Future<List<RemoteVideoInfo>> _readRemoteVideoListNow(
+    RemoteVideoSource source,
+  ) async {
+    final RemoteLibraryRead<List<RemoteVideoInfo>>? read =
+        await _readRemoteVideoList(source: source, forceRefresh: false);
+    if (read == null) return const <RemoteVideoInfo>[];
+    return read.stale ?? await read.fresh;
   }
 
   /// 只取远端视频里 id 在 [ids] 中的那几条（合集详情页的远端成员）。
@@ -2499,13 +2586,12 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         ids: ids,
         idOf: (RemoteVideoInfo video) => video.id,
         fetch: lookup.remoteVideosByIds,
+        ttl: remoteVideoListTtlOf(source),
       );
     }
     final Set<String> wanted = ids.toSet();
     return <RemoteVideoInfo>[
-      for (final RemoteVideoInfo video
-          in await _readRemoteVideoList(source: source, forceRefresh: false) ??
-              const <RemoteVideoInfo>[])
+      for (final RemoteVideoInfo video in await _readRemoteVideoListNow(source))
         if (wanted.contains(video.id)) video,
     ];
   }
@@ -12186,11 +12272,8 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     final Map<String, String> titles = <String, String>{};
     if (source != null) {
       try {
-        for (final RemoteVideoInfo v in await _remoteCache.read(
-          sourceId: source.remoteLibrarySourceId,
-          key: RemoteLibraryCacheKeys.videos,
-          fetch: source.listRemoteVideos,
-        )) {
+        // 与库页同一入口（闸门 / TTL / 媒体服务器落盘清单都在那里判一次）。
+        for (final RemoteVideoInfo v in await _readRemoteVideoListNow(source)) {
           titles[v.id] = v.title;
         }
       } catch (_) {

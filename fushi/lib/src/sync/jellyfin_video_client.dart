@@ -52,6 +52,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 import 'package:fushi/src/sync/launch_item_detail_memo.dart';
 import 'package:fushi/src/sync/remote_cover_fetcher.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi/src/sync/server_url_credentials.dart';
 import 'package:fushi_engine/media/tracking/remote_anime_link.dart'
     show RemoteAnimeEpisode;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
@@ -703,10 +704,18 @@ class JellyfinItem {
 
 /// 一页条目（`/Items` 的 TotalRecordCount 分页语义）。
 class JellyfinItemsPage {
-  const JellyfinItemsPage({required this.items, required this.totalCount});
+  const JellyfinItemsPage({
+    required this.items,
+    required this.totalCount,
+    this.serverDate,
+  });
 
   final List<JellyfinItem> items;
   final int totalCount;
+
+  /// 这一页响应的 HTTP `Date` 头（服务器时钟，精确到秒）；没有该头为 null。
+  /// 只有清单变更戳（[JellyfinVideoClient.takeRemoteLibraryStamp]）用它取锚点。
+  final DateTime? serverDate;
 }
 
 /// 一次递归枚举的结果（BUG-1891）。
@@ -1248,6 +1257,14 @@ class JellyfinApi {
     String base,
     String path, [
     Map<String, String>? query,
+  ]) async => (await _getDatedAt(base, path, query)).body;
+
+  /// [_getDecodedAt] 连同响应的 HTTP `Date` 头（服务器时钟）一起交出；头缺失或
+  /// 解析不了时为 null。
+  Future<({Object? body, DateTime? serverDate})> _getDatedAt(
+    String base,
+    String path, [
+    Map<String, String>? query,
   ]) async {
     try {
       final http.Response res = await _client
@@ -1259,7 +1276,20 @@ class JellyfinApi {
       if (res.statusCode < 200 || res.statusCode >= 300) {
         throw JellyfinApiException.fromResponse(res, path);
       }
-      return jsonDecode(utf8.decode(res.bodyBytes));
+      final String? date = res.headers['date'];
+      DateTime? serverDate;
+      if (date != null) {
+        try {
+          serverDate = HttpDate.parse(date);
+        } on Exception {
+          // 头格式不对 = 没有可用的服务器时钟，变更戳会因此放弃（照常整库拉）。
+          serverDate = null;
+        }
+      }
+      return (
+        body: jsonDecode(utf8.decode(res.bodyBytes)),
+        serverDate: serverDate,
+      );
     } on http.ClientException catch (e) {
       // 凭据脱敏必须在异常构造侧（见 credential_redaction.dart 文件头）：
       // ClientException.toString() 把带 api_key 的整条 URL 塞进文本，而
@@ -1321,7 +1351,12 @@ class JellyfinApi {
   /// - [ids] 是标准的逗号列表（`Ids`，按 id 直接取，见
   ///   [JellyfinVideoClient.remoteVideosByIds]）。BUG-2254 的单值纪律管的是
   ///   `IncludeItemTypes`，不涉及它；但不许传空列表——空 `Ids` 等于不过滤，会退化成
-  ///   整库查询。
+  ///   整库查询；
+  /// - [filters]（`Filters`，如 `IsPlayed`）与 [minDateLastSaved]
+  ///   （`MinDateLastSaved`，条目自身 `DateLastSaved` 的下限，UTC ISO 8601）只给
+  ///   清单变更戳（[JellyfinVideoClient.takeRemoteLibraryStamp]）用。
+  ///
+  /// 返回页带响应的 `Date` 头（[JellyfinItemsPage.serverDate]）。
   Future<JellyfinItemsPage> items({
     required String userId,
     String? parentId,
@@ -1334,15 +1369,17 @@ class JellyfinApi {
     String fields = 'ProductionYear',
     String? sortBy = 'SortName',
     String? sortOrder = 'Ascending',
+    String? filters,
+    DateTime? minDateLastSaved,
   }) async {
     assert(
       !(includeItemType?.contains(',') ?? false),
       'IncludeItemTypes 必须单值（BUG-2254）',
     );
     assert(ids == null || ids.isNotEmpty, '空 Ids 会退化成整库查询');
-    final Map<String, Object?> json = await _getJson(
-      '/Users/$userId/Items',
-      <String, String>{
+    final String path = '/Users/$userId/Items';
+    final ({Object? body, DateTime? serverDate}) response = await _withFailover(
+      () => _getDatedAt(serverUrl, path, <String, String>{
         if (parentId != null) 'ParentId': parentId,
         if (recursive) 'Recursive': 'true',
         if (includeItemType != null) 'IncludeItemTypes': includeItemType,
@@ -1354,9 +1391,22 @@ class JellyfinApi {
         // null = 不指定排序，交给服务器（带 SearchTerm 时就是相关度序）。
         if (sortBy != null) 'SortBy': sortBy,
         if (sortOrder != null) 'SortOrder': sortOrder,
-      },
+        if (filters != null) 'Filters': filters,
+        if (minDateLastSaved != null)
+          'MinDateLastSaved': minDateLastSaved.toUtc().toIso8601String(),
+      }),
     );
-    return parseItemsPage(json);
+    final Object? body = response.body;
+    final JellyfinItemsPage page = parseItemsPage(
+      body is Map<String, dynamic>
+          ? body.cast<String, Object?>()
+          : <String, Object?>{},
+    );
+    return JellyfinItemsPage(
+      items: page.items,
+      totalCount: page.totalCount,
+      serverDate: response.serverDate,
+    );
   }
 
   /// 列 [parentId] 的直接子级（GET /Users/{uid}/Items，非递归，浏览用）。
@@ -2163,22 +2213,14 @@ class JellyfinApi {
 
   /// 把服务器签发的字幕 `DeliveryUrl`（相对根路径或绝对地址）补成可直接请求的绝对
   /// URL，并在缺令牌时附上 `api_key`（与 [subtitleUrl] 一样交给下载器 / libmpv）。
-  String subtitleDeliveryUrl(String deliveryUrl) {
-    final String absolute =
-        deliveryUrl.startsWith('http://') || deliveryUrl.startsWith('https://')
-        ? deliveryUrl
-        : '$serverUrl${deliveryUrl.startsWith('/') ? '' : '/'}$deliveryUrl';
-    final Uri uri = Uri.parse(absolute);
-    final String? token = accessToken;
-    if (token == null ||
-        token.isEmpty ||
-        uri.queryParameters.keys.any(
-          (String k) => k.toLowerCase() == 'api_key',
-        )) {
-      return absolute;
-    }
-    return '$absolute${uri.hasQuery ? '&' : '?'}api_key=$token';
-  }
+  String subtitleDeliveryUrl(String deliveryUrl) =>
+      urlCredentials.authorize(deliveryUrl);
+
+  /// 当前线路 + 当前令牌的 URL 凭据换算（补 / 去 `api_key` 的唯一实现）。远端清单
+  /// 落盘时用它把封面地址里的令牌与线路去掉，读回来再按此刻的线路与令牌补上
+  /// （`RemoteVideoListStore`）。
+  ServerUrlCredentials get urlCredentials =>
+      ServerUrlCredentials(baseUrl: serverUrl, token: accessToken ?? '');
 
   static String _subtitleExt(String codec) {
     switch (codec.toLowerCase()) {
@@ -2564,6 +2606,31 @@ class JellyfinApi {
   }
 }
 
+/// 一个媒体库的变更戳签名查询结果（[JellyfinVideoClient.takeRemoteLibraryStamp]）。
+class _LibrarySignals {
+  const _LibrarySignals({
+    required this.movies,
+    required this.episodes,
+    required this.played,
+    required this.lastPlayed,
+    required this.ignoresRecursion,
+    required this.serverDate,
+  });
+
+  final int movies;
+  final int episodes;
+  final int played;
+
+  /// 最近播放的那一条（id@最后播放时刻/断点/已播放）；没有 = `-`。
+  final String lastPlayed;
+
+  /// 服务器忽略了 `Recursive` / `IncludeItemTypes`（BUG-2567）：计数判不准。
+  final bool ignoresRecursion;
+
+  /// 这几个响应里最早的 `Date` 头；任一缺失为 null。
+  final DateTime? serverDate;
+}
+
 /// Jellyfin 服务器作为远端视频源：把条目适配成互联/云端同款契约。
 ///
 /// [remoteLibrarySourceId] 按「服务器 + 用户」细分（不同服务器/不同账号 = 不同
@@ -2599,7 +2666,8 @@ class JellyfinVideoClient
         RemoteVideoTitleIdentityFetch,
         RemoteVideoTrackingEpisodeFetch,
         RemoteVideoClientConnections,
-        RemoteVideoRouteFailover {
+        RemoteVideoRouteFailover,
+        PersistableRemoteVideoSource {
   JellyfinVideoClient({
     required this.api,
     required this.userId,
@@ -3581,6 +3649,204 @@ class JellyfinVideoClient
     }
     return out;
   }
+
+  // ── PersistableRemoteVideoSource：清单落盘与「库变了没」──────────────────
+
+  /// 落盘清单的作用域 = 点名枚举的媒体库（排序后；空 = 全部视频库）。服务器与
+  /// 账号已经在来源身份里（[remoteLibrarySourceId]），令牌不进作用域（换令牌不改变
+  /// 清单内容，登出另由 `RemoteVideoListStore.retainSources` 删文件）。
+  @override
+  String get remoteVideoListScope =>
+      'libraries=${(List<String>.of(libraryIds)..sort()).join(',')}';
+
+  @override
+  ServerUrlCredentials get remoteVideoUrlCredentials => api.urlCredentials;
+
+  /// 服务器时钟（`Date` 头）与条目 `DateLastSaved` 之间允许的偏差预算。
+  ///
+  /// 锚点 = 取戳那一刻的 `Date` 头减去本值；取戳时要求「锚点之后一条都没保存过」，
+  /// 否则不出戳（这一轮之后照常整库拉）。`Date` 头通常就是 Jellyfin / Emby 进程
+  /// 自己的时钟；经反代时是反代的时钟，两台机器之间的偏差只要在本值以内就不会漏掉
+  /// 改动。5 分钟取自 Kerberos 的默认最大时钟偏差，同网段 NTP 校时的机器远小于它；
+  /// 代价只是「库在这 5 分钟里刚动过」时这一轮不出戳。
+  static const Duration kStampClockSkewBudget = Duration(minutes: 5);
+
+  /// 变更戳（JSON：锚点 + 签名），在整库枚举**之前**取。
+  ///
+  /// 对每个要枚举的媒体库（[resolveEnumerationParents]，与 [listRemoteVideos] 同一
+  /// 判据；库集合本身也进签名，新增 / 删掉一个视频库即「变了」），各发几个
+  /// `Limit=1` 查询，只看 `TotalRecordCount` 或第一条：
+  ///  * `Recursive` + `IncludeItemTypes=Movie` / `Episode` 的总数——**删除**（以及
+  ///    增加）让它变。两个类型分开问（BUG-2254 单值纪律），返回的那一条顺带探测
+  ///    服务器是否忽略 `Recursive`（BUG-2567，[JellyfinApi.ignoresRecursiveEnumeration]）
+  ///    ——那种服务器的计数只覆盖库的直接子级，判不准，不出戳；
+  ///  * `Filters=IsPlayed` 的总数——别的设备标记已看 / 未看；
+  ///  * `SortBy=DatePlayed` 降序的第一条（id + 最后播放时刻 + 断点 + 已播放）——别的
+  ///    设备在看（起播即成为第一条，断点前进改第一条的断点）；
+  ///  * `MinDateLastSaved=<锚点>` 的总数——**新增与元数据变更**：服务器新建、刮削、
+  ///    改名、移动条目都会写条目自身的 `DateLastSaved`（Jellyfin 的这个过滤就是比
+  ///    这一列），剧 / 季的改动同样算（不带类型过滤）。取戳时它必须是 0。
+  ///
+  /// 服务器不认 `MinDateLastSaved` 时它会忽略该参数、回库的总数 → 取戳时不为 0 →
+  /// 不出戳：判不准的方向一律退回整库枚举，绝不误判「没变」。响应没有 `Date` 头
+  /// 同理；服务器拒绝这些查询参数（非 2xx / 回的不是 JSON）也同理——戳只是省一次
+  /// 枚举的捷径，不能让它挡住整库清单。连不上服务器（传输失败）照常抛出：整库枚举
+  /// 同样会失败，没必要再白等一轮超时。
+  @override
+  Future<String?> takeRemoteLibraryStamp() async {
+    try {
+      return await _takeRemoteLibraryStamp();
+    } on JellyfinApiException catch (e) {
+      debugPrint('[jellyfin] library stamp unavailable: $e');
+      return null;
+    } on FormatException catch (e) {
+      debugPrint('[jellyfin] library stamp unavailable: $e');
+      return null;
+    }
+  }
+
+  Future<String?> _takeRemoteLibraryStamp() async {
+    final List<String?> parents = await resolveEnumerationParents();
+    final List<_LibrarySignals> signals = await Future.wait(
+      <Future<_LibrarySignals>>[
+        for (final String? parent in parents) _librarySignals(parent),
+      ],
+    );
+    if (signals.any((_LibrarySignals s) => s.ignoresRecursion)) return null;
+    DateTime? serverNow;
+    for (final _LibrarySignals s in signals) {
+      final DateTime? date = s.serverDate;
+      if (date == null) return null;
+      if (serverNow == null || date.isBefore(serverNow)) serverNow = date;
+    }
+    if (serverNow == null) return null;
+    final DateTime anchor = serverNow.subtract(kStampClockSkewBudget);
+    final List<int> savedSince = await Future.wait(<Future<int>>[
+      for (final String? parent in parents) _savedSinceCount(parent, anchor),
+    ]);
+    if (savedSince.any((int n) => n != 0)) return null;
+    return jsonEncode(<String, Object?>{
+      'anchor': anchor.toUtc().millisecondsSinceEpoch,
+      'signature': _librarySignature(parents, signals),
+    });
+  }
+
+  /// 自 [stamp] 以来是否一条都没变：签名（各库的类型计数 / 已看计数 / 最近播放）
+  /// 原样相同，且没有任何条目在锚点之后保存过。戳读不懂、服务器拒绝查询一律
+  /// false（走整库枚举）；传输失败照常抛出（同 [takeRemoteLibraryStamp]）。
+  @override
+  Future<bool> remoteLibraryUnchangedSince(String stamp) async {
+    try {
+      return await _remoteLibraryUnchangedSince(stamp);
+    } on JellyfinApiException catch (e) {
+      debugPrint('[jellyfin] library change check unavailable: $e');
+      return false;
+    } on FormatException catch (e) {
+      debugPrint('[jellyfin] library change check unavailable: $e');
+      return false;
+    }
+  }
+
+  Future<bool> _remoteLibraryUnchangedSince(String stamp) async {
+    final Object? decoded;
+    try {
+      decoded = jsonDecode(stamp);
+    } on FormatException {
+      return false;
+    }
+    if (decoded is! Map<String, Object?>) return false;
+    final Object? anchorMs = decoded['anchor'];
+    final Object? signature = decoded['signature'];
+    if (anchorMs is! int || signature is! String) return false;
+    final DateTime anchor = DateTime.fromMillisecondsSinceEpoch(
+      anchorMs,
+      isUtc: true,
+    );
+    final List<String?> parents = await resolveEnumerationParents();
+    // 一个 Future.wait 收齐：失败时抛的是原始异常（上面按类型分流），其余请求的
+    // 失败也有人接。
+    final List<Object> results = await Future.wait(<Future<Object>>[
+      for (final String? parent in parents) _librarySignals(parent),
+      for (final String? parent in parents) _savedSinceCount(parent, anchor),
+    ]);
+    final List<_LibrarySignals> signals = results
+        .take(parents.length)
+        .cast<_LibrarySignals>()
+        .toList();
+    if (signals.any((_LibrarySignals s) => s.ignoresRecursion)) return false;
+    if (results.skip(parents.length).any((Object n) => n != 0)) return false;
+    return _librarySignature(parents, signals) == signature;
+  }
+
+  /// 一个媒体库（null = 整库递归）的签名查询：四个 `Limit=1` 请求并发。
+  Future<_LibrarySignals> _librarySignals(String? parentId) async {
+    Future<JellyfinItemsPage> probe({
+      String? type,
+      String? filters,
+      String? sortBy,
+      String? sortOrder,
+    }) => api.items(
+      userId: userId,
+      parentId: parentId,
+      recursive: true,
+      includeItemType: type,
+      filters: filters,
+      limit: 1,
+      sortBy: sortBy,
+      sortOrder: sortOrder,
+    );
+    final List<JellyfinItemsPage> pages =
+        await Future.wait(<Future<JellyfinItemsPage>>[
+          probe(type: 'Movie'),
+          probe(type: 'Episode'),
+          probe(filters: 'IsPlayed'),
+          probe(sortBy: 'DatePlayed', sortOrder: 'Descending'),
+        ]);
+    final JellyfinItem? lastPlayed = pages[3].items.firstOrNull;
+    DateTime? serverDate;
+    for (final JellyfinItemsPage page in pages) {
+      final DateTime? date = page.serverDate;
+      if (date == null) {
+        serverDate = null;
+        break;
+      }
+      if (serverDate == null || date.isBefore(serverDate)) serverDate = date;
+    }
+    return _LibrarySignals(
+      movies: pages[0].totalCount,
+      episodes: pages[1].totalCount,
+      played: pages[2].totalCount,
+      lastPlayed: lastPlayed == null
+          ? '-'
+          : '${lastPlayed.id}@${lastPlayed.lastPlayedAtMs}'
+                '/${lastPlayed.positionMs}/${lastPlayed.played}',
+      ignoresRecursion:
+          JellyfinApi.ignoresRecursiveEnumeration(pages[0]) ||
+          JellyfinApi.ignoresRecursiveEnumeration(pages[1]),
+      serverDate: serverDate,
+    );
+  }
+
+  /// [parentId] 下 `DateLastSaved >= anchor` 的条目数（任何类型）。
+  Future<int> _savedSinceCount(String? parentId, DateTime anchor) async =>
+      (await api.items(
+        userId: userId,
+        parentId: parentId,
+        recursive: true,
+        minDateLastSaved: anchor,
+        limit: 1,
+        sortBy: null,
+        sortOrder: null,
+      )).totalCount;
+
+  static String _librarySignature(
+    List<String?> parents,
+    List<_LibrarySignals> signals,
+  ) => <String>[
+    for (int i = 0; i < parents.length; i++)
+      '${parents[i] ?? '*'}:${signals[i].movies}:${signals[i].episodes}'
+          ':${signals[i].played}:${signals[i].lastPlayed}',
+  ].join(';');
 
   /// [remoteVideosByIds] 每发请求最多带多少个 id（Jellyfin 条目 id 32 位十六进制，
   /// 100 个约 3.3 KB 查询串，远低于常见反代的 URL 上限）。
