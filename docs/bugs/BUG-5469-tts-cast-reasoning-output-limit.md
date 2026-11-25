@@ -1,4 +1,4 @@
-## BUG-5369 · tts-cast-reasoning-output-limit
+## BUG-5469 · tts-cast-reasoning-output-limit
 - **报告**：2026-11-23（用户：有声书制作台「用 AI 标注说话人」用 gpt-5-mini 报「模型没有返回内容」，整本失败）
 - **真实性**：✅ 真 bug。用 Fushi 的原样请求（台词遍一块 ≤100 句 / 6000 字，`max_completion_tokens` = 8192）直接重放全书四块：gpt-5-mini 默认推理强度下思考 token 依次 5632 / 5696 / 6272 / **8192**，最后一块 `finish_reason=length`、`reasoning_tokens=8192`、正文为空；可见的标注本身只要约 1.5k token。
   - 根因一 `packages/fushi_engine/lib/ai/ai_chat_client.dart:597,615,652,683`（修复前行号）：`completeWithUsage` / `chat`（含互联主机转发）只要正文为空就抛 `empty_response`，不看停止原因——「思考把输出额度用光」被报成「模型没回」，而 `AiChatCompletion.truncated` 的文档早已写明这种情况原样重发只会再截一次、调用方要缩小这次要的输出。

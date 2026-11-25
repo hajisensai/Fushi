@@ -1,4 +1,4 @@
-## BUG-5366 · tts-cast-unclosed-json-array
+## BUG-5466 · tts-cast-unclosed-json-array
 - **报告**：2026-11-23（用户：有声书制作台「用 AI 标注说话人」对中文书《化物語（上）》报「无法理解 AI 的回复」；提供商 Unsloth Studio + Qwen3.5 9B）
 - **真实性**：✅ 真 bug。用同样的提示词与请求体直接重放第一章四块：第四块重放三次，一次回了三条完整操作但**漏掉数组末尾的 `]`**（`finish_reason=stop`，95 token，没被截断）。
   - 根因 `fushi/lib/src/media/audiobook/tts/studio/tts_cast_prompt.dart` `_firstJsonArray`：逐个 `[` 试解码，外层数组没闭合就退到**第一个嵌套的别名表** `["黑儀","戰原","傲嬌女"]`，元素全是字符串 → `no usable entries` → 整块（整本）`bad_output`。第二遍逐句归属共用同一解析，同样受影响。

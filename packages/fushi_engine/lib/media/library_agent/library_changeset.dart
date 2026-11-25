@@ -60,7 +60,7 @@ abstract final class LibraryChangeSkip {
   /// 格式 / 取值不对。
   static const String invalid = 'invalid';
 
-  /// 与条目的权威作品身份矛盾（BUG-5460，`organize_work_identity.dart`）：把它从
+  /// 与条目的权威作品身份矛盾（BUG-5480，`organize_work_identity.dart`）：把它从
   /// 同一部作品的合集里拆出来，或放进来源（媒体服务器 / 在线源）给的另一部剧的合集。
   static const String workIdentity = 'work_identity';
 }
@@ -600,7 +600,7 @@ class _Executor {
     return _resolveRow(ref.substring(0, colon), ref.substring(colon + 1));
   }
 
-  /// 合集成员 → 权威作品身份（只含带身份的成员；认不出的成员不算），BUG-5460。
+  /// 合集成员 → 权威作品身份（只含带身份的成员；认不出的成员不算），BUG-5480。
   Future<Map<String, OrganizeWorkIdentity>> _identitiesOf(_Coll c) async =>
       <String, OrganizeWorkIdentity>{
         for (final String k in c.members.keys)
@@ -721,7 +721,7 @@ class _Executor {
     final Set<String> targetVetoes = target == null || target.id < 0
         ? const <String>{}
         : await db.collectionMemberTombstoneKeysFor(target.name, target.type);
-    // 权威作品身份（BUG-5460）：去处现有成员的身份（剧身份闸门的起点、归拢判据），
+    // 权威作品身份（BUG-5480）：去处现有成员的身份（剧身份闸门的起点、归拢判据），
     // 来处的成员身份按需读一次。
     final List<OrganizeWorkIdentity> targetIdentities = target == null
         ? const <OrganizeWorkIdentity>[]
@@ -795,7 +795,7 @@ class _Executor {
       }
       passed.add((ref: ref, entry: r.entry, sources: sources));
     }
-    // 作品身份（BUG-5460）按整批判：同一条 move 里一起离开同一个来处的同一部作品不算
+    // 作品身份（BUG-5480）按整批判：同一条 move 里一起离开同一个来处的同一部作品不算
     // 拆散；去处是另一部来源剧的不放进去。被剔掉的条目留在原处，又可能让同批别的条目
     // 变成「拆散」，所以两步交替到不变为止。
     final Map<String, OrganizeWorkIdentity> movingIdentity =
@@ -1035,7 +1035,7 @@ class _Executor {
       return _Result.skipped(LibraryChangeSkip.folderCollection, into.ref);
     }
     final Set<CollectionShelfDomain> intoDomains = await _domainsOf(into);
-    // 败方成员与胜方里已有的来源剧不是同一部：那个败方不并（BUG-5460）。
+    // 败方成员与胜方里已有的来源剧不是同一部：那个败方不并（BUG-5480）。
     final OrganizeSeriesGate gate = OrganizeSeriesGate(
       (await _identitiesOf(into)).values,
     );
@@ -1205,7 +1205,7 @@ class _Executor {
       return const _Result.skipped(LibraryChangeSkip.exists, 'empty');
     }
     // 每一行成员各自移出（配对的 SRT 有声书行也在合集里，各是一行）；钉住的留下，
-    // 与权威作品身份矛盾的也留下（BUG-5460，[organizeIdentityForbidsRelease]）。
+    // 与权威作品身份矛盾的也留下（BUG-5480，[organizeIdentityForbidsRelease]）。
     final Map<String, OrganizeWorkIdentity> identities = await _identitiesOf(
       col,
     );

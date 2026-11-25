@@ -1,4 +1,4 @@
-## BUG-5452 · cupertino-scroll-edge-status-bar-seam
+## BUG-5472 · cupertino-scroll-edge-status-bar-seam
 - **报告**：2026-11-25（用户：Cupertino 音乐库页截图，深浅色「还是有这种分割线」，位置在状态栏下沿 / 顶栏上沿）
 - **真实性**：✅ 真 bug，三处叠加：
   1. `fushi/lib/src/pages/implementations/home_page.dart` `_withAppleTopEdge`：Apple 下外壳在内容区顶（= 状态栏下沿）另贴一条 14px 不透明渐隐带，只有设置页豁免；库页 / 浏览 / 首页的 `FushiFloatingChromeOverlay` 自己已从窗口顶画整块 `FushiAppleScrollEdgeBackdrop`，两层叠出黑边。

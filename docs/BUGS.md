@@ -33,93 +33,41 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4736 条。点号进各自文件。
+> 共 4761 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
-| [BUG-5461](bugs/BUG-5461-subdeck-steps-not-inherited.md) | ✅ | ✅ | Anki 导入的子牌组带着旧步长，父牌组改 RWKV 后按 Again 仍进重学 |
-| [BUG-5460](bugs/BUG-5460-sync-missing-book-content.md) | ✅ | ✅ | 书目还在而正文丢失时同步无法补回原书 |
-| [BUG-5456](bugs/BUG-5456-android-migrate-target-content-conflict.md) | ✅ | ✅ | Android 移动书库：目标里同路径不同内容的文件被当成中断残留整树删掉 |
-| [BUG-5455](bugs/BUG-5455-srs-gen4-migration-event-order.md) | ✅ | ✅ | 复习库升级后 Anki 复习副本选取改变到期日、间隔与统计，导致核对撤回 |
-| [BUG-5455](bugs/BUG-5455-opensubtitles-moviehash-negative-http400.md) | ✅ | ✅ | 字幕面板「字幕搜索失败（HTTP 400）」：OpenSubtitles movie hash 拼出负号，日志里没有任何线索 |
-| [BUG-5454](bugs/BUG-5454-stats-overview-srs-not-migrated.md) | ✅ | ✅ | stats-overview-srs-not-migrated |
-> 共 4731 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5455](bugs/BUG-5455-srs-gen4-migration-event-order.md) | ✅ | ✅ | 复习库升级后 Anki 复习副本选取改变到期日、间隔与统计，导致核对撤回 |
-> 共 4731 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5458](bugs/BUG-5458-srs-sync-already-bound-collection-candidate.md) | ✅ | ✅ | 复习同步冲突把本机其他资料库已绑定的集合列为可采用 |
-> 共 4731 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5459](bugs/BUG-5459-srs-upgrade-anki-destination-unconfirmed.md) | 🚧 | 🚧 | 更新后网页制卡写到 Anki，制卡去向疑似改变 |
-> 共 4731 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5453](bugs/BUG-5453-tracking-backoff-overflow-hot-loop.md) | ✅ | ✅ | tracking-backoff-overflow-hot-loop |
-> 共 4731 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5456](bugs/BUG-5456-ai-history-under-masthead.md) | ✅ | ✅ | AI 操作记录页首个会话头与前几行被页头大字盖住 |
-> 共 4731 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5453](bugs/BUG-5453-mangabaka-scrape-drops-description.md) | ✅ | ✅ | MangaBaka book scrape drops the description, year, rating and genres |
-> 共 4731 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5458](bugs/BUG-5458-video-header-double-refresh.md) | ✅ | ✅ | 视频库页头点「刷新」后并排出现两颗刷新钮 |
-> 共 4731 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-5481](bugs/BUG-5481-subdeck-steps-not-inherited.md) | ✅ | ✅ | Anki 导入的子牌组带着旧步长，父牌组改 RWKV 后按 Again 仍进重学 |
+| [BUG-5480](bugs/BUG-5480-organizer-contradicts-server-series.md) | ✅ | ✅ | AI 整理把媒体服务器同一部剧的集从自己的合集移空、又塞进另一部剧的合集 |
+| [BUG-5479](bugs/BUG-5479-video-header-double-refresh.md) | ✅ | ✅ | 视频库页头点「刷新」后并排出现两颗刷新钮 |
+| [BUG-5478](bugs/BUG-5478-ai-history-under-masthead.md) | ✅ | ✅ | AI 操作记录页首个会话头与前几行被页头大字盖住 |
+| [BUG-5477](bugs/BUG-5477-media-server-library-metadata-missing.md) | ✅ | ✅ | 从媒体服务器加入媒体库的剧没有资料：库里合集详情页只有封面与「资料待补」，看过的集也显示未看 |
+| [BUG-5476](bugs/BUG-5476-srs-gen4-migration-event-order.md) | ✅ | ✅ | 复习库升级后 Anki 复习副本选取改变到期日、间隔与统计，导致核对撤回 |
+| [BUG-5475](bugs/BUG-5475-local-player-sidecar-audio-not-loaded.md) | ✅ | ✅ | 本机播放器不加载本地视频旁的外挂音轨 |
+| [BUG-5474](bugs/BUG-5474-download-organizer-strands-sidecars.md) | ✅ | ✅ | 下载整理只搬视频，发布自带的外挂字幕/外挂音轨留在原地 |
+| [BUG-5473](bugs/BUG-5473-mangabaka-scrape-drops-description.md) | ✅ | ✅ | MangaBaka book scrape drops the description, year, rating and genres |
+| [BUG-5472](bugs/BUG-5472-cupertino-scroll-edge-status-bar-seam.md) | ✅ | ✅ | cupertino-scroll-edge-status-bar-seam |
+| [BUG-5471](bugs/BUG-5471-cupertino-header-actions-hidden-not-overflow.md) | ✅ | ✅ | cupertino-header-actions-hidden-not-overflow |
+| [BUG-5470](bugs/BUG-5470-srs-browse-inspector-field-ai-missing.md) | ✅ | ✅ | 浏览页检查器的字段编辑器没有字段 AI 键 |
+| [BUG-5469](bugs/BUG-5469-tts-cast-reasoning-output-limit.md) | ✅ | ✅ | tts-cast-reasoning-output-limit |
+| [BUG-5468](bugs/BUG-5468-ai-reasoning-effort-unsupported-model.md) | ✅ | ✅ | ai-reasoning-effort-unsupported-model |
+| [BUG-5467](bugs/BUG-5467-tts-cast-local-model-timeout.md) | ✅ | ✅ | tts-cast-local-model-timeout |
+| [BUG-5466](bugs/BUG-5466-tts-cast-unclosed-json-array.md) | ✅ | ✅ | tts-cast-unclosed-json-array |
 | [BUG-5465](bugs/BUG-5465-video-subtitle-autoload-hardcoded-ja.md) | ✅ | ✅ | 视频打开时自动挑字幕写死日语：sidecar 只认日语后缀，内封轨不看语言取第一条文本轨，繁 / 简中文不分 |
 | [BUG-5464](bugs/BUG-5464-video-subtitle-episode-inherit.md) | ✅ | ✅ | 合集里上一集选的字幕（内封轨 / sidecar / 关闭）下一集不继承，每集都得重选 |
-> 共 4731 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5455](bugs/BUG-5455-media-server-library-metadata-missing.md) | ✅ | ✅ | 从媒体服务器加入媒体库的剧没有资料：库里合集详情页只有封面与「资料待补」，看过的集也显示未看 |
-> 共 4731 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-5463](bugs/BUG-5463-same-work-remote-collection-empty.md) | ✅ | ✅ | 「同一作品」打开只在 Jellyfin 上有集的动画合集显示「合集为空」 |
-> 共 4732 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-5462](bugs/BUG-5462-deleted-collection-links-dangling.md) | ✅ | ✅ | 删掉的视频合集在作品图谱里留下「不在库中」的死连接 |
 | [BUG-5461](bugs/BUG-5461-organize-undo-collection-identity.md) | ✅ | ✅ | 撤销整理器移空 / 合并掉的合集后，合集换了新 id，挂在旧 id 上的作品图谱连接、标签、刮削资料全丢 |
-> 共 4731 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
+| [BUG-5460](bugs/BUG-5460-sync-missing-book-content.md) | ✅ | ✅ | 书目还在而正文丢失时同步无法补回原书 |
+| [BUG-5459](bugs/BUG-5459-srs-upgrade-anki-destination-unconfirmed.md) | 🚧 | 🚧 | 更新后网页制卡写到 Anki，制卡去向疑似改变 |
+| [BUG-5458](bugs/BUG-5458-srs-sync-already-bound-collection-candidate.md) | ✅ | ✅ | 复习同步冲突把本机其他资料库已绑定的集合列为可采用 |
 | [BUG-5457](bugs/BUG-5457-media-link-dangling-collection.md) | ✅ | ✅ | 删合集 / 游戏后「同一作品」留下标题是一串 id 的未入库死卡，灰卡背后还垫着一块灰板 |
-> 共 4731 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5460](bugs/BUG-5460-organizer-contradicts-server-series.md) | ✅ | ✅ | AI 整理把媒体服务器同一部剧的集从自己的合集移空、又塞进另一部剧的合集 |
-| [BUG-5454](bugs/BUG-5454-local-player-sidecar-audio-not-loaded.md) | ✅ | ✅ | 本机播放器不加载本地视频旁的外挂音轨 |
-| [BUG-5453](bugs/BUG-5453-download-organizer-strands-sidecars.md) | ✅ | ✅ | 下载整理只搬视频，发布自带的外挂字幕/外挂音轨留在原地 |
+| [BUG-5456](bugs/BUG-5456-android-migrate-target-content-conflict.md) | ✅ | ✅ | Android 移动书库：目标里同路径不同内容的文件被当成中断残留整树删掉 |
+| [BUG-5455](bugs/BUG-5455-opensubtitles-moviehash-negative-http400.md) | ✅ | ✅ | 字幕面板「字幕搜索失败（HTTP 400）」：OpenSubtitles movie hash 拼出负号，日志里没有任何线索 |
+| [BUG-5454](bugs/BUG-5454-stats-overview-srs-not-migrated.md) | ✅ | ✅ | stats-overview-srs-not-migrated |
+| [BUG-5453](bugs/BUG-5453-tracking-backoff-overflow-hot-loop.md) | ✅ | ✅ | tracking-backoff-overflow-hot-loop |
 | [BUG-5452](bugs/BUG-5452-music-mv-release-extras-unreachable.md) | ✅ | ✅ | 本地 MV 自动匹配找不到同一发布里被整理走的 NCOP/NCED/PV |
 | [BUG-5451](bugs/BUG-5451-download-release-audio-not-in-music.md) | ✅ | ✅ | 下载入库的发布里随附的 CD/OST 进不了音乐库 |
-> 共 4732 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5452](bugs/BUG-5452-cupertino-scroll-edge-status-bar-seam.md) | ✅ | ✅ | cupertino-scroll-edge-status-bar-seam |
-| [BUG-5451](bugs/BUG-5451-cupertino-header-actions-hidden-not-overflow.md) | ✅ | ✅ | cupertino-header-actions-hidden-not-overflow |
 | [BUG-5450](bugs/BUG-5450-android-library-layout-anchor-lost.md) | ✅ | ✅ | Android 书库对账只探当前配置的内部根，布局 / 容器锚点被冲掉后永不自愈 |
 | [BUG-5449](bugs/BUG-5449-background-writers-seal-and-interrupt.md) | ✅ | ✅ | background-writers-seal-and-interrupt |
 | [BUG-5448](bugs/BUG-5448-lumiere-font-switch-jank.md) | ✅ | ✅ | 绘光切字体卡顿、自定义字体加载完不重画 |
@@ -175,11 +123,6 @@
 | [BUG-5376](bugs/BUG-5376-android-shared-prefs-multiprocess-clobber.md) | 🚧 | 🚧 | Android 多进程下 SharedPreferences 会被别的进程的旧副本整份覆盖 |
 | [BUG-5375](bugs/BUG-5375-android-library-anchor-clobbered-links-lost.md) | ✅ | ✅ | Android 更新后书库全部失去链接（书库位置锚点被别的进程冲掉 + 沙箱重基不经磁盘核实） |
 | [BUG-5374](bugs/BUG-5374-windows-dart-silent-black-window.md) | 🚧 | ✅ | Windows 缩窗后主窗口黑屏冻结，平台线程空闲而 Dart 不回应，旧看门狗量不到 |
-> 共 4676 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5380](bugs/BUG-5380-srs-browse-inspector-field-ai-missing.md) | ✅ | ✅ | 浏览页检查器的字段编辑器没有字段 AI 键 |
 | [BUG-5373](bugs/BUG-5373-tracking-series-merge-declined-pref-not-device-local.md) | ✅ | ✅ | 系列「不合并」偏好存本机合集 id 却随备份 / 设置同步出境 |
 | [BUG-5372](bugs/BUG-5372-tracking-series-attention-n-plus-one.md) | ✅ | ✅ | 追踪页加载时系列合并候选 / 系列待处理卷逐条查库（N+1） |
 | [BUG-5371](bugs/BUG-5371-anidb-tag-tree-backtick.md) | ✅ | ✅ | anidb-tag-tree-backtick |
@@ -189,23 +132,6 @@
 | [BUG-5367](bugs/BUG-5367-music-visualizer-tap-exits.md) | ✅ | ✅ | 全屏歌词动画单击任意位置就退出 |
 | [BUG-5366](bugs/BUG-5366-curator-book-scrape-ignores-series-playlists.md) | ✅ | ✅ | 库管家补刮只认 collection 型合集、系列（playlist）各卷按卷名查而认不出 |
 | [BUG-5365](bugs/BUG-5365-library-agent-review-full-loop.md) | ✅ | ✅ | AI 助手自动全库复查把整库灌进一场对话爆上下文、失败不记进度无限重跑 |
-> 共 4667 条。点号进各自文件。
-> 共 4668 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5369](bugs/BUG-5369-tts-cast-reasoning-output-limit.md) | ✅ | ✅ | tts-cast-reasoning-output-limit |
-| [BUG-5366](bugs/BUG-5366-tts-cast-unclosed-json-array.md) | ✅ | ✅ | tts-cast-unclosed-json-array |
-> 共 4667 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5368](bugs/BUG-5368-ai-reasoning-effort-unsupported-model.md) | ✅ | ✅ | ai-reasoning-effort-unsupported-model |
-> 共 4667 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5367](bugs/BUG-5367-tts-cast-local-model-timeout.md) | ✅ | ✅ | tts-cast-local-model-timeout |
 | [BUG-5364](bugs/BUG-5364-manga-popup-forwarded-keys-block-scroll.md) | ✅ | ✅ | manga-popup-forwarded-keys-block-scroll |
 | [BUG-5363](bugs/BUG-5363-srs-visible-sounds-zero-opacity-animation.md) | ✅ | ✅ | 整面卡面：关键帧 opacity 始终为 0 的动画被当淡入，隐藏发音进自动播放 |
 | [BUG-5362](bugs/BUG-5362-overlay-handoff-reading-mismatch.md) | ✅ | ✅ | 覆盖窗转交高级制卡：同表记异读音时定位到错词条 |

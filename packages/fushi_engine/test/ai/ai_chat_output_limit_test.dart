@@ -1,4 +1,4 @@
-// BUG-5369：推理模型把 max_tokens 全花在思考上、正文为空并以截断收尾——这不是
+// BUG-5469：推理模型把 max_tokens 全花在思考上、正文为空并以截断收尾——这不是
 // 「模型什么也没回」（empty_response），而是输出额度用尽（output_limit）。三种协议、
 // complete / completeWithUsage / chat 与互联主机转发同一口径。
 import 'dart:convert';

@@ -36,7 +36,7 @@ const String kOpenAiOfficialHost = 'api.openai.com';
 ///
 /// 收的是一个封闭的旧族（gpt-3.5 / gpt-4 / gpt-4o / gpt-4.1 / gpt-4.5、ChatGPT
 /// 快照与 `*-chat-latest`、搜索专用模型）：这些模型带上该字段一律 400
-/// `unsupported_parameter`（BUG-5368）。不反过来列「推理模型白名单」：OpenAI 新出的
+/// `unsupported_parameter`（BUG-5468）。不反过来列「推理模型白名单」：OpenAI 新出的
 /// 对话模型都是推理模型，白名单会让每个新模型在 Fushi 更新前都调不了推理档位。
 /// `*-chat-latest` 在 5.1 之后只收 `medium`，同样按「档位不可调」处理。
 const List<String> _kOpenAiNonReasoningModelPrefixes = <String>[
@@ -243,7 +243,7 @@ bool isAiChatStopTruncated(String? stopReason) => switch (stopReason) {
 
 /// 输出额度用尽的失败短码：回复正文为空、停止原因却是截断——推理模型（o 系列 /
 /// gpt-5 / Gemini thinking / Claude extended thinking）把 `max_tokens` 全花在看不见
-/// 的思考上，一个字的正文都没写（BUG-5369）。不是「模型什么也没回」
+/// 的思考上，一个字的正文都没写（BUG-5469）。不是「模型什么也没回」
 /// （`empty_response`），也不是临时性失败：原样重发只会在同一处再截一次，调用方要
 /// 缩小这次要的输出（把输入拆小），或请用户调低推理强度。
 const String kAiOutputLimitCode = 'output_limit';
@@ -570,7 +570,7 @@ class AiChatClient {
 
   /// 这个客户端每次 chat 请求的整体时限（默认 [kAiChatRequestTimeout]）。回复本来
   /// 就长的调用方（有声书选角一块要几千 token）在本地模型上生成要几分钟，用默认
-  /// 的 90 秒会在模型还在正常吐字时超时、再被当成网络抖动整块重试（BUG-5367），
+  /// 的 90 秒会在模型还在正常吐字时超时、再被当成网络抖动整块重试（BUG-5467），
   /// 所以它们建客户端时给更宽的时限。
   final Duration _requestTimeout;
 
@@ -1209,7 +1209,7 @@ class AiChatClient {
             : 'max_tokens':
         maxTokens,
     // 档位是否生效由 [effectiveAiReasoningEffort] 统一判：用户没选不发（大量兼容
-    // 端点不认识这个字段），所配模型明确不收也不发（BUG-5368：OpenAI 官方的
+    // 端点不认识这个字段），所配模型明确不收也不发（BUG-5468：OpenAI 官方的
     // 非推理模型对它回 400）。
     if (effectiveAiReasoningEffort(provider) case final AiReasoningEffort effort
         when effort != AiReasoningEffort.none)
@@ -1897,7 +1897,7 @@ const List<String> _kContextOverflowMarkers = <String>[
   'maximum number of tokens',
 ];
 
-/// 服务端不收请求里的 `reasoning_effort` 的失败短码（BUG-5368）：自定义兼容端点
+/// 服务端不收请求里的 `reasoning_effort` 的失败短码（BUG-5468）：自定义兼容端点
 /// 或 Fushi 认不出的模型不收推理档位时，界面据此提示去把「推理」改成关闭，而不是
 /// 只报一个看不懂的 `http_400`。不是临时性失败：原样重发还是被拒。
 const String kAiReasoningUnsupportedCode = 'reasoning_unsupported';

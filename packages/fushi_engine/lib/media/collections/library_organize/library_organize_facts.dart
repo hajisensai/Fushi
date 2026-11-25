@@ -357,7 +357,7 @@ Future<List<_Candidate>> _videoCandidates(
   final List<_Candidate> out = <_Candidate>[];
   for (final VideoBookRow v in await db.allVideoBooks()) {
     final String memberKey = '${MediaKind.video.dbValue}\u0000${v.bookUid}';
-    // 权威作品身份（BUG-5460）：刮削作品只认挂在这一条本身上的（下面按合集补的那份
+    // 权威作品身份（BUG-5480）：刮削作品只认挂在这一条本身上的（下面按合集补的那份
     // 是「它在这个合集里」推出来的，不能拿来判它该不该留在这个合集）。
     final OrganizeWorkIdentity identity = OrganizeWorkIdentity(
       externalWorkKey: workByBook[v.bookUid]?.key,

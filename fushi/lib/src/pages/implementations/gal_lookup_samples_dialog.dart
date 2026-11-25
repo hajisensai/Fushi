@@ -911,7 +911,7 @@ class _GalLookupSamplesDialogState extends State<GalLookupSamplesDialog> {
     final FushiAppleSurfaceForm? appleForm = FushiAppleSurfaceScope.maybeFormOf(
       context,
     );
-    // 页头动作用 [FushiIconButton]：放不下时才收得进「⋯」（BUG-5451）。
+    // 页头动作用 [FushiIconButton]：放不下时才收得进「⋯」（BUG-5471）。
     final Widget captureButton = FushiIconButton(
       enabled: !_busy,
       onTap: _busy ? null : _capture,

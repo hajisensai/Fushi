@@ -721,7 +721,7 @@ void main() {
       expect(m['video:c$scraped']!.upload.refs, <String>['t:葬送のフリーレン|']);
     });
 
-    test('媒体服务器自带资料（BUG-5455）：只有 mediaserver 身份不上报；带 TMDB 交叉引用的'
+    test('媒体服务器自带资料（BUG-5477）：只有 mediaserver 身份不上报；带 TMDB 交叉引用的'
         '照常上报，但服务器图地址不当公开封面', () async {
       await video('ms1', completedAt: DateTime(2026, 8, 1, 12));
       await video('ms2', completedAt: DateTime(2026, 8, 1, 12));

@@ -12,7 +12,7 @@
 ///   合集（与媒体服务器混排 / 互联下载入库同一条收养路径），合集与各集封面用剧的
 ///   海报；
 /// - 作品资料（简介 / 评分 / 类型 / 背景 / 分集名与剧照）与服务器上的观看状态由
-///   `media_server_metadata.dart` 在每次入库 / 后台补新集时同步（BUG-5455）。
+///   `media_server_metadata.dart` 在每次入库 / 后台补新集时同步（BUG-5477）。
 library;
 
 import 'dart:convert';

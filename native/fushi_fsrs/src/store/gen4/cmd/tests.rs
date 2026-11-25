@@ -506,7 +506,7 @@ fn logs_stats_and_server_times_match_protocol_3() {
     let (c1, c2) = (card(N1, "t1"), card(N1, "t2"));
     p.same(
         json!({"q": "logs", "cards": [c1, c2, card(N3, "t1"), card(N2, "t1")]}),
-        // oid：新代的别名归一前排序 ID（BUG-5455），协议 3 没有别名、恒为空。
+        // oid：新代的别名归一前排序 ID（BUG-5476），协议 3 没有别名、恒为空。
         &[("t", &[Id, Id, Log, Skip, Skip])],
     );
     p.same(

@@ -136,7 +136,7 @@ void main() {
     });
   });
 
-  group('BUG-5366', () {
+  group('BUG-5466', () {
     test('中文书两遍都用中文示例的提示词', () async {
       final ({TtsCast cast, int saves, List<String> systems}) r = await _run(
         sentences: <TtsPlanSentence>[
@@ -172,7 +172,7 @@ void main() {
       expect(failure.toString(), contains('I cannot help with that.'));
     });
   });
-  group('BUG-5369', () {
+  group('BUG-5469', () {
     /// 第 9 章 100 句：偶数句旁白、奇数句台词，正文各不相同；一块装得下。
     final List<TtsPlanSentence> book = <TtsPlanSentence>[
       for (int i = 0; i < 100; i++)

@@ -1,4 +1,4 @@
-// BUG-5368：OpenAI 提供商从 gpt-5-mini（推理档位「低」）换成 gpt-4o-mini 后，存着的
+// BUG-5468：OpenAI 提供商从 gpt-5-mini（推理档位「低」）换成 gpt-4o-mini 后，存着的
 // `reasoningEffort` 照发 `reasoning_effort`，官方对非推理模型回 400
 // `unsupported_parameter`，此后每个请求都失败，界面只报「服务返回错误（400）」。
 import 'dart:convert';

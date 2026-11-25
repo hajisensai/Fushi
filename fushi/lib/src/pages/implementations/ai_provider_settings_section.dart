@@ -705,7 +705,7 @@ class _AiProviderSettingsSectionState
             ),
             // 所配模型不收推理档位（Anthropic / Gemini 协议、OpenAI 官方的非推理
             // 模型）时不显示这一行：显示「低」却不生效，或者生效了让请求 400
-            // （BUG-5368）。存着的档位不清，换回推理模型时原样回来。
+            // （BUG-5468）。存着的档位不清，换回推理模型时原样回来。
             if (aiModelAcceptsReasoningEffort(
               protocol: draft.protocol,
               baseUrl: Uri.tryParse(draft.baseUrl.trim()) ?? Uri(),

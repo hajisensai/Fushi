@@ -116,7 +116,7 @@ void main() {
 
     // 设计稿 #video V2：刷新是页头「⋯」的项（宽窗放得下时平铺成独立图标钮），
     // 进行中由这一项自己置灰表达（[FushiHeaderMoreEntry.busy]），不另挂一颗
-    // 「进行中」刷新钮——平铺后那会是并排两颗刷新（BUG-5458）。
+    // 「进行中」刷新钮——平铺后那会是并排两颗刷新（BUG-5479）。
     expect(
       header.contains("ValueKey<String>('video-library-refresh-menu')") &&
           header.contains('onSelected: _refreshFromHeader'),
@@ -131,7 +131,7 @@ void main() {
     expect(
       header.contains("ValueKey<String>('video-library-refresh')"),
       isFalse,
-      reason: '不再另挂「进行中」刷新钮（BUG-5458：平铺后并排两颗刷新）',
+      reason: '不再另挂「进行中」刷新钮（BUG-5479：平铺后并排两颗刷新）',
     );
   });
 

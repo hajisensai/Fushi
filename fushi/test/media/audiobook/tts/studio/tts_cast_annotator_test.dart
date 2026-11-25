@@ -895,7 +895,7 @@ void main() {
     });
   });
 
-  group('BUG-5366：小模型漏掉数组末尾的 ]', () {
+  group('BUG-5466：小模型漏掉数组末尾的 ]', () {
     // Qwen3.5 9B（Unsloth Studio）对《化物語》第一章第四块的真实回复：三条完整
     // 操作，最后少了闭合的 `]`。旧解析退到第一个嵌套的别名表，判成「没有可用条目」。
     const String unclosed =
@@ -959,7 +959,7 @@ void main() {
     });
   });
 
-  group('BUG-5366：提示词示例跟着正文的文字走', () {
+  group('BUG-5466：提示词示例跟着正文的文字走', () {
     test('按正文判断日文 / 中文 / 其他', () {
       expect(
         detectTtsCastScript(<String>['「行くぞ」とスバルは言った。']),

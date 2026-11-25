@@ -1,4 +1,4 @@
-## BUG-5453 · MangaBaka book scrape drops the description, year, rating and genres
+## BUG-5473 · MangaBaka book scrape drops the description, year, rating and genres
 - **报告**：2026-11-24（用户：合集页简介是中文（Bangumi 来源），想改用 MangaBaka 重新刮削拿英文简介）
 - **真实性**：✅ 真 bug。MangaBaka `/v1/series/search` 与 `/v1/series/{id}` 的真实响应带 `description`（英文 Markdown）/ `year` / `published.start_date` / `rating`（0~100）/ `genres`，但 `MangaBakaSeries.fromJson`（`packages/fushi_engine/lib/media/metadata/mangabaka/mangabaka_models.dart`）一个都没解析，`mapMangaBakaSeries`（`fushi/lib/src/media/metadata/book_metadata_scraper.dart:700`）也就只给候选填封面 / 标题 / 作者 / 链接。选 MangaBaka 结果写回条目资料时简介、日期、评分、标签全为空：书详情页没有简介，合集页借第一卷资料时也没有，用户无法用 MangaBaka 替换 Bangumi 的中文简介。
 - **[x] ① 已修复** — `MangaBakaSeries` 新增 `description`（经 `mangaBakaPlainText` 去 Markdown 链接 / 图片 / 强调 / 标题 / 行内代码，保留段落）、`year`、`startDate`、`rating`（÷10 归一到 0~10，≤0 视为无）、`genres`；`mapMangaBakaSeries` 把它们填进 `summary` / `year` / `date` / `rating` / `tags`（类型键经 `mangaBakaGenreLabel` 转展示名）。署名沿用既有的刮削弹窗 / 编辑弹窗 / 关于页 CC BY-NC-SA 署名与详情页来源标签。

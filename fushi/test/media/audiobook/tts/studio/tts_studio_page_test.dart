@@ -185,7 +185,7 @@ void main() {
         ),
         t.audiobook_studio_cast_failed(reason: aiFailureText('rate_limited')),
       );
-      // BUG-5369：拆到最小仍被截断 → 提示调低推理强度，不是「模型没有返回内容」。
+      // BUG-5469：拆到最小仍被截断 → 提示调低推理强度，不是「模型没有返回内容」。
       expect(
         ttsCastAnnotateFailureText(
           const TtsCastAnnotateFailure(

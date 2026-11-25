@@ -1,4 +1,4 @@
-// AI 操作记录页：列表顶部留白必须让出页头大字（BUG-5456，与 BUG-5171 同一机制）。
+// AI 操作记录页：列表顶部留白必须让出页头大字（BUG-5478，与 BUG-5171 同一机制）。
 // MD3 与 Apple 两套设计系统各跑一遍。
 import 'package:drift/drift.dart' show Value;
 import 'package:drift/native.dart';

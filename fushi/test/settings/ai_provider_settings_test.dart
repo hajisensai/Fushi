@@ -531,7 +531,7 @@ void main() {
       expect(saved.isUsable, isTrue);
     });
 
-    testWidgets('推理档位行只在所配模型收它时显示（BUG-5368）', (WidgetTester tester) async {
+    testWidgets('推理档位行只在所配模型收它时显示（BUG-5468）', (WidgetTester tester) async {
       await pumpSection(tester);
       await tapKey(tester, 'ai-provider-add');
       await tapKey(tester, 'ai-provider-preset-openai');
@@ -1761,7 +1761,7 @@ void main() {
       );
     });
 
-    test('OpenAI 官方的非推理模型：存着档位也不发 reasoning_effort（BUG-5368）', () async {
+    test('OpenAI 官方的非推理模型：存着档位也不发 reasoning_effort（BUG-5468）', () async {
       final AiChatClient client = clientReturning(<String, Object?>{
         'choices': <Object?>[
           <String, Object?>{

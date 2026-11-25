@@ -377,7 +377,7 @@ class _GalgameDetailPageState extends ConsumerState<GalgameDetailPage>
   /// entryKey=galgames.id），落库同走 addToCollection DAO；库页返回后 _reload
   /// 刷新分组。两种版式（浮动顶栏 / 海报面板裸图标页头）共用。
   ///
-  /// 页头动作用 [FushiIconButton]：放不下时才收得进「⋯」（BUG-5451）。
+  /// 页头动作用 [FushiIconButton]：放不下时才收得进「⋯」（BUG-5471）。
   Widget _addToCollectionAction(GalgameEntry game) => FushiIconButton(
     key: const ValueKey<String>('galgame_detail_add_to_collection'),
     tooltip: t.add_to_collection,

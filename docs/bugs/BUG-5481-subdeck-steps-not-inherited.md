@@ -1,4 +1,4 @@
-## BUG-5461 · Anki 导入的子牌组带着旧步长，父牌组改 RWKV 后按 Again 仍进重学
+## BUG-5481 · Anki 导入的子牌组带着旧步长，父牌组改 RWKV 后按 Again 仍进重学
 - **报告**：2026-11-25（用户转来的用户反馈，拍板台 design-subdeck-steps-inherit 选 a）。「日本語」从 Anki 导入、父牌组改成 RWKV 后，该牌组按 Again 进重学，别的牌组不进。
 - **真实性**：✅ 真 bug。作答时步长取卡片所在牌组自己的 `ls` / `rs`（native/fushi_fsrs/src/store/sync2/config.rs `DeckTree::config` 用 `me.view`；Dart `SrsDeckTree.schedulingConfig` 用 `self.learnStepsFor`，packages/fushi_srs/lib/src/deck.dart），算法 / 参数才向上找 own 祖先。导入时没开「使用 RWKV」会给每个子牌组写上 Anki 预设的步长（packages/fushi_engine/lib/srs/apkg/srs_apkg_import.dart `_presetValues`），父牌组之后改成 RWKV、步长为空，子牌组上仍是 `[10]`，于是按 Again 进 Relearning（native/fushi_fsrs/src/sync2/sched.rs 重学分支）。「子牌组都继承这里」只改 paramsMode、不动步长，父牌组设置页也看不出子牌组的步长。
 - **[x] ① 已修复** — 步长随参数一起继承（与算法 / 记忆率同一条规则）：继承上级的牌组用最近 own 祖先的步长，只有「单独设置」或顶层牌组才用自己写的。Rust `DeckTree::config` 与 Dart `SrsDeckTree.schedulingConfig` 都改成取 owner 的步长。牌组设置页在「继承上级」时只读显示上级的生效步长（写明跟随哪个牌组），不再给可编辑却不生效的输入框，也不校验、不写步长。「子牌组都继承这里」的确认文案改成说明步长也一起跟随。Anki 导入比较「子牌组与父牌组设置是否相同」时把步长算进去，步长不同的子牌组落成「单独设置」，保住自己的步长；继承的子牌组不再写步长。

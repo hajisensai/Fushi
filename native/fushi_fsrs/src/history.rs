@@ -1087,7 +1087,7 @@ pub const COLUMN_STRINGS: usize = 5;
 
 /// 列模式批量：第 i 条日志的五个串 = `text[offs[5i]..offs[5i+1]]`（id）、`[5i+1..5i+2]`（writerId）、
 /// `[5i+2..5i+3]`（revokes，无则空串且 bits 不带 `1<<7`）、`[5i+3..5i+4]`（cardId）、`[5i+4..5i+5]`（别名归一前的
-/// 排序 ID [Log::order_id]，与 id 相同时为空串；BUG-5455：新代 `read logs` 的 `oid` 列，Dart 侧选取与内核同序）。
+/// 排序 ID [Log::order_id]，与 id 相同时为空串；BUG-5476：新代 `read logs` 的 `oid` 列，Dart 侧选取与内核同序）。
 ///
 /// 输出布局（小端）：`[u32 组边界 × (n_groups + 1)][u32 输入下标 × 去重后总数][i32 lastEffective × n_groups]
 /// [i32 schedulerFrom × n_groups][u8 STATUS_* × 去重后总数]`；下标都是全局输入下标，-1 = 无。
@@ -1537,7 +1537,7 @@ mod tests {
         assert!(select_columns(&ints, text.as_bytes(), &offs[..13], &[0, 3]).is_err());
     }
 
-    /// BUG-5455：新代 `read logs` 交回的是规范 ID，排序 ID 是别名归一前的原值。列模式按排序 ID 排序、选副本，
+    /// BUG-5476：新代 `read logs` 交回的是规范 ID，排序 ID 是别名归一前的原值。列模式按排序 ID 排序、选副本，
     /// 与内核重放（[Log::order_id]）同一结果；规范 ID 的先后与原值相反时也不换代表。
     #[test]
     fn column_mode_orders_and_picks_copies_by_the_original_id() {

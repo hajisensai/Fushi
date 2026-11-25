@@ -964,7 +964,7 @@ class _VideoRefs {
 }
 
 /// 不算「经外部资料源刮削过」的 provider 名：本地索引（`local`）与媒体服务器自带
-/// 资料（`mediaserver`，BUG-5455）。两者都是用户已有资料的离线兼容输入，标题可能
+/// 资料（`mediaserver`，BUG-5477）。两者都是用户已有资料的离线兼容输入，标题可能
 /// 就是文件夹名；媒体服务器作品带了 TMDB / AniDB 交叉引用时照常按强 ID 上报。
 const Set<String> _offlineProviders = <String>{
   'local', // VideoMetadataProviderKind.local.name
@@ -972,7 +972,7 @@ const Set<String> _offlineProviders = <String>{
 };
 
 /// 媒体服务器资料图的 provider 名：图行 `remoteUrl` 是用户自己服务器的地址（去了
-/// 令牌，仍带私有主机名 / 条目 id），不能当公开封面上传（BUG-5455）。
+/// 令牌，仍带私有主机名 / 条目 id），不能当公开封面上传（BUG-5477）。
 const String _mediaServerImageProvider = 'mediaserver';
 
 Future<Map<int, List<VideoMetadataProviderIdentityRow>>> _videoWorkIdentities(

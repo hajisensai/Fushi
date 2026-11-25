@@ -22,7 +22,7 @@ const String kTtsCastPhaseLines = 'lines';
 /// [kTtsCastFailureOutputLimit] / `cancelled`）。
 ///
 /// `bad_output` 带上模型的原始回复 [reply]：错误日志里要能看到模型到底回了什么，
-/// 否则「回复无法理解」无从查起（BUG-5366）。
+/// 否则「回复无法理解」无从查起（BUG-5466）。
 class TtsCastAnnotateFailure implements Exception {
   const TtsCastAnnotateFailure(this.code, [this.detail, this.reply]);
   final String code;
@@ -45,7 +45,7 @@ class TtsCastAnnotateFailure implements Exception {
 }
 
 /// 拆到 [kTtsCastSplitMinSentences] 句以内的块回复仍被截断：模型（多半是推理模型
-/// 的思考）把整份输出额度用光，块再小也写不出标注（BUG-5369）。界面提示调低推理
+/// 的思考）把整份输出额度用光，块再小也写不出标注（BUG-5469）。界面提示调低推理
 /// 强度；[TtsCastAnnotateFailure.detail] 记哪一遍、哪章、几句。
 const String kTtsCastFailureOutputLimit = 'output_limit';
 
@@ -71,7 +71,7 @@ typedef TtsCastAsk = Future<TtsCastReply> Function(String system, String user);
 ///
 /// 回复被截断（[TtsCastReply.truncated]，正文为空或只有前半截）：把这块按字数拆成
 /// 两半依次重问，递归到 [kTtsCastSplitMinSentences] 句为止，仍截断抛
-/// [kTtsCastFailureOutputLimit]（BUG-5369）。截断的前半截不拿来补救：缺的行会被
+/// [kTtsCastFailureOutputLimit]（BUG-5469）。截断的前半截不拿来补救：缺的行会被
 /// 悄悄记成旁白 / 不明。拆块不影响进度计数（按章算）。
 ///
 /// [onProgress] = 两遍都完成的章数 / 待标章数；[onPhase] = 当前阶段
@@ -88,7 +88,7 @@ Future<void> runTtsCastPasses({
   void Function(String phase, int done, int total)? onPhase,
 }) async {
   onProgress(0, todo.length);
-  // 示例语言跟着正文走（BUG-5366）；惰性取文本，检测只读前两万字。
+  // 示例语言跟着正文走（BUG-5466）；惰性取文本，检测只读前两万字。
   final TtsCastScript script = detectTtsCastScript(
     todo.expand(
       (int section) => bySection[section]!.map((TtsPlanSentence s) => s.text),

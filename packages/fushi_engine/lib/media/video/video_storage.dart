@@ -91,7 +91,7 @@ class VideoStorage {
   static Future<Directory> itemImagesDir() async =>
       Directory(p.join((await coversDir()).path, itemImagesDirName));
 
-  /// 媒体服务器入库作品的资料图（剧海报 / 背景 / 分集剧照，BUG-5455）子目录名。
+  /// 媒体服务器入库作品的资料图（剧海报 / 背景 / 分集剧照，BUG-5477）子目录名。
   /// 服务器图片 URL 带访问令牌，不能落库，所以下载到这里、`video_metadata_images`
   /// 记本地路径。同 [imagesDirName] 的理由放子目录（[gcOrphanCovers] 非递归）；
   /// 本目录只归媒体服务器入库所有，作品移出媒体库时按作品回收。

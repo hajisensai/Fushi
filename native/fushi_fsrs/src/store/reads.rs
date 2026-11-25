@@ -528,7 +528,7 @@ fn lapis_backfill(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>,
 // ------------------------------------------------------------------ 复习日志与服务器时刻
 
 /// `logs {cards}`：一组卡的全部复习日志原文 + 服务器时刻（`id`, `card_id`, `json`, `st`, `oid`）。协议 3 存的是原值
-/// ID、没有别名归一，`oid`（新代的别名归一前排序 ID，BUG-5455）恒为空，列与新代同形。
+/// ID、没有别名归一，`oid`（新代的别名归一前排序 ID，BUG-5476）恒为空，列与新代同形。
 #[cfg(test)]
 fn logs(c: &Connection, profile: &str, req: &Value) -> Result<Vec<u8>, String> {
     let mut q = Sel::of(profile);

@@ -501,7 +501,7 @@ void main() {
         expect(q['StartIndex'], '24');
         expect(q['Limit'], '100');
         // MediaSourceCount 只是计数，点名它给集卡提示多版本（mxYhpVcwOX）；
-        // Overview 给入库落分集简介（BUG-5455，Jellyfin 清单不点名就不给）；
+        // Overview 给入库落分集简介（BUG-5477，Jellyfin 清单不点名就不给）；
         // 重字段 MediaSources 仍不带（BUG-1891）。
         expect(q['Fields']!.split(','), <String>[
           'ProductionYear',

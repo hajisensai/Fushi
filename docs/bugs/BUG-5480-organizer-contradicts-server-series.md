@@ -1,4 +1,4 @@
-## BUG-5460 · AI 整理把媒体服务器同一部剧的集从自己的合集移空、又塞进另一部剧的合集
+## BUG-5480 · AI 整理把媒体服务器同一部剧的集从自己的合集移空、又塞进另一部剧的合集
 - **报告**：2026-11-25（用户真实数据，视频库从 Jellyfin 入库）
 - **真实性**：✅ 真 bug。整理记录里两步：① 一次 `agent` 复查（AI 管库变更集）记了 `evict`，从一个用户合集（剧 A，按服务器剧名收养）移出全部 13 集（全是这部剧的集，合集是对的），理由「同一合集里有多集同一部剧可能造成混淆」，合集被移空删除；② 之后一次 `auto` 整理（库管家流水线）记了 `add`，把同样 13 集放进另一部剧（剧 B）的合集。两步置信度都是 high。
   - 根因：本地裁决完全不知道条目自带的**权威作品身份**。媒体服务器的集在入库时就按服务器剧名收进同一个 playlist 合集（`mediaServerCollectionOf` → `adoptRemoteCollectionMember`），`video_books.stream_spec_json` 里存着这份归属；可整理事实 `_videoCandidates`（`packages/fushi_engine/lib/media/collections/library_organize/library_organize_facts.dart:295`）从不读 spec，`externalWorkKey` 只来自刮削（`:366`），媒体服务器的集身份为空。于是：

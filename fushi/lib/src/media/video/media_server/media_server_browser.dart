@@ -393,7 +393,7 @@ class MediaServerItem {
 
   /// 外部 ID（Jellyfin / Emby `ProviderIds`），键小写：`tmdb` / `imdb` / `tvdb` /
   /// `anidb` …；服务器没给（或该服务器类型不报）为空。入库时作为作品的非主交叉
-  /// 引用落库（BUG-5455）。
+  /// 引用落库（BUG-5477）。
   final Map<String, String> providerIds;
 
   /// 服务器粗粒度 `HasSubtitles`（图形轨也算 true；精确判断在播放页按详情取）。

@@ -144,7 +144,7 @@ class AiChatTextCompleter implements AiTextCompleter {
       // 模型回了空正文：请求本身成功、token 也花了（用量未知），是「回复不合格」
       // 而不是「请求失败」——交给各阶段的重试循环当一次解析失败，3 次仍不行才报
       // reply_incomplete。思考把额度用光（[kAiOutputLimitCode]）同样是空正文，
-      // 口径不变（BUG-5369 只把它从 empty_response 里分出来）。
+      // 口径不变（BUG-5469 只把它从 empty_response 里分出来）。
       if (failure.message == 'empty_response' ||
           failure.message == kAiOutputLimitCode) {
         return const AiChatCompletion(text: '');

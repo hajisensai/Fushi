@@ -151,7 +151,7 @@ class MangaAnnotateRunner {
             ? MangaAnnotateFailureCode.network
             : MangaAnnotateFailureCode.aiFailed,
         detail: e.message,
-        // 空回复 / 思考把输出额度用光（BUG-5369）只记这一页失败，不中止整卷。
+        // 空回复 / 思考把输出额度用光（BUG-5469）只记这一页失败，不中止整卷。
         fatal:
             !e.isTransient &&
             e.message != 'empty_response' &&

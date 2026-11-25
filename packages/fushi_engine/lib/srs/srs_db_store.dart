@@ -3071,7 +3071,7 @@ class SrsDbStore implements SrsSync2Host {
       final SrsStringColumn card = c.strings('card_id');
       final SrsStringColumn json = c.strings('json');
       final SrsIntColumn st = c.ints('st');
-      // 别名归一前的原值日志 ID（native/fushi_fsrs/src/store/gen4/cmd/reads.rs `logs`，BUG-5455）。
+      // 别名归一前的原值日志 ID（native/fushi_fsrs/src/store/gen4/cmd/reads.rs `logs`，BUG-5476）。
       final SrsStringColumn? oid = c.has('oid') ? c.strings('oid') : null;
       for (int i = 0; i < c.rows; i++) {
         pre.logsByCard[card[i]]!.add(json[i]);
@@ -6536,7 +6536,7 @@ class _RefreshPrefetch {
   /// 日志 ID → 别名归一前的原值日志 ID（只记与 ID 不同的；[SrsDbStore._prefetchLogs]）。
   final Map<String, String> orderIds = <String, String>{};
 
-  /// [SrsCardHistory] 的 `orderIdOf`：同一事件的副本按原值 ID 选代表，与内核同序（BUG-5455）。
+  /// [SrsCardHistory] 的 `orderIdOf`：同一事件的副本按原值 ID 选代表，与内核同序（BUG-5476）。
   String? orderIdOf(String logId) => orderIds[logId];
 }
 

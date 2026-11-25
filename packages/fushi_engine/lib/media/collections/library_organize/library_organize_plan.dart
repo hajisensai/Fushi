@@ -13,7 +13,7 @@ export 'package:fushi_engine/media/collections/library_organize/organize_work_id
 /// §2.2，取代库管家 §8 的确认卡；自动路径只收 high），可撤销。用户拒绝过的分组不复活；
 /// 用户移出过的成员不放回；跨域、越界、重复一律丢弃（只丢那一条，不整批作废）。
 /// 与条目权威作品身份（媒体服务器 / 在线源的剧、刮削作品 id）矛盾的移出 / 放入一律
-/// 丢弃（`organize_work_identity.dart`，BUG-5460）。
+/// 丢弃（`organize_work_identity.dart`，BUG-5480）。
 
 /// 整理怎么触发的（决定置信度门槛）。
 enum OrganizeTrigger { manual, auto }
@@ -61,7 +61,7 @@ class OrganizeEntry {
   final String? groupTitle;
 
   /// 权威作品身份（来源的剧、挂在这一条本身上的刮削作品）：AI 的移出 / 放入不得与它
-  /// 矛盾（BUG-5460）。只用于本地否决，不发给 AI。
+  /// 矛盾（BUG-5480）。只用于本地否决，不发给 AI。
   final OrganizeWorkIdentity identity;
 
   /// 跟它算一卷的其它成员行（EPUB 配对的 SRT 有声书）：加入 / 移出时一起动，与
@@ -137,7 +137,7 @@ class OrganizeCollectionFact {
   bool get isFolder => origin == CollectionOrigin.folder;
 
   /// AI 能不能把 [memberKey] 从这个合集里移出（AI 库管家设计稿 §7）：目录合集、用户
-  /// 钉住的、AI 移出过一次的不移；与权威作品身份矛盾的也不移（BUG-5460：拆散一部作品，
+  /// 钉住的、AI 移出过一次的不移；与权威作品身份矛盾的也不移（BUG-5480：拆散一部作品，
   /// 或把它从自己的合集里移空）。[leaving]：同一处改动里一起离开的成员行键；
   /// [destination]：去处里已有 / 一起去的成员身份（见 [organizeIdentityForbidsRelease]）。
   bool canRelease(
@@ -412,7 +412,7 @@ OrganizePlan planOrganizeReply({
   }
   bool single(int i) => uses[i] == 1;
 
-  // 往已有合集里放条目的剧身份闸门（BUG-5460）：同一份回复里先放进去的也算。
+  // 往已有合集里放条目的剧身份闸门（BUG-5480）：同一份回复里先放进去的也算。
   final Map<int, OrganizeSeriesGate> gates = <int, OrganizeSeriesGate>{};
   OrganizeSeriesGate gateOf(OrganizeCollectionFact c) =>
       gates[c.id] ??= c.seriesGate();
@@ -438,7 +438,7 @@ OrganizePlan planOrganizeReply({
       cs,
     )..sort(_mergeWinnerOrder)).first;
     if (mergedInto.containsKey(target.id)) continue;
-    // 败方的成员与胜方里已有的来源剧不是同一部：这个败方不并（BUG-5460）。
+    // 败方的成员与胜方里已有的来源剧不是同一部：这个败方不并（BUG-5480）。
     final OrganizeSeriesGate gate = gateOf(target);
     final List<int> sources = <int>[
       for (final OrganizeCollectionFact c in cs)
@@ -482,7 +482,7 @@ OrganizePlan planOrganizeReply({
       to = resolveTarget(e.into!);
       if (to == null || to.id == from.id) continue;
     }
-    // 作品身份（BUG-5460）按这一条移出的整批判：一起移出的同一部作品不算拆散；去处里
+    // 作品身份（BUG-5480）按这一条移出的整批判：一起移出的同一部作品不算拆散；去处里
     // 是另一部来源剧的不挪过去。
     final OrganizeCollectionFact? dest = to;
     final List<OrganizeEntry> members = _settleIdentity(
@@ -581,7 +581,7 @@ OrganizePlan planOrganizeReply({
 
   // 分组只动「散的或只在整理器合集里、且都能移出来」的条目：在用户合集里的条目换
   // 合集只走「移出 + into」（带理由），pinned / 已被 AI 移出过的不动。
-  // 作品身份（BUG-5460）按这一组一起离开来处的整批判（[_settleIdentity]）：去处 =
+  // 作品身份（BUG-5480）按这一组一起离开来处的整批判（[_settleIdentity]）：去处 =
   // [target] 现有成员 + 同组里不是从同一个来处来的成员。
   List<OrganizeEntry> groupable(
     List<OrganizeEntry> candidates,
@@ -633,7 +633,7 @@ OrganizePlan planOrganizeReply({
     if (g.into != null) {
       final OrganizeCollectionFact? target = resolveTarget(g.into!);
       if (target == null) continue;
-      // 目标里是另一部来源剧：不放进去（BUG-5460，groupable 里的剧身份闸门）。
+      // 目标里是另一部来源剧：不放进去（BUG-5480，groupable 里的剧身份闸门）。
       final List<OrganizeEntry> adds = groupable(<OrganizeEntry>[
         for (final OrganizeEntry e in members)
           if (!target.memberKeys.contains(e.memberKey)) e,
@@ -650,7 +650,7 @@ OrganizePlan planOrganizeReply({
         if (e.externalWorkKey != null) e.externalWorkKey!,
     };
     // 视频「同一部作品」里成员刮到了不同作品、或是来源给的两部剧：那是系列，不是作品
-    // （spec §9；BUG-5460）。
+    // （spec §9；BUG-5480）。
     final OrganizeSeriesGate memberSeries = OrganizeSeriesGate();
     if (facts.domain == CollectionShelfDomain.video &&
         level == AiOrganizeLevel.work &&
@@ -721,7 +721,7 @@ OrganizePlan planOrganizeReply({
   return OrganizePlan(actions: out);
 }
 
-/// 作品身份否决（BUG-5460）按一整批离开来处的条目判到不变：[release] 按「这一轮一起
+/// 作品身份否决（BUG-5480）按一整批离开来处的条目判到不变：[release] 按「这一轮一起
 /// 离开的行键」判规则 1（[organizeReleasableTogether]）；有去处 [target] 时再过它的剧
 /// 身份闸门（规则 2），被闸门挡下的条目留在原处，又可能让同批别的条目变成拆散，所以
 /// 两步交替。定下来的那批才记进 [gateOf] 的共享闸门（同一份回复里后面的改动看得到）。

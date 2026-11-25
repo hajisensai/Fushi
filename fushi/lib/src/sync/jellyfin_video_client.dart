@@ -1465,7 +1465,7 @@ class JellyfinApi {
         'Limit': '$limit',
         // MediaSourceCount：集卡上提示多版本（mxYhpVcwOX）。只是一个计数，
         // 不是 MediaSources 重字段（BUG-1891）。Overview：入库时落分集简介、
-        // 详情页集卡显示简介（BUG-5455；Jellyfin 清单不点名就不给）。
+        // 详情页集卡显示简介（BUG-5477；Jellyfin 清单不点名就不给）。
         'Fields': 'ProductionYear,MediaSourceCount,Overview',
       },
     );

@@ -479,11 +479,11 @@ void main() {
     expect(mid.contains('E'), isFalse, reason: '最低优先级先收');
   });
 
-  // BUG-5458：视频库页头「⋯」里的刷新项在宽窗被平铺成独立图标钮后，页面又为
+  // BUG-5479：视频库页头「⋯」里的刷新项在宽窗被平铺成独立图标钮后，页面又为
   // 「刷新进行中」另挂一颗同图标的按钮，点一下刷新就并排出现两颗。进行中状态
   // 改由菜单项自己的 [FushiHeaderMoreEntry.busy] 表达：平铺时就是同一颗置灰，
   // 窄位上也恒外露（进行中的状态不藏进「⋯」），留在菜单里置灰。
-  group('页面「⋯」项的 busy（BUG-5458）', () {
+  group('页面「⋯」项的 busy（BUG-5479）', () {
     const ValueKey<String> refreshKey = ValueKey<String>('page-refresh');
 
     Widget pageMore({required bool busy, required List<String> tapped}) =>

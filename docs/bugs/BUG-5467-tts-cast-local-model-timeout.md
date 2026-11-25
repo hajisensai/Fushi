@@ -1,4 +1,4 @@
-## BUG-5367 · tts-cast-local-model-timeout
+## BUG-5467 · tts-cast-local-model-timeout
 - **报告**：2026-11-23（用户：有声书制作台「用 AI 标注说话人」用本地 Unsloth Studio + Qwen3-14B 标《化物語（上）》，转了几分钟后报「网络错误」）
 - **真实性**：✅ 真 bug。同一请求直接发给本地端点能正常回 200，只是要几分钟：选角一块回 3–4.5k token，本地 9B 约 50 token/s 已压线，14B 必超。
   - 根因 `packages/fushi_engine/lib/ai/ai_chat_client.dart` `_send`：所有 chat 请求共用 90 秒时限 `kAiChatRequestTimeout`，超时被包成 `network_error`（临时性失败），`_withRetry` 把整块重生成最多 `kAiChatMaxAttempts` 次，每次都在模型还在正常吐字时被掐断，最后界面报「网络错误」。

@@ -1083,7 +1083,7 @@ impl<'t, 'c> Reads<'t, 'c> {
 
     /// `logs {cards}`：一组卡（每个别名类一份）的日志（`id` 规范日志 ID, `card_id` 规范卡, `json`, `st`, `oid`）：每个规范
     /// 日志 ID 一条代表（`cache.rs` `card_logs`）。卡按 ID 序，卡内按 (发生时刻, 操作主键)。`oid` = 别名归一前的原值日志 ID
-    /// （与 `id` 相同时为空，`cache.rs` `LogIn::order_id`）：同一事件的几份副本按它排序、选代表（BUG-5455），Dart 的
+    /// （与 `id` 相同时为空，`cache.rs` `LogIn::order_id`）：同一事件的几份副本按它排序、选代表（BUG-5476），Dart 的
     /// `SrsCardHistory` 把它交给列模式选取（history.rs `select_columns`），与内核的排程、统计选同一份。
     fn logs(&mut self, req: &Value) -> Result<Vec<u8>, String> {
         let mut cards = canon_ids(&self.ix, need_list(req, "cards")?)?;
