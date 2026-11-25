@@ -1,12 +1,182 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-25T21:06:08Z",
+ "generatedAt": "2026-11-25T21:41:21Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "34ae43883e0a27f2676b7a49555df6a6f6500279",
-  "seq": 32678
+  "sha": "b876b0196f238627203c3da06d4a59ef3a74ee6e",
+  "seq": 32679
  },
  "builds": [
+  {
+   "seq": 32678,
+   "version": "3.4.0",
+   "sha": "34ae43883e0a27f2676b7a49555df6a6f6500279",
+   "unknown": false,
+   "publishedAt": "2026-11-25T21:41:05Z",
+   "testflight": false,
+   "baseSeq": 32573,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "34ae43883e0a27f2676b7a49555df6a6f6500279",
+     "subject": "style: dart format 两份 gal 守卫测试"
+    },
+    {
+     "sha": "2ea109367adce70624d5d19f7842a13b82ff0710",
+     "subject": "test(video): 远端下载登记封面用真能解码的 1x1 PNG（远端卡片会真解码，假 JPEG 在真实 zone 解码完成时抛 Invalid image data）"
+    },
+    {
+     "sha": "4db2a66b3ab019cc86c879b9e2a6bd681d01b3a9",
+     "subject": "test(srs): Apple 窄窗笔记编辑器保存恒外露、预览从「⋯」打开（顶栏只放得下一颗动作 + ⋯）"
+    },
+    {
+     "sha": "105404c782e0363fb9094e84373c72629f4ce184",
+     "subject": "test(web-video): 档位当前档打勾断言跟上 FushiIcons.filled(success)（面板图标改走语义名）"
+    },
+    {
+     "sha": "3ddfda76d38130586353db302bc31adca4762d91",
+     "subject": "test(gal): BUG-1908 回程守卫锚点跟到 gal_hook_mining_result.dart（拆环后 GalHookMineResult 下沉该叶子文件）"
+    },
+    {
+     "sha": "abc5f7f4604431b4de5e23a3474924992bd81d52",
+     "subject": "Merge PR #redfix-sync-env"
+    },
+    {
+     "sha": "96d881f7ae5af53ad48eb27255247131fe6fe6cd",
+     "subject": "Merge PR #redfix-source-guards"
+    },
+    {
+     "sha": "54c17f0b2d0aa410b5d62c3280146758d3248543",
+     "subject": "Merge PR #redfix-gal-texthooker"
+    },
+    {
+     "sha": "9d777e6135145e8e0d08cae8aea0de209692752d",
+     "subject": "Merge PR #redfix-apple-ui"
+    },
+    {
+     "sha": "69d87a408e61353e12639410634f8de673007ff2",
+     "subject": "Merge PR #4446"
+    },
+    {
+     "sha": "19c7ca57d43fb48e89b3366d4b471b7bb6e92b79",
+     "subject": "Merge PR #4421"
+    },
+    {
+     "sha": "e21c91cfeeac7ea5f710ad18054f1af2eb5e7ef1",
+     "subject": "Merge PR #4420"
+    },
+    {
+     "sha": "21654629ddf372557d8e5b3e08437b21290e33b4",
+     "subject": "Merge PR #4430"
+    },
+    {
+     "sha": "8d458bff5f589f0beabe80c8f4e2f2a06c775be7",
+     "subject": "fix(organize): undo of a merge restores the winner's work-graph links (BUG-5457)"
+    },
+    {
+     "sha": "112a9b2e899c4981a657826cba5763ed4c702f16",
+     "subject": "Merge PR #4427"
+    },
+    {
+     "sha": "9b9b29016e5e8fcc594f96668752583fa63f1633",
+     "subject": "Merge PR #4429"
+    },
+    {
+     "sha": "65c97bf88269dfdcb1820dbfbfa94782eaa3e9d2",
+     "subject": "Merge PR #4436"
+    },
+    {
+     "sha": "0933c84f3681c4002a984d1ec823aa5d64206c69",
+     "subject": "Merge PR #4435"
+    },
+    {
+     "sha": "15715327b12795416f5f4f46d6a8dc765ebef66d",
+     "subject": "Merge PR #4433"
+    },
+    {
+     "sha": "798a180e4c2b1b281a20b44139f6d54d7421c5a2",
+     "subject": "Merge PR #4425"
+    },
+    {
+     "sha": "b1152820657862b61b6cb3be97fe932f82ce6221",
+     "subject": "Merge PR #4444-4445"
+    },
+    {
+     "sha": "155b1637c76867d251d574fb7568dd5798b8d0ef",
+     "subject": "Merge PR #4327"
+    },
+    {
+     "sha": "2fb31fce95eef55251f567e121cc4fc1bf72f966",
+     "subject": "Merge PR #4329"
+    },
+    {
+     "sha": "a90e105ff0c58d98d34fda482149441faa5a8723",
+     "subject": "Merge PR #4330"
+    },
+    {
+     "sha": "f5e384e8b689d6bc2a2d84d10ebc97ebc22453d9",
+     "subject": "Merge PR #4326"
+    },
+    {
+     "sha": "191a336b823d925b6a1996f7331a0674b5ff2f28",
+     "subject": "Merge PR #4428"
+    },
+    {
+     "sha": "d810e2c846a31b42d31f8168bacb62d273ae4a49",
+     "subject": "Merge PR #4419"
+    },
+    {
+     "sha": "5952f227ae14b158b58653f5069367ab4c526e96",
+     "subject": "Merge PR #4417"
+    },
+    {
+     "sha": "3266ab886ead76e1b66a1c85fe386d5430dceb8e",
+     "subject": "Merge PR #4426"
+    },
+    {
+     "sha": "8acc2ea950eaf7bbcd049afad2a8d62cd922b313",
+     "subject": "Merge PR #4422"
+    },
+    {
+     "sha": "a48a2230b2c6079cf690fea378e538888a43e7ac",
+     "subject": "Merge PR #4368"
+    },
+    {
+     "sha": "533377891da890155b47c2644a868757a4b45030",
+     "subject": "Merge PR #4443"
+    },
+    {
+     "sha": "398d8d0bebebe6ca916941a53574939be661d011",
+     "subject": "Merge PR #4442"
+    },
+    {
+     "sha": "e2fdc7eb22564ba2f9215e99898484991108b77a",
+     "subject": "Merge PR #4431 (含 #4440)"
+    },
+    {
+     "sha": "c5db09bd8d3c518a5fcf32cb4a23db72e9b31631",
+     "subject": "chore(bugs): settle BUG number collisions on a46839d71"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45700789841"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45700789841"
+    },
+    "ios": {
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45700789841"
+    }
+   }
+  },
   {
    "seq": 32573,
    "version": "3.4.0",
@@ -121,7 +291,7 @@
    "version": "3.4.0",
    "sha": "6f57bfa86540868669490405e4ebb1b7fc1231f1",
    "unknown": false,
-   "publishedAt": "2026-11-24T23:57:27Z",
+   "publishedAt": "2026-11-24T23:33:25Z",
    "testflight": true,
    "baseSeq": 32530,
    "prs": [],
@@ -142,7 +312,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45492837874"
     },
     "windows": {
      "state": "ok"
@@ -325,168 +496,28 @@
   }
  ],
  "pending": {
-  "headSha": "34ae43883e0a27f2676b7a49555df6a6f6500279",
-  "headSeq": 32678,
+  "headSha": "b876b0196f238627203c3da06d4a59ef3a74ee6e",
+  "headSeq": 32679,
   "prs": [],
   "direct": [
    {
-    "sha": "34ae43883e0a27f2676b7a49555df6a6f6500279",
-    "subject": "style: dart format 两份 gal 守卫测试"
-   },
-   {
-    "sha": "2ea109367adce70624d5d19f7842a13b82ff0710",
-    "subject": "test(video): 远端下载登记封面用真能解码的 1x1 PNG（远端卡片会真解码，假 JPEG 在真实 zone 解码完成时抛 Invalid image data）"
-   },
-   {
-    "sha": "4db2a66b3ab019cc86c879b9e2a6bd681d01b3a9",
-    "subject": "test(srs): Apple 窄窗笔记编辑器保存恒外露、预览从「⋯」打开（顶栏只放得下一颗动作 + ⋯）"
-   },
-   {
-    "sha": "105404c782e0363fb9094e84373c72629f4ce184",
-    "subject": "test(web-video): 档位当前档打勾断言跟上 FushiIcons.filled(success)（面板图标改走语义名）"
-   },
-   {
-    "sha": "3ddfda76d38130586353db302bc31adca4762d91",
-    "subject": "test(gal): BUG-1908 回程守卫锚点跟到 gal_hook_mining_result.dart（拆环后 GalHookMineResult 下沉该叶子文件）"
-   },
-   {
-    "sha": "abc5f7f4604431b4de5e23a3474924992bd81d52",
-    "subject": "Merge PR #redfix-sync-env"
-   },
-   {
-    "sha": "96d881f7ae5af53ad48eb27255247131fe6fe6cd",
-    "subject": "Merge PR #redfix-source-guards"
-   },
-   {
-    "sha": "54c17f0b2d0aa410b5d62c3280146758d3248543",
-    "subject": "Merge PR #redfix-gal-texthooker"
-   },
-   {
-    "sha": "9d777e6135145e8e0d08cae8aea0de209692752d",
-    "subject": "Merge PR #redfix-apple-ui"
-   },
-   {
-    "sha": "69d87a408e61353e12639410634f8de673007ff2",
-    "subject": "Merge PR #4446"
-   },
-   {
-    "sha": "19c7ca57d43fb48e89b3366d4b471b7bb6e92b79",
-    "subject": "Merge PR #4421"
-   },
-   {
-    "sha": "e21c91cfeeac7ea5f710ad18054f1af2eb5e7ef1",
-    "subject": "Merge PR #4420"
-   },
-   {
-    "sha": "21654629ddf372557d8e5b3e08437b21290e33b4",
-    "subject": "Merge PR #4430"
-   },
-   {
-    "sha": "8d458bff5f589f0beabe80c8f4e2f2a06c775be7",
-    "subject": "fix(organize): undo of a merge restores the winner's work-graph links (BUG-5457)"
-   },
-   {
-    "sha": "112a9b2e899c4981a657826cba5763ed4c702f16",
-    "subject": "Merge PR #4427"
-   },
-   {
-    "sha": "9b9b29016e5e8fcc594f96668752583fa63f1633",
-    "subject": "Merge PR #4429"
-   },
-   {
-    "sha": "65c97bf88269dfdcb1820dbfbfa94782eaa3e9d2",
-    "subject": "Merge PR #4436"
-   },
-   {
-    "sha": "0933c84f3681c4002a984d1ec823aa5d64206c69",
-    "subject": "Merge PR #4435"
-   },
-   {
-    "sha": "15715327b12795416f5f4f46d6a8dc765ebef66d",
-    "subject": "Merge PR #4433"
-   },
-   {
-    "sha": "798a180e4c2b1b281a20b44139f6d54d7421c5a2",
-    "subject": "Merge PR #4425"
-   },
-   {
-    "sha": "b1152820657862b61b6cb3be97fe932f82ce6221",
-    "subject": "Merge PR #4444-4445"
-   },
-   {
-    "sha": "155b1637c76867d251d574fb7568dd5798b8d0ef",
-    "subject": "Merge PR #4327"
-   },
-   {
-    "sha": "2fb31fce95eef55251f567e121cc4fc1bf72f966",
-    "subject": "Merge PR #4329"
-   },
-   {
-    "sha": "a90e105ff0c58d98d34fda482149441faa5a8723",
-    "subject": "Merge PR #4330"
-   },
-   {
-    "sha": "f5e384e8b689d6bc2a2d84d10ebc97ebc22453d9",
-    "subject": "Merge PR #4326"
-   },
-   {
-    "sha": "191a336b823d925b6a1996f7331a0674b5ff2f28",
-    "subject": "Merge PR #4428"
-   },
-   {
-    "sha": "d810e2c846a31b42d31f8168bacb62d273ae4a49",
-    "subject": "Merge PR #4419"
-   },
-   {
-    "sha": "5952f227ae14b158b58653f5069367ab4c526e96",
-    "subject": "Merge PR #4417"
-   },
-   {
-    "sha": "3266ab886ead76e1b66a1c85fe386d5430dceb8e",
-    "subject": "Merge PR #4426"
-   },
-   {
-    "sha": "8acc2ea950eaf7bbcd049afad2a8d62cd922b313",
-    "subject": "Merge PR #4422"
-   },
-   {
-    "sha": "a48a2230b2c6079cf690fea378e538888a43e7ac",
-    "subject": "Merge PR #4368"
-   },
-   {
-    "sha": "533377891da890155b47c2644a868757a4b45030",
-    "subject": "Merge PR #4443"
-   },
-   {
-    "sha": "398d8d0bebebe6ca916941a53574939be661d011",
-    "subject": "Merge PR #4442"
-   },
-   {
-    "sha": "e2fdc7eb22564ba2f9215e99898484991108b77a",
-    "subject": "Merge PR #4431 (含 #4440)"
-   },
-   {
-    "sha": "c5db09bd8d3c518a5fcf32cb4a23db72e9b31631",
-    "subject": "chore(bugs): settle BUG number collisions on a46839d71"
+    "sha": "b876b0196f238627203c3da06d4a59ef3a74ee6e",
+    "subject": "chore(bugs): settle BUG number collisions on 34ae43883"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45700789912"
+    "state": "none"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45700789841"
+    "state": "none"
    },
    "macos": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45700789841"
+    "state": "none"
    },
    "ios": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45700789841"
+    "state": "none"
    }
   }
  },
