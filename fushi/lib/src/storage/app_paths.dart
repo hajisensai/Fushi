@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart'
@@ -716,18 +717,31 @@ class AppPaths {
     }
   }
 
-  /// Android 书库迁移前，固定目标 [target] 里第一个「[source] 里没有同名相对路径」的
-  /// 文件（相对 [target]）；没有返回 null。
+  /// Android 书库迁移前，核实固定目标 [target] 能不能整树清掉；能清返回 null，不能清
+  /// 返回第一个拦路的文件（相对 [target]）与原因。
   ///
-  /// 目标是固定位置，上次中断的跨盘复制会留下半成品，必须先清掉引擎才肯搬。半成品一定
-  /// 是源的子集（复制阶段不删源）；目标里出现源里没有的文件，就说明它**不是**半成品
-  /// ——典型是锚点错指空根时，用户点「移回内部」，目标恰好就是真正的书库（#4366 指出）。
-  /// 这时绝不能整树删除。`.nomedia` 占位不计。
-  static Future<String?> firstAndroidMigrationTargetOnlyFile({
+  /// 目标是固定位置，上次中断的跨盘复制会留下半成品，必须先清掉引擎才肯搬。引擎复制
+  /// 阶段不删源、逐个文件直接写正式名（Android 上 `File.copy` 是 `O_TRUNC` 打开后顺序
+  /// 写），所以半成品里的每个文件都满足：源里有同一相对路径，且内容是源那份的**前缀**
+  /// ——复制完的文件与源逐字节相同，被打断的最后一个文件是源的开头一截。判据就是这条
+  /// 「目标里的每个字节都能在源里同位置找到」：清掉它不丢任何源里没有的数据。
+  ///
+  /// 拦下的两种情况，一个字节都不删：
+  ///  - [AndroidMigrationTargetBlockKind.targetOnly]：源里没有这个相对路径。典型是
+  ///    锚点错指空根时用户点「移回内部」，目标恰好就是真正的书库（#4366 指出）。
+  ///  - [AndroidMigrationTargetBlockKind.contentConflict]：源里有同名文件但内容对不上
+  ///    （比源长，或同一位置字节不同——同大小不同字节也算）。只比相对路径会把它当半成品
+  ///    整树删掉，目标里的完整正文 / 较新版本就没了（反馈 hjOW5xpIJ0）。
+  ///
+  /// 唯一放宽：前缀之后到末尾全是 0 字节，视为没写进去的空洞（预分配 / 掉电后文件长度
+  /// 先于数据落盘），这部分本来就没有数据。`.nomedia` 占位与 `*.fushi-part` 半截临时
+  /// 文件不计。先只比长度与存在性（便宜、遇到就收手），全部过关才逐字节比。
+  static Future<AndroidMigrationTargetBlocker?> androidMigrationTargetBlocker({
     required Directory target,
     required Directory source,
   }) async {
     if (!await target.exists()) return null;
+    final List<String> toCompare = <String>[];
     await for (final FileSystemEntity e in target.list(
       recursive: true,
       followLinks: false,
@@ -735,9 +749,87 @@ class AppPaths {
       if (e is! File) continue;
       if (!isLibraryEvidenceFileName(p.basename(e.path))) continue;
       final String rel = p.relative(e.path, from: target.path);
-      if (!await File(p.join(source.path, rel)).exists()) return rel;
+      final String sourcePath = p.join(source.path, rel);
+      switch (await FileSystemEntity.type(sourcePath, followLinks: false)) {
+        case FileSystemEntityType.notFound:
+          return AndroidMigrationTargetBlocker(
+            AndroidMigrationTargetBlockKind.targetOnly,
+            rel,
+          );
+        case FileSystemEntityType.file:
+          if (await e.length() > await File(sourcePath).length()) {
+            return AndroidMigrationTargetBlocker(
+              AndroidMigrationTargetBlockKind.contentConflict,
+              rel,
+            );
+          }
+          toCompare.add(rel);
+        default:
+          // 源里同名的是目录 / 链接：目标这份数据在源里找不到，不能当半成品删。
+          return AndroidMigrationTargetBlocker(
+            AndroidMigrationTargetBlockKind.contentConflict,
+            rel,
+          );
+      }
+    }
+    for (final String rel in toCompare) {
+      if (!await isInterruptedCopyOf(
+        File(p.join(target.path, rel)),
+        File(p.join(source.path, rel)),
+      )) {
+        return AndroidMigrationTargetBlocker(
+          AndroidMigrationTargetBlockKind.contentConflict,
+          rel,
+        );
+      }
     }
     return null;
+  }
+
+  /// [androidMigrationTargetBlocker] 放到后台 isolate 里跑：要逐字节读两边的副本，
+  /// 书库大时不能占 UI isolate。闭包只捕获两条路径字符串。
+  static Future<AndroidMigrationTargetBlocker?>
+  androidMigrationTargetBlockerInBackground({
+    required String target,
+    required String source,
+  }) => Isolate.run<AndroidMigrationTargetBlocker?>(
+    () => androidMigrationTargetBlocker(
+      target: Directory(target),
+      source: Directory(source),
+    ),
+  );
+
+  /// [copy] 是否可能是从 [original] 复制、复制中途被打断（或已复制完）留下的：长度不
+  /// 超过原件，且内容是原件的前缀；前缀之后允许到末尾全是 0（没写进去的空洞）。
+  /// 逐字节相同是它的特例。
+  static Future<bool> isInterruptedCopyOf(File copy, File original) async {
+    final int copyLength = await copy.length();
+    if (copyLength > await original.length()) return false;
+    final RandomAccessFile rc = await copy.open();
+    final RandomAccessFile ro = await original.open();
+    try {
+      const int chunk = 1 << 20;
+      bool inHole = false;
+      while (true) {
+        final Uint8List bc = await rc.read(chunk);
+        if (bc.isEmpty) return true;
+        final Uint8List bo = inHole ? Uint8List(0) : await ro.read(bc.length);
+        for (int i = 0; i < bc.length; i++) {
+          if (inHole) {
+            if (bc[i] != 0) return false;
+          } else if (i >= bo.length) {
+            // 原件在读的过程中变短了：对不上就按冲突处理。
+            return false;
+          } else if (bc[i] != bo[i]) {
+            if (bc[i] != 0) return false;
+            inHole = true;
+          }
+        }
+      }
+    } finally {
+      await rc.close();
+      await ro.close();
+    }
   }
 
   /// 本进程启动期对 Android 书库位置做过的纠正（AppModel 写进诊断日志）。
@@ -1874,4 +1966,36 @@ class AndroidLibraryReconciliation {
 
   /// 两个根都有书、主库作证后落选的根，交给散书合并；null = 不合并。
   final Directory? strayRoot;
+}
+
+/// [AppPaths.androidMigrationTargetBlocker] 拒绝清空固定目标的原因。
+enum AndroidMigrationTargetBlockKind {
+  /// 源里没有这个相对路径：目标可能才是真正的书库。
+  targetOnly,
+
+  /// 源里有同名文件但内容对不上（不是中断复制能留下的样子）：两份都要保留。
+  contentConflict,
+}
+
+/// 迁移前核实固定目标时拦路的第一个文件。
+@immutable
+class AndroidMigrationTargetBlocker {
+  const AndroidMigrationTargetBlocker(this.kind, this.file);
+
+  final AndroidMigrationTargetBlockKind kind;
+
+  /// 相对目标根的路径。
+  final String file;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AndroidMigrationTargetBlocker &&
+      other.kind == kind &&
+      other.file == file;
+
+  @override
+  int get hashCode => Object.hash(kind, file);
+
+  @override
+  String toString() => 'AndroidMigrationTargetBlocker($kind, $file)';
 }

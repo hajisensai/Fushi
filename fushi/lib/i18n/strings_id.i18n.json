@@ -2500,6 +2500,7 @@
   "data_storage_migrate_overlay_title": "Memindahkan data Anda",
   "data_storage_migrate_overlay_warning": "Harap biarkan aplikasi tetap terbuka. Jangan tutup atau matikan komputer sampai selesai.",
   "data_storage_migrate_success": "Data dipindahkan. Memulai ulang…",
+  "data_storage_migrate_target_conflict": "The destination ${path} has a version of ${file} that differs from the one in your current library. To keep both copies, the destination was not cleared and nothing was moved.",
   "data_storage_migrate_target_has_library": "The destination ${path} already holds files your current library doesn't have (e.g. ${file}). It may be your real library, so it was not cleared and nothing was moved.",
   "data_storage_migrating": "Memindahkan data…",
   "data_storage_reject_install_dir": "Folder tersebut adalah lokasi instalasi aplikasi dan tidak bisa menyimpan data Anda. Silakan pilih folder kosong yang berbeda.",

@@ -2500,6 +2500,7 @@
   "data_storage_migrate_overlay_title": "데이터 이동 중",
   "data_storage_migrate_overlay_warning": "앱을 열어 두세요. 완료될 때까지 앱을 닫거나 컴퓨터를 종료하지 마세요.",
   "data_storage_migrate_success": "데이터 이동 완료. 재시작 중…",
+  "data_storage_migrate_target_conflict": "The destination ${path} has a version of ${file} that differs from the one in your current library. To keep both copies, the destination was not cleared and nothing was moved.",
   "data_storage_migrate_target_has_library": "The destination ${path} already holds files your current library doesn't have (e.g. ${file}). It may be your real library, so it was not cleared and nothing was moved.",
   "data_storage_migrating": "데이터 이동 중…",
   "data_storage_reject_install_dir": "해당 폴더는 앱의 설치 위치이므로 데이터를 저장할 수 없습니다. 다른 빈 폴더를 선택하세요.",

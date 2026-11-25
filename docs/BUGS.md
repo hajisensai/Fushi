@@ -39,6 +39,7 @@
 |---|:--:|:--:|---|
 | [BUG-5454](bugs/BUG-5454-stats-overview-srs-not-migrated.md) | ✅ | ✅ | stats-overview-srs-not-migrated |
 | [BUG-5455](bugs/BUG-5455-opensubtitles-moviehash-negative-http400.md) | ✅ | ✅ | 字幕面板「字幕搜索失败（HTTP 400）」：OpenSubtitles movie hash 拼出负号，日志里没有任何线索 |
+| [BUG-5456](bugs/BUG-5456-android-migrate-target-content-conflict.md) | ✅ | ✅ | Android 移动书库：目标里同路径不同内容的文件被当成中断残留整树删掉 |
 | [BUG-5450](bugs/BUG-5450-android-library-layout-anchor-lost.md) | ✅ | ✅ | Android 书库对账只探当前配置的内部根，布局 / 容器锚点被冲掉后永不自愈 |
 | [BUG-5449](bugs/BUG-5449-background-writers-seal-and-interrupt.md) | ✅ | ✅ | background-writers-seal-and-interrupt |
 | [BUG-5448](bugs/BUG-5448-lumiere-font-switch-jank.md) | ✅ | ✅ | 绘光切字体卡顿、自定义字体加载完不重画 |

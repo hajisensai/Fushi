@@ -338,8 +338,9 @@ Future<DataRootMigrationRunOutcome> runDataRootMigration({
 ///
 /// 但「目标一定不是活数据」只在位置锚点正确时成立。锚点错指空根时（反馈 RCv76PPoiJ），
 /// 用户点「移回内部」的目标恰好就是真正的书库（#4366 指出）。所以清之前先核实它确是
-/// 半成品——每个文件在源里都有同名相对路径（[AppPaths.firstAndroidMigrationTargetOnlyFile]）；
-/// 有源里没有的文件就拒绝，一个字节都不删。
+/// 半成品——每个文件在源里都有同名相对路径，且内容是源那份的前缀（复制完的逐字节相同、
+/// 被打断的是开头一截，见 [AppPaths.androidMigrationTargetBlocker]）。有源里没有的文件、
+/// 或同名文件内容对不上（反馈 hjOW5xpIJ0）就拒绝并报出那个文件，一个字节都不删。
 Future<DataRootMigrationPlan> planAndroidDocumentsMigration({
   required AppModel appModel,
   required bool toExternal,
@@ -376,22 +377,32 @@ Future<DataRootMigrationPlan> planAndroidDocumentsMigration({
     );
   }
   try {
-    final String? targetOnly =
-        await AppPaths.firstAndroidMigrationTargetOnlyFile(
-          target: newDocs,
-          source: Directory(oldDocs),
+    final AndroidMigrationTargetBlocker? blocker =
+        await AppPaths.androidMigrationTargetBlockerInBackground(
+          target: newDocs.path,
+          source: oldDocs,
         );
-    if (targetOnly != null) {
+    if (blocker != null) {
+      final bool conflict =
+          blocker.kind == AndroidMigrationTargetBlockKind.contentConflict;
       ErrorLogService.instance.logDiagnostic(
         'DataRootMigration.androidClearStaleTarget',
-        '拒绝清空目标 ${newDocs.path}：$targetOnly 在当前书库根 $oldDocs 里没有，'
-            '目标可能是真正的书库',
+        conflict
+            ? '拒绝清空目标 ${newDocs.path}：${blocker.file} 与当前书库根 $oldDocs '
+                  '里的同名文件内容不同（不是中断复制留下的前缀），两份都保留'
+            : '拒绝清空目标 ${newDocs.path}：${blocker.file} 在当前书库根 $oldDocs '
+                  '里没有，目标可能是真正的书库',
       );
       throw DataRootMigrationPrecheckFailure(
-        t.data_storage_migrate_target_has_library(
-          path: newDocs.path,
-          file: targetOnly,
-        ),
+        conflict
+            ? t.data_storage_migrate_target_conflict(
+                path: newDocs.path,
+                file: blocker.file,
+              )
+            : t.data_storage_migrate_target_has_library(
+                path: newDocs.path,
+                file: blocker.file,
+              ),
       );
     }
     if (await newDocs.exists()) await newDocs.delete(recursive: true);

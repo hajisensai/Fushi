@@ -2500,6 +2500,7 @@
   "data_storage_migrate_overlay_title": "Перенос данных",
   "data_storage_migrate_overlay_warning": "Пожалуйста, не закрывайте приложение. Не выключайте компьютер до завершения.",
   "data_storage_migrate_success": "Данные перенесены. Перезапуск…",
+  "data_storage_migrate_target_conflict": "The destination ${path} has a version of ${file} that differs from the one in your current library. To keep both copies, the destination was not cleared and nothing was moved.",
   "data_storage_migrate_target_has_library": "The destination ${path} already holds files your current library doesn't have (e.g. ${file}). It may be your real library, so it was not cleared and nothing was moved.",
   "data_storage_migrating": "Перенос данных…",
   "data_storage_reject_install_dir": "Эта папка является местом установки приложения и не может использоваться для хранения данных. Выберите другую пустую папку.",
