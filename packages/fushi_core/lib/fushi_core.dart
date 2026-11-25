@@ -28,6 +28,7 @@ export 'src/database/people_tables.dart';
 export 'src/database/theme_song_span_tables.dart';
 export 'src/database/video_content_fingerprint_tables.dart';
 export 'src/database/pref_codec.dart';
+export 'src/database/device_backup_inbox.dart';
 export 'src/database/restore_points.dart';
 export 'src/database/profile_media_kind.dart';
 export 'src/database/source_library_kind.dart';
