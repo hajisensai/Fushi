@@ -2332,8 +2332,9 @@ void main() {
       expect(lang.fsrs7, isNull);
       expect(lang.desiredRetention, 0.8);
       expect(jp.ownParams, isFalse);
-      // 关 RWKV：步长照搬，≥ 1 天的被截掉并进报告。
-      expect(jp.learnSteps, <double>[1, 10]);
+      // 关 RWKV：步长照搬（只写在 own 的父牌组上，继承的子牌组随它），≥ 1 天的被截掉并进报告。
+      expect(lang.learnSteps, <double>[1, 10]);
+      expect(jp.learnStepsSet, isFalse);
       expect(rep.truncatedSteps, hasLength(1));
       expect(rep.truncatedSteps.single.preset, 'JP preset');
       expect(rep.truncatedSteps.single.removed, <double>[1440]);
@@ -2466,8 +2467,9 @@ void main() {
   group('子牌组参数继承', () {
     /// 子牌组 Lang::JP 改用预设 3：JP preset 的复制品，[edit] 再改它。
     Future<SrsDeckTree> importWithCopiedPreset(
-      void Function(Map<String, Object?> preset) edit,
-    ) async {
+      void Function(Map<String, Object?> preset) edit, {
+      SrsAnkiImportOptions options = kFullOptions,
+    }) async {
       final Map<String, Object?> dconf = legacyDconf();
       final Map<String, Object?> copy =
           jsonDecode(jsonEncode(dconf['2'])) as Map<String, Object?>;
@@ -2496,6 +2498,7 @@ void main() {
           ),
           'media': utf8.encode('{}'),
         }),
+        options: options,
       );
       return s.deckTree();
     }
@@ -2511,6 +2514,36 @@ void main() {
       expect(tree.paramsOwner(jp).id, lang);
       expect(tree[jp]!.newPerDay, 30);
       expect(tree[lang]!.newPerDay, 15);
+    });
+
+    // 步长随参数继承（拍板 design-subdeck-steps-inherit）：步长不同的子牌组要落成「单独设置」才保得住自己的步长；
+    // 相同的继承，步长只写在 own 牌组上。
+    test('关 RWKV 时重学步长不同 → 单独设置，生效的是子牌组自己的步长', () async {
+      final SrsDeckTree tree = await importWithCopiedPreset(
+        (Map<String, Object?> p) =>
+            (p['lapse']! as Map<String, Object?>)['delays'] = <double>[30],
+        options: kFullOptions.copyWith(useRwkv: false),
+      );
+      final String jp = srsImportedDeckId(kProfile, 'Lang::JP');
+      expect(tree[jp]!.ownParams, isTrue);
+      expect(tree.schedulingConfig(jp).relearnStepsMinutes, <double>[30]);
+    });
+
+    test('关 RWKV 时步长相同 → 继承，子牌组上不写步长，生效值来自父牌组', () async {
+      final SrsDeckTree tree = await importWithCopiedPreset(
+        (Map<String, Object?> p) {},
+        options: kFullOptions.copyWith(useRwkv: false),
+      );
+      final String lang = srsImportedDeckId(kProfile, 'Lang');
+      final String jp = srsImportedDeckId(kProfile, 'Lang::JP');
+      expect(tree[jp]!.ownParams, isFalse);
+      expect(tree[jp]!.learnStepsSet, isFalse);
+      expect(tree[jp]!.relearnStepsSet, isFalse);
+      expect(tree[lang]!.learnStepsSet, isTrue);
+      expect(
+        tree.schedulingConfig(jp).learnStepsMinutes,
+        tree.schedulingConfig(lang).learnStepsMinutes,
+      );
     });
 
     test('记忆率不同 → 单独设置', () async {
