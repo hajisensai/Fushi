@@ -385,7 +385,7 @@ Future<DataRootMigrationPlan> planAndroidDocumentsMigration({
     if (blocker != null) {
       final bool conflict =
           blocker.kind == AndroidMigrationTargetBlockKind.contentConflict;
-      ErrorLogService.instance.logDiagnostic(
+      ErrorLogService.instance.logDataLocation(
         'DataRootMigration.androidClearStaleTarget',
         conflict
             ? '拒绝清空目标 ${newDocs.path}：${blocker.file} 与当前书库根 $oldDocs '

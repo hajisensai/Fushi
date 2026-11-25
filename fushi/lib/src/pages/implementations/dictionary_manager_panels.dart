@@ -4,6 +4,7 @@ import 'package:flutter/services.dart'
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/models/dictionary_repository.dart'
     show DictionaryRepository, RemoteDictionary;
+import 'package:fushi/src/dictionary/dictionary_file_health.dart';
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_chips.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -161,10 +162,18 @@ class DictionaryManagerDetail extends StatelessWidget {
     this.headerTags = const <Widget>[],
     this.serverCopySection,
     this.transferSection,
+    this.fileIssue,
+    this.onReimport,
     super.key,
   });
 
   final Dictionary dictionary;
+
+  /// BUG-5462：这本的文件问题（不在 / 暂时读不到）；null = 文件正常。
+  final DictionaryFileIssue? fileIssue;
+
+  /// 文件不在时的「重新导入」（在线来源强制重下，本地导入选文件覆盖）。
+  final VoidCallback? onReimport;
   final bool enabled;
   final DictionaryCollapseState collapseState;
   final String typeLabel;
@@ -217,6 +226,15 @@ class DictionaryManagerDetail extends StatelessWidget {
         if (showHeader) ...<Widget>[
           _buildHeader(context),
           SizedBox(height: gap * 2),
+        ],
+        if (fileIssue case final DictionaryFileIssue issue) ...<Widget>[
+          DictionaryFileIssueNotice(
+            key: ValueKey<String>('dict-detail-file-issue-${dictionary.name}'),
+            issue: issue,
+            onReimport: onReimport,
+            onDelete: onDelete,
+          ),
+          SizedBox(height: gap),
         ],
         _buildQuickActions(context),
         SizedBox(height: gap),
@@ -330,6 +348,8 @@ class DictionaryManagerDetail extends StatelessWidget {
                 dense: true,
               ),
             ...headerTags,
+            if (fileIssue case final DictionaryFileIssue issue)
+              DictionaryFileIssueTag(issue: issue),
             if (!enabled)
               FushiTag(
                 text: t.dict_status_disabled,
@@ -398,6 +418,81 @@ class DictionaryManagerDetail extends StatelessWidget {
         textAlign: TextAlign.end,
         style: textTheme.bodyMedium?.copyWith(color: scheme.onSurfaceVariant),
       ),
+    );
+  }
+}
+
+/// BUG-5462：词典行 / 详情标题下的文件状态标签（「文件缺失」/「暂时读不到」）。
+class DictionaryFileIssueTag extends StatelessWidget {
+  const DictionaryFileIssueTag({required this.issue, super.key});
+
+  final DictionaryFileIssue issue;
+
+  @override
+  Widget build(BuildContext context) => switch (issue) {
+    DictionaryFileIssue.missing => FushiTag(
+      text: t.dictionary_files_missing_tag,
+      icon: FushiIcons.warning,
+      tone: FushiTagTone.error,
+      dense: true,
+      message: t.dictionary_files_missing_detail,
+    ),
+    DictionaryFileIssue.unreadable => FushiTag(
+      text: t.dictionary_files_unreadable_tag,
+      icon: FushiIcons.sdStorage,
+      tone: FushiTagTone.warning,
+      dense: true,
+      message: t.dictionary_files_unreadable_detail,
+    ),
+  };
+}
+
+/// BUG-5462：详情顶部的文件状态说明。文件不在 → 给「重新导入 / 删除」两条出路；暂时
+/// 读不到 → 只说明、不给删除（没删任何东西，等文件能读到就自动恢复）。
+class DictionaryFileIssueNotice extends StatelessWidget {
+  const DictionaryFileIssueNotice({
+    required this.issue,
+    required this.onDelete,
+    this.onReimport,
+    super.key,
+  });
+
+  final DictionaryFileIssue issue;
+  final VoidCallback? onReimport;
+  final VoidCallback onDelete;
+
+  @override
+  Widget build(BuildContext context) {
+    final VoidCallback? reimport = onReimport;
+    return FushiStaggeredEntrance(
+      index: 0,
+      child: switch (issue) {
+        DictionaryFileIssue.missing => FushiInlineNotice(
+          severity: FushiNoticeSeverity.error,
+          icon: FushiIcons.warning,
+          title: t.dictionary_files_missing_tag,
+          message: t.dictionary_files_missing_detail,
+          actions: <Widget>[
+            if (reimport != null)
+              FushiTextButton(
+                key: const ValueKey<String>('dict-file-issue-reimport'),
+                onPressed: reimport,
+                child: Text(t.dictionary_files_reimport),
+              ),
+            FushiTextButton(
+              key: const ValueKey<String>('dict-file-issue-delete'),
+              onPressed: onDelete,
+              child: Text(t.options_delete),
+            ),
+          ],
+        ),
+        DictionaryFileIssue.unreadable => FushiInlineNotice(
+          severity: FushiNoticeSeverity.warning,
+          icon: FushiIcons.sdStorage,
+          title: t.dictionary_files_unreadable_tag,
+          message: t.dictionary_files_unreadable_detail,
+        ),
+      },
     );
   }
 }

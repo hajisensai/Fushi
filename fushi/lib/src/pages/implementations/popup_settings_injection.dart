@@ -14,6 +14,7 @@ import 'dart:io';
 import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:material_ui/material_ui.dart';
 import 'package:flutter/services.dart' show LogicalKeyboardKey;
+import 'package:fushi/src/dictionary/dictionary_file_health.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/content_font_chain.dart';
@@ -1403,7 +1404,7 @@ PopupStaticSettingsJs buildPopupStaticSettingsJs({
     window.__fushiSrsMiningTarget = $srsMiningToReview;
     window.sentenceDraftEnabled = ${options.sentenceDraftEnabled};
     window._noResultsMessage = ${jsonEncode(t.no_search_results)};
-    window._noResultsHint = ${jsonEncode(t.settings_search_empty_hint)};
+    window._noResultsHint = ${jsonEncode(dictionaryLookupFileNotice(DictionaryFileHealthMonitor.instance.value) ?? t.settings_search_empty_hint)};
     window.embedMedia = true;
     window.deduplicatePitchAccents = ${appModel.deduplicatePitchAccents};
     window.i18nPitchSourceCount = ${jsonEncode(t.dictionary_pitch_source_count(count: '{count}'))};

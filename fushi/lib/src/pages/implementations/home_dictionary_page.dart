@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:cupertino_ui/cupertino_ui.dart' show CupertinoIcons;
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/dictionary/dictionary_file_health.dart';
 import 'package:fushi/src/utils/adaptive/fushi_page_backdrop.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_feedback.dart';
 import 'package:flutter/scheduler.dart';
@@ -48,6 +49,7 @@ import 'package:fushi/src/utils/misc/lookup_dismiss_barrier.dart';
 import 'package:fushi/src/utils/components/clipboard_lookup_text_panel.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/section_visibility.dart';
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/fushi_deferred_loading.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -360,6 +362,8 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   @override
   void initState() {
     super.initState();
+    // BUG-5462：词典文件状态变了（装载判定 / 重新导入后）就重画空态说明与结果上方横幅。
+    DictionaryFileHealthMonitor.instance.addListener(_onDictionaryFileHealth);
     _popupHost =
         SharedLookupPopupScope.maybeOf(context) ??
         (_ownedPopupHost = SharedLookupPopupHost());
@@ -692,8 +696,15 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
     return true;
   }
 
+  void _onDictionaryFileHealth() {
+    if (mounted) setState(() {});
+  }
+
   @override
   void dispose() {
+    DictionaryFileHealthMonitor.instance.removeListener(
+      _onDictionaryFileHealth,
+    );
     _advancedMiningGate.dispose();
     _sourceScrollController.dispose();
     WidgetsBinding.instance.removeObserver(this);
@@ -1343,6 +1354,11 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         child: FushiPlaceholderMessage(
           icon: FushiIcons.searchOff,
           message: t.no_search_results,
+          // BUG-5462：查不到是因为词典文件不在 / 读不到时如实说。
+          detailMaxLines: 5,
+          detail: dictionaryLookupFileNotice(
+            DictionaryFileHealthMonitor.instance.value,
+          ),
         ),
       ),
     );
@@ -2082,6 +2098,9 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         ? tokens.spacing.gap / 2
         : tokens.spacing.page;
     final double bodySideInset = compact ? 0 : tokens.spacing.gap / 2;
+    final String? fileNotice = dictionaryLookupFileNotice(
+      DictionaryFileHealthMonitor.instance.value,
+    );
     return FushiCard(
       margin: EdgeInsets.fromLTRB(
         cardSideMargin,
@@ -2137,6 +2156,27 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                 child: const FushiDivider(),
               ),
             ],
+            // BUG-5462：部分词典文件不在 / 读不到时，结果上方挂一条说明——结果不全的原因。
+            if (fileNotice != null)
+              Padding(
+                padding: EdgeInsets.fromLTRB(
+                  tokens.spacing.gap,
+                  tokens.spacing.gap,
+                  tokens.spacing.gap,
+                  0,
+                ),
+                child: FushiStaggeredEntrance(
+                  index: 0,
+                  child: FushiInlineNotice(
+                    key: const ValueKey<String>(
+                      'home_dictionary_file_health_notice',
+                    ),
+                    severity: FushiNoticeSeverity.warning,
+                    icon: FushiIcons.warning,
+                    message: fileNotice,
+                  ),
+                ),
+              ),
             // 根因修复（BUG-054）：结果区 WebView 仍整块在中和器下渲染（净缩放=1），否则被全局
             // 「界面大小」FittedBox 拉糊。源文本条是普通 app UI，留在中和器外继续吃界面大小。
             // TODO-617：嵌套弹窗栈不再挂在此页内 Stack（会被结果子区域 / DesktopContentLayout
