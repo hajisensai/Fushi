@@ -316,7 +316,13 @@ Future<Set<int>> applyOrganizeActions(
 }
 
 /// 合并前的快照（撤销用）：胜方原有成员键 `targetBefore`，败方的名字 / 来源 / 分组
-/// 身份与成员（连同 pinned）`sources`。整理合并与用户接受的合并建议共用。
+/// 身份与成员（连同 pinned）`sources`，以及胜方上会被作品图谱改挂动到的连接原状
+/// `targetLinksBefore`。整理合并与用户接受的合并建议共用。
+///
+/// 合并把败方的作品图谱连接改挂到胜方（BUG-5457），撞同一身份时按 LWW 还会改写胜方
+/// 原有的行；败方身份快照只记败方自己的连接，撤销插回它们还原不了胜方——同一对端会
+/// 同时连着两边，被改写的内容也回不来，所以胜方一侧单独记原状。全部在合并之前取：
+/// 多个败方连向同一对端时，后一个败方看到的已是前一个改挂后的胜方。
 Future<Map<String, Object?>> _mergeSnapshot(
   FushiDatabase db,
   int targetId,
@@ -324,9 +330,24 @@ Future<Map<String, Object?>> _mergeSnapshot(
 ) async {
   final Set<String> before = await _memberKeysOf(db, targetId);
   final List<Map<String, Object?>> sources = <Map<String, Object?>>[];
-  for (final int id in sourceIds) {
+  final List<Map<String, Object?>> targetLinksBefore = <Map<String, Object?>>[];
+  final MediaLinkEndpoint targetEndpoint = (
+    kind: MediaLinkKind.videoCollection,
+    key: collectionTagEntryKey(targetId),
+  );
+  for (final int id in sourceIds.toSet()) {
+    if (id == targetId) continue;
     final MediaCollectionRow? s = await db.getMediaCollectionById(id);
     if (s == null) continue;
+    targetLinksBefore.addAll(
+      await db.captureMediaLinkRetargetPreimage(
+        from: (
+          kind: MediaLinkKind.videoCollection,
+          key: collectionTagEntryKey(id),
+        ),
+        to: targetEndpoint,
+      ),
+    );
     sources.add(<String, Object?>{
       'name': s.name,
       'type': s.collectionType,
@@ -350,6 +371,7 @@ Future<Map<String, Object?>> _mergeSnapshot(
   return <String, Object?>{
     'sources': sources,
     'targetBefore': before.toList()..sort(),
+    'targetLinksBefore': targetLinksBefore,
   };
 }
 
@@ -685,6 +707,12 @@ Future<void> _undoMergeSnapshot(
   }
   final MediaCollectionRow? target = await db.getMediaCollectionById(c.id);
   if (target != null) {
+    // 胜方上改挂进来的连接删掉、被 LWW 改写的写回原状（败方自己的连接已随身份快照
+    // 回到败方）。胜方已不在就不动：写回会留下端点不存在的死连接。缺字段的旧记录
+    // 什么也不做。
+    await db.restoreMediaLinkRetargetPreimage(
+      payload['targetLinksBefore'] as List<Object?>? ?? const <Object?>[],
+    );
     await db.setMediaCollectionOrganizeState(
       target.id,
       origin: CollectionOrigin.user,

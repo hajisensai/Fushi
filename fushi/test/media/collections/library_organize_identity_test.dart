@@ -259,6 +259,114 @@ void main() {
     );
   });
 
+  test('合并 → 撤销：两边的作品图谱连接与合并前完全一致（改挂的删掉、LWW 改写的还原）', () async {
+    final String a = await book('A');
+    final String b = await book('B');
+    final String c = await book('C');
+    final int winner = await db.createMediaCollection(
+      'Winner',
+      origin: CollectionOrigin.ai,
+      organizeKey: 'k-w',
+    );
+    await db.addToCollectionRaw(winner, 'epub', a, userIntent: false);
+    final int loser = await db.createMediaCollection(
+      'Loser',
+      origin: CollectionOrigin.ai,
+      organizeKey: 'k-l',
+    );
+    await db.addToCollectionRaw(loser, 'epub', b, userIntent: false);
+    final int loser2 = await db.createMediaCollection(
+      'Loser2',
+      origin: CollectionOrigin.ai,
+      organizeKey: 'k-l2',
+    );
+    await db.addToCollectionRaw(loser2, 'epub', c, userIntent: false);
+    MediaLinkEndpoint col(int id) =>
+        (kind: MediaLinkKind.videoCollection, key: '$id');
+    const MediaLinkEndpoint vol1 = (kind: MediaLinkKind.book, key: 'vol1');
+    const MediaLinkEndpoint vol2 = (kind: MediaLinkKind.book, key: 'vol2');
+    const MediaLinkEndpoint vol3 = (kind: MediaLinkKind.book, key: 'vol3');
+    // 胜方原有：vol1 同一作品（AI 生效，时钟最旧）+ 一条无关的 vol3。
+    await db.applyAiMediaLink(
+      relation: MediaLinkRelation.sameWork,
+      from: vol1,
+      to: col(winner),
+      source: 'ai',
+    );
+    await db.upsertManualMediaLink(
+      relation: MediaLinkRelation.adaptation,
+      from: vol3,
+      to: col(winner),
+      at: 20,
+    );
+    // 败方：同一身份的 vol1（用户手动、更新 → 改挂时 LWW 改写胜方那行）、胜方上没有
+    // 的 vol2、连着胜方自己的一条（改挂成自环被丢掉）。第二个败方也连 vol2。
+    await db.upsertManualMediaLink(
+      relation: MediaLinkRelation.sameWork,
+      from: vol1,
+      to: col(loser),
+      at: 100,
+    );
+    await db.upsertManualMediaLink(
+      relation: MediaLinkRelation.adaptation,
+      from: vol2,
+      to: col(loser),
+      at: 30,
+    );
+    await db.upsertManualMediaLink(
+      relation: MediaLinkRelation.sameWork,
+      from: col(loser),
+      to: col(winner),
+      at: 40,
+    );
+    await db.upsertManualMediaLink(
+      relation: MediaLinkRelation.adaptation,
+      from: vol2,
+      to: col(loser2),
+      at: 50,
+    );
+    Future<List<String>> allLinks() async => <String>[
+      for (final MediaLinkRow r in await db.select(db.mediaLinks).get())
+        jsonEncode(r.toJson()),
+    ]..sort();
+    final List<String> before = await allLinks();
+    final MediaLinkId winnerVol1 = mediaLinkIdFor(
+      MediaLinkRelation.sameWork,
+      vol1,
+      col(winner),
+    );
+    final MediaLinkRow winnerVol1Before = (await db.mediaLinkById(winnerVol1))!;
+    final int runId = await run();
+
+    await applyOrganizeActions(
+      db,
+      runId: runId,
+      actions: <OrganizeAction>[
+        OrganizeAction(
+          kind: OrganizeActionKind.merge,
+          source: 'ai',
+          confidence: AiOrganizeConfidence.high,
+          targetCollectionId: winner,
+          sourceCollectionIds: <int>[loser, loser2],
+        ),
+      ],
+    );
+    // 前提：合并确实改挂了、也确实 LWW 改写了胜方原有行。
+    expect(
+      (await db.mediaLinkById(winnerVol1))!.updatedAt,
+      isNot(winnerVol1Before.updatedAt),
+    );
+    expect(
+      await db.mediaLinkById(
+        mediaLinkIdFor(MediaLinkRelation.adaptation, vol2, col(winner)),
+      ),
+      isNotNull,
+    );
+
+    expect(await undoLibraryOrganizeRun(db, runId), 1);
+    expect(await allLinks(), before);
+  });
+
   test('接受「移出成员」建议把合集移空 → 撤销建议：原 id 回来', () async {
     final String a = await book('A');
     final int col = await db.createMediaCollection('Show');
