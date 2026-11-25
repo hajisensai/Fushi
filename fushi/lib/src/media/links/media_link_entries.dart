@@ -155,14 +155,16 @@ Future<MediaLinkEntry> resolveMediaLinkEntry(
           ? null
           : await db.getMediaCollectionById(id);
       if (collection == null) return missing(endpoint.key);
+      final _CollectionMembersScan members = await _scanCollectionMembers(
+        db,
+        collection.id,
+      );
       return MediaLinkEntry(
         endpoint: endpoint,
         title: collection.name,
         inLibrary: true,
-        coverPath: await firstExistingCoverPath(
-          await loadCollectionOwnCoverCandidates(db, collection),
-        ),
-        remoteMemberKeys: await _collectionRemoteMemberKeys(db, collection.id),
+        coverPath: await _videoCollectionPosterPath(db, collection, members),
+        remoteMemberKeys: members.remoteKeys,
       );
     case MediaLinkKind.game:
       final GalgameRow? game = await db.getGalgame(endpoint.key);
@@ -362,18 +364,65 @@ Future<List<MediaLinkEntry>> loadMediaLinkCandidates(
 
 /// 视频合集 [collectionId] 里本机没有视频行的成员（远端集）的 entryKey，按成员序、
 /// 最多 [kMediaLinkRemoteMemberKeysMax] 个（见 [MediaLinkEntry.remoteMemberKeys]）。
-Future<List<String>> _collectionRemoteMemberKeys(
+/// 视频合集成员一趟扫描的结果：本机有行的成员封面候选（按成员序）+ 本机没有
+/// 行的远端成员 entryKey（[MediaLinkEntry.remoteMemberKeys]）。
+typedef _CollectionMembersScan = ({
+  List<String> localCoverCandidates,
+  List<String> remoteKeys,
+});
+
+Future<_CollectionMembersScan> _scanCollectionMembers(
   FushiDatabase db,
   int collectionId,
 ) async {
-  final List<String> keys = <String>[];
+  final List<String> covers = <String>[];
+  final List<String> remote = <String>[];
   for (final MediaCollectionItemRow item in await db.getCollectionItems(
     collectionId,
   )) {
     if (item.mediaType != MediaKind.video.dbValue) continue;
-    if (await db.getVideoBookByBookUid(item.entryKey) != null) continue;
-    keys.add(item.entryKey);
-    if (keys.length >= kMediaLinkRemoteMemberKeysMax) break;
+    final VideoBookRow? row = await db.getVideoBookByBookUid(item.entryKey);
+    if (row == null) {
+      if (remote.length < kMediaLinkRemoteMemberKeysMax) {
+        remote.add(item.entryKey);
+      }
+      continue;
+    }
+    final String? cover = row.coverPath;
+    if (cover != null && cover.isNotEmpty) covers.add(cover);
   }
-  return keys;
+  return (localCoverCandidates: covers, remoteKeys: remote);
+}
+
+/// 合集卡的本地竖版海报，顺序与视频库合集卡（`HomeVideoPage`
+/// `_collectionPosterProvider`）一致：合集自有层（自有封面 → 原盘盘面图）→ 刮削
+/// 作品海报（cover / poster 的本地文件）→ 成员本地封面借用（从媒体服务器加入的
+/// 剧，各集共用落盘的作品海报）。都没有为 null——有远端成员时区块再按 id 问远端
+/// 要剧海报（[MediaLinksSection.remoteVideoSource]），否则占位图。
+Future<String?> _videoCollectionPosterPath(
+  FushiDatabase db,
+  MediaCollectionRow collection,
+  _CollectionMembersScan members,
+) async {
+  final String? own = await firstExistingCoverPath(
+    await loadCollectionOwnCoverCandidates(db, collection),
+  );
+  if (own != null) return own;
+  final VideoMetadataWorkRow? work = await db
+      .resolveVideoMetadataWorkForCollection(collection.id);
+  if (work != null) {
+    final List<VideoMetadataImageRow> images =
+        (await db.getVideoMetadataImages(workId: work.id)).toList()..sort(
+          (VideoMetadataImageRow a, VideoMetadataImageRow b) =>
+              a.position.compareTo(b.position),
+        );
+    final String? scraped = await firstExistingCoverPath(<String>[
+      for (final String kind in const <String>['cover', 'poster'])
+        for (final VideoMetadataImageRow row in images)
+          if (row.kind == kind && (row.localPath?.isNotEmpty ?? false))
+            row.localPath!,
+    ]);
+    if (scraped != null) return scraped;
+  }
+  return firstExistingCoverPath(members.localCoverCandidates);
 }
