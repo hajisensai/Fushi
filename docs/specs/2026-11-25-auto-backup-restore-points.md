@@ -1,7 +1,8 @@
 # Auto backup and update rollback (restore points)
 
 Status: phase 1 implemented (branch `feat/auto-backup-p1-update-snapshot`), phase 2 implemented (branch
-`feat/auto-backup-p2-scheduled`, stacked on phase 1). Owner: auto-backup session. Proposal with the comparison of other apps:
+`feat/auto-backup-p2-scheduled`, stacked on phase 1), phase 3 user folder on mobile implemented (branch
+`feat/auto-backup-p3-offdevice`, stacked on phase 2); cloud copies are a proposal only. Owner: auto-backup session. Proposal with the comparison of other apps:
 https://claude.ai/artifact/GzX9ynemY4FxoXn85dbvCp (private; summary below so this file stands alone).
 
 ## Problem
@@ -137,7 +138,8 @@ Differences from the design text below, and details the design left open:
   pre-operation point synchronously via `prepareRestorePointReplace`). Op ids `backup.restore-point.list` /
   `.restore`, `backup.auto.status` / `.run`; CLI `fushi ctl backup points` / `point-restore <id> --fill|--replace --yes`
   / `auto` / `auto-run`.
-- **Left for phase 3:** macOS security-scoped bookmark for the custom folder (stored as a plain path now);
+- **Left for phase 3:** macOS security-scoped bookmark for the custom folder (stored as a plain path now;
+  phase 3 found it is not needed, see below);
   the non-en/zh translations of the renamed `restore_points_fill_*` keys still say "snapshot"; an exported
   full-database point imported on another device brings library rows whose files were not packed (they show
   as missing there).
@@ -204,6 +206,104 @@ Differences from the design text below, and details the design left open:
 
 User folder on Android (SAF) / iOS (Files), optional Android WorkManager run, then cloud upload once the
 sync backend gets list / delete for stored archives.
+
+## Phase 3 as implemented (2026-11-25)
+
+- **Local first, then a copy (mobile).** On Android and iOS a scheduled point is still written to the
+  local store first (atomic, pruned as before). If the user picked a folder
+  (`AutoBackupSettings.mirrorFolder`, device-local prefs `auto_backup_mirror_folder` = handle and
+  `auto_backup_mirror_label`), the finished point is copied to `<folder>/<id>/backup.zip` +
+  `restore_point.json` (same layout as the store; meta written last = complete marker; an existing meta is
+  deleted before files are overwritten, so a re-copy never looks complete half way). Copying runs under the
+  export lock and the local point is `hold`-pinned meanwhile. Desktop is unchanged: the phase 2 custom
+  folder is the store root.
+- **Shared folders.** A user folder is often a synced folder used by several devices. The folder copy's meta
+  carries `deviceId` (sync device id, device-local) and `deviceName` (`resolveInterconnectDeviceName`).
+  Folder retention (`planMirrorRetention`) applies the scheduled policy (48 h, 7 daily, 4 weekly, 3 monthly,
+  5 GB) to **this device's copies only**; other devices' copies and copies without a device are never
+  deleted automatically (the user can delete them on the page). A reinstall gets a new device id, so the old
+  install's copies are kept until deleted by hand (safe direction).
+- **Status.** `auto_backup_status.json` gains `mirror {target, pointId, atMs, error, errorAtMs, pendingId}`;
+  `target` is a 16-hex sha1 of the handle (the bookmark / URI itself is not written there). A copy failure
+  does not fail the backup: the local point is the result, the settings row shows a warning and the user is
+  told once (`notifyMirrorFailure`). `pendingId` is set while a copy runs; if it is still there on the next
+  run, that exact half-written `<id>/` is deleted from the folder (another device's half-written dirs are not
+  touched), then the latest point is copied again.
+- **When copies happen.** After every new scheduled point ("Back up now" included). On a due run with no
+  changes, a latest point that is not yet in the folder is copied (that slot's retry). On a not-due check
+  (launch / resume / folder change), a missing copy is caught up silently unless the last copy to that folder
+  failed explicitly; failures wait for the next due slot or "Back up now", so a revoked folder does not
+  retry and notify on every resume.
+- **Android: SAF tree + persisted permission** (`BackupFolderChannel.java`, channel
+  `app.fushi.reader/backup_folder`). `ACTION_OPEN_DOCUMENT_TREE` with persistable read/write grant,
+  `takePersistableUriPermission`; no all-files access needed. All folder I/O is native (`DocumentsContract`
+  / `ContentResolver`, background thread), addressed by display name. If a provider renames a created file
+  (suffix), the copy fails instead of writing a name the listing cannot find. A revoked grant / deleted
+  folder maps to "folder unavailable". "Stop copying" / choosing another folder releases the old grant.
+- **iOS: picked folder + security-scoped bookmark**, reusing the source-folder bookmark channel
+  (`FushiDirectoryImport.swift`, `pickDirectoryBookmark` / `startAccessingBookmark` /
+  `stopAccessingBookmark`); no new Swift. Chosen over exposing the app's own Documents folder in Files
+  (already `UIFileSharingEnabled`): that folder is deleted on uninstall and never leaves the device, which is
+  exactly what this phase protects against; a picked folder can live in iCloud Drive or another file provider.
+  Access is started for each run and stopped after; a stale bookmark is rebuilt in the access window and
+  saved back. iCloud copies whose meta is not downloaded (`.restore_point.json.icloud`) are counted and the
+  page says to download them in the Files app.
+- **Restore points page.** A "In your backup folder" section lists copies that are not on this device
+  (another device's, or ones whose local point was pruned / lost in a reinstall) with "Copy to this device"
+  and Delete (inline confirm). "Copy to this device" copies into a staging dir next to the store, checks the
+  sizes against the meta, writes the meta and renames the whole dir into the store, so the store never shows
+  a half point; afterwards it is an ordinary scheduled point (Fill in / Replace / Export). Local rows that
+  also exist in the folder say so; copies from a device show "From <device>". A folder that cannot be opened
+  shows the reason in that section only.
+- **macOS custom folder.** No bookmark needed: the macOS app is not sandboxed (`Release.entitlements` and
+  `DebugProfile.entitlements` drop `com.apple.security.app-sandbox` for in-app updates; no Mac App Store
+  build exists). If the sandbox ever returns, the custom folder has to store a bookmark like the data root.
+- **Android background run (WorkManager): not done, on purpose.** A scheduled point is
+  `BackupService.createBackup` on the open drift DB plus the Rust review kernel (`srsStorageForBackup`),
+  credential stripping and the device-local layer; it needs the app's isolate. Running Dart from WorkManager
+  means a background `FlutterEngine` with all plugins, which is the structure that BUG-4271 / feedback
+  yjn-3h8B-7 removed (audio_service attaches to it, starts a second `main()` engine and binds its static
+  handler to the background engine). A native worker cannot build the archive, and a second engine opening
+  `fushi.db` / `srs4.db` while the foreground app owns them would need cross-process locking the kernel does
+  not have. Mobile keeps "catch up on next launch / resume".
+- **Cloud copies:** research only, proposal in `.worktrees/coordination/briefs/auto-backup-p3-cloud-proposal.md`
+  and summarised below.
+
+### Cloud copies: proposal (not implemented)
+
+Findings: the spec's premise is stale. Every sync backend already implements `SyncAssetStore`
+(`packages/fushi_engine/lib/sync/sync_asset_store.dart`) with `putAsset` (streaming), `listChildren`,
+`getAsset` and `deleteAsset`: Google Drive (resumable 8 MiB chunks), OneDrive (upload session over 10 MiB),
+Dropbox (single `files/upload` request, no upload session), WebDAV, FTP, SFTP and Interconnect (single PUT, no
+resume). Caveats: FTP lists no sizes and mtimes only up to 50 files and its delete throws on a missing file;
+Interconnect lists no size; Drive's default space is the hidden `appDataFolder` (counts against the user's
+quota, invisible outside the app).
+
+| Option | What | Cost | Risk |
+|---|---|---|---|
+| A. Sync backend as a second mirror target | `SyncAssetStoreBackupMirror implements BackupFolderMirror` under `fushi-backups/<deviceId>/<id>/`; the controller's copy-after-local, device-scoped retention, catch-up and page "Copy to this device" are reused unchanged. Retention reads the meta json, never backend mtimes. | ~2 days + Dropbox upload sessions (~1 day) + settings UI | Quota on daily full-DB zips; mobile data; large single-PUT uploads restart from zero on WebDAV/FTP/SFTP/Interconnect; iOS suspends long uploads in the background. |
+| B. User folder inside a cloud provider (done) | Pick an iCloud Drive / Nextcloud / Syncthing folder | 0 | Android Google Drive app does not offer folder trees; iCloud eviction needs a manual download. |
+| C. Interconnect push to the paired desktop | Same as A, restricted to the Interconnect backend, host stores under its sync data dir | ~1 day on top of A | Only when the desktop is reachable. |
+
+Recommendation: keep B as the shipped path; build A next as one more `BackupFolderMirror`, enabled first for
+the resumable backends (Google Drive, OneDrive) plus Interconnect, with Dropbox after upload sessions land.
+Needs user decisions first (decision board): which backends; Wi-Fi-only default; Drive hidden vs visible
+space; a smaller cloud retention (e.g. 7 daily) to save quota.
+
+### Phase 3 open questions
+
+1. A copied-back old point is an ordinary scheduled point, so the next scheduled run's retention may delete it
+   if a newer local point already claims its bucket. It is pinned only while it is being restored. A
+   "keep until restored" pin would change retention semantics (left as is).
+2. Phase 2's desktop custom folder is a store root without device scoping: two desktops sharing a synced
+   folder prune each other's points.
+3. iCloud-evicted copies only get a notice; `FileManager.startDownloadingUbiquitousItem` could fetch them
+   (new Swift, not buildable or testable on the Windows dev box).
+4. ctl / CLI do not list or copy folder copies (`GET /api/admin/restore-points` is local only).
+5. iOS: a long copy to the folder is suspended when the app goes to the background; it is caught up on the next
+   launch (`pendingId`). `beginBackgroundTask` would add about 30 s.
+6. Real-device checks of the SAF / iCloud flows were not done (the debug build has no separate
+   applicationId, so installing it would overwrite the user's app).
 
 ## Decisions (taken by the user 2026-11-25 on the proposal's recommendations; maintainer may change)
 
