@@ -46,6 +46,7 @@ class AutoBackupStatus {
     this.fingerprint,
     this.runningSinceMs,
     this.lastInterruptedMs,
+    this.missingData = const <String>[],
   });
 
   final int? lastAttemptMs;
@@ -68,6 +69,10 @@ class AutoBackupStatus {
   /// 上次被打断的那次运行的开始时刻：到期判定据此等到下一个时段再试，不在每次启动都重跑、
   /// 每次都在同一处被杀。
   final int? lastInterruptedMs;
+
+  /// 上次成功的那份里因为读不了而没带的数据类别（`BackupCategory.name`，现在只有复习库还在等升级
+  /// 时的 `srs`）。状态行据此说明。
+  final List<String> missingData;
 
   DateTime? get lastSatisfied => lastSatisfiedMs == null
       ? null
@@ -95,6 +100,7 @@ class AutoBackupStatus {
     'fingerprint': fingerprint,
     if (runningSinceMs != null) 'runningSinceMs': runningSinceMs,
     if (lastInterruptedMs != null) 'lastInterruptedMs': lastInterruptedMs,
+    if (missingData.isNotEmpty) 'missingData': missingData,
   };
 
   static AutoBackupStatus fromJson(Object? raw) {
@@ -116,6 +122,11 @@ class AutoBackupStatus {
       fingerprint: s('fingerprint'),
       runningSinceMs: i('runningSinceMs'),
       lastInterruptedMs: i('lastInterruptedMs'),
+      missingData: <String>[
+        if (raw['missingData'] case final List<Object?> list)
+          for (final Object? v in list)
+            if (v is String) v,
+      ],
     );
   }
 
@@ -131,6 +142,7 @@ class AutoBackupStatus {
     fingerprint: fingerprint,
     runningSinceMs: atMs,
     lastInterruptedMs: lastInterruptedMs,
+    missingData: missingData,
   );
 
   /// 成功：记下指纹、点 id、大小，这一期满足。
@@ -139,6 +151,7 @@ class AutoBackupStatus {
     required String pointId,
     required int bytes,
     required String fingerprint,
+    List<String> missingData = const <String>[],
   }) => AutoBackupStatus(
     lastAttemptMs: atMs,
     lastResult: AutoBackupResult.success,
@@ -147,6 +160,7 @@ class AutoBackupStatus {
     lastSuccessBytes: bytes,
     lastSatisfiedMs: atMs,
     fingerprint: fingerprint,
+    missingData: missingData,
   );
 
   /// 没变化跳过：成功记录不动，这一期满足。
@@ -158,6 +172,7 @@ class AutoBackupStatus {
     lastSuccessBytes: lastSuccessBytes,
     lastSatisfiedMs: atMs,
     fingerprint: fingerprint,
+    missingData: missingData,
   );
 
   /// 失败：这一期不算满足，下次到期检查再试。
@@ -172,6 +187,7 @@ class AutoBackupStatus {
         lastError: error,
         fingerprint: fingerprint,
         lastInterruptedMs: lastInterruptedMs,
+        missingData: missingData,
       );
 
   /// 启动时发现「开始」标记还在：记成失败（[kAutoBackupErrorInterrupted]），清标记，记下被
@@ -186,6 +202,7 @@ class AutoBackupStatus {
     lastError: kAutoBackupErrorInterrupted,
     fingerprint: fingerprint,
     lastInterruptedMs: runningSinceMs,
+    missingData: missingData,
   );
 }
 

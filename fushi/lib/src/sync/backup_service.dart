@@ -1389,6 +1389,9 @@ class BackupService {
   /// [includeSrsMedia]：复习类别勾着时要不要带 `srs_media/` 文件树（D2：定时备份默认不带，
   /// 笔记与复习记录照带）。不带媒体的包覆盖恢复时本机媒体目录原样保留（恢复侧只在包里有
   /// `srs_media/` 条目时才换那棵树）。
+  ///
+  /// [unavailableData]：整库备份里这会儿读不了的数据类别（复习库还在等升级时的 [BackupCategory.srs]）。
+  /// 它们不进包、记进 meta 的 `excludedCategories`，覆盖恢复据此保留本机那一份，不当成「备份里是空的」。
   Future<BackupMeta> createBackup(
     String outputPath, {
     Set<BackupCategory>? categories,
@@ -1399,14 +1402,17 @@ class BackupService {
     bool compress = false,
     bool includeSrsMedia = true,
     bool fullDatabase = false,
+    Set<BackupCategory> unavailableData = const <BackupCategory>{},
   }) async {
     if (fullDatabase && (bookKeys != null || videoKeys != null)) {
       throw ArgumentError('fullDatabase backups cannot select single items');
     }
     bool wants(BackupCategory c) =>
-        categories == null || categories.contains(c);
-    // 整库备份：数据类别一律在，[categories] 只挑文件树。
-    bool keepsData(BackupCategory c) => fullDatabase || wants(c);
+        !unavailableData.contains(c) &&
+        (categories == null || categories.contains(c));
+    // 整库备份：数据类别一律在（读不了的除外），[categories] 只挑文件树。
+    bool keepsData(BackupCategory c) =>
+        !unavailableData.contains(c) && (fullDatabase || wants(c));
     final tmpDir = await Directory.systemTemp.createTemp('fushi_backup_');
     try {
       final cleanDbPath = p.join(tmpDir.path, _dbName);
@@ -1755,7 +1761,9 @@ class BackupService {
         excludedCategories: <String>{
           for (final BackupCategory c in BackupCategory.values)
             if (!wants(c) &&
-                (!fullDatabase || kBackupFileCategories.contains(c)))
+                (!fullDatabase ||
+                    kBackupFileCategories.contains(c) ||
+                    unavailableData.contains(c)))
               c.name,
         },
         fullDatabase: fullDatabase,

@@ -637,6 +637,9 @@ String _renderBackupAutoStatus(Object? data) {
           '（${_bytes(data['lastSuccessBytes'])}）',
     if (data['lastResult'] != null) '上次结果：${data['lastResult']}',
     if (data['lastError'] != null) '上次错误：${data['lastError']}',
+    if (data['missingData'] case final List<Object?> missing
+        when missing.isNotEmpty)
+      '上次未含：${missing.join(', ')}（复习库待升级时不含复习数据）',
     '保留：${data['kept']} 份（${_bytes(data['keptBytes'])}）',
     if (data['overdue'] == true) '已超期，下一次检查时会补做',
   ].join('\n');

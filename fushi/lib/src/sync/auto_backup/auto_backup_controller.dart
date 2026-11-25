@@ -72,6 +72,10 @@ abstract interface class AutoBackupHost {
 
   void reportBackupExportProgress(double fraction);
 
+  /// 复习库这会儿不能备份的原因（`SrsGenState.wire`：还在等升级、别的进程在迁、只剩封存旧库、上次
+  /// 迁移失败）；能备份（或根本没有复习库）返回 null。只看磁盘上的代际状态，不开库。
+  String? srsUnavailableReason();
+
   /// 复习库开着时把它一致地快照到 [destPath]（内核的 `VACUUM INTO`）；复习库没开（模块关 /
   /// 从没用过）返回 null，操作前还原点就只带主库。
   Future<Future<void> Function(String destPath)?> srsSnapshotWriter();
@@ -326,6 +330,11 @@ class AutoBackupController {
       for (final BackupCategory c in settings.categories)
         if (kBackupFileCategories.contains(c)) c,
     };
+    // 复习库还在等升级等：开库会抛。照样备份其余数据，复习记成「没带」（恢复时保留本机那份），
+    // 状态行说明原因；不让整份备份因此失败、天天失败。
+    final Set<BackupCategory> unavailable = <BackupCategory>{
+      if (host.srsUnavailableReason() != null) BackupCategory.srs,
+    };
     RestorePointDraft? draft;
     autoBackupProgress.value = const AutoBackupProgress();
     // 「开始」标记：写到一半进程没了，下次启动据此认出来（[recoverInterruptedRun]）。
@@ -336,6 +345,7 @@ class AutoBackupController {
         p.join(draft.directory, kRestorePointArchiveFileName),
         categories: files,
         fullDatabase: true,
+        unavailableData: unavailable,
         compress: true,
         includeSrsMedia: settings.includeSrsMedia,
         onProgress: (double fraction) {
@@ -347,14 +357,18 @@ class AutoBackupController {
         draft,
         fromSchema: meta.schemaVersion,
         toSchema: meta.schemaVersion,
-        // 整库：数据类别都在，文件类别只有勾着的。
+        // 整库：数据类别都在（读不了的除外），文件类别只有勾着的。
         categories: <String>[
           for (final BackupCategory c in BackupCategory.values)
-            if (!kBackupFileCategories.contains(c) || files.contains(c)) c.name,
+            if (!unavailable.contains(c) &&
+                (!kBackupFileCategories.contains(c) || files.contains(c)))
+              c.name,
         ],
         excludedCategories: <String>[
           for (final BackupCategory c in BackupCategory.values)
-            if (kBackupFileCategories.contains(c) && !files.contains(c)) c.name,
+            if (unavailable.contains(c) ||
+                (kBackupFileCategories.contains(c) && !files.contains(c)))
+              c.name,
         ],
         includesSrsMedia: settings.includeSrsMedia,
         fullDatabase: true,
@@ -367,6 +381,9 @@ class AutoBackupController {
           pointId: point.id,
           bytes: point.totalBytes,
           fingerprint: fingerprint,
+          missingData: <String>[
+            for (final BackupCategory c in unavailable) c.name,
+          ],
         ),
       );
       return AutoBackupOutcome.created;

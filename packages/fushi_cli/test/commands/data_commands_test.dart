@@ -750,6 +750,24 @@ void main() {
             .find(command)!
             .render!(data);
 
+    test('backup auto：上次没带的数据（复习库待升级）单独一行', () {
+      final Map<String, Object?> base = <String, Object?>{
+        'interval': 'daily',
+        'categories': <Object?>['fonts'],
+        'folder': '/x',
+        'kept': 1,
+        'keptBytes': 10,
+      };
+      expect(render('backup', 'auto', base), isNot(contains('上次未含')));
+      expect(
+        render('backup', 'auto', <String, Object?>{
+          ...base,
+          'missingData': <Object?>['srs'],
+        }),
+        contains('上次未含：srs'),
+      );
+    });
+
     test('sub ls 状态列：启用 / 已停用 / 已完成 / 出错；后端未就绪有提示', () {
       final String out = render('sub', 'ls', <String, Object?>{
         'supported': false,

@@ -423,6 +423,16 @@ class _AutoBackupStatusRow extends StatelessWidget {
                       : t.auto_backup_overdue_warning,
                 ),
               ),
+            if (!failed &&
+                status.missingData.contains(BackupCategory.srs.name))
+              Padding(
+                padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                child: FushiInlineNotice(
+                  key: const ValueKey<String>('auto-backup-srs-missing'),
+                  severity: FushiNoticeSeverity.info,
+                  message: t.auto_backup_status_srs_missing,
+                ),
+              ),
           ],
         );
       },

@@ -88,6 +88,13 @@ Differences from the design text below, and details the design left open:
   never push out the Anki-migration point, D6). `createPreOperationPoint(protectIds:)` and
   `RestorePointStore.hold(dir)` keep the Replace / Fill target out of every prune while it is restored.
   Pre-update / pre-rollback: unchanged (3 each).
+- **Review library not upgraded yet.** While `srs4.db` is not ready (the generation-4 upgrade is still pending,
+  running in another process, failed, or only the sealed old library is left), opening it throws. A scheduled
+  point then backs up everything else and lists `srs` under `excludedCategories` (restore keeps this device's
+  review data, which still sits untouched in its own old file); the status keeps `missingData: ["srs"]` and the
+  settings section says why. Pre-operation points carry only `fushi.db` in that state. (Found in the real-app
+  check on a seeded pre-upgrade profile: before this, every scheduled run failed.) Manual export has the same
+  pre-existing limitation and is unchanged.
 - **Schedule** (`fushi/lib/src/sync/auto_backup/`): due rule in `auto_backup_schedule.dart`. With a
   preferred time T and interval N: due when the last *satisfied* run (success, or skipped because nothing
   changed) is before `latestSlot(T) - (N-1) days`; without T the slot is local midnight, i.e. calendar days

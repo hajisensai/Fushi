@@ -1799,6 +1799,7 @@
   "auto_backup_srs_media_hint": "Card images and audio. Can make each backup much larger.",
   "auto_backup_status_last": "Last backup: $time · $size · $n kept",
   "auto_backup_status_none": "No backup yet",
+  "auto_backup_status_srs_missing": "Review data is not in automatic backups until the review library upgrade is finished. Open Review to upgrade it.",
   "auto_backup_task_running": "Creating automatic backup",
   "auto_backup_time": "Preferred time",
   "auto_backup_time_any": "Any time",

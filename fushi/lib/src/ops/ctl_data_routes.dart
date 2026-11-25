@@ -448,6 +448,7 @@ List<CtlRoute> _backupRoutes(
       'lastSuccessAt': ?status.lastSuccessMs,
       'lastSuccessBytes': ?status.lastSuccessBytes,
       'lastError': ?status.lastError,
+      if (status.missingData.isNotEmpty) 'missingData': status.missingData,
       'overdue': isAutoBackupOverdue(
         settings: settings,
         now: DateTime.now(),

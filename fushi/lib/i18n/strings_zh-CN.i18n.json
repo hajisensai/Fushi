@@ -1799,6 +1799,7 @@
   "auto_backup_srs_media_hint": "卡片图片与音频，会让每份备份大很多。",
   "auto_backup_status_last": "上次备份：$time · $size · 共保留 $n 份",
   "auto_backup_status_none": "还没有备份",
+  "auto_backup_status_srs_missing": "复习库升级完成之前，自动备份不含复习数据。打开「复习」完成升级即可。",
   "auto_backup_task_running": "正在自动备份",
   "auto_backup_time": "偏好时间",
   "auto_backup_time_any": "任意时间",

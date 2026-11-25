@@ -71,7 +71,8 @@ import 'package:fushi/src/updates/update_notifier.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_srs/fushi_srs.dart' show SrsDayContext;
+import 'package:fushi_srs/fushi_srs.dart'
+    show SrsDayContext, SrsGen4Migration, SrsGenState;
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:http/http.dart' as http;
@@ -17288,7 +17289,17 @@ class _AppAutoBackupHost implements AutoBackupHost {
       _app.reportBackupExportProgress(fraction);
 
   @override
+  String? srsUnavailableReason() {
+    final SrsGenState state = SrsGen4Migration.status(
+      _app.databaseDirectory.path,
+    ).state;
+    return state == SrsGenState.ready ? null : state.wire;
+  }
+
+  @override
   Future<Future<void> Function(String destPath)?> srsSnapshotWriter() async {
+    // 复习库还在等升级等：开库会抛，旧代数据在它自己的文件里原样不动，操作前还原点只带主库。
+    if (srsUnavailableReason() != null) return null;
     final SrsStorage? storage = await _app.srsStorageForBackup();
     if (storage == null) return null;
     return (String destPath) async =>

@@ -29,6 +29,7 @@ class _FakeHost implements AutoBackupHost {
   int serviceCalls = 0;
   final List<String> failures = <String>[];
   Future<void> Function(String destPath)? srsWriter;
+  String? srsBlocked;
 
   @override
   String get databaseDirectory => dbDir;
@@ -74,6 +75,9 @@ class _FakeHost implements AutoBackupHost {
 
   @override
   void reportBackupExportProgress(double fraction) {}
+
+  @override
+  String? srsUnavailableReason() => srsBlocked;
 
   @override
   Future<Future<void> Function(String destPath)?> srsSnapshotWriter() async =>
@@ -395,6 +399,40 @@ void main() {
     } finally {
       await input.close();
     }
+  });
+
+  test('复习库还在等升级：照样备份其余数据，复习记成没带（恢复时保留本机那份），状态说明', () async {
+    host.srsBlocked = 'needsMigration';
+    expect(await controller.backUpNow(), AutoBackupOutcome.created);
+    final RestorePoint point = controller.scheduledPoints().single;
+    expect(point.categories, isNot(contains('srs')));
+    expect(point.excludedCategories, contains('srs'));
+    expect(controller.status.value.missingData, <String>['srs']);
+    expect(host.failures, isEmpty);
+    final InputFileStream input = InputFileStream(point.archivePath!);
+    try {
+      final ArchiveFile metaEntry = ZipDecoder()
+          .decodeBuffer(input)
+          .findFile('backup_meta.json')!;
+      final BackupMeta meta = BackupMeta.tryParse(
+        utf8.decode(metaEntry.content as List<int>),
+      )!;
+      // 恢复侧（_prepareSrsRestoreUnits）看到 srs 在排除表里就不碰本机复习库。
+      expect(meta.excludedCategories, contains('srs'));
+      expect(meta.fullDatabase, isTrue);
+    } finally {
+      await input.close();
+    }
+    // 状态文件往返保留它；升级完成后的下一份不再带这条。
+    expect(
+      AutoBackupStatus.fromJson(
+        jsonDecode(jsonEncode(controller.status.value.toJson())),
+      ).missingData,
+      <String>['srs'],
+    );
+    host.srsBlocked = null;
+    expect(await controller.backUpNow(), AutoBackupOutcome.created);
+    expect(controller.status.value.missingData, isEmpty);
   });
 
   test('上次成功的那份被删了：指纹没变也不跳过，照样新建', () async {
