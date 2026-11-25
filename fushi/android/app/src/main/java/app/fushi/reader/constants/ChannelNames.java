@@ -19,6 +19,8 @@ public final class ChannelNames {
     public static final String LIFECYCLE = PREFIX + "/lifecycle";
     public static final String FONTS = PREFIX + "/fonts";
     public static final String SAF = PREFIX + "/saf";
+    // 自动备份的用户文件夹（SAF 树 + 持久授权），实现见 BackupFolderChannel。
+    public static final String BACKUP_FOLDER = PREFIX + "/backup_folder";
     public static final String ICON_SWITCH = PREFIX + "/icon_switch";
     // 长按 app 图标的动态快捷方式，实现见 AppShortcutsHelper。
     public static final String APP_SHORTCUTS = PREFIX + "/app_shortcuts";

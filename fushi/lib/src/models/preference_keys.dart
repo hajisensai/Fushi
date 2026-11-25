@@ -132,6 +132,13 @@ const String kAutoBackupSrsMediaPrefKey = 'auto_backup_srs_media';
 /// String（缺省空 = 默认还原点目录）：桌面端自定义的自动备份文件夹（绝对路径）。
 const String kAutoBackupFolderPrefKey = 'auto_backup_folder';
 
+/// String（缺省空 = 不复制）：移动端自动备份的用户文件夹句柄（第三期；Android = SAF 树 URI，
+/// iOS = base64 安全作用域书签）。每份定时还原点写好后复制一份进去。
+const String kAutoBackupMirrorFolderPrefKey = 'auto_backup_mirror_folder';
+
+/// String：[kAutoBackupMirrorFolderPrefKey] 那个文件夹的显示名。
+const String kAutoBackupMirrorLabelPrefKey = 'auto_backup_mirror_label';
+
 /// 已知的静态偏好键全集（守卫强制）。按字母序。
 const Set<String> kKnownPreferenceKeys = <String>{
   'active_profile_id',
@@ -262,6 +269,8 @@ const Set<String> kKnownPreferenceKeys = <String>{
   kAutoBackupCategoriesPrefKey,
   kAutoBackupFolderPrefKey,
   kAutoBackupIntervalPrefKey,
+  kAutoBackupMirrorFolderPrefKey,
+  kAutoBackupMirrorLabelPrefKey,
   kAutoBackupSrsMediaPrefKey,
   kAutoBackupTimePrefKey,
   'auto_search',

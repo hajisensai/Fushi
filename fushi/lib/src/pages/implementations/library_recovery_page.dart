@@ -24,6 +24,8 @@ import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart'
         kRestorePointReasonSyncDownload;
 import 'package:fushi/src/sync/auto_backup/restore_point_actions.dart';
 import 'package:fushi/src/sync/auto_backup/restore_point_catalog.dart';
+import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart'
+    show MirrorFolderListing, MirroredRestorePoint;
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart'
     show friendlySyncErrorDetail;
@@ -105,6 +107,18 @@ abstract interface class RestorePointsHost {
 
   /// 孤儿书目录恢复；null = 不显示这一节。
   Future<OrphanBookRecovery?> orphanRecovery();
+
+  /// 用户文件夹（第三期，移动端）的显示名；没设 / 平台不支持为 null（不显示那一节）。
+  String? get folderLabel;
+
+  /// 用户文件夹里的副本；没设文件夹返回 null，打不开时抛出。
+  Future<MirrorFolderListing?> listFolderCopies();
+
+  /// 把文件夹副本取回本机还原点存储（之后补回 / 替换 / 导出照常）。
+  Future<void> copyFolderCopyToDevice(MirroredRestorePoint copy);
+
+  /// 删掉文件夹里的副本（本机的点不动）。
+  Future<void> deleteFolderCopy(MirroredRestorePoint copy);
 }
 
 /// [RestorePointsHost] 的生产实现。
@@ -181,6 +195,47 @@ class AppRestorePointsHost implements RestorePointsHost {
         app.database,
         registrars: libraryRecoveryRegistrars(),
       );
+
+  @override
+  String? get folderLabel => app.autoBackup.mirrorFolder()?.label;
+
+  @override
+  Future<MirrorFolderListing?> listFolderCopies() =>
+      app.autoBackup.listMirrorCopies();
+
+  @override
+  Future<void> copyFolderCopyToDevice(MirroredRestorePoint copy) async {
+    await app.autoBackup.copyMirrorCopyToDevice(copy);
+  }
+
+  @override
+  Future<void> deleteFolderCopy(MirroredRestorePoint copy) =>
+      app.autoBackup.deleteMirrorCopy(copy);
+}
+
+/// 文件夹副本当作一行还原点（只借用种类 / 内容 / 详情文案；动作另有一套）。
+RestorePointEntry _folderCopyEntry(MirroredRestorePoint copy) =>
+    RestorePointEntry(
+      id: copy.id,
+      source: RestorePointEntrySource.store,
+      path: copy.point.directory,
+      createdAt: copy.point.createdAt.toLocal(),
+      sizeBytes: copy.point.totalBytes,
+      point: copy.point,
+      schema: copy.point.fromSchema,
+    );
+
+/// 文件夹那一节要列的副本：本机还原点里没有的（本机有的只在本机那行标「文件夹里也有」）。
+@visibleForTesting
+List<MirroredRestorePoint> restorePointFolderOnlyCopies(
+  MirrorFolderListing listing,
+  Iterable<String> localIds,
+) {
+  final Set<String> local = localIds.toSet();
+  return <MirroredRestorePoint>[
+    for (final MirroredRestorePoint c in listing.points)
+      if (!local.contains(c.id)) c,
+  ];
 }
 
 /// 一行还原点的种类文案（纯函数，测试用）。
@@ -337,6 +392,14 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
   OrphanBookScan? _scan;
   OrphanBookRecovery? _recovery;
 
+  /// 用户文件夹（第三期）：列表 / 打不开的原因 / 加载中。
+  MirrorFolderListing? _folder;
+  Object? _folderError;
+  bool _folderLoading = false;
+
+  /// 展开着删除确认的文件夹副本 id。
+  String? _folderDeleteId;
+
   /// 展开着确认面板的那一行与面板种类（一次只开一个）。
   String? _openId;
   _PanelKind? _openKind;
@@ -383,6 +446,7 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
           _closePanelState();
         }
       });
+      unawaited(_loadFolder());
     } catch (e, st) {
       ErrorLogService.instance.log('RestorePointsPage.load', e, st);
       if (!mounted) return;
@@ -391,6 +455,95 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
         _loading = false;
       });
     }
+  }
+
+  // ── 用户文件夹 ───────────────────────────────────────────────────
+
+  Future<void> _loadFolder() async {
+    if (_host.folderLabel == null) {
+      if (_folder != null || _folderError != null) {
+        setState(() {
+          _folder = null;
+          _folderError = null;
+        });
+      }
+      return;
+    }
+    setState(() => _folderLoading = true);
+    MirrorFolderListing? listing;
+    Object? error;
+    try {
+      listing = await _host.listFolderCopies();
+    } catch (e, st) {
+      ErrorLogService.instance.log('RestorePointsPage.listFolder', e, st);
+      error = e;
+    }
+    if (!mounted) return;
+    setState(() {
+      _folder = listing;
+      _folderError = error;
+      _folderLoading = false;
+      if (_folderDeleteId != null &&
+          !(listing?.points.any(
+                (MirroredRestorePoint c) => c.id == _folderDeleteId,
+              ) ??
+              false)) {
+        _folderDeleteId = null;
+      }
+    });
+  }
+
+  Future<void> _copyFolderCopy(MirroredRestorePoint copy) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await _host.copyFolderCopyToDevice(copy);
+      FushiToast.show(
+        msg: t.restore_points_folder_copy_done,
+        severity: ToastSeverity.success,
+      );
+    } catch (e, st) {
+      ErrorLogService.instance.log('RestorePointsPage.copyFolder', e, st);
+      FushiToast.show(
+        msg: t.restore_points_folder_copy_failed(
+          reason: friendlySyncErrorDetail(e),
+        ),
+        severity: ToastSeverity.error,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+    await _load();
+  }
+
+  void _openFolderDelete(MirroredRestorePoint copy) {
+    setState(() {
+      _closePanelState();
+      _folderDeleteId = copy.id;
+    });
+    _focusPanelSoon();
+  }
+
+  Future<void> _deleteFolderCopy(MirroredRestorePoint copy) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await _host.deleteFolderCopy(copy);
+    } catch (e, st) {
+      ErrorLogService.instance.log('RestorePointsPage.deleteFolder', e, st);
+      FushiToast.show(
+        msg: t.storage_entry_delete_failed(reason: friendlySyncErrorDetail(e)),
+        severity: ToastSeverity.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _folderDeleteId = null;
+        });
+      }
+    }
+    await _loadFolder();
   }
 
   // ── 还原点：行内确认面板 ─────────────────────────────────────────
@@ -414,6 +567,7 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
   void _openPanel(RestorePointEntry entry, _PanelKind kind) {
     setState(() {
       _closePanelState();
+      _folderDeleteId = null;
       _openId = entry.id;
       _openKind = kind;
       _previewLoading = kind == _PanelKind.fill;
@@ -609,10 +763,14 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
         ),
       };
 
-  static String _entryDetails(RestorePointEntry entry) {
+  static String _entryDetails(
+    RestorePointEntry entry, {
+    bool alsoInFolder = false,
+  }) {
     final String? version = entry.point?.appVersion;
     final int? schema = entry.schema;
     final String contents = restorePointContentsLabel(entry);
+    final String? device = entry.point?.deviceName;
     return <String>[
       '${FushiTimeFormat.dateHourMinute(entry.createdAt)} · '
           '${formatStorageBytes(entry.sizeBytes)}',
@@ -622,6 +780,8 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
         if (schema != null && schema > 0) t.restore_points_schema(n: schema),
       ].join(' · '),
       contents,
+      if (device != null) t.restore_points_folder_from_device(device: device),
+      if (alsoInFolder) t.restore_points_folder_also,
       if (!entry.schemaSupported) t.restore_points_too_new,
     ].where((String line) => line.isNotEmpty).join('\n');
   }
@@ -839,8 +999,17 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
         FushiListItem(
           leading: FushiIcon(_kindIcon(entry)),
           title: Text(restorePointKindLabel(entry)),
-          subtitle: Text(_entryDetails(entry)),
-          subtitleMaxLines: 6,
+          subtitle: Text(
+            _entryDetails(
+              entry,
+              alsoInFolder:
+                  _folder?.points.any(
+                    (MirroredRestorePoint c) => c.id == entry.id,
+                  ) ??
+                  false,
+            ),
+          ),
+          subtitleMaxLines: 7,
         ),
         AnimatedSize(
           duration: fushiMotionDuration(context, FushiMotion.medium),
@@ -868,6 +1037,149 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
       _sectionTitle(context, t.restore_points_title),
       _hint(_entries.isEmpty ? t.restore_points_empty : t.restore_points_hint),
       for (final RestorePointEntry entry in _entries) _entryCard(entry),
+    ];
+  }
+
+  Widget _folderCard(MirroredRestorePoint copy) {
+    final RestorePointEntry entry = _folderCopyEntry(copy);
+    final String id = copy.id;
+    final bool deleting = _folderDeleteId == id;
+    return FushiGroupedList(
+      key: ValueKey<String>('restore-point-folder-$id'),
+      children: <Widget>[
+        FushiListItem(
+          leading: const FushiIcon(FushiIcons.folder),
+          title: Text(restorePointKindLabel(entry)),
+          subtitle: Text(_entryDetails(entry)),
+          subtitleMaxLines: 7,
+        ),
+        AnimatedSize(
+          duration: fushiMotionDuration(context, FushiMotion.medium),
+          curve: Curves.easeOutCubic,
+          alignment: AlignmentDirectional.topStart,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    _pressable(
+                      child: FushiFilledButton.tonalIcon(
+                        key: ValueKey<String>('restore-point-folder-copy-$id'),
+                        onPressed: _busy || !entry.schemaSupported
+                            ? null
+                            : () => unawaited(_copyFolderCopy(copy)),
+                        icon: const FushiIcon(FushiIcons.download),
+                        label: Text(t.restore_points_folder_action_copy),
+                      ),
+                    ),
+                    _pressable(
+                      child: FushiTextButton.icon(
+                        key: ValueKey<String>(
+                          'restore-point-folder-delete-$id',
+                        ),
+                        onPressed: _busy ? null : () => _openFolderDelete(copy),
+                        icon: const FushiIcon(FushiIcons.delete),
+                        label: Text(t.restore_points_action_delete),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (deleting)
+                Padding(
+                  padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                  child: FushiInlineNotice(
+                    key: ValueKey<String>('restore-point-folder-panel-$id'),
+                    severity: FushiNoticeSeverity.warning,
+                    title: t.restore_points_action_delete,
+                    message: t.restore_points_folder_delete_body,
+                    actionsInline: false,
+                    actions: <Widget>[
+                      Wrap(
+                        spacing: 8,
+                        runSpacing: 8,
+                        children: <Widget>[
+                          _pressable(
+                            child: FushiFilledButton.icon(
+                              key: ValueKey<String>(
+                                'restore-point-folder-confirm-$id',
+                              ),
+                              focusNode: _panelFocus,
+                              onPressed: _busy
+                                  ? null
+                                  : () => unawaited(_deleteFolderCopy(copy)),
+                              icon: const FushiIcon(FushiIcons.delete),
+                              label: Text(t.restore_points_confirm),
+                            ),
+                          ),
+                          _pressable(
+                            child: FushiTextButton(
+                              key: ValueKey<String>(
+                                'restore-point-folder-cancel-$id',
+                              ),
+                              onPressed: _busy
+                                  ? null
+                                  : () =>
+                                        setState(() => _folderDeleteId = null),
+                              child: Text(t.cancel),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ],
+                  ),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 用户文件夹那一节（第三期，移动端）：本机没有的副本可「复制到本机」/ 删除。
+  List<Widget> _folderSection(BuildContext context) {
+    final String? label = _host.folderLabel;
+    if (label == null) return const <Widget>[];
+    final MirrorFolderListing? listing = _folder;
+    final Object? error = _folderError;
+    final List<MirroredRestorePoint> copies = listing == null
+        ? const <MirroredRestorePoint>[]
+        : restorePointFolderOnlyCopies(
+            listing,
+            _entries.map((RestorePointEntry e) => e.id),
+          );
+    return <Widget>[
+      _sectionTitle(context, t.restore_points_folder_section),
+      if (error != null)
+        FushiInlineNotice(
+          key: const ValueKey<String>('restore-point-folder-error'),
+          severity: FushiNoticeSeverity.error,
+          message: t.restore_points_folder_failed(
+            reason: friendlySyncErrorDetail(error),
+          ),
+        )
+      else if (listing == null && _folderLoading)
+        const Center(child: FushiCircularProgressIndicator())
+      else if (listing != null) ...<Widget>[
+        _hint(
+          copies.isEmpty
+              ? t.restore_points_folder_empty
+              : t.restore_points_folder_hint(folder: label),
+        ),
+        if (listing.notDownloaded > 0)
+          FushiInlineNotice(
+            key: const ValueKey<String>('restore-point-folder-not-downloaded'),
+            message: t.restore_points_folder_not_downloaded(
+              n: listing.notDownloaded,
+            ),
+          ),
+        for (final MirroredRestorePoint copy in copies) _folderCard(copy),
+      ],
     ];
   }
 
@@ -993,8 +1305,10 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
       );
     }
     final List<Widget> orphans = _orphanSection(context);
+    final List<Widget> folder = _folderSection(context);
     final List<Widget> sections = <Widget>[
       ..._restorePointSection(context),
+      if (folder.isNotEmpty) ...<Widget>[const SizedBox(height: 8), ...folder],
       if (orphans.isNotEmpty) ...<Widget>[
         const SizedBox(height: 8),
         ...orphans,

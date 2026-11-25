@@ -33,6 +33,99 @@ const String kAutoBackupErrorInterrupted = 'interrupted';
 /// [AutoBackupStatus.lastError] 的错误码：自定义文件夹不在（外接盘没插、网络盘没挂上…）。
 const String kAutoBackupErrorFolderUnavailable = 'folder_unavailable';
 
+/// 用户文件夹（第三期）里副本的复制状态。与定时备份本身的结局分开记：本机还原点写好了、只是没复制
+/// 进文件夹，不算备份失败。
+class AutoBackupMirrorStatus {
+  const AutoBackupMirrorStatus({
+    this.target,
+    this.pointId,
+    this.atMs,
+    this.error,
+    this.errorAtMs,
+    this.pendingId,
+  });
+
+  /// 上次复制成功 / 失败的那个文件夹（[AutoBackupMirrorFolder.key]）。
+  final String? target;
+
+  /// 已经完整复制进 [target] 的最新还原点 id。
+  final String? pointId;
+
+  /// [pointId] 复制好的时刻。
+  final int? atMs;
+
+  /// 上次复制失败的原因（错误码见 [kAutoBackupErrorFolderUnavailable]，其余是原文）；成功后清掉。
+  final String? error;
+  final int? errorAtMs;
+
+  /// 正在复制的还原点 id：复制开始时落下、结束时清掉。下次还在 = 上次复制到一半进程就没了，文件夹里
+  /// 那份半截副本按这个 id 精确清掉（别的设备在同一个文件夹里写的半截副本不碰），然后补复制。
+  final String? pendingId;
+
+  /// [pointId] 已经在文件夹 [folderKey] 里了。
+  bool holds(String folderKey, String? id) =>
+      id != null && target == folderKey && pointId == id;
+
+  /// 上次对文件夹 [folderKey] 复制 [id] 时明确失败过（不是被打断）。
+  bool failedFor(String folderKey) => target == folderKey && error != null;
+
+  Map<String, Object?> toJson() => <String, Object?>{
+    'target': ?target,
+    'pointId': ?pointId,
+    'atMs': ?atMs,
+    'error': ?error,
+    'errorAtMs': ?errorAtMs,
+    'pendingId': ?pendingId,
+  };
+
+  static AutoBackupMirrorStatus fromJson(Object? raw) {
+    if (raw is! Map<String, Object?>) return const AutoBackupMirrorStatus();
+    int? i(String k) => raw[k] is int ? raw[k]! as int : null;
+    String? s(String k) => raw[k] is String ? raw[k]! as String : null;
+    return AutoBackupMirrorStatus(
+      target: s('target'),
+      pointId: s('pointId'),
+      atMs: i('atMs'),
+      error: s('error'),
+      errorAtMs: i('errorAtMs'),
+      pendingId: s('pendingId'),
+    );
+  }
+
+  /// 开始把 [id] 复制进 [folderKey]。换了文件夹时之前的记录作废。
+  AutoBackupMirrorStatus started({
+    required String folderKey,
+    required String id,
+  }) => target == folderKey
+      ? AutoBackupMirrorStatus(
+          target: target,
+          pointId: pointId,
+          atMs: atMs,
+          error: error,
+          errorAtMs: errorAtMs,
+          pendingId: id,
+        )
+      : AutoBackupMirrorStatus(target: folderKey, pendingId: id);
+
+  AutoBackupMirrorStatus succeeded({
+    required String folderKey,
+    required String id,
+    required int atMs,
+  }) => AutoBackupMirrorStatus(target: folderKey, pointId: id, atMs: atMs);
+
+  AutoBackupMirrorStatus failed({
+    required String folderKey,
+    required String error,
+    required int atMs,
+  }) => AutoBackupMirrorStatus(
+    target: folderKey,
+    pointId: target == folderKey ? pointId : null,
+    atMs: target == folderKey ? this.atMs : null,
+    error: error,
+    errorAtMs: atMs,
+  );
+}
+
 /// 状态文件的内容（不可变）。
 class AutoBackupStatus {
   const AutoBackupStatus({
@@ -47,6 +140,7 @@ class AutoBackupStatus {
     this.runningSinceMs,
     this.lastInterruptedMs,
     this.missingData = const <String>[],
+    this.mirror = const AutoBackupMirrorStatus(),
   });
 
   final int? lastAttemptMs;
@@ -73,6 +167,9 @@ class AutoBackupStatus {
   /// 上次成功的那份里因为读不了而没带的数据类别（`BackupCategory.name`，现在只有复习库还在等升级
   /// 时的 `srs`）。状态行据此说明。
   final List<String> missingData;
+
+  /// 用户文件夹里副本的复制状态（第三期）。
+  final AutoBackupMirrorStatus mirror;
 
   DateTime? get lastSatisfied => lastSatisfiedMs == null
       ? null
@@ -101,6 +198,7 @@ class AutoBackupStatus {
     if (runningSinceMs != null) 'runningSinceMs': runningSinceMs,
     if (lastInterruptedMs != null) 'lastInterruptedMs': lastInterruptedMs,
     if (missingData.isNotEmpty) 'missingData': missingData,
+    if (mirror.toJson().isNotEmpty) 'mirror': mirror.toJson(),
   };
 
   static AutoBackupStatus fromJson(Object? raw) {
@@ -127,8 +225,25 @@ class AutoBackupStatus {
           for (final Object? v in list)
             if (v is String) v,
       ],
+      mirror: AutoBackupMirrorStatus.fromJson(raw['mirror']),
     );
   }
+
+  /// 换掉复制状态，其余不动。
+  AutoBackupStatus withMirror(AutoBackupMirrorStatus next) => AutoBackupStatus(
+    lastAttemptMs: lastAttemptMs,
+    lastResult: lastResult,
+    lastSuccessMs: lastSuccessMs,
+    lastSuccessPointId: lastSuccessPointId,
+    lastSuccessBytes: lastSuccessBytes,
+    lastSatisfiedMs: lastSatisfiedMs,
+    lastError: lastError,
+    fingerprint: fingerprint,
+    runningSinceMs: runningSinceMs,
+    lastInterruptedMs: lastInterruptedMs,
+    missingData: missingData,
+    mirror: next,
+  );
 
   /// 开始写定时还原点：落「开始」标记，其余不动。
   AutoBackupStatus started({required int atMs}) => AutoBackupStatus(
@@ -143,6 +258,7 @@ class AutoBackupStatus {
     runningSinceMs: atMs,
     lastInterruptedMs: lastInterruptedMs,
     missingData: missingData,
+    mirror: mirror,
   );
 
   /// 成功：记下指纹、点 id、大小，这一期满足。
@@ -161,6 +277,7 @@ class AutoBackupStatus {
     lastSatisfiedMs: atMs,
     fingerprint: fingerprint,
     missingData: missingData,
+    mirror: mirror,
   );
 
   /// 没变化跳过：成功记录不动，这一期满足。
@@ -173,6 +290,7 @@ class AutoBackupStatus {
     lastSatisfiedMs: atMs,
     fingerprint: fingerprint,
     missingData: missingData,
+    mirror: mirror,
   );
 
   /// 失败：这一期不算满足，下次到期检查再试。
@@ -188,6 +306,7 @@ class AutoBackupStatus {
         fingerprint: fingerprint,
         lastInterruptedMs: lastInterruptedMs,
         missingData: missingData,
+        mirror: mirror,
       );
 
   /// 启动时发现「开始」标记还在：记成失败（[kAutoBackupErrorInterrupted]），清标记，记下被
@@ -203,6 +322,7 @@ class AutoBackupStatus {
     fingerprint: fingerprint,
     lastInterruptedMs: runningSinceMs,
     missingData: missingData,
+    mirror: mirror,
   );
 }
 

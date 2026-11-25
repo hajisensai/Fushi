@@ -11,6 +11,11 @@
 ///   下次启动认出来记成「被打断」。
 /// - **操作前还原点**：[AutoBackupController.createPreOperationPoint]（主库 `VACUUM INTO` + 复习库
 ///   内核快照），在覆盖本机数据的操作之前由调用方显式调用。
+/// - **用户文件夹（第三期，移动端）**：定时还原点照旧写进本机存储；设了用户文件夹
+///   （[AutoBackupSettings.mirrorFolder]）时，写好的点再复制一份进去（[BackupFolderMirror]），文件夹里
+///   本机写的副本按同一套保留规则修剪（[planMirrorRetention]，别的设备的副本不动）。复制失败不算
+///   备份失败：单独记在 [AutoBackupStatus.mirror]、提示一次。没复制上的（被打断、换了文件夹）在下次
+///   检查时补上；明确失败过的等下一个到期时段或「立即备份」再试，不每次回前台都重试。
 /// - **调度**：[AutoBackupController.start] 在首页就绪后挂一个空闲任务查一次、桌面端每
 ///   [kAutoBackupDesktopCheckInterval] 查一次；[AutoBackupController.onResumed] 回前台查一次。
 library;
@@ -24,6 +29,8 @@ import 'package:fushi/src/sync/auto_backup/auto_backup_progress.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_schedule.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_status.dart';
+import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart';
+import 'package:fushi/src/sync/auto_backup/backup_folder_platform.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
@@ -47,6 +54,16 @@ abstract interface class AutoBackupHost {
 
   /// 平台支不支持自定义文件夹（第二期只有桌面端）。
   bool get supportsCustomFolder;
+
+  /// 移动端的用户文件夹（第三期：Android SAF / iOS 书签）；不支持的平台 [BackupFolderPlatform.supported]
+  /// 为 false。
+  BackupFolderPlatform get mirrorPlatform;
+
+  /// 这台设备的 id 与显示名（写进文件夹副本：保留规则只修剪本机写的副本）。
+  Future<({String id, String name})> deviceIdentity();
+
+  /// 系统重建了文件夹授权（iOS 书签过期）：存回设置。
+  Future<void> saveMirrorFolder(AutoBackupMirrorFolder folder);
 
   /// 与手动导出同一份构造的备份服务。
   BackupService createBackupService();
@@ -83,6 +100,9 @@ abstract interface class AutoBackupHost {
   /// 定时备份失败：提示用户一次（状态页的告警行另外常驻）。[reason] 是状态里的错误
   /// （认识的错误码见 `auto_backup_status.dart`，文案用 `autoBackupErrorText`）。
   void notifyFailure(String reason);
+
+  /// 定时还原点写好了，复制进用户文件夹失败：提示用户一次（设置页另有常驻告警行）。
+  void notifyMirrorFailure(String reason);
 
   /// 操作前还原点没拍成、操作照常继续（[takePreOperationRestorePoint]）：提示用户一次。
   void notifyPreOperationFailure(String reason);
@@ -133,6 +153,14 @@ enum AutoBackupOutcome {
 
 /// 自定义文件夹不在（外接盘没插、网络盘没挂上）：不在本机盘上替它建一个同名目录，按失败记
 /// （[kAutoBackupErrorFolderUnavailable]）。
+/// 文件夹操作时已有备份在跑（自动 / 手动导出、还原），这次不做。
+class AutoBackupBusyException implements Exception {
+  const AutoBackupBusyException();
+
+  @override
+  String toString() => 'a backup is already running';
+}
+
 class AutoBackupFolderUnavailableException implements Exception {
   const AutoBackupFolderUnavailableException(this.folder);
 
@@ -183,6 +211,12 @@ class AutoBackupController {
         for (final RestorePoint point in scheduledStore(settings).list())
           if (point.kind == RestorePointKind.scheduled) point,
       ];
+
+  /// 实际生效的用户文件夹（平台不支持 / 没设为 null）。
+  AutoBackupMirrorFolder? mirrorFolder([AutoBackupSettings? settings]) =>
+      (settings ?? host.readSettings()).effectiveMirrorFolder(
+        supportsMirrorFolder: host.mirrorPlatform.supported,
+      );
 
   /// 首页就绪后调用：先认出上次写到一半就被打断的运行，再等这一帧画完、挂一个空闲优先级的
   /// 任务查一次；桌面端起周期检查。幂等。
@@ -247,9 +281,39 @@ class AutoBackupController {
       lastSatisfied: _status.value.lastSatisfied,
       lastInterrupted: _status.value.lastInterrupted,
     )) {
+      await _catchUpMirror(settings);
       return AutoBackupOutcome.notDue;
     }
     return _run(settings, force: false);
+  }
+
+  /// 没到期时补复制：最新的定时还原点还不在用户文件夹里（复制被打断、刚选了 / 换了文件夹），且对这个
+  /// 文件夹没有明确失败过（失败过的等下一个到期时段或「立即备份」，不每次回前台都重试、都提示）。
+  /// 不提示。
+  Future<void> _catchUpMirror(AutoBackupSettings settings) async {
+    final AutoBackupMirrorFolder? folder = mirrorFolder(settings);
+    if (folder == null) return;
+    final AutoBackupStatus status = _status.value;
+    final String? id = status.lastSuccessPointId;
+    if (id == null || status.mirror.holds(folder.key, id)) return;
+    if (status.mirror.failedFor(folder.key) &&
+        status.mirror.pendingId == null) {
+      return;
+    }
+    if (_running || !host.databaseAvailable) return;
+    final Object? lock = host.beginBackupExport();
+    if (lock == null) return;
+    _running = true;
+    try {
+      final RestorePoint? point = RestorePoint.tryRead(
+        p.join(scheduledStore(settings).root, id),
+      );
+      if (point == null) return;
+      await _mirrorPoint(folder, point, notify: false);
+    } finally {
+      _running = false;
+      host.endBackupExport(lock);
+    }
   }
 
   /// 「立即备份」：不看到期、也不因没变化跳过，直接建一个定时还原点。
@@ -286,6 +350,17 @@ class AutoBackupController {
           fingerprint == _status.value.fingerprint &&
           _lastSuccessPointExists(store)) {
         _writeStatus(_status.value.skipped(atMs: startedMs));
+        // 数据没变，但最新那份可能还没进用户文件夹（上次复制失败 / 换了文件夹）：这一期补上。
+        final AutoBackupMirrorFolder? folder = mirrorFolder(settings);
+        final String? id = _status.value.lastSuccessPointId;
+        if (folder != null &&
+            id != null &&
+            !_status.value.mirror.holds(folder.key, id)) {
+          final RestorePoint? point = RestorePoint.tryRead(
+            p.join(store.root, id),
+          );
+          if (point != null) await _mirrorPoint(folder, point, notify: true);
+        }
         return AutoBackupOutcome.skippedNoChanges;
       }
       return await _createScheduledPoint(
@@ -386,6 +461,8 @@ class AutoBackupController {
           ],
         ),
       );
+      final AutoBackupMirrorFolder? folder = mirrorFolder(settings);
+      if (folder != null) await _mirrorPoint(folder, point, notify: true);
       return AutoBackupOutcome.created;
     } catch (e, st) {
       debugPrint('AutoBackup: scheduled backup failed: $e\n$st');
@@ -400,6 +477,144 @@ class AutoBackupController {
       return AutoBackupOutcome.failed;
     } finally {
       autoBackupProgress.value = null;
+    }
+  }
+
+  // ── 用户文件夹（第三期） ───────────────────────────────────────────────────
+
+  /// 把本机定时还原点 [point] 复制进用户文件夹 [folder]，再按保留规则修剪文件夹里本机写的副本。调用方
+  /// 持有导出锁。失败只记进 [AutoBackupStatus.mirror]（[notify] 时提示一次），从不抛出：本机那份已经
+  /// 写好了。
+  Future<void> _mirrorPoint(
+    AutoBackupMirrorFolder folder,
+    RestorePoint point, {
+    required bool notify,
+  }) async {
+    final String? interrupted = _status.value.mirror.pendingId;
+    _writeStatus(
+      _status.value.withMirror(
+        _status.value.mirror.started(folderKey: folder.key, id: point.id),
+      ),
+    );
+    // 复制期间钉住本机那份：还原点页删点 / 别处的修剪删不到它。
+    final void Function() release = RestorePointStore.hold(point.directory);
+    BackupFolderSession? session;
+    try {
+      session = await host.mirrorPlatform.open(folder);
+      final AutoBackupMirrorFolder? refreshed = session.refreshedFolder;
+      if (refreshed != null) await host.saveMirrorFolder(refreshed);
+      final BackupFolderMirror mirror = session.mirror;
+      final ({String id, String name}) device = await host.deviceIdentity();
+      // 上次复制到一半进程就没了：那份半截副本按 id 精确清掉（同一个 id 下面照样会覆盖重写）。
+      if (interrupted != null && interrupted != point.id) {
+        await mirror.delete(interrupted);
+      }
+      final MirrorFolderListing listing = await mirror.list();
+      final List<MirroredRestorePoint> copies = <MirroredRestorePoint>[
+        ...listing.points,
+      ];
+      if (!copies.any((MirroredRestorePoint c) => c.id == point.id)) {
+        final String meta = mirrorMetaText(
+          point,
+          deviceId: device.id,
+          deviceName: device.name,
+        );
+        await mirror.upload(point, metaText: meta);
+        // 刚复制的那份也参与保留：它占住自己的日 / 周 / 月桶，同桶里更旧的本机副本才会被修剪。
+        final RestorePoint? uploaded = RestorePoint.tryParse(
+          meta,
+          id: point.id,
+          directory: point.id,
+        );
+        if (uploaded != null) {
+          copies.add(MirroredRestorePoint(point: uploaded, metaText: meta));
+        }
+      }
+      final List<MirroredRestorePoint> doomed = planMirrorRetention(
+        copies,
+        deviceId: device.id,
+        now: _clock(),
+        protectId: point.id,
+      );
+      for (final MirroredRestorePoint copy in doomed) {
+        await mirror.delete(copy.id);
+      }
+      _writeStatus(
+        _status.value.withMirror(
+          _status.value.mirror.succeeded(
+            folderKey: folder.key,
+            id: point.id,
+            atMs: _clock().millisecondsSinceEpoch,
+          ),
+        ),
+      );
+    } catch (e, st) {
+      debugPrint(
+        'AutoBackup: copying ${point.id} to the folder failed: $e\n$st',
+      );
+      final String error = e is BackupFolderUnavailableException
+          ? kAutoBackupErrorFolderUnavailable
+          : '$e';
+      _writeStatus(
+        _status.value.withMirror(
+          _status.value.mirror.failed(
+            folderKey: folder.key,
+            error: error,
+            atMs: _clock().millisecondsSinceEpoch,
+          ),
+        ),
+      );
+      if (notify) host.notifyMirrorFailure(error);
+    } finally {
+      release();
+      await session?.close();
+    }
+  }
+
+  /// 用户文件夹里的副本（还原点页）；没设文件夹返回 null。打不开时抛
+  /// [BackupFolderUnavailableException]。
+  Future<MirrorFolderListing?> listMirrorCopies() async {
+    final AutoBackupMirrorFolder? folder = mirrorFolder();
+    if (folder == null) return null;
+    final BackupFolderSession session = await host.mirrorPlatform.open(folder);
+    try {
+      return await session.mirror.list();
+    } finally {
+      await session.close();
+    }
+  }
+
+  /// 把文件夹副本 [copy] 取回本机还原点存储（之后补回 / 替换 / 导出照常）。持有导出锁；有备份在跑抛
+  /// [AutoBackupBusyException]。
+  Future<RestorePoint> copyMirrorCopyToDevice(MirroredRestorePoint copy) =>
+      _withFolder<RestorePoint>(
+        (BackupFolderMirror mirror) =>
+            copyMirroredPointToStore(mirror, copy, defaultStore),
+      );
+
+  /// 删掉文件夹里的副本 [copy]（本机的点不动）。持有导出锁。
+  Future<void> deleteMirrorCopy(MirroredRestorePoint copy) =>
+      _withFolder<void>((BackupFolderMirror mirror) => mirror.delete(copy.id));
+
+  Future<T> _withFolder<T>(
+    Future<T> Function(BackupFolderMirror mirror) action,
+  ) async {
+    final AutoBackupMirrorFolder? folder = mirrorFolder();
+    if (folder == null) {
+      throw const BackupFolderUnavailableException('no folder set');
+    }
+    if (_running) throw const AutoBackupBusyException();
+    final Object? lock = host.beginBackupExport();
+    if (lock == null) throw const AutoBackupBusyException();
+    _running = true;
+    BackupFolderSession? session;
+    try {
+      session = await host.mirrorPlatform.open(folder);
+      return await action(session.mirror);
+    } finally {
+      await session?.close();
+      _running = false;
+      host.endBackupExport(lock);
     }
   }
 

@@ -9,6 +9,8 @@ library;
 import 'dart:convert';
 
 import 'package:fushi/src/models/preference_keys.dart';
+import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart'
+    show AutoBackupMirrorFolder;
 import 'package:fushi/src/sync/backup_service.dart'
     show BackupCategory, kBackupFileCategories;
 
@@ -51,6 +53,7 @@ class AutoBackupSettings {
     this.categories = kAutoBackupDefaultCategories,
     this.includeSrsMedia = false,
     this.customFolder,
+    this.mirrorFolder,
   });
 
   final AutoBackupInterval interval;
@@ -64,15 +67,23 @@ class AutoBackupSettings {
   /// 带不带复习媒体（卡片图片 / 音频，D2，缺省不带）。复习笔记与记录恒在。
   final bool includeSrsMedia;
 
-  /// 桌面端自定义文件夹（绝对路径）；null = 默认还原点目录。移动端第三期才接（SAF / Files），
-  /// 读到也不用（见 [effectiveFolder]）。
+  /// 桌面端自定义文件夹（绝对路径）；null = 默认还原点目录。只有桌面端用（见 [effectiveFolder]）。
   final String? customFolder;
+
+  /// 移动端的用户文件夹（第三期，Android SAF 树 / iOS 书签）：定时还原点照旧写进本机存储，写好后
+  /// 复制一份进这里。null = 不复制。只有支持的平台用（见 [effectiveMirrorFolder]）。
+  final AutoBackupMirrorFolder? mirrorFolder;
 
   bool get enabled => interval != AutoBackupInterval.off;
 
   /// 实际生效的自定义文件夹：只有支持自定义文件夹的平台（[supportsCustomFolder]）才用。
   String? effectiveFolder({required bool supportsCustomFolder}) =>
       supportsCustomFolder ? customFolder : null;
+
+  /// 实际生效的用户文件夹：只有支持的平台（[supportsMirrorFolder]）才用。
+  AutoBackupMirrorFolder? effectiveMirrorFolder({
+    required bool supportsMirrorFolder,
+  }) => supportsMirrorFolder ? mirrorFolder : null;
 
   /// 内容签名：内容设置变了，指纹就不同，不会因「数据没变」跳过。`full` 标记整库格式：
   /// 从按类别剥行的老格式升上来后第一次照常备份。
@@ -89,6 +100,7 @@ class AutoBackupSettings {
     Set<BackupCategory>? categories,
     bool? includeSrsMedia,
     String? Function()? customFolder,
+    AutoBackupMirrorFolder? Function()? mirrorFolder,
   }) => AutoBackupSettings(
     interval: interval ?? this.interval,
     preferredMinuteOfDay: preferredMinuteOfDay != null
@@ -97,6 +109,7 @@ class AutoBackupSettings {
     categories: categories ?? this.categories,
     includeSrsMedia: includeSrsMedia ?? this.includeSrsMedia,
     customFolder: customFolder != null ? customFolder() : this.customFolder,
+    mirrorFolder: mirrorFolder != null ? mirrorFolder() : this.mirrorFolder,
   );
 
   @override
@@ -105,7 +118,8 @@ class AutoBackupSettings {
       other.interval == interval &&
       other.preferredMinuteOfDay == preferredMinuteOfDay &&
       other.contentSignature == contentSignature &&
-      other.customFolder == customFolder;
+      other.customFolder == customFolder &&
+      other.mirrorFolder == mirrorFolder;
 
   @override
   int get hashCode => Object.hash(
@@ -113,6 +127,7 @@ class AutoBackupSettings {
     preferredMinuteOfDay,
     contentSignature,
     customFolder,
+    mirrorFolder,
   );
 }
 
@@ -122,6 +137,8 @@ AutoBackupSettings readAutoBackupSettings(
 ) {
   final Object? time = readPref(kAutoBackupTimePrefKey);
   final Object? folder = readPref(kAutoBackupFolderPrefKey);
+  final Object? mirror = readPref(kAutoBackupMirrorFolderPrefKey);
+  final Object? mirrorLabel = readPref(kAutoBackupMirrorLabelPrefKey);
   return AutoBackupSettings(
     interval: AutoBackupInterval.fromName(readPref(kAutoBackupIntervalPrefKey)),
     preferredMinuteOfDay: time is int && time >= 0 && time < 24 * 60
@@ -132,6 +149,14 @@ AutoBackupSettings readAutoBackupSettings(
     ),
     includeSrsMedia: readPref(kAutoBackupSrsMediaPrefKey) == true,
     customFolder: folder is String && folder.trim().isNotEmpty ? folder : null,
+    mirrorFolder: mirror is String && mirror.isNotEmpty
+        ? AutoBackupMirrorFolder(
+            handle: mirror,
+            label: mirrorLabel is String && mirrorLabel.isNotEmpty
+                ? mirrorLabel
+                : mirror,
+          )
+        : null,
   );
 }
 
@@ -149,6 +174,8 @@ Future<void> writeAutoBackupSettings(
   ]),
   kAutoBackupSrsMediaPrefKey: settings.includeSrsMedia,
   kAutoBackupFolderPrefKey: settings.customFolder ?? '',
+  kAutoBackupMirrorFolderPrefKey: settings.mirrorFolder?.handle ?? '',
+  kAutoBackupMirrorLabelPrefKey: settings.mirrorFolder?.label ?? '',
 });
 
 /// 偏好里存的类别清单 → 文件树集合。只认 [kBackupFileCategories]：老版本存下的数据类别

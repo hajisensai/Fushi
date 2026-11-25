@@ -6,9 +6,13 @@ import 'package:fushi/src/storage/storage_usage_service.dart'
 import 'package:fushi/src/sync/auto_backup/auto_backup_messages.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_status.dart';
+import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart';
 import 'package:fushi/src/sync/backup_service.dart' show BackupCategory;
 import 'package:fushi/src/sync/sync_settings_schema.dart'
-    show autoBackupIntervalLabel, autoBackupStatusLine;
+    show
+        autoBackupIntervalLabel,
+        autoBackupMirrorStatusLine,
+        autoBackupStatusLine;
 
 /// 设置 › 同步与备份 ›「自动备份」：缺省值（D1 默认开、每日、小集合；D2 复习媒体默认不带）、
 /// 偏好往返、状态行文案。
@@ -128,5 +132,114 @@ void main() {
     expect(line, contains(formatStorageBytes(412 * 1024 * 1024)));
     expect(line, contains('14'));
     expect(line, contains(t.activity_hours_ago(n: 3)));
+  });
+
+  test('用户文件夹（第三期）：句柄与显示名往返，只在支持的平台生效，停止复制清掉', () async {
+    final Map<String, Object?> prefs = <String, Object?>{};
+    const AutoBackupMirrorFolder folder = AutoBackupMirrorFolder(
+      handle:
+          'content://com.android.externalstorage.documents/tree/primary%3ABackups',
+      label: 'Backups',
+    );
+    await writeAutoBackupSettings(
+      (Map<String, dynamic> values) async => prefs.addAll(values),
+      const AutoBackupSettings(mirrorFolder: folder),
+    );
+    final AutoBackupSettings read = readAutoBackupSettings(
+      (String key) => prefs[key],
+    );
+    expect(read.mirrorFolder, folder);
+    expect(read.effectiveMirrorFolder(supportsMirrorFolder: true), folder);
+    expect(read.effectiveMirrorFolder(supportsMirrorFolder: false), isNull);
+    // 换文件夹 = 设置不同（存设置后会补复制进新文件夹）。
+    expect(
+      read ==
+          read.copyWith(
+            mirrorFolder: () =>
+                const AutoBackupMirrorFolder(handle: 'other', label: 'Backups'),
+          ),
+      isFalse,
+    );
+    await writeAutoBackupSettings(
+      (Map<String, dynamic> values) async => prefs.addAll(values),
+      read.copyWith(mirrorFolder: () => null),
+    );
+    expect(
+      readAutoBackupSettings((String key) => prefs[key]).mirrorFolder,
+      isNull,
+    );
+    // 不把书签 / URI 原文写进状态文件：只用短标识。
+    expect(folder.key, hasLength(16));
+    expect(folder.key, isNot(contains('content')));
+  });
+
+  test('用户文件夹状态行：没备份 → 不显示；已复制 / 待复制 / 失败', () {
+    final DateTime now = DateTime(2026, 11, 25, 15);
+    const AutoBackupMirrorFolder folder = AutoBackupMirrorFolder(
+      handle: 'h',
+      label: 'Backups',
+    );
+    expect(
+      autoBackupMirrorStatusLine(
+        status: const AutoBackupStatus(),
+        folder: folder,
+        now: now,
+      ),
+      isNull,
+    );
+    final AutoBackupStatus base = AutoBackupStatus(
+      lastSuccessPointId: 'p1',
+      lastSuccessMs: now.millisecondsSinceEpoch,
+    );
+    expect(
+      autoBackupMirrorStatusLine(status: base, folder: folder, now: now)!.text,
+      t.auto_backup_mirror_status_pending,
+    );
+    final AutoBackupStatus copied = base.withMirror(
+      const AutoBackupMirrorStatus().succeeded(
+        folderKey: folder.key,
+        id: 'p1',
+        atMs: now.subtract(const Duration(hours: 2)).millisecondsSinceEpoch,
+      ),
+    );
+    final ({String text, bool failed}) done = autoBackupMirrorStatusLine(
+      status: copied,
+      folder: folder,
+      now: now,
+    )!;
+    expect(done.failed, isFalse);
+    expect(done.text, contains(t.activity_hours_ago(n: 2)));
+    // 复制状态是另一个文件夹的：当作还没复制。
+    expect(
+      autoBackupMirrorStatusLine(
+        status: copied,
+        folder: const AutoBackupMirrorFolder(handle: 'x', label: 'X'),
+        now: now,
+      )!.text,
+      t.auto_backup_mirror_status_pending,
+    );
+    final ({String text, bool failed}) failed = autoBackupMirrorStatusLine(
+      status: copied.withMirror(
+        copied.mirror.failed(
+          folderKey: folder.key,
+          error: kAutoBackupErrorFolderUnavailable,
+          atMs: now.millisecondsSinceEpoch,
+        ),
+      ),
+      folder: folder,
+      now: now,
+    )!;
+    expect(failed.failed, isTrue);
+    expect(
+      failed.text,
+      t.auto_backup_mirror_failed(
+        reason: autoBackupErrorText(kAutoBackupErrorFolderUnavailable),
+      ),
+    );
+    // 复制状态随状态文件往返，其它状态转换不丢它。
+    final AutoBackupStatus roundTrip = AutoBackupStatus.fromJson(
+      copied.toJson(),
+    ).skipped(atMs: now.millisecondsSinceEpoch);
+    expect(roundTrip.mirror.holds(folder.key, 'p1'), isTrue);
   });
 }

@@ -73,7 +73,11 @@ import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
 import 'package:fushi/src/sync/auto_backup/restore_point_actions.dart'
     show RestorePointUiFlows;
 import 'package:fushi/src/sync/auto_backup/auto_backup_status.dart'
-    show AutoBackupStatus;
+    show AutoBackupMirrorStatus, AutoBackupStatus;
+import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart'
+    show AutoBackupMirrorFolder;
+import 'package:fushi/src/sync/auto_backup/backup_folder_platform.dart'
+    show BackupFolderPlatform;
 import 'package:fushi/src/utils/components/fushi_date_time_picker.dart'
     show showFushiTimePicker;
 import 'package:fushi/src/utils/components/fushi_inline_notice.dart';

@@ -459,6 +459,11 @@ import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_messages.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
+import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart'
+    show AutoBackupMirrorFolder;
+import 'package:fushi/src/sync/auto_backup/backup_folder_platform.dart';
+import 'package:fushi_engine/sync/interconnect_device_name.dart'
+    show resolveInterconnectDeviceName;
 import 'package:fushi/src/sync/auto_backup/restore_point_actions.dart'
     show RestorePointActionsHost;
 import 'package:fushi_engine/srs/srs_media_store.dart' show SrsMediaStore;
@@ -17315,6 +17320,31 @@ class _AppAutoBackupHost implements AutoBackupHost {
   @override
   void notifyPreOperationFailure(String reason) => FushiToast.show(
     msg: t.restore_points_pre_operation_failed(reason: reason),
+    severity: ToastSeverity.warning,
+  );
+
+  @override
+  late final BackupFolderPlatform mirrorPlatform =
+      currentBackupFolderPlatform();
+
+  @override
+  Future<({String id, String name})> deviceIdentity() async => (
+    id: await SyncRepository(_app.database).getOrCreateDeviceId(),
+    name: await resolveInterconnectDeviceName(
+      _app.platformServices.deviceInfo,
+    ),
+  );
+
+  @override
+  Future<void> saveMirrorFolder(AutoBackupMirrorFolder folder) =>
+      writeAutoBackupSettings(
+        _app.prefsRepo.setPrefs,
+        _app.autoBackupSettings.copyWith(mirrorFolder: () => folder),
+      );
+
+  @override
+  void notifyMirrorFailure(String reason) => FushiToast.show(
+    msg: t.auto_backup_mirror_failed(reason: autoBackupErrorText(reason)),
     severity: ToastSeverity.warning,
   );
 }

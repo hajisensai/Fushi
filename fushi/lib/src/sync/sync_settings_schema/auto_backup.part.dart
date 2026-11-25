@@ -237,7 +237,38 @@ class _AutoBackupTimeRow extends StatelessWidget {
   }
 }
 
+/// 用户文件夹的状态行（纯函数，测试用）：失败 → 告警原因；最新那份已复制 → 「最新备份已复制（3 小时前）」；
+/// 还没复制 → 「下次检查时补上」；还没有任何备份 → null（不显示）。
+@visibleForTesting
+({String text, bool failed})? autoBackupMirrorStatusLine({
+  required AutoBackupStatus status,
+  required AutoBackupMirrorFolder folder,
+  required DateTime now,
+}) {
+  final AutoBackupMirrorStatus mirror = status.mirror;
+  if (mirror.failedFor(folder.key)) {
+    return (
+      text: t.auto_backup_mirror_failed(
+        reason: autoBackupErrorText(mirror.error),
+      ),
+      failed: true,
+    );
+  }
+  final String? latest = status.lastSuccessPointId;
+  if (latest == null) return null;
+  if (mirror.holds(folder.key, latest) && mirror.atMs != null) {
+    return (
+      text: t.auto_backup_mirror_status_done(
+        time: formatActivityRelativeTime(mirror.atMs!, now),
+      ),
+      failed: false,
+    );
+  }
+  return (text: t.auto_backup_mirror_status_pending, failed: false);
+}
+
 /// 落点：默认还原点目录；桌面端可选自定义文件夹 / 改回默认。默认目录在卸载时随 app 删除，提示一次。
+/// 移动端（第三期）另有「复制到文件夹」：Android SAF 树 / iOS 书签文件夹，见 [_AutoBackupMirrorRow]。
 class _AutoBackupFolderRow extends StatelessWidget {
   const _AutoBackupFolderRow({required this.settingsContext});
 
@@ -258,11 +289,13 @@ class _AutoBackupFolderRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final AppModel app = settingsContext.appModel;
     final bool supportsCustom = _autoBackupSupportsCustomFolder;
-    // 第三期接口位：Android SAF 树 / iOS「文件」里可见的文件夹在这里接（spec Phase 3）。
-    // 第二期移动端只有默认目录，不出选择按钮。
+    // 移动端没有自定义存储根：还原点留在默认目录，另可复制到用户文件夹（[_AutoBackupMirrorRow]）。
     final String? folder = app.autoBackupSettings.effectiveFolder(
       supportsCustomFolder: supportsCustom,
     );
+    final BackupFolderPlatform mirrorPlatform =
+        app.autoBackup.host.mirrorPlatform;
+    final AutoBackupMirrorFolder? mirror = app.autoBackup.mirrorFolder();
     final String defaultRoot = app.autoBackup.defaultStore.root;
     return Column(
       mainAxisSize: MainAxisSize.min,
@@ -308,7 +341,7 @@ class _AutoBackupFolderRow extends StatelessWidget {
                 )
               : null,
         ),
-        if (folder == null)
+        if (folder == null && mirror == null)
           Padding(
             padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
             child: FushiInlineNotice(
@@ -316,6 +349,132 @@ class _AutoBackupFolderRow extends StatelessWidget {
               severity: FushiNoticeSeverity.warning,
               message: t.auto_backup_folder_uninstall_warning,
             ),
+          ),
+        if (mirrorPlatform.supported)
+          _AutoBackupMirrorRow(
+            settingsContext: settingsContext,
+            platform: mirrorPlatform,
+            folder: mirror,
+          ),
+      ],
+    );
+  }
+}
+
+/// 移动端「复制到文件夹」（第三期）：选 / 换 / 停止复制，加复制状态行。还原点照旧先写进本机存储，
+/// 写好的每份再复制进这个文件夹（[AutoBackupController]）。
+class _AutoBackupMirrorRow extends StatelessWidget {
+  const _AutoBackupMirrorRow({
+    required this.settingsContext,
+    required this.platform,
+    required this.folder,
+  });
+
+  final SettingsContext settingsContext;
+  final BackupFolderPlatform platform;
+  final AutoBackupMirrorFolder? folder;
+
+  Future<void> _choose() async {
+    final AutoBackupMirrorFolder? picked;
+    try {
+      picked = await platform.pick();
+    } catch (e, st) {
+      debugPrint('AutoBackup: picking the folder failed: $e\n$st');
+      FushiToast.show(
+        msg: t.auto_backup_mirror_failed(reason: '$e'),
+        severity: ToastSeverity.error,
+      );
+      return;
+    }
+    if (picked == null) return;
+    final AutoBackupMirrorFolder? previous = folder;
+    // 存设置会立刻查一次到期：没到期也会把最新那份补复制进新文件夹。
+    await _updateAutoBackupSettings(
+      settingsContext,
+      (AutoBackupSettings s) => s.copyWith(mirrorFolder: () => picked),
+    );
+    if (previous != null && previous.handle != picked.handle) {
+      await platform.forget(previous);
+    }
+  }
+
+  Future<void> _stop() async {
+    final AutoBackupMirrorFolder? previous = folder;
+    await _updateAutoBackupSettings(
+      settingsContext,
+      (AutoBackupSettings s) => s.copyWith(mirrorFolder: () => null),
+    );
+    if (previous != null) await platform.forget(previous);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final AppModel app = settingsContext.appModel;
+    final AutoBackupMirrorFolder? current = folder;
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      children: <Widget>[
+        AdaptiveSettingsRow(
+          key: const ValueKey<String>('auto-backup-mirror'),
+          title: t.auto_backup_mirror_folder,
+          subtitle: current?.label ?? t.auto_backup_mirror_folder_none,
+          icon: FushiIcons.folder,
+          showIcon: true,
+          subtitleMaxLines: 3,
+          onTap: () => unawaited(_choose()),
+          trailing: Wrap(
+            spacing: 4,
+            children: <Widget>[
+              if (current != null)
+                FushiPressScale(
+                  child: FushiTextButton(
+                    key: const ValueKey<String>('auto-backup-mirror-stop'),
+                    onPressed: () => unawaited(_stop()),
+                    child: Text(t.auto_backup_mirror_stop),
+                  ),
+                ),
+              FushiPressScale(
+                child: FushiTextButton(
+                  key: const ValueKey<String>('auto-backup-mirror-choose'),
+                  onPressed: () => unawaited(_choose()),
+                  child: Text(t.auto_backup_folder_choose),
+                ),
+              ),
+            ],
+          ),
+        ),
+        if (current == null)
+          Padding(
+            padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+            child: FushiInlineNotice(
+              key: const ValueKey<String>('auto-backup-mirror-hint'),
+              message: t.auto_backup_mirror_folder_hint,
+            ),
+          )
+        else
+          ValueListenableBuilder<AutoBackupStatus>(
+            valueListenable: app.autoBackup.status,
+            builder:
+                (BuildContext context, AutoBackupStatus status, Widget? _) {
+                  final ({String text, bool failed})? line =
+                      autoBackupMirrorStatusLine(
+                        status: status,
+                        folder: current,
+                        now: DateTime.now(),
+                      );
+                  if (line == null) return const SizedBox.shrink();
+                  return Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
+                    child: FushiInlineNotice(
+                      key: const ValueKey<String>('auto-backup-mirror-status'),
+                      severity: line.failed
+                          ? FushiNoticeSeverity.warning
+                          : FushiNoticeSeverity.info,
+                      message: line.text,
+                    ),
+                  );
+                },
           ),
       ],
     );
@@ -423,8 +582,7 @@ class _AutoBackupStatusRow extends StatelessWidget {
                       : t.auto_backup_overdue_warning,
                 ),
               ),
-            if (!failed &&
-                status.missingData.contains(BackupCategory.srs.name))
+            if (!failed && status.missingData.contains(BackupCategory.srs.name))
               Padding(
                 padding: const EdgeInsets.fromLTRB(16, 0, 16, 12),
                 child: FushiInlineNotice(

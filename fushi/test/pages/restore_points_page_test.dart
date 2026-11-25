@@ -1,3 +1,4 @@
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:flutter/services.dart';
@@ -11,6 +12,7 @@ import 'package:fushi/src/models/theme_notifier.dart'
     show buildFushiFallbackTheme;
 import 'package:fushi/src/pages/implementations/library_recovery_page.dart';
 import 'package:fushi/src/storage/orphan_book_recovery.dart';
+import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart';
 import 'package:fushi/src/sync/auto_backup/restore_point_catalog.dart';
 import 'package:fushi/src/sync/backup_service.dart'
     show BackupCategory, OverwriteSnapshotBook, OverwriteSnapshotPreview;
@@ -57,6 +59,44 @@ class _DirHost implements RestorePointsHost {
 
   @override
   Future<OrphanBookRecovery?> orphanRecovery() async => null;
+
+  /// 用户文件夹（目录）；null = 没设。
+  String? folderDir;
+
+  @override
+  String? get folderLabel => folderDir == null ? null : 'Backups';
+
+  @override
+  Future<MirrorFolderListing?> listFolderCopies() async =>
+      folderDir == null ? null : IoBackupFolderMirror(folderDir!).list();
+
+  @override
+  Future<void> copyFolderCopyToDevice(MirroredRestorePoint copy) async {
+    await copyMirroredPointToStore(
+      IoBackupFolderMirror(folderDir!),
+      copy,
+      RestorePointStore(dir),
+    );
+  }
+
+  @override
+  Future<void> deleteFolderCopy(MirroredRestorePoint copy) =>
+      IoBackupFolderMirror(folderDir!).delete(copy.id);
+}
+
+/// 在文件夹 [folder] 里造一份副本（[source] 的文件 + 元数据，标上写入设备）。
+void _mirrorInto(String folder, RestorePoint source, {required String device}) {
+  final Directory dest = Directory(p.join(folder, source.id))
+    ..createSync(recursive: true);
+  for (final RestorePointFile f in source.files) {
+    File(p.join(source.directory, f.name)).copySync(p.join(dest.path, f.name));
+  }
+  final Map<String, Object?> meta = source.toJson()
+    ..['deviceId'] = device
+    ..['deviceName'] = 'Phone $device';
+  File(
+    p.join(dest.path, kRestorePointMetaFileName),
+  ).writeAsStringSync(jsonEncode(meta));
 }
 
 void main() {
@@ -120,8 +160,14 @@ void main() {
     if (tmp.existsSync()) tmp.deleteSync(recursive: true);
   });
 
-  Future<_DirHost> pumpPage(WidgetTester tester) async {
-    final _DirHost host = _DirHost(tmp.path);
+  Future<_DirHost> pumpPage(WidgetTester tester, {String? folderDir}) async {
+    if (folderDir != null) {
+      // 文件夹那一节在两张还原点卡片下面：给足高度，懒构建的列表才会把它建出来。
+      tester.view.physicalSize = const Size(1000, 3000);
+      tester.view.devicePixelRatio = 1.0;
+      addTearDown(tester.view.reset);
+    }
+    final _DirHost host = _DirHost(tmp.path)..folderDir = folderDir;
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
@@ -290,5 +336,120 @@ void main() {
     ).deleteSync(recursive: true);
     await pumpPage(tester);
     expect(find.text(t.restore_points_empty), findsOneWidget);
+  });
+
+  group('用户文件夹（第三期）', () {
+    late String folder;
+    late String foreignId;
+
+    setUp(() {
+      folder = p.join(tmp.path, 'user_folder');
+      Directory(folder).createSync();
+      // 本机这份也在文件夹里；另有一份只在文件夹里（别的设备写的，本机没有）。
+      _mirrorInto(folder, scheduled, device: 'a');
+      final RestorePointStore other = RestorePointStore(
+        p.join(tmp.path, 'other_device'),
+      );
+      final RestorePointDraft draft = other.begin(
+        kind: RestorePointKind.scheduled,
+        nowMs: DateTime.utc(2026, 11, 20, 8).millisecondsSinceEpoch,
+      );
+      File(
+        p.join(draft.directory, kRestorePointArchiveFileName),
+      ).writeAsStringSync('zip2');
+      final RestorePoint foreign = other.commit(
+        draft,
+        fromSchema: kFushiDbSchemaVersion,
+        toSchema: kFushiDbSchemaVersion,
+        categories: <String>['fonts'],
+        excludedCategories: <String>['books'],
+        includesSrsMedia: false,
+        fullDatabase: true,
+      );
+      foreignId = foreign.id;
+      _mirrorInto(folder, foreign, device: 'b');
+    });
+
+    testWidgets('只列本机没有的副本，本机那份标「文件夹里也有」', (WidgetTester tester) async {
+      await pumpPage(tester, folderDir: folder);
+      expect(find.text(t.restore_points_folder_section), findsOneWidget);
+      expect(
+        find.byKey(ValueKey<String>('restore-point-folder-$foreignId')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey<String>('restore-point-folder-${scheduled.id}')),
+        findsNothing,
+      );
+      expect(find.textContaining(t.restore_points_folder_also), findsOneWidget);
+      expect(
+        find.textContaining(
+          t.restore_points_folder_from_device(device: 'Phone b'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('「复制到本机」：键盘走到按钮 → Enter → 进本机还原点，可补回 / 替换', (
+      WidgetTester tester,
+    ) async {
+      await pumpPage(tester, folderDir: folder);
+      final FocusDriver driver = FocusDriver(tester);
+      final bool reached = await driver.focusWidget(
+        find.byKey(ValueKey<String>('restore-point-folder-copy-$foreignId')),
+      );
+      expect(reached, isTrue, reason: '「复制到本机」必须能用键盘走到');
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      // 复制走真实文件 IO：让出真实事件循环等它完成，再把界面推进到底。
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      await tester.pumpAndSettle();
+
+      expect(
+        RestorePoint.tryRead(
+          p.join(tmp.path, kRestorePointsDirName, foreignId),
+        ),
+        isNotNull,
+      );
+      expect(
+        find.byKey(ValueKey<String>('restore-point-fill-$foreignId')),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(ValueKey<String>('restore-point-folder-$foreignId')),
+        findsNothing,
+      );
+      expect(find.text(t.restore_points_folder_empty), findsOneWidget);
+    });
+
+    testWidgets('删除文件夹副本：行内确认 → Enter，本机的点不动', (WidgetTester tester) async {
+      await pumpPage(tester, folderDir: folder);
+      final FocusDriver driver = FocusDriver(tester);
+      final bool reached = await driver.focusWidget(
+        find.byKey(ValueKey<String>('restore-point-folder-delete-$foreignId')),
+      );
+      expect(reached, isTrue);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(find.text(t.restore_points_folder_delete_body), findsOneWidget);
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.runAsync(
+        () => Future<void>.delayed(const Duration(milliseconds: 300)),
+      );
+      await tester.pumpAndSettle();
+      expect(Directory(p.join(folder, foreignId)).existsSync(), isFalse);
+      expect(Directory(p.join(folder, scheduled.id)).existsSync(), isTrue);
+      expect(Directory(scheduled.directory).existsSync(), isTrue);
+    });
+
+    testWidgets('文件夹打不开：那一节说明原因，本机列表照常', (WidgetTester tester) async {
+      await pumpPage(tester, folderDir: p.join(tmp.path, 'missing'));
+      expect(
+        find.byKey(const ValueKey<String>('restore-point-folder-error')),
+        findsOneWidget,
+      );
+      expect(find.text(t.restore_points_kind_scheduled), findsOneWidget);
+    });
   });
 }
