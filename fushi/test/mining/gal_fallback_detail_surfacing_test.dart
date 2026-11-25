@@ -52,7 +52,9 @@ void main() {
 
   group('会话卡必须把 native 证据显示出来 (BUG-1446)', () {
     // 私有 widget（`_SessionOverviewCard`）没法从外部构造，widget 测试够不着；
-    // 源码扫描是这条回归目前最强的可落地层。
+    // 源码扫描是这条回归目前最强的可落地层。d6f2962d5a 起说明行（含证据行）在两套
+    // 设计系统共用的 `_SessionSummary.hints` 里算好，渲染端只照 `hint.maxLines` 摆
+    // （见 texthooker_narrow_degrade_reason_guard_test.dart），故锚在 `_SessionSummary`。
     late String card;
 
     setUpAll(() {
@@ -61,15 +63,14 @@ void main() {
       );
       expect(file.existsSync(), isTrue, reason: '会话卡源文件不在了？守卫失去锚点，先修路径再谈断言');
       final String src = file.readAsStringSync();
-      final int start = maskCommentsAndStrings(
-        src,
-      ).indexOf('class _SessionOverviewCard');
+      final int start = maskCommentsAndStrings(src)
+          .indexOf('class _SessionSummary ');
       expect(
         start,
         greaterThanOrEqualTo(0),
-        reason: '_SessionOverviewCard 改名了：守卫锚点必须跟着改，不能静默失效',
+        reason: '_SessionSummary 改名了：守卫锚点必须跟着改，不能静默失效',
       );
-      card = balancedBlockFrom(src, start, what: '_SessionOverviewCard');
+      card = balancedBlockFrom(src, start, what: '_SessionSummary');
     });
 
     test('渲染了 state.injectorDetail —— 丢掉它等于把确诊依据藏起来', () {
