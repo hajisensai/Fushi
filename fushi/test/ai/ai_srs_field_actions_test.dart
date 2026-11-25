@@ -30,19 +30,26 @@ The explanation must be written in the same language as the user instruction
 (or the output language if there is no instruction).
 ''';
 
-/// 改造前 `_taskLine(task, lang)` 的输出。
-String _p0TaskLine(AiSrsFieldTask task, String lang) => switch (task) {
-  AiSrsFieldTask.define =>
-    'Task: write a concise definition of the headword for this field, in '
-        '$lang. Number senses if there are several.',
-  AiSrsFieldTask.translate =>
-    'Task: translate the example sentence into $lang. Keep the '
-        'target word recognisable (wrap its translation in <b>).',
-  AiSrsFieldTask.rewrite =>
-    'Task: fill in or improve this field using the other fields of the note: '
-        'keep the meaning, make it clearer and shorter.',
-  AiSrsFieldTask.custom => 'Task: follow the user instruction below.',
-};
+/// P2 在总体说明末尾加的一段（以笔记的词典字段为准）。
+const String _kGrounding = '''
+Ground your answer in the note: prefer what its dictionary fields (definition,
+glossary) say over your own knowledge, and never invent senses, readings or
+facts that the note does not support.''';
+
+/// 当前内置系统提示 = P0 原文在「语言」一段后插入 [_kGrounding]；契约部分逐字节不变。
+final String _kDefaultSystemPrompt = _kP0SystemPrompt.replaceFirst(
+  'says otherwise.\n\nFormatting',
+  'says otherwise.\n\n$_kGrounding\n\nFormatting',
+);
+
+/// 内置任务模板代入占位符后的任务行。
+String _defaultTaskLine(AiSrsFieldTask task, String lang) =>
+    aiSrsFieldResolvePlaceholders(
+      aiSrsFieldTaskTemplate(task).text,
+      outputLanguage: lang,
+      targetField: 'X',
+      fieldValuesByName: const <String, String>{},
+    );
 
 const List<SrsFieldDef> _fields = <SrsFieldDef>[
   SrsFieldDef(id: 'f0', name: 'Sentence', ord: 0),
@@ -68,36 +75,87 @@ AiSrsFieldPrompt _build({
 );
 
 void main() {
-  group('没有改动 = 与改造前逐字节一致', () {
-    test('系统消息 = P0 的系统提示', () {
-      expect(kAiSrsFieldSystemPrompt, _kP0SystemPrompt);
+  group('没有改动 = 内置默认', () {
+    test('系统消息 = P0 原文 + 「以笔记为准」一段；契约不变', () {
+      expect(kAiSrsFieldSystemPrompt, _kDefaultSystemPrompt);
       expect(
         aiSrsFieldSystemMessage(
           AiSrsFieldActions.empty.textOf(kAiSrsFieldSystemTemplateId),
         ),
-        _kP0SystemPrompt,
+        _kDefaultSystemPrompt,
       );
-      expect(_build().system, _kP0SystemPrompt);
+      expect(_build().system, _kDefaultSystemPrompt);
+      expect(_kDefaultSystemPrompt, contains(_kGrounding));
     });
 
-    test('四个任务行 = 改造前的 _taskLine', () {
-      for (final AiSrsFieldTask task in AiSrsFieldTask.values) {
-        for (final String lang in <String>['zh-CN', 'English']) {
-          expect(
-            aiSrsFieldResolvePlaceholders(
-              AiSrsFieldActions.empty.taskTextOf(AiSrsFieldAction(task)),
-              outputLanguage: lang,
-              targetField: 'X',
-              fieldValuesByName: const <String, String>{'Sentence': 'a'},
-            ),
-            _p0TaskLine(task, lang),
-            reason: '${task.name} / $lang',
-          );
-        }
+    test('改过正文的内置模板版本号都加了一（基于旧版改过的用户会看到更新提示）', () {
+      int versionOf(String id) => aiSrsFieldTemplateById(id)!.version;
+      expect(versionOf(kAiSrsFieldSystemTemplateId), 2);
+      expect(versionOf('task.define'), 2);
+      expect(versionOf('task.translate'), 2);
+      expect(versionOf('task.rewrite'), 2);
+      expect(versionOf('task.custom'), 1, reason: '自定义任务正文没变');
+      final AiSrsFieldActions basedOnV1 = decodeAiSrsFieldActions(
+        '{"overrides": {"task.translate": {"text": "mine", "baseVersion": 1}}}',
+      );
+      expect(basedOnV1.isOutdated('task.translate'), isTrue);
+    });
+
+    test('翻译任务：只译例句、保留语气与残句、句末语气词、中性猜测写进说明、目标词加粗', () {
+      final String line = _defaultTaskLine(AiSrsFieldTask.translate, 'English');
+      final String flat = line.replaceAll('\n', ' ');
+      expect(
+        line,
+        startsWith("Task: translate the note's example sentence into English."),
+      );
+      expect(line, isNot(contains('{{')));
+      for (final String rule in <String>[
+        'Translate only the sentence.',
+        'Be faithful first, natural second',
+        'Keep fragments, interjections and lines that trail off as they are',
+        'Add a missing subject or object only when the sentence needs one.',
+        'name the guess in "explanation"',
+        'Translate sentence-final particles and drawn-out endings',
+        'Wrap the words that translate the target word',
+        '"value" holds only the translation',
+      ]) {
+        expect(flat, contains(rule), reason: rule);
       }
     });
 
-    test('整条用户消息 = 改造前的骨架 + 任务行', () {
+    test('释义任务以词典字段为准、句中义项加粗；改写不许改意思；自定义不变', () {
+      final String define = _defaultTaskLine(
+        AiSrsFieldTask.define,
+        'English',
+      ).replaceAll('\n', ' ');
+      expect(define, contains('in English.'));
+      expect(define, contains('do not invent senses'));
+      expect(define, contains("the sense used in the note's sentence first"));
+      expect(
+        _defaultTaskLine(AiSrsFieldTask.rewrite, 'English'),
+        contains('Never change the meaning'),
+      );
+      expect(
+        _defaultTaskLine(AiSrsFieldTask.custom, 'English'),
+        'Task: follow the user instruction below.',
+      );
+    });
+
+    test('两条真实难句：目标词标记原样进用户消息，翻译规则同在一条消息里', () {
+      for (final String sentence in <String>[
+        'それに<b>気づいた</b>時 完全に嫌いになった',
+        '<b>うっかり</b>かあ',
+      ]) {
+        final AiSrsFieldPrompt p = _build(
+          values: <String, String>{'f0': sentence},
+        );
+        expect(p.user, contains(sentence), reason: sentence);
+        expect(p.user, contains('Keep fragments, interjections'));
+        expect(p.system, contains('marks the\ntarget word'));
+      }
+    });
+
+    test('整条用户消息 = 固定骨架 + 内置任务行', () {
       for (final AiSrsFieldTask task in AiSrsFieldTask.values) {
         final String expected = buildAiSrsFieldUserPrompt(
           noteTypeName: 'T',
@@ -109,7 +167,7 @@ void main() {
               ),
           ],
           targetFieldId: 'f1',
-          taskText: _p0TaskLine(task, 'English'),
+          taskText: _defaultTaskLine(task, 'English'),
           instruction: 'be brief',
           outputLanguage: 'English',
         );
@@ -209,7 +267,7 @@ void main() {
         'mine',
       );
       expect(fresh.isOutdated('task.define'), isFalse);
-      expect(fresh.overrides['task.define']!.baseVersion, 1);
+      expect(fresh.overrides['task.define']!.baseVersion, 2);
       expect(AiSrsFieldActions.empty.isOutdated('task.define'), isFalse);
       // 看着提示改了再存 = 算看过新版。
       expect(
@@ -328,7 +386,7 @@ void main() {
           actions: a,
           action: AiSrsFieldAction(AiSrsFieldTask.define, variantId: v.id),
         ).user,
-        contains(_p0TaskLine(AiSrsFieldTask.define, 'English')),
+        contains(_defaultTaskLine(AiSrsFieldTask.define, 'English')),
       );
       // 已删除的变体 → 任务模板。
       expect(
@@ -336,7 +394,7 @@ void main() {
           actions: a.removeVariant(v.id),
           action: AiSrsFieldAction(AiSrsFieldTask.translate, variantId: v.id),
         ).user,
-        contains(_p0TaskLine(AiSrsFieldTask.translate, 'English')),
+        contains(_defaultTaskLine(AiSrsFieldTask.translate, 'English')),
       );
     });
   });
@@ -347,8 +405,13 @@ void main() {
       for (final AiSavedPrompt p in builtins)
         if (aiSrsFieldBuiltinPresetVisible(p, task)) p.id.split(':').last,
     ];
-    expect(visible(AiSrsFieldTask.define), <String>['concise', 'list']);
-    expect(visible(AiSrsFieldTask.translate), isEmpty);
+    expect(visible(AiSrsFieldTask.define), <String>[
+      'concise',
+      'list',
+      'sense',
+      'monolingual',
+    ]);
+    expect(visible(AiSrsFieldTask.translate), <String>['literal', 'nuance']);
     expect(visible(AiSrsFieldTask.rewrite), <String>['concise', 'example']);
     expect(visible(AiSrsFieldTask.custom), <String>['example']);
     const AiSavedPrompt mine = AiSavedPrompt(id: 'p1', name: 'n', text: 't');
@@ -358,9 +421,17 @@ void main() {
   });
 }
 
-/// 三条内置预设的 id（正文走 i18n，这里只关心 id）。
+/// 内置预设的 id（正文走 i18n，这里只关心 id），顺序同 `aiBuiltinPrompts`。
 List<AiSavedPrompt> aiBuiltinPromptsForTest() => <AiSavedPrompt>[
-  for (final String slug in <String>['concise', 'example', 'list'])
+  for (final String slug in <String>[
+    'concise',
+    'example',
+    'list',
+    'sense',
+    'monolingual',
+    'literal',
+    'nuance',
+  ])
     AiSavedPrompt(
       id: '${kAiBuiltinPromptIdPrefix}srs_field:$slug',
       name: slug,

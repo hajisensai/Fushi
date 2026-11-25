@@ -65,36 +65,74 @@ class AiSrsFieldTemplate {
   bool get isSystem => task == null;
 }
 
+/// 内置「写释义」任务正文。
+const String kAiSrsFieldDefineTask = '''
+Task: write the definition of the headword for this field, in
+{{output_language}}.
+- Base it on the note's dictionary fields (definition, glossary) when they are
+  present; do not invent senses.
+- Put the sense used in the note's sentence first and wrap it in <b>…</b>.
+  Number the senses if there are several.''';
+
+/// 内置「翻译例句」任务正文。规则按两类真实难句定：省略主语 / 宾语的整句
+/// （`それに気づいた時 完全に嫌いになった`）与带句末语气词的残句（`うっかりかあ`）。
+const String kAiSrsFieldTranslateTask = '''
+Task: translate the note's example sentence into {{output_language}}.
+- Translate only the sentence. Use the other fields (target word, its
+  definition, source) only to work out what it means.
+- Be faithful first, natural second: keep the meaning, tone and register
+  (casual, polite, rough). Do not add or drop information, do not soften or
+  intensify, do not explain.
+- Keep fragments, interjections and lines that trail off as they are: do not
+  turn them into full sentences or add a subject or verb the original does not
+  imply.
+- Add a missing subject or object only when the sentence needs one. Pick the
+  most likely reading from the other fields; if they do not settle it, use a
+  neutral choice ("I", "it", "them") and name the guess in "explanation".
+- Translate sentence-final particles and drawn-out endings with a natural
+  equivalent ("huh", "right", "…") instead of dropping them.
+- Wrap the words that translate the target word (the <b> part of the
+  sentence, or the headword) in <b>…</b>, once.
+- "value" holds only the translation: one line, no quotes, no romanization,
+  no alternatives, no notes.
+- "explanation": one short sentence naming any guess or ambiguity; if there
+  was none, say the translation is direct.''';
+
+/// 内置「改写」任务正文。
+const String kAiSrsFieldRewriteTask = '''
+Task: improve this field using the other fields of the note: keep the
+meaning, make it clearer and shorter. Never change the meaning, and do not
+rewrite the note's sentence or headword text itself.''';
+
 /// 全部内置模板（总体说明在前，任务按 [AiSrsFieldTask] 的顺序）。
 const List<AiSrsFieldTemplate> kAiSrsFieldTemplates = <AiSrsFieldTemplate>[
+  // v2：加「以笔记的词典字段为准、不编造」一段。
   AiSrsFieldTemplate(
     id: kAiSrsFieldSystemTemplateId,
-    version: 1,
+    version: 2,
     text: kAiSrsFieldGuidance,
   ),
+  // v2：以笔记的词典字段为准；句中用到的义项放第一、加粗。
   AiSrsFieldTemplate(
     id: 'task.define',
-    version: 1,
+    version: 2,
     task: AiSrsFieldTask.define,
-    text:
-        'Task: write a concise definition of the headword for this field, in '
-        '{{output_language}}. Number senses if there are several.',
+    text: kAiSrsFieldDefineTask,
   ),
+  // v2：只译例句；忠实优先、保留语气；残句 / 句末语气词 / 省略的主语宾语怎么处理；
+  // 目标词译文加粗；value 只放译文；猜测写进 explanation。
   AiSrsFieldTemplate(
     id: 'task.translate',
-    version: 1,
+    version: 2,
     task: AiSrsFieldTask.translate,
-    text:
-        'Task: translate the example sentence into {{output_language}}. Keep '
-        'the target word recognisable (wrap its translation in <b>).',
+    text: kAiSrsFieldTranslateTask,
   ),
+  // v2：不许改意思，不改写例句 / 词头本身。
   AiSrsFieldTemplate(
     id: 'task.rewrite',
-    version: 1,
+    version: 2,
     task: AiSrsFieldTask.rewrite,
-    text:
-        'Task: fill in or improve this field using the other fields of the '
-        'note: keep the meaning, make it clearer and shorter.',
+    text: kAiSrsFieldRewriteTask,
   ),
   AiSrsFieldTemplate(
     id: 'task.custom',
@@ -586,8 +624,9 @@ AiSrsFieldPrompt buildAiSrsFieldPrompt({
 }
 
 /// 字段 AI 抽屉里内置的「已保存的提示词」预设按任务筛选（只管
-/// [AiPromptScene.srsField] 的三条内置；用户保存的不筛）：`concise` → 释义 / 改写，
-/// `list` → 释义，`example` → 自定义 / 改写。
+/// [AiPromptScene.srsField] 的内置；用户保存的不筛）：`concise` → 释义 / 改写，
+/// `list` / `sense` / `monolingual` → 释义，`example` → 自定义 / 改写，
+/// `literal` / `nuance` → 翻译。
 bool aiSrsFieldBuiltinPresetVisible(AiSavedPrompt prompt, AiSrsFieldTask task) {
   final String prefix =
       '$kAiBuiltinPromptIdPrefix${AiPromptScene.srsField.wire}:';
@@ -596,7 +635,8 @@ bool aiSrsFieldBuiltinPresetVisible(AiSavedPrompt prompt, AiSrsFieldTask task) {
   return switch (slug) {
     'concise' =>
       task == AiSrsFieldTask.define || task == AiSrsFieldTask.rewrite,
-    'list' => task == AiSrsFieldTask.define,
+    'list' || 'sense' || 'monolingual' => task == AiSrsFieldTask.define,
+    'literal' || 'nuance' => task == AiSrsFieldTask.translate,
     'example' =>
       task == AiSrsFieldTask.custom || task == AiSrsFieldTask.rewrite,
     _ => true,

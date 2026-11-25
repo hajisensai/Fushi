@@ -284,6 +284,32 @@ List<AiSavedPrompt> aiBuiltinPrompts(AiPromptScene scene) => switch (scene) {
       t.ai_prompt_preset_srs_field_list_name,
       t.ai_prompt_preset_srs_field_list_text,
     ),
+    // 按任务筛选（`aiSrsFieldBuiltinPresetVisible`）：sense / monolingual 只在写释义，
+    // literal / nuance 只在翻译时出现。
+    _builtin(
+      scene,
+      'sense',
+      t.ai_prompt_preset_srs_field_sense_name,
+      t.ai_prompt_preset_srs_field_sense_text,
+    ),
+    _builtin(
+      scene,
+      'monolingual',
+      t.ai_prompt_preset_srs_field_monolingual_name,
+      t.ai_prompt_preset_srs_field_monolingual_text,
+    ),
+    _builtin(
+      scene,
+      'literal',
+      t.ai_prompt_preset_srs_field_literal_name,
+      t.ai_prompt_preset_srs_field_literal_text,
+    ),
+    _builtin(
+      scene,
+      'nuance',
+      t.ai_prompt_preset_srs_field_nuance_name,
+      t.ai_prompt_preset_srs_field_nuance_text,
+    ),
   ],
   AiPromptScene.srsTemplate => <AiSavedPrompt>[
     _builtin(

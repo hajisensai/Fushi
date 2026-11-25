@@ -4,6 +4,9 @@ import 'package:drift/drift.dart' show DatabaseConnection;
 import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
+import 'package:fushi/src/ai/ai_srs_field_actions.dart'
+    show aiSrsFieldBuiltinPresetVisible;
+import 'package:fushi/src/ai/ai_srs_field_assistant.dart' show AiSrsFieldTask;
 import 'package:fushi/src/models/preference_keys.dart';
 import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -154,11 +157,28 @@ void main() {
       );
     });
 
-    test('每个场景都有 1–3 条内置预设，id 唯一且都是内置 id', () {
+    test('每个场景都有 1–3 条内置预设（字段场景按任务筛后每个任务 1–4 条），id 唯一且都是内置 id', () {
       final Set<String> ids = <String>{};
       for (final AiPromptScene scene in AiPromptScene.values) {
         final List<AiSavedPrompt> builtins = aiBuiltinPrompts(scene);
-        expect(builtins.length, inInclusiveRange(1, 3), reason: scene.name);
+        if (scene == AiPromptScene.srsField) {
+          // 字段场景的预设按任务筛（`aiSrsFieldBuiltinPresetVisible`），抽屉里一次只
+          // 显示当前任务的那几条。
+          for (final AiSrsFieldTask task in AiSrsFieldTask.values) {
+            expect(
+              builtins
+                  .where(
+                    (AiSavedPrompt p) =>
+                        aiSrsFieldBuiltinPresetVisible(p, task),
+                  )
+                  .length,
+              inInclusiveRange(1, 4),
+              reason: task.name,
+            );
+          }
+        } else {
+          expect(builtins.length, inInclusiveRange(1, 3), reason: scene.name);
+        }
         for (final AiSavedPrompt p in builtins) {
           expect(p.isBuiltin, isTrue);
           expect(p.scene, scene);

@@ -164,7 +164,11 @@ target word of the note.
 Languages: definitions, translations and explanations are written in the
 output language given in the request. New example sentences, and any text that
 belongs to the language being learned, are written in the language of the
-note's sentence and headword, unless the user instruction says otherwise.''';
+note's sentence and headword, unless the user instruction says otherwise.
+
+Ground your answer in the note: prefer what its dictionary fields (definition,
+glossary) say over your own knowledge, and never invent senses, readings or
+facts that the note does not support.''';
 
 /// 系统提示里**锁定**的契约（排版白名单、回复 JSON、说明的语言）：不论总体说明怎么改，
 /// 代码都把它接在后面——回复的本地校验（[parseAiSrsFieldSuggestion]）依赖它。
