@@ -127,6 +127,7 @@
   "ai_error_output_limit": "模型还没写出回复就用完了全部输出额度。若是思考型模型，请调低它的推理强度",
   "ai_error_quota_exhausted": "余额或额度不足",
   "ai_error_rate_limited": "被限流，请稍后重试",
+  "ai_error_reasoning_unsupported": "该模型不支持推理档位。请在 AI 设置里把这家提供商的「推理」改为「关闭」。",
   "ai_error_relay_bad_request": "主机没看懂这次请求，请把两台设备更新到同一版本",
   "ai_error_relay_disabled": "主机关闭了「允许已配对设备使用本机 AI」",
   "ai_error_relay_host_not_paired": "这台主机已不在本机的配对列表里，请重新配对或删除这个提供商",

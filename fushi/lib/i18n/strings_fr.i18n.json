@@ -127,6 +127,7 @@
   "ai_error_output_limit": "The model used up its whole output allowance before writing a reply. For a thinking model, lower its reasoning setting",
   "ai_error_quota_exhausted": "Out of credit or quota",
   "ai_error_rate_limited": "Débit limité, réessayez plus tard",
+  "ai_error_reasoning_unsupported": "This model doesn't accept the reasoning setting. Set Reasoning to Off for this provider in AI settings.",
   "ai_error_relay_bad_request": "The host didn't understand the request. Update both devices to the same version",
   "ai_error_relay_disabled": "The host has turned off sharing its AI with paired devices",
   "ai_error_relay_host_not_paired": "This host is no longer paired with this device. Pair it again, or remove this provider",

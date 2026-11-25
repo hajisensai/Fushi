@@ -25,6 +25,8 @@ String aiFailureText(String code) {
     'provider_not_configured' => t.ai_error_not_configured,
     // `kAiContextOverflowCode`：请求超出模型上下文窗口（反馈 GewyVIt5oo）。
     'context_overflow' => t.ai_error_context_overflow,
+    // `kAiReasoningUnsupportedCode`：端点 / 模型不收推理档位（BUG-5368）。
+    'reasoning_unsupported' => t.ai_error_reasoning_unsupported,
     // `kAiTranscriptionUnsupportedProtocol`：云端转录只认 OpenAI 兼容协议。
     'unsupported_protocol' => t.ai_error_unsupported_protocol,
     // 「互联主机」提供商（`ai_relay.dart` 的 `kAiRelay*`）。
