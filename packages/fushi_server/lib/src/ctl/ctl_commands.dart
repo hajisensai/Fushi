@@ -44,6 +44,7 @@ import 'dart:io';
 import 'package:args/args.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/ctl/admin_client.dart';
+import 'package:fushi_server/src/ctl/ctl_device_backup_commands.dart';
 import 'package:fushi_server/src/ctl/ctl_download_commands.dart';
 import 'package:fushi_server/src/ctl/ctl_host_commands.dart';
 import 'package:fushi_server/src/ctl/ctl_srs_commands.dart';
@@ -255,6 +256,9 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   backup [ls] | create [--no-documents] | rm <name>
                                            整机备份（落 <data>/backups/；下载走
                                            GET /api/admin/backups/<name>）
+  device-backups [ls] | rm <设备键> <id> | rm <设备键> --yes
+                                           已配对设备复制来的自动备份（下载走
+                                           GET /api/admin/device-backups/<设备键>/<id>）
   p2p                                      P2P 隧道状态
   upload <文件…> --lib <id> [--path <目录>] 分块断点续传到库根（传完记得 scan）
   raw <METHOD> </api/admin/...> ['<json>'] 直接调任意 admin 接口
@@ -306,6 +310,9 @@ fushi_server ctl <action> [args] --interconnect https://127.0.0.1:38765 --passwo
   backup [ls] | create [--no-documents] | rm <name>
                                            Whole-machine backup (stored in <data>/backups/; download via
                                            GET /api/admin/backups/<name>)
+  device-backups [ls] | rm <device key> <id> | rm <device key> --yes
+                                           Automatic backups copied here by paired devices (download via
+                                           GET /api/admin/device-backups/<device key>/<id>)
   p2p                                      P2P tunnel status
   upload <files...> --lib <id> [--path <dir>] Chunked resumable upload to a library root (remember to scan afterwards)
   raw <METHOD> </api/admin/...> ['<json>'] Call any admin endpoint directly
@@ -1221,6 +1228,17 @@ _CtlRequest? _parseAction(
       }
       return usage(
         'backup [ls] | backup create [--no-documents] | backup rm <name>',
+      );
+
+    case kCtlDeviceBackupsAction:
+      // 见 ctl_device_backup_commands.dart。
+      return _fromSrs(
+        parseCtlDeviceBackupsAction(
+          sub,
+          args,
+          yes: command['yes'] as bool,
+          err: err,
+        ),
       );
 
     case 'raw':

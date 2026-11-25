@@ -118,8 +118,8 @@ void addCtlSrsOptions(ArgParser parser) {
       abbr: 'y',
       negatable: false,
       help: tr(
-        'srs conflict-keep / retained delete：确认（这一步不能撤销）',
-        'srs conflict-keep / retained delete: confirm (this cannot be undone)',
+        'srs conflict-keep / retained delete、device-backups rm <设备键>：确认（这一步不能撤销）',
+        'srs conflict-keep / retained delete, device-backups rm <device key>: confirm (this cannot be undone)',
       ),
     )
     ..addOption(
