@@ -15,6 +15,7 @@ sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from server_release_plan import (  # noqa: E402
     DEBUG_TAG,
+    SERVER_BUILD_FLOOR,
     Plan,
     count_failures,
     debug_change_is_relevant,
@@ -63,6 +64,8 @@ def _routes(**overrides: object) -> Dict[str, object]:
             "status": "ahead",
             "files": [{"filename": "packages/fushi_server/lib/a.dart"}],
         },
+        f"repos/{SRC}/compare/{SERVER_BUILD_FLOOR}...{FORMAL_SHA}": {"status": "ahead"},
+        f"repos/{SRC}/compare/{SERVER_BUILD_FLOOR}...{BETA_SHA}": {"status": "ahead"},
     }
     for k, v in overrides.items():
         routes[k.replace("SRC", SRC).replace("SRV", SRV)] = v
@@ -132,6 +135,31 @@ class PlanAutoTest(unittest.TestCase):
 
     def test_failing_debug_head_is_not_rebuilt(self) -> None:
         self.assertEqual(_plan(_routes(), {target_key("debug", "", HEAD): 2}).channel, "")
+
+    def test_release_older_than_build_floor_is_skipped_for_next_channel(self) -> None:
+        # App v3.3.0 predates the server bundle scripts and the Flutter 3.50 pin.
+        routes = _routes()
+        del routes[f"repos/{SRV}/releases/tags/v3.3.0"]
+        del routes[f"repos/{SRV}/releases/tags/v2.7.0-beta.14929"]
+        routes[f"repos/{SRC}/compare/{SERVER_BUILD_FLOOR}...{FORMAL_SHA}"] = {
+            "status": "diverged"}
+        warnings: List[str] = []
+        p = plan_auto(FakeApi(routes), {}, SRC, SRV, warnings.append)
+        self.assertEqual((p.channel, p.tag_name), ("beta", "v2.7.0-beta.14929"))
+        self.assertTrue(any("predates the server build floor" in w for w in warnings))
+
+    def test_floor_itself_is_buildable(self) -> None:
+        routes = _routes()
+        del routes[f"repos/{SRV}/releases/tags/v3.3.0"]
+        routes[f"repos/{SRC}/compare/{SERVER_BUILD_FLOOR}...{FORMAL_SHA}"] = {
+            "status": "identical"}
+        self.assertEqual(_plan(routes).channel, "formal")
+
+    def test_unknown_compare_is_not_buildable(self) -> None:
+        routes = _routes()
+        del routes[f"repos/{SRV}/releases/tags/v3.3.0"]
+        del routes[f"repos/{SRC}/compare/{SERVER_BUILD_FLOOR}...{FORMAL_SHA}"]
+        self.assertEqual(_plan(routes).channel, "debug")
 
 
 class HelpersTest(unittest.TestCase):
