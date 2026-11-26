@@ -811,6 +811,159 @@ void main() {
       expect((await srsListRemoteProfiles(store)).single.writers, isEmpty);
     });
   });
+
+  // BUG-5492：平板（新代设备 tab）自己的集合目录里留着一台协议 1 时代旧设备 old 的 `v2/devices/old/`（说明文件报
+  // 「有笔记」）。新代立根后旧根 `v2/` / `v3/` 都立了围栏，old 不会再写这个集合；以前它照样算成员，关联永远判成「已关联」，
+  // 平板再也不采用电脑那份有一万多条笔记的集合，同步每轮照常报成功、两边数据永远对不上。
+  group('已退役旧根里的写入者（真目录）', () {
+    const String kTabCollection = '84749d00-0000-5000-8000-000000000001';
+    const String kPcCollection = 'fa45abce-0000-5000-8000-000000000002';
+    late Directory root;
+    late LocalDirectoryAssetStore store;
+    setUp(() {
+      root = Directory.systemTemp.createTempSync('fushi_srs_link_retired_');
+      store = LocalDirectoryAssetStore(root);
+    });
+    tearDown(() => root.deleteSync(recursive: true));
+
+    String dirOf(String uid, String rel) =>
+        '${root.path}/$kSrsSync2Namespace/$uid/$rel';
+    void put(String path, String text) {
+      File(path)
+        ..parent.createSync(recursive: true)
+        ..writeAsStringSync(text);
+    }
+
+    /// 平板的目录 [kMine]：`v4/` 根（[withV4Meta] 时有带集合标识的 meta）+ 平板自己的说明文件；旧根 `v2/` 里 old 的
+    /// 说明文件与段；旧根 `v3/` 里一台老一些的新代设备 g4 的说明文件，它在 `v4/devices/` 下只有 head。
+    void layTablet({required bool withV4Meta}) {
+      if (withV4Meta) {
+        put(
+          dirOf(kMine, '$kSrs4Root/meta.json'),
+          '{"collection":"$kTabCollection","v":4}',
+        );
+      }
+      put(
+        dirOf(kMine, '$kSrs4Root/devices/tab/$kSrsProfileInfoName'),
+        '{"v":1,"name":"Default","hasNotes":false,"device":"Pad","notes":0}',
+      );
+      put(
+        dirOf(kMine, '$kSrs4Root/devices/g4/head-000000000001-00000000.json'),
+        '{}',
+      );
+      put(
+        dirOf(kMine, '$kSrsSync2Folder/devices/g4/$kSrsProfileInfoName'),
+        '{"v":1,"name":"Default","hasNotes":false,"device":"Old pad"}',
+      );
+      put(
+        dirOf(kMine, '$kSrsSync2V1Folder/devices/old/$kSrsProfileInfoName'),
+        '{"v":1,"name":"Stale","hasNotes":true,"device":"Gone","notes":38}',
+      );
+      put(dirOf(kMine, '$kSrsSync2V1Folder/devices/old/seg-1-38.bin'), 'x');
+      put(
+        dirOf(kOther, '$kSrs4Root/meta.json'),
+        '{"collection":"$kPcCollection","v":4}',
+      );
+      put(
+        dirOf(kOther, '$kSrs4Root/devices/pc/$kSrsProfileInfoName'),
+        '{"v":1,"name":"Default","hasNotes":true,"device":"PC","notes":15377}',
+      );
+    }
+
+    SrsProfileLinkDecision decideTablet(List<SrsRemoteProfile> remote) =>
+        srsDecideProfileLink(
+          localUid: kMine,
+          localName: 'Default',
+          deviceId: 'tablet-install',
+          v2Device: 'tab',
+          localHasNotes: false,
+          localProfileCount: 1,
+          remote: remote,
+          ownCollection: kTabCollection,
+        );
+
+    test('立了新代根的目录：只在旧根里的写入者已退役，不算成员、不采信它的说明文件', () async {
+      layTablet(withV4Meta: true);
+      final SrsRemoteProfile tab = (await srsListRemoteProfiles(
+        store,
+      )).firstWhere((SrsRemoteProfile r) => r.uid == kMine);
+      expect(tab.writers.toSet(), <String>{
+        srsV2WriterName('tab'),
+        srsV2WriterName('g4'),
+        srsV2WriterName('old'),
+      }, reason: '写入者清单照旧列全（孤儿清理按它判「只有本设备写过」）');
+      expect(tab.retiredWriters, <String>{srsV2WriterName('old')});
+      expect(tab.stayingWriters.toSet(), <String>{
+        srsV2WriterName('tab'),
+        srsV2WriterName('g4'),
+      }, reason: 'g4 的说明文件还在旧根，但它在 v4/devices 下有设备目录：仍在新代根上同步');
+      expect(tab.hasNotes, isFalse);
+      expect(tab.noteCount, 0);
+      expect(tab.names, <String>{'Default'});
+      expect(tab.nameOf.containsKey(srsV2WriterName('old')), isFalse);
+      expect(tab.devices.toSet(), <String>{'Pad', 'Old pad'});
+    });
+
+    test('平板只剩自己与退役写入者：不再判「已关联」，采用电脑那份有数据的集合', () async {
+      layTablet(withV4Meta: true);
+      // 平板目录里只剩平板自己与退役的 old（g4 是另一台仍在同步的设备：有它就确实已关联）。
+      Directory(
+        dirOf(kMine, '$kSrs4Root/devices/g4'),
+      ).deleteSync(recursive: true);
+      Directory(dirOf(kMine, kSrsSync2Folder)).deleteSync(recursive: true);
+      final SrsProfileLinkDecision d = decideTablet(
+        await srsListRemoteProfiles(store),
+      );
+      expect(d, isA<SrsProfileLinkAdopt>());
+      expect((d as SrsProfileLinkAdopt).uid, kOther);
+    });
+
+    test('还没立新代根的目录（只有旧根、读不到 v4 meta）：旧根里的写入者照旧是成员', () async {
+      layTablet(withV4Meta: false);
+      final SrsRemoteProfile tab = (await srsListRemoteProfiles(
+        store,
+      )).firstWhere((SrsRemoteProfile r) => r.uid == kMine);
+      expect(tab.retiredWriters, isEmpty);
+      expect(tab.stayingWriters, contains(srsV2WriterName('old')));
+      expect(tab.hasNotes, isTrue);
+      expect(tab.noteCount, 38);
+    });
+
+    test('纯函数：本机目录里别的写入者全已退役时不算已关联', () {
+      const SrsRemoteProfile pc = SrsRemoteProfile(
+        uid: kOther,
+        writers: <String>['v2:pc'],
+        names: <String>{'Default'},
+        hasNotes: true,
+        collection: kPcCollection,
+      );
+      expect(
+        decideTablet(const <SrsRemoteProfile>[
+          SrsRemoteProfile(
+            uid: kMine,
+            writers: <String>['v2:old', 'v2:tab'],
+            retiredWriters: <String>{'v2:old'},
+            collection: kTabCollection,
+          ),
+          pc,
+        ]),
+        isA<SrsProfileLinkAdopt>(),
+      );
+      // 对照：同一个写入者没退役（还在新代根上同步）就是已关联。
+      final SrsProfileLinkDecision linked = decideTablet(
+        const <SrsRemoteProfile>[
+          SrsRemoteProfile(
+            uid: kMine,
+            writers: <String>['v2:old', 'v2:tab'],
+            collection: kTabCollection,
+          ),
+          pc,
+        ],
+      );
+      expect(linked, isA<SrsProfileLinkKeep>());
+      expect((linked as SrsProfileLinkKeep).linked, isTrue);
+    });
+  });
 }
 
 /// 把 [listChildren] 按名字正序或逆序返回的本地目录后端：模拟不同机器上的目录列举顺序（`listSync` 不排序）。
