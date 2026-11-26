@@ -46,8 +46,8 @@
 | `mod.rs`（12,748） | `src/rwkv/mod.rs`（≈4,800，其中 ≈200 行是标了 `Fushi` 的新增） | 推理核心逐字保留：权重加载（`WeightMap` / `Cursor`）、特征构造（`FeatureState`、`TorchIdRng` 与 ID 编码、全部 `scale_*` 与均值 / 方差常量、日期周期编码）、网络（`SrsModel` / `RwkvModule` / `RwkvLayer` / `TimeMixer` / `ChannelMixer` / `LoraSimple` / `Linear` / `Norm`、单步递推、AVX2+FMA / NEON / 标量 SIMD 辅助）、`ReviewInput`、`warm_up_reviews`（回放）、`warm_up_reviews_sequential`（逐条参考实现）、`predict_retrievability_many_from_warm_up`（批量 R 查询）、状态序列化 / 反序列化（`ARWKVMODSTATE1` f32 与紧凑格式）、特征簿记序列化（`ARWKVPROCSTATE2`） |
 | `bulk.rs`（1,445） | `src/rwkv/bulk.rs`（1,367） | 批量回放逐字保留 |
 | `precision.rs`（377） | `src/rwkv/precision.rs`（281） | int8 / int4 紧凑状态，删掉测试模块，其余未改 |
-| `query_kernels.rs`（330） | `src/rwkv/query_kernels.rs` | aarch64 NEON 查询内核，未改 |
-| `matmul.rs`（145） | `src/rwkv/matmul.rs` | macOS Accelerate `cblas_sgemm`，未改 |
+| `query_kernels.rs`（330） | —— | aarch64 NEON 查询内核：2026-11-26 删（见「改了什么 · 跨平台逐位一致」） |
+| `matmul.rs`（145） | —— | macOS Accelerate `cblas_sgemm`：2026-11-26 删（同上） |
 
 每个文件头保留上游版权与许可行，并加一行 `Adapted for Fushi from <repo>@<sha> <path>`。
 
@@ -81,13 +81,23 @@
 
 上游共 16,056 行（9 个文件），保留 6,917 行（5 个文件，含 Fushi 新增）。
 
-## 改了什么（全部标 `Fushi:`；除下面「量化比例因子」一条外均不涉及数值）
+## 改了什么（全部标 `Fushi:`；除下面「量化比例因子」「跨平台逐位一致」两条外均不涉及数值）
 
 - 权重从字节切片加载（`WeightMap::from_bytes` / `SrsModel::from_weight_bytes`，原来读文件路径）；
   公开 `RwkvModel`（可在多个 runtime 间共享），`RwkvInference::new(&model, precision)` 取代
   `load_with_precision(path, target_retention, max_interval_days, precision)`；为此给网络结构体
   加了 `#[derive(Clone)]`（非 f32 精度时复制一份网络，因为上游把精度存在 card / note 模块上）。
 - `bulk.rs`：去掉曲线计算与 dirty 标记后，state-only 分支的返回值改为 `drop(..)`。
+- **跨平台逐位一致**（2026-11-26，`src/rwkv/det.rs`，README「跨平台逐位一致」）：上游的点积 / axpy 在
+  x86 AVX2+FMA、aarch64 NEON、标量回退各有一套求和顺序（尾部还有的融合有的不融合），R 查询在 macOS /
+  aarch64 走批量 GEMM（Accelerate `cblas_sgemm`、NEON 查询内核、改写过的衰减公式 `exp(-e^-0.5 sigmoid(x))`
+  与 Accelerate 的向量超越函数），x86 走逐行；超越函数用各平台的 libm。同一历史在不同平台上 R 差最后几位，
+  阈值边上的卡到期判定不同。改为：点积 32 条交错 lane + 固定归约树、axpy 每个元素都 FMA（无 FMA 的 CPU 用
+  软件 FMA），`exp` / `ln` / `ln_1p` / `tanh` / `sin` / `cos` / `powf` / `sigmoid` 自写（f64 计算、一次舍入），
+  R 查询所有平台都走逐行路径（删 `matmul.rs`、`query_kernels.rs`、`review_retrievability_query_refs_batched`
+  及其批量 scratch / `apply_batch` / `Norm::apply_batch`，`bulk.rs` 的 `apply_block_approx_into` 与
+  `approximate_projections` 参数一并删）。与上游夹具的差：f32 ≤ 3.6e-7、int8 ≤ 6.5e-4（量化台阶），
+  容差不变；快照魔数升为 `FRWKVSNAP2\0` / `FRWKVSMALL2\0`，旧快照拒收、全量重放。
 - `ARWKVPROCSTATE2` 特征簿记照写，曲线表恒为 0 条；读取时跳过曲线（复用上游
   `read_runtime_feature_state`）。
 - 新增：`snapshot` / `restore_snapshot`（无损快照，见 README）、`reset`、`last_day_offset`、

@@ -191,8 +191,7 @@ struct ReviewPredictionQueryRef<'a> {
     state: SrsStateRef<'a>,
 }
 
-impl ReviewPredictionQueryRef<'_> {
-}
+impl ReviewPredictionQueryRef<'_> {}
 
 impl RwkvInference {
     /// Fushi: upstream `load_with_precision(path, target_retention,
@@ -1787,7 +1786,6 @@ struct ReviewRetrievabilityScratch {
     probabilities: [f32; 4],
 }
 
-
 impl Default for ReviewRetrievabilityScratch {
     fn default() -> Self {
         Self {
@@ -1849,8 +1847,6 @@ impl SrsModel {
             )
             .collect()
     }
-
-
 
     /// The feature MLP shared by the per-review and bulk replay paths.
     fn feature_mlp(&self, features: &[f32]) -> Vec<f32> {
@@ -1994,8 +1990,7 @@ struct SrsStateRef<'a> {
     global: Option<&'a ModuleState>,
 }
 
-impl<'a> SrsStateRef<'a> {
-}
+impl<'a> SrsStateRef<'a> {}
 
 /// [SrsStateRef] for states that may have been decoded for the query.
 struct SrsStateView<'a> {
@@ -2303,7 +2298,6 @@ struct ModuleQueryScratch {
     layer: LayerQueryScratch,
 }
 
-
 impl Default for ModuleQueryScratch {
     fn default() -> Self {
         Self {
@@ -2381,7 +2375,6 @@ impl RwkvModule {
 
         *current
     }
-
 }
 
 #[derive(Clone)]
@@ -2402,7 +2395,6 @@ struct LayerQueryScratch {
     time: TimeMixerQueryScratch,
     channel: ChannelMixerQueryScratch,
 }
-
 
 impl Default for LayerQueryScratch {
     fn default() -> Self {
@@ -2466,7 +2458,6 @@ impl RwkvLayer {
             &mut scratch.channel,
         );
     }
-
 }
 
 /// Card and note states: one per card and note, so they are most of the RWKV
@@ -2634,7 +2625,6 @@ struct TimeMixerQueryScratch {
     next_row: [f32; HEAD_SIZE],
 }
 
-
 impl Default for TimeMixerQueryScratch {
     fn default() -> Self {
         Self {
@@ -2784,8 +2774,8 @@ impl TimeMixer {
         fill_mixed(3, &mut mixed);
         let mut w = self.d_lora.apply_tanh(&mixed);
         for value in &mut w {
-            let d = -0.5 - softplus(-*value);
-            *value = det::exp(-det::exp(d));
+            // Fushi: exp(-exp(-0.5 - softplus(-x))) in closed form (`det::decay`).
+            *value = det::decay(*value);
         }
 
         normalize_heads_in_place(&mut k);
@@ -2918,8 +2908,7 @@ impl TimeMixer {
 
         self.d_lora.apply_tanh_into(&mixed[3], lora_hidden, w);
         for value in w.iter_mut() {
-            let decay = -0.5 - softplus(-*value);
-            *value = det::exp(-det::exp(decay));
+            *value = det::decay(*value);
         }
 
         normalize_heads_in_place(k);
@@ -2971,7 +2960,6 @@ impl TimeMixer {
             out[channel] += input[channel];
         }
     }
-
 }
 
 /// Per-timestep time-mixer coefficients produced ahead of the recurrence.
@@ -3007,7 +2995,6 @@ struct ChannelMixerQueryScratch {
     hidden: [f32; MAX_CHANNEL_MIXER_DIM],
     projected: [f32; D_MODEL],
 }
-
 
 impl Default for ChannelMixerQueryScratch {
     fn default() -> Self {
@@ -3087,7 +3074,6 @@ impl ChannelMixer {
             out[channel] = input[channel] + scratch.projected[channel];
         }
     }
-
 }
 
 #[derive(Clone)] // Fushi: per-precision copies of the network (RwkvInference::new)
@@ -3116,7 +3102,6 @@ impl LoraSimple {
         self.b.apply_into(hidden, out);
         sigmoid_in_place(out);
     }
-
 
     fn apply_tanh(&self, input: &[f32]) -> Vec<f32> {
         let mut hidden = self.a.apply(input);
@@ -3160,7 +3145,6 @@ impl LoraSimple {
         }
         self.b.apply_into(hidden, out);
     }
-
 }
 
 #[derive(Clone)] // Fushi: per-precision copies of the network (RwkvInference::new)
@@ -3205,7 +3189,6 @@ impl Linear {
             add_scaled_in_place(out, weight_column, scale);
         }
     }
-
 
     /// Applies the projection to `rows` packed input rows at once, streaming
     /// each weight column once per block instead of once per row. For every
@@ -3594,7 +3577,6 @@ impl Norm {
             }
         }
     }
-
 }
 
 fn single_timestep(
@@ -3880,11 +3862,6 @@ fn normalize_heads_in_place(values: &mut [f32]) {
     }
 }
 
-
-
-
-
-
 fn softmax(input: &[f32]) -> Vec<f32> {
     let max = input
         .iter()
@@ -3929,24 +3906,9 @@ fn sigmoid(value: f32) -> f32 {
 
 // exp(-0.5), rounded to f32.
 
-
 // Batched query-only activations. On macOS they use Accelerate's vectorized
 // transcendental functions, which may differ from the scalar ones in the last
 // bit; answer rows and warm-up state updates keep the scalar functions.
-
-
-
-
-
-fn softplus(value: f32) -> f32 {
-    if value > 20.0 {
-        value
-    } else if value < -20.0 {
-        det::exp(value)
-    } else {
-        det::ln_1p(det::exp(value))
-    }
-}
 
 fn silu_in_place(values: &mut [f32]) {
     for value in values {

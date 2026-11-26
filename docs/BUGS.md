@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4761 条。点号进各自文件。
+> 共 4763 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5491](bugs/BUG-5491-rwkv-armv7-portable-fma-slow.md) | 🚧 | 🚧 | armeabi-v7a 与无 FMA 的老 x86 上 RWKV 回放走软件 FMA，比向量路径慢约 4–5 倍 |
+| [BUG-5488](bugs/BUG-5488-rwkv-cross-platform-nondeterminism.md) | ✅ | ✅ | RWKV 同一复习日志在电脑与手机上回放出的 R 不同，到期数差一张（73 vs 72） |
 | [BUG-5481](bugs/BUG-5481-subdeck-steps-not-inherited.md) | ✅ | ✅ | Anki 导入的子牌组带着旧步长，父牌组改 RWKV 后按 Again 仍进重学 |
 | [BUG-5480](bugs/BUG-5480-organizer-contradicts-server-series.md) | ✅ | ✅ | AI 整理把媒体服务器同一部剧的集从自己的合集移空、又塞进另一部剧的合集 |
 | [BUG-5479](bugs/BUG-5479-video-header-double-refresh.md) | ✅ | ✅ | 视频库页头点「刷新」后并排出现两颗刷新钮 |

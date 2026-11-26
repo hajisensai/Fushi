@@ -29,14 +29,38 @@ use sha2::{Digest, Sha256};
 
 /// x86_64 Windows（AVX2+FMA，Ryzen 7 9800X3D）2026-11-26 生成。
 const GOLDEN: [(&str, &str); 8] = [
-    ("large f32", "755b36344d18e4356b3d2348e6cafcadf1944d17ede772fe9fade794c6242414"),
-    ("large int8", "537163fb20d7b8bf66b9d5bed1b68dad1c817ab3c3d8a83781ef233c0aea39f6"),
-    ("sm101 f32", "b63d18d9d0cd449ab1d24fe78e42bdf54beb8fcfb76f8b092089d341003c3072"),
-    ("sm101 int4", "3b51da7c219daca51a367183cf1356ede040d1df188fcb42ff9e38236e1b90e1"),
-    ("sm101 int8", "43e09a6a5414608128b0e2757fbf99433176b2827a91eab260aea7664b8bcce0"),
-    ("sm98 f32", "9ab9a7922cf6d16682370c2d1d6af26843aa57b6839996778593d73a15e01100"),
-    ("sm98 int4", "ad3220fdaf01539a703f461b67425afc557de33e1f907d87225e0bc50f22f620"),
-    ("sm98 int8", "46ea2ff42a6236d35a84999ee2a290dee807ae278da7a514375428101d2b86a5"),
+    (
+        "large f32",
+        "5a20955b6a8811662bad408a689756ac05d02a1a2149b17ad3ad105639204426",
+    ),
+    (
+        "large int8",
+        "93adcbf62392f9bc461d07bc74e9cd449ed8770e4fafb70a2b910179e80ac53f",
+    ),
+    (
+        "sm101 f32",
+        "c93e77abf42629bceeb6bbf79878a062f876bbd2ca1fc3c32cbcb5f694f719dd",
+    ),
+    (
+        "sm101 int4",
+        "c8f3bf2df634ac909eac4b6422a7bb65428c596aa8921b59fd42fbd502bd68b6",
+    ),
+    (
+        "sm101 int8",
+        "c2e4a64fc82c3fbcd837487630e2d5ee6a4fe53a3f8c5624dafd5bfb8eebf33a",
+    ),
+    (
+        "sm98 f32",
+        "a1a4bcadebd277ebfc05911be330764f60e3a7c07ca15075517878ade6992c3a",
+    ),
+    (
+        "sm98 int4",
+        "7eaf802a1a42ff6b9744f8ec5982c77fe5473d902b45e3debf9415629a5ecf9f",
+    ),
+    (
+        "sm98 int8",
+        "7f11e823de169a7865d02a99cc834c3965d40fadebfd251122f1a969a3765c06",
+    ),
 ];
 
 const CHILD_MARKER: &str = "BITEXACT-DIGEST";
@@ -107,7 +131,10 @@ fn digest(model: &Model, precision: StatePrecision, fixtures: &[Fixture]) -> Str
                     }
                 }
                 Step::Query { rows } => {
-                    feed_bits(&mut hasher, runtime.query(&inputs(rows, true)).expect("query"));
+                    feed_bits(
+                        &mut hasher,
+                        runtime.query(&inputs(rows, true)).expect("query"),
+                    );
                 }
             }
         }
@@ -159,7 +186,11 @@ fn digests() -> &'static BTreeMap<String, String> {
         }
         for id in SmallModelId::ALL {
             let small = Model::from_bytes(small_file_of(id, SmallFile::Int8Weights)).unwrap();
-            for precision in [StatePrecision::F32, StatePrecision::Int8, StatePrecision::Int4] {
+            for precision in [
+                StatePrecision::F32,
+                StatePrecision::Int8,
+                StatePrecision::Int4,
+            ] {
                 out.insert(
                     format!("{} {}", id.name(), common::precision_key(precision)),
                     digest(&small, precision, &all),
@@ -198,7 +229,10 @@ fn vector_and_portable_kernels_agree_bit_for_bit() {
     let portable: BTreeMap<String, String> = stdout
         .lines()
         // libtest prints "test <name> ... " in front of the first line.
-        .filter_map(|line| line.find(CHILD_MARKER).map(|at| &line[at + CHILD_MARKER.len()..]))
+        .filter_map(|line| {
+            line.find(CHILD_MARKER)
+                .map(|at| &line[at + CHILD_MARKER.len()..])
+        })
         .filter_map(|rest| rest.trim().split_once('='))
         .map(|(case, digest)| (case.to_owned(), digest.to_owned()))
         .collect();

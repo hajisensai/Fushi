@@ -17,17 +17,20 @@ use fushi_rwkv::{
 use serde::Deserialize;
 use sha2::{Digest, Sha256};
 
-/// 夹具里 f32 状态与上游实现的容差（任务要求 1e-5）。
+/// 本 crate 与**上游实现**（夹具由 tools/oracle 原样编译上游 `rslib/src/rwkv` 产出）的 f32 容差。
+///
+/// 这不是跨平台容差：本 crate 自己在各平台上逐位相同（`tests/bitexact.rs` 断言摘要逐位相等，
+/// CI 三个平台都跑）。与上游不能逐位相同，因为两边的算术本来就不同——上游用平台 libm 的
+/// `exp` / `ln` / `tanh` 等和各平台各自的 SIMD 求和顺序，本 crate 用自己的确定性实现
+/// （`src/rwkv/det.rs`）。实测（2026-11-26，x86_64 Windows）：f32 最大差 3.58e-7（simulated_collection），
+/// 小模型对 NumPy 黄金向量最大差 6.9e-7（tests/small_model.rs 自己的 1e-5）。
 pub const F32_TOLERANCE: f32 = 1e-5;
-/// int8 状态的容差。来源：int8 模式在每次作答后把 card/note 时间混合矩阵逐行量化
-/// （`round_ties_even(x / scale)`），量化对输入的最后几位很敏感——上游的 SIMD 内核
-/// （x86 AVX2+FMA / aarch64 NEON / macOS Accelerate / 标量）求和顺序不同，跨平台时恰好
-/// 落在舍入边界上的元素会差一个量化台阶（行最大值 / 127），再经后续复习传播。
-/// 实测（x86_64-windows，夹具生成平台）：本 crate 与上游 f32、int8 都是 0 差；
-/// 把 x86 的 AVX2+FMA 内核强制换成标量内核（只改求和顺序，模拟另一个平台）再对夹具：
-/// f32 最大差 2.98e-7，int8 最大差 3.78e-4（simulated_collection）。
-/// 取 1e-3（约 2.6 倍余量）。上游自己的对比（docs/rwkv-state-precision-2026-10-10.MD）里
-/// 整体 int8 与 f32 的单条最大差是 6.8e-3，本容差仍比它小一个数量级。
+/// 与上游实现的 int8 容差。int8 模式每次作答后把 card/note 时间混合矩阵逐行量化
+/// （`round_ties_even(x / scale)`），量化对输入的最后几位很敏感：上游与本 crate 的最后一位一不同，
+/// 恰好落在舍入边界上的元素就差一个量化台阶（行最大值 / 127），再经后续复习传播。
+/// 实测（2026-11-26）：最大差 6.47e-4（simulated_collection），取 1e-3。上游自己的对比
+/// （docs/rwkv-state-precision-2026-10-10.MD）里整体 int8 与 f32 的单条最大差是 6.8e-3，
+/// 本容差仍比它小一个数量级。
 pub const INT8_TOLERANCE: f32 = 1e-3;
 
 pub fn tolerance(precision: StatePrecision) -> f32 {

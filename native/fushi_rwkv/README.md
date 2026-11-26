@@ -109,7 +109,7 @@ RWKV 牌组的复习卡**不看到期日**，每次排队以当前状态查每�
 自动变化。上游的「每天最少复习数」默认 0，这里不做：R 都高于目标时队列为空，即模型认为都还记得。
 
 存下的到期日（作答时由 FSRS-7 写）只在 RWKV 不可用时排队、导出给 Anki 时用；同步不需要它——
-RWKV 状态由同步来的复习日志在每台设备上回放出来（同一权重、确定性）。统计页的未来到期 / 逾期 /
+RWKV 状态由同步来的复习日志在每台设备上回放出来（同一权重 + 跨平台逐位一致的算术：各设备的状态与 R 逐位相同，到期判定一致，见「跨平台逐位一致」）。统计页的未来到期 / 逾期 /
 负担不计按 R 排队的卡，可提取度用 RWKV 的；浏览器的 `is:due` 与出卡同口径；日志的 `alg` 记 `rwkv`。
 
 **为什么用即时头而不是曲线头**（2026-10-20 用当时的两头小模型 SM40 测，int4，20 个封存用户约 136 万对
@@ -389,17 +389,51 @@ channel mixer），`layer_steps` 12 步。架构由权重张量目录推出（�
 切换 = 不同的权重指纹，旧快照被拒、全量重放一次（`tests/small_model.rs`
 `tiny_model_has_its_own_architecture_and_smaller_card_state` 钉住两边互拒、同模型照常恢复）。
 
+## 跨平台逐位一致
+
+同一权重 + 同一复习历史，在 x86_64（Windows / Linux，有无 AVX2+FMA 都一样）、aarch64（Android / iOS）、
+macOS 上回放出的**状态字节与 R 逐位相同**（2026-11-26 起，`src/rwkv/det.rs`）。RWKV 牌组「今天到期」是
+「R ≤ 目标保留率」，各设备各自回放同步来的日志算 R；之前各平台的 SIMD 求和顺序、FMA 与否、批量 GEMM 和
+libm 都不同，同一张卡电脑上 R = 0.91486245、另一路径 0.9148693，R 压在阈值边上的卡两端判定不同，同步完成后
+电脑到期 73、手机 72（BUG-5488）。现在的约定：
+
+- **点积**（`det::dot`）：32 条交错 lane，元素 `j` 进 lane `j % 32`、按 `j` 升序 FMA 累加，再按一棵固定的树
+  归约（`det::reduce32`）。AVX2 用 4 个 8 宽寄存器、NEON 用 8 个 4 宽寄存器、可移植版用数组，顺序一样。
+- **axpy**（`det::axpy`、线性层的行 / 块内核）：每个元素都是一次 FMA，尾部也不例外（上游 AVX2 / NEON 的尾部
+  不融合）。没有硬件 FMA 的 CPU（2013 年前的 x86、armv7）走可移植内核 + 软件 FMA（`det::soft_fma`，
+  f64 乘积精确、TwoSum 判半点，与硬件 FMA 逐位相同，有随机 + 边界用例测试；每 32 个元素一块先走无分支快路径、
+  块内出现半点 / 次正规 / 非有限的和才整块重算）；实测 1 线程回放比向量路径慢约 4–5 倍（见「实测」），结果逐位相同。
+  armeabi-v7a 也走这条路（stable Rust 还不能运行期启用 VFPv4 的 `vfma`），登记为 BUG-5491。
+- **超越函数**：`exp` / `ln` / `ln_1p` / `tanh` / `sin` / `cos` / `powf` / `sigmoid` 不用平台 libm（MSVC、glibc、
+  bionic、Apple 的 libm 最后一位各不相同），自写：f64 里精确规约 + 多项式（误差约 1e-15 相对），一次舍入到 f32，
+  与 f64 libm 相比最多差 1 ulp、各平台完全相同。`sqrt` 与除法本就是 IEEE 精确运算，直接用。
+- **R 查询**：大模型所有平台都走逐行路径（上游在 macOS / aarch64 走批量 GEMM——Accelerate `cblas_sgemm`、
+  NEON 查询内核、改写的衰减公式与 Accelerate 的向量超越函数——已删）；小模型本来就只有一条路径。
+- 其余标量代码 Rust 不会自动融合成 FMA、也不重排，本来就确定；rayon 并行没有跨线程浮点归约，线程数不影响结果。
+  前提：FPU 是默认的 IEEE 环境（就近舍入、不把次正规数冲成 0），各系统线程默认如此。
+
+钉住它的测试：`tests/bitexact.rs`（每个模型 × 精度跑四份夹具 + 一段长历史，回放预测、查询 R 的位模式与快照字节压成
+SHA-256）——本机向量内核与子进程里强制的可移植内核（`FUSHI_RWKV_PORTABLE_KERNELS=1`）摘要必须相同（把 AVX2 的归约树
+改一处即红，已做变异实测）；摘要必须等于 x86_64 上生成的黄金值，CI 的 linux-x86_64 / linux-aarch64 / macos-arm64
+三个任务都跑（`native-rwkv-gate.yml`），即跨平台对拍。`src/rwkv/det.rs` 的单元测试逐长度（0–299，所有尾部形状）
+核对向量点积 / axpy 与参考顺序逐位相同、软件 FMA 与硬件 FMA 逐位相同。
+
+数值一改（运算序、超越函数、量化），旧快照里的状态就是旧算术算出来的：快照魔数随之升版，旧快照被拒、宿主全量
+重放一次（见「快照」）；黄金摘要也要用 `FUSHI_RWKV_PRINT_DIGESTS=1` 重新生成。
+
 ## 快照
 
-大模型：`FRWKVSNAP1\0` + precision 字节（0 / 8 / 4）+ 上游 `append_warm_up_snapshot_binary` 的布局：
+大模型：`FRWKVSNAP2\0` + precision 字节（0 / 8 / 4）+ 上游 `append_warm_up_snapshot_binary` 的布局：
 card、note、deck、preset 四张表（u32 个数，按 id 升序：i64 id + u32 长度 + 状态字节），
 global（标志 + 长度 + 状态），特征簿记（标志 + 长度 + `ARWKVPROCSTATE2`，曲线表恒为空）。
 **无损**：任意时刻导出 → 新 runtime 恢复 → 继续回放，结果与不中断逐位相同（有测试）。
 kuma3 自己的离线状态文件把 deck / preset / global 存成 f16（有损），本库不用那种格式。
 
-小模型：`FRWKVSMALL1\0` + precision 字节 + 权重指纹（u64，FNV-1a，别的权重文件的快照被拒）+ 五个流
+小模型：`FRWKVSMALL2\0` + precision 字节 + 权重指纹（u64，FNV-1a，别的权重文件的快照被拒）+ 五个流
 （card、deck、note、preset、user）各自：槽长 u32、个数 u32、按 id 升序的（i64 id + 槽字节）；最后
 u32 长度 + `ARWKVPROCSTATE2` 特征簿记。同样无损。
+
+魔数末位是数值版本：2 = 跨平台逐位一致的算术（2026-11-26）。版本 1（`FRWKVSNAP1\0` / `FRWKVSMALL1\0`，布局相同）里是旧的各平台算术算出的状态，恢复时被拒（`snapshot_tests::version_1_snapshots_are_refused`）；排程内核把它当坏快照丢掉、从复习日志全量重放（`sched` 的「RWKV snapshot ignored」），检查点同理。升级后每台设备各重放一次，之后从同一状态继续。
 
 **内存**：card / note 的紧凑状态存在定长槽位池（`src/rwkv/slots.rs`，按 1 MB 分块、原地覆盖）。上游
 每份状态一个 `Vec`，回放时与每块的 f32 解码临时数据交错分配释放，长期块钉住空洞：2026-10-20 实测
@@ -430,8 +464,26 @@ u32 长度 + `ARWKVPROCSTATE2` 特征簿记。同样无损。
 报 f32 1,247 MB / int8 395 MB（`docs/rwkv-state-precision-2026-10-10.MD`），与此一致。
 **手机上应默认 int8**（上游测得 int8 与 f32 的整体 log loss 差 −0.00005%、单条最大差 0.68 个百分点）。
 
-x86 的查询走逐条标量路径；aarch64（Android / iOS）与 macOS 走上游的批量 GEMM / NEON /
-Accelerate 路径，本表不代表移动端速度。冷启动第一次回放会多花数秒在缺页上（本机首轮 f32 9.8 s）。
+本表是跨平台逐位一致之前测的（x86 的查询当时就走逐行路径，与现在相同；aarch64 / macOS 当时走上游的批量
+GEMM 路径，2026-11-26 起也走逐行，见「跨平台逐位一致」），不代表移动端速度。冷启动第一次回放会多花数秒在缺页上
+（本机首轮 f32 9.8 s）。
+
+## 跨平台逐位一致前后（2026-11-26，同一台机器，sm98 int8 权重 + int4 状态，14,715 卡 / 167,061 条复习）
+
+`examples/bench.rs <sm98_weights.int8.bin> 14715 730 <线程> int4`，修前（`b876b0196f2`）与修后两个 release 二进制交替各跑两轮
+（这台机器本身波动约 ±15%）：
+
+| | 修前（平台 SIMD + libm） | 修后（`det.rs` 规范运算序） |
+|---|---|---|
+| 回放，1 线程 | 11.8 / 9.9 s | 11.1 / 9.9 s |
+| 查询 14,715 张卡，1 线程 | 684 / 865 ms | 780 / 658 ms |
+| 回放，16 线程 | 2.44 / 2.34 s | 2.65 / 2.26 s |
+| 查询，16 线程 | 174 / 167 ms | 181 / 162 ms |
+| 可移植内核（`FUSHI_RWKV_PORTABLE_KERNELS=1`，1 线程） | —（修前的标量路径约 15.8 s） | 回放 46.7 / 51.3 s，查询 4.4 / 4.7 s |
+
+向量路径持平（差在噪声内）。第一版自写超越函数用 `f64::round`（基线 x86_64 没有 SSE4.1，是 libm 调用）+ 12 项泰勒 `exp`，
+衰减按上游写成四个串行超越函数，1 线程回放慢到 22.8 / 24.5 s；改成移位取整、64 项查表 `exp`、衰减闭式
+`exp(-e^-0.5·sigmoid(x))`（`det::decay`）后回到上表。第一张卡的 R：修前 0.91486245，修后 0.9148428（各平台相同）。
 
 ## 小模型实测（同一台机器，同一模拟收藏：14,715 卡 / 7,358 笔记，167,061 条复习）
 
@@ -464,6 +516,7 @@ cargo test --profile quick --manifest-path native/fushi_rwkv/Cargo.toml
 - `tests/parity.rs`：与上游对拍（夹具由 `tools/oracle` 把上游 `rslib/src/rwkv` 原样编译后产出，
   f32 / int8 各一份），上游自己测试里写死的两个数，批量回放 vs 逐条回放的状态逐位相同，
   快照中断续跑，损坏快照拒收，线程数无关，reset。
+- `tests/bitexact.rs`：跨平台逐位一致（向量 / 可移植内核摘要相同、等于 x86 黄金值；见「跨平台逐位一致」）。
 - `tests/c_abi.rs`：只走 `extern "C"` 的往返与错误路径。
 - `tests/small_model.rs`：两个小模型（sm98 / sm101）各自与上游 NumPy 参考实现的黄金向量（`<模型>-vectors.json.gz`，两位用户
   各 500 行，无泄漏输入、show-time 查询行，f32 / int8 权重）逐行对拍 p_imm、p_rating、标签时刻与 6 个扫描时刻的
@@ -481,8 +534,9 @@ cargo test --profile quick --manifest-path native/fushi_rwkv/Cargo.toml
 - `examples/replay_eval.rs`、`examples/state_drift.rs`、`examples/bench.rs`：真实历史评测、状态峰值
   追踪、速度与内存。`examples/model_compare.rs`：多个小模型权重在同一份历史（单文件或每用户一个
   `.bin` 的目录）上的成对 LogLoss 差与聚类 bootstrap 区间（见「sm72e25」）。
-- 容差：f32 `1e-5`；int8 `1e-3`（来源见 `tests/common/mod.rs`：生成平台上实测 0 差；把 x86
-  的 AVX2+FMA 内核强制换成标量内核模拟别的平台，int8 最大差 3.78e-4、f32 2.98e-7）。
+- 与**上游实现**夹具的容差：f32 `1e-5`；int8 `1e-3`（`tests/common/mod.rs`）。这不是跨平台容差（本库各平台
+  逐位相同，`tests/bitexact.rs`），而是本库的确定性算术与上游的 libm / 平台 SIMD 之间的差：实测 f32 最大
+  3.58e-7、int8 最大 6.47e-4（量化台阶）。
 
 ## 构建
 

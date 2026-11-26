@@ -48,7 +48,6 @@ const GROUP_NORM_EPS: f32 = 6.4e-4;
 const NORMALIZE_EPS: f32 = 1e-12;
 const MAX_LORA_RANK: usize = 16;
 const MAX_CHANNEL_HIDDEN: usize = 256;
-const SOFTPLUS_THRESHOLD: f32 = 20.0;
 pub(super) const PROB_CLAMP: f32 = 1e-5;
 /// Card and note streams: the ones kept at the runtime's state precision
 /// (deck, preset and user states are few and stay f32).
@@ -413,8 +412,7 @@ impl TimeMixer {
             p.g.copy_from_slice(&g[at..at + D]);
             for c in 0..D {
                 p.a[c] = sigmoid(a[at + c]);
-                let dd = -0.5 - softplus(-tmp[at + c]);
-                p.w[c] = det::exp(-det::exp(dd));
+                p.w[c] = det::decay(tmp[at + c]);
             }
             for h in 0..HEADS {
                 let range = h * K..(h + 1) * K;
@@ -490,15 +488,6 @@ fn torch_lerp(start: f32, end: f32, weight: f32) -> f32 {
         start + weight * (end - start)
     } else {
         end - (end - start) * (1.0 - weight)
-    }
-}
-
-#[inline]
-fn softplus(x: f32) -> f32 {
-    if x > SOFTPLUS_THRESHOLD {
-        x
-    } else {
-        det::ln_1p(det::exp(x))
     }
 }
 
@@ -596,7 +585,11 @@ impl SmallHeads {
     pub fn curve_retrievability(&self, seconds: f32) -> f32 {
         let w = &self.curve[0..3];
         let max = w.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-        let e = [det::exp(w[0] - max), det::exp(w[1] - max), det::exp(w[2] - max)];
+        let e = [
+            det::exp(w[0] - max),
+            det::exp(w[1] - max),
+            det::exp(w[2] - max),
+        ];
         let sum = e[0] + e[1] + e[2];
         let t = seconds.max(1.0);
         let mut r = 0.0f32;

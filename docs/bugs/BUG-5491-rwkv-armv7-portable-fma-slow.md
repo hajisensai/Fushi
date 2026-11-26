@@ -1,0 +1,6 @@
+## BUG-5491 · armeabi-v7a 与无 FMA 的老 x86 上 RWKV 回放走软件 FMA，比向量路径慢约 4–5 倍
+- **报告**：2026-11-26（BUG-5488 跨平台逐位一致改造中自查发现）
+- **真实性**：✅ 真问题（性能退化，结果正确）。BUG-5488 后所有平台用同一运算序（点积 / axpy 每元素一次 FMA）；`native/fushi_rwkv/src/rwkv/det.rs` `detect_vector_kernels` 只在 x86_64（AVX2+FMA）与 aarch64（NEON）返回 true，其余走 `dot_portable` / `axpy_portable` + `soft_fma`（f64 乘加 + 半点修正）。armeabi-v7a 的 split release APK 随包 `libfushi_rwkv.so`（`release.yml` 的 fushi_rwkv cargo-ndk 三 ABI），这些设备因此走慢路径。x86 本机强制可移植内核实测（sm98 int4、14,715 卡 / 167,061 条复习、1 线程）：回放约 47–55 s，向量路径约 10–12 s；修前的平台标量路径（非融合 f32 乘加）约 15.8 s。armv7 没有 f64 SIMD，相对差距可能更大。
+- **[ ] ① 未修复** — 方向：armv7 运行期查 `getauxval(AT_HWCAP) & HWCAP_VFPv4`，有则用硬件 `vfma.f32`（与 IEEE FMA 逐位相同）。stable Rust 1.95 上 `#[target_feature(enable = "vfp4")]` 与 `is_arm_feature_detected!("vfp4")` 都还是 unstable（实测 E0658），只能 `asm!` + `.inst` 手写编码（Thumb-2 / ARM 两种模式），本机无 armv7 设备 / qemu 无法执行验证，故未在 BUG-5488 里做：编码错会静默算错或 SIGILL，比慢更糟。需要 armv7 真机或 CI 上 qemu-arm 跑 `tests/bitexact.rs` 才能落地。无 FMA 的 x86（2013 年前、Haswell 之前）同类，量极小，可不做。
+- **[ ] ② 未加自动化测试** — 落地时：CI 加 armv7（qemu-arm 或真机）跑 `tests/bitexact.rs`，黄金摘要与 x86 / aarch64 相同即证逐位一致。
+- **备注**：结果本身已逐位一致（可移植内核与向量内核摘要相同，`tests/bitexact.rs` 子进程用例），只是慢；首次回放之后是增量追加 + 快照，日常影响主要在升级后那一次全量重放。

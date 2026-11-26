@@ -115,12 +115,15 @@ pub(crate) fn soft_fma(a: f32, b: f32, c: f32) -> f32 {
     let product = a as f64 * b as f64;
     let addend = c as f64;
     let sum = product + addend;
-    if !sum.is_finite() {
+    // Common path: rounding the f64 sum to f32 is already correct unless the
+    // sum sits exactly on an f32 midpoint (one bit test; the error term is
+    // only computed for those).
+    if !is_f32_midpoint(sum) || !sum.is_finite() {
         return sum as f32;
     }
     let virtual_addend = sum - product;
     let error = (product - (sum - virtual_addend)) + (addend - virtual_addend);
-    if error == 0.0 || !is_f32_midpoint(sum) {
+    if error == 0.0 {
         return sum as f32;
     }
     let bits = sum.to_bits();
@@ -164,10 +167,14 @@ pub(crate) fn reduce32(lanes: &[f32; DOT_LANES]) -> f32 {
 }
 
 /// The canonical dot product (see the module docs), evaluated with the given
-/// scalar multiply-add. Reference for the vector kernels; also the kernel
-/// itself where there are no vectors.
-#[inline]
-pub(crate) fn dot_reference(left: &[f32], right: &[f32], fma: impl Fn(f32, f32, f32) -> f32) -> f32 {
+/// scalar multiply-add: the definition the vector kernels and
+/// [dot_portable] are tested against.
+#[cfg(test)]
+pub(crate) fn dot_reference(
+    left: &[f32],
+    right: &[f32],
+    fma: impl Fn(f32, f32, f32) -> f32,
+) -> f32 {
     debug_assert_eq!(left.len(), right.len());
     let mut lanes = [0.0f32; DOT_LANES];
     for (index, (l, r)) in left.iter().zip(right).enumerate() {
@@ -177,8 +184,9 @@ pub(crate) fn dot_reference(left: &[f32], right: &[f32], fma: impl Fn(f32, f32, 
     reduce32(&lanes)
 }
 
-/// `out[i] = fma(weights[i], scale, out[i])` with the given multiply-add.
-#[inline]
+/// `out[i] = fma(weights[i], scale, out[i])` with the given multiply-add
+/// (test reference, like [dot_reference]).
+#[cfg(test)]
 pub(crate) fn axpy_reference(
     out: &mut [f32],
     weights: &[f32],
@@ -203,7 +211,7 @@ pub(crate) fn dot(left: &[f32], right: &[f32]) -> f32 {
         #[cfg(target_arch = "aarch64")]
         return unsafe { dot_neon(left, right) };
     }
-    dot_reference(left, right, soft_fma)
+    dot_portable(left, right)
 }
 
 /// `out[i] = fma(weights[i], scale, out[i])` (every element fused).
@@ -217,7 +225,67 @@ pub(crate) fn axpy(out: &mut [f32], weights: &[f32], scale: f32) {
         #[cfg(target_arch = "aarch64")]
         return unsafe { axpy_neon(out, weights, scale) };
     }
-    axpy_reference(out, weights, scale, soft_fma)
+    axpy_portable(out, weights, scale)
+}
+
+/// [soft_fma] without its rare correction, branch-free so a chunk of these
+/// vectorizes: the f64-rounded sum and whether it needs [soft_fma] (an f32
+/// midpoint, a nonzero sum below the f32 normal range, or non-finite).
+#[inline(always)]
+fn fma_unless_suspicious(a: f32, b: f32, c: f32) -> (f32, bool) {
+    const MIN_NORMAL_BITS: u64 = 0x3810_0000_0000_0000; // 2^-126 as f64
+    const INFINITY_BITS: u64 = 0x7ff0_0000_0000_0000;
+    let sum = a as f64 * b as f64 + c as f64;
+    let magnitude = sum.to_bits() & 0x7fff_ffff_ffff_ffff;
+    let midpoint = sum.to_bits() & 0x1fff_ffff == 0x1000_0000;
+    let tiny = magnitude.wrapping_sub(1) < MIN_NORMAL_BITS - 1;
+    (sum as f32, midpoint | tiny | (magnitude >= INFINITY_BITS))
+}
+
+/// [dot_reference] with [soft_fma], 32 elements (one per lane) at a time:
+/// the chunk is computed with [fma_unless_suspicious] and only redone
+/// exactly when one of its sums is suspicious. Same result bit for bit.
+fn dot_portable(left: &[f32], right: &[f32]) -> f32 {
+    let mut lanes = [0.0f32; DOT_LANES];
+    for (l, r) in left.chunks(DOT_LANES).zip(right.chunks(DOT_LANES)) {
+        let n = l.len();
+        let mut next = [0.0f32; DOT_LANES];
+        let mut suspicious = false;
+        for i in 0..n {
+            let (value, flag) = fma_unless_suspicious(l[i], r[i], lanes[i]);
+            next[i] = value;
+            suspicious |= flag;
+        }
+        if suspicious {
+            for i in 0..n {
+                lanes[i] = soft_fma(l[i], r[i], lanes[i]);
+            }
+        } else {
+            lanes[..n].copy_from_slice(&next[..n]);
+        }
+    }
+    reduce32(&lanes)
+}
+
+/// [axpy_reference] with [soft_fma], chunked like [dot_portable].
+fn axpy_portable(out: &mut [f32], weights: &[f32], scale: f32) {
+    for (o, w) in out.chunks_mut(DOT_LANES).zip(weights.chunks(DOT_LANES)) {
+        let n = o.len();
+        let mut next = [0.0f32; DOT_LANES];
+        let mut suspicious = false;
+        for i in 0..n {
+            let (value, flag) = fma_unless_suspicious(w[i], scale, o[i]);
+            next[i] = value;
+            suspicious |= flag;
+        }
+        if suspicious {
+            for i in 0..n {
+                o[i] = soft_fma(w[i], scale, o[i]);
+            }
+        } else {
+            o.copy_from_slice(&next[..n]);
+        }
+    }
 }
 
 /// AVX2: lanes `8g..8g+8` live in `acc[g]`; element `j` of a full 8-block
@@ -263,8 +331,7 @@ pub(crate) unsafe fn dot_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
             acc1 = _mm256_fmadd_ps(_mm256_loadu_ps(l.add(j)), _mm256_loadu_ps(r.add(j)), acc1);
             j += 8;
             if j + 8 <= len {
-                acc2 =
-                    _mm256_fmadd_ps(_mm256_loadu_ps(l.add(j)), _mm256_loadu_ps(r.add(j)), acc2);
+                acc2 = _mm256_fmadd_ps(_mm256_loadu_ps(l.add(j)), _mm256_loadu_ps(r.add(j)), acc2);
                 j += 8;
             }
         }
@@ -299,23 +366,41 @@ pub(crate) unsafe fn axpy_avx2_fma(out: &mut [f32], weights: &[f32], scale: f32)
     let s = _mm256_set1_ps(scale);
     let mut j = 0;
     while j + 32 <= len {
-        _mm256_storeu_ps(o.add(j), _mm256_fmadd_ps(_mm256_loadu_ps(w.add(j)), s, _mm256_loadu_ps(o.add(j))));
+        _mm256_storeu_ps(
+            o.add(j),
+            _mm256_fmadd_ps(_mm256_loadu_ps(w.add(j)), s, _mm256_loadu_ps(o.add(j))),
+        );
         _mm256_storeu_ps(
             o.add(j + 8),
-            _mm256_fmadd_ps(_mm256_loadu_ps(w.add(j + 8)), s, _mm256_loadu_ps(o.add(j + 8))),
+            _mm256_fmadd_ps(
+                _mm256_loadu_ps(w.add(j + 8)),
+                s,
+                _mm256_loadu_ps(o.add(j + 8)),
+            ),
         );
         _mm256_storeu_ps(
             o.add(j + 16),
-            _mm256_fmadd_ps(_mm256_loadu_ps(w.add(j + 16)), s, _mm256_loadu_ps(o.add(j + 16))),
+            _mm256_fmadd_ps(
+                _mm256_loadu_ps(w.add(j + 16)),
+                s,
+                _mm256_loadu_ps(o.add(j + 16)),
+            ),
         );
         _mm256_storeu_ps(
             o.add(j + 24),
-            _mm256_fmadd_ps(_mm256_loadu_ps(w.add(j + 24)), s, _mm256_loadu_ps(o.add(j + 24))),
+            _mm256_fmadd_ps(
+                _mm256_loadu_ps(w.add(j + 24)),
+                s,
+                _mm256_loadu_ps(o.add(j + 24)),
+            ),
         );
         j += 32;
     }
     while j + 8 <= len {
-        _mm256_storeu_ps(o.add(j), _mm256_fmadd_ps(_mm256_loadu_ps(w.add(j)), s, _mm256_loadu_ps(o.add(j))));
+        _mm256_storeu_ps(
+            o.add(j),
+            _mm256_fmadd_ps(_mm256_loadu_ps(w.add(j)), s, _mm256_loadu_ps(o.add(j))),
+        );
         j += 8;
     }
     while j < len {
@@ -337,7 +422,11 @@ pub(crate) unsafe fn dot_neon(left: &[f32], right: &[f32]) -> f32 {
     let mut j = 0;
     while j + 32 <= len {
         for (q, acc) in acc.iter_mut().enumerate() {
-            *acc = vfmaq_f32(*acc, vld1q_f32(l.add(j + 4 * q)), vld1q_f32(r.add(j + 4 * q)));
+            *acc = vfmaq_f32(
+                *acc,
+                vld1q_f32(l.add(j + 4 * q)),
+                vld1q_f32(r.add(j + 4 * q)),
+            );
         }
         j += 32;
     }
@@ -381,9 +470,18 @@ pub(crate) unsafe fn axpy_neon(out: &mut [f32], weights: &[f32], scale: f32) {
     let s = vdupq_n_f32(scale);
     let mut j = 0;
     while j + 16 <= len {
-        vst1q_f32(o.add(j), vfmaq_f32(vld1q_f32(o.add(j)), vld1q_f32(w.add(j)), s));
-        vst1q_f32(o.add(j + 4), vfmaq_f32(vld1q_f32(o.add(j + 4)), vld1q_f32(w.add(j + 4)), s));
-        vst1q_f32(o.add(j + 8), vfmaq_f32(vld1q_f32(o.add(j + 8)), vld1q_f32(w.add(j + 8)), s));
+        vst1q_f32(
+            o.add(j),
+            vfmaq_f32(vld1q_f32(o.add(j)), vld1q_f32(w.add(j)), s),
+        );
+        vst1q_f32(
+            o.add(j + 4),
+            vfmaq_f32(vld1q_f32(o.add(j + 4)), vld1q_f32(w.add(j + 4)), s),
+        );
+        vst1q_f32(
+            o.add(j + 8),
+            vfmaq_f32(vld1q_f32(o.add(j + 8)), vld1q_f32(w.add(j + 8)), s),
+        );
         vst1q_f32(
             o.add(j + 12),
             vfmaq_f32(vld1q_f32(o.add(j + 12)), vld1q_f32(w.add(j + 12)), s),
@@ -391,7 +489,10 @@ pub(crate) unsafe fn axpy_neon(out: &mut [f32], weights: &[f32], scale: f32) {
         j += 16;
     }
     while j + 4 <= len {
-        vst1q_f32(o.add(j), vfmaq_f32(vld1q_f32(o.add(j)), vld1q_f32(w.add(j)), s));
+        vst1q_f32(
+            o.add(j),
+            vfmaq_f32(vld1q_f32(o.add(j)), vld1q_f32(w.add(j)), s),
+        );
         j += 4;
     }
     while j < len {
@@ -437,7 +538,87 @@ fn expm1_reduced(r: f64) -> f64 {
     r * p
 }
 
-/// `e^x`. Exact range reduction `x = k ln2 + r`, `|r| <= ln2 / 2`.
+/// Nearest integer, ties to even, by the `1.5 * 2^52` trick: exact in the
+/// default rounding mode for `|v| < 2^51`, two additions (`f64::round` is a
+/// libm call on baseline x86_64, which has no SSE4.1 `roundsd`).
+#[inline(always)]
+fn round_f64(v: f64) -> f64 {
+    const SHIFT: f64 = 6_755_399_441_055_744.0; // 1.5 * 2^52
+    (v + SHIFT) - SHIFT
+}
+
+/// `2^(j / 64)`, j = 0..64, correctly rounded f64 (generated with 60-digit
+/// decimal arithmetic).
+const EXP2_TABLE: [u64; 64] = [
+    0x3ff0000000000000,
+    0x3ff02c9a3e778061,
+    0x3ff059b0d3158574,
+    0x3ff0874518759bc8,
+    0x3ff0b5586cf9890f,
+    0x3ff0e3ec32d3d1a2,
+    0x3ff11301d0125b51,
+    0x3ff1429aaea92de0,
+    0x3ff172b83c7d517b,
+    0x3ff1a35beb6fcb75,
+    0x3ff1d4873168b9aa,
+    0x3ff2063b88628cd6,
+    0x3ff2387a6e756238,
+    0x3ff26b4565e27cdd,
+    0x3ff29e9df51fdee1,
+    0x3ff2d285a6e4030b,
+    0x3ff306fe0a31b715,
+    0x3ff33c08b26416ff,
+    0x3ff371a7373aa9cb,
+    0x3ff3a7db34e59ff7,
+    0x3ff3dea64c123422,
+    0x3ff4160a21f72e2a,
+    0x3ff44e086061892d,
+    0x3ff486a2b5c13cd0,
+    0x3ff4bfdad5362a27,
+    0x3ff4f9b2769d2ca7,
+    0x3ff5342b569d4f82,
+    0x3ff56f4736b527da,
+    0x3ff5ab07dd485429,
+    0x3ff5e76f15ad2148,
+    0x3ff6247eb03a5585,
+    0x3ff6623882552225,
+    0x3ff6a09e667f3bcd,
+    0x3ff6dfb23c651a2f,
+    0x3ff71f75e8ec5f74,
+    0x3ff75feb564267c9,
+    0x3ff7a11473eb0187,
+    0x3ff7e2f336cf4e62,
+    0x3ff82589994cce13,
+    0x3ff868d99b4492ed,
+    0x3ff8ace5422aa0db,
+    0x3ff8f1ae99157736,
+    0x3ff93737b0cdc5e5,
+    0x3ff97d829fde4e50,
+    0x3ff9c49182a3f090,
+    0x3ffa0c667b5de565,
+    0x3ffa5503b23e255d,
+    0x3ffa9e6b5579fdbf,
+    0x3ffae89f995ad3ad,
+    0x3ffb33a2b84f15fb,
+    0x3ffb7f76f2fb5e47,
+    0x3ffbcc1e904bc1d2,
+    0x3ffc199bdd85529c,
+    0x3ffc67f12e57d14b,
+    0x3ffcb720dcef9069,
+    0x3ffd072d4a07897c,
+    0x3ffd5818dcfba487,
+    0x3ffda9e603db3285,
+    0x3ffdfc97337b9b5f,
+    0x3ffe502ee78b3ff6,
+    0x3ffea4afa2a490da,
+    0x3ffefa1bee615a27,
+    0x3fff50765b6e4540,
+    0x3fffa7c1819e90d8,
+];
+
+/// `e^x`: `x = (64 e + j) ln2 / 64 + r` exactly (`|r| <= ln2 / 128`), then
+/// `2^e * 2^(j/64) * e^r` with `e^r - 1` to `r^5 / 120` (truncation < 4e-17).
+#[inline]
 pub(crate) fn exp_f64(x: f64) -> f64 {
     if x.is_nan() {
         return x;
@@ -449,10 +630,14 @@ pub(crate) fn exp_f64(x: f64) -> f64 {
         // Far below the smallest f32 (2^-149); callers round to f32.
         return 0.0;
     }
-    let k = (x * INV_LN2).round();
-    let r = (x - k * LN2_HI) - k * LN2_LO;
-    let scale = f64::from_bits(((k as i64 + 1023) as u64) << 52);
-    (1.0 + expm1_reduced(r)) * scale
+    let k = round_f64(x * (64.0 * INV_LN2));
+    // `LN2_HI / 64` keeps the 32 trailing zero bits: `k * LN2_HI / 64` is exact.
+    let r = (x - k * (LN2_HI / 64.0)) - k * (LN2_LO / 64.0);
+    let k = k as i64;
+    let t = f64::from_bits(EXP2_TABLE[(k & 63) as usize]);
+    let p = r * (1.0 + r * (0.5 + r * (1.0 / 6.0 + r * (1.0 / 24.0 + r * (1.0 / 120.0)))));
+    let scale = f64::from_bits((((k >> 6) + 1023) as u64) << 52);
+    (t + t * p) * scale
 }
 
 /// `e^x - 1`, accurate near 0.
@@ -560,19 +745,29 @@ pub(crate) fn tanh(x: f32) -> f32 {
     ((t / (t + 2.0)) as f32).copysign(x)
 }
 
+fn sigmoid_f64(x: f64) -> f64 {
+    if x >= 0.0 {
+        1.0 / (1.0 + exp_f64(-x))
+    } else {
+        let e = exp_f64(x);
+        e / (1.0 + e)
+    }
+}
+
 /// The logistic function `1 / (1 + e^-x)`.
 #[inline]
 pub(crate) fn sigmoid(x: f32) -> f32 {
-    let x = x as f64;
-    if x.is_nan() {
-        return x as f32;
-    }
-    if x >= 0.0 {
-        (1.0 / (1.0 + exp_f64(-x))) as f32
-    } else {
-        let e = exp_f64(x);
-        (e / (1.0 + e)) as f32
-    }
+    sigmoid_f64(x as f64) as f32
+}
+
+/// RWKV-7's decay `exp(-exp(-0.5 - softplus(-x)))`, evaluated as the equal
+/// `exp(-e^-0.5 * sigmoid(x))` (`exp(-softplus(-x)) = sigmoid(x)`) in f64
+/// with one rounding: two exponentials instead of four serial
+/// transcendentals, and closer to the exact value than the f32 chain.
+#[inline]
+pub(crate) fn decay(x: f32) -> f32 {
+    const E_MINUS_HALF: f64 = 0.606_530_659_712_633_4;
+    exp_f64(-E_MINUS_HALF * sigmoid_f64(x as f64)) as f32
 }
 
 /// `base^exponent` for `base > 0`, as `e^(exponent ln base)`.
@@ -590,7 +785,7 @@ const INV_PIO2: f64 = 6.366_197_723_675_813_824_33e-1;
 /// phases below 2 pi).
 #[inline]
 fn reduce_pio2(x: f64) -> (i64, f64) {
-    let n = (x * INV_PIO2).round();
+    let n = round_f64(x * INV_PIO2);
     (n as i64, (x - n * PIO2_1) - n * PIO2_1T)
 }
 
@@ -728,7 +923,11 @@ mod tests {
             check(a, b, c);
             // Subnormal results.
             let tiny = f32::from_bits((rng.next() as u32) & 0x00ff_ffff);
-            check(tiny, rng.uniform(2.0), f32::from_bits((rng.next() as u32) & 0x807f_ffff));
+            check(
+                tiny,
+                rng.uniform(2.0),
+                f32::from_bits((rng.next() as u32) & 0x807f_ffff),
+            );
             check(
                 f32::from_bits(((rng.next() as u32) & 0x007f_ffff) | 0x0080_0000),
                 f32::from_bits(((rng.next() as u32) & 0x007f_ffff) | 0x0080_0000) * 1e-30,
@@ -769,7 +968,61 @@ mod tests {
                 axpy_reference(&mut expected, &left, scale, soft_fma);
                 let mut got = right.clone();
                 axpy(&mut got, &left, scale);
-                let same = got.iter().zip(&expected).all(|(a, b)| a.to_bits() == b.to_bits());
+                let same = got
+                    .iter()
+                    .zip(&expected)
+                    .all(|(a, b)| a.to_bits() == b.to_bits());
+                assert!(same, "axpy, len {len}");
+            }
+        }
+    }
+
+    /// The chunked portable kernels equal the per-element [soft_fma]
+    /// reference, also on data that keeps hitting the slow path (exact f32
+    /// midpoints, zeros, subnormal and overflowing sums).
+    #[test]
+    fn portable_kernels_match_the_reference_order() {
+        let mut rng = Rng(0x0bad_cafe_dead_beef);
+        let half_ulp = f32::from_bits(0x3380_0000); // 2^-24: 1 + this is a midpoint
+        let special = [
+            0.0,
+            1.0,
+            -1.0,
+            half_ulp,
+            -half_ulp,
+            3.0 * half_ulp,
+            f32::from_bits(1),
+            f32::from_bits(0x0040_0000),
+            1e30,
+            -3e38,
+            f32::MIN_POSITIVE,
+        ];
+        let pick = |rng: &mut Rng| -> f32 {
+            match rng.next() % 3 {
+                0 => special[(rng.next() % special.len() as u64) as usize],
+                1 => rng.uniform(3.0),
+                _ => rng.any_f32(),
+            }
+        };
+        for len in 0..200 {
+            for _ in 0..30 {
+                let left: Vec<f32> = (0..len).map(|_| pick(&mut rng)).collect();
+                let right: Vec<f32> = (0..len).map(|_| pick(&mut rng)).collect();
+                let expected = dot_reference(&left, &right, soft_fma);
+                let got = dot_portable(&left, &right);
+                assert!(
+                    got.to_bits() == expected.to_bits() || (got.is_nan() && expected.is_nan()),
+                    "dot, len {len}: {got:e} vs {expected:e}"
+                );
+                let scale = pick(&mut rng);
+                let mut expected = right.clone();
+                axpy_reference(&mut expected, &left, scale, soft_fma);
+                let mut got = right.clone();
+                axpy_portable(&mut got, &left, scale);
+                let same = got
+                    .iter()
+                    .zip(&expected)
+                    .all(|(a, b)| a.to_bits() == b.to_bits() || (a.is_nan() && b.is_nan()));
                 assert!(same, "axpy, len {len}");
             }
         }
@@ -784,7 +1037,10 @@ mod tests {
                 if got.to_bits() == want.to_bits() || (got.is_nan() && want.is_nan()) {
                     0
                 } else {
-                    assert!(got.is_finite() && want.is_finite(), "f({x:e}) = {got:e}, want {want:e}");
+                    assert!(
+                        got.is_finite() && want.is_finite(),
+                        "f({x:e}) = {got:e}, want {want:e}"
+                    );
                     (got.to_bits() as i64 - want.to_bits() as i64).unsigned_abs() as u32
                 }
             })
@@ -816,6 +1072,13 @@ mod tests {
         }
         assert!(max_ulps(ln_1p, f64::ln_1p, &small) <= 1);
         assert!(max_ulps(sin, f64::sin, &phases) <= 1);
+        assert!(
+            max_ulps(
+                decay,
+                |x| (-(-0.5f64).exp() / (1.0 + (-x).exp())).exp(),
+                &wide
+            ) <= 1
+        );
         assert!(max_ulps(cos, f64::cos, &phases) <= 1);
         let exponents: Vec<f32> = (0..200_000).map(|_| rng.uniform(500.0)).collect();
         assert!(max_ulps(|e| powf(0.9, e), |e| (0.9f32 as f64).powf(e), &exponents) <= 1);

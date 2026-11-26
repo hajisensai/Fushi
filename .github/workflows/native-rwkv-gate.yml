@@ -5,9 +5,11 @@
 #                    kuma3-anki-core 的 rslib/src/rwkv 原样编译后产出的黄金值（f32 / int8），
 #                    外加上游 Python 测试写死的两个数、批量 vs 逐条回放逐位相同、快照续跑等。
 #   tests/c_abi.rs   只走 frwkv_* extern 函数的往返与错误路径。
-#   三种 CPU 内核各跑一遍：x86_64（AVX2+FMA / 标量）、aarch64 Linux（NEON + 批量查询，
-#   即 Android / iOS 走的路径）、macOS arm64（Accelerate cblas_sgemm）。夹具在 x86_64-windows
-#   生成，另两种内核的求和顺序不同，靠测试里的容差吸收（见 tests/common/mod.rs）。
+#   tests/bitexact.rs 跨平台逐位一致：状态与 R 的摘要必须等于 x86_64 上生成的黄金值，且本机
+#                    向量内核与强制的可移植内核（标量 + 软件 FMA）摘要相同（src/rwkv/det.rs）。
+#   三种 CPU 各跑一遍：x86_64（AVX2+FMA）、aarch64 Linux（NEON，即 Android / iOS 走的路径）、
+#   macOS arm64（NEON）。三者逐位相同；与上游夹具（x86_64-windows 上原样编译上游产出）之间
+#   的差来自上游的 libm / SIMD 求和顺序，靠 tests/common/mod.rs 的容差吸收。
 #   android：与 native-compute-gate.yml 同一形态——随包的 Android .so（build_android_so.sh，
 #            cargo-ndk 三个 ABI）是唯一没有别的 pull_request workflow 编的产物，这里真编一遍，
 #            核对 ELF 架构与 frwkv_* 符号（verify_abi.sh：src/ 声明 ∪ Dart 绑定 lookup）；

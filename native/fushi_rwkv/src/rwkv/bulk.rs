@@ -818,14 +818,7 @@ fn finish_layer_time_stage(output: LayerTimeStageOutput<'_>) {
     }
 
     // Time mixer, pointwise post-recurrence stage.
-    let time_out = time_outputs(
-        mixer,
-        &parts,
-        &recurrence,
-        x,
-        chunk_start,
-        chunk_rows,
-    );
+    let time_out = time_outputs(mixer, &parts, &recurrence, x, chunk_start, chunk_rows);
     let time_out_query = parts_query.as_ref().map(|parts_query| {
         time_outputs(
             mixer,
@@ -1120,14 +1113,10 @@ fn time_parts_block(
     let mixed = &mut mixed[..rows * D_MODEL];
 
     fill_mixed(0, mixed);
-    mixer
-        .w_r
-        .apply_block_into(mixed, block.r, rows);
+    mixer.w_r.apply_block_into(mixed, block.r, rows);
 
     fill_mixed(1, mixed);
-    mixer
-        .w_k
-        .apply_block_into(mixed, block.k, rows);
+    mixer.w_k.apply_block_into(mixed, block.k, rows);
 
     fill_mixed(6, mixed);
     let mut k_scale = [0.0f32; LINEAR_BLOCK_ROWS * HEADS];
@@ -1143,17 +1132,13 @@ fn time_parts_block(
 
     fill_mixed(2, mixed);
     if mixer.layer_id == 0 {
-        mixer
-            .w_v
-            .apply_block_into(mixed, block.v, rows);
+        mixer.w_v.apply_block_into(mixed, block.v, rows);
         block.next_v0.copy_from_slice(block.v);
     } else {
         mixer.v_lora.apply_sigmoid_block_into(mixed, block.v, rows);
         let mut w_v = [0.0f32; LINEAR_BLOCK_ROWS * D_MODEL];
         let w_v = &mut w_v[..rows * D_MODEL];
-        mixer
-            .w_v
-            .apply_block_into(mixed, w_v, rows);
+        mixer.w_v.apply_block_into(mixed, w_v, rows);
         for index in 0..rows {
             let range = index * D_MODEL..(index + 1) * D_MODEL;
             let v0_row = row(v0, block_start + index);
@@ -1181,8 +1166,7 @@ fn time_parts_block(
     fill_mixed(3, mixed);
     mixer.d_lora.apply_tanh_block_into(mixed, block.w, rows);
     for value in block.w.iter_mut() {
-        let d = -0.5 - softplus(-*value);
-        *value = det::exp(-det::exp(d));
+        *value = det::decay(*value);
     }
 
     for index in 0..rows {
@@ -1252,9 +1236,7 @@ fn time_outputs(
                     }
                 }
             }
-            mixer
-                .w_o
-                .apply_block_into(gated, out_block, rows);
+            mixer.w_o.apply_block_into(gated, out_block, rows);
             for index in 0..rows {
                 let input = row(trunk, chunk_start + block_start + index);
                 for channel in 0..D_MODEL {
@@ -1314,14 +1296,12 @@ fn channel_outputs(
             debug_assert!(channel_dim <= 256);
             let mut k = [0.0f32; LINEAR_BLOCK_ROWS * 256];
             let k = &mut k[..rows * channel_dim];
-            cm.w_k
-                .apply_block_into(mixed, k, rows);
+            cm.w_k.apply_block_into(mixed, k, rows);
             for value in k.iter_mut() {
                 let relu = value.max(0.0);
                 *value = relu * relu;
             }
-            cm.w_v
-                .apply_block_into(k, trunk_block, rows);
+            cm.w_v.apply_block_into(k, trunk_block, rows);
             for index in 0..rows {
                 let input = row(time_out, block_start + index);
                 for channel in 0..D_MODEL {
