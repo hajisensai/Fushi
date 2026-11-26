@@ -678,6 +678,10 @@ extension _FushiSyncServerPairing on FushiSyncServer {
         // `/streamurl` 也不带列表，client 只有默认那一条。
         kVideoSidecarSubtitlesCapability:
             _libraryService is VideoSidecarSubtitleListHost,
+        // `/streamurl` 下发这一集的外挂音轨（`externalAudioTracks` + token 音轨流
+        // `.../sidecaraudio`，M9OEh1PeYH）。老 host 无此字段 → 不下发，client 照旧。
+        kVideoSidecarAudioCapability:
+            _libraryService is VideoSidecarAudioListHost,
         // 远端原盘：整盘下载 + 流式原盘菜单共用的只读盘目录服务
         // （`/api/library/videos/<id>/disc` + `/api/library/disc/<token>/**`）。老 host
         // 无此字段 → client 的远端原盘按钮说明「对端版本过低」，不发请求。

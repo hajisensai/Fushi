@@ -31,7 +31,10 @@ import 'package:fushi_engine/media/video/video_subtitle_source.dart'
         subtitleExtensionForCodec,
         subtitleFormatForCodec;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
-    show isSidecarSubtitleSuffix, sidecarSubtitleLanguageTag;
+    show
+        SidecarAudioTrackFile,
+        isSidecarSubtitleSuffix,
+        sidecarSubtitleLanguageTag;
 import 'package:fushi_engine/utils/net/bounded_read.dart'
     show readBoundedRequestBody;
 import 'package:fushi_engine/sync/collection_manifest.dart';

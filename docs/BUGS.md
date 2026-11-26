@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4769 条。点号进各自文件。
+> 共 4771 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5510](bugs/BUG-5510-sync-sweep-audiobook-pull-untracked.md) | ✅ | ✅ | 同步 sweep 补拉有声书不进下载任务表、不与手动任务互斥 |
+| [BUG-5509](bugs/BUG-5509-interconnect-remote-sidecar-audio-missing.md) | ✅ | ✅ | 互联远端播放 host 的本地视频拿不到外挂音轨 |
 | [BUG-5490](bugs/BUG-5490-data-location-diag-not-retained.md) | ✅ | ✅ | 数据位置诊断只在内存且被普通诊断挤掉 |
 | [BUG-5489](bugs/BUG-5489-dict-files-missing-silent.md) | ✅ | ✅ | 词典文件缺失时界面静默只显示无释义 |
 | [BUG-5487](bugs/BUG-5487-music-plugin-switch-cover-pixi-slow.md) | ✅ | ✅ | music-plugin-switch-cover-pixi-slow |

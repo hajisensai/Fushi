@@ -11,7 +11,9 @@ import 'package:fushi_engine/media/video/video_library_import.dart'
     show parseSubtitleCues;
 import 'package:fushi_engine/media/video/video_sidecar.dart'
     show
+        SidecarAudioTrackFile,
         defaultSidecarSubtitleSuffix,
+        discoverSidecarAudioTrackFiles,
         findSidecarSubtitle,
         isSidecarSubtitleSuffix,
         listSidecarSubtitles,
@@ -192,6 +194,7 @@ abstract class _LocalLibraryHostBase
         VideoSubtitleDefaultHost,
         VideoSubtitleClearHost,
         VideoSidecarSubtitleListHost,
+        VideoSidecarAudioListHost,
         InterconnectServiceConfigHost,
         InterconnectProfileHost,
         VideoMetadataHost,

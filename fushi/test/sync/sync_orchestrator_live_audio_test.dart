@@ -11,6 +11,7 @@
 ///   → 仍走原 syncLocalAudioPackages / syncAudiobookPackages（__local_audio__ 路径）。
 library;
 
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -24,6 +25,7 @@ import 'package:fushi_engine/models/local_audio_content_id.dart';
 import 'package:fushi_engine/models/local_audio_source_pref.dart'
     show LocalAudioSourcePref;
 import 'package:fushi_engine/sync/local_library_host_service.dart';
+import 'package:fushi/src/sync/interconnect_download_manager.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
 import 'package:fushi/src/sync/remote_audiobook_revision.dart';
 import 'package:fushi/src/sync/remote_audiobook_revision_store.dart';
@@ -32,6 +34,7 @@ import 'package:fushi_engine/sync/fushi_library_host_service.dart'
 import 'package:fushi_engine/sync/fushi_sync_server.dart';
 import 'package:fushi_engine/sync/sync_asset_package_service.dart';
 import 'package:fushi_engine/sync/sync_asset_store.dart';
+import 'package:fushi/src/sync/sync_audiobook_pull_tasks.dart';
 import 'package:fushi/src/sync/sync_backend.dart';
 import 'package:fushi/src/sync/sync_orchestrator.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
@@ -136,8 +139,10 @@ SyncOrchestrator _audioOrchestrator({
   bool syncAudioBookFiles = false,
   List<LocalAudioDbEntry> localAudioEntries = const <LocalAudioDbEntry>[],
   Future<void> Function(LocalAudioPackageContents)? onLocalAudioImported,
+  SyncAudiobookPullTasks? audiobookPullTasks,
 }) => SyncOrchestrator(
   db: db,
+  audiobookPullTasks: audiobookPullTasks,
   backend: backend,
   dictionaryResourceRoot: tmp,
   audioDatabaseRoot: tmp,
@@ -763,6 +768,138 @@ void main() {
           ).load())[remoteAudiobookRevisionKeyForBook('HostAudioBook')];
       expect(record?.revision, hostRevision);
       expect(record?.sourceId, startsWith('interconnect|'));
+    });
+
+    // ── B5trcDxSnf：sweep 补拉接进 app 级下载任务表 ─────────────────────────────
+
+    Future<FushiDatabase> localDbWithBookMissingAudio(String name) async {
+      final FushiDatabase localDb = _memDb();
+      addTearDown(localDb.close);
+      await localDb.insertEpubBook(
+        EpubBooksCompanion.insert(
+          bookKey: 'HostAudioBook',
+          title: 'Host Audio Book',
+          epubPath: p.join(work.path, '$name.epub'),
+          extractDir: '',
+          chapterCount: 1,
+          chaptersJson: '["ch1"]',
+          importedAt: DateTime.now().millisecondsSinceEpoch,
+        ),
+      );
+      return localDb;
+    }
+
+    test('B5trcDxSnf: sweep 补拉登记成下载任务（落地书键 = 这本书），书架遮罩看得到', () async {
+      final FushiDatabase localDb = await localDbWithBookMissingAudio(
+        'sweep_task',
+      );
+      final Directory tmp = Directory(p.join(work.path, 'tmp_ab_sweep_task'))
+        ..createSync();
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
+      final InterconnectDownloadManager manager = InterconnectDownloadManager();
+      addTearDown(manager.dispose);
+      // 任务在跑时书架本地卡按落地书键找得到它（遮罩 / 后台任务环的数据源）。
+      bool sawRunningOnBook = false;
+      manager.addListener(() {
+        if (manager.isBookDownloadRunning('HostAudioBook')) {
+          sawRunningOnBook = true;
+        }
+      });
+
+      final SyncOrchestrator orch = _audioOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        syncAudioBookFiles: true,
+        audiobookPullTasks: manager,
+      );
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncAudiobooksLiveForTest(report, backend);
+
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+      expect(report.audiobooksImported, 1);
+      expect(await localDb.getAudiobookByBookKey('HostAudioBook'), isNotNull);
+      expect(sawRunningOnBook, isTrue);
+      final InterconnectDownloadTask? task = manager.taskFor(
+        InterconnectDownloadManager.syncAudiobookTaskId('HostAudioBook'),
+      );
+      expect(task, isNotNull, reason: 'sweep 补拉必须进下载任务表');
+      expect(task!.status, InterconnectDownloadStatus.completed);
+      expect(task.kind, InterconnectDownloadKind.audiobook);
+      expect(task.landedBookKey, 'HostAudioBook');
+      expect(task.title, 'Host Audio Book');
+      expect(task.stages, <InterconnectDownloadStage>[
+        InterconnectDownloadStage.audiobook,
+      ]);
+      expect(manager.isBookDownloadRunning('HostAudioBook'), isFalse);
+    });
+
+    test('B5trcDxSnf: 书架上正在手动拉同一本书时 sweep 跳过，不重复拉同一个包', () async {
+      final FushiDatabase localDb = await localDbWithBookMissingAudio(
+        'sweep_busy',
+      );
+      final Directory tmp = Directory(p.join(work.path, 'tmp_ab_sweep_busy'))
+        ..createSync();
+      final InterconnectSyncBackend backend = await _buildClientBackend(
+        base: serverBase,
+        token: token,
+      );
+      final InterconnectDownloadManager manager = InterconnectDownloadManager();
+      addTearDown(manager.dispose);
+      // 书架「从对端下载有声书」的手动任务：键是 host downloadId，落地书键是本书。
+      final Completer<void> manualDone = Completer<void>();
+      final Future<InterconnectDownloadTask> manual = manager.startBookDownload(
+        downloadId: 'HostAudioBook',
+        title: 'Host Audio Book',
+        dest: File(p.join(tmp.path, 'manual.fushiaudio')),
+        landedBookKey: 'HostAudioBook',
+        stages: const <InterconnectDownloadStage>[
+          InterconnectDownloadStage.audiobook,
+        ],
+        run: (File _, {void Function(double progress)? onProgress}) =>
+            manualDone.future,
+      );
+      expect(manager.isBookDownloadRunning('HostAudioBook'), isTrue);
+
+      final SyncOrchestrator orch = _audioOrchestrator(
+        db: localDb,
+        backend: backend,
+        tmp: tmp,
+        syncAudioBookFiles: true,
+        audiobookPullTasks: manager,
+      );
+      final SyncRunReport report = SyncRunReport();
+      await orch.syncAudiobooksLiveForTest(report, backend);
+
+      expect(report.errors, isEmpty, reason: '${report.errors}');
+      expect(report.audiobooksImported, 0, reason: '手动任务在拉，sweep 必须让开');
+      expect(await localDb.getAudiobookByBookKey('HostAudioBook'), isNull);
+      expect(
+        manager.taskFor(
+          InterconnectDownloadManager.syncAudiobookTaskId('HostAudioBook'),
+        ),
+        isNull,
+        reason: 'sweep 不得为同一本书另起任务',
+      );
+      // 反方向：sweep 的任务在跑时手动入口按同一判据让开（runAudiobookPull 判忙）。
+      expect(
+        await manager.runAudiobookPull(
+          bookKey: 'HostAudioBook',
+          title: 'Host Audio Book',
+          dest: File(p.join(tmp.path, 'sweep.fushiaudio')),
+          body:
+              ({
+                required void Function(double fraction) onProgress,
+                required void Function(int received, int? total) onBytes,
+              }) async => fail('同一本书已有在跑任务时不得跑本体'),
+        ),
+        isFalse,
+      );
+      manualDone.complete();
+      await manual;
     });
 
     test('push：本地有 LocalAudioBook 有声书，host 无 → 推送到 host', () async {

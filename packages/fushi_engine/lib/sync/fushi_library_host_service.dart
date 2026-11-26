@@ -11,6 +11,8 @@ import 'package:fushi_engine/media/video/dandanplay_file_key.dart'
     show DandanplayFileKey;
 import 'package:fushi_engine/models/local_audio_content_id.dart';
 import 'package:fushi_engine/media/video/stream_video_sync.dart';
+import 'package:fushi_engine/media/video/video_sidecar.dart'
+    show SidecarAudioTrackFile;
 import 'package:fushi_engine/sync/aggregate_snapshot.dart';
 import 'package:fushi_engine/sync/collection_manifest.dart';
 import 'package:fushi_engine/sync/media_link_sync.dart';
@@ -84,6 +86,17 @@ const String kVideoSidecarSubtitleQueryParam = 'sidecar';
 /// `/api/host/info` 的能力位：host 会在 `/streamurl` 列出这一集的全部外挂字幕、
 /// 并接受 [kVideoSidecarSubtitleQueryParam]（[VideoSidecarSubtitleListHost]）。
 const String kVideoSidecarSubtitlesCapability = 'videoSidecarSubtitles';
+
+/// `GET /api/library/videos/<id>/sidecaraudio?token=<t>&n=<i>`：这一集第 i 条外挂
+/// 音轨的音频流（M9OEh1PeYH）。与 `/stream` 同待遇——豁免 Basic（播放器 `audio-add`
+/// 是裸 GET），门是 `/streamurl` 签的同一张短时 token（绑定视频与集）；`n` 只能落在
+/// host 自己枚举出的音轨表里（[VideoSidecarAudioListHost]），URL 持有者拿不到别的文件。
+const String kVideoSidecarAudioPathSuffix = 'sidecaraudio';
+
+/// `/api/host/info` 的能力位：host 会在 `/streamurl` 的 `externalAudioTracks` 下发这
+/// 一集的外挂音轨（[VideoSidecarAudioListHost]）。client 不靠它决定行为（老 host 不发
+/// 列表即可），只供诊断 / 混版本排查。
+const String kVideoSidecarAudioCapability = 'videoSidecarAudio';
 
 /// `/api/library/videos/<id>/fingerprint`：host 有这个端点、却担保不了这份字节时的
 /// 状态码（BUG-4782）。404 只留给「老 host 没有这个端点」，两者必须可区分。响应体
@@ -472,6 +485,24 @@ abstract interface class VideoSidecarSubtitleListHost {
   /// 不必包含 host 用户另行选定、住在别处的默认字幕——服务端会把
   /// [FushiLibraryHostService.resolveVideoSubtitle] 的结果并进列表并标默认。
   Future<List<File>> listVideoSidecarSubtitles(
+    String id, {
+    int episodeIndex = 0,
+  });
+}
+
+/// host 端「列出某一集**全部**外挂音轨」的**可选**能力（M9OEh1PeYH；与
+/// [VideoSidecarSubtitleListHost] 同范式，不扩大主接口）。
+///
+/// 本机播放器起播时会挂上视频旁的外挂音轨（`ep01.jpn.mka`、`Audio 5.1/…`，BUG-5475），
+/// 远端经互联播放同一个视频却一条都拿不到：`/streamurl` 只下发字幕。实现了本接口的
+/// host 在 `/streamurl` 额外下发 `externalAudioTracks[]`（每条一个
+/// [kVideoSidecarAudioPathSuffix] 的 token URL），client 按在线源外挂音轨同一条路
+/// `audio-add … auto` 挂上。不实现 → 不下发，client 行为与从前一致。
+abstract interface class VideoSidecarAudioListHost {
+  /// 视频 [id] 第 [episodeIndex] 集旁的全部外挂音轨（判据与本机播放器同一份
+  /// `discoverSidecarAudioTrackFiles`：同目录 + 直接子目录），按发现顺序。未知视频 /
+  /// 网络流 / 光盘标题 / 目录读不了时返回空表。
+  Future<List<SidecarAudioTrackFile>> listVideoSidecarAudioTracks(
     String id, {
     int episodeIndex = 0,
   });
@@ -3470,6 +3501,13 @@ class RemoteVideoExternalAudioTrack {
 
   /// 语言码（若来源给得出）；扩展只给标签时为 null。
   final String? language;
+
+  /// wire 形状（`/streamurl` 的 `externalAudioTracks[]`），缺省值不上 wire。
+  Map<String, Object?> toJson() => <String, Object?>{
+    'url': url,
+    'label': ?label,
+    'language': ?language,
+  };
 
   static RemoteVideoExternalAudioTrack? fromJson(Object? value) {
     if (value is! Map) return null;

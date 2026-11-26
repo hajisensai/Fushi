@@ -306,52 +306,105 @@ extension _SyncOrchestratorAudiobooks on SyncOrchestrator {
     }
 
     // ── Pull A（场景B）：远端有、本端有书但缺音频 → 下载并解包落盘 ────────────
-    for (final String key in toPullAudioOnly) {
-      // 安全检查点：上一项已完整落地，这一项还没开始。
-      _checkpoint();
-      _emit(
-        SyncPhase.audiobooks,
-        itemIndex: index,
-        itemTotal: total,
-        title: key,
-      );
-      File? tmp;
-      try {
-        tmp = resumableTmpFile('audiobook', key, '.fushiaudio');
-        await backend.getRemoteAudiobook(
-          key,
-          tmp,
-          onProgress: (double f, [int? b]) => _emit(
-            SyncPhase.audiobooks,
-            itemIndex: index,
-            itemTotal: total,
-            title: key,
-            fileFraction: f,
-            fileBytes: b,
-          ),
+    //
+    // B5trcDxSnf：补拉经 app 级下载任务表（[audiobookPullTasks]）——书架上正在手动
+    // 拉同一本书的（补拉 / 重拉 / 整书下载的有声书阶段）这轮跳过，不并跑两条写同一
+    // 本书；自己拉的也登记成任务，书架本地卡与后台任务环看得到进度。
+    final SyncAudiobookPullTasks? tasks = audiobookPullTasks;
+    final Map<String, String> localTitles = <String, String>{
+      for (final EpubBookRow b in localBooks) b.bookKey: b.title,
+    };
+    // 任务表里失败的任务可在下载中心重试（同一个本体再跑一遍），那时本轮同步早已
+    // 结束：本体只在本轮还在进行时才往同步进度行报进度。
+    bool sweepActive = true;
+    try {
+      for (final String key in toPullAudioOnly) {
+        // 安全检查点：上一项已完整落地，这一项还没开始。
+        _checkpoint();
+        if (tasks != null && tasks.isBookDownloadRunning(key)) {
+          index++;
+          continue;
+        }
+        final int itemIndex = index;
+        _emit(
+          SyncPhase.audiobooks,
+          itemIndex: itemIndex,
+          itemTotal: total,
+          title: key,
         );
-        // 用本地 EPUB 的 bookKey 作 override：远端 key 已等于本地 EPUB 的 bookKey
-        // （toPull 已由 localBookKeys 筛过），显式 override 保写入行与 EPUB 可配对。
-        await _packages.importAudioDatabasePackage(
-          packageFile: tmp,
-          audioDatabaseRoot: _audioDatabaseRoot,
-          bookKeyOverride: key,
-        );
-        // 与书架手动下载同一个记录入口：记下这份包是 host 哪一版，之后 host 换了
-        // 音频 / 字幕书架才会提示「对端有更新」。
-        await recordRemoteAudiobookPackageDownload(
-          db: _db,
-          client: backend,
-          key: remoteAudiobookRevisionKeyForBook(key),
-          package: tmp,
-        );
-        report.audiobooksImported++;
-      } catch (e) {
-        report.noteError('live pull audiobook "$key"', e);
-      } finally {
-        _safeDelete(tmp);
+        Future<void> pull({
+          void Function(double fraction)? onProgress,
+          void Function(int received, int? total)? onBytes,
+        }) async {
+          File? tmp;
+          try {
+            tmp = resumableTmpFile('audiobook', key, '.fushiaudio');
+            await backend.getRemoteAudiobook(
+              key,
+              tmp,
+              onProgress: (double f, [int? b]) {
+                onProgress?.call(f);
+                // 与书架手动补拉同一口径：总量 = 已传 ÷ 比例（比例为 0 时未知）。
+                if (b != null) onBytes?.call(b, f > 0 ? (b / f).round() : null);
+                if (!sweepActive) return;
+                _emit(
+                  SyncPhase.audiobooks,
+                  itemIndex: itemIndex,
+                  itemTotal: total,
+                  title: key,
+                  fileFraction: f,
+                  fileBytes: b,
+                );
+              },
+            );
+            // 用本地 EPUB 的 bookKey 作 override：远端 key 已等于本地 EPUB 的 bookKey
+            // （toPull 已由 localBookKeys 筛过），显式 override 保写入行与 EPUB 可配对。
+            await _packages.importAudioDatabasePackage(
+              packageFile: tmp,
+              audioDatabaseRoot: _audioDatabaseRoot,
+              bookKeyOverride: key,
+            );
+            // 与书架手动下载同一个记录入口：记下这份包是 host 哪一版，之后 host 换了
+            // 音频 / 字幕书架才会提示「对端有更新」。
+            await recordRemoteAudiobookPackageDownload(
+              db: _db,
+              client: backend,
+              key: remoteAudiobookRevisionKeyForBook(key),
+              package: tmp,
+            );
+          } finally {
+            _safeDelete(tmp);
+          }
+        }
+
+        try {
+          if (tasks == null) {
+            await pull();
+          } else {
+            final bool ran = await tasks.runAudiobookPull(
+              bookKey: key,
+              title: localTitles[key] ?? key,
+              dest: resumableTmpFile('audiobook', key, '.fushiaudio'),
+              body:
+                  ({
+                    required void Function(double fraction) onProgress,
+                    required void Function(int received, int? total) onBytes,
+                  }) => pull(onProgress: onProgress, onBytes: onBytes),
+            );
+            if (!ran) {
+              // 判忙到登记之间手动任务抢先起跑了：同样让给它。
+              index++;
+              continue;
+            }
+          }
+          report.audiobooksImported++;
+        } catch (e) {
+          report.noteError('live pull audiobook "$key"', e);
+        }
+        index++;
       }
-      index++;
+    } finally {
+      sweepActive = false;
     }
   }
 }
