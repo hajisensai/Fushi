@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/preference_keys.dart';
+import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/platform/desktop/desktop_tray.dart';
 
 /// 托盘菜单拼装、通道去重与原生侧「只拦用户关闭手势」的契约。
@@ -87,6 +89,11 @@ void main() {
       expect(wire['screenOcr']!['revealWindow'], isFalse);
       expect(wire['exit']!['revealWindow'], isFalse);
     });
+  });
+
+  test('「已收进托盘」提示标记是设备本地键，不随 Profile 切换重弹', () {
+    expect(kKnownPreferenceKeys, contains('desktop_tray_hint_shown'));
+    expect(ProfileKeys.isExcludedPref('desktop_tray_hint_shown'), isTrue);
   });
 
   group('DesktopTray 通道', () {

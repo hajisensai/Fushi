@@ -38,6 +38,7 @@
 #include "game_stream_input.h"
 #include "global_mouse_trigger.h"
 #include "hang_watchdog.h"
+#include "startup_reveal_policy.h"
 #include "low_level_mouse_hook.h"
 #include "system_font_list.h"
 #include "system_transparency_channel.h"
@@ -5125,6 +5126,12 @@ void FlutterWindow::OnDestroy() {
   attached_text_surface_window_.reset();
   // 托盘图标先于图标句柄销毁摘掉（它可能还引用着 icon_small_），回调通道一并撤。
   tray_.reset();
+  // SetPropW 挂上的属性必须在窗口销毁前 RemovePropW（MSDN：否则属性条目泄漏）：
+  // 看门狗挂的「显示过」（startup_reveal_policy.h）与关闭到托盘挂的「藏在托盘」。
+  if (HWND hwnd = GetHandle()) {
+    RemovePropW(hwnd, ::fushi::kMainWindowShownProp);
+    RemovePropW(hwnd, ::fushi::kTrayHiddenWindowProp);
+  }
   if (tray_channel_) {
     tray_channel_->SetMethodCallHandler(nullptr);
     tray_channel_.reset();
