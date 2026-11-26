@@ -8,7 +8,7 @@ import 'package:drift/native.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_server/src/admin/admin_api.dart';
 import 'package:fushi_server/src/admin/admin_backups.dart'
-    show adminBackupStartResponse;
+    show adminBackupStartResponse, adminBackupStartedResponse;
 import 'package:fushi_server/src/admin/admin_context.dart';
 import 'package:fushi_server/src/backup/server_backup.dart'
     show serverBackupSizeEstimate, serverBackupWalkFiles;
@@ -60,6 +60,9 @@ class _Rig {
   /// 卷的可用空间（第五期）；null = 不知道（照常写）。
   int? Function(String path)? freeBytes;
 
+  /// 卷身份（第五期）；null = 拿不到（保守地全部合计）。
+  int? Function(String path)? volumeId;
+
   /// 给了就让指纹（遍历数据目录）抛它，模拟读不了的子目录。
   FileSystemException? fingerprintFails;
   int writes = 0;
@@ -74,6 +77,7 @@ class _Rig {
     now: () => now,
     holdSrs: () => srsMigrating ? null : () => holdsReleased++,
     freeBytes: (String path) => freeBytes?.call(path),
+    volumeId: (String path) => volumeId?.call(path),
     fingerprinter: ({required bool includeDocuments}) {
       final FileSystemException? fail = fingerprintFails;
       return fail == null ? null : Future<String>.error(fail);
@@ -653,6 +657,8 @@ void main() {
 
     test('备份目录与 tmp/ 在不同的卷：各自只要放下自己那份', () async {
       final String backups = rig.dir.path;
+      rig.volumeId = (String path) =>
+          p.isWithin(backups, path) || p.equals(backups, path) ? 1 : 2;
       // 备份卷放得下整份（1700 + 余量）但放不下「整份 + 库快照」；tmp 卷是另一个读数。
       rig.freeBytes = (String path) =>
           p.isWithin(backups, path) || p.equals(backups, path)
@@ -660,6 +666,62 @@ void main() {
           : kBackupSpaceMarginBytes + 1500 + 20;
       final ServerBackupResult r = await rig.service.runAutomatic(force: true);
       expect(r.outcome, ServerBackupOutcome.succeeded, reason: '${r.error}');
+    });
+
+    test('同一个卷但两次读数不同（中间有写入）：按卷身份合计，读数相同与否不影响', () async {
+      final String backups = rig.dir.path;
+      rig.volumeId = (String _) => 7;
+      // 两个读数各自都够放自己那份，合起来不够：以前按读数分组会放行。
+      rig.freeBytes = (String path) =>
+          p.isWithin(backups, path) || p.equals(backups, path)
+          ? kBackupSpaceMarginBytes + 1700 + 10
+          : kBackupSpaceMarginBytes + 1500 + 20;
+      final ServerBackupResult r = await rig.service.runAutomatic(force: true);
+      expect(r.error, kNotEnoughSpaceError);
+    });
+
+    test('立即跑（强制自动备份）也有动笔前检查：空间不够 → preflight 给出错误码', () async {
+      rig.freeBytes = (String _) => 1;
+      final ServerBackupStart start = rig.service.startAutomatic(force: true);
+      expect(start.started, isTrue);
+      expect(await start.preflight, kNotEnoughSpaceError);
+      expect((await start.done).error, kNotEnoughSpaceError);
+      final shelf.Response resp = await adminBackupStartedResponse(
+        rig.service.startAutomatic(force: true),
+        running: null,
+      );
+      expect(resp.statusCode, 507);
+      await rig.service.pending;
+    });
+
+    test('写之前就失败（遍历数据目录读不了）→ preflight_failed，回应 500 且不带原文', () async {
+      rig.fingerprintFails = const FileSystemException(
+        'secret path C:/x',
+        'C:/x',
+      );
+      final ServerBackupStart start = rig.service.startAutomatic(force: true);
+      final shelf.Response resp = await adminBackupStartedResponse(
+        start,
+        running: null,
+      );
+      expect(resp.statusCode, 500);
+      final String body = await resp.readAsString();
+      expect(jsonDecode(body)['error'], kServerBackupErrorPreflightFailed);
+      expect(body, isNot(contains('secret')));
+      await start.done;
+      expect(rig.writes, 0);
+    });
+
+    test('没变化跳过的那轮：preflight 放行（202），不当成失败', () async {
+      expect(
+        (await rig.service.runAutomatic()).outcome,
+        ServerBackupOutcome.succeeded,
+      );
+      rig.now = rig.now.add(const Duration(days: 2));
+      final ServerBackupStart again = rig.service.startAutomatic();
+      expect(again.started, isTrue);
+      expect(await again.preflight, isNull);
+      expect((await again.done).outcome, ServerBackupOutcome.skippedUnchanged);
     });
 
     test('更新前：空间不够 → 记 preUpdateError，不抛（更新照样进行）', () async {
@@ -858,6 +920,24 @@ void main() {
         expect((body['status'] as Map)['runningSinceMs'], isNull);
       },
     );
+
+    test('POST run（立即跑）空间不够 → 507，不写', () async {
+      registerVolumeFreeBytes((String _) => 1);
+      try {
+        var (int code, Map<String, dynamic> body) = await call(
+          'POST',
+          'backups/run',
+        );
+        expect(code, 507, reason: '$body');
+        expect(body['error'], kNotEnoughSpaceError);
+        await api.backups.pending;
+        (code, body) = await call('GET', 'backups');
+        expect(body['items'], isEmpty);
+        expect((body['status'] as Map)['lastError'], kNotEnoughSpaceError);
+      } finally {
+        registerVolumeFreeBytes(null);
+      }
+    });
 
     test('POST（手动）空间不够 → 507 not_enough_space，不写；状态里记下原因', () async {
       registerVolumeFreeBytes((String _) => 1);

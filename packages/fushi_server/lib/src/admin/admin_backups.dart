@@ -134,20 +134,10 @@ class AdminBackups {
     final ServerBackupStart start = _service.startManual(
       includeDocuments: docs as bool? ?? true,
     );
-    // 动笔之前的空间检查不过：507（Insufficient Storage），不让调用方以为在写、过一会儿才在列表里看到失败。
-    final String? early = await start.preflight;
-    if (early == kNotEnoughSpaceError) {
-      return _jsonResponse(<String, Object?>{
-        'error': kNotEnoughSpaceError,
-        'message':
-            'Not enough free disk space for this backup; free some space '
-            '(or delete old backups) and try again',
-      }, 507);
-    }
-    return adminBackupStartResponse(start, running: _service.running);
+    return adminBackupStartedResponse(start, running: _service.running);
   }
 
-  Future<shelf.Response> _runNow() async => adminBackupStartResponse(
+  Future<shelf.Response> _runNow() => adminBackupStartedResponse(
     _service.startAutomatic(force: true),
     running: _service.running,
   );
@@ -175,6 +165,31 @@ class AdminBackups {
     }
     return _jsonResponse(_scheduleJson());
   }
+}
+
+/// 开始了的备份等它动笔之前的检查（[ServerBackupStart.preflight]）再回应：空间不够 507（Insufficient Storage），
+/// 估算本身失败 500（安全的错误码，原文只在日志里），通过才 202——不让调用方以为在写、过一会儿才在列表里看到失败。
+/// 没开始的照 [adminBackupStartResponse]。
+Future<shelf.Response> adminBackupStartedResponse(
+  ServerBackupStart start, {
+  required String? running,
+}) async {
+  final String? early = await start.preflight;
+  if (early == kNotEnoughSpaceError) {
+    return _jsonResponse(<String, Object?>{
+      'error': kNotEnoughSpaceError,
+      'message':
+          'Not enough free disk space for this backup; free some space '
+          '(or delete old backups) and try again',
+    }, 507);
+  }
+  if (early != null) {
+    return _jsonResponse(<String, Object?>{
+      'error': early,
+      'message': 'The backup could not be prepared; see the server log',
+    }, 500);
+  }
+  return adminBackupStartResponse(start, running: running);
 }
 
 /// 「开始一份备份」的回执 → HTTP 回应（202 / 409 + 原因）。[running] = 正在写的那份（busy 时回给调用方）。

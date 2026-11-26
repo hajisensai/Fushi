@@ -45,7 +45,9 @@ const BK_KIND = {manual:T('手动'), auto:T('自动'), pre_update:T('更新前')
 const BK_KIND_TONE = {manual:'info', auto:'', pre_update:'warn'};
 const BK_SKIP = {unchanged:T('没有变化'), srs_migration_running:T('复习库正在升级，稍后重试')};
 function bkWhen(ms){ return ms ? fmtTime(ms) : T('还没有'); }
-const BK_ERROR = {interrupted:T('写到一半被中断，已清理'), srs_migration_running:T('复习库正在升级'), not_enough_space:T('磁盘空间不够，没有开始（腾出空间或删掉旧备份后再试）')};
+const BK_ERROR = {interrupted:T('写到一半被中断，已清理'), srs_migration_running:T('复习库正在升级'), not_enough_space:T('磁盘空间不够，没有开始（腾出空间或删掉旧备份后再试）'), preflight_failed:T('准备备份时出错（估算大小失败），详见服务端日志')};
+// 开始备份的请求被拒（507 / 500 带已知错误码）：提示原因并刷新状态；别的错误交给 guard。
+async function bkStart(path, body, okText){ let r; try { r=await post(path, body); } catch(e){ if (!BK_ERROR[e.message]) throw e; toast(bkError(e.message), true); await loadBackups(); return; } toast(okText(r.name)); await loadBackups(); }
 function bkError(e){ return BK_ERROR[e] || e; }
 async function loadBackups(){ renderBackups(await api('backups')); }
 function renderBackups(r){
@@ -77,8 +79,8 @@ document.querySelectorAll('input[name="bk-interval"]').forEach(x=>x.onchange=()=
 $('#bk-time').onchange = ()=>{ if($('#bk-time').value) saveBackupSchedule({time:$('#bk-time').value}); };
 $('#bk-cap').onchange = ()=>{ const v=Number($('#bk-cap').value); if(Number.isInteger(v) && v>=0) saveBackupSchedule({maxTotalGb:v}); else toast(T('总大小上限要是非负整数'), true); };
 $('#bk-docs').onchange = ()=>saveBackupSchedule({documents:$('#bk-docs').checked});
-$('#btn-bk-now').onclick = guard(async()=>{ let r; try { r=await post('backups', {documents:$('#bk-now-docs').checked}); } catch(e){ if (e.message!=='not_enough_space') throw e; toast(bkError('not_enough_space'), true); await loadBackups(); return; } toast(T('已开始备份：{0}', r.name)); await loadBackups(); });
-$('#btn-bk-run').onclick = guard(async()=>{ const r=await post('backups/run'); toast(T('已开始自动备份：{0}', r.name)); await loadBackups(); });
+$('#btn-bk-now').onclick = guard(()=>bkStart('backups', {documents:$('#bk-now-docs').checked}, (n)=>T('已开始备份：{0}', n)));
+$('#btn-bk-run').onclick = guard(()=>bkStart('backups/run', null, (n)=>T('已开始自动备份：{0}', n)));
 loaders.backups = loadBackups;
 ''';
 
@@ -113,6 +115,8 @@ const Map<String, String> kWebUiBackupsEnglish = <String, String>{
   '还没有': 'Not yet',
   '写到一半被中断，已清理': 'Interrupted half-way; cleaned up',
   '复习库正在升级': 'Review library is upgrading',
+  '准备备份时出错（估算大小失败），详见服务端日志':
+      'Could not prepare the backup (size estimate failed); see the server log',
   '磁盘空间不够，没有开始（腾出空间或删掉旧备份后再试）':
       'Not enough free disk space; not started (free some space or delete old backups, then try again)',
   '正在备份：{0}': 'Backing up: {0}',

@@ -308,6 +308,7 @@ Future<void> ensureServerBackupSpace({
   required bool includeDocuments,
   String? configPath,
   VolumeFreeBytes? probe,
+  VolumeIdProbe? volumeId,
 }) async {
   final ({int databases, int total}) size = await Isolate.run(
     () => serverBackupSizeEstimate(
@@ -316,18 +317,27 @@ Future<void> ensureServerBackupSpace({
       includeDocuments: includeDocuments,
     ),
   );
-  ensureFreeSpace(<SpaceNeed>[
-    SpaceNeed(outputDir, size.total),
-    SpaceNeed(p.join(dataDir, 'tmp'), size.databases),
-  ], probe: probe ?? _envFreeBytesOverride());
+  ensureFreeSpace(
+    <SpaceNeed>[
+      SpaceNeed(outputDir, size.total),
+      SpaceNeed(p.join(dataDir, 'tmp'), size.databases),
+    ],
+    probe: probe ?? _overrideProbe(),
+    volumeId: volumeId,
+  );
 }
 
-/// 只给手工验证用：环境变量 `FUSHI_SERVER_FREE_BYTES_OVERRIDE`（整数字节）把所有卷的可用空间报成这个数，
-/// 用来在真进程上看「空间不够」的状态与 WebUI（不用真把盘写满）。没设 / 不是整数 = 不覆盖。
-VolumeFreeBytes? _envFreeBytesOverride() {
-  final int? forced = int.tryParse(
-    Platform.environment['FUSHI_SERVER_FREE_BYTES_OVERRIDE'] ?? '',
-  );
+/// **只给测试 / 手工验证用**的环境变量：设成整数字节时，所有卷的可用空间都报成这个数（没有卷身份，按保守
+/// 规则合计），用来在真进程上看「空间不够」的状态与 WebUI，不用真把盘写满。生效时启动打一条警告
+/// （`cli.dart`），每次备份查空间也在日志里写明（`server_backup_service.dart`）。
+const String kServerFreeBytesOverrideEnv = 'FUSHI_SERVER_FREE_BYTES_OVERRIDE';
+
+/// [kServerFreeBytesOverrideEnv] 的值；没设 / 不是整数为 null。
+int? serverFreeBytesOverride() =>
+    int.tryParse(Platform.environment[kServerFreeBytesOverrideEnv] ?? '');
+
+VolumeFreeBytes? _overrideProbe() {
+  final int? forced = serverFreeBytesOverride();
   return forced == null ? null : (String _) => forced;
 }
 

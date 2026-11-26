@@ -26,6 +26,9 @@ const String kServerBackupSkipSrsMigration = 'srs_migration_running';
 /// 失败原因：上次运行写到一半进程没了。
 const String kServerBackupErrorInterrupted = 'interrupted';
 
+/// 失败原因：动笔之前的检查（估算这份备份多大）本身失败了，比如数据目录里有读不了的子目录（原文只进日志）。
+const String kServerBackupErrorPreflightFailed = 'preflight_failed';
+
 class ServerBackupStatus {
   const ServerBackupStatus({
     this.runningSinceMs,

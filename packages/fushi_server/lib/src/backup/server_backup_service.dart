@@ -27,6 +27,7 @@ import 'package:fushi_core/fushi_core.dart'
         FushiDatabase,
         NotEnoughSpaceException,
         VolumeFreeBytes,
+        VolumeIdProbe,
         isBackupSlotDue,
         kNotEnoughSpaceError;
 import 'package:fushi_engine/foundation/engine_log.dart';
@@ -120,8 +121,10 @@ class ServerBackupService {
     DateTime Function()? now,
     Future<String>? Function({required bool includeDocuments})? fingerprinter,
     VolumeFreeBytes? freeBytes,
+    VolumeIdProbe? volumeId,
   }) : _settings = settings,
        _freeBytes = freeBytes,
+       _volumeId = volumeId,
        _write = write,
        _fingerprinter = fingerprinter,
        _holdSrs = holdSrs ?? _noSrs,
@@ -173,6 +176,9 @@ class ServerBackupService {
 
   /// 测试缝：卷的可用空间（缺省 = 进程登记的探针，CLI 入口登记 fushi_fsrs 的实现）。
   final VolumeFreeBytes? _freeBytes;
+
+  /// 测试缝：卷身份（只在注入了 [_freeBytes] 时用；缺省走登记的那一对探针）。
+  final VolumeIdProbe? _volumeId;
 
   String? _running;
   ServerBackupKind? _runningKind;
@@ -279,6 +285,14 @@ class ServerBackupService {
     String label, {
     required bool includeDocuments,
   }) async {
+    final int? forced = _freeBytes == null ? serverFreeBytesOverride() : null;
+    if (forced != null) {
+      engineLog.logDiagnostic(
+        label,
+        'WARNING: $kServerFreeBytesOverrideEnv=$forced is set (test only); '
+        'free space is not measured',
+      );
+    }
     try {
       await ensureServerBackupSpace(
         dataDir: dataDir,
@@ -286,6 +300,7 @@ class ServerBackupService {
         includeDocuments: includeDocuments,
         configPath: configFile?.path,
         probe: _freeBytes,
+        volumeId: _volumeId,
       );
     } on NotEnoughSpaceException catch (e) {
       engineLog.logDiagnostic(label, 'not started: ${e.detail}');
@@ -307,21 +322,19 @@ class ServerBackupService {
       name,
       () async {
         try {
-          try {
-            await _ensureSpace(
-              'ServerBackup.manual',
-              includeDocuments: includeDocuments,
-            );
-          } on NotEnoughSpaceException {
-            _lastManualError = kNotEnoughSpaceError;
-            preflight.complete(kNotEnoughSpaceError);
+          final String? early = await _preflight(
+            'ServerBackup.manual',
+            preflight,
+            includeDocuments: includeDocuments,
+          );
+          if (early != null) {
+            _lastManualError = early;
             return ServerBackupResult(
               outcome: ServerBackupOutcome.failed,
               name: name,
-              error: kNotEnoughSpaceError,
+              error: early,
             );
           }
-          preflight.complete(null);
           await _writeTo(name, includeDocuments: includeDocuments);
           return ServerBackupResult(
             outcome: ServerBackupOutcome.succeeded,
@@ -339,13 +352,46 @@ class ServerBackupService {
       },
       c.release!,
     );
-    // 作业体在查空间之前就失败（极少见）也得让等 [ServerBackupStart.preflight] 的一方放行。
+    return ServerBackupStart._(
+      null,
+      name,
+      done,
+      _releaseWhenDone(preflight, done),
+    );
+  }
+
+  /// 动笔之前的检查（目前是查空间），结局交给 [preflight]（admin API 据此回 202 / 507 / 500）：通过 = null；
+  /// 空间不够 = [kNotEnoughSpaceError]；估算本身失败（遍历数据目录读不了、后台 isolate 出错）=
+  /// [kServerBackupErrorPreflightFailed]，原文只进日志、不进回应。返回同一个结局。
+  Future<String?> _preflight(
+    String label,
+    Completer<String?> preflight, {
+    required bool includeDocuments,
+  }) async {
+    String? early;
+    try {
+      await _ensureSpace(label, includeDocuments: includeDocuments);
+    } on NotEnoughSpaceException {
+      early = kNotEnoughSpaceError;
+    } catch (e, stack) {
+      engineLog.log(label, e, stack);
+      early = kServerBackupErrorPreflightFailed;
+    }
+    if (!preflight.isCompleted) preflight.complete(early);
+    return early;
+  }
+
+  /// 作业体在走到检查之前就结束了（没变化跳过、极少见的早退）也让等 [ServerBackupStart.preflight] 的一方放行。
+  static Future<String?> _releaseWhenDone(
+    Completer<String?> preflight,
+    Future<ServerBackupResult> done,
+  ) {
     unawaited(
       done.whenComplete(() {
         if (!preflight.isCompleted) preflight.complete(null);
       }),
     );
-    return ServerBackupStart._(null, name, done, preflight.future);
+    return preflight.future;
   }
 
   // ── 自动 ────────────────────────────────────────────────────────────
@@ -384,15 +430,18 @@ class ServerBackupService {
     }
     if (c.refusal != null) return _refused(c.refusal!);
     final String name = c.name!;
+    final Completer<String?> preflight = Completer<String?>();
+    final Future<ServerBackupResult> done = _track(
+      ServerBackupKind.auto,
+      name,
+      () => _runAutomatic(name, force: force, preflight: preflight),
+      c.release!,
+    );
     return ServerBackupStart._(
       null,
       name,
-      _track(
-        ServerBackupKind.auto,
-        name,
-        () => _runAutomatic(name, force: force),
-        c.release!,
-      ),
+      done,
+      _releaseWhenDone(preflight, done),
     );
   }
 
@@ -403,6 +452,7 @@ class ServerBackupService {
   Future<ServerBackupResult> _runAutomatic(
     String name, {
     required bool force,
+    required Completer<String?> preflight,
   }) async {
     final ServerBackupConfig s = _settings();
     final DateTime started = _now();
@@ -432,11 +482,26 @@ class ServerBackupService {
           outcome: ServerBackupOutcome.skippedUnchanged,
         );
       }
-      // 空间不够：记成这一轮失败 `not_enough_space`（状态 + 日志，WebUI 显示），不写半截。
-      await _ensureSpace(
+      // 空间不够：记成这一轮失败 `not_enough_space`（状态 + 日志，WebUI 显示），不写半截；估算本身失败记
+      // `preflight_failed`。「立即跑」的 admin API 等这一步的结局回 202 / 507 / 500。
+      final String? early = await _preflight(
         'ServerBackup.auto',
+        preflight,
         includeDocuments: s.includeDocuments,
       );
+      if (early != null) {
+        await _update(
+          (ServerBackupStatus st) => st.notRunning().copyWith(
+            lastFailureAtMs: _now().millisecondsSinceEpoch,
+            lastError: early,
+          ),
+        );
+        return ServerBackupResult(
+          outcome: ServerBackupOutcome.failed,
+          name: name,
+          error: early,
+        );
+      }
       await _update(
         (ServerBackupStatus st) => st.copyWith(
           runningSinceMs: () => started.millisecondsSinceEpoch,
@@ -472,6 +537,10 @@ class ServerBackupService {
       );
     } catch (e, stack) {
       engineLog.log('ServerBackup.auto', e, stack);
+      // 写之前就失败（指纹遍历数据目录读不了）：「立即跑」回 500 + 安全的错误码，原文只进日志与状态。
+      if (!preflight.isCompleted) {
+        preflight.complete(kServerBackupErrorPreflightFailed);
+      }
       final String error = _oneLine(e);
       await _update(
         (ServerBackupStatus st) => st.notRunning().copyWith(
@@ -527,7 +596,12 @@ class ServerBackupService {
       );
       try {
         // 空间不够：记成 `preUpdateError: not_enough_space`，更新照样进行（D16）。
-        await _ensureSpace('ServerBackup.preUpdate', includeDocuments: false);
+        final String? early = await _preflight(
+          'ServerBackup.preUpdate',
+          Completer<String?>(),
+          includeDocuments: false,
+        );
+        if (early != null) throw _PreflightFailure(early);
         await _writeTo(name, includeDocuments: false);
         final List<String> pruned = await prune(protect: <String>{name});
         await _update(
@@ -716,4 +790,14 @@ DateTime? _at(int? ms) =>
 String _oneLine(Object e) {
   final String s = '$e'.split('\n').first.trim();
   return s.length > 300 ? '${s.substring(0, 300)}…' : s;
+}
+
+/// 更新前备份动笔前检查没过：把安全的错误码（`toString`）交给外层的失败记录。
+class _PreflightFailure implements Exception {
+  const _PreflightFailure(this.code);
+
+  final String code;
+
+  @override
+  String toString() => code;
 }
