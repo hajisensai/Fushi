@@ -1,0 +1,11 @@
+## BUG-5515 · Windows 安装器在开着「智能应用控制」的机器上报 4551 拒绝启动（Inno 解出的 .tmp 安装程序没签名）
+- **报告**：2026-11-26（Discord 用户 GrimsChild，Surface Pro 7+ 新机；与 BUG-5483 / BUG-5484 同一位用户）。原话：`Error 4551: An Application Control policy has blocked this file`，「3.3.0 的安装器没触发这个」。用户装的是 debug 通道包（`fushi-debug-rolling`）。
+- **真实性**：✅ 真 bug。错误 4551 = `ERROR_SYSTEM_INTEGRITY_POLICY_VIOLATION`，是 Windows 11 智能应用控制（SAC）/ WDAC 拒绝运行未签名、又没有云端信誉的可执行文件。
+  - 安装器的 exe/dll 载荷**都签了**：debug 构建 run 45753369622 的回验日志「装出的 exe/dll 共 276 个：本证书签名 174，他方签名 102，未签名 0」。
+  - 没签的是 Inno 自己在运行期生成的两样东西：外壳运行时解到 `%TEMP%\is-*.tmp\<名字>.tmp`、真正执行安装的程序，以及安装时现生成的 `{app}\unins000.exe`。根因：`fushi/windows/installer/fushi.iss` 的 `[Setup]` 没有 `SignTool=`，`.github/workflows/release-desktop.yml` 旧「Sign Windows installer」步骤是在 ISCC 编完后**只签外壳**。按 Inno 维护者的说明，只有设了 `SignTool`，ISCC 才会签 .tmp（https://groups.google.com/g/innosetup/c/7RpEFVoaHZI）。旧的回验步骤还特意把 `unins*.exe` 排除在签名检查外，所以这个缺口一直测不到。
+  - 3.3.0 能装：正式包下载量大，它那个 .tmp 的哈希有 SAC 云端信誉；debug 包每次构建哈希都不同，信誉为零，所以被拦。
+- **[x] ① 已修复** — `fushi.iss` 在 `#ifdef FushiSignTool` 下设 `SignTool=fushisign` + `SignedUninstaller=yes`；`release-desktop.yml` 的「Compile installer (Inno Setup)」在有签名凭据时传 `/DFushiSignTool` 和 `/Sfushisign=pwsh.exe … tool/sign_windows_release.ps1 -Path $f`，由 ISCC 在编译期签外壳、.tmp 安装程序和卸载器；删掉了编完后只签外壳的那一步。
+- **[x] ② 已加自动化测试** — ① 发布 CI 的「Verify installed payload is signed」：外壳必须是本证书签名且带时间戳；`unins*.exe` 不再豁免，必须存在且是本证书签名（卸载器和 .tmp 走同一条 SignTool 通路，卸载器签上就说明 SignTool 生效了）。② `tool/check_release_policy.ps1`（ci-config-gate，已把 `fushi/windows/installer/fushi.iss` 加进触发路径）钉死：iss 必须有 `SignTool=fushisign` / `SignedUninstaller=yes`，workflow 必须传 `/DFushiSignTool` 和 `/Sfushisign=`，并且禁止再豁免 `unins*.exe`。这些断言拿修复前的 HEAD 跑是 5 条全红，修复后全过（本机没有 pwsh 7，是用 Python 按同样的语义核对的；PowerShell 语法解析 0 错误）。
+- **备注**：
+  - 不在开着 SAC 的真机上复测（手头没有这类设备）。下一个 debug 包会由 CI 回验卸载器签名；用户可以装那个包验证安装器能不能启动。
+  - BUG-5484（3.4 启动卡在首帧之前）有了新线索：该用户机器上 SAC 处于**强制**模式。exe/dll 都签了，不会被拦；但运行期才生成或从别处加载的可执行文件仍可能被拦。另外 WDAC 会把未签名的 PowerShell 脚本强制压进受限语言模式。拿到用户的 `事件查看器 › 应用程序和服务日志 › Microsoft › Windows › CodeIntegrity › Operational`（事件 3077 / 3033 / 3034 会点名被拦文件的完整路径）就能确认 3.4 启动时有没有东西被拦。

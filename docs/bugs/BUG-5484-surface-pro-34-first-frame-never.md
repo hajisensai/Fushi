@@ -8,3 +8,4 @@
 - **[ ] ① 未修复** — 等 BUG-5483 的取证上线后拿新日志：`hang_watchdog.log` 的 `startup: … last phase reached=<阶段>` 指出卡住的 await，同时附带一份 `hang-*.dmp`。拿到后按该 await 的真实代码路径根因修。
 - **[ ] ② 未加自动化测试** — 随 ① 一起补。
 - **备注**：可先请用户试两件事缩小范围：删除 `%LOCALAPPDATA%\Fushi\fushi.exe.ShaderCache` 后再启动；查看 `%LOCALAPPDATA%\Fushi\present_stall.log` 是否存在（存在 = 已过 `runApp`、卡在首帧上屏）。
+- **新线索（2026-11-26）**：该用户机器上「智能应用控制」处于强制模式（安装器报 4551，见 BUG-5515）。应用目录里的 exe/dll 都签了，不会被拦；要排除的是 3.4 启动路径上运行期才落盘或从别处加载的可执行文件 / 未签名 PowerShell 脚本。请用户导出 `Microsoft-Windows-CodeIntegrity/Operational` 事件日志（3077/3033/3034 点名被拦文件）。
