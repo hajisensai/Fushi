@@ -274,6 +274,13 @@ Map<String, String> _dataFiles(
           _liveDbFiles.contains(parts.last)) {
         continue;
       }
+      // 更新前还原点（fushi_core `restore_points.dart`）是本机库的整份副本，最多每库几份：
+      // 进包会让备份翻几倍，还原到别处也毫无用处。
+      if (parts.length > 2 &&
+          parts.first == 'support' &&
+          parts[1] == kRestorePointsDirName) {
+        continue;
+      }
       out['$_dataPrefix${parts.join('/')}'] = f.path;
     }
   }

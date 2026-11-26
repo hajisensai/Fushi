@@ -33,6 +33,12 @@ abstract final class FushiChannels {
   static const MethodChannel fonts = MethodChannel('$_prefix/fonts');
   static const MethodChannel saf = MethodChannel('$_prefix/saf');
 
+  /// 自动备份的用户文件夹（Android SAF 树 + 持久授权，原生 `BackupFolderChannel.java`；Dart 门面
+  /// `sync/auto_backup/backup_folder_platform.dart`）。
+  static const MethodChannel backupFolder = MethodChannel(
+    '$_prefix/backup_folder',
+  );
+
   /// Hibiki→Fushi 跨包名迁移（探测/拉起新包、卸载引导、注销系统入口）。
   static const MethodChannel migration = MethodChannel('$_prefix/migration');
 

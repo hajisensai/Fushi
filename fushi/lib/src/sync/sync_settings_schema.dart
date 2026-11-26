@@ -57,6 +57,32 @@ import 'package:fushi/src/sync/hidden_remote_books.dart'
 import 'package:fushi/src/sync/remote_book_source_host.dart'
     show remoteBookSourceHost;
 import 'package:fushi/src/pages/implementations/hidden_remote_books_page.dart';
+import 'package:fushi/src/pages/implementations/activity_feed.dart'
+    show formatActivityRelativeTime;
+import 'package:fushi/src/pages/implementations/library_recovery_page.dart'
+    show openRestorePointsPage;
+import 'package:fushi/src/storage/storage_usage_service.dart'
+    show formatStorageBytes;
+import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart'
+    show AutoBackupOutcome;
+import 'package:fushi/src/sync/auto_backup/auto_backup_messages.dart'
+    show autoBackupErrorText;
+import 'package:fushi/src/sync/auto_backup/auto_backup_schedule.dart'
+    show isAutoBackupOverdue;
+import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
+import 'package:fushi/src/sync/auto_backup/restore_point_actions.dart'
+    show RestorePointUiFlows;
+import 'package:fushi/src/sync/auto_backup/auto_backup_status.dart'
+    show AutoBackupMirrorStatus, AutoBackupStatus;
+import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart'
+    show AutoBackupMirrorFolder;
+import 'package:fushi/src/sync/auto_backup/backup_folder_platform.dart'
+    show BackupFolderPlatform;
+import 'package:fushi/src/utils/components/fushi_date_time_picker.dart'
+    show showFushiTimePicker;
+import 'package:fushi/src/utils/components/fushi_inline_notice.dart';
+import 'package:fushi/src/utils/components/fushi_press_scale.dart';
+import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/sync/mine_to_server_target_picker.dart';
@@ -146,6 +172,7 @@ part 'sync_settings_schema/interconnect.part.dart';
 part 'sync_settings_schema/interconnect_link.part.dart';
 part 'sync_settings_schema/actions.part.dart';
 part 'sync_settings_schema/backup.part.dart';
+part 'sync_settings_schema/auto_backup.part.dart';
 part 'sync_settings_schema/data_root.part.dart';
 
 SettingsDestination buildSyncBackupDestination() {
@@ -619,6 +646,8 @@ SettingsDestination buildSyncBackupDestination() {
             ),
         ],
       ),
+      // ── Group 5b: Automatic backup (restore points) ─────────────────
+      _autoBackupSection(),
     ],
   );
 }

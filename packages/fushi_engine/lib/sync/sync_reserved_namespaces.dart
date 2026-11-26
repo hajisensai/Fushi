@@ -11,7 +11,8 @@ import 'package:fushi_engine/srs/sync2/srs_location_store.dart'
 /// - 互联 host 启动时清理已死的文件箱书文件夹（`pruneDeadInterconnectFileBox`）——漏一个就直接删掉。
 ///
 /// 判据：`__x__` 形状（全部资产命名空间：`__dictionaries__` `__local_audio__` `__aggregate__`
-/// `__collections__` `__videos__` `__tombstones__` `__fonts__` `__settings__` `__pending_mines__`），
+/// `__collections__` `__videos__` `__tombstones__` `__fonts__` `__settings__` `__pending_mines__`，以及
+/// 自动备份的云端副本 `__backups__`），
 /// 外加唯一不是这个形状的复习同步命名空间 `fushi-srs`。**新命名空间一律按 `__x__` 起名**，起了就
 /// 自动受保护；守卫 `fushi/test/sync/interconnect_file_box_prune_reserved_guard_test.dart` 扫源码里
 /// 全部命名空间常量逐个核对。

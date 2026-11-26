@@ -71,7 +71,8 @@ import 'package:fushi/src/updates/update_notifier.dart';
 import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_srs/fushi_srs.dart' show SrsDayContext;
+import 'package:fushi_srs/fushi_srs.dart'
+    show SrsDayContext, SrsGen4Migration, SrsGenState;
 import 'package:path/path.dart' as path;
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:http/http.dart' as http;
@@ -456,6 +457,27 @@ import 'package:fushi_engine/sync/torrent_engine/host_torrent_engine.dart';
 import 'package:fushi/src/ai/agent/ai_agent_assistant_host.dart'
     show createAppAssistantHost;
 import 'package:fushi/src/sync/backup_service.dart';
+import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart';
+import 'package:fushi/src/sync/auto_backup/auto_backup_messages.dart';
+import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
+import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart'
+    show
+        AutoBackupMirrorFolder,
+        BackupMirrorException,
+        backupDeviceKey,
+        kBackupMirrorErrorCloudAuth,
+        kBackupMirrorErrorCloudUnreachable;
+import 'package:fushi/src/sync/auto_backup/backup_folder_platform.dart';
+import 'package:fushi/src/sync/auto_backup/cloud_backup_mirror.dart';
+import 'package:fushi/src/sync/sync_resource_locks.dart'
+    show syncChannelResource, syncResourceLocks;
+import 'package:fushi/src/sync/sync_transient_error.dart'
+    show retryTransientSync;
+import 'package:fushi_engine/sync/interconnect_device_name.dart'
+    show resolveInterconnectDeviceName;
+import 'package:fushi/src/sync/auto_backup/restore_point_actions.dart'
+    show RestorePointActionsHost;
+import 'package:fushi_engine/srs/srs_media_store.dart' show SrsMediaStore;
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile;
@@ -1079,7 +1101,8 @@ class AppModel
         ExternalStorageAccess,
         LookupMatchSearchHost,
         StudyGoalHost,
-        TrackingSeriesCardHost {
+        TrackingSeriesCardHost,
+        RestorePointActionsHost {
   /// Platform-specific service implementations, injected at construction.
   final PlatformServices platformServices;
 
@@ -2115,6 +2138,9 @@ class AppModel
     );
     _updateCheckScheduler = scheduler;
     scheduler.start();
+    // 自动备份与更新检查同一个时机起：首页已就绪，第一次到期检查挂在空闲任务上。
+    autoBackup.start();
+    registerAutoBackupController(autoBackup);
     // 安装统计心跳（iOS / 关了开关时它自己不发）：与更新检查同生命周期。
     final UsageHeartbeat heartbeat = UsageHeartbeat.forFushi(
       prefs: prefsRepo,
@@ -2142,6 +2168,7 @@ class AppModel
     final UsageHeartbeat? heartbeat = _usageHeartbeat;
     _updateCheckScheduler = null;
     _usageHeartbeat = null;
+    autoBackup.stop();
     await scheduler?.stop();
     await heartbeat?.stop();
   }
@@ -3402,6 +3429,88 @@ class AppModel
   DataRootUnavailableException? _dataRootUnavailable;
 
   /// Clears the error state and re-runs [initialise].
+  /// 降级屏 / 主库损坏屏「恢复更新前的数据」可选的还原点：本版本能打开的主库还原点，新的在前。
+  List<RestorePoint> restorePointsForRollback() =>
+      RestorePointStore(_databaseDirectory.path).compatibleMainDatabasePoints();
+
+  /// 与 [point] 出自同一次更新、要一起换回的复习库还原点（没有 = 复习库不动）。
+  RestorePoint? companionSrsRestorePoint(RestorePoint point) =>
+      RestorePointStore(_databaseDirectory.path).companionSrsPoint(point);
+
+  /// 把 [point] 里的库换回来：主库副本在就换主库（更新前还原点再带上同一次更新的复习库），
+  /// 复习库副本在（操作前还原点）就换复习库。开库被拒 / 失败的专屏与还原点页「替换」都走这里：
+  /// 先关复习库与主库连接（降级时 drift 的后台连接已经开着），再离线换文件；当前的库
+  /// 另存为回滚前还原点。之后由调用方重启 app。换不了时抛出、文件不动（或由下次启动补完）。
+  @override
+  Future<void> rollbackToRestorePoint(RestorePoint point) async {
+    final RestorePointStore store = RestorePointStore(_databaseDirectory.path);
+    final bool hasMain =
+        point.rawDatabasePath(RestorePointDatabase.fushi) != null;
+    final bool hasSrs = point.rawDatabasePath(RestorePointDatabase.srs) != null;
+    final RestorePoint? companion = hasMain && !hasSrs
+        ? store.companionSrsPoint(point)
+        : null;
+    final List<RestorePointRollbackPlan> plans = <RestorePointRollbackPlan>[
+      if (hasMain)
+        RestorePointRollbackPlan(
+          target: point,
+          database: RestorePointDatabase.fushi,
+        ),
+      if (hasSrs)
+        RestorePointRollbackPlan(
+          target: point,
+          database: RestorePointDatabase.srs,
+        )
+      else if (companion != null)
+        RestorePointRollbackPlan(target: companion),
+    ];
+    if (plans.isEmpty) {
+      throw StateError('restore point ${point.id} holds no database copy');
+    }
+    await _closeSrsStorage();
+    if (_databaseOpened) {
+      try {
+        await _database.close();
+      } catch (e, stack) {
+        ErrorLogService.instance.log('AppModel.rollback.close', e, stack);
+      }
+      _databaseOpened = false;
+    }
+    await store.rollback(plans);
+  }
+
+  /// 与设置页导出、控制通道导出同一份构造的备份服务：数据根下的书 / 有声书 / 字体 / 游戏封面树
+  /// 一起打包，复习库经 [srsStorageForBackup]。
+  BackupService createBackupService() => BackupService(
+    db: database,
+    dbDirectory: databaseDirectory.path,
+    dictionaryResourceDirectory: dictionaryResourceDirectory.path,
+    appVersion: packageInfo.version,
+    booksRootDirectory: path.join(appDirectory.path, 'fushi_books'),
+    audiobooksRootDirectory: path.join(appDirectory.path, 'audiobooks'),
+    fontsRootDirectory: path.join(appDirectory.path, 'custom_fonts'),
+    gameCoversRootDirectory: path.join(appDirectory.path, 'game_covers'),
+    srsStorage: srsStorageForBackup,
+  );
+
+  /// 自动备份（定时还原点 + 操作前还原点）。首页就绪后 [startUpdateChecks] 里启动调度，
+  /// [stopUpdateChecks] 里停。
+  @override
+  late final AutoBackupController autoBackup = AutoBackupController(
+    host: _AppAutoBackupHost(this),
+  );
+
+  /// 当前自动备份设置（设备本地偏好）。
+  AutoBackupSettings get autoBackupSettings =>
+      readAutoBackupSettings((String key) => prefsRepo.getPref(key));
+
+  /// 写自动备份设置；改了之后立刻按新设置查一次到期（例如从「关」改成「每日」）。
+  Future<void> setAutoBackupSettings(AutoBackupSettings settings) async {
+    await writeAutoBackupSettings(prefsRepo.setPrefs, settings);
+    notifyListeners();
+    unawaited(autoBackup.checkNow());
+  }
+
   Future<void> retryInitialise() async {
     // BUG-815: if an init started by main() is still IN FLIGHT — a slow cold
     // start that merely tripped the 20s loading watchdog, NOT a hang — do NOT
@@ -3623,8 +3732,12 @@ class AppModel
   /// `if (!mounted) return` 就把已经打完的 zip 连同分享/另存/成功提示一起丢掉，用户
   /// 看到的是「点一下折叠箭头，备份被取消了」。所有权挪到这里之后，折叠只是不再显示
   /// 进度，任务本身与 UI 生命周期无关。
-  bool _backupExportActive = false;
-  bool get backupExportActive => _backupExportActive;
+  ///
+  /// 锁按持有者凭据记：[beginBackupExport] 返回凭据，[endBackupExport] 只放自己的那把——以前是
+  /// 一个布尔，先跑完的一方会把另一方正持有的锁放掉。
+  Object? _backupExportOwner;
+  @override
+  bool get backupExportActive => _backupExportOwner != null;
 
   /// 打包阶段的确定进度（0..1）；null = 尚未进入打包。准备阶段（VACUUM INTO、按
   /// 分类裁剪行、枚举待打包文件）没有可分的量，UI 此时走不确定动画。与导入侧同理用
@@ -3633,11 +3746,14 @@ class AppModel
     null,
   );
 
-  void beginBackupExport() {
-    if (_backupExportActive) return;
-    _backupExportActive = true;
+  /// 拿导出锁：成功返回这次持有的凭据，已被别人持有返回 null（调用方按「已有备份在跑」处理）。
+  Object? beginBackupExport() {
+    if (_backupExportOwner != null) return null;
+    final Object token = Object();
+    _backupExportOwner = token;
     backupExportProgress.value = null;
     notifyListeners();
+    return token;
   }
 
   /// 由 [BackupService.createBackup] 的 onProgress 回调驱动（本 isolate 上被打包
@@ -3646,12 +3762,39 @@ class AppModel
     backupExportProgress.value = fraction.clamp(0.0, 1.0);
   }
 
-  void endBackupExport() {
-    if (!_backupExportActive) return;
-    _backupExportActive = false;
+  /// 放导出锁：只有 [token] 是当前持有者才放。
+  void endBackupExport(Object token) {
+    if (!identical(_backupExportOwner, token)) return;
+    _backupExportOwner = null;
     backupExportProgress.value = null;
     notifyListeners();
   }
+
+  /// 正在进行的「会关库 / 换库」流程数：备份导入（从校验到重启）、还原点替换 / 补回（含拍操作前
+  /// 还原点）。持有期间自动备份不开跑（[autoBackupDatabaseAvailable]）。
+  int _restoreFlows = 0;
+
+  /// 开始一个会关库 / 换库的流程；返回的回调结束它（可重复调，只生效一次）。调用方必须先
+  /// 在同一段同步代码里查过 [backupExportActive]：两者之间没有 await，就与自动备份的
+  /// 「查库可用 + 拿锁」互斥。
+  @override
+  void Function() beginRestoreFlow() {
+    _restoreFlows++;
+    bool ended = false;
+    return () {
+      if (ended) return;
+      ended = true;
+      _restoreFlows--;
+    };
+  }
+
+  /// 主库现在能不能拿来做定时备份：已初始化、没有导入 / 替换 / 补回 / 数据目录迁移在进行
+  /// （遮罩没上、库没关）。
+  bool get autoBackupDatabaseAvailable =>
+      _isInitialised &&
+      _backupImportPhase == null &&
+      _restoreFlows == 0 &&
+      !_dataRootMigrationActive;
 
   /// TODO-1151：备份「读取/校验」阶段的作废 token。选完文件后 validate + previewMerge
   /// 会跑数十秒（后台 isolate，UI 不冻结但只有 24px 小圈）。进入 [beginBackupValidating]
@@ -3694,6 +3837,7 @@ class AppModel
 
   /// 进入导入态：先于 [closeDatabase] 调用，确保「遮罩已上屏 → 关库 → 解压落盘」的
   /// 顺序，根 widget 在关库引发的 rebuild 里看到的是导入遮罩而非裸 loading。
+  @override
   void beginBackupImport() {
     _backupImportPhase = BackupImportPhase.running;
     _backupImportMessage = null;
@@ -3703,6 +3847,7 @@ class AppModel
 
   /// 导入**成功**结束：切到确认视图（导入完成 → 立即重启），展示成功 [message]。
   /// DB 已关闭，必须重启才能重载数据。
+  @override
   void completeBackupImport(String message) {
     _backupImportPhase = BackupImportPhase.done;
     _backupImportMessage = message;
@@ -3713,6 +3858,7 @@ class AppModel
   /// 导入**失败**结束（如 OOM/损坏/异常）：切到确认视图并置 [BackupImportPhase.failed]，
   /// 让遮罩画红色错误图标 + 失败原因 [message]（根治「失败却显绿✓」，TODO-1183）。DB 已
   /// 关闭，仍必须重启回到可用状态，故失败也走同一「立即重启」出口。
+  @override
   void failBackupImport(String message) {
     _backupImportPhase = BackupImportPhase.failed;
     _backupImportMessage = message;
@@ -5735,6 +5881,10 @@ class AppModel
       StartupTimeline.mark('data-roots');
       debugPrint('[Fushi] init: Drift database');
       ErrorLogService.instance.markInitStep('open-database（Drift 打开 fushi.db）');
+      // 更新前还原点的元数据记下写它的 app 版本（fushi_core 自己不知道版本号）。
+      RestorePointStore.appVersion = runningVersion;
+      // 上次「恢复更新前的数据」崩在中途：在主库与复习库的任何连接之前补完。
+      await RestorePointStore(_databaseDirectory.path).recoverPendingRollback();
       _database = FushiDatabase(_databaseDirectory.path);
       _databaseOpened = true;
       // 媒体服务器请求漏斗的自动换线路：按服务器共享、单飞，写回走现取的数据库
@@ -13103,6 +13253,7 @@ class AppModel
     _databaseCloseQuiescers.remove(quiesce);
   }
 
+  @override
   Future<void> closeDatabase({Duration? pipelineDrainTimeout}) async {
     _isInitialised = false;
     // BUG-5387：换库的生命周期边界。先让本库名下的后台写库工作（来源扫描、视频刮削 /
@@ -17270,3 +17421,276 @@ typedef _PopupAppearanceInputs = ({
   PopupDisplayPrefs displayPrefs,
   bool einkMode,
 });
+
+/// [AppModel] 给自动备份的宿主实现（备份服务、导出锁、复习库快照、失败提示）。
+class _AppAutoBackupHost implements AutoBackupHost {
+  _AppAutoBackupHost(this._app);
+
+  final AppModel _app;
+
+  @override
+  String get databaseDirectory => _app.databaseDirectory.path;
+
+  @override
+  AutoBackupSettings readSettings() => _app.autoBackupSettings;
+
+  @override
+  bool get supportsCustomFolder =>
+      Platform.isWindows || Platform.isMacOS || Platform.isLinux;
+
+  @override
+  BackupService createBackupService() => _app.createBackupService();
+
+  @override
+  Map<BackupCategory, String> get contentTreeRoots => <BackupCategory, String>{
+    BackupCategory.books: path.join(_app.appDirectory.path, 'fushi_books'),
+    BackupCategory.audiobooks: path.join(_app.appDirectory.path, 'audiobooks'),
+    BackupCategory.fonts: path.join(_app.appDirectory.path, 'custom_fonts'),
+    BackupCategory.games: path.join(_app.appDirectory.path, 'game_covers'),
+    BackupCategory.dictionary: _app.dictionaryResourceDirectory.path,
+  };
+
+  @override
+  String get srsMediaRoot =>
+      SrsMediaStore.mediaRootFor(_app.databaseDirectory).path;
+
+  @override
+  bool get databaseAvailable => _app.autoBackupDatabaseAvailable;
+
+  @override
+  bool get backupExportActive => _app.backupExportActive;
+
+  @override
+  Object? beginBackupExport() => _app.beginBackupExport();
+
+  @override
+  void endBackupExport(Object token) => _app.endBackupExport(token);
+
+  @override
+  void reportBackupExportProgress(double fraction) =>
+      _app.reportBackupExportProgress(fraction);
+
+  @override
+  String? srsUnavailableReason() {
+    final SrsGenState state = SrsGen4Migration.status(
+      _app.databaseDirectory.path,
+    ).state;
+    return state == SrsGenState.ready ? null : state.wire;
+  }
+
+  @override
+  Future<Future<void> Function(String destPath)?> srsSnapshotWriter() async {
+    // 复习库还在等升级等：开库会抛，旧代数据在它自己的文件里原样不动，操作前还原点只带主库。
+    if (srsUnavailableReason() != null) return null;
+    final SrsStorage? storage = await _app.srsStorageForBackup();
+    if (storage == null) return null;
+    return (String destPath) async =>
+        storage.core.snapshotInto(destPath, stripDeviceLocal: false);
+  }
+
+  @override
+  void notifyFailure(String reason) => FushiToast.show(
+    msg: t.auto_backup_failed_notice(reason: autoBackupErrorText(reason)),
+    severity: ToastSeverity.error,
+  );
+
+  @override
+  void notifyPreOperationFailure(String reason) => FushiToast.show(
+    msg: t.restore_points_pre_operation_failed(reason: reason),
+    severity: ToastSeverity.warning,
+  );
+
+  @override
+  late final BackupFolderPlatform mirrorPlatform =
+      currentBackupFolderPlatform();
+
+  /// 写进还原点 / 副本元数据的是设备键（同步设备 id 的 sha1 前缀），不是原始 id：副本在共用文件夹 /
+  /// 云端，原始 id 不必露出去。
+  @override
+  Future<({String id, String name})> deviceIdentity() async => (
+    id: backupDeviceKey(
+      await SyncRepository(_app.database).getOrCreateDeviceId(),
+    ),
+    name: await resolveInterconnectDeviceName(_app.platformServices.deviceInfo),
+  );
+
+  @override
+  Future<void> saveMirrorFolder(AutoBackupMirrorFolder folder) =>
+      writeAutoBackupSettings(
+        _app.prefsRepo.setPrefs,
+        _app.autoBackupSettings.copyWith(mirrorFolder: () => folder),
+      );
+
+  @override
+  void notifyMirrorFailure(AutoBackupMirrorKind kind, String reason) =>
+      FushiToast.show(
+        msg: switch (kind) {
+          AutoBackupMirrorKind.folder => t.auto_backup_mirror_failed(
+            reason: autoBackupErrorText(reason),
+          ),
+          AutoBackupMirrorKind.cloud => t.auto_backup_cloud_failed(
+            reason: autoBackupErrorText(reason),
+          ),
+        },
+        severity: ToastSeverity.warning,
+      );
+
+  /// 云端副本支持的后端（D9）：OneDrive 不在内。
+  static const Set<SyncBackendType> _cloudBackupBackends = <SyncBackendType>{
+    SyncBackendType.googleDrive,
+    SyncBackendType.fushiServer,
+    SyncBackendType.dropbox,
+    SyncBackendType.webDav,
+    SyncBackendType.ftp,
+    SyncBackendType.sftp,
+  };
+
+  static String _cloudBackendLabel(SyncBackendType type) => switch (type) {
+    SyncBackendType.googleDrive => t.sync_backend_google_drive,
+    SyncBackendType.fushiServer => t.sync_backend_fushi_server,
+    SyncBackendType.webDav => t.sync_backend_webdav,
+    SyncBackendType.oneDrive => t.sync_backend_onedrive,
+    SyncBackendType.dropbox => t.sync_backend_dropbox,
+    SyncBackendType.ftp => t.sync_backend_ftp,
+    SyncBackendType.sftp => t.sync_backend_sftp,
+  };
+
+  /// 后端异常 → 云端副本错误码。先按类型认鉴权 / 连不上，其余看消息里的限流 / 空间字样
+  /// （[classifyCloudBackupErrorText]：限流算连不上、只有空间满了才算配额），消息本身不往外传（可能带服务器
+  /// 地址 / 响应正文）。
+  static String _classifyCloudError(Object error) {
+    if (error is SyncAuthError) return kBackupMirrorErrorCloudAuth;
+    if (error is SyncPeerUnreachableError ||
+        error is SocketException ||
+        error is TimeoutException ||
+        error is HttpException) {
+      return kBackupMirrorErrorCloudUnreachable;
+    }
+    return classifyCloudBackupErrorText('$error');
+  }
+
+  /// 云端副本目标键里的账号 / 服务器身份（[cloudBackupTargetKey] 只存它的哈希）：Google Drive / Dropbox 是
+  /// 登录账号的邮箱，WebDAV 是地址 + 用户名，FTP / SFTP 是主机 + 端口 + 用户名，互联是主机的证书指纹（没有
+  /// 就用地址）。查不出来返回 null（键只用后端类型）。
+  static Future<String?> _cloudAccountIdentity(
+    SyncChannel channel,
+    SyncRepository repo,
+  ) async {
+    String? join(List<String?> parts) {
+      final String? head = parts.first?.trim();
+      if (head == null || head.isEmpty) return null;
+      return parts.map((String? e) => e?.trim() ?? '').join('|');
+    }
+
+    try {
+      switch (channel.type) {
+        case SyncBackendType.webDav:
+          return join(<String?>[
+            await repo.getWebDavUrl(),
+            await repo.getWebDavUsername(),
+          ]);
+        case SyncBackendType.ftp:
+          return join(<String?>[
+            await repo.getFtpHost(),
+            '${await repo.getFtpPort()}',
+            await repo.getFtpUsername(),
+          ]);
+        case SyncBackendType.sftp:
+          return join(<String?>[
+            await repo.getSftpHost(),
+            '${await repo.getSftpPort()}',
+            await repo.getSftpUsername(),
+          ]);
+        case SyncBackendType.fushiServer:
+          final String? url = await repo.getFushiClientUrl();
+          if (url == null || url.isEmpty) return null;
+          return await repo.getFushiClientFingerprint(url) ?? url;
+        case SyncBackendType.googleDrive:
+        case SyncBackendType.dropbox:
+        case SyncBackendType.oneDrive:
+          return await channel.backend.currentEmail;
+      }
+    } on Object catch (e) {
+      debugPrint(
+        'AutoBackup: cloud account identity unavailable: ${e.runtimeType}',
+      );
+      return null;
+    }
+  }
+
+  /// 云端副本用的通道：已开的同步通道里（云在前、互联在后）第一条支持的。
+  Future<SyncChannel?> _cloudBackupChannel(SyncRepository repo) async {
+    for (final SyncChannel c in await enabledSyncChannelBackends(repo)) {
+      if (_cloudBackupBackends.contains(c.type)) return c;
+    }
+    return null;
+  }
+
+  @override
+  Future<String?> cloudBackendLabel() async {
+    final SyncChannel? channel = await _cloudBackupChannel(
+      SyncRepository(_app.database),
+    );
+    return channel == null ? null : _cloudBackendLabel(channel.type);
+  }
+
+  /// 没有支持的后端返回 null；配置了但登录不上 / 连不上抛 [BackupMirrorException]（错误码按
+  /// [_classifyCloudError]，原文只把类型名写进调试日志）。
+  @override
+  Future<AutoBackupMirrorTarget?> cloudTarget() async {
+    final SyncRepository repo = SyncRepository(_app.database);
+    final SyncChannel? channel = await _cloudBackupChannel(repo);
+    if (channel == null) return null;
+    final SyncBackend backend = channel.backend;
+    // 后端是带可变状态（令牌、folder-id 缓存）的进程级单例：每一次调用都和同步一样独占这条通道。
+    final Set<String> resources = <String>{
+      syncChannelResource(syncChannelScopeOf(backend)),
+    };
+    final bool signedIn;
+    try {
+      signedIn = await syncResourceLocks.withResources<bool>(
+        resources,
+        () => backend.restoreAuth(repo),
+      );
+    } on Object catch (e) {
+      final String code = _classifyCloudError(e);
+      debugPrint('AutoBackup: cloud sign-in failed: ${e.runtimeType} -> $code');
+      throw BackupMirrorException(code);
+    }
+    if (!signedIn) {
+      throw const BackupMirrorException(kBackupMirrorErrorCloudAuth);
+    }
+    final String key = cloudBackupTargetKey(
+      channel.type.name,
+      await _cloudAccountIdentity(channel, repo),
+    );
+    final ({String id, String name}) device = await deviceIdentity();
+    Future<T> guard<T>(Future<T> Function() body, {required bool idempotent}) =>
+        syncResourceLocks.withResources<T>(
+          resources,
+          () => idempotent ? retryTransientSync<T>(body) : body(),
+        );
+    return AutoBackupMirrorTarget(
+      kind: AutoBackupMirrorKind.cloud,
+      key: key,
+      label: _cloudBackendLabel(channel.type),
+      policy: kCloudBackupRetention,
+      open: () async => BackupFolderSession(
+        mirror: SyncAssetStoreBackupMirror(
+          store: backend,
+          namespace: () async {
+            // FTP / SFTP / WebDAV 的 ensureNamespace 不建同步根，先确保它在。
+            await backend.findOrCreateRootFolder();
+            return backend.ensureNamespace(kCloudBackupNamespace);
+          },
+          deviceFolder: device.id,
+          guard: guard,
+          classify: _classifyCloudError,
+        ),
+      ),
+    );
+  }
+
+  @override
+  Future<bool> networkUnmetered() => currentNetworkUnmetered();
+}

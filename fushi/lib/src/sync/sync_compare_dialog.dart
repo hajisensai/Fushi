@@ -9,6 +9,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi_engine/epub/book_title_conflict.dart';
 import 'package:fushi/src/focus/fushi_focus_controller.dart';
 import 'package:fushi/src/focus/fushi_focus_target.dart';
+import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart'
+    show kRestorePointReasonSyncDownload, takePreOperationRestorePoint;
 import 'package:fushi/src/sync/book_change_gate.dart'
     show publishOwnBookManifestAfterBookSync;
 import 'package:fushi/src/sync/cloud_book_content_names.dart';
@@ -1737,6 +1739,10 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
     // Only the books the user chose to sync count toward progress.
     final actionable = entries.where(_isActionable).toList();
     final total = actionable.length;
+    // 「用远端」会拿远端的进度 / 内容覆盖本机：先拍一个操作前还原点，覆盖错了能从还原点页回去。
+    final bool overwritesLocal = actionable.any(
+      (SyncCompareEntry e) => _choices[e.title] == SyncChoice.useRemote,
+    );
 
     setState(() {
       _applying = true;
@@ -1744,6 +1750,9 @@ class _SyncCompareDialogState extends State<SyncCompareDialog> {
       _progressLabel = null;
     });
     try {
+      if (overwritesLocal) {
+        await takePreOperationRestorePoint(kRestorePointReasonSyncDownload);
+      }
       // Apply runs real network writes (downloads/uploads/deletes) on the shared
       // singleton backend, so it is serialized against any in-flight sync inside
       // [applySyncCompareChoices] (BUG-083).
