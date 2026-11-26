@@ -397,6 +397,18 @@ pub(crate) fn free_bytes(path: &Path) -> Option<u64> {
     imp::free(dir)
 }
 
+/// [path] 所在卷的身份（同一个卷恒等、不同的卷不等；取不到为 None）：POSIX 是 `st_dev`，Windows 是卷根路径
+/// （`GetVolumePathNameW`，挂载点也认得出）与卷序列号合成的 64 位值。写备份前查空间时据此把同一个卷上的几个
+/// 目标加在一起算（只看可用空间读数会被两次读之间的写入骗过）。
+pub(crate) fn volume_id(path: &Path) -> Option<u64> {
+    let dir = if path.is_dir() { path } else { path.parent()? };
+    // Windows 的 GetVolumePathNameW 对不存在的路径也会按字符串给出卷根：先确认它在。
+    if !dir.is_dir() {
+        return None;
+    }
+    imp::volume(dir)
+}
+
 #[cfg(windows)]
 mod imp {
     use std::os::windows::ffi::OsStrExt;
@@ -423,6 +435,65 @@ mod imp {
         let ok = unsafe { GetDiskFreeSpaceExW(wide.as_ptr(), &mut avail, &mut total, &mut free) };
         (ok != 0).then_some(avail)
     }
+
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn GetVolumePathNameW(file: *const u16, out: *mut u16, len: u32) -> i32;
+        fn GetVolumeInformationW(
+            root: *const u16,
+            name: *mut u16,
+            name_len: u32,
+            serial: *mut u32,
+            max_component: *mut u32,
+            flags: *mut u32,
+            fs_name: *mut u16,
+            fs_name_len: u32,
+        ) -> i32;
+    }
+
+    pub(super) fn volume(dir: &Path) -> Option<u64> {
+        let wide: Vec<u16> = dir
+            .as_os_str()
+            .encode_wide()
+            .chain(std::iter::once(0))
+            .collect();
+        let mut root = vec![0u16; 1024];
+        // SAFETY: wide 以 0 结尾；root 是 1024 个 u16 的缓冲区，长度如实传入。
+        let ok = unsafe { GetVolumePathNameW(wide.as_ptr(), root.as_mut_ptr(), root.len() as u32) };
+        if ok == 0 {
+            return None;
+        }
+        let end = root.iter().position(|&c| c == 0)?;
+        let mut serial = 0u32;
+        // SAFETY: root[..=end] 以 0 结尾；只要序列号，其余输出传空指针 / 0 长度。
+        let ok = unsafe {
+            GetVolumeInformationW(
+                root.as_ptr(),
+                std::ptr::null_mut(),
+                0,
+                &mut serial,
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                std::ptr::null_mut(),
+                0,
+            )
+        };
+        if ok == 0 {
+            return None;
+        }
+        // 卷根路径（不分大小写）的 FNV-1a，高 32 位再混进序列号。
+        let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+        for c in &root[..end] {
+            let c = if (b'a' as u16..=b'z' as u16).contains(c) {
+                c - 32
+            } else {
+                *c
+            };
+            h ^= u64::from(c);
+            h = h.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+        Some(h ^ (u64::from(serial) << 32))
+    }
 }
 
 #[cfg(unix)]
@@ -438,11 +509,20 @@ mod imp {
         let rc = unsafe { libc::statvfs(c.as_ptr(), &mut st) };
         (rc == 0).then(|| (st.f_bavail as u64).saturating_mul(st.f_frsize as u64))
     }
+
+    pub(super) fn volume(dir: &Path) -> Option<u64> {
+        use std::os::unix::fs::MetadataExt;
+        std::fs::metadata(dir).ok().map(|m| m.dev())
+    }
 }
 
 #[cfg(not(any(windows, unix)))]
 mod imp {
     pub(super) fn free(_dir: &std::path::Path) -> Option<u64> {
+        None
+    }
+
+    pub(super) fn volume(_dir: &std::path::Path) -> Option<u64> {
         None
     }
 }

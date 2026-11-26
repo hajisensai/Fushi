@@ -24,5 +24,11 @@ void main() {
       greaterThan(0),
     );
     expect(FfiFsrsEngine.volumeFreeBytes(''), isNull);
+    // 卷身份：目录、里面的文件、还没建的子路径都是同一个卷。
+    final int? id = FfiFsrsEngine.volumeId(tmp.path);
+    expect(id, isNotNull);
+    expect(FfiFsrsEngine.volumeId(file.path), id);
+    expect(FfiFsrsEngine.volumeId(p.join(tmp.path, 'not', 'yet')), id);
+    expect(FfiFsrsEngine.volumeId(''), isNull);
   });
 }

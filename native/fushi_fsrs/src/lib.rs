@@ -25,8 +25,8 @@
 //!   （开机时钟：含睡眠、不受改系统时间影响，可信时间按它推算，见 boot_clock.rs）/
 //!   ffsrs_predict_tss / ffsrs_calibration_report
 //!   （复习统计页的校准图与 UM+：FSRS 时间序列切分的留出预测、分箱与自助法区间，见 calibration.rs）/
-//!   ffsrs_volume_free_bytes
-//!   （某路径所在卷的可用空间：app 与无头服务端写备份前查空间，与复习库压缩共用 store/compact.rs 的平台实现）
+//!   ffsrs_volume_free_bytes / ffsrs_volume_id
+//!   （某路径所在卷的可用空间与卷身份：app 与无头服务端写备份前查空间，与复习库压缩共用 store/compact.rs 的平台实现）
 
 // 让 cargo 的新鲜度指纹带上「这是哪个 worktree」：多个 worktree 共用一个 CARGO_TARGET_DIR 时，没有它会把别的
 // worktree 编出的产物当成本 worktree 的直接用（假绿 / 假红）。值来自仓库根 .cargo/config.toml 的 [env]，不进产物。
@@ -76,7 +76,8 @@ use serde_json::{Value, json};
 /// `STORE_LEGACY_UNMIGRATED`）；`ffsrs_store_sync2` 的命令经新代分发器；迁移的全局命令 `gen4_migrate_*` 走 [dispatch]。
 /// 同列车（G7-6）另删协议 1 主库搬迁的 `ffsrs_store_legacy_abort` / `_begin` / `_commit` / `_mark_none` / `_page` /
 /// `_state`（换代后只报 Unwired）；ABI 8 尚未发布（develop 仍是 7），所以不另升 9，verify_abi.sh 下界同步改 35。
-/// 9：加 `ffsrs_volume_free_bytes`（自动备份第五期：写备份 / 还原点前查卷的可用空间）。只加不删，但旧库缺这个
+/// 9：加 `ffsrs_volume_free_bytes` / `ffsrs_volume_id`（自动备份第五期：写备份 / 还原点前查卷的可用空间，同一个卷上的
+/// 几个目标按卷身份合计）。只加不删，但旧库缺这个
 /// 符号、绑定在加载时就查不到，所以照规矩升版本。
 pub const ABI_VERSION: i32 = 9;
 
@@ -1236,19 +1237,42 @@ pub extern "C" fn ffsrs_volume_free_bytes(path: *const c_char) -> i64 {
 }
 
 fn volume_free_bytes_raw(path: *const c_char) -> i64 {
-    if path.is_null() {
-        return -1;
-    }
-    let Ok(text) = unsafe { CStr::from_ptr(path) }.to_str() else {
+    let Some(path) = volume_path_arg(path) else {
         return -1;
     };
-    if text.is_empty() {
-        return -1;
-    }
-    match store::compact::free_bytes(std::path::Path::new(text)) {
+    match store::compact::free_bytes(path) {
         Some(free) => i64::try_from(free).unwrap_or(i64::MAX),
         None => -1,
     }
+}
+
+/// C 字符串参数 → 路径；空指针 / 非 UTF-8 / 空串为 None。
+fn volume_path_arg<'a>(path: *const c_char) -> Option<&'a std::path::Path> {
+    if path.is_null() {
+        return None;
+    }
+    let text = unsafe { CStr::from_ptr(path) }.to_str().ok()?;
+    (!text.is_empty()).then(|| std::path::Path::new(text))
+}
+
+/// [path]（UTF-8、NUL 结尾）所在卷的身份写进 `*out`，返回 1；取不到（空指针、路径不存在、平台不支持、panic）返回
+/// 0、不写 `*out`。同一个卷恒等、不同的卷不等（POSIX `st_dev`；Windows 卷根路径 + 卷序列号），只在本次开机内
+/// 比较有意义，不要存盘。
+#[no_mangle]
+pub extern "C" fn ffsrs_volume_id(path: *const c_char, out: *mut u64) -> i32 {
+    catch_unwind(AssertUnwindSafe(|| {
+        if out.is_null() {
+            return 0;
+        }
+        match volume_path_arg(path).and_then(store::compact::volume_id) {
+            Some(id) => {
+                unsafe { *out = id };
+                1
+            }
+            None => 0,
+        }
+    }))
+    .unwrap_or(0)
 }
 
 #[cfg(test)]
@@ -1271,6 +1295,17 @@ mod tests {
         assert_eq!(ffsrs_volume_free_bytes(empty.as_ptr()), -1);
         let missing = CString::new(dir.join("no").join("such").to_str().unwrap()).unwrap();
         assert_eq!(ffsrs_volume_free_bytes(missing.as_ptr()), -1);
+
+        // 卷身份：目录与它里面的文件同一个卷；取不到的一律 0、不写出参。
+        let (mut a, mut b) = (0u64, 0u64);
+        assert_eq!(ffsrs_volume_id(c_dir.as_ptr(), &mut a), 1);
+        assert_eq!(ffsrs_volume_id(c_file.as_ptr(), &mut b), 1);
+        assert_eq!(a, b);
+        let mut untouched = 7u64;
+        assert_eq!(ffsrs_volume_id(missing.as_ptr(), &mut untouched), 0);
+        assert_eq!(ffsrs_volume_id(std::ptr::null(), &mut untouched), 0);
+        assert_eq!(ffsrs_volume_id(c_dir.as_ptr(), std::ptr::null_mut()), 0);
+        assert_eq!(untouched, 7);
         let _ = std::fs::remove_dir_all(&dir);
     }
 

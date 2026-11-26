@@ -2,9 +2,9 @@
 /// 「Phase 5」）：app 的定时 / 操作前 / 更新前还原点、取回本机的副本，以及无头服务端的整机备份，动笔之前先估
 /// 这次要写多少、和目标卷的可用空间比，不够就不开始（不写半截、不把盘写满）。
 ///
-/// 平台实现只有一份：fushi_fsrs 的 `ffsrs_volume_free_bytes`（与复习库压缩的空间检查共用 `free_bytes`）。本包
-/// 不依赖 fushi_srs，所以由宿主在启动时 [registerVolumeFreeBytes]（app / 服务端都接
-/// `FfiFsrsEngine.volumeFreeBytes`）；没登记、或平台取不到时一律当「不知道」，照常写（不因查不到空间而拒绝备份）。
+/// 平台实现只有一份：fushi_fsrs 的 `ffsrs_volume_free_bytes` / `ffsrs_volume_id`（与复习库压缩的空间检查共用
+/// `free_bytes`）。本包不依赖 fushi_srs，所以由宿主在启动时 [registerVolumeFreeBytes]（app / 服务端都接
+/// `FfiFsrsEngine.volumeFreeBytes` 与 `FfiFsrsEngine.volumeId`）；没登记、或平台取不到时一律当「不知道」，照常写（不因查不到空间而拒绝备份）。
 library;
 
 import 'dart:io';
@@ -18,10 +18,29 @@ const int kBackupSpaceMarginBytes = 64 << 20;
 /// [path] 所在卷可用的字节数；不知道返回 null。
 typedef VolumeFreeBytes = int? Function(String path);
 
-VolumeFreeBytes? _registered;
+/// [path] 所在卷的身份（同一个卷恒等、不同的卷不等）；不知道返回 null。
+typedef VolumeIdProbe = int? Function(String path);
 
-/// 登记进程里的可用空间探针（app / 服务端启动时）；null = 撤销（测试）。
-void registerVolumeFreeBytes(VolumeFreeBytes? probe) => _registered = probe;
+VolumeFreeBytes? _registered;
+VolumeIdProbe? _registeredVolumeId;
+
+/// 登记进程里的可用空间探针与卷身份探针（app / 服务端启动时）；null = 撤销（测试）。
+void registerVolumeFreeBytes(
+  VolumeFreeBytes? probe, {
+  VolumeIdProbe? volumeId,
+}) {
+  _registered = probe;
+  _registeredVolumeId = volumeId;
+}
+
+int? _volumeIdOf(String path, VolumeIdProbe? probe) {
+  if (probe == null) return null;
+  try {
+    return probe(path);
+  } on Object {
+    return null;
+  }
+}
 
 /// [path] 所在卷的可用空间：[probe] 优先，否则用登记的探针；都没有、探针抛错或给负数返回 null。
 int? volumeFreeBytes(String path, {VolumeFreeBytes? probe}) {
@@ -70,33 +89,63 @@ class NotEnoughSpaceException implements Exception {
 
 /// [needs] 里每个目标卷的可用空间都够（估算 + [marginBytes]）才返回，否则抛 [NotEnoughSpaceException]。
 ///
-/// 两个目标在同一个卷上（例如备份目录与 `tmp/`）要加在一起算：Dart 拿不到卷的身份，这里把**可用空间读数
-/// 相同**的目标当作同一个卷（同一时刻两次读数在不同的卷上恰好相等几乎不会发生，真发生了也只是更严）。
+/// 同一个卷上的几个目标（例如备份目录与 `tmp/`）要加在一起算，按**卷身份**分组（[VolumeIdProbe]，平台实现
+/// `ffsrs_volume_id`：POSIX `st_dev`，Windows 卷根路径 + 卷序列号）；组内取最小的可用空间读数。只要有一个目标拿不到
+/// 卷身份，就保守地把全部目标当作一个卷：需要量全加在一起，对比最小的那个读数（宁可多拒一次，也不少算）。
 /// 不知道可用空间的目标跳过（照常写）。
+///
+/// [probe] 给了就只用参数里的两个探针（[volumeId] 没给 = 没有卷身份），否则用登记的那一对。
 void ensureFreeSpace(
   Iterable<SpaceNeed> needs, {
   VolumeFreeBytes? probe,
+  VolumeIdProbe? volumeId,
   int marginBytes = kBackupSpaceMarginBytes,
 }) {
-  final Map<int, ({String directory, int bytes})> byVolume =
-      <int, ({String directory, int bytes})>{};
+  final VolumeIdProbe? idProbe = probe == null
+      ? (volumeId ?? _registeredVolumeId)
+      : volumeId;
+  final List<({SpaceNeed need, int free, int? volume})> known =
+      <({SpaceNeed need, int free, int? volume})>[];
   for (final SpaceNeed need in needs) {
     final int? free = volumeFreeBytes(need.directory, probe: probe);
     if (free == null) continue;
-    final ({String directory, int bytes})? seen = byVolume[free];
-    byVolume[free] = (
-      directory: seen?.directory ?? need.directory,
-      bytes: (seen?.bytes ?? 0) + need.bytes,
-    );
+    known.add((
+      need: need,
+      free: free,
+      volume: _volumeIdOf(need.directory, idProbe),
+    ));
   }
-  for (final MapEntry<int, ({String directory, int bytes})> e
-      in byVolume.entries) {
-    final int needed = e.value.bytes + marginBytes;
-    if (e.key < needed) {
+  if (known.isEmpty) return;
+  final bool allIdentified = known.every(
+    (({SpaceNeed need, int free, int? volume}) k) => k.volume != null,
+  );
+  final Map<int?, List<({SpaceNeed need, int free, int? volume})>> groups =
+      <int?, List<({SpaceNeed need, int free, int? volume})>>{};
+  for (final ({SpaceNeed need, int free, int? volume}) k in known) {
+    (groups[allIdentified ? k.volume : null] ??=
+            <({SpaceNeed need, int free, int? volume})>[])
+        .add(k);
+  }
+  for (final List<({SpaceNeed need, int free, int? volume})> group
+      in groups.values) {
+    final ({SpaceNeed need, int free, int? volume}) tightest = group.reduce(
+      (
+        ({SpaceNeed need, int free, int? volume}) a,
+        ({SpaceNeed need, int free, int? volume}) b,
+      ) => b.free < a.free ? b : a,
+    );
+    final int needed =
+        group.fold<int>(
+          0,
+          (int sum, ({SpaceNeed need, int free, int? volume}) k) =>
+              sum + k.need.bytes,
+        ) +
+        marginBytes;
+    if (tightest.free < needed) {
       throw NotEnoughSpaceException(
-        directory: e.value.directory,
+        directory: tightest.need.directory,
         neededBytes: needed,
-        freeBytes: e.key,
+        freeBytes: tightest.free,
       );
     }
   }

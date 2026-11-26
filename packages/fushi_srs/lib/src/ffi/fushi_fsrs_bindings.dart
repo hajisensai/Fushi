@@ -303,6 +303,10 @@ typedef _BootTimeC = ffi.Int64 Function();
 typedef _BootTimeDart = int Function();
 typedef _VolumeFreeC = ffi.Int64 Function(ffi.Pointer<ffi.Char> path);
 typedef _VolumeFreeDart = int Function(ffi.Pointer<ffi.Char> path);
+typedef _VolumeIdC =
+    ffi.Int32 Function(ffi.Pointer<ffi.Char> path, ffi.Pointer<ffi.Uint64> out);
+typedef _VolumeIdDart =
+    int Function(ffi.Pointer<ffi.Char> path, ffi.Pointer<ffi.Uint64> out);
 
 /// `ffsrs_*` 符号表。构造时就把全部符号解析完：缺符号 = 库不对，立刻抛
 /// [ArgumentError]，由 `FushiFsrs.tryLoad` 转成「不可用」。
@@ -344,6 +348,9 @@ class FushiFsrsBindings {
           .lookupFunction<_VolumeFreeC, _VolumeFreeDart>(
             'ffsrs_volume_free_bytes',
           ),
+      ffsrs_volume_id = lib.lookupFunction<_VolumeIdC, _VolumeIdDart>(
+        'ffsrs_volume_id',
+      ),
       ffsrs_search_dupe_norm_batch = lib
           .lookupFunction<_DupeNormC, _DupeNormDart>(
             'ffsrs_search_dupe_norm_batch',
@@ -474,6 +481,11 @@ class FushiFsrsBindings {
   /// [path]（UTF-8、NUL 结尾）所在卷对本进程可用的字节数（不是目录时看上级目录）；取不到返回 -1。
   /// 平台实现与复习库压缩的空间检查共用（native/fushi_fsrs/src/store/compact.rs `free_bytes`）。
   final int Function(ffi.Pointer<ffi.Char> path) ffsrs_volume_free_bytes;
+
+  /// [path] 所在卷的身份写进 `*out` 并返回 1；取不到返回 0、不写。同一个卷恒等、不同的卷不等（POSIX
+  /// `st_dev`，Windows 卷根路径 + 卷序列号），只在本次开机内有意义。
+  final int Function(ffi.Pointer<ffi.Char> path, ffi.Pointer<ffi.Uint64> out)
+  ffsrs_volume_id;
 
   /// AnkiConnect 查重规范形，批量；返回 `[u32 LE 偏移 × (n+1)][UTF-8]`，由 [ffsrs_free_bytes] 释放。
   final ffi.Pointer<ffi.Uint8> Function(

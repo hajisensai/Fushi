@@ -42,11 +42,13 @@ void main() {
       );
     });
 
-    test('不同的卷各算各的；不够的那个卷点名', () {
+    test('不同的卷（卷身份不同）各算各的；不够的那个卷点名', () {
       int? probe(String path) => path == 'big' ? 1 << 40 : 1000;
+      int? volume(String path) => path == 'big' ? 1 : 2;
       ensureFreeSpace(
         const <SpaceNeed>[SpaceNeed('big', 1 << 30), SpaceNeed('small', 500)],
         probe: probe,
+        volumeId: volume,
         marginBytes: 0,
       );
       expect(
@@ -56,6 +58,7 @@ void main() {
             SpaceNeed('small', 1001),
           ],
           probe: probe,
+          volumeId: volume,
           marginBytes: 0,
         ),
         throwsA(
@@ -63,6 +66,53 @@ void main() {
             (NotEnoughSpaceException e) => e.directory,
             'dir',
             'small',
+          ),
+        ),
+      );
+    });
+
+    test('同一个卷、两次读数之间有写入（读数不同）：仍按卷身份合计，对比较小的读数', () {
+      // 先读到 1000，再读时别的程序写了 100：以前按读数分组会当成两个卷、各自都够。
+      int? probe(String path) => path == 'a' ? 1000 : 900;
+      expect(
+        () => ensureFreeSpace(
+          const <SpaceNeed>[SpaceNeed('a', 500), SpaceNeed('b', 450)],
+          probe: probe,
+          volumeId: (String _) => 42,
+          marginBytes: 0,
+        ),
+        throwsA(
+          isA<NotEnoughSpaceException>()
+              .having((NotEnoughSpaceException e) => e.freeBytes, 'free', 900)
+              .having(
+                (NotEnoughSpaceException e) => e.neededBytes,
+                'needed',
+                950,
+              ),
+        ),
+      );
+    });
+
+    test('拿不到卷身份：保守地全部合计、对比最小读数', () {
+      int? probe(String path) => path == 'a' ? 1 << 40 : 1000;
+      ensureFreeSpace(
+        const <SpaceNeed>[SpaceNeed('a', 400), SpaceNeed('b', 600)],
+        probe: probe,
+        marginBytes: 0,
+      );
+      expect(
+        () => ensureFreeSpace(
+          const <SpaceNeed>[SpaceNeed('a', 401), SpaceNeed('b', 600)],
+          probe: probe,
+          // 只有一个目标有身份也不算数：不能确定它们不在同一个卷。
+          volumeId: (String path) => path == 'a' ? 1 : null,
+          marginBytes: 0,
+        ),
+        throwsA(
+          isA<NotEnoughSpaceException>().having(
+            (NotEnoughSpaceException e) => e.directory,
+            'dir',
+            'b',
           ),
         ),
       );
