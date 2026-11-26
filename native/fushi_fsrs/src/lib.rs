@@ -1231,13 +1231,18 @@ pub extern "C" fn ffsrs_boot_time_ms() -> i64 {
 
 /// [path]（UTF-8、NUL 结尾）所在卷对本进程可用的字节数；路径不是目录时看它的上级目录。取不到（空指针、
 /// 非 UTF-8、路径不存在、平台不支持、panic）返回 -1，调用方当「不知道」处理。超过 `i64::MAX` 的封顶。
+///
+/// # Safety
+/// `path` 为空指针，或指向调用期间有效、NUL 结尾的 C 字符串。
 #[no_mangle]
-pub extern "C" fn ffsrs_volume_free_bytes(path: *const c_char) -> i64 {
-    catch_unwind(AssertUnwindSafe(|| volume_free_bytes_raw(path))).unwrap_or(-1)
+pub unsafe extern "C" fn ffsrs_volume_free_bytes(path: *const c_char) -> i64 {
+    catch_unwind(AssertUnwindSafe(|| unsafe { volume_free_bytes_raw(path) })).unwrap_or(-1)
 }
 
-fn volume_free_bytes_raw(path: *const c_char) -> i64 {
-    let Some(path) = volume_path_arg(path) else {
+/// # Safety
+/// 同 [ffsrs_volume_free_bytes]。
+unsafe fn volume_free_bytes_raw(path: *const c_char) -> i64 {
+    let Some(path) = (unsafe { volume_path_arg(path) }) else {
         return -1;
     };
     match store::compact::free_bytes(path) {
@@ -1247,7 +1252,10 @@ fn volume_free_bytes_raw(path: *const c_char) -> i64 {
 }
 
 /// C 字符串参数 → 路径；空指针 / 非 UTF-8 / 空串为 None。
-fn volume_path_arg<'a>(path: *const c_char) -> Option<&'a std::path::Path> {
+///
+/// # Safety
+/// `path` 为空指针，或指向在 `'a` 内有效、NUL 结尾的 C 字符串。
+unsafe fn volume_path_arg<'a>(path: *const c_char) -> Option<&'a std::path::Path> {
     if path.is_null() {
         return None;
     }
@@ -1258,13 +1266,16 @@ fn volume_path_arg<'a>(path: *const c_char) -> Option<&'a std::path::Path> {
 /// [path]（UTF-8、NUL 结尾）所在卷的身份写进 `*out`，返回 1；取不到（空指针、路径不存在、平台不支持、panic）返回
 /// 0、不写 `*out`。同一个卷恒等、不同的卷不等（POSIX `st_dev`；Windows 卷根路径 + 卷序列号），只在本次开机内
 /// 比较有意义，不要存盘。
+///
+/// # Safety
+/// `path` 为空指针，或指向调用期间有效、NUL 结尾的 C 字符串；`out` 为空指针，或指向可写的 `u64`。
 #[no_mangle]
-pub extern "C" fn ffsrs_volume_id(path: *const c_char, out: *mut u64) -> i32 {
+pub unsafe extern "C" fn ffsrs_volume_id(path: *const c_char, out: *mut u64) -> i32 {
     catch_unwind(AssertUnwindSafe(|| {
         if out.is_null() {
             return 0;
         }
-        match volume_path_arg(path).and_then(store::compact::volume_id) {
+        match unsafe { volume_path_arg(path) }.and_then(store::compact::volume_id) {
             Some(id) => {
                 unsafe { *out = id };
                 1
@@ -1288,23 +1299,32 @@ mod tests {
         std::fs::write(&file, b"x").unwrap();
         let c_dir = CString::new(dir.to_str().unwrap()).unwrap();
         let c_file = CString::new(file.to_str().unwrap()).unwrap();
-        assert!(ffsrs_volume_free_bytes(c_dir.as_ptr()) > 0);
-        assert!(ffsrs_volume_free_bytes(c_file.as_ptr()) > 0);
-        assert_eq!(ffsrs_volume_free_bytes(std::ptr::null()), -1);
+        assert!(unsafe { ffsrs_volume_free_bytes(c_dir.as_ptr()) } > 0);
+        assert!(unsafe { ffsrs_volume_free_bytes(c_file.as_ptr()) } > 0);
+        assert_eq!(unsafe { ffsrs_volume_free_bytes(std::ptr::null()) }, -1);
         let empty = CString::new("").unwrap();
-        assert_eq!(ffsrs_volume_free_bytes(empty.as_ptr()), -1);
+        assert_eq!(unsafe { ffsrs_volume_free_bytes(empty.as_ptr()) }, -1);
         let missing = CString::new(dir.join("no").join("such").to_str().unwrap()).unwrap();
-        assert_eq!(ffsrs_volume_free_bytes(missing.as_ptr()), -1);
+        assert_eq!(unsafe { ffsrs_volume_free_bytes(missing.as_ptr()) }, -1);
 
         // 卷身份：目录与它里面的文件同一个卷；取不到的一律 0、不写出参。
         let (mut a, mut b) = (0u64, 0u64);
-        assert_eq!(ffsrs_volume_id(c_dir.as_ptr(), &mut a), 1);
-        assert_eq!(ffsrs_volume_id(c_file.as_ptr(), &mut b), 1);
+        assert_eq!(unsafe { ffsrs_volume_id(c_dir.as_ptr(), &mut a) }, 1);
+        assert_eq!(unsafe { ffsrs_volume_id(c_file.as_ptr(), &mut b) }, 1);
         assert_eq!(a, b);
         let mut untouched = 7u64;
-        assert_eq!(ffsrs_volume_id(missing.as_ptr(), &mut untouched), 0);
-        assert_eq!(ffsrs_volume_id(std::ptr::null(), &mut untouched), 0);
-        assert_eq!(ffsrs_volume_id(c_dir.as_ptr(), std::ptr::null_mut()), 0);
+        assert_eq!(
+            unsafe { ffsrs_volume_id(missing.as_ptr(), &mut untouched) },
+            0
+        );
+        assert_eq!(
+            unsafe { ffsrs_volume_id(std::ptr::null(), &mut untouched) },
+            0
+        );
+        assert_eq!(
+            unsafe { ffsrs_volume_id(c_dir.as_ptr(), std::ptr::null_mut()) },
+            0
+        );
         assert_eq!(untouched, 7);
         let _ = std::fs::remove_dir_all(&dir);
     }
