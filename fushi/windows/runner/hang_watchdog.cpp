@@ -216,20 +216,22 @@ namespace fushi
     }
 
     // 主窗第一次可见：挂上「显示过」属性（第二个进程据此区分启动中 / 退出中）。
-    // 一直没显示：过了启动期限就抓 dump、记日志、ShowWindowAsync 显窗——Async 只是
-    // 往主线程投递，主线程若真卡住看门狗线程也不会跟着阻塞。
+    // 一直没显示：过了启动期限就抓 dump、记日志、PostMessageW 请主窗线程撤隐身并
+    // 显窗——投递式，主线程若真卡住看门狗线程也不会跟着阻塞。
     void CheckStartupReveal(WatchdogState& s)
     {
       if (s.main_window_shown) return;
       // BUG-5491: a startup maximize shows the window cloaked until Dart's
       // reveal — Win32-visible, but nothing on screen yet.
-      BOOL cloaked = FALSE;
+      // Only the app's own cloak counts: DWM_CLOAKED_SHELL (another virtual
+      // desktop) is not "never revealed".
+      DWORD cloaked = 0;
       if (FAILED(DwmGetWindowAttribute(g_main_window, DWMWA_CLOAKED, &cloaked,
             sizeof(cloaked)))) {
-        cloaked = FALSE;
+        cloaked = 0;
       }
       if (IsWindowUserVisible(IsWindowVisible(g_main_window) != FALSE,
-            cloaked != FALSE)) {
+            IsStartupCloaked(cloaked))) {
         s.main_window_shown = true;
         SetPropW(g_main_window, kMainWindowShownProp,
           reinterpret_cast<HANDLE>(static_cast<INT_PTR>(1)));

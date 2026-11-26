@@ -2,6 +2,7 @@
 #define RUNNER_STARTUP_REVEAL_POLICY_H_
 
 #include <windows.h>
+#include <dwmapi.h>
 
 // 主窗「隐藏建窗、Dart 首帧后才显窗」的两条原生判据（反馈：Surface Pro 7+ 升级 3.4
 // 后进程常驻后台、窗口永远不出，重启多次无效）。纯函数，随每次 Windows runner 构建
@@ -13,7 +14,8 @@
 //    转给它然后退出，用户除了重启电脑无路可走，也不留任何证据（主线程照常泵消息，
 //    停泵看门狗不响；Dart 心跳照常，失联检测也不响）。看门狗线程在主窗建好
 //    kStartupRevealDeadlineMs 后仍从未显示过时抓一份全线程栈 dump、记一行
-//    hang_watchdog.log，并 ShowWindowAsync 把窗口显出来（用户至少能看见、能关掉它）。
+//    hang_watchdog.log，并 PostMessageW(ForceStartupRevealMessage()) 投递给主窗线程
+//    撤隐身 + 显窗（用户至少能看见、能关掉它；投递式，看门狗线程不跟着阻塞）。
 //    Dart 侧 lib/src/startup/startup_stall_deadline.dart 在更早一点（40 s）把已走到的
 //    启动阶段写进同一个日志，两条合起来就是「卡在哪个 await」+「各线程在干什么」。
 //
@@ -79,10 +81,19 @@ inline bool ShouldCloakAtCreation(bool test_hidden_mode) {
   return !test_hidden_mode;
 }
 
-// 「用户真的看得见」= Win32 可见且没被 DWM 隐身。隐身中的主窗 IsWindowVisible 为真，
+// DWMWA_CLOAKED 读回的是隐身来源位掩码。只有 DWM_CLOAKED_APP（本进程自己
+// DWMWA_CLOAK 上的启动隐身）算「还没显示」；DWM_CLOAKED_SHELL 是窗口在别的虚拟
+// 桌面等外壳原因，DWM_CLOAKED_INHERITED 是继承所有者的隐身——这些都不是启动没
+// 显窗，当成未显示会让看门狗在用户切走桌面时误抓 dump、误强制显窗、迟迟不挂
+// kMainWindowShownProp。
+inline bool IsStartupCloaked(DWORD cloaked_flags) {
+  return (cloaked_flags & DWM_CLOAKED_APP) != 0;
+}
+
+// 「用户真的看得见」= Win32 可见且没被启动隐身。隐身中的主窗 IsWindowVisible 为真，
 // 但用户什么也看不到：看门狗不能据此挂 kMainWindowShownProp，也不能因此放弃强制显窗。
-inline bool IsWindowUserVisible(bool win32_visible, bool cloaked) {
-  return win32_visible && !cloaked;
+inline bool IsWindowUserVisible(bool win32_visible, bool startup_cloaked) {
+  return win32_visible && !startup_cloaked;
 }
 
 // 看门狗（另一线程）请主窗线程完成启动显窗：撤隐身 + ShowWindow。用注册消息而不是

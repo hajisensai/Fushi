@@ -79,6 +79,19 @@ int main() {
                    "a cloaked window is not user-visible even if Win32-visible");
   passed &= Expect(!IsWindowUserVisible(false, false),
                    "a hidden window is not user-visible");
+  using fushi::IsStartupCloaked;
+  passed &= Expect(IsStartupCloaked(DWM_CLOAKED_APP),
+                   "the app's own startup cloak means not revealed yet");
+  passed &= Expect(!IsStartupCloaked(DWM_CLOAKED_SHELL),
+                   "shell cloak (another virtual desktop) is not a startup "
+                   "cloak");
+  passed &= Expect(!IsStartupCloaked(DWM_CLOAKED_INHERITED),
+                   "an inherited cloak is not a startup cloak");
+  passed &= Expect(IsStartupCloaked(DWM_CLOAKED_APP | DWM_CLOAKED_SHELL),
+                   "the app cloak still counts alongside a shell cloak");
+  passed &= Expect(!IsStartupCloaked(0), "an uncloaked window");
+  passed &= Expect(IsWindowUserVisible(true, IsStartupCloaked(DWM_CLOAKED_SHELL)),
+                   "a shown window on another virtual desktop was revealed");
   passed &= Expect(fushi::ForceStartupRevealMessage() != 0 &&
                        fushi::ForceStartupRevealMessage() ==
                            fushi::ForceStartupRevealMessage(),
