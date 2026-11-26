@@ -3181,7 +3181,7 @@ impl Linear {
         }
 
         #[cfg(target_arch = "aarch64")]
-        {
+        if det::vector_kernels() {
             // SAFETY: aarch64 guarantees NEON support. The helper receives
             // slices whose dimensions were checked above and only accesses
             // complete weight columns and output elements within them.
@@ -3189,7 +3189,6 @@ impl Linear {
             return;
         }
 
-        #[allow(unreachable_code)]
         for (column, scale) in input.iter().copied().enumerate() {
             if scale == 0.0 {
                 continue;
@@ -3219,7 +3218,7 @@ impl Linear {
         }
 
         #[cfg(target_arch = "aarch64")]
-        if rows >= 4 {
+        if rows >= 4 && det::vector_kernels() {
             // SAFETY: aarch64 guarantees NEON support. The helper receives
             // slices whose dimensions were checked above and only accesses
             // complete rows and output vectors within those dimensions.
@@ -3237,7 +3236,7 @@ impl Linear {
         }
 
         #[cfg(target_arch = "x86_64")]
-        if rows >= 4 && det::x86_avx2_fma_available() {
+        if rows >= 4 && det::vector_kernels() {
             // SAFETY: availability was checked above. The helper receives
             // slices whose dimensions were checked above and only accesses
             // complete rows and output vectors within those dimensions.
@@ -3667,7 +3666,7 @@ fn update_recurrence_head(
     next_state: &mut [f32],
 ) {
     #[cfg(target_arch = "x86_64")]
-    if det::x86_avx2_fma_available() {
+    if det::vector_kernels() {
         // SAFETY: availability was checked above. Every head is exactly
         // `HEAD_SIZE` square and `HEAD_SIZE` is a multiple of eight.
         unsafe {

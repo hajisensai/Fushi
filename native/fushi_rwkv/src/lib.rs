@@ -55,6 +55,7 @@ mod rwkv;
 mod sched;
 
 pub use curve::{AnswerCurve, answer_intervals};
+pub use rwkv::det::PORTABLE_KERNELS_ENV;
 pub use rwkv::small::{SmallHeads, SmallInference, SmallModel, SmallUndo};
 pub use rwkv::{
     ReviewInput, RwkvInference, RwkvModel, RwkvStats, StatePrecision, forecast_query,

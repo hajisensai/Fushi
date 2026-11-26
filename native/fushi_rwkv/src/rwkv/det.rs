@@ -35,55 +35,71 @@
 // Fused multiply-add
 // ---------------------------------------------------------------------------
 
-/// `a * b + c` with one rounding, the hardware instruction where there is
-/// one (the kernels below inline the same instruction; this scalar entry is
-/// the yardstick the tests hold [soft_fma] against).
+/// `a * b + c` with the hardware FMA instruction (the yardstick the tests
+/// hold [soft_fma] against; the kernels inline the same instruction). `None`
+/// on a CPU without one.
 #[cfg(test)]
-#[inline(always)]
-pub(crate) fn fma(a: f32, b: f32, c: f32) -> f32 {
+pub(crate) fn hardware_fma(a: f32, b: f32, c: f32) -> Option<f32> {
     #[cfg(target_arch = "aarch64")]
     {
         // aarch64 always has `fmadd`; `mul_add` lowers to it.
-        a.mul_add(b, c)
+        Some(a.mul_add(b, c))
     }
     #[cfg(target_arch = "x86_64")]
     {
-        if x86_avx2_fma_available() {
-            // SAFETY: the FMA extension was detected.
-            unsafe { fma_x86(a, b, c) }
-        } else {
-            soft_fma(a, b, c)
+        #[target_feature(enable = "fma")]
+        unsafe fn fma_x86(a: f32, b: f32, c: f32) -> f32 {
+            a.mul_add(b, c)
         }
+        // SAFETY: only called once the FMA extension was detected.
+        std::is_x86_feature_detected!("fma").then(|| unsafe { fma_x86(a, b, c) })
     }
     #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
     {
-        soft_fma(a, b, c)
+        let _ = (a, b, c);
+        None
     }
 }
 
-#[cfg(all(test, target_arch = "x86_64"))]
-#[target_feature(enable = "fma")]
-#[inline]
-unsafe fn fma_x86(a: f32, b: f32, c: f32) -> f32 {
-    a.mul_add(b, c)
-}
+/// Environment variable that forces the portable kernels (scalar code on
+/// [soft_fma]) on a machine that has vector ones. Results are identical by
+/// construction; the bit-exactness tests run both paths on one machine.
+pub const PORTABLE_KERNELS_ENV: &str = "FUSHI_RWKV_PORTABLE_KERNELS";
 
-/// True when x86_64 has AVX2 and FMA (the vector kernels need both).
-#[cfg(target_arch = "x86_64")]
+/// The vector kernels are in use: x86_64 with AVX2 and FMA, or aarch64
+/// (NEON); not when [PORTABLE_KERNELS_ENV] is `1`. Decided once per process.
 #[inline(always)]
-pub(crate) fn x86_avx2_fma_available() -> bool {
+pub(crate) fn vector_kernels() -> bool {
     use std::sync::atomic::{AtomicU8, Ordering};
 
-    static AVAILABLE: AtomicU8 = AtomicU8::new(0);
-    match AVAILABLE.load(Ordering::Relaxed) {
+    static STATE: AtomicU8 = AtomicU8::new(0);
+    match STATE.load(Ordering::Relaxed) {
         1 => false,
         2 => true,
         _ => {
-            let available =
-                std::is_x86_feature_detected!("avx2") && std::is_x86_feature_detected!("fma");
-            AVAILABLE.store(if available { 2 } else { 1 }, Ordering::Relaxed);
+            let available = detect_vector_kernels();
+            STATE.store(if available { 2 } else { 1 }, Ordering::Relaxed);
             available
         }
+    }
+}
+
+#[cold]
+fn detect_vector_kernels() -> bool {
+    if std::env::var_os(PORTABLE_KERNELS_ENV).is_some_and(|value| value == "1") {
+        return false;
+    }
+    #[cfg(target_arch = "x86_64")]
+    {
+        std::is_x86_feature_detected!("avx2") && std::is_x86_feature_detected!("fma")
+    }
+    #[cfg(target_arch = "aarch64")]
+    {
+        true
+    }
+    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
+    {
+        false
     }
 }
 
@@ -179,48 +195,29 @@ pub(crate) fn axpy_reference(
 #[inline(always)]
 pub(crate) fn dot(left: &[f32], right: &[f32]) -> f32 {
     assert_eq!(left.len(), right.len());
-    #[cfg(target_arch = "aarch64")]
-    {
-        // SAFETY: aarch64 guarantees NEON; the lengths were checked above.
-        unsafe { dot_neon(left, right) }
+    if vector_kernels() {
+        // SAFETY: the vector extension was detected (aarch64: always NEON);
+        // the lengths were checked above.
+        #[cfg(target_arch = "x86_64")]
+        return unsafe { dot_avx2_fma(left, right) };
+        #[cfg(target_arch = "aarch64")]
+        return unsafe { dot_neon(left, right) };
     }
-    #[cfg(target_arch = "x86_64")]
-    {
-        if x86_avx2_fma_available() {
-            // SAFETY: AVX2 and FMA were detected; the lengths were checked above.
-            unsafe { dot_avx2_fma(left, right) }
-        } else {
-            dot_reference(left, right, soft_fma)
-        }
-    }
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
-    {
-        dot_reference(left, right, soft_fma)
-    }
+    dot_reference(left, right, soft_fma)
 }
 
 /// `out[i] = fma(weights[i], scale, out[i])` (every element fused).
 #[inline(always)]
 pub(crate) fn axpy(out: &mut [f32], weights: &[f32], scale: f32) {
     assert_eq!(out.len(), weights.len());
-    #[cfg(target_arch = "aarch64")]
-    {
-        // SAFETY: aarch64 guarantees NEON; the lengths were checked above.
-        unsafe { axpy_neon(out, weights, scale) }
+    if vector_kernels() {
+        // SAFETY: as in [dot].
+        #[cfg(target_arch = "x86_64")]
+        return unsafe { axpy_avx2_fma(out, weights, scale) };
+        #[cfg(target_arch = "aarch64")]
+        return unsafe { axpy_neon(out, weights, scale) };
     }
-    #[cfg(target_arch = "x86_64")]
-    {
-        if x86_avx2_fma_available() {
-            // SAFETY: AVX2 and FMA were detected; the lengths were checked above.
-            unsafe { axpy_avx2_fma(out, weights, scale) }
-        } else {
-            axpy_reference(out, weights, scale, soft_fma)
-        }
-    }
-    #[cfg(not(any(target_arch = "aarch64", target_arch = "x86_64")))]
-    {
-        axpy_reference(out, weights, scale, soft_fma)
-    }
+    axpy_reference(out, weights, scale, soft_fma)
 }
 
 /// AVX2: lanes `8g..8g+8` live in `acc[g]`; element `j` of a full 8-block
@@ -705,12 +702,11 @@ mod tests {
     /// random operands, near-cancellation, halfway and subnormal cases.
     #[test]
     fn soft_fma_matches_hardware() {
-        #[cfg(target_arch = "x86_64")]
-        if !x86_avx2_fma_available() {
+        if hardware_fma(1.0, 1.0, 1.0).is_none() {
             eprintln!("no FMA on this CPU; skipping the hardware comparison");
             return;
         }
-        let hardware = |a: f32, b: f32, c: f32| fma(a, b, c);
+        let hardware = |a: f32, b: f32, c: f32| hardware_fma(a, b, c).unwrap();
         let mut rng = Rng(0x9e37_79b9_7f4a_7c15);
         let check = |a: f32, b: f32, c: f32| {
             let soft = soft_fma(a, b, c);
