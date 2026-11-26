@@ -154,7 +154,7 @@ pub fn list(store_dir: &Path, database: &str) -> Vec<(String, PointMeta)> {
         return Vec::new();
     };
     let mut out: Vec<(String, PointMeta)> = rd
-        .filter_map(|e| e.ok())
+        .filter_map(Result::ok)
         .filter(|e| e.path().is_dir())
         .filter_map(|e| {
             let id = e.file_name().to_string_lossy().into_owned();
@@ -187,7 +187,7 @@ fn apply_retention(store: &Path, just_created: &str) {
     let Ok(rd) = fs::read_dir(store) else { return };
     let marker = format!("-{DATABASE}-");
     let mut complete: Vec<(i64, String)> = Vec::new();
-    for e in rd.filter_map(|e| e.ok()) {
+    for e in rd.filter_map(Result::ok) {
         let path = e.path();
         if !path.is_dir() {
             continue;
@@ -224,7 +224,7 @@ fn create_point(
 ) -> Result<(), String> {
     let name = db_path
         .file_name()
-        .and_then(|n| n.to_str())
+        .and_then(std::ffi::OsStr::to_str)
         .ok_or_else(|| "bad db path".to_string())?
         .to_string();
     let dir = store.join(id);
@@ -308,7 +308,7 @@ pub fn snapshot_before_upgrade(
 ) -> Result<String, String> {
     let store: PathBuf = db_path
         .parent()
-        .map(|p| p.to_path_buf())
+        .map(Path::to_path_buf)
         .unwrap_or_default()
         .join(STORE_DIR);
     if let Err(e) = fs::create_dir_all(&store) {
