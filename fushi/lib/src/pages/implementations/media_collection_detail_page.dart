@@ -104,6 +104,8 @@ import 'package:fushi/src/models/module_id.dart';
 import 'package:fushi/src/pages/implementations/subtitle_collection_panel.dart'
     show SubtitleCollectionPanel;
 import 'package:fushi/src/pages/implementations/subtitle_workbench_page.dart';
+import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_sheet.dart'
+    show showLibrarySubtitleFillSheet;
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/pages/implementations/video_fushi_page.dart';
 import 'package:fushi_engine/sync/fushi_library_host_service.dart'
@@ -3763,6 +3765,16 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
       case _CollectionManageAction.subtitles:
         await _fetchCollectionSubtitles();
         return;
+      case _CollectionManageAction.fillSubtitles:
+        await showLibrarySubtitleFillSheet(
+          context: context,
+          appModel: ProviderScope.containerOf(
+            context,
+            listen: false,
+          ).read(appProvider),
+          bookUids: <String>[for (final VideoBookRow m in _members) m.bookUid],
+        );
+        return;
       case _CollectionManageAction.generateJaSubtitles:
         await _generateSeasonJaSubtitles();
         return;
@@ -3952,6 +3964,14 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         _CollectionManageAction.subtitles,
         FushiIcons.subtitles,
         t.video_jimaku_batch_title,
+        enabled: _members.isNotEmpty,
+      ),
+      // 补齐字幕：逐集按语言判缺 → 内封 → OCR → 下载（原盘重定时）→ 本机生成，
+      // 只动缺字幕的集（与 `fushi_cli video sub-fill` 同一个编排）。
+      action(
+        _CollectionManageAction.fillSubtitles,
+        FushiIcons.subtitles,
+        t.video_subtitle_fill_title,
         enabled: _members.isNotEmpty,
       ),
       // 整季生成日语字幕（ASR + 可选 AI 校对）：要本机视频文件与本机 ONNX 运行时；
@@ -4477,6 +4497,7 @@ enum _CollectionManageAction {
   tmdbOrderingOnHost,
   sortBySeason,
   subtitles,
+  fillSubtitles,
   generateJaSubtitles,
   renameEpisodes,
   downloadRemote,

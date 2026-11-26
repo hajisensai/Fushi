@@ -34,7 +34,7 @@ import 'package:fushi_engine/media/video/subtitle/subtitle_timing_check.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
 import 'package:fushi_engine/media/video/video_duration_probe.dart';
 import 'package:fushi_engine/media/video/video_sidecar.dart'
-    show listSidecarSubtitles, ownedSidecarSuffix;
+    show listSidecarSubtitles, ownedSidecarSuffix, sidecarSubtitleLanguageTag;
 import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
 import 'package:fushi_engine/media/video/subtitle/subtitle_work_identity.dart';
 
@@ -49,6 +49,7 @@ class SubtitleBackfillTarget {
     this.contentLanguage,
     this.originalLanguage,
     this.explicitLanguage,
+    this.managedSubtitleDirectory,
   });
 
   /// 视频稳定身份（`VideoBooks.bookUid`），只用于日志与调用方对账。
@@ -79,6 +80,31 @@ class SubtitleBackfillTarget {
   /// 与 [contentLanguage] 不同：那是「视频说什么语言」，这是「要什么语言的字幕」。
   final String? explicitLanguage;
 
+  /// 原盘成员（蓝光整卷 / 分集 `.mpls`、DVD title）的字幕不落在盘目录里——
+  /// `BDMV/PLAYLIST/` 不是播放页发现 sidecar 的目录，也不该往用户的盘里塞文件
+  /// ——改落这个 app 托管目录（`video_subtitles/`，[managedDiscSubtitleFileName]），
+  /// 由调用方登记成 `subtitleSource`（否则播放页找不到它）。null = 普通文件，落
+  /// sidecar。
+  final String? managedSubtitleDirectory;
+
+  /// 是不是原盘成员（字幕落 [managedSubtitleDirectory]）。
+  bool get isDiscMember => managedSubtitleDirectory != null;
+
+  /// 「库里已有字幕源」不再挡这一次（整库补字幕已经按语言判过缺口：库里选着的是
+  /// 别种语言 / 已不在的文件时仍要补）。其余不变；同目录 / 托管目录里已有目标语言
+  /// 文件的保护照旧。
+  SubtitleBackfillTarget withoutExistingSubtitleBlock() =>
+      SubtitleBackfillTarget(
+        bookUid: bookUid,
+        videoPath: videoPath,
+        media: media,
+        scrapedRuntimeMinutes: scrapedRuntimeMinutes,
+        contentLanguage: contentLanguage,
+        originalLanguage: originalLanguage,
+        explicitLanguage: explicitLanguage,
+        managedSubtitleDirectory: managedSubtitleDirectory,
+      );
+
   /// 换一份身份，其余不变。
   SubtitleBackfillTarget withMedia(VideoMediaReference media) =>
       SubtitleBackfillTarget(
@@ -90,6 +116,7 @@ class SubtitleBackfillTarget {
         contentLanguage: contentLanguage,
         originalLanguage: originalLanguage,
         explicitLanguage: explicitLanguage,
+        managedSubtitleDirectory: managedSubtitleDirectory,
       );
 }
 
@@ -177,9 +204,8 @@ class VideoSubtitleBackfillService {
       );
     }
     // 全部文件判据 async：补字幕跑在 UI isolate，视频与 sidecar 常在网络盘上，同步
-    // stat / list 冷目录要数秒、冻结界面与同 isolate 的互联 host（BUG-3756）。DVD
-    // title 是虚拟路径，按「这个路径本身是不是文件」判（video_member_file.dart）。
-    if (!await videoPathFileExists(target.videoPath)) {
+    // stat / list 冷目录要数秒、冻结界面与同 isolate 的互联 host（BUG-3756）。
+    if (!await _mediaExists(target)) {
       return const SubtitleBackfillResult(
         SubtitleBackfillOutcome.failed,
         detail: 'video file is gone',
@@ -187,8 +213,9 @@ class VideoSubtitleBackfillService {
     }
     final File video = File(target.videoPath);
     // 目录里已经躺着 sidecar 就当已有字幕——它可能是用户手放的，也可能是下载
-    // 流水线放的。两种都不该被覆盖。
-    if ((await _existingSidecars(video)).isNotEmpty) {
+    // 流水线放的。两种都不该被覆盖。显式要了某种语言时只认那种语言的 sidecar
+    // （[_sidecarsCovering]）：目录里一份中文字幕不代表日语字幕也有了。
+    if ((await _existingSubtitles(target, video)).isNotEmpty) {
       return const SubtitleBackfillResult(
         SubtitleBackfillOutcome.alreadyHasSubtitle,
       );
@@ -317,13 +344,13 @@ class VideoSubtitleBackfillService {
         continue;
       }
       try {
-        final String target = await _sidecarDest(video, download);
-        if (!await _writeSidecar(video, download, target)) {
-          return _sameNameExists(target);
+        final String dest = await _sidecarDest(target, video, download);
+        if (!await _writeSidecar(target, video, download, dest)) {
+          return _sameNameExists(dest);
         }
         return SubtitleBackfillResult(
           SubtitleBackfillOutcome.installed,
-          installedPath: target,
+          installedPath: dest,
           language: download.language,
         );
       } on Object catch (error) {
@@ -357,11 +384,17 @@ class VideoSubtitleBackfillService {
       languages: target.explicitLanguage == null
           ? preferredLanguages
           : <String>[target.explicitLanguage!],
-      fingerprint: LocalVideoFingerprint(
-        fileSize: await video.length(),
-        fileName: p.basename(video.path),
-        openSubtitlesMovieHash: await computeOpenSubtitlesMovieHash(video.path),
-      ),
+      // 原盘成员没有文件指纹：路径背后是 `.mpls` 播放列表（几百字节的片段表），
+      // 它的大小与 moviehash 对来源站都是噪声，报上去只会把命中排序带偏。
+      fingerprint: target.isDiscMember
+          ? null
+          : LocalVideoFingerprint(
+              fileSize: await video.length(),
+              fileName: p.basename(video.path),
+              openSubtitlesMovieHash: await computeOpenSubtitlesMovieHash(
+                video.path,
+              ),
+            ),
     );
   }
 
@@ -372,7 +405,7 @@ class VideoSubtitleBackfillService {
     String? query,
     int? episode,
   }) async {
-    if (!await videoPathFileExists(target.videoPath)) {
+    if (!await _mediaExists(target)) {
       throw FileSystemException('video file is gone', target.videoPath);
     }
     final File video = File(target.videoPath);
@@ -388,7 +421,7 @@ class VideoSubtitleBackfillService {
     SubtitleBackfillTarget target,
     VideoSubtitleCandidate candidate,
   ) async {
-    if (!await videoPathFileExists(target.videoPath)) {
+    if (!await _mediaExists(target)) {
       return const SubtitleBackfillResult(
         SubtitleBackfillOutcome.failed,
         detail: 'video file is gone',
@@ -404,10 +437,10 @@ class VideoSubtitleBackfillService {
         detail: 'download failed: $error',
       );
     }
-    final String dest = await _sidecarDest(video, download);
+    final String dest = await _sidecarDest(target, video, download);
     if (await File(dest).exists()) return _sameNameExists(dest);
     try {
-      if (!await _writeSidecar(video, download, dest)) {
+      if (!await _writeSidecar(target, video, download, dest)) {
         return _sameNameExists(dest);
       }
       return SubtitleBackfillResult(
@@ -478,17 +511,90 @@ class VideoSubtitleBackfillService {
     return null;
   }
 
-  Future<List<String>> _existingSidecars(File video) async {
+  /// 媒体在不在：原盘成员（虚拟分集 `.pNN.mpls`、DVD title）换成它背后真实存在的
+  /// 播放列表 / 盘根判（[hasLocalMediaFile]）；普通文件按路径本身判。
+  static Future<bool> _mediaExists(SubtitleBackfillTarget target) =>
+      target.isDiscMember
+      ? hasLocalMediaFile(target.videoPath)
+      : videoPathFileExists(target.videoPath);
+
+  /// 已有、会挡住这次补字幕的字幕文件名。
+  ///
+  /// - 原盘成员：只看托管目录里这一条自己的那份（盘目录里的文件不是它的 sidecar）；
+  /// - 普通文件：同目录 sidecar；[SubtitleBackfillTarget.explicitLanguage] 非空时只算
+  ///   那种语言的（[_sidecarsCovering]）。
+  Future<List<String>> _existingSubtitles(
+    SubtitleBackfillTarget target,
+    File video,
+  ) async {
+    final String? wanted = normalizeSubtitleLanguageCode(
+      target.explicitLanguage,
+    );
+    final String? managed = target.managedSubtitleDirectory;
+    if (managed != null) {
+      final String prefix = managedDiscSubtitleStem(target.bookUid);
+      final List<String> names = <String>[];
+      try {
+        final Directory dir = Directory(managed);
+        if (!await dir.exists()) return names;
+        await for (final FileSystemEntity entity in dir.list()) {
+          if (entity is! File) continue;
+          final String name = p.basename(entity.path);
+          final String? tag = sidecarSubtitleLanguageTag(prefix, name);
+          if (tag == null) continue;
+          if (wanted == null || normalizeSubtitleLanguageCode(tag) == wanted) {
+            names.add(name);
+          }
+        }
+      } on FileSystemException {
+        return const <String>['<unreadable>'];
+      }
+      return names;
+    }
     try {
-      final List<String> names = await _dirFileNames(video);
-      return listSidecarSubtitles(
+      final List<String> names = listSidecarSubtitles(
         p.basenameWithoutExtension(video.path),
-        names,
+        await _dirFileNames(video),
       );
+      if (wanted == null) return names;
+      return await _sidecarsCovering(video, names, wanted);
     } on FileSystemException {
       // 目录读不了就当「不确定有没有」，按有处理——宁可不补，也不能覆盖。
       return const <String>['<unreadable>'];
     }
+  }
+
+  /// [names] 里算得上 [wanted] 语言的 sidecar：标了语言就按标记；没标的读正文判
+  /// （[detectSubtitleContentLanguage]），正文判不出或读不动的一律算（宁可不补）。
+  static Future<List<String>> _sidecarsCovering(
+    File video,
+    List<String> names,
+    String wanted,
+  ) async {
+    final String stem = p.basenameWithoutExtension(video.path);
+    final List<String> out = <String>[];
+    for (final String name in names) {
+      final String? tag = sidecarSubtitleLanguageTag(stem, name);
+      final String? code = normalizeSubtitleLanguageCode(tag);
+      if (code != null) {
+        if (code == wanted) out.add(name);
+        continue;
+      }
+      try {
+        final String text = await decodeTextBytes(
+          await File(p.join(video.parent.path, name)).readAsBytes(),
+        );
+        if (!subtitleContentContradictsLanguage(
+          detectSubtitleContentLanguage(text),
+          wanted,
+        )) {
+          out.add(name);
+        }
+      } on FileSystemException {
+        out.add(name);
+      }
+    }
+    return out;
   }
 
   Future<List<String>> _dirFileNames(File video) async => <String>[
@@ -500,9 +606,17 @@ class VideoSubtitleBackfillService {
   /// 更长的同目录视频认领时退回无语言标记（[ownedSidecarSuffix]）。目录读不了就按
   /// 原名（后面的写入照样会失败 / 被同名检查挡住）。
   Future<String> _sidecarDest(
+    SubtitleBackfillTarget target,
     File video,
     VideoSubtitleDownload download,
   ) async {
+    final String? managed = target.managedSubtitleDirectory;
+    if (managed != null) {
+      return p.join(
+        managed,
+        managedDiscSubtitleFileName(target.bookUid, download),
+      );
+    }
     List<String> names = const <String>[];
     try {
       names = await _dirFileNames(video);
@@ -526,20 +640,26 @@ class VideoSubtitleBackfillService {
   /// 查过整目录的 sidecar，这里是防并发的第二道）。返回 true = 这次真写了；false =
   /// 同名文件已在（写之前就在，或对齐期间被别人落下），什么都没写。
   Future<bool> _writeSidecar(
+    SubtitleBackfillTarget backfillTarget,
     File video,
     VideoSubtitleDownload download,
     String target,
   ) async {
     final File dest = File(target);
     if (await dest.exists()) return false;
+    await dest.parent.create(recursive: true);
     // 先写临时文件再 rename：半截字幕文件比没有字幕更糟——播放页会把它当成
     // 一条可用字幕加载，用户看到的是「字幕只有前三句」。
     final File temp = File('$target.fushi.tmp');
     final AutomaticSubtitleAligner? aligner = subtitleAligner;
     // 后台自动路径：网络路径（UNC / smb:// …）不抽内嵌轨——整片 demux 走网络等于
-    // 把整部视频拉一遍。原样写。
+    // 把整部视频拉一遍。原样写。原盘成员也原样写：盘上只有图形字幕轨，没有可对的
+    // 文本参照轨；版本差异由整库补字幕的「ASR 参照重定时」处理
+    // （library_subtitle_fill.dart）。
     await temp.writeAsBytes(
-      aligner == null || isNetworkMediaPath(video.path)
+      aligner == null ||
+              backfillTarget.isDiscMember ||
+              isNetworkMediaPath(video.path)
           ? download.bytes
           : await aligner(download.bytes, video.path),
       flush: true,
@@ -576,6 +696,24 @@ String sidecarPathFor(
     '$stem${ownedSidecarSuffix(stem, suffix, dirFiles)}',
   );
 }
+
+/// 原盘成员托管字幕文件名的主干：`disc-<bookUid 安全化>`。纯函数。
+///
+/// 托管目录（`video_subtitles/`）是扁平副本池，主干带上 bookUid 才不会两张盘的
+/// `00001.mpls` 撞名；只留 sidecar 后缀白名单的字符集，避免 bookUid 里的分隔符
+/// 写出子目录。
+String managedDiscSubtitleStem(String bookUid) {
+  final String safe = bookUid.replaceAll(RegExp(r'[^A-Za-z0-9_-]'), '_');
+  return 'disc-${safe.isEmpty ? 'unknown' : safe}';
+}
+
+/// 原盘成员托管字幕文件名：`<主干>.<lang><ext>`（[managedDiscSubtitleStem]）。纯函数。
+String managedDiscSubtitleFileName(
+  String bookUid,
+  VideoSubtitleDownload download,
+) =>
+    '${managedDiscSubtitleStem(bookUid)}.${sidecarLanguageTag(download.language)}'
+    '${sidecarSubtitleExtension(download.fileName)}';
 
 /// 语言标签归一到 sidecar 后缀白名单允许的字符集（见 `isSidecarSubtitleSuffix`：
 /// `[A-Za-z0-9_-]{1,32}`）。纯函数，与那条白名单成对单测。

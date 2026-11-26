@@ -25,6 +25,8 @@ import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/background_keyed_derivation.dart';
 import 'package:fushi/src/media/audio_cd/audio_cd_import.dart';
 import 'package:fushi/src/media/collections/collection_owned_subscriptions.dart';
+import 'package:fushi/src/media/video/subtitle/library_subtitle_fill_sheet.dart'
+    show showLibrarySubtitleFillSheet;
 import 'package:fushi/src/media/video/cover_ui/video_series_meta.dart';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi/src/pages/base_module_tab_page.dart';
@@ -5442,6 +5444,30 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
     );
     if (!mounted) return;
     await _listenToVideos(books);
+  }
+
+  /// 批量「补齐字幕」：选中的合集展开成全部视频成员，再接散卡；同一集只算一次。
+  /// 判缺与补齐全在 [showLibrarySubtitleFillSheet] 背后的编排里。
+  Future<void> _batchFillSubtitles() async {
+    if (!await _pruneStaleSelection() || !mounted) return;
+    final AppModel appModel = ref.read(appProvider);
+    final List<int> collectionIds = _selectedCollectionIds.toList()..sort();
+    final List<String> order = <String>[];
+    for (final int id in collectionIds) {
+      for (final MediaCollectionItemRow m
+          in await appModel.database.getCollectionItems(id)) {
+        if (MediaKind.tryParse(m.mediaType) == MediaKind.video) {
+          order.add(m.entryKey);
+        }
+      }
+    }
+    order.addAll(_selectedLocalUids);
+    if (!mounted) return;
+    await showLibrarySubtitleFillSheet(
+      context: context,
+      appModel: appModel,
+      bookUids: <String>{...order}.toList(),
+    );
   }
 
   /// 手动标记已看 / 未看（本地行 + 媒体服务器条目）。落地见 [setVideosWatched]
@@ -12666,6 +12692,14 @@ class _HomeVideoPageState extends BaseModuleTabPageState<HomeVideoPage>
         onPressed: () => unawaited(_batchListen()),
         icon: FushiIcons.audiobook,
         label: t.video_listen_action,
+      ),
+      // 补齐所选（散卡 + 合集全部集）缺的字幕；全选即整库。
+      BatchAction(
+        key: 'home_video_batch_fill_subtitles',
+        enabled: hasLocalSelection,
+        onPressed: () => unawaited(_batchFillSubtitles()),
+        icon: FushiIcons.subtitles,
+        label: t.video_subtitle_fill_title,
       ),
       // AI 整理所选（spec 2026-10-20 §10.1）。
       if (isAiModuleEnabled(ref.read(appProvider).moduleVisibility))
