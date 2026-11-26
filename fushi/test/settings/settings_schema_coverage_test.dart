@@ -1383,6 +1383,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
       'test/media/video/video_asbplayer_config_test.dart + test/pages/video_settings_schema_guard_test.dart',
   'video/Seek seconds':
       'test/media/video/video_asbplayer_config_test.dart + test/media/video/video_seek_relative_test.dart',
+  // 第二档「长步进」秒数：消费点是视频页 Shift+←/→ 快捷键、控制条长步进按钮与
+  // 手机遥控 seekStep，harness 设置页里没有播放页。
+  'video/Long seek step':
+      'test/media/video/video_asbplayer_config_test.dart（longSeekSeconds 默认 / 旧档 / 夹值）+ '
+      'test/shortcuts/video_shortcut_registry_test.dart（Shift+←/→ 派发长步进回调）+ '
+      'test/sync/video_remote_host_seek_step_test.dart（快照 longSeekSeconds / seekStep 命令）',
   'video/Subtitle pause playback mode':
       'test/media/video/video_asbplayer_config_test.dart',
   'video/Quality enhancement':
