@@ -3272,7 +3272,7 @@ class _TexthookerPageState extends ConsumerState<TexthookerPage>
         TexthookerLineFilter.mined,
         t.game_filter_mined,
         count((TexthookerLineEntry e) => e.mined),
-        Icons.style_outlined,
+        FushiIcons.ankiCard,
       ),
       (
         TexthookerLineFilter.favorited,
@@ -5739,7 +5739,7 @@ class _LineMinedChip extends StatelessWidget {
     // 与 [_LineAudioChip] 同一枚共享标签：强调色调 + 卡片图标。
     return FushiTag(
       text: t.game_line_mined,
-      icon: Icons.style,
+      icon: FushiIcons.filled(FushiIcons.ankiCard),
       tone: FushiTagTone.accent,
       dense: true,
     );

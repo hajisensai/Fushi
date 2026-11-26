@@ -197,23 +197,21 @@ void main() {
       // 已制卡两态（✓ / ✓↩）逐字锁死——含 TODO-1338 的 VS15。未制卡那一臂只锁
       // 「仍是文本字形、且可制卡时是 '+'」：BUG-2242 起该臂多了「已入队」子态
       // （队列里显示 ✓），锁死整行会把合法子态当回退误报。
-      const String minedArm =
-          "mineButton.textContent = isMined ? (latest ? '\u{2713}\u{21A9}\u{FE0E}' : '\u{2713}') : ";
+      // 用户 2026-11-26「按钮都切换 SF」：Apple 设计系统下制卡钮改画 SF 字形
+      // （__fushiPaintMineGlyph 的 Apple 分支），Material / 墨水屏仍是这里锁的文本标记。
+      // 状态机只写 data-mine-glyph（含 BUG-2242「已入队」显示 ✓ 的子态）。
       expect(
         js,
-        contains(minedArm),
-        reason: '制卡按钮状态切换用 ✓/✓↩ 文本字形，且 ↩ 带 VS15(U+FE0E)',
+        contains(
+          "mineButton.dataset.mineGlyph = isMined ? (latest ? 'latest' : 'mined') : (queued ? 'mined' : 'add');",
+        ),
       );
-      final int armIdx = js.indexOf(minedArm);
-      final String unminedArm = js.substring(
-        armIdx + minedArm.length,
-        js.indexOf(';', armIdx),
-      );
-      expect(unminedArm, contains("'+'"), reason: '可制卡态仍是文本 +');
+      const String materialArm =
+          "button.textContent = glyph === 'latest' ? '\u{2713}\u{21A9}\u{FE0E}' : (glyph === 'mined' ? '\u{2713}' : '+');";
       expect(
-        unminedArm.contains('<svg'),
-        isFalse,
-        reason: '未制卡那一臂也必须是文本字形，不得塞 SVG',
+        js,
+        contains(materialArm),
+        reason: 'Material 下制卡按钮用 + / ✓ / ✓↩ 文本字形，且 ↩ 带 VS15(U+FE0E)',
       );
       // class 列表允许带 inline-action-button 等布局基类前缀（BUG-1895）；这里守的
       // 是「初始 textContent 是文本 '+' 而非 SVG」，不是 class 名的确切拼写。

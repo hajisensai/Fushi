@@ -639,7 +639,7 @@ class _ReaderStatisticsSheetState extends State<ReaderStatisticsSheet> {
             key: 'fushi_reader_stats_today_lookups',
           ),
           (
-            icon: Icons.style_outlined,
+            icon: FushiIcons.ankiCard,
             label: t.stat_mined,
             value: '${book.todayCards}',
             key: 'fushi_reader_stats_today_cards',

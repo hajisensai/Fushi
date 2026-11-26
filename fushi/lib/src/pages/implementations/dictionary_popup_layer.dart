@@ -47,6 +47,7 @@ import 'package:fushi/src/utils/components/fushi_placeholder_message.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_overlays.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
+import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 // BUG-2953：根 Overlay 查词浮层的自带导航层；宿主经本文件取用，故此处 re-export。
@@ -2132,7 +2133,8 @@ class DictionaryPopupLayer extends StatelessWidget {
   static Widget _overflowMenuLabel(IconData icon, String label) => Row(
     mainAxisSize: MainAxisSize.min,
     children: <Widget>[
-      Icon(icon, size: 20),
+      // FushiIcon：Apple 设计系统下换 SF 风格字形（裸 Icon 不换）。
+      FushiIcon(icon, size: 20),
       const SizedBox(width: 12),
       Flexible(child: Text(label)),
     ],
@@ -2172,7 +2174,7 @@ class DictionaryPopupLayer extends StatelessWidget {
       child: ConstrainedBox(
         constraints: _topActionConstraints,
         child: const Center(
-          child: Icon(
+          child: FushiIcon(
             Icons.more_horiz,
             size: kDictionaryPopupTopActionIconSize,
           ),

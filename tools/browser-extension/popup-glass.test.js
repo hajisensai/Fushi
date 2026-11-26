@@ -168,6 +168,9 @@ function assertGlassHooksAreAccentOnly(css, where) {
     if (!/fushi-glass/.test(sel)) continue;
     assert.ok(!/backdrop-filter/.test(m[2]), `${where}的玻璃钩子规则带了模糊：${sel}`);
     if (/^html\.fushi-glass-host/.test(sel)) continue; // app 内透明宿主，只在 popup.css
+    // Apple 设计系统视觉层（Cupertino 风格，生成器从 html.fushi-glass-host.fushi-apple 重根而来）：
+    // 只有 inset grouped 卡片 / 标签 / SF 按钮的形状与颜色，上面已断言不带模糊。
+    if (sel.split(/,(?![^(]*\))/).every((part) => /^:where\(#entries-container\)\.fushi-glass-host\.fushi-apple($|[ .:[])/.test(part.trim()))) continue;
     for (const part of sel.split(/,(?![^(]*\))/)) {
       assert.match(part.trim(), /^:where\(html\.fushi-glass-host, \.fushi-glass\) /,
         `${where}出现强调色段以外的玻璃钩子：${part.trim()}`);

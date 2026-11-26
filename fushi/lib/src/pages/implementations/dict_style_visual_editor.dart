@@ -5,6 +5,9 @@ import 'package:fushi/src/utils/components/fushi_dialog_color_picker.dart';
 import 'package:fushi/src/dictionary/dict_style_rules.dart';
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
+    show fushiHairline;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -531,6 +534,9 @@ class _ColorChoice extends StatelessWidget {
               : (selected
                     ? FushiIcon(FushiIcons.check, size: 16, color: glyphColor)
                     : null));
+    if (isGlassDesign(context)) {
+      return _buildApple(context, spring: spring, swatch: swatch, glyph: glyph);
+    }
     return FushiTooltip(
       message: tooltip,
       child: FushiPressScale(
@@ -553,6 +559,59 @@ class _ColorChoice extends StatelessWidget {
               ),
             ),
             child: glyph,
+          ),
+        ),
+      ),
+    );
+  }
+
+  /// Apple 设计系统的色块（iOS 颜色选取器口径）：恒为正圆，不做形状变形、不铺水波；
+  /// 选中 = 外圈 2px 强调色环、色点内缩 4px 留出一道底色缝（同 UIColorWell / 系统
+  /// 设置的强调色选择）。未选中描一圈发丝分隔线，透明 / 白色色点在分组底上也看得见。
+  Widget _buildApple(
+    BuildContext context, {
+    required FushiSpringSpec spring,
+    required Color? swatch,
+    required Widget? glyph,
+  }) {
+    final FushiAppleColors apple = appleColorsOf(context);
+    return FushiTooltip(
+      message: tooltip,
+      child: Semantics(
+        button: true,
+        selected: selected,
+        label: tooltip,
+        child: FushiPressScale(
+          child: GestureDetector(
+            behavior: HitTestBehavior.opaque,
+            onTap: onTap,
+            child: AnimatedContainer(
+              duration: spring.duration,
+              curve: spring.curve,
+              width: 32,
+              height: 32,
+              padding: EdgeInsets.all(selected ? 4 : 0),
+              decoration: BoxDecoration(
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: selected ? apple.accent : Colors.transparent,
+                  width: 2,
+                ),
+              ),
+              child: DecoratedBox(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: swatch ?? apple.tertiaryGroupedBackground,
+                  border: selected
+                      ? null
+                      : Border.all(
+                          color: apple.separator,
+                          width: fushiHairline(context),
+                        ),
+                ),
+                child: Center(child: glyph),
+              ),
+            ),
           ),
         ),
       ),
