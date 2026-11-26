@@ -3204,6 +3204,8 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 注册本 profile 的缓存配置（`cache_config_set`，native/fushi_fsrs/src/store/gen4/dispatch.rs）：与库里存的按 JSON
   /// 值比，相同回 `{changed: false}`；变了内核写下并在同一个事务里整层重建派生层，回 `{changed: true, settled}`。
+  /// 回包带 `rwkvLastFill: true`（只差 `rwkv_last` 的旧口径库就地升级了，BUG-5532）时后台分批回填
+  /// （[_startRwkvLastFill]）。
   /// 整层重建不推进本机状态行的修订号（刷新键），所以变了时这里把本对象按刷新键 / 缓存日志记的缓存一并作废。失败照常
   /// 抛出（打开失败），下次打开重来。
   ///
@@ -3218,7 +3220,47 @@ class SrsDbStore implements SrsSync2Host {
     final Object? revive = r['revive'];
     if (revive is Map) _absorbLocalWrite(revive.cast<String, Object?>());
     if (r['changed'] == true || revive != null) _invalidateDerivedCaches();
+    if (r['rwkvLastFill'] == true) _startRwkvLastFill();
   });
+
+  /// 一步回填的卡数（[_runRwkvLastFill]）：每张卡逐卡重放全部历史，手机上一步约零点几秒，期间别的写入在内核写锁上排队。
+  static const int _kRwkvLastFillBatch = 64;
+
+  /// 在跑的 `rwkv_last` 回填（[_startRwkvLastFill]）；没有在跑 = null。
+  Future<void>? _rwkvLastFill;
+
+  /// 在跑的 `rwkv_last` 回填（测试等它跑完）。
+  @visibleForTesting
+  Future<void>? get debugRwkvLastFill => _rwkvLastFill;
+
+  /// 内核要求分批回填 `rwkv_last`（`cache_config_set` 回包 `rwkvLastFill`，BUG-5532：只差这张表的旧口径库就地升级，
+  /// 不在开库的写事务里整层重建）：后台一批一笔地填，不挡打开。中途被杀 / 关库只丢在途那一批，下次开库内核照样回
+  /// `rwkvLastFill`，从游标接着填。填完之前 RWKV 末条读对没填到的卡逐卡重放（内核 `cmd/training.rs` `rwkv_last`），
+  /// 结果不变、只是慢。
+  void _startRwkvLastFill() {
+    _rwkvLastFill ??= _runRwkvLastFill().whenComplete(
+      () => _rwkvLastFill = null,
+    );
+  }
+
+  Future<void> _runRwkvLastFill() async {
+    // 先让打开走完（`ensureBuiltins` / 根上 ID），回填排在后面。
+    await Future<void>.delayed(Duration.zero);
+    while (!isWindingDown && !isClosed) {
+      final Map<String, Object?> r;
+      try {
+        r = await _sync2(const <String, Object?>{
+          'op': 'rwkv_last_fill',
+          'limit': _kRwkvLastFillBatch,
+        });
+      } on Object {
+        // 副本作废 / 库关了：在途那一批随之回滚，下次开库接着填，不是错误。别的失败照常抛出（进错误日志）。
+        if (isWindingDown || isClosed) return;
+        rethrow;
+      }
+      if (r['done'] == true) return;
+    }
+  }
 
   /// 派生层整层重建（`rebuild_caches`，`Settle::Rebuild`）：新代的派生层是真相的纯函数，重建结果与随写入维护的
   /// 相同；用于诊断 / 覆盖恢复之后。重建不推进修订号，本对象记的缓存一并作废。

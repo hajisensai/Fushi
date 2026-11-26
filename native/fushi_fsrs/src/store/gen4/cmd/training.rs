@@ -49,7 +49,7 @@ use super::lineage::lineages;
 use super::{ref_of, snapshot};
 use crate::gen4::op::Body4;
 use crate::projection::{Alg, Day};
-use crate::store::gen4::cache::LogIn;
+use crate::store::gen4::cache::{LogIn, RWKV_FILL_KEY};
 use crate::store::gen4::derive::{Index, Ref, body_of};
 use crate::store::gen4::schema::sql;
 use crate::store::gen4::truth::Truth;
@@ -149,23 +149,46 @@ pub fn rwkv_cards(
 ///
 /// RWKV 打分的查询行只要这一条（`srs_rwkv_service.dart` `_queryRows`）：冷启动分数表是空的、统计又整表重查，
 /// 逐卡模式要重放每张卡的全部历史（实测 1.5 万张卡 26～36 秒，BUG-5525），这里是一次按主键的表读。
+///
+/// 表还在分批回填（`derive_cfg` 有 [RWKV_FILL_KEY]，BUG-5532）时，游标之后、有卡行的卡还没填：这些卡逐卡重放取同一条
+/// （[replayed_last]，与物化同一份规则），结果与填完之后逐卡相同，只是慢。
 pub fn rwkv_last(t: &Truth<'_>, col: i64, cards: &[String]) -> Result<Vec<u8>, String> {
     snapshot(t, |t| {
-        let ix = Index::new(t, col);
+        let mut ix = Index::new(t, col);
+        let canon: Vec<Ref> = cards
+            .iter()
+            .map(|c| ix.canonical(&ref_of(c)))
+            .collect::<Result<_, _>>()?;
+        let mut rows: Vec<Option<(i64, i64, i64)>> = Vec::with_capacity(canon.len());
+        {
+            let mut stmt = t
+                .conn()
+                .prepare_cached(
+                    "SELECT at, rating, rtype FROM rwkv_last WHERE col = ?1 AND card = ?2",
+                )
+                .map_err(sql)?;
+            for card in &canon {
+                rows.push(
+                    stmt.query_row(params![col, card], |r| {
+                        Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                    })
+                    .optional()
+                    .map_err(sql)?,
+                );
+            }
+        }
+        if let Some(cursor) = t.derive_cfg(col, RWKV_FILL_KEY)? {
+            let pending = unfilled(t, col, &cursor, &canon)?;
+            if !pending.is_empty() {
+                let texts: Vec<String> = pending.iter().map(|&i| canon[i].text()).collect();
+                for (&i, last) in pending.iter().zip(replayed_last(t, col, &mut ix, &texts)?) {
+                    rows[i] = last;
+                }
+            }
+        }
         let mut out = Vec::with_capacity(8 + cards.len() * 24);
         out.extend_from_slice(&(cards.len() as i64).to_le_bytes());
-        let mut stmt = t
-            .conn()
-            .prepare_cached("SELECT at, rating, rtype FROM rwkv_last WHERE col = ?1 AND card = ?2")
-            .map_err(sql)?;
-        for c in cards {
-            let card = ix.canonical(&ref_of(c))?;
-            let row: Option<(i64, i64, i64)> = stmt
-                .query_row(params![col, card], |r| {
-                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
-                })
-                .optional()
-                .map_err(sql)?;
+        for row in rows {
             let (at, rating, rtype) = row.unwrap_or((crate::history::NONE_I64, 0, 0));
             for v in [at, rating, rtype] {
                 out.extend_from_slice(&v.to_le_bytes());
@@ -173,6 +196,97 @@ pub fn rwkv_last(t: &Truth<'_>, col: i64, cards: &[String]) -> Result<Vec<u8>, S
         }
         Ok(out)
     })
+}
+
+/// [canon] 里还没回填的（下标）：有卡行、且排在回填游标之后（`cards` 主键序，比较交给 SQLite，与回填取下一批的
+/// `ORDER BY id` 同一套序）。没有卡行的卡在表里本来就没有行（`NONE`），不重放。
+fn unfilled(t: &Truth<'_>, col: i64, cursor: &str, canon: &[Ref]) -> Result<Vec<usize>, String> {
+    let after: Option<Ref> = (!cursor.is_empty()).then(|| ref_of(cursor));
+    let mut stmt = t
+        .conn()
+        .prepare_cached(
+            "SELECT EXISTS (SELECT 1 FROM cards WHERE col = ?1 AND id = ?2 AND (?3 IS NULL OR id > ?3))",
+        )
+        .map_err(sql)?;
+    let mut out = Vec::new();
+    for (i, card) in canon.iter().enumerate() {
+        let pending: bool = stmt
+            .query_row(params![col, card, after], |r| r.get(0))
+            .map_err(sql)?;
+        if pending {
+            out.push(i);
+        }
+    }
+    Ok(out)
+}
+
+/// [cards]（规范 ID 文本）各自按血统重放出的最后一条 RWKV 保留评分（与缓存层物化 `rwkv_last` 的同一条：
+/// `LogsByCard::rwkv_last`；`derive.rs` 的 `assert_rwkv_last_matches_replay` 逐卡对拍两者）。
+fn replayed_last(
+    t: &Truth<'_>,
+    col: i64,
+    ix: &mut Index<'_, '_>,
+    cards: &[String],
+) -> Result<Vec<Option<(i64, i64, i64)>>, String> {
+    let groups: Vec<Vec<String>> = cards.iter().map(|c| vec![c.clone()]).collect();
+    let groups = expand(t, col, ix, &groups)?;
+    let logs = logs_by_card(ix, &projections::wanted_cards(&groups))?;
+    Ok(groups.iter().map(|g| logs.rwkv_last(g)).collect())
+}
+
+/// `rwkv_last_fill`（写，BUG-5532）：`rwkv_last` 分批回填的一步。从游标（`derive_cfg` 的 [RWKV_FILL_KEY]）之后按
+/// `cards` 主键序取至多 [limit] 张卡，逐卡重放写下（或删掉）各自的末条，游标推进到这批最后一张；取到的不满一批 = 填完，
+/// 删掉游标。在调用方的写事务里：一批一笔提交，中途被杀只丢这一批，下次从游标接着做。
+///
+/// 回填期间的写入照常由增量收尾（`cache.rs` 的卡行物化）维护碰到的卡；回填到它时重算出的是同一条，覆盖不改值。
+/// 没有游标（表是完整的）回 `{done: true, filled: 0}`。回包 `{done, filled}`。
+pub fn rwkv_last_fill(t: &Truth<'_>, col: i64, limit: usize) -> Result<serde_json::Value, String> {
+    let Some(cursor) = t.derive_cfg(col, RWKV_FILL_KEY)? else {
+        return Ok(serde_json::json!({"done": true, "filled": 0}));
+    };
+    let limit = limit.max(1);
+    let after: Option<Ref> = (!cursor.is_empty()).then(|| ref_of(&cursor));
+    let batch: Vec<Ref> = {
+        let mut stmt = t
+            .conn()
+            .prepare_cached(
+                "SELECT id FROM cards WHERE col = ?1 AND (?2 IS NULL OR id > ?2) ORDER BY id LIMIT ?3",
+            )
+            .map_err(sql)?;
+        let rows = stmt
+            .query_map(params![col, after, limit as i64], |r| r.get::<_, Ref>(0))
+            .map_err(sql)?;
+        rows.collect::<Result<_, _>>().map_err(sql)?
+    };
+    let texts: Vec<String> = batch.iter().map(Ref::text).collect();
+    let mut ix = Index::new(t, col);
+    let lasts = replayed_last(t, col, &mut ix, &texts)?;
+    for (card, last) in batch.iter().zip(lasts) {
+        match last {
+            Some((at, rating, rtype)) => t
+                .conn()
+                .prepare_cached(
+                    "INSERT OR REPLACE INTO rwkv_last (col, card, at, rating, rtype) VALUES (?1, ?2, ?3, ?4, ?5)",
+                )
+                .map_err(sql)?
+                .execute(params![col, card, at, rating, rtype])
+                .map_err(sql)?,
+            None => t
+                .conn()
+                .prepare_cached("DELETE FROM rwkv_last WHERE col = ?1 AND card = ?2")
+                .map_err(sql)?
+                .execute(params![col, card])
+                .map_err(sql)?,
+        };
+    }
+    let done = batch.len() < limit;
+    let next = batch.last().map(Ref::text);
+    t.set_derive_cfg(
+        col,
+        RWKV_FILL_KEY,
+        if done { None } else { next.as_deref() },
+    )?;
+    Ok(serde_json::json!({"done": done, "filled": batch.len()}))
 }
 
 /// `rwkv_rows` 回放模式：这个集合的全部日志按本机落库序扫一遍（指纹与行出自同一个快照），选行与输出同协议 3
