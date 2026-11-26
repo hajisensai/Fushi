@@ -38,8 +38,46 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5531](bugs/BUG-5531-srs-export-filtered-review-ease-zero.md) | ✅ | ✅ | srs-export-filtered-review-ease-zero |
+> 共 4803 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5526](bugs/BUG-5526-srs-link-retired-root-writer.md) | ✅ | ✅ | 平板复习同步永远不采用电脑的集合：集合目录里退役旧根的写入者被当成成员，关联判成「已关联」 |
+| [BUG-5525](bugs/BUG-5525-rwkv-cold-start-full-replay.md) | ✅ | ✅ | RWKV 冷启动逐卡重放全部历史，复习页首开等十几二十秒 |
+| [BUG-5521](bugs/BUG-5521-windows-maximized-startup-teal-flash.md) | ✅ | ✅ | Windows：上次最大化关掉，下次启动先显示几秒青绿色空窗 |
+| [BUG-5520](bugs/BUG-5520-sftp-dead-transport-hang.md) | ✅ | ✅ | SSH 传输断开后 SFTP 请求永远挂起：同步卡死、「本地 vs 远端」对比弹窗一直转圈 |
+| [BUG-5519](bugs/BUG-5519-pair-schemeless-https-timeout.md) | ✅ | ✅ | 互联手动添加不带 scheme 的地址配对 TLS host 报「对端没在时限内应答」 |
+| [BUG-5518](bugs/BUG-5518-ai-review-removal-blocks-readd.md) | ✅ | ✅ | AI 管库拆散 / 挪走的集，用户再「加入媒体库」也归不回合集 |
+| [BUG-5517](bugs/BUG-5517-srs-field-ai-no-language-for-new-text.md) | ✅ | ✅ | Card field AI: prompt never says which language new example text is written in |
+| [BUG-5516](bugs/BUG-5516-srs-field-ai-sample-loses-target-markup.md) | ✅ | ✅ | Card field AI: field contents lose the target-word bold, gain spaces at tags, and mix furigana readings into the text |
+| [BUG-5515](bugs/BUG-5515-windows-installer-tmp-unsigned-smart-app-control.md) | ✅ | ✅ | Windows 安装器在开着「智能应用控制」的机器上报 4551 拒绝启动（Inno 解出的 .tmp 安装程序没签名） |
+| [BUG-5514](bugs/BUG-5514-book-fan-covers-clipped-in-tall-block.md) | ✅ | ✅ | book-fan-covers-clipped-in-tall-block |
+| [BUG-5513](bugs/BUG-5513-media-link-removal-no-undo.md) | ✅ | ✅ | media-link-removal-no-undo |
+| [BUG-5512](bugs/BUG-5512-remote-collection-members-lack-info.md) | ✅ | ✅ | remote-collection-members-lack-info |
+| [BUG-5511](bugs/BUG-5511-hero-backdrop-band-collapses-on-rotate.md) | ✅ | ✅ | hero-backdrop-band-collapses-on-rotate |
+| [BUG-5510](bugs/BUG-5510-sync-sweep-audiobook-pull-untracked.md) | ✅ | ✅ | 同步 sweep 补拉有声书不进下载任务表、不与手动任务互斥 |
+| [BUG-5509](bugs/BUG-5509-interconnect-remote-sidecar-audio-missing.md) | ✅ | ✅ | 互联远端播放 host 的本地视频拿不到外挂音轨 |
+| [BUG-5508](bugs/BUG-5508-android-ort-java-heap-oom.md) | ✅ | ✅ | Android 跑 OCR / ASR 时 Java 堆 OOM 连环闪退 |
+| [BUG-5507](bugs/BUG-5507-anime-subtitle-cross-site-403.md) | ✅ | ✅ | anime-subtitle-cross-site-403 |
+| [BUG-5506](bugs/BUG-5506-video-autopause-skip-pulled-back.md) | ✅ | ✅ | video-autopause-skip-pulled-back |
+| [BUG-5505](bugs/BUG-5505-android-preview-audio-steals-focus.md) | ✅ | ✅ | android-preview-audio-steals-focus |
+| [BUG-5504](bugs/BUG-5504-music-player-embedded-cover.md) | ✅ | ✅ | music-player-embedded-cover |
+| [BUG-5503](bugs/BUG-5503-mine-overwrite-toast-empty-deck-name.md) | ✅ | ✅ | 覆盖已有卡片后提示「卡片已覆盖到『』」，牌组名为空 |
+| [BUG-5502](bugs/BUG-5502-srs-conflict-badge-misses-duplicate-groups.md) | ✅ | ✅ | 复习页「同步冲突」角标不数可能重复的笔记组，只有重复组时角标为 0、进去却有冲突 |
+| [BUG-5501](bugs/BUG-5501-web-video-no-resume-position.md) | ✅ | ✅ | PC 上 YouTube 不登录就记不住观看进度（网页档只写进度不读） |
+| [BUG-5500](bugs/BUG-5500-web-video-youtube-chat-replay-missing.md) | ✅ | ✅ | PC 上 YouTube 直播回放不出「聊天回放」按钮（网页档从不探测） |
+| [BUG-5499](bugs/BUG-5499-exit-verdict-ignores-pid-time.md) | ✅ | ✅ | 退出判定不看 pid / 时间，存活进程的厂商告警转储压过真死因 |
+| [BUG-5498](bugs/BUG-5498-crash-summary-platform-evidence-truncated.md) | ✅ | ✅ | 崩溃报告正文里会话标记的内存采样挤掉平台证据 |
+| [BUG-5497](bugs/BUG-5497-mac-ips-exception-reason-dropped.md) | ✅ | ✅ | macOS .ips 摘要丢掉 ObjC 异常原因与抛出处的栈 |
+| [BUG-5496](bugs/BUG-5496-gal-thread-memory-restore-no-retry-after-select-failure.md) | ✅ | ✅ | Galgame 记忆的文本线程一次选择失败后本会话不再恢复 |
+| [BUG-5495](bugs/BUG-5495-manga-window-ready-waits-page-images.md) | ✅ | ✅ | 漫画窗口文档就绪要等首屏页图取完，Android 上翻页被导航锁挡住 |
+| [BUG-5494](bugs/BUG-5494-android-screen-ocr-dart-engine-no-block.md) | ✅ | ✅ | Android 应用外截屏识字走本机模型 / Google Lens 时查词不跨 OCR 折行 |
+| [BUG-5493](bugs/BUG-5493-devconsole-sample-file-404.md) | ✅ | ✅ | 网页处理台样本文件下载 404 |
+| [BUG-5492](bugs/BUG-5492-android-external-library-wiped.md) | ✅ | ✅ | Android 外部书库被整树删掉，书与词典全没了 |
+| [BUG-5491](bugs/BUG-5491-rwkv-armv7-portable-fma-slow.md) | 🚧 | 🚧 | armeabi-v7a 与无 FMA 的老 x86 上 RWKV 回放走软件 FMA，比向量路径慢约 4–5 倍 |
 | [BUG-5490](bugs/BUG-5490-data-location-diag-not-retained.md) | ✅ | ✅ | 数据位置诊断只在内存且被普通诊断挤掉 |
 | [BUG-5489](bugs/BUG-5489-dict-files-missing-silent.md) | ✅ | ✅ | 词典文件缺失时界面静默只显示无释义 |
+| [BUG-5488](bugs/BUG-5488-rwkv-cross-platform-nondeterminism.md) | ✅ | ✅ | RWKV 同一复习日志在电脑与手机上回放出的 R 不同，到期数差一张（73 vs 72） |
 | [BUG-5487](bugs/BUG-5487-music-plugin-switch-cover-pixi-slow.md) | ✅ | ✅ | music-plugin-switch-cover-pixi-slow |
 | [BUG-5486](bugs/BUG-5486-engine-long-word-exceeds-scan-length.md) | 🚧 | 🚧 | 超过扫描长度的英文单词查不到（characteristically 等） |
 | [BUG-5485](bugs/BUG-5485-ext-scan-window-truncates-long-words.md) | ✅ | ✅ | 浏览器扩展取词上限 12 截断长英文词，procrastination 不出弹窗 |

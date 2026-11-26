@@ -2,9 +2,10 @@
 /// 被点那一行所在的**文本块**：卡图裁哪块（反馈 Gz7z6Y6Mbr）、查词串与制卡句子跨到
 /// 哪几行（BUG-4707）都按这里的同一套聚合规则，规则只写一处。
 ///
-/// Android 截屏识字有 ML Kit 的 text block，块由原生给（`ScreenOcrLayout.blockText`），
-/// 不走这里；块全文的格式（块内各行按 `\n` 拼接）两边一致，后续截句 / 拼续文都交给
-/// `ocr_block_sentence.dart`。
+/// Android 截屏识字走 ML Kit 时块由 ML Kit 自己给（`ScreenOcrLayout.blockText`），不走
+/// 这里；走本机模型 / Google Lens 时行从 Dart 回原生，块也按这里的规则算好随行下发
+/// （`screenOcrLinesToNative`，BUG-5494）。块全文的格式（块内各行按 `\n` 拼接）各端
+/// 一致，后续截句 / 拼续文都交给 `ocr_block_sentence.dart`。
 library;
 
 import 'dart:math' as math;
@@ -95,43 +96,56 @@ class ScreenOcrBlockLookup {
   final String sentence;
 }
 
+/// [lines] 里第 [hitIndex] 行所在的文本块（[screenOcrTextBlockMembers]）：块全文（块内
+/// 各行按 `\n` 拼接，与 Android ML Kit 块同一格式）、该行在块全文里的起始 UTF-16
+/// 偏移、块包围盒。查词续文 / 制卡整句（[screenOcrBlockLookupForHit]）与 Android
+/// 选取层的块信息（`screenOcrLinesToNative`，BUG-5494）都从这里取，拼法只写一处。
+({String text, int offset, Rect rect}) screenOcrTextBlockOf({
+  required List<SystemOcrTextLine> lines,
+  required int hitIndex,
+}) {
+  final StringBuffer block = StringBuffer();
+  int offset = 0;
+  Rect? rect;
+  for (final int i in screenOcrTextBlockMembers(
+    lines: <ScreenOcrLineBox>[
+      for (final SystemOcrTextLine line in lines)
+        (rect: line.rect, vertical: line.isVertical),
+    ],
+    hitIndex: hitIndex,
+  )) {
+    if (block.isNotEmpty) block.write('\n');
+    if (i == hitIndex) offset = block.length;
+    block.write(lines[i].text);
+    rect = rect?.expandToInclude(lines[i].rect) ?? lines[i].rect;
+  }
+  return (
+    text: block.toString(),
+    offset: offset,
+    rect: rect ?? lines[hitIndex].rect,
+  );
+}
+
 /// 只有行框的平台点中 [lines] 里的 [hit] 行、行内 UTF-16 下标 [charIndex] 时，按
-/// [screenOcrTextBlockMembers] 把它所在的文本块拼成块全文（块内各行按 `\n` 拼接，与
-/// Android ML Kit 块同一格式），再交给 `ocr_block_sentence.dart` 拼续文、截整句。
+/// [screenOcrTextBlockOf] 把它所在的文本块拼成块全文，再交给 `ocr_block_sentence.dart`
+/// 拼续文、截整句。
 ScreenOcrBlockLookup screenOcrBlockLookupForHit({
   required List<SystemOcrTextLine> lines,
   required SystemOcrTextLine hit,
   required int charIndex,
 }) {
   final int hitIndex = lines.indexOf(hit);
-  final List<SystemOcrTextLine> members = hitIndex < 0
-      ? <SystemOcrTextLine>[hit]
-      : <SystemOcrTextLine>[
-          for (final int i in screenOcrTextBlockMembers(
-            lines: <ScreenOcrLineBox>[
-              for (final SystemOcrTextLine line in lines)
-                (rect: line.rect, vertical: line.isVertical),
-            ],
-            hitIndex: hitIndex,
-          ))
-            lines[i],
-        ];
-  final StringBuffer block = StringBuffer();
-  int offset = 0;
-  for (final SystemOcrTextLine line in members) {
-    if (block.isNotEmpty) block.write('\n');
-    if (identical(line, hit)) offset = block.length;
-    block.write(line.text);
-  }
-  final String blockText = block.toString();
+  final ({String text, int offset, Rect rect}) block = hitIndex < 0
+      ? (text: hit.text, offset: 0, rect: hit.rect)
+      : screenOcrTextBlockOf(lines: lines, hitIndex: hitIndex);
   final String continuation = ocrBlockContinuationAfterLine(
-    blockText,
-    lineEnd: offset + hit.text.length,
+    block.text,
+    lineEnd: block.offset + hit.text.length,
   );
   return ScreenOcrBlockLookup(
     text: hit.text + continuation,
     sentence:
-        ocrBlockSentenceAt(blockText, offset + charIndex) ??
+        ocrBlockSentenceAt(block.text, block.offset + charIndex) ??
         ocrSentenceInLine(hit.text, charIndex),
   );
 }

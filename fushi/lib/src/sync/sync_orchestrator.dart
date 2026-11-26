@@ -50,6 +50,7 @@ import 'package:fushi/src/sync/interconnect_source_share_kinds.dart'
     show sourceSharePluginStores, sourceSharePrefWriter, SharedPluginStore;
 import 'package:fushi/src/sync/interconnect_source_share_sync.dart';
 import 'package:fushi/src/sync/interconnect_sync_backend.dart';
+import 'package:fushi/src/sync/sync_audiobook_pull_tasks.dart';
 import 'package:fushi/src/sync/remote_audiobook_revision.dart'
     show remoteAudiobookRevisionKeyForBook;
 import 'package:fushi/src/sync/remote_audiobook_revision_store.dart'
@@ -861,6 +862,7 @@ class SyncOrchestrator {
     this.onError,
     this.pendingMineRelay,
     this.cancellation = SyncCancellation.never,
+    this.audiobookPullTasks,
     AggregatePeerSnapshotCache? remoteManifestMirror,
   }) : _db = db,
        _manifestMirror =
@@ -954,6 +956,11 @@ class SyncOrchestrator {
 
   /// 本轮的取消信号（「同步与备份 + 互联」模块途中被关掉，`sync_module_gate.dart`）。
   final SyncCancellation cancellation;
+
+  /// sweep 补拉有声书接进 app 级下载任务表的端口（[SyncAudiobookPullTasks]，
+  /// B5trcDxSnf）：拉之前跳过已有在跑任务的书、自己登记成任务。null = 不登记
+  /// （测试 / 无界面宿主），行为与从前一致。
+  final SyncAudiobookPullTasks? audiobookPullTasks;
 
   /// 安全检查点：已取消则抛 [SyncCancelledException]。
   ///

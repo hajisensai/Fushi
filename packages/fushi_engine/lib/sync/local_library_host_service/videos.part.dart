@@ -578,6 +578,25 @@ mixin _LocalLibraryHostVideos
     return files;
   }
 
+  /// 这一集视频旁的全部外挂音轨（[VideoSidecarAudioListHost]，M9OEh1PeYH）：与
+  /// [resolveVideoFile] 同一份「这一集是哪个文件」，判据与本机播放器同一份
+  /// [discoverSidecarAudioTrackFiles]。网络流 / `.strm` / 光盘标题（成员路径是
+  /// `.mpls` / `VIDEO_TS` 里的东西，旁边没有发布组外挂音轨）不列。
+  @override
+  Future<List<SidecarAudioTrackFile>> listVideoSidecarAudioTracks(
+    String id, {
+    int episodeIndex = 0,
+  }) async {
+    final String? videoPath = await _resolveEpisodeVideoPath(id, episodeIndex);
+    if (videoPath == null ||
+        videoPath.isEmpty ||
+        lacksLocalMediaFile(videoPath) ||
+        discRootForMemberPath(videoPath) != null) {
+      return const <SidecarAudioTrackFile>[];
+    }
+    return discoverSidecarAudioTrackFiles(videoPath);
+  }
+
   /// BUG-1004：host 端本地裁 mining 句子音频（见抽象声明）。用 [resolveVideoFile] 反查真实
   /// 本地文件后调 [extractAudioSegmentViaFfmpeg]（本地路径、不经网络/TLS——绕开 client
   /// ffmpeg 抓 host 自签 https/token 流的整类失败）。裁到独立临时目录，产物返回给调用方，

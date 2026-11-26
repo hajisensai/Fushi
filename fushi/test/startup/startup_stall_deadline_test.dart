@@ -86,7 +86,7 @@ void main() {
     expect(watchdog, contains('CheckStartupReveal(s);'));
     expect(
       watchdog,
-      contains('ShowWindowAsync(g_main_window, SW_SHOW)'),
+      contains('PostMessageW(g_main_window, ForceStartupRevealMessage()'),
       reason: '强制显窗必须投递式：主线程真卡住时看门狗线程不能跟着阻塞',
     );
     expect(watchdog, contains('SetPropW(g_main_window, kMainWindowShownProp'));

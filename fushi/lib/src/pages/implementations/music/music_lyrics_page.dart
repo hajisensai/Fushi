@@ -512,8 +512,15 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
   BuildContext get _themedContext => _themedKey.currentContext ?? context;
 
   /// build 里调：封面或明暗变了才重新取色。
-  void _resolveCoverScheme(String? coverPath, Brightness brightness) {
-    final ImageProvider? cover = musicLyricsBackdropCoverProvider(coverPath);
+  void _resolveCoverScheme(
+    String? coverPath,
+    String? embeddedFromPath,
+    Brightness brightness,
+  ) {
+    final ImageProvider? cover = musicLyricsBackdropCoverProvider(
+      coverPath,
+      embeddedFromPath: embeddedFromPath,
+    );
     // ImageProvider 按值比较（FileImage 比路径），同一封面不重取。
     if (cover == _schemeSource && brightness == _schemeBrightness) return;
     _schemeSource = cover;
@@ -630,6 +637,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
     final Object shape = (
       item?.trackUid,
       item?.coverPath,
+      item?.embeddedCoverPath,
       _engine.isPlaying,
       _engine.duration,
       _engine.abLoop,
@@ -1945,6 +1953,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       children: <Widget>[
         MusicLyricsBackdrop(
           coverPath: item?.coverPath,
+          embeddedFromPath: item?.embeddedCoverPath,
           style: MusicLyricsBackdropStyle.fromPref(
             appModel.prefsRepo.musicLyricsBackdropStyle,
           ),
@@ -2061,7 +2070,11 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
       page = FushiAppleDarkTier(child: page);
     } else {
       final ThemeData base = Theme.of(context);
-      _resolveCoverScheme(item?.coverPath, base.brightness);
+      _resolveCoverScheme(
+        item?.coverPath,
+        item?.embeddedCoverPath,
+        base.brightness,
+      );
       final ColorScheme? scheme = _coverScheme;
       // 结构恒定（没取到色时也挂一层原主题）：换色不重挂整页。
       page = Theme(
@@ -2231,6 +2244,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                       top: inset,
                       child: _SpinningDisc(
                         coverPath: item?.coverPath,
+                        embeddedFromPath: item?.embeddedCoverPath,
                         discArtPath: discArt,
                         size: disc,
                         spinning: _engine.isPlaying,
@@ -2296,6 +2310,7 @@ class _MusicLyricsPageState extends BaseSourcePageState<MusicLyricsPage> {
                     builder: (BuildContext context, String? discArt) =>
                         _SpinningDisc(
                           coverPath: item?.coverPath,
+                          embeddedFromPath: item?.embeddedCoverPath,
                           discArtPath: discArt,
                           size: disc,
                           spinning: _engine.isPlaying,
@@ -3541,7 +3556,11 @@ class _LyricsCover extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) => musicMaterialCover(
-    MusicCover(coverPath: item?.coverPath, size: compact ? size : 640),
+    MusicCover(
+      coverPath: item?.coverPath,
+      embeddedFromPath: item?.embeddedCoverPath,
+      size: compact ? size : 640,
+    ),
     compact: compact,
     // 播放器里的大封面跟随指针 3D 倾斜（用户 2026-10-29：「加回去」）；顶行的
     // 小封面不倾斜。
@@ -3638,12 +3657,16 @@ class _DiscArtLookupState extends State<_DiscArtLookup> {
 class _SpinningDisc extends StatefulWidget {
   const _SpinningDisc({
     required this.coverPath,
+    required this.embeddedFromPath,
     required this.discArtPath,
     required this.size,
     required this.spinning,
   });
 
   final String? coverPath;
+
+  /// 没有 [coverPath] 时读内嵌封面的音频文件。
+  final String? embeddedFromPath;
 
   /// 当前专辑的盘面扫描图；null 时画黑胶。
   final String? discArtPath;
@@ -3745,6 +3768,7 @@ class _SpinningDiscState extends State<_SpinningDisc>
                     dimension: label,
                     child: MusicCover(
                       coverPath: widget.coverPath,
+                      embeddedFromPath: widget.embeddedFromPath,
                       size: label,
                       borderRadius: BorderRadius.zero,
                     ),

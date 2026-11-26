@@ -1196,6 +1196,21 @@ pub fn rwkv_cards(
     })
 }
 
+/// `ffsrs_store_rwkv_rows` 模式 2（末条：每张卡最后一条保留评分，读缓存层的 `rwkv_last`）。
+pub fn rwkv_last(
+    c: &G4Core,
+    profile: Option<&str>,
+    groups: &[Vec<String>],
+) -> Result<Vec<u8>, String> {
+    let cards: Vec<String> = groups.iter().filter_map(|g| g.first().cloned()).collect();
+    if cards.len() != groups.len() {
+        return Err("rwkv: empty card group".into());
+    }
+    direct(c, profile, groups, |t, col| {
+        cmd::training::rwkv_last(t, col, &cards)
+    })
+}
+
 /// `ffsrs_store_rwkv_rows` 模式 1（回放；页里一定有 profile 行，协议 3 同样要它）。
 pub fn rwkv_replay(
     c: &G4Core,

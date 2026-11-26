@@ -54,11 +54,13 @@ void main() {
       c.debugUpdateCueForPosition(2500); // cue1
       c.debugUpdateCueForPosition(3100); // 越过 cue1 句尾进入首尾相接的 cue2
       await _flush();
-      expect(actions, <String>['pause', 'seek:3000']);
+      // 落点在句尾之前（mKqIAxIvZA）：3000 整点是 cue2 句首，停在那里屏幕上已是下一句。
+      expect(actions, <String>['pause', 'seek:2900']);
 
       actions.clear();
-      // 落点 = cue1 句尾；续播进入 cue2，cue2 播完落进 gap → 再停。
-      c.debugUpdateCueForPosition(3000);
+      // 落点 = cue1 句尾前；续播进入 cue2，cue2 播完落进 gap → 再停。
+      c.debugUpdateCueForPosition(2900);
+      c.debugUpdateCueForPosition(3100);
       c.debugUpdateCueForPosition(3500);
       c.debugUpdateCueForPosition(4200);
       await _flush();
@@ -89,12 +91,84 @@ void main() {
       c.debugUpdateCueForPosition(500);
       c.debugUpdateCueForPosition(1200); // 一拍跨进 cue1
       await _flush();
-      expect(actions, <String>['pause', 'seek:1000']);
+      expect(actions, <String>['pause', 'seek:900']);
       actions.clear();
-      c.debugUpdateCueForPosition(1000); // 落点（cue0 句尾，仍在 cue0 内）
+      c.debugUpdateCueForPosition(900); // 落点（cue0 句尾前，仍在 cue0 内）
+      c.debugUpdateCueForPosition(899); // 落点回报取整早 1ms 也不算往回跳
       c.debugUpdateCueForPosition(1050); // 续播落进 gap
       await _flush();
       expect(actions, isEmpty, reason: 'cue0 已停过');
+    });
+
+    test('句中按「下一句」：跳过去，不被拉回本句句尾（mKqIAxIvZA）', () async {
+      final (:VideoPlayerController c, :List<String> actions) = _setUp();
+      addTearDown(c.dispose);
+      c.setAutoPauseAtCueEnd(true);
+      c.debugSetPositionForTesting(2500);
+      c.debugUpdateCueForPosition(2500); // cue1 句中
+      await c.skipToNextCue(); // → cue2（与 cue1 首尾相接）
+      // seek 落地后的第一拍已在 cue2 里（越过 cue1 句尾），此刻 currentCueIndex 还是 cue1。
+      c.debugUpdateCueForPosition(3050);
+      await _flush();
+      expect(actions, isEmpty, reason: '主动跳句不是 cue1 自然播完');
+      expect(c.currentCueIndex, 2);
+      // cue2 照常在句尾停。
+      c.debugUpdateCueForPosition(3900);
+      c.debugUpdateCueForPosition(4200);
+      await _flush();
+      expect(actions, <String>['pause']);
+    });
+
+    test('句中按「下一句」跨 gap：seek 落地前的第一拍就越过本句句尾也不停', () async {
+      final (:VideoPlayerController c, :List<String> actions) = _setUp();
+      addTearDown(c.dispose);
+      c.setAutoPauseAtCueEnd(true);
+      c.debugUpdateCueForPosition(500); // cue0 句中
+      c.debugSetPositionForTesting(500);
+      await c.skipToNextCue(); // → cue1（中间 1000ms gap）
+      c.debugUpdateCueForPosition(1820); // 前导余量落点：越过 cue0 句尾、在 gap 里
+      c.debugUpdateCueForPosition(2100);
+      await _flush();
+      expect(actions, isEmpty);
+      expect(c.currentCueIndex, 1);
+    });
+
+    test('句中往后 seek（±秒 / 点列表）越过本句句尾：不暂停、不拉回', () async {
+      final (:VideoPlayerController c, :List<String> actions) = _setUp();
+      addTearDown(c.dispose);
+      c.setAutoPauseAtCueEnd(true);
+      c.debugUpdateCueForPosition(2500); // cue1
+      await c.seekMs(6500); // cue3
+      c.debugUpdateCueForPosition(6500);
+      await _flush();
+      expect(actions, isEmpty);
+      expect(c.currentCueIndex, 3);
+    });
+
+    test('句内往回 seek 不作废本句句尾暂停', () async {
+      final (:VideoPlayerController c, :List<String> actions) = _setUp();
+      addTearDown(c.dispose);
+      c.setAutoPauseAtCueEnd(true);
+      // 播放态：普通 seek 的在途保护只在播放时按真实位置放行（暂停态一直钉在目标上）。
+      c.debugSetIsPlayingForTesting(true);
+      c.debugUpdateCueForPosition(2800); // cue1
+      await c.seekMs(2200); // 仍在 cue1，句尾之前
+      for (int ms = 2200; ms <= 3100; ms += 150) {
+        c.debugUpdateCueForPosition(ms);
+      }
+      await _flush();
+      expect(actions, <String>['pause', 'seek:2900']);
+    });
+
+    test('句尾落点：句尾前 lead，短句不早于句首', () {
+      expect(
+        VideoPlayerController.subtitleEndHoldLandingMs(_cue(0, 2000, 3000)),
+        3000 - VideoPlayerController.kSubtitleEndHoldLeadMs,
+      );
+      expect(
+        VideoPlayerController.subtitleEndHoldLandingMs(_cue(0, 2000, 2050)),
+        2000,
+      );
     });
 
     test('关着：照常往下播', () async {

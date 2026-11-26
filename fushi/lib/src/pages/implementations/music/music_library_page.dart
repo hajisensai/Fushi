@@ -658,7 +658,7 @@ class _MusicLibraryPageState extends ConsumerState<MusicLibraryPage> {
         engine.playQueue(
           <MusicPlayItem>[
             for (final MusicTrackRow t in tracks)
-              musicPlayItemOf(t, album: album),
+              musicPlayItemOf(t, album: album, trackPathOf: snap.trackPathOf),
           ],
           startIndex: start < 0 ? 0 : start,
           context: album == null

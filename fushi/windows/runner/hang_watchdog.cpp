@@ -1,12 +1,15 @@
 #include "hang_watchdog.h"
 
 #include <windows.h>
+#include <dwmapi.h>
 
 #include <atomic>
 #include <cstdint>
 #include <cwchar>
 #include <string>
 
+#include "code_integrity_probe.h"
+#include "code_integrity_report.h"
 #include "crash_dump.h"
 #include "native_glog.h"
 #include "startup_reveal_policy.h"
@@ -123,6 +126,8 @@ namespace fushi
       ULONGLONG started_ms = 0;
       bool main_window_shown = false;
       bool startup_reveal_forced = false;
+      // 本次启动的代码完整性拦截记录查过没有（code_integrity_probe.h，BUG-5484）。
+      bool code_integrity_probed = false;
     };
 
     // 抓一份 hang dump 并记录：dump 与 hang_watchdog.log 这两样证据只用栈缓冲和
@@ -215,12 +220,22 @@ namespace fushi
     }
 
     // 主窗第一次可见：挂上「显示过」属性（第二个进程据此区分启动中 / 退出中）。
-    // 一直没显示：过了启动期限就抓 dump、记日志、ShowWindowAsync 显窗——Async 只是
-    // 往主线程投递，主线程若真卡住看门狗线程也不会跟着阻塞。
+    // 一直没显示：过了启动期限就抓 dump、记日志、PostMessageW 请主窗线程撤隐身并
+    // 显窗——投递式，主线程若真卡住看门狗线程也不会跟着阻塞。
     void CheckStartupReveal(WatchdogState& s)
     {
       if (s.main_window_shown) return;
-      if (IsWindowVisible(g_main_window)) {
+      // BUG-5521: a startup maximize shows the window cloaked until Dart's
+      // reveal — Win32-visible, but nothing on screen yet.
+      // Only the app's own cloak counts: DWM_CLOAKED_SHELL (another virtual
+      // desktop) is not "never revealed".
+      DWORD cloaked = 0;
+      if (FAILED(DwmGetWindowAttribute(g_main_window, DWMWA_CLOAKED, &cloaked,
+            sizeof(cloaked)))) {
+        cloaked = 0;
+      }
+      if (IsWindowUserVisible(IsWindowVisible(g_main_window) != FALSE,
+            IsStartupCloaked(cloaked))) {
         s.main_window_shown = true;
         SetPropW(g_main_window, kMainWindowShownProp,
           reinterpret_cast<HANDLE>(static_cast<INT_PTR>(1)));
@@ -244,7 +259,24 @@ namespace fushi
           L"never revealed it); force-showing it; hang dump=%s",
           elapsed_ms, "startup-hidden: ms=");
       }
-      ShowWindowAsync(g_main_window, SW_SHOW);
+      // Posted, like ShowWindowAsync, so a stuck main thread never blocks the
+      // watchdog; the handler lifts the startup cloak and shows the window
+      // (Win32Window::MessageHandler).
+      PostMessageW(g_main_window, ForceStartupRevealMessage(), 0, 0);
+      // 智能应用控制 / WDAC 拦下的文件只记在 CodeIntegrity 事件日志里，用户不会去翻：
+      // 卡住这一刻自动读出来，和 dump 一起落盘（BUG-5484）。
+      s.code_integrity_probed = true;
+      StartCodeIntegrityProbe(true);
+    }
+
+    // 每次启动查一次（不管卡没卡）：被拦的 DLL 可能只让某个功能静默失效。
+    void CheckCodeIntegrityProbe(WatchdogState& s)
+    {
+      if (s.code_integrity_probed) return;
+      const ULONGLONG now_ms = UnbiasedNowMs();
+      if (now_ms < s.started_ms + kCodeIntegrityLaunchProbeDelayMs) return;
+      s.code_integrity_probed = true;
+      StartCodeIntegrityProbe(false);
     }
 
     DWORD WINAPI WatchdogMain(LPVOID)
@@ -259,6 +291,7 @@ namespace fushi
           return 0;
         }
         CheckStartupReveal(s);
+        CheckCodeIntegrityProbe(s);
         CheckDartSilence(s);
         SettleAckedHeartbeat(s);
         if (s.in_flight) {

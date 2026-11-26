@@ -233,16 +233,26 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
       onPlayNext: queue
           ? () => unawaited(
               _runBatch(
-                (List<MusicLibraryEntry> picked) =>
-                    musicQueueEntries(engine, picked, albums, next: true),
+                (List<MusicLibraryEntry> picked) => musicQueueEntries(
+                  engine,
+                  picked,
+                  albums,
+                  trackPathOf: musicTrackPathsOf(tracks),
+                  next: true,
+                ),
               ),
             )
           : null,
       onAddToQueue: queue
           ? () => unawaited(
               _runBatch(
-                (List<MusicLibraryEntry> picked) =>
-                    musicQueueEntries(engine, picked, albums, next: false),
+                (List<MusicLibraryEntry> picked) => musicQueueEntries(
+                  engine,
+                  picked,
+                  albums,
+                  trackPathOf: musicTrackPathsOf(tracks),
+                  next: false,
+                ),
               ),
             )
           : null,
@@ -384,7 +394,8 @@ class _MusicAlbumPageState extends ConsumerState<MusicAlbumPage> {
   }
 
   List<MusicPlayItem> _items() => <MusicPlayItem>[
-    for (final MusicTrackRow t in tracks) musicPlayItemOf(t, album: album),
+    for (final MusicTrackRow t in tracks)
+      musicPlayItemOf(t, album: album, trackPathOf: musicTrackPathsOf(tracks)),
   ];
 
   /// 「播放全部 / 随机播放」：从头放整张并直接进播放页（返回回到专辑页）。
@@ -805,11 +816,12 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
       for (final MusicTrackRow t in tracks)
         musicTrackResumeOf(t, _resume[t.trackUid], mode),
     ];
+    final MusicTrackPathOf trackPathOf = musicTrackPathsOf(allTracks);
     void play(int i) => unawaited(
       engine.playQueue(
         <MusicPlayItem>[
           for (final MusicTrackRow t in allTracks)
-            musicPlayItemOf(t, album: album),
+            musicPlayItemOf(t, album: album, trackPathOf: trackPathOf),
         ],
         startIndex: allTracks.indexOf(tracks[i]),
         context: MusicQueueContext.album,
@@ -832,6 +844,8 @@ class _AlbumDiscListState extends ConsumerState<_AlbumDiscList> {
     MusicItemMenu menuOf(int i) => musicLocalTrackMenu(
       context,
       tracks[i],
+      album: album,
+      trackPathOf: trackPathOf,
       onPlay: () => play(i),
       extra: <MusicMenuAction>[
         MusicMenuAction(

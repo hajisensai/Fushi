@@ -702,6 +702,11 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
         );
         _watch = MangaReadAloudSessionWatch(
           c,
+          // 长时连续朗读持有音频焦点（speech / gain），暂停 / 停止 / 读完释放（BUG-5505：
+          // 共用播放器的短预览在 Android 上不再自己申请焦点）。
+          onRunningChanged: (bool running) => unawaited(
+            DesktopAudioPlayback.holdLongPlayback(this, active: running),
+          ),
           onActiveChanged: _rebuild,
           onFinished: _onFinished,
         );
@@ -821,6 +826,7 @@ class _MangaReadAloudSupport implements MangaReadAloudHost {
     _failWaiters(MangaPageTextUnavailableReason.cancelled);
     _watch?.dispose();
     _watch = null;
+    unawaited(DesktopAudioPlayback.holdLongPlayback(this, active: false));
     if (c == null) return;
     c.dispose();
   }

@@ -655,6 +655,7 @@ class _CurrentRow extends StatelessWidget {
         children: <Widget>[
           MusicCover(
             coverPath: item.coverPath,
+            embeddedFromPath: item.embeddedCoverPath,
             size: 48,
             borderRadius: FushiM3eShape.smallRadius,
           ),
@@ -872,6 +873,7 @@ class _QueueRowState extends State<_QueueRow> {
         children: <Widget>[
           MusicCover(
             coverPath: widget.item.coverPath,
+            embeddedFromPath: widget.item.embeddedCoverPath,
             size: 44,
             borderRadius: FushiM3eShape.smallRadius,
           ),

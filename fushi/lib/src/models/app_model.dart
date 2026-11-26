@@ -197,6 +197,7 @@ import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/models/home_dashboard_panel.dart';
 import 'package:fushi/src/models/home_widget_layout.dart';
 import 'package:fushi/src/storage/android_stray_library_merge.dart';
+import 'package:fushi/src/storage/library_sentinel.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/books_directory.dart';
 import 'package:fushi/src/storage/download_layout.dart';
@@ -5854,6 +5855,33 @@ class AppModel
           androidLocation: AppPaths.decidedAndroidDocumentsLocation,
         ),
       );
+      // BUG-5492：书库消失哨兵（只 Android：外部 `Android/data` 书库能被文件管理器 / 电脑 /
+      // 清理工具整树删掉）。必须在书库根判定、散书合并、沙箱重定位之后：此刻的
+      // `_appDirectory` 才是本次真正用的书库根。只判定、只写哨兵与记录，不动书库文件；
+      // 发现被清空就把现场留在记录里，首页提示用户上传日志。
+      if (Platform.isAndroid) {
+        final LibrarySentinelResult sentinel = await LibrarySentinel.check(
+          libraryRoot: _appDirectory,
+          supportRoot: _databaseDirectory,
+        );
+        final LibraryVanishIncident? incident = sentinel.incident;
+        if (incident != null) {
+          ErrorLogService.instance.logDataLocation(
+            'LibrarySentinel',
+            incident.describe(),
+          );
+        } else if (sentinel.status == LibrarySentinelStatus.error) {
+          ErrorLogService.instance.logDataLocation(
+            'LibrarySentinel',
+            '检查失败（未改动任何文件）：${sentinel.error}',
+          );
+        } else if (sentinel.status != LibrarySentinelStatus.intact) {
+          ErrorLogService.instance.logDataLocation(
+            'LibrarySentinel',
+            '${sentinel.status.name}：${_appDirectory.path}',
+          );
+        }
+      }
       //    cloud backup backend can now coexist);
       // 4) BUG-1576: drop the pre-decoupling GLOBAL folder cache. Two channels
       //    took turns writing that single pair of keys, so its value can no

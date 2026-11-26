@@ -1,6 +1,9 @@
 import 'dart:io';
 import 'dart:isolate';
 import 'dart:typed_data';
+import 'dart:ui' as ui;
+
+import 'package:flutter/foundation.dart' show SynchronousFuture;
 
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi_music/fushi_music.dart';
@@ -48,6 +51,51 @@ class MusicEmbeddedCoverCache {
     }
     return loading;
   }
+}
+
+/// 曲目内嵌封面的 [ImageProvider]（字节来自 [MusicEmbeddedCoverCache]，与 [MusicCover]
+/// 显示的同一份）：歌词页流体背景、封面取色这类只认 [ImageProvider] 的消费方用它接上
+/// 只有内嵌封面的曲目。按音频路径判等，同一首不重复解码。
+@immutable
+class MusicEmbeddedCoverImage extends ImageProvider<MusicEmbeddedCoverImage> {
+  const MusicEmbeddedCoverImage(this.audioPath);
+
+  /// 带内嵌封面的音频文件路径。
+  final String audioPath;
+
+  @override
+  Future<MusicEmbeddedCoverImage> obtainKey(ImageConfiguration configuration) =>
+      SynchronousFuture<MusicEmbeddedCoverImage>(this);
+
+  @override
+  ImageStreamCompleter loadImage(
+    MusicEmbeddedCoverImage key,
+    ImageDecoderCallback decode,
+  ) => MultiFrameImageStreamCompleter(
+    codec: _loadCodec(key, decode),
+    scale: 1,
+    debugLabel: 'MusicEmbeddedCoverImage(${key.audioPath})',
+  );
+
+  static Future<ui.Codec> _loadCodec(
+    MusicEmbeddedCoverImage key,
+    ImageDecoderCallback decode,
+  ) async {
+    final Uint8List? bytes = await MusicEmbeddedCoverCache.instance.load(
+      key.audioPath,
+    );
+    if (bytes == null || bytes.isEmpty) {
+      throw StateError('no embedded cover in ${key.audioPath}');
+    }
+    return decode(await ui.ImmutableBuffer.fromUint8List(bytes));
+  }
+
+  @override
+  bool operator ==(Object other) =>
+      other is MusicEmbeddedCoverImage && other.audioPath == audioPath;
+
+  @override
+  int get hashCode => audioPath.hashCode;
 }
 
 /// 音乐页的悬停不放大（用户 2026-10-29：「音乐这鼠标悬浮上去会放大，砍掉」），
@@ -225,12 +273,25 @@ Widget musicDiscArtImage(String path) => MusicDiscFace(
 );
 
 /// [MusicCover] 同一套来源规则下的封面 provider（取色用，[size] 同显示尺寸）：
-/// `http(s)://` 走 [musicRemoteCoverProvider]（磁盘缓存），本地文件走 [FileImage]；内嵌封面 / 没有封面
-/// 返回 null。
-ImageProvider? musicCoverImageProvider(String? coverPath, {double size = 64}) {
+/// `http(s)://` 走 [musicRemoteCoverProvider]（磁盘缓存），本地文件走 [FileImage]；没有封面文件时
+/// 用 [embeddedFromPath] 的内嵌封面（[MusicEmbeddedCoverImage]）；都没有返回 null。
+ImageProvider? musicCoverImageProvider(
+  String? coverPath, {
+  double size = 64,
+  String? embeddedFromPath,
+}) {
   final String? file = coverPath;
-  if (file == null || file.isEmpty) return null;
   final int width = (size * 2).round();
+  if (file == null || file.isEmpty) {
+    final String? embedded = embeddedFromPath;
+    return embedded == null || embedded.isEmpty
+        ? null
+        : ResizeImage.resizeIfNeeded(
+            width,
+            null,
+            MusicEmbeddedCoverImage(embedded),
+          );
+  }
   if (file.startsWith('http://') || file.startsWith('https://')) {
     return ResizeImage.resizeIfNeeded(
       width,

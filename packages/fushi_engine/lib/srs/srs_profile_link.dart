@@ -136,6 +136,7 @@ class SrsRemoteProfile {
     this.mergingInto = const <String, String>{},
     this.collection,
     this.joinHints = const <SrsJoinHint>[],
+    this.retiredWriters = const <String>{},
   });
 
   /// 显示名：[names] 的第一个（最近改动过的说明文件报的名字），没有时用 uid。
@@ -152,8 +153,15 @@ class SrsRemoteProfile {
   /// 目录里的并入提示（[kSrsJoinHintPrefix]）：别的集合已经把这个集合并了进去。
   final List<SrsJoinHint> joinHints;
 
-  /// 目录里的写入者（`<deviceId>#<化身号>`）。
+  /// 目录里的写入者（`<deviceId>#<化身号>`）。含 [retiredWriters]。
   final List<String> writers;
+
+  /// 只在已退役的旧位置里出现过的写入者：目录立了新代根 `v4/`（[collection] 读自 `v4/meta.json`），而它在
+  /// `v4/devices/` 下没有设备目录、只在旧根 `v3/` / `v2/`（新代立根后都立了围栏，旧版本在握手就停下）或旧格式写入者
+  /// 目录里留着。它不会再往这个集合写东西，不是成员：[stayingWriters] 不含它，名字、有无笔记、笔记数、设备名、最新
+  /// 时刻也都不采信它的说明文件——那是它停在旧版本时的样子（BUG-5526：平板目录里一台协议 1 时代的旧设备让关联
+  /// 永远判成「已关联」，平板从此不再采用电脑的集合）。
+  final Set<String> retiredWriters;
 
   /// 各写入者说明文件里最新的修改时刻（毫秒；后端不给或没有说明文件时为 null）。让用户分辨候选用。
   final int? updatedAt;
@@ -187,9 +195,10 @@ class SrsRemoteProfile {
   /// 写入者算作这个 profile 的成员（BUG-4296）。旧版本不写这个键：空，按以前那样算。
   final Map<String, String> mergingInto;
 
-  /// 不在离开中的写入者（[writers] 去掉 [mergingInto] 里的）。
-  Iterable<String> get stayingWriters =>
-      writers.where((String w) => !mergingInto.containsKey(w));
+  /// 还算这个集合成员的写入者（[writers] 去掉离开中的 [mergingInto] 与已退役的 [retiredWriters]）。
+  Iterable<String> get stayingWriters => writers.where(
+    (String w) => !mergingInto.containsKey(w) && !retiredWriters.contains(w),
+  );
 }
 
 /// 关联决定。
@@ -373,11 +382,14 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
     // 写入者 → 当前采信的那份说明文件的（来源优先级, 修改时刻）。同一写入者可能有好几份（协议 3 时代写在旧根
     // `v3/devices/`，现在写 `v4/devices/`，旧那份没人删）：采信哪份按优先级 + 时刻定，不按目录列举顺序。
     final Map<String, (int, int?)> chosenOf = <String, (int, int?)>{};
-    bool? hasNotes;
-    int? updatedAt;
-    final List<String> devices = <String>[];
-    int? noteCount;
+    // 有无笔记、笔记数、最新时刻、设备名按写入者分开记，列完、知道谁已退役（[SrsRemoteProfile.retiredWriters]）之后再汇总。
+    final Map<String, bool> hasNotesOf = <String, bool>{};
+    final Map<String, int> atOf = <String, int>{};
+    final Map<String, int> noteCountOf = <String, int>{};
+    final List<(String, String)> deviceOf = <(String, String)>[];
     final Map<String, String> mergingInto = <String, String>{};
+    // `v4/devices/` 下有设备目录的写入者（只有 head、没发布说明文件的也算：它在新代根上同步着）。
+    final Set<String> v4Writers = <String>{};
     String? v4Collection;
     String? v3Collection;
     final List<SrsJoinHint> hints = <SrsJoinHint>[];
@@ -394,7 +406,7 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
       final Map<String, Object?>? info = read.$1;
       if (info == null) return false;
       final int? at = read.$2;
-      if (at != null && (updatedAt == null || at > updatedAt!)) updatedAt = at;
+      if (at != null && at > (atOf[writer] ?? -1)) atOf[writer] = at;
       final (int, int?)? prev = chosenOf[writer];
       final bool chosen =
           prev == null ||
@@ -422,14 +434,14 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
         }
       }
       final Object? notes = info['hasNotes'];
-      if (notes is bool) hasNotes = (hasNotes ?? false) || notes;
-      final Object? device = info['device'];
-      if (device is String && device.isNotEmpty && !devices.contains(device)) {
-        devices.add(device);
+      if (notes is bool) {
+        hasNotesOf[writer] = (hasNotesOf[writer] ?? false) || notes;
       }
+      final Object? device = info['device'];
+      if (device is String && device.isNotEmpty) deviceOf.add((writer, device));
       final Object? count = info['notes'];
-      if (count is int && (noteCount == null || count > noteCount!)) {
-        noteCount = count;
+      if (count is int && count > (noteCountOf[writer] ?? -1)) {
+        noteCountOf[writer] = count;
       }
       return true;
     }
@@ -450,6 +462,7 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
           for (final AssetEntry dev in await store.listChildren(d.id)) {
             if (!dev.isFolder) continue;
             final String name = srsV2WriterName(dev.name);
+            v4Writers.add(name);
             if (await readInfo(name, dev.id, _kSrsInfoRankV4) &&
                 !writers.contains(name)) {
               writers.add(name);
@@ -483,6 +496,32 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
       writers.add(w.name);
       await readInfo(w.name, w.id, _kSrsInfoRankLegacy);
     }
+    final Set<String> retired = v4Collection == null
+        ? const <String>{}
+        : <String>{
+            for (final String w in writers)
+              if (!v4Writers.contains(w)) w,
+          };
+    bool live(String w) => !retired.contains(w);
+    nameOf.removeWhere((String w, _) => !live(w));
+    nameAtOf.removeWhere((String w, _) => !live(w));
+    mergingInto.removeWhere((String w, _) => !live(w));
+    bool? hasNotes;
+    for (final MapEntry<String, bool> e in hasNotesOf.entries) {
+      if (live(e.key)) hasNotes = (hasNotes ?? false) || e.value;
+    }
+    int? updatedAt;
+    for (final MapEntry<String, int> e in atOf.entries) {
+      if (live(e.key) && e.value > (updatedAt ?? -1)) updatedAt = e.value;
+    }
+    int? noteCount;
+    for (final MapEntry<String, int> e in noteCountOf.entries) {
+      if (live(e.key) && e.value > (noteCount ?? -1)) noteCount = e.value;
+    }
+    final List<String> devices = <String>[];
+    for (final (String w, String device) in deviceOf) {
+      if (live(w) && !devices.contains(device)) devices.add(device);
+    }
     // 名字集合按「说明文件新的在前、同刻按写入者名（UTF-16 码元序）」排（[SrsRemoteProfile.displayName] 取第一个），
     // 不跟目录列举顺序走。
     final List<String> byRecency = nameOf.keys.toList()
@@ -507,6 +546,7 @@ Future<List<SrsRemoteProfile>> srsListRemoteProfiles(
         mergingInto: mergingInto,
         collection: v4Collection ?? v3Collection,
         joinHints: hints,
+        retiredWriters: retired,
       ),
     );
   }

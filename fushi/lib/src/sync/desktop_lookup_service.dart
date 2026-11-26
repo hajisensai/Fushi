@@ -154,8 +154,9 @@ class DesktopLookupService extends ChangeNotifier {
     // 对没有 flash 的窗口是 no-op）。
     // 进程级前台判据只说明「前台属于 Fushi 进程」，不说明主窗看得见：主窗「关闭到
     // 托盘」（SW_HIDE）后，托盘菜单 / 剪贴板查词面板等同进程窗口拿着前台时判据照样
-    // 为真——此时更要 show，否则主窗永远藏着。
-    if (await _isFushiForeground() && await _isMainWindowVisible()) {
+    // 为真——此时更要 show，否则主窗永远藏着。最小化同理：IsWindowVisible 对最小化
+    // 窗口也为真，得另看最小化，否则主窗一直缩在任务栏里。
+    if (await _isFushiForeground() && await _isMainWindowOnScreen()) {
       await WindowCaptionChannel.clearTaskbarFlash();
       return;
     }
@@ -220,11 +221,12 @@ class DesktopLookupService extends ChangeNotifier {
     return _isWindowFocused();
   }
 
-  /// 主窗是否可见（没被收进托盘）。查不到时按「可见」答，保持
-  /// [bringMainWindowToFront] 原有的「已前台就不动」行为，不因瞬态失败引出任务栏闪烁。
-  Future<bool> _isMainWindowVisible() async {
+  /// 主窗确实摆在屏幕上（可见且未最小化）。查不到时按「在屏上」处理，保持
+  /// 防任务栏闪烁的旧行为。
+  Future<bool> _isMainWindowOnScreen() async {
     try {
-      return await windowManager.isVisible();
+      return await windowManager.isVisible() &&
+          !await windowManager.isMinimized();
     } on MissingPluginException {
       return true;
     } on PlatformException {

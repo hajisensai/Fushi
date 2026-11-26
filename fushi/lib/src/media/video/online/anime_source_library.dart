@@ -181,9 +181,10 @@ class AnimeSourceLibrary {
         added.add(info.id);
         addedInfos.add(info);
       }
-      // 已在库的集也重新收养一次：合集被用户删掉后重新加入能回到合集里。
-      await adoption.adoptVideo(info, userIntent: userIntent);
     }
+    // 已在库的集也重新收养一次：合集被用户删掉后重新加入能回到合集里；整部作品
+    // 一起收养，整理记录只读一次（BUG-5518）。
+    await adoption.adoptVideos(infos, userIntent: userIntent);
     if (added.isNotEmpty) {
       await repository.recordVideoImportActivity(
         bookUid: added.first,

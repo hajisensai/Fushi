@@ -1,0 +1,6 @@
+## BUG-5506 · video-autopause-skip-pulled-back
+- **报告**：2026-11-26（用户：应用内反馈 mKqIAxIvZA，Android 平板）
+- **真实性**：✅ 真 bug。①「每句播完自动暂停」开着时句中按「下一句」被拉回本句句尾：`fushi/lib/src/media/video/video_player_controller.dart` 的 `_shouldHoldAtSubtitleEnd` 按「`_currentCueIndex` 仍是旧句 + 位置已越过它的 endMs」判定句尾暂停，而 `_currentCueIndex` 要等下一拍 tick 才跟上；`skipToCue` → `_rawSeekMs`（以及 `seekMs` 的权威同步、进度条 `notifyExternalSeek`）落地后的第一拍正好是「旧句 + 越过句尾」，被当成自然播完 → `_pauseAndSeekForSubtitleEnd` 暂停并 seek 回旧句句尾。②暂停落点是 `cue.endMs` 整点：相邻字幕首尾相接时这一点就是下一句起点（`JsonAlignmentParser.findCueIndex` 精确命中 startMs 返回下一句），停下时屏幕上已是下一句。
+- **[x] ① 已修复** — 显式 seek 的统一登记点 `_noteSeekIssued` 调 `_voidSubtitleEndHoldOfDepartedCue`，把离开的那句记成已停过（落点仍在它句尾之前时 `_rearmSubtitleEndPauseIfNeeded` 照常重新武装）；`skipToCue` 快照在途、目标是别的句时 `_subtitleEndHoldSupersededByJump` 让旧句的句尾暂停让位（tick 判定与时钟冻结判定两处）。落点改为 `subtitleEndHoldLandingMs` = 句尾前 `kSubtitleEndHoldLeadMs`(100ms，大于 24fps 一帧)，不早于句首；重新武装门槛同步对齐落点（再留 20ms 取整余量）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/video/video_line_study_test.dart`（句中下一句不被拉回 / 跨 gap 下一句第一拍越过句尾也不停 / 往后 seek 越过句尾不停 / 句内往回 seek 仍在句尾停 / 落点函数），`video_line_study_test.dart`、`video_player_replay_cue_test.dart` 的落点期望改成句尾前。
+- **备注**：反馈里「按上一句也被拉回」未复现：往回跳的落点在旧句句尾之前，按代码不会触发句尾暂停；本次修法覆盖了 seek 在途读到越过旧句句尾位置的情形，请用户新版复测。

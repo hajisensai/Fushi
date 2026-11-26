@@ -494,17 +494,16 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
     }
   }
 
-  /// Android：内部 / 外部切换。目标固定，不弹目录选择器；确认框照样列出解析后的落点。
+  /// Android：只剩「外部 → 移回内部」一个方向（BUG-5492：外部 `Android/data` 书库能被
+  /// 文件管理器 / 电脑 / 清理工具整树删掉，不再提供移出去）。目标固定，不弹目录选择器；
+  /// 确认框照样列出解析后的落点。
   Future<void> _changeAndroidLocation() async {
     final bool? external = _androidExternal;
-    if (_migrating || external == null) return;
+    if (_migrating || external != true) return;
     final AppModel appModel = widget.settingsContext.appModel;
-    final bool toExternal = !external;
     final Directory target;
     try {
-      target = toExternal
-          ? await AppPaths.androidExternalDocumentsRoot()
-          : await AppPaths.androidInternalDocumentsRoot();
+      target = await AppPaths.androidInternalDocumentsRoot();
     } catch (e) {
       if (mounted) {
         _showSnackBar(
@@ -519,9 +518,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       DataRootMigrationTarget.androidDocuments(
         documentsRoot: target.path,
         supportRoot: appModel.databaseDirectory.path,
-        location: toExternal
-            ? AppPaths.androidDocumentsLocationExternal
-            : AppPaths.androidDocumentsLocationInternal,
+        location: AppPaths.androidDocumentsLocationInternal,
       ),
     );
     if (!confirmed || !mounted) return;
@@ -529,7 +526,7 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       await startAndroidDocumentsMigration(
         context: context,
         appModel: appModel,
-        toExternal: toExternal,
+        toExternal: false,
         onStarted: () {
           if (mounted) setState(() => _migrating = true);
         },
@@ -1011,13 +1008,14 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
         : t.data_storage_android_internal_hint;
   }
 
-  /// 按钮文案：桌面「更改位置」；Android 按当前位置给出要去的那一档。
-  String get _changeButtonLabel {
-    if (!Platform.isAndroid) return t.data_storage_change_button;
-    return _androidExternal == true
-        ? t.data_storage_android_move_internal
-        : t.data_storage_android_move_external;
-  }
+  /// 按钮文案：桌面「更改位置」；Android 只有「移回内部存储」。
+  String get _changeButtonLabel => Platform.isAndroid
+      ? t.data_storage_android_move_internal
+      : t.data_storage_change_button;
+
+  /// 有没有可做的位置变更：桌面总有；Android 只在书库还在外部时能移回内部。
+  bool get _canChangeLocation =>
+      !Platform.isAndroid || _androidExternal == true;
 
   @override
   Widget build(BuildContext context) {
@@ -1029,8 +1027,11 @@ class _DataRootWidgetState extends State<_DataRootWidget> {
       icon: FushiIcons.folder,
       controlBelow: true,
       // 行 onTap 注册焦点目标（方向导航可达）；trailing 按钮是视觉入口。
-      onTap: _changeLocation,
-      trailing: _migrating
+      // Android 书库已在内部时没有可迁的方向：不给按钮也不注册点击。
+      onTap: _canChangeLocation ? _changeLocation : null,
+      trailing: !_canChangeLocation
+          ? null
+          : _migrating
           ? Row(
               mainAxisSize: MainAxisSize.min,
               children: <Widget>[

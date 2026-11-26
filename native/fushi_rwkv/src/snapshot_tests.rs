@@ -247,6 +247,32 @@ fn streaming_io_errors_before_commit_preserve_both_models() {
     }
 }
 
+/// Snapshots taken before the platform-independent arithmetic (magic
+/// version 1, same layout otherwise) hold states from the old per-platform
+/// kernels: they are refused so the host replays the log (`sched` logs
+/// "RWKV snapshot ignored" and rebuilds).
+#[test]
+fn version_1_snapshots_are_refused() {
+    for small in [true, false] {
+        let model = model(small);
+        let mut runtime = RwkvRuntime::new(&model, StatePrecision::Int8, 1).unwrap();
+        let reviews: Vec<_> = (1..=4).map(|card| row(card, 0, false)).collect();
+        runtime.replay(&reviews, false).unwrap();
+        let mut bytes = runtime.snapshot().unwrap();
+        let (current, old): (&[u8], &[u8]) = if small {
+            (crate::rwkv::small::SNAPSHOT_MAGIC, b"FRWKVSMALL1\0")
+        } else {
+            (crate::rwkv::SNAPSHOT_MAGIC, b"FRWKVSNAP1\0")
+        };
+        assert_eq!(&bytes[..current.len()], current);
+        let mut fresh = RwkvRuntime::new(&model, StatePrecision::Int8, 1).unwrap();
+        fresh.restore(&bytes).unwrap();
+        bytes[..old.len()].copy_from_slice(old);
+        let error = fresh.restore(&bytes).unwrap_err().to_string();
+        assert!(error.contains("version-1"), "{error}");
+    }
+}
+
 #[test]
 fn small_snapshot_files_are_lossless_and_atomic() {
     round_trip(true);

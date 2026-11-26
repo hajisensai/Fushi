@@ -86,6 +86,8 @@ MusicItemMenu musicLocalTrackMenu(
   BuildContext context,
   MusicTrackRow track, {
   required VoidCallback onPlay,
+  MusicAlbumRow? album,
+  MusicTrackPathOf? trackPathOf,
   List<MusicMenuAction> extra = const <MusicMenuAction>[],
 }) => MusicItemMenu(
   buttonKey: ValueKey<String>('music-track-menu-${track.trackUid}'),
@@ -106,7 +108,7 @@ MusicItemMenu musicLocalTrackMenu(
             context,
             listen: false,
           ).read(appProvider).musicSession.engine,
-          () => musicPlayItemOf(track),
+          () => musicPlayItemOf(track, album: album, trackPathOf: trackPathOf),
         ),
         // MV（拍板台 jeNKF9u0WJ；网络来源的串流看，left3568）：在视频播放页看画面
         // （ASS 特效字幕 / 暂停识别画面文字）。视频模块关掉时不给入口。
@@ -135,7 +137,13 @@ MusicItemMenu musicLocalTrackMenu(
               await musicAddItemsToLocalPlaylist(
                 c,
                 app.database,
-                <MusicPlayItem>[musicPlayItemOf(track)],
+                <MusicPlayItem>[
+                  musicPlayItemOf(
+                    track,
+                    album: album,
+                    trackPathOf: trackPathOf,
+                  ),
+                ],
               );
             },
           ),
@@ -497,6 +505,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                   engine,
                   picked,
                   widget.albums,
+                  trackPathOf: _trackPathOf,
                   next: true,
                 ),
               ),
@@ -509,6 +518,7 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
                   engine,
                   picked,
                   widget.albums,
+                  trackPathOf: _trackPathOf,
                   next: false,
                 ),
               ),
@@ -592,7 +602,10 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     final List<MusicPlayItem> items = <MusicPlayItem>[];
     int? start;
     for (int i = 0; i < entries.length; i++) {
-      final MusicPlayItem? item = entries[i].playItem(widget.albums);
+      final MusicPlayItem? item = entries[i].playItem(
+        widget.albums,
+        trackPathOf: _trackPathOf,
+      );
       if (item == null) continue;
       if (i == index) start = items.length;
       items.add(item);
@@ -780,6 +793,8 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
     final MusicItemMenu menu = musicLocalTrackMenu(
       c,
       track,
+      album: _albumOf(track),
+      trackPathOf: _trackPathOf,
       onPlay: play,
       extra: _rowExtras(i),
     );
@@ -886,9 +901,15 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
   MusicTrackCoverSource _localCoverSource(MusicTrackRow track) =>
       musicLocalTrackCoverOf(
         track,
-        album: track.albumUid == null ? null : widget.albums[track.albumUid],
+        album: _albumOf(track),
         pathByUid: _pathByUid,
       );
+
+  MusicAlbumRow? _albumOf(MusicTrackRow track) =>
+      track.albumUid == null ? null : widget.albums[track.albumUid];
+
+  /// 列表里本地曲目的路径查表：播放项与行首封面同一份（[musicLocalTrackCoverOf]）。
+  String? _trackPathOf(String trackUid) => _pathByUid[trackUid];
 
   /// 本地曲目行的封面缩略图（与远程行同尺寸同材质）。
   Widget _localCover(MusicTrackRow track) {
@@ -1070,6 +1091,8 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
         final MusicItemMenu menu = musicLocalTrackMenu(
           c,
           track,
+          album: _albumOf(track),
+          trackPathOf: _trackPathOf,
           onPlay: play,
           extra: _rowExtras(i),
         );
@@ -1081,7 +1104,9 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
               size: size,
               title: track.title,
               subtitle: track.artistCredit ?? t.music_artist_unknown,
-              coverPath: entries[i].playItem(widget.albums)?.coverPath,
+              coverPath: entries[i]
+                  .playItem(widget.albums, trackPathOf: _trackPathOf)
+                  ?.coverPath,
               embeddedFromPath: track.path,
               durationText: musicTrackTimeLabel(track.durationMs, resume),
               playing: playing,
@@ -1149,7 +1174,9 @@ class _MusicTrackListState extends ConsumerState<MusicTrackList> {
   /// 重设计外壳的曲目行（[MusicTrackRowSurface]）接上「正在播放」：第 [i] 行的
   /// 播放项（与 [_play] 排进队列的同一份）是引擎当前曲时常驻铺色 + 标题水印。
   Widget _surfaceRow(int i, Widget Function(bool playing) row) {
-    final String? uid = entries[i].playItem(widget.albums)?.trackUid;
+    final String? uid = entries[i]
+        .playItem(widget.albums, trackPathOf: _trackPathOf)
+        ?.trackUid;
     if (uid == null) return row(false);
     final MusicPlayerEngine engine = ref.read(appProvider).musicSession.engine;
     return MusicNowPlayingMatch(
@@ -1183,16 +1210,11 @@ MusicTrackCoverSource musicLocalTrackCoverOf(
   MusicTrackRow track, {
   required MusicAlbumRow? album,
   required Map<String, String> pathByUid,
-}) {
-  return musicCoverSourceOf(
-    track: track,
-    album: album,
-    albumEmbeddedPath: switch (album?.coverTrackUid) {
-      final String uid => pathByUid[uid],
-      null => null,
-    },
-  );
-}
+}) => musicLocalCoverSourceOf(
+  track,
+  album: album,
+  trackPathOf: (String uid) => pathByUid[uid],
+);
 
 /// 当前的断点续播模式（设置 `music_resume_mode`）；设置里切档时调用方跟着重建。
 MusicResumeMode watchMusicResumeMode(WidgetRef ref) => ref.watch(

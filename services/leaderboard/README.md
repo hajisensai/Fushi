@@ -89,6 +89,7 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 > `0020_decisions.sql`（新表 `decisions` / `decision_notes`，处理台 `/dev/decisions`）：没迁移就部署时只有 `/dev/decisions` 与拍板提交会 500（其余接口不受影响）。纯新表。
 > `0021_install_stats_snapshot.sql`（新表 `install_stats_snapshot`，处理台 `/dev/stats` / `/dev/stats.json` / `/dev/project` 改读安装统计快照）：没迁移就部署时这三页与定时任务的快照一步会 500（其余接口不受影响）——**先迁移**。纯新表。
 > `0022_notices.sql`（新表 `notice_rules` / `notice_known_h` / `notice_seen`，`POST /v1/notices`、`/admin/api/notices/**`、处理台 `/dev/notices`，src/notices.js）：没迁移就部署时这几个接口与定时任务的计数清理一步会 500（定时任务后面的步骤随之不跑）——**先迁移**。纯新表。
+> `0026_feedback_api_keys.sql`（新表 `feedback_api_keys`，反馈密钥 `/v1/agent/feedback/**` 与 `/dev/keys` 的反馈密钥一节）：没迁移就部署时 `/dev/keys` 与反馈 JSON API 会 500（其余接口不受影响）——**先迁移**。纯新表，旧 Worker 不读它。
 > `0025_decision_file_shares.sql`（新表 `decision_file_shares`，拍板台附件公开分享 `/share/f/:token`）：没迁移就部署时 `/dev/decisions`（列表要读分享状态）、拍板 / 上传后的回卡、`/v1/decisions` 列表与公开分享路由会 500——**先迁移**。纯新表，旧 Worker 不读它。
 > `0009_feedback_release.sql`（修复 / 发布追踪列）同理：处理台列表显式选 `fix_*` 列，`/v1/ci/feedback/**` 也读写这些列，没迁移就部署时都会 500（反馈人接口 `SELECT *` 不受影响，`fix` 恒为 null）。
 
@@ -183,8 +184,9 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | POST | `/v1/ci/feedback/fixed` `{sha, ids ≤ 50, scope: app\|none}` | Bearer `FEEDBACK_CI_TOKEN` | CI 标记修复 commit → `{updated, unchanged, missing}`（open / 处理中 → 已解决并记时间线；换了 sha 或 scope 会清空已发布记录，sha 与 scope 都没变的幂等跳过、进 `unchanged`）。没配 secret 时 `/v1/ci/**` 一律 404。手动兜底：`node scripts/feedback.mjs fixed <id> --sha <commit> [--no-app]` |
 | GET | `/v1/ci/feedback/pending?channel&platform` | Bearer | 180 天内、需要新 App、该通道 / 平台还没回填的修复 `{items:[{id, sha}]}`（≤ 500） |
 | POST | `/v1/ci/feedback/released` `{channel, platform, version, ids: [{id, sha}] ≤ 500}` | Bearer | 回填「哪个版本已包含修复」，只记首次 → `{updated}`；行的当前 `fix_sha` 与该条 `sha` 不同（其间被重新标记修复）的静默跳过。只写 `fixed_in`，不刷 `dev_reply_at` / `updated_at`（回填不是开发者回复，不影响红点、「新消息」与处理台排序）。反馈人 / 开发者接口的摘要带 `fix: {sha, scope, at, releases}` |
-| GET/POST | `/dev/**` | 会话 Cookie | 开发者网页处理台（邮箱验证码登录，仅 role = dev；除拍板台外无脚本、POST 验 Origin）：`/dev` 反馈（`/dev/feedback.json?status&cursor&q`、`/dev/f/:id.json` 同数据的 JSON）、`/dev/stats` 安装统计（读定时快照，每 6 小时重算，页面可「刷新」、冷却 15 分钟；`/dev/stats.json` 同一份数据的 JSON 加 `computedAt`，供维护者看板 Fushi Pulse 用同一会话取数，没会话回 401 而不是跳登录页）、`/dev/project` 项目数据（GitHub star / fork / 关注 / issue、App Release 各平台下载、官网 fushi.moe 每日页面浏览 / 访客 / 流量 / 国家；定时任务每 3 / 6 小时取一次存成每日快照画趋势，页面可「立即刷新」；细节见 `src/project_stats.js` 文件头）、`/dev/decisions` 拍板台（AI 代理经 `node scripts/decisions.mjs` 写入待拍事项，开发者点做 / 不做 / 以后 / 永远不做 / 没看懂 / 你定并留言；`POST /dev/d/:id`（带 `Accept: application/json` 回新卡片，不跳转）；页面只放行本站脚本 `/dev/decisions.js`（`src/decisions_client.js`）做无刷新提交、本地切栏、撤销、键盘快捷键，并每 20 秒按签名轮询 `/dev/decisions.json` 同步；没有脚本时退回普通表单；规则见 `docs/agent/decision-board.md`） |
+| GET/POST | `/dev/**` | 会话 Cookie | 开发者网页处理台（邮箱验证码登录，仅 role = dev，`triage` 只能进反馈只读页、批改与 `/dev/keys` 签自己的反馈密钥；除拍板台外无脚本、POST 验 Origin）：`/dev` 反馈（`/dev/feedback.json?status&cursor&q`、`/dev/f/:id.json` 同数据的 JSON）、`/dev/stats` 安装统计（读定时快照，每 6 小时重算，页面可「刷新」、冷却 15 分钟；`/dev/stats.json` 同一份数据的 JSON 加 `computedAt`，供维护者看板 Fushi Pulse 用同一会话取数，没会话回 401 而不是跳登录页）、`/dev/project` 项目数据（GitHub star / fork / 关注 / issue、App Release 各平台下载、官网 fushi.moe 每日页面浏览 / 访客 / 流量 / 国家；定时任务每 3 / 6 小时取一次存成每日快照画趋势，页面可「立即刷新」；细节见 `src/project_stats.js` 文件头）、`/dev/decisions` 拍板台（AI 代理经 `node scripts/decisions.mjs` 写入待拍事项，开发者点做 / 不做 / 以后 / 永远不做 / 没看懂 / 你定并留言；`POST /dev/d/:id`（带 `Accept: application/json` 回新卡片，不跳转）；页面只放行本站脚本 `/dev/decisions.js`（`src/decisions_client.js`）做无刷新提交、本地切栏、撤销、键盘快捷键，并每 20 秒按签名轮询 `/dev/decisions.json` 同步；没有脚本时退回普通表单；规则见 `docs/agent/decision-board.md`） |
 | GET | `/share/f/:token` | 无（链接即凭据） | 拍板台附件公开分享（迁移 0025，`src/decisions.js`）：开发者在处理台附件旁「分享」签发（`POST /dev/d/:id/f/:n/share`，撤销 `…/unshare`），或 API `POST/DELETE /v1/decisions/:id/files/:n/share`。只读一个附件，回包与处理台同一套 CSP sandbox + nosniff，另加 `frame-ancestors 'none'`、`no-store`、`X-Robots-Tag: noindex`；撤销 / 附件已删 / 签发人不再是开发者 → 404。按 IP 过 READ_LIMITER |
+| GET/POST | `/v1/agent/feedback/**` | Bearer 反馈密钥 `ffk_…` | 给 AI 代理读反馈的 JSON API（迁移 0026，`src/feedback_api.js` 文件头）：`GET /v1/agent/feedback?status&q&cursor&limit` 列表、`GET …/:id` 详情（与 `/dev/feedback.json`、`/dev/f/:id.json` 同一份数据）、`GET …/:id/a/:slot` 附件（`log` / `s0..s2` / `v0` / `f0..f2`，`?view=text`）、`POST …/:id/note {devNote, base}` 改内部批改（`base` = 改之前读到的批改，期间被改过 409 `note_changed`，不覆盖）。开发者与 `triage` 都能在 `/dev/keys` 签发（每人 ≤ 5 把未吊销，库里只存 SHA-256），开发者的反馈密钥同样只有这些权限，**不能回复反馈人、改状态**，也碰不到拍板台；与 `fdk_` 拍板台密钥互不通用；账户不再是 dev / triage 后失效。按 IP 过 READ_LIMITER |
 | GET/POST/DELETE | `/v1/decisions/**` | Bearer 开发者个人密钥 `fdk_…` | 拍板台 JSON API（`src/decisions_api.js` 文件头）：列 / 取事项、写待拍事项、Claude 留言、结单、校正决定、附件上传 / 下载 / 删除。密钥由开发者在 `/dev/keys` 自己签发（库里只存 SHA-256，明文只显示一次，每人 ≤ 5 把未吊销），账户被撤开发者后失效；`scripts/decisions.mjs` 设了 `FUSHI_DECISIONS_TOKEN` 就走这里，不需要 Cloudflare 凭据。按 IP 过 READ_LIMITER |
 
 「ticket 或同账户签名」：带了非空 `X-Fushi-Ticket` 就只认 ticket；否则验 `X-Fushi-Account` 签名，反馈须是该账户提交的。
@@ -238,7 +240,7 @@ HTTP Basic Auth（`ADMIN_USER` / `ADMIN_PASS`，未配置时 503 fail-closed）�
 | POST | `/admin/api/accounts/:id/devices/clear` | 清空账户全部设备（用户设备名额满又没有一台还登录着时；之后用邮箱验证码重新登录） |
 | POST | `/admin/api/works/merge` `{from, into}` | 合并误拆的作品 |
 | POST | `/admin/api/works/split` `{ref}` | 拆出误挂的别名（`ref` 带 `kind|` 前缀） |
-| POST | `/admin/api/accounts/:id/role` `{role: 'dev'\|'user'}` | 设 / 撤开发者（反馈处理台；撤销时网页会话一并作废） |
+| POST | `/admin/api/accounts/:id/role` `{role: 'dev'\|'triage'\|'user'}` | 设 / 撤开发者或反馈协查（`triage`：只能看反馈、写内部批改、签自己的反馈密钥 `ffk_…`，不能回复反馈人 / 改状态，处理台其他页面 403；撤成 user 时网页会话一并作废） |
 
 ## APNs 推送（反馈有新回复）
 

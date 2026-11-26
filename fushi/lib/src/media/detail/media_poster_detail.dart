@@ -1398,6 +1398,11 @@ class _HeroImageAspectState extends State<_HeroImageAspect>
   @override
   bool needsBackdropSeed(double aspect) => false;
 
+  /// 背景带高度按比例算：轮播换图时沿用上一张的比例直到新图解码，带高不先塌回
+  /// 兜底高度再撑开（反馈 hmsIkQ9zIv）。
+  @override
+  bool get holdsAspectAcrossImageChange => true;
+
   @override
   Widget build(BuildContext context) =>
       widget.builder(coverFailed ? null : coverAspect);

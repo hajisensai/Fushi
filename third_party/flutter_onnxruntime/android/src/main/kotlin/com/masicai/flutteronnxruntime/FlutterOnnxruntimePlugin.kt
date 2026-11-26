@@ -1075,6 +1075,77 @@ class FlutterOnnxruntimePlugin : FlutterPlugin, MethodCallHandler {
                         result.error("CONVERSION_ERROR", e.message, e.stackTraceToString())
                     }
                 }
+                // Fushi fork (PATCHES.md delta 19, BUG-5508): tensor data crosses as an address,
+                // never as a list -- see NativeTensorMemory for why the list path OOMs Android.
+                "createOrtValueFromAddress" -> {
+                    try {
+                        val sourceType = call.argument<String>("sourceType")
+                        val address = call.argument<Number>("address")?.toLong()
+                        val byteLength = call.argument<Number>("byteLength")?.toLong()
+                        val shape = call.argument<List<Int>>("shape")
+
+                        if (sourceType == null || address == null || byteLength == null || shape == null) {
+                            result.error("INVALID_ARG", "Missing required arguments", null)
+                            return
+                        }
+
+                        val longShape = shape.map { it.toLong() }.toLongArray()
+                        val tensor =
+                            NativeTensorMemory.wrapInput(ortEnvironment, sourceType, address, byteLength, longShape)
+                        val valueId = UUID.randomUUID().toString()
+                        ortValues[valueId] = tensor
+
+                        result.success(
+                            mapOf(
+                                "valueId" to valueId,
+                                "dataType" to sourceType,
+                                "shape" to shape,
+                            ),
+                        )
+                    } catch (e: Exception) {
+                        result.error("TENSOR_CREATION_ERROR", e.message, e.stackTraceToString())
+                    }
+                }
+                "getOrtValueAddress" -> {
+                    try {
+                        val valueId = call.argument<String>("valueId")
+
+                        if (valueId == null) {
+                            result.error("INVALID_ARG", "Missing value ID", null)
+                            return
+                        }
+
+                        val tensor = ortValues[valueId]
+                        if (tensor == null) {
+                            result.error("INVALID_VALUE", "Tensor not found or already being disposed", null)
+                            return
+                        }
+
+                        if (tensor !is OnnxTensor) {
+                            result.error("INVALID_TENSOR_TYPE", "OrtValue is not a tensor", null)
+                            return
+                        }
+
+                        val dataType = ortTypeToString(tensor.info.type)
+                        val memory = NativeTensorMemory.dataAddress(tensor, dataType)
+                        if (memory == null) {
+                            // Not raw-readable: the caller falls back to getOrtValueData.
+                            result.success(null)
+                            return
+                        }
+
+                        result.success(
+                            mapOf(
+                                "address" to memory.first,
+                                "byteLength" to memory.second,
+                                "dataType" to dataType,
+                                "shape" to tensor.info.shape.toList(),
+                            ),
+                        )
+                    } catch (e: Exception) {
+                        result.error("DATA_EXTRACTION_ERROR", e.message, e.stackTraceToString())
+                    }
+                }
                 "getOrtValueData" -> {
                     try {
                         val valueId = call.argument<String>("valueId")

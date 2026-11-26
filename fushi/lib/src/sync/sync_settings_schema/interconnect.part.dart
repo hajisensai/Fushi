@@ -562,14 +562,25 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     // 是现成范式。
     if (!mounted) return;
     if (result == null || result.isEmpty) return;
-    final String normalizedResult;
+    final FushiInterconnectManualAddress address;
     try {
-      normalizedResult = normalizeFushiInterconnectManualUrl(result);
+      address = parseFushiInterconnectManualAddress(result);
     } catch (e, stack) {
       // BUG-1741：这里根本没发起过连接——normalize 只是解析字符串。说「连接失败」
       // 会把用户支去查网络/防火墙，而真正要改的是他刚敲错的那行地址。
       ErrorLogService.instance.log('SyncConfig.addFushiUrl', e, stack);
       if (mounted) _showSnackBar(context, t.sync_pair_invalid_url);
+      return;
+    }
+    final String normalizedResult = address.url;
+
+    // BUG-5519：新增的地址没写 scheme 时，`http://` 只是占位，不是对端的事实。
+    // 先探明对端讲 https 还是 http，再按探明的 scheme 落库 + 配对。
+    final List<FushiPairingCandidate>? schemelessCandidates = editingUrl == null
+        ? fushiInterconnectManualPairingCandidates(address)
+        : null;
+    if (schemelessCandidates != null) {
+      await _attemptSchemelessManualPair(schemelessCandidates);
       return;
     }
 
@@ -628,6 +639,69 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
     }
   }
 
+  /// BUG-5519：不带 scheme 的手动地址——按 [candidates]（https 先、http 后）依次
+  /// 探测，与 LAN 发现共用 [probeFushiPairingCandidates]；探明的那个 scheme 才
+  /// 落库、才拿去配对。
+  ///
+  /// 旧实现把裸地址一律补成 `http://` 再探测。TLS host 只 `bindSecure`、不 bind
+  /// 明文端口，明文 ping 打上去要么被立刻断开，要么（隔着容器 / NAT 端口转发时）
+  /// 转发器不把断开传回来、一直挂到超时——后者让 UI 说「对端没在时限内应答」，
+  /// 可网络和对端都好好的，真相只是 scheme 猜错了；落库的还是那条永远连不上的
+  /// http:// 地址。https 先试：TLS host 一次握手就认出来，明文 host 对 TLS 握手
+  /// 立刻回 400 / 断开，几乎零成本。
+  Future<void> _attemptSchemelessManualPair(
+    List<FushiPairingCandidate> candidates,
+  ) async {
+    // 与 [_attemptManualPair] 同一把忙态锁（BUG-1562）：探测本身就是秒级往返。
+    if (_pairingManual) return;
+    _setPairV2Busy(true);
+    try {
+      final DiscoveredPairingProbeOutcome outcome =
+          await probeFushiPairingCandidates(candidates);
+      if (!mounted) return;
+      final DiscoveredPairingProbeResult? probe = outcome.result;
+      // 探测失败也落库（与写了 scheme 的手动路径一致：保留地址，用户仍可手填
+      // token）。对端确证讲 TLS 时存 https 那条——存 http 就是存一条注定连不上的
+      // 地址。
+      final String saved =
+          probe?.baseUrl ??
+          candidates
+              .firstWhere(
+                (FushiPairingCandidate c) =>
+                    c.baseUrl.startsWith('https://') == outcome.peerSpeaksTls,
+                orElse: () => candidates.last,
+              )
+              .baseUrl;
+      await _mutateUrls((List<FushiClientUrl> current) {
+        if (current.any((FushiClientUrl u) => u.url == saved)) return current;
+        return <FushiClientUrl>[...current, FushiClientUrl(url: saved)];
+      });
+      if (!mounted) return;
+      if (probe == null) {
+        // 失败原因按严重度取最重的一条（证书 > 超时 > 连不上 > 不是 Fushi）；
+        // 地址已在上面落库，「已保存该地址」成立。
+        _showSnackBar(
+          context,
+          _pingFailureMessage(outcome.failure, addressSaved: true),
+        );
+        return;
+      }
+      if (!probe.ping.supportsPairV2) {
+        _showSnackBar(context, t.sync_pair_unavailable);
+        return;
+      }
+      // https 端点的指纹由探测保证非空（TOFU 捕获，ping 回传优先）；http 为 null。
+      await _runPairingV2(
+        baseUrl: probe.baseUrl,
+        fingerprint: probe.fingerprint,
+        deviceName: probe.ping.deviceName,
+        hostId: probe.ping.hostId,
+      );
+    } finally {
+      _setPairV2Busy(false);
+    }
+  }
+
   /// TODO-963 M2: 手动 IP 配对编排（与 LAN 发现共用 [_runPairingV2]）。
   /// 流程：normalize URL → /api/ping 探测（https 先 TOFU 捕获指纹核对）→ host 支持
   /// v2 配对则双确认（确认身份 + 输 PIN）→ pair/v2 → 落 token + 指纹（TOFU 记录）。
@@ -677,7 +751,14 @@ class _FushiServerConfigWidgetState extends State<_FushiServerConfigWidget>
         // BUG-1741：明文地址打不通时回头确认对端是不是 TLS-only。那不是「这里没有
         // 设备」，是「地址的 scheme 写错了」——两句话指向完全相反的排查方向，而旧
         // 实现把它们说成同一句。
-        if (!isHttps && outcome.failure == FushiPingFailure.unreachable) {
+        //
+        // BUG-5519：超时也要回头确认。明文请求打在 TLS-only 端口上，直连时是立刻
+        // 断开（unreachable），隔着端口转发时转发器可能不把断开传回来，客户端只能
+        // 等到超时——同一个「scheme 写错了」，不能因为中间多了一跳就说成「对端没
+        // 应答」。
+        if (!isHttps &&
+            (outcome.failure == FushiPingFailure.unreachable ||
+                outcome.failure == FushiPingFailure.timeout)) {
           final FushiTofuOutcome tofu = await FushiTofuProbe.probeFingerprint(
             parsed.host,
             port,

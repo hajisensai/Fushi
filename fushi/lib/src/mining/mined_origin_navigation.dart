@@ -24,6 +24,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/music_cover_source.dart';
 import 'package:material_ui/material_ui.dart';
 import 'package:fushi/src/media/media_source.dart';
 
@@ -103,7 +104,12 @@ Future<bool> playMusicOriginClip({
       ? null
       : await db.getMusicAlbum(albumUid);
   final MusicPlayerEngine engine = app.musicSession.engine;
-  final MusicPlayItem item = musicPlayItemOf(track, album: album);
+  final String? coverTrackPath = await musicAlbumEmbeddedCoverPath(db, album);
+  final MusicPlayItem item = musicPlayItemOf(
+    track,
+    album: album,
+    trackPathOf: (_) => coverTrackPath,
+  );
   // 定点播放：不读断点、不下发续播起点（否则 mpv 的 file-local `start` 可能晚于下面的
   // seek 落地，把出处盖成上次听到的位置）。
   await engine.playQueue(<MusicPlayItem>[item], resume: false);

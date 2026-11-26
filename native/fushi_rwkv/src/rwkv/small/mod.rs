@@ -38,7 +38,11 @@ use weights::Weights;
 /// stay under 20 MB, and the states touched are encoded back once per call.
 const CHUNK_REVIEWS: usize = 4096;
 
-const SNAPSHOT_MAGIC: &[u8] = b"FRWKVSMALL1\0";
+/// Version 2 (2026-11-26): states computed with the platform-independent
+/// arithmetic of `det`. Version 1 snapshots hold states from the old
+/// per-platform kernels and libm; they are refused, so the host replays the
+/// review log once and every device continues from identical states.
+pub(crate) const SNAPSHOT_MAGIC: &[u8] = b"FRWKVSMALL2\0";
 
 /// The parsed small network, shareable between runtimes.
 #[derive(Clone)]
@@ -448,7 +452,7 @@ impl SmallInference {
         Some(self.features.first_day_offset? + self.features.previous_day_offset?)
     }
 
-    /// `FRWKVSMALL1\0`, precision byte (0 / 8 / 4), weight fingerprint (u64),
+    /// `FRWKVSMALL2\0`, precision byte (0 / 8 / 4), weight fingerprint (u64),
     /// then per stream (card, deck, note, preset, user): slot length (u32),
     /// count (u32), states by ascending id (i64 id + slot bytes); then u32
     /// length + the `ARWKVPROCSTATE2` feature cache. Lossless.
@@ -522,7 +526,10 @@ impl SmallInference {
             |message: &str| io::Error::new(io::ErrorKind::InvalidData, message.to_owned());
         let mut cursor = SnapshotReader::new(input, len);
         cursor.expect_magic(SNAPSHOT_MAGIC).map_err(|_| {
-            invalid("not a small-model RWKV snapshot (a big-model snapshot or damaged bytes)")
+            invalid(
+                "not a current small-model RWKV snapshot (a big-model snapshot, a version-1 \
+                 snapshot from before the platform-independent arithmetic, or damaged bytes)",
+            )
         })?;
         if cursor.u8()? != super::precision_code(self.precision) {
             return Err(invalid(

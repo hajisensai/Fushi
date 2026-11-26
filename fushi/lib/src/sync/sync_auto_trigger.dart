@@ -29,6 +29,7 @@ import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/sync/sync_resource_locks.dart';
 import 'package:fushi/src/sync/sync_task_board.dart';
+import 'package:fushi/src/sync/sync_audiobook_pull_tasks.dart';
 import 'package:fushi/src/sync/sync_file_ref.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -636,6 +637,9 @@ Future<SyncRunReport?> _runSyncChannelInner({
     onProgress: onProgress,
     onError: onError,
     cancellation: cancellation,
+    // 补拉有声书登记进 app 级下载任务表（书架遮罩 / 后台任务环看得到进度），并跳过
+    // 书架上正在手动拉的同一本书（B5trcDxSnf）。
+    audiobookPullTasks: syncAudiobookPullTasks,
   );
   final SyncRunReport report = await orchestrator.run();
   // 编排的阶段到此为止；后置步骤（复习同步可能跑很久）与调用方的库页刷新都不发

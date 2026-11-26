@@ -7,6 +7,7 @@
 import 'dart:typed_data';
 
 import 'package:flutter_onnxruntime/src/flutter_onnxruntime_platform_interface.dart';
+import 'package:flutter_onnxruntime/src/native_tensor_memory.dart';
 
 /// Represents a data type in ONNX Runtime
 enum OrtDataType {
@@ -49,12 +50,28 @@ class OrtValue {
   /// Shape of the tensor as a list of dimensions
   final List<int> shape;
 
+  /// Input data this value's native tensor reads from directly (Fushi fork,
+  /// PATCHES.md delta 19). Owned here and freed by [dispose] only after the
+  /// native tensor is released; null for values that own their memory natively.
+  NativeTensorMemory? _nativeMemory;
+
+  /// Reads in flight. A native read hands Dart an address into ORT's own tensor
+  /// memory, so [dispose] must not release the tensor until each has copied out.
+  final Set<Future<void>> _pendingReads = <Future<void>>{};
+
+  /// Set by [dispose]; later reads fail instead of touching released memory.
+  bool _disposed = false;
+
   /// Private constructor
-  OrtValue._({required this.id, required this.dataType, required this.shape});
+  OrtValue._({required this.id, required this.dataType, required this.shape, NativeTensorMemory? nativeMemory})
+      : _nativeMemory = nativeMemory;
 
   /// Creates an OrtValue from a map returned by the platform interface
-  factory OrtValue.fromMap(Map<String, dynamic> map) {
+  factory OrtValue.fromMap(Map<String, dynamic> map) => OrtValue._fromMap(map);
+
+  static OrtValue _fromMap(Map<String, dynamic> map, {NativeTensorMemory? nativeMemory}) {
     return OrtValue._(
+      nativeMemory: nativeMemory,
       id: map['valueId'] as String,
       dataType: OrtDataType.values.firstWhere(
         (dt) => dt.toString() == 'OrtDataType.${map['dataType']}',
@@ -117,8 +134,69 @@ class OrtValue {
       throw ArgumentError('Unsupported data type: ${data.runtimeType}');
     }
 
-    final result = await FlutterOnnxruntimePlatform.instance.createOrtValue(sourceType, data, shape);
+    final FlutterOnnxruntimePlatform platform = FlutterOnnxruntimePlatform.instance;
+    // Fushi fork (PATCHES.md delta 19, BUG-5508): dense numeric data goes over as
+    // an address on platforms whose list path would copy it into a managed heap.
+    if (platform.supportsNativeTensorMemory && _nativeSourceTypes.contains(sourceType) && data is TypedData) {
+      if (data.lengthInBytes > 0) {
+        final NativeTensorMemory memory = NativeTensorMemory.copyOf(data);
+        try {
+          final result = await platform.createOrtValueFromAddress(sourceType, memory.address, memory.byteLength, shape);
+          return OrtValue._fromMap(result, nativeMemory: memory);
+        } catch (_) {
+          // No native tensor was registered over the block (the plugin only stores
+          // a tensor right before replying success), so it is safe to free.
+          memory.free();
+          rethrow;
+        }
+      }
+    }
+
+    final result = await platform.createOrtValue(sourceType, data, shape);
     return OrtValue.fromMap(result);
+  }
+
+  /// Source types [fromList] can hand over as native memory.
+  static const Set<String> _nativeSourceTypes = <String>{'float32', 'int32', 'int64', 'uint8'};
+
+  /// Element types whose dense bytes can be read back as native memory.
+  static const Set<OrtDataType> _nativeReadableTypes = <OrtDataType>{
+    OrtDataType.float32,
+    OrtDataType.int32,
+    OrtDataType.int64,
+    OrtDataType.uint8,
+    OrtDataType.int8,
+  };
+
+  /// Reads the value's data as a flat list, tracked so [dispose] waits for it.
+  Future<List<dynamic>> _readFlat() {
+    if (_disposed) {
+      return Future<List<dynamic>>.error(StateError('OrtValue $id was read after dispose()'));
+    }
+    final Future<List<dynamic>> read = _readFlatNow();
+    final Future<void> settled = read.then<void>((List<dynamic> _) {}, onError: (Object _) {});
+    _pendingReads.add(settled);
+    settled.whenComplete(() => _pendingReads.remove(settled));
+    return read;
+  }
+
+  /// Reads the value's data as a flat list: straight from native memory when the
+  /// platform supports it (no codec copies), else through [getOrtValueData].
+  Future<List<dynamic>> _readFlatNow() async {
+    final FlutterOnnxruntimePlatform platform = FlutterOnnxruntimePlatform.instance;
+    if (platform.supportsNativeTensorMemory && _nativeReadableTypes.contains(dataType)) {
+      final Map<String, dynamic>? memory = await platform.getOrtValueAddress(id);
+      if (memory != null) {
+        return NativeTensorMemory.readCopy(
+          memory['dataType'] as String,
+          (memory['address'] as num).toInt(),
+          (memory['byteLength'] as num).toInt(),
+        ) as List<dynamic>;
+      }
+    }
+    final data = await platform.getOrtValueData(id);
+    final rawData = data['data'];
+    return (rawData is List) ? rawData : List<dynamic>.from(rawData);
   }
 
   /// Convert this tensor to a different data type
@@ -140,9 +218,7 @@ class OrtValue {
   /// - String values for string tensors
   ///
   Future<List<dynamic>> asList() async {
-    final data = await FlutterOnnxruntimePlatform.instance.getOrtValueData(id);
-    final rawData = data['data'];
-    var dataList1d = (rawData is List) ? rawData : List<dynamic>.from(rawData);
+    var dataList1d = await _readFlat();
     // On iOS/macOS, bool tensors are stored as uint8 internally,
     // so convert 0/1 integers back to false/true
     if (dataType == OrtDataType.bool && dataList1d.isNotEmpty && dataList1d.first is! bool) {
@@ -160,9 +236,7 @@ class OrtValue {
   /// - String values for string tensors
   ///
   Future<List<dynamic>> asFlattenedList() async {
-    final data = await FlutterOnnxruntimePlatform.instance.getOrtValueData(id);
-    final rawData = data['data'];
-    final list = (rawData is List) ? rawData : List<dynamic>.from(rawData);
+    final list = await _readFlat();
     // On iOS/macOS, bool tensors are stored as uint8 internally,
     // so convert 0/1 integers back to false/true
     if (dataType == OrtDataType.bool && list.isNotEmpty && list.first is! bool) {
@@ -171,9 +245,20 @@ class OrtValue {
     return list;
   }
 
-  /// Release native resources associated with this tensor
+  /// Release native resources associated with this tensor.
+  ///
+  /// Waits for reads already in flight (they may be copying out of the tensor's
+  /// own memory); reads started afterwards fail with a [StateError]. Calling it
+  /// again is a no-op.
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    await Future.wait<void>(_pendingReads.toList());
     await FlutterOnnxruntimePlatform.instance.releaseOrtValue(id);
+    // Only after the native tensor is gone: until then it may still read the
+    // block. A failed release leaves it allocated (a leak, never a dangling read).
+    _nativeMemory?.free();
+    _nativeMemory = null;
   }
 
   /// Converts a regular List to appropriate TypedData based on content

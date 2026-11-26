@@ -93,6 +93,7 @@ class _AppleLyricsCover extends StatelessWidget {
           borderRadius: BorderRadius.circular(radius),
           child: MusicCover(
             coverPath: item?.coverPath,
+            embeddedFromPath: item?.embeddedCoverPath,
             size: size,
             borderRadius: BorderRadius.zero,
             title: item?.title,

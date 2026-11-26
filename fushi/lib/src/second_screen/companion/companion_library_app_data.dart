@@ -1571,7 +1571,8 @@ class AppCompanionLibraryData implements CompanionLibraryData {
     final MusicPlayerEngine engine = _app.musicSession.engine;
     await engine.playQueue(
       <MusicPlayItem>[
-        for (final MusicTrackRow t in tracks) musicPlayItemOf(t, album: album),
+        for (final MusicTrackRow t in tracks)
+          musicPlayItemOf(t, album: album, trackPathOf: snap.trackPathOf),
       ],
       startIndex: start < 0 ? 0 : start,
       context: MusicQueueContext.album,

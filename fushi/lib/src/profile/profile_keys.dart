@@ -108,6 +108,9 @@ class ProfileKeys {
     // BT / 磁力下载的 P2P 说明「不再提示」：同族（描述本安装看过说明，不随
     // Profile 切换重新弹出）。
     'p2p_download_notice_dismissed',
+    // 「已收进托盘」一次性系统通知提示过了：同族（描述本安装见过提示，不随 Profile
+    // 切换重新弹出）。
+    'desktop_tray_hint_shown',
     // 「词典格式可以升级」提示的「以后再说」：描述本机词典目录的状态，同族。
     'dict_format_upgrade_prompt_dismissed',
     'game_resource_notice_dismissed',

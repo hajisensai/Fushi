@@ -9,6 +9,7 @@ import { accountVotes, voteStatements } from './cover_votes.js';
 import { periodContributions, workPeriodsDeltaStatements } from './periods.js';
 import { deleteMedia, spend } from './budget.js';
 import { publicAccount } from './views.js';
+import { ACCOUNT_ROLES } from './feedback.js';
 
 export function selfView(row) {
   return {
@@ -17,8 +18,9 @@ export function selfView(row) {
     createdAt: row.created_at,
     shelfCount: row.shelf_count,
     emailVerified: true,
-    // 开发者账户：App 据此显示反馈处理入口（权限仍以服务端为准）。
-    role: row.role === 'dev' ? 'dev' : 'user',
+    // 开发者账户：App 据此显示反馈处理入口（权限仍以服务端为准）。triage（反馈协查）只用网页处理台，
+    // App 的 isDeveloper 只认 dev，不显示处理入口。
+    role: ACCOUNT_ROLES.includes(row.role) ? row.role : 'user',
     // 本机是否为「上传设备」（还没有任何设备上传过时，第一台上传的就是）。
     uploadDevice: row.upload_key === null || row.upload_key === undefined || row.upload_key === row.keyId,
   };

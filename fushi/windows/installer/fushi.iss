@@ -41,6 +41,17 @@ OutputBaseFilename=fushi-{#AppVersion}-windows-setup
 Compression=lzma2
 SolidCompression=yes
 
+; 代码签名必须由 ISCC 在**编译期**做（BUG-5515），不能只在编完后给 setup.exe 外壳补签：
+; Inno 安装包运行时会把真正的安装程序解到 %TEMP%\is-*.tmp\<名字>.tmp 再启动，装完还会现生成
+; {app}\unins000.exe。外壳签了、这两个没签，开着「智能应用控制」/ WDAC 的 Windows 11 会拒绝
+; 启动那个 .tmp（错误 4551「应用程序控制策略已阻止此文件」），安装器一步都走不动。只有设了
+; SignTool，ISCC 才会把这三样（外壳、.tmp 安装程序、卸载器）一起签上。
+; release-desktop.yml 在有签名凭据时传 /DFushiSignTool 与 /Sfushisign=<命令>；本地预览构建不传，照常出未签名包。
+#ifdef FushiSignTool
+SignTool=fushisign
+SignedUninstaller=yes
+#endif
+
 ; 安装器自己的图标 = app 图标（兔子）。不设的话是 Inno 默认的下载箭头，
 ; 于是「双击下载来的 setup.exe」和「桌面上的 Fushi」看着毫不相干。
 ; 这份 ico 由 a32b885d65 换成兔子，7 档尺寸（16~256）齐全，直接可用。

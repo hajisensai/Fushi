@@ -248,7 +248,18 @@ class ErrorLogService extends ChangeNotifier
     _importStepFile = File('${dir.path}/import_step_breadcrumb.txt');
     _lookupBreadcrumbFile = File('${dir.path}/lookup_crash_breadcrumb.txt');
     _initStepFile = File('${dir.path}/init_step_breadcrumb.txt');
-    await _loadDataLocationLog(File('${dir.path}/data_location_log.jsonl'));
+    // BUG-5492：取证环落「撑得过书库被外部清空」的目录（Android 内部 support 根），旧版
+    // 写在外部诊断目录的那份第一次搬过来。
+    final Directory durable =
+        directoryOverride ?? await AppPaths.durableDiagnosticsDirectory();
+    final File dataLocationFile = File(
+      '${durable.path}/$dataLocationLogFileName',
+    );
+    await adoptLegacyDataLocationLog(
+      legacy: File('${dir.path}/$dataLocationLogFileName'),
+      target: dataLocationFile,
+    );
+    await _loadDataLocationLog(dataLocationFile);
     try {
       if (await _logFile!.exists()) {
         final bytes = await _logFile!.readAsBytes();
@@ -559,6 +570,27 @@ class ErrorLogService extends ChangeNotifier
 
   /// 读旧环：坏行（半截写入、手改）逐行跳过，不让一行坏掉整份取证。[init] 前记下的
   /// 条目比文件里的都新，接在后面。
+  /// 数据位置取证环的文件名。
+  static const String dataLocationLogFileName = 'data_location_log.jsonl';
+
+  /// [target] 还不存在、[legacy] 在（且不是同一个文件）时把旧环搬过去；搬不动只记
+  /// debugPrint（取证环是尽力而为，不能拦启动）。
+  @visibleForTesting
+  static Future<void> adoptLegacyDataLocationLog({
+    required File legacy,
+    required File target,
+  }) async {
+    try {
+      if (legacy.absolute.path == target.absolute.path) return;
+      if (await target.exists() || !await legacy.exists()) return;
+      await target.parent.create(recursive: true);
+      await legacy.copy(target.path);
+      await legacy.delete();
+    } catch (e) {
+      debugPrint('[ErrorLogService] adopt legacy data-location log failed: $e');
+    }
+  }
+
   Future<void> _loadDataLocationLog(File file) async {
     final List<ErrorLogEntry> unsaved = _dataLocationFile == null
         ? List<ErrorLogEntry>.of(_dataLocationEntries)
@@ -943,8 +975,12 @@ describeMineOutcome(MineOutcome outcome, {bool overwrite = false}) {
       // 失败原因（含 HTTP 码/URL）追加到成功 toast，终结用户「没音频不知为何」的盲猜。
       // audioWarning 为 null（音频本就没有或下载成功）时维持原成功文案（向后兼容）。
       final String? audioWarning = outcome.audioWarning;
-      final String deckName = outcome.deckName ?? '';
-      final String baseMessage = overwrite
+      final String deckName = outcome.deckName?.trim() ?? '';
+      // 后端认不出落点牌组（覆写来源回看 / 首选牌组为空的笔记、视频待写队列）时用不带牌组名的文案，
+      // 不出「卡片已覆盖到『』」空引号（反馈 OGj5irRpo7）。
+      final String baseMessage = deckName.isEmpty
+          ? (overwrite ? t.card_overwritten_no_deck : t.card_exported_no_deck)
+          : overwrite
           ? t.card_overwritten(deck: deckName)
           : t.card_exported(deck: deckName);
       final bool hasAudioWarning =

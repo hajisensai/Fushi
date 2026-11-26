@@ -1676,6 +1676,50 @@ pub(crate) mod tests {
         for (a, b) in before.iter().zip(&after) {
             assert_eq!(a, b);
         }
+        assert_rwkv_last_matches_replay(t, col);
+    }
+
+    /// 缓存层物化的 `rwkv_last`（`cmd/training.rs` `rwkv_last`）与逐卡重放（`rwkv_cards` 摘要里的 last）逐卡相同：
+    /// 每个调 [assert_rebuild_is_identity] 的场景（血统、重置、撤销、别名、Anki 副本……）都顺带核一遍（BUG-5525）。
+    pub(crate) fn assert_rwkv_last_matches_replay(t: &Truth<'_>, col: i64) {
+        let cards: Vec<String> = {
+            let mut stmt = t
+                .conn()
+                .prepare("SELECT id FROM cards WHERE col = ?1 ORDER BY id")
+                .unwrap();
+            stmt.query_map([col], |r| r.get::<_, Ref>(0))
+                .unwrap()
+                .map(|r| r.unwrap().text())
+                .collect()
+        };
+        if cards.is_empty() {
+            return;
+        }
+        let day = crate::projection::Day {
+            utc_offset_min: 0,
+            rollover_hour: 4,
+        };
+        let groups: Vec<Vec<String>> = cards.iter().map(|c| vec![c.clone()]).collect();
+        let ids: Vec<i64> = (0..cards.len() as i64 * 4).collect();
+        let full =
+            crate::store::gen4::cmd::training::rwkv_cards(t, col, &groups, &ids, &day).unwrap();
+        let last = crate::store::gen4::cmd::training::rwkv_last(t, col, &cards).unwrap();
+        let w = |b: &[u8], k: usize| i64::from_le_bytes(b[8 * k..8 * k + 8].try_into().unwrap());
+        assert_eq!(w(&last, 0), cards.len() as i64);
+        for (g, c) in cards.iter().enumerate() {
+            let b = 1 + 6 * g;
+            let want = if w(&full, b + 2) == crate::history::NONE_I64 {
+                [crate::history::NONE_I64, 0, 0]
+            } else {
+                [w(&full, b + 2), w(&full, b + 3), w(&full, b + 4)]
+            };
+            let got = [
+                w(&last, 1 + 3 * g),
+                w(&last, 2 + 3 * g),
+                w(&last, 3 + 3 * g),
+            ];
+            assert_eq!(got, want, "rwkv_last of card {c}");
+        }
     }
 
     const FIELD: u8 = 4;

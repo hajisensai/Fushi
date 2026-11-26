@@ -36,6 +36,37 @@ List<String> discoveredPairingCandidateUrls({
   return tlsAdvertised ? <String>[https, http] : <String>[http, https];
 }
 
+/// 配对探测的一个候选端点。[host] / [port] 只给 https 候选的 TOFU 握手用
+/// （[baseUrl] 才是 ping / 配对 / 落库用的地址）。
+typedef FushiPairingCandidate = ({String baseUrl, String host, int port});
+
+/// BUG-5519：手动输入的**不带 scheme** 的地址（`host[:port][/path]`）的候选顺序：
+/// https 优先、http 兜底。
+///
+/// 为什么不是「默认补 http://」：TLS host 只 `bindSecure` 一个 socket，明文请求
+/// 打上去的下场取决于中间链路——直连时对端立刻断开（空应答），隔一层端口转发
+/// （容器 / NAT 映射）时转发器可能一直不把断开传回来，客户端就只能等到超时，
+/// UI 于是说「对端没在时限内应答」，把用户支去查网络。反过来，TLS 握手打到明文
+/// HTTP host 上会立刻换回一个 400 / 断开，几乎零成本；而且 https 先试也保证了
+/// 「对端讲 TLS 时，第一发请求绝不是明文」。
+///
+/// 没写端口时两个候选各用自己 scheme 的默认端口（443 / 80）。
+List<FushiPairingCandidate> schemelessPairingCandidates(String address) {
+  final Uri https = Uri.parse('https://$address');
+  return <FushiPairingCandidate>[
+    (
+      baseUrl: 'https://$address',
+      host: https.host,
+      port: https.hasPort ? https.port : 443,
+    ),
+    (
+      baseUrl: 'http://$address',
+      host: https.host,
+      port: https.hasPort ? https.port : 80,
+    ),
+  ];
+}
+
 /// BUG-1741：整段探测的收口结果——探到的端点，或**为什么没探到**。
 class DiscoveredPairingProbeOutcome {
   const DiscoveredPairingProbeOutcome.found(
@@ -79,14 +110,42 @@ FushiPingFailure _worst(FushiPingFailure? a, FushiPingFailure b) {
 
 /// 按候选顺序探测一台发现设备，返回第一个 ping 通的端点**或失败原因**。
 ///
-/// https 候选先经 TOFU 一次性握手取指纹（取不到 → 记下原因并跳过该候选，绝不
-/// 裸读 https），再用钉扎 ping 确认；明文 http 候选直接 ping。
-///
-/// [captureFingerprint] / [ping] 为测试注入缝，生产默认真实现。
+/// 候选顺序见 [discoveredPairingCandidateUrls]；探测本身见
+/// [probeFushiPairingCandidates]。
 Future<DiscoveredPairingProbeOutcome> probeDiscoveredPairingEndpointDetailed({
   required String host,
   required int port,
   required bool tlsAdvertised,
+  Future<FushiTofuOutcome> Function(String host, int port)? captureFingerprint,
+  Future<FushiPingOutcome> Function(
+    String baseUrl, {
+    String? pinnedFingerprint,
+  })?
+  ping,
+}) {
+  return probeFushiPairingCandidates(
+    <FushiPairingCandidate>[
+      for (final String baseUrl in discoveredPairingCandidateUrls(
+        host: host,
+        port: port,
+        tlsAdvertised: tlsAdvertised,
+      ))
+        (baseUrl: baseUrl, host: host, port: port),
+    ],
+    captureFingerprint: captureFingerprint,
+    ping: ping,
+  );
+}
+
+/// 按 [candidates] 的顺序逐个探测，返回第一个 ping 通的端点**或失败原因**
+/// （LAN 发现与手动输入的无 scheme 地址共用，BUG-5519）。
+///
+/// https 候选先经 TOFU 一次性握手取指纹（取不到 → 记下原因并跳过该候选，绝不
+/// 裸读 https），再用钉扎 ping 确认；明文 http 候选直接 ping。
+///
+/// [captureFingerprint] / [ping] 为测试注入缝，生产默认真实现。
+Future<DiscoveredPairingProbeOutcome> probeFushiPairingCandidates(
+  List<FushiPairingCandidate> candidates, {
   Future<FushiTofuOutcome> Function(String host, int port)? captureFingerprint,
   Future<FushiPingOutcome> Function(
     String baseUrl, {
@@ -109,13 +168,13 @@ Future<DiscoveredPairingProbeOutcome> probeDiscoveredPairingEndpointDetailed({
   FushiPingFailure? worst;
   bool peerSpeaksTls = false;
 
-  for (final String baseUrl in discoveredPairingCandidateUrls(
-    host: host,
-    port: port,
-    tlsAdvertised: tlsAdvertised,
-  )) {
+  for (final FushiPairingCandidate candidate in candidates) {
+    final String baseUrl = candidate.baseUrl;
     if (baseUrl.startsWith('https://')) {
-      final FushiTofuOutcome tofu = await capture(host, port);
+      final FushiTofuOutcome tofu = await capture(
+        candidate.host,
+        candidate.port,
+      );
       if (tofu.speaksTls) peerSpeaksTls = true;
       final String? captured = tofu.fingerprint;
       if (captured == null || captured.isEmpty) {

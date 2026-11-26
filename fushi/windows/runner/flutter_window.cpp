@@ -39,6 +39,7 @@
 #include "global_mouse_trigger.h"
 #include "hang_watchdog.h"
 #include "low_level_mouse_hook.h"
+#include "startup_reveal_policy.h"
 #include "system_font_list.h"
 #include "system_transparency_channel.h"
 #include "utils.h"
@@ -547,6 +548,14 @@ bool FlutterWindow::OnCreate() {
           result->Success();
         } else if (call.method_name() == "endStartupWindowPreparation") {
           EndStartupWindowPreparation();
+          result->Success();
+        } else if (call.method_name() == "showStartupWindow") {
+          // BUG-5521: Dart's startup reveal (first frame rasterized), in one
+          // platform round trip: lift the startup cloak, show, bring to the
+          // foreground (what window_manager's show() did). Dart then only
+          // asks for keyboard focus.
+          RevealStartupWindow();
+          SetForegroundWindow(GetHandle());
           result->Success();
         } else if (call.method_name() == "setCaptionMaxButtonRect") {
           // Physical-pixel rect of the Flutter maximize button in the Flutter
@@ -5294,6 +5303,14 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   // 主线程卡顿计量的心跳应答（hang_watchdog.h）：最先处理、不往下传。
   if (::fushi::HandleHangWatchdogHeartbeat(message, wparam)) {
     return 0;
+  }
+  // SetPropW 挂上的属性必须在窗口销毁前 RemovePropW（MSDN：否则属性条目泄漏）：
+  // 看门狗挂的「显示过」（startup_reveal_policy.h）与关闭到托盘挂的「藏在托盘」。
+  // 只能在这里用参数 hwnd 摘：Win32Window 处理 WM_DESTROY 时先清 window_handle_
+  // 再调 OnDestroy，到 OnDestroy 里 GetHandle() 已是 nullptr。
+  if (message == WM_DESTROY) {
+    RemovePropW(hwnd, ::fushi::kMainWindowShownProp);
+    RemovePropW(hwnd, ::fushi::kTrayHiddenWindowProp);
   }
   // 托盘图标的回调消息 / Explorer 重启广播。
   if (tray_) {

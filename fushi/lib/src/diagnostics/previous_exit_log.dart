@@ -179,6 +179,8 @@ class ExitReportEntry {
     this.foreground = true,
     this.duringStartup = false,
     this.atMs,
+    this.pid,
+    this.aliveAtMs,
   });
 
   final String source;
@@ -194,6 +196,14 @@ class ExitReportEntry {
 
   /// 证据里的退出时刻（毫秒）；拿不到为 null。
   final int? atMs;
+
+  /// 这条证据说的是哪个进程；平台没给 pid 的证据为 null。
+  final int? pid;
+
+  /// 这条证据说明 [pid] 那个进程在这一刻还活着（会话标记最后一次记生命周期的时刻）。
+  /// 为 null 的带 [pid] 证据是「死亡记录」，[atMs] 是死的时刻。[classifyPreviousExit]
+  /// 据此把「同一进程之后还活着」的死亡记录排除出判定（厂商告警转储，反馈 632O8xFQSV）。
+  final int? aliveAtMs;
 }
 
 // ───────────────────────── 会话标记（全平台） ─────────────────────────
@@ -519,9 +529,11 @@ ExitReportEntry? describeUncleanPreviousSession(
       'last@${_iso(previous.memoryPressureAt!)}',
     );
   }
-  if (previous.memorySamples.isNotEmpty) {
-    b.write(' memory=[${previous.memorySamples.join('; ')}]');
-  }
+  // 内存采样很长（每次几百字、最多 [kSessionMemorySampleCount] 次），放在条目最末：
+  // 判定标签（退出意图、前后台结论）必须留在截断点之前（反馈 rfmUsTI66G）。
+  final String memory = previous.memorySamples.isEmpty
+      ? ''
+      : ' memory=[${previous.memorySamples.join('; ')}]';
   if (!previous.initialised) b.write(' 启动初始化未完成');
   final String? exitReason = previous.exitReason;
   if (exitReason != null) {
@@ -534,12 +546,14 @@ ExitReportEntry? describeUncleanPreviousSession(
     );
     return ExitReportEntry(
       kPreviousExitUncleanSource,
-      b.toString(),
+      '$b$memory',
       severe: false,
       kind: PreviousExitKind.exitInterrupted,
       foreground: diedInForeground,
       duringStartup: !previous.initialised,
       atMs: previous.lifecycleAt,
+      pid: previous.pid,
+      aliveAtMs: previous.lifecycleAt,
     );
   }
   if (previous.awaitingCrashReportDecision) {
@@ -549,12 +563,14 @@ ExitReportEntry? describeUncleanPreviousSession(
     b.write('（停在闪退报告提示上等用户选择时没了，按用户结束处理）');
     return ExitReportEntry(
       kPreviousExitUncleanSource,
-      b.toString(),
+      '$b$memory',
       severe: false,
       kind: PreviousExitKind.userStopped,
       foreground: diedInForeground,
       duringStartup: !previous.initialised,
       atMs: previous.lifecycleAt,
+      pid: previous.pid,
+      aliveAtMs: previous.lifecycleAt,
     );
   }
   final String? previousVersion = knownSessionVersion(previous.version);
@@ -568,12 +584,14 @@ ExitReportEntry? describeUncleanPreviousSession(
     );
     return ExitReportEntry(
       kPreviousExitUncleanSource,
-      b.toString(),
+      '$b$memory',
       severe: false,
       kind: PreviousExitKind.appUpdated,
       foreground: diedInForeground,
       duringStartup: !previous.initialised,
       atMs: previous.lifecycleAt,
+      pid: previous.pid,
+      aliveAtMs: previous.lifecycleAt,
     );
   }
   b.write(
@@ -585,7 +603,7 @@ ExitReportEntry? describeUncleanPreviousSession(
   );
   return ExitReportEntry(
     kPreviousExitUncleanSource,
-    b.toString(),
+    '$b$memory',
     severe: diedInForeground,
     kind: diedInForeground
         ? PreviousExitKind.unexpected
@@ -593,6 +611,8 @@ ExitReportEntry? describeUncleanPreviousSession(
     foreground: diedInForeground,
     duringStartup: !previous.initialised,
     atMs: previous.lifecycleAt,
+    pid: previous.pid,
+    aliveAtMs: previous.lifecycleAt,
   );
 }
 
@@ -1021,6 +1041,7 @@ List<ExitReportEntry> formatAndroidExitReports(
             uiVisible: uiVisible,
           ),
           atMs: timestamp is int ? timestamp : null,
+          pid: pid is int ? pid : null,
         ),
       );
     }
@@ -1416,8 +1437,60 @@ Future<String?> queryWindowsEventLog(String xpath) async {
 
 // ───────────────────────── macOS ─────────────────────────
 
-/// 把一份 `.ips`（第一行头部 JSON + 正文 JSON）摘成一段：异常类型 / 信号、终止原因、
-/// 崩溃线程前若干帧。解析不了返回 null。
+/// 崩溃线程开头属于 abort / 终止机制本身的帧（按符号名去掉参数表比较）。ObjC / C++
+/// 未捕获异常的崩溃线程前七八帧全是这些，不跳过的话 [summarizeMacIpsReport] 的帧数上限
+/// 会把真正的调用方截掉（反馈 3LRSlAOkXu）。
+const Set<String> kMacAbortMechanismSymbols = <String>{
+  '__pthread_kill',
+  'pthread_kill',
+  'raise',
+  'abort',
+  'abort_message',
+  '__abort_with_payload',
+  'abort_with_payload_wrapper_internal',
+  'abort_with_payload',
+  'demangling_terminate_handler',
+  '_objc_terminate',
+  'std::__terminate',
+  'std::terminate',
+  '__cxa_throw',
+  '__cxa_rethrow',
+  'objc_exception_rethrow',
+};
+
+String _ipsSymbolName(Object? symbol) {
+  final String s = '${symbol ?? ''}';
+  final int paren = s.indexOf('(');
+  return paren > 0 ? s.substring(0, paren) : s;
+}
+
+/// 把 `.ips` 的一段帧数组（`threads[n].frames` / `lastExceptionBacktrace`）写成
+/// `\n  <image>+0x<offset> <symbol>` 行，最多 [maxFrames] 帧。
+void _writeIpsFrames(
+  StringBuffer out,
+  List<Object?> frames,
+  Object? images,
+  int maxFrames,
+) {
+  for (final Object? f in frames.take(maxFrames)) {
+    if (f is! Map) continue;
+    final Object? idx = f['imageIndex'];
+    String image = '?';
+    if (images is List && idx is int && idx >= 0 && idx < images.length) {
+      final Object? img = images[idx];
+      if (img is Map) image = '${img['name'] ?? '?'}';
+    }
+    final Object? symbol = f['symbol'];
+    out.write(
+      '\n  $image+0x${(f['imageOffset'] is int ? f['imageOffset'] as int : 0).toRadixString(16)}'
+      '${symbol != null ? ' $symbol' : ''}',
+    );
+  }
+}
+
+/// 把一份 `.ips`（第一行头部 JSON + 正文 JSON）摘成一段：异常类型 / 信号、ObjC 异常
+/// 原因（`exceptionReason`）、终止原因、抛异常处的栈（`lastExceptionBacktrace`）、崩溃
+/// 线程跳过开头 abort 机制帧后的若干帧。解析不了返回 null。
 String? summarizeMacIpsReport(String content, {int maxFrames = 12}) {
   final int newline = content.indexOf('\n');
   if (newline <= 0) return null;
@@ -1442,6 +1515,17 @@ String? summarizeMacIpsReport(String content, {int maxFrames = 12}) {
       'codes=${exception['codes']} subtype=${exception['subtype'] ?? ''}',
     );
   }
+  // 未捕获的 ObjC / C++ 异常：原文（如「-[X sel]: unrecognized selector sent to
+  // instance」）只在这里，崩溃线程上只剩 abort 链（反馈 3LRSlAOkXu）。
+  final Object? reason = body['exceptionReason'];
+  if (reason is Map) {
+    final Object? message =
+        reason['composed_message'] ?? reason['format_string'];
+    out.write(
+      '\nexceptionReason: ${reason['type'] ?? ''} ${reason['name'] ?? ''}'
+      '${message != null ? ': $message' : ''}',
+    );
+  }
   final Object? termination = body['termination'];
   if (termination is Map) {
     out.write(
@@ -1452,28 +1536,32 @@ String? summarizeMacIpsReport(String content, {int maxFrames = 12}) {
   final Object? asi = body['asi'];
   if (asi is Map && asi.isNotEmpty) out.write('\nasi: ${jsonEncode(asi)}');
   final Object? images = body['usedImages'];
+  final Object? backtrace = body['lastExceptionBacktrace'];
+  if (backtrace is List && backtrace.isNotEmpty) {
+    out.write('\nlast exception backtrace:');
+    _writeIpsFrames(out, backtrace, images, maxFrames);
+  }
   final Object? threads = body['threads'];
   final Object? faulting = body['faultingThread'];
-  if (threads is List && faulting is int && faulting < threads.length) {
+  if (threads is List &&
+      faulting is int &&
+      faulting >= 0 &&
+      faulting < threads.length) {
     final Object? thread = threads[faulting];
     if (thread is Map) {
       out.write('\nfaulting thread #$faulting ${thread['queue'] ?? ''}:');
       final Object? frames = thread['frames'];
       if (frames is List) {
-        for (final Object? f in frames.take(maxFrames)) {
-          if (f is! Map) continue;
-          final Object? idx = f['imageIndex'];
-          String image = '?';
-          if (images is List && idx is int && idx < images.length) {
-            final Object? img = images[idx];
-            if (img is Map) image = '${img['name'] ?? '?'}';
-          }
-          final Object? symbol = f['symbol'];
-          out.write(
-            '\n  $image+0x${(f['imageOffset'] is int ? f['imageOffset'] as int : 0).toRadixString(16)}'
-            '${symbol != null ? ' $symbol' : ''}',
-          );
+        int skipped = 0;
+        while (skipped < frames.length &&
+            frames[skipped] is Map &&
+            kMacAbortMechanismSymbols.contains(
+              _ipsSymbolName((frames[skipped] as Map)['symbol']),
+            )) {
+          skipped++;
         }
+        if (skipped > 0) out.write('\n  （跳过开头 $skipped 帧 abort 机制）');
+        _writeIpsFrames(out, frames.sublist(skipped), images, maxFrames);
       }
     }
   }
@@ -1811,14 +1899,23 @@ class PreviousExitVerdict {
 /// - 平台明确原因压过会话标记推断：Android 说 `USER_REQUESTED` 时，即使标记显示停在
 ///   前台也算用户强停，不算闪退；Windows 有崩溃摘要时，标记的「疑似闪退」升级为原生崩溃。
 /// - 「启动即闪退」只看会话标记（只有它知道初始化走没走完），与选中的种类无关。
+/// - 同一进程之后还活着的死亡记录不是死因（[isSupersededDeathRecord]），不参与选种类：
+///   厂商系统给存活进程发转储也记成 `CRASH_NATIVE`，不能压过同一 pid 更晚的真实退出
+///   （反馈 632O8xFQSV：荣耀 vss 告警转储压过了 `MANAGE_EXTERNAL_STORAGE changed.`）。
+/// - 摘要里决定种类的证据排最前、每条单独限长，再整体限长：会话标记的内存采样再长也
+///   挤不掉平台证据（反馈 rfmUsTI66G、3LRSlAOkXu）。
 PreviousExitVerdict? classifyPreviousExit(
   List<ExitReportEntry> entries, {
   required String version,
   required int nowMs,
 }) {
+  final Set<ExitReportEntry> superseded = <ExitReportEntry>{
+    for (final ExitReportEntry e in entries)
+      if (isSupersededDeathRecord(e, entries)) e,
+  };
   final List<ExitReportEntry> classified = <ExitReportEntry>[
     for (final ExitReportEntry e in entries)
-      if (e.kind != null) e,
+      if (e.kind != null && !superseded.contains(e)) e,
   ];
   if (classified.isEmpty) return null;
   final PreviousExitKind kind = classified
@@ -1833,9 +1930,23 @@ PreviousExitVerdict? classifyPreviousExit(
   final int at = chosen
       .map((ExitReportEntry e) => e.atMs ?? 0)
       .fold<int>(0, math.max);
-  final String summary = entries
-      .map((ExitReportEntry e) => '[${e.source}] ${e.text}')
-      .join('\n\n');
+  final List<ExitReportEntry> others =
+      <ExitReportEntry>[
+        for (final ExitReportEntry e in classified)
+          if (e.kind != kind) e,
+      ]..sort(
+        (ExitReportEntry a, ExitReportEntry b) =>
+            a.kind!.index.compareTo(b.kind!.index),
+      );
+  final String summary = <String>[
+    for (final ExitReportEntry e in chosen) '[${e.source}] ${_cap(e.text)}',
+    for (final ExitReportEntry e in others) '[${e.source}] ${_cap(e.text)}',
+    for (final ExitReportEntry e in entries)
+      if (superseded.contains(e))
+        '[${e.source}]（同一进程之后仍在运行，不是死因）${_cap(e.text)}'
+      else if (e.kind == null)
+        '[${e.source}] ${_cap(e.text)}',
+  ].join('\n\n');
   return PreviousExitVerdict(
     kind: kind,
     count: chosen.length,
@@ -1845,6 +1956,24 @@ PreviousExitVerdict? classifyPreviousExit(
     version: version,
     summary: _cap(summary, kExitVerdictSummaryMaxChars),
   );
+}
+
+/// [record] 是不是被同一进程更晚的证据推翻的死亡记录：带 [ExitReportEntry.pid]、
+/// [ExitReportEntry.atMs] 且不是存活证据，而 [entries] 里同一 pid 另有更晚的死亡记录、
+/// 或会话标记在它之后还记到了生命周期（进程那时还活着）。
+bool isSupersededDeathRecord(
+  ExitReportEntry record,
+  List<ExitReportEntry> entries,
+) {
+  final int? pid = record.pid;
+  final int? at = record.atMs;
+  if (pid == null || at == null || record.aliveAtMs != null) return false;
+  for (final ExitReportEntry other in entries) {
+    if (identical(other, record) || other.pid != pid) continue;
+    final int? later = other.aliveAtMs ?? other.atMs;
+    if (later != null && later > at) return true;
+  }
+  return false;
 }
 
 // ───────────────────────── 装配 ─────────────────────────

@@ -17,9 +17,12 @@ class WindowCaptionChannel {
   static int? _lastCaption;
   static int? _lastText;
 
-  /// macOS 启动时先隐藏 nib 自动显示的主窗口，首帧就绪后再显示。
+  /// 首帧就绪后的启动显窗点。macOS：启动时先隐藏 nib 自动显示的主窗口，这里再显示。
+  /// Windows（BUG-5521）：撤掉主窗从建窗起挂着的 DWM 隐身（恢复最大化的
+  /// SC_MAXIMIZE 会把隐藏主窗提前显出来，隐身让它在首帧前什么也不呈现），并显示 +
+  /// 前置主窗——一次往返代替 `windowManager.show()`。
   static Future<void> showStartupWindow() async {
-    if (!Platform.isMacOS) return;
+    if (!Platform.isMacOS && !Platform.isWindows) return;
     await _channel.invokeMethod<void>('showStartupWindow');
   }
 

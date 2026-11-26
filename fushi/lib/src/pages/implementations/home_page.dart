@@ -128,7 +128,9 @@ import 'package:fushi/src/pages/implementations/browse_moved_notice.dart'
 import 'package:fushi/src/pages/implementations/overwrite_snapshot_notice.dart'
     show maybeShowOverwriteSnapshotNotice;
 import 'package:fushi/src/pages/implementations/android_storage_move_prompt.dart'
-    show maybeShowAndroidStorageMovePrompt;
+    show maybeShowAndroidStorageMoveBackPrompt, maybeShowLibraryVanishedAlert;
+import 'package:fushi/src/pages/implementations/feedback/feedback_common.dart'
+    show openFeedbackComposeWith;
 import 'package:fushi/src/sync/sync_settings_schema.dart'
     show startAndroidDocumentsMigration;
 import 'package:fushi/src/pages/implementations/media_server/media_server_browse_page.dart'
@@ -782,15 +784,25 @@ class _HomePageState extends BasePageState<HomePage>
         );
       }
 
-      // Android 老安装：一次性提示把书库移到可访问的外部 app 专属目录（新装已在那里）。
-      // 选「现在迁移」时迁移遮罩接管界面并自动重启，后面的更新检查不会再跑。
+      // BUG-5492：启动期哨兵发现书库文件被清空（外部目录被文件管理器 / 清理工具删掉
+      // 之类），请用户带日志反馈。排在移回提示之前：先让用户知道丢了什么。
+      if (mounted && Platform.isAndroid) {
+        await maybeShowLibraryVanishedAlert(
+          context: context,
+          supportRoot: appModelNoUpdate.databaseDirectory,
+          openFeedback: openFeedbackComposeWith,
+        );
+      }
+
+      // BUG-5492：书库还在外部 `Android/data` 的安装，一次性建议移回内部存储。
+      // 选「移回内部存储」时迁移遮罩接管界面并自动重启，后面的更新检查不会再跑。
       if (mounted) {
-        await maybeShowAndroidStorageMovePrompt(
+        await maybeShowAndroidStorageMoveBackPrompt(
           context: context,
           startMigration: () => startAndroidDocumentsMigration(
             context: context,
             appModel: appModelNoUpdate,
-            toExternal: true,
+            toExternal: false,
           ),
         );
       }

@@ -167,4 +167,44 @@ void main() {
       }
     }
   });
+
+  group('BUG-5492：数据位置环挪到内部 support 根', () {
+    test('旧位置（诊断目录）的环搬到新位置并删旧文件', () async {
+      final File legacy = File('${tmp.path}/old/data_location_log.jsonl')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('{"a":1}\n');
+      final File target = File('${tmp.path}/new/data_location_log.jsonl');
+      await ErrorLogService.adoptLegacyDataLocationLog(
+        legacy: legacy,
+        target: target,
+      );
+      expect(target.readAsStringSync(), '{"a":1}\n');
+      expect(legacy.existsSync(), isFalse);
+    });
+
+    test('新位置已有环时不覆盖、不删旧文件', () async {
+      final File legacy = File('${tmp.path}/old/data_location_log.jsonl')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('old');
+      final File target = File('${tmp.path}/new/data_location_log.jsonl')
+        ..createSync(recursive: true)
+        ..writeAsStringSync('new');
+      await ErrorLogService.adoptLegacyDataLocationLog(
+        legacy: legacy,
+        target: target,
+      );
+      expect(target.readAsStringSync(), 'new');
+      expect(legacy.existsSync(), isTrue);
+    });
+
+    test('新旧同一文件（桌面 / 测试目录）什么都不做', () async {
+      final File same = File('${tmp.path}/data_location_log.jsonl')
+        ..writeAsStringSync('keep');
+      await ErrorLogService.adoptLegacyDataLocationLog(
+        legacy: same,
+        target: same,
+      );
+      expect(same.readAsStringSync(), 'keep');
+    });
+  });
 }

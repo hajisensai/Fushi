@@ -47,8 +47,8 @@ void main() {
       expect(actions, <String>[
         'play',
         'pause',
-        'seek:1000',
-      ], reason: '越过句尾：暂停并回到该句的精确结尾');
+        'seek:900',
+      ], reason: '越过句尾：暂停并回到该句句尾之前（mKqIAxIvZA）');
       expect(c.debugOneShotHoldCueIndex, isNull, reason: '停下即消耗');
     });
 
@@ -281,8 +281,8 @@ void main() {
       expect(actions, <String>[
         'play',
         'pause',
-        'seek:3000',
-      ], reason: '末句句尾停并回到它的精确结尾');
+        'seek:2900',
+      ], reason: '末句句尾停并回到它的句尾之前');
       expect(c.debugOneShotHoldCueIndex, isNull);
     });
 

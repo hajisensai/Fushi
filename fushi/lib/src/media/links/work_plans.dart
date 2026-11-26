@@ -31,14 +31,105 @@ Future<void> confirmMediaLinks(
 }
 
 /// 否决 / 移除一组连接（写墓碑，推断不会再提议这一对）。
-Future<void> rejectMediaLinks(
+///
+/// 返回这次移除的撤销凭据（[MediaLinkRemovalUndo.revert]）：误点「移除 AI 关联」/
+/// 「移除关联」/「不相关」后能原样恢复（反馈 bkrkQrYhnX：否决墓碑会让推断永不再
+/// 提议这一对，没有撤销就只能手动重连）。
+Future<MediaLinkRemovalUndo> rejectMediaLinks(
   FushiDatabase db,
   Iterable<MediaLinkId> ids,
 ) async {
-  for (final MediaLinkId id in ids) {
+  final List<MediaLinkId> targets = ids.toList(growable: false);
+  // 否决管一整对：[FushiDatabase.removeMediaLink] 会顺带把同一对上别的 AI 生效行
+  // 也写成墓碑，所以快照取整对的行，而不只是点名的那几条。
+  final List<({MediaLinkEndpoint a, MediaLinkEndpoint b})> pairs =
+      _mediaLinkPairsOf(targets);
+  final Map<MediaLinkId, MediaLinkRow> before = await _mediaLinkRowsOfPairs(
+    db,
+    pairs,
+  );
+  for (final MediaLinkId id in targets) {
     await db.removeMediaLink(id);
   }
+  final Map<MediaLinkId, MediaLinkRow> after = await _mediaLinkRowsOfPairs(
+    db,
+    pairs,
+  );
+  return MediaLinkRemovalUndo._(<MediaLinkRemovalChange>[
+    for (final MapEntry<MediaLinkId, MediaLinkRow> e in after.entries)
+      if (before[e.key] case final MediaLinkRow previous
+          when previous.updatedAt != e.value.updatedAt ||
+              previous.deletedAt != e.value.deletedAt)
+        (id: e.key, writtenAt: e.value.updatedAt, previous: previous),
+  ]);
 }
+
+/// 一次移除改动的一行：身份、移除写下的时钟、移除前的整行。
+typedef MediaLinkRemovalChange = ({
+  MediaLinkId id,
+  int writtenAt,
+  MediaLinkRow previous,
+});
+
+/// [rejectMediaLinks] 的撤销凭据。
+final class MediaLinkRemovalUndo {
+  const MediaLinkRemovalUndo._(this.changes);
+
+  /// 这次移除实际改动的行（已经是墓碑的行不在里面）。
+  final List<MediaLinkRemovalChange> changes;
+
+  /// 没改动任何行（全都早已移除）：没有可撤销的。
+  bool get isEmpty => changes.isEmpty;
+
+  /// 把改动的行恢复成移除前的样子（[FushiDatabase.restoreMediaLinkSnapshot]：之后
+  /// 又被改过的行不覆盖）。返回恢复了几行。
+  Future<int> revert(FushiDatabase db) async {
+    int restored = 0;
+    for (final MediaLinkRemovalChange c in changes) {
+      if (await db.restoreMediaLinkSnapshot(
+        c.id,
+        writtenAt: c.writtenAt,
+        previous: c.previous,
+      )) {
+        restored++;
+      }
+    }
+    return restored;
+  }
+}
+
+List<({MediaLinkEndpoint a, MediaLinkEndpoint b})> _mediaLinkPairsOf(
+  List<MediaLinkId> ids,
+) {
+  final Set<String> seen = <String>{};
+  final List<({MediaLinkEndpoint a, MediaLinkEndpoint b})> out =
+      <({MediaLinkEndpoint a, MediaLinkEndpoint b})>[];
+  for (final MediaLinkId id in ids) {
+    final MediaLinkKind? fromKind = MediaLinkKind.tryParse(id.fromKind);
+    final MediaLinkKind? toKind = MediaLinkKind.tryParse(id.toKind);
+    if (fromKind == null || toKind == null) continue;
+    final String k1 = '${id.fromKind}\u0000${id.fromKey}';
+    final String k2 = '${id.toKind}\u0000${id.toKey}';
+    final String pairKey = k1.compareTo(k2) <= 0
+        ? '$k1\u0001$k2'
+        : '$k2\u0001$k1';
+    if (!seen.add(pairKey)) continue;
+    out.add((
+      a: (kind: fromKind, key: id.fromKey),
+      b: (kind: toKind, key: id.toKey),
+    ));
+  }
+  return out;
+}
+
+Future<Map<MediaLinkId, MediaLinkRow>> _mediaLinkRowsOfPairs(
+  FushiDatabase db,
+  List<({MediaLinkEndpoint a, MediaLinkEndpoint b})> pairs,
+) async => <MediaLinkId, MediaLinkRow>{
+  for (final ({MediaLinkEndpoint a, MediaLinkEndpoint b}) p in pairs)
+    for (final MediaLinkRow row in await db.mediaLinksBetween(p.a, p.b))
+      mediaLinkIdOf(row): row,
+};
 
 /// 一条连接是不是 AI 直接生效的（用户确认后升为 user，就不再算）。
 bool mediaLinkIsAiEffective(MediaLinkRow row) =>
