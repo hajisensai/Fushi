@@ -1726,6 +1726,7 @@ class SyncOrchestrator {
       // 对端 POST 的 mergeCollectionManifest 持同一把窄锁（网络读写都在锁外）。
       late final CollectionSyncOutcome outcome;
       await runExclusiveWithSyncStateApply(() async {
+        await _db.reconcileEpubCollectionMemberKeys();
         final CollectionManifest local = await loadLocalCollectionManifest(_db);
         outcome = CollectionSyncEngine.merge(
           local: local,
