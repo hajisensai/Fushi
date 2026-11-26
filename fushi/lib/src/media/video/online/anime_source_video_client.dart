@@ -1,6 +1,6 @@
 import 'dart:io';
 
-import 'package:flutter/foundation.dart' show debugPrint;
+import 'package:flutter/foundation.dart' show debugPrint, visibleForTesting;
 import 'dart:typed_data';
 
 import 'package:http/http.dart' as http;
@@ -165,6 +165,43 @@ class AnimeSourceVideoClient
     if (mpv.headers.isEmpty) return video.headers;
     return <String, String>{...mpv.headers, ...video.headers};
   }
+
+  /// 下载 [video] 的字幕轨 [subtitleUri] 时带的请求头（kslC0cG1TS）。
+  ///
+  /// 上游 Aniyomi 把 `Video.headers` 设成 mpv 全局 `http-header-fields`，字幕
+  /// `sub-add` 也吃同一份头，扩展按这个契约写：字幕放在第三方字幕站（mysubsplay 一类）
+  /// 时，站点按 Referer / UA 防盗链，不带就回 403。旧实现照搬 `UrlStreamVideoClient`
+  /// 「跨站一律不带」，可那条规则防的是**用户凭据**（WebDAV 账号密码）被发到外部内容
+  /// 指定的主机；这里的头和字幕地址出自同一个扩展，不是用户凭据。
+  ///
+  /// 同站：全带。跨站：去掉凭据类头（Cookie / Authorization / Proxy-Authorization），
+  /// 防盗链靠的 Referer / Origin / User-Agent 照带。
+  @visibleForTesting
+  static Map<String, String> subtitleRequestHeaders(
+    MihonVideo video, {
+    required Uri subtitleUri,
+  }) {
+    final Map<String, String> headers = streamHeadersFor(video);
+    if (headers.isEmpty) return headers;
+    final Uri? streamUri = Uri.tryParse(video.resolvedUrl);
+    final bool sameSite =
+        streamUri != null &&
+        subtitleUri.scheme == streamUri.scheme &&
+        subtitleUri.host == streamUri.host &&
+        subtitleUri.port == streamUri.port;
+    if (sameSite) return headers;
+    return <String, String>{
+      for (final MapEntry<String, String> e in headers.entries)
+        if (!_credentialHeaderNames.contains(e.key.toLowerCase()))
+          e.key: e.value,
+    };
+  }
+
+  static const Set<String> _credentialHeaderNames = <String>{
+    'cookie',
+    'authorization',
+    'proxy-authorization',
+  };
 
   /// 候选的可选外挂音轨（EXlaIL2eKQ）：`Video.audioTracks` + `mpvArgs` 白名单里的
   /// `audio-file(s)`，按 URL 去重。语义与上游 Aniyomi 一致——播放器 `audio-add
@@ -571,8 +608,8 @@ class AnimeSourceVideoClient
     return path.endsWith('.m3u8') || path.endsWith('.m3u');
   }
 
-  /// 字幕轨与流同一个站点时才带流的头（防盗链站点的字幕也在同一防盗链之下），
-  /// 跨站一律不带——与 `UrlStreamVideoClient` 的口径一致。
+  /// 字幕请求带扩展给这条流的请求头（[subtitleRequestHeaders]）：同站全带，跨站去掉
+  /// 凭据头、照带 Referer / User-Agent 等。
   @override
   Future<void> getRemoteVideoSubtitle(
     String id,
@@ -614,18 +651,15 @@ class AnimeSourceVideoClient
       onProgress?.call(1.0);
       return;
     }
-    final Uri streamUri = Uri.parse(video.resolvedUrl);
-    final bool sameSite =
-        subtitleUri.scheme == streamUri.scheme &&
-        subtitleUri.host == streamUri.host &&
-        subtitleUri.port == streamUri.port;
     // 起播时默认字幕挡在开流之前：第三方字幕站不回数据时必须有上限，否则页面永远
     // 停在「正在下载字幕」。到点抛 TimeoutException，播放页照常起播、不挂这条字幕。
     final http.Response response = await getWithDeadline(
       _httpClient,
       subtitleUri,
       timeout: subtitleFetchTimeout,
-      headers: sameSite ? _nonEmptyOrNull(streamHeadersFor(video)) : null,
+      headers: _nonEmptyOrNull(
+        subtitleRequestHeaders(video, subtitleUri: subtitleUri),
+      ),
     );
     if (response.statusCode < 200 || response.statusCode >= 300) {
       throw http.ClientException(
