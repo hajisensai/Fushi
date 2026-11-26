@@ -637,6 +637,34 @@ void main() {
         isFalse,
         reason: '只含书的目录合集只是磁盘目录',
       );
+      expect(
+        isWorkSeriesCollection(
+          collectionType: 'playlist',
+          sourceFolderPath: null,
+          origin: CollectionOrigin.user,
+          organizeKey: null,
+          hasVideo: true,
+          hasWorkIdentity: false,
+          memberCount: 1,
+          bookTitles: const <String>[],
+        ),
+        isTrue,
+        reason: '只装一个视频的用户合集就是那个视频的外壳，与它折成一个节点',
+      );
+      expect(
+        isWorkSeriesCollection(
+          collectionType: 'playlist',
+          sourceFolderPath: null,
+          origin: CollectionOrigin.user,
+          organizeKey: null,
+          hasVideo: true,
+          hasWorkIdentity: false,
+          memberCount: 2,
+          bookTitles: const <String>[],
+        ),
+        isFalse,
+        reason: '两个以上视频的用户合集仍要作品身份才算系列',
+      );
     });
 
     test('视频合集端点的连接把整个合集的集带进作品；主题曲是卫星', () async {

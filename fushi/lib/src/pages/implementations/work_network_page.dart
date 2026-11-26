@@ -611,7 +611,8 @@ class _NetworkNode extends StatelessWidget {
             const SizedBox(height: 6),
             Text(
               entry.title,
-              maxLines: 2,
+              // 三行：前編 / 後編、第 2 期这类区别常在标题末尾（布局按三行留了高）。
+              maxLines: 3,
               overflow: TextOverflow.ellipsis,
               style: theme.textTheme.bodySmall?.copyWith(
                 fontWeight: FontWeight.w600,
@@ -839,7 +840,7 @@ class _WebNode extends StatelessWidget {
                 const SizedBox(height: 6),
                 Text(
                   title,
-                  maxLines: 2,
+                  maxLines: 3,
                   overflow: TextOverflow.ellipsis,
                   style: theme.textTheme.bodySmall?.copyWith(
                     fontWeight: FontWeight.w600,
