@@ -28,6 +28,7 @@ import '../utils/backup_retention.dart';
 import '../utils/fushi_debug_print.dart';
 import 'database.dart' show kMinSupportedSchemaVersion;
 import 'db_schema_version.dart';
+import 'free_space.dart';
 
 /// 还原点根目录名（库目录的直接子目录）。
 const String kRestorePointsDirName = 'restore_points';
@@ -730,6 +731,10 @@ class RestorePointStore {
     final int now = DateTime.now().millisecondsSinceEpoch;
     String? pointDir;
     try {
+      // 空间不够就不拍（[NotEnoughSpaceException] 记成状态里的 `not_enough_space`），迁移照常。
+      ensureFreeSpace(<SpaceNeed>[
+        SpaceNeed(root, _liveDatabaseBytes(dbFilePath)),
+      ]);
       Directory(root).createSync(recursive: true);
       final String id = _uniqueId(now, database, RestorePointKind.preUpdate);
       pointDir = p.join(root, id);
@@ -953,21 +958,39 @@ class RestorePointStore {
     _deleteDirQuietly(draft.directory);
   }
 
+  /// 活库快照的大小上界：库文件 + `-wal`（`VACUUM INTO` 的副本不会比两者之和大）。
+  static int _liveDatabaseBytes(String dbFilePath) =>
+      fileBytesOrZero(dbFilePath) + fileBytesOrZero('$dbFilePath-wal');
+
   /// 操作前还原点：[fushiDbPath] 非空时 `VACUUM INTO` 主库（活库开着也行：另开一条只读连接，
   /// WAL 下读到一致的已提交状态），[snapshotSrs] 非空时由调用方把复习库快照写到给定路径
   /// （复习库归 Rust 内核独占，走内核自己的快照命令）。主库副本再 `quick_check`，最后写元数据，
   /// 然后按 [kRestorePointKeepPreOperation]（按 reason 分开算）修剪；[protectIds] 里的点（例如
   /// 「替换」的目标点）这次修剪不删。失败删掉半截目录并抛出，由调用方决定要不要继续那个操作。
-  /// 两个都没给时抛 [ArgumentError]。
+  /// 两个都没给时抛 [ArgumentError]。动笔之前先查空间（[freeBytes] 缺省用登记的探针），不够抛
+  /// [NotEnoughSpaceException]（`toString` 是 `not_enough_space`）。
   Future<RestorePoint> createPreOperationPoint({
     required String reason,
     String? fushiDbPath,
     Future<void> Function(String destPath)? snapshotSrs,
     Set<String> protectIds = const <String>{},
+    VolumeFreeBytes? freeBytes,
   }) async {
     if (fushiDbPath == null && snapshotSrs == null) {
       throw ArgumentError('nothing to snapshot');
     }
+    // 空间不够：动任何东西之前抛 [NotEnoughSpaceException]，调用方照旧按「没拍成」处理（替换不做）。
+    ensureFreeSpace(<SpaceNeed>[
+      SpaceNeed(
+        root,
+        (fushiDbPath == null ? 0 : _liveDatabaseBytes(fushiDbPath)) +
+            (snapshotSrs == null
+                ? 0
+                : _liveDatabaseBytes(
+                    p.join(dbDirectory, RestorePointDatabase.srs.fileName),
+                  )),
+      ),
+    ], probe: freeBytes);
     final RestorePointDraft draft = begin(
       kind: RestorePointKind.preOperation,
       database: fushiDbPath != null
