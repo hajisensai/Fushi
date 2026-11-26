@@ -65,6 +65,11 @@
 | [BUG-5494](bugs/BUG-5494-android-screen-ocr-dart-engine-no-block.md) | ✅ | ✅ | Android 应用外截屏识字走本机模型 / Google Lens 时查词不跨 OCR 折行 |
 | [BUG-5492](bugs/BUG-5492-android-external-library-wiped.md) | ✅ | ✅ | Android 外部书库被整树删掉，书与词典全没了 |
 | [BUG-5491](bugs/BUG-5491-rwkv-armv7-portable-fma-slow.md) | 🚧 | 🚧 | armeabi-v7a 与无 FMA 的老 x86 上 RWKV 回放走软件 FMA，比向量路径慢约 4–5 倍 |
+> 共 4770 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5492](bugs/BUG-5492-srs-link-retired-root-writer.md) | ✅ | ✅ | 平板复习同步永远不采用电脑的集合：集合目录里退役旧根的写入者被当成成员，关联判成「已关联」 |
 | [BUG-5490](bugs/BUG-5490-data-location-diag-not-retained.md) | ✅ | ✅ | 数据位置诊断只在内存且被普通诊断挤掉 |
 | [BUG-5489](bugs/BUG-5489-dict-files-missing-silent.md) | ✅ | ✅ | 词典文件缺失时界面静默只显示无释义 |
 | [BUG-5488](bugs/BUG-5488-rwkv-cross-platform-nondeterminism.md) | ✅ | ✅ | RWKV 同一复习日志在电脑与手机上回放出的 R 不同，到期数差一张（73 vs 72） |
