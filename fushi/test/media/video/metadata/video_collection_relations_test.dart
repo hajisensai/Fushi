@@ -600,6 +600,36 @@ void main() {
       expect(toMovie.targetCollectionId, isNull);
     });
 
+    // BUG-5530：owner 已不在库里的孤儿作品（页级撕裂留下的）不当补填对象——以前
+    // 拿它当 owner 往 collection_relations 插行撞外键（787），整趟补填失败。
+    test('存量补填跳过 owner 已不在库里的孤儿作品，不撞外键', () async {
+      final Directory dir = await Directory.systemTemp.createTemp('anidb_xml');
+      addTearDown(() => dir.delete(recursive: true));
+      await File(p.join(dir.path, 'AnimeDoc_100.xml')).writeAsString(_xml);
+      final int a = await db.createMediaCollection(
+        'A',
+        collectionType: 'playlist',
+      );
+      await work(a, 'anidb', '100');
+      await movieVideo('ghost');
+      await work(null, 'anidb', '100', mediaType: 'movie', bookUid: 'ghost');
+      // 父行没了、作品还在（外键关着删的，与用户库同形）。
+      await db.customStatement('PRAGMA foreign_keys = OFF');
+      await db.customStatement(
+        "DELETE FROM video_books WHERE book_uid = 'ghost'",
+      );
+      await db.customStatement('PRAGMA foreign_keys = ON');
+
+      final CollectionRelationBackfillResult r =
+          await backfillScrapedCollectionRelations(
+            db,
+            aniDbXmlDirectory: () async => dir,
+          );
+      expect(r.works, 1, reason: '只补 owner 还在的作品');
+      expect(await rows(a), isNotEmpty);
+      expect(await db.getVideoBookRelations('ghost'), isEmpty);
+    });
+
     test('升级绑定到单视频：电影后来入库，别的合集指向它的纯刮削行补上 targetBookUid', () async {
       final int a = await db.createMediaCollection(
         'A',

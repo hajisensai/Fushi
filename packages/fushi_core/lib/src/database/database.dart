@@ -3878,6 +3878,23 @@ class FushiDatabase extends _$FushiDatabase
           await purgeDanglingMediaLinks();
         }
       }
+      if (from < 182) {
+        // v182：表结构不变，清掉 book_uid 指向已不存在视频的作品 / 刮削快照 / 花絮等
+        // 孤儿行（BUG-5530：页级撕裂留下的，库管家 ⑤ 系列关系补填拿孤儿作品当
+        // owner 插 collection_relations 撞外键）。作品子树随外键级联；幂等。只有迁移
+        // 测试的局部建表夹具会缺表。
+        if (await _tableExists('video_books') &&
+            await _tableExists('video_metadata_works') &&
+            await _tableExists('video_metadata_extras') &&
+            await _tableExists('video_metadata_episodes') &&
+            await _tableExists('collection_relations') &&
+            await _tableExists('video_episode_binding_overrides') &&
+            await _tableExists('video_collection_section_overrides') &&
+            await _tableExists('media_images') &&
+            await _tableExists('video_scrape_meta')) {
+          await purgeDanglingVideoBookRefs();
+        }
+      }
       // 阶梯之后（列已齐）补统计分区索引：v105 后新装的库 onCreate 曾漏建
       // （video-36i），每次升 schema 都幂等补一次。
       await _ensureStatIndexes();

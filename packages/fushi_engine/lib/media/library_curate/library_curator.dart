@@ -19,6 +19,8 @@ import 'dart:convert';
 import 'package:drift/drift.dart' show QueryRow, Variable;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/agent/agent_tool.dart';
+import 'package:fushi_engine/ai/ai_chat_client.dart'
+    show AiChatFailure, aiFailureStopsBatch;
 import 'package:fushi_engine/ai/ai_media_identity_assistant.dart';
 import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/identity/pending_identity.dart'
@@ -153,6 +155,16 @@ abstract interface class LibraryCurateFacts {
 
   /// 要刮削的游戏（没有任何资料源快照的）；[sinceMs] 非 null 时只要晚于它入库的。
   Future<List<LibraryCurateGameUnit>> gameScrapeUnits(int? sinceMs);
+
+  /// 视频作品资料（`video_metadata_works`）在 [sinceMs] 之后有没有变化（null = 有没有
+  /// 作品）。⑤ 的系列关系补填只在它为真时跑：新刮到 / 换了身份的作品才可能带来新
+  /// 关系或新的绑定目标。
+  Future<bool> videoWorksChangedSince(int? sinceMs);
+
+  /// 库变化戳：只读库、不联网的一串摘要（各库的行数 + 最近入库 / 更新时刻）。两次
+  /// 相同 = 这期间没有入库、删除、合集或刮削变化，自动路径据此判断「没有新内容」
+  /// （[LibraryCurator.runAuto]）。
+  Future<String> changeStamp();
 }
 
 /// 进度回调：正在跑第 [index] 个阶段（共 [total] 个）。
@@ -277,8 +289,10 @@ class LibraryCurator {
   final void Function()? onWorksChanged;
 
   /// ⑤ 作品层重算之前的系列关系存量补填（不联网：AniDB 读已落盘 XML、其余读
-  /// details 快照，见 `backfillScrapedCollectionRelations`）。null = 不补。幂等，
-  /// 每趟都跑：新落盘的 XML / 新入库的目标作品在下一趟补上、升级绑定。
+  /// details 快照，见 `backfillScrapedCollectionRelations`）。null = 不补。幂等；
+  /// 手动触发每趟都跑，自动路径只在作品资料自上一趟以来变过时跑
+  /// （[LibraryCurateFacts.videoWorksChangedSince]）：新落盘的 XML / 新入库的目标
+  /// 作品都伴随作品行更新，在那一趟补上、升级绑定。
   final Future<CollectionRelationBackfillResult> Function()?
   seriesRelationBackfill;
   final DateTime Function() _clock;
@@ -368,6 +382,37 @@ class LibraryCurator {
 
   bool _busy = false;
 
+  /// 自动路径的一趟（入库 / 扫描 / 库页重载后去抖调）。
+  ///
+  /// 先比库变化戳（[LibraryCurateFacts.changeStamp] + 此刻的 AI 指派）：与上一趟自动跑
+  /// 开始时一样、上一趟也没留下要接着做的活（[LibraryCurateState.autoResume]）= 没有
+  /// 新内容，什么都不做、返回 null——不记运行、不联网、不问 AI、不补填关系。库页
+  /// 每次重载都会来一次信号（阅读进度、合集变化都会重载书架），这一道门让那些信号
+  /// 几乎零成本。有一趟在跑抛 [LibraryCurateBusy]。
+  Future<LibraryCurateRun?> runAuto({bool Function()? isCancelled}) async {
+    if (_busy) throw LibraryCurateBusy(_current?.id ?? 0);
+    _busy = true;
+    try {
+      final LibraryCurateState state = await store.load();
+      final LibraryCurateAiAvailability a = ai();
+      final String stamp =
+          '${await facts.changeStamp()}'
+          '|ai:${a.organize ? 1 : 0}${a.videoIdentify ? 1 : 0}'
+          '${a.mediaLinks ? 1 : 0}';
+      if (!state.autoResume && state.autoStamp == stamp) return null;
+      return await _runLocked(
+        trigger: LibraryCurateTrigger.auto,
+        full: false,
+        isCancelled: isCancelled,
+        onProgress: null,
+        onStarted: null,
+        autoStamp: stamp,
+      );
+    } finally {
+      _busy = false;
+    }
+  }
+
   Future<LibraryCurateRun> _runLocked({
     required LibraryCurateTrigger trigger,
     required bool full,
@@ -376,6 +421,7 @@ class LibraryCurator {
     required void Function(LibraryCurateRun run)? onStarted,
     List<LibraryCurateStage> stages = LibraryCurateStage.values,
     String? target,
+    String? autoStamp,
   }) async {
     final LibraryCurateState state = await store.load();
     final int now = _clock().millisecondsSinceEpoch;
@@ -386,6 +432,13 @@ class LibraryCurator {
       full: full,
       target: target,
     );
+    if (trigger == LibraryCurateTrigger.auto) {
+      // 上一趟碰到过额度用尽 / 鉴权被拒这类失败：自动路径整趟不发 AI，只跑规则。
+      run.aiStopped = state.aiBlocked;
+    } else {
+      // 手动 = 用户要它重新试：先解除，这一趟还失败再记上。
+      state.aiBlocked = null;
+    }
     _current = run;
     state.upsertRun(run);
     await store.save(state);
@@ -398,6 +451,7 @@ class LibraryCurator {
           ? limits.autoMaxRequests
           : null,
       isCancelled: isCancelled ?? () => false,
+      nowMs: now,
       target: target,
     );
     try {
@@ -438,6 +492,13 @@ class LibraryCurator {
     } finally {
       run.finishedAt = _clock().millisecondsSinceEpoch;
       run.status = _overall(run);
+      // AI 被停（本趟碰到的，或自动路径带进来的）持久化：之后的自动路径不再反复
+      // 撞同一堵墙。
+      if (run.aiStopped != null) state.aiBlocked = run.aiStopped;
+      if (autoStamp != null) {
+        state.autoStamp = autoStamp;
+        state.autoResume = ctx.leftover;
+      }
       state.upsertRun(run);
       await store.save(state);
       _current = null;
@@ -560,8 +621,8 @@ class LibraryCurator {
         status: LibraryCurateStageStatus.done,
       );
     }
-    // 没指派「AI 整理库」：只跑规则那一步（不发任何 AI 请求）。
-    String? capped = ctx.ai.organize ? null : 'no_provider';
+    // 没指派「AI 整理库」/ AI 已被停：只跑规则那一步（不发任何 AI 请求）。
+    String? capped = !ctx.ai.organize ? 'no_provider' : ctx.aiStopped;
     if (capped == null && ctx.budget != null) {
       final int estimate = await facts.organizeRequestEstimate(domain, only);
       if (!ctx.spend(estimate)) capped = 'request_cap';
@@ -607,6 +668,8 @@ class LibraryCurator {
       );
     }
     final Map<String, Object?> data = _map(r.data);
+    // 整理的 AI 请求碰到配置类致命失败：后面各阶段都不再发 AI。
+    if (data['status'] == 'failed') ctx.stopAiOnCode(data['error']);
     final int changes = _int(data['changes']);
     final int proposals = _int(data['proposals']);
     final int requests = _int(data['requests']);
@@ -695,7 +758,7 @@ class LibraryCurator {
           toolbox.describeTool(LibraryCurateOps.videoWorkCandidates) != null,
       decide: videoDecider?.call(),
     );
-    final AiVideoPlacementJudge? judge = ctx.ai.videoIdentify
+    final AiVideoPlacementJudge? judge = ctx.ai.videoIdentify && ctx.aiOn
         ? placementJudge?.call()
         : null;
     if (judge == null) {
@@ -711,7 +774,7 @@ class LibraryCurator {
       changes: pass.changes,
       pending: pass.pending,
       requests: pass.requests,
-      error: pass.incomplete && ctx.capped ? 'request_cap' : null,
+      error: _incompleteError(ctx, pass.incomplete),
       note: judge == null ? 'rules_only' : null,
     );
   }
@@ -720,6 +783,7 @@ class LibraryCurator {
   /// 每趟重报；模型判过「放得对」的不重问（全量跑照样重看）。
   bool _structureOpen(_RunContext ctx, String uid) {
     if (ctx.state.suppressed.contains('structure:$uid')) return false;
+    if (ctx.skipDeferred('structure.ai:$uid')) return false;
     if (ctx.run.trigger == LibraryCurateTrigger.auto &&
         ctx.state.seen.contains('structure:$uid')) {
       return false;
@@ -744,6 +808,13 @@ class LibraryCurator {
           if (_structureOpen(ctx, '${f['uid']}')) f,
       ];
       if (files.isEmpty) continue;
+      final String deferKey = 'structure.ai:$workId';
+      if (ctx.skipDeferred(deferKey)) continue;
+      // AI 中途被停（额度用尽 / 鉴权被拒…）：后面的作品不再问，留到 AI 恢复后。
+      if (!ctx.aiOn) {
+        pass.incomplete = true;
+        return;
+      }
       if (!ctx.spend(1)) {
         pass.incomplete = true;
         return;
@@ -797,8 +868,11 @@ class LibraryCurator {
       } on Object catch (error, stack) {
         engineLog.log('libraryCurate.videoStructure.ai', error, stack);
         pass.incomplete = true;
+        if (ctx.stopAiOn(error)) return;
+        ctx.defer(deferKey);
         continue;
       }
+      ctx.settle(deferKey);
       final Map<String, AiVideoPlacementAnswer> answerOf =
           <String, AiVideoPlacementAnswer>{
             for (final AiVideoPlacementAnswer a in answers) a.key: a,
@@ -941,6 +1015,13 @@ class LibraryCurator {
     if (candidates.length == 1 && _strongTitleMatch(title, candidates[0])) {
       pick = candidates[0];
     } else if (candidates.length > 1 && pass.decide != null) {
+      // 要 AI 选、AI 却已被停：不当成「认不出」留待确认（那会让自动路径以后再也
+      // 不问它），退避到 AI 恢复后再看。
+      if (!ctx.aiOn) {
+        pass.incomplete = true;
+        ctx.defer('structure.ai:${f['uid']}');
+        return;
+      }
       if (!ctx.spend(1)) {
         pass.incomplete = true;
         pass.park(f, 'needs_identify', ref: bookId);
@@ -962,7 +1043,11 @@ class LibraryCurator {
       } on Object catch (error, stack) {
         engineLog.log('libraryCurate.videoStructure.identify', error, stack);
         pass.incomplete = true;
+        ctx.stopAiOn(error);
+        ctx.defer('structure.ai:${f['uid']}');
+        return;
       }
+      ctx.settle('structure.ai:${f['uid']}');
     }
     if (pick == null) {
       pass.park(
@@ -1012,6 +1097,14 @@ class LibraryCurator {
         error: 'no_provider',
       );
     }
+    if (!ctx.aiOn) {
+      // AI 已被停：与没指派同样跳过。
+      return LibraryCurateStageResult(
+        stage: stage,
+        status: LibraryCurateStageStatus.skipped,
+        error: ctx.aiStopped,
+      );
+    }
     final AgentToolResult? listed = await _read(
       LibraryCurateOps.videoWorkList,
       const <String, Object?>{'pending': true},
@@ -1036,7 +1129,8 @@ class LibraryCurator {
       for (final Map<String, Object?> w in _list(listed.data, 'works'))
         if (!ctx.state.suppressed.contains('scrape:${w['id']}') &&
             !progress.contains('${w['id']}') &&
-            !(auto && ctx.state.seen.contains('scrape:${w['id']}')))
+            !(auto && ctx.state.seen.contains('scrape:${w['id']}')) &&
+            !ctx.skipDeferred('scrape:${w['id']}'))
           w,
     ];
     final AiVideoIdentityDecider? decide = videoDecider?.call();
@@ -1052,6 +1146,12 @@ class LibraryCurator {
       }
       if (auto && examined >= limits.autoMaxScrapeWorks) {
         incomplete = true;
+        ctx.truncated = true;
+        break;
+      }
+      // AI 中途被停：这一阶段到此为止（与没指派同样不再搜资料源）。
+      if (!ctx.aiOn) {
+        incomplete = true;
         break;
       }
       examined++;
@@ -1064,6 +1164,7 @@ class LibraryCurator {
       );
       if (found == null || found.isError) {
         incomplete = true;
+        ctx.defer('scrape:$id');
         continue;
       }
       final List<Map<String, Object?>> candidates = _list(
@@ -1087,6 +1188,8 @@ class LibraryCurator {
         } on Object catch (error, stack) {
           engineLog.log('libraryCurate.scrape.ai', error, stack);
           incomplete = true;
+          ctx.defer('scrape:$id');
+          if (ctx.stopAiOn(error)) break;
           continue;
         }
         if (decision != null && decision.isAutoAcceptable) {
@@ -1098,6 +1201,7 @@ class LibraryCurator {
       if (pick == null) {
         pending++;
         ctx.state.seen.add('scrape:$id');
+        ctx.settle('scrape:$id');
         progress.add(id);
         ctx.run.pendingItems.add(
           LibraryCuratePendingItem(
@@ -1132,14 +1236,17 @@ class LibraryCurator {
           ),
         );
         progress.add(id);
+        ctx.settle('scrape:$id');
         continue;
       }
       if (w.unavailable || w.result!.isError) {
         incomplete = true;
+        ctx.defer('scrape:$id');
         continue;
       }
       changes++;
       progress.add(id);
+      ctx.settle('scrape:$id');
     }
     return LibraryCurateStageResult(
       stage: stage,
@@ -1149,8 +1256,15 @@ class LibraryCurator {
       changes: changes,
       pending: pending,
       requests: requests,
-      error: incomplete && ctx.capped ? 'request_cap' : null,
+      error: _incompleteError(ctx, incomplete),
     );
+  }
+
+  /// 没做完的阶段结论里的短码：AI 被停优先（用户要知道是额度 / 鉴权出了问题），
+  /// 其次是单趟请求上限。
+  static String? _incompleteError(_RunContext ctx, bool incomplete) {
+    if (!incomplete) return null;
+    return ctx.aiStopped ?? (ctx.capped ? 'request_cap' : null);
   }
 
   static bool _strongTitleMatch(String local, Map<String, Object?> candidate) {
@@ -1220,12 +1334,20 @@ class LibraryCurator {
     final List<LibraryCurateBookUnit> units = target == null
         ? <LibraryCurateBookUnit>[
             for (final LibraryCurateBookUnit u in _openBookUnits(
-              await facts.bookScrapeUnits(_since(stage, ctx)),
+              await _withDeferred<LibraryCurateBookUnit>(
+                ctx,
+                stage,
+                since: _since(stage, ctx),
+                load: facts.bookScrapeUnits,
+                keyOf: (LibraryCurateBookUnit u) => u.id,
+              ),
               ctx.state,
               progress: progress,
               auto: auto,
             ))
-              if (!ignored.contains(u.id)) u,
+              if (!ignored.contains(u.id) &&
+                  !ctx.skipDeferred('${stage.wire}:${u.id}'))
+                u,
           ]
         : targetBookUnits(await facts.bookScrapeUnits(null), target);
     final AiMediaIdentityDecider? decide = ctx.ai.videoIdentify
@@ -1243,9 +1365,11 @@ class LibraryCurator {
       }
       if (auto && examined >= limits.autoMaxBookUnits) {
         incomplete = true;
+        ctx.truncated = true;
         break;
       }
       examined++;
+      final String deferKey = '${stage.wire}:${unit.id}';
       final (String? source, String query, bool exact) = bookScrapeQueryOf(
         unit,
       );
@@ -1255,6 +1379,7 @@ class LibraryCurator {
       );
       if (candidates == null) {
         incomplete = true;
+        ctx.defer(deferKey);
         continue;
       }
       Map<String, Object?>? pick;
@@ -1272,6 +1397,13 @@ class LibraryCurator {
       // 规则认不了、又有候选（含唯一一条但标题对不上：资料源条目名常带出版社 /
       // 副标题，本地是系列名）→ 交 AI 在候选里选。
       if (pick == null && candidates.isNotEmpty && decide != null) {
+        // AI 已被停：不当成「AI 没认出来」留待确认（自动路径以后就不再问它了），
+        // 退避到 AI 恢复后再看；规则能认的其余单元照常做。
+        if (!ctx.aiOn) {
+          incomplete = true;
+          ctx.defer(deferKey);
+          continue;
+        }
         if (!ctx.spend(1)) {
           incomplete = true;
           break;
@@ -1283,6 +1415,8 @@ class LibraryCurator {
         } on Object catch (error, stack) {
           engineLog.log('libraryCurate.scrapeBooks.ai', error, stack);
           incomplete = true;
+          ctx.stopAiOn(error);
+          ctx.defer(deferKey);
           continue;
         }
         ai = PendingIdentityAiOutcome.declined;
@@ -1298,6 +1432,7 @@ class LibraryCurator {
       if (pick == null) {
         pending++;
         ctx.state.seen.add('scrape.books:${unit.id}');
+        ctx.settle(deferKey);
         progress.add(unit.id);
         ctx.run.pendingItems.add(
           LibraryCuratePendingItem(
@@ -1420,8 +1555,10 @@ class LibraryCurator {
       }
       if (unitFailed) {
         incomplete = true;
+        ctx.defer(deferKey);
       } else {
         progress.add(unit.id);
+        ctx.settle(deferKey);
       }
       if (!unitFailed && nothingToWrite) {
         // 走到这里作品已认出：AI 选的记 accepted，规则直接认的 AI 没被问到
@@ -1454,8 +1591,35 @@ class LibraryCurator {
       changes: changes,
       pending: pending,
       requests: requests,
-      error: incomplete && ctx.capped ? 'request_cap' : null,
+      error: _incompleteError(ctx, incomplete),
     );
+  }
+
+  /// [load]（按水位取的单元）再并上水位之前、上次没做成的单元
+  /// （[LibraryCurateState.deferred]）：阶段做完后水位越过了它们，只按水位取就再也
+  /// 看不到。自动路径只并退避到期的，手动并全部。没有这类单元时不多读一次。
+  Future<List<T>> _withDeferred<T>(
+    _RunContext ctx,
+    LibraryCurateStage stage, {
+    required int? since,
+    required Future<List<T>> Function(int? sinceMs) load,
+    required String Function(T unit) keyOf,
+  }) async {
+    final List<T> fresh = await load(since);
+    if (since == null) return fresh;
+    final String prefix = '${stage.wire}:';
+    final Set<String> retry = <String>{
+      for (final String k in ctx.state.deferred.keys)
+        if (k.startsWith(prefix) && !ctx.skipDeferred(k))
+          k.substring(prefix.length),
+    };
+    if (retry.isEmpty) return fresh;
+    final Set<String> have = <String>{for (final T u in fresh) keyOf(u)};
+    return <T>[
+      ...fresh,
+      for (final T u in await load(null))
+        if (retry.contains(keyOf(u)) && !have.contains(keyOf(u))) u,
+    ];
   }
 
   /// 还要处理的书单元：去掉撤销过（抑制）/ 已经写回过的卷，去掉这一水位下已处理的
@@ -1600,15 +1764,23 @@ class LibraryCurator {
         ? await loadPendingIdentityIgnored(db, PendingIdentityIgnoreDomain.game)
         : const <String>{};
     final List<LibraryCurateGameUnit> units = <LibraryCurateGameUnit>[
-      for (final LibraryCurateGameUnit g in await facts.gameScrapeUnits(
-        target == null ? _since(stage, ctx) : null,
-      ))
+      for (final LibraryCurateGameUnit g
+          in target == null
+              ? await _withDeferred<LibraryCurateGameUnit>(
+                  ctx,
+                  stage,
+                  since: _since(stage, ctx),
+                  load: facts.gameScrapeUnits,
+                  keyOf: (LibraryCurateGameUnit g) => g.id,
+                )
+              : await facts.gameScrapeUnits(null))
         if (target != null
             ? (g.id == target || 'game:${g.id}' == target)
             : !progress.contains(g.id) &&
                   !ignored.contains('game:${g.id}') &&
                   !ctx.state.suppressed.contains('scrape.games:${g.id}') &&
-                  !(auto && ctx.state.seen.contains('scrape.games:${g.id}')))
+                  !(auto && ctx.state.seen.contains('scrape.games:${g.id}')) &&
+                  !ctx.skipDeferred('scrape.games:${g.id}'))
           g,
     ];
     final AiMediaIdentityDecider? decide = ctx.ai.videoIdentify
@@ -1626,15 +1798,18 @@ class LibraryCurator {
       }
       if (auto && examined >= limits.autoMaxGameUnits) {
         incomplete = true;
+        ctx.truncated = true;
         break;
       }
       examined++;
+      final String deferKey = 'scrape.games:${game.id}';
       final AgentToolResult? found = await _read(
         LibraryCurateOps.gameScrapeSearch,
         <String, Object?>{'id': game.id},
       );
       if (found == null || found.isError) {
         incomplete = true;
+        ctx.defer(deferKey);
         continue;
       }
       final List<Map<String, Object?>> candidates = _list(
@@ -1652,6 +1827,11 @@ class LibraryCurator {
         decide,
       );
       if (pick == null && candidates.isNotEmpty && decide != null) {
+        if (!ctx.aiOn) {
+          incomplete = true;
+          ctx.defer(deferKey);
+          continue;
+        }
         if (!ctx.spend(1)) {
           incomplete = true;
           break;
@@ -1663,6 +1843,8 @@ class LibraryCurator {
         } on Object catch (error, stack) {
           engineLog.log('libraryCurate.scrapeGames.ai', error, stack);
           incomplete = true;
+          ctx.stopAiOn(error);
+          ctx.defer(deferKey);
           continue;
         }
         ai = PendingIdentityAiOutcome.declined;
@@ -1677,6 +1859,7 @@ class LibraryCurator {
       if (pick == null) {
         pending++;
         ctx.state.seen.add('scrape.games:${game.id}');
+        ctx.settle(deferKey);
         progress.add(game.id);
         ctx.run.pendingItems.add(
           LibraryCuratePendingItem(
@@ -1703,6 +1886,7 @@ class LibraryCurator {
       if (w.needsConfirmation) {
         pending++;
         progress.add(game.id);
+        ctx.settle(deferKey);
         ctx.run.pendingItems.add(
           LibraryCuratePendingItem(
             stage: stage,
@@ -1715,10 +1899,12 @@ class LibraryCurator {
       }
       if (w.unavailable || w.result!.isError) {
         incomplete = true;
+        ctx.defer(deferKey);
         continue;
       }
       changes++;
       progress.add(game.id);
+      ctx.settle(deferKey);
     }
     return LibraryCurateStageResult(
       stage: stage,
@@ -1728,7 +1914,7 @@ class LibraryCurator {
       changes: changes,
       pending: pending,
       requests: requests,
-      error: incomplete && ctx.capped ? 'request_cap' : null,
+      error: _incompleteError(ctx, incomplete),
     );
   }
 
@@ -1769,10 +1955,27 @@ class LibraryCurator {
         error: 'no_provider',
       );
     }
+    if (!ctx.aiOn) {
+      return LibraryCurateStageResult(
+        stage: stage,
+        status: LibraryCurateStageStatus.skipped,
+        error: ctx.aiStopped,
+      );
+    }
     final Set<String> progress = ctx.progressOf(stage);
+    final int? since = _since(stage, ctx);
+    final List<String> fresh = await facts.linkEndpointsSince(since);
     final List<String> endpoints = <String>[
-      for (final String e in await facts.linkEndpointsSince(_since(stage, ctx)))
-        if (!progress.contains(e) && !ctx.state.suppressed.contains('links:$e'))
+      for (final String e in <String>{
+        ...fresh,
+        // 水位之前上次推断失败的端点（见 [_withDeferred]）。
+        if (since != null)
+          for (final String k in ctx.state.deferred.keys)
+            if (k.startsWith('links:')) k.substring('links:'.length),
+      })
+        if (!progress.contains(e) &&
+            !ctx.state.suppressed.contains('links:$e') &&
+            !ctx.skipDeferred('links:$e'))
           e,
     ];
     final bool auto = ctx.run.trigger == LibraryCurateTrigger.auto;
@@ -1794,6 +1997,7 @@ class LibraryCurator {
         final int room = limits.autoMaxLinkEndpoints - processed;
         if (room <= 0) {
           incomplete = true;
+          ctx.truncated = true;
           break;
         }
         if (batch.length > room) batch = batch.sublist(0, room);
@@ -1815,21 +2019,35 @@ class LibraryCurator {
       final AgentToolResult r = w.result!;
       if (r.isError) {
         incomplete = true;
+        for (final String e in batch) {
+          ctx.defer('links:$e');
+        }
         continue;
       }
       final Map<String, Object?> data = _map(r.data);
       changes += _int(data['applied']);
       pending += _int(data['suggested']);
       requests += _int(data['requests']);
+      processed += batch.length;
+      // AI 碰到配置类致命失败（操作已退回只落确定性证据）：这一批不记进度，AI
+      // 恢复后再推断；后面的批次不再发。
+      if (ctx.stopAiOnCode(data['aiError'])) {
+        incomplete = true;
+        break;
+      }
       final Set<String> failed = <String>{
         for (final Object? f in (data['failed'] as List?) ?? const <Object?>[])
           '$f',
       };
       if (failed.isNotEmpty) incomplete = true;
       for (final String e in batch) {
-        if (!failed.contains(e)) progress.add(e);
+        if (failed.contains(e)) {
+          ctx.defer('links:$e');
+        } else {
+          progress.add(e);
+          ctx.settle('links:$e');
+        }
       }
-      processed += batch.length;
     }
     // 被取消 / 单趟上限截断、或有端点失败：没进度的下一趟接着做。
     if (endpoints.any((String e) => !progress.contains(e))) incomplete = true;
@@ -1842,7 +2060,7 @@ class LibraryCurator {
       changes: changes,
       pending: pending,
       requests: requests,
-      error: incomplete && ctx.capped ? 'request_cap' : null,
+      error: _incompleteError(ctx, incomplete),
     );
   }
 
@@ -1866,7 +2084,7 @@ class LibraryCurator {
     }
     // 声纹命中 / 本地标题的确定性部分不联网、不花钱，没指派 AI 也跑；AI 裁决只在
     // 指派了「作品关联」且没碰到单趟上限时开。
-    final bool useAi = ctx.ai.mediaLinks && ctx.spend(1);
+    final bool useAi = ctx.ai.mediaLinks && ctx.aiOn && ctx.spend(1);
     final _Write w =
         await _write(ctx, LibraryCurateOps.linksMusic, <String, Object?>{
           'trigger': ctx.run.trigger == LibraryCurateTrigger.auto
@@ -1890,7 +2108,8 @@ class LibraryCurator {
       );
     }
     final Map<String, Object?> data = _map(r.data);
-    final bool aiSkipped = ctx.ai.mediaLinks && !useAi;
+    ctx.stopAiOnCode(data['aiError']);
+    final bool aiSkipped = ctx.ai.mediaLinks && (!useAi || !ctx.aiOn);
     return LibraryCurateStageResult(
       stage: stage,
       status: aiSkipped
@@ -1899,7 +2118,7 @@ class LibraryCurator {
       changes: _int(data['applied']),
       pending: _int(data['suggested']),
       requests: _int(data['requests']),
-      error: aiSkipped ? 'request_cap' : null,
+      error: aiSkipped ? (ctx.aiStopped ?? 'request_cap') : null,
       note: useAi ? null : 'rules_only',
     );
   }
@@ -1910,7 +2129,15 @@ class LibraryCurator {
     final Future<CollectionRelationBackfillResult> Function()? backfill =
         seriesRelationBackfill;
     int relationRows = 0;
-    if (backfill != null) {
+    // 系列关系补填要读全部作品（TMDB 那步还可能联网）：只在作品资料自上一趟以来变过
+    // （新刮到 / 换了身份）或这一趟有改动时跑；手动触发照跑（用户明确要整理）。
+    final bool relationsStale =
+        ctx.run.trigger == LibraryCurateTrigger.manual ||
+        ctx.run.changes > 0 ||
+        await facts.videoWorksChangedSince(
+          _since(LibraryCurateStage.works, ctx),
+        );
+    if (backfill != null && relationsStale) {
       try {
         final CollectionRelationBackfillResult r = await backfill();
         relationRows = r.rows + r.bound;
@@ -2338,8 +2565,57 @@ class _RunContext {
     required this.ai,
     required this.budget,
     required this.isCancelled,
+    required this.nowMs,
     this.target,
   });
+
+  /// 这一趟的开始时刻（退避的基准）。
+  final int nowMs;
+
+  /// AI 被停的失败短码（配置类致命失败，见 [AiChatFailure.stopsBatch]）；null =
+  /// AI 照常可用。一旦置上，这一趟后面所有 AI 调用都不再发。
+  String? get aiStopped => run.aiStopped;
+
+  bool get aiOn => run.aiStopped == null;
+
+  /// [error] 是配置类致命失败时停掉这一趟后面的全部 AI 调用，返回 true。
+  bool stopAiOn(Object error) {
+    if (error is AiChatFailure && error.stopsBatch) {
+      run.aiStopped ??= error.message;
+      return true;
+    }
+    return false;
+  }
+
+  /// 失败短码 [code]（操作结果里带回的 AI 失败）是配置类致命失败时同上。
+  bool stopAiOnCode(Object? code) {
+    if (code is String && aiFailureStopsBatch(code)) {
+      run.aiStopped ??= code;
+      return true;
+    }
+    return false;
+  }
+
+  bool get auto => run.trigger == LibraryCurateTrigger.auto;
+
+  /// 自动路径跳过还在退避期的单元（手动触发照样重试）。
+  bool skipDeferred(String key) => auto && state.isDeferred(key, nowMs);
+
+  /// [key] 这一趟没做成：记退避（单条重试不记——那是用户对这一条的一次性请求，
+  /// 不该改自动路径的节奏）。
+  void defer(String key) {
+    if (target == null) state.defer(key, nowMs);
+  }
+
+  /// [key] 做成了 / 留进待确认：清掉退避。
+  void settle(String key) => state.deferred.remove(key);
+
+  /// 本趟有没有因为单趟条目上限（[LibraryCurateLimits]）少做了什么。
+  bool truncated = false;
+
+  /// 留了下一趟自动跑该接着做的活（请求上限、条目上限、取消）。失败单元不算——
+  /// 它们进 [LibraryCurateState.deferred]，按退避重试。
+  bool get leftover => capped || truncated || isCancelled();
 
   final LibraryCurateRun run;
 
@@ -2528,6 +2804,57 @@ class DatabaseLibraryCurateFacts implements LibraryCurateFacts {
     }
     return out;
   }
+
+  @override
+  Future<bool> videoWorksChangedSince(int? sinceMs) async {
+    final List<QueryRow> rows = await db
+        .customSelect(
+          'SELECT 1 FROM video_metadata_works WHERE updated_at > ? LIMIT 1',
+          variables: <Variable<Object>>[Variable<int>(sinceMs ?? -1)],
+        )
+        .get();
+    return rows.isNotEmpty;
+  }
+
+  /// 各库「行数 + 最近入库 / 更新时刻」拼成一串：入库、删除（行数变）、合集增删 /
+  /// 成员变化、刮到身份（作品行 `updated_at`）、游戏拿到资料源快照、音乐库变化都会
+  /// 改它；阅读 / 播放进度、界面状态不会。一条只读查询，不联网。
+  @override
+  Future<String> changeStamp() async {
+    final QueryRow row = await db.customSelect(_kChangeStampSql).getSingle();
+    return <String>[
+      for (final String column in _kChangeStampColumns)
+        '${row.data[column] ?? ''}',
+    ].join('/');
+  }
+
+  static const List<String> _kChangeStampColumns = <String>[
+    'books',
+    'videos',
+    'games',
+    'game_sources',
+    'collections',
+    'collection_items',
+    'works',
+    'music',
+  ];
+
+  static const String _kChangeStampSql =
+      'SELECT '
+      "(SELECT COUNT(*) || ':' || IFNULL(MAX(local_added_at), 0) "
+      'FROM epub_books) AS books, '
+      "(SELECT COUNT(*) || ':' || IFNULL(MAX(local_added_at), 0) "
+      'FROM video_books) AS videos, '
+      "(SELECT COUNT(*) || ':' || IFNULL(MAX(added_at), 0) "
+      'FROM galgames) AS games, '
+      '(SELECT COUNT(*) FROM galgame_sources) AS game_sources, '
+      "(SELECT COUNT(*) || ':' || IFNULL(MAX(created_at), 0) "
+      'FROM media_collections) AS collections, '
+      '(SELECT COUNT(*) FROM media_collection_items) AS collection_items, '
+      "(SELECT COUNT(*) || ':' || IFNULL(MAX(updated_at), 0) "
+      'FROM video_metadata_works) AS works, '
+      "(SELECT COUNT(*) || ':' || IFNULL(MAX(updated_at), 0) "
+      'FROM music_albums) AS music';
 
   @override
   Future<bool> musicChangedSince(int? sinceMs) async {

@@ -214,6 +214,14 @@ Future<Directory?> productionAniDbXmlDirectory() async {
   );
 }
 
+/// 补填只认 owner 还在库里的作品：`collection_relations` 的 owner 列有外键，指向已删
+/// 合集 / 视频的孤儿作品（BUG-5530：页级撕裂留下的）当 owner 插行会撞外键
+/// （SqliteException 787），整趟补填失败。
+const String _kLiveOwner =
+    '((w.collection_id IS NOT NULL AND EXISTS (SELECT 1 FROM media_collections c '
+    'WHERE c.id = w.collection_id)) OR (w.book_uid IS NOT NULL AND EXISTS '
+    '(SELECT 1 FROM video_books b WHERE b.book_uid = w.book_uid)))';
+
 /// 存量补填：已经刮过的作品（挂合集的与挂单视频的都算）不重新联网也补出系列关系。
 ///
 /// - 主源 AniDB：读 [aniDbXmlDirectory] 下的 `AnimeDoc_{aid}.xml`（刮削时落盘的
@@ -252,7 +260,7 @@ Future<CollectionRelationBackfillResult> backfillScrapedCollectionRelations(
                   'FROM video_metadata_works w '
                   'JOIN video_metadata_provider_identities i '
                   'ON i.work_id = w.id AND i.is_primary = 1 '
-                  'WHERE w.collection_id IS NOT NULL OR w.book_uid IS NOT NULL '
+                  'WHERE $_kLiveOwner '
                   'ORDER BY w.collection_id, w.book_uid',
                 )
                 .get())
@@ -314,7 +322,7 @@ Future<CollectionRelationBackfillResult> backfillScrapedCollectionRelations(
             'i.external_id AS eid '
             'FROM video_metadata_works w '
             'JOIN video_metadata_provider_identities i ON i.work_id = w.id '
-            'WHERE w.collection_id IS NOT NULL OR w.book_uid IS NOT NULL',
+            'WHERE $_kLiveOwner',
           )
           .get()) {
     final VideoRelationOwner? owner = _ownerOfRow(row);

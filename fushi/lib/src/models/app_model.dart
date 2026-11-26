@@ -5926,9 +5926,9 @@ class AppModel
           nameLanguage: () => appLocale.toLanguageTag(),
         ),
       );
-      // AI 库管家自动路径（spec 2026-11-18 §9，默认开）：开着时接管上面那套自动
-      // 整理的触发点（scheduleAutomaticLibraryOrganize 内部转交）。编排器经进程级
-      // 操作上下文拿操作目录，根组件登记前那几次触发什么都不做。
+      // AI 库管家自动路径（spec 2026-11-18 §9，默认关，用户自己打开后才跑）：开着时
+      // 接管上面那套自动整理的触发点（scheduleAutomaticLibraryOrganize 内部转交）。
+      // 编排器经进程级操作上下文拿操作目录，根组件登记前那几次触发什么都不做。
       installLibraryCurateAutomatic(
         LibraryCurateAutoHost(
           settings: _prefsRepo!,

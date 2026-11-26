@@ -253,6 +253,8 @@ void main() {
       db = FushiDatabase.forTesting(NativeDatabase.memory());
       prefs = PreferencesRepository(db);
       await prefs.loadFromDb();
+      // 默认关（用户 2026-11-26）：这一组测的是打开之后的行为。
+      await prefs.setLibraryAgentReviewAuto(true);
       prompts = <String>[];
       result = () => const LibraryAgentReviewSessionResult();
       totals = null;

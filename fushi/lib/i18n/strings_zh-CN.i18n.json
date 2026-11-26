@@ -5502,6 +5502,7 @@
   "library_curate_estimate_body": "约 $items 个条目要处理，约 $requests 次 AI 请求。",
   "library_curate_estimate_title": "整理整个库？",
   "library_curate_not_ready": "还没准备好，稍后再试",
+  "library_curate_result_ai_stopped": "AI 请求已停止：$reason。后面的步骤只跑了不用 AI 的部分；在你再手动整理一次之前，自动整理不会再发 AI 请求。",
   "library_curate_result_nothing": "没有要改的",
   "library_curate_result_title": "改了 $changes 处，$pending 条待你确认",
   "library_curate_run_action": "立即整理整个库",
