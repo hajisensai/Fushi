@@ -9,7 +9,7 @@
 #
 # 部署目标与 fushi/macos/Runner.xcodeproj 的 MACOSX_DEPLOYMENT_TARGET 对齐（13.4），
 # 否则链接 Runner 时 ld 会对「dylib 比 app 要求更新的系统」报警、老系统上加载失败。
-# macOS 上推理走 Accelerate（src/rwkv/matmul.rs），dylib 依赖系统 Accelerate.framework。
+# 推理与其他平台同一套确定性算术（src/rwkv/det.rs，NEON），不依赖 Accelerate.framework。
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

@@ -26,7 +26,7 @@ use half::f16;
 use rayon::prelude::*;
 
 use super::super::slots::SlotStore;
-use super::super::{CARD_FEATURES, StatePrecision, add_scaled_in_place, dot_product, sigmoid};
+use super::super::{CARD_FEATURES, StatePrecision, add_scaled_in_place, det, dot_product, sigmoid};
 use super::weights::Weights;
 
 pub(super) const D: usize = 64;
@@ -48,7 +48,6 @@ const GROUP_NORM_EPS: f32 = 6.4e-4;
 const NORMALIZE_EPS: f32 = 1e-12;
 const MAX_LORA_RANK: usize = 16;
 const MAX_CHANNEL_HIDDEN: usize = 256;
-const SOFTPLUS_THRESHOLD: f32 = 20.0;
 pub(super) const PROB_CLAMP: f32 = 1e-5;
 /// Card and note streams: the ones kept at the runtime's state precision
 /// (deck, preset and user states are few and stay f32).
@@ -413,8 +412,7 @@ impl TimeMixer {
             p.g.copy_from_slice(&g[at..at + D]);
             for c in 0..D {
                 p.a[c] = sigmoid(a[at + c]);
-                let dd = -0.5 - softplus(-tmp[at + c]);
-                p.w[c] = (-dd.exp()).exp();
+                p.w[c] = det::decay(tmp[at + c]);
             }
             for h in 0..HEADS {
                 let range = h * K..(h + 1) * K;
@@ -478,7 +476,7 @@ fn lora_rows(
     match between {
         Activation::None => {}
         Activation::Sigmoid => hidden.iter_mut().for_each(|h| *h = sigmoid(*h)),
-        Activation::Tanh => hidden.iter_mut().for_each(|h| *h = h.tanh()),
+        Activation::Tanh => hidden.iter_mut().for_each(|h| *h = det::tanh(*h)),
     }
     second.apply_rows(hidden, out);
 }
@@ -490,15 +488,6 @@ fn torch_lerp(start: f32, end: f32, weight: f32) -> f32 {
         start + weight * (end - start)
     } else {
         end - (end - start) * (1.0 - weight)
-    }
-}
-
-#[inline]
-fn softplus(x: f32) -> f32 {
-    if x > SOFTPLUS_THRESHOLD {
-        x
-    } else {
-        x.exp().ln_1p()
     }
 }
 
@@ -596,18 +585,22 @@ impl SmallHeads {
     pub fn curve_retrievability(&self, seconds: f32) -> f32 {
         let w = &self.curve[0..3];
         let max = w.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-        let e = [(w[0] - max).exp(), (w[1] - max).exp(), (w[2] - max).exp()];
+        let e = [
+            det::exp(w[0] - max),
+            det::exp(w[1] - max),
+            det::exp(w[2] - max),
+        ];
         let sum = e[0] + e[1] + e[2];
         let t = seconds.max(1.0);
         let mut r = 0.0f32;
         for (i, weight) in e.iter().enumerate() {
-            let s = self.curve[3 + i].clamp(-25.0, 25.0).exp();
-            let d = self.curve[6 + i].clamp(-25.0, 25.0).exp();
-            r += weight / sum * (-d * (t / (1e-7 + s)).ln_1p()).exp();
+            let s = det::exp(self.curve[3 + i].clamp(-25.0, 25.0));
+            let d = det::exp(self.curve[6 + i].clamp(-25.0, 25.0));
+            r += weight / sum * det::exp(-d * det::ln_1p(t / (1e-7 + s)));
         }
         let raw = 1e-5 + (1.0 - 2e-5) * r;
-        let logit = (raw / (1.0 - raw)).ln() + 1e-5;
-        1.0 / (1.0 + (-logit).exp())
+        let logit = det::ln(raw / (1.0 - raw)) + 1e-5;
+        1.0 / (1.0 + det::exp(-logit))
     }
 
     /// `p_imm`: 1 - P(Again), clamped to [1e-5, 1 - 1e-5].
@@ -623,7 +616,7 @@ impl SmallHeads {
 
 fn softmax4(x: &[f32; 4]) -> [f32; 4] {
     let max = x.iter().copied().fold(f32::NEG_INFINITY, f32::max);
-    let e = x.map(|v| (v - max).exp());
+    let e = x.map(|v| det::exp(v - max));
     let sum: f32 = e.iter().sum();
     e.map(|v| v / sum)
 }
