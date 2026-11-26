@@ -8,6 +8,7 @@ import 'package:fushi_engine/media/collections/book_series_key.dart';
 import 'package:fushi_engine/media/tracking/bangumi_tracking_provider.dart';
 import 'package:fushi_engine/media/tracking/book_series_link.dart';
 import 'package:fushi_engine/media/tracking/book_tracking_link.dart';
+import 'package:fushi_engine/media/tracking/media_tracking_recent_sends.dart';
 import 'package:fushi_engine/media/tracking/media_tracking_repository.dart';
 import 'package:fushi_engine/media/tracking/remote_anime_link.dart';
 import 'package:fushi_engine/media/tracking/title_match.dart';
@@ -274,6 +275,9 @@ class MediaTrackingHomeSnapshot {
     this.inertMappingIds = const <int>{},
     this.mediaServerInertMappingIds = const <int>{},
     this.mediaServerCoverage = MediaServerLibraryCoverage.empty,
+    this.activity = const <MediaTrackingActivityRow>[],
+    this.queued = const <PendingTrackingUpdate>[],
+    this.seriesVolumeBooks = const <String, String>{},
   });
 
   static const MediaTrackingHomeSnapshot empty = MediaTrackingHomeSnapshot(
@@ -307,6 +311,39 @@ class MediaTrackingHomeSnapshot {
   /// server ([MediaTrackingRepository.loadMediaServerLibraryCoverage]).
   final MediaServerLibraryCoverage mediaServerCoverage;
 
+  /// The Activity log, newest first ([MediaTrackingRepository.listActivity]):
+  /// what the home widget's "Last synced" view reads.
+  final List<MediaTrackingActivityRow> activity;
+
+  /// Updates waiting in the outbox of the sites that are on and signed in,
+  /// without those of ignored items.
+  final List<PendingTrackingUpdate> queued;
+
+  /// `<series card id>|<volume>` -> the book key of that volume, for the
+  /// series-link sends in [recentSends] and [queuedSends] (so the home widget
+  /// can show the cover of the volume a series link counted). Volumes are
+  /// numbered as the series link numbers them ([planSeriesCoverage]).
+  final Map<String, String> seriesVolumeBooks;
+
+  /// The book of the volume a series-link [send] counted; null for any other
+  /// send, or when no volume of the card has that number.
+  String? seriesVolumeBookOf(MediaTrackingRecentSend send) =>
+      send.mediaType == TrackingMediaType.bookCollection.value
+      ? seriesVolumeBooks['${send.mediaKey}|${send.progress}']
+      : null;
+
+  /// The newest sends, one per title ([mediaTrackingRecentSends]).
+  List<MediaTrackingRecentSend> recentSends({int limit = 8}) =>
+      mediaTrackingRecentSends(activity, limit: limit);
+
+  /// The outbox, one entry per title ([mediaTrackingQueuedSends]).
+  List<MediaTrackingRecentSend> get queuedSends =>
+      mediaTrackingQueuedSends(queued);
+
+  /// Counts over the sends since [sinceMs] ([mediaTrackingSendTotals]).
+  MediaTrackingSendTotals sendTotalsSince(int sinceMs) =>
+      mediaTrackingSendTotals(activity, sinceMs: sinceMs);
+
   /// 去掉 [hidden] 判为藏起来的本地作品（上锁且本次会话未解锁，判据由 app 端
   /// `MediaVisibility.hidesTrackedMedia` 给）的链接与未链接条目。没有要藏的原样返回。
   MediaTrackingHomeSnapshot withoutMedia(
@@ -322,8 +359,24 @@ class MediaTrackingHomeSnapshot {
           for (final MediaTrackingUnlinkedItem u in unlinked)
             if (!hidden(u.mediaType.value, u.mediaKey)) u,
         ];
+    final List<MediaTrackingActivityRow> keptActivity =
+        <MediaTrackingActivityRow>[
+          for (final MediaTrackingActivityRow a in activity)
+            if (!hidden(a.mediaType, a.mediaKey)) a,
+        ];
+    final List<PendingTrackingUpdate> keptQueued = <PendingTrackingUpdate>[
+      for (final PendingTrackingUpdate q in queued)
+        if (!hidden(q.mapping.mediaType, q.mapping.mediaKey)) q,
+    ];
+    final Map<String, String> keptVolumeBooks = <String, String>{
+      for (final MapEntry<String, String> e in seriesVolumeBooks.entries)
+        if (!hidden(TrackingMediaType.book.value, e.value)) e.key: e.value,
+    };
     if (keptMappings.length == mappings.length &&
-        keptUnlinked.length == unlinked.length) {
+        keptUnlinked.length == unlinked.length &&
+        keptActivity.length == activity.length &&
+        keptQueued.length == queued.length &&
+        keptVolumeBooks.length == seriesVolumeBooks.length) {
       return this;
     }
     return MediaTrackingHomeSnapshot(
@@ -334,6 +387,9 @@ class MediaTrackingHomeSnapshot {
       inertMappingIds: inertMappingIds,
       mediaServerInertMappingIds: mediaServerInertMappingIds,
       mediaServerCoverage: mediaServerCoverage,
+      activity: keptActivity,
+      queued: keptQueued,
+      seriesVolumeBooks: keptVolumeBooks,
     );
   }
 }
@@ -1238,19 +1294,33 @@ class MediaTrackingService {
   }
 
   /// One snapshot per registered provider, in registry order.
-  Future<List<MediaTrackingProviderStatus>> loadProviderStatuses() async {
+  Future<List<MediaTrackingProviderStatus>> loadProviderStatuses() async =>
+      (await _loadProviderStatusesWithQueue()).statuses;
+
+  /// [loadProviderStatuses] plus the active outbox rows of the sites that are
+  /// on and signed in (read once for both).
+  Future<
+    ({
+      List<MediaTrackingProviderStatus> statuses,
+      List<PendingTrackingUpdate> queued,
+    })
+  >
+  _loadProviderStatusesWithQueue() async {
     final List<MediaTrackingProviderStatus> result =
         <MediaTrackingProviderStatus>[];
+    final List<PendingTrackingUpdate> queued = <PendingTrackingUpdate>[];
     for (final TrackingProvider provider in _registry.all) {
       final TrackingProviderPrefKeys keys =
           TrackingProviderPrefKeys.forProvider(provider.id);
       final List<PendingTrackingUpdate> pending = await _activePending(
         provider.id,
       );
+      final bool enabled = isProviderEnabled(provider.id);
+      if (enabled && provider.isConfigured) queued.addAll(pending);
       result.add(
         MediaTrackingProviderStatus(
           providerId: provider.id,
-          enabled: isProviderEnabled(provider.id),
+          enabled: enabled,
           configured: provider.isConfigured,
           accountName: _accountNameOf(provider),
           lastSyncAt: _intPref(keys.lastSyncAt),
@@ -1265,15 +1335,80 @@ class MediaTrackingService {
         ),
       );
     }
-    return result;
+    return (statuses: result, queued: queued);
   }
 
   /// The home page's view of tracking; see [MediaTrackingHomeSnapshot].
+  /// [MediaTrackingHomeSnapshot.seriesVolumeBooks] of [sends]: for each
+  /// series-link send, the book the series link numbers as the volume it sent.
+  /// One coverage plan per card, without read progress (numbers do not depend
+  /// on it), in a fixed number of queries.
+  Future<Map<String, String>> _seriesVolumeBooks(
+    Iterable<MediaTrackingRecentSend> sends,
+  ) async {
+    final Map<int, _SeriesCard> cards = <int, _SeriesCard>{};
+    final Map<int, Set<int>> volumes = <int, Set<int>>{};
+    for (final MediaTrackingRecentSend send in sends) {
+      if (send.mediaType != TrackingMediaType.bookCollection.value ||
+          send.progressMode != TrackingProgressMode.volume.value ||
+          send.progress <= 0 ||
+          send.siteIds.isEmpty) {
+        continue;
+      }
+      final int? id = int.tryParse(send.mediaKey);
+      final TrackingKind? kind = _trackingKindOf(send.kind);
+      if (id == null || kind == null) continue;
+      cards.putIfAbsent(
+        id,
+        () => (collectionId: id, providerId: send.siteIds.first, kind: kind),
+      );
+      (volumes[id] ??= <int>{}).add(send.progress);
+    }
+    if (cards.isEmpty) return const <String, String>{};
+    final List<_SeriesCard> list = cards.values.toList(growable: false);
+    final List<TrackingSeriesCoverage> coverages = await _seriesCoverages(
+      list,
+      readState: false,
+    );
+    final Map<String, String> out = <String, String>{};
+    for (int i = 0; i < list.length; i++) {
+      final int id = list[i].collectionId;
+      for (final int volume in volumes[id]!) {
+        // A counted volume first: an uncounted one (spin-off, another
+        // format) may carry the same number.
+        TrackingSeriesMember? pick;
+        for (final TrackingSeriesMember member in coverages[i].members) {
+          if (member.volume != volume) continue;
+          if (member.counted) {
+            pick = member;
+            break;
+          }
+          pick ??= member;
+        }
+        if (pick != null) out['$id|$volume'] = pick.bookKey;
+      }
+    }
+    return out;
+  }
+
   Future<MediaTrackingHomeSnapshot> loadHomeSnapshot() async {
     final List<MediaTrackingMappingRow> mappings = await _repository
         .listMappings();
+    final ({
+      List<MediaTrackingProviderStatus> statuses,
+      List<PendingTrackingUpdate> queued,
+    })
+    sites = await _loadProviderStatusesWithQueue();
+    final List<MediaTrackingActivityRow> activity = await _repository
+        .listActivity();
     return MediaTrackingHomeSnapshot(
-      sites: await loadProviderStatuses(),
+      sites: sites.statuses,
+      queued: sites.queued,
+      activity: activity,
+      seriesVolumeBooks: await _seriesVolumeBooks(<MediaTrackingRecentSend>[
+        ...mediaTrackingRecentSends(activity),
+        ...mediaTrackingQueuedSends(sites.queued),
+      ]),
       siteNames: <String, String>{
         for (final TrackingProvider provider in _registry.all)
           provider.id: provider.displayName,

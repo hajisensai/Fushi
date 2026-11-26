@@ -1,6 +1,8 @@
 /// Media tracking on the home page ([HomeWidgetKind.tracking]).
 ///
-/// Two parts, both read from one [MediaTrackingHomeSnapshot]:
+/// Two parts, both read from one [MediaTrackingHomeSnapshot] (the "Last
+/// synced" view, shown while nothing blocks tracking, is
+/// `home_tracking_feed.dart`):
 /// - [HomeTrackingPanel]: the 2×1 home widget. It stays on the home page once
 ///   placed; with nothing to do it says so in one line. Users who never edited
 ///   their home page get it in the first layout only while something needs
@@ -115,8 +117,9 @@ class HomeTrackingSummary {
   /// Latest sync attempt on any connected site (epoch ms; 0 = never).
   final int lastSyncAt;
 
-  /// Local titles linked on at least one connected site (the "N synced" the
-  /// collage block shows when nothing needs the user).
+  /// Local titles linked on at least one connected site (the "N linked" the
+  /// collage block shows when nothing needs the user and nothing was sent
+  /// yet; once something was sent, `HomeTrackingFeed` takes over).
   final int linked;
 
   /// Something the user has to do: sign in again, link a title, or look at a
@@ -403,8 +406,9 @@ List<String> homeTrackingPosterChips(
 /// coloured by state. While titles wait to be linked the figure is that count
 /// (also the watermark), the other problems are chips, the covers of the
 /// waiting titles fan out on the end side and "Fix ›" sits bottom-end. When
-/// nothing needs the user it says how many titles are synced and when the
-/// last sync ran. Tapping anywhere opens the Tracking page (same as [onOpen]).
+/// nothing needs the user (and nothing was sent yet) it says how many titles
+/// are linked and when the last sync ran. Tapping anywhere opens the Tracking
+/// page (same as [onOpen]).
 class HomeTrackingPoster extends StatelessWidget {
   const HomeTrackingPoster({
     super.key,
@@ -435,7 +439,7 @@ class HomeTrackingPoster extends StatelessWidget {
     final int figure = homeTrackingPosterFigure(summary);
     final String counted = summary.unlinked > 0
         ? t.home_tracking_panel_to_link(n: figure)
-        : t.home_tracking_panel_synced(n: figure);
+        : t.home_tracking_panel_linked(n: figure);
     // The counted phrase split around the figure, so the number is big and
     // the words stay small on whichever side the language puts them
     // ("12 to link", "已同步 12 项", "Карт: 12").

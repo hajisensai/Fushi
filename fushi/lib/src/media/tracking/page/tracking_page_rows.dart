@@ -678,22 +678,12 @@ class TrackingIgnoredRow extends StatelessWidget {
 
 /// What one Activity row sent, in words: "Episode 5", "Volume 3 ·
 /// finished", or a game's collection status.
-String trackingActivitySentLabel(MediaTrackingActivityRow row) {
-  final String what = switch (TrackingProgressMode.tryParse(row.progressMode)) {
-    TrackingProgressMode.status => switch (row.progress) {
-      1 => t.game_status_want_to_play,
-      2 => t.game_status_played,
-      3 => t.game_status_playing,
-      4 => t.game_status_on_hold,
-      5 => t.game_status_dropped,
-      _ => '${t.media_tracking_status} ${row.progress}',
-    },
-    _ => '${trackingProgressModeLabel(row.progressMode)} ${row.progress}',
-  };
-  return row.completed && row.progressMode != TrackingProgressMode.status.value
-      ? '$what · ${t.media_tracking_activity_finished}'
-      : what;
-}
+String trackingActivitySentLabel(MediaTrackingActivityRow row) =>
+    trackingSendLabel(
+      progressMode: row.progressMode,
+      progress: row.progress,
+      completed: row.completed,
+    );
 
 /// One send: the local title, the site, what was sent, when, and the error
 /// when it failed.
