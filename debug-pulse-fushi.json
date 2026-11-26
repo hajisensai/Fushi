@@ -1,12 +1,78 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-26T18:55:30Z",
+ "generatedAt": "2026-11-26T19:44:01Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "6d1e2464929f9aceefca6fdf6387ef232f769a78",
   "seq": 32863
  },
  "builds": [
+  {
+   "seq": 32862,
+   "version": "3.4.0",
+   "sha": "06de0be3bc520671196aa8e12b13876e12977f27",
+   "unknown": false,
+   "publishedAt": "2026-11-26T19:43:41Z",
+   "testflight": false,
+   "baseSeq": 32846,
+   "prs": [],
+   "direct": [
+    {
+     "sha": "06de0be3bc520671196aa8e12b13876e12977f27",
+     "subject": "fix(merge): 截屏识字回包期望补上 BUG-5494 下发的文本块字段；设置重置钮测试跟上 PR #4518 换的 restoreBackup 图标"
+    },
+    {
+     "sha": "c0725a6e2a1e325533d58afe9a36f744f67121e5",
+     "subject": "fix(merge): 库管家自动门补上 srt_books 戳、失败阶段按退避重开、设置开关经编排器解除停用（PR #4516 审查）；登记 BUG-5538/5539"
+    },
+    {
+     "sha": "dbd2f9c0aa967a200abf1eded0680762352d275a",
+     "subject": "fix(merge): rwkv_last 回填测试改走内核原始通道读写库（另开 sqlite3 连接在 Linux 上内核看不到改动）；ONNX 张量测试改用 asTypedListOutOfLine，ffi_typed_list_view 守卫转绿"
+    },
+    {
+     "sha": "f5cfbadab66db7ac758f506eca3b30883249f521",
+     "subject": "Merge PR #4523"
+    },
+    {
+     "sha": "7d9bd5773997a9007685274a39e7ba2d228c46d6",
+     "subject": "Merge PR #4520"
+    },
+    {
+     "sha": "9560bd31b9c65e534d982c69f1e19623650cad61",
+     "subject": "Merge PR #4516"
+    },
+    {
+     "sha": "2b3ab780de29970bbfe8b54cc6860ee73249b2d5",
+     "subject": "Merge PR #4518"
+    },
+    {
+     "sha": "32819e7f247ce35106192108ffc2e48ac2cfdcd1",
+     "subject": "Merge PR #4519"
+    },
+    {
+     "sha": "1af8eff4f14e4adb76c2194d58739f863ff8db97",
+     "subject": "Merge PR #4517"
+    }
+   ],
+   "truncated": false,
+   "platforms": {
+    "android": {
+     "state": "ok"
+    },
+    "windows": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377194"
+    },
+    "macos": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377194"
+    },
+    "ios": {
+     "state": "building",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377194"
+    }
+   }
+  },
   {
    "seq": 32846,
    "version": "3.4.0",
@@ -187,7 +253,7 @@
    "version": "3.4.0",
    "sha": "cb5365ea4a8a1db4ffbc65191a798ce835a06cac",
    "unknown": false,
-   "publishedAt": "2026-11-26T11:32:15Z",
+   "publishedAt": "2026-11-26T11:25:36Z",
    "testflight": true,
    "baseSeq": 32705,
    "prs": [],
@@ -280,7 +346,8 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "ok"
+     "state": "built",
+     "url": "https://github.com/hajisensai/Fushi/actions/runs/45798362682"
     },
     "windows": {
      "state": "ok"
@@ -302,61 +369,21 @@
    {
     "sha": "6d1e2464929f9aceefca6fdf6387ef232f769a78",
     "subject": "chore(bugs): settle BUG number collisions on 06de0be3b"
-   },
-   {
-    "sha": "06de0be3bc520671196aa8e12b13876e12977f27",
-    "subject": "fix(merge): 截屏识字回包期望补上 BUG-5494 下发的文本块字段；设置重置钮测试跟上 PR #4518 换的 restoreBackup 图标"
-   },
-   {
-    "sha": "c0725a6e2a1e325533d58afe9a36f744f67121e5",
-    "subject": "fix(merge): 库管家自动门补上 srt_books 戳、失败阶段按退避重开、设置开关经编排器解除停用（PR #4516 审查）；登记 BUG-5538/5539"
-   },
-   {
-    "sha": "dbd2f9c0aa967a200abf1eded0680762352d275a",
-    "subject": "fix(merge): rwkv_last 回填测试改走内核原始通道读写库（另开 sqlite3 连接在 Linux 上内核看不到改动）；ONNX 张量测试改用 asTypedListOutOfLine，ffi_typed_list_view 守卫转绿"
-   },
-   {
-    "sha": "f5cfbadab66db7ac758f506eca3b30883249f521",
-    "subject": "Merge PR #4523"
-   },
-   {
-    "sha": "7d9bd5773997a9007685274a39e7ba2d228c46d6",
-    "subject": "Merge PR #4520"
-   },
-   {
-    "sha": "9560bd31b9c65e534d982c69f1e19623650cad61",
-    "subject": "Merge PR #4516"
-   },
-   {
-    "sha": "2b3ab780de29970bbfe8b54cc6860ee73249b2d5",
-    "subject": "Merge PR #4518"
-   },
-   {
-    "sha": "32819e7f247ce35106192108ffc2e48ac2cfdcd1",
-    "subject": "Merge PR #4519"
-   },
-   {
-    "sha": "1af8eff4f14e4adb76c2194d58739f863ff8db97",
-    "subject": "Merge PR #4517"
    }
   ],
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377342"
+    "state": "none"
    },
    "windows": {
-    "state": "building",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377194"
+    "state": "none"
    },
    "macos": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377194"
+    "state": "none"
    },
    "ios": {
-    "state": "queued",
-    "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377194"
+    "state": "none"
    }
   }
  },
