@@ -4,6 +4,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_duplicate_notes.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 
 import 'srs_test_support.dart' show openSrsTestStorage;
@@ -66,5 +67,47 @@ void main() {
     container.read(srsRevisionProvider.notifier).state++;
     expect(store.contentFingerprint, isNot(fp));
     expect(await container.read(srsConflictCountProvider.future), 1);
+  });
+
+  test('冲突角标数「可能重复的笔记」组，与冲突页同口径；标过「不是重复」后不再数（反馈 4cqrL4u9UI）', () async {
+    final SrsStorage srs = await openSrsTestStorage();
+    final SrsDbStore store = await SrsDbStore.open(
+      core: srs.core,
+      profileUid: _kProfile,
+      deviceId: 'memo-test',
+    );
+    final ProviderContainer container = ProviderContainer(
+      overrides: <Override>[
+        srsStoreProvider.overrideWith((Ref ref) async => store),
+      ],
+    );
+    addTearDown(container.dispose);
+    final ProviderSubscription<AsyncValue<int>> sub = container.listen(
+      srsConflictCountProvider,
+      (_, _) {},
+    );
+    addTearDown(sub.close);
+
+    Future<String> add(String expression, String reading) => store.createNote(
+      noteTypeId: store.lapisNoteTypeId,
+      fieldsById: <String, String>{
+        srsLapisFieldId(_kProfile, 'Expression'): expression,
+        srsLapisReadingFieldId(_kProfile): reading,
+      },
+    );
+    final String a = await add('雪', 'ゆき');
+    final String b = await add('雪', 'ゆき');
+    await add('雪', 'せつ');
+    container.read(srsRevisionProvider.notifier).state++;
+    expect(await store.duplicateNoteGroups(), hasLength(1));
+    expect(
+      await container.read(srsConflictCountProvider.future),
+      1,
+      reason: '只有重复笔记组时角标不能是 0：冲突页会列出这一组',
+    );
+
+    await store.dismissDuplicates(<String>[a, b]);
+    container.read(srsRevisionProvider.notifier).state++;
+    expect(await container.read(srsConflictCountProvider.future), 0);
   });
 }

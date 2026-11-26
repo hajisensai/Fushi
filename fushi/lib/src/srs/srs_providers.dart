@@ -26,6 +26,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi_engine/srs/srs_collection_binding.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_duplicate_notes.dart';
 import 'package:fushi_engine/srs/srs_legacy_lapis_migration.dart';
 import 'package:fushi_engine/srs/srs_purge.dart';
 import 'package:fushi_engine/srs/srs_rwkv_attach.dart';
@@ -907,7 +908,9 @@ final FutureProvider<int> srsLimitUnitLegacyCountProvider = FutureProvider<int>(
   },
 );
 
-/// 待处理的同步冲突（标志 / 设置类）+ 待裁决笔记，合计（牌组列表顶栏的冲突角标）。
+/// 待处理的同步冲突（标志 / 设置类）+ 扣着的删除 + 待确认设备 + 待裁决笔记 + 可能重复的笔记组，合计（牌组列表顶栏的
+/// 冲突角标）。口径与冲突页（srs_conflicts_page.dart `_load`）列出的分区一一对应：以前漏数重复笔记组，只有它时角标为 0、
+/// 进页面却有内容（反馈 4cqrL4u9UI）。
 /// 订阅 [srsRevisionProvider]；与牌组列表各自重读，互不等待。模块关着时为 0。内容没变时复用
 /// 上次结果（[_srsMemoByContent]）：评分只落日志，冲突数不可能因此变。
 final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
@@ -924,7 +927,12 @@ final FutureProvider<int> srsConflictCountProvider = FutureProvider<int>((
     final int untrusted = srsDeviceViewsOf(
       await store.sync2Status(),
     ).where((SrsDeviceView d) => d.needsTrust).length;
-    return conflicts + held + untrusted + await store.pendingDecisionCount();
+    final int duplicates = (await store.duplicateNoteGroups()).length;
+    return conflicts +
+        held +
+        untrusted +
+        await store.pendingDecisionCount() +
+        duplicates;
   });
 });
 
