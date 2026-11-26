@@ -84,11 +84,17 @@
 | [BUG-5463](bugs/BUG-5463-same-work-remote-collection-empty.md) | ✅ | ✅ | 「同一作品」打开只在 Jellyfin 上有集的动画合集显示「合集为空」 |
 | [BUG-5462](bugs/BUG-5462-deleted-collection-links-dangling.md) | ✅ | ✅ | 删掉的视频合集在作品图谱里留下「不在库中」的死连接 |
 | [BUG-5461](bugs/BUG-5461-organize-undo-collection-identity.md) | ✅ | ✅ | 撤销整理器移空 / 合并掉的合集后，合集换了新 id，挂在旧 id 上的作品图谱连接、标签、刮削资料全丢 |
+> 共 4736 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5466](bugs/BUG-5466-ai-review-removal-blocks-readd.md) | ✅ | ✅ | AI 管库拆散 / 挪走的集，用户再「加入媒体库」也归不回合集 |
 | [BUG-5460](bugs/BUG-5460-sync-missing-book-content.md) | ✅ | ✅ | 书目还在而正文丢失时同步无法补回原书 |
 | [BUG-5459](bugs/BUG-5459-srs-upgrade-anki-destination-unconfirmed.md) | 🚧 | 🚧 | 更新后网页制卡写到 Anki，制卡去向疑似改变 |
 | [BUG-5458](bugs/BUG-5458-srs-sync-already-bound-collection-candidate.md) | ✅ | ✅ | 复习同步冲突把本机其他资料库已绑定的集合列为可采用 |
 | [BUG-5457](bugs/BUG-5457-media-link-dangling-collection.md) | ✅ | ✅ | 删合集 / 游戏后「同一作品」留下标题是一串 id 的未入库死卡，灰卡背后还垫着一块灰板 |
 | [BUG-5456](bugs/BUG-5456-android-migrate-target-content-conflict.md) | ✅ | ✅ | Android 移动书库：目标里同路径不同内容的文件被当成中断残留整树删掉 |
+| [BUG-5455](bugs/BUG-5455-srs-gen4-migration-event-order.md) | ✅ | ✅ | 复习库升级后 Anki 复习副本选取改变到期日、间隔与统计，导致核对撤回 |
 | [BUG-5455](bugs/BUG-5455-opensubtitles-moviehash-negative-http400.md) | ✅ | ✅ | 字幕面板「字幕搜索失败（HTTP 400）」：OpenSubtitles movie hash 拼出负号，日志里没有任何线索 |
 | [BUG-5454](bugs/BUG-5454-stats-overview-srs-not-migrated.md) | ✅ | ✅ | stats-overview-srs-not-migrated |
 | [BUG-5453](bugs/BUG-5453-tracking-backoff-overflow-hot-loop.md) | ✅ | ✅ | tracking-backoff-overflow-hot-loop |
@@ -101,6 +107,7 @@
 |---|:--:|:--:|---|
 | [BUG-5451](bugs/BUG-5451-srs-field-ai-no-language-for-new-text.md) | ✅ | ✅ | Card field AI: prompt never says which language new example text is written in |
 | [BUG-5450](bugs/BUG-5450-srs-field-ai-sample-loses-target-markup.md) | ✅ | ✅ | Card field AI: field contents lose the target-word bold, gain spaces at tags, and mix furigana readings into the text |
+| [BUG-5450](bugs/BUG-5450-android-library-layout-anchor-lost.md) | ✅ | ✅ | Android 书库对账只探当前配置的内部根，布局 / 容器锚点被冲掉后永不自愈 |
 | [BUG-5449](bugs/BUG-5449-background-writers-seal-and-interrupt.md) | ✅ | ✅ | background-writers-seal-and-interrupt |
 | [BUG-5448](bugs/BUG-5448-lumiere-font-switch-jank.md) | ✅ | ✅ | 绘光切字体卡顿、自定义字体加载完不重画 |
 | [BUG-5447](bugs/BUG-5447-lumiere-glyph-atlas-blurry.md) | ✅ | ✅ | 绘光大字发虚 |
