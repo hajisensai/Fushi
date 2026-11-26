@@ -1,3 +1,5 @@
+import 'dart:ui' show Offset, Rect;
+
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/links/work_graph_store.dart';
@@ -317,5 +319,87 @@ void main() {
       WorkSeriesKind.fromCollectionRelationWire('future'),
       WorkSeriesKind.other,
     );
+  });
+
+  test('布局：标签恒压在自己的边上，不压节点、不互压（建议边跨栏 + 同栏弧）', () {
+    WorkNetworkNodeSpec node(String id, WorkNetworkRole role) =>
+        WorkNetworkNodeSpec(
+          id: id,
+          target: vc(id.hashCode.abs() % 1000),
+          group: WorkMediaGroup.anime,
+          role: role,
+        );
+    // 截图里的形状：建议态节点两条「外传」建议边，一条到成员、一条跨过成员栏到系列；
+    // 成员栏两节点间一道同栏弧；成员 → 系列两条续作。
+    final WorkNetworkPlan plan = WorkNetworkPlan(
+      nodes: <WorkNetworkNodeSpec>[
+        node('a-suggested', WorkNetworkRole.suggested),
+        node('b-member1', WorkNetworkRole.member)..isSelf = true,
+        node('b-member2', WorkNetworkRole.member),
+        node('c-series1', WorkNetworkRole.series),
+        node('c-series2', WorkNetworkRole.series),
+      ],
+      edges: <WorkNetworkEdgeSpec>[
+        WorkNetworkEdgeSpec(
+          from: 'a-suggested',
+          to: 'b-member1',
+          relation: MediaLinkRelation.sideStory,
+          seriesKind: WorkSeriesKind.sideStory,
+          suggested: true,
+        ),
+        WorkNetworkEdgeSpec(
+          from: 'a-suggested',
+          to: 'c-series1',
+          relation: MediaLinkRelation.sideStory,
+          seriesKind: WorkSeriesKind.sideStory,
+          suggested: true,
+        ),
+        WorkNetworkEdgeSpec(
+          from: 'b-member1',
+          to: 'b-member2',
+          relation: MediaLinkRelation.sameWork,
+          suggested: false,
+        ),
+        WorkNetworkEdgeSpec(
+          from: 'b-member1',
+          to: 'c-series1',
+          relation: MediaLinkRelation.sequel,
+          seriesKind: WorkSeriesKind.sequel,
+          suggested: false,
+        ),
+        WorkNetworkEdgeSpec(
+          from: 'b-member2',
+          to: 'c-series2',
+          relation: MediaLinkRelation.sequel,
+          seriesKind: WorkSeriesKind.sequel,
+          suggested: false,
+        ),
+      ],
+    );
+    final WorkNetworkLayout layout = layoutWorkNetwork(plan);
+    expect(layout.edges, hasLength(plan.edges.length));
+    for (int i = 0; i < layout.edges.length; i++) {
+      final WorkNetworkEdgeGeometry g = layout.edges[i];
+      final String name = '${plan.edges[i].from}>${plan.edges[i].to}';
+      bool onCurve = false;
+      for (int k = 0; k <= 100 && !onCurve; k++) {
+        final double t = k / 100;
+        final double u = 1 - t;
+        final Offset p =
+            g.start * (u * u * u) +
+            g.control1 * (3 * u * u * t) +
+            g.control2 * (3 * u * t * t) +
+            g.end * (t * t * t);
+        onCurve = g.label.contains(p);
+      }
+      expect(onCurve, isTrue, reason: '$name 的标签离开了自己的边');
+      for (final MapEntry<String, Rect> n in layout.nodes.entries) {
+        expect(g.label.overlaps(n.value), isFalse, reason: '$name 压住 ${n.key}');
+      }
+      for (int j = i + 1; j < layout.edges.length; j++) {
+        expect(g.label.overlaps(layout.edges[j].label), isFalse);
+      }
+      expect((Offset.zero & layout.size).contains(g.label.bottomRight), isTrue);
+    }
   });
 }
