@@ -23,6 +23,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/onnx/onnx_inference_ort.dart';
 import 'package:fushi_asr_core/asr_core.dart'
     show OnnxExecutionProvider, OnnxSession, OnnxTensor;
+import 'package:fushi_ffi_view/fushi_ffi_view.dart';
 
 const MethodChannel _channel = MethodChannel('flutter_onnxruntime');
 
@@ -48,7 +49,9 @@ class _FakeAndroidPlugin {
 
   String addOutput(TypedData data, String type, List<int> shape) {
     final Pointer<Uint8> p = malloc<Uint8>(data.lengthInBytes);
-    p.asTypedList(data.lengthInBytes).setAll(0, data.buffer.asUint8List());
+    p
+        .asTypedListOutOfLine(data.lengthInBytes)
+        .setAll(0, data.buffer.asUint8List());
     ownedOutputs.add(p);
     final String id = 'out${_next++}';
     values[id] = (
@@ -97,7 +100,9 @@ class _FakeAndroidPlugin {
         final v = values.remove(id);
         if (v != null && id.startsWith('in')) {
           bytesAtRelease[id] = Uint8List.fromList(
-            Pointer<Uint8>.fromAddress(v.address).asTypedList(v.byteLength),
+            Pointer<Uint8>.fromAddress(
+              v.address,
+            ).asTypedListOutOfLine(v.byteLength),
           );
         }
         return null;
@@ -195,7 +200,7 @@ void main() {
       expect(args['shape'], <int>[2, 2]);
       final Float32List seen = Pointer<Float>.fromAddress(
         args['address']! as int,
-      ).asTypedList(4);
+      ).asTypedListOutOfLine(4);
       expect(seen, data, reason: '插件按地址读到的必须就是这份输入');
 
       await value.dispose();

@@ -10,7 +10,6 @@ import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_projections.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
-import 'package:sqlite3/sqlite3.dart';
 import 'package:test/test.dart';
 
 import 'apkg/apkg_test_support.dart';
@@ -34,18 +33,15 @@ void main() {
       r == null ? '-' : '${r.at}/${r.rating}/${r.reviewType}',
   ];
 
-  /// 直接在库文件上读一个 `derive_cfg` 项（内核没有读它的命令）。
-  String? cfg(SrsStorage storage, String key) {
-    final Database db = sqlite3.open(SrsStorage.gen4PathIn(storage.directory));
-    try {
-      final ResultSet r = db.select(
-        'SELECT value FROM derive_cfg WHERE key = ?',
-        <Object?>[key],
-      );
-      return r.isEmpty ? null : r.first['value'] as String?;
-    } finally {
-      db.close();
-    }
+  /// 读一个 `derive_cfg` 项（内核没有读它的命令）。走内核自己连接上的测试原始通道
+  /// （[SrsCore.debugSelectRaw]），不另开 `package:sqlite3` 连接：同进程两份 SQLite 在 POSIX 上不共享
+  /// fcntl 锁记账，另一份 `close()` 会连带放掉内核的锁，Linux CI 上内核看不到外部改动（PR #4520 CI 红）。
+  String? cfg(SrsDbStore s, String key) {
+    final List<Map<String, Object?>> r = s.core.debugSelectRaw(
+      'SELECT value FROM derive_cfg WHERE key = ?',
+      <Object?>[key],
+    );
+    return r.isEmpty ? null : r.first['value'] as String?;
   }
 
   test('按口径 6 物化的库：开库不整层重建，后台分批回填 rwkv_last，末条读前后一致', () async {
@@ -67,26 +63,23 @@ void main() {
     final List<String> want = shape(await s.rwkvLastRatings(cards));
     expect(want.where((String r) => r != '-'), isNotEmpty, reason: '要有保留评分');
     expect(s.debugRwkvLastFill, isNull, reason: '新库是按当前口径物化的');
-    expect(cfg(storage, 'rwkvLastFill'), isNull);
+    expect(cfg(s, 'rwkvLastFill'), isNull);
 
     // 退回口径 6 的样子（升级前的库）：表是空的、修订号记 6。
-    final Database db = sqlite3.open(SrsStorage.gen4PathIn(storage.directory));
-    try {
-      db.execute('DELETE FROM rwkv_last');
-      db.execute("UPDATE derive_cfg SET value = '6' WHERE key = 'cacheRules'");
-    } finally {
-      db.close();
-    }
+    s.core.debugExecRaw('DELETE FROM rwkv_last');
+    s.core.debugExecRaw(
+      "UPDATE derive_cfg SET value = '6' WHERE key = 'cacheRules'",
+    );
 
     final SrsDbStore reopened = await open(storage);
-    expect(cfg(storage, 'cacheRules'), '7', reason: '就地记成当前口径，不整层重建');
+    expect(cfg(reopened, 'cacheRules'), '7', reason: '就地记成当前口径，不整层重建');
     final Future<void>? fill = reopened.debugRwkvLastFill;
     expect(fill, isNotNull, reason: '开库后在后台回填');
     // 回填进行中读到的与填满后相同（没填到的卡内核逐卡重放）。
     expect(shape(await reopened.rwkvLastRatings(cards)), want);
     await fill;
     expect(reopened.debugRwkvLastFill, isNull);
-    expect(cfg(storage, 'rwkvLastFill'), isNull, reason: '填完删游标');
+    expect(cfg(reopened, 'rwkvLastFill'), isNull, reason: '填完删游标');
     expect(shape(await reopened.rwkvLastRatings(cards)), want);
 
     // 再开一次：表是完整的，不再回填。
