@@ -144,7 +144,7 @@ pub fn rwkv_cards(
 }
 
 /// `rwkv_rows` 末条模式：[cards]（任意 ID，按类归一）各自最后一条 RWKV 保留评分，读缓存层与卡行一起物化的
-/// `rwkv_last`（与 [rwkv_cards] 摘要里的 `last` 同一条，测试 `rwkv_last_matches_rwkv_cards_*` 钉住）。
+/// `rwkv_last`（与 [rwkv_cards] 摘要里的 `last` 同一条，`store/gen4/derive.rs` 的 `assert_rwkv_last_matches_replay`（挂在 `assert_rebuild_is_identity` 上，逐卡对拍整层重建与重放） 钉住）。
 /// 输出 `[n, (时刻|NONE, 评分, 复习类型代码) × n]`，没有保留评分（或没有卡行）的卡是 `NONE, 0, 0`。
 ///
 /// RWKV 打分的查询行只要这一条（`srs_rwkv_service.dart` `_queryRows`）：冷启动分数表是空的、统计又整表重查，

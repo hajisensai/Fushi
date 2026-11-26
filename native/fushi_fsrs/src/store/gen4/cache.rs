@@ -3422,7 +3422,7 @@ mod tests {
                 6,
             ),
             (
-                "rwkv_last 与卡行一起物化（cmd/training.rs 的 rwkv_last_matches_rwkv_cards_* 测试）",
+                "rwkv_last 与卡行一起物化（derive.rs 的 assert_rwkv_last_matches_replay 守）",
                 7,
             ),
         ];
