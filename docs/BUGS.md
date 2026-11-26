@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4798 条。点号进各自文件。
+> 共 4800 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5524](bugs/BUG-5524-home-apple-collapsed-title-covered.md) | ✅ | ✅ | home-apple-collapsed-title-covered |
+| [BUG-5523](bugs/BUG-5523-srs-apple-status-bar-seam.md) | ✅ | ✅ | srs-apple-status-bar-seam |
 | [BUG-5521](bugs/BUG-5521-windows-maximized-startup-teal-flash.md) | ✅ | ✅ | Windows：上次最大化关掉，下次启动先显示几秒青绿色空窗 |
 | [BUG-5520](bugs/BUG-5520-sftp-dead-transport-hang.md) | ✅ | ✅ | SSH 传输断开后 SFTP 请求永远挂起：同步卡死、「本地 vs 远端」对比弹窗一直转圈 |
 | [BUG-5519](bugs/BUG-5519-pair-schemeless-https-timeout.md) | ✅ | ✅ | 互联手动添加不带 scheme 的地址配对 TLS host 报「对端没在时限内应答」 |

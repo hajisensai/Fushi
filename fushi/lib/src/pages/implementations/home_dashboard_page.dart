@@ -136,6 +136,7 @@ import 'package:fushi/src/utils/components/fushi_floating_chrome.dart'
     show
         FushiFloatingChromeBar,
         FushiFloatingChromeController,
+        FushiMastheadCollapseAway,
         FushiFloatingChromeInset,
         FushiFloatingChromeOverlay,
         FushiFloatingChromeScope;
@@ -563,14 +564,18 @@ class _HomeAvatarPillState extends ConsumerState<_HomeAvatarPill> {
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
         button,
-        HomeProfileChip(
-          extent: chipExtent,
-          floating: !masthead && !apple,
-          database: ref.read(appProvider).database,
-          onManageProfiles: () => ref.read(appProvider).showProfilesMenu(),
-          onSwitchProfile: (int profileId) => ref
-              .read(profileViewModelProvider.notifier)
-              .switchProfile(profileId),
+        // Apple 窄窗页头收成小标题时配置胶囊折叠，只留头像：居中小标题不被
+        // 盖住（[FushiMastheadCollapseAway]），滚回顶部再展开。
+        FushiMastheadCollapseAway(
+          child: HomeProfileChip(
+            extent: chipExtent,
+            floating: !masthead && !apple,
+            database: ref.read(appProvider).database,
+            onManageProfiles: () => ref.read(appProvider).showProfilesMenu(),
+            onSwitchProfile: (int profileId) => ref
+                .read(profileViewModelProvider.notifier)
+                .switchProfile(profileId),
+          ),
         ),
       ],
     );

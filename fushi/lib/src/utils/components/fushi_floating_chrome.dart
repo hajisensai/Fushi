@@ -2994,3 +2994,84 @@ class _FushiMastheadHost extends InheritedWidget {
       !identical(overlay, oldWidget.overlay) ||
       !identical(scrollOffset, oldWidget.scrollOffset);
 }
+
+/// 页头大字主按钮位 / 动作组里的**次要**部件：Apple 窄窗页头收成导航栏小标题
+/// 时（与 `_RenderMasthead._layoutApple` 同一判据：进度 ≥ 0.5）折叠让位，
+/// 滚回顶部再展开。
+///
+/// 收起态小标题居中，右侧只剩半行：主按钮位不让，动作组再怎么收进「⋯」也会
+/// 把小标题压在按钮底下（2026-11-26 用户 iPhone 录屏：首页「首页」被 ⋯ /
+/// 头像 /「Default」配置胶囊盖住）。不在页头大字宿主里、M3E、宽窗时原样画
+/// [child]。
+///
+/// @design dual（只管让位，外观由 [child] 自己按设计系统画）
+class FushiMastheadCollapseAway extends StatefulWidget {
+  const FushiMastheadCollapseAway({required this.child, super.key});
+
+  final Widget child;
+
+  @override
+  State<FushiMastheadCollapseAway> createState() =>
+      _FushiMastheadCollapseAwayState();
+}
+
+class _FushiMastheadCollapseAwayState extends State<FushiMastheadCollapseAway> {
+  ValueListenable<double>? _offset;
+  bool _compact = false;
+  bool _motion = true;
+  bool _collapsed = false;
+
+  bool _computeCollapsed() {
+    final ValueListenable<double>? offset = _offset;
+    if (offset == null || !_compact) return false;
+    return fushiMastheadProgressOf(
+          compact: true,
+          motionEnabled: _motion,
+          offset: offset.value,
+        ) >=
+        0.5;
+  }
+
+  void _onOffset() {
+    final bool next = _computeCollapsed();
+    if (next != _collapsed) setState(() => _collapsed = next);
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final _FushiMastheadHost? host = context
+        .dependOnInheritedWidgetOfExactType<_FushiMastheadHost>();
+    final ValueListenable<double>? offset =
+        host != null && isGlassDesign(context) ? host.scrollOffset : null;
+    if (!identical(offset, _offset)) {
+      _offset?.removeListener(_onOffset);
+      _offset = offset;
+      _offset?.addListener(_onOffset);
+    }
+    _compact = fushiMastheadCompact(context);
+    _motion = fushiExpressiveMotionEnabled(context);
+    _collapsed = _computeCollapsed();
+  }
+
+  @override
+  void dispose() {
+    _offset?.removeListener(_onOffset);
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return FushiAnimatedSize(
+      duration: fushiMotionDuration(context, FushiMotion.short),
+      curve: FushiMotion.standard,
+      alignment: AlignmentDirectional.centerStart,
+      clipBehavior: Clip.hardEdge,
+      // Offstage 而不是换成空盒：子树状态（配置胶囊的库订阅等）收起时保留。
+      child: ExcludeFocus(
+        excluding: _collapsed,
+        child: Offstage(offstage: _collapsed, child: widget.child),
+      ),
+    );
+  }
+}
