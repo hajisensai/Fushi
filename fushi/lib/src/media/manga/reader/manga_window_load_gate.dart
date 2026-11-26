@@ -27,6 +27,9 @@ class MangaWindowLoadTicket {
   final int generation;
   final Completer<MangaWindowLoadOutcome> _completer;
 
+  /// 已有一路就绪回调认领了本次加载（见 [MangaWindowLoadGate.claimReady]）。
+  bool _readyClaimed = false;
+
   /// 等待本次加载收尾（就绪或被放弃）。
   Future<MangaWindowLoadOutcome> get outcome => _completer.future;
 }
@@ -62,6 +65,26 @@ class MangaWindowLoadGate {
       return null;
     }
     return pending;
+  }
+
+  /// 就绪回调认领本次加载：与 [ticketFor] 同样要求 [documentGeneration] 就是当前
+  /// 在飞的那次，此外**每次加载只认领一次**。
+  ///
+  /// 同一份文档有两路就绪信号（BUG-5495）：文档脚本跑完即发的
+  /// `onMangaDocumentReady`，和浏览器 load 事件之后的 `onLoadStop`（要等首屏 eager
+  /// 页图全部取完）。先到的那路认领并做完收尾；后到的拿 null 停手，不把键桥 /
+  /// 平移 / OCR 回填再跑一遍。
+  MangaWindowLoadTicket? claimReady(int? documentGeneration) {
+    final MangaWindowLoadTicket? ticket = ticketFor(documentGeneration);
+    if (ticket == null || ticket._readyClaimed) return null;
+    ticket._readyClaimed = true;
+    return ticket;
+  }
+
+  /// 认领者没能收尾就退出（中途抛错）时交还认领，让另一路就绪信号还能接手；
+  /// 已收尾的加载不受影响。
+  void releaseReadyClaim(MangaWindowLoadTicket ticket) {
+    if (!ticket._completer.isCompleted) ticket._readyClaimed = false;
   }
 
   /// [ticket] 是否仍是当前在飞的那次加载（每个 await 之后都要问一次）。

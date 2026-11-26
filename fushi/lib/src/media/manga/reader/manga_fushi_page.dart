@@ -9963,6 +9963,17 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             unawaited(_onMangaScroll(args[0] as String));
           },
         );
+        // 窗口文档就绪（BUG-5495）：文档脚本跑完就发，不等页图。onLoadStop 要等
+        // load 事件——首屏 ±1 跨页的 eager 页图经 shouldInterceptRequest 逐张取完、
+        // 按显示宽度转码完才到；Android 上这一段常常超过 5～10 秒，导航锁一直挂着，
+        // 翻页全被挡住。就绪收尾只碰 DOM（键桥、平移、OCR 命中层），不需要页图。
+        controller.addJavaScriptHandler(
+          handlerName: kMangaDocumentReadyHandler,
+          callback: (List<dynamic> _) async {
+            await _markWindowReady(controller);
+            await _syncAutoScrollPause();
+          },
+        );
         unawaited(_loadInitialWindow());
       },
       shouldInterceptRequest:
@@ -9985,6 +9996,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
               unawaited(_markWindowReady(controller));
             }
           },
+      // 就绪信号的兜底路：文档脚本发的 onMangaDocumentReady 没到时（桥没在文档
+      // 脚本执行前注入）由 load 事件之后的它收尾；已被认领的这一代它直接跳过。
       onLoadStop: (InAppWebViewController controller, WebUri? url) async {
         await _markWindowReady(controller);
         await _syncAutoScrollPause();
@@ -10026,12 +10039,29 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // （10s 超时放弃旧窗口 → 新一轮 begin() 递增 generation 并换新锁），迟到的旧
     // 回调会解开**新**窗口的锁，导航锁被错误解除，WebView 还在加载旧内容就被判定
     // 就绪。所以这里取本次加载的凭据，每个 await 之后再复问一次归属。
-    final MangaWindowLoadTicket? ticket = _windowGate.ticketFor(
+    //
+    // 两路就绪信号（文档脚本的 onMangaDocumentReady、load 事件后的 onLoadStop，
+    // BUG-5495）各会进来一次：只有先认领到的那路往下做，另一路在这里停手。
+    final MangaWindowLoadTicket? ticket = _windowGate.claimReady(
       MangaWindowGeneration.parse(rawGeneration),
     );
     if (ticket == null) {
       return;
     }
+    try {
+      await _applyWindowReady(controller, ticket);
+    } finally {
+      // 中途抛错没收尾：交还认领，让另一路信号还能把这一代文档收尾。
+      _windowGate.releaseReadyClaim(ticket);
+    }
+  }
+
+  /// [_markWindowReady] 认领到 [ticket] 之后的收尾：装键桥 / 鼠标桥、把视口落到
+  /// 当前跨页、补 OCR，最后解开导航锁。每个 await 之后复问归属（BUG-1170）。
+  Future<void> _applyWindowReady(
+    InAppWebViewController controller,
+    MangaWindowLoadTicket ticket,
+  ) async {
     await controller.evaluateJavascript(
       source: MangaFushiPage.navigationKeyBridgeScript,
     );

@@ -1198,6 +1198,7 @@ String mangaWindowDocument(
       '<script>'
       'window.__mangaDocumentGeneration=$documentGeneration;'
       '${_mangaGestureJs(isWebtoon: isWebtoon, rtl: rtl, currentSpread: currentSpread, restoreFraction: restoreFraction, zoomPercent: zoomPercent, restZoomPercent: restZoomPercent ?? zoomPercent, zoomMinPercent: zoomMinPercent, zoomMaxPercent: zoomMaxPercent, zoomSensitivity: zoomSensitivity, pageAnimation: pageAnimation, pageAnimationSpeed: pageAnimationSpeed, followDrag: followDrag, swipeSensitivity: swipeSensitivity, tapZonePaging: tapZonePaging, tapZoneLayout: tapZoneLayout, disableZoomOut: disableZoomOut, animateDoubleTap: animateDoubleTap, invertHorizontal: invertHorizontal, invertVertical: invertVertical, invertBoth: invertBoth, doubleTapAnimationMs: doubleTapAnimationMs, splitWidePages: splitWidePages, rotateWidePages: rotateWidePages, autoZoomWidePages: autoZoomWidePages, panWidePages: panWidePages, zoomStartPosition: zoomStartPosition, preferences: preferences, hoverKey: hoverKey, cropBorders: cropBorders, scaleType: scaleType, longStripSidePadding: longStripSidePadding, isVerticalPaged: isVerticalPaged, enableMouseTextSelection: enableMouseTextSelection, fitImagesToDisplay: fitImagesToDisplay, spreadGutterPx: spreadGutterPx, bookRtl: spreadDirection == 'rtl', bubbleZoomOpenMs: bubbleZoomOpenMs, bubbleZoomCloseMs: bubbleZoomCloseMs, textStripLayout: textStripLayout, bubbleFocusLabel: bubbleFocusLabel, bubbleFocusResume: bubbleFocusResume, textStripEmptyLabel: textStripEmptyLabel, bubbleZoomCloseLabel: bubbleZoomCloseLabel)}'
+      '$mangaDocumentReadySignalJs'
       '</script>'
       '</body></html>';
 }
@@ -1238,6 +1239,23 @@ const int kMangaActivityReportIntervalMs = 5000;
 /// 按 data-spread 测量。
 /// 翻页动画统一缓动（CSS 过渡与 JS 逐帧滚动动画同一条曲线）。
 const String kMangaPageTurnEasing = 'cubic-bezier(.2,.7,.2,1)';
+
+/// 窗口文档自报就绪的 JS handler 名（BUG-5495，宿主见 `_markWindowReady`）。
+const String kMangaDocumentReadyHandler = 'onMangaDocumentReady';
+
+/// 窗口文档末尾的就绪信号：手势脚本与全部 `window.__manga*` 钩子装完后，立刻把本文档
+/// 的 generation 报给宿主。
+///
+/// 不能只靠 `onLoadStop`：它跟着 load 事件走，要等首屏 eager 页图全部取完（Android
+/// 上每张都经 `shouldInterceptRequest` 过一趟平台通道、再按显示宽度转码），慢的时候
+/// 超过 10 秒，宿主的导航锁一直挂着，翻页全排在队里（反馈 eMhRJkkQOW / p8PxXVb-xH）。
+/// 桥（`window.flutter_inappwebview`）在文档开始时注入；没注入上就不发，交给
+/// `onLoadStop` 兜底。
+const String mangaDocumentReadySignalJs =
+    '(function(){var b=window.flutter_inappwebview;'
+    'if(b&&typeof b.callHandler==="function")'
+    'b.callHandler("$kMangaDocumentReadyHandler",window.__mangaDocumentGeneration);'
+    '})();';
 
 /// `#manga-root` 的过渡声明，由翻页动画效果与速度决定（JS 侧 `_rootTransitionDecl`
 /// 是它的运行时镜像，设置变化时换掉 `#manga-anim-css` 的内容）。
