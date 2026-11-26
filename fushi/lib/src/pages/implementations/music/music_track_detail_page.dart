@@ -230,14 +230,18 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
   }
 
   /// 有没听完的断点（「播放」会接着放）时平铺的两个动作，见 [_TrackResumeActions]。
-  List<Widget> _resumeActions(MusicTrackRow track, MusicAlbumRow? album) =>
-      <Widget>[
-        _TrackResumeActions(
-          key: ValueKey<String>('music-track-resume-actions-${track.trackUid}'),
-          track: track,
-          album: album,
-        ),
-      ];
+  List<Widget> _resumeActions(
+    MusicTrackRow track,
+    MusicAlbumRow? album,
+    String? coverTrackPath,
+  ) => <Widget>[
+    _TrackResumeActions(
+      key: ValueKey<String>('music-track-resume-actions-${track.trackUid}'),
+      track: track,
+      album: album,
+      coverTrackPath: coverTrackPath,
+    ),
+  ];
 
   Widget _body(
     BuildContext context,
@@ -259,14 +263,18 @@ class _MusicTrackDetailPageState extends ConsumerState<MusicTrackDetailPage> {
           key: const ValueKey<String>('music_track_play'),
           onPressed: () => unawaited(
             engine.playQueue(<MusicPlayItem>[
-              musicPlayItemOf(track, album: album),
+              musicPlayItemOf(
+                track,
+                album: album,
+                trackPathOf: (_) => embeddedCover,
+              ),
             ], context: MusicQueueContext.mixed),
           ),
           icon: const FushiIcon(FushiIcons.play),
           label: Text(t.music_play_all),
         ),
       ),
-      ..._resumeActions(track, album),
+      ..._resumeActions(track, album, embeddedCover),
       FushiPressScale(
         child: FushiFilledButton.tonalIcon(
           size: FushiButtonSize.m,
@@ -598,10 +606,14 @@ class _TrackResumeActions extends ConsumerStatefulWidget {
     super.key,
     required this.track,
     required this.album,
+    required this.coverTrackPath,
   });
 
   final MusicTrackRow track;
   final MusicAlbumRow? album;
+
+  /// 专辑选定的内嵌封面曲目的路径（播放项封面，见 [musicPlayItemOf]）。
+  final String? coverTrackPath;
 
   @override
   ConsumerState<_TrackResumeActions> createState() =>
@@ -662,7 +674,13 @@ class _TrackResumeActionsState extends ConsumerState<_TrackResumeActions> {
               key: const ValueKey<String>('music_track_play_from_start'),
               onPressed: () => unawaited(
                 session.engine.playQueue(
-                  <MusicPlayItem>[musicPlayItemOf(track, album: album)],
+                  <MusicPlayItem>[
+                    musicPlayItemOf(
+                      track,
+                      album: album,
+                      trackPathOf: (_) => widget.coverTrackPath,
+                    ),
+                  ],
                   context: MusicQueueContext.mixed,
                   resume: false,
                 ),

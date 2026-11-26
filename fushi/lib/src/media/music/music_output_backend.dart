@@ -28,6 +28,7 @@ class MusicPlayItem {
     this.trackNo,
     this.durationMs,
     this.coverPath,
+    this.embeddedCoverPath,
     this.codec,
     this.sampleRate,
     this.bitDepth,
@@ -80,6 +81,11 @@ class MusicPlayItem {
   /// 不是整首，播放进度用 [playbackDuration]。
   final int? durationMs;
   final String? coverPath;
+
+  /// 内嵌封面从哪个音频文件读（[coverPath] 为空时用；与曲目行同一条来源规则
+  /// `musicCoverSourceOf`）：只有内嵌封面、没有目录封面的本地曲目，播放页 / 播放条 / 队列
+  /// 照样有图（BUG 反馈 qGNRXaXNEv / EMjx7gJftH）。远程 / 插件 / 服务器曲目为 null。
+  final String? embeddedCoverPath;
 
   /// 这一项只是曲目的试听片段（Apple Music 未登录 / 无订阅时约 30 秒的预览）：界面打
   /// 「试听」标记，播放时长以媒体实际长度为准（反馈 okvRZINcQU）。

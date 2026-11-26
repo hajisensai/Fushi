@@ -152,10 +152,13 @@ Future<void> musicQueueEntries(
   Iterable<MusicLibraryEntry> entries,
   Map<String, MusicAlbumRow> albums, {
   required bool next,
+  MusicTrackPathOf? trackPathOf,
 }) async {
   final List<MusicPlayItem> items = <MusicPlayItem>[
     for (final MusicLibraryEntry e in entries)
-      if (e.playItem(albums) case final MusicPlayItem item) item,
+      if (e.playItem(albums, trackPathOf: trackPathOf)
+          case final MusicPlayItem item)
+        item,
   ];
   if (items.isEmpty) return;
   if (next) {

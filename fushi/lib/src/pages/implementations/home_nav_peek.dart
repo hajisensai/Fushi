@@ -1599,7 +1599,12 @@ Future<AdaptiveNavPeekData> _loadMusic({
     );
     await engine.playQueue(
       <MusicPlayItem>[
-        for (final MusicTrackRow t in tracks) musicPlayItemOf(t, album: album),
+        for (final MusicTrackRow t in tracks)
+          musicPlayItemOf(
+            t,
+            album: album,
+            trackPathOf: musicTrackPathsOf(tracks),
+          ),
       ],
       startIndex: index < 0 ? 0 : index,
       context: uid == null ? MusicQueueContext.mixed : MusicQueueContext.album,
