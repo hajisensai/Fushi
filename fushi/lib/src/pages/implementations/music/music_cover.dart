@@ -6,7 +6,7 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_music/fushi_music.dart';
 
 import 'package:fushi/src/media/music/lyrics/visualizer/lyric_visualizer_cover.dart'
-    show kMusicCoverRequestHeaders;
+    show musicRemoteCoverProvider;
 import 'package:fushi/src/media/music/server/interconnect_music_client.dart'
     show fushiHostMusicCoverProvider;
 import 'package:fushi/src/media/nsfw/media_nsfw_cover.dart';
@@ -21,7 +21,6 @@ import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/shelf_card_widgets.dart';
 import 'package:fushi/src/utils/components/shelf_cover_material.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
-import 'package:fushi/src/utils/net/app_http_image.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 
 /// 内嵌封面字节的进程内缓存（按音频路径）。取封面要读整个文件头里的图片块，放后台
@@ -147,12 +146,12 @@ class MusicCover extends StatelessWidget {
       );
     } else if (file != null &&
         (file.startsWith('http://') || file.startsWith('https://'))) {
-      // 服务器曲库封面走全应用代理装配（裸 Image.network 会绕过代理）。
+      // 在线封面走全应用代理装配 + 磁盘缓存（裸 Image.network 会绕过代理）。
       child = Image(
         image: ResizeImage.resizeIfNeeded(
           size == null ? 512 : (size! * 2).round(),
           null,
-          AppHttpImage(file, headers: kMusicCoverRequestHeaders),
+          musicRemoteCoverProvider(file),
         ),
         fit: BoxFit.cover,
         gaplessPlayback: true,
@@ -226,7 +225,7 @@ Widget musicDiscArtImage(String path) => MusicDiscFace(
 );
 
 /// [MusicCover] 同一套来源规则下的封面 provider（取色用，[size] 同显示尺寸）：
-/// `http(s)://` 走 [AppHttpImage]，本地文件走 [FileImage]；内嵌封面 / 没有封面
+/// `http(s)://` 走 [musicRemoteCoverProvider]（磁盘缓存），本地文件走 [FileImage]；内嵌封面 / 没有封面
 /// 返回 null。
 ImageProvider? musicCoverImageProvider(String? coverPath, {double size = 64}) {
   final String? file = coverPath;
@@ -236,7 +235,7 @@ ImageProvider? musicCoverImageProvider(String? coverPath, {double size = 64}) {
     return ResizeImage.resizeIfNeeded(
       width,
       null,
-      AppHttpImage(file, headers: kMusicCoverRequestHeaders),
+      musicRemoteCoverProvider(file),
     );
   }
   final ImageProvider? host = fushiHostMusicCoverProvider(file);

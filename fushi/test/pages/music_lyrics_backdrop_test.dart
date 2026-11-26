@@ -385,6 +385,40 @@ void main() {
       expect(renders, after);
     });
 
+    testWidgets(
+      'switching songs crossfades inside one scene, then drops the old layer',
+      (WidgetTester tester) async {
+        Widget backdrop(String? cover) =>
+            host(MusicLyricsBackdrop(coverPath: cover, animate: false));
+        CustomPaint scenePaint() => tester.widget<CustomPaint>(
+          find.descendant(
+            of: find.byType(MusicLyricsBackdrop),
+            matching: find.byWidgetPredicate(
+              (Widget w) => w is CustomPaint && w.painter != null,
+            ),
+          ),
+        );
+        await tester.pumpWidget(backdrop(null));
+        await tester.pump();
+        expect(renders, 1);
+        // 换歌（封面读不到 → 新的一层，主题色回退）：淡化途中仍只有一个场景。
+        await tester.pumpWidget(backdrop('Z:/no/such/cover.png'));
+        await tester.pump(const Duration(milliseconds: 50));
+        expect(find.byType(AnimatedSwitcher), findsNothing);
+        scenePaint();
+        // 新层渲染一次离屏图；旧层的离屏图沿用缓存（静态模式不重画）。
+        expect(renders, 2);
+        for (int i = 0; i < 10; i++) {
+          await tester.pump(const Duration(milliseconds: 100));
+        }
+        expect(renders, 2, reason: '淡化期间只是按不透明度合成，不重画离屏图');
+        // 淡完：只剩新层，之后不再要帧。
+        await tester.pumpAndSettle();
+        expect(renders, 2);
+        expect(tester.hasRunningAnimations, isFalse);
+      },
+    );
+
     testWidgets('reduced motion freezes flowing mode', (
       WidgetTester tester,
     ) async {
