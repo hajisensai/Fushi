@@ -160,4 +160,33 @@ abstract class FlutterOnnxruntimePlatform extends PlatformInterface {
   Future<void> releaseOrtValue(String valueId) {
     throw UnimplementedError('releaseOrtValue() has not been implemented.');
   }
+
+  // Fushi fork (PATCHES.md delta 19, BUG-5508): tensor data crosses as an address.
+
+  /// Whether this platform takes tensor data as a process address
+  /// ([createOrtValueFromAddress] / [getOrtValueAddress]) instead of a list
+  /// copied through the message codec.
+  ///
+  /// Android only: its list path keeps several copies of every tensor in the
+  /// 256 MB Java heap and crashed with `OutOfMemoryError` under OCR / ASR load.
+  bool get supportsNativeTensorMemory => false;
+
+  /// Creates an OrtValue that reads its data straight from [byteLength] bytes at
+  /// [address]. The caller owns that memory and must keep it alive until
+  /// [releaseOrtValue] for the returned value has completed.
+  Future<Map<String, dynamic>> createOrtValueFromAddress(
+    String sourceType,
+    int address,
+    int byteLength,
+    List<int> shape,
+  ) {
+    throw UnimplementedError('createOrtValueFromAddress() has not been implemented.');
+  }
+
+  /// Address and byte length of an OrtValue's dense data
+  /// (`{address, byteLength, dataType, shape}`), valid until [releaseOrtValue];
+  /// null when its element type is not raw-readable (use [getOrtValueData]).
+  Future<Map<String, dynamic>?> getOrtValueAddress(String valueId) {
+    throw UnimplementedError('getOrtValueAddress() has not been implemented.');
+  }
 }
