@@ -707,20 +707,29 @@ Two open items from #4470 (phase 4A open question 1, phase 4B open question 3).
 
 - **One platform implementation.** Rust `ffsrs_volume_free_bytes(path) -> i64` (`native/fushi_fsrs/src/lib.rs`,
   -1 = unknown, wraps `store/compact.rs` `free_bytes`, the same `statvfs` / `GetDiskFreeSpaceExW` code that
-  guards review-library compaction); ABI 8 → 9. Dart: `FfiFsrsEngine.volumeFreeBytes(path)` walks up to the
-  first existing ancestor (the backups folder may not exist yet). fushi_core does not depend on fushi_srs, so
+  guards review-library compaction) and `ffsrs_volume_id(path, *mut u64) -> i32` (1 = written; POSIX `st_dev`,
+  Windows `GetVolumePathNameW` root + `GetVolumeInformationW` serial, so mount points are told apart; a path that
+  does not exist gives 0); ABI 8 → 9. Dart: `FfiFsrsEngine.volumeFreeBytes` / `FfiFsrsEngine.volumeId` walk up to
+  the first existing ancestor (the backups folder may not exist yet). fushi_core does not depend on fushi_srs, so
   the check lives in fushi_core `database/free_space.dart` (`ensureFreeSpace`, `NotEnoughSpaceException`,
   `kNotEnoughSpaceError = 'not_enough_space'`, `kBackupSpaceMarginBytes` = 64 MiB like compaction's `MARGIN`)
-  and the app (`main`) and the server CLI entry register the probe (`registerVolumeFreeBytes`). Every caller
-  also accepts an injected probe (tests).
+  and the app (`main`) and the server CLI entry register both probes (`registerVolumeFreeBytes(free, volumeId:)`).
+  Every caller also accepts injected probes (tests).
 - **Estimate (D18).** Uncompressed upper bound plus margin: a compressed zip is never larger than its inputs,
   and media / documents barely compress, so no factor is applied. Temp snapshot copies are counted on the
-  volume they go to. Two targets with the same free-space reading are treated as one volume and summed (Dart has
-  no volume identity; equal readings on different volumes at the same moment only make the check stricter).
+  volume they go to. Targets on the same volume are summed, grouped by **volume identity**
+  (`ffsrs_volume_id`), each group compared with its smallest free reading. If any target has no identity, all
+  targets are treated as one volume: every need summed against the smallest reading (conservative; a first
+  version grouped by equal free readings, which a write between the two reads broke, under-counting).
   Unknown free space (no probe, platform cannot tell) → write as before.
-  - App scheduled point: `fushi.db` + `srs4.db` (each with `-wal`; srs only when available) + the ticked file
-    trees + review media when included, on the store root (custom folder or default); the two databases again
-    on the system temp volume (`createBackup` `VACUUM INTO`s them there first).
+  - App scheduled point: `fushi.db` + `srs4.db` (each with `-wal`; srs only when available) + the file
+    categories and review media from `BackupService.estimateFileCategoryBytes`, which runs **the same collector
+    as `createBackup`** (`_collectFileCategories`: dictionaries, books and downloaded manga, audiobooks, referenced
+    fonts, every referenced video file, `local_audio_*.db`, game covers, `srs_media/`), on the store root (custom
+    folder or default); the two databases again on the system temp volume (`createBackup` `VACUUM INTO`s them
+    there first). A first version walked a separate "category → folder" table and missed videos and local
+    audio; `backup_categories_test.dart` now fails if any category in `kBackupFileCategories` or review media
+    estimates to 0 or differs from what `createBackup` packs.
   - App pre-operation / pre-update point: the live database file(s) + `-wal` on the restore point root.
   - Copy back to this device: the copy's `totalBytes` on the database directory (staging and store are there).
   - Server: `serverBackupSizeEstimate` = every source file of the backup (`serverBackupSourceFiles`: DB files,
@@ -738,13 +747,21 @@ Two open items from #4470 (phase 4A open question 1, phase 4B open question 3).
   - Copy back: refused before the download starts (error code `not_enough_space`).
   - Server automatic: failed, `lastError: not_enough_space` in status + log (WebUI shows "Not enough free disk
     space; not started"), not counted as satisfied, retried at the next check.
-  - Server manual (admin API `POST /api/admin/backups`): the job claims the lock, checks space, and the handler
-    waits only for that check (`ServerBackupStart.preflight`): **507** `{"error":"not_enough_space",...}`; the
-    WebUI toasts the localized text; `lastError` also shows it. Offline `backup create` prints the reason and exits
-    non-zero.
+  - Server manual and "run now" (admin API `POST /api/admin/backups` and `POST /api/admin/backups/run`): the job
+    claims the lock, checks space, and the handler waits only for that check (`ServerBackupStart.preflight`,
+    `adminBackupStartedResponse`): **507** `{"error":"not_enough_space",...}`; if the estimate itself fails
+    (unreadable data directory, isolate error) **500** `{"error":"preflight_failed"}` with the raw text only in
+    the log; a run skipped as unchanged answers 202. The WebUI toasts the localized text for both buttons;
+    `lastError` also shows it; `fushi_server ctl backup create|run` call the same admin API. Offline
+    `backup create` prints the reason and exits non-zero.
   - Server pre-update: skipped with `preUpdateError: not_enough_space`, the update proceeds (D16).
-- **Manual verification hook.** `FUSHI_SERVER_FREE_BYTES_OVERRIDE=<bytes>` (server only) reports that value for
-  every volume, so a real `serve` can be shown failing for space without filling a disk.
+- **Test-only hook.** `FUSHI_SERVER_FREE_BYTES_OVERRIDE=<bytes>` (server only, `kServerFreeBytesOverrideEnv`)
+  reports that value for every volume (no volume identity, so the conservative sum applies), so a real `serve`
+  can be shown failing for space without filling a disk. When set, the CLI prints a warning at startup and every
+  backup's space check logs a `WARNING … (test only)` line; the server README says not to set it in production.
+- **ctl received list.** `GET /api/admin/restore-points/received` answers 503 `device_identity_unavailable`
+  (raw error only in the log) when this device's key cannot be read, instead of a bare 500: without it the route
+  cannot guarantee that this device's own copies are excluded.
 - **Tests.** Rust `tests::volume_free_bytes_abi`; fushi_srs `volume_free_bytes_test.dart` (real library);
   fushi_core `free_space_test.dart` (same-volume sum, separate volumes, unknown, registered probe, pre-operation
   refused, pre-update status); server `server_auto_backup_test.dart` group "写之前查空间（第五期）" + admin API 507;
@@ -759,6 +776,13 @@ Two open items from #4470 (phase 4A open question 1, phase 4B open question 3).
 2. Folder / cloud / server copies are not space-checked on the target (the remote side reports its own quota
    errors, `cloud_quota`); only local writes are.
 3. The received-backups section was checked by widget tests only; the app was not launched.
+4. **iOS free space.** `statvfs` `f_bavail` excludes purgeable space (caches iOS frees on demand), while
+   `volumeAvailableCapacityForImportantUsage` includes it, so on a full-looking iPhone the check may refuse a
+   backup the system would have made room for. Using the Foundation value needs a Swift / Objective-C shim
+   (cannot be built in this batch); left as a follow-up.
+5. The app fingerprint (skip-unchanged) still walks the `contentTreeRoots` table, which has no videos / local
+   audio entries; a change only in those files is not seen as a change (pre-existing, phase 2). The estimate no
+   longer uses that table.
 
 ## Decisions (taken by the user 2026-11-25 on the proposal's recommendations; maintainer may change)
 
@@ -782,9 +806,9 @@ Two open items from #4470 (phase 4A open question 1, phase 4B open question 3).
 | D16 | Backup before a server self-update | none / block on failure / proceed on failure | **Settings + data (no documents) before the bundle swap, newest 3 kept; a failure is logged and shown, the update still proceeds** (same as phase 1). Rollback = restore that zip with the current binary (do not start it), then reinstall the older bundle. *Recommended default, maintainer may change.* |
 
 | D17 | App as Interconnect host: received device backups | not shown / list + delete / list + export + delete + restore | **List, export and delete on the Restore points page ("Received from other devices"); no restore on the host** (a backup belongs to the device it came from). Shown whenever the inbox has other devices' copies, also after hosting was turned off (leftovers stay deletable); this device's own key is excluded; deletes ask inline, ctl delete needs `confirm` / CLI `--yes`. *Recommended default, maintainer may change.* |
-| D18 | How much space a backup needs | compressed guess / uncompressed upper bound | **Uncompressed sum of the inputs + 64 MiB margin**, temp snapshot copies counted on their volume, same-reading targets summed; unknown free space → write. *Recommended default, maintainer may change.* |
+| D18 | How much space a backup needs | compressed guess / uncompressed upper bound | **Uncompressed sum of the inputs + 64 MiB margin**, computed from the same file map `createBackup` packs (app) / the same source list the server zip uses; temp snapshot copies counted on their volume; targets on the same volume (by volume identity) summed, and all targets summed against the smallest reading when an identity is missing; unknown free space → write. *Recommended default, maintainer may change.* |
 | D19 | Not enough space | try anyway / refuse | **Refuse before writing anything**: app scheduled → failed `not_enough_space`, notified once per streak; Replace → refused with that reason; other pre-operation points and the phase-1 snapshot → skipped with the reason, the operation / migration continues; server automatic → failed in status; manual → HTTP 507; pre-update → skipped, update proceeds (D16). *Recommended default, maintainer may change.* |
-| D20 | Where the platform free-space call lives | Dart per platform / fushi_compute / fushi_fsrs | **fushi_fsrs `ffsrs_volume_free_bytes` (ABI 9)**, reusing the compaction helper (one `statvfs` / `GetDiskFreeSpaceExW` implementation; fushi_fsrs already exports non-SRS utilities such as zstd); registered into fushi_core by the app / server entry because fushi_core does not depend on fushi_srs. *Recommended default, maintainer may change.* |
+| D20 | Where the platform free-space call lives | Dart per platform / fushi_compute / fushi_fsrs | **fushi_fsrs `ffsrs_volume_free_bytes` + `ffsrs_volume_id` (ABI 9)**, reusing the compaction helper (one `statvfs` / `GetDiskFreeSpaceExW` implementation; fushi_fsrs already exports non-SRS utilities such as zstd); registered into fushi_core by the app / server entry because fushi_core does not depend on fushi_srs. *Recommended default, maintainer may change.* |
 
 ## 决策摘要（中文）
 
@@ -816,10 +840,12 @@ D12–D13（用户 2026-11-25 定第四期 = 设备备份到服务器 + 服务�
 D17–D20（第五期，按建议默认实现，维护者可改）：app 当互联 host 时，还原点页多一段「从其他设备收到的备份」，按设备分组（名字、份数、总大小、最新日期、
 不完整份数），每份可导出、可删（行内确认），也可删一台设备的全部；不在 host 上提供恢复（备份属于原来那台设备），本机自己的设备键不列；只要收件箱
 里有别的设备的副本就显示，host 关了也照样能清；ctl / CLI 也能列、能删（删要 `confirm` / `--yes`）。app 自己的备份 / 导出本来就不打包收件箱，
-不用改。写任何备份之前先查空间：按不压缩的输入总和 + 64 MiB 余量估，临时快照算在它落的那个卷上，读数相同的目标当同一个卷合计，查不到可用空间就
+不用改。写任何备份之前先查空间：按不压缩的输入总和 + 64 MiB 余量估，临时快照算在它落的那个卷上，按卷身份（`ffsrs_volume_id`：POSIX `st_dev`、Windows 卷根 + 序列号）把同一个卷上的
+目标合计，拿不到卷身份就全部合计、对比最小的读数；app 的估算与 `createBackup` 走同一个文件收集器（视频、本地音频不再漏算）；查不到可用空间就
 照常写；不够就一个字都不写——app 定时备份记失败 `not_enough_space`、同一原因只提示一次，「替换」拒绝并说明原因，其余操作前还原点与更新前快照
-跳过并记原因、操作 / 迁移照常；服务端自动备份记失败，手动备份回 507，更新前备份跳过、更新照常（D16）。平台实现只有一份：fushi_fsrs 的
-`ffsrs_volume_free_bytes`（ABI 升到 9，复用复习库压缩的 `free_bytes`），由 app / 服务端入口登记进 fushi_core。
+跳过并记原因、操作 / 迁移照常；服务端自动备份记失败，手动备份与「立即跑」回 507（估算本身失败回 500 `preflight_failed`），更新前备份跳过、更新照常（D16）；
+`FUSHI_SERVER_FREE_BYTES_OVERRIDE` 只给测试用，设了会在启动和每次备份日志里警告。平台实现只有一份：fushi_fsrs 的
+`ffsrs_volume_free_bytes` / `ffsrs_volume_id`（ABI 升到 9，复用复习库压缩的 `free_bytes`），由 app / 服务端入口登记进 fushi_core。
 
 ## Naming
 
