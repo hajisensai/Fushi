@@ -1248,6 +1248,38 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
             ]))
           .get();
 
+  /// 视频库（`video_books`）里每条视频的**主合集名**：bookUid → 它所在的 id 最小的
+  /// 现存合集的名字（最早建立的那个，一般就是下载 / 导入时自动建的作品合集）。
+  /// 不在任何合集里的视频不出现。
+  ///
+  /// 过滤、连表与分组全在 SQL 侧做，只把「库里每条视频一行」拷回调用方 isolate。
+  /// 设置 → 存储页曾为此整表读 [getAllCollectionItems] + [getAllMediaCollections]
+  /// 到 UI isolate 再内存过滤——用户库 85k 成员行（几乎全是已不在视频库里的
+  /// `video` 成员）/ 3k 合集，真正用得上的只有几百行（BUG-5529）。
+  Future<Map<String, String>> videoBookPrimaryCollectionNames() async {
+    final List<QueryRow> rows = await customSelect(
+      'SELECT g.entry_key AS entry_key, c.name AS name '
+      'FROM (SELECT i.entry_key AS entry_key, '
+      'MIN(i.collection_id) AS collection_id '
+      'FROM media_collection_items i '
+      'JOIN video_books v ON v.book_uid = i.entry_key '
+      'JOIN media_collections c0 ON c0.id = i.collection_id '
+      'WHERE i.media_type = ? '
+      'GROUP BY i.entry_key) g '
+      'JOIN media_collections c ON c.id = g.collection_id',
+      variables: <Variable<Object>>[Variable<String>(MediaKind.video.dbValue)],
+      readsFrom: <ResultSetImplementation<dynamic, dynamic>>{
+        mediaCollectionItems,
+        mediaCollections,
+        videoBooks,
+      },
+    ).get();
+    return <String, String>{
+      for (final QueryRow r in rows)
+        r.read<String>('entry_key'): r.read<String>('name'),
+    };
+  }
+
   /// 全部合集成员行（一次查询，供渲染层内存分组算组内 sortIndex，替代逐合集
   /// [getCollectionItems] 的 N+1）。按 collectionId、sortIndex、entryKey、mediaType
   /// 升序，与 [getCollectionItems] 同口径（含末位 mediaType 的全序兜底）——同一
