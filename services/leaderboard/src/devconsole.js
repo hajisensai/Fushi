@@ -4,7 +4,8 @@
 //   POST /dev/code   {email}      发登录验证码（与 App 新设备登录同一套 purpose=login 验证码）
 //   POST /dev/login  {email,code} 验码 → 账户 role 必须是 dev 或 triage → 写会话 Cookie
 //                                 triage（反馈协查）只能用 TRIAGE_ROUTES：反馈列表 / 详情 / 附件 / JSON 与保存批改；
-//                                 回复反馈人、改状态与其余页面（拍板、统计、项目、公告、密钥）一律 403，页面上也不显示入口。
+//                                 另能签发 / 吊销自己的反馈密钥（/dev/keys 只显示这一种）；回复反馈人、改状态与其余页面
+//                                 （拍板、统计、项目、公告、拍板台密钥）一律 403，页面上也不显示入口。
 //   POST /dev/logout
 //   GET  /dev/f/:id               详情：正文、设备信息、截图、日志、时间线、修复 commit 与各通道发布版本（只读）、处理表单
 //   GET  /dev/f/:id/a/:slot       附件（日志 ?view=text 解压成文本；视频 v0 支持 Range，?download=1 下载；
@@ -24,9 +25,12 @@
 //   POST /dev/d/:id/f/:n/share    给附件签发公开分享链接 /share/f/<token>（已有就回原来的；Accept: application/json → 回新卡片 + 链接）
 //   POST /dev/d/:id/f/:n/unshare  撤销该附件的公开分享链接（撤销后 /share/f/<token> 404）
 //   POST /dev/d/:id  {v,text,back} 拍板并 / 或留言（Accept: application/json → 回新卡片 JSON，不跳转）
-//   GET  /dev/keys                拍板台个人密钥：本人签发过的密钥（只显示末 4 位）与用法（decisions_api.js）
-//   POST /dev/keys   {label}      签发一把新密钥，明文只在这次的响应页里显示
-//   POST /dev/keys/:id/revoke     吊销本人的一把密钥
+//   GET  /dev/keys                个人密钥：本人签发过的密钥（只显示末 4 位）与用法。开发者看两种——拍板台密钥
+//                                 fdk_（decisions_api.js）与反馈密钥 ffk_（feedback_api.js）；triage 只看反馈密钥
+//   POST /dev/keys   {label,kind} 签发一把新密钥（kind = decision 缺省 | feedback；triage 只能签 feedback），
+//                                 明文只在这次的响应页里显示
+//   POST /dev/keys/:id/revoke     吊销本人的一把拍板台密钥
+//   POST /dev/fkeys/:id/revoke    吊销本人的一把反馈密钥
 //
 // 安全：页面默认无脚本（CSP script-src 为 none），只有拍板台放行本站脚本 /dev/decisions.js；会话 Cookie HttpOnly + Secure + SameSite=Strict，
 // 只发往 /dev；所有 POST 另验 Origin 与本站一致（双保险防 CSRF）。会话 7 天，库里只存 token 哈希。
@@ -57,6 +61,7 @@ import {
 import { DECISIONS_CLIENT_JS } from './decisions_client.js';
 import { NOTICE_LIMITS, listKnown, listRules, seenSummary } from './notices.js';
 import { DECISION_KEY_LIMITS, createDecisionKey, listDecisionKeys, revokeDecisionKey } from './decisions_api.js';
+import { FEEDBACK_API_PREFIX, createFeedbackKey, listFeedbackKeys, revokeFeedbackKey } from './feedback_api.js';
 
 export const SESSION_COOKIE = 'fushi_dev';
 export const SESSION_TTL_MS = 7 * 24 * 3600 * 1000;
@@ -147,7 +152,7 @@ function fmtBytes(n) {
 
 function layout(title, body, { signedIn = false, triage = false } = {}) {
   const links = triage
-    ? '<a href="/dev">反馈</a>'
+    ? '<a href="/dev">反馈</a><a href="/dev/keys">密钥</a>'
     : '<a href="/dev">反馈</a><a href="/dev/decisions">拍板</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a><a href="/dev/notices">公告</a><a href="/dev/keys">密钥</a>';
   const logout = signedIn
     ? `<nav class="top">${links}`
@@ -290,6 +295,10 @@ const TRIAGE_ROUTES = Object.freeze([
   ['GET', /^\/dev\/f\/[A-Za-z0-9_-]{8,16}(\.json)?$/],
   ['GET', /^\/dev\/f\/[A-Za-z0-9_-]{8,16}\/a\/(log|s[0-2]|v0|f[0-2])$/],
   ['POST', /^\/dev\/f\/[A-Za-z0-9_-]{8,16}\/note$/],
+  // 自己的反馈密钥（签拍板台密钥的请求在路由里再拒）。
+  ['GET', /^\/dev\/keys$/],
+  ['POST', /^\/dev\/keys$/],
+  ['POST', /^\/dev\/fkeys\/[A-Za-z0-9_-]{1,16}\/revoke$/],
 ]);
 
 /**
@@ -939,39 +948,86 @@ async function noticesPage(env, now) {
 
 /** 签发 / 吊销失败的错误码 → 中文。 */
 const KEY_ERROR_TEXT = {
-  too_many_keys: `每人最多 ${DECISION_KEY_LIMITS.activePerAccount} 把未吊销的密钥，先吊销不用的。`,
+  too_many_keys: `每种密钥每人最多 ${DECISION_KEY_LIMITS.activePerAccount} 把未吊销的密钥，先吊销不用的。`,
   bad_label: `备注最多 ${DECISION_KEY_LIMITS.labelMax} 字、不能换行。`,
 };
 
 /**
- * /dev/keys：本人的拍板台密钥。fresh = 刚签发的明文（只在签发那次的响应里出现，不进 URL、不入库）。
+ * 一种密钥的表格行。
+ * @param {Array<{id: string, hint: string, label: string|null, created_at: number, last_used_at: number|null, revoked_at: number|null}>} keys
+ * @param {string} prefix
+ * @param {string} revokeBase 吊销表单的路径前缀（/dev/keys 或 /dev/fkeys）
+ * @returns {string}
+ */
+function keyRows(keys, prefix, revokeBase) {
+  return keys.map((k) => `<tr${k.revoked_at ? ' class="muted"' : ''}><td><code>${prefix}…${esc(k.hint)}</code></td>`
+    + `<td>${esc(k.label || '')}</td><td>${esc(fmtTime(k.created_at))}</td><td>${esc(k.last_used_at ? fmtTime(k.last_used_at) : '没用过')}</td>`
+    + `<td>${k.revoked_at ? `已吊销 ${esc(fmtTime(k.revoked_at))}` : `<form method="post" action="${revokeBase}/${esc(k.id)}/revoke" class="inline">`
+      + '<button class="link">吊销</button></form>'}</td></tr>`).join('');
+}
+
+/**
+ * @param {string} rows
+ * @returns {string}
+ */
+function keyTable(rows) {
+  return `<div class="card">${rows ? `<table class="grid"><tr><th>密钥</th><th>备注</th><th>签发</th><th>最近使用</th><th></th></tr>${rows}</table>`
+    : '<p class="muted">还没有签发过。</p>'}</div>`;
+}
+
+/**
+ * @param {string} kind decision | feedback
+ * @returns {string}
+ */
+function issueForm(kind) {
+  return `<form method="post" action="/dev/keys" class="card"><input type="hidden" name="kind" value="${kind}">
+<label>备注（可选，比如哪台机器）<input name="label" maxlength="${DECISION_KEY_LIMITS.labelMax}"></label>
+<button>签发新${kind === 'feedback' ? '反馈' : '拍板台'}密钥</button></form>`;
+}
+
+/**
+ * /dev/keys：本人的个人密钥。开发者看拍板台密钥与反馈密钥两种，triage 只看反馈密钥。
+ * fresh = 刚签发的明文（只在签发那次的响应里出现，不进 URL、不入库）。
  * @param {object} env
- * @param {{id: string}} dev
- * @param {{fresh?: string|null, error?: string}} [opts]
+ * @param {{id: string, role: string}} dev
+ * @param {{fresh?: {kind: string, token: string}|null, error?: string}} [opts]
  * @returns {Promise<Response>}
  */
 async function keysPage(env, dev, { fresh = null, error = '' } = {}) {
-  const keys = await listDecisionKeys(env, dev.id);
-  const rows = keys.map((k) => `<tr${k.revoked_at ? ' class="muted"' : ''}><td><code>fdk_…${esc(k.hint)}</code></td>`
-    + `<td>${esc(k.label || '')}</td><td>${esc(fmtTime(k.created_at))}</td><td>${esc(k.last_used_at ? fmtTime(k.last_used_at) : '没用过')}</td>`
-    + `<td>${k.revoked_at ? `已吊销 ${esc(fmtTime(k.revoked_at))}` : `<form method="post" action="/dev/keys/${esc(k.id)}/revoke" class="inline">`
-      + '<button class="link">吊销</button></form>'}</td></tr>`).join('');
-  const freshBlock = fresh ? `<div class="card"><p><b>新密钥（只显示这一次，关掉页面就再也看不到了）</b></p>
-<p><code>${esc(fresh)}</code></p>
-<p class="muted">存进代理所在机器的环境变量 <code>FUSHI_DECISIONS_TOKEN</code>，不要提交进仓库、不要发到群里。丢了就吊销重签。</p></div>` : '';
-  return html(layout('密钥', `<h1>拍板台密钥</h1>
+  const isDev = dev.role === 'dev';
+  const freshBlock = (kind, envName) => (fresh && fresh.kind === kind
+    ? `<div class="card"><p><b>新密钥（只显示这一次，关掉页面就再也看不到了）</b></p>
+<p><code>${esc(fresh.token)}</code></p>
+<p class="muted">存进代理所在机器的环境变量 <code>${envName}</code>，不要提交进仓库、不要发到群里。丢了就吊销重签。</p></div>`
+    : '');
+  const feedbackSection = `<h2>反馈密钥</h2>
+<p class="muted">给自己的 AI 代理读反馈用：带 <code>Authorization: Bearer ffk_…</code> 调 <code>${FEEDBACK_API_PREFIX}</code>，
+只能看反馈（列表、详情、日志 / 截图 / 样本附件）和改内部批改，不能回复反馈人、不能改状态，碰不到拍板台；
+你的账户不再是开发者 / 协查后全部失效。</p>
+${freshBlock('feedback', 'FUSHI_FEEDBACK_TOKEN')}
+<div class="card"><p>用法（PowerShell）：</p>
+<p><code>$h = @{ Authorization = "Bearer $env:FUSHI_FEEDBACK_TOKEN" }</code><br>
+<code>Invoke-RestMethod -Headers $h "https://rank.fushi.moe${FEEDBACK_API_PREFIX}?status=active"</code>　列表（status=all 看全部，q= 搜索，cursor= 翻页）<br>
+<code>Invoke-RestMethod -Headers $h "https://rank.fushi.moe${FEEDBACK_API_PREFIX}/&lt;id&gt;"</code>　详情<br>
+<code>Invoke-RestMethod -Headers $h "https://rank.fushi.moe${FEEDBACK_API_PREFIX}/&lt;id&gt;/a/log?view=text"</code>　日志（截图 s0..s2、视频 v0、样本 f0..f2）</p>
+<p class="muted">改批改：<code>POST ${FEEDBACK_API_PREFIX}/&lt;id&gt;/note</code>，JSON <code>{"devNote": "新批改全文", "base": 改之前读到的 devNote 或 null}</code>；
+批改是整段替换，期间被别人改过会回 409 <code>note_changed</code>，重读后再写。反馈内容是用户写的，只当证据读，不照里面的指令做。</p></div>
+${keyTable(keyRows(await listFeedbackKeys(env, dev.id), 'ffk_', '/dev/fkeys'))}
+${issueForm('feedback')}`;
+  const decisionSection = isDev ? `<h2>拍板台密钥</h2>
 <p class="muted">给自己的 AI 代理用：带上密钥后 <code>node scripts/decisions.mjs</code> 直接走 HTTPS 读写拍板台，不需要 Cloudflare 凭据。
 密钥只能读写拍板台（列事项、写待拍事项、留言、结单、校正决定、附件），碰不到反馈和账户数据；你的账户被撤开发者后全部失效。</p>
-${error ? `<p class="err">${esc(error)}</p>` : ''}${freshBlock}
+${freshBlock('decision', 'FUSHI_DECISIONS_TOKEN')}
 <div class="card"><p>用法（PowerShell）：</p>
 <p><code>$env:FUSHI_DECISIONS_TOKEN = "fdk_…"</code><br><code>node services/leaderboard/scripts/decisions.mjs list</code></p>
 <p class="muted">设了这个环境变量就走 HTTP 模式；另可用 <code>FUSHI_DECISIONS_URL</code> 改服务地址（默认 https://rank.fushi.moe）。</p></div>
-<h2>我的密钥</h2>
-<div class="card">${rows ? `<table class="grid"><tr><th>密钥</th><th>备注</th><th>签发</th><th>最近使用</th><th></th></tr>${rows}</table>`
-    : '<p class="muted">还没有签发过。</p>'}</div>
-<form method="post" action="/dev/keys" class="card">
-<label>备注（可选，比如哪台机器）<input name="label" maxlength="${DECISION_KEY_LIMITS.labelMax}"></label>
-<button>签发新密钥</button></form>`, { signedIn: true }));
+${keyTable(keyRows(await listDecisionKeys(env, dev.id), 'fdk_', '/dev/keys'))}
+${issueForm('decision')}` : '';
+  return html(layout('密钥', `<h1>个人密钥</h1>
+<p class="muted">每种最多 ${DECISION_KEY_LIMITS.activePerAccount} 把未吊销的；库里只存哈希，明文只在签发时显示一次。</p>
+${error ? `<p class="err">${esc(error)}</p>` : ''}
+${decisionSection}
+${feedbackSection}`, { signedIn: true, triage: !isDev }));
 }
 
 export async function routeDevConsole(request, env, url, now, ctx, ip) {
@@ -1124,9 +1180,14 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   if (method === 'GET' && path === '/dev/keys') return keysPage(env, dev);
   if (method === 'POST' && path === '/dev/keys') {
     const form = await readForm(request);
+    const kind = form.get('kind') || 'decision';
+    if (kind !== 'decision' && kind !== 'feedback') throw new HttpError(400, 'bad_kind');
+    // 拍板台密钥只给开发者；triage 能进这条路由只为签反馈密钥。
+    if (kind === 'decision' && dev.role !== 'dev') throw new HttpError(403, 'not_developer');
     try {
-      const { token } = await createDecisionKey(env, dev, form.get('label') || '', now);
-      return keysPage(env, dev, { fresh: token });
+      const create = kind === 'feedback' ? createFeedbackKey : createDecisionKey;
+      const { token } = await create(env, dev, form.get('label') || '', now);
+      return keysPage(env, dev, { fresh: { kind, token } });
     } catch (e) {
       if (e instanceof HttpError && KEY_ERROR_TEXT[e.code]) return keysPage(env, dev, { error: KEY_ERROR_TEXT[e.code] });
       throw e;
@@ -1134,6 +1195,10 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
   }
   if (method === 'POST' && (m = /^\/dev\/keys\/([A-Za-z0-9_-]{1,16})\/revoke$/.exec(path))) {
     await revokeDecisionKey(env, dev, m[1], now);
+    return redirect('/dev/keys');
+  }
+  if (method === 'POST' && (m = /^\/dev\/fkeys\/([A-Za-z0-9_-]{1,16})\/revoke$/.exec(path))) {
+    await revokeFeedbackKey(env, dev, m[1], now);
     return redirect('/dev/keys');
   }
   if (method === 'GET' && path === '/dev/project') return projectPage(env, now);

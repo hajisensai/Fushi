@@ -71,13 +71,13 @@ describe('角色表', () => {
     expect((await as(env, u, 'GET', '/v1/me')).data.role).toBe('triage');
   });
 
-  it('triage 处理台白名单只含反馈只读与批改', () => {
+  it('triage 处理台白名单只含反馈只读、批改与自己的反馈密钥', () => {
     const id = 'AbCdEfGh12';
     const ok = [['GET', '/dev'], ['GET', '/dev/feedback.json'], ['GET', `/dev/f/${id}`], ['GET', `/dev/f/${id}.json`],
       ['GET', `/dev/f/${id}/a/log`], ['GET', `/dev/f/${id}/a/s0`], ['GET', `/dev/f/${id}/a/v0`], ['GET', `/dev/f/${id}/a/f2`],
-      ['POST', `/dev/f/${id}/note`]];
+      ['POST', `/dev/f/${id}/note`], ['GET', '/dev/keys'], ['POST', '/dev/keys'], ['POST', '/dev/fkeys/k1/revoke']];
     const no = [['POST', `/dev/f/${id}`], ['GET', '/dev/decisions'], ['GET', '/dev/decisions.json'], ['GET', '/dev/stats'],
-      ['GET', '/dev/stats.json'], ['GET', '/dev/project'], ['GET', '/dev/notices'], ['GET', '/dev/keys'], ['POST', '/dev/keys'],
+      ['GET', '/dev/stats.json'], ['GET', '/dev/project'], ['GET', '/dev/notices'], ['POST', '/dev/keys/k1/revoke'],
       ['POST', '/dev/d/abc'], ['GET', `/dev/f/${id}/note`]];
     for (const [m, p] of ok) expect([m, p, consoleRouteAllowed('triage', m, p)]).toEqual([m, p, true]);
     for (const [m, p] of no) expect([m, p, consoleRouteAllowed('triage', m, p)]).toEqual([m, p, false]);
@@ -134,7 +134,7 @@ describe('triage：网页处理台', () => {
     expect(list.status).toBe(200);
     expect(list.data).toContain(`/dev/f/${id}`);
     expect(list.data).not.toContain('href="/dev/decisions"');
-    expect(list.data).not.toContain('href="/dev/keys"');
+    expect(list.data).toContain('href="/dev/keys"');
 
     const detail = await page(env, 'GET', `/dev/f/${id}`, { cookie });
     expect(detail.data).toContain(`action="/dev/f/${id}/note"`);
@@ -153,10 +153,16 @@ describe('triage：网页处理台', () => {
     expect(msgCount(env)).toBe(0);
     expect(fbRow(env, id).status).toBe('open');
 
-    for (const p of ['/dev/decisions', '/dev/decisions.json', '/dev/stats', '/dev/stats.json', '/dev/project', '/dev/notices', '/dev/keys']) {
+    for (const p of ['/dev/decisions', '/dev/decisions.json', '/dev/stats', '/dev/stats.json', '/dev/project', '/dev/notices']) {
       expect([p, (await page(env, 'GET', p, { cookie })).status]).toEqual([p, 403]);
     }
+    // 密钥页只给反馈密钥：不显示拍板台密钥，签拍板台密钥（kind 缺省 = decision）403。
+    const keys = await page(env, 'GET', '/dev/keys', { cookie });
+    expect(keys.status).toBe(200);
+    expect(keys.data).toContain('反馈密钥');
+    expect(keys.data).not.toContain('拍板台密钥');
     expect((await page(env, 'POST', '/dev/keys', { cookie, fields: { label: 'k' } })).status).toBe(403);
+    expect((await page(env, 'POST', '/dev/keys', { cookie, fields: { label: 'k', kind: 'decision' } })).status).toBe(403);
     expect(env.DB.raw.prepare('SELECT COUNT(*) n FROM decision_api_keys').get().n).toBe(0);
 
     // triage → dev：同一会话立即拿到全部能力；→ user：会话作废。
