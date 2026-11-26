@@ -90,6 +90,21 @@ class SubtitleBackfillTarget {
   /// 是不是原盘成员（字幕落 [managedSubtitleDirectory]）。
   bool get isDiscMember => managedSubtitleDirectory != null;
 
+  /// 「库里已有字幕源」不再挡这一次（整库补字幕已经按语言判过缺口：库里选着的是
+  /// 别种语言 / 已不在的文件时仍要补）。其余不变；同目录 / 托管目录里已有目标语言
+  /// 文件的保护照旧。
+  SubtitleBackfillTarget withoutExistingSubtitleBlock() =>
+      SubtitleBackfillTarget(
+        bookUid: bookUid,
+        videoPath: videoPath,
+        media: media,
+        scrapedRuntimeMinutes: scrapedRuntimeMinutes,
+        contentLanguage: contentLanguage,
+        originalLanguage: originalLanguage,
+        explicitLanguage: explicitLanguage,
+        managedSubtitleDirectory: managedSubtitleDirectory,
+      );
+
   /// 换一份身份，其余不变。
   SubtitleBackfillTarget withMedia(VideoMediaReference media) =>
       SubtitleBackfillTarget(
