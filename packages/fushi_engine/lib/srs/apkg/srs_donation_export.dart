@@ -17,6 +17,7 @@ import 'package:fushi_engine/srs/apkg/srs_apkg_export.dart';
 import 'package:fushi_engine/srs/apkg/srs_export_options.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_store_background.dart';
 
 /// `fushi_donation_meta.format`。
 const String srsDonationFormat = 'fushi-srs-donation';
@@ -281,6 +282,44 @@ Future<SrsDonationPreview> previewSrsDonation({
     words: words,
   );
 }
+
+/// 同 [exportSrsDonationFile]，整个导出在一次性后台 isolate 里跑（[srsRunWithStoreInBackground]），UI isolate
+/// 只等结果。产品代码一律走这里。
+Future<void> exportSrsDonationFileInBackground({
+  required SrsDbStore store,
+  required File file,
+  required String donorId,
+  required String appVersion,
+  bool includeWords = true,
+  Set<String> excludedNoteIds = const <String>{},
+}) => srsRunWithStoreInBackground<void>(
+  store,
+  _donationInBackground(
+    file.path,
+    donorId,
+    appVersion,
+    includeWords,
+    Set<String>.of(excludedNoteIds),
+  ),
+  debugName: 'srs-donation-export',
+);
+
+/// [exportSrsDonationFileInBackground] 的后台一半（顶层函数：闭包只捕获可发送的值）。
+Future<void> Function(SrsDbStore) _donationInBackground(
+  String path,
+  String donorId,
+  String appVersion,
+  bool includeWords,
+  Set<String> excludedNoteIds,
+) =>
+    (SrsDbStore store) => exportSrsDonationFile(
+      store: store,
+      file: File(path),
+      donorId: donorId,
+      appVersion: appVersion,
+      includeWords: includeWords,
+      excludedNoteIds: excludedNoteIds,
+    );
 
 /// 导出捐赠包到 [file]（Anki 兼容 .apkg：schema-11 集合 + 空媒体清单，不带 fushi-ext）。
 ///

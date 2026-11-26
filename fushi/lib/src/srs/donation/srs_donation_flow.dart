@@ -1,9 +1,8 @@
 /// 一次捐赠：导出脱敏包到临时文件 → PUT 上传 → 记偏好。界面只管展示阶段与进度。
 ///
-/// 导出与普通「导出 .apkg」同一条路（`openSrsExport` → `exportAnkiPackageFile`）：在主
-/// isolate 上 await [exportSrsDonationFile]（流式写盘，不整包进内存）。[SrsDbStore] 持有原生
-/// 连接与缓存，不能整个发到别的 isolate；要真正搬进后台 isolate 得先让导出器能在后台按
-/// 路径自开一份只读连接，那是导出器（引擎侧）的改动，普通导出也一并受益。
+/// 导出与普通「导出 .apkg」同一条路（`openSrsExport` → `exportAnkiPackageFileInBackground`）：
+/// [exportSrsDonationFileInBackground] 在一次性后台 isolate 里按句柄号重开一份只读副本导出、流式写盘
+/// （fushi_engine srs_store_background.dart），UI isolate 只等结果。
 library;
 
 import 'dart:io';
@@ -40,7 +39,7 @@ Future<SrsDonationStatus> runSrsDonation({
     final File file = File(
       '${staging.path}${Platform.pathSeparator}${id.donorId}.apkg',
     );
-    await exportSrsDonationFile(
+    await exportSrsDonationFileInBackground(
       store: store,
       file: file,
       donorId: id.donorId,

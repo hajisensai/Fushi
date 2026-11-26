@@ -22,6 +22,8 @@ import 'package:fushi_engine/srs/apkg/srs_anki_package.dart'
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/apkg/srs_export_options.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_store_background.dart';
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 
 /// 导出范围内的媒体文件读取（没有返回 null，不进包）。
@@ -146,6 +148,42 @@ Future<void> exportAnkiPackageFile({
     rethrow;
   }
 }
+
+/// 同 [exportAnkiPackageFile]，整个导出（读库、建集合 SQLite、压缩、拷媒体）在一次性后台 isolate 里跑
+/// （[srsRunWithStoreInBackground]），UI isolate 只等结果。产品代码一律走这里。
+///
+/// 媒体读取器（闭包）发不过去：给 [mediaDirectory]（[SrsMediaStore.root] 的路径），后台按它重建
+/// [SrsMediaStore]；null = 不带媒体。
+Future<void> exportAnkiPackageFileInBackground({
+  required SrsDbStore store,
+  required File file,
+  String? deckId,
+  String? mediaDirectory,
+  SrsAnkiExportOptions options = const SrsAnkiExportOptions(),
+}) => srsRunWithStoreInBackground<void>(
+  store,
+  _exportInBackground(file.path, deckId, mediaDirectory, options),
+  debugName: 'srs-apkg-export',
+);
+
+/// [exportAnkiPackageFileInBackground] 的后台一半（顶层函数：闭包只捕获可发送的值）。
+Future<void> Function(SrsDbStore) _exportInBackground(
+  String path,
+  String? deckId,
+  String? mediaDirectory,
+  SrsAnkiExportOptions options,
+) => (SrsDbStore store) {
+  final SrsMediaStore? media = mediaDirectory == null
+      ? null
+      : SrsMediaStore(Directory(mediaDirectory));
+  return exportAnkiPackageFile(
+    store: store,
+    file: File(path),
+    deckId: deckId,
+    loadMedia: media?.load,
+    options: options,
+  );
+};
 
 Future<void> _deleteQuietly(FileSystemEntity e) async {
   try {
