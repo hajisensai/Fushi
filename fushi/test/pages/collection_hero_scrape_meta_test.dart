@@ -478,8 +478,9 @@ void main() {
       reason: '安全目录判定阻止作品根图落盘时，详情页不能退回分集截图',
     );
     // settleCoverProbes 给真实 IO 的 runAsync 窗口里远程封面的磁盘缓存也真的起来了，
-    // 它排了一个 10 秒的清理定时器；海报面板取色也给远程封面挂了 10 秒加载超时。
-    // 走完它们，免得测试结束时还有定时器挂着。
+    // 它排了一个 10 秒的清理定时器（flutter_cache_manager 自己的，与封面取色无关）；
+    // 走完它，免得测试结束时还有定时器挂着。
+    await tester.pump(const Duration(seconds: 11));
   });
 
   // BUG：剧集目录从 `D:\smb\<剧名>` 挪进 `D:\smb\动漫\<剧名>` 后，合集

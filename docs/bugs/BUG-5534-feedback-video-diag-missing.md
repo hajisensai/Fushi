@@ -1,4 +1,4 @@
-## BUG-5527 · 反馈附带的日志里没有视频性能诊断（上屏 / 丢帧 / 帧耗时）
+## BUG-5534 · 反馈附带的日志里没有视频性能诊断（上屏 / 丢帧 / 帧耗时）
 - **报告**：2026-11-26（用户：查应用内反馈 MReV894ote「大范围平移镜头卡顿掉帧」时发现，反馈里一行视频性能数据都没有，「性能检测数据好像没进反馈」）
 - **真实性**：✅ 真 bug。反馈 / 闪退报告日志的唯一汇总点 `collectFeedbackLogText`（`fushi/lib/src/feedback/feedback_diagnostics.dart`）只拼错误日志、调试日志、游戏内查词诊断与数据位置诊断；视频诊断（BUG-5200 加的 `[mpv/stats] present window=… lost=…`、每秒属性采样 `late= vo-drop= dec-drop=`、`[frame] video-page` build / raster 耗时）只写进 `video_diag_log.txt`（`fushi/lib/src/diagnostics/video_diag_log.dart`），只有「设置 › 诊断 › 导出视频诊断日志」手动导出才拿得到。用户开着视频诊断复现卡顿再提交反馈，开发者在反馈里也看不到。
 - **[x] ① 已修复** — 新增 `fushi/lib/src/feedback/feedback_video_diag_log.dart`：同步读 `video_diag_log.txt` 末尾 2 MB，按类别白名单摘行（`session` / `video` / `frame` / `mpv/stats` / `memory` / `warmslot` 原样收，`mpv/<模块>` 转写行只收 fatal / error / warn），最多 3600 行（约 20 分钟连续播放），逐行过 `redactVideoDiagSecrets`。带查询词的 `lookup` / `popup` 与 libmpv verbose 转写行（文件路径、流 URL）不收。`collectFeedbackLogText` 在 `includeDebugLog`（与调试日志、游戏内查词同一道用户开关）时追加 `==== video diagnostics ====` 一节，节头写当前视频诊断开关与过滤串，放在数据位置诊断之前（超上限只留尾部时数据位置仍最后才丢）；闪退自动报告不带。`VideoDiagLog` 加只读 `timelineFile` 供读取。

@@ -408,7 +408,7 @@ Future<List<StorageBookRef>> loadStorageBookRefs(FushiDatabase db) async {
 /// 一条视频可属于多个合集：取 id 最小的那个（最早建立的，一般就是下载 / 导入时
 /// 自动建的作品合集），保证每条视频只出现在一个组里。归组在 SQL 侧做完
 /// （[FushiDatabase.videoBookPrimaryCollectionNames]）：整表读合集成员到 UI isolate
-/// 再内存过滤，用户库是 85k 行只为用上几百行（BUG-5529）。
+/// 再内存过滤，用户库是 85k 行只为用上几百行（BUG-5536）。
 Future<List<StorageVideoRef>> loadStorageVideoRefs(FushiDatabase db) async {
   // 瘦投影（同 [loadStorageBookRefs]）：只取 uid / 标题 / 路径三列。
   final List<({String bookUid, String title, String videoPath})> rows = await db

@@ -218,7 +218,7 @@ void main() {
       _expectNoFatSelect(recorder.statements);
     });
 
-    test('视频分组：取 id 最小的现存合集，别的媒体类型的成员不算；成员表不整表读回（BUG-5529）', () async {
+    test('视频分组：取 id 最小的现存合集，别的媒体类型的成员不算；成员表不整表读回（BUG-5536）', () async {
       await db
           .into(db.videoBooks)
           .insert(

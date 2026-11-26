@@ -1255,7 +1255,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
   /// 过滤、连表与分组全在 SQL 侧做，只把「库里每条视频一行」拷回调用方 isolate。
   /// 设置 → 存储页曾为此整表读 [getAllCollectionItems] + [getAllMediaCollections]
   /// 到 UI isolate 再内存过滤——用户库 85k 成员行（几乎全是已不在视频库里的
-  /// `video` 成员）/ 3k 合集，真正用得上的只有几百行（BUG-5529）。
+  /// `video` 成员）/ 3k 合集，真正用得上的只有几百行（BUG-5536）。
   Future<Map<String, String>> videoBookPrimaryCollectionNames() async {
     final List<QueryRow> rows = await customSelect(
       'SELECT g.entry_key AS entry_key, c.name AS name '
