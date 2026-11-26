@@ -1074,12 +1074,19 @@ function setButtonIcon(button, name) {
 window.__fushiRefreshIcons = function () {
     const root = __fushiContainer() || document;
     if (!root || typeof root.querySelectorAll !== 'function') return;
-    root.querySelectorAll('[data-icon]').forEach(button => {
-        if (button.classList.contains('mine-button')) {
+    // 制卡按钮按 data-mine-glyph 认：Material 下 __fushiPaintMineGlyph 会删掉它的
+    // data-icon（画文本标记），只按 [data-icon] 找，Material → Apple 翻转时它会漏掉、
+    // 停在文本 '+' / '✓'。
+    root.querySelectorAll('[data-icon], [data-mine-glyph]').forEach(button => {
+        if (button.dataset.mineGlyph !== undefined) {
             __fushiPaintMineGlyph(button);
         } else {
             button.innerHTML = iconSvg(button.dataset.icon);
         }
+    });
+    // 远端词典角标（__fushiRemoteDictGlyph）没有 data-icon，同样按当前设计系统重建。
+    root.querySelectorAll('.dict-remote-glyph').forEach(glyph => {
+        glyph.replaceWith(__fushiRemoteDictGlyph());
     });
 };
 
