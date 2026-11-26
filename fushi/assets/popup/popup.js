@@ -9785,8 +9785,15 @@ function updateEffectiveDictColumns() {
     if (!doc || !doc.style || typeof doc.style.setProperty !== 'function') {
         return;
     }
-    doc.style.setProperty(
-        '--dict-columns-effective', String(effectiveDictColumns()));
+    const cols = effectiveDictColumns();
+    doc.style.setProperty('--dict-columns-effective', String(cols));
+    // Apple 设计系统层（popup.css html.fushi-glass-host.fushi-apple）按「单列 = 一个 inset
+    // grouped 分组、多列 = 各自独立的圆角 cell」分两种卡片几何。判据必须是这里算好的有效
+    // 列数：data-masonry-cols 只在 masonry 接管后才有，CSS grid 回落（masonry 未跑 / 被跳过
+    // 渲染的词条）时多列也会被当成单列分组。扩展里 documentElement 是宿主页，不挂。
+    if (!window.__fushiRoot && doc.classList) {
+        doc.classList.toggle('fushi-dict-multicol', cols > 1);
+    }
 }
 if (typeof window.addEventListener === 'function'
     && !window.__fushiDictColsResizeHooked) {

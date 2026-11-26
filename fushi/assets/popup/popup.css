@@ -3909,6 +3909,431 @@ html.fushi-m3e.fushi-reduced-motion .header-buttons > .inline-action-button:acti
 }
 
 /* =====================================================================
+ * Apple 设计系统视觉层（html.fushi-glass-host.fushi-apple）。
+ *
+ * 用户 2026-11-26：Cupertino 下的词典弹窗按 Apple 设计重做，不影响 Material。此前 Apple
+ * 只换了词条头的动作按钮（上面 .header-buttons 段），词典卡 / 标签 / 折叠行仍是基础层的
+ * Niratan 描边卡 + 左侧小三角，与 app 其它 Apple 页面不是一套语言。本层按 iOS 26 /
+ * macOS 26 的 inset grouped 列表重排：
+ *   · 单列（一本词典 / 列数 1 / 视口只装得下一列）= 一个分组：所有词典卡并成一块圆角
+ *     分组（白 / 深灰 cell 压在弹窗的 secondarySystemGroupedBackground 上），卡间无缝，
+ *     行间是从文字左缘起的发丝分隔线（inset separator）；
+ *   · 多列（popup.js 按有效列数挂 html.fushi-dict-multicol，masonry 与 CSS grid 回落
+ *     都算；masonry 间距由 masonryGap() 决定）= 各自独立的圆角 cell，不画分隔线；
+ *   · 词典名行 = 列表行：44px 命中区、正文色 15px，折叠指示是行尾的 chevron（收起指右、
+ *     展开指下，同 SwiftUI DisclosureGroup），按下整行铺 systemFill；
+ *   · 标签 = 系统 fill 小圆角块 + secondaryLabel 字；频率 / 音调来源 = 强调色淡染；
+ *   · 词头 = Large Title 字重。
+ * 颜色全部取 Apple 系统色（与 FushiAppleColors 同值，按 data-theme 分两档）；强调色走
+ * Dart 注入的 --md-primary（Apple 设计系统下 ColorScheme.primary 就是 Apple 强调色，见
+ * fushi_apple_palette.dart appleColorScheme）。不变式与 M3E 层相同：振假名预留走 em、
+ * chevron 只用 transform 换朝向（BUG-2049）、masonry 间距归 popup.js。
+ * 用户「词典样式自定义」编译的规则全带 !important（dictionary_style_css.dart），本层
+ * 不会盖掉用户设置；样式编辑器的实时预览注入同一段主题 class，自动同外观。
+ * html.fushi-glass-host 开头，扩展生成器整条丢弃（扩展没有 Apple 设计系统）。
+ * ===================================================================== */
+html.fushi-glass-host.fushi-apple {
+    --fa-label: var(--text-color);
+    --fa-secondary-label: color-mix(in srgb, var(--text-color) 60%, transparent);
+    --fa-tertiary-label: color-mix(in srgb, var(--text-color) 32%, transparent);
+    --fa-accent: var(--md-primary, var(--primary-color));
+    --fa-fill: rgba(120, 120, 128, 0.2);
+    --fa-tertiary-fill: rgba(118, 118, 128, 0.12);
+    --fa-quaternary-fill: rgba(116, 116, 128, 0.08);
+    --fa-separator: rgba(60, 60, 67, 0.2);
+    --fa-cell: rgba(255, 255, 255, 0.82);
+    --fa-group-radius: 14px;
+    --fa-row-inset: 16px;
+    --fa-ease: cubic-bezier(0.32, 0.72, 0, 1);
+}
+
+html.fushi-glass-host.fushi-apple[data-theme="dark"] {
+    --fa-fill: rgba(120, 120, 128, 0.36);
+    --fa-tertiary-fill: rgba(118, 118, 128, 0.24);
+    --fa-quaternary-fill: rgba(116, 116, 128, 0.18);
+    --fa-separator: rgba(84, 84, 88, 0.55);
+    --fa-cell: rgba(255, 255, 255, 0.075);
+}
+
+/* ── 词典卡：inset grouped cell ── */
+html.fushi-glass-host.fushi-apple .glossary-group {
+    padding: 0;
+    border: none;
+    border-radius: 0;
+    background-color: var(--fa-cell);
+    box-shadow: none;
+    /* 按压底色铺满标题行，圆角由卡片裁出（overflow:clip 不建滚动容器，不影响 fixed 浮层）。 */
+    overflow: clip;
+}
+
+html.fushi-glass-host.fushi-apple .glossary-group[open] {
+    padding-bottom: 12px;
+}
+
+html.fushi-glass-host.fushi-apple .glossary-group > :not(summary) {
+    margin-left: var(--fa-row-inset);
+    margin-right: var(--fa-row-inset);
+}
+
+/* 单列：卡间无缝并成一个分组，组首尾圆角；第二张起顶边画 inset 发丝分隔线（背景渐变
+   画线，不占布局、不依赖 <details> 上的伪元素）。 */
+html.fushi-glass-host.fushi-apple .glossary-section > .category-body > .glossary-group {
+    margin-top: 0;
+}
+
+html.fushi-glass-host.fushi-apple .glossary-section > .category-body > .glossary-group + .glossary-group {
+    background-image: linear-gradient(var(--fa-separator), var(--fa-separator));
+    background-size: calc(100% - var(--fa-row-inset)) 1px;
+    background-position: var(--fa-row-inset) 0;
+    background-repeat: no-repeat;
+}
+
+html.fushi-glass-host.fushi-apple .glossary-section > .category-body > .glossary-group:first-child {
+    border-top-left-radius: var(--fa-group-radius);
+    border-top-right-radius: var(--fa-group-radius);
+}
+
+html.fushi-glass-host.fushi-apple .glossary-section > .category-body > .glossary-group:last-child {
+    border-bottom-left-radius: var(--fa-group-radius);
+    border-bottom-right-radius: var(--fa-group-radius);
+}
+
+/* 多列（popup.js updateEffectiveDictColumns 按有效列数 > 1 挂 html.fushi-dict-multicol；
+   masonry 与 CSS grid 回落两种排法都覆盖）：各自独立的圆角 cell，不画分隔线。与上面单列
+   分组的几条同特异度，靠排在其后生效。 */
+html.fushi-glass-host.fushi-apple.fushi-dict-multicol .glossary-section > .category-body > .glossary-group {
+    border-radius: var(--fa-group-radius);
+    background-image: none;
+}
+
+/* CSS grid 回落时的行距（与列距 6px 同值，卡片自身 margin-top 已在上面归零，不会叠成双倍）；
+   masonry 接管后 body 是绝对定位容器，行距由 popup.js masonryGap() 决定，row-gap 不参与。 */
+html.fushi-glass-host.fushi-apple.fushi-dict-multicol .glossary-section > .category-body {
+    row-gap: 6px;
+}
+
+/* 汉字区块单独成一个分组（不在词典列表里）。 */
+html.fushi-glass-host.fushi-apple .kanji-card-section.glossary-group {
+    border-radius: var(--fa-group-radius);
+}
+
+/* ── 词典名行：列表行 + 行尾 chevron ── */
+html.fushi-glass-host.fushi-apple .dict-label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 var(--fa-row-inset);
+    font-size: 15px;
+    line-height: 20px;
+    /* 列表行标题是常规字重（iOS 行标题 = Body Regular）：CJK 字体多数没有 Medium，500
+       会落到 W6 粗体，一列词典名全是粗体反而抢释义的戏。当前词典另用强调色 + 600。 */
+    font-weight: 400;
+    letter-spacing: -0.01em;
+    color: var(--fa-label);
+    opacity: 1;
+    transition: background-color 0.2s ease;
+}
+
+html.fushi-glass-host.fushi-apple .dict-label:active {
+    background-color: var(--fa-fill);
+    transition-duration: 0s;
+}
+
+html.fushi-glass-host.fushi-apple .dict-label.selected {
+    color: var(--fa-accent);
+    font-weight: 600;
+}
+
+html.fushi-glass-host.fushi-apple .dict-label > .dict-name {
+    flex: 1 1 auto;
+    min-width: 0;
+    white-space: normal;
+    overflow-wrap: anywhere;
+    padding: 2px 0;
+}
+
+html.fushi-glass-host.fushi-apple .kanji-card-summary-dicts {
+    flex: 0 1 auto;
+    min-width: 0;
+    margin-left: 0;
+    font-size: 13px;
+    line-height: 18px;
+    font-weight: 400;
+    color: var(--fa-secondary-label);
+}
+
+/* chevron：纯 CSS 描边（零字体依赖），布局盒恒 8×8、只旋转（BUG-2049）。收起 = 指右
+   (›)，展开 = 指下；tertiaryLabel 色、半粗笔画，与 SF Symbols chevron.right 同重。 */
+html.fushi-glass-host.fushi-apple .glossary-group > summary::before {
+    order: 1;
+    flex: 0 0 auto;
+    box-sizing: border-box;
+    width: 8px;
+    height: 8px;
+    margin: 0 2px 0 auto;
+    border: 0;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    border-radius: 0 0 1px 0;
+    color: var(--fa-tertiary-label);
+    opacity: 1;
+    vertical-align: baseline;
+    transform: rotate(-45deg);
+    transition: transform 0.3s var(--fa-ease);
+}
+
+html.fushi-glass-host.fushi-apple .glossary-group[open] > summary::before {
+    transform: rotate(45deg);
+}
+
+/* ── 词头：Large Title 字重 ── */
+html.fushi-glass-host.fushi-apple .entry {
+    padding: 12px 0;
+}
+
+html.fushi-glass-host.fushi-apple .entry:first-child {
+    padding-top: 0;
+}
+
+html.fushi-glass-host.fushi-apple .entry-header {
+    column-gap: 12px;
+    padding-top: 0;
+}
+
+html.fushi-glass-host.fushi-apple .expression {
+    font-size: clamp(26px, 7vw, 32px);
+    line-height: 1.2;
+    font-weight: 700;
+    letter-spacing: 0;
+}
+
+html.fushi-glass-host.fushi-apple .entry-current .entry-header::before {
+    border-left-color: var(--fa-accent);
+}
+
+/* ── 元数据行（词形 / 变形 / 频率 / 音调）：22 高小圆角块，行内 6、行间 6 ── */
+html.fushi-glass-host.fushi-apple .entry-tags,
+html.fushi-glass-host.fushi-apple .entry-header-meta > .entry-tags:not(:first-child) {
+    margin-top: 6px;
+}
+
+html.fushi-glass-host.fushi-apple .tag-row {
+    gap: 6px;
+    margin-top: 0;
+    align-items: center;
+    line-height: normal;
+}
+
+html.fushi-glass-host.fushi-apple .tag-row + .tag-row,
+html.fushi-glass-host.fushi-apple .category-section,
+html.fushi-glass-host.fushi-apple .frequency-section + .pitch-section {
+    margin-top: 6px;
+}
+
+html.fushi-glass-host.fushi-apple .glossary-section {
+    margin-top: 14px;
+}
+
+html.fushi-glass-host.fushi-apple .expr-tag,
+html.fushi-glass-host.fushi-apple .deinflection-tag,
+html.fushi-glass-host.fushi-apple .frequency-group,
+html.fushi-glass-host.fushi-apple .pitch-dict-label {
+    display: inline-flex;
+    align-items: center;
+    box-sizing: border-box;
+    height: 22px;
+    margin-right: 0;
+    border: none;
+    border-radius: 6px;
+    font-size: 12px;
+    line-height: 1;
+    font-weight: 500;
+    white-space: nowrap;
+}
+
+html.fushi-glass-host.fushi-apple .expr-tag,
+html.fushi-glass-host.fushi-apple .deinflection-tag {
+    padding: 0 8px;
+    color: var(--fa-secondary-label);
+    background-color: var(--fa-tertiary-fill);
+}
+
+/* 频率：一枚块，来源名强调色、数值 label 色等宽数字，中间一条发丝竖线。 */
+html.fushi-glass-host.fushi-apple .frequency-group {
+    align-items: stretch;
+    color: var(--fa-label);
+    background-color: var(--fa-tertiary-fill);
+}
+
+html.fushi-glass-host.fushi-apple .frequency-dict-label,
+html.fushi-glass-host.fushi-apple .frequency-values {
+    display: inline-flex;
+    align-items: center;
+}
+
+html.fushi-glass-host.fushi-apple .frequency-dict-label {
+    padding: 0 7px 0 8px;
+    color: var(--fa-accent);
+    background-color: transparent;
+    font-weight: 600;
+    box-shadow: inset -1px 0 0 var(--fa-separator);
+}
+
+html.fushi-glass-host.fushi-apple .frequency-values {
+    padding: 0 8px 0 7px;
+    font-variant-numeric: tabular-nums;
+}
+
+/* 音调：来源 = 强调色淡染块；整行中线对齐。 */
+html.fushi-glass-host.fushi-apple .pitch-list {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    font-size: 14px;
+}
+
+html.fushi-glass-host.fushi-apple .pitch-group {
+    align-items: center;
+    gap: 8px;
+    margin-top: 0;
+}
+
+html.fushi-glass-host.fushi-apple .pitch-dict-label {
+    padding: 0 8px;
+    font-weight: 600;
+    color: var(--fa-accent);
+    background-color: color-mix(in srgb, var(--fa-accent) 14%, transparent);
+}
+
+html.fushi-glass-host.fushi-apple .pitch-entries {
+    line-height: 22px;
+}
+
+/* 释义内的义项标签：更小一档，quaternary fill。 */
+html.fushi-glass-host.fushi-apple .glossary-group > div[data-dictionary] .glossary-tag {
+    padding: 2px 6px;
+    border-radius: 5px;
+    font-size: 11px;
+    font-weight: 500;
+    color: var(--fa-secondary-label);
+    background-color: var(--fa-quaternary-fill);
+}
+
+/* ── 词条间分隔：发丝线 + 呼吸 ── */
+html.fushi-glass-host.fushi-apple hr {
+    border-top-color: var(--fa-separator);
+}
+
+html.fushi-glass-host.fushi-apple .entry + hr {
+    margin: 14px 0;
+}
+
+html.fushi-glass-host.fushi-apple a {
+    color: var(--fa-accent);
+}
+
+/* ── 汉字卡：分组里的内嵌块（quaternary fill、10 圆角），大字落在强调色淡染方块里 ── */
+html.fushi-glass-host.fushi-apple .kanji-card {
+    border: none;
+    border-radius: 10px;
+    padding: 10px 12px;
+    background: var(--fa-quaternary-fill);
+}
+
+html.fushi-glass-host.fushi-apple .kanji-card-char {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 56px;
+    min-height: 56px;
+    padding: 6px;
+    border-radius: 12px;
+    color: var(--fa-accent);
+    background: color-mix(in srgb, var(--fa-accent) 12%, transparent);
+}
+
+html.fushi-glass-host.fushi-apple .kanji-card-char:active {
+    opacity: 0.6;
+}
+
+html.fushi-glass-host.fushi-apple .kanji-card-label {
+    font-weight: 600;
+    color: var(--fa-secondary-label);
+}
+
+/* ── 提示 / 语法说明：Apple popover（实底 + 发丝描边 + 柔和投影）── */
+html.fushi-glass-host.fushi-apple .audio-hint,
+html.fushi-glass-host.fushi-apple .inline-hint,
+html.fushi-glass-host.fushi-apple .fushi-btn-tip {
+    border: 0.5px solid var(--fa-separator);
+    border-radius: 7px;
+    padding: 4px 8px;
+    font-size: 12px;
+    color: var(--fa-label);
+    background: var(--md-surface-container-low, var(--background-color));
+    box-shadow: 0 4px 14px rgba(0, 0, 0, 0.14);
+}
+
+html.fushi-glass-host.fushi-apple .grammar-tooltip {
+    border: 0.5px solid var(--fa-separator);
+    border-radius: 12px;
+    padding: 10px 14px;
+    color: var(--fa-label);
+    background: var(--md-surface-container-low, var(--background-color));
+    box-shadow: 0 10px 32px rgba(0, 0, 0, 0.18);
+}
+
+html.fushi-glass-host.fushi-apple .grammar-tooltip.is-pinned {
+    border-radius: 16px;
+    padding: 14px 16px;
+}
+
+html.fushi-glass-host.fushi-apple .grammar-tooltip.is-pinned .grammar-tooltip-title {
+    font-size: 22px;
+    font-weight: 700;
+}
+
+html.fushi-glass-host.fushi-apple .grammar-tooltip.is-pinned .grammar-tooltip-close {
+    color: var(--fa-tertiary-label);
+}
+
+/* ── 空状态：大号 tertiaryLabel 字形 + Headline 标题 + secondaryLabel 说明 ── */
+html.fushi-glass-host.fushi-apple .no-results {
+    opacity: 1;
+    gap: 6px;
+    color: var(--fa-secondary-label);
+    font-size: 15px;
+}
+
+html.fushi-glass-host.fushi-apple .no-results-icon {
+    font-size: 44px;
+    opacity: 1;
+    color: var(--fa-tertiary-label);
+    margin-bottom: 6px;
+}
+
+html.fushi-glass-host.fushi-apple .no-results-title {
+    color: var(--fa-label);
+    font-size: 17px;
+    line-height: 22px;
+    font-weight: 600;
+}
+
+html.fushi-glass-host.fushi-apple .no-results-hint {
+    opacity: 1;
+    color: var(--fa-secondary-label);
+    font-size: 13px;
+    line-height: 18px;
+}
+
+/* ── 减弱动态效果：chevron 转向与按压底色瞬时 ── */
+html.fushi-glass-host.fushi-apple.fushi-reduced-motion .glossary-group > summary::before,
+html.fushi-glass-host.fushi-apple.fushi-reduced-motion .dict-label {
+    transition: none;
+}
+
+/* =====================================================================
  * E-ink 墨水屏模式（html.eink）。
  *
  * class 由 popup_settings_injection.dart 的 _themeVariablesJs 注入（toggle，
