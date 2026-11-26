@@ -1805,13 +1805,20 @@ install: function(C) {
   // 非左键（中键/侧键）：上报 Dart，由 resolveMouse 判定是否绑定「seek 到点击句」。
   // mousedown 一定触发，preventDefault 压掉中键自动滚动。触屏合成事件 button 恒 0，
   // 被首行排除，不干扰触摸手势。
+  // 按住连发（翻页 / 上一句下一句）：连发走单独的 onReaderMouseHoldRepeat，Dart 回
+  // false（不连发 / 宿主已接管指针）即停。
+$webViewMouseHoldRepeatScript
   document.addEventListener('mousedown', function(e) {
     if (e.button === 0) return;
     if (e.button === 2 && _fushiBlockImageUrl(e.target || document.elementFromPoint(e.clientX, e.clientY))) {
       return;
     }
     e.preventDefault();
-    window.flutter_inappwebview.callHandler('onPointerSeek', e.button, e.clientX, e.clientY);
+    var _b = e.button;
+    window.flutter_inappwebview.callHandler('onPointerSeek', _b, e.clientX, e.clientY);
+    window.__fushiMouseHold.start(_b, function() {
+      return window.flutter_inappwebview.callHandler('onReaderMouseHoldRepeat', _b);
+    });
   }, {passive: false});
   document.addEventListener('selectstart', function(e) {
     if (hasStart && !_fushiReaderMouseNativeTextStart && (Date.now() - startTime) < 400) e.preventDefault();
@@ -2361,8 +2368,7 @@ updateLive: function(patch) {
             ),
       initialUserScripts: UnmodifiableListView<UserScript>(<UserScript>[
         UserScript(
-          source:
-              'window.onerror=function(m,s,l,c,e){console.error("__FUSHI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};',
+          source: 'window.onerror=function(m,s,l,c,e){console.error("__FUSHI_JS_ERROR__ "+m+" at "+s+":"+l+":"+c);return false;};',
           injectionTime: UserScriptInjectionTime.AT_DOCUMENT_START,
         ),
         WebViewMenuDismissBridge.userScript,
@@ -3178,6 +3184,17 @@ updateLive: function(patch) {
         // 反馈 C9wcnKaPq_：合成书左键点句跳播的 `onCueTap` 桥已删（左键只查词，与
         // EPUB 书一致）；跳到点击句只走下面的位置型 `onPointerSeek`（中键）与触屏
         // 长按选区操作条「从此句播放」（chrome.part.dart `_playFromSelectionSentence`）。
+        // 页内鼠标按住连发（[webViewMouseHoldRepeatScript]）的每一跳。返回 false 让页内
+        // 停掉连发。
+        controller.addJavaScriptHandler(
+          handlerName: 'onReaderMouseHoldRepeat',
+          callback: (List<dynamic> args) {
+            final int button = args.isEmpty
+                ? -1
+                : (args[0] as num?)?.toInt() ?? -1;
+            return _handleReaderWebViewMouseHoldRepeat(button);
+          },
+        );
         controller.addJavaScriptHandler(
           handlerName: 'onPointerSeek',
           callback: (List<dynamic> args) async {

@@ -318,9 +318,8 @@ KeyEventResult _activatePrimaryFocus() {
     intent: intent,
   );
   if (action == null) return KeyEventResult.ignored;
-  final (bool enabled, Object? _) = Actions.of(
-    context,
-  ).invokeActionIfEnabled(action, intent, context);
+  final (bool enabled, Object? _) = Actions.of(context)
+      .invokeActionIfEnabled(action, intent, context);
   return enabled ? KeyEventResult.handled : KeyEventResult.ignored;
 }
 
@@ -665,14 +664,16 @@ void _handleGlobalPointerDown(
     ],
   );
   if (action == null) return;
+  bool run() =>
+      _executeGlobalMouseAction(context, navigatorKey, action, openAiAssistant);
   dispatchClaimedMouseAction(
     event,
-    () => _executeGlobalMouseAction(
-      context,
-      navigatorKey,
-      action,
-      openAiAssistant,
-    ),
+    run,
+    // 按住连发：只有逐行 / 整屏滚动（[mouseBindingRepeatsWhileHeld]），与键盘长按
+    // 方向键 / PageDown 连续滚动对齐。
+    onHeldRepeat: mouseBindingRepeatsWhileHeld(action)
+        ? () => context.mounted && run()
+        : null,
   );
 }
 

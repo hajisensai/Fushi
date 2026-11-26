@@ -794,6 +794,17 @@ int? domMouseButtonFromPointerButtons(int buttons) {
   return null; // primary (kPrimaryMouseButton) or unknown → not bindable
 }
 
+/// [domMouseButtonFromPointerButtons] 的逆映射：DOM `MouseEvent.button` 号对应的
+/// Flutter `buttons` 位，用来判断「这颗键松开了没有」（鼠标按住连发靠它停）。
+/// 左键与未知号返回 null，与折叠规则同一个可绑定值域。
+int? pointerButtonBitForDomMouseButton(int domButton) => switch (domButton) {
+  1 => kMiddleMouseButton,
+  2 => kSecondaryMouseButton,
+  3 => kBackMouseButton,
+  4 => kForwardMouseButton,
+  _ => null,
+};
+
 /// 滚轮方向。滚轮是**离散事件**（没有按下/抬起），故它自成一个绑定通道，而不是
 /// 塞进 [MouseBinding] 的按钮编号：按钮绑定按 `MouseEvent.button` 分发（中键/右键/
 /// 侧键），滚轮按 `WheelEvent.deltaY` 的符号分发，两者的运行时判据根本不同。

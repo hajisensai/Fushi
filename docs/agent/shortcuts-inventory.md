@@ -278,6 +278,15 @@
 | 查词弹窗开着时 ← → | 关弹窗并翻页（正文持焦 / 弹窗持焦两条路都接） | 关弹窗并翻页 |
 | 「反转方向键翻页」开关 | 阅读控制 · `reverse_arrow_page_turn`（冻结键名） | 漫画 · 翻页 · `manga_reverse_arrow_page_turn`（两边分开） |
 
+**鼠标键按住连发**（2026-11-26）：直接绑在中键 / 右键 / 侧键上的动作，按住时与键盘长按
+同节奏连发（起步 500 ms、之后 33 ms 一次，取 Windows 键盘重复默认值），松开即停。只放行
+步进类动作：判据 `mouseBindingRepeatsWhileHeld`（`mouse_binding_dispatch.dart`；阅读器段复用
+`isRepeatableReaderKeyboardShortcut`），漫画复用自己的长按判决（翻页仍等动画落定）。
+宿主拥有指针时由 `dispatchClaimedMouseAction(onHeldRepeat:)` 计时；指针归 WebView 的平台由页内
+`webViewMouseHoldRepeatScript` 计时、每跳问 Dart，回 false 即停。外部改键软件（Logi Options+
+等）把侧键映射成键盘快捷键时，按下瞬间就发完「按下 + 松开」，Fushi 看不到按住，这种映射下
+无法连发——要连发就在软件里把侧键恢复成默认的前进 / 后退，再在 Fushi 里绑鼠标键。
+
 用户改绑 / 解绑过左右键时上表全部让路，交回注册表的真实绑定。手柄 D-pad 跟随阅读方向，
 但不受「反转方向键翻页」与有声切句影响。
 

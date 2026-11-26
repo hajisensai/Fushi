@@ -1,7 +1,9 @@
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+
 import 'dart:async';
+
 import 'package:fushi_engine/media/video/video_member_file.dart';
 import 'package:fushi_engine/media/video/disc/disc_angle.dart'
     show discAngleBaseMemberPath;
@@ -30,6 +32,7 @@ import 'package:fushi/src/media/video/video_specs_display.dart'
     show formatBitrate;
 import 'package:fushi/src/media/video/bluray_java_runtime.dart';
 import 'package:fushi_engine/media/video/bluray/bluray_menu_info.dart';
+
 import 'dart:convert' show jsonEncode, utf8;
 import 'dart:io';
 import 'dart:math' as math;
@@ -441,7 +444,10 @@ import 'package:fushi/src/shortcuts/input_binding.dart'
         activeModifierKeys,
         domMouseButtonFromPointerButtons;
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
-    show dispatchClaimedMouseAction, resolveMouseBindingAction;
+    show
+        dispatchClaimedMouseAction,
+        mouseBindingRepeatsWhileHeld,
+        resolveMouseBindingAction;
 import 'package:fushi/src/shortcuts/reader_caret_router.dart'
     show CaretAction, ReaderCaretRouter;
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
@@ -3783,9 +3789,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   late final RemoteOnlineSubtitleSearch _remoteOnlineSubtitles =
       RemoteOnlineSubtitleSearch(
         registry: appModel.subtitleSearchRegistry,
-        preferredLanguageFor: AppSubtitleWorkbenchHost(
-          appModel,
-        ).preferredLanguageFor,
+        preferredLanguageFor: AppSubtitleWorkbenchHost(appModel)
+            .preferredLanguageFor,
         saveDirectory: AppPaths.videoSubtitlesDirectory,
         aligner: appModel.alignDownloadedSubtitle,
       );
@@ -6222,9 +6227,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         ? raw.toDouble()
         : double.tryParse(raw?.toString() ?? '') ?? 100.0;
     // 上限随 mpv 配置的「音量上限」；controller 开片时还会按同一上限再 clamp 一次。
-    final double max = VideoMpvConfig.decode(
-      appModel.videoMpvConfig,
-    ).volumeMax.toDouble();
+    final double max = VideoMpvConfig.decode(appModel.videoMpvConfig).volumeMax
+        .toDouble();
     return v.clamp(0.0, max).toDouble();
   }
 
@@ -6457,9 +6461,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       // 基线——否则顺序接力（本机看完、另一台接着看）会被下轮 sweep 误判成冲突。
       // host-playlist 的非首集（`#ep<n>` 键）sweep 不同步，也就不记基线。
       if (client is InterconnectSyncBackend && episodeIndex <= 0) {
-        await _remoteSessionFor(
-          client,
-        ).report(keyUid, (positionMs: clamped, updatedAtMs: nowMs));
+        await _remoteSessionFor(client)
+            .report(keyUid, (positionMs: clamped, updatedAtMs: nowMs));
       } else {
         await _remoteReportGate.position(
           client,
@@ -10653,30 +10656,43 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       ladder: kVideoMouseLadder,
     );
     if (action == null) return;
-    dispatchClaimedMouseAction(event, () {
-      // 「只关词典」在浮层不可见时按下 = 无事发生，这正是它存在的意义（给侧键一个
-      // 没有副作用的落点）。返回 false = **不认领**，让 app 根兜底照常有机会解析同一
-      // 个按钮上的 global 绑定（等价于键盘返回 ignored 让它冒泡）。
-      if (action == ShortcutAction.videoDismissDict) return false;
-      // BUG-2031：与键盘 / 手柄同款分流——「返回上一级」的执行体不碰播放器，必须排在
-      // controller 门**之前**，否则加载态下侧键退不出转圈中的视频页。走的是本页的逐级
-      // 退出 [_handleVideoEscapeAction]（先关面板 / 退全屏，最后才退页），与键盘 Esc、
-      // 手柄 B 完全同一个执行体；此前阶梯里没有 universal，它只能落到 app 根那份平铺
-      // 的 `maybePop()`，一按直接退整页，比键盘少了一级。
-      if (action == ShortcutAction.globalBack) {
-        _handleVideoEscapeAction();
-        return true;
-      }
-      final VideoPlayerController? controller = _controller;
-      if (controller == null) return false;
-      // 动作不在回调表里（例如 popupMineEntry 这类页面另行分流的）就不算本层派发过。
-      final VoidCallback? run = videoActionCallbacks(
-        _buildVideoShortcutActions(controller),
-      )[action];
-      if (run == null) return false;
-      run();
-      return true;
-    });
+    dispatchClaimedMouseAction(
+      event,
+      () {
+        // 「只关词典」在浮层不可见时按下 = 无事发生，这正是它存在的意义（给侧键一个
+        // 没有副作用的落点）。返回 false = **不认领**，让 app 根兜底照常有机会解析同一
+        // 个按钮上的 global 绑定（等价于键盘返回 ignored 让它冒泡）。
+        if (action == ShortcutAction.videoDismissDict) return false;
+        // BUG-2031：与键盘 / 手柄同款分流——「返回上一级」的执行体不碰播放器，必须排在
+        // controller 门**之前**，否则加载态下侧键退不出转圈中的视频页。走的是本页的逐级
+        // 退出 [_handleVideoEscapeAction]（先关面板 / 退全屏，最后才退页），与键盘 Esc、
+        // 手柄 B 完全同一个执行体；此前阶梯里没有 universal，它只能落到 app 根那份平铺
+        // 的 `maybePop()`，一按直接退整页，比键盘少了一级。
+        if (action == ShortcutAction.globalBack) {
+          _handleVideoEscapeAction();
+          return true;
+        }
+        return _runVideoMouseAction(action);
+      },
+      onHeldRepeat: mouseBindingRepeatsWhileHeld(action)
+          // 按住连发（逐帧 / seek / 音量……）：与键盘自动重复同一个执行体。
+          ? () =>
+                mounted && !_discLearningBlocked && _runVideoMouseAction(action)
+          : null,
+    );
+  }
+
+  /// 鼠标绑定的视频动作执行体（按下与按住连发共用）。返回本次是否真的执行了。
+  bool _runVideoMouseAction(ShortcutAction action) {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return false;
+    // 动作不在回调表里（例如 popupMineEntry 这类页面另行分流的）就不算本层派发过。
+    final VoidCallback? run = videoActionCallbacks(
+      _buildVideoShortcutActions(controller),
+    )[action];
+    if (run == null) return false;
+    run();
+    return true;
   }
 
   /// 视频页键盘通道的**唯一**派发点（方案 D）：每次按键当场问注册表，与手柄
@@ -11144,14 +11160,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 驱动 [_videoControlItemTone] 的状态源（面板 / 列表开关）。字幕源与收藏随页面
   /// setState / 控制器通知重建。
-  late final Listenable _videoChromeToneListenable =
-      Listenable.merge(<Listenable>[
-        _subtitleListVisible,
-        _episodeListVisible,
-        _liveChatVisible,
-        _videoSidePanel,
-        _studyClockManualPaused,
-      ]);
+  late final Listenable _videoChromeToneListenable = Listenable.merge(
+    <Listenable>[
+      _subtitleListVisible,
+      _episodeListVisible,
+      _liveChatVisible,
+      _videoSidePanel,
+      _studyClockManualPaused,
+    ],
+  );
 
   /// 倍速≠1.0 时倍速按钮换成显示数值的 secondary tonal 胶囊（M3E）。
   Widget _m3eSpeedValueButton({required VoidCallback onPressed}) {
@@ -11367,9 +11384,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                     overflow: TextOverflow.ellipsis,
                     textAlign: textAlign,
                     style: TextStyle(
-                      color: videoM3eChromeForegroundOf(
-                        context,
-                      ).withValues(alpha: 0.7),
+                      color: videoM3eChromeForegroundOf(context)
+                          .withValues(alpha: 0.7),
                       fontSize: 12 * scale,
                       height: 1.3,
                       fontWeight: FontWeight.w500,
@@ -13398,9 +13414,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     bool highQuality,
     List<String> enabledNames,
   ) async {
-    final VideoMpvConfig cfg = VideoMpvConfig.decode(
-      appModel.videoMpvConfig,
-    ).copyWith(highQuality: highQuality);
+    final VideoMpvConfig cfg = VideoMpvConfig.decode(appModel.videoMpvConfig)
+        .copyWith(highQuality: highQuality);
     await appModel.setVideoMpvConfig(VideoMpvConfig.encode(cfg));
     await appModel.setVideoShadersEnabled(encodeEnabledShaders(enabledNames));
     await _controller?.applyMpvConfig(cfg);
@@ -13909,9 +13924,11 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       onMpvShaderDirChanged: (String dir) => appModel.setVideoMpvShaderDir(dir),
       // 一键画质档位：原子落「mpv 内置缩放开关 + 启用集」并实时应用（着色器文件由
       // 着色器视图在回调前已下载到目录）。统一在此一处写两套 pref，消除两回调顺序耦合。
-      onSelectShaderTier:
-          (VideoShaderTier tier, bool highQuality, List<String> enabledNames) =>
-              _applyShaderTier(highQuality, enabledNames),
+      onSelectShaderTier: (
+        VideoShaderTier tier,
+        bool highQuality,
+        List<String> enabledNames,
+      ) => _applyShaderTier(highQuality, enabledNames),
       onControlLayoutChanged: _setVideoControlLayout,
       immersiveControlLayout: () => _immersiveControlLayout,
       onImmersiveControlLayoutChanged: _setVideoImmersiveControlLayout,
@@ -14488,9 +14505,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
                 textAlign: TextAlign.center,
                 maxLines: 2,
                 overflow: TextOverflow.ellipsis,
-                style: Theme.of(
-                  context,
-                ).textTheme.bodySmall?.copyWith(color: cs.onSurfaceVariant),
+                style: Theme.of(context).textTheme.bodySmall
+                    ?.copyWith(color: cs.onSurfaceVariant),
               ),
             ],
             const SizedBox(height: 12),
@@ -14825,17 +14841,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // [_handleVideoGamepadButton] 记录的边沿合并；真实鼠标右键不与手柄边沿重合，照常弹。
     final Duration secondaryTapAt = _videoInputClock.elapsed;
     unawaited(
-      Future<void>.delayed(
-        VideoGamepadSecondaryTapDeduper.settleDelay,
-      ).then<void>((_) {
-        if (!mounted ||
-            _videoGamepadSecondaryTapDeduper.shouldSuppressSecondaryTap(
-              secondaryTapAt,
-            )) {
-          return;
-        }
-        _showVideoContextMenu(globalPosition);
-      }),
+      Future<void>.delayed(VideoGamepadSecondaryTapDeduper.settleDelay)
+          .then<void>((_) {
+            if (!mounted ||
+                _videoGamepadSecondaryTapDeduper.shouldSuppressSecondaryTap(
+                  secondaryTapAt,
+                )) {
+              return;
+            }
+            _showVideoContextMenu(globalPosition);
+          }),
     );
   }
 
@@ -14851,9 +14866,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     // showMenu 用 [ctx] 最近的 Navigator（rootNavigator:false）的 Overlay 作菜单宿主；
     // [RelativeRect] 须落在该 Overlay 的坐标系。取同一个 Overlay 的 RenderBox 作变换
     // 目标，使锚点与菜单宿主同系（FittedBox 缩放残差被 ancestor 变换吸收，BUG-260）。
-    final RenderObject? overlayObject = Overlay.of(
-      ctx,
-    ).context.findRenderObject();
+    final RenderObject? overlayObject = Overlay.of(ctx).context
+        .findRenderObject();
     if (overlayObject is! RenderBox || !overlayObject.hasSize) return;
     // 右键点：globalPosition 先回 controls 本地（真实空间），再沿真实渲染变换链映射到
     // Overlay 坐标系（吃掉中和器还原 + 全局 FittedBox 缩放的所有变换）。

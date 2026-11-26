@@ -4,8 +4,11 @@ import 'package:fushi/src/media/import/import_surface_spec.dart';
 import 'package:fushi/src/media/audiobook/audiobook_controller.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
+
 import 'dart:async';
+
 import 'package:fushi/src/anki/source_review_session.dart';
+
 import 'dart:collection';
 import 'dart:convert';
 import 'dart:io';
@@ -21,6 +24,7 @@ import 'package:fushi/src/second_screen/companion/modules/reader_companion_schem
 import 'package:fushi/src/media/shared/controller_lookup_steps.dart';
 import 'package:fushi/src/second_screen/input/controller_lookup_mode.dart';
 import 'package:fushi/src/second_screen/input/controller_lookup_target.dart';
+
 import 'dart:ui' as ui show Image;
 import 'dart:ui' show ImageFilter;
 
@@ -268,7 +272,10 @@ import 'package:fushi/src/shortcuts/input_binding.dart'
         activeModifierKeys,
         domMouseButtonFromPointerButtons;
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
-    show dispatchClaimedMouseAction, resolveMouseBindingActionForButton;
+    show
+        dispatchClaimedMouseAction,
+        mouseBindingRepeatsWhileHeld,
+        resolveMouseBindingActionForButton;
 import 'package:fushi/src/shortcuts/shortcut_registry.dart'
     show FushiShortcutRegistry;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'
@@ -4898,12 +4905,12 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                   colors: _sourceReviewSession == null
                       ? (background: bgColor, foreground: _themeTextColor())
                       : (
-                          background: Theme.of(
-                            context,
-                          ).colorScheme.secondaryContainer,
-                          foreground: Theme.of(
-                            context,
-                          ).colorScheme.onSecondaryContainer,
+                          background: Theme.of(context)
+                              .colorScheme
+                              .secondaryContainer,
+                          foreground: Theme.of(context)
+                              .colorScheme
+                              .onSecondaryContainer,
                         ),
                   // 顶栏（贴边 / 悬浮两种样式同一判据）画着时沉浸标题行跟着浮出：
                   // 唤出工具栏即可拖窗口 / 点窗口按钮（BUG-4115，与视频页控制条同一
@@ -5011,9 +5018,9 @@ class _ReaderFushiPageState extends BaseSourcePageState<ReaderFushiPage>
                                             8,
                                           ),
                                           border: Border.all(
-                                            color: Theme.of(
-                                              context,
-                                            ).colorScheme.primary,
+                                            color: Theme.of(context)
+                                                .colorScheme
+                                                .primary,
                                             width: 2.5,
                                           ),
                                         ),
@@ -5491,8 +5498,7 @@ $liveConfigJs
       );
       if (!mounted || _controller == null) return;
       await _controller!.evaluateJavascript(
-        source:
-            'if (!window.__fushiCssHighlightsSupported) { window.fushiReader && window.fushiReader.buildNodeOffsets(); }',
+        source: 'if (!window.__fushiCssHighlightsSupported) { window.fushiReader && window.fushiReader.buildNodeOffsets(); }',
       );
       // HBK-AUDIT-117: theme persistence moved to _onThemeChanged — it is
       // unrelated to highlight application and must not be gated on favorites.

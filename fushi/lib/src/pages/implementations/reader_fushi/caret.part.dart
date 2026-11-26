@@ -628,7 +628,32 @@ extension _ReaderCaret on _ReaderFushiPageState {
     dispatchClaimedMouseAction(
       event,
       () => _executeShortcutAction(action) == KeyEventResult.handled,
+      // 按住连发（翻页 / 上一句下一句）：与键盘长按同一份白名单、同一个执行体。
+      onHeldRepeat: mouseBindingRepeatsWhileHeld(action)
+          ? () =>
+                mounted &&
+                _executeShortcutAction(action) == KeyEventResult.handled
+          : null,
     );
+  }
+
+  /// 页内鼠标桥按住连发（[webViewMouseHoldRepeatScript]）的一跳：正文与歌词模式两份
+  /// 文档共用。与 [_handleReaderPointerDown] 的 `onHeldRepeat` 同一份白名单
+  /// （[mouseBindingRepeatsWhileHeld]）、同一个执行体；返回 false 让页内停掉连发。
+  bool _handleReaderWebViewMouseHoldRepeat(int button) {
+    if (!mounted || button <= 0) return false;
+    // 宿主拥有指针的平台上连发由页面根 [Listener] 那条腿负责，这里再跳一次就是双倍。
+    if (hostOwnsWebViewPointerInput) return false;
+    final FushiShortcutRegistry registry = appModel.shortcutRegistry;
+    // 「seek 到点击句」是位置型的一次性动作，不连发。
+    if (isSeekToClickedSentenceButton(registry, button)) return false;
+    final ShortcutAction? action = resolveMouseBindingActionForButton(
+      registry: registry,
+      button: button,
+      ladder: kReaderMouseLadder,
+    );
+    if (action == null || !mouseBindingRepeatsWhileHeld(action)) return false;
+    return _executeShortcutAction(action) == KeyEventResult.handled;
   }
 
   /// 查词弹窗开着时按 ← / → 翻页：先关整条弹窗栈再翻（反馈 uz_2m0E_Eu ③，与漫画

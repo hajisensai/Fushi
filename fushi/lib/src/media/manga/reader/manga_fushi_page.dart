@@ -940,6 +940,7 @@ class MangaFushiPage extends BaseSourcePage {
     handlerName: 'onMangaMouseButton',
     mouseButtons: buttons,
     installMouseListeners: true,
+    repeatMouseHold: true,
     stopPropagation: true,
   );
 
@@ -2114,9 +2115,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
   Future<void> _resolveAndApplyMangaProfile() async {
     String? languageTag;
     try {
-      languageTag = (await appModel.database.getEpubBook(
-        widget.bookKey,
-      ))?.language;
+      languageTag = (await appModel.database.getEpubBook(widget.bookKey))
+          ?.language;
     } catch (e, st) {
       debugPrint('[MangaFushi] 读内容语言失败（非致命，退回媒体类型绑定）: $e\n$st');
     }
@@ -2602,9 +2602,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     // 由 PDF 转来、还没提取过文字层的卷（加这一步之前导入的）：开书时补一次。
     // 判据先看内存里的版本号，只有确实要补才碰 PDFium。
     if (payload.pdfTextLayerVersion == null &&
-        File(
-          p.join(p.dirname(mangaJsonPath), PdfImporter.kPdfFileName),
-        ).existsSync()) {
+        File(p.join(p.dirname(mangaJsonPath), PdfImporter.kPdfFileName))
+            .existsSync()) {
       payload =
           await MangaPdfTextLayer.ensure(p.dirname(mangaJsonPath)) ?? payload;
     }
@@ -5174,10 +5173,37 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _kMangaMouseLadder,
     );
     if (action == null) return;
-    dispatchClaimedMouseAction(event, () {
-      _executeReaderInputAction(action, source: _MangaReaderInputSource.mouse);
-      return true;
-    });
+    dispatchClaimedMouseAction(
+      event,
+      () {
+        _executeReaderInputAction(
+          action,
+          source: _MangaReaderInputSource.mouse,
+        );
+        return true;
+      },
+      onHeldRepeat: () =>
+          mounted &&
+          _runHeldMouseRepeat(action, source: _MangaReaderInputSource.mouse),
+    );
+  }
+
+  /// 鼠标键按住的一次连发（Flutter 指针腿与 WebView 鼠标桥共用）：与键盘长按同一个
+  /// [_heldInputVerdict]——平移 / 上一句下一句照常连发，翻页等上一页动画落定才放行，
+  /// 其余动作一次一按。返回 false = 这个动作不连发，调用方据此停掉连发。
+  bool _runHeldMouseRepeat(
+    MangaReaderInputAction action, {
+    required _MangaReaderInputSource source,
+  }) {
+    switch (_heldInputVerdict(action)) {
+      case _MangaHeldInputVerdict.notRepeatable:
+        return false;
+      case _MangaHeldInputVerdict.throttled:
+        return true;
+      case _MangaHeldInputVerdict.accept:
+        _executeReaderInputAction(action, source: source);
+        return true;
+    }
   }
 
   /// 返回**本次是否真的执行了**动作。BUG-2031：查词弹窗 barrier 那条路要靠这个
@@ -5197,6 +5223,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         _kMangaMouseLadder,
       );
       if (mouseAction == null) return false;
+      // 鼠标桥的按住连发（`webViewMouseHoldRepeatScript`）：返回 false 让页内停掉连发。
+      if (repeat) {
+        return _runHeldMouseRepeat(
+          mouseAction,
+          source: _MangaReaderInputSource.nativeWebView,
+        );
+      }
       _executeReaderInputAction(
         mouseAction,
         source: _MangaReaderInputSource.nativeWebView,
@@ -6165,9 +6198,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         followPlayback: followVolume,
         volume: followVolume
             ? liveVolume ??
-                  await AudiobookRepository(
-                    appModel.database,
-                  ).readVolume(widget.bookKey)
+                  await AudiobookRepository(appModel.database)
+                      .readVolume(widget.bookKey)
             : null,
         curve: audiobookPlaybackVolumeCurve,
       );
@@ -7150,9 +7182,9 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         onNewestFirstChanged: (bool value) =>
             unawaited(appModel.setMangaChapterListNewestFirst(value)),
         onClose: () => Navigator.of(sheetContext).pop(),
-        onChapterTap: (OnlineMangaChapter chapter) => Navigator.of(
-          sheetContext,
-        ).pop(entry.indexOfChapterKey(chapter.key)),
+        onChapterTap: (OnlineMangaChapter chapter) =>
+            Navigator.of(sheetContext)
+                .pop(entry.indexOfChapterKey(chapter.key)),
       ),
     );
     if (target != null && target >= 0) {
@@ -7256,12 +7288,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         ),
         onPageTurnChanged: _setPageTurnSettings,
         onEditToolbarLayout: () => unawaited(_showControlLayoutEditor()),
-        globalDefaults: appModel.mangaReaderPreferences
-            .copyWithJson(<String, Object?>{
-              if (desktopWindowFullscreenSupported)
-                'fullscreen': _isWindowFullscreen,
-              'keepScreenOn': ReaderFushiSource.instance.keepScreenAwake,
-            }),
+        globalDefaults: appModel.mangaReaderPreferences.copyWithJson(
+          <String, Object?>{
+            if (desktopWindowFullscreenSupported)
+              'fullscreen': _isWindowFullscreen,
+            'keepScreenOn': ReaderFushiSource.instance.keepScreenAwake,
+          },
+        ),
         overrides: override,
         onChanged: (Map<String, Object?> value) async {
           // 只有落库失败才抛给面板（面板据此回滚）。落库已成功时重应用出错
@@ -9262,9 +9295,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
     final String? bookUid = _bookmarkBookUid;
     if (bookUid == null) return;
     try {
-      final List<Bookmark> items = await BookmarkRepository(
-        appModel.database,
-      ).getBookmarks(bookUid);
+      final List<Bookmark> items = await BookmarkRepository(appModel.database)
+          .getBookmarks(bookUid);
       if (!mounted) return;
       setState(() => _bookmarks = items);
     } on Object catch (error, stack) {
@@ -9843,9 +9875,8 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
             // 松手后靠这个答复判断「Dart 换没换页」，没换才回弹（BUG-3219）。
             // 还要等进行中的那一轮 drain：连滑时本次 enqueue 会立即返回，步数要等
             // 那一轮才消费（见 [MangaTurnQueue.whenIdle]）。
-            return _onMangaTurn(
-              args[0] as String,
-            ).then((void _) => _turnQueue.whenIdle);
+            return _onMangaTurn(args[0] as String)
+                .then((void _) => _turnQueue.whenIdle);
           },
         );
         controller.addJavaScriptHandler(
@@ -9881,9 +9912,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         // InputBinding，动作由绑定决定而不是由桥决定。
         controller.addJavaScriptHandler(
           handlerName: 'onMangaMouseButton',
+          // 回传布尔值：页内鼠标桥的按住连发据此决定继续还是停（false = 不连发）。
           callback: (List<dynamic> args) {
-            if (args.isEmpty || args[0] is! String) return;
-            _handleNativeNavigationKey(args[0] as String);
+            if (args.isEmpty || args[0] is! String) return false;
+            return _handleNativeNavigationKey(
+              args[0] as String,
+              repeat: args.length > 1 && args[1] == true,
+            );
           },
         );
         controller.addJavaScriptHandler(
@@ -9976,12 +10011,14 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         );
         unawaited(_loadInitialWindow());
       },
-      shouldInterceptRequest:
-          (InAppWebViewController controller, WebResourceRequest request) =>
-              _interceptRequest(request.url),
-      onLoadResourceWithCustomScheme:
-          (InAppWebViewController controller, WebResourceRequest request) =>
-              _loadMangaCustomScheme(request),
+      shouldInterceptRequest: (
+        InAppWebViewController controller,
+        WebResourceRequest request,
+      ) => _interceptRequest(request.url),
+      onLoadResourceWithCustomScheme: (
+        InAppWebViewController controller,
+        WebResourceRequest request,
+      ) => _loadMangaCustomScheme(request),
       onReceivedError:
           (
             InAppWebViewController controller,
