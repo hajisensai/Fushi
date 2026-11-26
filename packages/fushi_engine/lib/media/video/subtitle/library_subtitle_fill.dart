@@ -331,6 +331,7 @@ class SubtitleFillOutcome {
     this.matchPercent,
     this.previousSubtitleSource,
     this.selectionChanged = false,
+    this.extraFiles = const <String>[],
     this.notes = const <String>[],
   });
 
@@ -356,6 +357,10 @@ class SubtitleFillOutcome {
   /// 这次写了 `subtitle_source`。
   final bool selectionChanged;
 
+  /// 这次另写在盘上、不是 [path] 的中间产物（原盘版本适配用的 ASR 参照稿）：
+  /// 撤销时与 [path] 一起删，不然撤销后盘上还留着这次写的字幕。
+  final List<String> extraFiles;
+
   /// 前面几档为什么没成（下载被拒的原因、OCR 不可用……），按顺序。
   final List<String> notes;
 
@@ -380,6 +385,7 @@ class SubtitleFillOutcome {
     if (matchPercent != null) 'matchPercent': matchPercent,
     if (selectionChanged) 'previousSubtitleSource': previousSubtitleSource,
     if (selectionChanged) 'selectionChanged': true,
+    if (extraFiles.isNotEmpty) 'extraFiles': extraFiles,
     if (notes.isNotEmpty) 'notes': notes,
   };
 }
@@ -677,15 +683,18 @@ class LibrarySubtitleFill {
     } else if (options.allowDownload) {
       notes.add('download: no online subtitle source is configured');
     }
-    throwIfSubtitleCancelled(cancel);
+    // 已经下到盘上的字幕不能因为取消就丢出报告（撤销按报告删文件、还原选择）：
+    // 有下载就按「下载」收尾，没有才在这里停。
+    if (downloaded == null) throwIfSubtitleCancelled(cancel);
 
     final bool longEnough =
         facts.durationMs == null ||
         facts.durationMs! >= options.minGenerateDurationMs;
     if (downloaded != null) {
-      if (!(item.isDisc &&
-          options.retimeDiscDownloads &&
-          options.allowGenerate)) {
+      if (cancel.isCancelled ||
+          !(item.isDisc &&
+              options.retimeDiscDownloads &&
+              options.allowGenerate)) {
         return _finish(
           item,
           book,
@@ -699,10 +708,13 @@ class LibrarySubtitleFill {
       final SubtitleFillProduct reference;
       try {
         reference = await host.generate(item, wanted, cancel);
-      } on SubtitlePipelineCancelled {
-        rethrow;
       } on Object catch (error) {
-        notes.add('retime: asr failed: $error');
+        // 取消也走这里：下载件已经在盘上，按「下载」收尾才进得了报告。
+        notes.add(
+          error is SubtitlePipelineCancelled
+              ? 'retime: cancelled'
+              : 'retime: asr failed: $error',
+        );
         return _finish(
           item,
           book,
@@ -730,6 +742,7 @@ class LibrarySubtitleFill {
             mayTake: mayTake || reference.registered,
             matchPercent: retimed.matchPercent,
             detail: 'median shift ${retimed.medianShiftMs} ms',
+            extraFiles: <String>[reference.path],
             notes: notes,
           );
         }
@@ -739,7 +752,17 @@ class LibrarySubtitleFill {
         );
         await _deleteQuietly(retimed.path);
       } on SubtitlePipelineCancelled {
-        rethrow;
+        // 下载件与 ASR 稿都已在盘上：用下载件收尾，ASR 稿记进报告供撤销。
+        notes.add('retime: cancelled');
+        return _finish(
+          item,
+          book,
+          SubtitleFillAction.downloaded,
+          downloaded,
+          mayTake: mayTake || reference.registered,
+          extraFiles: <String>[reference.path],
+          notes: notes,
+        );
       } on Object catch (error) {
         notes.add('retime: $error');
       }
@@ -853,6 +876,7 @@ class LibrarySubtitleFill {
     bool alreadyRegistered = false,
     int? matchPercent,
     String? detail,
+    List<String> extraFiles = const <String>[],
     List<String> notes = const <String>[],
   }) async {
     bool changed = alreadyRegistered;
@@ -877,6 +901,7 @@ class LibrarySubtitleFill {
       matchPercent: matchPercent,
       previousSubtitleSource: book.subtitleSource,
       selectionChanged: changed,
+      extraFiles: extraFiles,
       notes: notes,
     );
   }
@@ -907,7 +932,8 @@ class LibrarySubtitleFill {
   }
 }
 
-/// 撤销一次整库补字幕：删掉这次新写的文件，把改过的 `subtitle_source` 还原。
+/// 撤销一次整库补字幕：删掉这次新写的文件（含 [SubtitleFillOutcome.extraFiles]），
+/// 把改过的 `subtitle_source` 还原。
 /// 用户之后又改过选择的那一集不还原（只还原仍指向这次产物的）。返回还原的集数。
 Future<int> undoLibrarySubtitleFill(
   FushiDatabase database,
@@ -928,9 +954,12 @@ Future<int> undoLibrarySubtitleFill(
         touched = true;
       }
     }
-    if (o.wroteFile) {
+    for (final String written in <String>[
+      if (o.wroteFile) path,
+      ...o.extraFiles,
+    ]) {
       try {
-        final File file = File(path);
+        final File file = File(written);
         if (await file.exists()) {
           await file.delete();
           touched = true;

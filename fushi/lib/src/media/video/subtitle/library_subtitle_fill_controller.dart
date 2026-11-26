@@ -112,8 +112,10 @@ class LibrarySubtitleFillController extends ChangeNotifier {
       appModel.database,
       bookUids: bookUids,
     );
+    // 精确到毫秒：「预览」紧接「开始」常在同一秒内，秒级 id 会让后一次的报告盖掉
+    // 前一次、videoJob 镜像撞 id。
     final String id =
-        'fill-${DateTime.now().toUtc().toIso8601String().replaceAll(RegExp(r'[^0-9]'), '').substring(0, 14)}';
+        'fill-${DateTime.now().toUtc().toIso8601String().replaceAll(RegExp(r'[^0-9]'), '').substring(0, 17)}';
     final LibrarySubtitleFillJob job = LibrarySubtitleFillJob._(
       id: id,
       options: options,
@@ -200,8 +202,12 @@ class LibrarySubtitleFillController extends ChangeNotifier {
   );
 
   /// 撤销 [jobId] 那次补字幕（读落盘的报告）。返回还原的集数；报告不存在抛
-  /// [FileSystemException]。
+  /// [FileSystemException]；[jobId] 不是本控制器发的任务 id 抛 [FormatException]
+  /// （它拼进报告路径，又经控制通道外来：`../` 能让撤销按任意 JSON 删文件）。
   Future<int> undo(String jobId) async {
+    if (!isLibrarySubtitleFillJobId(jobId)) {
+      throw FormatException('not a subtitle fill job id', jobId);
+    }
     final LibrarySubtitleFillJob? running = _active;
     if (running != null && running.isRunning && running.id == jobId) {
       throw LibrarySubtitleFillBusy(running);
@@ -220,6 +226,11 @@ class LibrarySubtitleFillController extends ChangeNotifier {
   }
 }
 
+/// [LibrarySubtitleFillController.start] 发的任务 id 形状（`fill-` + UTC 时间戳数字，
+/// 早期秒级的 14 位也认，旧报告照样能撤）。撤销前必须过这道：id 拼进报告路径。
+bool isLibrarySubtitleFillJobId(String id) =>
+    RegExp(r'^fill-[0-9]{14,17}$').hasMatch(id);
+
 /// [SubtitleFillOutcome.toJson] 的逆（撤销只用得到路径 / 选择相关字段）。
 SubtitleFillOutcome subtitleFillOutcomeFromJson(Map<String, Object?> json) =>
     SubtitleFillOutcome(
@@ -233,6 +244,11 @@ SubtitleFillOutcome subtitleFillOutcomeFromJson(Map<String, Object?> json) =>
       path: json['path'] as String?,
       previousSubtitleSource: json['previousSubtitleSource'] as String?,
       selectionChanged: json['selectionChanged'] == true,
+      extraFiles: <String>[
+        for (final Object? f
+            in json['extraFiles'] as List<Object?>? ?? const <Object?>[])
+          if (f is String) f,
+      ],
     );
 
 /// 面板与控制通道共用的单例（挂在 [AppModel] 生命周期上）。

@@ -495,6 +495,68 @@ void main() {
       expect(out.single.action, SubtitleFillAction.generated);
       expect(out.single.notes.last, contains('12%'));
     });
+
+    test('撤销重定时版：ASR 参照稿一起删、选择还原', () async {
+      final SubtitleFillItem item = await scrapedDisc();
+      final List<SubtitleFillOutcome> out =
+          await LibrarySubtitleFill(
+            database: db,
+            host: _FakeHost(root, retimeMatch: 85),
+            backfill: _backfill(),
+            probe: (String _) async => VideoProbeFacts.empty,
+          ).run(<SubtitleFillItem>[
+            item,
+          ], const LibrarySubtitleFillOptions(language: 'ja'));
+      final SubtitleFillOutcome o = out.single;
+      expect(o.action, SubtitleFillAction.downloadedRetimed);
+      final String reference = p.join(root.path, 'out', 'ep2.ja.srt');
+      expect(o.extraFiles, <String>[reference]);
+      expect(o.toJson()['extraFiles'], <String>[reference]);
+      expect(File(reference).existsSync(), isTrue);
+      expect(await undoLibrarySubtitleFill(db, out), 1);
+      expect(File(o.path!).existsSync(), isFalse);
+      expect(File(reference).existsSync(), isFalse);
+      expect((await db.getVideoBookByBookUid('ep2'))!.subtitleSource, isNull);
+    });
+
+    test('下载后取消：下载件照样进报告，撤销删得掉', () async {
+      final SubtitleFillItem item = await scrapedDisc();
+      final SubtitleCancelSource cancel = SubtitleCancelSource();
+      final _FakeHost host = _FakeHost(
+        root,
+        onGenerate: cancel.cancel,
+        generateCancelled: true,
+      );
+      final List<SubtitleFillOutcome> out =
+          await LibrarySubtitleFill(
+            database: db,
+            host: host,
+            backfill: _backfill(),
+            probe: (String _) async => VideoProbeFacts.empty,
+          ).run(
+            <SubtitleFillItem>[item],
+            const LibrarySubtitleFillOptions(language: 'ja'),
+            cancel: cancel,
+          );
+      final SubtitleFillOutcome o = out.single;
+      expect(o.action, SubtitleFillAction.downloaded);
+      expect(o.notes, contains('retime: cancelled'));
+      expect(host.calls, <String>['generate:ep2']);
+      final String downloaded = p.join(
+        root.path,
+        'video_subtitles',
+        'disc-ep2.ja.srt',
+      );
+      expect(o.path, downloaded);
+      expect(File(downloaded).existsSync(), isTrue);
+      expect(
+        (await db.getVideoBookByBookUid('ep2'))!.subtitleSource,
+        downloaded,
+      );
+      expect(await undoLibrarySubtitleFill(db, out), 1);
+      expect(File(downloaded).existsSync(), isFalse);
+      expect((await db.getVideoBookByBookUid('ep2'))!.subtitleSource, isNull);
+    });
   });
 }
 
@@ -572,12 +634,16 @@ class _FakeHost implements LibrarySubtitleFillHost {
     this.ocrFails = false,
     this.retimeMatch = 90,
     this.onGenerate,
+    this.generateCancelled = false,
   });
 
   final Directory root;
   final bool ocrFails;
   final int retimeMatch;
   final void Function()? onGenerate;
+
+  /// generate 像真实管线被取消那样抛 [SubtitlePipelineCancelled]。
+  final bool generateCancelled;
   final List<String> calls = <String>[];
 
   Future<String> _write(String name) async {
@@ -609,6 +675,7 @@ class _FakeHost implements LibrarySubtitleFillHost {
   ) async {
     calls.add('generate:${item.bookUid}');
     onGenerate?.call();
+    if (generateCancelled) throw const SubtitlePipelineCancelled();
     return SubtitleFillProduct(path: await _write('${item.bookUid}.ja.srt'));
   }
 

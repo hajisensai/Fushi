@@ -135,6 +135,11 @@ class CtlVideoSubtitleFillHandlers {
   Future<Object?> undo(CtlCall call) async {
     _requireVideoModule();
     final String jobId = call.requireString('jobId');
+    if (!isLibrarySubtitleFillJobId(jobId)) {
+      throw CtlFailure.badRequest(
+        'jobId 不是补字幕任务 id：$jobId（形如 fill-20261126153012345）',
+      );
+    }
     try {
       return <String, Object?>{
         'jobId': jobId,

@@ -33,7 +33,7 @@ void main() {
         _status(422),
       );
       await expectLater(
-        h.undo(_post(<String, Object?>{'jobId': 'fill-1'})),
+        h.undo(_post(<String, Object?>{'jobId': 'fill-20261126153012345'})),
         _status(422),
       );
     });
@@ -69,6 +69,21 @@ void main() {
         _status(400),
       );
     });
+
+    test('undo 的 jobId 不是任务 id（含路径穿越）→ 400，不碰 controller', () async {
+      for (final String bad in <String>[
+        '../../secrets',
+        r'..\fill-20261126153012',
+        'fill-1',
+        'fill-20261126153012/../../x',
+      ]) {
+        await expectLater(
+          _handlers().undo(_post(<String, Object?>{'jobId': bad})),
+          _status(400),
+          reason: bad,
+        );
+      }
+    });
   });
 
   test('bookUids：数组原样认（uid 可带逗号），字符串按逗号切', () {
@@ -98,6 +113,7 @@ void main() {
       path: r'C:\support\video_subtitles\disc-a.ja.srt',
       previousSubtitleSource: 'embedded:2',
       selectionChanged: true,
+      extraFiles: <String>[r'C:\support\jobs\disc_out\ep1.ja.srt'],
     );
     final SubtitleFillOutcome back = subtitleFillOutcomeFromJson(
       original.toJson(),
@@ -107,7 +123,15 @@ void main() {
     expect(back.path, original.path);
     expect(back.previousSubtitleSource, 'embedded:2');
     expect(back.selectionChanged, isTrue);
+    expect(back.extraFiles, original.extraFiles);
     expect(back.wroteFile, isTrue);
+  });
+
+  test('任务 id 形状：秒级旧 id 与毫秒级新 id 都认', () {
+    expect(isLibrarySubtitleFillJobId('fill-20261126153012'), isTrue);
+    expect(isLibrarySubtitleFillJobId('fill-20261126153012345'), isTrue);
+    expect(isLibrarySubtitleFillJobId('fill-2026'), isFalse);
+    expect(isLibrarySubtitleFillJobId('../fill-20261126153012'), isFalse);
   });
 
   test('报告里认不出的 action 按 failed 处理（撤销不动它）', () {
