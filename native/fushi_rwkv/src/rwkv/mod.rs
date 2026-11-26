@@ -402,7 +402,7 @@ impl RwkvInference {
     // ---- Fushi additions below this line (not in upstream) ----------------
 
     /// Everything [Self::warm_up_reviews] has built up, as bytes:
-    /// `FRWKVSNAP1\0`, a precision byte (0 = f32, 8 = int8, 4 = int4), then
+    /// `FRWKVSNAP2\0`, a precision byte (0 = f32, 8 = int8, 4 = int4), then
     /// upstream's `append_warm_up_snapshot_binary` layout (card, note, deck and
     /// preset maps as u32 count + per id ascending i64 id + u32 length + state;
     /// global as flag + length + state; then flag + length + the
@@ -464,7 +464,12 @@ impl RwkvInference {
         let invalid =
             |message: &str| io::Error::new(io::ErrorKind::InvalidData, message.to_owned());
         let mut cursor = SnapshotReader::new(input, len);
-        cursor.expect_magic(SNAPSHOT_MAGIC)?;
+        cursor.expect_magic(SNAPSHOT_MAGIC).map_err(|_| {
+            invalid(
+                "not a current RWKV snapshot (a version-1 snapshot from before the \
+                 platform-independent arithmetic, or damaged bytes)",
+            )
+        })?;
         if cursor.u8()? != precision_code(self.precision()) {
             return Err(invalid(
                 "RWKV snapshot was taken with another state precision",
@@ -687,7 +692,9 @@ pub struct RwkvStats {
     pub feature_state_bytes: usize,
 }
 
-const SNAPSHOT_MAGIC: &[u8] = b"FRWKVSNAP1\0";
+/// Fushi: version 2 (2026-11-26) = states from the platform-independent
+/// arithmetic of `det`; version 1 snapshots are refused (replay the log).
+pub(crate) const SNAPSHOT_MAGIC: &[u8] = b"FRWKVSNAP2\0";
 
 fn precision_code(precision: StatePrecision) -> u8 {
     match precision {
