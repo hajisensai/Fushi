@@ -1319,7 +1319,25 @@ class VideoPlayerController extends ChangeNotifier
     // 用户 seek 也是显式播放控制意图（见 [remoteControlRevision]）；句尾自动停下的
     // 落点 seek 不是（见 [_automaticSubtitleEndHold]）。
     if (!_automaticSubtitleEndHold) _remoteControlRevision++;
+    _voidSubtitleEndHoldOfDepartedCue();
     return _setPendingSeekLanding(targetMs);
+  }
+
+  /// 显式 seek 作废「当前句」的句尾暂停（mKqIAxIvZA）：把它记成已停过
+  /// （[_lastSubtitleEndPauseCueIndex]）。
+  ///
+  /// 根因：句尾暂停按「[_currentCueIndex] 还是旧句、位置已越过它的 endMs」判定
+  /// （[_shouldHoldAtSubtitleEnd]），而 [_currentCueIndex] 要等下一拍 tick 才跟上新位置。
+  /// 用户句中按「下一句」/ ±秒 / 点字幕列表往后跳时，第一拍看到的正是「旧句 + 已越过句尾」，
+  /// 于是被当成自然播完、暂停并 seek 回旧句句尾——跳句失灵。用户主动离开这一句，它的
+  /// 句尾暂停就不该再触发；落点若仍在这句句尾之前（往回跳 / 句内小步 seek），
+  /// [_rearmSubtitleEndPauseIfNeeded] 会照常重新武装，到句尾照停。
+  ///
+  /// 句尾暂停自己的落点 seek 也经过这里：那时本句已记成停过，这里是幂等的。
+  void _voidSubtitleEndHoldOfDepartedCue() {
+    final int current = _currentCueIndex;
+    if (current < 0 || current >= _cues.length) return;
+    _lastSubtitleEndPauseCueIndex = current;
   }
 
   /// 换在途目标（或清掉）的唯一入口：连同「已结束」判据的累积状态与下发确认一起复位，
@@ -5041,6 +5059,7 @@ class VideoPlayerController extends ChangeNotifier
   bool _subtitleEndHoldPendingAt(int effectiveMs) {
     final int current = _currentCueIndex;
     if (current < 0 || current >= _cues.length) return false;
+    if (_subtitleEndHoldSupersededByJump(current)) return false;
     if (effectiveMs <= _cues[current].endMs) return false;
     if (_lastSubtitleEndPauseCueIndex == current) return false;
     return _holdEnabledForCue(current);
@@ -6511,7 +6530,7 @@ class VideoPlayerController extends ChangeNotifier
   void _pauseForSubtitleEnd() {
     final int endedCueIndex = _currentCueIndex;
     if (!_holdEnabledForCue(endedCueIndex)) return;
-    // 这句刚被相邻路径停过（[_pauseAndSeekForSubtitleEnd] 落点 = 句尾，续播再落进 gap）：
+    // 这句刚被相邻路径停过（[_pauseAndSeekForSubtitleEnd] 落点在句尾前，续播再落进 gap）：
     // 常开的自动暂停不能对同一句停第二次。一次性 hold 停过即消耗，本判定对它是空操作。
     if (_lastSubtitleEndPauseCueIndex == endedCueIndex) return;
     _lastSubtitleEndPauseCueIndex = endedCueIndex;
@@ -6709,11 +6728,42 @@ class VideoPlayerController extends ChangeNotifier
     }
     if (!_holdEnabledForCue(_currentCueIndex)) return false;
     if (nextCueIndex == _currentCueIndex) return false;
+    if (_subtitleEndHoldSupersededByJump(_currentCueIndex)) return false;
     final AudioCue cue = _cues[_currentCueIndex];
     if (effectiveMs <= cue.endMs) return false;
     if (_lastSubtitleEndPauseCueIndex == _currentCueIndex) return false;
     return _isPlayingForSubtitleEnd();
   }
+
+  /// 主动跳句（[skipToCue]）在途、目标是**别的句**时，[cueIndex] 的句尾暂停让位
+  /// （mKqIAxIvZA）：位置越过它的句尾是跳句造成的，不是这句自然播完。与
+  /// [_voidSubtitleEndHoldOfDepartedCue] 互补——后者在 seek 下发时记一次，可被 seek
+  /// 在途读到的旧位置（仍在旧句句尾之前）重新武装；本判定只要快照还在就一直生效。
+  bool _subtitleEndHoldSupersededByJump(int cueIndex) {
+    final int? target = _seekTargetCueIndex;
+    return target != null && target != cueIndex;
+  }
+
+  /// 句尾暂停落回的位置（cue 时间轴）：句尾**之前** [kSubtitleEndHoldLeadMs]，不早于句首。
+  ///
+  /// mKqIAxIvZA：旧落点是 `endMs` 整点。相邻字幕首尾相接时这一点就是下一句的起点
+  /// （[JsonAlignmentParser.findCueIndex] 精确命中 startMs 返回下一句），停下来屏幕上
+  /// 已经是下一句；hr-seek 落到的帧 pts 还会再往后偏不到一帧。提前一点停，画面与字幕都还
+  /// 在本句里。
+  @visibleForTesting
+  static int subtitleEndHoldLandingMs(AudioCue cue) {
+    final int landing = cue.endMs - kSubtitleEndHoldLeadMs;
+    return landing < cue.startMs ? cue.startMs : landing;
+  }
+
+  /// 见 [subtitleEndHoldLandingMs]：大于低帧率片源的一帧（24fps ≈ 42ms），
+  /// 落点帧的时间戳不会越过句尾。
+  static const int kSubtitleEndHoldLeadMs = 100;
+
+  /// 位置低于句尾落点多少才算「回到这句里面了」、重新武装句尾暂停
+  /// （[_rearmSubtitleEndPauseIfNeeded]）。吸收落点回报的毫秒取整误差：停在落点上
+  /// 读到早 1ms 的位置不能被当成往回跳，否则续播又在同一句尾停一次。
+  static const int _subtitleEndHoldRearmSlackMs = 20;
 
   bool _isPlayingForSubtitleEnd() {
     final bool Function()? override = _subtitleEndHoldIsPlayingOverride;
@@ -6732,7 +6782,10 @@ class VideoPlayerController extends ChangeNotifier
           _subtitleEndHoldSeekOverride ?? seekMs;
       await _runSubtitleEndHold(
         () => seekToEnd(
-          cueSeekTargetMs(cueStartMs: cue.endMs, delayMs: _delayMs),
+          cueSeekTargetMs(
+            cueStartMs: subtitleEndHoldLandingMs(cue),
+            delayMs: _delayMs,
+          ),
         ),
       );
     }());
@@ -6745,7 +6798,11 @@ class VideoPlayerController extends ChangeNotifier
       _lastSubtitleEndPauseCueIndex = null;
       return;
     }
-    if (effectiveMs < _cues[pausedCueIndex].endMs) {
+    // 门槛对齐句尾暂停的落点（[subtitleEndHoldLandingMs]）：停在落点上不能自己把自己
+    // 重新武装，否则续播又在同一句尾停一次。
+    if (effectiveMs <
+        subtitleEndHoldLandingMs(_cues[pausedCueIndex]) -
+            _subtitleEndHoldRearmSlackMs) {
       _lastSubtitleEndPauseCueIndex = null;
     }
   }
@@ -7071,7 +7128,7 @@ class VideoPlayerController extends ChangeNotifier
   ///
   /// [preRollMs]：句子跳转的前导余量（>=0），在 cue 时间轴上把目标点往**前**移，吸收
   /// media_kit 关键帧吸附把落点推到句首之后的偏差（BUG-259）。默认 0 —— 字幕结束暂停
-  /// （[_pauseAndSeekForSubtitleEnd] 用 `cueStartMs: cue.endMs`）等精确 seek 不能加余量，
+  /// （[_pauseAndSeekForSubtitleEnd] 用 [subtitleEndHoldLandingMs]）等精确 seek 不能加余量，
   /// 否则会把暂停点拉回句中，故只有 [skipToCue] 传非零余量。
   ///
   /// [prevCueStartMs]：上一句起点（cue 时间轴，可空）。前导余量减完后下界钳到它，

@@ -337,58 +337,64 @@ void main() {
     );
   });
 
-  test(
-    'subtitle download sends stream headers only to the same site',
-    () async {
-      final List<http.Request> requests = <http.Request>[];
-      final MockClient httpClient = MockClient((http.Request request) async {
-        requests.add(request);
-        return http.Response('WEBVTT', 200);
-      });
-      runtime.videos = <Object?>[
-        <Object?, Object?>{
-          'url': 'https://cdn.example/ep.m3u8',
-          'quality': '1080p',
-          'headers': <Object?, Object?>{'Referer': 'https://site.example/'},
-          'subtitleTracks': <Object?>[
-            <Object?, Object?>{
-              'url': 'https://cdn.example/ja.vtt',
-              'lang': 'ja',
-            },
-          ],
-        },
-      ];
-      final AnimeSourceVideoClient sameSite = client(httpClient: httpClient);
-      final String id = sameSite.remoteVideos.first.id;
-      await sameSite.remoteVideoStreamUrls(id);
-      final File dest = File('${root.path}/ja.vtt');
-      await sameSite.getRemoteVideoSubtitle(id, dest);
-      expect(await dest.readAsString(), 'WEBVTT');
-      expect(requests.single.headers['Referer'], 'https://site.example/');
+  test('subtitle download: same site gets every stream header, a third-party '
+      'subtitle host gets them minus credentials (kslC0cG1TS)', () async {
+    final List<http.Request> requests = <http.Request>[];
+    final MockClient httpClient = MockClient((http.Request request) async {
+      requests.add(request);
+      return http.Response('WEBVTT', 200);
+    });
+    const Map<Object?, Object?> streamHeaders = <Object?, Object?>{
+      'Referer': 'https://site.example/',
+      'User-Agent': 'ExtUA/1.0',
+      'Cookie': 'session=1',
+      'Authorization': 'Bearer t',
+    };
+    runtime.videos = <Object?>[
+      <Object?, Object?>{
+        'url': 'https://cdn.example/ep.m3u8',
+        'quality': '1080p',
+        'headers': streamHeaders,
+        'subtitleTracks': <Object?>[
+          <Object?, Object?>{'url': 'https://cdn.example/ja.vtt', 'lang': 'ja'},
+        ],
+      },
+    ];
+    final AnimeSourceVideoClient sameSite = client(httpClient: httpClient);
+    final String id = sameSite.remoteVideos.first.id;
+    await sameSite.remoteVideoStreamUrls(id);
+    final File dest = File('${root.path}/ja.vtt');
+    await sameSite.getRemoteVideoSubtitle(id, dest);
+    expect(await dest.readAsString(), 'WEBVTT');
+    expect(requests.single.headers['Referer'], 'https://site.example/');
+    expect(requests.single.headers['Cookie'], 'session=1');
 
-      requests.clear();
-      runtime.videos = <Object?>[
-        <Object?, Object?>{
-          'url': 'https://cdn.example/ep.m3u8',
-          'quality': '1080p',
-          'headers': <Object?, Object?>{'Referer': 'https://site.example/'},
-          'subtitleTracks': <Object?>[
-            <Object?, Object?>{
-              'url': 'https://subs.other/ja.vtt',
-              'lang': 'ja',
-            },
-          ],
-        },
-      ];
-      final AnimeSourceVideoClient crossSite = client(httpClient: httpClient);
-      await crossSite.remoteVideoStreamUrls(crossSite.remoteVideos.first.id);
-      await crossSite.getRemoteVideoSubtitle(
-        crossSite.remoteVideos.first.id,
-        File('${root.path}/other.vtt'),
-      );
-      expect(requests.single.headers.containsKey('Referer'), isFalse);
-    },
-  );
+    requests.clear();
+    runtime.videos = <Object?>[
+      <Object?, Object?>{
+        'url': 'https://cdn.example/ep.m3u8',
+        'quality': '1080p',
+        'headers': streamHeaders,
+        'subtitleTracks': <Object?>[
+          <Object?, Object?>{'url': 'https://subs.other/ja.vtt', 'lang': 'ja'},
+        ],
+      },
+    ];
+    final AnimeSourceVideoClient crossSite = client(httpClient: httpClient);
+    await crossSite.remoteVideoStreamUrls(crossSite.remoteVideos.first.id);
+    await crossSite.getRemoteVideoSubtitle(
+      crossSite.remoteVideos.first.id,
+      File('${root.path}/other.vtt'),
+    );
+    // 第三方字幕站按 Referer / UA 防盗链（mysubsplay 不带就 403）：照带；
+    // 凭据类头不出站。
+    final Map<String, String> sent = requests.single.headers;
+    expect(sent['Referer'], 'https://site.example/');
+    expect(sent['User-Agent'], 'ExtUA/1.0');
+    final Iterable<String> names = sent.keys.map((String k) => k.toLowerCase());
+    expect(names, isNot(contains('cookie')));
+    expect(names, isNot(contains('authorization')));
+  });
 
   group('网站字幕轨（Video.subtitleTracks）全部可选', () {
     List<Object?> multiTrackVideos() => <Object?>[
