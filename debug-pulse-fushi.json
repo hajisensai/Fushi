@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-26T11:32:29Z",
+ "generatedAt": "2026-11-26T11:35:22Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "2704c408960f91bd1baf43eb986d24b1566b0064",
-  "seq": 32769
+  "sha": "4703f7a06bb5b923d8b06f794ec4efd50dbb64b9",
+  "seq": 32770
  },
  "builds": [
   {
@@ -395,10 +395,14 @@
   }
  ],
  "pending": {
-  "headSha": "2704c408960f91bd1baf43eb986d24b1566b0064",
-  "headSeq": 32769,
+  "headSha": "4703f7a06bb5b923d8b06f794ec4efd50dbb64b9",
+  "headSeq": 32770,
   "prs": [],
   "direct": [
+   {
+    "sha": "4703f7a06bb5b923d8b06f794ec4efd50dbb64b9",
+    "subject": "chore(bugs): settle BUG number collisions on 2704c4089"
+   },
    {
     "sha": "2704c408960f91bd1baf43eb986d24b1566b0064",
     "subject": "docs(srs): rwkv_last 文档注释归位、守卫测试名改成实际的 assert_rwkv_last_matches_replay；登记首次升级整层重建耗时待办 (BUG-5491)"
@@ -443,15 +447,15 @@
     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084405"
    },
    "windows": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
    },
    "macos": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
    },
    "ios": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/45810084399"
    }
   }
