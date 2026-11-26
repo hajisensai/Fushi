@@ -198,6 +198,31 @@ class MethodChannelFlutterOnnxruntime extends FlutterOnnxruntimePlatform {
     await methodChannel.invokeMethod<void>('releaseOrtValue', {'valueId': valueId});
   }
 
+  @override
+  bool get supportsNativeTensorMemory => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+
+  @override
+  Future<Map<String, dynamic>> createOrtValueFromAddress(
+    String sourceType,
+    int address,
+    int byteLength,
+    List<int> shape,
+  ) async {
+    final result = await methodChannel.invokeMethod<Map<Object?, Object?>>('createOrtValueFromAddress', {
+      'sourceType': sourceType,
+      'address': address,
+      'byteLength': byteLength,
+      'shape': shape,
+    });
+    return _convertMapToStringDynamic(result ?? {});
+  }
+
+  @override
+  Future<Map<String, dynamic>?> getOrtValueAddress(String valueId) async {
+    final result = await methodChannel.invokeMethod<Map<Object?, Object?>>('getOrtValueAddress', {'valueId': valueId});
+    return result == null ? null : _convertMapToStringDynamic(result);
+  }
+
   Map<String, dynamic> _convertMapToStringDynamic(Map<Object?, Object?> map) {
     return map.map((key, value) => MapEntry(key.toString(), value));
   }
