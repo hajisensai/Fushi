@@ -309,6 +309,9 @@ Type: files; Name: "{app}\fushi-update-install-*.log"
 Type: filesandordirs; Name: "{app}\fushi.exe.ShaderCache"
 ; 升级时被 explorer.exe 占着、改名挪开的旧缩略图处理器（见 [Code] FushiSetAsideThumbnailHandler）。
 Type: files; Name: "{app}\fushi_shell_thumbs.dll.*.old"
+; 升级时被外部进程（旧 /MD launcher、explorer）映射着、改名让路的根目录 DLL（BUG-5529，
+; 见 [Code] MakeWayForLockedRootDlls）。
+Type: files; Name: "{app}\*.dll.*.old"
 
 [Run]
 Filename: "{app}\fushi.exe"; Description: "{cm:LaunchProgram,Fushi}"; Flags: nowait postinstall; Check: ShouldLaunchAppAfterInstall
@@ -577,6 +580,100 @@ begin
   RenameFile(Launcher, Stale);
 end;
 
+// BUG-5529：给安装目录**根**下被外部进程映射着的 DLL 改名让路。
+//
+// 现场：更新到 3.4.0 时 {app}\msvcp140.dll 换不掉（DeleteFile code 5），整包回滚。
+// 持有者是旧版 /MD 编译的 fushi_update_launcher.exe：用户机器没装 VC++ 运行库，launcher
+// 按 DLL 搜索顺序落到继承来的当前目录（安装目录），把随包的 CRT（TODO-1242）映射了进去；
+// 而它是本安装器刻意不杀的进程（见 MakeWayForRunningLauncher）。新版 launcher 已改为
+// 静态 CRT（windows/update_launcher/CMakeLists.txt），本过程是给**存量旧 launcher** 和
+// 其它杀不得的外部持有者（例如经 COM 加载缩略图处理器、连带从 {app} 解析依赖的
+// explorer.exe）的救援：映射中的 DLL 不能删、但能同卷改名，改名后原路径空出来，Inno 照常
+// 写入新文件，持有者手里的旧映像照样有效。
+//
+// 只扫根目录：voice_hook\ 下的组件被占用时**必须**中止（BUG-1675，见 LockedGalHookComponent），
+// 不能改名混装。改名记在 FushiSetAsideDllFrom/To 里：安装没走到 ssPostInstall（复制失败
+// 回滚 / 中止 / 取消）时由 DeinitializeSetup 改回去——回滚会删掉「新建」的文件，原路径上
+// 就什么都没有了（与 BUG-1831 的 launcher 同理），不改回去 app 下次启动就缺 CRT。
+var
+  FushiSetAsideDllFrom: TArrayOfString;
+  FushiSetAsideDllTo: TArrayOfString;
+  FushiInstallReachedPostInstall: Boolean;
+
+procedure MakeWayForLockedRootDlls(const AppDir: String);
+var
+  FindRec: TFindRec;
+  Full: String;
+  Aside: String;
+  N: Integer;
+begin
+  if not FindFirst(AddBackslash(AppDir) + '*.dll', FindRec) then
+    Exit;
+  try
+    repeat
+      if FindRec.Attributes and FILE_ATTRIBUTE_DIRECTORY = 0 then
+      begin
+        Full := AddBackslash(AppDir) + FindRec.Name;
+        { *.dll 通配也会经 8.3 短名命中别的后缀，只认真正以 .dll 结尾的。 }
+        if (Lowercase(Copy(Full, Length(Full) - 3, 4)) = '.dll') and
+           FileLockedForWrite(Full) then
+        begin
+          Aside := Full + '.' + GetDateTimeString('yyyymmddhhnnsszzz', #0, #0) + '.old';
+          if RenameFile(Full, Aside) then
+          begin
+            N := GetArrayLength(FushiSetAsideDllFrom);
+            SetArrayLength(FushiSetAsideDllFrom, N + 1);
+            SetArrayLength(FushiSetAsideDllTo, N + 1);
+            FushiSetAsideDllFrom[N] := Full;
+            FushiSetAsideDllTo[N] := Aside;
+            Log('set aside locked dll: ' + Full + ' -> ' + Aside);
+          end
+          else
+            Log('set aside locked dll FAILED: ' + Full);
+        end;
+      end;
+    until not FindNext(FindRec);
+  finally
+    FindClose(FindRec);
+  end;
+end;
+
+{ 安装没完成：把改名让路的 DLL 放回原位。原路径已有文件（回滚恢复了被覆盖的原件等）
+  就不动。由 DeinitializeSetup（md3_layout.iss）调用。 }
+procedure RestoreSetAsideDllsIfInstallFailed();
+var
+  I: Integer;
+begin
+  if FushiInstallReachedPostInstall then
+    Exit;
+  for I := 0 to GetArrayLength(FushiSetAsideDllFrom) - 1 do
+    if (not FileExists(FushiSetAsideDllFrom[I])) and FileExists(FushiSetAsideDllTo[I]) then
+    begin
+      if RenameFile(FushiSetAsideDllTo[I], FushiSetAsideDllFrom[I]) then
+        Log('restored set-aside dll: ' + FushiSetAsideDllFrom[I])
+      else
+        Log('restore set-aside dll FAILED: ' + FushiSetAsideDllFrom[I]);
+    end;
+end;
+
+{ 新文件已全部落地：删掉让路留下的 *.dll.*.old（含缩略图处理器的）。仍被持有的删不掉，
+  留给下次安装 / 卸载（[UninstallDelete]）。 }
+procedure FushiDeleteSetAsideDlls();
+var
+  FindRec: TFindRec;
+begin
+  if FindFirst(ExpandConstant('{app}\*.dll.*.old'), FindRec) then
+  begin
+    try
+      repeat
+        DeleteFile(ExpandConstant('{app}\') + FindRec.Name);
+      until not FindNext(FindRec);
+    finally
+      FindClose(FindRec);
+    end;
+  end;
+end;
+
 { Runs after the user confirms install, before file copy — the last hook where
   we can still release file locks. Empty result string = proceed. }
 function PrepareToInstall(var NeedsRestart: Boolean): String;
@@ -591,6 +688,8 @@ begin
   KillProcessesUnderDir(ExpandConstant('{app}'));
   { KillProcessesUnderDir 杀不到 launcher，也**不该**杀它（见上）。改名让路。 }
   MakeWayForRunningLauncher(ExpandConstant('{app}'));
+  { BUG-5529：杀不得的外部进程（旧 /MD launcher、explorer）映射着的根目录 DLL 改名让路。 }
+  MakeWayForLockedRootDlls(ExpandConstant('{app}'));
 
   { BUG-1675：KillProcessesUnderDir 按**主模块路径**杀进程，杀得掉安装目录里的
     fushi_voice_injector.exe，却杀不掉真正的占用大头——**用户正在玩的游戏**：它的
@@ -884,22 +983,6 @@ begin
     RenameFile(Dll, Dll + '.' + GetDateTimeString('yyyymmddhhnnsszzz', #0, #0) + '.old');
 end;
 
-procedure FushiDeleteSetAsideThumbnailHandlers();
-var
-  FindRec: TFindRec;
-begin
-  if FindFirst(ExpandConstant('{app}\fushi_shell_thumbs.dll.*.old'), FindRec) then
-  begin
-    try
-      repeat
-        DeleteFile(ExpandConstant('{app}\') + FindRec.Name);
-      until not FindNext(FindRec);
-    finally
-      FindClose(FindRec);
-    end;
-  end;
-end;
-
 // Fushi 改名的旧名残留清理，全部放在 ssPostInstall（新文件已全部落地之后），
 // 不放 [InstallDelete]：后者在复制前执行，且 Inno 不会在安装失败/取消时回滚删除，
 // 于是任何一次中途失败的升级都会把「还剩个能跑的旧版」变成「一个可执行文件都没有」。
@@ -918,7 +1001,8 @@ begin
   if CurStep <> ssPostInstall then
     Exit;
 
-  FushiDeleteSetAsideThumbnailHandlers();
+  FushiInstallReachedPostInstall := True;
+  FushiDeleteSetAsideDlls();
 
   { BUG-4028：新文件已全部落地，放开启动门（[Run] 拉起新版在此之后）。 }
   CloseFushiInstallGate();

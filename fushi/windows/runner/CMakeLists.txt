@@ -702,12 +702,7 @@ add_custom_target(fushi_windows_printwindow_helper_gate
 )
 add_dependencies(${BINARY_NAME} fushi_windows_printwindow_helper_gate)
 
-add_executable(fushi_update_launcher WIN32
-  "update_launcher.cpp"
-)
-apply_standard_settings(fushi_update_launcher)
-target_compile_definitions(fushi_update_launcher PRIVATE "NOMINMAX")
-target_link_libraries(fushi_update_launcher PRIVATE shell32 bcrypt)
+# fushi_update_launcher 在 ../update_launcher/（静态 CRT，BUG-5529）。
 
 # BUG-2726: game-stream input regression (window-targeted input, SGRE native
 # gamepad channel, release-without-visibility). Unlike the gates above it is
