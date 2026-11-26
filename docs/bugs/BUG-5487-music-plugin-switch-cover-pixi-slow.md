@@ -1,4 +1,4 @@
-## BUG-5463 · music-plugin-switch-cover-pixi-slow
+## BUG-5487 · music-plugin-switch-cover-pixi-slow
 - **报告**：2026-11-26（用户：网易云插件切歌慢，加载封面和 Pixi 渲染慢）
 - **真实性**：✅ 真 bug，三处根因（沿代码路径验证）：
   1. **手动切歌把预取好的流扔掉重取**：插件曲目在播放期间已由 `_attachNext` 取好下一首的流并排进 mpv（`fushi/lib/src/media/music/mpv_music_output_backend.dart` `_attachNext`），但「下一首」走引擎 `skipNext` → `openPair(下一首)` → `_open`，`_open` 不认这份现成源，先停掉旧曲再 `_mediaFor` 从头取流：插件 `invoke('stream')`（每个插件 http 一次后台 isolate 往返）+ `resolveMediaStream` 对音频 CDN 的 DNS + TCP/TLS + `Range: bytes=0-0` 探测（`packages/fushi_music/lib/src/plugin/plugin_net_guard.dart` `probeRedirect`），全部串行，期间无声。
