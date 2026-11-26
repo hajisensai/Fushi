@@ -148,7 +148,7 @@ void main() {
     expect(active, contains('color: var(--background-color)'));
   });
 
-  test('扩展 content.css：带 MD3 样式、丢弃 Apple 段', () {
+  test('扩展 content.css：带 MD3 样式、Apple 段重根到弹窗容器', () {
     final String content = maskCssComments(
       File(contentCssPath).readAsStringSync(),
     );
@@ -156,7 +156,14 @@ void main() {
       ruleBody(content, '.ctx-adjust-button'),
       contains('border-radius: 16px'),
     );
-    expect(content, isNot(contains('.fushi-apple')));
+    // 扩展 Cupertino 风格（用户 2026-11-26）：Apple 段重根到 #entries-container，不留 app 内宿主选择器。
+    expect(
+      content,
+      contains(
+        ':where(#entries-container).fushi-glass-host.fushi-apple .ctx-adjust-button',
+      ),
+    );
+    expect(content, isNot(contains('html.fushi-glass-host.fushi-apple')));
     expect(
       content,
       contains(':where(#entries-container).eink .ctx-adjust-button'),

@@ -9,11 +9,12 @@ import '../helpers/source_guard.dart';
 /// 这里锁住三条契约：
 ///
 /// - 隔离：凡是提到 `fushi-apple` 的规则都以 `html.fushi-glass-host.fushi-apple` 开头——
-///   M3E / 墨水屏 / 桌面全局查词窗不挂这对 class，扩展生成器整条丢弃，Material 与浏览器
-///   扩展零变化；
+///   M3E / 墨水屏 / 桌面全局查词窗不挂这对 class；
+/// - 浏览器扩展（用户 2026-11-26「一个 material 一个 cupertino」）：Cupertino 风格下 theme.js
+///   给弹窗容器挂同一对 class，生成器把 Apple 层重根到 `:where(#entries-container)`，与 app 同一套；
+/// - SF 图标：Apple 下 popup.js 出 CupertinoIcons 字形（制卡钮也是），Material 保持原样；
 /// - 结构：词典卡是 inset grouped cell（单列并组、多列独立圆角），折叠指示是行尾 chevron，
 ///   只用 transform 换朝向（BUG-2049：布局盒不随展开状态变化）；
-/// - 扩展产物 content.css 里没有任何 Apple 层规则。
 void main() {
   final String css = maskCssComments(
     File('assets/popup/popup.css').readAsStringSync(),
@@ -76,30 +77,82 @@ void main() {
     expect(open.trim(), 'transform: rotate(45deg);');
   });
 
+  final String js = File('assets/popup/popup.js').readAsStringSync();
+
+  String jsFunction(String signature) {
+    final int at = js.indexOf(signature);
+    expect(at, isNonNegative, reason: '缺少 $signature');
+    return js.substring(at, js.indexOf('\n}\n', at));
+  }
+
   test('multi-column geometry keys off the effective column count', () {
-    final String js = File('assets/popup/popup.js').readAsStringSync();
-    final int at = js.indexOf('function updateEffectiveDictColumns()');
-    expect(at, isNonNegative);
-    final String body = js.substring(at, js.indexOf('\n}\n', at));
+    final String body = jsFunction('function updateEffectiveDictColumns()');
     expect(
       body,
-      contains("doc.classList.toggle('fushi-dict-multicol', cols > 1)"),
+      contains("container.classList.toggle('fushi-dict-multicol', cols > 1)"),
     );
     expect(
       body,
-      contains('!window.__fushiRoot'),
-      reason: '扩展里 documentElement 是宿主页，不能往上挂 class',
+      contains("doc.classList.contains('fushi-glass-host')"),
+      reason: '扩展里 documentElement 是宿主页，只有 app 内弹窗文档带 fushi-glass-host',
     );
   });
 
-  test('extension content.css carries no Apple layer rules', () {
+  test('Apple design system renders SF glyphs, Material keeps its paths', () {
+    final String table = js.substring(
+      js.indexOf('const APPLE_ICON_PATHS = {'),
+      js.indexOf('\n};\n', js.indexOf('const APPLE_ICON_PATHS = {')),
+    );
+    final int iconsAt = js.indexOf('const ICON_PATHS = {');
+    final String material = js.substring(iconsAt, js.indexOf('\n};', iconsAt));
+    for (final RegExpMatch m in RegExp(
+      r'^    (\w+):',
+      multiLine: true,
+    ).allMatches(material)) {
+      expect(table, contains('    ${m.group(1)}: {'), reason: m.group(1));
+    }
+    for (final String name in <String>['mined', 'latest', 'remote']) {
+      expect(table, contains('    $name: {'), reason: name);
+    }
+    final String iconSvg = jsFunction('function iconSvg(name)');
+    expect(iconSvg, contains('__fushiAppleIcons() ? APPLE_ICON_PATHS[name]'));
+    expect(iconSvg, contains('ICON_PATHS[name]'));
+    final String mine = jsFunction('function __fushiPaintMineGlyph(button)');
+    expect(mine, contains('iconSvg(glyph)'));
+    expect(mine, contains("'✓↩︎'"), reason: 'Material / 墨水屏保留 TODO-1325 的文本标记');
+    expect(
+      ruleBody(
+        'html.fushi-glass-host.fushi-apple .header-buttons > .mine-button::after',
+      ).trim(),
+      'content: none;',
+      reason: 'Apple 下不再用 ::before/::after 拼十字',
+    );
+  });
+
+  test('extension Cupertino style re-roots the Apple layer onto the popup', () {
+    final String theme = File(
+      '../tools/browser-extension/theme.js',
+    ).readAsStringSync();
+    expect(theme, contains("container.classList.toggle('fushi-apple', apple)"));
+    expect(
+      theme,
+      contains("container.classList.toggle('fushi-glass-host', apple)"),
+    );
     for (final String path in <String>[
       'assets/browser_extension/vendor/content.css',
       '../tools/browser-extension/vendor/content.css',
     ]) {
+      final String out = maskCssComments(File(path).readAsStringSync());
       expect(
-        maskCssComments(File(path).readAsStringSync()).contains('fushi-apple'),
-        isFalse,
+        out,
+        contains(
+          ':where(#entries-container).fushi-glass-host.fushi-apple .glossary-group',
+        ),
+        reason: path,
+      );
+      expect(
+        out,
+        isNot(contains('html.fushi-glass-host.fushi-apple')),
         reason: path,
       );
     }

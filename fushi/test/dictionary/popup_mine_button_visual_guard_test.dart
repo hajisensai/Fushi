@@ -159,11 +159,14 @@ void main() {
     test('[${mirror.key}] 静息态 textContent 仍是 + 文本标记', () {
       final String js = File(mirror.value).readAsStringSync();
       expect(
-        RegExp(r'mineButton\.textContent\s*=\s*isMined\s*\?').hasMatch(js),
+        RegExp(
+              r"button\.textContent = glyph === 'latest' \? '[^']+' : \(glyph === 'mined' \? '[^']+' : '\+'\);",
+            ).hasMatch(js) &&
+            js.contains('mineButton.dataset.mineGlyph = isMined ?'),
         isTrue,
         reason:
-            'BUG-1923：可见十字改成几何绘制后，textContent 仍必须是 + / ✓ / ✓↩ '
-            '文本标记（TODO-1325 用户要求，且无障碍朗读与 setMineState 状态机依赖它）。',
+            'BUG-1923：可见十字改成几何绘制后，Material 下 textContent 仍必须是 + / ✓ / ✓↩ '
+            '文本标记（TODO-1325 用户要求）；Apple 设计系统下改画 SF 字形（用户 2026-11-26）。',
       );
     });
   }

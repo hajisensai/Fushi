@@ -75,7 +75,7 @@
     return typeof v === 'string' && VALID_STYLE[v] === true ? v : DEFAULT_STYLE;
   }
 
-  // 当前风格是否液态玻璃（查词弹窗 / 嵌套层决定要不要上模糊与半透明填充）。
+  // 当前风格是否 Cupertino（存储值 'glass'；查词弹窗 / 嵌套层决定要不要上模糊与半透明填充）。
   function usesGlass() {
     return style === 'glass';
   }
@@ -104,7 +104,15 @@
     try { eink = eink || container.classList.contains('eink'); } catch (_) {}
     try {
       container.classList.toggle('fushi-m3e', style === 'm3e' && !eink);
+      // Cupertino（存储值仍是 'glass'，冻结不改）= popup.css 的 Apple 设计系统视觉层：generate-content-css.mjs
+      // 把 html.fushi-glass-host.fushi-apple 重根成 :where(#entries-container).fushi-glass-host.fushi-apple，
+      // 两个 class 都挂在容器上。popup.js 据 fushi-apple 出 SF 风格字形；翻转时重盖已渲染按钮。
+      var apple = style === 'glass' && !eink;
+      var wasApple = container.classList.contains('fushi-apple');
+      container.classList.toggle('fushi-glass-host', apple);
+      container.classList.toggle('fushi-apple', apple);
       container.classList.toggle('fushi-reduced-motion', reducedMotion());
+      if (wasApple !== apple && typeof window.__fushiRefreshIcons === 'function') window.__fushiRefreshIcons();
     } catch (_) {}
   }
 

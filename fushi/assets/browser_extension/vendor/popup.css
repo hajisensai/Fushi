@@ -2779,10 +2779,28 @@ html.fushi-glass-host.fushi-apple[data-theme="dark"] .header-buttons > .favorite
     color: #ffd60a;
 }
 
-/* 静息「+」由 ::before/::after 以 em 画十字（见 .mine-button:not(.duplicate)）：字号只决定
-   十字大小，33px → 臂长 15.4px，与同排 20px SVG 字形的可见轮廓等高。 */
-html.fushi-glass-host.fushi-apple .header-buttons > .mine-button:not(.duplicate) {
-    font-size: 33px;
+/* 制卡按钮在 Apple 下与同排一样是 SF 字形 SVG（popup.js __fushiPaintMineGlyph：plus /
+   checkmark / checkmark + arrow.uturn.left 角标），不再用文本标记与 ::before/::after 拼的十字：
+   摘掉十字、恢复文本填充、字号与同排对齐。未制卡 plus 用强调色（主动作）。 */
+html.fushi-glass-host.fushi-apple .header-buttons > .mine-button,
+html.fushi-glass-host.fushi-apple .header-buttons > .mine-button.latest {
+    font-size: 20px;
+    -webkit-text-fill-color: currentColor;
+}
+
+html.fushi-glass-host.fushi-apple .header-buttons > .mine-button::before,
+html.fushi-glass-host.fushi-apple .header-buttons > .mine-button::after {
+    content: none;
+}
+
+html.fushi-glass-host.fushi-apple .header-buttons > .mine-button:where(:not(.duplicate)) {
+    color: var(--md-primary, var(--primary-color));
+}
+
+html.fushi-glass-host.fushi-apple .header-buttons > .inline-action-button > svg {
+    display: block;
+    width: 1em;
+    height: 1em;
 }
 
 html.fushi-glass-host.fushi-apple .header-buttons > .mine-button.duplicate {
@@ -2790,7 +2808,6 @@ html.fushi-glass-host.fushi-apple .header-buttons > .mine-button.duplicate {
 }
 
 html.fushi-glass-host.fushi-apple .header-buttons > .mine-button.latest {
-    font-size: 17px;
     color: #34c759;
 }
 
