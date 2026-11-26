@@ -331,9 +331,10 @@ extension _VideoMiniWindow on _VideoFushiPageState {
       return _buildPictureInPicturePlaybackSync(controller);
     }
     final ColorScheme cs = _videoChromeColorScheme(context);
-    // 与底栏那两个 ±10s 键同一个常量（见 [_buildBottomSlotButton] 的
-    // seekBackward / seekForward 分支）：小窗里换个位置，语义必须还是同一个键。
-    const int seekMs = 10000;
+    // 与底栏短步进键同一个值（见 [_buildBottomSlotButton] 的 seekBackward /
+    // seekForward 分支，读 asbplayer 配置 seekSeconds）：小窗里换个位置，语义必须
+    // 还是同一个键。
+    final int seekMs = _asbSeekMs;
     return Positioned.fill(
       child: ListenableBuilder(
         // 与顶部那条带同源：桌面小窗只认显式唤出、常规窄窗口跟 hover（见
@@ -356,7 +357,9 @@ extension _VideoMiniWindow on _VideoFushiPageState {
               children: <Widget>[
                 _miniWindowRoundButton(
                   icon: Icons.fast_rewind_rounded,
-                  tooltip: t.video_bottom_seek_back,
+                  tooltip: _videoControlItemTooltip(
+                    VideoControlItem.seekBackward,
+                  ),
                   colorScheme: cs,
                   onPressed: () => unawaited(_seekRelative(-seekMs)),
                 ),
@@ -379,7 +382,9 @@ extension _VideoMiniWindow on _VideoFushiPageState {
                 SizedBox(width: 16 * _videoUiScale),
                 _miniWindowRoundButton(
                   icon: Icons.fast_forward_rounded,
-                  tooltip: t.video_bottom_seek_forward,
+                  tooltip: _videoControlItemTooltip(
+                    VideoControlItem.seekForward,
+                  ),
                   colorScheme: cs,
                   onPressed: () => unawaited(_seekRelative(seekMs)),
                 ),

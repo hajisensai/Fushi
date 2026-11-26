@@ -251,7 +251,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       // 与注册表打架。
       keyboardShortcuts: const <ShortcutActivator, VoidCallback>{},
       // 画面中央不挂任何键（shishamo 反馈「中间这个太挡视野」）：桌面底栏已有完全
-      // 相同的 −10s / 播放暂停 / +10s，键盘（空格 / Enter / 方向键）走整页快捷键表，
+      // 相同的 −Ns / 播放暂停 / +Ns，键盘（空格 / Enter / 方向键）走整页快捷键表，
       // 桌面触屏有单击切控制栏 + 双击暂停 / 快退快进。fork 默认值本就是空表，这里
       // 显式传空是为了让「桌面中央无键」成为一处可见的决定。缓冲指示不受影响。
       primaryButtonBar: _m3eCenterControlsBar(controller, desktop: true),
@@ -312,13 +312,13 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       ],
       bottomButtonBar: <Widget>[
         // 三区 Stack 布局把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
-        // seek 簇。±10s 带可见标注（旧底栏只有 tooltip，用户看不懂图标）。media_kit 把
+        // seek 簇。±Ns 带可见标注（旧底栏只有 tooltip，用户看不懂图标）。media_kit 把
         // bottomButtonBar 放进 Row，用单个 [Expanded] 占满整宽承接三区布局。
         // 进度/时长文字吃「界面大小」（TODO-128）、5 键带 Tooltip（BUG-247）均在
         // [_centeredBottomControlBar] 内保留。
         // mini 档整行让位给本仓自绘的居中大三键（[_buildMiniWindowCenterControls]，
         // 即系统画中画那种观感）；系统画中画下连三键也不画（系统自带控件）。
-        // Apple：方案 C 底栏（桌面单行条、进度条行内 / 触屏两枚胶囊），播放 / ±10
+        // Apple：方案 C 底栏（桌面单行条、进度条行内 / 触屏两枚胶囊），播放 / ±N
         // 在底栏首位，画面中央不放控件。M3E 原样。
         if (apple)
           ..._appleBottomButtonBar(controller, layout, desktop: true)
@@ -622,11 +622,11 @@ extension _VideoControlsTheme on _VideoFushiPageState {
       ],
       bottomButtonBar: <Widget>[
         // 三簇控制条（[VideoControlBar]，BUG-2792/2832）把 play 钉在几何中心（BUG-257）：左时间 / 右尾部按钮 / 居中
-        // seek 簇，与桌面同源（[_centeredBottomControlBar]）。±10s 带可见标注、5 键带
+        // seek 簇，与桌面同源（[_centeredBottomControlBar]）。±Ns 带可见标注、5 键带
         // Tooltip（BUG-247）、上/下一句走动态 cue 导航（无字幕段对称回退/前进，TODO-073/
         // TODO-119/BUG-198，动态 _asbConfig.seekSeconds 不写死）均在 helper 内保留。
         // 同桌面：mini 档整行让位给自绘居中三键。
-        // Apple：方案 C 底栏（桌面单行条、进度条行内 / 触屏两枚胶囊），播放 / ±10
+        // Apple：方案 C 底栏（桌面单行条、进度条行内 / 触屏两枚胶囊），播放 / ±N
         // 在底栏首位，画面中央不放控件。M3E 原样。
         if (apple)
           ..._appleBottomButtonBar(controller, layout, desktop: false)
@@ -796,7 +796,7 @@ extension _VideoControlsTheme on _VideoFushiPageState {
     );
   }
 
-  /// 画面中央控制行（fork `primaryButtonBar`）。原先是 `[−10s] [▶ 96dp] [+10s]`
+  /// 画面中央控制行（fork `primaryButtonBar`）。原先是 `[−Ns] [▶ 96dp] [+Ns]`
   /// 半透明大圆块，正压在画面中心（shishamo 反馈「太挡视野」），现收成：
   ///
   /// - 桌面（[desktop]，含桌面触屏模式）：空。底栏已有同一组传输键，触屏有单击切

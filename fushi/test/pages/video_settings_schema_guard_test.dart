@@ -70,6 +70,7 @@ void main() {
       'video.playback.lock_window_aspect',
       'video.playback.long_press_speed',
       'video.playback.seek_seconds',
+      'video.playback.long_seek_seconds',
       // Image quality (mpv pure-pref subset)
       'video.quality.enhancement',
       'video.quality.sigmoid',

@@ -91,15 +91,21 @@ void main() {
       greaterThanOrEqualTo(3),
       reason: 'previous/play/next cue buttons each need a Tooltip',
     );
+    // 短 / 长步进四颗 seek 键的 tooltip 都走 _videoControlItemTooltip（带当前配置的
+    // 秒数：短步进 seekSeconds、长步进 longSeekSeconds），不再写死「10 秒」。
     expect(
-      'tooltip: t.video_bottom_seek_back'.allMatches(slotButtons).length,
+      'tooltip: _videoControlItemTooltip(item)'.allMatches(slotButtons).length,
       1,
-      reason: '-10s seek button should pass tooltip into _seekLabelButton',
+      reason:
+          'each seek button should pass its dynamic tooltip to '
+          '_seekLabelButton',
     );
+    // 旧的写死「10 秒」文案键（video_bottom_seek_back / forward）不再出现在底栏。
     expect(
-      'tooltip: t.video_bottom_seek_forward'.allMatches(slotButtons).length,
-      1,
-      reason: '+10s seek button should pass tooltip into _seekLabelButton',
+      RegExp(
+        r't\.video_bottom_seek_(back|forward)(?!_seconds_label)',
+      ).hasMatch(slotButtons),
+      isFalse,
     );
     expect(
       bar.contains('VideoControlSlot.bottomCenter'),

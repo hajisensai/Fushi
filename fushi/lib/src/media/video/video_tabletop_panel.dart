@@ -1,4 +1,5 @@
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/media/video/video_apple_seek_glyph.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_player.dart';
@@ -6,6 +7,8 @@ import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_palette.dart';
 import 'package:fushi/src/utils/components/glass/fushi_expressive.dart';
+import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart'
+    show FushiIconButtonControl;
 import 'package:fushi/src/utils/components/glass/fushi_glass_feedback.dart'
     show FushiTooltip;
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
@@ -19,10 +22,13 @@ import 'package:material_ui/material_ui.dart';
 /// 指南的桌面模式媒体播放器。
 ///
 /// 两套设计系统各自成套：
-/// - Material（M3E）：波浪进度条 + 形变播放键 + ±10 秒 tonal 圆钮（与歌词模式 /
-///   字幕遥控器同一套 `fushi_m3e_player` 公共件）。
-/// - Apple：iOS 细轨滑块 + SF 实心字形圆钮（语义图标 [FushiIcons] 经 [FushiIcon]
-///   按设计系统换字形），底色取系统分组灰（实色，不上玻璃）。
+/// - Material（M3E）：波浪进度条 + 形变播放键 + 短 / 长步进 tonal 圆钮（圆钮下标
+///   「−Ns / +Ns」，与视频控制条的步进键同一种标注）。
+/// - Apple：iOS 细轨滑块 + 圆钮，步进键画 [VideoAppleSeekGlyph]（圆箭头里写着秒数），
+///   底色取系统分组灰（实色，不上玻璃）。
+///
+/// 步进秒数不写死：短步进 [seekSeconds]、长步进 [longSeekSeconds]，由视频页从
+/// asbplayer 配置（与控制条 / 快捷键同一份）传入。
 ///
 /// 不认识播放器对象：位置经 [position] / [duration] 读，操作全是回调，[listenable]
 /// 通知播放态变化，[positionListenable] 推送位置变化——两套设计系统都由它驱动进度，
@@ -37,6 +43,8 @@ class VideoTabletopPanel extends StatelessWidget {
     required this.onPlayPause,
     required this.onSeek,
     required this.onSeekRelative,
+    required this.seekSeconds,
+    required this.longSeekSeconds,
     super.key,
     this.title,
   });
@@ -55,6 +63,12 @@ class VideoTabletopPanel extends StatelessWidget {
 
   /// 相对跳转（秒，负数后退）。
   final ValueChanged<int> onSeekRelative;
+
+  /// 短步进秒数（asbplayer `seekSeconds`）。
+  final int seekSeconds;
+
+  /// 长步进秒数（asbplayer `longSeekSeconds`）。
+  final int longSeekSeconds;
 
   /// 当前标题（随 [listenable] 重读）；null / 空串不显示。
   final String? Function()? title;
@@ -128,20 +142,30 @@ class _MaterialTabletopPanel extends StatelessWidget {
               FushiButtonGroup(
                 spacing: 12,
                 children: <Widget>[
-                  fushiRelativeSeekButton(
-                    -10,
-                    panel.onSeekRelative,
-                    keyPrefix: 'video_tabletop',
+                  _MaterialSeekStepButton(
+                    panel: panel,
+                    forward: false,
+                    long: true,
+                  ),
+                  _MaterialSeekStepButton(
+                    panel: panel,
+                    forward: false,
+                    long: false,
                   ),
                   FushiExpressivePlayButton(
                     isPlaying: playing,
                     size: 64,
                     onPressed: panel.onPlayPause,
                   ),
-                  fushiRelativeSeekButton(
-                    10,
-                    panel.onSeekRelative,
-                    keyPrefix: 'video_tabletop',
+                  _MaterialSeekStepButton(
+                    panel: panel,
+                    forward: true,
+                    long: false,
+                  ),
+                  _MaterialSeekStepButton(
+                    panel: panel,
+                    forward: true,
+                    long: true,
                   ),
                 ],
               ),
@@ -266,44 +290,28 @@ class _AppleTabletopPanelState extends State<_AppleTabletopPanel> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: <Widget>[
-                  _AppleRoundButton(
-                    key: const ValueKey<String>(
-                      'video_tabletop_seek_back_button',
-                    ),
-                    icon: FushiIcons.replay10,
-                    diameter: 48,
-                    iconSize: 24,
-                    tooltip: t.video_control_seek_backward,
-                    background: apple.tertiaryFill,
-                    foreground: apple.label,
-                    onPressed: () => panel.onSeekRelative(-10),
-                  ),
-                  const SizedBox(width: 24),
+                  _appleSeekStep(panel, apple, forward: false, long: true),
+                  const SizedBox(width: 16),
+                  _appleSeekStep(panel, apple, forward: false, long: false),
+                  const SizedBox(width: 16),
                   _AppleRoundButton(
                     key: const ValueKey<String>('video_tabletop_play_button'),
-                    icon: FushiIcons.filled(
-                      playing ? FushiIcons.pause : FushiIcons.play,
+                    glyph: FushiIcon(
+                      FushiIcons.filled(
+                        playing ? FushiIcons.pause : FushiIcons.play,
+                      ),
+                      size: 30,
+                      color: apple.onAccent,
                     ),
                     diameter: 64,
-                    iconSize: 30,
                     tooltip: playing ? t.pause : t.play,
                     background: apple.accent,
-                    foreground: apple.onAccent,
                     onPressed: panel.onPlayPause,
                   ),
-                  const SizedBox(width: 24),
-                  _AppleRoundButton(
-                    key: const ValueKey<String>(
-                      'video_tabletop_seek_forward_button',
-                    ),
-                    icon: FushiIcons.forward10,
-                    diameter: 48,
-                    iconSize: 24,
-                    tooltip: t.video_control_seek_forward,
-                    background: apple.tertiaryFill,
-                    foreground: apple.label,
-                    onPressed: () => panel.onSeekRelative(10),
-                  ),
+                  const SizedBox(width: 16),
+                  _appleSeekStep(panel, apple, forward: true, long: false),
+                  const SizedBox(width: 16),
+                  _appleSeekStep(panel, apple, forward: true, long: true),
                 ],
               ),
             ],
@@ -314,24 +322,102 @@ class _AppleTabletopPanelState extends State<_AppleTabletopPanel> {
   }
 }
 
+/// 步进键的 key：短步进沿用旧 key（`video_tabletop_seek_*_button`），长步进加 `long_`。
+ValueKey<String> _seekStepKey({required bool forward, required bool long}) =>
+    ValueKey<String>(
+      'video_tabletop_${long ? 'long_' : ''}seek_'
+      '${forward ? 'forward' : 'back'}_button',
+    );
+
+int _seekStepSeconds(VideoTabletopPanel panel, {required bool long}) =>
+    long ? panel.longSeekSeconds : panel.seekSeconds;
+
+String _seekStepTooltip(int seconds, {required bool forward}) => forward
+    ? t.video_control_seek_forward_seconds(seconds: seconds)
+    : t.video_control_seek_backward_seconds(seconds: seconds);
+
+/// Apple 面板的一颗步进圆钮：圆箭头里写着当前秒数（[VideoAppleSeekGlyph]）。
+Widget _appleSeekStep(
+  VideoTabletopPanel panel,
+  FushiAppleColors apple, {
+  required bool forward,
+  required bool long,
+}) {
+  final int seconds = _seekStepSeconds(panel, long: long);
+  return _AppleRoundButton(
+    key: _seekStepKey(forward: forward, long: long),
+    glyph: VideoAppleSeekGlyph(
+      forward: forward,
+      seconds: seconds,
+      size: 24,
+      color: apple.label,
+    ),
+    diameter: 48,
+    tooltip: _seekStepTooltip(seconds, forward: forward),
+    background: apple.tertiaryFill,
+    onPressed: () => panel.onSeekRelative(forward ? seconds : -seconds),
+  );
+}
+
+/// M3E 面板的一颗步进键：tonal 圆钮（短步进快退 / 快进图标，长步进双箭头）+ 圆钮下
+/// 「−Ns / +Ns」标注，秒数随配置变。
+class _MaterialSeekStepButton extends StatelessWidget {
+  const _MaterialSeekStepButton({
+    required this.panel,
+    required this.forward,
+    required this.long,
+  });
+
+  final VideoTabletopPanel panel;
+  final bool forward;
+  final bool long;
+
+  @override
+  Widget build(BuildContext context) {
+    final int seconds = _seekStepSeconds(panel, long: long);
+    final ColorScheme cs = Theme.of(context).colorScheme;
+    final IconData icon = long
+        ? (forward
+              ? FushiIcons.doubleChevronRight
+              : FushiIcons.doubleChevronLeft)
+        : (forward ? FushiIcons.fastForward : FushiIcons.fastRewind);
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        FushiIconButtonControl.filledTonal(
+          key: _seekStepKey(forward: forward, long: long),
+          size: ButtonSizeVariant.small,
+          tooltip: _seekStepTooltip(seconds, forward: forward),
+          onPressed: () => panel.onSeekRelative(forward ? seconds : -seconds),
+          icon: FushiIcon(icon),
+        ),
+        Text(
+          forward
+              ? t.video_bottom_seek_forward_seconds_label(seconds: seconds)
+              : t.video_bottom_seek_back_seconds_label(seconds: seconds),
+          style: context.fushiType.labelSmall.copyWith(
+            color: cs.onSurfaceVariant,
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 class _AppleRoundButton extends StatelessWidget {
   const _AppleRoundButton({
-    required this.icon,
+    required this.glyph,
     required this.diameter,
-    required this.iconSize,
     required this.tooltip,
     required this.background,
-    required this.foreground,
     required this.onPressed,
     super.key,
   });
 
-  final IconData icon;
+  final Widget glyph;
   final double diameter;
-  final double iconSize;
   final String tooltip;
   final Color background;
-  final Color foreground;
   final VoidCallback onPressed;
 
   @override
@@ -350,7 +436,7 @@ class _AppleRoundButton extends StatelessWidget {
               onTap: onPressed,
               child: SizedBox.square(
                 dimension: diameter,
-                child: FushiIcon(icon, size: iconSize, color: foreground),
+                child: Center(child: glyph),
               ),
             ),
           ),

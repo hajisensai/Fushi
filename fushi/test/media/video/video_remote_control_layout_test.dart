@@ -34,7 +34,37 @@ void main() {
           VideoRemoteControlItem.subtitleVisibility,
           VideoRemoteControlItem.seekBack,
           VideoRemoteControlItem.seekForward,
+          VideoRemoteControlItem.longSeekBack,
+          VideoRemoteControlItem.longSeekForward,
         ]),
+      );
+    });
+
+    test('长步进：出厂与旧存档都在托盘，可拖上来并保存', () {
+      final VideoRemoteControlLayout legacy = VideoRemoteControlLayout.decode(
+        jsonEncode(<String, Object>{
+          'version': 1,
+          'slots': <String, List<String>>{
+            'primary': <String>['previousCue', 'playPause', 'nextCue'],
+            'secondary': <String>['seekBack', 'seekForward'],
+          },
+        }),
+      );
+      for (final VideoRemoteControlItem item in <VideoRemoteControlItem>[
+        VideoRemoteControlItem.longSeekBack,
+        VideoRemoteControlItem.longSeekForward,
+      ]) {
+        expect(VideoRemoteControlItem.fromStorage(item.storageValue), item);
+        expect(legacy.removedItems, contains(item));
+        expect(legacy.secondaryItems, isNot(contains(item)));
+      }
+      final VideoRemoteControlLayout placed = legacy.moveItem(
+        VideoRemoteControlItem.longSeekForward,
+        VideoRemoteControlSlot.secondary,
+      );
+      expect(
+        VideoRemoteControlLayout.decode(placed.encode()).secondaryItems,
+        contains(VideoRemoteControlItem.longSeekForward),
       );
     });
 

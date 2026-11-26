@@ -29,6 +29,7 @@ import 'package:fushi/src/media/video/video_player_controller.dart';
 import 'package:fushi/src/media/video/video_current_line_copy.dart';
 import 'package:fushi/src/media/video/video_simultaneous_cues.dart';
 import 'package:fushi/src/media/video/video_player_shortcuts.dart';
+import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/media/video/video_subtitle_jump_panel.dart';
 import 'package:fushi/src/media/video/video_subtitle_overlay.dart';
 import 'package:fushi/src/media/video/video_study_accrual_arbiter.dart';
@@ -2393,6 +2394,15 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   // ── 快捷键（与视频页同一注册表、同一动作集合）────────────────────────────
 
+  /// 短 / 长步进（键盘 ←/→ 与 Shift+←/→、手机遥控步进键）：秒数与本地视频页同一份
+  /// asbplayer 配置（seekSeconds / longSeekSeconds），用的时候现读，设置页改了立即生效。
+  VideoAsbplayerConfig get _asbConfig =>
+      VideoAsbplayerConfig.decode(_appModel.videoAsbplayerConfig);
+
+  int get _shortSeekMs => _asbConfig.seekSeconds * 1000;
+
+  int get _longSeekMs => _asbConfig.longSeekSeconds * 1000;
+
   VideoPlayerShortcutActions _shortcutActions() {
     void noop() {}
     return VideoPlayerShortcutActions(
@@ -2401,8 +2411,10 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       pause: () => unawaited(_pause()),
       previousSubtitle: () => unawaited(_seekToCueOffset(-1)),
       nextSubtitle: () => unawaited(_seekToCueOffset(1)),
-      seekBackward: () => unawaited(_seekRelative(-5000)),
-      seekForward: () => unawaited(_seekRelative(5000)),
+      seekBackward: () => unawaited(_seekRelative(-_shortSeekMs)),
+      seekForward: () => unawaited(_seekRelative(_shortSeekMs)),
+      longSeekBackward: () => unawaited(_seekRelative(-_longSeekMs)),
+      longSeekForward: () => unawaited(_seekRelative(_longSeekMs)),
       toggleShaderCompare: noop,
       // 音量走 glue（Netflix 上是正片播放器的 setVolume / setMuted），不直写 <video>.volume。
       volumeUp: () => unawaited(_js('window.__fushiWebVideo.nudgeVolume(0.1)')),
@@ -2652,6 +2664,9 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         'playing': _state?.isPlaying ?? false,
         'speed': _state?.rate ?? 1.0,
         'controlRevision': _remoteControlRevision,
+        // 手机短 / 长步进键的秒数（`seekStep` 由本页按同一组值执行）。
+        'seekSeconds': _asbConfig.seekSeconds,
+        'longSeekSeconds': _asbConfig.longSeekSeconds,
         'primaryTrack': _trackSel.activeKey,
         'secondaryTrack': null,
         'primaryDelayMs': _controller.delayMs,
@@ -2704,6 +2719,12 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
             episode: episode,
           ),
       downloadSubtitle: _downloadRemoteSubtitle,
+      // 手机短 / 长步进：与本页键盘 ←/→、Shift+←/→ 同一组步长。
+      seekStep: ({required bool forward, required bool long}) {
+        _requireRemoteControllable();
+        final int ms = long ? _longSeekMs : _shortSeekMs;
+        return _seekRelative(forward ? ms : -ms);
+      },
       close: () async {
         if (!mounted) throw const VideoRemoteException(409, 'no_video');
         if (!await Navigator.of(context).maybePop()) {

@@ -12,7 +12,7 @@ import 'package:fushi/src/media/video/video_control_customization.dart';
 //
 // - 左上：返回圆钮 + 靠左标题；
 // - 右上：一枚玻璃胶囊，只放少量动作 + 全局唯一的「⋯」；
-// - 底部：传输组（播放 / −10 / +10）起首，其后是前导簇，进度条与时间在中段（桌面
+// - 底部：传输组（播放 / −N / +N）起首，其后是前导簇，进度条与时间在中段（桌面
 //   单行条里行内；触屏在胶囊上方独立一行），末尾是后随簇；
 // - 屏幕左 / 右侧栏：沿用用户布局（沉浸锁等）。
 //
@@ -100,7 +100,7 @@ class VideoAppleChromePlan {
   };
 }
 
-/// 传输组：恒在底部条首位（播放最显眼，其后 −10 / +10）。
+/// 传输组：恒在底部条首位（播放最显眼，其后 −N / +N）。
 const List<VideoControlItem> kVideoAppleTransportItems = <VideoControlItem>[
   VideoControlItem.playPause,
   VideoControlItem.seekBackward,
@@ -139,7 +139,7 @@ _AppleHome? _appleHomeOf(VideoControlItem item, VideoAppleChromeForm form) {
 ///
 /// 规则（逐次摆放判，按钮可在多个槽各放一份）：
 ///
-/// 1. 播放 / 暂停、±10 秒是底部条首位的传输组，恒在；它们在别的顶部 / 底部槽的摆放
+/// 1. 播放 / 暂停、±N 秒是底部条首位的传输组，恒在；它们在别的顶部 / 底部槽的摆放
 ///    与「⋯」里的行一并去重（不会出现两份）。屏幕侧栏是用户的单手操作区，不动。
 /// 2. 返回、标题：放在任一可见槽即在左上（返回圆钮 + 靠左标题）。
 /// 3. 仍在**出厂槽位**（[VideoControlLayout.currentChrome]）的几颗按方案 C 重新安家：
@@ -339,7 +339,7 @@ VideoAppleChromePlan planVideoAppleChrome({
 }
 
 /// 传输键的来源槽：用户把它放在哪个可见槽就记哪个（浮层 / 执行上下文），一个都没有
-/// （出厂 ±10 在 hidden）时记底部中簇。
+/// （出厂 ±N 在 hidden）时记底部中簇。
 VideoControlSlot _transportSourceSlot(
   VideoControlLayout layout,
   VideoControlItem item,

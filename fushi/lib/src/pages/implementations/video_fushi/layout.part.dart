@@ -1251,6 +1251,8 @@ extension _VideoLayout on _VideoFushiPageState {
       },
       onSeekRelative: (int seconds) =>
           unawaited(controller.seekRelative(seconds * 1000)),
+      seekSeconds: _asbConfig.seekSeconds,
+      longSeekSeconds: _asbConfig.longSeekSeconds,
     );
   }
 

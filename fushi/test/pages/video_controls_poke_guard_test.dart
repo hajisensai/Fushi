@@ -101,7 +101,7 @@ void main() {
       );
     });
 
-    test('键盘 / 手柄六个入口只【续命】控制条，不唤起（BUG-2030）', () {
+    test('键盘 / 手柄八个入口只【续命】控制条，不唤起（BUG-2030）', () {
       // BUG-2030 把 BUG-176 ② 的「每个入口都 poke」拆成两个语义：
       //   指针交互（底栏按钮 tap / 双击 / hover）→ _pokeControlsVisible（唤起 + 续命）
       //   键盘 / 手柄快捷键          → _keepControlsAliveIfVisible（只在已可见时续命）
@@ -114,6 +114,8 @@ void main() {
         'nextSubtitle',
         'seekBackward',
         'seekForward',
+        'longSeekBackward',
+        'longSeekForward',
         'previousChapter',
         'nextChapter',
       ]) {

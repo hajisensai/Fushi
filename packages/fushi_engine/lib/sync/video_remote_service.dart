@@ -173,8 +173,16 @@ const Set<String> videoRemoteOperations = <String>{
 ///   lookup card opens on the computer screen ([videoRemoteCapabilityCaret]).
 ///   Answers `{ok, caret}` with the cursor's surface afterwards (see
 ///   [videoRemoteCaretSurfaces]); the snapshot carries the same `caret`.
+/// * `seekStep` — `{step: 'back'|'forward', size: 'short'|'long'}`
+///   ([videoRemoteSeekSteps] / [videoRemoteSeekStepSizes],
+///   [videoRemoteCapabilitySeekStep]): a relative seek by the computer's own
+///   configured step (its keyboard short / long seek), so the computer stays
+///   the single source of the step length. The snapshot carries the lengths
+///   as `seekSeconds` / `longSeekSeconds` (int seconds) for the phone's labels.
+///   A phone talking to a host without the capability falls back to an
+///   absolute `seek` by its own fixed step.
 ///
-/// The last five are newer than the protocol itself: a host that predates
+/// The last six are newer than the protocol itself: a host that predates
 /// them answers `400 invalid_action`, a host whose player cannot do one
 /// answers `409 action_unsupported`. Phones only offer an action when the
 /// snapshot's `capabilities` list names it, so neither reaches a user.
@@ -188,7 +196,15 @@ const Set<String> videoRemoteCommandActions = <String>{
   'subtitleTrack',
   'subtitleDownload',
   'caret',
+  'seekStep',
 };
+
+/// `step` values of the `seekStep` command.
+const Set<String> videoRemoteSeekSteps = <String>{'back', 'forward'};
+
+/// `size` values of the `seekStep` command: the computer's short (keyboard
+/// arrow) or long (Shift+arrow) seek step.
+const Set<String> videoRemoteSeekStepSizes = <String>{'short', 'long'};
 
 /// Steps of the `caret` command. The computer routes each by where its cursor
 /// is: on the subtitle `enter` starts it (pausing playback) on the first
@@ -232,6 +248,10 @@ const String videoRemoteCapabilityEpisodes = 'episodes';
 const String videoRemoteCapabilitySubtitleTracks = 'subtitleTracks';
 const String videoRemoteCapabilitySubtitleSearch = 'subtitleSearch';
 const String videoRemoteCapabilityCaret = 'caret';
+
+/// The player answers `seekStep` and publishes `seekSeconds` /
+/// `longSeekSeconds` in its state.
+const String videoRemoteCapabilitySeekStep = 'seekStep';
 
 /// The open video can be closed from the phone (`closeVideo`).
 const String videoRemoteCapabilityCloseVideo = 'closeVideo';

@@ -56,6 +56,9 @@ extension _VideoRemoteControl on _VideoFushiPageState {
         'episodeCount': _episodes.length,
         // 选词光标在哪（手机触控板据此切换手势）。
         'caret': _remoteCaretSurface,
+        // 手机短 / 长步进键的秒数（`seekStep` 由本页按同一份配置执行）。
+        'seekSeconds': _asbConfig.seekSeconds,
+        'longSeekSeconds': _asbConfig.longSeekSeconds,
       },
       command: (String action, Map<String, dynamic> body) async {
         switch (action) {
@@ -123,6 +126,12 @@ extension _VideoRemoteControl on _VideoFushiPageState {
       episodeCover: _remoteEpisodeCover,
       // 手机「关闭视频」：与点播换片同一条媒体切换队列、同一个退出流程（落进度）。
       close: _closeForRemote,
+      // 手机短 / 长步进：与键盘 ←/→、Shift+←/→ 同一份 asbplayer 配置（主机是步长的
+      // 唯一真相源），走 controller.seekRelative（同遥控 seekByMs）。
+      seekStep: ({required bool forward, required bool long}) async {
+        final int ms = long ? _asbLongSeekMs : _asbSeekMs;
+        await controller.seekRelative(forward ? ms : -ms);
+      },
     );
     // 先登记新的再撤旧的：先撤会让宿主回落到压在下面的播放器（浏览页等），手机闪一下。
     final VideoRemotePlaybackBinding? previous = _videoRemoteBinding;

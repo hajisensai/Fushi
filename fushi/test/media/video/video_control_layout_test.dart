@@ -1418,6 +1418,66 @@ void main() {
   });
 
   // 反馈 X3ozgOAx8v：「识别当前画面」按钮默认不在任何布局里，用户自行加。
+  // 长步进（第二档 seek）：默认隐藏，用户在控件布局编辑器里拖上来才出现。
+  group('long seek control items', () {
+    const List<VideoControlItem> longSeek = <VideoControlItem>[
+      VideoControlItem.longSeekBackward,
+      VideoControlItem.longSeekForward,
+    ];
+
+    test('round-trip their storage ids and are offered in the palette', () {
+      for (final VideoControlItem item in longSeek) {
+        expect(VideoControlItem.fromStorage(item.storageValue), item);
+        expect(VideoControlItem.customizableItems, contains(item));
+        expect(item.isChipRenderable, isTrue);
+      }
+      expect(
+        VideoControlItem.longSeekBackward.storageValue,
+        'longSeekBackward',
+      );
+      expect(VideoControlItem.longSeekForward.storageValue, 'longSeekForward');
+    });
+
+    test('defaults, factory chrome and old saved layouts keep them hidden', () {
+      final VideoControlLayout fresh = VideoControlLayout.decode('');
+      final VideoControlLayout legacy = VideoControlLayout.decode(
+        jsonEncode(<String, Object>{
+          'version': 3,
+          'slots': <String, List<String>>{
+            'bottomCenter': <String>[
+              'seekBackward',
+              'playPause',
+              'seekForward',
+            ],
+            'bottomRight': <String>['volume', 'fullscreen'],
+          },
+        }),
+      );
+      for (final VideoControlItem item in longSeek) {
+        expect(VideoControlLayout.defaults.isOnPlayer(item), isFalse);
+        expect(VideoControlLayout.currentChrome.isOnPlayer(item), isFalse);
+        expect(fresh.isOnPlayer(item), isFalse);
+        expect(fresh.removedItems, contains(item));
+        expect(legacy.isOnPlayer(item), isFalse, reason: 'old saved layout');
+        expect(legacy.removedItems, contains(item));
+      }
+    });
+
+    test('can be dragged onto the player and survive encode/decode', () {
+      VideoControlLayout placed = VideoControlLayout.currentChrome;
+      for (final VideoControlItem item in longSeek) {
+        placed = placed.moveItem(item, VideoControlSlot.bottomRight);
+      }
+      final VideoControlLayout reloaded = VideoControlLayout.decode(
+        placed.encode(),
+      );
+      expect(
+        reloaded.itemsIn(VideoControlSlot.bottomRight),
+        containsAll(longSeek),
+      );
+    });
+  });
+
   group('ocrFrame control item', () {
     test('round-trips its storage id', () {
       expect(VideoControlItem.ocrFrame.storageValue, 'ocrFrame');

@@ -377,6 +377,7 @@ import 'package:fushi/src/media/video/video_loop_cue_badge.dart';
 import 'package:fushi/src/media/video/video_apple_chrome.dart';
 import 'package:fushi/src/media/video/video_apple_chrome_bar.dart';
 import 'package:fushi/src/media/video/video_apple_chrome_plan.dart';
+import 'package:fushi/src/media/video/video_apple_seek_glyph.dart';
 import 'package:fushi/src/media/video/video_m3e_chrome.dart';
 import 'package:fushi/src/media/video/video_control_customization.dart';
 import 'package:fushi/src/media/video/video_control_item_presentation.dart';
@@ -2067,6 +2068,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   double? _enterBrightness;
 
   int get _asbSeekMs => _asbConfig.seekSeconds * 1000;
+  int get _asbLongSeekMs => _asbConfig.longSeekSeconds * 1000;
   double get _speedStep => _asbConfig.speedStep;
 
   ColorScheme _videoChromeColorScheme(BuildContext context) =>
@@ -2090,7 +2092,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   Color _videoChromeAccent(ColorScheme cs) =>
       _appleChrome ? videoChromeNeutralForeground : videoChromeAccentColor(cs);
 
-  /// chrome 按钮字形 / 标注的前景（底栏 ±10s、逐帧、media_kit 自带按钮——都在悬浮
+  /// chrome 按钮字形 / 标注的前景（底栏 ±Ns、逐帧、media_kit 自带按钮——都在悬浮
   /// 胶囊里）：与 [VideoM3eIconButton] 同一前景。M3E 走胶囊前景
   /// （[videoM3eChromeForegroundOf]：深色近白、日间近黑、墨水屏白，跟随 app 的
   /// 日间 / 深色模式，2026-10-14）；Apple 恒白（玻璃 + 白字）。强调色只留给播放键、
@@ -10222,6 +10224,15 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         _keepControlsAliveIfVisible();
         unawaited(controller.seekRelative(_asbSeekMs));
       }),
+      // Shift+←/→ = 长步进（±longSeekSeconds 秒），其余语义同短步进。
+      longSeekBackward: () => _runWhenImmersiveAllowsShortcuts(() {
+        _keepControlsAliveIfVisible();
+        unawaited(controller.seekRelative(-_asbLongSeekMs));
+      }),
+      longSeekForward: () => _runWhenImmersiveAllowsShortcuts(() {
+        _keepControlsAliveIfVisible();
+        unawaited(controller.seekRelative(_asbLongSeekMs));
+      }),
       toggleShaderCompare: webGated(
         ShortcutAction.videoToggleShaderCompare,
         () => _runWhenImmersiveAllowsShortcuts(
@@ -10864,7 +10875,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// media_kit 桌面控制主题。底部胶囊条改成居中传输组
-  /// `[−10s][上一句][暂停][下一句][+10s]`（清空中央 primaryButtonBar 避免重复），
+  /// `[−Ns][上一句][暂停][下一句][+Ns]`（清空中央 primaryButtonBar 避免重复），
   /// 左端进度、右端全屏；顶栏右侧放 截图/字幕/音轨/倍速/设置 图标（参照截图）。
   /// 上/下一句走 cue 导航（无字幕/转场段对称回退/前进，
   /// [VideoPlayerController.skipToPrevCueOrSeekBack]/[VideoPlayerController.skipToNextCueOrSeekForward]）。
@@ -10936,7 +10947,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
               desktop: desktop,
               slot: slot,
             ),
-            // ±10s 放不下文字时先退成纯图标，再考虑收进「⋯」（BUG-2832：判据是
+            // ±Ns 放不下文字时先退成纯图标，再考虑收进「⋯」（BUG-2832：判据是
             // 这条栏**实际放不放得下**，不再是「底栏宽 >= 600」）。
             compactChild:
                 item == VideoControlItem.seekBackward ||
@@ -11539,25 +11550,35 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
             onPressed: () => _skipCueAndPokeControls(forward: true),
           ),
         );
+      // 短 / 长步进：原样形态带 ±Ns 文字，秒数取 asbplayer 配置（短 seekSeconds、长
+      // longSeekSeconds，动态）；放不下时的纯图标形态由 [_bottomSlotButtons] 作为
+      // compactChild 另给，取哪个由 [VideoControlBar] 按实际宽度定（BUG-2832）。
       case VideoControlItem.seekBackward:
-        // 原样形态带 ±10s 文字；放不下时的纯图标形态由 [_bottomSlotButtons] 作为
-        // compactChild 另给，取哪个由 [VideoControlBar] 按实际宽度定（BUG-2832）。
-        return _seekLabelButton(
-          icon: Icons.fast_rewind_rounded,
-          label: t.video_bottom_seek_back_label,
-          tooltip: t.video_bottom_seek_back,
-          color: _videoChromeButtonForeground(Theme.of(context).colorScheme),
-          onPressed: () => _seekRelative(-10000),
-        );
       case VideoControlItem.seekForward:
-        // 原样形态带 ±10s 文字；放不下时的纯图标形态由 [_bottomSlotButtons] 作为
-        // compactChild 另给，取哪个由 [VideoControlBar] 按实际宽度定（BUG-2832）。
+      case VideoControlItem.longSeekBackward:
+      case VideoControlItem.longSeekForward:
+        final bool forward =
+            item == VideoControlItem.seekForward ||
+            item == VideoControlItem.longSeekForward;
+        final bool long =
+            item == VideoControlItem.longSeekBackward ||
+            item == VideoControlItem.longSeekForward;
+        final int seconds = long
+            ? _asbConfig.longSeekSeconds
+            : _asbConfig.seekSeconds;
+        final int stepMs = long ? _asbLongSeekMs : _asbSeekMs;
         return _seekLabelButton(
-          icon: Icons.fast_forward_rounded,
-          label: t.video_bottom_seek_forward_label,
-          tooltip: t.video_bottom_seek_forward,
+          icon: forward
+              ? Icons.fast_forward_rounded
+              : Icons.fast_rewind_rounded,
+          label: forward
+              ? t.video_bottom_seek_forward_seconds_label(seconds: seconds)
+              : t.video_bottom_seek_back_seconds_label(seconds: seconds),
+          tooltip: _videoControlItemTooltip(item),
+          forward: forward,
+          seconds: seconds,
           color: _videoChromeButtonForeground(Theme.of(context).colorScheme),
-          onPressed: () => _seekRelative(10000),
+          onPressed: () => _seekRelative(forward ? stepMs : -stepMs),
         );
       case VideoControlItem.frameBackward:
         return _frameStepButton(controller, forward: false);
@@ -11780,6 +11801,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       case VideoControlItem.playPause:
       case VideoControlItem.seekBackward:
       case VideoControlItem.seekForward:
+      case VideoControlItem.longSeekBackward:
+      case VideoControlItem.longSeekForward:
       case VideoControlItem.previousCue:
       case VideoControlItem.nextCue:
       case VideoControlItem.replayCue:
@@ -12045,6 +12068,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return Icons.fast_rewind;
       case VideoControlItem.seekForward:
         return Icons.fast_forward;
+      case VideoControlItem.longSeekBackward:
+      case VideoControlItem.longSeekForward:
+        return videoControlItemIcon(item);
       case VideoControlItem.frameBackward:
         return Icons.arrow_left;
       case VideoControlItem.frameForward:
@@ -12139,10 +12165,23 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         return _immersiveLocked.value
             ? t.video_immersive_unlock
             : t.video_menu_lock;
+      // 短 / 长步进的 tooltip（也是「⋯」菜单项文案）都带当前配置的秒数。
       case VideoControlItem.seekBackward:
-        return t.video_control_seek_backward;
+        return t.video_control_seek_backward_seconds(
+          seconds: _asbConfig.seekSeconds,
+        );
       case VideoControlItem.seekForward:
-        return t.video_control_seek_forward;
+        return t.video_control_seek_forward_seconds(
+          seconds: _asbConfig.seekSeconds,
+        );
+      case VideoControlItem.longSeekBackward:
+        return t.video_control_seek_backward_seconds(
+          seconds: _asbConfig.longSeekSeconds,
+        );
+      case VideoControlItem.longSeekForward:
+        return t.video_control_seek_forward_seconds(
+          seconds: _asbConfig.longSeekSeconds,
+        );
       case VideoControlItem.frameBackward:
         return t.shortcut_action_video_previous_frame;
       case VideoControlItem.frameForward:
@@ -12269,10 +12308,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         unawaited(controller.playOrPause());
         break;
       case VideoControlItem.seekBackward:
-        unawaited(_seekRelative(-10000));
+        unawaited(_seekRelative(-_asbSeekMs));
         break;
       case VideoControlItem.seekForward:
-        unawaited(_seekRelative(10000));
+        unawaited(_seekRelative(_asbSeekMs));
+        break;
+      case VideoControlItem.longSeekBackward:
+        unawaited(_seekRelative(-_asbLongSeekMs));
+        break;
+      case VideoControlItem.longSeekForward:
+        unawaited(_seekRelative(_asbLongSeekMs));
         break;
       case VideoControlItem.frameBackward:
         _pokeControlsVisible();
@@ -12402,7 +12447,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     }
   }
 
-  /// 底栏传输组：`[−10s][上一句][play][下一句][+10s]`，[play] 钉在几何正中（BUG-257）。
+  /// 底栏传输组：`[−Ns][上一句][play][下一句][+Ns]`，[play] 钉在几何正中（BUG-257）。
   ///
   /// 根因：旧底栏 `[时间] Spacer [seek 簇] Spacer [尾部按钮…]` 用两个 [Spacer] 在「时间」
   /// 与「尾部按钮」间均分，尾部按钮越多 seek 簇离整条几何中心越远 → play 偏左。改用
@@ -12412,7 +12457,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// BUG-2792：三区不再 `Stack` 叠放（居中簇与右簇互不知道对方多宽、直接叠画）。
   ///
   /// BUG-2832：三区合成**一条** [VideoControlBar]——左簇 start、传输簇 center、右簇 end，
-  /// 是同一个收起域。放得下时 play 照旧钉正中；放不下时先把 ±10s 退成纯图标，再按
+  /// 是同一个收起域。放得下时 play 照旧钉正中；放不下时先把 ±Ns 退成纯图标，再按
   /// [videoControlItemBarPriority] 把最不要紧的收进右端「⋯」。旧实现给三区各套
   /// `FittedBox(scaleDown)`，窄窗时整排传输键缩成米粒大，点击区远小于 48dp。
   Widget _centeredBottomControlBar(
@@ -12438,7 +12483,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           cluster: VideoBarCluster.start,
         ),
         // 居中传输簇：从 bottomCenter slot 取真实顺序，默认
-        // `[−10s][上一句][play][下一句][+10s]`。
+        // `[−Ns][上一句][play][下一句][+Ns]`。
         ..._bottomSlotButtons(
           VideoControlSlot.bottomCenter,
           controller,
@@ -12480,6 +12525,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       <VideoControlItem>{
         VideoControlItem.seekBackward,
         VideoControlItem.seekForward,
+        VideoControlItem.longSeekBackward,
+        VideoControlItem.longSeekForward,
         VideoControlItem.previousCue,
         VideoControlItem.replayCue,
         VideoControlItem.nextCue,
@@ -12595,7 +12642,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         : MaterialPositionIndicator(style: style);
   }
 
-  /// 带可见标注的 seek 按钮（图标 + `−10s`/`+10s`）。media_kit 的 `MaterialCustomButton`
+  /// 带可见标注的 seek 按钮（图标 + `−Ns`/`+Ns`）。media_kit 的 `MaterialCustomButton`
   /// 只接受单 icon、无可见文字，用户看不懂图标（BUG-257）；这里用 [InkWell] 自绘
   /// 图标 + 紧凑标注，颜色对齐 `buttonBarButtonColor`（cs.primary），仍带 [Tooltip]。
   ///
@@ -12606,6 +12653,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required IconData icon,
     required String label,
     required String tooltip,
+    required bool forward,
+    required int seconds,
     required Color color,
     required VoidCallback onPressed,
   }) {
@@ -12615,6 +12664,8 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
         icon: icon,
         label: label,
         tooltip: tooltip,
+        forward: forward,
+        seconds: seconds,
         color: color,
         onTap: onPressed,
       ),
@@ -12627,13 +12678,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
     required IconData icon,
     required String label,
     required String tooltip,
+    required bool forward,
+    required int seconds,
     required Color color,
     required VoidCallback onTap,
   }) {
-    // Apple：AVKit 的 ±10 秒键是带数字的 SF 字形（gobackward.10 / goforward.10），
-    // 不另挂文字标注；跳转秒数与 MD3 的 ±10s 同一个常量（[_seekRelative] 的 10000）。
+    // Apple：AVKit 的 ±N 秒键是带数字的 SF 字形（gobackward.10 / goforward.30 …），
+    // 不另挂文字标注；秒数 = 调用方给的 [seconds]（短步进取 seekSeconds，长步进取
+    // longSeekSeconds）。
+    // SF 没有对应数字字形的秒数由 [VideoAppleSeekGlyph] 在无数字圆箭头里叠数字。
     if (_appleChrome) {
-      final bool forward = tooltip == t.video_bottom_seek_forward;
       return FushiTooltip(
         message: tooltip,
         child: InkWell(
@@ -12641,10 +12695,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
           customBorder: const CircleBorder(),
           child: Padding(
             padding: EdgeInsets.all(8 * _videoUiScale),
-            child: FushiIcon(
-              forward
-                  ? CupertinoIcons.goforward_10
-                  : CupertinoIcons.gobackward_10,
+            child: VideoAppleSeekGlyph(
+              forward: forward,
+              seconds: seconds,
               size: _videoControlIconSize,
               color: color,
               semanticLabel: label,
@@ -13450,7 +13503,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   }
 
   /// 相对当前位置 seek（±[deltaMs]，底部胶囊条 / 快捷键共用）。每次都唤醒控制条并
-  /// 重置自动隐藏计时（BUG-175 ②；底部 ±10 按钮是 tap，media_kit 也不重置计时）。
+  /// 重置自动隐藏计时（BUG-175 ②；底部 ±N 按钮是 tap，media_kit 也不重置计时）。
   Future<void> _seekRelative(int deltaMs) async {
     _pokeControlsVisible();
     await _controller?.seekRelative(deltaMs);
@@ -14577,7 +14630,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
   /// 集合对它们始终为空，双击路径零改变。
   ///
   /// 同一处顺带记「按下是否落在控件上」（[_chromeVideoPointers]）：按真实 hit-test
-  /// 判，取代旧的顶 / 底两条按钮行高几何带——M3E 浮动底栏比那条带高，连点 ±10s
+  /// 判，取代旧的顶 / 底两条按钮行高几何带——M3E 浮动底栏比那条带高，连点 ±Ns
   /// 的上半截会被当成双击画面切全屏。
   void _recordVideoPointerButton(PointerDownEvent event) {
     if (domMouseButtonFromPointerButtons(event.buttons) != null) {
@@ -14648,7 +14701,7 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       return;
     }
     // 按下落在控件上（控制条任意位置 / 任何可点浮层按钮）不是「点画面」：不参与双击
-    // 判定，并清掉双击追踪——否则连点 ±10s 这类按钮，两次抬起就凑成一次双击画面。
+    // 判定，并清掉双击追踪——否则连点 ±Ns 这类按钮，两次抬起就凑成一次双击画面。
     final BuildContext? controlsContext = _videoControlsContext;
     if (controlsContext == null || !controlsContext.mounted || chromePointer) {
       _lastVideoPointerUpAt = null;

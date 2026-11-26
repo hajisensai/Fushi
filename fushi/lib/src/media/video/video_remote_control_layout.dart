@@ -74,11 +74,20 @@ enum VideoRemoteControlItem implements ControlItemSpec<VideoRemoteControlSlot> {
     recoverySlot: VideoRemoteControlSlot.secondary,
   ),
 
-  /// 后退 10 秒。
+  /// 短步进后退（电脑的 seekSeconds；旧版电脑退回固定 10 秒）。
   seekBack('seekBack', recoverySlot: VideoRemoteControlSlot.secondary),
 
-  /// 前进 10 秒。
+  /// 短步进前进。
   seekForward('seekForward', recoverySlot: VideoRemoteControlSlot.secondary),
+
+  /// 长步进后退（电脑的 longSeekSeconds；旧版电脑退回固定 30 秒）。出厂在托盘。
+  longSeekBack('longSeekBack', recoverySlot: VideoRemoteControlSlot.secondary),
+
+  /// 长步进前进。出厂在托盘。
+  longSeekForward(
+    'longSeekForward',
+    recoverySlot: VideoRemoteControlSlot.secondary,
+  ),
 
   /// 选集（切到同一作品的其它集）。
   episodes('episodes', recoverySlot: VideoRemoteControlSlot.secondary),
@@ -151,7 +160,7 @@ class VideoRemoteControlLayout {
   final ControlLayout<VideoRemoteControlSlot, VideoRemoteControlItem> core;
 
   /// 出厂布局：主组 上一句 / 播放 / 下一句；次组 重播本句 / 收藏 / 回到当前句 /
-  /// 制卡 / 选集 / 字幕轨 / 音量；倍速、字幕显隐、±10 秒在托盘（用户可拖上来）。
+  /// 制卡 / 选集 / 字幕轨 / 音量；倍速、字幕显隐、短 / 长步进在托盘（用户可拖上来）。
   /// 旧存档里没有后三颗时由 [decode] 按这里的位置回填到次组末尾。
   static final VideoRemoteControlLayout defaults = VideoRemoteControlLayout._(
     ControlLayout<VideoRemoteControlSlot, VideoRemoteControlItem>.fromSlots(

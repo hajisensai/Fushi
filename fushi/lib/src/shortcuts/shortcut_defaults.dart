@@ -320,6 +320,16 @@ class ShortcutDefaults {
       ],
       [_gRB, _gDpadRight],
     ),
+    // 长步进（±longSeekSeconds 秒）：Shift+←/→，与裸 ←/→ 短步进同指法、多一个修饰键
+    // 即「同一动作的加强版」。video co-active 组内 Shift+←/→ 未被占用（Ctrl+←/→ 是
+    // 跳句、Ctrl+Shift+←/→ 是字幕偏移对齐）；音乐的 Shift+←/→ 在 music 组，不同时解析。
+    // 手柄不给默认（LB/RB/dpad 已被短步进占满）。
+    ShortcutAction.videoLongSeekBackward: _kb([
+      _key(LogicalKeyboardKey.arrowLeft, {ModifierKey.shift}),
+    ]),
+    ShortcutAction.videoLongSeekForward: _kb([
+      _key(LogicalKeyboardKey.arrowRight, {ModifierKey.shift}),
+    ]),
     ShortcutAction.videoToggleShaderCompare: _kb([
       _key(LogicalKeyboardKey.keyC),
     ]),

@@ -158,6 +158,10 @@ extension ShortcutActionLabel on ShortcutAction {
         return t.shortcut_action_video_seek_backward;
       case ShortcutAction.videoSeekForward:
         return t.shortcut_action_video_seek_forward;
+      case ShortcutAction.videoLongSeekBackward:
+        return t.shortcut_action_video_long_seek_backward;
+      case ShortcutAction.videoLongSeekForward:
+        return t.shortcut_action_video_long_seek_forward;
       case ShortcutAction.videoToggleShaderCompare:
         return t.shortcut_action_video_toggle_shader_compare;
       case ShortcutAction.videoVolumeUp:
@@ -549,6 +553,10 @@ extension ShortcutActionIcon on ShortcutAction {
         return FushiIcons.fastRewind;
       case ShortcutAction.videoSeekForward:
         return FushiIcons.fastForward;
+      case ShortcutAction.videoLongSeekBackward:
+        return FushiIcons.doubleChevronLeft;
+      case ShortcutAction.videoLongSeekForward:
+        return FushiIcons.doubleChevronRight;
       case ShortcutAction.videoPreviousFrame:
         return FushiIcons.stepBackward;
       case ShortcutAction.videoNextFrame:
