@@ -381,6 +381,12 @@ const Map<String, String> kCoveredElsewhere = <String, String>{
   'system/Auto-add new episodes to the video library':
       'test/updates/update_check_scheduler_test.dart（番剧新集域只看 '
       'video_library_auto_update，不看提醒开关）',
+  // 「关闭时最小化到托盘」：只在 Windows 显示（visible: hostPlatform.isWindows），Linux CI
+  // 的 harness 看不到它，Windows 本机才会枚举到。写 prefsRepo 后推给原生托盘通道，
+  // 生效点在原生侧拦 SC_CLOSE；由托盘通道用例与原生关闭契约守卫咬住。
+  'system/Minimize to tray when closing':
+      'test/platform/desktop/desktop_tray_test.dart（开关变化立即重推 closeToTray；'
+      '原生只拦 SC_CLOSE 且受 close_to_tray_ 门控）',
   'system/Notify about app releases':
       'test/updates/update_feed_service_test.dart（关掉的域整批丢弃）',
   'system/System notifications':
