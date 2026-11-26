@@ -8,6 +8,7 @@ library;
 import 'dart:io';
 
 import 'package:fushi_engine/foundation/engine_paths.dart';
+import 'package:fushi_engine/sync/sync_root_folder.dart';
 import 'package:path/path.dart' as p;
 
 class ServerPaths extends EnginePaths {
@@ -21,6 +22,13 @@ class ServerPaths extends EnginePaths {
 
   /// 互联 WebDAV 根与配对/TLS 身份的落点（FushiSyncServer 内部再拼 `sync-data`）。
   Directory get syncData => Directory(p.join(dataDir, 'interconnect'));
+
+  /// 互联 WebDAV 下的同步根 `<syncData>/sync-data/fushi-data`：`HeadlessHost` 把 [syncData] 交给
+  /// `FushiSyncServer`，后者的构造函数再拼一层 `sync-data`
+  /// （packages/fushi_engine/lib/sync/fushi_sync_server.dart；引擎没有导出这个名字）。
+  /// 设备备份收件箱（`DeviceBackupInbox`）就在它下面。
+  String get interconnectSyncRoot =>
+      p.join(syncData.path, 'sync-data', kSyncRootFolderName);
 
   /// 远程 OCR 作业的上传页图（TTL 自清理）。
   Directory get mangaOcrJobs =>

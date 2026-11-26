@@ -206,6 +206,39 @@ void main() {
       expect(readServerBackupManifest(out).includesDocuments, isFalse);
     });
 
+    test('已配对设备复制来的自动备份（设备备份收件箱）不进整机备份，互联其余数据照进', () async {
+      final File out = File(p.join(h.tmp.path, 'b.zip'));
+      expect(
+        await h.run(module, <String>['backup', 'create', '-o', out.path]),
+        0,
+      );
+      _write(
+        data(
+          'interconnect/sync-data/fushi-data/__backups__/0123456789abcdef/'
+          '20261125-040000-000-fushi-scheduled/backup.zip',
+        ),
+        'device copy',
+      );
+      _write(data('interconnect/sync-data/fushi-data/progress.json'), '{}');
+      expect(
+        await h.run(module, <String>[
+          'backup',
+          'create',
+          '-o',
+          out.path,
+          '--force',
+        ]),
+        0,
+        reason: h.err.toString(),
+      );
+      final Set<String> names = _zipNames(out);
+      expect(
+        names,
+        contains('data/interconnect/sync-data/fushi-data/progress.json'),
+      );
+      expect(names.where((String n) => n.contains('/__backups__/')), isEmpty);
+    });
+
     test('没加 --yes 不还原；输出不能放进数据目录', () async {
       final File out = File(p.join(h.tmp.path, 'b.zip'));
       expect(

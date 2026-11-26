@@ -363,11 +363,17 @@ void main() {
     expect(loaders, isNonNegative);
     expect(register, greaterThan(loaders));
     expect(start, greaterThan(register));
-    // 导航项在「系统」组里、「设置」之前。
+    // 导航项在「系统」组里，紧跟「备份」（整机备份页）之后，两个备份页挨着。
     final int system = html.indexOf('<div class="nav-group-label">系统</div>');
     final int nav = html.indexOf('data-s="device-backups"');
-    final int settings = html.indexOf('data-s="settings"');
+    final int backups = html.indexOf('data-s="backups"');
     expect(nav, greaterThan(system));
-    expect(settings, greaterThan(nav));
+    expect(backups, greaterThan(system));
+    expect(nav, greaterThan(backups));
+    expect(
+      html.substring(backups, nav).split('class="nav-item"').length,
+      2,
+      reason: '「备份」与「设备备份」之间不该隔着别的导航项',
+    );
   });
 }

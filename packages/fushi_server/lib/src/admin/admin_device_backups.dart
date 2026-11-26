@@ -29,17 +29,14 @@ import 'package:shelf/shelf.dart' as shelf;
 const String kAdminDeviceBackupsPath = '/api/admin/device-backups';
 
 /// 无头服务端互联 WebDAV 根下的同步根（`fushi-data/`）。互联服务在跑时用它实际的
-/// [FushiSyncServer.syncDataDir]；没在跑（关着 / 测试）就按同样的规则算：`HeadlessHost` 把
-/// [ServerPaths.syncData] 交给 `FushiSyncServer`，后者的构造函数再拼一层 `sync-data`
-/// （packages/fushi_engine/lib/sync/fushi_sync_server.dart，`syncDataDir = p.join(syncDataDir, 'sync-data')`；
-/// 引擎没有导出这个名字，server_srs.dart / anki_landing.dart 同样照抄）。
+/// [FushiSyncServer.syncDataDir]；没在跑（关着 / 测试）就按同样的规则算
+/// （[ServerPaths.interconnectSyncRoot]）。
 String serverInterconnectSyncRoot(
   ServerPaths paths, {
   String? runningSyncDataDir,
-}) => p.join(
-  runningSyncDataDir ?? p.join(paths.syncData.path, 'sync-data'),
-  kSyncRootFolderName,
-);
+}) => runningSyncDataDir == null
+    ? paths.interconnectSyncRoot
+    : p.join(runningSyncDataDir, kSyncRootFolderName);
 
 /// 下载文件名里只留 `[A-Za-z0-9._-]`：其余字符换成 `-`，连着的并成一个，首尾的 `-` / `.` 去掉。
 String deviceBackupFileNamePart(String raw) {

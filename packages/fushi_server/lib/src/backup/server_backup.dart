@@ -41,6 +41,7 @@ import 'package:fushi_engine/srs/srs_storage.dart'
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/server_data_lock.dart';
+import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
 import 'package:path/path.dart' as p;
 import 'package:fushi_server/src/server_language.dart';
@@ -267,6 +268,13 @@ List<String> serverBackupSourceFiles(
   ..._dataFiles(Directory(dataDir), includeDocuments: includeDocuments).values,
 ];
 
+bool _startsWith(List<String> parts, List<String> prefix) {
+  for (int i = 0; i < prefix.length; i++) {
+    if (parts[i] != prefix[i]) return false;
+  }
+  return true;
+}
+
 /// 数据目录里要进包的文件：zip 条目名 → 源路径。
 Map<String, String> _dataFiles(
   Directory data, {
@@ -274,6 +282,17 @@ Map<String, String> _dataFiles(
 }) {
   final Map<String, String> out = <String, String>{};
   if (!data.existsSync()) return out;
+  // 已配对设备复制来的自动备份（`DeviceBackupInbox`）：那是各设备自己的备份，设备自己按保留
+  // 策略修剪、可以取回；每天的整机备份再打一遍会让包随设备数翻倍，还原整机也用不到它们。
+  final List<String> deviceInbox = p.split(
+    p.relative(
+      p.join(
+        ServerPaths(data.path).interconnectSyncRoot,
+        kDeviceBackupsNamespace,
+      ),
+      from: data.path,
+    ),
+  );
   for (final FileSystemEntity top in data.listSync(followLinks: false)) {
     final String name = p.basename(top.path);
     if (_excludedTopLevel.contains(name)) continue;
@@ -288,6 +307,10 @@ Map<String, String> _dataFiles(
       if (parts.length == 2 &&
           parts.first == 'support' &&
           _liveDbFiles.contains(parts.last)) {
+        continue;
+      }
+      if (parts.length > deviceInbox.length &&
+          _startsWith(parts, deviceInbox)) {
         continue;
       }
       // 更新前还原点（fushi_core `restore_points.dart`）是本机库的整份副本，最多每库几份：
