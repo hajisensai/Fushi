@@ -155,6 +155,41 @@ List<OpDescription> describeDataOps(OpDescribeKit kit) => <OpDescription>[
         'database-check copies, with kind, time, size and what each can do.',
   ),
   const OpDescription(
+    id: 'backup.received.list',
+    method: 'GET',
+    pattern: '/api/admin/restore-points/received',
+    summary:
+        'List backups that other devices copied to this device while it was '
+        'their Interconnect server, grouped by device (name, copies, size, '
+        'newest, incomplete uploads). This device\'s own key is excluded. '
+        'They can only be restored on the device they came from.',
+  ),
+  OpDescription(
+    id: 'backup.received.delete',
+    method: 'POST',
+    pattern: '/api/admin/restore-points/received/delete',
+    summary:
+        'Delete backups another device copied to this Interconnect host: one '
+        'copy when id is given, otherwise every copy from that device. Cannot '
+        'be undone.',
+    risk: OpRisk.irreversible,
+    params: <OpParam>[
+      OpParam.string(
+        'device',
+        description: 'Device key (from backup.received.list).',
+        required: true,
+      ),
+      OpParam.string(
+        'id',
+        description: 'Backup id; omit to delete every copy from the device.',
+      ),
+      OpParam.userGate(
+        'confirm',
+        description: 'User confirmed deleting these backups.',
+      ),
+    ],
+  ),
+  const OpDescription(
     id: 'backup.auto.status',
     method: 'GET',
     pattern: '/api/admin/auto-backup/status',

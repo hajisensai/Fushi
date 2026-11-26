@@ -64,6 +64,20 @@ const List<CtlCommandGroup> dataCommandGroups = <CtlCommandGroup>[
         render: _renderMessage,
       ),
       CtlCommandSpec(
+        name: 'received',
+        summary: '列出本机当互联服务器时别的设备复制过来的备份（按设备分组；只能在原设备上恢复）',
+        build: _backupReceived,
+        render: _renderBackupReceived,
+      ),
+      CtlCommandSpec(
+        name: 'received-delete',
+        summary: '删除别的设备复制过来的备份（给了 <id> 删那一份，否则删那台设备的全部；撤销不了）',
+        usage: '<device> [<id>]',
+        configure: _configureYes,
+        build: _backupReceivedDelete,
+        render: _renderMessage,
+      ),
+      CtlCommandSpec(
         name: 'auto',
         summary: '自动备份的设置与最近一次结果（间隔、时间、带哪些文件、文件夹、是否超期）',
         build: _backupAutoStatus,
@@ -612,6 +626,59 @@ CtlRequestSpec _backupPointRestore(CtlCommandContext c) {
       'mode': fill ? 'fill' : 'replace',
       'confirm': true,
     },
+  );
+}
+
+CtlRequestSpec _backupReceived(CtlCommandContext c) =>
+    const CtlRequestSpec.get('/api/admin/restore-points/received');
+
+String _renderBackupReceived(Object? data) {
+  if (data is! Map) return renderCtlJson(data);
+  final List<Object?> devices =
+      data['devices'] as List<Object?>? ?? const <Object?>[];
+  if (devices.isEmpty) return '（没有别的设备复制过来的备份）';
+  String time(Object? ms) => ms is int
+      ? DateTime.fromMillisecondsSinceEpoch(
+          ms,
+        ).toLocal().toString().substring(0, 16)
+      : '';
+  return <String>[
+    for (final Object? d in devices)
+      if (d is Map)
+        <String>[
+          '${d['name'] ?? '（未命名设备）'}  ${d['device']}  '
+              '${d['count']} 份 · ${_bytes(d['bytes'])}'
+              '${d['incomplete'] is int && (d['incomplete'] as int) > 0 ? ' · 不完整 ${d['incomplete']} 份' : ''}',
+          renderCtlTable(
+            <Map<String, Object?>>[
+              for (final Object? c
+                  in (d['copies'] as List<Object?>? ?? const <Object?>[]))
+                if (c is Map)
+                  <String, Object?>{
+                    ...c.cast<String, Object?>(),
+                    'time': time(c['createdAtMs']),
+                    'size': _bytes(c['bytes']),
+                  },
+            ],
+            const <(String, String)>[
+              ('id', 'id'),
+              ('时间', 'time'),
+              ('大小', 'size'),
+              ('版本', 'appVersion'),
+            ],
+            empty: '（没有完整的备份）',
+          ),
+        ].join('\n'),
+  ].join('\n\n');
+}
+
+CtlRequestSpec _backupReceivedDelete(CtlCommandContext c) {
+  final String device = c.positional(0, 'device');
+  final String? id = c.optionalPositional(1);
+  _requireYes(c, '删除收到的备份');
+  return CtlRequestSpec.post(
+    '/api/admin/restore-points/received/delete',
+    body: <String, Object?>{'device': device, 'id': ?id, 'confirm': true},
   );
 }
 

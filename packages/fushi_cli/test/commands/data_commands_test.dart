@@ -665,6 +665,80 @@ void main() {
     });
   });
 
+  group('收到的设备备份（本机当互联 host）', () {
+    test('received 指向列表路由', () {
+      final CtlRequestSpec r = build('backup', 'received', <String>[]);
+      expect((r.method, r.path), ('GET', '/api/admin/restore-points/received'));
+    });
+
+    test('received-delete：要设备键与 --yes；不给 id 删整台设备', () {
+      expect(
+        () => build('backup', 'received-delete', <String>['0123456789abcdef']),
+        usageError(),
+      );
+      expect(
+        () => build('backup', 'received-delete', <String>['--yes']),
+        usageError(),
+      );
+      final CtlRequestSpec all = build('backup', 'received-delete', <String>[
+        '0123456789abcdef',
+        '--yes',
+      ]);
+      expect(
+        (all.method, all.path),
+        ('POST', '/api/admin/restore-points/received/delete'),
+      );
+      expect(all.body, <String, Object?>{
+        'device': '0123456789abcdef',
+        'confirm': true,
+      });
+      final CtlRequestSpec one = build('backup', 'received-delete', <String>[
+        '0123456789abcdef',
+        '20261120-030000-000-fushi-scheduled',
+        '-y',
+      ]);
+      expect(one.body, <String, Object?>{
+        'device': '0123456789abcdef',
+        'id': '20261120-030000-000-fushi-scheduled',
+        'confirm': true,
+      });
+    });
+
+    test('received 渲染：按设备分组列出，没有时给空提示', () {
+      final CtlCommandSpec spec = dataCommandGroups
+          .firstWhere((CtlCommandGroup g) => g.name == 'backup')
+          .find('received')!;
+      expect(
+        spec.render!(<String, Object?>{'devices': <Object?>[]}),
+        contains('没有'),
+      );
+      final String out = spec.render!(<String, Object?>{
+        'devices': <Object?>[
+          <String, Object?>{
+            'device': '0123456789abcdef',
+            'name': 'Pixel',
+            'count': 1,
+            'bytes': 2048,
+            'incomplete': 1,
+            'copies': <Object?>[
+              <String, Object?>{
+                'id': '20261120-030000-000-fushi-scheduled',
+                'createdAtMs': 1000,
+                'bytes': 2048,
+                'appVersion': '1.2.3',
+              },
+            ],
+          },
+        ],
+      });
+      expect(out, contains('Pixel'));
+      expect(out, contains('0123456789abcdef'));
+      expect(out, contains('20261120-030000-000-fushi-scheduled'));
+      expect(out, contains('1.2.3'));
+      expect(out, contains('不完整 1 份'));
+    });
+  });
+
   group('sub', () {
     test('ls / get / items / check（单条与全部）', () {
       expect(build('sub', 'ls', <String>[]).path, '/api/admin/subscriptions');

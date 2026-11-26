@@ -15,6 +15,8 @@ import 'package:fushi/src/storage/orphan_book_recovery.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart'
     show AutoBackupMirrorKind;
 import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart';
+import 'package:fushi/src/sync/auto_backup/received_device_backups.dart'
+    show listReceivedDeviceBackupsSync;
 import 'package:fushi/src/sync/auto_backup/restore_point_catalog.dart';
 import 'package:fushi/src/sync/backup_service.dart'
     show BackupCategory, OverwriteSnapshotBook, OverwriteSnapshotPreview;
@@ -126,6 +128,75 @@ class _DirHost implements RestorePointsHost {
     copyCalls.add('delete:${kind.name}:${copy.id}');
     return IoBackupFolderMirror(_dirOf(kind)).delete(copy.id);
   }
+
+  /// 假扮 app 当 host 时的同步根（`fushi-data/`）；null = 没有收件箱。
+  String? receivedRoot;
+
+  /// 宿主收到的「收到的备份」操作（`<export|delete>:<设备键>:<id|*>`）。
+  final List<String> receivedCalls = <String>[];
+
+  @override
+  Future<List<ReceivedDeviceBackupGroup>> listReceivedBackups() async {
+    final String? root = receivedRoot;
+    if (root == null) return const <ReceivedDeviceBackupGroup>[];
+    // 生产实现在后台 isolate 里跑同一个函数；假时钟里直接同步跑。
+    return listReceivedDeviceBackupsSync(root, _kOwnDeviceKey);
+  }
+
+  @override
+  Future<bool> exportReceivedBackup(ReceivedDeviceBackup copy) async {
+    receivedCalls.add('export:${copy.deviceKey}:${copy.id}');
+    return false;
+  }
+
+  @override
+  Future<void> deleteReceivedBackup(String deviceKey, {String? id}) async {
+    receivedCalls.add('delete:$deviceKey:${id ?? '*'}');
+    final String dir = p.joinAll(<String>[
+      receivedRoot!,
+      kDeviceBackupsNamespace,
+      deviceKey,
+      ?id,
+    ]);
+    // 假时钟里不走真异步 IO。
+    Directory(dir).deleteSync(recursive: true);
+  }
+}
+
+/// 本机自己的设备键（收件箱里它的副本不列）。
+const String _kOwnDeviceKey = '00000000000000aa';
+
+/// 照设备经 WebDAV 上传的样子在同步根 [syncRoot] 下写一份收到的定时还原点。
+void _putReceived(
+  String syncRoot,
+  String device,
+  String id, {
+  required int createdAtMs,
+  String? name,
+}) {
+  final Directory dir = Directory(
+    p.join(syncRoot, kDeviceBackupsNamespace, device, id),
+  )..createSync(recursive: true);
+  File(p.join(dir.path, kRestorePointArchiveFileName)).writeAsStringSync('zip');
+  final RestorePoint point = RestorePoint(
+    id: id,
+    directory: dir.path,
+    kind: RestorePointKind.scheduled,
+    database: RestorePointDatabase.fushi,
+    createdAtMs: createdAtMs,
+    fromSchema: kFushiDbSchemaVersion,
+    toSchema: kFushiDbSchemaVersion,
+    files: const <RestorePointFile>[
+      RestorePointFile(name: kRestorePointArchiveFileName, size: 3),
+    ],
+    fullDatabase: true,
+    appVersion: '9.9.9',
+    deviceId: device,
+    deviceName: name,
+  );
+  File(
+    p.join(dir.path, kRestorePointMetaFileName),
+  ).writeAsStringSync(jsonEncode(point.toJson()));
 }
 
 /// 在另一台设备的存储 [root] 里写一份定时还原点（只会出现在文件夹 / 云端里）。
@@ -231,8 +302,12 @@ void main() {
     String? cloudDir,
     Exception? cloudListError,
     String? serverDir,
+    String? receivedRoot,
   }) async {
-    if (folderDir != null || cloudDir != null || serverDir != null) {
+    if (folderDir != null ||
+        cloudDir != null ||
+        serverDir != null ||
+        receivedRoot != null) {
       // 文件夹那一节在两张还原点卡片下面：给足高度，懒构建的列表才会把它建出来。
       tester.view.physicalSize = const Size(1000, 3000);
       tester.view.devicePixelRatio = 1.0;
@@ -242,7 +317,8 @@ void main() {
       ..folderDir = folderDir
       ..cloudDir = cloudDir
       ..cloudListError = cloudListError
-      ..serverDir = serverDir;
+      ..serverDir = serverDir
+      ..receivedRoot = receivedRoot;
     await tester.pumpWidget(
       TranslationProvider(
         child: MaterialApp(
@@ -726,6 +802,171 @@ void main() {
         find.byKey(ValueKey<String>('restore-point-fill-$foreignId')),
         findsOneWidget,
       );
+    });
+  });
+
+  group('从其他设备收到的备份（本机当互联 host，第五期）', () {
+    const String phone = '0123456789abcdef';
+    const String tablet = 'fedcba9876543210';
+    const String id1 = '20261120-030000-000-fushi-scheduled';
+    const String id2 = '20261124-030000-000-fushi-scheduled';
+    late String syncRoot;
+
+    setUp(() {
+      syncRoot = p.join(tmp.path, 'sync-data', 'fushi-data');
+    });
+
+    testWidgets('按设备分组列出（名字、份数、不完整），本机自己的副本不列；不提供恢复', (
+      WidgetTester tester,
+    ) async {
+      _putReceived(syncRoot, phone, id1, createdAtMs: 1000, name: 'Pixel');
+      _putReceived(syncRoot, phone, id2, createdAtMs: 3000, name: 'Pixel');
+      _putReceived(syncRoot, tablet, id1, createdAtMs: 2000);
+      _putReceived(syncRoot, _kOwnDeviceKey, id2, createdAtMs: 9000);
+      // tablet 一份上传到一半（没有元数据）。
+      Directory(
+        p.join(syncRoot, kDeviceBackupsNamespace, tablet, id2),
+      ).createSync(recursive: true);
+
+      await pumpPage(tester, receivedRoot: syncRoot);
+      expect(find.text(t.restore_points_received_section), findsOneWidget);
+      expect(find.text(t.restore_points_received_hint), findsOneWidget);
+      expect(find.text('Pixel'), findsOneWidget);
+      expect(
+        find.text(
+          t.restore_points_received_unnamed_device(key: tablet.substring(0, 8)),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.textContaining(t.restore_points_received_incomplete(n: 1)),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('restore-point-received-device-$phone'),
+        ),
+        findsOneWidget,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>(
+            'restore-point-received-device-$_kOwnDeviceKey',
+          ),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('restore-point-received-$phone-$id1'),
+        ),
+        findsOneWidget,
+      );
+      // 只能导出 / 删除：收到的副本不出补回 / 替换 / 复制到本机。
+      expect(
+        find.byKey(const ValueKey<String>('restore-point-fill-$id1')),
+        findsNothing,
+      );
+      expect(
+        find.textContaining(t.restore_points_app_version(version: '9.9.9')),
+        findsNWidgets(3),
+      );
+    });
+
+    testWidgets('收件箱里只有本机自己的副本 / 没有收件箱：这一节不出现', (WidgetTester tester) async {
+      _putReceived(syncRoot, _kOwnDeviceKey, id1, createdAtMs: 1000);
+      await pumpPage(tester, receivedRoot: syncRoot);
+      expect(find.text(t.restore_points_received_section), findsNothing);
+      await tester.pumpWidget(const SizedBox());
+      await pumpPage(tester);
+      expect(find.text(t.restore_points_received_section), findsNothing);
+    });
+
+    testWidgets('删一份：键盘到「删除」→ 行内确认 → Enter，只删那一份', (WidgetTester tester) async {
+      _putReceived(syncRoot, phone, id1, createdAtMs: 1000, name: 'Pixel');
+      _putReceived(syncRoot, phone, id2, createdAtMs: 3000, name: 'Pixel');
+      final _DirHost host = await pumpPage(tester, receivedRoot: syncRoot);
+      final FocusDriver driver = FocusDriver(tester);
+      expect(
+        await driver.focusWidget(
+          find.byKey(
+            const ValueKey<String>('restore-point-received-delete-$phone-$id1'),
+          ),
+        ),
+        isTrue,
+        reason: '「删除」必须能用键盘走到',
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        find.byKey(
+          const ValueKey<String>('restore-point-received-panel-$phone-$id1'),
+        ),
+        findsOneWidget,
+      );
+      expect(find.text(t.restore_points_received_delete_body), findsOneWidget);
+      expect(host.receivedCalls, isEmpty);
+
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(host.receivedCalls, <String>['delete:$phone:$id1']);
+      expect(
+        find.byKey(
+          const ValueKey<String>('restore-point-received-$phone-$id1'),
+        ),
+        findsNothing,
+      );
+      expect(
+        find.byKey(
+          const ValueKey<String>('restore-point-received-$phone-$id2'),
+        ),
+        findsOneWidget,
+      );
+    });
+
+    testWidgets('删整台设备：行内确认带设备名 → Enter，这一节随之消失', (WidgetTester tester) async {
+      _putReceived(syncRoot, phone, id1, createdAtMs: 1000, name: 'Pixel');
+      final _DirHost host = await pumpPage(tester, receivedRoot: syncRoot);
+      final FocusDriver driver = FocusDriver(tester);
+      expect(
+        await driver.focusWidget(
+          find.byKey(
+            const ValueKey<String>(
+              'restore-point-received-delete-device-$phone',
+            ),
+          ),
+        ),
+        isTrue,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(
+        find.text(
+          t.restore_points_received_delete_device_body(device: 'Pixel'),
+        ),
+        findsOneWidget,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(host.receivedCalls, <String>['delete:$phone:*']);
+      expect(find.text(t.restore_points_received_section), findsNothing);
+    });
+
+    testWidgets('导出：交给宿主导出那一份', (WidgetTester tester) async {
+      _putReceived(syncRoot, phone, id1, createdAtMs: 1000, name: 'Pixel');
+      final _DirHost host = await pumpPage(tester, receivedRoot: syncRoot);
+      final FocusDriver driver = FocusDriver(tester);
+      expect(
+        await driver.focusWidget(
+          find.byKey(
+            const ValueKey<String>('restore-point-received-export-$phone-$id1'),
+          ),
+        ),
+        isTrue,
+      );
+      await tester.sendKeyEvent(LogicalKeyboardKey.enter);
+      await tester.pumpAndSettle();
+      expect(host.receivedCalls, <String>['export:$phone:$id1']);
     });
   });
 }

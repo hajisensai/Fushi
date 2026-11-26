@@ -10,6 +10,10 @@ import 'package:fushi_core/fushi_core.dart'
         FushiPairedPeerRow,
         kLegacySchemaBridgeAppVersion,
         kLegacySchemaBridgeReleaseUrl,
+        ReceivedDeviceBackup,
+        ReceivedDeviceBackupGroup,
+        isDeviceBackupKey,
+        isScheduledRestorePointId,
         kMinSupportedSchemaVersion,
         RestorePoint,
         VideoBookRow,
@@ -46,6 +50,7 @@ import 'package:fushi/src/sync/auto_backup/auto_backup_schedule.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
 import 'package:fushi/src/sync/auto_backup/auto_backup_status.dart';
 import 'package:fushi/src/sync/auto_backup/restore_point_actions.dart';
+import 'package:fushi/src/sync/auto_backup/received_device_backups.dart';
 import 'package:fushi/src/sync/auto_backup/restore_point_catalog.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/backup_archive_name.dart';
@@ -179,6 +184,32 @@ List<RestorePointEntry> _restorePointEntries(AppModel appModel) {
     extraRoots: <String>[?folder],
   );
 }
+
+/// 本机当互联 host 时收到的别的设备的备份（与还原点页「从其他设备收到的备份」同一个收件箱；本机
+/// 设备键与写进还原点元数据的同源）。
+Future<ReceivedDeviceBackups> _receivedDeviceBackups(AppModel appModel) async =>
+    ReceivedDeviceBackups.forApp(
+      databaseDirectory: appModel.databaseDirectory.path,
+      ownDeviceKey: (await appModel.autoBackup.host.deviceIdentity()).id,
+    );
+
+/// 收到的一台设备的 wire 形态：[ReceivedDeviceBackupGroup.toJson] 加上盘上位置。
+@visibleForTesting
+Map<String, Object?> receivedDeviceBackupGroupToWire(
+  ReceivedDeviceBackupGroup group,
+  String inboxRoot,
+) => <String, Object?>{
+  ...group.toJson(),
+  'path': p.join(inboxRoot, group.deviceKey),
+  'copies': <Map<String, Object?>>[
+    for (final ReceivedDeviceBackup c in group.copies)
+      <String, Object?>{
+        ...c.toJson(),
+        'path': c.point.directory,
+        'archive': ?c.point.archivePath,
+      },
+  ],
+};
 
 /// ctl 备份导出的类别里去掉「要先升级才能导出」的（[BackupContentSummary.needsUpgrade]，目前只有复习：本机只有协议 3
 /// 的复习库、还没迁移成新代时打不开，整份导出会失败）。
@@ -425,6 +456,56 @@ List<CtlRoute> _backupRoutes(
         ))
           _restorePointEntryToWire(e),
       ],
+    };
+  }),
+  // 本机当互联 host 时别的设备复制过来的备份，按设备分组（本机自己的设备键不在里面）。
+  CtlRoute.get('/api/admin/restore-points/received', (CtlCall call) async {
+    final ReceivedDeviceBackups received = await _receivedDeviceBackups(
+      context.appModel,
+    );
+    return <String, Object?>{
+      'root': received.inbox.root,
+      'devices': <Map<String, Object?>>[
+        for (final ReceivedDeviceBackupGroup g in await received.list())
+          receivedDeviceBackupGroupToWire(g, received.inbox.root),
+      ],
+    };
+  }),
+  // 删收到的备份：给了 id 删那一份，否则删那台设备的全部。删了撤销不了，要 `confirm: true`。
+  CtlRoute.post('/api/admin/restore-points/received/delete', (
+    CtlCall call,
+  ) async {
+    _requireConfirm(call, '删除收到的备份');
+    final String device = call.requireString('device');
+    final String? id = call.optString('id');
+    // 参数先于 app 校验（键 / id 来自终端）。
+    if (!isDeviceBackupKey(device)) {
+      throw CtlFailure.badRequest('不是设备键：$device');
+    }
+    if (id != null && !isScheduledRestorePointId(id)) {
+      throw CtlFailure.badRequest('不是备份 id：$id');
+    }
+    final ReceivedDeviceBackups received = await _receivedDeviceBackups(
+      context.appModel,
+    );
+    final bool deleted;
+    try {
+      deleted = id == null
+          ? await received.deleteDevice(device)
+          : await received.deleteCopy(device, id);
+    } on ArgumentError catch (e) {
+      throw CtlFailure.badRequest('${e.name ?? 'device'}：${e.message}');
+    }
+    if (!deleted) {
+      throw CtlFailure.notFound(
+        id == null ? '没有这台设备的备份：$device' : '没有这份备份：$device/$id',
+      );
+    }
+    return <String, Object?>{
+      'device': device,
+      'id': ?id,
+      'deleted': true,
+      'message': id == null ? '已删除设备 $device 的全部备份' : '已删除备份 $device/$id',
     };
   }),
   // 自动备份的设置与状态（与设置页状态行同源）。

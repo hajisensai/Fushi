@@ -3,7 +3,13 @@ import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:fushi_core/fushi_core.dart'
-    show FushiDatabase, RestorePoint, RestorePointDatabase, RestorePointKind;
+    show
+        FushiDatabase,
+        ReceivedDeviceBackup,
+        ReceivedDeviceBackupGroup,
+        RestorePoint,
+        RestorePointDatabase,
+        RestorePointKind;
 import 'package:fushi_engine/epub/epub_importer.dart';
 import 'package:fushi_engine/media/manga/manga_importer.dart';
 import 'package:fushi_engine/utils/misc/fushi_time_format.dart';
@@ -29,6 +35,7 @@ import 'package:fushi/src/sync/auto_backup/restore_point_actions.dart';
 import 'package:fushi/src/sync/auto_backup/restore_point_catalog.dart';
 import 'package:fushi/src/sync/auto_backup/backup_folder_mirror.dart'
     show MirrorFolderListing, MirroredRestorePoint;
+import 'package:fushi/src/sync/auto_backup/received_device_backups.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart'
     show friendlySyncErrorDetail;
@@ -129,6 +136,16 @@ abstract interface class RestorePointsHost {
     MirroredRestorePoint copy,
     AutoBackupMirrorKind kind,
   );
+
+  /// 本机当互联 host 时别的设备复制过来的备份（[ReceivedDeviceBackups]），按设备分组，本机自己的
+  /// 设备键不在里面；没有为空。与 host 此刻开没开无关（关了留下的也要能清理）。
+  Future<List<ReceivedDeviceBackupGroup>> listReceivedBackups();
+
+  /// 把收到的一份备份的 zip 导出到用户选的位置（同 [export]）；用户取消返回 false。
+  Future<bool> exportReceivedBackup(ReceivedDeviceBackup copy);
+
+  /// 删收到的备份：给了 [id] 删那一份，否则删 [deviceKey] 那台设备的全部。
+  Future<void> deleteReceivedBackup(String deviceKey, {String? id});
 }
 
 /// [RestorePointsHost] 的生产实现。
@@ -137,6 +154,14 @@ class AppRestorePointsHost implements RestorePointsHost {
 
   final AppModel app;
   OrphanBookRecovery? _recovery;
+  ReceivedDeviceBackups? _received;
+
+  /// 本机的收件箱；本机设备键与写进还原点元数据的同源（`AutoBackupHost.deviceIdentity`）。
+  Future<ReceivedDeviceBackups> _receivedBackups() async =>
+      _received ??= ReceivedDeviceBackups.forApp(
+        databaseDirectory: app.databaseDirectory.path,
+        ownDeviceKey: (await app.autoBackup.host.deviceIdentity()).id,
+      );
 
   @override
   List<RestorePointEntry> listEntries() {
@@ -175,7 +200,11 @@ class AppRestorePointsHost implements RestorePointsHost {
     if (source == null) {
       throw StateError('restore point ${entry.id} has nothing to export');
     }
-    final String name = restorePointExportFileName(entry);
+    return _saveOrShare(source, restorePointExportFileName(entry));
+  }
+
+  /// 桌面另存为 / 移动端分享面板把 [source] 交给用户（文件名 [name]）；用户取消返回 false。
+  static Future<bool> _saveOrShare(String source, String name) async {
     final bool zip = name.endsWith('.zip');
     if (Platform.isAndroid || Platform.isIOS) {
       final bool shown = await FushiShare.shareFiles(<XFile>[
@@ -241,6 +270,32 @@ class AppRestorePointsHost implements RestorePointsHost {
     MirroredRestorePoint copy,
     AutoBackupMirrorKind kind,
   ) => app.autoBackup.deleteMirrorCopy(copy, kind: kind);
+
+  @override
+  Future<List<ReceivedDeviceBackupGroup>> listReceivedBackups() async =>
+      (await _receivedBackups()).list();
+
+  @override
+  Future<bool> exportReceivedBackup(ReceivedDeviceBackup copy) async {
+    final File? archive = (await _receivedBackups()).archiveOf(
+      copy.deviceKey,
+      copy.id,
+    );
+    if (archive == null) {
+      throw StateError('backup ${copy.deviceKey}/${copy.id} is gone');
+    }
+    return _saveOrShare(archive.path, receivedDeviceBackupExportFileName(copy));
+  }
+
+  @override
+  Future<void> deleteReceivedBackup(String deviceKey, {String? id}) async {
+    final ReceivedDeviceBackups received = await _receivedBackups();
+    if (id == null) {
+      await received.deleteDevice(deviceKey);
+    } else {
+      await received.deleteCopy(deviceKey, id);
+    }
+  }
 }
 
 /// 副本当作一行还原点（只借用种类 / 内容 / 详情文案；动作另有一套）。
@@ -449,6 +504,13 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
   /// 展开着删除确认的副本（哪个目标、哪个 id）。
   ({AutoBackupMirrorKind kind, String id})? _copyDelete;
 
+  /// 本机当互联 host 时别的设备复制过来的备份（第五期），按设备分组；空 = 不显示那一节。
+  List<ReceivedDeviceBackupGroup> _received =
+      const <ReceivedDeviceBackupGroup>[];
+
+  /// 展开着删除确认的收到的备份：[id] 为 null = 删那台设备的全部。
+  ({String device, String? id})? _receivedDelete;
+
   /// 展开着确认面板的那一行与面板种类（一次只开一个）。
   String? _openId;
   _PanelKind? _openKind;
@@ -496,6 +558,7 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
         }
       });
       unawaited(_loadAllCopies());
+      unawaited(_loadReceived());
     } catch (e, st) {
       ErrorLogService.instance.log('RestorePointsPage.load', e, st);
       if (!mounted) return;
@@ -600,6 +663,7 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
   void _openCopyDelete(MirroredRestorePoint copy, AutoBackupMirrorKind kind) {
     setState(() {
       _closePanelState();
+      _receivedDelete = null;
       _copyDelete = (kind: kind, id: copy.id);
     });
     _focusPanelSoon();
@@ -630,6 +694,87 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
     await _loadCopies(kind);
   }
 
+  // ── 收到的别的设备的备份（本机当互联 host）─────────────────────────
+
+  Future<void> _loadReceived() async {
+    List<ReceivedDeviceBackupGroup> groups;
+    try {
+      groups = await _host.listReceivedBackups();
+    } catch (e, st) {
+      // 收件箱读不了不挡本机还原点；这一节只是不出现。
+      ErrorLogService.instance.log('RestorePointsPage.listReceived', e, st);
+      groups = const <ReceivedDeviceBackupGroup>[];
+    }
+    if (!mounted) return;
+    setState(() {
+      _received = groups;
+      final ({String device, String? id})? pending = _receivedDelete;
+      if (pending != null &&
+          !groups.any(
+            (ReceivedDeviceBackupGroup g) =>
+                g.deviceKey == pending.device &&
+                (pending.id == null ||
+                    g.copies.any(
+                      (ReceivedDeviceBackup c) => c.id == pending.id,
+                    )),
+          )) {
+        _receivedDelete = null;
+      }
+    });
+  }
+
+  void _openReceivedDelete(String device, {String? id}) {
+    setState(() {
+      _closePanelState();
+      _copyDelete = null;
+      _receivedDelete = (device: device, id: id);
+    });
+    _focusPanelSoon();
+  }
+
+  Future<void> _deleteReceived(String device, {String? id}) async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await _host.deleteReceivedBackup(device, id: id);
+    } catch (e, st) {
+      ErrorLogService.instance.log('RestorePointsPage.deleteReceived', e, st);
+      FushiToast.show(
+        msg: t.storage_entry_delete_failed(reason: autoBackupErrorText(e)),
+        severity: ToastSeverity.error,
+      );
+    } finally {
+      if (mounted) {
+        setState(() {
+          _busy = false;
+          _receivedDelete = null;
+        });
+      }
+    }
+    await _loadReceived();
+  }
+
+  Future<void> _exportReceived(ReceivedDeviceBackup copy) async {
+    setState(() => _busy = true);
+    try {
+      final bool done = await _host.exportReceivedBackup(copy);
+      if (done) {
+        FushiToast.show(
+          msg: t.restore_points_export_done,
+          severity: ToastSeverity.success,
+        );
+      }
+    } catch (e, st) {
+      ErrorLogService.instance.log('RestorePointsPage.exportReceived', e, st);
+      FushiToast.show(
+        msg: t.restore_points_export_failed(reason: friendlySyncErrorDetail(e)),
+        severity: ToastSeverity.error,
+      );
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
   // ── 还原点：行内确认面板 ─────────────────────────────────────────
 
   void _closePanelState() {
@@ -652,6 +797,7 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
     setState(() {
       _closePanelState();
       _copyDelete = null;
+      _receivedDelete = null;
       _openId = entry.id;
       _openKind = kind;
       _previewLoading = kind == _PanelKind.fill;
@@ -1329,6 +1475,248 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
     ];
   }
 
+  /// 收到的备份的行内删除确认（删一份 / 删整台设备共用）。
+  Widget _receivedDeletePanel({
+    required String keySuffix,
+    required String title,
+    required String message,
+    required VoidCallback onConfirm,
+  }) => Padding(
+    padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+    child: FushiInlineNotice(
+      key: ValueKey<String>('restore-point-received-panel-$keySuffix'),
+      severity: FushiNoticeSeverity.warning,
+      title: title,
+      message: message,
+      actionsInline: false,
+      actions: <Widget>[
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: <Widget>[
+            _pressable(
+              child: FushiFilledButton.icon(
+                key: ValueKey<String>(
+                  'restore-point-received-confirm-$keySuffix',
+                ),
+                focusNode: _panelFocus,
+                onPressed: _busy ? null : onConfirm,
+                icon: const FushiIcon(FushiIcons.delete),
+                label: Text(t.restore_points_confirm),
+              ),
+            ),
+            _pressable(
+              child: FushiTextButton(
+                key: ValueKey<String>(
+                  'restore-point-received-cancel-$keySuffix',
+                ),
+                onPressed: _busy
+                    ? null
+                    : () => setState(() => _receivedDelete = null),
+                child: Text(t.cancel),
+              ),
+            ),
+          ],
+        ),
+      ],
+    ),
+  );
+
+  /// 收到的一份备份的说明：时间 · 大小、版本 · schema、内容。
+  static String _receivedCopyDetails(ReceivedDeviceBackup copy) {
+    final RestorePoint point = copy.point;
+    final RestorePointEntry entry = RestorePointEntry(
+      id: copy.id,
+      source: RestorePointEntrySource.store,
+      path: point.directory,
+      createdAt: point.createdAt.toLocal(),
+      sizeBytes: copy.bytes,
+      point: point,
+      schema: point.fromSchema,
+    );
+    final String? version = point.appVersion;
+    final int schema = point.fromSchema;
+    return <String>[
+      '${FushiTimeFormat.dateHourMinute(entry.createdAt)} · '
+          '${formatStorageBytes(copy.bytes)}',
+      <String>[
+        if (version != null && version.isNotEmpty)
+          t.restore_points_app_version(version: version),
+        if (schema > 0) t.restore_points_schema(n: schema),
+      ].join(' · '),
+      restorePointContentsLabel(entry),
+    ].where((String line) => line.isNotEmpty).join('\n');
+  }
+
+  /// 设备的显示名：元数据里的设备名，没有时「未命名设备（键的前 8 位）」。
+  static String _receivedDeviceName(ReceivedDeviceBackupGroup group) {
+    final String? name = group.deviceName;
+    if (name != null && name.isNotEmpty) return name;
+    final String key = group.deviceKey;
+    return t.restore_points_received_unnamed_device(
+      key: key.length > 8 ? key.substring(0, 8) : key,
+    );
+  }
+
+  Widget _receivedCopyRow(String device, ReceivedDeviceBackup copy) {
+    final String id = copy.id;
+    final String k = '$device-$id';
+    final ({String device, String? id})? pending = _receivedDelete;
+    final bool deleting =
+        pending != null && pending.device == device && pending.id == id;
+    return Column(
+      key: ValueKey<String>('restore-point-received-$k'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      mainAxisSize: MainAxisSize.min,
+      children: <Widget>[
+        FushiListItem(
+          leading: const FushiIcon(FushiIcons.schedule),
+          title: Text(t.restore_points_kind_scheduled),
+          subtitle: Text(_receivedCopyDetails(copy)),
+          subtitleMaxLines: 5,
+        ),
+        AnimatedSize(
+          duration: fushiMotionDuration(context, FushiMotion.medium),
+          curve: Curves.easeOutCubic,
+          alignment: AlignmentDirectional.topStart,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: Wrap(
+                  spacing: 8,
+                  runSpacing: 8,
+                  children: <Widget>[
+                    _pressable(
+                      child: FushiOutlinedButton.icon(
+                        key: ValueKey<String>(
+                          'restore-point-received-export-$k',
+                        ),
+                        onPressed: _busy
+                            ? null
+                            : () => unawaited(_exportReceived(copy)),
+                        icon: const FushiIcon(FushiIcons.share),
+                        label: Text(t.restore_points_action_export),
+                      ),
+                    ),
+                    _pressable(
+                      child: FushiTextButton.icon(
+                        key: ValueKey<String>(
+                          'restore-point-received-delete-$k',
+                        ),
+                        onPressed: _busy
+                            ? null
+                            : () => _openReceivedDelete(device, id: id),
+                        icon: const FushiIcon(FushiIcons.delete),
+                        label: Text(t.restore_points_action_delete),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+              if (deleting)
+                _receivedDeletePanel(
+                  keySuffix: k,
+                  title: t.restore_points_action_delete,
+                  message: t.restore_points_received_delete_body,
+                  onConfirm: () => unawaited(_deleteReceived(device, id: id)),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _receivedDeviceCard(ReceivedDeviceBackupGroup group) {
+    final String device = group.deviceKey;
+    final String name = _receivedDeviceName(group);
+    final int? newest = group.newestAtMs;
+    final ({String device, String? id})? pending = _receivedDelete;
+    final bool deletingAll =
+        pending != null && pending.device == device && pending.id == null;
+    return FushiGroupedList(
+      key: ValueKey<String>('restore-point-received-device-$device'),
+      children: <Widget>[
+        FushiListItem(
+          leading: const FushiIcon(FushiIcons.devices),
+          title: Text(name),
+          subtitle: Text(
+            <String>[
+              t.restore_points_received_device_summary(
+                n: group.copies.length,
+                size: formatStorageBytes(group.totalBytes),
+                date: newest == null
+                    ? '-'
+                    : FushiTimeFormat.dateHourMinute(
+                        DateTime.fromMillisecondsSinceEpoch(newest),
+                      ),
+              ),
+              if (group.incomplete > 0)
+                t.restore_points_received_incomplete(n: group.incomplete),
+            ].join('\n'),
+          ),
+          subtitleMaxLines: 3,
+        ),
+        for (final ReceivedDeviceBackup copy in group.copies)
+          _receivedCopyRow(device, copy),
+        AnimatedSize(
+          duration: fushiMotionDuration(context, FushiMotion.medium),
+          curve: Curves.easeOutCubic,
+          alignment: AlignmentDirectional.topStart,
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.stretch,
+            mainAxisSize: MainAxisSize.min,
+            children: <Widget>[
+              Padding(
+                padding: const EdgeInsets.fromLTRB(12, 0, 12, 12),
+                child: Align(
+                  alignment: AlignmentDirectional.centerStart,
+                  child: _pressable(
+                    child: FushiTextButton.icon(
+                      key: ValueKey<String>(
+                        'restore-point-received-delete-device-$device',
+                      ),
+                      onPressed: _busy
+                          ? null
+                          : () => _openReceivedDelete(device),
+                      icon: const FushiIcon(FushiIcons.delete),
+                      label: Text(t.restore_points_received_delete_device),
+                    ),
+                  ),
+                ),
+              ),
+              if (deletingAll)
+                _receivedDeletePanel(
+                  keySuffix: device,
+                  title: t.restore_points_received_delete_device,
+                  message: t.restore_points_received_delete_device_body(
+                    device: name,
+                  ),
+                  onConfirm: () => unawaited(_deleteReceived(device)),
+                ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  /// 「从其他设备收到的备份」（第五期）：本机当过互联 host、别的设备把还原点复制过来时才出现（host
+  /// 此刻关着也照样列出，留下的可清理）。只能导出 / 删除，不在这里恢复：那是原设备的数据，只能在原
+  /// 设备上恢复。
+  List<Widget> _receivedSection(BuildContext context) {
+    if (_received.isEmpty) return const <Widget>[];
+    return <Widget>[
+      _sectionTitle(context, t.restore_points_received_section),
+      _hint(t.restore_points_received_hint),
+      for (final ReceivedDeviceBackupGroup group in _received)
+        _receivedDeviceCard(group),
+    ];
+  }
+
   List<Widget> _orphanSection(BuildContext context) {
     final OrphanBookScan? scan = _scan;
     if (scan == null) return const <Widget>[];
@@ -1451,6 +1839,7 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
       );
     }
     final List<Widget> orphans = _orphanSection(context);
+    final List<Widget> received = _receivedSection(context);
     final List<Widget> sections = <Widget>[
       ..._restorePointSection(context),
       for (final AutoBackupMirrorKind kind in AutoBackupMirrorKind.values)
@@ -1459,6 +1848,10 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
           const SizedBox(height: 8),
           ...copies,
         ],
+      if (received.isNotEmpty) ...<Widget>[
+        const SizedBox(height: 8),
+        ...received,
+      ],
       if (orphans.isNotEmpty) ...<Widget>[
         const SizedBox(height: 8),
         ...orphans,
