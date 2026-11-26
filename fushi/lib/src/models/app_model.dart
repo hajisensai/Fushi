@@ -478,7 +478,6 @@ import 'package:fushi_engine/sync/interconnect_device_name.dart'
     show resolveInterconnectDeviceName;
 import 'package:fushi/src/sync/auto_backup/restore_point_actions.dart'
     show RestorePointActionsHost;
-import 'package:fushi_engine/srs/srs_media_store.dart' show SrsMediaStore;
 import 'package:fushi/src/sync/deletion_prompt.dart';
 import 'package:fushi_engine/asr/asr_host_job_runner.dart';
 import 'package:fushi_asr_core/asr_core.dart' show AsrAudioProfile;
@@ -17275,19 +17274,6 @@ class _AppAutoBackupHost implements AutoBackupHost {
 
   @override
   BackupService createBackupService() => _app.createBackupService();
-
-  @override
-  Map<BackupCategory, String> get contentTreeRoots => <BackupCategory, String>{
-    BackupCategory.books: path.join(_app.appDirectory.path, 'fushi_books'),
-    BackupCategory.audiobooks: path.join(_app.appDirectory.path, 'audiobooks'),
-    BackupCategory.fonts: path.join(_app.appDirectory.path, 'custom_fonts'),
-    BackupCategory.games: path.join(_app.appDirectory.path, 'game_covers'),
-    BackupCategory.dictionary: _app.dictionaryResourceDirectory.path,
-  };
-
-  @override
-  String get srsMediaRoot =>
-      SrsMediaStore.mediaRootFor(_app.databaseDirectory).path;
 
   @override
   bool get databaseAvailable => _app.autoBackupDatabaseAvailable;

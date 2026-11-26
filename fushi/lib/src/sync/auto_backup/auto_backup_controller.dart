@@ -94,12 +94,6 @@ abstract interface class AutoBackupHost {
   /// 这时定时备份不跑（[AutoBackupOutcome.busy]）。
   bool get databaseAvailable;
 
-  /// 各内容类别在盘上的文件树根（指纹用）；不在里面的类别不进指纹。
-  Map<BackupCategory, String> get contentTreeRoots;
-
-  /// 复习媒体根（`<support>/srs_media`）。
-  String get srsMediaRoot;
-
   /// 备份导出的所有权（手动导出 / 控制通道导出 / 自动备份共用一把锁）。
   bool get backupExportActive;
 
@@ -414,7 +408,26 @@ class AutoBackupController {
       if (folder != null && !Directory(folder).existsSync()) {
         throw AutoBackupFolderUnavailableException(folder);
       }
-      final String fingerprint = await _fingerprint(settings, store);
+      final BackupService service = host.createBackupService();
+      final Set<BackupCategory> files = <BackupCategory>{
+        for (final BackupCategory c in settings.categories)
+          if (kBackupFileCategories.contains(c)) c,
+      };
+      // 复习库还在等升级等：开库会抛。照样备份其余数据，复习记成「没带」（恢复时保留本机那份），
+      // 状态行说明原因；不让整份备份因此失败、天天失败。
+      final Set<BackupCategory> unavailable = <BackupCategory>{
+        if (host.srsUnavailableReason() != null) BackupCategory.srs,
+      };
+      // 这份备份真会打包的文件类别与复习媒体：与 `createBackup` 同一个收集器，收一次，指纹与空间估算
+      // 共用，两边都不会与真打包走岔（视频、本地音频这些散在各处的文件变了一样不跳过）。
+      final Map<String, String> sources = await service
+          .collectFileCategorySources(
+            categories: files,
+            includeSrsMedia:
+                !unavailable.contains(BackupCategory.srs) &&
+                settings.includeSrsMedia,
+          );
+      final String fingerprint = await _fingerprint(settings, store, sources);
       final int startedMs = _clock().millisecondsSinceEpoch;
       // 指纹相同还得上次成功的那份还在当前存储里：被删了（还原点页删除、控制通道撤销）或换了
       // 文件夹，就不能拿「没变化」跳过——否则永远跳过、也永远不告警。
@@ -431,6 +444,10 @@ class AutoBackupController {
             await _createScheduledPoint(
               settings,
               store,
+              service: service,
+              files: files,
+              unavailable: unavailable,
+              sources: sources,
               fingerprint: fingerprint,
               startedMs: startedMs,
             );
@@ -438,7 +455,7 @@ class AutoBackupController {
         outcome = created.outcome;
       }
     } catch (e, st) {
-      // 文件夹不在 / 指纹本身失败（极少见）：同样按失败记、提示一次。
+      // 文件夹不在 / 建服务、收文件、算指纹失败（极少见）：同样按失败记、提示一次。
       debugPrint('AutoBackup: run failed: $e\n$st');
       final String error = e is AutoBackupFolderUnavailableException
           ? kAutoBackupErrorFolderUnavailable
@@ -471,18 +488,13 @@ class AutoBackupController {
   _createScheduledPoint(
     AutoBackupSettings settings,
     RestorePointStore store, {
+    required BackupService service,
+    required Set<BackupCategory> files,
+    required Set<BackupCategory> unavailable,
+    required Map<String, String> sources,
     required String fingerprint,
     required int startedMs,
   }) async {
-    final Set<BackupCategory> files = <BackupCategory>{
-      for (final BackupCategory c in settings.categories)
-        if (kBackupFileCategories.contains(c)) c,
-    };
-    // 复习库还在等升级等：开库会抛。照样备份其余数据，复习记成「没带」（恢复时保留本机那份），
-    // 状态行说明原因；不让整份备份因此失败、天天失败。
-    final Set<BackupCategory> unavailable = <BackupCategory>{
-      if (host.srsUnavailableReason() != null) BackupCategory.srs,
-    };
     // 写入设备：保留规则只修剪本机写的点（共用的自定义文件夹、取回本机的副本不动）。查不出来就不标，
     // 这份点在共用文件夹里就当作别人的、不会被自动删（安全的方向）。
     ({String id, String name})? device;
@@ -502,8 +514,7 @@ class AutoBackupController {
     _writeStatus(_status.value.started(atMs: startedMs));
     try {
       // 写之前先看空间（第五期）：不够就记成失败 `not_enough_space`，不写半截、不把盘写满。
-      final BackupService service = host.createBackupService();
-      await _ensureScheduledSpace(service, settings, store, files, unavailable);
+      await _ensureScheduledSpace(store, sources, unavailable);
       draft = store.begin(
         kind: RestorePointKind.scheduled,
         nowMs: startedMs,
@@ -585,15 +596,13 @@ class AutoBackupController {
     }
   }
 
-  /// 定时还原点要写多少的上界：主库与复习库（含 `-wal`）+ 文件类别与复习媒体（[BackupService.estimateFileCategoryBytes]：
-  /// 与 `createBackup` 同一个收集器，视频 / 本地音频这些散在各处的文件一样算），按不压缩算（zip 只会更小；媒体本来
-  /// 就压不动）。`createBackup` 先把两个库 `VACUUM INTO` 系统临时目录再打包，所以临时目录所在的卷另要放下两个库。
+  /// 定时还原点要写多少的上界：主库与复习库（含 `-wal`）+ 文件类别与复习媒体（[sources]：这次跑开头
+  /// [BackupService.collectFileCategorySources] 收的那张表，与 `createBackup` 同一个收集器，视频 / 本地音频这些散在
+  /// 各处的文件一样算），按不压缩算（zip 只会更小；媒体本来就压不动）。`createBackup` 先把两个库 `VACUUM INTO` 系统临时目录再打包，所以临时目录所在的卷另要放下两个库。
   /// 空间不够抛 [NotEnoughSpaceException]；不知道可用空间就照常写。
   Future<void> _ensureScheduledSpace(
-    BackupService service,
-    AutoBackupSettings settings,
     RestorePointStore store,
-    Set<BackupCategory> files,
+    Map<String, String> sources,
     Set<BackupCategory> unavailable,
   ) async {
     final String dbDir = host.databaseDirectory;
@@ -609,10 +618,7 @@ class AutoBackupController {
             sum + fileBytesOrZero(f) + fileBytesOrZero('$f-wal'),
       ),
     );
-    final int fileBytes = await service.estimateFileCategoryBytes(
-      categories: files,
-      includeSrsMedia: srs && settings.includeSrsMedia,
-    );
+    final int fileBytes = await BackupService.sourceBytesOf(sources);
     ensureFreeSpace(<SpaceNeed>[
       SpaceNeed(store.root, databases + fileBytes),
       SpaceNeed(Directory.systemTemp.path, databases),
@@ -1044,9 +1050,12 @@ class AutoBackupController {
     }
   }
 
+  /// 指纹：两个库（含 `-wal`）+ [sources]（这份备份真会打包的文件类别与复习媒体，按路径排好序）每个文件的
+  /// 路径 + 大小 + 修改时刻，再拼内容设置（类别集合、复习媒体开关）与存储根。
   Future<String> _fingerprint(
     AutoBackupSettings settings,
     RestorePointStore store,
+    Map<String, String> sources,
   ) {
     final String dbDir = host.databaseDirectory;
     final List<String> files = <String>[
@@ -1055,16 +1064,10 @@ class AutoBackupController {
         p.join(dbDir, db.fileName),
         p.join(dbDir, '${db.fileName}-wal'),
       ],
-    ];
-    final Map<BackupCategory, String> roots = host.contentTreeRoots;
-    final List<String> directories = <String>[
-      for (final BackupCategory c in BackupCategory.values)
-        if (settings.categories.contains(c) && roots[c] != null) roots[c]!,
-      if (settings.includeSrsMedia) host.srsMediaRoot,
+      ...(sources.values.toSet().toList()..sort()),
     ];
     return computeAutoBackupFingerprint(
       files: files,
-      directories: directories,
       // 存储根也进签名：换了文件夹，新文件夹里还没有这份数据。
       contentSignature:
           '${settings.contentSignature}|root=${p.normalize(store.root)}',

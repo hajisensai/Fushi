@@ -48,22 +48,12 @@ class _FakeHost implements AutoBackupHost {
   @override
   bool get supportsCustomFolder => true;
 
-  void Function()? onCreateService;
-
   @override
   BackupService createBackupService() {
     serviceCalls++;
-    onCreateService?.call();
     if (failService) throw StateError('service unavailable');
     return BackupService(db: db, dbDirectory: dbDir, appVersion: '9.9.9');
   }
-
-  @override
-  Map<BackupCategory, String> get contentTreeRoots =>
-      const <BackupCategory, String>{};
-
-  @override
-  String get srsMediaRoot => p.join(dbDir, 'srs_media');
 
   bool get exportActive => exportOwner != null;
 
@@ -81,8 +71,10 @@ class _FakeHost implements AutoBackupHost {
     if (identical(exportOwner, token)) exportOwner = null;
   }
 
+  void Function()? onProgress;
+
   @override
-  void reportBackupExportProgress(double fraction) {}
+  void reportBackupExportProgress(double fraction) => onProgress?.call();
 
   @override
   String? srsUnavailableReason() => srsBlocked;
@@ -379,6 +371,65 @@ void main() {
     now = now.add(const Duration(days: 2));
     host.settings = host.settings.copyWith(includeSrsMedia: true);
     expect(await controller.checkNow(), AutoBackupOutcome.created);
+  });
+
+  // 开放问题 5：指纹与 `createBackup` 同一个收集器，视频（库里引用的散文件）、本地音频（库目录下的
+  // `local_audio_*.db`）这些不在任何「类别 → 目录」表里的文件变了，下一次到期照常备份；没变照样跳过。
+  test('勾了视频：新出现的视频文件让下一次不跳过；没变照样跳过', () async {
+    final String video = p.join(root.path, 'videos', 'Film.mp4');
+    // 库里先登记好（文件还不在）：之后只有文件出现，库不变。
+    await db.upsertVideoBook(
+      VideoBooksCompanion.insert(
+        bookUid: 'video/film',
+        title: 'Film',
+        videoPath: video,
+      ),
+    );
+    host.settings = host.settings.copyWith(
+      categories: <BackupCategory>{BackupCategory.videos},
+    );
+    expect(await controller.checkNow(), AutoBackupOutcome.created);
+    now = now.add(const Duration(days: 2));
+    expect(await controller.checkNow(), AutoBackupOutcome.skippedNoChanges);
+    File(video)
+      ..parent.createSync(recursive: true)
+      ..writeAsBytesSync(Uint8List(64));
+    now = now.add(const Duration(days: 2));
+    expect(await controller.checkNow(), AutoBackupOutcome.created);
+    final Archive zip = ZipDecoder().decodeBytes(
+      File(
+        controller
+            .scheduledPoints()
+            .firstWhere(
+              (RestorePoint r) =>
+                  r.id == controller.status.value.lastSuccessPointId,
+            )
+            .archivePath!,
+      ).readAsBytesSync(),
+    );
+    expect(
+      zip.files.any((ArchiveFile e) => e.name.startsWith('videos/')),
+      isTrue,
+      reason: '指纹看到的文件就是打包的文件',
+    );
+    now = now.add(const Duration(days: 2));
+    expect(await controller.checkNow(), AutoBackupOutcome.skippedNoChanges);
+  });
+
+  test('勾了本地音频：库目录下的 local_audio_*.db 变了让下一次不跳过；没变照样跳过', () async {
+    final File audio = File(p.join(dbDir, 'local_audio_1.db'))
+      ..writeAsBytesSync(Uint8List(16));
+    host.settings = host.settings.copyWith(
+      categories: <BackupCategory>{BackupCategory.localAudio},
+    );
+    expect(await controller.checkNow(), AutoBackupOutcome.created);
+    now = now.add(const Duration(days: 2));
+    expect(await controller.checkNow(), AutoBackupOutcome.skippedNoChanges);
+    audio.writeAsBytesSync(Uint8List(32));
+    now = now.add(const Duration(days: 2));
+    expect(await controller.checkNow(), AutoBackupOutcome.created);
+    now = now.add(const Duration(days: 2));
+    expect(await controller.checkNow(), AutoBackupOutcome.skippedNoChanges);
   });
 
   test('已有导出在跑：不跑（busy）；关着：disabled', () async {
@@ -824,7 +875,8 @@ void main() {
 
   test('写备份期间落「开始」标记，成功后清掉', () async {
     AutoBackupStatus? during;
-    host.onCreateService = () => during = readAutoBackupStatus(dbDir);
+    // 打包进度回调时正在写：这时状态文件里应已落「开始」标记。
+    host.onProgress = () => during ??= readAutoBackupStatus(dbDir);
     expect(await controller.backUpNow(), AutoBackupOutcome.created);
     expect(during?.runningSinceMs, isNotNull);
     expect(controller.status.value.runningSinceMs, isNull);

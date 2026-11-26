@@ -2631,11 +2631,11 @@ class BackupService {
     return videoFiles;
   }
 
-  /// 一份整库备份里文件类别与复习媒体会打包多少字节（不压缩，自动备份写之前查空间用，第五期）：与
-  /// [createBackup] 走同一个收集器（[_collectFileCategories]），所以视频（库里引用的每个文件）、本地音频
-  /// （库目录下的 `local_audio_*.db`）这些散在各处的大文件一样算进去。[categories] 只看文件类别；库本身不算
-  /// （调用方按库文件大小另算）。
-  Future<int> estimateFileCategoryBytes({
+  /// 一份整库备份里文件类别与复习媒体要打包的文件（zip 内路径 → 磁盘路径）：与 [createBackup] 走同一个收集器
+  /// （[_collectFileCategories]），所以视频（库里引用的每个文件）、本地音频（库目录下的 `local_audio_*.db`）这些
+  /// 散在各处的大文件一样在里面。自动备份拿它同时算「有没有变化」的指纹与写之前的空间估算（第五期），两边都
+  /// 不会与真打包走岔。[categories] 只看文件类别；库本身不在里面。
+  Future<Map<String, String>> collectFileCategorySources({
     required Set<BackupCategory> categories,
     required bool includeSrsMedia,
   }) async {
@@ -2657,9 +2657,27 @@ class BackupService {
           ? await _db.getAllEpubBooks()
           : const <EpubBookRow>[],
     );
-    if (files.isEmpty) return 0;
-    return Isolate.run(() => _totalSourceBytes(files));
+    return files;
   }
+
+  /// [collectFileCategorySources] 收出来的文件不压缩共多少字节（缺失 / 无权限的按 0 计，与打包时跳过同口径）；
+  /// 空表为 0。在后台 isolate 里 stat。
+  static Future<int> sourceBytesOf(Map<String, String> sources) async {
+    if (sources.isEmpty) return 0;
+    return Isolate.run(() => _totalSourceBytes(sources));
+  }
+
+  /// 一份整库备份里文件类别与复习媒体会打包多少字节（不压缩，第五期）：[collectFileCategorySources] +
+  /// [sourceBytesOf]。库本身不算（调用方按库文件大小另算）。
+  Future<int> estimateFileCategoryBytes({
+    required Set<BackupCategory> categories,
+    required bool includeSrsMedia,
+  }) async => sourceBytesOf(
+    await collectFileCategorySources(
+      categories: categories,
+      includeSrsMedia: includeSrsMedia,
+    ),
+  );
 
   static int _totalSourceBytes(Map<String, String> archivePathToSource) {
     int total = 0;

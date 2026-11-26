@@ -780,9 +780,16 @@ Two open items from #4470 (phase 4A open question 1, phase 4B open question 3).
    `volumeAvailableCapacityForImportantUsage` includes it, so on a full-looking iPhone the check may refuse a
    backup the system would have made room for. Using the Foundation value needs a Swift / Objective-C shim
    (cannot be built in this batch); left as a follow-up.
-5. The app fingerprint (skip-unchanged) still walks the `contentTreeRoots` table, which has no videos / local
+5. ~~The app fingerprint (skip-unchanged) still walks the `contentTreeRoots` table, which has no videos / local
    audio entries; a change only in those files is not seen as a change (pre-existing, phase 2). The estimate no
-   longer uses that table.
+   longer uses that table.~~ *Closed in phase 5: each scheduled run collects the files once with
+   `BackupService.collectFileCategorySources` (the same collector `createBackup` packs from); the fingerprint is
+   the path + size + mtime of the two databases (with `-wal`) and every collected file, plus the content
+   signature (ticked file categories, review-media switch) and the store root, and the space estimate sums the
+   same table (`BackupService.sourceBytesOf`). A new video file or a changed `local_audio_*.db` now makes the next
+   due run back up; `contentTreeRoots` / `srsMediaRoot` are gone from `AutoBackupHost`. Skipping still also needs
+   the last successful point to exist in the current store. Tests: `auto_backup_controller_test.dart`
+   "勾了视频…" / "勾了本地音频…".*
 
 ## Decisions (taken by the user 2026-11-25 on the proposal's recommendations; maintainer may change)
 
@@ -841,7 +848,8 @@ D17–D20（第五期，按建议默认实现，维护者可改）：app 当互�
 不完整份数），每份可导出、可删（行内确认），也可删一台设备的全部；不在 host 上提供恢复（备份属于原来那台设备），本机自己的设备键不列；只要收件箱
 里有别的设备的副本就显示，host 关了也照样能清；ctl / CLI 也能列、能删（删要 `confirm` / `--yes`）。app 自己的备份 / 导出本来就不打包收件箱，
 不用改。写任何备份之前先查空间：按不压缩的输入总和 + 64 MiB 余量估，临时快照算在它落的那个卷上，按卷身份（`ffsrs_volume_id`：POSIX `st_dev`、Windows 卷根 + 序列号）把同一个卷上的
-目标合计，拿不到卷身份就全部合计、对比最小的读数；app 的估算与 `createBackup` 走同一个文件收集器（视频、本地音频不再漏算）；查不到可用空间就
+目标合计，拿不到卷身份就全部合计、对比最小的读数；app 的估算与 `createBackup` 走同一个文件收集器（视频、本地音频不再漏算），定时备份「没变化就跳过」的指纹也用
+这次收的同一张文件表（每个文件的路径 + 大小 + 修改时刻，加勾选的类别与存储根），只动了视频或本地音频也照常备份；查不到可用空间就
 照常写；不够就一个字都不写——app 定时备份记失败 `not_enough_space`、同一原因只提示一次，「替换」拒绝并说明原因，其余操作前还原点与更新前快照
 跳过并记原因、操作 / 迁移照常；服务端自动备份记失败，手动备份与「立即跑」回 507（估算本身失败回 500 `preflight_failed`），更新前备份跳过、更新照常（D16）；
 `FUSHI_SERVER_FREE_BYTES_OVERRIDE` 只给测试用，设了会在启动和每次备份日志里警告。平台实现只有一份：fushi_fsrs 的

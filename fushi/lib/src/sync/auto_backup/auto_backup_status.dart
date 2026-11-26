@@ -472,15 +472,15 @@ void writeAutoBackupStatus(String dbDirectory, AutoBackupStatus status) {
   tmp.renameSync(path);
 }
 
-/// 「上次备份之后有没有变化」的廉价指纹：[files] 每个文件的大小 + 修改时刻，[directories]
-/// 每个目录下（递归）全部文件的条数、总大小、最新修改时刻，再拼上 [contentSignature]
-/// （内容设置变了指纹就变）。不读文件内容；在后台 isolate 里遍历目录。
+/// 「上次备份之后有没有变化」的廉价指纹：[files] 每个文件的路径 + 大小 + 修改时刻（不在的记成缺失），
+/// 再拼上 [contentSignature]（内容设置、存储根变了指纹就变）。不读文件内容；在后台 isolate 里 stat。
 ///
-/// 只要求「没变 ⇒ 指纹相同」足够可靠（主库 / 复习库每次写入都会动 `-wal` 的修改时刻）；指纹
-/// 变了而数据其实没变，最多多备份一次。
+/// 调用方传的是这份备份真会打包的文件（库文件 + [BackupService.collectFileCategorySources] 收出来的文件
+/// 类别与复习媒体），所以视频、本地音频这些散在各处的文件变了一样会让下一次照常备份，不会与真打包走岔。
+/// 只要求「没变 ⇒ 指纹相同」足够可靠（主库 / 复习库每次写入都会动 `-wal` 的修改时刻）；指纹变了而数据
+/// 其实没变，最多多备份一次。
 Future<String> computeAutoBackupFingerprint({
   required List<String> files,
-  required List<String> directories,
   required String contentSignature,
 }) => Isolate.run<String>(() {
   final StringBuffer out = StringBuffer(contentSignature);
@@ -491,32 +491,6 @@ Future<String> computeAutoBackupFingerprint({
           ? '|$path:-'
           : '|$path:${st.size}:${st.modified.millisecondsSinceEpoch}',
     );
-  }
-  for (final String path in directories) {
-    final Directory dir = Directory(path);
-    if (!dir.existsSync()) {
-      out.write('|$path/:-');
-      continue;
-    }
-    int count = 0;
-    int bytes = 0;
-    int newest = 0;
-    try {
-      for (final FileSystemEntity e in dir.listSync(
-        recursive: true,
-        followLinks: false,
-      )) {
-        if (e is! File) continue;
-        final FileStat st = e.statSync();
-        count++;
-        bytes += st.size;
-        final int ms = st.modified.millisecondsSinceEpoch;
-        if (ms > newest) newest = ms;
-      }
-    } on FileSystemException {
-      // 遍历中途被删 / 无权限：照已数到的写，最多多备份一次。
-    }
-    out.write('|$path/:$count:$bytes:$newest');
   }
   return out.toString();
 });
