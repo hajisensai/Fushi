@@ -1793,7 +1793,7 @@ void main() {
       expect(gameWrites, <String, String>{'g1': 'bgm:1'});
     });
 
-    // BUG-5531：额度用尽 / 鉴权被拒这类配置类失败——本趟立刻停掉后续全部 AI 调用
+    // BUG-5546：额度用尽 / 鉴权被拒这类配置类失败——本趟立刻停掉后续全部 AI 调用
     // （规则照跑），结论里给出原因；之后的自动路径整趟不发 AI，手动跑一趟才重试。
     test('配置类 AI 失败：本趟停掉后续 AI，结论带原因，自动路径不再问，手动重试', () async {
       facts.bookUnits = <LibraryCurateBookUnit>[
@@ -1957,7 +1957,7 @@ void main() {
     });
   });
 
-  // BUG-5531：书架每次重载都来一次信号；没有新内容时自动路径一趟应几乎零成本。
+  // BUG-5546：书架每次重载都来一次信号；没有新内容时自动路径一趟应几乎零成本。
   group('自动路径「没有新内容」不跑', () {
     test('库变化戳没变、上一趟没留活：什么都不做、不记运行', () async {
       expect(await curator().runAuto(), isNotNull);

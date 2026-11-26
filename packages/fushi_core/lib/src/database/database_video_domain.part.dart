@@ -3827,7 +3827,7 @@ mixin _FushiDbVideoDomain
     });
   }
 
-  /// 清掉 `book_uid` 指向已不存在的 `video_books` 的行（BUG-5530）：正常删除走
+  /// 清掉 `book_uid` 指向已不存在的 `video_books` 的行（BUG-5545）：正常删除走
   /// [deleteVideoBooks]，这些行由外键级联 / 显式清理带走；但库文件在 checkpoint
   /// 中途被杀、之后又丢了 WAL 这类页级撕裂，会留下父行没了、子树还在的「孤儿」——
   /// 用户库里实测 79 部作品、148 条刮削快照、1 条本地花絮。孤儿作品被库管家

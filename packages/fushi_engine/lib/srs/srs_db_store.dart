@@ -3204,7 +3204,7 @@ class SrsDbStore implements SrsSync2Host {
 
   /// 注册本 profile 的缓存配置（`cache_config_set`，native/fushi_fsrs/src/store/gen4/dispatch.rs）：与库里存的按 JSON
   /// 值比，相同回 `{changed: false}`；变了内核写下并在同一个事务里整层重建派生层，回 `{changed: true, settled}`。
-  /// 回包带 `rwkvLastFill: true`（只差 `rwkv_last` 的旧口径库就地升级了，BUG-5532）时后台分批回填
+  /// 回包带 `rwkvLastFill: true`（只差 `rwkv_last` 的旧口径库就地升级了，BUG-5547）时后台分批回填
   /// （[_startRwkvLastFill]）。
   /// 整层重建不推进本机状态行的修订号（刷新键），所以变了时这里把本对象按刷新键 / 缓存日志记的缓存一并作废。失败照常
   /// 抛出（打开失败），下次打开重来。
@@ -3233,7 +3233,7 @@ class SrsDbStore implements SrsSync2Host {
   @visibleForTesting
   Future<void>? get debugRwkvLastFill => _rwkvLastFill;
 
-  /// 内核要求分批回填 `rwkv_last`（`cache_config_set` 回包 `rwkvLastFill`，BUG-5532：只差这张表的旧口径库就地升级，
+  /// 内核要求分批回填 `rwkv_last`（`cache_config_set` 回包 `rwkvLastFill`，BUG-5547：只差这张表的旧口径库就地升级，
   /// 不在开库的写事务里整层重建）：后台一批一笔地填，不挡打开。中途被杀 / 关库只丢在途那一批，下次开库内核照样回
   /// `rwkvLastFill`，从游标接着填。填完之前 RWKV 末条读对没填到的卡逐卡重放（内核 `cmd/training.rs` `rwkv_last`），
   /// 结果不变、只是慢。

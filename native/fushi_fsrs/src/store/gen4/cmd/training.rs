@@ -150,7 +150,7 @@ pub fn rwkv_cards(
 /// RWKV 打分的查询行只要这一条（`srs_rwkv_service.dart` `_queryRows`）：冷启动分数表是空的、统计又整表重查，
 /// 逐卡模式要重放每张卡的全部历史（实测 1.5 万张卡 26～36 秒，BUG-5525），这里是一次按主键的表读。
 ///
-/// 表还在分批回填（`derive_cfg` 有 [RWKV_FILL_KEY]，BUG-5532）时，游标之后、有卡行的卡还没填：这些卡逐卡重放取同一条
+/// 表还在分批回填（`derive_cfg` 有 [RWKV_FILL_KEY]，BUG-5547）时，游标之后、有卡行的卡还没填：这些卡逐卡重放取同一条
 /// （[replayed_last]，与物化同一份规则），结果与填完之后逐卡相同，只是慢。
 pub fn rwkv_last(t: &Truth<'_>, col: i64, cards: &[String]) -> Result<Vec<u8>, String> {
     snapshot(t, |t| {
@@ -234,7 +234,7 @@ fn replayed_last(
     Ok(groups.iter().map(|g| logs.rwkv_last(g)).collect())
 }
 
-/// `rwkv_last_fill`（写，BUG-5532）：`rwkv_last` 分批回填的一步。从游标（`derive_cfg` 的 [RWKV_FILL_KEY]）之后按
+/// `rwkv_last_fill`（写，BUG-5547）：`rwkv_last` 分批回填的一步。从游标（`derive_cfg` 的 [RWKV_FILL_KEY]）之后按
 /// `cards` 主键序取至多 [limit] 张卡，逐卡重放写下（或删掉）各自的末条，游标推进到这批最后一张；取到的不满一批 = 填完，
 /// 删掉游标。在调用方的写事务里：一批一笔提交，中途被杀只丢这一批，下次从游标接着做。
 ///

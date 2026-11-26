@@ -416,7 +416,7 @@ SettingsDestination buildAiDestination() {
             value: (SettingsContext c) =>
                 c.appModel.prefsRepo.libraryCurateAuto,
             // 重新打开 = 用户明确要它继续：解除上次额度用尽 / 鉴权被拒后的 AI 停用
-            // 与失败单元的退避（BUG-5531），水位与进度保留。
+            // 与失败单元的退避（BUG-5546），水位与进度保留。
             onChanged: (SettingsContext c, bool value) async {
               final PreferencesRepository prefs = c.appModel.prefsRepo;
               await prefs.setLibraryCurateAuto(value);

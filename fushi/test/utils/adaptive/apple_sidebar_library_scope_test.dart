@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/utils/adaptive/apple_sidebar_library_host.dart';
 import 'package:material_ui/material_ui.dart';
 
-/// BUG-5533：Apple 宽窗侧栏外壳里切 tab 时，新库页登记分区行、旧库页撤回，
+/// BUG-5548：Apple 宽窗侧栏外壳里切 tab 时，新库页登记分区行、旧库页撤回，
 /// 宿主帧末通知一次。旧实现把宿主本身当 [AppleSidebarLibraryScope] 的
 /// notifier，这一次通知让所有依赖 scope 的库页（访问过的保活页，包括藏起来
 /// 的）各自整页重建。依赖者只该随侧栏形态（[AppleSidebarLibraryHost.sidebarMode]）

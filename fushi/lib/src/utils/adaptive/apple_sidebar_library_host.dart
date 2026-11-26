@@ -64,7 +64,7 @@ class AppleSidebarLibraryRow {
 /// - [sidebarMode] 由侧栏外壳报告：侧栏收成顶部标签栏（或根本不是侧栏布局）时
 ///   为 false，库页据此把分区画回内容区的胶囊行。
 ///
-/// 两路通知分开（BUG-5533）：分区行 / 标签节的登记只通知宿主自己的监听者——
+/// 两路通知分开（BUG-5548）：分区行 / 标签节的登记只通知宿主自己的监听者——
 /// 只有侧栏外壳要画这些行；库页经 [AppleSidebarLibraryScope] 依赖的只有
 /// [sidebarModeListenable]。合成一路时，每次切 tab（新库页登记、旧库页撤回）
 /// 帧末那一次通知会让**所有访问过的保活库页**（包括藏起来的）各自整页重建，
@@ -200,7 +200,7 @@ class _SidebarModeNotifier extends ChangeNotifier {
 /// 向首页各 tab 下发 [AppleSidebarLibraryHost]（只在 Apple 宽窗侧栏外壳里有）。
 /// 纯数据通道，与设计系统分派无关。
 ///
-/// 依赖者只随 [AppleSidebarLibraryHost.sidebarMode] 变化重建（BUG-5533）；分区
+/// 依赖者只随 [AppleSidebarLibraryHost.sidebarMode] 变化重建（BUG-5548）；分区
 /// 行 / 标签节的登记不经这里通知（侧栏外壳直接监听宿主）。
 class AppleSidebarLibraryScope extends InheritedNotifier<Listenable> {
   AppleSidebarLibraryScope({

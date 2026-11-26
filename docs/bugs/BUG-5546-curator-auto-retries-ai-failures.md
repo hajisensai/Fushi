@@ -1,4 +1,4 @@
-## BUG-5531 · AI 库管家默认开、书架每次重载就跑一趟，额度用完还逐个单元问 AI、下一趟再问一遍
+## BUG-5546 · AI 库管家默认开、书架每次重载就跑一趟，额度用完还逐个单元问 AI、下一趟再问一遍
 - **报告**：2026-11-26（用户：「别默认开这个 ai 管家并且修好这个 ai 管家」「不要一直跑，不要自动开，要问了用户才开」「并且改为默认手动触发」；安装版错误日志里每趟 `libraryCurate.scrapeBooks.ai` 报 `AiChatFailure: quota_exhausted` 7 次，阅读时每 2～3 分钟一趟）
 - **真实性**：✅ 真 bug，四个根因：
   1. **默认开**：`library_curate_auto` / `library_agent_review_auto` 默认 true（`fushi/lib/src/models/preferences_repository.dart`）。

@@ -598,7 +598,7 @@ fn arrival_order_counts_late_logs_of_low_devices_as_new_and_survives_rebuilds() 
     });
 }
 
-/// BUG-5532（反馈 gPPVTfHm1b）：按 `CACHE_RULES` 6 物化的库（`rwkv_last` 是空的）开库时不整层重建——`cache_config_set`
+/// BUG-5547（反馈 gPPVTfHm1b）：按 `CACHE_RULES` 6 物化的库（`rwkv_last` 是空的）开库时不整层重建——`cache_config_set`
 /// 只记下当前修订号与回填游标，回包 `rwkvLastFill`；回填完成前末条读（`rwkv_last`）对没填到的卡逐卡重放，结果与填满后
 /// 逐卡相同；`rwkv_last_fill` 一批一笔推进，填完删游标，表与整层重建逐行相同；整份物化也删游标。
 #[test]

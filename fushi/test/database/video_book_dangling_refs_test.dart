@@ -5,7 +5,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 import 'package:test/test.dart';
 
-/// BUG-5530：用户库里 79 部作品、148 条刮削快照、1 条本地花絮的 `book_uid` 指向已经
+/// BUG-5545：用户库里 79 部作品、148 条刮削快照、1 条本地花絮的 `book_uid` 指向已经
 /// 不存在的 `video_books`（页级撕裂留下的孤儿，外键当时没管上）。库管家 ⑤ 的系列
 /// 关系补填拿孤儿作品当 owner 往 `collection_relations` 插行，撞外键（787）。这里钉死
 /// [FushiDatabase.purgeDanglingVideoBookRefs] 按外键语义清孤儿、不碰活数据，以及 v182

@@ -930,7 +930,7 @@ fn run(
             v
         }
         "rwkv_last_fill" => {
-            // 分批回填 `rwkv_last` 的一步（BUG-5532，`cmd/training.rs`）：只写缓存层的这张表与回填游标，别的缓存行与
+            // 分批回填 `rwkv_last` 的一步（BUG-5547，`cmd/training.rs`）：只写缓存层的这张表与回填游标，别的缓存行与
             // 刷新键都不动（`rwkv_last` 只有 RWKV 末条读它，回填出的值与填完之后读到的相同），不作废宿主缓存。
             let limit = req
                 .get("limit")
@@ -963,7 +963,7 @@ fn run(
 /// `derive_cfg`（与迁移写下的是同一个键）。值与库里的相同（按 JSON 值比，键序无关）就什么都不做；变了就写下并按
 /// `Settle::Rebuild` 整个重建派生层（缓存行按新配置重算），同一个事务。配置没变、但缓存层不是按当前推导口径物化的
 /// （`derive_cfg` 的 [RULES_KEY] 不等于 [CACHE_RULES]，`cache.rs`）也整层重建一次——例外是 [RWKV_FILL_FROM]
-/// （与当前口径只差 `rwkv_last`，BUG-5532）：只记下当前修订号与回填游标 [RWKV_FILL_KEY]，表由宿主分批回填
+/// （与当前口径只差 `rwkv_last`，BUG-5547）：只记下当前修订号与回填游标 [RWKV_FILL_KEY]，表由宿主分批回填
 /// （`rwkv_last_fill`），不在这一个写事务里整层重建。回包 `{changed, settled?, rwkvLastFill?}`：
 /// `changed` = 派生层重建过（宿主据它作废按刷新键记的缓存）；`rwkvLastFill: true` = 回填还没做完（刚就地升级，或上次
 /// 没填完），宿主接着填。请求要带 `now`：分发处在同一个事务里接着做默认牌组
@@ -987,7 +987,7 @@ pub(crate) fn cache_config_set(t: &Truth<'_>, col: i64, caches: &Value) -> Resul
             });
         }
         if RWKV_FILL_FROM.is_some_and(|from| rules == Some(from.to_string())) {
-            // 与当前口径只差 `rwkv_last`（BUG-5532）：不整层重建，记下当前修订号与回填游标，表由宿主分批填。别的缓存行
+            // 与当前口径只差 `rwkv_last`（BUG-5547）：不整层重建，记下当前修订号与回填游标，表由宿主分批填。别的缓存行
             // 一行没变，`changed` 仍是 false（宿主不必作废按刷新键记的缓存）。
             t.set_derive_cfg(col, RULES_KEY, Some(&CACHE_RULES.to_string()))?;
             t.set_derive_cfg(col, RWKV_FILL_KEY, Some(""))?;

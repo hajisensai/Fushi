@@ -4,7 +4,7 @@
 ///
 /// 触发点是各库页重载 / 来源扫描（[scheduleAutomaticLibraryCurate]），它们只表示
 /// 「库可能变了」——书架连阅读进度、合集变化都会重载。真正的「有没有新内容」由
-/// 编排器的 [LibraryCurator.runAuto] 按库变化戳判断，没有就什么都不做（BUG-5531）。
+/// 编排器的 [LibraryCurator.runAuto] 按库变化戳判断，没有就什么都不做（BUG-5546）。
 ///
 /// **这是 import 叶子**：只依赖引擎，不 import `package:fushi` 的任何文件——
 /// `AppModel` 与库整理 runner（都在 app 的 import 大环里）要 import 它，它再往回

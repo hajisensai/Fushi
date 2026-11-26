@@ -390,7 +390,7 @@ pub const RULES_KEY: &str = "cacheRules";
 ///   要重建一次才填上。
 pub const CACHE_RULES: i64 = 7;
 
-/// 能就地升到 [CACHE_RULES]、不必整层重建的旧修订号（BUG-5532）：7 相对 6 只多了 `rwkv_last` 这张表，别的缓存行与
+/// 能就地升到 [CACHE_RULES]、不必整层重建的旧修订号（BUG-5547）：7 相对 6 只多了 `rwkv_last` 这张表，别的缓存行与
 /// 派生层逐行相同。按 6 物化的库开库时（`dispatch.rs` `cache_config_set`）只把修订号记成当前值、置上
 /// [RWKV_FILL_KEY]，宿主随后分批回填（`cmd/training.rs` `rwkv_last_fill`），不在开库那一个写事务里整层重建——手机上
 /// 那一次重建要几分钟，中途切后台被系统回收就整笔回滚、下次从头再来，复习页永远停在加载（反馈 gPPVTfHm1b）。
@@ -399,7 +399,7 @@ pub const CACHE_RULES: i64 = 7;
 /// `rwkv_fill_from_is_one_revision_below_cache_rules` 守着不让它跟丢。
 pub const RWKV_FILL_FROM: Option<i64> = Some(6);
 
-/// `derive_cfg` 里「`rwkv_last` 还没回填完」的键（BUG-5532）。值 = 已回填到的卡（`cards` 主键序最后一张的规范 ID
+/// `derive_cfg` 里「`rwkv_last` 还没回填完」的键（BUG-5547）。值 = 已回填到的卡（`cards` 主键序最后一张的规范 ID
 /// 文本；空串 = 还没开始）；没有这一行 = 表是完整的。整份物化（[Index::materialize_caches]）填满了整张表，同时删掉它。
 pub const RWKV_FILL_KEY: &str = "rwkvLastFill";
 
@@ -700,7 +700,7 @@ impl<'t, 'c> Index<'t, 'c> {
         // 整份物化完：这一层是按当前推导口径建的（[CACHE_RULES]）。
         self.t
             .set_derive_cfg(self.col, RULES_KEY, Some(&CACHE_RULES.to_string()))?;
-        // `rwkv_last` 随卡行整份填满了：分批回填（BUG-5532）没做完的也不用再做。
+        // `rwkv_last` 随卡行整份填满了：分批回填（BUG-5547）没做完的也不用再做。
         self.t.set_derive_cfg(self.col, RWKV_FILL_KEY, None)?;
         Ok(())
     }
@@ -3454,7 +3454,7 @@ mod tests {
         );
     }
 
-    /// [super::RWKV_FILL_FROM] 只能是 [super::CACHE_RULES] 的前一版（BUG-5532）：那一版与当前只差 `rwkv_last`。
+    /// [super::RWKV_FILL_FROM] 只能是 [super::CACHE_RULES] 的前一版（BUG-5547）：那一版与当前只差 `rwkv_last`。
     /// 升了 `CACHE_RULES` 而没改它，按旧版物化的库会跳过新口径的整层重建——这里红，逼升号的人重看就地升级规则。
     #[test]
     fn rwkv_fill_from_is_one_revision_below_cache_rules() {

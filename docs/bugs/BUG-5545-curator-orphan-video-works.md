@@ -1,4 +1,4 @@
-## BUG-5530 · 库管家每趟报 `libraryCurate.works.relations` 外键失败：视频作品 / 刮削快照的 owner 视频已不在库里
+## BUG-5545 · 库管家每趟报 `libraryCurate.works.relations` 外键失败：视频作品 / 刮削快照的 owner 视频已不在库里
 - **报告**：2026-11-26（用户安装版错误日志：每趟库管家都有一条 `libraryCurate.works.relations` `SqliteException(787)` FOREIGN KEY constraint failed）
 - **真实性**：✅ 真 bug。用户库副本（schema 181）`PRAGMA foreign_key_check`：`video_metadata_works` 79 行、`video_scrape_meta` 148 行、`video_metadata_extras` 1 行的 `book_uid` 指向已不存在的 `video_books`，全是同一批《药屋少女》多个字幕组版本，子行写入时刻集中在 1792655167–1792655330（2026-10-22，约 3 分钟）。⑤ 的系列关系补填 `backfillScrapedCollectionRelations`（`packages/fushi_engine/lib/media/video/metadata/video_collection_relation_sync.dart`）按 `w.book_uid IS NOT NULL` 取作品，拿孤儿作品当 owner 往 `collection_relations`（`book_uid` 外键 → `video_books`）插行 → 787，整趟补填失败。
 - **孤儿怎么来的**（读代码 + 数据指纹，未能 100% 坐实）：

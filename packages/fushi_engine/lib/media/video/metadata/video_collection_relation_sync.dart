@@ -215,7 +215,7 @@ Future<Directory?> productionAniDbXmlDirectory() async {
 }
 
 /// 补填只认 owner 还在库里的作品：`collection_relations` 的 owner 列有外键，指向已删
-/// 合集 / 视频的孤儿作品（BUG-5530：页级撕裂留下的）当 owner 插行会撞外键
+/// 合集 / 视频的孤儿作品（BUG-5545：页级撕裂留下的）当 owner 插行会撞外键
 /// （SqliteException 787），整趟补填失败。
 const String _kLiveOwner =
     '((w.collection_id IS NOT NULL AND EXISTS (SELECT 1 FROM media_collections c '

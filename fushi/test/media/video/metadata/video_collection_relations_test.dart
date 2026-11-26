@@ -600,7 +600,7 @@ void main() {
       expect(toMovie.targetCollectionId, isNull);
     });
 
-    // BUG-5530：owner 已不在库里的孤儿作品（页级撕裂留下的）不当补填对象——以前
+    // BUG-5545：owner 已不在库里的孤儿作品（页级撕裂留下的）不当补填对象——以前
     // 拿它当 owner 往 collection_relations 插行撞外键（787），整趟补填失败。
     test('存量补填跳过 owner 已不在库里的孤儿作品，不撞外键', () async {
       final Directory dir = await Directory.systemTemp.createTemp('anidb_xml');

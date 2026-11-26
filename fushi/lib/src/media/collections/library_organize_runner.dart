@@ -489,7 +489,7 @@ Future<void> _showCurateResult(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
-            // 额度用尽 / 鉴权被拒这类失败停掉了后续 AI 请求（BUG-5531）：如实说原因。
+            // 额度用尽 / 鉴权被拒这类失败停掉了后续 AI 请求（BUG-5546）：如实说原因。
             if (run.aiStopped case final String code)
               Padding(
                 key: const ValueKey<String>('library_curate_result_ai_stopped'),

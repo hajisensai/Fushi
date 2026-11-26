@@ -3880,7 +3880,7 @@ class FushiDatabase extends _$FushiDatabase
       }
       if (from < 182) {
         // v182：表结构不变，清掉 book_uid 指向已不存在视频的作品 / 刮削快照 / 花絮等
-        // 孤儿行（BUG-5530：页级撕裂留下的，库管家 ⑤ 系列关系补填拿孤儿作品当
+        // 孤儿行（BUG-5545：页级撕裂留下的，库管家 ⑤ 系列关系补填拿孤儿作品当
         // owner 插 collection_relations 撞外键）。作品子树随外键级联；幂等。只有迁移
         // 测试的局部建表夹具会缺表。
         if (await _tableExists('video_books') &&
