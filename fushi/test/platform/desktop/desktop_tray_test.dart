@@ -4,6 +4,8 @@ import 'package:flutter/services.dart';
 import 'package:flutter_test/flutter_test.dart';
 
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/preference_keys.dart';
+import 'package:fushi/src/profile/profile_keys.dart';
 import 'package:fushi/src/platform/desktop/desktop_tray.dart';
 
 /// 托盘菜单拼装、通道去重与原生侧「只拦用户关闭手势」的契约。
@@ -87,6 +89,11 @@ void main() {
       expect(wire['screenOcr']!['revealWindow'], isFalse);
       expect(wire['exit']!['revealWindow'], isFalse);
     });
+  });
+
+  test('「已收进托盘」提示标记是设备本地键，不随 Profile 切换重弹', () {
+    expect(kKnownPreferenceKeys, contains('desktop_tray_hint_shown'));
+    expect(ProfileKeys.isExcludedPref('desktop_tray_hint_shown'), isTrue);
   });
 
   group('DesktopTray 通道', () {
@@ -262,6 +269,32 @@ void main() {
         fw.substring(exiting, exiting + 600),
         contains('RemovePropW(hwnd, ::fushi::kTrayHiddenWindowProp)'),
       );
+    });
+
+    test('主窗属性在 WM_DESTROY 时用消息参数 hwnd 摘除', () {
+      // Win32Window 处理 WM_DESTROY 时先清 window_handle_ 再调 OnDestroy，
+      // OnDestroy 里 GetHandle() 已是 nullptr，在那里摘属性永远走不到。
+      final String fw = read('windows/runner/flutter_window.cpp');
+      final int handler = fw.indexOf('FlutterWindow::MessageHandler(');
+      expect(handler, greaterThan(0));
+      final int destroy = fw.indexOf('if (message == WM_DESTROY) {', handler);
+      expect(destroy, greaterThan(handler));
+      final String block = fw.substring(destroy, fw.indexOf('}', destroy));
+      expect(
+        block,
+        contains('RemovePropW(hwnd, ::fushi::kMainWindowShownProp);'),
+      );
+      expect(
+        block,
+        contains('RemovePropW(hwnd, ::fushi::kTrayHiddenWindowProp);'),
+      );
+      final int onDestroy = fw.indexOf('void FlutterWindow::OnDestroy()');
+      expect(onDestroy, greaterThan(0));
+      final String onDestroyBody = fw.substring(
+        onDestroy,
+        fw.indexOf('Win32Window::OnDestroy();', onDestroy),
+      );
+      expect(onDestroyBody, isNot(contains('RemovePropW')));
     });
   });
 }

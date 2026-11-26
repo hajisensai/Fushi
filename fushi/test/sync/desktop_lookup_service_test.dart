@@ -120,6 +120,17 @@ void main() {
       expect(calls, containsAllInOrder(<String>['show', 'focus']));
     });
 
+    test('主窗最小化时先 restore 再 show/focus', () async {
+      if (!DesktopLookupService.isDesktop) return;
+      DesktopForegroundGuard.debugHiddenWindowsRunner = false;
+      DesktopForegroundGuard.debugForegroundOwnedByCurrentProcess = true;
+      final List<String> calls = mockWindowManager(minimized: true);
+
+      await DesktopLookupService.instance.bringMainWindowToFront();
+
+      expect(calls, containsAllInOrder(<String>['restore', 'show', 'focus']));
+    });
+
     test('主窗可见就不再 show/focus（避免任务栏闪烁）', () async {
       if (!DesktopLookupService.isDesktop) return;
       DesktopForegroundGuard.debugHiddenWindowsRunner = false;
