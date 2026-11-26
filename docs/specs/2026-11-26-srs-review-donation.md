@@ -73,7 +73,7 @@ Future<void> exportSrsDonationFile({
 
 ## 服务端（`services/leaderboard/src/srs_donations.js`）
 
-存储：R2 `MEDIA` 桶键 `srs-donations/<donorId>.apkg`；D1 迁移 `0026_srs_donations.sql`：
+存储：R2 `MEDIA` 桶键 `srs-donations/<donorId>.apkg`；D1 迁移 `0027_srs_donations.sql`：
 - `srs_donations(donor_id TEXT PRIMARY KEY, key_hash TEXT NOT NULL, bytes INTEGER, reviews INTEGER, cards INTEGER, app_version TEXT, created_at INTEGER, updated_at INTEGER)`
 - `srs_donation_withdrawals(donor_id TEXT PRIMARY KEY, withdrawn_at INTEGER NOT NULL, reported_batch TEXT NULL)`
 - `srs_donation_batches(token TEXT PRIMARY KEY, created_at INTEGER, expires_at INTEGER, donors_json TEXT, withdrawn_json TEXT)`

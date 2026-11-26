@@ -1,4 +1,4 @@
-// SRS 复习历史捐赠（给 anki-rwkv 训练调度模型；设计 docs/specs/2026-11-26-srs-review-donation.md，迁移 0026）。
+// SRS 复习历史捐赠（给 anki-rwkv 训练调度模型；设计 docs/specs/2026-11-26-srs-review-donation.md，迁移 0027）。
 //
 // 身份：客户端由 profileUid 派生 donorId（32 位小写 hex）与 donorKey（64 位 hex，Bearer 凭据）。
 // 服务端只存 key_hash = hex(sha256(donorKey 的小写形式按 UTF-8))；第一次上传的 key 认领该 donorId，

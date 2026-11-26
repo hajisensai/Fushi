@@ -192,7 +192,7 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 社交写（好友 / 屏蔽 / 举报）按账户每小时 120 次限流（`LIMITS.socialWritePerHour`）。被管理员隐藏的账户
 不出现在任何列表里，也不能被加好友或屏蔽。
 
-## SRS 复习历史捐赠（迁移 0026，`src/srs_donations.js`）
+## SRS 复习历史捐赠（迁移 0027，`src/srs_donations.js`）
 
 用户自愿把脱敏复习历史（Anki 兼容 `.apkg`）捐给 anki-rwkv 训练调度模型（设计 `docs/specs/2026-11-26-srs-review-donation.md`）。
 文件存 R2 `srs-donations/<donorId>.apkg`，一个捐赠者一个文件，重传覆盖；占「大附件」配额池（`budget.js` 的 `video` 池）。

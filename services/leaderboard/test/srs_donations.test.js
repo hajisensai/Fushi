@@ -1,4 +1,4 @@
-// SRS 复习历史捐赠（src/srs_donations.js，迁移 0026）：上传 / 覆盖 / 查询 / 撤回、限流与配额、批次下载、里程碑通知。
+// SRS 复习历史捐赠（src/srs_donations.js，迁移 0027）：上传 / 覆盖 / 查询 / 撤回、限流与配额、批次下载、里程碑通知。
 import { describe, expect, it, vi } from 'vitest';
 import { call, makeEnv, nextIp } from './harness.js';
 import { SRS_DONATION_LIMITS, donationKey, donorKeyHash, milestoneMessage } from '../src/srs_donations.js';
