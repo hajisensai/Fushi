@@ -8,9 +8,10 @@
 ///   输出语言按「设置 › AI › AI 输出语言」（空 = 界面语言）。
 /// - 结果只交回调用方：编辑页 / 检查器写进字段编辑器的模型（[SrsFieldModel.reset]），编辑页点保存才落库、
 ///   检查器按自动保存走浏览页的写入（压进浏览页撤销栈）；复习页走它自己的可撤销写入。
+/// - 宿主只认窄接口 [SrsFieldAiHost]（AppModel 实现、调用方注入）：本文件不 import AppModel / Riverpod
+///   装配 / 整套字段编辑器，不随调用方进大 import 环（`import_cycle_guard_test.dart` 钉住）。
 library;
 
-import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_feature.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -20,14 +21,13 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/ai/ai_srs_field_actions.dart' show AiSrsFieldAction;
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
-import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/models/module_registry.dart' show isAiModuleEnabled;
+import 'package:fushi/src/pages/implementations/srs/srs_field_ai_host.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_prompt_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_field_editors.dart'
-    show SrsFieldModel;
+import 'package:fushi/src/pages/implementations/srs/srs_field_model.dart';
 import 'package:fushi/src/srs/srs_field_catalog.dart' as catalog;
-import 'package:fushi/src/srs/srs_providers.dart' show srsRunLogged;
+import 'package:fushi/src/srs/srs_run_logged.dart';
 import 'package:fushi/src/stats/study_goals.dart' show studyGoalLanguageName;
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
@@ -41,7 +41,7 @@ bool srsFieldAiEligible(SrsFieldDef field) =>
     };
 
 /// 指派给「复习卡片字段」的 AI 提供商；没有指派就提示并返回 null（调用方据此一个请求都不发）。
-AiProviderConfig? srsFieldAiProvider(AppModel appModel) {
+AiProviderConfig? srsFieldAiProvider(SrsFieldAiHost appModel) {
   final AiProviderConfig? provider = appModel.prefsRepo
       .resolveAiFeatureProvider(AiFeature.srsNoteField);
   if (provider == null) FushiToast.show(msg: t.ai_assist_no_provider);
@@ -66,7 +66,7 @@ List<String> srsFieldAiOutputLanguageTags() => <String>[
 ];
 
 /// 实际生效的输出语言名：设置为空 = 跟随界面语言。
-String srsFieldAiOutputLanguage(AppModel appModel) {
+String srsFieldAiOutputLanguage(SrsFieldAiHost appModel) {
   final String tag = appModel.prefsRepo.aiOutputLanguage;
   return srsFieldAiOutputLanguageName(
     tag.isNotEmpty
@@ -77,7 +77,7 @@ String srsFieldAiOutputLanguage(AppModel appModel) {
 
 /// [noteType] 的这条笔记交给字段 AI 的上下文（[valuesById] 现取）。
 AiSrsFieldNoteContext srsFieldAiNoteContext(
-  AppModel appModel, {
+  SrsFieldAiHost appModel, {
   required SrsNoteTypeView noteType,
   required SrsFieldDef field,
   required Map<String, String> valuesById,
@@ -94,7 +94,7 @@ AiSrsFieldNoteContext srsFieldAiNoteContext(
 /// [valuesById] 每次生成时现取整条笔记各字段的值（编辑页 / 检查器里别的字段可能刚改过）。
 Future<String?> showSrsFieldAiFor(
   BuildContext context, {
-  required AppModel appModel,
+  required SrsFieldAiHost appModel,
   required AiProviderConfig provider,
   required SrsNoteTypeView noteType,
   required SrsFieldDef field,
@@ -143,7 +143,7 @@ Future<String?> showSrsFieldAiFor(
 /// [model] 在抽屉关掉后现取：等待期间字段模型可能被换掉（编辑页换了笔记类型），取不到就不写。
 Future<void> runSrsFieldAiOnModel(
   BuildContext context, {
-  required AppModel appModel,
+  required SrsFieldAiHost appModel,
   required SrsNoteTypeView noteType,
   required SrsFieldDef field,
   required SrsFieldModel? Function() model,
@@ -169,16 +169,16 @@ Future<void> runSrsFieldAiOnModel(
 /// 字段标题行的「AI」键（`srs-field-ai-<字段名>`）：AI 模块开着、且字段装的是文字时才有，否则空表。
 ///
 /// [context] 传页面 State 自己的 context（抽屉关掉后据它判断页面还在不在），[logTag] 进错误日志。
+/// [appModel] 由调用方在 build 里 `ref.watch(appProvider)` 取得（AI 模块开关一变就重建）。
 List<Widget> srsFieldAiHeaderActions(
-  BuildContext context,
-  WidgetRef ref, {
+  BuildContext context, {
+  required SrsFieldAiHost appModel,
   required String logTag,
   required SrsNoteTypeView noteType,
   required SrsFieldDef field,
   required SrsFieldModel? Function() model,
   required Map<String, String> Function() valuesById,
 }) {
-  final AppModel appModel = ref.watch(appProvider);
   if (!isAiModuleEnabled(appModel.moduleVisibility) ||
       !srsFieldAiEligible(field)) {
     return const <Widget>[];
@@ -193,7 +193,7 @@ List<Widget> srsFieldAiHeaderActions(
         logTag,
         () => runSrsFieldAiOnModel(
           context,
-          appModel: ref.read(appProvider),
+          appModel: appModel,
           noteType: noteType,
           field: field,
           model: model,

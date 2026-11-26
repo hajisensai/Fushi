@@ -213,6 +213,10 @@ const List<String> kLeafEntries = <String>[
   'lib/src/media/video/subtitle/app_video_subtitle_service.dart',
   'lib/src/media/video/subtitle/burned_in_subtitle_ocr.dart',
   'lib/src/media/video/web_video_subtitle_generation.dart',
+  // 卡片字段 AI 入口被笔记编辑页 / 浏览页检查器 / 复习页 import；宿主只经窄接口
+  // SrsFieldAiHost（AppModel 实现、调用方注入），值模型与 srsRunLogged 下沉成叶子。
+  // 直接 import AppModel / srs_providers / srs_field_editors 就跟着进环（2026-11-25 实测 +1）。
+  'lib/src/pages/implementations/srs/srs_field_ai_action.dart',
 ];
 
 const List<String> kBarrels = <String>[

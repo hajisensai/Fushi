@@ -907,7 +907,7 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       help: SrsFieldHelp.of(field, miningSlot: _miningSlotsOf(type)[field.id]),
       headerActions: srsFieldAiHeaderActions(
         this.context,
-        ref,
+        appModel: ref.watch(appProvider),
         logTag: 'SrsNoteEditor.fieldAi',
         noteType: type,
         field: field,

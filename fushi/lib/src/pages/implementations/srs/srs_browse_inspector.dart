@@ -38,6 +38,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_field_editors.dart';
 import 'package:fushi/src/srs/srs_fushi_card_fields.dart' show srsPlainText;
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi/src/srs/srs_field_speech.dart' show srsSpeechSourcesOf;
+import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/srs/srs_sound_tag.dart';
 import 'package:fushi/src/utils/adaptive/shell_style.dart'
@@ -750,7 +751,7 @@ class _EditTabState extends ConsumerState<_EditTab> {
                 // 与编辑页同一个字段 AI 键（BUG-5470）：结果换进模型后照常停笔自动保存，经浏览页写入压进撤销栈。
                 headerActions: srsFieldAiHeaderActions(
                   this.context,
-                  ref,
+                  appModel: ref.watch(appProvider),
                   logTag: 'SrsBrowse.inlineFieldAi',
                   noteType: type,
                   field: f,

@@ -52,7 +52,10 @@ import 'package:fushi/src/srs/srs_review_layout.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi/src/utils/misc/error_log_service.dart';
+import 'package:fushi/src/srs/srs_run_logged.dart';
 import 'package:fushi_engine/srs/srs_op_ledger.dart';
+
+export 'package:fushi/src/srs/srs_run_logged.dart' show srsRunLogged;
 
 /// 复习模块此刻是否可见（用户意愿 + 平台判据的唯一合成，见 [ModuleVisibility]）。
 final Provider<bool> srsModuleEnabledProvider = Provider<bool>(
@@ -931,20 +934,4 @@ void retrySrsStoreOpen(WidgetRef ref) {
     ref.invalidate(srsStorageProvider);
   }
   if (ref.read(srsStoreProvider).hasError) ref.invalidate(srsStoreProvider);
-}
-
-/// 把一个 Future 交给后台跑并记录失败（按钮回调里用）。
-///
-/// 用 `then(onError:)` 而不是 `catchError`：[body] 实际返回的可能是 `Future<bool>` 之类（`Future<void>`
-/// 收得下任何 Future），`catchError` 的处理函数返回 null 时 Dart 会再抛一个「error handler must return a
-/// value of the future's type」的未处理错误。
-void srsRunLogged(String where, Future<void> Function() body) {
-  unawaited(
-    body().then<void>(
-      (_) {},
-      onError: (Object e, StackTrace stack) {
-        ErrorLogService.instance.log(where, e, stack);
-      },
-    ),
-  );
 }

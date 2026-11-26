@@ -60,34 +60,9 @@ import 'package:fushi/src/utils/misc/system_tts.dart'
     show resolveSystemTtsLanguageTag;
 import 'package:fushi/src/utils/misc/tts_channel.dart';
 import 'package:fushi/src/srs/srs_action_error_text.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_field_model.dart';
 
-/// 一个字段的当前值。编辑器改值走 [edit]；页面整体换值（重读笔记、连续添加后清空、
-/// 冲突裁决）走 [reset]，编辑器据 [generation] 重建内部状态。
-class SrsFieldModel extends ChangeNotifier {
-  SrsFieldModel(this._value);
-
-  String _value;
-  int _generation = 0;
-
-  String get value => _value;
-
-  /// [reset] 的次数。
-  int get generation => _generation;
-
-  /// 编辑器改值。
-  void edit(String value) {
-    if (value == _value) return;
-    _value = value;
-    notifyListeners();
-  }
-
-  /// 外部整体换值（编辑器丢弃自身状态，按新值重新判类型）。
-  void reset(String value) {
-    _value = value;
-    _generation++;
-    notifyListeners();
-  }
-}
+export 'package:fushi/src/pages/implementations/srs/srs_field_model.dart';
 
 /// 选到 / 粘到 / 录到的一份媒体。
 typedef SrsPickedMedia = ({String name, Uint8List bytes});

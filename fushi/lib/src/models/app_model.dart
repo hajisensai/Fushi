@@ -680,6 +680,7 @@ import 'package:fushi/src/platform/platform_providers.dart';
 import 'package:fushi/src/stats/reader_study_clock_start_mode.dart';
 import 'package:fushi/src/stats/stat_window.dart' show StatWindow;
 import 'package:fushi/src/stats/study_goal_host.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_field_ai_host.dart';
 import 'package:fushi/src/stats/study_goal_period.dart';
 import 'package:fushi/src/stats/study_goal_record.dart'
     show
@@ -1077,6 +1078,7 @@ class AppModel
         AudioProductionHost,
         ExternalStorageAccess,
         LookupMatchSearchHost,
+        SrsFieldAiHost,
         StudyGoalHost,
         TrackingSeriesCardHost {
   /// Platform-specific service implementations, injected at construction.
