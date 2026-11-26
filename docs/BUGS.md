@@ -33,40 +33,27 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4815 条。点号进各自文件。
+> 共 4823 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5539](bugs/BUG-5539-v182-collection-side-orphans-not-purged.md) | 🚧 | 🚧 | v182-collection-side-orphans-not-purged |
+| [BUG-5538](bugs/BUG-5538-curator-ai-blocked-no-auto-recovery.md) | 🚧 | 🚧 | curator-ai-blocked-no-auto-recovery |
+| [BUG-5537](bugs/BUG-5537-i18n-merge-driver-corrupts-flutter-sdk.md) | ✅ | ✅ | i18n-merge-driver-corrupts-flutter-sdk |
 | [BUG-5536](bugs/BUG-5536-storage-scan-ui-freeze.md) | ✅ | ✅ | 打开 设置 › 存储 扫描期间整窗冻结（有声书逐文件音频路径在 UI isolate 上 O(n²) 去嵌套） |
 | [BUG-5535](bugs/BUG-5535-masthead-icons-title-misaligned.md) | ✅ | ✅ | 页头大字顶栏的返回键、动作图标和页名上下没对齐（二级页收缩后返回键高出一截，库页动作组和页名错开） |
 | [BUG-5534](bugs/BUG-5534-feedback-video-diag-missing.md) | ✅ | ✅ | 反馈附带的日志里没有视频性能诊断（上屏 / 丢帧 / 帧耗时） |
 | [BUG-5533](bugs/BUG-5533-subtitle-fill-incomplete-download-stalls.md) | 🚧 | 🚧 | 整库补字幕遇到没下完的视频，每集卡到 5 分钟停滞超时才失败 |
+| [BUG-5533](bugs/BUG-5533-apple-sidebar-scope-rebuilds-hidden-library-pages.md) | ✅ | ✅ | Apple 宽窗侧栏外壳切 tab 后紧跟一帧：所有访问过的保活库页（含藏起的）整页重建 |
+| [BUG-5532](bugs/BUG-5532-danmaku-clock-resnap-stutter.md) | ✅ | ✅ | danmaku-clock-resnap-stutter |
+| [BUG-5532](bugs/BUG-5532-srs-rules7-full-rebuild-killed-loop.md) | ✅ | ✅ | 升级到缓存口径 7 后复习一直在加载：开库整层重建几分钟、切后台被杀就回滚重来 |
+| [BUG-5531](bugs/BUG-5531-curator-auto-retries-ai-failures.md) | ✅ | ✅ | AI 库管家默认开、书架每次重载就跑一趟，额度用完还逐个单元问 AI、下一趟再问一遍 |
 | [BUG-5531](bugs/BUG-5531-srs-export-filtered-review-ease-zero.md) | ✅ | ✅ | srs-export-filtered-review-ease-zero |
 | [BUG-5530](bugs/BUG-5530-video-move-rebind-keeps-old-source.md) | ✅ | ✅ | 扫描搬家改指不改归属源、不迁路径关联列 |
+| [BUG-5530](bugs/BUG-5530-curator-orphan-video-works.md) | ✅ | ✅ | 库管家每趟报 `libraryCurate.works.relations` 外键失败：视频作品 / 刮削快照的 owner 视频已不在库里 |
 | [BUG-5529](bugs/BUG-5529-windows-update-launcher-locks-bundled-crt.md) | ✅ | ✅ | Windows 应用内更新卡在「Update did not finish」：msvcp140.dll 被 update launcher 占着换不掉 |
 | [BUG-5528](bugs/BUG-5528-bd-subtitle-version-merge.md) | 🚧 | 🚧 | 原盘下载字幕版本对不上时只能整份换 ASR 稿：缺 TV 版 / BD 版逐句合并 |
 | [BUG-5527](bugs/BUG-5527-work-network-duplicate-nodes-floating-labels.md) | ✅ | ✅ | 关系网：单视频合集与其唯一那集画成两个重复节点、建议边标签飘离连线、标题截断分不清前後編 |
-> 共 4804 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5532](bugs/BUG-5532-danmaku-clock-resnap-stutter.md) | ✅ | ✅ | danmaku-clock-resnap-stutter |
-> 共 4804 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5533](bugs/BUG-5533-apple-sidebar-scope-rebuilds-hidden-library-pages.md) | ✅ | ✅ | Apple 宽窗侧栏外壳切 tab 后紧跟一帧：所有访问过的保活库页（含藏起的）整页重建 |
-> 共 4805 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5531](bugs/BUG-5531-curator-auto-retries-ai-failures.md) | ✅ | ✅ | AI 库管家默认开、书架每次重载就跑一趟，额度用完还逐个单元问 AI、下一趟再问一遍 |
-| [BUG-5530](bugs/BUG-5530-curator-orphan-video-works.md) | ✅ | ✅ | 库管家每趟报 `libraryCurate.works.relations` 外键失败：视频作品 / 刮削快照的 owner 视频已不在库里 |
-> 共 4804 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5532](bugs/BUG-5532-srs-rules7-full-rebuild-killed-loop.md) | ✅ | ✅ | 升级到缓存口径 7 后复习一直在加载：开库整层重建几分钟、切后台被杀就回滚重来 |
 | [BUG-5526](bugs/BUG-5526-srs-link-retired-root-writer.md) | ✅ | ✅ | 平板复习同步永远不采用电脑的集合：集合目录里退役旧根的写入者被当成成员，关联判成「已关联」 |
 | [BUG-5525](bugs/BUG-5525-rwkv-cold-start-full-replay.md) | ✅ | ✅ | RWKV 冷启动逐卡重放全部历史，复习页首开等十几二十秒 |
 | [BUG-5524](bugs/BUG-5524-home-apple-collapsed-title-covered.md) | ✅ | ✅ | home-apple-collapsed-title-covered |

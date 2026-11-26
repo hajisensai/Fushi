@@ -399,7 +399,11 @@ class LibraryCurator {
           '${await facts.changeStamp()}'
           '|ai:${a.organize ? 1 : 0}${a.videoIdentify ? 1 : 0}'
           '${a.mediaLinks ? 1 : 0}';
-      if (!state.autoResume && state.autoStamp == stamp) return null;
+      if (!state.autoResume &&
+          state.autoStamp == stamp &&
+          !_deferralDue(state, _clock().millisecondsSinceEpoch)) {
+        return null;
+      }
       return await _runLocked(
         trigger: LibraryCurateTrigger.auto,
         full: false,
@@ -412,6 +416,42 @@ class LibraryCurator {
       _busy = false;
     }
   }
+
+  /// 有没有退避在「上一趟自动跑开始之后、此刻之前」到期（失败单元 / 失败阶段等着重试）。
+  /// 只看这个窗口：到期后跑过一趟仍没被重记、也没被 [_RunContext.settle] 清掉的陈旧
+  /// 条目（单元已删之类）不会让门从此常开——那就回到了每次信号都跑一趟。
+  static bool _deferralDue(LibraryCurateState state, int nowMs) {
+    int lastAuto = 0;
+    for (final LibraryCurateRun r in state.runs) {
+      if (r.trigger == LibraryCurateTrigger.auto && r.startedAt > lastAuto) {
+        lastAuto = r.startedAt;
+      }
+    }
+    for (final LibraryCurateDeferral d in state.deferred.values) {
+      if (d.untilMs > lastAuto && d.untilMs <= nowMs) return true;
+    }
+    return false;
+  }
+
+  /// 用户重新打开自动开关（设置页）：解除 AI 停用、清掉退避与戳，下一次触发照常跑
+  /// （[LibraryCurateState.resume]）。走编排器而不是直接改偏好：有一趟在跑时它开跑就把
+  /// 整份状态读进内存、每阶段与收尾都整份写回，旁路写的解除会被盖掉——这时记下来，
+  /// 由这一趟收尾时合进它的状态。
+  Future<void> resumeAuto() async {
+    if (_current != null) {
+      _resumePending = true;
+      return;
+    }
+    final LibraryCurateState state = await store.load();
+    state.resume();
+    await store.save(state);
+  }
+
+  bool _resumePending = false;
+
+  /// 失败阶段在 [LibraryCurateState.deferred] 里的键（按退避重开自动门）。
+  static String _stageDeferKey(LibraryCurateStage stage) =>
+      'stage:${stage.wire}';
 
   Future<LibraryCurateRun> _runLocked({
     required LibraryCurateTrigger trigger,
@@ -480,6 +520,15 @@ class LibraryCurator {
           }
         }
         run.stages.add(result);
+        // 阶段失败（internal_error）不推进水位；按退避记下，到期由 [_deferralDue]
+        // 重开自动门重试——否则戳不变时这一阶段永远不会再被自动跑到。
+        if (target == null) {
+          if (result.status == LibraryCurateStageStatus.failed) {
+            state.defer(_stageDeferKey(stage), now);
+          } else if (result.status == LibraryCurateStageStatus.done) {
+            state.deferred.remove(_stageDeferKey(stage));
+          }
+        }
         // 单条重试只看了一个单元：不代表这一阶段做完了，水位与进度都不动。
         if (target == null && result.status == LibraryCurateStageStatus.done) {
           // 水位 = 这一趟的开始时刻；进度清空（下一趟从新水位重新数）。
@@ -498,6 +547,11 @@ class LibraryCurator {
       if (autoStamp != null) {
         state.autoStamp = autoStamp;
         state.autoResume = ctx.leftover;
+      }
+      if (_resumePending) {
+        // 跑的过程中用户重新打开了自动开关（[resumeAuto]）：合进这一趟要写回的状态。
+        _resumePending = false;
+        state.resume();
       }
       state.upsertRun(run);
       await store.save(state);
@@ -2830,6 +2884,7 @@ class DatabaseLibraryCurateFacts implements LibraryCurateFacts {
 
   static const List<String> _kChangeStampColumns = <String>[
     'books',
+    'srt_books',
     'videos',
     'games',
     'game_sources',
@@ -2843,6 +2898,8 @@ class DatabaseLibraryCurateFacts implements LibraryCurateFacts {
       'SELECT '
       "(SELECT COUNT(*) || ':' || IFNULL(MAX(local_added_at), 0) "
       'FROM epub_books) AS books, '
+      "(SELECT COUNT(*) || ':' || IFNULL(MAX(local_added_at), 0) "
+      'FROM srt_books) AS srt_books, '
       "(SELECT COUNT(*) || ':' || IFNULL(MAX(local_added_at), 0) "
       'FROM video_books) AS videos, '
       "(SELECT COUNT(*) || ':' || IFNULL(MAX(added_at), 0) "

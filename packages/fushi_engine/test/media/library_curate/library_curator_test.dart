@@ -5,6 +5,7 @@
 // 工具箱是假的（每个写操作照真工具箱的形状记进内存库的 ai_agent_actions，撤销按记录
 // 回放），库内容是一个内存模型——这里只验编排器自己负责的逻辑；各操作的落库与撤销
 // 由它们各自的路由测试覆盖。
+import 'dart:async';
 import 'dart:convert';
 
 import 'package:drift/drift.dart' show Value;
@@ -1979,6 +1980,94 @@ void main() {
       expect(first.status, LibraryCurateRunStatus.partial);
       expect((await store.load()).autoResume, isTrue);
       expect(await c.runAuto(), isNotNull, reason: '留了活：接着做');
+    });
+
+    test('库变化戳算上字幕书 / 有声书：只新入库一本 srt 书也算有新内容', () async {
+      final DatabaseLibraryCurateFacts real = DatabaseLibraryCurateFacts(db);
+      final String before = await real.changeStamp();
+      await db.upsertSrtBook(
+        SrtBooksCompanion.insert(
+          uid: 'srt-new',
+          title: 'New',
+          srtPath: '/tmp/new.srt',
+          importedAt: 1,
+          localAddedAt: const Value<int>(1234),
+        ),
+      );
+      expect(await real.changeStamp(), isNot(before));
+    });
+
+    test('阶段失败：戳没变时等退避到期再自动重跑这一阶段，做完后门又关上', () async {
+      final _Op books = toolbox.ops[LibraryCurateOps.organizeRun]!;
+      bool fail = true;
+      toolbox.op(
+        LibraryCurateOps.organizeRun,
+        (Map<String, Object?> a) async {
+          if (fail && a['domain'] == 'books') throw const _Fail('network');
+          return books.handler(a);
+        },
+        payload: books.payload,
+        undo: books.undo,
+      );
+      final LibraryCurateRun first = (await curator().runAuto())!;
+      expect(first.stages.first.status, LibraryCurateStageStatus.failed);
+      expect(
+        (await store.load()).deferred.containsKey('stage:organize.books'),
+        isTrue,
+      );
+      expect(await curator().runAuto(), isNull, reason: '退避期内、库没变：不跑');
+      now += kLibraryCurateDeferBase.inMilliseconds + 1;
+      fail = false;
+      final LibraryCurateRun? again = await curator().runAuto();
+      expect(again, isNotNull, reason: '失败阶段的退避到期：门重开');
+      expect(again!.stages.first.status, LibraryCurateStageStatus.done);
+      expect(
+        (await store.load()).deferred.containsKey('stage:organize.books'),
+        isFalse,
+      );
+      expect(await curator().runAuto(), isNull, reason: '做完了：门又关上');
+    });
+
+    test('到期后跑过一趟仍留着的陈旧退避，不让门从此常开', () async {
+      expect(await curator().runAuto(), isNotNull);
+      final LibraryCurateState s = await store.load();
+      s.deferred['scrape:gone'] = LibraryCurateDeferral(
+        failures: 1,
+        untilMs: now + 5000,
+      );
+      await store.save(s);
+      expect(await curator().runAuto(), isNull, reason: '还没到期');
+      now += 10000;
+      expect(await curator().runAuto(), isNotNull, reason: '到期：重开一次');
+      expect(await curator().runAuto(), isNull, reason: '跑过一趟了：不再因为它常开');
+    });
+
+    test('跑的过程中重新打开自动开关：解除由这一趟收尾合进去，不被整份写回盖掉', () async {
+      final LibraryCurateState s0 = await store.load()
+        ..aiBlocked = 'quota';
+      await store.save(s0);
+      final Completer<void> entered = Completer<void>();
+      final Completer<void> gate = Completer<void>();
+      final _Op books = toolbox.ops[LibraryCurateOps.organizeRun]!;
+      toolbox.op(
+        LibraryCurateOps.organizeRun,
+        (Map<String, Object?> a) async {
+          if (!entered.isCompleted) entered.complete();
+          await gate.future;
+          return books.handler(a);
+        },
+        payload: books.payload,
+        undo: books.undo,
+      );
+      final LibraryCurator c = curator();
+      final Future<LibraryCurateRun?> running = c.runAuto();
+      await entered.future;
+      await c.resumeAuto();
+      gate.complete();
+      await running;
+      final LibraryCurateState after = await store.load();
+      expect(after.aiBlocked, isNull);
+      expect(after.autoStamp, isNull, reason: '下一次触发照常跑');
     });
   });
 

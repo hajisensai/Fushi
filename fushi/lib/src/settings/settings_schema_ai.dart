@@ -4,6 +4,8 @@ import 'package:fushi_engine/ai/mcp_client/mcp_client_toolbox.dart'
 import 'package:fushi_engine/ai/web_knowledge.dart';
 import 'package:fushi_engine/media/library_curate/library_curate_run.dart'
     show LibraryCurateState;
+import 'package:fushi_engine/media/library_curate/library_curator.dart'
+    show LibraryCurator;
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/ai/agent/ai_agent_controller.dart'
@@ -22,6 +24,8 @@ import 'package:fushi/src/pages/implementations/ai_mcp_servers_page.dart'
 import 'package:fushi/src/pages/implementations/ai_provider_settings_section.dart';
 import 'package:fushi/src/pages/implementations/ai_web_knowledge_sites_section.dart';
 import 'package:fushi/src/pages/implementations/ai_web_search_section.dart';
+import 'package:fushi/src/media/library_curate/library_curate_auto.dart'
+    show appLibraryCurator;
 import 'package:fushi/src/media/library_curate/library_agent_review_state.dart'
     show LibraryAgentReviewState;
 import 'package:fushi/src/media/collections/library_organize_runner.dart'
@@ -417,10 +421,16 @@ SettingsDestination buildAiDestination() {
               final PreferencesRepository prefs = c.appModel.prefsRepo;
               await prefs.setLibraryCurateAuto(value);
               if (value) {
-                final LibraryCurateState state = LibraryCurateState.decode(
-                  prefs.libraryCurateState,
-                )..resume();
-                await prefs.setLibraryCurateState(state.encode());
+                // 经编排器：有一趟在跑时由它收尾合并，不被整份写回盖掉。
+                final LibraryCurator? curator = appLibraryCurator();
+                if (curator != null) {
+                  await curator.resumeAuto();
+                } else {
+                  final LibraryCurateState state = LibraryCurateState.decode(
+                    prefs.libraryCurateState,
+                  )..resume();
+                  await prefs.setLibraryCurateState(state.encode());
+                }
               }
             },
             defaultValue: false,

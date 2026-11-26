@@ -12,4 +12,5 @@
   - `LibraryCurator.runAuto`：比库变化戳（`LibraryCurateFacts.changeStamp`：各库行数 + 最近入库 / 更新时刻，加 AI 指派），没变且上一趟没碰到单趟上限就什么都不做。触发点不收窄：库页重载覆盖了全部入库入口（含同步拉取），收窄要在每条导入路径各挂一次、容易漏；变化判断放在编排器里，服务端 / CLI 也受益。
   - ⑤ 系列关系补填在自动路径上只在 `video_metadata_works` 自上一趟以来变过（或这一趟有改动）时跑。
 - **[x] ② 已加自动化测试** — `packages/fushi_engine/test/media/library_curate/library_curator_test.dart`：配置类失败停掉后续 AI / 结论带原因 / 自动路径不再问 / 手动重试；非致命失败退避、手动照样重试；退避到期从水位之外捞回重试；没有新内容不跑、不记运行；碰到单趟上限接着跑；⑤ 补填门；关系推断 `aiError` 停 AI；退避与状态往返。`fushi/test/ops/ctl_library_curate_routes_test.dart`：两开关默认关、开了才接管触发点。
+- **合并时补修（2026-11-27，PR #4516 审查）**：① 库变化戳漏了 `srt_books`（自动整理的书域读它的 `local_added_at`），只新入库字幕书 / 有声书时门不开，已补列；② 阶段失败（`internal_error`）不推进水位，但戳不变时门不开，这一阶段永远不会被自动重跑；退避到期的失败单元同样要等库有变化。现在失败阶段按同一套退避记成 `stage:<wire>`，`runAuto` 的门多一个条件：有退避在「上一趟自动跑开始之后、此刻之前」到期就放行。只看这个窗口，陈旧退避不会让门常开；③ 设置开关直接读、改、写 `library_curate_state`，会被正在跑的那一趟整份写回盖掉。改成调 `LibraryCurator.resumeAuto()`，有一趟在跑时由它收尾合并。测试在 `library_curator_test.dart`「自动路径「没有新内容」不跑」组。AI 停用后的自动恢复与界面提示登记为 BUG-5538，v182 合并侧孤儿登记为 BUG-5539。
 - **备注**：spec `docs/specs/2026-11-18-ai-library-curator-design.md` §9、`docs/specs/2026-11-22-ai-library-agent-design.md` §7 同步改成默认关。
