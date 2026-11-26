@@ -106,14 +106,18 @@ void main() {
 
   group('库页页头几何', () {
     // 版面尺寸取真实量级：页名一行、动作组 48、主按钮 48 / 56、徽标。
-    FushiMastheadGeometry geometry({required bool compact, bool title = true}) {
+    FushiMastheadGeometry geometry({
+      required bool compact,
+      bool title = true,
+      bool buttons = true,
+    }) {
       final double font = compact ? 46 : 84;
       final double line = font * FushiPageTitleMetrics.titleLineHeight;
       final double baseline = font * 0.2;
       return FushiMastheadGeometry(
         compact: compact,
         width: compact ? 402 : 1400,
-        leading: const Size(48, 48),
+        leading: buttons ? const Size(48, 48) : Size.zero,
         title: title ? Size(font * 2, line) : Size.zero,
         titleBaseline: baseline,
         titleInkCenter: baseline + FushiPageTitleMetrics.inkCenterEm * font,
@@ -121,8 +125,12 @@ void main() {
         badge: compact ? const Size(22, 22) : const Size(44, 44),
         switcher: title ? const Size(120, 30) : Size(font * 2, line),
         switchBaseline: baseline,
-        actions: const Size(150, 48),
-        primary: compact ? const Size(48, 48) : const Size(56, 56),
+        actions: buttons ? const Size(150, 48) : Size.zero,
+        primary: !buttons
+            ? Size.zero
+            : compact
+            ? const Size(48, 48)
+            : const Size(56, 56),
         secondary: Size.zero,
       );
     }
@@ -153,6 +161,25 @@ void main() {
         });
       }
     }
+
+    test('窄窗没有任何按钮的页（设置）：页名基线与有按钮的模块页同一条线', () {
+      final FushiMastheadGeometry withButtons = geometry(compact: true);
+      final FushiMastheadGeometry bare = geometry(
+        compact: true,
+        buttons: false,
+      );
+      for (final double p in const <double>[0, 0.5, 1]) {
+        double baselineY(FushiMastheadGeometry g) =>
+            g.topPadAt(p) +
+            g.firstRowHeightAt(p) -
+            g.titleLiftAt(p) -
+            g.titleBaseline * g.titleScaleAt(p);
+        expect(
+          baselineY(bare),
+          moreOrLessEquals(baselineY(withButtons), epsilon: 1e-6),
+        );
+      }
+    });
 
     test('窄窗一级切换顶替页名：图标中线 = 切换大字的字面中心', () {
       final FushiMastheadGeometry g = geometry(compact: true, title: false);

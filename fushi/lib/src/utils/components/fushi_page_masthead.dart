@@ -331,11 +331,21 @@ class FushiMastheadGeometry {
   }
 
   /// 动作行各段（前导 / 动作组 / 主按钮，主按钮按 [primaryScaleAt]）里最高
-  /// 一段的半高。
+  /// 一段的半高。手机上恒按主按钮位与一颗动作按钮中较高的那个留
+  /// （[FushiPageTitleMetrics.minFirstRowExtentAt] 同一口径）：这一页没有动作 /
+  /// 主按钮时，展开与收起各进度下页名基线都与其它模块页同一条线，切 tab 不跳。
   double _actionHalfAt(double p) =>
       math.max(
-        math.max(leading.height, actions.height),
-        primary.height * primaryScaleAt(p),
+        math.max(
+          math.max(leading.height, actions.height),
+          primary.height * primaryScaleAt(p),
+        ),
+        compact
+            ? math.max(
+                _metrics.primaryExtentAt(p),
+                FushiPageTitleMetrics.actionExtent,
+              )
+            : 0,
       ) /
       2;
 
