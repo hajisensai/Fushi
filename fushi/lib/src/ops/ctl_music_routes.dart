@@ -614,7 +614,7 @@ List<CtlRoute> buildMusicCtlRoutesFor({
         // 专辑页「全部播放」/「随机播放」。
         items = <MusicPlayItem>[
           for (final MusicTrackRow t in snap.tracksOfAlbum(albumUid))
-            musicPlayItemOf(t, album: album),
+            musicPlayItemOf(t, album: album, trackPathOf: snap.trackPathOf),
         ];
         queueContext = MusicQueueContext.album;
       } else {
@@ -625,7 +625,11 @@ List<CtlRoute> buildMusicCtlRoutesFor({
         items = <MusicPlayItem>[
           for (final String uid in trackUids)
             if (byUid[uid] case final MusicTrackRow t)
-              musicPlayItemOf(t, album: snap.albumByUid[t.albumUid])
+              musicPlayItemOf(
+                t,
+                album: snap.albumByUid[t.albumUid],
+                trackPathOf: snap.trackPathOf,
+              )
             else
               throw CtlFailure.notFound('曲库里没有曲目 $uid'),
         ];

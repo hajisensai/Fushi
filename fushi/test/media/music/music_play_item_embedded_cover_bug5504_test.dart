@@ -1,12 +1,20 @@
 import 'dart:io';
 
+import 'package:drift/drift.dart' show Value;
+import 'package:drift/native.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi_cli/fushi_cli.dart';
 import 'package:fushi/src/media/music/music_library_data.dart';
+import 'package:fushi/src/ops/ctl_music_routes.dart';
 import 'package:fushi/src/media/music/music_output_backend.dart';
 import 'package:fushi/src/pages/implementations/music/music_cover.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_backdrop.dart';
+import 'package:fushi/src/pages/implementations/music/music_track_list.dart'
+    show musicLocalTrackCoverOf;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:material_ui/material_ui.dart';
+
+import '../../helpers/music_ctl_fakes.dart';
 
 /// BUG-5504（反馈 qGNRXaXNEv / EMjx7gJftH）：只有内嵌封面、没有目录封面的本地曲目，
 /// 曲目行有图，播放页 / 迷你播放条 / 队列却是占位音符——播放项只带目录封面。
@@ -75,13 +83,54 @@ void main() {
       expect(item.embeddedCoverPath, isNull);
     });
 
-    test('专辑选定的封面曲目路径（调用方查好）优先于这首自己的', () {
+    test('专辑选定的封面曲目（经 trackPathOf 查路径）优先于这首自己的', () {
       final MusicPlayItem item = musicPlayItemOf(
-        _track('b', albumUid: 'al'),
+        _track('b', albumUid: 'al', hasEmbeddedCover: true),
         album: _album('al', coverTrackUid: 'a'),
-        albumEmbeddedPath: '/music/a.flac',
+        trackPathOf: musicTrackPathsOf(<MusicTrackRow>[
+          _track('a', albumUid: 'al', hasEmbeddedCover: true),
+        ]),
       );
       expect(item.embeddedCoverPath, '/music/a.flac');
+    });
+
+    test('只有第一首带内嵌图：第二首的播放项与曲目行同一张封面', () {
+      final MusicAlbumRow album = _album('al', coverTrackUid: 'a');
+      final List<MusicTrackRow> tracks = <MusicTrackRow>[
+        _track('a', albumUid: 'al', hasEmbeddedCover: true),
+        _track('b', albumUid: 'al'),
+      ];
+      final MusicLocalEntry second = MusicLocalEntry(tracks[1]);
+      final MusicPlayItem item = second.playItem(<String, MusicAlbumRow>{
+        'al': album,
+      }, trackPathOf: musicTrackPathsOf(tracks));
+      expect(item.embeddedCoverPath, '/music/a.flac');
+      // 曲目行（BUG-4494）走同一条规则。
+      expect(
+        musicLocalTrackCoverOf(
+          tracks[1],
+          album: album,
+          pathByUid: <String, String>{
+            for (final MusicTrackRow t in tracks) t.trackUid: t.path,
+          },
+        ).embeddedFromPath,
+        item.embeddedCoverPath,
+      );
+      // 快照查表（曲库页 / 互联 / 控制通道用的那份）。
+      final MusicLibrarySnapshot snap = MusicLibrarySnapshot(
+        albums: <MusicAlbumRow>[album],
+        tracks: tracks,
+        artists: const <MusicArtistRow>[],
+        playlists: const <MusicPlaylistRow>[],
+      );
+      expect(
+        musicPlayItemOf(
+          tracks[1],
+          album: album,
+          trackPathOf: snap.trackPathOf,
+        ).embeddedCoverPath,
+        '/music/a.flac',
+      );
     });
 
     test('都没有 → 两个都为 null（占位）', () {
@@ -91,6 +140,72 @@ void main() {
       );
       expect(item.coverPath, isNull);
       expect(item.embeddedCoverPath, isNull);
+    });
+  });
+
+  group('真实调用方：控制通道放专辑 / 按曲目放', () {
+    late FushiDatabase db;
+    late FakeMusicPlayer player;
+    late List<CtlRoute> routes;
+
+    setUp(() async {
+      db = FushiDatabase.forTesting(NativeDatabase.memory());
+      player = FakeMusicPlayer();
+      routes = buildMusicCtlRoutesFor(
+        database: () => db,
+        musicEnabled: () => true,
+        isReadonly: () => false,
+        player: () => player,
+        scraper: () => FakeMusicScraper(db).port,
+        removeSource: (FushiDatabase d, int id) async {},
+        jobs: MusicScrapeJobs(),
+        clock: () => 1,
+      );
+      await seedMusicLibrary(db);
+      // 专辑 al-1 没有目录封面，只有第一首 t-1 带内嵌图（扫描时选它当封面曲目）。
+      await (db.update(
+        db.musicTracks,
+      )..where(($MusicTracksTable t) => t.trackUid.equals('t-1'))).write(
+        const MusicTracksCompanion(hasEmbeddedCover: Value<bool>(true)),
+      );
+      await (db.update(
+        db.musicAlbums,
+      )..where(($MusicAlbumsTable a) => a.albumUid.equals('al-1'))).write(
+        const MusicAlbumsCompanion(coverTrackUid: Value<String?>('t-1')),
+      );
+    });
+
+    tearDown(() => db.close());
+
+    Future<Object?> play(Map<String, Object?> body) => routes
+        .singleWhere(
+          (CtlRoute r) =>
+              r.method == 'POST' && r.pattern == '$kMusicCtlRoot/player/play',
+        )
+        .handler(
+          CtlCall(
+            method: 'POST',
+            path: '$kMusicCtlRoot/player/play',
+            params: const <String, String>{},
+            body: body,
+          ),
+        );
+
+    test('放专辑：第二首的播放项带第一首的内嵌封面', () async {
+      await play(<String, Object?>{'album': 'al-1'});
+      expect(
+        <String?>[for (final MusicPlayItem i in player.queue) i.trackUid],
+        <String>['t-1', 't-2'],
+      );
+      expect(player.queue[1].coverPath, isNull);
+      expect(player.queue[1].embeddedCoverPath, '/music/t-1.flac');
+    });
+
+    test('只点第二首：播放项照样带专辑封面曲目的内嵌封面', () async {
+      await play(<String, Object?>{
+        'tracks': <String>['t-2'],
+      });
+      expect(player.queue.single.embeddedCoverPath, '/music/t-1.flac');
     });
   });
 
@@ -128,6 +243,40 @@ void main() {
       );
       expect(musicLyricsBackdropCoverProvider(null), isNull);
     });
+  });
+
+  test('带专辑的 musicPlayItemOf 调用都给了 trackPathOf（封面曲目查得到）', () {
+    // 最近播放从事件快照还原播放项，手里没有专辑其余曲目，只能退回这首自己的内嵌封面。
+    const Set<String> exempt = <String>{
+      'lib/src/media/music/music_history.dart',
+    };
+    final List<String> missing = <String>[];
+    for (final FileSystemEntity f in Directory(
+      'lib',
+    ).listSync(recursive: true)) {
+      if (f is! File || !f.path.endsWith('.dart')) continue;
+      final String path = f.path.replaceAll(r'\', '/');
+      if (exempt.contains(path)) continue;
+      final String src = f.readAsStringSync();
+      int from = 0;
+      while (true) {
+        final int at = src.indexOf('musicPlayItemOf(', from);
+        if (at < 0) break;
+        int depth = 0;
+        int end = at + 'musicPlayItemOf'.length;
+        for (; end < src.length; end++) {
+          final String ch = src[end];
+          if (ch == '(') depth++;
+          if (ch == ')' && --depth == 0) break;
+        }
+        final String call = src.substring(at, end + 1);
+        from = end;
+        if (call.contains('album:') && !call.contains('trackPathOf:')) {
+          missing.add('$path: $call');
+        }
+      }
+    }
+    expect(missing, isEmpty);
   });
 
   test('播放页 / Apple 播放页 / 播放条 / 队列的封面都传了内嵌来源', () {

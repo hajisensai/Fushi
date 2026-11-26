@@ -596,6 +596,33 @@ void main() {
       c.dispose();
     });
 
+    test(
+      'isRunning 翻转回调（BUG-5505 长时播放焦点）：开读 true、暂停 false、继续 true、停止 false',
+      () async {
+        final _Host host = threePages();
+        final MangaReadAloudController c = controllerFor(host);
+        final List<bool> running = <bool>[];
+        final MangaReadAloudSessionWatch watch = MangaReadAloudSessionWatch(
+          c,
+          onActiveChanged: () {},
+          onFinished: (_) {},
+          onRunningChanged: running.add,
+        );
+        c.start(fromPage: 0);
+        await _waitFor(() => player.playing);
+        expect(running, <bool>[true], reason: '等字 / 合成 / 出声都算同一段持有');
+        c.pause();
+        expect(running, <bool>[true, false]);
+        c.resume();
+        await _waitFor(() => player.playing);
+        expect(running, <bool>[true, false, true]);
+        c.stop();
+        expect(running, <bool>[true, false, true, false]);
+        watch.dispose();
+        c.dispose();
+      },
+    );
+
     test('整章无字直接 finished(noText)：重建两次（起 / 止）并提示无字', () async {
       final _Host host = _Host(<int, MangaPageTextResult>{
         0: MangaPageTextReady(_image(const <String>['……'])),

@@ -1,6 +1,7 @@
 import 'dart:async';
 import 'dart:io';
 
+import 'package:audio_session/audio_session.dart';
 import 'package:flutter/foundation.dart';
 import 'package:just_audio/just_audio.dart';
 import 'package:path_provider/path_provider.dart';
@@ -84,20 +85,91 @@ bool get justAudioUsesMediaKitBackend => Platform.isWindows || Platform.isLinux;
 /// 原生 MediaPlayer）。所以 Android 上关掉；iOS / macOS 保留——AVPlayer 不经激活时落在缺省
 /// 的 soloAmbient 类别，照样打断别家音频且受静音键影响，关掉只会更糟；Windows / Linux 上
 /// audio_session 是空实现，开关无影响。
+///
+/// 这只管「每次 play() 自动激活」；长时连续播放（漫画朗读会话）仍要焦点（BUG-3311：长时播放
+/// 保留焦点、收中断回调），由 [DesktopAudioPlayback.holdLongPlayback] 按会话显式激活 / 释放。
 @visibleForTesting
 bool previewPlayerHandlesAudioSession({required bool isAndroid}) => !isAndroid;
+
+/// 长时连续播放会话申请音频焦点用的 Android 参数：朗读是语音、`AUDIOFOCUS_GAIN`（与 just_audio
+/// 原先每次 play() 申请的同一档：别家音乐暂停；来电 / 别家抢焦点时经 audio_session 的中断流
+/// 让共用播放器暂停）。只作为 `setActive` 的覆盖参数传，不 `configure` 全局会话（音乐 / 有声书
+/// 各自 configure 的配置不被改掉）。
+const AndroidAudioAttributes longPlaybackAndroidAudioAttributes =
+    AndroidAudioAttributes(
+      contentType: AndroidAudioContentType.speech,
+      usage: AndroidAudioUsage.media,
+    );
+
+/// 真实的会话激活：`AudioSession.setActive`（Android 上 request / abandon 音频焦点）。
+Future<bool> _setAudioSessionActive(bool active) async {
+  final AudioSession session = await AudioSession.instance;
+  return session.setActive(
+    active,
+    androidAudioFocusGainType: AndroidAudioFocusGainType.gain,
+    androidAudioAttributes: longPlaybackAndroidAudioAttributes,
+  );
+}
 
 class DesktopAudioPlayback {
   const DesktopAudioPlayback._();
 
   static AudioPlayer _player = AudioPlayer(
-    handleAudioSessionActivation: previewPlayerHandlesAudioSession(
-      isAndroid: Platform.isAndroid,
-    ),
+    handleAudioSessionActivation: _playerHandlesSession,
   );
 
   /// `_player.play()` 的 Future 是否覆盖整段播放（见 [justAudioUsesMediaKitBackend]）。
   static bool _playFutureSpansPlayback = !justAudioUsesMediaKitBackend;
+
+  /// 共用播放器是否每次 play() 自己激活会话（见 [previewPlayerHandlesAudioSession]）。
+  static bool _playerHandlesSession = previewPlayerHandlesAudioSession(
+    isAndroid: Platform.isAndroid,
+  );
+
+  /// 会话激活的实现（测试换成记录器）。
+  static Future<bool> Function(bool active) _sessionActivator =
+      _setAudioSessionActive;
+
+  /// 正在持有长时播放焦点的会话（[holdLongPlayback] 的 owner）。
+  static final Set<Object> _longPlaybackOwners = <Object>{};
+
+  /// 长时连续播放（漫画朗读会话）按次决定音频焦点（BUG-5505）：[owner] 开始往下读时
+  /// `active: true`，暂停 / 停止 / 读完 / 页面销毁时 `active: false`（重复调用无害）。
+  /// 有 owner 持有时激活会话（Android：speech + `AUDIOFOCUS_GAIN`，见
+  /// [longPlaybackAndroidAudioAttributes]），最后一个释放时 `setActive(false)` 交还焦点。
+  ///
+  /// 短预览（复习卡发音、卡面自动播放、查词试听）不调它，Android 上就不申请焦点、与别家
+  /// 音乐叠播。共用播放器每次 play() 自己激活会话的平台（iOS / macOS，及会话为空实现的
+  /// Windows / Linux）这里什么都不做。
+  static Future<void> holdLongPlayback(
+    Object owner, {
+    required bool active,
+  }) async {
+    if (_playerHandlesSession) return;
+    final bool wasHeld = _longPlaybackOwners.isNotEmpty;
+    if (active) {
+      _longPlaybackOwners.add(owner);
+    } else {
+      _longPlaybackOwners.remove(owner);
+    }
+    final bool held = _longPlaybackOwners.isNotEmpty;
+    if (held == wasHeld) return;
+    try {
+      final bool ok = await _sessionActivator(held);
+      if (!ok && held) {
+        ErrorLogService.instance.logDiagnostic(
+          'DesktopAudioPlayback.holdLongPlayback',
+          'audio focus request denied',
+        );
+      }
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'DesktopAudioPlayback.holdLongPlayback',
+        e,
+        stack,
+      );
+    }
+  }
 
   /// 测试钩子：换成假播放器（[playFutureSpansPlayback] 模拟后端的 `play()` 语义），
   /// 重置串行队列；[skipWarmUp] 跳过冷启动预热（它要 path_provider 与真实设备）。
@@ -106,9 +178,16 @@ class DesktopAudioPlayback {
     required AudioPlayer player,
     required bool playFutureSpansPlayback,
     bool skipWarmUp = true,
+    bool? playerHandlesSession,
+    Future<bool> Function(bool active)? sessionActivator,
   }) {
     _player = player;
     _playFutureSpansPlayback = playFutureSpansPlayback;
+    _playerHandlesSession =
+        playerHandlesSession ??
+        previewPlayerHandlesAudioSession(isAndroid: Platform.isAndroid);
+    _sessionActivator = sessionActivator ?? _setAudioSessionActive;
+    _longPlaybackOwners.clear();
     _activation = AudioActivationQueue();
     _warmUpQueued = skipWarmUp;
   }
