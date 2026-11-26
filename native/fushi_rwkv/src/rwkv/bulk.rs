@@ -468,7 +468,6 @@ fn run_layer_chunks(chunks: LayerChunks<'_>) {
         v0_query_snapshot: v0_query
             .as_deref()
             .map(|v0_query| &v0_query[..chunk_size.min(rows) * D_MODEL]),
-        approximate_query_projections: matches!(query_recurrence, QueryRecurrence::Fast),
     }));
 
     while chunk_start < rows {
@@ -503,10 +502,6 @@ fn run_layer_chunks(chunks: LayerChunks<'_>) {
                         v0_snapshot: &v0_next,
                         x_query_snapshot: x_query_next.as_deref(),
                         v0_query_snapshot: v0_query_next.as_deref(),
-                        approximate_query_projections: matches!(
-                            query_recurrence,
-                            QueryRecurrence::Fast
-                        ),
                     })
                 },
                 || {
@@ -596,7 +591,6 @@ struct LayerTimeStageInput<'a> {
     v0_snapshot: &'a [f32],
     x_query_snapshot: Option<&'a [f32]>,
     v0_query_snapshot: Option<&'a [f32]>,
-    approximate_query_projections: bool,
 }
 
 fn prepare_layer_time_stage(input: LayerTimeStageInput<'_>) -> LayerTimeStage {
@@ -610,7 +604,6 @@ fn prepare_layer_time_stage(input: LayerTimeStageInput<'_>) -> LayerTimeStage {
         v0_snapshot,
         x_query_snapshot,
         v0_query_snapshot,
-        approximate_query_projections,
     } = input;
     let mixer = &layer.time_mixer;
 
@@ -637,7 +630,6 @@ fn prepare_layer_time_stage(input: LayerTimeStageInput<'_>) -> LayerTimeStage {
             &x_norm,
             &x_norm,
             v0_snapshot,
-            false,
         )
     };
     let (parts, parts_query) = if let Some(x_norm_query) = x_norm_query.as_ref() {
@@ -651,7 +643,6 @@ fn prepare_layer_time_stage(input: LayerTimeStageInput<'_>) -> LayerTimeStage {
                 x_norm_query,
                 &x_norm,
                 v0_query_snapshot.expect("query v0 buffer"),
-                approximate_query_projections,
             )
         });
         (answer, Some(query))
@@ -834,7 +825,6 @@ fn finish_layer_time_stage(output: LayerTimeStageOutput<'_>) {
         x,
         chunk_start,
         chunk_rows,
-        false,
     );
     let time_out_query = parts_query.as_ref().map(|parts_query| {
         time_outputs(
@@ -844,7 +834,6 @@ fn finish_layer_time_stage(output: LayerTimeStageOutput<'_>) {
             x_query.as_deref().expect("query trunk"),
             chunk_start,
             chunk_rows,
-            matches!(query_recurrence, QueryRecurrence::Fast),
         )
     });
 
@@ -867,7 +856,6 @@ fn finish_layer_time_stage(output: LayerTimeStageOutput<'_>) {
         &cm_norm,
         &time_out,
         x,
-        false,
     );
     if let Some(cm_norm_query) = &cm_norm_query {
         channel_outputs(
@@ -881,7 +869,6 @@ fn finish_layer_time_stage(output: LayerTimeStageOutput<'_>) {
             &cm_norm,
             time_out_query.as_ref().expect("query time out"),
             x_query.take().expect("query trunk"),
-            matches!(query_recurrence, QueryRecurrence::Fast),
         );
     }
 
@@ -1035,7 +1022,6 @@ fn time_parts(
     x_norm: &[f32],
     x_norm_answer: &[f32],
     v0: &[f32],
-    approximate_projections: bool,
 ) -> BulkTimeMixParts {
     let mut parts = BulkTimeMixParts::zeroed(chunk_rows);
     let block_size = LINEAR_BLOCK_ROWS * D_MODEL;
@@ -1061,7 +1047,6 @@ fn time_parts(
                     x_norm,
                     x_norm_answer,
                     v0,
-                    approximate_projections,
                     PartsBlockMut {
                         r,
                         k,
@@ -1092,7 +1077,6 @@ fn time_parts_block(
     x_norm: &[f32],
     x_norm_answer: &[f32],
     v0: &[f32],
-    approximate_projections: bool,
     block: PartsBlockMut<'_>,
 ) {
     let rows = block.r.len() / D_MODEL;
@@ -1138,12 +1122,12 @@ fn time_parts_block(
     fill_mixed(0, mixed);
     mixer
         .w_r
-        .apply_block_approx_into(mixed, block.r, rows, approximate_projections);
+        .apply_block_into(mixed, block.r, rows);
 
     fill_mixed(1, mixed);
     mixer
         .w_k
-        .apply_block_approx_into(mixed, block.k, rows, approximate_projections);
+        .apply_block_into(mixed, block.k, rows);
 
     fill_mixed(6, mixed);
     let mut k_scale = [0.0f32; LINEAR_BLOCK_ROWS * HEADS];
@@ -1161,7 +1145,7 @@ fn time_parts_block(
     if mixer.layer_id == 0 {
         mixer
             .w_v
-            .apply_block_approx_into(mixed, block.v, rows, approximate_projections);
+            .apply_block_into(mixed, block.v, rows);
         block.next_v0.copy_from_slice(block.v);
     } else {
         mixer.v_lora.apply_sigmoid_block_into(mixed, block.v, rows);
@@ -1169,7 +1153,7 @@ fn time_parts_block(
         let w_v = &mut w_v[..rows * D_MODEL];
         mixer
             .w_v
-            .apply_block_approx_into(mixed, w_v, rows, approximate_projections);
+            .apply_block_into(mixed, w_v, rows);
         for index in 0..rows {
             let range = index * D_MODEL..(index + 1) * D_MODEL;
             let v0_row = row(v0, block_start + index);
@@ -1198,7 +1182,7 @@ fn time_parts_block(
     mixer.d_lora.apply_tanh_block_into(mixed, block.w, rows);
     for value in block.w.iter_mut() {
         let d = -0.5 - softplus(-*value);
-        *value = (-d.exp()).exp();
+        *value = det::exp(-det::exp(d));
     }
 
     for index in 0..rows {
@@ -1235,7 +1219,6 @@ fn time_outputs(
     trunk: &[f32],
     chunk_start: usize,
     chunk_rows: usize,
-    approximate_projections: bool,
 ) -> Vec<f32> {
     let mut out = vec![0.0; chunk_rows * D_MODEL];
     out.par_chunks_mut(LINEAR_BLOCK_ROWS * D_MODEL)
@@ -1271,7 +1254,7 @@ fn time_outputs(
             }
             mixer
                 .w_o
-                .apply_block_approx_into(gated, out_block, rows, approximate_projections);
+                .apply_block_into(gated, out_block, rows);
             for index in 0..rows {
                 let input = row(trunk, chunk_start + block_start + index);
                 for channel in 0..D_MODEL {
@@ -1294,7 +1277,6 @@ fn channel_outputs(
     cm_norm_answer: &[f32],
     time_out: &[f32],
     trunk: &mut [f32],
-    approximate_projections: bool,
 ) {
     trunk[chunk_start * D_MODEL..(chunk_start + chunk_rows) * D_MODEL]
         .par_chunks_mut(LINEAR_BLOCK_ROWS * D_MODEL)
@@ -1333,12 +1315,13 @@ fn channel_outputs(
             let mut k = [0.0f32; LINEAR_BLOCK_ROWS * 256];
             let k = &mut k[..rows * channel_dim];
             cm.w_k
-                .apply_block_approx_into(mixed, k, rows, approximate_projections);
+                .apply_block_into(mixed, k, rows);
             for value in k.iter_mut() {
-                *value = value.max(0.0).powi(2);
+                let relu = value.max(0.0);
+                *value = relu * relu;
             }
             cm.w_v
-                .apply_block_approx_into(k, trunk_block, rows, approximate_projections);
+                .apply_block_into(k, trunk_block, rows);
             for index in 0..rows {
                 let input = row(time_out, block_start + index);
                 for channel in 0..D_MODEL {

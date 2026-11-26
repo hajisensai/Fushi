@@ -15,10 +15,9 @@ mod precision;
 mod slots;
 pub mod small;
 pub use precision::StatePrecision;
-#[cfg(target_os = "macos")]
-mod matmul;
-#[cfg(target_arch = "aarch64")]
-mod query_kernels;
+// Fushi: the platform-independent arithmetic (canonical reduction order,
+// fused multiply-adds, own transcendental functions).
+pub(crate) mod det;
 
 const D_MODEL: usize = 128;
 const CARD_FEATURES: usize = 92;
@@ -34,12 +33,8 @@ const CHANNEL_MIXER_DIMS: [usize; 5] = [192, 256, 192, 256, 256];
 /// over more rows.
 const LINEAR_BLOCK_ROWS: usize = 32;
 
-#[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
 const MAX_CHANNEL_MIXER_DIM: usize = 256;
-#[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
 const MAX_LORA_RANK: usize = 16;
-#[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-const RETRIEVABILITY_GEMM_BATCH_SIZE: usize = 128;
 const ID_PLACEHOLDER: i64 = 314_159_265_358_979_323;
 /// Fushi: the note key of a row without a note id is this plus its card id.
 pub(crate) const ID_PLACEHOLDER_NOTE_BASE: i64 = ID_PLACEHOLDER;
@@ -197,12 +192,6 @@ struct ReviewPredictionQueryRef<'a> {
 }
 
 impl ReviewPredictionQueryRef<'_> {
-    #[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-    fn layer_state(&self, module_id: usize, layer_id: usize) -> Option<&LayerState> {
-        self.state
-            .module(module_id)
-            .and_then(|state| state.layers.get(layer_id))
-    }
 }
 
 impl RwkvInference {
@@ -1268,10 +1257,10 @@ fn append_day_offset_encoding(features: &mut Vec<f32>, day_offset: i64, first_da
         let phase = 2.0 * std::f32::consts::PI / period;
         let day = day_offset.rem_euclid(period as i64) as f32;
         let first_day = first_day_offset.rem_euclid(period as i64) as f32;
-        features.push((phase * day).sin());
-        features.push((phase * day).cos());
-        features.push((phase * first_day).sin());
-        features.push((phase * first_day).cos());
+        features.push(det::sin(phase * day));
+        features.push(det::cos(phase * day));
+        features.push(det::sin(phase * first_day));
+        features.push(det::cos(phase * first_day));
     }
 }
 
@@ -1283,8 +1272,8 @@ pub fn predict_curve(weights: &[f32], elapsed_seconds: f32) -> f32 {
     let mut raw_probability = 0.0;
     for (index, weight) in weights.iter().enumerate() {
         let s_space_raw = linspace_exp(index, NUM_CURVES, 18.5);
-        let s_space = 0.1 + (s_space_raw - 1.0) * (22.0_f32 - 18.5).exp();
-        raw_probability += weight * 0.9_f32.powf(elapsed_seconds / s_space);
+        let s_space = 0.1 + (s_space_raw - 1.0) * det::exp(22.0_f32 - 18.5);
+        raw_probability += weight * det::powf(0.9, elapsed_seconds / s_space);
     }
     1e-5 + (1.0 - 2e-5) * raw_probability
 }
@@ -1295,7 +1284,7 @@ fn linspace_exp(index: usize, count: usize, point_spread: f32) -> f32 {
     } else {
         point_spread * index as f32 / (count - 1) as f32
     };
-    value.exp()
+    det::exp(value)
 }
 
 /// Fushi: the query for `answer`'s card `days` scheduling days and `seconds`
@@ -1401,23 +1390,23 @@ fn scale_elapsed_seconds_cumulative(x: i64) -> f32 {
 }
 
 fn scale_duration(x: f32) -> f32 {
-    ((10.0 + x).ln() - DURATION_MEAN) / DURATION_STD
+    (det::ln(10.0 + x) - DURATION_MEAN) / DURATION_STD
 }
 
 fn scale_diff_new_cards(x: i64) -> f32 {
-    ((3.0 + x as f32).ln() - DIFF_NEW_CARDS_MEAN) / DIFF_NEW_CARDS_STD
+    (det::ln(3.0 + x as f32) - DIFF_NEW_CARDS_MEAN) / DIFF_NEW_CARDS_STD
 }
 
 fn scale_diff_reviews(x: i64) -> f32 {
-    ((3.0 + x as f32).ln() - DIFF_REVIEWS_MEAN) / DIFF_REVIEWS_STD
+    (det::ln(3.0 + x as f32) - DIFF_REVIEWS_MEAN) / DIFF_REVIEWS_STD
 }
 
 fn scale_cum_new_cards_today(x: i64) -> f32 {
-    ((3.0 + x as f32).ln() - CUM_NEW_CARDS_TODAY_MEAN) / CUM_NEW_CARDS_TODAY_STD
+    (det::ln(3.0 + x as f32) - CUM_NEW_CARDS_TODAY_MEAN) / CUM_NEW_CARDS_TODAY_STD
 }
 
 fn scale_cum_reviews_today(x: i64) -> f32 {
-    ((3.0 + x as f32).ln() - CUM_REVIEWS_TODAY_MEAN) / CUM_REVIEWS_TODAY_STD
+    (det::ln(3.0 + x as f32) - CUM_REVIEWS_TODAY_MEAN) / CUM_REVIEWS_TODAY_STD
 }
 
 fn scale_state(x: i64) -> f32 {
@@ -1425,23 +1414,23 @@ fn scale_state(x: i64) -> f32 {
 }
 
 fn scale_day_offset_diff(x: i64) -> f32 {
-    (std::f32::consts::E + x as f32).ln().ln()
+    det::ln(det::ln(std::f32::consts::E + x as f32))
 }
 
 fn log_elapsed(x: i64) -> f32 {
     if x == -1 {
         0.0
     } else {
-        (1.0 + 1e-5 + x as f32).ln()
+        det::ln(1.0 + 1e-5 + x as f32)
     }
 }
 
 fn cyclic_sin(value: i64, period: i64) -> f32 {
-    ((value.rem_euclid(period) as f32) * 2.0 * std::f32::consts::PI / period as f32).sin()
+    det::sin((value.rem_euclid(period) as f32) * 2.0 * std::f32::consts::PI / period as f32)
 }
 
 fn cyclic_cos(value: i64, period: i64) -> f32 {
-    ((value.rem_euclid(period) as f32) * 2.0 * std::f32::consts::PI / period as f32).cos()
+    det::cos((value.rem_euclid(period) as f32) * 2.0 * std::f32::consts::PI / period as f32)
 }
 
 struct WeightMap {
@@ -1781,7 +1770,6 @@ struct SrsModel {
     p_linear: Linear,
 }
 
-#[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
 struct ReviewRetrievabilityScratch {
     feature_hidden: [f32; HEAD_DIM],
     normalized_features: [f32; HEAD_DIM],
@@ -1792,20 +1780,7 @@ struct ReviewRetrievabilityScratch {
     probabilities: [f32; 4],
 }
 
-#[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-#[derive(Default)]
-struct ReviewRetrievabilityBatchScratch {
-    feature_input: Vec<f32>,
-    feature_hidden: Vec<f32>,
-    normalized_features: Vec<f32>,
-    x: Vec<f32>,
-    module: ModuleQueryBatchScratch,
-    prehead: Vec<f32>,
-    head: Vec<f32>,
-    logits: Vec<f32>,
-}
 
-#[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
 impl Default for ReviewRetrievabilityScratch {
     fn default() -> Self {
         Self {
@@ -1851,23 +1826,11 @@ impl SrsModel {
         self.review_features(features, state)
     }
 
+    // Fushi: one row at a time on every platform. Upstream batched the rows
+    // into GEMMs on macOS (Accelerate) and aarch64 (NEON), with reduction
+    // orders and activation formulas of their own, so the same history gave
+    // a slightly different R per platform.
     fn review_retrievability_query_refs(&self, items: &[ReviewPredictionQueryRef<'_>]) -> Vec<f32> {
-        #[cfg(all(any(target_os = "macos", target_arch = "aarch64"), not(test)))]
-        {
-            self.review_retrievability_query_refs_batched(items)
-        }
-
-        #[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
-        {
-            self.review_retrievability_query_refs_scalar(items)
-        }
-    }
-
-    #[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
-    fn review_retrievability_query_refs_scalar(
-        &self,
-        items: &[ReviewPredictionQueryRef<'_>],
-    ) -> Vec<f32> {
         items
             .par_iter()
             .map_init(
@@ -1880,70 +1843,7 @@ impl SrsModel {
             .collect()
     }
 
-    #[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-    fn review_retrievability_query_refs_batched(
-        &self,
-        items: &[ReviewPredictionQueryRef<'_>],
-    ) -> Vec<f32> {
-        let mut retrievabilities = vec![0.0; items.len()];
-        retrievabilities
-            .par_chunks_mut(RETRIEVABILITY_GEMM_BATCH_SIZE)
-            .zip(items.par_chunks(RETRIEVABILITY_GEMM_BATCH_SIZE))
-            .for_each_init(
-                ReviewRetrievabilityBatchScratch::default,
-                |scratch, (retrievabilities, items)| {
-                    self.review_retrievability_query_batch(items, scratch, retrievabilities);
-                },
-            );
-        retrievabilities
-    }
 
-    #[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-    fn review_retrievability_query_batch(
-        &self,
-        items: &[ReviewPredictionQueryRef<'_>],
-        scratch: &mut ReviewRetrievabilityBatchScratch,
-        retrievabilities: &mut [f32],
-    ) {
-        let rows = items.len();
-        scratch.feature_input.clear();
-        scratch.feature_input.reserve(rows * CARD_FEATURES);
-        for item in items {
-            scratch.feature_input.extend_from_slice(item.features);
-        }
-
-        self.features_0
-            .apply_batch(&scratch.feature_input, rows, &mut scratch.feature_hidden);
-        query_silu_batch_in_place(&mut scratch.feature_hidden);
-        self.features_norm.apply_batch(
-            &scratch.feature_hidden,
-            rows,
-            &mut scratch.normalized_features,
-        );
-        self.features_3
-            .apply_batch(&scratch.normalized_features, rows, &mut scratch.x);
-        query_silu_batch_in_place(&mut scratch.x);
-
-        for (module_id, module) in self.modules.iter().enumerate() {
-            module.run_query_batch(&mut scratch.x, items, module_id, &mut scratch.module);
-        }
-
-        self.prehead_norm
-            .apply_batch(&scratch.x, rows, &mut scratch.prehead);
-        self.head_p_0
-            .apply_batch(&scratch.prehead, rows, &mut scratch.head);
-        relu_in_place(&mut scratch.head);
-        self.p_linear
-            .apply_batch(&scratch.head, rows, &mut scratch.logits);
-        for (retrievability, logits) in retrievabilities
-            .iter_mut()
-            .zip(scratch.logits.chunks_exact(4))
-        {
-            let mut probabilities = [0.0; 4];
-            softmax_into(logits, &mut probabilities);
-            *retrievability = 1.0 - probabilities[0];
-        }
-    }
 
     /// The feature MLP shared by the per-review and bulk replay paths.
     fn feature_mlp(&self, features: &[f32]) -> Vec<f32> {
@@ -2021,7 +1921,6 @@ impl SrsModel {
         heads
     }
 
-    #[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
     fn review_retrievability_features(
         &self,
         features: &[f32],
@@ -2089,17 +1988,6 @@ struct SrsStateRef<'a> {
 }
 
 impl<'a> SrsStateRef<'a> {
-    #[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-    fn module(self, module_id: usize) -> Option<&'a ModuleState> {
-        match module_id {
-            0 => self.card,
-            1 => self.deck,
-            2 => self.note,
-            3 => self.preset,
-            4 => self.global,
-            _ => None,
-        }
-    }
 }
 
 /// [SrsStateRef] for states that may have been decoded for the query.
@@ -2401,7 +2289,6 @@ struct RwkvModule {
     precision: StatePrecision,
 }
 
-#[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
 struct ModuleQueryScratch {
     current: [f32; D_MODEL],
     next: [f32; D_MODEL],
@@ -2409,15 +2296,7 @@ struct ModuleQueryScratch {
     layer: LayerQueryScratch,
 }
 
-#[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-#[derive(Default)]
-struct ModuleQueryBatchScratch {
-    next: Vec<f32>,
-    v0: Vec<f32>,
-    layer: LayerQueryBatchScratch,
-}
 
-#[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
 impl Default for ModuleQueryScratch {
     fn default() -> Self {
         Self {
@@ -2468,7 +2347,6 @@ impl RwkvModule {
         output
     }
 
-    #[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
     fn run_query(
         &self,
         input: &[f32],
@@ -2497,56 +2375,6 @@ impl RwkvModule {
         *current
     }
 
-    #[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-    fn run_query_batch(
-        &self,
-        x: &mut Vec<f32>,
-        items: &[ReviewPredictionQueryRef<'_>],
-        module_id: usize,
-        scratch: &mut ModuleQueryBatchScratch,
-    ) {
-        let decoded: Vec<_> = items
-            .iter()
-            .map(|item| item.state.module(module_id).map(ModuleState::decoded))
-            .collect();
-        let decoded_items: Vec<_> = items
-            .iter()
-            .zip(&decoded)
-            .map(|(item, state)| {
-                let mut item = *item;
-                match module_id {
-                    0 => item.state.card = state.as_deref(),
-                    1 => item.state.deck = state.as_deref(),
-                    2 => item.state.note = state.as_deref(),
-                    3 => item.state.preset = state.as_deref(),
-                    _ => item.state.global = state.as_deref(),
-                }
-                item
-            })
-            .collect();
-        let items = decoded_items.as_slice();
-        let rows = items.len();
-        scratch.v0.resize(rows * D_MODEL, 0.0);
-        scratch.v0.fill(0.0);
-        let mut current = std::mem::take(x);
-        let mut next = std::mem::take(&mut scratch.next);
-
-        for (layer_id, layer) in self.layers.iter().enumerate() {
-            layer.run_query_batch(
-                &current,
-                &mut scratch.v0,
-                items,
-                module_id,
-                layer_id,
-                &mut next,
-                &mut scratch.layer,
-            );
-            std::mem::swap(&mut current, &mut next);
-        }
-
-        *x = current;
-        scratch.next = next;
-    }
 }
 
 #[derive(Clone)]
@@ -2562,22 +2390,13 @@ struct RwkvLayer {
     channel_mixer: ChannelMixer,
 }
 
-#[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
 struct LayerQueryScratch {
     time_output: [f32; D_MODEL],
     time: TimeMixerQueryScratch,
     channel: ChannelMixerQueryScratch,
 }
 
-#[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-#[derive(Default)]
-struct LayerQueryBatchScratch {
-    time_output: Vec<f32>,
-    time: TimeMixerQueryBatchScratch,
-    channel: ChannelMixerQueryBatchScratch,
-}
 
-#[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
 impl Default for LayerQueryScratch {
     fn default() -> Self {
         Self {
@@ -2618,7 +2437,6 @@ impl RwkvLayer {
         )
     }
 
-    #[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
     fn run_query_into(
         &self,
         input: &[f32],
@@ -2642,36 +2460,6 @@ impl RwkvLayer {
         );
     }
 
-    #[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-    #[allow(clippy::too_many_arguments)]
-    fn run_query_batch(
-        &self,
-        input: &[f32],
-        v0: &mut [f32],
-        items: &[ReviewPredictionQueryRef<'_>],
-        module_id: usize,
-        layer_id: usize,
-        out: &mut Vec<f32>,
-        scratch: &mut LayerQueryBatchScratch,
-    ) {
-        self.time_mixer.run_query_batch(
-            input,
-            v0,
-            items,
-            module_id,
-            layer_id,
-            &mut scratch.time_output,
-            &mut scratch.time,
-        );
-        self.channel_mixer.run_query_batch(
-            &scratch.time_output,
-            items,
-            module_id,
-            layer_id,
-            out,
-            &mut scratch.channel,
-        );
-    }
 }
 
 /// Card and note states: one per card and note, so they are most of the RWKV
@@ -2821,7 +2609,6 @@ struct TimeMixer {
     out_group_norm: Norm,
 }
 
-#[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
 struct TimeMixerQueryScratch {
     x: [f32; D_MODEL],
     mixed: [[f32; D_MODEL]; 8],
@@ -2840,26 +2627,7 @@ struct TimeMixerQueryScratch {
     next_row: [f32; HEAD_SIZE],
 }
 
-#[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-#[derive(Default)]
-struct TimeMixerQueryBatchScratch {
-    x: Vec<f32>,
-    mixed: [Vec<f32>; 8],
-    r: Vec<f32>,
-    k: Vec<f32>,
-    v: Vec<f32>,
-    k_scale: Vec<f32>,
-    v_scale: Vec<f32>,
-    a: Vec<f32>,
-    g: Vec<f32>,
-    w: Vec<f32>,
-    k_deformed: Vec<f32>,
-    timestep_out: Vec<f32>,
-    temp: Vec<f32>,
-    lora_hidden: Vec<f32>,
-}
 
-#[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
 impl Default for TimeMixerQueryScratch {
     fn default() -> Self {
         Self {
@@ -3010,7 +2778,7 @@ impl TimeMixer {
         let mut w = self.d_lora.apply_tanh(&mixed);
         for value in &mut w {
             let d = -0.5 - softplus(-*value);
-            *value = (-d.exp()).exp();
+            *value = det::exp(-det::exp(d));
         }
 
         normalize_heads_in_place(&mut k);
@@ -3079,7 +2847,6 @@ impl TimeMixer {
         out
     }
 
-    #[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
     fn run_query_into(
         &self,
         input: &[f32],
@@ -3145,7 +2912,7 @@ impl TimeMixer {
         self.d_lora.apply_tanh_into(&mixed[3], lora_hidden, w);
         for value in w.iter_mut() {
             let decay = -0.5 - softplus(-*value);
-            *value = (-decay.exp()).exp();
+            *value = det::exp(-det::exp(decay));
         }
 
         normalize_heads_in_place(k);
@@ -3198,158 +2965,6 @@ impl TimeMixer {
         }
     }
 
-    #[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-    #[allow(clippy::too_many_arguments)]
-    fn run_query_batch(
-        &self,
-        input: &[f32],
-        v0: &mut [f32],
-        items: &[ReviewPredictionQueryRef<'_>],
-        module_id: usize,
-        layer_id: usize,
-        out: &mut Vec<f32>,
-        scratch: &mut TimeMixerQueryBatchScratch,
-    ) {
-        let rows = items.len();
-        debug_assert_eq!(input.len(), rows * D_MODEL);
-        debug_assert_eq!(v0.len(), rows * D_MODEL);
-
-        self.layer_norm.apply_batch(input, rows, &mut scratch.x);
-        for mixed in &mut scratch.mixed {
-            mixed.resize(rows * D_MODEL, 0.0);
-        }
-        // Resolve each row's shift state once for all eight mixes.
-        for (row, item) in items.iter().enumerate() {
-            let x = &scratch.x[row * D_MODEL..(row + 1) * D_MODEL];
-            let x_shift = item
-                .layer_state(module_id, layer_id)
-                .and_then(|state| state.time.as_ref())
-                .map_or(x, |state| state.x_shift.as_slice());
-            time_shift_mix_row(x, x_shift, &self.rkvdag_lerp, &mut scratch.mixed, row);
-        }
-
-        self.w_r
-            .apply_batch(&scratch.mixed[0], rows, &mut scratch.r);
-        self.w_k
-            .apply_batch(&scratch.mixed[1], rows, &mut scratch.k);
-        self.k_scale_linear
-            .apply_batch(&scratch.mixed[6], rows, &mut scratch.k_scale);
-        query_sigmoid_batch_in_place(&mut scratch.k_scale);
-        self.v_scale_linear
-            .apply_batch(&scratch.mixed[7], rows, &mut scratch.v_scale);
-        query_sigmoid_batch_in_place(&mut scratch.v_scale);
-
-        if self.layer_id == 0 {
-            self.w_v
-                .apply_batch(&scratch.mixed[2], rows, &mut scratch.v);
-            v0.copy_from_slice(&scratch.v);
-        } else {
-            self.v_lora.apply_sigmoid_batch(
-                &scratch.mixed[2],
-                rows,
-                &mut scratch.lora_hidden,
-                &mut scratch.v,
-            );
-            self.w_v
-                .apply_batch(&scratch.mixed[2], rows, &mut scratch.temp);
-            scratch
-                .v
-                .chunks_mut(D_MODEL)
-                .enumerate()
-                .for_each(|(row, v)| {
-                    let projected = &scratch.temp[row * D_MODEL..(row + 1) * D_MODEL];
-                    let v0 = &v0[row * D_MODEL..(row + 1) * D_MODEL];
-                    for channel in 0..D_MODEL {
-                        v[channel] = lerp(projected[channel], v0[channel], v[channel]);
-                    }
-                });
-        }
-
-        self.a_lora.apply_sigmoid_batch(
-            &scratch.mixed[4],
-            rows,
-            &mut scratch.lora_hidden,
-            &mut scratch.a,
-        );
-        self.lora_a_g
-            .apply_batch(&scratch.mixed[5], rows, &mut scratch.lora_hidden);
-        query_sigmoid_batch_in_place(&mut scratch.lora_hidden);
-        self.lora_b_g
-            .apply_batch(&scratch.lora_hidden, rows, &mut scratch.g);
-
-        self.d_lora.apply_tanh_batch(
-            &scratch.mixed[3],
-            rows,
-            &mut scratch.lora_hidden,
-            &mut scratch.w,
-        );
-        query_decay_batch_in_place(&mut scratch.w);
-
-        scratch
-            .k
-            .chunks_mut(D_MODEL)
-            .zip(scratch.k_scale.chunks(HEADS))
-            .for_each(|(k, scales)| normalize_scale_heads_in_place(k, scales));
-        scratch
-            .v
-            .chunks_mut(D_MODEL)
-            .zip(scratch.v_scale.chunks(HEADS))
-            .for_each(|(v, scales)| normalize_scale_heads_in_place(v, scales));
-
-        scratch.k_deformed.resize(rows * D_MODEL, 0.0);
-        scratch.k_deformed.copy_from_slice(&scratch.k);
-        scratch
-            .k
-            .iter_mut()
-            .zip(scratch.a.iter())
-            .for_each(|(k, a)| *k *= *a);
-
-        scratch.timestep_out.resize(rows * D_MODEL, 0.0);
-        scratch
-            .timestep_out
-            .chunks_mut(D_MODEL)
-            .enumerate()
-            .for_each(|(row, timestep_out)| {
-                let range = row * D_MODEL..(row + 1) * D_MODEL;
-                let state = items[row]
-                    .layer_state(module_id, layer_id)
-                    .and_then(|state| state.time.as_ref())
-                    .map(|state| state.matrix.as_slice());
-                single_timestep_query_fast_into(
-                    &scratch.r[range.clone()],
-                    &scratch.k[range.clone()],
-                    &scratch.v[range.clone()],
-                    &scratch.w[range.clone()],
-                    &scratch.a[range.clone()],
-                    &scratch.k_deformed[range],
-                    state,
-                    timestep_out,
-                );
-            });
-        self.out_group_norm
-            .apply_batch(&scratch.timestep_out, rows, &mut scratch.temp);
-
-        scratch
-            .temp
-            .chunks_mut(D_MODEL)
-            .enumerate()
-            .for_each(|(row, output)| {
-                let range = row * D_MODEL..(row + 1) * D_MODEL;
-                bonus_gate_in_place(
-                    output,
-                    &scratch.r[range.clone()],
-                    &self.bonus,
-                    &scratch.k[range.clone()],
-                    &scratch.v[range.clone()],
-                    &scratch.g[range],
-                );
-            });
-
-        self.w_o.apply_batch(&scratch.temp, rows, out);
-        out.iter_mut()
-            .zip(input.iter())
-            .for_each(|(output, input)| *output += *input);
-    }
 }
 
 /// Per-timestep time-mixer coefficients produced ahead of the recurrence.
@@ -3379,7 +2994,6 @@ struct ChannelMixer {
     w_v: Linear,
 }
 
-#[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
 struct ChannelMixerQueryScratch {
     x: [f32; D_MODEL],
     mixed: [f32; D_MODEL],
@@ -3387,16 +3001,7 @@ struct ChannelMixerQueryScratch {
     projected: [f32; D_MODEL],
 }
 
-#[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-#[derive(Default)]
-struct ChannelMixerQueryBatchScratch {
-    x: Vec<f32>,
-    mixed: Vec<f32>,
-    hidden: Vec<f32>,
-    projected: Vec<f32>,
-}
 
-#[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
 impl Default for ChannelMixerQueryScratch {
     fn default() -> Self {
         Self {
@@ -3441,7 +3046,8 @@ impl ChannelMixer {
 
         let mut k = self.w_k.apply(&mixed);
         for value in &mut k {
-            *value = value.max(0.0).powi(2);
+            let relu = value.max(0.0);
+            *value = relu * relu;
         }
         let mut out = self.w_v.apply(&k);
         for channel in 0..D_MODEL {
@@ -3450,7 +3056,6 @@ impl ChannelMixer {
         out
     }
 
-    #[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
     fn run_query_into(
         &self,
         input: &[f32],
@@ -3467,7 +3072,8 @@ impl ChannelMixer {
         let hidden = &mut scratch.hidden[..self.w_k.output];
         self.w_k.apply_into(&scratch.mixed, hidden);
         for value in hidden.iter_mut() {
-            *value = value.max(0.0).powi(2);
+            let relu = value.max(0.0);
+            *value = relu * relu;
         }
         self.w_v.apply_into(hidden, &mut scratch.projected);
         for channel in 0..D_MODEL {
@@ -3475,48 +3081,6 @@ impl ChannelMixer {
         }
     }
 
-    #[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-    fn run_query_batch(
-        &self,
-        input: &[f32],
-        items: &[ReviewPredictionQueryRef<'_>],
-        module_id: usize,
-        layer_id: usize,
-        out: &mut Vec<f32>,
-        scratch: &mut ChannelMixerQueryBatchScratch,
-    ) {
-        let rows = items.len();
-        self.layer_norm.apply_batch(input, rows, &mut scratch.x);
-        scratch.mixed.resize(rows * D_MODEL, 0.0);
-        scratch
-            .mixed
-            .chunks_mut(D_MODEL)
-            .enumerate()
-            .for_each(|(row, mixed)| {
-                let x = &scratch.x[row * D_MODEL..(row + 1) * D_MODEL];
-                let x_shift = items[row]
-                    .layer_state(module_id, layer_id)
-                    .and_then(|state| state.channel_shift.as_deref())
-                    .unwrap_or(x);
-                for channel in 0..D_MODEL {
-                    mixed[channel] = lerp(x[channel], x_shift[channel], self.lerp_k[channel]);
-                }
-            });
-
-        self.w_k
-            .apply_batch(&scratch.mixed, rows, &mut scratch.hidden);
-        scratch
-            .hidden
-            .iter_mut()
-            .for_each(|value| *value = value.max(0.0).powi(2));
-        self.w_v
-            .apply_batch(&scratch.hidden, rows, &mut scratch.projected);
-        out.resize(rows * D_MODEL, 0.0);
-        out.iter_mut()
-            .zip(input.iter())
-            .zip(scratch.projected.iter())
-            .for_each(|((output, input), projected)| *output = *input + *projected);
-    }
 }
 
 #[derive(Clone)] // Fushi: per-precision copies of the network (RwkvInference::new)
@@ -3539,7 +3103,6 @@ impl LoraSimple {
         out
     }
 
-    #[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
     fn apply_sigmoid_into(&self, input: &[f32], hidden: &mut [f32], out: &mut [f32]) {
         let hidden = &mut hidden[..self.a.output];
         self.a.apply_into(input, hidden);
@@ -3547,23 +3110,11 @@ impl LoraSimple {
         sigmoid_in_place(out);
     }
 
-    #[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-    fn apply_sigmoid_batch(
-        &self,
-        input: &[f32],
-        rows: usize,
-        hidden: &mut Vec<f32>,
-        out: &mut Vec<f32>,
-    ) {
-        self.a.apply_batch(input, rows, hidden);
-        self.b.apply_batch(hidden, rows, out);
-        query_sigmoid_batch_in_place(out);
-    }
 
     fn apply_tanh(&self, input: &[f32]) -> Vec<f32> {
         let mut hidden = self.a.apply(input);
         for value in &mut hidden {
-            *value = value.tanh();
+            *value = det::tanh(*value);
         }
         self.b.apply(&hidden)
     }
@@ -3589,33 +3140,20 @@ impl LoraSimple {
         let hidden = &mut hidden[..rows * rank];
         self.a.apply_block_into(inputs, hidden, rows);
         for value in hidden.iter_mut() {
-            *value = value.tanh();
+            *value = det::tanh(*value);
         }
         self.b.apply_block_into(hidden, outs, rows);
     }
 
-    #[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
     fn apply_tanh_into(&self, input: &[f32], hidden: &mut [f32], out: &mut [f32]) {
         let hidden = &mut hidden[..self.a.output];
         self.a.apply_into(input, hidden);
         for value in hidden.iter_mut() {
-            *value = value.tanh();
+            *value = det::tanh(*value);
         }
         self.b.apply_into(hidden, out);
     }
 
-    #[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-    fn apply_tanh_batch(
-        &self,
-        input: &[f32],
-        rows: usize,
-        hidden: &mut Vec<f32>,
-        out: &mut Vec<f32>,
-    ) {
-        self.a.apply_batch(input, rows, hidden);
-        query_tanh_batch_in_place(hidden);
-        self.b.apply_batch(hidden, rows, out);
-    }
 }
 
 #[derive(Clone)] // Fushi: per-precision copies of the network (RwkvInference::new)
@@ -3662,46 +3200,6 @@ impl Linear {
         }
     }
 
-    #[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-    fn apply_batch(&self, input: &[f32], rows: usize, out: &mut Vec<f32>) {
-        let input_len = rows
-            .checked_mul(self.input)
-            .expect("linear batch input is too large");
-        let output_len = rows
-            .checked_mul(self.output)
-            .expect("linear batch output is too large");
-        assert_eq!(input.len(), input_len);
-        out.resize(output_len, 0.0);
-        if rows == 0 {
-            return;
-        }
-
-        #[cfg(target_os = "macos")]
-        matmul::matrix_times_matrix(
-            input,
-            &self.weight_by_input,
-            rows,
-            self.output,
-            self.input,
-            out,
-        );
-
-        // kuma3: phones (aarch64) take the batched query path too; the block
-        // kernel streams each weight column once per block of rows (NEON),
-        // bit-identical to `apply_into` per row. Callers already run batches
-        // in parallel.
-        #[cfg(not(target_os = "macos"))]
-        self.apply_block_into(input, out, rows);
-
-        #[cfg(target_os = "macos")]
-        if let Some(bias) = &self.bias {
-            out.chunks_mut(self.output).for_each(|output| {
-                for (output, bias) in output.iter_mut().zip(bias) {
-                    *output += bias;
-                }
-            });
-        }
-    }
 
     /// Applies the projection to `rows` packed input rows at once, streaming
     /// each weight column once per block instead of once per row. For every
@@ -3739,7 +3237,7 @@ impl Linear {
         }
 
         #[cfg(target_arch = "x86_64")]
-        if rows >= 4 && x86_avx2_fma_available() {
+        if rows >= 4 && det::x86_avx2_fma_available() {
             // SAFETY: availability was checked above. The helper receives
             // slices whose dimensions were checked above and only accesses
             // complete rows and output vectors within those dimensions.
@@ -3768,130 +3266,13 @@ impl Linear {
             }
         }
     }
-
-    /// Uses the native matrix backend for non-persisted bulk query rows when
-    /// requested. Answer rows retain `apply_block_into()`'s exact accumulation
-    /// order so warm-up state snapshots remain byte-identical.
-    fn apply_block_approx_into(
-        &self,
-        inputs: &[f32],
-        outs: &mut [f32],
-        rows: usize,
-        approximate: bool,
-    ) {
-        #[cfg(not(target_os = "macos"))]
-        let _ = approximate;
-
-        #[cfg(target_os = "macos")]
-        if approximate && rows >= 16 && self.input * self.output >= 4096 {
-            matmul::matrix_times_matrix(
-                inputs,
-                &self.weight_by_input,
-                rows,
-                self.output,
-                self.input,
-                outs,
-            );
-            if let Some(bias) = &self.bias {
-                for out in outs.chunks_exact_mut(self.output) {
-                    for (value, bias) in out.iter_mut().zip(bias) {
-                        *value += bias;
-                    }
-                }
-            }
-            return;
-        }
-
-        self.apply_block_into(inputs, outs, rows);
-    }
 }
 
+/// Fushi: `out[i] = fma(weights[i], scale, out[i])`, the canonical axpy
+/// ([det::axpy]; was a per-platform kernel with unfused tails).
 #[inline(always)]
 fn add_scaled_in_place(out: &mut [f32], weights: &[f32], scale: f32) {
-    debug_assert_eq!(out.len(), weights.len());
-    add_scaled_in_place_arch(out, weights, scale)
-}
-
-#[cfg(target_arch = "aarch64")]
-#[inline(always)]
-fn add_scaled_in_place_arch(out: &mut [f32], weights: &[f32], scale: f32) {
-    // SAFETY: aarch64 guarantees NEON support, and the helper only uses
-    // unaligned loads/stores within the bounds checked by its loop conditions.
-    unsafe { add_scaled_in_place_neon(out, weights, scale) }
-}
-
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-fn add_scaled_in_place_arch(out: &mut [f32], weights: &[f32], scale: f32) {
-    if x86_avx2_fma_available() {
-        // SAFETY: availability was checked above, and the helper only uses
-        // unaligned loads/stores within the bounds checked by its loops.
-        unsafe { add_scaled_in_place_avx2_fma(out, weights, scale) }
-    } else {
-        add_scaled_in_place_scalar(out, weights, scale)
-    }
-}
-
-#[cfg(all(not(target_arch = "aarch64"), not(target_arch = "x86_64")))]
-#[inline(always)]
-fn add_scaled_in_place_arch(out: &mut [f32], weights: &[f32], scale: f32) {
-    add_scaled_in_place_scalar(out, weights, scale)
-}
-
-#[cfg(target_arch = "aarch64")]
-#[inline(always)]
-unsafe fn add_scaled_in_place_neon(out: &mut [f32], weights: &[f32], scale: f32) {
-    use std::arch::aarch64::*;
-
-    let mut offset = 0;
-    let len = out.len();
-    let scale = vdupq_n_f32(scale);
-    while offset + 16 <= len {
-        let out_ptr = out.as_mut_ptr().add(offset);
-        let weight_ptr = weights.as_ptr().add(offset);
-        vst1q_f32(
-            out_ptr,
-            vfmaq_f32(vld1q_f32(out_ptr), vld1q_f32(weight_ptr), scale),
-        );
-        vst1q_f32(
-            out_ptr.add(4),
-            vfmaq_f32(
-                vld1q_f32(out_ptr.add(4)),
-                vld1q_f32(weight_ptr.add(4)),
-                scale,
-            ),
-        );
-        vst1q_f32(
-            out_ptr.add(8),
-            vfmaq_f32(
-                vld1q_f32(out_ptr.add(8)),
-                vld1q_f32(weight_ptr.add(8)),
-                scale,
-            ),
-        );
-        vst1q_f32(
-            out_ptr.add(12),
-            vfmaq_f32(
-                vld1q_f32(out_ptr.add(12)),
-                vld1q_f32(weight_ptr.add(12)),
-                scale,
-            ),
-        );
-        offset += 16;
-    }
-    while offset + 4 <= len {
-        let out_ptr = out.as_mut_ptr().add(offset);
-        let weight_ptr = weights.as_ptr().add(offset);
-        vst1q_f32(
-            out_ptr,
-            vfmaq_f32(vld1q_f32(out_ptr), vld1q_f32(weight_ptr), scale),
-        );
-        offset += 4;
-    }
-    while offset < len {
-        out[offset] += weights[offset] * vgetq_lane_f32(scale, 0);
-        offset += 1;
-    }
+    det::axpy(out, weights, scale)
 }
 
 /// Exact single-row linear projection microkernel for AArch64 NEON machines.
@@ -3901,7 +3282,8 @@ unsafe fn add_scaled_in_place_neon(out: &mut [f32], weights: &[f32], scale: f32)
 /// instead of once per column. Each output element still starts from `out`'s
 /// initial value and accumulates ascending columns with the same fused
 /// multiply-add and zero-scale skip as `add_scaled_in_place()`, so results
-/// are bit-identical to the column-at-a-time loop.
+/// are bit-identical to the column-at-a-time loop (Fushi: the tail is fused
+/// too, as on every platform).
 #[cfg(target_arch = "aarch64")]
 unsafe fn linear_apply_row_neon(input: &[f32], weights: &[f32], out: &mut [f32]) {
     use std::arch::aarch64::*;
@@ -3946,7 +3328,7 @@ unsafe fn linear_apply_row_neon(input: &[f32], weights: &[f32], out: &mut [f32])
             if scale == 0.0 {
                 continue;
             }
-            value += *weight_ptr.add(column * output + offset) * scale;
+            value = (*weight_ptr.add(column * output + offset)).mul_add(scale, value);
         }
         *out_ptr.add(offset) = value;
     }
@@ -3972,11 +3354,13 @@ unsafe fn linear_apply_block_neon(
     let tiled_rows = rows / 4 * 4;
     for row_base in (0..tiled_rows).step_by(4) {
         for column in 0..input {
-            let scale0 = *inputs.get_unchecked(row_base * input + column);
-            let scale1 = *inputs.get_unchecked((row_base + 1) * input + column);
-            let scale2 = *inputs.get_unchecked((row_base + 2) * input + column);
-            let scale3 = *inputs.get_unchecked((row_base + 3) * input + column);
-            if scale0 == 0.0 && scale1 == 0.0 && scale2 == 0.0 && scale3 == 0.0 {
+            let scales = [
+                *inputs.get_unchecked(row_base * input + column),
+                *inputs.get_unchecked((row_base + 1) * input + column),
+                *inputs.get_unchecked((row_base + 2) * input + column),
+                *inputs.get_unchecked((row_base + 3) * input + column),
+            ];
+            if scales.iter().all(|&scale| scale == 0.0) {
                 continue;
             }
 
@@ -3989,90 +3373,39 @@ unsafe fn linear_apply_block_neon(
                     vld1q_f32(weight_column.add(output_offset + 8)),
                     vld1q_f32(weight_column.add(output_offset + 12)),
                 ];
-                if scale0 != 0.0 {
-                    add_scaled_16_neon(
-                        outs.as_mut_ptr().add(row_base * output + output_offset),
-                        weights,
-                        scale0,
-                    );
-                }
-                if scale1 != 0.0 {
-                    add_scaled_16_neon(
-                        outs.as_mut_ptr()
-                            .add((row_base + 1) * output + output_offset),
-                        weights,
-                        scale1,
-                    );
-                }
-                if scale2 != 0.0 {
-                    add_scaled_16_neon(
-                        outs.as_mut_ptr()
-                            .add((row_base + 2) * output + output_offset),
-                        weights,
-                        scale2,
-                    );
-                }
-                if scale3 != 0.0 {
-                    add_scaled_16_neon(
-                        outs.as_mut_ptr()
-                            .add((row_base + 3) * output + output_offset),
-                        weights,
-                        scale3,
-                    );
+                for (row, &scale) in scales.iter().enumerate() {
+                    if scale != 0.0 {
+                        add_scaled_16_neon(
+                            outs.as_mut_ptr()
+                                .add((row_base + row) * output + output_offset),
+                            weights,
+                            scale,
+                        );
+                    }
                 }
                 output_offset += 16;
             }
             while output_offset + 4 <= output {
                 let weight = vld1q_f32(weight_column.add(output_offset));
-                if scale0 != 0.0 {
-                    add_scaled_4_neon(
-                        outs.as_mut_ptr().add(row_base * output + output_offset),
-                        weight,
-                        scale0,
-                    );
-                }
-                if scale1 != 0.0 {
-                    add_scaled_4_neon(
-                        outs.as_mut_ptr()
-                            .add((row_base + 1) * output + output_offset),
-                        weight,
-                        scale1,
-                    );
-                }
-                if scale2 != 0.0 {
-                    add_scaled_4_neon(
-                        outs.as_mut_ptr()
-                            .add((row_base + 2) * output + output_offset),
-                        weight,
-                        scale2,
-                    );
-                }
-                if scale3 != 0.0 {
-                    add_scaled_4_neon(
-                        outs.as_mut_ptr()
-                            .add((row_base + 3) * output + output_offset),
-                        weight,
-                        scale3,
-                    );
+                for (row, &scale) in scales.iter().enumerate() {
+                    if scale != 0.0 {
+                        add_scaled_4_neon(
+                            outs.as_mut_ptr()
+                                .add((row_base + row) * output + output_offset),
+                            weight,
+                            scale,
+                        );
+                    }
                 }
                 output_offset += 4;
             }
             while output_offset < output {
                 let weight = *weight_column.add(output_offset);
-                if scale0 != 0.0 {
-                    *outs.get_unchecked_mut(row_base * output + output_offset) += weight * scale0;
-                }
-                if scale1 != 0.0 {
-                    *outs.get_unchecked_mut((row_base + 1) * output + output_offset) +=
-                        weight * scale1;
-                }
-                if scale2 != 0.0 {
-                    *outs.get_unchecked_mut((row_base + 2) * output + output_offset) +=
-                        weight * scale2;
-                }
-                if scale3 != 0.0 {
-                    *outs.get_unchecked_mut((row_base + 3) * output + output_offset) +=
-                        weight * scale3;
+                for (row, &scale) in scales.iter().enumerate() {
+                    if scale != 0.0 {
+                        let out = outs.get_unchecked_mut((row_base + row) * output + output_offset);
+                        *out = weight.mul_add(scale, *out);
+                    }
                 }
                 output_offset += 1;
             }
@@ -4087,7 +3420,7 @@ unsafe fn linear_apply_block_neon(
                 continue;
             }
             let weight_column = &weights[column * output..(column + 1) * output];
-            add_scaled_in_place_neon(out, weight_column, scale);
+            det::axpy_neon(out, weight_column, scale);
         }
     }
 }
@@ -4125,97 +3458,12 @@ unsafe fn add_scaled_4_neon(out: *mut f32, weights: std::arch::aarch64::float32x
     vst1q_f32(out, vfmaq_f32(vld1q_f32(out), weights, vdupq_n_f32(scale)));
 }
 
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-fn x86_avx2_fma_available() -> bool {
-    use std::sync::atomic::AtomicU8;
-    use std::sync::atomic::Ordering;
-
-    static AVAILABLE: AtomicU8 = AtomicU8::new(0);
-
-    match AVAILABLE.load(Ordering::Relaxed) {
-        1 => false,
-        2 => true,
-        _ => {
-            let available =
-                std::is_x86_feature_detected!("avx2") && std::is_x86_feature_detected!("fma");
-            AVAILABLE.store(if available { 2 } else { 1 }, Ordering::Relaxed);
-            available
-        }
-    }
-}
-
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2,fma")]
-unsafe fn add_scaled_in_place_avx2_fma(out: &mut [f32], weights: &[f32], scale: f32) {
-    use std::arch::x86_64::*;
-
-    let mut offset = 0;
-    let len = out.len();
-    let scale_vector = _mm256_set1_ps(scale);
-    while offset + 32 <= len {
-        let out_ptr = out.as_mut_ptr().add(offset);
-        let weight_ptr = weights.as_ptr().add(offset);
-        _mm256_storeu_ps(
-            out_ptr,
-            _mm256_fmadd_ps(
-                _mm256_loadu_ps(weight_ptr),
-                scale_vector,
-                _mm256_loadu_ps(out_ptr),
-            ),
-        );
-        _mm256_storeu_ps(
-            out_ptr.add(8),
-            _mm256_fmadd_ps(
-                _mm256_loadu_ps(weight_ptr.add(8)),
-                scale_vector,
-                _mm256_loadu_ps(out_ptr.add(8)),
-            ),
-        );
-        _mm256_storeu_ps(
-            out_ptr.add(16),
-            _mm256_fmadd_ps(
-                _mm256_loadu_ps(weight_ptr.add(16)),
-                scale_vector,
-                _mm256_loadu_ps(out_ptr.add(16)),
-            ),
-        );
-        _mm256_storeu_ps(
-            out_ptr.add(24),
-            _mm256_fmadd_ps(
-                _mm256_loadu_ps(weight_ptr.add(24)),
-                scale_vector,
-                _mm256_loadu_ps(out_ptr.add(24)),
-            ),
-        );
-        offset += 32;
-    }
-    while offset + 8 <= len {
-        let out_ptr = out.as_mut_ptr().add(offset);
-        let weight_ptr = weights.as_ptr().add(offset);
-        _mm256_storeu_ps(
-            out_ptr,
-            _mm256_fmadd_ps(
-                _mm256_loadu_ps(weight_ptr),
-                scale_vector,
-                _mm256_loadu_ps(out_ptr),
-            ),
-        );
-        offset += 8;
-    }
-    while offset < len {
-        out[offset] += weights[offset] * scale;
-        offset += 1;
-    }
-}
-
 /// Exact four-row linear projection microkernel for AVX2/FMA machines.
 ///
 /// Each output accumulator still visits input columns in ascending order and
 /// skips zero scales, matching `Linear::apply_into()`. Changing only the row
-/// and output-vector loop order lets four reviews share each weight load. Two
-/// input columns are handled per inner-loop iteration to reduce loop-control
-/// overhead without changing the per-output accumulation order.
+/// and output-vector loop order lets four reviews share each weight load.
+/// Fushi: the `output % 8` tail is fused like the vectors.
 #[cfg(target_arch = "x86_64")]
 #[target_feature(enable = "avx2,fma")]
 unsafe fn linear_apply_block_avx2_fma(
@@ -4232,166 +3480,50 @@ unsafe fn linear_apply_block_avx2_fma(
     for row_base in (0..tiled_rows).step_by(4) {
         let mut output_offset = 0;
         while output_offset + 8 <= output {
-            let mut acc0 = _mm256_loadu_ps(outs.as_ptr().add(row_base * output + output_offset));
-            let mut acc1 =
-                _mm256_loadu_ps(outs.as_ptr().add((row_base + 1) * output + output_offset));
-            let mut acc2 =
-                _mm256_loadu_ps(outs.as_ptr().add((row_base + 2) * output + output_offset));
-            let mut acc3 =
-                _mm256_loadu_ps(outs.as_ptr().add((row_base + 3) * output + output_offset));
-
-            let mut column = 0;
-            while column + 2 <= input {
-                let weight0 =
-                    _mm256_loadu_ps(weights.as_ptr().add(column * output + output_offset));
-                let scale00 = *inputs.get_unchecked(row_base * input + column);
-                let scale10 = *inputs.get_unchecked((row_base + 1) * input + column);
-                let scale20 = *inputs.get_unchecked((row_base + 2) * input + column);
-                let scale30 = *inputs.get_unchecked((row_base + 3) * input + column);
-                if scale00 != 0.0 {
-                    acc0 = _mm256_fmadd_ps(weight0, _mm256_set1_ps(scale00), acc0);
-                }
-                if scale10 != 0.0 {
-                    acc1 = _mm256_fmadd_ps(weight0, _mm256_set1_ps(scale10), acc1);
-                }
-                if scale20 != 0.0 {
-                    acc2 = _mm256_fmadd_ps(weight0, _mm256_set1_ps(scale20), acc2);
-                }
-                if scale30 != 0.0 {
-                    acc3 = _mm256_fmadd_ps(weight0, _mm256_set1_ps(scale30), acc3);
-                }
-
-                let weight1 =
-                    _mm256_loadu_ps(weights.as_ptr().add((column + 1) * output + output_offset));
-                let scale01 = *inputs.get_unchecked(row_base * input + column + 1);
-                let scale11 = *inputs.get_unchecked((row_base + 1) * input + column + 1);
-                let scale21 = *inputs.get_unchecked((row_base + 2) * input + column + 1);
-                let scale31 = *inputs.get_unchecked((row_base + 3) * input + column + 1);
-                if scale01 != 0.0 {
-                    acc0 = _mm256_fmadd_ps(weight1, _mm256_set1_ps(scale01), acc0);
-                }
-                if scale11 != 0.0 {
-                    acc1 = _mm256_fmadd_ps(weight1, _mm256_set1_ps(scale11), acc1);
-                }
-                if scale21 != 0.0 {
-                    acc2 = _mm256_fmadd_ps(weight1, _mm256_set1_ps(scale21), acc2);
-                }
-                if scale31 != 0.0 {
-                    acc3 = _mm256_fmadd_ps(weight1, _mm256_set1_ps(scale31), acc3);
-                }
-
-                column += 2;
-            }
-            if column < input {
+            let mut acc = [
+                _mm256_loadu_ps(outs.as_ptr().add(row_base * output + output_offset)),
+                _mm256_loadu_ps(outs.as_ptr().add((row_base + 1) * output + output_offset)),
+                _mm256_loadu_ps(outs.as_ptr().add((row_base + 2) * output + output_offset)),
+                _mm256_loadu_ps(outs.as_ptr().add((row_base + 3) * output + output_offset)),
+            ];
+            for column in 0..input {
                 let weight = _mm256_loadu_ps(weights.as_ptr().add(column * output + output_offset));
-                let scale0 = *inputs.get_unchecked(row_base * input + column);
-                let scale1 = *inputs.get_unchecked((row_base + 1) * input + column);
-                let scale2 = *inputs.get_unchecked((row_base + 2) * input + column);
-                let scale3 = *inputs.get_unchecked((row_base + 3) * input + column);
-                if scale0 != 0.0 {
-                    acc0 = _mm256_fmadd_ps(weight, _mm256_set1_ps(scale0), acc0);
-                }
-                if scale1 != 0.0 {
-                    acc1 = _mm256_fmadd_ps(weight, _mm256_set1_ps(scale1), acc1);
-                }
-                if scale2 != 0.0 {
-                    acc2 = _mm256_fmadd_ps(weight, _mm256_set1_ps(scale2), acc2);
-                }
-                if scale3 != 0.0 {
-                    acc3 = _mm256_fmadd_ps(weight, _mm256_set1_ps(scale3), acc3);
+                for (row, acc) in acc.iter_mut().enumerate() {
+                    let scale = *inputs.get_unchecked((row_base + row) * input + column);
+                    if scale != 0.0 {
+                        *acc = _mm256_fmadd_ps(weight, _mm256_set1_ps(scale), *acc);
+                    }
                 }
             }
-
-            _mm256_storeu_ps(
-                outs.as_mut_ptr().add(row_base * output + output_offset),
-                acc0,
-            );
-            _mm256_storeu_ps(
-                outs.as_mut_ptr()
-                    .add((row_base + 1) * output + output_offset),
-                acc1,
-            );
-            _mm256_storeu_ps(
-                outs.as_mut_ptr()
-                    .add((row_base + 2) * output + output_offset),
-                acc2,
-            );
-            _mm256_storeu_ps(
-                outs.as_mut_ptr()
-                    .add((row_base + 3) * output + output_offset),
-                acc3,
-            );
+            for (row, acc) in acc.iter().enumerate() {
+                _mm256_storeu_ps(
+                    outs.as_mut_ptr()
+                        .add((row_base + row) * output + output_offset),
+                    *acc,
+                );
+            }
             output_offset += 8;
         }
 
         while output_offset < output {
-            let mut acc0 = *outs.get_unchecked(row_base * output + output_offset);
-            let mut acc1 = *outs.get_unchecked((row_base + 1) * output + output_offset);
-            let mut acc2 = *outs.get_unchecked((row_base + 2) * output + output_offset);
-            let mut acc3 = *outs.get_unchecked((row_base + 3) * output + output_offset);
-            let mut column = 0;
-            while column + 2 <= input {
-                let weight0 = *weights.get_unchecked(column * output + output_offset);
-                let scale00 = *inputs.get_unchecked(row_base * input + column);
-                let scale10 = *inputs.get_unchecked((row_base + 1) * input + column);
-                let scale20 = *inputs.get_unchecked((row_base + 2) * input + column);
-                let scale30 = *inputs.get_unchecked((row_base + 3) * input + column);
-                if scale00 != 0.0 {
-                    acc0 += weight0 * scale00;
-                }
-                if scale10 != 0.0 {
-                    acc1 += weight0 * scale10;
-                }
-                if scale20 != 0.0 {
-                    acc2 += weight0 * scale20;
-                }
-                if scale30 != 0.0 {
-                    acc3 += weight0 * scale30;
-                }
-
-                let weight1 = *weights.get_unchecked((column + 1) * output + output_offset);
-                let scale01 = *inputs.get_unchecked(row_base * input + column + 1);
-                let scale11 = *inputs.get_unchecked((row_base + 1) * input + column + 1);
-                let scale21 = *inputs.get_unchecked((row_base + 2) * input + column + 1);
-                let scale31 = *inputs.get_unchecked((row_base + 3) * input + column + 1);
-                if scale01 != 0.0 {
-                    acc0 += weight1 * scale01;
-                }
-                if scale11 != 0.0 {
-                    acc1 += weight1 * scale11;
-                }
-                if scale21 != 0.0 {
-                    acc2 += weight1 * scale21;
-                }
-                if scale31 != 0.0 {
-                    acc3 += weight1 * scale31;
-                }
-
-                column += 2;
-            }
-            if column < input {
+            let mut acc = [
+                *outs.get_unchecked(row_base * output + output_offset),
+                *outs.get_unchecked((row_base + 1) * output + output_offset),
+                *outs.get_unchecked((row_base + 2) * output + output_offset),
+                *outs.get_unchecked((row_base + 3) * output + output_offset),
+            ];
+            for column in 0..input {
                 let weight = *weights.get_unchecked(column * output + output_offset);
-                let scale0 = *inputs.get_unchecked(row_base * input + column);
-                let scale1 = *inputs.get_unchecked((row_base + 1) * input + column);
-                let scale2 = *inputs.get_unchecked((row_base + 2) * input + column);
-                let scale3 = *inputs.get_unchecked((row_base + 3) * input + column);
-                if scale0 != 0.0 {
-                    acc0 += weight * scale0;
-                }
-                if scale1 != 0.0 {
-                    acc1 += weight * scale1;
-                }
-                if scale2 != 0.0 {
-                    acc2 += weight * scale2;
-                }
-                if scale3 != 0.0 {
-                    acc3 += weight * scale3;
+                for (row, acc) in acc.iter_mut().enumerate() {
+                    let scale = *inputs.get_unchecked((row_base + row) * input + column);
+                    if scale != 0.0 {
+                        *acc = weight.mul_add(scale, *acc);
+                    }
                 }
             }
-            *outs.get_unchecked_mut(row_base * output + output_offset) = acc0;
-            *outs.get_unchecked_mut((row_base + 1) * output + output_offset) = acc1;
-            *outs.get_unchecked_mut((row_base + 2) * output + output_offset) = acc2;
-            *outs.get_unchecked_mut((row_base + 3) * output + output_offset) = acc3;
+            for (row, acc) in acc.iter().enumerate() {
+                *outs.get_unchecked_mut((row_base + row) * output + output_offset) = *acc;
+            }
             output_offset += 1;
         }
     }
@@ -4404,164 +3536,16 @@ unsafe fn linear_apply_block_avx2_fma(
                 continue;
             }
             let weight_column = &weights[column * output..(column + 1) * output];
-            add_scaled_in_place_avx2_fma(out, weight_column, scale);
+            det::axpy_avx2_fma(out, weight_column, scale);
         }
     }
 }
 
-#[cfg(not(target_arch = "aarch64"))]
-#[inline(always)]
-fn add_scaled_in_place_scalar(out: &mut [f32], weights: &[f32], scale: f32) {
-    for (output, weight) in out.iter_mut().zip(weights) {
-        *output += weight * scale;
-    }
-}
-
+/// Fushi: the canonical dot product ([det::dot]; was a per-platform reduction
+/// order).
 #[inline(always)]
 fn dot_product(left: &[f32], right: &[f32]) -> f32 {
-    debug_assert_eq!(left.len(), right.len());
-    dot_product_arch(left, right)
-}
-
-#[cfg(target_arch = "aarch64")]
-#[inline(always)]
-fn dot_product_arch(left: &[f32], right: &[f32]) -> f32 {
-    // SAFETY: aarch64 guarantees NEON support, and the helper only uses
-    // unaligned loads within the bounds checked by its loop conditions.
-    unsafe { dot_product_neon(left, right) }
-}
-
-#[cfg(target_arch = "x86_64")]
-#[inline(always)]
-fn dot_product_arch(left: &[f32], right: &[f32]) -> f32 {
-    if x86_avx2_fma_available() {
-        // SAFETY: availability was checked above, and the helper only uses
-        // unaligned loads within the bounds checked by its loops.
-        unsafe { dot_product_avx2_fma(left, right) }
-    } else {
-        dot_product_scalar(left, right)
-    }
-}
-
-#[cfg(all(not(target_arch = "aarch64"), not(target_arch = "x86_64")))]
-#[inline(always)]
-fn dot_product_arch(left: &[f32], right: &[f32]) -> f32 {
-    dot_product_scalar(left, right)
-}
-
-#[cfg(target_arch = "aarch64")]
-#[inline(always)]
-unsafe fn dot_product_neon(left: &[f32], right: &[f32]) -> f32 {
-    use std::arch::aarch64::*;
-
-    let mut offset = 0;
-    let len = left.len();
-    let mut acc0 = vdupq_n_f32(0.0);
-    let mut acc1 = vdupq_n_f32(0.0);
-    let mut acc2 = vdupq_n_f32(0.0);
-    let mut acc3 = vdupq_n_f32(0.0);
-
-    while offset + 16 <= len {
-        let left_ptr = left.as_ptr().add(offset);
-        let right_ptr = right.as_ptr().add(offset);
-        acc0 = vfmaq_f32(acc0, vld1q_f32(left_ptr), vld1q_f32(right_ptr));
-        acc1 = vfmaq_f32(
-            acc1,
-            vld1q_f32(left_ptr.add(4)),
-            vld1q_f32(right_ptr.add(4)),
-        );
-        acc2 = vfmaq_f32(
-            acc2,
-            vld1q_f32(left_ptr.add(8)),
-            vld1q_f32(right_ptr.add(8)),
-        );
-        acc3 = vfmaq_f32(
-            acc3,
-            vld1q_f32(left_ptr.add(12)),
-            vld1q_f32(right_ptr.add(12)),
-        );
-        offset += 16;
-    }
-
-    let mut acc = vaddq_f32(vaddq_f32(acc0, acc1), vaddq_f32(acc2, acc3));
-    while offset + 4 <= len {
-        acc = vfmaq_f32(
-            acc,
-            vld1q_f32(left.as_ptr().add(offset)),
-            vld1q_f32(right.as_ptr().add(offset)),
-        );
-        offset += 4;
-    }
-
-    let mut sum = vaddvq_f32(acc);
-    while offset < len {
-        sum += left[offset] * right[offset];
-        offset += 1;
-    }
-    sum
-}
-
-#[cfg(target_arch = "x86_64")]
-#[target_feature(enable = "avx2,fma")]
-unsafe fn dot_product_avx2_fma(left: &[f32], right: &[f32]) -> f32 {
-    use std::arch::x86_64::*;
-
-    let mut offset = 0;
-    let len = left.len();
-    let mut acc0 = _mm256_setzero_ps();
-    let mut acc1 = _mm256_setzero_ps();
-    let mut acc2 = _mm256_setzero_ps();
-    let mut acc3 = _mm256_setzero_ps();
-
-    while offset + 32 <= len {
-        let left_ptr = left.as_ptr().add(offset);
-        let right_ptr = right.as_ptr().add(offset);
-        acc0 = _mm256_fmadd_ps(_mm256_loadu_ps(left_ptr), _mm256_loadu_ps(right_ptr), acc0);
-        acc1 = _mm256_fmadd_ps(
-            _mm256_loadu_ps(left_ptr.add(8)),
-            _mm256_loadu_ps(right_ptr.add(8)),
-            acc1,
-        );
-        acc2 = _mm256_fmadd_ps(
-            _mm256_loadu_ps(left_ptr.add(16)),
-            _mm256_loadu_ps(right_ptr.add(16)),
-            acc2,
-        );
-        acc3 = _mm256_fmadd_ps(
-            _mm256_loadu_ps(left_ptr.add(24)),
-            _mm256_loadu_ps(right_ptr.add(24)),
-            acc3,
-        );
-        offset += 32;
-    }
-
-    let mut acc = _mm256_add_ps(_mm256_add_ps(acc0, acc1), _mm256_add_ps(acc2, acc3));
-    while offset + 8 <= len {
-        acc = _mm256_fmadd_ps(
-            _mm256_loadu_ps(left.as_ptr().add(offset)),
-            _mm256_loadu_ps(right.as_ptr().add(offset)),
-            acc,
-        );
-        offset += 8;
-    }
-
-    let mut lanes = [0.0_f32; 8];
-    _mm256_storeu_ps(lanes.as_mut_ptr(), acc);
-    let mut sum = lanes.iter().copied().sum::<f32>();
-    while offset < len {
-        sum += left[offset] * right[offset];
-        offset += 1;
-    }
-    sum
-}
-
-#[cfg(not(target_arch = "aarch64"))]
-#[inline(always)]
-fn dot_product_scalar(left: &[f32], right: &[f32]) -> f32 {
-    left.iter()
-        .zip(right)
-        .map(|(left, right)| left * right)
-        .sum()
+    det::dot(left, right)
 }
 
 #[derive(Clone)] // Fushi: per-precision copies of the network (RwkvInference::new)
@@ -4605,96 +3589,6 @@ impl Norm {
         }
     }
 
-    #[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-    fn apply_batch(&self, input: &[f32], rows: usize, out: &mut Vec<f32>) {
-        assert_eq!(input.len(), rows * self.dim);
-        out.resize(rows * self.dim, 0.0);
-        // Accumulate independent rows together, keeping each row's reduction
-        // order unchanged so SIMD does not change normalization results.
-        const LANES: usize = 4;
-        let group_size = self.dim / self.groups;
-
-        #[cfg(target_arch = "aarch64")]
-        if group_size % 4 == 0 && group_size * self.groups == self.dim {
-            assert!(self.weight.len() == self.dim && self.bias.len() == self.dim);
-            let mut row = 0;
-            // SAFETY: aarch64 guarantees NEON support. Each call reads and
-            // writes the `4 * BLOCKS` complete rows starting at `row`, which
-            // lie within the lengths checked above.
-            unsafe {
-                while row + 16 <= rows {
-                    query_kernels::norm_rows_neon::<4>(
-                        input.as_ptr().add(row * self.dim),
-                        out.as_mut_ptr().add(row * self.dim),
-                        self.dim,
-                        self.groups,
-                        self.eps,
-                        &self.weight,
-                        &self.bias,
-                    );
-                    row += 16;
-                }
-                while row + 4 <= rows {
-                    query_kernels::norm_rows_neon::<1>(
-                        input.as_ptr().add(row * self.dim),
-                        out.as_mut_ptr().add(row * self.dim),
-                        self.dim,
-                        self.groups,
-                        self.eps,
-                        &self.weight,
-                        &self.bias,
-                    );
-                    row += 4;
-                }
-            }
-            out[row * self.dim..]
-                .chunks_mut(self.dim)
-                .zip(input[row * self.dim..].chunks(self.dim))
-                .for_each(|(output, input)| self.apply_into(input, output));
-            return;
-        }
-
-        let mut inputs = input.chunks_exact(self.dim * LANES);
-        let mut outputs = out.chunks_exact_mut(self.dim * LANES);
-        for (input, output) in inputs.by_ref().zip(outputs.by_ref()) {
-            for group in 0..self.groups {
-                let start = group * group_size;
-                let end = start + group_size;
-                let mut means = [-0.0; LANES];
-                for channel in start..end {
-                    for lane in 0..LANES {
-                        means[lane] += input[lane * self.dim + channel];
-                    }
-                }
-                for mean in &mut means {
-                    *mean /= group_size as f32;
-                }
-                let mut scales = [-0.0; LANES];
-                for channel in start..end {
-                    for lane in 0..LANES {
-                        let diff = input[lane * self.dim + channel] - means[lane];
-                        scales[lane] += diff * diff;
-                    }
-                }
-                for scale in &mut scales {
-                    *scale = (*scale / group_size as f32 + self.eps).sqrt().recip();
-                }
-                for lane in 0..LANES {
-                    for channel in start..end {
-                        let index = lane * self.dim + channel;
-                        output[index] =
-                            (input[index] - means[lane]) * scales[lane] * self.weight[channel]
-                                + self.bias[channel];
-                    }
-                }
-            }
-        }
-        outputs
-            .into_remainder()
-            .chunks_mut(self.dim)
-            .zip(inputs.remainder().chunks(self.dim))
-            .for_each(|(output, input)| self.apply_into(input, output));
-    }
 }
 
 fn single_timestep(
@@ -4773,7 +3667,7 @@ fn update_recurrence_head(
     next_state: &mut [f32],
 ) {
     #[cfg(target_arch = "x86_64")]
-    if x86_avx2_fma_available() {
+    if det::x86_avx2_fma_available() {
         // SAFETY: availability was checked above. Every head is exactly
         // `HEAD_SIZE` square and `HEAD_SIZE` is a multiple of eight.
         unsafe {
@@ -4847,7 +3741,6 @@ unsafe fn update_recurrence_head_avx2(
     }
 }
 
-#[cfg(any(not(any(target_os = "macos", target_arch = "aarch64")), test))]
 #[allow(clippy::too_many_arguments)]
 fn single_timestep_query_into(
     r: &[f32],
@@ -4914,19 +3807,12 @@ fn single_timestep_query_fast_into(
         state.is_none() || state.is_some_and(|state| state.len() == HEADS * HEAD_SIZE * HEAD_SIZE)
     );
 
-    #[cfg(target_arch = "aarch64")]
-    // SAFETY: aarch64 guarantees NEON support, and every slice length was
-    // checked above; the kernel only reads and writes within those lengths.
-    unsafe {
-        query_kernels::single_timestep_query_fast_neon(r, k, v, w, a, k_deformed, state, out);
-    }
-
-    #[cfg(not(target_arch = "aarch64"))]
+    // Fushi: one implementation on every platform (upstream had a NEON
+    // kernel with its own reduction order on aarch64).
     single_timestep_query_fast_scalar(r, k, v, w, a, k_deformed, state, out);
 }
 
-/// Portable reference for `single_timestep_query_fast_into()`.
-#[cfg(any(not(target_arch = "aarch64"), test))]
+/// `single_timestep_query_fast_into()` on the canonical dot product.
 #[allow(clippy::too_many_arguments)]
 fn single_timestep_query_fast_scalar(
     r: &[f32],
@@ -4988,110 +3874,10 @@ fn normalize_heads_in_place(values: &mut [f32]) {
     }
 }
 
-/// Writes row `row` of all eight time-mix inputs,
-/// `mixed[mix] = lerp(x, x_shift, lerp_weights[mix])`, in one pass. Sharing
-/// `x_shift - x` between the mixes keeps `lerp()`'s exact arithmetic.
-#[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-fn time_shift_mix_row(
-    x: &[f32],
-    x_shift: &[f32],
-    lerp_weights: &[f32],
-    mixed: &mut [Vec<f32>; 8],
-    row: usize,
-) {
-    assert!(x.len() == D_MODEL && x_shift.len() == D_MODEL);
-    assert_eq!(lerp_weights.len(), mixed.len() * D_MODEL);
-    let mut shift_delta = [0.0; D_MODEL];
-    for channel in 0..D_MODEL {
-        shift_delta[channel] = x_shift[channel] - x[channel];
-    }
-    for (mixed, weights) in mixed.iter_mut().zip(lerp_weights.chunks_exact(D_MODEL)) {
-        let mixed = &mut mixed[row * D_MODEL..(row + 1) * D_MODEL];
-        for channel in 0..D_MODEL {
-            mixed[channel] = x[channel] + weights[channel] * shift_delta[channel];
-        }
-    }
-}
 
-/// `normalize_heads_in_place()` followed by `scale_heads_in_place()`.
-#[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-fn normalize_scale_heads_in_place(values: &mut [f32], scales: &[f32]) {
-    assert!(values.len() == D_MODEL && scales.len() == HEADS);
 
-    #[cfg(target_arch = "aarch64")]
-    // SAFETY: aarch64 guarantees NEON support, and both lengths were checked
-    // above; the kernel only accesses elements within them.
-    unsafe {
-        query_kernels::normalize_scale_heads_neon(values, scales);
-    }
 
-    #[cfg(not(target_arch = "aarch64"))]
-    {
-        normalize_heads_in_place(values);
-        scale_heads_in_place(values, scales);
-    }
-}
 
-/// Adds the per-head bonus to the group-normed recurrence output and applies
-/// the output gate: `output = g * (output + sum_head(r * bonus * k) * v)`.
-#[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-fn bonus_gate_in_place(
-    output: &mut [f32],
-    r: &[f32],
-    bonus: &[f32],
-    k: &[f32],
-    v: &[f32],
-    g: &[f32],
-) {
-    assert!(
-        [&*output, r, bonus, k, v, g]
-            .iter()
-            .all(|values| values.len() == D_MODEL)
-    );
-
-    #[cfg(target_arch = "aarch64")]
-    // SAFETY: aarch64 guarantees NEON support, and every length was checked
-    // above; the kernel only accesses elements within them.
-    unsafe {
-        query_kernels::bonus_gate_neon(output, r, bonus, k, v, g);
-    }
-
-    #[cfg(not(target_arch = "aarch64"))]
-    bonus_gate_scalar(output, r, bonus, k, v, g);
-}
-
-/// Portable reference for `bonus_gate_in_place()`.
-#[cfg(any(all(target_os = "macos", not(target_arch = "aarch64")), test))]
-fn bonus_gate_scalar(
-    output: &mut [f32],
-    r: &[f32],
-    bonus: &[f32],
-    k: &[f32],
-    v: &[f32],
-    g: &[f32],
-) {
-    for head in 0..HEADS {
-        let head_base = head * HEAD_SIZE;
-        let mut bonus_scale = 0.0;
-        for channel in head_base..head_base + HEAD_SIZE {
-            bonus_scale += r[channel] * bonus[channel] * k[channel];
-        }
-        for channel in head_base..head_base + HEAD_SIZE {
-            output[channel] = g[channel] * (output[channel] + bonus_scale * v[channel]);
-        }
-    }
-}
-
-#[cfg(any(all(target_os = "macos", not(target_arch = "aarch64")), test))]
-fn scale_heads_in_place(values: &mut [f32], scales: &[f32]) {
-    debug_assert_eq!(values.len(), D_MODEL);
-    debug_assert_eq!(scales.len(), HEADS);
-    for head in 0..HEADS {
-        for index in 0..HEAD_SIZE {
-            values[head * HEAD_SIZE + index] *= scales[head];
-        }
-    }
-}
 
 fn softmax(input: &[f32]) -> Vec<f32> {
     let max = input
@@ -5100,7 +3886,7 @@ fn softmax(input: &[f32]) -> Vec<f32> {
         .fold(f32::NEG_INFINITY, |a, b| a.max(b));
     let mut out = input
         .iter()
-        .map(|value| (*value - max).exp())
+        .map(|value| det::exp(*value - max))
         .collect::<Vec<_>>();
     let sum = out.iter().sum::<f32>();
     for value in &mut out {
@@ -5116,7 +3902,7 @@ fn softmax_into(input: &[f32], out: &mut [f32]) {
         .copied()
         .fold(f32::NEG_INFINITY, |a, b| a.max(b));
     for (output, value) in out.iter_mut().zip(input) {
-        *output = (*value - max).exp();
+        *output = det::exp(*value - max);
     }
     let sum = out.iter().sum::<f32>();
     for value in out {
@@ -5130,73 +3916,29 @@ fn sigmoid_in_place(values: &mut [f32]) {
     }
 }
 
+// Fushi: deterministic (see `det`), was two f32 branches on the libm `exp`.
 fn sigmoid(value: f32) -> f32 {
-    if value >= 0.0 {
-        1.0 / (1.0 + (-value).exp())
-    } else {
-        let exp = value.exp();
-        exp / (1.0 + exp)
-    }
+    det::sigmoid(value)
 }
 
 // exp(-0.5), rounded to f32.
-#[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-const QUERY_DECAY_SCALE: f32 = 0.606_530_67;
 
-/// Scalar reference for `query_decay_batch_in_place()`, which also uses it off
-/// macOS (phones).
-#[cfg(any(all(target_arch = "aarch64", not(target_os = "macos")), test))]
-fn query_decay(value: f32) -> f32 {
-    // exp(-exp(-0.5 - softplus(-x))) = exp(-exp(-0.5) * sigmoid(x)).
-    // Query-only: recurrent state updates keep their original arithmetic.
-    (-QUERY_DECAY_SCALE * sigmoid(value)).exp()
-}
 
 // Batched query-only activations. On macOS they use Accelerate's vectorized
 // transcendental functions, which may differ from the scalar ones in the last
 // bit; answer rows and warm-up state updates keep the scalar functions.
 
-#[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-fn query_sigmoid_batch_in_place(values: &mut [f32]) {
-    #[cfg(target_os = "macos")]
-    matmul::sigmoid_in_place(values);
-    #[cfg(not(target_os = "macos"))]
-    sigmoid_in_place(values);
-}
 
-#[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-fn query_silu_batch_in_place(values: &mut [f32]) {
-    #[cfg(target_os = "macos")]
-    matmul::silu_in_place(values);
-    #[cfg(not(target_os = "macos"))]
-    silu_in_place(values);
-}
 
-#[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-fn query_tanh_batch_in_place(values: &mut [f32]) {
-    #[cfg(target_os = "macos")]
-    matmul::tanh_in_place(values);
-    #[cfg(not(target_os = "macos"))]
-    values.iter_mut().for_each(|value| *value = value.tanh());
-}
 
-#[cfg(any(target_os = "macos", target_arch = "aarch64", test))]
-fn query_decay_batch_in_place(values: &mut [f32]) {
-    #[cfg(target_os = "macos")]
-    matmul::scaled_sigmoid_decay_in_place(values, QUERY_DECAY_SCALE);
-    #[cfg(not(target_os = "macos"))]
-    values
-        .iter_mut()
-        .for_each(|value| *value = query_decay(*value));
-}
 
 fn softplus(value: f32) -> f32 {
     if value > 20.0 {
         value
     } else if value < -20.0 {
-        value.exp()
+        det::exp(value)
     } else {
-        value.exp().ln_1p()
+        det::ln_1p(det::exp(value))
     }
 }
 
