@@ -295,4 +295,6 @@ end;
 procedure DeinitializeSetup();
 begin
   Md3FinalizeControls();
+  { BUG-5529：安装没完成就把改名让路的 DLL 放回原位（fushi.iss）。 }
+  RestoreSetAsideDllsIfInstallFailed();
 end;
