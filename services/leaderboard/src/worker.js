@@ -247,7 +247,7 @@ async function route(request, env, now, ctx) {
   //      读（含批次下载）过 READ_LIMITER；一律不进边缘缓存 ----
   if (isSrsDonationPath(path)) {
     await bindingLimit(method === 'GET' ? env.READ_LIMITER : env.AUTH_LIMITER, request);
-    const res = await routeSrsDonations(request, env, url, now, ctx, clientIp(request));
+    const res = await routeSrsDonations(request, env, url, now, clientIp(request));
     if (res) return res;
     throw new HttpError(404, 'not_found');
   }

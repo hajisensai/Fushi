@@ -3,13 +3,13 @@
 -- 所有者每月生成一个私有批次链接（scripts/srs_donation_batch.mjs）交给作者。
 --
 --   srs_donations             一个捐赠者一行（同一 donorId 重传覆盖）。key_hash = sha256(donorKey 的 UTF-8 字节)
---                             的小写 hex；donorKey 明文不落库。bytes = R2 对象大小（占「大附件」配额池）。
+--                             的小写 hex；donorKey 明文不落库。bytes = R2 对象大小（占捐赠配额池 donation_bytes）。
 --   srs_donation_withdrawals  撤回记录。reported_batch 为空 = 还没在批次里报给作者；批次生成时填上批次 token。
 --                             重新捐赠时删掉尚未报告的那条；已报告的保留（作者那边已删，新文件照常进下一批）。
 --   srs_donation_batches      一个私有批次：token（链接即凭据）、30 天有效期、生成时刻的捐赠者快照与撤回清单。
---   srs_donation_milestones   一次性里程碑（如 donors_30：不同捐赠者数第一次到 30 时通知所有者）。
 --
--- 纯新表，旧 Worker 不读它；写入量极小（每捐赠者每小时 ≤ 2 次上传）。
+-- ⚠️ 先迁移再部署：捐赠上传 / 撤回与 GET /v1/admin/srs-donations 读写 media_usage.donation_bytes，没迁移会 500。
+-- 新表旧 Worker 不读它；写入量极小（每捐赠者每小时 ≤ 2 次上传）。
 CREATE TABLE srs_donations (
   donor_id TEXT PRIMARY KEY,
   key_hash TEXT NOT NULL,
@@ -35,7 +35,6 @@ CREATE TABLE srs_donation_batches (
   withdrawn_json TEXT
 );
 
-CREATE TABLE srs_donation_milestones (
-  name TEXT PRIMARY KEY,
-  reached_at INTEGER
-);
+-- 捐赠包单独一个 R2 配额池（src/budget.js MEDIA_POOLS 'donation'）：捐赠包永不过期、反馈视频 30 天过期，
+-- 共池会让捐赠慢慢占死视频池，分池后互不挤占。上限 DONATION_QUOTA_BYTES（默认 2 GiB，从总配额里切出）。
+ALTER TABLE media_usage ADD COLUMN donation_bytes INTEGER NOT NULL DEFAULT 0;

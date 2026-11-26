@@ -1,8 +1,7 @@
-// SRS 复习历史捐赠（src/srs_donations.js，迁移 0027 / 0028）：上传 / 覆盖 / 查询 / 撤回、限流与配额、批次下载、里程碑通知。
-import { describe, expect, it, vi } from 'vitest';
-import { readFileSync } from 'node:fs';
+// SRS 复习历史捐赠（src/srs_donations.js，迁移 0027）：上传 / 覆盖 / 查询 / 撤回、限流与配额、批次下载、公开统计。
+import { describe, expect, it } from 'vitest';
 import { call, makeEnv, nextIp } from './harness.js';
-import { SRS_DONATION_LIMITS, donationKey, donorKeyHash, milestoneMessage } from '../src/srs_donations.js';
+import { SRS_DONATION_LIMITS, donationKey, donorKeyHash } from '../src/srs_donations.js';
 import { poolQuota } from '../src/budget.js';
 
 const NOW = Date.UTC(2026, 10, 26, 12);
@@ -45,7 +44,7 @@ function withKey(env, method, d, opts = {}) {
   });
 }
 
-/** 捐赠专用配额池（budget.js 'donation'，迁移 0028）；视频池 / 普通池不该被捐赠动到。 */
+/** 捐赠专用配额池（budget.js 'donation'，迁移 0027）；视频池 / 普通池不该被捐赠动到。 */
 const donationBytes = (env) => env.DB.raw.prepare('SELECT donation_bytes FROM media_usage').get().donation_bytes;
 const otherPools = (env) => env.DB.raw.prepare('SELECT bytes, video_bytes FROM media_usage').get();
 const row = (env, id) => env.DB.raw.prepare('SELECT * FROM srs_donations WHERE donor_id = ?').get(id);
@@ -207,17 +206,6 @@ describe('上传', () => {
     expect((await put(env, d, apkg(40, 2), { length: 90 })).status).toBe(400);
     expect(donationBytes(env)).toBe(50);
   });
-
-  it('迁移 0028：把已记在视频池里的捐赠字节挪到捐赠池', () => {
-    const env = makeEnv();
-    const db = env.DB.raw;
-    db.prepare("INSERT INTO srs_donations (donor_id, key_hash, bytes) VALUES ('a', 'h', 60), ('b', 'h', 40)").run();
-    db.prepare('UPDATE media_usage SET video_bytes = 500, donation_bytes = 0, bytes = 7').run();
-    const sql = readFileSync(new URL('../migrations/0028_srs_donation_pool.sql', import.meta.url), 'utf8');
-    db.exec(sql.slice(sql.indexOf('UPDATE media_usage')));
-    expect(db.prepare('SELECT bytes, video_bytes, donation_bytes FROM media_usage').get())
-      .toEqual({ bytes: 7, video_bytes: 400, donation_bytes: 100 });
-  });
 });
 
 describe('查询与撤回', () => {
@@ -342,71 +330,36 @@ describe('批次', () => {
     const bt = await batch(env);
     const r = await call(env, 'GET', '/v1/admin/srs-donations', { headers: basic, now: NOW + 1 });
     expect(r.status).toBe(200);
-    expect(r.data).toMatchObject({ donors: 1, reviews: 1000, cards: 10, bytes: 40, pendingWithdrawals: 0, milestones: [] });
+    expect(r.data).toMatchObject({ donors: 1, reviews: 1000, cards: 10, bytes: 40, pendingWithdrawals: 0 });
     expect(r.data.pool).toEqual({ usedBytes: 40, quotaBytes: poolQuota(env, 'donation') });
     expect(r.data.batches).toEqual([{ createdAt: NOW, expiresAt: NOW + 30 * DAY, donors: 1, withdrawn: 1, url: bt.url }]);
   });
 });
 
-describe('里程碑', () => {
-  it('第 30 个捐赠者：写 donors_30、经 waitUntil POST webhook 一次；之后不再发', async () => {
-    const posts = [];
-    const env = makeEnv({
-      DONATION_NOTIFY_WEBHOOK: 'https://discord.example/webhook',
-      DONATION_NOTIFY_MENTION: '<@123>',
-      DONATION_FETCH: async (u, init) => {
-        posts.push({ u, init });
-        return new Response(null, { status: 204 });
-      },
-    });
-    for (let i = 0; i < 29; i++) expect((await put(env, donor(100 + i), apkg(), { reviews: '100' })).status).toBe(200);
-    // 同一捐赠者重传不算新捐赠者。
-    expect((await put(env, donor(100), apkg(), { reviews: '100' })).status).toBe(200);
-    expect(posts).toHaveLength(0);
-    const waits = [];
-    const ctx = { waitUntil: (p) => waits.push(p) };
-    expect((await put(env, donor(200), apkg(), { reviews: '100', ctx })).status).toBe(200);
-    expect(waits).toHaveLength(1);
-    await Promise.all(waits);
-    expect(posts).toHaveLength(1);
-    expect(posts[0].u).toBe('https://discord.example/webhook');
-    expect(posts[0].init.method).toBe('POST');
-    expect(JSON.parse(posts[0].init.body)).toEqual({
-      content: '<@123> SRS review donations reached 30 donors (3000 reviews). Create a batch: POST /v1/admin/srs-donations/batch',
-    });
-    expect(env.DB.raw.prepare("SELECT reached_at FROM srs_donation_milestones WHERE name = 'donors_30'").get().reached_at).toBe(NOW);
-    await put(env, donor(201), apkg(), { reviews: '100' });
-    expect(posts).toHaveLength(1);
+describe('公开统计 GET /v1/srs-donations/stats', () => {
+  const stats = (env, opts = {}) => call(env, 'GET', '/v1/srs-donations/stats', { now: NOW, ...opts });
+
+  it('无记录：{donors:0, reviews:0}，无需 Authorization，no-store', async () => {
+    const env = makeEnv();
+    const r = await stats(env);
+    expect(r.status).toBe(200);
+    expect(r.data).toEqual({ donors: 0, reviews: 0 });
+    expect(r.res.headers.get('Cache-Control')).toBe('no-store');
   });
 
-  it('没配 webhook：只记日志、上传照常成功', async () => {
-    const env = makeEnv({ DONATION_FETCH: async () => { throw new Error('must not fetch'); } });
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    try {
-      for (let i = 0; i < 30; i++) expect((await put(env, donor(300 + i), apkg(), { reviews: '1' })).status).toBe(200);
-      expect(log.mock.calls.some((c) => String(c[0]).includes('no DONATION_NOTIFY_WEBHOOK'))).toBe(true);
-    } finally {
-      log.mockRestore();
+  it('两次上传后合计；撤回后减少', async () => {
+    const env = makeEnv();
+    await put(env, donor(500), apkg(), { reviews: '1000', cards: '10' });
+    await put(env, donor(501), apkg(), { reviews: '3000', cards: '20' });
+    expect((await stats(env)).data).toEqual({ donors: 2, reviews: 4000 });
+    await withKey(env, 'DELETE', donor(501));
+    expect((await stats(env)).data).toEqual({ donors: 1, reviews: 1000 });
+  });
+
+  it('非 GET → 405', async () => {
+    const env = makeEnv();
+    for (const m of ['POST', 'PUT', 'DELETE']) {
+      expect((await call(env, m, '/v1/srs-donations/stats', { now: NOW })).status).toBe(405);
     }
-    expect(env.DB.raw.prepare('SELECT COUNT(*) n FROM srs_donation_milestones').get().n).toBe(1);
-  });
-
-  it('webhook 失败不影响上传', async () => {
-    const env = makeEnv({
-      DONATION_NOTIFY_WEBHOOK: 'https://discord.example/webhook',
-      DONATION_FETCH: async () => new Response('nope', { status: 500 }),
-    });
-    const log = vi.spyOn(console, 'log').mockImplementation(() => {});
-    try {
-      for (let i = 0; i < 30; i++) expect((await put(env, donor(400 + i), apkg())).status).toBe(200);
-    } finally {
-      log.mockRestore();
-    }
-  });
-
-  it('没配 mention 时正文不带前缀', () => {
-    expect(milestoneMessage(undefined, 5)).toBe(
-      'SRS review donations reached 30 donors (5 reviews). Create a batch: POST /v1/admin/srs-donations/batch',
-    );
   });
 });

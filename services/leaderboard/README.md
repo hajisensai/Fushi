@@ -79,7 +79,7 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 > ⚠️ **新增迁移的版本必须先迁移再部署**（Actions 部署每次都会自动先迁移再部署；本机部署则先跑上面的 `d1 migrations apply --remote`）。
 > `0007_feedback_video_mine.sql`（`feedback.has_video` + 两个索引）：没迁移就部署时视频补传、`GET /v1/feedback/mine` 与定时清理会 500。
 > `0008_media_video_pool.sql`（`media_usage.video_bytes`，反馈视频配额池）：没迁移就部署时视频补传与视频到期清理会 500。
-> `0028_srs_donation_pool.sql`（`media_usage.donation_bytes`，SRS 捐赠配额池；顺带把 0027 起记在视频池里的捐赠字节挪过去）：没迁移就部署时捐赠上传 / 撤回与 `GET /v1/admin/srs-donations` 会 500（其余接口不受影响）——**先迁移**。只加列。
+> `0027_srs_donations.sql`（SRS 捐赠四张新表 + `media_usage.donation_bytes` 捐赠配额池）：没迁移就部署时捐赠上传 / 撤回 / 统计会 500（其余接口不受影响）——**先迁移**。
 > 例如 `0006_feedback_dev_notes.sql`：新代码的处理台列表显式选 `ai_summary` 列，没迁移就部署时 `/v1/dev/feedback` 与网页 `/dev` 会整页 500（反馈人接口不受影响）。迁移只加列，先迁移、旧代码照跑不受影响。
 > `0011_install_stats.sql`（`installs` / `install_days` 两张表 + `feedback.install_id`）：没迁移就部署时 `POST /v1/ping`、反馈提交、处理台详情与定时清理都会 500——**这条迁移碰了反馈提交，务必先迁移**。
 > `0014_cover_replace_guard.sql`（`cover_votes.confirmed` / `works.cover_cleared_at` 两列 + `cover_mismatches` 表 + 一个部分索引）：纯增量，旧 Worker 在线时先迁移不受影响；没迁移就部署时封面投票 / 上传 / 物化、删号与定时任务都会 500——**务必先迁移**（Actions 部署自动先迁移）。
@@ -193,7 +193,7 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 社交写（好友 / 屏蔽 / 举报）按账户每小时 120 次限流（`LIMITS.socialWritePerHour`）。被管理员隐藏的账户
 不出现在任何列表里，也不能被加好友或屏蔽。
 
-## SRS 复习历史捐赠（迁移 0027 / 0028，`src/srs_donations.js`）
+## SRS 复习历史捐赠（迁移 0027，`src/srs_donations.js`）
 
 用户自愿把脱敏复习历史（Anki 兼容 `.apkg`）捐给 anki-rwkv 训练调度模型（设计 `docs/specs/2026-11-26-srs-review-donation.md`）。
 文件存 R2 `srs-donations/<donorId>.apkg`，一个捐赠者一个文件，重传覆盖。字节占捐赠专用配额池（`budget.js` 的 `donation` 池，`media_usage.donation_bytes`，
@@ -206,12 +206,13 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 | GET | `/v1/srs-donations/:donorId` | Bearer donorKey | `{donated, reviews, cards, updatedAt}`，无记录 `{donated: false}` |
 | DELETE | `/v1/srs-donations/:donorId` | Bearer donorKey | 撤回：删文件与行、记撤回（进下一批的撤回清单）→ `{donated: false}`，幂等 |
 | POST | `/v1/admin/srs-donations/batch` | Basic | 生成私有批次（快照全部捐赠 + 未报告的撤回，token 30 天有效）→ `{url, token, expiresAt, donors, reviews, withdrawn}` |
-| GET | `/v1/admin/srs-donations` | Basic | 统计（含捐赠池占用 `pool: {usedBytes, quotaBytes}`）、里程碑与历史批次 |
+| GET | `/v1/srs-donations/stats` | 无（公开） | `{donors, reviews}`：捐赠者数与复习条数合计（无记录各为 0）；其他方法 405，走 READ_LIMITER |
+| GET | `/v1/admin/srs-donations` | Basic | 统计（含捐赠池占用 `pool: {usedBytes, quotaBytes}`）与历史批次 |
 | GET | `/d/srs-donations/<token>/`、`…/<donorId>.apkg`、`…/withdrawn.txt` | 链接即凭据 | 批次 JSON 清单 / 文件下载（attachment）/ 撤回 ID；过期或快照后已撤回 404 |
 
 每月：`ADMIN_USER=… ADMIN_PASS=… node scripts/srs_donation_batch.mjs` 打印链接交给作者（`--stats` 只看数字，不生成批次——
-生成会把未报告的撤回标成已报告）。捐赠者数第一次到 30 时 POST Discord webhook：`wrangler secret put DONATION_NOTIFY_WEBHOOK`，
-可选 `DONATION_NOTIFY_MENTION`（如 `<@用户 id>`，放在消息开头）；没配只记日志。
+生成会把未报告的撤回标成已报告）。捐赠者数到 30 的提醒不在服务端做：所有者本地的 kaguya bot（fushi-bot）每小时轮询
+公开的 `GET /v1/srs-donations/stats`，第一次 ≥ 30 人时在群里 @所有者；服务端没有 webhook / 里程碑表。
 
 ## 测试
 

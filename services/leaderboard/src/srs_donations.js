@@ -14,16 +14,16 @@
 //          （'donation'，media_usage.donation_bytes，DONATION_QUOTA_BYTES 默认 2 GiB，满了 507 donation_quota；
 //          捐赠包永不过期，所以不与 30 天过期的反馈视频共池）。重传只预占比旧文件多出的字节，成功后归还
 //          变小的差额；撤回归还整份。曾撤回、撤回尚未报告给作者的，删掉那条撤回记录。
-//          成功后数捐赠者，第一次 ≥ 30 时写里程碑 donors_30 并后台 POST Discord webhook
-//          （secret DONATION_NOTIFY_WEBHOOK，可选 DONATION_NOTIFY_MENTION；没配只记日志）。
 //   GET    /v1/srs-donations/:donorId   [Bearer donorKey] → 200 {donated, reviews, cards, updatedAt}；无记录 {donated: false}
 //   DELETE /v1/srs-donations/:donorId   [Bearer donorKey] → 删 R2 + 行、写撤回记录 → 200 {donated: false}；无记录也 200（不写撤回）
+//   GET    /v1/srs-donations/stats      公开、无需鉴权 → 200 {donors, reviews}（捐赠者数 / 复习条数合计，无记录各为 0）；
+//          其他方法 405。「捐赠者到 30 人提醒所有者」由所有者本地的 kaguya bot 轮询此接口完成，服务端不发通知。
 //
 // 管理（HTTP Basic，ADMIN_USER / ADMIN_PASS，admin.js checkBasicAuth）：
 //   POST   /v1/admin/srs-donations/batch → 快照当前全部捐赠 + 尚未报告的撤回 ID，签发随机 32 字节 token（30 天有效）
 //          → 200 {url, token, expiresAt, donors, reviews, withdrawn}。CLI：node scripts/srs_donation_batch.mjs
 //   GET    /v1/admin/srs-donations       → 统计 {donors, reviews, cards, bytes, pool: {usedBytes, quotaBytes},
-//                                            pendingWithdrawals, milestones, batches}
+//                                            pendingWithdrawals, batches}
 //
 // 批次下载（链接里的 token 即凭据，无其他认证；过期 404）：
 //   GET /d/srs-donations/<token>/                 JSON 清单 {createdAt, expiresAt, files:[{donorId, reviews, cards, bytes,
@@ -51,11 +51,10 @@ export const SRS_DONATION_LIMITS = {
   /** 每 IP 每 UTC 日上传字节（两次满额）。 */
   bytesPerIpDay: 128 * 1024 * 1024,
   batchTtlMs: 30 * DAY,
-  milestoneDonors: 30,
   maxCount: 1e9,
 };
 
-/** 一次上传的估算写入行数（捐赠行 + 撤回清理 + 里程碑 + 限流 / 预算计数）。 */
+/** 一次上传的估算写入行数（捐赠行 + 撤回清理 + 限流 / 预算计数）。 */
 const UPLOAD_WRITE_ROWS = 8;
 const DELETE_WRITE_ROWS = 4;
 const POOL = 'donation';
@@ -65,7 +64,6 @@ export const DONOR_ID_RE = /^[0-9a-f]{32}$/;
 const DONOR_KEY_RE = /^[0-9a-fA-F]{64}$/;
 const BATCH_TOKEN_RE = /^[0-9a-f]{64}$/;
 const APP_VERSION_RE = /^[A-Za-z0-9.+_-]{1,64}$/;
-export const MILESTONE_DONORS_30 = 'donors_30';
 
 const NO_STORE = { 'Cache-Control': 'no-store', 'X-Content-Type-Options': 'nosniff', 'Referrer-Policy': 'no-referrer' };
 
@@ -167,7 +165,7 @@ async function authorizedRow(env, donorId, keyHash) {
  * PUT：流式写 R2。所有能在读体之前判的（id / key / 长度 / 计数头 / key 归属 / 每 donorId 限流）先判；
  * 魔数通过后才扣 IP 日额度、全局预算并预占配额池。R2 put 对同一键是原子替换：中途失败旧文件仍在。
  */
-async function putDonation(env, request, donorId, now, ctx, ip) {
+async function putDonation(env, request, donorId, now, ip) {
   const keyHash = await donorKeyHash(bearerKey(request));
   const declared = request.headers.get('Content-Length');
   if (declared === null || declared === '') throw new HttpError(411, 'length_required');
@@ -225,7 +223,6 @@ async function putDonation(env, request, donorId, now, ctx, ip) {
     if (oldBytes > length) await releaseMediaBytes(env, oldBytes - length, POOL);
     await env.DB.prepare('DELETE FROM srs_donation_withdrawals WHERE donor_id = ?1 AND reported_batch IS NULL')
       .bind(donorId).run();
-    await checkMilestone(env, now, ctx);
     return json({ donated: true, updatedAt: now }, 200, NO_STORE);
   } catch (e) {
     await reader.cancel().catch(() => {});
@@ -234,53 +231,10 @@ async function putDonation(env, request, donorId, now, ctx, ip) {
   }
 }
 
-/**
- * 捐赠者数第一次 ≥ 30：写里程碑（主键保证只一次），后台通知所有者。
- * @returns {Promise<boolean>} 本次是否刚达成
- */
-async function checkMilestone(env, now, ctx) {
-  const stats = await env.DB.prepare('SELECT COUNT(*) AS n, COALESCE(SUM(reviews), 0) AS r FROM srs_donations').first();
-  if (stats.n < SRS_DONATION_LIMITS.milestoneDonors) return false;
-  const ins = await env.DB.prepare(
-    'INSERT INTO srs_donation_milestones (name, reached_at) VALUES (?1, ?2) ON CONFLICT (name) DO NOTHING',
-  ).bind(MILESTONE_DONORS_30, now).run();
-  if (ins.meta.changes !== 1) return false;
-  const task = notifyMilestone(env, stats.r);
-  if (ctx && ctx.waitUntil) ctx.waitUntil(task);
-  else await task;
-  return true;
-}
-
-/**
- * 里程碑通知正文（Discord webhook）。
- * @param {string|undefined} mention DONATION_NOTIFY_MENTION（如 `<@123>`），空则不加
- * @param {number} reviews
- * @returns {string}
- */
-export function milestoneMessage(mention, reviews) {
-  const prefix = mention && String(mention).trim() ? `${String(mention).trim()} ` : '';
-  return `${prefix}SRS review donations reached ${SRS_DONATION_LIMITS.milestoneDonors} donors (${reviews} reviews). `
-    + `Create a batch: POST ${SRS_DONATION_ADMIN_PATH}/batch`;
-}
-
-/** 不抛：webhook 失败 / 未配置只记日志。测试可用 env.DONATION_FETCH 换掉 fetch。 */
-async function notifyMilestone(env, reviews) {
-  const content = milestoneMessage(env.DONATION_NOTIFY_MENTION, reviews);
-  if (!env.DONATION_NOTIFY_WEBHOOK) {
-    console.log(`srs donation milestone (no DONATION_NOTIFY_WEBHOOK): ${content}`);
-    return;
-  }
-  try {
-    const doFetch = env.DONATION_FETCH || fetch;
-    const res = await doFetch(env.DONATION_NOTIFY_WEBHOOK, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ content }),
-    });
-    if (!res.ok) console.log(`srs donation milestone webhook failed: HTTP ${res.status}`);
-  } catch (e) {
-    console.log(`srs donation milestone webhook failed: ${e && e.message ? e.message : e}`);
-  }
+/** 公开统计：捐赠者数与复习条数合计（所有者的 kaguya bot 轮询）。 */
+async function publicStats(env) {
+  const r = await env.DB.prepare('SELECT COUNT(*) AS donors, COALESCE(SUM(reviews), 0) AS reviews FROM srs_donations').first();
+  return { donors: r.donors, reviews: r.reviews };
 }
 
 async function getDonation(env, request, donorId) {
@@ -349,8 +303,6 @@ async function donationStats(env, origin, now) {
        COALESCE(SUM(bytes), 0) AS bytes FROM srs_donations`,
   ).first();
   const w = await env.DB.prepare('SELECT COUNT(*) AS n FROM srs_donation_withdrawals WHERE reported_batch IS NULL').first();
-  const milestones = (await env.DB.prepare('SELECT name, reached_at FROM srs_donation_milestones ORDER BY name').all())
-    .results.map((m) => ({ name: m.name, reachedAt: m.reached_at }));
   const batches = (await env.DB.prepare(
     `SELECT token, created_at, expires_at, json_array_length(donors_json) AS donors,
        json_array_length(withdrawn_json) AS withdrawn FROM srs_donation_batches ORDER BY created_at DESC LIMIT 24`,
@@ -363,7 +315,7 @@ async function donationStats(env, origin, now) {
   }));
   const pool = await poolUsage(env, POOL);
   return {
-    donors: s.donors, reviews: s.reviews, cards: s.cards, bytes: s.bytes, pool, pendingWithdrawals: w.n, milestones, batches,
+    donors: s.donors, reviews: s.reviews, cards: s.cards, bytes: s.bytes, pool, pendingWithdrawals: w.n, batches,
   };
 }
 
@@ -440,11 +392,10 @@ async function downloadRoute(env, url, now) {
  * @param {object} env
  * @param {URL} url
  * @param {number} now
- * @param {object|undefined} ctx
  * @param {string} ip 限流键（worker.js clientIp，IPv6 按 /64）
  * @returns {Promise<Response|null>}
  */
-export async function routeSrsDonations(request, env, url, now, ctx, ip) {
+export async function routeSrsDonations(request, env, url, now, ip) {
   const path = url.pathname;
   const method = request.method;
   if (path === `${SRS_DONATION_ADMIN_PATH}/batch` && method === 'POST') {
@@ -456,10 +407,14 @@ export async function routeSrsDonations(request, env, url, now, ctx, ip) {
     return json(await donationStats(env, url.origin, now), 200, NO_STORE);
   }
   if (path.startsWith(SRS_DONATION_DOWNLOAD_PATH) && method === 'GET') return downloadRoute(env, url, now);
+  if (path === `${SRS_DONATION_PATH}stats`) {
+    if (method !== 'GET') throw new HttpError(405, 'method_not_allowed');
+    return json(await publicStats(env), 200, NO_STORE);
+  }
   if (path.startsWith(SRS_DONATION_PATH)) {
     const donorId = path.slice(SRS_DONATION_PATH.length);
     if (!DONOR_ID_RE.test(donorId)) throw new HttpError(400, 'bad_donor_id');
-    if (method === 'PUT') return putDonation(env, request, donorId, now, ctx, ip);
+    if (method === 'PUT') return putDonation(env, request, donorId, now, ip);
     if (method === 'GET') return getDonation(env, request, donorId);
     if (method === 'DELETE') return deleteDonation(env, request, donorId, now);
     throw new HttpError(405, 'method_not_allowed');

@@ -18,7 +18,7 @@
 | 卡面内容 | 只保留词头 + 读音（规则见下），其余全部清空；用户可在预览里逐词排除或整体关掉 |
 | 投递 | 一个用户一个文件，同一捐赠 ID 重传覆盖旧文件；每月一个私有批次链接 |
 | 撤回 | 用户随时在设置里撤回：我们删文件，并把 ID 记进下一批的撤回清单交给作者删除 |
-| 里程碑 | 不同捐赠者数第一次达到 30 时通知所有者（Discord webhook，见服务端） |
+| 里程碑 | kaguya bot 每小时轮询公开统计接口 GET /v1/srs-donations/stats，第一次 ≥30 人时在群里 @所有者（fushi-bot PR #16） |
 
 同意文案（英文原文，作者给定；各语言翻译保持同义）：
 
@@ -77,15 +77,15 @@ Future<void> exportSrsDonationFile({
 - `srs_donations(donor_id TEXT PRIMARY KEY, key_hash TEXT NOT NULL, bytes INTEGER, reviews INTEGER, cards INTEGER, app_version TEXT, created_at INTEGER, updated_at INTEGER)`
 - `srs_donation_withdrawals(donor_id TEXT PRIMARY KEY, withdrawn_at INTEGER NOT NULL, reported_batch TEXT NULL)`
 - `srs_donation_batches(token TEXT PRIMARY KEY, created_at INTEGER, expires_at INTEGER, donors_json TEXT, withdrawn_json TEXT)`
-- `srs_donation_milestones(name TEXT PRIMARY KEY, reached_at INTEGER)`
+- `media_usage.donation_bytes INTEGER NOT NULL DEFAULT 0`（同迁移加列，捐赠专用配额池）
 
 接口：
-- `PUT /v1/srs-donations/:donorId`，`Authorization: Bearer <donorKey>`，body = apkg 原始字节（`application/octet-stream`，流式写 R2），头 `x-donation-reviews` / `x-donation-cards` / `x-donation-app-version`。校验：donorId 32 位小写 hex、key 64 位 hex、zip 魔数 `PK\x03\x04`、大小 ≤ 64 MiB；已有记录时 key_hash 必须一致，否则 403。按 donorId 每小时 2 次、按 IP 日字节额度（`budget.js` 口径）；R2 字节占捐赠专用配额池（`media_usage.donation_bytes`，`DONATION_QUOTA_BYTES` 默认 2 GiB，满了 `507 donation_quota`；迁移 0028）。曾撤回的 ID 重新捐赠：删掉撤回记录中尚未 `reported_batch` 的那条，已报告过的保留（作者那边已删，新文件照常进下一批）。→ `200 {donated: true, updatedAt}`。
+- `PUT /v1/srs-donations/:donorId`，`Authorization: Bearer <donorKey>`，body = apkg 原始字节（`application/octet-stream`，流式写 R2），头 `x-donation-reviews` / `x-donation-cards` / `x-donation-app-version`。校验：donorId 32 位小写 hex、key 64 位 hex、zip 魔数 `PK\x03\x04`、大小 ≤ 64 MiB；已有记录时 key_hash 必须一致，否则 403。按 donorId 每小时 2 次、按 IP 日字节额度（`budget.js` 口径）；R2 字节占捐赠专用配额池（`media_usage.donation_bytes`，`DONATION_QUOTA_BYTES` 默认 2 GiB，满了 `507 donation_quota`；迁移 0027）。曾撤回的 ID 重新捐赠：删掉撤回记录中尚未 `reported_batch` 的那条，已报告过的保留（作者那边已删，新文件照常进下一批）。→ `200 {donated: true, updatedAt}`。
 - `GET /v1/srs-donations/:donorId`（Bearer）→ `200 {donated, reviews, cards, updatedAt}`，无记录 `{donated: false}`。
 - `DELETE /v1/srs-donations/:donorId`（Bearer）→ 删 R2 + 行，写撤回记录 → `200 {donated: false}`。无记录也 200（幂等）。
 - 管理（`checkBasicAuth`）：`POST /v1/admin/srs-donations/batch` 生成批次：快照当前全部捐赠与尚未报告的撤回 ID，随机 32 字节 token，30 天有效，返回 `{url}`；`GET /v1/admin/srs-donations` 列统计。
 - 批次下载（凭 token，无其他认证）：`GET /d/srs-donations/<token>/` → 纯文本 / JSON 清单（每个文件的 donorId、reviews、bytes、下载 URL，加 `withdrawn` 列表）；`GET /d/srs-donations/<token>/<donorId>.apkg` → `Content-Disposition: attachment`、`application/octet-stream`；`GET /d/srs-donations/<token>/withdrawn.txt`。过期 404。快照之后被撤回的文件同样 404。
-- 里程碑：每次成功上传后数 `srs_donations` 行数，第一次 ≥ 30 时写 `srs_donation_milestones('donors_30')` 并经 `ctx.waitUntil` POST 到 secret `DONATION_NOTIFY_WEBHOOK`（Discord webhook，`{content: "<DONATION_NOTIFY_MENTION> SRS review donations reached 30 donors (<reviews> reviews). Create a batch: POST /v1/admin/srs-donations/batch"}`）；secret 缺失只记日志不报错。
+- 公开统计：`GET /v1/srs-donations/stats`（无鉴权、`no-store`，其他方法 405）→ `200 {donors, reviews}`（捐赠者数 / 复习条数合计，无记录各为 0）。30 人提醒由所有者本地的 kaguya bot 轮询它完成，服务端无 webhook。
 - 脚本 `services/leaderboard/scripts/srs_donation_batch.mjs`：调管理接口生成批次并打印链接。
 
 ## 客户端（`fushi/lib/src/srs/donation/`）
