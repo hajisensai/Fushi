@@ -97,6 +97,12 @@ void main() {
       _write(data('support/dictionaries/d.txt'), 'dict');
       _write(data('documents/fushi_books/b.txt'), 'book');
       _write(data('logs/x.log'), 'log');
+      _write(
+        data(
+          'support/restore_points/20261125-000000-000-fushi-pre_update/fushi.db',
+        ),
+        'copy',
+      );
 
       expect(
         await h.run(module, <String>[
@@ -116,6 +122,11 @@ void main() {
       expect(names, contains('data/support/dictionaries/d.txt'));
       expect(names, contains('data/documents/fushi_books/b.txt'));
       expect(names.where((String n) => n.startsWith('data/logs/')), isEmpty);
+      // 更新前还原点是本机库的整份副本，不进备份包。
+      expect(
+        names.where((String n) => n.contains('/restore_points/')),
+        isEmpty,
+      );
       expect(names, isNot(contains('data/fushi_server.lock')));
       expect(names.where((String n) => n.endsWith('-wal')), isEmpty);
 
