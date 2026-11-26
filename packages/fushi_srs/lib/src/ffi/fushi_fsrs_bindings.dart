@@ -301,6 +301,8 @@ typedef _AbiVersionC = ffi.Int32 Function();
 typedef _AbiVersionDart = int Function();
 typedef _BootTimeC = ffi.Int64 Function();
 typedef _BootTimeDart = int Function();
+typedef _VolumeFreeC = ffi.Int64 Function(ffi.Pointer<ffi.Char> path);
+typedef _VolumeFreeDart = int Function(ffi.Pointer<ffi.Char> path);
 
 /// `ffsrs_*` 符号表。构造时就把全部符号解析完：缺符号 = 库不对，立刻抛
 /// [ArgumentError]，由 `FushiFsrs.tryLoad` 转成「不可用」。
@@ -338,6 +340,10 @@ class FushiFsrsBindings {
         'ffsrs_boot_time_ms',
         isLeaf: true,
       ),
+      ffsrs_volume_free_bytes = lib
+          .lookupFunction<_VolumeFreeC, _VolumeFreeDart>(
+            'ffsrs_volume_free_bytes',
+          ),
       ffsrs_search_dupe_norm_batch = lib
           .lookupFunction<_DupeNormC, _DupeNormDart>(
             'ffsrs_search_dupe_norm_batch',
@@ -464,6 +470,10 @@ class FushiFsrsBindings {
   /// 自本次开机以来的毫秒，**含睡眠**、不受改系统时间影响（native/fushi_fsrs/src/boot_clock.rs）；
   /// 取不到返回 -1。可信时间（`SrsTrustedClock`）按它推算。
   final int Function() ffsrs_boot_time_ms;
+
+  /// [path]（UTF-8、NUL 结尾）所在卷对本进程可用的字节数（不是目录时看上级目录）；取不到返回 -1。
+  /// 平台实现与复习库压缩的空间检查共用（native/fushi_fsrs/src/store/compact.rs `free_bytes`）。
+  final int Function(ffi.Pointer<ffi.Char> path) ffsrs_volume_free_bytes;
 
   /// AnkiConnect 查重规范形，批量；返回 `[u32 LE 偏移 × (n+1)][UTF-8]`，由 [ffsrs_free_bytes] 释放。
   final ffi.Pointer<ffi.Uint8> Function(

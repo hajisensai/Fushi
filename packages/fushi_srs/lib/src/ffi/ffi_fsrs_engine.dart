@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:ffi';
+import 'dart:io';
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart';
@@ -388,6 +389,27 @@ class FfiFsrsEngine implements FsrsBatchEngine {
     } finally {
       calloc.free(input);
       calloc.free(outLen);
+    }
+  }
+
+  /// [path] 所在卷对本进程可用的字节数（自动备份第五期：app 与无头服务端写备份 / 还原点前查空间）。
+  /// 路径还不存在时往上找到第一个存在的上级目录再问（备份目录可能还没建）。原生库不可用、平台取不到时
+  /// 返回 null（调用方当「不知道」，照常写）。只 stat 一次，可以在主 isolate 调。
+  static int? volumeFreeBytes(String path, {FushiFsrs? library}) {
+    final FushiFsrs? lib = library ?? FushiFsrs.instance;
+    if (lib == null || path.isEmpty) return null;
+    String probe = path;
+    while (FileSystemEntity.typeSync(probe) == FileSystemEntityType.notFound) {
+      final String parent = File(probe).parent.path;
+      if (parent == probe) return null;
+      probe = parent;
+    }
+    final Pointer<Utf8> c = probe.toNativeUtf8();
+    try {
+      final int free = lib.bindings.ffsrs_volume_free_bytes(c.cast<Char>());
+      return free < 0 ? null : free;
+    } finally {
+      calloc.free(c);
     }
   }
 

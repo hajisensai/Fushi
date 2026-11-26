@@ -24,7 +24,9 @@
 //!   ffsrs_boot_time_ms
 //!   （开机时钟：含睡眠、不受改系统时间影响，可信时间按它推算，见 boot_clock.rs）/
 //!   ffsrs_predict_tss / ffsrs_calibration_report
-//!   （复习统计页的校准图与 UM+：FSRS 时间序列切分的留出预测、分箱与自助法区间，见 calibration.rs）
+//!   （复习统计页的校准图与 UM+：FSRS 时间序列切分的留出预测、分箱与自助法区间，见 calibration.rs）/
+//!   ffsrs_volume_free_bytes
+//!   （某路径所在卷的可用空间：app 与无头服务端写备份前查空间，与复习库压缩共用 store/compact.rs 的平台实现）
 
 // 让 cargo 的新鲜度指纹带上「这是哪个 worktree」：多个 worktree 共用一个 CARGO_TARGET_DIR 时，没有它会把别的
 // worktree 编出的产物当成本 worktree 的直接用（假绿 / 假红）。值来自仓库根 .cargo/config.toml 的 [env]，不进产物。
@@ -74,7 +76,9 @@ use serde_json::{Value, json};
 /// `STORE_LEGACY_UNMIGRATED`）；`ffsrs_store_sync2` 的命令经新代分发器；迁移的全局命令 `gen4_migrate_*` 走 [dispatch]。
 /// 同列车（G7-6）另删协议 1 主库搬迁的 `ffsrs_store_legacy_abort` / `_begin` / `_commit` / `_mark_none` / `_page` /
 /// `_state`（换代后只报 Unwired）；ABI 8 尚未发布（develop 仍是 7），所以不另升 9，verify_abi.sh 下界同步改 35。
-pub const ABI_VERSION: i32 = 8;
+/// 9：加 `ffsrs_volume_free_bytes`（自动备份第五期：写备份 / 还原点前查卷的可用空间）。只加不删，但旧库缺这个
+/// 符号、绑定在加载时就查不到，所以照规矩升版本。
+pub const ABI_VERSION: i32 = 9;
 
 /// 钉定的 fsrs-rs 源码版本，写进参数组的 algorithmRev：crates.io `fsrs = "=7.0.0"` 包内 `.cargo_vcs_info.json`
 /// 记的发布提交（与 GitHub tag v7.0.0 的 `47b8a16f…` 是同父的两个 bump 提交，只差 Cargo.toml / Cargo.lock）。
@@ -1224,9 +1228,51 @@ pub extern "C" fn ffsrs_boot_time_ms() -> i64 {
     boot_clock::boot_time_ms().unwrap_or(-1)
 }
 
+/// [path]（UTF-8、NUL 结尾）所在卷对本进程可用的字节数；路径不是目录时看它的上级目录。取不到（空指针、
+/// 非 UTF-8、路径不存在、平台不支持、panic）返回 -1，调用方当「不知道」处理。超过 `i64::MAX` 的封顶。
+#[no_mangle]
+pub extern "C" fn ffsrs_volume_free_bytes(path: *const c_char) -> i64 {
+    catch_unwind(AssertUnwindSafe(|| volume_free_bytes_raw(path))).unwrap_or(-1)
+}
+
+fn volume_free_bytes_raw(path: *const c_char) -> i64 {
+    if path.is_null() {
+        return -1;
+    }
+    let Ok(text) = unsafe { CStr::from_ptr(path) }.to_str() else {
+        return -1;
+    };
+    if text.is_empty() {
+        return -1;
+    }
+    match store::compact::free_bytes(std::path::Path::new(text)) {
+        Some(free) => i64::try_from(free).unwrap_or(i64::MAX),
+        None => -1,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// 卷可用空间的 C ABI：真实目录 / 文件取得到正数，空指针 / 空串 / 不存在的路径一律 -1。
+    #[test]
+    fn volume_free_bytes_abi() {
+        let dir = std::env::temp_dir().join(format!("ffsrs-volfree-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("f.bin");
+        std::fs::write(&file, b"x").unwrap();
+        let c_dir = CString::new(dir.to_str().unwrap()).unwrap();
+        let c_file = CString::new(file.to_str().unwrap()).unwrap();
+        assert!(ffsrs_volume_free_bytes(c_dir.as_ptr()) > 0);
+        assert!(ffsrs_volume_free_bytes(c_file.as_ptr()) > 0);
+        assert_eq!(ffsrs_volume_free_bytes(std::ptr::null()), -1);
+        let empty = CString::new("").unwrap();
+        assert_eq!(ffsrs_volume_free_bytes(empty.as_ptr()), -1);
+        let missing = CString::new(dir.join("no").join("such").to_str().unwrap()).unwrap();
+        assert_eq!(ffsrs_volume_free_bytes(missing.as_ptr()), -1);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 
     fn call(req: Value) -> Value {
         let c = CString::new(req.to_string()).unwrap();
