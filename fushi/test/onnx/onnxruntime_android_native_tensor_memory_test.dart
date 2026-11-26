@@ -174,14 +174,14 @@ void main() {
   });
 
   tearDown(() {
-    debugDefaultTargetPlatformOverride = null;
+    debugNativeTensorMemoryHostOverride = null;
     TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_channel, null);
     plugin.dispose();
   });
 
   group('Android：张量只过地址', () {
-    setUp(() => debugDefaultTargetPlatformOverride = TargetPlatform.android);
+    setUp(() => debugNativeTensorMemoryHostOverride = true);
 
     test('float32 输入按地址交给插件，channel 上没有数据列表', () async {
       final Float32List data = Float32List.fromList(<double>[1, 2.5, -3, 4]);
@@ -299,10 +299,46 @@ void main() {
       ]);
       expect(plugin.methods, <String>['getOrtValueAddress']);
     });
+
+    test('dispose 先等在途读取拷完再 release，之后的读取报 StateError', () async {
+      final String id = plugin.addOutput(
+        Float32List.fromList(<double>[1, 2, 3]),
+        'float32',
+        <int>[3],
+      );
+      final OrtValue value = OrtValue.fromMap(<String, dynamic>{
+        'valueId': id,
+        'dataType': 'float32',
+        'shape': <int>[3],
+      });
+      // 不 await 读取就 dispose：读取必须照常拿到正确数据，release 排在它后面。
+      final Future<List<dynamic>> read = value.asFlattenedList();
+      final Future<void> disposed = value.dispose();
+      expect(await read, <double>[1, 2, 3]);
+      await disposed;
+      expect(plugin.methods, <String>['getOrtValueAddress', 'releaseOrtValue']);
+      await expectLater(value.asFlattenedList(), throwsStateError);
+      await value.dispose();
+      expect(
+        plugin.methods.where((String m) => m == 'releaseOrtValue'),
+        hasLength(1),
+      );
+    });
+  });
+
+  test('UI 目标平台被改成 Android 也不走地址：判据只认真实宿主 OS', () async {
+    debugDefaultTargetPlatformOverride = TargetPlatform.android;
+    try {
+      final Float32List data = Float32List.fromList(<double>[1, 2]);
+      await OrtValue.fromList(data, <int>[2]);
+      expect(plugin.methods, <String>['createOrtValue']);
+    } finally {
+      debugDefaultTargetPlatformOverride = null;
+    }
   });
 
   test('非 Android 平台照旧走 list 路径', () async {
-    debugDefaultTargetPlatformOverride = TargetPlatform.windows;
+    debugNativeTensorMemoryHostOverride = false;
     final Float32List data = Float32List.fromList(<double>[1, 2]);
     await OrtValue.fromList(data, <int>[2]);
     expect(plugin.methods, <String>['createOrtValue']);

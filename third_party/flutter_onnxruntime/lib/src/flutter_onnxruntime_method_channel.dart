@@ -9,6 +9,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_onnxruntime/flutter_onnxruntime.dart';
 
 import 'flutter_onnxruntime_platform_interface.dart';
+import 'native_tensor_memory.dart';
 
 /// An implementation of [FlutterOnnxruntimePlatform] that uses method channels.
 class MethodChannelFlutterOnnxruntime extends FlutterOnnxruntimePlatform {
@@ -199,7 +200,7 @@ class MethodChannelFlutterOnnxruntime extends FlutterOnnxruntimePlatform {
   }
 
   @override
-  bool get supportsNativeTensorMemory => !kIsWeb && defaultTargetPlatform == TargetPlatform.android;
+  bool get supportsNativeTensorMemory => hostSupportsNativeTensorMemory();
 
   @override
   Future<Map<String, dynamic>> createOrtValueFromAddress(

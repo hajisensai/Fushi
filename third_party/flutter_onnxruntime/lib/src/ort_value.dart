@@ -55,6 +55,13 @@ class OrtValue {
   /// native tensor is released; null for values that own their memory natively.
   NativeTensorMemory? _nativeMemory;
 
+  /// Reads in flight. A native read hands Dart an address into ORT's own tensor
+  /// memory, so [dispose] must not release the tensor until each has copied out.
+  final Set<Future<void>> _pendingReads = <Future<void>>{};
+
+  /// Set by [dispose]; later reads fail instead of touching released memory.
+  bool _disposed = false;
+
   /// Private constructor
   OrtValue._({required this.id, required this.dataType, required this.shape, NativeTensorMemory? nativeMemory})
       : _nativeMemory = nativeMemory;
@@ -161,9 +168,21 @@ class OrtValue {
     OrtDataType.int8,
   };
 
+  /// Reads the value's data as a flat list, tracked so [dispose] waits for it.
+  Future<List<dynamic>> _readFlat() {
+    if (_disposed) {
+      return Future<List<dynamic>>.error(StateError('OrtValue $id was read after dispose()'));
+    }
+    final Future<List<dynamic>> read = _readFlatNow();
+    final Future<void> settled = read.then<void>((List<dynamic> _) {}, onError: (Object _) {});
+    _pendingReads.add(settled);
+    settled.whenComplete(() => _pendingReads.remove(settled));
+    return read;
+  }
+
   /// Reads the value's data as a flat list: straight from native memory when the
   /// platform supports it (no codec copies), else through [getOrtValueData].
-  Future<List<dynamic>> _readFlat() async {
+  Future<List<dynamic>> _readFlatNow() async {
     final FlutterOnnxruntimePlatform platform = FlutterOnnxruntimePlatform.instance;
     if (platform.supportsNativeTensorMemory && _nativeReadableTypes.contains(dataType)) {
       final Map<String, dynamic>? memory = await platform.getOrtValueAddress(id);
@@ -226,8 +245,15 @@ class OrtValue {
     return list;
   }
 
-  /// Release native resources associated with this tensor
+  /// Release native resources associated with this tensor.
+  ///
+  /// Waits for reads already in flight (they may be copying out of the tensor's
+  /// own memory); reads started afterwards fail with a [StateError]. Calling it
+  /// again is a no-op.
   Future<void> dispose() async {
+    if (_disposed) return;
+    _disposed = true;
+    await Future.wait<void>(_pendingReads.toList());
     await FlutterOnnxruntimePlatform.instance.releaseOrtValue(id);
     // Only after the native tensor is gone: until then it may still read the
     // block. A failed release leaves it allocated (a leak, never a dangling read).

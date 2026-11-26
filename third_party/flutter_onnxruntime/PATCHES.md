@@ -451,4 +451,12 @@ or below the API version of the downloaded DirectML core.
     - float16 / bool / string and `convertOrtValue` keep the codec path (no
       caller sends large tensors of those). Linux / Windows keep the codec path
       too: their native heap has no such cap.
+    - The address path is chosen by the real host OS (`Platform.isAndroid` in
+      `native_tensor_memory_ffi.dart`), not by `defaultTargetPlatform`: a desktop
+      debug run that overrides the UI target platform still talks to the desktop
+      plugin. Tests flip it with `debugNativeTensorMemoryHostOverride`.
+    - `OrtValue.dispose()` waits for reads in flight before releasing the tensor
+      (a native read copies out of ORT's own memory) and later reads throw
+      `StateError`, so a caller that disposes without awaiting a read cannot make
+      Dart copy from freed memory.
     - Guard: `fushi/test/onnx/onnxruntime_android_native_tensor_memory_test.dart`.

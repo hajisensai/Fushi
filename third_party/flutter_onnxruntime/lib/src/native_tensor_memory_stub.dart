@@ -2,6 +2,9 @@
 
 import 'dart:typed_data';
 
+/// Web has no process memory to hand out.
+bool hostSupportsNativeTensorMemory() => false;
+
 /// Web has no process memory to hand out; never constructed there.
 class NativeTensorMemory {
   NativeTensorMemory._();

@@ -1,9 +1,18 @@
 // Fushi fork (PATCHES.md delta 19, BUG-5508).
 
 import 'dart:ffi';
+import 'dart:io' show Platform;
 import 'dart:typed_data';
 
 import 'package:ffi/ffi.dart' as ffi;
+
+import 'native_tensor_memory_host.dart';
+
+/// Whether this process's plugin takes tensor data as an address: only the
+/// Android plugin implements it. Decided by the real OS, never by the UI target
+/// platform (a desktop debug run that overrides the target platform to Android
+/// still talks to the desktop plugin).
+bool hostSupportsNativeTensorMemory() => resolveNativeTensorMemoryHost(Platform.isAndroid);
 
 /// A malloc'd block holding one input tensor's dense bytes.
 ///
