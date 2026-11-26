@@ -655,17 +655,10 @@ class _Exporter {
     }
   }
 
-  /// revlog.ease：评分复习写 1–4，其余（手动改期 / 重排）写 0。捐赠包里从 Anki 导入的筛选牌组复习
-  /// （type 3，kind 仍是 review）也写原评分：训练要用，作者那边按 ease 0 认手动改期、会把它丢掉。
-  /// 普通导出保持原口径（只认 learn / review / relearn）。
-  int _revlogEase(SrsReviewLog l) {
-    final bool rated =
-        l.isRatingReview ||
-        (redaction != null &&
-            l.kind == SrsLogKind.review &&
-            l.reviewType == SrsReviewType.filtered);
-    return rated ? (l.rating ?? 0) : 0;
-  }
+  /// revlog.ease：kind=review 的行写真实评分（含 Anki 导入的筛选牌组复习 type 3，评分 1–4 是真复习），
+  /// 其余（手动改期 / 重排 / 无评分）写 0——Anki 与训练端都按 ease 0 认手动改期。普通导出与捐赠包同一条规则。
+  int _revlogEase(SrsReviewLog l) =>
+      l.kind == SrsLogKind.review ? (l.rating ?? 0) : 0;
 
   /// 脱敏后的 guid：`sha256(guid)` 前 10 个十六进制位（同一笔记仍同一 guid，不暴露共享牌组来源）。
   static String _hashedGuid(String guid) =>
