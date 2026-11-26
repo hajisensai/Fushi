@@ -816,7 +816,10 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
       ..i64s(q.anchors);
   }
 
-  /// [cards] 在时刻 [atMs] 的查询行（读每张卡最后一条保留评分）与锚点（那条评分的时刻；没有 = -1）。
+  /// [cards] 在时刻 [atMs] 的查询行（每张卡最后一条保留评分）与锚点（那条评分的时刻；没有 = -1）。
+  ///
+  /// 最后一条保留评分读缓存层物化好的表（[SrsDbStore.rwkvLastRatings]，一次表读）：冷启动分数表是空的、统计又
+  /// 整表重查，原先逐卡重放全部历史，1.5 万张卡要 26～36 秒（BUG-5491）。
   Future<({RwkvRows rows, Int64List anchors})> _queryRows(
     List<SrsRwkvCandidate> cards,
     SrsDeckTree tree,
@@ -824,38 +827,29 @@ class SrsRwkvService implements SrsRwkvScheduling, SrsRwkvStatusSource {
     int atMs,
   ) async {
     final Int64List anchors = Int64List(cards.length);
+    final List<SrsRwkvLastRating?> lasts = await store.rwkvLastRatings(<String>[
+      for (final SrsRwkvCandidate c in cards) c.id,
+    ]);
+    final List<int> numeric = SrsIds.ankiNumericIds(<String>[
+      for (final SrsRwkvCandidate c in cards) ...<String>[
+        c.id,
+        c.noteId,
+        c.deckId,
+        _presetOf(tree, c.deckId),
+      ],
+    ]);
     final List<SrsRwkvNowCard> now = <SrsRwkvNowCard>[];
-    for (int at = 0; at < cards.length; at += 500) {
-      final List<SrsRwkvCandidate> chunk = cards.sublist(
-        at,
-        min(at + 500, cards.length),
-      );
-      final List<int> numeric = SrsIds.ankiNumericIds(<String>[
-        for (final SrsRwkvCandidate c in chunk) ...<String>[
-          c.id,
-          c.noteId,
-          c.deckId,
-          _presetOf(tree, c.deckId),
-        ],
-      ]);
-      // 最后一条保留评分由 Rust 从日志直读（一块一次）。
-      final List<SrsRwkvCardRows> kept = await store.rwkvCardRows(
-        <String>[for (final SrsRwkvCandidate c in chunk) c.id],
-        numeric,
-        day,
-      );
-      for (int i = 0; i < chunk.length; i++) {
-        final SrsRwkvLastRating? last = kept[i].last;
-        anchors[at + i] = last?.at ?? -1;
-        now.add((
-          cardId: numeric[4 * i],
-          noteId: numeric[4 * i + 1],
-          deckId: numeric[4 * i + 2],
-          presetId: numeric[4 * i + 3],
-          last: last,
-          queue: SrsQueue.review,
-        ));
-      }
+    for (int i = 0; i < cards.length; i++) {
+      final SrsRwkvLastRating? last = lasts[i];
+      anchors[i] = last?.at ?? -1;
+      now.add((
+        cardId: numeric[4 * i],
+        noteId: numeric[4 * i + 1],
+        deckId: numeric[4 * i + 2],
+        presetId: numeric[4 * i + 3],
+        last: last,
+        queue: SrsQueue.review,
+      ));
     }
     return (rows: srsRwkvNowRows(now, nowMs: atMs, day: day), anchors: anchors);
   }

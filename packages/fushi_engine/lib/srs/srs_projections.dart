@@ -219,6 +219,22 @@ class SrsRwkvCardRows {
   }
 }
 
+/// `rwkvLastRatings` 的输出：每张卡最后一条保留评分（没有 = null），顺序同输入。
+List<SrsRwkvLastRating?> srsDecodeRwkvLastRatings(Uint8List bytes) {
+  final ByteData d = ByteData.sublistView(bytes);
+  int w(int k) => d.getInt64(8 * k, Endian.little);
+  return <SrsRwkvLastRating?>[
+    for (int g = 0, n = w(0); g < n; g++)
+      w(1 + 3 * g) == _none
+          ? null
+          : SrsRwkvLastRating(
+              at: w(1 + 3 * g),
+              rating: w(2 + 3 * g),
+              reviewType: srsReviewTypeOfCode(w(3 + 3 * g)),
+            ),
+  ];
+}
+
 List<SrsRwkvCardRows> srsDecodeRwkvCards(Uint8List bytes) {
   final ByteData d = ByteData.sublistView(bytes);
   int w(int k) => d.getInt64(8 * k, Endian.little);

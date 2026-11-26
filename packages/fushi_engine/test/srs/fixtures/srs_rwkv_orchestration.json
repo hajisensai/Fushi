@@ -142,7 +142,7 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]]
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]]
       ]
     ],
     "status": [
@@ -198,14 +198,14 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
         ["tail",{"since":8,"withRows":true,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[["review","c0",86408000,false]]}],
         ["cards",[["c0",2,2,86408000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
-        ["cards",[["c0",2,2,86408000]]],
-        ["cards",[["c0",2,2,86408000]]],
-        ["cards",[["c0",2,2,86408000]]],
+        ["last",[["c0",86408000]]],
+        ["last",[["c0",86408000]]],
+        ["last",[["c0",86408000]]],
         ["tail",{"since":9,"withRows":false,"incremental":false},{"count":9,"maxRowId":9,"newRows":0,"logs":[]}]
       ]
     ],
@@ -294,7 +294,7 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":3,"maxRowId":3,"newRows":3,"logs":[]}],
         ["replay",{"cards":3,"since":3,"rebaseSince":null,"rowsFrom":null},{"count":3,"maxRowId":3,"lastAt":2000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0]],"ats":[0,1000,2000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":3,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000]]]
+        ["last",[["c0",0],["c1",1000],["c2",2000]]]
       ]
     ],
     "status": [
@@ -394,7 +394,7 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":3,"maxRowId":3,"newRows":3,"logs":[]}],
         ["replay",{"cards":3,"since":3,"rebaseSince":null,"rowsFrom":null},{"count":3,"maxRowId":3,"lastAt":2000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0]],"ats":[0,1000,2000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":3,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000]]]
+        ["last",[["c0",0],["c1",1000],["c2",2000]]]
       ]
     ],
     "status": [
@@ -517,7 +517,7 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
         ["tail",{"since":8,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":0,"logs":[]}]
       ]
     ],
@@ -566,9 +566,9 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":4,"maxRowId":4,"newRows":4,"logs":[]}],
         ["replay",{"cards":4,"since":4,"rebaseSince":null,"rowsFrom":null},{"count":4,"maxRowId":4,"lastAt":3000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":4,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000]]],
         ["tail",{"since":4,"withRows":false,"incremental":false},{"count":4,"maxRowId":4,"newRows":0,"logs":[]}],
-        ["cards",[["c1",1,1,1000]]]
+        ["last",[["c1",1000]]]
       ]
     ],
     "status": [
@@ -613,7 +613,7 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":2,"maxRowId":10,"newRows":2,"logs":[]}],
         ["tail",{"since":8,"withRows":true,"incremental":true},{"count":2,"maxRowId":10,"newRows":2,"logs":[["review","c0",86408000,false],["undo","c0",86408000,true]]}],
         ["cards",[]],
@@ -665,9 +665,9 @@
         ["tail",{"since":8,"withRows":true,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[["review","c0",86408000,false]]}],
         ["cards",[["c0",2,2,86408000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
-        ["cards",[["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
-        ["cards",[["c0",2,2,86408000]]],
-        ["cards",[["c0",2,2,86408000]]]
+        ["last",[["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
+        ["last",[["c0",86408000]]],
+        ["last",[["c0",86408000]]]
       ]
     ],
     "status": [
@@ -820,7 +820,7 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":3,"maxRowId":3,"newRows":3,"logs":[]}],
         ["replay",{"cards":3,"since":3,"rebaseSince":null,"rowsFrom":null},{"count":3,"maxRowId":3,"lastAt":2000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0]],"ats":[0,1000,2000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":3,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000]]],
         ["tail",{"since":3,"withRows":false,"incremental":true},{"count":1,"maxRowId":4,"newRows":1,"logs":[]}],
         ["tail",{"since":3,"withRows":true,"incremental":true},{"count":1,"maxRowId":4,"newRows":1,"logs":[["review","c0",86403000,false]]}],
         ["cards",[["c0",2,2,86403000]]],
@@ -883,7 +883,7 @@
         ["replay",{"cards":2,"since":2,"rebaseSince":null,"rowsFrom":null},{"count":2,"maxRowId":2,"lastAt":1000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0]],"ats":[0,1000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":2,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
         ["tail",{"since":2,"withRows":false,"incremental":false},{"count":2,"maxRowId":2,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000]]]
+        ["last",[["c0",0],["c1",1000]]]
       ]
     ],
     "status": [
@@ -932,7 +932,7 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
         ["tail",{"since":8,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":0,"logs":[]}],
         ["tail",{"since":8,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":0,"logs":[]}]
       ]
@@ -1208,33 +1208,33 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
         ["tail",{"since":8,"withRows":true,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[["review","c0",86408000,false]]}],
         ["cards",[["c0",2,2,86408000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
-        ["cards",[["c0",2,2,86408000]]],
+        ["last",[["c0",86408000]]],
         ["tail",{"since":9,"withRows":false,"incremental":true},{"count":1,"maxRowId":10,"newRows":1,"logs":[]}],
         ["tail",{"since":9,"withRows":true,"incremental":true},{"count":1,"maxRowId":10,"newRows":1,"logs":[["review","c1",86448000,false]]}],
         ["cards",[["c1",2,2,86448000]]],
         ["tail",{"since":9,"withRows":false,"incremental":true},{"count":1,"maxRowId":10,"newRows":1,"logs":[]}],
-        ["cards",[["c0",2,2,86408000],["c1",2,2,86448000]]],
+        ["last",[["c0",86408000],["c1",86448000]]],
         ["tail",{"since":10,"withRows":false,"incremental":true},{"count":1,"maxRowId":11,"newRows":1,"logs":[]}],
         ["tail",{"since":10,"withRows":true,"incremental":true},{"count":1,"maxRowId":11,"newRows":1,"logs":[["undo","c1",86449000,true]]}],
         ["cards",[]],
         ["tail",{"since":10,"withRows":false,"incremental":true},{"count":1,"maxRowId":11,"newRows":1,"logs":[]}],
-        ["cards",[["c1",1,1,1000]]],
-        ["cards",[["c0",2,2,86408000]]],
+        ["last",[["c1",1000]]],
+        ["last",[["c0",86408000]]],
         ["tail",{"since":11,"withRows":false,"incremental":true},{"count":1,"maxRowId":12,"newRows":1,"logs":[]}],
         ["tail",{"since":11,"withRows":true,"incremental":true},{"count":1,"maxRowId":12,"newRows":1,"logs":[["undo","c0",86449000,true]]}],
         ["cards",[]],
         ["tail",{"since":11,"withRows":false,"incremental":true},{"count":1,"maxRowId":12,"newRows":1,"logs":[]}],
-        ["cards",[["c0",1,1,0]]],
+        ["last",[["c0",0]]],
         ["tail",{"since":12,"withRows":false,"incremental":true},{"count":1,"maxRowId":13,"newRows":1,"logs":[]}],
         ["tail",{"since":12,"withRows":true,"incremental":true},{"count":1,"maxRowId":13,"newRows":1,"logs":[["review","c0",86449000,false]]}],
         ["cards",[["c0",2,2,86449000]]],
         ["tail",{"since":12,"withRows":false,"incremental":true},{"count":1,"maxRowId":13,"newRows":1,"logs":[]}],
-        ["cards",[["c0",2,2,86449000]]],
+        ["last",[["c0",86449000]]],
         ["tail",{"since":13,"withRows":false,"incremental":true},{"count":1,"maxRowId":14,"newRows":1,"logs":[]}],
         ["tail",{"since":13,"withRows":true,"incremental":true},{"count":1,"maxRowId":14,"newRows":1,"logs":[["review","c1",86489000,false]]}],
         ["cards",[["c1",2,2,86489000]]],
@@ -1325,12 +1325,12 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
         ["tail",{"since":8,"withRows":true,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[["review","c0",86408000,false]]}],
         ["cards",[["c0",2,2,86408000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
-        ["cards",[["c0",2,2,86408000]]],
+        ["last",[["c0",86408000]]],
         ["tail",{"since":9,"withRows":false,"incremental":true},{"count":1,"maxRowId":10,"newRows":1,"logs":[]}],
         ["tail",{"since":9,"withRows":true,"incremental":true},{"count":1,"maxRowId":10,"newRows":1,"logs":[["review","c1",86448000,false]]}],
         ["cards",[["c1",2,2,86448000]]],
@@ -1411,9 +1411,9 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":3,"maxRowId":3,"newRows":3,"logs":[]}],
         ["replay",{"cards":3,"since":3,"rebaseSince":null,"rowsFrom":null},{"count":3,"maxRowId":3,"lastAt":2000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0]],"ats":[0,1000,2000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":3,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000]]],
         ["tail",{"since":3,"withRows":false,"incremental":false},{"count":3,"maxRowId":3,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000]]]
+        ["last",[["c0",0],["c1",1000],["c2",2000]]]
       ]
     ],
     "status": [
@@ -1486,7 +1486,7 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]]
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]]
       ]
     ],
     "status": [
@@ -1544,8 +1544,8 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":3,"maxRowId":3,"newRows":3,"logs":[]}],
         ["replay",{"cards":3,"since":3,"rebaseSince":null,"rowsFrom":null},{"count":3,"maxRowId":3,"lastAt":2000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0]],"ats":[0,1000,2000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":3,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000]]],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000]]]
+        ["last",[["c0",0],["c1",1000],["c2",2000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000]]]
       ]
     ],
     "status": [
@@ -1723,7 +1723,7 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
         ["tail",{"since":8,"withRows":true,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[["review","c5",86408000,false]]}],
         ["cards",[["c5",2,2,86408000]]],
@@ -1732,27 +1732,27 @@
         ["tail",{"since":9,"withRows":true,"incremental":true},{"count":1,"maxRowId":10,"newRows":1,"logs":[["review","c5",86409000,false]]}],
         ["cards",[["c5",3,3,86409000]]],
         ["tail",{"since":9,"withRows":false,"incremental":true},{"count":1,"maxRowId":10,"newRows":1,"logs":[]}],
-        ["cards",[["c5",3,3,86409000]]],
+        ["last",[["c5",86409000]]],
         ["tail",{"since":10,"withRows":false,"incremental":false},{"count":10,"maxRowId":10,"newRows":0,"logs":[]}],
-        ["cards",[["c5",3,3,86409000]]],
+        ["last",[["c5",86409000]]],
         ["tail",{"since":10,"withRows":false,"incremental":false},{"count":10,"maxRowId":10,"newRows":0,"logs":[]}],
-        ["cards",[["c5",3,3,86409000]]],
-        ["cards",[["c5",3,3,86409000]]],
+        ["last",[["c5",86409000]]],
+        ["last",[["c5",86409000]]],
         ["tail",{"since":10,"withRows":false,"incremental":true},{"count":1,"maxRowId":11,"newRows":1,"logs":[]}],
         ["tail",{"since":10,"withRows":true,"incremental":true},{"count":1,"maxRowId":11,"newRows":1,"logs":[["review","c4",86410000,false]]}],
         ["cards",[["c4",2,2,86410000]]],
         ["tail",{"since":10,"withRows":false,"incremental":true},{"count":1,"maxRowId":11,"newRows":1,"logs":[]}],
-        ["cards",[["c4",2,2,86410000],["c5",3,3,86409000]]],
+        ["last",[["c4",86410000],["c5",86409000]]],
         ["tail",{"since":11,"withRows":false,"incremental":true},{"count":1,"maxRowId":12,"newRows":1,"logs":[]}],
         ["tail",{"since":11,"withRows":true,"incremental":true},{"count":1,"maxRowId":12,"newRows":1,"logs":[["review","c3",86411000,false]]}],
         ["cards",[["c3",2,2,86411000]]],
         ["tail",{"since":11,"withRows":false,"incremental":true},{"count":1,"maxRowId":12,"newRows":1,"logs":[]}],
-        ["cards",[["c3",2,2,86411000],["c4",2,2,86410000],["c5",3,3,86409000]]],
+        ["last",[["c3",86411000],["c4",86410000],["c5",86409000]]],
         ["tail",{"since":12,"withRows":false,"incremental":true},{"count":1,"maxRowId":13,"newRows":1,"logs":[]}],
         ["tail",{"since":12,"withRows":true,"incremental":true},{"count":1,"maxRowId":13,"newRows":1,"logs":[["review","c2",86412000,false]]}],
         ["cards",[["c2",2,2,86412000]]],
         ["tail",{"since":12,"withRows":false,"incremental":true},{"count":1,"maxRowId":13,"newRows":1,"logs":[]}],
-        ["cards",[["c2",2,2,86412000],["c3",2,2,86411000],["c4",2,2,86410000],["c5",3,3,86409000]]]
+        ["last",[["c2",86412000],["c3",86411000],["c4",86410000],["c5",86409000]]]
       ]
     ],
     "status": [
@@ -1818,14 +1818,14 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
         ["tail",{"since":8,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":0,"logs":[]}],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
         ["tail",{"since":8,"withRows":true,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[["review","c5",86408000,false]]}],
         ["cards",[["c5",2,2,86408000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
-        ["cards",[["c5",2,2,86408000]]],
-        ["cards",[["c5",2,2,86408000]]]
+        ["last",[["c5",86408000]]],
+        ["last",[["c5",86408000]]]
       ]
     ],
     "status": [
@@ -1879,12 +1879,12 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
         ["tail",{"since":8,"withRows":true,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[["review","c0",86408000,false]]}],
         ["cards",[["c0",2,2,86408000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
-        ["cards",[["c0",2,2,86408000]]]
+        ["last",[["c0",86408000]]]
       ]
     ],
     "status": [
@@ -1939,18 +1939,18 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
         ["tail",{"since":8,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":0,"logs":[]}],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
         ["tail",{"since":8,"withRows":true,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[["review","c0",86408000,false]]}],
         ["cards",[["c0",2,2,86408000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
-        ["cards",[["c0",2,2,86408000]]],
+        ["last",[["c0",86408000]]],
         ["tail",{"since":9,"withRows":false,"incremental":true},{"count":1,"maxRowId":10,"newRows":1,"logs":[]}],
         ["tail",{"since":9,"withRows":true,"incremental":true},{"count":1,"maxRowId":10,"newRows":1,"logs":[["review","c1",86409000,false]]}],
         ["cards",[["c1",2,2,86409000]]],
         ["tail",{"since":9,"withRows":false,"incremental":true},{"count":1,"maxRowId":10,"newRows":1,"logs":[]}],
-        ["cards",[["c0",2,2,86408000],["c1",2,2,86409000]]]
+        ["last",[["c0",86408000],["c1",86409000]]]
       ]
     ],
     "status": [
@@ -1998,7 +1998,7 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]]
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]]
       ]
     ],
     "status": [
@@ -2129,7 +2129,7 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":2,"maxRowId":2,"newRows":2,"logs":[]}],
         ["replay",{"cards":2,"since":2,"rebaseSince":null,"rowsFrom":null},{"count":2,"maxRowId":2,"lastAt":1000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0]],"ats":[0,1000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":2,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000]]]
+        ["last",[["c0",0],["c1",1000]]]
       ]
     ],
     "status": [
@@ -2179,10 +2179,10 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]]
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]]
       ]
     ],
     "status": [
@@ -2240,17 +2240,17 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
         ["tail",{"since":8,"withRows":true,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[["review","c0",86408000,false]]}],
         ["cards",[["c0",2,2,86408000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
-        ["cards",[["c0",2,2,86408000]]],
+        ["last",[["c0",86408000]]],
         ["tail",{"since":9,"withRows":false,"incremental":true},{"count":1,"maxRowId":10,"newRows":1,"logs":[]}],
         ["tail",{"since":9,"withRows":true,"incremental":true},{"count":1,"maxRowId":10,"newRows":1,"logs":[["review","c2",86409000,false]]}],
         ["cards",[["c2",2,2,86409000]]],
         ["tail",{"since":9,"withRows":false,"incremental":true},{"count":1,"maxRowId":10,"newRows":1,"logs":[]}],
-        ["cards",[["c0",2,2,86408000],["c2",2,2,86409000]]]
+        ["last",[["c0",86408000],["c2",86409000]]]
       ]
     ],
     "status": [
@@ -2308,11 +2308,11 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":3,"maxRowId":3,"newRows":3,"logs":[]}],
         ["replay",{"cards":3,"since":3,"rebaseSince":null,"rowsFrom":null},{"count":3,"maxRowId":3,"lastAt":2000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0]],"ats":[0,1000,2000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":3,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000]]],
         ["tail",{"since":3,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
         ["replay",{"cards":3,"since":3,"rebaseSince":null,"rowsFrom":null},{"count":3,"maxRowId":3,"lastAt":2000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0]],"ats":[0,1000,2000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":3,"withRows":false,"incremental":true},{"count":0,"maxRowId":0,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000]]]
+        ["last",[["c0",0],["c1",1000],["c2",2000]]]
       ],
       [
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":3,"maxRowId":3,"newRows":3,"logs":[]}],
@@ -2453,12 +2453,12 @@
         ["tail",{"since":0,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":8,"logs":[]}],
         ["replay",{"cards":8,"since":8,"rebaseSince":null,"rowsFrom":null},{"count":8,"maxRowId":8,"lastAt":7000,"rows":[["c0",4,20513,-1,-1,0],["c1",4,20513,-1,-1,0],["c2",4,20513,-1,-1,0],["c3",4,20513,-1,-1,0],["c4",4,20513,-1,-1,0],["c5",4,20513,-1,-1,0],["c6",4,20513,-1,-1,0],["c7",4,20513,-1,-1,0]],"ats":[0,1000,2000,3000,4000,5000,6000,7000],"strays":0,"divergeAt":null,"tailRows":0}],
         ["tail",{"since":8,"withRows":false,"incremental":false},{"count":8,"maxRowId":8,"newRows":0,"logs":[]}],
-        ["cards",[["c0",1,1,0],["c1",1,1,1000],["c2",1,1,2000],["c3",1,1,3000],["c4",1,1,4000],["c5",1,1,5000],["c6",1,1,6000],["c7",1,1,7000]]],
+        ["last",[["c0",0],["c1",1000],["c2",2000],["c3",3000],["c4",4000],["c5",5000],["c6",6000],["c7",7000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
         ["tail",{"since":8,"withRows":true,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[["review","c0",86408000,false]]}],
         ["cards",[["c0",2,2,86408000]]],
         ["tail",{"since":8,"withRows":false,"incremental":true},{"count":1,"maxRowId":9,"newRows":1,"logs":[]}],
-        ["cards",[["c0",2,2,86408000]]]
+        ["last",[["c0",86408000]]]
       ]
     ],
     "status": [

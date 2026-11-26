@@ -817,6 +817,29 @@ void main() {
       )).single;
       expect(undone.keptIds, hasLength(2));
       expect(undone.appendRows(<String>[last]), isNull);
+
+      // 末条（缓存层物化的 rwkv_last，BUG-5491）与逐卡重放的 last 是同一条：撤销前后、没有评分的卡都一致。
+      final List<SrsRwkvLastRating?> lasts = await f.store.rwkvLastRatings(
+        cards,
+      );
+      final List<SrsRwkvCardRows> replayed = await f.store.rwkvCardRows(
+        cards,
+        <int>[for (int i = 0; i < cards.length; i++) ...ids(i)],
+        day,
+      );
+      expect(lasts, hasLength(cards.length));
+      for (int i = 0; i < cards.length; i++) {
+        final SrsRwkvLastRating? want = replayed[i].last;
+        expect(lasts[i]?.at, want?.at, reason: 'card $i at');
+        expect(lasts[i]?.rating, want?.rating, reason: 'card $i rating');
+        expect(lasts[i]?.reviewType, want?.reviewType, reason: 'card $i type');
+      }
+      expect(lasts[0]?.at, undone.last?.at);
+      expect(lasts[0]?.at, isNot(card0.last?.at));
+      expect(
+        (await f.store.rwkvLastRatings(<String>[cards[0]])).single?.at,
+        undone.last?.at,
+      );
     });
   });
 

@@ -73,8 +73,19 @@ use rusqlite::Connection;
 /// 40025 分给同批别的 PR、最后没用）；第六波合流起 `40027`（`40026` 的形状再加 develop 上 G8-3 修复的 `media_seen`
 /// 按代号一行的集合、主键多一列 `gen`——那次修复在 develop 上单独用了 `40020`，与本线 40020 的预分配撞号，合流后
 /// 两边的表合起来才是终态，另起新号，不复用任何一边进过构建的号）。
+/// BUG-5491 起 `40028`（缓存层派生表 `rwkv_last` 与卡行删除时连带删它的触发器 `cards_gone_rwkv_last`，`cache.rs`
+/// `DDL`）：第一次给已有用户的新代库升号，只加对象，走 [ADDITIVE_FROM] 的就地升级。
 /// 整批推送前每个改表的 PR 各自用分到的号。
-pub const SCHEMA: i64 = 40_027;
+pub const SCHEMA: i64 = 40_028;
+
+/// 可以就地升到 [SCHEMA] 的旧号：从这些号到 [SCHEMA] 只**新增**表 / 索引 / 触发器（没改、没删任何已有对象），
+/// [install] 每次开库都跑的 `CREATE … IF NOT EXISTS` 补齐新对象、再写下 [SCHEMA]，就是完整的升级。新对象若是派生
+/// 层的，同一次改动升 `cache.rs` 的 `CACHE_RULES`，开库时整层重建一次填上数据。改了已有对象的升号不能进这张表，
+/// 要写真正的迁移。测试 `guards_tests.rs` `every_additive_schema_upgrades_in_place_to_the_frozen_shape` 钉住
+/// 「旧号形状的库开一次 = 新建库的形状」。升级后的库旧版本打不开（[check_kind] 的「比本版本新」）。
+///
+/// - 40027 → 40028：`rwkv_last` + `cards_gone_rwkv_last`（BUG-5491）。
+pub(crate) const ADDITIVE_FROM: &[i64] = &[40_027];
 
 /// 新代的号段从这里起：`schema` 小于它的都不是新代库（协议 3 的 1～29 与封存值 39999）。
 pub const GEN_FLOOR: i64 = 40_000;
@@ -544,7 +555,7 @@ CREATE TABLE IF NOT EXISTS dg_dirty (
 ";
 
 /// 派生表的名字（每张都有 `col` 列）。
-pub(crate) const DERIVED_TABLES: [&str; 19] = [
+pub(crate) const DERIVED_TABLES: [&str; 20] = [
     "ent_ix",
     "reg_ix",
     "log_ix",
@@ -562,6 +573,7 @@ pub(crate) const DERIVED_TABLES: [&str; 19] = [
     "dg_dirty",
     "notes",
     "cards",
+    "rwkv_last",
     "stats",
     "anki_members",
 ];
@@ -621,7 +633,7 @@ pub(crate) fn check_kind(conn: &Connection) -> Result<(), String> {
             "gen4 store: schema {v} is newer than this build ({SCHEMA})"
         ));
     }
-    if v != SCHEMA {
+    if v != SCHEMA && !ADDITIVE_FROM.contains(&v) {
         return Err(format!(
             "gen4 store: not a generation 4 library of this build (schema {v})"
         ));
@@ -1087,10 +1099,23 @@ mod tests {
         }
         conn.execute_batch(&format!("PRAGMA application_id = {APPLICATION_ID};"))
             .unwrap();
-        // 魔数对、号是新代号段里更早的一版。
-        for v in [GEN_FLOOR, SCHEMA - 1] {
+        // 魔数对、号是新代号段里更早、又不能就地升级的一版。
+        let oldest_additive = *ADDITIVE_FROM.iter().min().unwrap();
+        for v in [GEN_FLOOR, oldest_additive - 1] {
             set_schema(v);
             refused("of this build");
+        }
+        // 能就地升级的旧号：认，建表补齐后写下本版本的号。
+        for &v in ADDITIVE_FROM {
+            set_schema(v);
+            assert_eq!(check_kind(&conn), Ok(()));
+            in_tx(&conn, install).unwrap();
+            let now: String = conn
+                .query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| {
+                    r.get(0)
+                })
+                .unwrap();
+            assert_eq!(now, SCHEMA.to_string());
         }
         // 魔数对、号比本版本新。
         set_schema(SCHEMA + 1);
