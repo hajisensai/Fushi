@@ -185,12 +185,12 @@ void main() {
 
   // syncHeight：同步与备份页比互联页长（反馈 AWp-0BtDDv 加了「同步设置」与
   // 「合并导入时包含设置」两行；自动备份又加了一整节，第三期再加副本与云端
-  // 几行），单独给它更高的视口，互联页基线不动。
+  // 几行，第四期再加服务器副本一行），单独给它更高的视口，互联页基线不动。
   for (final ({String name, double width, double height, double syncHeight})
       size
       in <({String name, double width, double height, double syncHeight})>[
-        (name: 'wide', width: 900, height: 2400, syncHeight: 4500),
-        (name: 'narrow', width: 400, height: 3800, syncHeight: 7400),
+        (name: 'wide', width: 900, height: 2400, syncHeight: 4700),
+        (name: 'narrow', width: 400, height: 3800, syncHeight: 7800),
       ]) {
     testWidgets('sync & backup page · ${size.name}', (
       WidgetTester tester,
