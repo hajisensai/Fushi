@@ -1,6 +1,6 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-26T11:25:55Z",
+ "generatedAt": "2026-11-26T11:32:29Z",
  "repo": "hajisensai/Fushi",
  "develop": {
   "sha": "2704c408960f91bd1baf43eb986d24b1566b0064",
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "cb5365ea4a8a1db4ffbc65191a798ce835a06cac",
    "unknown": false,
-   "publishedAt": "2026-11-26T11:25:36Z",
-   "testflight": false,
+   "publishedAt": "2026-11-26T11:32:15Z",
+   "testflight": true,
    "baseSeq": 32705,
    "prs": [],
    "direct": [
@@ -105,8 +105,7 @@
    "truncated": false,
    "platforms": {
     "android": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45798362682"
+     "state": "ok"
     },
     "windows": {
      "state": "ok"
@@ -198,7 +197,7 @@
    "unknown": false,
    "publishedAt": "2026-11-25T22:03:31Z",
    "testflight": true,
-   "baseSeq": 32573,
+   "baseSeq": 32559,
    "prs": [],
    "direct": [
     {
@@ -340,34 +339,7 @@
     {
      "sha": "c5db09bd8d3c518a5fcf32cb4a23db72e9b31631",
      "subject": "chore(bugs): settle BUG number collisions on a46839d71"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "ok"
     },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "ok"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
-  },
-  {
-   "seq": 32573,
-   "version": "3.4.0",
-   "sha": "a46839d71b5c659860dad756f9c79b386a956fa2",
-   "unknown": false,
-   "publishedAt": "2026-11-25T15:39:49Z",
-   "testflight": false,
-   "baseSeq": 32559,
-   "prs": [],
-   "direct": [
     {
      "sha": "a46839d71b5c659860dad756f9c79b386a956fa2",
      "subject": "Merge PR #4432"
@@ -411,16 +383,13 @@
      "state": "ok"
     },
     "windows": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682370"
+     "state": "ok"
     },
     "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682370"
+     "state": "ok"
     },
     "ios": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45639682370"
+     "state": "ok"
     }
    }
   }
