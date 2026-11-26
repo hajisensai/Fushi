@@ -265,6 +265,16 @@ impl LogsByCard {
     }
 
     /// 一份历史（血统里各卡日志之和）的有效日志；[upto] 给了就只看 rowid 不超过它的日志。
+    /// 血统 [lineage] 的最后一条 RWKV 保留评分（[projection::rwkv_kept] 的最后一条，与 [rwkv_cards_of] 摘要里的同一条）：
+    /// (时刻, 评分, 复习类型代码 `RType as i64`)；没有保留评分 = None。缓存层与卡行一起物化成 `rwkv_last`
+    /// （`store/gen4/cache.rs`），RWKV 查询行直接读表，不再逐卡重放。
+    pub(crate) fn rwkv_last(&self, lineage: &[String]) -> Option<(i64, i64, i64)> {
+        let eff = self.effective(lineage, None);
+        projection::rwkv_kept(&eff)
+            .last()
+            .map(|&i| (eff[i].at, eff[i].rating.unwrap_or(0), eff[i].rtype as i64))
+    }
+
     fn effective(&self, lineage: &[String], upto: Option<i64>) -> Vec<EffLog> {
         let scans: Vec<(&str, &ScanLog)> = lineage
             .iter()

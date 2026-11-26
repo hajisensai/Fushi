@@ -47,7 +47,18 @@ const FROZEN: &[(i64, &str)] = &[
         40_027,
         "f55986e3a92176c9a730ad658c9700db7113f3b93167f90478a2232a906ce6be",
     ),
+    (
+        40_028,
+        "d3d90f591bc2e90d34fdeb0944405aa7e8ced096e03c773615b20981b70acc18",
+    ),
 ];
+
+/// 从 [schema::ADDITIVE_FROM] 的旧号升到当前号新增的对象（`sqlite_schema` 的 (type, name)）：旧号形状 = 新建库去掉它们。
+/// 升号时在这里登记；只加不改的升级才能进 `ADDITIVE_FROM`。
+const ADDED_SINCE: &[(i64, &[(&str, &str)])] = &[(
+    40_027,
+    &[("table", "rwkv_last"), ("trigger", "cards_gone_rwkv_last")],
+)];
 
 fn src_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("src")
@@ -728,7 +739,11 @@ fn live_code_names_no_protocol_3_table() {
 /// 空库上 [schema::install] 建出的对象与魔数的指纹：`application_id`，加上 `sqlite_schema` 里每个对象
 /// `type|name|tbl_name|sql`（空白折成一个空格）按 (type, name) 排序后拼起来，取 blake3 的十六进制。
 fn fingerprint() -> String {
-    let conn = schema::open_in_memory().unwrap();
+    fingerprint_of(&schema::open_in_memory().unwrap())
+}
+
+/// [fingerprint] 的算法，作用在给定的连接上。
+fn fingerprint_of(conn: &rusqlite::Connection) -> String {
     let app: i32 = conn
         .query_row("PRAGMA application_id", [], |r| r.get(0))
         .unwrap();
@@ -755,6 +770,56 @@ fn fingerprint() -> String {
         text.push_str(&format!("{ty}|{name}|{tbl}|{sql}\n"));
     }
     blake3::hash(text.as_bytes()).to_hex().to_string()
+}
+
+/// 每个能就地升级的旧号（[schema::ADDITIVE_FROM]）：新建库去掉 [ADDED_SINCE] 登记的对象、号写回旧号，指纹必须正是
+/// [FROZEN] 里旧号那份（登记的增量就是真实差别）；再走一遍开库的 [schema::install]，指纹回到当前号那份、号写成当前号。
+#[test]
+fn every_additive_schema_upgrades_in_place_to_the_frozen_shape() {
+    let frozen = |v: i64| {
+        FROZEN
+            .iter()
+            .find(|(n, _)| *n == v)
+            .unwrap_or_else(|| panic!("{v} is in ADDITIVE_FROM but not in FROZEN"))
+            .1
+    };
+    for &from in schema::ADDITIVE_FROM {
+        let added = ADDED_SINCE
+            .iter()
+            .find(|(n, _)| *n == from)
+            .unwrap_or_else(|| panic!("{from} is in ADDITIVE_FROM but not in ADDED_SINCE"))
+            .1;
+        let conn = schema::open_in_memory().unwrap();
+        // 先删触发器 / 索引再删表（删表会连带删表上的触发器，顺序反了后一条找不到）。
+        let mut order: Vec<&(&str, &str)> = added.iter().collect();
+        order.sort_by_key(|(ty, _)| match *ty {
+            "trigger" => 0,
+            "index" => 1,
+            _ => 2,
+        });
+        for (ty, name) in order {
+            conn.execute_batch(&format!("DROP {} {name};", ty.to_uppercase()))
+                .unwrap();
+        }
+        conn.execute(
+            "UPDATE srs_meta SET value = ?1 WHERE key = 'schema'",
+            [from.to_string()],
+        )
+        .unwrap();
+        assert_eq!(
+            fingerprint_of(&conn),
+            frozen(from),
+            "ADDED_SINCE for {from} is not the real difference to the frozen {from} shape"
+        );
+        schema::in_tx(&conn, schema::install).unwrap();
+        assert_eq!(fingerprint_of(&conn), frozen(schema::SCHEMA));
+        let v: String = conn
+            .query_row("SELECT value FROM srs_meta WHERE key = 'schema'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(v, schema::SCHEMA.to_string());
+    }
 }
 
 #[test]

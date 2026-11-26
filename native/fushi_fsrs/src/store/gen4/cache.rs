@@ -135,6 +135,7 @@ use crate::store::caches::{
     self, AnkiStatKey, CacheConfig, Material, NoteInfo, TypeInfo, add_descendants,
     anki_duplicate_log_ids, card_row, note_row, sorted_ids, stat_groups,
 };
+use crate::store::projections::LogsByCard;
 use crate::store::schema::anki_numeric_id;
 use crate::store::sync2::{
     canonical, config, group_lineage, log_json, note_type_key_affects_caches, tails_with,
@@ -224,6 +225,20 @@ CREATE INDEX IF NOT EXISTS cards_review_due ON cards
   (col, deck_id, COALESCE(due_day, 0), buried_until_day, last_reviewed_at, stability, id, due_at, due_day,
    queue, hidden, suspended, scheduler)
   WHERE queue = 'review' AND hidden = 0 AND suspended = 0 AND scheduler = 'fushi';
+-- RWKV 查询行要的「最后一条保留评分」（`projection::rwkv_kept` 的最后一条，按卡行的血统算），与卡行同一次物化；
+-- 没有保留评分的卡没有行。卡行删掉时由触发器一起删（`INSERT OR REPLACE` 换卡行不触发，物化随即重写这一行）。
+-- 冷启动 RWKV 打分只读这张表（`cmd/training.rs` `rwkv_last`），不再逐卡重放全部历史（BUG-5491）。
+CREATE TABLE IF NOT EXISTS rwkv_last (
+  col INTEGER NOT NULL,
+  card NOT NULL,
+  at INTEGER NOT NULL,
+  rating INTEGER NOT NULL,
+  rtype INTEGER NOT NULL,
+  PRIMARY KEY (col, card)
+) WITHOUT ROWID;
+CREATE TRIGGER IF NOT EXISTS cards_gone_rwkv_last AFTER DELETE ON cards BEGIN
+  DELETE FROM rwkv_last WHERE col = OLD.col AND card = OLD.id;
+END;
 CREATE INDEX IF NOT EXISTS cards_tally ON cards
   (col, deck_id, queue, due_day, due_at, suspended, scheduler, buried_until_day)
   WHERE hidden = 0;
@@ -371,7 +386,9 @@ pub const RULES_KEY: &str = "cacheRules";
 ///   （`registers::cards_group` 的 `registers::later`）。之前取卡 ID 序在前的：按 4 物化过的库里这类后继卡的
 ///   `flag` / `new_position` / 牌组……是按 ID 序继承的，原地重开与重建不同，要重建一次才换成新口径。
 /// - 6（BUG-5476）：日志重放、卡片状态和统计以原始日志 ID 排序和选副本。规范 ID 只用于身份和引用。
-pub const CACHE_RULES: i64 = 6;
+/// - 7（BUG-5491）：新增 `rwkv_last`（每张卡最后一条 RWKV 保留评分，与卡行一起物化）。按 6 物化的库这张表是空的，
+///   要重建一次才填上。
+pub const CACHE_RULES: i64 = 7;
 
 /// [Index::log_class_rep] 每个成员一次的点查（走 `log_id (col, id, k)`；查询计划测试用同一份）。
 pub(crate) const LOG_REP_SQL: &str =
@@ -2027,6 +2044,30 @@ impl<'t, 'c> Index<'t, 'c> {
                 ])
                 .map_err(sql)?;
             out.cache_cards += 1;
+            let mut by_card = LogsByCard::default();
+            for c in &lineage {
+                for l in logs.get(c).into_iter().flatten() {
+                    by_card.push(c.clone(), l.k, l.stored())?;
+                }
+            }
+            match by_card.rwkv_last(&lineage) {
+                Some((at, rating, rtype)) => self
+                    .t
+                    .conn()
+                    .prepare_cached(
+                        "INSERT OR REPLACE INTO rwkv_last (col, card, at, rating, rtype) VALUES (?1, ?2, ?3, ?4, ?5)",
+                    )
+                    .map_err(sql)?
+                    .execute(params![self.col, t.card, at, rating, rtype])
+                    .map_err(sql)?,
+                None => self
+                    .t
+                    .conn()
+                    .prepare_cached("DELETE FROM rwkv_last WHERE col = ?1 AND card = ?2")
+                    .map_err(sql)?
+                    .execute(params![self.col, t.card])
+                    .map_err(sql)?,
+            };
             if !all {
                 self.cache_touched.insert(t.note.clone());
             }
@@ -3367,7 +3408,7 @@ mod tests {
             );
         }
         // 不在日志排序键上的修订（各自由对应模块的测试钉口径）：(说明, 修订号)。
-        const ELSEWHERE: [(&str, i64); 3] = [
+        const ELSEWHERE: [(&str, i64); 4] = [
             (
                 "改名写入者的旧上下文只换到归回上界（class.rs 的 bounded_writer_rename_* 测试）",
                 4,
@@ -3379,6 +3420,10 @@ mod tests {
             (
                 "带盐日志按原始 ID 选副本（anki_copies_with_different_schedules_migrate_cleanly）",
                 6,
+            ),
+            (
+                "rwkv_last 与卡行一起物化（cmd/training.rs 的 rwkv_last_matches_rwkv_cards_* 测试）",
+                7,
             ),
         ];
         let latest = table

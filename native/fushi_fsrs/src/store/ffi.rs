@@ -780,7 +780,8 @@ pub extern "C" fn ffsrs_store_calibration_items(
 /// RWKV 回放行。mode 0 = 逐卡（`SrsCore::rwkv_cards`）：`args = [n_groups, 0, utcOffsetMin, rolloverHour, 0,
 /// 数字 id × 4·n_groups]`；mode 1 = 回放（`SrsCore::rwkv_replay`，页里要有 profile 行）：`args = [n_groups, 1,
 /// utcOffsetMin, rolloverHour, since, rebaseSince|NONE, rowsFrom|NONE, 数字 id × 4·n_groups]`（NONE = i64::MIN，
-/// rebaseSince 为 NONE = 全量）。
+/// rebaseSince 为 NONE = 全量）；mode 2 = 末条（`cmd/training.rs` `rwkv_last`）：`args = [n_groups, 2, 0, 0, 0]`，
+/// 每组一张卡，输出 `[n, (时刻|NONE, 评分, 复习类型代码) × n]`。
 #[no_mangle]
 pub extern "C" fn ffsrs_store_rwkv_rows(
     core: *const SrsCoreHandle,
@@ -804,9 +805,13 @@ pub extern "C" fn ffsrs_store_rwkv_rows(
         |c, page, args| {
             let n = group_count(args)?;
             let (lineages, profile) = lineage_page(page, n)?;
+            let mode = arg(args, 1)?;
+            if mode == 2 {
+                return gen4_dispatch::rwkv_last(c, profile.as_deref(), &lineages);
+            }
             let day = day_of(args, 2)?;
             let opt = |v: i64| (v != crate::history::NONE_I64).then_some(v);
-            match arg(args, 1)? {
+            match mode {
                 0 => gen4_dispatch::rwkv_cards(
                     c,
                     profile.as_deref(),
