@@ -1425,6 +1425,13 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
         decoration != null &&
         !_isSearchDecoration(decoration) &&
         !_c.expands;
+    // 数值字段（字号、像素、秒数这类）在表单行里是 SwiftUI `LabeledContent` /
+    // macOS 27 设置的写法：左标题、右侧一枚右对齐的窄框，单位与重置钮排在框外。
+    // 撑满一整行的宽框 + 框内单位是表单录入的形态，放数值显得不像系统设置。
+    final bool numericFormRow =
+        formRow &&
+        _c.maxLines == 1 &&
+        _c.keyboardType?.index == TextInputType.number.index;
     final String? formLabelText = formRow
         ? (rowScope.label ?? decoration.labelText)
         : null;
@@ -1435,6 +1442,7 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     final bool formLabeled =
         formLabel != null &&
         (desktop ||
+            numericFormRow ||
             decoration!.hintText != null ||
             (rowScope!.label == null && decoration.label != null));
     final Widget editable = _buildEditable(
@@ -1444,11 +1452,12 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
       placeholder: formRow && !formLabeled
           ? (decoration.hintText ?? formLabelText)
           : null,
-      textAlign:
-          formLabeled &&
-              !desktop &&
-              _c.maxLines == 1 &&
-              _c.textAlign == TextAlign.start
+      textAlign: numericFormRow
+          ? TextAlign.end
+          : formLabeled &&
+                !desktop &&
+                _c.maxLines == 1 &&
+                _c.textAlign == TextAlign.start
           ? TextAlign.end
           : null,
     );
@@ -1607,7 +1616,7 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
     final Border? restingBorder = enabled && hasError
         ? Border.all(color: apple.destructive)
         : (macField ? Border.all(color: apple.separator, width: 0.5) : null);
-    Widget shell = AnimatedContainer(
+    Widget buildShell(Widget child) => AnimatedContainer(
       duration: fushiMotionDuration(context, FushiMotion.short),
       curve: FushiMotion.standard,
       padding: padding,
@@ -1629,7 +1638,10 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
               )
             : Border.all(color: Colors.transparent, width: 1.5),
       ),
-      child: capsule
+      child: child,
+    );
+    Widget shell = buildShell(
+      capsule
           ? Align(
               alignment: AlignmentDirectional.centerStart,
               heightFactor: 1,
@@ -1677,9 +1689,31 @@ class _GlassTextFieldViewState extends State<_GlassTextFieldView> {
 
     if (formRow) {
       final String? rowHelper = rowScope.helper;
+      // 数值字段：窄框（macOS 带框、iOS 无框右对齐文字）+ 框外单位 / 尾部钮。
+      final Widget numericField = Row(
+        mainAxisAlignment: MainAxisAlignment.end,
+        children: <Widget>[
+          Flexible(
+            child: ConstrainedBox(
+              constraints: BoxConstraints(
+                maxWidth: desktop ? 72 * macScale : 96,
+              ),
+              child: desktop ? buildShell(editable) : editable,
+            ),
+          ),
+          if (suffix != null) ...<Widget>[
+            SizedBox(width: (desktop ? 6 * macScale : 6)),
+            suffix,
+          ],
+          if (suffixIcon != null) ...<Widget>[
+            SizedBox(width: (desktop ? 4 * macScale : 4)),
+            suffixIcon,
+          ],
+        ],
+      );
       return _buildFormRow(
         context,
-        field: desktop ? shell : row,
+        field: numericFormRow ? numericField : (desktop ? shell : row),
         leading: rowScope.leading,
         label: formLabeled ? formLabel : null,
         labelColor: enabled && hasError ? apple.destructive : apple.label,

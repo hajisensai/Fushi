@@ -1597,10 +1597,13 @@ const double kFushiAppleScrollEdgeFade = 24;
 /// （用户 2026-10-12「顶部的标签页改回为 Cupertino 的分段选择器」，取代 10-04
 /// 的 iOS 文字页签 + 下划线）。
 ///
-/// 段宽一律等分（`UISegmentedControl` 形态）：[fill] 且摆得下时铺满整行，
-/// 否则按内容取宽贴左。段数多到摆不下时不横滑（横滑会把首尾段切掉一截，
-/// 2026-10-12 用户截图「视频这块没贴合」），与 MD3 页签同一套溢出：只排得下
-/// 的前几段进控件，其余收进末尾的「更多」下拉；选中段在溢出区时替换到可见
+/// 段宽首选等分（`UISegmentedControl` 形态）：[fill] 且摆得下时铺满整行，
+/// 否则按内容取宽贴左。等宽摆不下时先按内容分宽（`apportionsSegmentWidthsByContent`，
+/// 由控件内的 [fushiSegmentWidths] 逐级退让：短段让出留白、再收内边距），只要
+/// 每段文字在最小内边距下都放得下，就全部排在一行里（用户 2026-11-26：阅读
+/// 设置面板五个分区被收起两个）。连这样都摆不下才不横滑（横滑会把首尾段切掉
+/// 一截，2026-10-12 用户截图「视频这块没贴合」），与 MD3 页签同一套溢出：只排
+/// 得下的前几段进控件，其余收进末尾的「更多」下拉；选中段在溢出区时替换到可见
 /// 末位，永远看得到自己在哪。焦点契约在外层 [FushiAdjustableSegmented]（与
 /// MD3 的 TabBar 同一外壳）。
 ///
@@ -1624,8 +1627,8 @@ class FushiAppleSectionSegments<T extends Object> extends StatelessWidget {
   /// 见 [LibrarySectionTabs.selectedIsCurrent]。
   final bool selectedIsCurrent;
 
-  /// 等宽段的格宽：最宽文案 + 两侧 14（同 [FushiSegmentedButton] 的口径）。
-  double _cellWidth(BuildContext context) {
+  /// 各段文案宽（与控件同一字样：Apple 分段的选中字样）。
+  List<double> _labelWidths(BuildContext context) {
     final bool compact = fushiAppleCompact(context);
     final double macScale = fushiAppleMacScale(context);
     final TextStyle style =
@@ -1634,19 +1637,27 @@ class FushiAppleSectionSegments<T extends Object> extends StatelessWidget {
           fontWeight: FontWeight.w600,
         );
     final TextScaler scaler = MediaQuery.textScalerOf(context);
-    double widest = 0;
-    for (final LibrarySectionTab<T> tab in tabs) {
-      final TextPainter painter = TextPainter(
-        text: TextSpan(text: tab.label, style: style),
-        textDirection: TextDirection.ltr,
-        textScaler: scaler,
-        maxLines: 1,
-      )..layout();
-      widest = math.max(widest, painter.width);
-      painter.dispose();
-    }
-    return widest + 28;
+    return <double>[
+      for (final LibrarySectionTab<T> tab in tabs)
+        () {
+          final TextPainter painter = TextPainter(
+            text: TextSpan(text: tab.label, style: style),
+            textDirection: TextDirection.ltr,
+            textScaler: scaler,
+            maxLines: 1,
+          )..layout();
+          final double width = painter.width;
+          painter.dispose();
+          return width;
+        }(),
+    ];
   }
+
+  /// 首选段内边距（两侧共 28，同 [FushiSegmentedButton] 的口径）与最小段内
+  /// 边距（两侧共 12，= [FushiAppleSegmentedControl] 段内固定内边距
+  /// `_cellPadding` × 2，再收文字就要被省略）。
+  static const double _preferredCellPadding = 28;
+  static const double _minCellPadding = 12;
 
   /// [count] 段的控件宽（轨道两端各 3）。
   static double _controlWidth(double cell, int count) => count * cell + 6;
@@ -1701,8 +1712,14 @@ class FushiAppleSectionSegments<T extends Object> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final double cell = _cellWidth(context);
+    final List<double> labels = _labelWidths(context);
+    final double cell = labels.reduce(math.max) + _preferredCellPadding;
     final double natural = _controlWidth(cell, tabs.length);
+    final double labelSum = labels.fold(0, (double a, double b) => a + b);
+    // 按内容分宽：自然宽（每段首选内边距）与下限（每段最小内边距）。
+    final double contentNatural =
+        labelSum + tabs.length * _preferredCellPadding + 6;
+    final double contentMin = labelSum + tabs.length * _minCellPadding + 6;
     FushiHeaderCrampScope.maybeOf(context)?.reportTitleNaturalWidth(natural);
     return LayoutBuilder(
       builder: (BuildContext context, BoxConstraints constraints) {
@@ -1714,6 +1731,17 @@ class FushiAppleSectionSegments<T extends Object> extends StatelessWidget {
             widthFactor: fill ? null : 1,
             child: SizedBox(
               width: fill && max.isFinite ? max : natural,
+              child: _control(all, expand: true),
+            ),
+          );
+        }
+        // 等宽摆不下、按内容分宽摆得下：全部段排一行，段宽交给控件分配。
+        if (contentMin <= max) {
+          return Align(
+            alignment: AlignmentDirectional.centerStart,
+            widthFactor: fill ? null : 1,
+            child: SizedBox(
+              width: fill ? max : math.min(contentNatural, max),
               child: _control(all, expand: true),
             ),
           );
