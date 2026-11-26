@@ -1018,4 +1018,35 @@ void main() {
       }
     });
   });
+
+  // 第一人称小说的叙述者也是会说话的角色：不教模型这一点，「我」的台词全被标成
+  // unknown（实测八九寺片段 gpt-4o-mini 30% → 73%、Qwen3-14B 63% → 84%）。
+  group('第一人称叙述者', () {
+    test('选角提示词：叙述者入表，自称进别名，示例自称跟着文字走', () {
+      final String zh = ttsRosterSystemPrompt(TtsCastScript.chinese);
+      expect(zh, contains('First-person books'));
+      expect(zh, contains('"我" (or "本小姐", "在下"…)'));
+      expect(zh, contains('into their "aliases"'));
+      final String ja = ttsRosterSystemPrompt(TtsCastScript.japanese);
+      expect(ja, contains('"私", "僕", "俺"'));
+      expect(ja, isNot(contains('"本小姐"')));
+      expect(
+        ttsRosterSystemPrompt(TtsCastScript.other),
+        contains('a label such as "I"'),
+      );
+    });
+
+    test('逐句提示词：别名含自称的角色就是叙述者，旁白仍不列出', () {
+      for (final TtsCastScript s in TtsCastScript.values) {
+        final String p = ttsCastLinesSystemPrompt(s);
+        expect(p, contains('First-person books'));
+        expect(p, contains('get THAT character\'s name'));
+        expect(p, contains('the unquoted narration stays the narrator'));
+      }
+      expect(
+        ttsCastLinesSystemPrompt(TtsCastScript.chinese),
+        contains('first-person word ("我"'),
+      );
+    });
+  });
 }
