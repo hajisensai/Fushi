@@ -1251,6 +1251,81 @@ void main() {
     });
   });
 
+  group('resolveBookStoragePaths 去重去嵌套（storage-scan-ui-freeze）', () {
+    List<String> categoryRoots() => <String>[
+      p.join(docs.path, 'fushi_books'),
+      p.join(docs.path, 'audiobooks'),
+    ];
+
+    test('重复与被包住的路径都去掉，保留原序；兄弟目录与同前缀目录不误判', () {
+      final String root = p.join(docs.path, 'audiobooks', 'Book');
+      final String extract = p.join(docs.path, 'fushi_books', 'keyA');
+      final String external = p.join(tempRoot.path, 'external');
+      final StorageBookPaths paths = resolveBookStoragePaths(
+        documentsRoot: docs,
+        book: StorageBookRef(
+          id: 'keyA',
+          title: 'A',
+          extractDir: extract,
+          audioPaths: <String>[
+            p.join(root, 'disc1', '01.mp3'),
+            root,
+            // 同一目录的另一种写法（尾随分隔符 / `.` 段）只算一次。
+            '$root${p.separator}',
+            p.join(root, '.', 'disc2', '02.mp3'),
+            // 「Book2」与「Book」同前缀但不是父子，不能被吞。
+            p.join(docs.path, 'audiobooks', 'Book2', '01.mp3'),
+            p.join(external, 'a.mp3'),
+            p.join(external, 'a.mp3'),
+            external,
+          ],
+        ),
+        categoryRoots: categoryRoots(),
+      );
+
+      expect(paths.counted, <String>[
+        extract,
+        root,
+        p.join(docs.path, 'audiobooks', 'Book2', '01.mp3'),
+      ]);
+      expect(paths.external, <String>[external]);
+    });
+
+    test('逐文件音频清单上千条也是近线性：不能在 UI isolate 上做 O(n²) 次 canonicalize', () {
+      // 用户真机：有声书 `audioPathsJson` 逐文件登记，几千条路径在 UI isolate 上
+      // 两两 canonicalize，开存储页整窗冻结 7～10 秒。旧实现 6000 条要数分钟。
+      final String root = p.join(docs.path, 'audiobooks', 'Long');
+      final List<String> files = <String>[
+        for (int i = 0; i < 3000; i++)
+          p.join(root, 'track${i.toString().padLeft(4, '0')}.mp3'),
+      ];
+      final List<String> siblings = <String>[
+        for (int i = 0; i < 3000; i++)
+          p.join(docs.path, 'audiobooks', 'Other', 'part$i.mp3'),
+      ];
+      final Stopwatch sw = Stopwatch()..start();
+      final StorageBookPaths paths = resolveBookStoragePaths(
+        documentsRoot: docs,
+        book: StorageBookRef(
+          id: 'long',
+          title: 'Long',
+          extractDir: '',
+          audioPaths: <String>[...files, root, ...siblings],
+        ),
+        categoryRoots: categoryRoots(),
+      );
+      sw.stop();
+
+      expect(paths.counted, <String>[root, ...siblings]);
+      expect(paths.external, isEmpty);
+      expect(
+        sw.elapsed,
+        lessThan(const Duration(seconds: 3)),
+        reason: '6000 条路径去嵌套耗时 ${sw.elapsedMilliseconds} ms',
+      );
+    });
+  });
+
   group('formatStorageBytes', () {
     test('分档口径', () {
       expect(formatStorageBytes(0), '0 B');
