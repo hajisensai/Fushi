@@ -94,8 +94,7 @@ Future<void> showOverwriteSnapshotNoticeDialog({
   await Navigator.of(context).push<void>(
     adaptivePageRoute<void>(
       context: context,
-      builder: (BuildContext context) =>
-          RestorePointsPage(appModel: appModel),
+      builder: (BuildContext context) => RestorePointsPage(appModel: appModel),
     ),
   );
 }
