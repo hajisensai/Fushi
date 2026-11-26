@@ -40,6 +40,7 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_widgets.dart';
 import 'package:fushi/src/utils/components/fushi_design_tokens.dart';
 import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
@@ -701,10 +702,20 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool malformed = error.kind == AiSrsFieldReplyErrorKind.malformed;
     // 错误色卡：说明、「显示回复」、「把回复当作文字使用」在同一张卡里读作一组（中性卡在
-    // 抽屉底色上几乎看不出边界）。文字前景走卡的 onErrorContainer。
+    // 抽屉底色上几乎看不出边界）。MD3 不用饱和的 errorContainer 大色块（暗色下整块深红
+    // 压过结果区，用户 2026-11-25 选了柔和版）：抽屉面上叠一层淡错误色 + 半透明错误色
+    // 描边，文字保持常规前景；Apple 走 error 配色变体的淡染底。
+    final bool glass = isGlassDesign(context);
     return FushiCard(
       key: const ValueKey<String>('srs-field-ai-reply-error'),
       tone: FushiCardTone.error,
+      color: glass
+          ? null
+          : Color.alphaBlend(
+              scheme.error.withValues(alpha: 0.12),
+              scheme.surfaceContainerHigh,
+            ),
+      borderColor: glass ? null : scheme.error.withValues(alpha: 0.45),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         spacing: tokens.spacing.gap,

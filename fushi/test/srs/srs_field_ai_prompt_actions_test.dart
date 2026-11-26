@@ -1008,10 +1008,23 @@ void main() {
     final _Harness h = await _pump(tester, _Store());
     h.client.reply = 'Sure! {broken';
     await _tap(tester, 'srs-field-ai-run');
-    expect(
-      tester.widget<FushiCard>(_key('srs-field-ai-reply-error')).tone,
-      FushiCardTone.error,
+    final FushiCard errorCard = tester.widget<FushiCard>(
+      _key('srs-field-ai-reply-error'),
     );
+    expect(errorCard.tone, FushiCardTone.error);
+    // MD3：柔和错误底（抽屉面 + 12% 错误色），不是饱和的 errorContainer 大色块。
+    final ColorScheme scheme = Theme.of(
+      tester.element(_key('srs-field-ai-reply-error')),
+    ).colorScheme;
+    expect(
+      errorCard.color,
+      Color.alphaBlend(
+        scheme.error.withValues(alpha: 0.12),
+        scheme.surfaceContainerHigh,
+      ),
+    );
+    expect(errorCard.color, isNot(scheme.errorContainer));
+    expect(errorCard.borderColor, scheme.error.withValues(alpha: 0.45));
     for (final String key in <String>[
       'srs-field-ai-reply-error-text',
       'srs-field-ai-show-reply',

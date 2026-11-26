@@ -416,7 +416,7 @@ class _FushiCardState extends State<FushiCard>
       ),
     );
     final Widget card = isGlassDesign(context)
-        ? _buildGlassCard(context, content)
+        ? _buildGlassCard(context, content, toneColors: toneColors)
         : ContextMenuTrigger(
             // 右键菜单不再硬绑鼠标次按钮：改由绑定表决定哪个鼠标键唤出（默认仍是右键），
             // 用户把右键绑给页面动作时菜单自动让位。InkWell 只留 tap / longPress。
@@ -556,8 +556,22 @@ class _FushiCardState extends State<FushiCard>
   /// 点击面是 [FushiAppleRow]（同 MD3 的 InkWell）：没有 FushiFocusRoot 时它
   /// 自己就是 Tab 停靠点（Enter / 手柄 A → onTap，强调色焦点描边）；有焦点根时
   /// 交给外层 FushiFocusTarget，行自身不再取焦点（一卡一个停靠点）。
-  Widget _buildGlassCard(BuildContext context, Widget content) {
+  Widget _buildGlassCard(
+    BuildContext context,
+    Widget content, {
+    required FushiCardColors? toneColors,
+  }) {
     final FushiAppleColors apple = appleColorsOf(context);
+    // 配色变体（[FushiCard.tone]）的淡染底叠在实色组底上（不直接透到页面
+    // 背景），调用点显式 color 仍优先；neutral 交回组底默认色。
+    final Color? surfaceColor =
+        widget.color ??
+        (toneColors == null
+            ? null
+            : Color.alphaBlend(
+                toneColors.container,
+                apple.secondaryGroupedBackground,
+              ));
     final BorderRadius radius =
         widget.borderRadius ?? FushiAppleMetrics.of(context).groupBorderRadius;
     final bool interactive = widget.onTap != null || widget.onLongPress != null;
@@ -604,7 +618,7 @@ class _FushiCardState extends State<FushiCard>
               !widget.grouped &&
               (widget.onTap != null || widget.onLongPress != null),
           child: FushiAppleGroupSurface(
-            color: widget.color,
+            color: surfaceColor,
             borderRadius: radius,
             clipBehavior: widget.clipBehavior,
             child: body,

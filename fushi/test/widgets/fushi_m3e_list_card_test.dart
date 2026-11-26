@@ -144,6 +144,44 @@ void main() {
       expect(text.text.style?.color, _scheme.onPrimaryContainer);
     });
 
+    testWidgets('Apple：配色变体淡染底叠在组底上，中性卡仍用组底默认色', (WidgetTester tester) async {
+      await _pump(
+        tester,
+        const Column(
+          children: <Widget>[
+            FushiCard(
+              key: ValueKey<String>('tone'),
+              tone: FushiCardTone.error,
+              child: Text('错'),
+            ),
+            FushiCard(key: ValueKey<String>('plain'), child: Text('中性')),
+          ],
+        ),
+        glass: true,
+      );
+      Color? surfaceOf(String key) => tester
+          .widget<FushiAppleGroupSurface>(
+            find
+                .descendant(
+                  of: find.byKey(ValueKey<String>(key)),
+                  matching: find.byType(FushiAppleGroupSurface),
+                )
+                .first,
+          )
+          .color;
+      final FushiAppleColors apple = appleColorsOf(
+        tester.element(find.byKey(const ValueKey<String>('tone'))),
+      );
+      expect(
+        surfaceOf('tone'),
+        Color.alphaBlend(
+          apple.destructive.withValues(alpha: 0.15),
+          apple.secondaryGroupedBackground,
+        ),
+      );
+      expect(surfaceOf('plain'), isNull);
+    });
+
     testWidgets('独立可点卡不形变（只抬升 + 按压回弹）', (WidgetTester tester) async {
       await _pump(
         tester,
