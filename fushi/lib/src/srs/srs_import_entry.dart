@@ -10,7 +10,7 @@
 ///   （[runSrsTextImportFile]）。
 /// - 导出：选项（学习进度 / 牌组预设 / 兼容 Anki，见 srs_export_options_dialog.dart；
 ///   记住上次的选择；范围里有 FSRS-7 牌组时对话框内提示「Anki 里会改用 FSRS-6」）→
-///   `exportAnkiPackageFile`（流式写暂存文件）→ 桌面「另存为」/ 移动端系统分享。
+///   `exportAnkiPackageFileInBackground`（后台 isolate 流式写暂存文件）→ 桌面「另存为」/ 移动端系统分享。
 /// - 从制卡历史导入：`mined_sentences` → 当前 profile 的默认牌组（见
 ///   srs_mined_history_import.dart），确认框写明导入到哪个 profile。
 ///
@@ -208,7 +208,7 @@ Future<bool> srsExportScopeUsesFsrs7(SrsDbStore store, {String? deckId}) async {
 }
 
 /// 导出 [deckId] 子树（null = 全部）为 .apkg，流式写到 [file]（整包不进内存）；媒体从
-/// [media] 读。
+/// [media] 读。导出整个在后台 isolate 里跑（[exportAnkiPackageFileInBackground]）。
 Future<SrsAnkiExport> buildSrsAnkiExport({
   required SrsDbStore store,
   required SrsMediaStore? media,
@@ -216,11 +216,11 @@ Future<SrsAnkiExport> buildSrsAnkiExport({
   String? deckId,
   SrsAnkiExportOptions options = const SrsAnkiExportOptions(),
 }) async {
-  await exportAnkiPackageFile(
+  await exportAnkiPackageFileInBackground(
     store: store,
     file: file,
     deckId: deckId,
-    loadMedia: media == null ? null : (String name) => media.load(name),
+    mediaDirectory: media?.root.path,
     options: options,
   );
   return SrsAnkiExport(

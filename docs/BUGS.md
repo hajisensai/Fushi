@@ -45,6 +45,11 @@
 |---|:--:|:--:|---|
 | [BUG-5524](bugs/BUG-5524-home-apple-collapsed-title-covered.md) | ✅ | ✅ | home-apple-collapsed-title-covered |
 | [BUG-5523](bugs/BUG-5523-srs-apple-status-bar-seam.md) | ✅ | ✅ | srs-apple-status-bar-seam |
+> 共 4770 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5531](bugs/BUG-5531-srs-export-filtered-review-ease-zero.md) | ✅ | ✅ | srs-export-filtered-review-ease-zero |
 > 共 4803 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |

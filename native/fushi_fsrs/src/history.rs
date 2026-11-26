@@ -89,6 +89,32 @@ pub enum Origin {
     Other,
 }
 
+impl Origin {
+    /// 线格式 / 列里的 `origin` 原文：缺省 = fushi（Dart `SrsReviewLog.fromJson` 同缺省）。
+    pub fn of_wire(origin: Option<&str>) -> Origin {
+        match origin {
+            None | Some("fushi") => Origin::Fushi,
+            Some("anki") => Origin::Anki,
+            Some(_) => Origin::Other,
+        }
+    }
+}
+
+/// 单次作答计入学习用时的上限（毫秒，与 Anki「最长作答秒数」默认 60 秒同口径；Dart `kSrsMaxAnswerDurationMs` 同值）。
+/// 日志里存**真实**用时（2026-11-26 起；之前的版本在记日志时就封到这个值），封顶只在把用时拿去聚合 / 当输入的地方做
+/// （[counted_answer_ms]），走神、切出去之类的长停顿不把统计撑爆，用户看到的数与以前一样。
+pub const MAX_COUNTED_ANSWER_MS: i64 = 60_000;
+
+/// 一条日志计入学习用时（复习统计投影、今天的「按分钟」每日上限、RWKV 输入行）的作答用时：负数按 0；不是 Anki 来源的
+/// （Fushi 自己记的）封到 [MAX_COUNTED_ANSWER_MS]。Anki 导入的照 Anki 记的值算——它已按那份集合的 `maxTaken` 封过，
+/// 以前也是原值进统计，这里不改它。
+pub fn counted_answer_ms(origin: Origin, dur: i64) -> i64 {
+    match origin {
+        Origin::Anki => dur.max(0),
+        Origin::Fushi | Origin::Other => dur.clamp(0, MAX_COUNTED_ANSWER_MS),
+    }
+}
+
 /// 选取规则需要的一条日志（两条入口各自解出这一形状）。
 #[derive(Debug, Clone)]
 pub struct Log<'a> {
@@ -639,11 +665,7 @@ fn parse_wire<'a>(
         Some(r) if r.get().starts_with('{') => Some(parse_result(r)?),
         _ => None,
     };
-    let origin = match w.origin.as_deref() {
-        None | Some("fushi") => Origin::Fushi,
-        Some("anki") => Origin::Anki,
-        Some(_) => Origin::Other,
-    };
+    let origin = Origin::of_wire(w.origin.as_deref());
     // reviewType 缺省 manual（不是评分类）。
     let rtype = RType::parse(w.rtype.as_deref());
     let rating_type = rtype.is_rating();
@@ -780,6 +802,7 @@ pub struct StatRow {
     pub rating: Option<i64>,
     /// `SrsStatReviewKind` 下标：0 新卡 / 1 学习 / 2 年轻 / 3 成熟 / 4 重学 / 5 筛选。
     pub kind: i64,
+    /// 计入学习用时的作答用时（[counted_answer_ms]：Fushi 记的封顶 60 秒；日志里存的是真实用时）。
     pub dur: i64,
     /// 按到期日排的复习卡复习：上一条有效结果的到期日（> 当天 = 提前复习）；其余 None。
     pub prev_due_day: Option<i64>,
@@ -888,7 +911,7 @@ fn stat_rows(
                 utc_off: extra.utc_off,
                 rating: kind.and(log.rating),
                 kind: kind.unwrap_or(0),
-                dur: extra.dur.max(0),
+                dur: counted_answer_ms(log.origin, extra.dur),
                 // 按回忆率排的复习（日志 alg = rwkv）不看到期日，无所谓「提前」。
                 prev_due_day: if kind.is_some()
                     && !extra.alg_rwkv
@@ -1410,6 +1433,45 @@ mod tests {
             .replace(r#""rating":3"#, r#""rating":2"#)
             .replace(r#""id":"b""#, r#""id":"a""#);
         assert_eq!(effective_ids(&[&mine, &other_rating]), ["a", "b"]);
+    }
+
+    #[test]
+    fn counted_answer_ms_caps_native_durations_only() {
+        assert_eq!(
+            counted_answer_ms(Origin::Fushi, 600_000),
+            MAX_COUNTED_ANSWER_MS
+        );
+        assert_eq!(counted_answer_ms(Origin::Fushi, 59_000), 59_000);
+        assert_eq!(counted_answer_ms(Origin::Fushi, -5), 0);
+        assert_eq!(
+            counted_answer_ms(Origin::Other, 600_000),
+            MAX_COUNTED_ANSWER_MS
+        );
+        assert_eq!(counted_answer_ms(Origin::Anki, 90_000), 90_000);
+        assert_eq!(counted_answer_ms(Origin::Anki, -1), 0);
+    }
+
+    #[test]
+    fn stat_rows_cap_native_durations_but_keep_anki_ones() {
+        // 日志存真实用时（2026-11-26 起）：统计投影里 Fushi 记的单次封顶 60 秒，与以前记录时就封顶的数一样；Anki 导入的
+        // 照 Anki 记的值（以前也是原值进统计）。Anki 事件身份里的用时保持原值（判同一次复习用）。
+        let native = r#"{"id":"n","p":"p","card":"c","kind":"review","hlc":"10:0:A","at":10,"origin":"fushi","rtype":"review","rating":3,"dur":600000,"res":{"queue":"review","dueDay":3}}"#;
+        let anki = r#"{"id":"a","p":"p","card":"c","kind":"review","hlc":"900000:0:anki","at":900000,"origin":"anki","ankiId":900000,"rtype":"review","rating":3,"dur":90000,"res":{"queue":"review","dueDay":5}}"#;
+        let rows = stats_from_json(&[native, anki], &[None, None]).unwrap();
+        let dur_of = |id: &str| rows.iter().find(|r| r.log_id == id).unwrap().dur;
+        assert_eq!(dur_of("n"), MAX_COUNTED_ANSWER_MS);
+        assert_eq!(dur_of("a"), 90_000);
+        let ev = rows
+            .iter()
+            .find(|r| r.log_id == "a")
+            .unwrap()
+            .anki_event
+            .unwrap();
+        assert_eq!(ev.dur, 90_000);
+        // 日志本身（选取 / 线格式）仍是原值。
+        let (log, _, extra) = parse_full(native, None).unwrap();
+        assert_eq!(log.origin, Origin::Fushi);
+        assert_eq!(extra.dur, 600_000);
     }
 
     /// 卡 [card] 上一条 Anki 导入的评分复习（HLC / 时刻都由 revlog id [rid] 派生，与导入器同形）。

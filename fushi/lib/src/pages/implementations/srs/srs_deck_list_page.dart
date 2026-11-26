@@ -54,6 +54,13 @@ import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_remote_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_review_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_sync_settings.dart';
+import 'package:fushi/src/models/store_compliance.dart'
+    show srsDonationAvailable;
+import 'package:fushi/src/srs/donation/srs_donation_banner.dart';
+import 'package:fushi/src/srs/donation/srs_donation_eligibility.dart'
+    show SrsDonationPromptKind;
+import 'package:fushi/src/srs/donation/srs_donation_page.dart';
+import 'package:fushi/src/srs/donation/srs_donation_providers.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/pages/implementations/srs_stat_charts.dart';
 import 'package:fushi/src/pages/implementations/stat_charts.dart'
@@ -690,6 +697,17 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       label: t.srs_note_types_title,
       onPressed: () => srsRunLogged('SrsDeckList.noteTypes', _openNoteTypes),
     ),
+    // 复习历史捐赠：状态、更新捐赠、撤回（横幅关掉后也从这里进）。
+    if (srsDonationAvailable)
+      FushiToolbarItem(
+        key: const ValueKey<String>('srs_donation'),
+        icon: FushiIcons.favorite,
+        label: t.srs_donation_title,
+        onPressed: () => srsRunLogged(
+          'SrsDeckList.donation',
+          () => openSrsDonationPage(context),
+        ),
+      ),
     FushiToolbarItem(
       key: const ValueKey<String>('srs_timeline'),
       icon: FushiIcons.history,
@@ -700,6 +718,12 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       ),
     ),
   ];
+
+  /// 首页捐赠横幅；不该出时为 null（不占横幅列表的位置与间距）。
+  Widget? _donationBanner() {
+    final SrsDonationPromptKind? kind = ref.watch(srsDonationPromptProvider);
+    return kind == null ? null : SrsDonationBanner(kind: kind);
+  }
 
   /// 手机：当前打开的牌组详情页（逐层进入，面包屑 / 返回键回上一层）；null = 首页根层。
   String? _focusId;
@@ -1041,6 +1065,8 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
         SrsScrubErrorNotice(
           gapBelow: FushiDesignTokens.of(context).spacing.gap * 1.5,
         ),
+        // 复习历史捐赠（资格够、没被「以后再说 / 不再提示」压住时）。
+        ?_donationBanner(),
         ..._srsDeckBanners(
           context,
           data: list,

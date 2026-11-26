@@ -474,7 +474,11 @@ fn fold_into(
             l.at,
             &l.rtype,
             learn_json.as_deref(),
-            Some(l.dur),
+            // 「按分钟」的每日上限按计入口径算（Fushi 记的单次封顶 60 秒），与协议 3 `LogState::fold_row` 同一份规则。
+            Some(crate::history::counted_answer_ms(
+                crate::history::Origin::of_wire(Some(&l.origin)),
+                l.dur,
+            )),
             day,
             today,
             today_start,

@@ -1137,10 +1137,8 @@ class _SrsReviewPageState extends ConsumerState<SrsReviewPage>
           out = await store.answerAndStudy(
             detail.card.id,
             rating,
-            durationMs: math.min(
-              _answerClock.elapsedMilliseconds,
-              kSrsMaxAnswerDurationMs,
-            ),
+            // 记真实用时；单次封顶 60 秒只在统计聚合处做（kSrsMaxAnswerDurationMs）。
+            durationMs: _answerClock.elapsedMilliseconds,
             studyDeckId: widget.deckId,
             custom: widget.custom,
           );

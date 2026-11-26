@@ -1143,9 +1143,11 @@ class _LogRow extends StatelessWidget {
           if (days != null && days > 0) t.srs_browse_history_days(n: days),
         ].join(' · '),
       ),
-      trailing: log.durationMs > 0
+      trailing: srsCountedAnswerMs(log) > 0
           ? Text(
-              t.srs_browse_history_seconds(n: (log.durationMs / 1000).round()),
+              t.srs_browse_history_seconds(
+                n: (srsCountedAnswerMs(log) / 1000).round(),
+              ),
             )
           : null,
     );

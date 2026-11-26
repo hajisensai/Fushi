@@ -1634,9 +1634,9 @@ class SrsRemoteStoreService {
     'answerAndStudy': _Op(write: true, (SrsDbStore s, _Args a) async {
       final String card = a.str('card');
       final int rating = a.integer('rating');
-      final int durationMs = a
-          .integer('durationMs')
-          .clamp(0, kSrsMaxAnswerDurationMs);
+      // 日志存真实用时（不封 60 秒，封顶在统计聚合处做：kSrsMaxAnswerDurationMs），只去掉负数。
+      final int rawDurationMs = a.integer('durationMs');
+      final int durationMs = rawDurationMs < 0 ? 0 : rawDurationMs;
       final String? deck = a.optStr('deck');
       final SrsCustomStudy? custom = SrsRemoteWire.customStudyFrom(
         a.raw('custom'),

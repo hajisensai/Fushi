@@ -10,7 +10,6 @@
 // 对应的保证由「投影行被删光后整份重建复原、且 = 增量 = 参考实现」覆盖（[expectRebuildRestores]：先经原始通道
 // 删掉派生表 `stats` 的行再 [SrsDbStore.rebuildCaches]，只比重建前后同值测不出重建坏掉）。
 import 'dart:io';
-import 'dart:math' as math;
 
 import 'package:drift/drift.dart' hide isNull, isNotNull;
 import 'package:fushi_core/fushi_core.dart';
@@ -167,7 +166,8 @@ Future<List<String>> fromReference(SrsDbStore s, SrsDayContext day) async {
             hour: ((l.occurredAt + offsetMs) % _dayMs) ~/ _hourMs,
             rating: rating,
             kind: kind,
-            durationMs: math.max(0, l.durationMs),
+            // 日志存真实用时，投影按计入口径（Fushi 记的单次封顶 60 秒）。
+            durationMs: srsCountedAnswerMs(l),
             early:
                 l.algorithm != SrsAlgorithm.rwkv.wire &&
                 l.reviewType == SrsReviewType.review &&
@@ -241,6 +241,8 @@ void main() {
     now += 26 * 3600 * 1000;
     await store.answer(cards[0], 4, durationMs: 2500);
     await store.answer(cards[2], 2, durationMs: 9000);
+    // 走神 10 分钟：日志存原值，投影封到 60 秒（参考实现同口径）。
+    await store.answer(cards[3], 3, durationMs: 600000);
   }
 
   test('增量 = 整份重建 = 参考实现（按卡分组、前身并到继承卡、选取后分类）', () async {
@@ -248,8 +250,22 @@ void main() {
     final List<String> incremental = await projectionRows(store);
     expect(incremental, isNotEmpty);
     final List<String> want = await fromReference(store, jst);
-    expect(want.where((String s) => s.startsWith('r ')), hasLength(6 * 3 + 3));
+    expect(want.where((String s) => s.startsWith('r ')), hasLength(6 * 3 + 4));
     expect(await fromLoader(store, jst), want);
+    // 10 分钟那次：日志原值，统计行封到 60 秒。
+    final List<String> ids = <String>[
+      for (final SrsCardCacheRow c in await store.allCardRows()) c.id,
+    ]..sort();
+    expect((await store.history(ids[3])).lastEffective!.durationMs, 600000);
+    final List<int> durations = <int>[
+      for (final StatReviewRow r in (await statsRowsOf(
+        store,
+        day: jst,
+      )).reviews)
+        r.durationMs,
+    ];
+    expect(durations, contains(kSrsMaxAnswerDurationMs));
+    expect(durations.every((int d) => d <= kSrsMaxAnswerDurationMs), isTrue);
 
     await expectRebuildRestores(store, 'stats', 'DELETE FROM stats');
     expect(await projectionRows(store), incremental);

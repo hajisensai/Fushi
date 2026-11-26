@@ -65,6 +65,26 @@ void main() {
       );
     });
 
+    test('复习历史捐赠 iOS 不加，判据只写在 store_compliance.dart 一处', () {
+      expect(srsDonationAvailableOn(isIOS: true), isFalse);
+      expect(srsDonationAvailableOn(isIOS: false), isTrue);
+      expect(
+        compactCode(read('lib/src/models/store_compliance.dart')),
+        contains('boolsrsDonationAvailableOn({requiredboolisIOS})=>!isIOS;'),
+      );
+      // 消费端只问判据，不自己判平台。
+      for (final FileSystemEntity e in Directory(
+        'lib/src/srs/donation',
+      ).listSync(recursive: true)) {
+        if (e is! File || !e.path.endsWith('.dart')) continue;
+        expect(
+          maskComments(e.readAsStringSync()),
+          isNot(contains('isIOS')),
+          reason: '${e.path} 不得自己判 iOS，问 srsDonationAvailable。',
+        );
+      }
+    });
+
     test('内置源 / 扩展宿主 / 下载中心在 iOS 上仍然受限（放开用户服务器时不变）', () {
       // 逐个点名，而不是只靠上面「遍历全部枚举值」：有人把某个值从枚举里删掉、
       // 改成恒 true 的独立判据（照用户服务器那样「放开」）时，遍历测试照样绿。

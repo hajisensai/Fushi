@@ -196,7 +196,7 @@ impl ScanLog {
             rtype: self.rtype,
             rating: opt_of(self.rating),
             at: self.at,
-            dur: self.dur,
+            dur: crate::history::counted_answer_ms(self.origin, self.dur),
             res: self.res.as_ref().map(ScanOutcome::outcome),
             mem_alg: self.mem_alg,
             restore: self.restore,

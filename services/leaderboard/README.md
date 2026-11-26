@@ -25,14 +25,14 @@ Cloudflare Worker + D1 + R2。设计与分期见
 | Workers 请求 | 10 万次/天 | 匿名读边缘缓存 60 秒（缓存键只含白名单参数）；`READ_LIMITER` 每 IP 每分钟 120 次；未鉴权写入口先过 `AUTH_LIMITER`（每 IP 每分钟 10 次，IPv6 按 /64）；图片走边缘缓存 |
 | D1 读 | 500 万行/天 | 榜单 / 人气 / 名次读定时快照（每 30 分钟一次，只读周期汇总表的当期段）；读者数、行数、周/月计分、周/月作品读者数全部增量维护；书架 / 作品读者用游标分页（每页只读 limit+1 行）；`test/plans.test.js` 在查询计划上断言每个读接口不全表扫描、不建临时 B 树；处理台安装统计（一次 ≈ 20 条全表聚合、实测约 30 万行）只读快照，定时任务每 6 小时重算一次，手动刷新冷却 15 分钟（2026-11-10 曾因每次打开都现场算而超额） |
 | D1 写 | 10 万行/天 | 增量上报；**全局日预算 `write_rows` 8 万行**（超了 503，次日恢复）；每账户每天 2 万行；安装统计心跳另有日预算 `ping` 4000 个安装（每个约 5 行，同一安装当天第二次心跳只读不写） |
-| R2 存储 | 10 GB | 头像 ≤ 64KB、封面 ≤ 96KB；反馈截图 ≤ 1.5 MiB、日志 ≤ 2 MiB（结案 90 天清）；**反馈视频 ≤ 100 MB（十进制 1e8 字节，压在 Cloudflare Free / Pro 的 100 MB 请求体上限内），结案 7 天 / 创建 30 天（先到者）到期清理**，流式写入不进 Worker 内存；**总配额 8 GiB**（超了 507，按声明长度预占）；删除即归还。总配额分两池：**反馈视频单独 1 GiB**（`media_usage.video_bytes`，满了 507 `video_quota`，只拒视频），头像 / 封面 / 反馈截图与日志用其余 7 GiB（满了 507 `media_quota`），两池互不挤占；**视频每上传 IP 每天 ≤ 200 MB**（按声明长度计，超了 429） |
+| R2 存储 | 10 GB | 头像 ≤ 64KB、封面 ≤ 96KB；反馈截图 ≤ 1.5 MiB、日志 ≤ 2 MiB（结案 90 天清）；**反馈视频 ≤ 100 MB（十进制 1e8 字节，压在 Cloudflare Free / Pro 的 100 MB 请求体上限内），结案 7 天 / 创建 30 天（先到者）到期清理**，流式写入不进 Worker 内存；**总配额 8 GiB**（超了 507，按声明长度预占）；删除即归还。总配额分三池：**反馈视频单独 1 GiB**（`media_usage.video_bytes`，满了 507 `video_quota`，只拒视频），**SRS 复习历史捐赠单独 2 GiB**（`media_usage.donation_bytes`，永不过期，满了 507 `donation_quota`，只拒捐赠），头像 / 封面 / 反馈截图与日志用其余 5 GiB（满了 507 `media_quota`），三池互不挤占；**视频每上传 IP 每天 ≤ 200 MB**（按声明长度计，超了 429） |
 | R2 操作 | A 类 100 万/月、B 类 1000 万/月 | 全局日预算 `media` 3000 次上传；出图先查边缘缓存 |
 | 发信：Brevo SMTP（配了 `SMTP_*` 时）或 Resend | Brevo 300 封/天；Resend 100 封/天、3000 封/月 | 全局日预算 `email` 默认 90 封，`wrangler.toml` 走 Brevo 时设为 280；每 IP 每小时 5 封、每邮箱每小时 3 封 / 每天 10 封 |
 
 代价（如实）：D1 每写一行、每个受影响索引另计一行，所以超大书架（8000 部）首次同步约 4 万行，会被拆到两三天里
 续传；几百部的普通书架一次传完。榜单最多滞后 30 分钟（响应里带 `computedAt`）。
 
-预算可用 vars 覆盖：`BUDGET_WRITE_ROWS` / `BUDGET_MEDIA` / `BUDGET_REGISTER` / `BUDGET_EMAIL` / `BUDGET_FEEDBACK`（每天新反馈条数，默认 300）/ `BUDGET_PING`（每天记入统计的安装数，默认 4000）/ `MEDIA_QUOTA_BYTES` / `VIDEO_QUOTA_BYTES`（反馈视频池，默认 1 GiB，最多切走总配额一半；从总配额里切出，不另加）。反馈截图与日志和头像 / 封面共用普通池与 `media` 预算，反馈视频另占视频池（同样扣 `media` 次数），已结案 90 天的反馈附件由定时任务清掉。
+预算可用 vars 覆盖：`BUDGET_WRITE_ROWS` / `BUDGET_MEDIA` / `BUDGET_REGISTER` / `BUDGET_EMAIL` / `BUDGET_FEEDBACK`（每天新反馈条数，默认 300）/ `BUDGET_PING`（每天记入统计的安装数，默认 4000）/ `MEDIA_QUOTA_BYTES` / `VIDEO_QUOTA_BYTES`（反馈视频池，默认 1 GiB，最多切走总配额一半；从总配额里切出，不另加）/ `DONATION_QUOTA_BYTES`（SRS 捐赠池，默认 2 GiB，最多切走总配额四分之一；同样从总配额里切出）。反馈截图与日志和头像 / 封面共用普通池与 `media` 预算，反馈视频另占视频池（同样扣 `media` 次数），已结案 90 天的反馈附件由定时任务清掉。
 
 代价（如实）：视频池按「30 天保留 × 每 IP 每天 200 MB」算，五六个 IP 一天就能把视频池占满，之后到最早的视频过期前新视频一律 507 `video_quota`（App 留在待传区、24 小时补传窗口内可重试）；头像 / 封面 / 截图不受影响。
 
@@ -79,6 +79,7 @@ dashboard 的 Email Sending 里 Onboard 发件域名），否则用 Resend（`wr
 > ⚠️ **新增迁移的版本必须先迁移再部署**（Actions 部署每次都会自动先迁移再部署；本机部署则先跑上面的 `d1 migrations apply --remote`）。
 > `0007_feedback_video_mine.sql`（`feedback.has_video` + 两个索引）：没迁移就部署时视频补传、`GET /v1/feedback/mine` 与定时清理会 500。
 > `0008_media_video_pool.sql`（`media_usage.video_bytes`，反馈视频配额池）：没迁移就部署时视频补传与视频到期清理会 500。
+> `0027_srs_donations.sql`（SRS 捐赠四张新表 + `media_usage.donation_bytes` 捐赠配额池）：没迁移就部署时捐赠上传 / 撤回 / 统计会 500（其余接口不受影响）——**先迁移**。
 > 例如 `0006_feedback_dev_notes.sql`：新代码的处理台列表显式选 `ai_summary` 列，没迁移就部署时 `/v1/dev/feedback` 与网页 `/dev` 会整页 500（反馈人接口不受影响）。迁移只加列，先迁移、旧代码照跑不受影响。
 > `0011_install_stats.sql`（`installs` / `install_days` 两张表 + `feedback.install_id`）：没迁移就部署时 `POST /v1/ping`、反馈提交、处理台详情与定时清理都会 500——**这条迁移碰了反馈提交，务必先迁移**。
 > `0014_cover_replace_guard.sql`（`cover_votes.confirmed` / `works.cover_cleared_at` 两列 + `cover_mismatches` 表 + 一个部分索引）：纯增量，旧 Worker 在线时先迁移不受影响；没迁移就部署时封面投票 / 上传 / 物化、删号与定时任务都会 500——**务必先迁移**（Actions 部署自动先迁移）。
@@ -193,6 +194,27 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 
 社交写（好友 / 屏蔽 / 举报）按账户每小时 120 次限流（`LIMITS.socialWritePerHour`）。被管理员隐藏的账户
 不出现在任何列表里，也不能被加好友或屏蔽。
+
+## SRS 复习历史捐赠（迁移 0027，`src/srs_donations.js`）
+
+用户自愿把脱敏复习历史（Anki 兼容 `.apkg`）捐给 anki-rwkv 训练调度模型（设计 `docs/specs/2026-11-26-srs-review-donation.md`）。
+文件存 R2 `srs-donations/<donorId>.apkg`，一个捐赠者一个文件，重传覆盖。字节占捐赠专用配额池（`budget.js` 的 `donation` 池，`media_usage.donation_bytes`，
+`DONATION_QUOTA_BYTES` 默认 2 GiB，满了 507 `donation_quota`）：捐赠包永不过期，不与 30 天过期的反馈视频共池；
+上传按声明长度预占（重传只预占比旧文件多出的部分，变小归还差额），撤回整份归还。
+
+| 方法 | 路径 | 鉴权 | 作用 |
+|---|---|---|---|
+| PUT | `/v1/srs-donations/:donorId` | Bearer donorKey | body = apkg 原始字节（必须 `Content-Length`，≤ 64 MiB，zip 魔数，流式写 R2），头 `x-donation-reviews` / `x-donation-cards` / 可选 `x-donation-app-version` → `{donated: true, updatedAt}`。首次上传的 key 认领该 ID（库里只存 SHA-256），之后换 key 403 `donor_key_mismatch`；每 donorId 每小时 2 次、每 IP 每日 128 MiB（429 `upload_quota_daily`） |
+| GET | `/v1/srs-donations/:donorId` | Bearer donorKey | `{donated, reviews, cards, updatedAt}`，无记录 `{donated: false}` |
+| DELETE | `/v1/srs-donations/:donorId` | Bearer donorKey | 撤回：删文件与行、记撤回（进下一批的撤回清单）→ `{donated: false}`，幂等 |
+| POST | `/v1/admin/srs-donations/batch` | Basic | 生成私有批次（快照全部捐赠 + 未报告的撤回，token 30 天有效）→ `{url, token, expiresAt, donors, reviews, withdrawn}` |
+| GET | `/v1/srs-donations/stats` | 无（公开） | `{donors, reviews}`：捐赠者数与复习条数合计（无记录各为 0）；其他方法 405，走 READ_LIMITER |
+| GET | `/v1/admin/srs-donations` | Basic | 统计（含捐赠池占用 `pool: {usedBytes, quotaBytes}`）与历史批次 |
+| GET | `/d/srs-donations/<token>/`、`…/<donorId>.apkg`、`…/withdrawn.txt` | 链接即凭据 | 批次 JSON 清单 / 文件下载（attachment）/ 撤回 ID；过期或快照后已撤回 404 |
+
+每月：`ADMIN_USER=… ADMIN_PASS=… node scripts/srs_donation_batch.mjs` 打印链接交给作者（`--stats` 只看数字，不生成批次——
+生成会把未报告的撤回标成已报告）。捐赠者数到 30 的提醒不在服务端做：所有者本地的 kaguya bot（fushi-bot）每小时轮询
+公开的 `GET /v1/srs-donations/stats`，第一次 ≥ 30 人时在群里 @所有者；服务端没有 webhook / 里程碑表。
 
 ## 测试
 

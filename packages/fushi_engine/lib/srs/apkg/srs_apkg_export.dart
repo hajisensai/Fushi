@@ -22,10 +22,38 @@ import 'package:fushi_engine/srs/apkg/srs_anki_package.dart'
 import 'package:fushi_engine/srs/apkg/srs_apkg_common.dart';
 import 'package:fushi_engine/srs/apkg/srs_export_options.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
+import 'package:fushi_engine/srs/srs_media_store.dart';
+import 'package:fushi_engine/srs/srs_store_background.dart';
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 
 /// 导出范围内的媒体文件读取（没有返回 null，不进包）。
 typedef SrsMediaLoad = Future<Uint8List?> Function(String name);
+
+/// 复习历史捐赠的脱敏策略（`srs_donation_export.dart` 用；普通导出不传，行为与字节不变）。
+///
+/// 带上它时导出器固定做这些（docs/specs/2026-11-26-srs-review-donation.md「捐赠包格式」）：
+/// revlog 只导 [SrsLogKind.review]、`time` 写真实用时不截断、只导有复习日志的笔记；牌组 / 预设 /
+/// 笔记类型 / 模板名换成编号，字段名由 [fieldNames] 给，模板正文换成只引用首字段的占位、CSS 清空，
+/// 标签清空，guid 换成 `sha256(guid)` 前 10 位；字段值由 [fieldValues] 给（不保留的写空串）；另建
+/// `fushi_revlog_origin`（每条 revlog 的 [SrsReviewLog.origin]）与 `fushi_donation_meta`（[meta]）两张表。
+/// 不带 fushi-ext、不带媒体由调用方的 [SrsAnkiExportOptions.ankiCompatible] 与不传 `loadMedia` 保证。
+class SrsApkgRedaction {
+  const SrsApkgRedaction({
+    required this.fieldValues,
+    required this.fieldNames,
+    required this.meta,
+  });
+
+  /// 笔记的字段值，按 `type.fields` 的顺序；不保留的写空串。
+  final List<String> Function(SrsNoteView note, SrsNoteTypeView type)
+  fieldValues;
+
+  /// 笔记类型的字段名，按 `type.fields` 的顺序（同一类型内不重名）。
+  final List<String> Function(SrsNoteTypeView type) fieldNames;
+
+  /// `fushi_donation_meta` 的全部行（导出时刻 nowMs 与日界 day 由导出器给）。
+  final Map<String, String> Function(SrsDayContext day, int nowMs) meta;
+}
 
 /// 导出时导出的日志种类（导入锚点 / 移交是 Fushi 内部事件，只进 fushi-ext）。
 const Set<String> _revlogKinds = <String>{
@@ -33,6 +61,11 @@ const Set<String> _revlogKinds = <String>{
   SrsLogKind.manual,
   SrsLogKind.reschedule,
 };
+
+const String _latexPre =
+    '\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n'
+    '\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n'
+    '\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n';
 
 const String _schema11 = '''
 CREATE TABLE col (id integer PRIMARY KEY, crt integer NOT NULL, mod integer NOT NULL,
@@ -100,12 +133,14 @@ Future<void> exportAnkiPackageFile({
   String? deckId,
   SrsMediaLoad? loadMedia,
   SrsAnkiExportOptions options = const SrsAnkiExportOptions(),
+  SrsApkgRedaction? redaction,
 }) async {
   final File part = File('${file.path}.part');
   try {
     await _Exporter(
       store,
       options,
+      redaction,
     ).run(part, deckId: deckId, loadMedia: loadMedia);
     await part.rename(file.path);
   } on Object {
@@ -113,6 +148,42 @@ Future<void> exportAnkiPackageFile({
     rethrow;
   }
 }
+
+/// 同 [exportAnkiPackageFile]，整个导出（读库、建集合 SQLite、压缩、拷媒体）在一次性后台 isolate 里跑
+/// （[srsRunWithStoreInBackground]），UI isolate 只等结果。产品代码一律走这里。
+///
+/// 媒体读取器（闭包）发不过去：给 [mediaDirectory]（[SrsMediaStore.root] 的路径），后台按它重建
+/// [SrsMediaStore]；null = 不带媒体。
+Future<void> exportAnkiPackageFileInBackground({
+  required SrsDbStore store,
+  required File file,
+  String? deckId,
+  String? mediaDirectory,
+  SrsAnkiExportOptions options = const SrsAnkiExportOptions(),
+}) => srsRunWithStoreInBackground<void>(
+  store,
+  _exportInBackground(file.path, deckId, mediaDirectory, options),
+  debugName: 'srs-apkg-export',
+);
+
+/// [exportAnkiPackageFileInBackground] 的后台一半（顶层函数：闭包只捕获可发送的值）。
+Future<void> Function(SrsDbStore) _exportInBackground(
+  String path,
+  String? deckId,
+  String? mediaDirectory,
+  SrsAnkiExportOptions options,
+) => (SrsDbStore store) {
+  final SrsMediaStore? media = mediaDirectory == null
+      ? null
+      : SrsMediaStore(Directory(mediaDirectory));
+  return exportAnkiPackageFile(
+    store: store,
+    file: File(path),
+    deckId: deckId,
+    loadMedia: media?.load,
+    options: options,
+  );
+};
 
 Future<void> _deleteQuietly(FileSystemEntity e) async {
   try {
@@ -184,10 +255,21 @@ class _ExportCard {
 }
 
 class _Exporter {
-  _Exporter(this.store, this.options);
+  _Exporter(this.store, this.options, this.redaction);
 
   final SrsDbStore store;
   final SrsAnkiExportOptions options;
+
+  /// null = 普通导出。
+  final SrsApkgRedaction? redaction;
+
+  /// 脱敏时的编号（牌组 id → `Deck <n>`、预设 id → `Preset <n>`），写牌组 JSON 前按 Anki 数字 id 排序编好。
+  final Map<String, int> _deckNo = <String, int>{};
+  final Map<int, int> _presetNo = <int, int>{};
+
+  /// 这张卡有没有进捐赠包的复习日志。
+  static bool _hasReview(SrsCardHistory h) =>
+      h.effective.any((SrsReviewLog l) => l.kind == SrsLogKind.review);
 
   int _ankiDeckId(String id) =>
       id == store.defaultDeckId ? 1 : SrsIds.ankiNumericId(id);
@@ -237,10 +319,21 @@ class _Exporter {
         <String, List<_ExportCard>>{};
     final Set<String> usedDecks = <String>{store.defaultDeckId};
     int minDueDay = today;
+    // 脱敏：没有一张（模板还在的）卡有复习日志的笔记不进包。
+    final Set<String> unreviewed = <String>{};
     for (final SrsNoteView n in notes) {
       final SrsNoteTypeView? t =
           types[n.noteTypeId] ?? await store.noteType(n.noteTypeId);
       if (t == null) continue;
+      if (redaction != null &&
+          !(visibleCardsOf[n.id] ?? const <SrsCardCacheRow>[]).any(
+            (SrsCardCacheRow c) =>
+                _hasReview(histories[c.id]!) &&
+                t.templates.any((SrsTemplateDef x) => x.id == c.templateId),
+          )) {
+        unreviewed.add(n.id);
+        continue;
+      }
       types[n.noteTypeId] = t;
       final List<_ExportCard> cs = <_ExportCard>[];
       for (final SrsCardCacheRow c
@@ -260,6 +353,9 @@ class _Exporter {
         }
       }
       cardsOf[n.id] = cs;
+    }
+    if (unreviewed.isNotEmpty) {
+      notes.removeWhere((SrsNoteView n) => unreviewed.contains(n.id));
     }
     // crt 取最早到期日之前：review 卡的 due（相对 crt 的天数）恒非负。
     final int crtDay = minDueDay;
@@ -292,6 +388,15 @@ class _Exporter {
       final PreparedStatement insRev = db.prepare(
         'INSERT INTO revlog VALUES (?,?,?,?,?,?,?,?,?)',
       );
+      if (redaction != null) {
+        db.execute(
+          'CREATE TABLE fushi_revlog_origin '
+          '(id INTEGER PRIMARY KEY, origin TEXT NOT NULL)',
+        );
+      }
+      final PreparedStatement? insOrigin = redaction == null
+          ? null
+          : db.prepare('INSERT INTO fushi_revlog_origin VALUES (?,?)');
       final Map<String, int> revlogIds = <String, int>{};
       final Map<String, int> extLogCards = <String, int>{};
       final Map<String, Object?> extNotes = <String, Object?>{};
@@ -306,10 +411,13 @@ class _Exporter {
           if (t == null) continue;
           // 释义样式去重的引用行展开回内联 `<style>`：导出包自包含，AnkiDroid / AnkiMobile
           // 不必认识 `<link>`、也不必带共享样式文件（Fushi 回导时会重新去重）。
-          final List<String> values = <String>[
-            for (final SrsFieldDef f in t.fields)
-              await store.expandStyles(n.field(f.id)),
-          ];
+          final SrsApkgRedaction? red = redaction;
+          final List<String> values = red != null
+              ? red.fieldValues(n, t)
+              : <String>[
+                  for (final SrsFieldDef f in t.fields)
+                    await store.expandStyles(n.field(f.id)),
+                ];
           for (final String v in values) {
             mediaRefs.addAll(srsMediaRefsIn(v));
           }
@@ -319,11 +427,11 @@ class _Exporter {
           final int nid = SrsIds.ankiNumericId(n.id);
           insNote.execute(<Object?>[
             nid,
-            n.guid,
+            red != null ? _hashedGuid(n.guid) : n.guid,
             t.ankiNum,
             nowSecs,
             -1,
-            n.tags.isEmpty ? '' : ' ${n.tags.join(' ')} ',
+            red != null || n.tags.isEmpty ? '' : ' ${n.tags.join(' ')} ',
             values.join('\x1f'),
             sort,
             _checksum(sort),
@@ -377,7 +485,11 @@ class _Exporter {
               if (l.cardId != c.id) extLogCards[l.id] = cid;
             }
             for (final SrsReviewLog l in ec.history.effective) {
-              if (_revlogKinds.contains(l.kind)) revlogQueue.add((l, cid));
+              if (red != null
+                  ? l.kind == SrsLogKind.review
+                  : _revlogKinds.contains(l.kind)) {
+                revlogQueue.add((l, cid));
+              }
             }
           }
         }
@@ -402,22 +514,41 @@ class _Exporter {
             id,
             cid,
             -1,
-            l.isRatingReview ? (l.rating ?? 0) : 0,
+            _revlogEase(l),
             ivl,
             lastIvl[cid] ?? 0,
             r == null || (r.queue == SrsQueue.newCard && r.reps == 0)
                 ? 0
                 : (r.ease ?? 2500),
-            min(l.durationMs, 60000),
+            // 捐赠包写真实用时（训练要用），普通导出同 Anki 截到 60 s（kSrsMaxAnswerDurationMs，与导入判等价同一封顶）。
+            redaction != null
+                ? l.durationMs
+                : min(l.durationMs, kSrsMaxAnswerDurationMs),
             SrsReviewType.toAnki(l.reviewType),
           ]);
+          insOrigin?.execute(<Object?>[id, l.origin]);
           lastIvl[cid] = ivl;
         }
 
+        final SrsApkgRedaction? red = redaction;
+        final Map<int, int> typeNo = red == null
+            ? const <int, int>{}
+            : <int, int>{
+                for (final (int i, int num)
+                    in (types.values
+                            .map((SrsNoteTypeView t) => t.ankiNum)
+                            .toList()
+                          ..sort())
+                        .indexed)
+                  num: i + 1,
+              };
         final Map<String, Object?> models = <String, Object?>{
           for (final SrsNoteTypeView t in types.values)
-            '${t.ankiNum}': _modelJson(t, nowSecs, mediaRefs),
+            '${t.ankiNum}': red != null
+                ? _redactedModelJson(t, red, nowSecs, typeNo[t.ankiNum]!)
+                : _modelJson(t, nowSecs, mediaRefs),
         };
+        if (red != null) _numberDecks(tree, usedDecks);
         final (Map<String, Object?> decks, Map<String, Object?> dconf) =
             _decksJson(tree, usedDecks, nowSecs);
         db.execute(
@@ -451,11 +582,29 @@ class _Exporter {
             '{}',
           ],
         );
+        if (red != null) {
+          db.execute(
+            'CREATE TABLE fushi_donation_meta '
+            '(key TEXT PRIMARY KEY, value TEXT NOT NULL)',
+          );
+          final PreparedStatement insMeta = db.prepare(
+            'INSERT INTO fushi_donation_meta VALUES (?,?)',
+          );
+          try {
+            for (final MapEntry<String, String> e
+                in red.meta(day, nowMs).entries) {
+              insMeta.execute(<Object?>[e.key, e.value]);
+            }
+          } finally {
+            insMeta.close();
+          }
+        }
         db.execute('COMMIT');
       } finally {
         insNote.close();
         insCard.close();
         insRev.close();
+        insOrigin?.close();
       }
 
       ext?.finish(<String, Object?>{
@@ -506,6 +655,109 @@ class _Exporter {
       zip.closeSync();
       await _deleteQuietly(tmp);
     }
+  }
+
+  /// revlog.ease：kind=review 的行写真实评分（含 Anki 导入的筛选牌组复习 type 3，评分 1–4 是真复习），
+  /// 其余（手动改期 / 重排 / 无评分）写 0——Anki 与训练端都按 ease 0 认手动改期。普通导出与捐赠包同一条规则。
+  int _revlogEase(SrsReviewLog l) =>
+      l.kind == SrsLogKind.review ? (l.rating ?? 0) : 0;
+
+  /// 脱敏后的 guid：`sha256(guid)` 前 10 个十六进制位（同一笔记仍同一 guid，不暴露共享牌组来源）。
+  static String _hashedGuid(String guid) =>
+      sha256.convert(utf8.encode(guid)).toString().substring(0, 10);
+
+  /// 脱敏编号：包里的牌组（默认牌组除外）与预设各按 Anki 数字 id 排序编 1、2、3…。
+  void _numberDecks(SrsDeckTree tree, Set<String> used) {
+    final List<String> decks = <String>[
+      for (final String id in used)
+        if (id != store.defaultDeckId && tree[id] != null) id,
+    ]..sort((String a, String b) => _ankiDeckId(a).compareTo(_ankiDeckId(b)));
+    for (final (int i, String id) in decks.indexed) {
+      _deckNo[id] = i + 1;
+    }
+    final List<int> presets = <int>{
+      for (final String id in used)
+        options.withDeckConfigs
+            ? _ankiDeckId(tree[id] == null ? id : tree.paramsOwner(id).id)
+            : 1,
+    }.toList()..sort();
+    for (final (int i, int confId) in presets.indexed) {
+      _presetNo[confId] = i + 1;
+    }
+  }
+
+  /// 脱敏后的牌组全名：每一级换成 `Deck <n>`，层级不变（祖先都在包里，见 [run] 收集 usedDecks）。
+  String _redactedDeckName(SrsDeckTree tree, String id) {
+    final List<String> parts = <String>[];
+    String? d = id;
+    while (d != null) {
+      parts.add(d == store.defaultDeckId ? 'Default' : 'Deck ${_deckNo[d]}');
+      d = tree.parentOf(d);
+    }
+    return parts.reversed.join('::');
+  }
+
+  /// 脱敏后的笔记类型：名字 `NoteType <n>`、字段名由 [red] 给、模板换成只引用首字段的占位、
+  /// CSS 与字段说明清空；模板个数与顺序不变（cards.ord 指向它们）。
+  static Map<String, Object?> _redactedModelJson(
+    SrsNoteTypeView t,
+    SrsApkgRedaction red,
+    int nowSecs,
+    int no,
+  ) {
+    final List<String> names = red.fieldNames(t);
+    final String first = names.isEmpty ? 'Field 1' : names.first;
+    final String q = t.isCloze ? '{{cloze:$first}}' : '{{$first}}';
+    final String a = t.isCloze
+        ? '{{cloze:$first}}'
+        : '{{FrontSide}}<hr id=answer>';
+    final List<int> allOrds = <int>[for (int i = 0; i < names.length; i++) i];
+    return <String, Object?>{
+      'id': t.ankiNum,
+      'name': 'NoteType $no',
+      'type': t.isCloze ? 1 : 0,
+      'mod': nowSecs,
+      'usn': -1,
+      'sortf': 0,
+      'did': 1,
+      'tmpls': <Map<String, Object?>>[
+        for (int i = 0; i < t.templates.length; i++)
+          <String, Object?>{
+            'name': 'Card ${i + 1}',
+            'ord': i,
+            'qfmt': q,
+            'afmt': a,
+            'bqfmt': '',
+            'bafmt': '',
+            'did': null,
+            'bfont': '',
+            'bsize': 0,
+          },
+      ],
+      'flds': <Map<String, Object?>>[
+        for (int i = 0; i < names.length; i++)
+          <String, Object?>{
+            'name': names[i],
+            'ord': i,
+            'sticky': false,
+            'rtl': false,
+            'font': 'Arial',
+            'size': 20,
+            'description': '',
+            'plainText': false,
+            'collapsed': false,
+            'excludeFromSearch': false,
+          },
+      ],
+      'css': '',
+      'latexPre': _latexPre,
+      'latexPost': '\\end{document}',
+      'latexsvg': false,
+      'req': <Object?>[
+        for (int i = 0; i < t.templates.length; i++)
+          <Object?>[i, 'any', allOrds],
+      ],
+    };
   }
 
   /// [type, queue, due, factor]
@@ -622,10 +874,7 @@ class _Exporter {
           },
       ],
       'css': t.css,
-      'latexPre':
-          '\\documentclass[12pt]{article}\n\\special{papersize=3in,5in}\n'
-          '\\usepackage[utf8]{inputenc}\n\\usepackage{amssymb,amsmath}\n'
-          '\\pagestyle{empty}\n\\setlength{\\parindent}{0in}\n\\begin{document}\n',
+      'latexPre': _latexPre,
       'latexPost': '\\end{document}',
       'latexsvg': false,
       'req': <Object?>[
@@ -644,12 +893,17 @@ class _Exporter {
     final Map<String, Object?> dconf = <String, Object?>{};
     for (final String id in used) {
       final SrsDeckView? d = tree[id];
-      final String name = id == store.defaultDeckId
+      final String name = id == store.defaultDeckId || d == null
           ? 'Default'
-          : (d == null ? 'Default' : tree.fullName(id));
+          : redaction != null
+          ? _redactedDeckName(tree, id)
+          : tree.fullName(id);
       final String ownerId = d == null ? id : tree.paramsOwner(id).id;
       // 不带牌组预设：所有牌组共用 Anki 的默认预设（id 1，全部取默认值）。
       final int confId = options.withDeckConfigs ? _ankiDeckId(ownerId) : 1;
+      final String? presetName = redaction != null
+          ? 'Preset ${_presetNo[confId]}'
+          : null;
       decks['${_ankiDeckId(id)}'] = <String, Object?>{
         'id': _ankiDeckId(id),
         'mod': nowSecs,
@@ -673,10 +927,10 @@ class _Exporter {
                 confId,
                 tree[ownerId],
                 d,
-                tree[ownerId]?.name ?? 'Default',
+                presetName ?? tree[ownerId]?.name ?? 'Default',
                 nowSecs,
               )
-            : _dconfJson(confId, null, null, 'Default', nowSecs);
+            : _dconfJson(confId, null, null, presetName ?? 'Default', nowSecs);
       }
     }
     return (decks, dconf);
