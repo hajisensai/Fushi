@@ -19,7 +19,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_deck_list_page.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart'
-    show kFushiHeaderOverflowMenuKey;
+    show FushiCard, kFushiHeaderOverflowMenuKey;
 import 'package:fushi/src/utils/components/glass/fushi_glass_controls.dart'
     show FushiCheckbox, FushiFilledButton;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
@@ -407,6 +407,60 @@ void main() {
       );
       expect(_row('食べる'), findsOneWidget);
       expect(_row('飲む'), findsNothing);
+      await _unmount(tester);
+    });
+
+    testWidgets('[$ds] BUG-5549：宽屏检查器编辑页签的字段坐在卡上，不直接压在页底（背景图）上', (
+      WidgetTester tester,
+    ) async {
+      final SrsDbStore store = await _openStore(tester);
+      await _add(tester, store, '素人', 'amateur');
+      await _pump(
+        tester,
+        store: store,
+        apple: apple,
+        size: const Size(1300, 900),
+      );
+
+      // Apple 的分段控件按文字重建分段（不带 Text 的 key）：两套都按页签文字点。
+      await tester.tap(
+        find
+            .descendant(
+              of: find.byKey(const ValueKey<String>('srs-browse-inspector')),
+              matching: find.text(t.srs_browse_tab_edit),
+            )
+            .first,
+      );
+      await _settle(tester, rounds: 6);
+
+      final Finder panel = find.byKey(
+        const ValueKey<String>('srs-browse-edit-panel'),
+      );
+      expect(panel, findsOneWidget);
+      expect(tester.widget(panel), isA<FushiCard>());
+      // 字段列表与字段编辑器（含字段名、提示小字）都在卡里（列表是懒构建，
+      // 末尾的标签框在这个窗口高度下还没建出来，由列表在卡里间接保证）。
+      for (final String key in <String>[
+        'srs-browse-edit-fields',
+        'srs-browse-field-Expression',
+        'srs-browse-field-MainDefinition',
+      ]) {
+        expect(
+          find.descendant(
+            of: panel,
+            matching: find.byKey(ValueKey<String>(key)),
+          ),
+          findsOneWidget,
+          reason: '$key 不在编辑页签的卡里',
+        );
+      }
+      // 卡占满检查器的内容区：卡下沿之下没有露在页底上的字段。
+      final Rect card = tester.getRect(panel);
+      final Rect list = tester.getRect(
+        find.byKey(const ValueKey<String>('srs-browse-edit-fields')),
+      );
+      expect(card.contains(list.topLeft), isTrue);
+      expect(card.contains(list.bottomRight - const Offset(1, 1)), isTrue);
       await _unmount(tester);
     });
   }

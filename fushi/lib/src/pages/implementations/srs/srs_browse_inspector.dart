@@ -682,104 +682,124 @@ class _EditTabState extends ConsumerState<_EditTab> {
     final SrsNoteTypeView type = widget.detail.noteType;
     final bool builtin = type.builtinKey == kSrsBuiltinFushiCardKey;
     final List<SrsFieldDef> fields = type.fields;
-    return FushiEntranceScope(
-      replayKey: widget.detail.note.id,
-      child: ListView.builder(
-        key: const ValueKey<String>('srs-browse-edit-fields'),
-        itemCount: fields.length + 2,
-        itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
-          if (i == fields.length) {
-            return Padding(
-              padding: EdgeInsets.only(top: tokens.spacing.gap),
-              child: Focus(
-                canRequestFocus: false,
-                skipTraversal: true,
-                onFocusChange: (bool focused) {
-                  if (!focused) unawaited(_saveTags());
-                },
-                child: FushiTextField(
-                  key: const ValueKey<String>('srs-browse-edit-tags'),
-                  controller: _tags,
-                  labelText: t.srs_browse_edit_tags,
-                  hintText: t.srs_note_tags_hint,
-                  onSubmitted: (_) => unawaited(_saveTags()),
-                ),
-              ),
-            );
-          }
-          if (i == fields.length + 1) {
-            return Padding(
-              padding: EdgeInsets.only(top: tokens.spacing.gap),
-              child: Row(
-                children: <Widget>[
-                  Expanded(
-                    child: AnimatedOpacity(
-                      opacity: _justSaved ? 1 : 0,
-                      duration: fushiMotionDuration(context, FushiMotion.short),
-                      child: Text(
-                        t.srs_browse_edit_saved,
-                        style: context.fushiType.bodySmall,
-                      ),
-                    ),
-                  ),
-                  FushiTextButton(
-                    key: const ValueKey<String>('srs-browse-edit-full'),
-                    onPressed: () => widget.onOpenEditor(widget.detail.note.id),
-                    child: Text(t.srs_browse_edit_full),
-                  ),
-                ],
-              ),
-            );
-          }
-          final SrsFieldDef f = fields[i];
+    // 字段坐在一张卡上（BUG-5549），与完整编辑页（字段在 FushiCard 里）、预览页签（卡面）、
+    // 历史页签（卡片）同一层级：直接压在页底上时，字段名、提示小字与半透明输入框底
+    // 都透出用户的自定义背景图，看不清。卡底走 FushiCard（MD3 分组色 / Apple 分组面），
+    // 裁圆角，滚动内容不越出卡边。
+    return FushiCard(
+      key: const ValueKey<String>('srs-browse-edit-panel'),
+      padding: EdgeInsets.zero,
+      pressScale: false,
+      child: FushiEntranceScope(
+        replayKey: widget.detail.note.id,
+        child: _buildFields(context, tokens, type, builtin, fields),
+      ),
+    );
+  }
+
+  Widget _buildFields(
+    BuildContext context,
+    FushiDesignTokens tokens,
+    SrsNoteTypeView type,
+    bool builtin,
+    List<SrsFieldDef> fields,
+  ) {
+    return ListView.builder(
+      key: const ValueKey<String>('srs-browse-edit-fields'),
+      padding: EdgeInsets.all(tokens.spacing.card),
+      itemCount: fields.length + 2,
+      itemBuilder: fushiStaggeredItemBuilder((BuildContext context, int i) {
+        if (i == fields.length) {
           return Padding(
-            padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+            padding: EdgeInsets.only(top: tokens.spacing.gap),
             child: Focus(
               canRequestFocus: false,
               skipTraversal: true,
               onFocusChange: (bool focused) {
-                if (!focused && _pending.containsKey(f.id)) {
-                  _pending.remove(f.id)?.cancel();
-                  unawaited(_save(f));
-                }
+                if (!focused) unawaited(_saveTags());
               },
-              child: SrsFieldEditor(
-                key: ValueKey<String>('srs-browse-field-${f.name}'),
-                name: f.name,
-                model: _models[f.id]!,
-                // 与编辑页同一个字段 AI 键（BUG-5470）：结果换进模型后照常停笔自动保存，经浏览页写入压进撤销栈。
-                headerActions: srsFieldAiHeaderActions(
-                  this.context,
-                  ref,
-                  logTag: 'SrsBrowse.inlineFieldAi',
-                  noteType: type,
-                  field: f,
-                  model: () => _models[f.id],
-                  valuesById: () => <String, String>{
-                    for (final MapEntry<String, SrsFieldModel> e
-                        in _models.entries)
-                      e.key: e.value.value,
-                  },
-                ),
-                speechSources: srsSpeechSourcesOf<SrsFieldModel>(
-                  f.name,
-                  <({String name, SrsFieldModel value})>[
-                    for (final SrsFieldDef g in fields)
-                      (name: g.name, value: _models[g.id]!),
-                  ],
-                ),
-                toggle:
-                    builtin &&
-                    kFushiCardSwitchFields.contains(
-                      FushiCardFields.canonical(f.name),
-                    ),
-                css: type.css,
-                fushiCard: builtin,
+              child: FushiTextField(
+                key: const ValueKey<String>('srs-browse-edit-tags'),
+                controller: _tags,
+                labelText: t.srs_browse_edit_tags,
+                hintText: t.srs_note_tags_hint,
+                onSubmitted: (_) => unawaited(_saveTags()),
               ),
             ),
           );
-        }),
-      ),
+        }
+        if (i == fields.length + 1) {
+          return Padding(
+            padding: EdgeInsets.only(top: tokens.spacing.gap),
+            child: Row(
+              children: <Widget>[
+                Expanded(
+                  child: AnimatedOpacity(
+                    opacity: _justSaved ? 1 : 0,
+                    duration: fushiMotionDuration(context, FushiMotion.short),
+                    child: Text(
+                      t.srs_browse_edit_saved,
+                      style: context.fushiType.bodySmall,
+                    ),
+                  ),
+                ),
+                FushiTextButton(
+                  key: const ValueKey<String>('srs-browse-edit-full'),
+                  onPressed: () => widget.onOpenEditor(widget.detail.note.id),
+                  child: Text(t.srs_browse_edit_full),
+                ),
+              ],
+            ),
+          );
+        }
+        final SrsFieldDef f = fields[i];
+        return Padding(
+          padding: EdgeInsets.only(bottom: tokens.spacing.gap),
+          child: Focus(
+            canRequestFocus: false,
+            skipTraversal: true,
+            onFocusChange: (bool focused) {
+              if (!focused && _pending.containsKey(f.id)) {
+                _pending.remove(f.id)?.cancel();
+                unawaited(_save(f));
+              }
+            },
+            child: SrsFieldEditor(
+              key: ValueKey<String>('srs-browse-field-${f.name}'),
+              name: f.name,
+              model: _models[f.id]!,
+              // 与编辑页同一个字段 AI 键（BUG-5470）：结果换进模型后照常停笔自动保存，经浏览页写入压进撤销栈。
+              headerActions: srsFieldAiHeaderActions(
+                this.context,
+                ref,
+                logTag: 'SrsBrowse.inlineFieldAi',
+                noteType: type,
+                field: f,
+                model: () => _models[f.id],
+                valuesById: () => <String, String>{
+                  for (final MapEntry<String, SrsFieldModel> e
+                      in _models.entries)
+                    e.key: e.value.value,
+                },
+              ),
+              speechSources: srsSpeechSourcesOf<SrsFieldModel>(
+                f.name,
+                <({String name, SrsFieldModel value})>[
+                  for (final SrsFieldDef g in fields)
+                    (name: g.name, value: _models[g.id]!),
+                ],
+              ),
+              toggle:
+                  builtin &&
+                  kFushiCardSwitchFields.contains(
+                    FushiCardFields.canonical(f.name),
+                  ),
+              css: type.css,
+              fushiCard: builtin,
+            ),
+          ),
+        );
+      }),
     );
   }
 }
