@@ -33,10 +33,11 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4815 条。点号进各自文件。
+> 共 4816 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5544](bugs/BUG-5544-masthead-tabs-hittest.md) | ✅ | ✅ | 页头大字收缩后嵌套标签行 / 工具行点不动 |
 | [BUG-5536](bugs/BUG-5536-storage-scan-ui-freeze.md) | ✅ | ✅ | 打开 设置 › 存储 扫描期间整窗冻结（有声书逐文件音频路径在 UI isolate 上 O(n²) 去嵌套） |
 | [BUG-5535](bugs/BUG-5535-masthead-icons-title-misaligned.md) | ✅ | ✅ | 页头大字顶栏的返回键、动作图标和页名上下没对齐（二级页收缩后返回键高出一截，库页动作组和页名错开） |
 | [BUG-5534](bugs/BUG-5534-feedback-video-diag-missing.md) | ✅ | ✅ | 反馈附带的日志里没有视频性能诊断（上屏 / 丢帧 / 帧耗时） |
