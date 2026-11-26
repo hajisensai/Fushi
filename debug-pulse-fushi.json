@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-26T12:35:13Z",
+ "generatedAt": "2026-11-26T17:44:57Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "cdeb48c0e8e20d091e34ce0b16c3573ac7d29841",
-  "seq": 32772
+  "sha": "b3beaa39bab0820eb637c1959fa84527e8dfe89a",
+  "seq": 32846
  },
  "builds": [
   {
@@ -431,10 +431,86 @@
   }
  ],
  "pending": {
-  "headSha": "cdeb48c0e8e20d091e34ce0b16c3573ac7d29841",
-  "headSeq": 32772,
+  "headSha": "b3beaa39bab0820eb637c1959fa84527e8dfe89a",
+  "headSeq": 32846,
   "prs": [],
   "direct": [
+   {
+    "sha": "b3beaa39bab0820eb637c1959fa84527e8dfe89a",
+    "subject": "fix(merge): 集成验证三处红——BUG-5527/5528/5529 撞号改号为 5534/5535/5536；捐赠客户端测试改用 package:test；作品远程海报用例补回磁盘缓存清理定时器的 pump"
+   },
+   {
+    "sha": "ddfd1b4806b77dbb25d64f56aa21a211b192b3b2",
+    "subject": "test(settings): 覆盖登记补上 Windows 专属的「关闭时最小化到托盘」"
+   },
+   {
+    "sha": "cca15211e017d19babd9f8325bb85c32231ca0d1",
+    "subject": "chore(bugs): 合并后重建 BUGS.md 索引"
+   },
+   {
+    "sha": "aeff5b6ac4be6c2663a25db557a1018f566f9cad",
+    "subject": "fix(test): 封面取色在测试套件里不设加载超时，挂封面的组件测试不再残留 10 秒定时器"
+   },
+   {
+    "sha": "5bf89c01ed2da1978b0c3e12e74c21670ef287b8",
+    "subject": "Merge PR #4515"
+   },
+   {
+    "sha": "49e12272bae21bc1dc1795bf2c3956c6e87b9c10",
+    "subject": "Merge PR #4501"
+   },
+   {
+    "sha": "fd79a568ae1a3dd513dc8a3cb31507d76a47b675",
+    "subject": "Merge PR #4500"
+   },
+   {
+    "sha": "e29fe1f37740fff84b1b64e0f41238874afd6035",
+    "subject": "Merge PR #4502"
+   },
+   {
+    "sha": "493237622db39d5c60200cdefa98ab2db4a159d8",
+    "subject": "Merge PR #4498"
+   },
+   {
+    "sha": "826e117d5d50eb690b2f69a6d22ca0ca9627efcd",
+    "subject": "Merge PR #4506"
+   },
+   {
+    "sha": "9119f52f1bb20712494428e058ad70856b6e12c2",
+    "subject": "Merge PR #4507"
+   },
+   {
+    "sha": "053ab9266a86f8329140f6bbefce1eaae8679b53",
+    "subject": "Merge PR #4508"
+   },
+   {
+    "sha": "224117f76945600fefacd626b35bb957b148ca35",
+    "subject": "Merge PR #4503"
+   },
+   {
+    "sha": "87248179c8c89ae01e93d464fb478b28b1395775",
+    "subject": "Merge PR #4509"
+   },
+   {
+    "sha": "b448870736750aa4d723d41431fc62e009e10fce",
+    "subject": "Merge PR #4511"
+   },
+   {
+    "sha": "8cea3fb25b5ac9bdf4ab311528eedeff792c6706",
+    "subject": "Merge PR #4512"
+   },
+   {
+    "sha": "bea278811eeb01cf122928b7f59c298683f64ffe",
+    "subject": "Merge PR #4513"
+   },
+   {
+    "sha": "77256cb2748b8054ce2e34f26d19af448ef53de7",
+    "subject": "Merge PR #4514"
+   },
+   {
+    "sha": "da6b2f852121226606bdf3ee69ae5e9758724b03",
+    "subject": "Merge PR #4499"
+   },
    {
     "sha": "cdeb48c0e8e20d091e34ce0b16c3573ac7d29841",
     "subject": "Merge PR #4505"
@@ -447,16 +523,20 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45870008615"
    },
    "windows": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45870008870"
    },
    "macos": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45870008870"
    },
    "ios": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45870008870"
    }
   }
  },
