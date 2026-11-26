@@ -7,6 +7,7 @@ import 'package:fushi/src/srs/srs_sync_progress_ui.dart';
 import 'package:fushi/src/sync/manual_sync_ui.dart';
 import 'package:fushi/src/sync/sync_activity.dart';
 import 'package:fushi/src/sync/sync_auto_trigger.dart';
+import 'package:fushi/src/sync/sync_peer_gap_ui.dart';
 import 'package:fushi/src/sync/sync_progress.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_expressive_progress.dart';
@@ -64,6 +65,12 @@ String syncActivityKindLabel(SyncActivityKind kind) => switch (kind) {
   SyncActivityKind.assetTransfer => t.sync_task_kind_asset_transfer,
 };
 
+/// 已结束的一轮的标题：这轮是谁（「全量同步」/「单本同步：书名」），不带进行时。
+String syncFinishedTaskLine(SyncActivityKind kind, String? title) =>
+    kind == SyncActivityKind.singleBook && title != null && title.isNotEmpty
+    ? t.sync_task_finished_titled(title: title)
+    : syncActivityKindLabel(kind);
+
 /// 明细第二行：通道 · 在等谁 / 结束了。都没有时为 null。
 String? syncTaskDetailLine(SyncTask task) {
   final SyncChannelScope? channel = task.channel;
@@ -99,14 +106,22 @@ BackgroundTask syncTaskToBackgroundTask(SyncTask task) {
   return BackgroundTask(
     id: 'sync-${task.id}',
     icon: syncItemKindIcon(p?.itemKind),
-    // 两级取值（BUG-1260）：在跑且有阶段 tick 用它，否则说清这轮同步是谁。
+    // 两级取值（BUG-1260）：在跑且有阶段 tick 用它，否则说清这轮同步是谁。已结束的
+    // 用种类名（「全量同步」），不用进行时的兜底行——那会让结束的一轮一直写着
+    // 「正在准备同步」。
     line: p != null
         ? syncProgressLine(p)
-        : syncActivityLine(SyncActivity(task.kind, title: task.title)),
+        : task.isActive
+        ? syncActivityLine(SyncActivity(task.kind, title: task.title))
+        : syncFinishedTaskLine(task.kind, task.title),
     fraction: p?.fraction,
     detail: syncTaskDetailLine(task),
     stageSince: task.isActive ? task.stageSince : null,
-    errors: <String>[for (final SyncTaskError e in task.errors) e.message],
+    // 对端缺能力的原句（英文、进日志）在面板里换成本地化说明，其余原样。
+    errors: <String>[
+      for (final SyncTaskError e in task.errors)
+        localizedSyncTaskError(e.message),
+    ],
     finished: !task.isActive,
   );
 }

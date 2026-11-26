@@ -1133,7 +1133,7 @@ const splitLabel = (l) => { const m = LABEL_SPLIT.exec(l); return m ? [m[1], m[2
 const BIND_CHOICES = () => [['0.0.0.0',T('所有网络（0.0.0.0）')],['127.0.0.1',T('仅本机（127.0.0.1）')]];
 const CHOICES = {
   bind: BIND_CHOICES,
-  subtitleLanguage: (s) => (s.subtitleLanguageOptions||[]).map(o=>[o.code, `${o.name} (${o.code})`]),
+  subtitleLanguage: (s) => [['', T('自动（跟随每个视频的语言）')], ...(s.subtitleLanguageOptions||[]).map(o=>[o.code, `${o.name} (${o.code})`])],
   metadataLocale: (s) => (s.metadataLocaleOptions||[]).map(o=>[o.code, `${o.name} (${o.code})`]),
 };
 const OTHER = '__other';
@@ -1207,11 +1207,13 @@ async function loadSettings(){
   settingsBaseline = FIELDS.map(([k,,type])=>fieldValue(k,type));
   updateDirty();
 }
+// 空串本身是有效取值的下拉（字幕语言：空 = 自动），不能像别的字段那样把空当「没填」。
+const EMPTY_IS_VALUE = new Set(['subtitleLanguage']);
 // 表单里一项的当前值（与保存请求体同一套换算）。
 function fieldValue(k, type){
   const id='f-'+k.replace('.','-');
   if(type.startsWith('seg:')) return (document.querySelector(`input[name="${id}"]:checked`)||{}).value;
-  if(type.startsWith('choice:')) return choiceValue(id);
+  if(type.startsWith('choice:')) return choiceValue(id) ?? (EMPTY_IS_VALUE.has(k) ? '' : null);
   if(type==='bytes') return bytesValue(id);
   const el=$('#'+id); let v=el.value;
   if(type==='bool') v=el.checked; else if(type==='number') v=Number(v);

@@ -11,6 +11,8 @@ import 'package:fushi/src/media/music/metadata/music_video_auto_match.dart';
 import 'package:fushi/src/media/music/metadata/music_video_service.dart';
 import 'package:fushi/src/pages/implementations/music/music_lyrics_mv_backdrop.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_engine/media/music/metadata/music_release_videos.dart'
+    show MusicReleaseVideoCandidate;
 import 'package:fushi_engine/media/music/metadata/music_video_match.dart'
     show MusicVideoKind;
 import 'package:fushi_music/fushi_music.dart';
@@ -90,16 +92,28 @@ void main() {
     final MusicVideoService svc = MusicVideoService(
       database: db,
       detector: detector,
-      nearby: (String d) => collectMusicVideoFilesNear(d, minDiscBytes: 1),
+      nearby:
+          (
+            String d, {
+            List<MusicReleaseVideoCandidate> release =
+                const <MusicReleaseVideoCandidate>[],
+          }) =>
+              collectMusicVideoFilesNear(d, minDiscBytes: 1, release: release),
     );
     final MusicVideoAutoMatcher matcher = MusicVideoAutoMatcher(
       database: () => db,
       enabled: () => true,
       service: (_) => svc,
-      collect: (List<String> dirs) async => <String, MusicVideoNearbyFiles>{
-        for (final String d in dirs)
-          d: collectMusicVideoFilesNear(d, minDiscBytes: 1),
-      },
+      collect: (Map<String, List<MusicReleaseVideoCandidate>> dirs) async =>
+          <String, MusicVideoNearbyFiles>{
+            for (final MapEntry<String, List<MusicReleaseVideoCandidate>> d
+                in dirs.entries)
+              d.key: collectMusicVideoFilesNear(
+                d.key,
+                minDiscBytes: 1,
+                release: d.value,
+              ),
+          },
     );
     return (matcher: matcher, decoder: decoder, svc: svc);
   }
@@ -259,6 +273,81 @@ void main() {
     await db.deleteMusicVideo((await db.listMusicVideos('a')).single.id);
     expect(await next(), isNull, reason: '解绑后撤掉');
     await events.cancel();
+  });
+
+  test('同一下载发布里的特典（整理后不在 CD 附近）也是候选；来源搬家后照样找得到', () async {
+    // 原发布目录 [Grp] Show/CDs/OP/op.flac，整理后的特典在 Show (2023)/Extras/SPs/，
+    // 整个来源又从 root/old 搬到 root/new（任务记下的绝对路径全部过时）。
+    const String relCd = '[Grp] Show/CDs/OP';
+    const String relNcop = 'Show (2023)/Extras/SPs/[Grp] Show [NCOP].mkv';
+    final String newRoot = p.join(root.path, 'new');
+    final String song = p.join(newRoot, relCd, 'op.flac');
+    final String ncop = p.joinAll(<String>[newRoot, ...relNcop.split('/')]);
+    File(song)
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync('op-audio');
+    File(ncop)
+      ..parent.createSync(recursive: true)
+      ..writeAsStringSync('ncop-video');
+    await db.upsertVideoDownloadJob(
+      VideoDownloadJobsCompanion.insert(
+        jobId: 'job',
+        resourceProvider: 'nyaa:test',
+        selectedResourceId: 'r',
+        mediaKind: 'tv',
+        title: 'Show',
+        backendKind: 'embedded',
+        fingerprint: 'fp',
+        createdAt: 1,
+        updatedAt: 1,
+      ),
+    );
+    final String oldRoot = p.join(root.path, 'old');
+    await db.replaceVideoDownloadJobFiles(
+      'job',
+      <VideoDownloadJobFilesCompanion>[
+        VideoDownloadJobFilesCompanion.insert(
+          jobId: 'job',
+          originalRelativePath: '$relCd/op.flac',
+          currentRelativePath: '$relCd/op.flac',
+          createdAt: 1,
+          updatedAt: 1,
+        ),
+        VideoDownloadJobFilesCompanion.insert(
+          jobId: 'job',
+          originalRelativePath: '[Grp] Show/SPs/[Grp] Show [NCOP].mkv',
+          currentRelativePath: relNcop,
+          kind: const Value<String>('extra'),
+          finalAbsolutePath: Value<String?>(
+            p.joinAll(<String>[oldRoot, ...relNcop.split('/')]),
+          ),
+          createdAt: 1,
+          updatedAt: 1,
+        ),
+      ],
+    );
+    await addTrack('op', song);
+
+    final _FakeDecoder decoder = _FakeDecoder();
+    final ThemeSongDetector detector = ThemeSongDetector(
+      database: db,
+      decoder: decoder,
+      engine: _PairEngine(<(String, String)>{(song, ncop)}),
+      workDirectory: work,
+    );
+    final MusicVideoAutoMatcher matcher = MusicVideoAutoMatcher(
+      database: () => db,
+      enabled: () => true,
+      service: (_) => MusicVideoService(database: db, detector: detector),
+      collect: (Map<String, List<MusicReleaseVideoCandidate>> dirs) async =>
+          <String, MusicVideoNearbyFiles>{
+            for (final MapEntry<String, List<MusicReleaseVideoCandidate>> d
+                in dirs.entries)
+              d.key: collectMusicVideoFilesNear(d.key, release: d.value),
+          },
+    );
+    await matcher.schedule();
+    expect((await db.listMusicVideos('op')).single.ref, ncop);
   });
 
   test('声纹落库编码往返', () {

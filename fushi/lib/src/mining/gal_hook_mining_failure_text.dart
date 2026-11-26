@@ -6,7 +6,7 @@
 library;
 
 import 'package:fushi/i18n/strings.g.dart';
-import 'package:fushi/src/mining/gal_hook_mining_coordinator.dart';
+import 'package:fushi/src/mining/gal_hook_mining_result.dart';
 
 /// [result] 必须是 aborted（`outcome == null`）的结果；有结局的失败走
 /// `describeMineOutcome`。

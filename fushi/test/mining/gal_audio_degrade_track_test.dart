@@ -883,23 +883,25 @@ const String _kFallbackLabel = 'galHookFallbackLabel';
 /// 「UI 只在这里把它翻成人话」本身就是 gal_hook_failure_text.dart 的文档契约。
 const String _kFailureTextPath = 'lib/src/mining/gal_hook_failure_text.dart';
 
-/// 降级会话卡（`_SessionOverviewCard`）的类体原文。
+/// 会话状态区的取舍类（`_SessionSummary`）的类体原文。
 ///
-/// 用 [balancedBlockFrom] 而不是整文件：texthooker_page.dart 六千多行，别处出现
-/// `state.fallbackReason` 的话窗口会锚到不相干的地方去。
+/// 2026-11-24 d6f2962d5a 起，降级原因等说明行的文案在 `_SessionSummary.hints` 里
+/// 算好，M3E 色块 `_SessionOverviewCard` 与 Cupertino 侧栏都只照着渲染；「内部代码
+/// 交给了谁」因此在这里判定。两个渲染端照 `hint.maxLines` 摆这件事由
+/// `texthooker_narrow_degrade_reason_guard_test.dart` 守。
 String _sessionOverviewCardSource() {
   final File file = File('lib/src/pages/implementations/texthooker_page.dart');
   expect(file.existsSync(), isTrue, reason: '会话卡源文件不在了？守卫失去锚点，先修路径再谈断言');
   final String src = file.readAsStringSync();
   final int start = maskCommentsAndStrings(
     src,
-  ).indexOf('class _SessionOverviewCard');
+  ).indexOf('class _SessionSummary ');
   expect(
     start,
     greaterThanOrEqualTo(0),
-    reason: '_SessionOverviewCard 改名了：守卫锚点必须跟着改，不能静默失效',
+    reason: '_SessionSummary 改名了：守卫锚点必须跟着改，不能静默失效',
   );
-  return balancedBlockFrom(src, start, what: '_SessionOverviewCard');
+  return balancedBlockFrom(src, start, what: '_SessionSummary');
 }
 
 /// 接收内部代码的这个调用 [callee]，会不会先查翻译表。

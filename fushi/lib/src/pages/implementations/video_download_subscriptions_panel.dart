@@ -70,6 +70,8 @@ import 'package:fushi/src/media/downloads/download_task_card.dart'
 import 'package:fushi/src/utils/components/fushi_press_scale.dart';
 import 'package:fushi/src/utils/components/glass/fushi_apple_popup_button.dart';
 import 'package:fushi/src/utils/components/apple/apple_radii.dart';
+import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
+    show ContextMenuTrigger;
 
 part '../../media/downloads/apple/apple_download_subscriptions.dart';
 

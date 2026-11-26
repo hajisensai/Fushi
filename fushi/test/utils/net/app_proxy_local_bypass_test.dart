@@ -408,8 +408,25 @@ void main() {
       ).readAsStringSync();
       expect(source, contains('applyAppProxySync(client)'));
       // createAppHttpIoClient / createAppDio 都必须复用 createAppHttpClient，
-      // 而不是各自 new 一个裸的。
-      expect(source, matches(RegExp(r'IOClient\(\s*createAppHttpClient\(')));
+      // 而不是各自 new 一个裸的。createAppHttpIoClient 包的是 IOClient 子类
+      // DatabaseWorkAwareIoClient（BUG-5406：后台写库工作里的请求随关库中止），
+      // 内层仍必须是 createAppHttpClient 建的那个，子类也只能收注入的 inner。
+      expect(
+        source,
+        matches(
+          RegExp(
+            r'http\.Client createAppHttpIoClient\(\{[^}]*\}\)\s*=>\s*'
+            r'\w*I[Oo]Client\(\s*createAppHttpClient\(',
+          ),
+        ),
+      );
+      expect(
+        source,
+        contains(
+          'class DatabaseWorkAwareIoClient extends IOClient {\n'
+          '  DatabaseWorkAwareIoClient([super.inner]);',
+        ),
+      );
       expect(source, contains('createAppHttpClient(connectionTimeout:'));
     });
   });

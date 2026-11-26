@@ -81,6 +81,8 @@ const Map<String, String> _selfGatedFiles = <String, String>{
   'lib/src/pages/implementations/discovery_ai_acquire_action.dart':
       '发现页的「AI 下载」（小说 / 漫画 / 游戏）',
   'lib/src/pages/implementations/home_page.dart': '视频发现的「AI 下视频」',
+  'lib/src/pages/implementations/srs/srs_field_ai_action.dart':
+      '复习卡片字段旁的 AI 键（笔记编辑页 / 浏览检查器）',
 };
 
 String _read(String path) => File(path).readAsStringSync();

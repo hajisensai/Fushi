@@ -64,7 +64,7 @@ String srsEditsSignature(
 bool _deckViewStateKey(String key) =>
     srsFieldClassOf(SrsEntityKind.deck, key) == SrsFieldClass.viewState;
 
-/// 一张卡在复习页上用到的牌组设置的签名：卡的有效牌组到顶层的整条链（步长 / 上限是自己的，算法 / 参数 /
+/// 一张卡在复习页上用到的牌组设置的签名：卡的有效牌组到顶层的整条链（上限是自己的，算法 / 参数 / 步长 /
 /// 记忆率 / 音频开关来自 own 祖先，全名来自各级名字），加上正在复习的牌组那条链（标题、计数上限）。
 /// 牌组的界面状态（收起 / 展开、排序位）不计入。
 String srsDeckChainSignature(

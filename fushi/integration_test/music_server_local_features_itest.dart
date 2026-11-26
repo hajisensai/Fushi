@@ -28,6 +28,8 @@ import 'package:fushi/src/media/music/music_signal_path.dart';
 import 'package:fushi/src/media/music/server/jellyfin_music_client.dart';
 import 'package:fushi/src/media/music/server/music_server_play_item.dart';
 import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart';
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service_entry.dart'
+    show appVideoSubtitleService;
 import 'package:fushi/src/models/app_model.dart';
 import 'package:fushi/src/pages/implementations/home_page.dart';
 import 'package:fushi/src/pages/implementations/music/music_server_pages.dart';

@@ -29,12 +29,24 @@ import 'package:fushi/src/media/audiobook/tts/studio/tts_cast_prompt.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_series_cast.dart';
 import 'package:fushi/src/media/audiobook/tts/studio/tts_studio_service.dart';
 import 'package:fushi/src/media/audiobook/tts/tts_book_plan.dart';
+import 'package:fushi/src/utils/misc/error_log_service.dart';
 
 export 'package:fushi/src/media/audiobook/tts/studio/tts_cast_passes.dart'
-    show TtsCastAnnotateFailure, kTtsCastPhaseLines, kTtsCastPhaseRoster;
+    show
+        TtsCastAnnotateFailure,
+        kTtsCastFailureOutputLimit,
+        kTtsCastPhaseLines,
+        kTtsCastPhaseRoster;
 
 /// 单块回复的输出上限：100 句全是台词时约 4k token，给推理模型的思考留余量。
+/// 不再调大（gpt-4o-mini 等拒收 >16384）：思考把它用光时由主循环拆块重问
+/// （BUG-5469）。
 const int _kAnnotateMaxTokens = 8192;
+
+/// 单块请求的整体时限：上限 [_kAnnotateMaxTokens] 按消费级显卡上本地模型约
+/// 15 token/s 算要九分钟出头；默认的 90 秒在本地 14B 上几乎每块都超时，又被当成
+/// 网络抖动整块重生成（BUG-5467）。云端模型几十秒就回，不受影响。
+const Duration _kAnnotateRequestTimeout = Duration(minutes: 10);
 
 /// 两遍请 LLM 标注 [sections]（空 = 计划里的全部章）里每句的说话人，并入 [bookKey]
 /// 的选角表并落盘；用户手改过的行保留。返回更新后的选角表。
@@ -84,10 +96,12 @@ Future<TtsCast> annotateTtsCast({
           .toList()
         ..sort();
 
-  final AiChatClient client = AiChatClient();
-  Future<String> ask(String system, String user) async {
+  final AiChatClient client = AiChatClient(
+    requestTimeout: _kAnnotateRequestTimeout,
+  );
+  Future<TtsCastReply> ask(String system, String user) async {
     try {
-      return await client.complete(
+      final AiChatCompletion done = await client.completeWithUsage(
         provider: provider,
         messages: <AiChatMessage>[
           AiChatMessage.system(system),
@@ -95,7 +109,10 @@ Future<TtsCast> annotateTtsCast({
         ],
         maxTokens: _kAnnotateMaxTokens,
       );
+      return (text: done.text, truncated: done.truncated);
     } on AiChatFailure catch (e) {
+      // 正文为空的截断（推理模型的思考把额度用光，BUG-5469）交给主循环拆块重问。
+      if (e.message == kAiOutputLimitCode) return (text: '', truncated: true);
       throw TtsCastAnnotateFailure('ai_failed', e.message);
     }
   }
@@ -112,6 +129,12 @@ Future<TtsCast> annotateTtsCast({
       isCancelled: isCancelled,
       onPhase: onPhase,
     );
+  } on TtsCastAnnotateFailure catch (e, stack) {
+    // 界面只显示一句话；原因、章与模型原始回复记进错误日志（BUG-5466）。
+    if (e.code != 'cancelled') {
+      ErrorLogService.instance.log('TtsCast.annotate($bookKey)', e, stack);
+    }
+    rethrow;
   } finally {
     client.close();
     // 取消 / 失败时已抽到的角色也学回系列（角色表只增不减，并入幂等）。

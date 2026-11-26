@@ -590,7 +590,9 @@ fn run(
                 Ok(json!({"due": due, "error": error}))
             })
         })?,
-        "collection_info" => read_col(c, profile, cmd::identity::collection_info)?,
+        "collection_info" => read_col(c, profile, |t, col| {
+            cmd::identity::collection_info(t, col, req)
+        })?,
         "canonical_ids" => read_col(c, profile, |t, col| {
             cmd::identity::canonical_ids(t, col, req)
         })?,

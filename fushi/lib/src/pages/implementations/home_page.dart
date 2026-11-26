@@ -2063,12 +2063,10 @@ class _HomePageState extends BasePageState<HomePage>
     );
   }
 
-  /// [tab] 自己在顶栏 / 工具栏下沿画 scroll edge，外壳不再在内容区顶部叠一条。
-  /// 设置页各形态（窄屏导航栏、宽屏详情的 macOS 27 窗口工具栏、二级侧栏）都把
-  /// 滚动内容排在自己的栏下面并自带渐隐；外壳这条带贴的是**内容区顶部**，对设置
-  /// 来说那是栏的上沿——宽窗会在窗口按钮行与设置工具栏之间压出一道页面底色
-  /// （深色是黑）的横带，并横穿二级侧栏的搜索框（2026-11-24 用户截图）。
-  bool _tabOwnsTopScrollEdge(HomeTab tab) => tab == HomeTab.settings;
+  /// [tab] 自己画顶部 scroll edge，外壳不再在内容区顶部叠一条（见
+  /// [homeTabOwnsTopScrollEdge]）。
+  bool _tabOwnsTopScrollEdge(HomeTab tab) =>
+      homeTabOwnsTopScrollEdge(tab, redesign: shellRedesignActive(context));
 
   /// 外壳为 [tab] 显示的页面大标题：有自己分区页签行、却没有页面名的库页
   /// （书架 / 漫画 / 视频 / 游戏）与浏览、浏览器、查词。桌面自绘控制条已不再显示
@@ -4971,6 +4969,23 @@ String? homeShellBarTitleFor(
     redesign: redesign,
   );
 }
+
+/// [tab] 的内容自己画顶部 scroll edge，外壳（Apple）不再在内容区顶部叠那条
+/// 「页面底色 → 透明」的 soft 带（`_withAppleTopEdge`）。外壳那条带贴的是
+/// **内容区顶部**，对自带顶栏 / 页头的页来说那正是自己底板的中段：
+/// - 设置页各形态（窄屏导航栏、宽屏详情的 macOS 27 窗口工具栏、二级侧栏）把
+///   滚动内容排在自己的栏下面并自带渐隐；叠上外壳的带，宽窗会在窗口按钮行与
+///   设置工具栏之间压出一道页面底色（深色是黑）的横带（2026-11-24 用户截图）。
+/// - 挂 `FushiFloatingChromeOverlay` 的库页 / 浏览 / 浏览器（[_tabHasFloatingChrome]）
+///   与重设计外壳下的首页（页头大字）：overlay 自己从窗口顶起画整块 scroll edge
+///   （Apple：[FushiAppleScrollEdgeBackdrop]）。外壳的带再从状态栏下沿起叠一条
+///   不透明页面底色，正好横在状态栏与顶栏行之间，成了一条分割线（2026-11-25
+///   用户 iPhone 截图，音乐页）。
+@visibleForTesting
+bool homeTabOwnsTopScrollEdge(HomeTab tab, {required bool redesign}) =>
+    tab == HomeTab.settings ||
+    _HomePageState._tabHasFloatingChrome(tab) ||
+    (redesign && tab == HomeTab.home);
 
 /// 「后台任务」入口（同步 / 复习同步 / 补刮）是否由外壳的栏承载（承载时首页
 /// body 不再画右下 FAB）。

@@ -1,7 +1,7 @@
 /// 远端视频「导入 / 重定时的字幕自动上传 host 并设为默认」+「远端视频也能对轴 /
 /// 重定时」守卫。
 ///
-/// 1. 纯函数：[defaultSidecarSubtitleSuffix] / [sidecarSuffixesDisplacedBy] /
+/// 1. 纯函数：[defaultSidecarSubtitleSuffix] / [sidecarNamesDisplacedBy] /
 ///    [clipVideoAudioTimeout]。
 /// 2. host [LocalLibraryHostService.importDefaultVideoSubtitle]：按 host 学习语言定
 ///    后缀、压过它的旧 sidecar 改名 `.fushi-bak` 让位（原始文件只备份一次）、落库。
@@ -61,7 +61,7 @@ LocalLibraryHostService _hostService({
   packages: SyncAssetPackageService(db: db),
   refreshDictionaryCache: () async {},
   runExclusive: (Future<void> Function() body) => body(),
-  videoSubtitleLangCode: 'ja',
+  videoSubtitleExplicitLanguage: () => 'ja',
 );
 
 Future<InterconnectSyncBackend> _clientBackend({
@@ -127,18 +127,21 @@ void main() {
       expect(defaultSidecarSubtitleSuffix('', langCode: 'ja'), isNull);
     });
 
-    test('sidecarSuffixesDisplacedBy 返回优先级不低于自身的全部后缀', () {
-      expect(sidecarSuffixesDisplacedBy('.ja.srt', langCode: 'ja'), <String>[
-        '.ja.srt',
-      ]);
-      expect(sidecarSuffixesDisplacedBy('.ja.ass', langCode: 'ja'), <String>[
-        '.ja.srt',
-        '.ja.ass',
-      ]);
-      // 不在优先级表里（别的语言标记）：只让位同名文件。
-      expect(sidecarSuffixesDisplacedBy('.en.srt', langCode: 'ja'), <String>[
-        '.en.srt',
-      ]);
+    test('sidecarNamesDisplacedBy 让位排在它前面的与同名的', () {
+      const List<String> owned = <String>['EP01.ja.srt', 'EP01.ja.ass'];
+      expect(
+        sidecarNamesDisplacedBy('EP01', '.ja.srt', owned, langCode: 'ja'),
+        <String>{'ep01.ja.srt'},
+      );
+      expect(
+        sidecarNamesDisplacedBy('EP01', '.ja.ass', owned, langCode: 'ja'),
+        <String>{'ep01.ja.srt', 'ep01.ja.ass'},
+      );
+      // 不会被自动加载（别的语言标记）：只让位同名文件。
+      expect(
+        sidecarNamesDisplacedBy('EP01', '.en.srt', owned, langCode: 'ja'),
+        <String>{'ep01.en.srt'},
+      );
     });
 
     test('clipVideoAudioTimeout：句子片段 120s，整集按 10 倍速放大', () {

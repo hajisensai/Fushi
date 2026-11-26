@@ -192,7 +192,7 @@ void main() {
     expect(
       find.byKey(const ValueKey<String>('video-library-refresh')),
       findsNothing,
-      reason: '刷新空闲时是「⋯」项（此处平铺），不另画转圈刷新钮',
+      reason: '刷新只有「⋯」项（此处平铺）一颗，不另挂「进行中」刷新钮（BUG-5479）',
     );
     expect(
       inPill(find.byKey(const ValueKey<String>('video-library-refresh-menu'))),

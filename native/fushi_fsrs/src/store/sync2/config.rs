@@ -2,7 +2,9 @@
 //!
 //! - 卡的牌组：血统继承的卡片标志（registers.rs `cards_group`）→ 笔记首选牌组 → 默认牌组；不在树里
 //!   （已删 / 还没同步到）的归默认牌组（`effectiveDeckOf`）。
-//! - 步长 / 最大间隔取卡所在牌组自己的；算法 / 参数 / 记忆率取最近一个 own 祖先（顶层恒为 own）。
+//! - 最大间隔取卡所在牌组自己的；算法 / 参数 / 记忆率 / 学习与重学步长取最近一个 own 祖先（顶层恒为 own）。
+//!   步长随参数继承（拍板 design-subdeck-steps-inherit）：「继承上级」的子牌组上写过的步长不生效，
+//!   「单独设置」后才用自己的。
 //! - 成环的父子关系：环上 ID 字典序最小的那个视为顶层。
 
 use std::collections::{BTreeMap, HashMap, HashSet};
@@ -275,7 +277,8 @@ impl DeckTree {
         } else {
             Vec::new()
         };
-        // 没写过步长的 RWKV 牌组不用步长（`SrsDeckView.learnStepsFor`）。
+        // 步长与算法同一条继承：取 own 祖先上的（`SrsDeckTree.schedulingConfig`）；它没写过步长、又按 RWKV 排程时
+        // 不用步长（`SrsDeckView.learnStepsFor`）。
         let rwkv = Self::owner_uses_rwkv(owner);
         let pick = |v: &Value, default: &[f64]| {
             if rwkv && !v.is_array() {
@@ -285,8 +288,8 @@ impl DeckTree {
             }
         };
         Config {
-            learn_steps: pick(&me.view["ls"], &DEFAULT_LEARN),
-            relearn_steps: pick(&me.view["rs"], &DEFAULT_RELEARN),
+            learn_steps: pick(&owner.view["ls"], &DEFAULT_LEARN),
+            relearn_steps: pick(&owner.view["rs"], &DEFAULT_RELEARN),
             desired_retention: owner.view["ret"].as_f64().unwrap_or(0.8),
             max_interval: me.view["mi"].as_i64().unwrap_or(36500),
             alg,
@@ -431,4 +434,73 @@ pub fn successors(conn: &Connection, card: &str) -> Result<Vec<String>, String> 
     }
     out.sort();
     Ok(out)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn tree(views: Vec<(&str, Value)>) -> DeckTree {
+        DeckTree::of_views(
+            views
+                .into_iter()
+                .map(|(id, v)| (id.to_owned(), v))
+                .collect(),
+            "root".to_owned(),
+        )
+    }
+
+    /// 用户报的场景：Anki 导入时子牌组写上了重学步长 [10]，父牌组之后改成 RWKV、没写步长。继承上级的子牌组
+    /// 跟着父牌组不用步长（按 Again 不进重学），单独设置的子牌组仍用自己的。
+    #[test]
+    fn learn_and_relearn_steps_follow_the_params_owner() {
+        let t = tree(vec![
+            ("root", json!({"own": true, "alg": "rwkv", "da": null})),
+            (
+                "inherit",
+                json!({"pa": "root", "own": false, "ls": [1.0, 10.0], "rs": [10.0], "mi": 99, "da": null}),
+            ),
+            (
+                "grandchild",
+                json!({"pa": "inherit", "own": false, "ls": [3.0], "rs": [7.0], "da": null}),
+            ),
+            (
+                "own",
+                json!({"pa": "root", "own": true, "alg": "fsrs7", "ls": [2.0], "rs": [5.0], "da": null}),
+            ),
+            (
+                "under_own",
+                json!({"pa": "own", "own": false, "rs": [30.0], "da": null}),
+            ),
+        ]);
+        let c = t.config("inherit");
+        assert!(c.learn_steps.is_empty());
+        assert!(c.relearn_steps.is_empty());
+        assert_eq!(c.max_interval, 99, "最大间隔仍是牌组自己的");
+        let c = t.config("grandchild");
+        assert!(c.learn_steps.is_empty());
+        assert!(c.relearn_steps.is_empty());
+        let c = t.config("own");
+        assert_eq!(c.learn_steps, vec![2.0]);
+        assert_eq!(c.relearn_steps, vec![5.0]);
+        let c = t.config("under_own");
+        assert_eq!(c.learn_steps, vec![2.0]);
+        assert_eq!(c.relearn_steps, vec![5.0]);
+    }
+
+    /// own 祖先是 FSRS、没写过步长：继承的子牌组用 FSRS 默认步长，不用自己写过的。
+    #[test]
+    fn an_fsrs_owner_without_steps_gives_inheriting_children_the_defaults() {
+        let t = tree(vec![
+            ("root", json!({"own": true, "alg": "fsrs7", "da": null})),
+            (
+                "kid",
+                json!({"pa": "root", "own": false, "ls": [], "rs": [], "da": null}),
+            ),
+        ]);
+        let c = t.config("kid");
+        assert_eq!(c.learn_steps, DEFAULT_LEARN.to_vec());
+        assert_eq!(c.relearn_steps, DEFAULT_RELEARN.to_vec());
+    }
 }

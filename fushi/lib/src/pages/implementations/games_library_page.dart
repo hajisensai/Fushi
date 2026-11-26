@@ -47,7 +47,7 @@ import 'package:fushi/src/media/links/media_link_entries.dart'
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
-    show mediaLinkSearchAction, openMediaLinkEntry;
+    show mediaLinkRemoteVideoSource, mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show showMediaLinksDialog;
 import 'package:fushi/src/media/links/work_kinds_badge.dart';
@@ -2135,6 +2135,7 @@ class _GamesLibraryPageState extends ConsumerState<GamesLibraryPage>
   void _showWorkLinks(MediaLinkEndpoint self) {
     unawaited(
       showMediaLinksDialog(
+        remoteVideoSource: mediaLinkRemoteVideoSource(ref: ref),
         context: context,
         database: _appModel.database,
         self: self,

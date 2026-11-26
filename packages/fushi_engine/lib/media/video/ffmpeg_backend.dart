@@ -450,10 +450,12 @@ Future<FfmpegRunResult> _runToolProcess(
     args,
     environment: ffmpegChildEnvironment(args),
   );
+  // 超时与关库取消共用这一处强杀：两条路径都要 SIGKILL 后等进程退出再返回。
+  void kill() => process.kill(ProcessSignal.sigkill);
   bool cancelled = false;
   final void Function() unlinkCancel = DatabaseWorkToken.abortOnCancel(() {
     cancelled = true;
-    process.kill(ProcessSignal.sigkill);
+    kill();
   });
   try {
     return await _collectToolProcess(
@@ -461,6 +463,7 @@ Future<FfmpegRunResult> _runToolProcess(
       executable,
       timeout,
       streams,
+      kill: kill,
       cancelled: () => cancelled,
     );
   } finally {
@@ -473,6 +476,7 @@ Future<FfmpegRunResult> _collectToolProcess(
   String executable,
   Duration timeout,
   _ToolOutputStreams streams, {
+  required void Function() kill,
   required bool Function() cancelled,
 }) async {
   Future<String> collect(Stream<List<int>> stream) =>
@@ -509,7 +513,7 @@ Future<FfmpegRunResult> _collectToolProcess(
       attemptedExecutables: <String>[executable],
     );
   } on TimeoutException {
-    process.kill(ProcessSignal.sigkill);
+    kill();
     // Reap the killed process before its caller removes command-scoped inputs.
     // On Windows an open concat manifest cannot be deleted while FFmpeg lives.
     await process.exitCode;

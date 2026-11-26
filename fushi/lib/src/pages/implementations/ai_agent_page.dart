@@ -52,6 +52,7 @@ import 'package:fushi/src/utils/components/fushi_floating_toolbar.dart'
     show fushiFloatingPillDecoration;
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
@@ -761,12 +762,11 @@ class AiAgentPage extends StatelessWidget {
             ),
           ),
         if (library != null && !sideList)
-          FushiIconButtonControl(
+          FushiIconButton(
             key: kAiAgentSessionsButtonKey,
             tooltip: t.ai_agent_sessions_title,
-            onPressed: () =>
-                unawaited(showAiAgentSessionsSheet(context, library)),
-            icon: const FushiIcon(FushiIcons.history),
+            onTap: () => unawaited(showAiAgentSessionsSheet(context, library)),
+            icon: FushiIcons.history,
           ),
       ],
       body: SafeArea(

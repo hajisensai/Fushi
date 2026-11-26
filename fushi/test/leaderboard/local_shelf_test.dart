@@ -720,6 +720,45 @@ void main() {
       expect(m['video:c$scraped']!.upload.title, '葬送のフリーレン');
       expect(m['video:c$scraped']!.upload.refs, <String>['t:葬送のフリーレン|']);
     });
+
+    test('媒体服务器自带资料（BUG-5477）：只有 mediaserver 身份不上报；带 TMDB 交叉引用的'
+        '照常上报，但服务器图地址不当公开封面', () async {
+      await video('ms1', completedAt: DateTime(2026, 8, 1, 12));
+      await video('ms2', completedAt: DateTime(2026, 8, 1, 12));
+      // 服务器上没识别出来的电影：标题可能就是文件夹名。
+      await scrapedMovie('ms1', provider: 'mediaserver');
+      final int w = await scrapedMovie('ms2', provider: 'mediaserver');
+      await db
+          .into(db.videoMetadataProviderIdentities)
+          .insert(
+            VideoMetadataProviderIdentitiesCompanion.insert(
+              identityKey: 'work:$w:tmdb',
+              workId: Value<int?>(w),
+              provider: 'tmdb',
+              externalId: '555',
+              updatedAt: 0,
+            ),
+          );
+      await db
+          .into(db.videoMetadataImages)
+          .insert(
+            VideoMetadataImagesCompanion.insert(
+              workId: Value<int?>(w),
+              provider: 'mediaserver',
+              kind: 'cover',
+              remoteUrl:
+                  'http://192.168.1.5:8096/Items/abc/Images/Primary?maxWidth=600',
+              updatedAt: 0,
+            ),
+          );
+
+      final Map<String, LocalShelfEntry> m = byKey(
+        await buildLocalShelf(db, profileId: profile),
+      );
+      expect(m.keys, <String>['video:bms2']);
+      expect(m['video:bms2']!.upload.refs.first, 'tmdb:movie:555');
+      expect(m['video:bms2']!.upload.coverUrl, isNull);
+    });
   });
 
   group('服务端同口径', () {

@@ -91,6 +91,16 @@ class VideoStorage {
   static Future<Directory> itemImagesDir() async =>
       Directory(p.join((await coversDir()).path, itemImagesDirName));
 
+  /// 媒体服务器入库作品的资料图（剧海报 / 背景 / 分集剧照，BUG-5477）子目录名。
+  /// 服务器图片 URL 带访问令牌，不能落库，所以下载到这里、`video_metadata_images`
+  /// 记本地路径。同 [imagesDirName] 的理由放子目录（[gcOrphanCovers] 非递归）；
+  /// 本目录只归媒体服务器入库所有，作品移出媒体库时按作品回收。
+  static const String mediaServerImagesDirName = 'media_server';
+
+  /// 媒体服务器资料图目录绝对路径（不创建）。见 [mediaServerImagesDirName]。
+  static Future<Directory> mediaServerImagesDir() async =>
+      Directory(p.join((await coversDir()).path, mediaServerImagesDirName));
+
   /// 回收一批附加图文件（media_images 行已随归属 cascade 删除后调用）。
   ///
   /// 纪律与 [deleteBookAssets] 逐字一致：只删**非空 + 落在 [ownedDir] 内 + 不在

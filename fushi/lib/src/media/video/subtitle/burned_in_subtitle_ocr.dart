@@ -12,7 +12,7 @@ import 'dart:async';
 import 'dart:isolate';
 import 'dart:typed_data';
 
-import 'package:fushi/src/media/manga/manga_ocr_provider.dart'
+import 'package:fushi/src/media/manga/manga_ocr_service_factory.dart'
     show createMangaOcrService;
 import 'package:fushi/src/ocr/local_screen_ocr.dart';
 import 'package:fushi/src/ocr/system_ocr_channel.dart';
