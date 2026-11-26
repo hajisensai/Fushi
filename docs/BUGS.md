@@ -74,6 +74,12 @@
 | [BUG-5513](bugs/BUG-5513-media-link-removal-no-undo.md) | ✅ | ✅ | media-link-removal-no-undo |
 | [BUG-5512](bugs/BUG-5512-remote-collection-members-lack-info.md) | ✅ | ✅ | remote-collection-members-lack-info |
 | [BUG-5511](bugs/BUG-5511-hero-backdrop-band-collapses-on-rotate.md) | ✅ | ✅ | hero-backdrop-band-collapses-on-rotate |
+> 共 4771 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5501](bugs/BUG-5501-web-video-no-resume-position.md) | ✅ | ✅ | PC 上 YouTube 不登录就记不住观看进度（网页档只写进度不读） |
+| [BUG-5500](bugs/BUG-5500-web-video-youtube-chat-replay-missing.md) | ✅ | ✅ | PC 上 YouTube 直播回放不出「聊天回放」按钮（网页档从不探测） |
 | [BUG-5490](bugs/BUG-5490-data-location-diag-not-retained.md) | ✅ | ✅ | 数据位置诊断只在内存且被普通诊断挤掉 |
 | [BUG-5489](bugs/BUG-5489-dict-files-missing-silent.md) | ✅ | ✅ | 词典文件缺失时界面静默只显示无释义 |
 | [BUG-5487](bugs/BUG-5487-music-plugin-switch-cover-pixi-slow.md) | ✅ | ✅ | music-plugin-switch-cover-pixi-slow |
