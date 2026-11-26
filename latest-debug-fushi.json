@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "3.4.0-debug.32678",
-  "tag": "v3.4.0-debug.32678+34ae438",
+  "version": "3.4.0-debug.32705",
+  "tag": "v3.4.0-debug.32705+bbf3048",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 32678,
-  "notes": "Automated desktop debug-channel build from develop @ 34ae438. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 32705,
+  "notes": "Automated desktop debug-channel build from develop @ bbf3048. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-3.4.0-debug.32559-linux-x86_64.flatpak",
@@ -58,13 +58,13 @@
       "dbSchemaVersion": 181
     },
     {
-      "name": "fushi-3.4.0-debug.32678-windows-setup.exe",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.32678-windows-setup.exe",
-      "releaseSequence": 32678,
-      "tag": "v3.4.0-debug.32678+34ae438",
-      "version": "3.4.0-debug.32678",
-      "size": 305972864,
-      "sha256": "b866ddd17fba418d32b19f7e54e75c638a53cbf5cf6bd44fd97259119208ee66",
+      "name": "fushi-3.4.0-debug.32705-windows-setup.exe",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.32705-windows-setup.exe",
+      "releaseSequence": 32705,
+      "tag": "v3.4.0-debug.32705+bbf3048",
+      "version": "3.4.0-debug.32705",
+      "size": 306000512,
+      "sha256": "37b29ba1a1d63375cc6b14892e1b48bfd6074703a9da9454452a7ab6910c81ad",
       "dbSchemaVersion": 181
     }
   ]
