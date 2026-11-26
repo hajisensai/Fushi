@@ -51,16 +51,20 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
 
   bool get _shouldTick => widget.enabled && widget.items.isNotEmpty;
 
-  /// 锚点真值（毫秒）：最近一次对齐播放器时钟时的 [positionMs] 值。null = 尚未锚定。
+  /// 锚点真值（毫秒）：播放器时钟最近一次**变化**时读到的 [positionMs]。null = 尚未锚定。
+  /// 只用来估计「此刻真值大约是多少」（[_smoothPositionMs] 的目标），不直接决定画面位置。
   int? _anchorRawMs;
 
-  /// 锚点帧时间（毫秒）：锚定当刻的 [SchedulerBinding.currentFrameTimeStamp]。
+  /// 锚点帧时间（微秒）：锚定当刻的 [SchedulerBinding.currentFrameTimeStamp]。
   /// 该时钟在生产环境按 vsync 逐帧推进、在 widget 测试里按 `pump(duration)` 推进，
   /// 故插值在测试中确定、不依赖真实墙钟。
-  int _anchorFrameMs = 0;
+  int _anchorFrameUs = 0;
 
-  /// 上一帧返回的平滑位置（毫秒），用于**只进不退**单调钳制，消除退出边缘的来回跳动。
-  int _lastSmoothMs = 0;
+  /// 上一帧的帧时间（微秒），平滑时钟按两帧间隔自由推进。
+  int _lastFrameUs = 0;
+
+  /// 平滑时钟（毫秒，带小数）：画面实际用的位置。播放中只进不退。
+  double _smoothMs = 0;
 
   /// 布局器**按播放会话长期持有**：行号分配记在它内部并跨帧延续，一条弹幕退场时
   /// 其余弹幕才不会跟着换行。每帧新建实例就丢掉这份记忆，重排立刻回来。
@@ -102,46 +106,85 @@ class _VideoDanmakuOverlayState extends State<VideoDanmakuOverlay>
     }
   }
 
-  /// 按帧插值出的**单调**平滑播放位置（毫秒），消除 media_kit `state.position`
-  /// ~200ms 才更新一次导致的弹幕跳格，且**播放中只进不退**——避免退出边缘（progress
-  /// 逼近 1）来回穿越活动/淡出阈值造成的「来回跳动 + 忽隐忽现」。
+  /// 真值多久没变就认为播放器其实停了（缓冲 / 卡顿但 isPlaying 仍为真）：目标估计
+  /// 最多从锚点外推这么远，平滑时钟随之减速停下，不会在画面冻住时自顾往前跑。
+  static const double _maxExtrapolateMs = 600;
+
+  /// 平滑时钟向目标收敛的时间常数（毫秒）。远大于真值采样间隔（~200ms），单次采样的
+  /// 抖动被摊平成肉眼不可见的微小变速，而持续漂移仍能在一两秒内追平。
+  static const double _convergeTauMs = 800;
+
+  /// 小误差时单帧修正量上限占「本帧应走距离」的比例：速度最多 ±12% 微调，不会顿住。
+  static const double _maxSlewRatio = 0.12;
+
+  /// 误差在这个范围内只做限幅微调；超出（中途卡顿 / 恢复）才放开按时间常数快速收敛。
+  static const double _slewOnlyErrorMs = 250;
+
+  /// 真值偏离平滑时钟超过这个量视为 seek，直接对齐（唯一允许后退的情形）。
+  static const double _snapErrorMs = 1000;
+
+  /// 按帧推进的**平滑、单调**播放位置（毫秒）。
   ///
-  /// 锚点法：以最近的真值为地面真相，从锚点按 帧时间 × 速率外推；真值每前进一格就
-  /// 重锚（当前时刻真相），故外推不会越跑越远。外推结果对上一帧做单调钳制（不得后退）；
-  /// 真值大跳（seek）时才允许一次性对齐（含后退）；暂停时冻结当前平滑值。
+  /// 播放器时钟（media_kit `state.position`）约 200ms 才更新一次，且每次到达都带不定的
+  /// 延迟。修前的做法是真值每变一次就**硬重锚**到真值、再叠「只进不退」钳制：真值比外推
+  /// 落后时钳制让弹幕原地停住，领先时一下跳过去——每 200ms 一顿一跳，就是「一卡一卡地
+  /// 抽动前进」。
+  ///
+  /// 现在画面位置由一根自由运行的时钟给出：每帧按「帧间隔 × 速率」前进，只把它与真值
+  /// 估计（锚点真值 + 自锚点起的外推）的误差**慢慢**揉进去（限幅微调速度），真值采样
+  /// 本身不再直接出现在画面上。seek（误差 > 1s）才一次性对齐；暂停冻结当前位置。
   int _smoothPositionMs() {
     final int raw = widget.positionMs();
-    final int frameMs =
-        SchedulerBinding.instance.currentFrameTimeStamp.inMilliseconds;
+    final int frameUs =
+        SchedulerBinding.instance.currentFrameTimeStamp.inMicroseconds;
     final bool playing = widget.isPlaying?.call() ?? true;
     final double speed = widget.speed?.call() ?? 1.0;
 
-    // 首帧 / seek（真值大跳，前进或后退）：以真值重锚并直接对齐（允许后退，仅此一次）。
-    if (_anchorRawMs == null || (raw - _anchorRawMs!).abs() > 1000) {
+    if (_anchorRawMs == null) {
       _anchorRawMs = raw;
-      _anchorFrameMs = frameMs;
-      _lastSmoothMs = raw;
+      _anchorFrameUs = frameUs;
+      _lastFrameUs = frameUs;
+      _smoothMs = raw.toDouble();
       return raw;
     }
 
-    // 暂停：冻结在上一帧平滑值（不外推），锚点挪到当下使恢复播放时无跳变。
-    if (!playing) {
-      _anchorRawMs = raw;
-      _anchorFrameMs = frameMs;
-      return _lastSmoothMs;
-    }
-
-    // 真值前进了一格（media_kit ~200ms 一次）→ 用最新真值重锚（当前时刻的地面真相）。
+    final double dtMs = (frameUs - _lastFrameUs).clamp(0, 1 << 31) / 1000.0;
+    _lastFrameUs = frameUs;
     if (raw != _anchorRawMs) {
       _anchorRawMs = raw;
-      _anchorFrameMs = frameMs;
+      _anchorFrameUs = frameUs;
     }
 
-    // 从锚点按 帧时间 × 速率外推，再做只进不退单调钳制。
-    int next = _anchorRawMs! + ((frameMs - _anchorFrameMs) * speed).round();
-    if (next < _lastSmoothMs) next = _lastSmoothMs;
-    _lastSmoothMs = next;
-    return next;
+    if (!playing) {
+      // 锚点帧时间跟着挪到当下：恢复播放时外推从零算起，不把暂停时长当成落后。
+      _anchorFrameUs = frameUs;
+      // 暂停时真值就是画面帧；只有它明显挪动（暂停中 seek / 逐帧）才跟过去。
+      if ((raw - _smoothMs).abs() > _snapErrorMs) _smoothMs = raw.toDouble();
+      return _smoothMs.round();
+    }
+
+    final double sinceAnchorMs = ((frameUs - _anchorFrameUs) / 1000.0).clamp(
+      0.0,
+      _maxExtrapolateMs,
+    );
+    final double target = _anchorRawMs! + sinceAnchorMs * speed;
+    final double predicted = _smoothMs + dtMs * speed;
+    final double error = target - predicted;
+
+    if (error.abs() > _snapErrorMs) {
+      _smoothMs = target;
+      return _smoothMs.round();
+    }
+
+    double correction = error * (dtMs / _convergeTauMs).clamp(0.0, 1.0);
+    if (error.abs() <= _slewOnlyErrorMs) {
+      final double limit = dtMs * speed.abs() * _maxSlewRatio;
+      correction = correction.clamp(-limit, limit);
+    }
+    final double next = predicted + correction;
+    // 只进不退：退出边缘不来回穿越活动 / 淡出阈值。
+    if (next > _smoothMs) _smoothMs = next;
+    return _smoothMs.round();
   }
 
   @override
