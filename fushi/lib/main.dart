@@ -51,6 +51,7 @@ import 'package:fushi/src/second_screen/companion/companion_context.dart'
     show companionContextRouteObserver;
 import 'package:fushi/src/second_screen/second_screen_approval_host.dart';
 import 'package:fushi/src/models/module_id.dart';
+import 'package:fushi/src/models/preferences_repository.dart';
 import 'package:fushi/src/srs/srs_app_host.dart' show srsPushProfileNoteEditor;
 import 'package:fushi/src/srs/srs_app_runtime.dart'
     show SrsAppRuntime, installSrsAppRuntime, srsAppRuntimeProvider;
@@ -187,6 +188,9 @@ import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
 import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
+import 'package:fushi/src/platform/desktop/desktop_tray.dart';
+import 'package:fushi/src/floating_ball/floating_ball_config.dart'
+    show isDesktopSystemBallPlatform;
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
 import 'package:fushi/src/media/import/android_open_with.dart';
 import 'package:fushi/src/media/import/archive_password_prompt.dart';
@@ -1379,6 +1383,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (_isDesktop) {
       windowManager.addListener(this);
     }
+    // Windows 托盘图标：菜单动作、「关闭到托盘」回调。菜单内容在根 build 里推。
+    DesktopTray.instance.attach(
+      onEntry: (DesktopTrayEntry entry) => unawaited(_runTrayEntry(entry)),
+      onHiddenToTray: _onHiddenToTray,
+    );
     // BUG-2259：macOS 的「退出应用」不是「关窗口」。window_manager 的
     // setPreventClose(true) 只拦 NSWindow 的 windowShouldClose:（点红叉），而
     // ⌘Q / 菜单「退出 Fushi」/ Dock 右键退出 走的是 NSApplication 的
@@ -1917,6 +1926,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (_isDesktop) {
       windowManager.removeListener(this);
     }
+    DesktopTray.instance.detach();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
@@ -1994,6 +2004,97 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
   /// link on this screen (continue an item, start reviews...).
   Future<void> _openCompanionLink(String link) async {
     await handleIncomingUrl(data: link, isInitial: false);
+  }
+
+  /// 托盘菜单项的文案：导航项与底栏同名，其余复用悬浮球 / 托盘自己的文案。
+  String _trayEntryLabel(DesktopTrayEntry entry) => switch (entry) {
+    DesktopTrayEntry.show => t.desktop_tray_show_window,
+    DesktopTrayEntry.clipboardLookup => t.floating_ball_action_clipboard,
+    DesktopTrayEntry.screenOcr => t.floating_ball_action_screen_ocr,
+    DesktopTrayEntry.exit => t.desktop_tray_quit,
+    _ => homeNavItemFor(entry.homeTab!).label,
+  };
+
+  /// 托盘菜单动作。要露出主窗口的项，原生侧已经在菜单返回的同一调用栈里把窗口
+  /// 带回前台了，这里只管落地。
+  Future<void> _runTrayEntry(DesktopTrayEntry entry) async {
+    if (!mounted) return;
+    final AppModel appModel = ref.read(appProvider);
+    switch (entry) {
+      case DesktopTrayEntry.show:
+        return;
+      case DesktopTrayEntry.exit:
+        await _flushAndExitForWindowClose();
+        return;
+      case DesktopTrayEntry.screenOcr:
+        await GlobalLookupController.instance.triggerScreenOcr();
+        return;
+      case DesktopTrayEntry.clipboardLookup:
+        await _trayClipboardLookup();
+        return;
+      case DesktopTrayEntry.lookup:
+      case DesktopTrayEntry.books:
+      case DesktopTrayEntry.manga:
+      case DesktopTrayEntry.video:
+      case DesktopTrayEntry.music:
+      case DesktopTrayEntry.srs:
+      case DesktopTrayEntry.settings:
+        break;
+    }
+    if (!appModel.isInitialised) return;
+    // 菜单可能是模块关掉之前发的：落地时再判一次门。
+    final ModuleId? module = entry.module;
+    if (module != null && !appModel.moduleVisibility.isEnabled(module)) return;
+    final HomeTab tab = entry.homeTab!;
+    void selectHomeTab(HomeTab tab) => homeShellTabNotifier.value = tab;
+    // 新手引导没走完：只在引导下面切 tab，不动路由栈（与长按图标快捷方式同口径）。
+    if (!appModel.onboardingCompleted) {
+      selectHomeTab(tab);
+      return;
+    }
+    if (entry == DesktopTrayEntry.lookup) {
+      // 点「查词」就是要打字：送进搜索框（与全局「打开查词页」热键同一入口）。
+      appModel.requestHomeDictionaryTab(focusSearch: true);
+      return;
+    }
+    await landOnHomeTab(
+      tab,
+      navigator: appModel.navigatorKey.currentState,
+      selectHomeTab: selectHomeTab,
+    );
+  }
+
+  /// 托盘「剪贴板查词」：弹应用外查词窗，不把主窗口带出来；查词窗起不来时退回
+  /// 主窗口里的查词卡。
+  Future<void> _trayClipboardLookup() async {
+    final ClipboardData? data = await Clipboard.getData(Clipboard.kTextPlain);
+    final String text = data?.text?.trim() ?? '';
+    if (text.isEmpty) {
+      await DesktopTray.instance.showNotification(
+        title: 'Fushi',
+        body: t.floating_ball_clipboard_empty,
+      );
+      return;
+    }
+    if (await GlobalLookupController.instance.lookupText(text)) return;
+    await DesktopLookupService.instance.bringMainWindowToFront();
+    FloatingLyricLookupNotifier.instance.requestLookup(text, 0);
+  }
+
+  /// 原生侧已把主窗口收进托盘（关闭按钮 / Alt+F4 且开着「关闭到托盘」）。窗口隐藏
+  /// 后几何仍可读，趁此落一次盘；第一次收进托盘时弹一条通知，告诉用户它还在运行。
+  void _onHiddenToTray() {
+    unawaited(DesktopWindowPlacement.saveCurrentBoundsNow());
+    if (!mounted) return;
+    final PreferencesRepository prefs = ref.read(appProvider).prefsRepo;
+    if (prefs.desktopTrayHintShown) return;
+    unawaited(prefs.setDesktopTrayHintShown(true));
+    unawaited(
+      DesktopTray.instance.showNotification(
+        title: 'Fushi',
+        body: t.desktop_tray_hidden_hint,
+      ),
+    );
   }
 
   void _queueAppShortcut(AppShortcut shortcut) {
@@ -3282,6 +3383,17 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
       AppShortcut.available(appModel.moduleVisibility),
       labelOf: (AppShortcut shortcut) => homeNavItemFor(shortcut.homeTab).label,
       disabledMessage: t.module_disabled_hint,
+    );
+    // 托盘菜单同口径：跟着模块开关与界面语言走，按签名去重。
+    DesktopTray.instance.sync(
+      items: buildDesktopTrayMenu(
+        isModuleEnabled: appModel.moduleVisibility.isEnabled,
+        labelOf: _trayEntryLabel,
+        screenOcrAvailable: isDesktopSystemBallPlatform,
+        clipboardLookupAvailable: true,
+      ),
+      tooltip: 'Fushi',
+      closeToTray: appModel.prefsRepo.desktopCloseToTray,
     );
 
     if (!_startupFeedbackChecked) {

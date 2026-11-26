@@ -77,13 +77,32 @@ Future<void> runAppShortcut(
     openLookup();
     return;
   }
+  await landOnHomeTab(
+    shortcut.homeTab,
+    navigator: navigator,
+    selectHomeTab: selectHomeTab,
+    media: media,
+  );
+}
+
+/// 外部入口（长按图标快捷方式、桌面托盘菜单）落到某个首页 tab：切 tab 后逐层
+/// 退回首页根路由，否则 tab 切了也被上层页面挡住。
+///
+/// 与卡片来源回跳（card_source_router）同一条 [ExternalMediaNavigation] 队列：
+/// 两个外部入口不会同时去收同一个媒体页。切 tab 也排在队列里：前一个外部导航还
+/// 没收完时先切 tab，页面却迟迟不退，用户看到的是 tab 变了、画面没变。
+///
+/// 模块门与新手引导由调用方判（各入口的口径不同）。
+Future<void> landOnHomeTab(
+  HomeTab tab, {
+  required NavigatorState? navigator,
+  required void Function(HomeTab tab) selectHomeTab,
+  ExternalMediaNavigation? media,
+}) async {
   final ExternalMediaNavigation mediaNavigation =
       media ?? ExternalMediaNavigation.instance;
-  // 与卡片来源回跳（card_source_router）同一条队列：两个外部入口不会同时去收
-  // 同一个媒体页。切 tab 也排在队列里：前一个外部导航还没收完时先切 tab，页面
-  // 却迟迟不退，用户看到的是 tab 变了、画面没变。
   await mediaNavigation.navigate(() async {
-    selectHomeTab(shortcut.homeTab);
+    selectHomeTab(tab);
     if (navigator == null) return;
     await unwindToHomeRoute(navigator, media: mediaNavigation);
   });

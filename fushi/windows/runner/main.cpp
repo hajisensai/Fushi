@@ -17,6 +17,7 @@
 #include "flutter_window.h"
 #include "hang_watchdog.h"
 #include "single_instance_mutex.h"
+#include "tray_icon.h"
 #include "startup_trace.h"
 #include "utils.h"
 #include "window_capture.h"
@@ -419,6 +420,10 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
       const std::wstring file_arg = FirstFileArgFromCommandLine();
       if (!file_arg.empty()) {
         ::fushi::SendExternalVideoPath(existing, file_arg);
+      }
+      // 主窗口被「关闭到托盘」藏着：再次启动 = 用户要把它找回来。
+      if (::GetPropW(existing, ::fushi::kTrayHiddenWindowProp) != nullptr) {
+        ::ShowWindow(existing, SW_SHOW);
       }
       if (::IsIconic(existing)) {
         ::ShowWindow(existing, SW_RESTORE);
