@@ -100,6 +100,7 @@ Rules:
 - Never change the meaning. Keep tone and register unless the instruction says otherwise.
 - Don't add anything the note doesn't support; don't drop important details.
 - Keep quotes of the note's sentence or headword word for word.
+- Keep every part in the language it is written in; don't translate.
 - "explanation": one short sentence on what you changed.
 
 $_kInstructionTail''';
@@ -158,7 +159,7 @@ const List<AiSrsFieldTemplate> kAiSrsFieldTemplates = <AiSrsFieldTemplate>[
   ),
   AiSrsFieldTemplate(
     id: 'task.rewrite',
-    version: 4,
+    version: 5,
     task: AiSrsFieldTask.rewrite,
     prompt: AiSrsFieldActionPrompt(
       template: kAiSrsFieldRewriteTemplate,

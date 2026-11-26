@@ -782,6 +782,8 @@ class AnotherPopupPart {
           'with the tonal role directly on the plot canvas; the dots are chart '
           'content (same class as the allowlisted reading/video statistics '
           'pages), not page chrome.',
+      'lib/src/pages/implementations/srs/srs_field_ai_formatted_text.dart':
+          'Field AI suggestion preview renders the field HTML from the AI reply: <rt> readings at 0.55x and <sub>/<sup> at 0.75x of the passed body style (fontSizeFactor on context.fushiType), the same relative sizes a card face gives them; field content typography, not page chrome.',
       'lib/src/pages/implementations/srs/srs_field_editors.dart':
           'Ruby format key icon draws the reading glyph at 0.6x the body size (the icon is the ruby itself); derived from context.fushiType, not a free-standing size.',
       'lib/src/pages/implementations/srs/srs_fushi_card_view.dart':
@@ -1545,6 +1547,8 @@ class AnotherPopupPart {
       'lib/src/pages/implementations/srs_calibration_charts.dart': <String>{
         'surfaceContainerLow',
       },
+      'lib/src/pages/implementations/srs/srs_field_ai_formatted_text.dart':
+          <String>{'fontSizeFactor'},
       'lib/src/pages/implementations/srs/srs_field_editors.dart': <String>{
         'fontSize:',
       },

@@ -407,7 +407,8 @@ void main() {
         ),
       );
       expect(structured, contains('if there is no instruction, in 日本語.'));
-      expect(kAiSrsFieldAppRulesVersion, 1);
+      expect(plain, contains('never **word**'));
+      expect(kAiSrsFieldAppRulesVersion, 2);
     });
   });
 
@@ -420,7 +421,8 @@ void main() {
         'task.custom',
       ]);
       for (final AiSrsFieldTemplate t in kAiSrsFieldTemplates) {
-        expect(t.version, 4, reason: t.id);
+        // 改写 v5：加了「各部分保持原语言、不翻译」（本地模型实测把大辞林释义译成了英文）。
+        expect(t.version, t.id == 'task.rewrite' ? 5 : 4, reason: t.id);
         expect(t.prompt.guidance, kAiSrsFieldGuidance);
         expect(
           t.prompt.mode,

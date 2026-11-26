@@ -37,16 +37,14 @@ Text srsFieldAiFormattedText(
   Key? key,
 }) {
   final ColorScheme scheme = Theme.of(context).colorScheme;
-  final double size = style.fontSize ?? 16;
   return Text.rich(
     srsFieldAiFormattedSpan(
       html,
       style: style,
-      rubyStyle: style.copyWith(
-        fontSize: size * 0.55,
-        height: 1.1,
-        color: scheme.onSurfaceVariant,
-      ),
+      rubyStyle: _scaled(
+        style,
+        0.55,
+      ).copyWith(height: 1.1, color: scheme.onSurfaceVariant),
       markColor: scheme.tertiaryContainer,
     ),
     key: key,
@@ -132,8 +130,7 @@ class _SpanWriter {
       case 'sub' || 'sup':
         nodes(
           e.nodes,
-          style.copyWith(
-            fontSize: (style.fontSize ?? 16) * 0.75,
+          _scaled(style, 0.75).copyWith(
             fontFeatures: <FontFeature>[
               ...?style.fontFeatures,
               tag == 'sub'
@@ -215,3 +212,8 @@ class _SpanWriter {
     _lineStart = false;
   }
 }
+
+/// 按字号比例缩放（注音 / 上下标相对正文字号，不另立绝对字号）；没有字号的样式原样
+/// 交回，由继承的 DefaultTextStyle 决定。
+TextStyle _scaled(TextStyle style, double factor) =>
+    style.fontSize == null ? style : style.apply(fontSizeFactor: factor);

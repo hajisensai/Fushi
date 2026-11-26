@@ -72,6 +72,25 @@ void main() {
       );
     });
 
+    test('Markdown **bold** becomes <b> (local model replies, 2026-11-25)', () {
+      expect(
+        _plain('And when I **realized** it, I completely hated it.').value,
+        'And when I <b>realized</b> it, I completely hated it.',
+      );
+      expect(_plain('**Oops, I guess.**').value, '<b>Oops, I guess.</b>');
+      expect(
+        _structured(
+          '```json\n{\n  "value": "When I **noticed** that, I disliked it.",\n'
+          '  "explanation": "The translation is direct."\n}\n```',
+        ).value,
+        'When I <b>noticed</b> that, I disliked it.',
+      );
+      // Not bold: single stars, spaced stars, a pair split across lines.
+      expect(_plain('2 * 3 = 6, a *b* c').value, '2 * 3 = 6, a *b* c');
+      expect(_plain('a ** b ** c').value, 'a ** b ** c');
+      expect(_plain('**a\nb**').value, '**a<br>b**');
+    });
+
     test('empty / whitespace / only-tags reply is an empty error with raw', () {
       for (final String raw in <String>[
         '',

@@ -128,9 +128,15 @@ final RegExp _lineStructureTag = RegExp(
   caseSensitive: false,
 );
 
-/// 换行规整 + 清洗：值里没有表达换行的标签时，把纯文本换行转成 `<br>`。
+// Markdown 粗体 `**…**`（同一行内、内容不以空白开头 / 结尾）。小模型即便被要求写 HTML
+// 也常这样加粗（本地小模型实测：翻译回复几乎全是 `**noticed**`），原样写进字段就是字面星号。
+final RegExp _markdownBold = RegExp(r'\*\*(?=\S)([^\n]*?\S)\*\*');
+
+/// 换行规整 + Markdown 粗体转 `<b>` + 清洗：值里没有表达换行的标签时，把纯文本换行转成
+/// `<br>`。单个 `*` 不当斜体处理（乘号、列表符、脚注都用它）。
 String _fieldValue(String raw) {
   String s = raw.replaceAll('\r\n', '\n').replaceAll('\r', '\n').trim();
+  s = s.replaceAllMapped(_markdownBold, (Match m) => '<b>${m.group(1)}</b>');
   if (!_lineStructureTag.hasMatch(s)) {
     s = s.replaceAll(RegExp(r'\n{3,}'), '\n\n').replaceAll('\n', '<br>');
   }
