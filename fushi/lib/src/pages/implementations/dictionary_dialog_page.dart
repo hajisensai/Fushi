@@ -979,8 +979,10 @@ class _DictionaryDialogPageState extends BasePageState {
   @override
   Widget build(BuildContext context) {
     // Apple 设计系统（iOS 26 / macOS 26）与 Cupertino 渲染一样把导入 / 更新 / 清空
-    // 放进标题栏动作（桌面一排玻璃圆钮、窄屏「…」溢出菜单），不再在内容层铺一排
-    // MD3 tonal 按钮——iOS 的「添加」类动作住在导航栏，内容层只放列表。
+    // 放进标题栏动作，不再在内容层铺一排 MD3 tonal 按钮——iOS 的「添加」类动作
+    // 住在导航栏，内容层只放列表。各宽度给同一份平铺动作，放不下由导航栏统一
+    // 收进「⋯」；以前窄屏自带一个「⋮」菜单，被导航栏再收一层就成了「⋮」「⋯」
+    // 两颗溢出钮并排。
     final bool cupertino =
         isCupertinoPlatform(context) || isGlassDesign(context);
     final double width = MediaQuery.sizeOf(context).width;
@@ -988,7 +990,7 @@ class _DictionaryDialogPageState extends BasePageState {
     // 宽屏（PC）= 列表 + 右侧详情侧板两栏；窄屏 = 单列卡片列表 + 底部 sheet。
     final bool split = dictionaryManagerUsesSplitLayout(width);
     final List<Widget> actions = cupertino
-        ? (compact ? _buildMobilePageActions() : _buildDesktopPageActions())
+        ? _buildApplePageActions()
         : const <Widget>[];
     final List<Widget> listChildren = <Widget>[
       if (!cupertino) _buildActionBar(compact: compact),
@@ -1217,7 +1219,7 @@ class _DictionaryDialogPageState extends BasePageState {
                   // Folder import is unavailable on iOS. This bar only renders
                   // on Material, so the guard is a no-op on a normal iOS device;
                   // it stays live only for a forced Material design-system
-                  // override on iOS, mirroring _buildDesktopPageActions.
+                  // override on iOS, mirroring _buildApplePageActions.
                   if (!Platform.isIOS)
                     _buildActionButton(
                       focusPrefix: 'dict-action-folder',
@@ -1291,6 +1293,8 @@ class _DictionaryDialogPageState extends BasePageState {
       tooltip: _selecting ? t.dict_selection_exit : t.batch_select,
       selected: _selecting,
       enabled: _selecting || hasRows,
+      // Apple 导航栏放不下时，多选与「导入词典」最后才收进「⋯」。
+      overflowPriority: 10,
       onTap: _toggleSelecting,
     );
   }
@@ -1331,7 +1335,7 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  List<Widget> _buildDesktopPageActions() {
+  List<Widget> _buildApplePageActions() {
     return [
       FushiIconButton(
         tooltip: t.dict_update_all,
@@ -1352,6 +1356,7 @@ class _DictionaryDialogPageState extends BasePageState {
       FushiIconButton(
         tooltip: t.dialog_import_dictionary,
         icon: Icons.upload_file_outlined,
+        overflowPriority: 20,
         onTap: _importDictionaryFiles,
       ),
       _buildSelectionToggle(),
@@ -1360,30 +1365,6 @@ class _DictionaryDialogPageState extends BasePageState {
         icon: Icons.delete_sweep_outlined,
         enabledColor: theme.colorScheme.error,
         onTap: showDictionaryClearDialog,
-      ),
-    ];
-  }
-
-  List<Widget> _buildMobilePageActions() {
-    return [
-      FushiIconButton(
-        tooltip: t.dialog_import_dictionary,
-        icon: Icons.upload_file_outlined,
-        onTap: _importDictionaryFiles,
-      ),
-      _buildSelectionToggle(),
-      FushiOverflowMenu<VoidCallback>(
-        tooltip: t.show_options,
-        icon: Icons.more_vert,
-        onSelected: (VoidCallback action) => action(),
-        items: [
-          buildPopupItem(
-            label: t.dict_download_browse,
-            icon: Icons.cloud_download_outlined,
-            action: _showDownloadSelectionDialog,
-          ),
-          ..._buildOverflowItems(includeSecondaryImports: true),
-        ],
       ),
     ];
   }

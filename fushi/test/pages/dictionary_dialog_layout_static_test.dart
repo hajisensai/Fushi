@@ -147,8 +147,10 @@ void main() {
       'lib/src/pages/implementations/dictionary_dialog_page.dart',
     ).readAsStringSync();
 
-    expect(source, contains('_buildMobilePageActions'));
-    expect(source, contains('_buildDesktopPageActions'));
+    // Apple 各宽度同一份平铺动作，放不下由导航栏收进「⋯」；不再自带第二个
+    // 溢出菜单（窄屏曾出现「⋮」「⋯」两颗溢出钮并排）。
+    expect(source, contains('_buildApplePageActions'));
+    expect(source, isNot(contains('_buildMobilePageActions')));
     expect(source, contains('MediaQuery.sizeOf(context).width < 480'));
     expect(source, contains('dictionaryManagerUsesSplitLayout(width)'));
     expect(source, contains('_buildSplitBody('));
