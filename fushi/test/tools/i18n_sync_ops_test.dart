@@ -571,9 +571,9 @@ void main() {
         return r;
       }
 
-      void write(Map<String, dynamic> json) => File(
-        '${repo.path}/s.i18n.json',
-      ).writeAsStringSync(encodeI18nJson(json));
+      void write(Map<String, dynamic> json) =>
+          File('${repo.path}/s.i18n.json')
+              .writeAsStringSync(encodeI18nJson(json));
 
       expect(git(<String>['init', '-q', '-b', 'main']).exitCode, 0);
       git(<String>['config', 'core.autocrlf', 'false']);
@@ -582,9 +582,8 @@ void main() {
         'merge.fushi-i18n-json.driver',
         'dart "${driver.replaceAll('\\', '/')}" %O %A %B',
       ]);
-      File(
-        '${repo.path}/.gitattributes',
-      ).writeAsStringSync('*.i18n.json merge=fushi-i18n-json\n');
+      File('${repo.path}/.gitattributes')
+          .writeAsStringSync('*.i18n.json merge=fushi-i18n-json\n');
       write(<String, dynamic>{'a': '1', 'b': '2'});
       git(<String>['add', '.']);
       git(<String>['commit', '-q', '-m', 'base']);
@@ -610,11 +609,119 @@ void main() {
             '相邻 key 按行合并必冲突，驱动没生效才会到这里：'
             '${merge.stdout}${merge.stderr}',
       );
-      final Map<String, dynamic> merged =
-          jsonDecode(File('${repo.path}/s.i18n.json').readAsStringSync())
-              as Map<String, dynamic>;
+      final Map<String, dynamic> merged = jsonDecode(
+        File('${repo.path}/s.i18n.json').readAsStringSync(),
+      ) as Map<String, dynamic>;
       expect(merged.keys.toList(), <String>['a', 'a_x', 'a_y', 'b']);
     }, timeout: const Timeout(Duration(minutes: 2)));
+
+    /// 2026-11-27：worktree 里 git 把 GIT_DIR 传给合并驱动。驱动直接配成 `dart ...`
+    /// 时 PATH 上的 Flutter `dart` 包装脚本拿它跑 `git -C $FLUTTER_ROOT rev-parse
+    /// HEAD`，读到的是本仓 HEAD，于是重建工具、把 SDK 的 flutter.version.json
+    /// 写成本仓版本号（3.50.0 → 「2.9.1」），bootstrap 随即拒用该 SDK。注册的入口
+    /// `tool/git_hooks/i18n_merge_driver.sh` 必须先清掉这些变量再起 dart。
+    test('linked worktree 里合并：入口脚本起的 dart 看不到 GIT_DIR（对照：直接 dart 看得到）', () {
+      final Directory tmp = Directory.systemTemp.createTempSync(
+        'i18n_driver_env_',
+      );
+      addTearDown(() => tmp.deleteSync(recursive: true));
+      final String root = tmp.path.replaceAll('\\', '/');
+      // 仓库布局的最小复制：真入口脚本 + 一个探针顶替 fushi/tool/i18n_merge_driver.dart，
+      // 探针记下自己看到的 GIT_DIR，并以 theirs 作为合并结果。没有
+      // .dart_tool/package_config.json，入口脚本退回 PATH 上的 dart。
+      Directory('$root/layout/tool/git_hooks').createSync(recursive: true);
+      Directory('$root/layout/fushi/tool').createSync(recursive: true);
+      File('../tool/git_hooks/i18n_merge_driver.sh')
+          .copySync('$root/layout/tool/git_hooks/i18n_merge_driver.sh');
+      final String probe = '$root/layout/fushi/tool/i18n_merge_driver.dart';
+      File(probe).writeAsStringSync('''
+import 'dart:io';
+
+void main(List<String> args) {
+  File(Platform.environment['I18N_PROBE_OUT']!).writeAsStringSync(
+    Platform.environment['GIT_DIR'] ?? '<unset>',
+  );
+  File(args[1]).writeAsStringSync(File(args[2]).readAsStringSync());
+}
+''');
+
+      final String out = '$root/probe.txt';
+      ProcessResult git(String cwd, List<String> args) => Process.runSync(
+        'git',
+        <String>[
+          '-c',
+          'user.name=t',
+          '-c',
+          'user.email=t@t',
+          '-c',
+          'commit.gpgsign=false',
+          ...args,
+        ],
+        workingDirectory: cwd,
+        environment: <String, String>{'I18N_PROBE_OUT': out},
+      );
+
+      final String main = '$root/main';
+      Directory(main).createSync();
+      expect(git(main, <String>['init', '-q', '-b', 'main']).exitCode, 0);
+      git(main, <String>['config', 'core.autocrlf', 'false']);
+      File('$main/.gitattributes').writeAsStringSync('*.j merge=probe\n');
+      File('$main/s.j').writeAsStringSync('base\n');
+      git(main, <String>['add', '.']);
+      git(main, <String>['commit', '-q', '-m', 'base']);
+      git(main, <String>['checkout', '-q', '-b', 'feature']);
+      File('$main/s.j').writeAsStringSync('theirs\n');
+      git(main, <String>['commit', '-q', '-am', 'theirs']);
+      git(main, <String>['checkout', '-q', 'main']);
+
+      String mergeInWorktree(String name, String driver) {
+        final String wt = '$root/$name';
+        expect(
+          git(main, <String>['worktree', 'add', '-q', '-b', name, wt]).exitCode,
+          0,
+        );
+        File('$wt/s.j').writeAsStringSync('ours $name\n');
+        git(wt, <String>['commit', '-q', '-am', 'ours']);
+        git(wt, <String>['config', 'merge.probe.driver', driver]);
+        final File record = File(out);
+        if (record.existsSync()) record.deleteSync();
+        final ProcessResult merge = git(wt, <String>[
+          'merge',
+          '--no-edit',
+          '-q',
+          'feature',
+        ]);
+        expect(
+          merge.exitCode,
+          0,
+          reason: '驱动没跑通：${merge.stdout}${merge.stderr}',
+        );
+        expect(File('$wt/s.j').readAsStringSync(), 'theirs\n');
+        return record.readAsStringSync();
+      }
+
+      // 对照组用 sh 探针而不是 `dart`：真用 PATH 上的 Flutter dart 包装脚本带着
+      // GIT_DIR 跑一次，就会把跑测试这台机器的 SDK 版本缓存写坏——正是要防的事。
+      final String shProbe = '$root/probe.sh';
+      File(shProbe).writeAsStringSync(
+        '#!/bin/sh\n'
+        'printf %s "\${GIT_DIR-<unset>}" > "\$I18N_PROBE_OUT"\n'
+        'cp "\$3" "\$2"\n',
+      );
+      expect(
+        mergeInWorktree('direct', 'sh "$shProbe" %O %A %B'),
+        isNot('<unset>'),
+        reason: '对照组：git 在 linked worktree 里确实把 GIT_DIR 传给驱动，否则本测试测不到东西',
+      );
+      expect(
+        mergeInWorktree(
+          'entry',
+          'sh "$root/layout/tool/git_hooks/i18n_merge_driver.sh" %O %A %B',
+        ),
+        '<unset>',
+        reason: '入口脚本必须清掉 GIT_DIR，Flutter 的 dart 包装脚本才不会把本仓 HEAD 当成 SDK 版本',
+      );
+    }, timeout: const Timeout(Duration(minutes: 3)));
 
     /// 失败安全：驱动报冲突 / 吃不下输入时，%A 必须同时带着两边的内容。旧实现
     /// 冲突时把 ours 的值写成一份「看起来已合好」的合法 JSON、非 JSON 输入时

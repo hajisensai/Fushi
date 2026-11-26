@@ -9,7 +9,12 @@
 ///
 ///   .gitattributes:  fushi/lib/i18n/*.i18n.json merge=fushi-i18n-json
 ///   git config merge.fushi-i18n-json.driver \
-///     "dart fushi/tool/i18n_merge_driver.dart %O %A %B"
+///     "sh tool/git_hooks/i18n_merge_driver.sh %O %A %B"
+///
+/// The shell entry strips the GIT_DIR / GIT_INDEX_FILE / ... that git exports
+/// to drivers in a linked worktree and runs the SDK's dart binary, not the
+/// Flutter `dart` wrapper (which would read this repo's HEAD as its own and
+/// corrupt the SDK's version cache); see that script's header.
 ///
 /// Git runs the driver from the work tree root with the ancestor (%O), ours
 /// (%A, also the output) and theirs (%B) as temp files. Exit 0 = merged; exit 1
