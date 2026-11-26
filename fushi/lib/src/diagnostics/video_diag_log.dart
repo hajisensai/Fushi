@@ -116,6 +116,10 @@ class VideoDiagLog {
   /// 进程启动以来的毫秒数（各探针用同一把尺，保证时间轴可对齐）。
   int get uptimeMs => _uptime.elapsedMilliseconds;
 
+  /// Dart 侧时间轴文件（[fileName]）；[init] 之前或目录解析失败时为 null。反馈日志
+  /// 汇总（`readVideoDiagFeedbackLines`）从这里读末尾一段。
+  File? get timelineFile => _file;
+
   /// libmpv `log-file` 应当写到的绝对路径；日志目录还没解析出来时返回 null
   /// （此时不给 libmpv 下发 `log-file`，而不是瞎猜一个路径）。
   String? get mpvLogFilePath {
