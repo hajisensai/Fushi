@@ -1,0 +1,6 @@
+## BUG-5512 · remote-collection-members-lack-info
+- **报告**：2026-11-19（来源：应用内反馈 vHa0VKme1R、ky0eLY4LHa，开发者自提）
+- **真实性**：✅ 真 bug。远端占位成员（对端有、本机没下载的书）在书架合集信息里一律被当成「没有进度真值、没有标题」：`fushi/lib/src/pages/implementations/reader_fushi_history_page.dart` `_slotContinueInfo` 对远端槽返回 null、`_collectionReadFraction` 跳过远端槽，所以没下载的第 2 卷读过也不进「读到第 X 卷」和合集进度条（vHa0VKme1R）；`_collectionMemberInfo`（合集详情页 `memberInfoOf`）对远端成员返回 null，`fushi/lib/src/pages/implementations/media_collection_grid_detail_page.dart` 只能拿成员行 entryKey（对端 bookKey）当标题，「按卷号」排序因此按 bookKey 排，三卷远端合集显示成 2、1、3（ky0eLY4LHa）。而 host 清单本来就带进度与显示名（`RemoteBookInfo.progressPercent` / `progressUpdatedAtMs` / `displayName`），首页「继续」早就在用。
+- **[x] ① 已修复** — 新增 `fushi/lib/src/media/collections/remote_collection_member_info.dart`（`remoteBookMemberInfo` / `remoteAudiobookMemberInfo` / `remoteBookProgressFraction`，与首页「继续」同判据：≥100% 算读完）。`_slotContinueInfo` 远端槽走它；`_collectionReadFraction` 远端书按 host 进度计入；`_collectionMemberInfo` 本地找不到时按 `_resolveCollectionMember` 同源认远端成员，给标题 / 封面 / 进度（srt 分支不再提前 return null）；`_slotDisplayTitle` 远端书用 host 显示名（与占位卡同源）。
+- **[x] ② 已加自动化测试** — `fushi/test/media/collections/remote_collection_member_info_test.dart`（进度 / 读完 / 未读映射；三卷远端成员按显示名排出 1、2、3 而不是按 bookKey）。
+- **备注**：书架页私有方法的接线未做 widget 级测试（页面依赖整套 provider），只覆盖纯函数。

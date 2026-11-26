@@ -4,6 +4,7 @@ import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/links/media_links_section.dart';
 import 'package:fushi/src/media/links/work_graph_store.dart';
+import 'package:fushi/src/media/links/work_plans.dart';
 import 'package:fushi/src/media/links/work_kinds_badge.dart';
 import 'package:fushi/src/pages/implementations/work_network_page.dart';
 import 'package:fushi_core/fushi_core.dart';
@@ -140,6 +141,49 @@ void main() {
     await tester.pump();
     await tester.pumpAndSettle();
     expect(card('game-g'), findsNothing);
+  });
+
+  testWidgets('误点「移除 AI 关联」后点提示条的撤销，原样恢复 AI 连接（反馈 bkrkQrYhnX）', (
+    WidgetTester tester,
+  ) async {
+    const MediaLinkEndpoint book = (kind: MediaLinkKind.book, key: 'novel');
+    await tester.runAsync(() async {
+      await WorkLinksSeed.insertBook(db, 'novel', '某小说', uid: 'un');
+      await db.applyAiMediaLink(
+        relation: MediaLinkRelation.sameWork,
+        from: book,
+        to: (kind: MediaLinkKind.game, key: 'g'),
+        source: MediaLinkSource.ai,
+      );
+    });
+    await tester.pumpWidget(buildSection(book));
+    await tester.pumpAndSettle();
+    expect(card('game-g'), findsOneWidget);
+
+    await tester.tap(
+      find.byKey(const ValueKey<String>('media-link-ai-remove')),
+    );
+    await tester.pumpAndSettle();
+    expect(find.text(t.media_link_removed), findsOneWidget);
+    final Finder undo = find.byKey(
+      const ValueKey<String>('media-link-removed-undo'),
+    );
+    expect(undo, findsOneWidget, reason: '移除提示条必须带撤销');
+
+    await tester.tap(undo);
+    await tester.pumpAndSettle();
+    final MediaLinkRow row = (await tester.runAsync(
+      () => db.mediaLinksForEndpoint(book.kind, book.key, includeRemoved: true),
+    ))!.single;
+    expect(row.deletedAt, isNull, reason: '撤销清掉否决墓碑');
+    expect(mediaLinkIsAiEffective(row), isTrue, reason: '恢复成 AI 生效，而不是用户确认');
+    await tester.pump();
+    await tester.pumpAndSettle();
+    expect(card('game-g'), findsOneWidget);
+    expect(
+      find.byKey(const ValueKey<String>('media-link-ai-badge')),
+      findsOneWidget,
+    );
   });
 
   testWidgets('用户确认过的连接不标 AI', (WidgetTester tester) async {

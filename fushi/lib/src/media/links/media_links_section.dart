@@ -5,6 +5,7 @@ import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
 import 'package:fushi/src/shortcuts/context_menu_trigger.dart';
 import 'package:fushi/src/media/links/adaptation_progress_section.dart';
 import 'package:fushi/src/media/links/media_link_editor_dialog.dart';
+import 'package:fushi/src/media/links/media_link_removal_notice.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
 import 'package:fushi/src/media/links/work_graph_store.dart';
 import 'package:fushi/src/media/links/work_plans.dart';
@@ -463,18 +464,17 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
       ],
     );
     if (remove != true || !mounted) return;
-    await rejectMediaLinks(widget.database, <MediaLinkId>[
+    await removeMediaLinksWithUndo(context, widget.database, <MediaLinkId>[
       for (final MediaLinkView v in direct) v.id,
     ]);
-    FushiToast.show(msg: t.media_link_removed, severity: ToastSeverity.info);
   }
 
-  Future<void> _removeAiLinks(List<MediaLinkView> ai) async {
-    await rejectMediaLinks(widget.database, <MediaLinkId>[
-      for (final MediaLinkView v in ai) v.id,
-    ]);
-    FushiToast.show(msg: t.media_link_removed, severity: ToastSeverity.info);
-  }
+  /// 卡片角上的一键「移除 AI 关联」：一点就把这张卡上的 AI 连接全写成否决墓碑，
+  /// 所以提示条必须带撤销（反馈 bkrkQrYhnX，[removeMediaLinksWithUndo]）。
+  Future<void> _removeAiLinks(List<MediaLinkView> ai) =>
+      removeMediaLinksWithUndo(context, widget.database, <MediaLinkId>[
+        for (final MediaLinkView v in ai) v.id,
+      ]);
 
   Widget _cover(BuildContext context, MediaLinkEntry entry, double width) {
     final MediaKind? kind = mediaKindOfLinkKind(entry.endpoint.kind);
@@ -710,7 +710,8 @@ class _MediaLinksSectionState extends State<MediaLinksSection> {
                           key: const ValueKey<String>(
                             'media-link-suggestion-reject',
                           ),
-                          onPressed: () => rejectMediaLinks(
+                          onPressed: () => removeMediaLinksWithUndo(
+                            context,
                             widget.database,
                             <MediaLinkId>[view.id],
                           ),

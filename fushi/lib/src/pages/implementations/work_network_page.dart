@@ -7,6 +7,7 @@ import 'package:drift/drift.dart' show TableUpdate, TableUpdateQuery;
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/links/media_link_editor_dialog.dart';
 import 'package:fushi/src/media/links/media_link_entries.dart';
+import 'package:fushi/src/media/links/media_link_removal_notice.dart';
 import 'package:fushi/src/media/links/theme_song/theme_song_plan.dart'
     show ThemeSongRole;
 import 'package:fushi/src/media/links/work_graph_store.dart';
@@ -340,8 +341,11 @@ class _WorkNetworkPageState extends State<WorkNetworkPage> {
             rows: data.edgeRows[i],
             onConfirm: () =>
                 confirmMediaLinks(widget.database, data.plan.edges[i].ids),
-            onReject: () =>
-                rejectMediaLinks(widget.database, data.plan.edges[i].ids),
+            onReject: () => removeMediaLinksWithUndo(
+              context,
+              widget.database,
+              data.plan.edges[i].ids,
+            ),
           ),
         ),
     ];

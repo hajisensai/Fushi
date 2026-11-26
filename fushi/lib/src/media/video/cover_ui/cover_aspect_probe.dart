@@ -137,6 +137,14 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
   /// 判据就是子类 build 里那条 mismatch 分支，两处必须同源——各写一份迟早漂移。
   bool needsBackdropSeed(double aspect);
 
+  /// 换图时，新图首帧解码出来之前是否沿用上一张图的宽高比。
+  ///
+  /// 默认 false：网格卡换图 = 换了一个条目，旧比例对新图没有意义，按「尺寸未知
+  /// = 合槽」渲染。按比例撑版面高度的槽位（详情页背景带轮播换图）要开：否则换图
+  /// 那一刻比例清空、版面退回兜底高度把下方内容抬上来，新图解码完再撑回去
+  /// （反馈 hmsIkQ9zIv）。新图的比例记在 [CoverProbeMemo] 里时直接用新的。
+  bool get holdsAspectAcrossImageChange => false;
+
   ImageStream? _stream;
   ImageStreamListener? _listener;
 
@@ -173,11 +181,13 @@ mixin CoverAspectProbe<T extends StatefulWidget> on State<T> {
   void didUpdateWidget(covariant T oldWidget) {
     super.didUpdateWidget(oldWidget);
     if (probedImageOf(widget) != probedImageOf(oldWidget)) {
+      final double? previous = _failed ? null : _aspect;
       _aspect = null;
       _failed = false;
       _backdropSeed = null;
       _sampleGeneration++;
       _resolveProbedImage();
+      if (_aspect == null && holdsAspectAcrossImageChange) _aspect = previous;
     }
   }
 

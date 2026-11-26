@@ -1121,6 +1121,48 @@ Rect _mirrorRect(Rect rect, double width) =>
 /// 背景图 + 海报摆法里，斜放海报（静止 / 悬停姿态）的外接框离色块边缘的最小距离。
 const double _kPosterEdgeMargin = 4;
 
+/// [slot] 按姿态 [pose] 变换（绕 [_CoverSlot.origin] 旋转 / 缩放、再平移，与
+/// `_posed` 的 [Transform] 同一算式）后四个角的外接框。
+Rect _poseBounds(_CoverSlot slot, _Pose pose) {
+  final Rect r = slot.rect;
+  final Offset o = slot.origin.withinRect(r);
+  final double theta = pose.rotation * math.pi / 180;
+  final double c = math.cos(theta);
+  final double sn = math.sin(theta);
+  double l = double.infinity;
+  double t = double.infinity;
+  double rt = -double.infinity;
+  double b = -double.infinity;
+  for (final Offset p in <Offset>[
+    r.topLeft,
+    r.topRight,
+    r.bottomLeft,
+    r.bottomRight,
+  ]) {
+    final double x = (p.dx - o.dx) * pose.scale;
+    final double y = (p.dy - o.dy) * pose.scale;
+    final double px = o.dx + pose.dx + x * c - y * sn;
+    final double py = o.dy + pose.dy + x * sn + y * c;
+    l = math.min(l, px);
+    t = math.min(t, py);
+    rt = math.max(rt, px);
+    b = math.max(b, py);
+  }
+  return Rect.fromLTRB(l, t, rt, b);
+}
+
+/// 一组槽在静止与悬停两个姿态下的总外接框。
+Rect _slotsBounds(List<_CoverSlot> slots) {
+  Rect? out;
+  for (final _CoverSlot slot in slots) {
+    for (final _Pose pose in <_Pose>[slot.rest, slot.hover]) {
+      final Rect b = _poseBounds(slot, pose);
+      out = out == null ? b : out.expandToInclude(b);
+    }
+  }
+  return out ?? Rect.zero;
+}
+
 /// 各摆法的几何（设计稿 `.vb` / `.bk` / `.mb` / `.ab` / `.gb` 换算）。
 @immutable
 class _BlockGeometry {
@@ -1228,47 +1270,77 @@ class _BlockGeometry {
         );
       case FushiCoverBlockArt.book:
         // 书：左侧扇形（设计稿 `.bk .fan`），右侧文字。
-        final double top = half ? 12 : 20;
-        final double fanLeft = half ? 18 : (hero ? 34 : 26);
+        final double top0 = half ? 12 : 20;
+        final double fanLeft0 = half ? 18 : (hero ? 34 : 26);
         final double fanW = w * (hero ? 0.38 : 0.44);
-        final double ch = h - top * 2;
-        // 书封槽按最前那本的真实比例定宽（fitHeight 铺满、不裁不露衬底）；
-        // 解出前按书封默认比例。
-        final double cw = math.min(
-          ch * (coverAspect ?? kShelfBookCoverAspectRatio),
-          fanW,
-        );
         final int n = coverCount.clamp(1, 3);
         const List<(_Pose, _Pose)> fan = <(_Pose, _Pose)>[
           (_Pose(rotation: 6), _Pose(rotation: 15, dx: 14)),
           (_Pose(rotation: -2), _Pose(rotation: -3, dy: -10)),
           (_Pose(rotation: -9), _Pose(rotation: -18, dx: -12)),
         ];
-        final List<_CoverSlot> slots = <_CoverSlot>[];
-        if (n == 1) {
-          slots.add(
-            _CoverSlot(
-              rect: Rect.fromLTWH(fanLeft + fanW * 0.08, top, cw, ch),
-              rest: const _Pose(rotation: -5),
-              hover: const _Pose(rotation: -10, dy: -6, scale: 1.03),
-              origin: Alignment.bottomCenter,
-            ),
+        // 书封槽按最前那本的真实比例定宽（fitHeight 铺满、不裁不露衬底）；
+        // 解出前按书封默认比例。
+        List<_CoverSlot> fanSlots(double left, double top, double ch) {
+          final double cw = math.min(
+            ch * (coverAspect ?? kShelfBookCoverAspectRatio),
+            fanW,
           );
-        } else {
-          // 首个（最前）放在最右、最后画；其余依次往左后方。
-          for (int i = 0; i < n; i++) {
-            final int pos = n - 1 - i;
-            final (_Pose rest, _Pose hover) = fan[i + (3 - n)];
-            slots.add(
+          if (n == 1) {
+            return <_CoverSlot>[
               _CoverSlot(
-                rect: Rect.fromLTWH(fanLeft + fanW * 0.17 * pos, top, cw, ch),
-                rest: rest,
-                hover: hover,
+                rect: Rect.fromLTWH(left + fanW * 0.08, top, cw, ch),
+                rest: const _Pose(rotation: -5),
+                hover: const _Pose(rotation: -10, dy: -6, scale: 1.03),
                 origin: Alignment.bottomCenter,
               ),
-            );
+            ];
           }
+          // 首个（最前）放在最右、最后画；其余依次往左后方。
+          return <_CoverSlot>[
+            for (int i = 0; i < n; i++)
+              _CoverSlot(
+                rect: Rect.fromLTWH(
+                  left + fanW * 0.17 * (n - 1 - i),
+                  top,
+                  cw,
+                  ch,
+                ),
+                rest: fan[i + (3 - n)].$1,
+                hover: fan[i + (3 - n)].$2,
+                origin: Alignment.bottomCenter,
+              ),
+          ];
         }
+
+        // 扇形绕底边中点斜放，转角让封面的角探出槽外：块越高、书封越高，探出
+        // 越多——「最近添加」这种高格子里最左那本的左上角与下角被色块圆角裁掉
+        // （反馈 ONOhm9EOY3）。静止与悬停两个姿态的外接框都要落在色块里（离边
+        // [_kPosterEdgeMargin]，同背景图 + 海报摆法）：高或宽放不下就按比例缩
+        // 书封，再整体平移进来。
+        double ch = h - top0 * 2;
+        double top = top0;
+        double left = fanLeft0;
+        final double roomH = h - _kPosterEdgeMargin * 2;
+        final double roomW = w - _kPosterEdgeMargin * 2;
+        for (int pass = 0; pass < 8; pass++) {
+          final Rect span = _slotsBounds(fanSlots(left, top, ch));
+          final double k = math.min(roomH / span.height, roomW / span.width);
+          if (k >= 1 - 1e-4) break;
+          ch *= k;
+        }
+        final Rect bounds = _slotsBounds(fanSlots(left, top, ch));
+        if (bounds.top < _kPosterEdgeMargin) {
+          top += _kPosterEdgeMargin - bounds.top;
+        } else if (bounds.bottom > h - _kPosterEdgeMargin) {
+          top -= bounds.bottom - (h - _kPosterEdgeMargin);
+        }
+        if (bounds.left < _kPosterEdgeMargin) {
+          left += _kPosterEdgeMargin - bounds.left;
+        } else if (bounds.right > w - _kPosterEdgeMargin) {
+          left -= bounds.right - (w - _kPosterEdgeMargin);
+        }
+        final List<_CoverSlot> slots = fanSlots(left, top, ch);
         final double fanRight = slots
             .map((_CoverSlot s) => s.rect.right)
             .reduce(math.max);
