@@ -13,6 +13,7 @@
 /// `docs/specs/2026-11-23-combo-settings-tree-design.md` §3.1。
 library;
 
+import 'package:fushi_core/fushi_core.dart' show kProfileComboSrsSharedUidKey;
 import 'package:fushi_engine/profile/combo/combo_resolver.dart';
 import 'package:fushi_engine/profile/combo/settings_tree.dart';
 
@@ -23,7 +24,7 @@ const String kComboRoleKey = 'role';
 const String kComboSplitKeyPrefix = 'split:';
 
 /// 默认组合上记共享复习库集合 uid 的 key。
-const String kComboSrsSharedUidKey = 'srs_shared_uid';
+const String kComboSrsSharedUidKey = kProfileComboSrsSharedUidKey;
 
 /// [key]（category [kComboSyntheticCategory] 下）是不是格式元数据而非设置值。
 bool isComboMetadataKey(String key) =>

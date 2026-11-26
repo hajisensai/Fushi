@@ -10,6 +10,8 @@ import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi/src/media/sources/reader_fushi_source.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/profile/combo/combo_repository.dart'
+    show ComboMigrationReport;
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/work_profile_scope.dart';
@@ -412,8 +414,12 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     state = state.copyWith(profiles: await _repo.getAllProfiles());
   }
 
-  /// 删掉 [id] 会连带删掉的数据规模（确认框用）。
+  /// 删掉 [id] 会连带删掉的数据规模（确认框用）。[id] 承载共享复习库时抛
+  /// [ProfileHostsSharedSrsLibraryException]（确认框写明原因、删除键不可点）。
   Future<ProfileDeletionImpact> deletionImpact(int id) async {
+    if (await _repo.hostsSharedSrsLibrary(id)) {
+      throw ProfileHostsSharedSrsLibraryException(id);
+    }
     final ProfileDeletionCascade? cascade = _deletionCascade;
     if (cascade == null) return const ProfileDeletionImpact.none();
     final ProfileRow? target = _profileById(await _repo.getAllProfiles(), id);
@@ -423,6 +429,7 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
 
   /// 删 Profile，连带它在 srs.db 里的复习数据与媒体目录（反馈 8TaOy2i-lL）：先备份（失败抛
   /// [ProfileDeletionBackupException]，什么都不删），再删 `profiles` 行（主库外键级联其余），最后清复习数据。
+  /// 承载共享复习库的那份不删，抛 [ProfileHostsSharedSrsLibraryException]。
   /// 只剩一个 Profile 或 [id] 不存在时不删，返回 null。
   Future<ProfileDeletionOutcome?> deleteProfile(int id) =>
       _profileDraftCoordinator._runProfileMutation((
@@ -431,6 +438,10 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
         final List<ProfileRow> before = await _repo.getAllProfiles();
         final ProfileRow? target = _profileById(before, id);
         if (target == null || before.length <= 1) return null;
+        // 承载共享复习库的那份不删（备份 / 清理都不开始）。
+        if (await _repo.hostsSharedSrsLibrary(id)) {
+          throw ProfileHostsSharedSrsLibraryException(id);
+        }
         final ProfileDeletionCleanup? cleanup = await _deletionCascade?.prepare(
           target,
         );
@@ -504,6 +515,10 @@ class ProfileViewModel extends StateNotifier<ProfileUiState> {
     );
   }
 
+  /// 本库最近一次组合迁移的报告（配置管理页「组合迁移报告」行）；没有时 null。
+  Future<ComboMigrationReport?> comboMigrationReport() =>
+      _repo.loadComboMigrationReport();
+
   Future<void> saveCurrentSettingsToActiveProfile() async {
     await _repo.snapshotCurrentSettings(state.activeProfileId);
   }
@@ -568,6 +583,9 @@ final profileRepositoryProvider = Provider<ProfileRepository>((ref) {
     ankiRepo,
     // BUG-1994：回插被旧 prune 删掉的词典行时，「装没装」只认磁盘目录。
     isDictionaryInstalled: ref.read(appProvider).isDictionaryInstalledOnDisk,
+    // 组合迁移（ensureDefaultProfile 里归一，旧备份恢复后也在这里收敛）。
+    srsUserData: ref.read(appProvider).comboSrsUserData,
+    comboMigrationBackupDirectory: AppModel.comboMigrationBackupDirectory,
   );
 });
 

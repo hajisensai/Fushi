@@ -59,10 +59,22 @@ class InertProfileRepository implements ProfileRepository {
   Future<void> renameProfile(int id, String name) async {}
 
   @override
+  Future<bool> hostsSharedSrsLibrary(int id) async => false;
+
+  @override
   Future<void> deleteProfile(int id) async {}
 
   @override
   Future<void> snapshotCurrentSettings(int profileId) async {}
+
+  @override
+  Future<void> normalizeCombos() async {}
+
+  @override
+  Future<ComboMigrationReport?> loadComboMigrationReport() async => null;
+
+  @override
+  Future<ComboMigrationReport?> takePendingComboMigrationReport() async => null;
 
   @override
   Future<void> applyProfile(int profileId) async {}

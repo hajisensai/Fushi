@@ -213,6 +213,9 @@ import 'package:fushi/src/utils/misc/lookup_input_limits.dart';
 import 'package:fushi/src/utils/net/app_network_bindings.dart';
 import 'package:fushi/src/media/drag_drop/desktop_drop_reinitializer.dart';
 import 'package:fushi_audio/fushi_audio.dart';
+import 'package:fushi/src/profile/combo/combo_repository.dart'
+    show ComboSrsLibraries, ComboSrsLibrary;
+import 'package:fushi/src/profile/combo/srs_library_resolver.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/pages/implementations/dictionary_webview_media.dart'
     show writeDictionaryMediaCache;
@@ -3849,6 +3852,25 @@ class AppModel
     database,
     platformServices.createAnkiRepository(),
     isDictionaryInstalled: isDictionaryInstalledOnDisk,
+    srsUserData: comboSrsUserData,
+    comboMigrationBackupDirectory: comboMigrationBackupDirectory,
+  );
+
+  /// 组合迁移定复习库归属（拍板台 design-srs-shared-library §4.2）：本机复习数据里 [uids] 中哪些有用户数据；
+  /// null = 此刻判断不了（库打不开、主库里还有没搬过的旧复习表……），归属留到下次再定。判据见
+  /// [SrsStorageHost.profileUidsWithUserData]。
+  Future<Set<String>?> comboSrsUserData(List<String> uids) async {
+    final SrsStorageHost? host = _srsStorageHost;
+    if (host == null) return null;
+    return host.profileUidsWithUserData(uids);
+  }
+
+  /// 组合迁移前的原快照备份目录（`<support>/combo_migration_backups/`）。
+  static Future<Directory> comboMigrationBackupDirectory() async => Directory(
+    path.join(
+      (await AppPaths.supportRootDirectory()).path,
+      'combo_migration_backups',
+    ),
   );
 
   Directory get dictionaryResourceDirectory => _dictionaryResourceDirectory;
@@ -5951,6 +5973,9 @@ class AppModel
         // BUG-1994：切 profile 时「这本词典装没装」只认磁盘目录。闭包是惰性的，
         // 只在 applyProfile（用户操作）里调，那时 late 的资源目录早已就位。
         isDictionaryInstalled: isDictionaryInstalledOnDisk,
+        // 组合迁移（ensureDefaultProfile 里归一）：复习库归属判据与原快照备份。
+        srsUserData: comboSrsUserData,
+        comboMigrationBackupDirectory: comboMigrationBackupDirectory,
       );
       dictRepo = DictionaryRepository(
         _database,
@@ -13950,7 +13975,8 @@ class AppModel
   Future<void> _setStatDayResetHourByUser(int value) async {
     await setStatDayResetHour(value);
     final int hour = statDayResetHour;
-    final String uid = await database.resolveActiveProfileUid();
+    // 日界写进激活配置解析出的那份复习库（组合阶段 4：默认共享库）。
+    final String uid = await resolveSrsLibraryUid(database);
     if (uid.isEmpty) return;
     final SrsProfileStores Function()? reader = srsProfileStoresReader;
     SrsDbStore? store;
@@ -14006,7 +14032,7 @@ class AppModel
     String profileUid,
     Future<SrsDayRollover?> Function() readSynced,
   ) async {
-    if (profileUid != await database.resolveActiveProfileUid()) return;
+    if (profileUid != await resolveSrsLibraryUid(database)) return;
     final Object? pending = prefsRepo.getPref(
       _srsDayRolloverPendingKey(profileUid),
     );
@@ -14689,8 +14715,9 @@ class AppModel
     return FushiRemoteMiningClient(
       repo: SyncRepository(_database),
       httpClient: _remoteLookupClient,
-      activeProfileUid: () async =>
-          _database.profileUidOf(await _database.resolveActiveProfileId()),
+      // 主机默认落「本机此刻制卡落的那份复习库」（组合阶段 4：共享库 / 激活组合拆出的独立库），
+      // 两边同步的是同一个集合 uid。
+      activeProfileUid: () => resolveSrsLibraryUid(_database),
       chosenTarget: (String hostId) => mineToServerTargets[hostId],
       onTargetUnavailable: (String hostId, RemoteMiningTarget? landed) {
         if (mineToServerTargets[hostId] == null) return;
@@ -15016,43 +15043,76 @@ class AppModel
         toResult: remoteMineResultFromOutcome,
       );
 
-  /// 本机复习此刻能落到的配置：激活配置 + srs.db 里已有复习数据的其它配置。复习模块关着 / 未装配时 null。
+  /// 本机复习此刻能落到的复习库：组合模型下 = 共享库 + 各组合拆出的独立库（组合阶段 4，名字写
+  /// 「共享复习库」/ 组合名）；共享库还没定（迁移待定）时照旧 = 激活配置 + srs.db 里已有复习数据的其它
+  /// 配置。复习模块关着 / 未装配时 null。
   Future<HostReviewMiningCatalog?> _hostReviewMiningCatalog() async {
     final SrsProfileStores Function()? reader = srsProfileStoresReader;
     if (reader == null || !moduleVisibility.isEnabled(ModuleId.srs)) {
       return null;
     }
     final SrsProfileStores stores = reader();
-    final String active = await database.resolveActiveProfileUid();
+    final String active = await resolveSrsLibraryUid(database);
     if (active.isEmpty) return null;
+    final ComboSrsLibraries libraries = await loadComboSrsLibraries(database);
+    final List<ProfileRow> rows = await database.getAllProfiles();
+    final Map<int, String> names = <int, String>{
+      for (final ProfileRow r in rows) r.id: r.name,
+    };
     final List<HostReviewMiningProfile> profiles = <HostReviewMiningProfile>[];
-    for (final ProfileRow row in await database.getAllProfiles()) {
-      final String uid = await database.profileUidOf(row.id);
-      if (uid == active || await stores.hasReviewData(uid)) {
-        profiles.add(HostReviewMiningProfile(uid: uid, name: row.name));
+    if (libraries.decided) {
+      for (final ComboSrsLibrary l in libraries.libraries) {
+        profiles.add(
+          HostReviewMiningProfile(
+            uid: l.uid,
+            name: l.shared
+                ? t.srs_library_shared
+                : names[l.ownerProfileId] ?? l.uid,
+          ),
+        );
+      }
+    } else {
+      for (final ProfileRow row in rows) {
+        final String uid = await database.profileUidOf(row.id);
+        if (uid == active || await stores.hasReviewData(uid)) {
+          profiles.add(HostReviewMiningProfile(uid: uid, name: row.name));
+        }
       }
     }
     return HostReviewMiningCatalog(activeProfile: active, profiles: profiles);
   }
 
-  /// uid 为 [profileUid] 的非激活配置的设置视图；是激活配置 / 不存在时 null。
-  Future<ProfileSettingsView?> _hostProfileViewForUid(String profileUid) async {
+  /// 落进复习库 [libraryUid] 时读哪份配置的设置（复习落点 / 日界）；是激活配置的库 / 找不到时 null。
+  /// 独立库读拆出它的组合；共享库读默认组合；共享库还没定时按旧语义找 uid 相同的那份配置。
+  Future<ProfileSettingsView?> _hostProfileViewForUid(String libraryUid) async {
     final int activeId = await database.resolveActiveProfileId();
-    for (final ProfileRow row in await database.getAllProfiles()) {
-      if (row.id == activeId) continue;
-      if (await database.profileUidOf(row.id) != profileUid) continue;
-      return interconnectProfileRepository().loadSettingsView(row.id);
+    final ComboSrsLibraries libraries = await loadComboSrsLibraries(database);
+    int? owner;
+    if (libraries.decided) {
+      for (final ComboSrsLibrary l in libraries.libraries) {
+        if (l.uid != libraryUid) continue;
+        owner = l.shared ? libraries.defaultId : l.ownerProfileId;
+        break;
+      }
+    } else {
+      for (final ProfileRow row in await database.getAllProfiles()) {
+        if (await database.profileUidOf(row.id) == libraryUid) {
+          owner = row.id;
+          break;
+        }
+      }
     }
-    return null;
+    if (owner == null || owner == activeId) return null;
+    return interconnectProfileRepository().loadSettingsView(owner);
   }
 
-  /// 落进 [profileUid] 那份复习的仓库：激活配置用激活副本 + 激活配置的复习落点（不叠本机作品会话，与
-  /// `hostMiningAnkiRepositoryProvider` 同口径）；别的配置读它的设置视图。
+  /// 落进复习库 [profileUid] 的仓库：激活配置的库用激活配置的复习落点（不叠本机作品会话，与
+  /// `hostMiningAnkiRepositoryProvider` 同口径）；别的库读它那份配置的设置视图。
   Future<BaseAnkiRepository?> _hostReviewMiningRepository(
     String profileUid,
   ) async {
     if (srsProfileStoresReader == null) return null;
-    if (profileUid == await database.resolveActiveProfileUid()) {
+    if (profileUid == await resolveSrsLibraryUid(database)) {
       return SrsMiningAnkiRepository(
         inner: platformServices.createAnkiRepository(),
         miner: () => _hostReviewMiningMiner(profileUid),
@@ -15071,7 +15131,7 @@ class AppModel
     final SrsProfileStores Function()? reader = srsProfileStoresReader;
     if (reader == null) return null;
     try {
-      if (profileUid == await database.resolveActiveProfileUid()) {
+      if (profileUid == await resolveSrsLibraryUid(database)) {
         return await reader().minerFor(
           profileUid: profileUid,
           destination: hostSrsMiningDestination,
@@ -15114,8 +15174,14 @@ class AppModel
     final SrsProfileStores Function()? reader = srsProfileStoresReader;
     if (reader == null) return null;
     try {
+      // 那份配置解析出的复习库（组合阶段 4：没拆 `srs.library` 的是共享库）。
+      final String libraryUid = await resolveSrsLibraryUid(
+        database,
+        baseProfileId: view.profileId,
+      );
+      if (libraryUid.isEmpty) return null;
       return await reader().minerFor(
-        profileUid: await database.profileUidOf(view.profileId),
+        profileUid: libraryUid,
         destination: srsMiningDestinationIn(view.prefs),
         fallbackRolloverHour: () => view.prefs.statDayResetHour,
       );

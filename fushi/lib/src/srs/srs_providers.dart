@@ -6,8 +6,10 @@
 ///   允许浏览 / 编辑，不能复习）。测试里覆写成假引擎。
 /// - [srsStorageProvider]：进程级 SRS 存储（`srs.db`，[AppModel.srsStorage]）；模块关着时为 null，
 ///   不打开文件。非主进程在主进程完成首次搬迁之前也为 null（见 `SrsStorageHost`）。
-/// - [srsStoreProvider]：按当前 profile 打开的 [SrsDbStore]；切 profile 时随
-///   `activeProfileId` 重建（profile 的全局身份由 `FushiDatabase.profileUidOf` 给出）。
+/// - [srsStoreProvider]：复习页此刻看的那份复习库（[SrsLibraries.viewedUid]：默认 = 激活配置按组合
+///   `srs.library` 解析出的库，共享库或独立库；复习页可切）的 [SrsDbStore]。
+/// - [srsLibraryStore]：激活配置制卡落的那份库（[SrsLibraries.activeUid]）的副本——复习页切到别的库时
+///   制卡、制卡落点选项仍落激活配置的库。
 /// - [srsRevisionProvider]：本机写操作后的刷新信号。store 本身不发变更流，页面写完
 ///   一律 [bumpSrsRevision]，订阅它的列表 / 计数随之重读。信号不分种类，由消费方按数据自己
 ///   判断要不要真重算：整库扫一遍的角标（同步冲突 / 待裁决 / 旧 Lapis 迁移提醒）按
@@ -19,8 +21,10 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
+import 'package:drift/drift.dart'
+    show ResultSetImplementation, TableUpdateQuery;
 import 'package:flutter/foundation.dart'
-    show ChangeNotifier, ValueListenable, ValueNotifier;
+    show ChangeNotifier, ValueListenable, ValueNotifier, visibleForTesting;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:path/path.dart' as p;
 import 'package:fushi_engine/srs/srs_miner.dart';
@@ -35,6 +39,7 @@ import 'package:fushi_engine/srs/srs_rwkv_service.dart';
 import 'package:fushi_engine/srs/srs_storage.dart';
 import 'package:fushi_engine/srs/srs_style_store.dart';
 import 'package:fushi_engine/utils/net/app_http.dart';
+import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
 import 'package:fushi/src/models/app_model.dart';
@@ -44,6 +49,7 @@ import 'package:fushi/src/models/preference_keys.dart'
 import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi/src/srs/srs_card_appearance.dart';
 import 'package:fushi/src/srs/srs_device_view.dart';
+import 'package:fushi/src/srs/srs_library.dart';
 import 'package:fushi/src/srs/srs_persisted_ids.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
@@ -225,7 +231,15 @@ final FutureProvider<SrsMiningChoices?> srsMiningChoicesProvider =
       final SrsMiningDestination destination = ref.watch(
         appProvider.select((AppModel app) => app.srsMiningDestination),
       );
-      final SrsDbStore? store = await ref.watch(srsStoreProvider.future);
+      // 落点选项列的是制卡要落的那份库（激活配置解析出的），不是复习页此刻切到的那份。
+      final String libraryUid = await ref.watch(
+        srsLibrariesProvider.selectAsync((SrsLibraries l) => l.activeUid),
+      );
+      ref.watch(srsStoreProvider);
+      final SrsDbStore? store = await srsLibraryStore(
+        ref,
+        libraryUid: libraryUid,
+      );
       if (store == null) return null;
       final SrsDeckTree tree = await store.deckTree();
       final List<(String, String)> decks = <(String, String)>[
@@ -275,6 +289,88 @@ final Provider<SrsProfileStores> srsProfileStoresProvider =
       );
     });
 
+/// 复习库解析结果。`profiles` / `profile_settings` 有写入（建 / 删组合、拆 `srs.library`、迁移定
+/// 下共享库）时现算一遍，**结果不变就不通知**——下游用 `selectAsync` 只在 uid 真变了时重建。
+final AsyncNotifierProvider<SrsLibrariesNotifier, SrsLibraries>
+srsLibrariesProvider =
+    AsyncNotifierProvider<SrsLibrariesNotifier, SrsLibraries>(
+      SrsLibrariesNotifier.new,
+    );
+
+class SrsLibrariesNotifier extends AsyncNotifier<SrsLibraries> {
+  /// 每次发起现算（build 或某次写入后的 [_refresh]）领一个序号，只有**最后发起**的那次结果算数。
+  ///
+  /// 现算是几条异步查询，结果可能乱序回来：切激活配置时先快照旧配置（写 `profile_settings`，触发一次按
+  /// **旧**激活 id 的 [_refresh]），再改激活 id 让 provider 重建；那次旧的现算若晚于重建回来，会把
+  /// 「旧配置的库」写回 state，`srsStoreProvider` 就打开错库，直到下一次写入才纠正。切库选择同理。
+  int _ticket = 0;
+
+  /// 正在算的 build 个数：期间的写入只领序号、不自己写 state，由 build 发现序号变了再算一遍。
+  int _buildsInFlight = 0;
+
+  @override
+  Future<SrsLibraries> build() async {
+    // 配置装载完再读激活 id（装载期间是初值 -1，见 `ProfileViewModel.loaded`）。
+    await ref.watch(profileViewModelProvider.notifier).loaded;
+    final int activeId = ref.watch(
+      profileViewModelProvider.select((ProfileUiState s) => s.activeProfileId),
+    );
+    final String? choice = ref.watch(srsLibraryChoiceProvider);
+    final FushiDatabase db = ref.read(appProvider).database;
+    bool disposed = false;
+    final StreamSubscription<void> changes = db
+        .tableUpdates(
+          TableUpdateQuery.onAllTables(
+            <ResultSetImplementation<dynamic, dynamic>>[
+              db.profiles,
+              db.profileSettings,
+            ],
+          ),
+        )
+        .listen((_) => unawaited(_refresh(db, activeId, choice)));
+    ref.onDispose(() {
+      disposed = true;
+      unawaited(changes.cancel());
+    });
+    _buildsInFlight++;
+    try {
+      while (true) {
+        final int ticket = ++_ticket;
+        final SrsLibraries value = await compute(db, activeId, choice);
+        // 算的期间有写入（或已被新的 build 取代）：已作废的 build 直接交差（Riverpod 不用它的结果），
+        // 否则按最新的表再算一遍，保证交出去的不早于最后一次写入。
+        if (disposed || ticket == _ticket) return value;
+      }
+    } finally {
+      _buildsInFlight--;
+    }
+  }
+
+  Future<void> _refresh(FushiDatabase db, int activeId, String? choice) async {
+    final int ticket = ++_ticket;
+    if (_buildsInFlight > 0) return;
+    final SrsLibraries next;
+    try {
+      next = await compute(db, activeId, choice);
+    } on Object {
+      // 读表失败（库正在关）：保持现状，下一次写入再算。
+      return;
+    }
+    // 之后又发起过现算（再一次写入，或换了激活配置 / 切库重建）：这次的结果已过时。
+    if (ticket != _ticket) return;
+    if (state.valueOrNull == next) return;
+    state = AsyncData<SrsLibraries>(next);
+  }
+
+  /// 按此刻的表算一遍（测试可覆写来控制返回时机）。
+  @visibleForTesting
+  Future<SrsLibraries> compute(
+    FushiDatabase db,
+    int activeProfileId,
+    String? choice,
+  ) => computeSrsLibraries(db, activeProfileId, choice);
+}
+
 /// 当前 profile 的 SRS 副本；模块关着时为 null。
 ///
 /// 经 [srsProfileStoresProvider] 打开：浏览器扩展之前为这个配置开过的副本先作废，同一个 uid 不会
@@ -289,15 +385,19 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
   }
   // 配置装载完再读激活 id：装载期间它是初值 -1，读了就会在装载完成（-1 → 真实 id）时整个重建一遍。
   await ref.watch(profileViewModelProvider.notifier).loaded;
-  final int activeProfileId = ref.watch(
+  // 切配置照旧重建一次（同一份库就地复用副本，见 [SrsProfileStores.activate]）：新配置的制卡落点 id
+  // 要随重建再归一一遍（[srsNormalizeStoreIds]）。
+  ref.watch(
     profileViewModelProvider.select((ProfileUiState s) => s.activeProfileId),
   );
   final FsrsEngine? engine = ref.watch(srsEngineProvider);
   final AppModel app = ref.read(appProvider);
-  final int profileId = activeProfileId > 0
-      ? activeProfileId
-      : await app.database.resolveActiveProfileId();
-  final String profileUid = await app.database.profileUidOf(profileId);
+  // 打开哪份复习库由组合的 `srs.library` 解析（design-srs-shared-library 方案 a，srs_library.dart）：
+  // 默认共享库；切到拆出独立库的组合、或复习页切了库时换成那一份。只在 uid 真变了时重建。
+  final String profileUid = await ref.watch(
+    srsLibrariesProvider.selectAsync((SrsLibraries l) => l.viewedUid),
+  );
+  if (profileUid.isEmpty) return null;
   final String deviceId = await SyncRepository(
     app.database,
   ).getOrCreateDeviceId();
@@ -349,8 +449,11 @@ srsStoreProvider = FutureProvider<SrsDbStore?>((Ref ref) async {
   ref.onDispose(() => disposed = true);
   bool shouldStop() => disposed || store.isWindingDown;
   // 偏好里存的牌组 / 笔记类型 / 字段映射 ID 与内置实体 ID 换成规范 ID（G9-6，srs_persisted_ids.dart）：补盐 / 并入后
-  // 旧盐算出的成员 ID 在牌组树里查不到。归一不到的原样保留。
+  // 旧盐算出的成员 ID 在牌组树里查不到。归一不到的原样保留。偏好里的落点属于激活配置制卡落的那份库：复习页
+  // 切到别的库时不拿那份库的规范 ID 去改写它（组合阶段 4）。
   srsRunLogged('srsNormalizeStoreIds', () async {
+    final SrsLibraries libraries = await ref.read(srsLibrariesProvider.future);
+    if (libraries.activeUid != profileUid) return;
     await srsNormalizeStoreIds(
       store: store,
       prefs: app.prefsRepo,
@@ -452,6 +555,23 @@ final Provider<Future<Directory> Function()> srsSupportRootProvider =
     Provider<Future<Directory> Function()>(
       (Ref ref) => AppPaths.supportRootDirectory,
     );
+
+/// 复习库 [libraryUid] 的副本：就是复习页正看的那份（[srsStoreProvider]）时直接用它，否则经
+/// [srsProfileStoresProvider] 取（必要时打开）那份库的扩展副本。复习模块关着 / [libraryUid] 为空时 null；
+/// 库在换代途中原样抛出代际异常（与 [srsStoreProvider] 同一契约）。
+Future<SrsDbStore?> srsLibraryStore(
+  Ref ref, {
+  required String libraryUid,
+}) async {
+  if (libraryUid.isEmpty) return null;
+  final SrsDbStore? viewed = await ref.read(srsStoreProvider.future);
+  if (viewed == null) return null;
+  if (viewed.profileUid == libraryUid) return viewed;
+  final AppModel app = ref.read(appProvider);
+  return ref
+      .read(srsProfileStoresProvider)
+      .storeFor(libraryUid, fallbackRolloverHour: () => app.statDayResetHour);
+}
 
 /// 当前 profile 的 SRS 媒体目录（`<support>/srs_media/<profileUid>/`）；模块关着时为 null。
 final FutureProvider<SrsMediaStore?> srsMediaStoreProvider =

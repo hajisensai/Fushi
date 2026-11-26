@@ -15,7 +15,8 @@ import 'package:fushi/src/reader/reader_settings.dart';
 import 'package:fushi/src/sync/sync_repository.dart';
 import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
-import 'package:fushi_engine/profile/combo/settings_tree.dart' show ComboScope;
+import 'package:fushi_engine/profile/combo/settings_tree.dart'
+    show ComboScope, SettingKey;
 import 'package:material_ui/material_ui.dart';
 
 import '../helpers/fake_anki_repository.dart';
@@ -52,19 +53,15 @@ void main() {
   final WorkProfileScope scope = WorkProfileScope.instance;
   final Object reader = Object();
 
+  /// 作品配置单独设置一个键（组合格式：所属叶子按此刻生效值拆出来再改这个键）。
   Future<void> putSnapshot(
     int profileId,
     String category,
     String key,
     String value,
-  ) => db.upsertProfileSetting(
-    ProfileSettingsCompanion.insert(
-      profileId: profileId,
-      category: category,
-      key: key,
-      value: value,
-    ),
-  );
+  ) => repo.combos.writeSettings(profileId, <SettingKey, String?>{
+    SettingKey(category, key): value,
+  });
 
   Future<String?> snapshotValue(
     int profileId,

@@ -49,6 +49,7 @@ import 'package:fushi/src/pages/implementations/srs/srs_conflicts_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_deck_settings_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_legacy_lapis_migration_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_load_error.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_library_switcher.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_editor_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_note_types_page.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_remote_review_page.dart';
@@ -72,6 +73,7 @@ import 'package:fushi/src/shortcuts/context_menu_trigger.dart'
     show ContextMenuTrigger, activeContextMenuAnchor, contextMenuInvoker;
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_import_entry.dart';
+import 'package:fushi/src/srs/srs_library.dart';
 import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_import_tasks_bar.dart';
 import 'package:fushi/src/srs/srs_home_stats.dart';
@@ -1050,6 +1052,7 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
     deleter.pruneDeleted(<String>[
       for (final SrsDeckSummary d in list.decks) d.deck.id,
     ]);
+    final SrsLibraries? libraries = ref.watch(srsLibrariesProvider).valueOrNull;
     return _SrsHomeView(
       data: list,
       paired: _hasPaired ? _paired : null,
@@ -1059,6 +1062,14 @@ class _SrsDeckListPageState extends ConsumerState<SrsDeckListPage> {
       stats: ref.watch(srsHomeStatsProvider).valueOrNull,
       deleting: deleter.deleting,
       banners: <Widget>[
+        // 有独立复习库时顶部多一个库切换（组合阶段 4，设计 §4.1）；只有共享库时不出现、不占位。
+        if (libraries != null && libraries.switchable)
+          SrsLibrarySwitcher(
+            key: const ValueKey<String>('srs-library-switcher'),
+            libraries: libraries,
+            onChoiceChanged: (String? choice) =>
+                ref.read(srsLibraryChoiceProvider.notifier).state = choice,
+          ),
         // 彻底清除的字节层收尾出错（内核 `scrub_state`）：清除的原文还在磁盘上。下方间距由提示自己带（列表在它
         // 后面不插间距，见 [_DeckList] 的 separatorBuilder）：没出错时零高度、不占一条空白，出现 / 消失连同间距
         // 一起展开 / 收起。

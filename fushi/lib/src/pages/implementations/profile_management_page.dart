@@ -23,6 +23,10 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/profile/combo/combo_migration_report_dialog.dart'
+    show showComboMigrationReportDialog;
+import 'package:fushi/src/profile/combo/combo_repository.dart'
+    show ComboMigrationReport;
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
@@ -80,7 +84,13 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
       ErrorLogService.instance.log('ProfileManagement.sweepOrphans', e, stack);
       return 0;
     });
+    // 组合迁移报告（拍板台 design-combo-node-split）：迁移改写过存量配置时可在这里重看。
+    vm.comboMigrationReport().then((ComboMigrationReport? report) {
+      if (mounted && report != null) setState(() => _migrationReport = report);
+    });
   }
+
+  ComboMigrationReport? _migrationReport;
 
   @override
   Widget build(BuildContext context) {
@@ -106,6 +116,8 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
           children: [
             _buildCreateRow(vm),
             _buildImportRow(vm),
+            if (_migrationReport case final ComboMigrationReport report)
+              _buildMigrationReportRow(report),
             ..._buildProfileRows(uiState, vm),
           ],
         ),
@@ -201,6 +213,17 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
       showIcon: true,
       title: t.profile_import,
       onTap: () => _importProfile(vm),
+    );
+  }
+
+  Widget _buildMigrationReportRow(ComboMigrationReport report) {
+    final bool cupertino = isCupertinoPlatform(context);
+    return AdaptiveSettingsRow(
+      key: const ValueKey<String>('profile_combo_migration_report_row'),
+      icon: cupertino ? CupertinoIcons.info : FushiIcons.info,
+      showIcon: true,
+      title: t.profile_combo_migration_view,
+      onTap: () => showComboMigrationReportDialog(context, report),
     );
   }
 
@@ -407,12 +430,15 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     // 不能让异常逃出按钮回调（那样确认框不弹、什么提示都没有，BUG-5275）：复习库打不开时确认框照弹、写明原因、
     // 删除按钮不可点；其余失败给提示。
     ProfileDeletionImpact impact = const ProfileDeletionImpact.none();
-    bool srsUnavailable = false;
+    String? blockedReason;
     try {
       impact = await vm.deletionImpact(id);
+    } on ProfileHostsSharedSrsLibraryException {
+      // 承载共享复习库（组合阶段 4）：不是错误，确认框写明为什么不能删。
+      blockedReason = t.profile_delete_hosts_shared_srs_library;
     } on ProfileDeletionSrsUnavailableException catch (e, stack) {
       ErrorLogService.instance.log('ProfileManagement.deleteImpact', e, stack);
-      srsUnavailable = true;
+      blockedReason = t.profile_delete_srs_unavailable;
     } catch (e, stack) {
       ErrorLogService.instance.log('ProfileManagement.deleteImpact', e, stack);
       FushiToast.show(
@@ -427,7 +453,7 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
       builder: (ctx) => ProfileDeleteDialog(
         profileName: name,
         impact: impact,
-        blockedReason: srsUnavailable ? t.profile_delete_srs_unavailable : null,
+        blockedReason: blockedReason,
         onConfirm: () => Navigator.pop(ctx, true),
       ),
     );
@@ -435,6 +461,13 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
     final ProfileDeletionOutcome? outcome;
     try {
       outcome = await vm.deleteProfile(id);
+    } on ProfileHostsSharedSrsLibraryException {
+      FushiToast.show(
+        msg: t.profile_delete_hosts_shared_srs_library,
+        toastLength: Toast.LENGTH_LONG,
+        severity: ToastSeverity.error,
+      );
+      return;
     } on ProfileDeletionSrsUnavailableException catch (e, stack) {
       // 确认之后复习库才变得打不开（例如别的窗口开始升级）：删除已中止，Profile 原样保留。
       ErrorLogService.instance.log('ProfileManagement.delete', e, stack);

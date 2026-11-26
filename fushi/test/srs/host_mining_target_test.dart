@@ -76,9 +76,15 @@ class _RecordingAnki extends BaseAnkiRepository {
 
 /// [_target] 非 null 时把挖词目标钉死（本机链与替对端链都读它）；null = 照常读偏好（含作品会话）。
 class _TargetAppModel extends AppModel {
-  _TargetAppModel(super.platformServices, this._target);
+  _TargetAppModel(super.platformServices, this._target, this._db);
 
   final SrsMiningTarget? _target;
+
+  /// 制卡按主库里的配置 / 组合解析落哪份复习库（组合阶段 4，`srs_library_resolver.dart`）。
+  final FushiDatabase _db;
+
+  @override
+  FushiDatabase get database => _db;
 
   @override
   SrsMiningTarget get srsMiningTarget => _target ?? super.srsMiningTarget;
@@ -107,6 +113,11 @@ void main() {
   setUp(() async {
     tmp = Directory.systemTemp.createTempSync('fushi_host_mining_');
     (db, store) = await openSrsTestStore();
+    // 激活配置就是复习副本那份（还没迁成组合格式：复习库 = 激活配置自己的 uid）。
+    await db.customStatement(
+      'INSERT INTO profiles (id, name, uid, created_at, updated_at) '
+      "VALUES (1, 'Default', '$kSrsTestProfile', 0, 0)",
+    );
     media = SrsMediaStore(Directory('${tmp.path}/srs_media/$kSrsTestProfile'));
     anki = _RecordingAnki();
     prefs = PreferencesRepository(db);
@@ -133,6 +144,7 @@ void main() {
           (Ref ref) => _TargetAppModel(
             fakePlatformServices(createAnkiRepository: () => anki),
             target,
+            db,
           ),
         ),
         srsModuleEnabledProvider.overrideWithValue(srsEnabled),

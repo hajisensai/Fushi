@@ -17,6 +17,7 @@ import 'package:path_provider/path_provider.dart';
 
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/profile/combo/srs_library_resolver.dart';
 import 'package:fushi/src/srs/srs_app_runtime.dart';
 import 'package:fushi/src/srs/srs_card_autoplay.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -100,13 +101,13 @@ class SrsRemoteHostConnector {
   /// 首页缓存的时间戳与探测有效期用的时钟（测试换成可拨的）。
   DateTime now() => DateTime.now();
 
-  /// 本机当前配置的 profile uid：主机提供几份 profile 时直接打开同一份（见 [SrsRemoteStore.connect]）。
+  /// 本机此刻的复习库 uid（组合阶段 4：激活配置解析出的共享库 / 独立库）：主机提供几份 profile 时直接打开
+  /// 同一份（见 [SrsRemoteStore.connect]；两边同步的是同一个集合 uid）。
   Future<String?> _localProfileUid() async {
     if (!app.isDatabaseOpen) return null;
     try {
-      return await app.database.profileUidOf(
-        await app.database.resolveActiveProfileId(),
-      );
+      final String uid = await resolveSrsLibraryUid(app.database);
+      return uid.isEmpty ? null : uid;
     } catch (e, stack) {
       ErrorLogService.instance.log('SrsRemoteReview.localProfile', e, stack);
       return null;
