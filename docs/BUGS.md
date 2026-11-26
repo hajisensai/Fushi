@@ -33,49 +33,24 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4808 条。点号进各自文件。
-> 共 4799 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5522](bugs/BUG-5522-mdx-dict-script-click-looks-up.md) | ✅ | ✅ | MDX 词典自带的词性切换 / 页内跳转点了只会查词 |
-> 共 4800 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5524](bugs/BUG-5524-home-apple-collapsed-title-covered.md) | ✅ | ✅ | home-apple-collapsed-title-covered |
-| [BUG-5523](bugs/BUG-5523-srs-apple-status-bar-seam.md) | ✅ | ✅ | srs-apple-status-bar-seam |
-> 共 4770 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5531](bugs/BUG-5531-srs-export-filtered-review-ease-zero.md) | ✅ | ✅ | srs-export-filtered-review-ease-zero |
-> 共 4803 条。点号进各自文件。
+> 共 4815 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5533](bugs/BUG-5533-subtitle-fill-incomplete-download-stalls.md) | 🚧 | 🚧 | 整库补字幕遇到没下完的视频，每集卡到 5 分钟停滞超时才失败 |
+| [BUG-5531](bugs/BUG-5531-srs-export-filtered-review-ease-zero.md) | ✅ | ✅ | srs-export-filtered-review-ease-zero |
 | [BUG-5530](bugs/BUG-5530-video-move-rebind-keeps-old-source.md) | ✅ | ✅ | 扫描搬家改指不改归属源、不迁路径关联列 |
 | [BUG-5529](bugs/BUG-5529-windows-update-launcher-locks-bundled-crt.md) | ✅ | ✅ | Windows 应用内更新卡在「Update did not finish」：msvcp140.dll 被 update launcher 占着换不掉 |
 | [BUG-5529](bugs/BUG-5529-storage-scan-ui-freeze.md) | ✅ | ✅ | 打开 设置 › 存储 扫描期间整窗冻结（有声书逐文件音频路径在 UI isolate 上 O(n²) 去嵌套） |
-| [BUG-5528](bugs/BUG-5528-bd-subtitle-version-merge.md) | 🚧 | 🚧 | 原盘下载字幕版本对不上时只能整份换 ASR 稿：缺 TV 版 / BD 版逐句合并 |
-> 共 4804 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5527](bugs/BUG-5527-work-network-duplicate-nodes-floating-labels.md) | ✅ | ✅ | 关系网：单视频合集与其唯一那集画成两个重复节点、建议边标签飘离连线、标题截断分不清前後編 |
-> 共 4804 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
-| [BUG-5527](bugs/BUG-5527-feedback-video-diag-missing.md) | ✅ | ✅ | 反馈附带的日志里没有视频性能诊断（上屏 / 丢帧 / 帧耗时） |
-> 共 4804 条。点号进各自文件。
-
-| BUG | 修复 | 测试 | 标题 |
-|---|:--:|:--:|---|
 | [BUG-5528](bugs/BUG-5528-masthead-icons-title-misaligned.md) | ✅ | ✅ | 页头大字顶栏的返回键、动作图标和页名上下没对齐（二级页收缩后返回键高出一截，库页动作组和页名错开） |
+| [BUG-5528](bugs/BUG-5528-bd-subtitle-version-merge.md) | 🚧 | 🚧 | 原盘下载字幕版本对不上时只能整份换 ASR 稿：缺 TV 版 / BD 版逐句合并 |
+| [BUG-5527](bugs/BUG-5527-work-network-duplicate-nodes-floating-labels.md) | ✅ | ✅ | 关系网：单视频合集与其唯一那集画成两个重复节点、建议边标签飘离连线、标题截断分不清前後編 |
+| [BUG-5527](bugs/BUG-5527-feedback-video-diag-missing.md) | ✅ | ✅ | 反馈附带的日志里没有视频性能诊断（上屏 / 丢帧 / 帧耗时） |
 | [BUG-5526](bugs/BUG-5526-srs-link-retired-root-writer.md) | ✅ | ✅ | 平板复习同步永远不采用电脑的集合：集合目录里退役旧根的写入者被当成成员，关联判成「已关联」 |
 | [BUG-5525](bugs/BUG-5525-rwkv-cold-start-full-replay.md) | ✅ | ✅ | RWKV 冷启动逐卡重放全部历史，复习页首开等十几二十秒 |
+| [BUG-5524](bugs/BUG-5524-home-apple-collapsed-title-covered.md) | ✅ | ✅ | home-apple-collapsed-title-covered |
+| [BUG-5523](bugs/BUG-5523-srs-apple-status-bar-seam.md) | ✅ | ✅ | srs-apple-status-bar-seam |
+| [BUG-5522](bugs/BUG-5522-mdx-dict-script-click-looks-up.md) | ✅ | ✅ | MDX 词典自带的词性切换 / 页内跳转点了只会查词 |
 | [BUG-5521](bugs/BUG-5521-windows-maximized-startup-teal-flash.md) | ✅ | ✅ | Windows：上次最大化关掉，下次启动先显示几秒青绿色空窗 |
 | [BUG-5520](bugs/BUG-5520-sftp-dead-transport-hang.md) | ✅ | ✅ | SSH 传输断开后 SFTP 请求永远挂起：同步卡死、「本地 vs 远端」对比弹窗一直转圈 |
 | [BUG-5519](bugs/BUG-5519-pair-schemeless-https-timeout.md) | ✅ | ✅ | 互联手动添加不带 scheme 的地址配对 TLS host 报「对端没在时限内应答」 |
