@@ -1,7 +1,11 @@
 ## BUG-5496 · Galgame 记忆的文本线程一次选择失败后本会话不再恢复
-- **报告**：2026-11-23（用户：GitHub #4290 / 反馈 7vGmtj4A1t，《魔法少女ノ魔女裁判》Unity + Naninovel JIT hook；冷启动附着后记忆的台词线程不自动恢复，游戏已在对话中再附着则 1–3 秒内恢复）。
-- **真实性**：✅ 真 bug（代码路径确认；反馈现场的事件日志未附，是否正是本条触发未实测）。`fushi/lib/src/mining/gal_hook_session_controller.dart` `_maybeRestoreTextThread`：发起 `selectTextThread` **之前**就把 `_textThreadMemoryApplied` 置 true，回调里 `selected == false` 时直接 `return`、不复位；之后每次线程目录 / 行数变动再进 `_maybeRestoreTextThread` 都在 `if (_textThreadMemoryApplied || ...) return;` 处退出，本会话再也不恢复。冷启动时 JIT hook 线程刚登记、native helper 侧尚未接受选择正是 `selectTextThread` 返回 false 的窗口。`_maybeAutoSelectEngineExactThread` 同样先置位，失败后会堵死记忆恢复。
-  - 反馈里另一个可能原因（候选线程须出满 `_textThreadRestoreMinLines = 3` 行才恢复，现场那条线程上线时 `observedLines=1`）是设计门限，不改。
-- **[x] ① 已修复** — 两条自动选择路径在 native 拒绝（`selected == false`）时把恢复状态复位到发起前（记忆恢复：`_textThreadMemoryApplied = false`；引擎精确接管：发起前无选择时还原 `_textThreadMemoryApplied` 原值），让下一次目录 / 行数变动重试；用户在飞期间亲选过线程、或引擎源已换（停止 / 降级 / 重新附着）时不动。
-- **[x] ② 已加自动化测试** — `fushi/test/mining/gal_hook_session_controller_test.dart`「a remembered thread is restored again after native rejects the first select」：假引擎第一次 `selectTextThread` 返回 false，之后照常出行，断言再次发起选择并最终恢复到记忆线程、记 `text.thread_memory_restored`、记忆不被改写。
-- **备注**：未在真机原始路径（冷启动附着该 Unity 游戏）复测；修复后若仍不恢复，需看事件日志确认是不是 3 行门限未满足。
+- **报告**：2026-11-23（审查 GitHub #4290 / 反馈 7vGmtj4A1t 时顺查代码发现的**潜伏缺陷**）。**本条不是该反馈的已证实根因**，见下方「与 7vGmtj4A1t 的关系」。
+- **真实性**：✅ 真 bug（代码路径确认，现场未触发过）。`fushi/lib/src/mining/gal_hook_session_controller.dart`：
+  - `_maybeRestoreTextThread` 在发起 `selectTextThread` **之前**就把 `_textThreadMemoryApplied` 置 true，回调里 `selected == false` 时直接 `return`、不复位；之后每次线程目录 / 行数变动都在 `if (_textThreadMemoryApplied || ...) return;` 处退出，本会话再也不恢复。
+  - `_maybeAutoSelectEngineExactThread` 同样先置位，失败后堵死记忆恢复；而且它在每次目录变动都排在记忆恢复之前重试同一条被拒的引擎线程并返回 true，被拒若是持续性的，记忆恢复永远轮不到——两条自动路径一起卡死。
+  - native 侧 `fushi/windows/runner/voice_hook_reader.cpp` `VoiceHookReader::SelectTextThread` 只在 `ProtocolMatches(header)` 为假（共享头失效 / 协议不符）时返回 false，所以这条失败路径在正常附着期间很少走到，属于边界情况下的状态钉死。
+- **与 7vGmtj4A1t 的关系**：该反馈（《魔法少女ノ魔女裁判》Unity + Naninovel JIT hook，冷启动附着后记忆线程不自动恢复，游戏已在对话中再附着则 1–3 秒内恢复）**不能归因于本条**：恢复触发时共享头刚有效，`SelectTextThread` 不会返回 false；select 失败会记 `text.thread_select_failed`，#4290 的事件时间线里没有这一条。更可能是 `pickRememberedTextThread` 的门限挡住了恢复——最少行数门（`_textThreadRestoreMinLines = 3`）或 `ln2` 行长门（现场并行线程 57→84、`textThreadLen=32`，行长差两倍以上就宁可不恢复）。**该反馈仍待日志定位**，本条修复不声明修好它。
+- **[x] ① 已修复** — 两条自动选择路径在 native 拒绝（`selected == false`）时把恢复状态复位到发起前（记忆恢复：`_textThreadMemoryApplied = false`；引擎精确接管：发起前无选择时还原 `_textThreadMemoryApplied` 原值），让下一次目录 / 行数变动重试；引擎精确线程被拒后记下它被拒时的行数（`_engineExactRejected`），它出新行之前不再抢先重试，并立即重评一次让记忆恢复接上。用户在飞期间亲选过线程、或引擎源已换（停止 / 降级 / 重新附着）时不动。
+- **[x] ② 已加自动化测试** — `fushi/test/mining/gal_hook_session_controller_test.dart`：
+  - 「a remembered thread is restored again after native rejects the first select」：假引擎第一次 `selectTextThread` 返回 false，之后照常出行，断言再次发起选择并最终恢复到记忆线程、记 `text.thread_memory_restored`、记忆不被改写。
+  - 「a rejected engine exact takeover lets memory restore, then retries on new lines」：引擎精确线程先出满 3 行、接管被拒；之后记忆线程出满行，断言恢复到记忆线程且期间不重试被拒的引擎线程；引擎线程再出新行时重试接管成功。把接管失败分支的 `_textThreadMemoryApplied` 还原改成钉死后该用例红。

@@ -1371,6 +1371,11 @@ class GalHookSessionController extends ChangeNotifier {
   /// 恢复的 select 还没回来时引擎接管又发一次，晚回来的那次会把选择改回去。
   bool _textThreadAutoSelectInFlight = false;
 
+  /// 本会话 native 拒绝过的引擎精确线程，及被拒时它已出的行数。它再出新行之前不再
+  /// 重试接管：否则它每轮都抢在记忆恢复之前发起选择、每轮又被拒，记忆恢复永远轮
+  /// 不到，两条自动路径一起卡死。出了新行就再试一次（冷启动的一次性拒绝能自愈）。
+  ({String key, int lines})? _engineExactRejected;
+
   /// 记忆恢复文本线程所需的最小行数：native 线程 id 混了 processId，跨会话不稳定，
   /// 同一 hook 往往有多条并行线程共用同一指纹，只能靠「真的在出台词」来消歧。
   /// 门限设 3 行而不是 1 行，避免开局个别 UI 线程抢先蹦一行就把选择钉死。
@@ -4758,12 +4763,19 @@ class GalHookSessionController extends ChangeNotifier {
       if (thread.nativeThreadId == null || thread.nativeThreadId == 0) continue;
       if (thread.observedLineCount < _textThreadRestoreMinLines) continue;
       if (thread.isArtifactDominated) continue; // BUG-2112，同记忆恢复
+      final ({String key, int lines})? rejected = _engineExactRejected;
+      if (rejected != null &&
+          rejected.key == thread.key &&
+          thread.observedLineCount <= rejected.lines) {
+        continue;
+      }
       if (best == null || thread.observedLineCount > best.observedLineCount) {
         best = thread;
       }
     }
     if (best == null) return false;
     final TexthookerTextThread chosen = best;
+    final int chosenLines = chosen.observedLineCount;
     final String? replaced = current?.key ?? _selectedTextThreadKey;
     // 接管前是否已有选择：接管失败时据此判断记忆恢复是否还没发生过。
     final bool hadSelection = _selectedTextThreadKey != null;
@@ -4778,12 +4790,15 @@ class GalHookSessionController extends ChangeNotifier {
         _textThreadAutoSelectInFlight = false;
         if (!selected) {
           if (!identical(engine, _engineSource)) return;
-          // 接管没成：恢复到发起前的状态，别让一次失败的自动选择堵死记忆恢复。
-          if (!_textThreadUserSelected && !hadSelection) {
-            _textThreadMemoryApplied = memoryAppliedBefore;
-          }
+          // 接管没成：恢复到发起前的状态，别让一次失败的自动选择堵死记忆恢复；
+          // 该线程出新行前不再重试，并立即按当前目录重评一次，让记忆恢复接上。
+          _engineExactRejected = (key: chosen.key, lines: chosenLines);
+          if (_textThreadUserSelected) return;
+          if (!hadSelection) _textThreadMemoryApplied = memoryAppliedBefore;
+          _maybeRestoreTextThread();
           return;
         }
+        _engineExactRejected = null;
         _record(
           GalHookEventSeverity.info,
           'text',
@@ -4918,6 +4933,7 @@ class GalHookSessionController extends ChangeNotifier {
     _textThreadMemoryApplied = false;
     _textThreadUserSelected = false;
     _textThreadAutoSelectInFlight = false;
+    _engineExactRejected = null;
     _captureMemoryLoaded = false;
     _captureMemoryGameKey = null;
     _captureMemory = const GalCaptureMemory();
