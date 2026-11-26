@@ -111,7 +111,7 @@ void main() {
       final sqlite3.Database db = sqlite3.sqlite3.open(dbPath);
       db.execute('CREATE TABLE t (x); INSERT INTO t VALUES (1);');
       db.execute('PRAGMA user_version = 100');
-      db.dispose();
+      db.close();
     });
 
     tearDown(() {
