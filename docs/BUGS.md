@@ -33,10 +33,13 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4769 条。点号进各自文件。
+> 共 4772 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5499](bugs/BUG-5499-exit-verdict-ignores-pid-time.md) | ✅ | ✅ | 退出判定不看 pid / 时间，存活进程的厂商告警转储压过真死因 |
+| [BUG-5498](bugs/BUG-5498-crash-summary-platform-evidence-truncated.md) | ✅ | ✅ | 崩溃报告正文里会话标记的内存采样挤掉平台证据 |
+| [BUG-5497](bugs/BUG-5497-mac-ips-exception-reason-dropped.md) | ✅ | ✅ | macOS .ips 摘要丢掉 ObjC 异常原因与抛出处的栈 |
 | [BUG-5490](bugs/BUG-5490-data-location-diag-not-retained.md) | ✅ | ✅ | 数据位置诊断只在内存且被普通诊断挤掉 |
 | [BUG-5489](bugs/BUG-5489-dict-files-missing-silent.md) | ✅ | ✅ | 词典文件缺失时界面静默只显示无释义 |
 | [BUG-5487](bugs/BUG-5487-music-plugin-switch-cover-pixi-slow.md) | ✅ | ✅ | music-plugin-switch-cover-pixi-slow |
