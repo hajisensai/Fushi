@@ -8,3 +8,15 @@ Dart 3.13 收紧了「被闭包捕获的可空局部变量跨 await 的类型提
 
 **删除条件**：锁文件升到上游已修复的版本（dartssh2-2.11.0 的新版本要求的依赖本仓暂不能升：
 dartssh2 2.15+ 需 pointycastle ^4（2.15 仍有同一错误，2.22.5 已重写该段），pdfrx_engine 0.4.6+ 才修且需 archive ^4 / image ^4.8）后删除本目录。
+
+# BUG-5483：SSH 传输断开后 SFTP 请求永远挂起 + 未捕获 `SSHStateError`
+
+Android 掐掉 socket（切后台 / 换网）时 2.11.0 有两处缺陷，SFTP 同步后端的 op 锁被永远等不到回复的请求占住，同步与「本地 vs 远端」对比弹窗一直转圈（issue #4331）：
+
+- `lib/src/sftp/sftp_client.dart`：频道流 `listen` 没有 `onDone` / `onError`，频道结束后在途请求与未完成的握手永不完成。补 `onDone: close` / `onError: _closeError`，两者都失败握手和全部等待者；关闭后再发的请求立即失败；`_done` completer（无人监听，带错完成会成未捕获错误、重复完成会抛）换成布尔标记。
+- `lib/src/ssh_channel.dart` 新增 `abandon()`：传输已断时只在本地拆频道、不发消息。
+- `lib/src/ssh_client.dart` `_closeChannels`：传输已断时对每个频道走 `abandon()`。原来走 `destroy()`，在关闭的传输上发 EOF 抛 `SSHStateError`，`_done` 没完成、循环中断、`_channels` 不清。
+
+测试：`fushi/test/sync/sftp_dead_transport_test.dart`（未打补丁时 5 条全红：挂起超时 / close 抛错）。
+
+**删除条件**：同上，升到上游已修复这两处的版本（2.11.0 之后的版本未逐一核对）后连同测试里的 `abandon()` 调用一起删。

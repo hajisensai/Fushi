@@ -45,6 +45,11 @@
 | [BUG-5484](bugs/BUG-5484-surface-pro-34-first-frame-never.md) | 🚧 | 🚧 | Surface Pro 7+（Intel Iris Xe）上 3.4 启动卡在首帧之前：Dart 等一个永不完成的 Future（根因待新取证） |
 | [BUG-5483](bugs/BUG-5483-windows-startup-hidden-zombie.md) | ✅ | ✅ | Windows 升级 3.4 后进程常驻后台、主窗永远不显示，再点图标无反应 |
 | [BUG-5482](bugs/BUG-5482-srs-rwkv-startup-due-fallback.md) | ✅ | ✅ | srs-rwkv-startup-due-fallback |
+> 共 4762 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5483](bugs/BUG-5483-sftp-dead-transport-hang.md) | ✅ | ✅ | SSH 传输断开后 SFTP 请求永远挂起：同步卡死、「本地 vs 远端」对比弹窗一直转圈 |
 | [BUG-5481](bugs/BUG-5481-subdeck-steps-not-inherited.md) | ✅ | ✅ | Anki 导入的子牌组带着旧步长，父牌组改 RWKV 后按 Again 仍进重学 |
 | [BUG-5480](bugs/BUG-5480-organizer-contradicts-server-series.md) | ✅ | ✅ | AI 整理把媒体服务器同一部剧的集从自己的合集移空、又塞进另一部剧的合集 |
 | [BUG-5479](bugs/BUG-5479-video-header-double-refresh.md) | ✅ | ✅ | 视频库页头点「刷新」后并排出现两颗刷新钮 |
