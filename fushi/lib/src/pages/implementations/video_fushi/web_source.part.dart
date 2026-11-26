@@ -344,6 +344,15 @@ extension _VideoWebSource on _VideoFushiPageState {
       _webSubtitleUserChosen = true;
       _webAudioUserChosen = true;
       _webPendingRestore = WebMineRestoreTracker(restore, now: DateTime.now());
+    } else {
+      // 打开的就是某一集的书：续播到 Fushi 记下的进度（不靠站点账号书签，2ajU2PuEDA）。
+      final String? bound = _webBoundEpisodeUrl;
+      if (bound != null) {
+        _webResumeSeek = WebVideoResumeSeek.forBook(
+          episodeUrl: bound,
+          lastPositionMs: row.lastPositionMs,
+        );
+      }
     }
     // 站点入口还没有书：进度 / 观看统计等播起某一集落库后再接（[_bindWebEpisode]）。
     if (_webBoundEpisodeUrl == null) {
@@ -391,6 +400,9 @@ extension _VideoWebSource on _VideoFushiPageState {
       if (webVideoEpisodeUrl(state.href) == _webBoundEpisodeUrl) {
         _installWebGeneratedTrack(select: generatedWasActive);
       }
+      // YouTube 直播回放的聊天回放跟着视频走（C7c1ck6RMU，与 mpv 流同一个探测）：是已落书的
+      // 这一集就探测；站内点去了别的视频先撤掉，那一集落书后（[_bindWebEpisode]）再探测。
+      unawaited(_loadLiveChatForCurrentVideo());
     }
     if (!listEquals(state.siteTracks, _webSiteTracks) ||
         state.siteTrackCurrent != _webSiteTrackCurrent) {
@@ -401,6 +413,7 @@ extension _VideoWebSource on _VideoFushiPageState {
     }
     _checkWebPendingTrackCapture();
     _applyWebPendingRestore(state);
+    _applyWebResumeSeek(state);
     _maybeRequestDefaultSiteTrack();
     _syncWebAudioTracks(state);
     _syncWebNetflixMetadata(state);
@@ -539,6 +552,14 @@ extension _VideoWebSource on _VideoFushiPageState {
         : _webNetflixMeta[boundWatchId];
     if (boundMeta != null) unawaited(_linkWebSeries(boundMeta));
     unawaited(_restoreWebGeneratedSubtitle());
+    // 换到的这一集以前看过：与开页同一口径续播（2ajU2PuEDA）；制卡重放的恢复在途时让它。
+    _webResumeSeek = _webPendingRestore == null
+        ? WebVideoResumeSeek.forBook(
+            episodeUrl: url,
+            lastPositionMs: bound.lastPositionMs,
+          )
+        : null;
+    unawaited(_loadLiveChatForCurrentVideo());
   }
 
   /// 把库里这部剧已落书的各集收进它的 playlist 合集（GBDddvjDsj / BUG-4024：继续观看 /
@@ -1853,6 +1874,17 @@ extension _VideoWebSource on _VideoFushiPageState {
         ),
       ),
     );
+  }
+
+  /// 每拍站点状态过一次续播判定（[WebVideoResumeSeek]，一次性）。制卡重放的恢复
+  /// （[_webPendingRestore]）在途时先让它：那份状态本身就带着位置。
+  void _applyWebResumeSeek(WebVideoPlaybackState state) {
+    final WebVideoResumeSeek? resume = _webResumeSeek;
+    if (resume == null || _webPendingRestore != null) return;
+    final int? seek = resume.step(state);
+    if (resume.done) _webResumeSeek = null;
+    final VideoPlayerController? controller = _controller;
+    if (seek != null && controller != null) unawaited(controller.seekMs(seek));
   }
 
   /// 每拍站点状态到来时把 [_webPendingRestore] 对齐一次；每项动作最多首发 + 一次补发

@@ -289,6 +289,7 @@ import 'package:fushi/src/media/video/underlay_composition.dart'
         underlayCompositionSupported;
 import 'package:fushi/src/lookup/global_lookup_controller.dart';
 import 'package:fushi/src/media/video/web_mine_return_state.dart';
+import 'package:fushi/src/media/video/web_video_resume.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart'
     show WebVideoHosting, WebVideoLookupRequest;
 import 'package:fushi/src/media/video/web_video_hosting_default.dart';
@@ -2926,6 +2927,9 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
 
   /// 待恢复的重放前状态（[VideoFushiPage.webReturnState]）；逐拍对齐，见 `_applyWebPendingRestore`。
   WebMineRestoreTracker? _webPendingRestore;
+
+  /// 这一集待做的续播判定（打开 / 换集时按书的 `lastPositionMs` 建；见 `_applyWebResumeSeek`）。
+  WebVideoResumeSeek? _webResumeSeek;
   String? _webAudioAutoVideoKey;
 
   /// 当前选中的是站点的图片字幕：Fushi 叠层画不了，站点自己的字幕层要显示出来。
