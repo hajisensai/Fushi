@@ -405,6 +405,105 @@ void main() {
     expect(await controller.checkNow(), AutoBackupOutcome.created);
   });
 
+  group('写之前查空间（第五期）', () {
+    int? free;
+    late AutoBackupController spaced;
+
+    setUp(() {
+      free = null;
+      spaced = AutoBackupController(
+        host: host,
+        clock: () => now,
+        freeBytes: (String _) => free,
+      );
+    });
+
+    tearDown(() => spaced.dispose());
+
+    int liveDatabaseBytes() {
+      int total = 0;
+      for (final String name in <String>[
+        'fushi.db',
+        'fushi.db-wal',
+        'srs4.db',
+        'srs4.db-wal',
+      ]) {
+        final File f = File(p.join(dbDir, name));
+        if (f.existsSync()) total += f.lengthSync();
+      }
+      return total;
+    }
+
+    test('定时：空间不够 → 失败 not_enough_space，不写、锁放开；同一原因只提示一次；腾出空间后照常', () async {
+      free = 1;
+      expect(await spaced.checkNow(), AutoBackupOutcome.failed);
+      expect(spaced.status.value.lastError, kNotEnoughSpaceError);
+      expect(host.failures, <String>[kNotEnoughSpaceError]);
+      expect(host.serviceCalls, 0, reason: '没开始打包');
+      expect(host.exportActive, isFalse);
+      expect(spaced.scheduledPoints(), isEmpty);
+      // 还到期、还不够：再失败，但不再提示。
+      expect(await spaced.checkNow(), AutoBackupOutcome.failed);
+      expect(host.failures, hasLength(1));
+      free = 1 << 50;
+      expect(await spaced.checkNow(), AutoBackupOutcome.created);
+      // 成功过之后再不够：是新的一次，要再提示。
+      free = 1;
+      expect(await spaced.backUpNow(), AutoBackupOutcome.failed);
+      expect(host.failures, hasLength(2), reason: '成功之后再不够要再提示');
+    });
+
+    test('估算按不压缩算：库（另算一份临时快照）+ 勾选的文件树；不知道可用空间照常写', () async {
+      final File media = File(p.join(dbDir, 'srs_media', 'a.bin'))
+        ..parent.createSync(recursive: true)
+        ..writeAsBytesSync(Uint8List(1 << 20));
+      expect(media.lengthSync(), 1 << 20);
+      // 同一个卷（读数相同）：库 × 2（还原点里一份 + 临时快照一份）+ 余量，留 512 KiB 宽裕。
+      free = liveDatabaseBytes() * 2 + kBackupSpaceMarginBytes + (512 << 10);
+      expect(await spaced.backUpNow(), AutoBackupOutcome.created);
+      host.settings = host.settings.copyWith(includeSrsMedia: true);
+      expect(await spaced.backUpNow(), AutoBackupOutcome.failed);
+      expect(spaced.status.value.lastError, kNotEnoughSpaceError);
+      free = null;
+      expect(await spaced.backUpNow(), AutoBackupOutcome.created);
+    });
+
+    test('操作前还原点：空间不够 → 抛 NotEnoughSpaceException、什么都没写；兜底入口提示原因并返回 null', () async {
+      free = 1;
+      await expectLater(
+        spaced.createPreOperationPoint(kRestorePointReasonReplace),
+        throwsA(isA<NotEnoughSpaceException>()),
+      );
+      expect(RestorePointStore(dbDir).list(), isEmpty);
+      registerAutoBackupController(spaced);
+      try {
+        expect(
+          await takePreOperationRestorePoint(kRestorePointReasonSyncDownload),
+          isNull,
+        );
+      } finally {
+        registerAutoBackupController(null);
+      }
+      expect(host.failures, <String>[kNotEnoughSpaceError]);
+      expect(
+        autoBackupMirrorErrorCode(
+          const NotEnoughSpaceException(
+            directory: 'x',
+            neededBytes: 2,
+            freeBytes: 1,
+          ),
+        ),
+        kNotEnoughSpaceError,
+      );
+      free = 1 << 50;
+      expect(
+        (await spaced.createPreOperationPoint(kRestorePointReasonReplace))
+            .reason,
+        kRestorePointReasonReplace,
+      );
+    });
+  });
+
   test('自定义文件夹：定时还原点写进去，目录清单一并列出', () async {
     final String folder = p.join(root.path, 'custom');
     Directory(folder).createSync();

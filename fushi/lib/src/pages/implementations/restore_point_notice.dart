@@ -51,7 +51,11 @@ Future<void> maybeShowRestorePointFailureNotice({
       icon: const FushiIcon(FushiIcons.history),
       title: Text(t.db_restore_point_snapshot_failed_title),
       content: Text(
-        t.db_restore_point_snapshot_failed_body(error: failure.error ?? '?'),
+        t.db_restore_point_snapshot_failed_body(
+          error: failure.error == kNotEnoughSpaceError
+              ? t.auto_backup_error_not_enough_space
+              : failure.error ?? '?',
+        ),
       ),
       actions: <Widget>[
         FushiTextButton(

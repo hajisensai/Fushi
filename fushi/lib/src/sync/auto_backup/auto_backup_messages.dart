@@ -2,6 +2,7 @@
 library;
 
 import 'package:fushi/i18n/strings.g.dart';
+import 'package:fushi_core/fushi_core.dart' show kNotEnoughSpaceError;
 import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart'
     show AutoBackupBusyException, autoBackupMirrorErrorCode;
 import 'package:fushi/src/sync/auto_backup/auto_backup_status.dart';
@@ -20,6 +21,7 @@ String autoBackupErrorText(Object? error) => switch (error) {
 String _codeText(String code) => switch (code) {
   kAutoBackupErrorInterrupted => t.auto_backup_error_interrupted,
   kAutoBackupErrorFolderUnavailable => t.auto_backup_error_folder_unavailable,
+  kNotEnoughSpaceError => t.auto_backup_error_not_enough_space,
   kBackupMirrorErrorNotFound => t.auto_backup_error_copy_not_found,
   kBackupMirrorErrorLocalIo => t.auto_backup_error_copy_local_io,
   kBackupMirrorErrorUnsupported => t.auto_backup_error_copy_unsupported,

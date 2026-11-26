@@ -234,6 +234,10 @@ Future<RestorePoint> copyMirroredPointToStore(
   final String target = p.join(store.root, copy.id);
   final RestorePoint? existing = RestorePoint.tryRead(target);
   if (existing != null) return existing;
+  // 取回先落在库目录下的临时目录、再改名进存储（同一个卷）：不够放就不开始下载（[NotEnoughSpaceException]）。
+  ensureFreeSpace(<SpaceNeed>[
+    SpaceNeed(store.dbDirectory, copy.point.totalBytes),
+  ]);
   final Directory staging = Directory(
     p.join(store.dbDirectory, '.restore_point_download'),
   );

@@ -1799,6 +1799,7 @@
   "auto_backup_error_copy_unsupported": "这个文件夹所在的存储服务不支持这项操作，请换一个文件夹。",
   "auto_backup_error_folder_unavailable": "备份文件夹不可用。请接上对应的磁盘，或换一个文件夹。",
   "auto_backup_error_interrupted": "写备份时 Fushi 被关闭了，稍后会再试。",
+  "auto_backup_error_not_enough_space": "存储空间不够。腾出一些空间（或删掉旧的还原点）后再试。",
   "auto_backup_failed_notice": "自动备份失败：$reason",
   "auto_backup_folder": "备份位置",
   "auto_backup_folder_choose": "选择文件夹",

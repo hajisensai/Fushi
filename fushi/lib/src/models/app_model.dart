@@ -17331,7 +17331,9 @@ class _AppAutoBackupHost implements AutoBackupHost {
 
   @override
   void notifyPreOperationFailure(String reason) => FushiToast.show(
-    msg: t.restore_points_pre_operation_failed(reason: reason),
+    msg: t.restore_points_pre_operation_failed(
+      reason: autoBackupErrorText(reason),
+    ),
     severity: ToastSeverity.warning,
   );
 

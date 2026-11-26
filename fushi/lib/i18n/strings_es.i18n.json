@@ -1799,6 +1799,7 @@
   "auto_backup_error_copy_unsupported": "The storage provider of this folder does not support this. Choose another folder.",
   "auto_backup_error_folder_unavailable": "The backup folder is not available. Connect the drive or choose another folder.",
   "auto_backup_error_interrupted": "Fushi was closed while the backup was being written. It will try again later.",
+  "auto_backup_error_not_enough_space": "Not enough free storage. Free up some space (or delete old restore points) and try again.",
   "auto_backup_failed_notice": "Automatic backup failed: $reason",
   "auto_backup_folder": "Backup folder",
   "auto_backup_folder_choose": "Choose folder",

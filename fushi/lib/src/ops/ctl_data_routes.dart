@@ -10,6 +10,7 @@ import 'package:fushi_core/fushi_core.dart'
         FushiPairedPeerRow,
         kLegacySchemaBridgeAppVersion,
         kLegacySchemaBridgeReleaseUrl,
+        NotEnoughSpaceException,
         ReceivedDeviceBackup,
         ReceivedDeviceBackupGroup,
         isDeviceBackupKey,
@@ -620,6 +621,10 @@ List<CtlRoute> _backupRoutes(
           ticket = await prepareRestorePointReplace(appModel, entry);
         } on RestorePointBusyException {
           throw const CtlFailure.conflict('备份导出进行中，先等它结束');
+        } on NotEnoughSpaceException {
+          throw const CtlFailure.rejected(
+            '存储空间不够，没拍成替换前的还原点，什么都没替换（not_enough_space）',
+          );
         }
         _runDetached(
           'backup.restore-point.replace',

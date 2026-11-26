@@ -5,6 +5,7 @@ import 'package:file_picker/file_picker.dart';
 import 'package:fushi_core/fushi_core.dart'
     show
         FushiDatabase,
+        NotEnoughSpaceException,
         ReceivedDeviceBackup,
         ReceivedDeviceBackupGroup,
         RestorePoint,
@@ -872,7 +873,9 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
           ErrorLogService.instance.log('RestorePointsPage.replace', e, st);
           FushiToast.show(
             msg: t.restore_points_replace_not_started(
-              reason: friendlySyncErrorDetail(e),
+              reason: e is NotEnoughSpaceException
+                  ? autoBackupErrorText(e)
+                  : friendlySyncErrorDetail(e),
             ),
             severity: ToastSeverity.error,
           );

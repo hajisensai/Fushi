@@ -251,7 +251,9 @@ import 'package:fushi_core/fushi_core.dart'
         FushiDatabaseFailureKind,
         kLegacySchemaBridgeAppVersion,
         kLegacySchemaBridgeReleaseUrl,
-        VideoBookRow;
+        VideoBookRow,
+        registerVolumeFreeBytes;
+import 'package:fushi_srs/fushi_srs.dart' show FfiFsrsEngine;
 import 'package:fushi/src/media/media_item.dart';
 import 'package:path/path.dart' as p;
 import 'package:url_launcher/url_launcher.dart' show LaunchMode, launchUrl;
@@ -370,6 +372,8 @@ Future<void> _restoreWindowsWindowIcon(AppIconSelection selection) async {
 /// to act on once the app has finished initialising.
 void main([List<String> args = const <String>[]]) {
   StartupTimeline.begin();
+  // 写备份 / 还原点前的空间检查用 fushi_fsrs 的平台实现（fushi_core 不依赖 fushi_srs，由入口登记；第五期）。
+  registerVolumeFreeBytes(FfiFsrsEngine.volumeFreeBytes);
   // 有声漫画工作台挂到环外入口（书卡菜单 / 侧栏速览经入口打开，见入口文件注释）。
   registerMangaAudioWorkbenchEntry();
   // 桌面端：从 args 里挑出外部打开的视频路径（Windows / Linux runner 传 argv）。

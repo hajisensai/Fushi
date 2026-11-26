@@ -22,6 +22,7 @@ library;
 
 import 'dart:async';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter/scheduler.dart';
@@ -233,6 +234,7 @@ class AutoBackupMirrorTarget {
 /// 副本失败写进状态的错误码：已知原因给码（界面本地化），本机文件读写失败给原文（只有本机路径）。
 String autoBackupMirrorErrorCode(Object error) => switch (error) {
   BackupFolderUnavailableException() => kAutoBackupErrorFolderUnavailable,
+  NotEnoughSpaceException() => kNotEnoughSpaceError,
   BackupMirrorException(:final String code) => code,
   // 本机 / iOS 文件夹路径上的读写失败：原文带路径，不上界面。
   FileSystemException() => kBackupMirrorErrorFailed,
@@ -241,11 +243,18 @@ String autoBackupMirrorErrorCode(Object error) => switch (error) {
 
 /// 自动备份控制器：AppModel 持有一个，设置页 / 还原点页 / 控制通道都经它。
 class AutoBackupController {
-  AutoBackupController({required this.host, DateTime Function()? clock})
-    : _clock = clock ?? DateTime.now;
+  AutoBackupController({
+    required this.host,
+    DateTime Function()? clock,
+    VolumeFreeBytes? freeBytes,
+  }) : _clock = clock ?? DateTime.now,
+       _freeBytes = freeBytes;
 
   final AutoBackupHost host;
   final DateTime Function() _clock;
+
+  /// 测试缝：卷的可用空间（缺省 = 进程登记的探针，fushi_core [registerVolumeFreeBytes]）。
+  final VolumeFreeBytes? _freeBytes;
 
   late final ValueNotifier<AutoBackupStatus> _status =
       ValueNotifier<AutoBackupStatus>(
@@ -492,6 +501,8 @@ class AutoBackupController {
     // 「开始」标记：写到一半进程没了，下次启动据此认出来（[recoverInterruptedRun]）。
     _writeStatus(_status.value.started(atMs: startedMs));
     try {
+      // 写之前先看空间（第五期）：不够就记成失败 `not_enough_space`，不写半截、不把盘写满。
+      await _ensureScheduledSpace(settings, store, files, unavailable);
       draft = store.begin(
         kind: RestorePointKind.scheduled,
         nowMs: startedMs,
@@ -551,19 +562,63 @@ class AutoBackupController {
       );
       return (outcome: AutoBackupOutcome.created, point: point);
     } catch (e, st) {
-      debugPrint('AutoBackup: scheduled backup failed: $e\n$st');
+      debugPrint(
+        'AutoBackup: scheduled backup failed: '
+        '${e is NotEnoughSpaceException ? e.detail : e}\n$st',
+      );
       if (draft != null) store.discard(draft);
+      // 空间不够在腾出空间之前每次检查都会再失败：同一个原因只提示一次（状态行的告警常驻）。
+      final bool repeatSpace =
+          e is NotEnoughSpaceException &&
+          _status.value.lastError == kNotEnoughSpaceError;
       _writeStatus(
         _status.value.failed(
           atMs: _clock().millisecondsSinceEpoch,
           error: '$e',
         ),
       );
-      host.notifyFailure('$e');
+      if (!repeatSpace) host.notifyFailure('$e');
       return (outcome: AutoBackupOutcome.failed, point: null);
     } finally {
       autoBackupProgress.value = null;
     }
+  }
+
+  /// 定时还原点要写多少的上界（在后台 isolate 里数）：主库与复习库（含 `-wal`）+ 勾选的文件树 + 复习媒体，
+  /// 按不压缩算（zip 只会更小；媒体本来就压不动）。`BackupService.createBackup` 先把两个库 `VACUUM INTO`
+  /// 系统临时目录再打包，所以临时目录所在的卷另要放下两个库。空间不够抛 [NotEnoughSpaceException]；
+  /// 不知道可用空间就照常写。
+  Future<void> _ensureScheduledSpace(
+    AutoBackupSettings settings,
+    RestorePointStore store,
+    Set<BackupCategory> files,
+    Set<BackupCategory> unavailable,
+  ) async {
+    final String dbDir = host.databaseDirectory;
+    final List<String> dbFiles = <String>[
+      p.join(dbDir, RestorePointDatabase.fushi.fileName),
+      if (!unavailable.contains(BackupCategory.srs))
+        p.join(dbDir, RestorePointDatabase.srs.fileName),
+    ];
+    final Map<BackupCategory, String> roots = host.contentTreeRoots;
+    final List<String> trees = <String>[
+      for (final BackupCategory c in files) ?roots[c],
+      if (settings.includeSrsMedia) host.srsMediaRoot,
+    ];
+    final ({int databases, int files}) size = await Isolate.run(
+      () => (
+        databases: dbFiles.fold<int>(
+          0,
+          (int sum, String f) =>
+              sum + fileBytesOrZero(f) + fileBytesOrZero('$f-wal'),
+        ),
+        files: trees.fold<int>(0, (int sum, String d) => sum + treeBytes(d)),
+      ),
+    );
+    ensureFreeSpace(<SpaceNeed>[
+      SpaceNeed(store.root, size.databases + size.files),
+      SpaceNeed(Directory.systemTemp.path, size.databases),
+    ], probe: _freeBytes);
   }
 
   // ── 副本：用户文件夹 / 云端（第三期） ──────────────────────────────────────────
@@ -1041,6 +1096,7 @@ class AutoBackupController {
         ? await host.srsSnapshotWriter()
         : null;
     return defaultStore.createPreOperationPoint(
+      freeBytes: _freeBytes,
       reason: reason,
       fushiDbPath: includeMainDatabase
           ? p.join(host.databaseDirectory, RestorePointDatabase.fushi.fileName)
