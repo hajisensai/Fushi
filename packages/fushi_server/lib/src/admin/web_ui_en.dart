@@ -655,6 +655,7 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '{0} 个文件：{1}': '{0} files: {1}',
   '（{0}/{1}）{2}：': '({0}/{1}) {2}: ',
   '导入完成：{0} 个成功，{1} 个失败': 'Import finished: {0} succeeded, {1} failed',
+  '{0} / {1} 个词典导入失败': '{0} of {1} dictionaries failed to import',
   '「{0}」导入失败：{1}': '"{0}" failed to import: {1}',
   '按「{0}」查': 'Looked up as "{0}"',
   '没有结果': 'No results',

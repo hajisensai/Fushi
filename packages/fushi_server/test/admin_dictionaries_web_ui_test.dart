@@ -187,8 +187,21 @@ void main() {
     expect(handler, contains("T('导入完成：{0} 个成功，{1} 个失败'"));
     expect(handler, contains("T('「{0}」导入失败：{1}', x.file.name, x.error)"));
     expect(handler, contains('failed.forEach(x=>keep.items.add(x.file))'));
-    // 汇总多行用 JS 的转义换行；页面源码是 Dart 原始字符串，不能落成真换行（会断开 JS 字符串）。
-    expect(handler, contains(r"x.error))].join('\n');"));
+    // 汇总一行一条，只有失败行标红（err-text），成功行不染色；部分失败不抛错，
+    // 提示条报「N / M 个失败」，不再是「失败: 导入完成…」。
+    expect(
+      handler,
+      contains("<span\${err?' class=\"err-text\"':''}>\${esc(text)}</span>"),
+    );
+    expect(handler, contains("x.error), true))].join('<br>');"));
+    expect(
+      handler,
+      contains(
+        "if (failed.length){ toast(T('{0} / {1} 个词典导入失败', "
+        'failed.length, files.length), true); return; }',
+      ),
+    );
+    expect(handler, isNot(contains('throw new Error(head)')));
     // 单文件仍是原来的提示。
     expect(handler, contains("T('导入失败：{0}', failed[0].error)"));
   });
@@ -232,6 +245,7 @@ void main() {
       '（{0}/{1}）{2}：',
       '导入完成：{0} 个成功，{1} 个失败',
       '「{0}」导入失败：{1}',
+      '{0} / {1} 个词典导入失败',
     ]) {
       expect(kWebUiEnglish[key], isNotNull, reason: key);
     }

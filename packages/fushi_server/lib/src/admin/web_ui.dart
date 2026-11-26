@@ -1458,8 +1458,10 @@ $('#btn-dict-up').onclick = guard(async()=>{
       st.textContent=done[0]; toast(st.textContent); return;
     }
     const head = T('导入完成：{0} 个成功，{1} 个失败', done.length, failed.length);
-    st.textContent = [head, ...done, ...failed.map(x=>T('「{0}」导入失败：{1}', x.file.name, x.error))].join('\n');
-    if (failed.length){ st.style.color='var(--md-sys-color-error)'; throw new Error(head); }
+    // 部分失败：只把失败行标红，成功行照常；提示条说「N / M 个失败」而不是套一层「失败: 导入完成…」。
+    const line = (text, err) => `<span${err?' class="err-text"':''}>${esc(text)}</span>`;
+    st.innerHTML = [line(head), ...done.map(t=>line(t)), ...failed.map(x=>line(T('「{0}」导入失败：{1}', x.file.name, x.error), true))].join('<br>');
+    if (failed.length){ toast(T('{0} / {1} 个词典导入失败', failed.length, files.length), true); return; }
     toast(head);
   }finally{ btn.disabled=false; }
 });
