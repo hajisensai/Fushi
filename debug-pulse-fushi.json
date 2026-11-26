@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-25T22:03:56Z",
+ "generatedAt": "2026-11-26T04:20:38Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "b876b0196f238627203c3da06d4a59ef3a74ee6e",
-  "seq": 32679
+  "sha": "bbf3048ffa788689b67b74ba9e82183176640690",
+  "seq": 32705
  },
  "builds": [
   {
@@ -325,10 +325,50 @@
   }
  ],
  "pending": {
-  "headSha": "b876b0196f238627203c3da06d4a59ef3a74ee6e",
-  "headSeq": 32679,
+  "headSha": "bbf3048ffa788689b67b74ba9e82183176640690",
+  "headSeq": 32705,
   "prs": [],
   "direct": [
+   {
+    "sha": "bbf3048ffa788689b67b74ba9e82183176640690",
+    "subject": "Merge remote-tracking branch 'origin/develop' into claude/review-merge-93d9b1"
+   },
+   {
+    "sha": "b580825235207a32ea34b078c8cacb0acbce216e",
+    "subject": "chore(bugs): settle BUG number collisions on review-merge batch (#4452 的 5462/5463 → 5489/5490)"
+   },
+   {
+    "sha": "8ae37501b0e66478fc0453a821d4264262e14a5e",
+    "subject": "Merge remote-tracking branch 'origin/merge-fix/4452' into claude/review-merge-93d9b1"
+   },
+   {
+    "sha": "2ee6f4b5bcf0ad44431bf4abae9bf58ac9a4ffc5",
+    "subject": "Merge remote-tracking branch 'origin/merge-fix/4453' into claude/review-merge-93d9b1"
+   },
+   {
+    "sha": "13aba8dbcab8e19c81d94ab3cdba16b51b289de3",
+    "subject": "Merge remote-tracking branch 'origin/merge-fix/4457' into claude/review-merge-93d9b1"
+   },
+   {
+    "sha": "f7f639c558c4ea129a6388fe52d6148103a95b85",
+    "subject": "Merge remote-tracking branch 'origin/pr/srs-deck-list-collapsing-title' into claude/review-merge-93d9b1"
+   },
+   {
+    "sha": "bdf68120ae5366b37ed489fb327539949fb6671f",
+    "subject": "Merge origin/merge-fix/4472 (#4472) + 修与 #4473 托盘的语义冲突"
+   },
+   {
+    "sha": "529eea1089eaa0febd013e55fffdb6677a2d188f",
+    "subject": "Merge remote-tracking branch 'origin/merge-fix/4473' into claude/review-merge-93d9b1"
+   },
+   {
+    "sha": "41373a572de7523ac0c2c22235b901e45214656c",
+    "subject": "Merge remote-tracking branch 'origin/claude/fushi-sync-data-inconsistency-29c34c' into claude/review-merge-93d9b1"
+   },
+   {
+    "sha": "1709ff1f14e223fd068fee9b281a11300bba9349",
+    "subject": "chore(readme): refresh star history chart (TODO-1294) [skip ci]"
+   },
    {
     "sha": "b876b0196f238627203c3da06d4a59ef3a74ee6e",
     "subject": "chore(bugs): settle BUG number collisions on 34ae43883"
@@ -337,16 +377,20 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "none"
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45753369634"
    },
    "windows": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45753369622"
    },
    "macos": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45753369622"
    },
    "ios": {
-    "state": "none"
+    "state": "building",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45753369622"
    }
   }
  },
