@@ -182,6 +182,15 @@ class FushiPageTitleMetrics {
   /// 任何一步都不截断、不出省略号。
   static const double minTitleScale = 0.85;
 
+  /// 页名大字的**字面中心**在字母基线之上多高（按字号的比例）：返回键、右侧
+  /// 动作、主按钮、徽标的中线都对到这条线上（2026-11-26 用户截图：返回键 / 动作
+  /// 图标按行底边 + 固定下边距摆，页名一缩放就上下错开）。汉字字面框
+  /// （思源 / 系统 CJK 字体 ascent 0.88、descent 0.12）中心约 0.38em，拉丁大写
+  /// 字母（cap height ≈ 0.71em）约 0.36em；取 0.37，两者都差不到 1 px（46 号）。
+  /// 行盒中心不能用：0.98 行高 + 平均分配的行距下，行盒中心比字面中心低约
+  /// 0.1em，大字上肉眼可见。
+  static const double inkCenterEm = 0.37;
+
   /// [natural] 宽的标题放进 [room] 宽时的字号缩放与是否换行。
   static FushiTitleFit fitTitle({
     required double natural,
