@@ -1064,6 +1064,22 @@ const List<String> kWebBrowserSeekSecondsOptions = <String>[
 ];
 const String kWebBrowserSeekSecondsDefault = '5';
 
+/// 扩展存储里的快退 / 快进秒数 → 秒（`video-shortcuts.js` seekSeconds()：只认
+/// [kWebBrowserSeekSecondsOptions] 里的值，缺省 / 写歪回落 [kWebBrowserSeekSecondsDefault]）。
+int webBrowserSeekSecondsOf(Object? raw) {
+  // JS 的 String(5.0) 是 "5"：整数值的浮点数按整数认。
+  final String? v = raw is String
+      ? raw
+      : raw is num
+      ? (raw == raw.roundToDouble() ? '${raw.round()}' : '$raw')
+      : null;
+  return int.parse(
+    v != null && kWebBrowserSeekSecondsOptions.contains(v)
+        ? v
+        : kWebBrowserSeekSecondsDefault,
+  );
+}
+
 /// 按住临时倍速的倍率（`video-shortcuts.js` HOLD_RATE_SETTING / _OPTIONS / _DEFAULT）：存字符串。
 const String kWebBrowserHoldSpeedRateSetting = 'videoHoldSpeedRate';
 const List<String> kWebBrowserHoldSpeedRateOptions = <String>[

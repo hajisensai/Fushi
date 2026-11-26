@@ -4,7 +4,10 @@ import 'package:fushi_engine/sync/immersion_mine_payload.dart';
 
 import 'package:fushi/src/media/manga/web/web_comic_reader_launch.dart';
 import 'package:fushi/src/media/manga/web/web_comic_site_detector.dart';
+import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/settings/settings_schema_web_browser_extension.dart'
+    show kWebBrowserSeekSecondsSetting, webBrowserSeekSecondsOf;
 import 'package:fushi/src/pages/implementations/srs/srs_card_lookup.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_host_feature.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_extension_storage_provider.dart';
@@ -74,6 +77,16 @@ List<WebBrowserFeature> buildWebBrowserFeatures(
                   tailPadMs: app.miningAudioTailPadMs,
                 ),
                 closeTab: closeTab,
+                seekSteps: () => (
+                  seekSeconds: webBrowserSeekSecondsOf(
+                    ref.read(webBrowserExtensionStorageProvider).get(<String>[
+                      kWebBrowserSeekSecondsSetting,
+                    ])[kWebBrowserSeekSecondsSetting],
+                  ),
+                  longSeekSeconds: VideoAsbplayerConfig.decode(
+                    app.videoAsbplayerConfig,
+                  ).longSeekSeconds,
+                ),
               ),
             ),
       );

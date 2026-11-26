@@ -4,6 +4,8 @@ import 'package:drift/native.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart'
     show InAppWebViewController;
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/settings/settings_schema_web_browser_extension.dart'
+    show webBrowserSeekSecondsOf;
 import 'package:fushi/src/sync/video_remote_host.dart';
 import 'package:fushi/src/web_browser/features/extension_host/web_browser_video_remote.dart';
 import 'package:fushi/src/web_browser/features/page_visibility/web_browser_page_visibility_feature.dart';
@@ -30,6 +32,11 @@ void main() {
   late WebBrowserTab tabB;
   Map<String, Object?> snapshot = <String, Object?>{};
   int serial = 0;
+  // 宿主的短 / 长步进（扩展 videoSeekSeconds / app longSeekSeconds），测试里可改。
+  ({int seekSeconds, int longSeekSeconds}) steps = (
+    seekSeconds: 5,
+    longSeekSeconds: 30,
+  );
 
   setUp(() {
     db = FushiDatabase.forTesting(NativeDatabase.memory());
@@ -94,6 +101,7 @@ void main() {
         },
         miningPads: () => (headPadMs: 100, tailPadMs: 200),
         closeTab: closed.add,
+        seekSteps: () => steps,
       ),
     );
   });
@@ -359,6 +367,84 @@ void main() {
         page.controls.map((Map<String, Object?> m) => m['action']),
         <Object?>['pause', 'seek', 'play', 'volume'],
       );
+    });
+
+    test('短 / 长步进：声明 seekStep，按宿主步长算目标、走页面认得的绝对 seek', () async {
+      steps = (seekSeconds: 5, longSeekSeconds: 30);
+      final Map<String, Object?> s = await connect();
+      expect(s['capabilities'], contains(videoRemoteCapabilitySeekStep));
+      expect(s['seekSeconds'], 5);
+      expect(s['longSeekSeconds'], 30);
+
+      final _FakePage page = pages['a']!;
+      Future<void> step(String dir, String size) => call(
+        'command',
+        <String, dynamic>{'action': 'seekStep', 'step': dir, 'size': size},
+      );
+      await step('forward', 'short'); // 3000 → 8000
+      expect(page.positionMs, 8000);
+      // 页面自己播走了（轮询还没赶上）：步进按现取的位置算，不按旧回报。
+      page.positionMs = 60000;
+      await step('forward', 'long');
+      expect(page.positionMs, 90000);
+      await step('back', 'short');
+      expect(page.positionMs, 85000);
+      // 夹在 [0, 时长]。
+      await step('forward', 'long');
+      await step('forward', 'long');
+      expect(page.positionMs, 120000);
+      page.positionMs = 2000;
+      await step('back', 'long');
+      expect(page.positionMs, 0);
+      // 下发的全是旧扩展就认得的 `seek`（不给扩展加新动作）。
+      expect(
+        page.controls.map((Map<String, Object?> m) => m['action']).toSet(),
+        <Object?>{'seek'},
+      );
+
+      // 步长用的时候现读：扩展设置改成 10 秒，下一下就按 10 秒走，快照也跟着报。
+      steps = (seekSeconds: 10, longSeekSeconds: 60);
+      page.positionMs = 20000;
+      await step('back', 'short');
+      expect(page.positionMs, 10000);
+      expect((await connect())['seekSeconds'], 10);
+    });
+
+    test('宿主不给步长（旧装配）：不声明 seekStep，手机按旧电脑回退', () async {
+      remote.dispose();
+      remote = WebBrowserVideoRemote(
+        autoPoll: false,
+        ports: WebBrowserVideoRemotePorts(
+          request: remote.ports.request,
+          runtime: remote.ports.runtime,
+          register: host.register,
+          unregister: host.unregister,
+          controlledBinding: host.controlledBinding,
+          mineImmersion: remote.ports.mineImmersion,
+          miningPads: remote.ports.miningPads,
+        ),
+      );
+      await activate(tabA);
+      final Map<String, Object?> s = await connect();
+      expect(s['capabilities'], isNot(contains(videoRemoteCapabilitySeekStep)));
+      expect(s.containsKey('seekSeconds'), isFalse);
+      await expectLater(
+        call('command', <String, dynamic>{
+          'action': 'seekStep',
+          'step': 'forward',
+          'size': 'short',
+        }),
+        throwsA(remoteError(409, videoRemoteActionUnsupported)),
+      );
+    });
+
+    test('扩展存储里的秒数按 video-shortcuts.js 同一规则解析', () {
+      expect(webBrowserSeekSecondsOf('10'), 10);
+      expect(webBrowserSeekSecondsOf(15), 15);
+      expect(webBrowserSeekSecondsOf(3.0), 3);
+      for (final Object? bad in <Object?>[null, '', '7', 7, 2.5, true]) {
+        expect(webBrowserSeekSecondsOf(bad), 5, reason: '$bad');
+      }
     });
 
     test('查词暂停：电脑前没人动过就续播，有人动过就不续', () async {

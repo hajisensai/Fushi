@@ -2394,14 +2394,14 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
 
   // ── 快捷键（与视频页同一注册表、同一动作集合）────────────────────────────
 
-  /// 网页档的短步进（键盘 ←/→、手机遥控短步进）：固定 5 秒，站点播放器的通行步长。
-  static const int _kShortSeekMs = 5000;
+  /// 短 / 长步进（键盘 ←/→ 与 Shift+←/→、手机遥控步进键）：秒数与本地视频页同一份
+  /// asbplayer 配置（seekSeconds / longSeekSeconds），用的时候现读，设置页改了立即生效。
+  VideoAsbplayerConfig get _asbConfig =>
+      VideoAsbplayerConfig.decode(_appModel.videoAsbplayerConfig);
 
-  int get _longSeekMs =>
-      VideoAsbplayerConfig.decode(
-        _appModel.videoAsbplayerConfig,
-      ).longSeekSeconds *
-      1000;
+  int get _shortSeekMs => _asbConfig.seekSeconds * 1000;
+
+  int get _longSeekMs => _asbConfig.longSeekSeconds * 1000;
 
   VideoPlayerShortcutActions _shortcutActions() {
     void noop() {}
@@ -2411,10 +2411,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       pause: () => unawaited(_pause()),
       previousSubtitle: () => unawaited(_seekToCueOffset(-1)),
       nextSubtitle: () => unawaited(_seekToCueOffset(1)),
-      seekBackward: () => unawaited(_seekRelative(-_kShortSeekMs)),
-      seekForward: () => unawaited(_seekRelative(_kShortSeekMs)),
-      // 长步进（默认 Shift+←/→）：秒数与本地视频页同一份 asbplayer 配置
-      // （longSeekSeconds），按键当时读，设置页改了立即生效。
+      seekBackward: () => unawaited(_seekRelative(-_shortSeekMs)),
+      seekForward: () => unawaited(_seekRelative(_shortSeekMs)),
       longSeekBackward: () => unawaited(_seekRelative(-_longSeekMs)),
       longSeekForward: () => unawaited(_seekRelative(_longSeekMs)),
       toggleShaderCompare: noop,
@@ -2667,8 +2665,8 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
         'speed': _state?.rate ?? 1.0,
         'controlRevision': _remoteControlRevision,
         // 手机短 / 长步进键的秒数（`seekStep` 由本页按同一组值执行）。
-        'seekSeconds': _kShortSeekMs ~/ 1000,
-        'longSeekSeconds': _longSeekMs ~/ 1000,
+        'seekSeconds': _asbConfig.seekSeconds,
+        'longSeekSeconds': _asbConfig.longSeekSeconds,
         'primaryTrack': _trackSel.activeKey,
         'secondaryTrack': null,
         'primaryDelayMs': _controller.delayMs,
@@ -2724,7 +2722,7 @@ class _WebVideoFushiPageState extends ConsumerState<WebVideoFushiPage>
       // 手机短 / 长步进：与本页键盘 ←/→、Shift+←/→ 同一组步长。
       seekStep: ({required bool forward, required bool long}) {
         _requireRemoteControllable();
-        final int ms = long ? _longSeekMs : _kShortSeekMs;
+        final int ms = long ? _longSeekMs : _shortSeekMs;
         return _seekRelative(forward ? ms : -ms);
       },
       close: () async {
