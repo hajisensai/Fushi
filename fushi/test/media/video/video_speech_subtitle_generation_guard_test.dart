@@ -45,11 +45,6 @@ void main() {
     expect(rows, isNot(contains('video-subtitle-ai-generate')));
     expect(rows, contains('_subtitleStudioAvailable(controller)'));
     expect(rows, contains('_openSubtitleStudio(controller)'));
-    // 行本身画在纯展示的 [VideoWebSubtitleTrackRows] 里（BUG-5543 抽出，widget 测试直接构建）。
-    final String rowsWidget = web
-        .split('class VideoWebSubtitleTrackRows')[1]
-        .split('extension _VideoWebSource')[0];
-    expect(rowsWidget, contains("'video-web-subtitle-studio'"));
     expect(rows, isNot(contains('_openSubtitleGeneration(')));
     expect(rows, isNot(contains('_retimeSubtitleWithSpeechModel(')));
     expect(rows, isNot(contains('_alignSubtitleToEmbeddedTracks(')));
@@ -534,6 +529,11 @@ void main() {
         .split('void _onWebPageLookup(')[0];
     expect(rows, contains('_subtitleStudioAvailable(controller)'));
     expect(rows, contains('_openSubtitleStudio(controller)'));
+    // 行本身画在纯展示的 [VideoWebSubtitleTrackRows] 里（BUG-5543 抽出，widget 测试直接构建）。
+    final String rowsWidget = web
+        .split('class VideoWebSubtitleTrackRows')[1]
+        .split('extension _VideoWebSource')[0];
+    expect(rowsWidget, contains("'video-web-subtitle-studio'"));
 
     // 取地址：页面回执 + cookie；拿不到时以说明原因的失败结束。这一集的身份 / 开拉 / 管线目标
     // 抽成原生播放器页网页档与制卡重放宿主共用的 web_video_subtitle_generation.dart（BUG-5419）。

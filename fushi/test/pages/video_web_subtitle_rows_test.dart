@@ -30,6 +30,9 @@ Future<_Calls> _pump(
   bool importEnabled = true,
 }) async {
   final _Calls calls = _Calls();
+  // 整块列表（含展开后的副字幕区）放得下，点选不落到视口外。
+  await tester.binding.setSurfaceSize(const Size(800, 2000));
+  addTearDown(() => tester.binding.setSurfaceSize(null));
   await tester.pumpWidget(
     MaterialApp(
       home: Scaffold(
