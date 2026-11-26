@@ -64,6 +64,39 @@ int main() {
       !ShouldForceStartupReveal(kStartupRevealDeadlineMs * 10, false, true),
       "the forced reveal (and its dump) happens once per process");
 
+  // BUG-5491: the hidden-launch main window is cloaked from creation, so an
+  // early show before Dart's reveal (SC_MAXIMIZE when the last session closed
+  // maximized) puts nothing on screen.
+  using fushi::IsWindowUserVisible;
+  using fushi::ShouldCloakAtCreation;
+  passed &= Expect(ShouldCloakAtCreation(false),
+                   "a normal (hidden) launch is cloaked until the reveal");
+  passed &= Expect(!ShouldCloakAtCreation(true),
+                   "integration-test windows stay capturable, never cloaked");
+  passed &= Expect(IsWindowUserVisible(true, false),
+                   "visible and not cloaked is user-visible");
+  passed &= Expect(!IsWindowUserVisible(true, true),
+                   "a cloaked window is not user-visible even if Win32-visible");
+  passed &= Expect(!IsWindowUserVisible(false, false),
+                   "a hidden window is not user-visible");
+  using fushi::IsStartupCloaked;
+  passed &= Expect(IsStartupCloaked(DWM_CLOAKED_APP),
+                   "the app's own startup cloak means not revealed yet");
+  passed &= Expect(!IsStartupCloaked(DWM_CLOAKED_SHELL),
+                   "shell cloak (another virtual desktop) is not a startup "
+                   "cloak");
+  passed &= Expect(!IsStartupCloaked(DWM_CLOAKED_INHERITED),
+                   "an inherited cloak is not a startup cloak");
+  passed &= Expect(IsStartupCloaked(DWM_CLOAKED_APP | DWM_CLOAKED_SHELL),
+                   "the app cloak still counts alongside a shell cloak");
+  passed &= Expect(!IsStartupCloaked(0), "an uncloaked window");
+  passed &= Expect(IsWindowUserVisible(true, IsStartupCloaked(DWM_CLOAKED_SHELL)),
+                   "a shown window on another virtual desktop was revealed");
+  passed &= Expect(fushi::ForceStartupRevealMessage() != 0 &&
+                       fushi::ForceStartupRevealMessage() ==
+                           fushi::ForceStartupRevealMessage(),
+                   "the force-reveal message is registered once");
+
   if (!passed) {
     return 1;
   }
