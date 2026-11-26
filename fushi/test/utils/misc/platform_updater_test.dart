@@ -417,8 +417,9 @@ void main() {
       final String launcher = File(
         'windows/runner/update_launcher.cpp',
       ).readAsStringSync();
+      // BUG-5529：launcher 挪到独立目录（目录作用域改 /MT 静态 CRT），源码仍在 runner/。
       final String cmake = File(
-        'windows/runner/CMakeLists.txt',
+        'windows/update_launcher/CMakeLists.txt',
       ).readAsStringSync();
       final String rootCmake = File(
         'windows/CMakeLists.txt',
@@ -435,7 +436,7 @@ void main() {
       expect(launcher, contains('FushiSingleInstanceMutex'));
       expect(launcher, contains('WaitForMutexReleased'));
       expect(cmake, contains('add_executable(fushi_update_launcher WIN32'));
-      expect(cmake, contains('"update_launcher.cpp"'));
+      expect(cmake, contains('/../runner/update_launcher.cpp"'));
       expect(
         cmake,
         isNot(contains('fushi_update_launcher WIN32\n  "main.cpp"')),
