@@ -10,6 +10,7 @@ import 'package:fushi/src/platform/mobile/android_download_keep_alive.dart';
 import 'package:fushi/src/platform/mobile/download_keep_alive_hub.dart';
 import 'package:fushi/src/sync/interconnect_video_resume_store.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
+import 'package:fushi/src/sync/sync_audiobook_pull_tasks.dart';
 import 'package:fushi/src/sync/sync_error_messages.dart';
 import 'package:fushi_engine/media/video/media_server/media_server_resumable_download.dart'
     show kMediaServerResumeSidecarSuffix;
@@ -340,7 +341,8 @@ class _DownloadSpec {
 /// 进程活不过切后台是另一回事（BUG-2714）：有任务在跑时经 [DownloadKeepAlive]
 /// 挂 Android 前台服务保活；真被杀了，视频任务靠与 `.part` 并排的续传清单
 /// （[InterconnectVideoResumeStore]）在下次拿到远端清单时接回来。
-class InterconnectDownloadManager extends ChangeNotifier {
+class InterconnectDownloadManager extends ChangeNotifier
+    implements SyncAudiobookPullTasks {
   InterconnectDownloadManager({
     DownloadKeepAlive? keepAlive,
     int Function()? now,
@@ -363,6 +365,12 @@ class InterconnectDownloadManager extends ChangeNotifier {
   /// 纯 SRT（standalone）远端有声书任务键（身份 = uid，与书 downloadId 又是一个
   /// 不同值域，再隔一个域前缀）。
   static String srtAudiobookTaskId(String identity) => 'srt:$identity';
+
+  /// 自动同步 sweep 补拉有声书的任务键（本地 bookKey，B5trcDxSnf）。与书架手动
+  /// 任务（[bookTaskId]，host 的 downloadId）不是同一值域；两者靠
+  /// [isBookDownloadRunning]（落地书键）互斥，不靠撞键。
+  static String syncAudiobookTaskId(String bookKey) =>
+      'sync-audiobook:$bookKey';
 
   /// 远端原盘整盘下载的任务键（host 下发的盘身份 `discKey`；一张盘的几条标题
   /// 共用一个任务，再隔一个域前缀与视频键分开）。
@@ -504,6 +512,58 @@ class InterconnectDownloadManager extends ChangeNotifier {
       }
     }
     return null;
+  }
+
+  /// 本地书 [bookKey] 此刻有没有在跑、且落在它身上的任务（[InterconnectDownloadTask
+  /// .landedBookKey]）：手动补拉 / 重拉有声书、整书下载落地后的有声书阶段、sweep
+  /// 补拉都算。sweep 与书架手动入口拉有声书前都问它，同一本书不并跑两条。
+  @override
+  bool isBookDownloadRunning(String bookKey) {
+    for (final InterconnectDownloadTask task in _tasks.values) {
+      if (task.isRunning && task.landedBookKey == bookKey) return true;
+    }
+    return false;
+  }
+
+  /// 自动同步 sweep 补拉一本有声书（[SyncAudiobookPullTasks]，B5trcDxSnf）：任务键
+  /// [syncAudiobookTaskId]、单阶段「有声书」、落地书键 [bookKey]——书架本地卡的遮罩
+  /// 与首页后台任务环由此看得到 sweep 的进度。失败照常留在任务表里可重试。
+  /// 这本书已有在跑的任务时不跑 [body]，返回 false。
+  @override
+  Future<bool> runAudiobookPull({
+    required String bookKey,
+    required String title,
+    required File dest,
+    required SyncAudiobookPullBody body,
+  }) async {
+    if (isBookDownloadRunning(bookKey)) return false;
+    final String id = syncAudiobookTaskId(bookKey);
+    await _startDownload(
+      id,
+      _DownloadSpec(
+        title: title,
+        kind: InterconnectDownloadKind.audiobook,
+        dest: dest,
+        run:
+            (
+              File _, {
+              void Function(double progress)? onProgress,
+              void Function(int received, int? total)? onBytes,
+              Future<void>? cancelSignal,
+            }) => body(
+              onProgress: (double f) => onProgress?.call(f),
+              onBytes: (int received, int? total) =>
+                  onBytes?.call(received, total),
+            ),
+        onComplete: null,
+        pausable: false,
+        stages: const <InterconnectDownloadStage>[
+          InterconnectDownloadStage.audiobook,
+        ],
+        landedBookKey: bookKey,
+      ),
+    );
+    return true;
   }
 
   /// 此刻「已落地、任务未完」的本地书键（排序后以换行拼接）。书架页按它 select：
@@ -1187,9 +1247,19 @@ class InterconnectDownloadManager extends ChangeNotifier {
 }
 
 /// app 级单例 provider：在整个 app 生命周期内持有互联下载任务，跨页面存活。
+///
+/// 创建即注册为同步 sweep 补拉有声书的任务端口（[syncAudiobookPullTasks]，
+/// B5trcDxSnf），销毁时注销。
 final interconnectDownloadManagerProvider =
-    ChangeNotifierProvider<InterconnectDownloadManager>(
-      (ref) => InterconnectDownloadManager(
+    ChangeNotifierProvider<InterconnectDownloadManager>((ref) {
+      final InterconnectDownloadManager manager = InterconnectDownloadManager(
         keepAlive: downloadKeepAliveHub.lease('interconnect'),
-      ),
-    );
+      );
+      syncAudiobookPullTasks = manager;
+      ref.onDispose(() {
+        if (identical(syncAudiobookPullTasks, manager)) {
+          syncAudiobookPullTasks = null;
+        }
+      });
+      return manager;
+    });

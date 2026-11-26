@@ -574,3 +574,74 @@ List<SidecarAudioTrack> listSidecarAudioTracks(
         : null,
   );
 }
+
+/// 视频旁一条外挂音轨的落地结果（[discoverSidecarAudioTrackFiles] 的产物）：绝对
+/// 路径 + 给人看的名字 / 语言码（[sidecarAudioLabel]）。
+typedef SidecarAudioTrackFile = ({String path, String label, String? language});
+
+/// 列 [dir] 的直接条目：文件名清单 + 子目录路径清单。读不了返回 null。
+Future<({List<String> files, List<String> dirs})?> _listSidecarAudioDir(
+  String dir,
+) async {
+  final List<String> files = <String>[];
+  final List<String> dirs = <String>[];
+  try {
+    await for (final FileSystemEntity e in Directory(
+      dir,
+    ).list(followLinks: false)) {
+      if (e is File) {
+        files.add(p.basename(e.path));
+      } else if (e is Directory) {
+        dirs.add(e.path);
+      }
+    }
+  } on FileSystemException {
+    return null;
+  }
+  return (files: files, dirs: dirs);
+}
+
+/// 本机视频文件 [videoPath] 旁的全部外挂音轨（同目录 + 直接子目录，判据见
+/// [listSidecarAudioTracks]），按发现顺序给出绝对路径与标签。本机播放器起播挂音轨、
+/// 互联 host 给远端下发音轨（`/streamurl` 的 `externalAudioTracks`）共用这一份，
+/// 两边认出的音轨不会不一样。目录读不了 / 没有时返回空表。
+Future<List<SidecarAudioTrackFile>> discoverSidecarAudioTrackFiles(
+  String videoPath,
+) async {
+  final String dir = p.dirname(videoPath);
+  final ({List<String> files, List<String> dirs})? top =
+      await _listSidecarAudioDir(dir);
+  if (top == null) return const <SidecarAudioTrackFile>[];
+  final String stem = p.basenameWithoutExtension(videoPath);
+  final String stemLower = stem.toLowerCase();
+  // 子目录只为找外挂音轨而读：只读一层、只读文件名，代价是几个 readdir。
+  final Map<String, List<String>> children = <String, List<String>>{};
+  for (final String child in top.dirs) {
+    final ({List<String> files, List<String> dirs})? listed =
+        await _listSidecarAudioDir(child);
+    if (listed == null) continue;
+    final List<String> hits = <String>[
+      for (final String name in listed.files)
+        if (name.toLowerCase().startsWith(stemLower)) name,
+    ];
+    if (hits.isNotEmpty) children[p.basename(child)] = hits;
+  }
+  return <SidecarAudioTrackFile>[
+    for (final SidecarAudioTrack t in listSidecarAudioTracks(
+      stem,
+      top.files,
+      childDirFiles: children,
+    ))
+      if (sidecarAudioLabel(t.tag, p.posix.basename(t.relativePath)) case (
+        label: final String label,
+        language: final String? language,
+      ))
+        (
+          path: p.normalize(
+            p.joinAll(<String>[dir, ...t.relativePath.split('/')]),
+          ),
+          label: label,
+          language: language,
+        ),
+  ];
+}
