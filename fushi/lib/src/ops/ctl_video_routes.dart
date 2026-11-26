@@ -58,6 +58,7 @@ import 'package:fushi/src/ops/ctl_video_organize_routes.dart';
 import 'package:fushi/src/ops/ctl_video_player_routes.dart';
 import 'package:fushi/src/ops/ctl_video_support.dart';
 import 'package:fushi/src/ops/ctl_video_subtitle_fetch_routes.dart';
+import 'package:fushi/src/ops/ctl_video_subtitle_fill_routes.dart';
 import 'package:fushi/src/ops/ctl_video_subtitle_routes.dart';
 import 'package:fushi/src/ops/op_context.dart';
 
@@ -106,6 +107,8 @@ List<CtlRoute> buildVideoCtlRoutes(OpContext context) {
     ...buildVideoSubtitleCtlRoutes(context),
     // ── 在线字幕：立即补 / 手动搜 / 点名下载（与刮削后自动补同一个服务） ──────
     ...buildVideoSubtitleFetchCtlRoutes(context),
+    // ── 整库补字幕：按语言判缺 → 内封 → OCR → 下载（原盘重定时）→ 生成 ──────
+    ...buildVideoSubtitleFillCtlRoutes(context),
   ];
 }
 
