@@ -10,8 +10,10 @@
 //          x-donation-app-version（可选，≤ 64 个 [A-Za-z0-9.+_-]）。魔数必须是 zip（PK\x03\x04）。
 //          → 200 {donated: true, updatedAt}。同一 donorId 重传覆盖 R2 `srs-donations/<donorId>.apkg`。
 //          限流：每 donorId 每小时 2 次（429 rate_limited）；每 IP 每 UTC 日 128 MiB（429 upload_quota_daily，
-//          按声明长度计，传失败不退）；全局扣 media 日预算 1 次 + write_rows；字节占 budget.js 的「大附件」池
-//          （'video'，满了 507 video_quota）。曾撤回、撤回尚未报告给作者的，删掉那条撤回记录。
+//          按声明长度计，传失败不退）；全局扣 media 日预算 1 次 + write_rows；字节占 budget.js 的捐赠专用池
+//          （'donation'，media_usage.donation_bytes，DONATION_QUOTA_BYTES 默认 2 GiB，满了 507 donation_quota；
+//          捐赠包永不过期，所以不与 30 天过期的反馈视频共池）。重传只预占比旧文件多出的字节，成功后归还
+//          变小的差额；撤回归还整份。曾撤回、撤回尚未报告给作者的，删掉那条撤回记录。
 //          成功后数捐赠者，第一次 ≥ 30 时写里程碑 donors_30 并后台 POST Discord webhook
 //          （secret DONATION_NOTIFY_WEBHOOK，可选 DONATION_NOTIFY_MENTION；没配只记日志）。
 //   GET    /v1/srs-donations/:donorId   [Bearer donorKey] → 200 {donated, reviews, cards, updatedAt}；无记录 {donated: false}
@@ -20,7 +22,8 @@
 // 管理（HTTP Basic，ADMIN_USER / ADMIN_PASS，admin.js checkBasicAuth）：
 //   POST   /v1/admin/srs-donations/batch → 快照当前全部捐赠 + 尚未报告的撤回 ID，签发随机 32 字节 token（30 天有效）
 //          → 200 {url, token, expiresAt, donors, reviews, withdrawn}。CLI：node scripts/srs_donation_batch.mjs
-//   GET    /v1/admin/srs-donations       → 统计 {donors, reviews, cards, bytes, pendingWithdrawals, milestones, batches}
+//   GET    /v1/admin/srs-donations       → 统计 {donors, reviews, cards, bytes, pool: {usedBytes, quotaBytes},
+//                                            pendingWithdrawals, milestones, batches}
 //
 // 批次下载（链接里的 token 即凭据，无其他认证；过期 404）：
 //   GET /d/srs-donations/<token>/                 JSON 清单 {createdAt, expiresAt, files:[{donorId, reviews, cards, bytes,
@@ -34,7 +37,7 @@
 
 import { HttpError, hex, json, sha256 } from './util.js';
 import { DAY, HOUR, hit } from './ratelimit.js';
-import { deleteMedia, releaseMediaBytes, reserveMediaBytes, spend } from './budget.js';
+import { deleteMedia, poolUsage, releaseMediaBytes, reserveMediaBytes, spend } from './budget.js';
 import { checkBasicAuth } from './admin.js';
 
 export const SRS_DONATION_PATH = '/v1/srs-donations/';
@@ -55,7 +58,7 @@ export const SRS_DONATION_LIMITS = {
 /** 一次上传的估算写入行数（捐赠行 + 撤回清理 + 里程碑 + 限流 / 预算计数）。 */
 const UPLOAD_WRITE_ROWS = 8;
 const DELETE_WRITE_ROWS = 4;
-const POOL = 'video';
+const POOL = 'donation';
 const ZIP_MAGIC = [0x50, 0x4b, 0x03, 0x04];
 
 export const DONOR_ID_RE = /^[0-9a-f]{32}$/;
@@ -183,6 +186,9 @@ async function putDonation(env, request, donorId, now, ctx, ip) {
   await hit(env, `srsdon:${donorId}`, HOUR, SRS_DONATION_LIMITS.uploadsPerDonorHour, now);
 
   const reader = request.body.getReader();
+  // 重传时旧文件的字节已在池里：只预占多出来的部分（R2 同键 put 是原子替换，不会同时存两份）。
+  const oldBytes = existing && existing.bytes ? existing.bytes : 0;
+  const extra = Math.max(0, length - oldBytes);
   let reserved = false;
   try {
     const head = await readHead(reader, ZIP_MAGIC.length);
@@ -192,8 +198,10 @@ async function putDonation(env, request, donorId, now, ctx, ip) {
     await hit(env, `srsdon:ip:${ip}`, DAY, SRS_DONATION_LIMITS.bytesPerIpDay, now, length, 'upload_quota_daily');
     await spend(env, 'media', 1, now);
     await spend(env, 'write_rows', UPLOAD_WRITE_ROWS, now);
-    await reserveMediaBytes(env, length, POOL);
-    reserved = true;
+    if (extra > 0) {
+      await reserveMediaBytes(env, extra, POOL);
+      reserved = true;
+    }
     // eslint-disable-next-line no-undef
     const body = rejoin(head, reader).pipeThrough(new FixedLengthStream(length));
     try {
@@ -211,17 +219,17 @@ async function putDonation(env, request, donorId, now, ctx, ip) {
        WHERE srs_donations.key_hash = excluded.key_hash`,
     ).bind(donorId, keyHash, length, reviews, cards, appVersion, now).run();
     if (res.meta.changes !== 1) {
-      // 并发首次上传撞上了别的 key（文件头「已知取舍」）：行归先到的那把 key，配额池可能多记一份，接受。
+      // 并发首次上传撞上了别的 key（文件头「已知取舍」）：行归先到的那把 key，配额池可能记偏，接受。
       throw new HttpError(409, 'conflict');
     }
-    if (existing && existing.bytes) await releaseMediaBytes(env, existing.bytes, POOL);
+    if (oldBytes > length) await releaseMediaBytes(env, oldBytes - length, POOL);
     await env.DB.prepare('DELETE FROM srs_donation_withdrawals WHERE donor_id = ?1 AND reported_batch IS NULL')
       .bind(donorId).run();
     await checkMilestone(env, now, ctx);
     return json({ donated: true, updatedAt: now }, 200, NO_STORE);
   } catch (e) {
     await reader.cancel().catch(() => {});
-    if (reserved) await releaseMediaBytes(env, length, POOL);
+    if (reserved) await releaseMediaBytes(env, extra, POOL);
     throw e;
   }
 }
@@ -353,7 +361,10 @@ async function donationStats(env, origin, now) {
     withdrawn: b.withdrawn,
     url: b.expires_at > now ? batchUrl(origin, b.token) : null,
   }));
-  return { donors: s.donors, reviews: s.reviews, cards: s.cards, bytes: s.bytes, pendingWithdrawals: w.n, milestones, batches };
+  const pool = await poolUsage(env, POOL);
+  return {
+    donors: s.donors, reviews: s.reviews, cards: s.cards, bytes: s.bytes, pool, pendingWithdrawals: w.n, milestones, batches,
+  };
 }
 
 async function liveBatch(env, token, now) {

@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import worker from '../src/worker.js';
 import { BASE, call, lastCode, makeEnv, nextIp, pngHeader, registerUser } from './harness.js';
 import { FEEDBACK_LIMITS, purgeFeedbackAttachments, purgeFeedbackVideos } from '../src/feedback.js';
-import { mediaQuota, poolQuota, videoQuota } from '../src/budget.js';
+import { donationQuota, mediaQuota, poolQuota, videoQuota } from '../src/budget.js';
 
 const NOW = Date.UTC(2026, 9, 12, 12);
 const DAY = 24 * 3600 * 1000;
@@ -200,13 +200,16 @@ describe('视频上传', () => {
 // ---- 视频配额池 ----
 
 describe('视频配额池', () => {
-  it('视频池默认 1 GiB、最多切走总配额一半；两池之和等于总配额', () => {
+  it('视频池默认 1 GiB、最多切走总配额一半；捐赠池默认 2 GiB、最多四分之一；三池之和等于总配额', () => {
     const def = {};
     expect(videoQuota(def)).toBe(1024 * 1024 * 1024);
-    expect(poolQuota(def, 'video') + poolQuota(def, 'media')).toBe(mediaQuota(def));
-    const small = { MEDIA_QUOTA_BYTES: '1000', VIDEO_QUOTA_BYTES: '900' };
+    expect(donationQuota(def)).toBe(2 * 1024 * 1024 * 1024);
+    expect(poolQuota(def, 'media')).toBe(5 * 1024 * 1024 * 1024);
+    expect(poolQuota(def, 'video') + poolQuota(def, 'donation') + poolQuota(def, 'media')).toBe(mediaQuota(def));
+    const small = { MEDIA_QUOTA_BYTES: '1000', VIDEO_QUOTA_BYTES: '900', DONATION_QUOTA_BYTES: '900' };
     expect(videoQuota(small)).toBe(500);
-    expect(poolQuota(small, 'media')).toBe(500);
+    expect(donationQuota(small)).toBe(250);
+    expect(poolQuota(small, 'media')).toBe(250);
   });
 
   it('视频池满了：视频 507 video_quota、不留对象；截图 / 头像那份照常可传', async () => {

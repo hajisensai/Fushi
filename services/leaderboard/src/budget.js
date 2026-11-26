@@ -7,8 +7,10 @@
 //     反馈视频单独一池（media_usage.video_bytes，默认 1 GiB），其余（头像 / 封面 / 反馈截图与日志）
 //     用剩下的（media_usage.bytes）。视频单个 100 MB、能匿名上传，同一池的话几个 IP 就能把总配额
 //     打满、让全站头像封面一起 507 上一个月；分池后视频满了只拒视频。
+//     SRS 复习历史捐赠再单独一池（media_usage.donation_bytes，默认 2 GiB，srs_donations.js）：捐赠包永不过期，
+//     与 30 天过期的视频共池会慢慢把视频池占死；分池后捐赠满了只拒捐赠（507 donation_quota）。
 // 预算用 env 覆盖：BUDGET_WRITE_ROWS / BUDGET_MEDIA / BUDGET_REGISTER / BUDGET_EMAIL / BUDGET_FEEDBACK / BUDGET_PING / BUDGET_NOTICES /
-// MEDIA_QUOTA_BYTES / VIDEO_QUOTA_BYTES。
+// MEDIA_QUOTA_BYTES / VIDEO_QUOTA_BYTES / DONATION_QUOTA_BYTES。
 
 import { HttpError, utcDateKey } from './util.js';
 
@@ -32,11 +34,13 @@ export const DEFAULT_BUDGETS = {
 export const DEFAULT_MEDIA_QUOTA_BYTES = 8 * 1024 * 1024 * 1024;
 /** 反馈视频池默认 1 GiB（从总配额里切出来，不另加）。 */
 export const DEFAULT_VIDEO_QUOTA_BYTES = 1024 * 1024 * 1024;
+/** SRS 捐赠池默认 2 GiB（同样从总配额里切出；按 1 万捐赠者 × 平均 200 KB 估，留足余量）。 */
+export const DEFAULT_DONATION_QUOTA_BYTES = 2 * 1024 * 1024 * 1024;
 
 /** 配额池 → media_usage 的列。列名只从这张表取，不拼外部输入。 */
-export const MEDIA_POOLS = { media: 'bytes', video: 'video_bytes' };
+export const MEDIA_POOLS = { media: 'bytes', video: 'video_bytes', donation: 'donation_bytes' };
 /** 各池超额时的错误码（都是 507）。 */
-const POOL_ERRORS = { media: 'media_quota', video: 'video_quota' };
+const POOL_ERRORS = { media: 'media_quota', video: 'video_quota', donation: 'donation_quota' };
 
 export function budgetLimit(env, kind) {
   const v = Number(env[`BUDGET_${kind.toUpperCase()}`]);
@@ -55,9 +59,36 @@ export function videoQuota(env) {
   return Math.min(want, Math.floor(mediaQuota(env) / 2));
 }
 
-/** 某个池的上限：视频池 = videoQuota；普通池 = 总配额减去视频池（两池之和不超过 MEDIA_QUOTA_BYTES）。 */
+/** 捐赠池大小：DONATION_QUOTA_BYTES（默认 2 GiB），最多切走总配额的四分之一（与视频池合计不过四分之三）。 */
+export function donationQuota(env) {
+  const v = Number(env.DONATION_QUOTA_BYTES);
+  const want = Number.isFinite(v) && v > 0 ? v : DEFAULT_DONATION_QUOTA_BYTES;
+  return Math.min(want, Math.floor(mediaQuota(env) / 4));
+}
+
+/**
+ * 某个池的上限：视频池 = videoQuota；捐赠池 = donationQuota；普通池 = 总配额减去这两池
+ * （三池之和不超过 MEDIA_QUOTA_BYTES，普通池至少留总配额的四分之一）。
+ * @param {object} env
+ * @param {'media'|'video'|'donation'} pool
+ * @returns {number}
+ */
 export function poolQuota(env, pool) {
-  return pool === 'video' ? videoQuota(env) : mediaQuota(env) - videoQuota(env);
+  if (pool === 'video') return videoQuota(env);
+  if (pool === 'donation') return donationQuota(env);
+  return mediaQuota(env) - videoQuota(env) - donationQuota(env);
+}
+
+/**
+ * 某个池的当前占用与上限（管理统计用）。
+ * @param {object} env
+ * @param {'media'|'video'|'donation'} pool
+ * @returns {Promise<{usedBytes: number, quotaBytes: number}>}
+ */
+export async function poolUsage(env, pool) {
+  const col = poolColumn(pool);
+  const row = await env.DB.prepare(`SELECT ${col} AS used FROM media_usage WHERE id = 1`).first();
+  return { usedBytes: row ? row.used : 0, quotaBytes: poolQuota(env, pool) };
 }
 
 function poolColumn(pool) {
@@ -87,8 +118,9 @@ export async function adjustSpend(env, kind, delta, now) {
 }
 
 /**
- * 在 pool 里预占 R2 字节；超过该池上限抛 507（普通池 media_quota、视频池 video_quota）。条件 UPDATE，原子。
- * 只看本池的列：视频池满了不影响普通池，反之亦然。
+ * 在 pool 里预占 R2 字节；超过该池上限抛 507（普通池 media_quota、视频池 video_quota、捐赠池 donation_quota）。
+ * 条件 UPDATE，原子。
+ * 只看本池的列：一个池满了不影响其他池。
  */
 export async function reserveMediaBytes(env, bytes, pool = 'media') {
   const col = poolColumn(pool);
@@ -107,7 +139,7 @@ export async function releaseMediaBytes(env, bytes, pool = 'media') {
 
 /**
  * 删除 R2 对象并归还配额到 pool（先 head 取大小；head 是 B 类操作，免费额度 1000 万次/月）。
- * 一次调用里的 keys 必须同属一个池（反馈视频走 'video'，其余默认 'media'）。
+ * 一次调用里的 keys 必须同属一个池（反馈视频走 'video'，SRS 捐赠走 'donation'，其余默认 'media'）。
  */
 export async function deleteMedia(env, keys, pool = 'media') {
   const list = (Array.isArray(keys) ? keys : [keys]).filter(Boolean);

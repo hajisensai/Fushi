@@ -1,7 +1,9 @@
-// SRS 复习历史捐赠（src/srs_donations.js，迁移 0027）：上传 / 覆盖 / 查询 / 撤回、限流与配额、批次下载、里程碑通知。
+// SRS 复习历史捐赠（src/srs_donations.js，迁移 0027 / 0028）：上传 / 覆盖 / 查询 / 撤回、限流与配额、批次下载、里程碑通知。
 import { describe, expect, it, vi } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { call, makeEnv, nextIp } from './harness.js';
 import { SRS_DONATION_LIMITS, donationKey, donorKeyHash, milestoneMessage } from '../src/srs_donations.js';
+import { poolQuota } from '../src/budget.js';
 
 const NOW = Date.UTC(2026, 10, 26, 12);
 const HOUR = 3600 * 1000;
@@ -43,7 +45,9 @@ function withKey(env, method, d, opts = {}) {
   });
 }
 
-const videoBytes = (env) => env.DB.raw.prepare('SELECT video_bytes FROM media_usage').get().video_bytes;
+/** 捐赠专用配额池（budget.js 'donation'，迁移 0028）；视频池 / 普通池不该被捐赠动到。 */
+const donationBytes = (env) => env.DB.raw.prepare('SELECT donation_bytes FROM media_usage').get().donation_bytes;
+const otherPools = (env) => env.DB.raw.prepare('SELECT bytes, video_bytes FROM media_usage').get();
 const row = (env, id) => env.DB.raw.prepare('SELECT * FROM srs_donations WHERE donor_id = ?').get(id);
 const withdrawal = (env, id) => env.DB.raw.prepare('SELECT * FROM srs_donation_withdrawals WHERE donor_id = ?').get(id);
 
@@ -57,7 +61,7 @@ async function batch(env, now = NOW) {
 const pathOf = (url) => new URL(url).pathname;
 
 describe('上传', () => {
-  it('成功：流式写 R2、记行（只存 key 的哈希）、占大附件池、返回 updatedAt', async () => {
+  it('成功：流式写 R2、记行（只存 key 的哈希）、占捐赠池（不碰视频 / 普通池）、返回 updatedAt', async () => {
     const env = makeEnv();
     const d = donor(1);
     const bytes = apkg(100);
@@ -70,7 +74,8 @@ describe('上传', () => {
     expect(rec).toMatchObject({ bytes: 100, reviews: 1234, cards: 200, app_version: '1.2.3+45', created_at: NOW, updated_at: NOW });
     expect(rec.key_hash).toBe(await donorKeyHash(d.key));
     expect(rec.key_hash).not.toContain(d.key);
-    expect(videoBytes(env)).toBe(100);
+    expect(donationBytes(env)).toBe(100);
+    expect(otherPools(env)).toEqual({ bytes: 0, video_bytes: 0 });
   });
 
   it('Bearer key 大小写不敏感', async () => {
@@ -98,7 +103,7 @@ describe('上传', () => {
     expect((await put(env, d, apkg(), { version: 'a b' })).data.error).toBe('bad_app_version');
     expect(row(env, d.id)).toBeUndefined();
     expect(env.MEDIA.store.size).toBe(0);
-    expect(videoBytes(env)).toBe(0);
+    expect(donationBytes(env)).toBe(0);
   });
 
   it('实际长度与声明不符：400 bad_length，归还配额，旧文件仍在', async () => {
@@ -110,7 +115,7 @@ describe('上传', () => {
     expect(bad.status).toBe(400);
     expect(bad.data.error).toBe('bad_length');
     expect(env.MEDIA.store.get(donationKey(d.id)).bytes).toEqual(first);
-    expect(videoBytes(env)).toBe(50);
+    expect(donationBytes(env)).toBe(50);
     expect(row(env, d.id).bytes).toBe(50);
   });
 
@@ -122,7 +127,7 @@ describe('上传', () => {
     expect(r.data).toEqual({ donated: true, updatedAt: NOW + 10 });
     expect(env.MEDIA.store.get(donationKey(d.id)).bytes).toEqual(apkg(30, 2));
     expect(row(env, d.id)).toMatchObject({ bytes: 30, reviews: 2000, cards: 300, created_at: NOW, updated_at: NOW + 10 });
-    expect(videoBytes(env)).toBe(30);
+    expect(donationBytes(env)).toBe(30);
   });
 
   it('已有记录时换 key：403 donor_key_mismatch，不碰文件', async () => {
@@ -151,7 +156,7 @@ describe('上传', () => {
   });
 
   it('每 IP 每日字节额度：超了 429 upload_quota_daily', async () => {
-    const env = makeEnv({ VIDEO_QUOTA_BYTES: String(4 * SRS_DONATION_LIMITS.bytesPerIpDay) });
+    const env = makeEnv();
     const ip = '203.0.113.9';
     const half = SRS_DONATION_LIMITS.bytesPerIpDay / 2;
     // 只声明长度、不给够字节：额度按声明长度扣（传失败不退），不必真造 64 MiB。
@@ -161,16 +166,57 @@ describe('上传', () => {
     expect(r.status).toBe(429);
     expect(r.data.error).toBe('upload_quota_daily');
     expect((await put(env, donor(10), apkg(8), { ip, now: NOW + DAY })).status).toBe(200);
-    expect(videoBytes(env)).toBe(8);
+    expect(donationBytes(env)).toBe(8);
   });
 
-  it('大附件池满了 507 video_quota', async () => {
-    const env = makeEnv({ MEDIA_QUOTA_BYTES: '200', VIDEO_QUOTA_BYTES: '100' });
+  it('捐赠池满了 507 donation_quota；视频池满了不挡捐赠', async () => {
+    const env = makeEnv({ MEDIA_QUOTA_BYTES: '1000', DONATION_QUOTA_BYTES: '100' });
+    env.DB.raw.prepare('UPDATE media_usage SET video_bytes = ?').run(poolQuota(env, 'video'));
     expect((await put(env, donor(11), apkg(60))).status).toBe(200);
     const r = await put(env, donor(12), apkg(60));
     expect(r.status).toBe(507);
-    expect(r.data.error).toBe('video_quota');
+    expect(r.data.error).toBe('donation_quota');
     expect(env.MEDIA.store.has(donationKey(donor(12).id))).toBe(false);
+    expect(donationBytes(env)).toBe(60);
+  });
+
+  it('池接近满时重传：只预占多出的字节（不按新旧两份算），变小归还差额', async () => {
+    const env = makeEnv({ MEDIA_QUOTA_BYTES: '1000', DONATION_QUOTA_BYTES: '100' });
+    const d = donor(13);
+    expect((await put(env, d, apkg(70, 1))).status).toBe(200);
+    // 新旧合计 150 > 100，但净增 10：照收。
+    expect((await put(env, d, apkg(80, 2))).status).toBe(200);
+    expect(donationBytes(env)).toBe(80);
+    expect(env.MEDIA.store.get(donationKey(d.id)).bytes).toEqual(apkg(80, 2));
+    // 净增超出：507，旧文件与计数原样。
+    const big = await put(env, d, apkg(130, 3), { now: NOW + HOUR });
+    expect(big.status).toBe(507);
+    expect(big.data.error).toBe('donation_quota');
+    expect(env.MEDIA.store.get(donationKey(d.id)).bytes).toEqual(apkg(80, 2));
+    expect(donationBytes(env)).toBe(80);
+    // 变小：归还差额。
+    expect((await put(env, d, apkg(20, 4), { now: NOW + HOUR })).status).toBe(200);
+    expect(donationBytes(env)).toBe(20);
+    expect(row(env, d.id).bytes).toBe(20);
+  });
+
+  it('重传长度不符失败：只退本次多占的，池里仍是旧文件大小', async () => {
+    const env = makeEnv();
+    const d = donor(14);
+    expect((await put(env, d, apkg(50, 1))).status).toBe(200);
+    expect((await put(env, d, apkg(40, 2), { length: 90 })).status).toBe(400);
+    expect(donationBytes(env)).toBe(50);
+  });
+
+  it('迁移 0028：把已记在视频池里的捐赠字节挪到捐赠池', () => {
+    const env = makeEnv();
+    const db = env.DB.raw;
+    db.prepare("INSERT INTO srs_donations (donor_id, key_hash, bytes) VALUES ('a', 'h', 60), ('b', 'h', 40)").run();
+    db.prepare('UPDATE media_usage SET video_bytes = 500, donation_bytes = 0, bytes = 7').run();
+    const sql = readFileSync(new URL('../migrations/0028_srs_donation_pool.sql', import.meta.url), 'utf8');
+    db.exec(sql.slice(sql.indexOf('UPDATE media_usage')));
+    expect(db.prepare('SELECT bytes, video_bytes, donation_bytes FROM media_usage').get())
+      .toEqual({ bytes: 7, video_bytes: 400, donation_bytes: 100 });
   });
 });
 
@@ -198,7 +244,7 @@ describe('查询与撤回', () => {
     expect(r.data).toEqual({ donated: false });
     expect(env.MEDIA.store.has(donationKey(d.id))).toBe(false);
     expect(row(env, d.id)).toBeUndefined();
-    expect(videoBytes(env)).toBe(0);
+    expect(donationBytes(env)).toBe(0);
     expect(withdrawal(env, d.id)).toMatchObject({ withdrawn_at: NOW + 5, reported_batch: null });
     expect((await withKey(env, 'DELETE', d)).status).toBe(200);
   });
@@ -297,6 +343,7 @@ describe('批次', () => {
     const r = await call(env, 'GET', '/v1/admin/srs-donations', { headers: basic, now: NOW + 1 });
     expect(r.status).toBe(200);
     expect(r.data).toMatchObject({ donors: 1, reviews: 1000, cards: 10, bytes: 40, pendingWithdrawals: 0, milestones: [] });
+    expect(r.data.pool).toEqual({ usedBytes: 40, quotaBytes: poolQuota(env, 'donation') });
     expect(r.data.batches).toEqual([{ createdAt: NOW, expiresAt: NOW + 30 * DAY, donors: 1, withdrawn: 1, url: bt.url }]);
   });
 });

@@ -72,6 +72,8 @@ BANNED_WORDS = ""
 # MEDIA_QUOTA_BYTES = "8589934592"
 # 反馈视频配额池（字节，默认 1 GiB，从上面的总配额里切出，最多切一半）。
 # VIDEO_QUOTA_BYTES = "1073741824"
+# SRS 复习历史捐赠配额池（字节，默认 2 GiB，同样从总配额里切出，最多切四分之一；src/srs_donations.js）。
+# DONATION_QUOTA_BYTES = "2147483648"
 # 处理台 /dev/project 的官网访问量（src/project_stats.js）：fushi.moe 的 zone id，配合 secret CF_ANALYTICS_TOKEN
 # （API token，权限 Zone · Analytics · Read）。没有 token 就不取官网数据。
 CF_ZONE_ID = "e14cc8639f6160ca94ab8838ecb9a64b"
