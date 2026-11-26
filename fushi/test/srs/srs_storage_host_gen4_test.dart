@@ -180,4 +180,56 @@ void main() {
       expect(calls, hasLength(1));
     });
   });
+
+  group('profileUidsWithUserData（组合迁移 §4.2 的复习数据探测）', () {
+    late Directory dir;
+    setUp(
+      () async => dir = await Directory.systemTemp.createTemp('srs_host_probe'),
+    );
+    tearDown(() async => dir.delete(recursive: true));
+
+    SrsStorageHost probeHost(List<_Call> calls) => SrsStorageHost(
+      dbDirectory: dir.path,
+      isMainProcess: true,
+      legacyDatabase: () => db,
+      opener:
+          ({
+            required String directory,
+            required SrsOpenMode mode,
+            DatabaseConnectionUser? legacy,
+          }) async {
+            calls.add(_Call(directory, mode, legacy));
+            throw const SrsStoreNotMigrated('x', SrsGenState.needsMigration);
+          },
+    );
+
+    test('没有复习库文件、主库里也没有旧复习表：谁都没有，不开库', () async {
+      final List<_Call> calls = <_Call>[];
+      expect(
+        await probeHost(calls).profileUidsWithUserData(<String>['a']),
+        isEmpty,
+      );
+      expect(calls, isEmpty);
+    });
+
+    test('没有复习库文件但主库里还有没搬过的协议 1 复习表：判断不了（null），不当成「都没有」', () async {
+      await db.customStatement('CREATE TABLE srs_entities (id TEXT)');
+      final List<_Call> calls = <_Call>[];
+      expect(
+        await probeHost(calls).profileUidsWithUserData(<String>['a']),
+        isNull,
+      );
+      expect(calls, isEmpty);
+    });
+
+    test('有复习库文件但此刻打不开：null', () async {
+      File('${dir.path}${Platform.pathSeparator}srs.db').writeAsStringSync('');
+      final List<_Call> calls = <_Call>[];
+      expect(
+        await probeHost(calls).profileUidsWithUserData(<String>['a']),
+        isNull,
+      );
+      expect(calls, hasLength(1));
+    });
+  });
 }

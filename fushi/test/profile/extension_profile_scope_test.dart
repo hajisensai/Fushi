@@ -11,6 +11,7 @@ import 'package:fushi_anki/fushi_anki.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 
+import '../helpers/combo_fixtures.dart';
 import '../helpers/fake_anki_repository.dart';
 
 /// 反馈 biLEesNqWb：浏览器扩展所选配置「只影响扩展」。
@@ -120,7 +121,7 @@ void main() {
       fields: const <String, String>{'Front': 'reading'},
       pref: 'B-value',
     );
-    await repo.snapshotCurrentSettings(profileB);
+    await freezeLiveIntoCombo(repo, profileB);
     await setLive(
       dictAOrder: 0,
       dictBOrder: 1,
@@ -277,7 +278,7 @@ void main() {
 
     // B 的快照被改（例如用户在 App 里切到 B 改了设置再切走）→ 下一次请求看到新值。
     await db.setPref(_scopedPref, 'B-updated');
-    await repo.snapshotCurrentSettings(profileB);
+    await freezeLiveIntoCombo(repo, profileB);
     await db.setPref(_scopedPref, 'A-value');
     await pumpEventQueue();
 

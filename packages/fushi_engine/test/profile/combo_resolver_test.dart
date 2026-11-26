@@ -593,35 +593,54 @@ void main() {
       );
     });
 
-    test('diff ignores rows the snapshot lacks (installed later) and rows '
-        'the defaults lack (uninstalled); only changed shared rows split', () {
-      const SettingKey stale = SettingKey('dictionary_meta', 'Gone');
-      final ComboDocument same = diffAgainstDefaults(
-        tree: rowTree,
-        defaults: rowDefaults,
-        snapshot: <SettingKey, String>{dictA: 'on:0', stale: 'on:9'},
-      );
-      expect(same.splitLeafIds, isEmpty);
+    test(
+      'diff ignores rows the snapshot lacks (installed later); a changed '
+      'row or a row the defaults lack (object not here right now) splits',
+      () {
+        const SettingKey stale = SettingKey('dictionary_meta', 'Gone');
+        final ComboDocument same = diffAgainstDefaults(
+          tree: rowTree,
+          defaults: rowDefaults,
+          snapshot: <SettingKey, String>{dictA: 'on:0'},
+        );
+        expect(same.splitLeafIds, isEmpty);
 
-      final Map<SettingKey, String> changedSnapshot = <SettingKey, String>{
-        dictA: 'off:0',
-        stale: 'on:9',
-      };
-      final ComboDocument changed = diffAgainstDefaults(
-        tree: rowTree,
-        defaults: rowDefaults,
-        snapshot: changedSnapshot,
-      );
-      expect(changed.splits['dictionary'], changedSnapshot);
-      final ResolvedSettings r = resolveCombos(
-        tree: rowTree,
-        defaults: rowDefaults,
-        layers: <ComboLayer>[
-          ComboLayer(scope: ComboScope.work, comboRef: 'w', document: changed),
-        ],
-      );
-      expect(r.valueOf(dictA), 'off:0');
-      expect(r.valueOf(dictB), 'on:1');
-    });
+        // 默认组合此刻没有这一行（服务器词典目录还没拉到 / 词典以后重装）：快照对它的选择
+        // 要留下（BUG-4693），否则对象出现时就丢了这份配置的选择。
+        final ComboDocument absent = diffAgainstDefaults(
+          tree: rowTree,
+          defaults: rowDefaults,
+          snapshot: <SettingKey, String>{dictA: 'on:0', stale: 'on:9'},
+        );
+        expect(absent.splits['dictionary'], <SettingKey, String>{
+          dictA: 'on:0',
+          stale: 'on:9',
+        });
+
+        final Map<SettingKey, String> changedSnapshot = <SettingKey, String>{
+          dictA: 'off:0',
+          stale: 'on:9',
+        };
+        final ComboDocument changed = diffAgainstDefaults(
+          tree: rowTree,
+          defaults: rowDefaults,
+          snapshot: changedSnapshot,
+        );
+        expect(changed.splits['dictionary'], changedSnapshot);
+        final ResolvedSettings r = resolveCombos(
+          tree: rowTree,
+          defaults: rowDefaults,
+          layers: <ComboLayer>[
+            ComboLayer(
+              scope: ComboScope.work,
+              comboRef: 'w',
+              document: changed,
+            ),
+          ],
+        );
+        expect(r.valueOf(dictA), 'off:0');
+        expect(r.valueOf(dictB), 'on:1');
+      },
+    );
   });
 }

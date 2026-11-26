@@ -15,6 +15,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:fushi_engine/sync/fushi_remote_lookup_service.dart';
 
+import '../helpers/combo_fixtures.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
@@ -47,6 +48,7 @@ void main() {
     );
     defaultId = loaded.activeProfileId;
     boundId = await repo.createProfile('bound');
+    await freezeLiveIntoCombo(repo, boundId);
     await repo.setBookProfile('book-bound', boundId);
 
     // 全局（激活配置的 live 偏好）。

@@ -23,6 +23,10 @@ import 'package:fushi/src/utils/misc/fushi_toast.dart';
 import 'package:fushi/src/utils/misc/show_app_dialog.dart';
 import 'package:fushi_engine/utils/misc/safe_file_name.dart';
 import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/profile/combo/combo_migration_report_dialog.dart'
+    show showComboMigrationReportDialog;
+import 'package:fushi/src/profile/combo/combo_repository.dart'
+    show ComboMigrationReport;
 import 'package:fushi/src/profile/profile_deletion_cascade.dart';
 import 'package:fushi/src/profile/profile_repository.dart';
 import 'package:fushi/src/profile/profile_view_model.dart';
@@ -80,7 +84,13 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
       ErrorLogService.instance.log('ProfileManagement.sweepOrphans', e, stack);
       return 0;
     });
+    // 组合迁移报告（拍板台 design-combo-node-split）：迁移改写过存量配置时可在这里重看。
+    vm.comboMigrationReport().then((ComboMigrationReport? report) {
+      if (mounted && report != null) setState(() => _migrationReport = report);
+    });
   }
+
+  ComboMigrationReport? _migrationReport;
 
   @override
   Widget build(BuildContext context) {
@@ -106,6 +116,8 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
           children: [
             _buildCreateRow(vm),
             _buildImportRow(vm),
+            if (_migrationReport case final ComboMigrationReport report)
+              _buildMigrationReportRow(report),
             ..._buildProfileRows(uiState, vm),
           ],
         ),
@@ -201,6 +213,17 @@ class _ProfileManagementBodyState extends ConsumerState<ProfileManagementBody> {
       showIcon: true,
       title: t.profile_import,
       onTap: () => _importProfile(vm),
+    );
+  }
+
+  Widget _buildMigrationReportRow(ComboMigrationReport report) {
+    final bool cupertino = isCupertinoPlatform(context);
+    return AdaptiveSettingsRow(
+      key: const ValueKey<String>('profile_combo_migration_report_row'),
+      icon: cupertino ? CupertinoIcons.info : FushiIcons.info,
+      showIcon: true,
+      title: t.profile_combo_migration_view,
+      onTap: () => showComboMigrationReportDialog(context, report),
     );
   }
 

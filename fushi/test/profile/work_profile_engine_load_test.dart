@@ -14,6 +14,7 @@ import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_dictionary/fushi_dictionary.dart';
 import 'package:path/path.dart' as p;
 
+import '../helpers/combo_fixtures.dart';
 import '../helpers/fake_anki_repository.dart';
 import '../helpers/test_platform_services.dart';
 
@@ -112,7 +113,7 @@ void main() {
       final int boundId = await repo.createProfile('english');
       await dictRepo.persistDictionary(_dict('JP', order: 0, hidden: true));
       await dictRepo.persistDictionary(_dict('EN', order: 1, collapsed: true));
-      await repo.snapshotCurrentSettings(boundId);
+      await freezeLiveIntoCombo(repo, boundId);
       // 激活配置（live）：JP 开、EN 关。
       await dictRepo.persistDictionary(_dict('JP', order: 0));
       await dictRepo.persistDictionary(_dict('EN', order: 1, hidden: true));

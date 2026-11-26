@@ -65,6 +65,15 @@ class InertProfileRepository implements ProfileRepository {
   Future<void> snapshotCurrentSettings(int profileId) async {}
 
   @override
+  Future<void> normalizeCombos() async {}
+
+  @override
+  Future<ComboMigrationReport?> loadComboMigrationReport() async => null;
+
+  @override
+  Future<ComboMigrationReport?> takePendingComboMigrationReport() async => null;
+
+  @override
   Future<void> applyProfile(int profileId) async {}
 
   @override

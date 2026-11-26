@@ -69,10 +69,25 @@ void main() {
         ),
       );
 
-  /// 存量 Profile：整份快照此刻的 live 设置（新建配置的同一条路）。
+  /// 存量 Profile：整份快照此刻的 live 设置，没有 `combo/role` 行（组合迁移前的格式）。迁移
+  /// （视图模型首次装载时的 `ensureDefaultProfile`）之后库里不再产生这种行，只会由旧备份恢复 /
+  /// 合并导入带进来、到下一次归一前存在；读写路径对它们照旧逐叶子解析（读时 diff）。组合格式
+  /// 的同类场景见 `combo_migration_test.dart` / `combo_repository_test.dart`。
   Future<int> legacyProfile(String name) async {
-    final int id = await repo.createProfile(name);
-    await repo.snapshotCurrentSettings(id);
+    final int now = DateTime.now().millisecondsSinceEpoch;
+    final int id = await db.insertProfile(
+      ProfilesCompanion.insert(name: name, createdAt: now, updatedAt: now),
+    );
+    await db.replaceProfileSettings(id, <ProfileSettingsCompanion>[
+      for (final MapEntry<SettingKey, String> e
+          in (await repo.currentSettings()).entries)
+        ProfileSettingsCompanion.insert(
+          profileId: id,
+          category: e.key.category,
+          key: e.key.key,
+          value: e.value,
+        ),
+    ]);
     return id;
   }
 

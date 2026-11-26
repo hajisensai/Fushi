@@ -3849,6 +3849,25 @@ class AppModel
     database,
     platformServices.createAnkiRepository(),
     isDictionaryInstalled: isDictionaryInstalledOnDisk,
+    srsUserData: comboSrsUserData,
+    comboMigrationBackupDirectory: comboMigrationBackupDirectory,
+  );
+
+  /// 组合迁移定复习库归属（拍板台 design-srs-shared-library §4.2）：本机复习数据里 [uids] 中哪些有用户数据；
+  /// null = 此刻判断不了（库打不开、主库里还有没搬过的旧复习表……），归属留到下次再定。判据见
+  /// [SrsStorageHost.profileUidsWithUserData]。
+  Future<Set<String>?> comboSrsUserData(List<String> uids) async {
+    final SrsStorageHost? host = _srsStorageHost;
+    if (host == null) return null;
+    return host.profileUidsWithUserData(uids);
+  }
+
+  /// 组合迁移前的原快照备份目录（`<support>/combo_migration_backups/`）。
+  static Future<Directory> comboMigrationBackupDirectory() async => Directory(
+    path.join(
+      (await AppPaths.supportRootDirectory()).path,
+      'combo_migration_backups',
+    ),
   );
 
   Directory get dictionaryResourceDirectory => _dictionaryResourceDirectory;
@@ -5951,6 +5970,9 @@ class AppModel
         // BUG-1994：切 profile 时「这本词典装没装」只认磁盘目录。闭包是惰性的，
         // 只在 applyProfile（用户操作）里调，那时 late 的资源目录早已就位。
         isDictionaryInstalled: isDictionaryInstalledOnDisk,
+        // 组合迁移（ensureDefaultProfile 里归一）：复习库归属判据与原快照备份。
+        srsUserData: comboSrsUserData,
+        comboMigrationBackupDirectory: comboMigrationBackupDirectory,
       );
       dictRepo = DictionaryRepository(
         _database,
