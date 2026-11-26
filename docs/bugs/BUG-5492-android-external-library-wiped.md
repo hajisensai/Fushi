@@ -1,5 +1,5 @@
 ## BUG-5492 · Android 外部书库被整树删掉，书与词典全没了
-- **报告**：2026-11-26（反馈 MXX0xhQDgt / yjj8-18vKt，vivo 3.4.0：「移到可访问文件夹」后书库全部消失、数据库还在；同类 cH-HbP8XkQ，报告人承认自己手动删过 `Android/data/app.fushi.reader`）
+- **报告**：2026-11-26（反馈 MXX0xhQDgt / yjj8-18vKt，vivo 3.4.0：「移到可访问文件夹」后书库全部消失、数据库还在；同类 cH-HbP8XkQ，报告人承认自己手动删过 `Android/data/app.fushi.reader`；同类 MOLf_50680，OnePlus PJX110 / ColorOS 16 / Android 16，3.4.0-debug.32705（bbf3048，早于本修复）：「更新以后书籍、音频文件消失」，锚点 external、外部书库根与全部内部候选都 `none`、48 本词典文件全缺、主库还在；首页显示 1 小时前还在读，`androidExitInfo` 为 `PACKAGE_UPDATED`（应用内更新装包）——丢失时间窗与一次应用内更新重合，比 MXX0xhQDgt 的时间线更窄，但同期没有迁移 / 对账删除的日志，原生侧也没有碰 `getExternalFilesDir` 的删除路径）
 - **真实性**：✅ 真问题，但不是 Fushi 自己删的。在真机（OPPO）实验包上反复验过：正常迁移、迁移中途杀进程、多次冷启动、3.3.0 → 3.4.0 → develop 升级、平铺与嵌套两种内部布局，书库都完好，应用内找不到删除路径。MXX0xhQDgt 日志里 11:08 书库根还在外部（那里只剩新建的空派生目录），11:50 锚点已是内部嵌套布局（多半是丢了之后用户自己迁回）。根因是位置本身：3.4.0 把书库默认放到 / 引导迁到外部 app 专属目录 `Android/data/<包名>/files/data`（`fushi/lib/src/storage/app_paths.dart` `decideAndroidDocumentsLocation`、首页 `maybeShowAndroidStorageMovePrompt`）。那里对文件管理器、电脑 USB、手机清理工具（vivo i管家之类）都可见可删，Fushi 拦不住；而数据位置取证环（BUG-5490）也写在外部 `files/logs`，跟着一起被删，事后查不到。
 - **[x] ① 已修复** — 用户 2026-11-26 拍板「暂时砍掉外部位置 + 哨兵检测」：
   - 新装和没有锚点的老安装一律落内部（`decideAndroidDocumentsLocation` 只认已有锚点，否则内部）；不再弹「移到可访问文件夹」，设置「数据存储位置」在内部时不给按钮。
