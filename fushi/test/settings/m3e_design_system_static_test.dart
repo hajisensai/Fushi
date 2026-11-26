@@ -3464,12 +3464,12 @@ class AnotherPopupPart {
       'Widget _buildDictionaryList(',
     );
     // TODO-422：词典行尾的三点菜单已改为独立删除按钮，词典管理界面剩下的
-    // FushiOverflowMenu 在移动端页头的溢出菜单 _buildMobilePageActions 里，
+    // FushiOverflowMenu 在 MD3 动作条的溢出菜单 _buildOverflowMenu 里，
     // 仍守卫它用共享 MD3 原语（FushiOverflowMenu，而非裸 PopupMenuButton）。
     final String managerMenu = _functionSource(
       dictionaryManager,
-      'List<Widget> _buildMobilePageActions() {',
-      'Future<void> showDictionaryClearDialog()',
+      'Widget _buildOverflowMenu({required bool compact}) {',
+      'List<FushiPopupMenuItem<VoidCallback>> _buildOverflowItems({',
     );
     final String managerPopupItem = _functionSource(
       dictionaryManager,
