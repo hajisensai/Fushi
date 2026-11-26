@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
-  "version": "3.4.0-debug.32846",
-  "tag": "v3.4.0-debug.32846+b3beaa3",
+  "version": "3.4.0-debug.32862",
+  "tag": "v3.4.0-debug.32862+06de0be",
   "channel": "debug",
   "prerelease": true,
-  "releaseSequence": 32846,
-  "notes": "Automated desktop debug-channel build from develop @ b3beaa3. Push releases are always prerelease and never Latest.",
+  "releaseSequence": 32862,
+  "notes": "Automated release-signed debug-channel build from develop @ 06de0be. Push releases are always prerelease and never Latest.",
   "assets": [
     {
       "name": "fushi-3.4.0-debug.32769-macos-arm64.dmg",
@@ -25,16 +25,6 @@
       "version": "3.4.0-debug.32769",
       "size": 281410605,
       "sha256": "0b8366e08bf5fc1ac5ef895f5e3ae23cc0457424212e17657cde6e897be5d494",
-      "dbSchemaVersion": 181
-    },
-    {
-      "name": "fushi-3.4.0-debug.32846-b3beaa3-debug.apk",
-      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.32846-b3beaa3-debug.apk",
-      "releaseSequence": 32846,
-      "tag": "v3.4.0-debug.32846+b3beaa3",
-      "version": "3.4.0-debug.32846",
-      "size": 285138106,
-      "sha256": "4abb8b2f9ff62c59dbb58d3eb36ac564a2f47cb5c932af44ac5b9588c0ae4444",
       "dbSchemaVersion": 181
     },
     {
@@ -66,6 +56,16 @@
       "size": 306198016,
       "sha256": "ab4de669e824596246d25e9e5f1e40b3669dfc29d4faca18eee42e41adf7e67f",
       "dbSchemaVersion": 181
+    },
+    {
+      "name": "fushi-3.4.0-debug.32862-06de0be-debug.apk",
+      "browser_download_url": "https://github.com/hajisensai/Fushi/releases/download/fushi-debug-rolling/fushi-3.4.0-debug.32862-06de0be-debug.apk",
+      "releaseSequence": 32862,
+      "tag": "v3.4.0-debug.32862+06de0be",
+      "version": "3.4.0-debug.32862",
+      "size": 285154490,
+      "sha256": "ce7a95c0afce1f13e78a0cbd615080532c1c5abb497120cdb09c4204c93b55c3",
+      "dbSchemaVersion": 182
     }
   ]
 }
