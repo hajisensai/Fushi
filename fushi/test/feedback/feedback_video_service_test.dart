@@ -555,6 +555,232 @@ void main() {
       expect(third.byId('otherdev01')!.hasUnseenReply, isFalse);
     });
 
+    test('拉取 mine 期间身份短暂归 null（并发 refresh 置空状态）后恢复同一账户：保留已读并可继续落盘', () async {
+      Map<String, dynamic> replied(String id, {int createdAt = 1000}) =>
+          <String, dynamic>{
+            ..._summary(id, createdAt: createdAt),
+            'devReplyAt': 1500,
+            'updatedAt': 1500,
+          };
+      Completer<void>? mineArrived;
+      Completer<void>? mineRelease;
+      handler = (http.Request r) async {
+        if (r.url.path == '/v1/feedback/mine') {
+          if (mineArrived != null && !mineArrived.isCompleted) {
+            mineArrived.complete();
+          }
+          if (mineRelease != null) await mineRelease.future;
+          return _json(<String, dynamic>{
+            'items': <Object>[
+              replied('otherdev01', createdAt: 2000),
+              replied('otherdev02', createdAt: 1000),
+            ],
+            'next': null,
+          });
+        }
+        if (r.url.path == '/v1/feedback/otherdev01' ||
+            r.url.path == '/v1/feedback/otherdev02') {
+          final String id = r.url.pathSegments.last;
+          return _json(<String, dynamic>{
+            ...replied(id),
+            'body': 'body-$id',
+            'attachments': <Object>[],
+            'messages': <Object>[],
+          });
+        }
+        return _json(<String, dynamic>{}, 404);
+      };
+
+      final FeedbackService first = service();
+      await first.refresh();
+      await first.detail('otherdev01');
+      expect(first.byId('otherdev01')!.hasUnseenReply, isFalse);
+      expect(first.byId('otherdev01')!.seenAt, 1500);
+      expect(first.unseenCount, 1);
+
+      mineArrived = Completer<void>();
+      mineRelease = Completer<void>();
+      final Future<void> r1 = first.refresh();
+      await mineArrived.future;
+
+      final LeaderboardIdentity account = identity!;
+      identity = null;
+      final Future<void> r2 = first.refresh();
+      await pumpEventQueue();
+      expect(first.byId('otherdev01'), isNull);
+
+      identity = account;
+      mineRelease.complete();
+      await Future.wait<void>(<Future<void>>[r1, r2]);
+
+      final FeedbackTicket after1 = first.byId('otherdev01')!;
+      expect(after1.hasUnseenReply, isFalse);
+      expect(after1.seenAt, 1500);
+      expect(after1.body, 'body-otherdev01');
+      expect(first.unseenCount, 1);
+
+      // 恢复后 _accountKey 必须仍在位：继续点击第二条也应真实落盘。
+      await first.detail('otherdev02');
+      expect(first.unseenCount, 0);
+
+      final FeedbackService relaunched = service();
+      await relaunched.load();
+      expect(relaunched.byId('otherdev01')!.hasUnseenReply, isFalse);
+      expect(relaunched.byId('otherdev01')!.body, 'body-otherdev01');
+      expect(relaunched.byId('otherdev02')!.hasUnseenReply, isFalse);
+      expect(relaunched.unseenCount, 0);
+    });
+
+    test(
+      '并发 refresh 撞上 _switchAccount 正在读缓存：等待读完再合并，不以 seenAt=0 覆写落盘',
+      () async {
+        final LeaderboardIdentity account = identity!;
+        final Map<String, dynamic> replied = <String, dynamic>{
+          ..._summary('otherdev01'),
+          'devReplyAt': 1500,
+          'updatedAt': 1500,
+        };
+        await FeedbackTicketStore.account(
+          root,
+          account.accountId,
+        ).write(<FeedbackTicket>[
+          const FeedbackTicket(
+            id: 'otherdev01',
+            ticket: '',
+            title: 'server-otherdev01',
+            category: FeedbackCategory.bug,
+            createdAt: 1000,
+            status: FeedbackStatus.open,
+            updatedAt: 1500,
+            devReplyAt: 1500,
+            seenAt: 1500,
+            body: 'body-otherdev01',
+          ),
+        ]);
+        handler = (http.Request r) async {
+          if (r.url.path == '/v1/feedback/mine') {
+            return _json(<String, dynamic>{
+              'items': <Object>[replied],
+              'next': null,
+            });
+          }
+          return _json(<String, dynamic>{}, 404);
+        };
+
+        Completer<Directory>? cacheReadGate;
+        bool gatedOnce = false;
+        final FeedbackService s = FeedbackService(
+          supportRoot: () async {
+            if (cacheReadGate != null && !gatedOnce) {
+              gatedOnce = true;
+              return cacheReadGate.future;
+            }
+            return root;
+          },
+          client: client,
+        );
+
+        // 先以 null 身份完成 load，随后身份就绪，卡住第一次切换账户时的读缓存。
+        identity = null;
+        await s.load();
+        identity = account;
+        cacheReadGate = Completer<Directory>();
+
+        final Future<void> r1 = s.refresh();
+        await pumpEventQueue();
+        final Future<void> r2 = s.refresh();
+        await pumpEventQueue();
+        expect(
+          requests,
+          isEmpty,
+          reason: '并发 refresh 须等在途读缓存完成，不能先空表跑 _refreshAccount',
+        );
+
+        cacheReadGate.complete(root);
+        await Future.wait<void>(<Future<void>>[r1, r2]);
+
+        final FeedbackTicket? restored = s.byId('otherdev01');
+        expect(restored, isNotNull);
+        expect(restored!.hasUnseenReply, isFalse);
+        expect(restored.seenAt, 1500);
+        expect(restored.body, 'body-otherdev01');
+
+        final FeedbackService relaunched = service();
+        await relaunched.load();
+        expect(relaunched.byId('otherdev01')!.hasUnseenReply, isFalse);
+        expect(relaunched.byId('otherdev01')!.body, 'body-otherdev01');
+      },
+    );
+
+    test('在途 detail 返回前已退出登录：不回写已清空的账户列表、不覆盖原账户缓存', () async {
+      final LeaderboardIdentity account = identity!;
+      final Map<String, dynamic> initial = <String, dynamic>{
+        ..._summary('otherdev01'),
+        'devReplyAt': 1500,
+        'updatedAt': 1500,
+      };
+      final Map<String, dynamic> newer = <String, dynamic>{
+        ..._summary('otherdev01'),
+        'devReplyAt': 2500,
+        'updatedAt': 2500,
+      };
+      Completer<void>? detailArrived;
+      Completer<void>? detailRelease;
+      handler = (http.Request r) async {
+        if (r.url.path == '/v1/feedback/mine') {
+          return _json(<String, dynamic>{
+            'items': <Object>[initial],
+            'next': null,
+          });
+        }
+        if (r.url.path == '/v1/feedback/otherdev01') {
+          if (detailRelease == null) {
+            return _json(<String, dynamic>{
+              ...initial,
+              'body': 'body-otherdev01',
+              'attachments': <Object>[],
+              'messages': <Object>[],
+            });
+          }
+          detailArrived!.complete();
+          await detailRelease.future;
+          return _json(<String, dynamic>{
+            ...newer,
+            'body': 'updated-body',
+            'attachments': <Object>[],
+            'messages': <Object>[],
+          });
+        }
+        return _json(<String, dynamic>{}, 404);
+      };
+
+      final FeedbackService s = service();
+      await s.refresh();
+      await s.detail('otherdev01');
+
+      detailArrived = Completer<void>();
+      detailRelease = Completer<void>();
+      final Future<FeedbackDetail> pending = s.detail('otherdev01');
+      await detailArrived.future;
+
+      identity = null;
+      await s.refresh();
+      expect(s.byId('otherdev01'), isNull);
+
+      detailRelease.complete();
+      await pending;
+
+      expect(s.byId('otherdev01'), isNull);
+      expect(s.tickets, isEmpty);
+      final List<FeedbackTicket> persisted = await FeedbackTicketStore.account(
+        root,
+        account.accountId,
+      ).read();
+      expect(persisted, hasLength(1));
+      expect(persisted.single.seenAt, 1500);
+      expect(persisted.single.body, 'body-otherdev01');
+    });
+
     test('退出登录 / 换账户：丢掉旧账户的列表，未登录不请求 mine', () async {
       handler = (http.Request r) async => _json(<String, dynamic>{
         'items': <Object>[_summary('otherdev01')],

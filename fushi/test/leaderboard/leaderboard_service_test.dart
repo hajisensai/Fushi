@@ -4,12 +4,15 @@ import 'dart:io';
 import 'dart:math';
 import 'dart:typed_data';
 
-import 'package:drift/drift.dart' show Value;
+import 'package:drift/drift.dart' show Value, driftRuntimeOptions;
 import 'package:drift/native.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/leaderboard/leaderboard_store.dart';
 import 'package:fushi/src/media/source_library/source_library_privacy.dart';
+import 'package:fushi/src/models/app_model.dart';
+import 'package:fushi/src/profile/profile_view_model.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_client.dart';
 import 'package:fushi_engine/leaderboard/leaderboard_identity.dart';
@@ -19,6 +22,9 @@ import 'package:fushi_engine/leaderboard/local_shelf.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
 import 'package:image/image.dart' as img;
+
+import '../helpers/inert_profile_repository.dart';
+import '../helpers/test_platform_services.dart';
 
 /// 假服务端：记下每个请求，按路径回固定形状。
 class _FakeServer {
@@ -169,7 +175,46 @@ LocalShelf _shelf(int n) => LocalShelf(
   daily: <DailyCharsUpload>[DailyCharsUpload(date: '2026-09-01', chars: 3)],
 );
 
+class _GatedProfileRepository extends InertProfileRepository {
+  _GatedProfileRepository(this.gate)
+    : super(
+        profiles: const <ProfileRow>[
+          ProfileRow(id: 1, name: 'Default', createdAt: 0, updatedAt: 0),
+          ProfileRow(id: 2, name: 'Second', createdAt: 0, updatedAt: 0),
+        ],
+      );
+
+  final Future<void> gate;
+  int _activeId = 1;
+
+  @override
+  Future<void> ensureDefaultProfile() => gate;
+
+  @override
+  Future<int> getActiveProfileId() async => _activeId;
+
+  @override
+  Future<void> setActiveProfileId(int id) async {
+    _activeId = id;
+  }
+}
+
+class _ProviderAppModel extends AppModel {
+  _ProviderAppModel(this._db, this._dir) : super(testPlatformServices());
+
+  final FushiDatabase _db;
+  final Directory _dir;
+
+  @override
+  FushiDatabase get database => _db;
+
+  @override
+  Directory get databaseDirectory => _dir;
+}
+
 void main() {
+  TestWidgetsFlutterBinding.ensureInitialized();
+  driftRuntimeOptions.dontWarnAboutMultipleDatabases = true;
   late Directory root;
   late FushiDatabase db;
   late _FakeServer server;
@@ -1120,6 +1165,78 @@ void main() {
       server.failShelf = false;
       await s.syncNow();
       expect(server.shelfWorks, <String>{'W_Open'});
+    });
+  });
+
+  group('leaderboardServiceProvider', () {
+    test('冷启动 -1 → 真实激活 Profile 与 ViewModel 重建不销毁重开；切换 Profile 时才重建', () async {
+      await db.customStatement(
+        'INSERT INTO profiles (id, name, uid, created_at, updated_at) '
+        "VALUES (1, 'Default', 'uid-profile-1', 0, 0), "
+        "(2, 'Second', 'uid-profile-2', 0, 0)",
+      );
+      final LeaderboardIdentity id = LeaderboardIdentity.generate();
+      await LeaderboardStore(supportRoot: root, profileId: 1).write(
+        LeaderboardLocalAccount(
+          recoveryCode: id.toRecoveryCode(),
+          accountId: id.accountId,
+        ),
+      );
+      final Completer<void> gate = Completer<void>();
+      final _GatedProfileRepository repo = _GatedProfileRepository(gate.future);
+      final ProviderContainer container = ProviderContainer(
+        overrides: <Override>[
+          appProvider.overrideWith((Ref ref) => _ProviderAppModel(db, root)),
+          profileRepositoryProvider.overrideWithValue(repo),
+          profileViewModelProvider.overrideWith(
+            (Ref ref) =>
+                ProfileViewModel(repo, () async {}, ProfileDraftCoordinator()),
+          ),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      // 1. 装载期间 activeProfileId 仍是 -1：provider 自行解析到 1 并加载账户。
+      final LeaderboardService first = container.read(
+        leaderboardServiceProvider,
+      );
+      await first.load();
+      expect(first.status, LeaderboardStatus.active);
+      expect(first.resolvedProfileId, 1);
+      expect(first.feedbackClient().identity?.accountId, id.accountId);
+
+      // 2. ProfileViewModel 首次装载完成（-1 → 1）：沿用同一个服务实例，不短暂清空身份。
+      gate.complete();
+      await container.read(profileViewModelProvider.notifier).loaded;
+      await pumpEventQueue();
+      expect(
+        identical(container.read(leaderboardServiceProvider), first),
+        isTrue,
+      );
+      expect(first.status, LeaderboardStatus.active);
+      expect(first.feedbackClient().identity?.accountId, id.accountId);
+
+      // 3. invalidate(profileViewModelProvider) 但激活 id 仍为 1（1 → -1 → 1）：不重建。
+      container.invalidate(profileViewModelProvider);
+      await container.read(profileViewModelProvider.notifier).loaded;
+      await pumpEventQueue();
+      expect(
+        identical(container.read(leaderboardServiceProvider), first),
+        isTrue,
+      );
+      expect(first.status, LeaderboardStatus.active);
+
+      // 4. 真正切换到 Profile 2（无排行榜账户）：销毁旧实例、新建并加载 Profile 2。
+      await container.read(profileViewModelProvider.notifier).switchProfile(2);
+      await pumpEventQueue();
+      final LeaderboardService second = container.read(
+        leaderboardServiceProvider,
+      );
+      expect(identical(second, first), isFalse);
+      await second.load();
+      expect(second.resolvedProfileId, 2);
+      expect(second.status, LeaderboardStatus.disabled);
+      expect(second.feedbackClient().identity, isNull);
     });
   });
 }
