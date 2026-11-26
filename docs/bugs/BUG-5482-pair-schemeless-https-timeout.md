@@ -1,0 +1,19 @@
+## BUG-5482 · 互联手动添加不带 scheme 的地址配对 TLS host 报「对端没在时限内应答」
+- **报告**：2026-11-25（用户：手机上「互联 → 添加设备」输入 `192.0.2.10:48765`（不写 scheme）配对一台开着 TLS（默认）的 Docker 版 fushi_server，提示「The peer did not respond in time.」（`sync_pair_timeout`）；改输 `https://192.0.2.10:48765` 立即配对成功。网络与 server 都正常，curl 明文请求该端口得到空应答（exit 52）。）
+- **真实性**：✅ 真 bug。
+  - 症状：裸地址被当成 http 地址探测，TLS host 上配对失败，文案把锅甩给网络；落库的也是一条永远连不上的 `http://` 地址。
+  - 根因：`fushi/lib/src/sync/interconnect_url.dart:16`（修复前）`normalizeFushiInterconnectManualUrl` 把没写 scheme 的输入一律补成 `http://`，`fushi/lib/src/sync/sync_settings_schema/interconnect.part.dart:567`（修复前）`_addOrEditUrl` 把这个**占位** scheme 当成对端事实：先落库、再交给 `_attemptManualPair` 发明文 `/api/ping`。TLS host（`FushiSyncServer._bindListener` 只 `bindSecure`）不监听明文：直连时对端立刻断开 → `unreachable`（BUG-1741 那条「回头做 TOFU 认出 TLS」的兜底能接住）；但隔着不把后端断开传回客户端的端口转发（容器 / NAT 映射）时，明文请求一直挂到 5 秒超时 → `FushiPingFailure.timeout`，而 `interconnect.part.dart:680`（修复前）的 TLS 回查只认 `unreachable`，于是直落 `_pingFailureMessage` → `sync_pair_timeout`。
+  - 复核：「空应答 / 连接被关」本身的分型没错——真 `HttpServer.bindSecure` 上明文 ping 得到 `ClientException: Connection closed before full header was received` → `unreachable`（见测试）。超时只出在中间多一跳、断开没被传回来的链路上。LAN 发现路径（`probeDiscoveredPairingEndpointDetailed`）早已两种 scheme 都探，手动路径是唯一还在猜 scheme 的入口。
+- **[x] ① 已修复** —
+  - 引擎：`packages/fushi_engine/lib/sync/pairing/discovered_pairing_probe.dart` 把「按候选顺序 TOFU + 钉扎 ping」抽成共用的 `probeFushiPairingCandidates`（LAN 发现改为委托它，行为不变），新增 `schemelessPairingCandidates`：裸地址 https 优先、http 兜底（没写端口时各用 443 / 80）。https 先试：TLS host 一次握手就认出，明文 host 对 TLS 握手立刻回 400 / 断开，几乎零成本，且对端讲 TLS 时第一发绝不是明文。
+  - App：`interconnect_url.dart` 新增 `parseFushiInterconnectManualAddress`（带 `schemeExplicit`）与 `fushiInterconnectManualPairingCandidates`；`_addOrEditUrl` 新增模式下裸地址改走 `_attemptSchemelessManualPair`：同一把忙态锁 → 探测 → 落库**探明的**地址（探测失败但对端确证讲 TLS 时存 https 那条）→ v2 配对；失败按最重原因出文案。写了 scheme 的输入照旧（用户的 scheme 说了算，保留「对端不是 https」等专属提示）。
+  - 显式 `http://` 打 TLS host 的回查从只认 `unreachable` 扩到 `timeout`，隔着端口转发也给出「此设备只接受 HTTPS」而不是「对端没应答」。
+  - 提交：见 PR（分支 `fix/pair-schemeless-https`）。
+- **[x] ② 已加自动化测试** —
+  - `packages/fushi_engine/test/sync/pairing/schemeless_pairing_probe_test.dart`（真 socket）：真 TLS host 上明文 ping 归 `unreachable`；隔着「不传递后端断开」的 TCP 转发器明文 ping 归 `timeout`（根因复现）；裸地址直连 / 隔转发器都探到 https 端点 + 指纹且不超时；明文 host 上裸地址快速回落 http。
+  - `fushi/test/sync/interconnect_url_test.dart`：解析结果与候选顺序；显式 scheme 不探测。
+  - `fushi/test/sync/interconnect_manual_url_scheme_guard_test.dart`：裸地址新增必须「探测 → 落库探明地址 → 配对」且在忙态锁内。
+- **备注**：
+  - 编辑已有地址（`_addOrEditUrl(index:)`）时输入裸地址仍补 `http://` 且不探测（编辑路径本来就不发起网络请求）；把 TLS host 的行改成裸地址会得到 http 地址，需要用户写 `https://` 或重新添加。未改，留作后续。
+  - 输入框提示仍是 `http://192.168.1.100:38765`（守卫钉着、app 自带 host 默认明文）；未改。
+  - UI 层未做真机复测（需 TLS host + 端口转发环境），引擎层已用真 socket 覆盖失败链路。
