@@ -33,10 +33,12 @@
 
 <!-- BUGS-INDEX:BEGIN（自动生成，勿手改；改完跑 `dart run tool/bug.dart reindex`）-->
 
-> 共 4803 条。点号进各自文件。
+> 共 4805 条。点号进各自文件。
 
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
+| [BUG-5536](bugs/BUG-5536-idle-page-continuous-frames.md) | 🚧 | 🚧 | 页面静止时仍以接近屏幕刷新率持续出帧（视频库页 / 视频合集页） |
+| [BUG-5535](bugs/BUG-5535-route-transition-covered-page-full-replay.md) | ✅ | ✅ | 打开 / 返回二级页（视频合集等）转场掉帧：被盖住的那一页每帧整页重放绘制 |
 | [BUG-5526](bugs/BUG-5526-srs-link-retired-root-writer.md) | ✅ | ✅ | 平板复习同步永远不采用电脑的集合：集合目录里退役旧根的写入者被当成成员，关联判成「已关联」 |
 | [BUG-5525](bugs/BUG-5525-rwkv-cold-start-full-replay.md) | ✅ | ✅ | RWKV 冷启动逐卡重放全部历史，复习页首开等十几二十秒 |
 | [BUG-5521](bugs/BUG-5521-windows-maximized-startup-teal-flash.md) | ✅ | ✅ | Windows：上次最大化关掉，下次启动先显示几秒青绿色空窗 |
