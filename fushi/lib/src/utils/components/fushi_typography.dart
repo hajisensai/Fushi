@@ -118,6 +118,50 @@ extension FushiTextStyleFigures on TextStyle {
   }
 }
 
+/// 等宽字体链（代码 / 提示词模板 / 原始回复这类要按字符对齐的文字）：按平台给系统里一定有的
+/// 等宽字体。裸写 `fontFamily: 'monospace'` 只在 Android / Linux 能解析（fontconfig 别名），
+/// Windows / Apple 上按名字找不到就退回比例字体。
+///
+/// - Windows：Consolas（XP 起随系统）→ Cascadia Mono（Win 11 / Terminal）→ Courier New；
+/// - macOS / iOS：Menlo → SF Mono → Courier；
+/// - Android / Linux / Fuchsia：Roboto Mono（装了才有）→ `monospace` 别名 → DejaVu Sans Mono。
+List<String> fushiMonospaceFamilies(TargetPlatform platform) =>
+    switch (platform) {
+      TargetPlatform.windows => const <String>[
+        'Consolas',
+        'Cascadia Mono',
+        'Courier New',
+      ],
+      TargetPlatform.macOS ||
+      TargetPlatform.iOS => const <String>['Menlo', 'SF Mono', 'Courier'],
+      TargetPlatform.android ||
+      TargetPlatform.linux ||
+      TargetPlatform.fuchsia => const <String>[
+        'Roboto Mono',
+        'monospace',
+        'DejaVu Sans Mono',
+      ],
+    };
+
+/// 等宽排版（与设计系统无关：只换字体链，字号 / 颜色 / 行高照旧）。
+extension FushiTextStyleMonospace on TextStyle {
+  /// 换成当前平台的等宽字体链（[fushiMonospaceFamilies]）。原来的 UI 字体与它的回退链接在
+  /// 等宽字体之后：等宽字体没有的字（日文 / 中文等）照旧走 UI 字体链，不落到系统随便挑的字体。
+  TextStyle get monospace {
+    final List<String> mono = fushiMonospaceFamilies(defaultTargetPlatform);
+    final String? ui = fontFamily;
+    return copyWith(
+      fontFamily: mono.first,
+      fontFamilyFallback: <String>[
+        ...mono.skip(1),
+        if (ui != null && !mono.contains(ui)) ui,
+        for (final String f in fontFamilyFallback ?? const <String>[])
+          if (!mono.contains(f) && f != ui) f,
+      ],
+    );
+  }
+}
+
 /// 把应用字阶 [textTheme] 解析成**与 `Theme.of(context).textTheme` 同一基底**的
 /// 完整 TextTheme：Typography.material2021 的颜色档（[scheme] 明暗对应 black /
 /// white）+ 按 UI 语言取的几何档（CJK = dense，其余 = englishLike），再叠上

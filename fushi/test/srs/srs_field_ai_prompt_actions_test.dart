@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show defaultTargetPlatform;
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
@@ -7,9 +8,13 @@ import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/ai/ai_srs_field_reply.dart';
 import 'package:fushi/src/ai/ai_srs_field_samples.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_prompt_editor_page.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_field_ai_formatted_text.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
 import 'package:fushi/src/utils/components/fushi_icon_button.dart';
+import 'package:fushi/src/utils/components/fushi_m3e_list_card.dart';
 import 'package:fushi/src/utils/components/fushi_material_components.dart';
+import 'package:fushi/src/utils/components/fushi_section_title.dart';
+import 'package:fushi/src/utils/components/fushi_typography.dart';
 import 'package:fushi/src/utils/components/glass/fushi_glass_buttons.dart';
 import 'package:fushi_engine/ai/ai_chat_client.dart';
 import 'package:fushi_engine/ai/ai_provider_config.dart';
@@ -43,6 +48,9 @@ class _CapturingClient extends AiChatClient {
   final List<List<AiChatMessage>> sent = <List<AiChatMessage>>[];
   String reply = '{"value": "I go.", "explanation": "direct"}';
 
+  /// 非空 = 下一次请求抛它（网络 / 提供商失败），抛完清空。
+  AiChatFailure? failNext;
+
   @override
   Future<String> complete({
     required AiProviderConfig provider,
@@ -50,6 +58,9 @@ class _CapturingClient extends AiChatClient {
     int maxTokens = 2048,
   }) async {
     sent.add(List<AiChatMessage>.of(messages));
+    final AiChatFailure? fail = failNext;
+    failNext = null;
+    if (fail != null) throw fail;
     return reply;
   }
 }
@@ -91,6 +102,20 @@ Future<void> _tap(WidgetTester tester, String key) async {
 String _selectable(WidgetTester tester, String key) =>
     tester.widget<SelectableText>(_key(key)).data!;
 
+/// 带格式预览（Text.rich）的纯文字。
+String _richText(WidgetTester tester, String key) =>
+    tester.widget<Text>(_key(key)).textSpan!.toPlainText();
+
+/// [root] 里所有带文字的 TextSpan（深度优先）。
+List<TextSpan> _textSpans(InlineSpan root) {
+  final List<TextSpan> out = <TextSpan>[];
+  root.visitChildren((InlineSpan s) {
+    if (s is TextSpan && (s.text ?? '').isNotEmpty) out.add(s);
+    return true;
+  });
+  return out;
+}
+
 class _Harness {
   final _CapturingClient client = _CapturingClient();
   String? result;
@@ -102,8 +127,9 @@ Future<_Harness> _pump(
   _Store store, {
   String fieldName = 'SentenceTranslation',
   Map<String, String> values = const <String, String>{'f0': '毎日<b>通う</b>'},
+  Size size = const Size(900, 4000),
 }) async {
-  tester.view.physicalSize = const Size(900, 4000);
+  tester.view.physicalSize = size;
   tester.view.devicePixelRatio = 1;
   addTearDown(tester.view.reset);
   final _Harness h = _Harness();
@@ -558,7 +584,7 @@ void main() {
     await _tap(tester, 'srs-field-ai-use-as-text');
     expect(_key('srs-field-ai-reply-error'), findsNothing);
     expect(
-      _selectable(tester, 'srs-field-ai-result-text'),
+      _richText(tester, 'srs-field-ai-result-text'),
       'Sure! Here it is: I go.',
     );
     expect(h.closed, isFalse, reason: '还没写');
@@ -569,7 +595,8 @@ void main() {
     final _Harness h2 = await _pump(tester, _Store());
     h2.client.reply = '{"value": "  ", "explanation": "x"}';
     await _tap(tester, 'srs-field-ai-run');
-    expect(find.text(t.ai_assist_empty), findsOneWidget);
+    // 默认翻译提示词用得上要求、但这次没写：建议重试 / 改提示词，不说「换个说法」。
+    expect(find.text(t.srs_note_field_ai_reply_empty_retry), findsOneWidget);
     expect(_key('srs-field-ai-use-as-text'), findsNothing);
     expect(h2.result, isNull);
   });
@@ -767,5 +794,500 @@ void main() {
         '毎日<b>通う</b>\n',
       ),
     );
+  });
+  testWidgets('弹层正文留边：抽屉 / 新建变体 / 占位符清单 / 已保存的提示词，控件不贴面板左右边缘', (
+    WidgetTester tester,
+  ) async {
+    // FushiModalSheetFrame 默认不给正文留边；这几个弹层以前没传 bodyPadding，分段、输入框、
+    // 搜索框、分组标题贴着面板边缘（集成测试截图 01 / 09 / 18 / 02，两套设计系统都一样）。
+    void expectInset(String frameKey, Finder content, String what) {
+      final Rect frame = tester.getRect(_key(frameKey));
+      final Rect box = tester.getRect(content.first);
+      expect(
+        box.left - frame.left,
+        greaterThanOrEqualTo(16),
+        reason: '$what: left inset',
+      );
+      expect(
+        frame.right - box.right,
+        greaterThanOrEqualTo(16),
+        reason: '$what: right inset',
+      );
+    }
+
+    final _Store store = _Store();
+    await _pump(tester, store);
+    expectInset(
+      'srs-field-ai-sheet',
+      _key('srs-field-ai-instruction'),
+      'field AI sheet instruction box',
+    );
+    expectInset(
+      'srs-field-ai-sheet',
+      find.byWidgetPredicate(
+        (Widget w) => w.runtimeType.toString().contains('Segmented'),
+      ),
+      'field AI sheet task selector',
+    );
+
+    await _tap(tester, 'ai-saved-prompts-srs_field');
+    expectInset(
+      'ai-saved-prompt-sheet',
+      find.text(t.ai_prompt_library_presets_header),
+      'saved prompts section title',
+    );
+    await Navigator.of(
+      tester.element(_key('ai-saved-prompt-sheet')),
+    ).maybePop();
+    await tester.pumpAndSettle();
+
+    await _tap(tester, 'srs-field-ai-new-variant');
+    expectInset(
+      'srs-field-ai-new-variant-sheet',
+      find.text(t.srs_field_ai_prompt_new_variant_samples),
+      'new variant section title',
+    );
+    await Navigator.of(
+      tester.element(_key('srs-field-ai-new-variant-sheet')),
+    ).maybePop();
+    await tester.pumpAndSettle();
+
+    await _tap(tester, 'srs-field-ai-edit-prompt');
+    await _tap(tester, 'srs-field-ai-prompt-insert');
+    expectInset(
+      'srs-field-ai-placeholder-sheet',
+      _key('srs-field-ai-placeholder-search'),
+      'placeholder search field',
+    );
+  });
+
+  testWidgets('重新生成失败（读不懂 / 空 / 网络）：先清掉上一次的建议，不能再把旧结果替换 / 追加进去', (
+    WidgetTester tester,
+  ) async {
+    final _Harness h = await _pump(tester, _Store());
+    await _tap(tester, 'srs-field-ai-run');
+    expect(_key('srs-field-ai-result'), findsOneWidget);
+    expect(_key('srs-field-ai-replace'), findsOneWidget);
+
+    Future<void> expectNoStale(String what) async {
+      expect(_key('srs-field-ai-result'), findsNothing, reason: what);
+      expect(_key('srs-field-ai-replace'), findsNothing, reason: what);
+      expect(_key('srs-field-ai-append'), findsNothing, reason: what);
+    }
+
+    h.client.reply = 'Sure! {broken';
+    await _tap(tester, 'srs-field-ai-run');
+    expect(_key('srs-field-ai-reply-error'), findsOneWidget);
+    await expectNoStale('malformed');
+    // 生成过就一直是「重新生成」。
+    expect(find.text(t.srs_note_field_ai_again), findsOneWidget);
+
+    h.client.reply = '{"value": "I go.", "explanation": "direct"}';
+    await _tap(tester, 'srs-field-ai-run');
+    expect(_key('srs-field-ai-result'), findsOneWidget);
+    h.client.reply = '{"value": " ", "explanation": "x"}';
+    await _tap(tester, 'srs-field-ai-run');
+    expect(_key('srs-field-ai-reply-error'), findsOneWidget);
+    await expectNoStale('empty');
+
+    h.client.reply = '{"value": "I go.", "explanation": "direct"}';
+    await _tap(tester, 'srs-field-ai-run');
+    expect(_key('srs-field-ai-result'), findsOneWidget);
+    h.client.failNext = const AiChatFailure('timeout');
+    await _tap(tester, 'srs-field-ai-run');
+    expect(_key('srs-field-ai-error'), findsOneWidget);
+    await expectNoStale('network');
+    expect(h.closed, isFalse);
+  });
+
+  testWidgets('建议带格式预览：加粗 / 斜体 / 换行 / 注音照写进字段的 HTML 画', (
+    WidgetTester tester,
+  ) async {
+    final _Harness h = await _pump(tester, _Store());
+    h.client.reply =
+        '{"value": "When I <b>noticed</b> <i>it</i><br>'
+        '<ruby>気<rt>き</rt></ruby>づく", "explanation": "x"}';
+    await _tap(tester, 'srs-field-ai-run');
+    final InlineSpan span = tester
+        .widget<Text>(_key('srs-field-ai-result-text'))
+        .textSpan!;
+    final List<TextSpan> spans = _textSpans(span);
+    final TextSpan bold = spans.singleWhere(
+      (TextSpan s) => s.text == 'noticed',
+    );
+    expect(bold.style?.fontWeight, FontWeight.w700);
+    final TextSpan italic = spans.singleWhere((TextSpan s) => s.text == 'it');
+    expect(italic.style?.fontStyle, FontStyle.italic);
+    expect(spans.any((TextSpan s) => s.text == '\n'), isTrue, reason: '<br>');
+    // 注音：读音画在基字上方。
+    expect(
+      find.descendant(
+        of: _key('srs-field-ai-result'),
+        matching: find.text('き'),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      _richText(tester, 'srs-field-ai-result-text'),
+      startsWith('When I noticed it\n'),
+    );
+    await _tap(tester, 'srs-field-ai-replace');
+    expect(
+      h.result,
+      'When I <b>noticed</b> <i>it</i><br><ruby>気<rt>き</rt></ruby>づく',
+    );
+  });
+
+  test('带格式预览（纯函数）：空白折叠、段落 / 列表各自成行、嵌套缩进、rp 不画、实体解码', () {
+    String plain(String html) => srsFieldAiFormattedSpan(
+      html,
+      style: const TextStyle(fontSize: 16),
+      rubyStyle: const TextStyle(fontSize: 9),
+      markColor: const Color(0xFFFFFF00),
+    ).toPlainText();
+    expect(plain('a  \n b'), 'a b');
+    expect(plain('<p>one</p><p>two</p>'), 'one\ntwo');
+    expect(plain('x<ol><li>a</li><li>b</li></ol>y'), 'x\n1. a\n2. b\ny');
+    expect(plain('<ul><li>a<ul><li>b</li></ul></li></ul>'), '• a\n    • b');
+    expect(plain('1 &lt; 2 &amp; 3'), '1 < 2 & 3');
+    expect(plain('<ruby>気<rp>(</rp><rt>き</rt><rp>)</rp></ruby>'), '￼');
+    final List<TextSpan> spans = _textSpans(
+      srsFieldAiFormattedSpan(
+        '<u>u</u><mark>m</mark>',
+        style: const TextStyle(fontSize: 16),
+        rubyStyle: const TextStyle(fontSize: 9),
+        markColor: const Color(0xFFFFFF00),
+      ),
+    );
+    expect(spans[0].style?.decoration, TextDecoration.underline);
+    expect(spans[1].style?.backgroundColor, const Color(0xFFFFFF00));
+  });
+
+  testWidgets('提示词不用要求：要求框禁用且框里写明「不使用」、写过的要求不显示也不丢；回复为空的建议按有没有要求措辞', (
+    WidgetTester tester,
+  ) async {
+    final _Store store = _Store();
+    final _Harness h = await _pump(tester, store);
+    // 默认翻译用得上要求：写一句，空回复 → 「换个说法」。
+    await tester.enterText(_key('srs-field-ai-instruction'), 'Be casual.');
+    await tester.pumpAndSettle();
+    h.client.reply = '{"value": " ", "explanation": "x"}';
+    await _tap(tester, 'srs-field-ai-run');
+    expect(find.text(t.ai_assist_empty), findsOneWidget);
+
+    // 改成不带 {{instruction}} 的提示词。
+    await store.setAiFieldActions(
+      store.aiFieldActions.withTemplatePrompt(
+        'task.translate',
+        _builtin(
+          AiSrsFieldTask.translate,
+        ).copyWith(template: 'Translate {{Sentence}}.'),
+      ),
+    );
+    await _tap(tester, 'srs-field-ai-edit-prompt');
+    await _leaveEditor(tester);
+    final FushiTextField box = tester.widget<FushiTextField>(
+      _key('srs-field-ai-instruction'),
+    );
+    expect(box.enabled, isFalse);
+    expect(box.hintText, t.srs_note_field_ai_instruction_unused_hint);
+    expect(box.prefixIcon, isNotNull);
+    expect(box.controller!.text, isEmpty, reason: '写过的要求不显示在禁用框里');
+    expect(_key('srs-field-ai-instruction-unused'), findsOneWidget);
+    expect(_key('ai-saved-prompts-srs_field'), findsNothing);
+
+    await _tap(tester, 'srs-field-ai-run');
+    expect(h.client.sent.last[1].content, 'Translate 毎日<b>通う</b>.');
+    expect(find.text(t.srs_note_field_ai_reply_empty_retry), findsOneWidget);
+    expect(find.text(t.ai_assist_empty), findsNothing);
+  });
+
+  testWidgets('回复读不懂的卡片用错误色调，与说明 / 显示回复 / 当作文字用读作一组', (
+    WidgetTester tester,
+  ) async {
+    final _Harness h = await _pump(tester, _Store());
+    h.client.reply = 'Sure! {broken';
+    await _tap(tester, 'srs-field-ai-run');
+    expect(
+      tester.widget<FushiCard>(_key('srs-field-ai-reply-error')).tone,
+      FushiCardTone.error,
+    );
+    for (final String key in <String>[
+      'srs-field-ai-reply-error-text',
+      'srs-field-ai-show-reply',
+      'srs-field-ai-use-as-text',
+    ]) {
+      expect(
+        find.descendant(
+          of: _key('srs-field-ai-reply-error'),
+          matching: _key(key),
+        ),
+        findsOneWidget,
+        reason: key,
+      );
+    }
+  });
+
+  test('等宽字体链按平台给系统一定有的字体，UI 字体接在后面兜 CJK', () {
+    expect(fushiMonospaceFamilies(TargetPlatform.windows).first, 'Consolas');
+    expect(
+      fushiMonospaceFamilies(TargetPlatform.windows),
+      contains('Cascadia Mono'),
+    );
+    expect(fushiMonospaceFamilies(TargetPlatform.macOS).first, 'Menlo');
+    expect(fushiMonospaceFamilies(TargetPlatform.iOS), contains('SF Mono'));
+    expect(
+      fushiMonospaceFamilies(TargetPlatform.android),
+      contains('monospace'),
+    );
+    expect(fushiMonospaceFamilies(TargetPlatform.linux), contains('monospace'));
+    final TextStyle mono = const TextStyle(
+      fontFamily: 'UiFont',
+      fontFamilyFallback: <String>['Noto Sans JP'],
+      fontSize: 13,
+    ).monospace;
+    final List<String> chain = fushiMonospaceFamilies(defaultTargetPlatform);
+    expect(mono.fontFamily, chain.first);
+    expect(mono.fontSize, 13);
+    expect(mono.fontFamilyFallback, <String>[
+      ...chain.skip(1),
+      'UiFont',
+      'Noto Sans JP',
+    ]);
+  });
+
+  testWidgets('等宽：提示词框 / 预览 / 原始回复都用平台等宽字体链（不是解析不了的 monospace）', (
+    WidgetTester tester,
+  ) async {
+    final String mono = fushiMonospaceFamilies(defaultTargetPlatform).first;
+    final _Harness h = await _pump(tester, _Store());
+    h.client.reply = 'Sure! {broken';
+    await _tap(tester, 'srs-field-ai-run');
+    await _tap(tester, 'srs-field-ai-show-reply');
+    expect(
+      tester
+          .widget<SelectableText>(_key('srs-field-ai-raw-reply'))
+          .style
+          ?.fontFamily,
+      mono,
+    );
+    await _tap(tester, 'srs-field-ai-edit-prompt');
+    expect(
+      tester
+          .widget<FushiTextField>(_key('srs-field-ai-prompt-text'))
+          .style
+          ?.fontFamily,
+      mono,
+    );
+    expect(
+      tester
+          .widget<SelectableText>(_key('srs-field-ai-prompt-preview-user'))
+          .style
+          ?.fontFamily,
+      mono,
+    );
+  });
+
+  testWidgets('编辑页桌面宽窗口限宽居中；预览两段消息同一结构（分组标题在卡外）', (WidgetTester tester) async {
+    await _pump(tester, _Store(), size: const Size(1600, 4000));
+    await _tap(tester, 'srs-field-ai-edit-prompt');
+    final Rect body = tester.getRect(_key('srs-field-ai-prompt-editor'));
+    expect(body.width, lessThanOrEqualTo(900));
+    expect(body.center.dx, closeTo(800, 1), reason: '居中');
+
+    for (final String key in <String>[
+      'srs-field-ai-prompt-preview-user-title',
+      'srs-field-ai-prompt-preview-system-title',
+    ]) {
+      final FushiSectionTitle title = tester.widget<FushiSectionTitle>(
+        _key(key),
+      );
+      expect(title.level, FushiSectionTitleLevel.group, reason: key);
+    }
+    double top(String k) => tester.getTopLeft(_key(k)).dy;
+    expect(
+      top('srs-field-ai-prompt-preview-user-title'),
+      lessThan(top('srs-field-ai-prompt-preview-user-card')),
+    );
+    expect(
+      top('srs-field-ai-prompt-preview-user-card'),
+      lessThan(top('srs-field-ai-prompt-preview-system-title')),
+    );
+    expect(
+      top('srs-field-ai-prompt-preview-system-title'),
+      lessThan(top('srs-field-ai-prompt-preview-guidance-card')),
+    );
+    expect(
+      top('srs-field-ai-prompt-preview-guidance-card'),
+      lessThan(top('srs-field-ai-prompt-preview-rules-card')),
+    );
+    // 标题不在卡片里。
+    expect(
+      find.descendant(
+        of: _key('srs-field-ai-prompt-preview-user-card'),
+        matching: find.text(t.srs_field_ai_prompt_preview_user),
+      ),
+      findsNothing,
+    );
+  });
+
+  test('变体名去重：默认名按任务避开已有名字，长名截短后序号不丢', () {
+    AiSrsFieldActions a = AiSrsFieldActions.empty;
+    String fmt(String b, int n) => n == 1 ? '$b (copy)' : '$b (copy $n)';
+    expect(a.uniqueVariantName(AiSrsFieldTask.translate, 'T', fmt), 'T (copy)');
+    a = a
+        .addVariant(
+          task: AiSrsFieldTask.translate,
+          name: 'T (copy)',
+          prompt: _builtin(AiSrsFieldTask.translate),
+        )
+        .$1;
+    expect(
+      a.uniqueVariantName(AiSrsFieldTask.translate, 'T', fmt),
+      'T (copy 2)',
+    );
+    // 别的任务不算重名。
+    expect(a.uniqueVariantName(AiSrsFieldTask.define, 'T', fmt), 'T (copy)');
+    expect(a.variantNameTaken(AiSrsFieldTask.translate, ' t (COPY) '), isTrue);
+    final String long = 'x' * kAiSrsFieldVariantNameMax;
+    final String first = a.uniqueVariantName(
+      AiSrsFieldTask.translate,
+      long,
+      fmt,
+    );
+    expect(first.length, lessThanOrEqualTo(kAiSrsFieldVariantNameMax));
+    expect(first, endsWith(' (copy)'), reason: '截的是名字、不是序号');
+    a = a
+        .addVariant(
+          task: AiSrsFieldTask.translate,
+          name: first,
+          prompt: _builtin(AiSrsFieldTask.translate),
+        )
+        .$1;
+    expect(a.variants.last.name, first, reason: '存进去不再被截');
+    final String next = a.uniqueVariantName(
+      AiSrsFieldTask.translate,
+      long,
+      fmt,
+    );
+    expect(next.length, lessThanOrEqualTo(kAiSrsFieldVariantNameMax));
+    expect(next, endsWith(' (copy 2)'));
+  });
+
+  testWidgets('变体重名：复制两次 / 同一样例两次自动编号；改名撞上同任务的变体时提示，保存前确认', (
+    WidgetTester tester,
+  ) async {
+    final _Store store = _Store();
+    await _pump(tester, store);
+    final String translate = t.srs_note_field_ai_translate;
+    Future<void> copyCurrent() async {
+      await _tap(tester, 'srs-field-ai-new-variant');
+      await _tap(tester, 'srs-field-ai-new-variant-copy');
+      await _leaveEditor(tester);
+    }
+
+    await copyCurrent();
+    // 抽屉此时选中了第一个副本：切走再切回（换任务 = 回到默认），再复制一次默认。
+    await tester.tap(find.text(t.srs_note_field_ai_define).first);
+    await tester.pumpAndSettle();
+    await tester.tap(find.text(translate).first);
+    await tester.pumpAndSettle();
+    await copyCurrent();
+    expect(
+      <String>[
+        for (final AiSrsFieldVariant v in store.aiFieldActions.variants) v.name,
+      ],
+      <String>[
+        t.srs_field_ai_prompt_copy_name(name: translate),
+        t.srs_field_ai_prompt_copy_name_n(name: translate, n: 2),
+      ],
+    );
+
+    final AiSrsFieldSample sample = kAiSrsFieldSamples.singleWhere(
+      (AiSrsFieldSample x) => x.id == 'sample.custom.grammar_note',
+    );
+    for (int i = 0; i < 2; i++) {
+      await _tap(tester, 'srs-field-ai-new-variant');
+      await _tap(tester, 'srs-field-ai-new-variant-sample.custom.grammar_note');
+      await _leaveEditor(tester);
+    }
+    final List<String> custom = <String>[
+      for (final AiSrsFieldVariant v in store.aiFieldActions.variantsFor(
+        AiSrsFieldTask.custom,
+      ))
+        v.name,
+    ];
+    expect(custom, <String>[
+      sample.name,
+      t.srs_field_ai_prompt_name_numbered(name: sample.name, n: 2),
+    ]);
+
+    // 编辑第二个样例变体：改成第一个的名字 → 名称框下提示；保存先确认，取消不写。
+    await _tap(tester, 'srs-field-ai-edit-prompt');
+    await tester.enterText(_key('srs-field-ai-prompt-name'), sample.name);
+    await tester.pumpAndSettle();
+    final String taken = t.srs_field_ai_prompt_name_taken(
+      task: t.srs_note_field_ai_custom,
+      name: sample.name,
+    );
+    expect(
+      tester
+          .widget<FushiTextField>(_key('srs-field-ai-prompt-name'))
+          .helperText,
+      taken,
+    );
+    await _tap(tester, 'srs-field-ai-prompt-save');
+    expect(find.text(t.srs_field_ai_prompt_name_taken_title), findsOneWidget);
+    await tester.tap(find.text(t.cancel).last);
+    await tester.pumpAndSettle();
+    expect(
+      store.aiFieldActions.variantsFor(AiSrsFieldTask.custom).last.name,
+      t.srs_field_ai_prompt_name_numbered(name: sample.name, n: 2),
+    );
+    await _tap(tester, 'srs-field-ai-prompt-save');
+    await tester.tap(find.text(t.srs_field_ai_prompt_save_anyway).last);
+    await tester.pumpAndSettle();
+    expect(
+      store.aiFieldActions.variantsFor(AiSrsFieldTask.custom).last.name,
+      sample.name,
+      reason: '确认后照样保存',
+    );
+  });
+
+  testWidgets('「新建变体」是与「编辑提示词」同样式的文字按钮（≥48dp）；预设书签有提示与无障碍标签', (
+    WidgetTester tester,
+  ) async {
+    await _pump(tester, _Store());
+    final FushiTextButton newVariant = tester.widget<FushiTextButton>(
+      _key('srs-field-ai-new-variant'),
+    );
+    expect(newVariant, isNotNull);
+    expect(
+      _key('srs-field-ai-edit-prompt').evaluate().single.widget,
+      isA<FushiTextButton>(),
+    );
+    expect(
+      find.descendant(
+        of: _key('srs-field-ai-new-variant'),
+        matching: find.text(t.srs_field_ai_prompt_new_variant),
+      ),
+      findsOneWidget,
+    );
+    expect(
+      tester.getSize(_key('srs-field-ai-new-variant')).height,
+      greaterThanOrEqualTo(48),
+    );
+    expect(
+      tester.getSize(_key('srs-field-ai-new-variant')).height,
+      tester.getSize(_key('srs-field-ai-edit-prompt')).height,
+    );
+    expect(
+      find.descendant(
+        of: _key('ai-saved-prompts-srs_field'),
+        matching: find.byTooltip(t.ai_prompt_library_title),
+      ),
+      findsOneWidget,
+    );
+    expect(find.bySemanticsLabel(t.ai_prompt_library_title), findsWidgets);
   });
 }

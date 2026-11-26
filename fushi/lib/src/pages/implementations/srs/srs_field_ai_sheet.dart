@@ -7,7 +7,11 @@
 ///
 /// - 「新建变体」（[showSrsFieldAiNewVariantSheet]，抽屉与编辑页共用）：复制当前提示词，或从样例库
 ///   （`ai_srs_field_samples.dart`）挑一条；新建的变体存进去后直接打开编辑页。
-/// - 动作的提示词里没有 `{{instruction}}`：要求框禁用并提示，预设按钮隐藏。
+/// - 动作的提示词里没有 `{{instruction}}`：要求框禁用、框里直接写「这个提示词不使用补充要求」，
+///   下方提示去「编辑提示词」加上，预设按钮隐藏。
+/// - 每次生成先清掉上一次的结果 / 错误：失败了不会留着旧建议让人误点替换 / 追加。
+/// - 建议按清洗后的 HTML 带格式预览（加粗 / 斜体 / 换行 / 列表 / 注音，
+///   [srsFieldAiFormattedText]），与写进字段的内容一致。
 /// - 自定义任务要求为空、拼出的请求超限 / 为空：生成键禁用；认不出的占位符 / 截断 / 超限提示在
 ///   生成键上方。
 /// - 回复读不懂：说明 + 「显示回复」（原文可选中）；结构化回复格式不对时多一个「把回复当作文字
@@ -26,8 +30,8 @@ import 'package:fushi/src/ai/ai_srs_field_actions.dart';
 import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/ai/ai_srs_field_reply.dart';
 import 'package:fushi/src/ai/ai_srs_field_samples.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_field_ai_formatted_text.dart';
 import 'package:fushi/src/utils/components/fushi_dropdown.dart';
-import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_section_title.dart';
 import 'package:fushi/src/utils/components/fushi_animated_size.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
@@ -81,6 +85,30 @@ String srsApplyFieldAi(String current, String value, {required bool append}) {
   return '$current<br>$value';
 }
 
+/// 「复制」出来的变体的默认名：`名 (copy)`，[task] 下重名就 `名 (copy 2)`、`名 (copy 3)`……
+String srsFieldAiCopyVariantName(
+  AiSrsFieldActions actions,
+  AiSrsFieldTask task,
+  String base,
+) => actions.uniqueVariantName(
+  task,
+  base,
+  (String b, int n) => n == 1
+      ? t.srs_field_ai_prompt_copy_name(name: b)
+      : t.srs_field_ai_prompt_copy_name_n(name: b, n: n),
+);
+
+/// 照样例新建的变体名：样例名，样例的任务下重名就 `名 (2)`、`名 (3)`……
+String srsFieldAiSampleVariantName(
+  AiSrsFieldActions actions,
+  AiSrsFieldSample sample,
+) => actions.uniqueVariantName(
+  sample.task,
+  sample.name,
+  (String b, int n) =>
+      n == 1 ? b : t.srs_field_ai_prompt_name_numbered(name: b, n: n),
+);
+
 /// 拼好的请求要提示用户的事：认不出的占位符、截断（提示色）、超限（错误色）。抽屉与编辑页共用。
 List<Widget> srsFieldAiRequestNotices(
   BuildContext context,
@@ -123,6 +151,16 @@ List<Widget> srsFieldAiRequestNotices(
       ),
   ];
 }
+
+/// 字段 AI 各个弹层（抽屉、新建变体、占位符清单）的正文内边距：[FushiModalSheetFrame] 默认不给正文
+/// 留边，不传的话分段 / 输入框 / 按钮会贴着面板左右边缘（两套设计系统都一样）。
+EdgeInsets srsFieldAiSheetBodyPadding(FushiDesignTokens tokens) =>
+    EdgeInsets.fromLTRB(
+      tokens.spacing.card,
+      0,
+      tokens.spacing.card,
+      tokens.spacing.gap,
+    );
 
 /// 「新建变体」里选了什么：[sample] 为 null = 复制当前提示词，否则照这条样例新建。
 typedef SrsFieldAiNewVariantChoice = ({AiSrsFieldSample? sample});
@@ -203,6 +241,7 @@ class _SrsFieldAiNewVariantSheet extends StatelessWidget {
       title: t.srs_field_ai_prompt_new_variant,
       leadingIcon: FushiIcons.add,
       scrollable: true,
+      bodyPadding: srsFieldAiSheetBodyPadding(tokens),
       body: FushiEntranceScope(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -287,7 +326,17 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
       widget.actionStore?.aiFieldActions ?? AiSrsFieldActions.empty;
   late AiSrsFieldNoteContext _note = widget.note();
   final TextEditingController _instruction = TextEditingController();
+
+  /// 提示词不用 `{{instruction}}` 时要求框换成这个空控制器：框里显示「不使用」的提示，
+  /// 用户之前写的要求留在 [_instruction] 里，切回用得上的提示词时还在。
+  final TextEditingController _unusedInstruction = TextEditingController();
   bool _busy = false;
+
+  /// 生成过至少一次（生成键显示「重新生成」）。
+  bool _ran = false;
+
+  /// 最近一次请求里有没有用户写的要求（回复为空时的建议据此措辞）。
+  bool _lastHadInstruction = false;
 
   /// 请求失败（网络 / 提供商）的文案。
   String? _error;
@@ -305,6 +354,7 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
   @override
   void dispose() {
     _instruction.dispose();
+    _unusedInstruction.dispose();
     super.dispose();
   }
 
@@ -366,12 +416,12 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
     final (AiSrsFieldActions next, AiSrsFieldVariant created) = sample == null
         ? actions.addVariant(
             task: _task,
-            name: t.srs_field_ai_prompt_copy_name(name: base),
+            name: srsFieldAiCopyVariantName(actions, _task, base),
             prompt: actions.promptFor(_action),
           )
         : actions.addVariant(
             task: sample.task,
-            name: sample.name,
+            name: srsFieldAiSampleVariantName(actions, sample),
             prompt: sample.prompt,
           );
     await store.setAiFieldActions(next);
@@ -392,10 +442,16 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
       setState(() {});
       return;
     }
+    // 新的一次生成开始：上一次的结果 / 错误一起清掉。失败时不能还留着旧建议和它的
+    // 「替换 / 追加」——那样点下去写进字段的是上一次的结果。
     setState(() {
       _busy = true;
+      _ran = true;
+      _lastHadInstruction =
+          request.usesInstruction && _instruction.text.trim().isNotEmpty;
       _error = null;
       _replyError = null;
+      _result = null;
     });
     try {
       final String reply = await widget.send(request.prompt);
@@ -432,18 +488,6 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
     }
   }
 
-  /// 结果的纯文字预览（`<br>` / 块标签换行，其余标签去掉）。
-  static String _plain(String html) => html
-      .replaceAll(
-        RegExp(r'<br\s*/?>|</(p|div|li)>', caseSensitive: false),
-        '\n',
-      )
-      .replaceAll(RegExp(r'<[^>]*>'), '')
-      .replaceAll('&lt;', '<')
-      .replaceAll('&gt;', '>')
-      .replaceAll('&amp;', '&')
-      .trim();
-
   @override
   Widget build(BuildContext context) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -469,56 +513,23 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
         }),
       ),
       if (variants.isNotEmpty || widget.editPrompt != null)
-        Row(
-          spacing: tokens.spacing.gap,
-          children: <Widget>[
-            if (variants.isNotEmpty)
-              Expanded(
-                child: GamepadMenuDropdown<String>(
-                  key: const ValueKey<String>('srs-field-ai-variant'),
-                  label: t.srs_note_field_ai_variant_label,
-                  entries: <GamepadDropdownEntry<String>>[
-                    (value: '', label: t.srs_note_field_ai_variant_default),
-                    for (final AiSrsFieldVariant v in variants)
-                      (value: v.id, label: v.name),
-                  ],
-                  selected: _variantId ?? '',
-                  enabled: !_busy,
-                  onChanged: (String id) =>
-                      setState(() => _variantId = id.isEmpty ? null : id),
-                ),
-              )
-            else
-              const Spacer(),
-            if (widget.editPrompt case final SrsFieldAiPromptEditorOpener open)
-              FushiTextButton.icon(
-                key: const ValueKey<String>('srs-field-ai-edit-prompt'),
-                icon: const FushiIcon(FushiIcons.edit),
-                label: Text(t.srs_note_field_ai_prompt_edit),
-                onPressed: _busy ? null : () => unawaited(_editPrompt(open)),
-              ),
-            if ((widget.editPrompt, widget.actionStore) case (
-              final SrsFieldAiPromptEditorOpener open,
-              final AiSrsFieldActionStore store,
-            ))
-              FushiIconButton(
-                key: const ValueKey<String>('srs-field-ai-new-variant'),
-                icon: FushiIcons.add,
-                tooltip: t.srs_field_ai_prompt_new_variant,
-                enabled: !_busy,
-                onTap: () => unawaited(_newVariant(open, store)),
-              ),
-          ],
-        ),
+        _promptRow(context, variants),
       Row(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: <Widget>[
           Expanded(
             child: FushiTextField(
               key: const ValueKey<String>('srs-field-ai-instruction'),
-              controller: _instruction,
+              controller: usesInstruction ? _instruction : _unusedInstruction,
               enabled: usesInstruction && !_busy,
-              hintText: _task == AiSrsFieldTask.custom
+              // 不用补充要求的提示词：禁用的框里直接写明「不使用」，不让它看着像个能填的
+              // 可选框（下方另有去「编辑提示词」加上的提示）。
+              prefixIcon: usesInstruction
+                  ? null
+                  : const FushiIcon(FushiIcons.block, size: 18),
+              hintText: !usesInstruction
+                  ? t.srs_note_field_ai_instruction_unused_hint
+                  : _task == AiSrsFieldTask.custom
                   ? t.srs_note_field_ai_custom_hint
                   : t.srs_note_field_ai_instruction_hint,
               minLines: 1,
@@ -553,9 +564,7 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
           FushiFilledButton.icon(
             key: const ValueKey<String>('srs-field-ai-run'),
             icon: const FushiIcon(FushiIcons.aiAssistant),
-            label: Text(
-              result == null ? t.srs_visual_ai_run : t.srs_note_field_ai_again,
-            ),
+            label: Text(_ran ? t.srs_note_field_ai_again : t.srs_visual_ai_run),
             onPressed: _canRun(request) ? () => unawaited(_generate()) : null,
           ),
           if (_busy)
@@ -602,6 +611,7 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
       title: t.srs_note_field_ai_title(field: widget.fieldLabel),
       leadingIcon: FushiIcons.aiAssistant,
       scrollable: true,
+      bodyPadding: srsFieldAiSheetBodyPadding(tokens),
       body: FushiEntranceScope(
         child: Column(
           mainAxisSize: MainAxisSize.min,
@@ -616,23 +626,107 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
     );
   }
 
+  /// 变体下拉 +「编辑提示词」「新建变体」两个文字按钮（同一样式）。宽度够就一行，不够时
+  /// 下拉独占一行、两个按钮换到下面靠右，不把下拉挤成一条。
+  Widget _promptRow(BuildContext context, List<AiSrsFieldVariant> variants) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    final Widget? dropdown = variants.isEmpty
+        ? null
+        : GamepadMenuDropdown<String>(
+            key: const ValueKey<String>('srs-field-ai-variant'),
+            label: t.srs_note_field_ai_variant_label,
+            entries: <GamepadDropdownEntry<String>>[
+              (value: '', label: t.srs_note_field_ai_variant_default),
+              for (final AiSrsFieldVariant v in variants)
+                (value: v.id, label: v.name),
+            ],
+            selected: _variantId ?? '',
+            enabled: !_busy,
+            onChanged: (String id) =>
+                setState(() => _variantId = id.isEmpty ? null : id),
+          );
+    final List<Widget> buttons = <Widget>[
+      if (widget.editPrompt case final SrsFieldAiPromptEditorOpener open)
+        FushiTextButton.icon(
+          key: const ValueKey<String>('srs-field-ai-edit-prompt'),
+          icon: const FushiIcon(FushiIcons.edit),
+          label: Text(t.srs_note_field_ai_prompt_edit),
+          onPressed: _busy ? null : () => unawaited(_editPrompt(open)),
+        ),
+      if ((widget.editPrompt, widget.actionStore) case (
+        final SrsFieldAiPromptEditorOpener open,
+        final AiSrsFieldActionStore store,
+      ))
+        FushiTextButton.icon(
+          key: const ValueKey<String>('srs-field-ai-new-variant'),
+          icon: const FushiIcon(FushiIcons.add),
+          label: Text(t.srs_field_ai_prompt_new_variant),
+          onPressed: _busy ? null : () => unawaited(_newVariant(open, store)),
+        ),
+    ];
+    final Widget buttonRow = Wrap(
+      alignment: WrapAlignment.end,
+      crossAxisAlignment: WrapCrossAlignment.center,
+      spacing: tokens.spacing.gap / 2,
+      children: buttons,
+    );
+    if (dropdown == null) {
+      return Align(alignment: AlignmentDirectional.centerEnd, child: buttonRow);
+    }
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints c) {
+        if (c.maxWidth >= 560) {
+          return Row(
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              Expanded(child: dropdown),
+              buttonRow,
+            ],
+          );
+        }
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          spacing: tokens.spacing.gap / 2,
+          children: <Widget>[
+            dropdown,
+            Align(alignment: AlignmentDirectional.centerEnd, child: buttonRow),
+          ],
+        );
+      },
+    );
+  }
+
   Widget _replyErrorCard(BuildContext context, AiSrsFieldReplyError error) {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
     final ColorScheme scheme = Theme.of(context).colorScheme;
     final bool malformed = error.kind == AiSrsFieldReplyErrorKind.malformed;
+    // 错误色卡：说明、「显示回复」、「把回复当作文字使用」在同一张卡里读作一组（中性卡在
+    // 抽屉底色上几乎看不出边界）。文字前景走卡的 onErrorContainer。
     return FushiCard(
       key: const ValueKey<String>('srs-field-ai-reply-error'),
-      tone: FushiCardTone.neutral,
+      tone: FushiCardTone.error,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         spacing: tokens.spacing.gap,
         children: <Widget>[
-          Text(
-            malformed
-                ? t.srs_note_field_ai_reply_unreadable
-                : t.ai_assist_empty,
-            key: const ValueKey<String>('srs-field-ai-reply-error-text'),
-            style: context.fushiType.bodyMedium.copyWith(color: scheme.error),
+          Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            spacing: tokens.spacing.gap,
+            children: <Widget>[
+              FushiIcon(FushiIcons.error, size: 20, color: scheme.error),
+              Expanded(
+                child: Text(
+                  malformed
+                      ? t.srs_note_field_ai_reply_unreadable
+                      // 回复为空：请求里有用户写的要求才建议换个说法，否则建议重试 / 改提示词。
+                      : _lastHadInstruction
+                      ? t.ai_assist_empty
+                      : t.srs_note_field_ai_reply_empty_retry,
+                  key: const ValueKey<String>('srs-field-ai-reply-error-text'),
+                  style: context.fushiType.bodyMedium,
+                ),
+              ),
+            ],
           ),
           if (error.raw.trim().isNotEmpty)
             FushiExpansionTile(
@@ -640,11 +734,22 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
               title: Text(t.srs_note_field_ai_show_reply),
               expandedCrossAxisAlignment: CrossAxisAlignment.stretch,
               children: <Widget>[
-                SelectableText(
-                  error.raw,
-                  key: const ValueKey<String>('srs-field-ai-raw-reply'),
-                  style: context.fushiType.bodySmall.copyWith(
-                    fontFamily: 'monospace',
+                // 原始回复放进中性底的代码块：错误色卡上直接排等宽字，暗色主题下对比度
+                // 不够，也和标题行贴在一起。
+                DecoratedBox(
+                  decoration: BoxDecoration(
+                    color: scheme.surfaceContainerHighest,
+                    borderRadius: tokens.radii.chipRadius,
+                  ),
+                  child: Padding(
+                    padding: EdgeInsets.all(tokens.spacing.gap),
+                    child: SelectableText(
+                      error.raw,
+                      key: const ValueKey<String>('srs-field-ai-raw-reply'),
+                      style: context.fushiType.bodySmall.monospace.copyWith(
+                        color: scheme.onSurface,
+                      ),
+                    ),
                   ),
                 ),
               ],
@@ -674,10 +779,14 @@ class _SrsFieldAiSheetState extends State<SrsFieldAiSheet> {
         crossAxisAlignment: CrossAxisAlignment.stretch,
         spacing: tokens.spacing.gap,
         children: <Widget>[
-          SelectableText(
-            _plain(result.value),
-            key: const ValueKey<String>('srs-field-ai-result-text'),
-            style: context.fushiType.bodyLarge,
+          // 带格式预览（与写进字段的 HTML 同一份），可选中复制。
+          SelectionArea(
+            child: srsFieldAiFormattedText(
+              context,
+              result.value,
+              key: const ValueKey<String>('srs-field-ai-result-text'),
+              style: context.fushiType.bodyLarge,
+            ),
           ),
           if (result.explanation.isNotEmpty)
             Text(result.explanation, style: context.fushiType.bodySmall),

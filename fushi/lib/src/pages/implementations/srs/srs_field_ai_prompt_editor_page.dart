@@ -5,7 +5,11 @@
 ///   **回复格式**（纯文本 / 附带说明）、预览用的要求（模板用到 `{{instruction}}` 时）。
 /// - 高级（折叠）：**AI 说明**（系统消息里用户可改的部分，可空）。
 /// - 预览：先用户消息（用户改的就是它），再系统消息 = AI 说明（你的）+ 应用规则（固定，只读、
-///   锁图标）；警告：认不出的占位符、截断、超限。从设置打开用示例笔记。
+///   锁图标）；两段同一结构（分组标题 + 卡片）。警告：认不出的占位符、截断、超限。从设置打开用
+///   示例笔记。
+/// - 变体重名：新建时默认名自动避开（`(copy 2)` / `(2)`），改名撞上同任务的另一个变体时名称框
+///   下提示，保存前再确认一次。
+/// - 桌面宽窗口下正文限宽 [kFushiSettingsDialogMaxWidth] 居中（与其它全屏设置 / 编辑页同宽）。
 /// - 恢复默认（内置动作，三部分一起，先确认）、新建变体（[showSrsFieldAiNewVariantSheet]：复制当前
 ///   三部分，或照样例库里的一条；照样例新建时有未保存的修改先问要不要放弃）、删除（变体，先确认）、
 ///   内置版本更新提示（对比 / 恢复）。
@@ -27,6 +31,9 @@ import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart'
     show
         SrsFieldAiNewVariantChoice,
         showSrsFieldAiNewVariantSheet,
+        srsFieldAiCopyVariantName,
+        srsFieldAiSampleVariantName,
+        srsFieldAiSheetBodyPadding,
         srsFieldAiRequestNotices,
         srsFieldAiTaskLabel;
 import 'package:fushi/src/srs/srs_card_sample.dart';
@@ -49,6 +56,8 @@ import 'package:fushi/src/utils/components/glass/fushi_glass_lists.dart'
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
+import 'package:fushi/src/utils/misc/platform_utils.dart'
+    show kFushiSettingsDialogMaxWidth;
 import 'package:fushi_anki/fushi_anki_core.dart' show FushiCardNoteType;
 import 'package:fushi_srs/fushi_srs.dart' show SrsFieldDef;
 
@@ -263,14 +272,13 @@ class _SrsFieldAiPlaceholderSheetState
             e.description.toLowerCase().contains(q))
           e,
     ];
-    final TextStyle mono = context.fushiType.bodyMedium.copyWith(
-      fontFamily: 'monospace',
-    );
+    final TextStyle mono = context.fushiType.bodyMedium.monospace;
     return FushiModalSheetFrame(
       key: const ValueKey<String>('srs-field-ai-placeholder-sheet'),
       title: t.srs_field_ai_prompt_placeholders,
       leadingIcon: FushiIcons.add,
       scrollable: true,
+      bodyPadding: srsFieldAiSheetBodyPadding(tokens),
       body: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -414,6 +422,14 @@ class _SrsFieldAiPromptEditorPageState
 
   bool get _invalid => _templateTooLong || _guidanceTooLong || _templateEmpty;
 
+  /// 改的名字撞上同一任务的另一个变体（下拉里就分不出来了）。
+  bool get _nameTaken {
+    final AiSrsFieldVariant? v = _variant;
+    final AiSrsFieldTask? task = v?.task;
+    if (v == null || task == null) return false;
+    return _actions.variantNameTaken(task, _name.text, exceptId: v.id);
+  }
+
   bool get _canSave =>
       _dirty &&
       !_invalid &&
@@ -447,6 +463,21 @@ class _SrsFieldAiPromptEditorPageState
     final AiSrsFieldVariant? v = _variant;
     final String? templateId = _ref.templateId;
     if (v == null && templateId == null) return;
+    // 改了名、而新名字同任务下已经有了：保存前确认一次（不拦：重名只是分不清，不会坏）。
+    if (v != null && _name.text.trim() != _savedName && _nameTaken) {
+      final bool ok = await showFushiConfirmDialog(
+        context: context,
+        title: t.srs_field_ai_prompt_name_taken_title,
+        message: t.srs_field_ai_prompt_name_taken(
+          task: srsFieldAiTaskLabel(v.task!),
+          name: _name.text.trim(),
+        ),
+        confirmLabel: t.srs_field_ai_prompt_save_anyway,
+        cancelLabel: t.cancel,
+        icon: FushiIcons.warning,
+      );
+      if (!ok || !mounted) return;
+    }
     await _write(
       v != null
           ? _actions.updateVariant(v.id, name: _name.text, prompt: _current)
@@ -479,7 +510,7 @@ class _SrsFieldAiPromptEditorPageState
     final (AiSrsFieldActions next, AiSrsFieldVariant created) = _actions
         .addVariant(
           task: task,
-          name: t.srs_field_ai_prompt_copy_name(name: base),
+          name: srsFieldAiCopyVariantName(_actions, task, base),
           prompt: _current,
         );
     await _write(next);
@@ -509,7 +540,7 @@ class _SrsFieldAiPromptEditorPageState
     final (AiSrsFieldActions next, AiSrsFieldVariant created) = _actions
         .addVariant(
           task: sample.task,
-          name: sample.name,
+          name: srsFieldAiSampleVariantName(_actions, sample),
           prompt: sample.prompt,
         );
     await _write(next);
@@ -551,9 +582,7 @@ class _SrsFieldAiPromptEditorPageState
     final AiSrsFieldActionPrompt yours =
         _actions.promptOf(template.id) ?? template.prompt;
     final AiSrsFieldActionPrompt builtin = template.prompt;
-    final TextStyle mono = context.fushiType.bodySmall.copyWith(
-      fontFamily: 'monospace',
-    );
+    final TextStyle mono = context.fushiType.bodySmall.monospace;
     Widget pair(String label, String a, String b, String key) => Column(
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: <Widget>[
@@ -659,9 +688,7 @@ class _SrsFieldAiPromptEditorPageState
       prompt: current,
       instruction: _previewInstruction.text,
     );
-    final TextStyle mono = context.fushiType.bodySmall.copyWith(
-      fontFamily: 'monospace',
-    );
+    final TextStyle mono = context.fushiType.bodySmall.monospace;
     final TextStyle muted = context.fushiType.bodySmall.copyWith(
       color: scheme.onSurfaceVariant,
     );
@@ -712,6 +739,12 @@ class _SrsFieldAiPromptEditorPageState
           controller: _name,
           labelText: t.srs_field_ai_prompt_name_label,
           maxLength: kAiSrsFieldVariantNameMax,
+          helperText: _nameTaken
+              ? t.srs_field_ai_prompt_name_taken(
+                  task: srsFieldAiTaskLabel(variant.task!),
+                  name: _name.text.trim(),
+                )
+              : null,
         ),
       FushiTextField(
         key: const ValueKey<String>('srs-field-ai-prompt-text'),
@@ -781,30 +814,29 @@ class _SrsFieldAiPromptEditorPageState
       if (preview.isSample)
         Text(t.srs_field_ai_prompt_preview_sample, style: muted),
       ...srsFieldAiRequestNotices(context, request),
-      // 用户消息在前：用户改的就是它。
+      // 用户消息在前：用户改的就是它。两段消息同一结构：分组标题在卡片外，卡片里只放内容。
+      FushiSectionTitle(
+        t.srs_field_ai_prompt_preview_user,
+        key: const ValueKey<String>('srs-field-ai-prompt-preview-user-title'),
+        level: FushiSectionTitleLevel.group,
+      ),
       FushiCard(
         key: const ValueKey<String>('srs-field-ai-prompt-preview-user-card'),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.stretch,
-          spacing: tokens.spacing.gap,
-          children: <Widget>[
-            Text(
-              t.srs_field_ai_prompt_preview_user,
-              style: context.fushiType.labelLarge,
-            ),
-            SelectableText(
-              request.prompt.user,
-              key: const ValueKey<String>('srs-field-ai-prompt-preview-user'),
-              style: mono,
-            ),
-          ],
+        child: SelectableText(
+          request.prompt.user,
+          key: const ValueKey<String>('srs-field-ai-prompt-preview-user'),
+          style: mono,
         ),
       ),
-      Text(
+      FushiSectionTitle(
         t.srs_field_ai_prompt_preview_system,
-        style: context.fushiType.labelLarge,
+        key: const ValueKey<String>('srs-field-ai-prompt-preview-system-title'),
+        level: FushiSectionTitleLevel.group,
       ),
       FushiCard(
+        key: const ValueKey<String>(
+          'srs-field-ai-prompt-preview-guidance-card',
+        ),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           spacing: tokens.spacing.gap,
@@ -913,16 +945,26 @@ class _SrsFieldAiPromptEditorPageState
               ),
         actions: actions,
         children: <Widget>[
-          // 新页面动效：各块错峰进场，按钮按压缩放；时长走 FushiMotion（组件内部）。
-          FushiEntranceScope(
-            child: Column(
-              key: const ValueKey<String>('srs-field-ai-prompt-editor'),
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              spacing: tokens.spacing.gap,
-              children: <Widget>[
-                for (final (int i, Widget w) in children.indexed)
-                  FushiStaggeredEntrance(index: i, child: w),
-              ],
+          // 桌面宽窗口不铺满整宽（一行一千多像素读不下去）：与其它全屏设置 / 编辑页同一个
+          // 限宽，居中。
+          Align(
+            alignment: Alignment.topCenter,
+            child: ConstrainedBox(
+              constraints: const BoxConstraints(
+                maxWidth: kFushiSettingsDialogMaxWidth,
+              ),
+              // 新页面动效：各块错峰进场，按钮按压缩放；时长走 FushiMotion（组件内部）。
+              child: FushiEntranceScope(
+                child: Column(
+                  key: const ValueKey<String>('srs-field-ai-prompt-editor'),
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  spacing: tokens.spacing.gap,
+                  children: <Widget>[
+                    for (final (int i, Widget w) in children.indexed)
+                      FushiStaggeredEntrance(index: i, child: w),
+                  ],
+                ),
+              ),
             ),
           ),
         ],

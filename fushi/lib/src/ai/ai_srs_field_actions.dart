@@ -420,6 +420,50 @@ class AiSrsFieldActions {
           if (v.task == task) v,
       ];
 
+  /// [task] 下除 [exceptId] 之外，有没有变体叫 [name]（去首尾空白、不分大小写；按存储时的
+  /// 截断长度比）。同一任务的变体在抽屉下拉里并列，重名就分不出来。
+  bool variantNameTaken(AiSrsFieldTask task, String name, {String? exceptId}) {
+    final String want = _capName(name).toLowerCase();
+    if (want.isEmpty) return false;
+    for (final AiSrsFieldVariant v in variants) {
+      if (v.task == task &&
+          v.id != exceptId &&
+          v.name.trim().toLowerCase() == want) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /// [task] 下一个还没被用过的变体名：先试 `format(base, 1)`，重名就 2、3……。[base] 会被截短，
+  /// 保证加上序号后仍放得进 [kAiSrsFieldVariantNameMax]（序号不会被截掉、截出重名）。
+  String uniqueVariantName(
+    AiSrsFieldTask task,
+    String base,
+    String Function(String base, int n) format,
+  ) {
+    String candidate = base.trim();
+    // N 个变体最多占掉 N 个候选名：第 N + 1 个一定空着。
+    for (int n = 1; n <= variants.length + 1; n++) {
+      String b = base.trim();
+      candidate = format(b, n).trim();
+      while (candidate.length > kAiSrsFieldVariantNameMax && b.isNotEmpty) {
+        b = b
+            .substring(
+              0,
+              (b.length - (candidate.length - kAiSrsFieldVariantNameMax)).clamp(
+                0,
+                b.length - 1,
+              ),
+            )
+            .trimRight();
+        candidate = format(b, n).trim();
+      }
+      if (!variantNameTaken(task, candidate)) return candidate;
+    }
+    return candidate;
+  }
+
   /// 本版本认得的全部变体（任务认得出）。
   List<AiSrsFieldVariant> get knownVariants => <AiSrsFieldVariant>[
     for (final AiSrsFieldVariant v in variants)

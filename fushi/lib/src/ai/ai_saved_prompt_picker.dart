@@ -304,6 +304,13 @@ class _AiSavedPromptSheetState extends State<AiSavedPromptSheet> {
       title: t.ai_prompt_library_title,
       leadingIcon: FushiIcons.bookmarks,
       scrollable: true,
+      // FushiModalSheetFrame 默认正文不留边：不给的话按钮 / 分组标题贴着面板边缘。
+      bodyPadding: EdgeInsets.fromLTRB(
+        tokens.spacing.card,
+        0,
+        tokens.spacing.card,
+        tokens.spacing.gap,
+      ),
       body: FushiEntranceScope(
         child: Column(
           mainAxisSize: MainAxisSize.min,
