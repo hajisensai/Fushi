@@ -546,7 +546,8 @@ space; a smaller cloud retention (e.g. 7 daily) to save quota.
 
 ### Phase 4A open questions
 
-1. **App as Interconnect host has no inbox UI.** Phones paired to a desktop app host copy their backups into
+1. **App as Interconnect host has no inbox UI.** *Closed in phase 5 (D17), see "Phase 5 as implemented".*
+   Phones paired to a desktop app host copy their backups into
    its `sync-data/fushi-data/__backups__/`, so the desktop's inbox fills up, but the desktop has no list or
    delete for it (only the devices trim their own copies; nothing caps the total). `DeviceBackupInbox` is ready
    for a "Received from other devices" section on the Restore points page (list + delete; the app host's sync
@@ -664,12 +665,100 @@ defaults, maintainer may change. Everything lives in `packages/fushi_server/lib/
 2. The pre-update backup happens inside the self-update job; the client only sees the update status, not the
    backup result (it is in the server's backup status / WebUI / log). Surfacing it in `HostUpdateStatus` would
    need a protocol field.
-3. A backup larger than the free disk space fails with the I/O error; there is no free-space check before
-   starting (the app phase 2 has none either).
+3. ~~A backup larger than the free disk space fails with the I/O error; there is no free-space check before
+   starting (the app phase 2 has none either).~~ *Closed in phase 5 (D18–D20): every backup checks free space
+   before it writes.*
 4. Offline `backup run` / `backup status` show the schedule from the config file; a `serve` started later picks
    it up, but `backup settings` while serve runs is refused rather than forwarded to the admin API.
 5. Real check was on Windows with `dart run` (no native dictionary / torrent libraries); not checked in a
    release bundle, on Linux, under systemd stop timeouts, or with a real self-update swap.
+
+## Phase 5 as implemented (2026-11-25): received backups on the app host, free-space check
+
+Two open items from #4470 (phase 4A open question 1, phase 4B open question 3).
+
+### Received from other devices (app as Interconnect host, D17)
+
+- **Where the copies are.** The app host's WebDAV root is `<databaseDirectory>/sync-data`, so the inbox is always
+  `<databaseDirectory>/sync-data/fushi-data/__backups__/<device key>/<id>/`
+  (`appInterconnectSyncRoot`, `fushi/lib/src/sync/auto_backup/received_device_backups.dart`). Disk reads and
+  deletes stay in fushi_core `DeviceBackupInbox` (shared with the headless server); `ReceivedDeviceBackups` adds
+  the two app-side rules: this device's own key (`backupDeviceKey` of the sync device id, same source as the
+  restore point metadata) is never listed or deleted, and the directory walk runs in a background isolate.
+- **Restore points page.** A "Received from other devices" section after the folder / cloud / server copy
+  sections, shown only when the inbox has other devices' copies. One card per device: name from the newest
+  meta (fallback "Unnamed device (key prefix)"), count, total size, newest date, incomplete count. Per copy:
+  date, size, app version / schema, contents; **Export** (the same Save As / share flow as a local restore
+  point, file name `fushi-backup-<device key>-<id>.zip`) and **Delete** (inline confirm). Per device: **Delete
+  all from this device** (inline confirm). A hint says restoring is only possible on the device the backup came
+  from (that device copies it back from the server), so it is not offered here. The host's own restore point
+  list is unchanged.
+- **ctl / CLI.** `GET /api/admin/restore-points/received` (groups + paths, own key excluded) and
+  `POST /api/admin/restore-points/received/delete` (`device`, optional `id`; no id = the whole device), which
+  requires `confirm: true` because the delete cannot be undone (op descriptions `backup.received.list` /
+  `backup.received.delete`, risk irreversible). CLI (fushi_cli): `backup received` and
+  `backup received-delete <device> [<id>] --yes`.
+- **The host's own backups do not pack the inbox.** Checked: `BackupService.createBackup` only packs explicit
+  roots (`fushi_books`, `audiobooks`, `custom_fonts`, `game_covers`, dictionary resources, `srs_media`);
+  `sync-data/` is never one of them, so manual exports, scheduled points and copies never contain the inbox
+  (the headless server excludes it explicitly since phase 4B). No change needed.
+
+### Free-space check before writing a backup (D18–D20)
+
+- **One platform implementation.** Rust `ffsrs_volume_free_bytes(path) -> i64` (`native/fushi_fsrs/src/lib.rs`,
+  -1 = unknown, wraps `store/compact.rs` `free_bytes`, the same `statvfs` / `GetDiskFreeSpaceExW` code that
+  guards review-library compaction); ABI 8 → 9. Dart: `FfiFsrsEngine.volumeFreeBytes(path)` walks up to the
+  first existing ancestor (the backups folder may not exist yet). fushi_core does not depend on fushi_srs, so
+  the check lives in fushi_core `database/free_space.dart` (`ensureFreeSpace`, `NotEnoughSpaceException`,
+  `kNotEnoughSpaceError = 'not_enough_space'`, `kBackupSpaceMarginBytes` = 64 MiB like compaction's `MARGIN`)
+  and the app (`main`) and the server CLI entry register the probe (`registerVolumeFreeBytes`). Every caller
+  also accepts an injected probe (tests).
+- **Estimate (D18).** Uncompressed upper bound plus margin: a compressed zip is never larger than its inputs,
+  and media / documents barely compress, so no factor is applied. Temp snapshot copies are counted on the
+  volume they go to. Two targets with the same free-space reading are treated as one volume and summed (Dart has
+  no volume identity; equal readings on different volumes at the same moment only make the check stricter).
+  Unknown free space (no probe, platform cannot tell) → write as before.
+  - App scheduled point: `fushi.db` + `srs4.db` (each with `-wal`; srs only when available) + the ticked file
+    trees + review media when included, on the store root (custom folder or default); the two databases again
+    on the system temp volume (`createBackup` `VACUUM INTO`s them there first).
+  - App pre-operation / pre-update point: the live database file(s) + `-wal` on the restore point root.
+  - Copy back to this device: the copy's `totalBytes` on the database directory (staging and store are there).
+  - Server: `serverBackupSizeEstimate` = every source file of the backup (`serverBackupSourceFiles`: DB files,
+    data directory, `documents/` only when included) + config on `backups/`; `fushi.db` + `srs4.db` (+ `-wal`)
+    again on `<data>/tmp/` (the snapshot copies). Shared by the service and the offline `backup create`.
+- **Outcomes (D19).**
+  - App scheduled: failed with `not_enough_space` (status row + localized text `auto_backup_error_not_enough_space`);
+    notified once per streak (a repeat failure for the same reason does not toast again; a success resets it).
+  - App pre-operation for Replace: refused before anything changes (unchanged phase 2 behaviour), the toast /
+    ctl error now says the reason is free space. Pre-operation points taken through
+    `takePreOperationRestorePoint` (sync download, review migration) keep continuing without a point, with the
+    reason localized in the notice.
+  - Phase 1 pre-update snapshot: not taken, the status records `error: not_enough_space` (the startup notice
+    shows the localized reason), migration continues.
+  - Copy back: refused before the download starts (error code `not_enough_space`).
+  - Server automatic: failed, `lastError: not_enough_space` in status + log (WebUI shows "Not enough free disk
+    space; not started"), not counted as satisfied, retried at the next check.
+  - Server manual (admin API `POST /api/admin/backups`): the job claims the lock, checks space, and the handler
+    waits only for that check (`ServerBackupStart.preflight`): **507** `{"error":"not_enough_space",...}`; the
+    WebUI toasts the localized text; `lastError` also shows it. Offline `backup create` prints the reason and exits
+    non-zero.
+  - Server pre-update: skipped with `preUpdateError: not_enough_space`, the update proceeds (D16).
+- **Manual verification hook.** `FUSHI_SERVER_FREE_BYTES_OVERRIDE=<bytes>` (server only) reports that value for
+  every volume, so a real `serve` can be shown failing for space without filling a disk.
+- **Tests.** Rust `tests::volume_free_bytes_abi`; fushi_srs `volume_free_bytes_test.dart` (real library);
+  fushi_core `free_space_test.dart` (same-volume sum, separate volumes, unknown, registered probe, pre-operation
+  refused, pre-update status); server `server_auto_backup_test.dart` group "写之前查空间（第五期）" + admin API 507;
+  app `auto_backup_controller_test.dart` group "写之前查空间（第五期）" (scheduled fails / notify once / recovers,
+  estimate counts file trees, pre-operation refused); received backups: `received_device_backups_test.dart`,
+  `restore_points_page_test.dart`, `ctl_data_routes_test.dart`, fushi_cli `data_commands_test.dart`.
+
+### Phase 5 open questions
+
+1. The estimate is an upper bound: a nearly-full disk may refuse a backup that would have fit after compression.
+   A tighter estimate (per-category compression ratios from the last successful backup) is possible later.
+2. Folder / cloud / server copies are not space-checked on the target (the remote side reports its own quota
+   errors, `cloud_quota`); only local writes are.
+3. The received-backups section was checked by widget tests only; the app was not launched.
 
 ## Decisions (taken by the user 2026-11-25 on the proposal's recommendations; maintainer may change)
 
@@ -691,6 +780,11 @@ defaults, maintainer may change. Everything lives in `packages/fushi_server/lib/
 | D14 | Server self-backup: when / what | off / scheduled | **On by default: daily at 04:00 server local time** (interval off / daily / every 3 days / weekly, time configurable), catch-up after downtime, skipped when nothing changed, `documents/` excluded by default (setting to include). One job at a time with manual backups; skipped (not failed) while the review library migrates; interrupted runs detected and cleaned. *Recommended default, maintainer may change.* |
 | D15 | Server automatic-backup retention | flat keep-N / tiered | **Same tiers as D3 (48 h all, 7 daily, 4 weekly, 3 monthly), newest always kept, 5 GB cap (configurable, 0 = none).** Manual and pre-update backups are never pruned by it. *Recommended default, maintainer may change.* |
 | D16 | Backup before a server self-update | none / block on failure / proceed on failure | **Settings + data (no documents) before the bundle swap, newest 3 kept; a failure is logged and shown, the update still proceeds** (same as phase 1). Rollback = restore that zip with the current binary (do not start it), then reinstall the older bundle. *Recommended default, maintainer may change.* |
+
+| D17 | App as Interconnect host: received device backups | not shown / list + delete / list + export + delete + restore | **List, export and delete on the Restore points page ("Received from other devices"); no restore on the host** (a backup belongs to the device it came from). Shown whenever the inbox has other devices' copies, also after hosting was turned off (leftovers stay deletable); this device's own key is excluded; deletes ask inline, ctl delete needs `confirm` / CLI `--yes`. *Recommended default, maintainer may change.* |
+| D18 | How much space a backup needs | compressed guess / uncompressed upper bound | **Uncompressed sum of the inputs + 64 MiB margin**, temp snapshot copies counted on their volume, same-reading targets summed; unknown free space → write. *Recommended default, maintainer may change.* |
+| D19 | Not enough space | try anyway / refuse | **Refuse before writing anything**: app scheduled → failed `not_enough_space`, notified once per streak; Replace → refused with that reason; other pre-operation points and the phase-1 snapshot → skipped with the reason, the operation / migration continues; server automatic → failed in status; manual → HTTP 507; pre-update → skipped, update proceeds (D16). *Recommended default, maintainer may change.* |
+| D20 | Where the platform free-space call lives | Dart per platform / fushi_compute / fushi_fsrs | **fushi_fsrs `ffsrs_volume_free_bytes` (ABI 9)**, reusing the compaction helper (one `statvfs` / `GetDiskFreeSpaceExW` implementation; fushi_fsrs already exports non-SRS utilities such as zstd); registered into fushi_core by the app / server entry because fushi_core does not depend on fushi_srs. *Recommended default, maintainer may change.* |
 
 ## 决策摘要（中文）
 
@@ -715,9 +809,17 @@ pre-restore 目录）。还原时 `backups/`、设备复制来的备份原地留
 D12–D13（用户 2026-11-25 定第四期 = 设备备份到服务器 + 服务器自己定时备份；以下为推荐默认，维护者可改）：「复制到服务器」是单独的副本目标，
 与云端互不相干（两个都开就各传一份），用同步在用的那条互联通道，默认关，状态 / 键 / 失败提示各自一份；云端副本不再选互联；「也用移动数据
 上传」云端与服务器共用一个开关。服务器上的副本由设备按本机规则修剪自己写的（48 小时全留、7 日 4 周 3 月、5 GB），别的设备的、取回的从不
-自动删，服务器自己也从不自动删，管理员可在 WebUI「设备备份」页 / admin API / ctl 里删。app 当互联 host 时收到的副本暂不在还原点页列出（待定）。
+自动删，服务器自己也从不自动删，管理员可在 WebUI「设备备份」页 / admin API / ctl 里删。app 当互联 host 时收到的副本第五期起在还原点页列出（D17）。
 复制开关开着却没有可用服务（比如云端只配了互联）时，那个目标的状态记「没有服务」并只提示一次，开关不替用户关；云端 / 服务器上自动删除只动
 本机目录里的副本，还原点页删别的设备的副本按列出来的那一份删。
+
+D17–D20（第五期，按建议默认实现，维护者可改）：app 当互联 host 时，还原点页多一段「从其他设备收到的备份」，按设备分组（名字、份数、总大小、最新日期、
+不完整份数），每份可导出、可删（行内确认），也可删一台设备的全部；不在 host 上提供恢复（备份属于原来那台设备），本机自己的设备键不列；只要收件箱
+里有别的设备的副本就显示，host 关了也照样能清；ctl / CLI 也能列、能删（删要 `confirm` / `--yes`）。app 自己的备份 / 导出本来就不打包收件箱，
+不用改。写任何备份之前先查空间：按不压缩的输入总和 + 64 MiB 余量估，临时快照算在它落的那个卷上，读数相同的目标当同一个卷合计，查不到可用空间就
+照常写；不够就一个字都不写——app 定时备份记失败 `not_enough_space`、同一原因只提示一次，「替换」拒绝并说明原因，其余操作前还原点与更新前快照
+跳过并记原因、操作 / 迁移照常；服务端自动备份记失败，手动备份回 507，更新前备份跳过、更新照常（D16）。平台实现只有一份：fushi_fsrs 的
+`ffsrs_volume_free_bytes`（ABI 升到 9，复用复习库压缩的 `free_bytes`），由 app / 服务端入口登记进 fushi_core。
 
 ## Naming
 
