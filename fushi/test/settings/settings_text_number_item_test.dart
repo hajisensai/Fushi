@@ -280,7 +280,7 @@ void main() {
     await tester.tap(
       find.descendant(
         of: secretRow,
-        matching: find.byIcon(Icons.undo_outlined),
+        matching: find.byIcon(FushiIcons.restoreBackup),
       ),
     );
     await tester.pumpAndSettle();
@@ -338,7 +338,10 @@ void main() {
 
     final Finder delayRow = find.widgetWithText(AdaptiveSettingsRow, 'Delay');
     await tester.tap(
-      find.descendant(of: delayRow, matching: find.byIcon(Icons.undo_outlined)),
+      find.descendant(
+        of: delayRow,
+        matching: find.byIcon(FushiIcons.restoreBackup),
+      ),
     );
     await tester.pumpAndSettle();
     expect(intValue, 50);

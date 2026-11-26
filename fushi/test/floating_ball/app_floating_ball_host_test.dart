@@ -2098,6 +2098,10 @@ void main() {
                     <int>[0, 2, 100, 200, 300, 250],
                     <int>[2, 2, 300, 200, 500, 250],
                   ],
+                  // BUG-5494：随行下发所在文本块（查词跨 OCR 折行接续文）。
+                  'blockText': '吾輩は猫',
+                  'blockOffset': 0,
+                  'blockRect': <int>[100, 200, 500, 251],
                 },
               ],
             });
@@ -2178,6 +2182,9 @@ void main() {
                   'rect': <int>[10, 20, 60, 70],
                   'vertical': true,
                   'segments': <Object?>[],
+                  'blockText': '猫',
+                  'blockOffset': 0,
+                  'blockRect': <int>[10, 20, 60, 70],
                 },
               ],
             });
