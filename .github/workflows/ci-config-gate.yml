@@ -23,6 +23,8 @@ on:
       - '.claude/agents/**'
       # 代理定义内嵌根 CLAUDE.md（tool/claude_hooks/sync_agent_claude_md.mjs），改它要跑同步守卫。
       - 'CLAUDE.md'
+      # tool/check_release_policy.ps1 也守 Inno 安装器的签名契约（BUG-5515）。
+      - 'fushi/windows/installer/fushi.iss'
   # 本仓日常大量直推 develop（不走 PR），而发布 workflow 的 push 已不再因 workflow / tool
   # 改动触发——直推也要有门。
   push:
@@ -33,6 +35,8 @@ on:
       - '.claude/agents/**'
       # 代理定义内嵌根 CLAUDE.md（tool/claude_hooks/sync_agent_claude_md.mjs），改它要跑同步守卫。
       - 'CLAUDE.md'
+      # tool/check_release_policy.ps1 也守 Inno 安装器的签名契约（BUG-5515）。
+      - 'fushi/windows/installer/fushi.iss'
 
 permissions:
   contents: read

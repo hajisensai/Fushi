@@ -198,6 +198,15 @@ Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-m
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-macos-arm64.dmg' 'desktop workflow must upload macOS (Apple Silicon) dmg assets for manual install'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'fushi-*-ios.ipa' 'desktop workflow must upload iOS IPA assets'
 Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow 'Publish mirror update manifest (Apple assets)' 'Apple release assets must merge into the update manifest'
+# BUG-5515：Inno 安装包的签名必须走 ISCC 编译期 SignTool。只在编完后签 setup.exe 外壳时，
+# 运行时解到 %TEMP% 的 .tmp 安装程序与现生成的 unins000.exe 没有签名，开着智能应用控制的
+# Windows 11 报 4551 拒绝启动安装器。
+$innoScript = Read-RepoFile 'fushi/windows/installer/fushi.iss'
+Require-Text 'fushi/windows/installer/fushi.iss' $innoScript 'SignTool=fushisign' 'installer must be signed by ISCC SignTool so the extracted .tmp setup program is signed too (BUG-5515)'
+Require-Text 'fushi/windows/installer/fushi.iss' $innoScript 'SignedUninstaller=yes' 'generated unins000.exe must carry our signature (BUG-5515)'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '/DFushiSignTool' 'ISCC must be invoked with the SignTool define when signing credentials exist (BUG-5515)'
+Require-Text '.github/workflows/release-desktop.yml' $desktopWorkflow '/Sfushisign=' 'ISCC must receive the fushisign sign command (BUG-5515)'
+Forbid-Pattern '.github/workflows/release-desktop.yml' $desktopWorkflow "-notlike 'unins\*\.exe'" 'installed-payload verification must not exempt the uninstaller from the signature check (BUG-5515)'
 # Apple 签名链路：细粒度不变式由 fushi/test/tools/apple_signing_workflow_guard_test.dart
 # 守（每个 PR 都跑）。这里只锁发布策略层面的一条：手动 dispatch 那条门必须显式判事件。
 # develop 的 push debug 通道每次都传（2026-11-02 用户拍板，取代「发布序列 % 3 == 0 才传」），
