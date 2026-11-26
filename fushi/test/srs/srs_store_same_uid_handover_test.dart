@@ -197,6 +197,11 @@ void main() {
       final SrsDbStore store = (await pending)!;
       await pumpEventQueue();
       expect(stores.opened, 1);
+      expect(
+        store.hostsRwkv,
+        isTrue,
+        reason: 'app 的库先于 RWKV 服务交出：交库前就要声明有 RWKV 运行时，挂服务之前的计数不按到期日数（BUG-5482）',
+      );
       expect(identical(await c.read(srsStoreProvider.future), store), isTrue);
       expect(store.isUsable, isTrue, reason: '装载完成不再重建、不作废');
 
