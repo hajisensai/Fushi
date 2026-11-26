@@ -360,24 +360,43 @@ bool _isWithinAny(final List<String> roots, final String path) {
 /// 这是「DB 真实路径 + 哈希派生目录」两个来源并存的必然要求：同步导入的书
 /// `audioRoot` 是目录、`audioPathsJson` 是它下面的文件，本地导入的哈希目录又
 /// 常常与 `audioRoot` 是同一个目录——不去嵌套就会把同一堆字节数两次三次。
+///
+/// 复杂度 O(n · 路径深度)：每条路径只 [p.canonicalize] 一次，重复靠 Set 判，
+/// 嵌套靠沿规范化路径逐级取父目录查 Set。有声书的 `audioPathsJson` 是逐文件
+/// 清单（一本几百上千条），旧实现两两比较、每对都重新规范化，是 O(n²) 次
+/// canonicalize——它跑在 UI isolate 上，开存储页时整窗冻结十秒级
+/// （storage-scan-ui-freeze）。
 List<String> _dedupeNestedPaths(final List<String> paths) {
   final List<String> kept = <String>[];
   final List<String> canonical = <String>[];
+  final Set<String> seen = <String>{};
   for (final String path in paths) {
     if (path.isEmpty) continue;
     final String key = p.canonicalize(path);
-    if (canonical.contains(key)) continue;
+    if (!seen.add(key)) continue;
     kept.add(path);
     canonical.add(key);
   }
   return <String>[
     for (int i = 0; i < kept.length; i++)
-      if (!_isWithinAny(<String>[
-        for (int j = 0; j < canonical.length; j++)
-          if (j != i) canonical[j],
-      ], canonical[i]))
-        kept[i],
+      if (!_hasProperAncestorIn(seen, canonical[i])) kept[i],
   ];
+}
+
+/// 规范化路径 [canonicalPath] 的某个**真祖先**目录是否在 [canonicalSet] 里。
+/// 两边都是 [p.canonicalize] 的产物，父目录逐级 [p.dirname] 得到的仍是同一口径，
+/// 与 `p.isWithin(祖先, canonicalPath)` 等价。
+bool _hasProperAncestorIn(
+  final Set<String> canonicalSet,
+  final String canonicalPath,
+) {
+  String current = canonicalPath;
+  while (true) {
+    final String parent = p.dirname(current);
+    if (parent == current) return false;
+    if (canonicalSet.contains(parent)) return true;
+    current = parent;
+  }
 }
 
 /// 把一条 [book] 拆成「计入体积的路径」与「外部引用路径」两组。
