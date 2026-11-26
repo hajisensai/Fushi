@@ -141,6 +141,7 @@ void main() {
             domain: 'video',
             trigger: 'test',
             startedAt: now,
+            finishedAt: Value<int?>(now),
             status: 'done',
           ),
         );
@@ -173,5 +174,26 @@ void main() {
 
     await addSeries();
     expect(await members(), <String>{'ep1', 'ep2'});
+  });
+
+  test('AI 移出后用户加回又亲手移出：再「加入媒体库」不放回（BUG-5016 成员墓碑）', () async {
+    await addSeries();
+    await dissolve();
+    expect(await members(), isEmpty);
+
+    // 用户先把 ep1 加回来（重建合集），再把 ep2 亲手加进去、随后又亲手移出。
+    await adoption.adoptVideos(<RemoteVideoInfo>[
+      episode('ep1'),
+    ], userIntent: true);
+    final MediaCollectionRow c = (await series())!;
+    await db.addToCollection(c.id, MediaKind.video, 'ep2');
+    expect(await members(), <String>{'ep1', 'ep2'});
+    // 用户的移出必然晚于 AI 那次运行结束；测试里同一毫秒会混淆上界，让时钟走一格。
+    await Future<void>.delayed(const Duration(milliseconds: 5));
+    await db.removeFromCollection(c.id, MediaKind.video, 'ep2');
+
+    // 整理记录里 dissolve 的 evict 仍未撤销，但 ep2 现在的墓碑是用户写的：照常拦。
+    await addSeries();
+    expect(await members(), <String>{'ep1', 'ep3'});
   });
 }

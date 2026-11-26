@@ -642,6 +642,11 @@ CollectionOrigin _originOr(Object? raw, CollectionOrigin fallback) =>
 /// 索引：`evict`（移出 / 拆散，记在来处合集名下）与 `move`（挪走，来处记在
 /// `payload.from`）。用户同意的待确认建议（`proposal`）是用户意图，不算。
 ///
+/// 每个键带那次运行（`library_organize_runs`，按 `runId` 关联）的结束时刻，作 AI
+/// 写下的成员墓碑 `deletedAt` 的上界：收养入口只清不晚于它的墓碑，用户之后（加回
+/// 又）亲手移出写下的更新墓碑照常拦（BUG-5016）。还没结束（`finishedAt` 为空）的
+/// 运行给不出上界，不算——宁可照旧拦，也不误清用户的移出。
+///
 /// 收养入口据此分辨「AI 移出留下的成员墓碑」与「用户自己移出的」：前者在用户亲手
 /// 再加入这部作品时清掉（BUG-5466）。一次「加入媒体库」只读一次整理记录
 /// （[load]），逐集查 [keysFor]。整理记录设备本地、不同步，所以只认得本机 AI 做的
@@ -651,13 +656,13 @@ class OrganizerRemovals {
 
   /// 什么都没移出过（被动收养不查整理记录时用）。
   static const OrganizerRemovals none = OrganizerRemovals._(
-    <(String, String, String), Set<String>>{},
+    <(String, String, String), Map<String, int>>{},
   );
 
-  final Map<(String, String, String), Set<String>> _keys;
+  final Map<(String, String, String), Map<String, int>> _keys;
 
-  /// 读一次整理记录，只收 [collectionNames] 这些合集的移出（`evict` 在 SQL 里按
-  /// 合集名筛；`move` 的来处在载荷里，解码后筛）。
+  /// 读一次整理记录（连同所属运行的结束时刻），只收 [collectionNames] 这些合集的
+  /// 移出（`evict` 在 SQL 里按合集名筛；`move` 的来处在载荷里，解码后筛）。
   static Future<OrganizerRemovals> load(
     FushiDatabase db, {
     required Set<String> collectionNames,
@@ -665,24 +670,29 @@ class OrganizerRemovals {
     if (collectionNames.isEmpty) return none;
     final String evict = OrganizeActionKind.evict.name;
     final String move = OrganizeActionKind.move.name;
-    final List<LibraryOrganizeChangeRow> rows =
-        await (db.select(db.libraryOrganizeChanges)..where(
-              (t) =>
-                  t.undoneAt.isNull() &
-                  (t.kind.equals(move) |
-                      (t.kind.equals(evict) &
-                          t.collectionName.isIn(collectionNames))),
-            ))
+    final $LibraryOrganizeChangesTable c = db.libraryOrganizeChanges;
+    final $LibraryOrganizeRunsTable r = db.libraryOrganizeRuns;
+    final List<TypedResult> rows =
+        await (db.select(c).join(<Join>[innerJoin(r, r.id.equalsExp(c.runId))])
+              ..where(
+                c.undoneAt.isNull() &
+                    r.finishedAt.isNotNull() &
+                    (c.kind.equals(move) |
+                        (c.kind.equals(evict) &
+                            c.collectionName.isIn(collectionNames))),
+              ))
             .get();
-    final Map<(String, String, String), Set<String>> keys =
-        <(String, String, String), Set<String>>{};
-    for (final LibraryOrganizeChangeRow r in rows) {
-      final Map<String, Object?>? payload = _decode(r.payloadJson);
+    final Map<(String, String, String), Map<String, int>> keys =
+        <(String, String, String), Map<String, int>>{};
+    for (final TypedResult row in rows) {
+      final LibraryOrganizeChangeRow change = row.readTable(c);
+      final int until = row.readTable(r).finishedAt!;
+      final Map<String, Object?>? payload = _decode(change.payloadJson);
       if (payload == null) continue;
       final String name;
       final String type;
-      if (r.kind == evict) {
-        (name, type) = (r.collectionName, r.collectionType);
+      if (change.kind == evict) {
+        (name, type) = (change.collectionName, change.collectionType);
       } else if (payload['from'] case {
         'name': final String n,
         'type': final String t,
@@ -693,18 +703,23 @@ class OrganizerRemovals {
       }
       if (!collectionNames.contains(name)) continue;
       for (final ({String t, String k}) m in _members(payload['members'])) {
-        (keys[(name, type, m.t)] ??= <String>{}).add(m.k);
+        final Map<String, int> byKey = keys[(name, type, m.t)] ??=
+            <String, int>{};
+        final int? prev = byKey[m.k];
+        if (prev == null || until > prev) byKey[m.k] = until;
       }
     }
     return OrganizerRemovals._(keys);
   }
 
-  /// [mediaType] 是 `MediaKind.dbValue`。
-  Set<String> keysFor({
+  /// [mediaType] 是 `MediaKind.dbValue`。返回条目键 → AI 移出墓碑 `deletedAt` 的上界。
+  Map<String, int> keysFor({
     required String collectionName,
     required String collectionType,
     required String mediaType,
-  }) => _keys[(collectionName, collectionType, mediaType)] ?? const <String>{};
+  }) =>
+      _keys[(collectionName, collectionType, mediaType)] ??
+      const <String, int>{};
 }
 
 /// 撤销一次整理里还没撤销的全部改动（待确认建议不算改动，不动）。

@@ -332,7 +332,7 @@ void main() {
     Future<int?> adoptSeries(
       String key, {
       bool userIntent = false,
-      Set<String> organizerRemovedKeys = const <String>{},
+      Map<String, int> organizerRemovedKeys = const <String, int>{},
     }) => db.adoptRemoteCollectionMember(
       name: 'Series',
       collectionType: 'playlist',
@@ -356,10 +356,14 @@ void main() {
         );
       }
       await db.removeFromCollection(cid, MediaKind.video, 'ep3');
+      final int runEnd = DateTime.now().millisecondsSinceEpoch;
 
       // 被动收养：不清。
       expect(
-        await adoptSeries('ep1', organizerRemovedKeys: <String>{'ep1'}),
+        await adoptSeries(
+          'ep1',
+          organizerRemovedKeys: <String, int>{'ep1': runEnd},
+        ),
         isNull,
       );
       // 用户意图：清列出的 AI 移出墓碑，用户自己移出的 ep3 仍拦。
@@ -367,7 +371,7 @@ void main() {
         await adoptSeries(
           k,
           userIntent: true,
-          organizerRemovedKeys: <String>{'ep1', 'ep2'},
+          organizerRemovedKeys: <String, int>{'ep1': runEnd, 'ep2': runEnd},
         );
       }
       final MediaCollectionRow c = (await db.getMediaCollectionByNaturalKey(
@@ -383,6 +387,34 @@ void main() {
       expect(
         await db.collectionMemberTombstoneKeysFor('Series', 'playlist'),
         contains(isA<String>().having((String k) => k, 'key', endsWith('ep3'))),
+      );
+    });
+
+    test('只清不晚于运行结束的墓碑：用户之后亲手移出的照常拦', () async {
+      final int cid = (await adoptSeries('ep1'))!;
+      await adoptSeries('ep2');
+      await db.removeFromCollectionAutomatically(
+        cid,
+        MediaKind.video.dbValue,
+        'ep2',
+      );
+      // AI 那次运行在用户亲手加回 + 移出之前结束。
+      final int runEnd = DateTime.now().millisecondsSinceEpoch;
+      await db.addToCollection(cid, MediaKind.video, 'ep2');
+      await Future<void>.delayed(const Duration(milliseconds: 5));
+      await db.removeFromCollection(cid, MediaKind.video, 'ep2');
+
+      expect(
+        await adoptSeries(
+          'ep2',
+          userIntent: true,
+          organizerRemovedKeys: <String, int>{'ep2': runEnd},
+        ),
+        isNull,
+      );
+      expect(
+        await db.collectionMemberTombstoneKeysFor('Series', 'playlist'),
+        contains(isA<String>().having((String k) => k, 'key', endsWith('ep2'))),
       );
     });
   });
