@@ -1623,9 +1623,8 @@ class _HomeDashboardPageState extends BaseModuleTabPageState<HomeDashboardPage>
         _adoptedRemoteBooks = remoteBooks;
       }
       if (!identical(remoteVideos, _adoptedRemoteVideos)) {
-        for (final RemoteVideoInfo video in remoteVideos) {
-          await adoption.adoptVideo(video);
-        }
+        // 差分批量收养：清单没变时一次只读查询、零写入。
+        await adoption.adoptVideos(remoteVideos);
         _adoptedRemoteVideos = remoteVideos;
       }
       if (skipIfUnchanged &&

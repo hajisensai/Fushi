@@ -21,6 +21,13 @@ enum VideoMetadataProviderKind {
   anilist,
   fanart,
   mal,
+
+  /// 媒体服务器（Jellyfin / Emby / 飞牛 / Plex）自带的资料：从服务器「加入媒体库」的
+  /// 作品用服务器已有的简介 / 评分 / 类型 / 图（BUG-5477）。与 `local` 同属「用户
+  /// 已有资料的离线兼容输入」，**不是**刮削 provider：不进可选主源白名单、不发任何
+  /// 刮削请求、不当成可续刮的已确认身份。外部 ID（TMDB / AniDB…）只作非主交叉引用
+  /// 落库。名字全小写：身份表的 provider 列按小写存、按枚举名比对。
+  mediaserver,
 }
 
 /// 作品的 Kodi/MoviePilot 媒体类型。

@@ -149,9 +149,24 @@ import 'package:test/test.dart';
 /// `home_profile_chip` 为取库 / 打开配置管理 / 切换配置 import AppModel 与
 /// `profile_view_model`——改由首页注入库与两个回调。最大环降到 622，上限随之下调。
 ///
+/// 2026-11-26 批量合并后实测 627（develop 626 + 本轮 1）。新进环 5 个：查词弹窗排队覆盖回执、
+/// 流媒体书选集、网页档字幕生成、gal 场景卡中止文案、字段 AI 共用入口。不调上限，拆五条底层边：
+/// galgame 浮窗后台写卡登记 `overlay_queued_mines` 只为两个回执值类型 import
+/// `dictionary_popup_webview`——值类型挪到叶子 `dictionary_popup_queued_overwrite.dart`
+/// （webview 原样 re-export）；流媒体书选集 `stream_book_episodes` 为单集封面 import 读 AppModel
+/// 的 `media_cover_source`——单集没有书目分支，改用 `media_cover_standalone_source`；gal 中止
+/// 文案 `gal_hook_mining_failure_text` 为结果值类型 import 整个编排器——结果类型挪到叶子
+/// `gal_hook_mining_result.dart`（编排器 re-export）；视频字幕服务本体
+/// `app_video_subtitle_service` 只为一个装配函数 import AppModel——装配挪到
+/// `app_video_subtitle_service_entry.dart`，服务连同只持服务的字幕生成面板 / 术语表页 / 网页档
+/// 字幕生成一起出环；它要的硬字幕 OCR `burned_in_subtitle_ocr` 为建服务 import 读 AppModel 的
+/// `manga_ocr_provider`——纯工厂挪到 `manga_ocr_service_factory.dart`（provider re-export）。
+/// 剩下新进环的只有本就读 AppModel 的 SRS 字段 AI 入口 `srs_field_ai_action` 与新装配入口，
+/// 最大环降到 620，上限随之下调。
+///
 /// 红了：新加的 import 把底层模块接到了 UI / AppModel 上。把用到的东西挪到
 /// 更底层的文件，或改用参数 / 回调注入，不要调大上限、不要把文件从目录里豁免。
-const int kMaxCycleFiles = 622;
+const int kMaxCycleFiles = 620;
 
 const String kAppModel = 'lib/src/models/app_model.dart';
 
@@ -190,6 +205,14 @@ const List<String> kLeafEntries = <String>[
   'lib/src/media/tracking/page/tracking_page.dart',
   // 首页默认配置胶囊的库与动作由首页注入。
   'lib/src/pages/implementations/home_profile_chip.dart',
+  // 2026-11-26 拆出大环的五个件（见 [kMaxCycleFiles] 文档）：回执 / 结果值类型、单集封面、
+  // 字幕服务本体与它的硬字幕 OCR 都不经 AppModel。
+  'lib/src/lookup/overlay_queued_mines.dart',
+  'lib/src/media/video/stream_book_episodes.dart',
+  'lib/src/mining/gal_hook_mining_failure_text.dart',
+  'lib/src/media/video/subtitle/app_video_subtitle_service.dart',
+  'lib/src/media/video/subtitle/burned_in_subtitle_ocr.dart',
+  'lib/src/media/video/web_video_subtitle_generation.dart',
 ];
 
 const List<String> kBarrels = <String>[

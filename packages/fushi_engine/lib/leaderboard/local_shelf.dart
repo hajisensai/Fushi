@@ -8,7 +8,7 @@
 //   再无则单个视频；电影读完 = 单位内全部成员都有 completedAt；剧集读完 = 同一作品身份
 //   的全部单元合起来，季集骨架里每个正片集都有看完的本地文件（没骨架时只认合集单元的
 //   全部成员看完）——服务端合并同一作品取「任一读完」，只看完一集不能让整部剧读完。**只上报经外部资料源刮削过
-//   的作品**（作品上有非 local 的 provider 身份）：否则标题只能是文件名 / 合集名，既会
+//   的作品**（作品上有 local / 媒体服务器自带资料以外的 provider 身份）：否则标题只能是文件名 / 合集名，既会
 //   当公开标题泄露，弱键 `t:` 又会把所有人的「Season 1」并成一部。
 // - 游戏：`galgames`，playStatus 2 = 玩过（读完），3 = 在玩。与视频同口径**只上报刮削过
 //   的游戏**（有 bgm / vndb 身份）：否则标题只能是本地 exe 推出来的库名。
@@ -937,7 +937,8 @@ class _VideoRefs {
           : '$mediaType:$tmdb',
       scraped: rows.any(
         (VideoMetadataProviderIdentityRow r) =>
-            r.provider != _localProvider && _nonEmpty(r.externalId) != null,
+            !_offlineProviders.contains(r.provider) &&
+            _nonEmpty(r.externalId) != null,
       ),
     );
   }
@@ -947,7 +948,8 @@ class _VideoRefs {
   final String? mal;
   final String? tmdb;
 
-  /// 作品经外部资料源刮削过（有非 local 的 provider 身份；强 ID 必然属于这种）。
+  /// 作品经外部资料源刮削过（有 local / mediaserver 以外的 provider 身份；强 ID
+  /// 必然属于这种）。
   final bool scraped;
 
   /// 刮削作品缺标题时的占位：第一个强 ID 键（不含任何本地文件名信息）。
@@ -961,8 +963,17 @@ class _VideoRefs {
       '';
 }
 
-/// 本地索引（未刮削）作品的 provider 名（`VideoMetadataProviderKind.local.name`）。
-const String _localProvider = 'local';
+/// 不算「经外部资料源刮削过」的 provider 名：本地索引（`local`）与媒体服务器自带
+/// 资料（`mediaserver`，BUG-5477）。两者都是用户已有资料的离线兼容输入，标题可能
+/// 就是文件夹名；媒体服务器作品带了 TMDB / AniDB 交叉引用时照常按强 ID 上报。
+const Set<String> _offlineProviders = <String>{
+  'local', // VideoMetadataProviderKind.local.name
+  'mediaserver', // VideoMetadataProviderKind.mediaserver.name
+};
+
+/// 媒体服务器资料图的 provider 名：图行 `remoteUrl` 是用户自己服务器的地址（去了
+/// 令牌，仍带私有主机名 / 条目 id），不能当公开封面上传（BUG-5477）。
+const String _mediaServerImageProvider = 'mediaserver';
 
 Future<Map<int, List<VideoMetadataProviderIdentityRow>>> _videoWorkIdentities(
   FushiDatabase db,
@@ -987,7 +998,8 @@ Future<Map<int, String>> _videoWorkPosters(FushiDatabase db) async {
             ..where(
               ($VideoMetadataImagesTable i) =>
                   i.workId.isNotNull() &
-                  i.kind.isIn(<String>['cover', 'poster']),
+                  i.kind.isIn(<String>['cover', 'poster']) &
+                  i.provider.equals(_mediaServerImageProvider).not(),
             )
             ..orderBy(<OrderClauseGenerator<$VideoMetadataImagesTable>>[
               ($VideoMetadataImagesTable i) =>

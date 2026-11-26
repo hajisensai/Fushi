@@ -245,7 +245,7 @@ void main() {
   });
 
   testWidgets(
-    'real glass SettingsFormField edits through legacy Cupertino input',
+    'real glass SettingsFormField edits through the migrated Cupertino input',
     (WidgetTester tester) async {
       String? changed;
       await tester.pumpWidget(
@@ -267,7 +267,11 @@ void main() {
       );
       await tester.pumpAndSettle();
       expect(tester.takeException(), isNull);
-      expect(find.byType(legacy_cupertino.CupertinoTextField), findsOneWidget);
+      // 3c3aadd8a7 起 SettingsFormField 不再走液态玻璃库的 GlassTextField（内部是
+      // legacy flutter/cupertino 输入框），两套设计系统都经 FushiTextFormFieldControl，
+      // Apple 下是 cupertino_ui 的 CupertinoTextField；不应再混进 legacy 输入框。
+      expect(find.byType(cupertino.CupertinoTextField), findsOneWidget);
+      expect(find.byType(legacy_cupertino.CupertinoTextField), findsNothing);
       await tester.enterText(find.byType(EditableText), 'after');
       await tester.pump();
       expect(changed, 'after');

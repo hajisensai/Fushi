@@ -22,20 +22,15 @@ import 'package:fushi_anki/fushi_anki_core.dart'
         kFushiCardBackBlocks,
         kFushiCardSwitchFields;
 import 'package:fushi_core/fushi_core.dart' show SrsCardCacheRow;
-import 'package:fushi_engine/ai/ai_chat_client.dart';
-import 'package:fushi_engine/ai/ai_feature.dart';
-import 'package:fushi_engine/ai/ai_provider_config.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
 import 'package:fushi_engine/srs/srs_canonical_ids.dart';
 import 'package:fushi_engine/srs/srs_db_store.dart';
 import 'package:fushi_engine/srs/srs_mining_target.dart';
 import 'package:fushi_srs/fushi_srs.dart';
 
-import 'package:fushi/src/ai/ai_srs_field_assistant.dart';
 import 'package:fushi/src/models/app_model.dart';
-import 'package:fushi/src/models/module_registry.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_edit_history_page.dart';
-import 'package:fushi/src/pages/implementations/srs/srs_field_ai_sheet.dart';
+import 'package:fushi/src/pages/implementations/srs/srs_field_ai_action.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_editors.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_field_label.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_fushi_block_layout_panel.dart'
@@ -43,7 +38,6 @@ import 'package:fushi/src/pages/implementations/srs/srs_fushi_block_layout_panel
 import 'package:fushi/src/pages/implementations/srs/srs_note_preview.dart';
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_change_note_type.dart';
-import 'package:fushi/src/srs/srs_field_catalog.dart' as catalog;
 import 'package:fushi_engine/srs/srs_miner.dart';
 import 'package:fushi/src/srs/srs_field_speech.dart' show srsSpeechSourcesOf;
 import 'package:fushi/src/srs/srs_providers.dart';
@@ -562,8 +556,10 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
                 ),
         );
 
+  static const Key _saveItemKey = ValueKey<String>('srs_note_save');
+
   FushiToolbarItem get _saveItem => FushiToolbarItem(
-    key: const ValueKey<String>('srs_note_save'),
+    key: _saveItemKey,
     icon: _editing ? FushiIcons.save : FushiIcons.add,
     label: _editing ? t.srs_note_save : t.srs_note_add_action,
     onPressed: _saving || _type == null ? null : () => unawaited(_save()),
@@ -590,6 +586,10 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
                   icon: item.icon,
                   tooltip: item.label,
                   enabled: item.onPressed != null,
+                  // 保存 / 添加是编辑器的主操作，恒外露：Apple iOS 档顶栏最多
+                  // 平铺 3 颗（kFushiAppleIosHeaderMaxActions），同优先级按
+                  // 列表位置从后往前收，不标的话排在最后的它最先进「⋯」。
+                  alwaysVisible: item.key == _saveItemKey,
                   onTap: item.onPressed,
                 ),
             ]
@@ -842,72 +842,6 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
     );
   }
 
-  /// 字段「AI 改写 / 补全」：先确认有指派的提供商（没有就一个请求都不发），结果只回草稿。
-  Future<void> _fieldAi(SrsNoteTypeView type, SrsFieldDef field) async {
-    final SrsFieldModel? model = _fields[field.id];
-    if (model == null) return;
-    final AiProviderConfig? provider = ref
-        .read(appProvider)
-        .prefsRepo
-        .resolveAiFeatureProvider(AiFeature.srsNoteField);
-    if (provider == null) {
-      FushiToast.show(msg: t.ai_assist_no_provider);
-      return;
-    }
-    final String? value = await showSrsFieldAiSheet(
-      context,
-      fieldLabel: catalog.srsFieldDisplayName(field),
-      fieldName: field.name,
-      current: model.value,
-      promptStore: ref.read(appProvider).prefsRepo,
-      run: (AiSrsFieldTask task, String instruction) async {
-        final AiChatClient client = AiChatClient();
-        try {
-          return await requestAiSrsField(
-            client: client,
-            provider: provider,
-            noteType: type,
-            valuesById: <String, String>{
-              for (final MapEntry<String, SrsFieldModel> e in _fields.entries)
-                e.key: e.value.value,
-            },
-            targetFieldId: field.id,
-            task: task,
-            instruction: instruction,
-            outputLanguage: LocaleSettings.currentLocale.languageTag,
-          );
-        } finally {
-          client.close();
-        }
-      },
-    );
-    if (value == null || !mounted) return;
-    // 整体换值：编辑器按新内容重新判类型（AI 可能写出列表等结构化内容）。
-    _fields[field.id]?.reset(value);
-  }
-
-  /// 字段标题行的「AI」按钮：AI 模块开着、且字段装的是文字（不是图片 / 音频 / 开关 / 数据）。
-  List<Widget> _fieldActions(SrsNoteTypeView type, SrsFieldDef field) {
-    if (!isAiModuleEnabled(ref.watch(appProvider).moduleVisibility)) {
-      return const <Widget>[];
-    }
-    final catalog.SrsFieldKind kind = catalog.srsFieldKind(field);
-    if (kind != catalog.SrsFieldKind.text &&
-        kind != catalog.SrsFieldKind.rich) {
-      return const <Widget>[];
-    }
-    return <Widget>[
-      FushiIconButton(
-        key: ValueKey<String>('srs-field-ai-${field.name}'),
-        icon: FushiIcons.aiAssistant,
-        size: 20,
-        tooltip: t.srs_note_field_ai,
-        onTap: () =>
-            srsRunLogged('SrsNoteEditor.fieldAi', () => _fieldAi(type, field)),
-      ),
-    ];
-  }
-
   Map<String, String> _miningSlotsOf(SrsNoteTypeView type) {
     final SrsDbStore? store = _store;
     if (store == null) return const <String, String>{};
@@ -971,7 +905,18 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
       key: ValueKey<String>('srs-field-${field.name}'),
       name: field.name,
       help: SrsFieldHelp.of(field, miningSlot: _miningSlotsOf(type)[field.id]),
-      headerActions: _fieldActions(type, field),
+      headerActions: srsFieldAiHeaderActions(
+        this.context,
+        ref,
+        logTag: 'SrsNoteEditor.fieldAi',
+        noteType: type,
+        field: field,
+        model: () => _fields[field.id],
+        valuesById: () => <String, String>{
+          for (final MapEntry<String, SrsFieldModel> e in _fields.entries)
+            e.key: e.value.value,
+        },
+      ),
       model: _fields[field.id]!,
       speechSources: srsSpeechSourcesOf<SrsFieldModel>(
         field.name,

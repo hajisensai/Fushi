@@ -370,7 +370,7 @@ pub const RULES_KEY: &str = "cacheRules";
 /// - 5（BUG-5190 / HBK-AUDIT-203）：卡片标志按血统继承时，同一层几张前身都有记录的取生效写入最新的那张
 ///   （`registers::cards_group` 的 `registers::later`）。之前取卡 ID 序在前的：按 4 物化过的库里这类后继卡的
 ///   `flag` / `new_position` / 牌组……是按 ID 序继承的，原地重开与重建不同，要重建一次才换成新口径。
-/// - 6（BUG-5455）：日志重放、卡片状态和统计以原始日志 ID 排序和选副本。规范 ID 只用于身份和引用。
+/// - 6（BUG-5476）：日志重放、卡片状态和统计以原始日志 ID 排序和选副本。规范 ID 只用于身份和引用。
 pub const CACHE_RULES: i64 = 6;
 
 /// [Index::log_class_rep] 每个成员一次的点查（走 `log_id (col, id, k)`；查询计划测试用同一份）。

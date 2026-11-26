@@ -10,7 +10,9 @@
 ///   配置现建客户端取流——流地址带令牌、换线路就变，不落库；
 /// - 同一部剧的集经 [RemoteCollectionAdoptionService] 归进以剧名命名的 playlist
 ///   合集（与媒体服务器混排 / 互联下载入库同一条收养路径），合集与各集封面用剧的
-///   海报。
+///   海报；
+/// - 作品资料（简介 / 评分 / 类型 / 背景 / 分集名与剧照）与服务器上的观看状态由
+///   `media_server_metadata.dart` 在每次入库 / 后台补新集时同步（BUG-5477）。
 library;
 
 import 'dart:convert';
@@ -35,6 +37,7 @@ import 'package:path/path.dart' as p;
 import 'package:fushi/src/media/media_cover_service.dart';
 import 'package:fushi/src/media/video/media_server/media_server_browser.dart';
 import 'package:fushi/src/media/video/media_server/media_server_config.dart';
+import 'package:fushi/src/media/video/media_server/media_server_metadata.dart';
 import 'package:fushi/src/sync/remote_video_client.dart';
 import 'package:fushi/src/utils/misc/dashboard_server_continue.dart'
     show mediaServerItemKey;
@@ -218,8 +221,12 @@ class MediaServerVideoLibrary {
         RemoteCollectionAdoptionService(database);
     final List<String> added = <String>[];
     final List<RemoteVideoInfo> addedInfos = <RemoteVideoInfo>[];
+    final List<RemoteVideoInfo> infos = <RemoteVideoInfo>[];
+    final List<MediaServerLeafRow> rows = <MediaServerLeafRow>[];
     for (final MediaServerItem leaf in leaves) {
       final RemoteVideoInfo info = browser.toRemoteVideoInfo(leaf);
+      infos.add(info);
+      rows.add((item: leaf, bookUid: info.id));
       if (await repository.getByBookUid(info.id) == null) {
         await repository.saveVideoBook(
           VideoBooksCompanion(
@@ -258,6 +265,18 @@ class MediaServerVideoLibrary {
             : null,
       );
     }
+    try {
+      await importMediaServerProgress(database, rows);
+    } on Object catch (error, stack) {
+      ErrorLogService.instance.log(
+        'MediaServerVideoLibrary.progress',
+        error,
+        stack,
+      );
+    }
+    await MediaServerMetadataSync(
+      database,
+    ).sync(browser, work, rows, membership: mediaServerMembershipOf(infos));
     return addedInfos;
   }
 
@@ -300,17 +319,28 @@ class MediaServerVideoLibrary {
     Future<void> Function()? afterDeleteBeforeReclaim,
   }) async {
     if (works.isEmpty) return 0;
-    final List<String> uids = <String>[
-      for (final VideoBookRow row in await database.allVideoBooks())
-        if (mediaServerWorkOfRow(row) case final MediaServerLibraryWork work
-            when works.contains(work))
-          row.bookUid,
-    ];
+    final List<String> uids = <String>[];
+    // 服务器 → 要回收资料图的条目（作品自身 + 各集）。
+    final Map<String, Set<String>> imageItems = <String, Set<String>>{};
+    for (final VideoBookRow row in await database.allVideoBooks()) {
+      if (mediaServerWorkOfRow(row) case final MediaServerLibraryWork work
+          when works.contains(work)) {
+        uids.add(row.bookUid);
+        (imageItems[work.serverId] ??= <String>{}).addAll(<String>[
+          work.workId,
+          ?MediaServerBookSpec.tryParse(row.streamSpecJson)?.itemId,
+        ]);
+      }
+    }
     if (uids.isEmpty) return 0;
-    return repository.deleteVideoBooksAndReclaimAssets(
+    final int deleted = await repository.deleteVideoBooksAndReclaimAssets(
       uids,
       afterDeleteBeforeReclaim: afterDeleteBeforeReclaim,
     );
+    for (final MapEntry<String, Set<String>> entry in imageItems.entries) {
+      await deleteMediaServerImageFiles(entry.key, entry.value);
+    }
+    return deleted;
   }
 
   /// 电影 = 自身；剧 = 整部剧的集（不带 SeasonId，按季集号升序，逐页取完）。

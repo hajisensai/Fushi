@@ -11,7 +11,7 @@ import 'dart:async';
 import 'dart:collection';
 
 import 'package:flutter/foundation.dart';
-import 'package:fushi/src/media/media_cover_source.dart';
+import 'package:fushi/src/media/media_cover_standalone_source.dart';
 import 'package:fushi/src/media/video/url_stream_video.dart'
     show streamVideoBookUid;
 import 'package:fushi/src/media/video/video_episode_rail.dart'
@@ -208,8 +208,9 @@ List<VideoEpisodeEntry> streamBookEpisodePanelEntries(
     for (int i = 0; i < episodes.length; i++)
       VideoEpisodeEntry(
         title: episodes[i].displayTitle ?? episodes[i].title,
-        cover: resolveMediaCoverImage(
-          kind: MediaKind.video,
+        // 单集没有书目（不走书的 override 缩略图链），直接用独立封面解析：
+        // media_cover_source 为书目分支读 AppModel，接它会把本文件拖进 import 大环。
+        cover: resolveStandaloneCoverImage(
           localPath: episodes[i].coverPath,
           remoteUrl: episodes[i].coverUrl,
           remoteFetcher: coverFetcher,

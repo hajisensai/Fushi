@@ -11,6 +11,7 @@ library;
 
 import 'package:path/path.dart' as p;
 
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_target.dart';
 import 'package:fushi_engine/media/video/video_filename_parser.dart';
 
 /// 文件夹匹配认的字幕格式（与视频手选字幕白名单 srt/vtt/ass/ssa 一致），顺序即同一份
@@ -118,15 +119,32 @@ _SubtitleName? _splitSubtitleName(String rawName) {
 String _skeleton(String name) =>
     name.toLowerCase().replaceAll(RegExp(r'\d+'), '#');
 
+/// 字幕标记 [tag] 是不是目标语言 [langCode]（语言标签，`ja` / `zh-Hant` …）。
+/// `zh-Hans` / `ja_JP` / `chs&jpn`：任一分段是目标语言即算；目标是带书写系统的中文时，
+/// 标记写明了相反的书写系统就不算（`zh-Hant` 的视频不认 `.chs`）。
 bool _tagMatchesLanguage(String? tag, String langCode) {
   if (tag == null) return false;
-  final String lang = langCode.toLowerCase();
-  if (lang.isEmpty) return false;
-  final Set<String> aliases = _languageTagAliases[lang] ?? <String>{lang};
+  final SubtitleLanguageTarget? target = SubtitleLanguageTarget.parse(langCode);
+  if (target == null) return false;
+  final Set<String> aliases =
+      _languageTagAliases[target.code] ?? <String>{target.code};
   final String lower = tag.toLowerCase();
-  if (aliases.contains(lower)) return true;
-  // `zh-Hans` / `ja_JP` / `chs&jpn`：任一分段是学习语言即算。
-  return lower.split(RegExp(r'[-_&]')).any(aliases.contains);
+  final List<String> segments = <String>[
+    lower,
+    ...lower.split(RegExp(r'[-_&]')),
+  ];
+  final bool sameLanguage =
+      segments.any(aliases.contains) ||
+      matchSubtitleTarget(target, languageTag: lower) !=
+          SubtitleTargetMatch.none;
+  if (!sameLanguage) return false;
+  final ChineseScript? want = target.script;
+  if (want == null) return true;
+  final ChineseScript? got = <ChineseScript?>[
+    for (final String s in <String>[lower, ...lower.split('&')])
+      chineseScriptOfLanguageTag(s),
+  ].whereType<ChineseScript>().firstOrNull;
+  return got == null || got == want;
 }
 
 List<_SubtitleName> _subtitleNames(List<String> fileNames) => <_SubtitleName>[

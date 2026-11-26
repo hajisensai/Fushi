@@ -3,6 +3,7 @@ import 'dart:convert';
 
 import 'package:collection/collection.dart';
 import 'package:material_ui/material_ui.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/components/fushi_dialog_color_picker.dart';
 import 'package:flutter_inappwebview/flutter_inappwebview.dart';
 import 'package:fushi/src/utils/components/fushi_bottom_action_bar.dart';
@@ -609,15 +610,14 @@ class _LapisStyleEditorPageState extends State<LapisStyleEditorPage> {
         title: t.anki_lapis_visual_editor,
         actions: <Widget>[
           if (!_wideLayout)
-            FushiIconButtonControl.filledTonal(
+            // 页头动作用 [FushiIconButton]（切换态走 selected）：收纳判据只认它。
+            FushiIconButton(
               tooltip: t.anki_lapis_visual_preview,
-              isSelected: !_previewCollapsed,
-              icon: FushiIcon(
-                _previewCollapsed
-                    ? FushiIcons.visibilityOff
-                    : FushiIcons.visibility,
-              ),
-              onPressed: () =>
+              selected: !_previewCollapsed,
+              icon: _previewCollapsed
+                  ? FushiIcons.visibilityOff
+                  : FushiIcons.visibility,
+              onTap: () =>
                   setState(() => _previewCollapsed = !_previewCollapsed),
             ),
           FushiSegmentedButton<bool>(

@@ -311,8 +311,9 @@ void main() {
           completedAt: 1700000500000,
         ),
       ],
-      // 写侧唯一入口只收可解码字节（BUG-2496）：JPEG 须以 FF D9 收尾。
-      coverBytes: fakeJpegBytes(fill: 0xE0),
+      // 写侧唯一入口只收可解码字节（BUG-2496）；远端卡片还会经 RemoteCoverImage
+      // 真的解码同一份字节，只有外形合法的假图会抛 Invalid image data，所以用真图。
+      coverBytes: decodableTinyPngBytes(),
     );
     await tester.pumpWidget(buildApp(client: client));
     await tester.pumpAndSettle();
@@ -338,7 +339,7 @@ void main() {
       'http://x/videos/remote-clip/cover',
     }, reason: 'host 有 coverUrl 时先拉 host 封面');
     expect(row.coverPath, isNotNull);
-    expect(File(row.coverPath!).readAsBytesSync(), fakeJpegBytes(fill: 0xE0));
+    expect(File(row.coverPath!).readAsBytesSync(), decodableTinyPngBytes());
     await releaseCoverFileHandles(tester);
   });
 
@@ -358,7 +359,7 @@ void main() {
           coverUrl: 'http://x/videos/remote-clip/cover',
         ),
       ],
-      coverBytes: fakeJpegBytes(fill: 0xE0),
+      coverBytes: decodableTinyPngBytes(),
     );
     await tester.pumpWidget(buildApp(client: client));
     await tester.pumpAndSettle();
@@ -384,7 +385,7 @@ void main() {
     final VideoBookRow? row = await repo.getByBookUid('remote-clip');
     expect(row, isNotNull);
     expect(row!.coverPath, isNotNull);
-    expect(File(row.coverPath!).readAsBytesSync(), fakeJpegBytes(fill: 0xE0));
+    expect(File(row.coverPath!).readAsBytesSync(), decodableTinyPngBytes());
   });
 }
 

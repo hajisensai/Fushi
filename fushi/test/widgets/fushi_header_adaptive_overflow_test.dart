@@ -478,4 +478,81 @@ void main() {
     );
     expect(mid.contains('E'), isFalse, reason: '最低优先级先收');
   });
+
+  // BUG-5479：视频库页头「⋯」里的刷新项在宽窗被平铺成独立图标钮后，页面又为
+  // 「刷新进行中」另挂一颗同图标的按钮，点一下刷新就并排出现两颗。进行中状态
+  // 改由菜单项自己的 [FushiHeaderMoreEntry.busy] 表达：平铺时就是同一颗置灰，
+  // 窄位上也恒外露（进行中的状态不藏进「⋯」），留在菜单里置灰。
+  group('页面「⋯」项的 busy（BUG-5479）', () {
+    const ValueKey<String> refreshKey = ValueKey<String>('page-refresh');
+
+    Widget pageMore({required bool busy, required List<String> tapped}) =>
+        FushiHeaderMoreButton(
+          key: const ValueKey<String>('page-more-anchor'),
+          buttonKey: const ValueKey<String>('page-more'),
+          entries: <FushiHeaderMoreEntry>[
+            FushiHeaderMoreEntry(
+              key: refreshKey,
+              icon: Icons.refresh_outlined,
+              label: 'Refresh',
+              busy: busy,
+              onSelected: () => tapped.add('Refresh'),
+            ),
+          ],
+        );
+
+    FushiIconButton refreshButton(WidgetTester tester) =>
+        tester.widget<FushiIconButton>(find.byKey(refreshKey));
+
+    testWidgets('宽窗：空闲与进行中都只有一颗刷新，进行中置灰', (WidgetTester tester) async {
+      final List<String> tapped = <String>[];
+      await tester.pumpWidget(
+        host(
+          width: 800,
+          actions: <Widget>[pageMore(busy: false, tapped: tapped)],
+        ),
+      );
+      await tester.pump();
+      expect(find.byIcon(Icons.refresh_outlined), findsOneWidget);
+      expect(refreshButton(tester).enabled, isTrue);
+
+      await tester.pumpWidget(
+        host(
+          width: 800,
+          actions: <Widget>[pageMore(busy: true, tapped: tapped)],
+        ),
+      );
+      await tester.pump();
+      expect(
+        find.byIcon(Icons.refresh_outlined),
+        findsOneWidget,
+        reason: '进行中不再并排出现第二颗刷新',
+      );
+      expect(refreshButton(tester).enabled, isFalse, reason: '进行中不可重入');
+      await tester.tap(find.byKey(refreshKey), warnIfMissed: false);
+      await tester.pump();
+      expect(tapped, isEmpty);
+    });
+
+    testWidgets('窄位：进行中的项恒外露，空闲时照常先收进「⋯」', (WidgetTester tester) async {
+      final List<String> tapped = <String>[];
+      List<Widget> actions({required bool busy}) => <Widget>[
+        ...buildActions(tapped),
+        pageMore(busy: busy, tapped: tapped),
+      ];
+      await tester.pumpWidget(host(width: 200, actions: actions(busy: false)));
+      await tester.pump();
+      expect(
+        find.byKey(refreshKey),
+        findsNothing,
+        reason: '空闲时页面「⋯」的项优先级最低，窄位先收',
+      );
+
+      await tester.pumpWidget(host(width: 200, actions: actions(busy: true)));
+      await tester.pump();
+      expect(find.byKey(refreshKey), findsOneWidget, reason: '进行中恒外露');
+      expect(find.byIcon(Icons.refresh_outlined), findsOneWidget);
+      expect(refreshButton(tester).enabled, isFalse);
+    });
+  });
 }

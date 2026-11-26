@@ -16,6 +16,8 @@ import 'package:fushi_engine/media/discovery/discovery_models.dart'
 import 'package:fushi_engine/media/discovery/import/discovery_import_plan.dart'
     show DiscoveryImportBlockedException;
 import 'package:fushi_engine/media/external_provider.dart';
+import 'package:fushi_engine/media/media_extensions.dart'
+    show isAudioOnlyMediaPath;
 import 'package:fushi_engine/media/metadata/credential_redaction.dart';
 import 'package:fushi_engine/media/torrent/anime_download_config.dart';
 import 'package:fushi_engine/media/torrent/download_save_root.dart'
@@ -447,6 +449,28 @@ String? resolveManagedPathWithinRoot({
   if (!p.isWithin(normalizedRoot, resolved)) return null;
   return resolved;
 }
+
+/// 一条已整理任务里随发布的纯音频（BD 附带的 CD / OST / 特典 CD）在本机的绝对路径。
+///
+/// 整理只搬视频和原盘（种子 moveStorage 到受管来源根 [sourceRoot]），其余文件的
+/// `currentRelativePath` 是来源根下的相对路径。取选中、没被跳过、扩展名是纯音频
+/// （[isAudioOnlyMediaPath]）的文件行；视频 / 盘内文件不算。路径越出来源根的丢弃。
+/// 纯函数，不碰文件系统（存在性由调用方查）。
+List<String> videoDownloadJobReleaseAudioPaths({
+  required String sourceRoot,
+  required Iterable<VideoDownloadJobFileRow> files,
+}) => <String>[
+  for (final VideoDownloadJobFileRow row in files)
+    if (row.selected &&
+        row.kind == 'other' &&
+        row.status != VideoDownloadJobFileStatus.skipped &&
+        row.status != VideoDownloadJobFileStatus.failed &&
+        isAudioOnlyMediaPath(row.currentRelativePath))
+      ?resolveManagedPathWithinRoot(
+        root: sourceRoot,
+        relativePath: row.currentRelativePath,
+      ),
+];
 
 /// Thrown when a delete request removed the durable job but could not remove
 /// every managed file: on Windows an open player or the download engine still
@@ -1056,6 +1080,8 @@ class VideoDownloadPipelineService {
     this.skipDownloadExtras,
     this.defaultTargetSourceId,
     this.onDiscCollectionImported,
+    this.onReleaseAudioImported,
+    this.onReleaseCompanionsRelocated,
     DateTime Function()? now,
   }) : assert(
          subtitleRegistry == null || subtitleRegistrySource == null,
@@ -1139,6 +1165,23 @@ class VideoDownloadPipelineService {
   /// 写入走 app 层服务，与扫描器同一份）。null（服务端 / 测试）= 不补，合集照常
   /// 回落刮削图。
   final DiscCollectionReadyHook? onDiscCollectionImported;
+
+  /// 任务入库后，种子里随发布的纯音频（BD 附带的 CD / OST / 特典 CD）交给音乐库：参数是
+  /// 任务的受管视频来源和这些音频在本机的绝对路径（[videoDownloadJobReleaseAudioPaths]）。
+  ///
+  /// 视频来源扫描会把纯音频交给音乐库，但下载入库不走来源扫描——视频来源没开自动扫描
+  /// 时，新下载的发布里的 CD 永远进不了音乐库。null（服务端 / 测试）= 不交接。
+  /// 端口抛的异常只记日志，不回滚入库（视频已经进库，下次 [replayReleaseAudioHandOff]
+  /// 还会再交一次）。
+  final Future<void> Function(MediaSourceRow source, List<String> audioPaths)?
+  onReleaseAudioImported;
+
+  /// 存量补搬（[relocateStrandedReleaseCompanions]）把外挂件从原发布目录搬走后调用，
+  /// 参数是它们**搬走前**的本机绝对路径。早先滞留在原位、旁边没有视频的整片外挂音轨
+  /// 被视频来源扫描当纯音频收进了音乐库，app 据此重扫那些曲目所在的音乐来源，把
+  /// 已不在的曲目对账掉。抛错只记日志。
+  final Future<void> Function(List<String> movedFromPaths)?
+  onReleaseCompanionsRelocated;
 
   /// 订阅新集提醒的配图抽取（默认 [extractVideoCover]，ffmpeg 抽帧）；测试注入。
   final VideoCoverExtractor _coverExtractor;
@@ -2378,7 +2421,23 @@ class VideoDownloadPipelineService {
     if (_disposed || _timer != null) return;
     wake();
     _timer = Timer.periodic(pollInterval, (_) => wake());
+    if (!_companionRepairStarted) {
+      _companionRepairStarted = true;
+      // 存量修复（外挂件早先不跟视频走）：每个进程启动跑一次，失败只记日志。
+      unawaited(
+        relocateStrandedReleaseCompanions().then(
+          (_) {},
+          onError: (Object error, StackTrace stack) => engineLog.log(
+            'VideoDownloadCompanions',
+            'Stranded release companion repair failed: $error',
+            stack,
+          ),
+        ),
+      );
+    }
   }
+
+  bool _companionRepairStarted = false;
 
   void wake() {
     if (_disposed || _running) return;
@@ -3304,6 +3363,10 @@ class VideoDownloadPipelineService {
         await _recordObservedSavePath(job, remoteSourceRoot);
       }
       await _markFilesOrganized(rows);
+      // 崩溃落在「视频已改名、外挂件还没改」之间时，重算的计划已配不上外挂件
+      // （两者不在同一目录了），按整理前的位置补搬。
+      await _relocateCompanionsDuringOrganize(job, binding.backend, hash);
+      rows = await database.getVideoDownloadJobFiles(job.jobId);
       await _advanceToSubtitle(job, rows);
       return;
     }
@@ -3405,9 +3468,315 @@ class VideoDownloadPipelineService {
     // `currentRelativePath`（已是来源根下的新相对路径）拼回旧下载目录，任务删除 /
     // 打开位置都会指向一个不存在的地方（BUG-3540）。
     await _recordObservedSavePath(job, planned.remoteSourceRoot);
+    await _relocateCompanionsDuringOrganize(job, binding.backend, hash);
     rows = await database.getVideoDownloadJobFiles(job.jobId);
     await _markFilesOrganized(rows);
     await _advanceToSubtitle(job, rows);
+  }
+
+  /// 整理阶段（持租约）里的外挂件补搬：失败只记日志，不让附属文件卡住任务。
+  Future<void> _relocateCompanionsDuringOrganize(
+    VideoDownloadJobRow job,
+    TorrentBackend backend,
+    String torrentId,
+  ) async {
+    try {
+      await _relocateStrandedCompanions(
+        job,
+        backend: backend,
+        torrentId: torrentId,
+        checkpoint: _ensureLeaseHeld,
+      );
+    } on VideoDownloadLeaseLost {
+      rethrow;
+    } on Object catch (error, stack) {
+      engineLog.log(
+        'VideoDownloadCompanions',
+        'Failed to relocate release companions of job ${job.jobId}: $error',
+        stack,
+      );
+    }
+  }
+
+  /// 存量修复：已整理过的任务里，随视频发布、却还留在原发布目录的外挂字幕 / 外挂
+  /// 音轨（整理器早先只排视频，外挂件原地不动），按与整理同一套配对与落位规则
+  /// （[planVideoReleaseCompanions]）补搬到视频旁边。流水线 [start] 时跑一次；
+  /// 幂等，可重复跑。返回本次搬动的文件数。
+  ///
+  /// 只看「整理已完成、没有 worker 会再改文件」的任务：已完成，或停在整理之后的
+  /// 阶段（字幕 / 入库 / 刮削，那些阶段不改名）。没有后端会话（种子已摘）、后端
+  /// 绑定对不上、视频已不在磁盘上的，跳过并记日志，不硬搬。
+  Future<int> relocateStrandedReleaseCompanions() async {
+    int moved = 0;
+    final List<String> movedFrom = <String>[];
+    for (final VideoDownloadJobRow job
+        in await database.getVideoDownloadJobs()) {
+      if (_disposed) break;
+      if (!videoDownloadJobUsesManagedSource(job)) continue;
+      if (job.lifecycle == VideoDownloadJobLifecycle.cancelled) continue;
+      if (job.lifecycle != VideoDownloadJobLifecycle.completed &&
+          !const <String>{
+            VideoDownloadJobStage.subtitle,
+            VideoDownloadJobStage.import,
+            VideoDownloadJobStage.scrape,
+          }.contains(job.stage)) {
+        continue;
+      }
+      try {
+        // 先只看行：没有可配对的滞留外挂件就不碰后端（绝大多数任务）。
+        final List<VideoDownloadJobFileRow> rows = await database
+            .getVideoDownloadJobFiles(job.jobId);
+        if (_strandedCompanionMoves(job, rows).isEmpty) continue;
+        final String torrentId = (job.backendTaskId ?? job.torrentHash ?? '')
+            .trim();
+        if (torrentId.isEmpty) {
+          engineLog.log(
+            'VideoDownloadCompanions',
+            'Skip job ${job.jobId}: stranded release companions but the '
+                'torrent is no longer attached to a backend',
+          );
+          continue;
+        }
+        final VideoDownloadBackendBinding? binding = await backendResolver(job);
+        _validateBackendBinding(job, binding);
+        moved += await _relocateStrandedCompanions(
+          job,
+          backend: binding!.backend,
+          torrentId: torrentId,
+          movedFrom: movedFrom,
+        );
+      } on Object catch (error, stack) {
+        engineLog.log(
+          'VideoDownloadCompanions',
+          'Skip job ${job.jobId}: failed to relocate release companions: '
+              '$error',
+          stack,
+        );
+      }
+    }
+    final Future<void> Function(List<String>)? hook =
+        onReleaseCompanionsRelocated;
+    if (hook != null && movedFrom.isNotEmpty) {
+      try {
+        await hook(movedFrom);
+      } catch (error, stack) {
+        engineLog.log(
+          'VideoDownloadPipelineService.onReleaseCompanionsRelocated',
+          error,
+          stack,
+        );
+      }
+    }
+    return moved;
+  }
+
+  /// 把 [job] 滞留在原位的外挂件经后端改名搬到视频旁（[_strandedCompanionMoves]），
+  /// 与整理同一条 `backend.renameFile` 路径（种子继续做种）。返回搬动数。
+  ///
+  /// 幂等：后端里的文件已经叫目标名（上一轮改名成功、没来得及写库）就只补写文件行；
+  /// 文件既不在原名也不在目标名、视频已不在磁盘上、目标已被别的文件占用的，跳过并记
+  /// 日志。[checkpoint] 在持租约的调用方里每步核一次租约。
+  Future<int> _relocateStrandedCompanions(
+    VideoDownloadJobRow job, {
+    required TorrentBackend backend,
+    required String torrentId,
+    void Function()? checkpoint,
+    List<String>? movedFrom,
+  }) async {
+    final List<VideoDownloadJobFileRow> rows = await database
+        .getVideoDownloadJobFiles(job.jobId);
+    final List<VideoCompanionMove> moves = _strandedCompanionMoves(job, rows);
+    if (moves.isEmpty) return 0;
+    final Map<int, VideoDownloadJobFileRow> byIndex =
+        <int, VideoDownloadJobFileRow>{
+          for (final VideoDownloadJobFileRow row in rows)
+            if (row.backendFileIndex != null) row.backendFileIndex!: row,
+        };
+    final Map<int, String> backendNames = <int, String>{
+      for (final TorrentFileEntry file in await backend.listFiles(torrentId))
+        file.index: _portableRelative(file.name),
+    };
+    checkpoint?.call();
+    int moved = 0;
+    for (final VideoCompanionMove move in moves) {
+      checkpoint?.call();
+      final VideoDownloadJobFileRow? owner =
+          byIndex[move.ownerBackendFileIndex];
+      final VideoDownloadJobFileRow? row = byIndex[move.backendFileIndex];
+      if (owner == null || row == null) continue;
+      final String ownerPath = owner.finalAbsolutePath!;
+      if (!await File(ownerPath).exists()) {
+        engineLog.log(
+          'VideoDownloadCompanions',
+          'Skip ${move.originalRelativePath} of job ${job.jobId}: its video '
+              'is no longer on disk ($ownerPath)',
+        );
+        continue;
+      }
+      // 来源根 = 视频落位路径去掉它的目标相对路径（整理后种子的保存位置）。
+      final String root = _stripRelative(
+        ownerPath,
+        _portableRelative(owner.targetRelativePath!),
+      );
+      final String finalPath = p.normalize(
+        p.joinAll(<String>[root, ...move.targetRelativePath.split('/')]),
+      );
+      final String? backendName = backendNames[move.backendFileIndex];
+      final bool alreadyRenamed = backendName == move.targetRelativePath;
+      if (!alreadyRenamed) {
+        if (backendName != _portableRelative(move.originalRelativePath)) {
+          engineLog.log(
+            'VideoDownloadCompanions',
+            'Skip ${move.originalRelativePath} of job ${job.jobId}: the '
+                'backend reports it as ${backendName ?? '<missing>'}',
+          );
+          continue;
+        }
+        if (await File(finalPath).exists()) {
+          engineLog.log(
+            'VideoDownloadCompanions',
+            'Skip ${move.originalRelativePath} of job ${job.jobId}: target '
+                'already exists ($finalPath)',
+          );
+          continue;
+        }
+        final TorrentStorageResult renamed = await backend.renameFile(
+          torrentId,
+          move.backendFileIndex,
+          move.targetRelativePath,
+        );
+        checkpoint?.call();
+        if (!renamed.ok) {
+          engineLog.log(
+            'VideoDownloadCompanions',
+            'Failed to move ${move.originalRelativePath} of job ${job.jobId}: '
+                '${renamed.error ?? 'backend file rename failed'}',
+          );
+          continue;
+        }
+      }
+      await database.updateVideoDownloadJobFile(
+        row.id,
+        VideoDownloadJobFilesCompanion(
+          currentRelativePath: Value<String>(move.targetRelativePath),
+          targetRelativePath: Value<String?>(move.targetRelativePath),
+          finalAbsolutePath: Value<String?>(finalPath),
+          kind: const Value<String>(videoDownloadCompanionFileKind),
+          status: const Value<String>(VideoDownloadJobFileStatus.organized),
+          updatedAt: Value<int>(_now().millisecondsSinceEpoch),
+        ),
+      );
+      // 上一轮已改名、没来得及写库的也报：那一轮的通知同样没发出去。
+      movedFrom?.add(
+        p.normalize(
+          p.joinAll(<String>[
+            root,
+            ..._portableRelative(move.originalRelativePath).split('/'),
+          ]),
+        ),
+      );
+      moved++;
+    }
+    return moved;
+  }
+
+  /// 种子内相对路径统一成 `/` 分隔、去掉开头的分隔符。
+  static String _portableRelative(String value) =>
+      value.replaceAll(r'\', '/').replaceFirst(RegExp(r'^/+'), '');
+
+  /// [absolute] 去掉结尾的相对路径 [relative]（`/` 分隔）后的目录。
+  static String _stripRelative(String absolute, String relative) {
+    String dir = p.normalize(absolute);
+    final int depth = relative
+        .split('/')
+        .where((String s) => s.isNotEmpty)
+        .length;
+    for (int i = 0; i < depth; i++) {
+      dir = p.dirname(dir);
+    }
+    return dir;
+  }
+
+  /// [rows] 里还留在原位、能配上一个已落位视频的外挂件（纯计算，不碰磁盘 / 后端）。
+  ///
+  /// 视频行取 `video` / `extra`（特典视频的外挂字幕同样跟走）且已落位（当前路径 =
+  /// 目标路径）；配对按它们**整理前**的位置（`originalRelativePath`）。候选是选中的、
+  /// 当前路径仍是原路径的行，且二者之一：没有整理目标（整理器早先不排外挂件的存量
+  /// 任务），或是已落过外挂件意图（[videoDownloadCompanionFileKind]、目标 ≠ 当前）却
+  /// 没改成名的行——整理在「视频已改名、外挂件还没改」之间崩溃后，重算的计划配不上
+  /// 外挂件，旧意图留在行上，不认它就永远滞留。这类行自己的旧目标不算占用。
+  static List<VideoCompanionMove> _strandedCompanionMoves(
+    VideoDownloadJobRow job,
+    List<VideoDownloadJobFileRow> rows,
+  ) {
+    const String Function(String) norm = _portableRelative;
+    final List<VideoCompanionAnchor> videos = <VideoCompanionAnchor>[
+      for (final VideoDownloadJobFileRow row in rows)
+        if ((row.kind == 'video' || row.kind == 'extra') &&
+            row.selected &&
+            row.backendFileIndex != null &&
+            row.targetRelativePath != null &&
+            (row.finalAbsolutePath?.trim().isNotEmpty ?? false) &&
+            norm(row.currentRelativePath) == norm(row.targetRelativePath!))
+          VideoCompanionAnchor(
+            backendFileIndex: row.backendFileIndex!,
+            sourceRelativePath: row.originalRelativePath,
+            targetRelativePath: norm(row.targetRelativePath!),
+          ),
+    ];
+    if (videos.isEmpty) return const <VideoCompanionMove>[];
+    bool unmovedIntent(VideoDownloadJobFileRow row) =>
+        row.kind == videoDownloadCompanionFileKind &&
+        row.targetRelativePath != null &&
+        norm(row.targetRelativePath!) != norm(row.currentRelativePath);
+    final List<VideoDownloadJobFileRow> candidateRows =
+        <VideoDownloadJobFileRow>[
+          for (final VideoDownloadJobFileRow row in rows)
+            if (row.kind != 'video' &&
+                row.kind != 'extra' &&
+                row.selected &&
+                row.backendFileIndex != null &&
+                (row.targetRelativePath == null || unmovedIntent(row)) &&
+                norm(row.currentRelativePath) ==
+                    norm(row.originalRelativePath) &&
+                videoReleaseCompanionKindOf(row.originalRelativePath) != null)
+              row,
+        ];
+    if (candidateRows.isEmpty) return const <VideoCompanionMove>[];
+    final Set<int> candidateIds = <int>{
+      for (final VideoDownloadJobFileRow row in candidateRows) row.id,
+    };
+    final List<VideoCompanionCandidate> candidates = <VideoCompanionCandidate>[
+      for (final VideoDownloadJobFileRow row in candidateRows)
+        VideoCompanionCandidate(
+          backendFileIndex: row.backendFileIndex!,
+          relativePath: row.originalRelativePath,
+        ),
+    ];
+    final List<String?> persistedTargets = <String?>[
+      for (final VideoDownloadJobFileRow row in rows) row.targetRelativePath,
+    ];
+    return planVideoReleaseCompanions(
+      videos: videos,
+      candidates: candidates,
+      reservedTargets: <String>[
+        for (final VideoDownloadJobFileRow row in rows) ...<String>[
+          norm(row.currentRelativePath),
+          if (row.targetRelativePath case final String target
+              when !candidateIds.contains(row.id))
+            norm(target),
+        ],
+      ],
+      // 非法字符替身沿用这条任务落过的意图（与视频同一套，见
+      // [videoOrganizationKeepsLegacyNames]，意图已落过，不看磁盘）。
+      legacyUnderscoreNames: videoOrganizationKeepsLegacyNames(
+        title: job.title,
+        year: job.year,
+        persistedTargets: persistedTargets,
+        legacyRootExists: false,
+        currentRootExists: false,
+      ),
+    );
   }
 
   /// 手动「按域入库」任务的 organize：不重命名、不搬进受管视频来源，只把后端
@@ -3756,8 +4125,12 @@ class VideoDownloadPipelineService {
           // [isVideoDownloadSiblingWorkRow]）。
           // 原盘里的文件（BUG-4245）不是散装视频：`other`，入库按整盘走
           // （[videoDownloadJobDiscs] 从路径认回盘）。
+          // 随视频发布的外挂字幕 / 外挂音轨：[videoDownloadCompanionFileKind]，
+          // 不当视频入库、不配字幕、不刮削。
           kind: Value<String>(
-            file.disc != null
+            file.companion != null
+                ? videoDownloadCompanionFileKind
+                : file.disc != null
                 ? 'other'
                 : file.targetRelativePath.contains('/Extras/') &&
                       !file.siblingWork
@@ -4815,6 +5188,7 @@ class VideoDownloadPipelineService {
       );
     }
     database.notifyVideoLibraryChanged();
+    if (source != null) await _handOffReleaseAudio(source, allRows, job.jobId);
     // 已确认的 MAL/TMDB 身份直接刮削；无身份作品留给媒体库自动识别或人工确认。
     // 什么都没进库（只有 BD 镜像 / 读不出标题的半张盘：文件原样落位、不入库，
     // BUG-4245）时也没有可刮的作品，任务按「已落位、未入库」完成。
@@ -4922,6 +5296,72 @@ class VideoDownloadPipelineService {
   /// 读取兼容。与库内补刮同一判据 [videoDownloadJobConfirmedLookup]。
   VideoMetadataLookup? _confirmedMetadataLookup(VideoDownloadJobRow job) =>
       videoDownloadJobConfirmedLookup(job);
+
+  /// 把一条任务随发布的纯音频交给音乐库（[onReleaseAudioImported]）。没有钩子 / 没有
+  /// 纯音频时什么也不做；钩子抛错只记日志。
+  Future<void> _handOffReleaseAudio(
+    MediaSourceRow source,
+    List<VideoDownloadJobFileRow> rows,
+    String jobId,
+  ) async {
+    final Future<void> Function(MediaSourceRow, List<String>)? hook =
+        onReleaseAudioImported;
+    if (hook == null) return;
+    final List<String> audio = videoDownloadJobReleaseAudioPaths(
+      sourceRoot: source.rootPath,
+      files: rows,
+    );
+    if (audio.isEmpty) return;
+    try {
+      await hook(source, audio);
+    } catch (error, stack) {
+      engineLog.log(
+        'VideoDownloadPipelineService.onReleaseAudioImported($jobId)',
+        error,
+        stack,
+      );
+    }
+  }
+
+  /// 已入库任务的发布音频补交一遍（启动时调一次）：钩子是后加的，之前入库的任务里的
+  /// CD 从没交过；交接本身幂等（已被音乐来源覆盖的目录不再登记），重复调用无副作用。
+  /// 只看非 legacy、受管来源还在、至少有一个文件已入库的任务。返回交出音频的任务数。
+  Future<int> replayReleaseAudioHandOff() async {
+    if (onReleaseAudioImported == null) return 0;
+    int handed = 0;
+    for (final VideoDownloadJobRow job
+        in await database.getVideoDownloadJobs()) {
+      if (job.organizationPolicy == 'legacy') continue;
+      if (discoveryKindOfOrganizationPolicy(job.organizationPolicy) != null ||
+          downloadOnlyKindOfOrganizationPolicy(job.organizationPolicy) !=
+              null) {
+        continue;
+      }
+      final int? sourceId = job.targetSourceId;
+      if (sourceId == null) continue;
+      final MediaSourceRow? source = await database.getMediaSourceById(
+        sourceId,
+      );
+      if (source == null || source.mediaKind != 'video') continue;
+      final List<VideoDownloadJobFileRow> rows = await database
+          .getVideoDownloadJobFiles(job.jobId);
+      if (!rows.any(
+        (VideoDownloadJobFileRow r) =>
+            r.status == VideoDownloadJobFileStatus.imported,
+      )) {
+        continue;
+      }
+      if (videoDownloadJobReleaseAudioPaths(
+        sourceRoot: source.rootPath,
+        files: rows,
+      ).isEmpty) {
+        continue;
+      }
+      await _handOffReleaseAudio(source, rows, job.jobId);
+      handed++;
+    }
+    return handed;
+  }
 
   Future<void> _notifyDownloadOnlyCompleted(VideoDownloadJobRow job) async {
     final Future<void> Function(DiscoveryMediaKind, List<String>)? hook =

@@ -80,7 +80,28 @@ class MangaBakaSeries {
     this.artists = const <String>[],
     this.finalVolume,
     this.cover,
+    this.description,
+    this.year,
+    this.startDate,
+    this.rating,
+    this.genres = const <String>[],
   });
+
+  /// 简介纯文本（源站是英文 Markdown，已去掉强调 / 链接标记，见
+  /// [mangaBakaPlainText]）；没有为 null。
+  final String? description;
+
+  /// 连载开始年份。
+  final int? year;
+
+  /// 连载开始日期原文（`published.start_date`，`YYYY-MM-DD`）。
+  final String? startDate;
+
+  /// 综合评分，已从源站的 0~100 归一到 0~10。
+  final double? rating;
+
+  /// 类型（源站 `genres` 蛇形小写，如 `slice_of_life`）。
+  final List<String> genres;
 
   final int id;
 
@@ -171,6 +192,9 @@ class MangaBakaSeries {
       }
     }
     final Object? cover = json['cover'];
+    final Object? published = json['published'];
+    final num? rating = _num(json['rating']);
+    final String? description = _string(json['description']);
     return MangaBakaSeries(
       id: id,
       state: _string(json['state']) ?? 'active',
@@ -187,8 +211,53 @@ class MangaBakaSeries {
       contentRating: _string(json['content_rating'])?.toLowerCase() ?? 'safe',
       finalVolume: _num(json['final_volume']),
       cover: cover is Map ? MangaBakaRawImage.fromJson(cover['raw']) : null,
+      description: description == null ? null : mangaBakaPlainText(description),
+      year: _int(json['year']),
+      startDate: published is Map ? _string(published['start_date']) : null,
+      rating: rating == null || rating <= 0 ? null : rating / 10,
+      genres: _strings(json['genres']),
     );
   }
+}
+
+/// MangaBaka 简介是 Markdown（如结尾的 `*Source: Yen Press, Vol. 1*`）；详情页按纯文本
+/// 显示，这里去掉链接 / 强调 / 标题 / 行内代码标记，保留段落换行。去完为空返回 null。
+String? mangaBakaPlainText(String markdown) {
+  String text = markdown.replaceAll('\r\n', '\n');
+  // [文字](url) → 文字；![alt](url) 图片整个去掉。
+  text = text.replaceAll(RegExp(r'!\[[^\]]*\]\([^)]*\)'), '');
+  text = text.replaceAllMapped(
+    RegExp(r'\[([^\]]+)\]\([^)]*\)'),
+    (Match m) => m.group(1)!,
+  );
+  // 行首标题 / 引用标记。
+  text = text.replaceAll(
+    RegExp(r'^[ \t]*(#{1,6}|>)[ \t]*', multiLine: true),
+    '',
+  );
+  // **粗体** / __粗体__ / *斜体* / _斜体_ / `代码`：只去成对的标记（不动 snake_case
+  // 之类词内下划线）。
+  for (final RegExp pattern in <RegExp>[
+    RegExp(r'\*\*(\S(?:.*?\S)?)\*\*'),
+    RegExp(r'(?<![\w])__(\S(?:.*?\S)?)__(?![\w])'),
+    RegExp(r'\*(\S(?:.*?\S)?)\*'),
+    RegExp(r'(?<![\w])_(\S(?:.*?\S)?)_(?![\w])'),
+    RegExp(r'`([^`]+)`'),
+  ]) {
+    text = text.replaceAllMapped(pattern, (Match m) => m.group(1)!);
+  }
+  text = text
+      .replaceAll(RegExp(r'[ \t]+$', multiLine: true), '')
+      .replaceAll(RegExp(r'\n{3,}'), '\n\n')
+      .trim();
+  return text.isEmpty ? null : text;
+}
+
+/// 源站类型键（`slice_of_life`）→ 展示名（`Slice of life`）。
+String mangaBakaGenreLabel(String genre) {
+  final String spaced = genre.replaceAll('_', ' ').trim();
+  if (spaced.isEmpty) return spaced;
+  return spaced[0].toUpperCase() + spaced.substring(1);
 }
 
 /// `/v1/series/{id}/images` 的一项。

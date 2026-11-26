@@ -67,6 +67,11 @@ class RemoteLibraryCache {
   final int Function() _nowMs;
   final Map<String, _CacheSlot> _slots = <String, _CacheSlot>{};
 
+  /// 按 id 单查回来的条目（[readByIds]），与整份清单槽同一个联合定位符、分表存放：
+  /// 它们只是「清单里的几条」，**不**冒充整份清单——[peek] / [wouldReadImmediately]
+  /// / [read] 从不读这里，库页不会因为详情页查过三集就以为远端只有三集。
+  final Map<String, _ItemSlot> _itemSlots = <String, _ItemSlot>{};
+
   /// 读 [sourceId] 这个来源的 [key] 域列表：命中未过期缓存直接返回；有同槽请求在途
   /// 则复用它（in-flight 去重，解决书架/漫画/首页同帧并发问一样东西）；否则调 [fetch]
   /// 取数。
@@ -124,6 +129,9 @@ class RemoteLibraryCache {
           slot.hasValue = true;
           slot.fetchedAtMs = _nowMs();
           slot.inFlight = null;
+          // 整份清单到手即是这一域的唯一真相：此前按 id 单查的条目作废，之后
+          // [readByIds] 在清单新鲜期内只从清单里取，不会出现两份口径。
+          _itemSlots[_slotKey(sourceId, key)]?.clear();
         }
         return value;
       },
@@ -132,6 +140,171 @@ class RemoteLibraryCache {
         Error.throwWithStackTrace(error, stack);
       },
     );
+  }
+
+  /// stale-while-revalidate 版的 [read]：槽里有**过期**的值时把它作为
+  /// [RemoteLibraryRead.stale] 立即交出，同时照 [read] 的规则取新值
+  /// （[RemoteLibraryRead.fresh]：复用在途请求 / 发起取数）。槽里的值新鲜、或
+  /// 根本没有值、或 [forceRefresh]（用户手动刷新要的就是新清单）时 `stale` 为
+  /// null，调用方等 `fresh`。
+  ///
+  /// 给「清单大、取一次要几十秒」的来源用（媒体服务器整库枚举）：库页先用上一份
+  /// 清单（含冷启动时从磁盘灌进来的，见 [seed]）把卡片画出来，新清单到手再换上。
+  /// `fresh` 失败不会变成无人处理的异步错误（见 [RemoteLibraryRead]）。
+  RemoteLibraryRead<T> readOrRevalidate<T extends Object>({
+    required String sourceId,
+    required String key,
+    required Future<T> Function() fetch,
+    Duration? ttl,
+    bool forceRefresh = false,
+  }) {
+    final _CacheSlot? slot = _slots[_slotKey(sourceId, key)];
+    final T? stale =
+        !forceRefresh &&
+            slot != null &&
+            slot.hasValue &&
+            !_hasFreshValue(slot, ttl)
+        ? slot.value as T
+        : null;
+    final Future<T> fresh = read<T>(
+      sourceId: sourceId,
+      key: key,
+      fetch: fetch,
+      ttl: ttl,
+      forceRefresh: forceRefresh,
+    );
+    return RemoteLibraryRead<T>(stale: stale, fresh: fresh);
+  }
+
+  /// 往**空**槽里放一份已知是旧的值（磁盘上持久化的上一份清单），不发任何请求。
+  ///
+  /// 放进来的值**一律算过期**（取得时刻记为 0）：它只是「上一次已知」的清单，
+  /// 下一次 [readOrRevalidate] / [read] 照样去取新值，[peek] 不带 `maxAge` 时能
+  /// 读到它（BUG-1891 关掉自动列出时仍显示上一份）。槽里已有值（哪怕过期）时
+  /// 不覆盖——内存里的那份不会比磁盘上的旧。
+  void seed<T extends Object>({
+    required String sourceId,
+    required String key,
+    required T value,
+  }) {
+    final _CacheSlot slot = _slots.putIfAbsent(
+      _slotKey(sourceId, key),
+      () => _CacheSlot(),
+    );
+    if (slot.hasValue) return;
+    slot.value = value;
+    slot.hasValue = true;
+    slot.fetchedAtMs = 0;
+  }
+
+  /// 只读 [sourceId] 的 [key] 域清单里 id 在 [ids] 中的**这几条**，不枚举整库。
+  ///
+  /// 合集详情页只需要它自己的成员；媒体服务器大库的整库枚举要几十秒，打开一个合集
+  /// 不该等它、也不该和它抢（[fetch] 是来源的按 id 批量查询，如
+  /// `RemoteVideoLookup.remoteVideosByIds`）。
+  ///
+  /// 取数顺序：
+  ///  1. 整份清单槽新鲜 → 直接从清单里挑（整份清单是这一域的真相，清单里没有的
+  ///     id 就是没有，不再单查）；**不等**在途的整库请求。
+  ///  2. 否则按条目查单查记录：新鲜的直接用；同一 id 已有在途单查则复用它；其余
+  ///     合成**一次** [fetch]。查回来的条目（含「服务器上没有」）按 id 记下，同样
+  ///     受 [ttl] 与失效约束（[invalidate] / [invalidateSource] / [invalidateAll]
+  ///     一并清掉；整份清单写入时清空，见 [read]）。
+  ///
+  /// 返回按 [ids] 的顺序、去掉服务器上不存在的 id。[fetch] 抛出时不缓存失败，异常
+  /// 原样上抛（与 [read] 同一降级语义）。单查记录不改变整份清单槽的任何状态。
+  Future<List<T>> readByIds<T extends Object>({
+    required String sourceId,
+    required String key,
+    required List<String> ids,
+    required String Function(T item) idOf,
+    required Future<List<T>> Function(List<String> ids) fetch,
+    Duration? ttl,
+  }) async {
+    if (ids.isEmpty) return <T>[];
+    final String slotKey = _slotKey(sourceId, key);
+    final _CacheSlot? listSlot = _slots[slotKey];
+    if (listSlot != null && _hasFreshValue(listSlot, ttl)) {
+      final Map<String, T> byId = <String, T>{
+        for (final T item in listSlot.value! as List<T>) idOf(item): item,
+      };
+      return <T>[
+        for (final String id in ids)
+          if (byId[id] case final T item) item,
+      ];
+    }
+
+    final _ItemSlot slot = _itemSlots.putIfAbsent(slotKey, () => _ItemSlot());
+    final int now = _nowMs();
+    final int ttlMs = (ttl ?? defaultTtl).inMilliseconds;
+    // 本次调用自己的结果表：先装进调用时刻新鲜的记录，再并入在途 / 新发的批次。
+    // 不在结束时回读 [slot]——期间被失效清掉也照样把这次查到的交给调用方（与
+    // [read]「作废的结果不写回、但仍交给自己的调用方」同一口径）。
+    final Map<String, T?> resolved = <String, T?>{};
+    final List<Future<Map<String, Object?>>> joined =
+        <Future<Map<String, Object?>>>[];
+    final List<String> missing = <String>[];
+    for (final String id in ids.toSet()) {
+      final _ItemEntry? entry = slot.entries[id];
+      if (entry != null && now - entry.fetchedAtMs < ttlMs) {
+        resolved[id] = entry.value as T?;
+        continue;
+      }
+      final _ItemBatch? batch = slot.inFlight[id];
+      if (batch != null &&
+          now - batch.startedAtMs < inFlightTtl.inMilliseconds) {
+        if (!joined.contains(batch.future)) joined.add(batch.future);
+        continue;
+      }
+      missing.add(id);
+    }
+
+    if (missing.isNotEmpty) {
+      final int generation = slot.generation;
+      final Future<Map<String, Object?>> future = fetch(missing).then((
+        List<T> found,
+      ) {
+        final Map<String, Object?> byId = <String, Object?>{
+          for (final String id in missing) id: null,
+          for (final T item in found) idOf(item): item,
+        };
+        if (slot.generation == generation) {
+          final int at = _nowMs();
+          for (final String id in missing) {
+            slot.entries[id] = _ItemEntry(byId[id], at);
+          }
+        }
+        return byId;
+      });
+      final _ItemBatch batch = _ItemBatch(future, now);
+      for (final String id in missing) {
+        slot.inFlight[id] = batch;
+      }
+      // 只有本调用在等时，失败不能变成「无人处理的异步错误」；复用者照常收到错误。
+      unawaited(future.then<void>((_) {}, onError: (Object _) {}));
+      void release() {
+        for (final String id in missing) {
+          if (identical(slot.inFlight[id], batch)) slot.inFlight.remove(id);
+        }
+      }
+
+      try {
+        final Map<String, Object?> mine = await future;
+        mine.forEach((String id, Object? value) => resolved[id] = value as T?);
+      } finally {
+        release();
+      }
+    }
+    for (final Future<Map<String, Object?>> other in joined) {
+      final Map<String, Object?> theirs = await other;
+      for (final String id in ids) {
+        if (theirs.containsKey(id)) resolved[id] = theirs[id] as T?;
+      }
+    }
+    return <T>[
+      for (final String id in ids)
+        if (resolved[id] case final T item) item,
+    ];
   }
 
   /// BUG-1567：只复用「还在信任期内」的在途请求；超过 [inFlightTtl] 的视为挂死，
@@ -182,12 +355,15 @@ class RemoteLibraryCache {
   /// activity 按 limit 分槽，调用方根本枚举不全。
   void invalidateSource(String sourceId) {
     final String prefix = '$sourceId|';
-    for (final String slotKey in _slots.keys.toList()) {
+    for (final String slotKey in <String>{..._slots.keys, ..._itemSlots.keys}) {
       if (slotKey.startsWith(prefix)) _invalidateSlot(slotKey);
     }
   }
 
   void _invalidateSlot(String slotKey) {
+    // 按 id 单查的条目与整份清单同生共死：清单作废的信号（下拉刷新、换线路、
+    // 已播放变更……）对单查记录同样成立。
+    _itemSlots[slotKey]?.clear();
     final _CacheSlot? slot = _slots[slotKey];
     if (slot == null) return;
     slot.generation++;
@@ -200,7 +376,7 @@ class RemoteLibraryCache {
   /// 作废全部槽（所有来源、所有域）。用于对端换人 / 配对变更 / 同步跑完这类
   /// 「远端库整体可能已变」的信号。
   void invalidateAll() {
-    for (final String slotKey in _slots.keys.toList()) {
+    for (final String slotKey in <String>{..._slots.keys, ..._itemSlots.keys}) {
       _invalidateSlot(slotKey);
     }
   }
@@ -236,6 +412,29 @@ class RemoteLibraryCache {
   }
 }
 
+/// [RemoteLibraryCache.readOrRevalidate] 的结果：可以先画的旧值 + 新值。
+///
+/// 构造时就给 [fresh] 挂上一个吞错监听：交出 [stale] 时调用方可能根本不等
+/// [fresh]，等的调用方也要隔一个异步间隙才挂上 `await`——没有这个监听，取数失败
+/// 会先被当成「无人处理的异步错误」抛进 Zone。真正等它的调用方照常收到错误。
+@immutable
+class RemoteLibraryRead<T extends Object> {
+  RemoteLibraryRead({required this.stale, required this.fresh}) {
+    unawaited(fresh.then<void>((_) {}, onError: (Object _) {}));
+  }
+
+  /// 已经到手的值（不再有新值要等）。
+  RemoteLibraryRead.settled(T value)
+    : stale = null,
+      fresh = Future<T>.value(value);
+
+  /// 过期但可以先显示的值；null = 没有可先显示的，等 [fresh]。
+  final T? stale;
+
+  /// 新值（复用在途请求或新发起的取数）；[stale] 非空时它在后台完成。
+  final Future<T> fresh;
+}
+
 class _CacheSlot {
   Object? value;
   bool hasValue = false;
@@ -248,6 +447,39 @@ class _CacheSlot {
   /// 当前在途请求的发起时刻（BUG-1567）：超过 [RemoteLibraryCache.inFlightTtl]
   /// 的在途请求视为挂死，不再被后续 [RemoteLibraryCache.read] 复用。
   int inFlightStartedAtMs = 0;
+}
+
+/// [RemoteLibraryCache.readByIds] 的单查记录：一个 (来源, 域) 一份。
+class _ItemSlot {
+  /// 已查过的 id → 条目（null = 服务器上没有）与查得时刻。
+  final Map<String, _ItemEntry> entries = <String, _ItemEntry>{};
+
+  /// 在途单查：id → 它所在的那一批（一批多个 id 共用一个 future）。
+  final Map<String, _ItemBatch> inFlight = <String, _ItemBatch>{};
+
+  /// 每次清空自增；在途批次写回时比对，拦截「失效之前发出的查询后到写回」。
+  int generation = 0;
+
+  void clear() {
+    generation++;
+    entries.clear();
+    inFlight.clear();
+  }
+}
+
+class _ItemEntry {
+  const _ItemEntry(this.value, this.fetchedAtMs);
+
+  final Object? value;
+  final int fetchedAtMs;
+}
+
+class _ItemBatch {
+  const _ItemBatch(this.future, this.startedAtMs);
+
+  /// 这一批的结果：本批每个 id → 条目或 null（服务器上没有）。
+  final Future<Map<String, Object?>> future;
+  final int startedAtMs;
 }
 
 /// app 级单例 provider：书架 / 漫画书架 / 视频页 / 首页 dashboard 共享同一份缓存，

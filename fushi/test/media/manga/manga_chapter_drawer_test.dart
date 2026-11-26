@@ -210,7 +210,14 @@ void main() {
       const ValueKey<String>('manga_chapter_fast_scrollbar'),
     );
     expect(bar, findsOneWidget);
-    final Scrollbar scrollbar = tester.widget<Scrollbar>(bar);
+    // 8d1c4bbcac 起页面里的裸 Scrollbar 统一走 FushiScrollbar（两套设计系统共用
+    // 的放宽命中滚动条），这里断言它实际挂上的 RawScrollbar：可拖动、拇指常驻。
+    final RawScrollbar scrollbar = tester.widget<RawScrollbar>(
+      find.descendant(
+        of: bar,
+        matching: find.byWidgetPredicate((Widget w) => w is RawScrollbar),
+      ),
+    );
     expect(scrollbar.interactive, isTrue);
     expect(scrollbar.thumbVisibility, isTrue);
 

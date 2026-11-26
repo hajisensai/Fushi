@@ -10,6 +10,7 @@ import 'package:fushi/src/media/video/video_web_playback_mode_panel.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/pages/implementations/video_shader_dialog.dart';
 import 'package:fushi/src/settings/settings_destination.dart' show VideoGroup;
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 import '../../helpers/video_quick_settings_harness.dart';
 
@@ -96,7 +97,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(_captureRowKey),
-        matching: find.byIcon(Icons.check_circle),
+        matching: find.byIcon(FushiIcons.filled(FushiIcons.success)),
       ),
       findsOneWidget,
     );
@@ -133,7 +134,7 @@ void main() {
     expect(
       find.descendant(
         of: find.byKey(_qualityRowKey),
-        matching: find.byIcon(Icons.check_circle),
+        matching: find.byIcon(FushiIcons.filled(FushiIcons.success)),
       ),
       findsOneWidget,
     );

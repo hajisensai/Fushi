@@ -1,12 +1,15 @@
 import 'dart:io';
 
+import 'package:fushi_audio/fushi_audio_core.dart' show readTextWithEncoding;
 import 'package:path/path.dart' as p;
 
-import 'package:fushi_engine/media/media_extensions.dart' show kVideoExtensions;
+import 'package:fushi_engine/media/media_extensions.dart'
+    show kAudioExtensions, kVideoExtensions;
+import 'package:fushi_engine/media/video/subtitle/subtitle_content_language.dart';
+import 'package:fushi_engine/media/video/subtitle/subtitle_language_target.dart';
 
-/// sidecar 字幕的「无语言标记」基础扩展名优先级（查词主语言用的是带语言标记版）。
-///
-/// `.srt` > `.ass` > `.ssa` > `.vtt`。
+/// sidecar 字幕的基础扩展名优先级：`.srt` > `.ass` > `.ssa` > `.vtt`（同一语言档内的
+/// 次序键）。
 const List<String> _baseSubtitleExtensions = <String>[
   '.srt',
   '.ass',
@@ -14,22 +17,148 @@ const List<String> _baseSubtitleExtensions = <String>[
   '.vtt',
 ];
 
-/// 按 app 目标学习语言为 [langCode] 构造 sidecar 字幕优先级后缀列表。
-///
-/// 规则：先找带语言标记 `.<langCode>.<ext>`（如学日语 → `.ja.srt`、`.ja.ass`…），
-/// 再回退无语言标记 `.<ext>`（如 `.srt`、`.ass`…）。每组内格式优先级见
-/// [_baseSubtitleExtensions]。
-///
-/// 例（langCode='ja'）：
-/// `.ja.srt > .ja.ass > .ja.ssa > .ja.vtt > .srt > .ass > .ssa > .vtt`。
-List<String> _sidecarSuffixPriority(String langCode) {
-  final String lang = langCode.toLowerCase();
-  final List<String> suffixes = <String>[];
-  for (final String ext in _baseSubtitleExtensions) {
-    suffixes.add('.$lang$ext');
+int _formatRank(String name) {
+  final int i = _baseSubtitleExtensions.indexOf(
+    p.extension(name).toLowerCase(),
+  );
+  return i < 0 ? _baseSubtitleExtensions.length : i;
+}
+
+/// 语言未知时用来判「这些带标记的字幕是不是同一种语言」的键（中文繁 / 简算两种）；
+/// 标记不是语言写法（`forced` / `sdh`）返回 null。
+String? _sidecarLanguageKey(String tag) {
+  final String? code = subtitleTokenLanguageCode(tag);
+  if (code == null) return null;
+  final ChineseScript? script = code == 'zh'
+      ? chineseScriptOfLanguageTag(tag)
+      : null;
+  return script == null ? code : '$code-${script.name}';
+}
+
+/// 一条 sidecar 的排名档（越小越先）；null = 不自动加载。规则见 [rankSidecarSubtitles]。
+int? _sidecarTier({
+  required String? tag,
+  required SubtitleLanguageTarget? target,
+  required ChineseScript? contentScript,
+  required bool singleTaggedLanguage,
+}) {
+  if (target == null) {
+    if (tag == null) return 0;
+    if (_sidecarLanguageKey(tag) == null) return null;
+    return singleTaggedLanguage ? 1 : null;
   }
-  suffixes.addAll(_baseSubtitleExtensions);
-  return suffixes;
+  if (tag == null) {
+    final ChineseScript? want = target.script;
+    if (target.code == 'zh' && want != null && contentScript != null) {
+      return contentScript == want ? 0 : 3;
+    }
+    return 2;
+  }
+  return switch (matchSubtitleTarget(
+    target,
+    languageTag: tag,
+    contentScript: contentScript,
+  )) {
+    SubtitleTargetMatch.exact => 0,
+    SubtitleTargetMatch.scriptUnknown => 1,
+    SubtitleTargetMatch.otherScript => 3,
+    SubtitleTargetMatch.none => null,
+  };
+}
+
+/// 纯函数：把属于 `<videoBaseNameNoExt>` 的 sidecar [candidates]（[listSidecarSubtitles]
+/// 的结果）按目标语言 [langCode] 排成自动加载的先后；**不该自动加载的不在结果里**。
+///
+/// [langCode] 是语言标签（`ja` / `zh-Hant` / `ko-KR` …，[SubtitleLanguageTarget.parse]
+/// 能认的写法），空串 = 语言未知。语言标记按语言比较而不是按字面：`.jpn.srt`、
+/// `.ja-JP.srt`、`.japanese.srt` 都算日语，`.chs` / `.sc` / `.zh-Hans` 都算简体中文。
+///
+/// 档次（目标已知）：
+/// 0. 标记的语言对上（中文还要繁 / 简对上；无标记但正文判出同一书写系统的也在这档，
+///    排在带标记的后面）；
+/// 1. 标了中文但没标繁 / 简（目标是带书写系统的中文时）；
+/// 2. 无语言标记（可能就是本片语言，旧行为里它也排在语言标记组之后）；
+/// 3. 同为中文但书写系统相反（读得懂，最后才用）；
+/// 标了别的语言（`.en.srt` 之于日语片）与标记不是语言写法（`.forced.srt`）的不自动加载。
+///
+/// 目标未知时**不猜**：无标记的先；带标记的只在它们全是同一种语言时才用（没得选
+/// 也就无所谓猜）；混着几种语言就都不自动加载。
+///
+/// 同档内：带标记的先于无标记的、`.srt` > `.ass` > `.ssa` > `.vtt`、再按文件名。
+/// [contentScripts] 是读正文判出的繁 / 简（见 [sidecarSubtitlesNeedingScriptSniff]），
+/// 键为候选原名。
+List<String> rankSidecarSubtitles(
+  String videoBaseNameNoExt,
+  List<String> candidates, {
+  required String langCode,
+  Map<String, ChineseScript> contentScripts = const <String, ChineseScript>{},
+}) {
+  final SubtitleLanguageTarget? target = SubtitleLanguageTarget.parse(langCode);
+  final Set<String> taggedLanguages = <String>{
+    for (final String name in candidates)
+      if (sidecarSubtitleLanguageTag(videoBaseNameNoExt, name)
+          case final String t)
+        if (_sidecarLanguageKey(t) case final String key) key,
+  };
+  final List<({String name, int tier, int tagged, int format})> ranked =
+      <({String name, int tier, int tagged, int format})>[];
+  for (final String name in candidates) {
+    final String? tag = sidecarSubtitleLanguageTag(videoBaseNameNoExt, name);
+    final int? tier = _sidecarTier(
+      tag: tag,
+      target: target,
+      contentScript: contentScripts[name],
+      singleTaggedLanguage: taggedLanguages.length == 1,
+    );
+    if (tier == null) continue;
+    ranked.add((
+      name: name,
+      tier: tier,
+      tagged: tag == null ? 1 : 0,
+      format: _formatRank(name),
+    ));
+  }
+  ranked.sort((a, b) {
+    int c = a.tier.compareTo(b.tier);
+    if (c != 0) return c;
+    c = a.tagged.compareTo(b.tagged);
+    if (c != 0) return c;
+    c = a.format.compareTo(b.format);
+    if (c != 0) return c;
+    return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+  });
+  return <String>[for (final r in ranked) r.name];
+}
+
+/// 纯函数：目标是带书写系统的中文（`zh-Hant` / `zh-Hans`）、而 [candidates] 里没有
+/// 一条靠标记就对上书写系统时，需要读正文判繁 / 简的候选（无标记的、只标了中文没标
+/// 繁简的）。其余情况返回空表——标记已经够用，不读盘。
+List<String> sidecarSubtitlesNeedingScriptSniff(
+  String videoBaseNameNoExt,
+  List<String> candidates, {
+  required String langCode,
+}) {
+  final SubtitleLanguageTarget? target = SubtitleLanguageTarget.parse(langCode);
+  if (target == null || target.code != 'zh' || target.script == null) {
+    return const <String>[];
+  }
+  final List<String> ambiguous = <String>[];
+  for (final String name in candidates) {
+    final String? tag = sidecarSubtitleLanguageTag(videoBaseNameNoExt, name);
+    if (tag == null) {
+      ambiguous.add(name);
+      continue;
+    }
+    switch (matchSubtitleTarget(target, languageTag: tag)) {
+      case SubtitleTargetMatch.exact:
+        return const <String>[];
+      case SubtitleTargetMatch.scriptUnknown:
+        ambiguous.add(name);
+      case SubtitleTargetMatch.otherScript || SubtitleTargetMatch.none:
+        break;
+    }
+  }
+  return ambiguous;
 }
 
 /// 外挂字幕的归属规则（三处共用：播放器选 / 列字幕、删视频带走字幕、iOS 收件箱搬入
@@ -63,36 +192,30 @@ bool _isRawSidecarOf(String stemLower, String name) =>
     name.toLowerCase().startsWith(stemLower) &&
     isSidecarSubtitleSuffix(name.substring(stemLower.length));
 
-/// 纯函数：给「去掉视频扩展名的 basename」与「同目录文件名列表」，按 app 学习语言
-/// [langCode] 的优先级挑出第一个匹配的 sidecar 字幕文件名；无则返回 null。
-///
-/// 优先级（以 langCode='ja' 为例）：
-/// `.ja.srt > .ja.ass > .ja.ssa > .ja.vtt > .srt > .ass > .ssa > .vtt`，即先找
-/// 带学习语言标记的同前缀字幕，再回退无语言标记的字幕。
+/// 纯函数：给「去掉视频扩展名的 basename」与「同目录文件名列表」，按目标语言
+/// [langCode]（语言标签，空串 = 未知）挑出最该自动加载的 sidecar 字幕文件名；无则
+/// 返回 null。排序规则见 [rankSidecarSubtitles]。
 ///
 /// 候选只取 [listSidecarSubtitles] 认给这个视频的（同目录 stem 更长的视频认领走的
-/// 不算，见 [sidecarSubtitleOwnerStem]）；候选（不区分大小写比较）等于
-/// `<videoBaseNameNoExt><suffix>`，suffix 取自 [_sidecarSuffixPriority]。返回的是
-/// [dirFiles] 中的原始文件名（保留原始大小写），便于调用方直接拼回目录得到绝对路径。
+/// 不算，见 [sidecarSubtitleOwnerStem]）。返回的是 [dirFiles] 中的原始文件名（保留
+/// 原始大小写），便于调用方直接拼回目录得到绝对路径。
 ///
-/// 抽成纯函数是为可测：不碰文件系统，只做字符串优先级匹配。
+/// 抽成纯函数是为可测：不碰文件系统。
 String? pickSidecar(
   String videoBaseNameNoExt,
   List<String> dirFiles, {
   required String langCode,
+  Map<String, ChineseScript> contentScripts = const <String, ChineseScript>{},
 }) {
   final List<String> mine = listSidecarSubtitles(videoBaseNameNoExt, dirFiles);
   if (mine.isEmpty) return null;
-  final String baseLower = videoBaseNameNoExt.toLowerCase();
-  for (final String suffix in _sidecarSuffixPriority(langCode)) {
-    final String wantLower = '$baseLower$suffix';
-    for (final String name in mine) {
-      if (name.toLowerCase() == wantLower) {
-        return name;
-      }
-    }
-  }
-  return null;
+  final List<String> ranked = rankSidecarSubtitles(
+    videoBaseNameNoExt,
+    mine,
+    langCode: langCode,
+    contentScripts: contentScripts,
+  );
+  return ranked.isEmpty ? null : ranked.first;
 }
 
 /// 纯函数：列出 [dirFiles] 中**所有**属于 `<videoBaseNameNoExt>` 的 sidecar 字幕
@@ -181,43 +304,63 @@ String? sidecarSubtitleLanguageTag(String videoBaseNameNoExt, String fileName) {
   return parts.length == 3 ? parts[1] : null;
 }
 
-/// 纯函数：「设为该视频默认字幕」时落盘用的 sidecar 后缀——学习语言标记版
-/// `.<langCode>.<ext>`（[pickSidecar] 优先级最高的那一组），[langCode] 为空时退回
-/// 无标记 `.<ext>`。[format] 取 `srt` / `.ass` 等（大小写、前导点皆可）；不是字幕
-/// 扩展名时返回 null。
+/// 纯函数：「设为该视频默认字幕」时落盘用的 sidecar 后缀——目标语言标记版
+/// `.<规范标签>.<ext>`（`.ja.srt` / `.zh-Hant.ass`，[rankSidecarSubtitles] 最先的
+/// 那一档），[langCode] 为空或认不出语言时退回无标记 `.<ext>`。[format] 取 `srt` /
+/// `.ass` 等（大小写、前导点皆可）；不是字幕扩展名时返回 null。
 String? defaultSidecarSubtitleSuffix(
   String format, {
   required String langCode,
 }) {
   final String ext = format.toLowerCase().replaceFirst(RegExp(r'^\.'), '');
   if (!_baseSubtitleExtensions.contains('.$ext')) return null;
-  final String lang = langCode.toLowerCase();
+  final String lang = SubtitleLanguageTarget.parse(langCode)?.tag ?? '';
   final String suffix = lang.isEmpty ? '.$ext' : '.$lang.$ext';
   return isSidecarSubtitleSuffix(suffix) ? suffix : null;
 }
 
-/// 纯函数：把 [suffix] 落成默认字幕时要让位的 sidecar 后缀——[pickSidecar] 优先级
-/// 列表里排在它前面的全部候选，加上它自己（同名文件会被覆盖）。不让位的话，一份
-/// 更高优先级的旧字幕会继续被 host 选中，上传等于白传。[suffix] 不在优先级列表里
-/// 时只返回它自己。
-List<String> sidecarSuffixesDisplacedBy(
-  String suffix, {
+/// 纯函数：把 `<videoBaseNameNoExt><placedSuffix>` 落成默认字幕时要让位的 sidecar
+/// （小写文件名）——[ownedNames]（归这个视频的现有 sidecar）里按 [rankSidecarSubtitles]
+/// 排在它前面或与它并列靠前的全部，加上同名的它自己（会被覆盖）。不让位的话，一份
+/// 排得更前的旧字幕会继续被选中，上传等于白传。落下的这份本身不会被自动加载时
+/// （语言对不上）只让位同名文件。
+Set<String> sidecarNamesDisplacedBy(
+  String videoBaseNameNoExt,
+  String placedSuffix,
+  List<String> ownedNames, {
   required String langCode,
 }) {
-  final String lower = suffix.toLowerCase();
-  final List<String> priority = langCode.isEmpty
-      ? _baseSubtitleExtensions
-      : _sidecarSuffixPriority(langCode);
-  final int index = priority.indexOf(lower);
-  if (index < 0) return <String>[lower];
-  return priority.sublist(0, index + 1);
+  final String placedLower = '$videoBaseNameNoExt$placedSuffix'.toLowerCase();
+  final List<String> pool = <String>[
+    for (final String n in ownedNames)
+      if (n.toLowerCase() != placedLower) n,
+    '$videoBaseNameNoExt$placedSuffix',
+  ];
+  final List<String> ranked = rankSidecarSubtitles(
+    videoBaseNameNoExt,
+    pool,
+    langCode: langCode,
+  );
+  final int index = ranked.indexWhere(
+    (String n) => n.toLowerCase() == placedLower,
+  );
+  return <String>{
+    placedLower,
+    if (index > 0)
+      for (final String n in ranked.sublist(0, index)) n.toLowerCase(),
+  };
 }
 
 /// 在 [videoPath] 同目录查找同名 sidecar 字幕（IO 版，包装 [pickSidecar]）。
 ///
-/// [langCode] 是 app 目标学习语言代码（如 `'ja'`/`'ko'`），优先选带该语言标记的
-/// 字幕。返回第一个存在的字幕绝对路径（优先级见 [pickSidecar]），无则 null。
-/// 目录不存在 / 读取失败时静默返回 null。
+/// [langCode] 是本视频的目标语言标签（见 [rankSidecarSubtitles]；空串 = 未知）。
+/// 目标是带书写系统的中文、而标记分不出繁简时，读那几份候选的正文判繁简
+/// （[sidecarSubtitlesNeedingScriptSniff]，字幕文件只有几十 KB）。返回字幕绝对路径，
+/// 无则 null。目录不存在 / 读取失败时静默返回 null。
+///
+/// [fallbackLanguage]：[langCode] 为空、而带标记的候选混着几种语言（不猜就挑不出）
+/// 时才调一次，取最后一条证据（播放页传音轨语言，见 `audioSubtitleLanguageTarget`）；
+/// 其余情况不调——它可能要起一次 ffmpeg。
 ///
 /// async：视频常在网络盘（rclone / SMB 挂载）上，同步 listSync 冷目录时要逐级重列
 /// 目录、单次数秒，会冻结调用方整条 isolate——互联 host 跑在 app 主 isolate 上，
@@ -225,6 +368,7 @@ List<String> sidecarSuffixesDisplacedBy(
 Future<String?> findSidecarSubtitle(
   String videoPath, {
   required String langCode,
+  Future<String> Function()? fallbackLanguage,
 }) async {
   final String dir = p.dirname(videoPath);
   final String baseNameNoExt = p.basenameWithoutExtension(videoPath);
@@ -241,11 +385,192 @@ Future<String?> findSidecarSubtitle(
     return null;
   }
 
-  final String? picked = pickSidecar(
+  final List<String> mine = listSidecarSubtitles(baseNameNoExt, dirFiles);
+  if (mine.isEmpty) return null;
+  final String? picked = await _pickSidecarWithSniff(
+    dir,
     baseNameNoExt,
-    dirFiles,
-    langCode: langCode,
+    mine,
+    langCode,
   );
-  if (picked == null) return null;
-  return p.normalize(p.join(dir, picked));
+  if (picked != null) return p.normalize(p.join(dir, picked));
+  if (langCode.trim().isNotEmpty || fallbackLanguage == null) return null;
+  final String fallback = (await fallbackLanguage()).trim();
+  if (fallback.isEmpty) return null;
+  final String? byFallback = await _pickSidecarWithSniff(
+    dir,
+    baseNameNoExt,
+    mine,
+    fallback,
+  );
+  return byFallback == null ? null : p.normalize(p.join(dir, byFallback));
+}
+
+Future<String?> _pickSidecarWithSniff(
+  String dir,
+  String baseNameNoExt,
+  List<String> mine,
+  String langCode,
+) async {
+  final Map<String, ChineseScript> contentScripts = <String, ChineseScript>{};
+  for (final String name in sidecarSubtitlesNeedingScriptSniff(
+    baseNameNoExt,
+    mine,
+    langCode: langCode,
+  )) {
+    final ChineseScript? script = await _sniffChineseScript(
+      File(p.join(dir, name)),
+    );
+    if (script != null) contentScripts[name] = script;
+  }
+  final List<String> ranked = rankSidecarSubtitles(
+    baseNameNoExt,
+    mine,
+    langCode: langCode,
+    contentScripts: contentScripts,
+  );
+  return ranked.isEmpty ? null : ranked.first;
+}
+
+/// 读一份字幕的正文判繁 / 简（[detectSubtitleContentLanguage]）；不是单一书写系统
+/// 的中文、或读不出时返回 null。
+Future<ChineseScript?> _sniffChineseScript(File file) async {
+  try {
+    return switch (detectSubtitleContentLanguage(
+      await readTextWithEncoding(file),
+    )) {
+      SubtitleContentLanguage.simplifiedChinese => ChineseScript.simplified,
+      SubtitleContentLanguage.traditionalChinese => ChineseScript.traditional,
+      _ => null,
+    };
+  } on FileSystemException {
+    return null;
+  }
+}
+
+/// 外挂音轨的扩展名（小写、带点）：纯音频扩展名（[kAudioExtensions]，`.mka` / `.flac`
+/// / `.ac3` …）加发布组常用的裸音轨扩展名。播放器发现本地外挂音轨
+/// （[listSidecarAudioTracks]）与下载整理带走外挂件共用这一份。
+const Set<String> kSidecarAudioExtraExtensions = <String>{
+  '.dts',
+  '.dtshd',
+  '.thd',
+  '.truehd',
+};
+
+/// 纯函数：扩展名 [extension]（带点，大小写不敏感）是不是外挂音轨扩展名。
+bool isSidecarAudioExtension(String extension) {
+  final String ext = extension.toLowerCase();
+  return kAudioExtensions.contains(ext) ||
+      kSidecarAudioExtraExtensions.contains(ext);
+}
+
+/// 视频旁的一条外挂音轨（[listSidecarAudioTracks] 的产物）。
+typedef SidecarAudioTrack = ({
+  /// 相对视频所在目录的路径（同目录就是文件名；子目录里是 `子目录/文件名`，`/` 分隔）。
+  String relativePath,
+
+  /// 文件名里主干之后、扩展名之前的标记（`ep01.jpn.mka` → `jpn`，
+  /// `Movie_Eng_Audio_5.1.mka` → `Eng_Audio_5.1`）；没有为 null。
+  String? tag,
+});
+
+/// 主干之后的外挂音轨后缀：`<分隔符><标记>.<ext>` 或 `.<ext>`，分隔符取 `.` / `_` / `-`
+/// （与下载整理器配外挂件同一口径；`Movie_Eng_Audio_5.1.mka` 用的是 `_`）。标记里不许
+/// 出现路径分隔符。返回标记（可能为 null）；不是外挂音轨后缀返回 `false` 记号。
+({bool ok, String? tag}) _sidecarAudioSuffix(String rest) {
+  // 前面垫一个字符：裸的 `.flac`（无标记）在 path 包眼里是点文件、扩展名为空。
+  final String ext = p.extension('x$rest');
+  if (ext.isEmpty || !isSidecarAudioExtension(ext)) {
+    return (ok: false, tag: null);
+  }
+  final String middle = rest.substring(0, rest.length - ext.length);
+  if (middle.isEmpty) return (ok: true, tag: null);
+  if (!'._-'.contains(middle[0])) return (ok: false, tag: null);
+  final String tag = middle.substring(1).trim();
+  if (tag.isEmpty || tag.length > 64 || tag.contains(RegExp(r'[\/]'))) {
+    return (ok: false, tag: null);
+  }
+  return (ok: true, tag: tag);
+}
+
+/// 纯函数：视频 `<videoBaseNameNoExt>` 旁的全部外挂音轨。
+///
+/// - 位置：与视频同目录（[dirFiles]），或视频目录的**直接子目录**（[childDirFiles]：
+///   子目录名 → 其中文件名；`Audio 5.1/<主干>_Eng_Audio_5.1.mka`）。
+/// - 文件名：不分大小写以视频主干开头，后面是 `.<ext>` 或 `<.|_|->标记.<ext>`，ext 是
+///   外挂音轨扩展名（[isSidecarAudioExtension]）。
+/// - 归属：同目录 stem 更长、且同样配得上这个文件的视频认领走（最长主干认领，与外挂
+///   字幕 [listSidecarSubtitles] 同一条规则）。
+/// - 纯数字主干（`01.mkv`）不认子目录里的文件：`CDs/01.flac` 这类专辑曲目与剧集同号
+///   很常见，不是外挂音轨（同目录照常认，`01.mkv` 旁的 `01.flac` 就是它的音轨）。
+///
+/// 同目录的在前、子目录的在后，各自保持输入顺序。不碰文件系统。
+List<SidecarAudioTrack> listSidecarAudioTracks(
+  String videoBaseNameNoExt,
+  List<String> dirFiles, {
+  Map<String, List<String>> childDirFiles = const <String, List<String>>{},
+}) {
+  final String stemLower = videoBaseNameNoExt.toLowerCase();
+  if (stemLower.isEmpty) return const <SidecarAudioTrack>[];
+  // 同目录里 stem 更长、以本 stem 开头的视频：可能把候选认领走。
+  final List<String> longerStems = <String>[
+    for (final String name in dirFiles)
+      if (kVideoExtensions.contains(p.extension(name).toLowerCase()))
+        if (p.basenameWithoutExtension(name).toLowerCase() case final String s
+            when s.length > stemLower.length && s.startsWith(stemLower))
+          s,
+  ];
+  ({bool ok, String? tag}) match(String name) {
+    final String lower = name.toLowerCase();
+    if (lower.length <= stemLower.length || !lower.startsWith(stemLower)) {
+      return (ok: false, tag: null);
+    }
+    final ({bool ok, String? tag}) mine = _sidecarAudioSuffix(
+      name.substring(videoBaseNameNoExt.length),
+    );
+    if (!mine.ok) return mine;
+    for (final String longer in longerStems) {
+      if (lower.startsWith(longer) &&
+          lower.length > longer.length &&
+          _sidecarAudioSuffix(name.substring(longer.length)).ok) {
+        return (ok: false, tag: null);
+      }
+    }
+    return mine;
+  }
+
+  final List<SidecarAudioTrack> out = <SidecarAudioTrack>[
+    for (final String name in dirFiles)
+      if (match(name) case (ok: true, tag: final String? tag))
+        (relativePath: name, tag: tag),
+  ];
+  if (RegExp(r'^\d+$').hasMatch(videoBaseNameNoExt)) return out;
+  for (final MapEntry<String, List<String>> child in childDirFiles.entries) {
+    for (final String name in child.value) {
+      if (match(name) case (ok: true, tag: final String? tag)) {
+        out.add((relativePath: '${child.key}/$name', tag: tag));
+      }
+    }
+  }
+  return out;
+}
+
+/// 纯函数：外挂音轨标记 [tag] 给人看的名字与语言码。名字 = 标记里的 `_` 换成空格；
+/// 标记的第一段（按 `.` / `_` / `-` / 空格切）是 2–3 个字母时当语言码（小写，
+/// `jpn` / `eng` / `ja`），否则没有语言。没有标记时名字用文件名（[fileName]）。
+({String label, String? language}) sidecarAudioLabel(
+  String? tag,
+  String fileName,
+) {
+  if (tag == null || tag.trim().isEmpty) {
+    return (label: fileName, language: null);
+  }
+  final String first = tag.split(RegExp(r'[._\- ]')).first;
+  return (
+    label: tag.replaceAll('_', ' ').trim(),
+    language: RegExp(r'^[A-Za-z]{2,3}$').hasMatch(first)
+        ? first.toLowerCase()
+        : null,
+  );
 }

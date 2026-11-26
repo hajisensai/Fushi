@@ -1283,14 +1283,13 @@ class _Importer {
     return values;
   }
 
-  /// 两个预设落到 Fushi 后、随参数继承的那部分（记忆率、音频、算法、参数组）是否一致。步长 /
+  /// 两个预设落到 Fushi 后、随参数继承的那部分（记忆率、音频、算法、参数组、学习 / 重学步长）是否一致。
   /// 上限 / 最大间隔在 Fushi 里是每个牌组自己的，继承与否都照写，不参与比较；本次不导入的键
   /// （按 [SrsAnkiImportOptions.withDeckConfigs] / [SrsAnkiImportOptions.withFsrsParams]）也不比。
   bool _sameInheritedSettings(SrsAnkiPreset a, SrsAnkiPreset b) {
     if (a.id == b.id) return true;
     Map<String, Object?> inherited(SrsAnkiPreset p) =>
         _presetValues(p, own: true, report: false)
-          ..remove(SrsFieldKeys.deckSteps)
           ..remove(SrsFieldKeys.deckLimits)
           ..remove(SrsFieldKeys.deckMaxInterval)
           ..removeWhere(
@@ -1355,18 +1354,25 @@ class _Importer {
     // 改回 FSRS 时用 FSRS 默认步长（[SrsDeckView.learnStepsFor]）。来源本来就是 RWKV 预设的照搬用户自己的
     // 设置；两种步长都是空的同样不写（与「不写」在 RWKV 下等价，且 Fushi 导出的 RWKV 牌组在预设里填的
     // 就是生效值空表，这样往返后仍是「没写过」）。
-    if (!options.useRwkv ||
-        p.rwkvEnabled &&
-            (p.learnSteps.isNotEmpty || p.relearnSteps.isNotEmpty)) {
-      v[SrsFieldKeys.deckSteps] = <String, Object?>{
-        'learn': steps(p.learnSteps, SrsDeckView.defaultLearnSteps, 'learn'),
-        'relearn': steps(
-          p.relearnSteps,
-          SrsDeckView.defaultRelearnSteps,
-          'relearn',
-        ),
-      };
-    }
+    // 步长随参数继承（拍板 design-subdeck-steps-inherit）：只写在 own 牌组上；继承上级的牌组与上级预设的
+    // 步长相同（[_sameInheritedSettings] 把步长算进比较），不写也不丢。截断报告照样按预设记一次。
+    final Map<String, Object?>? stepsValue =
+        !options.useRwkv ||
+            p.rwkvEnabled &&
+                (p.learnSteps.isNotEmpty || p.relearnSteps.isNotEmpty)
+        ? <String, Object?>{
+            'learn': steps(
+              p.learnSteps,
+              SrsDeckView.defaultLearnSteps,
+              'learn',
+            ),
+            'relearn': steps(
+              p.relearnSteps,
+              SrsDeckView.defaultRelearnSteps,
+              'relearn',
+            ),
+          }
+        : null;
     v[SrsFieldKeys.deckLimits] = <String, Object?>{
       'new': p.newPerDay,
       'review': p.reviewsPerDay,
@@ -1375,6 +1381,7 @@ class _Importer {
       v[SrsFieldKeys.deckMaxInterval] = p.maxIntervalDays;
     }
     if (!own) return v;
+    if (stepsValue != null) v[SrsFieldKeys.deckSteps] = stepsValue;
     // 音频两项随参数继承（只写在 own 牌组上）；与缺省值相同时不写，不产生多余记录。
     if (!p.autoplay) v[SrsFieldKeys.deckAutoplay] = false;
     if (!p.replayQuestion) v[SrsFieldKeys.deckReplayQuestion] = false;

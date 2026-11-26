@@ -842,12 +842,20 @@ class _FushiFloatingChromeOverlayState extends State<FushiFloatingChromeOverlay>
     // 桌面自绘标题行：页头大字的页面把内容层向上铺到窗口上沿——滚动内容从
     // 窗口按钮底下穿过去，标题行那一条不再是一道裁掉内容的实色边（2026-11-12
     // 用户：「顶部白边改透明，右上角三个按钮直接悬浮」）。内容层上移、让位同步
-    // 加这么多，静止时版面不变。手机状态栏那段不铺（状态栏图标不随内容变色）。
+    // 加这么多，静止时版面不变。
+    //
+    // Apple（iOS 27 导航栏 scroll edge）手机状态栏那段同样铺：scroll edge 底
+    // （[FushiAppleScrollEdgeBackdrop]）从窗口顶到最深一行吸顶工具下沿是**一整块**
+    // 模糊 + 压暗，状态栏底下若没有内容，那一段只能模糊到纯页面底色，下面一段
+    // 模糊的却是内容——两种底在状态栏下沿接成一条分界线（2026-11-25 用户 iPhone
+    // 截图，库页音乐页）。内容滚进状态栏之前底已经淡入完（头
+    // [kFushiAppleScrollEdgeDistance] 内），状态栏图标始终压在这块底上。MD3 手机
+    // 状态栏那段仍不铺（MD3 底板不保证状态栏图标的对比度）。
     final double contentBleed =
         _parent == null &&
             widget.masthead &&
             shellRedesignActive(context) &&
-            FushiDesktopTitleBar.isEnabled
+            (FushiDesktopTitleBar.isEnabled || isGlassDesign(context))
         ? shellStageTopBleedOf(context)
         : 0;
     if (_parent == null) _contentBleed = contentBleed;

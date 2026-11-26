@@ -62,6 +62,8 @@ Future<int> mergeMediaCollectionsInto(
       db,
       sourceId,
       deletedAt: deletedAt,
+      // 作品图谱连接跟着成员一起搬进目标合集（BUG-5457）。
+      linksMovedTo: targetId,
       // 删除记下「并掉」：收到这条删除的设备知道它不是用户拒绝。只对整理器合集
       // 记（BUG：并用户合集也记 true 时，同步的「对端用户接手胜过整理器并掉」规则
       // 会把对端那份本来就归用户的旧副本当成「接手」，按原样重建被并掉的合集）。

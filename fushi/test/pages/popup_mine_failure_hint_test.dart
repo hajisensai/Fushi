@@ -66,11 +66,11 @@ void main() {
   });
 
   test('Dart 三条回程都能带失败原因（BUG-1908）', () {
-    final String coordinator = File(
-      'lib/src/mining/gal_hook_mining_coordinator.dart',
+    final String galResult = File(
+      'lib/src/mining/gal_hook_mining_result.dart',
     ).readAsStringSync();
     expect(
-      coordinator.contains('toPopupReply({String? message})'),
+      galResult.contains('toPopupReply({String? message})'),
       isTrue,
       reason: 'gal 制卡回程必须能带 message',
     );
@@ -214,16 +214,16 @@ void main() {
   });
 
   test('Dart 侧把「重复」与「真没制成」分开回传（BUG-1908）', () {
-    final String coordinator = File(
-      'lib/src/mining/gal_hook_mining_coordinator.dart',
+    final String galResult = File(
+      'lib/src/mining/gal_hook_mining_result.dart',
     ).readAsStringSync();
     expect(
-      coordinator.contains('bool get duplicate'),
+      galResult.contains('bool get duplicate'),
       isTrue,
       reason: 'gal 回程必须能区分 MineResult.duplicate',
     );
     expect(
-      coordinator.contains("if (duplicate) 'duplicate': true"),
+      galResult.contains("if (duplicate) 'duplicate': true"),
       isTrue,
       reason: 'duplicate 位必须真的进 reply',
     );

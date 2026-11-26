@@ -50,9 +50,21 @@ void main() {
       expect(switches, 2, reason: '主字幕与副字幕两条选择路径');
       // 恢复路径两处解析都经载入链 helper；helper 的内嵌分支带取消信号（外挂档
       // 只读一个文件，无需取消）。
+      // 恢复本行选择（导入字幕捷径 + 精确匹配的源）与沿用兄弟集选择共用
+      // _loadChosenSubtitleForLoad 加载选定的源（BUG-5464）。
       final String restore = _bodyOf(page, '  _restorePersistedSubtitle({');
-      expect('_loadCuesForSourceInLoad('.allMatches(restore).length, 2);
-      expect(restore, isNot(contains('loadCuesForSource(')));
+      final String chosen = _bodyOf(
+        page,
+        '  _loadChosenSubtitleForLoad(SubtitleSource chosen',
+      );
+      expect('_loadCuesForSourceInLoad('.allMatches(restore).length, 1);
+      expect('_loadChosenSubtitleForLoad('.allMatches(restore).length, 1);
+      expect('_loadCuesForSourceInLoad('.allMatches(chosen).length, 1);
+      final String inherit = _bodyOf(page, '  _restoreInheritedSubtitle({');
+      expect('_loadChosenSubtitleForLoad('.allMatches(inherit).length, 1);
+      for (final String body in <String>[restore, chosen, inherit]) {
+        expect(body, isNot(contains('loadCuesForSource(')));
+      }
       final String inLoad = _bodyOf(
         page,
         '  Future<List<AudioCue>> _loadCuesForSourceInLoad(',

@@ -17,7 +17,7 @@ import 'package:fushi/src/media/library_finish_marks.dart';
 import 'package:fushi/src/media/import/import_inbox.dart';
 import 'package:fushi/src/media/source_library/source_folder_access.dart';
 import 'package:fushi/src/media/source_library/source_library_scanner.dart'
-    show applyBlurayDiscCollectionArtwork;
+    show SourceLibraryScanner, applyBlurayDiscCollectionArtwork;
 import 'package:fushi/src/models/asset_licenses.dart';
 import 'package:fushi/src/leaderboard/leaderboard_service.dart';
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
@@ -500,6 +500,7 @@ import 'package:fushi/src/models/audio_controller.dart';
 import 'package:fushi/src/media/music/lyrics/karaoke/karaoke_stage_plan.dart'
     show MusicAssRenderPreference;
 import 'package:fushi/src/media/music/lyrics/lrclib_client.dart';
+import 'package:fushi/src/media/music/download_release_audio_intake.dart';
 import 'package:fushi/src/media/music/music_view_style.dart'
     show MusicViewStyleStore;
 import 'package:fushi/src/media/music/lyrics/lyrics_provider_list.dart';
@@ -1509,7 +1510,10 @@ class AppModel
           throw FormatException(e.toString());
         }
       },
-      videoSubtitleLangCode: JapaneseLanguage.instance.languageCode,
+      // 每个视频挑 sidecar 的目标语言由 host 按视频逐个解析（合集系列字幕语言 >
+      // 字幕工作台默认语言 > 视频语言 > 刮削原语言 > 默认内容语言），不再全库固定日语。
+      videoSubtitleExplicitLanguage: () => jimakuDefaultLanguage,
+      videoDefaultContentLanguage: () => defaultContentLanguage,
       // client→host 视频上传（syncVideoFiles 开关驱动）：落 <documents>/remote_videos
       // （与 client 下载远端视频落点一致，AppPaths.remoteVideosDirectory 同目录）。
       uploadedVideoRoot: Directory('${appDirectory.path}/remote_videos'),
@@ -9556,8 +9560,29 @@ class AppModel
             collectionId,
             discRootPath,
           ),
+      // 发布里随附的 CD / OST 交给音乐库（下载入库不走来源扫描，否则视频来源没开
+      // 自动扫描时这些音频永远进不了音乐库）。
+      onReleaseAudioImported: (MediaSourceRow source, List<String> audio) =>
+          adoptDownloadedReleaseAudio(
+            db: database,
+            intake: MusicAudioIntake(database),
+            source: source,
+            audioPaths: audio,
+          ),
+      // 补搬走的外挂件里，早先被误收成「歌」的整片外挂音轨：重扫所在音乐来源对账掉。
+      onReleaseCompanionsRelocated: (List<String> movedFrom) =>
+          rescanMusicSourcesOfMovedFiles(
+            db: database,
+            movedFromPaths: movedFrom,
+            rescan: (MediaSourceRow source) => SourceLibraryScanner(
+              database,
+              transcribeAudiobook: null,
+            ).scan(source),
+          ),
     )..start();
     _videoDownloadPipelineService = pipeline;
+    // 钩子之前入库的任务里的 CD 从没交过：启动补交一遍（幂等，已覆盖的目录不再登记）。
+    unawaited(_replayReleaseAudioHandOff(pipeline));
     // 上次没跑完的「转录后入库」任务从断点续跑（转录进度落在 ASR 服务自己的
     // 任务目录里）。没有 ASR 的平台不建队列。
     if (isAsrSupported) unawaited(audiobookTranscribeImportQueue.load());
@@ -9581,6 +9606,20 @@ class AppModel
     // still starting. Publish the new service identity so its cached resource
     // dependencies are rebuilt instead of remaining permanently unavailable.
     notifyListeners();
+  }
+
+  Future<void> _replayReleaseAudioHandOff(
+    VideoDownloadPipelineService pipeline,
+  ) async {
+    try {
+      await pipeline.replayReleaseAudioHandOff();
+    } catch (e, stack) {
+      ErrorLogService.instance.log(
+        'AppModel.replayReleaseAudioHandOff',
+        e,
+        stack,
+      );
+    }
   }
 
   /// 每系列字幕语言记忆（`jimaku_pref_langs`）按键查；空串 / 没记过 → null。

@@ -23,6 +23,25 @@ class RemoteCollectionAdoptionService {
         userIntent: userIntent,
       );
 
+  /// 目录刷新：整份远端视频清单一次收养（[FushiDatabase.adoptRemoteCollectionMembers]）。
+  ///
+  /// 清单没变时只有一次只读查询、零写入；有变化的条目在同一个事务里落库。返回
+  /// 真的改了库的条数，0 = 合集归属没有变化（调用方不必重载合集映射）。规则与单条
+  /// [adoptVideo] 是同一份（被动刷新，`userIntent: false`）。
+  Future<int> adoptVideos(Iterable<RemoteVideoInfo> videos) =>
+      database.adoptRemoteCollectionMembers(<RemoteCollectionMemberAdoption>[
+        for (final RemoteVideoInfo video in videos)
+          if (video.collection case final RemoteCollectionMembership membership)
+            RemoteCollectionMemberAdoption(
+              name: membership.collectionName,
+              collectionType: membership.collectionType,
+              mediaType: MediaKind.video,
+              remoteEntryKey: video.id,
+              sortIndex: membership.sortIndex,
+              localEntryKey: video.id,
+            ),
+      ]);
+
   /// 目录刷新：整份远端清单一次收养。身份索引只装载一次（全表读
   /// `epub_books` + alias），不按本数重复物化——dashboard 启动路径也走这里。
   Future<void> adoptBooks(Iterable<RemoteBookInfo> books) async {

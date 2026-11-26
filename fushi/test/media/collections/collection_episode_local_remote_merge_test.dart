@@ -73,7 +73,7 @@ void main() {
     final List<CollectionEpisodeSlot> slots = await loadCollectionEpisodeSlots(
       repository: repo,
       collectionId: collectionId,
-      loadRemoteVideos: () async => <RemoteVideoInfo>[
+      loadRemoteMembers: (List<String> ids) async => <RemoteVideoInfo>[
         jellyfinEpisode('jf-1', 1, completedAt: 123),
         jellyfinEpisode('jf-2', 2),
         jellyfinEpisode('jf-3', 3),
@@ -91,6 +91,52 @@ void main() {
     // 在媒体服务器上看完的那一集，归并后仍算看完。
     expect(slots[0].completed, isTrue);
     expect(slots[1].completed, isFalse);
+  });
+
+  test('远端只问本机缺的那几个成员 id；全员本地时一次都不问', () async {
+    await db.upsertVideoBook(
+      const VideoBooksCompanion(
+        bookUid: Value('video/local1'),
+        title: Value('Frieren - 01'),
+        videoPath: Value('/anime/Frieren/Frieren - 01.mkv'),
+      ),
+    );
+    for (final String key in <String>['video/local1', 'jf-2', 'jf-3']) {
+      await db.addToCollection(collectionId, MediaKind.video, key);
+    }
+    final List<List<String>> asked = <List<String>>[];
+    final List<CollectionEpisodeSlot> slots = await loadCollectionEpisodeSlots(
+      repository: repo,
+      collectionId: collectionId,
+      loadRemoteMembers: (List<String> ids) async {
+        asked.add(ids);
+        return <RemoteVideoInfo>[jellyfinEpisode('jf-3', 3)];
+      },
+    );
+    expect(asked, <List<String>>[
+      <String>['jf-2', 'jf-3'],
+    ], reason: '整份远端清单不该被要：成员行的 entryKey 就是远端 id');
+    // 服务器上已没有的 jf-2 照旧丢弃，jf-3 占远端槽。
+    expect(
+      slots.map((CollectionEpisodeSlot s) => s.entryKey).toList(),
+      <String>['video/local1', 'jf-3'],
+    );
+
+    final int allLocal = await db.createMediaCollection(
+      'Local only',
+      collectionType: 'playlist',
+    );
+    await db.addToCollection(allLocal, MediaKind.video, 'video/local1');
+    asked.clear();
+    await loadCollectionEpisodeSlots(
+      repository: repo,
+      collectionId: allLocal,
+      loadRemoteMembers: (List<String> ids) async {
+        asked.add(ids);
+        return const <RemoteVideoInfo>[];
+      },
+    );
+    expect(asked, isEmpty);
   });
 
   test('不同季同集号不归并；身份撞号时宁可不并', () {
