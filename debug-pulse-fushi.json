@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-26T18:46:31Z",
+ "generatedAt": "2026-11-26T18:53:50Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "06de0be3bc520671196aa8e12b13876e12977f27",
-  "seq": 32862
+  "sha": "6d1e2464929f9aceefca6fdf6387ef232f769a78",
+  "seq": 32863
  },
  "builds": [
   {
@@ -295,10 +295,14 @@
   }
  ],
  "pending": {
-  "headSha": "06de0be3bc520671196aa8e12b13876e12977f27",
-  "headSeq": 32862,
+  "headSha": "6d1e2464929f9aceefca6fdf6387ef232f769a78",
+  "headSeq": 32863,
   "prs": [],
   "direct": [
+   {
+    "sha": "6d1e2464929f9aceefca6fdf6387ef232f769a78",
+    "subject": "chore(bugs): settle BUG number collisions on 06de0be3b"
+   },
    {
     "sha": "06de0be3bc520671196aa8e12b13876e12977f27",
     "subject": "fix(merge): 截屏识字回包期望补上 BUG-5494 下发的文本块字段；设置重置钮测试跟上 PR #4518 换的 restoreBackup 图标"
@@ -339,11 +343,11 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377342"
    },
    "windows": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377194"
    },
    "macos": {
