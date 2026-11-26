@@ -26,6 +26,7 @@ final class RemoteCollectionMemberAdoption {
     required this.sortIndex,
     this.localEntryKey,
     this.userIntent = false,
+    this.organizerRemovedKeys = const <String, int>{},
   });
 
   final String name;
@@ -35,6 +36,10 @@ final class RemoteCollectionMemberAdoption {
   final int sortIndex;
   final String? localEntryKey;
   final bool userIntent;
+
+  /// 只在 [userIntent] 时生效：条目键 → 那次 AI 整理自动移出所在运行的结束时刻
+  /// （毫秒，见 [FushiDatabase.adoptRemoteCollectionMember]）。
+  final Map<String, int> organizerRemovedKeys;
 
   /// 落成成员行的键：本机有入库行时是本机键，否则是远端占位键。
   String get targetEntryKey => localEntryKey ?? remoteEntryKey;
@@ -1438,6 +1443,7 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
             sortIndex: sortIndex,
             localEntryKey: localEntryKey,
             userIntent: userIntent,
+            organizerRemovedKeys: organizerRemovedKeys,
           ),
         );
     return result.collectionId;
@@ -1541,6 +1547,8 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
     final String remoteEntryKey = request.remoteEntryKey;
     final int sortIndex = request.sortIndex;
     final String? localEntryKey = request.localEntryKey;
+    final bool userIntent = request.userIntent;
+    final Map<String, int> organizerRemovedKeys = request.organizerRemovedKeys;
     bool wrote = false;
     if (request.userIntent) {
       wrote = await _clearCollectionDeletionTombstone(name, collectionType) > 0;
@@ -1577,15 +1585,17 @@ mixin _FushiDbLibrary on _$FushiDatabase, _FushiDbTagsSync, _FushiDbMediaLinks {
         bound(await _tombstoneEntryKeyOf(mediaType.dbValue, k), until);
       }
       for (final MapEntry<String, int> e in clearable.entries) {
-        await (delete(collectionMemberTombstones)..where(
-              (t) =>
-                  t.collectionName.equals(name) &
-                  t.collectionType.equals(collectionType) &
-                  t.mediaType.equals(mediaType.dbValue) &
-                  t.entryKey.equals(e.key) &
-                  t.deletedAt.isSmallerOrEqualValue(e.value),
-            ))
-            .go();
+        final int cleared =
+            await (delete(collectionMemberTombstones)..where(
+                  (t) =>
+                      t.collectionName.equals(name) &
+                      t.collectionType.equals(collectionType) &
+                      t.mediaType.equals(mediaType.dbValue) &
+                      t.entryKey.equals(e.key) &
+                      t.deletedAt.isSmallerOrEqualValue(e.value),
+                ))
+                .go();
+        if (cleared > 0) wrote = true;
       }
     }
     final CollectionMemberTombstoneRow? removed =

@@ -20,56 +20,59 @@ class RemoteCollectionAdoptionService {
   Future<void> adoptVideo(RemoteVideoInfo video, {bool userIntent = false}) =>
       adoptVideos(<RemoteVideoInfo>[video], userIntent: userIntent);
 
-  /// 一次「加入媒体库」的全部集一起收养：[userIntent] 时整理记录只读一次
-  /// （[OrganizerRemovals.load]），不按集重复读（BUG-5466）。
-  Future<void> adoptVideos(
+  /// 一批远端视频一起收养。
+  ///
+  /// 被动刷新（`userIntent: false`，目录刷新 / 启动）：整份清单一次收养
+  /// （[FushiDatabase.adoptRemoteCollectionMembers]）——清单没变时只有一次只读查询、
+  /// 零写入，有变化的条目在同一个事务里落库；返回真的改了库的条数，0 = 合集归属
+  /// 没有变化（调用方不必重载合集映射）。
+  ///
+  /// 用户亲手加入（`userIntent: true`）：要撤销合集删除与本机 AI 整理的移出，按集
+  /// 走 [adoptMembership]，整理记录只读一次（[OrganizerRemovals.load]，BUG-5466）；
+  /// 返回参与收养的集数（调用方都会重载，不据此判断有没有变化）。
+  Future<int> adoptVideos(
     Iterable<RemoteVideoInfo> videos, {
     bool userIntent = false,
   }) async {
+    if (!userIntent) {
+      return database
+          .adoptRemoteCollectionMembers(<RemoteCollectionMemberAdoption>[
+            for (final RemoteVideoInfo video in videos)
+              if (video.collection
+                  case final RemoteCollectionMembership membership)
+                RemoteCollectionMemberAdoption(
+                  name: membership.collectionName,
+                  collectionType: membership.collectionType,
+                  mediaType: MediaKind.video,
+                  remoteEntryKey: video.id,
+                  sortIndex: membership.sortIndex,
+                  localEntryKey: video.id,
+                ),
+          ]);
+    }
     final List<RemoteVideoInfo> members = <RemoteVideoInfo>[
       for (final RemoteVideoInfo v in videos)
         if (v.collection != null) v,
     ];
-    if (members.isEmpty) return;
-    final OrganizerRemovals removals = userIntent
-        ? await OrganizerRemovals.load(
-            database,
-            collectionNames: <String>{
-              for (final RemoteVideoInfo v in members)
-                v.collection!.collectionName,
-            },
-          )
-        : OrganizerRemovals.none;
+    if (members.isEmpty) return 0;
+    final OrganizerRemovals removals = await OrganizerRemovals.load(
+      database,
+      collectionNames: <String>{
+        for (final RemoteVideoInfo v in members) v.collection!.collectionName,
+      },
+    );
     for (final RemoteVideoInfo video in members) {
       await adoptMembership(
         membership: video.collection,
         mediaType: MediaKind.video,
         remoteEntryKey: video.id,
         localEntryKey: video.id,
-        userIntent: userIntent,
+        userIntent: true,
         organizerRemovals: removals,
       );
     }
+    return members.length;
   }
-
-  /// 目录刷新：整份远端视频清单一次收养（[FushiDatabase.adoptRemoteCollectionMembers]）。
-  ///
-  /// 清单没变时只有一次只读查询、零写入；有变化的条目在同一个事务里落库。返回
-  /// 真的改了库的条数，0 = 合集归属没有变化（调用方不必重载合集映射）。规则与单条
-  /// [adoptVideo] 是同一份（被动刷新，`userIntent: false`）。
-  Future<int> adoptVideos(Iterable<RemoteVideoInfo> videos) =>
-      database.adoptRemoteCollectionMembers(<RemoteCollectionMemberAdoption>[
-        for (final RemoteVideoInfo video in videos)
-          if (video.collection case final RemoteCollectionMembership membership)
-            RemoteCollectionMemberAdoption(
-              name: membership.collectionName,
-              collectionType: membership.collectionType,
-              mediaType: MediaKind.video,
-              remoteEntryKey: video.id,
-              sortIndex: membership.sortIndex,
-              localEntryKey: video.id,
-            ),
-      ]);
 
   /// 目录刷新：整份远端清单一次收养。身份索引只装载一次（全表读
   /// `epub_books` + alias），不按本数重复物化——dashboard 启动路径也走这里。
