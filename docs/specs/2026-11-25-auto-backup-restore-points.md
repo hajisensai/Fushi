@@ -362,7 +362,7 @@ sync backend gets list / delete for stored archives.
   folder and the cloud as two `AutoBackupMirrorTarget`s with separate status (`mirror` / `cloud` in
   `auto_backup_status.json`), so meta-last completion, pending / leftover cleanup, device-scoped retention,
   catch-up and "Copy to this device" are shared. Each target copies independently; neither holds the export lock.
-- **Backend.** The first enabled sync channel (cloud before Interconnect) whose type is Google Drive,
+- **Backend.** (Phase 4A: Interconnect is no longer a cloud backend, see D12.) The first enabled sync channel (cloud before Interconnect) whose type is Google Drive,
   Interconnect (`fushiServer`), Dropbox, WebDAV, FTP or SFTP; OneDrive is not offered (D9). It must be signed in
   (`restoreAuth`); if it is configured but cannot sign in, the failure is recorded and shown (see "Second
   review fixes"). Every backend call runs under the sync channel's resource lock (`syncResourceLocks`, same as
@@ -446,6 +446,89 @@ space; a smaller cloud retention (e.g. 7 daily) to save quota.
 9. Cloud upload happens before pruning, so a nearly full store can fail the upload that pruning would have
    made room for; the failure shows `cloud_quota` and the user can delete old cloud copies on the page.
 
+## Phase 4A as implemented: devices back up to the server (2026-11-25, D12–D13)
+
+- **Own target.** `AutoBackupMirrorKind.server` is a third `AutoBackupMirrorTarget` next to folder and cloud,
+  with its own status (`server` in `auto_backup_status.json`), so meta-last completion, pending / leftover /
+  unreadable handling, claim-before-await, catch-up, notify-once and "Copy to this device" are the same code
+  (the controller's cloud-only branches became `kind.remote`: `_remoteTarget`, `_recordUnavailable`). The cloud
+  target no longer picks Interconnect (`_cloudBackupBackends` lost `fushiServer`): Google Drive, Dropbox,
+  WebDAV, FTP, SFTP only. A device can copy to a cloud service and to its server at the same time.
+- **Which server.** The Interconnect channel that sync itself uses: the `isInterconnect` entry of
+  `enabledSyncChannelBackends` (Interconnect switch on, or the backup backend set to Interconnect). The
+  Interconnect backend is a process-wide singleton over the paired candidate addresses; whichever host it
+  connects to is the one sync uses. Every call runs under that channel's resource lock, idempotent calls go
+  through `retryTransientSync`, errors map to the same codes as the cloud (`cloud_auth`, `cloud_unreachable`,
+  `cloud_failed`, ...; texts talk about "the sync service / server"). Status key
+  `server-<12-hex sha1 of the host identity>` (`serverBackupTargetKey`; identity =
+  `connectedHostIdentity()`: the paired hostId, else the address). Label: the paired device name of that host
+  (else the first enabled address with a name, else "Fushi Interconnect").
+- **Layout on the host.** Same as the cloud: `fushi-data/__backups__/<device key>/<id>/backup.zip +
+  restore_point.json`, written through the host's generic WebDAV handler. On the headless server that is
+  `<data dir>/interconnect/sync-data/fushi-data/__backups__/` (`FushiSyncServer.syncDataDir` is
+  `paths.syncData/sync-data`; the phase-3 text "`paths.syncData`" was one level short). Interconnect is not
+  wrapped in `ObfuscatingSyncBackend`, so the stored zip is a plain Fushi backup zip.
+- **Retention (D13).** `kServerBackupRetention` = the local / folder policy (48 h all, 7 daily, 4 weekly,
+  3 monthly, 5 GB), own copies only; other devices' and copied-back copies are never auto-deleted. The server
+  never deletes device copies by itself.
+- **Network.** One "Also upload on mobile data" switch covers cloud and server (pref key
+  `auto_backup_cloud_metered` kept, frozen name). It moved out of the cloud row into its own row
+  `sync.auto_backup.metered`, shown on Android / iOS when automatic backup is on and cloud or server copies are
+  on. Chosen over a per-target switch because "may Fushi use mobile data for backups" is one question for the
+  user; two identical switches would read as a bug.
+- **Settings.** "Copy to server" (`sync.auto_backup.server`, pref `auto_backup_server`, device-local, off by
+  default): subtitle names the server; disabled with "Set up a Fushi Interconnect server in sync settings
+  first" when there is no Interconnect channel; when on, the retention hint and a status line (copied /
+  pending / waiting for Wi-Fi / failed reason) plus the prune-failed line. The cloud "no backend" hint no
+  longer lists Interconnect (new key `auto_backup_cloud_no_service`).
+- **Restore points page.** An "On the server" section (server-only copies, Copy to this device, Delete with
+  server wording, "From <device>"); local rows say "Also on the server". ctl `auto-backup` status carries
+  `serverCopies` / `serverCopy`.
+- **Disk layer (fushi_core).** `DeviceBackupInbox` (`database/device_backup_inbox.dart`) lists, finds, returns
+  the zip of, and deletes received copies under a sync root. Every name from the network or a request is
+  validated before touching disk: device keys `isDeviceBackupKey` (1–64 lowercase hex), ids
+  `isScheduledRestorePointId`, joined paths must stay inside the inbox, links / junctions are not followed,
+  a copy counts only if its meta parses as a scheduled point and every file it lists exists. The namespace
+  constant lives there (`kDeviceBackupsNamespace`; the app's `kCloudBackupNamespace` points at it).
+- **Headless server.** `GET /api/admin/device-backups` (devices grouped: name from the newest meta, copy count,
+  total bytes incl. incomplete dirs, newest date, incomplete count, copies with date / size / schema / app
+  version), `GET .../<device>/<id>` (streams the zip, `fushi-<name>-<id>.zip`), `DELETE .../<device>/<id>` and
+  `DELETE .../<device>`; bad names → 400 without echoing them, missing → 404
+  (`packages/fushi_server/lib/src/admin/admin_device_backups.dart`, one hook in `admin_api.dart`). Not in the
+  remote AI op directory (contains whole databases; test asserts it). WebUI page "Device backups" in its own
+  file (`web_ui_device_backups.dart`, hooked into `web_ui.dart` / `web_ui_en.dart` by const concatenation /
+  spread): per device and per copy, Download, Delete, Delete all, and notes on the device-side trimming rules
+  and how to restore (Import backup in Fushi, or Restore points › On the server on the device).
+  `fushi_server ctl device-backups [ls]`, `device-backups rm <key> <id>`, `device-backups rm <key> --yes`.
+- **Tests.** fushi_core `device_backup_inbox_test.dart` (grouping, incomplete, zip, delete, name validation,
+  planted link); server `admin_device_backups_test.dart`, `ctl_device_backup_commands_test.dart`,
+  `web_ui_i18n_test.dart`; app controller group "服务器副本（第四期 D12–D13）" (independent of cloud, status
+  round trip, off → null, local retention on the server, unreachable → status + one toast, unclassified error
+  → `cloud_failed` without the raw text, shared metered rule, copy back / delete), settings section (order,
+  metered-row rule, pref round trip / device-local registration, server row states, status line), page section
+  (list, "Also on the server", delete, copy back). The Sync & backup golden viewport grew to 4700 / 7800 px.
+  Real check: `fushi_server` from source with a temp config / data dir, fake copies on disk, admin API list /
+  download (bytes identical) / bad names / delete, ctl list.
+
+### Phase 4A open questions
+
+1. **App as Interconnect host.** A desktop app acting as host stores received copies under its own
+   `sync-data/fushi-data/__backups__/` but does not show them anywhere yet. `DeviceBackupInbox` is ready for a
+   "Received from other devices" section on the Restore points page (list + delete; the app host's sync data
+   dir comes from `FushiServerController`'s `syncDataDir`); not built in this batch.
+2. **Per-device write scope on the host.** Interconnect auth scopes requests to paired devices, but any paired
+   device can write or delete under any `__backups__/<device key>/` over WebDAV (the device-side page may
+   delete another device's copy by design, as in the cloud). A host-side rule "a device may only write its own
+   key" would need the host to know each peer's device key.
+3. **No size cap on the host.** The host accepts whatever devices upload; each device trims its own copies
+   (5 GB cap per device), and the admin can delete copies. A server-wide quota for received backups is not
+   implemented.
+4. **Real device → server run** (phone copying over Interconnect to a running server, then restoring from the
+   server section) was not done: the app was not launched in this batch; the server side was checked with
+   copies placed on disk.
+5. WebUI "Device backups" page was not looked at in a real browser (markup and script are tested, and the page
+   script parses with `node --check`).
+
 ## Decisions (taken by the user 2026-11-25 on the proposal's recommendations; maintainer may change)
 
 | # | Question | Options | Chosen |
@@ -461,6 +544,8 @@ space; a smaller cloud retention (e.g. 7 daily) to save quota.
 | D9 | Which backends | resumable only (Drive, OneDrive) + Interconnect / all with list+delete / pick a set | **Google Drive, Interconnect, Dropbox, WebDAV, FTP, SFTP; not OneDrive.** Dropbox gets upload sessions; backends that cannot resume clean up a failed upload and retry next slot. |
 | D10 | Mobile data | Wi-Fi only by default / any network / ask | **Wi-Fi only by default**, a setting allows mobile data; desktop / ethernet counts as unmetered. |
 | D11 | Cloud retention | same as local / fewer | **Fewer: 7 daily + 4 weekly**, this device's copies only (implementation adds the 5 GB cap as a quota guard). |
+| D12 | Phase 4: copies to the paired server | part of the cloud target / own target | **Own target "Copy to server"** (user 2026-11-25: phase 4 = devices → server + server self-backup; defaults below recommended, maintainer may change): independent of the cloud, uses the Interconnect channel sync uses, off by default, own status / key / notify-once; the cloud target stops picking Interconnect; one "Also upload on mobile data" switch covers cloud and server. |
+| D13 | Retention of copies on the server | like the cloud / like local / server decides | **Like local** (48 h all, 7 daily, 4 weekly, 3 monthly, 5 GB), the device prunes only its own copies; other devices' and copied-back copies are never auto-deleted; the server never auto-deletes device copies, its admin can (WebUI / admin API / ctl). |
 
 ## 决策摘要（中文）
 
@@ -475,6 +560,11 @@ D8–D11（用户 2026-11-25 拍板）：云端副本这一批就做（同分支
 不含 OneDrive，Dropbox 补上传会话，不能续传的后端失败就清掉半截、下个时段重来；默认只在 Wi-Fi 上传，可开「也用移动数据」，桌面 / 有线
 算不计流量；云端保留更少：7 日 + 4 周（只动本机写的副本，另有 5 GB 上限防配额被占满）。同批按审查修好：定时点都记写入设备，本机 /
 自定义文件夹 / 云端都只修剪本机写的，取回本机的点不自动删；复制不再拿导出锁；半截副本按目标与元数据精确清理；修剪逐份尽力。
+
+D12–D13（用户 2026-11-25 定第四期 = 设备备份到服务器 + 服务器自己定时备份；以下为推荐默认，维护者可改）：「复制到服务器」是单独的副本目标，
+与云端互不相干（两个都开就各传一份），用同步在用的那条互联通道，默认关，状态 / 键 / 失败提示各自一份；云端副本不再选互联；「也用移动数据
+上传」云端与服务器共用一个开关。服务器上的副本由设备按本机规则修剪自己写的（48 小时全留、7 日 4 周 3 月、5 GB），别的设备的、取回的从不
+自动删，服务器自己也从不自动删，管理员可在 WebUI「设备备份」页 / admin API / ctl 里删。app 当互联 host 时收到的副本暂不在还原点页列出（待定）。
 
 ## Naming
 
