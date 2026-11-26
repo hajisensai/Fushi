@@ -144,6 +144,65 @@ List<OpDescription> describeDataOps(OpDescribeKit kit) => <OpDescription>[
     ],
   ),
 
+  // ── 还原点 / 自动备份 ─────────────────────────────────────────────────
+  const OpDescription(
+    id: 'backup.restore-point.list',
+    method: 'GET',
+    pattern: '/api/admin/restore-points',
+    summary:
+        'List restore points: pre-update, pre-restore, automatic (scheduled) '
+        'and pre-operation points, plus the pre-overwrite snapshot and '
+        'database-check copies, with kind, time, size and what each can do.',
+  ),
+  const OpDescription(
+    id: 'backup.auto.status',
+    method: 'GET',
+    pattern: '/api/admin/auto-backup/status',
+    summary:
+        'Automatic backup settings (interval, time, contents, folder) and the '
+        'result of the last run, number of kept points and whether it is '
+        'overdue.',
+  ),
+  OpDescription(
+    id: 'backup.auto.run',
+    method: 'POST',
+    pattern: '/api/admin/auto-backup/run',
+    summary:
+        'Create an automatic backup restore point now (same as Settings › '
+        'Automatic backup › Back up now). Undo deletes the point it created.',
+    risk: OpRisk.write,
+    undo: _createdRestorePointUndo(),
+  ),
+  const OpDescription(
+    id: 'backup.restore-point.restore',
+    method: 'POST',
+    pattern: '/api/admin/restore-points/restore',
+    summary:
+        'Restore from a restore point. fill adds back what the current data '
+        'is missing and keeps everything else; replace makes the data match '
+        'the point (a pre-operation restore point of the current data is '
+        'taken first). Both close the database and restart the app.',
+    risk: OpRisk.irreversible,
+    needsUi: true,
+    params: <OpParam>[
+      OpParam.string(
+        'id',
+        description: 'Restore point id (from backup.restore-point.list).',
+        required: true,
+      ),
+      OpParam.string(
+        'mode',
+        description: 'fill or replace.',
+        required: true,
+        enumValues: <String>['fill', 'replace'],
+      ),
+      OpParam.userGate(
+        'confirm',
+        description: 'User confirmed restoring from this point.',
+      ),
+    ],
+  ),
+
   // ── 同步 ──────────────────────────────────────────────────────────────
   const OpDescription(
     id: 'sync.status',
@@ -446,6 +505,29 @@ OpUndo _createdFileUndo(OpDescribeKit kit) => OpUndo(
       return const OpUndoOutcome.superseded('文件之后被改过，不删');
     }
     await file.delete();
+    return const OpUndoOutcome.done();
+  },
+);
+
+/// 「立即自动备份」的撤销：删掉它建的那个还原点目录（目录已不在 / 不是还原点 = superseded）。
+OpUndo _createdRestorePointUndo() => OpUndo(
+  record: (CtlCall call, Map<String, Object?> before, Object? result) {
+    final Object? path = result is Map ? result['path'] : null;
+    return OpUndoRecord(
+      payload: <String, Object?>{'path': path is String ? path : null},
+      after: path is String ? path : null,
+    );
+  },
+  revert: (Map<String, Object?> payload) async {
+    final Object? path = payload['path'];
+    if (path is! String) return const OpUndoOutcome.superseded('这次没有新建还原点');
+    final Directory dir = Directory(path);
+    if (!await File(
+      '$path${Platform.pathSeparator}restore_point.json',
+    ).exists()) {
+      return const OpUndoOutcome.superseded('还原点已不在');
+    }
+    await dir.delete(recursive: true);
     return const OpUndoOutcome.done();
   },
 );

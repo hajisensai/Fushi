@@ -14,10 +14,12 @@
 ///   纯 Dart `getCrc32` 逐字节算；[addFileStored] 换成 Rust 的 [ffcCrc32FileSync]。
 ///
 /// 本文件的函数只消费条目的原始压缩窗口 [ArchiveFile.rawContent]，内存峰值是
-/// 一个读块（解压）或压缩后的体积（压缩）。
+/// 一个读块（解压），或一个读块 + 至多 [kNativeZipInMemoryDeflateBytes] 的压缩结果（压缩；
+/// 更大的文件把压缩结果流式写进临时文件，再从临时文件流式拷进 zip）。
 library;
 
-import 'dart:io' show Directory, File, FileSystemEntity, RandomAccessFile;
+import 'dart:io'
+    show Directory, File, FileMode, FileSystemEntity, RandomAccessFile;
 import 'dart:io' as io show ZLibCodec, ZLibOption;
 import 'dart:typed_data';
 
@@ -27,6 +29,10 @@ import 'package:path/path.dart' as p;
 
 /// 读 / 写的分块大小：每块的堆峰值。
 const int kNativeZipChunkBytes = 4 * 1024 * 1024;
+
+/// [addFileNativeDeflate] 在内存里攒压缩结果的上限（按源文件大小判）：不超过它的文件压缩结果
+/// 直接留在内存（小文件不值得落临时文件）；更大的把压缩结果流式写进临时文件，内存峰值有界。
+const int kNativeZipInMemoryDeflateBytes = 16 * 1024 * 1024;
 
 /// 已经是压缩格式的扩展名：再 deflate 只浪费 CPU，直接 STORE。
 const Set<String> kAlreadyCompressedExtensions = <String>{
@@ -316,8 +322,12 @@ ArchiveFile nativeDeflatedArchiveFile(
   )..crc32 = ffcCrc32(bytes);
 }
 
-/// 把磁盘文件 [file] 以 [name] 加进 [encoder]：原生 deflate 分块读文件、增量算
-/// CRC，内存峰值 = 压缩后体积 + 一个读块（archive 的 GZIP 档要整文件入内存再压）。
+/// 把磁盘文件 [file] 以 [name] 加进 [encoder]：原生 deflate 分块读文件、增量算 CRC。
+///
+/// 内存峰值有界：不超过 [kNativeZipInMemoryDeflateBytes] 的文件压缩结果留在内存；更大的
+/// 文件把压缩结果分块写进临时文件（[tempDirectory]，缺省系统临时目录），再由 archive 从
+/// 临时文件分块拷进 zip——以前整份压缩结果攒在 `BytesBuilder` 里、`takeBytes` 再拷一份，
+/// 几百 MB 的条目在手机上能把 app 挤爆。
 ///
 /// 已是压缩格式（[kAlreadyCompressedExtensions]）或压缩后不变小的文件走 STORE，
 /// STORE 走 [addFileStored]（真流式、不整文件入内存）。
@@ -326,6 +336,7 @@ void addFileNativeDeflate(
   File file,
   String name, {
   int level = io.ZLibOption.defaultLevel,
+  String? tempDirectory,
 }) {
   final int size = file.lengthSync();
   if (size == 0 ||
@@ -334,40 +345,80 @@ void addFileNativeDeflate(
     return;
   }
 
-  final BytesBuilder compressed = BytesBuilder(copy: false);
-  final Sink<List<int>> deflater = io.ZLibCodec(
-    raw: true,
-    level: level,
-  ).encoder.startChunkedConversion(_CallbackSink(compressed.add));
-  int crc = 0;
-  final RandomAccessFile raf = file.openSync();
-  try {
-    while (true) {
-      final Uint8List chunk = raf.readSync(kNativeZipChunkBytes);
-      if (chunk.isEmpty) break;
-      crc = ffcCrc32(chunk, crc);
-      deflater.add(chunk);
+  int deflateInto(void Function(List<int> chunk) sink) {
+    final Sink<List<int>> deflater = io.ZLibCodec(
+      raw: true,
+      level: level,
+    ).encoder.startChunkedConversion(_CallbackSink(sink));
+    int crc = 0;
+    final RandomAccessFile raf = file.openSync();
+    try {
+      while (true) {
+        final Uint8List chunk = raf.readSync(kNativeZipChunkBytes);
+        if (chunk.isEmpty) break;
+        crc = ffcCrc32(chunk, crc);
+        deflater.add(chunk);
+      }
+    } finally {
+      raf.closeSync();
     }
-  } finally {
-    raf.closeSync();
+    deflater.close();
+    return crc;
   }
-  deflater.close();
 
-  if (compressed.length >= size) {
-    addFileStored(encoder, file, name);
-    return;
-  }
-  final ArchiveFile entry =
-      ArchiveFile(
-          name,
-          size,
-          InputStream(compressed.takeBytes()),
-          ArchiveFile.DEFLATE,
-        )
+  ArchiveFile deflatedEntry(InputStreamBase compressed, int crc) =>
+      ArchiveFile(name, size, compressed, ArchiveFile.DEFLATE)
         ..crc32 = crc
         ..lastModTime = file.lastModifiedSync().millisecondsSinceEpoch ~/ 1000
         ..mode = file.statSync().mode;
-  encoder.addArchiveFile(entry);
+
+  if (size <= kNativeZipInMemoryDeflateBytes) {
+    final BytesBuilder compressed = BytesBuilder(copy: false);
+    final int crc = deflateInto(compressed.add);
+    if (compressed.length >= size) {
+      addFileStored(encoder, file, name);
+      return;
+    }
+    encoder.addArchiveFile(
+      deflatedEntry(InputStream(compressed.takeBytes()), crc),
+    );
+    return;
+  }
+
+  final Directory tmpDir = Directory(
+    tempDirectory ?? Directory.systemTemp.path,
+  ).createTempSync('fushi_deflate_');
+  try {
+    final File tmp = File(p.join(tmpDir.path, 'entry.deflate'));
+    final RandomAccessFile out = tmp.openSync(mode: FileMode.writeOnly);
+    int compressedBytes = 0;
+    final int crc;
+    try {
+      crc = deflateInto((List<int> chunk) {
+        out.writeFromSync(chunk);
+        compressedBytes += chunk.length;
+      });
+    } finally {
+      out.closeSync();
+    }
+    if (compressedBytes >= size) {
+      addFileStored(encoder, file, name);
+      return;
+    }
+    final InputFileStream stream = InputFileStream(tmp.path);
+    try {
+      // addArchiveFile 写完即关条目的流（autoClose）；finally 再关一次无害。
+      encoder.addArchiveFile(deflatedEntry(stream, crc));
+    } finally {
+      stream.closeSync();
+    }
+  } finally {
+    try {
+      tmpDir.deleteSync(recursive: true);
+    } on Object {
+      // 临时目录删不掉只占空间（系统临时目录会被清理），不让它盖过真正的结果。
+    }
+  }
 }
 
 /// [ZipFileEncoder.addFile]`(file, name, ZipFileEncoder.STORE)` 的替代：先按

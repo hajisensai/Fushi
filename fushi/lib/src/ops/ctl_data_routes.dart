@@ -11,6 +11,7 @@ import 'package:fushi_core/fushi_core.dart'
         kLegacySchemaBridgeAppVersion,
         kLegacySchemaBridgeReleaseUrl,
         kMinSupportedSchemaVersion,
+        RestorePoint,
         VideoBookRow,
         VideoDownloadJobRow;
 import 'package:fushi_engine/media/discovery/discovery_download_queue.dart';
@@ -40,6 +41,12 @@ import 'package:fushi/src/ops/ctl_download_support.dart';
 import 'package:fushi/src/ops/op_context.dart';
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/storage_usage_service.dart';
+import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart';
+import 'package:fushi/src/sync/auto_backup/auto_backup_schedule.dart';
+import 'package:fushi/src/sync/auto_backup/auto_backup_settings.dart';
+import 'package:fushi/src/sync/auto_backup/auto_backup_status.dart';
+import 'package:fushi/src/sync/auto_backup/restore_point_actions.dart';
+import 'package:fushi/src/sync/auto_backup/restore_point_catalog.dart';
 import 'package:fushi/src/sync/backup_service.dart';
 import 'package:fushi/src/sync/backup_archive_name.dart';
 import 'package:fushi/src/sync/fushi_server_controller.dart';
@@ -75,6 +82,7 @@ import 'package:fushi/src/sync/sync_settings_schema.dart'
         DataRootMigrationRunOutcome,
         interconnectPairFailureMessage,
         planDataRootMigration,
+        restorePointUiFlowsFor,
         runBackupImportFlowForFile,
         runDataRootMigration,
         runInterconnectLinkPairingFlow;
@@ -138,19 +146,39 @@ void _runDetached(String label, Future<Object?> Function() body) {
 
 // ── 备份 ─────────────────────────────────────────────────────────────
 
-/// 与设置页「导出备份」同一份构造（`backup.part.dart` 的 `_export`）：数据根下的
+/// 与设置页「导出备份」同一份构造（[AppModel.createBackupService]）：数据根下的
 /// 书 / 有声书 / 字体 / 游戏封面树一起打包。
-BackupService _backupServiceFor(AppModel appModel) => BackupService(
-  db: appModel.database,
-  dbDirectory: appModel.databaseDirectory.path,
-  dictionaryResourceDirectory: appModel.dictionaryResourceDirectory.path,
-  appVersion: appModel.packageInfo.version,
-  booksRootDirectory: p.join(appModel.appDirectory.path, 'fushi_books'),
-  audiobooksRootDirectory: p.join(appModel.appDirectory.path, 'audiobooks'),
-  fontsRootDirectory: p.join(appModel.appDirectory.path, 'custom_fonts'),
-  gameCoversRootDirectory: p.join(appModel.appDirectory.path, 'game_covers'),
-  srsStorage: appModel.srsStorageForBackup,
-);
+BackupService _backupServiceFor(AppModel appModel) =>
+    appModel.createBackupService();
+
+/// 还原点一行的 wire 形态（`restore-points` 列表）。
+Map<String, Object?> _restorePointEntryToWire(RestorePointEntry e) =>
+    <String, Object?>{
+      'id': e.id,
+      'kind': e.kindName,
+      'createdAt': e.createdAt.millisecondsSinceEpoch,
+      'bytes': e.sizeBytes,
+      'path': e.path,
+      'schema': ?e.schema,
+      'appVersion': ?e.point?.appVersion,
+      'reason': ?e.point?.reason,
+      'categories': ?e.point?.categories,
+      'srsMedia': ?e.point?.includesSrsMedia,
+      'canFillIn': e.canFillIn,
+      'canReplace': e.canReplace,
+    };
+
+/// 当前的全部还原点（含自定义文件夹里的定时还原点与存量整库副本）。
+List<RestorePointEntry> _restorePointEntries(AppModel appModel) {
+  final String? folder = appModel.autoBackupSettings.effectiveFolder(
+    supportsCustomFolder:
+        Platform.isWindows || Platform.isMacOS || Platform.isLinux,
+  );
+  return listRestorePointEntries(
+    dbDirectory: appModel.databaseDirectory.path,
+    extraRoots: <String>[?folder],
+  );
+}
 
 /// ctl 备份导出的类别里去掉「要先升级才能导出」的（[BackupContentSummary.needsUpgrade]，目前只有复习：本机只有协议 3
 /// 的复习库、还没迁移成新代时打不开，整份导出会失败）。
@@ -302,7 +330,11 @@ List<CtlRoute> _backupRoutes(
     );
     final Set<BackupCategory>? finalCategories = resolved.categories;
     final bool wait = call.optBool('wait') ?? true;
-    appModel.beginBackupExport();
+    // 上面的检查与这里之间有 await：拿锁失败（这期间别的导出 / 自动备份拿走了）照样 409。
+    final Object? exportLock = appModel.beginBackupExport();
+    if (exportLock == null) {
+      throw const CtlFailure.conflict('已有一个备份导出在进行中');
+    }
     Future<Map<String, Object?>> export() async {
       List<String> skippedDictionaries = const <String>[];
       final BackupMeta meta;
@@ -323,7 +355,7 @@ List<CtlRoute> _backupRoutes(
         } catch (_) {}
         rethrow;
       } finally {
-        appModel.endBackupExport();
+        appModel.endBackupExport(exportLock);
       }
       return <String, Object?>{
         'path': outputPath,
@@ -381,6 +413,142 @@ List<CtlRoute> _backupRoutes(
       'active': appModel.backupExportActive,
       'progress': ?appModel.backupExportProgress.value,
       'last': ?tasks.lastBackup,
+    };
+  }),
+  // ── 还原点 / 自动备份（docs/specs/2026-11-25-auto-backup-restore-points.md）──
+  // 列出全部还原点（更新前 / 回滚前 / 定时 / 操作前，加覆盖前快照与检查数据库的备份）。
+  CtlRoute.get('/api/admin/restore-points', (CtlCall call) async {
+    return <String, Object?>{
+      'points': <Map<String, Object?>>[
+        for (final RestorePointEntry e in _restorePointEntries(
+          context.appModel,
+        ))
+          _restorePointEntryToWire(e),
+      ],
+    };
+  }),
+  // 自动备份的设置与状态（与设置页状态行同源）。
+  CtlRoute.get('/api/admin/auto-backup/status', (CtlCall call) async {
+    final AppModel appModel = context.appModel;
+    final AutoBackupSettings settings = appModel.autoBackupSettings;
+    final AutoBackupStatus status = appModel.autoBackup.status.value;
+    final List<RestorePoint> kept = appModel.autoBackup.scheduledPoints(
+      settings,
+    );
+    return <String, Object?>{
+      'interval': settings.interval.name,
+      'preferredMinuteOfDay': ?settings.preferredMinuteOfDay,
+      'categories': <String>[
+        for (final BackupCategory c in settings.categories) c.name,
+      ],
+      'srsMedia': settings.includeSrsMedia,
+      'folder': appModel.autoBackup.scheduledStore(settings).root,
+      'running': appModel.autoBackup.running,
+      'lastResult': ?status.lastResult?.name,
+      'lastSuccessAt': ?status.lastSuccessMs,
+      'lastSuccessBytes': ?status.lastSuccessBytes,
+      'lastError': ?status.lastError,
+      if (status.missingData.isNotEmpty) 'missingData': status.missingData,
+      'overdue': isAutoBackupOverdue(
+        settings: settings,
+        now: DateTime.now(),
+        lastSatisfied: status.lastSatisfied,
+      ),
+      'kept': kept.length,
+      'keptBytes': kept.fold<int>(
+        0,
+        (int sum, RestorePoint point) => sum + point.totalBytes,
+      ),
+    };
+  }),
+  // 立即自动备份：与设置页「立即备份」同一个 [AutoBackupController.backUpNow]（不看到期、不因
+  // 没变化跳过）。已有备份在跑时 409。
+  CtlRoute.post('/api/admin/auto-backup/run', (CtlCall call) async {
+    final AppModel appModel = context.appModel;
+    if (appModel.backupExportActive || appModel.autoBackup.running) {
+      throw const CtlFailure.conflict('已有一个备份在进行中');
+    }
+    final AutoBackupOutcome outcome = await appModel.autoBackup.backUpNow();
+    if (outcome == AutoBackupOutcome.busy) {
+      throw const CtlFailure.conflict('已有一个备份在进行中，或正在恢复数据');
+    }
+    final AutoBackupStatus status = appModel.autoBackup.status.value;
+    if (outcome == AutoBackupOutcome.failed) {
+      throw CtlFailure.rejected(
+        '自动备份失败：${redactCtlSecrets(status.lastError ?? '')}',
+      );
+    }
+    final RestorePoint? point = outcome == AutoBackupOutcome.created
+        ? appModel.autoBackup
+              .scheduledPoints()
+              .where((RestorePoint p) => p.id == status.lastSuccessPointId)
+              .firstOrNull
+        : null;
+    return <String, Object?>{
+      'outcome': outcome.name,
+      'id': ?point?.id,
+      'path': ?point?.directory,
+      'bytes': ?point?.totalBytes,
+    };
+  }),
+  // 从还原点恢复：fill = 只补缺合并（已有的行不动），replace = 先拍操作前还原点再整体换回。
+  // 两种都关库、走全屏遮罩并重启，与还原点页同一套动作；需要 `confirm: true`（与恢复备份同一道门）。
+  CtlRoute.post('/api/admin/restore-points/restore', (CtlCall call) async {
+    _requireConfirm(call, '从还原点恢复');
+    final String id = call.requireString('id');
+    final String mode = call.requireString('mode');
+    final AppModel appModel = context.appModel;
+    if (appModel.backupExportActive) {
+      throw const CtlFailure.conflict('备份导出进行中，先等它结束');
+    }
+    final RestorePointEntry? entry = _restorePointEntries(
+      appModel,
+    ).where((RestorePointEntry e) => e.id == id).firstOrNull;
+    if (entry == null) throw CtlFailure.notFound('没有这个还原点：$id');
+    switch (mode) {
+      case 'fill':
+        if (!entry.canFillIn) {
+          throw const CtlFailure.rejected('这个还原点不能补回内容（版本不兼容或没有主库副本）');
+        }
+        await _uiContext(context);
+        _runDetached(
+          'backup.restore-point.fill',
+          () => fillInFromRestorePoint(
+            appModel,
+            entry,
+            restorePointUiFlowsFor(appModel),
+          ),
+        );
+      case 'replace':
+        if (!entry.canReplace) {
+          throw const CtlFailure.rejected('这个还原点不能用来替换（版本不兼容或不是还原点）');
+        }
+        await _uiContext(context);
+        // 查锁、钉住目标点、拍操作前还原点：任何一步不成都在动任何东西之前抛出，同步等到这一步，
+        // 失败直接回终端。
+        final RestorePointReplaceTicket ticket;
+        try {
+          ticket = await prepareRestorePointReplace(appModel, entry);
+        } on RestorePointBusyException {
+          throw const CtlFailure.conflict('备份导出进行中，先等它结束');
+        }
+        _runDetached(
+          'backup.restore-point.replace',
+          () => runRestorePointReplace(
+            appModel,
+            ticket,
+            restorePointUiFlowsFor(appModel),
+          ),
+        );
+      default:
+        throw const CtlFailure.badRequest('mode 只能是 fill 或 replace');
+    }
+    return <String, Object?>{
+      'ok': true,
+      'started': true,
+      'id': id,
+      'mode': mode,
+      'message': '已开始恢复，完成后 app 会自动重启',
     };
   }),
   // 恢复备份：交给 app 既有的导入编排 [runBackupImportFlowForFile]（校验 → 确认框

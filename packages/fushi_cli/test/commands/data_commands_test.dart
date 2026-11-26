@@ -611,6 +611,60 @@ void main() {
     });
   });
 
+  group('还原点 / 自动备份', () {
+    test('points / auto / auto-run 指向对应路由', () {
+      final CtlRequestSpec ls = build('backup', 'points', <String>[]);
+      expect((ls.method, ls.path), ('GET', '/api/admin/restore-points'));
+      final CtlRequestSpec st = build('backup', 'auto', <String>[]);
+      expect((st.method, st.path), ('GET', '/api/admin/auto-backup/status'));
+      final CtlRequestSpec run = build('backup', 'auto-run', <String>[]);
+      expect((run.method, run.path), ('POST', '/api/admin/auto-backup/run'));
+    });
+
+    test('point-restore：--fill / --replace 二选一，要 --yes', () {
+      expect(
+        () => build('backup', 'point-restore', <String>['p1', '--yes']),
+        usageError(),
+      );
+      expect(
+        () => build('backup', 'point-restore', <String>[
+          'p1',
+          '--fill',
+          '--replace',
+          '--yes',
+        ]),
+        usageError(),
+      );
+      expect(
+        () => build('backup', 'point-restore', <String>['p1', '--replace']),
+        usageError(),
+      );
+      expect(
+        () => build('backup', 'point-restore', <String>['--fill', '--yes']),
+        usageError(),
+      );
+      final CtlRequestSpec r = build('backup', 'point-restore', <String>[
+        'p1',
+        '--replace',
+        '--yes',
+      ]);
+      expect((r.method, r.path), ('POST', '/api/admin/restore-points/restore'));
+      expect(r.body, <String, Object?>{
+        'id': 'p1',
+        'mode': 'replace',
+        'confirm': true,
+      });
+      expect(
+        build('backup', 'point-restore', <String>[
+          'p1',
+          '--fill',
+          '-y',
+        ]).body?['mode'],
+        'fill',
+      );
+    });
+  });
+
   group('sub', () {
     test('ls / get / items / check（单条与全部）', () {
       expect(build('sub', 'ls', <String>[]).path, '/api/admin/subscriptions');
@@ -695,6 +749,24 @@ void main() {
             .firstWhere((CtlCommandGroup g) => g.name == group)
             .find(command)!
             .render!(data);
+
+    test('backup auto：上次没带的数据（复习库待升级）单独一行', () {
+      final Map<String, Object?> base = <String, Object?>{
+        'interval': 'daily',
+        'categories': <Object?>['fonts'],
+        'folder': '/x',
+        'kept': 1,
+        'keptBytes': 10,
+      };
+      expect(render('backup', 'auto', base), isNot(contains('上次未含')));
+      expect(
+        render('backup', 'auto', <String, Object?>{
+          ...base,
+          'missingData': <Object?>['srs'],
+        }),
+        contains('上次未含：srs'),
+      );
+    });
 
     test('sub ls 状态列：启用 / 已停用 / 已完成 / 出错；后端未就绪有提示', () {
       final String out = render('sub', 'ls', <String, Object?>{

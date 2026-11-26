@@ -7,6 +7,11 @@ import 'package:fushi/src/models/library_grid_columns.dart'
 import 'package:fushi/src/models/preference_keys.dart'
     show
         kAnkiSettingsPrefKey,
+        kAutoBackupCategoriesPrefKey,
+        kAutoBackupFolderPrefKey,
+        kAutoBackupIntervalPrefKey,
+        kAutoBackupSrsMediaPrefKey,
+        kAutoBackupTimePrefKey,
         kOnlineLibraryLedgerPrefKey,
         kWhatsNewCardDismissedVersionPrefKey,
         kWhatsNewSeenSeqPrefKey,
@@ -2066,6 +2071,13 @@ class SyncRepository {
   static const String syncRemoteAccountPrefBase = 'sync_remote_account';
 
   static const List<String> _deviceLocalFixedKeys = <String>[
+    // 自动备份的节奏、内容与落点：描述这台设备（自定义文件夹是本机路径）；恢复备份不该
+    // 替这台设备改掉它的备份设置。
+    kAutoBackupCategoriesPrefKey,
+    kAutoBackupFolderPrefKey,
+    kAutoBackupIntervalPrefKey,
+    kAutoBackupSrsMediaPrefKey,
+    kAutoBackupTimePrefKey,
     // 楽天ブックス书籍检索凭据：用户自己注册的应用凭据，只留在这台设备。
     'book_scrape_rakuten_access_key',
     'book_scrape_rakuten_application_id',

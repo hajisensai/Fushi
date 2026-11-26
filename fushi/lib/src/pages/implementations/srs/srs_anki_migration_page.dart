@@ -28,6 +28,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_action_error_text.dart'
     show srsImportFailureMessage;
 import 'package:fushi/src/srs/srs_anki_migration.dart';
+import 'package:fushi/src/sync/auto_backup/auto_backup_controller.dart'
+    show kRestorePointReasonSrsMigration, takePreOperationRestorePoint;
 import 'package:fushi/src/srs/srs_import_entry.dart' show srsImportReportLines;
 import 'package:fushi/src/srs/srs_import_task.dart';
 import 'package:fushi_engine/srs/srs_media_store.dart';
@@ -372,6 +374,10 @@ class _SrsAnkiMigrationPageState extends ConsumerState<SrsAnkiMigrationPage>
                 cardTargetSwitch: cardTargetSwitch,
                 onProgress: onProgress,
                 shouldStop: shouldStop,
+                // 迁移前拍操作前还原点（主库 + 复习库），设置页提示里说的「用还原点撤回」靠它。
+                beforeImport: () => takePreOperationRestorePoint(
+                  kRestorePointReasonSrsMigration,
+                ),
               ),
           cleanup: cleanup,
         );
