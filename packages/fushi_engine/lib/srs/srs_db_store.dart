@@ -3436,6 +3436,15 @@ class SrsDbStore implements SrsSync2Host {
     );
   }
 
+  /// RWKV 末条：[cardIds] 每张卡最后一条保留评分（没有 = null），读缓存层物化好的表，不重放历史
+  /// （冷启动打分 / 统计整表查询行用它，BUG-5525）。
+  Future<List<SrsRwkvLastRating?>> rwkvLastRatings(List<String> cardIds) async {
+    if (cardIds.isEmpty) return const <SrsRwkvLastRating?>[];
+    return srsDecodeRwkvLastRatings(
+      await _coreRwkvLast(core.address, core.libraryPath, profileUid, cardIds),
+    );
+  }
+
   /// RWKV 全量回放：[cardIds]（回放的加入顺序）的保留评分行按评分时刻排好序，连同同一快照里的日志指纹；
   /// [since] 之后出现、不在这些卡血统里的卡作为 [SrsRwkvReplay.strays] 返回。
   ///
@@ -6603,6 +6612,20 @@ Future<Uint8List> _coreCalibrationItems(
       rolloverHour: rolloverHour,
       profile: profile,
     ),
+  ),
+  measure: (Uint8List b) => (b.length, 0),
+);
+
+Future<Uint8List> _coreRwkvLast(
+  int address,
+  String? libraryPath,
+  String profile,
+  List<String> cardIds,
+) => SrsOpLedger.track(
+  'core:rwkv_last',
+  () => SrsCoreWorkers.of(libraryPath).run<Uint8List>(
+    address,
+    (SrsCore c) => c.rwkvLastRatings(cardIds, profile: profile),
   ),
   measure: (Uint8List b) => (b.length, 0),
 );

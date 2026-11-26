@@ -41,6 +41,18 @@ android {
 
     defaultConfig {
         minSdk = 21
+        consumerProguardFiles "consumer-rules.pro"
+    }
+
+    // Fushi fork (PATCHES.md delta 19): libflutter_onnxruntime_jni.so, the JNI half of
+    // the native tensor memory path (tensor bytes stay out of the Java heap, BUG-5508).
+    // Same NDK as the app (fushi/android/app/build.gradle) so CI installs only one.
+    ndkVersion = "28.2.13676358"
+    externalNativeBuild {
+        cmake {
+            path = "src/main/cpp/CMakeLists.txt"
+            version = "3.22.1"
+        }
     }
 
     dependencies {

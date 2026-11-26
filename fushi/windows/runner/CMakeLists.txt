@@ -39,6 +39,7 @@ add_executable(${BINARY_NAME} WIN32
   "global_lookup_window.cpp"
   "global_mouse_trigger.cpp"
   "hang_watchdog.cpp"
+  "code_integrity_probe.cpp"
   "hdr_desktop_capture.cpp"
   "hdr_display_info.cpp"
   "hook_toolbar_window.cpp"
@@ -115,6 +116,9 @@ target_link_libraries(${BINARY_NAME} PRIVATE bcrypt)
 # BUG-1450: ImmAssociateContextEx — detach the IME from the window while no text
 # field has focus so CJK IMEs stop swallowing every shortcut key.
 target_link_libraries(${BINARY_NAME} PRIVATE imm32)
+# BUG-5484: code_integrity_probe.cpp reads the CodeIntegrity/Operational event
+# log (EvtQuery) to record Smart App Control / WDAC blocks of Fushi files.
+target_link_libraries(${BINARY_NAME} PRIVATE wevtapi)
 target_include_directories(${BINARY_NAME} PRIVATE "${CMAKE_SOURCE_DIR}")
 add_dependencies(${BINARY_NAME} flutter_assemble)
 
@@ -207,6 +211,22 @@ add_custom_target(fushi_windows_startup_reveal_policy_gate
   VERBATIM
 )
 add_dependencies(${BINARY_NAME} fushi_windows_startup_reveal_policy_gate)
+
+# BUG-5484: Smart App Control / WDAC block evidence (code_integrity_report.h) —
+# event XML parsing, the "is this a Fushi file" match, user-profile redaction and
+# the report-once record cursor stay executable on every Windows runner build.
+add_executable(fushi_windows_code_integrity_report_test
+  "tests/code_integrity_report_test.cpp"
+)
+apply_standard_settings(fushi_windows_code_integrity_report_test)
+target_compile_definitions(fushi_windows_code_integrity_report_test PRIVATE
+  "NOMINMAX")
+add_custom_target(fushi_windows_code_integrity_report_gate
+  COMMAND "$<TARGET_FILE:fushi_windows_code_integrity_report_test>"
+  DEPENDS fushi_windows_code_integrity_report_test
+  VERBATIM
+)
+add_dependencies(${BINARY_NAME} fushi_windows_code_integrity_report_gate)
 
 # BUG-3768: the FUSHI_TEST_HIDDEN window must stay where the runner parked it;
 # Dart startup placement (setBounds / maximize) otherwise pulls it onto the

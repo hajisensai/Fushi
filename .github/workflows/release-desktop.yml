@@ -1170,6 +1170,8 @@ jobs:
           if ($LASTEXITCODE -ne 0) { throw "bundle 签名失败，退出码 $LASTEXITCODE" }
       - name: Compile installer (Inno Setup)
         shell: pwsh
+        env:
+          CERTUM_CERT_THUMBPRINT: ${{ secrets.CERTUM_CERT_THUMBPRINT }}
         run: |
           $iscc = "${env:ProgramFiles(x86)}\Inno Setup 6\ISCC.exe"
           function Test-Md3Capable([string]$compiler) {
@@ -1217,21 +1219,26 @@ jobs:
             }
           }
           Write-Host "ISCC accepts the MD3 wizard directives"
+          # 安装器签名交给 ISCC 的 SignTool 在编译期做（BUG-5515），不再编完后只签外壳：
+          # Inno 运行时解到 %TEMP% 的 .tmp 安装程序和现生成的 unins000.exe 只有走 SignTool
+          # 才会被签；外壳签了、它们没签，开着智能应用控制的 Windows 11 直接报 4551 拒绝启动。
+          # ISCC 把 $f 换成带引号的待签文件路径；脚本失败非零退出，ISCC 随即报错停编。
+          # 脚本路径的引号只能写成 Inno 的 $q：pwsh 7 把传给原生 exe 的内嵌 " 转义成 \"，
+          # 而 ISCC 的命令行解析不认反斜杠转义，-File 会收到前后各多一个 \ 的坏路径。
+          [string[]] $signArgs = @()
+          if ('${{ steps.signcheck.outputs.have }}' -eq 'true') {
+            $signScript = "$PWD\tool\sign_windows_release.ps1"
+            $signArgs = @(
+              '/DFushiSignTool',
+              "/Sfushisign=pwsh.exe -NoProfile -NonInteractive -File `$q$signScript`$q -Path `$f -Description Fushi"
+            )
+          }
           & "$iscc" "/DAppVersion=${{ steps.channel.outputs.build_version_name }}" `
             "/DSourceDir=$PWD\fushi\build\windows\x64\runner\Release" `
             "/DOutputDir=$PWD\fushi\build\installer" `
+            @signArgs `
             "fushi\windows\installer\fushi.iss"
           if ($LASTEXITCODE -ne 0) { throw "ISCC failed with exit code $LASTEXITCODE" }
-      - name: Sign Windows installer
-        if: steps.signcheck.outputs.have == 'true'
-        shell: pwsh
-        env:
-          CERTUM_CERT_THUMBPRINT: ${{ secrets.CERTUM_CERT_THUMBPRINT }}
-        run: |
-          & "$PWD\tool\sign_windows_release.ps1" `
-            -Path "$PWD\fushi\build\installer\fushi-${{ steps.channel.outputs.build_version_name }}-windows-setup.exe" `
-            -Description 'Fushi'
-          if ($LASTEXITCODE -ne 0) { throw "签名失败，退出码 $LASTEXITCODE" }
       # 打包后回验：把刚签好的安装器真的装进 runner 的临时目录，检查**装出来的**
       # 每个 exe/dll 都带签名。
       # 「Sign Windows bundle binaries」验的是打包**前**的文件，证明不了 Inno 把它们
@@ -1279,10 +1286,20 @@ jobs:
             throw "安装包里混入了 $($shippedTests.Count) 个测试 exe。"
           }
 
+          # 安装器外壳本身：ISCC 的 SignTool 签的，事后不再单独补签（BUG-5515）。
+          $outer = Get-AuthenticodeSignature -LiteralPath $setup
+          Write-Host "setup.exe -> $($outer.Status) / $($outer.SignerCertificate.Subject)"
+          if ($outer.Status -ne 'Valid' -or $outer.SignerCertificate.Thumbprint -ne $thumb -or
+              $null -eq $outer.TimeStamperCertificate) {
+            throw "安装器外壳未被本证书签名或缺时间戳。"
+          }
+          # unins*.exe 不再排除（BUG-5515）：它是 Inno 安装时用编译期签好的 uninst.e32 现生成的，
+          # 和运行时解到 %TEMP% 的 .tmp 安装程序走同一条 SignTool 通路——卸载器带了我们的签名，
+          # 就证明 SignTool 生效、.tmp 也签上了；无签名的 .tmp 在智能应用控制下报 4551 拒绝启动。
+          [string[]] $uninstallers = @(Get-ChildItem -LiteralPath $dst -File -Filter 'unins*.exe').Name
+          if ($uninstallers.Count -eq 0) { throw "装出来的目录里没有 unins*.exe，无法回验 SignTool 是否生效。" }
           $files = Get-ChildItem -LiteralPath $dst -Recurse -File |
-            Where-Object { $_.Extension -in '.exe', '.dll' } |
-            # unins*.exe 是 Inno 在**安装时**现生成的卸载器，我们签不到它。
-            Where-Object { $_.Name -notlike 'unins*.exe' }
+            Where-Object { $_.Extension -in '.exe', '.dll' }
 
           Write-Host "[verify] 待校验 exe/dll $($files.Count) 个，开始逐个读签名…"
           $ours = 0; $others = 0; [string[]] $unsigned = @()

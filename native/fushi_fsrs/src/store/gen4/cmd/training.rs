@@ -43,7 +43,7 @@
 
 use std::collections::{BTreeSet, HashMap, HashSet};
 
-use rusqlite::params;
+use rusqlite::{OptionalExtension, params};
 
 use super::lineage::lineages;
 use super::{ref_of, snapshot};
@@ -140,6 +140,38 @@ pub fn rwkv_cards(
         let groups = expand(t, col, &ix, groups)?;
         let logs = logs_by_card(&mut ix, &projections::wanted_cards(&groups))?;
         projections::rwkv_cards_of(&groups, &logs, ids, day)
+    })
+}
+
+/// `rwkv_rows` 末条模式：[cards]（任意 ID，按类归一）各自最后一条 RWKV 保留评分，读缓存层与卡行一起物化的
+/// `rwkv_last`（与 [rwkv_cards] 摘要里的 `last` 同一条，`store/gen4/derive.rs` 的 `assert_rwkv_last_matches_replay`（挂在 `assert_rebuild_is_identity` 上，逐卡对拍整层重建与重放） 钉住）。
+/// 输出 `[n, (时刻|NONE, 评分, 复习类型代码) × n]`，没有保留评分（或没有卡行）的卡是 `NONE, 0, 0`。
+///
+/// RWKV 打分的查询行只要这一条（`srs_rwkv_service.dart` `_queryRows`）：冷启动分数表是空的、统计又整表重查，
+/// 逐卡模式要重放每张卡的全部历史（实测 1.5 万张卡 26～36 秒，BUG-5525），这里是一次按主键的表读。
+pub fn rwkv_last(t: &Truth<'_>, col: i64, cards: &[String]) -> Result<Vec<u8>, String> {
+    snapshot(t, |t| {
+        let ix = Index::new(t, col);
+        let mut out = Vec::with_capacity(8 + cards.len() * 24);
+        out.extend_from_slice(&(cards.len() as i64).to_le_bytes());
+        let mut stmt = t
+            .conn()
+            .prepare_cached("SELECT at, rating, rtype FROM rwkv_last WHERE col = ?1 AND card = ?2")
+            .map_err(sql)?;
+        for c in cards {
+            let card = ix.canonical(&ref_of(c))?;
+            let row: Option<(i64, i64, i64)> = stmt
+                .query_row(params![col, card], |r| {
+                    Ok((r.get(0)?, r.get(1)?, r.get(2)?))
+                })
+                .optional()
+                .map_err(sql)?;
+            let (at, rating, rtype) = row.unwrap_or((crate::history::NONE_I64, 0, 0));
+            for v in [at, rating, rtype] {
+                out.extend_from_slice(&v.to_le_bytes());
+            }
+        }
+        Ok(out)
     })
 }
 

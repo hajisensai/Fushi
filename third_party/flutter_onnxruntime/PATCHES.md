@@ -423,3 +423,40 @@ or below the API version of the downloaded DirectML core.
       (`released: false`, `openCudaSessions > 0`) while a CUDA session is open.
     - Guard: `fushi/test/onnx/cuda_idle_release_guard_test.dart`; device probe:
       `fushi/integration_test/asr_cuda_vram_release_itest.dart`.
+
+19. `android/src/main/cpp/` (new) + `android/build.gradle` + `android/consumer-rules.pro`
+    (new) + `android/.../NativeTensorMemory.kt` (new) + `FlutterOnnxruntimePlugin.kt`
+    + `lib/src/native_tensor_memory*.dart` (new) + `lib/src/ort_value.dart` /
+    platform interface / method channel: **Android tensor data crosses as an
+    address, not as a list** (BUG-5508).
+
+    - On Android `ByteBuffer.allocateDirect` is a Java-heap array. Upstream's
+      list path kept every tensor in the 256 MB app heap several times over: the
+      codec decodes a Dart `Float32List` into a `FloatArray`, ORT copies that into
+      a direct buffer that lives as long as the tensor, and each read-back is
+      `getFloatBuffer()` copy + `FloatArray` + a doubling `ByteArrayOutputStream`
+      + the reply buffer. Under OCR / ASR load the app died with
+      `OutOfMemoryError` in `OrtUtil.prepareBuffer` (9 MB) / `StandardMessageCodec.writeFloat`
+      (4 MB), and the full heap then took down unrelated channels too.
+    - Inputs: `OrtValue.fromList` (float32 / int32 / int64 / uint8 typed data)
+      mallocs the bytes in Dart and calls `createOrtValueFromAddress`; the plugin
+      wraps the block with JNI `NewDirectByteBuffer` and ORT uses it zero-copy
+      (`OrtUtil.prepareBuffer` keeps direct buffers). The `OrtValue` owns the
+      block and frees it only after `releaseOrtValue` returned.
+    - Outputs: `asFlattenedList` / `asList` (float32 / int32 / int64 / uint8 /
+      int8) call `getOrtValueAddress`, which returns the address of ORT's own
+      tensor memory (private `OnnxTensor.getBuffer()` by reflection, kept by
+      the consumer rules, then JNI `GetDirectBufferAddress`); Dart copies it into
+      a typed list before the value is disposed.
+    - float16 / bool / string and `convertOrtValue` keep the codec path (no
+      caller sends large tensors of those). Linux / Windows keep the codec path
+      too: their native heap has no such cap.
+    - The address path is chosen by the real host OS (`Platform.isAndroid` in
+      `native_tensor_memory_ffi.dart`), not by `defaultTargetPlatform`: a desktop
+      debug run that overrides the UI target platform still talks to the desktop
+      plugin. Tests flip it with `debugNativeTensorMemoryHostOverride`.
+    - `OrtValue.dispose()` waits for reads in flight before releasing the tensor
+      (a native read copies out of ORT's own memory) and later reads throw
+      `StateError`, so a caller that disposes without awaiting a read cannot make
+      Dart copy from freed memory.
+    - Guard: `fushi/test/onnx/onnxruntime_android_native_tensor_memory_test.dart`.
