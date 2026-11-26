@@ -380,17 +380,18 @@ try {
     passed++;
   }
 
+  // 辅助脚本是 popup.js 里的模板串常量：取出字面量、按 JS 模板串求值，得到真正塞进
+  // srcdoc 的那段源码（场景 11、12 共用）；装进一张不带 popup.js 的空白页，只测它自己。
+  const helperLiteral = /const DICT_SANDBOX_HELPER_JS = (`[\s\S]*?`);/.exec(scripts.popup);
+  assert.ok(helperLiteral, 'DICT_SANDBOX_HELPER_JS literal found in popup.js');
+  const helperJs = vm.runInNewContext(helperLiteral[1]);
+
   step('11');
   // 11. BUG-4753：沙箱里点字取词，起点是「字框真包含点」的那个字。caretRangeFromPoint 给的
   //     是离点最近的字间缝，点在字的右半边时偏移已指向下一个字——曾经直接拿它当起点，
   //     点「昼」查成「間」、点「訪」查成「問」。这里在真 Chrome 里把生产的沙箱辅助脚本
   //     装进一个 srcdoc frame，点每个字的左 / 右半边，看它报给父页面的查词串从哪个字起。
   {
-    // 辅助脚本是 popup.js 里的模板串常量：取出字面量、按 JS 模板串求值，得到真正塞进
-    // srcdoc 的那段源码；装进一张不带 popup.js 的空白页，只测它自己的取字。
-    const helperLiteral = /const DICT_SANDBOX_HELPER_JS = (`[\s\S]*?`);/.exec(scripts.popup);
-    assert.ok(helperLiteral, 'DICT_SANDBOX_HELPER_JS literal found in popup.js');
-    const helperJs = vm.runInNewContext(helperLiteral[1]);
     // 测试页由 cdp_client 以 CSP sandbox（不透明源）供出，父页面摸不到 frame 的文档，所以
     // 量字框、派点击都在 frame 里做：辅助脚本先装（它的 click 监听在前），探针脚本随后逐字
     // 点左 / 右半边，辅助脚本把查词串 postMessage 给父页面，父页面按序收齐 8 条。
@@ -442,8 +443,6 @@ try {
   //     标出来的发音控件。反例：每次点击都 closest 一个大容器 / 改别处的全局监听、根节点
   //     上的总监听、从大容器继承来的 pointer，都不能把正文的点词查词废掉。
   {
-    const helperLiteral = /const DICT_SANDBOX_HELPER_JS = (`[\s\S]*?`);/.exec(scripts.popup);
-    const helperJs = vm.runInNewContext(helperLiteral[1]);
     const dictJs = `(function () {
       document.addEventListener('click', function (event) {
         var tab = event.target.closest && event.target.closest('.oaldpe-nav span');
@@ -463,9 +462,15 @@ try {
       document.querySelector('.oald-entry-root').addEventListener('click', function () {});
     })();`;
     const probeJs = `(function () {
+      // 点在元素第一个字的字框正中：多行段落的整体中线可能落在行间空隙或别的行上
+      // （CI 的 Linux 字体下「keep …」段落折两行，中线正好在行缝里，点不中任何字）。
       function click(el) {
-        var r = el.getBoundingClientRect();
-        var x = r.left + Math.min(r.width / 2, 4), y = r.top + r.height / 2;
+        var text = document.createTreeWalker(el, NodeFilter.SHOW_TEXT).nextNode();
+        var first = document.createRange();
+        first.setStart(text, 0);
+        first.setEnd(text, 1);
+        var r = first.getClientRects()[0];
+        var x = r.left + r.width / 2, y = r.top + r.height / 2;
         document.elementFromPoint(x, y).dispatchEvent(new MouseEvent('click',
           { bubbles: true, cancelable: true, clientX: x, clientY: y }));
       }
