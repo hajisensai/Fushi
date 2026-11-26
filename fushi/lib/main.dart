@@ -188,6 +188,7 @@ import 'package:fushi/src/platform/desktop/windows_native_pre_exit.dart';
 import 'package:fushi/src/platform/platform_services.dart';
 import 'package:fushi/src/platform/source_url_channel.dart';
 import 'package:fushi/src/platform/desktop/desktop_ctl_host.dart';
+import 'package:fushi/src/platform/desktop/desktop_close_prompt.dart';
 import 'package:fushi/src/platform/desktop/desktop_tray.dart';
 import 'package:fushi/src/floating_ball/floating_ball_config.dart'
     show isDesktopSystemBallPlatform;
@@ -1383,10 +1384,11 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (_isDesktop) {
       windowManager.addListener(this);
     }
-    // Windows 托盘图标：菜单动作、「关闭到托盘」回调。菜单内容在根 build 里推。
+    // Windows 托盘图标：菜单动作、收进托盘 / 关闭询问回调。菜单内容在根 build 里推。
     DesktopTray.instance.attach(
       onEntry: (DesktopTrayEntry entry) => unawaited(_runTrayEntry(entry)),
       onHiddenToTray: _onHiddenToTray,
+      onCloseRequested: () => unawaited(_promptDesktopClose()),
     );
     // BUG-2259：macOS 的「退出应用」不是「关窗口」。window_manager 的
     // setPreventClose(true) 只拦 NSWindow 的 windowShouldClose:（点红叉），而
@@ -2079,6 +2081,44 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
     if (await GlobalLookupController.instance.lookupText(text)) return;
     await DesktopLookupService.instance.bringMainWindowToFront();
     FloatingLyricLookupNotifier.instance.requestLookup(text, 0);
+  }
+
+  /// 关闭询问框已经开着：连点关闭不叠第二个。
+  bool _closePromptOpen = false;
+
+  /// 「关闭窗口时：每次询问」下用户点了关闭（原生侧拦下了 SC_CLOSE，窗口还在）：
+  /// 问收进托盘还是退出；勾了「记住」就写回偏好，以后不再问。取消 = 什么都不做。
+  Future<void> _promptDesktopClose() async {
+    if (_closePromptOpen || _shutdownStarted || !mounted) return;
+    final AppModel appModel = ref.read(appProvider);
+    final BuildContext? dialogContext = appModel.navigatorKey.currentContext;
+    if (dialogContext == null) {
+      // 导航器还没起来（极早期）：没法问，按关闭的原意退出。
+      await _flushAndExitForWindowClose();
+      return;
+    }
+    _closePromptOpen = true;
+    final DesktopClosePromptResult? result;
+    try {
+      result = await showDesktopClosePrompt(dialogContext);
+    } finally {
+      _closePromptOpen = false;
+    }
+    if (result == null || !mounted) return;
+    if (result.remember) {
+      await appModel.prefsRepo.setDesktopCloseAction(result.action);
+      DesktopTray.instance.setCloseAction(result.action);
+    }
+    switch (result.action) {
+      case DesktopCloseAction.tray:
+        // 托盘图标意外没挂上就别把窗口藏丢：改走退出。
+        if (!await DesktopTray.instance.hideToTray()) {
+          await _flushAndExitForWindowClose();
+        }
+      case DesktopCloseAction.exit:
+      case DesktopCloseAction.ask:
+        await _flushAndExitForWindowClose();
+    }
   }
 
   /// 原生侧已把主窗口收进托盘（关闭按钮 / Alt+F4 且开着「关闭到托盘」）。窗口隐藏
@@ -3393,7 +3433,7 @@ class _FushiReaderAppState extends ConsumerState<FushiReaderApp>
         clipboardLookupAvailable: true,
       ),
       tooltip: 'Fushi',
-      closeToTray: appModel.prefsRepo.desktopCloseToTray,
+      closeAction: appModel.prefsRepo.desktopCloseAction,
     );
 
     if (!_startupFeedbackChecked) {

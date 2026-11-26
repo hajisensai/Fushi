@@ -266,14 +266,18 @@ class FlutterWindow : public Win32Window {
   // System tray icon + menu (app.fushi/tray). Created when Dart first
   // configures it; menu labels / entries / close-to-tray come from Dart.
   void RegisterTrayChannel();
-  // Hides the main window into the tray (close button / Alt+F4 while
-  // close-to-tray is on) and tells Dart. Returns false when the tray icon is
-  // not showing (then the close goes on as a normal close).
+  // Hides the main window into the tray and tells Dart. Returns false when the
+  // tray icon is not showing (then the close goes on as a normal close).
   bool HideToTray();
+  // What a user close gesture (SC_CLOSE: close button / Alt+F4 / taskbar
+  // "Close window") does. kAsk forwards it to Dart, which shows a prompt.
+  enum class CloseAction { kExit, kTray, kAsk };
+  // Handles SC_CLOSE per close_action_. Returns true when it consumed it.
+  bool HandleUserClose();
   std::unique_ptr<flutter::MethodChannel<flutter::EncodableValue>>
       tray_channel_;
   std::unique_ptr<fushi::TrayIcon> tray_;
-  bool close_to_tray_ = false;
+  CloseAction close_action_ = CloseAction::kExit;
 };
 
 #endif  // RUNNER_FLUTTER_WINDOW_H_

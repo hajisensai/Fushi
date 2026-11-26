@@ -50,6 +50,8 @@ import 'package:fushi/src/models/library_grid_columns.dart';
 import 'package:fushi/src/stats/study_goal_record.dart';
 import 'package:fushi_engine/stats/study_goal_language.dart'
     show StudyGoalUnitChoice;
+import 'package:fushi/src/platform/desktop/desktop_tray.dart'
+    show DesktopCloseAction;
 import 'package:fushi/src/utils/misc/platform_utils.dart' show WindowSizeClass;
 import 'package:fushi/src/utils/adaptive/nav_bar_style.dart';
 import 'package:fushi/src/ai/ai_saved_prompts.dart';
@@ -1027,13 +1029,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// Windows：点关闭按钮 / Alt+F4 时把主窗口收进托盘继续运行，而不是退出。默认关
-  /// （沿用「关闭 = 退出」）；托盘图标本身始终在，菜单里有「退出 Fushi」。
-  bool get desktopCloseToTray =>
-      getPref('desktop_close_to_tray', defaultValue: false) as bool;
+  /// Windows：点关闭按钮 / Alt+F4 时做什么——每次询问（出厂默认）/ 收进托盘 /
+  /// 直接退出。值是 [DesktopCloseAction.wire]；托盘图标本身始终在，菜单里有
+  /// 「退出 Fushi」。
+  DesktopCloseAction get desktopCloseAction => DesktopCloseAction.parse(
+    getPref('desktop_close_action', defaultValue: DesktopCloseAction.ask.wire),
+  );
 
-  Future<void> setDesktopCloseToTray(bool value) async {
-    await setPref('desktop_close_to_tray', value);
+  Future<void> setDesktopCloseAction(DesktopCloseAction value) async {
+    await setPref('desktop_close_action', value.wire);
     notifyListeners();
   }
 

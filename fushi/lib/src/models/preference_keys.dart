@@ -277,9 +277,9 @@ const Set<String> kKnownPreferenceKeys = <String>{
   // 内容字体链优先级的第三档，兜在「资源手动指定 > 内容自带元数据」之后。
   'default_content_language',
   'design_system',
-  // bool（默认 false）：Windows 上点关闭按钮 / Alt+F4 时把主窗口收进托盘而不是退出
-  // （desktop_tray.dart）。
-  'desktop_close_to_tray',
+  // String（默认 'ask'）：Windows 上点关闭按钮 / Alt+F4 时每次询问 / 收进托盘 /
+  // 直接退出（DesktopCloseAction，desktop_tray.dart）。
+  'desktop_close_action',
   // bool（默认 false）：「已收进托盘」的一次性系统通知提示过了。
   'desktop_tray_hint_shown',
   // bool（默认 false）：启动期「词典格式可以升级」提示点过「以后再说」。设备本地（描述

@@ -91,6 +91,30 @@ enum DesktopTrayEntry {
   }
 }
 
+/// 点关闭按钮 / Alt+F4 时做什么（Windows）。偏好存 [wire] 字符串。
+enum DesktopCloseAction {
+  /// 每次弹框问「收进托盘还是退出」，可勾「记住我的选择」（出厂默认）。
+  ask('ask'),
+
+  /// 收进托盘继续运行。
+  tray('tray'),
+
+  /// 直接退出（落盘退出链）。
+  exit('exit');
+
+  const DesktopCloseAction(this.wire);
+
+  /// 偏好值与通道上的字符串。
+  final String wire;
+
+  static DesktopCloseAction parse(Object? wire) {
+    for (final DesktopCloseAction action in values) {
+      if (action.wire == wire) return action;
+    }
+    return DesktopCloseAction.ask;
+  }
+}
+
 /// 菜单上的一行：一项动作或一条分隔线。
 @immutable
 class DesktopTrayMenuItem {
@@ -163,8 +187,10 @@ List<DesktopTrayMenuItem> buildDesktopTrayMenu({
 /// `app.fushi/tray`）只管 Win32：挂图标、弹原生菜单、拦「关闭到托盘」的 SC_CLOSE；
 /// 菜单内容、语言、开关都由这里推过去。
 ///
-/// 关闭到托盘只拦**用户的关闭手势**（标题栏关闭按钮、Alt+F4、任务栏「关闭窗口」，
-/// 都是 SC_CLOSE），安装器 / taskkill 的裸 WM_CLOSE 照旧走落盘退出链。
+/// 关闭行为（[DesktopCloseAction]）只作用于**用户的关闭手势**（标题栏关闭按钮、
+/// Alt+F4、任务栏「关闭窗口」，都是 SC_CLOSE）：收进托盘由原生侧直接做；「每次询问」
+/// 由原生侧拦下后回调 `onCloseRequested`，Dart 弹框再决定。安装器 / taskkill 的裸
+/// WM_CLOSE 一律照旧走落盘退出链，从不弹框。
 ///
 /// 只有 Windows：macOS 有 Dock 常驻，Linux 托盘要额外的 AppIndicator 运行库。
 class DesktopTray {
@@ -182,21 +208,24 @@ class DesktopTray {
   void Function(DesktopTrayEntry entry)? _onEntry;
   VoidCallback? _onHiddenToTray;
   VoidCallback? _onActivate;
+  VoidCallback? _onCloseRequested;
   String? _lastSignature;
   List<DesktopTrayMenuItem>? _items;
   String _tooltip = 'Fushi';
-  bool _closeToTray = false;
+  DesktopCloseAction _closeAction = DesktopCloseAction.ask;
 
   /// 根 widget 挂载时装上回调。原生回调只在这之后才有意义，所以通道处理器也在
   /// 这里装。
   void attach({
     required void Function(DesktopTrayEntry entry) onEntry,
     required VoidCallback onHiddenToTray,
+    required VoidCallback onCloseRequested,
     VoidCallback? onActivate,
   }) {
     if (!platformSupported) return;
     _onEntry = onEntry;
     _onHiddenToTray = onHiddenToTray;
+    _onCloseRequested = onCloseRequested;
     _onActivate = onActivate;
     _channel.setMethodCallHandler(_handleNativeCall);
   }
@@ -205,6 +234,7 @@ class DesktopTray {
     if (!platformSupported) return;
     _onEntry = null;
     _onHiddenToTray = null;
+    _onCloseRequested = null;
     _onActivate = null;
     _channel.setMethodCallHandler(null);
   }
@@ -224,29 +254,45 @@ class DesktopTray {
         _onActivate?.call();
       case 'onHiddenToTray':
         _onHiddenToTray?.call();
+      case 'onCloseRequested':
+        _onCloseRequested?.call();
     }
     return null;
   }
 
-  /// 把菜单 / 提示 / 关闭到托盘开关推给原生侧。根 build 每次重建都会调，按签名
+  /// 把菜单 / 提示 / 关闭行为推给原生侧。根 build 每次重建都会调，按签名
   /// 去重，只有内容真的变了才过一次通道。
   void sync({
     required List<DesktopTrayMenuItem> items,
     required String tooltip,
-    required bool closeToTray,
+    required DesktopCloseAction closeAction,
   }) {
     if (!platformSupported) return;
     _items = items;
     _tooltip = tooltip;
-    _closeToTray = closeToTray;
+    _closeAction = closeAction;
     _push();
   }
 
-  /// 设置页切「关闭时最小化到托盘」：立刻生效，不等根 widget 下一次重建。
-  void setCloseToTray(bool closeToTray) {
+  /// 设置页 / 关闭询问框改了「关闭窗口时」：立刻生效，不等根 widget 下一次重建。
+  void setCloseAction(DesktopCloseAction closeAction) {
     if (!platformSupported) return;
-    _closeToTray = closeToTray;
+    _closeAction = closeAction;
     _push();
+  }
+
+  /// 把主窗口收进托盘（关闭询问框选了「最小化到托盘」）。返回 false = 托盘图标
+  /// 没挂上，调用方应改走退出。
+  Future<bool> hideToTray() async {
+    if (!platformSupported) return false;
+    try {
+      return await _channel.invokeMethod<bool>('hideToTray') ?? false;
+    } on PlatformException catch (e) {
+      debugPrint('[Fushi] tray hide failed: $e');
+      return false;
+    } on MissingPluginException {
+      return false;
+    }
   }
 
   void _push() {
@@ -255,25 +301,25 @@ class DesktopTray {
     if (items == null) return;
     final String signature = <String>[
       _tooltip,
-      '$_closeToTray',
+      _closeAction.wire,
       for (final DesktopTrayMenuItem item in items)
         item.separator ? '-' : '${item.entry!.id}=${item.label}',
     ].join('\n');
     if (signature == _lastSignature) return;
     _lastSignature = signature;
-    unawaited(_configure(items, tooltip: _tooltip, closeToTray: _closeToTray));
+    unawaited(_configure(items, tooltip: _tooltip, closeAction: _closeAction));
   }
 
   Future<void> _configure(
     List<DesktopTrayMenuItem> items, {
     required String tooltip,
-    required bool closeToTray,
+    required DesktopCloseAction closeAction,
   }) async {
     try {
       await _channel.invokeMethod<bool>('configure', <String, Object>{
         'visible': true,
         'tooltip': tooltip,
-        'closeToTray': closeToTray,
+        'closeAction': closeAction.wire,
         'items': <Map<String, Object>>[
           for (final DesktopTrayMenuItem item in items) item.toWire(),
         ],

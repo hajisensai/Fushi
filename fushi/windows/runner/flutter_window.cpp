@@ -5158,6 +5158,29 @@ bool FlutterWindow::HideToTray() {
   return true;
 }
 
+bool FlutterWindow::HandleUserClose() {
+  if (!tray_ || !tray_->visible()) {
+    // 托盘没挂上（Dart 还没推过菜单）：照旧关闭。
+    return false;
+  }
+  switch (close_action_) {
+    case CloseAction::kTray:
+      return HideToTray();
+    case CloseAction::kAsk:
+      if (!tray_channel_) {
+        return false;
+      }
+      // 窗口留着，交给 Dart 弹框问「收进托盘还是退出」；结果经 hideToTray 或
+      // Dart 的落盘退出链落地。
+      tray_channel_->InvokeMethod("onCloseRequested",
+                                  std::make_unique<flutter::EncodableValue>());
+      return true;
+    case CloseAction::kExit:
+      return false;
+  }
+  return false;
+}
+
 namespace {
 
 const flutter::EncodableValue* TrayArg(const flutter::EncodableMap& map,
@@ -5244,7 +5267,11 @@ void FlutterWindow::RegisterTrayChannel() {
           tray_->SetMenu(std::move(items));
           tray_->SetTooltip(Utf8ToWideString(TrayStringArg(*args, "tooltip")));
           tray_->SetVisible(TrayBoolArg(*args, "visible", true));
-          close_to_tray_ = TrayBoolArg(*args, "closeToTray", false);
+          const std::string close_action =
+              TrayStringArg(*args, "closeAction");
+          close_action_ = close_action == "tray"  ? CloseAction::kTray
+                          : close_action == "ask" ? CloseAction::kAsk
+                                                  : CloseAction::kExit;
           result->Success(flutter::EncodableValue(tray_->visible()));
         } else if (call.method_name() == "showNotification") {
           if (args == nullptr) {
@@ -5293,13 +5320,14 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       return *handled;
     }
   }
-  // 关闭到托盘：只拦 SC_CLOSE（标题栏关闭按钮经 window_manager.close() 投的就是
-  // 它，Alt+F4 与任务栏「关闭窗口」也是），必须排在 window_manager 之前——它会把
-  // SC_CLOSE 交给 DefWindowProc 变成 WM_CLOSE 再走 Dart 的退出链。
+  // 关闭行为（收进托盘 / 每次询问）：只拦 SC_CLOSE（标题栏关闭按钮经
+  // window_manager.close() 投的就是它，Alt+F4 与任务栏「关闭窗口」也是），必须排在
+  // window_manager 之前——它会把 SC_CLOSE 交给 DefWindowProc 变成 WM_CLOSE 再走
+  // Dart 的退出链。
   // **裸 WM_CLOSE 不拦**：安装器 / taskkill（不带 /F）靠它让 app 落盘退出，
-  // 拦成藏到托盘会让升级等满超时后强杀。
+  // 拦成藏到托盘 / 弹询问框会让升级等满超时后强杀。
   if (message == WM_SYSCOMMAND && (wparam & 0xFFF0) == SC_CLOSE &&
-      close_to_tray_ && HideToTray()) {
+      HandleUserClose()) {
     return 0;
   }
   if (message == WM_SHOWWINDOW && wparam) {

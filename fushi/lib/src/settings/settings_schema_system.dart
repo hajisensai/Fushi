@@ -437,24 +437,41 @@ SettingsDestination buildSystemDestination() {
         presentation: SettingsSectionPresentation.alwaysExpanded,
         title: t.settings_system_section_background,
         items: <SettingsItem>[
-          // Windows：关闭按钮 / Alt+F4 收进托盘继续运行（默认关 = 关闭即退出）。
+          // Windows：关闭按钮 / Alt+F4 时每次询问（默认）/ 收进托盘 / 直接退出。
           // 托盘图标始终在，菜单里有「退出 Fushi」；安装器的关闭不受影响。
-          SettingsSwitchItem(
-            id: 'system.desktop_close_to_tray',
-            title: t.desktop_tray_close_to_tray,
-            subtitle: t.desktop_tray_close_to_tray_hint,
+          SettingsSegmentedItem<DesktopCloseAction>(
+            id: 'system.desktop_close_action',
+            title: t.desktop_close_action_title,
+            subtitle: t.desktop_close_action_hint,
             icon: FushiIcons.close,
-            defaultValue: false,
+            defaultValue: DesktopCloseAction.ask,
             visible: (_) => hostPlatform.isWindows,
-            value: (SettingsContext settingsContext) =>
-                settingsContext.appModel.prefsRepo.desktopCloseToTray,
-            onChanged: (SettingsContext settingsContext, bool value) async {
-              await settingsContext.appModel.prefsRepo.setDesktopCloseToTray(
-                value,
-              );
-              DesktopTray.instance.setCloseToTray(value);
-              settingsContext.refresh();
-            },
+            options: <SettingsSegmentOption<DesktopCloseAction>>[
+              SettingsSegmentOption<DesktopCloseAction>(
+                value: DesktopCloseAction.ask,
+                label: t.desktop_close_action_ask,
+              ),
+              SettingsSegmentOption<DesktopCloseAction>(
+                value: DesktopCloseAction.tray,
+                label: t.desktop_close_action_tray,
+              ),
+              SettingsSegmentOption<DesktopCloseAction>(
+                value: DesktopCloseAction.exit,
+                label: t.desktop_close_action_exit,
+              ),
+            ],
+            selected: (SettingsContext settingsContext) =>
+                settingsContext.appModel.prefsRepo.desktopCloseAction,
+            onChanged:
+                (
+                  SettingsContext settingsContext,
+                  DesktopCloseAction value,
+                ) async {
+                  await settingsContext.appModel.prefsRepo
+                      .setDesktopCloseAction(value);
+                  DesktopTray.instance.setCloseAction(value);
+                  settingsContext.refresh();
+                },
           ),
           // 媒体库在线作品自动补新集（默认开）：与上面的「番剧新集提醒」分开——
           // 关提醒不停补集，关这里不影响订阅下载的提醒。

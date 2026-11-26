@@ -114,33 +114,50 @@ void main() {
       clipboardLookupAvailable: true,
     );
 
-    test('同内容只推一次；开关变化立即重推', () async {
+    test('同内容只推一次；关闭行为变化立即重推', () async {
       final DesktopTray tray = DesktopTray(
         platformSupported: true,
         channel: channel,
       );
-      tray.setCloseToTray(true);
+      tray.setCloseAction(DesktopCloseAction.tray);
       await pumpEventQueue();
       expect(calls, isEmpty, reason: '菜单还没拼出来时不挂图标');
 
-      tray.sync(items: menu(), tooltip: 'Fushi', closeToTray: false);
-      tray.sync(items: menu(), tooltip: 'Fushi', closeToTray: false);
+      tray.sync(
+        items: menu(),
+        tooltip: 'Fushi',
+        closeAction: DesktopCloseAction.ask,
+      );
+      tray.sync(
+        items: menu(),
+        tooltip: 'Fushi',
+        closeAction: DesktopCloseAction.ask,
+      );
       await pumpEventQueue();
       expect(calls, hasLength(1));
       final Map<Object?, Object?> args =
           calls.single.arguments as Map<Object?, Object?>;
       expect(calls.single.method, 'configure');
       expect(args['visible'], isTrue);
-      expect(args['closeToTray'], isFalse);
+      expect(args['closeAction'], 'ask');
       expect((args['items']! as List<Object?>).length, menu().length);
 
-      tray.setCloseToTray(true);
+      tray.setCloseAction(DesktopCloseAction.tray);
       await pumpEventQueue();
       expect(calls, hasLength(2));
       expect(
-        (calls.last.arguments as Map<Object?, Object?>)['closeToTray'],
-        isTrue,
+        (calls.last.arguments as Map<Object?, Object?>)['closeAction'],
+        'tray',
       );
+    });
+
+    test('hideToTray 走通道并回传结果', () async {
+      final DesktopTray tray = DesktopTray(
+        platformSupported: true,
+        channel: channel,
+      );
+      expect(await tray.hideToTray(), isTrue);
+      expect(calls.single.method, 'hideToTray');
     });
 
     test('不支持的平台不碰通道', () async {
@@ -148,8 +165,13 @@ void main() {
         platformSupported: false,
         channel: channel,
       );
-      tray.sync(items: menu(), tooltip: 'Fushi', closeToTray: true);
+      tray.sync(
+        items: menu(),
+        tooltip: 'Fushi',
+        closeAction: DesktopCloseAction.tray,
+      );
       await tray.showNotification(title: 't', body: 'b');
+      expect(await tray.hideToTray(), isFalse);
       await pumpEventQueue();
       expect(calls, isEmpty);
     });
@@ -162,9 +184,11 @@ void main() {
       final List<DesktopTrayEntry> entries = <DesktopTrayEntry>[];
       int hidden = 0;
       int activated = 0;
+      int closeRequested = 0;
       tray.attach(
         onEntry: entries.add,
         onHiddenToTray: () => hidden++,
+        onCloseRequested: () => closeRequested++,
         onActivate: () => activated++,
       );
       await tray.handleNativeCallForTest(
@@ -175,11 +199,20 @@ void main() {
       );
       await tray.handleNativeCallForTest(const MethodCall('onHiddenToTray'));
       await tray.handleNativeCallForTest(const MethodCall('onActivate'));
+      await tray.handleNativeCallForTest(const MethodCall('onCloseRequested'));
       expect(entries, <DesktopTrayEntry>[DesktopTrayEntry.manga]);
       expect(hidden, 1);
       expect(activated, 1);
+      expect(closeRequested, 1);
       tray.detach();
     });
+  });
+
+  test('关闭行为偏好：未知 / 缺省值回到「每次询问」', () {
+    expect(DesktopCloseAction.parse('tray'), DesktopCloseAction.tray);
+    expect(DesktopCloseAction.parse('exit'), DesktopCloseAction.exit);
+    expect(DesktopCloseAction.parse(null), DesktopCloseAction.ask);
+    expect(DesktopCloseAction.parse(true), DesktopCloseAction.ask);
   });
 
   group('原生侧关闭契约（源码守卫）', () {
@@ -192,7 +225,7 @@ void main() {
       expect(handler, greaterThan(0));
       final String body = src.substring(handler);
       final int intercept = body.indexOf(
-        '(wparam & 0xFFF0) == SC_CLOSE &&\n      close_to_tray_ && HideToTray()',
+        '(wparam & 0xFFF0) == SC_CLOSE &&\n      HandleUserClose()',
       );
       final int plugins = body.indexOf('HandleTopLevelWindowProc(');
       expect(intercept, greaterThan(0), reason: '关闭到托盘必须只认 SC_CLOSE');
@@ -204,9 +237,17 @@ void main() {
       // 安装器 / taskkill 用裸 WM_CLOSE 让 app 落盘退出（process_control.iss），
       // 绝不能被收进托盘。
       expect(
-        RegExp(r'message == WM_CLOSE[^\n]*HideToTray').hasMatch(body),
+        RegExp(
+          r'message == WM_CLOSE[^\n]*(HideToTray|HandleUserClose)',
+        ).hasMatch(body),
         isFalse,
       );
+      // 「每次询问」拦下后只通知 Dart，窗口留着；托盘没挂上时照旧关闭。
+      final int askFn = src.indexOf('bool FlutterWindow::HandleUserClose()');
+      expect(askFn, greaterThan(0));
+      final String ask = src.substring(askFn, src.indexOf('\n}\n', askFn));
+      expect(ask, contains('!tray_ || !tray_->visible()'));
+      expect(ask, contains('"onCloseRequested"'));
     });
 
     test('第二实例启动能把收进托盘的主窗口找回来', () {
