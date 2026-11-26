@@ -502,13 +502,14 @@ class AutoBackupController {
     _writeStatus(_status.value.started(atMs: startedMs));
     try {
       // 写之前先看空间（第五期）：不够就记成失败 `not_enough_space`，不写半截、不把盘写满。
-      await _ensureScheduledSpace(settings, store, files, unavailable);
+      final BackupService service = host.createBackupService();
+      await _ensureScheduledSpace(service, settings, store, files, unavailable);
       draft = store.begin(
         kind: RestorePointKind.scheduled,
         nowMs: startedMs,
         ownerDeviceId: device?.id,
       );
-      final BackupMeta meta = await host.createBackupService().createBackup(
+      final BackupMeta meta = await service.createBackup(
         p.join(draft.directory, kRestorePointArchiveFileName),
         categories: files,
         fullDatabase: true,
@@ -584,40 +585,37 @@ class AutoBackupController {
     }
   }
 
-  /// 定时还原点要写多少的上界（在后台 isolate 里数）：主库与复习库（含 `-wal`）+ 勾选的文件树 + 复习媒体，
-  /// 按不压缩算（zip 只会更小；媒体本来就压不动）。`BackupService.createBackup` 先把两个库 `VACUUM INTO`
-  /// 系统临时目录再打包，所以临时目录所在的卷另要放下两个库。空间不够抛 [NotEnoughSpaceException]；
-  /// 不知道可用空间就照常写。
+  /// 定时还原点要写多少的上界：主库与复习库（含 `-wal`）+ 文件类别与复习媒体（[BackupService.estimateFileCategoryBytes]：
+  /// 与 `createBackup` 同一个收集器，视频 / 本地音频这些散在各处的文件一样算），按不压缩算（zip 只会更小；媒体本来
+  /// 就压不动）。`createBackup` 先把两个库 `VACUUM INTO` 系统临时目录再打包，所以临时目录所在的卷另要放下两个库。
+  /// 空间不够抛 [NotEnoughSpaceException]；不知道可用空间就照常写。
   Future<void> _ensureScheduledSpace(
+    BackupService service,
     AutoBackupSettings settings,
     RestorePointStore store,
     Set<BackupCategory> files,
     Set<BackupCategory> unavailable,
   ) async {
     final String dbDir = host.databaseDirectory;
+    final bool srs = !unavailable.contains(BackupCategory.srs);
     final List<String> dbFiles = <String>[
       p.join(dbDir, RestorePointDatabase.fushi.fileName),
-      if (!unavailable.contains(BackupCategory.srs))
-        p.join(dbDir, RestorePointDatabase.srs.fileName),
+      if (srs) p.join(dbDir, RestorePointDatabase.srs.fileName),
     ];
-    final Map<BackupCategory, String> roots = host.contentTreeRoots;
-    final List<String> trees = <String>[
-      for (final BackupCategory c in files) ?roots[c],
-      if (settings.includeSrsMedia) host.srsMediaRoot,
-    ];
-    final ({int databases, int files}) size = await Isolate.run(
-      () => (
-        databases: dbFiles.fold<int>(
-          0,
-          (int sum, String f) =>
-              sum + fileBytesOrZero(f) + fileBytesOrZero('$f-wal'),
-        ),
-        files: trees.fold<int>(0, (int sum, String d) => sum + treeBytes(d)),
+    final int databases = await Isolate.run(
+      () => dbFiles.fold<int>(
+        0,
+        (int sum, String f) =>
+            sum + fileBytesOrZero(f) + fileBytesOrZero('$f-wal'),
       ),
     );
+    final int fileBytes = await service.estimateFileCategoryBytes(
+      categories: files,
+      includeSrsMedia: srs && settings.includeSrsMedia,
+    );
     ensureFreeSpace(<SpaceNeed>[
-      SpaceNeed(store.root, size.databases + size.files),
-      SpaceNeed(Directory.systemTemp.path, size.databases),
+      SpaceNeed(store.root, databases + fileBytes),
+      SpaceNeed(Directory.systemTemp.path, databases),
     ], probe: _freeBytes);
   }
 

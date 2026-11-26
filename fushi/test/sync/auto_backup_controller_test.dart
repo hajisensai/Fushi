@@ -439,7 +439,6 @@ void main() {
       expect(await spaced.checkNow(), AutoBackupOutcome.failed);
       expect(spaced.status.value.lastError, kNotEnoughSpaceError);
       expect(host.failures, <String>[kNotEnoughSpaceError]);
-      expect(host.serviceCalls, 0, reason: '没开始打包');
       expect(host.exportActive, isFalse);
       expect(spaced.scheduledPoints(), isEmpty);
       // 还到期、还不够：再失败，但不再提示。
@@ -468,40 +467,44 @@ void main() {
       expect(await spaced.backUpNow(), AutoBackupOutcome.created);
     });
 
-    test('操作前还原点：空间不够 → 抛 NotEnoughSpaceException、什么都没写；兜底入口提示原因并返回 null', () async {
-      free = 1;
-      await expectLater(
-        spaced.createPreOperationPoint(kRestorePointReasonReplace),
-        throwsA(isA<NotEnoughSpaceException>()),
-      );
-      expect(RestorePointStore(dbDir).list(), isEmpty);
-      registerAutoBackupController(spaced);
-      try {
-        expect(
-          await takePreOperationRestorePoint(kRestorePointReasonSyncDownload),
-          isNull,
+    test(
+      '操作前还原点：空间不够 → 抛 NotEnoughSpaceException、什么都没写；兜底入口提示原因并返回 null',
+      () async {
+        free = 1;
+        await expectLater(
+          spaced.createPreOperationPoint(kRestorePointReasonReplace),
+          throwsA(isA<NotEnoughSpaceException>()),
         );
-      } finally {
-        registerAutoBackupController(null);
-      }
-      expect(host.failures, <String>[kNotEnoughSpaceError]);
-      expect(
-        autoBackupMirrorErrorCode(
-          const NotEnoughSpaceException(
-            directory: 'x',
-            neededBytes: 2,
-            freeBytes: 1,
+        expect(RestorePointStore(dbDir).list(), isEmpty);
+        registerAutoBackupController(spaced);
+        try {
+          expect(
+            await takePreOperationRestorePoint(kRestorePointReasonSyncDownload),
+            isNull,
+          );
+        } finally {
+          registerAutoBackupController(null);
+        }
+        expect(host.failures, <String>[kNotEnoughSpaceError]);
+        expect(
+          autoBackupMirrorErrorCode(
+            const NotEnoughSpaceException(
+              directory: 'x',
+              neededBytes: 2,
+              freeBytes: 1,
+            ),
           ),
-        ),
-        kNotEnoughSpaceError,
-      );
-      free = 1 << 50;
-      expect(
-        (await spaced.createPreOperationPoint(kRestorePointReasonReplace))
-            .reason,
-        kRestorePointReasonReplace,
-      );
-    });
+          kNotEnoughSpaceError,
+        );
+        free = 1 << 50;
+        expect(
+          (await spaced.createPreOperationPoint(
+            kRestorePointReasonReplace,
+          )).reason,
+          kRestorePointReasonReplace,
+        );
+      },
+    );
   });
 
   test('自定义文件夹：定时还原点写进去，目录清单一并列出', () async {

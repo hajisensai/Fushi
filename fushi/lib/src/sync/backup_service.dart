@@ -1662,13 +1662,18 @@ class BackupService {
         _dbName: cleanDbPath,
         ...srsEntries,
       };
-      Map<String, String> videoFiles = const <String, String>{};
-      if (includeVideos) {
-        videoFiles = await _collectVideoFiles(files, videoKeys: videoKeys);
-      }
-      if (wants(BackupCategory.localAudio)) {
-        await _collectLocalAudioFiles(files);
-      }
+      // 文件类别与复习媒体：与 [estimateFileCategoryBytes] 同一个收集器，估算不会与真打包走岔。
+      final Map<String, String> videoFiles = await _collectFileCategories(
+        files,
+        wants: wants,
+        srsMedia: includeSrs && includeSrsMedia,
+        dictionaryPlan: includeDictionary
+            ? dictionaryPlan
+            : const _DictionaryPackPlan.empty(),
+        books: books,
+        bookKeys: bookKeys,
+        videoKeys: videoKeys,
+      );
 
       // TODO-1261: the confirm dialog's "N books" must count EVERY shelf item
       // that will travel usably, not just EPUBs. A video book travels usably iff
@@ -1768,64 +1773,6 @@ class BackupService {
         },
         fullDatabase: fullDatabase,
       );
-
-      if (includeDictionary) {
-        await _collectDictionaryTrees(
-          dictionaryResourceRoot!,
-          dictionaryPlan.packable,
-          files,
-        );
-      }
-      if (_booksRootDirectory != null && includeBooks) {
-        if (bookKeys == null) {
-          // Legacy full export: pack the whole books tree.
-          await _collectTreeFiles(
-            Directory(_booksRootDirectory),
-            _booksPrefix,
-            files,
-          );
-        } else {
-          // Per-book export (TODO-1195 part A): pack ONLY the selected books'
-          // content, keyed by each file's path relative to the books root so
-          // the archive layout matches the full-tree export (import restores
-          // the whole hoshi_books/ prefix onto this device's root either way).
-          await _collectSelectedBookFiles(
-            bookKeys,
-            books,
-            _booksRootDirectory,
-            files,
-          );
-        }
-      }
-      if (includeBooks) {
-        await _collectDownloadMangaFiles(
-          bookKeys,
-          books,
-          _booksRootDirectory,
-          files,
-        );
-      }
-      if (_audiobooksRootDirectory != null &&
-          wants(BackupCategory.audiobooks)) {
-        await _collectTreeFiles(
-          Directory(_audiobooksRootDirectory),
-          _audiobooksPrefix,
-          files,
-        );
-      }
-      if (_fontsRootDirectory != null && wants(BackupCategory.fonts)) {
-        await _collectReferencedFontFiles(files);
-      }
-      if (_gameCoversRootDirectory != null && includeGames) {
-        await _collectTreeFiles(
-          Directory(_gameCoversRootDirectory),
-          _gameCoversPrefix,
-          files,
-        );
-      }
-      if (includeSrs && includeSrsMedia) {
-        await _collectSrsMediaFiles(files);
-      }
 
       final String metaJson = const JsonEncoder.withIndent(
         '  ',
@@ -2602,6 +2549,118 @@ class BackupService {
   /// failure deletes the half-written archive so it is never mistaken for valid.
   /// 待打包总字节。缺失 / 无权限的源按 0 计，与 worker 里 `existsSync` 跳过同口径；
   /// 恒 ≥1 以免空备份除零（与导入侧 [_totalContentBytes] 同款）。
+  /// 文件类别（词典 / 书 / 下载的漫画 / 有声书 / 字体 / 视频 / 本地音频 / 游戏封面）与复习媒体要进包的文件：
+  /// zip 内路径 → 磁盘路径收进 [into]，返回打包了的视频文件表（写进 meta）。[createBackup] 与
+  /// [estimateFileCategoryBytes] 共用这一处：估算与真打包是同一张表，不会各算各的。
+  Future<Map<String, String>> _collectFileCategories(
+    Map<String, String> into, {
+    required bool Function(BackupCategory) wants,
+    required bool srsMedia,
+    required _DictionaryPackPlan dictionaryPlan,
+    required List<EpubBookRow> books,
+    Set<String>? bookKeys,
+    Set<String>? videoKeys,
+  }) async {
+    Map<String, String> videoFiles = const <String, String>{};
+    if (wants(BackupCategory.videos)) {
+      videoFiles = await _collectVideoFiles(into, videoKeys: videoKeys);
+    }
+    if (wants(BackupCategory.localAudio)) {
+      await _collectLocalAudioFiles(into);
+    }
+    final String? dictionaryRoot = _dictionaryResourceDirectory;
+    if (dictionaryRoot != null &&
+        wants(BackupCategory.dictionary) &&
+        dictionaryPlan.packable.isNotEmpty) {
+      await _collectDictionaryTrees(
+        Directory(dictionaryRoot),
+        dictionaryPlan.packable,
+        into,
+      );
+    }
+    final bool includeBooks = wants(BackupCategory.books);
+    if (_booksRootDirectory != null && includeBooks) {
+      if (bookKeys == null) {
+        // Legacy full export: pack the whole books tree.
+        await _collectTreeFiles(
+          Directory(_booksRootDirectory),
+          _booksPrefix,
+          into,
+        );
+      } else {
+        // Per-book export (TODO-1195 part A): pack ONLY the selected books'
+        // content, keyed by each file's path relative to the books root so
+        // the archive layout matches the full-tree export (import restores
+        // the whole hoshi_books/ prefix onto this device's root either way).
+        await _collectSelectedBookFiles(
+          bookKeys,
+          books,
+          _booksRootDirectory,
+          into,
+        );
+      }
+    }
+    if (includeBooks) {
+      await _collectDownloadMangaFiles(
+        bookKeys,
+        books,
+        _booksRootDirectory,
+        into,
+      );
+    }
+    if (_audiobooksRootDirectory != null && wants(BackupCategory.audiobooks)) {
+      await _collectTreeFiles(
+        Directory(_audiobooksRootDirectory),
+        _audiobooksPrefix,
+        into,
+      );
+    }
+    if (_fontsRootDirectory != null && wants(BackupCategory.fonts)) {
+      await _collectReferencedFontFiles(into);
+    }
+    if (_gameCoversRootDirectory != null && wants(BackupCategory.games)) {
+      await _collectTreeFiles(
+        Directory(_gameCoversRootDirectory),
+        _gameCoversPrefix,
+        into,
+      );
+    }
+    if (srsMedia) {
+      await _collectSrsMediaFiles(into);
+    }
+    return videoFiles;
+  }
+
+  /// 一份整库备份里文件类别与复习媒体会打包多少字节（不压缩，自动备份写之前查空间用，第五期）：与
+  /// [createBackup] 走同一个收集器（[_collectFileCategories]），所以视频（库里引用的每个文件）、本地音频
+  /// （库目录下的 `local_audio_*.db`）这些散在各处的大文件一样算进去。[categories] 只看文件类别；库本身不算
+  /// （调用方按库文件大小另算）。
+  Future<int> estimateFileCategoryBytes({
+    required Set<BackupCategory> categories,
+    required bool includeSrsMedia,
+  }) async {
+    bool wants(BackupCategory c) => categories.contains(c);
+    final _DictionaryPackPlan plan = wants(BackupCategory.dictionary)
+        ? await _planDictionaryPack(
+            _dictionaryResourceDirectory == null
+                ? null
+                : Directory(_dictionaryResourceDirectory),
+          )
+        : const _DictionaryPackPlan.empty();
+    final Map<String, String> files = <String, String>{};
+    await _collectFileCategories(
+      files,
+      wants: wants,
+      srsMedia: includeSrsMedia,
+      dictionaryPlan: plan,
+      books: wants(BackupCategory.books)
+          ? await _db.getAllEpubBooks()
+          : const <EpubBookRow>[],
+    );
+    if (files.isEmpty) return 0;
+    return Isolate.run(() => _totalSourceBytes(files));
+  }
+
   static int _totalSourceBytes(Map<String, String> archivePathToSource) {
     int total = 0;
     for (final String source in archivePathToSource.values) {
