@@ -119,6 +119,8 @@ const Map<String, String> kWebUiEnglish = <String, String>{
       'A single-use link carries its own ticket, so pairing needs no PIN. It works even while PIN pairing from the internet is paused.',
   '生成配对链接': 'Create pairing link',
   '复制': 'Copy',
+  '这是容器内的端口。要改设备连接用的端口，请改 compose 里端口映射的宿主机一侧（FUSHI_SYNC_PORT / FUSHI_WEBUI_PORT），并在「设置 › 远程访问」填写公网地址。':
+      'This is the port inside the container. To change the port devices connect to, change the host side of the port mapping in your compose file (FUSHI_SYNC_PORT / FUSHI_WEBUI_PORT), and set Settings › Remote access › Public addresses.',
   '用手机上的 Fushi 扫码：互联 › 配对 › 扫码':
       'Scan with Fushi on your phone: Interconnect › Pair › Scan',
   '链接里只有容器内部 / 本机地址，手机连不上。请先在「设置 › 远程访问」的公网地址里填写手机能访问到的地址。':

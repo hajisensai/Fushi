@@ -1199,6 +1199,7 @@ async function loadSettings(){
     if(k==='ai.preset'&&s.ai) extra = s.ai.status==='ready' ? tag('ok', T('可用')) : tag('warn', T('未配全：{0}', s.ai.problem||''));
     let ctl;
     let wrapped = false;
+    const locked = !!s.inContainer && (k==='port'||k==='adminPort');
     if(type.startsWith('dyn:')) ctl = `<select id="${id}">${['',...(s[type.slice(4)]||[])].map(o=>`<option value="${esc(o)}" ${o===(v??'')?'selected':''}>${esc(k==='ai.preset'?aiPresetLabel(s,o):o)}</option>`).join('')}</select>`;
     else if(type.startsWith('choice:')){ ctl = choiceCtl(id, CHOICES[type.slice(7)](s), v); wrapped = true; }
     else if(type==='bytes'){ ctl = bytesCtl(id, v); wrapped = true; }
@@ -1208,8 +1209,9 @@ async function loadSettings(){
     else if(type.startsWith('select:')) ctl = `<select id="${id}">${type.slice(7).split(',').map(o=>`<option value="${esc(o)}" ${o===v?'selected':''}>${esc(k==='language'?LANGUAGE_NAMES[o]:o)}</option>`).join('')}</select>`;
     else if(type==='password'){ extra += setNote(s.qbittorrent.passwordSet); ctl = `<input type="password" id="${id}" value="" autocomplete="off">`; }
     else if(type.startsWith('secret:')){ const sk=type.slice(7); const isSet = sk.includes('.') ? (s[sk.split('.')[0]]||{})[sk.split('.')[1]] : s[sk]; extra += setNote(isSet); ctl = `<input type="password" id="${id}" value="" autocomplete="off">`; }
-    else ctl = `<input type="${type}" id="${id}" value="${esc(v??'')}">`;
-    const [title, sub] = splitLabel(label);
+    else ctl = `<input type="${type}" id="${id}" value="${esc(v??'')}"${locked?' readonly':''}>`;
+    let [title, sub] = splitLabel(label);
+    if(locked) sub = T('这是容器内的端口。要改设备连接用的端口，请改 compose 里端口映射的宿主机一侧（FUSHI_SYNC_PORT / FUSHI_WEBUI_PORT），并在「设置 › 远程访问」填写公网地址。');
     return `<div class="setting-row"><label class="setting-copy" for="${id}"><strong>${esc(title)}${RESTART.has(k)?tag('warn', T('需重启')):''}${extra}</strong>${sub?`<small>${esc(sub)}</small>`:''}</label><div class="setting-trail${type==='bool'?'':' is-field'}">${ctl}</div></div>`;
   };
   $('#settings-form').innerHTML = SETTING_GROUPS.map(([g,name])=>`<h3 class="kit-section-title">${esc(name)}</h3><div class="setting-list is-surface">${FIELDS.filter(f=>f[3]===g).map(field).join('')}</div>`).join('');

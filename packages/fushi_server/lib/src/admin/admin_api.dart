@@ -45,6 +45,7 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
     show HostSubscriptionRejected;
 import 'package:fushi_server/src/admin/admin_backups.dart';
 import 'package:fushi_server/src/admin/pair_link_qr.dart';
+import 'package:fushi_server/src/self_update/server_release.dart';
 import 'package:fushi_server/src/admin/admin_srs.dart';
 import 'package:fushi_server/src/admin/admin_srs_ctl.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
@@ -596,6 +597,10 @@ class AdminApi {
       InterconnectOwnerDeviceStore(ctx.db);
 
   /// BUG-4391：签发一次性配对链接（票据配对不走 PIN 预算）。签不出时 409 + reason。
+  /// 运行在 Fushi 容器镜像里（与自更新的平台门同一个判据）。
+  bool get _inContainer =>
+      serverRunsInContainerImage(environment: ctx.environment);
+
   Future<shelf.Response> _createPairLink() async {
     final PairLinkOutcome outcome = await ctx.host.createPairLink();
     return switch (outcome) {
@@ -1540,6 +1545,8 @@ class AdminApi {
     'onnxruntimeLibrary': ctx.config.ortLibraryPath,
     'uploadQuotaBytes': ctx.config.uploadQuotaBytes,
     'adminPort': ctx.config.adminPort,
+    // 容器里 port / adminPort 是容器内端口（对外端口由 compose 的端口映射决定），页面据此只读。
+    'inContainer': _inContainer,
     'qbittorrent': <String, Object?>{
       'url': ctx.config.qbittorrentUrl,
       'username': ctx.config.qbittorrentUsername,
@@ -1627,6 +1634,25 @@ class AdminApi {
       throw FormatException(
         'torrent.engine must be auto / embedded / qbittorrent, got "$engine"',
       );
+    }
+    // 容器里监听端口由镜像 / compose 管：改了配置文件也与端口映射对不上，设备反而连不上。
+    // 页面只读不够（ctl / 脚本也能调），这里按「值变了」拒绝；原值回传（整表单保存）放行。
+    if (_inContainer) {
+      for (final String key in const <String>['port', 'adminPort']) {
+        final Object? v = body[key];
+        final int current = key == 'port'
+            ? ctx.config.port
+            : ctx.config.adminPort;
+        if (v is num && v.toInt() != current) {
+          return _json(<String, Object?>{
+            'error': tr(
+              '容器里不能改端口（$key）：请改 compose 里端口映射的宿主机一侧（FUSHI_SYNC_PORT / FUSHI_WEBUI_PORT），并在「设置 › 远程访问」填写公网地址',
+              'The port ($key) cannot be changed inside a container: change the host side of the port mapping in your compose file (FUSHI_SYNC_PORT / FUSHI_WEBUI_PORT) and set Settings › Remote access › Public addresses',
+            ),
+            'reason': 'container_port_locked',
+          }, status: 409);
+        }
+      }
     }
     final List<String>? publicUrls = _remoteUrls(body, 'publicUrls');
     final List<String>? p2pRelays = _remoteUrls(body, 'p2pRelays');
