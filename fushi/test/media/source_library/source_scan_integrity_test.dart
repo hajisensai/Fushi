@@ -14,6 +14,7 @@
 // 「SourceLibraryScanner.scan manga source」组里（要用那里的压缩包夹具）。
 
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 
 import 'package:drift/drift.dart' show Value;
@@ -227,6 +228,170 @@ void main() {
       expect(rows.keys, <String>['video/ep10'], reason: '只剩一行');
       expect(rows['video/ep10']!.videoPath, newFile);
       expect(rows['video/ep10']!.lastPositionMs, 107774);
+    });
+
+    // BUG-5530：用户把 D:\video 里的剧挪进 NAS，再重扫 NAS 源。改指要把归属源改成
+    // 新源（否则移除旧源会连带删掉新源下的集），按路径关联的列一次事务全迁过去。
+    test('旧行属于源 A、文件挪进源 B 的根：重扫 B 后归属 B，封面 / 播放列表 / 覆盖层键跟着迁', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String rootA = p.join(tmp.path, 'video');
+      final String oldDir = p.join(rootA, 'Show', 'Season 01');
+      final String oldFile = p.join(oldDir, 'ep10.mkv');
+      _video(oldFile);
+      final SourceLibraryRow sourceA = await _source(db, rootA);
+      await _scan(db, sourceA);
+      await _setProgress(db, 'video/ep10', 4321);
+      expect((await _rowsByUid(db))['video/ep10']!.sourceId, sourceA.id);
+
+      // 刮削写在视频旁的封面、用户另选的字幕（改名前叫 old_name.srt）与它上面的手改。
+      final String oldCover = p.join(oldDir, 'ep10-poster.jpg');
+      final String oldSub = p.join(oldDir, 'old_name.srt');
+      File(oldCover).writeAsBytesSync(<int>[1, 2, 3]);
+      File(oldSub).writeAsStringSync('1\n00:00:01,000 --> 00:00:02,000\nx\n');
+      await (db.update(
+        db.videoBooks,
+      )..where((t) => t.bookUid.equals('video/ep10'))).write(
+        VideoBooksCompanion(
+          coverPath: Value<String?>(oldCover),
+          subtitleSource: Value<String?>(oldSub),
+        ),
+      );
+      await db.upsertVideoSubtitleTextOverride(
+        VideoSubtitleTextOverridesCompanion.insert(
+          videoKey: 'video/ep10',
+          sourceKey: 'file:old_name.srt',
+          startMs: 1000,
+          originalText: 'x',
+          editedText: 'y',
+          updatedAt: 1,
+        ),
+      );
+      // 另一行播放列表也收着这一集：各集 path 跟着换，各集进度原样。
+      final String otherEp = p.join(tmp.path, 'elsewhere', 'ep09.mkv');
+      _video(otherEp, fill: 9);
+      final String playlist = jsonEncode(<Map<String, Object?>>[
+        <String, Object?>{'title': 'ep09', 'path': otherEp, 'positionMs': 1},
+        <String, Object?>{'title': 'ep10', 'path': oldFile, 'positionMs': 2},
+      ]);
+      await db
+          .into(db.videoBooks)
+          .insert(
+            VideoBooksCompanion.insert(
+              bookUid: 'playlist/mix',
+              title: 'mix',
+              videoPath: otherEp,
+              playlistJson: Value<String?>(playlist),
+            ),
+          );
+
+      // 整个目录挪进源 B 的根；字幕在新位置按视频名改叫 ep10.srt。
+      final String rootB = p.join(tmp.path, 'nas');
+      final String newDir = p.join(rootB, 'Show', 'Season 01');
+      Directory(rootB).createSync();
+      Directory(p.join(rootA, 'Show')).renameSync(p.join(rootB, 'Show'));
+      File(
+        p.join(newDir, 'old_name.srt'),
+      ).renameSync(p.join(newDir, 'ep10.srt'));
+      final String newFile = p.join(newDir, 'ep10.mkv');
+      final SourceLibraryRow sourceB = await _source(db, rootB);
+
+      final SourceScanSummary summary = await _scan(db, sourceB);
+
+      expect(summary.error, isNull);
+      final Map<String, VideoBookRow> rows = await _rowsByUid(db);
+      final VideoBookRow row = rows['video/ep10']!;
+      expect(rows.keys.toSet(), <String>{'video/ep10', 'playlist/mix'});
+      expect(row.videoPath, newFile);
+      expect(row.sourceId, sourceB.id, reason: '归属跟着文件走到源 B');
+      expect(row.lastPositionMs, 4321);
+      expect(row.coverPath, p.join(newDir, 'ep10-poster.jpg'));
+      expect(row.subtitleSource, p.join(newDir, 'ep10.srt'));
+      final List<Object?> entries =
+          jsonDecode(rows['playlist/mix']!.playlistJson!) as List<Object?>;
+      expect((entries[1]! as Map<String, Object?>)['path'], newFile);
+      expect((entries[1]! as Map<String, Object?>)['positionMs'], 2);
+      expect((entries[0]! as Map<String, Object?>)['path'], otherEp);
+      expect(
+        await db.getVideoSubtitleTextOverrides(
+          videoKey: 'video/ep10',
+          sourceKey: 'file:ep10.srt',
+        ),
+        hasLength(1),
+        reason: '字幕改名后手改的字幕跟着新源键',
+      );
+      expect(
+        await db.getVideoSubtitleTextOverrides(
+          videoKey: 'video/ep10',
+          sourceKey: 'file:old_name.srt',
+        ),
+        isEmpty,
+      );
+    });
+
+    test('修复前已改指的行：路径在源 B 根下、归属 A 的根不含它，重扫 B 改归 B；重叠来源不动', () async {
+      final FushiDatabase db = _memDb();
+      addTearDown(db.close);
+      final String rootA = p.join(tmp.path, 'video');
+      final String rootB = p.join(tmp.path, 'nas');
+      final String misowned = p.join(rootB, 'Show', 'ep01.mkv');
+      final String nested = p.join(rootB, 'Inner', 'ep02.mkv');
+      _video(misowned);
+      _video(nested, fill: 8);
+      final SourceLibraryRow sourceA = await _source(db, rootA);
+      final SourceLibraryRow sourceInner = await _source(
+        db,
+        p.join(rootB, 'Inner'),
+      );
+      Future<void> add(String uid, String path, int owner) => db
+          .into(db.videoBooks)
+          .insert(
+            VideoBooksCompanion.insert(
+              bookUid: uid,
+              title: uid,
+              videoPath: path,
+              sourceId: Value<int?>(owner),
+            ),
+          );
+      await add('video/ep01', misowned, sourceA.id);
+      await add('video/ep02', nested, sourceInner.id);
+      final SourceLibraryRow sourceB = await _source(db, rootB);
+
+      final SourceScanSummary summary = await _scan(db, sourceB);
+
+      expect(summary.error, isNull);
+      final Map<String, VideoBookRow> rows = await _rowsByUid(db);
+      expect(rows.keys.toSet(), <String>{'video/ep01', 'video/ep02'});
+      expect(rows['video/ep01']!.sourceId, sourceB.id);
+      expect(
+        rows['video/ep02']!.sourceId,
+        sourceInner.id,
+        reason: '归属源的根也含这个路径（重叠来源），不抢',
+      );
+    });
+
+    test('旁挂文件：只认与旧视频同目录、旧的已不在、新目录有同名的', () async {
+      final String oldDir = p.join(tmp.path, 'old');
+      final String newDir = p.join(tmp.path, 'new');
+      Directory(oldDir).createSync();
+      Directory(newDir).createSync();
+      File(p.join(newDir, 'moved.jpg')).writeAsBytesSync(<int>[1]);
+      File(p.join(newDir, 'still.jpg')).writeAsBytesSync(<int>[1]);
+      File(p.join(oldDir, 'still.jpg')).writeAsBytesSync(<int>[1]);
+      final Map<String, String> moves = await movedVideoCompanionFiles(
+        oldVideoPath: p.join(oldDir, 'ep.mkv'),
+        newVideoPath: p.join(newDir, 'ep.mkv'),
+        candidates: <String?>[
+          null,
+          p.join(oldDir, 'moved.jpg'),
+          p.join(oldDir, 'still.jpg'),
+          p.join(oldDir, 'gone.jpg'),
+          p.join(tmp.path, 'cache', 'moved.jpg'),
+        ],
+      );
+      expect(moves, <String, String>{
+        p.join(oldDir, 'moved.jpg'): p.join(newDir, 'moved.jpg'),
+      });
     });
 
     test('删掉 A 剧的 01.mkv 再放进 B 剧的 01.mkv：新建一行，A 行原样不动', () async {
