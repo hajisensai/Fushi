@@ -11111,7 +11111,7 @@ function __fushiPopupClick(e) {
     window.flutter_inappwebview.callHandler('tapOutside');
 }
 
-// BUG-5461：弹窗内嵌套取词交给宿主的文本上限，不是扫描窗口（窗口由引擎按「扫描长度」设置切）。
+// BUG-5485：弹窗内嵌套取词交给宿主的文本上限，不是扫描窗口（窗口由引擎按「扫描长度」设置切）。
 // 与 app 阅读器 / 内置浏览器 / 浏览器扩展页面取词同为 400；旧值 20 会截断更长的英文词，
 // 也让调到 20 以上的扫描长度在嵌套层不生效。
 const FUSHI_POPUP_SCAN_TEXT_MAX_LEN = 400;

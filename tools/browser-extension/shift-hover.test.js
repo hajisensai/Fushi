@@ -206,12 +206,12 @@ test('Shift + mousemove 命中日文时真的发出 lookup 查词消息', () => 
   assert.strictEqual(lookups[0].term, '世界', 'lookup 携带的词不对');
 });
 
-// BUG-5461 回归守卫：YouTube 字幕 Shift 悬停 procrastination 不出弹窗。content.js 把取词上限写死
+// BUG-5485 回归守卫：YouTube 字幕 Shift 悬停 procrastination 不出弹窗。content.js 把取词上限写死
 // 成 12，selectFromPosition 前向扫描到 12 个字就停，发给 app 的是 procrastinat——引擎查无此词，
 // 弹窗不出。取词上限不是扫描窗口：窗口由 app 的「扫描长度」设置（FushiDicts.scanLength，上限
 // 32）在引擎侧切，宿主只管给足文本（app 阅读器 / 内置浏览器都传 400）。桩按真 selection.js 的
 // 前向扫描语义从命中处取 maxLength 个字，断言长英文词整词送达、且上限不低于扫描长度设置的上限。
-test('Shift 悬停长英文词：整词交给 app，不被取词上限截断（BUG-5461）', () => {
+test('Shift 悬停长英文词：整词交给 app，不被取词上限截断（BUG-5485）', () => {
   const caption = 'of procrastination day after day.';
   const maxLengths = [];
   const h = loadContentAndFireShift({

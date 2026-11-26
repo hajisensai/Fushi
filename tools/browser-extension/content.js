@@ -18,7 +18,7 @@ window.__fushiCssHighlightsSupported = false;
 // 设计，注入宿主页后宿主页自身 hover/click 会误触 selectText→clearSelection，拆掉刚画的划词高亮；
 // popup.js 读此 flag 后只处理落在 #entries-container 内的事件（content.js 与 popup.js 同隔离世界共享 window）。
 window.__fushiExtension = true;
-// BUG-5461：交给引擎的取词文本上限，不是扫描窗口。窗口长度由 app 的「扫描长度」设置
+// BUG-5485：交给引擎的取词文本上限，不是扫描窗口。窗口长度由 app 的「扫描长度」设置
 // （FushiDicts.scanLength，出厂 16、上限 32）在引擎侧切；这里只要给足文本，与 app 阅读器 /
 // 内置浏览器调 selectText 传的 400 同值。旧值 12 在发出前就把超过 12 个字母的英文词拦腰
 // 截断（procrastination → procrastinat，引擎查无此词、弹窗不出），也让用户调大的扫描长度

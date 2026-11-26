@@ -1,7 +1,7 @@
-## BUG-5461 · 浏览器扩展取词上限 12 截断长英文词，procrastination 不出弹窗
+## BUG-5485 · 浏览器扩展取词上限 12 截断长英文词，procrastination 不出弹窗
 - **报告**：2026-11-26（用户：）YouTube 字幕 / 标题上 Shift 悬停 `procrastination`、`procrastinate` 不出弹窗（词被高亮），app 内查词页能查到。
 - **真实性**：✅ 真 bug。根因 `tools/browser-extension/content.js:21`（旧 `const FUSHI_MAX_LEN = 12;`）：Shift 悬停 / 悬浮字幕 / canvas OCR 三条取词入口都把它当 `selectFromPosition` 的 `maxLength`，前向扫描满 12 个字就停，发给 app 的是 `procrastinat`；引擎查无此词 → `popupJson: null` → `fushiAbandonLookupWithoutPopup`，弹窗不出。服务端直接查 `procrastination` 正常（`bestLength` 15）。
 - **根因**：取词上限被当成了扫描窗口。扫描窗口归引擎：app 的「扫描长度」设置（`FushiDicts.scanLength`，出厂 16、上限 32）在 `native/fushidicts` 里切窗，宿主只负责给足文本——app 阅读器（`reader_fushi/lookup.part.dart`）与内置浏览器（`web_browser_tab_view.dart`）调 `selectText` 都传 400。扩展的 12 比引擎窗口还小，于是 ① 超过 12 个字母的英文词被拦腰截断；② 用户调大的扫描长度在扩展里不生效（日语长短语同样被截）。词典弹窗内嵌套取词（`fushi/assets/popup/popup.js` 两处写死 20）是同一类问题：扫描长度调到 20 以上、或词长超过 20 时在嵌套层被截。
 - **[x] ① 已修复** — 扩展 `FUSHI_MAX_LEN` 12 → 400；`popup.js` 嵌套取词改用新常量 `FUSHI_POPUP_SCAN_TEXT_MAX_LEN = 400`。所有宿主统一「给足文本、窗口由引擎按设置切」。镜像 `fushi/assets/browser_extension/content.js`、两份 `vendor/popup.js` 同步。高亮仍按服务端 `bestLength`，不受取词文本变长影响。
-- **[x] ② 已加自动化测试** — `tools/browser-extension/shift-hover.test.js`「Shift 悬停长英文词：整词交给 app，不被取词上限截断（BUG-5461）」：桩按真 selection.js 前向扫描语义取 `maxLength` 个字，断言发出的 term 以 `procrastination` 开头、上限 ≥ 32（扫描长度设置上限）。旧代码下红在 `"procrastinat"`。另用 Playwright Chromium 装真扩展连运行中的 app 复验：`procrastination` / `procrastinate` 弹窗正常，`say` / 日语不回归。
-- **备注**：超过引擎扫描长度（出厂 16）的英文单词（`characteristically` 18、`internationalization` 20）在 app 内同样查不到，是引擎层 `word_scan.cpp` 的问题，另记 BUG-5462。
+- **[x] ② 已加自动化测试** — `tools/browser-extension/shift-hover.test.js`「Shift 悬停长英文词：整词交给 app，不被取词上限截断（BUG-5485）」：桩按真 selection.js 前向扫描语义取 `maxLength` 个字，断言发出的 term 以 `procrastination` 开头、上限 ≥ 32（扫描长度设置上限）。旧代码下红在 `"procrastinat"`。另用 Playwright Chromium 装真扩展连运行中的 app 复验：`procrastination` / `procrastinate` 弹窗正常，`say` / 日语不回归。
+- **备注**：超过引擎扫描长度（出厂 16）的英文单词（`characteristically` 18、`internationalization` 20）在 app 内同样查不到，是引擎层 `word_scan.cpp` 的问题，另记 BUG-5486。
