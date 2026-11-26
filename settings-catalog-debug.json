@@ -13,7 +13,7 @@
   "windows",
   "macos"
  ],
- "count": 928,
+ "count": 929,
  "settings": [
   {
    "key": "appearance.language",
@@ -15359,6 +15359,27 @@
     "zh-CN": "在后台检查这台设备提交的反馈有没有新回复"
    },
    "default": true
+  },
+  {
+   "key": "system.desktop_close_to_tray",
+   "kind": "value",
+   "type": "bool",
+   "title": {
+    "en": "Minimize to tray when closing",
+    "zh-CN": "关闭窗口时最小化到托盘"
+   },
+   "path": {
+    "en": "System and about › Background tasks",
+    "zh-CN": "系统与关于 › 后台任务"
+   },
+   "description": {
+    "en": "The close button and Alt+F4 keep Fushi running in the notification area. Quit from the tray icon menu.",
+    "zh-CN": "点关闭按钮或按 Alt+F4 时收进右下角托盘继续运行，从托盘图标菜单退出。"
+   },
+   "default": false,
+   "platforms": [
+    "windows"
+   ]
   },
   {
    "key": "system.updates.video_library_auto_update",

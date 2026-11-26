@@ -1,6 +1,6 @@
 # Fushi settings reference
 
-> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 928 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
+> Every setting of the Fushi app (version 3.4.0), generated from the app's own settings schema on each change. 929 entries. Machine-readable copy: <https://fushi.moe/settings.json>.
 
 How to read this:
 
@@ -965,6 +965,7 @@ How to read this:
 | `system.updates.appRelease` | Notify about app releases | 应用新版提醒 | Notifications | bool |  | `true` | Alert when a newer Fushi release is available. |
 | `system.updates.system_notifications` | System notifications | 系统通知 | Notifications | bool |  | `false` | Also send a system notification. Turning this off keeps the in-app badge. |
 | `system.updates.feedback_replies` | Notify me of feedback replies | 反馈有新回复时通知我 | Notifications | bool |  | `true` | Check in the background for new replies to feedback sent from this device |
+| `system.desktop_close_to_tray` | Minimize to tray when closing | 关闭窗口时最小化到托盘 | Background tasks | bool |  | `false` | The close button and Alt+F4 keep Fushi running in the notification area. Quit from the tray icon menu. · *only on windows* |
 | `system.updates.video_library_auto_update` | Auto-add new episodes to the video library | 自动补齐媒体库新集 | Background tasks | bool |  | `true` | Every few hours, checks online-source titles and media server shows and adds newly released episodes. |
 | `system.updates.extension_auto_update` | Auto-update extensions in the background | 后台自动更新扩展 | Background tasks | bool |  | `false` | Installs new versions of manga and video extensions at startup (only those whose signature is unchanged). · *only on android, windows, macos* |
 | `system.network_proxy_mode` | Proxy mode | 代理模式 | Network | choice | `auto`, `direct`, `manual` | `auto` | Follow the system, set one manually, or use no proxy |
