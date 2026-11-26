@@ -259,11 +259,12 @@ class AppPaths {
   ///
   /// - 外部 = `getExternalFilesDir(null)/data`（`Android/data/<包名>/files/data`）：
   ///   USB / 电脑能直接拿到有声书、下载、字幕与转录结果；不需要任何存储权限，卸载时随
-  ///   app 一起删除。**全新安装默认外部**。
-  /// - 内部 = `app_flutter` 下的旧布局（flat 或 nested）。**升级上来的老安装锚定内部**、
-  ///   一个字节都不自动搬：内部到外部跨挂载点，只能逐文件复制，GB 级书库在启动期悄悄搬
-  ///   会卡死启动画面。老用户由首页一次性提示（或设置「数据存储位置」）走带进度的
-  ///   `DataRootMigrator` 迁移，迁完提交本锚点。
+  ///   app 一起删除。也正因为外部可见，文件管理器、电脑、手机清理工具都能把它整树删掉，
+  ///   **不再是任何安装的默认位置**（BUG-5492），只保留给 3.4.0 已经迁过去的安装。
+  /// - 内部 = `app_flutter` 下的布局（flat 或 nested），只有 Fushi 自己读写得到。新装与
+  ///   没有锚点的安装一律落这里。已在外部的安装不自动搬（跨挂载点只能逐文件复制，GB 级
+  ///   书库在启动期悄悄搬会卡死启动画面），由首页一次性提示（或设置「数据存储位置」）
+  ///   走带进度的 `DataRootMigrator` 迁回，迁完提交本锚点。
   ///
   /// 数据库（support 根）两种情况下都留在内部 `filesDir`，不随本锚点移动。
   static const String androidDocumentsLocationPrefKey =
@@ -271,9 +272,14 @@ class AppPaths {
   static const String androidDocumentsLocationInternal = 'internal';
   static const String androidDocumentsLocationExternal = 'external';
 
-  /// 老安装「把书库移到可访问文件夹」一次性提示已处理（弹过 / 已迁移）的标记。
+  /// 3.4.0「把书库移到可访问文件夹」一次性提示已处理的标记（冻结名，只由迁移提交照写；
+  /// 那个提示已撤掉，BUG-5492）。
   static const String androidDocumentsMovePromptedPrefKey =
       'android_documents_move_prompted';
+
+  /// 书库在外部时「建议移回内部存储」一次性提示已弹过的标记（BUG-5492）。
+  static const String androidDocumentsMoveBackPromptedPrefKey =
+      'android_documents_move_back_prompted';
 
   /// 外部 app 专属目录下书库根的子目录名。不直接用 `files/` 本身：`files/logs`（诊断）、
   /// `files/video_clips`（导出剪辑）、`files/Download`（浏览器下载兜底）与书库并列，
@@ -301,19 +307,18 @@ class AppPaths {
     _androidExternalFilesDir = externalFilesDir;
   }
 
-  /// 纯判定（测试钉住）：已有合法锚点就沿用；否则按「本机是否已有跑过的安装」决定——
-  /// 老安装 = 内部（不自动搬），全新安装 = 外部。
-  static String decideAndroidDocumentsLocation({
-    required String? stored,
-    required bool existingInstall,
-  }) {
+  /// 纯判定（测试钉住）：已有合法锚点就沿用（3.4.0 起已在外部的安装不被挪动，由首页
+  /// 一次性提示建议迁回）；没有锚点一律内部——新装与老安装都一样。
+  ///
+  /// BUG-5492：外部 `Android/data/<包名>/files/data` 能被文件管理器、电脑 USB、手机清理
+  /// 工具整树删掉（反馈 cH-HbP8XkQ 报告人手动删了 `Android/data/app.fushi.reader`，
+  /// MXX0xhQDgt 迁移成功后外部书库被清空），而 Fushi 拦不住，书库默认不再放那里。
+  static String decideAndroidDocumentsLocation({required String? stored}) {
     if (stored == androidDocumentsLocationInternal ||
         stored == androidDocumentsLocationExternal) {
       return stored!;
     }
-    return existingInstall
-        ? androidDocumentsLocationInternal
-        : androidDocumentsLocationExternal;
+    return androidDocumentsLocationInternal;
   }
 
   /// 外部书库根的展示串（外部存储不可用、拿不到真实路径时给逃生屏用）。
@@ -352,10 +357,7 @@ class AppPaths {
       final String? stored =
           anchor?.location ??
           (await _prefsOrNull())?.getString(androidDocumentsLocationPrefKey);
-      final String decided = decideAndroidDocumentsLocation(
-        stored: stored,
-        existingInstall: stored != null || await existingInstallHasDatabase(),
-      );
+      final String decided = decideAndroidDocumentsLocation(stored: stored);
       _androidExternalFilesDir = await getExternalStorageDirectory();
       final Directory? ext = _androidExternalFilesDir;
       final List<AndroidInternalLibraryCandidate> candidates =
@@ -651,10 +653,17 @@ class AppPaths {
     'onboarding_tutorial',
   };
 
+  /// 书库消失哨兵文件名（BUG-5492，`LibrarySentinel`）：放在书库根，内容是随机 token。
+  static const String librarySentinelFileName = '.fushi_library_sentinel';
+
   /// 不算书库证据的文件名：`.nomedia` 是排除媒体扫描的占位（0 字节），任何目录都可能被
-  /// 顺手放一个；`*.fushi-part` 是中断的跨盘复制留下的半截临时文件，不是书。
+  /// 顺手放一个；`*.fushi-part` 是中断的跨盘复制留下的半截临时文件，不是书；书库消失
+  /// 哨兵（及其写到一半的 `.tmp`）是 app 自己放的标记，不能让迁移目标核对把它当成
+  /// 「目标里有源里没有的书」挡住迁移。
   static bool isLibraryEvidenceFileName(String name) =>
-      name != '.nomedia' && !name.endsWith(kDirectoryCopyPartSuffix);
+      name != '.nomedia' &&
+      !name.endsWith(kDirectoryCopyPartSuffix) &&
+      !name.startsWith(librarySentinelFileName);
 
   /// [root] 下 Fushi 自有顶层项（[fushiOwnedDocumentsEntries]，去掉
   /// [libraryEvidenceIgnoredEntries]）里是否至少有一个书库**文件**。只认文件不认目录：
@@ -1594,6 +1603,22 @@ class AppPaths {
   }
 
   static Future<Directory>? _diagnosticsDirectory;
+
+  /// 必须撑过「书库被外部清空」的诊断落点（BUG-5492）：数据位置取证环
+  /// （`ErrorLogService.logDataLocation`）就是为丢数据之后追查写的，却和外部书库一起住在
+  /// Android 的 `Android/data/<包名>/files/logs`——文件管理器 / 电脑 / 清理工具删掉
+  /// `Android/data/<包名>` 时取证一起没了（反馈 MXX0xhQDgt 的日志里迁移那天一条都不剩）。
+  /// Android 落内部 support 根下的 `logs`（`/data/user/0/<包名>/files/logs`，只有 Fushi 读得
+  /// 到）；其它平台 [diagnosticsDirectory] 本来就在 app 私有目录，原样返回。
+  static Future<Directory> durableDiagnosticsDirectory() async {
+    final Directory? test = fushiTestDirectory('app-documents');
+    if (test != null || !Platform.isAndroid) return diagnosticsDirectory();
+    final Directory dir = Directory(
+      p.join((await getApplicationSupportDirectory()).path, 'logs'),
+    );
+    await dir.create(recursive: true);
+    return dir;
+  }
 
   /// 启动期把旧诊断文件搬进 [diagnosticsDirectory] 时失败的条目（`文件名: 原因`）。
   /// 搬迁跑在错误日志就绪之前，由 `ErrorLogService.init` 读出写进错误日志，不吞。

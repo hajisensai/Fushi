@@ -7,94 +7,76 @@ import 'package:path/path.dart' as p;
 import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 import 'package:fushi/src/pages/implementations/android_storage_move_prompt.dart'
-    show shouldShowAndroidStorageMovePrompt;
+    show shouldShowAndroidStorageMoveBackPrompt;
 import 'package:fushi/src/storage/app_paths.dart';
 import 'package:fushi/src/storage/data_root_migrator.dart';
 
-/// Android 书库根：新装默认外部 app 专属目录（`Android/data/<包名>/files/data`），
-/// 老安装锚定内部、一次性提示后走带进度的迁移（数据库始终留在内部）。
+/// Android 书库根：一律默认内部（BUG-5492：外部 `Android/data` 书库能被文件管理器 /
+/// 电脑 / 清理工具整树删掉），已在外部的安装沿用锚点并一次性建议移回（数据库始终留在内部）。
 void main() {
   group('decideAndroidDocumentsLocation', () {
-    test('全新安装（没有主库）→ 外部', () {
+    test('没有锚点（全新安装或老安装）→ 内部', () {
       expect(
-        AppPaths.decideAndroidDocumentsLocation(
-          stored: null,
-          existingInstall: false,
-        ),
-        AppPaths.androidDocumentsLocationExternal,
-      );
-    });
-
-    test('升级上来的老安装（已有主库）→ 内部，一个字节都不自动搬', () {
-      expect(
-        AppPaths.decideAndroidDocumentsLocation(
-          stored: null,
-          existingInstall: true,
-        ),
+        AppPaths.decideAndroidDocumentsLocation(stored: null),
         AppPaths.androidDocumentsLocationInternal,
       );
     });
 
-    test('已有锚点一律沿用，不因主库存在与否翻转', () {
+    test('已有锚点一律沿用：外部的不自动搬回（GB 级书库启动期搬会卡死启动画面）', () {
       expect(
         AppPaths.decideAndroidDocumentsLocation(
           stored: AppPaths.androidDocumentsLocationExternal,
-          existingInstall: true,
         ),
         AppPaths.androidDocumentsLocationExternal,
       );
       expect(
         AppPaths.decideAndroidDocumentsLocation(
           stored: AppPaths.androidDocumentsLocationInternal,
-          existingInstall: false,
         ),
         AppPaths.androidDocumentsLocationInternal,
       );
     });
 
-    test('锚点是垃圾值时按安装状态重判', () {
+    test('锚点是垃圾值时落内部', () {
       expect(
-        AppPaths.decideAndroidDocumentsLocation(
-          stored: 'sdcard',
-          existingInstall: true,
-        ),
+        AppPaths.decideAndroidDocumentsLocation(stored: 'sdcard'),
         AppPaths.androidDocumentsLocationInternal,
       );
     });
   });
 
-  group('shouldShowAndroidStorageMovePrompt', () {
-    test('只有 Android + 书库在内部 + 没处理过才弹', () {
+  group('shouldShowAndroidStorageMoveBackPrompt', () {
+    test('只有 Android + 书库在外部 + 没弹过才弹', () {
       expect(
-        shouldShowAndroidStorageMovePrompt(
+        shouldShowAndroidStorageMoveBackPrompt(
           isAndroid: true,
-          documentsExternal: false,
+          documentsExternal: true,
           prompted: false,
         ),
         isTrue,
       );
       expect(
-        shouldShowAndroidStorageMovePrompt(
+        shouldShowAndroidStorageMoveBackPrompt(
           isAndroid: true,
-          documentsExternal: true,
+          documentsExternal: false,
           prompted: false,
         ),
         isFalse,
-        reason: '新装 / 已迁移：书库已经在外部',
+        reason: '书库已在内部，没东西可移',
       );
       expect(
-        shouldShowAndroidStorageMovePrompt(
+        shouldShowAndroidStorageMoveBackPrompt(
           isAndroid: true,
-          documentsExternal: false,
+          documentsExternal: true,
           prompted: true,
         ),
         isFalse,
-        reason: '弹过一次就不再弹，之后走设置',
+        reason: '只弹一次，之后在设置里迁',
       );
       expect(
-        shouldShowAndroidStorageMovePrompt(
+        shouldShowAndroidStorageMoveBackPrompt(
           isAndroid: false,
-          documentsExternal: false,
+          documentsExternal: true,
           prompted: false,
         ),
         isFalse,
