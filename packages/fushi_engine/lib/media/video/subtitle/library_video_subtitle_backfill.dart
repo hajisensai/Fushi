@@ -14,6 +14,9 @@ library;
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart'
     show VideoMediaReference;
+import 'package:fushi_engine/foundation/engine_paths.dart' show enginePaths;
+import 'package:fushi_engine/media/video/disc/disc_format.dart'
+    show isDiscMemberPath;
 import 'package:fushi_engine/media/video/download/download_confirmed_identity.dart'
     show DownloadConfirmedIdentityResolver, mergeDownloadConfirmedIdentity;
 import 'package:fushi_engine/media/video/metadata/video_metadata_models.dart'
@@ -70,6 +73,15 @@ Future<VideoSubtitleBackfillReport?> backfillLibraryVideoSubtitle({
     );
   }
   final SubtitleBackfillResult result = await service.backfill(target);
+  // 原盘成员的字幕落在托管目录，播放页不会按目录发现它：没有字幕选择时登记成
+  // 这一集的字幕源（与下载后重试同一条「只补空」规则，不顶掉用户的选择）。
+  final String? installedPath = result.installedPath;
+  if (result.installed &&
+      installedPath != null &&
+      target.isDiscMember &&
+      !subtitleSourceBlocksBackfill(book.subtitleSource)) {
+    await database.updateVideoBookSubtitleSource(book.bookUid, installedPath);
+  }
   return VideoSubtitleBackfillReport(
     outcome: result.outcome.name,
     installedPath: result.installedPath,
@@ -142,22 +154,33 @@ libraryVideoSubtitleTarget(
     (VideoMetadataProviderIdentityRow row) => row.isPrimary,
     orElse: () => identities.first,
   );
-  // 季集号取文件名解析（与刮削后自动补同一判据，见 scrapedSubtitleTargets）：
-  // 多集作品里认不出集号就不配，配上去只能是碰运气。
+  // 季集号：先取刮削落库的逐文件分集绑定（[libraryVideoEpisodeBinding]），没有再
+  // 退回文件名解析（与刮削后自动补同一判据，见 scrapedSubtitleTargets）。原盘
+  // 分集成员的文件名是 `00001.p03.mpls`，解析不出集号；它的集号是刮削协调器按
+  // 盘内顺序给的覆盖，只在绑定表里。多集作品里两样都认不出集号就不配，配上去只能
+  // 是碰运气。
   final bool single = own != null || memberCount <= 1;
-  final VideoNameInfo parsed = parseVideoFilename(p.basename(book.videoPath));
+  final bool disc = isDiscMemberPath(book.videoPath);
+  final ({int season, int episode, int? runtimeMinutes})? bound =
+      await libraryVideoEpisodeBinding(database, book.bookUid);
+  final VideoNameInfo? parsed = disc
+      ? null
+      : parseVideoFilename(p.basename(book.videoPath));
   // 单文件电影没有集号（「Doraemon Movie 25」的 25 是系列序号），同
   // scrapedSubtitleTargets。
-  final int? episode = single && work.mediaType == 'movie'
-      ? null
-      : parsed.episode;
+  final bool movie = single && work.mediaType == 'movie';
+  final int? episode = movie ? null : (bound?.episode ?? parsed?.episode);
   if (episode == null && !single) {
     return (
       target: null,
-      reason: 'cannot tell which episode this file is from its name',
+      reason: disc
+          ? 'disc episode has no scraped episode binding; rescrape the disc'
+          : 'cannot tell which episode this file is from its name',
     );
   }
-  final int? season = episode == null ? null : (parsed.season ?? 1);
+  final int? season = episode == null
+      ? null
+      : (bound?.season ?? parsed?.season ?? 1);
   final String? series = collection?.name.trim().toLowerCase();
   final VideoMediaReference scraped = identityMediaReference(
     providerId: primary.provider,
@@ -184,14 +207,51 @@ libraryVideoSubtitleTarget(
         videoPath: book.videoPath,
         media: scraped,
       ),
-      scrapedRuntimeMinutes: work.runtimeMinutes,
+      // 分集自己的时长比作品级 runtime 准（作品级常是「每集约 24 分钟」的均值，
+      // 电影就是片长）。
+      scrapedRuntimeMinutes: bound?.runtimeMinutes ?? work.runtimeMinutes,
       contentLanguage: book.language,
       originalLanguage: work.originalLanguage,
       explicitLanguage:
           explicitLanguage ??
           (series == null ? null : seriesLanguage?.call(series)),
+      managedSubtitleDirectory: disc
+          ? (await enginePaths.videoSubtitlesDirectory()).path
+          : null,
     ),
     reason: null,
+  );
+}
+
+/// [bookUid] 这个视频文件在刮削落库时绑定的分集：季号、集号、分集时长。一文件绑
+/// 多集（双集连播）取最小的那集；没绑定返回 null。
+///
+/// 这是库里唯一同时覆盖「文件名能解析」与「文件名解析不了」（原盘分集、绝对集号、
+/// 手动改绑）的集号来源——展示的集号就是它，字幕按它搜才与用户看到的一致。
+Future<({int season, int episode, int? runtimeMinutes})?>
+libraryVideoEpisodeBinding(FushiDatabase database, String bookUid) async {
+  final VideoFileEpisodeRows rows = await database.getVideoFileEpisodeRows(
+    <String>[bookUid],
+  );
+  if (rows.episodes.isEmpty) return null;
+  final Map<int, int> seasonNumbers = <int, int>{
+    for (final VideoMetadataSeasonRow s in rows.seasons) s.id: s.seasonNumber,
+  };
+  VideoMetadataEpisodeRow? first;
+  for (final VideoMetadataEpisodeRow e in rows.episodes) {
+    if (!seasonNumbers.containsKey(e.seasonId)) continue;
+    if (first == null ||
+        seasonNumbers[e.seasonId]! < seasonNumbers[first.seasonId]! ||
+        (e.seasonId == first.seasonId &&
+            e.episodeNumber < first.episodeNumber)) {
+      first = e;
+    }
+  }
+  if (first == null) return null;
+  return (
+    season: seasonNumbers[first.seasonId]!,
+    episode: first.episodeNumber,
+    runtimeMinutes: first.runtimeMinutes,
   );
 }
 
