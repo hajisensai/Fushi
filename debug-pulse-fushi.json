@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-26T10:28:30Z",
+ "generatedAt": "2026-11-26T10:42:02Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "cb5365ea4a8a1db4ffbc65191a798ce835a06cac",
-  "seq": 32753
+  "sha": "a85baae75d8e7c6a08b3557f9f52e54ca20cef6a",
+  "seq": 32754
  },
  "builds": [
   {
@@ -370,10 +370,14 @@
   }
  ],
  "pending": {
-  "headSha": "cb5365ea4a8a1db4ffbc65191a798ce835a06cac",
-  "headSeq": 32753,
+  "headSha": "a85baae75d8e7c6a08b3557f9f52e54ca20cef6a",
+  "headSeq": 32754,
   "prs": [],
   "direct": [
+   {
+    "sha": "a85baae75d8e7c6a08b3557f9f52e54ca20cef6a",
+    "subject": "chore(bugs): settle BUG number collisions on cb5365ea4"
+   },
    {
     "sha": "cb5365ea4a8a1db4ffbc65191a798ce835a06cac",
     "subject": "Merge PR #4492"
@@ -462,7 +466,7 @@
   "truncated": false,
   "platforms": {
    "android": {
-    "state": "queued",
+    "state": "building",
     "url": "https://github.com/hajisensai/Fushi/actions/runs/45798362682"
    },
    "windows": {
