@@ -3923,7 +3923,6 @@ String _crossPlatformBasename(String path) {
   return cut < 0 ? path : path.substring(cut + 1);
 }
 
-/// 本地路径已失效（null / URL / 哨兵值都不算失效，不去动它）。
 /// [path] 是否落在来源根 [root] 下（含等于根）；比较走 `p.canonicalize`
 /// （Windows 大小写不敏感、`/` `\` 混用）。
 @visibleForTesting
@@ -3957,6 +3956,7 @@ Future<Map<String, String>> movedVideoCompanionFiles({
   return moves;
 }
 
+/// 本地路径已失效（null / URL / 哨兵值都不算失效，不去动它）。
 Future<bool> _isDeadLocalPath(String? path) async {
   if (path == null || path.isEmpty || path.contains('://')) return false;
   if (!p.isAbsolute(path)) return false;
