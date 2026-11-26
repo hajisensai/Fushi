@@ -112,7 +112,8 @@ final RegExp _rubyReading = RegExp(
 );
 final RegExp _clozeMark = RegExp(r'\{\{c\d+::([\s\S]*?)(?:::[\s\S]*?)?\}\}');
 final RegExp _lineBreakTag = RegExp(
-  r'<br\s*/?>|</(p|div|li)\s*>',
+  // 块级标签开、闭都算换行：`一行<div>二行</div>`、`<li>a</li><li>b</li>` 不粘连。
+  r'<br\s*/?>|</?(p|div|li|ul|ol)\b[^>]*>',
   caseSensitive: false,
 );
 final RegExp _boldTag = RegExp(

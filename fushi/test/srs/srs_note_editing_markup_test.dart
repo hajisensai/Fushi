@@ -293,7 +293,7 @@ void main() {
           '一行目<br>二行目<div>三</div><!-- c --><script>x</script>'
           'A&nbsp;&amp;&nbsp;B &lt;b&gt;',
         ),
-        '一行目\n二行目三\nA & B &lt;b&gt;',
+        '一行目\n二行目\n三\nA & B &lt;b&gt;',
       );
     });
 
