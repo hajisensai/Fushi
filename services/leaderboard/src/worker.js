@@ -39,6 +39,8 @@
 //   POST /v1/notices                       {v, p, c, l, id, h, k} 按构建信息取服务端下发的公告（notices.js）
 //   GET  /v1/musickit/token                                Apple Music API developer token（musickit.js；没配 MUSICKIT_* 则 503）
 //   GET  /musickit/  /musickit/bridge.js                   MusicKit JS 托管页 + 桥接脚本（musickit_page.js；Windows/Android 网页桥）
+//   PUT/GET/DELETE /v1/srs-donations/:donorId  [Bearer donorKey] SRS 复习历史捐赠（srs_donations.js 文件头）；
+//   /v1/admin/srs-donations[/batch] [Basic] 统计 / 生成私有批次；GET /d/srs-donations/<token>/… 批次下载（token 即凭据）
 //
 // 开发者网页处理台（HTML，会话 Cookie；devconsole.js）：/dev/**
 // 拍板台附件公开分享（无需登录，只读；decisions.js sharedFileResponse）：GET /share/f/<token>，撤销后 404
@@ -80,6 +82,7 @@ import { purgeInstallStats, recordPing, refreshInstallStatsSnapshot } from './in
 import { refreshProjectStats } from './project_stats.js';
 import { USAGE_LIMITS, recordAiUsage } from './ai_usage.js';
 import { NOTICE_LIMITS, handleNotices, purgeNoticeSeen } from './notices.js';
+import { isSrsDonationPath, routeSrsDonations } from './srs_donations.js';
 
 const HOUR = 3600 * 1000;
 const JSON_BODY_MAX = 16 * 1024;
@@ -238,6 +241,15 @@ async function route(request, env, now, ctx) {
   if (isDecisionsApiPath(path)) {
     await bindingLimit(env.READ_LIMITER, request);
     return routeDecisionsApi(request, env, url, now);
+  }
+
+  // ---- SRS 复习历史捐赠（srs_donations.js）：Bearer donorKey / 管理 Basic / 批次 token；写入口按 IP 过 AUTH_LIMITER，
+  //      读（含批次下载）过 READ_LIMITER；一律不进边缘缓存 ----
+  if (isSrsDonationPath(path)) {
+    await bindingLimit(method === 'GET' ? env.READ_LIMITER : env.AUTH_LIMITER, request);
+    const res = await routeSrsDonations(request, env, url, now, ctx, clientIp(request));
+    if (res) return res;
+    throw new HttpError(404, 'not_found');
   }
 
   // ---- 反馈、开发者处理与 CI 回填：凭据各不相同（ticket / 签名 / Bearer），一律不进边缘缓存 ----

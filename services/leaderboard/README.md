@@ -192,6 +192,24 @@ Run workflow），push / PR 永远不会部署。维护者不需要在自己机�
 社交写（好友 / 屏蔽 / 举报）按账户每小时 120 次限流（`LIMITS.socialWritePerHour`）。被管理员隐藏的账户
 不出现在任何列表里，也不能被加好友或屏蔽。
 
+## SRS 复习历史捐赠（迁移 0026，`src/srs_donations.js`）
+
+用户自愿把脱敏复习历史（Anki 兼容 `.apkg`）捐给 anki-rwkv 训练调度模型（设计 `docs/specs/2026-11-26-srs-review-donation.md`）。
+文件存 R2 `srs-donations/<donorId>.apkg`，一个捐赠者一个文件，重传覆盖；占「大附件」配额池（`budget.js` 的 `video` 池）。
+
+| 方法 | 路径 | 鉴权 | 作用 |
+|---|---|---|---|
+| PUT | `/v1/srs-donations/:donorId` | Bearer donorKey | body = apkg 原始字节（必须 `Content-Length`，≤ 64 MiB，zip 魔数，流式写 R2），头 `x-donation-reviews` / `x-donation-cards` / 可选 `x-donation-app-version` → `{donated: true, updatedAt}`。首次上传的 key 认领该 ID（库里只存 SHA-256），之后换 key 403 `donor_key_mismatch`；每 donorId 每小时 2 次、每 IP 每日 128 MiB（429 `upload_quota_daily`） |
+| GET | `/v1/srs-donations/:donorId` | Bearer donorKey | `{donated, reviews, cards, updatedAt}`，无记录 `{donated: false}` |
+| DELETE | `/v1/srs-donations/:donorId` | Bearer donorKey | 撤回：删文件与行、记撤回（进下一批的撤回清单）→ `{donated: false}`，幂等 |
+| POST | `/v1/admin/srs-donations/batch` | Basic | 生成私有批次（快照全部捐赠 + 未报告的撤回，token 30 天有效）→ `{url, token, expiresAt, donors, reviews, withdrawn}` |
+| GET | `/v1/admin/srs-donations` | Basic | 统计、里程碑与历史批次 |
+| GET | `/d/srs-donations/<token>/`、`…/<donorId>.apkg`、`…/withdrawn.txt` | 链接即凭据 | 批次 JSON 清单 / 文件下载（attachment）/ 撤回 ID；过期或快照后已撤回 404 |
+
+每月：`ADMIN_USER=… ADMIN_PASS=… node scripts/srs_donation_batch.mjs` 打印链接交给作者（`--stats` 只看数字，不生成批次——
+生成会把未报告的撤回标成已报告）。捐赠者数第一次到 30 时 POST Discord webhook：`wrangler secret put DONATION_NOTIFY_WEBHOOK`，
+可选 `DONATION_NOTIFY_MENTION`（如 `<@用户 id>`，放在消息开头）；没配只记日志。
+
 ## 测试
 
 ```bash
