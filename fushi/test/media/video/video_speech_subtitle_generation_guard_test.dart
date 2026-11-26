@@ -45,6 +45,11 @@ void main() {
     expect(rows, isNot(contains('video-subtitle-ai-generate')));
     expect(rows, contains('_subtitleStudioAvailable(controller)'));
     expect(rows, contains('_openSubtitleStudio(controller)'));
+    // 行本身画在纯展示的 [VideoWebSubtitleTrackRows] 里（BUG-5543 抽出，widget 测试直接构建）。
+    final String rowsWidget = web
+        .split('class VideoWebSubtitleTrackRows')[1]
+        .split('extension _VideoWebSource')[0];
+    expect(rowsWidget, contains("'video-web-subtitle-studio'"));
     expect(rows, isNot(contains('_openSubtitleGeneration(')));
     expect(rows, isNot(contains('_retimeSubtitleWithSpeechModel(')));
     expect(rows, isNot(contains('_alignSubtitleToEmbeddedTracks(')));
@@ -527,7 +532,6 @@ void main() {
     final String rows = web
         .split('Widget _buildWebSubtitleTrackRows(')[1]
         .split('void _onWebPageLookup(')[0];
-    expect(rows, contains("'video-web-subtitle-studio'"));
     expect(rows, contains('_subtitleStudioAvailable(controller)'));
     expect(rows, contains('_openSubtitleStudio(controller)'));
 

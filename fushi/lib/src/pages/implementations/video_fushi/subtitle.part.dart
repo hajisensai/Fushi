@@ -195,7 +195,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
     BuildContext context,
     VideoPlayerController controller,
   ) {
-    // 网页档：字幕轨来自站点（bridge 抓的整集轨 + DOM 采样 live 轨），见 web_source.part.dart。
+    // 网页档：字幕轨来自站点（bridge 抓的整集轨 + DOM 采样 live 轨）+ 本机导入的轨，副字幕同样
+    // 按「站点视频 → 轨」管，整块见 web_source.part.dart [VideoWebSubtitleTrackRows]。
     if (_webMode) return _buildWebSubtitleTrackRows(context);
     // 选中行前景：M3E 交给面板列表主题（secondaryContainer 色块 +
     // onSecondaryContainer），Apple 照旧强调色。
@@ -2015,20 +2016,8 @@ extension _VideoSubtitle on _VideoFushiPageState {
       return false;
     }
     // 复制到 video_subtitles/ 持久目录再应用：远端选择按文件路径持久化（见
-    // _applyRemoteSubtitle），原始 pick 可能是 SAF 临时缓存，退出后失效；复制到 app
-    // 拥有的目录才能在重进时按路径重放。复制失败则退回原路径（尽力而为，不阻断应用）。
-    String applyPath = path;
-    try {
-      final Directory destDir = await AppPaths.videoSubtitlesDirectory();
-      await destDir.create(recursive: true);
-      final String dest = p.join(destDir.path, p.basename(path));
-      if (!p.equals(path, dest)) {
-        await File(path).copy(dest);
-      }
-      applyPath = dest;
-    } catch (_) {
-      // 保留原始 pick 路径应用；本次可播，只是可能不持久。
-    }
+    // _applyRemoteSubtitle），见 [_copyImportedSubtitleIntoLibrary]。
+    final String applyPath = await _copyImportedSubtitleIntoLibrary(path);
     // BUG-1861：与远端 Jimaku 下载同理，导入的档案要在字幕轨列表里有自己的行。
     _registerImportedSubtitleSource(applyPath);
     final bool applied = await _applyRemoteSubtitle(controller, applyPath);
@@ -2632,7 +2621,16 @@ extension _VideoSubtitle on _VideoFushiPageState {
       );
       return;
     }
-    String applyPath = path;
+    final String applyPath = await _copyImportedSubtitleIntoLibrary(path);
+    // BUG-1861：与远端主字幕导入同理，档案要在**副**字幕轨列表里有自己的行。
+    _registerImportedSubtitleSource(applyPath);
+    await _applyRemoteSecondarySubtitle(controller, applyPath);
+  }
+
+  /// 把用户挑的字幕文件 [path] 拷进 app 自己的 `video_subtitles/` 目录，返回拷贝路径（远端 /
+  /// 网页档的导入共用）：原始 pick 可能是 SAF 临时缓存，退出后失效，拷进 app 拥有的目录才能
+  /// 按路径重放。拷贝失败退回原路径（尽力而为：本次照样能用，只是可能不持久）。
+  Future<String> _copyImportedSubtitleIntoLibrary(String path) async {
     try {
       final Directory destDir = await AppPaths.videoSubtitlesDirectory();
       await destDir.create(recursive: true);
@@ -2640,13 +2638,10 @@ extension _VideoSubtitle on _VideoFushiPageState {
       if (!p.equals(path, dest)) {
         await File(path).copy(dest);
       }
-      applyPath = dest;
+      return dest;
     } catch (_) {
-      // 保留原始 pick 路径应用；本次可用，只是可能不持久。
+      return path;
     }
-    // BUG-1861：与远端主字幕导入同理，档案要在**副**字幕轨列表里有自己的行。
-    _registerImportedSubtitleSource(applyPath);
-    await _applyRemoteSecondarySubtitle(controller, applyPath);
   }
 
   /// 远端模式：关闭副字幕（清副层 + 带戳「显式清除」）。清除也走带戳写（值空 +
@@ -5108,11 +5103,17 @@ extension _VideoSubtitle on _VideoFushiPageState {
     VideoPlayerController controller,
     String srcPath,
   ) async {
-    if (_currentVideoPath == null) return;
+    // 网页档（站点视频）没有本机视频文件，字幕登记成站点视频的一条轨（反馈 WNUWVgsr6Q：
+    // 此前这里遇到 `_currentVideoPath == null` 直接早退，拖放字幕到网页档播放区静默无反应）。
+    if (!_webMode && _currentVideoPath == null) return;
     if (_subtitleImportsInFlight.contains(srcPath)) return;
     _subtitleImportsInFlight.add(srcPath);
     try {
-      await _importExternalSubtitleInner(controller, srcPath);
+      if (_webMode) {
+        await _importWebSubtitleFile(srcPath, secondary: false);
+      } else {
+        await _importExternalSubtitleInner(controller, srcPath);
+      }
     } finally {
       _subtitleImportsInFlight.remove(srcPath);
     }
