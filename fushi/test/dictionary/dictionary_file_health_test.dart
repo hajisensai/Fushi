@@ -13,7 +13,7 @@ import 'package:path/path.dart' as p;
 
 import '../helpers/test_platform_services.dart';
 
-/// BUG-5462：词典元数据还在、`dictionaryResources/<名>` 下的文件没了（或读不到）时，
+/// BUG-5489：词典元数据还在、`dictionaryResources/<名>` 下的文件没了（或读不到）时，
 /// 装载链路只是静默不装，查词只剩「未找到」。契约：
 ///  * 判定区分「不在」与「暂时读不到」（资源根列不出来 = 读不到，不当成删除）；
 ///  * 判定**从不删任何东西**；

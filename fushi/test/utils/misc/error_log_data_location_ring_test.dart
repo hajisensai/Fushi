@@ -5,7 +5,7 @@ import 'package:fushi/src/feedback/feedback_diagnostics.dart';
 import 'package:fushi/src/storage/app_paths.dart' show dataRootsDiagnostic;
 import 'package:fushi/src/utils/misc/error_log_service.dart';
 
-/// BUG-5463：数据位置诊断（书库根判定 / 沙箱重定位 / 散书合并 / 迁移被拒 / 词典文件
+/// BUG-5490：数据位置诊断（书库根判定 / 沙箱重定位 / 散书合并 / 迁移被拒 / 词典文件
 /// 缺失）进独立的持久环：跨运行保留、不被普通诊断挤掉、不随清空日志消失、固定上限，
 /// 反馈日志里排在最末尾。
 void main() {

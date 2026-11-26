@@ -169,7 +169,7 @@ class DictionaryManagerDetail extends StatelessWidget {
 
   final Dictionary dictionary;
 
-  /// BUG-5462：这本的文件问题（不在 / 暂时读不到）；null = 文件正常。
+  /// BUG-5489：这本的文件问题（不在 / 暂时读不到）；null = 文件正常。
   final DictionaryFileIssue? fileIssue;
 
   /// 文件不在时的「重新导入」（在线来源强制重下，本地导入选文件覆盖）。
@@ -422,7 +422,7 @@ class DictionaryManagerDetail extends StatelessWidget {
   }
 }
 
-/// BUG-5462：词典行 / 详情标题下的文件状态标签（「文件缺失」/「暂时读不到」）。
+/// BUG-5489：词典行 / 详情标题下的文件状态标签（「文件缺失」/「暂时读不到」）。
 class DictionaryFileIssueTag extends StatelessWidget {
   const DictionaryFileIssueTag({required this.issue, super.key});
 
@@ -447,7 +447,7 @@ class DictionaryFileIssueTag extends StatelessWidget {
   };
 }
 
-/// BUG-5462：详情顶部的文件状态说明。文件不在 → 给「重新导入 / 删除」两条出路；暂时
+/// BUG-5489：详情顶部的文件状态说明。文件不在 → 给「重新导入 / 删除」两条出路；暂时
 /// 读不到 → 只说明、不给删除（没删任何东西，等文件能读到就自动恢复）。
 class DictionaryFileIssueNotice extends StatelessWidget {
   const DictionaryFileIssueNotice({

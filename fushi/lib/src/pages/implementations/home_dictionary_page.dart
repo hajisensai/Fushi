@@ -362,7 +362,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
   @override
   void initState() {
     super.initState();
-    // BUG-5462：词典文件状态变了（装载判定 / 重新导入后）就重画空态说明与结果上方横幅。
+    // BUG-5489：词典文件状态变了（装载判定 / 重新导入后）就重画空态说明与结果上方横幅。
     DictionaryFileHealthMonitor.instance.addListener(_onDictionaryFileHealth);
     _popupHost =
         SharedLookupPopupScope.maybeOf(context) ??
@@ -1354,7 +1354,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
         child: FushiPlaceholderMessage(
           icon: FushiIcons.searchOff,
           message: t.no_search_results,
-          // BUG-5462：查不到是因为词典文件不在 / 读不到时如实说。
+          // BUG-5489：查不到是因为词典文件不在 / 读不到时如实说。
           detailMaxLines: 5,
           detail: dictionaryLookupFileNotice(
             DictionaryFileHealthMonitor.instance.value,
@@ -2156,7 +2156,7 @@ class _HomeDictionaryPageState extends BaseTabPageState<HomeDictionaryPage>
                 child: const FushiDivider(),
               ),
             ],
-            // BUG-5462：部分词典文件不在 / 读不到时，结果上方挂一条说明——结果不全的原因。
+            // BUG-5489：部分词典文件不在 / 读不到时，结果上方挂一条说明——结果不全的原因。
             if (fileNotice != null)
               Padding(
                 padding: EdgeInsets.fromLTRB(

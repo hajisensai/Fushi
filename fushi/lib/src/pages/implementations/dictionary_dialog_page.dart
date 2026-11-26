@@ -492,7 +492,7 @@ class _DictionaryDialogPageState extends BasePageState {
     RemoteDictionaryCatalogService.reachabilityRevision.addListener(
       _onReachabilityChanged,
     );
-    // BUG-5462：词典文件状态（不在 / 读不到）由 AppModel 的装载路径判定，变了就重建
+    // BUG-5489：词典文件状态（不在 / 读不到）由 AppModel 的装载路径判定，变了就重建
     // 行标签、顶部横幅与详情（sheet 经 [_revision] 跟着刷新）。
     DictionaryFileHealthMonitor.instance.addListener(_onFileHealthChanged);
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -528,7 +528,7 @@ class _DictionaryDialogPageState extends BasePageState {
   DictionaryFileIssue? _fileIssueOf(Dictionary dictionary) =>
       DictionaryFileHealthMonitor.instance.value.issueOf(dictionary.name);
 
-  /// BUG-5462：文件不在的词典的「重新导入」：在线来源强制重下（不比版本——本机版本号
+  /// BUG-5489：文件不在的词典的「重新导入」：在线来源强制重下（不比版本——本机版本号
   /// 还在库里，比了只会得到「已是最新」）；本地导入的选文件覆盖。都以它为显式替换
   /// 目标，保住顺序 / 开关 / 改名。
   void _reimportDictionary(Dictionary dictionary) => unawaited(
@@ -997,7 +997,7 @@ class _DictionaryDialogPageState extends BasePageState {
       // 还停在旧磁盘格式的词典的升级入口（拍板台 pr3554：升级前先问；启动期点了
       // 「以后再说」之后只剩这里）。没有待升级的、或有写任务在跑时是零高度。
       _buildFormatUpgradeRow(),
-      // BUG-5462：有已登记却找不到 / 读不到文件的词典时的横幅；全都正常时零高度。
+      // BUG-5489：有已登记却找不到 / 读不到文件的词典时的横幅；全都正常时零高度。
       _buildFileHealthBanner(),
       if (_hasAnyRows) _buildCategorySelector(),
       // 「来源」条：每台有目录的服务器一张卡片（状态 / 本数 / 用于查词 / 刷新），
@@ -2233,7 +2233,7 @@ class _DictionaryDialogPageState extends BasePageState {
     );
   }
 
-  /// BUG-5462：列表顶部的词典文件状态横幅。文件不在优先说（要用户处理），只有读不到
+  /// BUG-5489：列表顶部的词典文件状态横幅。文件不在优先说（要用户处理），只有读不到
   /// 时说「没删任何东西」。逐本的出路在各自详情里（行上有标签）。
   Widget _buildFileHealthBanner() {
     final FushiDesignTokens tokens = FushiDesignTokens.of(context);
@@ -4099,7 +4099,7 @@ class _DictionaryDialogPageState extends BasePageState {
   /// 单本词典「更新」按钮：拉远端 index.json 比 revision，有新版才下载重导。无新版
   /// 提示「已是最新」。任何失败提示 [t.dict_update_failed]，不崩。
   ///
-  /// [force]：不比版本直接重下（BUG-5462 文件不在时的「重新导入」）。
+  /// [force]：不比版本直接重下（BUG-5489 文件不在时的「重新导入」）。
   Future<void> _updateSingleDictionary(
     Dictionary dictionary, {
     bool force = false,

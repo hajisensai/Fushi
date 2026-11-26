@@ -2358,7 +2358,7 @@ class DictionaryPopupLayer extends StatelessWidget {
         onRefineQuery;
     final String source = _refineSourceFor(result?.searchTerm);
     final bool showRefine = refine != null && source.isNotEmpty;
-    // BUG-5462：查不到是因为词典文件不在 / 读不到时如实说，不只是「未找到」。
+    // BUG-5489：查不到是因为词典文件不在 / 读不到时如实说，不只是「未找到」。
     final String? fileNotice = dictionaryLookupFileNotice(
       DictionaryFileHealthMonitor.instance.value,
     );

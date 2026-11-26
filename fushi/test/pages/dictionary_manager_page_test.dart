@@ -352,7 +352,7 @@ void main() {
     },
   );
 
-  group('BUG-5462: registered dictionaries whose files are gone', () {
+  group('BUG-5489: registered dictionaries whose files are gone', () {
     tearDown(() {
       DictionaryFileHealthMonitor.instance.value = DictionaryFileHealth.healthy;
     });

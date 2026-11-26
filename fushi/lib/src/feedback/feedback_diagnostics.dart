@@ -334,7 +334,7 @@ String collectFeedbackLogText({required bool includeDebugLog}) {
       ..writeAll(galLines, '\n')
       ..writeln();
   }
-  // BUG-5463：数据位置取证环（书库根判定 / 重定位 / 迁移 / 词典文件缺失，跨运行保留）
+  // BUG-5490：数据位置取证环（书库根判定 / 重定位 / 迁移 / 词典文件缺失，跨运行保留）
   // 放在最末尾：超出上传上限时 [buildFeedbackLogGzip] 只留尾部，它最后才被丢。闪退报告
   // 同样带上——它就是错误日志的一部分，不受调试日志开关管。
   final String dataLocation = ErrorLogService.instance.dataLocationLogText();

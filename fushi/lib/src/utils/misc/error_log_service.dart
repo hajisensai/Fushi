@@ -61,7 +61,7 @@ class ErrorLogService extends ChangeNotifier
   List<ErrorLogEntry> get diagnosticEntries =>
       List.unmodifiable(_diagnosticEntries);
 
-  /// BUG-5463：数据位置取证环的条数上限。书库根 / 支持根的判定与纠正、沙箱重定位、
+  /// BUG-5490：数据位置取证环的条数上限。书库根 / 支持根的判定与纠正、沙箱重定位、
   /// 散书合并、数据根迁移被拒、词典文件缺失——这些一次启动只出现几条，60 条足够覆盖
   /// 几十次「有事发生」的启动；平静的启动一条都不写（见 [logDataLocationIfChanged]）。
   static const int maxDataLocationEntries = 60;
@@ -72,7 +72,7 @@ class ErrorLogService extends ChangeNotifier
   /// 整个环落盘的字节上限；超出从最旧的一条丢起。
   static const int maxDataLocationFileBytes = 64 * 1024;
 
-  /// BUG-5463：数据位置取证环（[logDataLocation]）。与 [_diagnosticEntries] 分开存放：
+  /// BUG-5490：数据位置取证环（[logDataLocation]）。与 [_diagnosticEntries] 分开存放：
   /// 那一段只在内存、上限 100 条、被网络探测等普通诊断挤着滚动，丢数据那次启动做了
   /// 什么，用户重开 app 再提反馈时早已不在了（反馈 cH-HbP8XkQ / nrMj_CBwCC）。这里
   /// 单独落盘成固定条数的小文件，跨运行保留，随反馈日志放在最末尾一起上传。
@@ -490,7 +490,7 @@ class ErrorLogService extends ChangeNotifier
     notifyListenersFrameSafe();
   }
 
-  /// BUG-5463：记一条**数据位置**取证（书库根 / 支持根判定与纠正、沙箱重定位、散书
+  /// BUG-5490：记一条**数据位置**取证（书库根 / 支持根判定与纠正、沙箱重定位、散书
   /// 合并、数据根迁移、词典文件缺失）。进独立的持久环 [dataLocationEntries]：不计入
   /// 用户可见错误、不被普通诊断挤掉、跨运行保留（固定 [maxDataLocationEntries] 条、
   /// [maxDataLocationFileBytes] 字节），反馈日志把它放在最末尾（尾部截断时最后才丢）。
@@ -704,7 +704,7 @@ class ErrorLogService extends ChangeNotifier
         buf.write(e.format());
       }
     }
-    // BUG-5463：数据位置取证段放最后。
+    // BUG-5490：数据位置取证段放最后。
     if (withDataLocation) {
       if (buf.isNotEmpty) buf.writeln('═' * 60);
       buf.writeln('▼ ${t.error_log_data_location_section}');
@@ -714,7 +714,7 @@ class ErrorLogService extends ChangeNotifier
     return buf.toString();
   }
 
-  /// 清空错误与诊断。**不清**数据位置取证环（BUG-5463）：它固定条数自滚动，正是要
+  /// 清空错误与诊断。**不清**数据位置取证环（BUG-5490）：它固定条数自滚动，正是要
   /// 撑过「先清日志、再重现、再提反馈」这条用户路径。
   Future<void> clear() async {
     _entries.clear();

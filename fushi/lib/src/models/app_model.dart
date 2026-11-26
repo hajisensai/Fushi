@@ -4728,7 +4728,7 @@ class AppModel
     return true;
   }
 
-  /// BUG-5462：已登记词典的文件状态判定（异步装载路径，每次排期都重判一遍）。
+  /// BUG-5489：已登记词典的文件状态判定（异步装载路径，每次排期都重判一遍）。
   ///
   /// 装载链路对「目录不在 / 读不到」的词典只是不进引擎，界面上什么都看不出来——这里把
   /// 同一份 exists 结果与物化探测的失败，加上资源根可读性与必需文件齐全性，判成
@@ -4820,7 +4820,7 @@ class AppModel
         DictionaryFileHealthMonitor.instance;
     if (monitor.value == health) return;
     monitor.value = health;
-    // 进数据位置取证环（BUG-5463）：有问题、或环里记过问题而现在恢复了才记（文本没变
+    // 进数据位置取证环（BUG-5490）：有问题、或环里记过问题而现在恢复了才记（文本没变
     // 不占条目）；一直正常的设备一条都不写。`:popup` 进程不记：同一份环文件只由主进程
     // 写，免得两个进程整份重写互相覆盖。
     const String source = 'AppModel.dictionaryFiles';
@@ -5843,7 +5843,7 @@ class AppModel
           relocation.toString(),
         );
       }
-      // BUG-5463：本次启动用的数据根。只在和环里上一次记的不一样时占一条——平静的启动
+      // BUG-5490：本次启动用的数据根。只在和环里上一次记的不一样时占一条——平静的启动
       // 不写盘；书库根换了位置（迁移、Android 内外部判定翻转、iOS 容器换代）的那次启动
       // 则留下「从哪次起变了」的证据，丢数据后重开再提反馈也还在。
       ErrorLogService.instance.logDataLocationIfChanged(
@@ -6549,7 +6549,7 @@ class AppModel
       await refreshForWarmDictionaryPopup();
       return;
     }
-    // 一进来就标记：下面的词典装载（BUG-5462 文件状态判定）要知道自己在 `:popup` 进程里，
+    // 一进来就标记：下面的词典装载（BUG-5489 文件状态判定）要知道自己在 `:popup` 进程里，
     // 不去写主进程那份数据位置取证环。
     _isDictionaryPopupProcess = true;
     try {

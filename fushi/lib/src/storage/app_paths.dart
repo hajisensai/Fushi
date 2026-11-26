@@ -284,7 +284,7 @@ class AppPaths {
   static String? _androidDocumentsLocation;
 
   /// 本进程已判定的 Android 书库位置（`internal` / `external`）；非 Android 或还没判定时
-  /// 为 null。只读，供诊断记录（BUG-5463 数据位置取证环）。
+  /// 为 null。只读，供诊断记录（BUG-5490 数据位置取证环）。
   static String? get decidedAndroidDocumentsLocation =>
       _androidDocumentsLocation;
 
@@ -2005,7 +2005,7 @@ class AndroidMigrationTargetBlocker {
   String toString() => 'AndroidMigrationTargetBlocker($kind, $file)';
 }
 
-/// BUG-5463：数据根快照的诊断文本（[ErrorLogService.logDataLocationIfChanged] 按
+/// BUG-5490：数据根快照的诊断文本（[ErrorLogService.logDataLocationIfChanged] 按
 /// 文本比较，同样的根必须得出逐字相同的串）。
 String dataRootsDiagnostic({
   required String libraryRoot,
