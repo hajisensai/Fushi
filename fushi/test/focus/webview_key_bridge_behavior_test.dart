@@ -60,6 +60,13 @@ void main() {
           handlerName: 'onSpaceKey',
           keys: const <String>[' '],
         ),
+        // 漫画鼠标桥同款：按住连发（指针归 WebView 的平台上唯一的连发来源）。
+        'mouseHold': webViewKeyBridgeScript(
+          handlerName: 'onMangaMouseButton',
+          mouseButtons: const <int>[3],
+          installMouseListeners: true,
+          repeatMouseHold: true,
+        ),
       };
 
       final Directory tmp = Directory.systemTemp.createTempSync(

@@ -940,6 +940,7 @@ class MangaFushiPage extends BaseSourcePage {
     handlerName: 'onMangaMouseButton',
     mouseButtons: buttons,
     installMouseListeners: true,
+    repeatMouseHold: true,
     stopPropagation: true,
   );
 
@@ -5174,10 +5175,37 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
       _kMangaMouseLadder,
     );
     if (action == null) return;
-    dispatchClaimedMouseAction(event, () {
-      _executeReaderInputAction(action, source: _MangaReaderInputSource.mouse);
-      return true;
-    });
+    dispatchClaimedMouseAction(
+      event,
+      () {
+        _executeReaderInputAction(
+          action,
+          source: _MangaReaderInputSource.mouse,
+        );
+        return true;
+      },
+      onHeldRepeat: () =>
+          mounted &&
+          _runHeldMouseRepeat(action, source: _MangaReaderInputSource.mouse),
+    );
+  }
+
+  /// 鼠标键按住的一次连发（Flutter 指针腿与 WebView 鼠标桥共用）：与键盘长按同一个
+  /// [_heldInputVerdict]——平移 / 上一句下一句照常连发，翻页等上一页动画落定才放行，
+  /// 其余动作一次一按。返回 false = 这个动作不连发，调用方据此停掉连发。
+  bool _runHeldMouseRepeat(
+    MangaReaderInputAction action, {
+    required _MangaReaderInputSource source,
+  }) {
+    switch (_heldInputVerdict(action)) {
+      case _MangaHeldInputVerdict.notRepeatable:
+        return false;
+      case _MangaHeldInputVerdict.throttled:
+        return true;
+      case _MangaHeldInputVerdict.accept:
+        _executeReaderInputAction(action, source: source);
+        return true;
+    }
   }
 
   /// 返回**本次是否真的执行了**动作。BUG-2031：查词弹窗 barrier 那条路要靠这个
@@ -5197,6 +5225,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         _kMangaMouseLadder,
       );
       if (mouseAction == null) return false;
+      // 鼠标桥的按住连发（`webViewMouseHoldRepeatScript`）：返回 false 让页内停掉连发。
+      if (repeat) {
+        return _runHeldMouseRepeat(
+          mouseAction,
+          source: _MangaReaderInputSource.nativeWebView,
+        );
+      }
       _executeReaderInputAction(
         mouseAction,
         source: _MangaReaderInputSource.nativeWebView,
@@ -9881,9 +9916,13 @@ class _MangaFushiPageState extends BaseSourcePageState<MangaFushiPage>
         // InputBinding，动作由绑定决定而不是由桥决定。
         controller.addJavaScriptHandler(
           handlerName: 'onMangaMouseButton',
+          // 回传布尔值：页内鼠标桥的按住连发据此决定继续还是停（false = 不连发）。
           callback: (List<dynamic> args) {
-            if (args.isEmpty || args[0] is! String) return;
-            _handleNativeNavigationKey(args[0] as String);
+            if (args.isEmpty || args[0] is! String) return false;
+            return _handleNativeNavigationKey(
+              args[0] as String,
+              repeat: args.length > 1 && args[1] == true,
+            );
           },
         );
         controller.addJavaScriptHandler(

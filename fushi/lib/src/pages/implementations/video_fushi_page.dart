@@ -443,7 +443,10 @@ import 'package:fushi/src/shortcuts/input_binding.dart'
         activeModifierKeys,
         domMouseButtonFromPointerButtons;
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
-    show dispatchClaimedMouseAction, resolveMouseBindingAction;
+    show
+        dispatchClaimedMouseAction,
+        mouseBindingRepeatsWhileHeld,
+        resolveMouseBindingAction;
 import 'package:fushi/src/shortcuts/reader_caret_router.dart'
     show CaretAction, ReaderCaretRouter;
 import 'package:fushi/src/shortcuts/window_fullscreen_hosts.dart'
@@ -10662,30 +10665,43 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       ladder: kVideoMouseLadder,
     );
     if (action == null) return;
-    dispatchClaimedMouseAction(event, () {
-      // 「只关词典」在浮层不可见时按下 = 无事发生，这正是它存在的意义（给侧键一个
-      // 没有副作用的落点）。返回 false = **不认领**，让 app 根兜底照常有机会解析同一
-      // 个按钮上的 global 绑定（等价于键盘返回 ignored 让它冒泡）。
-      if (action == ShortcutAction.videoDismissDict) return false;
-      // BUG-2031：与键盘 / 手柄同款分流——「返回上一级」的执行体不碰播放器，必须排在
-      // controller 门**之前**，否则加载态下侧键退不出转圈中的视频页。走的是本页的逐级
-      // 退出 [_handleVideoEscapeAction]（先关面板 / 退全屏，最后才退页），与键盘 Esc、
-      // 手柄 B 完全同一个执行体；此前阶梯里没有 universal，它只能落到 app 根那份平铺
-      // 的 `maybePop()`，一按直接退整页，比键盘少了一级。
-      if (action == ShortcutAction.globalBack) {
-        _handleVideoEscapeAction();
-        return true;
-      }
-      final VideoPlayerController? controller = _controller;
-      if (controller == null) return false;
-      // 动作不在回调表里（例如 popupMineEntry 这类页面另行分流的）就不算本层派发过。
-      final VoidCallback? run = videoActionCallbacks(
-        _buildVideoShortcutActions(controller),
-      )[action];
-      if (run == null) return false;
-      run();
-      return true;
-    });
+    dispatchClaimedMouseAction(
+      event,
+      () {
+        // 「只关词典」在浮层不可见时按下 = 无事发生，这正是它存在的意义（给侧键一个
+        // 没有副作用的落点）。返回 false = **不认领**，让 app 根兜底照常有机会解析同一
+        // 个按钮上的 global 绑定（等价于键盘返回 ignored 让它冒泡）。
+        if (action == ShortcutAction.videoDismissDict) return false;
+        // BUG-2031：与键盘 / 手柄同款分流——「返回上一级」的执行体不碰播放器，必须排在
+        // controller 门**之前**，否则加载态下侧键退不出转圈中的视频页。走的是本页的逐级
+        // 退出 [_handleVideoEscapeAction]（先关面板 / 退全屏，最后才退页），与键盘 Esc、
+        // 手柄 B 完全同一个执行体；此前阶梯里没有 universal，它只能落到 app 根那份平铺
+        // 的 `maybePop()`，一按直接退整页，比键盘少了一级。
+        if (action == ShortcutAction.globalBack) {
+          _handleVideoEscapeAction();
+          return true;
+        }
+        return _runVideoMouseAction(action);
+      },
+      onHeldRepeat: mouseBindingRepeatsWhileHeld(action)
+          // 按住连发（逐帧 / seek / 音量……）：与键盘自动重复同一个执行体。
+          ? () =>
+                mounted && !_discLearningBlocked && _runVideoMouseAction(action)
+          : null,
+    );
+  }
+
+  /// 鼠标绑定的视频动作执行体（按下与按住连发共用）。返回本次是否真的执行了。
+  bool _runVideoMouseAction(ShortcutAction action) {
+    final VideoPlayerController? controller = _controller;
+    if (controller == null) return false;
+    // 动作不在回调表里（例如 popupMineEntry 这类页面另行分流的）就不算本层派发过。
+    final VoidCallback? run = videoActionCallbacks(
+      _buildVideoShortcutActions(controller),
+    )[action];
+    if (run == null) return false;
+    run();
+    return true;
   }
 
   /// 视频页键盘通道的**唯一**派发点（方案 D）：每次按键当场问注册表，与手柄

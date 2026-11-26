@@ -12,6 +12,8 @@
 /// `onKeyEvent` 天然互斥、不会双触发。
 library;
 
+import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
+    show kMouseHoldRepeatDelay, kMouseHoldRepeatInterval;
 import 'package:fushi/src/utils/misc/platform_utils.dart';
 
 /// 一次鼠标按下**先到谁手里**：宿主 Flutter，还是原生 WebView。
@@ -126,6 +128,7 @@ String webViewKeyBridgeScript({
   List<String> keys = const <String>[],
   List<int> mouseButtons = const <int>[],
   bool installMouseListeners = false,
+  bool repeatMouseHold = false,
   bool deferToPopupModal = false,
   bool forwardRepeats = true,
   bool reportRepeats = false,
@@ -184,14 +187,30 @@ String webViewKeyBridgeScript({
     } catch (err) { return false; }
   }'''
       : '';
-  final String mouseListeners = installMouseListeners
+  assert(
+    installMouseListeners || !repeatMouseHold,
+    'repeatMouseHold needs installMouseListeners',
+  );
+  // 按住连发：首次按下照常回传，之后按键盘自动重复的节奏带 `true` 再回传同一个
+  // token，handler 回 false（这个动作不连发）或松开即停。
+  final String mouseHoldStart = repeatMouseHold
       ? '''
+      var _b = e.button;
+      window.__fushiMouseHold.start(_b, function() {
+        return window.flutter_inappwebview.callHandler('$handlerName', 'Mouse' + _b, true);
+      });'''
+      : '';
+  final String mouseHoldInstall = repeatMouseHold
+      ? webViewMouseHoldRepeatScript
+      : '';
+  final String mouseListeners = installMouseListeners
+      ? '''$mouseHoldInstall
   document.addEventListener('mousedown', function(e) {
     if (!e || e.button === 0) return;$popupModalGuard
     if ((window[$buttonsVar] || []).indexOf(e.button) === -1) return;
     e.preventDefault();$propagationGuard
     if (window.flutter_inappwebview && window.flutter_inappwebview.callHandler) {
-      window.flutter_inappwebview.callHandler('$handlerName', 'Mouse' + e.button);
+      window.flutter_inappwebview.callHandler('$handlerName', 'Mouse' + e.button);$mouseHoldStart
     }
   }, {capture: true});
   document.addEventListener('auxclick', function(e) {
@@ -245,6 +264,53 @@ String webViewKeyBridgeScript({
   }, {capture: true});
 $mouseListeners  })();''';
 }
+
+/// 页内**鼠标按住连发**的公共 JS（装一次，`window.__fushiMouseHold`）。
+///
+/// 指针归 WebView 的平台（[hostOwnsWebViewPointerInput] 为 false）上，宿主
+/// `dispatchClaimedMouseAction` 的按住连发收不到这片区域的指针，只能在页内补同一份
+/// 语义：`start(button, send)` 在 [kMouseHoldRepeatDelay] 后按
+/// [kMouseHoldRepeatInterval] 反复调 `send()`。每一次都等上一次 `callHandler` 的
+/// 回包才排下一次（Dart 慢时自动降速、不积压），回包是 `false`（这个动作不连发 /
+/// 页面不再接）就停；这颗键 `mouseup`、窗口失焦、页面隐藏也停。
+///
+/// 阅读器正文、歌词模式、漫画鼠标桥三处共用：同一时刻文档里只有一颗键在连发。
+final String webViewMouseHoldRepeatScript =
+    '''
+  if (!window.__fushiMouseHold) {
+    window.__fushiMouseHold = (function() {
+      var timer = null, button = -1, gen = 0;
+      function stop() {
+        if (timer !== null) clearTimeout(timer);
+        timer = null;
+        button = -1;
+        gen++;
+      }
+      function start(b, send) {
+        stop();
+        button = b;
+        var my = gen;
+        function tick() {
+          timer = null;
+          Promise.resolve(send()).then(function(ok) {
+            if (my !== gen) return;
+            if (ok === false) { stop(); return; }
+            timer = setTimeout(tick, ${kMouseHoldRepeatInterval.inMilliseconds});
+          }, function() { if (my === gen) stop(); });
+        }
+        timer = setTimeout(tick, ${kMouseHoldRepeatDelay.inMilliseconds});
+      }
+      document.addEventListener('mouseup', function(e) {
+        if (e && e.button === button) stop();
+      }, {capture: true});
+      window.addEventListener('blur', stop);
+      document.addEventListener('visibilitychange', function() {
+        if (document.hidden) stop();
+      });
+      return {start: start, stop: stop};
+    })();
+  }
+''';
 
 /// 把 Dart 字符串转成安全的 JS 单引号字面量（键名可能含引号 / 反斜杠）。
 String _jsStringLiteral(String value) {

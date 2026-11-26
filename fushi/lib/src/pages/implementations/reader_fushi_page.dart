@@ -268,7 +268,10 @@ import 'package:fushi/src/shortcuts/input_binding.dart'
         activeModifierKeys,
         domMouseButtonFromPointerButtons;
 import 'package:fushi/src/shortcuts/mouse_binding_dispatch.dart'
-    show dispatchClaimedMouseAction, resolveMouseBindingActionForButton;
+    show
+        dispatchClaimedMouseAction,
+        mouseBindingRepeatsWhileHeld,
+        resolveMouseBindingActionForButton;
 import 'package:fushi/src/shortcuts/shortcut_registry.dart'
     show FushiShortcutRegistry;
 import 'package:fushi/src/shortcuts/gamepad_service.dart'

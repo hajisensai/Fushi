@@ -665,14 +665,16 @@ void _handleGlobalPointerDown(
     ],
   );
   if (action == null) return;
+  bool run() =>
+      _executeGlobalMouseAction(context, navigatorKey, action, openAiAssistant);
   dispatchClaimedMouseAction(
     event,
-    () => _executeGlobalMouseAction(
-      context,
-      navigatorKey,
-      action,
-      openAiAssistant,
-    ),
+    run,
+    // 按住连发：只有逐行 / 整屏滚动（[mouseBindingRepeatsWhileHeld]），与键盘长按
+    // 方向键 / PageDown 连续滚动对齐。
+    onHeldRepeat: mouseBindingRepeatsWhileHeld(action)
+        ? () => context.mounted && run()
+        : null,
   );
 }
 

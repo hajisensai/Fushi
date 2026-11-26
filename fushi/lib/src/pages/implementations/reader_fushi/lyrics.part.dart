@@ -1816,6 +1816,16 @@ extension _ReaderLyrics on _ReaderFushiPageState {
             _focusOwnership.reclaim(FocusReclaimCause.gesture);
           },
         );
+        // 歌词文档的鼠标按住连发：与正文同一个落地点，只多一道「仍在歌词模式」。
+        controller.addJavaScriptHandler(
+          handlerName: 'onReaderMouseHoldRepeat',
+          callback: (List<dynamic> args) {
+            if (!_lyricsMode || args.isEmpty) return false;
+            return _handleReaderWebViewMouseHoldRepeat(
+              (args[0] as num?)?.toInt() ?? -1,
+            );
+          },
+        );
         // 歌词文档的非左键 `mousedown`（idx = 所在行的 data-cue-index，行外为 -1）。与正文
         // `onPointerSeek` 同一条三级阶梯（HBK-AUDIT-221：此前只认「seek 到点击句」，非
         // Windows 上绑到侧键的关词典 / 其余动作在歌词视图里全是死项）。
