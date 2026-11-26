@@ -1,0 +1,6 @@
+## BUG-5494 · Android 应用外截屏识字走本机模型 / Google Lens 时查词不跨 OCR 折行
+- **报告**：2026-11-26（用户：应用内反馈 XDdY8NuGkk——安卓应用外截屏识字，行头禁则把「る…！？」推到下一行时「見破れ」被截断；PC 端本机模型效果比安卓好）
+- **真实性**：✅ 真 bug。BUG-4707 给只有行框的平台（桌面冻结层、iOS）接了行框聚合 `screenOcrTextBlockMembers`，但 Android 走 Dart 侧识别器（本机模型 ONNX / Google Lens，决定 4BBSaB12zj）时，`fushi/lib/src/floating_ball/floating_ball_channel.dart` 的 `screenOcrLinesToNative` 只下发行框，原生 `fushi/android/app/src/main/java/app/fushi/reader/ScreenOcrLayout.kt` 的 `linesFromWire` 让每行自成一块（`blockText` = 本行），查词窗 `popup_dictionary_page.dart` 的 `_blockContinuationOf` 于是没有续文，词在折行处被截断；卡图也只裁被点那一行。
+- **[x] ① 已修复** — `screen_ocr_text_block.dart` 抽出 `screenOcrTextBlockOf`（块全文 / 本行偏移 / 块框，拼法只写一处，`screenOcrBlockLookupForHit` 也改用它）；`screenOcrLinesToNative` 对留下的行逐行按它算块，随行下发 `blockText` / `blockOffset` / `blockRect`；`linesFromWire` 读块信息，校验「块全文在偏移处是本行原文、块框包住行框」，对不上就退回自成一块。
+- **[x] ② 已加自动化测试** — `fushi/test/floating_ball/screen_ocr_lines_to_native_test.dart`（折行两行同块、偏移、块框，被丢的行不入块）；`fushi/android/app/src/test/kotlin/app/fushi/reader/ScreenOcrLayoutTest.kt`（`wireLinesKeepDartBlock` / `wireLinesIgnoreInconsistentBlock`）。
+- **备注**：真机未复测。ML Kit（设备自带 OCR）路径的块仍来自 ML Kit 自身分块（反馈里说本机 OCR 也偶有不跨行），是否改用同一几何聚合规则属于行为取舍，未改。
