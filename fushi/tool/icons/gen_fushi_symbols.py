@@ -361,6 +361,8 @@ APPLE_OVERRIDES: dict[str, tuple[str, str]] = {
     # （用户 2026-11-24 拍板）。与 moreHoriz 同字形，码位不同不冲突。
     "more": ("ellipsis", "ellipsis"),
     "pageBackdrop": ("rectangle_stack", "rectangle_stack_fill"),
+    # 制卡 / Anki 是一叠卡片，旧映射（继承 Icons.style）是画笔，语义不对（用户 2026-11-26）。
+    "ankiCard": ("square_stack", "square_stack_fill"),
     # 旧映射表里没有 flash_on（只有 bolt 系列），SF 风格对应字形就是 bolt。
     "flash": ("bolt", "bolt_fill"),
     # 本版新内容：SF 风格没有彩带，取「闪光」。

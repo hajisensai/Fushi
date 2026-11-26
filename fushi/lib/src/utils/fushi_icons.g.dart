@@ -2652,7 +2652,7 @@ kFushiSymbolAppleMap = <int, (IconData, IconData)>{
     CupertinoIcons.photo_on_rectangle,
     CupertinoIcons.photo_fill_on_rectangle_fill,
   ),
-  0xe41d: (CupertinoIcons.paintbrush, CupertinoIcons.paintbrush_fill),
+  0xe41d: (CupertinoIcons.square_stack, CupertinoIcons.square_stack_fill),
   0xe421: (CupertinoIcons.rectangle, CupertinoIcons.rectangle_fill),
   0xe425: (CupertinoIcons.timer, CupertinoIcons.timer_fill),
   0xe426: (CupertinoIcons.stopwatch, CupertinoIcons.stopwatch_fill),
