@@ -1521,7 +1521,7 @@ void main() {
     });
 
     test('宿主漏掉没归类的错误：归成 cloud_failed，原文不外传', () async {
-      host.serverError = StateError('https://192.168.1.5:8443/?token=secret');
+      host.serverError = StateError('https://192.0.2.5:8443/?token=secret');
       expect(await controller.checkNow(), AutoBackupOutcome.created);
       expect(
         controller.status.value.server.error,
