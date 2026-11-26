@@ -3,7 +3,11 @@ import 'dart:io';
 import 'dart:isolate';
 
 import 'package:fushi_core/fushi_core.dart'
-    show databaseSnapshotMainFileName, fnv1a32Hex, isDeletableDatabaseSnapshot;
+    show
+        databaseSnapshotMainFileName,
+        fnv1a32Hex,
+        isDeletableDatabaseSnapshot,
+        kRestorePointsDirName;
 import 'package:fushi_engine/media/collections/shelf_sort.dart'
     show naturalCompare;
 import 'package:fushi_engine/sync/interconnect_file_box_prune.dart'
@@ -1069,6 +1073,11 @@ class StorageUsageService {
   /// 快照聚合条目的域内主键（UI 用它做忙碌态/去重）。
   static const String kDatabaseSnapshotsEntryId = 'database-snapshots';
 
+  /// 更新前还原点目录 `<support>/restore_points/`（fushi_core [kRestorePointsDirName]）的
+  /// 条目 id：单列一条带名字的只读条目，不混进不认识的子项。删除 / 恢复归还原点自己的
+  /// 流程（保留策略自动清旧点），存储页不给裸删。
+  static const String kRestorePointsEntryId = 'restore-points';
+
   /// 互联同步数据拆出的各条目主键（BUG-4991）。UI 按 id 翻译标题。
   static const String kInterconnectSharedEntryId = 'interconnect-shared';
   static const String kInterconnectSrsEntryId = 'interconnect-srs';
@@ -1155,6 +1164,14 @@ class StorageUsageService {
     final List<String> snapshotPaths = <String>[
       for (final Map<String, Object> e in snapshots) e['path'] as String,
     ];
+    final Map<String, Object>? restorePoints = raw
+        .where(
+          (Map<String, Object> e) =>
+              !(e['isFile'] as bool) &&
+              p.basename(e['path'] as String) == kRestorePointsDirName,
+        )
+        .firstOrNull;
+    final String? restorePointsPath = restorePoints?['path'] as String?;
     final String syncDataDir = p.join(
       support.path,
       kInterconnectSyncDataSupportChild,
@@ -1187,9 +1204,18 @@ class StorageUsageService {
               // 互联同步数据按用途拆成下面几条，不再整块一行。
               syncDataDir,
               ...snapshotPaths,
+              ?restorePointsPath,
             },
           ),
           ...syncDataEntries,
+          if (restorePoints != null)
+            StorageEntryUsage(
+              id: kRestorePointsEntryId,
+              label: restorePoints['label'] as String,
+              bytes: restorePoints['bytes'] as int,
+              paths: <String>[restorePointsPath!],
+              kind: StorageEntryKind.readOnly,
+            ),
           if (snapshots.isNotEmpty)
             StorageEntryUsage(
               id: kDatabaseSnapshotsEntryId,

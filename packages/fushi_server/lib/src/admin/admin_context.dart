@@ -5,6 +5,7 @@ import 'dart:async';
 import 'dart:io';
 
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_server/src/backup/server_backup_service.dart';
 import 'package:fushi_server/src/config/server_ai_config.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/server_language.dart';
@@ -47,6 +48,16 @@ class AdminContext {
   Map<String, String> get environment => _environment ?? Platform.environment;
 
   ServerConfig get config => _config;
+
+  /// 整机备份（手动 / 自动 / 更新前共用一把作业锁，见 server_backup_service.dart）：admin API、
+  /// serve 的计划任务与远程更新前的钩子用的是这同一份。
+  late final ServerBackupService backups = ServerBackupService.forServer(
+    db: db,
+    dataDir: _config.dataDir,
+    configFile: configFile,
+    settings: () => config.backup,
+    srs: () => host.srs,
+  );
 
   /// 改配置 = 改内存 + 写回文件 + 推给正在跑的 host。端口/TLS/绑定这类要重启才
   /// 生效，WebUI 会提示；公网地址 / P2P / 中继由 [HeadlessHost.applyConfig] 即时

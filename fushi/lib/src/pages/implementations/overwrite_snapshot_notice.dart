@@ -95,7 +95,7 @@ Future<void> showOverwriteSnapshotNoticeDialog({
     adaptivePageRoute<void>(
       context: context,
       builder: (BuildContext context) =>
-          LibraryRecoveryPage(appModel: appModel),
+          RestorePointsPage(appModel: appModel),
     ),
   );
 }

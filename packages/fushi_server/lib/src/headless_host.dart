@@ -162,6 +162,7 @@ class HeadlessHost {
     HostSelfUpdater Function({
       required Future<bool> Function() isAllowed,
       required void Function() onInstalled,
+      Future<void> Function()? beforeInstall,
     })?
     selfUpdaterFactory,
     VideoSubtitleRegistry Function()? subtitleRegistryFactory,
@@ -193,8 +194,13 @@ class HeadlessHost {
   final HostSelfUpdater Function({
     required Future<bool> Function() isAllowed,
     required void Function() onInstalled,
+    Future<void> Function()? beforeInstall,
   })
   _selfUpdaterFactory;
+
+  /// 远程更新换包之前要做的事（`serve` 接上更新前整机备份，见 server_backup_service.dart `runPreUpdate`）。
+  /// 现读：在 [start] 之后接上也生效。
+  Future<void> Function()? beforeSelfUpdateInstall;
   final Completer<void> _selfUpdateInstalled = Completer<void>();
 
   /// 远程更新已把新版换进安装目录：`serve` 等到它就停服，以 [kExitSelfUpdated]
@@ -657,6 +663,7 @@ class HeadlessHost {
                 _selfUpdateInstalled.complete();
               }
             },
+            beforeInstall: () async => beforeSelfUpdateInstall?.call(),
           )
           // 「立即给这个视频补字幕」：与 app 当 host 同一个引擎服务（身份取已落库的刮削
           // 结论，只补缺的，不覆盖已有字幕）。

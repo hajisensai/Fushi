@@ -1,6 +1,8 @@
 import 'dart:io';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:fushi/src/sync/auto_backup/cloud_backup_mirror.dart'
+    show kCloudBackupNamespace;
 import 'package:fushi/src/sync/font_sync.dart' show kSyncFontsNamespace;
 import 'package:fushi/src/sync/settings_sync.dart' show kSyncSettingsNamespace;
 import 'package:fushi/src/sync/sync_orchestrator.dart'
@@ -64,6 +66,7 @@ void main() {
       kSyncSettingsNamespace,
       PendingMineRelay.namespace,
       kSrsSync2Namespace,
+      kCloudBackupNamespace,
     ];
     for (final String name in known) {
       expect(isReservedSyncNamespaceName(name), isTrue, reason: name);

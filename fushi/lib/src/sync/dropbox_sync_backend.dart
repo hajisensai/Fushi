@@ -1,5 +1,7 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
+import 'dart:math' as math;
 
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
@@ -363,12 +365,12 @@ class DropboxSyncBackend extends SyncBackend
     SyncTransferProgress? onProgress,
   }) async {
     final fileLength = await file.length();
-    final apiArg = jsonEncode({
-      'path': '$folderId/$fileName',
-      'mode': 'overwrite',
-      'autorename': false,
-      'mute': true,
-    });
+    final Map<String, Object> commit = _overwriteCommit('$folderId/$fileName');
+    if (fileLength > _uploadSessionThresholdBytes) {
+      await _uploadViaSession(file, fileLength, commit, onProgress);
+      return;
+    }
+    final apiArg = jsonEncode(commit);
     final request = http.StreamedRequest(
       'POST',
       Uri.parse('$_contentBase/files/upload'),
@@ -385,6 +387,347 @@ class DropboxSyncBackend extends SyncBackend
       );
     }
   }
+
+  // ── Upload sessions（大文件分块上传） ─────────────────────────────
+
+  /// 单次 `files/upload` 请求 Dropbox 上限 150 MB（超了要走 upload session）。留出
+  /// 余量：严格大于 128 MiB 的文件走 session，其余仍是一次请求（行为不变）。
+  static const int _uploadSessionThresholdDefault = 128 * 1024 * 1024;
+
+  /// 每次 `upload_session/append_v2` 上传的块大小。文档要求（并发 session 时）除最后
+  /// 一块外须是 4 MiB（4194304）的整数倍，顺序 session 也照此取 8 MiB。
+  static const int _uploadSessionChunkDefault = 8 * 1024 * 1024;
+
+  /// 单个 session 请求遇到瞬时失败（429 / 5xx / 网络断开）的最多尝试次数。
+  static const int _uploadSessionMaxAttempts = 5;
+
+  /// 按服务端 `correct_offset` 重新对齐偏移的最多连续次数（防服务端与本端互相纠正成
+  /// 死循环）。按块算：一块被收下就清零，几 GB 的文件在不稳的网络上偶尔对齐几次不会
+  /// 累计到上限；finish 另有一份同样的上限（它把偏移往回拨后，补传成功也不清零）。
+  static const int _uploadSessionMaxOffsetResyncs = 8;
+
+  /// 无 `Retry-After` 时的退避基数（第 n 次重试等 base * 2^(n-1)），以及服务端给的
+  /// `Retry-After` 被采信的上限。
+  static const Duration _uploadRetryBaseDelay = Duration(seconds: 1);
+  static const Duration _uploadRetryMaxDelay = Duration(minutes: 5);
+
+  /// 测试注入：把 session 门槛 / 块大小调小，测试文件就不用真有上百 MB。
+  @visibleForTesting
+  static int? debugUploadSessionThresholdBytes;
+  @visibleForTesting
+  static int? debugUploadSessionChunkBytes;
+
+  /// 测试注入：替换重试前的等待（记录时长、不真睡）。
+  @visibleForTesting
+  static Future<void> Function(Duration delay) debugUploadRetrySleep =
+      _defaultUploadRetrySleep;
+
+  static Future<void> _defaultUploadRetrySleep(Duration delay) =>
+      Future<void>.delayed(delay);
+
+  static int get _uploadSessionThresholdBytes =>
+      debugUploadSessionThresholdBytes ?? _uploadSessionThresholdDefault;
+  static int get _uploadSessionChunkBytes =>
+      debugUploadSessionChunkBytes ?? _uploadSessionChunkDefault;
+
+  /// 单次上传与 session finish 共用的 `commit`（字段必须与单次上传完全一致）。
+  static Map<String, Object> _overwriteCommit(String path) => <String, Object>{
+    'path': path,
+    'mode': 'overwrite',
+    'autorename': false,
+    'mute': true,
+  };
+
+  /// `upload_session/start`（空体）→ 逐块 `append_v2`（按块从文件流式读，不整份进
+  /// 内存）→ `finish`（空体 + commit）。偏移不一致（`incorrect_offset`，含瞬时失败后
+  /// 服务端其实已收下那块的情况）按服务端给的 `correct_offset` 续传。
+  Future<void> _uploadViaSession(
+    File file,
+    int total,
+    Map<String, Object> commit,
+    SyncTransferProgress? onProgress,
+  ) async {
+    void report(int done) =>
+        onProgress?.call(total > 0 ? done / total : 0, done);
+
+    final http.Response startResp = await _uploadSessionCall(
+      step: 'start',
+      arg: <String, Object>{'close': false},
+      file: file,
+      start: 0,
+      length: 0,
+    );
+    if (startResp.statusCode != 200) {
+      throw _uploadSessionError('start', startResp);
+    }
+    final Object? startJson = jsonDecode(startResp.body);
+    final String? sessionId = startJson is Map<String, dynamic>
+        ? startJson['session_id'] as String?
+        : null;
+    if (sessionId == null || sessionId.isEmpty) {
+      throw SyncBackendError(
+        'Dropbox upload session start returned no session_id',
+      );
+    }
+
+    final int chunkBytes = _uploadSessionChunkBytes;
+    int offset = 0;
+    // 当前这块（从上一次被收下之后）连续对齐了几次；finish 往回拨偏移了几次。
+    int chunkResyncs = 0;
+    int finishResyncs = 0;
+    int resync(http.Response resp, String step, int done) {
+      final int? correct = _incorrectOffsetOf(resp);
+      if (correct == null ||
+          correct < 0 ||
+          correct > total ||
+          done >= _uploadSessionMaxOffsetResyncs) {
+        throw _uploadSessionError(step, resp);
+      }
+      return correct;
+    }
+
+    while (true) {
+      while (offset < total) {
+        final int length = math.min(chunkBytes, total - offset);
+        final int base = offset;
+        final http.Response resp = await _uploadSessionCall(
+          step: 'append_v2',
+          arg: <String, Object>{
+            'cursor': <String, Object>{
+              'session_id': sessionId,
+              'offset': offset,
+            },
+            'close': false,
+          },
+          file: file,
+          start: offset,
+          length: length,
+          onSent: (int sent) => report(base + sent),
+        );
+        if (resp.statusCode == 200) {
+          offset += length;
+          chunkResyncs = 0;
+        } else {
+          offset = resync(resp, 'append_v2', chunkResyncs++);
+        }
+        report(offset);
+      }
+      final http.Response finishResp = await _uploadSessionCall(
+        step: 'finish',
+        arg: <String, Object>{
+          'cursor': <String, Object>{'session_id': sessionId, 'offset': offset},
+          'commit': commit,
+        },
+        file: file,
+        start: offset,
+        length: 0,
+      );
+      if (finishResp.statusCode == 200) return;
+      final int correct = resync(finishResp, 'finish', finishResyncs++);
+      if (correct == offset) throw _uploadSessionError('finish', finishResp);
+      offset = correct;
+    }
+  }
+
+  /// 发一次 session 请求，体是 [file] 的 `[start, start + length)` 区间。瞬时失败
+  /// （429 / 5xx / `too_many_write_operations` / 网络异常）有界重试并采信
+  /// `Retry-After`；401 先刷新 token 再重试一次（大文件可能传过 token 有效期）。
+  /// 返回 200 或其它 409（由调用方解析 `incorrect_offset`）；别的错误直接抛。
+  Future<http.Response> _uploadSessionCall({
+    required String step,
+    required Map<String, Object> arg,
+    required File file,
+    required int start,
+    required int length,
+    void Function(int sent)? onSent,
+  }) async {
+    final String apiArg = jsonEncode(arg);
+    bool refreshedAuth = false;
+    int attempt = 0;
+    while (true) {
+      attempt++;
+      final http.Response resp;
+      try {
+        resp = await _sendFileRange(
+          Uri.parse('$_contentBase/files/upload_session/$step'),
+          apiArg,
+          file,
+          start,
+          length,
+          onSent,
+        );
+      } on Object catch (e) {
+        final bool transient = _isTransientUploadException(e);
+        if (!transient || attempt >= _uploadSessionMaxAttempts) {
+          if (e is SyncBackendError) rethrow;
+          throw SyncBackendError(
+            'Dropbox upload session $step failed: $e',
+            isRetryable: transient,
+          );
+        }
+        await debugUploadRetrySleep(_uploadRetryDelay(attempt, null));
+        continue;
+      }
+      if (resp.statusCode == 401) {
+        if (refreshedAuth) {
+          throw SyncAuthError(
+            'Authentication expired: Dropbox upload session $step',
+          );
+        }
+        refreshedAuth = true;
+        attempt--; // 刷新 token 不占瞬时重试的次数。
+        await refreshAuth();
+        continue;
+      }
+      if (_isTransientUploadResponse(resp)) {
+        if (attempt >= _uploadSessionMaxAttempts) {
+          throw _uploadSessionError(step, resp, isRetryable: true);
+        }
+        await debugUploadRetrySleep(_uploadRetryDelay(attempt, resp));
+        continue;
+      }
+      if (resp.statusCode == 200 || resp.statusCode == 409) return resp;
+      throw _uploadSessionError(step, resp);
+    }
+  }
+
+  /// 把 [file] 的 `[start, start + length)` 流式写进请求体（每次现开一个只读区间，
+  /// 不把整块读进内存），已发字节数经 [onSent] 回报。读文件出错抛
+  /// [SyncBackendError]（不可重试）；网络异常原样抛给重试层。
+  Future<http.Response> _sendFileRange(
+    Uri url,
+    String apiArg,
+    File file,
+    int start,
+    int length,
+    void Function(int sent)? onSent,
+  ) async {
+    final http.StreamedRequest request = http.StreamedRequest('POST', url)
+      ..headers['Authorization'] = 'Bearer $accessToken'
+      ..headers['Content-Type'] = 'application/octet-stream'
+      ..headers['Dropbox-API-Arg'] = apiArg
+      ..contentLength = length;
+    final Future<http.StreamedResponse> responseFuture =
+        (await obtainSyncHttpClient()).send(request);
+    Object? pumpError;
+    try {
+      if (length > 0) {
+        int sent = 0;
+        await request.sink.addStream(
+          file.openRead(start, start + length).map((List<int> chunk) {
+            sent += chunk.length;
+            onSent?.call(sent);
+            return chunk;
+          }),
+        );
+      }
+    } catch (e) {
+      pumpError = e;
+    } finally {
+      await request.sink.close();
+    }
+    final http.StreamedResponse streamed;
+    try {
+      streamed = await responseFuture;
+    } catch (_) {
+      if (pumpError != null) {
+        throw SyncBackendError('Upload failed reading file: $pumpError');
+      }
+      rethrow;
+    }
+    if (pumpError != null) {
+      // 先把响应体读完（不留悬空连接），再报本地读文件错误。
+      await streamed.stream.drain<void>();
+      throw SyncBackendError('Upload failed reading file: $pumpError');
+    }
+    return http.Response.fromStream(streamed);
+  }
+
+  static bool _isTransientUploadException(Object e) =>
+      e is SocketException ||
+      e is HttpException ||
+      e is http.ClientException ||
+      e is TimeoutException;
+
+  static bool _isTransientUploadResponse(http.Response resp) {
+    if (resp.statusCode == 429 || resp.statusCode >= 500) return true;
+    // `too_many_write_operations`（同命名空间并发写冲突）文档建议重试：finish 的
+    // UploadSessionFinishError 里可能直接是这个 tag，也可能包在 `path`（WriteError）里。
+    return resp.statusCode == 409 && _isTooManyWriteOperations(resp);
+  }
+
+  static bool _isTooManyWriteOperations(http.Response resp) {
+    final Map<String, dynamic>? error = _dropboxErrorOf(resp);
+    if (error == null) return false;
+    const String tag = 'too_many_write_operations';
+    if (error['.tag'] == tag) return true;
+    final Object? path = error['path'];
+    return error['.tag'] == 'path' &&
+        path is Map<String, dynamic> &&
+        path['.tag'] == tag;
+  }
+
+  /// 服务端给了 `Retry-After`（秒数或 HTTP 日期）就照办（封顶
+  /// [_uploadRetryMaxDelay]），否则指数退避。
+  static Duration _uploadRetryDelay(int attempt, http.Response? resp) {
+    final String? header = resp?.headers['retry-after']?.trim();
+    if (header != null && header.isNotEmpty) {
+      Duration? hinted;
+      final int? seconds = int.tryParse(header);
+      if (seconds != null) {
+        hinted = Duration(seconds: math.max(0, seconds));
+      } else {
+        try {
+          final Duration until = HttpDate.parse(
+            header,
+          ).difference(DateTime.now());
+          hinted = until.isNegative ? Duration.zero : until;
+        } on HttpException {
+          hinted = null;
+        } on FormatException {
+          hinted = null;
+        }
+      }
+      if (hinted != null) {
+        return hinted > _uploadRetryMaxDelay ? _uploadRetryMaxDelay : hinted;
+      }
+    }
+    return _uploadRetryBaseDelay * (1 << (attempt - 1).clamp(0, 8));
+  }
+
+  static Map<String, dynamic>? _dropboxErrorOf(http.Response resp) {
+    try {
+      final Object? body = jsonDecode(resp.body);
+      if (body is! Map<String, dynamic>) return null;
+      final Object? error = body['error'];
+      return error is Map<String, dynamic> ? error : null;
+    } on FormatException {
+      return null;
+    }
+  }
+
+  /// 409 `incorrect_offset` 里的 `correct_offset`：append_v2 直接是
+  /// `{".tag": "incorrect_offset", "correct_offset": N}`，finish 包在
+  /// `lookup_failed` 里。不是这类错误返回 null。
+  static int? _incorrectOffsetOf(http.Response resp) {
+    if (resp.statusCode != 409) return null;
+    Map<String, dynamic>? error = _dropboxErrorOf(resp);
+    if (error?['.tag'] == 'lookup_failed') {
+      final Object? lookup = error?['lookup_failed'];
+      error = lookup is Map<String, dynamic> ? lookup : null;
+    }
+    if (error?['.tag'] != 'incorrect_offset') return null;
+    return (error?['correct_offset'] as num?)?.toInt();
+  }
+
+  static SyncBackendError _uploadSessionError(
+    String step,
+    http.Response resp, {
+    bool isRetryable = false,
+  }) => SyncBackendError(
+    'Dropbox upload session $step failed: ${resp.statusCode} ${resp.body}',
+    isRetryable: isRetryable,
+  );
 
   @override
   Future<void> downloadContentFile({

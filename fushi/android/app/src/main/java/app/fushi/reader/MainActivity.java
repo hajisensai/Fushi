@@ -461,6 +461,8 @@ public class MainActivity extends AudioServiceActivity {
         super.onActivityResult(requestCode, resultCode, data);
         // 上锁作品的系统验证（API 24–28 的确认锁屏页）。
         if (DeviceOwnerAuthChannel.onActivityResult(requestCode, resultCode)) return;
+        // 自动备份的用户文件夹（SAF 树 + 持久授权）。
+        if (BackupFolderChannel.onActivityResult(requestCode, resultCode, data)) return;
         if (requestCode == SAF_PICK_DIR_REQUEST) {
             if (pendingSafResult == null) return;
             final MethodChannel.Result safResult = pendingSafResult;
@@ -658,6 +660,7 @@ public class MainActivity extends AudioServiceActivity {
         SystemOcrChannel.registerWith(flutterEngine, this);
         // 上锁作品解锁的系统验证（生物识别 / 设备锁屏，拍板台 qiqSbvdxrk）。
         DeviceOwnerAuthChannel.registerWith(flutterEngine, this);
+        BackupFolderChannel.registerWith(flutterEngine, this);
         ClipboardImageChannel.registerWith(flutterEngine, getApplicationContext());
         // 墨水屏全刷的厂商 EPD 通道（反射探测，需要 Activity 的 decorView）。
         EinkRefreshChannel.registerWith(flutterEngine, this);

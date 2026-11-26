@@ -25,7 +25,11 @@
 ///
 /// 还原只在离线时做（拿数据目录锁，serve 在跑就拒绝）：新数据先解到旁边的暂存目录，
 /// 再把现有数据目录的内容整体挪到 `<data_dir>.pre-restore-<时间>/`，最后把暂存内容
-/// 挪进来；任何一步失败都挪回去。旧数据不删，确认无误后由用户自己删。
+/// 挪进来；任何一步失败都挪回去。旧数据不删，确认无误后由用户自己删。不在包里、却不属于「旧数据」的几样
+/// 留在现场：`backups/` 与锁文件留在原处（还原之后自动 / 手动 / 更新前备份照样都在）；包不含 `documents/`
+/// （自动 / 更新前备份默认如此）时现有 `documents/` 原地不动（书 / 封面 / 有声书 / 下载不跟着挪走）；已配对设备
+/// 复制来的备份（设备备份收件箱，`interconnect/…/__backups__/`）在换之前先搬进暂存数据的同一相对位置，随新数据
+/// 一起换进来（失败就搬回原处）。
 library;
 
 import 'dart:convert';
@@ -40,6 +44,7 @@ import 'package:fushi_engine/srs/srs_storage.dart'
 import 'package:fushi_engine/utils/archive/native_zip.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/server_data_lock.dart';
+import 'package:fushi_server/src/server_paths.dart';
 import 'package:fushi_srs/fushi_srs.dart' show SrsCore;
 import 'package:path/path.dart' as p;
 import 'package:fushi_server/src/server_language.dart';
@@ -251,6 +256,64 @@ Future<File> createServerBackup({
   }
 }
 
+/// 一份备份读的全部源文件（数据目录里进包的文件 + 主库 / 新代复习库及其 `-wal`），给自动备份的
+/// 「没变化就跳过」算指纹用（`server_backup_service.dart`）。快照替代的 `-shm` / `-journal` 不算：读库也会动它们。
+List<String> serverBackupSourceFiles(
+  String dataDir, {
+  required bool includeDocuments,
+}) => <String>[
+  for (final String db in <String>[
+    fushiDatabaseFileName,
+    kSrsGen4DatabaseFileName,
+  ])
+    for (final String suffix in <String>['', '-wal'])
+      p.join(dataDir, 'support', '$db$suffix'),
+  ..._dataFiles(Directory(dataDir), includeDocuments: includeDocuments).values,
+];
+
+/// 路径段相等：Windows / macOS 的默认文件系统不分大小写，同一个目录可能以别的大小写出现。
+bool _samePart(String a, String b) => (Platform.isWindows || Platform.isMacOS)
+    ? a.toLowerCase() == b.toLowerCase()
+    : a == b;
+
+bool _startsWith(List<String> parts, List<String> prefix) {
+  for (int i = 0; i < prefix.length; i++) {
+    if (!_samePart(parts[i], prefix[i])) return false;
+  }
+  return true;
+}
+
+/// 设备备份收件箱相对数据目录的路径（`interconnect/sync-data/fushi-data/__backups__`）。
+String _deviceInboxRelative(String dataDir) => p.relative(
+  p.join(ServerPaths(dataDir).interconnectSyncRoot, kDeviceBackupsNamespace),
+  from: dataDir,
+);
+
+/// 列出 [dir] 下的全部文件（递归、不跟链接）。遍历途中消失的子目录（serve 在跑时的临时目录、
+/// 刚被清理的缓存）跳过；还在却读不了（权限）照样抛，由调用方记失败。
+List<File> serverBackupWalkFiles(Directory dir) {
+  final List<File> out = <File>[];
+  final List<Directory> pending = <Directory>[dir];
+  while (pending.isNotEmpty) {
+    final Directory d = pending.removeLast();
+    final List<FileSystemEntity> children;
+    try {
+      children = d.listSync(followLinks: false);
+    } on FileSystemException {
+      if (!d.existsSync()) continue;
+      rethrow;
+    }
+    for (final FileSystemEntity e in children) {
+      if (e is File) {
+        out.add(e);
+      } else if (e is Directory) {
+        pending.add(e);
+      }
+    }
+  }
+  return out;
+}
+
 /// 数据目录里要进包的文件：zip 条目名 → 源路径。
 Map<String, String> _dataFiles(
   Directory data, {
@@ -258,20 +321,35 @@ Map<String, String> _dataFiles(
 }) {
   final Map<String, String> out = <String, String>{};
   if (!data.existsSync()) return out;
+  // 已配对设备复制来的自动备份（`DeviceBackupInbox`）：那是各设备自己的备份，设备自己按保留
+  // 策略修剪、可以取回；每天的整机备份再打一遍会让包随设备数翻倍，还原整机也用不到它们。
+  final List<String> deviceInbox = p.split(_deviceInboxRelative(data.path));
   for (final FileSystemEntity top in data.listSync(followLinks: false)) {
     final String name = p.basename(top.path);
-    if (_excludedTopLevel.contains(name)) continue;
-    if (!includeDocuments && name == 'documents') continue;
-    final Iterable<FileSystemEntity> files = top is Directory
-        ? top.listSync(recursive: true, followLinks: false)
-        : <FileSystemEntity>[top];
-    for (final FileSystemEntity f in files) {
-      if (f is! File) continue;
+    if (_excludedTopLevel.any((String x) => _samePart(x, name))) continue;
+    if (!includeDocuments && _samePart(name, 'documents')) continue;
+    final List<File> files = top is Directory
+        ? serverBackupWalkFiles(top)
+        : top is File
+        ? <File>[top]
+        : const <File>[];
+    for (final File f in files) {
       final String rel = p.relative(f.path, from: data.path);
       final List<String> parts = p.split(rel);
       if (parts.length == 2 &&
           parts.first == 'support' &&
           _liveDbFiles.contains(parts.last)) {
+        continue;
+      }
+      if (parts.length > deviceInbox.length &&
+          _startsWith(parts, deviceInbox)) {
+        continue;
+      }
+      // 更新前还原点（fushi_core `restore_points.dart`）是本机库的整份副本，最多每库几份：
+      // 进包会让备份翻几倍，还原到别处也毫无用处。
+      if (parts.length > 2 &&
+          parts.first == 'support' &&
+          parts[1] == kRestorePointsDirName) {
         continue;
       }
       out['$_dataPrefix${parts.join('/')}'] = f.path;
@@ -328,12 +406,20 @@ class ServerRestoreResult {
     required this.manifest,
     required this.previousData,
     required this.previousConfig,
+    this.keptDocuments = false,
+    this.keptDeviceBackups = false,
   });
 
   final ServerBackupManifest manifest;
 
   /// 还原前的数据目录内容挪到了这里（没有旧数据时为 null）。
   final Directory? previousData;
+
+  /// 包里没有 `documents/`，现有的 `documents/` 原地留着（没挪进 [previousData]）。
+  final bool keptDocuments;
+
+  /// 已配对设备复制来的备份（设备备份收件箱）随新数据留在数据目录里。
+  final bool keptDeviceBackups;
 
   /// 还原前的配置文件副本（没还原配置时为 null）。
   final File? previousConfig;
@@ -410,21 +496,54 @@ Future<ServerRestoreResult> restoreServerBackup({
         );
       }
     }
+    // 包里没有 documents/（自动 / 更新前备份默认不带）：现有的书 / 封面 / 有声书 / 下载原地留着，
+    // 不然还原一份「设置 + 数据」的备份会把整个文档库挪进 pre-restore 目录。包里说不带却带了
+    // （手造的包）就按包来，免得两份 documents/ 撞在一起。
+    final bool keepDocuments =
+        !manifest.includesDocuments &&
+        !Directory(p.join(staging.path, 'documents')).existsSync();
+    // 设备备份收件箱不在包里（各设备自己修剪、可以取回），也不是这台服务端「旧数据」的一部分：先搬进
+    // 暂存数据的同一相对位置，随新数据一起换进来。老包（收件箱还进包的那几版）里带的那份比现场旧，丢掉。
+    final String inboxRel = _deviceInboxRelative(dataDir);
+    final String liveInbox = p.join(dataDir, inboxRel);
+    final String stagedInbox = p.join(staging.path, inboxRel);
+    bool inboxCarried = false;
     final List<String> moved = <String>[];
     final List<String> placed = <String>[];
     await data.create(recursive: true);
     try {
+      if (Directory(liveInbox).existsSync()) {
+        if (FileSystemEntity.typeSync(stagedInbox) !=
+            FileSystemEntityType.notFound) {
+          await _entity(stagedInbox).delete(recursive: true);
+        }
+        await _relocate(liveInbox, stagedInbox);
+        inboxCarried = true;
+      }
       for (final FileSystemEntity e in data.listSync(followLinks: false)) {
-        if (p.basename(e.path) == kServerLockFileName) continue;
+        final String name = p.basename(e.path);
+        // 锁文件与备份目录留在原处：备份目录不在包里，挪走它 = 还原之后这台服务端的备份全看不见了
+        // （还原的那份包往往就在里面）。
+        if (_samePart(name, kServerLockFileName) ||
+            _samePart(name, kServerBackupDirName) ||
+            (keepDocuments && _samePart(name, 'documents'))) {
+          continue;
+        }
         await previous.create(recursive: true);
-        await e.rename(p.join(previous.path, p.basename(e.path)));
-        moved.add(p.basename(e.path));
+        await e.rename(p.join(previous.path, name));
+        moved.add(name);
       }
       for (final FileSystemEntity e in staging.listSync(followLinks: false)) {
         await e.rename(p.join(dataDir, p.basename(e.path)));
         placed.add(p.basename(e.path));
       }
     } catch (e) {
+      // 收件箱已随新数据换进来：先收回暂存，删换进来的新数据时别把它一起删了。
+      if (inboxCarried &&
+          !Directory(stagedInbox).existsSync() &&
+          Directory(liveInbox).existsSync()) {
+        await _relocate(liveInbox, stagedInbox);
+      }
       for (final String name in placed.reversed) {
         await _entity(p.join(dataDir, name)).delete(recursive: true);
       }
@@ -432,6 +551,9 @@ Future<ServerRestoreResult> restoreServerBackup({
         await _entity(
           p.join(previous.path, name),
         ).rename(p.join(dataDir, name));
+      }
+      if (inboxCarried && Directory(stagedInbox).existsSync()) {
+        await _relocate(stagedInbox, liveInbox);
       }
       if (previous.existsSync() && previous.listSync().isEmpty) {
         await previous.delete();
@@ -453,10 +575,25 @@ Future<ServerRestoreResult> restoreServerBackup({
       manifest: manifest,
       previousData: moved.isEmpty ? null : previous,
       previousConfig: previousConfig,
+      keptDocuments:
+          keepDocuments && Directory(p.join(dataDir, 'documents')).existsSync(),
+      keptDeviceBackups: inboxCarried,
     );
   } finally {
-    if (staging.existsSync()) await staging.delete(recursive: true);
+    // 回滚中途又失败、收件箱还压在暂存目录里：暂存目录留着不删（里面是各设备的备份），让用户自己搬回去。
+    if (staging.existsSync() &&
+        !Directory(
+          p.join(staging.path, _deviceInboxRelative(dataDir)),
+        ).existsSync()) {
+      await staging.delete(recursive: true);
+    }
   }
+}
+
+/// 把目录 [from] 挪到 [to]（同一卷上的改名），先建好 [to] 的上级目录。
+Future<void> _relocate(String from, String to) async {
+  await Directory(p.dirname(to)).create(recursive: true);
+  await Directory(from).rename(to);
 }
 
 FileSystemEntity _entity(String path) =>
@@ -592,7 +729,3 @@ String _stamp(DateTime t) {
   return '${t.year}${two(t.month)}${two(t.day)}-'
       '${two(t.hour)}${two(t.minute)}${two(t.second)}';
 }
-
-/// admin API 生成的备份文件名。
-String serverBackupFileName(DateTime t) =>
-    'fushi_server-backup-${_stamp(t)}.zip';

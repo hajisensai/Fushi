@@ -500,6 +500,11 @@ class InterconnectSyncBackend extends SyncBackend
     return _activeHostIdentity!;
   }
 
+  /// 会话已选定 host 时它的身份（同 [connectedHostIdentity]），没选定为 null；不选路、不联网。设置页显示
+  /// 「复制到服务器」用的服务器名时用它，与副本目标认的是同一台 host。
+  String? get resolvedHostIdentity =>
+      _sessionResolved ? _activeHostIdentity : null;
+
   // ── 基线作用域（BUG-4434）──────────────────────────────────────────────────
 
   /// 会话所连 host 的基线作用域（[interconnectScopeIdentityOf]）：选中候选的
