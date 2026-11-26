@@ -2241,7 +2241,9 @@ class _HomePageState extends BasePageState<HomePage>
         // NavRailContentSync 与 buildBody），免得它们每帧重排；可见内容照常
         // 随 rail 重排，否则右侧贴边内容整段过渡被裁、结束时弹回（BUG-3447）。
         child: NavRailContentSync(
-          child: isGlassDesign(context) && sizeClass == WindowSizeClass.expanded
+          child:
+              isGlassDesign(context) &&
+                  adaptiveNavSidebarByWindow(context, sizeClass: sizeClass)
               ? _appleSidebarShell(
                   tabs: tabs,
                   reversed: reversed,

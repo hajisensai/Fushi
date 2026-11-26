@@ -19,6 +19,8 @@ import 'dart:math' as math;
 
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/utils/app_ui_scale.dart';
+
 /// 窗口高度低于此（逻辑像素）且宽高比不小于 [kFushiCompactLandscapeMinAspect] 时
 /// 视为横屏矮窗口。与浮动弹层的 `kFushiSheetShortWindowHeight` 同值（那边引用这里）。
 const double kFushiCompactLandscapeMaxHeight = 500;
@@ -43,6 +45,16 @@ bool isFushiCompactLandscape(Size size) =>
     size.height > 0 &&
     size.width >= size.height * kFushiCompactLandscapeMinAspect &&
     size.height < kFushiCompactLandscapeMaxHeight;
+
+/// 当前窗口（按**真实**视口尺寸，即逻辑尺寸 × [FushiAppUiScale]）是否是横屏矮
+/// 窗口。外壳级的版面判据（页头大字档位、侧栏默认收展）用它：界面缩放只改逻辑
+/// 画布，不改手机横过来只有 ~400dp 高这件事（同 `windowSizeClassReal` 的理由）。
+bool isFushiCompactLandscapeWindow(BuildContext context) {
+  final double scale = FushiAppUiScale.of(context);
+  final Size logical = MediaQuery.sizeOf(context);
+  final bool usable = scale.isFinite && scale > 0;
+  return isFushiCompactLandscape(usable ? logical * scale : logical);
+}
 
 /// 浮层外边距：横屏矮窗口下把 [base] 的上下收到
 /// [kFushiCompactLandscapeVerticalInset]、左右收到
