@@ -2,7 +2,9 @@
 //
 //   GET  /dev                     未登录 → 邮箱登录；已登录 → 反馈列表（?status=active|<状态>|all&cursor）
 //   POST /dev/code   {email}      发登录验证码（与 App 新设备登录同一套 purpose=login 验证码）
-//   POST /dev/login  {email,code} 验码 → 账户 role 必须是 dev → 写会话 Cookie
+//   POST /dev/login  {email,code} 验码 → 账户 role 必须是 dev 或 triage → 写会话 Cookie
+//                                 triage（反馈协查）只能用 TRIAGE_ROUTES：反馈列表 / 详情 / 附件 / JSON 与保存批改；
+//                                 回复反馈人、改状态与其余页面（拍板、统计、项目、公告、密钥）一律 403，页面上也不显示入口。
 //   POST /dev/logout
 //   GET  /dev/f/:id               详情：正文、设备信息、截图、日志、时间线、修复 commit 与各通道发布版本（只读）、处理表单
 //   GET  /dev/f/:id/a/:slot       附件（日志 ?view=text 解压成文本；视频 v0 支持 Range，?download=1 下载；
@@ -37,6 +39,7 @@ import { FILE_EXTENSIONS } from './feedback_files.js';
 import {
   STATUSES,
   attachmentResponse,
+  canViewFeedback,
   FEEDBACK_LIMITS,
   devList,
   devSaveNotes,
@@ -142,9 +145,12 @@ function fmtBytes(n) {
   return `${Math.max(1, Math.round(n / 1024))} KB`;
 }
 
-function layout(title, body, { signedIn = false } = {}) {
+function layout(title, body, { signedIn = false, triage = false } = {}) {
+  const links = triage
+    ? '<a href="/dev">反馈</a>'
+    : '<a href="/dev">反馈</a><a href="/dev/decisions">拍板</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a><a href="/dev/notices">公告</a><a href="/dev/keys">密钥</a>';
   const logout = signedIn
-    ? '<nav class="top"><a href="/dev">反馈</a><a href="/dev/decisions">拍板</a><a href="/dev/stats">统计</a><a href="/dev/project">项目</a><a href="/dev/notices">公告</a><a href="/dev/keys">密钥</a>'
+    ? `<nav class="top">${links}`
       + '<form method="post" action="/dev/logout" class="inline"><button class="link">退出</button></form></nav>'
     : '';
   return `<!doctype html>
@@ -263,7 +269,7 @@ async function tokenHash(token) {
   return hex(await sha256(new TextEncoder().encode(token)));
 }
 
-/** 当前会话的开发者账户；没有 / 过期 / 已不是开发者 → null。 */
+/** 当前会话的开发者 / 反馈协查账户；没有 / 过期 / 已被撤成普通用户 → null。 */
 export async function sessionAccount(env, request, now) {
   const token = readCookie(request, SESSION_COOKIE);
   if (!token || !/^[A-Za-z0-9_-]{20,64}$/.test(token)) return null;
@@ -271,7 +277,31 @@ export async function sessionAccount(env, request, now) {
     `SELECT a.* FROM dev_sessions s JOIN accounts a ON a.id = s.account_id
      WHERE s.token_hash = ?1 AND s.expires_at > ?2`,
   ).bind(await tokenHash(token), now).first();
-  return row && row.role === 'dev' ? row : null;
+  return row && canViewFeedback(row.role) ? row : null;
+}
+
+/**
+ * triage 会话能走的路由（其余一律 403）：只读反馈 + 保存内部批改。回复 / 改状态（POST /dev/f/:id）不在内。
+ * @type {ReadonlyArray<[string, RegExp]>}
+ */
+const TRIAGE_ROUTES = Object.freeze([
+  ['GET', /^\/dev$/],
+  ['GET', /^\/dev\/feedback\.json$/],
+  ['GET', /^\/dev\/f\/[A-Za-z0-9_-]{8,16}(\.json)?$/],
+  ['GET', /^\/dev\/f\/[A-Za-z0-9_-]{8,16}\/a\/(log|s[0-2]|v0|f[0-2])$/],
+  ['POST', /^\/dev\/f\/[A-Za-z0-9_-]{8,16}\/note$/],
+]);
+
+/**
+ * @param {string} role
+ * @param {string} method
+ * @param {string} path
+ * @returns {boolean}
+ */
+export function consoleRouteAllowed(role, method, path) {
+  if (role === 'dev') return true;
+  if (role !== 'triage') return false;
+  return TRIAGE_ROUTES.some(([mth, re]) => mth === method && re.test(path));
 }
 
 function sessionCookie(token, maxAgeSec) {
@@ -343,7 +373,7 @@ function loginPage({ email = '', step = 'email', error = '' } = {}) {
 <div class="card">
 ${err}
 ${form}
-<p class="muted">只有被管理员设为开发者的 Fushi 账户能进入处理台。</p>
+<p class="muted">只有被管理员设为开发者或反馈协查的 Fushi 账户能进入处理台。</p>
 </div>`));
 }
 
@@ -399,7 +429,7 @@ ${f.aiSummary ? `<span class="sum muted">AI：${esc(f.aiSummary)}</span>` : ''}
 <nav class="tabs">${tabs}</nav>
 ${searchForm}
 <div class="card">${rows || `<p class="muted">${q ? '没有匹配的反馈。' : '没有反馈。'}</p>`}</div>
-${more}`, { signedIn: true }));
+${more}`, { signedIn: true, triage: dev.role !== 'dev' }));
 }
 
 const CHANNEL_LABEL = { debug: '调试版', beta: '测试版', stable: '正式版' };
@@ -815,6 +845,7 @@ async function detailPage(env, id, dev) {
     const body = m.body ? `<div class="body">${esc(m.body)}</div>` : '';
     return `<div class="msg ${m.author}"><div class="muted">${who} · ${esc(fmtTime(m.createdAt))}${st}</div>${body}</div>`;
   }).join('');
+  const triage = dev.role !== 'dev';
   const options = STATUSES.map((s) => `<option value="${s}"${s === f.status ? ' selected' : ''}>${esc(STATUS_LABEL[s])}</option>`).join('');
   const reporter = f.reporter
     ? `${esc(f.reporter.nickname)}#${String(f.reporter.discriminator).padStart(4, '0')}`
@@ -852,13 +883,15 @@ ${installSection(f.install, f.fix)}
 <h2>处理记录</h2>
 <div class="card">${timeline || '<p class="muted">还没有记录。</p>'}</div>
 <h2>处理</h2>
-<form method="post" action="/dev/f/${esc(f.id)}" class="card">
+${triage
+    ? '<div class="card"><p class="muted">你的账户是反馈协查：可以写上面的批改，回复反馈人和改状态需要开发者处理。</p></div>'
+    : `<form method="post" action="/dev/f/${esc(f.id)}" class="card">
 <label for="status">状态</label>
 <select id="status" name="status">${options}</select>
 <label for="reply">回复反馈人（会显示在对方 App 里）</label>
 <textarea id="reply" name="reply" maxlength="4000"></textarea>
 <button>保存</button>
-</form>`, { signedIn: true }));
+</form>`}`, { signedIn: true, triage }));
 }
 
 /** /dev 下的全部请求。 */
@@ -970,7 +1003,7 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
       throw e;
     }
     const acc = await resolveEmailAccount(env, ids, now);
-    if (!acc || acc.role !== 'dev') return loginPage({ email, error: '该账户不是开发者账户。' });
+    if (!acc || !canViewFeedback(acc.role)) return loginPage({ email, error: '该账户不是开发者账户。' });
     const token = newSessionToken();
     await env.DB.prepare('INSERT INTO dev_sessions (token_hash, account_id, expires_at) VALUES (?1, ?2, ?3)')
       .bind(await tokenHash(token), acc.id, now + SESSION_TTL_MS).run();
@@ -988,6 +1021,7 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
     if (method === 'GET' && !path.endsWith('.json')) return redirect('/dev');
     throw new HttpError(401, 'dev_session_required');
   }
+  if (!consoleRouteAllowed(dev.role, method, path)) throw new HttpError(403, 'not_developer');
 
   if (method === 'GET' && path === '/dev') return listPage(env, url, dev);
   if (method === 'GET' && path === '/dev/stats') return statsPage(env, now);
@@ -1108,7 +1142,7 @@ export async function routeDevConsole(request, env, url, now, ctx, ip) {
     return redirect('/dev/project');
   }
   if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})$/.exec(path))) return detailPage(env, m[1], dev);
-  if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\/a\/(log|s[0-2]|v0)$/.exec(path))) {
+  if (method === 'GET' && (m = /^\/dev\/f\/([A-Za-z0-9_-]{8,16})\/a\/(log|s[0-2]|v0|f[0-2])$/.exec(path))) {
     return attachmentResponse(env, await feedbackById(env, m[1]), m[2], url.searchParams.get('view') === 'text', {
       range: request.headers.get('Range'),
       download: url.searchParams.get('download') === '1',
