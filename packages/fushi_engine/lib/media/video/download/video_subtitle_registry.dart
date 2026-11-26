@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:io';
 import 'dart:typed_data';
 
+import 'package:fushi_engine/foundation/engine_log.dart';
 import 'package:fushi_engine/media/external_provider.dart';
 import 'package:fushi_engine/media/video/discovery/video_discovery_provider.dart';
 import 'package:fushi_engine/media/video/subtitle/video_subtitle_provider.dart';
@@ -48,6 +49,14 @@ class VideoSubtitleRegistry {
         );
     final ProviderBatchResult<VideoSubtitleCandidate> merged =
         ProviderBatchResult.merge(results);
+    // 各来源的失败到这里都已归一成返回值、不再抛出，界面只挑一条拼成「搜索失败
+    // （HTTP 400）」，连是哪一家都不说。这里是所有入口（字幕面板、下载管线、遥控）
+    // 共用的汇合点，逐条留诊断：来源、操作、状态码都在 [ExternalProviderFailure]
+    // 的 toString 里（BUG-5455：一次 OpenSubtitles 400 被当成 Jimaku 的问题报上来，
+    // 日志里一行线索都没有）。
+    for (final ExternalProviderFailure failure in merged.failures) {
+      engineLog.logDiagnostic('VideoSubtitleRegistry.search', failure);
+    }
     return ProviderBatchResult<VideoSubtitleCandidate>(
       items: deduplicateVideoSubtitles(merged.items),
       failures: merged.failures,
@@ -125,6 +134,18 @@ class VideoSubtitleRegistry {
   }
 }
 
+/// 把 64 位 movie hash 按**无符号**拼成 OpenSubtitles 要求的 16 位小写十六进制。
+///
+/// 不能直接 `hash.toRadixString(16)`：Dart 的 int 有符号，最高位为 1（约一半的
+/// 视频文件）时会拼出 `-1a2b…` 这种带负号的串，OpenSubtitles 对它回
+/// `400 moviehash must be 16 hex characters`，而 hash 档失败会让整次 OpenSubtitles
+/// 搜索作废（BUG-5455）。高低 32 位分开拼，与平台的 int 表示无关。
+String formatOpenSubtitlesMovieHash(int hash) {
+  final String high = ((hash >> 32) & 0xffffffff).toRadixString(16);
+  final String low = (hash & 0xffffffff).toRadixString(16);
+  return '${high.padLeft(8, '0')}${low.padLeft(8, '0')}';
+}
+
 /// OpenSubtitles 64-bit movie hash：文件大小 + 首尾各 64 KiB 的 little-endian
 /// uint64 累加。小于 128 KiB 的文件不发送 hash，自动回退到外部 id / 标题。
 Future<String?> computeOpenSubtitlesMovieHash(String path) async {
@@ -137,15 +158,16 @@ Future<String?> computeOpenSubtitlesMovieHash(String path) async {
     final Uint8List first = await handle.read(chunkSize);
     await handle.setPosition(length - chunkSize);
     final Uint8List last = await handle.read(chunkSize);
-    const int mask = 0xffffffffffffffff;
-    int hash = length & mask;
+    // Dart 的 int 是有符号 64 位：累加按二进制补码自然回绕，结果与无符号 uint64
+    // 逐位相同，但最高位为 1 时数值是负的。
+    int hash = length;
     for (final Uint8List chunk in <Uint8List>[first, last]) {
       final ByteData bytes = ByteData.sublistView(chunk);
       for (int offset = 0; offset + 8 <= chunk.length; offset += 8) {
-        hash = (hash + bytes.getUint64(offset, Endian.little)) & mask;
+        hash += bytes.getUint64(offset, Endian.little);
       }
     }
-    return hash.toRadixString(16).padLeft(16, '0');
+    return formatOpenSubtitlesMovieHash(hash);
   } finally {
     await handle.close();
   }

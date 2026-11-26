@@ -156,27 +156,71 @@ class AndroidLibraryDbWitness {
     required String otherRoot,
     required bool Function(String path) exists,
   }) {
+    final ({int sampled, List<int> onlyIn}) votes = tallyRoots(
+      storedPaths: storedPaths,
+      roots: <String>[anchoredRoot, otherRoot],
+      exists: exists,
+    );
+    return AndroidLibraryDbWitness(
+      sampled: votes.sampled,
+      onlyInAnchored: votes.onlyIn[0],
+      onlyInOther: votes.onlyIn[1],
+    );
+  }
+
+  /// [tally] 的多根版本（BUG-5450：书库可能散在外部与几种内部布局里，不止两个根）：
+  /// 每条尾段只在**恰好一个**根里存在时给那个根记一票，返回与 [roots] 同序的票数。
+  static ({int sampled, List<int> onlyIn}) tallyRoots({
+    required Iterable<String> storedPaths,
+    required List<String> roots,
+    required bool Function(String path) exists,
+  }) {
     int sampled = 0;
-    int onlyInAnchored = 0;
-    int onlyInOther = 0;
+    final List<int> onlyIn = List<int>.filled(roots.length, 0);
     final Set<String> seen = <String>{};
     for (final String stored in storedPaths) {
       final String? tail = libraryRelativeTail(stored);
       if (tail == null || !seen.add(tail)) continue;
       sampled++;
       final List<String> parts = tail.split('/');
-      final bool inAnchored = exists(
-        p.joinAll(<String>[anchoredRoot, ...parts]),
-      );
-      final bool inOther = exists(p.joinAll(<String>[otherRoot, ...parts]));
-      if (inAnchored && !inOther) onlyInAnchored++;
-      if (inOther && !inAnchored) onlyInOther++;
+      int? only;
+      int hits = 0;
+      for (int i = 0; i < roots.length; i++) {
+        if (exists(p.joinAll(<String>[roots[i], ...parts]))) {
+          hits++;
+          only = i;
+        }
+      }
+      if (hits == 1) onlyIn[only!]++;
     }
-    return AndroidLibraryDbWitness(
-      sampled: sampled,
-      onlyInAnchored: onlyInAnchored,
-      onlyInOther: onlyInOther,
-    );
+    return (sampled: sampled, onlyIn: onlyIn);
+  }
+
+  /// 读主库、对 [roots] 计票（[tallyRoots]），返回与 [roots] 同序的「只在该根存在」票数；
+  /// 没有证据（主库不存在 / 打不开 / 超时）返回 null。读库与 stat 同 [probe] 放后台 isolate。
+  static Future<List<int>?> probeRoots({
+    required Directory supportRoot,
+    required List<Directory> roots,
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    final String? path = await _databasePath(supportRoot);
+    if (path == null) return null;
+    final List<String> rootPaths = <String>[
+      for (final Directory d in roots) d.path,
+    ];
+    try {
+      return await Isolate.run<List<int>?>(() {
+        final List<String>? paths = readStoredLibraryPathsSync(path);
+        if (paths == null) return null;
+        return tallyRoots(
+          storedPaths: paths,
+          roots: rootPaths,
+          exists: pathExists,
+        ).onlyIn;
+      }).timeout(timeout, onTimeout: () => null);
+    } catch (_) {
+      return null;
+    }
   }
 
   /// 真实磁盘上的存在判据（文件或目录）。

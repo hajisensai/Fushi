@@ -810,6 +810,51 @@ void main() {
       expect(api.creates, isNotEmpty);
     });
 
+    test('长期失败的行退避钳在 6 小时，不因指数溢出变成每 5 秒重发（BUG-5453）', () async {
+      await enqueueOneBookUpdate();
+      // 真库里令牌过期的那行已失败上万次：2^(n-1) 在 n≈60 后溢出，退避曾归零 / 变负。
+      for (final int attempts in <int>[58, 59, 63, 64, 11308]) {
+        await db
+            .update(db.mediaTrackingOutbox)
+            .write(
+              MediaTrackingOutboxCompanion(
+                attemptCount: Value<int>(attempts),
+                nextAttemptAt: const Value<int>(0),
+              ),
+            );
+        final MediaTrackingOutboxRow row = await db
+            .select(db.mediaTrackingOutbox)
+            .getSingle();
+        await repository.markFailed(row, 'boom', nowMs: 1000);
+        final MediaTrackingOutboxRow failed = await db
+            .select(db.mediaTrackingOutbox)
+            .getSingle();
+        expect(
+          failed.nextAttemptAt,
+          1000 + 6 * 60 * 60 * 1000,
+          reason: '第 ${attempts + 1} 次失败也必须退避满 6 小时',
+        );
+      }
+
+      // 服务侧：被拒的令牌让这行失败后，重试定时器挂在 6 小时后而不是 5 秒后。
+      await db
+          .update(db.mediaTrackingOutbox)
+          .write(
+            const MediaTrackingOutboxCompanion(
+              attemptCount: Value<int>(11308),
+              nextAttemptAt: Value<int>(0),
+            ),
+          );
+      api.error = const BangumiApiException(statusCode: 401, message: 'nope');
+      await retryService.syncNow();
+      expect(scheduled, hasLength(1));
+      expect(
+        scheduled.single.delay,
+        greaterThan(const Duration(hours: 5)),
+        reason: '退避归零会让同步每 5 秒空转一轮',
+      );
+    });
+
     test('下一轮同步开始时取消旧定时器，零待办不再安排新的', () async {
       await enqueueOneBookUpdate();
       api.error = const BangumiApiException(statusCode: 500, message: 'boom');

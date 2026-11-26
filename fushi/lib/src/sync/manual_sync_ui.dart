@@ -23,8 +23,9 @@ import 'package:fushi/i18n/strings.g.dart';
 /// 全 0 → "无新增"；多类型 → ` · ` 拼接；有失败 → 追加失败计数后缀。
 @visibleForTesting
 String summarizeSyncReport(SyncRunReport r) {
+  final int downloadedBooks = r.booksImported + r.booksRecovered;
   final List<String> parts = <String>[
-    if (r.booksImported > 0) t.sync_now_books_in(count: r.booksImported),
+    if (downloadedBooks > 0) t.sync_now_books_in(count: downloadedBooks),
     if (r.dictionariesImported > 0)
       t.sync_now_dicts_in(count: r.dictionariesImported),
     if (r.dictionariesExported > 0)

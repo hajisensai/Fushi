@@ -168,14 +168,38 @@ void main() {
         t.audiobook_studio_cast_no_ai,
       );
       expect(
-        ttsCastAnnotateFailureText(const TtsCastAnnotateFailure('bad_output')),
-        t.audiobook_studio_cast_failure_bad_output,
+        ttsCastAnnotateFailureText(
+          const TtsCastAnnotateFailure(
+            'bad_output',
+            'roster, section 6: no usable entries',
+            '[{"op":"update"',
+          ),
+        ),
+        t.audiobook_studio_cast_failure_bad_output_reason(
+          reason: 'roster, section 6: no usable entries',
+        ),
       );
       expect(
         ttsCastAnnotateFailureText(
           const TtsCastAnnotateFailure('ai_failed', 'rate_limited'),
         ),
         t.audiobook_studio_cast_failed(reason: aiFailureText('rate_limited')),
+      );
+      // BUG-5469：拆到最小仍被截断 → 提示调低推理强度，不是「模型没有返回内容」。
+      expect(
+        ttsCastAnnotateFailureText(
+          const TtsCastAnnotateFailure(
+            kTtsCastFailureOutputLimit,
+            'lines, section 3: 7 sentences',
+          ),
+        ),
+        t.audiobook_studio_cast_failure_output_limit,
+      );
+      expect(
+        ttsCastAnnotateFailureText(
+          const TtsCastAnnotateFailure('ai_failed', 'output_limit'),
+        ),
+        t.audiobook_studio_cast_failed(reason: t.ai_error_output_limit),
       );
       expect(
         ttsCastAnnotateFailureText(const TtsCastAnnotateFailure('ai_failed')),

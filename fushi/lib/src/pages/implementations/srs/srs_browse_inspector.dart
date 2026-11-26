@@ -747,7 +747,7 @@ class _EditTabState extends ConsumerState<_EditTab> {
                 key: ValueKey<String>('srs-browse-field-${f.name}'),
                 name: f.name,
                 model: _models[f.id]!,
-                // 与编辑页同一个字段 AI 键（BUG-5380）：结果换进模型后照常停笔自动保存，经浏览页写入压进撤销栈。
+                // 与编辑页同一个字段 AI 键（BUG-5470）：结果换进模型后照常停笔自动保存，经浏览页写入压进撤销栈。
                 headerActions: srsFieldAiHeaderActions(
                   this.context,
                   ref,

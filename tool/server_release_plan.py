@@ -14,6 +14,10 @@ app repo instead and follows its three channels:
   release was built from (recorded as `source-sha: <sha>` in its body), and the
   change is not docs-only.
 
+An app release whose commit does not contain SERVER_BUILD_FLOOR is never a
+candidate: its source predates what this workflow builds (no server bundle
+scripts, older Flutter pin), so it cannot produce a server package at all.
+
 One target per run, in that order, so a run is one ordinary linear release.
 A target whose build already failed FAIL_LIMIT times in recent runs is skipped
 with a warning (the job names carry `[target:<key>]`), so a broken source tag is
@@ -47,6 +51,12 @@ IRRELEVANT_PATH = re.compile(
 )
 # GitHub's compare API lists at most 300 files; a full list means "maybe more".
 COMPARE_FILE_CAP = 300
+# Oldest develop commit release-server.yml can build: #3400 (Flutter 3.50.0 pin),
+# which already contains #3468 (packages/fushi_server/tool/build_linux_bundle.sh).
+# App v3.3.0 (a2638e03) predates both and fails on either platform (fushi-server
+# run 45491284403). Bump this in the same commit as any change that stops the
+# workflow from building older sources.
+SERVER_BUILD_FLOOR = "283a92028615e3ddf92cd510d316234ae2ecbf35"
 
 # endpoint -> parsed JSON, or None when the API answers 404.
 Fetch = Callable[[str], Optional[object]]
@@ -90,6 +100,12 @@ def _resolve_sha(fetch: Fetch, source_repo: str, release: dict) -> str:
     return sha
 
 
+def source_is_buildable(fetch: Fetch, source_repo: str, sha: str) -> bool:
+    """True when `sha` contains SERVER_BUILD_FLOOR (unknown compare = not provable)."""
+    compare = fetch(f"repos/{source_repo}/compare/{SERVER_BUILD_FLOOR}...{sha}")
+    return isinstance(compare, dict) and compare.get("status") in ("ahead", "identical")
+
+
 def _newest_beta(releases: object) -> Optional[dict]:
     best: Optional[dict] = None
     best_seq = -1
@@ -121,6 +137,19 @@ def plan_auto(
             return True
         return False
 
+    def candidate(channel: str, release: dict) -> Optional[Plan]:
+        tag = release["tag_name"]
+        if has_server_release(tag) or gave_up(tag):
+            return None
+        sha = _resolve_sha(fetch, source_repo, release)
+        if not source_is_buildable(fetch, source_repo, sha):
+            warn(
+                f"app {channel} {tag} ({sha[:12]}) predates the server build floor "
+                f"{SERVER_BUILD_FLOOR[:12]}; skipped (its source cannot build fushi_server)."
+            )
+            return None
+        return Plan(channel, sha, tag, f"app {channel} {tag} has no server release")
+
     latest = fetch(f"repos/{source_repo}/releases/latest")
     if (
         isinstance(latest, dict)
@@ -128,17 +157,15 @@ def plan_auto(
         and not latest.get("prerelease")
         and FORMAL_TAG.match(str(latest.get("tag_name", "")))
     ):
-        tag = latest["tag_name"]
-        if not has_server_release(tag) and not gave_up(tag):
-            return Plan("formal", _resolve_sha(fetch, source_repo, latest), tag,
-                        f"app formal {tag} has no server release")
+        plan = candidate("formal", latest)
+        if plan is not None:
+            return plan
 
     beta = _newest_beta(fetch(f"repos/{source_repo}/releases?per_page=50"))
     if beta is not None:
-        tag = beta["tag_name"]
-        if not has_server_release(tag) and not gave_up(tag):
-            return Plan("beta", _resolve_sha(fetch, source_repo, beta), tag,
-                        f"app beta {tag} has no server release")
+        plan = candidate("beta", beta)
+        if plan is not None:
+            return plan
 
     head_commit = fetch(f"repos/{source_repo}/commits/develop")
     head = head_commit.get("sha") if isinstance(head_commit, dict) else None

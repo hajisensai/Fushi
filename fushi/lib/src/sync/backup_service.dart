@@ -954,6 +954,8 @@ Future<void> _retainGames(String dbDirectory, Set<String> keep) async {
       'entry_key NOT IN (SELECT id FROM galgames)',
       <Object>[MediaKind.game.dbValue],
     );
+    // 作品图谱里的游戏端点是本机 id：游戏不在了连接就是死行（BUG-5457）。
+    await db.purgeDanglingMediaLinks();
     await db.customStatement(
       'DELETE FROM study_segments WHERE media_kind = ? AND media_key '
       'NOT IN (SELECT id FROM galgames)',
@@ -2096,6 +2098,9 @@ class BackupService {
         "OR (media_kind = 'game' AND entry_key NOT IN "
         '(SELECT id FROM galgames))',
       );
+      // 作品图谱：合集 / 游戏端点是本机 id，宿主被裁掉的连接是死行（BUG-5457）；
+      // 书 / 视频 / 音乐端点键跨端稳定，保留（详情页显示「未入库」）。
+      await db.purgeDanglingMediaLinks();
       await db.customStatement(
         'DELETE FROM book_tags WHERE id NOT IN ('
         'SELECT tag_id FROM tag_assignments)',

@@ -1,0 +1,8 @@
+## BUG-5476 · 复习库升级后 Anki 复习副本选取改变到期日、间隔与统计，导致核对撤回
+
+- **报告**：2026-11-25（应用内反馈 iNWSgqE7_Z，Windows 3.4.0+32563）。升级核对发现同一批 228 张卡的到期日和间隔不同，并出现统计分类与成熟度差异。日志与有日志的卡的规范计数一致。
+- **真实性**：✅ 最小协议 3 库复现撤回。两份同次 Anki 复习的副本带有不同排程结果，且原始 ID 和规范 ID 的排序相反。原先 `native/fushi_fsrs/src/store/gen4/cache.rs:1033` 把规范 ID 交给 `native/fushi_fsrs/src/history.rs:226` 选取，迁移因此选中另一份副本。复现时到期日从 32 变 5、间隔从 30 天变 3 天，并改变成熟度统计。
+- **[x] ① 已修复** — 提交 5c150365da。日志投影保留操作里的原始排序 ID；重放、选取、统计去重与预览共用它，规范 ID 用于实体引用与撤销。迁移继续核对实际排程和统计列。缓存规则升至 6，已有协议 4 库在打开时按现有流程重建缓存。
+- **[x] ② 已增加自动化测试** — `native/fushi_fsrs/src/store/gen4/migrate_tests.rs:1799` 通过真实迁移入口核对原始排程、后续复习的统计分类，以及存在上次失败报告时的重新升级。
+- **补漏（审查）**：Dart 侧卡片历史（Browse 检查器的复习历史、`.apkg` 导出的 revlog）经 `read logs` 只拿到规范 ID，再交列模式选取（`history.rs` `select_columns`）时仍按规范 ID 选副本，与内核排程选的不是同一份。`read logs` 加 `oid` 列（别名归一前的原值 ID），列模式每条日志多带一个排序 ID 串，`SrsDbStore.history` / `histories` 把它交给 `SrsCardHistory`。测试：`history.rs` `column_mode_orders_and_picks_copies_by_the_original_id`、`tests_class.rs` `logs_by_time_give_one_representative_per_class` 的 `oid` 断言、`packages/fushi_srs/test/kernel_test.dart` 的 BUG-5476 用例。
+- **备注**：反馈附件只有诊断报告与截图，未取得反馈人的原库。合成用例验证了与报告相同的排程差异；原库剩余差异以用户重跑结果为准。

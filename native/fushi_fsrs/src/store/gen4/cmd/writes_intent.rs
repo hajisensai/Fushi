@@ -986,12 +986,7 @@ pub fn sched(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
             let rows = s.settled()?.group_rows(&ref_of(&card))?;
             let input: Vec<Row<'_>> = rows
                 .iter()
-                .map(|(j, st, i, c)| Row {
-                    json: j,
-                    server_time: *st,
-                    intent: i.clone(),
-                    seed_card: Some(c),
-                })
+                .map(crate::store::gen4::cache::LogIn::replay_row)
                 .collect();
             let head = replay::head(&input)?;
             let (kind, rtype, intent, res, revokes) = match &action {

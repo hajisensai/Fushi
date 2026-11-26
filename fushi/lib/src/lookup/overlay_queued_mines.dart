@@ -22,8 +22,7 @@ import 'dart:collection';
 import 'package:flutter/foundation.dart';
 import 'package:fushi/src/lookup/global_lookup_channel.dart';
 import 'package:fushi/src/lookup/global_lookup_log.dart';
-import 'package:fushi/src/pages/implementations/dictionary_popup_webview.dart'
-    show QueuedOverwriteReply, QueuedOverwriteSettled;
+import 'package:fushi/src/pages/implementations/dictionary_popup_queued_overwrite.dart';
 import 'package:fushi/src/utils/misc/toast_severity.dart';
 
 /// 一次后台写卡的结局（推给 popup.js 的 `outcome` 字段同名）。

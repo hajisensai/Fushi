@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:test/test.dart';
 
@@ -97,6 +99,57 @@ void main() {
         'lookup_chinese_script_variants: true\n',
         configDir: '/etc/fushi',
       ).lookupChineseScriptVariants,
+      isTrue,
+    );
+  });
+
+  test(
+    '字幕语言 subtitle_language：新装空串（自动，跟随每个视频的语言），旧配置写着的值照旧，空串往返不变（BUG-5465）',
+    () {
+      expect(ServerConfig.defaults(dataDir: '/srv/d').subtitleLanguage, '');
+      final ServerConfig auto = ServerConfig.parse(
+        ServerConfig.defaults(dataDir: '/srv/d').toYaml(),
+        configDir: '/etc/fushi',
+      );
+      expect(auto.subtitleLanguage, '');
+      expect(
+        ServerConfig.parse(
+          'subtitle_language: ja\n',
+          configDir: '/etc/fushi',
+        ).subtitleLanguage,
+        'ja',
+        reason: '已有配置文件里写着的是用户的显式选择，不改写',
+      );
+      final ServerConfig hant = ServerConfig.defaults(
+        dataDir: '/srv/d',
+      ).copyWith(subtitleLanguage: 'zh-Hant');
+      expect(
+        ServerConfig.parse(
+          hant.toYaml(),
+          configDir: '/etc/fushi',
+        ).subtitleLanguage,
+        'zh-Hant',
+      );
+      expect(
+        hant.copyWith(subtitleLanguage: '').subtitleLanguage,
+        '',
+        reason: 'WebUI 选「自动」发来空串，要能从显式值改回自动',
+      );
+    },
+  );
+
+  test('服务端 host 把偏好 default_content_language 接给自动挑字幕（BUG-5465）', () {
+    final String src = File('lib/src/headless_host.dart').readAsStringSync();
+    expect(
+      RegExp(
+        r'videoDefaultContentLanguage:\s*\(\)\s*=>\s*serverDefaultContentLanguage\(prefs\)',
+      ).hasMatch(src),
+      isTrue,
+    );
+    expect(
+      src.contains(
+        'videoSubtitleExplicitLanguage: () => config.subtitleLanguage',
+      ),
       isTrue,
     );
   });

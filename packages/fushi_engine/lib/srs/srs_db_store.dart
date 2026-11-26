@@ -3071,9 +3071,13 @@ class SrsDbStore implements SrsSync2Host {
       final SrsStringColumn card = c.strings('card_id');
       final SrsStringColumn json = c.strings('json');
       final SrsIntColumn st = c.ints('st');
+      // 别名归一前的原值日志 ID（native/fushi_fsrs/src/store/gen4/cmd/reads.rs `logs`，BUG-5476）。
+      final SrsStringColumn? oid = c.has('oid') ? c.strings('oid') : null;
       for (int i = 0; i < c.rows; i++) {
         pre.logsByCard[card[i]]!.add(json[i]);
         _noteServerTime(pre, id[i], st.at(i));
+        final String? orderId = oid?.at(i);
+        if (orderId != null) pre.orderIds[id[i]] = orderId;
       }
     }
   }
@@ -3335,7 +3339,10 @@ class SrsDbStore implements SrsSync2Host {
           for (final List<String> l in lineages) await _historyInput(l),
         ];
         // 整块一次 FFI 调用（卡片历史内核），不逐卡跨边界。
-        final List<SrsCardHistory> hs = SrsCardHistory.many(inputs);
+        final List<SrsCardHistory> hs = SrsCardHistory.many(
+          inputs,
+          orderIdOf: pre.orderIdOf,
+        );
         for (int k = 0; k < chunk.length; k++) {
           out[chunk[k]] = hs[k];
         }
@@ -3493,20 +3500,29 @@ class SrsDbStore implements SrsSync2Host {
   );
 
   Future<SrsCardHistory> _historyOf(List<String> cardIds) async {
+    final _RefreshPrefetch p = await _logsPrefetch(cardIds);
     final (List<SrsReviewLog> logs, int? Function(String)? s) =
-        await _historyInput(cardIds);
-    return SrsCardHistory(logs, serverTimeOf: s);
+        _historyInputFrom(p, cardIds);
+    return SrsCardHistory(logs, serverTimeOf: s, orderIdOf: p.orderIdOf);
   }
 
   /// 一组卡（一张卡的血统）的全部日志与服务器时刻：[SrsCardHistory] 的输入。
-  Future<SrsHistoryInput> _historyInput(List<String> cardIds) async {
-    _RefreshPrefetch? pre = _RefreshPrefetch.current;
-    if (pre == null || !cardIds.every(pre.logsByCard.containsKey)) {
-      // 没预读：这几张卡的日志与服务器时刻一条读命令取回（同 [_prefetchLogs]）。
-      pre = _RefreshPrefetch();
-      await _prefetchLogs(pre, cardIds);
+  Future<SrsHistoryInput> _historyInput(List<String> cardIds) async =>
+      _historyInputFrom(await _logsPrefetch(cardIds), cardIds);
+
+  /// 已预读了 [cardIds] 日志的预读（本 zone 的 [_RefreshPrefetch.current]），没有就为它们读一次。
+  Future<_RefreshPrefetch> _logsPrefetch(List<String> cardIds) async {
+    final _RefreshPrefetch? current = _RefreshPrefetch.current;
+    if (current != null && cardIds.every(current.logsByCard.containsKey)) {
+      return current;
     }
-    final _RefreshPrefetch p = pre;
+    // 没预读：这几张卡的日志与服务器时刻一条读命令取回（同 [_prefetchLogs]）。
+    final _RefreshPrefetch pre = _RefreshPrefetch();
+    await _prefetchLogs(pre, cardIds);
+    return pre;
+  }
+
+  SrsHistoryInput _historyInputFrom(_RefreshPrefetch p, List<String> cardIds) {
     final List<SrsReviewLog> logs = <SrsReviewLog>[
       for (final String c in cardIds)
         for (final String json in p.logsByCard[c]!)
@@ -6516,6 +6532,12 @@ class _RefreshPrefetch {
 
   final Map<String, int> serverTimes = <String, int>{};
   final Set<String> serverTimesKnown = <String>{};
+
+  /// 日志 ID → 别名归一前的原值日志 ID（只记与 ID 不同的；[SrsDbStore._prefetchLogs]）。
+  final Map<String, String> orderIds = <String, String>{};
+
+  /// [SrsCardHistory] 的 `orderIdOf`：同一事件的副本按原值 ID 选代表，与内核同序（BUG-5476）。
+  String? orderIdOf(String logId) => orderIds[logId];
 }
 
 // ------------------------------------------------------------------ 内核命令的后台 isolate 入口

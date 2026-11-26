@@ -229,7 +229,7 @@ void main() {
           await loadCollectionEpisodeSlots(
             repository: repo,
             collectionId: col,
-            loadRemoteVideos: () async => remoteList,
+            loadRemoteMembers: (List<String> ids) async => remoteList,
           );
       expect(slots.length, 3);
       expect(await visibleCount(online: true), slots.length);

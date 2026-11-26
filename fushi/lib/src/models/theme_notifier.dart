@@ -2614,9 +2614,12 @@ class ThemeNotifier extends ChangeNotifier {
       ShellLayoutInstallDefault.fresh;
 
   /// 没选过库页布局时生效的布局（新安装拼贴、升级上来的老用户封面网格），也是
-  /// 设置页「恢复默认」的目标。
-  ShellContentLayout get shellContentLayoutDefault =>
-      shellLayoutInstallDefault.layout;
+  /// 设置页「恢复默认」的目标。Apple（Cupertino，`design_system = glass`）设计
+  /// 系统下一律封面网格（用户 2026-11-25「cupertino 默认用封面网格」）：拼贴是
+  /// M3E 的色块语言，与 iOS 27 的封面墙不搭；选过布局的照旧按所选。
+  ShellContentLayout get shellContentLayoutDefault => designSystem == 'glass'
+      ? ShellContentLayout.grid
+      : shellLayoutInstallDefault.layout;
 
   ShellContentLayout get shellContentLayout => ShellContentLayout.fromPref(
     _get('shell_content_layout', defaultValue: '') as String,

@@ -209,7 +209,7 @@ class _VideoWorkDetailPageState extends State<VideoWorkDetailPage> {
                 loadEpisodes: () => loadCollectionEpisodeSlots(
                   repository: widget.repository,
                   collectionId: collection.id,
-                  loadRemoteVideos: widget.remote?.loadRemoteVideos,
+                  loadRemoteMembers: widget.remote?.loadRemoteMembers,
                 ),
                 remote: widget.remote,
                 onOpenEpisode: (VideoBookRow episode) {

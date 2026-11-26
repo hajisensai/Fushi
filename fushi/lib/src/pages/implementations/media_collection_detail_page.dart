@@ -116,6 +116,7 @@ import 'package:fushi/src/sync/remote_download_progress_badge.dart';
 import 'package:fushi/src/utils/components/fushi_adaptive_action_strip.dart';
 import 'package:fushi/src/utils/components/fushi_reorderable_grid.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
+import 'package:fushi/src/utils/components/fushi_icon_button.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/utils/misc/reveal_in_file_manager.dart'
     show currentRevealHost, revealFirstOf;
@@ -150,8 +151,9 @@ import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service.dart'
     show
         AppVideoSubtitleService,
         AppVideoSubtitleTarget,
-        AppVideoSubtitleTargetNotFound,
-        appVideoSubtitleService;
+        AppVideoSubtitleTargetNotFound;
+import 'package:fushi/src/media/video/subtitle/app_video_subtitle_service_entry.dart'
+    show appVideoSubtitleService;
 import 'package:fushi/src/media/video/subtitle/video_subtitle_generate_sheet.dart'
     show PrefsRepoVideoSubtitleGeneratePrefs, showVideoSubtitleGenerateSheet;
 import 'package:fushi/src/pages/implementations/ai_settings_route.dart'
@@ -169,7 +171,7 @@ import 'package:fushi/src/media/links/media_link_entries.dart'
 import 'package:fushi/src/media/links/media_link_inference_host.dart'
     show mediaLinkInferCallback;
 import 'package:fushi/src/media/links/media_link_opener.dart'
-    show mediaLinkSearchAction, openMediaLinkEntry;
+    show mediaLinkRemoteVideoSource, mediaLinkSearchAction, openMediaLinkEntry;
 import 'package:fushi/src/media/links/media_links_section.dart'
     show MediaLinksSection;
 
@@ -469,9 +471,9 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
   Set<String> _peerCopyKeys = const <String>{};
 
   /// 重算 [_peerCopyKeys]。在 [_reload] 画完之后后台跑、不挡首帧：
-  /// [loadCollectionEpisodeSlots] 在全员本地时刻意不问远端清单，这里只在库页
-  /// 注入了「删除本机副本」时才问一次（共享远端库缓存，TTL 内不打网络）；拉不到
-  /// 清单就当没有副本——宁可不给入口，也不把本机原件当副本删。
+  /// [loadCollectionEpisodeSlots] 在全员本地时刻意不问远端，这里只在库页注入了
+  /// 「删除本机副本」时才问一次、且只问这些成员的 id（共享远端库缓存，TTL 内不打
+  /// 网络）；问不到就当没有副本——宁可不给入口，也不把本机原件当副本删。
   Future<void> _refreshPeerCopyKeys(List<VideoBookRow> members) async {
     final CollectionRemoteContext? remote = widget.remote;
     Set<String> keys = const <String>{};
@@ -479,9 +481,11 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
         remote.deleteLocalCopy != null &&
         members.isNotEmpty) {
       try {
+        final List<RemoteVideoInfo> onPeer = await remote.loadRemoteMembers(
+          <String>[for (final VideoBookRow member in members) member.bookUid],
+        );
         final Set<String> remoteIds = <String>{
-          for (final RemoteVideoInfo info in await remote.loadRemoteVideos())
-            info.id,
+          for (final RemoteVideoInfo info in onPeer) info.id,
         };
         keys = <String>{
           for (final VideoBookRow member in members)
@@ -1765,7 +1769,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
           loadEpisodes: () => loadCollectionEpisodeSlots(
             repository: repo,
             collectionId: target.id,
-            loadRemoteVideos: widget.remote?.loadRemoteVideos,
+            loadRemoteMembers: widget.remote?.loadRemoteMembers,
           ),
           // 远端上下文原样传下去：相关作品也可能是「只在对端」的那一部。
           remote: widget.remote,
@@ -3869,15 +3873,13 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             context,
             MediaQuery.sizeOf(context).width,
           ))
-        FushiIconButtonControl(
+        FushiIconButton(
           key: const ValueKey<String>('collection-detail-layout-toggle'),
           tooltip: _posterLayout
               ? t.video_detail_layout_two_pane
               : t.video_detail_layout_poster,
-          icon: FushiIcon(
-            _posterLayout ? FushiIcons.viewColumn : FushiIcons.viewAgenda,
-          ),
-          onPressed: () => unawaited(_togglePosterLayout()),
+          icon: _posterLayout ? FushiIcons.viewColumn : FushiIcons.viewAgenda,
+          onTap: () => unawaited(_togglePosterLayout()),
         ),
       _buildSortMenu(),
       // 管理动作默认全部平铺，页头放不下才从最低优先级起收进「⋯」
@@ -4083,6 +4085,7 @@ class _MediaCollectionDetailPageState extends State<MediaCollectionDetailPage>
             key: collectionTagEntryKey(widget.collection.id),
           );
           return MediaLinksSection(
+            remoteVideoSource: mediaLinkRemoteVideoSource(ref: ref),
             database: widget.database,
             self: self,
             onOpen: (MediaLinkEntry e) =>

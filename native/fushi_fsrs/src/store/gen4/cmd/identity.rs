@@ -292,18 +292,27 @@ fn join_json(j: &JoinRow) -> Value {
 }
 
 /// `collection_info`：集合 [col] 的标识、目录名、盐集合、绑定状态与日志里的全部 `Join`。一个读快照。
-pub fn collection_info(t: &Truth<'_>, col: i64) -> Result<Value, String> {
+pub fn collection_info(t: &Truth<'_>, col: i64, req: &Value) -> Result<Value, String> {
     snapshot(t, |t| {
         let b = binding_of(t, col)?;
         let joins = Index::new(t, col).joins()?;
-        Ok(json!({
+        let mut info = json!({
             "profile": b.profile,
             "collection": b.collection.text(),
             "dir": b.dir,
             "salts": b.salts,
             "binding": t.binding_state(col)?.map(|s| s.json()),
             "joins": joins.iter().map(join_json).collect::<Vec<_>>(),
-        }))
+        });
+        if req.get("includeOtherCollections").and_then(Value::as_bool) == Some(true) {
+            info["otherCollections"] = json!(
+                t.other_collections(col)?
+                    .iter()
+                    .map(Id::text)
+                    .collect::<Vec<_>>()
+            );
+        }
+        Ok(info)
     })
 }
 

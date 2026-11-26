@@ -4709,13 +4709,15 @@ const int kFushiHeaderMoreEntryOverflowPriority = -1000;
 
 /// 「⋯」菜单项 → 平铺的图标钮：文案只进 tooltip（[FushiIconButton] 由它出
 /// Semantics），沿用菜单项的 key（测试 / 焦点驱动按同一个 key 定位，无论它此刻
-/// 平铺还是在菜单里）、同一个回调、同一个禁用态。
+/// 平铺还是在菜单里）、同一个回调、同一个禁用态。[FushiHeaderMoreEntry.busy]
+/// 时这颗按钮置灰不可重入，并恒外露（进行中的状态不能藏进「⋯」）。
 FushiIconButton _headerActionOfMoreEntry(FushiHeaderMoreEntry entry) =>
     FushiIconButton(
       key: entry.key,
       icon: entry.icon,
       tooltip: entry.label,
-      enabled: entry.enabled,
+      enabled: entry.enabled && !entry.busy,
+      alwaysVisible: entry.busy,
       overflowPriority: kFushiHeaderMoreEntryOverflowPriority,
       onTap: entry.onSelected,
     );
@@ -4764,6 +4766,14 @@ FushiResolvedHeaderActions fushiResolveHeaderActions(
   bool collapsePinned = false,
   FushiHeaderOverflowFit? fit,
 }) {
+  // 页头动作只收得进「⋯」的是 [FushiIconButton]（菜单项从它的图标 + 文案派生）。
+  // [FushiIconButtonControl] 派生不出菜单项，放不下时只能横滑、右侧按钮被藏起
+  // 来（用户 2026-11-25 合集页实报）：页面顶栏动作一律用 [FushiIconButton]。
+  assert(
+    !actions.any((Widget action) => action is FushiIconButtonControl),
+    'Header actions must be FushiIconButton, not FushiIconButtonControl: '
+    'only FushiIconButton can collapse into the overflow menu.',
+  );
   // 页面自带的「⋯」：它的项展开进动作行（[flat]），记下每项在行里的位置与
   // 「⋯」该落的位置（紧跟在它的项后面，即它原来的位置）。
   final int pageMoreAt = actions.indexWhere(

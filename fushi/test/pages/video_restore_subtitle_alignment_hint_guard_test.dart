@@ -16,12 +16,27 @@ void main() {
     final String body = maskComments(
       methodBody(src, '_restorePersistedSubtitle({'),
     );
-    expect(body, isNot(contains('loadCuesForSource(')));
+    final String chosen = maskComments(
+      methodBody(src, '_loadChosenSubtitleForLoad(SubtitleSource chosen'),
+    );
+    final String inherit = maskComments(
+      methodBody(src, '_restoreInheritedSubtitle({'),
+    );
+    for (final String b in <String>[body, chosen, inherit]) {
+      expect(b, isNot(contains('loadCuesForSource(')));
+    }
     expect(
       RegExp(r'_loadCuesForSourceInLoad\(').allMatches(body),
-      hasLength(2),
-      reason: '导入字幕捷径与同目录枚举选中的源各一处',
+      hasLength(1),
+      reason: '导入字幕捷径一处',
     );
+    expect(
+      RegExp(r'_loadCuesForSourceInLoad\(').allMatches(chosen),
+      hasLength(1),
+      reason: '同目录枚举 / 沿用兄弟集选中的源经共用 helper 一处（BUG-5464）',
+    );
+    expect(body, contains('_loadChosenSubtitleForLoad('));
+    expect(inherit, contains('_loadChosenSubtitleForLoad('));
   });
 
   test('载入链读法：外挂档注入 _readSubtitleTextForLoad，内嵌轨照旧', () {

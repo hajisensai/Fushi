@@ -91,11 +91,11 @@ void main() {
         loadEpisodes: () => loadCollectionEpisodeSlots(
           repository: repo,
           collectionId: collectionId,
-          loadRemoteVideos: () async => remoteVideos,
+          loadRemoteMembers: (List<String> ids) async => remoteVideos,
         ),
         onOpenEpisode: (VideoBookRow _) {},
         remote: CollectionRemoteContext(
-          loadRemoteVideos: () async => remoteVideos,
+          loadRemoteMembers: (List<String> ids) async => remoteVideos,
           openEpisode:
               onOpenRemote ??
               (RemoteVideoInfo _, List<RemoteVideoInfo> __, int ___) {},
@@ -123,7 +123,7 @@ void main() {
     final List<CollectionEpisodeSlot> slots = await loadCollectionEpisodeSlots(
       repository: repo,
       collectionId: collectionId,
-      loadRemoteVideos: () async => <RemoteVideoInfo>[
+      loadRemoteMembers: (List<String> ids) async => <RemoteVideoInfo>[
         remoteEpisode('video/e1', 'Show 01', 0),
         remoteEpisode('video/e3', 'Show 03', 2),
       ],
@@ -165,7 +165,7 @@ void main() {
     final List<CollectionEpisodeSlot> slots = await loadCollectionEpisodeSlots(
       repository: repo,
       collectionId: collectionId,
-      loadRemoteVideos: () async => throw Exception('offline'),
+      loadRemoteMembers: (List<String> ids) async => throw Exception('offline'),
     );
 
     expect(

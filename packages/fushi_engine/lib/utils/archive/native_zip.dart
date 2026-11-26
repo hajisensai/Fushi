@@ -263,7 +263,11 @@ String? zipEntryOutputPath(String outputDir, String entryName) {
 /// 与 archive 的 `extractFileToDisk` 对齐的语义：只写常规文件（目录按需创建）、
 /// 越出 [outputDir] 的条目跳过；不还原符号链接（本仓的导入源都不需要，且符号链接
 /// 是 zip-slip 的另一条路）。
-void extractZipFileToDirectory(String zipPath, String outputDir) {
+void extractZipFileToDirectory(
+  String zipPath,
+  String outputDir, {
+  bool verifyCrc32 = false,
+}) {
   Directory(outputDir).createSync(recursive: true);
   final InputFileStream input = InputFileStream(zipPath);
   try {
@@ -276,7 +280,7 @@ void extractZipFileToDirectory(String zipPath, String outputDir) {
         continue;
       }
       if (file.isSymbolicLink) continue;
-      extractZipEntryToFile(file, target);
+      extractZipEntryToFile(file, target, verifyCrc32: verifyCrc32);
     }
   } finally {
     input.closeSync();

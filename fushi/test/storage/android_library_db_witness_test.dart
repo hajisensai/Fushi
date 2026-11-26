@@ -15,6 +15,28 @@ void main() {
   const String internal = AppPaths.androidDocumentsLocationInternal;
   const String external = AppPaths.androidDocumentsLocationExternal;
 
+  test('tallyRoots：只在恰好一个根存在的尾段才给那个根记票', () {
+    final Set<String> existing = <String>{
+      p.join('/a', 'fushi_books', 'k1'),
+      p.join('/b', 'fushi_books', 'k2'),
+      p.join('/c', 'fushi_books', 'k2'),
+      p.join('/c', 'fushi_books', 'k3'),
+    };
+    final ({int sampled, List<int> onlyIn}) v =
+        AndroidLibraryDbWitness.tallyRoots(
+          storedPaths: <String>[
+            '/x/fushi_books/k1',
+            '/x/fushi_books/k2',
+            '/x/fushi_books/k3',
+            '/x/fushi_books/k4',
+          ],
+          roots: <String>['/a', '/b', '/c'],
+          exists: existing.contains,
+        );
+    expect(v.sampled, 4);
+    expect(v.onlyIn, <int>[1, 0, 1]);
+  });
+
   group('reconcileAndroidDocumentsLocation 两边都有书时听主库的', () {
     test('主库里的书多数只在另一个根 → 改到另一个根', () {
       expect(

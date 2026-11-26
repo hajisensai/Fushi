@@ -1065,38 +1065,38 @@ class _MediaCollectionGridDetailPageState
   /// 裸图标，不装胶囊底。「编辑标签」只在 hero 一处（见 [_buildAppBar]）。
   List<Widget> _headerActions(List<CollectionMemberEntry> arranged) {
     return <Widget>[
-      FushiIconButtonControl(
+      FushiIconButton(
         key: const ValueKey<String>('collection_detail_rename'),
         tooltip: t.rename_collection,
-        icon: const FushiIcon(FushiIcons.rename),
-        onPressed: renameDetailCollection,
+        icon: FushiIcons.rename,
+        onTap: renameDetailCollection,
       ),
       if (_sort != CollectionMemberSort.manual)
-        FushiIconButtonControl(
+        FushiIconButton(
           key: const ValueKey<String>('collection_detail_header_save_order'),
           tooltip: t.collection_detail_save_order,
-          icon: const FushiIcon(FushiIcons.download),
-          onPressed: () => _saveViewOrder(arranged),
+          icon: FushiIcons.download,
+          onTap: () => _saveViewOrder(arranged),
         ),
       if (_artScrapeAvailable) ...<Widget>[
-        FushiIconButtonControl(
+        FushiIconButton(
           key: const ValueKey<String>('collection_detail_art_scrape'),
           tooltip: t.collection_art_scrape_action,
-          icon: const FushiIcon(FushiIcons.imageSearch),
-          onPressed: _scrapeArt,
+          icon: FushiIcons.imageSearch,
+          onTap: _scrapeArt,
         ),
-        FushiIconButtonControl(
+        FushiIconButton(
           key: const ValueKey<String>('collection_detail_art_clear'),
           tooltip: t.collection_art_scrape_clear,
-          icon: const FushiIcon(FushiIcons.deleteSweep),
-          onPressed: _clearArt,
+          icon: FushiIcons.deleteSweep,
+          onTap: _clearArt,
         ),
       ],
-      FushiIconButtonControl(
+      FushiIconButton(
         key: const ValueKey<String>('collection_detail_delete'),
         tooltip: t.delete_collection,
-        icon: const FushiIcon(FushiIcons.delete),
-        onPressed: _delete,
+        icon: FushiIcons.delete,
+        onTap: _delete,
       ),
     ];
   }

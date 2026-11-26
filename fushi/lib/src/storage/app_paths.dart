@@ -1,5 +1,6 @@
 import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 
 import 'package:flutter/foundation.dart';
 import 'package:fushi_core/fushi_core.dart'
@@ -206,6 +207,12 @@ class AppPaths {
   /// （存量安装）或 `Fushi`（新装/已迁移）。
   static const String documentsContainerPrefKey = 'documents_container';
 
+  /// nested 容器名：新装 / 已迁移。
+  static const String documentsContainerFushi = 'Fushi';
+
+  /// nested 容器名：改名前的存量安装（目录冻结不改）。
+  static const String documentsContainerHibiki = 'Hibiki';
+
   /// 本进程已判定的容器名；[_ensureDocumentsLayoutDecided] 启动期写一次。
   static String? _documentsContainerName;
 
@@ -326,10 +333,16 @@ class AppPaths {
       final AndroidLibraryAnchor? anchor = await readAndroidLibraryAnchor(
         support,
       );
-      // 布局（flat / nested）只有 Android 书库迁回内部时会改，同样以锚点文件为准。
+      // 内部书库的布局（flat / nested）与容器名（Fushi / Hibiki）同样以锚点文件为准：
+      // 它们在 SharedPreferences 里的那份会被别的进程的旧副本整份冲掉（RCv76PPoiJ），
+      // 冲掉后布局判定会因为主库存在而回落成 flat，书库根就指到 `app_flutter` 本身。
       final String? anchoredLayout = anchor?.layout;
       if (anchoredLayout != null) {
         _legacyFlatDocumentsRoot = anchoredLayout == documentsLayoutFlat;
+      }
+      final String? anchoredContainer = anchor?.container;
+      if (anchoredContainer != null) {
+        _documentsContainerName = anchoredContainer;
       }
       final String? stored =
           anchor?.location ??
@@ -339,18 +352,59 @@ class AppPaths {
         existingInstall: stored != null || await existingInstallHasDatabase(),
       );
       _androidExternalFilesDir = await getExternalStorageDirectory();
-      final String location = await _reconcileAndroidLocationWithDisk(decided);
-      _androidDocumentsLocation = location;
-      if (anchor?.location != location) {
-        try {
-          await writeAndroidLibraryAnchor(
-            support,
-            AndroidLibraryAnchor(location: location, layout: anchoredLayout),
+      final Directory? ext = _androidExternalFilesDir;
+      final List<AndroidInternalLibraryCandidate> candidates =
+          androidInternalLibraryCandidates(
+            platformDocuments: await getApplicationDocumentsDirectory(),
+            configuredLayout: await _useLegacyFlatDocumentsRoot()
+                ? documentsLayoutFlat
+                : documentsLayoutNested,
+            configuredContainer: defaultDocumentsChildSegments.first,
           );
+      final AndroidLibraryReconciliation result =
+          await reconcileAndroidLibraryRoots(
+            anchored: decided,
+            external: ext == null
+                ? null
+                : Directory(p.join(ext.path, androidExternalDocumentsChild)),
+            internalCandidates: candidates,
+            supportRoot: support,
+          );
+      androidLocationCorrections.addAll(result.notes);
+      androidStrayLibraryRoot = result.strayRoot;
+      _androidDocumentsLocation = result.location;
+      final AndroidInternalLibraryCandidate chosen = result.internal;
+      _legacyFlatDocumentsRoot = chosen.layout == documentsLayoutFlat;
+      _documentsContainerName = chosen.container;
+      final AndroidLibraryAnchor settled = AndroidLibraryAnchor(
+        location: result.location,
+        layout: chosen.layout,
+        container: chosen.container,
+      );
+      if (anchor != settled) {
+        try {
+          await writeAndroidLibraryAnchor(support, settled);
         } catch (e) {
           // 写失败只意味着下次启动再判一次（判据与磁盘对账都是确定的）。
           debugPrint('AppPaths: 固化 Android 书库位置失败（下次启动重新判定）: $e');
         }
+      }
+      // prefs 里那份布局 / 容器跟上最终结论，免得不经锚点的读者（布局判定的兜底、桌面
+      // 共用的 helper）读到旧值。不只在对账改了布局时才同步：prefs 被冲掉后
+      // [_ensureDocumentsLayoutDecided] 已经先把重判出的（错的）flat 写了回去，锚点在内存
+      // 里纠正了它，prefs 却一直留着错值。尽力而为，真相源是锚点文件。
+      try {
+        final SharedPreferences? prefs = await _prefsOrNull();
+        if (prefs != null) {
+          if (prefs.getString(documentsLayoutPrefKey) != chosen.layout) {
+            await prefs.setString(documentsLayoutPrefKey, chosen.layout);
+          }
+          if (prefs.getString(documentsContainerPrefKey) != chosen.container) {
+            await prefs.setString(documentsContainerPrefKey, chosen.container);
+          }
+        }
+      } catch (e) {
+        debugPrint('AppPaths: 同步纠正后的布局 / 容器到 prefs 失败: $e');
       }
     }
     if (_androidDocumentsLocation != androidDocumentsLocationExternal) return;
@@ -362,67 +416,197 @@ class AppPaths {
     }
   }
 
-  /// 锚定位置 [anchored] 与磁盘对账，返回最终位置；纠正时往
-  /// [androidLocationCorrections] 记一行。外部存储不可用时不对账（无从比较）。
+  /// 内部书库根的所有候选，**第一个是当前配置**（布局锚点 + 容器锚点推出来的那个），
+  /// 其后是另外几种历史布局：flat（`app_flutter` 本身）、nested `Fushi/data`、nested
+  /// `Hibiki/data`，按根路径去重。
   ///
-  /// 两个根都有书库文件时让主库作证（[AndroidLibraryDbWitness]），并把落选的根记进
-  /// [androidStrayLibraryRoot]，开库后由 `AndroidStrayLibraryMerge` 把散落在那边的书并回来。
-  static Future<String> _reconcileAndroidLocationWithDisk(
-    String anchored,
-  ) async {
-    androidStrayLibraryRoot = null;
-    final Directory? ext = _androidExternalFilesDir;
-    if (ext == null) return anchored;
-    final Directory external = Directory(
-      p.join(ext.path, androidExternalDocumentsChild),
+  /// 布局 / 容器锚点丢过的安装（多进程冲掉 prefs，见 [_ensureAndroidDocumentsLocationDecided]），
+  /// 「当前配置」指的是一个空目录，真书库在另一种布局下；对账只看当前配置就永远认定
+  /// 「内部没有书库」、不会自愈（#4366 指出，3.4.0-debug.32552 用户复现）。
+  static List<AndroidInternalLibraryCandidate>
+  androidInternalLibraryCandidates({
+    required Directory platformDocuments,
+    required String configuredLayout,
+    required String configuredContainer,
+  }) {
+    AndroidInternalLibraryCandidate candidate(
+      String layout,
+      String container,
+    ) => AndroidInternalLibraryCandidate(
+      layout: layout,
+      container: container,
+      root: layout == documentsLayoutFlat
+          ? platformDocuments
+          : Directory(p.join(platformDocuments.path, container, 'data')),
     );
-    final Directory internal = await _useLegacyFlatDocumentsRoot()
-        ? await getApplicationDocumentsDirectory()
-        : await defaultLocationDocumentsRoot();
+    final List<AndroidInternalLibraryCandidate> all =
+        <AndroidInternalLibraryCandidate>[
+          candidate(configuredLayout, configuredContainer),
+          candidate(documentsLayoutFlat, configuredContainer),
+          candidate(documentsLayoutNested, documentsContainerFushi),
+          candidate(documentsLayoutNested, documentsContainerHibiki),
+        ];
+    final Set<String> seen = <String>{};
+    return <AndroidInternalLibraryCandidate>[
+      for (final AndroidInternalLibraryCandidate c in all)
+        if (seen.add(p.normalize(c.root.path))) c,
+    ];
+  }
+
+  /// Android 书库位置锚点与磁盘对账（启动期，[_ensureAndroidDocumentsLocationDecided]）。
+  ///
+  /// [internalCandidates] 第一个是当前配置的内部根（[androidInternalLibraryCandidates]）。
+  /// [external] 为 null（外部存储不可用）时外部不参与对账；锚点指外部时原样沿用（随后
+  /// [_ensureAndroidDocumentsLocationDecided] 抛 [DataRootUnavailableException]）。
+  ///
+  /// **所有候选根一起探**（外部 + 每种内部布局），不因锚定的根里有文件就停：错根运行
+  /// 期间 app 自己也会往里写证据文件（`srs_backups` 自动备份、`thumbnails` 等），只要
+  /// 锚定的根「有文件」就不看别处，真书库在另一种布局下时照样永不自愈。
+  ///
+  ///  - 只有一个根有书库文件：它胜出；
+  ///  - 多个根都有：让主库对这些根一起计票（[AndroidLibraryDbWitness.probeRoots]），
+  ///    「只在某个根存在」的书严格最多的根胜出；平局或没有证据时，锚定的根在其中就沿用，
+  ///    否则取探测顺序里的第一个。主库作过证时，票数次多的落选根交给散书合并；
+  ///  - 都没有：沿用锚点。
+  ///
+  /// 锚定的根探不清（[LibraryProbe.unknown]）按「有书」参与（保守：不因一次 IO 抖动离开
+  /// 它）。除了「锚定的根有书、别处都没有」这一常态，其余情形都把每个根的探测结论写进
+  /// [AndroidLibraryReconciliation.notes]，反馈日志里能看出书库到底在不在磁盘上。
+  static Future<AndroidLibraryReconciliation> reconcileAndroidLibraryRoots({
+    required String anchored,
+    required Directory? external,
+    required List<AndroidInternalLibraryCandidate> internalCandidates,
+    required Directory supportRoot,
+  }) async {
+    final AndroidInternalLibraryCandidate configured = internalCandidates.first;
     final bool anchoredExternal = anchored == androidDocumentsLocationExternal;
-    final Directory anchoredRoot = anchoredExternal ? external : internal;
-    final Directory otherRoot = anchoredExternal ? internal : external;
-    final bool anchoredHasLibrary = await hasLibraryFiles(
-      anchoredRoot,
-      onTimeout: true,
-    );
-    // 另一个根常态是空的（迁移成功后源已删空 / 从没用过），探测只是二十来次 exists。
-    final bool otherHasLibrary = await hasLibraryFiles(
-      otherRoot,
-      onTimeout: false,
-    );
-    AndroidLibraryDbWitness? witness;
-    if (anchoredHasLibrary && otherHasLibrary) {
-      witness = await AndroidLibraryDbWitness.probe(
-        supportRoot: await _resolveSupportRoot(),
-        anchoredRoot: anchoredRoot,
-        otherRoot: otherRoot,
+    if (anchoredExternal && external == null) {
+      return AndroidLibraryReconciliation(
+        location: anchored,
+        internal: configured,
       );
     }
-    final String location = reconcileAndroidDocumentsLocation(
-      anchored: anchored,
-      anchoredHasLibrary: anchoredHasLibrary,
-      otherHasLibrary: otherHasLibrary,
-      dbWitness: witness,
-    );
-    final bool switched = location != anchored;
-    final Directory chosenRoot = switched ? otherRoot : anchoredRoot;
-    final Directory losingRoot = switched ? anchoredRoot : otherRoot;
-    if (anchoredHasLibrary && otherHasLibrary) {
-      androidLocationCorrections.add(
-        '两个书库根都有书库文件（锚定 $anchored：${anchoredRoot.path}；另一个：'
-        '${otherRoot.path}），主库作证 ${witness ?? '无（主库读不到）'} → '
-        '${switched ? '改为' : '沿用'} $location',
+    // 探测顺序：锚定的根在最前，其后是对面与其余内部布局。
+    final List<_AndroidLibraryRootCandidate> roots =
+        <_AndroidLibraryRootCandidate>[
+          if (anchoredExternal)
+            _AndroidLibraryRootCandidate(
+              androidDocumentsLocationExternal,
+              configured,
+              external!,
+            ),
+          _AndroidLibraryRootCandidate(
+            androidDocumentsLocationInternal,
+            configured,
+            configured.root,
+          ),
+          if (!anchoredExternal && external != null)
+            _AndroidLibraryRootCandidate(
+              androidDocumentsLocationExternal,
+              configured,
+              external,
+            ),
+          for (final AndroidInternalLibraryCandidate c in internalCandidates)
+            if (!identical(c, configured))
+              _AndroidLibraryRootCandidate(
+                androidDocumentsLocationInternal,
+                c,
+                c.root,
+              ),
+        ];
+    final _AndroidLibraryRootCandidate anchoredRoot = roots.first;
+    final List<String> probes = <String>[];
+    final List<_AndroidLibraryRootCandidate> found =
+        <_AndroidLibraryRootCandidate>[];
+    for (final _AndroidLibraryRootCandidate r in roots) {
+      final LibraryProbe probe = await probeLibraryFiles(r.root);
+      probes.add('${r.root.path}=${probe.name}');
+      if (probe == LibraryProbe.found ||
+          (identical(r, anchoredRoot) && probe == LibraryProbe.unknown)) {
+        found.add(r);
+      }
+    }
+    String describe(_AndroidLibraryRootCandidate r) =>
+        r.location == androidDocumentsLocationInternal
+        ? '$androidDocumentsLocationInternal（布局 ${r.internal.layout}，'
+              '容器 ${r.internal.container}）'
+        : r.location;
+    final String probeSummary = '探测：${probes.join('，')}';
+
+    if (found.isEmpty) {
+      return AndroidLibraryReconciliation(
+        location: anchored,
+        internal: configured,
+        notes: <String>[
+          '锚点 $anchored 指向的书库根 ${anchoredRoot.root.path} 里没有书库文件，'
+              '其余候选也都没有 → 沿用；$probeSummary',
+        ],
       );
+    }
+    if (found.length == 1) {
+      final _AndroidLibraryRootCandidate winner = found.single;
+      if (identical(winner, anchoredRoot)) {
+        return AndroidLibraryReconciliation(
+          location: anchored,
+          internal: configured,
+        );
+      }
+      return AndroidLibraryReconciliation(
+        location: winner.location,
+        internal: winner.internal,
+        notes: <String>[
+          '锚点 $anchored 指向的书库根 ${anchoredRoot.root.path} 里没有书库文件，'
+              '${winner.root.path} 里有 → 改为 ${describe(winner)}；$probeSummary',
+        ],
+      );
+    }
+
+    // 多个根都有书库文件：主库作证。
+    final List<int>? votes = await AndroidLibraryDbWitness.probeRoots(
+      supportRoot: supportRoot,
+      roots: <Directory>[
+        for (final _AndroidLibraryRootCandidate r in found) r.root,
+      ],
+    );
+    final bool anchoredFound = identical(found.first, anchoredRoot);
+    int winnerIndex = 0;
+    if (votes != null) {
+      final int best = votes.reduce((int a, int b) => a > b ? a : b);
+      final List<int> leaders = <int>[
+        for (int i = 0; i < votes.length; i++)
+          if (votes[i] == best) i,
+      ];
+      // 严格最多才改；平局（迁移中断，两边是同一批文件）沿用锚定的根。
+      if (leaders.length == 1) winnerIndex = leaders.single;
+    }
+    // 没有证据 / 平局：锚定的根在其中就是它（found.first），否则取探测顺序第一个。
+    final _AndroidLibraryRootCandidate winner = found[winnerIndex];
+    _AndroidLibraryRootCandidate? stray;
+    if (votes != null) {
+      int strayVotes = -1;
+      for (int i = 0; i < found.length; i++) {
+        if (i == winnerIndex) continue;
+        if (votes[i] > strayVotes) {
+          strayVotes = votes[i];
+          stray = found[i];
+        }
+      }
+    }
+    final bool switched = !identical(winner, anchoredRoot);
+    return AndroidLibraryReconciliation(
+      location: winner.location,
+      internal: switched ? winner.internal : configured,
+      notes: <String>[
+        '${found.length} 个书库根都有书库文件'
+            '（${anchoredFound ? '含' : '不含'}锚定的 $anchored：${anchoredRoot.root.path}），'
+            '主库作证 ${votes == null ? '无（主库读不到）' : <String>[for (int i = 0; i < found.length; i++) '${found[i].root.path}=${votes[i]}'].join('，')}'
+            ' → ${switched ? '改为' : '沿用'} ${describe(winner)}'
+            '${stray == null ? '' : '，落选根 ${stray.root.path} 交给散书合并'}'
+            '；$probeSummary',
+      ],
       // 只有主库作过证才去合并：读不到主库时谁对谁错没有依据，宁可原样不动。
-      if (witness != null) androidStrayLibraryRoot = losingRoot;
-    } else if (switched) {
-      androidLocationCorrections.add(
-        '锚点 $anchored 指向的书库根 ${anchoredRoot.path} 里没有书库文件，'
-        '${chosenRoot.path} 里有 → 改为 $location',
-      );
-    }
-    return location;
+      strayRoot: stray?.root,
+    );
   }
 
   /// 纯判定（测试钉住）：
@@ -470,48 +654,94 @@ class AppPaths {
   /// [root] 下 Fushi 自有顶层项（[fushiOwnedDocumentsEntries]，去掉
   /// [libraryEvidenceIgnoredEntries]）里是否至少有一个书库**文件**。只认文件不认目录：
   /// 启动期会顺手建出空的派生目录，那不是书库；`.nomedia` 占位也不算。
-  /// 遇到第一个文件就停；探测出错或超时返回 [onTimeout]（调用方按保守方向给）。
+  /// 遇到第一个文件就停；探不清（出错且没找到文件 / 超时）返回 [onTimeout]（调用方按
+  /// 保守方向给）。
   static Future<bool> hasLibraryFiles(
     Directory root, {
     required bool onTimeout,
     Duration timeout = const Duration(seconds: 5),
   }) async {
-    Future<bool> probe() async {
-      for (final String name in fushiOwnedDocumentsEntries) {
-        if (libraryEvidenceIgnoredEntries.contains(name)) continue;
-        final Directory dir = Directory(p.join(root.path, name));
-        if (!await dir.exists()) continue;
-        await for (final FileSystemEntity e in dir.list(
-          recursive: true,
-          followLinks: false,
-        )) {
-          if (e is File && isLibraryEvidenceFileName(p.basename(e.path))) {
-            return true;
-          }
-        }
-      }
-      return false;
-    }
-
-    try {
-      return await probe().timeout(timeout, onTimeout: () => onTimeout);
-    } catch (_) {
-      return onTimeout;
+    switch (await probeLibraryFiles(root, timeout: timeout)) {
+      case LibraryProbe.found:
+        return true;
+      case LibraryProbe.none:
+        return false;
+      case LibraryProbe.unknown:
+        return onTimeout;
     }
   }
 
-  /// Android 书库迁移前，固定目标 [target] 里第一个「[source] 里没有同名相对路径」的
-  /// 文件（相对 [target]）；没有返回 null。
+  /// [hasLibraryFiles] 的三态版本。逐个目录列举、各自容错：某个子目录列不出来（权限、
+  /// 遍历中被删、坏链接）只记一笔，不中断其余目录——旧实现一处出错就整体判「没有书库」，
+  /// 别的目录里明明有书也看不见。没找到文件但途中出过错 → [LibraryProbe.unknown]。
+  static Future<LibraryProbe> probeLibraryFiles(
+    Directory root, {
+    Duration timeout = const Duration(seconds: 5),
+  }) async {
+    Future<LibraryProbe> probe() async {
+      bool errored = false;
+      for (final String name in fushiOwnedDocumentsEntries) {
+        if (libraryEvidenceIgnoredEntries.contains(name)) continue;
+        final List<Directory> pending = <Directory>[
+          Directory(p.join(root.path, name)),
+        ];
+        while (pending.isNotEmpty) {
+          final Directory dir = pending.removeLast();
+          try {
+            if (!await dir.exists()) continue;
+            await for (final FileSystemEntity e in dir.list(
+              followLinks: false,
+            )) {
+              if (e is Directory) {
+                pending.add(e);
+              } else if (e is File &&
+                  isLibraryEvidenceFileName(p.basename(e.path))) {
+                return LibraryProbe.found;
+              }
+            }
+          } catch (_) {
+            errored = true;
+          }
+        }
+      }
+      return errored ? LibraryProbe.unknown : LibraryProbe.none;
+    }
+
+    try {
+      return await probe().timeout(
+        timeout,
+        onTimeout: () => LibraryProbe.unknown,
+      );
+    } catch (_) {
+      return LibraryProbe.unknown;
+    }
+  }
+
+  /// Android 书库迁移前，核实固定目标 [target] 能不能整树清掉；能清返回 null，不能清
+  /// 返回第一个拦路的文件（相对 [target]）与原因。
   ///
-  /// 目标是固定位置，上次中断的跨盘复制会留下半成品，必须先清掉引擎才肯搬。半成品一定
-  /// 是源的子集（复制阶段不删源）；目标里出现源里没有的文件，就说明它**不是**半成品
-  /// ——典型是锚点错指空根时，用户点「移回内部」，目标恰好就是真正的书库（#4366 指出）。
-  /// 这时绝不能整树删除。`.nomedia` 占位不计。
-  static Future<String?> firstAndroidMigrationTargetOnlyFile({
+  /// 目标是固定位置，上次中断的跨盘复制会留下半成品，必须先清掉引擎才肯搬。引擎复制
+  /// 阶段不删源、逐个文件直接写正式名（Android 上 `File.copy` 是 `O_TRUNC` 打开后顺序
+  /// 写），所以半成品里的每个文件都满足：源里有同一相对路径，且内容是源那份的**前缀**
+  /// ——复制完的文件与源逐字节相同，被打断的最后一个文件是源的开头一截。判据就是这条
+  /// 「目标里的每个字节都能在源里同位置找到」：清掉它不丢任何源里没有的数据。
+  ///
+  /// 拦下的两种情况，一个字节都不删：
+  ///  - [AndroidMigrationTargetBlockKind.targetOnly]：源里没有这个相对路径。典型是
+  ///    锚点错指空根时用户点「移回内部」，目标恰好就是真正的书库（#4366 指出）。
+  ///  - [AndroidMigrationTargetBlockKind.contentConflict]：源里有同名文件但内容对不上
+  ///    （比源长，或同一位置字节不同——同大小不同字节也算）。只比相对路径会把它当半成品
+  ///    整树删掉，目标里的完整正文 / 较新版本就没了（反馈 hjOW5xpIJ0）。
+  ///
+  /// 唯一放宽：前缀之后到末尾全是 0 字节，视为没写进去的空洞（预分配 / 掉电后文件长度
+  /// 先于数据落盘），这部分本来就没有数据。`.nomedia` 占位与 `*.fushi-part` 半截临时
+  /// 文件不计。先只比长度与存在性（便宜、遇到就收手），全部过关才逐字节比。
+  static Future<AndroidMigrationTargetBlocker?> androidMigrationTargetBlocker({
     required Directory target,
     required Directory source,
   }) async {
     if (!await target.exists()) return null;
+    final List<String> toCompare = <String>[];
     await for (final FileSystemEntity e in target.list(
       recursive: true,
       followLinks: false,
@@ -519,9 +749,87 @@ class AppPaths {
       if (e is! File) continue;
       if (!isLibraryEvidenceFileName(p.basename(e.path))) continue;
       final String rel = p.relative(e.path, from: target.path);
-      if (!await File(p.join(source.path, rel)).exists()) return rel;
+      final String sourcePath = p.join(source.path, rel);
+      switch (await FileSystemEntity.type(sourcePath, followLinks: false)) {
+        case FileSystemEntityType.notFound:
+          return AndroidMigrationTargetBlocker(
+            AndroidMigrationTargetBlockKind.targetOnly,
+            rel,
+          );
+        case FileSystemEntityType.file:
+          if (await e.length() > await File(sourcePath).length()) {
+            return AndroidMigrationTargetBlocker(
+              AndroidMigrationTargetBlockKind.contentConflict,
+              rel,
+            );
+          }
+          toCompare.add(rel);
+        default:
+          // 源里同名的是目录 / 链接：目标这份数据在源里找不到，不能当半成品删。
+          return AndroidMigrationTargetBlocker(
+            AndroidMigrationTargetBlockKind.contentConflict,
+            rel,
+          );
+      }
+    }
+    for (final String rel in toCompare) {
+      if (!await isInterruptedCopyOf(
+        File(p.join(target.path, rel)),
+        File(p.join(source.path, rel)),
+      )) {
+        return AndroidMigrationTargetBlocker(
+          AndroidMigrationTargetBlockKind.contentConflict,
+          rel,
+        );
+      }
     }
     return null;
+  }
+
+  /// [androidMigrationTargetBlocker] 放到后台 isolate 里跑：要逐字节读两边的副本，
+  /// 书库大时不能占 UI isolate。闭包只捕获两条路径字符串。
+  static Future<AndroidMigrationTargetBlocker?>
+  androidMigrationTargetBlockerInBackground({
+    required String target,
+    required String source,
+  }) => Isolate.run<AndroidMigrationTargetBlocker?>(
+    () => androidMigrationTargetBlocker(
+      target: Directory(target),
+      source: Directory(source),
+    ),
+  );
+
+  /// [copy] 是否可能是从 [original] 复制、复制中途被打断（或已复制完）留下的：长度不
+  /// 超过原件，且内容是原件的前缀；前缀之后允许到末尾全是 0（没写进去的空洞）。
+  /// 逐字节相同是它的特例。
+  static Future<bool> isInterruptedCopyOf(File copy, File original) async {
+    final int copyLength = await copy.length();
+    if (copyLength > await original.length()) return false;
+    final RandomAccessFile rc = await copy.open();
+    final RandomAccessFile ro = await original.open();
+    try {
+      const int chunk = 1 << 20;
+      bool inHole = false;
+      while (true) {
+        final Uint8List bc = await rc.read(chunk);
+        if (bc.isEmpty) return true;
+        final Uint8List bo = inHole ? Uint8List(0) : await ro.read(bc.length);
+        for (int i = 0; i < bc.length; i++) {
+          if (inHole) {
+            if (bc[i] != 0) return false;
+          } else if (i >= bo.length) {
+            // 原件在读的过程中变短了：对不上就按冲突处理。
+            return false;
+          } else if (bc[i] != bo[i]) {
+            if (bc[i] != 0) return false;
+            inHole = true;
+          }
+        }
+      }
+    } finally {
+      await rc.close();
+      await ro.close();
+    }
   }
 
   /// 本进程启动期对 Android 书库位置做过的纠正（AppModel 写进诊断日志）。
@@ -1513,10 +1821,16 @@ class AppPaths {
 /// Android 书库位置锚点（[AppPaths.androidLibraryAnchorFileName] 的内容）。
 ///
 /// 放在 support 根下的独立小文件里、原子替换，而不是 SharedPreferences：后者在多进程
-/// 下会被别的进程的旧内存副本整份覆盖（反馈 RCv76PPoiJ）。
+/// 下会被别的进程的旧内存副本整份覆盖（反馈 RCv76PPoiJ）。内部书库的布局与容器名也
+/// 记在这里，理由相同：它们在 prefs 里那份被冲掉后，布局判定会回落成 flat，书库根指到
+/// `app_flutter` 本身，书库在 UI 上整体消失。
 @immutable
 class AndroidLibraryAnchor {
-  const AndroidLibraryAnchor({required this.location, this.layout});
+  const AndroidLibraryAnchor({
+    required this.location,
+    this.layout,
+    this.container,
+  });
 
   /// [AppPaths.androidDocumentsLocationInternal] / [AppPaths.androidDocumentsLocationExternal]。
   final String location;
@@ -1525,6 +1839,10 @@ class AndroidLibraryAnchor {
   /// null = 不由锚点决定（沿用布局锚点的判定）。
   final String? layout;
 
+  /// 内部 nested 书库的容器名 [AppPaths.documentsContainerFushi] /
+  /// [AppPaths.documentsContainerHibiki]；null = 不由锚点决定（沿用容器锚点的判定）。
+  final String? container;
+
   static const Set<String> _locations = <String>{
     AppPaths.androidDocumentsLocationInternal,
     AppPaths.androidDocumentsLocationExternal,
@@ -1532,6 +1850,10 @@ class AndroidLibraryAnchor {
   static const Set<String> _layouts = <String>{
     AppPaths.documentsLayoutFlat,
     AppPaths.documentsLayoutNested,
+  };
+  static const Set<String> _containers = <String>{
+    AppPaths.documentsContainerFushi,
+    AppPaths.documentsContainerHibiki,
   };
 
   /// 解析文件内容；不是合法锚点返回 null。
@@ -1542,9 +1864,13 @@ class AndroidLibraryAnchor {
       final Object? location = decoded['location'];
       if (location is! String || !_locations.contains(location)) return null;
       final Object? layout = decoded['layout'];
+      final Object? container = decoded['container'];
       return AndroidLibraryAnchor(
         location: location,
         layout: layout is String && _layouts.contains(layout) ? layout : null,
+        container: container is String && _containers.contains(container)
+            ? container
+            : null,
       );
     } on FormatException {
       return null;
@@ -1554,14 +1880,122 @@ class AndroidLibraryAnchor {
   String encode() => jsonEncode(<String, String>{
     'location': location,
     if (layout != null) 'layout': layout!,
+    if (container != null) 'container': container!,
   });
 
   @override
   bool operator ==(Object other) =>
       other is AndroidLibraryAnchor &&
       other.location == location &&
-      other.layout == layout;
+      other.layout == layout &&
+      other.container == container;
 
   @override
-  int get hashCode => Object.hash(location, layout);
+  int get hashCode => Object.hash(location, layout, container);
+
+  @override
+  String toString() => encode();
+}
+
+/// [AppPaths.reconcileAndroidLibraryRoots] 的一个候选根：位置、内部布局与目录。
+class _AndroidLibraryRootCandidate {
+  const _AndroidLibraryRootCandidate(this.location, this.internal, this.root);
+
+  /// [AppPaths.androidDocumentsLocationInternal] / [AppPaths.androidDocumentsLocationExternal]。
+  final String location;
+
+  /// 选中后的内部布局（位置是外部时 = 当前配置）。
+  final AndroidInternalLibraryCandidate internal;
+
+  final Directory root;
+}
+
+/// [AppPaths.probeLibraryFiles] 的结论。
+enum LibraryProbe {
+  /// 至少有一个书库文件。
+  found,
+
+  /// 全部探完，一个书库文件都没有。
+  none,
+
+  /// 没找到书库文件，但途中有目录列不出来或超时：结论不可靠。
+  unknown,
+}
+
+/// Android 内部书库根的一个候选：布局、容器名与它推出来的目录。
+@immutable
+class AndroidInternalLibraryCandidate {
+  const AndroidInternalLibraryCandidate({
+    required this.layout,
+    required this.container,
+    required this.root,
+  });
+
+  /// [AppPaths.documentsLayoutFlat] / [AppPaths.documentsLayoutNested]。
+  final String layout;
+
+  /// [AppPaths.documentsContainerFushi] / [AppPaths.documentsContainerHibiki]（flat 布局
+  /// 下不影响 [root]，只是沿用当前值，供日后迁回内部 nested 时用）。
+  final String container;
+
+  /// 这个候选的书库根。
+  final Directory root;
+
+  @override
+  String toString() => '$layout/$container ${root.path}';
+}
+
+/// [AppPaths.reconcileAndroidLibraryRoots] 的结论。
+@immutable
+class AndroidLibraryReconciliation {
+  const AndroidLibraryReconciliation({
+    required this.location,
+    required this.internal,
+    this.notes = const <String>[],
+    this.strayRoot,
+  });
+
+  /// 最终的书库位置（internal / external）。
+  final String location;
+
+  /// 最终的内部书库根候选（位置是外部时，它是迁回内部时用的布局与容器）。
+  final AndroidInternalLibraryCandidate internal;
+
+  /// 写进诊断日志的对账说明（纠正、两边都有、锚定根是空的时各根的探测结论）。
+  final List<String> notes;
+
+  /// 两个根都有书、主库作证后落选的根，交给散书合并；null = 不合并。
+  final Directory? strayRoot;
+}
+
+/// [AppPaths.androidMigrationTargetBlocker] 拒绝清空固定目标的原因。
+enum AndroidMigrationTargetBlockKind {
+  /// 源里没有这个相对路径：目标可能才是真正的书库。
+  targetOnly,
+
+  /// 源里有同名文件但内容对不上（不是中断复制能留下的样子）：两份都要保留。
+  contentConflict,
+}
+
+/// 迁移前核实固定目标时拦路的第一个文件。
+@immutable
+class AndroidMigrationTargetBlocker {
+  const AndroidMigrationTargetBlocker(this.kind, this.file);
+
+  final AndroidMigrationTargetBlockKind kind;
+
+  /// 相对目标根的路径。
+  final String file;
+
+  @override
+  bool operator ==(Object other) =>
+      other is AndroidMigrationTargetBlocker &&
+      other.kind == kind &&
+      other.file == file;
+
+  @override
+  int get hashCode => Object.hash(kind, file);
+
+  @override
+  String toString() => 'AndroidMigrationTargetBlocker($kind, $file)';
 }

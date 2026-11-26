@@ -9,6 +9,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi/i18n/strings.g.dart';
 import 'package:fushi/src/media/video/web_video_hosting.dart';
 import 'package:fushi/src/media/video/web_video_mode_chip.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 import '../../helpers/source_guard.dart';
 
@@ -77,7 +78,7 @@ void main() {
       );
       await tester.pumpWidget(chip(WebVideoHosting.builtin));
       expect(find.text(t.web_video_mode_capture_title), findsOneWidget);
-      expect(find.byIcon(Icons.style_outlined), findsOneWidget);
+      expect(find.byIcon(FushiIcons.ankiCard), findsOneWidget);
       await tester.tap(find.byType(WebVideoModeChip));
       await tester.pump();
       expect(taps, 1);

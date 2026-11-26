@@ -18,7 +18,7 @@ import '../../pages/video_fushi_page_source_corpus.dart';
 /// 自动抽取）见哨兵都短路；恢复/菜单端识别哨兵=「关闭」。旧 `null` 仍按「无偏好→自动
 /// 选默认」处理（向后兼容铁律）。
 ///
-/// media_kit 无法 headless 跑（`_loadSingle`/`_loadEpisode`/`controller.load` 都驱动真
+/// media_kit 无法 headless 跑（`_loadSingle`/`controller.load` 都驱动真
 /// Player），故这里用纯函数断言哨兵语义 + 源码守卫钉两个自动向量的短路调用点。
 void main() {
   group('SubtitleSource.offSentinel 第三态语义（纯函数）', () {

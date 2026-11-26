@@ -138,8 +138,11 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   SrsLimitUnit _limitUnit = SrsLimitUnit.reviews;
   SrsReviewCardOrder _reviewCardOrder = SrsReviewCardOrder.retrievability;
 
-  /// 父牌组那条继承链上的参数归属牌组的算法（切到「随上级」后本牌组按它排程）；顶层为 null。
-  SrsAlgorithm? _parentOwnerAlgorithm;
+  /// 父牌组那条继承链上的参数归属牌组（切到「随上级」后本牌组按它的算法与步长排程）；顶层为 null。
+  SrsDeckView? _parentOwner;
+
+  /// [_parentOwner] 的算法。
+  SrsAlgorithm? get _parentOwnerAlgorithm => _parentOwner?.localAlgorithm;
 
   String? _learnError;
   String? _relearnError;
@@ -340,9 +343,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _reviewsPerDay.text = '${deck.reviewsPerDay}';
         _limitUnit = deck.limitUnit;
         final String? parent = tree.parentOf(deck.id);
-        _parentOwnerAlgorithm = parent == null
-            ? null
-            : tree.paramsOwner(parent).localAlgorithm;
+        _parentOwner = parent == null ? null : tree.paramsOwner(parent);
         _maxInterval.text = '${deck.maxIntervalDays}';
         _retention = deck.desiredRetention.clamp(0.7, 0.97);
         _algorithm = deck.localAlgorithm;
@@ -361,8 +362,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
         _newLoadAuto = deck.newCardPlan.autoLoad;
         _newLoadBudget.text = '${deck.newCardPlan.budgetPercent}';
         _newLoadBoost.text = '${deck.newCardPlan.boostPercent}';
-        // 步长按此刻生效的算法显示（没写过步长的 RWKV 牌组为空，见 [SrsDeckView.learnStepsFor]）；
-        // 要在 _algorithm / _ownParams / _hasParent 都就位之后算。
+        // 输入框是本牌组「单独设置」时自己的步长，按本牌组的算法显示（没写过步长的 RWKV 牌组为空，见
+        // [SrsDeckView.learnStepsFor]）；要在 _algorithm 就位之后算。随上级时另显示上级的生效值（[_stepsFields]）。
         _learnSteps.text = _formatSteps(_baselineLearn);
         _relearnSteps.text = _formatSteps(_baselineRelearn);
         _loading = false;
@@ -385,7 +386,6 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   }
 
   /// 保存后本牌组按哪个算法排程：自己管参数（或顶层）= 页面上选的算法；随上级 = 上级的。
-  /// 没写过步长时实际用的步长取决于它（RWKV 不用步长，FSRS 用默认步长）。
   SrsAlgorithm get _stepsAlgorithm => (_ownParams || !_hasParent)
       ? _algorithm
       : (_parentOwnerAlgorithm ?? _algorithm);
@@ -394,12 +394,25 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   /// 不生效（内核恒给每日新卡上限），开关禁用、预算 / 多出两项收起。
   bool get _newPlanUnderRwkv => _stepsAlgorithm.usesRwkv;
 
-  /// 不改步长、按 [_stepsAlgorithm] 保存后实际生效的学习 / 重学步长。
-  List<double> get _baselineLearn => _deck!.learnStepsFor(_stepsAlgorithm);
-  List<double> get _baselineRelearn => _deck!.relearnStepsFor(_stepsAlgorithm);
+  /// 本牌组「单独设置」、不改步长、按页面上的算法保存后实际生效的学习 / 重学步长（输入框的基准）。
+  /// 没写过步长时取决于算法（RWKV 不用步长，FSRS 用默认步长）。
+  List<double> get _baselineLearn => _deck!.learnStepsFor(_algorithm);
+  List<double> get _baselineRelearn => _deck!.relearnStepsFor(_algorithm);
 
-  /// 改了决定排程算法的选项（算法、随上级 / 自己管）：输入框还是原先生效值的，换成新算法下的
-  /// 生效值，免得显示的步长与保存后实际用的对不上；用户已改过的输入原样保留（保存时与新生效值比）。
+  /// 「随上级」时实际生效的步长：步长随参数继承（拍板 design-subdeck-steps-inherit），取 [_parentOwner]
+  /// 的（与 `SrsDeckTree.schedulingConfig`、Rust `DeckTree::config` 同一条规则）。
+  List<double> get _inheritedLearn {
+    final SrsDeckView? o = _parentOwner;
+    return o == null ? _baselineLearn : o.learnStepsFor(o.localAlgorithm);
+  }
+
+  List<double> get _inheritedRelearn {
+    final SrsDeckView? o = _parentOwner;
+    return o == null ? _baselineRelearn : o.relearnStepsFor(o.localAlgorithm);
+  }
+
+  /// 改了算法（或随上级 / 自己管）：输入框还是原先生效值的，换成新算法下的生效值，免得显示的步长与
+  /// 保存后实际用的对不上；用户已改过的输入原样保留（保存时与新生效值比）。
   void _changeStepsAlgorithm(VoidCallback change) {
     final String learnBefore = _formatSteps(_baselineLearn);
     final String relearnBefore = _formatSteps(_baselineRelearn);
@@ -497,22 +510,28 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     if (plan != deck.newCardPlan) {
       out[SrsFieldKeys.deckNewPlan] = plan.toValue();
     }
-    final List<double>? learn = parseSrsSteps(_learnSteps.text);
-    final List<double>? relearn = parseSrsSteps(_relearnSteps.text);
-    _learnError = learn == null || !srsValidateSteps(learn)
-        ? t.srs_settings_steps_invalid
-        : null;
-    _relearnError = relearn == null || !srsValidateSteps(relearn)
-        ? t.srs_settings_steps_invalid
-        : null;
-    if (_learnError != null || _relearnError != null) return null;
-    // 与「不写步长、按保存后的算法」实际生效的步长比（同一次编辑里切了算法也对得上）。
-    if (_formatSteps(learn!) != _formatSteps(_baselineLearn) ||
-        _formatSteps(relearn!) != _formatSteps(_baselineRelearn)) {
-      out[SrsFieldKeys.deckSteps] = <String, Object?>{
-        'learn': learn,
-        'relearn': relearn,
-      };
+    // 步长随参数继承：只在本牌组自己管参数（或顶层）时可改、才保存；随上级时输入框收起，不校验也不写。
+    if (_ownParams || !_hasParent) {
+      final List<double>? learn = parseSrsSteps(_learnSteps.text);
+      final List<double>? relearn = parseSrsSteps(_relearnSteps.text);
+      _learnError = learn == null || !srsValidateSteps(learn)
+          ? t.srs_settings_steps_invalid
+          : null;
+      _relearnError = relearn == null || !srsValidateSteps(relearn)
+          ? t.srs_settings_steps_invalid
+          : null;
+      if (_learnError != null || _relearnError != null) return null;
+      // 与「不写步长、按保存后的算法」实际生效的步长比（同一次编辑里切了算法也对得上）。
+      if (_formatSteps(learn!) != _formatSteps(_baselineLearn) ||
+          _formatSteps(relearn!) != _formatSteps(_baselineRelearn)) {
+        out[SrsFieldKeys.deckSteps] = <String, Object?>{
+          'learn': learn,
+          'relearn': relearn,
+        };
+      }
+    } else {
+      _learnError = null;
+      _relearnError = null;
     }
     final int maxInterval =
         int.tryParse(_maxInterval.text.trim()) ?? deck.maxIntervalDays;
@@ -614,8 +633,8 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
   }
 
   /// 「子牌组都继承这里」：把子树里所有「单独设置」的后代一次改成「继承上级」，之后改这里的
-  /// 记忆率 / 算法 / 自动优化就对整棵子树生效（Anki 导入的子牌组常各带一份预设，逐个改太累）。
-  /// 后代自己的步长与每日上限不动。
+  /// 记忆率 / 算法 / 学习与重学步长 / 自动优化就对整棵子树生效（Anki 导入的子牌组常各带一份预设，逐个改
+  /// 太累）。后代自己的每日上限不动；后代上写过的步长留在库里但不再生效（改回「单独设置」时又用上）。
   Future<void> _childrenInherit() async {
     final SrsDbStore? store = _store;
     final List<String> targets = _ownDescendants;
@@ -623,7 +642,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     final bool ok = await showFushiConfirmDialog(
       context: context,
       title: t.srs_settings_children_inherit(n: targets.length),
-      message: t.srs_settings_children_inherit_confirm(n: targets.length),
+      message: t.srs_settings_children_inherit_prompt(n: targets.length),
       confirmLabel: t.srs_settings_children_inherit(n: targets.length),
       cancelLabel: t.cancel,
       icon: FushiIcons.merge,
@@ -953,8 +972,54 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
     );
   }
 
-  /// 学习 / 重学步长两个输入框（步长是牌组自己的值，不随参数继承）。说明只写一次，放在第二个框下面。
-  List<Widget?> _stepsFields(BuildContext context) => <Widget?>[
+  /// 学习 / 重学步长。步长随参数继承：自己管参数（或顶层）时是两个输入框，说明只写一次、放在第二个框下面；
+  /// 随上级时只读显示上级的生效值（[_inheritedSteps]）。
+  List<Widget?> _stepsFields(BuildContext context) => _ownParams || !_hasParent
+      ? _ownStepsFields(context)
+      : <Widget?>[_inheritedSteps(context)];
+
+  /// 随上级时的步长：上级（参数归属牌组）实际生效的学习 / 重学步长，只读。
+  Widget _inheritedSteps(BuildContext context) {
+    final FushiDesignTokens tokens = FushiDesignTokens.of(context);
+    Widget row(String key, String label, List<double> steps) => Row(
+      key: ValueKey<String>(key),
+      crossAxisAlignment: CrossAxisAlignment.start,
+      spacing: tokens.spacing.gap,
+      children: <Widget>[
+        Expanded(child: Text(label, style: context.fushiType.bodyMedium)),
+        Flexible(
+          child: Text(
+            steps.isEmpty ? t.srs_settings_steps_none : _formatSteps(steps),
+            textAlign: TextAlign.end,
+            style: context.fushiType.bodyMedium,
+          ),
+        ),
+      ],
+    );
+    return Column(
+      key: const ValueKey<String>('srs-settings-steps-inherited'),
+      crossAxisAlignment: CrossAxisAlignment.stretch,
+      spacing: tokens.spacing.gap,
+      children: <Widget>[
+        row(
+          'srs-settings-learn-steps-inherited',
+          t.srs_settings_learn_steps,
+          _inheritedLearn,
+        ),
+        row(
+          'srs-settings-relearn-steps-inherited',
+          t.srs_settings_relearn_steps,
+          _inheritedRelearn,
+        ),
+        Text(
+          t.srs_settings_steps_inherited_from(name: _parentOwner?.name ?? ''),
+          style: context.fushiType.bodySmall,
+        ),
+      ],
+    );
+  }
+
+  List<Widget?> _ownStepsFields(BuildContext context) => <Widget?>[
     FushiTextField(
       key: const ValueKey<String>('srs-settings-learn-steps'),
       controller: _learnSteps,
@@ -989,10 +1054,12 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       spacing: tokens.spacing.gap * 1.5,
       children: <Widget>[
         Text(t.srs_settings_steps_section, style: tokens.type.sectionLabel),
-        Text(
-          t.srs_settings_rwkv_steps_note,
-          style: context.fushiType.bodySmall,
-        ),
+        // 「留空」的建议只对能改步长的（自己管参数 / 顶层）牌组有意义。
+        if (_ownParams || !_hasParent)
+          Text(
+            t.srs_settings_rwkv_steps_note,
+            style: context.fushiType.bodySmall,
+          ),
         ..._stepsFields(context).whereType<Widget>(),
       ],
     );
@@ -1238,7 +1305,7 @@ class _SrsDeckSettingsPageState extends ConsumerState<SrsDeckSettingsPage> {
       ]),
       _limitsGroup(context, ownsParams),
       // RWKV 牌组还带着步长（多半是 Anki 预设带来的）：步长本身收在「高级」，紧跟每日上限提示并给一键清空。
-      if (_stepsUnderRwkv && _hasSteps)
+      if (ownsParams && _stepsUnderRwkv && _hasSteps)
         FushiInlineNotice(
           key: const ValueKey<String>('srs-settings-rwkv-steps-set'),
           severity: FushiNoticeSeverity.warning,

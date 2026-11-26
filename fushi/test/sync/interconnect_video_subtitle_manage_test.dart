@@ -41,7 +41,7 @@ LocalLibraryHostService _hostService(FushiDatabase db, Directory work) =>
       packages: SyncAssetPackageService(db: db),
       refreshDictionaryCache: () async {},
       runExclusive: (Future<void> Function() body) => body(),
-      videoSubtitleLangCode: 'ja',
+      videoSubtitleExplicitLanguage: () => 'ja',
     );
 
 /// `<dir>/movie.mkv` + 指向 `movie.ja.srt` 的主字幕源 + 一条 cue。

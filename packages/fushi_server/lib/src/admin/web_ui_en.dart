@@ -496,6 +496,7 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '绑定地址': 'Bind address',
   '局域网配对必须 PIN': 'Require a PIN for LAN pairing',
   '字幕语言': 'Subtitle language',
+  '自动（跟随每个视频的语言）': "Auto (follow each video's language)",
   '刮削资料语言（BCP-47，如 ja / zh-CN）':
       'Metadata language (BCP-47, e.g. ja / en / zh-CN)',
   '扫描后自动补刮视频资料': 'Fetch video metadata after scans',

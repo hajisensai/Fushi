@@ -4,6 +4,7 @@ import 'package:drift/drift.dart' show Value;
 import 'package:flutter_test/flutter_test.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:path/path.dart' as p;
+import 'package:sqlite3/sqlite3.dart' as sqlite;
 
 import 'package:fushi/src/pages/implementations/android_storage_move_prompt.dart'
     show shouldShowAndroidStorageMovePrompt;
@@ -455,7 +456,248 @@ void main() {
         );
       });
 
-      group('迁移前清理固定目标（#4366 指出）', () {
+      group('布局 / 容器锚点丢失（32552 用户复现）：对账探所有内部布局', () {
+        late Directory appFlutter;
+        late Directory ext;
+        setUp(() {
+          appFlutter = Directory(p.join(tmp.path, 'app_flutter'))
+            ..createSync(recursive: true);
+          ext = Directory(p.join(tmp.path, 'ext', 'data'))
+            ..createSync(recursive: true);
+          // 外部根：只有冷启动建出的空运行目录与 .nomedia。
+          Directory(p.join(ext.path, 'thumbnails')).createSync();
+          File(
+            p.join(ext.path, 'fushiExport', '.nomedia'),
+          ).createSync(recursive: true);
+        });
+
+        List<AndroidInternalLibraryCandidate> candidates({
+          required String layout,
+          required String container,
+        }) => AppPaths.androidInternalLibraryCandidates(
+          platformDocuments: appFlutter,
+          configuredLayout: layout,
+          configuredContainer: container,
+        );
+
+        test('候选：当前配置在前，其余布局去重排在后', () {
+          final List<AndroidInternalLibraryCandidate> c = candidates(
+            layout: AppPaths.documentsLayoutNested,
+            container: AppPaths.documentsContainerHibiki,
+          );
+          expect(
+            c.map((AndroidInternalLibraryCandidate x) => x.root.path),
+            <String>[
+              p.join(appFlutter.path, 'Hibiki', 'data'),
+              appFlutter.path,
+              p.join(appFlutter.path, 'Fushi', 'data'),
+            ],
+          );
+        });
+
+        test(
+          '锚点指外部空根、布局被冲成 flat、书在 Hibiki/data → 改回内部 nested Hibiki',
+          () async {
+            File(
+              p.join(
+                appFlutter.path,
+                'Hibiki',
+                'data',
+                'audiobooks',
+                'a',
+                'b.m4b',
+              ),
+            ).createSync(recursive: true);
+            final List<AndroidInternalLibraryCandidate> c = candidates(
+              layout: AppPaths.documentsLayoutFlat,
+              container: AppPaths.documentsContainerFushi,
+            );
+            final AndroidLibraryReconciliation r =
+                await AppPaths.reconcileAndroidLibraryRoots(
+                  anchored: external,
+                  external: ext,
+                  internalCandidates: c,
+                  supportRoot: tmp,
+                );
+            expect(r.location, internal);
+            expect(r.internal.layout, AppPaths.documentsLayoutNested);
+            expect(r.internal.container, AppPaths.documentsContainerHibiki);
+            expect(
+              r.notes.single,
+              contains('Hibiki'),
+              reason: '纠正要进诊断日志，带上各根的探测结论',
+            );
+          },
+        );
+
+        test('锚点指内部、当前配置的内部根是空的、书在另一种布局 → 改布局不改位置', () async {
+          File(
+            p.join(appFlutter.path, 'fushi_books', 'x', 'book.epub'),
+          ).createSync(recursive: true);
+          final AndroidLibraryReconciliation r =
+              await AppPaths.reconcileAndroidLibraryRoots(
+                anchored: internal,
+                external: ext,
+                internalCandidates: candidates(
+                  layout: AppPaths.documentsLayoutNested,
+                  container: AppPaths.documentsContainerFushi,
+                ),
+                supportRoot: tmp,
+              );
+          expect(r.location, internal);
+          expect(r.internal.layout, AppPaths.documentsLayoutFlat);
+          expect(r.internal.root.path, appFlutter.path);
+        });
+
+        test('哪里都没有书 → 沿用锚点，诊断里列出每个根的探测结论', () async {
+          final AndroidLibraryReconciliation r =
+              await AppPaths.reconcileAndroidLibraryRoots(
+                anchored: external,
+                external: ext,
+                internalCandidates: candidates(
+                  layout: AppPaths.documentsLayoutNested,
+                  container: AppPaths.documentsContainerFushi,
+                ),
+                supportRoot: tmp,
+              );
+          expect(r.location, external);
+          expect(r.strayRoot, isNull);
+          expect(r.notes.single, contains('其余候选也都没有'));
+          expect(r.notes.single, contains('=none'));
+        });
+
+        test('只有锚定的根有书 → 沿用，不写诊断', () async {
+          File(
+            p.join(ext.path, 'audiobooks', 'a', 'b.m4b'),
+          ).createSync(recursive: true);
+          final AndroidLibraryReconciliation r =
+              await AppPaths.reconcileAndroidLibraryRoots(
+                anchored: external,
+                external: ext,
+                internalCandidates: candidates(
+                  layout: AppPaths.documentsLayoutNested,
+                  container: AppPaths.documentsContainerFushi,
+                ),
+                supportRoot: tmp,
+              );
+          expect(r.location, external);
+          expect(r.notes, isEmpty);
+          expect(r.strayRoot, isNull);
+        });
+
+        test('锚定的根和另一种内部布局都有书、读不到主库 → 沿用锚点、不合并，诊断列出各根', () async {
+          File(
+            p.join(ext.path, 'audiobooks', 'a', 'b.m4b'),
+          ).createSync(recursive: true);
+          File(
+            p.join(
+              appFlutter.path,
+              'Hibiki',
+              'data',
+              'fushi_books',
+              'old.epub',
+            ),
+          ).createSync(recursive: true);
+          final AndroidLibraryReconciliation r =
+              await AppPaths.reconcileAndroidLibraryRoots(
+                anchored: external,
+                external: ext,
+                internalCandidates: candidates(
+                  layout: AppPaths.documentsLayoutNested,
+                  container: AppPaths.documentsContainerFushi,
+                ),
+                supportRoot: tmp,
+              );
+          expect(r.location, external);
+          expect(r.strayRoot, isNull);
+          expect(r.notes.single, contains('主库读不到'));
+        });
+
+        group('错根运行期间自己写进了证据文件（锚定的根「有书」但不是真书库）', () {
+          late Directory support;
+          late Directory hibikiRoot;
+          setUp(() {
+            support = Directory(p.join(tmp.path, 'support'))..createSync();
+            hibikiRoot = Directory(p.join(appFlutter.path, 'Hibiki', 'data'));
+            // 真书库：nested Hibiki。
+            File(
+              p.join(hibikiRoot.path, 'fushi_books', 'k1', 'book.epub'),
+            ).createSync(recursive: true);
+            File(
+              p.join(hibikiRoot.path, 'fushi_books', 'k2', 'book.epub'),
+            ).createSync(recursive: true);
+            // 布局被冲成 flat 后，app 以 app_flutter 为根跑过：自动备份写了进去。
+            File(
+              p.join(appFlutter.path, 'srs_backups', 'auto.zip'),
+            ).createSync(recursive: true);
+            final sqlite.Database db = sqlite.sqlite3.open(
+              p.join(support.path, fushiDatabaseFileName),
+            );
+            db.execute('CREATE TABLE epub_books (extract_dir TEXT)');
+            for (final String key in <String>['k1', 'k2']) {
+              db.execute('INSERT INTO epub_books VALUES (?)', <Object?>[
+                p.join(hibikiRoot.path, 'fushi_books', key),
+              ]);
+            }
+            db.dispose();
+          });
+
+          test('锚点指内部 flat → 主库作证改回 nested Hibiki，flat 根交给散书合并', () async {
+            final AndroidLibraryReconciliation r =
+                await AppPaths.reconcileAndroidLibraryRoots(
+                  anchored: internal,
+                  external: ext,
+                  internalCandidates: candidates(
+                    layout: AppPaths.documentsLayoutFlat,
+                    container: AppPaths.documentsContainerFushi,
+                  ),
+                  supportRoot: support,
+                );
+            expect(r.location, internal);
+            expect(r.internal.layout, AppPaths.documentsLayoutNested);
+            expect(r.internal.container, AppPaths.documentsContainerHibiki);
+            expect(r.strayRoot?.path, appFlutter.path);
+            expect(r.notes.single, contains('改为'));
+          });
+
+          test('外部存储不可用时内部各布局照样对账', () async {
+            final AndroidLibraryReconciliation r =
+                await AppPaths.reconcileAndroidLibraryRoots(
+                  anchored: internal,
+                  external: null,
+                  internalCandidates: candidates(
+                    layout: AppPaths.documentsLayoutFlat,
+                    container: AppPaths.documentsContainerFushi,
+                  ),
+                  supportRoot: support,
+                );
+            expect(r.location, internal);
+            expect(r.internal.root.path, hibikiRoot.path);
+          });
+        });
+      });
+
+      test('探测三态：有 / 没有 / 探不清（超时）各归各，探不清按调用方的保守值', () async {
+        expect(await AppPaths.probeLibraryFiles(tmp), LibraryProbe.none);
+        File(
+          p.join(tmp.path, 'fushi_books', 'a', 'b.epub'),
+        ).createSync(recursive: true);
+        expect(await AppPaths.probeLibraryFiles(tmp), LibraryProbe.found);
+        expect(
+          await AppPaths.probeLibraryFiles(tmp, timeout: Duration.zero),
+          LibraryProbe.unknown,
+        );
+        expect(
+          await AppPaths.hasLibraryFiles(
+            tmp,
+            onTimeout: false,
+            timeout: Duration.zero,
+          ),
+          isFalse,
+        );
+      });
+
+      group('迁移前清理固定目标（#4366 指出；反馈 hjOW5xpIJ0）', () {
         late Directory source;
         late Directory target;
         setUp(() {
@@ -463,14 +705,25 @@ void main() {
           target = Directory(p.join(tmp.path, 'dst'));
         });
 
-        test('目标不存在 → 可清', () async {
-          expect(
-            await AppPaths.firstAndroidMigrationTargetOnlyFile(
+        void writeBytes(Directory root, String rel, List<int> bytes) {
+          File(p.join(root.path, rel))
+            ..createSync(recursive: true)
+            ..writeAsBytesSync(bytes);
+        }
+
+        Future<AndroidMigrationTargetBlocker?> check() =>
+            AppPaths.androidMigrationTargetBlocker(
               target: target,
               source: source,
-            ),
-            isNull,
-          );
+            );
+
+        List<int> bigBytes() =>
+            List<int>.generate((1 << 20) + 4096, (int i) => (i % 251) + 1);
+
+        final String mangaJson = p.join('fushi_books', 'book', 'manga.json');
+
+        test('目标不存在 → 可清', () async {
+          expect(await check(), isNull);
         });
 
         test('上次中断留下的半成品（源的子集）→ 可清', () async {
@@ -488,13 +741,7 @@ void main() {
           File(
             p.join(target.path, 'fushiExport', '.nomedia'),
           ).createSync(recursive: true);
-          expect(
-            await AppPaths.firstAndroidMigrationTargetOnlyFile(
-              target: target,
-              source: source,
-            ),
-            isNull,
-          );
+          expect(await check(), isNull);
         });
 
         test('目标里有源没有的文件（锚点错指空根时目标就是真书库）→ 拒绝', () async {
@@ -505,11 +752,128 @@ void main() {
             ..createSync(recursive: true)
             ..writeAsStringSync('x');
           expect(
-            await AppPaths.firstAndroidMigrationTargetOnlyFile(
-              target: target,
-              source: source,
+            await check(),
+            AndroidMigrationTargetBlocker(
+              AndroidMigrationTargetBlockKind.targetOnly,
+              p.join('fushi_books', 'norway', 'cover.jpg'),
             ),
-            p.join('fushi_books', 'norway', 'cover.jpg'),
+          );
+        });
+
+        test('同相对路径、同大小、不同字节 → 内容冲突，拒绝', () async {
+          writeBytes(source, mangaJson, '{"title":"A"}'.codeUnits);
+          writeBytes(target, mangaJson, '{"title":"B"}'.codeUnits);
+          expect(
+            File(p.join(target.path, mangaJson)).lengthSync(),
+            File(p.join(source.path, mangaJson)).lengthSync(),
+          );
+          expect(
+            await check(),
+            AndroidMigrationTargetBlocker(
+              AndroidMigrationTargetBlockKind.contentConflict,
+              mangaJson,
+            ),
+          );
+        });
+
+        test('目标比源长（完整正文 / 较新版本）→ 内容冲突，拒绝', () async {
+          writeBytes(source, mangaJson, 'chapter 1'.codeUnits);
+          writeBytes(target, mangaJson, 'chapter 1 + chapter 2'.codeUnits);
+          expect(
+            await check(),
+            AndroidMigrationTargetBlocker(
+              AndroidMigrationTargetBlockKind.contentConflict,
+              mangaJson,
+            ),
+          );
+        });
+
+        test('目标更短但不是源的前缀 → 内容冲突，拒绝', () async {
+          writeBytes(source, mangaJson, 'abcdefgh'.codeUnits);
+          writeBytes(target, mangaJson, 'abcX'.codeUnits);
+          expect(
+            (await check())?.kind,
+            AndroidMigrationTargetBlockKind.contentConflict,
+          );
+        });
+
+        test('同大小、差异落在第二块（>1 MiB 处）也能发现', () async {
+          final List<int> big = bigBytes();
+          writeBytes(source, mangaJson, big);
+          final List<int> changed = List<int>.of(big);
+          changed[(1 << 20) + 100] ^= 0x55;
+          writeBytes(target, mangaJson, changed);
+          expect(
+            (await check())?.kind,
+            AndroidMigrationTargetBlockKind.contentConflict,
+          );
+        });
+
+        test('同名的一边是文件、另一边是目录 → 拒绝', () async {
+          Directory(p.join(source.path, mangaJson)).createSync(recursive: true);
+          writeBytes(target, mangaJson, 'x'.codeUnits);
+          expect(
+            (await check())?.kind,
+            AndroidMigrationTargetBlockKind.contentConflict,
+          );
+        });
+
+        test('中断复制残留：复制完的文件 + 截断的最后一个文件 + 半截临时文件 → 可清', () async {
+          final List<int> big = bigBytes();
+          final String done1 = p.join('fushi_books', 'book', 'cover.jpg');
+          final String done2 = p.join('audiobooks', 'a', 'track01.mp3');
+          final String cut = p.join('fushi_books', 'book', 'book.epub');
+          writeBytes(source, done1, <int>[1, 2, 3]);
+          writeBytes(source, done2, big);
+          writeBytes(source, cut, big);
+          writeBytes(source, mangaJson, 'not copied yet'.codeUnits);
+          writeBytes(target, done1, <int>[1, 2, 3]);
+          writeBytes(target, done2, big);
+          // 被打断的最后一个文件：跨过 1 MiB 读块边界截断。
+          writeBytes(target, cut, big.sublist(0, (1 << 20) + 17));
+          writeBytes(target, '$mangaJson.fushi-part', <int>[9]);
+          expect(await check(), isNull);
+        });
+
+        test('截断成 0 字节的文件 → 可清', () async {
+          writeBytes(source, mangaJson, 'abc'.codeUnits);
+          writeBytes(target, mangaJson, <int>[]);
+          expect(await check(), isNull);
+        });
+
+        test('已写前缀之后全是 0（预分配 / 掉电的空洞）→ 可清；空洞里有非 0 → 拒绝', () async {
+          writeBytes(source, mangaJson, <int>[5, 6, 7, 8, 9, 10]);
+          writeBytes(target, mangaJson, <int>[5, 6, 7, 0, 0, 0]);
+          expect(await check(), isNull);
+          writeBytes(target, mangaJson, <int>[5, 6, 7, 0, 1, 0]);
+          expect(
+            (await check())?.kind,
+            AndroidMigrationTargetBlockKind.contentConflict,
+          );
+        });
+
+        test('目标多出的文件先于逐字节比较报出', () async {
+          writeBytes(source, mangaJson, 'abcdefgh'.codeUnits);
+          writeBytes(target, mangaJson, 'abcX'.codeUnits);
+          writeBytes(target, p.join('fushi_books', 'other', 'x.txt'), <int>[1]);
+          expect(
+            (await check())?.kind,
+            AndroidMigrationTargetBlockKind.targetOnly,
+          );
+        });
+
+        test('后台 isolate 版本与直接调用结论一致', () async {
+          writeBytes(source, mangaJson, '{"title":"A"}'.codeUnits);
+          writeBytes(target, mangaJson, '{"title":"B"}'.codeUnits);
+          expect(
+            await AppPaths.androidMigrationTargetBlockerInBackground(
+              target: target.path,
+              source: source.path,
+            ),
+            AndroidMigrationTargetBlocker(
+              AndroidMigrationTargetBlockKind.contentConflict,
+              mangaJson,
+            ),
           );
         });
       });
@@ -547,6 +911,19 @@ void main() {
         AndroidLibraryAnchor.tryParse('{"location":"internal","layout":"x"}'),
         const AndroidLibraryAnchor(location: internal),
         reason: '布局是垃圾值时当没给',
+      );
+      const AndroidLibraryAnchor full = AndroidLibraryAnchor(
+        location: internal,
+        layout: AppPaths.documentsLayoutNested,
+        container: AppPaths.documentsContainerHibiki,
+      );
+      expect(AndroidLibraryAnchor.tryParse(full.encode()), full);
+      expect(
+        AndroidLibraryAnchor.tryParse(
+          '{"location":"internal","container":"Other"}',
+        ),
+        const AndroidLibraryAnchor(location: internal),
+        reason: '容器名是垃圾值时当没给',
       );
     });
 

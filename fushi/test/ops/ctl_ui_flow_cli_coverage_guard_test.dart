@@ -79,6 +79,8 @@ const Map<String, String> _notRouted = <String, String>{
   'exportPresetIconToFile': 'internal: 应用图标换肤的平台管线（main.dart / app_icon_apply）',
   'importLogin': 'internal: Bangumi 旧 token 迁移到插件追踪器',
   'importSyncedLocalAudioDb': 'internal: 同步拉下本地音频库后的落地',
+  'importMediaServerProgress':
+      'internal: 媒体服务器作品入库（MediaServerVideoLibrary.addToLibrary）里把服务器观看状态补进新入库行的一步（BUG-5455），不是单独的用户动作',
   'lib/src/media/music/music_audio_intake_port.dart#importAudioFiles':
       'internal: 音乐导入端口给视频侧的纯音频入口（用户入口 importMusicFiles 另行登记）',
   'lib/src/media/music/music_audio_intake.dart#importAudioFiles':

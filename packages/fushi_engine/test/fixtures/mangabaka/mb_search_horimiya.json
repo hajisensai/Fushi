@@ -1,0 +1,287 @@
+{
+  "status": 200,
+  "pagination": {
+    "count": 4,
+    "next": "https://api.mangabaka.org/v1/series/search?limit=1&q=Horimiya&page=2",
+    "previous": null,
+    "page": 1,
+    "limit": 1
+  },
+  "data": [
+    {
+      "id": 6029,
+      "state": "active",
+      "merged_with": null,
+      "canonical_url": "https://mangabaka.org/manga/6029/Horimiya",
+      "title": "Horimiya",
+      "native_title": "ホリミヤ",
+      "romanized_title": "Horimiya",
+      "secondary_titles": {
+        "ko": [
+          {
+            "type": "official",
+            "title": "호리미야"
+          }
+        ]
+      },
+      "cover": {
+        "raw": {
+          "url": "https://images.mangabaka.dev/b/0/3/0/9/2/7/5/4b0c/4fff/8c7d/7cd7dacf9b73",
+          "size": 198274,
+          "height": 1420,
+          "width": 998,
+          "blurhash": "|XL4NlS4_N^+_NIBx]xuxu~WM{tQM{IoM{WBt6WBTH-;s:bHoMofRPkCoM.8WBt7%Ls:M{oekCM|%3WAWUxuV@ozM|RjRjRkM{WBt7WBRjt7V@j[NaNGRjj[jsRjofaeaeS4ayWBWVaxxaRjoft7?HWBofofj[t7RjbHtR",
+          "thumbhash": "4ycODQTn7W9ZZYu4h3l3ZoB+WLMH",
+          "format": "jpeg"
+        },
+        "x150": {
+          "x1": "https://cdn.mangabaka.dev/imgproxy/plain/x150@1/aHR0cHM6Ly9pbWFnZXMubWFuZ2FiYWthLmRldi9iLzAvMy8wLzkvMi83LzUvNGIwYy80ZmZmLzhjN2QvN2NkN2RhY2Y5Yjcz",
+          "x2": "https://cdn.mangabaka.dev/imgproxy/plain/x150@2/aHR0cHM6Ly9pbWFnZXMubWFuZ2FiYWthLmRldi9iLzAvMy8wLzkvMi83LzUvNGIwYy80ZmZmLzhjN2QvN2NkN2RhY2Y5Yjcz",
+          "x3": "https://cdn.mangabaka.dev/imgproxy/plain/x150@3/aHR0cHM6Ly9pbWFnZXMubWFuZ2FiYWthLmRldi9iLzAvMy8wLzkvMi83LzUvNGIwYy80ZmZmLzhjN2QvN2NkN2RhY2Y5Yjcz"
+        },
+        "x250": {
+          "x1": "https://cdn.mangabaka.dev/imgproxy/plain/x250@1/aHR0cHM6Ly9pbWFnZXMubWFuZ2FiYWthLmRldi9iLzAvMy8wLzkvMi83LzUvNGIwYy80ZmZmLzhjN2QvN2NkN2RhY2Y5Yjcz",
+          "x2": "https://cdn.mangabaka.dev/imgproxy/plain/x250@2/aHR0cHM6Ly9pbWFnZXMubWFuZ2FiYWthLmRldi9iLzAvMy8wLzkvMi83LzUvNGIwYy80ZmZmLzhjN2QvN2NkN2RhY2Y5Yjcz",
+          "x3": "https://cdn.mangabaka.dev/imgproxy/plain/x250@3/aHR0cHM6Ly9pbWFnZXMubWFuZ2FiYWthLmRldi9iLzAvMy8wLzkvMi83LzUvNGIwYy80ZmZmLzhjN2QvN2NkN2RhY2Y5Yjcz"
+        },
+        "x350": {
+          "x1": "https://cdn.mangabaka.dev/imgproxy/plain/x350@1/aHR0cHM6Ly9pbWFnZXMubWFuZ2FiYWthLmRldi9iLzAvMy8wLzkvMi83LzUvNGIwYy80ZmZmLzhjN2QvN2NkN2RhY2Y5Yjcz",
+          "x2": "https://cdn.mangabaka.dev/imgproxy/plain/x350@2/aHR0cHM6Ly9pbWFnZXMubWFuZ2FiYWthLmRldi9iLzAvMy8wLzkvMi83LzUvNGIwYy80ZmZmLzhjN2QvN2NkN2RhY2Y5Yjcz",
+          "x3": "https://cdn.mangabaka.dev/imgproxy/plain/x350@3/aHR0cHM6Ly9pbWFnZXMubWFuZ2FiYWthLmRldi9iLzAvMy8wLzkvMi83LzUvNGIwYy80ZmZmLzhjN2QvN2NkN2RhY2Y5Yjcz"
+        }
+      },
+      "authors": [
+        "HERO"
+      ],
+      "artists": [
+        "Daisuke Hagiwara"
+      ],
+      "description": "A sweet “aww”-inspiring tale of school life begins!! At school, Kyouko Hori is known for being smart, attractive, and popular. On the other hand, her classmate, the boring, gloomy Izumi Miyamura tends to get painted as a “loser fanboy.” But when a liberally pierced and tattooed (not to mention downright gorgeous) Miyamura appears unexpectedly on the doorstep of secretly plain-Jane homebody Hori, these two similarly dissimilar teenagers discover that there are multiple sides to every story…and person!\n\n*Source: Yen Press, Vol. 1*",
+      "year": 2011,
+      "published": {
+        "start_date": "2011-10-18",
+        "end_date": "2023-07-18",
+        "start_date_is_estimated": false,
+        "end_date_is_estimated": false
+      },
+      "status": "completed",
+      "content_rating": "safe",
+      "type": "manga",
+      "original_language": "ja",
+      "rating": 83.5046857142857,
+      "final_volume": "17",
+      "genres": [
+        "comedy",
+        "romance",
+        "slice_of_life",
+        "school_life",
+        "shounen"
+      ],
+      "titles": [
+        {
+          "language": "ko",
+          "traits": [
+            "official"
+          ],
+          "title": "호리미야",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "de",
+          "traits": [
+            "official"
+          ],
+          "title": "Horimiya",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "en",
+          "traits": [
+            "official"
+          ],
+          "title": "Horimiya",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "ja-Latn",
+          "traits": [
+            "native"
+          ],
+          "title": "Horimiya",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "ja-Latn",
+          "traits": [],
+          "title": "Horimiya - A Piece of Memories Short Story Collection",
+          "note": null,
+          "is_primary": false
+        },
+        {
+          "language": "ja-Latn",
+          "traits": [],
+          "title": "Horimiya - Hori and Miyamura",
+          "note": null,
+          "is_primary": false
+        },
+        {
+          "language": "pt-br",
+          "traits": [],
+          "title": "Horimiya - Hori-san e Miyamura-kun",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "pt-br",
+          "traits": [],
+          "title": "Horimiya: Horisan ile Miyamurakun",
+          "note": null,
+          "is_primary": false
+        },
+        {
+          "language": "es",
+          "traits": [
+            "official"
+          ],
+          "title": "Horimiya: Hori y Miyamura",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "en",
+          "traits": [],
+          "title": "Hori-san and Miyamura-kun",
+          "note": null,
+          "is_primary": false
+        },
+        {
+          "language": "id",
+          "traits": [],
+          "title": "Hori-san dan Miyamura-kun",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "ja-Latn",
+          "traits": [
+            "native"
+          ],
+          "title": "Hori-san to Miyamura-kun",
+          "note": null,
+          "is_primary": false
+        },
+        {
+          "language": "tr",
+          "traits": [],
+          "title": "Hori-san ve Miyamura-kun",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "tl",
+          "traits": [],
+          "title": "Si Hori at Si Miyamura",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "ru",
+          "traits": [],
+          "title": "Хоримия",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "ru",
+          "traits": [],
+          "title": "Хоримияа",
+          "note": null,
+          "is_primary": false
+        },
+        {
+          "language": "ru",
+          "traits": [],
+          "title": "Хори-сан и Миямура-кун",
+          "note": null,
+          "is_primary": false
+        },
+        {
+          "language": "ru",
+          "traits": [],
+          "title": "Хорімія",
+          "note": null,
+          "is_primary": false
+        },
+        {
+          "language": "he",
+          "traits": [],
+          "title": "הורימיה",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "ar",
+          "traits": [],
+          "title": "هوريميا",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "fa",
+          "traits": [],
+          "title": "هوری-سان و میامورا-کون",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "hi",
+          "traits": [],
+          "title": "होरिमिया",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "th",
+          "traits": [],
+          "title": "โฮริมิยะ สาวมั่นกับนายมืดมน",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "ja",
+          "traits": [
+            "native"
+          ],
+          "title": "ホリミヤ",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "zh",
+          "traits": [],
+          "title": "堀与宫村",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "zh-Hant",
+          "traits": [],
+          "title": "堀與宮村",
+          "note": null,
+          "is_primary": true
+        },
+        {
+          "language": "zh",
+          "traits": [],
+          "title": "崛与宫村",
+          "note": null,
+          "is_primary": false
+        }
+      ]
+    }
+  ]
+}

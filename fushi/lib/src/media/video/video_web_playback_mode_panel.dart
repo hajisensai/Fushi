@@ -10,6 +10,7 @@ import 'package:fushi/src/media/video/web_video_mode_chip.dart';
 import 'package:fushi/src/utils/components/fushi_staggered_entrance.dart';
 import 'package:fushi/src/utils/components/glass/fushi_icon.dart';
 import 'package:fushi/src/utils/components/settings_shared.dart';
+import 'package:fushi/src/utils/fushi_icons.dart';
 
 /// 网页帧能选的超分档位：low 是 mpv 内置缩放档，网页帧没有 mpv 缩放器，不列（与制卡重放宿主页
 /// 的超分菜单同一组）。
@@ -95,7 +96,7 @@ class _VideoWebPlaybackModePanelState extends State<VideoWebPlaybackModePanel> {
           : t.web_video_mode_quality_unavailable,
       subtitleMaxLines: 3,
       trailing: selected
-          ? FushiIcon(Icons.check_circle, color: cs.primary)
+          ? FushiIcon(FushiIcons.filled(FushiIcons.success), color: cs.primary)
           : null,
       onTap: selected || !available ? null : () => host.onSelectMode(mode),
     );
@@ -148,7 +149,7 @@ class _VideoWebPlaybackModePanelState extends State<VideoWebPlaybackModePanel> {
                   key: const ValueKey<String>(
                     'video.player.web_mode.shaders_unavailable',
                   ),
-                  icon: Icons.info_outline,
+                  icon: FushiIcons.info,
                   showIcon: true,
                   title: t.web_video_mode_shaders_unavailable,
                   subtitle: t.web_video_mode_shaders_unavailable_hint,

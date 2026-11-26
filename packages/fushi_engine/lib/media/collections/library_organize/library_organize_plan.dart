@@ -1,5 +1,8 @@
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
+import 'package:fushi_engine/media/collections/library_organize/organize_work_identity.dart';
+
+export 'package:fushi_engine/media/collections/library_organize/organize_work_identity.dart';
 
 /// AI 整理库：事实模型 + 「AI 回复 → 要执行的改动」裁决（spec §7.7 / §7.8）。
 ///
@@ -9,6 +12,8 @@ import 'package:fushi_engine/ai/ai_library_organize_assistant.dart';
 /// 只移出一次，移出用户合集必须带理由。用户合集的合并 / 改名也直接执行（AI 管库 v3
 /// §2.2，取代库管家 §8 的确认卡；自动路径只收 high），可撤销。用户拒绝过的分组不复活；
 /// 用户移出过的成员不放回；跨域、越界、重复一律丢弃（只丢那一条，不整批作废）。
+/// 与条目权威作品身份（媒体服务器 / 在线源的剧、刮削作品 id）矛盾的移出 / 放入一律
+/// 丢弃（`organize_work_identity.dart`，BUG-5480）。
 
 /// 整理怎么触发的（决定置信度门槛）。
 enum OrganizeTrigger { manual, auto }
@@ -25,6 +30,7 @@ class OrganizeEntry {
     this.collectionIds = const <int>[],
     this.companions = const <OrganizeMemberRow>[],
     this.groupTitle,
+    this.identity = OrganizeWorkIdentity.none,
   });
 
   /// 成员行的种类与键（本地键域：epub = uid）。
@@ -53,6 +59,10 @@ class OrganizeEntry {
 
   /// 规则成组时用的组名（视频 = 刮削作品标题）；null = 没有。
   final String? groupTitle;
+
+  /// 权威作品身份（来源的剧、挂在这一条本身上的刮削作品）：AI 的移出 / 放入不得与它
+  /// 矛盾（BUG-5480）。只用于本地否决，不发给 AI。
+  final OrganizeWorkIdentity identity;
 
   /// 跟它算一卷的其它成员行（EPUB 配对的 SRT 有声书）：加入 / 移出时一起动，与
   /// `BookSeriesGrouper` 的「一卷 = 书架上一张卡」同口径。
@@ -97,6 +107,7 @@ class OrganizeCollectionFact {
     required this.sampleTitles,
     this.pinnedMemberKeys = const <String>{},
     this.aiEvictedMemberKeys = const <String>{},
+    this.memberIdentities = const <String, OrganizeWorkIdentity>{},
   });
 
   final int id;
@@ -119,13 +130,38 @@ class OrganizeCollectionFact {
   /// 不再移出，也不再放回。
   final Set<String> aiEvictedMemberKeys;
 
+  /// 成员行键 → 权威作品身份（只含带身份的成员；与 [memberKeys] 同口径，覆盖全部成员，
+  /// 不只是这次发给 AI 的那些）。
+  final Map<String, OrganizeWorkIdentity> memberIdentities;
+
   bool get isFolder => origin == CollectionOrigin.folder;
 
-  /// AI 能不能把 [memberKey] 从这个合集里移出（AI 库管家设计稿 §7）。
-  bool canRelease(String memberKey) =>
+  /// AI 能不能把 [memberKey] 从这个合集里移出（AI 库管家设计稿 §7）：目录合集、用户
+  /// 钉住的、AI 移出过一次的不移；与权威作品身份矛盾的也不移（BUG-5480：拆散一部作品，
+  /// 或把它从自己的合集里移空）。[leaving]：同一处改动里一起离开的成员行键；
+  /// [destination]：去处里已有 / 一起去的成员身份（见 [organizeIdentityForbidsRelease]）。
+  bool canRelease(
+    String memberKey, {
+    Set<String> leaving = const <String>{},
+    Iterable<OrganizeWorkIdentity> destination = const <OrganizeWorkIdentity>[],
+  }) =>
+      canReleaseIgnoringIdentity(memberKey) &&
+      !organizeIdentityForbidsRelease(
+        memberIdentities,
+        memberKey,
+        leaving: leaving,
+        destination: destination,
+      );
+
+  /// [canRelease] 里与作品身份无关的那几条（目录合集、钉住、AI 移出过一次）。
+  bool canReleaseIgnoringIdentity(String memberKey) =>
       !isFolder &&
       !pinnedMemberKeys.contains(memberKey) &&
       !aiEvictedMemberKeys.contains(memberKey);
+
+  /// 往这个合集里放条目的剧身份闸门（以现有成员起头，见 [OrganizeSeriesGate]）。
+  OrganizeSeriesGate seriesGate() =>
+      OrganizeSeriesGate(memberIdentities.values);
 
   Set<String> get identityKeys => <String>{
     if (organizeKey != null) organizeKey!,
@@ -376,6 +412,11 @@ OrganizePlan planOrganizeReply({
   }
   bool single(int i) => uses[i] == 1;
 
+  // 往已有合集里放条目的剧身份闸门（BUG-5480）：同一份回复里先放进去的也算。
+  final Map<int, OrganizeSeriesGate> gates = <int, OrganizeSeriesGate>{};
+  OrganizeSeriesGate gateOf(OrganizeCollectionFact c) =>
+      gates[c.id] ??= c.seriesGate();
+
   // ── 合并已有合集 ────────────────────────────────────────────────────────
   // 败方 → 胜方：同一份回复里「并入败方」的分组 / 挪走改并进胜方（执行时合并先于
   // 加入，败方已不在了）。
@@ -396,11 +437,17 @@ OrganizePlan planOrganizeReply({
     final OrganizeCollectionFact target = (List<OrganizeCollectionFact>.of(
       cs,
     )..sort(_mergeWinnerOrder)).first;
+    if (mergedInto.containsKey(target.id)) continue;
+    // 败方的成员与胜方里已有的来源剧不是同一部：这个败方不并（BUG-5480）。
+    final OrganizeSeriesGate gate = gateOf(target);
     final List<int> sources = <int>[
       for (final OrganizeCollectionFact c in cs)
-        if (c.id != target.id && !mergedInto.containsKey(c.id)) c.id,
+        if (c.id != target.id &&
+            !mergedInto.containsKey(c.id) &&
+            gate.admitAll(c.memberIdentities.values))
+          c.id,
     ];
-    if (sources.isEmpty || mergedInto.containsKey(target.id)) continue;
+    if (sources.isEmpty) continue;
     for (final int id in sources) {
       mergedInto[id] = target.id;
     }
@@ -435,15 +482,30 @@ OrganizePlan planOrganizeReply({
       to = resolveTarget(e.into!);
       if (to == null || to.id == from.id) continue;
     }
-    final List<OrganizeEntry> members = <OrganizeEntry>[
-      for (final int i in e.members)
-        if (single(i) &&
-            from.memberKeys.contains(chunk.entries[i].memberKey) &&
-            from.canRelease(chunk.entries[i].memberKey) &&
-            !(to?.aiEvictedMemberKeys.contains(chunk.entries[i].memberKey) ??
-                false))
-          chunk.entries[i],
-    ];
+    // 作品身份（BUG-5480）按这一条移出的整批判：一起移出的同一部作品不算拆散；去处里
+    // 是另一部来源剧的不挪过去。
+    final OrganizeCollectionFact? dest = to;
+    final List<OrganizeEntry> members = _settleIdentity(
+      <OrganizeEntry>[
+        for (final int i in e.members)
+          if (single(i) &&
+              from.memberKeys.contains(chunk.entries[i].memberKey) &&
+              from.canReleaseIgnoringIdentity(chunk.entries[i].memberKey) &&
+              !(dest?.aiEvictedMemberKeys.contains(
+                    chunk.entries[i].memberKey,
+                  ) ??
+                  false))
+            chunk.entries[i],
+      ],
+      release: (OrganizeEntry m, Set<String> leaving) => from.canRelease(
+        m.memberKey,
+        leaving: leaving,
+        destination:
+            dest?.memberIdentities.values ?? const <OrganizeWorkIdentity>[],
+      ),
+      target: dest,
+      gateOf: gateOf,
+    );
     if (members.isEmpty) continue;
     // 去处里已经有它：只剩「移出」一步。
     final List<OrganizeEntry> evictOnly = <OrganizeEntry>[
@@ -519,17 +581,44 @@ OrganizePlan planOrganizeReply({
 
   // 分组只动「散的或只在整理器合集里、且都能移出来」的条目：在用户合集里的条目换
   // 合集只走「移出 + into」（带理由），pinned / 已被 AI 移出过的不动。
-  bool groupable(OrganizeEntry e, OrganizeCollectionFact? target) {
-    if (target != null && target.aiEvictedMemberKeys.contains(e.memberKey)) {
-      return false;
+  // 作品身份（BUG-5480）按这一组一起离开来处的整批判（[_settleIdentity]）：去处 =
+  // [target] 现有成员 + 同组里不是从同一个来处来的成员。
+  List<OrganizeEntry> groupable(
+    List<OrganizeEntry> candidates,
+    OrganizeCollectionFact? target,
+  ) {
+    final Map<String, OrganizeEntry> byKey = <String, OrganizeEntry>{
+      for (final OrganizeEntry e in candidates) e.memberKey: e,
+    };
+    bool release(OrganizeEntry e, Set<String> leaving) {
+      if (target != null && target.aiEvictedMemberKeys.contains(e.memberKey)) {
+        return false;
+      }
+      for (final int cid in e.memberOf) {
+        if (cid == target?.id) continue;
+        final OrganizeCollectionFact? c = byId[cid];
+        if (c == null || !c.origin.isOrganizerManaged) return false;
+        final bool ok = c.canRelease(
+          e.memberKey,
+          leaving: leaving,
+          destination: <OrganizeWorkIdentity>[
+            ...?target?.memberIdentities.values,
+            for (final String k in leaving)
+              if (!c.memberKeys.contains(k) && !byKey[k]!.identity.isEmpty)
+                byKey[k]!.identity,
+          ],
+        );
+        if (!ok) return false;
+      }
+      return true;
     }
-    for (final int cid in e.memberOf) {
-      if (cid == target?.id) continue;
-      final OrganizeCollectionFact? c = byId[cid];
-      if (c == null || !c.origin.isOrganizerManaged) return false;
-      if (!c.canRelease(e.memberKey)) return false;
-    }
-    return true;
+
+    return _settleIdentity(
+      candidates,
+      release: release,
+      target: target,
+      gateOf: gateOf,
+    );
   }
 
   // ── 分组：并入 / 新建 / 系列标签 ────────────────────────────────────────
@@ -544,11 +633,11 @@ OrganizePlan planOrganizeReply({
     if (g.into != null) {
       final OrganizeCollectionFact? target = resolveTarget(g.into!);
       if (target == null) continue;
-      final List<OrganizeEntry> adds = <OrganizeEntry>[
+      // 目标里是另一部来源剧：不放进去（BUG-5480，groupable 里的剧身份闸门）。
+      final List<OrganizeEntry> adds = groupable(<OrganizeEntry>[
         for (final OrganizeEntry e in members)
-          if (!target.memberKeys.contains(e.memberKey) && groupable(e, target))
-            e,
-      ];
+          if (!target.memberKeys.contains(e.memberKey)) e,
+      ], target);
       if (adds.isEmpty) continue;
       out.addAll(_moveInto(adds, target, g.confidence));
       continue;
@@ -560,10 +649,15 @@ OrganizePlan planOrganizeReply({
       for (final OrganizeEntry e in members)
         if (e.externalWorkKey != null) e.externalWorkKey!,
     };
-    // 视频「同一部作品」里成员刮到了不同作品：那是系列，不是作品（spec §9）。
+    // 视频「同一部作品」里成员刮到了不同作品、或是来源给的两部剧：那是系列，不是作品
+    // （spec §9；BUG-5480）。
+    final OrganizeSeriesGate memberSeries = OrganizeSeriesGate();
     if (facts.domain == CollectionShelfDomain.video &&
         level == AiOrganizeLevel.work &&
-        externals.length > 1) {
+        (externals.length > 1 ||
+            !members.every(
+              (OrganizeEntry e) => memberSeries.admit(e.identity),
+            ))) {
       level = AiOrganizeLevel.franchise;
     }
     final String key = _keyFor(
@@ -594,20 +688,16 @@ OrganizePlan planOrganizeReply({
     // 分组键已有人持有：并进它，不新建。
     final OrganizeCollectionFact? holder = _holderOf(facts, key);
     if (holder != null) {
-      final List<OrganizeEntry> adds = <OrganizeEntry>[
+      final List<OrganizeEntry> adds = groupable(<OrganizeEntry>[
         for (final OrganizeEntry e in members)
-          if (!holder.memberKeys.contains(e.memberKey) && groupable(e, holder))
-            e,
-      ];
+          if (!holder.memberKeys.contains(e.memberKey)) e,
+      ], holder);
       if (adds.isEmpty) continue;
       out.addAll(_moveInto(adds, holder, g.confidence));
       continue;
     }
 
-    final List<OrganizeEntry> fresh = <OrganizeEntry>[
-      for (final OrganizeEntry e in members)
-        if (groupable(e, null)) e,
-    ];
+    final List<OrganizeEntry> fresh = groupable(members, null);
     if (fresh.length < 2) continue;
     String rawName = clampOrganizeName(g.name);
     if (rawName.isEmpty) rawName = clampOrganizeName(g.originalTitle ?? '');
@@ -629,6 +719,41 @@ OrganizePlan planOrganizeReply({
     );
   }
   return OrganizePlan(actions: out);
+}
+
+/// 作品身份否决（BUG-5480）按一整批离开来处的条目判到不变：[release] 按「这一轮一起
+/// 离开的行键」判规则 1（[organizeReleasableTogether]）；有去处 [target] 时再过它的剧
+/// 身份闸门（规则 2），被闸门挡下的条目留在原处，又可能让同批别的条目变成拆散，所以
+/// 两步交替。定下来的那批才记进 [gateOf] 的共享闸门（同一份回复里后面的改动看得到）。
+List<OrganizeEntry> _settleIdentity(
+  List<OrganizeEntry> candidates, {
+  required bool Function(OrganizeEntry entry, Set<String> leaving) release,
+  required OrganizeCollectionFact? target,
+  required OrganizeSeriesGate Function(OrganizeCollectionFact c) gateOf,
+}) {
+  List<OrganizeEntry> current = candidates;
+  while (true) {
+    current = organizeReleasableTogether(
+      current,
+      (OrganizeEntry e) => e.memberKey,
+      release,
+    );
+    if (target == null) return current;
+    final OrganizeSeriesGate trial = gateOf(target).copy();
+    final List<OrganizeEntry> admitted = <OrganizeEntry>[
+      for (final OrganizeEntry e in current)
+        if (target.memberKeys.contains(e.memberKey) || trial.admit(e.identity))
+          e,
+    ];
+    if (admitted.length == current.length) {
+      final OrganizeSeriesGate shared = gateOf(target);
+      for (final OrganizeEntry e in admitted) {
+        if (!target.memberKeys.contains(e.memberKey)) shared.admit(e.identity);
+      }
+      return admitted;
+    }
+    current = admitted;
+  }
 }
 
 String? _reasonOf(String? raw) {

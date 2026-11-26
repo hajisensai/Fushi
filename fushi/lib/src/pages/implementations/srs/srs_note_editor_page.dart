@@ -556,8 +556,10 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
                 ),
         );
 
+  static const Key _saveItemKey = ValueKey<String>('srs_note_save');
+
   FushiToolbarItem get _saveItem => FushiToolbarItem(
-    key: const ValueKey<String>('srs_note_save'),
+    key: _saveItemKey,
     icon: _editing ? FushiIcons.save : FushiIcons.add,
     label: _editing ? t.srs_note_save : t.srs_note_add_action,
     onPressed: _saving || _type == null ? null : () => unawaited(_save()),
@@ -584,6 +586,10 @@ class _SrsNoteEditorPageState extends ConsumerState<SrsNoteEditorPage> {
                   icon: item.icon,
                   tooltip: item.label,
                   enabled: item.onPressed != null,
+                  // 保存 / 添加是编辑器的主操作，恒外露：Apple iOS 档顶栏最多
+                  // 平铺 3 颗（kFushiAppleIosHeaderMaxActions），同优先级按
+                  // 列表位置从后往前收，不标的话排在最后的它最先进「⋯」。
+                  alwaysVisible: item.key == _saveItemKey,
                   onTap: item.onPressed,
                 ),
             ]

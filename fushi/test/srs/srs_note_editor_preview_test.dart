@@ -19,6 +19,8 @@ import 'package:fushi/src/pages/implementations/srs/srs_template_editor_page.dar
 import 'package:fushi/src/pages/implementations/srs/srs_ui.dart';
 import 'package:fushi/src/srs/srs_providers.dart';
 import 'package:fushi/src/utils/adaptive/adaptive_platform.dart';
+import 'package:fushi/src/utils/components/fushi_material_components.dart'
+    show kFushiHeaderOverflowMenuKey;
 import 'package:fushi/src/utils/components/glass/fushi_glass_scope.dart';
 import 'package:fushi_core/fushi_core.dart';
 import 'package:fushi_engine/srs/srs_builtin.dart';
@@ -303,7 +305,17 @@ void main() {
         apple: apple,
       );
       expect(_key('srs-note-preview'), findsNothing);
-      await tester.tap(_key('srs_note_preview').first);
+      if (apple) {
+        // Apple iOS 窄顶栏只放得下一颗动作 + 「⋯」：保存是编辑器主操作、恒外露
+        // （alwaysVisible），预览 / 历史 / 删除收进「⋯」，从菜单打开预览。
+        expect(_key('srs_note_save'), findsOneWidget);
+        expect(_key('srs_note_preview'), findsNothing);
+        await tester.tap(find.byKey(kFushiHeaderOverflowMenuKey).first);
+        await _settle(tester);
+        await tester.tap(find.text(t.srs_note_types_preview).last);
+      } else {
+        await tester.tap(_key('srs_note_preview').first);
+      }
       await _settle(tester);
       expect(_key('srs-note-preview-sheet'), findsOneWidget);
       expect(_inPreview(find.textContaining('食べる')), findsWidgets);

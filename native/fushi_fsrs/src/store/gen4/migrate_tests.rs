@@ -1787,10 +1787,21 @@ fn two_devices_upgrading_at_once_translate_the_same_bytes() {
 
 /// BUG-5063（反馈 9G1OHF2dQe）：同一条 Anki revlog 导入到血统里的两张卡上（旧笔记删了、新卡继承旧卡的历史，
 /// 再从 Anki 导一次），两份日志 ID 都由各自的带盐卡派生。同一事件的副本只算一份、代表取 ID 最小的那份——协议 3 比
-/// 原值 ID，新代比规范 ID，带盐的原值与规范值的先后可以相反。挑一对先后相反的 guid：迁移照样判 committed，对拍
-/// 没有差异（统计行、卡行的 `last_log_id` 两边指同一次复习）。
+/// 原值与规范值的先后可能相反。挑一对先后相反的 guid，验证归一不改变所选的副本。
 #[test]
 fn anki_copies_across_a_lineage_whose_salted_and_canonical_order_differ_migrate_cleanly() {
+    assert_anki_copies_migrate(false, false);
+}
+
+// The same revlog may get a different interval and due day when the card is
+// imported again. Choosing its other copy changes the card and later stats.
+#[test]
+fn anki_copies_with_different_schedules_migrate_cleanly() {
+    assert_anki_copies_migrate(true, false);
+    assert_anki_copies_migrate(true, true);
+}
+
+fn assert_anki_copies_migrate(different_schedules: bool, later_review: bool) {
     use crate::gen4_ids::rules::{self, CANONICAL};
     use crate::store::sync2::config::default_deck_id;
     use crate::store::sync2::tests::{deck_entity, edit};
@@ -1870,7 +1881,25 @@ fn anki_copies_across_a_lineage_whose_salted_and_canonical_order_differ_migrate_
             edit("card", &c_new, &format!("historyFrom/{c_old}"), json!(true)),
         ],
     );
-    d.apply(T0 + 3, vec![anki(&c_new, &log_of(Some(P), &new_g))]);
+    let mut new_copy = anki(&c_new, &log_of(Some(P), &new_g));
+    if different_schedules {
+        new_copy["x"]["res"]["ivl"] = json!(30);
+        new_copy["x"]["res"]["dueDay"] = json!(32);
+    }
+    d.apply(T0 + 3, vec![new_copy]);
+    if later_review {
+        // The review's statistical classification depends on the selected
+        // Anki copy's interval crossing the 21-day maturity threshold.
+        let at = RID + 60_000;
+        d.apply(
+            T0 + 4,
+            vec![json!({"t": "log", "x": {
+                "id": "later-review", "p": P, "card": c_new, "kind": "review",
+                "rating": 3, "hlc": format!("{at}:0:local"), "at": at,
+                "ts": "wall", "origin": "fushi", "rtype": "review",
+            }})],
+        );
+    }
     let Device { core, _dir: dir } = d;
     core.close();
     drop(core);
@@ -1879,6 +1908,24 @@ fn anki_copies_across_a_lineage_whose_salted_and_canonical_order_differ_migrate_
         P.to_owned(),
         json!({"defaultDeck": rules::builtin_default_deck(CANONICAL).text()}).to_string(),
     )]);
+    if different_schedules {
+        let legacy = open_ro(&dir.0.join(LEGACY_FILE)).unwrap();
+        let identity = seal::legacy_identity(&legacy).unwrap().unwrap();
+        drop(legacy);
+        let previous_report = json!({
+            "version": REPORT_VERSION,
+            "verdict": "aborted",
+            "profileVerdict": "fail",
+            "legacyIdentity": identity,
+        });
+        std::fs::write(dir.0.join(REPORT_FILE), previous_report.to_string()).unwrap();
+        assert!(matches!(
+            status(&dir.0),
+            Ok(GenState::MigrationFailed(Failure::Aborted(
+                AbortReason::Fail
+            )))
+        ));
+    }
     let out = migrate_with(&dir.0, &canonical, &Stop::new(), &mut Vec::new());
     let Outcome::Committed { report } = &out else {
         panic!("{out:?}")
@@ -1887,10 +1934,40 @@ fn anki_copies_across_a_lineage_whose_salted_and_canonical_order_differ_migrate_
     assert_eq!(p["verdict"], "pass", "{p:#}");
     assert_eq!(p["parity"], json!([]), "{p:#}");
     assert_eq!(p["canonical"], json!([]), "{p:#}");
-    // 正是「代表选得不同」这一格被认出来：新卡的统计行与卡行各一处。
+    // Both engines select the same copy even though the saved card and
+    // statistics refer to canonical IDs.
     let k = &p["knownDifferences"];
-    assert_eq!(k["cacheStatRepresentativeSwaps"], json!(1), "{p:#}");
-    assert_eq!(k["cacheCardRepresentativeSwaps"], json!(1), "{p:#}");
+    assert_eq!(k["cacheStatRepresentativeSwaps"], json!(0), "{p:#}");
+    assert_eq!(k["cacheCardRepresentativeSwaps"], json!(0), "{p:#}");
+    if different_schedules {
+        let c = Connection::open(dir.0.join(GEN4_FILE)).unwrap();
+        let card: Vec<u8> = card_of(CANONICAL, &new_g).0.to_vec();
+        let (due, interval): (i64, i64) = c
+            .query_row(
+                "SELECT due_day, scheduled_days FROM cards WHERE id = ?1",
+                [card],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        let (want_due, want_interval, want_kind) =
+            if log_of(Some(P), &new_g) < log_of(Some(P), &old_g) {
+                (32, 30, 3)
+            } else {
+                (5, 3, 2)
+            };
+        if later_review {
+            let kind: i64 = c
+                .query_row(
+                    "SELECT kind FROM stats WHERE at = ?1",
+                    [RID + 60_000],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(kind, want_kind);
+        } else {
+            assert_eq!((due, interval), (want_due, want_interval));
+        }
+    }
 }
 
 /// BUG-5190（反馈 eZJEGqEt7K）：一张卡有两个前身（并入重复笔记、删光重导……），两个前身记着不同的卡片标志

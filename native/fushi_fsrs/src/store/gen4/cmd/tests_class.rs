@@ -404,6 +404,12 @@ fn logs_by_time_give_one_representative_per_class() {
             let (_, logs) = read(t, col, json!({"q": "logs", "cards": [card.text()]}));
             assert_eq!(col_of(&logs, 0), [w.c_log.text()], "{}", card.text());
             assert_eq!(col_of(&logs, 1), [w.c_card.text()]);
+            // BUG-5476：`oid` 交回代表的原值日志 ID（规范 ID 从没出现在操作里），Dart 按它排序、选副本。
+            let oid = &logs[0][4];
+            assert!(
+                w.log.iter().any(|l| l.text() == *oid),
+                "oid {oid} is a raw member"
+            );
         }
     });
 }

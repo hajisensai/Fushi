@@ -31,6 +31,8 @@ import 'dart:io';
 import 'package:drift/drift.dart' show Value;
 import 'package:fushi_audio/fushi_audio_core.dart';
 import 'package:fushi_core/fushi_core.dart';
+import 'package:fushi_dictionary/fushi_dictionary_core.dart'
+    show kLearningLanguageCode;
 import 'package:fushi_engine/media/collections/library_organize/library_organize_service.dart';
 import 'package:fushi_engine/media/collections/library_organize/library_organize_facts.dart'
     show organizeEntryKeysAddedSince;
@@ -161,7 +163,15 @@ class LibraryScanner {
   }) : _videos = VideoBookRepository(db);
 
   final FushiDatabase db;
+
+  /// 配置 `subtitle_language`；空串 = 自动（视频按各自语言链挑，见 BUG-5465）。
   final String subtitleLanguage;
+
+  /// 有声书挑字幕用的语言：配置留空（自动）时退到学习语言——有声书行在扫描时还没有
+  /// 自己的语言可跟，与 app 本机导入（`kLearningLanguageCode`）同一个默认。
+  String get _audiobookSubtitleLanguage => subtitleLanguage.trim().isEmpty
+      ? kLearningLanguageCode
+      : subtitleLanguage;
   final bool extractCovers;
 
   /// 扫描后是否对账回收「文件已消失」的视频 / 书 / 漫画条目（默认开）。
@@ -985,7 +995,11 @@ class LibraryScanner {
             ..put(rel, uid)
             ..putSignature(
               rel,
-              _AudiobookFolderState.of(dir, folder, subtitleLanguage).signature,
+              _AudiobookFolderState.of(
+                dir,
+                folder,
+                _audiobookSubtitleLanguage,
+              ).signature,
             );
         }
         summary.audiobooksAdded++;
@@ -1012,7 +1026,7 @@ class LibraryScanner {
     final DiscoveryImportPlan plan = classifyDiscoveryDirectory(
       DiscoveryMediaKind.audiobook,
       folder.files,
-      subtitleLangCode: subtitleLanguage,
+      subtitleLangCode: _audiobookSubtitleLanguage,
     );
     switch (plan) {
       case AlignAudiobookPlan():
@@ -1122,7 +1136,7 @@ class LibraryScanner {
     final _AudiobookFolderState state = _AudiobookFolderState.of(
       root,
       folder,
-      subtitleLanguage,
+      _audiobookSubtitleLanguage,
     );
     final String? recorded = index.signatureOf(rel);
     if (recorded == state.signature) return false;

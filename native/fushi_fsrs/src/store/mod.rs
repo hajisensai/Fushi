@@ -1218,8 +1218,8 @@ pub(crate) fn history_states_of(
     for g in groups {
         let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
         for c in g {
-            for (j, s, cols) in logs.get(c).unwrap_or(&empty) {
-                stored.push((j, *s, cols.as_ref()));
+            for (j, s, cols, order_id) in logs.get(c).unwrap_or(&empty) {
+                stored.push((j, *s, cols.as_ref(), order_id.as_deref()));
             }
         }
         states.push(crate::history::state_from_stored(&stored)?);
@@ -1241,8 +1241,8 @@ pub(crate) fn stat_projection_of(
     for (gi, g) in groups.iter().enumerate() {
         let mut stored: Vec<crate::history::StoredLog<'_>> = Vec::new();
         for c in g {
-            for (j, s, cols) in logs.get(c).unwrap_or(&empty) {
-                stored.push((j, *s, cols.as_ref()));
+            for (j, s, cols, order_id) in logs.get(c).unwrap_or(&empty) {
+                stored.push((j, *s, cols.as_ref(), order_id.as_deref()));
             }
         }
         for r in crate::history::stats_from_stored(&stored)? {
@@ -1327,9 +1327,14 @@ impl SrsCore {
 }
 
 /// 这些组里全部卡的日志原文 + 服务器时刻（[conn] 上一条 JOIN 按块取）。
-/// [logs_of] 的一条：(存储值, 服务器时刻, 瘦存时的列)。读 `jslim` + 列（store/slim.rs `LOG_READ`），不经逐行
+/// [logs_of] 的一条：(存储值, 服务器时刻, 瘦存时的列, 别名归一前的排序 ID)。读 `jslim` + 列（store/slim.rs `LOG_READ`），不经逐行
 /// 拼回的 `json`。
-pub(crate) type LogRow = (String, Option<i64>, Option<crate::history::LogCols>);
+pub(crate) type LogRow = (
+    String,
+    Option<i64>,
+    Option<crate::history::LogCols>,
+    Option<String>,
+);
 
 pub(crate) fn logs_of(
     conn: &rusqlite::Connection,
@@ -1360,7 +1365,7 @@ pub(crate) fn logs_of(
             let card: String = row.get(0).map_err(|e| e.to_string())?;
             let st: Option<i64> = row.get(1).map_err(|e| e.to_string())?;
             let (json, cols) = slim::log_row(row, 2).map_err(|e| e.to_string())?;
-            logs.entry(card).or_default().push((json, st, cols));
+            logs.entry(card).or_default().push((json, st, cols, None));
         }
     }
     Ok(logs)
