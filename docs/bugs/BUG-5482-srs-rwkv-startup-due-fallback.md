@@ -1,0 +1,6 @@
+## BUG-5482 · srs-rwkv-startup-due-fallback
+- **报告**：2026-11-26（用户：复习牌组列表本来到期 73，重启 Fushi 后变成 959，手机同步后是 72）
+- **真实性**：✅ 真 bug。本机库 `srs4.db` 实查：`queue='review' AND due_day<=今天` 的复习卡约 960–1060 张，959 就是 RWKV 牌组被按存下的 FSRS-7 到期日数出来的数。根因：app 的 `srsStoreProvider`（`fushi/lib/src/srs/srs_providers.dart`）先把库交出去，`srsRwkvServiceProvider` 稍后（等模型档位 / 权重库 provider）才由 `srsAttachRwkv` 挂上 `store.rwkv`；这个间隙里 `SrsDbStore._instantInput`（`packages/fushi_engine/lib/srs/srs_db_store.dart`）把 `rwkv == null` 当成「宿主没有 RWKV 运行时」返回 null，RWKV 牌组于是按到期日排队计数。RWKV 挂上不是 store 写入、不推进修订号，牌组列表就一直停在 959（直到下一次评分 / 编辑）。复习页以前在自己那里先读服务再排队绕开了，列表 / 首页没有。换模型档位、换库重建服务的间隙同样会掉进这条路径。
+- **[x] ① 已修复** — `SrsDbStore.hostsRwkv`：宿主声明有 RWKV 运行时（app 在 `srsStoreProvider` 交库之前置上，`srsAttachRwkv` 也置上），之后 `rwkv` 为 null 一律按「RWKV 没准备好」交 pending，不退回到期日；牌组列表在 pending 时不再 await RWKV 服务（服务没挂上时那会让列表一直转圈），先交出「准备中」，服务到了订阅就绪事件重读。
+- **[x] ② 已加自动化测试** — `fushi/test/srs/srs_review_rwkv_pending_test.dart`「启动竞态（BUG-5482）」：两张按到期日已到期的 RWKV 卡，对照无运行时宿主数出 2；声明宿主、服务未挂时列表为 0 + 准备中；挂上就绪后自己重读成 RWKV 计数。`fushi/test/srs/srs_store_same_uid_handover_test.dart` 断言真实 `srsStoreProvider` 交出的库已声明 `hostsRwkv`。
+- **备注**：同次报告的「电脑 73 / 手机 72」不是本条：RWKV 分数由各设备本地回放算出，x86 走标量路径、aarch64 走 GEMM / NEON（`native/fushi_rwkv/README.md`），跨平台数值差约 1e-4，回忆率正好压在目标保留率附近的卡会一边算到期一边不算；另需排除两端模型档位（`<support>/srs_rwkv/model_size`）不同。跨平台逐位一致要改原生数值内核，已交用户拍板。

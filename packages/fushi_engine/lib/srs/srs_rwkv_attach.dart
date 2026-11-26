@@ -67,6 +67,9 @@ Future<void> writeSrsRwkvModelSize(
 /// 把 RWKV 排程服务挂到 [store] 上并返回它。对象本身很轻：后台 runtime、权重下载与全量回放只在
 /// [srsRwkvStartIfUsed]（库里有 RWKV 牌组）或第一次给 RWKV 牌组排队时启动。
 ///
+/// 同时置上 [SrsDbStore.hostsRwkv]：之后服务被摘下（换档位 / 换库重建）的间隙里 RWKV 牌组按「没准备好」排。
+/// 先交库、后装配的宿主（app：服务的 provider 依赖库的 provider）要在交库之前自己置上它。
+///
 /// 宿主在关库 / 不再提供这份库之前 `await service.close()`（存快照、关后台 runtime）；关了的服务永远「没就绪」，
 /// 这之后的排队不出 RWKV 牌组的复习卡。
 ///
@@ -97,7 +100,9 @@ SrsRwkvService srsAttachRwkv(
     openBackend: openBackend,
     log: log,
   );
-  store.rwkv = service;
+  store
+    ..hostsRwkv = true
+    ..rwkv = service;
   return service;
 }
 

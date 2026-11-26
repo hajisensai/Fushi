@@ -838,8 +838,18 @@ class SrsDbStore implements SrsSync2Host {
 
   /// RWKV-Instant 排队时「此刻回忆率」的来源（app 装配 `SrsRwkvService`，见 [_instantInput]）。它没准备好时
   /// RWKV 牌组的复习卡一张都不出（[SrsStudyState.rwkvPending]），**不**退回按 FSRS-7 存下的到期日排队。
-  /// null = 这个宿主根本没有 RWKV 运行时（无头引擎 / 测试），RWKV 牌组按到期日排。
+  /// null 且没有声明 [hostsRwkv] = 这个宿主根本没有 RWKV 运行时（离线工具 / 裸 store 的单测），RWKV 牌组按到期日排。
   SrsRwkvScheduling? rwkv;
+
+  /// 这个宿主有 RWKV 运行时、会给本库装配 [rwkv]（app 在交出库之前声明，[srsAttachRwkv] 也会置上）。声明之后
+  /// [rwkv] 暂时为 null（启动时服务还在建、换模型档位 / 换库时旧服务已摘新服务未挂）一律按「RWKV 没准备好」处理：
+  /// RWKV 牌组交零个候选并标 pending，**不**退回存下的 FSRS-7 到期日。以前 app 的库先于 RWKV 服务交出去，
+  /// 启动后第一轮牌组计数把 RWKV 牌组按到期日数成几百上千张，RWKV 挂上后又没有写入推进修订号，列表一直停在
+  /// 那个数（BUG-5482）。
+  bool hostsRwkv = false;
+
+  /// 排队时 RWKV 牌组归 RWKV 排（宿主有 RWKV 运行时：已装配或已声明）。
+  bool get _rwkvHost => hostsRwkv || rwkv != null;
 
   /// 释义样式去重的共享样式文件库；null = 不去重（字段值原样落库）。见 [compactStoredStyles]。
   final SrsStyleStore? styles;
@@ -5345,7 +5355,7 @@ class SrsDbStore implements SrsSync2Host {
     SrsDeckTree tree,
     Iterable<String> decks,
   ) {
-    if (rwkv == null) return const <String, double>{};
+    if (!_rwkvHost) return const <String, double>{};
     return <String, double>{
       for (final String d in decks)
         if (_schedulingConfigIn(tree, d) case final SrsSchedulingConfig c
@@ -5354,11 +5364,11 @@ class SrsDbStore implements SrsSync2Host {
     };
   }
 
-  /// 按 [config] 排程的牌组在这个宿主上是不是由 RWKV-Instant 排队：算法是 RWKV **且**宿主装配了 RWKV 运行时
-  /// （[rwkv]）。没有运行时的宿主（无头服务端 / CLI）上 RWKV 牌组照存下的 FSRS-7 到期日排队（[_instantInput]
+  /// 按 [config] 排程的牌组在这个宿主上是不是由 RWKV-Instant 排队：算法是 RWKV **且**宿主有 RWKV 运行时
+  /// （已装配 [rwkv]，或已声明 [hostsRwkv]、服务还没挂上）。没有运行时的宿主（无头服务端 / CLI）上 RWKV 牌组照存下的 FSRS-7 到期日排队（[_instantInput]
   /// 返回 null），这时评分日志的 `alg` 也必须是 FSRS-7（[_previewOf]）——日志记的是实际排它的算法。
   bool _queuesByRwkv(SrsSchedulingConfig config) =>
-      rwkv != null && config.algorithm.usesRwkv;
+      _rwkvHost && config.algorithm.usesRwkv;
 
   /// 这些牌组里可能有按 RWKV-Instant 排队的（有 RWKV 服务且有 RWKV 牌组）。
   bool _instantPossible(SrsDeckTree tree, Iterable<String> decks) =>
@@ -5369,8 +5379,8 @@ class SrsDbStore implements SrsSync2Host {
   /// （RWKV 服务是另一个原生库，[SrsRwkvScheduling]），排队规则（目标保留率、同日间隔守卫、每天最少复习数、
   /// 按 R 升序、每日上限）在内核（store/study.rs `instant_eligible`）。
   ///
-  /// 返回 null = [decks] 里没有 RWKV 牌组，或这个宿主没有 RWKV 运行时（[rwkv] 为 null）。RWKV 没准备好（权重
-  /// 没下载 / 正在回放 / 出错）时交出这些牌组、**零个候选**并标 `pending`：内核于是不出它们的复习卡
+  /// 返回 null = [decks] 里没有 RWKV 牌组，或这个宿主没有 RWKV 运行时（[rwkv] 为 null 且没声明 [hostsRwkv]）。
+  /// RWKV 没准备好（宿主声明了但服务还没挂上 / 权重没下载 / 正在回放 / 出错）时交出这些牌组、**零个候选**并标 `pending`：内核于是不出它们的复习卡
   /// （[SrsStudyState.rwkvPending]），复习页等 RWKV 就绪再出。绝不退回按 FSRS-7 存下的到期日排队——那是另一种
   /// 排程，日志的 `alg` 会混进 FSRS-7，时钟出问题时还会把「回放失败 → 改按到期日」放大成整批重复出卡。
   /// 只交 R 不高于目标保留率的卡，加上「每天最少复习数」补足可能用到的卡（[_minimumTopUp]）；其余的内核也只会丢掉。
@@ -5381,7 +5391,6 @@ class SrsDbStore implements SrsSync2Host {
     int nowMs,
   ) async {
     final SrsRwkvScheduling? source = rwkv;
-    if (source == null) return null;
     final Map<String, double> targets = _instantTargets(tree, decks);
     if (targets.isEmpty) return null;
     // 排队设置与目标保留率同一条继承（参数归属的 own 祖先）。
@@ -5406,6 +5415,8 @@ class SrsDbStore implements SrsSync2Host {
       'cands': const <Object?>[],
       'pending': true,
     };
+    // 宿主声明了 RWKV、服务还没挂上：挂上后由宿主启动准备（[srsRwkvStartIfUsed]），这里只报 pending。
+    if (source == null) return pending;
     if (!source.ready) {
       // 不读候选卡：没准备好时 [SrsRwkvScheduling.instantRetrievability] 只触发准备并返回 null。
       unawaited(
