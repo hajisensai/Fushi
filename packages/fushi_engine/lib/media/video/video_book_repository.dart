@@ -197,6 +197,12 @@ class VideoBookRepository {
   Future<bool> assignSourceIfNull(String bookUid, int sourceId) async =>
       await _db.assignVideoBookSourceIfNull(bookUid, sourceId) > 0;
 
+  /// 无条件把视频改归属到 [sourceId]（只写 `source_id`）：文件物理上已经在这个
+  /// 来源的根下（扫描认出的搬家改指，BUG-5530），归属必须跟着文件走，否则移除旧源
+  /// 会按 `source_id` 连带删掉新源下的集。
+  Future<void> assignSource(String bookUid, int sourceId) =>
+      _db.assignVideoBookSource(bookUid, sourceId);
+
   /// 一本视频的历史刮削资料原始行（播放器剧集面板判「真·集级集名」要
   /// `episodeNumber` 列，与合集详情页 `_episodeMetaByUid` 同一判据同一取数口）。
   Future<VideoScrapeMetaRow?> episodeScrapeMeta(String bookUid) =>

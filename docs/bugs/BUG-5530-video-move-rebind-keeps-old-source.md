@@ -1,0 +1,8 @@
+## BUG-5530 · 扫描搬家改指不改归属源、不迁路径关联列
+- **报告**：2026-11-26（整库补字幕实跑时发现：用户把 241 集从 `D:\video` 挪到 NAS `V:\`，重扫 V: 源后旧行全部改指到 V: 路径，但 `source_id` 仍是 3「播放列表合集 D:/video/…」）
+- **真实性**：✅ 真 bug。根因 `fushi/lib/src/media/source_library/source_library_scanner.dart:3145-3154`（BUG-2979 的搬家改指分支）：
+  1. 归属源用 `assignSourceIfNull(moved.bookUid, sourceId)`——旧行已有 `source_id` 时不改，行落在 V: 却归属 D: 的源。后果：移除旧源会按 `source_id` 连带删掉已经在新源下的集；按源的刮削设置 / 运行、按源统计都对不上。
+  2. 改路径用 `updateLocalMediaPaths`（只写 `videoPath` / 字幕源），不是一次事务迁全部路径关联列的 `VideoBookRepository.applyMediaFileMoves`（`packages/fushi_engine/lib/media/video/video_book_repository.dart:973`）：`playlistJson` 各集 path、`cover_path`、`media_images.path`、`video_metadata_images.local_path`、字幕覆盖层 `source_key`、`video_file_specs` 等仍指旧路径。
+- **[x] ① 已修复** — `source_library_scanner.dart` `_importVideos`：搬家改指不再逐行 `updateLocalMediaPaths` + `assignSourceIfNull`，改为本轮收集 `旧 → 新`（视频；旧字幕已失效且新位置有字幕时的字幕 sidecar，语义不变；`movedVideoCompanionFiles` 认出的跟着搬走的旁挂文件——封面、副字幕、刮削 sidecar，判据是「与旧视频同目录、旧的已不在、新目录有同名」），循环后一次 `VideoBookRepository.applyMediaFileMoves` 事务迁全部路径关联列，再用新增的 `VideoBookRepository.assignSource` 无条件把归属改成本源。修复前已改指的行（用户库那 241 集）：重扫时已在库的行若归属源的根不含其路径（`videoPathWithinRoot`），同样改归本源；重叠来源（归属源根也含该路径）不动——修复后重扫 V: 一次即可校正 3 → 24。播放缺失态「重新导入」`video_fushi_page.dart` `_relinkMissingResource` 改走 `applyMediaFileMoves(MovedMediaFiles({旧: 新}))`，旧值不是本地绝对路径（无路径列可迁）时才只写 videoPath。
+- **[x] ② 已加自动化测试** — `fushi/test/media/source_library/source_scan_integrity_test.dart`「视频搬家判定要正证据」组：① 旧行归属源 A、整目录挪进源 B 的根，重扫 B 后 `source_id == B`，`cover_path`、另一行 `playlistJson` 的该集 path（进度保留）、字幕改名后的覆盖层 `source_key` 跟着迁；② 修复前已改指的行重扫改归 B，重叠来源不抢；③ `movedVideoCompanionFiles` 判据单测。`video_relink_guard_test.dart` 守卫改咬 `applyMediaFileMoves`。
+- **备注**：BUG-4055 选 B（视频源重扫保留暂缺行）不受影响。

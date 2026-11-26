@@ -367,6 +367,8 @@ import 'package:fushi/src/media/video/video_seek_indicator_label.dart';
 import 'package:fushi_engine/media/video/series_playback_prefs.dart';
 import 'package:fushi/src/media/video/video_asbplayer_config.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_path_migration.dart'
+    show MovedMediaFiles;
 import 'package:fushi/src/media/video/video_chrome_colors.dart';
 import 'package:fushi/src/media/video/video_chrome_hit_test.dart';
 import 'package:fushi/src/media/video/video_current_line_copy.dart';
@@ -8008,9 +8010,16 @@ class _VideoFushiPageState extends ConsumerState<VideoFushiPage>
       copiesRoot: await enginePaths.pickedVideoCopiesDirectory(),
     );
     if (!mounted) return;
-    // 持久化新路径（只写 videoPath，进度 / 字幕 / 音轨 / 倍速等其它列不动，
-    // updateLocalMediaPaths 用 Value.absent() 保持未触及）。
-    await widget.repo.updateLocalMediaPaths(row.bookUid, videoPath: newPath);
+    // 持久化新路径（BUG-5530）：按路径关联的列（videoPath、playlistJson 各集 path、
+    // 规格 / ED2K 缓存、指着这个文件的刮削图）一次事务改过去；进度 / 字幕 / 音轨 /
+    // 倍速等按 bookUid 的列不动。旧值不是本地绝对路径（早年入库的 content:// 等）时
+    // 没有任何路径列可迁，只写 videoPath。
+    final int migrated = await widget.repo.applyMediaFileMoves(
+      moved: MovedMediaFiles(<String, String>{row.videoPath: newPath}),
+    );
+    if (migrated == 0) {
+      await widget.repo.updateLocalMediaPaths(row.bookUid, videoPath: newPath);
+    }
     // 重读最新行（承载新 videoPath + 其它未变列），清缺失态后原地重新载入播放。
     final VideoBookRow? updated = await widget.repo.getByBookUid(row.bookUid);
     if (updated == null || !mounted) return;

@@ -120,6 +120,8 @@ import 'package:fushi/src/media/video/url_stream_video.dart'
     show StreamVideoSpec;
 import 'package:fushi_engine/media/video/metadata/video_scrape_operation_gate.dart';
 import 'package:fushi_engine/media/video/video_book_repository.dart';
+import 'package:fushi_engine/media/video/video_path_migration.dart'
+    show MovedMediaFiles;
 import 'package:fushi_engine/media/collections/book_series_grouper.dart';
 import 'package:fushi_engine/media/video/video_folder_group_coordinator.dart';
 import 'package:fushi/src/media/video/video_import_dialog.dart';
@@ -3109,6 +3111,17 @@ class SourceLibraryScanner {
         : fullByPath[path] = await computeVideoContentFullHash(path);
     // 本轮扫到、库里已有的行：扫描结束后复查它们的指纹（原地换了文件就重算）。
     final Set<String> seenUids = <String>{};
+    // BUG-5530：本轮认出的搬家（旧 → 新，含跟着视频一起搬走的 sidecar）与改指的行。
+    // 循环结束后一次 [VideoBookRepository.applyMediaFileMoves] 事务迁全部按路径关联
+    // 的列，再把这些行的归属源改成本源——文件已经在本源的根下。
+    final Map<String, String> rebindMoves = <String, String>{};
+    final List<String> rebindUids = <String>[];
+    List<String>? sidecarArtifactPaths;
+    // 修复前改指过的行：路径已在本源根下、归属源的根却不含它（BUG-5530 用户库里
+    // 那 241 集）。重扫本源时按同一判据把归属改过来；重叠来源（归属源的根也含这个
+    // 路径）不动。
+    final List<String> reownUids = <String>[];
+    Map<int, String>? sourceRootById;
 
     // Temp dir only used by non-local transports (copyToLocal downloads here);
     // for local transport copyToLocal returns the original path unchanged.
@@ -3142,16 +3155,29 @@ class SourceLibraryScanner {
           if (live == null) {
             // 首次扫到搬家后的文件：原行改指新路径，进度 / 字幕 cue / 标签 /
             // 合集归属 / 统计全在原 bookUid 上，原样保住，不再另建 `X (2)`。
-            await _videoRepo.updateLocalMediaPaths(
-              moved.bookUid,
-              videoPath: item.videoPath,
-              subtitleSource:
-                  item.subtitlePath != null &&
-                      await _isDeadLocalPath(moved.subtitleSource)
-                  ? item.subtitlePath
-                  : null,
+            // 字幕 sidecar 只在旧字幕已失效、新位置有字幕时才跟着换。
+            rebindMoves[moved.videoPath] = item.videoPath;
+            if (item.subtitlePath != null &&
+                await _isDeadLocalPath(moved.subtitleSource)) {
+              rebindMoves[moved.subtitleSource!] = item.subtitlePath!;
+            }
+            sidecarArtifactPaths ??= <String>[
+              for (final VideoSidecarArtifactRow a
+                  in await _db.select(_db.videoSidecarArtifacts).get())
+                a.path,
+            ];
+            rebindMoves.addAll(
+              await movedVideoCompanionFiles(
+                oldVideoPath: moved.videoPath,
+                newVideoPath: item.videoPath,
+                candidates: <String?>[
+                  moved.coverPath,
+                  moved.secondarySubtitleSource,
+                  ...sidecarArtifactPaths,
+                ],
+              ),
             );
-            await _videoRepo.assignSourceIfNull(moved.bookUid, sourceId);
+            rebindUids.add(moved.bookUid);
             // 指纹跟着行走：同一份内容，修改时刻按新位置刷新；认定时算过整文件哈希
             // 就记整文件哈希，不降回采样指纹。
             await _recordContentFingerprint(
@@ -3176,7 +3202,21 @@ class SourceLibraryScanner {
         // Skip already-imported physical files (library or same-batch dup).
         if (!existingPaths.add(normalizedPath)) {
           final VideoBookRow? already = rowByPath[normalizedPath];
-          if (already != null) seenUids.add(already.bookUid);
+          if (already != null) {
+            seenUids.add(already.bookUid);
+            final int? owner = already.sourceId;
+            if (!streamInPlace && owner != null && owner != sourceId) {
+              sourceRootById ??= <int, String>{
+                for (final MediaSourceRow src in await _db.getAllMediaSources())
+                  src.id: src.rootPath,
+              };
+              final String? ownerRoot = sourceRootById[owner];
+              if (ownerRoot != null &&
+                  !videoPathWithinRoot(item.videoPath, ownerRoot)) {
+                reownUids.add(already.bookUid);
+              }
+            }
+          }
           continue;
         }
         // BUG-2570：一个文件的失败只作废这个文件。此前整个循环共用 [scan] 的总
@@ -3266,6 +3306,14 @@ class SourceLibraryScanner {
             '${item.videoPath}: $e\n$stack',
           );
         }
+      }
+      if (rebindUids.isNotEmpty) {
+        await _videoRepo.applyMediaFileMoves(
+          moved: MovedMediaFiles(rebindMoves),
+        );
+      }
+      for (final String uid in <String>[...rebindUids, ...reownUids]) {
+        await _videoRepo.assignSource(uid, sourceId);
       }
       if (!streamInPlace) {
         // 补算：本轮扫到的已有行复查（原地换了文件就重算），库里其余还没有指纹的
@@ -3873,6 +3921,39 @@ List<String> _directoryNames(String path) {
 String _crossPlatformBasename(String path) {
   final int cut = path.lastIndexOf(RegExp(r'[\\/]'));
   return cut < 0 ? path : path.substring(cut + 1);
+}
+
+/// [path] 是否落在来源根 [root] 下（含等于根）；比较走 `p.canonicalize`
+/// （Windows 大小写不敏感、`/` `\` 混用）。
+@visibleForTesting
+bool videoPathWithinRoot(String path, String root) {
+  final String c = p.canonicalize(path);
+  final String r = p.canonicalize(root);
+  return c == r || p.isWithin(r, c);
+}
+
+/// BUG-5530：扫描认出视频从 [oldVideoPath] 搬到 [newVideoPath] 时，[candidates]
+/// （库里按路径记着的旁挂文件：封面、副字幕、刮削写出的 nfo / 图）里哪些是跟着
+/// 视频一起搬走的，返回 `旧 → 新`。
+///
+/// 判据要正证据，不按目录前缀整体平移（BUG-3538）：旧文件与旧视频同目录且已经不在，
+/// 新视频目录下有同名文件。不同目录的（app 缓存里的封面等）、原地还在的一律不动。
+@visibleForTesting
+Future<Map<String, String>> movedVideoCompanionFiles({
+  required String oldVideoPath,
+  required String newVideoPath,
+  required Iterable<String?> candidates,
+}) async {
+  final Map<String, String> moves = <String, String>{};
+  final String newDir = p.dirname(newVideoPath);
+  for (final String? candidate in candidates) {
+    if (candidate == null || candidate == oldVideoPath) continue;
+    if (!MovedMediaFiles.sameDirectory(candidate, oldVideoPath)) continue;
+    if (!await _isDeadLocalPath(candidate)) continue;
+    final String target = p.join(newDir, p.basename(candidate));
+    if (await File(target).exists()) moves[candidate] = target;
+  }
+  return moves;
 }
 
 /// 本地路径已失效（null / URL / 哨兵值都不算失效，不去动它）。
