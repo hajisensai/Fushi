@@ -652,6 +652,10 @@ const Map<String, String> kWebUiEnglish = <String, String>{
   '已导入「{0}」（{1}，{2} 词条{3}）': 'Imported "{0}" ({1}, {2} entries{3})',
   '，{0} 汉字': ', {0} kanji',
   '导入失败：{0}': 'Import failed: {0}',
+  '{0} 个文件：{1}': '{0} files: {1}',
+  '（{0}/{1}）{2}：': '({0}/{1}) {2}: ',
+  '导入完成：{0} 个成功，{1} 个失败': 'Import finished: {0} succeeded, {1} failed',
+  '「{0}」导入失败：{1}': '"{0}" failed to import: {1}',
   '按「{0}」查': 'Looked up as "{0}"',
   '没有结果': 'No results',
   // ── 日志 / 标题栏 ──

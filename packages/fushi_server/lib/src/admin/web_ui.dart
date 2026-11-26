@@ -247,7 +247,7 @@ main{grid-column:1;padding:4px 16px 48px}
 <div class="card"><div class="kv-grid" id="dict-engine"></div></div>
 <p class="note">已配对设备查词时只把要查的文字发过来，去屈折（「食べた」→「食べる」）在本机用本机的变形表做，所以变形表装在服务端即可，各设备无需自带。</p>
 <div class="card"><h2 class="kit-title-medium">导入词典</h2>
-<div class="form-grid"><div class="field is-wide">词典包<label class="dropzone"><input type="file" id="dict-file" accept=".zip,.fushidict,.mdx,.dsl"><span class="msr-slot" data-fushi-icon="upload_file"></span><span class="dropzone-label">拖放文件到这里，或点击选择</span><span class="dropzone-files" id="dict-file-name"></span></label></div></div>
+<div class="form-grid"><div class="field is-wide">词典包<label class="dropzone"><input type="file" id="dict-file" accept=".zip,.fushidict,.mdx,.dsl" multiple><span class="msr-slot" data-fushi-icon="upload_file"></span><span class="dropzone-label">拖放文件到这里，或点击选择</span><span class="dropzone-files" id="dict-file-name"></span></label></div></div>
 <div class="action-row"><button class="primary-button" id="btn-dict-up"><span class="msr-slot" data-fushi-icon="upload"></span>导入</button><span class="field-hint">支持 Fushi app 导出的 .fushidict 词典包，以及 Yomitan（.zip）、MDX、DSL 词典。同名词典视为更新，保留排序与设置。导入完立即生效，计入上传配额；也可以在 Fushi 的「词典 · 传输」推送过来。</span></div>
 <p class="kit-supporting" id="dict-up-state"></p>
 </div>
@@ -503,10 +503,11 @@ function syncRail(){
 }
 $('#btn-rail').onclick = ()=>{ const expanded=$('#rail').classList.contains('is-expanded'); try{ localStorage.setItem(RAIL_KEY, expanded?'compact':'expanded'); }catch(e){} syncRail(); };
 narrow.addEventListener('change', syncRail); wide.addEventListener('change', syncRail);
-// 拖放区：显示选中的文件名。
+// 拖放区：显示选中的文件名（多个时前面带个数）。input 透明铺满整个拖放区，拖进来的文件由浏览器
+// 直接落到 input 上；带 multiple 的 input 一次可收多个。
 for (const [inp, out] of [['#up-files','#up-files-names'],['#dict-file','#dict-file-name']]){
   const el=$(inp), zone=el.closest('.dropzone');
-  el.addEventListener('change', ()=>{ $(out).textContent = Array.from(el.files).map(f=>f.name).join(T('、')); });
+  el.addEventListener('change', ()=>{ const names=Array.from(el.files).map(f=>f.name); $(out).textContent = names.length>1 ? T('{0} 个文件：{1}', names.length, names.join(T('、'))) : names.join(''); });
   zone.addEventListener('dragover', ()=>zone.classList.add('is-over')); zone.addEventListener('dragleave', ()=>zone.classList.remove('is-over')); zone.addEventListener('drop', ()=>zone.classList.remove('is-over'));
 }
 
@@ -1435,16 +1436,32 @@ function uploadDictionary(file, onProgress){
     x.send(file);
   });
 }
+// 可一次选 / 拖入多个词典：逐个顺序 PUT（复用单文件端点），一个失败不影响其余；结束后统一报
+// 成功 / 失败清单、只刷新一次清单。失败的文件留在选择框里，可直接再点「导入」重试。
 $('#btn-dict-up').onclick = guard(async()=>{
-  const f = $('#dict-file').files[0]; if(!f) throw new Error(T('先选择一个词典文件'));
-  const btn=$('#btn-dict-up'), st=$('#dict-up-state'); btn.disabled=true; st.style.color='';
+  const input=$('#dict-file'), files=Array.from(input.files); if(!files.length) throw new Error(T('先选择一个词典文件'));
+  const btn=$('#btn-dict-up'), st=$('#dict-up-state'); btn.disabled=true; st.style.color=''; st.style.whiteSpace='pre-line';
+  const many=files.length>1, done=[], failed=[];
+  const describe = (r)=>{ const args=[r.name, DICT_TYPE[r.type]||r.type, r.termCount, r.kanjiCount?T('，{0} 汉字', r.kanjiCount):'']; return r.replaced ? T('已更新「{0}」（{1}，{2} 词条{3}）', ...args) : T('已导入「{0}」（{1}，{2} 词条{3}）', ...args); };
   try{
-    const r = await uploadDictionary(f, (p)=>{ st.textContent = p<1 ? T('上传中 {0}%', Math.round(p*100)) : T('导入中…（大词典要几分钟）'); });
-    const args = [r.name, DICT_TYPE[r.type]||r.type, r.termCount, r.kanjiCount?T('，{0} 汉字', r.kanjiCount):''];
-    st.textContent = r.replaced ? T('已更新「{0}」（{1}，{2} 词条{3}）', ...args) : T('已导入「{0}」（{1}，{2} 词条{3}）', ...args);
-    toast(st.textContent); $('#dict-file').value=''; $('#dict-file-name').textContent=''; await loadDictionaries();
-  }catch(e){ st.style.color='var(--md-sys-color-error)'; st.textContent=T('导入失败：{0}', e.message); throw e; }
-  finally{ btn.disabled=false; }
+    for (const [i, f] of files.entries()){
+      const prefix = many ? T('（{0}/{1}）{2}：', i+1, files.length, f.name) : '';
+      try{
+        const r = await uploadDictionary(f, (p)=>{ st.textContent = prefix + (p<1 ? T('上传中 {0}%', Math.round(p*100)) : T('导入中…（大词典要几分钟）')); });
+        done.push(describe(r));
+      }catch(e){ failed.push({file:f, error:e.message}); }
+    }
+    const keep = new DataTransfer(); failed.forEach(x=>keep.items.add(x.file)); input.files = keep.files; input.dispatchEvent(new Event('change'));
+    if (done.length) await loadDictionaries();
+    if (!many){
+      if (failed.length){ st.style.color='var(--md-sys-color-error)'; st.textContent=T('导入失败：{0}', failed[0].error); throw new Error(failed[0].error); }
+      st.textContent=done[0]; toast(st.textContent); return;
+    }
+    const head = T('导入完成：{0} 个成功，{1} 个失败', done.length, failed.length);
+    st.textContent = [head, ...done, ...failed.map(x=>T('「{0}」导入失败：{1}', x.file.name, x.error))].join('\n');
+    if (failed.length){ st.style.color='var(--md-sys-color-error)'; throw new Error(head); }
+    toast(head);
+  }finally{ btn.disabled=false; }
 });
 $('#btn-dict-reload').onclick = guard(async()=>{
   $('#btn-dict-reload').disabled=true;
