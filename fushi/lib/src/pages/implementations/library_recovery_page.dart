@@ -756,6 +756,8 @@ class _RestorePointsPageState extends State<RestorePointsPage> {
   }
 
   Future<void> _exportReceived(ReceivedDeviceBackup copy) async {
+    // 连点 / 别的动作在跑：不叠第二个保存框。
+    if (_busy) return;
     setState(() => _busy = true);
     try {
       final bool done = await _host.exportReceivedBackup(copy);

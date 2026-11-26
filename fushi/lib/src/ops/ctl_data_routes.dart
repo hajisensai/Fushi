@@ -188,11 +188,26 @@ List<RestorePointEntry> _restorePointEntries(AppModel appModel) {
 
 /// 本机当互联 host 时收到的别的设备的备份（与还原点页「从其他设备收到的备份」同一个收件箱；本机
 /// 设备键与写进还原点元数据的同源）。
-Future<ReceivedDeviceBackups> _receivedDeviceBackups(AppModel appModel) async =>
-    ReceivedDeviceBackups.forApp(
-      databaseDirectory: appModel.databaseDirectory.path,
-      ownDeviceKey: (await appModel.autoBackup.host.deviceIdentity()).id,
+///
+/// 本机设备键查不出来（同步库读不了等）时回 503 + 安全的错误码 `device_identity_unavailable`（原文只进日志）：
+/// 不知道哪个是本机就不能保证不列 / 不删本机自己的副本。
+Future<ReceivedDeviceBackups> _receivedDeviceBackups(AppModel appModel) async {
+  final String ownKey;
+  try {
+    ownKey = (await appModel.autoBackup.host.deviceIdentity()).id;
+  } catch (e, st) {
+    debugPrint('ctl[backup.received] device identity unavailable: $e\n$st');
+    throw const CtlFailure(
+      503,
+      'device_identity_unavailable',
+      '查不出本机的设备标识，稍后再试',
     );
+  }
+  return ReceivedDeviceBackups.forApp(
+    databaseDirectory: appModel.databaseDirectory.path,
+    ownDeviceKey: ownKey,
+  );
+}
 
 /// 收到的一台设备的 wire 形态：[ReceivedDeviceBackupGroup.toJson] 加上盘上位置。
 @visibleForTesting
