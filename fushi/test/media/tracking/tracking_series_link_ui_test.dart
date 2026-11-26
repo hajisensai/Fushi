@@ -537,6 +537,68 @@ void main() {
       await tester.pumpWidget(const SizedBox.shrink());
     });
 
+    for (final bool apple in <bool>[false, true]) {
+      testWidgets('more than $kSeriesCardVolumeFoldThreshold volumes fold '
+          'behind a summary; a volume needing attention stays out; the fold '
+          'stays open across a reload (${apple ? 'Apple' : 'Material'})', (
+        WidgetTester tester,
+      ) async {
+        await open(tester);
+        await tester.runAsync(() async {
+          card = await seriesCard('Ajin', <String>[
+            for (int i = 1; i <= 6; i++) 'Ajin 0$i',
+            'Ajin',
+          ]);
+          await seriesLink('$card');
+        });
+        await pumpApp(
+          tester,
+          Scaffold(
+            body: SingleChildScrollView(
+              child: SeriesCardTrackingSection(
+                service: service,
+                collectionId: card,
+              ),
+            ),
+          ),
+          apple: apple,
+        );
+        Finder row(String bookKey) => find.byKey(
+          ValueKey<String>('series-card-tracking-volume-$_site-$bookKey'),
+        );
+        final Finder fold = find.byKey(
+          const ValueKey<String>('series-card-tracking-fold-$_site'),
+        );
+        // The unnumbered volume waits for the user: visible, outside.
+        expect(row('Ajin'), findsOneWidget);
+        expect(find.descendant(of: fold, matching: row('Ajin')), findsNothing);
+        expect(row('Ajin 03'), findsNothing);
+        expect(
+          find.text(
+            '${t.tracking_series_fold_counted(n: '6')} · '
+            '${t.tracking_series_fold_not_counted(n: '1')}',
+          ),
+          findsOneWidget,
+        );
+
+        await tester.tap(find.text(trackingVolumesCount(7)));
+        await settle(tester);
+        expect(row('Ajin 03'), findsOneWidget);
+
+        await pickMenu(tester, volumeMenu('Ajin 03'), 'exclude');
+        expect(row('Ajin 03'), findsOneWidget);
+        expect(
+          find.text(
+            '${t.tracking_series_fold_counted(n: '5')} · '
+            '${t.tracking_series_fold_not_counted(n: '2')}',
+          ),
+          findsOneWidget,
+        );
+        expect(tester.takeException(), isNull);
+        await tester.pumpWidget(const SizedBox.shrink());
+      });
+    }
+
     testWidgets('"Remove series link" asks, then removes it', (
       WidgetTester tester,
     ) async {
