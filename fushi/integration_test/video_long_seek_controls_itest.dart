@@ -110,6 +110,9 @@ void main() {
         }
       }
       expect(ready, isTrue, reason: 'video controller should load');
+      // 暂停在 10 秒处：截图时控制条不因播放而自动淡出，片尾也留得出 +30 秒的余量。
+      await hooks().debugPause();
+      await hooks().debugSeekMs(10000);
       await pumpFor(const Duration(milliseconds: 800));
     }
 
