@@ -64,7 +64,7 @@ void main() {
     expect(
       setup,
       contains(
-        'merge.fushi-i18n-json.driver "dart fushi/tool/i18n_merge_driver.dart %O %A %B"',
+        'merge.fushi-i18n-json.driver "sh tool/git_hooks/i18n_merge_driver.sh %O %A %B"',
       ),
     );
   });

@@ -121,7 +121,10 @@ else {
 # 本身只能放 git config(不入库)。写的是仓库级 config，主 checkout 与所有 worktree
 # 共用，幂等。没注册时 git 退回按行合并，不会出错，只是相邻 key 照样冲突。
 & git -C $here config merge.fushi-i18n-json.name "Fushi i18n JSON key-level merge"
-& git -C $here config merge.fushi-i18n-json.driver "dart fushi/tool/i18n_merge_driver.dart %O %A %B"
+# 经 tool/git_hooks/i18n_merge_driver.sh：清掉 git 传给驱动的 GIT_DIR 等变量、用 pub get 那份
+# SDK 的 dart。直接 `dart ...` 会走 Flutter 包装脚本，它在 worktree 里继承 GIT_DIR 后把本仓
+# HEAD 当成 SDK 版本，重建工具并把 flutter.version.json 写坏（2026-11-27 实测）。
+& git -C $here config merge.fushi-i18n-json.driver "sh tool/git_hooks/i18n_merge_driver.sh %O %A %B"
 Write-Host "OK i18n json 合并驱动已注册(merge.fushi-i18n-json)" -ForegroundColor Green
 
 # --- strings.g.dart 不入库：git 钩子 + 生成 -----------------------------------------
