@@ -11080,7 +11080,7 @@ function __fushiPopupClick(e) {
             window.flutter_inappwebview.callHandler('tapOutside');
             return;
         }
-        window.fushiSelection?.selectText(e.clientX, e.clientY, 20);
+        window.fushiSelection?.selectText(e.clientX, e.clientY, FUSHI_POPUP_SCAN_TEXT_MAX_LEN);
         return;
     }
     // TODO-859 方案1：用「点击是否落在某张词条卡片内」的正向判定取代旧黑名单。旧逻辑
@@ -11111,6 +11111,10 @@ function __fushiPopupClick(e) {
     window.flutter_inappwebview.callHandler('tapOutside');
 }
 
+// BUG-5485：弹窗内嵌套取词交给宿主的文本上限，不是扫描窗口（窗口由引擎按「扫描长度」设置切）。
+// 与 app 阅读器 / 内置浏览器 / 浏览器扩展页面取词同为 400；旧值 20 会截断更长的英文词，
+// 也让调到 20 以上的扫描长度在嵌套层不生效。
+const FUSHI_POPUP_SCAN_TEXT_MAX_LEN = 400;
 var _popupShiftLastX = -1, _popupShiftLastY = -1;
 // 弹窗内悬停扫描延迟（反馈 r4tpeIzVuD，与网页侧反馈 L4Vhk0hOjM 同一个设置）：浏览器扩展各 realm
 // 注入 __fushiScanDelayMs（content.js / side-panel.js / nested-popup.js，判据 = 各自的
@@ -11133,7 +11137,7 @@ function __fushiPopupScanAt(x, y) {
     if (dx * dx + dy * dy < 64) return;
     _popupShiftLastX = x; _popupShiftLastY = y;
     if (window.fushiSelection) {
-        window.fushiSelection.selectText(x, y, 20);
+        window.fushiSelection.selectText(x, y, FUSHI_POPUP_SCAN_TEXT_MAX_LEN);
     }
 }
 function __fushiPopupMouseMove(e) {

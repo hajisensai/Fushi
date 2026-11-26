@@ -154,7 +154,8 @@ function loadContentAndFireShift(options) {
       getCharacterAtPoint: () => ({ node: { textContent: '世界です', nodeType: 3 }, offset: 0 }),
       // options.selection：模拟真 selection.js 选词后留下的 selection（含 rubyReadings）。
       selection: null,
-      selectFromPosition() {
+      selectFromPosition(node, offset, maxLength) {
+        if (options.selectFromPosition) return options.selectFromPosition(node, offset, maxLength);
         if (options.selection) {
           this.selection = options.selection;
           return options.selection.text;
@@ -203,6 +204,33 @@ test('Shift + mousemove 命中日文时真的发出 lookup 查词消息', () => 
   const lookups = sent.filter((m) => m && m.type === 'lookup');
   assert.strictEqual(lookups.length, 1, 'Shift 悬停未发出恰好一次 lookup 查词');
   assert.strictEqual(lookups[0].term, '世界', 'lookup 携带的词不对');
+});
+
+// BUG-5485 回归守卫：YouTube 字幕 Shift 悬停 procrastination 不出弹窗。content.js 把取词上限写死
+// 成 12，selectFromPosition 前向扫描到 12 个字就停，发给 app 的是 procrastinat——引擎查无此词，
+// 弹窗不出。取词上限不是扫描窗口：窗口由 app 的「扫描长度」设置（FushiDicts.scanLength，上限
+// 32）在引擎侧切，宿主只管给足文本（app 阅读器 / 内置浏览器都传 400）。桩按真 selection.js 的
+// 前向扫描语义从命中处取 maxLength 个字，断言长英文词整词送达、且上限不低于扫描长度设置的上限。
+test('Shift 悬停长英文词：整词交给 app，不被取词上限截断（BUG-5485）', () => {
+  const caption = 'of procrastination day after day.';
+  const maxLengths = [];
+  const h = loadContentAndFireShift({
+    selectFromPosition(_node, _offset, maxLength) {
+      maxLengths.push(maxLength);
+      const start = caption.indexOf('procrastination');
+      return caption.slice(start, start + maxLength);
+    },
+  });
+  fireShiftLookup(h.docListeners, 300, 400);
+  const lookups = h.sent.filter((m) => m && m.type === 'lookup');
+  assert.strictEqual(lookups.length, 1, 'Shift 悬停未发出恰好一次 lookup 查词');
+  assert.ok(
+    lookups[0].term.startsWith('procrastination'),
+    `发给 app 的词被截断：${JSON.stringify(lookups[0].term)}`,
+  );
+  // FushiDicts.maxScanLength = 32：用户把扫描长度调到最大时扩展也不能先截掉。
+  assert.ok(maxLengths.length === 1 && maxLengths[0] >= 32,
+    `取词上限 ${maxLengths[0]} 小于扫描长度设置上限 32`);
 });
 
 test('未按 Shift 的 mousemove 不发查词（不刷爆服务器）', () => {

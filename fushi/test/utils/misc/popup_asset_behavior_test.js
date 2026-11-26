@@ -908,7 +908,7 @@ function testExtensionPopupHandlesNestedLookupBeforeHostPageBubbling() {
   }
   bubble('mousedown', glossary);
   bubble('click', glossary);
-  assert.deepEqual(selected, [[50, 50, 20]], 'definition click still selects a nested word');
+  assert.deepEqual(selected, [[50, 50, 400]], 'definition click still selects a nested word');
   bubble('mousemove', glossary, { shiftKey: true });
   assert.equal(selected.length, 2, 'Shift lookup must also remain inside the popup');
   const anchor = new FakeElement('a');
