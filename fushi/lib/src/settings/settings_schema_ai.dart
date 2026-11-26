@@ -2,6 +2,8 @@ import 'package:material_ui/material_ui.dart';
 import 'package:fushi_engine/ai/mcp_client/mcp_client_toolbox.dart'
     show McpServerStatus;
 import 'package:fushi_engine/ai/web_knowledge.dart';
+import 'package:fushi_engine/media/library_curate/library_curate_run.dart'
+    show LibraryCurateState;
 import 'package:fushi_engine/media/video/acquisition/video_acquisition_models.dart';
 import 'package:fushi/src/utils/fushi_icons.dart';
 import 'package:fushi/src/ai/agent/ai_agent_controller.dart'
@@ -398,9 +400,10 @@ SettingsDestination buildAiDestination() {
             _aiSectionModifiedSummary('ai.library_organize', c),
         items: <SettingsItem>[
           // AI 库管家（spec docs/specs/2026-11-18-ai-library-curator-design.md §9）：
-          // 自动路径默认开（所有者 2026-11-18 拍板；没指派任何 AI 时不发请求，副标题
-          // 写明发送什么、可能计费）。开着时它接管导入后的自动任务，下面旧的「导入后
-          // 自动整理」开关收起来——两套自动任务并成一处，不会对同一批条目重复跑。
+          // 自动路径**默认关**（用户 2026-11-26：「不要自动开，要问了用户才开」，默认
+          // 只有手动触发；副标题写明发送什么、可能计费）。用户打开后它接管导入后的
+          // 自动任务，下面旧的「导入后自动整理」开关收起来——两套自动任务并成一处，
+          // 不会对同一批条目重复跑。
           SettingsSwitchItem(
             id: 'ai.library_curate_auto',
             title: t.library_curate_auto_setting,
@@ -408,12 +411,23 @@ SettingsDestination buildAiDestination() {
             icon: FushiIcons.aiAssistant,
             value: (SettingsContext c) =>
                 c.appModel.prefsRepo.libraryCurateAuto,
-            onChanged: (SettingsContext c, bool value) =>
-                c.appModel.prefsRepo.setLibraryCurateAuto(value),
-            defaultValue: true,
+            // 重新打开 = 用户明确要它继续：解除上次额度用尽 / 鉴权被拒后的 AI 停用
+            // 与失败单元的退避（BUG-5531），水位与进度保留。
+            onChanged: (SettingsContext c, bool value) async {
+              final PreferencesRepository prefs = c.appModel.prefsRepo;
+              await prefs.setLibraryCurateAuto(value);
+              if (value) {
+                final LibraryCurateState state = LibraryCurateState.decode(
+                  prefs.libraryCurateState,
+                )..resume();
+                await prefs.setLibraryCurateState(state.encode());
+              }
+            },
+            defaultValue: false,
           ),
-          // 流水线之后的 AI 助手自动复查（spec 2026-11-22 §7，默认开；没指派「AI
-          // 助手」提供商时不发请求，副标题写明发什么、全库复查请求多）。
+          // 流水线之后的 AI 助手自动复查（spec 2026-11-22 §7，默认关——用户
+          // 2026-11-26 改拍板；没指派「AI 助手」提供商时不发请求，副标题写明发什么、
+          // 全库复查请求多）。
           SettingsSwitchItem(
             id: 'ai.library_agent_review_auto',
             title: t.library_agent_review_auto_setting,
@@ -434,7 +448,7 @@ SettingsDestination buildAiDestination() {
                 );
               }
             },
-            defaultValue: true,
+            defaultValue: false,
           ),
           // AI 管库 v3（spec docs/specs/2026-11-22-ai-library-agent-design.md §3.5）：
           // 整库重排交给助手的长程模式（读全库 → 成批改 → 自查 → 汇报，每批可撤销）；

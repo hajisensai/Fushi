@@ -1,0 +1,13 @@
+## BUG-5530 · 库管家每趟报 `libraryCurate.works.relations` 外键失败：视频作品 / 刮削快照的 owner 视频已不在库里
+- **报告**：2026-11-26（用户安装版错误日志：每趟库管家都有一条 `libraryCurate.works.relations` `SqliteException(787)` FOREIGN KEY constraint failed）
+- **真实性**：✅ 真 bug。用户库副本（schema 181）`PRAGMA foreign_key_check`：`video_metadata_works` 79 行、`video_scrape_meta` 148 行、`video_metadata_extras` 1 行的 `book_uid` 指向已不存在的 `video_books`，全是同一批《药屋少女》多个字幕组版本，子行写入时刻集中在 1792655167–1792655330（2026-10-22，约 3 分钟）。⑤ 的系列关系补填 `backfillScrapedCollectionRelations`（`packages/fushi_engine/lib/media/video/metadata/video_collection_relation_sync.dart`）按 `w.book_uid IS NOT NULL` 取作品，拿孤儿作品当 owner 往 `collection_relations`（`book_uid` 外键 → `video_books`）插行 → 787，整趟补填失败。
+- **孤儿怎么来的**（读代码 + 数据指纹，未能 100% 坐实）：
+  - 当前代码里唯一删 `video_books` 的语句在 `deleteVideoBooks`（`packages/fushi_core/lib/src/database/database_video_domain.part.dart`），它先显式删本地花絮、按路径删规格缓存，再删行、靠外键级联清作品 / 快照；所有 drift 连接都经 `_applyOpenPragmas`（`database.dart`）开 `foreign_keys`；迁移里 FK OFF/ON 重建的都不是 `video_books`；全仓没有 raw `DELETE FROM video_books` / 改 `book_uid` / REPLACE 写它。
+  - 残留的那条本地花絮（挂在活合集作品下）说明删除既不是外键开着的 SQL DELETE（SET NULL 会撞 `source_kind='local'` 的 CHECK，整条回滚，BUG-2754 实测过），也不是 `deleteVideoBooks`（它会先删这条花絮、也会删掉残留的 9 条 Moozzi2 规格缓存）。
+  - 同一时刻 `video_source_scrape_runs` 2827 状态 `interrupted`（「Application ended before the scrape completed」），孤儿子行的最后写入正是 app 在刮削写入高峰中结束；8 分钟后重新启动。最可能：checkpoint 中途被杀、库文件新旧页混杂，之后 WAL 被丢（启动恢复阶梯的侧车重建），`video_books` 页回到旧状态而子表页是新的——页级撕裂，外键管不到。事发时（2026-10-22）的代码在重写过的仓库历史里查不到。
+- **[x] ① 已修复** —
+  - 补填只取 owner 还在的作品（`_kLiveOwner`：合集 / 视频必须存在），孤儿不再撞外键。
+  - `FushiDatabase.purgeDanglingVideoBookRefs`：按外键语义清孤儿（CASCADE 的删、SET NULL 的置空、本地花絮直接删，作品子树随级联）；schema v182 数据迁移跑一次清存量，幂等。
+  - 自动路径上 ⑤ 的补填只在作品资料变过时跑（BUG-5531），不再每趟全库补填。
+- **[x] ② 已加自动化测试** — `fushi/test/database/video_book_dangling_refs_test.dart`（v181→v182：孤儿作品子树 / 快照 / 本地花絮清掉、活数据不动、`foreign_key_check` 为空、幂等）；`fushi/test/media/video/metadata/video_collection_relations_test.dart`「存量补填跳过 owner 已不在库里的孤儿作品，不撞外键」。
+- **备注**：页级撕裂这条没有日志证据。建议后续在「检查数据库」REINDEX 之后加 `foreign_key_check`（并复用 `purgeDanglingVideoBookRefs`），以及启动恢复阶梯 Layer 2 丢侧车后记一次 `integrity_check` / `foreign_key_check`，以后能坐实或排除。

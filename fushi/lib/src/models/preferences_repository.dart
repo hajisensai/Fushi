@@ -7831,13 +7831,15 @@ class PreferencesRepository extends ChangeNotifier
     notifyListeners();
   }
 
-  /// AI 库管家自动路径（spec docs/specs/2026-11-18-ai-library-curator-design.md §9，
-  /// 所有者 2026-11-18 拍板**默认开**）：入库 / 扫描后去抖跑一趟库管家（合集归属 →
-  /// 认身份 → 关系推断 → 作品层）。没给任何一步指派 AI 提供商时不发任何 AI 请求；
+  /// AI 库管家自动路径（spec docs/specs/2026-11-18-ai-library-curator-design.md §9）：
+  /// 入库 / 扫描后去抖跑一趟库管家（合集归属 → 认身份 → 关系推断 → 作品层）。
+  /// **默认关**：用户 2026-11-26 改拍板（原所有者 2026-11-18 定的默认开作废）——
+  /// 「不要自动开，要问了用户才开」，默认只有手动触发（设置里的「立即整理」/ CLI），
+  /// 用户自己打开这个开关后才自动跑。没给任何一步指派 AI 提供商时不发任何 AI 请求；
   /// 开着时它取代旧的「导入后自动整理」（[libraryOrganizeAuto] 只在它关掉时生效，
   /// 两套自动任务不会重复跑）。设备本地。
   bool get libraryCurateAuto =>
-      getPref('library_curate_auto', defaultValue: true) as bool;
+      getPref('library_curate_auto', defaultValue: false) as bool;
 
   Future<void> setLibraryCurateAuto(bool value) async {
     await setPref('library_curate_auto', value);
@@ -7853,11 +7855,13 @@ class PreferencesRepository extends ChangeNotifier
       setPref('library_curate_state', value);
 
   /// AI 管库自动复查（spec docs/specs/2026-11-22-ai-library-agent-design.md §7，所有者
-  /// 2026-11-22 拍板「流水线打底 + agent 自动复查」，**默认开**）：库管家自动路径跑完
-  /// 后起一场无人值守的 AI 助手会话复查新条目，首次 / 累积改动较多 / 隔一个月复查
-  /// 全库。没指派「AI 助手」提供商时不发请求。设备本地。
+  /// 2026-11-22 拍板「流水线打底 + agent 自动复查」）：库管家自动路径跑完后起一场
+  /// 无人值守的 AI 助手会话复查新条目，首次 / 累积改动较多 / 隔一个月复查全库。
+  /// **默认关**：用户 2026-11-26 改拍板（原 2026-11-22 的默认开作废），用户自己打开
+  /// 后才自动跑，默认只有手动（「整库重排」/ 助手对话）。没指派「AI 助手」提供商时
+  /// 不发请求。设备本地。
   bool get libraryAgentReviewAuto =>
-      getPref('library_agent_review_auto', defaultValue: true) as bool;
+      getPref('library_agent_review_auto', defaultValue: false) as bool;
 
   Future<void> setLibraryAgentReviewAuto(bool value) async {
     await setPref('library_agent_review_auto', value);

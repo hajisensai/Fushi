@@ -56,6 +56,12 @@
 | BUG | 修复 | 测试 | 标题 |
 |---|:--:|:--:|---|
 | [BUG-5533](bugs/BUG-5533-apple-sidebar-scope-rebuilds-hidden-library-pages.md) | ✅ | ✅ | Apple 宽窗侧栏外壳切 tab 后紧跟一帧：所有访问过的保活库页（含藏起的）整页重建 |
+> 共 4805 条。点号进各自文件。
+
+| BUG | 修复 | 测试 | 标题 |
+|---|:--:|:--:|---|
+| [BUG-5531](bugs/BUG-5531-curator-auto-retries-ai-failures.md) | ✅ | ✅ | AI 库管家默认开、书架每次重载就跑一趟，额度用完还逐个单元问 AI、下一趟再问一遍 |
+| [BUG-5530](bugs/BUG-5530-curator-orphan-video-works.md) | ✅ | ✅ | 库管家每趟报 `libraryCurate.works.relations` 外键失败：视频作品 / 刮削快照的 owner 视频已不在库里 |
 | [BUG-5526](bugs/BUG-5526-srs-link-retired-root-writer.md) | ✅ | ✅ | 平板复习同步永远不采用电脑的集合：集合目录里退役旧根的写入者被当成成员，关联判成「已关联」 |
 | [BUG-5525](bugs/BUG-5525-rwkv-cold-start-full-replay.md) | ✅ | ✅ | RWKV 冷启动逐卡重放全部历史，复习页首开等十几二十秒 |
 | [BUG-5524](bugs/BUG-5524-home-apple-collapsed-title-covered.md) | ✅ | ✅ | home-apple-collapsed-title-covered |

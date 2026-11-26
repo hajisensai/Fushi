@@ -11,6 +11,7 @@ import 'package:fushi_engine/media/collections/library_organize/library_organize
 import 'package:fushi_engine/media/library_curate/library_curator.dart';
 import 'package:material_ui/material_ui.dart';
 
+import 'package:fushi/src/ai/ai_failure_text.dart';
 import 'package:fushi/src/media/collections/collection_ai_order.dart'
     show scheduleAutomaticCollectionAiOrder;
 import 'package:fushi/src/media/library_curate/library_curate_auto.dart'
@@ -262,9 +263,9 @@ final Set<CollectionShelfDomain> _autoInFlight = <CollectionShelfDomain>{};
 /// 库页加载 / 来源扫描后调：开了「导入后自动整理」、同意过、有提供商时，去抖后对
 /// [domain] 里**本机上次自动整理之后新入库**的条目跑一次。不阻塞调用方。
 ///
-/// AI 库管家自动路径开着（`library_curate_auto`，默认开）时改由它接管：去抖后跑一
-/// 趟库管家（第一阶段就是这个整理，四个域一起），旧的自动整理不再单独跑，两套自动
-/// 任务不会对同一批新条目重复花钱。
+/// AI 库管家自动路径开着（`library_curate_auto`，默认关，用户自己打开后）时改由它
+/// 接管：去抖后跑一趟库管家（第一阶段就是这个整理，四个域一起），旧的自动整理不再
+/// 单独跑，两套自动任务不会对同一批新条目重复花钱。
 void scheduleAutomaticLibraryOrganize(CollectionShelfDomain domain) {
   if (libraryCurateAutoOwnsTriggers()) {
     scheduleAutomaticLibraryCurate();
@@ -488,6 +489,17 @@ Future<void> _showCurateResult(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: <Widget>[
+            // 额度用尽 / 鉴权被拒这类失败停掉了后续 AI 请求（BUG-5531）：如实说原因。
+            if (run.aiStopped case final String code)
+              Padding(
+                key: const ValueKey<String>('library_curate_result_ai_stopped'),
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Text(
+                  t.library_curate_result_ai_stopped(
+                    reason: aiFailureText(code),
+                  ),
+                ),
+              ),
             for (final (int i, LibraryCurateStageResult s)
                 in run.stages.indexed)
               FushiStaggeredEntrance(

@@ -441,9 +441,36 @@ class AiChatFailure implements Exception {
       message == 'rate_limited' ||
       message.startsWith('http_5');
 
+  /// 配置类致命失败（[aiFailureStopsBatch]）：额度 / 余额用尽、鉴权被拒（换遍了 key
+  /// 还是被拒才会抛到调用方）、没配提供商、端点 / 协议 / 互联主机配置不对。下一个
+  /// 请求也必然同样失败，批量任务应立刻停掉后续所有 AI 调用，而不是逐条再问一遍。
+  bool get stopsBatch => aiFailureStopsBatch(message);
+
   @override
   String toString() => 'AiChatFailure: $message';
 }
+
+/// [AiChatFailure.stopsBatch] 的判据：哪些失败码说明「这家提供商眼下根本用不了」。
+///
+/// 与 [AiChatFailure.isTransient] 互斥：限流 / 网络 / 5xx 过一会儿就好，不在这里；
+/// 坏回复、空回复、上下文超长、输出额度用完只跟这一次请求的内容有关，下一条照样
+/// 可能成功，也不在这里。互联主机提供商的配置类短码见 `ai_relay.dart` 的 `kAiRelay*`。
+bool aiFailureStopsBatch(String code) => switch (code) {
+  'quota_exhausted' ||
+  'unauthorized' ||
+  'provider_not_configured' ||
+  kAiEndpointErrorCode ||
+  kAiReasoningUnsupportedCode ||
+  kAiTranscriptionUnsupportedProtocol ||
+  'relay_unavailable' ||
+  'relay_host_not_paired' ||
+  'relay_certificate_mismatch' ||
+  'relay_auth_rejected' ||
+  'relay_host_unsupported' ||
+  'relay_disabled' ||
+  'relay_no_provider' => true,
+  _ => false,
+};
 
 /// 随消息一起发的一张图（视觉模型用）。
 ///

@@ -5502,6 +5502,7 @@
   "library_curate_estimate_body": "About $items items to look at, about $requests AI requests.",
   "library_curate_estimate_title": "Curate the library?",
   "library_curate_not_ready": "Not ready yet, try again in a moment",
+  "library_curate_result_ai_stopped": "AI requests were stopped: $reason. The remaining steps only ran their rules part, and automatic curation will not use AI until you run it manually again.",
   "library_curate_result_nothing": "Nothing to change",
   "library_curate_result_title": "$changes changes, $pending left for you",
   "library_curate_run_action": "Curate the whole library now",
