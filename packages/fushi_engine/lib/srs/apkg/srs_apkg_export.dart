@@ -520,8 +520,10 @@ class _Exporter {
             r == null || (r.queue == SrsQueue.newCard && r.reps == 0)
                 ? 0
                 : (r.ease ?? 2500),
-            // 捐赠包写真实用时（训练要用），普通导出同 Anki 截到 60 s。
-            redaction != null ? l.durationMs : min(l.durationMs, 60000),
+            // 捐赠包写真实用时（训练要用），普通导出同 Anki 截到 60 s（kSrsMaxAnswerDurationMs，与导入判等价同一封顶）。
+            redaction != null
+                ? l.durationMs
+                : min(l.durationMs, kSrsMaxAnswerDurationMs),
             SrsReviewType.toAnki(l.reviewType),
           ]);
           insOrigin?.execute(<Object?>[id, l.origin]);

@@ -80,7 +80,7 @@ Future<void> exportSrsDonationFile({
 - `srs_donation_milestones(name TEXT PRIMARY KEY, reached_at INTEGER)`
 
 接口：
-- `PUT /v1/srs-donations/:donorId`，`Authorization: Bearer <donorKey>`，body = apkg 原始字节（`application/octet-stream`，流式写 R2），头 `x-donation-reviews` / `x-donation-cards` / `x-donation-app-version`。校验：donorId 32 位小写 hex、key 64 位 hex、zip 魔数 `PK\x03\x04`、大小 ≤ 64 MiB；已有记录时 key_hash 必须一致，否则 403。按 donorId 每小时 2 次、按 IP 日字节额度（沿用大附件池 / `budget.js` 口径）。曾撤回的 ID 重新捐赠：删掉撤回记录中尚未 `reported_batch` 的那条，已报告过的保留（作者那边已删，新文件照常进下一批）。→ `200 {donated: true, updatedAt}`。
+- `PUT /v1/srs-donations/:donorId`，`Authorization: Bearer <donorKey>`，body = apkg 原始字节（`application/octet-stream`，流式写 R2），头 `x-donation-reviews` / `x-donation-cards` / `x-donation-app-version`。校验：donorId 32 位小写 hex、key 64 位 hex、zip 魔数 `PK\x03\x04`、大小 ≤ 64 MiB；已有记录时 key_hash 必须一致，否则 403。按 donorId 每小时 2 次、按 IP 日字节额度（`budget.js` 口径）；R2 字节占捐赠专用配额池（`media_usage.donation_bytes`，`DONATION_QUOTA_BYTES` 默认 2 GiB，满了 `507 donation_quota`；迁移 0028）。曾撤回的 ID 重新捐赠：删掉撤回记录中尚未 `reported_batch` 的那条，已报告过的保留（作者那边已删，新文件照常进下一批）。→ `200 {donated: true, updatedAt}`。
 - `GET /v1/srs-donations/:donorId`（Bearer）→ `200 {donated, reviews, cards, updatedAt}`，无记录 `{donated: false}`。
 - `DELETE /v1/srs-donations/:donorId`（Bearer）→ 删 R2 + 行，写撤回记录 → `200 {donated: false}`。无记录也 200（幂等）。
 - 管理（`checkBasicAuth`）：`POST /v1/admin/srs-donations/batch` 生成批次：快照当前全部捐赠与尚未报告的撤回 ID，随机 32 字节 token，30 天有效，返回 `{url}`；`GET /v1/admin/srs-donations` 列统计。
