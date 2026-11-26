@@ -431,6 +431,113 @@ try {
       `sandbox click must start the lookup at the clicked character (${r})`);
     passed++;
   }
+
+  step('12');
+  // 12. 词典脚本接管的点击不再被当成点词查词（OALDPE 的 noun / verb / All 词性切换、OALD 的
+  //     折叠块），页内跳转只滚动不查词。形状取自真实 OALDPE 词条：切换控件是无 href 的
+  //     span，词典脚本在 document 上委托处理，注册在辅助脚本之后（旧实现辅助脚本的
+  //     document 监听先跑，直接把「verb」报成查词）；折叠是元素上的监听改父节点 class。
+  //     另挂一个「每次点击都顺手改别处」的全局监听：它不能把正文的点词查词一起废掉。
+  {
+    const helperLiteral = /const DICT_SANDBOX_HELPER_JS = (`[\s\S]*?`);/.exec(scripts.popup);
+    const helperJs = vm.runInNewContext(helperLiteral[1]);
+    const dictJs = `(function () {
+      document.addEventListener('click', function (event) {
+        var tab = event.target.closest && event.target.closest('.oaldpe-nav span');
+        if (!tab) return;
+        var tabs = document.querySelectorAll('.oaldpe-nav span');
+        for (var i = 0; i < tabs.length; i++) tabs[i].classList.toggle('active', tabs[i] === tab);
+        var roots = document.querySelectorAll('.oald-entry-root');
+        for (var j = 0; j < roots.length; j++) roots[j].classList.toggle('visible', j === [].indexOf.call(tabs, tab));
+      });
+      document.querySelector('.box_title').addEventListener('click', function () {
+        this.parentNode.classList.toggle('is-active');
+      });
+      document.addEventListener('click', function () {
+        var c = document.getElementById('counter');
+        c.textContent = String(Number(c.textContent) + 1);
+      });
+    })();`;
+    const probeJs = `(function () {
+      function click(el) {
+        var r = el.getBoundingClientRect();
+        var x = r.left + Math.min(r.width / 2, 4), y = r.top + r.height / 2;
+        document.elementFromPoint(x, y).dispatchEvent(new MouseEvent('click',
+          { bubbles: true, cancelable: true, clientX: x, clientY: y }));
+      }
+      click(document.getElementById('verb'));
+      click(document.querySelector('.box_title'));
+      click(document.getElementById('jump'));
+      click(document.getElementById('xref'));
+      click(document.getElementById('word'));
+      parent.postMessage({ __fushiDictSandbox: 1, type: 'error', message: 'done:' +
+        document.getElementById('verb').className + ':' + document.querySelector('.unbox').className }, '*');
+    })();`;
+    const body = '<div class="oaldpe-nav"><span class="active" id="noun">noun</span><span id="verb">verb</span><span>All</span></div>' +
+      '<div class="oald-entry-root visible"><span class="unbox"><span class="box_title">Verb Forms</span><span class="body">x</span></span>' +
+      '<a href="#record_idmgs_1" id="jump"><span>Idioms</span></a>' +
+      '<a href="entry://champion_1#champion_sng_1" id="xref">champion</a>' +
+      '<p id="word">keep a record</p><div style="height:400px"></div><span id="record_idmgs_1">idioms here</span></div>' +
+      '<div class="oald-entry-root"></div><span id="counter">0</span>';
+    const r = await driver.evalOnPage('<!doctype html><html><body></body></html>', `(async () => {
+      const messages = [];
+      window.addEventListener('message', (e) => {
+        if (!e.data || e.data.__fushiDictSandbox !== 1 || e.data.type === 'height') return;
+        messages.push(e.data);
+      });
+      const frame = document.createElement('iframe');
+      frame.style.cssText = 'width:600px;height:800px;border:0';
+      frame.srcdoc = '<!doctype html><meta charset="utf-8"><body style="margin:0;font:20px/30px sans-serif">' +
+        ${JSON.stringify(body)} +
+        '<script>' + ${JSON.stringify(helperJs)} + '<' + '/script>' +
+        '<script>' + ${JSON.stringify(dictJs)} + '<' + '/script>' +
+        '<script>' + ${JSON.stringify(probeJs)} + '<' + '/script></body>';
+      document.body.appendChild(frame);
+      for (let t = 0; t < 400 && !messages.some((m) => m.type === 'error'); t++) {
+        await new Promise((resolve) => setTimeout(resolve, 10));
+      }
+      return messages.map((m) => m.type === 'select' ? 'select:' + m.text
+        : m.type === 'link' ? 'link:' + m.text
+          : m.type === 'scroll' ? 'scroll:' + (m.y > 400 ? 'below' : 'above')
+            : m.type + ':' + m.message);
+    })()`);
+    assert.deepEqual(r, [
+      'scroll:below',
+      'link:champion',
+      'select:keep',
+      'error:done:active:unbox is-active',
+    ], `dictionary-handled clicks must not look up; in-page jumps scroll; plain text still looks up (${r})`);
+    passed++;
+  }
+
+  step('13');
+  // 13. 父页面一侧：沙箱报来的 scroll 把 frame 内纵坐标滚到可视区顶端（要用户激活）；
+  //     无脚本的静态释义里点 #id 跳转直接滚到本词典块里的目标，不回查链接文字。
+  {
+    const r = await driver.evalOnPage(page(LOCKED, {}, true), `(async () => {
+      document.body.style.margin = '0';
+      const frame = document.createElement('div');
+      frame.style.cssText = 'height:3000px';
+      document.body.appendChild(frame);
+      __dictSandboxHandleMessage(frame, { type: 'scroll', y: 1200 });
+      const afterScroll = Math.round(document.scrollingElement.scrollTop);
+      window.scrollTo(0, 0);
+      const details = createGlossarySection('D', [{ content:
+        '<a href="#far" id="jump">Idioms</a><div style="height:2000px"></div><div id="far">far</div>',
+        definitionTags: '', termTags: '', glossaryIndex: 0 }], 0, 0, 1);
+      document.body.insertBefore(details, frame);
+      await ${SETTLE};
+      const anchor = document.querySelector('a[href="#far"]');
+      anchor.dispatchEvent(new MouseEvent('click', { bubbles: true, cancelable: true }));
+      const far = document.getElementById('far');
+      return { afterScroll, farTop: Math.round(far.getBoundingClientRect().top),
+        lookups: window.__calls.filter((c) => c.name === 'onLinkClick').length };
+    })()`);
+    assert.equal(r.afterScroll, 1200, `sandbox scroll message scrolls the popup (${JSON.stringify(r)})`);
+    assert.equal(r.farTop, 0, `static #id jump scrolls to the target (${JSON.stringify(r)})`);
+    assert.equal(r.lookups, 0, 'in-page jump must not look up the link text');
+    passed++;
+  }
   step('done');
 } finally {
   clearTimeout(watchdog);

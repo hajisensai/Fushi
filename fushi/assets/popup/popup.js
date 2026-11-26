@@ -4405,16 +4405,66 @@ const DICT_SANDBOX_HELPER_JS = `(function () {
     post({ type: 'link', href: anchor.getAttribute('href') || '', text: baseText(anchor),
            rect: rectOf(event.clientX, event.clientY, anchor) });
   }, true);
-  document.addEventListener('click', function (event) {
+  // 词典脚本自己接管的点击（OALDPE 顶部的 noun / verb / All 词性切换、OALD 的 Verb Forms
+  // 折叠……）不能再被当成点词查词。这类控件多是没有 href 的 span，词典脚本用元素监听或
+  // jQuery 在 document 上委托处理，通常既不 preventDefault 也不拦传播。所以判据是「这次
+  // 点击的派发过程里，词典脚本有没有改动被点的元素、它的祖先或后代」：捕获阶段开始记录
+  // DOM 变动，冒泡到 window（晚于词典挂在元素与 document 上的全部监听）时取出来看。
+  // 只认与被点元素同一条祖先链上的变动，<html> / <body> 除外，免得词典脚本里「每次点击都
+  // 顺手改一下别处」的全局监听把整本词典的点词查词废掉。
+  var clickObserver = null;
+  try { clickObserver = new MutationObserver(function () {}); } catch (e) {}
+  window.addEventListener('click', function () {
+    if (!clickObserver) return;
+    clickObserver.disconnect();
+    clickObserver.observe(document.documentElement,
+      { subtree: true, childList: true, attributes: true, characterData: true });
+  }, true);
+  function dictScriptReacted(target) {
+    if (!clickObserver) return false;
+    var records = clickObserver.takeRecords();
+    clickObserver.disconnect();
+    for (var i = 0; i < records.length; i++) {
+      var node = records[i].target;
+      if (node && node.nodeType !== 1) node = node.parentElement;
+      if (!node || node === document.documentElement || node === document.body) continue;
+      if (node === target || node.contains(target) || target.contains(node)) return true;
+    }
+    return false;
+  }
+  // 页内跳转（#id、MDict 的 entry://#id）：在本词典块里滚到目标，不拿链接文字去查词。
+  // iframe 按内容撑高、自己不滚动，真正滚动的是父页面，所以只报目标在 frame 里的纵坐标。
+  function fragmentOf(anchor) {
+    var match = /^(?:entry:\\/\\/)?#(.+)$/i.exec((anchor.getAttribute('href') || '').trim());
+    if (!match) return null;
+    try { return decodeURIComponent(match[1]); } catch (e) { return match[1]; }
+  }
+  function fragmentTarget(id) {
+    var byId = document.getElementById(id);
+    if (byId) return byId;
+    var named = document.getElementsByName(id);
+    return named.length ? named[0] : null;
+  }
+  window.addEventListener('click', function (event) {
     if (event.defaultPrevented) return;
+    var target = event.target && event.target.nodeType === 3 ? event.target.parentElement : event.target;
+    var reacted = target ? dictScriptReacted(target) : false;
     var anchor = anchorOf(event);
     if (anchor && isSoundLink(anchor)) return;
     if (anchor) {
       event.preventDefault();
+      if (reacted) return;
+      var fragment = fragmentOf(anchor);
+      if (fragment !== null) {
+        var jumpTo = fragmentTarget(fragment);
+        if (jumpTo) post({ type: 'scroll', y: jumpTo.getBoundingClientRect().top });
+        return;
+      }
       post({ type: 'link', href: anchor.getAttribute('href') || '', text: baseText(anchor),
              rect: rectOf(event.clientX, event.clientY, anchor) });
       return;
     }
+    if (reacted) return;
     if (!document.caretRangeFromPoint) return;
     var range = document.caretRangeFromPoint(event.clientX, event.clientY);
     if (!range || range.startContainer.nodeType !== 3) return;
@@ -4491,6 +4541,15 @@ function __dictSandboxHandleMessage(frame, data) {
     }
     if (data.type === 'error') {
         reportDictScriptError(dictName, 'sandbox', { message: `${data.message || ''}`.slice(0, 500) });
+        return;
+    }
+    if (data.type === 'scroll') {
+        // 沙箱里点了页内跳转（#id / entry://#id）：frame 按内容撑高、不自己滚动，由这里
+        // 把 frame 内纵坐标 y 处滚到弹窗可视区顶端。只动弹窗自己的滚动，不碰原生桥，
+        // 所以不占下面的动作节流；仍要求用户激活，沙箱脚本不能自顾自地把弹窗滚走。
+        if (!__dictSandboxUserActive(frame)) return;
+        const y = Number(data.y);
+        if (Number.isFinite(y)) scrollPopupToElementOffset(frame, Math.max(0, Math.min(y, 20000)));
         return;
     }
     if (data.type !== 'link' && data.type !== 'select') return;
@@ -10984,9 +11043,48 @@ if (typeof document !== 'undefined' && typeof document.addEventListener === 'fun
     });
 }
 
+// 把 element 内纵坐标 offsetY 处滚到它所在滚动容器的可视区顶端。弹窗的滚动容器因宿主而异
+// （app 内是文档本身，扩展里是 shadow root 下的内层容器），所以沿祖先找第一个真能滚的。
+function scrollPopupToElementOffset(element, offsetY) {
+    let container = element.parentElement;
+    while (container && container !== document.body && container !== document.documentElement) {
+        const overflowY = getComputedStyle(container).overflowY;
+        if ((overflowY === 'auto' || overflowY === 'scroll') &&
+            container.scrollHeight > container.clientHeight) break;
+        container = container.parentElement;
+    }
+    const scroller = container && container !== document.body && container !== document.documentElement
+        ? container : (document.scrollingElement || document.documentElement);
+    const viewportTop = scroller === (document.scrollingElement || document.documentElement)
+        ? 0 : scroller.getBoundingClientRect().top;
+    scroller.scrollTop += element.getBoundingClientRect().top + offsetY - viewportTop;
+}
+
+// MDX 的页内跳转：`#id`，以及 MDict 约定的 `entry://#id`（= 当前词条内的锚点）。返回解码后
+// 的 id；不是页内跳转返回 null。`entry://word#id` 指向另一个词条，仍按交叉引用回查。
+function dictFragmentOf(href) {
+    const match = /^(?:entry:\/\/)?#(.+)$/i.exec(href);
+    if (!match) return null;
+    try { return decodeURIComponent(match[1]); } catch (_) { return match[1]; }
+}
+
 function handleGlossaryAnchorClick(event, anchor) {
     event.preventDefault();
     const href = (anchor.getAttribute('href') || '').trim();
+    const fragment = dictFragmentOf(href);
+    if (fragment !== null) {
+        // OALD 的「Idioms」「Phrasal verbs」跳转等：在本词典块里滚到目标，不拿链接文字去查词
+        // （此前会查成「Idioms」这个词）。同一弹窗里多张词条卡可能各有一份同名 id，只在被点
+        // 的这一块里找；找不到就什么也不做。
+        const scope = anchor.closest('[data-dictionary]') || anchor.closest('.glossary-content');
+        const escaped = typeof CSS !== 'undefined' && CSS.escape ? CSS.escape(fragment)
+            : fragment.replace(/["\\]/g, '\\$&');
+        const jumpTo = scope
+            ? scope.querySelector(`[id="${escaped}"], [name="${escaped}"]`)
+            : null;
+        if (jumpTo) scrollPopupToElementOffset(jumpTo, 0);
+        return;
+    }
     if (/^https?:\/\//i.test(href)) {
         openExternalLink(href);
         return;

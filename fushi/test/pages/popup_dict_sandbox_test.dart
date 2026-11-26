@@ -74,7 +74,7 @@ void main() {
         );
         expect(
           out.toString(),
-          contains('PASS 11 dictionary sandbox scenarios'),
+          contains('PASS 13 dictionary sandbox scenarios'),
         );
       } finally {
         temp.deleteSync(recursive: true);
