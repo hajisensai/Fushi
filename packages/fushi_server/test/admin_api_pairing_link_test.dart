@@ -8,6 +8,7 @@ import 'package:fushi_engine/sync/pairing/fushi_pair_link.dart';
 import 'package:fushi_engine/sync/pairing/fushi_pairing_protocol.dart';
 import 'package:fushi_server/src/admin/admin_api.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
+import 'package:fushi_server/src/admin/pair_link_qr.dart';
 import 'package:fushi_server/src/config/server_config.dart';
 import 'package:fushi_server/src/headless_host.dart';
 import 'package:fushi_server/src/server_identity.dart';
@@ -156,6 +157,8 @@ void main() {
         jsonDecode(await r.readAsString()) as Map<String, dynamic>;
     final int ttl = json['expiresInSeconds'] as int;
     expect(ttl, inInclusiveRange(290, 300));
+    expect(json['qrSvg'], pairLinkQrSvg(json['uri'] as String));
+    expect(json['needsPublicAddress'], isFalse, reason: '配了公网地址就不警告');
 
     final FushiPairLink? link = FushiPairLink.tryParse(json['uri'] as String);
     expect(link, isNotNull, reason: 'app 的「粘贴配对链接」要能解析');

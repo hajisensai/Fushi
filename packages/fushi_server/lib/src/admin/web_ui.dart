@@ -589,10 +589,20 @@ $('#btn-scan').onclick = guard(async()=>{ await post('scan'); toast(T('已开始
 // ── 配对 ──
 function setPairBadge(pending){ $('#pair-badge').hidden = !pending; }
 // BUG-4391：管理员签发一次性配对链接（票据配对不走 PIN 预算）。再签一张即作废上一张。
+let pairLinkTimer = null;
+function clearPairLink(){
+  clearTimeout(pairLinkTimer);
+  const out = $('#pair-link-out');
+  out.innerHTML = '';
+  out.hidden = true;
+}
 $('#btn-pair-link').onclick = guard(async()=>{
+  clearPairLink();
   const r = await post('pairing/link');
   const out = $('#pair-link-out');
-  out.innerHTML = `<div class="action-row"><input id="pair-link-uri" class="mono" readonly value="${esc(r.uri)}"><button class="text-button" id="btn-pair-link-copy">${esc(T('复制'))}</button></div><p class="kit-supporting">${esc(T('{0} 分钟内有效，只能用一次。在 Fushi 的互联设置里点「粘贴配对链接」使用。', Math.max(1, Math.round(r.expiresInSeconds/60))))}</p>`;
+  // 二维码是服务端按同一条链接渲染的 SVG（白底深色，不随主题）；到期就清掉，不留作废的码。
+  out.innerHTML = `<div style="display:flex;flex-direction:column;align-items:center;gap:8px;margin:8px 0"><div style="width:min(100%,max(240px,40vmin));background:#fff;border-radius:8px;overflow:hidden;line-height:0">${r.qrSvg}</div><p class="kit-supporting" style="margin:0;text-align:center">${esc(T('用手机上的 Fushi 扫码：互联 › 配对 › 扫码'))}</p></div>${r.needsPublicAddress ? `<p class="kit-supporting" role="alert" style="color:var(--md-sys-color-error,#b3261e)">${esc(T('链接里只有容器内部 / 本机地址，手机连不上。请先在「设置 › 远程访问」的公网地址里填写手机能访问到的地址。'))}</p>` : ''}<div class="action-row"><input id="pair-link-uri" class="mono" readonly value="${esc(r.uri)}"><button class="text-button" id="btn-pair-link-copy">${esc(T('复制'))}</button></div><p class="kit-supporting">${esc(T('{0} 分钟内有效，只能用一次。在 Fushi 的互联设置里点「粘贴配对链接」使用。', Math.max(1, Math.round(r.expiresInSeconds/60))))}</p>`;
+  pairLinkTimer = setTimeout(clearPairLink, Math.max(1, r.expiresInSeconds) * 1000);
   out.hidden = false;
   $('#btn-pair-link-copy').onclick = guard(async()=>{
     const input = $('#pair-link-uri');

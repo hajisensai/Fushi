@@ -44,6 +44,7 @@ import 'package:fushi_engine/sync/subscriptions/host_subscription_host.dart';
 import 'package:fushi_engine/sync/subscriptions/host_subscription_routes.dart'
     show HostSubscriptionRejected;
 import 'package:fushi_server/src/admin/admin_backups.dart';
+import 'package:fushi_server/src/admin/pair_link_qr.dart';
 import 'package:fushi_server/src/admin/admin_srs.dart';
 import 'package:fushi_server/src/admin/admin_srs_ctl.dart';
 import 'package:fushi_server/src/admin/admin_context.dart';
@@ -598,9 +599,20 @@ class AdminApi {
   Future<shelf.Response> _createPairLink() async {
     final PairLinkOutcome outcome = await ctx.host.createPairLink();
     return switch (outcome) {
-      PairLinkIssued(:final String uri, :final DateTime expiresAt) =>
+      PairLinkIssued(
+        :final String uri,
+        :final DateTime expiresAt,
+        :final List<String> addressUrls,
+      ) =>
         _json(<String, Object?>{
           'uri': uri,
+          // 与链接同一次签发出的二维码（内联 SVG，白底深色，不随页面主题）。
+          'qrSvg': pairLinkQrSvg(uri),
+          // 没配公网地址且链接里全是回环 / Docker 桥接 / 链路本地地址：手机连不上。
+          'needsPublicAddress': pairLinkNeedsPublicAddress(
+            publicUrls: ctx.config.publicUrls,
+            addressUrls: addressUrls,
+          ),
           'expiresInSeconds': expiresAt
               .difference(DateTime.now())
               .inSeconds
