@@ -1,10 +1,10 @@
 {
  "schema": 1,
- "generatedAt": "2026-11-26T18:32:24Z",
+ "generatedAt": "2026-11-26T18:46:31Z",
  "repo": "hajisensai/Fushi",
  "develop": {
-  "sha": "b3beaa39bab0820eb637c1959fa84527e8dfe89a",
-  "seq": 32846
+  "sha": "06de0be3bc520671196aa8e12b13876e12977f27",
+  "seq": 32862
  },
  "builds": [
   {
@@ -12,8 +12,8 @@
    "version": "3.4.0",
    "sha": "b3beaa39bab0820eb637c1959fa84527e8dfe89a",
    "unknown": false,
-   "publishedAt": "2026-11-26T18:32:13Z",
-   "testflight": false,
+   "publishedAt": "2026-11-26T18:46:12Z",
+   "testflight": true,
    "baseSeq": 32769,
    "prs": [],
    "direct": [
@@ -108,16 +108,14 @@
      "state": "ok"
     },
     "windows": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45870008870"
+     "state": "ok"
     },
     "macos": {
-     "state": "building",
+     "state": "failed",
      "url": "https://github.com/hajisensai/Fushi/actions/runs/45870008870"
     },
     "ios": {
-     "state": "building",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45870008870"
+     "state": "ok"
     }
    }
   },
@@ -294,257 +292,69 @@
      "state": "ok"
     }
    }
-  },
-  {
-   "seq": 32705,
-   "version": "3.4.0",
-   "sha": "bbf3048ffa788689b67b74ba9e82183176640690",
-   "unknown": false,
-   "publishedAt": "2026-11-26T05:42:38Z",
-   "testflight": true,
-   "baseSeq": 32559,
-   "prs": [],
-   "direct": [
-    {
-     "sha": "bbf3048ffa788689b67b74ba9e82183176640690",
-     "subject": "Merge remote-tracking branch 'origin/develop' into claude/review-merge-93d9b1"
-    },
-    {
-     "sha": "b580825235207a32ea34b078c8cacb0acbce216e",
-     "subject": "chore(bugs): settle BUG number collisions on review-merge batch (#4452 的 5462/5463 → 5489/5490)"
-    },
-    {
-     "sha": "8ae37501b0e66478fc0453a821d4264262e14a5e",
-     "subject": "Merge remote-tracking branch 'origin/merge-fix/4452' into claude/review-merge-93d9b1"
-    },
-    {
-     "sha": "2ee6f4b5bcf0ad44431bf4abae9bf58ac9a4ffc5",
-     "subject": "Merge remote-tracking branch 'origin/merge-fix/4453' into claude/review-merge-93d9b1"
-    },
-    {
-     "sha": "13aba8dbcab8e19c81d94ab3cdba16b51b289de3",
-     "subject": "Merge remote-tracking branch 'origin/merge-fix/4457' into claude/review-merge-93d9b1"
-    },
-    {
-     "sha": "f7f639c558c4ea129a6388fe52d6148103a95b85",
-     "subject": "Merge remote-tracking branch 'origin/pr/srs-deck-list-collapsing-title' into claude/review-merge-93d9b1"
-    },
-    {
-     "sha": "bdf68120ae5366b37ed489fb327539949fb6671f",
-     "subject": "Merge origin/merge-fix/4472 (#4472) + 修与 #4473 托盘的语义冲突"
-    },
-    {
-     "sha": "529eea1089eaa0febd013e55fffdb6677a2d188f",
-     "subject": "Merge remote-tracking branch 'origin/merge-fix/4473' into claude/review-merge-93d9b1"
-    },
-    {
-     "sha": "41373a572de7523ac0c2c22235b901e45214656c",
-     "subject": "Merge remote-tracking branch 'origin/claude/fushi-sync-data-inconsistency-29c34c' into claude/review-merge-93d9b1"
-    },
-    {
-     "sha": "1709ff1f14e223fd068fee9b281a11300bba9349",
-     "subject": "chore(readme): refresh star history chart (TODO-1294) [skip ci]"
-    },
-    {
-     "sha": "b876b0196f238627203c3da06d4a59ef3a74ee6e",
-     "subject": "chore(bugs): settle BUG number collisions on 34ae43883"
-    },
-    {
-     "sha": "34ae43883e0a27f2676b7a49555df6a6f6500279",
-     "subject": "style: dart format 两份 gal 守卫测试"
-    },
-    {
-     "sha": "2ea109367adce70624d5d19f7842a13b82ff0710",
-     "subject": "test(video): 远端下载登记封面用真能解码的 1x1 PNG（远端卡片会真解码，假 JPEG 在真实 zone 解码完成时抛 Invalid image data）"
-    },
-    {
-     "sha": "4db2a66b3ab019cc86c879b9e2a6bd681d01b3a9",
-     "subject": "test(srs): Apple 窄窗笔记编辑器保存恒外露、预览从「⋯」打开（顶栏只放得下一颗动作 + ⋯）"
-    },
-    {
-     "sha": "105404c782e0363fb9094e84373c72629f4ce184",
-     "subject": "test(web-video): 档位当前档打勾断言跟上 FushiIcons.filled(success)（面板图标改走语义名）"
-    },
-    {
-     "sha": "3ddfda76d38130586353db302bc31adca4762d91",
-     "subject": "test(gal): BUG-1908 回程守卫锚点跟到 gal_hook_mining_result.dart（拆环后 GalHookMineResult 下沉该叶子文件）"
-    },
-    {
-     "sha": "abc5f7f4604431b4de5e23a3474924992bd81d52",
-     "subject": "Merge PR #redfix-sync-env"
-    },
-    {
-     "sha": "96d881f7ae5af53ad48eb27255247131fe6fe6cd",
-     "subject": "Merge PR #redfix-source-guards"
-    },
-    {
-     "sha": "54c17f0b2d0aa410b5d62c3280146758d3248543",
-     "subject": "Merge PR #redfix-gal-texthooker"
-    },
-    {
-     "sha": "9d777e6135145e8e0d08cae8aea0de209692752d",
-     "subject": "Merge PR #redfix-apple-ui"
-    },
-    {
-     "sha": "69d87a408e61353e12639410634f8de673007ff2",
-     "subject": "Merge PR #4446"
-    },
-    {
-     "sha": "19c7ca57d43fb48e89b3366d4b471b7bb6e92b79",
-     "subject": "Merge PR #4421"
-    },
-    {
-     "sha": "e21c91cfeeac7ea5f710ad18054f1af2eb5e7ef1",
-     "subject": "Merge PR #4420"
-    },
-    {
-     "sha": "21654629ddf372557d8e5b3e08437b21290e33b4",
-     "subject": "Merge PR #4430"
-    },
-    {
-     "sha": "8d458bff5f589f0beabe80c8f4e2f2a06c775be7",
-     "subject": "fix(organize): undo of a merge restores the winner's work-graph links (BUG-5457)"
-    },
-    {
-     "sha": "112a9b2e899c4981a657826cba5763ed4c702f16",
-     "subject": "Merge PR #4427"
-    },
-    {
-     "sha": "9b9b29016e5e8fcc594f96668752583fa63f1633",
-     "subject": "Merge PR #4429"
-    },
-    {
-     "sha": "65c97bf88269dfdcb1820dbfbfa94782eaa3e9d2",
-     "subject": "Merge PR #4436"
-    },
-    {
-     "sha": "0933c84f3681c4002a984d1ec823aa5d64206c69",
-     "subject": "Merge PR #4435"
-    },
-    {
-     "sha": "15715327b12795416f5f4f46d6a8dc765ebef66d",
-     "subject": "Merge PR #4433"
-    },
-    {
-     "sha": "798a180e4c2b1b281a20b44139f6d54d7421c5a2",
-     "subject": "Merge PR #4425"
-    },
-    {
-     "sha": "b1152820657862b61b6cb3be97fe932f82ce6221",
-     "subject": "Merge PR #4444-4445"
-    },
-    {
-     "sha": "155b1637c76867d251d574fb7568dd5798b8d0ef",
-     "subject": "Merge PR #4327"
-    },
-    {
-     "sha": "2fb31fce95eef55251f567e121cc4fc1bf72f966",
-     "subject": "Merge PR #4329"
-    },
-    {
-     "sha": "a90e105ff0c58d98d34fda482149441faa5a8723",
-     "subject": "Merge PR #4330"
-    },
-    {
-     "sha": "f5e384e8b689d6bc2a2d84d10ebc97ebc22453d9",
-     "subject": "Merge PR #4326"
-    },
-    {
-     "sha": "191a336b823d925b6a1996f7331a0674b5ff2f28",
-     "subject": "Merge PR #4428"
-    },
-    {
-     "sha": "d810e2c846a31b42d31f8168bacb62d273ae4a49",
-     "subject": "Merge PR #4419"
-    },
-    {
-     "sha": "5952f227ae14b158b58653f5069367ab4c526e96",
-     "subject": "Merge PR #4417"
-    },
-    {
-     "sha": "3266ab886ead76e1b66a1c85fe386d5430dceb8e",
-     "subject": "Merge PR #4426"
-    },
-    {
-     "sha": "8acc2ea950eaf7bbcd049afad2a8d62cd922b313",
-     "subject": "Merge PR #4422"
-    },
-    {
-     "sha": "a48a2230b2c6079cf690fea378e538888a43e7ac",
-     "subject": "Merge PR #4368"
-    },
-    {
-     "sha": "533377891da890155b47c2644a868757a4b45030",
-     "subject": "Merge PR #4443"
-    },
-    {
-     "sha": "398d8d0bebebe6ca916941a53574939be661d011",
-     "subject": "Merge PR #4442"
-    },
-    {
-     "sha": "e2fdc7eb22564ba2f9215e99898484991108b77a",
-     "subject": "Merge PR #4431 (含 #4440)"
-    },
-    {
-     "sha": "c5db09bd8d3c518a5fcf32cb4a23db72e9b31631",
-     "subject": "chore(bugs): settle BUG number collisions on a46839d71"
-    },
-    {
-     "sha": "a46839d71b5c659860dad756f9c79b386a956fa2",
-     "subject": "Merge PR #4432"
-    },
-    {
-     "sha": "5182a3f005ef2490d29787953aea9aa2c4628890",
-     "subject": "Merge PR #4438"
-    },
-    {
-     "sha": "d8125d57b6386261654d95dd3fe5b9bbffd9d279",
-     "subject": "Merge PR #4439"
-    },
-    {
-     "sha": "b367ce6899292e04a4f065125840f4f4aee69f27",
-     "subject": "Merge PR #4437"
-    },
-    {
-     "sha": "4299e148e69ca4865e5b301fc6123920e77006fc",
-     "subject": "chore(readme): refresh development activity chart [skip ci]"
-    },
-    {
-     "sha": "aba13f1799f3428f82390d4b62226084d00aa807",
-     "subject": "docs(release): 3.4.0 修复条目只和 3.3.0 正式版比：删掉调试版期间引入又修掉的（Windows 输入失灵、Android 书库位置丢失），ANR / 闪退写明场景，去掉含调试版修复的「600 多项」计数"
-    },
-    {
-     "sha": "b5f71537795c4eda32d839b4b9d3d101e6d5d660",
-     "subject": "docs(release): 3.4.0 公告精简：各节只留主要功能，修复只留用户最可能碰到的，注意事项去掉没变化的说明"
-    },
-    {
-     "sha": "34e621c775a4485081c678e98514879bc2287c7b",
-     "subject": "chore(readme): refresh star history chart (TODO-1294) [skip ci]"
-    },
-    {
-     "sha": "eb6196154301f02ba158dca9179a5fb5675fe119",
-     "subject": "docs(release): 3.4.0 公告补 #4416（书库布局记录丢失后整库「文件丢失」自愈）"
-    }
-   ],
-   "truncated": false,
-   "platforms": {
-    "android": {
-     "state": "built",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45753369634"
-    },
-    "windows": {
-     "state": "ok"
-    },
-    "macos": {
-     "state": "failed",
-     "url": "https://github.com/hajisensai/Fushi/actions/runs/45753369622"
-    },
-    "ios": {
-     "state": "ok"
-    }
-   }
   }
  ],
- "pending": null,
+ "pending": {
+  "headSha": "06de0be3bc520671196aa8e12b13876e12977f27",
+  "headSeq": 32862,
+  "prs": [],
+  "direct": [
+   {
+    "sha": "06de0be3bc520671196aa8e12b13876e12977f27",
+    "subject": "fix(merge): 截屏识字回包期望补上 BUG-5494 下发的文本块字段；设置重置钮测试跟上 PR #4518 换的 restoreBackup 图标"
+   },
+   {
+    "sha": "c0725a6e2a1e325533d58afe9a36f744f67121e5",
+    "subject": "fix(merge): 库管家自动门补上 srt_books 戳、失败阶段按退避重开、设置开关经编排器解除停用（PR #4516 审查）；登记 BUG-5538/5539"
+   },
+   {
+    "sha": "dbd2f9c0aa967a200abf1eded0680762352d275a",
+    "subject": "fix(merge): rwkv_last 回填测试改走内核原始通道读写库（另开 sqlite3 连接在 Linux 上内核看不到改动）；ONNX 张量测试改用 asTypedListOutOfLine，ffi_typed_list_view 守卫转绿"
+   },
+   {
+    "sha": "f5cfbadab66db7ac758f506eca3b30883249f521",
+    "subject": "Merge PR #4523"
+   },
+   {
+    "sha": "7d9bd5773997a9007685274a39e7ba2d228c46d6",
+    "subject": "Merge PR #4520"
+   },
+   {
+    "sha": "9560bd31b9c65e534d982c69f1e19623650cad61",
+    "subject": "Merge PR #4516"
+   },
+   {
+    "sha": "2b3ab780de29970bbfe8b54cc6860ee73249b2d5",
+    "subject": "Merge PR #4518"
+   },
+   {
+    "sha": "32819e7f247ce35106192108ffc2e48ac2cfdcd1",
+    "subject": "Merge PR #4519"
+   },
+   {
+    "sha": "1af8eff4f14e4adb76c2194d58739f863ff8db97",
+    "subject": "Merge PR #4517"
+   }
+  ],
+  "truncated": false,
+  "platforms": {
+   "android": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377342"
+   },
+   "windows": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377194"
+   },
+   "macos": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377194"
+   },
+   "ios": {
+    "state": "queued",
+    "url": "https://github.com/hajisensai/Fushi/actions/runs/45878377194"
+   }
+  }
+ },
  "prs": {}
 }
